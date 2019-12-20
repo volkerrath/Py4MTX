@@ -11,11 +11,11 @@ from mtpy.core.mt import MT
 
 plotsDA = True
 strngDA ='MT0_'
-plotsRJ = True
+plotsRJ = False
 strngRJ ='RJ10_'
  
 # Define the path to your edi files
-edi_dir = '/home/vrath/Timor/edifiles_bbmt_rot0/'
+edi_dir = '/home/vrath/Timor/edifiles_bbmt_roi/'
 print(' Edifiles read from: %s' % edi_dir)
 edi_files=[]
 files= os.listdir(edi_dir) 
@@ -28,12 +28,12 @@ for entry in files:
 
 # Define the path to corresponding plot files
 if plotsDA or plotsRJ:
-    plots_dir='plots_bbmt_rot0/'
+    plots_dir='plots_bbmt_roi/'
     print(' Plots read from: %s' % plots_dir)
 
 # Define the path for saving  kml files
 kml_dir = './'
-kml_file = 'Timor_bbmt'
+kml_file = 'Timor_bbmt_roi'
 
 # now open kml object
 kml = simplekml.Kml(open=1)
