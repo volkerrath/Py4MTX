@@ -9,10 +9,17 @@ import csv
 from mtpy.core.mt import MT
 import numpy as np
 
+
+
 dialect = 'unix'
+
 # Define the path to your edi files
 edi_dir = './edifiles_bbmt_roi/'
 print(' Edifiles read from: %s' % edi_dir)
+csv_file ='Timor_bbmt.csv'
+print('Writing data to CSV file: '+csv_file)
+
+
 
 edi_files=[]
 files= os.listdir(edi_dir) 
@@ -20,9 +27,6 @@ for entry in files:
    # print(entry)
    if entry.endswith('.edi') and not entry.endswith('.'):
             edi_files.append(entry)
-
-csv_file ='Timor_bbmt.csv'
-print('Writing data to CSV file: '+csv_file)
 ns =  np.size(edi_files)
 
 with open(csv_file, 'w') as f:
@@ -40,6 +44,9 @@ with open(csv_file, 'w') as f:
         mt_obj = MT(file_i)
         lon = mt_obj.lon
         lat = mt_obj.lat
-        hgt = mt_obj.elev
+        elev = mt_obj.elev
+        east = mt_obj.east
+        north = mt_obj.north
+
         sitename = mt_obj.station
         sitelist.writerow([sitename, lat, lon])

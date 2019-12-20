@@ -15,11 +15,21 @@ ErrPercent = 10.
 # Define the path to your edi files
 edi_in_dir = './edifiles_synth/'
 print(' Edifiles read from: %s' % edi_in_dir)
-edi_files = os.listdir(edi_in_dir)
 in_string = '.edi'
 # Define the path for saving  edifiles
 edi_out_dir= edi_in_dir
 out_string = '_Err'+str(ErrPercent)+'Percent.edi'
+
+
+
+
+edi_files=[]
+files= os.listdir(edi_in_dir) 
+for entry in files:
+   # print(entry)
+   if entry.endswith('.edi') and not entry.endswith('.'):
+            edi_files.append(entry)
+ns =  np.size(edi_files)
 
 
 Z_err_rel=ErrPercent/100. # 

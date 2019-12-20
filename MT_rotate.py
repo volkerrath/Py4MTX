@@ -8,16 +8,25 @@
 # import required modules
 import os
 from mtpy.core.mt import MT
+import numpy as np
+
 
 # Define the path to your edi files
 edi_in_dir = 'edifiles_bbmt/'
 print(' Edifiles read from: %s' % edi_in_dir)
-edi_files = os.listdir(edi_in_dir)
 in_string = 'MT'
-
 # Define the path for saving  edifiles
 edi_out_dir= 'edifiles_bbmt_rot0/'
+print(' Edifiles written from: %s' % edi_out_dir)
 out_string = 'MT0'
+
+edi_files=[]
+files= os.listdir(edi_in_dir) 
+for entry in files:
+   # print(entry)
+   if entry.endswith('.edi') and not entry.endswith('.'):
+            edi_files.append(entry)
+ns =  np.size(edi_files)
 
 ## loop
 for filename in edi_files :

@@ -26,16 +26,15 @@ plot_p  = 'y'
 edi_dir = './edifiles_bbmt_roi/'
 print(' Edifiles read from: %s' % edi_dir)
 
+# Define the path for saving  plots
+plots_dir = './plots_bbmt_roi/' #edi_dir #'./plots_synth/'
+
 edi_files=[]
 files= os.listdir(edi_dir) 
 for entry in files:
    # print(entry)
    if entry.endswith('.edi') and not entry.endswith('.'):
             edi_files.append(entry)
-
-# Define the path for saving  plots
-plots_dir = './plots_bbmt_roi/' #edi_dir #'./plots_synth/'
-
 
 ## loop
 for filename in edi_files :

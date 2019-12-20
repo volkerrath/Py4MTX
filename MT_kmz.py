@@ -17,7 +17,14 @@ strngRJ ='RJ10_'
 # Define the path to your edi files
 edi_dir = '/home/vrath/Timor/edifiles_bbmt_rot0/'
 print(' Edifiles read from: %s' % edi_dir)
-edi_files = os.listdir(edi_dir)
+edi_files=[]
+files= os.listdir(edi_dir) 
+for entry in files:
+   # print(entry)
+   if entry.endswith('.edi') and not entry.endswith('.'):
+            edi_files.append(entry)
+
+
 
 # Define the path to corresponding plot files
 if plotsDA or plotsRJ:
