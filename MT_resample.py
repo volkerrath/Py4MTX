@@ -39,11 +39,15 @@ for filename in edi_files :
     mt_obj = MT(file_i)  
     print('Size of Z list :',np.shape(mt_obj.Z.z))
     freq = mt_obj.Z.freq
+        
+    
+    
     maxfreq = np.max(freq)
     minfreq = np.min(freq)
     print('MinFreq: '+str(minfreq)+'   MaxFreq: '+str(maxfreq))
     test_freq_list = 1./get_period_list(1e-3,1e3,interp_pdec) # pdec periods per decade from 0.0001 to 100000 s
     new_freq_list  = np.select(test_freq_list<=maxfreq, test_freq_list>=minfreq,test_freq_list)
+       
     print('Size of old Freq list :',np.size(test_freq_list)) 
     print('Size of new Freq list :',np.size(new_freq_list)) 
     # create new Z and Tipper objects containing interpolated data

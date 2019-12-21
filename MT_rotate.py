@@ -12,11 +12,13 @@ import numpy as np
 
 
 # Define the path to your edi files
-edi_in_dir = 'edifiles_bbmt/'
+# edi_in_dir = 'edifiles_bbmt/'
+edi_in_dir = 'edifiles_test/'
 print(' Edifiles read from: %s' % edi_in_dir)
 in_string = 'MT'
 # Define the path for saving  edifiles
-edi_out_dir= 'edifiles_bbmt_rot0/'
+# edi_out_dir= 'edifiles_bbmt_rot0/'
+edi_out_dir= 'edifiles_test/'
 print(' Edifiles written from: %s' % edi_out_dir)
 out_string = 'MT0'
 
@@ -37,9 +39,10 @@ for filename in edi_files :
     mt_obj = MT(file_in)
     print(' site %s at :  % 10.6f % 10.6f' % (name, mt_obj.lat, mt_obj.lon))
     rot_angle=-1.*mt_obj.Z.rotation_angle
-#    print(mt_obj.Z.rotation_angle)
+    print(mt_obj.Tipper.rotation_angle)
     mt_obj.Z.rotate(rot_angle)
-#    print(mt_obj.Z.rotation_angle)
+    mt_obj.Tipper.rotate(-1.*rot_angle)
+    print(rot_angle)
 # Write a new edi file 
     file_out=filename.replace(in_string,out_string)
     print('Writing data to '+edi_out_dir+file_out)

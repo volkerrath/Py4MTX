@@ -10,7 +10,7 @@ import os
 from mtpy.core.mt import MT
 
 plot_pdf=True
-plot_png=False
+plot_png=True
 plot_eps=False
 dpi = 400
 
