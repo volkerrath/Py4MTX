@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """
+This script constructs a list of edifiles in a given directory, and produces 
+plots for all of them. 
 
 @author: sb & vr oct 2019
 
@@ -23,12 +25,17 @@ plot_t = 'yri'
 plot_p  = 'y'
 
 # Define the path to your edi files
-edi_dir = './edifiles_bbmt_roi/'
+# edi_dir = './edifiles_bbmt_roi/'
+edi_dir = './edifiles_test/'
 print(' Edifiles read from: %s' % edi_dir)
 
 # Define the path for saving  plots
-plots_dir = './plots_bbmt_roi/' #edi_dir #'./plots_synth/'
+# plots_dir = './plots_bbmt_roi/' #edi_dir #'./plots_synth/'
+plots_dir = './edifiles_test/'
 
+# No changes required after this line
+
+# Construct list of edi-files:
 edi_files=[]
 files= os.listdir(edi_dir) 
 for entry in files:
@@ -36,7 +43,7 @@ for entry in files:
    if entry.endswith('.edi') and not entry.endswith('.'):
             edi_files.append(entry)
 
-## loop
+## loop for plotting
 for filename in edi_files :
     print('\n \n \n reading data from '+filename)
     name, ext = os.path.splitext(filename)
@@ -49,7 +56,7 @@ for filename in edi_files :
                                      plot_tipper = plot_t,
                                      plot_pt = plot_p,
                                      x_limits = (0.00001,10000.),
-                                     res_limits=(0.1 ,1000.), # log resistivity limits
+                                     res_limits=(0.1 ,10000.), # log resistivity limits
                                      phase_limits=(0,90), # log phase limits
 #                                     shift_yx_phase = True, # True or False
     )
