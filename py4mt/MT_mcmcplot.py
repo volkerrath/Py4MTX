@@ -15,23 +15,24 @@
 script to visualise rjmcmcmt based on Ross Brodie's original matlab 
 plotting routines for rjmcmc inversion results.
  
-CreationDate:   2017/10/17
-Developer:      rakib.hassan@ga.gov.au
+CreationDate:   2017/10/17  -  Developer:      rakib.hassan@ga.gov.au
  
 Revision History:
     
 10/19   VR (Volker Rath)
     * adapted colorbar, sizes, and more 
 
-
 """
 import os
 import plotrjmcmc as  pmc
 
 
+
+
 results_dir = 'results_bbmt_roi/'
 plots_dir='plots_bbmt_roi/'
 outstrng='TIM'
+
 
 result_files = os.listdir(results_dir)
 result_files = sorted(result_files)
