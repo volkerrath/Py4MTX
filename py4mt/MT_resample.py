@@ -1,3 +1,15 @@
+# ---
+# jupyter:
+#   jupytext:
+#     cell_metadata_filter: -all
+#     formats: ipynb,py:light
+#     text_representation:
+#       extension: .py
+#       format_name: light
+#       format_version: '1.5'
+#       jupytext_version: 1.3.1
+# ---
+
 
 # -*- coding: utf-8 -*-
 """
@@ -68,4 +80,4 @@ for filename in edi_files :
                     latlon_format='dd' # write as decimal degrees (any other input
                                        # will write as degrees minutes seconds
                     )         
-  
+

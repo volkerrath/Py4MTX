@@ -1,4 +1,16 @@
 # -*- coding: utf-8 -*-
+# ---
+# jupyter:
+#   jupytext:
+#     cell_metadata_filter: -all
+#     formats: ipynb,py:light
+#     text_representation:
+#       extension: .py
+#       format_name: light
+#       format_version: '1.5'
+#       jupytext_version: 1.3.1
+# ---
+
 """
 script to visualise rjmcmcmt based on Ross Brodie's original matlab 
 plotting routines for rjmcmc inversion results.

@@ -1,4 +1,16 @@
 # -*- coding: utf-8 -*-
+# ---
+# jupyter:
+#   jupytext:
+#     cell_metadata_filter: -all
+#     formats: ipynb,py:light
+#     text_representation:
+#       extension: .py
+#       format_name: light
+#       format_version: '1.5'
+#       jupytext_version: 1.3.1
+# ---
+
 '''
 @author: sb & vr oct 2019
 '''
@@ -13,7 +25,7 @@ plotsDA = True
 strngDA ='MT0_'
 plotsRJ = False
 strngRJ ='RJ10_'
- 
+
 # Define the path to your edi files
 edi_dir = '/home/vrath/Timor/edifiles_bbmt_roi/'
 print(' Edifiles read from: %s' % edi_dir)
@@ -101,7 +113,7 @@ for filename in edi_files :
         site.description = description+'  - repeated site'
 
     site.description = description
-    
+
 kml_outfile = kml_dir+kml_file 
 # save kml file    
 kml.save(kml_outfile+'.kml')
