@@ -4,7 +4,7 @@ This repository contains simple scripts for EM imaging, allowing easy access to 
 
 Get your working copy via git from the command line:
 
-git clone https://github.com/volkerrath/Py4MT/
+_git clone https://github.com/volkerrath/Py4MT/_
 
 The scripts and jupyter notebooks are available in the subdirectory py4mt. 
 
@@ -14,10 +14,12 @@ This version will run under Python up to 3.7 (3.8 not yet tested). To install it
 
 (2) Create an appropriate conda environment (including the necessary prerequisites) by:
 
-conda env create -f Py4MT.yml
+_conda env create -f Py4MT.yml_
 
 (3) Activate this environment by:
 
-conda activate Py4MT
+_conda activate Py4MT_
 
 Enjoy!
+
+
