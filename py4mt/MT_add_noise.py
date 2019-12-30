@@ -1,39 +1,42 @@
 # -*- coding: utf-8 -*-
-# ---
-# jupyter:
-#   jupytext:
-#     cell_metadata_filter: -all
-#     formats: ipynb,py:light
-#     text_representation:
-#       extension: .py
-#       format_name: light
-#       format_version: '1.5'
-#       jupytext_version: 1.3.1
-# ---
+"""
+This script will take EDI-files from a prescribed directory, and add Gaussian
+noise. This is useful for working with synthetic data.
+
+@author: sb & vr dec 2019
 
 """
 
-@author: sb & vr oct 2019
+# First import required modules:
 
-"""
-
-# import required modules
 import os
 from mtpy.core.mt import MT
 import numpy as np
 
+# Define errors for Z and T in percent: 
 
-ErrPercent = 10.
-# Define the path to your edi files
+Z_ErrPercent = 10.
+T_ErrPercent = 10.
+
+# Define the path to your edi files:
+
 edi_in_dir = './edifiles_synth/'
 print(' Edifiles read from: %s' % edi_in_dir)
 in_string = '.edi'
-# Define the path for saving  edifiles
+
+# Define the path and additional marker string for perturbed edifiles:
+
 edi_out_dir= edi_in_dir
-out_string = '_Err'+str(ErrPercent)+'Percent.edi'
+out_string = '_ErrZ'+str(Z_ErrPercent)+'_ErrT'+str(T_ErrPercent)+'Percent.edi'
 
 
 
+
+# No changes required after this line!
+
+
+
+# Construct list of edi-files:
 
 edi_files=[]
 files= os.listdir(edi_in_dir) 
@@ -44,22 +47,27 @@ for entry in files:
 ns =  np.size(edi_files)
 
 
-Z_err_rel=ErrPercent/100. # 
-T_err_rel=ErrPercent/100. # 
+Z_err_rel=Z_ErrPercent/100. # 
+T_err_rel=Z_ErrPercent/100. # 
 
+# Enter loop 
 
-## loop
 for filename in edi_files :
     print('\n Reading data from '+edi_in_dir+filename)
     name, ext = os.path.splitext(filename)
-    # Create an MT object 
+
+# Create an MT object 
+    
     file_in = edi_in_dir+filename
     mt_obj = MT(file_in)
     print(' site %s at :  % 10.6f % 10.6f' % (name, mt_obj.lat, mt_obj.lon))
 
+# Extract impedance tensor Z:
+    
     Z           = mt_obj.Z.z[:]   
-#    print('orig') 
-#    print(Z)  
+
+# Set perturbation for real and imaginary parts:
+
     Z_err       = np.abs(Z*Z_err_rel) 
     rZ          = np.real(Z)
     iZ          = np.imag(Z)   
@@ -71,13 +79,13 @@ for filename in edi_files :
     
     Z_perturb   = rZ_perturb+iZ_perturb*1j
     newZ           = Z_perturb
-#    print('\n\n pert') 
-#    print(Z)   
+
+# Extract tipper T:
     
     T  = mt_obj.Tipper.tipper[:]
-#    print('orig') 
-#    print(Tipper)  
-    
+ 
+# Set perturbation for real and imaginary parts:    
+
     T_err       = np.abs(T*T_err_rel) 
     rT          = np.real(T)
     iT          = np.imag(T)   
@@ -89,13 +97,13 @@ for filename in edi_files :
     
     T_perturb   = rT_perturb+iT_perturb*1j
     newT        = T_perturb
-#    print('\n\n pert') 
-#    print(T)   
+
 
     mt_obj.Tipper.tipper    = newT
     mt_obj.Z.z              = newZ
-##    print(mt_obj.Z.rotation_angle)
+
 # Write a new edi file 
+    
     file_out=filename.replace(in_string,out_string)
     print('Writing data to '+edi_out_dir+file_out)
     mt_obj.write_mt_file(

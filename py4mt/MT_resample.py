@@ -13,24 +13,45 @@
 
 # -*- coding: utf-8 -*-
 """
-Created on Wed Nov 21 17:54:41 2018
+Resample/interpolate data (Z+T) from a prescribed set of EDI-files.
 
-@author: sb & vr oct 2019
+@author: sb & vr dec 2019
+
 '''
 
 """
+
+# Import required modules
+
 from mtpy.core.mt import MT
 from mtpy.utils.calculator import get_period_list
 import os
 import numpy as np
 
+# Parameters for interpolation and subsequent resampling. 
+# mtpy uses interp1 frm the scypy module, so different methods can be chosen:
+# Posibble options are 'linear', 'nearest', 'zero', 'slinear', 'quadratic', 'cubic'
+
 interp_type='slinear'
-#interp_types = ['linear', 'nearest', 'zero', 'slinear', 'quadratic', 'cubic']
+
+# This is the resampling rate, give as points per decade. TYpical values ae between 4 and 8.
+
 interp_pdec=5
 
-# Define the path to your edi files
+# Define the path to your EDI-files:
+
 edi_dir = './edifiles_bbmt_roi/'
 print(' Edifiles read from: %s' % edi_dir)
+
+# Define the path and append string for resampled data
+
+newedi_dir =  edi_dir
+print(' Edifiles written to: %s' % newedi_dir)
+out_string = '_rot0'
+
+# No changes required after this line!
+
+# Construct list of EDI-files:
 
 edi_files=[]
 files= os.listdir(edi_dir) 
@@ -39,14 +60,11 @@ for entry in files:
    if entry.endswith('.edi') and not entry.endswith('.'):
             edi_files.append(entry)
 
-# Define the path for saving  plots
-newedi_dir = './edifiles_bbmt_resampled/' #edi_dir #'./plots_synth/'
-
-
 for filename in edi_files :
     print('  \n reading data from '+filename)
     name, ext = os.path.splitext(filename)
-    # Create an MT object 
+    
+# Create an MT object 
     file_i = edi_dir+filename
     mt_obj = MT(file_i)  
     print('Size of Z list :',np.shape(mt_obj.Z.z))
@@ -62,17 +80,24 @@ for filename in edi_files :
        
     print('Size of old Freq list :',np.size(test_freq_list)) 
     print('Size of new Freq list :',np.size(new_freq_list)) 
-    # create new Z and Tipper objects containing interpolated data
+    
+# create new Z and Tipper objects containing interpolated data
+    
     new_Z_obj, new_Tipper_obj = mt_obj.interpolate(new_freq_list,interp_type=interp_type)
 
-#    pt_obj = mt_obj.plot_mt_response(plot_num=1, # 1 = yx and xy; 2 = all 4 components
-#    # 3 = off diagonal + determinant
-#    plot_tipper = 'yri',
-#    plot_pt = 'y' # plot phase tensor 'y' or 'n'f
-#    )
-#    pt_obj.save_plot(os.path.join(save_path,name+".pdf"), fig_dpi=400)    
+    #    pt_obj = mt_obj.plot_mt_response(plot_num=1, # 1 = yx and xy; 2 = all 4 components
+    #    # 3 = off diagonal + determinant
+    #    plot_tipper = 'yri',
+    #    plot_pt = 'y' # plot phase tensor 'y' or 'n'f
+    #    )
+    #    pt_obj.save_plot(os.path.join(save_path,name+".pdf"), fig_dpi=400)    
+   
+# Write a new edi file:
+    
+    
+    file_out=filename+out_string+ext
     mt_obj.write_mt_file(save_dir=newedi_dir, 
-                    fn_basename= name, 
+                    fn_basename= file_out, 
                     file_type='edi', # edi or xml format
                     new_Z_obj=new_Z_obj, # provide a z object to update the data
                     new_Tipper_obj=new_Tipper_obj, # provide a tipper object to update the data

@@ -23,14 +23,13 @@ plots for all of them.
 
 """
 
-# import required modules
+# Import required modules
 
 import os
 from mtpy.core.mt import MT
 
-## Graphical paramters for the plots have to be set:
-
-# First determine the plot formats produced, and the required resolution: 
+# Graphical paramter. Determine the plot formats produced, 
+# and the required resolution: 
 
 plot_pdf=True
 plot_png=True
@@ -38,7 +37,7 @@ plot_eps=False
 
 dpi = 400
 
-# What should be plotted:
+# What should be plotted?
 # 1 = yx and xy; 2 = all 4 components
 # 3 = off diagonal + determinant
 
@@ -49,12 +48,12 @@ plot_z = 1
 
 plot_t = 'yri'
 
-# Plot phase tensor:
+# Plot phase tensor?
 # 'y' or 'n'
 
 plot_p  = 'y'
 
-# Define the path to your edi files:
+# Define the path to your EDI-files:
 
 edi_dir = './edifiles_test/'
 print(' Edifiles read from: %s' % edi_dir)
@@ -66,22 +65,24 @@ print(' Plots written to: %s' % plots_dir)
 
 # No changes required after this line!
 
-# # Construct list of edi-files:
+# Construct list of EDI-files:
+
 
 edi_files=[]
 files= os.listdir(edi_dir) 
 for entry in files:
    # print(entry)
-   if entry.endswith('.edi') and not entry.endswith('.'):
+   if entry.endswith('.edi') and not entry.startswith('.'):
             edi_files.append(entry)
 
-# # Enter loop for plotting
+# Enter loop for plotting
+
 
 for filename in edi_files :
     print('\n \n \n reading data from '+filename)
     name, ext = os.path.splitext(filename)
     
-    # Create an MT object 
+# Create an MT object 
     
     file_i = edi_dir+filename
     mt_obj = MT(file_i)
@@ -90,11 +91,12 @@ for filename in edi_files :
                                      plot_tipper = plot_t,
                                      plot_pt = plot_p,
                                      x_limits = (0.00001,10000.),
-                                     res_limits=(0.1 ,10000.), # log resistivity limits
-                                     phase_limits=(0,90), # log phase limits
-                                     shift_yx_phase = True, # True or False
+                                     res_limits=(0.1 ,10000.), 
+                                     phase_limits=(0,90), 
+                                     shift_yx_phase = True
     )
-    # Finally save figure
+    
+# Finally save figure
     
     if plot_png:
         pt_obj.save_plot(os.path.join(plots_dir,name+".png"),file_format='png',fig_dpi=dpi)

@@ -15,58 +15,80 @@
 @author: sb & vr oct 2019
 '''
 
-# import required modules
+# Import required modules
+
 import os
 import simplekml 
 from mtpy.core.mt import MT
 
+# Deermine what is added to the KML-tags:
+
+# plotsDA =  site plots produced by MT_siteplot.py, with an 
+# additional string strngDA added to the EDI basename.
+# plotsRJ =  MCMC plots produced by MT_mcmcplot.py, with an 
+# additional string strnRJ added to the EDI basename.
 
 plotsDA = True
-strngDA ='MT0_'
-plotsRJ = False
-strngRJ ='RJ10_'
+strngDA ='_data'
 
-# Define the path to your edi files
+plotsRJ = False
+strngRJ ='_rjmcmc'
+
+# Define the path to your EDI-files
+
 edi_dir = '/home/vrath/Timor/edifiles_bbmt_roi/'
 print(' Edifiles read from: %s' % edi_dir)
-edi_files=[]
-files= os.listdir(edi_dir) 
-for entry in files:
-   # print(entry)
-   if entry.endswith('.edi') and not entry.endswith('.'):
-            edi_files.append(entry)
 
-
-
-# Define the path to corresponding plot files
 if plotsDA or plotsRJ:
     plots_dir='plots_bbmt_roi/'
     print(' Plots read from: %s' % plots_dir)
 
+
 # Define the path for saving  kml files
+
 kml_dir = './'
 kml_file = 'Timor_bbmt_roi'
 
-# now open kml object
-kml = simplekml.Kml(open=1)
-
+icon = 'icons/triangle.png'
 tcolor = simplekml.Color.white ###'#555500' #
 tscale = 0.8  # scale the text 
-iref   = kml.addfile('icons/triangle.png')
-#iref_alt1 =  kml.addfile('star.png')
-#iref_alt2 =  kml.addfile('donut.png')
+
 iscale = 1.
 icolor = simplekml.Color.red 
 rcolor = simplekml.Color.blue 
-# simplekml.Color.rgb(0, 0, 255)
-# 'ffff0000'
-# loop over edifiles
+    # simplekml.Color.rgb(0, 0, 255)
+    # 'ffff0000'
+
+
+# No changes required after this line!
+
+# Construct list of EDI-files:
+
+
+edi_files=[]
+files= os.listdir(edi_dir) 
+for entry in files:
+   # print(entry)
+   if entry.endswith('.edi') and not entry.startswith('.'):
+            edi_files.append(entry)
+
+
+# Open kml object:
+            
+kml = simplekml.Kml(open=1)
+iref   = kml.addfile(icon)
+#iref_alt1 =  kml.addfile('star.png')
+#iref_alt2 =  kml.addfile('donut.png')
+
+# Loop over edifiles
 
 for filename in edi_files :
     #print('reading data from '+filename)
     name, ext = os.path.splitext(filename)
     file_i = edi_dir+filename
-    # Create MT object
+
+# Create MT object
+
     mt_obj = MT(file_i)
     lon = mt_obj.lon
     lat = mt_obj.lat
@@ -76,9 +98,11 @@ for filename in edi_files :
     # print(full_name, nam,plots_dir+full_name+'.png')
     # print(full_name)
     description = ('')
-
+    
+#  Now add the plots to tag:
+    
     if plotsDA:
-        nam_DA = strngDA+nam
+        nam_DA = name+strngDA
         print(nam_DA)
         srcfileDA = kml.addfile(plots_dir+nam_DA+'.png')
         descriptionDA = (
@@ -87,7 +111,7 @@ for filename in edi_files :
         description = description+descriptionDA
         
     if plotsRJ:
-        nam_RJ = strngRJ+nam
+        nam_RJ = name+strngRJ
         print(nam_RJ)
         srcfileRJ = kml.addfile(plots_dir+nam_RJ+'.png')
         descriptionRJ = (
@@ -115,8 +139,13 @@ for filename in edi_files :
     site.description = description
 
 kml_outfile = kml_dir+kml_file 
-# save kml file    
+
+# Save raw kml file:    
+
 kml.save(kml_outfile+'.kml')
-# save compressed kmz file   
+
+# Compressed kmz file:  
+
 kml.savekmz(kml_outfile+'.kmz')
+
 print('kml/z written to '+kml_file)
