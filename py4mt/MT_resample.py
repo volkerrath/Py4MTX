@@ -40,10 +40,10 @@ interp_pdec=5
 
 # Define the path to your EDI-files:
 
-edi_dir = './edifiles_bbmt_roi/'
+edi_dir = './edifiles_test/'
 print(' Edifiles read from: %s' % edi_dir)
 
-# Define the path and append string for resampled data
+# Define the path and append string for resampled data:
 
 newedi_dir =  edi_dir
 print(' Edifiles written to: %s' % newedi_dir)
@@ -56,7 +56,7 @@ out_string = '_rot0'
 edi_files=[]
 files= os.listdir(edi_dir) 
 for entry in files:
-   # print(entry)
+
    if entry.endswith('.edi') and not entry.endswith('.'):
             edi_files.append(entry)
 
@@ -65,13 +65,17 @@ for filename in edi_files :
     name, ext = os.path.splitext(filename)
     
 # Create an MT object 
+    
     file_i = edi_dir+filename
     mt_obj = MT(file_i)  
-    print('Size of Z list :',np.shape(mt_obj.Z.z))
-    freq = mt_obj.Z.freq
-        
     
-    
+    freq    = mt_obj.Z.freq
+    Z       = mt_obj.Z.z
+    s       = np.shape(mt_obj.Z.z)
+    print('Size of Z list :',np.shape(Z))
+    Z_tmp   = np.reshape(Z,(ss[0],4))
+    print('Size of ZZ list :',np.shape(ZZ))
+    while any
     maxfreq = np.max(freq)
     minfreq = np.min(freq)
     print('MinFreq: '+str(minfreq)+'   MaxFreq: '+str(maxfreq))
