@@ -20,6 +20,6 @@ _conda env create -f Py4MT.yml_
 
 _conda activate Py4MT_
 
-Enjoy!
+(4) Now the open souce toolboxes used need to be installed (currently only mtpy, _https://github.com/MTgeophysics/mtpy_). for mtpy, download the current development version via the git system. Then, enter the download directory 9usually callen _mtpy_) and execute:
 
-
+_python setup.py install_
