@@ -38,6 +38,10 @@ interp_type='slinear'
 
 interp_pdec=5
 
+# Threshold for deciding masked values 
+
+thresh = 1.e20 
+
 # Define the path to your EDI-files:
 
 edi_dir = './edifiles_test/'
@@ -56,8 +60,7 @@ out_string = '_rot0'
 edi_files=[]
 files= os.listdir(edi_dir) 
 for entry in files:
-
-   if entry.endswith('.edi') and not entry.endswith('.'):
+   if entry.endswith('.edi') and not entry.startswith('.'):
             edi_files.append(entry)
 
 for filename in edi_files :
@@ -69,25 +72,90 @@ for filename in edi_files :
     file_i = edi_dir+filename
     mt_obj = MT(file_i)  
     
+# Setup frequency lists     
+    
     freq    = mt_obj.Z.freq
-    Z       = mt_obj.Z.z
-    s       = np.shape(mt_obj.Z.z)
-    print('Size of Z list :',np.shape(Z))
-    Z_tmp   = np.reshape(Z,(ss[0],4))
-    print('Size of ZZ list :',np.shape(ZZ))
-    while any
     maxfreq = np.max(freq)
     minfreq = np.min(freq)
     print('MinFreq: '+str(minfreq)+'   MaxFreq: '+str(maxfreq))
-    test_freq_list = 1./get_period_list(1e-3,1e3,interp_pdec) # pdec periods per decade from 0.0001 to 100000 s
-    new_freq_list  = np.select(test_freq_list<=maxfreq, test_freq_list>=minfreq,test_freq_list)
+    test_freq_list = 1./get_period_list(1e-4,1e4,interp_pdec) # pdec periods per decade from 0.0001 to 100000 s
+
+# Get Impedance data: 
+    
+    Z       = mt_obj.Z.z
+    sZ      = np.shape(Z)
+    print(' Size of Z list :',sZ)
+    tmp     = np.reshape(Z,(sZ[0],4))
+    print(' Size of tmp Z list :',np.shape(tmp))
+    
+# Find indices of valid impedance data, i. e., there absolute value is 
+# zero. This corresponds to the EMPTY key in EDI.
+
+    idx     = np.where([all(np.abs(row))>0. for row in tmp[:,1:]])
+    print(idx)
+    newZ = np.zeros(np.shape(Z))
+
+
+# Get Tipper data:
+    
+    T       = mt_obj.Tipper.tipper
+    sT      = np.shape(T)
+    print(' Size of T list :',sT)
+    tmp     = np.reshape(T,(sT[0],2)) 
+    print(' Size of tmp T list :',np.shape(tmp))
+    
+# Find indices of valid tipper data, i. e., there absolute value is 
+# zero. This corresponds to the EMPTY key in EDI.
+
+    idx     = np.where([all(np.abs(row))>0. for row in tmp[:,1:]])
+    print(idx)
+    newT = np.zeros(np.shape(T))
+   
+    
+    
+    
+    
+#     count=0
+#     for entry in Z_tmp:
+#         print(np.abs(tmp[count,:]))
+#         test = np.abs(tmp[count,:])
+#         if 
+#         count=count+1
+#         # if entry.endswith('.edi') and not entry.startswith('.'):
+#         #     edi_files.append(entry)
+            
+#         #     ns =  np.size(edi_files)
+
+    
+#     import numpy as np
+# # # data array 
+# # data = np.array([[4,3,1,2],[4,3,5,1],[1,2,1,0]])
+# # # array of acceptable combinations
+# # cond = np.array([[1,0],[1,2]])
+# # # index of rows matching the conditions
+# # idx=np.array([any(np.equal(cond,row).all(1)) for row in data[:,2:]])
+# # # selected rows
+# # data[idx]
+# # # array([[4, 3, 1, 2],
+# # #   [1, 2, 1, 0]]
+    
+    
+    
+    
+    
+    
+#     maxfreq = np.max(freq)
+#     minfreq = np.min(freq)
+#     print('MinFreq: '+str(minfreq)+'   MaxFreq: '+str(maxfreq))
+#     test_freq_list = 1./get_period_list(1e-3,1e3,interp_pdec) # pdec periods per decade from 0.0001 to 100000 s
+#     new_freq_list  = np.select(test_freq_list<=maxfreq, test_freq_list>=minfreq,test_freq_list)
        
-    print('Size of old Freq list :',np.size(test_freq_list)) 
-    print('Size of new Freq list :',np.size(new_freq_list)) 
+#     print('Size of old Freq list :',np.size(test_freq_list)) 
+#     print('Size of new Freq list :',np.size(new_freq_list)) 
     
-# create new Z and Tipper objects containing interpolated data
+# # create new Z and Tipper objects containing interpolated data
     
-    new_Z_obj, new_Tipper_obj = mt_obj.interpolate(new_freq_list,interp_type=interp_type)
+#     new_Z_obj, new_Tipper_obj = mt_obj.interpolate(new_freq_list,interp_type=interp_type)
 
     #    pt_obj = mt_obj.plot_mt_response(plot_num=1, # 1 = yx and xy; 2 = all 4 components
     #    # 3 = off diagonal + determinant
@@ -97,16 +165,15 @@ for filename in edi_files :
     #    pt_obj.save_plot(os.path.join(save_path,name+".pdf"), fig_dpi=400)    
    
 # Write a new edi file:
+    file_out=name+out_string+ext
     
-    
-    file_out=filename+out_string+ext
-    mt_obj.write_mt_file(save_dir=newedi_dir, 
-                    fn_basename= file_out, 
-                    file_type='edi', # edi or xml format
-                    new_Z_obj=new_Z_obj, # provide a z object to update the data
-                    new_Tipper_obj=new_Tipper_obj, # provide a tipper object to update the data
-                    longitude_format='LONG', # write longitudes as 'LON' or 'LONG'
-                    latlon_format='dd' # write as decimal degrees (any other input
-                                       # will write as degrees minutes seconds
-                    )         
+    # mt_obj.write_mt_file(save_dir=newedi_dir, 
+    #                 fn_basename= file_out, 
+    #                 file_type='edi', # edi or xml format
+    #                 new_Z_obj=new_Z_obj, # provide a z object to update the data
+    #                 new_Tipper_obj=new_Tipper_obj, # provide a tipper object to update the data
+    #                 longitude_format='LONG', # write longitudes as 'LON' or 'LONG'
+    #                 latlon_format='dd' # write as decimal degrees (any other input
+    #                                    # will write as degrees minutes seconds
+    #                 )         
 
