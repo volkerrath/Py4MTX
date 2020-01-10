@@ -32,20 +32,21 @@ import numpy as np
 
 # Define the path to your EDI-files:
 
-edi_in_dir = 'edifiles_test/'
+edi_in_dir = 'edifiles_bbmt_roi_corrected/'
 print(' Edifiles read from: %s' % edi_in_dir)
 
 # Define the path anf appended string for saved EDI-files:
 
-edi_out_dir= 'edifiles_test/'
+edi_out_dir= 'edifiles_bbmt_roigeo0/'
 print(' Edifiles written from: %s' % edi_out_dir)
-out_string = '_rot0'
+out_string = 'g0'
 
 # This example brings both angles to the normal (measurement) coordinate 
 # system, i. e., afterwards the ZROT and TROT fields in tehe EDI-files are 
 # both zero. Here Z_angle and T_angle are the rotation angles from the 
-# input EDI-file. 
-
+# input EDI-file. _rot=('-1.*Z_angle') and T_rot=('-1.*T_angle'), where 
+# Z_angle has been obtained from the corresponding mt_obj as 
+# Z_angle=mt_obj.Z.rotation_angle.
 
 Z_rot=('-1.*Z_angle')
 T_rot=('-1.*T_angle')
@@ -54,7 +55,13 @@ T_rot=('-1.*T_angle')
 # also be used to do rotations of different kind, e.g. when using a rotated 
 # coordinate system for modelling. In this case to rotate from the zero system 
 # to a sytem rotated 40 degrees clockwise, the string would look like 
-# '40.*np.ones(shape(Z_angle))'.
+# '40.*np.ones(shape(Z_angle))'  or simpler '40.' for Z and T. When correcting 
+# for declination, i.e., from geomagnetic to geographic north, it should be 
+# the negative value of the # declination obtained for the time of acquisition 
+# and geographic position at
+# https://www.ngdc.noaa.gov/geomag/calculators/magcalc.shtml).
+
+
 
 
 # No changes required after this line!
