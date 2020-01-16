@@ -110,6 +110,8 @@ for filename in edi_files :
         interp_type=interp_type, 
         period_buffer = pbuff)
 
+    new_Z = np.zeros(sZ)
+
 # Get Tipper data:
     
     T       = mt_obj.Tipper.tipper
@@ -132,6 +134,9 @@ for filename in edi_files :
         new_freq_list,
         interp_type=interp_type, 
         period_buffer = pbuff)
+    
+    new_T = np.zeros(sT)
+        
     #    pt_obj = mt_obj.plot_mt_response(plot_num=1, # 1 = yx and xy; 2 = all 4 components
     #    # 3 = off diagonal + determinant
     #    plot_tipper = 'yri',
