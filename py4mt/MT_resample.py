@@ -92,6 +92,7 @@ for filename in edi_files :
     sZ      = np.shape(Z)
     print(' Size of Z list :',sZ)
     tmp     = np.reshape(Z,(sZ[0],4))
+    print(Z[:])
     
 # Find indices of valid impedance data, i. e., there absolute value is 
 # zero. This corresponds to the EMPTY key in EDI.
@@ -142,13 +143,13 @@ for filename in edi_files :
     
     file_out=name+out_string+ext
     
-    mt_obj.write_mt_file(save_dir=newedi_dir, 
-                    fn_basename= file_out, 
-                    file_type='edi', # edi or xml format
-                    new_Z_obj=new_Z_obj, # provide a z object to update the data
-                    new_Tipper_obj=new_Tipper_obj, # provide a tipper object to update the data
-                    longitude_format='LONG', # write longitudes as 'LON' or 'LONG'
-                    latlon_format='dd' # write as decimal degrees (any other input
-                                        # will write as degrees minutes seconds
-                    )         
+    # mt_obj.write_mt_file(save_dir=newedi_dir, 
+    #                 fn_basename= file_out, 
+    #                 file_type='edi', # edi or xml format
+    #                 new_Z_obj=new_Z_obj, # provide a z object to update the data
+    #                 new_Tipper_obj=new_Tipper_obj, # provide a tipper object to update the data
+    #                 longitude_format='LONG', # write longitudes as 'LON' or 'LONG'
+    #                 latlon_format='dd' # write as decimal degrees (any other input
+    #                                     # will write as degrees minutes seconds
+    #                 )         
 
