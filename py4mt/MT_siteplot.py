@@ -53,16 +53,26 @@ plot_t = 'yri'
 
 plot_p  = 'y'
 
+
+PerLimits = (0.001,10000.)
+RhoLimits = (0.01 ,10000.)
+PhiLimits = (0,90)
+
 # Define the path to your EDI-files:
 
-edi_dir = './edifiles_test/'
+# edi_dir = './edifiles_test/'
+edi_dir = './edifiles_bbmt_roigeo0/'
 print(' Edifiles read from: %s' % edi_dir)
 
 # Define the path for saving  plots:
 
-plots_dir = './edifiles_test/'
+#plots_dir = './edifiles_test/'
+plots_dir = './plots_bbmt_roigeo0/'
 print(' Plots written to: %s' % plots_dir)
-
+if not os.path.isdir(plots_dir):
+    print(' File: %s does not exist, but will be created' % plots_dir)
+    os.mkdir(plots_dir)
+    
 # No changes required after this line!
 
 # Construct list of EDI-files:
@@ -90,10 +100,9 @@ for filename in edi_files :
     pt_obj = mt_obj.plot_mt_response(plot_num=plot_z,
                                      plot_tipper = plot_t,
                                      plot_pt = plot_p,
-                                     x_limits = (0.00001,10000.),
-                                     res_limits=(0.1 ,10000.), 
-                                     phase_limits=(0,90), 
-                                     shift_yx_phase = True
+                                     x_limits = PerLimits,
+                                     res_limits=RhoLimits, 
+                                     phase_limits=PhiLimits
     )
     
 # Finally save figure

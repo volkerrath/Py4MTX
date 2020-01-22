@@ -31,6 +31,10 @@ import plotrjmcmc as  pmc
 
 results_dir = 'results_bbmt_roi/'
 plots_dir='plots_bbmt_roi/'
+if not os.path.isdir(plots_dir):
+    print(' File: %s does not exist, but will be created' % plots_dir)
+    os.mkdir(plots_dir)
+    
 outstrng='TIM'
 
 

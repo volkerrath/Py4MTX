@@ -39,6 +39,10 @@ print(' Edifiles read from: %s' % edi_in_dir)
 
 edi_out_dir= 'edifiles_bbmt_roigeo0/'
 print(' Edifiles written from: %s' % edi_out_dir)
+if not os.path.isdir(edi_out_dir):
+    print(' File: %s does not exist, but will be created' % edi_out_dir)
+    os.mkdir(edi_out_dir)
+    
 out_string = 'g0'
 
 # This example brings both angles to the normal (measurement) coordinate 

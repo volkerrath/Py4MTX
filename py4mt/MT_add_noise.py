@@ -27,6 +27,9 @@ in_string = '.edi'
 # Define the path and additional marker string for perturbed edifiles:
 
 edi_out_dir= edi_in_dir
+if not os.path.isdir(edi_out_dir):
+    print(' File: %s does not exist, but will be created' % edi_out_dir)
+    os.mkdir(edi_out_dir)
 out_string = '_ErrZ'+str(Z_ErrPercent)+'_ErrT'+str(T_ErrPercent)+'Percent.edi'
 
 

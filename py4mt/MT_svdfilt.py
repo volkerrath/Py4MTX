@@ -49,8 +49,12 @@ print(' Edifiles read from: %s' % edi_dir)
 
 # Define the path and append string for resampled data:
 
-newedi_dir      =  edi_dir
-print(' Edifiles written to: %s' % newedi_dir)
+edi_out_dir      =  edi_dir
+print(' Edifiles written to: %s' % edi_out_dir)
+if not os.path.isdir(edi_out_dir):
+    print(' File: %s does not exist, but will be created' % edi_out_dir)
+    os.mkdir(edi_out_dir)
+
 out_string      = '_interp'
 
 # Setup frequency lists     
@@ -148,7 +152,7 @@ for filename in edi_files :
     
     file_out=name+out_string+ext
     
-    # mt_obj.write_mt_file(save_dir=newedi_dir, 
+    # mt_obj.write_mt_file(save_dir=edi_out_dir, 
     #                 fn_basename= file_out, 
     #                 file_type='edi', # edi or xml format
     #                 new_Z_obj=new_Z_obj, # provide a z object to update the data
