@@ -19,7 +19,7 @@ plot_eps=False
 dpi = 400
 
 ModelPath = r'./Fogo/'
-PlotPath = ModelPath 
+plots_dir = model_dir 
 
 
 model_fn = os.path.join(ModelPath,'Modular_MPI_NLCG_004.rho')
@@ -27,7 +27,7 @@ data_fn = os.path.join(ModelPath,'ModEM_Data.dat')
 
 
 
-pObj = PlotSlices(model_fn=model_fn, data_fn=data_fn,
+plot_obj = PlotSlices(model_fn=model_fn, data_fn=data_fn,
                   climits = [0,2], # log10(colour limits)
                   cmap='bwr_r', # colour map
                   plot_stations=True, # True/False - show station locations or not
@@ -39,17 +39,17 @@ pObj = PlotSlices(model_fn=model_fn, data_fn=data_fn,
                   plot_yn='n', # whether to load interactive plotting
                   fig_dpi = dpi # change to your preferred file resolution
 )
-pObj.PlotPath = Plotpath
-pObj.export_slices(plane='N-E', # options are 'N-Z', 'E-Z', and 'N-E'
+plot_obj.PlotPath = plots_dir
+plot_obj.export_slices(plane='N-E', # options are 'N-Z', 'E-Z', and 'N-E'
                    indexlist=[32], # slice indices to plot
                    station_buffer=20e3, # distance threshold for plotting stations on vertical slice
                    save=True,
 )
 # Finally save figure
     
-    if plot_png:
-        pt_obj.save_plot(os.path.join(plots_dir,name+".png"),file_format='png',fig_dpi=dpi)
-    if plot_pdf:
-        pt_obj.save_plot(os.path.join(plots_dir,name+".pdf"),file_format='pdf',fig_dpi=dpi)
-    if plot_eps:
-        pt_obj.save_plot(os.path.join(plots_dir,name+".eps"),file_format='eps',fig_dpi=dpi)
+# if plot_png:
+#     plot_obj.save_plot(os.path.join(plots_dir,name+".png"),file_format='png',fig_dpi=dpi)
+# if plot_pdf:
+#     plot_obj.save_plot(os.path.join(plots_dir,name+".pdf"),file_format='pdf',fig_dpi=dpi)
+# if plot_eps:
+#     plot_obj.save_plot(os.path.join(plots_dir,name+".eps"),file_format='eps',fig_dpi=dpi)

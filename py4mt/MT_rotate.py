@@ -33,7 +33,7 @@ import numpy as np
 # Define the path to your EDI-files:
 
 # edi_in_dir = 'edifiles_bbmt_roi_corrected/'
-edi_in_dir = 'test_sequence/'
+edi_in_dir = 'test/'
 print(' Edifiles read from: %s' % edi_in_dir)
 
 # Define the path anf appended string for saved EDI-files:

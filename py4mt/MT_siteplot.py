@@ -97,7 +97,7 @@ for filename in edi_files :
     file_i = edi_in_dir+filename
     mt_obj = MT(file_i)
     print(' site %s at :  % 10.6f % 10.6f' % (name, mt_obj.lat, mt_obj.lon))
-    pt_obj = mt_obj.plot_mt_response(plot_num=plot_z,
+    plot_obj = mt_obj.plot_mt_response(plot_num=plot_z,
                                      plot_tipper = plot_t,
                                      plot_pt = plot_p,
                                      x_limits = PerLimits,
@@ -108,11 +108,11 @@ for filename in edi_files :
 # Finally save figure
     
     if plot_png:
-        pt_obj.save_plot(os.path.join(plots_dir,name+".png"),file_format='png',fig_dpi=dpi)
+        plot_obj.save_plot(os.path.join(plots_dir,name+".png"),file_format='png',fig_dpi=dpi)
     if plot_pdf:
-        pt_obj.save_plot(os.path.join(plots_dir,name+".pdf"),file_format='pdf',fig_dpi=dpi)
+        plot_obj.save_plot(os.path.join(plots_dir,name+".pdf"),file_format='pdf',fig_dpi=dpi)
     if plot_eps:
-        pt_obj.save_plot(os.path.join(plots_dir,name+".eps"),file_format='eps',fig_dpi=dpi)
+        plot_obj.save_plot(os.path.join(plots_dir,name+".eps"),file_format='eps',fig_dpi=dpi)
 
         
 

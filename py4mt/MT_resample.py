@@ -32,7 +32,7 @@ import numpy as np
 # mtpy uses interp1 frm the scypy module, so different methods can be chosen:
 # Posibble options are 'linear', 'nearest', 'zero', 'slinear', 'quadratic', 'cubic'
 
-interp_type     = 'slinear'
+interp_type     = 'cubic'
 
 # This is the resampling rate, give as points per decade. TYpical values ae between 4 and 8.
 
@@ -40,16 +40,17 @@ interp_pdec     = 5
 
 # period buffer:
 
-pbuff           = 2
+pbuff           = 1.1
 
 # Define the path to your EDI-files:
 
-edi_dir         = './edifiles_test/'
-print(' Edifiles read from: %s' % edi_dir)
+edi_in_dir         = './test/'
+
+print(' Edifiles read from: %s' % edi_in_dir)
 
 # Define the path and append string for resampled data:
 
-edi_out_dir      =  edi_dir
+edi_out_dir      =  edi_in_dir
 print(' Edifiles written to: %s' % edi_out_dir)
 if not os.path.isdir(edi_out_dir):
     print(' File: %s does not exist, but will be created' % edi_out_dir)
@@ -60,7 +61,7 @@ out_string      = '_interp'
 # Setup frequency lists     
 
 min_per_test    =  1e-3
-max_per_test    =  1e4
+max_per_test    =  1e3
 test_freq_list = 1./get_period_list(min_per_test,max_per_test,interp_pdec) 
  
 maxfreq = np.max(test_freq_list)
@@ -73,7 +74,7 @@ print( 'MinFreqTest: '+str(minfreq)+'   MaxFreqTest: '+str(maxfreq))
 # Construct list of EDI-files:
 
 edi_files=[]
-files= os.listdir(edi_dir) 
+files= os.listdir(edi_in_dir) 
 for entry in files:
    if entry.endswith('.edi') and not entry.startswith('.'):
             edi_files.append(entry)
@@ -84,7 +85,7 @@ for filename in edi_files :
     
 # Create an MT object 
     
-    file_i = edi_dir+filename
+    file_i = edi_in_dir+filename
     mt_obj = MT(file_i)  
     
  
@@ -96,35 +97,41 @@ for filename in edi_files :
     sZ      = np.shape(Z)
     print(' Size of Z list :',sZ)
     tmp     = np.reshape(Z,(sZ[0],4))
-    print(Z[:])
+    # print(Z[:])
     
 # Find indices of valid impedance data, i. e., there absolute value is 
 # zero. This corresponds to the EMPTY key in EDI.
 
     idx     = np.where([all(np.abs(row))>0. for row in tmp[:,1:]])
     tmpfreq=freq[idx]
-    
     maxfreq = tmpfreq[0]
     minfreq = tmpfreq[-1]
     print(' Z: MinFreq: '+str(minfreq)+'   MaxFreq: '+str(maxfreq))
     
     new_freq_list=tmpfreq
+    # print(new_freq_list)
+    
     new_Z_obj, _ = mt_obj.interpolate(
         new_freq_list,
         interp_type=interp_type, 
         period_buffer = pbuff)
-
-    new_Z = np.zeros(sZ)
-
-
-# Get Tipper data:
+    Z_tmp = new_Z_obj.z[:]
+    
+    new_Z = np.zeros(sZ,dtype=np.complex128)
+    # print(np.shape(new_Z))
+    # print(np.shape(Z_tmp))
+    new_Z[idx,:,:] = Z_tmp[:,:,:]
+    # # print(new_Z[:])
+    print(np.shape(new_Z))
+    new_Z_obj.z[:,:,:] = new_Z[:,:,:]
+    
+    # Get Tipper data:
     
     T       = mt_obj.Tipper.tipper
     sT      = np.shape(T)
     print(' Size of T list :',sT)
     tmp     = np.reshape(T,(sT[0],2)) 
 
-    
 # Find indices of valid tipper data, i. e., there absolute value is 
 # zero. This corresponds to the EMPTY key in EDI.
 
@@ -135,14 +142,18 @@ for filename in edi_files :
     print(' T: MinFreq: '+str(minfreq)+'   MaxFreq: '+str(maxfreq))
     
     new_freq_list=tmpfreq
-    _ , new_Tipper_obj= mt_obj.interpolate(
+    _ , new_T_obj= mt_obj.interpolate(
         new_freq_list,
         interp_type=interp_type, 
         period_buffer = pbuff)
+    T_tmp = new_T_obj.tipper[:]
     
-    new_T = np.zeros(sT)
-    
-    
+    new_T  = np.zeros(sT,dtype=np.complex128)
+    # print(np.shape(new_T))
+    # print(np.shape(T_tmp))
+    new_T[idx,:,:] = T_tmp[:,:,:]
+    print(np.shape(new_T))
+    new_T_obj.tipper = new_T
     #    pt_obj = mt_obj.plot_mt_response(plot_num=1, # 1 = yx and xy; 2 = all 4 components
     #    # 3 = off diagonal + determinant
     #    plot_tipper = 'yri',
