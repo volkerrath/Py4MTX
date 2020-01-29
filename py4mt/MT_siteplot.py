@@ -60,14 +60,14 @@ PhiLimits = (0,90)
 
 # Define the path to your EDI-files:
 
-# edi_dir = './edifiles_test/'
-edi_dir = './edifiles_bbmt_roigeo0/'
-print(' Edifiles read from: %s' % edi_dir)
+edi_in_dir = 'test/' #'./edifiles_bbmt_roigeo0/''./edifiles_test/'
+
+print(' Edifiles read from: %s' % edi_in_dir)
 
 # Define the path for saving  plots:
 
 #plots_dir = './edifiles_test/'
-plots_dir = './plots_bbmt_roigeo0/'
+plots_dir = edi_in_dir #'DataND/'
 print(' Plots written to: %s' % plots_dir)
 if not os.path.isdir(plots_dir):
     print(' File: %s does not exist, but will be created' % plots_dir)
@@ -79,7 +79,7 @@ if not os.path.isdir(plots_dir):
 
 
 edi_files=[]
-files= os.listdir(edi_dir) 
+files= os.listdir(edi_in_dir) 
 for entry in files:
    # print(entry)
    if entry.endswith('.edi') and not entry.startswith('.'):
@@ -94,7 +94,7 @@ for filename in edi_files :
     
 # Create an MT object 
     
-    file_i = edi_dir+filename
+    file_i = edi_in_dir+filename
     mt_obj = MT(file_i)
     print(' site %s at :  % 10.6f % 10.6f' % (name, mt_obj.lat, mt_obj.lon))
     pt_obj = mt_obj.plot_mt_response(plot_num=plot_z,

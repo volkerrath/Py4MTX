@@ -32,18 +32,20 @@ import numpy as np
 
 # Define the path to your EDI-files:
 
-edi_in_dir = 'edifiles_bbmt_roi_corrected/'
+# edi_in_dir = 'edifiles_bbmt_roi_corrected/'
+edi_in_dir = 'test_sequence/'
 print(' Edifiles read from: %s' % edi_in_dir)
 
 # Define the path anf appended string for saved EDI-files:
 
-edi_out_dir= 'edifiles_bbmt_roigeo0/'
-print(' Edifiles written from: %s' % edi_out_dir)
+# edi_out_dir= 'edifiles_bbmt_roigeo0/'
+edi_out_dir= edi_in_dir
+print(' Edifiles written to: %s' % edi_out_dir)
 if not os.path.isdir(edi_out_dir):
     print(' File: %s does not exist, but will be created' % edi_out_dir)
     os.mkdir(edi_out_dir)
     
-out_string = 'g0'
+out_string = '_geo0'
 
 # This example brings both angles to the normal (measurement) coordinate 
 # system, i. e., afterwards the ZROT and TROT fields in tehe EDI-files are 
@@ -52,8 +54,20 @@ out_string = 'g0'
 # Z_angle has been obtained from the corresponding mt_obj as 
 # Z_angle=mt_obj.Z.rotation_angle.
 
-Z_rot=('-1.*Z_angle')
-T_rot=('-1.*T_angle')
+# Z_rot=('-1.*Z_angle')
+# T_rot=('-1.*T_angle')
+
+
+# Rotate to geographic N: 
+
+Z_rot=('-10.2*np.ones(np.shape(Z_angle))')
+T_rot=('-10.2*np.ones(np.shape(T_angle))')
+
+# Both: 
+
+# Z_rot=('-1.*Z_angle-10.2*np.ones(np.shape(Z_angle))')
+# T_rot=('-1.*T_angle-10.2*np.ones(np.shape(T_angle))')
+
 
 # As the actual call is done using the 'eval' function, this script can 
 # also be used to do rotations of different kind, e.g. when using a rotated 
