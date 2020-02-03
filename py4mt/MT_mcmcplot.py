@@ -24,13 +24,13 @@ Revision History:
 
 """
 import os
-import plotrjmcmc as  pmc
+import modules.plotrjmcmc as  pmc
 
 
 
 
-results_dir = 'results_bbmt_roi/'
-plots_dir='plots_bbmt_roi/'
+results_dir = 'NEW_results_bbmt_roi_edit/'
+plots_dir='NEW_plots_bbmt_roi_edit/'
 if not os.path.isdir(plots_dir):
     print(' File: %s does not exist, but will be created' % plots_dir)
     os.mkdir(plots_dir)

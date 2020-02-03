@@ -31,23 +31,23 @@ from mtpy.core.mt import MT
 plotsDA = True
 strngDA ='_data'
 
-plotsRJ = False
+plotsRJ = True
 strngRJ ='_rjmcmc'
 
 # Define the path to your EDI-files
 
-edi_dir = '/home/vrath/Timor/edifiles_bbmt_roi/'
+edi_dir = 'NEW_edifiles_bbmt_roi_edit/'
 print(' Edifiles read from: %s' % edi_dir)
 
 if plotsDA or plotsRJ:
-    plots_dir='plots_bbmt_roi/'
+    plots_dir='NEW_plots_bbmt_roi_edit/'
     print(' Plots read from: %s' % plots_dir)
 
 
 # Define the path for saving  kml files
 
 kml_dir = './'
-kml_file = 'Timor_bbmt_roi'
+kml_file = 'NEW_Timor_bbmt_edit'
 
 icon = 'icons/triangle.png'
 tcolor = simplekml.Color.white ###'#555500' #

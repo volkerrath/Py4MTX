@@ -41,7 +41,7 @@ dpi = 400
 # 1 = yx and xy; 2 = all 4 components
 # 3 = off diagonal + determinant
 
-plot_z = 1
+plot_z = 2
 
 # Plot tipper?
 # 'y' or 'n', followed by 'r','i', or 'ri', for real part, imaginary part, or both, respectively.
@@ -60,7 +60,7 @@ PhiLimits = (0,90)
 
 # Define the path to your EDI-files:
 
-edi_in_dir = 'test/' #'./edifiles_bbmt_roigeo0/''./edifiles_test/'
+edi_in_dir = 'tmp/' #'./edifiles_bbmt_roigeo0/''./edifiles_test/'
 
 print(' Edifiles read from: %s' % edi_in_dir)
 
