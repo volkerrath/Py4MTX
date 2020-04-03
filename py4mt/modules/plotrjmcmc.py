@@ -22,6 +22,7 @@ Revision History:
 """
 
 import os
+import gc
 from collections import defaultdict
 import numpy as np
 import matplotlib.pyplot as plt
@@ -79,14 +80,21 @@ class Results():
         # Load data
         d = np.loadtxt(os.path.join(self._stationDir, 'data.txt'))
         n = np.loadtxt(os.path.join(self._stationDir, 'noise.txt'))
+      
+        valid_test = np.append(d,n,axis=1)
+        not_valid  = np.where(valid_test >1.e30)
+        valid = np.delete( valid_test, not_valid[0],axis=0)
+
 
         self._D = defaultdict(list)
-        self._D['f'] = d[:, 0]
-        self._D['data1'] = d[:, 1]
-        self._D['data2'] = d[:, 2]
-        self._D['noise1'] = n[:, 1]
-        self._D['noise2'] = n[:, 2]
+        self._D['f']        = valid[:, 0]
+        self._D['data1']    = valid[:, 1]
+        self._D['data2']    = valid[:, 2]
+        self._D['noise1']   = valid[:, 4]
+        self._D['noise2']   = valid[:, 5]  
         self._D['period'] = 1. / self._D['f']
+
+
 
         # Set limits
         self._flim = [np.min(self._D['f']) * 0.5, np.max(self._D['f']) * 2.0]
@@ -184,9 +192,6 @@ class Results():
 
                 self._MF['sample'][:, chain] = np.arange(d.shape[0])
                 self._MF['misfit'][:, chain] = d
-            # end for
-        # end if
-
     # end func
 
     def plot(self):
@@ -235,17 +240,23 @@ class Results():
             self._ax3.set_ylim(yl)
             self._ax3.plot([self._burninSampls, self._burninSampls], yl, '--', dashes=(5, 10), color='k', lw=0.2)
             self._ax3.plot(xl, [self._ndata, self._ndata], '--', dashes=(5, 10), color='k', lw=0.2)
-            self._ax3.set_xlabel('Sample#')
+            self._ax3.set_xlabel('Number of Sampling Steps')
             self._ax3.set_ylabel('Data Misfit')
-        # end if
 
         # Layers histogram
         self._ax4.bar(self._layerNum, self._layerNumHist, ec='w')
+        self._ax4.ticklabel_format(style='sci',axis='y') 
+        self._ax4.yaxis.set_tick_params(labelrotation=90.)
         ml = ticker.MultipleLocator(1)
         self._ax4.xaxis.set_minor_locator(ml)
-        self._ax4.set_xlim([0, np.max(self._layerNum)])
-        self._ax4.set_xlabel('#Layer')
-
+       
+        nLayer= np.max(self._layerNum)
+        if np.mod(nLayer,2) !=0:
+            nLayer= nLayer+1
+            
+        self._ax4.set_xlim([0, nLayer])
+        self._ax4.set_xlabel('Number of Layers')
+        
 
         # Resistivity Depth
         im = self._props[0]['hist']
@@ -254,7 +265,6 @@ class Results():
         for ri in np.arange(im.shape[0]):
             #im[ri, :] = im[ri, :] / np.max(im[ri, :])
             pass
-        # end for
 
         im = np.ma.masked_array(im, mask=im<=0)
         cbinfo = self._ax5.pcolormesh(np.power(10., self._resBins),
@@ -276,15 +286,19 @@ class Results():
         self._ax5.plot(np.power(10., self._props[0]['mode'], ), self._depth, '-g', lw=1, label='Mode')
 
         self._ax5.set_xlabel('Resistivity [$\Omega . m$]')
-        self._ax5.set_ylabel('Depth [m]',rotation='vertical')
+
         self._ax5.legend(loc=3)
         self._ax5.grid(linestyle=':')
         self._ax5.xaxis.set_label_position('top')
         self._ax5.xaxis.set_tick_params(labeltop=True)
         self._ax5.xaxis.set_ticks_position('top')
         
+        self._ax5.set_ylabel('Depth [m]',rotation='vertical',labelpad =-25)
+        self._ax5.yaxis.set_tick_params(labelrotation=90.)
+        
         cbar = self._fig.colorbar(cbinfo, cax=self._ax5cb, orientation='horizontal')
-        cbar.set_label('Log frequency', labelpad=15)
+        # cbar.set_label('Log frequency', labelpad=15)        
+        cbar.set_label('Log frequency')
 #        cbar.set_label('Log conditional probability', labelpad=15)
 #        cbar.ax.set_xticklabels([])
         cbar.ax.tick_params(axis=u'both', which=u'both', length=0)
@@ -298,7 +312,7 @@ class Results():
         self._ax6.set_ylim(ylim)
         self._ax6.invert_yaxis()
         self._ax6.grid(linestyle=':')
-        self._ax6.set_xlabel('Change point')
+        self._ax6.set_xlabel('Change point frequency')
         self._ax6.xaxis.set_label_position('top')
         self._ax6.set_yticklabels([])
         self._ax6.set_xticklabels([])
@@ -314,14 +328,14 @@ class Results():
                                  zorder=2, label='Best fit for each chain')
             else:
                 self._ax1.loglog(self._BFFM['period'][i, :], self._BFFM['data1'][i, :], 'b-', lw=1, zorder=2)
-                # end if
-        # end for
+ 
         self._ax1.set_xscale('log')
         self._ax1.set_yscale('log')
         self._ax1.set_xlim(xlim)
         self._ax1.legend(loc='best')
-
+        self._ax1.xaxis.set_label_position('top')
         self._ax1.set_xlabel('Period [s]')
+        self._ax1.grid(linestyle=':',which='major',axis='both')
         if (self._dtImpedance):
             self._ax1.set_ylabel('Real Impedance \n[mv/km/nT]')
         else:
@@ -338,8 +352,6 @@ class Results():
                                  zorder=2, label='Best fit for each chain')
             else:
                 self._ax2.loglog(self._BFFM['period'][i, :], self._BFFM['data2'][i, :], 'b-', lw=1, zorder=2)
-                # end if
-        # end for
 
         if (self._dtImpedance == True):
             self._ax2.set_xscale('log')
@@ -347,23 +359,26 @@ class Results():
         else:
             self._ax2.set_xscale('log')
             self._ax2.set_yscale('linear')
-        # end if
+
         self._ax2.set_xlim(xlim)
         self._ax2.legend(loc='best')
-        self._ax2.set_xlabel('Period [s]')
-
+        # self._ax2.set_xlabel([])
+        self._ax2.xaxis.set_label_position('top') 
+        self._ax2.set_xticklabels([])
+        self._ax2.grid(linestyle=':',which='major',axis='both')
         if (self._dtImpedance):
             self._ax2.set_ylabel('Imag Impedance \n[mv/km/nT]')
         else:
             self._ax2.set_ylabel('Apparent Phase [Deg]')
 
         plt.suptitle(self._titleString, x=0.3, y=1.05)
-        plt.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0)
-
+        plt.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=0.05, hspace=0.05)
+        # plt.show()
         plt.savefig(self._outputFileName, bbox_inches='tight', dpi=400)
-        plt.close()
-        # end func
-# end class
+        plt.clf()
+        plt.close('all')
+        gc.collect()
+
 
 ''' ========================================================
 Setup Click interface

@@ -46,7 +46,7 @@ plot_z = 2
 # Plot tipper?
 # 'y' or 'n', followed by 'r','i', or 'ri', for real part, imaginary part, or both, respectively.
 
-plot_t = 'yri'
+plot_t = 'n'
 
 # Plot phase tensor?
 # 'y' or 'n'
@@ -54,13 +54,13 @@ plot_t = 'yri'
 plot_p  = 'y'
 
 
-PerLimits = (0.001,10000.)
-RhoLimits = (0.01 ,10000.)
+PerLimits = (0.001,1000.)
+RhoLimits = (0.1 ,1000.)
 PhiLimits = (0,90)
 
 # Define the path to your EDI-files:
 
-edi_in_dir = 'tmp/' #'./edifiles_bbmt_roigeo0/''./edifiles_test/'
+edi_in_dir = 'WT4_edi/' #'/home/vrath/FrogPond/Annecy/edi/' #'tmp/' './edifiles_bbmt_roigeo0/''./edifiles_test/'
 
 print(' Edifiles read from: %s' % edi_in_dir)
 

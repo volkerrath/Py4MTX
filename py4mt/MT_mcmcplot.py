@@ -26,38 +26,46 @@ Revision History:
 import os
 import modules.plotrjmcmc as  pmc
 
+plot_format ='pdf'
+
+
+results_in_dir = 'WT4_results/'
+result_files=[]
+files= os.listdir(results_in_dir) 
+for entry in files:
+    if  not entry.startswith('.'):
+            result_files.append(entry)
+
+result_files = sorted(result_files)
+nfiles = len(result_files)
 
 
 
-results_dir = 'NEW_results_bbmt_roi_edit/'
-plots_dir='NEW_plots_bbmt_roi_edit/'
+
+plots_dir='WT4_plots/'
 if not os.path.isdir(plots_dir):
     print(' File: %s does not exist, but will be created' % plots_dir)
     os.mkdir(plots_dir)
     
-outstrng='TIM'
+outstrng='WT4'
 
 
-result_files = os.listdir(results_dir)
-result_files = sorted(result_files)
-nfiles = len(result_files)
 
 count=0
 for path in result_files:
     count=count+1 
     print('\n') 
     print(str(count)+' of '+str(nfiles))
-    print(os.path.basename(path).replace('MT0',outstrng))
+    print(os.path.basename(path).replace('MT',outstrng))
 
-    r = pmc.Results(os.path.join(results_dir, path), 
-                         os.path.join(plots_dir,'%s.png'%(os.path.basename(path).replace('MT0',outstrng))), 
+    r = pmc.Results(os.path.join(results_in_dir, path), 
+                         os.path.join(plots_dir,'%s.pdf'%(os.path.basename(path).replace('MT',outstrng))), 
                          plotSizeInches='11x8', 
-                         maxDepth=10000,
-                         colormap='gray_r')
+                         maxDepth=5000,
+                         colormap='rainbow')
 #                          colormap='OrRd')
 #                         colormap='gray_r'
 #                         colormap='rainbow')
 #                         
                  
-    r.plot()
-#    r.close()
+ 

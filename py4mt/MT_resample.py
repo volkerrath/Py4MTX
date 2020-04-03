@@ -22,11 +22,12 @@ Resample/interpolate data (Z+T) from a prescribed set of EDI-files.
 """
 
 # Import required modules
-
-from mtpy.core.mt import MT
-from mtpy.utils.calculator import get_period_list
 import os
 import numpy as np
+
+from mtpy.core.mt import MT
+import mtpy.core.z as MTz
+from mtpy.utils.calculator import get_period_list
 
 # Parameters for interpolation and subsequent resampling. 
 # mtpy uses interp1 frm the scypy module, so different methods can be chosen:
@@ -109,13 +110,27 @@ for filename in edi_files :
     print(' Z: MinFreq: '+str(minfreq)+'   MaxFreq: '+str(maxfreq))
     
     new_freq_list=tmpfreq
-    # print(new_freq_list)
+    print(new_freq_list)
     
     new_Z_obj, _ = mt_obj.interpolate(
         new_freq_list,
         interp_type=interp_type, 
         period_buffer = pbuff)
-    Z_tmp = new_Z_obj.z[:]
+    Z_tmp = new_Z_obj.z[:]      
+    
+    
+    # make a new Z object
+    new_Z = MTz.Z(z_array=np.zeros((new_freq_array.shape[0], 2, 2),
+                                       dtype='complex'),
+                      z_err_array=np.zeros((new_freq_array.shape[0], 2, 2)),
+                      freq=new_freq_array)
+
+        new_Tipper = MTz.Tipper(tipper_array=np.zeros((new_freq_array.shape[0], 1, 2),
+                                                      dtype='complex'),
+                                tipper_err_array=np.zeros(
+                                    (new_freq_array.shape[0], 1, 2)),
+                                freq=new_freq_array)
+
     
     new_Z = np.zeros(sZ,dtype=np.complex128)
     # print(np.shape(new_Z))
@@ -123,43 +138,43 @@ for filename in edi_files :
     new_Z[idx,:,:] = Z_tmp[:,:,:]
     # # print(new_Z[:])
     print(np.shape(new_Z))
-    new_Z_obj.z[:,:,:] = new_Z[:,:,:]
+    new_Z_obj.z[:,:,:] = new_Z[:,:,:].copy
     
-    # Get Tipper data:
+#     # Get Tipper data:
     
-    T       = mt_obj.Tipper.tipper
-    sT      = np.shape(T)
-    print(' Size of T list :',sT)
-    tmp     = np.reshape(T,(sT[0],2)) 
+#     T       = mt_obj.Tipper.tipper
+#     sT      = np.shape(T)
+#     print(' Size of T list :',sT)
+#     tmp     = np.reshape(T,(sT[0],2)) 
 
-# Find indices of valid tipper data, i. e., there absolute value is 
-# zero. This corresponds to the EMPTY key in EDI.
+# # Find indices of valid tipper data, i. e., there absolute value is 
+# # zero. This corresponds to the EMPTY key in EDI.
 
-    idx     = np.where([all(np.abs(row))>0. for row in tmp[:,1:]])
-    tmpfreq=freq[idx]
-    maxfreq = tmpfreq[0]
-    minfreq = tmpfreq[-1]
-    print(' T: MinFreq: '+str(minfreq)+'   MaxFreq: '+str(maxfreq))
+#     idx     = np.where([all(np.abs(row))>0. for row in tmp[:,1:]])
+#     tmpfreq=freq[idx]
+#     maxfreq = tmpfreq[0]
+#     minfreq = tmpfreq[-1]
+#     print(' T: MinFreq: '+str(minfreq)+'   MaxFreq: '+str(maxfreq))
     
-    new_freq_list=tmpfreq
-    _ , new_T_obj= mt_obj.interpolate(
-        new_freq_list,
-        interp_type=interp_type, 
-        period_buffer = pbuff)
-    T_tmp = new_T_obj.tipper[:]
+#     new_freq_list=tmpfreq
+#     _ , new_T_obj= mt_obj.interpolate(
+#         new_freq_list,
+#         interp_type=interp_type, 
+#         period_buffer = pbuff)
+#     T_tmp = new_T_obj.tipper[:]
     
-    new_T  = np.zeros(sT,dtype=np.complex128)
-    # print(np.shape(new_T))
-    # print(np.shape(T_tmp))
-    new_T[idx,:,:] = T_tmp[:,:,:]
-    print(np.shape(new_T))
-    new_T_obj.tipper = new_T
-    #    pt_obj = mt_obj.plot_mt_response(plot_num=1, # 1 = yx and xy; 2 = all 4 components
-    #    # 3 = off diagonal + determinant
-    #    plot_tipper = 'yri',
-    #    plot_pt = 'y' # plot phase tensor 'y' or 'n'f
-    #    )
-    #    pt_obj.save_plot(os.path.join(save_path,name+".pdf"), fig_dpi=400)    
+#     new_T  = np.zeros(sT,dtype=np.complex128)
+#     # print(np.shape(new_T))
+#     # print(np.shape(T_tmp))
+#     new_T[idx,:,:] = T_tmp[:,:,:]
+#     print(np.shape(new_T))
+#     new_T_obj.tipper = new_T
+#     #    pt_obj = mt_obj.plot_mt_response(plot_num=1, # 1 = yx and xy; 2 = all 4 components
+#     #    # 3 = off diagonal + determinant
+#     #    plot_tipper = 'yri',
+#     #    plot_pt = 'y' # plot phase tensor 'y' or 'n'f
+#     #    )
+#     #    pt_obj.save_plot(os.path.join(save_path,name+".pdf"), fig_dpi=400)    
    
 # Write a new edi file:
     
