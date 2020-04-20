@@ -9,15 +9,14 @@ Created on Mon Apr 20 15:20:03 2020
 """
 # ==============================================================================
 
-def estimate_static_spatial_median(edi_fn, radius=20000., num_freq=20,
-                                   freq_skip=4, shift_tol=.15):
+def estimate_static_spatial_median(edi_fn, radius=20000.,
+                                   freq_skip=[4,4], shift_tol=.15):
     """
     Remove static shift from a station using a spatial median filter.  This
     will look at all the edi files in the same directory as edi_fn and find
     those station within the given radius (meters).  Then it will find
     the medain static shift for the x and y modes and remove it, given that
-    it is larger than the shift tolerance away from 1.  A new edi file will
-    be written in a new folder called SS.
+    it is larger than the shift tolerance away from 1.  
 
     Arguments
     -----------------
@@ -27,12 +26,6 @@ def estimate_static_spatial_median(edi_fn, radius=20000., num_freq=20,
         **radius** : float
                      radius to look for nearby stations, in meters.
                      *default* is 1000 m
-
-        **num_freq** : int
-                       number of frequencies calculate the median static
-                       shift.  This is assuming the first frequency is the
-                       highest frequency.  Cause usually highest frequencies
-                       are sampling a 1D earth.  *default* is 20
 
         **freq_skip** : int
                         number of frequencies to skip from the highest
@@ -76,11 +69,14 @@ def estimate_static_spatial_median(edi_fn, radius=20000., num_freq=20,
 
     # read the edi file
     mt_obj = mt.MT(edi_fn)
+    freqs = mt_obj.Z.freq
+    # nf = np.size(freqs)
     
   
     mt_obj.Z.compute_resistivity_phase()    
-    interp_freq = mt_obj.Z.freq[freq_skip:num_freq + freq_skip]
-
+    interp_freq = freqs[freq_skip[0]:-freq_skip[1]]
+    nf = np.size(interp_freq
+                 )
     # Find stations near by and store them in a list
     mt_obj_list = []
     for kk, kk_edi in enumerate(edi_list):
@@ -96,7 +92,7 @@ def estimate_static_spatial_median(edi_fn, radius=20000., num_freq=20,
         return 1.0, 1.0
 
     # extract the resistivity values from the near by stations
-    res_array = np.zeros((len(mt_obj_list), num_freq, 2, 2))
+    res_array = np.zeros((len(mt_obj_list), nf, 2, 2))
     print('These stations are within the given {0} m radius:'.format(radius))
     for kk, mt_obj_kk in enumerate(mt_obj_list):
         print('\t{0} --> {1:.1f} m'.format(mt_obj_kk.station, mt_obj_kk.delta_d))
@@ -117,7 +113,7 @@ def estimate_static_spatial_median(edi_fn, radius=20000., num_freq=20,
 
     # compute the static shift of x-components
     
-    static_shift_x = mt_obj.Z.resistivity[freq_skip:num_freq + freq_skip, 0, 1] / \
+    static_shift_x = mt_obj.Z.resistivity[freq_skip[0]:-freq_skip[1], 0, 1] / \
         np.median(res_array[:, :, 0, 1], axis=0)
     static_shift_x = np.median(static_shift_x)
 
@@ -126,7 +122,7 @@ def estimate_static_spatial_median(edi_fn, radius=20000., num_freq=20,
         static_shift_x = 1.0
 
     # compute the static shift of y-components
-    static_shift_y = mt_obj.Z.resistivity[freq_skip:num_freq + freq_skip, 1, 0] / \
+    static_shift_y = mt_obj.Z.resistivity[freq_skip[0]:-freq_skip[1], 1, 0] / \
         np.median(res_array[:, :, 1, 0], axis=0)
     static_shift_y = np.median(static_shift_y)
 

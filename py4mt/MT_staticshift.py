@@ -9,13 +9,13 @@ Created on Mon Apr 20 15:20:03 2020
 """
 # ==============================================================================
 import os
+import csv
 import numpy as np
 import mtpy.core.mt as mt
 import modules.staticshift as ss
 
 ss_radius   = 4000. 
-ss_numf     = 40
-ss_freqint  =
+ss_freqs    = [10, 10]
 
 
 edi_in_dir = r'/home/geothest/Desktop/WEST_TIMOR/NEW_edifiles_bbmt_roi/out_dist/'
@@ -57,8 +57,7 @@ for filename in edi_files :
 
     ss_x, ss_y = ss.estimate_static_spatial_median(file_i,
                                                 radius=ss_radius,
-                                                num_freq=ss_numf,
-                                                freq_skip=9,
+                                                skip_freq=ss_freqs,
                                                 shift_tol=.05)
     
     # write resuklts to list 

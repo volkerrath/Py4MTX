@@ -65,4 +65,4 @@ for path in result_files:
                          colormap='rainbow')
     
     
-# for Available colormaps see: https://matplotlib.org/tutorials/colors/colormaps.html
+# for other available colormaps see: https://matplotlib.org/tutorials/colors/colormaps.html
