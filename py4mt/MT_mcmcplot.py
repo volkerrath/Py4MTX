@@ -61,11 +61,8 @@ for path in result_files:
     r = pmc.Results(os.path.join(results_in_dir, path), 
                          os.path.join(plots_dir,'%s.pdf'%(os.path.basename(path).replace('MT',outstrng))), 
                          plotSizeInches='11x8', 
-                         maxDepth=5000,
+                         maxDepth=4000,
                          colormap='rainbow')
-#                          colormap='OrRd')
-#                         colormap='gray_r'
-#                         colormap='rainbow')
-#                         
-                 
- 
+    
+    
+# for Available colormaps see: https://matplotlib.org/tutorials/colors/colormaps.html

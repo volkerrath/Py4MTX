@@ -19,12 +19,13 @@ dialect = 'unix'
 # Define the path to your EDI-files and for the list produced
 
 
-edi_in_dir       = './NEW_edifiles_bbmt_roi_edit/'
+#edi_in_dir       = '/home/vrath/WT7_Svet_edited/set1/'
+edi_in_dir = '/home/vrath/RainyRiverTranssect/RRV/hfreq_amt/' 
 print(' Edifiles read from: %s' % edi_in_dir)
 
 # Define the path and append string for resampled data:
 
-edi_out_dir      =  './NEW_edifiles_bbmt_roi_dd/'
+edi_out_dir      =  edi_in_dir+'coords'
 print(' Edifiles written to: %s' % edi_out_dir)
 if not os.path.isdir(edi_out_dir):
     print(' File: %s does not exist, but will be created' % edi_out_dir)
@@ -59,7 +60,7 @@ for filename in edi_files :
     north   = mt_obj.north
     sname = mt_obj.station
     print(' site %s at :  % 10.6f % 10.6f' % (sname, mt_obj.lat, mt_obj.lon))
-    file_out=name+"_dd"+ext
+    file_out=name+out_string+ext
     
     mt_obj.write_mt_file(save_dir=edi_out_dir, 
                     fn_basename= file_out, 
@@ -71,12 +72,4 @@ for filename in edi_files :
                                         # will write as degrees minutes seconds
                     )         
 
-    file_out=name+"_dms"+ext
     print('Writing data to '+edi_out_dir+file_out)
-    mt_obj.write_mt_file(
-            save_dir=edi_out_dir,
-            fn_basename=file_out,
-            file_type='edi',
-            new_Z_obj=mt_obj.Z, 
-            new_Tipper_obj=mt_obj.Tipper,
-            )

@@ -29,25 +29,25 @@ from mtpy.core.mt import MT
 # additional string strnRJ added to the EDI basename.
 
 plotsDA = True
-strngDA ='_data'
+strngDA = '' #'_data'
 
-plotsRJ = True
+plotsRJ = False
 strngRJ ='_rjmcmc'
 
 # Define the path to your EDI-files
 
-edi_dir = 'NEW_edifiles_bbmt_roi_edit/'
+edi_dir = '/home/vrath/NaserWork/WST/' #'NEW_edifiles_bbmt_roi_edit/'
 print(' Edifiles read from: %s' % edi_dir)
 
 if plotsDA or plotsRJ:
-    plots_dir='NEW_plots_bbmt_roi_edit/'
+    plots_dir=edi_dir #'NEW_plots_bbmt_roi_edit/'
     print(' Plots read from: %s' % plots_dir)
 
 
 # Define the path for saving  kml files
 
-kml_dir = './'
-kml_file = 'NEW_Timor_bbmt_edit'
+kml_dir = edi_dir #./'
+kml_file = 'WST'
 
 icon = 'icons/triangle.png'
 tcolor = simplekml.Color.white ###'#555500' #
@@ -94,7 +94,8 @@ for filename in edi_files :
     lat = mt_obj.lat
     hgt = mt_obj.elev
     full_name = mt_obj.station
-    nam = full_name[3:] 
+    # nam = full_name[3:] 
+    nam = full_name
     # print(full_name, nam,plots_dir+full_name+'.png')
     # print(full_name)
     description = ('')

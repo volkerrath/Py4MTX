@@ -17,10 +17,9 @@ import numpy as np
 dialect = 'unix'
 
 # Define the path to your EDI-files and for the list produced
-
-edi_dir = './edifiles_bbmt_roi/'
+edi_dir = r'/home/vrath/NaserWork/RRV/AMT/'  
 print(' Edifiles read from: %s' % edi_dir)
-csv_file ='Timor_bbmt.csv'
+csv_file =r'/home/vrath/NaserWork/RRV/AMT/SitesAMT.csv'
 print('Writing data to CSV file: '+csv_file)
 
 
