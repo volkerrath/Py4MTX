@@ -18,11 +18,11 @@
 # Import required modules
 
 import os
+import csv
 import simplekml 
 from mtpy.core.mt import MT
 
-# Deermine what is added to the KML-tags:
-
+# Determine what is added to the KML-tags:
 # plotsDA =  site plots produced by MT_siteplot.py, with an 
 # additional string strngDA added to the EDI basename.
 # plotsRJ =  MCMC plots produced by MT_mcmcplot.py, with an 
@@ -31,31 +31,42 @@ from mtpy.core.mt import MT
 plotsDA = True
 strngDA = '' #'_data'
 
-plotsRJ = False
+plotsRJ = True
 strngRJ ='_rjmcmc'
 
 # Define the path to your EDI-files
 
-edi_dir = '/home/vrath/NaserWork/WST/' #'NEW_edifiles_bbmt_roi_edit/'
+edi_dir = r'/home/vrath/WestTimor/WT8C_edi/'
 print(' Edifiles read from: %s' % edi_dir)
 
 if plotsDA or plotsRJ:
-    plots_dir=edi_dir #'NEW_plots_bbmt_roi_edit/'
+    plots_dir=r'/home/vrath/WestTimor/WT8C_plots/' #edi_dir #'NEW_plots_bbmt_roi_edit/'
     print(' Plots read from: %s' % plots_dir)
 
 
+# Determine which geographical info is added to the KML-tags:
+# define empty list
+places = []
+
+# open file and read the content in a list
+places_file = r'/home/vrath/WestTimor/places.csv'
+with open(places_file, 'r') as f:
+    placelist = csv.reader(f, delimiter=' ')
+    for row in placelist:
+        print(row)
+
 # Define the path for saving  kml files
 
-kml_dir = edi_dir #./'
-kml_file = 'WST'
+kml_dir = './'
+kml_file = 'WT8C'
 
-icon = 'icons/triangle.png'
-tcolor = simplekml.Color.white ###'#555500' #
-tscale = 0.8  # scale the text 
+site_icon = 'icons/triangle.png'
+site_tcolor = simplekml.Color.white ###'#555500' #
+site_tscale = 0.8  # scale the text 
 
-iscale = 1.
-icolor = simplekml.Color.red 
-rcolor = simplekml.Color.blue 
+site_iscale = 1.
+site_icolor = simplekml.Color.red 
+site_rcolor = simplekml.Color.blue 
     # simplekml.Color.rgb(0, 0, 255)
     # 'ffff0000'
 
@@ -76,7 +87,8 @@ for entry in files:
 # Open kml object:
             
 kml = simplekml.Kml(open=1)
-iref   = kml.addfile(icon)
+
+site_iref   = kml.addfile(site_icon)
 #iref_alt1 =  kml.addfile('star.png')
 #iref_alt2 =  kml.addfile('donut.png')
 
@@ -124,20 +136,22 @@ for filename in edi_files :
 
     site = kml.newpoint(name=nam) 
     site.coords = [(lon,lat,hgt)]
-    site.style.labelstyle.color = tcolor 
-    site.style.labelstyle.scale = tscale
-    site.style.iconstyle.icon.href = iref
-    site.style.iconstyle.scale = iscale
-    site.style.iconstyle.color = icolor
+    site.style.labelstyle.color = site_tcolor 
+    site.style.labelstyle.scale = site_tscale
+    site.style.iconstyle.icon.href = site_iref
+    site.style.iconstyle.scale = site_iscale
+    site.style.iconstyle.color = site_icolor
     
     if full_name[-1:] =='R':
-        site.style.labelstyle.color =rcolor
+        site.style.labelstyle.color =site_rcolor
         site.style.balloonstyle.text = 'repeated site'
-        site.style.balloonstyle.textcolor = rcolor
+        site.style.balloonstyle.textcolor = site_rcolor
     #print(nam, mt_obj.lat, mt_obj.lon, hgt)
         site.description = description+'  - repeated site'
 
     site.description = description
+    
+    
 
 kml_outfile = kml_dir+kml_file 
 

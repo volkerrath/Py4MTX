@@ -41,12 +41,12 @@ dpi = 400
 # 1 = yx and xy; 2 = all 4 components
 # 3 = off diagonal + determinant
 
-plot_z = 2
+plot_z = 3
 
 # Plot tipper?
 # 'y' or 'n', followed by 'r','i', or 'ri', for real part, imaginary part, or both, respectively.
 
-plot_t = 'yri'
+plot_t = 'n'
 
 # Plot phase tensor?
 # 'y' or 'n'
@@ -54,20 +54,21 @@ plot_t = 'yri'
 plot_p  = 'y'
 
 
-PerLimits = (0.00001,10.) #AMT
-#PerLimits = (0.001,10000.) #BBMT
+# PerLimits = (0.0001,10.) #AMT
+# PerLimits = (0.001,10000.) #BBMT
+PerLimits = (0.0001,1000.) #AMT+BBMT
 RhoLimits = (0.1 ,100000.)
 PhiLimits = (-10.,100.)
 
 # Define the path to your EDI-files:
-#edi_in_dir = '/home/vrath/NaserWork/RRV/BBMT/' 
-edi_in_dir = '/home/vrath/NaserWork/RRV/AMT/' 
+edi_in_dir =  r'/home/vrath/RRV_work/edifiles_in/'
 print(' Edifiles read from: %s' % edi_in_dir)
 
 # Define the path for saving  plots:
 
-#plots_dir = './edifiles_test/'
-plots_dir = edi_in_dir #'DataND/'
+
+#plots_dir = edi_in_dir 
+plots_dir = r'/home/vrath/RRV_work/edifiles_in/' 
 print(' Plots written to: %s' % plots_dir)
 if not os.path.isdir(plots_dir):
     print(' File: %s does not exist, but will be created' % plots_dir)

@@ -12,13 +12,13 @@ import os
 import csv
 import numpy as np
 import mtpy.core.mt as mt
-import modules.staticshift as ss
+import modules.staticshiftx as ss
 
-ss_radius   = 4000. 
-ss_freqs    = [10, 10]
+ss_radius   = 2000. 
+freq_interval=[1.e-2,1.e2]
+prefix_remove = 'AMT_'
 
-
-edi_in_dir = r'/home/geothest/Desktop/WEST_TIMOR/NEW_edifiles_bbmt_roi/out_dist/'
+edi_in_dir =  r'/home/vrath/RRV_work/edifiles_in/'
 print(' Edifiles reading from: %s' % edi_in_dir)
 
 edi_files=[]
@@ -28,51 +28,52 @@ for entry in files:
             edi_files.append(entry)
 ns =  np.size(edi_files)
 
-edi_out_dir = r'/home/geothest/Desktop/WEST_TIMOR/NEW_edifiles_bbmt_roi/out_ss/'
+edi_out_dir =  r'/home/vrath/RRV_work/edifiles_out0/'
 if not os.path.isdir(edi_out_dir):
     print(' File: %s does not exist, but will be created' % edi_out_dir)
     os.mkdir(edi_out_dir)
 
-ss_out_file = edi_out_dir+'out_ss'
+ss_out_file = edi_out_dir+'/ss_list.csv'
 with open(ss_out_file, 'w') as f:
-    sitelist = csv.writer(f, delimiter=' ')
+    sitelist = csv.writer(f, delimiter=',')
     sitelist.writerow(['Sitename', 'Lat', 'Lon', 'SS_x', 'SS_y'])
-    sitelist.writerow([ns, ' ', ' '])
+    # sitelist.writerow([ns, ' ', ' '])
 
-for filename in edi_files :
-    print('reading data from '+filename)
-    name, ext = os.path.splitext(filename)
-    # Create an MT object 
-    file_i = edi_in_dir+filename
-    mt_obj = mt.MT(file_i)
+    for filename in edi_files :
+        print('reading data from '+filename)
+        name, ext = os.path.splitext(filename)
+        # Create an MT object 
+        file_i = edi_in_dir+filename
+        mt_obj = mt.MT(file_i)
+        
+        
+        sitename = mt_obj.station
+        lon = mt_obj.lon
+        lat = mt_obj.lat
+        # elev = mt_obj.elev
+        # east = mt_obj.east
+        # north = mt_obj.north
+        
     
-    
-    sitename = mt_obj.station
-    lon = mt_obj.lon
-    lat = mt_obj.lat
-    # elev = mt_obj.elev
-    # east = mt_obj.east
-    # north = mt_obj.north
-    
-
-    ss_x, ss_y = ss.estimate_static_spatial_median(file_i,
-                                                radius=ss_radius,
-                                                skip_freq=ss_freqs,
-                                                shift_tol=.05)
-    
-    # write resuklts to list 
-    sitelist.writerow([sitename, lat, lon, ss_x, ss_y])
-    
-    # remove static shift
-    new_z = mt_obj.remove_static_shift(ss_x=ss_x, ss_y=ss_y)
-    
-    # write to new edi file
-    mt_obj.write_mt_file(save_dir=edi_out_dir, 
-                    fn_basename= name, 
-                    file_type='edi', # edi or xml format
-                    new_Z_obj=new_z, # provide a z object to update the data
-                    longitude_format='LONG', # write longitudes as 'LON' or 'LONG'
-                    latlon_format='dd' # write as decimal degrees (any other input
-                                       # will write as degrees minutes seconds
-                    )      
-    
+        ss_x, ss_y = ss.estimate_static_spatial_median(file_i,
+                                                    radius=ss_radius,
+                                                    prefix_remove = prefix_remove,
+                                                    freq_interval=freq_interval,
+                                                    shift_tol=.05)
+        
+        # write resuklts to list 
+        sitelist.writerow([sitename, lat, lon, ss_x, ss_y])
+        
+        # remove static shift
+        new_z = mt_obj.remove_static_shift(ss_x=ss_x, ss_y=ss_y)
+        
+        # write to new edi file
+        mt_obj.write_mt_file(save_dir=edi_out_dir, 
+                        fn_basename= name, 
+                        file_type='edi', # edi or xml format
+                        new_Z_obj=new_z, # provide a z object to update the data
+                        longitude_format='LONG', # write longitudes as 'LON' or 'LONG'
+                        latlon_format='dd' # write as decimal degrees (any other input
+                                           # will write as degrees minutes seconds
+                        )      
+        

@@ -30,13 +30,14 @@ import matplotlib.colors as colors
 import matplotlib.ticker as ticker
 
 #from matplotlib.ticker import MultipleLocator
-import click
+# import click
 import matplotlib.style as mplstyle
 mplstyle.use('fast')
 #plt.rc('text', usetex=True)
 
 class Results():
     def __init__(self, path, outputFileName, plotSizeInches='11x8', maxDepth=2000,
+                 resLims=[1.,100000.], zLog=False,
                  colormap='gray_r'):
         self._stationDir = path
         self._outputFileName = outputFileName
@@ -45,10 +46,11 @@ class Results():
         self._plotMisfits = True
         self._plotSynthetic = False
         self._depthPlotLim = [0, maxDepth]
-        self._resPlotLim = [0.1, 100000]
+        self._resPlotLim = resLims
         self._plotWidth = float(plotSizeInches.split('x')[0])
         self._plotHeight = float(plotSizeInches.split('x')[1])
         self._colorMap = colormap
+        self._logZ = zLog
 
         # Extract station information from station_info file
         self._stationInfoFile = os.path.join(self._stationDir, 'station_info.txt')
@@ -275,6 +277,9 @@ class Results():
         self._ax5.set_ylim(self._depthPlotLim)
         self._ax5.set_xscale('log')
         self._ax5.set_yscale('linear')
+        if self._logZ ==True: 
+            self._ax5.set_yscale('log')
+            
         self._ax5.invert_yaxis()
         
 
@@ -310,7 +315,9 @@ class Results():
         self._ax6.plot(self._partitionDepthHist, np.power(10., self._partitionDepth), 'b', lw=0.5)
         self._ax6.set_xlim(xlim)
         self._ax6.set_ylim(ylim)
-        self._ax6.invert_yaxis()
+        self._ax6.invert_yaxis()   
+        if self._logZ ==True: 
+            self._ax6.set_yscale('log')
         self._ax6.grid(linestyle=':')
         self._ax6.set_xlabel('Change point frequency')
         self._ax6.xaxis.set_label_position('top')
@@ -373,43 +380,11 @@ class Results():
 
         plt.suptitle(self._titleString, x=0.3, y=1.05)
         plt.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=0.05, hspace=0.05)
-        # plt.show()
+        print(self._outputFileName)
         plt.savefig(self._outputFileName, bbox_inches='tight', dpi=400)
-        plt.clf()
-        plt.close('all')
+        plt.show()
         gc.collect()
+        plt.clf()
+        # plt.close('all')
 
 
-''' ========================================================
-Setup Click interface
-============================================================ '''
-CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
-@click.command(context_settings=CONTEXT_SETTINGS)
-@click.argument('path', type=click.Path(exists=True))
-@click.argument('output-file-name', type=click.Path())
-@click.option('--plot-size-inches', default='8x5',
-              help="Plot size, 'wxh', in inches: e.g. '8x5', which is the default")
-@click.option('--max-depth', default=2000., help="Maximum depth; default 2000 m")
-@click.option('--colormap', default='gray_r', help="Matplotlib colormap for Resistivity vs Depth plot, e.g. 'gray_r', which is the default")
-def process(path, output_file_name, plot_size_inches, max_depth, colormap):
-    '''
-    PATH: Path to data files \n
-    OUTPUT_FILE_NAME: Plot output file name; supported formats: png, eps, pdf or svg
-
-    Example: ./PlotResults.py examples/07-E1 /tmp/plot.pdf --plot-size-inches 8x5 --max-depth 600 --colormap gray_r
-    '''
-
-    r = Results(path, output_file_name, plotSizeInches=plot_size_inches,
-                maxDepth=max_depth, colormap=colormap)
-    r.plot()
-
-    return
-# end
-
-if __name__ == "__main__":
-    process()
-
-    # Quick test
-    # r = Results('/home/rakib/work/ausLAMP/CT_workshop/rjmcmcmt/Matlab/examples', '/tmp/a.pdf')
-    # r.plot()
-# end if

@@ -17,9 +17,9 @@ import numpy as np
 dialect = 'unix'
 
 # Define the path to your EDI-files and for the list produced
-edi_dir = r'/home/vrath/NaserWork/RRV/AMT/'  
+edi_dir = r'/media/vrath/MT/Annecy2020/Data/EDIS_just/'  
 print(' Edifiles read from: %s' % edi_dir)
-csv_file =r'/home/vrath/NaserWork/RRV/AMT/SitesAMT.csv'
+csv_file =r'/media/vrath/MT/Annecy2020/Data/EDIS_just/Annecy2020a_Sitelist.csv'
 print('Writing data to CSV file: '+csv_file)
 
 
@@ -38,9 +38,9 @@ ns =  np.size(edi_files)
 # Outputfile (e. g., for WALDIM analysis)
 
 with open(csv_file, 'w') as f:
-    sitelist = csv.writer(f, delimiter=' ')
-    sitelist.writerow(['Sitename', 'Latitude', 'Longitude'])
-    sitelist.writerow([ns, ' ', ' '])
+    sitelist = csv.writer(f, delimiter=',')
+    # sitelist.writerow(['Sitename', 'Latitude', 'Longitude'])
+    # sitelist.writerow([ns, ' ', ' '])
 
 # Loop over edifiles:
 
@@ -57,6 +57,5 @@ with open(csv_file, 'w') as f:
         elev = mt_obj.elev
         east = mt_obj.east
         north = mt_obj.north
-
-        sitename = mt_obj.station
-        sitelist.writerow([sitename, lat, lon])
+        # sitename = mt_obj.station
+        sitelist.writerow([name, lat, lon, elev])
