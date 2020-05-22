@@ -22,12 +22,12 @@ from modules.phase_tensor_pseudosection import PlotPhaseTensorPseudoSection
 plot_pdf=True
 plot_png=True
 plot_eps=False
-dpi = 400       
-fsiz=3
+dpi = 600       
+fsiz=6
 lwid=0.1
 stretch=(2500, 50)
 prefix_remove = 'XXX'
-plot_name = 'PhaseTensorSection'
+plot_name = 'RRV_PhaseTensorSection'
 
 # colorby:          - colour by phimin, phimax, skew, skew_seg
 # ellipse_range     - 3 numbers, the 3rd indicates interval, e.g. [-12,12,3]
@@ -74,25 +74,26 @@ for entry in files:
 
 
 
-print(edi_files)
+#  print(edi_files)
 #  create a plot object
 
 plot_obj = PlotPhaseTensorPseudoSection(fn_list = edi_files,
-                                 linedir='ns',          # 'ns' if the line is closer to north-south, 'ew' if line is closer to east-west
-                                 stretch=stretch,        # determines (x,y) aspect ratio of plot
-                                 station_id=(0,34),     # indices for showing station names
-                                 plot_tipper = plot_t,   # plot tipper ('y') + 'ri' means real+imag
-                                 font_size=fsiz,
-                                 lw=lwid,
+                                 linedir='ns',          
+                                 stretch=stretch,       
+                                 station_id=(0,34),     # 'ns' if the line is closer to north-south, 'ew' if line is closer to east-west
+                                 plot_tipper = plot_t,                           
                                  ellipse_dict = {'ellipse_colorby':'skew_seg',# option to colour by phimin, phimax, skew, skew_seg
                                                  'ellipse_range':[-12, 12, 3]} # set color limits - default 0,90 for phimin or max,
                                                                          # [-12,12] for skew. If plotting skew_seg need to provide
                                                                          # 3 numbers, the 3rd indicates interval, e.g. [-12,12,3]
                                  )
 
-# update ellipse size (tweak for your dataset)
-plot_obj.ellipse_size = 12.
-
+# update parameters (tweak for your dataset)
+plot_obj.ellipse_size   = 12.
+plot_obj.ylim           = (.0001,1000)
+plot_obj.lw             = lwid
+plot_obj.font_size      = fsiz
+plot_obj.title          = 'Rainy River Transect' 
 
 plot_obj.plot()
 

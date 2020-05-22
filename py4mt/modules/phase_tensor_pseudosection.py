@@ -407,6 +407,7 @@ class PlotPhaseTensorPseudoSection(mtpl.PlotSettings):
         else:
             pass
 
+        self.plot_reference = False
         # --> set induction arrow properties -------------------------------
         self.plot_tipper = kwargs.pop('plot_tipper', 'n')
 
@@ -755,7 +756,7 @@ class PlotPhaseTensorPseudoSection(mtpl.PlotSettings):
             for xx in range(0, len(self.stationlist), self.xstep):
                 xticklabels[xx] = self.stationlist[xx]
         self.ax.set_xticklabels(xticklabels)
-
+        self.ax.xaxis.set_tick_params(labelsize=self.font_size-3)
         # --> set x-limits
         if self.xlimits is None:
             self.ax.set_xlim(self.offsetlist.min() * self.xstretch - es * 2,
@@ -910,25 +911,25 @@ class PlotPhaseTensorPseudoSection(mtpl.PlotSettings):
             self.cb.ax.yaxis.set_label_coords(1.5, .5)
             self.cb.ax.yaxis.tick_left()
             self.cb.ax.tick_params(axis='y', direction='in')
-
-        # --> add reference ellipse
-        ref_ellip = patches.Ellipse((0, .0),
-                                    width=es,
-                                    height=es,
-                                    angle=0)
-        ref_ellip.set_facecolor((0.9, 0.9, 0.9))
-        ref_ax_loc = list(self.ax2.get_position().bounds)
-        ref_ax_loc[0] *= .95
-        ref_ax_loc[1] -= .17
-        ref_ax_loc[2] = .1
-        ref_ax_loc[3] = .1
-        self.ref_ax = self.fig.add_axes(ref_ax_loc, aspect='equal')
-        self.ref_ax.add_artist(ref_ellip)
-        self.ref_ax.set_xlim(-es / 2. * 1.05, es / 2. * 1.05)
-        self.ref_ax.set_ylim(-es / 2. * 1.05, es / 2. * 1.05)
-        plt.setp(self.ref_ax.xaxis.get_ticklabels(), visible=False)
-        plt.setp(self.ref_ax.yaxis.get_ticklabels(), visible=False)
-        self.ref_ax.set_title(r'$\Phi$ = 1')
+        if self.plot_reference:
+            # --> add reference ellipse
+            ref_ellip = patches.Ellipse((0, .0),
+                                        width=es,
+                                        height=es,
+                                        angle=0)
+            ref_ellip.set_facecolor((0.9, 0.9, 0.9))
+            ref_ax_loc = list(self.ax2.get_position().bounds)
+            ref_ax_loc[0] *= .95
+            ref_ax_loc[1] -= .17
+            ref_ax_loc[2] = .1
+            ref_ax_loc[3] = .1
+            self.ref_ax = self.fig.add_axes(ref_ax_loc, aspect='equal')
+            self.ref_ax.add_artist(ref_ellip)
+            self.ref_ax.set_xlim(-es / 2. * 1.05, es / 2. * 1.05)
+            self.ref_ax.set_ylim(-es / 2. * 1.05, es / 2. * 1.05)
+            plt.setp(self.ref_ax.xaxis.get_ticklabels(), visible=False)
+            plt.setp(self.ref_ax.yaxis.get_ticklabels(), visible=False)
+            self.ref_ax.set_title(r'$\Phi$ = 1')
 
         # put the grid lines behind
         #        [line.set_zorder(10000) for line in self.ax.lines]
@@ -1273,7 +1274,7 @@ class PlotPhaseTensorPseudoSection(mtpl.PlotSettings):
             >>> pt1.redraw_plot()
         """
 
-        self.fig.clf()
+        # self.fig.clf()
         self.plot()
 
     def __str__(self):
