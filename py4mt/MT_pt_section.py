@@ -13,7 +13,7 @@ plots for all of them.
 
 import os
 #from mtpy.core.mt import MT
-from mtpy.imaging.phase_tensor_pseudosection import PlotPhaseTensorPseudoSection
+from modules.phase_tensor_pseudosection import PlotPhaseTensorPseudoSection
 
 
 # Graphical paramter. Determine the plot formats produced, 
@@ -23,9 +23,10 @@ plot_pdf=True
 plot_png=True
 plot_eps=False
 dpi = 400       
-fsiz=5
-lwid=0.,
-
+fsiz=3
+lwid=0.1
+stretch=(2500, 50)
+prefix_remove = 'XXX'
 plot_name = 'PhaseTensorSection'
 
 # colorby:          - colour by phimin, phimax, skew, skew_seg
@@ -65,19 +66,21 @@ if not os.path.isdir(plots_dir):
 
 
 edi_files=[]
-files= os.listdir(edi_in_dir) 
+files=os.listdir(edi_in_dir)            
 for entry in files:
-   # print(entry)
-   if entry.endswith('.edi') and not entry.startswith('.'):
-            edi_files.append(entry)
+    if entry.endswith('.edi') and not entry.startswith(prefix_remove):
+        full = os.path.join(edi_in_dir,entry)
+        edi_files.append(full)
+
+
 
 print(edi_files)
 #  create a plot object
 
 plot_obj = PlotPhaseTensorPseudoSection(fn_list = edi_files,
                                  linedir='ns',          # 'ns' if the line is closer to north-south, 'ew' if line is closer to east-west
-                                 stretch=(17,8),        # determines (x,y) aspect ratio of plot
-                                 station_id=(0,10),     # indices for showing station names
+                                 stretch=stretch,        # determines (x,y) aspect ratio of plot
+                                 station_id=(0,34),     # indices for showing station names
                                  plot_tipper = plot_t,   # plot tipper ('y') + 'ri' means real+imag
                                  font_size=fsiz,
                                  lw=lwid,
@@ -88,20 +91,20 @@ plot_obj = PlotPhaseTensorPseudoSection(fn_list = edi_files,
                                  )
 
 # update ellipse size (tweak for your dataset)
-plot_obj.ellipse_size = 2.5
+plot_obj.ellipse_size = 12.
 
 
-
+plot_obj.plot()
 
 
 # Finally save figure
 
 if plot_png:
-    plot_obj.save_plot(os.path.join(plots_dir,plot_name+".png"),file_format='png',fig_dpi=dpi)
+    plot_obj.save_figure(os.path.join(plots_dir,plot_name+".png"),file_format='png',fig_dpi=dpi)
 if plot_pdf:
-    plot_obj.save_plot(os.path.join(plots_dir,plot_name+".pdf"),file_format='pdf',fig_dpi=dpi)
+    plot_obj.save_figure(os.path.join(plots_dir,plot_name+".pdf"),file_format='pdf',fig_dpi=dpi)
 if plot_eps:
-    plot_obj.save_plot(os.path.join(plots_dir,plot_name+".eps"),file_format='eps',fig_dpi=dpi)
+    plot_obj.save_figure(os.path.join(plots_dir,plot_name+".eps"),file_format='eps',fig_dpi=dpi)
 
         
 

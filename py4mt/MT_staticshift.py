@@ -25,7 +25,7 @@ import csv
 import numpy as np
 import mtpy.core.mt as mt
 import modules.staticshift as ss
-import mtpy.imaging.mtplot as mtplot
+#import mtpy.imaging.mtplot as mtplot
 from mtpy.imaging.plot_mt_response import PlotMTResponse
 
 
@@ -48,6 +48,7 @@ files= os.listdir(edi_in_dir)
 for entry in files:
    if entry.endswith('.edi') and not entry.startswith('.'):
             edi_files.append(entry)
+            
 ns =  np.size(edi_files)
 
 if plot_it:
@@ -71,7 +72,7 @@ with open(ss_out_file, 'w') as f:
         print('reading data from '+filename)
         name, ext = os.path.splitext(filename)
         # Create an MT object 
-        file_i = edi_in_dir+filename
+        file_i = filename
         mt_obj = mt.MT(file_i)
         
         
@@ -120,10 +121,6 @@ with open(ss_out_file, 'w') as f:
             
             plot_obj.station = obj0.station + " and " + obj1.station+'_no-ss'
             plot_obj.plot(overlay_mt_obj=obj1)
-            
-            # plot_obj = mtplot.plot_multiple_mt_responses(
-            #             fn_list=[file_i, edi_out_dir+name+'.edi'],
-            #             plot_style='compare')
             
             # Finally save figure
     
