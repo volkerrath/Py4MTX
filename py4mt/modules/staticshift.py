@@ -24,12 +24,15 @@ def estimate_static_spatial_median(edi_fn,
     Arguments
     -----------------
         **edi_fn** : string
-                     full path to edi file to have static shift removed
+                        full path to edi file to have static shift removed
 
         **radius** : float
-                     radius to look for nearby stations, in meters.
-                     *default* is 1000 m
-
+                        radius to look for nearby stations, in meters.
+                        *default* is 1000 m
+        **prefix_remove**: string
+                        edi files begining with this string will not be used for 
+                        interpolation
+                        *default* is 'Bad_'.
         **freq_interval** : float
                         number of frequencies to skip from the highest
                         frequency.  Sometimes the highest frequencies are
@@ -163,5 +166,6 @@ def estimate_static_spatial_median(edi_fn,
     # check to see if the estimated static shift is within given tolerance
     if 1 - shift_tol < static_shift_y and static_shift_y < 1 + shift_tol:
         static_shift_y = 1.0
+        
 
     return static_shift_x, static_shift_y

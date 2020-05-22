@@ -12,11 +12,21 @@ import os
 import csv
 import numpy as np
 import mtpy.core.mt as mt
-import modules.staticshiftx as ss
+import modules.staticshift as ss
+import mtpy.imaging.mtplot as mtplot
+from mtpy.imaging.plot_mt_response import PlotMTResponse
 
-ss_radius   = 2000. 
+
+ss_radius   = 1000. 
 freq_interval=[1.e-2,1.e2]
 prefix_remove = 'AMT_'
+
+plot_it = True
+plot_pdf=True
+plot_png=True
+plot_eps=False
+dpi = 400
+
 
 edi_in_dir =  r'/home/vrath/RRV_work/edifiles_in/'
 print(' Edifiles reading from: %s' % edi_in_dir)
@@ -28,11 +38,17 @@ for entry in files:
             edi_files.append(entry)
 ns =  np.size(edi_files)
 
-edi_out_dir =  r'/home/vrath/RRV_work/edifiles_out0/'
+if plot_it:
+    plots_dir =  r'/home/vrath/RRV_work/edifiles_out_r1000m/plots/'
+    print(' Plots written to: %s' % plots_dir)
+    if not os.path.isdir(plots_dir):
+        print(' File: %s does not exist, but will be created' % plots_dir)
+        os.mkdir(plots_dir)
+        
+edi_out_dir =  r'/home/vrath/RRV_work/edifiles_out1/'
 if not os.path.isdir(edi_out_dir):
     print(' File: %s does not exist, but will be created' % edi_out_dir)
     os.mkdir(edi_out_dir)
-
 ss_out_file = edi_out_dir+'/ss_list.csv'
 with open(ss_out_file, 'w') as f:
     sitelist = csv.writer(f, delimiter=',')
@@ -77,3 +93,33 @@ with open(ss_out_file, 'w') as f:
                                            # will write as degrees minutes seconds
                         )      
         
+        if plot_it == True:
+            
+            obj0 = mt.MT(file_i)
+            obj1 = mt.MT(edi_out_dir+name+'.edi')
+            # plot_num =1 xy + yx; =2 all 4 components; =3 xy yx det
+             
+            plot_obj = PlotMTResponse(z_object=obj0.Z,  # this is mandatory
+                             # t_object=mt_obj.Tipper,
+                             # pt_obj=mt_obj.pt,
+                             station=obj0.station,
+                             #plot_tipper='yr',  # plots the real part of the tipper
+                             plot_num=1)
+            
+            plot_obj.station = obj0.station + " and " + obj1.station+'_no-ss'
+            plot_obj.plot(overlay_mt_obj=obj1)
+            
+            # plot_obj = mtplot.plot_multiple_mt_responses(
+            #             fn_list=[file_i, edi_out_dir+name+'.edi'],
+            #             plot_style='compare')
+            
+            # Finally save figure
+    
+            if plot_png:
+               plot_obj.save_plot(os.path.join(plots_dir,name+".png"),file_format='png',fig_dpi=dpi)
+            if plot_pdf:
+                plot_obj.save_plot(os.path.join(plots_dir,name+".pdf"),file_format='pdf',fig_dpi=dpi)
+            if plot_eps:
+                plot_obj.save_plot(os.path.join(plots_dir,name+".eps"),file_format='eps',fig_dpi=dpi)
+
+ 

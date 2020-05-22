@@ -61,14 +61,14 @@ RhoLimits = (0.1 ,100000.)
 PhiLimits = (-10.,100.)
 
 # Define the path to your EDI-files:
-edi_in_dir =  r'/home/vrath/RRV_work/edifiles_in/'
+edi_in_dir =  r'/home/vrath/RRV_work/edifiles_out1/'
 print(' Edifiles read from: %s' % edi_in_dir)
 
 # Define the path for saving  plots:
 
 
-#plots_dir = edi_in_dir 
-plots_dir = r'/home/vrath/RRV_work/edifiles_in/' 
+plots_dir = edi_in_dir 
+# plots_dir = r'/home/vrath/RRV_work/edifiles_in/' 
 print(' Plots written to: %s' % plots_dir)
 if not os.path.isdir(plots_dir):
     print(' File: %s does not exist, but will be created' % plots_dir)

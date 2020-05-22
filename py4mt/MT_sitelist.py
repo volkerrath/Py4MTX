@@ -15,11 +15,12 @@ from mtpy.core.mt import MT
 import numpy as np
 
 dialect = 'unix'
+delim = ','
 
 # Define the path to your EDI-files and for the list produced
-edi_dir = r'/media/vrath/MT/Annecy2020/Data/EDIS_just/'  
+edi_dir = r'/home/vrath/RRV_work/edifiles_in/'
 print(' Edifiles read from: %s' % edi_dir)
-csv_file =r'/media/vrath/MT/Annecy2020/Data/EDIS_just/Annecy2020a_Sitelist.csv'
+csv_file =r'/home/vrath/RRV_work/edifiles_in/RRV_Sitelist.csv'
 print('Writing data to CSV file: '+csv_file)
 
 
@@ -38,7 +39,7 @@ ns =  np.size(edi_files)
 # Outputfile (e. g., for WALDIM analysis)
 
 with open(csv_file, 'w') as f:
-    sitelist = csv.writer(f, delimiter=',')
+    sitelist = csv.writer(f, delimiter=delim)
     # sitelist.writerow(['Sitename', 'Latitude', 'Longitude'])
     # sitelist.writerow([ns, ' ', ' '])
 
