@@ -3,12 +3,12 @@
 # jupyter:
 #   jupytext:
 #     cell_metadata_filter: -all
-#     formats: ipynb,py:light
+#     formats: py:light,ipynb
 #     text_representation:
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.3.1
+#       jupytext_version: 1.4.2
 # ---
 
 '''
@@ -85,7 +85,7 @@ for entry in files:
 
 
 # Open kml object:
-            
+
 kml = simplekml.Kml(open=1)
 
 site_iref   = kml.addfile(site_icon)
@@ -111,9 +111,9 @@ for filename in edi_files :
     # print(full_name, nam,plots_dir+full_name+'.png')
     # print(full_name)
     description = ('')
-    
+
 #  Now add the plots to tag:
-    
+
     if plotsDA:
         nam_DA = name+strngDA
         print(nam_DA)
@@ -150,7 +150,7 @@ for filename in edi_files :
         site.description = description+'  - repeated site'
 
     site.description = description
-    
+
     
 
 kml_outfile = kml_dir+kml_file 

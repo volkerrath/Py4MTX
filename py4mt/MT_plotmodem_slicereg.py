@@ -1,5 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# ---
+# jupyter:
+#   jupytext:
+#     cell_metadata_filter: -all
+#     formats: py:light,ipynb
+#     text_representation:
+#       extension: .py
+#       format_name: light
+#       format_version: '1.5'
+#       jupytext_version: 1.4.2
+# ---
+
 """
 Created on Wed Jan 29 15:45:32 2020
 
@@ -46,7 +58,7 @@ plot_obj.export_slices(plane='N-E', # options are 'N-Z', 'E-Z', and 'N-E'
                    save=True,
 )
 # Finally save figure
-    
+
 # if plot_png:
 #     plot_obj.save_plot(os.path.join(plots_dir,name+".png"),file_format='png',fig_dpi=dpi)
 # if plot_pdf:

@@ -3,12 +3,12 @@
 # jupyter:
 #   jupytext:
 #     cell_metadata_filter: -all
-#     formats: ipynb,py:light
+#     formats: py:light,ipynb
 #     text_representation:
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.3.1
+#       jupytext_version: 1.4.2
 # ---
 
 """
@@ -50,7 +50,7 @@ plots_dir=r'/media/vrath/MT/RainyRiverTransect/1-D_Results/RRV_plots/'
 if not os.path.isdir(plots_dir):
     print(' File: %s does not exist, but will be created' % plots_dir)
     os.mkdir(plots_dir)
-    
+
 outstrng='_rjmcmc'
 
 

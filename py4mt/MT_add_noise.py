@@ -1,4 +1,16 @@
 # -*- coding: utf-8 -*-
+# ---
+# jupyter:
+#   jupytext:
+#     cell_metadata_filter: -all
+#     formats: py:light,ipynb
+#     text_representation:
+#       extension: .py
+#       format_name: light
+#       format_version: '1.5'
+#       jupytext_version: 1.4.2
+# ---
+
 """
 This script will take EDI-files from a prescribed directory, and add Gaussian
 noise. This is useful for working with synthetic data.
@@ -60,13 +72,13 @@ for filename in edi_files :
     name, ext = os.path.splitext(filename)
 
 # Create an MT object 
-    
+
     file_in = edi_in_dir+filename
     mt_obj = MT(file_in)
     print(' site %s at :  % 10.6f % 10.6f' % (name, mt_obj.lat, mt_obj.lon))
 
 # Extract impedance tensor Z:
-    
+
     Z           = mt_obj.Z.z[:]   
 
 # Set perturbation for real and imaginary parts:
@@ -84,9 +96,9 @@ for filename in edi_files :
     newZ           = Z_perturb
 
 # Extract tipper T:
-    
+
     T  = mt_obj.Tipper.tipper[:]
- 
+
 # Set perturbation for real and imaginary parts:    
 
     T_err       = np.abs(T*T_err_rel) 
@@ -106,7 +118,7 @@ for filename in edi_files :
     mt_obj.Z.z              = newZ
 
 # Write a new edi file 
-    
+
     file_out=filename.replace(in_string,out_string)
     print('Writing data to '+edi_out_dir+file_out)
     mt_obj.write_mt_file(

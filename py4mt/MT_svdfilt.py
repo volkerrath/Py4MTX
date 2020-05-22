@@ -2,12 +2,12 @@
 # jupyter:
 #   jupytext:
 #     cell_metadata_filter: -all
-#     formats: ipynb,py:light
+#     formats: py:light,ipynb
 #     text_representation:
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.3.1
+#       jupytext_version: 1.4.2
 # ---
 
 
@@ -62,11 +62,11 @@ out_string      = '_interp'
 min_per_test    =  1e-3
 max_per_test    =  1e4
 test_freq_list = 1./get_period_list(min_per_test,max_per_test,interp_pdec) 
- 
+
 maxfreq = np.max(test_freq_list)
 minfreq = np.min(test_freq_list)
 print( 'MinFreqTest: '+str(minfreq)+'   MaxFreqTest: '+str(maxfreq))
-    
+
 
 # No changes required after this line!
 
@@ -81,23 +81,23 @@ for entry in files:
 for filename in edi_files :
     print('  \n reading data from '+filename)
     name, ext = os.path.splitext(filename)
-    
+
 # Create an MT object 
-    
+
     file_i = edi_dir+filename
     mt_obj = MT(file_i)  
     
  
     freq    = mt_obj.Z.freq
-   
+
 # Get Impedance data: 
-    
+
     Z       = mt_obj.Z.z
     sZ      = np.shape(Z)
     print(' Size of Z list :',sZ)
     tmp     = np.reshape(Z,(sZ[0],4))
     print(Z[:])
-    
+
 # Find indices of valid impedance data, i. e., there absolute value is 
 # zero. This corresponds to the EMPTY key in EDI.
 
@@ -117,13 +117,13 @@ for filename in edi_files :
     new_Z = np.zeros(sZ)
 
 # Get Tipper data:
-    
+
     T       = mt_obj.Tipper.tipper
     sT      = np.shape(T)
     print(' Size of T list :',sT)
     tmp     = np.reshape(T,(sT[0],2)) 
 
-    
+
 # Find indices of valid tipper data, i. e., there absolute value is 
 # zero. This corresponds to the EMPTY key in EDI.
 
@@ -147,9 +147,9 @@ for filename in edi_files :
     #    plot_pt = 'y' # plot phase tensor 'y' or 'n'f
     #    )
     #    pt_obj.save_plot(os.path.join(save_path,name+".pdf"), fig_dpi=400)    
-   
+
 # Write a new edi file:
-    
+
     file_out=name+out_string+ext
     
     # mt_obj.write_mt_file(save_dir=edi_out_dir, 

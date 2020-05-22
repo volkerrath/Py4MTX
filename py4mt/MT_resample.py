@@ -2,12 +2,12 @@
 # jupyter:
 #   jupytext:
 #     cell_metadata_filter: -all
-#     formats: ipynb,py:light
+#     formats: py:light,ipynb
 #     text_representation:
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.3.1
+#       jupytext_version: 1.4.2
 # ---
 
 
@@ -56,7 +56,7 @@ print(' Edifiles written to: %s' % edi_out_dir)
 if not os.path.isdir(edi_out_dir):
     print(' File: %s does not exist, but will be created' % edi_out_dir)
     os.mkdir(edi_out_dir)
-    
+
 out_string      = '_interp'
 
 # Setup frequency lists     
@@ -64,11 +64,11 @@ out_string      = '_interp'
 min_per_test    =  1e-3
 max_per_test    =  1e3
 test_freq_list = 1./get_period_list(min_per_test,max_per_test,interp_pdec) 
- 
+
 maxfreq = np.max(test_freq_list)
 minfreq = np.min(test_freq_list)
 print( 'MinFreqTest: '+str(minfreq)+'   MaxFreqTest: '+str(maxfreq))
-    
+
 
 # No changes required after this line!
 
@@ -83,23 +83,23 @@ for entry in files:
 for filename in edi_files :
     print('  \n reading data from '+filename)
     name, ext = os.path.splitext(filename)
-    
+
 # Create an MT object 
-    
+
     file_i = edi_in_dir+filename
     mt_obj = MT(file_i)  
     
  
     freq    = mt_obj.Z.freq
-   
+
 # Get Impedance data: 
-    
+
     Z       = mt_obj.Z.z
     sZ      = np.shape(Z)
     print(' Size of Z list :',sZ)
     tmp     = np.reshape(Z,(sZ[0],4))
     # print(Z[:])
-    
+
 # Find indices of valid impedance data, i. e., there absolute value is 
 # zero. This corresponds to the EMPTY key in EDI.
 
@@ -139,9 +139,9 @@ for filename in edi_files :
     # # print(new_Z[:])
     print(np.shape(new_Z))
     new_Z_obj.z[:,:,:] = new_Z[:,:,:].copy
-    
+
 #     # Get Tipper data:
-    
+
 #     T       = mt_obj.Tipper.tipper
 #     sT      = np.shape(T)
 #     print(' Size of T list :',sT)
@@ -155,14 +155,14 @@ for filename in edi_files :
 #     maxfreq = tmpfreq[0]
 #     minfreq = tmpfreq[-1]
 #     print(' T: MinFreq: '+str(minfreq)+'   MaxFreq: '+str(maxfreq))
-    
+
 #     new_freq_list=tmpfreq
 #     _ , new_T_obj= mt_obj.interpolate(
 #         new_freq_list,
 #         interp_type=interp_type, 
 #         period_buffer = pbuff)
 #     T_tmp = new_T_obj.tipper[:]
-    
+
 #     new_T  = np.zeros(sT,dtype=np.complex128)
 #     # print(np.shape(new_T))
 #     # print(np.shape(T_tmp))
@@ -175,9 +175,9 @@ for filename in edi_files :
 #     #    plot_pt = 'y' # plot phase tensor 'y' or 'n'f
 #     #    )
 #     #    pt_obj.save_plot(os.path.join(save_path,name+".pdf"), fig_dpi=400)    
-   
+
 # Write a new edi file:
-    
+
     file_out=name+out_string+ext
     
     # mt_obj.write_mt_file(save_dir=edi_out_dir, 

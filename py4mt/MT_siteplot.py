@@ -3,12 +3,12 @@
 # jupyter:
 #   jupytext:
 #     cell_metadata_filter: -all
-#     formats: ipynb,py
+#     formats: py:light,ipynb
 #     text_representation:
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.3.1
+#       jupytext_version: 1.4.2
 #   kernelspec:
 #     display_name: Python 3
 #     language: python
@@ -73,7 +73,7 @@ print(' Plots written to: %s' % plots_dir)
 if not os.path.isdir(plots_dir):
     print(' File: %s does not exist, but will be created' % plots_dir)
     os.mkdir(plots_dir)
-    
+
 # No changes required after this line!
 
 # Construct list of EDI-files:
@@ -92,9 +92,9 @@ for entry in files:
 for filename in edi_files :
     print('\n \n \n reading data from '+filename)
     name, ext = os.path.splitext(filename)
-    
+
 # Create an MT object 
-    
+
     file_i = edi_in_dir+filename
     mt_obj = MT(file_i)
     print(' site %s at :  % 10.6f % 10.6f' % (name, mt_obj.lat, mt_obj.lon))
@@ -105,9 +105,9 @@ for filename in edi_files :
                                      res_limits=RhoLimits, 
                                      phase_limits=PhiLimits
     )
-    
+
 # Finally save figure
-    
+
     if plot_png:
         plot_obj.save_plot(os.path.join(plots_dir,name+".png"),file_format='png',fig_dpi=dpi)
     if plot_pdf:

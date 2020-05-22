@@ -1,23 +1,21 @@
-The mtpy environment in Anaconda can be generated from the 
-mtpy.yaml file (exported from Volker's working environment) 
+The Py4MT environment in Mini/Anaconda can be generated from the 
+Py4MT.yaml file (exported from Volker's working environment) 
 by entering: 
 
-conda env create -f mtpy.yml
+conda env create -f Py4MT.yml
 
 If this works fine, carry on with:
 
-
-conda activate mtpy
+conda activate Py4MT
 
 
 Then get your git repository (using the develop branch at your own risk) with
-
 
 git clone https://github.com/MTgeophysics/mtpy.git whatever-directory-you-want
 cd whatever-directory-you-want
 python setup.py install
 
-That should do the trick. You can then test calling
+That should do the trick. You can then test mtpy by calling
 
 mtpy_tests.sh
 
