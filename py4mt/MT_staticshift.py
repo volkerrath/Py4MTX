@@ -29,39 +29,47 @@ import modules.staticshift as ss
 from mtpy.imaging.plot_mt_response import PlotMTResponse
 
 
-ss_radius   = 1000. 
-freq_interval=[1.e-2,1.e2]
-prefix_remove = 'AMT_'
+ss_radius       = 1500. 
+freq_interval   =[1.e-2,1.e2]
+prefix_remove   = 'A'
+append_out      = '_noss'  
 
 plot_it = True
 plot_pdf=True
 plot_png=True
 plot_eps=False
-dpi = 400
+dpi = 600
 
 
 edi_in_dir =  r'/home/vrath/RRV_work/edifiles_in/'
-print(' Edifiles reading from: %s' % edi_in_dir)
+print(' Edifiles read from: %s' % edi_in_dir)
 
 edi_files=[]
 files= os.listdir(edi_in_dir) 
 for entry in files:
    if entry.endswith('.edi') and not entry.startswith('.'):
-            edi_files.append(entry)
-            
+        full = os.path.join(edi_in_dir,entry)
+        edi_files.append(full)
+
+
 ns =  np.size(edi_files)
 
+
+edi_out_dir =  r'/home/vrath/RRV_work/edifiles_r1500m_bbmt/'
+print(' Corrected Edifiles written to: %s' % edi_out_dir)
+if not os.path.isdir(edi_out_dir):
+    print(' File: %s does not exist, but will be created' % edi_out_dir)
+    os.mkdir(edi_out_dir)
+
 if plot_it:
-    plots_dir =  r'/home/vrath/RRV_work/edifiles_out_r1000m/plots/'
+    plots_dir =  edi_out_dir+'sscor_plots/'
     print(' Plots written to: %s' % plots_dir)
     if not os.path.isdir(plots_dir):
         print(' File: %s does not exist, but will be created' % plots_dir)
         os.mkdir(plots_dir)
 
-edi_out_dir =  r'/home/vrath/RRV_work/edifiles_out1/'
-if not os.path.isdir(edi_out_dir):
-    print(' File: %s does not exist, but will be created' % edi_out_dir)
-    os.mkdir(edi_out_dir)
+    
+
 ss_out_file = edi_out_dir+'/ss_list.csv'
 with open(ss_out_file, 'w') as f:
     sitelist = csv.writer(f, delimiter=',')
@@ -69,10 +77,13 @@ with open(ss_out_file, 'w') as f:
     # sitelist.writerow([ns, ' ', ' '])
 
     for filename in edi_files :
-        print('reading data from '+filename)
-        name, ext = os.path.splitext(filename)
+        print(' Reading data from '+filename)
+        tmp = os.path.split(filename)
+        name, ext = os.path.splitext(os.path.split(filename)[1])
         # Create an MT object 
         file_i = filename
+        print(filename)
+        print(name)
         mt_obj = mt.MT(file_i)
         
         
@@ -97,27 +108,28 @@ with open(ss_out_file, 'w') as f:
         new_z = mt_obj.remove_static_shift(ss_x=ss_x, ss_y=ss_y)
         
         # write to new edi file
+        print (name+append_out+'.edi')
         mt_obj.write_mt_file(save_dir=edi_out_dir, 
-                        fn_basename= name, 
+                        fn_basename= name+append_out, 
                         file_type='edi', # edi or xml format
                         new_Z_obj=new_z, # provide a z object to update the data
                         longitude_format='LONG', # write longitudes as 'LON' or 'LONG'
                         latlon_format='dd' # write as decimal degrees (any other input
-                                           # will write as degrees minutes seconds
+                                            # will write as degrees minutes seconds
                         )      
         
         if plot_it == True:
-            
+            print(name)
             obj0 = mt.MT(file_i)
-            obj1 = mt.MT(edi_out_dir+name+'.edi')
+            obj1 = mt.MT(edi_out_dir+name+append_out+'.edi')
             # plot_num =1 xy + yx; =2 all 4 components; =3 xy yx det
              
             plot_obj = PlotMTResponse(z_object=obj0.Z,  # this is mandatory
-                             # t_object=mt_obj.Tipper,
-                             # pt_obj=mt_obj.pt,
-                             station=obj0.station,
-                             #plot_tipper='yr',  # plots the real part of the tipper
-                             plot_num=1)
+                              # t_object=mt_obj.Tipper,
+                              # pt_obj=mt_obj.pt,
+                              station=obj0.station,
+                              #plot_tipper='yr',  # plots the real part of the tipper
+                              plot_num=1)
             
             plot_obj.station = obj0.station + " and " + obj1.station+'_no-ss'
             plot_obj.plot(overlay_mt_obj=obj1)
@@ -125,7 +137,7 @@ with open(ss_out_file, 'w') as f:
             # Finally save figure
     
             if plot_png:
-               plot_obj.save_plot(os.path.join(plots_dir,name+".png"),file_format='png',fig_dpi=dpi)
+                plot_obj.save_plot(os.path.join(plots_dir,name+".png"),file_format='png',fig_dpi=dpi)
             if plot_pdf:
                 plot_obj.save_plot(os.path.join(plots_dir,name+".pdf"),file_format='pdf',fig_dpi=dpi)
             if plot_eps:

@@ -137,7 +137,7 @@ def estimate_static_spatial_median(edi_fn,
                               (interp_freq <= mt_obj_kk.Z.freq.max()))
         
         interp_freq_kk = interp_freq[interp_idx]
-        print(np.shape(interp_freq_kk ))
+        #print(np.shape(interp_freq_kk ))
         Z_interp, Tip_interp = mt_obj_kk.interpolate(interp_freq_kk)
         Z_interp.compute_resistivity_phase()
         res_array[
