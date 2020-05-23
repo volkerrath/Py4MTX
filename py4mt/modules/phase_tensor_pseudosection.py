@@ -208,11 +208,11 @@ class PlotPhaseTensorPseudoSection(mtpl.PlotSettings):
 
                       * 'n' to not plot on creating an instance
 
-        **xlim** : tuple(xmin, xmax)
+        **xlimits** : tuple(xmin, xmax)
                    min and max along the x-axis in relative distance of degrees
                    and multiplied by xstretch
 
-        **ylim** : tuple(ymin, ymax)
+        **ylimits** : tuple(ymin, ymax)
                    min and max period to plot, note that the scaling will be
                    done in the code.  So if you want to plot from (.1s, 100s)
                    input ylim=(.1,100)
@@ -593,7 +593,7 @@ class PlotPhaseTensorPseudoSection(mtpl.PlotSettings):
 
                 # make sure the ellipses will be visable
                 eheight = phimin[jj] / phimax[jj] * es
-                ewidth = phimax[jj] / phimax[jj] * es
+                ewidth  = phimax[jj] / phimax[jj] * es
 
                 # create an ellipse scaled by phimin and phimax and orient
                 # the ellipse so that north is up and east is right
@@ -769,6 +769,7 @@ class PlotPhaseTensorPseudoSection(mtpl.PlotSettings):
             #            self.ax.set_ylim(pmax+es*2, pmin-es*2)
             self.ax.set_ylim(pmax * self.ystretch, pmin * self.ystretch)
         else:
+            print(np.log10(self.ylimits[0]))
             pmin = np.log10(self.ylimits[0]) * self.ystretch
             pmax = np.log10(self.ylimits[1]) * self.ystretch
             self.ax.set_ylim(pmax + es * 2, pmin - es * 2)
@@ -911,6 +912,7 @@ class PlotPhaseTensorPseudoSection(mtpl.PlotSettings):
             self.cb.ax.yaxis.set_label_coords(1.5, .5)
             self.cb.ax.yaxis.tick_left()
             self.cb.ax.tick_params(axis='y', direction='in')
+            
         if self.plot_reference:
             # --> add reference ellipse
             ref_ellip = patches.Ellipse((0, .0),

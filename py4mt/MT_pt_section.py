@@ -25,7 +25,7 @@ plot_eps=False
 dpi = 600       
 fsiz=6
 lwid=0.1
-stretch=(2500, 50)
+stretch=(3000, 20)
 prefix_remove = 'XXX'
 plot_name = 'RRV_PhaseTensorSection'
 
@@ -78,22 +78,34 @@ for entry in files:
 #  create a plot object
 
 plot_obj = PlotPhaseTensorPseudoSection(fn_list = edi_files,
-                                 linedir='ns',          
+                                 # linedir='ns',          
                                  stretch=stretch,       
-                                 station_id=(0,34),     # 'ns' if the line is closer to north-south, 'ew' if line is closer to east-west
+                                 # station_id=(0,34),     # 'ns' if the line is closer to north-south, 'ew' if line is closer to east-west
                                  plot_tipper = plot_t,                           
-                                 ellipse_dict = {'ellipse_colorby':'skew_seg',# option to colour by phimin, phimax, skew, skew_seg
-                                                 'ellipse_range':[-12, 12, 3]} # set color limits - default 0,90 for phimin or max,
-                                                                         # [-12,12] for skew. If plotting skew_seg need to provide
-                                                                         # 3 numbers, the 3rd indicates interval, e.g. [-12,12,3]
+                                 # ellipse_dict = {'ellipse_colorby':'skew',# option to colour by phimin, phimax, skew, skew_seg
+                                 #                 'ellipse_range':[-12, 12, 3]} # set color limits - default 0,90 for phimin or max,
+                                 #                                         # [-12,12] for skew. If plotting skew_seg need to provide
+                                 #                                         # 3 numbers, the 3rd indicates interval, e.g. [-12,12,3]
                                  )
 
 # update parameters (tweak for your dataset)
-plot_obj.ellipse_size   = 12.
-plot_obj.ylim           = (.0001,1000)
+
+plot_obj.fig_size       = (15,8)
+
+plot_obj.linedir        = 'ns'
+plot_obj.stretch        = stretch
+plot_obj.ylimits        = (.0003,300.)
+
 plot_obj.lw             = lwid
 plot_obj.font_size      = fsiz
-plot_obj.title          = 'Rainy River Transect' 
+plot_obj.station_id     = (0,34)
+
+plot_obj.ellipse_size   = 15
+plot_obj.ellipse_dict   = {'ellipse_colorby':'skew','ellipse_range':[-12, 12, 3]}
+
+plot_obj.plot_title          = 'Rainy River Transect' 
+plot_obj.cb_orientation = 'vertical' 
+plot_obj.plot_reference = True
 
 plot_obj.plot()
 
