@@ -48,8 +48,13 @@ ns =  np.size(edi_files)
 
 
 # Loop over edifiles:
-
+n3d = 0
+n2d = 0
+n1d = 0
+nel = 0
+sit = 0
 for filename in edi_files :
+    sit = sit+1
     print('reading data from: '+filename)
     name, ext = os.path.splitext(filename)
     file_i = edi_dir+filename
@@ -67,5 +72,16 @@ for filename in edi_files :
                      skew_threshold=5,          # threshold in skew angle (degrees) to determine if data are 3d
                      eccentricity_threshold=0.1 # threshold in phase ellipse eccentricity to determine if data are 2d (vs 1d)
                      )
+    
+    nel = nel   +  np.size(dim)
+    n1d = n1d + sum(map(lambda x : x == 1, dim))
+    n2d = n2d + sum(map(lambda x : x == 2, dim))
+    n3d = n3d + sum(map(lambda x : x == 3, dim))
 
-    print(dim)
+
+print('number of sites = '+str(sit) )
+print('total number of elements = '+str(nel))
+print('  number of undetermined elements = '+str(nel-n1d-n2d-n3d)+'\n')
+print('  number of 1-D elements = '+str(n1d)+'  ('+str(round(100*n1d/nel))+'%)') 
+print('  number of 2-D elements = '+str(n2d)+'  ('+str(round(100*n2d/nel))+'%)')
+print('  number of 3-D elements = '+str(n3d)+'  ('+str(round(100*n3d/nel))+'%)')   
