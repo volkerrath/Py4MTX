@@ -35,11 +35,11 @@ plot_pdf=True
 plot_png=True
 plot_eps=False
 dpi = 600       
-fsiz=6
+fsiz=8
 lwid=0.1
-stretch=(3000, 20)
-prefix_remove = 'XXX'
-plot_name = 'RRV_PhaseTensorSection_SkewPolar'
+stretch=(15000, 200)
+prefix_remove = 'ARR'
+plot_name = 'RRV_BBMT_PhaseTensorSection_Skew'
 
 # colorby:          - colour by phimin, phimax, skew, skew_seg
 # ellipse_range     - 3 numbers, the 3rd indicates interval, e.g. [-12,12,3]
@@ -50,10 +50,10 @@ plot_name = 'RRV_PhaseTensorSection_SkewPolar'
 #                                 'ellipse_range':[-12, 12, 3]} 
 
 
-edict =  {'ellipse_colorby':'skew_seg',
+edict =  {'ellipse_colorby':'skew',
           'ellipse_range':[-12, 12, 3]} 
 
-# edict =  {'ellipse_colorby':'phimax',
+# edict =  {'ellipse_colorby':'phimin',
 #           'ellipse_range':[0.,90.]} 
 
 
@@ -65,7 +65,7 @@ plot_t = 'n'
 
 
 # Define the path to your EDI-files:
-edi_in_dir =  r'/home/vrath/RRV_work/edifiles_in/'
+edi_in_dir =  r'/home/vrath/RRV_work/edi_work/'
 print(' Edifiles read from: %s' % edi_in_dir)
 
 # Define the path for saving  plots:
@@ -105,15 +105,15 @@ plot_obj.fig_size       = (15,8)
 plot_obj.linedir        = 'ns'
 plot_obj.xstretch       = stretch[0]
 plot_obj.ystretch       = stretch[1]
-plot_obj.ylimits        = (.0003,300.)
+plot_obj.ylimits        = (.001,10000.)
 
 plot_obj.lw             = lwid
 plot_obj.font_size      = fsiz+2
 plot_obj.station_id     = (0,34)
 
-plot_obj.ellipse_size   = 15
+plot_obj.ellipse_size   = 36
 
-plot_obj.plot_title     = 'Rainy River Transect' 
+plot_obj.plot_title     = 'Rainy River Transect - BBMT' 
 plot_obj.cb_orientation = 'vertical' 
 plot_obj.plot_reference = True
 

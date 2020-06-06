@@ -61,8 +61,9 @@ RhoLimits = (0.1 ,100000.)
 PhiLimits = (-10.,100.)
 
 # Define the path to your EDI-files:
-# edi_in_dir =  r'/home/vrath/RRV_work/edifiles_in/'
-edi_in_dir =  r'/home/vrath/RRV_work/edifiles_r1500m_bbmt/'
+edi_in_dir = r'/home/vrath/ProfileR/BBMT_r1500m/' 
+# r'/home/vrath/RRV_work/edifiles_in/'
+# edi_in_dir =  r'/home/vrath/RRV_work/edifiles_r1500m_bbmt/'
 print(' Edifiles read from: %s' % edi_in_dir)
 
 # Define the path for saving  plots:

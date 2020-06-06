@@ -30,9 +30,9 @@ from mtpy.imaging.plot_mt_response import PlotMTResponse
 
 
 ss_radius       = 1500. 
-freq_interval   =[1.e-2,1.e2]
+freq_interval   =[1.e-3,1.e2]
 prefix_remove   = 'A'
-append_out      = '_noss'  
+append_out      = '_r1500'  
 
 plot_it = True
 plot_pdf=True
@@ -41,7 +41,7 @@ plot_eps=False
 dpi = 600
 
 
-edi_in_dir =  r'/home/vrath/RRV_work/edifiles_in/'
+edi_in_dir =  r'/home/vrath/ProfileR/BBMT_edited/'
 print(' Edifiles read from: %s' % edi_in_dir)
 
 edi_files=[]
@@ -55,7 +55,7 @@ for entry in files:
 ns =  np.size(edi_files)
 
 
-edi_out_dir =  r'/home/vrath/RRV_work/edifiles_r1500m_bbmt/'
+edi_out_dir =  r'/home/vrath/ProfileR/BBMT_r1500m/'
 print(' Corrected Edifiles written to: %s' % edi_out_dir)
 if not os.path.isdir(edi_out_dir):
     print(' File: %s does not exist, but will be created' % edi_out_dir)
