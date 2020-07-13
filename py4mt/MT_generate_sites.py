@@ -8,7 +8,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.4.2
+#       jupytext_version: 1.5.1
 #   kernelspec:
 #     display_name: Python 3
 #     language: python
@@ -36,23 +36,23 @@ print(' Edifile templte read from: %s' % edi_template)
 
 # Define the path and appended string for saved EDI-files:
 
-edi_out_dir=r'/home/vrath/Py4MT/py4mt/M/FWD/'
+edi_out_dir=r'/home/vrath/Py4MT/py4mt/M/MauTopo_fwd/'
 print(' Edifiles written to: %s' % edi_out_dir)
 if not os.path.isdir(edi_out_dir):
     print(' File: %s does not exist, but will be created' % edi_out_dir)
     os.mkdir(edi_out_dir)
 
-OutName = 'MauTopo'
+OutName = ''
 
 # Construct list of EDI-files:
-    
+
 small = 0.000001
-LonLimits = ( 6.35, 6.39)
+LonLimits = ( 6.275, 6.39)
 nLon = 11
 LonStep  = (LonLimits[1] - LonLimits[0])/nLon
 Lon = np.arange(LonLimits[0],LonLimits[1]+small,LonStep)
 
-LatLimits = (45.38,45.46)
+LatLimits = (45.37,45.46)
 nLat = 11
 LatStep  = (LatLimits[1] - LatLimits[0])/nLat
 Lat = np.arange(LatLimits[0],LatLimits[1]+small,LatStep)
@@ -67,30 +67,31 @@ for latval in Lat:
     nn=nn+1
     nnstr = str(nn)
     mm = -1
+    print(nnstr)
     for lonval in Lon:
         mm=mm+1
         mmstr = str(mm)
-        
- 
+        print(mmstr)
+
 
 # # Create an MT object 
 
         file_in = edi_template
         mt_tmp = MT(file_in)
     
-    mt_tmp.lat = Lat[nn]
-    mt_tmp.lon = Lon[mm]
-    mt_tmp.name = OutName+'_'+nnstr+'_'+mmstr
+        mt_tmp.lat = Lat[nn]
+        mt_tmp.lon = Lon[mm]
+        mt_tmp.station = OutName+nnstr+'_'+mmstr
     
-    file_out = OutName+'_'+nnstr+'_'+mmstr+'.edi'
+        file_out = OutName+nnstr+'_'+mmstr+'.edi'
     
-    print('\n Generating '+edi_out_dir+file_out)
-    print(' site %s at :  % 10.6f % 10.6f' % (mt_tmp.name, mt_tmp.lat, mt_tmp.lon))
- 
+        print('\n Generating '+edi_out_dir+file_out)
+        print(' site %s at :  % 10.6f % 10.6f' % (mt_tmp.station, mt_tmp.lat, mt_tmp.lon))
+
 # # Write a new edi file:
 
-    print('Writing data to '+edi_out_dir+file_out)
-    mt_tmp.write_mt_file(
+        print('Writing data to '+edi_out_dir+file_out)
+        mt_tmp.write_mt_file(
             save_dir=edi_out_dir,
             fn_basename=file_out,
             file_type='edi',

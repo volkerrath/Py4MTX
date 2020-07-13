@@ -8,7 +8,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.4.2
+#       jupytext_version: 1.5.1
 # ---
 
 '''
@@ -32,7 +32,8 @@ whatfor = 'nix'
 
 # Define the path to your EDI-files and for the list produced
 # edi_dir = r'/home/vrath/RRV_work/edi_work/BBMT/'
-edi_dir = r'/media/vrath/MT/Ireland/Northwest_CarboniferousBasin/MT_DATA/EDI/'
+edi_dir = r'/home/vrath/Py4MT/py4mt/M/MauTopo_fwd/'
+# r'/media/vrath/MT/Ireland/Northwest_CarboniferousBasin/MT_DATA/EDI/'
 print(' Edifiles read from: %s' % edi_dir)
 csv_file =edi_dir+'Sitelist.csv'
 print('Writing data to CSV file: '+csv_file)

@@ -8,7 +8,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.4.2
+#       jupytext_version: 1.5.1
 # ---
 
 '''
@@ -28,7 +28,7 @@ from mtpy.core.mt import MT
 # plotsRJ =  MCMC plots produced by MT_mcmcplot.py, with an 
 # additional string strnRJ added to the EDI basename.
 
-plotsDA = True
+plotsDA = False
 strngDA = '' #'_data'
 
 plotsRJ = False
@@ -37,7 +37,8 @@ strngRJ ='_rjmcmc'
 # Define the path to your EDI-files
 
 # edi_dir = r'/home/vrath/WestTimor/WT8C_edi/'
-edi_dir = r'/media/vrath/MT/Ireland/Donegal/Donegal_EDIs_3DGridEdited/'
+edi_dir = '/home/vrath/Py4MT/py4mt/M/MauTopo_fwd/'
+# r'/media/vrath/MT/Ireland/Donegal/Donegal_EDIs_3DGridEdited/'
 print(' Edifiles read from: %s' % edi_dir)
 
 if plotsDA or plotsRJ:
@@ -52,7 +53,7 @@ if plotsDA or plotsRJ:
 places = []
 
 # open file and read the content in a list
-places_file = r'/media/vrath/MT/Ireland/Northwest_CarboniferousBasin/MT_DATA/EDI/Sitelist.csv'
+places_file = r'/home/vrath/Py4MT/py4mt/M/FWD/Sitelist.csv'
 # r'/home/vrath/WestTimor/places.csv'
 with open(places_file, 'r') as f:
     placelist = csv.reader(f, delimiter=' ')
@@ -62,7 +63,7 @@ with open(places_file, 'r') as f:
 # Define the path for saving  kml files
 
 kml_dir = ''
-kml_file = edi_dir+'Donegal'
+kml_file = edi_dir+'MauTopo'
 
 site_icon = 'icons/triangle.png'
 site_tcolor = simplekml.Color.white ###'#555500' #
