@@ -31,9 +31,10 @@ delim = ' '
 whatfor = 'nix'
 
 # Define the path to your EDI-files and for the list produced
-edi_dir = r'/home/vrath/RRV_work/edi_work/BBMT/'
+# edi_dir = r'/home/vrath/RRV_work/edi_work/BBMT/'
+edi_dir = r'/media/vrath/MT/Ireland/Northwest_CarboniferousBasin/MT_DATA/EDI/'
 print(' Edifiles read from: %s' % edi_dir)
-csv_file =r'/home/vrath/RRV_work/edi_work/BBMT/RRV_Sitelist.csv'
+csv_file =edi_dir+'Sitelist.csv'
 print('Writing data to CSV file: '+csv_file)
 
 

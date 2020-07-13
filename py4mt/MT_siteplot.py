@@ -46,7 +46,7 @@ plot_z = 2
 # Plot tipper?
 # 'y' or 'n', followed by 'r','i', or 'ri', for real part, imaginary part, or both, respectively.
 
-plot_t = 'n'
+plot_t = 'n' #'yri'
 
 # Plot phase tensor?
 # 'y' or 'n'
@@ -58,10 +58,11 @@ plot_p  = 'y'
 # PerLimits = (0.001,100000.) #BBMT
 PerLimits = (0.00003,10000.) #AMT+BBMT
 RhoLimits = (0.1 ,200000.)
-PhiLimits = (-10.,100.)
+PhiLimits = (-180.,180.)
 
 # Define the path to your EDI-files:
-edi_in_dir = r'/home/vrath/RRV_work/edi_work/Edited/'
+# edi_in_dir = r'/home/vrath/RRV_work/edi_work/Edited/'
+edi_in_dir = r'/media/vrath/MT/Ireland/Donegal/Donegal_EDIs_3DGridEdited/'
 # r'/home/vrath/RRV_work/edifiles_in/'
 # edi_in_dir =  r'/home/vrath/RRV_work/edifiles_r1500m_bbmt/'
 print(' Edifiles read from: %s' % edi_in_dir)

@@ -31,16 +31,19 @@ from mtpy.core.mt import MT
 plotsDA = True
 strngDA = '' #'_data'
 
-plotsRJ = True
+plotsRJ = False
 strngRJ ='_rjmcmc'
 
 # Define the path to your EDI-files
 
-edi_dir = r'/home/vrath/WestTimor/WT8C_edi/'
+# edi_dir = r'/home/vrath/WestTimor/WT8C_edi/'
+edi_dir = r'/media/vrath/MT/Ireland/Donegal/Donegal_EDIs_3DGridEdited/'
 print(' Edifiles read from: %s' % edi_dir)
 
 if plotsDA or plotsRJ:
-    plots_dir=r'/home/vrath/WestTimor/WT8C_plots/' #edi_dir #'NEW_plots_bbmt_roi_edit/'
+    plots_dir= edi_dir+'data_plots/'
+    # r'/media/vrath/MT/Ireland/Northwest_CarboniferousBasin/MT_DATA/EDI/data_plots/'
+    # r'/home/vrath/WestTimor/WT8C_plots/' #edi_dir #'NEW_plots_bbmt_roi_edit/'
     print(' Plots read from: %s' % plots_dir)
 
 
@@ -49,7 +52,8 @@ if plotsDA or plotsRJ:
 places = []
 
 # open file and read the content in a list
-places_file = r'/home/vrath/WestTimor/places.csv'
+places_file = r'/media/vrath/MT/Ireland/Northwest_CarboniferousBasin/MT_DATA/EDI/Sitelist.csv'
+# r'/home/vrath/WestTimor/places.csv'
 with open(places_file, 'r') as f:
     placelist = csv.reader(f, delimiter=' ')
     for row in placelist:
@@ -57,8 +61,8 @@ with open(places_file, 'r') as f:
 
 # Define the path for saving  kml files
 
-kml_dir = './'
-kml_file = 'WT8C'
+kml_dir = ''
+kml_file = edi_dir+'Donegal'
 
 site_icon = 'icons/triangle.png'
 site_tcolor = simplekml.Color.white ###'#555500' #
