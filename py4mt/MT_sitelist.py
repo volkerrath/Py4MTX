@@ -24,6 +24,7 @@ coordinates and elevations, e. g., for WALDIM analysis.
 import os
 import csv
 from mtpy.core.mt import MT
+
 import numpy as np
 
 dialect = 'unix'
@@ -32,7 +33,7 @@ whatfor = 'nix'
 
 # Define the path to your EDI-files and for the list produced
 # edi_dir = r'/home/vrath/RRV_work/edi_work/BBMT/'
-edi_dir = r'/home/vrath/Py4MT/py4mt/M/MauTopo_fwd/'
+edi_dir = r'/home/vrath/MauTopo/MauTopo1000_edi/'
 # r'/media/vrath/MT/Ireland/Northwest_CarboniferousBasin/MT_DATA/EDI/'
 print(' Edifiles read from: %s' % edi_dir)
 csv_file =edi_dir+'Sitelist.csv'

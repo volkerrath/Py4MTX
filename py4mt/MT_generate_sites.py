@@ -31,7 +31,7 @@ import numpy as np
 
 # Define the path to your EDI-files:
 
-edi_template = r'/home/vrath/Py4MT/py4mt/M/LPH.edi'
+edi_template = r'/home/vrath/Py4MT/py4mt/M/BERG.edi'
 print(' Edifile templte read from: %s' % edi_template)
 
 # Define the path and appended string for saved EDI-files:

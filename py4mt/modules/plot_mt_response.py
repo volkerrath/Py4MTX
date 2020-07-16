@@ -354,6 +354,9 @@ class PlotMTResponse(PlotSettings):
         self.Tipper = t_object
         self.pt = pt_obj
         self.station = station
+        
+        self.no_err = False
+     
 
         self.phase_quadrant = 1
 
@@ -464,6 +467,10 @@ class PlotMTResponse(PlotSettings):
             Z2 = None
         else:
             Z2 = overlay_mt_obj.Z
+            
+        errfac = 1.
+        if self.no_err is True:
+            errfac = 0.0000001
 
         label_dict = dict([(ii, '$10^{' + str(ii) + '}$') for ii in range(-20, 21)])
         ckdict = {'phiminang': r'$\Phi_{min}$ (deg)',
@@ -506,7 +513,7 @@ class PlotMTResponse(PlotSettings):
 
         # set some parameters of the figure and subplot spacing
         plt.rcParams['font.size'] = self.font_size
-        plt.rcParams['figure.subplot.bottom'] = .9
+        plt.rcParams['figure.subplot.bottom'] = .1
         plt.rcParams['figure.subplot.top'] = .93
         plt.rcParams['figure.subplot.left'] = .80
         plt.rcParams['figure.subplot.right'] = .98
@@ -618,7 +625,7 @@ class PlotMTResponse(PlotSettings):
                                        ecolor=self.xy_color,
                                        ls=self.xy_ls,
                                        lw=self.lw,
-                                       yerr=self.Z.res_err_xy[nz_xy],
+                                       yerr= errfac*self.Z.res_err_xy[nz_xy],
                                        capsize=self.marker_size,
                                        capthick=self.lw)
         # FZ: overlay edi logic
@@ -633,7 +640,7 @@ class PlotMTResponse(PlotSettings):
                                        ecolor=self.xy_color,
                                        ls=self.xy_ls,
                                        lw=0.5*self.lw,
-                                       yerr=Z2.res_err_xy[nz_xy],
+                                       yerr= errfac*Z2.res_err_xy[nz_xy],
                                        capsize=self.marker_size,
                                        capthick=self.lw)
 
@@ -648,7 +655,7 @@ class PlotMTResponse(PlotSettings):
                                        ecolor=self.yx_color,
                                        ls=self.yx_ls,
                                        lw=self.lw,
-                                       yerr=self.Z.res_err_yx[nz_yx],
+                                       yerr= errfac*self.Z.res_err_yx[nz_yx],
                                        capsize=self.marker_size,
                                        capthick=self.lw)
 
@@ -663,7 +670,7 @@ class PlotMTResponse(PlotSettings):
                                            ecolor=self.yx_color,
                                            ls=self.yx_ls,
                                            lw=self.lw,
-                                           yerr=Z2.res_err_yx[nz_yx],
+                                           yerr= errfac*Z2.res_err_yx[nz_yx],
                                            capsize=0.5*self.marker_size,
                                            capthick=self.lw)
 
@@ -708,7 +715,7 @@ class PlotMTResponse(PlotSettings):
                                        ecolor=self.xy_color,
                                        ls=self.xy_ls,
                                        lw=self.lw,
-                                       yerr=self.Z.phase_err_xy[nz_xy],
+                                       yerr= errfac*self.Z.phase_err_xy[nz_xy],
                                        capsize=self.marker_size,
                                        capthick=self.lw)
 
@@ -723,7 +730,7 @@ class PlotMTResponse(PlotSettings):
                                        ecolor=self.yx_color,
                                        ls=self.yx_ls,
                                        lw=self.lw,
-                                       yerr=self.Z.phase_err_yx[nz_yx],
+                                       yerr= errfac*self.Z.phase_err_yx[nz_yx],
                                        capsize=self.marker_size,
                                        capthick=self.lw)
 
@@ -1046,7 +1053,7 @@ class PlotMTResponse(PlotSettings):
                                             ecolor=self.xy_color,
                                             ls=self.xy_ls,
                                             lw=self.lw,
-                                            yerr=self.Z.res_err_xx[nz_xx],
+                                            yerr= errfac*self.Z.res_err_xx[nz_xx],
                                             capsize=self.marker_size,
                                             capthick=self.lw)
 
@@ -1061,7 +1068,7 @@ class PlotMTResponse(PlotSettings):
                                             ecolor=self.yx_color,
                                             ls=self.yx_ls,
                                             lw=self.lw,
-                                            yerr=self.Z.res_err_yy[nz_yy],
+                                            yerr= errfac*self.Z.res_err_yy[nz_yy],
                                             capsize=self.marker_size,
                                             capthick=self.lw)
             if Z2 is not None:
@@ -1076,7 +1083,7 @@ class PlotMTResponse(PlotSettings):
                                                 ecolor=self.xy_color,
                                                 ls=self.xy_ls,
                                                 lw=self.lw,
-                                                yerr=Z2.res_err_xx[nz_xx],
+                                                yerr= errfac*Z2.res_err_xx[nz_xx],
                                                 capsize=0.5*self.marker_size,
                                                 capthick=self.lw)
 
@@ -1091,7 +1098,7 @@ class PlotMTResponse(PlotSettings):
                                                 ecolor=self.yx_color,
                                                 ls=self.yx_ls,
                                                 lw=self.lw,
-                                                yerr=Z2.res_err_yy[nz_yy],
+                                                yerr= errfac*Z2.res_err_yy[nz_yy],
                                                 capsize=0.5*self.marker_size,
                                                 capthick=self.lw)
 
@@ -1139,7 +1146,7 @@ class PlotMTResponse(PlotSettings):
                                             ecolor=self.xy_color,
                                             ls=self.xy_ls,
                                             lw=self.lw,
-                                            yerr=self.Z.phase_err_xx[nz_xx],
+                                            yerr= errfac*self.Z.phase_err_xx[nz_xx],
                                             capsize=self.marker_size,
                                             capthick=self.lw)
 
@@ -1154,7 +1161,7 @@ class PlotMTResponse(PlotSettings):
                                             ecolor=self.yx_color,
                                             ls=self.yx_ls,
                                             lw=self.lw,
-                                            yerr=self.Z.phase_err_yy[nz_yy],
+                                            yerr= errfac*self.Z.phase_err_yy[nz_yy],
                                             capsize=self.marker_size,
                                             capthick=self.lw)
 
@@ -1186,7 +1193,7 @@ class PlotMTResponse(PlotSettings):
                                             ecolor=self.det_color,
                                             ls=self.det_ls,
                                             lw=self.lw,
-                                            yerr=self.Z.res_det_err,
+                                            yerr= errfac*self.Z.res_det_err,
                                             capsize=self.marker_size,
                                             capthick=self.lw)
             if Z2 is not None:
@@ -1200,7 +1207,7 @@ class PlotMTResponse(PlotSettings):
                                                 ecolor=self.det_color,
                                                 ls=self.det_ls,
                                                 lw=self.lw,
-                                                yerr=Z2.res_det_err,
+                                                yerr= errfac*Z2.res_det_err,
                                                 capsize=0.5*self.marker_size,
                                                 capthick=self.lw)
 
@@ -1215,7 +1222,7 @@ class PlotMTResponse(PlotSettings):
                                             ecolor=self.det_color,
                                             ls=self.det_ls,
                                             lw=self.lw,
-                                            yerr=self.Z.phase_det_err,
+                                            yerr= errfac*self.Z.phase_det_err,
                                             capsize=self.marker_size,
                                             capthick=self.lw)
 

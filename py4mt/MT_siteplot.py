@@ -26,7 +26,9 @@ plots for all of them.
 # Import required modules
 
 import os
+import numpy as np
 from mtpy.core.mt import MT
+from mtpy.core.z import Z, Tipper
 
 # Graphical paramter. Determine the plot formats produced, 
 # and the required resolution: 
@@ -42,11 +44,11 @@ dpi = 400
 # 3 = off diagonal + determinant
 
 plot_z = 2
-
+no_err = True
 # Plot tipper?
 # 'y' or 'n', followed by 'r','i', or 'ri', for real part, imaginary part, or both, respectively.
 
-plot_t = 'n' #'yri'
+plot_t = 'yri' #'yri'
 
 # Plot phase tensor?
 # 'y' or 'n'
@@ -54,15 +56,15 @@ plot_t = 'n' #'yri'
 plot_p  = 'y'
 
 
-# PerLimits = (0.0001,10.) #AMT
+PerLimits = (0.0001,1.) #AMT
 # PerLimits = (0.001,100000.) #BBMT
-PerLimits = (0.00003,10000.) #AMT+BBMT
-RhoLimits = (0.1 ,200000.)
+# PerLimits = (0.00003,10000.) #AMT+BBMT
+RhoLimits = (0.1 ,10000.)
 PhiLimits = (-180.,180.)
-
+Tiplimits = (-.5,0.5)
 # Define the path to your EDI-files:
 # edi_in_dir = r'/home/vrath/RRV_work/edi_work/Edited/'
-edi_in_dir = r'/media/vrath/MT/Ireland/Donegal/Donegal_EDIs_3DGridEdited/'
+edi_in_dir = r'/home/vrath/MauTopo/MauTopo1000_edi/'
 # r'/home/vrath/RRV_work/edifiles_in/'
 # edi_in_dir =  r'/home/vrath/RRV_work/edifiles_r1500m_bbmt/'
 print(' Edifiles read from: %s' % edi_in_dir)
@@ -101,12 +103,18 @@ for filename in edi_files :
     file_i = edi_in_dir+filename
     mt_obj = MT(file_i)
     print(' site %s at :  % 10.6f % 10.6f' % (name, mt_obj.lat, mt_obj.lon))
+    
+    if no_err is True:
+        mt_obj.Z.z_err = 0.001*np.ones_like(np.real(mt_obj.Z.z))
+    
     plot_obj = mt_obj.plot_mt_response(plot_num=plot_z,
                                      plot_tipper = plot_t,
                                      plot_pt = plot_p,
                                      x_limits = PerLimits,
                                      res_limits=RhoLimits, 
-                                     phase_limits=PhiLimits
+                                     phase_limits=PhiLimits,
+                                     tipper_limits =Tiplimits,
+                                     no_err = True
     )
 
 # Finally save figure
