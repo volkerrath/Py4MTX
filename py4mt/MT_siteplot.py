@@ -105,7 +105,7 @@ for filename in edi_files :
     print(' site %s at :  % 10.6f % 10.6f' % (name, mt_obj.lat, mt_obj.lon))
     
     if no_err is True:
-        mt_obj.Z.z_err = 0.001*np.ones_like(np.real(mt_obj.Z.z))
+        mt_obj.Z.z_err = 0.0001*np.ones_like(np.real(mt_obj.Z.z))
     
     plot_obj = mt_obj.plot_mt_response(plot_num=plot_z,
                                      plot_tipper = plot_t,
