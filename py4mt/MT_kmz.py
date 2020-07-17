@@ -28,7 +28,7 @@ from mtpy.core.mt import MT
 # plotsRJ =  MCMC plots produced by MT_mcmcplot.py, with an 
 # additional string strnRJ added to the EDI basename.
 
-plotsDA = False
+plotsDA = True
 strngDA = '' #'_data'
 
 plotsRJ = False
@@ -37,7 +37,8 @@ strngRJ ='_rjmcmc'
 # Define the path to your EDI-files
 
 # edi_dir = r'/home/vrath/WestTimor/WT8C_edi/'
-edi_dir = '/home/vrath/Py4MT/py4mt/M/MauTopo_fwd/'
+edi_dir = r'/home/vrath/MauTopo/MauTopo500_edi/'
+#'/home/vrath/Py4MT/py4mt/M/MauTopo_fwd/'
 # r'/media/vrath/MT/Ireland/Donegal/Donegal_EDIs_3DGridEdited/'
 print(' Edifiles read from: %s' % edi_dir)
 
@@ -53,7 +54,8 @@ if plotsDA or plotsRJ:
 places = []
 
 # open file and read the content in a list
-places_file = r'/home/vrath/Py4MT/py4mt/M/FWD/Sitelist.csv'
+places_file = edi_dir+'Sitelist.csv'
+#r'/home/vrath/Py4MT/py4mt/M/FWD/Sitelist.csv'
 # r'/home/vrath/WestTimor/places.csv'
 with open(places_file, 'r') as f:
     placelist = csv.reader(f, delimiter=' ')

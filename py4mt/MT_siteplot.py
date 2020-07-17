@@ -28,7 +28,6 @@ plots for all of them.
 import os
 import numpy as np
 from mtpy.core.mt import MT
-from mtpy.core.z import Z, Tipper
 
 # Graphical paramter. Determine the plot formats produced, 
 # and the required resolution: 
@@ -64,7 +63,7 @@ PhiLimits = (-180.,180.)
 Tiplimits = (-.5,0.5)
 # Define the path to your EDI-files:
 # edi_in_dir = r'/home/vrath/RRV_work/edi_work/Edited/'
-edi_in_dir = r'/home/vrath/MauTopo/MauTopo1000_edi/'
+edi_in_dir = r'/home/vrath/MauTopo/MauTopo500_edi/'
 # r'/home/vrath/RRV_work/edifiles_in/'
 # edi_in_dir =  r'/home/vrath/RRV_work/edifiles_r1500m_bbmt/'
 print(' Edifiles read from: %s' % edi_in_dir)
@@ -72,7 +71,7 @@ print(' Edifiles read from: %s' % edi_in_dir)
 # Define the path for saving  plots:
 
 
-plots_dir = edi_in_dir+'data_plots/' 
+plots_dir = edi_in_dir+'data_plots3/' 
 # plots_dir = r'/home/vrath/RRV_work/edifiles_in/' 
 print(' Plots written to: %s' % plots_dir)
 if not os.path.isdir(plots_dir):
@@ -105,8 +104,12 @@ for filename in edi_files :
     print(' site %s at :  % 10.6f % 10.6f' % (name, mt_obj.lat, mt_obj.lon))
     
     if no_err is True:
-        mt_obj.Z.z_err = 0.0001*np.ones_like(np.real(mt_obj.Z.z))
-    
+        # mt_obj.Z.z_err = 0.0001*np.ones_like(np.real(mt_obj.Z.z))
+        # mt_obj.Tipper.tipper_err = 0.0001*np.ones_like(np.real(mt_obj.Tipper.tipper))
+        mt_obj.Z.z_err = 0.0001*np.real(mt_obj.Z.z)
+        mt_obj.Tipper.tipper_err = 0.0001*np.real(mt_obj.Tipper.tipper)
+        
+        
     plot_obj = mt_obj.plot_mt_response(plot_num=plot_z,
                                      plot_tipper = plot_t,
                                      plot_pt = plot_p,
