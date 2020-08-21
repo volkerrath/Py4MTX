@@ -23,26 +23,32 @@ import simplekml
 from mtpy.core.mt import MT
 
 # Determine what is added to the KML-tags:
-# plotsDA =  site plots produced by MT_siteplot.py, with an 
-# additional string strngDA added to the EDI basename.
-# plotsRJ =  MCMC plots produced by MT_mcmcplot.py, with an 
-# additional string strnRJ added to the EDI basename.
+# plots_1 =  site plots produced by MT_siteplot.py, with an 
+# additional string strng_1 added to the EDI basename.
+# plots_2 =  plots produced by MT_mcmcplot.py or  from
+# other sources, with an additional string strn_2 added to the EDI basename.
 
-plotsDA = True
-strngDA = '' #'_data'
+plots_1 = True
+strng_1 = '' #'_data'
 
-plotsRJ = False
-strngRJ ='_rjmcmc'
+plots_2 = True
+strng_2 ='_fwdres500'
+
+repeats = False
+repeat_string = 'r'
+
+bads = False
+bad_string = 'x'
 
 # Define the path to your EDI-files
 
 # edi_dir = r'/home/vrath/WestTimor/WT8C_edi/'
-edi_dir = r'/home/vrath/MauTopo/MauTopo500_edi/'
+edi_dir = r'/home/vrath/Desktop/MauTopo/MauEdi/'
 #'/home/vrath/Py4MT/py4mt/M/MauTopo_fwd/'
 # r'/media/vrath/MT/Ireland/Donegal/Donegal_EDIs_3DGridEdited/'
 print(' Edifiles read from: %s' % edi_dir)
 
-if plotsDA or plotsRJ:
+if plots_1 or plots_2:
     plots_dir= edi_dir+'data_plots/'
     # r'/media/vrath/MT/Ireland/Northwest_CarboniferousBasin/MT_DATA/EDI/data_plots/'
     # r'/home/vrath/WestTimor/WT8C_plots/' #edi_dir #'NEW_plots_bbmt_roi_edit/'
@@ -65,16 +71,26 @@ with open(places_file, 'r') as f:
 # Define the path for saving  kml files
 
 kml_dir = ''
-kml_file = edi_dir+'MauTopo'
+kml_file = edi_dir+'MauSites'
 
-site_icon = 'icons/triangle.png'
+
+site_icon   = 'icons/star.png'
+site_icon_rept  = 'icons/donut.png'
+site_icon_bad  = 'icons/triangle.png'
+
 site_tcolor = simplekml.Color.white ###'#555500' #
 site_tscale = 0.8  # scale the text 
 
 site_iscale = 1.
-site_icolor = simplekml.Color.red 
+site_icolor = simplekml.Color.blue
 site_rcolor = simplekml.Color.blue 
-    # simplekml.Color.rgb(0, 0, 255)
+
+site_icolor_rept = simplekml.Color.green
+site_rcolor_rept = simplekml.Color.green 
+
+site_icolor_bad = simplekml.Color.red
+site_rcolor_bad = simplekml.Color.red 
+   # simplekml.Color.rgb(0, 0, 255)
     # 'ffff0000'
 
 
@@ -95,9 +111,9 @@ for entry in files:
 
 kml = simplekml.Kml(open=1)
 
-site_iref   = kml.addfile(site_icon)
-#iref_alt1 =  kml.addfile('star.png')
-#iref_alt2 =  kml.addfile('donut.png')
+site_iref           = kml.addfile(site_icon)
+site_iref_rept      =  kml.addfile(site_icon_rept)
+site_iref_bad       =  kml.addfile(site_icon_bad)
 
 # Loop over edifiles
 
@@ -121,23 +137,23 @@ for filename in edi_files :
 
 #  Now add the plots to tag:
 
-    if plotsDA:
-        nam_DA = name+strngDA
-        print(nam_DA)
-        srcfileDA = kml.addfile(plots_dir+nam_DA+'.png')
-        descriptionDA = (
-            '<img width="800" align="left" src="'+srcfileDA+'"/>'
+    if plots_1:
+        nam_1 = name+strng_1
+        print(nam_1)
+        srcfile_1 = kml.addfile(plots_dir+nam_1+'.png')
+        description_1 = (
+            '<img width="800" align="left" src="'+srcfile_1+'"/>'
             )
-        description = description+descriptionDA
+        description = description+description_1
         
-    if plotsRJ:
-        nam_RJ = name+strngRJ
-        print(nam_RJ)
-        srcfileRJ = kml.addfile(plots_dir+nam_RJ+'.png')
-        descriptionRJ = (
-            '<img width="900" align="left" src="'+srcfileRJ+'"/>'
+    if plots_2:
+        nam__2 = name+strng_2
+        print(nam__2)
+        srcfile_2 = kml.addfile(plots_dir+nam__2+'.png')
+        description_2 = (
+            '<img width="900" align="left" src="'+srcfile_2+'"/>'
             )
-        description = description+descriptionRJ
+        description = description+description_2
     
 
 
@@ -149,12 +165,25 @@ for filename in edi_files :
     site.style.iconstyle.scale = site_iscale
     site.style.iconstyle.color = site_icolor
     
-    if full_name[-1:] =='R':
-        site.style.labelstyle.color =site_rcolor
-        site.style.balloonstyle.text = 'repeated site'
-        site.style.balloonstyle.textcolor = site_rcolor
-    #print(nam, mt_obj.lat, mt_obj.lon, hgt)
-        site.description = description+'  - repeated site'
+    if repeats:
+        if repeat_string in full_name:
+            site.style.iconstyle.icon.href = site_iref_rept
+            site.style.labelstyle.color = site_rcolor_rept
+            site.style.iconstyle.color  = site_icolor_rept
+            site.style.balloonstyle.text = 'repeated site'
+            site.style.balloonstyle.textcolor = site_rcolor
+        #print(nam, mt_obj.lat, mt_obj.lon, hgt)
+            site.description = description+'  - repeated site'
+    
+    if bads:
+        if bad_string in full_name:
+            site.style.iconstyle.icon.href = site_iref_bad
+            site.style.labelstyle.color = site_rcolor_bad
+            site.style.iconstyle.color  = site_icolor_bad
+            site.style.balloonstyle.text = 'bad site'
+            site.style.balloonstyle.textcolor = site_rcolor
+        #print(nam, mt_obj.lat, mt_obj.lon, hgt)
+            site.description = description+'  - repeated site'
 
     site.description = description
 

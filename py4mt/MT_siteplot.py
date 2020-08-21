@@ -63,7 +63,8 @@ PhiLimits = (-180.,180.)
 Tiplimits = (-.5,0.5)
 # Define the path to your EDI-files:
 # edi_in_dir = r'/home/vrath/RRV_work/edi_work/Edited/'
-edi_in_dir = r'/home/vrath/MauTopo/MauTopo500_edi/'
+edi_in_dir = r'/home/vrath/Desktop/MauTopo/MauEdi/'
+# r'/home/vrath/MauTopo/MauTopo500_edi/'
 # r'/home/vrath/RRV_work/edifiles_in/'
 # edi_in_dir =  r'/home/vrath/RRV_work/edifiles_r1500m_bbmt/'
 print(' Edifiles read from: %s' % edi_in_dir)
@@ -71,7 +72,7 @@ print(' Edifiles read from: %s' % edi_in_dir)
 # Define the path for saving  plots:
 
 
-plots_dir = edi_in_dir+'data_plots3/' 
+plots_dir = edi_in_dir+'data_plots/' 
 # plots_dir = r'/home/vrath/RRV_work/edifiles_in/' 
 print(' Plots written to: %s' % plots_dir)
 if not os.path.isdir(plots_dir):

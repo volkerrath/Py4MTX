@@ -31,12 +31,12 @@ import numpy as np
 
 # Define the path to your EDI-files:
 
-edi_template = r'/home/vrath/Py4MT/py4mt/M/BERG.edi'
-print(' Edifile templte read from: %s' % edi_template)
+edi_template = r'/home/vrath/Py4MT/py4mt/M/Template.edi'
+print(' Edifile template read from: %s' % edi_template)
 
 # Define the path and appended string for saved EDI-files:
 
-edi_out_dir=r'/home/vrath/Py4MT/py4mt/M/MauTopo_fwd/'
+edi_out_dir=r'/home/vrath/Py4MT/py4mt/M/MauTopo_dense/'
 print(' Edifiles written to: %s' % edi_out_dir)
 if not os.path.isdir(edi_out_dir):
     print(' File: %s does not exist, but will be created' % edi_out_dir)
@@ -48,12 +48,12 @@ OutName = ''
 
 small = 0.000001
 LonLimits = ( 6.275, 6.39)
-nLon = 11
+nLon = 31
 LonStep  = (LonLimits[1] - LonLimits[0])/nLon
 Lon = np.arange(LonLimits[0],LonLimits[1]+small,LonStep)
 
 LatLimits = (45.37,45.46)
-nLat = 11
+nLat = 31
 LatStep  = (LatLimits[1] - LatLimits[0])/nLat
 Lat = np.arange(LatLimits[0],LatLimits[1]+small,LatStep)
 
