@@ -1,4 +1,6 @@
-import os, sys
+import os
+import sys
+
 def splitall(path):
     allparts = []
     while 1:
@@ -13,3 +15,26 @@ def splitall(path):
             path = parts[0]
             allparts.insert(0, parts[1])
     return allparts
+
+def keycount(keyword, fname, what = 'pos'):
+    with open(fname, 'r') as fin:
+        if what == 'pos':
+            return sum([1 for line in fin if keyword in line])
+        if what == 'neg':
+            return sum([1 for line in fin if keyword not in line])
+
+def unique(list,out=False): 
+  
+    # intilize a null list 
+    unique_list = [] 
+      
+    # traverse for all elements 
+    for x in list: 
+        # check if exists in unique_list or not 
+        if x not in unique_list: 
+            unique_list.append(x) 
+    # print list 
+    if out:
+        for x in unique_list: print(x)
+        
+    return unique_list
