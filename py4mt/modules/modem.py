@@ -290,11 +290,14 @@ def readDat(DatFile=None, out = True):
     Data = []
     Site = []
     Comp = []
+    Head = []
         
     with open(DatFile) as fd:
         for line in fd:
             if line.startswith('#') or line.startswith('>'):
+                Head.append(line)
                 continue
+
             
             t= line.split()
             
@@ -303,8 +306,8 @@ def readDat(DatFile=None, out = True):
                  tmp1 = [float(t[0]),float(t[2]),float(t[3]),float(t[4]),
                    float(t[5]),float(t[6]),float(t[8]),float(t[9])] 
                  Data.append(tmp1)
-                 Site.append(t[1])
-                 Comp.append(t[7]+'R')
+                 Site.append([t[1]])
+                 Comp.append([t[7]])
             else:
                  tmp1 = [float(t[0]),float(t[2]),float(t[3]),float(t[4]),
                        float(t[5]),float(t[6]),float(t[8]),float(t[10])]
@@ -327,7 +330,7 @@ def readDat(DatFile=None, out = True):
     if out:
         print('readDat: %i data read from %s'%(nD[0], DatFile))
     
-    return Site, Comp, Data
+    return Site, Comp, Data, Head
 
 def writeMod(ModFile=None, 
              dx=None, dy=None, dz=None, rho=None, center=None, trans="LINEAR",
@@ -384,7 +387,7 @@ def writeMod(ModFile=None,
     
 def readMod(ModFile=None, trans="LINEAR",out = True):
     """
-    Writes ModEM model input
+    Reads ModEM model input
     returns rho in physical units
     
     author: vrath
