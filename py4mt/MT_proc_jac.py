@@ -37,7 +37,7 @@ import netCDF4 as nc
 # from tqdm import tqdm
 
 
-from modules.ModEM import * 
+from modules.modem import * 
 #import readJac, writeJacNC, readDat, writeDatNC, sparsifyJac, readMod
 
 normalize_err = True
@@ -64,7 +64,7 @@ print (' Used %7.4f s for reading model from %s ' % (elapsed,DatFile))
 
 
 start = time.time()
-Site, Comp, Data = readDat(DatFile)
+Site, Comp, Data, Head = readDat(DatFile)
 elapsed = (time.time() - start)
 total = total + elapsed
 print (' Used %7.4f s for reading data from %s ' % (elapsed,DatFile))
