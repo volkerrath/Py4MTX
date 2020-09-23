@@ -132,7 +132,7 @@ print (' Used %7.4f s for sparsifying Jacobian from %s ' % (elapsed,JacFile))
 
 for rank in [50]:
     start = time.time()
-    U, S, Vt = rsvd(Jac, rank)
+    U, S, Vt = rsvd(Jac.T, rank)
     elapsed = (time.time() - start)
     print (' Used %7.4f s for calculating k = %i  SVD from %s ' % (elapsed,rank,JacFile))
 
