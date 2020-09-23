@@ -57,7 +57,7 @@ def strcount(keyword=None, fname=None):
     # sum([1 for line in fin if keyword not in line])
 
 
-def strdelete(keywords=None, fname_in=None, fname_out=None, what = 'pos', out = True):
+def strdelete(keyword=None, fname_in=None, fname_out=None, out = True):
     '''
     delete lines containing on of the keywords in list
     
@@ -69,8 +69,6 @@ def strdelete(keywords=None, fname_in=None, fname_out=None, what = 'pos', out = 
         DESCRIPTION. The default is None.
     fname_out : TYPE, optional
         DESCRIPTION. The default is None.
-    what : TYPE, optional
-        DESCRIPTION. The default is 'pos'.
     out : TYPE, optional
         DESCRIPTION. The default is True.
 
@@ -80,21 +78,17 @@ def strdelete(keywords=None, fname_in=None, fname_out=None, what = 'pos', out = 
 
     VR 9/20
     '''
-    for kkey in keywords: 
-        nn = strcount(kkey,fname_in)
-        if out:
-            print(str(nn)+' occurances of <'+kkey+'> in '+fname_in)
+    nn = strcount(keyword,fname_in)
+    
+    if out:
+        print(str(nn)+' occurances of <'+keyword+'> in '+fname_in)
         
-    if fname_out == None: fname_out= fname_in
+    # if fname_out == None: fname_out= fname_in
     with open(fname_in, 'r') as fin, open(fname_out, 'w') as fou:
         for line in fin:
-            if what == 'pos':
-                if not any(key in line for key in keywords):
+                if not keyword in line:
                     fou.write(line)
-                else:
-                    continue
-
-
+ 
 def strreplace(key_in=None, key_out=None,fname_in=None, fname_out=None):
     '''
     replaces key_in in keywords by key_out
@@ -117,7 +111,7 @@ def strreplace(key_in=None, key_out=None,fname_in=None, fname_out=None):
     VR 9/20
 
     '''
-    if fname_out == None: fname_out= fname_in
+
     with open(fname_in, 'r') as fin, open(fname_out, 'w') as fou:
         for line in fin:
             fou.write(line.replace(key_in, key_out))
