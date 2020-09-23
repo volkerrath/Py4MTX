@@ -34,6 +34,8 @@ import numpy as np
 import math  as ma
 import netCDF4 as nc
 
+from modules.rsvd import *
+
 # from tqdm import tqdm
 
 
@@ -87,8 +89,8 @@ elapsed = (time.time() - start)
 total = total + elapsed
 print (' Used %7.4f s for reading Jacobian from %s ' % (elapsed,JacFile))
 
-print(np.shape(Data))
-print(np.shape(Jac))
+# print(np.shape(Data))
+# print(np.shape(Jac))
 
 
 if normalize_err:
@@ -128,15 +130,12 @@ elapsed = (time.time() - start)
 total = total + elapsed
 print (' Used %7.4f s for sparsifying Jacobian from %s ' % (elapsed,JacFile))
 
+for rank in [50]:
+    start = time.time()
+    U, S, Vt = rsvd(Jac, rank)
+    elapsed = (time.time() - start)
+    print (' Used %7.4f s for calculating k = %i  SVD from %s ' % (elapsed,rank,JacFile))
 
-# if calcsens:
-#     start = time.time()
-#     Sens = calculateSens(Js,normalize=True)
-#     elapsed = (time.time() - start)
-#     total = total + elapsed
-#     print (' Used %7.4f s for caculating sensitivity from %s ' % (elapsed,JacFile))
-
-
-
+total = total + elapsed
 print (' Total time used:  %f s ' % (total))
 

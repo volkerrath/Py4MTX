@@ -28,12 +28,17 @@ def rsvd(A, rank, n_oversamples=None, n_subspace_iters=None,
     else:
         n_samples = rank + n_oversamples
 
-    # Stage A.
+    # Stage A. 
+    print(' stage A')
     Q = find_range(A, n_samples, n_subspace_iters)
 
     # Stage B.
+    print(' stage B')
     B = Q.T @ A
+    print(np.shape(B))
+    print(' stage B before linalg')
     U_tilde, S, Vt = np.linalg.svd(B)
+    print(' stage B after linalg')
     U = Q @ U_tilde
 
     # Truncate.
@@ -57,6 +62,7 @@ def find_range(A, n_samples, n_subspace_iters=None):
     :param n_subspace_iters: Number of subspace iterations.
     :return:                 Orthonormal basis for approximate range of A.
     """
+    # print('here we are in range-finder')
     m, n = A.shape
     O = np.random.randn(n, n_samples)
     Y = A @ O
@@ -80,6 +86,7 @@ def subspace_iter(A, Y0, n_iters):
     :return:        Orthonormalized approximate range of A after power
                     iterations.
     """
+    # print('herere we are in subspace-iter')
     Q = ortho_basis(Y0)
     for _ in range(n_iters):
         Z = ortho_basis(A.T @ Q)
@@ -94,5 +101,6 @@ def ortho_basis(M):
     :param M: (m x n) matrix.
     :return:  An orthonormal basis for M.
     """
+    # print('herere we are in ortho')
     Q, _ = np.linalg.qr(M)
     return Q
