@@ -29,16 +29,16 @@ def rsvd(A, rank, n_oversamples=None, n_subspace_iters=None,
         n_samples = rank + n_oversamples
 
     # Stage A. 
-    print(' stage A')
+    # print(' stage A')
     Q = find_range(A, n_samples, n_subspace_iters)
 
     # Stage B.
-    print(' stage B')
+    # print(' stage B')
     B = Q.T @ A
-    print(np.shape(B))
-    print(' stage B before linalg')
+    # print(np.shape(B))
+    # print(' stage B before linalg')
     U_tilde, S, Vt = np.linalg.svd(B)
-    print(' stage B after linalg')
+    # print(' stage B after linalg')
     U = Q @ U_tilde
 
     # Truncate.

@@ -53,6 +53,7 @@ calcsens = True
 JacFile = r'/home/vrath/work/MaurienneJac/Maur_PT.jac'
 DatFile = r'/home/vrath/work/MaurienneJac/Maur_PT.dat'
 ModFile = r'/home/vrath/work/MaurienneJac/Maur_PT_R500_NLCG_016.rho'
+SnsFile = r'/home/vrath/work/MaurienneJac/Maur_PT_R500_NLCG_016.sns'
 
 total = 0. 
 
@@ -111,7 +112,10 @@ if calcsens:
     elapsed = (time.time() - start)
     total = total + elapsed
     print (' Used %7.4f s for caculating sensitivity from %s ' % (elapsed,JacFile))
-
+    print(Sens.shape)
+    sns = np.reshape(Sens, rho.shape)
+    writeMod(SnsFile, dx, dy, dz, Sens, center, trans='LOG10',out = True)
+    print (' Senitivity written to '+SnsFile)
 
 
 start = time.time()
@@ -130,7 +134,7 @@ elapsed = (time.time() - start)
 total = total + elapsed
 print (' Used %7.4f s for sparsifying Jacobian from %s ' % (elapsed,JacFile))
 
-for rank in [50]:
+for rank in [50, 100, 200, 400, 1000]:
     start = time.time()
     U, S, Vt = rsvd(Jac.T, rank)
     elapsed = (time.time() - start)
