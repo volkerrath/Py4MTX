@@ -503,17 +503,19 @@ def calculateSens(Jac=None,normalize=True, small = 1.e-14, out = True):
     author: vrath
     last changed: July 25, 2020
     """
+
     if scp.issparse(Jac):
         J = Jac.todense()
     else:
         J = Jac
-       
+
     S  = np.sum(np.power(J,2),axis=0)
-    print(np.shape(S))
+
     if normalize:
+        
         Smax=np.amax(S)
         S = S/Smax
-    
+        
     if small <= 1.e-14:
         S[S<small] = np.NaN
 

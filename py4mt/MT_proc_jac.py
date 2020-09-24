@@ -102,19 +102,19 @@ if normalize_err:
     elapsed = (time.time() - start)
     total = total + elapsed
     print (' Used %7.4f s for normalizing Jacobian from %s ' % (elapsed,JacFile))
-
+    
 
 
 
 if calcsens:
     start = time.time()
-    Sens = calculateSens(Jac,normalize=True)
+    Sens, Sens_max = calculateSens(Jac,normalize=True)
     elapsed = (time.time() - start)
     total = total + elapsed
     print (' Used %7.4f s for caculating sensitivity from %s ' % (elapsed,JacFile))
-    print(Sens.shape)
     sns = np.reshape(Sens, rho.shape)
-    writeMod(SnsFile, dx, dy, dz, Sens, center, trans='LOG10',out = True)
+    print(np.shape(sns))
+    writeMod(SnsFile, dx, dy, dz, sns, center, trans='LOG10',out = True)
     print (' Senitivity written to '+SnsFile)
 
 
