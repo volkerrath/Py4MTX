@@ -115,7 +115,7 @@ if calcsens:
     sns = np.reshape(Sens, rho.shape)
     print(np.shape(sns))
     writeMod(SnsFile, dx, dy, dz, sns, center, trans='LOG10',out = True)
-    print (' Senitivity written to '+SnsFile)
+
 
 
 start = time.time()
@@ -136,9 +136,12 @@ print (' Used %7.4f s for sparsifying Jacobian from %s ' % (elapsed,JacFile))
 
 for rank in [50, 100, 200, 400, 1000]:
     start = time.time()
-    U, S, Vt = rsvd(Jac.T, rank)
+    U, S, Vt = rsvd(Jac.T, rank, n_oversamples=0, n_subspace_iters=0)
     elapsed = (time.time() - start)
     print (' Used %7.4f s for calculating k = %i  SVD from %s ' % (elapsed,rank,JacFile))
+    print(U.shape)
+    print(S.shape)
+    print(Vt.shape)
 
 total = total + elapsed
 print (' Total time used:  %f s ' % (total))

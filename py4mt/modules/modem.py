@@ -448,12 +448,12 @@ def readMod(ModFile=None, trans="LINEAR",out = True):
     return dx, dy,dz, rho, center
 
 
-def sparsifyJac(Jac=None,sparse_thresh =1.E-6,normalized = True, out = True):
+def sparsifyJac(Jac=None,sparse_thresh =1.E-6,normalized = True, method=None, out = True):
     """
     Sparsifies error_scaled Jacobian from ModEM output
     
     author: vrath
-    last changed: July 25, 2020
+    last changed: Sep 25, 2020
     """
     shj = np.shape(Jac)
     if out:
