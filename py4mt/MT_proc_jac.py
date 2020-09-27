@@ -34,13 +34,9 @@ import numpy as np
 import math  as ma
 import netCDF4 as nc
 
-from modules.rsvd import *
-
-# from tqdm import tqdm
-
-
+from modules.jacproc import *
 from modules.modem import * 
-#import readJac, writeJacNC, readDat, writeDatNC, sparsifyJac, readMod
+#import readJac, writeJacNC, readDat, writeDatNC, sparsifyJac, readMod, rsvd
 
 normalize_err = True
 normalize_max = True
