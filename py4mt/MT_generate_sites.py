@@ -67,7 +67,7 @@ OutName = 'Lim'
 
 
 # Construct list of EDI-files:
-    
+
 if edi_gen == 'grid': 
     # generate site list
     Lat, Lon = utl.gen_grid(LatLimits, nLat, LonLimits, nLon)
@@ -107,7 +107,7 @@ if edi_gen == 'grid':
                 longitude_format='LONG',
                 latlon_format='dd'
                 )
-  
+
 elif edi_gen == 'read':
     # read site list
     Site = []
