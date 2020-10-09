@@ -25,71 +25,130 @@ generate pseudo dat for forward modelling studies
 # Import required modules
 
 import os
+import sys
+import csv
+import modules.util as utl
 from mtpy.core.mt import MT
 import numpy as np
 
 
+# edi_gen = 'grid'
+# # generate site list
+# LonLimits = ( 6.275, 6.39)
+# nLon = 31
+# LatLimits = (45.37,45.46)
+# nLat = 31 
+LonLimits = (0,0)
+nLon = 0
+LatLimits = (0,0)
+nLat = 0 
+
+edi_gen = 'read'
+# read site list
+edi_file = r'/home/vrath/AEM_Limerick/Limerick_pilot.csv'
+
 # Define the path to your EDI-files:
 
-edi_template = r'/home/vrath/Py4MT/py4mt/M/Template.edi'
+edi_template = r'/home/vrath/AEM_Limerick/EDI_AMT_template.edi'
 print(' Edifile template read from: %s' % edi_template)
 
 # Define the path and appended string for saved EDI-files:
 
-edi_out_dir=r'/home/vrath/Py4MT/py4mt/M/MauTopo_dense/'
+edi_out_dir=r'/home/vrath/AEM_Limerick/edi/'
 print(' Edifiles written to: %s' % edi_out_dir)
 if not os.path.isdir(edi_out_dir):
     print(' File: %s does not exist, but will be created' % edi_out_dir)
     os.mkdir(edi_out_dir)
 
-OutName = ''
-
-# Construct list of EDI-files:
-
-small = 0.000001
-LonLimits = ( 6.275, 6.39)
-nLon = 31
-LonStep  = (LonLimits[1] - LonLimits[0])/nLon
-Lon = np.arange(LonLimits[0],LonLimits[1]+small,LonStep)
-
-LatLimits = (45.37,45.46)
-nLat = 31
-LatStep  = (LatLimits[1] - LatLimits[0])/nLat
-Lat = np.arange(LatLimits[0],LatLimits[1]+small,LatStep)
-
+OutName = 'Lim'
 
 
 # No changes required after this line!
 
-# Enter loop:
-nn = -1
-for latval in Lat:
-    nn=nn+1
-    nnstr = str(nn)
-    mm = -1
-    print(nnstr)
-    for lonval in Lon:
-        mm=mm+1
-        mmstr = str(mm)
-        print(mmstr)
+
+# Construct list of EDI-files:
+    
+if edi_gen == 'grid': 
+    # generate site list
+    Lat, Lon = utl.gen_grid(LatLimits, nLat, LonLimits, nLon)
+    nn = -1
+    for latval in Lat:
+        nn=nn+1
+        nnstr = str(nn)
+        mm = -1
+        print(nnstr)
+        for lonval in Lon:
+            mm=mm+1
+            mmstr = str(mm)
+            print(mmstr)
+    
+    
+    # # Create an MT object 
+    
+            file_in = edi_template
+            mt_tmp = MT(file_in)
+        
+            mt_tmp.lat = Lat[nn]
+            mt_tmp.lon = Lon[mm]
+            mt_tmp.station = OutName+nnstr+'_'+mmstr
+        
+            file_out = OutName+nnstr+'_'+mmstr+'.edi'
+        
+            print('\n Generating '+edi_out_dir+file_out)
+            print(' site %s at :  % 10.6f % 10.6f' % (mt_tmp.station, mt_tmp.lat, mt_tmp.lon))
+    
+    #  Write a new edi file:
+    
+            print('Writing data to '+edi_out_dir+file_out)
+            mt_tmp.write_mt_file(
+                save_dir=edi_out_dir,
+                fn_basename=file_out,
+                file_type='edi',
+                longitude_format='LONG',
+                latlon_format='dd'
+                )
+  
+elif edi_gen == 'read':
+    # read site list
+    Site = []
+    Data = []
+    with open(edi_file) as ef:
+        for line in ef:
+            print(line)
+            d = line.split(',')
+            Site.append([d[0]])               
+            Data.append([float(d[1]),float(d[2]),float(d[3])])
 
 
-# # Create an MT object 
+    Site = [item for sublist in Site for item in sublist]
+    Site = np.asarray(Site,dtype=object)
+    Data = np.asarray(Data)
+     
+    Lon   = Data[:,0]
+    Lat   = Data[:,1]
+    Elev  = Data[:,2]
 
+
+
+    # Enter loop:
+    nn=-1
+    for place in Site:
+    # Create an MT object 
+        nn=nn+1
         file_in = edi_template
         mt_tmp = MT(file_in)
     
         mt_tmp.lat = Lat[nn]
-        mt_tmp.lon = Lon[mm]
-        mt_tmp.station = OutName+nnstr+'_'+mmstr
+        mt_tmp.lon = Lon[nn]
+        mt_tmp.station = place
     
-        file_out = OutName+nnstr+'_'+mmstr+'.edi'
+        file_out = OutName+'_'+place+'.edi'
     
         print('\n Generating '+edi_out_dir+file_out)
         print(' site %s at :  % 10.6f % 10.6f' % (mt_tmp.station, mt_tmp.lat, mt_tmp.lon))
-
-# # Write a new edi file:
-
+    
+    # # Write a new edi file:
+    
         print('Writing data to '+edi_out_dir+file_out)
         mt_tmp.write_mt_file(
             save_dir=edi_out_dir,
@@ -98,5 +157,15 @@ for latval in Lat:
             longitude_format='LONG',
             latlon_format='dd'
             )
+
+
+
+else:
+    print ('Error: option '+edi_gen+' not implemented. Exit.\n' )
+    sys.exit(1)
+
+    
+
+
 
   

@@ -98,7 +98,7 @@ if normalize_err:
     elapsed = (time.time() - start)
     total = total + elapsed
     print (' Used %7.4f s for normalizing Jacobian from %s ' % (elapsed,JacFile))
-    
+
 
 
 
@@ -130,14 +130,30 @@ elapsed = (time.time() - start)
 total = total + elapsed
 print (' Used %7.4f s for sparsifying Jacobian from %s ' % (elapsed,JacFile))
 
+mu = 0.
+sigma = 0.5
+r = rho.flat
+nproj = 1000
+
 for rank in [50, 100, 200, 400, 1000]:
     start = time.time()
     U, S, Vt = rsvd(Jac.T, rank, n_oversamples=0, n_subspace_iters=0)
     elapsed = (time.time() - start)
     print (' Used %7.4f s for calculating k = %i  SVD from %s ' % (elapsed,rank,JacFile))
-    print(U.shape)
-    print(S.shape)
-    print(Vt.shape)
+    # print(U.shape)
+    # print(S.shape)
+    # print(Vt.shape)    
+    s = time.time()
+    m = r + np.random.normal(mu, sigma, size= np.shape(r))
+    t = (time.time() - s) 
+    print (' Used %7.4f s for generating m  ' % (t))
+    
+    s = time.time()
+    for proj in range(nproj):
+        p = projectMod(m,U)
+    
+    t = (time.time() - s)
+    print (' Used %7.4f s for %i projections' % (t,nproj))
 
 total = total + elapsed
 print (' Total time used:  %f s ' % (total))

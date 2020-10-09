@@ -167,7 +167,7 @@ def calculateSens(Jac=None,normalize=True, small = 1.e-14, out = True):
     normalizes Jacobian from ModEM output
     
     author: vrath
-    last changed: July 25, 2020
+    last changed: Sep 25, 2020
     """
 
     if scp.issparse(Jac):
@@ -187,3 +187,19 @@ def calculateSens(Jac=None,normalize=True, small = 1.e-14, out = True):
 
     return S, Smax
 
+def projectMod(m=None,U=None, small = 1.e-14, out = True):
+    
+    """
+    Nullspace Projection
+    (see Munoz & Rath, 2006)
+    author: vrath
+    last changed: Sep 25, 2020
+    """
+    b = np.dot(U.T,m)
+    # print(m.shape)
+    # print(b.shape)
+    # print(U.shape)
+    
+    mp = m - np.dot(U,b)
+    
+    return mp

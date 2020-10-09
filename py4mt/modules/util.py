@@ -1,5 +1,6 @@
 import os
 import sys
+import numpy as np
 
 def splitall(path):
     allparts = []
@@ -115,3 +116,19 @@ def strreplace(key_in=None, key_out=None,fname_in=None, fname_out=None):
     with open(fname_in, 'r') as fin, open(fname_out, 'w') as fou:
         for line in fin:
             fou.write(line.replace(key_in, key_out))
+
+# Construct list of EDI-files:
+def gen_grid(LatLimits=None, nLat=None,LonLimits=None, nLon=None, out=True):
+    small = 0.000001
+# LonLimits = ( 6.275, 6.39)
+# nLon = 31
+    LonStep  = (LonLimits[1] - LonLimits[0])/nLon
+    Lon = np.arange(LonLimits[0],LonLimits[1]+small,LonStep)
+
+# LatLimits = (45.37,45.46)
+# nLat = 31
+    LatStep  = (LatLimits[1] - LatLimits[0])/nLat
+    Lat = np.arange(LatLimits[0],LatLimits[1]+small,LatStep)
+    
+    return Lat, Lon
+
