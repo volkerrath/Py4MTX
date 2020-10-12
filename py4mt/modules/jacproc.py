@@ -203,3 +203,19 @@ def projectMod(m=None,U=None, small = 1.e-14, out = True):
     mp = m - np.dot(U,b)
     
     return mp
+
+
+def transMod(m=None,M=None, small = 1.e-14, out = True):
+    
+    """
+    Transform Model 
+    M shoulld be something like C_m^-1/2
+    ( see egg Kelbert 2012, Egbert & kelbert 2014)
+    author: vrath
+    last changed:  Oct 12, 2020
+    """
+    
+   
+    transm = np.dot(M,m)
+    
+    return transm

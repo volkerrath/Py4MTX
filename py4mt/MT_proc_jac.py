@@ -46,10 +46,10 @@ calcsens = True
 # DatFile = r'./work/AnnPriorZT.dat'
 # ModFile = r'./work/AnnPriorZT.rho'
 
-JacFile = r'/home/vrath/work/MaurienneJac/Maur_PT.jac'
-DatFile = r'/home/vrath/work/MaurienneJac/Maur_PT.dat'
-ModFile = r'/home/vrath/work/MaurienneJac/Maur_PT_R500_NLCG_016.rho'
-SnsFile = r'/home/vrath/work/MaurienneJac/Maur_PT_R500_NLCG_016.sns'
+JacFile = r'/home/vrath/work/MT/Jacobians/Maurienne/Maur_PT.jac'
+DatFile = r'/home/vrath/work/MT/Jacobians/Maurienne/Maur_PT.dat'
+ModFile = r'/home/vrath/work/MT/Jacobians/Maurienne//Maur_PT_R500_NLCG_016.rho'
+SnsFile = r'/home/vrath/work/MT/Jacobians/Maurienne/Maur_PT_R500_NLCG_016.sns'
 
 total = 0. 
 

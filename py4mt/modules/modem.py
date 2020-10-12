@@ -13,6 +13,8 @@ from scipy.io import FortranFile
 import scipy.sparse as scp
 
 import netCDF4 as nc
+# import h5netcdf as hc
+
 
 def readJac(JacFile=None, out=False):
     """
@@ -78,62 +80,6 @@ def readJac(JacFile=None, out=False):
         
     return Jac
 
-def writeJacNC(NCFile=None, Jac=None, Dat= None, 
-            Site= None, Comp=None, zlib_in=True, shuffle_in=True, out = True):
-    """
-    Writes Jacobian from ModEM output
-    to NETCDF file
-    author: vrath
-    last changed: July 25, 2020
-    """
-  
-
-    JacDim = np.shape(Jac)
-    DatDim = np.shape(Dat)
-
-    if JacDim[0] != DatDim[0]:
-        print ('Error:  Jac dim='+str(JacDim[0])+' does not match Dat dim='+str(DatDim[0]))
-        sys.exit(1)
-        
-   
-        
-    ncout = nc.Dataset(NCFile,'w', format='NETCDF4');
-    ncout.createDimension('data',JacDim[0]);
-    ncout.createDimension('param',JacDim[1]);
-    
-        
-
-
-    S = ncout.createVariable('site',str,('data'), zlib=zlib_in,shuffle=shuffle_in)
-    C = ncout.createVariable('comp',str,('data'), zlib=zlib_in,shuffle=shuffle_in)
-
-    Per = ncout.createVariable('Per','float64',('data'), zlib=zlib_in,shuffle=shuffle_in)
-    Lat = ncout.createVariable('Lat','float64',('data'), zlib=zlib_in,shuffle=shuffle_in)
-    Lon = ncout.createVariable('Lon','float64',('data'), zlib=zlib_in,shuffle=shuffle_in)
-    X = ncout.createVariable('X','float64',('data'), zlib=zlib_in,shuffle=shuffle_in)
-    Y = ncout.createVariable('Y','float64',('data'), zlib=zlib_in,shuffle=shuffle_in)
-    Z = ncout.createVariable('Z','float64',('data'), zlib=zlib_in,shuffle=shuffle_in)
-    Val = ncout.createVariable('Val','float64',('data'), zlib=zlib_in,shuffle=shuffle_in)
-    Err = ncout.createVariable('Err','float64',('data'), zlib=zlib_in,shuffle=shuffle_in)
-    
-    J = ncout.createVariable('Jac','float64',('data','param'), zlib=zlib_in,shuffle=shuffle_in)
-    
-    S[:] = Site[:,]
-    C[:] = Comp[:,]
-    Per[:] = Dat[:,0]
-    Lat[:] = Dat[:,1] 
-    Lon[:] = Dat[:,2]
-    X[:] = Dat[:,3]
-    Y[:] = Dat[:,4]
-    Z[:] = Dat[:,5]
-    Val[:] = Dat[:,6]
-    Err[:] = Dat[:,7]
-    J[:] = Jac
- 
-    ncout.close()
-      
-    if out:
-        print('writeJacNC: data written to %s in %s format'%(NCFile,ncout.data_model))
   
     
 def writeDatNC(NCFile=None, Dat= None, 
@@ -182,53 +128,7 @@ def writeDatNC(NCFile=None, Dat= None,
     if out:
         print('writeDatNC: data written to %s in %s format'%(NCFile,ncout.data_model))
  
-def writeDatHD(HDFile=None, Dat= None, 
-            Site= None, Comp=None, zlib_in=True, shuffle_in=True, out=True):
-    """
-    Writes Jacobian from ModEM output
-    to NETCDF/HDF5 file
-    author: vrath
-    last changed: July 24, 2020
-    """
-  
-    DatDim = np.shape(Dat)
-    
-       
-    ncout = nc.Dataset(HDFile,'w', format='NETCDF4');
-    ncout.createDimension('data',DatDim[0]);
-    
-
-    S = ncout.createVariable('site',str,('data',), zlib=zlib_in,shuffle=shuffle_in)
-    C = ncout.createVariable('comp',str,('data',), zlib=zlib_in,shuffle=shuffle_in)
-
-    Per = ncout.createVariable('Per','float64',('data',), zlib=zlib_in,shuffle=shuffle_in)
-    Lat = ncout.createVariable('Lat','float64',('data',), zlib=zlib_in,shuffle=shuffle_in)
-    Lon = ncout.createVariable('Lon','float64',('data',), zlib=zlib_in,shuffle=shuffle_in)
-    X = ncout.createVariable('X','float64',('data',), zlib=zlib_in,shuffle=shuffle_in)
-    Y = ncout.createVariable('Y','float64',('data',), zlib=zlib_in,shuffle=shuffle_in)
-    Z = ncout.createVariable('Z','float64',('data',), zlib=zlib_in,shuffle=shuffle_in)
-    Val = ncout.createVariable('Val','float64',('data',), zlib=zlib_in,shuffle=shuffle_in)
-    Err = ncout.createVariable('Err','float64',('data',), zlib=zlib_in,shuffle=shuffle_in)
-     
-    
-  
-    S[:] = Site[:,]
-    C[:] = Comp[:,]
-    Per[:] = Dat[:,0]
-    Lat[:] = Dat[:,1] 
-    Lon[:] = Dat[:,2]
-    X[:] = Dat[:,3]
-    Y[:] = Dat[:,4]
-    Z[:] = Dat[:,5]
-    Val[:] = Dat[:,6]
-    Err[:] = Dat[:,7]
- 
-    ncout.close()
-     
-    if out:
-        print('writeDatHD: data written to %s in %s format'%(HDFile,ncout.data_model))
-    
-def writeJacHD(HDFile=None, Jac=None, Dat= None, 
+def writeJacNC(HDFile=None, Jac=None, Dat= None, 
             Site= None, Comp=None, zlib_in=True, shuffle_in=True, out = True):
     """
     Writes Jacobian from ModEM output
