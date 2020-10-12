@@ -42,10 +42,6 @@ normalize_err = True
 normalize_max = True
 calcsens = True
 
-# JacFile = r'./work/AnnPriorZT.jac'
-# DatFile = r'./work/AnnPriorZT.dat'
-# ModFile = r'./work/AnnPriorZT.rho'
-
 JacFile = r'/home/vrath/work/MT/Jacobians/Maurienne/Maur_PT.jac'
 DatFile = r'/home/vrath/work/MT/Jacobians/Maurienne/Maur_PT.dat'
 ModFile = r'/home/vrath/work/MT/Jacobians/Maurienne//Maur_PT_R500_NLCG_016.rho'
