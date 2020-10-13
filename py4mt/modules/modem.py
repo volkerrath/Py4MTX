@@ -233,7 +233,7 @@ def readDat(DatFile=None, out = True):
     return Site, Comp, Data, Head
 
 def writeMod(ModFile=None, 
-             dx=None, dy=None, dz=None, rho=None, center=None, trans="LINEAR",
+             dx=None, dy=None, dz=None, rho=None,reference=None, trans="LINEAR",
              out = True):
     """
     Reads ModEM model input
@@ -279,7 +279,7 @@ def writeMod(ModFile=None,
             np.savetxt(f,slice, fmt='%-9.5e')
             f.write('\n')
 
-        cnt=np.asarray(center)
+        cnt=np.asarray(reference)
         np.savetxt(f,cnt.reshape(1,cnt.shape[0]), fmt='%10.1f')   
         f.write('\n')
         f.write('%10.2f  \n' % (0.))
@@ -339,11 +339,11 @@ def readMod(ModFile=None, trans="LINEAR",out = True):
     rho = rho.reshape(dims,order='F')
     
 
-    center =  [float(sub) for sub in lines[-2][0:3]]
+    reference =  [float(sub) for sub in lines[-2][0:3]]
 
   
     
     if out: print('readMod: %i x %i x %i model read from %s'%(nx,ny,nz,ModFile))
     
-    return dx, dy,dz, rho, center
+    return dx, dy,dz, rho,reference
 

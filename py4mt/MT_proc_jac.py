@@ -51,7 +51,7 @@ total = 0.
 
 
 start = time.time()
-dx, dy, dz, rho, center = readMod(ModFile)
+dx, dy, dz, rho, reference = readMod(ModFile)
 elapsed = (time.time() - start)
 total = total + elapsed
 print (' Used %7.4f s for reading model from %s ' % (elapsed,DatFile))
@@ -106,7 +106,7 @@ if calcsens:
     print (' Used %7.4f s for caculating sensitivity from %s ' % (elapsed,JacFile))
     sns = np.reshape(Sens, rho.shape)
     print(np.shape(sns))
-    writeMod(SnsFile, dx, dy, dz, sns, center, trans='LOG10',out = True)
+    writeMod(SnsFile, dx, dy, dz, sns, reference, trans='LOG10',out = True)
 
 
 
