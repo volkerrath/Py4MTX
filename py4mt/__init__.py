@@ -9,3 +9,11 @@
 #       format_version: '1.5'
 #       jupytext_version: 1.6.0
 # ---
+# version
+from .version import version_info, __version__
+
+# utils
+from .modules import *
+
+# hIPPYlib model
+from .scripts import 

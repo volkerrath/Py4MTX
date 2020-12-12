@@ -53,7 +53,8 @@ edi_gen = 'readmod'
 mod_file = r'/home/vrath/AEM_Limerick/Limerick_pilot_etopo.rho'
 nx_bnd = 14
 ny_bnd = 14
-
+centerlatlon = ()
+centermod    = ()
 
 
 
