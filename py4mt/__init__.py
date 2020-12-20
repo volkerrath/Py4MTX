@@ -7,8 +7,9 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.6.0
+#       jupytext_version: 1.7.1
 # ---
+
 # version
 from .version import version_info, __version__
 

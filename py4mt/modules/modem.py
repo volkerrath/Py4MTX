@@ -7,10 +7,10 @@ Created on Fri Jul 10 11:33:17 2020
 """
 # import os
 import sys
-# import re
+from sys import exit as error
 import numpy as np
 from scipy.io import FortranFile 
-import scipy.sparse as scp
+# import scipy.sparse as scp
 
 import netCDF4 as nc
 # import h5netcdf as hc
@@ -81,54 +81,7 @@ def readJac(JacFile=None, out=False):
     return Jac
 
   
-    
-def writeDatNC(NCFile=None, Dat= None, 
-            Site= None, Comp=None, zlib_in=True, shuffle_in=True, out=True):
-    """
-    Writes Jacobian from ModEM output
-    to NETCDF file
-    author: vrath
-    last changed: July 24, 2020
-    """
-  
-    DatDim = np.shape(Dat)
-    
-       
-    ncout = nc.Dataset(NCFile,'w', format='NETCDF4');
-    ncout.createDimension('data',DatDim[0]);
-    
-
-    S = ncout.createVariable('site',str,('data',), zlib=zlib_in,shuffle=shuffle_in)
-    C = ncout.createVariable('comp',str,('data',), zlib=zlib_in,shuffle=shuffle_in)
-
-    Per = ncout.createVariable('Per','float64',('data',), zlib=zlib_in,shuffle=shuffle_in)
-    Lat = ncout.createVariable('Lat','float64',('data',), zlib=zlib_in,shuffle=shuffle_in)
-    Lon = ncout.createVariable('Lon','float64',('data',), zlib=zlib_in,shuffle=shuffle_in)
-    X = ncout.createVariable('X','float64',('data',), zlib=zlib_in,shuffle=shuffle_in)
-    Y = ncout.createVariable('Y','float64',('data',), zlib=zlib_in,shuffle=shuffle_in)
-    Z = ncout.createVariable('Z','float64',('data',), zlib=zlib_in,shuffle=shuffle_in)
-    Val = ncout.createVariable('Val','float64',('data',), zlib=zlib_in,shuffle=shuffle_in)
-    Err = ncout.createVariable('Err','float64',('data',), zlib=zlib_in,shuffle=shuffle_in)
-     
-    
-  
-    S[:] = Site[:,]
-    C[:] = Comp[:,]
-    Per[:] = Dat[:,0]
-    Lat[:] = Dat[:,1] 
-    Lon[:] = Dat[:,2]
-    X[:] = Dat[:,3]
-    Y[:] = Dat[:,4]
-    Z[:] = Dat[:,5]
-    Val[:] = Dat[:,6]
-    Err[:] = Dat[:,7]
- 
-    ncout.close()
-     
-    if out:
-        print('writeDatNC: data written to %s in %s format'%(NCFile,ncout.data_model))
- 
-def writeJacNC(HDFile=None, Jac=None, Dat= None, 
+def writeJacNC(NCFile=None, Jac=None, Dat= None, 
             Site= None, Comp=None, zlib_in=True, shuffle_in=True, out = True):
     """
     Writes Jacobian from ModEM output
@@ -147,7 +100,7 @@ def writeJacNC(HDFile=None, Jac=None, Dat= None,
         
    
         
-    ncout = nc.Dataset(HDFile,'w', format='NETCDF4');
+    ncout = nc.Dataset(NCFile,'w', format='NETCDF4');
     ncout.createDimension('data',JacDim[0]);
     ncout.createDimension('param',JacDim[1]);
     
@@ -183,7 +136,7 @@ def writeJacNC(HDFile=None, Jac=None, Dat= None,
     ncout.close()
       
     if out:
-        print('writeJacHD: data written to %s in %s format'%(HDFile,ncout.data_model))
+        print('writeJacHD: data written to %s in %s format'%(NCFile,ncout.data_model))
   
 
 def readDat(DatFile=None, out = True):
@@ -232,6 +185,118 @@ def readDat(DatFile=None, out = True):
     
     return Site, Comp, Data, Head
 
+    
+def writeDatNC(NCFile=None, Dat= None, 
+            Site= None, Comp=None, zlib_in=True, shuffle_in=True, out=True):
+    """
+    Writes Jacobian from ModEM output
+    to NETCDF file
+    author: vrath
+    last changed: July 24, 2020
+    """
+    try: NCFile.close
+    except: pass
+
+    DatDim = np.shape(Dat)
+    
+       
+    ncout = nc.Dataset(NCFile,'w', format='NETCDF4');
+    ncout.createDimension('data',DatDim[0]);
+    
+
+    S = ncout.createVariable('site',str,('data',), zlib=zlib_in,shuffle=shuffle_in)
+    C = ncout.createVariable('comp',str,('data',), zlib=zlib_in,shuffle=shuffle_in)
+
+    Per = ncout.createVariable('Per','float64',('data',), zlib=zlib_in,shuffle=shuffle_in)
+    Lat = ncout.createVariable('Lat','float64',('data',), zlib=zlib_in,shuffle=shuffle_in)
+    Lon = ncout.createVariable('Lon','float64',('data',), zlib=zlib_in,shuffle=shuffle_in)
+    X = ncout.createVariable('X','float64',('data',), zlib=zlib_in,shuffle=shuffle_in)
+    Y = ncout.createVariable('Y','float64',('data',), zlib=zlib_in,shuffle=shuffle_in)
+    Z = ncout.createVariable('Z','float64',('data',), zlib=zlib_in,shuffle=shuffle_in)
+    Val = ncout.createVariable('Val','float64',('data',), zlib=zlib_in,shuffle=shuffle_in)
+    Err = ncout.createVariable('Err','float64',('data',), zlib=zlib_in,shuffle=shuffle_in)
+     
+    
+  
+    S[:] = Site[:,]
+    C[:] = Comp[:,]
+    Per[:] = Dat[:,0]
+    Lat[:] = Dat[:,1] 
+    Lon[:] = Dat[:,2]
+    X[:] = Dat[:,3]
+    Y[:] = Dat[:,4]
+    Z[:] = Dat[:,5]
+    Val[:] = Dat[:,6]
+    Err[:] = Dat[:,7]
+ 
+    ncout.close()
+     
+    if out:
+        print('writeDatNC: data written to %s in %s format'%(NCFile,ncout.data_model))
+ 
+
+def writeModNC(NCFile=None, x=None, y=None, z=None, Mod=None, Sens= None, Ref=None, trans="LINEAR",
+             zlib_in=True, shuffle_in=True, out = True):
+    """
+    Writes Model from ModEM output
+    to NETCDF/HDF5 file
+    author: vrath
+    last changed: Dec 20, 2020
+    """
+  
+
+    ModDim = np.shape(Mod)
+   
+        
+    ncout = nc.Dataset(NCFile,'w', format='NETCDF4');
+    
+    
+    ncout.createDimension('msiz',ModDim);
+    ncout.createDimension('nx',ModDim[0]);
+    ncout.createDimension('ny',ModDim[1]);
+    ncout.createDimension('nz',ModDim[2]);
+    
+    ncout.createDimension('ref',(3));
+    
+    X = ncout.createVariable('x','float64',('nx'), zlib=zlib_in,shuffle=shuffle_in)
+    Y = ncout.createVariable('y','float64',('ny'), zlib=zlib_in,shuffle=shuffle_in)
+    Z = ncout.createVariable('z','float64',('nz'), zlib=zlib_in,shuffle=shuffle_in)
+    X[:] = x[:]
+    Y[:] = y[:]
+    Z[:] = z[:]
+    
+    trans = trans.upper()    
+    
+    if   trans == 'LOGE':
+        Mod = np.log(Mod)
+        if out: print('resistivities to '+NCFile+' transformed to: '+trans)  
+    elif trans == 'LOG10':
+        Mod = np.log10(Mod)
+        if out: print('resistivities to '+NCFile+' transformed to: '+trans)  
+    elif trans == 'LINEAR' :
+        pass
+    else:
+        print('Transformation: '+trans+' not defined!')   
+        sys.exit(1)
+        
+   
+    M = ncout.createVariable('model',str,('msiz'), zlib=zlib_in,shuffle=shuffle_in)    
+    M = Mod
+
+    if Sens != None:
+        S = ncout.createVariable('sens',str,('msiz'), zlib=zlib_in,shuffle=shuffle_in)
+        S = Sens
+    
+    if Ref != None:
+        R = ncout.createVariable('ref','float64',('ref'), zlib=zlib_in,shuffle=shuffle_in)
+        R = Ref
+    
+    ncout.close()
+      
+    if out:
+        print('writeModNC: data written to %s in %s format'%(NCFile,ncout.data_model))
+  
+
 def writeMod(ModFile=None, 
              dx=None, dy=None, dz=None, rho=None,reference=None, trans="LINEAR",
              out = True):
@@ -248,10 +313,12 @@ def writeMod(ModFile=None,
     ny = dims[1] 
     nz = dims[2]
     
-    if  trans == 'LOGE':
+    trans = trans.upper()    
+    
+    if   trans == 'LOGE':
         rho = np.log(rho)
         if out: print('resistivities to '+ModFile+' transformed to: '+trans)  
-    elif trans == 'LOG10' :
+    elif trans == 'LOG10':
         rho = np.log10(rho)
         if out: print('resistivities to '+ModFile+' transformed to: '+trans)  
     elif trans == 'LINEAR' :
@@ -263,22 +330,71 @@ def writeMod(ModFile=None,
     
     with open(ModFile,'w') as f:
         f.write(' # 3D MT model written by ModEM in WS format\n')
-        f.write('\n')    
-        f.write(' %6i %6i %6i %6i %s \n'% (nx,ny,nz,0,trans))
-        f.write('\n')    
-        np.savetxt(f,dx.reshape(1,dx.shape[0]), fmt='%10.1f')
-        f.write('\n')   
-        np.savetxt(f,dy.reshape(1,dy.shape[0]), fmt='%10.1f')
-        f.write('\n')   
+        #f.write('\n')    
+        f.write(' %6i %6i %6i %6i  %s'% (nx,ny,nz,0,trans))
+        #f.write('\n')    
+        np.savetxt(f,dx.reshape(1,dx.shape[0]), fmt='%12.3f')
+        #f.write('\n')   
+        np.savetxt(f,dy.reshape(1,dy.shape[0]), fmt='%12.3f')
+        #f.write('\n')   
        # f.write('%10.6e'% (dx))
-        np.savetxt(f,dz.reshape(1,dz.shape[0]), fmt='%10.1f')
-        f.write('\n')   
-    
-        for slice in rho:
+        np.savetxt(f,dz.reshape(1,dz.shape[0]), fmt='%12.3f')
+        # f.write('\n')   
+        
+        # print(np.shape(rho))
+        # rho = rho.reshape((nx*ny,nz),order='F')
+        # print(np.shape(rho))
+            #     # write S --> N node block
+            # for ii, nnode in enumerate(self.nodes_north):
+            #     ifid.write('{0:>12.3f}'.format(abs(nnode)))
 
-            np.savetxt(f,slice, fmt='%-9.5e')
+            # ifid.write('\n')
+
+            # # write W --> E node block
+            # for jj, enode in enumerate(self.nodes_east):
+            #     ifid.write('{0:>12.3f}'.format(abs(enode)))
+            # ifid.write('\n')
+
+            # # write top --> bottom node block
+            # for kk, zz in enumerate(self.nodes_z):
+            #     ifid.write('{0:>12.3f}'.format(abs(zz)))
+            # ifid.write('\n')
+
+            # # write the resistivity in log e format
+            # if self.res_scale.lower() == 'loge':
+            #     write_res_model = np.log(self.res_model[::-1, :, :])
+            # elif self.res_scale.lower() == 'log' or \
+            #                 self.res_scale.lower() == 'log10':
+            #     write_res_model = np.log10(self.res_model[::-1, :, :])
+            # elif self.res_scale.lower() == 'linear':
+            #     write_res_model = self.res_model[::-1, :, :]
+            # else:
+            #     raise ModelError("resistivity scale \"{}\" is not supported.".format(self.res_scale))
+
+            # write out the layers from resmodel
+        for zi in range(dz.size):
             f.write('\n')
+            for yi in range(dy.size):
+                line = rho[:, yi, zi]
+                np.savetxt(f, line.reshape(1,nx),fmt='%12.5e')
+            # f.write('\n')
 
+            # if self.grid_center is None:
+            #     # compute grid center
+            #     center_east = -self.nodes_east.__abs__().sum() / 2
+            #     center_north = -self.nodes_north.__abs__().sum() / 2
+            #     center_z = 0
+            #     self.grid_center = np.array([center_north, center_east, center_z])
+
+            # ifid.write('\n{0:>16.3f}{1:>16.3f}{2:>16.3f}\n'.format(self.grid_center[0],
+            #                                                        self.grid_center[1], self.grid_center[2]))
+
+
+        # for slice in rho:
+        #     print(slice)
+        #     np.savetxt(f,slice, fmt='%-9.5e')
+        #     f.write('\n')
+        f.write('\n')
         cnt=np.asarray(reference)
         np.savetxt(f,cnt.reshape(1,cnt.shape[0]), fmt='%10.1f')   
         f.write('\n')
@@ -347,3 +463,80 @@ def readMod(ModFile=None, trans="LINEAR",out = True):
     
     return dx, dy,dz, rho,reference
 
+
+def mt1dfwd(freq, sig, d, inmod='r',out = "imp"):
+    
+    """
+    1D magnetotelluric forward modelling
+    based on A. Pethik's script at www.digitalearthlab.com
+    Last change vr Nov 20, 2020
+    """
+        
+    mu0 = 4.E-7*np.pi   		# Magnetic Permeability (H/m)
+    
+    sig    = np.array(sig)
+    freq   = np.array(freq)
+    d      = np.array(d)
+    
+    if inmod[0] == "c":
+      sig    = np.array(sig)
+    elif inmod[0]=='r':
+      sig    = 1./np.array(sig)
+      
+      
+    if sig.ndim >1:
+        error('IP not yet implemented')
+        
+    n = np.size(sig)
+    
+    
+    Z = np.zeros_like(freq)+1j*np.zeros_like(freq)
+    w = np.zeros_like(freq)
+    
+    ifr=-1
+    for f in freq:   
+        ifr = ifr+1
+        w[ifr] =  2.*np.pi*f       
+        imp = np.array(range(n))+np.array(range(n))*1j
+        
+        #compute basement impedance
+        imp[n-1] = np.sqrt(1j*w[ifr]*mu0/sig[n-1])
+        
+        for layer in range(n-2,-1,-1):
+            sl   = sig[layer]
+            dl   = d[layer]
+            # 3. Compute apparent rho from top layer impedance
+            #Step 2. Iterate from bottom layer to top(not the basement) 
+            #   Step 2.1 Calculate the intrinsic impedance of current layer
+            dj = np.sqrt(1j * w[ifr] * mu0 * sl)
+            wj = dj/sl
+            #   Step 2.2 Calculate Exponential factor from intrinsic impedance
+            ej = np.exp(-2*dl*dj)                     
+        
+            #   Step 2.3 Calculate reflection coeficient using current layer
+            #          intrinsic impedance and the below layer impedance 
+            impb = imp[layer + 1]
+            rj = (wj - impb)/(wj + impb)
+            re = rj*ej 
+            Zj = wj * ((1 - re)/(1 + re))
+            imp[layer] = Zj    
+    
+        Z[ifr] = imp[0]
+        # print(Z[ifr])
+
+    if 	 out.lower() == "imp":        
+        
+        return Z
+    
+    elif out.lower() == "rho":
+        absZ = np.abs(Z)
+        rhoa 	= (absZ*absZ) / (mu0*w)
+        phase   = np.rad2deg(np.arctan(Z.imag / Z.real))
+        
+        return rhoa, phase
+    else:
+        absZ = np.abs(Z)
+        rhoa 	= (absZ*absZ) / (mu0*w)
+        phase   = np.rad2deg(np.arctan(Z.imag / Z.real))
+        return Z, rhoa, phase
+        
