@@ -298,7 +298,7 @@ def writeModNC(NCFile=None, x=None, y=None, z=None, Mod=None, Sens= None, Ref=No
   
 
 def writeMod(ModFile=None, 
-             dx=None, dy=None, dz=None, rho=None,reference=None, trans="LINEAR",
+             dx=None, dy=None, dz=None, rho=None,reference=None, trans='LINEAR',
              out = True):
     """
     Reads ModEM model input
@@ -314,6 +314,7 @@ def writeMod(ModFile=None,
     nz = dims[2]
     
     trans = trans.upper()    
+    dummy = 0
     
     if   trans == 'LOGE':
         rho = np.log(rho)
@@ -326,78 +327,26 @@ def writeMod(ModFile=None,
     else:
         print('Transformation: '+trans+' not defined!')   
         sys.exit(1)
-        
-    
+    trans=np.array(trans)
     with open(ModFile,'w') as f:
-        f.write(' # 3D MT model written by ModEM in WS format\n')
-        #f.write('\n')    
-        f.write(' %6i %6i %6i %6i  %s'% (nx,ny,nz,0,trans))
-        #f.write('\n')    
+        np.savetxt(f,[' # 3D MT model written by ModEM in WS format'],fmt='%s')
+        # line = np.array([nx, ny,nz, dummy, trans],dtype=('i8,i8,i8,i8,U10'))
+        line = np.array([nx,ny,nz,dummy,trans])
+        np.savetxt(f, line.reshape(1,5), fmt = '%s %s %s %s %s')
         np.savetxt(f,dx.reshape(1,dx.shape[0]), fmt='%12.3f')
-        #f.write('\n')   
         np.savetxt(f,dy.reshape(1,dy.shape[0]), fmt='%12.3f')
-        #f.write('\n')   
-       # f.write('%10.6e'% (dx))
         np.savetxt(f,dz.reshape(1,dz.shape[0]), fmt='%12.3f')
-        # f.write('\n')   
-        
-        # print(np.shape(rho))
-        # rho = rho.reshape((nx*ny,nz),order='F')
-        # print(np.shape(rho))
-            #     # write S --> N node block
-            # for ii, nnode in enumerate(self.nodes_north):
-            #     ifid.write('{0:>12.3f}'.format(abs(nnode)))
-
-            # ifid.write('\n')
-
-            # # write W --> E node block
-            # for jj, enode in enumerate(self.nodes_east):
-            #     ifid.write('{0:>12.3f}'.format(abs(enode)))
-            # ifid.write('\n')
-
-            # # write top --> bottom node block
-            # for kk, zz in enumerate(self.nodes_z):
-            #     ifid.write('{0:>12.3f}'.format(abs(zz)))
-            # ifid.write('\n')
-
-            # # write the resistivity in log e format
-            # if self.res_scale.lower() == 'loge':
-            #     write_res_model = np.log(self.res_model[::-1, :, :])
-            # elif self.res_scale.lower() == 'log' or \
-            #                 self.res_scale.lower() == 'log10':
-            #     write_res_model = np.log10(self.res_model[::-1, :, :])
-            # elif self.res_scale.lower() == 'linear':
-            #     write_res_model = self.res_model[::-1, :, :]
-            # else:
-            #     raise ModelError("resistivity scale \"{}\" is not supported.".format(self.res_scale))
-
-            # write out the layers from resmodel
+        # write out the layers from resmodel
         for zi in range(dz.size):
             f.write('\n')
             for yi in range(dy.size):
                 line = rho[:, yi, zi]
                 np.savetxt(f, line.reshape(1,nx),fmt='%12.5e')
-            # f.write('\n')
 
-            # if self.grid_center is None:
-            #     # compute grid center
-            #     center_east = -self.nodes_east.__abs__().sum() / 2
-            #     center_north = -self.nodes_north.__abs__().sum() / 2
-            #     center_z = 0
-            #     self.grid_center = np.array([center_north, center_east, center_z])
-
-            # ifid.write('\n{0:>16.3f}{1:>16.3f}{2:>16.3f}\n'.format(self.grid_center[0],
-            #                                                        self.grid_center[1], self.grid_center[2]))
-
-
-        # for slice in rho:
-        #     print(slice)
-        #     np.savetxt(f,slice, fmt='%-9.5e')
-        #     f.write('\n')
         f.write('\n')
+        
         cnt=np.asarray(reference)
         np.savetxt(f,cnt.reshape(1,cnt.shape[0]), fmt='%10.1f')   
-        f.write('\n')
         f.write('%10.2f  \n' % (0.))
     
     
