@@ -306,6 +306,18 @@ def writeMod(ModFile=None,
     
     author: vrath
     last changed: Aug 18, 2020
+    
+       
+    In Fortran:
+    
+    DO iz = 1,Nz
+        DO iy = 1,Ny
+            DO ix = Nx,1,-1
+                READ(10,*) rho(ix,iy,iz)
+            ENDDO
+        ENDDO
+    ENDDO
+
     """  
     
     dims = np.shape(rho)
@@ -339,7 +351,9 @@ def writeMod(ModFile=None,
         # write out the layers from resmodel
         for zi in range(dz.size):
             f.write('\n')
-            for yi in range(dy.size):
+            for yi in range(dy.size):                
+                # line = rho[::-1, yi, zi]
+                # line = np.flipud(rho[:, yi, zi])
                 line = rho[:, yi, zi]
                 np.savetxt(f, line.reshape(1,nx),fmt='%12.5e')
 
@@ -358,6 +372,16 @@ def readMod(ModFile=None, trans="LINEAR",out = True):
     author: vrath
     last changed: Aug 18, 2020
     
+    In Fortran:
+    
+    DO iz = 1,Nz
+        DO iy = 1,Ny
+            DO ix = Nx,1,-1
+                READ(10,*) rho(ix,iy,iz)
+            ENDDO
+        ENDDO
+    ENDDO
+
     """  
          
         

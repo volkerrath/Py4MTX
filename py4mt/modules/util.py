@@ -2,40 +2,42 @@ import os
 import sys
 import numpy as np
 from pyproj import Proj, transform
+from scipy.ndimage import gaussian_filter, laplace, convolve, gaussian_gradient_magnitude
+from scipy.linalg  import norm
 from sys import exit as error
 import fnmatch
 # from numba import jit
 # from shapely.geometry import Point
 # from shapely.geometry.polygon import Polygon
 
-    
+
 def get_filelist(searchstr=['*'],searchpath='.'):
     """
     generates filelist from path and unix wildcard list
-    
+
     author: VR 11/20
     """
 
-    
-    filelist = fnmatch.filter(os.listdir(searchpath), '*')                          
-    for sstr in searchstr:  
+
+    filelist = fnmatch.filter(os.listdir(searchpath), '*')
+    for sstr in searchstr:
         filelist = fnmatch.filter(filelist, sstr)
         print(filelist)
-                              
+
     return filelist
-    
+
 def growHeader(Header=None,Addstr=None, Out =False):
     """
-    Grows header string 
+    Grows header string
     author: vrath
     last changed: 2020/12/4
-    """     
+    """
     if Out:
         print('Old Header:')
         print(' \n'.join(Header))
 
     # Header = np.array2string(Header)
-    
+
     if Addstr==None:
         pass
     else:
@@ -46,21 +48,21 @@ def growHeader(Header=None,Addstr=None, Out =False):
     if Out:
         print('New Header:')
         print(' \n'.join(Header))
-        
+
     return Header
 
 def printHeader(Header):
     """
-    Grows header string 
+    Grows header string
     author: vrath
     last changed: 2020/12/4
-    """     
+    """
     print('Current Header:')
     print('\n'.join(Header))
 
 def proj_utm_to_latlon(utm_x, utm_y,utm_zone =32629):
     '''
-    transform utm to latlon, using pyproj 
+    transform utm to latlon, using pyproj
     Look for other EPSG at https://epsg.io/
     VR 11/20
     '''
@@ -71,11 +73,11 @@ def proj_utm_to_latlon(utm_x, utm_y,utm_zone =32629):
 
 def proj_latlon_to_utm(longitude,latitude,utm_zone =32629):
     '''
-    transform latlon to utm , using pyproj 
+    transform latlon to utm , using pyproj
     Look for other EPSG at https://epsg.io/
-    
+
     VR 11/20
-    '''  
+    '''
     prj_wgs = Proj(init='epsg:4326')
     prj_utm = Proj(init='epsg:'+str(utm_zone))
     utm_x, utm_y = transform(prj_wgs, prj_utm, latitude, longitude)
@@ -83,11 +85,11 @@ def proj_latlon_to_utm(longitude,latitude,utm_zone =32629):
 
 def proj_latlon_to_itm(longitude, latitude):
     '''
-    transform latlon to itm , using pyproj 
+    transform latlon to itm , using pyproj
     Look for other EPSG at https://epsg.io/
-    
+
     VR 11/20
-    '''    
+    '''
     prj_wgs = Proj(init='epsg:4326')
     prj_itm = Proj(init='epsg:2157')
     itm_x, itm_y = transform(prj_wgs, prj_itm, latitude, longitude)
@@ -95,9 +97,9 @@ def proj_latlon_to_itm(longitude, latitude):
 
 def proj_itm_to_latlon(itm_x, itm_y):
     '''
-    transform itm to latlon, using pyproj 
+    transform itm to latlon, using pyproj
     Look for other EPSG at https://epsg.io/
-    
+
     VR 11/20
     '''
     prj_wgs = Proj(init='epsg:4326')
@@ -107,9 +109,9 @@ def proj_itm_to_latlon(itm_x, itm_y):
 
 def proj_itm_to_utm(itm_x, itm_y,utm_zone =32629):
     '''
-    transform itm to utm, using pyproj 
+    transform itm to utm, using pyproj
     Look for other EPSG at https://epsg.io/
-    
+
     VR 11/20
     '''
     prj_utm = Proj(init='epsg:'+str(utm_zone))
@@ -119,9 +121,9 @@ def proj_itm_to_utm(itm_x, itm_y,utm_zone =32629):
 
 def proj_utm_to_itm(utm_x, utm_y,utm_zone =32629):
     '''
-    transform utm to itm, using pyproj 
+    transform utm to itm, using pyproj
     Look for other EPSG at https://epsg.io/
-    
+
     VR 11/20
     '''
     prj_utm = Proj(init='epsg:'+str(utm_zone))
@@ -144,77 +146,77 @@ def splitall(path):
             allparts.insert(0, parts[1])
     return allparts
 
-   
+
 def shift(l, n):
     return l[n:] + l[:n]
 
 def get_files(SearchString=None, SearchDirectory='.'):
-       """ 
+       """
        FileList = get_files(Filterstring) produces a list
        of files from a searchstring (allows wildcards)
-       
+
        VR 11/20
        """
        FileList = fnmatch.filter(os.listdir(SearchDirectory), SearchString)
-       
+
        return FileList
-   
-def get_header(file,headstr= '# ',Out=True): 
+
+def get_header(file,headstr= '# ',Out=True):
      '''
      Get header lines from file
      VR 11/20
-    
-     '''   
+
+     '''
      if Out: print('\nHeader:')
      header = []
      with open(file) as fd:
             for line in fd:
-                if line.startswith(headstr): 
+                if line.startswith(headstr):
                     # line=line[2:]
                     line=line.replace(headstr,'')
-                    header.append(line)                 
-                    if Out:                      
+                    header.append(line)
+                    if Out:
                         print(line[1:-2])
-     header = header[0:-1]      #new_list = list(chain(a[0:2], [a[4]], a[6:]))          
+     header = header[0:-1]      #new_list = list(chain(a[0:2], [a[4]], a[6:]))
      if Out: print('\n')
      Header = ''.join(header)
      print(Header)
      return Header
-     
-def unique(list,out=False): 
+
+def unique(list,out=False):
     '''
-    find unique elements in list/array 
-    
+    find unique elements in list/array
+
     VR 9/20
     '''
-    
-  
-    # intilize a null list 
-    unique_list = [] 
-      
-    # traverse for all elements 
-    for x in list: 
-        # check if exists in unique_list or not 
-        if x not in unique_list: 
-            unique_list.append(x) 
-    # print list 
+
+
+    # intilize a null list
+    unique_list = []
+
+    # traverse for all elements
+    for x in list:
+        # check if exists in unique_list or not
+        if x not in unique_list:
+            unique_list.append(x)
+    # print list
     if out:
         for x in unique_list: print(x)
-        
+
     return unique_list
 
 def strcount(keyword=None, fname=None):
     '''
-    count occurences of keyword in file 
+    count occurences of keyword in file
      Parameters
     ----------
     keywords : TYPE, optional
         DESCRIPTION. The default is None.
     fname : TYPE, optional
         DESCRIPTION. The default is None.
-        
+
     VR 9/20
-    '''   
+    '''
     with open(fname, 'r') as fin:
         return sum([1 for line in fin if keyword in line])
     # sum([1 for line in fin if keyword not in line])
@@ -223,7 +225,7 @@ def strcount(keyword=None, fname=None):
 def strdelete(keyword=None, fname_in=None, fname_out=None, out = True):
     '''
     delete lines containing on of the keywords in list
-    
+
     Parameters
     ----------
     keywords : TYPE, optional
@@ -242,16 +244,16 @@ def strdelete(keyword=None, fname_in=None, fname_out=None, out = True):
     VR 9/20
     '''
     nn = strcount(keyword,fname_in)
-    
+
     if out:
         print(str(nn)+' occurances of <'+keyword+'> in '+fname_in)
-        
+
     # if fname_out == None: fname_out= fname_in
     with open(fname_in, 'r') as fin, open(fname_out, 'w') as fou:
         for line in fin:
                 if not keyword in line:
                     fou.write(line)
- 
+
 def strreplace(key_in=None, key_out=None,fname_in=None, fname_out=None):
     '''
     replaces key_in in keywords by key_out
@@ -270,7 +272,7 @@ def strreplace(key_in=None, key_out=None,fname_in=None, fname_out=None):
     Returns
     -------
     None.
-    
+
     VR 9/20
 
     '''
@@ -283,7 +285,7 @@ def strreplace(key_in=None, key_out=None,fname_in=None, fname_out=None):
 def gen_grid_latlon(LatLimits=None, nLat=None,LonLimits=None, nLon=None, out=True):
     """
      Generates equidistant 1-d grids in latLong.
-     
+
      VR 11/20
     """
     small = 0.000001
@@ -296,17 +298,17 @@ def gen_grid_latlon(LatLimits=None, nLat=None,LonLimits=None, nLon=None, out=Tru
 # nLat = 31
     LatStep  = (LatLimits[1] - LatLimits[0])/nLat
     Lat = np.arange(LatLimits[0],LatLimits[1]+small,LatStep)
-    
+
     return Lat, Lon
 
-def gen_grid_utm(XLimits=None, nX=None,YLimits=None, nY=None, out=True):    
+def gen_grid_utm(XLimits=None, nX=None,YLimits=None, nY=None, out=True):
     """
      Generates equidistant 1-d grids in m.
-     
+
      VR 11/20
     """
- 
-    
+
+
     small = 0.000001
 # LonLimits = ( 6.275, 6.39)
 # nLon = 31
@@ -317,7 +319,7 @@ def gen_grid_utm(XLimits=None, nX=None,YLimits=None, nY=None, out=True):
 # nLat = 31
     YStep  = (YLimits[1] - YLimits[0])/nY
     Y = np.arange(YLimits[0],YLimits[1]+small,YStep)
-    
+
     return X, Y
 
 def choose_data_poly(Data=None, PolyPoints=None, Out=True):
@@ -325,29 +327,29 @@ def choose_data_poly(Data=None, PolyPoints=None, Out=True):
      Chooses polygon area from aempy data set, given
      PolyPoints = [[X1 Y1,...[XN YN]]. First and last points will
      be connected for closure.
-     
+
      VR 11/20
     """
     if Data.size == 0:
         error('No Data given!')
     if not PolyPoints:
-        error('No Rectangle given!')  
-        
-    Ddims = np.shape(Data)  
+        error('No Rectangle given!')
+
+    Ddims = np.shape(Data)
     if Out:
         print('data matrix input: '+str(Ddims)  )
-        
+
     Poly = []
     for row in np.arange(Ddims[0]-1):
         if point_inside_polygon(Data[row,1],Data[row,1],PolyPoints):
             Poly.append(Data[row,:])
-            
-    Poly = np.asarray(Poly,dtype=float)             
+
+    Poly = np.asarray(Poly,dtype=float)
     if Out:
         Ddims = np.shape(Poly)
         print('data matrix output: '+str(Ddims)  )
-         
-    return Poly   
+
+    return Poly
 
 # potentially faster:
 # from shapely.geometry import Point
@@ -357,7 +359,7 @@ def choose_data_poly(Data=None, PolyPoints=None, Out=True):
 # polygon = Polygon(lons_lats_vect) # create polygon
 # point = Point(y,x) # create point
 # print(polygon.contains(point)) # check if polygon contains point
-# print(point.within(polygon)) # check if a point is in the polygon 
+# print(point.within(polygon)) # check if a point is in the polygon
 
 #@jit(nopython=True)
 def point_inside_polygon(x,y,poly):
@@ -365,12 +367,12 @@ def point_inside_polygon(x,y,poly):
     Determine if a point is inside a given polygon or not, where
     the Polygon is given as a list of (x,y) pairs.
     Returns True  when point (x,y) ins inside polygon poly, False otherwise
-    
+
     '''
     #@jit(nopython=True)
     n = len(poly)
     inside =False
-    
+
     p1x,p1y = poly[0]
     for i in range(n+1):
         p2x,p2y = poly[i % n]
@@ -383,42 +385,42 @@ def point_inside_polygon(x,y,poly):
                         inside = not inside
         p1x,p1y = p2x,p2y
 
-    return inside 
+    return inside
 
 def choose_data_rect(Data=None, Corners=None, Out=True):
     """
      Chooses rectangular area from aempy data set, giveb
      the left lower and right uper corners in m as [minX maxX minY maxY]
-    
+
     """
     if Data.size == 0:
         error('No Data given!')
     if not Corners:
         error('No Rectangle given!')
-        
-        
-        
-    Ddims = np.shape(Data)  
+
+
+
+    Ddims = np.shape(Data)
     if Out:
         print('data matrix input: '+str(Ddims)  )
     Rect = []
     for row in np.arange(Ddims[0]-1):
-        if ( Data[row,1] > Corners[0] and Data[row,1] < Corners[1] and   
+        if ( Data[row,1] > Corners[0] and Data[row,1] < Corners[1] and
             Data[row,2] > Corners[2] and Data[row,2] < Corners[3]):
             Rect.append(Data[row,:])
-    Rect = np.asarray(Rect,dtype=float)             
+    Rect = np.asarray(Rect,dtype=float)
     if Out:
         Ddims = np.shape(Rect)
         print('data matrix output: '+str(Ddims)  )
-         
-    return Rect        
-    
+
+    return Rect
 
 
-    
+
+
 def proj_to_line(x,y,line):
     '''
-    Projects a point onto a line, where line is represented by two arbitrary 
+    Projects a point onto a line, where line is represented by two arbitrary
     points. as an array
     '''
 #    http://www.vcskicks.com/code-snippet/point-projection.php
@@ -444,4 +446,141 @@ def proj_to_line(x,y,line):
 #
     return xn, yn
 #}
+def  in_ellipsoid(point=None, cent=[0.,0.,0.], axs=[1.,1.,1.], ang=[0.,0.,0.], find_inside=True):
+    '''
+    Finds points inside arbitrary ellipsoid, defined by the 3-vectors
+    ellcent, ellaxes, elldir.
+    vr dec 2020
+    '''
+
+    # subtract center
+    p = point-cent
+
+    # rotation matrices
+    rz = rotz(ang[2])
+    p = np.dot(rz,p)
+    ry = roty(ang[1])
+    p = np.dot(ry,p)
+    rx = rotx(ang[0])
+    p = np.dot(rx,p)
+    # R = rz*ry*rx
+    # p = R*p
+
+    # position in ellipsoid coordinates
+
+    p = p/axs
+
+    t = p[0]^2 + p[1]^2 + p[2]^2 < 1.
+
+    if not find_inside:
+        t = not t
+
+    return t
+
+
+def in_block(point=None, cent=[0.,0.,0.], axs=[1.,1.,1.], ang=[0.,0.,0.], find_inside=True):
+    '''
+    Finds points inside arbitrary ellipsoid, defined by the 3-vectors
+    ellcent, ellaxes, elldir.
+    vr dec 2020
+    '''
+    # subtract center
+    p = point-cent
+
+    # rotation matrices
+    rz = rotz(ang[2])
+    p = np.dot(rz*p)
+    ry = roty(ang[1])
+    p = np.dot(ry*p)
+    rx = rotx(ang[0])
+    p = np.dot(rx,p)
+    # R = rz*ry*rx
+    # p = R*p
+
+    # position in ellipsoid coordinates
+
+    p = p/axs
+
+    t = (p[0] <= 1. and  p[0] >= -1. and
+        p[1] <= 1. and  p[1] >= -1. and
+        p[2] <= 1. and  p[2] >= -1.)
+
+    if not find_inside:
+        t = not t
+
+
+def rotz(theta):
+    '''
+    calculates 3x3 rotation matriz for rotation around z axis
+    vr dec 2020
+    '''
+    t = np.radians(theta)
+    s = np.sin(t)
+    c = np.cos(t)
+
+    M = np.array([c, -s,  0.,   s, c, 0.,   0., 0., 1.]).reshape(3,3)
+
+    return M
+
+def roty(theta):
+    '''
+    calculates 3x3 rotation matrix for rotationa around y axis
+    vr dec 2020
+    '''
+    t = np.radians(theta)
+    s = np.sin(t)
+    c = np.cos(t)
+
+    M = np.array([c, 0., s,   0., 1., 0.,   -s, 0., c]).reshape(3,3)
+
+    return M
+
+def rotx(theta):
+    '''
+    calculates 3x3 rotation matriz for rotation around x axis
+    vr dec 2020
+    '''
+    t = np.radians(theta)
+    s = np.sin(t)
+    c = np.cos(t)
+
+    M = np.array([1., 0., 0.,   0., c, -s,   0., s, c]).reshape(3,3)
+
+    return M
+
+
+def shock3d(M,dt=0.25,maxit=30,filtpar=[0.5,0.5,0.5],signfunc=None):
+    '''
+    Simple Shock Filter in nD
+
+    vr  Dec 2020
+    '''
+    if   signfunc== None or  signfunc== 'sign':
+        signcall = 'S = -np.sign(L)'
+
+    elif signfunc[0] == 'sigmoid':
+
+        signcall = '-1./(1. + np.exp(-scale *L))'
+
+    else:
+        error('sign func '+signfunc+' not defined! Exit.')
+
+
+    K = gaussian_filter(M,filtpar)
+
+    G = M
+
+    for it in range(maxit):
+
+        G = convolve(G,K)
+        g = gaussian_gradient_magnitude(G)
+        normxyz=norm(g)
+        L = laplace(G)
+
+        S = eval(signcall)
+
+        G=G+dt*normxyz*S
+
+
+    return G
 
