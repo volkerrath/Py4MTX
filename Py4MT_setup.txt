@@ -6,7 +6,7 @@ conda env create -f Py4MT.yml
 
 or 
 
-conda create --name Py4MT --file Py4MT..txt
+conda create --name Py4MT --file Py4MT.list
 
 If this works fine, carry on with:
 

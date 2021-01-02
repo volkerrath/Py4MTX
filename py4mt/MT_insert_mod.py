@@ -40,25 +40,26 @@ from scipy.ndimage import \
     gaussian_filter, laplace, convolve, gaussian_gradient_magnitude,median_filter
 from scipy.linalg  import norm
 from sys import exit as error
+
 from modules.modem import *
-from modules.util import shock3d
+from modules.util import *
 #import readJac, writeJacNC, readDat, writeDatNC, sparsifyJac, readMod, rsvd
 rhoair = 1.e+17
 
-total = 0
+
 ModFile_in  = r'/home/vrath/work/MT/Annecy/ImageProc/In/ANN20_02_PT_NLCG_016'
-ModFile_out = r'/home/vrath/work/MT/Annecy/ImageProc/Out/ANN20_02_PT_NLCG_016_ImProc'
+ModFile_out = r'/home/vrath/work/MT/Annecy/ImageProc/Out/ANN20_02_PT_NLCG_016_insbody'
 
-action = 'ellipsoid' # 'box'
-instances =[[0., 0., 10.,  4., 2., 3.,45., 45., 30.]]
-ns = np.shape(instances)
+bodies = [['ell', 0., 0., 10.,  4., 2., 3.,45., 45., 30.]]
+nb     = np.shape(bodies)
 
-smooth = True   #'reflect'
+smooth    = True   #'reflect'
 
-
+total = 0
 start = time.time()
+
 dx, dy, dz, rho, reference = readMod(ModFile_in+'.rho',out = True)
-writeMod(ModFile_out+'.rho', dx, dy, dz, rho,reference,out = True)
+# writeMod(ModFile_out+'.rho', dx, dy, dz, rho,reference,out = True)
 elapsed = (time.time() - start)
 total = total + elapsed
 print (' Used %7.4f s for reading model from %s ' % (elapsed,ModFile_in+'.rho'))
@@ -66,22 +67,27 @@ print (' Used %7.4f s for reading model from %s ' % (elapsed,ModFile_in+'.rho'))
 air = rho > rhoair/100.
 
 start = time.time()
-if action == 'ellipsoid ':
 
-    rhonew = median_filter(rho, size=kernel_size, mode = bmode)
-    rhonew[air] = rhoair
-    Modout =ModFile_out+'_mediankernel'+str(kersiz)+'_'+bmode+'.rho'
+for ibody in range(nb[0]):
+    rhonew = insert_body(rho,bodies)
+    Modout =ModFile_out+'.rho'
     writeMod(Modout, dx, dy, dz, rhonew,reference,out = True)
-    elapsed = (time.time() - start)
-    print (' Used %7.4f s for processing/writing model to %s ' % (elapsed,Modout))
 
-elif action == 'shockfilt':
-    rhonew = shock3d(rho,dt=0.25,maxit=30)
-    rhonew[air] = rhoair
-    Modout =ModFile_out+'_shockfilt'+str(maxit)+'.rho'
-    writeMod(Modout, dx, dy, dz, rhonew,reference,out = True)
-    elapsed = (time.time() - start)
-    print (' Used %7.4f s for processing/writing model to %s ' % (elapsed,Modout))
+    if bodies[ibody,0][0:3] == 'ell':
+        rhonew = insert_ellipsoid(rho, size=kernel_size, mode = bmode)
+        rhonew[air] = rhoair
+        Modout =ModFile_out+'_mediankernel'+str(kersiz)+'_'+bmode+'.rho'
+        writeMod(Modout, dx, dy, dz, rhonew,reference,out = True)
+        elapsed = (time.time() - start)
+        print (' Used %7.4f s for processing/writing model to %s ' % (elapsed,Modout))
+
+    elif bodies[ibody,0][0:3]  == 'box':
+        rhonew = in_box(rho, size=kernel_size, mode = bmode)
+        rhonew[air] = rhoair
+        Modout =ModFile_out+'_shockfilt'+str(maxit)+'.rho'
+        writeMod(Modout, dx, dy, dz, rhonew,reference,out = True)
+        elapsed = (time.time() - start)
+        print (' Used %7.4f s for processing/writing model to %s ' % (elapsed,Modout))
 
 
 total = total + elapsed
