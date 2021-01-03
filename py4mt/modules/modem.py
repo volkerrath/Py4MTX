@@ -718,7 +718,7 @@ def shock3d(M,dt=0.25,maxit=30,filt=[3,3,3,1.],signfunc=None):
     vr  Jan 2021
     '''
     if   signfunc== None or  signfunc== 'sign':
-        signcall = 'S = -np.sign(L)'
+        signcall = '-np.sign(L)'
 
     elif signfunc[0] == 'sigmoid':
 
@@ -736,7 +736,7 @@ def shock3d(M,dt=0.25,maxit=30,filt=[3,3,3,1.],signfunc=None):
     for it in range(maxit):
 
         G = convolve(G,K)
-        g = gaussian_gradient_magnitude(G)
+        g = gaussian_gradient_magnitude(G,kerstd)
         normxyz=norm(g)
         L = laplace(G)
 

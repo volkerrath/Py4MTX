@@ -41,7 +41,7 @@ from scipy.ndimage import \
 from scipy.linalg  import norm
 from sys import exit as error
 from modules.modem import *
-from modules.util import shock3d
+
 #import readJac, writeJacNC, readDat, writeDatNC, sparsifyJac, readMod, rsvd
 rhoair = 1.e+17
 
@@ -56,7 +56,7 @@ if   action == 'medfilt':
     kernel_size = 3
     bmode =  'reflect'   #'reflect'
 elif action == 'shockfilt':
-    maxit = 10
+    maxit = 30
     filtpar=[0.5,0.5,0.5]
 
 
