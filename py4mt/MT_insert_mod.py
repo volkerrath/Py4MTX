@@ -48,9 +48,10 @@ rhoair = 1.e+17
 
 
 ModFile_in  = r'/home/vrath/work/MT/Annecy/ImageProc/In/ANN20_02_PT_NLCG_016'
-ModFile_out = r'/home/vrath/work/MT/Annecy/ImageProc/Out/ANN20_02_PT_NLCG_016_insbody'
+ModFile_out = r'/home/vrath/work/MT/Annecy/ImageProc/Out/ANN20_02_PT_NLCG_016_insert'
 
-bodies = [['ell', 0., 0., 10.,  4., 2., 3.,45., 45., 30.]]
+bodies = [['ellipsoid', 10., 0., 0., 6000.,  4000., 2000., 3000.,  45., 45., 30.],
+          ['box', 10., 1000., 0., 2000.,  6000., 2000., 3000.,  45., 45., 30.]]
 nb     = np.shape(bodies)
 
 smooth    = True   #'reflect'
@@ -69,26 +70,17 @@ air = rho > rhoair/100.
 start = time.time()
 
 for ibody in range(nb[0]):
-    rhonew = insert_body(rho,bodies)
-    Modout =ModFile_out+'.rho'
+    body = bodies[ibody]
+    rhonew = insert_body(dx,dy,dz,rho,body)
+    # def insert_body(dx=None,dy=None,dz=None,rho_in=None,body=None,
+    #             pad=[-1,-1,-1], smooth=['gaussian',1.],Out=True):
+    rhonew[air] = rhoair
+    Modout =ModFile_out+'_'+body[0]+str(ibody)+'.rho'
     writeMod(Modout, dx, dy, dz, rhonew,reference,out = True)
 
-    if bodies[ibody,0][0:3] == 'ell':
-        rhonew = insert_ellipsoid(rho, size=kernel_size, mode = bmode)
-        rhonew[air] = rhoair
-        Modout =ModFile_out+'_mediankernel'+str(kersiz)+'_'+bmode+'.rho'
-        writeMod(Modout, dx, dy, dz, rhonew,reference,out = True)
-        elapsed = (time.time() - start)
-        print (' Used %7.4f s for processing/writing model to %s ' % (elapsed,Modout))
-
-    elif bodies[ibody,0][0:3]  == 'box':
-        rhonew = in_box(rho, size=kernel_size, mode = bmode)
-        rhonew[air] = rhoair
-        Modout =ModFile_out+'_shockfilt'+str(maxit)+'.rho'
-        writeMod(Modout, dx, dy, dz, rhonew,reference,out = True)
-        elapsed = (time.time() - start)
-        print (' Used %7.4f s for processing/writing model to %s ' % (elapsed,Modout))
-
+    elapsed = (time.time() - start)
+    print (' Used %7.4f s for processing/writing model to %s ' % (elapsed,Modout))
+    print('\n')
 
 total = total + elapsed
 print (' Total time used:  %f s ' % (total))

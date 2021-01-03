@@ -9,7 +9,13 @@ Created on Fri Jul 10 11:33:17 2020
 import sys
 from sys import exit as error
 import numpy as np
+from numpy.linalg import norm
 from scipy.io import FortranFile
+from scipy.ndimage import laplace, convolve, gaussian_gradient_magnitude
+from scipy.ndimage import uniform_filter, gaussian_filter
+
+
+
 # import scipy.sparse as scp
 
 import netCDF4 as nc
@@ -100,9 +106,9 @@ def writeJacNC(NCFile=None, Jac=None, Dat= None,
 
 
 
-    ncout = nc.Dataset(NCFile,'w', format='NETCDF4');
-    ncout.createDimension('data',JacDim[0]);
-    ncout.createDimension('param',JacDim[1]);
+    ncout = nc.Dataset(NCFile,'w', format='NETCDF4')
+    ncout.createDimension('data',JacDim[0])
+    ncout.createDimension('param',JacDim[1])
 
 
 
@@ -200,8 +206,8 @@ def writeDatNC(NCFile=None, Dat= None,
     DatDim = np.shape(Dat)
 
 
-    ncout = nc.Dataset(NCFile,'w', format='NETCDF4');
-    ncout.createDimension('data',DatDim[0]);
+    ncout = nc.Dataset(NCFile,'w', format='NETCDF4')
+    ncout.createDimension('data',DatDim[0])
 
 
     S = ncout.createVariable('site',str,('data',), zlib=zlib_in,shuffle=shuffle_in)
@@ -248,15 +254,15 @@ def writeModNC(NCFile=None, x=None, y=None, z=None, Mod=None, Sens= None, Ref=No
     ModDim = np.shape(Mod)
 
 
-    ncout = nc.Dataset(NCFile,'w', format='NETCDF4');
+    ncout = nc.Dataset(NCFile,'w', format='NETCDF4')
 
 
-    ncout.createDimension('msiz',ModDim);
-    ncout.createDimension('nx',ModDim[0]);
-    ncout.createDimension('ny',ModDim[1]);
-    ncout.createDimension('nz',ModDim[2]);
+    ncout.createDimension('msiz',ModDim)
+    ncout.createDimension('nx',ModDim[0])
+    ncout.createDimension('ny',ModDim[1])
+    ncout.createDimension('nz',ModDim[2])
 
-    ncout.createDimension('ref',(3));
+    ncout.createDimension('ref',(3))
 
     X = ncout.createVariable('x','float64',('nx'), zlib=zlib_in,shuffle=shuffle_in)
     Y = ncout.createVariable('y','float64',('ny'), zlib=zlib_in,shuffle=shuffle_in)
@@ -515,16 +521,104 @@ def mt1dfwd(freq, sig, d, inmod='r',out = "imp"):
 
 
 
-def  in_ellipsoid(point=None, cent=[0.,0.,0.], axs=[1.,1.,1.], ang=[0.,0.,0.], find_inside=True):
+def insert_body(dx=None,dy=None,dz=None,rho_in=None,body=None,
+                pad=[-1,-1,-1], smooth=['gaussian',1.],scale=1.,Out=True):
+    """
+    Inserts 3d ellipsoid or box into given model
+
+    Created on Sun Jan 3 10:35:28 2021
+    @author: vrath
+    """
+    xpad = pad[0]
+    ypad = pad[1]
+    zpad = pad[2]
+
+    xc, yc, zc =  centers3d(dx,dy,dz)
+
+    nx = np.shape(xc)[0]
+    ny = np.shape(yc)[0]
+    nz = np.shape(zc)[0]
+
+    rho_out = rho_in
+
+    action  = body[0]
+    rhoval  = body[1]
+    bcent   = body[2:5]
+    baxes   = body[5:8]
+    bangl   = body[8:11]
+
+    if Out:
+        print('Body type   : '+action+' with rho =',str(rhoval)+' Ohm.m')
+        print('Body center : '+str(bcent))
+        print('Body axes   : '+str(baxes))
+        print('Body angles : '+str(bangl))
+        print('Smoothed with '+smooth[0]+' filter, gstd = '+str(smooth[1]))
+
+    if action[0:3] == 'ell':
+
+        for kk in np.arange(0,nz-zpad-1):
+            zpoint=zc[kk]
+            for jj in np.arange(ypad+1,ny-ypad-1):
+                ypoint=yc[jj]
+                for ii  in np.arange(xpad+1,nx-xpad-1):
+                    xpoint=xc[ii]
+                    position = [xpoint,ypoint,zpoint]
+                    if in_ellipsoid(position, bcent, baxes, bangl):
+                        rho_out[ii,jj,kk] = rhoval
+
+
+    if action[0:3] == 'box':
+
+        for kk in np.arange(0,nz-zpad-1):
+            zpoint=zc[kk]
+            for jj in np.arange(ypad+1,ny-ypad-1):
+                ypoint=yc[jj]
+                for ii  in np.arange(xpad+1,nx-xpad-1):
+                    xpoint=xc[ii]
+                    position = [xpoint,ypoint,zpoint]
+                    if in_box(position, bcent, baxes, bangl):
+                        rho_out[ii,jj,kk] = rhoval
+
+    if smooth != None:
+        tmp = np.log10(rho_out)
+        if  smooth[0][0:3]=='box':
+            fsize = smooth[1]
+            tmp = uniform_filter(tmp,fsize)
+            rho_out = np.power(10.,tmp)
+        elif smooth[0][0:3]=='gau':
+            gstd = smooth[1]
+            tmp = gaussian_filter(tmp,gstd)
+            rho_out = np.power(10.,tmp)
+        else:
+            error('Smoothing filter  '+smooth[0]+' not implemented! Exit.')
+
+    return rho_out
+
+def centers3d(dx,dy,dz):
+    '''
+    defines cell centers
+    Created on Sat Jan 2 10:35:28 2021
+@author: vrath
+
+    '''
+    x = np.append( 0., np.cumsum(dx))
+    xc = 0.5*(x[:-1]+x[1:])
+    y = np.append( 0., np.cumsum(dy))
+    yc = 0.5*(y[:-1]+y[1:])
+    z = np.append( 0., np.cumsum(dz))
+    zc = 0.5*(z[:-1]+z[1:])
+    return xc, yc,zc
+
+def in_ellipsoid(point=None, cent=[0.,0.,0.], axs=[1.,1.,1.], ang=[0.,0.,0.], find_inside=True):
     '''
     Finds points inside arbitrary ellipsoid, defined by the 3-vectors
     ellcent, ellaxes, elldir.
     vr dec 2020
     '''
 
-    # subtract center
-    p = point-cent
 
+    # subtract center
+    p = np.array(point)-np.array(cent)
     # rotation matrices
     rz = rotz(ang[2])
     p = np.dot(rz,p)
@@ -539,7 +633,7 @@ def  in_ellipsoid(point=None, cent=[0.,0.,0.], axs=[1.,1.,1.], ang=[0.,0.,0.], f
 
     p = p/axs
 
-    t = p[0]^2 + p[1]^2 + p[2]^2 < 1.
+    t = p[0]*p[0] + p[1]*p[1] + p[2]*p[2] < 1.
 
     if not find_inside:
         t = not t
@@ -547,20 +641,19 @@ def  in_ellipsoid(point=None, cent=[0.,0.,0.], axs=[1.,1.,1.], ang=[0.,0.,0.], f
     return t
 
 
-def in_block(point=None, cent=[0.,0.,0.], axs=[1.,1.,1.], ang=[0.,0.,0.], find_inside=True):
+def in_box(point=None, cent=[0.,0.,0.], axs=[1.,1.,1.], ang=[0.,0.,0.], find_inside=True):
     '''
     Finds points inside arbitrary ellipsoid, defined by the 3-vectors
     ellcent, ellaxes, elldir.
     vr dec 2020
     '''
     # subtract center
-    p = point-cent
-
+    p = np.array(point)-np.array(cent)
     # rotation matrices
     rz = rotz(ang[2])
-    p = np.dot(rz*p)
+    p = np.dot(rz,p)
     ry = roty(ang[1])
-    p = np.dot(ry*p)
+    p = np.dot(ry,p)
     rx = rotx(ang[0])
     p = np.dot(rx,p)
     # R = rz*ry*rx
@@ -571,8 +664,8 @@ def in_block(point=None, cent=[0.,0.,0.], axs=[1.,1.,1.], ang=[0.,0.,0.], find_i
     p = p/axs
 
     t = (p[0] <= 1. and  p[0] >= -1. and
-        p[1] <= 1. and  p[1] >= -1. and
-        p[2] <= 1. and  p[2] >= -1.)
+         p[1] <= 1. and  p[1] >= -1. and
+         p[2] <= 1. and  p[2] >= -1.)
 
     if not find_inside:
         t = not t
@@ -618,11 +711,11 @@ def rotx(theta):
     return M
 
 
-def shock3d(M,dt=0.25,maxit=30,filt=[3,3,3,0.5],signfunc=None):
+def shock3d(M,dt=0.25,maxit=30,filt=[3,3,3,1.],signfunc=None):
     '''
     Simple Shock Filter in nD
 
-    vr  Dec 2020
+    vr  Jan 2021
     '''
     if   signfunc== None or  signfunc== 'sign':
         signcall = 'S = -np.sign(L)'
@@ -655,11 +748,13 @@ def shock3d(M,dt=0.25,maxit=30,filt=[3,3,3,0.5],signfunc=None):
     return G
 
 
-def gauss2D(Kshape=(3,3,3),Ksigma=0.5):
-    """
+def gauss3D(Kshape=(3,3,3),Ksigma=1.):
+    '''
     2D gaussian mask - should give the same result as MATLAB's
     fspecial('gaussiam',[shape],[sigma])
-    """
+
+    vr  Jan 2021
+    '''
     k,m,n = [(ss-1.)/2. for ss in Kshape]
     z,y,x = np.ogrid[-k:k+1,-m:m+1,-k:k+1]
     h = np.exp( -(x*x + y*y +z*z) / (2.*Ksigma*Ksigma) )
