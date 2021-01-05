@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Fri Jul 10 11:33:17 2020
-
-@author: vrath
-"""
-# import os
+import os
 import sys
 from sys import exit as error
 import numpy as np
@@ -748,7 +743,7 @@ def shock3d(M,dt=0.25,maxit=30,filt=[3,3,3,1.],signfunc=None):
     return G
 
 
-def gauss3D(Kshape=(3,3,3),Ksigma=1.):
+def gauss3D(Kshape=(3,3,3),Ksigma=0.5):
     '''
     2D gaussian mask - should give the same result as MATLAB's
     fspecial('gaussiam',[shape],[sigma])
@@ -766,3 +761,29 @@ def gauss3D(Kshape=(3,3,3),Ksigma=1.):
     K = h
 
     return K
+
+def prepare_mod(rho,rhoair=1.e17):
+    """
+    Prepares model for filteringe etc,
+    mainly redefining the boundaries (in the case of topograpy)
+    air domain is filed with vertckal surface value
+    Created on Tue Jan  5 11:59:42 2021
+
+    @author: vrath
+    """
+    nn = np.shape(rho)
+
+    rho_new = rho
+
+    for ii in range(nn[0]):
+        for jj in range(nn[1]):
+            tmp = rho[ii,jj,:]
+            na  =np.argwhere(tmp < rhoair/100.)[0]
+            # print(' orig')
+            # print(tmp)
+            tmp[:na[0]]=tmp[na[0]]
+            # print(' prep')
+            # print(tmp)
+            rho_new[ii,jj,:]=tmp
+
+    return rho_new

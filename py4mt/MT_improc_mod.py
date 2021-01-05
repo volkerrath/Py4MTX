@@ -9,7 +9,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.8.0
+#       jupytext_version: 1.8.1
 # ---
 
 """
@@ -56,7 +56,7 @@ if   action == 'medfilt':
     kernel_size = 3
     bmode =  'reflect'   #'reflect'
 elif action == 'shockfilt':
-    maxit = 30
+    maxit = 10
     filtpar=[0.5,0.5,0.5]
 
 
@@ -68,6 +68,8 @@ total = total + elapsed
 print (' Used %7.4f s for reading model from %s ' % (elapsed,ModFile_in+'.rho'))
 
 air = rho > rhoair/100.
+# prepare extended area of filter action (air)
+rho = prepare_mod(rho,rhoair=rhoair)
 
 start = time.time()
 if action == 'medfilt':
