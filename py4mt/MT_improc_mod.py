@@ -9,7 +9,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.8.1
+#       jupytext_version: 1.9.1
 # ---
 
 """
@@ -50,14 +50,14 @@ ModFile_in  = r'/home/vrath/work/MT/Annecy/ImageProc/In/ANN20_02_PT_NLCG_016'
 ModFile_out = r'/home/vrath/work/MT/Annecy/ImageProc/Out/ANN20_02_PT_NLCG_016_ImProc'
 
 action = 'shockfilt'
-bmode  = 'reflect'   #'reflect'
 
 if   action == 'medfilt':
-    kernel_size = 3
-    bmode =  'reflect'   #'reflect'
+    ksize = 3
+    bmode =  'nearest'   #'reflect'
+    maxit = 3
 elif action == 'shockfilt':
     maxit = 10
-    filtpar=[0.5,0.5,0.5]
+    bmode = 'nearest'
 
 
 start = time.time()
@@ -73,15 +73,15 @@ rho = prepare_mod(rho,rhoair=rhoair)
 
 start = time.time()
 if action == 'medfilt':
-    rhonew = median_filter(rho, size=kernel_size, mode = bmode)
+    rhonew = med3d(rho, kernel_size=ksize, boundary_mode=bmode,maxiter=maxit)
     rhonew[air] = rhoair
-    Modout =ModFile_out+'_mediankernel'+str(kersiz)+'_'+bmode+'.rho'
+    Modout =ModFile_out+'_mediankernel'+str(kersiz)+'_'+str(maxit)+'.rho'
     writeMod(Modout, dx, dy, dz, rhonew,reference,out = True)
     elapsed = (time.time() - start)
     print (' Used %7.4f s for processing/writing model to %s ' % (elapsed,Modout))
 
 elif action == 'shockfilt':
-    rhonew = shock3d(rho,dt=0.25,maxit=30)
+    rhonew = shock3d(rho,dt=0.25,maxiter=maxit,boundary_mode =bmode)
     rhonew[air] = rhoair
     Modout =ModFile_out+'_shockfilt'+str(maxit)+'.rho'
     writeMod(Modout, dx, dy, dz, rhonew,reference,out = True)

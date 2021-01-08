@@ -7,7 +7,7 @@ import numpy as np
 from numpy.linalg import norm
 from scipy.io import FortranFile
 from scipy.ndimage import laplace, convolve, gaussian_gradient_magnitude
-from scipy.ndimage import uniform_filter, gaussian_filter
+from scipy.ndimage import uniform_filter, gaussian_filter,median_filter
 
 
 
@@ -517,7 +517,7 @@ def mt1dfwd(freq, sig, d, inmod='r',out = "imp"):
 
 
 def insert_body(dx=None,dy=None,dz=None,rho_in=None,body=None,
-                pad=[-1,-1,-1], smooth=['gaussian',1.],scale=1.,Out=True):
+                pad=[0,0,0], smooth=['gaussian',1.],scale=1.,Out=True):
     """
     Inserts 3d ellipsoid or box into given model
 
@@ -534,22 +534,30 @@ def insert_body(dx=None,dy=None,dz=None,rho_in=None,body=None,
     ny = np.shape(yc)[0]
     nz = np.shape(zc)[0]
 
-    rho_out = rho_in
+    rho_out = np.log10(rho_in)
 
-    action  = body[0]
-    rhoval  = body[1]
-    bcent   = body[2:5]
-    baxes   = body[5:8]
-    bangl   = body[8:11]
+    geom    = body[0]
+    action  = body[1]
+    rhoval  = body[2]
+    bcent   = body[3:6]
+    baxes   = body[6:9]
+    bangl   = body[9:12]
+
+    if   action[0:3] == 'rep':
+        actstring = 'rhoval'
+    elif action[0:3] == 'add':
+        actstring = 'rho_out[ii,jj,kk] + rhoval'
+    else:
+        error('Action'+action+' not implemented! Exit.')
 
     if Out:
-        print('Body type   : '+action+' with rho =',str(rhoval)+' Ohm.m')
+        print('Body type   : '+geom+', '+action+' rho =',str(np.power(10.,rhoval))+' Ohm.m')
         print('Body center : '+str(bcent))
         print('Body axes   : '+str(baxes))
         print('Body angles : '+str(bangl))
         print('Smoothed with '+smooth[0]+' filter, gstd = '+str(smooth[1]))
 
-    if action[0:3] == 'ell':
+    if geom[0:3] == 'ell':
 
         for kk in np.arange(0,nz-zpad-1):
             zpoint=zc[kk]
@@ -559,10 +567,10 @@ def insert_body(dx=None,dy=None,dz=None,rho_in=None,body=None,
                     xpoint=xc[ii]
                     position = [xpoint,ypoint,zpoint]
                     if in_ellipsoid(position, bcent, baxes, bangl):
-                        rho_out[ii,jj,kk] = rhoval
+                        rho_out[ii,jj,kk] = eval(actstring)
 
 
-    if action[0:3] == 'box':
+    if geom[0:3] == 'box':
 
         for kk in np.arange(0,nz-zpad-1):
             zpoint=zc[kk]
@@ -572,20 +580,21 @@ def insert_body(dx=None,dy=None,dz=None,rho_in=None,body=None,
                     xpoint=xc[ii]
                     position = [xpoint,ypoint,zpoint]
                     if in_box(position, bcent, baxes, bangl):
-                        rho_out[ii,jj,kk] = rhoval
+                        rho_out[ii,jj,kk] = eval(actstring)
 
     if smooth != None:
-        tmp = np.log10(rho_out)
-        if  smooth[0][0:3]=='box':
+        if  smooth[0][0:3]=='uni':
             fsize = smooth[1]
-            tmp = uniform_filter(tmp,fsize)
-            rho_out = np.power(10.,tmp)
+            rho_out = uniform_filter(rho_out,fsize)
+
         elif smooth[0][0:3]=='gau':
             gstd = smooth[1]
-            tmp = gaussian_filter(tmp,gstd)
-            rho_out = np.power(10.,tmp)
+            rho_out = gaussian_filter(rho_out,gstd)
+
         else:
             error('Smoothing filter  '+smooth[0]+' not implemented! Exit.')
+
+    rho_out = np.power(10.,rho_out)
 
     return rho_out
 
@@ -705,10 +714,26 @@ def rotx(theta):
 
     return M
 
-
-def shock3d(M,dt=0.25,maxit=30,filt=[3,3,3,1.],signfunc=None):
+def med3d(M,kernel_size=[3,3,3], boundary_mode = 'nearest',maxiter =1,Out=True):
     '''
-    Simple Shock Filter in nD
+    Simple iterated median filter in nD
+
+    vr  Jan 2021
+    '''
+    tmp = M
+    for it in range(maxiter):
+        if Out:
+            print('iteration: '+str(it))
+        tmp = median_filter(tmp,
+                            size=kernel_size, mode = boundary_mode)
+
+    G = tmp
+
+    return G
+
+def shock3d(M,dt=0.25,maxiter=30,filt=[3,3,3,1.],boundary_mode='nearest',signfunc=None):
+    '''
+    Simple shock filter in nD
 
     vr  Jan 2021
     '''
@@ -725,19 +750,20 @@ def shock3d(M,dt=0.25,maxit=30,filt=[3,3,3,1.],signfunc=None):
     kersiz = (filt[0],filt[1],filt[2])
     kerstd =   filt[3]
     K = gauss3D(kersiz,kerstd)
-
+    print(np.sum(K.flat))
     G = M
 
-    for it in range(maxit):
+    for it in range(maxiter):
 
-        G = convolve(G,K)
-        g = gaussian_gradient_magnitude(G,kerstd)
-        normxyz=norm(g)
+        G = convolve(G,K,mode=boundary_mode)
+        g = gaussian_gradient_magnitude(G,kerstd,mode=boundary_mode)
+        normg=norm(g)
+        print(normg)
         L = laplace(G)
 
         S = eval(signcall)
 
-        G=G+dt*normxyz*S
+        G=G+dt*normg*S
 
 
     return G
@@ -750,8 +776,8 @@ def gauss3D(Kshape=(3,3,3),Ksigma=0.5):
 
     vr  Jan 2021
     '''
-    k,m,n = [(ss-1.)/2. for ss in Kshape]
-    z,y,x = np.ogrid[-k:k+1,-m:m+1,-k:k+1]
+    k,m,n = [(ss-1)/2 for ss in Kshape]
+    x,y,z = np.ogrid[-n:n+1,-m:m+1,-k:k+1]
     h = np.exp( -(x*x + y*y +z*z) / (2.*Ksigma*Ksigma) )
     h[h < np.finfo(h.dtype).eps*h.max() ] = 0
     s = h.sum()
@@ -766,7 +792,7 @@ def prepare_mod(rho,rhoair=1.e17):
     """
     Prepares model for filteringe etc,
     mainly redefining the boundaries (in the case of topograpy)
-    air domain is filed with vertckal surface value
+    air domain is filed with vertical surface value
     Created on Tue Jan  5 11:59:42 2021
 
     @author: vrath

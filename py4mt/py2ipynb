@@ -1,5 +1,5 @@
 #! /bin/bash
 
-jupytext --set-formats py,ipynb MT*.py
-jupytext --to notebook  MT*.py
+jupytext --set-formats py,ipynb *.py
+jupytext --to notebook *.py
 rm __init__.ipynb version.ipynb
