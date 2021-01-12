@@ -44,18 +44,26 @@ from sys import exit as error
 from modules.modem import *
 from modules.util import *
 #import readJac, writeJacNC, readDat, writeDatNC, sparsifyJac, readMod, rsvd
+
+import PVGeo
+
 rhoair = 1.e+17
 
 
 ModFile_in  = r'/home/vrath/work/MT/Annecy/ImageProc/In/ANN20_02_PT_NLCG_016'
 ModFile_out = r'/home/vrath/work/MT/Annecy/ImageProc/Out/ANN20_02_PT_NLCG_016_insert'
 
-bodies = [['ellipsoid', 'replace',1., 0., 0., 6000.,  4000., 2000., 3000.,  45., 45., 30.],
-          ['box',       'add',    1., 1000., 0., 2000.,  6000., 2000., 3000.,  45., 45., 30.]]
+geocenter = [45.938251,     6.084900]
+utm_x, utm_y = proj_latlon_to_utm(geocenter[0],geocenter[1],utm_zone =32631)
+utmcenter =  [utm_x,utm_y, 0.]
+
+bodies = [['ellipsoid', 'replace',0.,    0., 0., 3000., 1000., 2000., 1000.,  0., 0., 30.],
+          ['box',       'replace',0.,    0., 0., 1000., 2000., 1000., 1000.,  0., 0., 30.]]
+
 nb     = np.shape(bodies)
 
-smoother=['gaussian',0.5]
-
+# smoother=['gaussian',0.5]
+smoother=['uniform',3]
 total = 0
 start = time.time()
 
@@ -69,27 +77,9 @@ air = rho > rhoair/100.
 
 rho = prepare_mod(rho,rhoair=rhoair)
 
-smoother=['gaussian',1.]
 for ibody in range(nb[0]):
     body = bodies[ibody]
     rhonew = insert_body(dx,dy,dz,rho,body,smooth=smoother)
-    # def insert_body(dx=None,dy=None,dz=None,rho_in=None,body=None,
-    #             pad=[-1,-1,-1], smooth=['gaussian',1.],Out=True):
-    rhonew[air] = rhoair
-    Modout =ModFile_out+'_'+body[0]+str(ibody)+'_'+smoother[0]+'.rho'
-    writeMod(Modout, dx, dy, dz, rhonew,reference,out = True)
-
-    elapsed = (time.time() - start)
-    print (' Used %7.4f s for processing/writing model to %s ' % (elapsed,Modout))
-    print('\n')
-
-
-smoother=['uni',3]
-for ibody in range(nb[0]):
-    body = bodies[ibody]
-    rhonew = insert_body(dx,dy,dz,rho,body,smooth=smoother)
-    # def insert_body(dx=None,dy=None,dz=None,rho_in=None,body=None,
-    #             pad=[-1,-1,-1], smooth=['gaussian',1.],Out=True):
     rhonew[air] = rhoair
     Modout =ModFile_out+'_'+body[0]+str(ibody)+'_'+smoother[0]+'.rho'
     writeMod(Modout, dx, dy, dz, rhonew,reference,out = True)
