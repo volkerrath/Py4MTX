@@ -13,12 +13,11 @@
 # ---
 
 """
-Reads ModEM's Jacobian, adds perturbations.
-Ellipsoids or boxes
+Reads ModEM model, reads ModEM's Jacobian, does fancy things.
 
-@author: vr jan 2021
+Created on Sun Jan 17 15:09:34 2021
 
-Created on Tue Jul  7 16:59:01 2020
+@author: vrath jan 2021
 
 """
 
@@ -35,29 +34,52 @@ import numpy as np
 import math  as ma
 import netCDF4 as nc
 
-from scipy.ndimage import \
-    gaussian_filter, laplace, convolve, gaussian_gradient_magnitude,median_filter
-from scipy.linalg  import norm
 from sys import exit as error
-
 from modules.modem import *
-from modules.util import *
+
 #import readJac, writeJacNC, readDat, writeDatNC, sparsifyJac, readMod, rsvd
-
-import PVGeo
-
 rhoair = 1.e+17
 
-
+total = 0
 ModFile_in  = r'/home/vrath/work/MT/Annecy/ImageProc/In/ANN20_02_PT_NLCG_016'
-ModFile_out = r'/home/vrath/work/MT/Annecy/ImageProc/Out/ANN20_02_PT_NLCG_016_insert'
+ModFile_out = r'/home/vrath/work/MT/Annecy/ImageProc/Out/ANN20_02_PT_NLCG_016_nse'
 
 geocenter = [45.938251,     6.084900]
 utm_x, utm_y = proj_latlon_to_utm(geocenter[0],geocenter[1],utm_zone =32631)
 utmcenter =  [utm_x,utm_y, 0.]
 
-bodies = [['ellipsoid', 'replace',0.,    0., 0., 3000., 1000., 2000., 1000.,  0., 0., 30.],
-          ['box',       'replace',0.,    0., 0., 1000., 2000., 1000., 1000.,  0., 0., 30.]]
+ssamples = 10000
+
+
+
+body= ['ellipsoid', 'add', 0.,    0., 0., 3000., 1000., 2000., 1000.,  0., 0., 30.]
+
+normalize_err = True
+normalize_max = True
+calcsens = True
+
+JacFile = r'/home/vrath/work/MT/Jacobians/Maurienne/Maur_PT.jac'
+DatFile = r'/home/vrath/work/MT/Jacobians/Maurienne/Maur_PT.dat'
+ModFile = r'/home/vrath/work/MT/Jacobians/Maurienne//Maur_PT_R500_NLCG_016.rho'
+SnsFile = r'/home/vrath/work/MT/Jacobians/Maurienne/Maur_PT_R500_NLCG_016.sns'
+
+total = 0.
+
+
+start = time.time()
+dx, dy, dz, rho, reference = readMod(ModFile)
+elapsed = (time.time() - start)
+total = total + elapsed
+print (' Used %7.4f s for reading model from %s ' % (elapsed,DatFile))
+
+
+
+
+
+
+
+
+
 
 nb     = np.shape(bodies)
 
@@ -91,3 +113,4 @@ for ibody in range(nb[0]):
 
 total = total + elapsed
 print (' Total time used:  %f s ' % (total))
+

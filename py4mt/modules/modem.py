@@ -822,6 +822,7 @@ def anisodiff2D(img,niter=1,kappa=50,gamma=0.1,step=(1.,1.),option=1,ploton=True
 	June 2000  original version.
 	March 2002 corrected diffusion eqn No 2.
 	July 2012 translated to Python
+    Jan 2021 slithly adapted python3 VR
 	"""
 
 	# initialize output array
@@ -943,6 +944,7 @@ def anisodiff3D(stack,niter=1,kappa=50,gamma=0.1,step=(1.,1.,1.),option=1,ploton
 	June 2000  original version.
 	March 2002 corrected diffusion eqn No 2.
 	July 2012 translated to Python
+    Jan 2021 slightly adapted python3 VR
 	"""
 
 	# initialize output array
@@ -1019,33 +1021,33 @@ def anisodiff3D(stack,niter=1,kappa=50,gamma=0.1,step=(1.,1.,1.),option=1,ploton
 
 	return stackout
 
-# def shock3d(M,dt=0.25,maxiter=30,filt=[3,3,3,1.],boundary_mode='nearest',signfunc=None):
-#     '''
-#     Simple shock filter in nD
+def shock3d(M,dt=0.2,maxiter=30,filt=[3,3,3,0.5],boundary_mode='nearest',signfunc=None):
+    '''
+    Simple shock filter in nD
 
-#     vr  Jan 2021
-#     '''
-#     if   signfunc== None or  signfunc== 'sign':
-#         signcall = '-np.sign(L)'
+    vr  Jan 2021
+    '''
+    if   signfunc== None or  signfunc== 'sign':
+        signcall = '-np.sign(L)'
 
-#     elif signfunc[0] == 'sigmoid':
+    elif signfunc[0] == 'sigmoid':
+        scale = 1.
+        signcall = '-1./(1. + np.exp(-scale *L))'
 
-#         signcall = '-1./(1. + np.exp(-scale *L))'
+    else:
+        error('sign func '+signfunc+' not defined! Exit.')
 
-#     else:
-#         error('sign func '+signfunc+' not defined! Exit.')
+    kersiz = (filt[0],filt[1],filt[2])
+    kerstd =   filt[3]
+    K = gauss3D(kersiz,kerstd)
+    # print(np.sum(K.flat))
+    G = M
 
-#     kersiz = (filt[0],filt[1],filt[2])
-#     kerstd =   filt[3]
-#     K = gauss3D(kersiz,kerstd)
-#     # print(np.sum(K.flat))
-#     G = M
+    for it in range(maxiter):
 
-#     for it in range(maxiter):
+         G = convolve(G,K,mode=boundary_mode)
 
-#         G = convolve(G,K,mode=boundary_mode)
-
-#         g = np.gradient(G)
+         g = np.gradient(G)
 #         print(np.shape(g))
 #         normg=norm(g)
 #         normg=np.sqrt(g[0])
@@ -1057,7 +1059,7 @@ def anisodiff3D(stack,niter=1,kappa=50,gamma=0.1,step=(1.,1.,1.),option=1,ploton
 #         G=G+dt*normg*S
 
 
-#     return G
+    return G
 
 
 def gauss3D(Kshape=(3,3,3),Ksigma=0.5):
