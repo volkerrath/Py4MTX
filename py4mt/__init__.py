@@ -17,4 +17,4 @@ from .version import version_info, __version__
 from .modules import *
 
 # hIPPYlib model
-from .scripts import 
+from .scripts import *

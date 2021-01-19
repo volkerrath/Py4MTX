@@ -1,11 +1,39 @@
 #!/usr/bin/env python
 
-from  setuptools import setup, find_packages
+"""
+@author: VR
+"""
+from setuptools import setup
+from setuptools import find_packages
+import os
+
+with open('custEM/VERSION.rst', 'r') as v_file:
+    custEM_version = v_file.readline()[:7]
+    release_date = v_file.readline()[:10]
+
+readme = open('README.rst').read()
+v_str = str(custEM_version + ', ' + release_date)
+
+setup(
+    name='custEM',
+    version=v_str,
+    description='customizable controlled-source electromagnetic modeling',
+    author="Rochlitz, Raphael",
+    author_email="raphael.rochlitz@leibniz-liag.de",
+    license="LGPL",
+    url="https://custem.readthedocs.io/",
+    include_package_data=True,
+    packages=find_packages(),
+    package_data={'': ['*.txt', '*.h5', '*.npy', '*.sh', '*.zip', '*.rst']})
+
+
+
+
 
 LONG_DESC = """
-Py4MT is an open source Python package to assist MT Modelling, 
-Inversion, Visualization, and Interpretation. It is based on 
-mtpy (https://github.com/MTgeophysics/mtpy). 
+Py4MT is an open source Python package to assist MT Modelling,
+Inversion, Visualization, and Interpretation. It is based on
+mtpy (https://github.com/MTgeophysics/mtpy).
 """
 
 
@@ -29,7 +57,7 @@ setup(
         "Programming Language :: Python :: 3",
         "Operating System :: OS Independent",
         ],
-    
+
     install_requires = ['numpy',
                         'scipy',
                         'matplotlib',
@@ -46,11 +74,11 @@ setup(
                         'shapely',
                         'scikit-learn'
                         'mtpy']
-                        
+
     packages=find_packages(),
-#   packages = [ 
+#   packages = [
 #				]
-	entry_points = {'console_scripts': 
+	entry_points = {'console_scripts':
                     ['ws2vtk = mtpy.utils.ws2vtk:main',
                       'modem_pyqt = mtpy.gui.modem_pyqt:main',
                       'modem_plot_response = mtpy.gui.modem_plot_response:main',
@@ -60,5 +88,5 @@ setup(
                       'occam1d_gui = mtpy.gui.occam1d_gui:main',
                       'edi_editor = mtpy.gui.edi_editor:main'
                       ]}
-	
+
     )
