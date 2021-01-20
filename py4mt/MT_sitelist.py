@@ -12,8 +12,8 @@
 # ---
 
 '''
- 
-This script produces a site list containing site names, 
+
+This script produces a site list containing site names,
 coordinates and elevations, e. g., for WALDIM analysis.
 
 @author: sb & vr dec 2019
@@ -37,21 +37,21 @@ edi_dir = r'/home/vrath/work/MT/Maurienne/MAUR9VR/orig/edis_AB1_dist_ss_dist_jus
 # r'/home/vrath/Desktop/MauTopo/MauEdi/'
 # r'/media/vrath/MT/Ireland/Northwest_CarboniferousBasin/MT_DATA/EDI/'
 print(' Edifiles read from: %s' % edi_dir)
-csv_file =edi_dir+'Sitelist.csv'
-print('Writing data to CSV file: '+csv_file)
+csv_file = edi_dir + 'Sitelist.csv'
+print('Writing data to CSV file: ' + csv_file)
 
 
 # No changes required after this line!
 
 # Construct list of edi-files:
 
-edi_files=[]
-files= os.listdir(edi_dir) 
+edi_files = []
+files = os.listdir(edi_dir)
 for entry in files:
-   # print(entry)
-   if entry.endswith('.edi') and not entry.startswith('.'):
-            edi_files.append(entry)
-ns =  np.size(edi_files)
+    # print(entry)
+    if entry.endswith('.edi') and not entry.startswith('.'):
+        edi_files.append(entry)
+ns = np.size(edi_files)
 
 # Outputfile (e. g., for WALDIM analysis)
 
@@ -63,10 +63,10 @@ with open(csv_file, 'w') as f:
 
 # Loop over edifiles:
 
-    for filename in edi_files :
-        print('reading data from: '+filename)
+    for filename in edi_files:
+        print('reading data from: ' + filename)
         name, ext = os.path.splitext(filename)
-        file_i = edi_dir+filename
+        file_i = edi_dir + filename
 
 # Create MT object
 

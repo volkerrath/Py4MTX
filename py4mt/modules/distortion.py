@@ -8,7 +8,7 @@ The methods used follow Bibby et al 2005.
 As it has been pointed out in that paper, there are various possibilities for
 constraining the solution, esp. in the 2D case.
 
-Here we just implement the 'most basic' variety for the calculation of the 
+Here we just implement the 'most basic' variety for the calculation of the
 distortion tensor. Other methods can be implemented, but since the optimal assumptions and
 constraints depend on the application, the actual place for further functions
 is in an independent, personalised module.
@@ -53,31 +53,31 @@ def find_distortion(z_object, g='det', num_freq=None, lo_dims=None):
 
     automatically determine the dimensionality over all frequencies, then find
     the appropriate distortion tensor D
-    
+
     Parameters
     ----------
-    
+
         **z_object** : mtpy.core.z object
-                       
+
         **g** : [ 'det' | '01' | '10 ]
                 type of distortion correction
                 *default* is 'det'
-                
+
         **num_freq** : int
-                       number of frequencies to look for distortion from 
+                       number of frequencies to look for distortion from
                        the index 0
                        *default* is None, meaning all frequencies are used
-                       
+
         **lo_dims** : list
                       list of dimensions for each frequency
                       *default* is None, meaning calculated from data
-                      
+
     Returns
     -------
-    
+
         **distortion** : np.ndarray(2, 2)
                          distortion array all real values
-        
+
         **distortion_err** : np.ndarray(2, 2)
                              distortion error array
 
@@ -86,10 +86,10 @@ def find_distortion(z_object, g='det', num_freq=None, lo_dims=None):
     --------
 
         :Estimate Distortion: ::
-        
+
             >>> import mtpy.analysis.distortion as distortion
             >>> dis, dis_err = distortion.find_distortion(z_obj, num_freq=12)
-            
+
     """
 
     if num_freq is not None:
@@ -99,7 +99,6 @@ def find_distortion(z_object, g='det', num_freq=None, lo_dims=None):
             print('setting num_freq to {0}'.format(num_freq))
     else:
         num_freq = z_object.freq.size
-
 
     z_obj = MTz.Z(z_object.z[0:num_freq],
                   z_object.z_err[0:num_freq],
@@ -113,11 +112,11 @@ def find_distortion(z_object, g='det', num_freq=None, lo_dims=None):
     dis = np.zeros_like(z_obj.z, dtype=np.float)
     dis_err = np.ones_like(z_obj.z, dtype=np.float)
 
-    #dictionary of values that should be no distortion in case distortion
-    #cannot be calculated for that component
+    # dictionary of values that should be no distortion in case distortion
+    # cannot be calculated for that component
     rot_mat = np.matrix([[0, -1], [1, 0]])
     for idx, dim in enumerate(dim_arr):
-        if np.any(z_obj.z[idx] == 0.0 + 0.0j) == True:
+        if np.any(z_obj.z[idx] == 0.0 + 0.0j):
             dis[idx] = np.identity(2)
             print('Found a zero in z at {0}, skipping'.format(idx))
             continue
@@ -161,22 +160,33 @@ def find_distortion(z_object, g='det', num_freq=None, lo_dims=None):
             else:
                 err_arr = None
 
-            tetm_arr, tetm_err = MTcc.rotatematrix_incl_errors(z_obj.z[idx],
-                                                               strike_ang,
-                                                               inmatrix_err=err_arr)
+            tetm_arr, tetm_err = MTcc.rotatematrix_incl_errors(
+                z_obj.z[idx], strike_ang, inmatrix_err=err_arr)
 
             tetm_r = tetm_arr.real
             tetm_i = tetm_arr.imag
-            t_arr_r = -4 * P * tetm_r[0, 1] * tetm_r[1, 0] / np.linalg.det(tetm_r)
-            t_arr_i = -4 * P * tetm_i[0, 1] * tetm_i[1, 0] / np.linalg.det(tetm_i)
+            t_arr_r = -4 * P * tetm_r[0, 1] * \
+                tetm_r[1, 0] / np.linalg.det(tetm_r)
+            t_arr_i = -4 * P * tetm_i[0, 1] * \
+                tetm_i[1, 0] / np.linalg.det(tetm_i)
 
             try:
                 T = np.sqrt(max([t_arr_r, t_arr_i])) + .001
             except ValueError:
                 T = 2
 
-            sr = np.sqrt(T ** 2 + 4 * P * tetm_r[0, 1] * tetm_r[1, 0] / np.linalg.det(tetm_r))
-            si = np.sqrt(T ** 2 + 4 * P * tetm_i[0, 1] * tetm_i[1, 0] / np.linalg.det(tetm_i))
+            sr = np.sqrt(T ** 2 +
+                         4 *
+                         P *
+                         tetm_r[0, 1] *
+                         tetm_r[1, 0] /
+                         np.linalg.det(tetm_r))
+            si = np.sqrt(T ** 2 +
+                         4 *
+                         P *
+                         tetm_i[0, 1] *
+                         tetm_i[1, 0] /
+                         np.linalg.det(tetm_i))
 
             par_r = 2 * tetm_r[0, 1] / (T - sr)
             orth_r = 2 * tetm_r[1, 0] / (T + sr)
@@ -194,53 +204,77 @@ def find_distortion(z_object, g='det', num_freq=None, lo_dims=None):
 
             if err_arr is not None:
                 # find errors of entries for calculating weights
-                sigma_sr = np.sqrt((-(2 * P * tetm_r[0, 1] * tetm_r[1, 0] * \
-                                      tetm_r[1, 1] * err_arr[0, 0]) / \
-                                    (np.linalg.det(tetm_r) ** 2 * sr)) ** 2 + \
+                sigma_sr = np.sqrt((-(2 * P * tetm_r[0, 1] * tetm_r[1, 0] *
+                                      tetm_r[1, 1] * err_arr[0, 0]) /
+                                    (np.linalg.det(tetm_r) ** 2 * sr)) ** 2 +
                                    ((2 * P * tetm_r[0, 0] * tetm_r[1, 0] *
                                      tetm_r[1, 1] * err_arr[0, 1]) /
-                                    (np.linalg.det(tetm_r) ** 2 * sr)) ** 2 + \
+                                    (np.linalg.det(tetm_r) ** 2 * sr)) ** 2 +
                                    ((2 * P * tetm_r[0, 0] * tetm_r[0, 1] *
-                                     tetm_r[1, 1] * err_arr[1, 0]) / \
-                                    (np.linalg.det(tetm_r) ** 2 * sr)) ** 2 + \
-                                   (-(2 * P * tetm_r[0, 1] * tetm_r[1, 0] * \
-                                      tetm_r[0, 0] * err_arr[1, 1]) / \
+                                     tetm_r[1, 1] * err_arr[1, 0]) /
+                                    (np.linalg.det(tetm_r) ** 2 * sr)) ** 2 +
+                                   (-(2 * P * tetm_r[0, 1] * tetm_r[1, 0] *
+                                      tetm_r[0, 0] * err_arr[1, 1]) /
                                     (np.linalg.det(tetm_r) ** 2 * sr)) ** 2)
 
                 sigma_dr_11 = 0.5 * sigma_sr
                 sigma_dr_22 = 0.5 * sigma_sr
 
-                sigma_dr_12 = np.sqrt((mat2_r[0, 1] / tetm_r[0, 0] * err_arr[0, 0]) ** 2 + \
-                                      (mat2_r[0, 1] / tetm_r[1, 0] * err_arr[1, 0]) ** 2 + \
-                                      (0.5 * tetm_r[0, 0] / tetm_r[1, 0] * sigma_sr) ** 2)
-                sigma_dr_21 = np.sqrt((mat2_r[1, 0] / tetm_r[1, 1] * err_arr[1, 1]) ** 2 + \
-                                      (mat2_r[1, 0] / tetm_r[0, 1] * err_arr[0, 1]) ** 2 + \
-                                      (0.5 * tetm_r[1, 1] / tetm_r[0, 1] * sigma_sr) ** 2)
+                sigma_dr_12 = np.sqrt((mat2_r[0,
+                                              1] / tetm_r[0,
+                                                          0] * err_arr[0,
+                                                                       0]) ** 2 + (mat2_r[0,
+                                                                                          1] / tetm_r[1,
+                                                                                                      0] * err_arr[1,
+                                                                                                                   0]) ** 2 + (0.5 * tetm_r[0,
+                                                                                                                                            0] / tetm_r[1,
+                                                                                                                                                        0] * sigma_sr) ** 2)
+                sigma_dr_21 = np.sqrt((mat2_r[1,
+                                              0] / tetm_r[1,
+                                                          1] * err_arr[1,
+                                                                       1]) ** 2 + (mat2_r[1,
+                                                                                          0] / tetm_r[0,
+                                                                                                      1] * err_arr[0,
+                                                                                                                   1]) ** 2 + (0.5 * tetm_r[1,
+                                                                                                                                            1] / tetm_r[0,
+                                                                                                                                                        1] * sigma_sr) ** 2)
 
                 dis_err_r = np.array([[sigma_dr_11, sigma_dr_12],
                                       [sigma_dr_21, sigma_dr_22]])
 
-                sigma_si = np.sqrt((-(2 * P * tetm_i[0, 1] * tetm_i[1, 0] * \
-                                      tetm_i[1, 1] * err_arr[0, 0]) / \
-                                    (np.linalg.det(tetm_i) ** 2 * sr)) ** 2 + \
-                                   ((2 * P * tetm_i[0, 0] * tetm_i[1, 0] * \
-                                     tetm_i[1, 1] * err_arr[0, 1]) / \
-                                    (np.linalg.det(tetm_i) ** 2 * sr)) ** 2 + \
-                                   ((2 * P * tetm_i[0, 0] * tetm_i[0, 1] * \
-                                     tetm_i[1, 1] * err_arr[1, 0]) / \
-                                    (np.linalg.det(tetm_i) ** 2 * sr)) ** 2 + \
-                                   (-(2 * P * tetm_i[0, 1] * tetm_i[1, 0] * \
-                                      tetm_i[0, 0] * err_arr[1, 1]) / \
+                sigma_si = np.sqrt((-(2 * P * tetm_i[0, 1] * tetm_i[1, 0] *
+                                      tetm_i[1, 1] * err_arr[0, 0]) /
+                                    (np.linalg.det(tetm_i) ** 2 * sr)) ** 2 +
+                                   ((2 * P * tetm_i[0, 0] * tetm_i[1, 0] *
+                                     tetm_i[1, 1] * err_arr[0, 1]) /
+                                    (np.linalg.det(tetm_i) ** 2 * sr)) ** 2 +
+                                   ((2 * P * tetm_i[0, 0] * tetm_i[0, 1] *
+                                     tetm_i[1, 1] * err_arr[1, 0]) /
+                                    (np.linalg.det(tetm_i) ** 2 * sr)) ** 2 +
+                                   (-(2 * P * tetm_i[0, 1] * tetm_i[1, 0] *
+                                      tetm_i[0, 0] * err_arr[1, 1]) /
                                     (np.linalg.det(tetm_i) ** 2 * sr)) ** 2)
 
                 sigma_di_11 = 0.5 * sigma_si
                 sigma_di_22 = 0.5 * sigma_si
-                sigma_di_12 = np.sqrt((mat2_i[0, 1] / tetm_i[0, 0] * err_arr[0, 0]) ** 2 + \
-                                      (mat2_i[0, 1] / tetm_i[1, 0] * err_arr[1, 0]) ** 2 + \
-                                      (0.5 * tetm_i[0, 0] / tetm_i[1, 0] * sigma_si) ** 2)
-                sigma_di_21 = np.sqrt((mat2_i[1, 0] / tetm_i[1, 1] * err_arr[1, 1]) ** 2 + \
-                                      (mat2_i[1, 0] / tetm_i[0, 1] * err_arr[0, 1]) ** 2 + \
-                                      (0.5 * tetm_i[1, 1] / tetm_i[0, 1] * sigma_si) ** 2)
+                sigma_di_12 = np.sqrt((mat2_i[0,
+                                              1] / tetm_i[0,
+                                                          0] * err_arr[0,
+                                                                       0]) ** 2 + (mat2_i[0,
+                                                                                          1] / tetm_i[1,
+                                                                                                      0] * err_arr[1,
+                                                                                                                   0]) ** 2 + (0.5 * tetm_i[0,
+                                                                                                                                            0] / tetm_i[1,
+                                                                                                                                                        0] * sigma_si) ** 2)
+                sigma_di_21 = np.sqrt((mat2_i[1,
+                                              0] / tetm_i[1,
+                                                          1] * err_arr[1,
+                                                                       1]) ** 2 + (mat2_i[1,
+                                                                                          0] / tetm_i[0,
+                                                                                                      1] * err_arr[0,
+                                                                                                                   1]) ** 2 + (0.5 * tetm_i[1,
+                                                                                                                                            1] / tetm_i[0,
+                                                                                                                                                        1] * sigma_si) ** 2)
 
                 dis_err_i = np.array([[sigma_di_11, sigma_di_12],
                                       [sigma_di_21, sigma_di_22]])
@@ -265,10 +299,10 @@ def find_1d_distortion(z_object, include_non1d=False):
     """
     find 1D distortion tensor from z object
 
-    ONly use the 1D part of the Z to determine D. 
+    ONly use the 1D part of the Z to determine D.
     Treat all frequencies as 1D, if  "include_non1d = True".
 
-    
+
     """
 
     if not isinstance(z_object, MTz.Z):
@@ -283,8 +317,9 @@ def find_1d_distortion(z_object, include_non1d=False):
         lo_dims = [1 for i in lo_dims]
 
     if len(list(np.where(np.array(lo_dims) == 1))) == 0:
-        raise MTex.MTpyError_inputarguments('Z object does not have '
-                                            'frequencies with spatial 1D characteristic')
+        raise MTex.MTpyError_inputarguments(
+            'Z object does not have '
+            'frequencies with spatial 1D characteristic')
 
     print(lo_dims)
 
@@ -295,9 +330,9 @@ def find_2d_distortion(z_object, include_non2d=False):
     """
     find 2D distortion tensor from z object
 
-    ONly use the 2D part of the Z to determine D. 
+    ONly use the 2D part of the Z to determine D.
     Treat all frequencies as 2D, if  "include_non2d = True".
-    
+
     """
 
     if not isinstance(z_object, MTz.Z):
@@ -315,24 +350,25 @@ def find_2d_distortion(z_object, include_non2d=False):
         lo_dims = [2 for i in lo_dims]
 
     if len(list(np.where(np.array(lo_dims) == 2))) == 0:
-        raise MTex.MTpyError_inputarguments('Z object does not have'
-                                            ' frequencies with spatial 2D characteristic')
+        raise MTex.MTpyError_inputarguments(
+            'Z object does not have'
+            ' frequencies with spatial 2D characteristic')
 
     return find_distortion(z_obj, lo_dims=lo_dims)
 
 
 def remove_distortion(z_array=None, z_object=None, num_freq=None, g='det'):
     """
-    remove distortion from an impedance tensor using the method outlined by 
+    remove distortion from an impedance tensor using the method outlined by
     Bibby et al., [2005].
-    
+
     Parameters
     -----------
-    
+
         **z_array** : np.ndarray((nf, 2, 2))
                       numpy array of impedance tensor
                       *default* is None
-                      
+
         **z_object** : mtpy.core.z object
                        *default* is None
 
@@ -359,7 +395,7 @@ def remove_distortion(z_array=None, z_object=None, num_freq=None, g='det'):
         :Remove Distortion: ::
 
             >>> import mtpy.analysis.distortion as distortion
-            >>> d, new_z = distortion.remove_distortion(z_object=z_obj)                         
+            >>> d, new_z = distortion.remove_distortion(z_object=z_obj)
     """
 
     if z_array is not None:
@@ -378,7 +414,8 @@ def remove_distortion(z_array=None, z_object=None, num_freq=None, g='det'):
 
     try:
         # distortion_tensor, zd, zd_err = z_obj.no_distortion(dis, distortion_err_tensor=dis_err)
-        distortion_tensor, zd, zd_err = z_obj.remove_distortion(dis, distortion_err_tensor=dis_err)
+        distortion_tensor, zd, zd_err = z_obj.remove_distortion(
+            dis, distortion_err_tensor=dis_err)
 
         zd_err = np.nan_to_num(zd_err)
         zd_err[np.where(zd_err == 0.0)] = 1.0

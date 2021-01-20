@@ -33,7 +33,7 @@ import time
 
 
 import numpy as np
-import math  as ma
+import math as ma
 import netCDF4 as nc
 
 from sys import exit as error
@@ -43,48 +43,54 @@ from modules.modem import *
 rhoair = 1.e+17
 
 total = 0
-ModFile_in  = r'/home/vrath/work/MT/Annecy/ImageProc/In/ANN20_02_PT_NLCG_016'
+ModFile_in = r'/home/vrath/work/MT/Annecy/ImageProc/In/ANN20_02_PT_NLCG_016'
 ModFile_out = r'/home/vrath/work/MT/Annecy/ImageProc/Out/ANN20_02_PT_NLCG_016_ImProc'
 
 action = 'anidiff'
 
-if   action == 'medfilt':
+if action == 'medfilt':
     ksize = 3
-    bmode =  'nearest'   #'reflect'
+    bmode = 'nearest'  # 'reflect'
     maxit = 3
 elif action == 'anidiff':
     maxit = 50
-    fopt  = 1
+    fopt = 1
 
 
 start = time.time()
-dx, dy, dz, rho, reference = readMod(ModFile_in+'.rho',out = True)
-writeMod(ModFile_out+'.rho', dx, dy, dz, rho,reference,out = True)
+dx, dy, dz, rho, reference = readMod(ModFile_in + '.rho', out=True)
+writeMod(ModFile_out + '.rho', dx, dy, dz, rho, reference, out=True)
 elapsed = (time.time() - start)
 total = total + elapsed
-print (' Used %7.4f s for reading model from %s ' % (elapsed,ModFile_in+'.rho'))
+print(' Used %7.4f s for reading model from %s ' %
+      (elapsed, ModFile_in + '.rho'))
 
-air = rho > rhoair/100.
+air = rho > rhoair / 100.
 # prepare extended area of filter action (air)
-rho = prepare_mod(rho,rhoair=rhoair)
+rho = prepare_mod(rho, rhoair=rhoair)
 
 start = time.time()
 if action == 'medfilt':
-    rhonew = medfilt3D(rho, kernel_size=ksize, boundary_mode=bmode,maxiter=maxit)
+    rhonew = medfilt3D(rho, kernel_size=ksize,
+                       boundary_mode=bmode, maxiter=maxit)
     rhonew[air] = rhoair
-    Modout =ModFile_out+'_mediankernel'+str(kersiz)+'_'+str(maxit)+'.rho'
-    writeMod(Modout, dx, dy, dz, rhonew,reference,out = True)
+    Modout = ModFile_out + '_mediankernel' + \
+        str(kersiz) + '_' + str(maxit) + '.rho'
+    writeMod(Modout, dx, dy, dz, rhonew, reference, out=True)
     elapsed = (time.time() - start)
-    print (' Used %7.4f s for processing/writing model to %s ' % (elapsed,Modout))
+    print(' Used %7.4f s for processing/writing model to %s ' %
+          (elapsed, Modout))
 
 elif action == 'anidiff':
-    rhonew = anidiff3D(rho,ckappa=20, dgamma=0.24,foption=fopt, maxiter =maxit,Out=True,Plot=True)
+    rhonew = anidiff3D(rho, ckappa=20, dgamma=0.24,
+                       foption=fopt, maxiter=maxit, Out=True, Plot=True)
     rhonew[air] = rhoair
-    Modout =ModFile_out+'_anisodiff'+str(fopt)+'-'+str(maxit)+'.rho'
-    writeMod(Modout, dx, dy, dz, rhonew,reference,out = True)
+    Modout = ModFile_out + '_anisodiff' + str(fopt) + '-' + str(maxit) + '.rho'
+    writeMod(Modout, dx, dy, dz, rhonew, reference, out=True)
     elapsed = (time.time() - start)
-    print (' Used %7.4f s for processing/writing model to %s ' % (elapsed,Modout))
+    print(' Used %7.4f s for processing/writing model to %s ' %
+          (elapsed, Modout))
 
 
 total = total + elapsed
-print (' Total time used:  %f s ' % (total))
+print(' Total time used:  %f s ' % (total))

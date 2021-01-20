@@ -7,4 +7,3 @@ Created on Thu Sep 24 19:12:28 2020
 """
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
-

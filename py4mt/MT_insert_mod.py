@@ -32,12 +32,12 @@ import time
 
 
 import numpy as np
-import math  as ma
+import math as ma
 import netCDF4 as nc
 
 from scipy.ndimage import \
-    gaussian_filter, laplace, convolve, gaussian_gradient_magnitude,median_filter
-from scipy.linalg  import norm
+    gaussian_filter, laplace, convolve, gaussian_gradient_magnitude, median_filter
+from scipy.linalg import norm
 from sys import exit as error
 
 from modules.modem import *
@@ -49,45 +49,47 @@ import PVGeo
 rhoair = 1.e+17
 
 
-ModFile_in  = r'/home/vrath/work/MT/Annecy/ImageProc/In/ANN20_02_PT_NLCG_016'
+ModFile_in = r'/home/vrath/work/MT/Annecy/ImageProc/In/ANN20_02_PT_NLCG_016'
 ModFile_out = r'/home/vrath/work/MT/Annecy/ImageProc/Out/ANN20_02_PT_NLCG_016_insert'
 
-geocenter = [45.938251,     6.084900]
-utm_x, utm_y = proj_latlon_to_utm(geocenter[0],geocenter[1],utm_zone =32631)
-utmcenter =  [utm_x,utm_y, 0.]
+geocenter = [45.938251, 6.084900]
+utm_x, utm_y = proj_latlon_to_utm(geocenter[0], geocenter[1], utm_zone=32631)
+utmcenter = [utm_x, utm_y, 0.]
 
-bodies = [['ellipsoid', 'replace',0.,    0., 0., 3000., 1000., 2000., 1000.,  0., 0., 30.],
-          ['box',       'replace',0.,    0., 0., 1000., 2000., 1000., 1000.,  0., 0., 30.]]
+bodies = [['ellipsoid', 'replace', 0., 0., 0., 3000., 1000., 2000., 1000., 0., 0., 30.],
+          ['box', 'replace', 0., 0., 0., 1000., 2000., 1000., 1000., 0., 0., 30.]]
 
-nb     = np.shape(bodies)
+nb = np.shape(bodies)
 
 # smoother=['gaussian',0.5]
-smoother=['uniform',3]
+smoother = ['uniform', 3]
 total = 0
 start = time.time()
 
-dx, dy, dz, rho, reference = readMod(ModFile_in+'.rho',out = True)
+dx, dy, dz, rho, reference = readMod(ModFile_in + '.rho', out=True)
 # writeMod(ModFile_out+'.rho', dx, dy, dz, rho,reference,out = True)
 elapsed = (time.time() - start)
 total = total + elapsed
-print (' Used %7.4f s for reading model from %s ' % (elapsed,ModFile_in+'.rho'))
+print(' Used %7.4f s for reading model from %s ' %
+      (elapsed, ModFile_in + '.rho'))
 
-air = rho > rhoair/100.
+air = rho > rhoair / 100.
 
-rho = prepare_mod(rho,rhoair=rhoair)
+rho = prepare_mod(rho, rhoair=rhoair)
 
 for ibody in range(nb[0]):
     body = bodies[ibody]
-    rhonew = insert_body(dx,dy,dz,rho,body,smooth=smoother)
+    rhonew = insert_body(dx, dy, dz, rho, body, smooth=smoother)
     rhonew[air] = rhoair
-    Modout =ModFile_out+'_'+body[0]+str(ibody)+'_'+smoother[0]+'.rho'
-    writeMod(Modout, dx, dy, dz, rhonew,reference,out = True)
+    Modout = ModFile_out + '_' + body[0] + \
+        str(ibody) + '_' + smoother[0] + '.rho'
+    writeMod(Modout, dx, dy, dz, rhonew, reference, out=True)
 
     elapsed = (time.time() - start)
-    print (' Used %7.4f s for processing/writing model to %s ' % (elapsed,Modout))
+    print(' Used %7.4f s for processing/writing model to %s ' %
+          (elapsed, Modout))
     print('\n')
 
 
-
 total = total + elapsed
-print (' Total time used:  %f s ' % (total))
+print(' Total time used:  %f s ' % (total))

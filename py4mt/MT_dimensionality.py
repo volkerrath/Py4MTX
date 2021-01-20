@@ -12,8 +12,8 @@
 # ---
 
 '''
- 
-This script produces a site list containing site names, 
+
+This script produces a site list containing site names,
 coordinates and elevations, e. g., for WALDIM analysis.
 
 @author: sb & vr dec 2019
@@ -36,13 +36,13 @@ print(' Edifiles read from: %s' % edi_dir)
 
 # Construct list of edi-files:
 
-edi_files=[]
-files= os.listdir(edi_dir) 
+edi_files = []
+files = os.listdir(edi_dir)
 for entry in files:
-   # print(entry)
-   if entry.endswith('.edi') and not entry.startswith('.'):
-            edi_files.append(entry)
-ns =  np.size(edi_files)
+    # print(entry)
+    if entry.endswith('.edi') and not entry.startswith('.'):
+        edi_files.append(entry)
+ns = np.size(edi_files)
 
 # Outputfile (e. g., for WALDIM analysis)
 
@@ -53,11 +53,11 @@ n2d = 0
 n1d = 0
 nel = 0
 sit = 0
-for filename in edi_files :
-    sit = sit+1
-    print('reading data from: '+filename)
+for filename in edi_files:
+    sit = sit + 1
+    print('reading data from: ' + filename)
     name, ext = os.path.splitext(filename)
-    file_i = edi_dir+filename
+    file_i = edi_dir + filename
 
 # Create MT object
 
@@ -69,19 +69,27 @@ for filename in edi_files :
     north = mt_obj.north
 # use the phase tensor to determine which frequencies are 1D/2D/3D
     dim = dimensionality(z_object=mt_obj.Z,
-                     skew_threshold=5,          # threshold in skew angle (degrees) to determine if data are 3d
-                     eccentricity_threshold=0.1 # threshold in phase ellipse eccentricity to determine if data are 2d (vs 1d)
-                     )
-    
-    nel = nel   +  np.size(dim)
-    n1d = n1d + sum(map(lambda x : x == 1, dim))
-    n2d = n2d + sum(map(lambda x : x == 2, dim))
-    n3d = n3d + sum(map(lambda x : x == 3, dim))
+                         skew_threshold=5,
+                         # threshold in skew angle (degrees) to determine if
+                         # data are 3d
+                         # threshold in phase ellipse eccentricity to determine
+                         # if data are 2d (vs 1d)
+                         eccentricity_threshold=0.1
+                         )
+
+    nel = nel + np.size(dim)
+    n1d = n1d + sum(map(lambda x: x == 1, dim))
+    n2d = n2d + sum(map(lambda x: x == 2, dim))
+    n3d = n3d + sum(map(lambda x: x == 3, dim))
 
 
-print('number of sites = '+str(sit) )
-print('total number of elements = '+str(nel))
-print('  number of undetermined elements = '+str(nel-n1d-n2d-n3d)+'\n')
-print('  number of 1-D elements = '+str(n1d)+'  ('+str(round(100*n1d/nel))+'%)') 
-print('  number of 2-D elements = '+str(n2d)+'  ('+str(round(100*n2d/nel))+'%)')
-print('  number of 3-D elements = '+str(n3d)+'  ('+str(round(100*n3d/nel))+'%)')   
+print('number of sites = ' + str(sit))
+print('total number of elements = ' + str(nel))
+print('  number of undetermined elements = ' +
+      str(nel - n1d - n2d - n3d) + '\n')
+print('  number of 1-D elements = ' + str(n1d) +
+      '  (' + str(round(100 * n1d / nel)) + '%)')
+print('  number of 2-D elements = ' + str(n2d) +
+      '  (' + str(round(100 * n2d / nel)) + '%)')
+print('  number of 3-D elements = ' + str(n3d) +
+      '  (' + str(round(100 * n3d / nel)) + '%)')

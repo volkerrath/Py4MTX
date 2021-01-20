@@ -8,7 +8,6 @@ import numpy as np
 import scipy.sparse as scp
 
 
-
 # ------------------------------------------------------------------------------
 
 def rsvd(A, rank, n_oversamples=None, n_subspace_iters=None,
@@ -36,7 +35,7 @@ def rsvd(A, rank, n_oversamples=None, n_subspace_iters=None,
     else:
         n_samples = rank + n_oversamples
 
-    # Stage A. 
+    # Stage A.
     # print(' stage A')
     Q = find_range(A, n_samples, n_subspace_iters)
 
@@ -58,6 +57,7 @@ def rsvd(A, rank, n_oversamples=None, n_subspace_iters=None,
     return U, S, Vt
 
 # ------------------------------------------------------------------------------
+
 
 def find_range(A, n_samples, n_subspace_iters=None):
     """Algorithm 4.1: Randomized range finder (p. 240 of Halko et al).
@@ -82,6 +82,7 @@ def find_range(A, n_samples, n_subspace_iters=None):
 
 # ------------------------------------------------------------------------------
 
+
 def subspace_iter(A, Y0, n_iters):
     """Algorithm 4.4: Randomized subspace iteration (p. 244 of Halko et al).
 
@@ -103,6 +104,7 @@ def subspace_iter(A, Y0, n_iters):
 
 # ------------------------------------------------------------------------------
 
+
 def ortho_basis(M):
     """Computes an orthonormal basis for a matrix.
 
@@ -114,58 +116,66 @@ def ortho_basis(M):
     return Q
 
 
-def sparsifyJac(Jac=None,sparse_thresh =1.E-6,normalized = True, method=None, out = True):
+def sparsifyJac(
+        Jac=None,
+        sparse_thresh=1.E-6,
+        normalized=True,
+        method=None,
+        out=True):
     """
     Sparsifies error_scaled Jacobian from ModEM output
-    
+
     author: vrath
     last changed: Sep 25, 2020
     """
     shj = np.shape(Jac)
     if out:
-        nel = shj[0]*shj[1]
-        print('sparsifyJac: dimension of original J is %i x %i = %i elements' 
-              % (shj[0],shj[1],nel))
-        
-    Jac    = np.abs(Jac)
-    Jmax   = np.amax(Jac)
-    thresh = Jmax*sparse_thresh
-    Jac[Jac<thresh] = 0.0
-    Js= scp.csr_matrix(Jac)
-    
+        nel = shj[0] * shj[1]
+        print('sparsifyJac: dimension of original J is %i x %i = %i elements'
+              % (shj[0], shj[1], nel))
+
+    Jac = np.abs(Jac)
+    Jmax = np.amax(Jac)
+    thresh = Jmax * sparse_thresh
+    Jac[Jac < thresh] = 0.0
+    Js = scp.csr_matrix(Jac)
+
     if scp.issparse(Js):
         ns = scp.csr_matrix.count_nonzero(Js)
-        print('sparsifyJac: output J is sparse: %r, and has  %i nonzeros, %f percent' %
-              (scp.issparse(Js),ns,100.*ns/nel))
-        
-    if normalized:
-        f =1./Jmax
-        Js = f*Js
-        
-    return Js 
+        print(
+            'sparsifyJac: output J is sparse: %r, and has  %i nonzeros, %f percent' %
+            (scp.issparse(Js), ns, 100. * ns / nel))
 
-def normalizeJac(Jac=None,fn = None, out = True):
+    if normalized:
+        f = 1. / Jmax
+        Js = f * Js
+
+    return Js
+
+
+def normalizeJac(Jac=None, fn=None, out=True):
     """
     normalizes Jacobian from ModEM output
-    
+
     author: vrath
     last changed: July 25, 2020
     """
     shj = np.shape(Jac)
     shf = np.shape(fn)
     if shf[0] == 1:
-        f=1./fn
-        Jac = f*Jac
+        f = 1. / fn
+        Jac = f * Jac
     else:
-        erri = np.reshape(1./fn,(shj[0],1))
-        Jac = erri[:]*Jac
-        
+        erri = np.reshape(1. / fn, (shj[0], 1))
+        Jac = erri[:] * Jac
+
     return Jac
 
-def calculateSens(Jac=None,normalize=True, small = 1.e-14, out = True):
+
+def calculateSens(Jac=None, normalize=True, small=1.e-14, out=True):
     """
     normalizes Jacobian from ModEM output
-    
+
     author: vrath
     last changed: Sep 25, 2020
     """
@@ -175,47 +185,45 @@ def calculateSens(Jac=None,normalize=True, small = 1.e-14, out = True):
     else:
         J = Jac
 
-    S  = np.sum(np.power(J,2),axis=0)
+    S = np.sum(np.power(J, 2), axis=0)
 
     if normalize:
-        
-        Smax=np.amax(S)
-        S = S/Smax
-        
+
+        Smax = np.amax(S)
+        S = S / Smax
+
     if small <= 1.e-14:
-        S[S<small] = np.NaN
+        S[S < small] = np.NaN
 
     return S, Smax
 
-def projectMod(m=None,U=None, small = 1.e-14, out = True):
-    
+
+def projectMod(m=None, U=None, small=1.e-14, out=True):
     """
     Nullspace Projection
     (see Munoz & Rath, 2006)
     author: vrath
     last changed: Sep 25, 2020
     """
-    b = np.dot(U.T,m)
+    b = np.dot(U.T, m)
     # print(m.shape)
     # print(b.shape)
     # print(U.shape)
-    
-    mp = m - np.dot(U,b)
-    
+
+    mp = m - np.dot(U, b)
+
     return mp
 
 
-def transMod(m=None,M=None, small = 1.e-14, out = True):
-    
+def transMod(m=None, M=None, small=1.e-14, out=True):
     """
-    Transform Model 
+    Transform Model
     M shoulld be something like C_m^-1/2
     ( see egg Kelbert 2012, Egbert & kelbert 2014)
     author: vrath
     last changed:  Oct 12, 2020
     """
-    
-   
-    transm = np.dot(M,m)
-    
+
+    transm = np.dot(M, m)
+
     return transm
