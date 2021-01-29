@@ -42,10 +42,16 @@ normalize_err = True
 normalize_max = True
 calcsens = True
 
-JacFile = r'/home/vrath/work/MT/Jacobians/Maurienne/Maur_PT.jac'
-DatFile = r'/home/vrath/work/MT/Jacobians/Maurienne/Maur_PT.dat'
+# JacFile = r'/home/vrath/work/MT/Jacobians/Maurienne/Maur_PT.jac'
+# DatFile = r'/home/vrath/work/MT/Jacobians/Maurienne/Maur_PT.dat'
+# ModFile = r'/home/vrath/work/MT/Jacobians/Maurienne//Maur_PT_R500_NLCG_016.rho'
+# SnsFile = r'/home/vrath/work/MT/Jacobians/Maurienne/Maur_PT_R500_NLCG_016.sns'
+
+JacFile = r'/home/vrath/work/MT/Jacobians/Maurienne/Maur_Z.jac'
+DatFile = r'/home/vrath/work/MT/Jacobians/Maurienne/Maur_Z.dat'
 ModFile = r'/home/vrath/work/MT/Jacobians/Maurienne//Maur_PT_R500_NLCG_016.rho'
 SnsFile = r'/home/vrath/work/MT/Jacobians/Maurienne/Maur_PT_R500_NLCG_016.sns'
+
 
 total = 0.
 
