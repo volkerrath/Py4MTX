@@ -10,8 +10,8 @@ import scipy.sparse as scp
 
 # ------------------------------------------------------------------------------
 
-def rsvd(A, rank, n_oversamples=None, n_subspace_iters=None,
-         return_range=False):
+
+def rsvd(A, rank, n_oversamples=None, n_subspace_iters=None, return_range=False):
     """
     =============================================================================
     Randomized SVD. See Halko, Martinsson, Tropp's 2011 SIAM paper:
@@ -56,6 +56,7 @@ def rsvd(A, rank, n_oversamples=None, n_subspace_iters=None,
         return U, S, Vt, Q
     return U, S, Vt
 
+
 # ------------------------------------------------------------------------------
 
 
@@ -80,6 +81,7 @@ def find_range(A, n_samples, n_subspace_iters=None):
     else:
         return ortho_basis(Y)
 
+
 # ------------------------------------------------------------------------------
 
 
@@ -102,6 +104,7 @@ def subspace_iter(A, Y0, n_iters):
         Q = ortho_basis(A @ Z)
     return Q
 
+
 # ------------------------------------------------------------------------------
 
 
@@ -116,12 +119,7 @@ def ortho_basis(M):
     return Q
 
 
-def sparsifyJac(
-        Jac=None,
-        sparse_thresh=1.E-6,
-        normalized=True,
-        method=None,
-        out=True):
+def sparsifyJac(Jac=None, sparse_thresh=1.0e-6, normalized=True, method=None, out=True):
     """
     Sparsifies error_scaled Jacobian from ModEM output
 
@@ -131,8 +129,10 @@ def sparsifyJac(
     shj = np.shape(Jac)
     if out:
         nel = shj[0] * shj[1]
-        print('sparsifyJac: dimension of original J is %i x %i = %i elements'
-              % (shj[0], shj[1], nel))
+        print(
+            "sparsifyJac: dimension of original J is %i x %i = %i elements"
+            % (shj[0], shj[1], nel)
+        )
 
     Jac = np.abs(Jac)
     Jmax = np.amax(Jac)
@@ -143,11 +143,12 @@ def sparsifyJac(
     if scp.issparse(Js):
         ns = scp.csr_matrix.count_nonzero(Js)
         print(
-            'sparsifyJac: output J is sparse: %r, and has  %i nonzeros, %f percent' %
-            (scp.issparse(Js), ns, 100. * ns / nel))
+            "sparsifyJac: output J is sparse: %r, and has  %i nonzeros, %f percent"
+            % (scp.issparse(Js), ns, 100.0 * ns / nel)
+        )
 
     if normalized:
-        f = 1. / Jmax
+        f = 1.0 / Jmax
         Js = f * Js
 
     return Js
@@ -163,23 +164,22 @@ def normalizeJac(Jac=None, fn=None, out=True):
     shj = np.shape(Jac)
     shf = np.shape(fn)
     if shf[0] == 1:
-        f = 1. / fn
+        f = 1.0 / fn
         Jac = f * Jac
     else:
-        erri = np.reshape(1. / fn, (shj[0], 1))
+        erri = np.reshape(1.0 / fn, (shj[0], 1))
         Jac = erri[:] * Jac
 
     return Jac
 
 
-def calculateSens(Jac=None, normalize=True, small=1.e-14, out=True):
+def calculateSens(Jac=None, normalize=True, small=1.0e-14, out=True):
     """
-    normalizes Jacobian from ModEM output
+    Normalize Jacobian from ModEM output.
 
     author: vrath
     last changed: Sep 25, 2020
     """
-
     if scp.issparse(Jac):
         J = Jac.todense()
     else:
@@ -192,15 +192,16 @@ def calculateSens(Jac=None, normalize=True, small=1.e-14, out=True):
         Smax = np.amax(S)
         S = S / Smax
 
-    if small <= 1.e-14:
+    if small <= 1.0e-14:
         S[S < small] = np.NaN
 
     return S, Smax
 
 
-def projectMod(m=None, U=None, small=1.e-14, out=True):
+def projectMod(m=None, U=None, small=1.0e-14, out=True):
     """
-    Nullspace Projection
+    Project to Nullspace.
+
     (see Munoz & Rath, 2006)
     author: vrath
     last changed: Sep 25, 2020
@@ -215,15 +216,15 @@ def projectMod(m=None, U=None, small=1.e-14, out=True):
     return mp
 
 
-def transMod(m=None, M=None, small=1.e-14, out=True):
+def transMod(m=None, M=None, small=1.0e-14, out=True):
     """
-    Transform Model
-    M shoulld be something like C_m^-1/2
+    Transform Model.
+
+    M should be something like C_m^-1/2
     ( see egg Kelbert 2012, Egbert & kelbert 2014)
     author: vrath
     last changed:  Oct 12, 2020
     """
-
     transm = np.dot(M, m)
 
     return transm

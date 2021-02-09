@@ -13,15 +13,12 @@
 # ---
 
 """
-Reads ModEM'smodel file, adds perturbations.
-
+Reads ModEM'smodel files, does cellwise math on thenm.
 Ellipsoids or boxes
 
-@author: vr jan 2021
-
+@author: vr Feb 2021
 
 """
-
 import os
 import sys
 from sys import exit as error
@@ -37,9 +34,7 @@ import scipy.linalg as spl
 import vtk
 import pyvista as pv
 import PVGeo as pvg
-import omf
-import omfvista as ov
-import gdal
+
 
 mypath = ["/home/vrath/Py4MT/py4mt/modules/", "/home/vrath/Py4MT/py4mt/scripts/"]
 for pth in mypath:
@@ -83,8 +78,7 @@ dx, dy, dz, rho, reference = mod.readMod(ModFile_in + ".rho", out=True)
 # writeMod(ModFile_out+'.rho', dx, dy, dz, rho,reference,out = True)
 elapsed = time.time() - start
 total = total + elapsed
-print(" Used %7.4f s for reading model from %s "
-      % (elapsed, ModFile_in + ".rho"))
+print(" Used %7.4f s for reading model from %s " % (elapsed, ModFile_in + ".rho"))
 
 air = rho > rhoair / 100.0
 
@@ -94,15 +88,12 @@ for ibody in range(nb[0]):
     body = bodies[ibody]
     rhonew = mod.insert_body(dx, dy, dz, rho, body, smooth=smoother)
     rhonew[air] = rhoair
-    Modout = ModFile_out+"_"+body[0]+str(ibody)+"_"+smoother[0]+".rho"
+    Modout = ModFile_out + "_" + body[0] + str(ibody) + "_" + smoother[0] + ".rho"
     mod.writeMod(Modout, dx, dy, dz, rhonew, reference, out=True)
 
     elapsed = time.time() - start
-    print(" Used %7.4f s for processing/writing model to %s"
-          % (elapsed, Modout))
+    print(" Used %7.4f s for processing/writing model to %s " % (elapsed, Modout))
     print("\n")
 
 
 total = total + elapsed
-print(" Total time used:  %f s " % (total))
-

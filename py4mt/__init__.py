@@ -1,20 +1,21 @@
-# ---
-# jupyter:
-#   jupytext:
-#     cell_metadata_filter: -all
-#     formats: py:light,ipynb
-#     text_representation:
-#       extension: .py
-#       format_name: light
-#       format_version: '1.5'
-#       jupytext_version: 1.9.1
-# ---
+# -*- coding: utf-8 -*-
 
-# version
-from .version import version_info, __version__
+"""
+@author: VR Feb 2021
+"""
 
-# utils
-from .modules import *
+import sys
+import os
 
-# hIPPYlib model
-from .scripts import *
+sys.path.append(os.path.dirname(__file__))
+
+from . import modules
+from . import scripts
+
+# define custEM version
+with open(os.path.dirname(__file__) + '/version.txt', 'r') as v_file:
+    version = v_file.readline()[:7]
+    release_date = v_file.readline()[:10]
+
+__version__ = version
+# __release__ = release_date

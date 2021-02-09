@@ -17,9 +17,7 @@ Reads ModEM model, does fancy improc things.
 
 @author: vr july 2020
 
-Created on Tue Jul  7 16:59:01 2020
-
-@author: vrath
+@author: vrath  Feb 2021
 
 """
 
@@ -28,69 +26,84 @@ Created on Tue Jul  7 16:59:01 2020
 import os
 import sys
 from sys import exit as error
-# import struct
 import time
-
+import warnings
 
 import numpy as np
 import math as ma
 import netCDF4 as nc
 
-from sys import exit as error
-from modules.modem import *
 
-#import readJac, writeJacNC, readDat, writeDatNC, sparsifyJac, readMod, rsvd
-rhoair = 1.e+17
+import vtk
+import pyvista as pv
+import PVGeo as pvg
+
+
+mypath = ["/home/vrath/Py4MT/py4mt/modules/", "/home/vrath/Py4MT/py4mt/scripts/"]
+for pth in mypath:
+    if pth not in sys.path:
+        sys.path.append(pth)
+
+
+import modem as mod
+
+
+warnings.simplefilter(action="ignore", category=FutureWarning)
+
+rhoair = 1.0e17
 
 total = 0
-ModFile_in = r'/home/vrath/work/MT/Annecy/ImageProc/In/ANN20_02_PT_NLCG_016'
-ModFile_out = r'/home/vrath/work/MT/Annecy/ImageProc/Out/ANN20_02_PT_NLCG_016_ImProc'
+ModFile_in = r"/home/vrath/work/MT/Annecy/ImageProc/In/ANN20_02_PT_NLCG_016"
+ModFile_out = r"/home/vrath/work/MT/Annecy/ImageProc/Out/ANN20_02_PT_NLCG_016_ImProc"
 
-action = 'anidiff'
+action = "anidiff"
 
-if action == 'medfilt':
+if action == "medfilt":
     ksize = 3
-    bmode = 'nearest'  # 'reflect'
+    bmode = "nearest"  # 'reflect'
     maxit = 3
-elif action == 'anidiff':
+elif action == "anidiff":
     maxit = 50
     fopt = 1
 
 
 start = time.time()
-dx, dy, dz, rho, reference = readMod(ModFile_in + '.rho', out=True)
-writeMod(ModFile_out + '.rho', dx, dy, dz, rho, reference, out=True)
-elapsed = (time.time() - start)
+dx, dy, dz, rho, reference = mod.readMod(ModFile_in + ".rho", out=True)
+mod.writeMod(ModFile_out + ".rho", dx, dy, dz, rho, reference, out=True)
+elapsed = time.time() - start
 total = total + elapsed
-print(' Used %7.4f s for reading model from %s ' %
-      (elapsed, ModFile_in + '.rho'))
+print(" Used %7.4f s for reading model from %s "
+      % (elapsed, ModFile_in + ".rho"))
 
-air = rho > rhoair / 100.
+air = rho > rhoair / 100.0
 # prepare extended area of filter action (air)
-rho = prepare_mod(rho, rhoair=rhoair)
+rho = mod.prepare_mod(rho, rhoair=rhoair)
 
 start = time.time()
-if action == 'medfilt':
-    rhonew = medfilt3D(rho, kernel_size=ksize,
-                       boundary_mode=bmode, maxiter=maxit)
+if action == "medfilt":
+    rhonew = mod.medfilt3D(rho,
+                           kernel_size=ksize,
+                           boundary_mode=bmode, maxiter=maxit)
     rhonew[air] = rhoair
-    Modout = ModFile_out + '_mediankernel' + \
-        str(kersiz) + '_' + str(maxit) + '.rho'
-    writeMod(Modout, dx, dy, dz, rhonew, reference, out=True)
-    elapsed = (time.time() - start)
-    print(' Used %7.4f s for processing/writing model to %s ' %
-          (elapsed, Modout))
+    Modout = ModFile_out+"_mediankernel"+str(ksize)+"_"+str(maxit)+".rho"
+    mod.writeMod(Modout, dx, dy, dz, rhonew, reference, out=True)
+    elapsed = time.time() - start
+    print(
+        " Used %7.4f s for processing/writing model to %s "
+        % (elapsed, Modout))
 
-elif action == 'anidiff':
-    rhonew = anidiff3D(rho, ckappa=20, dgamma=0.24,
-                       foption=fopt, maxiter=maxit, Out=True, Plot=True)
+elif action == "anidiff":
+    rhonew = mod.anidiff3D(
+        rho,
+        ckappa=20, dgamma=0.24, foption=fopt, maxiter=maxit,
+        Out=True, Plot=True)
     rhonew[air] = rhoair
-    Modout = ModFile_out + '_anisodiff' + str(fopt) + '-' + str(maxit) + '.rho'
-    writeMod(Modout, dx, dy, dz, rhonew, reference, out=True)
-    elapsed = (time.time() - start)
-    print(' Used %7.4f s for processing/writing model to %s ' %
-          (elapsed, Modout))
+    Modout = ModFile_out + "_anisodiff" + str(fopt) + "-" + str(maxit) + ".rho"
+    mod.writeMod(Modout, dx, dy, dz, rhonew, reference, out=True)
+    elapsed = time.time() - start
+    print(" Used %7.4f s for processing/writing model to %s "
+          % (elapsed, Modout))
 
 
 total = total + elapsed
-print(' Total time used:  %f s ' % (total))
+print(" Total time used:  %f s " % (total))

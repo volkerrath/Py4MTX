@@ -1,6 +1,0 @@
-#! /bin/bash
-
-autopep8 --in-place --aggressive --aggressive *.py
-autopep8 --in-place --aggressive --aggressive modules/*.py
-autopep8 --in-place --aggressive --aggressive scripts/*.py
-autopep8 --in-place --aggressive --aggressive examples/*.py
