@@ -16,7 +16,7 @@ import netCDF4 as nc
 # import h5netcdf as hc
 
 
-def readJac(JacFile=None, out=False):
+def read_jac(JacFile=None, out=False):
     """
     Read Jacobian from ModEM output.
 
@@ -82,7 +82,7 @@ def readJac(JacFile=None, out=False):
     return Jac
 
 
-def writeJacNC(NCFile=None, Jac=None, Dat=None, Site=None, Comp=None,
+def write_jac_ncd(NCFile=None, Jac=None, Dat=None, Site=None, Comp=None,
                zlib_in=True, shuffle_in=True, out=True):
     """
     Write Jacobian from ModEM output to NETCDF/HDF5 file.
@@ -162,7 +162,7 @@ def writeJacNC(NCFile=None, Jac=None, Dat=None, Site=None, Comp=None,
         )
 
 
-def readDat(DatFile=None, out=True):
+def read_data(DatFile=None, out=True):
     """
     Read ModEM input data.
 
@@ -236,7 +236,7 @@ def readDat(DatFile=None, out=True):
     return Site, Comp, Data, Head
 
 
-def writeDatNC(
+def write_data_ncd(
         NCFile=None, Dat=None, Site=None, Comp=None,
         zlib_in=True, shuffle_in=True, out=True
         ):
@@ -310,7 +310,7 @@ def writeDatNC(
         )
 
 
-def writeModNC(
+def write_model_ncd(
     NCFile=None,
     x=None,
     y=None,
@@ -392,8 +392,8 @@ def writeModNC(
         )
 
 
-def writeMod(ModFile=None, dx=None, dy=None, dz=None, rho=None, reference=None,
-             trans="LINEAR", out=True):
+def write_model(ModFile=None, dx=None, dy=None, dz=None, rho=None, reference=None,
+                trans="LINEAR", out=True):
     """
     Read ModEM model input.
 
@@ -414,7 +414,6 @@ def writeMod(ModFile=None, dx=None, dy=None, dz=None, rho=None, reference=None,
     ENDDO
 
     """
-
     dims = np.shape(rho)
     nx = dims[0]
     ny = dims[1]
@@ -462,7 +461,7 @@ def writeMod(ModFile=None, dx=None, dy=None, dz=None, rho=None, reference=None,
         f.write("%10.2f  \n" % (0.0))
 
 
-def readMod(ModFile=None, trans="LINEAR", out=True):
+def read_model(ModFile=None, trans="LINEAR", out=True):
     """
     Read ModEM model input.
 
@@ -1123,7 +1122,7 @@ def gauss3D(Kshape=(3, 3, 3), Ksigma=0.5):
     return K
 
 
-def prepare_mod(rho, rhoair=1.0e17):
+def prepare_model(rho, rhoair=1.0e17):
     """
     Prepare model for filtering etc.
 

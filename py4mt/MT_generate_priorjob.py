@@ -18,7 +18,6 @@ Created on Fri Sep 11 15:41:25 2020
 @author: vrath
 """
 # Import required modules
-
 import os
 import numpy as np
 from modules.util import strcount, strdelete, strreplace, unique
@@ -95,7 +94,7 @@ for f in DataFiles:
         filef = FwdFile.split(os.sep)[-1]
         filec = Covar_out.split(os.sep)[-1]
 
-        exestr1 = 'mpirun --hostfile ${OAR_NODE_FILE} -n 96 -npernode 16 /home/superlana/bin/gMod3DMT7.x -I NLCG '
+        exestr1 = 'mpirun --hostfile ${OAR_NODE_FILE} -n 80 -npernode 16 /home/superlana/bin/gMod3DMT7.x -I NLCG '
         exestr2 = filep + ' ' + filed + ' ' + filei + ' ' + \
             filef + ' ' + filec + ' >' + RunName + '.out \n'
         with open(Exe_out, 'a') as exe:

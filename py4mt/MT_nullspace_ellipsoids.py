@@ -28,16 +28,45 @@ import sys
 from sys import exit as error
 # import struct
 import time
+from datetime import datetime
+
+
+import numpy as np
+import netCDF4 as nc
+
+mypath = ["/home/vrath/Py4MT/py4mt/modules/", "/home/vrath/Py4MT/py4mt/scripts/"]
+for pth in mypath:
+    if pth not in sys.path:
+        sys.path.insert(0,pth)
+
+
+import jacproc as jac
+import modem as mod
+
 
 
 import numpy as np
 import math as ma
 import netCDF4 as nc
 
-from sys import exit as error
-from modules.modem import *
+import modem as mod
+import util as utl
 
-#import readJac, writeJacNC, readDat, writeDatNC, sparsifyJac, readMod, rsvd
+from version import versionstrg
+
+Strng, _ = versionstrg()
+now = datetime.now()
+print("\n\n"+Strng)
+print("Generate Random sets of bodies"+"\n"+"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%S")))
+print("\n\n")
+
+
+
+
+rng = np.random.default_rng()
+nan = np.nan  # float('NaN')
+
+
 rhoair = 1.e+17
 
 total = 0
@@ -45,7 +74,7 @@ ModFile_in = r'/home/vrath/work/MT/Annecy/ImageProc/In/ANN20_02_PT_NLCG_016'
 ModFile_out = r'/home/vrath/work/MT/Annecy/ImageProc/Out/ANN20_02_PT_NLCG_016_nse'
 
 geocenter = [45.938251, 6.084900]
-utm_x, utm_y = proj_latlon_to_utm(geocenter[0], geocenter[1], utm_zone=32631)
+utm_x, utm_y = utl.proj_latlon_to_utm(geocenter[0], geocenter[1], utm_zone=32631)
 utmcenter = [utm_x, utm_y, 0.]
 
 ssamples = 10000
@@ -78,20 +107,20 @@ total = 0.
 
 
 start = time.time()
-dx, dy, dz, rho, reference = readMod(ModFile)
+dx, dy, dz, rho, reference = mod.read_model(ModFile)
 elapsed = (time.time() - start)
 total = total + elapsed
 print(' Used %7.4f s for reading model from %s ' % (elapsed, DatFile))
 
 
-nb = np.shape(bodies)
+nb = np.shape(body)
 
 # smoother=['gaussian',0.5]
 smoother = ['uniform', 3]
 total = 0
 start = time.time()
 
-dx, dy, dz, rho, reference = readMod(ModFile_in + '.rho', out=True)
+dx, dy, dz, rho, reference = mod.read_model(ModFile_in + '.rho', out=True)
 # writeMod(ModFile_out+'.rho', dx, dy, dz, rho,reference,out = True)
 elapsed = (time.time() - start)
 total = total + elapsed
@@ -100,7 +129,7 @@ print(' Used %7.4f s for reading model from %s ' %
 
 air = rho > rhoair / 100.
 
-rho = prepare_mod(rho, rhoair=rhoair)
+rho = mod.prepare_model(rho, rhoair=rhoair)
 
 for ibody in range(nb[0]):
     body = bodies[ibody]

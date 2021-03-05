@@ -1,2 +1,0 @@
-0.99.1          # version
-09.02.2021       # release date

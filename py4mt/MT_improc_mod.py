@@ -27,6 +27,7 @@ import os
 import sys
 from sys import exit as error
 import time
+from datetime import datetime
 import warnings
 
 import numpy as np
@@ -38,19 +39,24 @@ import vtk
 import pyvista as pv
 import PVGeo as pvg
 
-
 mypath = ["/home/vrath/Py4MT/py4mt/modules/", "/home/vrath/Py4MT/py4mt/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
-        sys.path.append(pth)
-
+        sys.path.insert(0, pth)
 
 import modem as mod
+from version import versionstrg
+
+Strng, _ = versionstrg()
+now = datetime.now()
+print("\n\n"+Strng)
+print("Image processing on model"+"\n"+"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%S")))
+print("\n\n")
 
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
-rhoair = 1.0e17
+rhoair = 1.e17
 
 total = 0
 ModFile_in = r"/home/vrath/work/MT/Annecy/ImageProc/In/ANN20_02_PT_NLCG_016"
@@ -75,7 +81,7 @@ total = total + elapsed
 print(" Used %7.4f s for reading model from %s "
       % (elapsed, ModFile_in + ".rho"))
 
-air = rho > rhoair / 100.0
+air = rho > rhoair / 100.
 # prepare extended area of filter action (air)
 rho = mod.prepare_mod(rho, rhoair=rhoair)
 

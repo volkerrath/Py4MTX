@@ -8,9 +8,6 @@ import numpy as np
 import scipy.sparse as scp
 
 
-# ------------------------------------------------------------------------------
-
-
 def rsvd(A, rank, n_oversamples=None, n_subspace_iters=None, return_range=False):
     """
     =============================================================================
@@ -119,7 +116,7 @@ def ortho_basis(M):
     return Q
 
 
-def sparsifyJac(Jac=None, sparse_thresh=1.0e-6, normalized=True, method=None, out=True):
+def sparsify_jac(Jac=None, sparse_thresh=1.0e-6, normalized=True, method=None, out=True):
     """
     Sparsifies error_scaled Jacobian from ModEM output
 
@@ -143,7 +140,8 @@ def sparsifyJac(Jac=None, sparse_thresh=1.0e-6, normalized=True, method=None, ou
     if scp.issparse(Js):
         ns = scp.csr_matrix.count_nonzero(Js)
         print(
-            "sparsifyJac: output J is sparse: %r, and has  %i nonzeros, %f percent"
+            "sparsifyJac:"
+            +"output J is sparse: %r, and has %i nonzeros, %f percent"
             % (scp.issparse(Js), ns, 100.0 * ns / nel)
         )
 
@@ -154,7 +152,7 @@ def sparsifyJac(Jac=None, sparse_thresh=1.0e-6, normalized=True, method=None, ou
     return Js
 
 
-def normalizeJac(Jac=None, fn=None, out=True):
+def normalize_jac(Jac=None, fn=None, out=True):
     """
     normalizes Jacobian from ModEM output
 
@@ -173,7 +171,7 @@ def normalizeJac(Jac=None, fn=None, out=True):
     return Jac
 
 
-def calculateSens(Jac=None, normalize=True, small=1.0e-14, out=True):
+def calculate_sens(Jac=None, normalize=True, small=1.0e-14, out=True):
     """
     Normalize Jacobian from ModEM output.
 
@@ -198,7 +196,7 @@ def calculateSens(Jac=None, normalize=True, small=1.0e-14, out=True):
     return S, Smax
 
 
-def projectMod(m=None, U=None, small=1.0e-14, out=True):
+def project_model(m=None, U=None, small=1.0e-14, out=True):
     """
     Project to Nullspace.
 
@@ -216,7 +214,7 @@ def projectMod(m=None, U=None, small=1.0e-14, out=True):
     return mp
 
 
-def transMod(m=None, M=None, small=1.0e-14, out=True):
+def transfrom_model(m=None, M=None, small=1.0e-14, out=True):
     """
     Transform Model.
 
