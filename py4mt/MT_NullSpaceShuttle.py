@@ -58,34 +58,25 @@ print("\n\n"+Strng)
 print("Nullspace Shuttle"+"\n"+"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%S")))
 print("\n\n")
 
-
-
 rng = np.random.default_rng()
 nan = np.nan
 
-normalize_err = True
-normalize_max = True
-calcsens = True
-
-# JFile = r'/home/vrath/work/MT/Jacobians/Maurienne/Maur_PT.jac'
-# DFile = r'/home/vrath/work/MT/Jacobians/Maurienne/Maur_PT.dat'
-# MFile = r'/home/vrath/work/MT/Jacobians/Maurienne//Maur_PT_R500_NLCG_016.rho'
-# SFile = r'/home/vrath/work/MT/Jacobians/Maurienne/Maur_PT_R500_NLCG_016.sns'
-
-# JFile = r"/home/vrath/work/MT/Jacobians/Maurienne/Maur_Z.jac"
-# DFile = r"/home/vrath/work/MT/Jacobians/Maurienne/Maur_Z.dat"
-# MFile = r"/home/vrath/work/MT/Jacobians/Maurienne//Maur_PT_R500_NLCG_016.rho"
-# SFile = r"/home/vrath/work/MT/Jacobians/Maurienne/Maur_PT_R500_NLCG_016.sns"
-
 JFile = r"/home/vrath/Py4MT/py4mt/data/ANN21_Jacobian/Ann21_Prior100_T-T3.jac"
-DFile = r"/home/vrath/Py4MT/py4mt/data/ANN21_Jacobian/Ann21_T3.dat"
+DFile = r"/home/vrath/Py4MT/py4mt/data/ANN21_Jacobian/Ann21_Prior100_T-T3.dat"
 MFile = r"/home/vrath/Py4MT/py4mt/data/ANN21_Jacobian/Ann21_Prior100_T_NLCG_033.rho"
 SFile = r"/home/vrath/Py4MT/py4mt/data/ANN21_Jacobian/Ann21_Prior100_T-Z3.sns"
 
+NSamples = 1000
+NBodies  = 32
+x_bounds = [-3000., 3000.]
+y_bounds = [-3000., 3000.]
+z_bounds = [-300., 3000.]
+rad_bounds = [100.,1000.]
+res_bounds = [-0.3, 0.3]
+
+
 
 total = 0.0
-
-
 start = time.time()
 dx, dy, dz, rho, reference = mod.read_model(MFile)
 elapsed = time.time() - start
@@ -99,58 +90,22 @@ elapsed = time.time() - start
 total = total + elapsed
 print(" Used %7.4f s for reading data from %s " % (elapsed, DFile))
 
-
-start = time.time()
-name, ext = os.path.splitext(DFile)
-NCFile = name + "_dat.ncd"
-mod.write_data_ncd(NCFile, Data, Site, Comp)
-elapsed = time.time() - start
-total = total + elapsed
-print(" Used %7.4f s for writing data to %s " % (elapsed, NCFile))
-
-
 start = time.time()
 Jac = mod.read_jac(JFile)
 elapsed = time.time() - start
 total = total + elapsed
 print(" Used %7.4f s for reading Jacobian from %s " % (elapsed, JFile))
 
-# print(np.shape(Data))
-# print(np.shape(Jac))
-
-
-if normalize_err:
-    start = time.time()
-    dsh = np.shape(Data)
-    err = np.reshape(Data[:, 7], (dsh[0], 1))
-    Jac = jac.normalize_jac(Jac, err)
-    elapsed = time.time() - start
-    total = total + elapsed
-    print(" Used %7.4f s for normalizing Jacobian from %s " % (elapsed, JFile))
-
-
-if calcsens:
-    start = time.time()
-    Sens, Sens_max = jac.calculate_sens(Jac, normalize=True)
-    elapsed = time.time() - start
-    total = total + elapsed
-    print(" Used %7.4f s for caculating sensitivity from %s " % (elapsed, JFile))
-    sns = np.reshape(Sens, rho.shape)
-    print(np.shape(sns))
-    mod.write_model(SFile, dx, dy, dz, sns, reference, trans="LOG10", out=True)
-
-
 start = time.time()
-name, ext = os.path.splitext(JFile)
-NCFile = name + "_jac.nc"
-mod.write_jac_ncd(NCFile, Jac, Data, Site, Comp)
+dsh = np.shape(Data)
+err = np.reshape(Data[:, 7], (dsh[0], 1))
+Jac = jac.normalize_jac(Jac, err)
 elapsed = time.time() - start
 total = total + elapsed
-print(" Used %7.4f s for writing Jacobian to %s " % (elapsed, NCFile))
-
+print(" Used %7.4f s for normalizing Jacobian from %s " % (elapsed, JFile))
 
 start = time.time()
-Js = jac.sparsify_jac(Jac,sparse_thresh=1.e-4)
+Js = jac.sparsify_jac(Jac, sparse_thresh=1.e-4)
 elapsed = time.time() - start
 total = total + elapsed
 print(" Used %7.4f s for sparsifying Jacobian from %s " % (elapsed, JFile))
@@ -169,32 +124,33 @@ print(
 )
 
 D = U@scp.diags(S[:])@Vt - Jac.T
-
-
-# j_fro = spl.norm(Jac,'fro')
-# n_fro = spl.norm(D,'fro')
-# j_nuc = spl.norm(Jac,'nuc')
-# n_nuc = spl.norm(D,'nuc')
-# j_inf = spl.norm(Jac,'Inf')
-# n_inf = spl.norm(D,'Inf')
-
 x_op = np.random.normal(size=np.shape(D)[1])
 n_op = npl.norm(D@x_op)/npl.norm(x_op)
 j_op = npl.norm(Jac.T@x_op)/npl.norm(x_op)
-print(" Op-norm J_k = "+str(n_op)+", explains "+str(100. - n_op*100./j_op)+"%")
+print(" Op-norm J_k = "+str(n_op)+", explains "
+      +str(100. - n_op*100./j_op)+"% of variations")
 
-# for rank in [50, 100, 200, 400, 1000]:
-#     start = time.time()
-#     U, S, Vt = jac.rsvd(Jac.T, rank, n_oversamples=0, n_subspace_iters=0)
-#     elapsed = time.time() - start
-#     print(
-#         " Used %7.4f s for calculating k = %i  SVD from %s " % (elapsed, rank, JFile)
-#     )
-#     # print(U.shape)
-#     # print(S.shape)
-#     # print(Vt.shape)
-#     s = time.time()
-#     m = r + np.random.normal(mu, sigma, size=np.shape(r))
+
+# m_avg = 0.
+# v_avg = 0.
+# s = time.time()
+for isample in np.arange(NSamples):
+
+    body = [
+    "ellipsoid",
+    "add",
+    0.,
+    0.,
+    0.,
+    3000.,
+    1000.,
+    2000.,
+    1000.,
+    0.,
+    0.,
+    30.]
+
+# m = r + np.random.normal(mu, sigma, size=np.shape(r))
 #     t = time.time() - s
 #     print(" Used %7.4f s for generating m  " % (t))
 

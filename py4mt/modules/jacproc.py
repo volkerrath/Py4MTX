@@ -7,6 +7,52 @@ Created on Sun Sep 27 17:36:08 2020
 import numpy as np
 import scipy.sparse as scp
 
+def update_avg(k = None, m_k=None, m_a=None, m_v=None):
+    """
+    Update the mean and variance from data stream.
+
+    Note: final variance needs to be divided by k-1.
+
+    Based on the formulae from
+    Knuth, Art of Computer Programming, Vol 2, page 232, 1997.
+
+    VR  Mar 7, 2021
+
+    Note: generalization possible for skewness (M3) and kurtosis (M4)
+
+    delta = x - M1;
+    delta_n = delta / n;
+    delta_n2 = delta_n * delta_n;
+    term1 = delta * delta_n * n1;
+    M1 += delta_n;
+    M4 += term1 * delta_n2 * (n*n - 3*n + 3) + 6 * delta_n2 * M2 - 4 * delta_n * M3;
+    M3 += term1 * delta_n * (n - 2) - 3 * delta_n * M2;
+    M2 += term1;
+
+    """
+    if k == 1:
+        m_avg = m_k
+        m_var = np.zeros_like(m_avg)
+
+    md = m_k - m_a
+    m_avg = m_a + md/np.abs(k)
+    m_var = m_v + md*(m_k - m_avg)
+
+    if k < 0:
+        m_var = m_var/(np.abs(k-1))
+
+    return m_avg, m_var
+
+# def update_med(k = None, model_n=None, model_a=None, model_v=None):
+#     """
+#     Update the mean and variance from data stream.
+
+#     T-digest
+
+#     VR  Mar , 2021
+#     """
+
+#     return m_med, m_q1, m_q2
 
 def rsvd(A, rank, n_oversamples=None, n_subspace_iters=None, return_range=False):
     """

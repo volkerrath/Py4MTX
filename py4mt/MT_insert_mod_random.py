@@ -9,11 +9,11 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.9.1
+#       jupytext_version: 1.10.2
 # ---
 
 """
-Reads ModEM model, reads ModEM's Jacobian, does fancy things.
+Reads ModEM model, reads ModEM"s Jacobian, does fancy things.
 
 Created on Sun Jan 17 15:09:34 2021
 
@@ -64,14 +64,21 @@ print("\n\n")
 
 
 rng = np.random.default_rng()
-nan = np.nan  # float('NaN')
+nan = np.nan  # float("NaN")
 
 
 rhoair = 1.e+17
 
 total = 0
-ModFile_in = r'/home/vrath/work/MT/Annecy/ImageProc/In/ANN20_02_PT_NLCG_016'
-ModFile_out = r'/home/vrath/work/MT/Annecy/ImageProc/Out/ANN20_02_PT_NLCG_016_nse'
+InModDir = r"/home/vrath/Py4MT/py4mt/data/ANN21_Jacobian/"
+OutModDir = InModDir
+ModFil = r"Ann21_Prior100_T_NLCG_033"
+ModFile_out = r"/home/vrath/work/MT/Annecy/ImageProc/Out/ANN20_02_PT_NLCG_016_nse"
+
+if not os.path.isdir(OutModDir):
+    print("File: %s does not exist, but will be created" % OutModDir)
+    os.mkdir(OutModDir)
+
 
 geocenter = [45.938251, 6.084900]
 utm_x, utm_y = utl.proj_latlon_to_utm(geocenter[0], geocenter[1], utm_zone=32631)
@@ -81,8 +88,8 @@ ssamples = 10000
 
 
 body = [
-    'ellipsoid',
-    'add',
+    "ellipsoid",
+    "add",
     0.,
     0.,
     0.,
@@ -98,10 +105,10 @@ normalize_err = True
 normalize_max = True
 calcsens = True
 
-JacFile = r'/home/vrath/work/MT/Jacobians/Maurienne/Maur_PT.jac'
-DatFile = r'/home/vrath/work/MT/Jacobians/Maurienne/Maur_PT.dat'
-ModFile = r'/home/vrath/work/MT/Jacobians/Maurienne//Maur_PT_R500_NLCG_016.rho'
-SnsFile = r'/home/vrath/work/MT/Jacobians/Maurienne/Maur_PT_R500_NLCG_016.sns'
+JacFile = r"/home/vrath/work/MT/Jacobians/Maurienne/Maur_PT.jac"
+DatFile = r"/home/vrath/work/MT/Jacobians/Maurienne/Maur_PT.dat"
+ModFile = r"/home/vrath/work/MT/Jacobians/Maurienne//Maur_PT_R500_NLCG_016.rho"
+SnsFile = r"/home/vrath/work/MT/Jacobians/Maurienne/Maur_PT_R500_NLCG_016.sns"
 
 total = 0.
 
@@ -110,22 +117,22 @@ start = time.time()
 dx, dy, dz, rho, reference = mod.read_model(ModFile)
 elapsed = (time.time() - start)
 total = total + elapsed
-print(' Used %7.4f s for reading model from %s ' % (elapsed, DatFile))
+print(" Used %7.4f s for reading model from %s " % (elapsed, DatFile))
 
 
 nb = np.shape(body)
 
-# smoother=['gaussian',0.5]
-smoother = ['uniform', 3]
+# smoother=["gaussian",0.5]
+smoother = ["uniform", 3]
 total = 0
 start = time.time()
 
-dx, dy, dz, rho, reference = mod.read_model(ModFile_in + '.rho', out=True)
-# writeMod(ModFile_out+'.rho', dx, dy, dz, rho,reference,out = True)
+dx, dy, dz, rho, reference = mod.read_model(ModFile_in + ".rho", out=True)
+# writeMod(ModFile_out+".rho", dx, dy, dz, rho,reference,out = True)
 elapsed = (time.time() - start)
 total = total + elapsed
-print(' Used %7.4f s for reading model from %s ' %
-      (elapsed, ModFile_in + '.rho'))
+print(" Used %7.4f s for reading model from %s " %
+      (elapsed, ModFile_in + ".rho"))
 
 air = rho > rhoair / 100.
 
@@ -135,16 +142,16 @@ for ibody in range(nb[0]):
     body = bodies[ibody]
     rhonew = insert_body(dx, dy, dz, rho, body, smooth=smoother)
     rhonew[air] = rhoair
-    Modout = ModFile_out + '_' + body[0] + \
-        str(ibody) + '_' + smoother[0] + '.rho'
+    Modout = ModFile_out + "_" + body[0] + \
+        str(ibody) + "_" + smoother[0] + ".rho"
     writeMod(Modout, dx, dy, dz, rhonew, reference, out=True)
 
     elapsed = (time.time() - start)
     print(
-        ' Used %7.4f s for processing/writing model to %s ' %
+        " Used %7.4f s for processing/writing model to %s " %
         (elapsed, Modout))
-    print('\n')
+    print("\n")
 
 
 total = total + elapsed
-print(' Total time used:  %f s ' % (total))
+print(" Total time used:  %f s " % (total))
