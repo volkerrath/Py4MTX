@@ -45,7 +45,7 @@ def update_avg(k = None, m_k=None, m_a=None, m_v=None):
 
 # def update_med(k = None, model_n=None, model_a=None, model_v=None):
 #     """
-#     Update the mean and variance from data stream.
+#     Estimate the quantiles from data stream.
 
 #     T-digest
 
@@ -54,7 +54,7 @@ def update_avg(k = None, m_k=None, m_a=None, m_v=None):
 
 #     return m_med, m_q1, m_q2
 
-def rsvd(A, rank, n_oversamples=None, n_subspace_iters=None, return_range=False):
+def rsvd(A, rank=300, n_oversamples=None, n_subspace_iters=None, return_range=False):
     """
     =============================================================================
     Randomized SVD. See Halko, Martinsson, Tropp's 2011 SIAM paper:

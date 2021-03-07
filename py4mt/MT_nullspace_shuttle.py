@@ -66,6 +66,8 @@ DFile = r"/home/vrath/Py4MT/py4mt/data/ANN21_Jacobian/Ann21_Prior100_T_NLCG_033.
 MFile = r"/home/vrath/Py4MT/py4mt/data/ANN21_Jacobian/Ann21_Prior100_T_NLCG_033.rho"
 SFile = r"/home/vrath/Py4MT/py4mt/data/ANN21_Jacobian/Ann21_Prior100_T-Z3.sns"
 
+JThresh  = 1.e-4
+NSingulr = 500
 NSamples = 1000
 NBodies  = 32
 x_bounds = [-3000., 3000.]
@@ -105,7 +107,7 @@ total = total + elapsed
 print(" Used %7.4f s for normalizing Jacobian from %s " % (elapsed, JFile))
 
 start = time.time()
-Js = jac.sparsify_jac(Jac, sparse_thresh=1.e-4)
+Js = jac.sparsify_jac(Jac, sparse_thresh=JThresh)
 elapsed = time.time() - start
 total = total + elapsed
 print(" Used %7.4f s for sparsifying Jacobian from %s " % (elapsed, JFile))
@@ -115,9 +117,8 @@ sigma = 0.5
 r = rho.flat
 nproj = 1000
 
-rank = 500
 start = time.time()
-U, S, Vt = jac.rsvd(Jac.T, rank, n_oversamples=0, n_subspace_iters=0)
+U, S, Vt = jac.rsvd(Jac.T, NSingulr, n_oversamples=0, n_subspace_iters=0)
 elapsed = time.time() - start
 print(
     "Used %7.4f s for calculating k = %i SVD from %s " % (elapsed, rank, JFile)
