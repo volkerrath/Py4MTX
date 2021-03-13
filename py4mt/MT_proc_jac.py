@@ -9,7 +9,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.10.2
+#       jupytext_version: 1.10.3
 # ---
 
 """
@@ -87,7 +87,7 @@ total = 0.0
 
 
 start = time.time()
-dx, dy, dz, rho, reference = mod.read_model(MFile)
+dx, dy, dz, rho, reference = mod.read_model(MFile, trans="log10")
 elapsed = time.time() - start
 total = total + elapsed
 print(" Used %7.4f s for reading model from %s " % (elapsed, DFile))
@@ -150,7 +150,7 @@ print(" Used %7.4f s for writing Jacobian to %s " % (elapsed, NCFile))
 
 
 start = time.time()
-Js = jac.sparsify_jac(Jac,sparse_thresh=1.e-4)
+Js = jac.sparsify_jac(Jac,sparse_thresh=1.e-6)
 elapsed = time.time() - start
 total = total + elapsed
 print(" Used %7.4f s for sparsifying Jacobian from %s " % (elapsed, JFile))
@@ -160,28 +160,61 @@ sigma = 0.5
 r = rho.flat
 nproj = 1000
 
-rank = 500
-start = time.time()
-U, S, Vt = jac.rsvd(Jac.T, rank, n_oversamples=0, n_subspace_iters=0)
-elapsed = time.time() - start
-print(
-    "Used %7.4f s for calculating k = %i SVD from %s " % (elapsed, rank, JFile)
+rank_results = []
+for rank in [100, 200, 300, 400, 500, 1000]:
+    start = time.time()
+    U, S, Vt = jac.rsvd(Jac.T, rank, n_oversamples=0, n_subspace_iters=0)
+    elapsed = time.time() - start
+    print(
+        "Used %7.4f s for calculating k = %i SVD from %s " % (elapsed, rank, JFile)
+    )
+
+    D = U@scp.diags(S[:])@Vt - Jac.T
+
+    x_op = np.random.normal(size=np.shape(D)[1])
+    n_op = npl.norm(D@x_op)/npl.norm(x_op)
+    j_op = npl.norm(Jac.T@x_op)/npl.norm(x_op)
+    print(" Op-norm J_k = "+str(n_op)+", explains "+str(100. - n_op*100./j_op)+"% of J_full")
+
+    kk= [rank, n_op, j_op, 100. - n_op*100./j_op]
+
+    rank_results.append(kk)
+
+Fileout = r"Rank_Results.npz"
+np.savez_compressed(Fileout,
+                    rank_results=rank_results
 )
 
-D = U@scp.diags(S[:])@Vt - Jac.T
+rank = 500
+thresh_results = []
+for thresh in [1.e-2, 1.e-4, 1.e-6, 1.e-8]:
+    start = time.time()
+
+    Js = jac.sparsify_jac(Jac,sparse_thresh=thresh)
+
+    U, S, Vt = jac.rsvd(Js.T, rank, n_oversamples=0, n_subspace_iters=0)
+    elapsed = time.time() - start
+    print(
+        "Used %7.4f s for thresg = %g SVD from %s " % (elapsed, thresh, JFile)
+    )
+
+    D = U@scp.diags(S[:])@Vt - Js.T
+
+    x_op = np.random.normal(size=np.shape(D)[1])
+    n_op = npl.norm(D@x_op)/npl.norm(x_op)
+    j_op = npl.norm(Js.T@x_op)/npl.norm(x_op)
+    print(" Op-norm J_thresh = "+str(n_op)+", explains "+str(100. - n_op*100./j_op)+"% of J_full")
+
+    kk= [rank, n_op, j_op, 100. - n_op*100./j_op]
+
+    thresh_results.append(kk)
+
+Fileout = r"Sparse_Results.npz"
+np.savez_compressed(Fileout,
+                    thresh_results=thresh_results
+)
 
 
-# j_fro = spl.norm(Jac,'fro')
-# n_fro = spl.norm(D,'fro')
-# j_nuc = spl.norm(Jac,'nuc')
-# n_nuc = spl.norm(D,'nuc')
-# j_inf = spl.norm(Jac,'Inf')
-# n_inf = spl.norm(D,'Inf')
-
-x_op = np.random.normal(size=np.shape(D)[1])
-n_op = npl.norm(D@x_op)/npl.norm(x_op)
-j_op = npl.norm(Jac.T@x_op)/npl.norm(x_op)
-print(" Op-norm J_k = "+str(n_op)+", explains "+str(100. - n_op*100./j_op)+"%")
 
 # for rank in [50, 100, 200, 400, 1000]:
 #     start = time.time()

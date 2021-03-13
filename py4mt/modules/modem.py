@@ -509,12 +509,11 @@ def read_model(ModFile=None, trans="LINEAR", out=True):
         sys.exit(1)
 
     # here rho should be in physical units, not log...
-
-    if trans == "LOGE":
+    if trans.lower()[0:4] == "loge" or trans.lower()[0:2] == "ln'":
         rho = np.log(rho)
         if out:
             print("resistivities transformed to: " + trans)
-    elif trans == "LOG10":
+    elif trans.lower()[0:5] == "log10":
         rho = np.log10(rho)
         if out:
             print("resistivities transformed to: " + trans)
@@ -532,6 +531,72 @@ def read_model(ModFile=None, trans="LINEAR", out=True):
             "readMod: %i x %i x %i model read from %s" % (nx, ny, nz, ModFile))
 
     return dx, dy, dz, rho, reference
+
+def linear_interpolation(p1, p2, x0):
+    """
+    Function that receives as arguments the coordinates of two points (x,y)
+    and returns the linear interpolation of a y0 in a given x0 position. This is the
+    equivalent to obtaining y0 = y1 + (y2 - y1)*((x0-x1)/(x2-x1)).
+    Look into https://en.wikipedia.org/wiki/Linear_interpolation for more
+    information.
+
+    Parameters
+    ----------
+    p1     : tuple (floats)
+        Tuple (x,y) of a first point in a line.
+    p2     : tuple (floats)
+        Tuple (x,y) of a second point in a line.
+    x0     : float
+        X coordinate on which you want to interpolate a y0.
+
+    Return float (interpolated y0 value)
+    """
+    y0 = p1[1] + (p2[1] - p1[1]) * ((x0 - p1[0]) / (p2[0] - p1[0]))
+
+    return y0
+
+
+def clip_model(x, y, z, rho,
+               pad=[0, 0, 0], centers=False, scale=[1., 1., 1.]):
+    """
+    Clip model to ROI.
+
+    Parameters
+    ----------
+    x, y, z : float
+        Node coordinates
+    rho : float
+        resistivity/sensitivity/diff values.
+    pad : integer, optional
+        padding in x/y/z. The default is [0, 0, 0].
+    centers: bool, optional
+        nodes or centers. The default is False (i.e. nodes).
+    scale: float
+        scling, e.g. to km (1E-3). The default is [1., 1.,1.].
+
+    Returns
+    -------
+    xn, yn, zn, rhon
+
+    """
+    if np.size(scale) == 1:
+        scale = [scale, scale, scale]
+
+    p_x, p_y, p_z = pad
+    s_x, s_y, s_z = scale
+
+    xn = s_x * x[p_x:-p_x]
+    yn = s_y * y[p_y:-p_y]
+    zn = s_z * z[0:-p_z]
+    rhon = rho[p_x:-p_x, p_y:-p_y, 0:-p_z]
+
+    if centers:
+        print("cells3d returning cell center coordinates.")
+        xn = 0.5 * (xn[:-1] + xn[1:])
+        yn = 0.5 * (yn[:-1] + yn[1:])
+        zn = 0.5 * (zn[:-1] + zn[1:])
+
+    return xn, yn, zn, rhon
 
 
 def mt1dfwd(freq, sig, d, inmod="r", out="imp"):
@@ -721,10 +786,11 @@ def insert_body(
     return rho_out
 
 
-def cells3d(dx, dy, dz, otype="c"):
+def cells3d(dx, dy, dz, center=False, reference = [0.,0.,0.]):
     """
     Define cell coordinates.
 
+    dx, dy, dz in m,
     Created on Sat Jan 2 10:35:28 2021
 
     @author: vrath
@@ -734,13 +800,19 @@ def cells3d(dx, dy, dz, otype="c"):
     y = np.append(0.0, np.cumsum(dy))
     z = np.append(0.0, np.cumsum(dz))
 
-    if otype[0] == "c":
+    x = x + reference[0]
+    y = y + reference[1]
+    z = z + reference[2]
+
+    if center:
+        print("cells3d returning cell center coordinates.")
         xc = 0.5 * (x[:-1] + x[1:])
         yc = 0.5 * (y[:-1] + y[1:])
         zc = 0.5 * (z[:-1] + z[1:])
         return xc, yc, zc
 
     else:
+        print("cells3d returning node coordinates.")
         return x, y, z
 
 

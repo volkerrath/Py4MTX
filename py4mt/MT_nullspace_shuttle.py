@@ -9,7 +9,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.10.2
+#       jupytext_version: 1.10.3
 # ---
 
 """
@@ -67,7 +67,7 @@ MFile = r"/home/vrath/Py4MT/py4mt/data/ANN21_Jacobian/Ann21_Prior100_T_NLCG_033.
 SFile = r"/home/vrath/Py4MT/py4mt/data/ANN21_Jacobian/Ann21_Prior100_T-Z3.sns"
 
 JThresh  = 1.e-4
-NSingulr = 500
+NSingulr = 300
 NSamples = 1000
 NBodies  = 32
 x_bounds = [-3000., 3000.]
@@ -118,10 +118,10 @@ r = rho.flat
 nproj = 1000
 
 start = time.time()
-U, S, Vt = jac.rsvd(Jac.T, NSingulr, n_oversamples=0, n_subspace_iters=0)
+U, S, Vt = jac.rsvd(Jac.T, rank=NSingulr, n_oversamples=0, n_subspace_iters=0)
 elapsed = time.time() - start
 print(
-    "Used %7.4f s for calculating k = %i SVD from %s " % (elapsed, rank, JFile)
+    "Used %7.4f s for calculating k = %i SVD from %s " % (elapsed, NSingulr, JFile)
 )
 
 D = U@scp.diags(S[:])@Vt - Jac.T

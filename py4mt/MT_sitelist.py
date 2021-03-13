@@ -8,7 +8,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.10.2
+#       jupytext_version: 1.10.3
 # ---
 
 '''
@@ -33,7 +33,7 @@ whatfor = 'nix'
 
 # Define the path to your EDI-files and for the list produced
 # edi_dir = r'/home/vrath/RRV_work/edi_work/BBMT/'
-edi_dir = r'/home/vrath/work/MT/Maurienne/MAUR9VR/orig/edis_AB1_dist_ss_dist_just/'
+edi_dir = r'/home/vrath/work/MT/Annecy/ANN22_6/ANN22_edis/'
 # r'/home/vrath/Desktop/MauTopo/MauEdi/'
 # r'/media/vrath/MT/Ireland/Northwest_CarboniferousBasin/MT_DATA/EDI/'
 print(' Edifiles read from: %s' % edi_dir)

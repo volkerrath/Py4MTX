@@ -6,21 +6,18 @@ from setuptools import setup
 from setuptools import find_packages
 import os
 
-with open('custEM/VERSION.rst', 'r') as v_file:
-    custEM_version = v_file.readline()[:7]
-    release_date = v_file.readline()[:10]
+from py4mt.modules.version import versionstr
 
-readme = open('README.rst').read()
-v_str = str(custEM_version + ', ' + release_date)
+version, release_date = versionstr()
 
 setup(
-    name='custEM',
-    version=v_str,
-    description='customizable controlled-source electromagnetic modeling',
-    author="Rochlitz, Raphael",
-    author_email="raphael.rochlitz@leibniz-liag.de",
+    name='Py4MT',
+    version=version+"   "+release_date,
+    description='Tools for magnetotelluric modeling and inversion',
+    author="Volker Rath",
+    author_email="vrath@cp.dias.ie",
     license="LGPL",
-    url="https://custem.readthedocs.io/",
+    url="https://github.com/volkerrath/Py4MT/",
     include_package_data=True,
     packages=find_packages(),
     package_data={'': ['*.txt', '*.h5', '*.npy', '*.sh', '*.zip', '*.rst']})
