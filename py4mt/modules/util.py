@@ -97,6 +97,8 @@ def proj_latlon_to_utm(longitude, latitude, utm_zone=32629):
     prj_wgs = Proj(init="epsg:4326")
     prj_utm = Proj(init="epsg:" + str(utm_zone))
     utm_x, utm_y = transform(prj_wgs, prj_utm, latitude, longitude)
+    # print(utm_x)
+    # print(utm_y)
     return utm_x, utm_y
 
 

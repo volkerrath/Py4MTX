@@ -162,7 +162,7 @@ def write_jac_ncd(NCFile=None, Jac=None, Dat=None, Site=None, Comp=None,
         )
 
 
-def read_data(DatFile=None, out=True):
+def read_data_jac(DatFile=None, out=True):
     """
     Read ModEM input data.
 
@@ -235,6 +235,211 @@ def read_data(DatFile=None, out=True):
 
     return Site, Comp, Data, Head
 
+
+def read_data_jac(DatFile=None, out=True):
+    """
+    Read ModEM input data.
+
+    author: vrath
+    last changed: Feb 10, 2021
+    """
+    Data = []
+    Site = []
+    Comp = []
+    Head = []
+
+    with open(DatFile) as fd:
+        for line in fd:
+            if line.startswith("#") or line.startswith(">"):
+                Head.append(line)
+                continue
+
+            t = line.split()
+
+            if "PT" in t[7] or "RH" in t[7] or "PH" in t[7]:
+                tmp1 = [
+                    float(t[0]),
+                    float(t[2]),
+                    float(t[3]),
+                    float(t[4]),
+                    float(t[5]),
+                    float(t[6]),
+                    float(t[8]),
+                    float(t[9]),
+                ]
+                Data.append(tmp1)
+                Site.append([t[1]])
+                Comp.append([t[7]])
+            else:
+                tmp1 = [
+                    float(t[0]),
+                    float(t[2]),
+                    float(t[3]),
+                    float(t[4]),
+                    float(t[5]),
+                    float(t[6]),
+                    float(t[8]),
+                    float(t[10]),
+                ]
+                Data.append(tmp1)
+                tmp2 = [
+                    float(t[0]),
+                    float(t[2]),
+                    float(t[3]),
+                    float(t[4]),
+                    float(t[5]),
+                    float(t[6]),
+                    float(t[9]),
+                    float(t[10]),
+                ]
+                Data.append(tmp2)
+                Comp.append([t[7] + "R", t[7] + "I"])
+                Site.append([t[1], t[1]])
+
+    Site = [item for sublist in Site for item in sublist]
+    Site = np.asarray(Site, dtype=object)
+    Comp = [item for sublist in Comp for item in sublist]
+    Comp = np.asarray(Comp, dtype=object)
+
+    Data = np.asarray(Data)
+
+    nD = np.shape(Data)
+    if out:
+        print("readDat: %i data read from %s" % (nD[0], DatFile))
+
+    return Site, Comp, Data, Head
+
+
+def read_data(DatFile=None, out=True):
+    """
+    Read ModEM input data.
+
+    author: vrath
+    last changed: Feb 10, 2021
+    """
+    Data = []
+    Site = []
+    Comp = []
+    Head = []
+
+    with open(DatFile) as fd:
+        for line in fd:
+            if line.startswith("#") or line.startswith(">"):
+                Head.append(line)
+                continue
+
+            t = line.split()
+
+            if "PT" in t[7] or "RH" in t[7] or "PH" in t[7]:
+                tmp1 = [
+                    float(t[0]),
+                    float(t[2]),
+                    float(t[3]),
+                    float(t[4]),
+                    float(t[5]),
+                    float(t[6]),
+                    float(t[8]),
+                    float(t[9]),
+                ]
+                Data.append(tmp1)
+                Site.append([t[1]])
+                Comp.append([t[7]])
+            else:
+                tmp1 = [
+                    float(t[0]),
+                    float(t[2]),
+                    float(t[3]),
+                    float(t[4]),
+                    float(t[5]),
+                    float(t[6]),
+                    float(t[8]),
+                    float(t[9]),
+                    float(t[10]),
+                ]
+                Data.append(tmp1)
+                Comp.append([t[7]])
+                Site.append([t[1]])
+
+    Site = [item for sublist in Site for item in sublist]
+    Site = np.asarray(Site, dtype=object)
+    Comp = [item for sublist in Comp for item in sublist]
+    Comp = np.asarray(Comp, dtype=object)
+
+    Data = np.asarray(Data)
+
+    nD = np.shape(Data)
+    if out:
+        print("readDat: %i data read from %s" % (nD[0], DatFile))
+
+    return Site, Comp, Data, Head
+
+
+def write_data(DatFile=None, Dat=None, Site=None, Comp=None, Head = None, out=True):
+    """
+    Write ModEM input data file.
+
+    author: vrath
+    last changed: Feb 10, 2021
+    """
+    datablock =np.column_stack((Dat[:,0], Site[:], Dat[:,1:6], Comp[:], Dat[:,6:10]))
+    print(datablock[0,:])
+    nD, _ = np.shape(datablock)
+    print(np.shape(datablock))
+
+    hlin = 0
+    nhead = len(Head)
+    nblck = int(nhead/8)
+    print(str(nblck)+" blocks will be written.")
+
+    with open(DatFile,"w") as fd:
+
+        for ib in np.arange(nblck):
+            blockheader = Head[hlin:hlin+8]
+            hlin = hlin + 8
+            for ii in np.arange(8):
+                fd.write(blockheader[ii])
+
+            if "Impedance" in blockheader[2]:
+                print('Impedances')
+                fmt = "%14e %14s"+"%15.6f"*2+" %15.1f"*3+" %14s"+" %14e"*3
+
+                indices = []
+                block = []
+                for ii in np.arange(len(Comp)):
+                    if ("ZX" in Comp[ii]) or ("ZY" in Comp[ii]):
+                        indices.append(ii)
+                        block.append(datablock[ii,:])
+                print(np.shape(block))
+
+            elif "Vertical" in blockheader[2]:
+                print('Tipper')
+                fmt = "%14e %14s"+"%15.6f"*2+" %15.1f"*3+" %14s"+" %14e"*3
+
+                indices = []
+                block = []
+                for ii in np.arange(len(Comp)):
+                    if ("TX" in Comp[ii]) or ("TY" in Comp[ii]):
+                        indices.append(ii)
+                        block.append(datablock[ii,:])
+                print(np.shape(block))
+
+            elif "Tensor" in blockheader[2]:
+                print('Tensor')
+                fmt = "%14e %14s"+"%15.6f"*2+" %15.1f"*3+" %14s"+" %14e"*3
+
+                indices = []
+                block = []
+                for ii in np.arange(len(Comp)):
+                    if ("PT" in Comp[ii]):
+                        indices.append(ii)
+                        block.append(datablock[ii,:])
+                print(np.shape(block))
+
+            else:
+                error("Dtata type "+blockheader[3]+'not implemented! Exit.')
+
+
+            np.savetxt(fd,block, fmt = fmt)
 
 def write_data_ncd(
         NCFile=None, Dat=None, Site=None, Comp=None,
@@ -392,10 +597,49 @@ def write_model_ncd(
         )
 
 
+# def write_model_vtk(ModFile=None, dx=None, dy=None, dz=None, rho=None, reference=None,
+#                  out=True):
+#     """
+#     write ModEM model input in .
+
+#     Expects rho in physical units
+
+#     author: vrath
+#     last changed: Mar 13, 2021
+
+#     """
+#     dims = np.shape(rho)
+#     nx = dims[0]
+#     ny = dims[1]
+#     nz = dims[2]
+
+#     with open(ModFile, "w") as f:
+#         np.savetxt(
+#             f, [" # 3D MT model written by ModEM in WS format"], fmt="%s")
+#         # line = np.array([nx, ny,nz, dummy, trans],dtype=('i8,i8,i8,i8,U10'))
+#         np.savetxt(f, dx.reshape(1, dx.shape[0]), fmt="%12.3f")
+#         np.savetxt(f, dy.reshape(1, dy.shape[0]), fmt="%12.3f")
+#         np.savetxt(f, dz.reshape(1, dz.shape[0]), fmt="%12.3f")
+#         # write out the layers from resmodel
+#         for zi in range(dz.size):
+#             f.write("\n")
+#             for yi in range(dy.size):
+#                 # line = rho[::-1, yi, zi]
+#                 # line = np.flipud(rho[:, yi, zi])
+#                 line = rho[:, yi, zi]
+#                 np.savetxt(f, line.reshape(1, nx), fmt="%12.5e")
+
+#         f.write("\n")
+
+#         cnt = np.asarray(reference)
+#         np.savetxt(f, cnt.reshape(1, cnt.shape[0]), fmt="%10.1f")
+#         f.write("%10.2f  \n" % (0.0))
+
+
 def write_model(ModFile=None, dx=None, dy=None, dz=None, rho=None, reference=None,
                 trans="LINEAR", out=True):
     """
-    Read ModEM model input.
+    Write ModEM model input.
 
     Expects rho in physical units
 
