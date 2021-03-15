@@ -74,13 +74,16 @@ if ReferenceType.lower()[0:3] == "sit":
 
 elif ReferenceType.lower()[0:3] == "cen":
     EPSG = 5015
+    Dfile_out = DFile+"_referenceCenter.dat"
+    Mfile_out = MFile+"_referenceCenter.rho"
+
 
 else:
     error("Reference type "+ReferenceType+" does not exist! Exit")
 
 
 start = time.time()
-dx, dy, dz, rho, refer = mod.read_model(MFile+".rho",trans="loge")
+dx, dy, dz, rho, refer = mod.read_model(MFile+".rho")
 elapsed = time.time() - start
 total = total + elapsed
 print("Used %7.4f s for reading model from %s " % (elapsed, MFile))
@@ -117,7 +120,7 @@ if all(refer) == 0:
     Data[:,3] = Data[:,3] - NewReferenceMod[0]
     Data[:,4] = Data[:,4] - NewReferenceMod[1]
 
-    refer = [-refer[0],-refer[1], -refer[2]]
+    refer = [-NewReferenceMod[0],-NewReferenceMod[1], -NewReferenceMod[2]]
 
 else:
     error("reference rexits and is nonzero! Exit.)")
