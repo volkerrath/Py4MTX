@@ -120,14 +120,16 @@ if all(refer) == 0:
     Data[:,3] = Data[:,3] - NewReferenceMod[0]
     Data[:,4] = Data[:,4] - NewReferenceMod[1]
 
-    refer = [-NewReferenceMod[0],-NewReferenceMod[1], -NewReferenceMod[2]]
+    refer = [-NewReferenceMod[0],-NewReferenceMod[1], 0.]
 
 else:
     error("reference rexits and is nonzero! Exit.)")
 
 
-mod.write_data(DatFile=Dfile_out, Dat=Data, Site=Site, Comp=Comp, Head=Head, out=True)
+mod.write_data(DatFile=Dfile_out,
+               Dat=Data, Site=Site, Comp=Comp, Head=Head, out=True)
 
 
-mod.write_model(ModFile=Mfile_out, dx=dx, dy=dy, dz=dz, rho=rho, reference=refer,
+mod.write_model(ModFile=Mfile_out,
+                dx=dx, dy=dy, dz=dz, rho=rho, reference=refer,
                 out=True)
