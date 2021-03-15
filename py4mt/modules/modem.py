@@ -236,80 +236,6 @@ def read_data_jac(DatFile=None, out=True):
     return Site, Comp, Data, Head
 
 
-def read_data_jac(DatFile=None, out=True):
-    """
-    Read ModEM input data.
-
-    author: vrath
-    last changed: Feb 10, 2021
-    """
-    Data = []
-    Site = []
-    Comp = []
-    Head = []
-
-    with open(DatFile) as fd:
-        for line in fd:
-            if line.startswith("#") or line.startswith(">"):
-                Head.append(line)
-                continue
-
-            t = line.split()
-
-            if "PT" in t[7] or "RH" in t[7] or "PH" in t[7]:
-                tmp1 = [
-                    float(t[0]),
-                    float(t[2]),
-                    float(t[3]),
-                    float(t[4]),
-                    float(t[5]),
-                    float(t[6]),
-                    float(t[8]),
-                    float(t[9]),
-                ]
-                Data.append(tmp1)
-                Site.append([t[1]])
-                Comp.append([t[7]])
-            else:
-                tmp1 = [
-                    float(t[0]),
-                    float(t[2]),
-                    float(t[3]),
-                    float(t[4]),
-                    float(t[5]),
-                    float(t[6]),
-                    float(t[8]),
-                    float(t[10]),
-                ]
-                Data.append(tmp1)
-                tmp2 = [
-                    float(t[0]),
-                    float(t[2]),
-                    float(t[3]),
-                    float(t[4]),
-                    float(t[5]),
-                    float(t[6]),
-                    float(t[9]),
-                    float(t[10]),
-                ]
-                Data.append(tmp2)
-                Comp.append([t[7] + "R", t[7] + "I"])
-                Site.append([t[1], t[1]])
-
-    Site = [item for sublist in Site for item in sublist]
-    Site = np.asarray(Site, dtype=object)
-    Comp = [item for sublist in Comp for item in sublist]
-    Comp = np.asarray(Comp, dtype=object)
-
-    Data = np.asarray(Data)
-
-    nD = np.shape(Data)
-    if out:
-        print("readDat: %i data read from %s" % (nD[0], DatFile))
-
-    return Site, Comp, Data, Head
-
-
 def read_data(DatFile=None, out=True):
     """
     Read ModEM input data.
@@ -382,9 +308,7 @@ def write_data(DatFile=None, Dat=None, Site=None, Comp=None, Head = None, out=Tr
     last changed: Feb 10, 2021
     """
     datablock =np.column_stack((Dat[:,0], Site[:], Dat[:,1:6], Comp[:], Dat[:,6:10]))
-    print(datablock[0,:])
     nD, _ = np.shape(datablock)
-    print(np.shape(datablock))
 
     hlin = 0
     nhead = len(Head)
@@ -400,7 +324,7 @@ def write_data(DatFile=None, Dat=None, Site=None, Comp=None, Head = None, out=Tr
                 fd.write(blockheader[ii])
 
             if "Impedance" in blockheader[2]:
-                print('Impedances')
+
                 fmt = "%14e %14s"+"%15.6f"*2+" %15.1f"*3+" %14s"+" %14e"*3
 
                 indices = []
@@ -409,10 +333,13 @@ def write_data(DatFile=None, Dat=None, Site=None, Comp=None, Head = None, out=Tr
                     if ("ZX" in Comp[ii]) or ("ZY" in Comp[ii]):
                         indices.append(ii)
                         block.append(datablock[ii,:])
-                print(np.shape(block))
+
+                if out:
+                    print('Impedances')
+                    print(np.shape(block))
 
             elif "Vertical" in blockheader[2]:
-                print('Tipper')
+
                 fmt = "%14e %14s"+"%15.6f"*2+" %15.1f"*3+" %14s"+" %14e"*3
 
                 indices = []
@@ -421,10 +348,13 @@ def write_data(DatFile=None, Dat=None, Site=None, Comp=None, Head = None, out=Tr
                     if ("TX" in Comp[ii]) or ("TY" in Comp[ii]):
                         indices.append(ii)
                         block.append(datablock[ii,:])
-                print(np.shape(block))
+
+                if out:
+                    print('Tipper')
+                    print(np.shape(block))
 
             elif "Tensor" in blockheader[2]:
-                print('Tensor')
+
                 fmt = "%14e %14s"+"%15.6f"*2+" %15.1f"*3+" %14s"+" %14e"*3
 
                 indices = []
@@ -433,13 +363,16 @@ def write_data(DatFile=None, Dat=None, Site=None, Comp=None, Head = None, out=Tr
                     if ("PT" in Comp[ii]):
                         indices.append(ii)
                         block.append(datablock[ii,:])
-                print(np.shape(block))
+
+                if out:
+                    print('Phase Tensor')
+                    print(np.shape(block))
 
             else:
                 error("Dtata type "+blockheader[3]+'not implemented! Exit.')
 
-
             np.savetxt(fd,block, fmt = fmt)
+
 
 def write_data_ncd(
         NCFile=None, Dat=None, Site=None, Comp=None,
@@ -637,11 +570,11 @@ def write_model_ncd(
 
 
 def write_model(ModFile=None, dx=None, dy=None, dz=None, rho=None, reference=None,
-                trans="LINEAR", out=True):
+                trans=None, out=True):
     """
     Write ModEM model input.
 
-    Expects rho in physical units
+    Expects rho in physical units (linear).
 
     author: vrath
     last changed: Aug 18, 2020
@@ -662,24 +595,33 @@ def write_model(ModFile=None, dx=None, dy=None, dz=None, rho=None, reference=Non
     nx = dims[0]
     ny = dims[1]
     nz = dims[2]
-
-    trans = trans.upper()
     dummy = 0
 
-    if trans == "LOGE":
-        rho = np.log(rho)
-        if out:
-            print("resistivities to " + ModFile + " transformed to: " + trans)
-    elif trans == "LOG10":
-        rho = np.log10(rho)
-        if out:
-            print("resistivities to " + ModFile + " transformed to: " + trans)
-    elif trans == "LINEAR":
-        pass
+    if trans is not None:
+
+        trans = np.array(trans)
+        trans = trans.upper()
+
+        if trans == "LOGE":
+            rho = np.log(rho)
+            if out:
+                print("resistivities to " + ModFile + " transformed to: " + trans)
+        elif trans == "LOG10":
+            rho = np.log10(rho)
+            if out:
+                print("resistivities to " + ModFile + " transformed to: " + trans)
+        elif trans == "LINEAR":
+            pass
+
+        else:
+            print("Transformation: " + trans + " not defined!")
+            sys.exit(1)
+
+        trans = np.array(trans)
+
     else:
-        print("Transformation: " + trans + " not defined!")
-        sys.exit(1)
-    trans = np.array(trans)
+        trans = "LINEAR"
+
     with open(ModFile, "w") as f:
         np.savetxt(
             f, [" # 3D MT model written by ModEM in WS format"], fmt="%s")
@@ -1030,7 +972,7 @@ def insert_body(
     return rho_out
 
 
-def cells3d(dx, dy, dz, center=False, reference = [0.,0.,0.]):
+def cells3d(dx, dy, dz, center=False, reference=[0., 0., 0.]):
     """
     Define cell coordinates.
 

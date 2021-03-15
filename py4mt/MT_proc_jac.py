@@ -94,7 +94,7 @@ print(" Used %7.4f s for reading model from %s " % (elapsed, DFile))
 
 
 start = time.time()
-Site, Comp, Data, Head = mod.read_data(DFile)
+Site, Comp, Data, Head = mod.read_data_jac(DFile)
 elapsed = time.time() - start
 total = total + elapsed
 print(" Used %7.4f s for reading data from %s " % (elapsed, DFile))

@@ -60,13 +60,17 @@ ReferenceType = "Site"
 
 if ReferenceType.lower()[0:3] == "sit":
     SiteReference = "FOG933A"
-    NewReferenceMod = [409426.000, 412426.000, 350.000]
-    NewReferenceGeo = [37.76242, -25.46609, 350.]   # ??? 566.037
-    SiteReference = "FOG933A"
     longitude = -25.46609
     latitude  =  37.76242
     EPSG = 5015
+
+    NewReferenceMod = [409426.000, 412426.000, 350.000]
+    NewReferenceGeo = [37.76242, -25.46609, 350.]   # ??? 566.037
+
     utm_x, utm_y = utl.proj_latlon_to_utm(longitude, latitude, utm_zone=EPSG)
+
+    Dfile_out = DFile+"_reference"+SiteReference+".dat"
+    Mfile_out = MFile+"_reference"+SiteReference+".rho"
 
 elif ReferenceType.lower()[0:3] == "cen":
     EPSG = 5015
@@ -76,11 +80,11 @@ else:
 
 
 start = time.time()
-dx, dy, dz, rho, reference = mod.read_model(MFile+".rho",trans="loge")
+dx, dy, dz, rho, refer = mod.read_model(MFile+".rho",trans="loge")
 elapsed = time.time() - start
 total = total + elapsed
 print("Used %7.4f s for reading model from %s " % (elapsed, MFile))
-print("ModEM reference is "+str(reference))
+print("ModEM reference is "+str(refer))
 print("Min/max rho = "+str(np.min(rho))+"/"+str(np.max(rho)))
 
 start = time.time()
@@ -89,7 +93,7 @@ elapsed = time.time() - start
 total = total + elapsed
 print("Used %7.4f s for reading data from %s " % (elapsed, DFile))
 
-if all(reference) == 0:
+if all(refer) == 0:
     print('Reference values are zero. New reference will be set.')
     hlin = 0
     nhead = len(Head)
@@ -99,21 +103,28 @@ if all(reference) == 0:
 
     for ib in np.arange(nblck):
         blockheader = Head[hlin:hlin+8]
-        print("Original: %s" % blockheader[6])
+        print("Original: %s" % blockheader[6].replace("\n",""))
         blockheader[6] = "> "+str(NewReferenceGeo[0])+"  "+str(NewReferenceGeo[1])+"\n"
-        print("New     : %s" % blockheader[6])
+        print("New     : %s" % blockheader[6].replace("\n",""))
         Head[hlin:hlin+8] = blockheader
         hlin = hlin+8
 
 
-    x, y, z = mod.cells3d(dx, dy, dz, reference=reference)
+    x, y, z = mod.cells3d(dx, dy, dz, reference=refer)
+
     in_lat = Data[:,1]
     in_lon = Data[:,2]
     Data[:,3] = Data[:,3] - NewReferenceMod[0]
     Data[:,4] = Data[:,4] - NewReferenceMod[1]
+
+    refer = [-refer[0],-refer[1], -refer[2]]
+
 else:
     error("reference rexits and is nonzero! Exit.)")
 
 
-Dfile_out = DFile+"_reference"+SiteReference+".dat"
 mod.write_data(DatFile=Dfile_out, Dat=Data, Site=Site, Comp=Comp, Head=Head, out=True)
+
+
+mod.write_model(ModFile=Mfile_out, dx=dx, dy=dy, dz=dz, rho=rho, reference=refer,
+                out=True)
