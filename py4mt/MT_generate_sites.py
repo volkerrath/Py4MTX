@@ -23,55 +23,76 @@ generate pseudo dat for forward modelling studies
 """
 
 # Import required modules
-
 import os
 import sys
+from sys import exit as error
+import time
+from datetime import datetime
+import warnings
 import csv
-import modules.util as utl
-import modules.modem as mod
-from mtpy.core.mt import MT
+
+
 import numpy as np
 
+mypath = ["/home/vrath/Py4MT/py4mt/modules/",
+          "/home/vrath/Py4MT/py4mt/scripts/"]
+for pth in mypath:
+    if pth not in sys.path:
+        sys.path.insert(0,pth)
+# Import required modules
 
-# edi_gen = 'grid'
+import util as utl
+import modem as mod
+from mtpy.core.mt import MT
+
+from version import versionstrg
+
+Strng, _ = versionstrg()
+now = datetime.now()
+print("\n\n"+Strng)
+print("Generate sites on a mesh (various methods)"+"\n"+"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%S")))
+print("\n\n")
+
+
+edi_gen = 'grid'
 # # generate site list
 # LonLimits = ( 6.275, 6.39)
 # nLon = 31
 # LatLimits = (45.37,45.46)
 # nLat = 31
-LonLimits = (0, 0)
-nLon = 0
-LatLimits = (0, 0)
-nLat = 0
+LonLimits = (-25.5600, -25.2250)
+nLon = 36
+LatLimits = ( 37.6700,  37.8550)
+nLat = 36
 
-edi_gen = 'readcsv'
-# read site list
-edi_file = r'/home/vrath/AEM_Limerick/Limerick_pilot.csv'
+# edi_gen = 'readcsv'
+# # read site list
+# edi_file = r'/home/vrath/AEM_Limerick/Limerick_pilot.csv'
 
-edi_gen = 'readmod'
-# read site list
-mod_file = r'/home/vrath/AEM_Limerick/Limerick_pilot_etopo.rho'
-nx_bnd = 14
-ny_bnd = 14
-centerlatlon = ()
-centermod = ()
+# edi_gen = 'readmod'
+# # read site list
+# mod_file = r'/home/vrath/AEM_Limerick/Limerick_pilot_etopo.rho'
+# nx_bnd = 14
+# ny_bnd = 14
+# centerlatlon = ()
+# centermod = ()
 
 
 # Define the path to your EDI-template:
 
-edi_template = r'/home/vrath/AEM_Limerick/EDI_AMT_template.edi'
+edi_template = r'/home/vrath/work/MT/MaChaPo/Template.edi'
 print(' Edifile template read from: %s' % edi_template)
 
 
 # Define the path and appended string for saved EDI-files:
 
-edi_out_dir = r'/home/vrath/AEM_Limerick/edi/'
+edi_out_dir = r'/home/vrath/work/MT/MaChaPo/EDI1/'
 print(' Edifiles written to: %s' % edi_out_dir)
 if not os.path.isdir(edi_out_dir):
     print(' File: %s does not exist, but will be created' % edi_out_dir)
     os.mkdir(edi_out_dir)
 
-OutName = 'LimMod'
+OutName = 'SM_Simple'
 
 
 # No changes required after this line!
@@ -81,7 +102,7 @@ OutName = 'LimMod'
 
 if edi_gen == 'grid':
     # generate site list
-    Lat, Lon = utl.gen_grid(LatLimits, nLat, LonLimits, nLon)
+    Lat, Lon = utl.gen_grid_latlon(LatLimits, nLat, LonLimits, nLon)
     nn = -1
     for latval in Lat:
         nn = nn + 1

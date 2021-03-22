@@ -170,8 +170,8 @@ def splitall(path):
     return allparts
 
 
-def shift(l, n):
-    return l[n:] + l[:n]
+# def shift(l, n):
+#     return l[n:] + l[:n]
 
 
 def get_files(SearchString=None, SearchDirectory="."):
