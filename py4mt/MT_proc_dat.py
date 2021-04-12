@@ -9,7 +9,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.10.3
+#       jupytext_version: 1.11.1
 # ---
 
 """

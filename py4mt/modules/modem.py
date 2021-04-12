@@ -27,22 +27,22 @@ def read_jac(JacFile=None, out=False):
         print("Opening and reading " + JacFile)
 
     fjac = FortranFile(JacFile, "r")
-    Temp = []
-    Comp = Freq = Site = []
+    tmp1 = []
+    tmp2 = []
     # print(np.shape(Jac))
     header1 = fjac.read_record(np.byte)
     h1 = ''.join([chr(item) for item in header1])
     # print(h1)
-    # nAll =
-    _ = fjac.read_ints(np.int32)
+    nAll = fjac.read_ints(np.int32)
+    # _ = fjac.read_ints(np.int32)
     nTx = fjac.read_ints(np.int32)
-    # print(nTx)
+    print(nTx)
     for i1 in range(nTx[0]):
         nDt = fjac.read_ints(np.int32)
-        # print(nDt)
+        print(nDt)
         for i2 in range(nDt[0]):
             nSite = fjac.read_ints(np.int32)
-            # print(nSite)
+            print(nSite)
             for i3 in range(nSite[0]):
                 # header2
                 _ = fjac.read_record(np.byte)
@@ -69,10 +69,11 @@ def read_jac(JacFile=None, out=False):
                     ColJac = fjac.read_reals(np.float64).flatten(order="F")
                     # print(np.shape(CellSens))
                     # ColJac =  CellSens.flatten(order='F')
-                    Temp.append(ColJac)
-                    # print(np.shape(Temp))
+                    tmp1.append(ColJac)
+                    # print(np.shape(tmp1))
 
-    Jac = np.asarray(Temp)
+    Jac = np.asarray(tmp1)
+    Inf = np.asarray(tmp2)
 
     fjac.close()
 

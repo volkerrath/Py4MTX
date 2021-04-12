@@ -7,7 +7,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.10.3
+#       jupytext_version: 1.11.1
 # ---
 
 import os
@@ -19,15 +19,15 @@ from sys import exit as error
 from datetime import datetime
 
 import numpy as np
-import gdal
-import scipy as sc
-import vtk
-import pyvista as pv
-import pyvistaqt as pvqt
-import discretize
-import tarfile
-import pylab as pl
-from time import sleep
+# import gdal
+# import scipy as sc
+# import vtk
+# import pyvista as pv
+# import pyvistaqt as pvqt
+# import discretize
+# import tarfile
+# import pylab as pl
+# from time import sleep
 
 mypath = ["/home/vrath/Py4MT/py4mt/modules/",
           "/home/vrath/Py4MT/py4mt/scripts/"]
@@ -55,17 +55,24 @@ total = 0
 
 DFile = r"/home/vrath/work/MT/Fogo/final_inversions/ZZT_100s/fogo_modem_data_zzt_3pc_003_100s_edited"
 MFile = r"/home/vrath/work/MT/Fogo/final_inversions/ZZT_100s/run7_NLCG_035"
+"""
+
+"""
 
 ReferenceType = "Site"
 
 if ReferenceType.lower()[0:3] == "sit":
+
+    EPSG = 5015
+    # values from edi file
     SiteReference = "FOG933A"
     longitude = -25.46609
     latitude  =  37.76242
-    EPSG = 5015
+    elevation = 566.
 
-    NewReferenceMod = [409426.000, 412426.000, 350.000]
-    NewReferenceGeo = [37.76242, -25.46609, 350.]   # ??? 566.037
+
+    NewReferenceMod = [409426.000, 412426.000, 350.0+elevation]
+    NewReferenceGeo = [37.76242, -25.46609, 350.+elevation]
 
     utm_x, utm_y = utl.proj_latlon_to_utm(longitude, latitude, utm_zone=EPSG)
 
@@ -123,7 +130,7 @@ if all(refer) == 0:
     refer = [-NewReferenceMod[0],-NewReferenceMod[1], 0.]
 
 else:
-    error("reference rexits and is nonzero! Exit.)")
+    error("reference exits and is nonzero! Exit.)")
 
 
 mod.write_data(DatFile=Dfile_out,
