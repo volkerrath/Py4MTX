@@ -253,12 +253,13 @@ def read_data(DatFile=None, out=True):
         for line in fd:
             if line.startswith("#") or line.startswith(">"):
                 Head.append(line)
+
                 continue
 
             t = line.split()
 
             if "PT" in t[7] or "RH" in t[7] or "PH" in t[7]:
-                tmp1 = [
+                tmp = [
                     float(t[0]),
                     float(t[2]),
                     float(t[3]),
@@ -267,12 +268,13 @@ def read_data(DatFile=None, out=True):
                     float(t[6]),
                     float(t[8]),
                     float(t[9]),
+                    0.,
                 ]
-                Data.append(tmp1)
+                Data.append(tmp)
                 Site.append([t[1]])
                 Comp.append([t[7]])
             else:
-                tmp1 = [
+                tmp = [
                     float(t[0]),
                     float(t[2]),
                     float(t[3]),
@@ -283,16 +285,17 @@ def read_data(DatFile=None, out=True):
                     float(t[9]),
                     float(t[10]),
                 ]
-                Data.append(tmp1)
+                Data.append(tmp)
                 Comp.append([t[7]])
                 Site.append([t[1]])
+
 
     Site = [item for sublist in Site for item in sublist]
     Site = np.asarray(Site, dtype=object)
     Comp = [item for sublist in Comp for item in sublist]
     Comp = np.asarray(Comp, dtype=object)
-
     Data = np.asarray(Data)
+
 
     nD = np.shape(Data)
     if out:
