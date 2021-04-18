@@ -43,7 +43,7 @@ from version import versionstrg
 Strng, _ = versionstrg()
 now = datetime.now()
 print("\n\n"+Strng)
-print("Set reference based on site"+"\n"+"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%S")))
+print("Set new reference"+"\n"+"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%S")))
 print("\n\n")
 
 
@@ -54,20 +54,20 @@ rhoair = 1.e17
 total = 0
 
 # MFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/run3_NLCG_039"
-# DFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/fogo_modem_phaset_tip_100s_data"
-DFile = r"/home/vrath/work/MT/Fogo/final_inversions/ZZT_100s/fogo_modem_data_zzt_3pc_003_100s_edited"
+# OFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/fogo_modem_phaset_tip_100s_data"
+OFile = r"/home/vrath/work/MT/Fogo/final_inversions/ZZT_100s/fogo_modem_data_zzt_3pc_003_100s_edited"
+PFile = r"/home/vrath/work/MT/Fogo/final_inversions/ZZT_100s/run7_NLCG_035"
 MFile = r"/home/vrath/work/MT/Fogo/final_inversions/ZZT_100s/run7_NLCG_035"
 """
 
 """
-
+EPSG = 5015
 ReferenceType = "Site"
 
 if ReferenceType.lower()[0:3] == "sit":
 
-    EPSG = 5015
-    # values from edi file
     SiteReference = "FOG933A"
+    # values from edi file
     longitude = -25.46609
     latitude  =  37.76242
     elevation = 566.
@@ -78,13 +78,15 @@ if ReferenceType.lower()[0:3] == "sit":
 
     utm_x, utm_y = utl.proj_latlon_to_utm(longitude, latitude, utm_zone=EPSG)
 
-    Dfile_out = DFile+"_reference"+SiteReference+".dat"
-    Mfile_out = MFile+"_reference"+SiteReference+".rho"
+    OFile_out = OFile+"_Refsite_"+SiteReference+".dat"
+    PFile_out = PFile+"_Refsite_"+SiteReference+".dat"
+    Mfile_out = MFile+"_Refsite_"+SiteReference+".rho"
 
 elif ReferenceType.lower()[0:3] == "cen":
-    EPSG = 5015
-    Dfile_out = DFile+"_referenceCenter.dat"
-    Mfile_out = MFile+"_referenceCenter.rho"
+    error("Center reference not yet implemented! Exit.")
+    OFile_out = OFile+"_RefCenter.dat"
+    PFile_out = PFile+"_RefCenter.dat"
+    Mfile_out = MFile+"_RefCenter.rho"
 
 
 else:
@@ -93,20 +95,28 @@ else:
 
 start = time.time()
 dx, dy, dz, rho, refer = mod.read_model(MFile+".rho")
-elapsed = time.time() - start
-total = total + elapsed
-print("Used %7.4f s for reading model from %s " % (elapsed, MFile))
+
 print("ModEM reference is "+str(refer))
 print("Min/max rho = "+str(np.min(rho))+"/"+str(np.max(rho)))
+print('New reference will be set.')
+
+refer = [-NewReferenceMod[0],-NewReferenceMod[1], NewReferenceMod[2]]
+mod.write_model(ModFile=Mfile_out,
+                dx=dx, dy=dy, dz=dz, rho=rho, reference=refer,
+                out=True)
+elapsed = time.time() - start
+print("Used %7.4f s for processing model from %s " % (elapsed, MFile))
 
 start = time.time()
-Site, Comp, Data, Head = mod.read_data(DFile+".dat")
-elapsed = time.time() - start
-total = total + elapsed
-print("Used %7.4f s for reading data from %s " % (elapsed, DFile))
+for FF in [OFile, PFile]:
 
-if all(refer) == 0:
-    print('Reference values are zero. New reference will be set.')
+    Site, Comp, Data, Head = mod.read_data(FF+".dat")
+    in_lat = Data[:,1]
+    in_lon = Data[:,2]
+    Data[:,3] = Data[:,3] - NewReferenceMod[0]
+    Data[:,4] = Data[:,4] - NewReferenceMod[1]
+
+    print("New reference will be set in %s" % (FF))
     hlin = 0
     nhead = len(Head)
     nblck = int(nhead/8)
@@ -121,24 +131,8 @@ if all(refer) == 0:
         Head[hlin:hlin+8] = blockheader
         hlin = hlin+8
 
-
-    x, y, z = mod.cells3d(dx, dy, dz, reference=refer)
-
-    in_lat = Data[:,1]
-    in_lon = Data[:,2]
-    Data[:,3] = Data[:,3] - NewReferenceMod[0]
-    Data[:,4] = Data[:,4] - NewReferenceMod[1]
-
-    refer = [-NewReferenceMod[0],-NewReferenceMod[1], 0.]
-
-else:
-    error("reference exits and is nonzero! Exit.)")
-
-
-mod.write_data(DatFile=Dfile_out,
+    mod.write_data(DatFile=OFile_out,
                Dat=Data, Site=Site, Comp=Comp, Head=Head, out=True)
 
-
-mod.write_model(ModFile=Mfile_out,
-                dx=dx, dy=dy, dz=dz, rho=rho, reference=refer,
-                out=True)
+elapsed = time.time() - start
+print("Used %7.4f s for processing data files" % (elapsed))
