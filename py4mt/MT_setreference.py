@@ -53,8 +53,8 @@ rhoair = 1.e17
 
 total = 0
 
-DFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/fogo_modem_phaset_tip_100s_data"
-MFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/run3_NLCG_039"
+# MFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/run3_NLCG_039"
+# DFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/fogo_modem_phaset_tip_100s_data"
 DFile = r"/home/vrath/work/MT/Fogo/final_inversions/ZZT_100s/fogo_modem_data_zzt_3pc_003_100s_edited"
 MFile = r"/home/vrath/work/MT/Fogo/final_inversions/ZZT_100s/run7_NLCG_035"
 """
