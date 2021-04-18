@@ -1,8 +1,8 @@
 name: EM
 channels:
-  - gimli
   - conda-forge
   - defaults
+  - gimli
 dependencies:
   - _libgcc_mutex=0.1=conda_forge
   - _openmp_mutex=4.5=1_llvm
@@ -330,12 +330,14 @@ dependencies:
   - ptyprocess=0.7.0=pyhd3deb0d_0
   - pugixml=1.11.4=h9c3ff4c_0
   - py=1.10.0=pyhd3deb0d_0
+  - pyaml=20.4.0=pyh9f0ad1d_0
   - pybind11=2.6.2=py38h1fd1430_0
   - pybind11-global=2.6.2=py38h1fd1430_0
   - pycodestyle=2.6.0=pyh9f0ad1d_0
   - pycparser=2.20=pyh9f0ad1d_2
   - pydocstyle=6.0.0=pyhd8ed1ab_0
   - pyflakes=2.2.0=pyh9f0ad1d_0
+  - pygalmesh=0.9.4=py38hd2abbef_0
   - pygments=2.8.1=pyhd8ed1ab_0
   - pygmt=0.3.1=pyhd8ed1ab_0
   - pygpu=0.7.6=py38h5c078b8_1002
@@ -382,8 +384,10 @@ dependencies:
   - rtree=0.9.7=py38h02d302b_1
   - scalapack=2.0.2=hf659fdc_1009
   - schwimmbad=0.3.2=py38h578d9bd_0
+  - scikit-fmm=2021.2.2=py38h51da96c_0
   - scikit-image=0.18.1=py38h51da96c_0
   - scikit-learn=0.24.1=py38h658cfdd_0
+  - scikit-optimize=0.8.1=pyh9f0ad1d_0
   - scipy=1.6.2=py38h7b17777_0
   - scooby=0.5.7=pyhd8ed1ab_0
   - scotch=6.0.9=h0eec0ba_1

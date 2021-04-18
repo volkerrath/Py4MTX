@@ -2,16 +2,39 @@ import os
 import sys
 from sys import exit as error
 import numpy as np
-import gdal
+# import gdal
 import scipy as sc
 import vtk
 import pyvista as pv
 import pylab as pl
-from time import sleep
+# from time import sleep
+from cycler import cycler
 
 import modem as mod
 import util as utl
 
+def get_plot_params(
+        pltfmt="pdf", fsiz=12, lsiz=10, lwid=1, grey = 0.7):
+    """
+    Set plot parameters.
+
+
+    Returns
+    -------
+    None.
+
+    """
+    PltFmt = pltfmt
+    Fsize = fsiz
+    Lsize = lsiz
+    Lwidth = lwid
+    Greyval = grey
+
+    Lcycle = (cycler('linestyle', ['-', '--', ':', '-.'])
+             * cycler('color', ['r', 'g', 'b', 'y']))
+
+
+    return PltFmt, Fsize, Lsize, Lwidth, Lcycle, Greyval
 
 def plotsliceMod(dx=None ,dy=None ,dz=None ,rho=None, position=None):
     """

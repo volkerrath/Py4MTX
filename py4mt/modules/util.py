@@ -9,7 +9,7 @@ import os
 import sys
 import ast
 import numpy as np
-from pyproj import Proj, transform
+import pyproj as proj
 from scipy.ndimage import gaussian_filter, laplace, convolve, gaussian_gradient_magnitude
 from scipy.linalg import norm
 from sys import exit as error
@@ -42,14 +42,14 @@ def find_functions(body):
     return (f for f in body if isinstance(f, ast.FunctionDef))
 
 
-def get_filelist(searchstr=['*'], searchpath='.'):
+def get_filelist(searchstr=["*"], searchpath="."):
     """
     Generate filelist from path and unix wildcard list.
 
     author: VR 3/20
     """
 
-    filelist = fnmatch.filter(os.listdir(searchpath), '*')
+    filelist = fnmatch.filter(os.listdir(searchpath), "*")
     for sstr in searchstr:
         filelist = fnmatch.filter(filelist, sstr)
         print(filelist)
@@ -58,79 +58,79 @@ def get_filelist(searchstr=['*'], searchpath='.'):
 
 
 def proj_utm_to_latlon(utm_x, utm_y, utm_zone=32629):
-    '''
+    """
     transform utm to latlon, using pyproj
     Look for other EPSG at https://epsg.io/
-    VR 11/20
-    '''
-    prj_wgs = Proj(init='epsg:4326')
-    prj_utm = Proj(init='epsg:' + str(utm_zone))
-    longitude, latitude = transform(prj_utm, prj_wgs, utm_x, utm_y)
+    VR 04/21
+    """
+    prj_wgs = proj.CRS("epsg:4326")
+    prj_utm = proj.CRS("epsg:" + str(utm_zone))
+    latitude, longitude = proj.transform(prj_utm, prj_wgs, utm_x, utm_y)
     return latitude, longitude
 
 
-def proj_latlon_to_utm(longitude, latitude, utm_zone=32629):
-    '''
+def proj_latlon_to_utm(latitude, longitude, utm_zone=32629):
+    """
     transform latlon to utm , using pyproj
     Look for other EPSG at https://epsg.io/
 
-    VR 11/20
-    '''
-    prj_wgs = Proj(init='epsg:4326')
-    prj_utm = Proj(init='epsg:' + str(utm_zone))
-    utm_x, utm_y = transform(prj_wgs, prj_utm, latitude, longitude)
+    VR 04/21
+    """
+    prj_wgs = proj.CRS("epsg:4326")
+    prj_utm = proj.CRS("epsg:" + str(utm_zone))
+    utm_x, utm_y = proj.transform(prj_wgs, prj_utm, latitude, longitude)
     return utm_x, utm_y
 
 
 def proj_latlon_to_itm(longitude, latitude):
-    '''
+    """
     transform latlon to itm , using pyproj
     Look for other EPSG at https://epsg.io/
 
-    VR 11/20
-    '''
-    prj_wgs = Proj(init='epsg:4326')
-    prj_itm = Proj(init='epsg:2157')
-    itm_x, itm_y = transform(prj_wgs, prj_itm, latitude, longitude)
+    VR 04/21
+    """
+    prj_wgs = proj.CRS("epsg:4326")
+    prj_itm = proj.CRS("epsg:2157")
+    itm_x, itm_y = proj.transform(prj_wgs, prj_itm, latitude, longitude)
     return itm_x, itm_y
 
 
 def proj_itm_to_latlon(itm_x, itm_y):
-    '''
+    """
     transform itm to latlon, using pyproj
     Look for other EPSG at https://epsg.io/
 
-    VR 11/20
-    '''
-    prj_wgs = Proj(init='epsg:4326')
-    prj_itm = Proj(init='epsg:2157')
-    longitude, latitude = transform(prj_itm, prj_wgs, itm_x, itm_y)
+    VR 04/21
+    """
+    prj_wgs = proj.CRS("epsg:4326")
+    prj_itm = proj.CRS("epsg:2157")
+    latitude, longitude = proj.transform(prj_itm, prj_wgs, itm_x, itm_y)
     return latitude, longitude
 
 
 def proj_itm_to_utm(itm_x, itm_y, utm_zone=32629):
-    '''
+    """
     transform itm to utm, using pyproj
     Look for other EPSG at https://epsg.io/
 
-    VR 11/20
-    '''
-    prj_utm = Proj(init='epsg:' + str(utm_zone))
-    prj_itm = Proj(init='epsg:2157')
-    utm_x, utm_y = transform(prj_itm, prj_utm, itm_x, itm_y)
+    VR 04/21
+    """
+    prj_utm = proj.CRS("epsg:" + str(utm_zone))
+    prj_itm = proj.CRS("epsg:2157")
+    utm_x, utm_y =proj.transform(prj_itm, prj_utm, itm_x, itm_y)
     return utm_x, utm_y
 
 
 def proj_utm_to_itm(utm_x, utm_y, utm_zone=32629):
-    '''
+    """
     transform utm to itm, using pyproj
     Look for other EPSG at https://epsg.io/
 
-    VR 11/20
-    '''
-    prj_utm = Proj(init='epsg:' + str(utm_zone))
-    prj_itm = Proj(init='epsg:2157')
-    itm_x, itm_y = transform(prj_utm, prj_itm, utm_x, utm_y)
+    VR 04/21
+    """
+    prj_utm = proj.CRS("epsg:" + str(utm_zone))
+    prj_itm = proj.CRS("epsg:2157")
+    itm_x, itm_y = proj.transform(prj_utm, prj_itm, utm_x, utm_y)
     return itm_x, itm_y
 
 
@@ -150,7 +150,7 @@ def splitall(path):
     return allparts
 
 
-def get_files(SearchString=None, SearchDirectory='.'):
+def get_files(SearchString=None, SearchDirectory="."):
     """
     FileList = get_files(Filterstring) produces a list
     of files from a searchstring (allows wildcards)
@@ -164,11 +164,11 @@ def get_files(SearchString=None, SearchDirectory='.'):
 
 
 def unique(list, out=False):
-    '''
+    """
     find unique elements in list/array
 
     VR 9/20
-    '''
+    """
 
     # intilize a null list
     unique_list = []
@@ -187,7 +187,7 @@ def unique(list, out=False):
 
 
 def strcount(keyword=None, fname=None):
-    '''
+    """
     count occurences of keyword in file
      Parameters
     ----------
@@ -197,14 +197,14 @@ def strcount(keyword=None, fname=None):
         DESCRIPTION. The default is None.
 
     VR 9/20
-    '''
-    with open(fname, 'r') as fin:
+    """
+    with open(fname, "r") as fin:
         return sum([1 for line in fin if keyword in line])
     # sum([1 for line in fin if keyword not in line])
 
 
 def strdelete(keyword=None, fname_in=None, fname_out=None, out=True):
-    '''
+    """
     delete lines containing on of the keywords in list
 
     Parameters
@@ -223,21 +223,21 @@ def strdelete(keyword=None, fname_in=None, fname_out=None, out=True):
     None.
 
     VR 9/20
-    '''
+    """
     nn = strcount(keyword, fname_in)
 
     if out:
-        print(str(nn) + ' occurances of <' + keyword + '> in ' + fname_in)
+        print(str(nn) + " occurances of <" + keyword + "> in " + fname_in)
 
     # if fname_out == None: fname_out= fname_in
-    with open(fname_in, 'r') as fin, open(fname_out, 'w') as fou:
+    with open(fname_in, "r") as fin, open(fname_out, "w") as fou:
         for line in fin:
             if keyword not in line:
                 fou.write(line)
 
 
 def strreplace(key_in=None, key_out=None, fname_in=None, fname_out=None):
-    '''
+    """
     replaces key_in in keywords by key_out
 
     Parameters
@@ -257,9 +257,9 @@ def strreplace(key_in=None, key_out=None, fname_in=None, fname_out=None):
 
     VR 9/20
 
-    '''
+    """
 
-    with open(fname_in, 'r') as fin, open(fname_out, 'w') as fou:
+    with open(fname_in, "r") as fin, open(fname_out, "w") as fou:
         for line in fin:
             fou.write(line.replace(key_in, key_out))
 
@@ -319,13 +319,13 @@ def choose_data_poly(Data=None, PolyPoints=None, Out=True):
      VR 11/20
     """
     if Data.size == 0:
-        error('No Data given!')
+        error("No Data given!")
     if not PolyPoints:
-        error('No Rectangle given!')
+        error("No Rectangle given!")
 
     Ddims = np.shape(Data)
     if Out:
-        print('data matrix input: ' + str(Ddims))
+        print("data matrix input: " + str(Ddims))
 
     Poly = []
     for row in np.arange(Ddims[0] - 1):
@@ -335,7 +335,7 @@ def choose_data_poly(Data=None, PolyPoints=None, Out=True):
     Poly = np.asarray(Poly, dtype=float)
     if Out:
         Ddims = np.shape(Poly)
-        print('data matrix output: ' + str(Ddims))
+        print("data matrix output: " + str(Ddims))
 
     return Poly
 
@@ -353,12 +353,12 @@ def choose_data_poly(Data=None, PolyPoints=None, Out=True):
 
 
 def point_inside_polygon(x, y, poly):
-    '''
+    """
     Determine if a point is inside a given polygon or not, where
     the Polygon is given as a list of (x,y) pairs.
     Returns True  when point (x,y) ins inside polygon poly, False otherwise
 
-    '''
+    """
     # @jit(nopython=True)
     n = len(poly)
     inside = False
@@ -385,13 +385,13 @@ def choose_data_rect(Data=None, Corners=None, Out=True):
 
     """
     if Data.size == 0:
-        error('No Data given!')
+        error("No Data given!")
     if not Corners:
-        error('No Rectangle given!')
+        error("No Rectangle given!")
 
     Ddims = np.shape(Data)
     if Out:
-        print('data matrix input: ' + str(Ddims))
+        print("data matrix input: " + str(Ddims))
     Rect = []
     for row in np.arange(Ddims[0] - 1):
         if (Data[row, 1] > Corners[0] and Data[row, 1] < Corners[1] and
@@ -400,16 +400,16 @@ def choose_data_rect(Data=None, Corners=None, Out=True):
     Rect = np.asarray(Rect, dtype=float)
     if Out:
         Ddims = np.shape(Rect)
-        print('data matrix output: ' + str(Ddims))
+        print("data matrix output: " + str(Ddims))
 
     return Rect
 
 
 def proj_to_line(x, y, line):
-    '''
+    """
     Projects a point onto a line, where line is represented by two arbitrary
     points. as an array
-    '''
+    """
 #    http://www.vcskicks.com/code-snippet/point-projection.php
 #    private Point Project(Point line1, Point line2, Point toProject)
 # {
@@ -477,7 +477,7 @@ def gen_searchgrid(Points=None,
 
     return p
 
-    
+
 def fractrans(m=None, x=None , a=0.5):
     """
     Caklculate fractional derivative of m.

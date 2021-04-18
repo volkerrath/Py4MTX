@@ -5,7 +5,7 @@ _libgcc_mutex             0.1                 conda_forge    conda-forge
 _openmp_mutex             4.5                      1_llvm    conda-forge
 absl-py                   0.12.0             pyhd8ed1ab_0    conda-forge
 alabaster                 0.7.12                     py_0    conda-forge
-anaconda-clean            1.1.0            py38h06a4308_1  
+anaconda-clean            1.1.0            py38h06a4308_1    defaults
 anyio                     2.2.0            py38h578d9bd_0    conda-forge
 appdirs                   1.4.4              pyh9f0ad1d_0    conda-forge
 argh                      0.26.2          pyh9f0ad1d_1002    conda-forge
@@ -339,6 +339,7 @@ ptyprocess                0.7.0              pyhd3deb0d_0    conda-forge
 pugixml                   1.11.4               h9c3ff4c_0    conda-forge
 pvgeo                     2.1.0                    pypi_0    pypi
 py                        1.10.0             pyhd3deb0d_0    conda-forge
+pyaml                     20.4.0             pyh9f0ad1d_0    conda-forge
 pybind11                  2.6.2            py38h1fd1430_0    conda-forge
 pybind11-global           2.6.2            py38h1fd1430_0    conda-forge
 pycodestyle               2.6.0              pyh9f0ad1d_0    conda-forge
@@ -346,6 +347,7 @@ pycparser                 2.20               pyh9f0ad1d_2    conda-forge
 pydocstyle                6.0.0              pyhd8ed1ab_0    conda-forge
 pydream                   2.0.0                    pypi_0    pypi
 pyflakes                  2.2.0              pyh9f0ad1d_0    conda-forge
+pygalmesh                 0.9.4            py38hd2abbef_0    conda-forge
 pygments                  2.8.1              pyhd8ed1ab_0    conda-forge
 pygmt                     0.3.1              pyhd8ed1ab_0    conda-forge
 pygpu                     0.7.6           py38h5c078b8_1002    conda-forge
@@ -393,8 +395,10 @@ rope                      0.18.0             pyh9f0ad1d_0    conda-forge
 rtree                     0.9.7            py38h02d302b_1    conda-forge
 scalapack                 2.0.2             hf659fdc_1009    conda-forge
 schwimmbad                0.3.2            py38h578d9bd_0    conda-forge
+scikit-fmm                2021.2.2         py38h51da96c_0    conda-forge
 scikit-image              0.18.1           py38h51da96c_0    conda-forge
 scikit-learn              0.24.1           py38h658cfdd_0    conda-forge
+scikit-optimize           0.8.1              pyh9f0ad1d_0    conda-forge
 scipy                     1.6.2            py38h7b17777_0    conda-forge
 scooby                    0.5.7              pyhd8ed1ab_0    conda-forge
 scotch                    6.0.9                h0eec0ba_1    conda-forge
