@@ -24,22 +24,12 @@ This will set up a Python 3.8 environment with all dependencies for aempy.
 
 _conda activate EM_
 
-Easiest way to run scripts is using spyder.
-
-
-Enjoy!
-This version will run under Python up to 3.7 (3.8 not yet tested). To install it in an Linux environment (e.g. Ubuntu, SuSE), you need to the following:
-
-(1) Download the latest Anaconda or Miniconda version (https://www.anaconda.com/distribution/), and install by runing the downloaded bash script.
-
-(2) Create an appropriate conda environment (including the necessary prerequisites) by:
-
-_conda env create -f Py4MT.yml_
-
-(3) Activate this environment by:
-
-_conda activate Py4MT_
-
-(4) Now the open souce toolboxes used need to be installed (currently only mtpy, _https://github.com/MTgeophysics/mtpy_). for mtpy, download the current development version via the git system. Then, enter the download directory 9usually callen _mtpy_) and execute:
+(4) Now the open source toolboxes used need to be installed (currently only mtpy, _https://github.com/MTgeophysics/mtpy_). For mtpy, download the current development version via the git system. Then, enter the download directory 9usually callen _mtpy_) and execute:
 
 _python setup.py install_
+
+(5) In order to reproduce the identical behavior of matplotlib, you should copy the included  _matplotlibrc_ file to the appropriate directory. Under Linux (Ubuntu), this should be : _$HOME/.config/matplotlib/matplotlibrc_. 
+
+
+Easiest way to run scripts is using spyder. Enjoy!
+
