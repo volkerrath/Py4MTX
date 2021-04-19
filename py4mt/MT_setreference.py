@@ -79,15 +79,11 @@ if ReferenceType.lower()[0:3] == "sit":
 
     utm_x, utm_y = utl.proj_latlon_to_utm(longitude, latitude, utm_zone=EPSG)
 
-    OFile_out = OFile+"_Refsite_"+SiteReference+".dat"
-    PFile_out = PFile+"_Refsite_"+SiteReference+".dat"
-    Mfile_out = MFile+"_Refsite_"+SiteReference+".rho"
+    addstr = "_Refsite_"+SiteReference+".dat"
 
 elif ReferenceType.lower()[0:3] == "cen":
     error("Center reference not yet implemented! Exit.")
-    OFile_out = OFile+"_RefCenter.dat"
-    PFile_out = PFile+"_RefCenter.dat"
-    Mfile_out = MFile+"_RefCenter.rho"
+    addstr ="_RefCenter.dat"
 
 
 else:
@@ -102,7 +98,7 @@ print("Min/max rho = "+str(np.min(rho))+"/"+str(np.max(rho)))
 print('New reference will be set.')
 
 refer = [-NewReferenceMod[0],-NewReferenceMod[1], NewReferenceMod[2]]
-mod.write_model(ModFile=Mfile_out,
+mod.write_model(ModFile=MFile+addstr,
                 dx=dx, dy=dy, dz=dz, rho=rho, reference=refer,
                 out=True)
 elapsed = time.time() - start
@@ -132,7 +128,7 @@ for FF in [OFile, PFile]:
         Head[hlin:hlin+8] = blockheader
         hlin = hlin+8
 
-    mod.write_data(DatFile=OFile_out,
+    mod.write_data(DatFile=FF+addstr,
                Dat=Data, Site=Site, Comp=Comp, Head=Head, out=True)
 
 elapsed = time.time() - start
