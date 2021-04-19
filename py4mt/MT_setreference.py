@@ -53,12 +53,12 @@ rhoair = 1.e17
 
 total = 0
 
-# MFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/run3_NLCG_039"
-# PFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/run3_NLCG_039"
-# OFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/fogo_modem_phaset_tip_100s_data"
-OFile = r"/home/vrath/work/MT/Fogo/final_inversions/ZZT_100s/fogo_modem_data_zzt_3pc_003_100s_edited"
-PFile = r"/home/vrath/work/MT/Fogo/final_inversions/ZZT_100s/run7_NLCG_035"
-MFile = r"/home/vrath/work/MT/Fogo/final_inversions/ZZT_100s/run7_NLCG_035"
+# OFile = r"/home/vrath/work/MT/Fogo/final_inversions/ZZT_100s/fogo_modem_data_zzt_3pc_003_100s_edited"
+# PFile = r"/home/vrath/work/MT/Fogo/final_inversions/ZZT_100s/run7_NLCG_035"
+# MFile = r"/home/vrath/work/MT/Fogo/final_inversions/ZZT_100s/run7_NLCG_035"
+PFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/run3_NLCG_039"
+OFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/fogo_modem_phaset_tip_100s_data"
+MFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/run3_NLCG_039"
 """
 
 """
@@ -75,7 +75,7 @@ if ReferenceType.lower()[0:3] == "sit":
 
 
     NewReferenceMod = [409426.000, 412426.000, 350.0+elevation]
-    NewReferenceGeo = [37.76242, -25.46609, 350.+elevation]
+    NewReferenceGeo = [37.76242, -25.46609, elevation]
 
     utm_x, utm_y = utl.proj_latlon_to_utm(longitude, latitude, utm_zone=EPSG)
 
@@ -108,8 +108,9 @@ start = time.time()
 for FF in [OFile, PFile]:
 
     Site, Comp, Data, Head = mod.read_data(FF+".dat")
-    in_lat = Data[:,1]
-    in_lon = Data[:,2]
+    Data[:,1] = NewReferenceGeo[0]
+    Data[:,2] = NewReferenceGeo[1]
+    Data[:,5] = NewReferenceGeo[2]
     Data[:,3] = Data[:,3] - NewReferenceMod[0]
     Data[:,4] = Data[:,4] - NewReferenceMod[1]
 

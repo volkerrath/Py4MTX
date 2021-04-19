@@ -304,7 +304,8 @@ def read_data(DatFile=None, out=True):
     return Site, Comp, Data, Head
 
 
-def write_data(DatFile=None, Dat=None, Site=None, Comp=None, Head = None, out=True):
+def write_data(DatFile=None, Dat=None, Site=None, Comp=None, Head = None,
+               out=True):
     """
     Write ModEM input data file.
 
@@ -349,7 +350,7 @@ def write_data(DatFile=None, Dat=None, Site=None, Comp=None, Head = None, out=Tr
                 indices = []
                 block = []
                 for ii in np.arange(len(Comp)):
-                    if ("TX" in Comp[ii]) or ("TY" in Comp[ii]):
+                    if ("TX" == Comp[ii]) or ("TY" == Comp[ii]):
                         indices.append(ii)
                         block.append(datablock[ii,:])
 
@@ -373,7 +374,7 @@ def write_data(DatFile=None, Dat=None, Site=None, Comp=None, Head = None, out=Tr
                     print(np.shape(block))
 
             else:
-                error("Dtata type "+blockheader[3]+'not implemented! Exit.')
+                error("Data type "+blockheader[3]+'not implemented! Exit.')
 
             np.savetxt(fd,block, fmt = fmt)
 
