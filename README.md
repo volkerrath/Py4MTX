@@ -28,7 +28,7 @@ _conda activate EM_
 
 _python setup.py install_
 
-(5) In order to reproduce the identical behavior of matplotlib, you should copy the included  _matplotlibrc_ file to the appropriate directory. Under Linux (Ubuntu), this should be : _$HOME/.config/matplotlib/matplotlibrc_. 
+(5) In order to reproduce the identical behavior of matplotlib, you should copy the included  _matplotlibrc_ file to the appropriate directory. Under Linux (Ubuntu), this should be : _$HOME/.config/matplotlib/matplotlibrc_. Pertinent changes should be made there, or have to be made within the scripts/modules usinin the _mpl.rcParams[name]=value_ mechanism. 
 
 
 Easiest way to run scripts is using spyder. Enjoy!
