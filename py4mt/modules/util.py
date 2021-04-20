@@ -508,7 +508,7 @@ def make_pdf_catalog(WorkDir="./", FileName=None):
     Workdir : string
         Working directory.
     Filename : string
-        Filename.
+        Filename. Files to be appended must begin with this string.
 
     Returns
     -------
@@ -518,11 +518,15 @@ def make_pdf_catalog(WorkDir="./", FileName=None):
     from PyPDF2 import PdfFileMerger
 
     catalog = PdfFileMerger()
-
+    pdflist = []
     files = os.listdir(WorkDir)
-    for entry in files:
+    for entry in sorted(files, key=str):
         print(entry)
         if entry.endswith(".pdf") and entry.startswith(FileName+"_"):
-           catalog.append(entry)
-    catalog.write(WorkDir+FileName+".pdf")
+           catalog.append(WorkDir+entry)
+           pdflist.append(entry)
+
+    CatName = WorkDir+FileName+".pdf"
+    catalog.write(CatName)
+    print(str(np.size(pdflist))+" files collected to "+CatName)
 
