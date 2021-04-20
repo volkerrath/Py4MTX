@@ -14,7 +14,7 @@ import modem as mod
 import util as utl
 
 def get_plot_params(
-        pltfmt="pdf", fsiz=8, lsiz=8, lwid=1, grey = 0.7):
+        pltfmt="pdf", fsiz=10, lsiz=10, lwid=1, grey = 0.7):
     """
     Set plot parameters.
 

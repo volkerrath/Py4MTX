@@ -53,24 +53,29 @@ print("\n\n"+Strng)
 print("Plot Phase Tensor fit"+"\n"+"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%S")))
 print("\n\n")
 
-
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
 
 # Graphical paramter. Determine the plot formats produced,
 # and the required resolution:
-
-_, Fontsize, Labelsize, Linewidth, Lcycle, Grey = mtp.get_plot_params()
-
-PlotFormat = [".pdf", ".png"]
-
-plt.style.use('seaborn-white')
-# PredFile = r"/home/vrath/Py4MT/py4mt/tmp/FBB902A_calculated"
-# ObsvFile = r"/home/vrath/Py4MT/py4mt/tmp/FBB902A_observed"
+WorkDir =   r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/"
 PredFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/run3_NLCG_039_Refsite_FOG933A"
 ObsvFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/fogo_modem_phaset_tip_100s_data_Refsite_FOG933A"
 
-PlotFile = PredFile+"_PT_"
+PerLimits = (0.001, 100.)
+PhTLimitsXX = (-5., 5.)
+PhTLimitsXY = (-1., 1.)
+PlotFile = "Fogo_PhT_final"
+
+
+
+PlotFormat = [".pdf", ".png"]
+PdfCatalog = True
+if not ".pdf" in PlotFormat:
+    error(" No pdfs generated. No catalog possible!")
+    PdfCatalog = False
+PdfCName = PlotFile
+
 
 """
 
@@ -80,156 +85,183 @@ EPSG = 5015
 start = time.time()
 
 FF = ObsvFile
-Siteo, Comp, Data, Head = mod.read_data(FF+".dat")
-obs_dat = Data[:, 6]
-obs_err = Data[:, 7]
-obs_per = Data[:, 0]
-obs_cmp = Comp
-lat = Data[:,1]
-lon = Data[:,2]
-x = Data[:,3]
-y = Data[:,4]
-z = Data[:,5]
+SiteObs, CompObs, DataObs, HeadObs = mod.read_data(FF+".dat")
+obs_dat = DataObs[:, 6]
+obs_err = DataObs[:, 7]
+obs_per = DataObs[:, 0]
+obs_cmp = CompObs
+obs_sit = SiteObs
+lat = DataObs[:,1]
+lon = DataObs[:,2]
+x = DataObs[:,3]
+y = DataObs[:,4]
+z = DataObs[:,5]
 
 FF = PredFile
-Sitec, Comp, Data, Head = mod.read_data(FF+".dat")
-cal_dat= Data[:, 6]
-cal_per= Data[:, 0]
-cal_cmp= Comp
+SiteCal, CompCal, DataCal, HeadCal = mod.read_data(FF+".dat")
+cal_dat= DataCal[:, 6]
+cal_per= DataCal[:, 0]
+cal_cmp= CompCal
+cal_sit = SiteCal
+
+# Determine graphical parameter.
+# print(plt.style.available)
+plt.style.use("seaborn-paper")
+mpl.rcParams["figure.dpi"] = 400
+mpl.rcParams["axes.linewidth"] = 0.5
+Fontsize = 10
+Labelsize = Fontsize
+Linewidth= 1
+Grey = 0.7
+Lcycle =Lcycle = (cycler("linestyle", ["-", "--", ":", "-."])
+          * cycler("color", ["r", "g", "b", "y"]))
+mpl.rcParams["figure.dpi"] = 400
+mpl.rcParams["axes.linewidth"] = 0.5
 
 
+plt.style.use("seaborn-paper")
 
-Sites = np.unique(Siteo)
+Sites = np.unique(SiteObs)
 
-for s in Sites[0:3]:
-
-    site = (Siteo==s)
-    print(s, site)
-    site_dobs = obs_dat[site].copy()
-    site_errs = obs_err[site].copy()
-    site_ocmp = obs_cmp[site].copy()
-    site_oper = obs_per[site].copy()
-    site_lat = lat[site][0].copy()
-    site_lon = lon[site][0].copy()
+for s in Sites:
+    print("Plotting site: "+s)
+    site = (obs_sit==s)
+    site_lon = lon[site][0]
+    site_lat = lat[site][0]
     site_utmx, site_utmy = utl.proj_latlon_to_utm(site_lat, site_lon, utm_zone=EPSG)
     site_utmx = int(np.round(site_utmx))
     site_utmy = int(np.round(site_utmy))
     site_elev = z[site][0]
 
-
-    site = (Sitec==s)
-    site_dcal = cal_dat[site].copy()
-    site_ccmp = cal_cmp[site].copy()
-    site_cper = cal_per[site].copy()
-
     cmp ="PTXX"
-    cmpo = (site_ocmp==cmp)
-    PTxxo = site_dobs[cmpo]
-    PTxxe = site_errs[cmpo]
-    Perxxo = site_oper[cmpo]
-    cmpc = (site_ccmp==cmp)
-    PTxxc = site_dcal[cmpc]
-    Perxxc = site_cper[cmpc]
-    print(Perxxc)
-    print(PTxxc)
+    cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
+    PhTxxo = obs_dat[cmpo]
+    PhTxxe = obs_err[cmpo]
+    Perxxo = obs_per[cmpo]
+    cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
+    PhTxxc = cal_dat[cmpc]
+    Perxxc = cal_per[cmpc]
 
     cmp ="PTXY"
-    cmpo = (site_ocmp==cmp)
-    PTxyo = site_dobs[cmpo]
-    PTxye = site_errs[cmpo]
-    Perxyo = site_oper[cmpo]
-    cmpc = (site_ccmp==cmp)
-    PTxyc = site_dcal[cmpc]
-    Perxyc = site_cper[cmpc]
+    cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
+    PhTxyo = obs_dat[cmpo]
+    PhTxye = obs_err[cmpo]
+    Perxyo = obs_per[cmpo]
+    cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
+    PhTxyc = cal_dat[cmpc]
+    Perxyc = cal_per[cmpc]
 
     cmp ="PTYX"
-    cmpo = (site_ocmp==cmp)
-    PTyxo = site_dobs[cmpo]
-    PTyxe = site_errs[cmpo]
-    Peryxo = site_oper[cmpo]
-    cmpc = (site_ccmp==cmp)
-    PTyxc = site_dcal[cmpc]
-    Peryxc = site_cper[cmpc]
+    cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
+    PhTyxo = obs_dat[cmpo]
+    PhTyxe = obs_err[cmpo]
+    Peryxo = obs_per[cmpo]
+    cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
+    PhTyxc = cal_dat[cmpc]
+    Peryxc = cal_per[cmpc]
 
     cmp ="PTYY"
-    cmpo = (site_ocmp==cmp)
-    PTyyo = site_dobs[cmpo]
-    PTyye = site_errs[cmpo]
-    Peryyo = site_oper[cmpo]
-    cmpc = (site_ccmp==cmp)
-    PTyyc = site_dcal[cmpc]
-    Peryyc = site_cper[cmpc]
+    cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
+    PhTyyo = obs_dat[cmpo]
+    PhTyye = obs_err[cmpo]
+    Peryyo = obs_per[cmpo]
+    cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
+    PhTyyc = cal_dat[cmpc]
+    Peryyc = cal_per[cmpc]
 
-
-
-    # mpl.rcParams["figure.dpi"] = 300
-    fig, axes = plt.subplots(2, 2)
+    cm = 1/2.54  # centimeters in inches
+    fig, axes = plt.subplots(2,2)   #, figsize = (12*cm, 12*cm))
     fig.suptitle(r"Site: "+s
-                 +"  /  Lat: "+str(site_lat)+"   Lon: "+str(site_lon)
-                 +"  /  UTMX: "+str(site_utmx)+"   UTMY: "+str(site_utmy)
-                 +" (EPSG="+str(EPSG)+")  /  Elev: "+ str(site_elev)+" m",
-                 ha="left", x=0.,fontsize=Fontsize)
+                 +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
+                 +"\nUTMX: "+str(site_utmx)+"   UTMY: "+str(site_utmy)
+                 +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m",
+                 ha="left", x=0.1,fontsize=Fontsize-1)
 
-
-    axes[0,0].plot(Perxxc, PTxxc, "-r")
-    axes[0,0].errorbar(Perxxo,PTxxo, yerr=PTxxe,
+    axes[0,0].plot(Perxxc, PhTxxc, "-r")
+    axes[0,0].errorbar(Perxxo,PhTxxo, yerr=PhTxxe,
                             linestyle="",
                             marker="o",
                             color="b",
                             lw=0.99,
-                            markersize=5)
-    axes[0,0].set_ylabel("PTXX", fontsize=Fontsize)
-    axes[0,0].xaxis.set_ticklabels([])
-    axes[0,0].grid("major", "both", linestyle=":", lw=0.8)
+                            markersize=3)
+
     axes[0,0].set_xscale("log")
+    axes[0,0].set_xlim(PerLimits)
+    if PhTLimitsXX != ():
+        axes[0,0].set_ylim(PhTLimitsXX)
+    axes[0,0].legend(["predicted", "observed"])
+    axes[0,0].xaxis.set_ticklabels([])
+    axes[0,0].tick_params(labelsize=Labelsize-1)
+    axes[0,0].set_ylabel("PhTXX", fontsize=Fontsize)
+    axes[0,0].grid("major", "both", linestyle=":", lw=0.5)
 
 
-    axes[0,1].plot(Perxyc, PTxyc, "-r")
-    axes[0,1].errorbar(Perxyo,PTxyo, yerr=PTxye,
+
+    axes[0,1].plot(Perxyc, PhTxyc, "-r")
+    axes[0,1].errorbar(Perxyo,PhTxyo, yerr=PhTxye,
                             linestyle="",
                             marker="o",
                             color="b",
                             lw=0.99,
-                            markersize=5)
-    axes[0,1].set_ylabel("PTXY", fontsize=Fontsize)
-    axes[0,1].xaxis.set_ticklabels([])
-    axes[0,1].tick_params(bottom='off', labelbottom='off')
-
-    axes[0,1].grid("major", "both", linestyle=":", lw=0.8)
+                            markersize=3)
     axes[0,1].set_xscale("log")
+    axes[0,1].set_xlim(PerLimits)
+    if PhTLimitsXY != ():
+        axes[0,1].set_ylim(PhTLimitsXY)
+    axes[0,1].legend(["predicted", "observed"])
+    axes[0,1].tick_params(labelsize=Labelsize-1)
+    axes[0,1].set_ylabel("PhTXY", fontsize=Fontsize)
+    axes[0,1].xaxis.set_ticklabels([])
+    axes[0,1].tick_params(bottom="off", labelbottom="off")
+    axes[0,1].grid("major", "both", linestyle=":", lw=0.5)
 
 
-    axes[1,0].plot(Peryxc, PTyxc, "-r")
-    axes[1,0].errorbar(Peryxo,PTyxo, yerr=PTyxe,
+
+    axes[1,0].plot(Peryxc, PhTyxc, "-r")
+    axes[1,0].errorbar(Peryxo,PhTyxo, yerr=PhTyxe,
                             linestyle="",
                             marker="o",
                             color="b",
                             lw=0.99,
-                            markersize=5)
-    axes[1,0].set_xlabel("Period (s)", fontsize=Fontsize)
-    axes[1,0].set_ylabel("PTYX", fontsize=Fontsize)
-    axes[1,0].grid("major", "both", linestyle=":", lw=0.8)
+                            markersize=3)
     axes[1,0].set_xscale("log")
+    axes[1,0].set_xlim(PerLimits)
+    if PhTLimitsXY != ():
+        axes[1,0].set_ylim(PhTLimitsXY)
+    axes[1,0].legend(["predicted", "observed"])
+    axes[1,0].tick_params(labelsize=Labelsize-1)
+    axes[1,0].set_xlabel("Period (s)", fontsize=Fontsize)
+    axes[1,0].set_ylabel("PhTYX", fontsize=Fontsize)
+    axes[1,0].grid("major", "both", linestyle=":", lw=0.5)
 
-    axes[1,1].plot(Peryyc, PTyyc, "-r")
-    axes[1,1].errorbar(Peryyo,PTyyo, yerr=PTyye,
+
+    axes[1,1].plot(Peryyc, PhTyyc, "-r")
+    axes[1,1].errorbar(Peryyo,PhTyyo, yerr=PhTyye,
                             linestyle="",
                             marker="o",
                             color="b",
                             lw=0.99,
-                            markersize=5)
+                            markersize=3)
+    axes[1,1].set_xscale("log")
+    axes[1,1].set_xlim(PerLimits)
+    if PhTLimitsXX != ():
+        axes[1,1].set_ylim(PhTLimitsXX)
+    axes[1,1].legend(["predicted", "observed"])
+    axes[1,1].tick_params(labelsize=Labelsize-1)
     axes[1,1].set_xlabel("Period (s)", fontsize=Fontsize)
-    axes[1,1].set_ylabel("PTYY", fontsize=Fontsize)
-    axes[1,1].grid("major", "both", linestyle=":", lw=0.8)
+    axes[1,1].set_ylabel("PhTYY", fontsize=Fontsize)
+    axes[1,1].grid("major", "both", linestyle=":", lw=0.5)
     axes[1,1].set_xscale("log")
 
     fig.tight_layout()
-    plt.show()
 
     for F in PlotFormat:
-        fig = plt.savefig(PlotFile+s+F, dpi=400)
+        plt.savefig(WorkDir+PlotFile+"_"+s+F, dpi=400)
 
-    #plt.close(fig)
 
-# elapsed = time.time() - start
-# print("Used %7.4f s for processing data files" % (elapsed))
+    plt.show()
+    plt.close(fig)
+
+if PdfCatalog:
+    utl.make_pdf_catalog(WorkDir, PdfCName)
+

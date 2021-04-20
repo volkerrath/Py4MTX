@@ -498,3 +498,31 @@ def fractrans(m=None, x=None , a=0.5):
     mm = df.differint(a, m, x0, x1, npnts)
 
     return mm
+
+def make_pdf_catalog(WorkDir="./", FileName=None):
+    """
+    Make pdf catalog from site-plots
+
+    Parameters
+    ----------
+    Workdir : string
+        Working directory.
+    Filename : string
+        Filename.
+
+    Returns
+    -------
+    None.
+
+    """
+    from PyPDF2 import PdfFileMerger
+
+    catalog = PdfFileMerger()
+
+    files = os.listdir(WorkDir)
+    for entry in files:
+        print(entry)
+        if entry.endswith(".pdf") and entry.startswith(FileName+"_"):
+           catalog.append(entry)
+    catalog.write(WorkDir+FileName+".pdf")
+
