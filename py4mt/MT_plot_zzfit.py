@@ -50,7 +50,7 @@ from version import versionstrg
 Strng, _ = versionstrg()
 now = datetime.now()
 print("\n\n"+Strng)
-print("Plot Phase Tensor fit"+"\n"+"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%S")))
+print("Plot Impedance fit"+"\n"+"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%S")))
 print("\n\n")
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
@@ -58,14 +58,14 @@ warnings.simplefilter(action="ignore", category=FutureWarning)
 
 # Graphical paramter. Determine the plot formats produced,
 # and the required resolution:
-WorkDir =   r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/"
-PredFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/run3_NLCG_039_Refsite_FOG933A"
-ObsvFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/fogo_modem_phaset_tip_100s_data_Refsite_FOG933A"
+WorkDir =  r"/home/vrath/work/MT/Fogo/final_inversions/ZZT_100s/"
+PredFile = r"/home/vrath/work/MT/Fogo/final_inversions/ZZT_100s/run7_NLCG_035_Refsite_FOG933A"
+ObsvFile = r"/home/vrath/work/MT/Fogo/final_inversions/ZZT_100s/fogo_modem_data_zzt_3pc_003_100s_edited_Refsite_FOG933A"
 
-PerLimits = (0.001, 100.)
-PhTLimitsXX = (-5., 5.)
-PhTLimitsXY = (-1., 1.)
-PlotFile = "Fogo_PhT_final"
+PerLimits = (0.001, 200.)
+ZLimitsXX = ()
+ZLimitsXY = ()
+PlotFile = "Fogo_ZZ_final"
 
 
 
@@ -83,11 +83,11 @@ PdfCName = PlotFile
 EPSG = 5015
 
 start = time.time()
-
 FF = ObsvFile
 SiteObs, CompObs, DataObs, HeadObs = mod.read_data(FF+".dat")
-obs_dat = DataObs[:, 6]
-obs_err = DataObs[:, 7]
+obs_rdat = DataObs[:, 6]
+obs_idat = DataObs[:, 7]
+obs_err = DataObs[:, 8]
 obs_per = DataObs[:, 0]
 obs_cmp = CompObs
 obs_sit = SiteObs
@@ -99,10 +99,12 @@ z = DataObs[:,5]
 
 FF = PredFile
 SiteCal, CompCal, DataCal, HeadCal = mod.read_data(FF+".dat")
-cal_dat= DataCal[:, 6]
-cal_per= DataCal[:, 0]
-cal_cmp= CompCal
+cal_rdat = DataCal[:, 6]
+cal_idat = DataCal[:, 7]
+cal_per = DataCal[:, 0]
+cal_cmp = CompCal
 cal_sit = SiteCal
+
 
 # Determine graphical parameter.
 # print(plt.style.available)
@@ -133,41 +135,50 @@ for s in Sites:
     site_utmy = int(np.round(site_utmy))
     site_elev = z[site][0]
 
-    cmp ="PTXX"
+    cmp ="ZXX"
     cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
-    PhTxxo = obs_dat[cmpo]
-    PhTxxe = obs_err[cmpo]
+    Zxxro = np.abs(obs_rdat[cmpo])
+    Zxxio = np.abs(obs_idat[cmpo])
+    Zxxe = obs_err[cmpo]
     Perxxo = obs_per[cmpo]
     cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
-    PhTxxc = cal_dat[cmpc]
+    Zxxrc = np.abs(cal_rdat[cmpc])
+    Zxxic = np.abs(cal_idat[cmpc])
     Perxxc = cal_per[cmpc]
 
-    cmp ="PTXY"
+    cmp ="ZXY"
     cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
-    PhTxyo = obs_dat[cmpo]
-    PhTxye = obs_err[cmpo]
+    Zxyro = np.abs(obs_rdat[cmpo])
+    Zxyio = np.abs(obs_idat[cmpo])
+    Zxye = obs_err[cmpo]
     Perxyo = obs_per[cmpo]
     cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
-    PhTxyc = cal_dat[cmpc]
+    Zxyrc = np.abs(cal_rdat[cmpc])
+    Zxyic = np.abs(cal_idat[cmpc])
     Perxyc = cal_per[cmpc]
 
-    cmp ="PTYX"
+    cmp ="ZYX"
     cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
-    PhTyxo = obs_dat[cmpo]
-    PhTyxe = obs_err[cmpo]
+    Zyxro = np.abs(obs_rdat[cmpo])
+    Zyxio = np.abs(obs_idat[cmpo])
+    Zyxe = obs_err[cmpo]
     Peryxo = obs_per[cmpo]
     cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
-    PhTyxc = cal_dat[cmpc]
+    Zyxrc = np.abs(cal_rdat[cmpc])
+    Zyxic = np.abs(cal_idat[cmpc])
     Peryxc = cal_per[cmpc]
 
-    cmp ="PTYY"
+    cmp ="ZYY"
     cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
-    PhTyyo = obs_dat[cmpo]
-    PhTyye = obs_err[cmpo]
+    Zyyro = np.abs(obs_rdat[cmpo])
+    Zyyio = np.abs(obs_idat[cmpo])
+    Zyye = obs_err[cmpo]
     Peryyo = obs_per[cmpo]
     cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
-    PhTyyc = cal_dat[cmpc]
+    Zyyrc = np.abs(cal_rdat[cmpc])
+    Zyyic = np.abs(cal_idat[cmpc])
     Peryyc = cal_per[cmpc]
+
 
     cm = 1/2.54  # centimeters in inches
     fig, axes = plt.subplots(2,2, figsize = (16*cm, 12*cm))
@@ -177,81 +188,107 @@ for s in Sites:
                  +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m",
                  ha="left", x=0.1,fontsize=Fontsize-1)
 
-    axes[0,0].plot(Perxxc, PhTxxc, "-r")
-    axes[0,0].errorbar(Perxxo,PhTxxo, yerr=PhTxxe,
+    axes[0,0].plot(Perxxc, Zxxrc, color="r",linestyle=":")
+    axes[0,0].errorbar(Perxxo,Zxxro, yerr=Zxxe,
+                            linestyle="",
+                            marker="o",
+                            color="r",
+                            lw=0.99,
+                            markersize=3)
+    axes[0,0].plot(Perxxc, Zxxic, color="b",linestyle=":")
+    axes[0,0].errorbar(Perxxo,Zxxio, yerr=Zxxe,
                             linestyle="",
                             marker="o",
                             color="b",
                             lw=0.99,
                             markersize=3)
-
     axes[0,0].set_xscale("log")
+    axes[0,0].set_yscale("log")
     axes[0,0].set_xlim(PerLimits)
-    if PhTLimitsXX != ():
-        axes[0,0].set_ylim(PhTLimitsXX)
-    axes[0,0].legend(["predicted", "observed"])
+    if ZLimitsXX != ():
+        axes[0,0].set_ylim(ZLimitsXX)
+    axes[0,0].legend(["real", "imag"])
     axes[0,0].xaxis.set_ticklabels([])
     axes[0,0].tick_params(labelsize=Labelsize-1)
-    axes[0,0].set_ylabel("PhTXX", fontsize=Fontsize)
+    axes[0,0].set_ylabel("|ZXX|", fontsize=Fontsize)
     axes[0,0].grid("major", "both", linestyle=":", lw=0.5)
 
 
-
-    axes[0,1].plot(Perxyc, PhTxyc, "-r")
-    axes[0,1].errorbar(Perxyo,PhTxyo, yerr=PhTxye,
+    axes[0,1].plot(Perxyc, Zxyrc, color="r",linestyle=":")
+    axes[0,1].errorbar(Perxyo,Zxyro, yerr=Zxye,
+                            linestyle="",
+                            marker="o",
+                            color="r",
+                            lw=0.99,
+                            markersize=3)
+    axes[0,1].plot(Perxyc, Zxyic, color="b",linestyle=":")
+    axes[0,1].errorbar(Perxyo,Zxyio, yerr=Zxye,
                             linestyle="",
                             marker="o",
                             color="b",
                             lw=0.99,
                             markersize=3)
     axes[0,1].set_xscale("log")
+    axes[0,1].set_yscale("log")
     axes[0,1].set_xlim(PerLimits)
-    if PhTLimitsXY != ():
-        axes[0,1].set_ylim(PhTLimitsXY)
-    axes[0,1].legend(["predicted", "observed"])
-    axes[0,1].tick_params(labelsize=Labelsize-1)
-    axes[0,1].set_ylabel("PhTXY", fontsize=Fontsize)
+    if ZLimitsXY != ():
+        axes[0,1].set_ylim(ZLimitsXY)
+    axes[0,1].legend(["real", "imag"])
     axes[0,1].xaxis.set_ticklabels([])
-    axes[0,1].tick_params(bottom="off", labelbottom="off")
+    axes[0,1].tick_params(labelsize=Labelsize-1)
+    axes[0,1].set_ylabel("|ZXY|", fontsize=Fontsize)
     axes[0,1].grid("major", "both", linestyle=":", lw=0.5)
 
 
-
-    axes[1,0].plot(Peryxc, PhTyxc, "-r")
-    axes[1,0].errorbar(Peryxo,PhTyxo, yerr=PhTyxe,
+    axes[1,0].plot(Peryxc, Zyxrc, color="r",linestyle=":")
+    axes[1,0].errorbar(Peryxo,Zyxro, yerr=Zyxe,
+                            linestyle="",
+                            marker="o",
+                            color="r",
+                            lw=0.99,
+                            markersize=3)
+    axes[1,0].plot(Peryxc, Zyxic, color="b",linestyle=":")
+    axes[1,0].errorbar(Peryxo,Zyxio, yerr=Zyxe,
                             linestyle="",
                             marker="o",
                             color="b",
                             lw=0.99,
                             markersize=3)
     axes[1,0].set_xscale("log")
+    axes[1,0].set_yscale("log")
     axes[1,0].set_xlim(PerLimits)
-    if PhTLimitsXY != ():
-        axes[1,0].set_ylim(PhTLimitsXY)
-    axes[1,0].legend(["predicted", "observed"])
+    if ZLimitsXY != ():
+        axes[1,0].set_ylim(ZLimitsXY)
+    axes[1,0].legend(["real", "imag"])
     axes[1,0].tick_params(labelsize=Labelsize-1)
-    axes[1,0].set_xlabel("Period (s)", fontsize=Fontsize)
-    axes[1,0].set_ylabel("PhTYX", fontsize=Fontsize)
+    axes[1,0].set_ylabel("|ZYX|", fontsize=Fontsize)
     axes[1,0].grid("major", "both", linestyle=":", lw=0.5)
 
-
-    axes[1,1].plot(Peryyc, PhTyyc, "-r")
-    axes[1,1].errorbar(Peryyo,PhTyyo, yerr=PhTyye,
+    axes[1,1].plot(Peryyc, Zyyrc, color="r",linestyle=":")
+    axes[1,1].errorbar(Peryyo,Zyyro, yerr=Zyye,
+                            linestyle="",
+                            marker="o",
+                            color="r",
+                            lw=0.99,
+                            markersize=3)
+    axes[1,1].plot(Peryyc, Zyyic, color="b",linestyle=":")
+    axes[1,1].errorbar(Peryyo,Zyyio, yerr=Zyye,
                             linestyle="",
                             marker="o",
                             color="b",
                             lw=0.99,
                             markersize=3)
     axes[1,1].set_xscale("log")
+    axes[1,1].set_yscale("log")
     axes[1,1].set_xlim(PerLimits)
-    if PhTLimitsXX != ():
-        axes[1,1].set_ylim(PhTLimitsXX)
-    axes[1,1].legend(["predicted", "observed"])
+    if ZLimitsXX != ():
+        axes[1,1].set_ylim(ZLimitsXX)
+    axes[1,1].legend(["real", "imag"])
     axes[1,1].tick_params(labelsize=Labelsize-1)
-    axes[1,1].set_xlabel("Period (s)", fontsize=Fontsize)
-    axes[1,1].set_ylabel("PhTYY", fontsize=Fontsize)
+    axes[1,1].set_ylabel("|ZYY|", fontsize=Fontsize)
     axes[1,1].grid("major", "both", linestyle=":", lw=0.5)
-    axes[1,1].set_xscale("log")
+
+
 
     fig.tight_layout()
 
