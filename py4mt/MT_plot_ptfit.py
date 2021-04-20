@@ -69,7 +69,7 @@ PlotFile = "Fogo_PhT_final"
 
 
 
-PlotFormat = [".pdf", ".png"]
+PlotFormat = [".pdf", ".png", ".svg"]
 PdfCatalog = True
 if not ".pdf" in PlotFormat:
     error(" No pdfs generated. No catalog possible!")
@@ -170,7 +170,7 @@ for s in Sites:
     Peryyc = cal_per[cmpc]
 
     cm = 1/2.54  # centimeters in inches
-    fig, axes = plt.subplots(2,2)   #, figsize = (12*cm, 12*cm))
+    fig, axes = plt.subplots(2,2, figsize = (16*cm, 12*cm))
     fig.suptitle(r"Site: "+s
                  +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
                  +"\nUTMX: "+str(site_utmx)+"   UTMY: "+str(site_utmy)

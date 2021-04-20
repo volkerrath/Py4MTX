@@ -50,22 +50,32 @@ from version import versionstrg
 Strng, _ = versionstrg()
 now = datetime.now()
 print("\n\n"+Strng)
-print("Plot Magnetic tranfer function fit"+"\n"+"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%S")))
+print("Plot Magnetic transfer function (tipper) fit"+"\n"+"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%S")))
 print("\n\n")
 
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
 
-
+WorkDir =r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/"
 PredFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/run3_NLCG_039_Refsite_FOG933A"
 ObsvFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/fogo_modem_phaset_tip_100s_data_Refsite_FOG933A"
 
-PerLimits = (0.001, 100.)
-TpLimits = (-1., 1.)
+PerLimits = (0.001, 200.)
+TpLimits = (-.5, 0.5)
 
-PlotFormat = [".pdf", ".png"]
-PlotFile = PredFile+"_T_"
+PlotFormat = [".pdf", ".png", ".svg"]
+PlotFile = "Fogo_Tp_final"
+
+
+
+PlotFormat = [".pdf", ".png", ".svg"]
+PdfCatalog = True
+if not ".pdf" in PlotFormat:
+    error(" No pdfs generated. No catalog possible!")
+    PdfCatalog = False
+PdfCName = PlotFile
+
 
 """
 
@@ -97,23 +107,20 @@ cal_per = DataCal[:, 0]
 cal_cmp = CompCal
 cal_sit = SiteCal
 
-np.shape(cal_per)
-
 
 # Determine graphical parameter.
 # print(plt.style.available)
-plt.style.use('seaborn-paper')
+plt.style.use("seaborn-paper")
 mpl.rcParams["figure.dpi"] = 400
-mpl.rcParams['axes.linewidth'] = 0.5
+mpl.rcParams["axes.linewidth"] = 0.5
 Fontsize = 10
 Labelsize = Fontsize
 Linewidth= 1
 Grey = 0.7
-Lcycle =Lcycle = (cycler('linestyle', ['-', '--', ':', '-.'])
-          * cycler('color', ['r', 'g', 'b', 'y']))
+Lcycle =Lcycle = (cycler("linestyle", ["-", "--", ":", "-."])
+          * cycler("color", ["r", "g", "b", "y"]))
 mpl.rcParams["figure.dpi"] = 400
-mpl.rcParams['axes.linewidth'] = 0.5
-
+mpl.rcParams["axes.linewidth"] = 0.5
 
 Sites = np.unique(SiteObs)
 
@@ -154,14 +161,15 @@ for s in Sites:
 
 
         cm = 1/2.54  # centimeters in inches
-        fig, axes = plt.subplots(2,1)   #, figsize = (12*cm, 12*cm))
+        fig, axes = plt.subplots(1, 2, figsize = (16*cm, 8*cm), squeeze=False)
+
         fig.suptitle(r"Site: "+s
                      +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
                      +"\nUTMX: "+str(site_utmx)+"   UTMY: "+str(site_utmy)
                      +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m",
                      ha="left", x=0.1,fontsize=Fontsize-1)
 
-        axes[0,0].plot(Perxc.flat, Tpxrc.flat, color="r",linestyle=":")
+        axes[0,0].plot(Perxc, Tpxrc, color="r",linestyle=":")
         axes[0,0].errorbar(Perxo,Tpxro, yerr=Tpxe,
                                 linestyle="",
                                 marker="o",
@@ -177,22 +185,23 @@ for s in Sites:
                                 markersize=3)
         axes[0,0].set_xscale("log")
         axes[0,0].set_xlim(PerLimits)
-        axes[0,0].legend(["predicted", "observed"])
-        axes[0,0].xaxis.set_ticklabels([])
+        if TpLimits != ():
+            axes[0,0].set_ylim(TpLimits)
+        axes[0,0].legend(["real", "imag"])
+        # axes[0,0].xaxis.set_ticklabels([])
         axes[0,0].tick_params(labelsize=Labelsize-1)
         axes[0,0].set_ylabel("Tpy", fontsize=Fontsize)
         axes[0,0].grid("major", "both", linestyle=":", lw=0.5)
 
-
-        axes[0,1].plot(Peryc, Tpyrc, ":r")
-        axes[0,1].errorbar(Peryo,Tpyro, yerr=Tpxe,
+        axes[0,1].plot(Peryc, Tpyrc, color="r",linestyle=":")
+        axes[0,1].errorbar(Peryo,Tpyro, yerr=Tpye,
                                 linestyle="",
                                 marker="o",
                                 color="r",
                                 lw=0.99,
                                 markersize=3)
         axes[0,1].plot(Peryc, Tpyic, ":b")
-        axes[0,1].errorbar(Peryc,Tpxio, yerr=Tpxe,
+        axes[0,1].errorbar(Peryc,Tpyio, yerr=Tpye,
                                 linestyle="",
                                 marker="o",
                                 color="b",
@@ -201,8 +210,10 @@ for s in Sites:
 
         axes[0,1].set_xscale("log")
         axes[0,1].set_xlim(PerLimits)
-        axes[0,1].legend(["predicted", "observed"])
-        axes[0,1].xaxis.set_ticklabels([])
+        if TpLimits != ():
+            axes[0,1].set_ylim(TpLimits)
+        axes[0,1].legend(["real", "imag"])
+        # axes[0,1].xaxis.set_ticklabels([])
         axes[0,1].tick_params(labelsize=Labelsize-1)
         axes[0,1].set_ylabel("Tpx", fontsize=Fontsize)
         axes[0,1].grid("major", "both", linestyle=":", lw=0.5)
@@ -212,10 +223,15 @@ for s in Sites:
         fig.tight_layout()
 
         for F in PlotFormat:
-            plt.savefig(PlotFile+s+F, dpi=400)
+            plt.savefig(WorkDir+PlotFile+"_"+s+F, dpi=400)
 
 
         plt.show()
         plt.close(fig)
     else:
         print("No Tipper for site "+s+"!")
+
+
+if PdfCatalog:
+    utl.make_pdf_catalog(WorkDir, PdfCName)
+

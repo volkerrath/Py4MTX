@@ -521,12 +521,11 @@ def make_pdf_catalog(WorkDir="./", FileName=None):
     pdflist = []
     files = os.listdir(WorkDir)
     for entry in sorted(files, key=str):
-        print(entry)
         if entry.endswith(".pdf") and entry.startswith(FileName+"_"):
            catalog.append(WorkDir+entry)
            pdflist.append(entry)
 
     CatName = WorkDir+FileName+".pdf"
     catalog.write(CatName)
-    print(str(np.size(pdflist))+" files collected to "+CatName)
+    print("\n"+str(np.size(pdflist))+" files collected to "+CatName)
 
