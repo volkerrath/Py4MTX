@@ -146,6 +146,11 @@ for s in Sites:
         Tpxrc = cal_rdat[cmpc]
         Tpxic = cal_idat[cmpc]
         Perxc  = cal_per[cmpc]
+        if ShowRMS:
+            RnormTpxr, ResTpxr = utl.calc_resnorm(Tpxro, Tpxrc, Tpxe)
+            nRMSTpxr, _ = utl.calc_rms(Tpxro, Tpxrc, 1.0/Tpxe)
+            RnormTpxi, ResTpxi = utl.calc_resnorm(Tpxio, Tpxic, Tpxe)
+            nRMSTpxi, _ = utl.calc_rms(Tpxio, Tpxic, 1.0/Tpxe)
 
         cmp ="TY"
         cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
@@ -157,6 +162,12 @@ for s in Sites:
         Tpyrc = cal_rdat[cmpc]
         Tpyic = cal_idat[cmpc]
         Peryc = cal_per[cmpc]
+        if ShowRMS:
+            RnormTpyr, ResTpyr = utl.calc_resnorm(Tpyro, Tpyrc, Tpye)
+            nRMSTpyr, _ = utl.calc_rms(Tpyro, Tpyrc, 1.0/Tpye)
+            RnormTpyi, ResTpyi = utl.calc_resnorm(Tpyio, Tpyic, Tpye)
+            nRMSTpyi, _ = utl.calc_rms(Tpyio, Tpyic, 1.0/Tpye)
+
 
 
         cm = 1/2.54  # centimeters in inches
@@ -191,6 +202,17 @@ for s in Sites:
         axes[0,0].tick_params(labelsize=Labelsize-1)
         axes[0,0].set_ylabel("Tpy", fontsize=Fontsize)
         axes[0,0].grid("major", "both", linestyle=":", linewidth=0.5)
+        if ShowRMS:
+            nRMSr = np.around(nRMSTpxr,1)
+            nRMSi = np.around(nRMSTpxi,1)
+            StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
+            axes[0,0].text(0.05, 0.05,StrRMS,
+                               transform=axes[0,0].transAxes,
+                               fontsize = Fontsize-2,
+                               ha="left", va="bottom",
+                               bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
+
+
 
         axes[0,1].plot(Peryc, Tpyrc, color="r",linestyle=":", linewidth=Linewidth)
         axes[0,1].errorbar(Peryo,Tpyro, yerr=Tpye,
@@ -216,6 +238,15 @@ for s in Sites:
         axes[0,1].tick_params(labelsize=Labelsize-1)
         axes[0,1].set_ylabel("Tpx", fontsize=Fontsize)
         axes[0,1].grid("major", "both", linestyle=":", linewidth=0.5)
+        if ShowRMS:
+            nRMSr = np.around(nRMSTpyr,1)
+            nRMSi = np.around(nRMSTpyi,1)
+            StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
+            axes[0,1].text(0.05, 0.05,StrRMS,
+                               transform=axes[0,1].transAxes,
+                               fontsize = Fontsize-2,
+                               ha="left", va="bottom",
+                               bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
 
 

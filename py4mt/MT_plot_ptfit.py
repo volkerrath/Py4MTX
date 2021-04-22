@@ -138,6 +138,10 @@ for s in Sites:
     cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
     PhTxxc = cal_dat[cmpc]
     Perxxc = cal_per[cmpc]
+    if ShowRMS:
+        RnormPhTxx, ResPhTxx = utl.calc_resnorm(PhTxxo, PhTxxc, PhTxxe)
+        nRMSPhTxx, _ = utl.calc_rms(PhTxxo, PhTxxc, 1.0/PhTxxe)
+
 
     cmp ="PTXY"
     cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
@@ -147,6 +151,9 @@ for s in Sites:
     cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
     PhTxyc = cal_dat[cmpc]
     Perxyc = cal_per[cmpc]
+    if ShowRMS:
+        RnormPhTxy, ResPhTxy = utl.calc_resnorm(PhTxyo, PhTxyc, PhTxye)
+        nRMSPhTxy, _ = utl.calc_rms(PhTxyo, PhTxyc, 1.0/PhTxye)
 
     cmp ="PTYX"
     cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
@@ -156,6 +163,9 @@ for s in Sites:
     cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
     PhTyxc = cal_dat[cmpc]
     Peryxc = cal_per[cmpc]
+    if ShowRMS:
+        RnormPhTyx, ResPhTyx = utl.calc_resnorm(PhTyxo, PhTxyc, PhTyxe)
+        nRMSPhTyx, _ = utl.calc_rms(PhTyxo, PhTyxc, 1.0/PhTyxe)
 
     cmp ="PTYY"
     cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
@@ -165,6 +175,9 @@ for s in Sites:
     cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
     PhTyyc = cal_dat[cmpc]
     Peryyc = cal_per[cmpc]
+    if ShowRMS:
+        RnormPhTyy, ResPhTyy = utl.calc_resnorm(PhTyyo, PhTxyc, PhTyye)
+        nRMSPhTyy, _ = utl.calc_rms(PhTyyo, PhTyyc, 1.0/PhTyye)
 
     cm = 1/2.54  # centimeters in inches
     fig, axes = plt.subplots(2,2, figsize = (16*cm, 12*cm))
@@ -200,7 +213,14 @@ for s in Sites:
     axes[0,0].tick_params(labelsize=Labelsize-1)
     axes[0,0].set_ylabel("PhTXX", fontsize=Fontsize)
     axes[0,0].grid("major", "both", linestyle=":", linewidth=0.5)
-
+    if ShowRMS:
+        nRMSr = np.around(nRMSPhTxx,1)
+        StrRMS = "nRMS = "+str(nRMSr)
+        axes[0,0].text(0.05, 0.05,StrRMS,
+                           transform=axes[0,0].transAxes,
+                           fontsize = Fontsize-2,
+                           ha="left", va="bottom",
+                           bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
 
     axes[0,1].plot(Perxyc, PhTxyc, "-r", linewidth =Linewidth)
@@ -218,7 +238,6 @@ for s in Sites:
                        linestyle="",
                        linewidth =Linewidth,
                        markersize=Markersize)
-
     axes[0,1].set_xscale("log")
     axes[0,1].set_xlim(PerLimits)
     if PhTLimitsXY != ():
@@ -229,6 +248,14 @@ for s in Sites:
     axes[0,1].xaxis.set_ticklabels([])
     axes[0,1].tick_params(bottom="off", labelbottom="off")
     axes[0,1].grid("major", "both", linestyle=":", linewidth=0.5)
+    if ShowRMS:
+        nRMSr = np.around(nRMSPhTxy,1)
+        StrRMS = "nRMS = "+str(nRMSr)
+        axes[0,1].text(0.05, 0.05,StrRMS,
+                           transform=axes[0,1].transAxes,
+                           fontsize = Fontsize-2,
+                           ha="left", va="bottom",
+                           bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
 
     axes[1,0].plot(Peryxc, PhTyxc, "-r", linewidth =Linewidth)
@@ -247,7 +274,6 @@ for s in Sites:
                        linewidth =Linewidth,
                        markersize=Markersize)
 
-
     axes[1,0].set_xscale("log")
     axes[1,0].set_xlim(PerLimits)
     if PhTLimitsXY != ():
@@ -257,7 +283,14 @@ for s in Sites:
     axes[1,0].set_xlabel("Period (s)", fontsize=Fontsize)
     axes[1,0].set_ylabel("PhTYX", fontsize=Fontsize)
     axes[1,0].grid("major", "both", linestyle=":", linewidth=0.5)
-
+    if ShowRMS:
+        nRMSr = np.around(nRMSPhTyx,1)
+        StrRMS = "nRMS = "+str(nRMSr)
+        axes[1,0].text(0.05, 0.05,StrRMS,
+                           transform=axes[1,0].transAxes,
+                           fontsize = Fontsize-2,
+                           ha="left", va="bottom",
+                           bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
     axes[1,1].plot(Peryyc, PhTyyc, "-r", linewidth =Linewidth)
     if ShowErrors:
@@ -274,9 +307,6 @@ for s in Sites:
                        linestyle="",
                        linewidth =Linewidth,
                        markersize=Markersize)
-
-
-
     axes[1,1].set_xscale("log")
     axes[1,1].set_xlim(PerLimits)
     if PhTLimitsXX != ():
@@ -286,7 +316,14 @@ for s in Sites:
     axes[1,1].set_xlabel("Period (s)", fontsize=Fontsize)
     axes[1,1].set_ylabel("PhTYY", fontsize=Fontsize)
     axes[1,1].grid("major", "both", linestyle=":", linewidth=0.5)
-    axes[1,1].set_xscale("log")
+    if ShowRMS:
+        nRMSr = np.around(nRMSPhTyy,1)
+        StrRMS = "nRMS = "+str(nRMSr)
+        axes[1,1].text(0.05, 0.05,StrRMS,
+                           transform=axes[1,1].transAxes,
+                           fontsize = Fontsize-2,
+                           ha="left", va="bottom",
+                           bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
     fig.tight_layout()
 

@@ -131,6 +131,12 @@ for s in Sites:
     Zxxrc = np.abs(cal_rdat[cmpc])
     Zxxic = np.abs(cal_idat[cmpc])
     Perxxc = cal_per[cmpc]
+    if ShowRMS:
+        RnormZxxr, ResZxxr = utl.calc_resnorm(Zxxro, Zxxrc, Zxxe)
+        nRMSZxxr, _ = utl.calc_rms(Zxxro, Zxxrc, 1.0/Zxxe)
+        RnormZxxi, ResZxxi = utl.calc_resnorm(Zxxio, Zxxic, Zxxe)
+        nRMSZxxi, _ = utl.calc_rms(Zxxio, Zxxic, 1.0/Zxxe)
+
 
     cmp ="ZXY"
     cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
@@ -142,6 +148,11 @@ for s in Sites:
     Zxyrc = np.abs(cal_rdat[cmpc])
     Zxyic = np.abs(cal_idat[cmpc])
     Perxyc = cal_per[cmpc]
+    if ShowRMS:
+        RnormZxyr, ResZxyr = utl.calc_resnorm(Zxyro, Zxyrc, Zxye)
+        nRMSZxyr, _ = utl.calc_rms(Zxyro, Zxyrc, 1.0/Zxye)
+        RnormZxyi, ResZxyi = utl.calc_resnorm(Zxyio, Zxyic, Zxye)
+        nRMSZxyi, _ = utl.calc_rms(Zxyio, Zxyic, 1.0/Zxye)
 
     cmp ="ZYX"
     cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
@@ -153,6 +164,11 @@ for s in Sites:
     Zyxrc = np.abs(cal_rdat[cmpc])
     Zyxic = np.abs(cal_idat[cmpc])
     Peryxc = cal_per[cmpc]
+    if ShowRMS:
+        RnormZyxr, ResZyxr = utl.calc_resnorm(Zyxro, Zyxrc, Zyxe)
+        nRMSZyxr, _ = utl.calc_rms(Zyxro, Zyxrc, 1.0/Zyxe)
+        RnormZyxi, ResZyxi = utl.calc_resnorm(Zyxio, Zyxic, Zyxe)
+        nRMSZyxi, _ = utl.calc_rms(Zyxio, Zyxic, 1.0/Zyxe)
 
     cmp ="ZYY"
     cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
@@ -164,6 +180,11 @@ for s in Sites:
     Zyyrc = np.abs(cal_rdat[cmpc])
     Zyyic = np.abs(cal_idat[cmpc])
     Peryyc = cal_per[cmpc]
+    if ShowRMS:
+        RnormZyyr, ResZyyr = utl.calc_resnorm(Zyyro, Zyyrc, Zyye)
+        nRMSZyyr, _ = utl.calc_rms(Zyyro, Zyyrc, 1.0/Zyye)
+        RnormZyyi, ResZyyi = utl.calc_resnorm(Zyyio, Zyyic, Zyye)
+        nRMSZyyi, _ = utl.calc_rms(Zyyio, Zyyic, 1.0/Zyye)
 
 
     cm = 1/2.54  # centimeters in inches
@@ -174,7 +195,7 @@ for s in Sites:
                  +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m",
                  ha="left", x=0.1,fontsize=Fontsize-1)
 
-    axes[0,0].plot(Perxxc, Zxxrc, color="r",linestyle=":", linewidth=Linewidth)
+    axes[0,0].plot(Perxxc, Zxxrc, color="r",linestyle="-", linewidth=Linewidth)
     if ShowErrors:
         axes[0,0].errorbar(Perxxo,Zxxro, yerr=Zxxe,
                         linestyle="",
@@ -188,7 +209,7 @@ for s in Sites:
                        linestyle="",
                        marker="o",
                        markersize=Markersize)
-    axes[0,0].plot(Perxxc, Zxxic, color="b",linestyle=":", linewidth=Linewidth)
+    axes[0,0].plot(Perxxc, Zxxic, color="b",linestyle="-", linewidth=Linewidth)
     if ShowErrors:
         axes[0,0].errorbar(Perxxo,Zxxio, yerr=Zxxe,
                                 linestyle="",
@@ -202,7 +223,6 @@ for s in Sites:
                        linestyle="",
                        marker="o",
                        markersize=Markersize)
-
     axes[0,0].set_xscale("log")
     axes[0,0].set_yscale("log")
     axes[0,0].set_xlim(PerLimits)
@@ -212,10 +232,19 @@ for s in Sites:
     axes[0,0].xaxis.set_ticklabels([])
     axes[0,0].tick_params(labelsize=Labelsize-1)
     axes[0,0].set_ylabel("|ZXX|", fontsize=Fontsize)
-    axes[0,0].grid("major", "both", linestyle=":", linewidth=0.5)
+    axes[0,0].grid("major", "both", linestyle="-", linewidth=0.5)
+    if ShowRMS:
+        nRMSr = np.around(nRMSZxxr,1)
+        nRMSi = np.around(nRMSZxxi,1)
+        StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
+        axes[0,0].text(0.05, 0.05,StrRMS,
+                           transform=axes[0,0].transAxes,
+                           fontsize = Fontsize-2,
+                           ha="left", va="bottom",
+                           bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
 
-    axes[0,1].plot(Perxyc, Zxyrc, color="r",linestyle=":", linewidth=Linewidth)
+    axes[0,1].plot(Perxyc, Zxyrc, color="r",linestyle="-", linewidth=Linewidth)
     if ShowErrors:
         axes[0,1].errorbar(Perxyo,Zxyro, yerr=Zxye,
                         linestyle="",
@@ -230,7 +259,7 @@ for s in Sites:
                        marker="o",
                        markersize=Markersize)
 
-    axes[0,1].plot(Perxyc, Zxyic, color="b",linestyle=":", linewidth=Linewidth)
+    axes[0,1].plot(Perxyc, Zxyic, color="b",linestyle="-", linewidth=Linewidth)
     if ShowErrors:
         axes[0,1].errorbar(Perxyo,Zxyio, yerr=Zxye,
                         linestyle="",
@@ -244,7 +273,6 @@ for s in Sites:
                        linestyle="",
                        marker="o",
                        markersize=Markersize)
-
     axes[0,1].set_xscale("log")
     axes[0,1].set_yscale("log")
     axes[0,1].set_xlim(PerLimits)
@@ -254,10 +282,19 @@ for s in Sites:
     axes[0,1].xaxis.set_ticklabels([])
     axes[0,1].tick_params(labelsize=Labelsize-1)
     axes[0,1].set_ylabel("|ZXY|", fontsize=Fontsize)
-    axes[0,1].grid("major", "both", linestyle=":", linewidth=0.5)
+    axes[0,1].grid("major", "both", linestyle="-", linewidth=0.5)
+    if ShowRMS:
+        nRMSr = np.around(nRMSZxyr,1)
+        nRMSi = np.around(nRMSZxyi,1)
+        StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
+        axes[0,1].text(0.05, 0.05,StrRMS,
+                           transform=axes[0,1].transAxes,
+                           fontsize = Fontsize-2,
+                           ha="left", va="bottom",
+                           bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
 
-    axes[1,0].plot(Peryxc, Zyxrc, color="r",linestyle=":", linewidth=Linewidth)
+    axes[1,0].plot(Peryxc, Zyxrc, color="r",linestyle="-", linewidth=Linewidth)
     if ShowErrors:
         axes[1,0].errorbar(Peryxo,Zyxro, yerr=Zyxe,
                         linestyle="",
@@ -272,7 +309,7 @@ for s in Sites:
                        marker="o",
                        markersize=Markersize)
 
-    axes[1,0].plot(Peryxc, Zyxic, color="b",linestyle=":", linewidth=Linewidth)
+    axes[1,0].plot(Peryxc, Zyxic, color="b",linestyle="-", linewidth=Linewidth)
     if ShowErrors:
         axes[1,0].errorbar(Peryxo,Zyxio, yerr=Zyxe,
                         linestyle="",
@@ -295,9 +332,18 @@ for s in Sites:
     axes[1,0].legend(["real", "imag"])
     axes[1,0].tick_params(labelsize=Labelsize-1)
     axes[1,0].set_ylabel("|ZYX|", fontsize=Fontsize)
-    axes[1,0].grid("major", "both", linestyle=":", linewidth=0.5)
+    axes[1,0].grid("major", "both", linestyle="-", linewidth=0.5)
+    if ShowRMS:
+        nRMSr = np.around(nRMSZyxr,1)
+        nRMSi = np.around(nRMSZyxi,1)
+        StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
+        axes[1,0].text(0.05, 0.05,StrRMS,
+                           transform=axes[1,0].transAxes,
+                           fontsize = Fontsize-2,
+                           ha="left", va="bottom",
+                           bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
-    axes[1,1].plot(Peryyc, Zyyrc, color="r",linestyle=":", linewidth=Linewidth)
+    axes[1,1].plot(Peryyc, Zyyrc, color="r",linestyle="-", linewidth=Linewidth)
     if ShowErrors:
         axes[1,1].errorbar(Peryyo,Zyyro, yerr=Zyye,
                         linestyle="",
@@ -312,7 +358,7 @@ for s in Sites:
                        marker="o",
                        markersize=Markersize)
 
-    axes[1,1].plot(Peryyc, Zyyic, color="b",linestyle=":", linewidth=Linewidth)
+    axes[1,1].plot(Peryyc, Zyyic, color="b",linestyle="-", linewidth=Linewidth)
     if ShowErrors:
         axes[1,1].errorbar(Peryyo,Zyyio, yerr=Zyye,
                         linestyle="",
@@ -335,8 +381,16 @@ for s in Sites:
     axes[1,1].legend(["real", "imag"])
     axes[1,1].tick_params(labelsize=Labelsize-1)
     axes[1,1].set_ylabel("|ZYY|", fontsize=Fontsize)
-    axes[1,1].grid("major", "both", linestyle=":", linewidth=0.5)
-
+    axes[1,1].grid("major", "both", linestyle="-", linewidth=0.5)
+    if ShowRMS:
+        nRMSr = np.around(nRMSZyyr,1)
+        nRMSi = np.around(nRMSZyyi,1)
+        StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
+        axes[1,1].text(0.05, 0.05,StrRMS,
+                           transform=axes[1,1].transAxes,
+                           fontsize = Fontsize-2,
+                           ha="left", va="bottom",
+                           bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
 
     fig.tight_layout()
