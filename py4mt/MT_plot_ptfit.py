@@ -65,10 +65,11 @@ ObsvFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/fogo_modem_phase
 PerLimits = (0.001, 100.)
 PhTLimitsXX = (-5., 5.)
 PhTLimitsXY = (-1., 1.)
+ShowErrors = False
+ShowRMS = True
+
+
 PlotFile = "Fogo_PhT_final"
-
-
-
 PlotFormat = [".pdf", ".png", ".svg"]
 PdfCatalog = True
 if not ".pdf" in PlotFormat:
@@ -111,15 +112,11 @@ mpl.rcParams["figure.dpi"] = 400
 mpl.rcParams["axes.linewidth"] = 0.5
 Fontsize = 10
 Labelsize = Fontsize
-Linewidth= 1
+Linewidth= 2
+Markersize = 4
 Grey = 0.7
 Lcycle =Lcycle = (cycler("linestyle", ["-", "--", ":", "-."])
           * cycler("color", ["r", "g", "b", "y"]))
-mpl.rcParams["figure.dpi"] = 400
-mpl.rcParams["axes.linewidth"] = 0.5
-
-
-plt.style.use("seaborn-paper")
 
 Sites = np.unique(SiteObs)
 
@@ -177,13 +174,22 @@ for s in Sites:
                  +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m",
                  ha="left", x=0.1,fontsize=Fontsize-1)
 
-    axes[0,0].plot(Perxxc, PhTxxc, "-r")
-    axes[0,0].errorbar(Perxxo,PhTxxo, yerr=PhTxxe,
-                            linestyle="",
-                            marker="o",
-                            color="b",
-                            lw=0.99,
-                            markersize=3)
+    axes[0,0].plot(Perxxc, PhTxxc, "-r", linewidth =Linewidth)
+    if ShowErrors:
+        axes[0,0].errorbar(Perxxo,PhTxxo, yerr=PhTxxe,
+                                linestyle="",
+                                marker="o",
+                                color="b",
+                                linewidth=Linewidth,
+                                markersize=Markersize)
+    else:
+        axes[0,0].plot(Perxxo, PhTxxo,
+                       color="b",
+                       marker="o",
+                       linestyle="",
+                       linewidth =Linewidth,
+                       markersize=Markersize)
+
 
     axes[0,0].set_xscale("log")
     axes[0,0].set_xlim(PerLimits)
@@ -193,17 +199,26 @@ for s in Sites:
     axes[0,0].xaxis.set_ticklabels([])
     axes[0,0].tick_params(labelsize=Labelsize-1)
     axes[0,0].set_ylabel("PhTXX", fontsize=Fontsize)
-    axes[0,0].grid("major", "both", linestyle=":", lw=0.5)
+    axes[0,0].grid("major", "both", linestyle=":", linewidth=0.5)
 
 
 
-    axes[0,1].plot(Perxyc, PhTxyc, "-r")
-    axes[0,1].errorbar(Perxyo,PhTxyo, yerr=PhTxye,
-                            linestyle="",
-                            marker="o",
-                            color="b",
-                            lw=0.99,
-                            markersize=3)
+    axes[0,1].plot(Perxyc, PhTxyc, "-r", linewidth =Linewidth)
+    if ShowErrors:
+        axes[0,1].errorbar(Perxyo,PhTxyo, yerr=PhTxye,
+                        linestyle="",
+                        marker="o",
+                        color="b",
+                        linewidth=Linewidth,
+                        markersize=Markersize)
+    else:
+        axes[0,1].plot(Perxyo, PhTxyo,
+                       color="b",
+                       marker="o",
+                       linestyle="",
+                       linewidth =Linewidth,
+                       markersize=Markersize)
+
     axes[0,1].set_xscale("log")
     axes[0,1].set_xlim(PerLimits)
     if PhTLimitsXY != ():
@@ -213,17 +228,26 @@ for s in Sites:
     axes[0,1].set_ylabel("PhTXY", fontsize=Fontsize)
     axes[0,1].xaxis.set_ticklabels([])
     axes[0,1].tick_params(bottom="off", labelbottom="off")
-    axes[0,1].grid("major", "both", linestyle=":", lw=0.5)
+    axes[0,1].grid("major", "both", linestyle=":", linewidth=0.5)
 
 
+    axes[1,0].plot(Peryxc, PhTyxc, "-r", linewidth =Linewidth)
+    if ShowErrors:
+        axes[1,0].errorbar(Peryxo,PhTyxo, yerr=PhTyxe,
+                                linestyle="",
+                                marker="o",
+                                color="b",
+                                linewidth=Linewidth,
+                                markersize=Markersize)
+    else:
+        axes[1,0].plot(Peryxo, PhTyxo,
+                       color="b",
+                       marker="o",
+                       linestyle="",
+                       linewidth =Linewidth,
+                       markersize=Markersize)
 
-    axes[1,0].plot(Peryxc, PhTyxc, "-r")
-    axes[1,0].errorbar(Peryxo,PhTyxo, yerr=PhTyxe,
-                            linestyle="",
-                            marker="o",
-                            color="b",
-                            lw=0.99,
-                            markersize=3)
+
     axes[1,0].set_xscale("log")
     axes[1,0].set_xlim(PerLimits)
     if PhTLimitsXY != ():
@@ -232,16 +256,27 @@ for s in Sites:
     axes[1,0].tick_params(labelsize=Labelsize-1)
     axes[1,0].set_xlabel("Period (s)", fontsize=Fontsize)
     axes[1,0].set_ylabel("PhTYX", fontsize=Fontsize)
-    axes[1,0].grid("major", "both", linestyle=":", lw=0.5)
+    axes[1,0].grid("major", "both", linestyle=":", linewidth=0.5)
 
 
-    axes[1,1].plot(Peryyc, PhTyyc, "-r")
-    axes[1,1].errorbar(Peryyo,PhTyyo, yerr=PhTyye,
-                            linestyle="",
-                            marker="o",
-                            color="b",
-                            lw=0.99,
-                            markersize=3)
+    axes[1,1].plot(Peryyc, PhTyyc, "-r", linewidth =Linewidth)
+    if ShowErrors:
+       axes[1,1].errorbar(Peryyo,PhTyyo, yerr=PhTyye,
+                                linestyle="",
+                                marker="o",
+                                color="b",
+                                linewidth=Linewidth,
+                                markersize=Markersize)
+    else:
+        axes[1,1].plot(Peryyo, PhTyyo,
+                       color="b",
+                       marker="o",
+                       linestyle="",
+                       linewidth =Linewidth,
+                       markersize=Markersize)
+
+
+
     axes[1,1].set_xscale("log")
     axes[1,1].set_xlim(PerLimits)
     if PhTLimitsXX != ():
@@ -250,7 +285,7 @@ for s in Sites:
     axes[1,1].tick_params(labelsize=Labelsize-1)
     axes[1,1].set_xlabel("Period (s)", fontsize=Fontsize)
     axes[1,1].set_ylabel("PhTYY", fontsize=Fontsize)
-    axes[1,1].grid("major", "both", linestyle=":", lw=0.5)
+    axes[1,1].grid("major", "both", linestyle=":", linewidth=0.5)
     axes[1,1].set_xscale("log")
 
     fig.tight_layout()

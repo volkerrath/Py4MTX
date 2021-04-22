@@ -63,13 +63,11 @@ ObsvFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/fogo_modem_phase
 
 PerLimits = (0.001, 200.)
 TpLimits = (-.5, 0.5)
+ShowErrors = False
+ShowRMS = True
 
 PlotFormat = [".pdf", ".png", ".svg"]
 PlotFile = "Fogo_Tp_final"
-
-
-
-PlotFormat = [".pdf", ".png", ".svg"]
 PdfCatalog = True
 if not ".pdf" in PlotFormat:
     error(" No pdfs generated. No catalog possible!")
@@ -116,6 +114,7 @@ mpl.rcParams["axes.linewidth"] = 0.5
 Fontsize = 10
 Labelsize = Fontsize
 Linewidth= 1
+Markersize = 4
 Grey = 0.7
 Lcycle =Lcycle = (cycler("linestyle", ["-", "--", ":", "-."])
           * cycler("color", ["r", "g", "b", "y"]))
@@ -161,7 +160,7 @@ for s in Sites:
 
 
         cm = 1/2.54  # centimeters in inches
-        fig, axes = plt.subplots(1, 2, figsize = (16*cm, 8*cm), squeeze=False)
+        fig, axes = plt.subplots(1, 2, figsize = (16*cm, 7*cm), squeeze=False)
 
         fig.suptitle(r"Site: "+s
                      +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
@@ -169,20 +168,20 @@ for s in Sites:
                      +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m",
                      ha="left", x=0.1,fontsize=Fontsize-1)
 
-        axes[0,0].plot(Perxc, Tpxrc, color="r",linestyle=":")
+        axes[0,0].plot(Perxc, Tpxrc, color="r",linestyle=":", linewidth=Linewidth)
         axes[0,0].errorbar(Perxo,Tpxro, yerr=Tpxe,
                                 linestyle="",
                                 marker="o",
                                 color="r",
-                                lw=0.99,
-                                markersize=3)
+                                linewidth=0.5*Linewidth,
+                                markersize=Markersize)
         axes[0,0].plot(Perxc, Tpxic, ":b")
         axes[0,0].errorbar(Perxo,Tpxio, yerr=Tpxe,
                                 linestyle="",
                                 marker="o",
                                 color="b",
-                                lw=0.99,
-                                markersize=3)
+                                linewidth=Linewidth,
+                                markersize=Markersize)
         axes[0,0].set_xscale("log")
         axes[0,0].set_xlim(PerLimits)
         if TpLimits != ():
@@ -191,22 +190,22 @@ for s in Sites:
         # axes[0,0].xaxis.set_ticklabels([])
         axes[0,0].tick_params(labelsize=Labelsize-1)
         axes[0,0].set_ylabel("Tpy", fontsize=Fontsize)
-        axes[0,0].grid("major", "both", linestyle=":", lw=0.5)
+        axes[0,0].grid("major", "both", linestyle=":", linewidth=0.5)
 
-        axes[0,1].plot(Peryc, Tpyrc, color="r",linestyle=":")
+        axes[0,1].plot(Peryc, Tpyrc, color="r",linestyle=":", linewidth=Linewidth)
         axes[0,1].errorbar(Peryo,Tpyro, yerr=Tpye,
                                 linestyle="",
                                 marker="o",
                                 color="r",
-                                lw=0.99,
-                                markersize=3)
+                                linewidth=Linewidth,
+                                markersize=Markersize)
         axes[0,1].plot(Peryc, Tpyic, ":b")
         axes[0,1].errorbar(Peryc,Tpyio, yerr=Tpye,
                                 linestyle="",
                                 marker="o",
                                 color="b",
-                                lw=0.99,
-                                markersize=3)
+                                linewidth=Linewidth,
+                                markersize=Markersize)
 
         axes[0,1].set_xscale("log")
         axes[0,1].set_xlim(PerLimits)
@@ -216,7 +215,7 @@ for s in Sites:
         # axes[0,1].xaxis.set_ticklabels([])
         axes[0,1].tick_params(labelsize=Labelsize-1)
         axes[0,1].set_ylabel("Tpx", fontsize=Fontsize)
-        axes[0,1].grid("major", "both", linestyle=":", lw=0.5)
+        axes[0,1].grid("major", "both", linestyle=":", linewidth=0.5)
 
 
 

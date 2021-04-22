@@ -499,6 +499,46 @@ def fractrans(m=None, x=None , a=0.5):
 
     return mm
 
+
+def calc_resnorm(data_obs=None, data_calc=None, data_std=None, p=2):
+    """
+    Calculate the p-norm of the residuals.
+
+    VR Jan 2021
+
+    """
+    if data_std is None:
+        data_std = np.ones(np.shape(data_obs))
+
+    resid = (data_obs - data_calc) / data_std
+
+    rnormp = np.power(resid, p)
+    rnorm = np.sum(rnormp)
+    #    return {'rnorm':rnorm, 'resid':resid }
+    return rnorm, resid
+
+
+def calc_rms(dcalc=None, dobs=None, Wd=1.0):
+    """
+    Calculate the NRMS ans SRMS.
+
+    VR Jan 2021
+
+    """
+    sizedat = np.shape(dcalc)
+    nd = sizedat[0]
+    rscal = Wd * (dobs - dcalc).T
+    # print(sizedat,nd)
+    # normalized root mean square error
+    nrms = np.sqrt(np.sum(np.power(abs(rscal), 2)) / (nd - 1))
+    # sum squared scaled symmetric error
+    serr = 2.0 * nd * np.abs(rscal) / (abs(dobs.T) + abs(dcalc.T))
+    ssq = np.sum(np.power(serr, 2))
+    srms = 100.0 * np.sqrt(ssq / nd)
+
+    return nrms, srms
+
+
 def make_pdf_catalog(WorkDir="./", FileName=None):
     """
     Make pdf catalog from site-plots

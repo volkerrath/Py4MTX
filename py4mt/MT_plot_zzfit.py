@@ -30,17 +30,6 @@ for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
 
-import mtplots as mtp
-
-# import gdal
-# import scipy as sc
-# import vtk
-# import pyvista as pv
-# import pyvistaqt as pvqt
-# import discretize
-# import tarfile
-# import pylab as pl
-# from time import sleep
 
 import mtplots as mtp
 import modem as mod
@@ -65,10 +54,10 @@ ObsvFile = r"/home/vrath/work/MT/Fogo/final_inversions/ZZT_100s/fogo_modem_data_
 PerLimits = (0.001, 200.)
 ZLimitsXX = ()
 ZLimitsXY = ()
+ShowErrors = False
+ShowRMS = True
+
 PlotFile = "Fogo_ZZ_final"
-
-
-
 PlotFormat = [".pdf", ".png", ".svg"]
 PdfCatalog = True
 if not ".pdf" in PlotFormat:
@@ -113,15 +102,12 @@ mpl.rcParams["figure.dpi"] = 400
 mpl.rcParams["axes.linewidth"] = 0.5
 Fontsize = 10
 Labelsize = Fontsize
-Linewidth= 1
+Linewidth= 2
+Markersize = 4
 Grey = 0.7
 Lcycle =Lcycle = (cycler("linestyle", ["-", "--", ":", "-."])
           * cycler("color", ["r", "g", "b", "y"]))
-mpl.rcParams["figure.dpi"] = 400
-mpl.rcParams["axes.linewidth"] = 0.5
 
-
-plt.style.use("seaborn-paper")
 
 Sites = np.unique(SiteObs)
 
@@ -188,20 +174,35 @@ for s in Sites:
                  +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m",
                  ha="left", x=0.1,fontsize=Fontsize-1)
 
-    axes[0,0].plot(Perxxc, Zxxrc, color="r",linestyle=":")
-    axes[0,0].errorbar(Perxxo,Zxxro, yerr=Zxxe,
-                            linestyle="",
-                            marker="o",
-                            color="r",
-                            lw=0.99,
-                            markersize=3)
-    axes[0,0].plot(Perxxc, Zxxic, color="b",linestyle=":")
-    axes[0,0].errorbar(Perxxo,Zxxio, yerr=Zxxe,
-                            linestyle="",
-                            marker="o",
-                            color="b",
-                            lw=0.99,
-                            markersize=3)
+    axes[0,0].plot(Perxxc, Zxxrc, color="r",linestyle=":", linewidth=Linewidth)
+    if ShowErrors:
+        axes[0,0].errorbar(Perxxo,Zxxro, yerr=Zxxe,
+                        linestyle="",
+                        marker="o",
+                        color="r",
+                        linewidth=Linewidth,
+                        markersize=Markersize)
+    else:
+        axes[0,0].plot(Perxxo, Zxxro,
+                       color="r",
+                       linestyle="",
+                       marker="o",
+                       markersize=Markersize)
+    axes[0,0].plot(Perxxc, Zxxic, color="b",linestyle=":", linewidth=Linewidth)
+    if ShowErrors:
+        axes[0,0].errorbar(Perxxo,Zxxio, yerr=Zxxe,
+                                linestyle="",
+                                marker="o",
+                                color="b",
+                                linewidth=Linewidth,
+                                markersize=Markersize)
+    else:
+        axes[0,0].plot(Perxxo, Zxxio,
+                       color="b",
+                       linestyle="",
+                       marker="o",
+                       markersize=Markersize)
+
     axes[0,0].set_xscale("log")
     axes[0,0].set_yscale("log")
     axes[0,0].set_xlim(PerLimits)
@@ -211,23 +212,39 @@ for s in Sites:
     axes[0,0].xaxis.set_ticklabels([])
     axes[0,0].tick_params(labelsize=Labelsize-1)
     axes[0,0].set_ylabel("|ZXX|", fontsize=Fontsize)
-    axes[0,0].grid("major", "both", linestyle=":", lw=0.5)
+    axes[0,0].grid("major", "both", linestyle=":", linewidth=0.5)
 
 
-    axes[0,1].plot(Perxyc, Zxyrc, color="r",linestyle=":")
-    axes[0,1].errorbar(Perxyo,Zxyro, yerr=Zxye,
-                            linestyle="",
-                            marker="o",
-                            color="r",
-                            lw=0.99,
-                            markersize=3)
-    axes[0,1].plot(Perxyc, Zxyic, color="b",linestyle=":")
-    axes[0,1].errorbar(Perxyo,Zxyio, yerr=Zxye,
-                            linestyle="",
-                            marker="o",
-                            color="b",
-                            lw=0.99,
-                            markersize=3)
+    axes[0,1].plot(Perxyc, Zxyrc, color="r",linestyle=":", linewidth=Linewidth)
+    if ShowErrors:
+        axes[0,1].errorbar(Perxyo,Zxyro, yerr=Zxye,
+                        linestyle="",
+                        marker="o",
+                        color="r",
+                        linewidth=Linewidth,
+                        markersize=Markersize)
+    else:
+        axes[0,1].plot(Perxyo,
+                       Zxyro, color="r",
+                       linestyle="",
+                       marker="o",
+                       markersize=Markersize)
+
+    axes[0,1].plot(Perxyc, Zxyic, color="b",linestyle=":", linewidth=Linewidth)
+    if ShowErrors:
+        axes[0,1].errorbar(Perxyo,Zxyio, yerr=Zxye,
+                        linestyle="",
+                        marker="o",
+                        color="b",
+                        linewidth=Linewidth,
+                        markersize=Markersize)
+    else:
+        axes[0,1].plot(Perxyo, Zxyio,
+                       color="b",
+                       linestyle="",
+                       marker="o",
+                       markersize=Markersize)
+
     axes[0,1].set_xscale("log")
     axes[0,1].set_yscale("log")
     axes[0,1].set_xlim(PerLimits)
@@ -237,23 +254,39 @@ for s in Sites:
     axes[0,1].xaxis.set_ticklabels([])
     axes[0,1].tick_params(labelsize=Labelsize-1)
     axes[0,1].set_ylabel("|ZXY|", fontsize=Fontsize)
-    axes[0,1].grid("major", "both", linestyle=":", lw=0.5)
+    axes[0,1].grid("major", "both", linestyle=":", linewidth=0.5)
 
 
-    axes[1,0].plot(Peryxc, Zyxrc, color="r",linestyle=":")
-    axes[1,0].errorbar(Peryxo,Zyxro, yerr=Zyxe,
-                            linestyle="",
-                            marker="o",
-                            color="r",
-                            lw=0.99,
-                            markersize=3)
-    axes[1,0].plot(Peryxc, Zyxic, color="b",linestyle=":")
-    axes[1,0].errorbar(Peryxo,Zyxio, yerr=Zyxe,
-                            linestyle="",
-                            marker="o",
-                            color="b",
-                            lw=0.99,
-                            markersize=3)
+    axes[1,0].plot(Peryxc, Zyxrc, color="r",linestyle=":", linewidth=Linewidth)
+    if ShowErrors:
+        axes[1,0].errorbar(Peryxo,Zyxro, yerr=Zyxe,
+                        linestyle="",
+                        marker="o",
+                        color="r",
+                        linewidth=Linewidth,
+                        markersize=Markersize)
+    else:
+        axes[1,0].plot(Peryxo, Zyxro,
+                       color="r",
+                       linestyle="",
+                       marker="o",
+                       markersize=Markersize)
+
+    axes[1,0].plot(Peryxc, Zyxic, color="b",linestyle=":", linewidth=Linewidth)
+    if ShowErrors:
+        axes[1,0].errorbar(Peryxo,Zyxio, yerr=Zyxe,
+                        linestyle="",
+                        marker="o",
+                        color="b",
+                        linewidth=Linewidth,
+                        markersize=Markersize)
+    else:
+        axes[1,0].plot(Peryxo, Zyxio,
+                       color="b",
+                       linestyle="",
+                       marker="o",
+                       markersize=Markersize)
+
     axes[1,0].set_xscale("log")
     axes[1,0].set_yscale("log")
     axes[1,0].set_xlim(PerLimits)
@@ -262,22 +295,38 @@ for s in Sites:
     axes[1,0].legend(["real", "imag"])
     axes[1,0].tick_params(labelsize=Labelsize-1)
     axes[1,0].set_ylabel("|ZYX|", fontsize=Fontsize)
-    axes[1,0].grid("major", "both", linestyle=":", lw=0.5)
+    axes[1,0].grid("major", "both", linestyle=":", linewidth=0.5)
 
-    axes[1,1].plot(Peryyc, Zyyrc, color="r",linestyle=":")
-    axes[1,1].errorbar(Peryyo,Zyyro, yerr=Zyye,
-                            linestyle="",
-                            marker="o",
-                            color="r",
-                            lw=0.99,
-                            markersize=3)
-    axes[1,1].plot(Peryyc, Zyyic, color="b",linestyle=":")
-    axes[1,1].errorbar(Peryyo,Zyyio, yerr=Zyye,
-                            linestyle="",
-                            marker="o",
-                            color="b",
-                            lw=0.99,
-                            markersize=3)
+    axes[1,1].plot(Peryyc, Zyyrc, color="r",linestyle=":", linewidth=Linewidth)
+    if ShowErrors:
+        axes[1,1].errorbar(Peryyo,Zyyro, yerr=Zyye,
+                        linestyle="",
+                        marker="o",
+                        color="r",
+                        linewidth=Linewidth,
+                        markersize=Markersize)
+    else:
+        axes[1,1].plot(Peryyo, Zyyro,
+                       color="r",
+                       linestyle="",
+                       marker="o",
+                       markersize=Markersize)
+
+    axes[1,1].plot(Peryyc, Zyyic, color="b",linestyle=":", linewidth=Linewidth)
+    if ShowErrors:
+        axes[1,1].errorbar(Peryyo,Zyyio, yerr=Zyye,
+                        linestyle="",
+                        marker="o",
+                        color="b",
+                        linewidth=Linewidth,
+                        markersize=Markersize)
+    else:
+        axes[1,1].plot(Peryyo, Zyyio,
+                       color="b",
+                       linestyle="",
+                       marker="o",
+                       markersize=Markersize)
+
     axes[1,1].set_xscale("log")
     axes[1,1].set_yscale("log")
     axes[1,1].set_xlim(PerLimits)
@@ -286,7 +335,7 @@ for s in Sites:
     axes[1,1].legend(["real", "imag"])
     axes[1,1].tick_params(labelsize=Labelsize-1)
     axes[1,1].set_ylabel("|ZYY|", fontsize=Fontsize)
-    axes[1,1].grid("major", "both", linestyle=":", lw=0.5)
+    axes[1,1].grid("major", "both", linestyle=":", linewidth=0.5)
 
 
 
