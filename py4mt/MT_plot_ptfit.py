@@ -65,7 +65,7 @@ ObsvFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/fogo_modem_phase
 PerLimits = (0.001, 100.)
 PhTLimitsXX = (-5., 5.)
 PhTLimitsXY = (-1., 1.)
-ShowErrors = False
+ShowErrors = True
 ShowRMS = True
 
 

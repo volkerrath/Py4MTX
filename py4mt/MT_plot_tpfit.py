@@ -58,16 +58,18 @@ warnings.simplefilter(action="ignore", category=FutureWarning)
 
 
 WorkDir =r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/"
-PredFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/run3_NLCG_039_Refsite_FOG933A"
-ObsvFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/fogo_modem_phaset_tip_100s_data_Refsite_FOG933A"
+# PredFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/run3_NLCG_039_Refsite_FOG933A"
+# ObsvFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/fogo_modem_phaset_tip_100s_data_Refsite_FOG933A"
+PredFile = r"/home/vrath/work/MT/Fogo/final_inversions/ZZT_100s/run7_NLCG_035_Refsite_FOG933A"
+ObsvFile = r"/home/vrath/work/MT/Fogo/final_inversions/ZZT_100s/fogo_modem_data_zzt_3pc_003_100s_edited_Refsite_FOG933A"
 
 PerLimits = (0.001, 200.)
 TpLimits = (-.5, 0.5)
-ShowErrors = False
+ShowErrors = True
 ShowRMS = True
 
 PlotFormat = [".pdf", ".png", ".svg"]
-PlotFile = "Fogo_Tp_final"
+PlotFile = "Fogo_ZTT_Tp_final"
 PdfCatalog = True
 if not ".pdf" in PlotFormat:
     error(" No pdfs generated. No catalog possible!")
@@ -113,7 +115,7 @@ mpl.rcParams["figure.dpi"] = 400
 mpl.rcParams["axes.linewidth"] = 0.5
 Fontsize = 10
 Labelsize = Fontsize
-Linewidth= 1
+Linewidth= 2
 Markersize = 4
 Grey = 0.7
 Lcycle =Lcycle = (cycler("linestyle", ["-", "--", ":", "-."])
@@ -179,14 +181,14 @@ for s in Sites:
                      +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m",
                      ha="left", x=0.1,fontsize=Fontsize-1)
 
-        axes[0,0].plot(Perxc, Tpxrc, color="r",linestyle=":", linewidth=Linewidth)
+        axes[0,0].plot(Perxc, Tpxrc, color="r",linestyle="-", linewidth=Linewidth)
         axes[0,0].errorbar(Perxo,Tpxro, yerr=Tpxe,
                                 linestyle="",
                                 marker="o",
                                 color="r",
-                                linewidth=0.5*Linewidth,
+                                linewidth=Linewidth,
                                 markersize=Markersize)
-        axes[0,0].plot(Perxc, Tpxic, ":b")
+        axes[0,0].plot(Perxc, Tpxic, color="b",linestyle="-", linewidth=Linewidth)
         axes[0,0].errorbar(Perxo,Tpxio, yerr=Tpxe,
                                 linestyle="",
                                 marker="o",
@@ -214,14 +216,14 @@ for s in Sites:
 
 
 
-        axes[0,1].plot(Peryc, Tpyrc, color="r",linestyle=":", linewidth=Linewidth)
+        axes[0,1].plot(Peryc, Tpyrc, color="r",linestyle="-", linewidth=Linewidth)
         axes[0,1].errorbar(Peryo,Tpyro, yerr=Tpye,
                                 linestyle="",
                                 marker="o",
                                 color="r",
                                 linewidth=Linewidth,
                                 markersize=Markersize)
-        axes[0,1].plot(Peryc, Tpyic, ":b")
+        axes[0,1].plot(Peryc, Tpyic, color="b",linestyle="-", linewidth=Linewidth)
         axes[0,1].errorbar(Peryc,Tpyio, yerr=Tpye,
                                 linestyle="",
                                 marker="o",
