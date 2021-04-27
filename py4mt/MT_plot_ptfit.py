@@ -56,20 +56,25 @@ print("\n\n")
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
 
-# Graphical paramter. Determine the plot formats produced,
-# and the required resolution:
-WorkDir =   r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/"
-PredFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/run3_NLCG_039_Refsite_FOG933A"
-ObsvFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/fogo_modem_phaset_tip_100s_data_Refsite_FOG933A"
+WorkDir =  r"/home/vrath/work/MT/Annecy/ANN25a_best/"
+PredFile = r"/home/vrath/work/MT/Annecy/ANN25a_best/Ann25c_ZPT_200_Alpha01_NLCG_017"
+ObsvFile = r"/home/vrath/work/MT/Annecy/ANN25a_best/Ann25_ZPTb"
+PlotDir = WorkDir + 'Plots/'
 
-PerLimits = (0.001, 100.)
+print(' Plots written to: %s' % PlotDir)
+if not os.path.isdir(PlotDir):
+    print(' File: %s does not exist, but will be created' % PlotDir)
+    os.mkdir(PlotDir)
+
+
+PerLimits = (0.0001, 3.)
 PhTLimitsXX = (-5., 5.)
 PhTLimitsXY = (-1., 1.)
 ShowErrors = True
 ShowRMS = True
 
 
-PlotFile = "Fogo_PhT_final"
+PlotFile = "Annecy_PhT_final"
 PlotFormat = [".pdf", ".png", ".svg"]
 PdfCatalog = True
 if not ".pdf" in PlotFormat:
@@ -176,7 +181,7 @@ for s in Sites:
     PhTyyc = cal_dat[cmpc]
     Peryyc = cal_per[cmpc]
     if ShowRMS:
-        RnormPhTyy, ResPhTyy = utl.calc_resnorm(PhTyyo, PhTxyc, PhTyye)
+        RnormPhTyy, ResPhTyy = utl.calc_resnorm(PhTyyo, PhTyyc, PhTyye)
         nRMSPhTyy, _ = utl.calc_rms(PhTyyo, PhTyyc, 1.0/PhTyye)
 
     cm = 1/2.54  # centimeters in inches
@@ -328,12 +333,12 @@ for s in Sites:
     fig.tight_layout()
 
     for F in PlotFormat:
-        plt.savefig(WorkDir+PlotFile+"_"+s+F, dpi=400)
+        plt.savefig(PlotDir+PlotFile+"_"+s+F, dpi=400)
 
 
     plt.show()
     plt.close(fig)
 
 if PdfCatalog:
-    utl.make_pdf_catalog(WorkDir, PdfCName)
+    utl.make_pdf_catalog(PlotDir, PdfCName)
 

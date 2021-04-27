@@ -56,6 +56,24 @@ def get_filelist(searchstr=["*"], searchpath="."):
 
     return filelist
 
+def get_utm_list(latitude=None, longitude=None):
+    """
+    Find EPSG from position, using pyproj
+
+    VR 04/21
+    """
+
+    utm_list = proj.database.query_utm_crs_info(
+        datum_name="WGS 84",
+        area_of_interest=proj.aoi.AreaOfInterest(
+        west_lon_degree=longitude,
+        south_lat_degree=latitude,
+        east_lon_degree=longitude,
+        north_lat_degree=latitude, ), )
+    utm_crs = proj.CRS.from_epsg(utm_list[0].code)
+    EPSG = proj.CRS.to_epsg(utm_crs)
+
+    return EPSG, utm_crs
 
 def proj_utm_to_latlon(utm_x, utm_y, utm_zone=32629):
     """
@@ -79,6 +97,7 @@ def proj_latlon_to_utm(latitude, longitude, utm_zone=32629):
     prj_wgs = proj.CRS("epsg:4326")
     prj_utm = proj.CRS("epsg:" + str(utm_zone))
     utm_x, utm_y = proj.transform(prj_wgs, prj_utm, latitude, longitude)
+
     return utm_x, utm_y
 
 

@@ -45,19 +45,24 @@ print("\n\n")
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
 
-# Graphical paramter. Determine the plot formats produced,
-# and the required resolution:
-WorkDir =  r"/home/vrath/work/MT/Fogo/final_inversions/ZZT_100s/"
-PredFile = r"/home/vrath/work/MT/Fogo/final_inversions/ZZT_100s/run7_NLCG_035_Refsite_FOG933A"
-ObsvFile = r"/home/vrath/work/MT/Fogo/final_inversions/ZZT_100s/fogo_modem_data_zzt_3pc_003_100s_edited_Refsite_FOG933A"
+WorkDir =  r"/home/vrath/work/MT/Annecy/ANN25a_best/"
+PredFile = r"/home/vrath/work/MT/Annecy/ANN25a_best/Ann25c_ZPT_200_Alpha01_NLCG_017"
+ObsvFile = r"/home/vrath/work/MT/Annecy/ANN25a_best/Ann25_ZPTb"
+PlotDir = WorkDir + 'Plots/'
 
-PerLimits = (0.001, 200.)
+print(' Plots written to: %s' % PlotDir)
+if not os.path.isdir(PlotDir):
+    print(' File: %s does not exist, but will be created' % PlotDir)
+    os.mkdir(PlotDir)
+
+
+PerLimits = (0.0001, 3.)
 ZLimitsXX = ()
 ZLimitsXY = ()
-ShowErrors = False
+ShowErrors = True
 ShowRMS = True
 
-PlotFile = "Fogo_ZZ_final"
+PlotFile = "Annecy_ZZ_final"
 PlotFormat = [".pdf", ".png", ".svg"]
 PdfCatalog = True
 if not ".pdf" in PlotFormat:
@@ -131,6 +136,11 @@ for s in Sites:
     Zxxrc = np.abs(cal_rdat[cmpc])
     Zxxic = np.abs(cal_idat[cmpc])
     Perxxc = cal_per[cmpc]
+    print(np.shape(Zxxro))
+    print(np.shape(Zxxrc))
+    print(np.shape(Zxxio))
+    print(np.shape(Zxxic))
+
     if ShowRMS:
         RnormZxxr, ResZxxr = utl.calc_resnorm(Zxxro, Zxxrc, Zxxe)
         nRMSZxxr, _ = utl.calc_rms(Zxxro, Zxxrc, 1.0/Zxxe)
@@ -396,12 +406,12 @@ for s in Sites:
     fig.tight_layout()
 
     for F in PlotFormat:
-        plt.savefig(WorkDir+PlotFile+"_"+s+F, dpi=400)
+        plt.savefig(PlotDir+PlotFile+"_"+s+F, dpi=400)
 
 
     plt.show()
     plt.close(fig)
 
 if PdfCatalog:
-    utl.make_pdf_catalog(WorkDir, PdfCName)
+    utl.make_pdf_catalog(PlotDir, PdfCName)
 

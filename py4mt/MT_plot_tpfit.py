@@ -56,20 +56,23 @@ print("\n\n")
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
+WorkDir =  r"/home/vrath/work/MT/Annecy/ANN25a_best/"
+PredFile = r"/home/vrath/work/MT/Annecy/ANN25a_best/Ann25c_ZPT_200_Alpha01_NLCG_017"
+ObsvFile = r"/home/vrath/work/MT/Annecy/ANN25a_best/Ann25_ZPTb"
+PlotDir = WorkDir + 'Plots/'
+print(' Plots written to: %s' % PlotDir)
+if not os.path.isdir(PlotDir):
+    print(' File: %s does not exist, but will be created' % PlotDir)
+    os.mkdir(PlotDir)
 
-WorkDir =r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/"
-# PredFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/run3_NLCG_039_Refsite_FOG933A"
-# ObsvFile = r"/home/vrath/work/MT/Fogo/final_inversions/PTT_100s/fogo_modem_phaset_tip_100s_data_Refsite_FOG933A"
-PredFile = r"/home/vrath/work/MT/Fogo/final_inversions/ZZT_100s/run7_NLCG_035_Refsite_FOG933A"
-ObsvFile = r"/home/vrath/work/MT/Fogo/final_inversions/ZZT_100s/fogo_modem_data_zzt_3pc_003_100s_edited_Refsite_FOG933A"
 
-PerLimits = (0.001, 200.)
+PerLimits = (0.0001, 3.)
 TpLimits = (-.5, 0.5)
 ShowErrors = True
 ShowRMS = True
 
 PlotFormat = [".pdf", ".png", ".svg"]
-PlotFile = "Fogo_ZTT_Tp_final"
+PlotFile = "Annecy_Tp_final"
 PdfCatalog = True
 if not ".pdf" in PlotFormat:
     error(" No pdfs generated. No catalog possible!")
@@ -255,7 +258,7 @@ for s in Sites:
         fig.tight_layout()
 
         for F in PlotFormat:
-            plt.savefig(WorkDir+PlotFile+"_"+s+F, dpi=400)
+            plt.savefig(PlotDir+PlotFile+"_"+s+F, dpi=400)
 
 
         plt.show()
@@ -265,5 +268,5 @@ for s in Sites:
 
 
 if PdfCatalog:
-    utl.make_pdf_catalog(WorkDir, PdfCName)
+    utl.make_pdf_catalog(PlotDir, PdfCName)
 
