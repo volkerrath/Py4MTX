@@ -140,9 +140,17 @@ for s in Sites:
     PhTxxo = obs_dat[cmpo]
     PhTxxe = obs_err[cmpo]
     Perxxo = obs_per[cmpo]
+    indx =np.argsort(Perxxo)
+    PhTxxo = PhTxxo[indx]
+    PhTxxe = PhTxxe[indx]
+    Perxxo = Perxxo[indx]
     cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
     PhTxxc = cal_dat[cmpc]
     Perxxc = cal_per[cmpc]
+    indx =np.argsort(Perxxc)
+    PhTxxc = PhTxxc[indx]
+    Perxxc = Perxxc[indx]
+
     if ShowRMS:
         RnormPhTxx, ResPhTxx = utl.calc_resnorm(PhTxxo, PhTxxc, PhTxxe)
         nRMSPhTxx, _ = utl.calc_rms(PhTxxo, PhTxxc, 1.0/PhTxxe)
@@ -153,9 +161,17 @@ for s in Sites:
     PhTxyo = obs_dat[cmpo]
     PhTxye = obs_err[cmpo]
     Perxyo = obs_per[cmpo]
+    indx =np.argsort(Perxyo)
+    PhTxyo = PhTxyo[indx]
+    PhTxye = PhTxye[indx]
+    Perxyo = Perxyo[indx]
     cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
     PhTxyc = cal_dat[cmpc]
     Perxyc = cal_per[cmpc]
+    indx =np.argsort(Perxyc)
+    PhTxyc = PhTxyc[indx]
+    Perxyc = Perxyc[indx]
+
     if ShowRMS:
         RnormPhTxy, ResPhTxy = utl.calc_resnorm(PhTxyo, PhTxyc, PhTxye)
         nRMSPhTxy, _ = utl.calc_rms(PhTxyo, PhTxyc, 1.0/PhTxye)
@@ -165,9 +181,17 @@ for s in Sites:
     PhTyxo = obs_dat[cmpo]
     PhTyxe = obs_err[cmpo]
     Peryxo = obs_per[cmpo]
+    indx =np.argsort(Peryxo)
+    PhTyxo = PhTyxo[indx]
+    PhTyxe = PhTyxe[indx]
+    Peryxo = Peryxo[indx]
     cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
     PhTyxc = cal_dat[cmpc]
     Peryxc = cal_per[cmpc]
+    indx =np.argsort(Peryxc)
+    PhTyxc = PhTyxc[indx]
+    Peryxc = Peryxc[indx]
+
     if ShowRMS:
         RnormPhTyx, ResPhTyx = utl.calc_resnorm(PhTyxo, PhTxyc, PhTyxe)
         nRMSPhTyx, _ = utl.calc_rms(PhTyxo, PhTyxc, 1.0/PhTyxe)
@@ -177,9 +201,17 @@ for s in Sites:
     PhTyyo = obs_dat[cmpo]
     PhTyye = obs_err[cmpo]
     Peryyo = obs_per[cmpo]
+    indx =np.argsort(Peryyo)
+    PhTyyo = PhTyyo[indx]
+    PhTyye = PhTyye[indx]
+    Peryyo = Peryyo[indx]
     cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
     PhTyyc = cal_dat[cmpc]
     Peryyc = cal_per[cmpc]
+    indx =np.argsort(Peryyc)
+    PhTyyc = PhTyyc[indx]
+    Peryyc = Peryyc[indx]
+
     if ShowRMS:
         RnormPhTyy, ResPhTyy = utl.calc_resnorm(PhTyyo, PhTyyc, PhTyye)
         nRMSPhTyy, _ = utl.calc_rms(PhTyyo, PhTyyc, 1.0/PhTyye)

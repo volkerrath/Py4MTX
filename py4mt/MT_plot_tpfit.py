@@ -147,10 +147,19 @@ for s in Sites:
         Tpxio = obs_idat[cmpo]
         Tpxe = obs_err[cmpo]
         Perxo = obs_per[cmpo]
+        indx =np.argsort(Perxo)
+        Tpxro = Tpxro[indx]
+        Tpxio = Tpxio[indx]
+        Perxo=Perxo[indx]
         cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
         Tpxrc = cal_rdat[cmpc]
         Tpxic = cal_idat[cmpc]
         Perxc  = cal_per[cmpc]
+        indx =np.argsort(Perxc)
+        Tpxrc = Tpxrc[indx]
+        Tpxic = Tpxic[indx]
+        Perxc=Perxc[indx]
+
         if ShowRMS:
             RnormTpxr, ResTpxr = utl.calc_resnorm(Tpxro, Tpxrc, Tpxe)
             nRMSTpxr, _ = utl.calc_rms(Tpxro, Tpxrc, 1.0/Tpxe)
@@ -163,10 +172,19 @@ for s in Sites:
         Tpyio = obs_idat[cmpo]
         Tpye = obs_err[cmpo]
         Peryo = obs_per[cmpo]
+        indx =np.argsort(Peryo)
+        Tpyro = Tpyro[indx]
+        Tpyio = Tpyio[indx]
+        Peryo=Peryo[indx]
         cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
         Tpyrc = cal_rdat[cmpc]
         Tpyic = cal_idat[cmpc]
         Peryc = cal_per[cmpc]
+        indx =np.argsort(Peryc)
+        Tpyrc = Tpyrc[indx]
+        Tpyic = Tpyic[indx]
+        Peryc=Peryc[indx]
+
         if ShowRMS:
             RnormTpyr, ResTpyr = utl.calc_resnorm(Tpyro, Tpyrc, Tpye)
             nRMSTpyr, _ = utl.calc_rms(Tpyro, Tpyrc, 1.0/Tpye)

@@ -132,14 +132,24 @@ for s in Sites:
     Zxxio = np.abs(obs_idat[cmpo])
     Zxxe = obs_err[cmpo]
     Perxxo = obs_per[cmpo]
+    indx =np.argsort(Perxxo)
+    Zxxro = Zxxro[indx]
+    Zxxio = Zxxio[indx]
+    Zxxe = Zxxe[indx]
+    Perxxo = Perxxo[indx]
     cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
     Zxxrc = np.abs(cal_rdat[cmpc])
     Zxxic = np.abs(cal_idat[cmpc])
     Perxxc = cal_per[cmpc]
-    print(np.shape(Zxxro))
-    print(np.shape(Zxxrc))
-    print(np.shape(Zxxio))
-    print(np.shape(Zxxic))
+    indx =np.argsort(Perxxc)
+    Zxxrc = Zxxrc[indx]
+    Zxxic = Zxxic[indx]
+    Perxxc = Perxxc[indx]
+
+    # print(np.shape(Zxxro))
+    # print(np.shape(Zxxrc))
+    # print(np.shape(Zxxio))
+    # print(np.shape(Zxxic))
 
     if ShowRMS:
         RnormZxxr, ResZxxr = utl.calc_resnorm(Zxxro, Zxxrc, Zxxe)
@@ -154,10 +164,19 @@ for s in Sites:
     Zxyio = np.abs(obs_idat[cmpo])
     Zxye = obs_err[cmpo]
     Perxyo = obs_per[cmpo]
+    indx =np.argsort(Perxyo)
+    Zxyro = Zxyro[indx]
+    Zxyio = Zxyio[indx]
+    Zxye = Zxye[indx]
+    Perxyo = Perxyo[indx]
     cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
     Zxyrc = np.abs(cal_rdat[cmpc])
     Zxyic = np.abs(cal_idat[cmpc])
     Perxyc = cal_per[cmpc]
+    indx =np.argsort(Perxyc)
+    Zxyrc = Zxyrc[indx]
+    Zxyic = Zxyic[indx]
+    Perxyo = Perxyo[indx]
     if ShowRMS:
         RnormZxyr, ResZxyr = utl.calc_resnorm(Zxyro, Zxyrc, Zxye)
         nRMSZxyr, _ = utl.calc_rms(Zxyro, Zxyrc, 1.0/Zxye)
@@ -170,10 +189,19 @@ for s in Sites:
     Zyxio = np.abs(obs_idat[cmpo])
     Zyxe = obs_err[cmpo]
     Peryxo = obs_per[cmpo]
+    indx =np.argsort(Peryxo)
+    Zyxro = Zyxro[indx]
+    Zyxio = Zyxio[indx]
+    Zyxe = Zyxe[indx]
+    Peryxo = Peryxo[indx]
     cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
     Zyxrc = np.abs(cal_rdat[cmpc])
     Zyxic = np.abs(cal_idat[cmpc])
     Peryxc = cal_per[cmpc]
+    indx =np.argsort(Peryxc)
+    Zyxrc = Zyxrc[indx]
+    Zyxic = Zyxic[indx]
+    Peryxc = Peryxc[indx]
     if ShowRMS:
         RnormZyxr, ResZyxr = utl.calc_resnorm(Zyxro, Zyxrc, Zyxe)
         nRMSZyxr, _ = utl.calc_rms(Zyxro, Zyxrc, 1.0/Zyxe)
@@ -186,10 +214,18 @@ for s in Sites:
     Zyyio = np.abs(obs_idat[cmpo])
     Zyye = obs_err[cmpo]
     Peryyo = obs_per[cmpo]
+    indx =np.argsort(Peryyo)
+    Zyyro = Zyyro[indx]
+    Zyyio = Zyyio[indx]
+    Peryyo = Peryyo[indx]
     cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
     Zyyrc = np.abs(cal_rdat[cmpc])
     Zyyic = np.abs(cal_idat[cmpc])
     Peryyc = cal_per[cmpc]
+    indx =np.argsort(Peryyc)
+    Zyyrc = Zyyrc[indx]
+    Zyyic = Zyyic[indx]
+    Peryyc = Peryyc[indx]
     if ShowRMS:
         RnormZyyr, ResZyyr = utl.calc_resnorm(Zyyro, Zyyrc, Zyye)
         nRMSZyyr, _ = utl.calc_rms(Zyyro, Zyyrc, 1.0/Zyye)
