@@ -49,7 +49,7 @@ def read_csem_data(DatFile=None, out=True):
     return Data, Head
 
 
-def write_csem_data(DatFile=None, Dat=None, Site=None, Comp=None, Head = None,
+def write_csem_data(DatFile=None, Dat=None, Head = None,
                out=True):
     """
     Write ModEM input data file.
@@ -57,71 +57,13 @@ def write_csem_data(DatFile=None, Dat=None, Site=None, Comp=None, Head = None,
     Volker Rath
     last changed: Apr 30, 2021
     """
-    datablock =np.column_stack((Dat[:,0], Site[:], Dat[:,1:6], Comp[:], Dat[:,6:10]))
-    nD, _ = np.shape(datablock)
+    fmt = "%14e"+" %12.1f "*3+" %20s"+" %12.1f "*3+" %14e"*3
 
-    hlin = 0
-    nhead = len(Head)
-    nblck = int(nhead/8)
-    print(str(nblck)+" blocks will be written.")
 
     with open(DatFile,"w") as fd:
 
-        for ib in np.arange(nblck):
-            blockheader = Head[hlin:hlin+8]
-            hlin = hlin + 8
-            for ii in np.arange(8):
-                fd.write(blockheader[ii])
-
-            if "Impedance" in blockheader[2]:
-
-                fmt = "%14e %14s"+"%15.6f"*2+" %15.1f"*3+" %14s"+" %14e"*3
-
-                indices = []
-                block = []
-                for ii in np.arange(len(Comp)):
-                    if ("ZX" in Comp[ii]) or ("ZY" in Comp[ii]):
-                        indices.append(ii)
-                        block.append(datablock[ii,:])
-
-                if out:
-                    print('Impedances')
-                    print(np.shape(block))
-
-            elif "Vertical" in blockheader[2]:
-
-                fmt = "%14e %14s"+"%15.6f"*2+" %15.1f"*3+" %14s"+" %14e"*3
-
-                indices = []
-                block = []
-                for ii in np.arange(len(Comp)):
-                    if ("TX" == Comp[ii]) or ("TY" == Comp[ii]):
-                        indices.append(ii)
-                        block.append(datablock[ii,:])
-
-                if out:
-                    print('Tipper')
-                    print(np.shape(block))
-
-            elif "Tensor" in blockheader[2]:
-
-                fmt = "%14e %14s"+"%15.6f"*2+" %15.1f"*3+" %14s"+" %14e"*3
-
-                indices = []
-                block = []
-                for ii in np.arange(len(Comp)):
-                    if ("PT" in Comp[ii]):
-                        indices.append(ii)
-                        block.append(datablock[ii,:])
-
-                if out:
-                    print('Phase Tensor')
-                    print(np.shape(block))
-
-            else:
-                error("Data type "+blockheader[3]+'not implemented! Exit.')
-
-            np.savetxt(fd,block, fmt = fmt)
+         fd.write(Head)
+         np.savetxt(fd,Dat, fmt = fmt)
 
 def get_randomTX_simple(TXx=None,TXy=None,
                         Nsamples=None,
@@ -247,3 +189,25 @@ def get_randomTX_constr(TXx=None,TXy=None,
 
 
     return Ind_s, TXx_s, TXy_s
+
+
+def error_model(data_obs, daterr_mul=0., daterr_add=0.):
+    """
+    Generate errors.
+
+    Error model including multiplicative and additive noise
+
+    VR Apr 2021
+
+    """
+
+    daterr_a = daterr_add * np.ones_like(data_obs)
+    daterr_m = daterr_mul * np.ones_like(data_obs)
+
+    data_err = \
+        daterr_m * np.abs(data_obs)+ daterr_a
+
+    # data_err = \
+    #     np.sqrt(np.power(daterr_m * data_obs, 2) + np.power(daterr_a, 2))
+
+    return data_err
