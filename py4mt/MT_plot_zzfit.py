@@ -45,9 +45,9 @@ print("\n\n")
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
 
-WorkDir =  r"/home/vrath/work/MT/Annecy/ANN25a_best/"
-PredFile = r"/home/vrath/work/MT/Annecy/ANN25a_best/Ann25c_ZPT_200_Alpha01_NLCG_017"
-ObsvFile = r"/home/vrath/work/MT/Annecy/ANN25a_best/Ann25_ZPTb"
+WorkDir =  r"/home/vrath/work/MT/Annecy/ANN26/"
+PredFile = r"/home/vrath/work/MT/Annecy/ANN26/Ann26_ZoPT_200_Alpha04_NLCG_017"
+ObsvFile = r"/home/vrath/work/MT/Annecy/ANN26/Ann26_ZoPT"
 PlotDir = WorkDir + 'Plots/'
 
 print(' Plots written to: %s' % PlotDir)
@@ -56,13 +56,14 @@ if not os.path.isdir(PlotDir):
     os.mkdir(PlotDir)
 
 
-PerLimits = (0.0001, 3.)
+PerLimits = (0.00005, 3.)
 ZLimitsXX = ()
 ZLimitsXY = ()
 ShowErrors = True
 ShowRMS = True
+PlotFull = False
 
-PlotFile = "Annecy_ZZ_final"
+PlotFile = "Annecy26_ZoPT_Alpha04"
 PlotFormat = [".pdf", ".png", ".svg"]
 PdfCatalog = True
 if not ".pdf" in PlotFormat:
@@ -112,7 +113,7 @@ Markersize = 4
 Grey = 0.7
 Lcycle =Lcycle = (cycler("linestyle", ["-", "--", ":", "-."])
           * cycler("color", ["r", "g", "b", "y"]))
-
+cm = 1/2.54  # centimeters in inches
 
 Sites = np.unique(SiteObs)
 
@@ -126,36 +127,33 @@ for s in Sites:
     site_utmy = int(np.round(site_utmy))
     site_elev = z[site][0]
 
-    cmp ="ZXX"
-    cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
-    Zxxro = np.abs(obs_rdat[cmpo])
-    Zxxio = np.abs(obs_idat[cmpo])
-    Zxxe = obs_err[cmpo]
-    Perxxo = obs_per[cmpo]
-    indx =np.argsort(Perxxo)
-    Zxxro = Zxxro[indx]
-    Zxxio = Zxxio[indx]
-    Zxxe = Zxxe[indx]
-    Perxxo = Perxxo[indx]
-    cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
-    Zxxrc = np.abs(cal_rdat[cmpc])
-    Zxxic = np.abs(cal_idat[cmpc])
-    Perxxc = cal_per[cmpc]
-    indx =np.argsort(Perxxc)
-    Zxxrc = Zxxrc[indx]
-    Zxxic = Zxxic[indx]
-    Perxxc = Perxxc[indx]
+    if PlotFull:
+        cmp ="ZXX"
+        cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
+        Zxxro = np.abs(obs_rdat[cmpo])
+        Zxxio = np.abs(obs_idat[cmpo])
+        Zxxe = obs_err[cmpo]
+        Perxxo = obs_per[cmpo]
+        indx =np.argsort(Perxxo)
+        Zxxro = Zxxro[indx]
+        Zxxio = Zxxio[indx]
+        Zxxe = Zxxe[indx]
+        Perxxo = Perxxo[indx]
+        cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
+        Zxxrc = np.abs(cal_rdat[cmpc])
+        Zxxic = np.abs(cal_idat[cmpc])
+        Perxxc = cal_per[cmpc]
+        indx =np.argsort(Perxxc)
+        Zxxrc = Zxxrc[indx]
+        Zxxic = Zxxic[indx]
+        Perxxc = Perxxc[indx]
 
-    # print(np.shape(Zxxro))
-    # print(np.shape(Zxxrc))
-    # print(np.shape(Zxxio))
-    # print(np.shape(Zxxic))
 
-    if ShowRMS:
-        RnormZxxr, ResZxxr = utl.calc_resnorm(Zxxro, Zxxrc, Zxxe)
-        nRMSZxxr, _ = utl.calc_rms(Zxxro, Zxxrc, 1.0/Zxxe)
-        RnormZxxi, ResZxxi = utl.calc_resnorm(Zxxio, Zxxic, Zxxe)
-        nRMSZxxi, _ = utl.calc_rms(Zxxio, Zxxic, 1.0/Zxxe)
+        if ShowRMS:
+            RnormZxxr, ResZxxr = utl.calc_resnorm(Zxxro, Zxxrc, Zxxe)
+            nRMSZxxr, _ = utl.calc_rms(Zxxro, Zxxrc, 1.0/Zxxe)
+            RnormZxxi, ResZxxi = utl.calc_resnorm(Zxxio, Zxxic, Zxxe)
+            nRMSZxxi, _ = utl.calc_rms(Zxxio, Zxxic, 1.0/Zxxe)
 
 
     cmp ="ZXY"
@@ -176,7 +174,7 @@ for s in Sites:
     indx =np.argsort(Perxyc)
     Zxyrc = Zxyrc[indx]
     Zxyic = Zxyic[indx]
-    Perxyo = Perxyo[indx]
+    Perxyc = Perxyc[indx]
     if ShowRMS:
         RnormZxyr, ResZxyr = utl.calc_resnorm(Zxyro, Zxyrc, Zxye)
         nRMSZxyr, _ = utl.calc_rms(Zxyro, Zxyrc, 1.0/Zxye)
@@ -208,235 +206,347 @@ for s in Sites:
         RnormZyxi, ResZyxi = utl.calc_resnorm(Zyxio, Zyxic, Zyxe)
         nRMSZyxi, _ = utl.calc_rms(Zyxio, Zyxic, 1.0/Zyxe)
 
-    cmp ="ZYY"
-    cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
-    Zyyro = np.abs(obs_rdat[cmpo])
-    Zyyio = np.abs(obs_idat[cmpo])
-    Zyye = obs_err[cmpo]
-    Peryyo = obs_per[cmpo]
-    indx =np.argsort(Peryyo)
-    Zyyro = Zyyro[indx]
-    Zyyio = Zyyio[indx]
-    Peryyo = Peryyo[indx]
-    cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
-    Zyyrc = np.abs(cal_rdat[cmpc])
-    Zyyic = np.abs(cal_idat[cmpc])
-    Peryyc = cal_per[cmpc]
-    indx =np.argsort(Peryyc)
-    Zyyrc = Zyyrc[indx]
-    Zyyic = Zyyic[indx]
-    Peryyc = Peryyc[indx]
-    if ShowRMS:
-        RnormZyyr, ResZyyr = utl.calc_resnorm(Zyyro, Zyyrc, Zyye)
-        nRMSZyyr, _ = utl.calc_rms(Zyyro, Zyyrc, 1.0/Zyye)
-        RnormZyyi, ResZyyi = utl.calc_resnorm(Zyyio, Zyyic, Zyye)
-        nRMSZyyi, _ = utl.calc_rms(Zyyio, Zyyic, 1.0/Zyye)
+    if PlotFull:
+        cmp ="ZYY"
+        cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
+        Zyyro = np.abs(obs_rdat[cmpo])
+        Zyyio = np.abs(obs_idat[cmpo])
+        Zyye = obs_err[cmpo]
+        Peryyo = obs_per[cmpo]
+        indx =np.argsort(Peryyo)
+        Zyyro = Zyyro[indx]
+        Zyyio = Zyyio[indx]
+        Peryyo = Peryyo[indx]
+        cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
+        Zyyrc = np.abs(cal_rdat[cmpc])
+        Zyyic = np.abs(cal_idat[cmpc])
+        Peryyc = cal_per[cmpc]
+        indx =np.argsort(Peryyc)
+        Zyyrc = Zyyrc[indx]
+        Zyyic = Zyyic[indx]
+        Peryyc = Peryyc[indx]
+        if ShowRMS:
+            RnormZyyr, ResZyyr = utl.calc_resnorm(Zyyro, Zyyrc, Zyye)
+            nRMSZyyr, _ = utl.calc_rms(Zyyro, Zyyrc, 1.0/Zyye)
+            RnormZyyi, ResZyyi = utl.calc_resnorm(Zyyio, Zyyic, Zyye)
+            nRMSZyyi, _ = utl.calc_rms(Zyyio, Zyyic, 1.0/Zyye)
 
 
-    cm = 1/2.54  # centimeters in inches
-    fig, axes = plt.subplots(2,2, figsize = (16*cm, 12*cm))
-    fig.suptitle(r"Site: "+s
-                 +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
-                 +"\nUTMX: "+str(site_utmx)+"   UTMY: "+str(site_utmy)
-                 +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m",
-                 ha="left", x=0.1,fontsize=Fontsize-1)
 
-    axes[0,0].plot(Perxxc, Zxxrc, color="r",linestyle="-", linewidth=Linewidth)
-    if ShowErrors:
-        axes[0,0].errorbar(Perxxo,Zxxro, yerr=Zxxe,
-                        linestyle="",
-                        marker="o",
-                        color="r",
-                        linewidth=Linewidth,
-                        markersize=Markersize)
+
+    if PlotFull:
+        fig, axes = plt.subplots(2,2, figsize = (16*cm, 12*cm))
+
+        fig.suptitle(r"Site: "+s
+                     +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
+                     +"\nUTMX: "+str(site_utmx)+"   UTMY: "+str(site_utmy)
+                     +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m",
+                     ha="left", x=0.1,fontsize=Fontsize-1)
+
+        axes[0,0].plot(Perxxc, Zxxrc, color="r",linestyle="-", linewidth=Linewidth)
+        if ShowErrors:
+            axes[0,0].errorbar(Perxxo,Zxxro, yerr=Zxxe,
+                            linestyle="",
+                            marker="o",
+                            color="r",
+                            linewidth=Linewidth,
+                            markersize=Markersize)
+        else:
+            axes[0,0].plot(Perxxo, Zxxro,
+                           color="r",
+                           linestyle="",
+                           marker="o",
+                           markersize=Markersize)
+        axes[0,0].plot(Perxxc, Zxxic, color="b",linestyle="-", linewidth=Linewidth)
+        if ShowErrors:
+            axes[0,0].errorbar(Perxxo,Zxxio, yerr=Zxxe,
+                                    linestyle="",
+                                    marker="o",
+                                    color="b",
+                                    linewidth=Linewidth,
+                                    markersize=Markersize)
+        else:
+            axes[0,0].plot(Perxxo, Zxxio,
+                           color="b",
+                           linestyle="",
+                           marker="o",
+                           markersize=Markersize)
+        axes[0,0].set_xscale("log")
+        axes[0,0].set_yscale("log")
+        axes[0,0].set_xlim(PerLimits)
+        if ZLimitsXX != ():
+            ax.set_ylim(ZLimitsXX)
+        axes[0,0].legend(["real", "imag"])
+        axes[0,0].xaxis.set_ticklabels([])
+        axes[0,0].tick_params(labelsize=Labelsize-1)
+        axes[0,0].set_ylabel("|ZXX|", fontsize=Fontsize)
+        axes[0,0].grid("major", "both", linestyle="-", linewidth=0.5)
+        if ShowRMS:
+            nRMSr = np.around(nRMSZxxr,1)
+            nRMSi = np.around(nRMSZxxi,1)
+            StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
+            axes[0,0].text(0.05, 0.05,StrRMS,
+                               transform=axes[0,0].transAxes,
+                               fontsize = Fontsize-2,
+                               ha="left", va="bottom",
+                               bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
+
+
+        axes[0,1].plot(Perxyc, Zxyrc, color="r",linestyle="-", linewidth=Linewidth)
+        if ShowErrors:
+            axes[0,1].errorbar(Perxyo,Zxyro, yerr=Zxye,
+                            linestyle="",
+                            marker="o",
+                            color="r",
+                            linewidth=Linewidth,
+                            markersize=Markersize)
+        else:
+            axes[0,1].plot(Perxyo,
+                           Zxyro, color="r",
+                           linestyle="",
+                           marker="o",
+                           markersize=Markersize)
+
+        axes[0,1].plot(Perxyc, Zxyic, color="b",linestyle="-", linewidth=Linewidth)
+        if ShowErrors:
+            axes[0,1].errorbar(Perxyo,Zxyio, yerr=Zxye,
+                            linestyle="",
+                            marker="o",
+                            color="b",
+                            linewidth=Linewidth,
+                            markersize=Markersize)
+        else:
+            axes[0,1].plot(Perxyo, Zxyio,
+                           color="b",
+                           linestyle="",
+                           marker="o",
+                           markersize=Markersize)
+        axes[0,1].set_xscale("log")
+        axes[0,1].set_yscale("log")
+        axes[0,1].set_xlim(PerLimits)
+        if ZLimitsXY != ():
+            axes[0,1].set_ylim(ZLimitsXY)
+        axes[0,1].legend(["real", "imag"])
+        axes[0,1].xaxis.set_ticklabels([])
+        axes[0,1].tick_params(labelsize=Labelsize-1)
+        axes[0,1].set_ylabel("|ZXY|", fontsize=Fontsize)
+        axes[0,1].grid("major", "both", linestyle="-", linewidth=0.5)
+        if ShowRMS:
+            nRMSr = np.around(nRMSZxyr,1)
+            nRMSi = np.around(nRMSZxyi,1)
+            StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
+            axes[0,1].text(0.05, 0.05,StrRMS,
+                               transform=axes[0,1].transAxes,
+                               fontsize = Fontsize-2,
+                               ha="left", va="bottom",
+                               bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
+
+
+        axes[1,0].plot(Peryxc, Zyxrc, color="r",linestyle="-", linewidth=Linewidth)
+        if ShowErrors:
+            axes[1,0].errorbar(Peryxo,Zyxro, yerr=Zyxe,
+                            linestyle="",
+                            marker="o",
+                            color="r",
+                            linewidth=Linewidth,
+                            markersize=Markersize)
+        else:
+            axes[1,0].plot(Peryxo, Zyxro,
+                           color="r",
+                           linestyle="",
+                           marker="o",
+                           markersize=Markersize)
+
+        axes[1,0].plot(Peryxc, Zyxic, color="b",linestyle="-", linewidth=Linewidth)
+        if ShowErrors:
+            axes[1,0].errorbar(Peryxo,Zyxio, yerr=Zyxe,
+                            linestyle="",
+                            marker="o",
+                            color="b",
+                            linewidth=Linewidth,
+                            markersize=Markersize)
+        else:
+            axes[1,0].plot(Peryxo, Zyxio,
+                           color="b",
+                           linestyle="",
+                           marker="o",
+                           markersize=Markersize)
+
+        axes[1,0].set_xscale("log")
+        axes[1,0].set_yscale("log")
+        axes[1,1].set_xlim(PerLimits)
+        if ZLimitsXY != ():
+            axes[1,1].set_ylim(ZLimitsXY)
+        axes[1,0].legend(["real", "imag"])
+        axes[1,0].tick_params(labelsize=Labelsize-1)
+        axes[1,0].set_ylabel("|ZYX|", fontsize=Fontsize)
+        axes[1,0].grid("major", "both", linestyle="-", linewidth=0.5)
+        if ShowRMS:
+            nRMSr = np.around(nRMSZyxr,1)
+            nRMSi = np.around(nRMSZyxi,1)
+            StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
+            axes[1,0].text(0.05, 0.05,StrRMS,
+                               transform=axes[1,0].transAxes,
+                               fontsize = Fontsize-2,
+                               ha="left", va="bottom",
+                               bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
+
+
+        axes[1,1].plot(Peryyc, Zyyrc, color="r",linestyle="-", linewidth=Linewidth)
+        if ShowErrors:
+            axes[1,1].errorbar(Peryyo,Zyyro, yerr=Zyye,
+                            linestyle="",
+                            marker="o",
+                            color="r",
+                            linewidth=Linewidth,
+                            markersize=Markersize)
+        else:
+            axes[1,1].plot(Peryyo, Zyyro,
+                           color="r",
+                           linestyle="",
+                           marker="o",
+                           markersize=Markersize)
+        axes[1,1].plot(Peryyc, Zyyic, color="b",linestyle="-", linewidth=Linewidth)
+        if ShowErrors:
+            axes[1,1].errorbar(Peryyo,Zyyio, yerr=Zyye,
+                                    linestyle="",
+                                    marker="o",
+                                    color="b",
+                                    linewidth=Linewidth,
+                                    markersize=Markersize)
+        else:
+            axes[1,1].plot(Peryyo, Zyyio,
+                           color="b",
+                           linestyle="",
+                           marker="o",
+                           markersize=Markersize)
+        axes[1,1].set_xscale("log")
+        axes[1,1].set_yscale("log")
+        axes[1,1].set_xlim(PerLimits)
+        if ZLimitsXX != ():
+            ax.set_ylim(ZLimitsXX)
+        axes[1,1].legend(["real", "imag"])
+        axes[1,1].tick_params(labelsize=Labelsize-1)
+        axes[1,1].set_ylabel("|ZYY|", fontsize=Fontsize)
+        axes[1,1].grid("major", "both", linestyle="-", linewidth=0.5)
+        if ShowRMS:
+            nRMSr = np.around(nRMSZyyr,1)
+            nRMSi = np.around(nRMSZyyi,1)
+            StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
+            axes[1,1].text(0.05, 0.05,StrRMS,
+                               transform=axes[1,1].transAxes,
+                               fontsize = Fontsize-2,
+                               ha="left", va="bottom",
+                               bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
+
     else:
-        axes[0,0].plot(Perxxo, Zxxro,
-                       color="r",
-                       linestyle="",
-                       marker="o",
-                       markersize=Markersize)
-    axes[0,0].plot(Perxxc, Zxxic, color="b",linestyle="-", linewidth=Linewidth)
-    if ShowErrors:
-        axes[0,0].errorbar(Perxxo,Zxxio, yerr=Zxxe,
-                                linestyle="",
-                                marker="o",
-                                color="b",
-                                linewidth=Linewidth,
-                                markersize=Markersize)
-    else:
-        axes[0,0].plot(Perxxo, Zxxio,
-                       color="b",
-                       linestyle="",
-                       marker="o",
-                       markersize=Markersize)
-    axes[0,0].set_xscale("log")
-    axes[0,0].set_yscale("log")
-    axes[0,0].set_xlim(PerLimits)
-    if ZLimitsXX != ():
-        axes[0,0].set_ylim(ZLimitsXX)
-    axes[0,0].legend(["real", "imag"])
-    axes[0,0].xaxis.set_ticklabels([])
-    axes[0,0].tick_params(labelsize=Labelsize-1)
-    axes[0,0].set_ylabel("|ZXX|", fontsize=Fontsize)
-    axes[0,0].grid("major", "both", linestyle="-", linewidth=0.5)
-    if ShowRMS:
-        nRMSr = np.around(nRMSZxxr,1)
-        nRMSi = np.around(nRMSZxxi,1)
-        StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
-        axes[0,0].text(0.05, 0.05,StrRMS,
-                           transform=axes[0,0].transAxes,
-                           fontsize = Fontsize-2,
-                           ha="left", va="bottom",
-                           bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
+
+        fig, axes = plt.subplots(1,2, figsize = (16*cm, 8*cm))
+
+        fig.suptitle(r"Site: "+s
+                     +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
+                     +"\nUTMX: "+str(site_utmx)+"   UTMY: "+str(site_utmy)
+                     +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m",
+                     ha="left", x=0.1,fontsize=Fontsize-1)
 
 
-    axes[0,1].plot(Perxyc, Zxyrc, color="r",linestyle="-", linewidth=Linewidth)
-    if ShowErrors:
-        axes[0,1].errorbar(Perxyo,Zxyro, yerr=Zxye,
-                        linestyle="",
-                        marker="o",
-                        color="r",
-                        linewidth=Linewidth,
-                        markersize=Markersize)
-    else:
-        axes[0,1].plot(Perxyo,
-                       Zxyro, color="r",
-                       linestyle="",
-                       marker="o",
-                       markersize=Markersize)
+        ax.plot(Perxyc, Zxyrc, color="r",linestyle="-", linewidth=Linewidth)
+        if ShowErrors:
+            ax.errorbar(Perxyo,Zxyro, yerr=Zxye,
+                            linestyle="",
+                            marker="o",
+                            color="r",
+                            linewidth=Linewidth,
+                            markersize=Markersize)
+        else:
+            ax.plot(Perxyo,
+                           Zxyro, color="r",
+                           linestyle="",
+                           marker="o",
+                           markersize=Markersize)
 
-    axes[0,1].plot(Perxyc, Zxyic, color="b",linestyle="-", linewidth=Linewidth)
-    if ShowErrors:
-        axes[0,1].errorbar(Perxyo,Zxyio, yerr=Zxye,
-                        linestyle="",
-                        marker="o",
-                        color="b",
-                        linewidth=Linewidth,
-                        markersize=Markersize)
-    else:
-        axes[0,1].plot(Perxyo, Zxyio,
-                       color="b",
-                       linestyle="",
-                       marker="o",
-                       markersize=Markersize)
-    axes[0,1].set_xscale("log")
-    axes[0,1].set_yscale("log")
-    axes[0,1].set_xlim(PerLimits)
-    if ZLimitsXY != ():
-        axes[0,1].set_ylim(ZLimitsXY)
-    axes[0,1].legend(["real", "imag"])
-    axes[0,1].xaxis.set_ticklabels([])
-    axes[0,1].tick_params(labelsize=Labelsize-1)
-    axes[0,1].set_ylabel("|ZXY|", fontsize=Fontsize)
-    axes[0,1].grid("major", "both", linestyle="-", linewidth=0.5)
-    if ShowRMS:
-        nRMSr = np.around(nRMSZxyr,1)
-        nRMSi = np.around(nRMSZxyi,1)
-        StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
-        axes[0,1].text(0.05, 0.05,StrRMS,
-                           transform=axes[0,1].transAxes,
-                           fontsize = Fontsize-2,
-                           ha="left", va="bottom",
-                           bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
+        ax.plot(Perxyc, Zxyic, color="b",linestyle="-", linewidth=Linewidth)
+        if ShowErrors:
+            ax.errorbar(Perxyo,Zxyio, yerr=Zxye,
+                            linestyle="",
+                            marker="o",
+                            color="b",
+                            linewidth=Linewidth,
+                            markersize=Markersize)
+        else:
+            ax.plot(Perxyo, Zxyio,
+                           color="b",
+                           linestyle="",
+                           marker="o",
+                           markersize=Markersize)
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_xlim(PerLimits)
+        if ZLimitsXY != ():
+            ax.set_ylim(ZLimitsXY)
+        ax.legend(["real", "imag"])
+        ax.tick_params(labelsize=Labelsize-1)
+        ax.set_ylabel("|ZXY|", fontsize=Fontsize)
+        ax.grid("major", "both", linestyle="-", linewidth=0.5)
+        if ShowRMS:
+            nRMSr = np.around(nRMSZxyr,1)
+            nRMSi = np.around(nRMSZxyi,1)
+            StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
+            ax.text(0.05, 0.05,StrRMS,
+                               transform=ax.transAxes,
+                               fontsize = Fontsize-2,
+                               ha="left", va="bottom",
+                               bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
 
-    axes[1,0].plot(Peryxc, Zyxrc, color="r",linestyle="-", linewidth=Linewidth)
-    if ShowErrors:
-        axes[1,0].errorbar(Peryxo,Zyxro, yerr=Zyxe,
-                        linestyle="",
-                        marker="o",
-                        color="r",
-                        linewidth=Linewidth,
-                        markersize=Markersize)
-    else:
-        axes[1,0].plot(Peryxo, Zyxro,
-                       color="r",
-                       linestyle="",
-                       marker="o",
-                       markersize=Markersize)
+        axes[1,].plot(Peryxc, Zyxrc, color="r",linestyle="-", linewidth=Linewidth)
+        if ShowErrors:
+            axes[1,].errorbar(Peryxo,Zyxro, yerr=Zyxe,
+                            linestyle="",
+                            marker="o",
+                            color="r",
+                            linewidth=Linewidth,
+                            markersize=Markersize)
+        else:
+            axes[1,].plot(Peryxo, Zyxro,
+                           color="r",
+                           linestyle="",
+                           marker="o",
+                           markersize=Markersize)
 
-    axes[1,0].plot(Peryxc, Zyxic, color="b",linestyle="-", linewidth=Linewidth)
-    if ShowErrors:
-        axes[1,0].errorbar(Peryxo,Zyxio, yerr=Zyxe,
-                        linestyle="",
-                        marker="o",
-                        color="b",
-                        linewidth=Linewidth,
-                        markersize=Markersize)
-    else:
-        axes[1,0].plot(Peryxo, Zyxio,
-                       color="b",
-                       linestyle="",
-                       marker="o",
-                       markersize=Markersize)
+        axes[1,].plot(Peryxc, Zyxic, color="b",linestyle="-", linewidth=Linewidth)
+        if ShowErrors:
+            axes[1,].errorbar(Peryxo,Zyxio, yerr=Zyxe,
+                            linestyle="",
+                            marker="o",
+                            color="b",
+                            linewidth=Linewidth,
+                            markersize=Markersize)
+        else:
+            axes[1,].plot(Peryxo, Zyxio,
+                           color="b",
+                           linestyle="",
+                           marker="o",
+                           markersize=Markersize)
 
-    axes[1,0].set_xscale("log")
-    axes[1,0].set_yscale("log")
-    axes[1,0].set_xlim(PerLimits)
-    if ZLimitsXY != ():
-        axes[1,0].set_ylim(ZLimitsXY)
-    axes[1,0].legend(["real", "imag"])
-    axes[1,0].tick_params(labelsize=Labelsize-1)
-    axes[1,0].set_ylabel("|ZYX|", fontsize=Fontsize)
-    axes[1,0].grid("major", "both", linestyle="-", linewidth=0.5)
-    if ShowRMS:
-        nRMSr = np.around(nRMSZyxr,1)
-        nRMSi = np.around(nRMSZyxi,1)
-        StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
-        axes[1,0].text(0.05, 0.05,StrRMS,
-                           transform=axes[1,0].transAxes,
-                           fontsize = Fontsize-2,
-                           ha="left", va="bottom",
-                           bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
-
-    axes[1,1].plot(Peryyc, Zyyrc, color="r",linestyle="-", linewidth=Linewidth)
-    if ShowErrors:
-        axes[1,1].errorbar(Peryyo,Zyyro, yerr=Zyye,
-                        linestyle="",
-                        marker="o",
-                        color="r",
-                        linewidth=Linewidth,
-                        markersize=Markersize)
-    else:
-        axes[1,1].plot(Peryyo, Zyyro,
-                       color="r",
-                       linestyle="",
-                       marker="o",
-                       markersize=Markersize)
-
-    axes[1,1].plot(Peryyc, Zyyic, color="b",linestyle="-", linewidth=Linewidth)
-    if ShowErrors:
-        axes[1,1].errorbar(Peryyo,Zyyio, yerr=Zyye,
-                        linestyle="",
-                        marker="o",
-                        color="b",
-                        linewidth=Linewidth,
-                        markersize=Markersize)
-    else:
-        axes[1,1].plot(Peryyo, Zyyio,
-                       color="b",
-                       linestyle="",
-                       marker="o",
-                       markersize=Markersize)
-
-    axes[1,1].set_xscale("log")
-    axes[1,1].set_yscale("log")
-    axes[1,1].set_xlim(PerLimits)
-    if ZLimitsXX != ():
-        axes[1,1].set_ylim(ZLimitsXX)
-    axes[1,1].legend(["real", "imag"])
-    axes[1,1].tick_params(labelsize=Labelsize-1)
-    axes[1,1].set_ylabel("|ZYY|", fontsize=Fontsize)
-    axes[1,1].grid("major", "both", linestyle="-", linewidth=0.5)
-    if ShowRMS:
-        nRMSr = np.around(nRMSZyyr,1)
-        nRMSi = np.around(nRMSZyyi,1)
-        StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
-        axes[1,1].text(0.05, 0.05,StrRMS,
-                           transform=axes[1,1].transAxes,
-                           fontsize = Fontsize-2,
-                           ha="left", va="bottom",
-                           bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
+        axes[1,].set_xscale("log")
+        axes[1,].set_yscale("log")
+        axes[1,].set_xlim(PerLimits)
+        if ZLimitsXY != ():
+            axes[1,].set_ylim(ZLimitsXY)
+        axes[1,].legend(["real", "imag"])
+        axes[1,].tick_params(labelsize=Labelsize-1)
+        axes[1,].set_ylabel("|ZYX|", fontsize=Fontsize)
+        axes[1,].grid("major", "both", linestyle="-", linewidth=0.5)
+        if ShowRMS:
+            nRMSr = np.around(nRMSZyxr,1)
+            nRMSi = np.around(nRMSZyxi,1)
+            StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
+            axes[1,].text(0.05, 0.05,StrRMS,
+                               transform=axes[1,].transAxes,
+                               fontsize = Fontsize-2,
+                               ha="left", va="bottom",
+                               bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
 
     fig.tight_layout()
@@ -447,6 +557,7 @@ for s in Sites:
 
     plt.show()
     plt.close(fig)
+
 
 if PdfCatalog:
     utl.make_pdf_catalog(PlotDir, PdfCName)

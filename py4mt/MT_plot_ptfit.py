@@ -56,9 +56,10 @@ print("\n\n")
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
 
-WorkDir =  r"/home/vrath/work/MT/Annecy/ANN25a_best/"
-PredFile = r"/home/vrath/work/MT/Annecy/ANN25a_best/Ann25c_ZPT_200_Alpha01_NLCG_017"
-ObsvFile = r"/home/vrath/work/MT/Annecy/ANN25a_best/Ann25_ZPTb"
+
+WorkDir =  r"/home/vrath/work/MT/Annecy/ANN26/"
+PredFile = r"/home/vrath/work/MT/Annecy/ANN26/Ann26_ZoPT_200_Alpha04_NLCG_017"
+ObsvFile = r"/home/vrath/work/MT/Annecy/ANN26/Ann26_ZoPT"
 PlotDir = WorkDir + 'Plots/'
 
 print(' Plots written to: %s' % PlotDir)
@@ -67,14 +68,14 @@ if not os.path.isdir(PlotDir):
     os.mkdir(PlotDir)
 
 
-PerLimits = (0.0001, 3.)
+PerLimits = (0.00005, 3.)
 PhTLimitsXX = (-5., 5.)
 PhTLimitsXY = (-1., 1.)
 ShowErrors = True
 ShowRMS = True
 
 
-PlotFile = "Annecy_PhT_final"
+PlotFile = "Annecy_PhT_Alpha04"
 PlotFormat = [".pdf", ".png", ".svg"]
 PdfCatalog = True
 if not ".pdf" in PlotFormat:

@@ -56,23 +56,24 @@ print("\n\n")
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
-WorkDir =  r"/home/vrath/work/MT/Annecy/ANN25a_best/"
-PredFile = r"/home/vrath/work/MT/Annecy/ANN25a_best/Ann25c_ZPT_200_Alpha01_NLCG_017"
-ObsvFile = r"/home/vrath/work/MT/Annecy/ANN25a_best/Ann25_ZPTb"
+WorkDir =  r"/home/vrath/work/MT/Annecy/ANN26/"
+PredFile = r"/home/vrath/work/MT/Annecy/ANN26/Ann26_ZoPT_200_Alpha04_NLCG_017"
+ObsvFile = r"/home/vrath/work/MT/Annecy/ANN26/Ann26_ZoPT"
 PlotDir = WorkDir + 'Plots/'
+
 print(' Plots written to: %s' % PlotDir)
 if not os.path.isdir(PlotDir):
     print(' File: %s does not exist, but will be created' % PlotDir)
     os.mkdir(PlotDir)
 
 
-PerLimits = (0.0001, 3.)
+PerLimits = (0.00005, 3.)
 TpLimits = (-.5, 0.5)
 ShowErrors = True
 ShowRMS = True
 
 PlotFormat = [".pdf", ".png", ".svg"]
-PlotFile = "Annecy_Tp_final"
+PlotFile = "Annecy26_Tp_Alpha04"
 PdfCatalog = True
 if not ".pdf" in PlotFormat:
     error(" No pdfs generated. No catalog possible!")
