@@ -224,10 +224,12 @@ for ifr in np.arange(nFreq):
             ImD = ImDat[indx, ifr].reshape(nind,1)
             Amp = np.sqrt(ReD**2+ImD**2)
             Err = mim.error_model(Amp, Err_mul, Err_add)
-            Nam0 = ModemName+"F"+str(ifr)+"T"+str(itx)
+            Nam0 = (ModemName
+            +"F"+str(ifr).zfill(2)
+            +"T"+str(itx).zfill(2))
             Nam = []
             for irx in np.arange(np.size(Rxi)):
-                Nam.append(Nam0+"R"+str(irx))
+                Nam.append(Nam0+"R"+str(irx).zfill(2))
             Nam = np.asarray(Nam,dtype=object).reshape(nind,1)
 
             Datai=np.concatenate((P,Txi,Tyi,Tzi,Nam,Rxi,Ryi,Rzi,ReD,ImD,Err),
