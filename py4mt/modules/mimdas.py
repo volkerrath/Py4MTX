@@ -67,7 +67,7 @@ def write_csem_data(DatFile=None, Dat=None, Head = None,
 
 def get_randomTX_simple(TXx=None,TXy=None,
                         Nsamples=None,
-                        Seedsamples=None,
+                        Ranstate=None,
                         d_margin=0.01):
     """
     Generate  uniform  distribution
@@ -82,10 +82,10 @@ def get_randomTX_simple(TXx=None,TXy=None,
     if TXx==[] or TXy==[]:
         error("no data given! Exit.")
 
-    if Seedsamples==None:
+    if Ranstate==None:
         rng = np.random.default_rng()
     else:
-        rng = np.random.default_rng(Seedsamples)
+        rng = Ranstate
 
     maxTXx = np.max(TXx)
     minTXx = np.min(TXx)
@@ -117,7 +117,7 @@ def get_randomTX_simple(TXx=None,TXy=None,
 
 def get_randomTX_constr(TXx=None,TXy=None,
                         Nsamples=None,
-                        Seedsamples=None,
+                        Ranstate=None,
                         Mindist=250., d_margin=0.01):
     """
     Generate  uniform  distribution
@@ -139,20 +139,14 @@ def get_randomTX_constr(TXx=None,TXy=None,
         # NTY = np.shape(TY)
         # print(NTX, NTY)
 
-    if Seedsamples==None:
+    if Ranstate==None:
         rng = np.random.default_rng()
     else:
-        rng = np.random.default_rng(Seedsamples)
+        rng = Ranstate
 
     TXx_s = []
     TXy_s = []
     Ind_s = []
-
-    maxTXx = np.max(TXx)
-    minTXx = np.min(TXx)
-    maxTXy = np.max(TXy)
-    minTXy = np.min(TXy)
-
 
     testx = rng.choice(TX,size=1)
     testy = rng.choice(TY,size=1)

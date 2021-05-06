@@ -13,21 +13,17 @@
 import os
 import sys
 import warnings
-import time
 
 from sys import exit as error
 from datetime import datetime
 
 import numpy as np
-import scipy as sc
-import scipy.ndimage as sci
-import scipy.linalg as scl
-import fnmatch
+
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-from cycler import cycler
-import pyproj as proj
+# from cycler import cycler
+
 
 mypath = ["/home/vrath/Py4MT/py4mt/modules/",
           "/home/vrath/Py4MT/py4mt/scripts/"]
@@ -35,12 +31,16 @@ for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
 
-import modem as mod
 import util as utl
 import mimdas as mim
 from version import versionstrg
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
+
+# rans = np.random.default_rng()
+RanState= None #110652
+RanGen =np.random.PCG64()
+rans = np.random.default_rng(RanGen)
 
 Strng, _ = versionstrg()
 now = datetime.now()
@@ -49,16 +49,16 @@ print("Read and transform MIMDAS CSEM data"+"\n"
       +"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%S")))
 print("\n")
 
-
+ident = str(rans.integers(1,10000)).zfill(5)
 DataDir =   r"/home/vrath/Py4MT/py4mt/MIMDAS/"
 DataFile = DataDir+r"Block1.dat"
 ModemDir = DataDir
-ModemFile = ModemDir+r"Block_ModEM.dat"
-ModemName = "B1"
+ModemFile = ModemDir+r"Block1_ModEM_"+ident+".dat"
+ModemName = "B01"
 ModemHead = ("# MIMDAS data for Block1"+"\n"
              +"".join("# Date " + now.strftime("%m/%d/%Y, %H:%M:%S")) +"\n")
 PlotDir = DataDir+"Plots/"
-PlotFile = "Block1"
+PlotFile = r"Block1_ModEM_"+ident
 PlotFormat = [".pdf", ".png", ".svg"]
 
 
@@ -71,10 +71,13 @@ if not os.path.isdir(PlotDir):
 Parameters for generating random set of transmitters.
 """
 NSample =9
-SeedSample= None #110652
 MinDist =(400., 100.)
 d_margin = 0.01
 RanMeth = "con"
+
+RanStatFile = DataDir+"RanStat"+ident+".npz"
+np.savez(RanStatFile, RanState=rans)
+
 
 """
 Coefficents for error function. Error model including
@@ -109,10 +112,10 @@ Fontsize = 10
 Labelsize = Fontsize
 Linewidth= 2
 Markersize = 4
-Grey = 0.7
-Lcycle  = (cycler("linestyle", ["-", "--", ":", "-."])
-          * cycler("color", ["r", "g", "b", "y"]))
-Ccycle =  cycler("color", ["r", "g", "b", "y"])
+# Grey = 0.7
+# Lcycle  = (cycler("linestyle", ["-", "--", ":", "-."])
+#           * cycler("color", ["r", "g", "b", "y"]))
+# Ccycle =  cycler("color", ["r", "g", "b", "y"])
 cm = 1/2.54  # centimeters in inches
 
 """
@@ -171,12 +174,12 @@ generate transmitter subset
 if RanMeth[0].lower() == "c":
     Ind_s, TXx_s, TXy_s = mim.get_randomTX_constr(TXx,TXy,
                             Nsamples=NSample,
-                            Seedsamples=SeedSample,
+                            Ranstate=rans,
                             Mindist=MinDist)
 else:
     Ind_s, TXx_s, TXy_s = mim.get_randomTX_simple(TXx, TXy,
                             Nsamples=NSample,
-                            Seedsamples=SeedSample)
+                            Ranstate=rans)
 
 
 fig, ax = plt.subplots() #figsize = (16*cm, 16*cm))
