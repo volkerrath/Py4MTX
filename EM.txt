@@ -231,7 +231,7 @@ markupsafe                1.1.1            py38h7b6447c_0
 matplotlib                3.3.4            py38h06a4308_0  
 matplotlib-base           3.3.4            py38h62a2d02_0  
 mccabe                    0.6.1                    py38_1  
-meshio                    4.4.2              pyhd8ed1ab_0    conda-forge
+meshio                    4.4.3              pyhd8ed1ab_0    conda-forge
 metis                     5.1.0                hf484d3e_4  
 mistune                   0.8.4           py38h7b6447c_1000  
 mkl                       2021.2.0           h06a4308_296  
@@ -382,6 +382,7 @@ sphinxcontrib-serializinghtml 1.1.4              pyhd3eb1b0_0
 spyder                    5.0.0            py38h06a4308_1  
 spyder-kernels            2.0.1            py38h06a4308_0  
 sqlite                    3.35.4               hdfb4753_0  
+subsurface                0.2.4              pyhd8ed1ab_0    conda-forge
 suitesparse               5.7.2                h7a0d4b7_0    conda-forge
 tbb                       2020.3               hfd86e86_0  
 tbb-devel                 2020.3               hfd86e86_0  

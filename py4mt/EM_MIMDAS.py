@@ -25,6 +25,7 @@ import matplotlib.pyplot as plt
 # from cycler import cycler
 
 
+
 mypath = ["/home/vrath/Py4MT/py4mt/modules/",
           "/home/vrath/Py4MT/py4mt/scripts/"]
 for pth in mypath:
@@ -56,7 +57,8 @@ ModemDir = DataDir
 ModemFile = ModemDir+r"Block1_ModEM_"+ident+".dat"
 ModemName = "B01"
 ModemHead = ("# MIMDAS data for Block1"+"\n"
-             +"".join("# Date " + now.strftime("%m/%d/%Y, %H:%M:%S")) +"\n")
+             +"".join("# Date " + now.strftime("%m/%d/%Y, %H:%M:%S"))+"\n"
+             +"Identifier: "+ident+"\n")
 PlotDir = DataDir+"Plots/"
 PlotFile = r"Block1_ModEM_"+ident
 PlotFormat = [".pdf", ".png", ".svg"]

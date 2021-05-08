@@ -101,20 +101,7 @@ cal_cmp = CompCal
 cal_sit = SiteCal
 
 
-# Determine graphical parameter.
-# print(plt.style.available)
-plt.style.use("seaborn-paper")
-mpl.rcParams["figure.dpi"] = 400
-mpl.rcParams["axes.linewidth"] = 0.5
-Fontsize = 10
-Labelsize = Fontsize
-Linewidth= 2
-Markersize = 4
-Grey = 0.7
-Lcycle =Lcycle = (cycler("linestyle", ["-", "--", ":", "-."])
-          * cycler("color", ["r", "g", "b", "y"]))
-cm = 1/2.54  # centimeters in inches
-
+$^{1}$
 Sites = np.unique(SiteObs)
 
 for s in Sites:
