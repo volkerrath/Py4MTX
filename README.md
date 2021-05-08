@@ -8,7 +8,7 @@ _git clone https://github.com/volkerrath/Py4MT/_
 
 This version will run under Python 3.6 - 3.8 (3.9 not yet fully tested, but seems to work correctly). To install it in an Linux environment (e.g. Ubuntu, SuSE), you need to do the following:
 
-(1) Download the latest Anaconda or Miniconda version (https://www.anaconda.com/distribution/), and install by running the downloaded bash script. 
+(1) Download the latest Anaconda or Miniconda version (https://www.anaconda.com/distribution/), and install by running the downloaded bash script. In order to make updates secure and avoid inconsistencies, copy _.condarc_ to your home directory. 
 
 (2) Create an appropriate conda environment (including the necessary prerequisites) from the files EM.yml or EM.txt found in the Py4MT base directory by:
 
