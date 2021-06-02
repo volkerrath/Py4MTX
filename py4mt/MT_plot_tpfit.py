@@ -22,7 +22,6 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from cycler import cycler
-import pyproj as proj
 
 mypath = ["/home/vrath/Py4MT/py4mt/modules/",
           "/home/vrath/Py4MT/py4mt/scripts/"]
@@ -30,19 +29,6 @@ for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
 
-import mtplots as mtp
-
-# import gdal
-# import scipy as sc
-# import vtk
-# import pyvista as pv
-# import pyvistaqt as pvqt
-# import discretize
-# import tarfile
-# import pylab as pl
-# from time import sleep
-
-import mtplots as mtp
 import modem as mod
 import util as utl
 from version import versionstrg
@@ -117,15 +103,15 @@ cal_sit = SiteCal
 plt.style.use("seaborn-paper")
 mpl.rcParams["figure.dpi"] = 400
 mpl.rcParams["axes.linewidth"] = 0.5
+mpl.rcParams["savefig.facecolor"] = "none"
 Fontsize = 10
 Labelsize = Fontsize
-Linewidth= 2
+Linewidth= 1
 Markersize = 4
 Grey = 0.7
 Lcycle =Lcycle = (cycler("linestyle", ["-", "--", ":", "-."])
           * cycler("color", ["r", "g", "b", "y"]))
-mpl.rcParams["figure.dpi"] = 400
-mpl.rcParams["axes.linewidth"] = 0.5
+cm = 1/2.54  # centimeters in inches
 
 Sites = np.unique(SiteObs)
 
@@ -194,7 +180,7 @@ for s in Sites:
 
 
 
-        cm = 1/2.54  # centimeters in inches
+
         fig, axes = plt.subplots(1, 2, figsize = (16*cm, 7*cm), squeeze=False)
 
         fig.suptitle(r"Site: "+s

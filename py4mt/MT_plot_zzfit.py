@@ -22,7 +22,6 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from cycler import cycler
-import pyproj as proj
 
 mypath = ["/home/vrath/Py4MT/py4mt/modules/",
           "/home/vrath/Py4MT/py4mt/scripts/"]
@@ -30,8 +29,6 @@ for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
 
-
-import mtplots as mtp
 import modem as mod
 import util as utl
 from version import versionstrg
@@ -100,8 +97,22 @@ cal_per = DataCal[:, 0]
 cal_cmp = CompCal
 cal_sit = SiteCal
 
+# Determine graphical parameter.
+# print(plt.style.available)
+plt.style.use("seaborn-paper")
+mpl.rcParams["figure.dpi"] = 400
+mpl.rcParams["axes.linewidth"] = 0.5
+mpl.rcParams["savefig.facecolor"] = "none"
+Fontsize = 10
+Labelsize = Fontsize
+Linewidth= 1
+Markersize = 4
+Grey = 0.7
+Lcycle =Lcycle = (cycler("linestyle", ["-", "--", ":", "-."])
+          * cycler("color", ["r", "g", "b", "y"]))
+cm = 1/2.54  # centimeters in inches
 
-$^{1}$
+
 Sites = np.unique(SiteObs)
 
 for s in Sites:
@@ -262,7 +273,7 @@ for s in Sites:
         axes[0,0].set_yscale("log")
         axes[0,0].set_xlim(PerLimits)
         if ZLimitsXX != ():
-            ax.set_ylim(ZLimitsXX)
+            axes[0,0].set_ylim(ZLimitsXX)
         axes[0,0].legend(["real", "imag"])
         axes[0,0].xaxis.set_ticklabels([])
         axes[0,0].tick_params(labelsize=Labelsize-1)
@@ -361,9 +372,9 @@ for s in Sites:
 
         axes[1,0].set_xscale("log")
         axes[1,0].set_yscale("log")
-        axes[1,1].set_xlim(PerLimits)
+        axes[1,0].set_xlim(PerLimits)
         if ZLimitsXY != ():
-            axes[1,1].set_ylim(ZLimitsXY)
+            axes[1,0].set_ylim(ZLimitsXY)
         axes[1,0].legend(["real", "imag"])
         axes[1,0].tick_params(labelsize=Labelsize-1)
         axes[1,0].set_ylabel("|ZYX|", fontsize=Fontsize)
@@ -411,7 +422,7 @@ for s in Sites:
         axes[1,1].set_yscale("log")
         axes[1,1].set_xlim(PerLimits)
         if ZLimitsXX != ():
-            ax.set_ylim(ZLimitsXX)
+            axes[1,1].set_ylim(ZLimitsXX)
         axes[1,1].legend(["real", "imag"])
         axes[1,1].tick_params(labelsize=Labelsize-1)
         axes[1,1].set_ylabel("|ZYY|", fontsize=Fontsize)
@@ -437,50 +448,50 @@ for s in Sites:
                      ha="left", x=0.1,fontsize=Fontsize-1)
 
 
-        ax.plot(Perxyc, Zxyrc, color="r",linestyle="-", linewidth=Linewidth)
+        axes[0,].plot(Perxyc, Zxyrc, color="r",linestyle="-", linewidth=Linewidth)
         if ShowErrors:
-            ax.errorbar(Perxyo,Zxyro, yerr=Zxye,
+            axes[0,].errorbar(Perxyo,Zxyro, yerr=Zxye,
                             linestyle="",
                             marker="o",
                             color="r",
                             linewidth=Linewidth,
                             markersize=Markersize)
         else:
-            ax.plot(Perxyo,
+            axes[0,].plot(Perxyo,
                            Zxyro, color="r",
                            linestyle="",
                            marker="o",
                            markersize=Markersize)
 
-        ax.plot(Perxyc, Zxyic, color="b",linestyle="-", linewidth=Linewidth)
+        axes[0,].plot(Perxyc, Zxyic, color="b",linestyle="-", linewidth=Linewidth)
         if ShowErrors:
-            ax.errorbar(Perxyo,Zxyio, yerr=Zxye,
+            axes[0,].errorbar(Perxyo,Zxyio, yerr=Zxye,
                             linestyle="",
                             marker="o",
                             color="b",
                             linewidth=Linewidth,
                             markersize=Markersize)
         else:
-            ax.plot(Perxyo, Zxyio,
+            axes[0,].plot(Perxyo, Zxyio,
                            color="b",
                            linestyle="",
                            marker="o",
                            markersize=Markersize)
-        ax.set_xscale("log")
-        ax.set_yscale("log")
-        ax.set_xlim(PerLimits)
+        axes[0,].set_xscale("log")
+        axes[0,].set_yscale("log")
+        axes[0,].set_xlim(PerLimits)
         if ZLimitsXY != ():
-            ax.set_ylim(ZLimitsXY)
-        ax.legend(["real", "imag"])
-        ax.tick_params(labelsize=Labelsize-1)
-        ax.set_ylabel("|ZXY|", fontsize=Fontsize)
-        ax.grid("major", "both", linestyle="-", linewidth=0.5)
+            axes[0,].set_ylim(ZLimitsXY)
+        axes[0,].legend(["real", "imag"])
+        axes[0,].tick_params(labelsize=Labelsize-1)
+        axes[0,].set_ylabel("|ZXY|", fontsize=Fontsize)
+        axes[0,].grid("major", "both", linestyle="-", linewidth=0.5)
         if ShowRMS:
             nRMSr = np.around(nRMSZxyr,1)
             nRMSi = np.around(nRMSZxyi,1)
             StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
-            ax.text(0.05, 0.05,StrRMS,
-                               transform=ax.transAxes,
+            axes[0,].text(0.05, 0.05,StrRMS,
+                               transform=axes[0,].transAxes,
                                fontsize = Fontsize-2,
                                ha="left", va="bottom",
                                bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )

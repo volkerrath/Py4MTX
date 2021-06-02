@@ -29,27 +29,29 @@ def read_jac(JacFile=None, out=False):
     fjac = FortranFile(JacFile, "r")
     tmp1 = []
     tmp2 = []
-    # print(np.shape(Jac))
-    header1 = fjac.read_record(np.byte)
-    h1 = ''.join([chr(item) for item in header1])
+
+    _ = fjac.read_record(np.byte)
+    # h1 = ''.join([chr(item) for item in header1])
     # print(h1)
-    nAll = fjac.read_ints(np.int32)
-    # _ = fjac.read_ints(np.int32)
+    _ = fjac.read_ints(np.int32)
+    # nAll = fjac.read_ints(np.int32)
+    # print("nAll"+str(nAll))
     nTx = fjac.read_ints(np.int32)
-    print(nTx)
+    print("ntx"+str(nTx))
     for i1 in range(nTx[0]):
         nDt = fjac.read_ints(np.int32)
-        print(nDt)
+        print("nDt"+str(nDt))
         for i2 in range(nDt[0]):
             nSite = fjac.read_ints(np.int32)
-            print(nSite)
+            print("nSite"+str(nSite))
             for i3 in range(nSite[0]):
                 # header2
-                _ = fjac.read_record(np.byte)
-                # h2 = ''.join([chr(item) for item in header2])
-                # print(h2)
+                header2 = fjac.read_record(np.byte)
+                h2 = ''.join([chr(item) for item in header2])
+                print(h2)
+                print(i1,i2,i3)
                 nSigma = fjac.read_ints(np.int32)
-                # print(nSigma)
+                # print("nSigma"+str(nSigma))
                 for i4 in range(nSigma[0]):
                     # paramType
                     _ = fjac.read_ints(np.byte)
@@ -71,16 +73,91 @@ def read_jac(JacFile=None, out=False):
                     # ColJac =  CellSens.flatten(order='F')
                     tmp1.append(ColJac)
                     # print(np.shape(tmp1))
-
+                    # tmp2.append()
     Jac = np.asarray(tmp1)
-    Inf = np.asarray(tmp2)
+    # Inf = np.asarray(tmp2,dtype=object)
 
     fjac.close()
 
     if out:
         print("...done reading " + JacFile)
 
-    return Jac
+    return Jac   #, Site, Freq, Comp
+
+
+def read_data_jac(DatFile=None, out=True):
+    """
+    Read ModEM input data.
+
+    author: vrath
+    last changed: Feb 10, 2021
+    """
+    Data = []
+    Site = []
+    Comp = []
+    Head = []
+
+    with open(DatFile) as fd:
+        for line in fd:
+            if line.startswith("#") or line.startswith(">"):
+                Head.append(line)
+                continue
+
+            t = line.split()
+
+            if "PT" in t[7] or "RH" in t[7] or "PH" in t[7]:
+                tmp1 = [
+                    float(t[0]),
+                    float(t[2]),
+                    float(t[3]),
+                    float(t[4]),
+                    float(t[5]),
+                    float(t[6]),
+                    float(t[8]),
+                    float(t[9]),
+                ]
+                Data.append(tmp1)
+                Site.append([t[1]])
+                Comp.append([t[7]])
+            else:
+                tmp1 = [
+                    float(t[0]),
+                    float(t[2]),
+                    float(t[3]),
+                    float(t[4]),
+                    float(t[5]),
+                    float(t[6]),
+                    float(t[8]),
+                    float(t[10]),
+                ]
+                Data.append(tmp1)
+                tmp2 = [
+                    float(t[0]),
+                    float(t[2]),
+                    float(t[3]),
+                    float(t[4]),
+                    float(t[5]),
+                    float(t[6]),
+                    float(t[9]),
+                    float(t[10]),
+                ]
+                Data.append(tmp2)
+                Comp.append([t[7] + "R", t[7] + "I"])
+                Site.append([t[1], t[1]])
+
+    Site = [item for sublist in Site for item in sublist]
+    Site = np.asarray(Site, dtype=object)
+    Comp = [item for sublist in Comp for item in sublist]
+    Comp = np.asarray(Comp, dtype=object)
+
+    Data = np.asarray(Data)
+    Freq = Data[:,0]
+
+    nD = np.shape(Data)
+    if out:
+        print("readDat: %i data read from %s" % (nD[0], DatFile))
+
+    return Data, Site, Freq, Comp, Head
 
 
 def write_jac_ncd(NCFile=None, Jac=None, Dat=None, Site=None, Comp=None,
@@ -162,79 +239,6 @@ def write_jac_ncd(NCFile=None, Jac=None, Dat=None, Site=None, Comp=None,
             (NCFile, ncout.data_model)
         )
 
-
-def read_data_jac(DatFile=None, out=True):
-    """
-    Read ModEM input data.
-
-    author: vrath
-    last changed: Feb 10, 2021
-    """
-    Data = []
-    Site = []
-    Comp = []
-    Head = []
-
-    with open(DatFile) as fd:
-        for line in fd:
-            if line.startswith("#") or line.startswith(">"):
-                Head.append(line)
-                continue
-
-            t = line.split()
-
-            if "PT" in t[7] or "RH" in t[7] or "PH" in t[7]:
-                tmp1 = [
-                    float(t[0]),
-                    float(t[2]),
-                    float(t[3]),
-                    float(t[4]),
-                    float(t[5]),
-                    float(t[6]),
-                    float(t[8]),
-                    float(t[9]),
-                ]
-                Data.append(tmp1)
-                Site.append([t[1]])
-                Comp.append([t[7]])
-            else:
-                tmp1 = [
-                    float(t[0]),
-                    float(t[2]),
-                    float(t[3]),
-                    float(t[4]),
-                    float(t[5]),
-                    float(t[6]),
-                    float(t[8]),
-                    float(t[10]),
-                ]
-                Data.append(tmp1)
-                tmp2 = [
-                    float(t[0]),
-                    float(t[2]),
-                    float(t[3]),
-                    float(t[4]),
-                    float(t[5]),
-                    float(t[6]),
-                    float(t[9]),
-                    float(t[10]),
-                ]
-                Data.append(tmp2)
-                Comp.append([t[7] + "R", t[7] + "I"])
-                Site.append([t[1], t[1]])
-
-    Site = [item for sublist in Site for item in sublist]
-    Site = np.asarray(Site, dtype=object)
-    Comp = [item for sublist in Comp for item in sublist]
-    Comp = np.asarray(Comp, dtype=object)
-
-    Data = np.asarray(Data)
-
-    nD = np.shape(Data)
-    if out:
-        print("readDat: %i data read from %s" % (nD[0], DatFile))
-
-    return Site, Comp, Data, Head
 
 
 def read_data(DatFile=None, out=True):

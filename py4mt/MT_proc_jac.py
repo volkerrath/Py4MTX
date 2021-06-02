@@ -28,6 +28,7 @@ import sys
 import time
 from datetime import datetime
 import warnings
+from sys import exit as error
 
 
 import numpy as np
