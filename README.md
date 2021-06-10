@@ -39,7 +39,7 @@ or:
 
 _conda create --name EM --file EM.txt_
 
-This will set up a Python 3.8 environment with all dependencies for aempy.
+This will set up a Python 3.8 environment with all dependencies for aempy. In case you want to use python 3.9, you currently are on your own. 
 
 (3) Activate this environment by:
 
