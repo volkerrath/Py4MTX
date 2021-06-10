@@ -45,7 +45,7 @@ This will set up a Python 3.8 environment with all dependencies for aempy.
 
 _conda activate EM_
 
-(4) Now the open source toolboxes used need to be installed (currently only mtpy, _https://github.com/MTgeophysics/mtpy_). For mtpy, download the current development version via the git system. Then, enter the download directory (usually called _mtpy_) and execute:
+(4) Now the remaining open source toolboxes used (i.e., not included in the anaconda framework) need to be installed (currently only mtpy, _https://github.com/MTgeophysics/mtpy_). For mtpy, download the current development version via the git system. Then, enter the download directory (usually called _mtpy_) and execute:
 
 _python setup.py install_ or _pip install [-e] ._
 
