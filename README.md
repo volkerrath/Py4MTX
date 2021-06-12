@@ -29,7 +29,13 @@ _git clone https://github.com/volkerrath/Py4MT/_
 
 This version will run under Python 3.6 - 3.8 (3.9 not yet fully tested, but seems to work correctly). To install it in an Linux environment (e.g. Ubuntu, SuSE), you need to do the following:
 
-(1) Download the latest Anaconda or Miniconda version (https://www.anaconda.com/distribution/), and install by running the downloaded bash script. In order to make updates secure and avoid inconsistencies, copy _.condarc_ to your home directory. 
+(1) Download the latest Anaconda or Miniconda version (https://www.anaconda.com/distribution/), and install by running the downloaded bash script.  In order to make updates secure and avoid inconsistencies, copy .condarc to your home directory. As the Miniconda installer is not updated very frequently, it is useful to run the following within Anaconda:
+
+_conda update conda_
+
+_conda update --all_
+
+Do this regularly to keep everything consistent!
 
 (2) Create an appropriate conda environment (including the necessary prerequisites) from the files EM.yml or EM.txt found in the Py4MT base directory by:
 
@@ -51,6 +57,8 @@ _python setup.py install_ or _pip install [-e] ._
 
 (5) In order to reproduce the identical behavior of matplotlib, you should copy the included  _matplotlibrc_ file to the appropriate directory. Under Linux (Ubuntu), this should be : _$HOME/.config/matplotlib/matplotlibrc_. Pertinent changes should be made there, or have to be made within the scripts/modules using the _mpl.rcParams[name]=value_ mechanism. 
 
+Don't forget to update also EM regularly, using _conda update --name EM --all_!
 
 Easiest way to run scripts is using spyder. Enjoy!
+
 
