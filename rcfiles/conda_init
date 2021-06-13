@@ -1,16 +1,24 @@
 #! /bin/bash 
+export MY_CONDA_ROOT='/home/vrath/.Miniconda/'
 
 # >>> conda initialize >>>
 # !! Contents within this block are managed by 'conda init' !!
-__conda_setup="$('/home/vrath/.Miniconda/bin/conda' 'shell.bash' 'hook' 2> /dev/null)"
+# __conda_setup="$('/home/vrath/.Miniconda/bin/conda' 'shell.bash' 'hook' 2> /dev/null)"
+__conda_setup="$('${MY_CONDA_ROOT}/bin/conda' 'shell.bash' 'hook' 2> /dev/null)"
 if [ $? -eq 0 ]; then
     eval "$__conda_setup"
 else
-    if [ -f "/home/vrath/.Miniconda/etc/profile.d/conda.sh" ]; then
-        . "/home/vrath/.Miniconda/etc/profile.d/conda.sh"
+    if [ -f ${MY_CONDA_ROOT}/etc/profile.d/conda.sh ]; then
+        . ${MY_CONDA_ROOT}/etc/profile.d/conda.sh
     else
-        export PATH="/home/vrath/.Miniconda/bin:$PATH"
+        export PATH='${MY_CONDA_ROOT}/bin:$PATH'
     fi
 fi
 unset __conda_setup
 # <<< conda initialize <<<
+
+export PY4MT_ROOT='/home/vrath/Py4MT/'
+export PY4MT_DATA='/home/vrath/work/MT/'
+ 
+export AEMPYX_ROOT='/home/vrath/AEMpyX/'
+export AEMPYX_DATA='/home/vrath/work/AEM_Data/Tellus/data/'
