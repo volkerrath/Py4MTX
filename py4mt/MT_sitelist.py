@@ -24,8 +24,16 @@ coordinates and elevations, e. g., for WALDIM analysis.
 import os
 import csv
 from mtpy.core.mt import MT
-
 import numpy as np
+
+
+PY4MT_ROOT = os.environ["PY4MT_ROOT"]
+mypath = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
+for pth in mypath:
+    if pth not in sys.path:
+        sys.path.insert(0,pth)
+
+
 
 dialect = 'unix'
 delim = ','

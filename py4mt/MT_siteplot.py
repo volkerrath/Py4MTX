@@ -29,6 +29,14 @@ import os
 import numpy as np
 from mtpy.core.mt import MT
 
+
+PY4MT_ROOT = os.environ["PY4MT_ROOT"]
+mypath = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
+for pth in mypath:
+    if pth not in sys.path:
+        sys.path.insert(0,pth)
+
+
 # Graphical paramter. Determine the plot formats produced,
 # and the required resolution:
 
