@@ -794,7 +794,7 @@ def clip_model(x, y, z, rho,
     return xn, yn, zn, rhon
 
 
-def mt1dfwd(freq, sig, d, inmod="r", out="imp"):
+def mt1dfwd(freq, sig, d, inmod="r", out="imp", magfield="b"):
     """
     Calulate 1D magnetotelluric forward response.
 
@@ -853,7 +853,10 @@ def mt1dfwd(freq, sig, d, inmod="r", out="imp"):
 
     if out.lower() == "imp":
 
-        return Z
+        if magfield.lower() =="b":
+            return Z/mu0
+        else:
+            return Z
 
     elif out.lower() == "rho":
         absZ = np.abs(Z)

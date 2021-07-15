@@ -42,7 +42,7 @@ print("\n\n")
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
-
+cm = 1/2.54  # centimeters in inches
 
 WorkDir =  r"/home/vrath/work/MT/Annecy/ANN26/"
 PredFile = r"/home/vrath/work/MT/Annecy/ANN26/Ann26_ZoPT_200_Alpha04_NLCG_017"
@@ -55,12 +55,21 @@ if not os.path.isdir(PlotDir):
     os.mkdir(PlotDir)
 
 
+PlotPred = True
+if PredFile == "":
+    PlotPred = False
+PlotObsv = True
+if ObsvFile == "":
+    PlotObsv = False
+
 PerLimits = (0.00005, 3.)
 PhTLimitsXX = (-5., 5.)
 PhTLimitsXY = (-1., 1.)
 ShowErrors = True
 ShowRMS = True
 
+FigSize = (16*cm, 16*cm) # Full
+# FigSize = (16*cm, 8*cm) #  NoDiag
 
 PlotFile = "Annecy_PhT_Alpha04"
 PlotFormat = [".pdf", ".png", ".svg"]
@@ -206,28 +215,33 @@ for s in Sites:
         RnormPhTyy, ResPhTyy = utl.calc_resnorm(PhTyyo, PhTyyc, PhTyye)
         nRMSPhTyy, _ = utl.calc_rms(PhTyyo, PhTyyc, 1.0/PhTyye)
 
-    fig, axes = plt.subplots(2,2, figsize = (16*cm, 12*cm))
+
+
+    fig, axes = plt.subplots(2,2, figsize = FigSize)
     fig.suptitle(r"Site: "+s
                  +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
                  +"\nUTMX: "+str(site_utmx)+"   UTMY: "+str(site_utmy)
                  +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m",
                  ha="left", x=0.1,fontsize=Fontsize-1)
 
-    axes[0,0].plot(Perxxc, PhTxxc, "-r", linewidth =Linewidth)
-    if ShowErrors:
-        axes[0,0].errorbar(Perxxo,PhTxxo, yerr=PhTxxe,
-                                linestyle="",
-                                marker="o",
-                                color="b",
-                                linewidth=Linewidth,
-                                markersize=Markersize)
-    else:
-        axes[0,0].plot(Perxxo, PhTxxo,
-                       color="b",
-                       marker="o",
-                       linestyle="",
-                       linewidth =Linewidth,
-                       markersize=Markersize)
+    if PlotPred:
+        axes[0,0].plot(Perxxc, PhTxxc, "-r", linewidth =Linewidth)
+
+    if PlotObsv:
+        if ShowErrors:
+            axes[0,0].errorbar(Perxxo,PhTxxo, yerr=PhTxxe,
+                                    linestyle="",
+                                    marker="o",
+                                    color="b",
+                                    linewidth=Linewidth,
+                                    markersize=Markersize)
+        else:
+            axes[0,0].plot(Perxxo, PhTxxo,
+                           color="b",
+                           marker="o",
+                           linestyle="",
+                           linewidth =Linewidth,
+                           markersize=Markersize)
 
 
     axes[0,0].set_xscale("log")
@@ -248,22 +262,31 @@ for s in Sites:
                            ha="left", va="bottom",
                            bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
+    if PlotPred:
+        axes[0,1].plot(Perxyc, PhTxyc, "-r", linewidth =Linewidth)
 
-    axes[0,1].plot(Perxyc, PhTxyc, "-r", linewidth =Linewidth)
-    if ShowErrors:
-        axes[0,1].errorbar(Perxyo,PhTxyo, yerr=PhTxye,
+    if PlotObsv:
+        if ShowErrors:
+            axes[0,1].errorbar(Perxyo,PhTxyo, yerr=PhTxye,
                         linestyle="",
                         marker="o",
                         color="b",
                         linewidth=Linewidth,
                         markersize=Markersize)
-    else:
-        axes[0,1].plot(Perxyo, PhTxyo,
-                       color="b",
-                       marker="o",
-                       linestyle="",
-                       linewidth =Linewidth,
-                       markersize=Markersize)
+
+            axes[0,1].errorbar(Perxyo,PhTxyo, yerr=PhTxye,
+                            linestyle="",
+                            marker="o",
+                            color="b",
+                            linewidth=Linewidth,
+                            markersize=Markersize)
+        else:
+            axes[0,1].plot(Perxyo, PhTxyo,
+                           color="b",
+                           marker="o",
+                           linestyle="",
+                           linewidth =Linewidth,
+                           markersize=Markersize)
     axes[0,1].set_xscale("log")
     axes[0,1].set_xlim(PerLimits)
     if PhTLimitsXY != ():
@@ -284,21 +307,24 @@ for s in Sites:
                            bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
 
-    axes[1,0].plot(Peryxc, PhTyxc, "-r", linewidth =Linewidth)
-    if ShowErrors:
-        axes[1,0].errorbar(Peryxo,PhTyxo, yerr=PhTyxe,
-                                linestyle="",
-                                marker="o",
-                                color="b",
-                                linewidth=Linewidth,
-                                markersize=Markersize)
-    else:
-        axes[1,0].plot(Peryxo, PhTyxo,
-                       color="b",
-                       marker="o",
-                       linestyle="",
-                       linewidth =Linewidth,
-                       markersize=Markersize)
+    if PlotPred:
+        axes[1,0].plot(Peryxc, PhTyxc, "-r", linewidth =Linewidth)
+
+    if PlotObsv:
+        if ShowErrors:
+            axes[1,0].errorbar(Peryxo,PhTyxo, yerr=PhTyxe,
+                                    linestyle="",
+                                    marker="o",
+                                    color="b",
+                                    linewidth=Linewidth,
+                                    markersize=Markersize)
+        else:
+            axes[1,0].plot(Peryxo, PhTyxo,
+                           color="b",
+                           marker="o",
+                           linestyle="",
+                           linewidth =Linewidth,
+                           markersize=Markersize)
 
     axes[1,0].set_xscale("log")
     axes[1,0].set_xlim(PerLimits)
@@ -318,21 +344,25 @@ for s in Sites:
                            ha="left", va="bottom",
                            bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
-    axes[1,1].plot(Peryyc, PhTyyc, "-r", linewidth =Linewidth)
-    if ShowErrors:
-       axes[1,1].errorbar(Peryyo,PhTyyo, yerr=PhTyye,
-                                linestyle="",
-                                marker="o",
-                                color="b",
-                                linewidth=Linewidth,
-                                markersize=Markersize)
-    else:
-        axes[1,1].plot(Peryyo, PhTyyo,
-                       color="b",
-                       marker="o",
-                       linestyle="",
-                       linewidth =Linewidth,
-                       markersize=Markersize)
+    if PlotPred:
+        axes[1,1].plot(Peryyc, PhTyyc, "-r", linewidth =Linewidth)
+
+    if PlotObsv:
+        if ShowErrors:
+           axes[1,1].errorbar(Peryyo,PhTyyo, yerr=PhTyye,
+                                    linestyle="",
+                                    marker="o",
+                                    color="b",
+                                    linewidth=Linewidth,
+                                    markersize=Markersize)
+        else:
+            axes[1,1].plot(Peryyo, PhTyyo,
+                           color="b",
+                           marker="o",
+                           linestyle="",
+                           linewidth =Linewidth,
+                           markersize=Markersize)
+
     axes[1,1].set_xscale("log")
     axes[1,1].set_xlim(PerLimits)
     if PhTLimitsXX != ():

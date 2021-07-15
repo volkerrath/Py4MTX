@@ -42,9 +42,16 @@ print("\n\n")
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
+cm = 1/2.54  # centimeters in inches
+
 WorkDir =  r"/home/vrath/work/MT/Annecy/ANN26/"
-PredFile = r"/home/vrath/work/MT/Annecy/ANN26/Ann26_ZoPT_200_Alpha04_NLCG_017"
+PredFile = r"/home/vrath/work/MT/Annecy/ANN26/Ann26_ZoPT_200_Alpha02_NLCG_013"
 ObsvFile = r"/home/vrath/work/MT/Annecy/ANN26/Ann26_ZoPT"
+
+# WorkDir =  r"/home/vrath/work/MT/Annecy/ANN26/"
+# PredFile = r"/home/vrath/work/MT/Annecy/ANN26/Ann26_ZoPT_200_Alpha04_NLCG_017"
+# ObsvFile = r"/home/vrath/work/MT/Annecy/ANN26/Ann26_ZoPT"
+
 PlotDir = WorkDir + 'Plots/'
 
 print(' Plots written to: %s' % PlotDir)
@@ -53,10 +60,19 @@ if not os.path.isdir(PlotDir):
     os.mkdir(PlotDir)
 
 
+PlotPred = True
+if PredFile == "":
+    PlotPred = False
+PlotObsv = True
+if ObsvFile == "":
+    PlotObsv = False
+
 PerLimits = (0.00005, 3.)
 TpLimits = (-.5, 0.5)
 ShowErrors = True
 ShowRMS = True
+
+FigSize = (16*cm, 8*cm)
 
 PlotFormat = [".pdf", ".png", ".svg"]
 PlotFile = "Annecy26_Tp_Alpha04"
@@ -111,7 +127,7 @@ Markersize = 4
 Grey = 0.7
 Lcycle =Lcycle = (cycler("linestyle", ["-", "--", ":", "-."])
           * cycler("color", ["r", "g", "b", "y"]))
-cm = 1/2.54  # centimeters in inches
+
 
 Sites = np.unique(SiteObs)
 
@@ -180,8 +196,7 @@ for s in Sites:
 
 
 
-
-        fig, axes = plt.subplots(1, 2, figsize = (16*cm, 7*cm), squeeze=False)
+            fig, axes = plt.subplots(1, 2, figsize = FigSize, squeeze=False)
 
         fig.suptitle(r"Site: "+s
                      +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
@@ -189,20 +204,26 @@ for s in Sites:
                      +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m",
                      ha="left", x=0.1,fontsize=Fontsize-1)
 
-        axes[0,0].plot(Perxc, Tpxrc, color="r",linestyle="-", linewidth=Linewidth)
-        axes[0,0].errorbar(Perxo,Tpxro, yerr=Tpxe,
-                                linestyle="",
-                                marker="o",
-                                color="r",
-                                linewidth=Linewidth,
-                                markersize=Markersize)
-        axes[0,0].plot(Perxc, Tpxic, color="b",linestyle="-", linewidth=Linewidth)
-        axes[0,0].errorbar(Perxo,Tpxio, yerr=Tpxe,
-                                linestyle="",
-                                marker="o",
-                                color="b",
-                                linewidth=Linewidth,
-                                markersize=Markersize)
+        if PlotPred:
+            axes[0,0].plot(Perxc, Tpxrc, color="r",linestyle="-", linewidth=Linewidth)
+
+        if PlotObsv:
+            axes[0,0].errorbar(Perxo,Tpxro, yerr=Tpxe,
+                            linestyle="",
+                            marker="o",
+                            color="r",
+                            linewidth=Linewidth,
+                            markersize=Markersize)
+        if PlotPred:
+            axes[0,0].plot(Perxc, Tpxic, color="b",linestyle="-", linewidth=Linewidth)
+
+        if PlotObsv:
+            axes[0,0].errorbar(Perxo,Tpxio, yerr=Tpxe,
+                            linestyle="",
+                            marker="o",
+                            color="b",
+                            linewidth=Linewidth,
+                            markersize=Markersize)
         axes[0,0].set_xscale("log")
         axes[0,0].set_xlim(PerLimits)
         if TpLimits != ():
@@ -217,27 +238,32 @@ for s in Sites:
             nRMSi = np.around(nRMSTpxi,1)
             StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
             axes[0,0].text(0.05, 0.05,StrRMS,
-                               transform=axes[0,0].transAxes,
-                               fontsize = Fontsize-2,
-                               ha="left", va="bottom",
-                               bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
+                            transform=axes[0,0].transAxes,
+                            fontsize = Fontsize-2,
+                            ha="left", va="bottom",
+                            bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
 
+        if PlotPred:
+            axes[0,1].plot(Peryc, Tpyrc, color="r",linestyle="-", linewidth=Linewidth)
 
-        axes[0,1].plot(Peryc, Tpyrc, color="r",linestyle="-", linewidth=Linewidth)
-        axes[0,1].errorbar(Peryo,Tpyro, yerr=Tpye,
-                                linestyle="",
-                                marker="o",
-                                color="r",
-                                linewidth=Linewidth,
-                                markersize=Markersize)
-        axes[0,1].plot(Peryc, Tpyic, color="b",linestyle="-", linewidth=Linewidth)
-        axes[0,1].errorbar(Peryc,Tpyio, yerr=Tpye,
-                                linestyle="",
-                                marker="o",
-                                color="b",
-                                linewidth=Linewidth,
-                                markersize=Markersize)
+        if PlotObsv:
+            axes[0,1].errorbar(Peryo,Tpyro, yerr=Tpye,
+                            linestyle="",
+                            marker="o",
+                            color="r",
+                            linewidth=Linewidth,
+                            markersize=Markersize)
+        if PlotPred:
+            axes[0,1].plot(Peryc, Tpyic, color="b",linestyle="-", linewidth=Linewidth)
+
+        if PlotObsv:
+            axes[0,1].errorbar(Peryc,Tpyio, yerr=Tpye,
+                            linestyle="",
+                            marker="o",
+                            color="b",
+                            linewidth=Linewidth,
+                            markersize=Markersize)
 
         axes[0,1].set_xscale("log")
         axes[0,1].set_xlim(PerLimits)
