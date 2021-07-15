@@ -1,5 +1,10 @@
 #! /bin/bash 
 export MY_CONDA_ROOT='/home/vrath/.Miniconda/'
+export AEMPYX_ROOT='/home/vrath/AEMpyX/'
+export AEMPYX_DATA='/home/vrath/work/AEM_Data/Tellus/data/'
+export Py4MT_ROOT='/home/vrath/Py4MT/'
+export Py4MT_DATA='/home/vrath/work/MT/'
+
 
 # >>> conda initialize >>>
 # !! Contents within this block are managed by 'conda init' !!
@@ -16,9 +21,3 @@ else
 fi
 unset __conda_setup
 # <<< conda initialize <<<
-
-export PY4MT_ROOT='/home/vrath/Py4MT/'
-export PY4MT_DATA='/home/vrath/work/MT/'
- 
-export AEMPYX_ROOT='/home/vrath/AEMpyX/'
-export AEMPYX_DATA='/home/vrath/work/AEM_Data/Tellus/data/'

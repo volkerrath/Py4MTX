@@ -3,22 +3,22 @@
 conda env export -n base > ~/Admin/Anaconda/base.yml
 conda env export -n EM >~/Admin/Anaconda/EM.yml
 #conda env export -n SimPEG >~/Admin/Anaconda/SimPEG.yml
-conda env export -n Fenics >~/Admin/Anaconda/Fenics.yml
+# conda env export -n Fenics >~/Admin/Anaconda/Fenics.yml
 #conda env export -n EarthEngine >~/Admin/Anaconda/EarthEngine.yml
 conda env export -n Gymli >~/Admin/Anaconda/Gymli.yml
 #conda env export -n Esys >~/Admin/Anaconda/Esys.yml
-conda env export -n UQ >~/Admin/Anaconda/UQ.yml
+conda env export -n RAFTA >~/Admin/Anaconda/RAFTA.yml
 #conda env export -n GemPy >~/Admin/Anaconda/GemPy.yml
 
 
 conda list  -n base > ~/Admin/Anaconda/base.txt
 conda list  -n EM >~/Admin/Anaconda/EM.txt
 #conda list  -n SimPEG >~/Admin/Anaconda/SimPEG.txt
-conda list  -n Fenics >~/Admin/Anaconda/Fenics.txt
+#conda list  -n Fenics >~/Admin/Anaconda/Fenics.txt
 #conda list  -n EarthEngine >~/Admin/Anaconda/EarthEngine.txt
 conda list  -n Gymli >~/Admin/Anaconda/Gymli.txt
 #conda list  -n Esys >~/Admin/Anaconda/Esys.txt
-conda list  -n UQ >~/Admin/Anaconda/UQ.txt
+conda list  -n RAFTA >~/Admin/Anaconda/RAFTA.txt
 #conda list  -n GemPy >~/Admin/Anaconda/GemPy.txt
 
 

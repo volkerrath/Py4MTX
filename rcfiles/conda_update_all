@@ -7,19 +7,19 @@ echo "*********** EM"
 conda update --all -y -n EM
 # echo "*********** SimPEG"
 # conda update --all -y -n SimPEG
-echo "*********** Fenics"
-conda update --all -y -n Fenics
+# echo "*********** Fenics"
+#Rconda update --all -y -n Fenics
 #echo "*********** EarthEngine"
 #conda update --all -y -n EarthEngine
 echo "*********** Gymli"
 conda update --all -y -n Gymli
 #echo "*********** Hippy"
 #conda update --all -y -n Hippy
-echo "*********** UQ"
-conda update --all -y -n UQ
+echo "*********** RAFTA"
+conda update --all -y -n RAFTA
 #echo "*********** GemPy"
 #conda update --all -y -n GemPy
-echo "*********** Esys"
-conda update --all -y -n Esys
+# echo "*********** Esys"
+# conda update --all -y -n Esys
 
 conda_export_all
