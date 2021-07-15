@@ -23,8 +23,8 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from cycler import cycler
 
-mypath = ["/home/vrath/Py4MT/py4mt/modules/",
-          "/home/vrath/Py4MT/py4mt/scripts/"]
+PY4MT_ROOT = os.environ["PY4MT_ROOT"]
+mypath = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -56,6 +56,8 @@ if not os.path.isdir(PlotDir):
 PerLimits = (0.00005, 3.)
 ZLimitsXX = ()
 ZLimitsXY = ()
+
+
 ShowErrors = True
 ShowRMS = True
 PlotFull = False
