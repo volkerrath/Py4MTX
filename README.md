@@ -61,9 +61,9 @@ _python setup.py install_ or _pip install [-e] ._
 
 Example: 
 
-_export AEMPYX_ROOT='${HOME}/AEMpyX/'_
+_export PY4MT_ROOT='${HOME}/Py4MT/'_
 	
-_export AEMPYX_DATA='${HOME}/AEM_Data/Tellus/data/'_
+_export PY4MT_DATA='${HOME}/Py4MT/data/'_
 
 Don't forget to update also EM regularly, using _conda update --name EM --all_!
 
