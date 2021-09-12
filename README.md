@@ -18,7 +18,11 @@ This repository contains the following subdirectories:
  	Contains the scripts  for preprocessing, visualization, and one-dimensional inversion of 
  	AEM data, explaining the typical work flow using the toolbox. Also included is a workflow 
 	for static shift correction of MT observations (work in progress).     	 
-
+ 
+- 	**aempy/notebooks**
+ 	Contains jupyter notebooks for the most important scripts using the toolbox. 
+	  	
+	
 - 	**rcfiles**
 	Contains some useful helper files for working with the conda EM environment.
 
@@ -45,7 +49,7 @@ or:
 
 _conda create --name EM --file EM.txt_
 
-This will set up a Python 3.8 environment with all dependencies for aempy. In case you want to use python 3.9, you currently are on your own. 
+This will set up a Python 3.8 environment with all dependencies for aempy. In case you want to use python 3.9, corresponding EM39.yml and EM39.txt are available. Dont forget to update also EM/EM39 regularly, using _conda update --name EM --all_! 
 
 (3) Activate this environment by:
 
