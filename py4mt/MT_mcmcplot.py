@@ -26,6 +26,14 @@ Revision History:
 
 """
 import os
+import sys
+
+PY4MT_ROOT = os.environ["PY4MT_ROOT"]
+mypath = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
+for pth in mypath:
+    if pth not in sys.path:
+        sys.path.insert(0,pth)
+
 import modules.plotrjmcmc as pmc
 
 plot_format = 'pdf'
