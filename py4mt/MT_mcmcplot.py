@@ -77,5 +77,6 @@ for path in result_files:
                     colormap='rainbow')
 
     r.plot()
+
 # for other available colormaps see:
 # https://matplotlib.org/tutorials/colors/colormaps.html

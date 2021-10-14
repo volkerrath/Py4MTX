@@ -42,10 +42,15 @@ print("\n\n")
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
 cm = 1/2.54  # centimeters in inches
+WorkDir =  r"/home/vrath/work/MT_Data/Reunion/LydiaModel/"
+PredFile = r"/home/vrath/work/MT_Data/Reunion/LydiaModel/reuf3_NLCG_020"
+ObsvFile = r"/home/vrath/work/MT_Data/Reunion/LydiaModel/reuf2dat-net"
 
-WorkDir =  r"/home/vrath/work/MT/Annecy/ANN26/"
-PredFile = r"/home/vrath/work/MT/Annecy/ANN26/Ann26_ZoPT_200_Alpha02_NLCG_013"
-ObsvFile = r"/home/vrath/work/MT/Annecy/ANN26/Ann26_ZoPT"
+
+# WorkDir =  r"/home/vrath/work/MT/Annecy/ANN26/"
+# PredFile = r"/home/vrath/work/MT/Annecy/ANN26/Ann26_ZoPT_200_Alpha02_NLCG_013"
+# ObsvFile = r"/home/vrath/work/MT/Annecy/ANN26/Ann26_ZoPT"
+
 PlotDir = WorkDir + 'Plots/'
 
 print(' Plots written to: %s' % PlotDir)
@@ -61,19 +66,23 @@ PlotObsv = True
 if ObsvFile == "":
     PlotObsv = False
 
-PerLimits = (0.00005, 3.)
+PerLimits = (0.0003, 3000.)
 ZLimitsXX = ()
 ZLimitsXY = ()
 
 ShowErrors = True
 ShowRMS = True
-PlotFull = False
+PlotFull = True
 
-#FigSize = (16*cm, 16*cm) # Full
-FigSize = (16*cm, 8*cm) #  NoDiag
+EPSG = 0  #5644
 
-PlotFile = "Annecy26_ZPT_Alpha04"
-PlotFormat = [".pdf", ".png", ".svg"]
+if PlotFull:
+    FigSize = (16*cm, 16*cm) #
+else:
+    FigSize = (16*cm, 10*cm)
+
+PlotFile = "LaReunion_LydiaModel_OffD"
+PlotFormat = [".pdf", ".png",]
 PdfCatalog = True
 if not ".pdf" in PlotFormat:
     error(" No pdfs generated. No catalog possible!")
@@ -84,7 +93,6 @@ PdfCName = PlotFile
 """
 
 """
-EPSG = 5015
 
 start = time.time()
 FF = ObsvFile
@@ -132,9 +140,16 @@ for s in Sites:
     site = (obs_sit==s)
     site_lon = lon[site][0]
     site_lat = lat[site][0]
-    site_utmx, site_utmy = utl.proj_latlon_to_utm(site_lat, site_lon, utm_zone=EPSG)
+    if EPSG==0:
+        site_utmx = x[site][0]
+        site_utmy = y[site][0]
+    else:
+        site_utmx, site_utmy = utl.proj_latlon_to_utm(site_lat, site_lon,
+                                                      utm_zone=EPSG)
+
     site_utmx = int(np.round(site_utmx))
     site_utmy = int(np.round(site_utmy))
+
     site_elev = z[site][0]
 
     if PlotFull:
@@ -246,12 +261,13 @@ for s in Sites:
 
     if PlotFull:
 
-        fig, axes = plt.subplots(2,2, figsize = FigSize)
+        fig, axes = plt.subplots(2,2, figsize = FigSize, subplot_kw=dict(box_aspect=1.),
+                         sharex=False, sharey=False)
 
         fig.suptitle(r"Site: "+s
                      +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
                      +"\nUTMX: "+str(site_utmx)+"   UTMY: "+str(site_utmy)
-                     +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m",
+                     +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m\n",
                      ha="left", x=0.1,fontsize=Fontsize-1)
 
 #  ZXX
@@ -298,10 +314,10 @@ for s in Sites:
         if ZLimitsXX != ():
             axes[0,0].set_ylim(ZLimitsXX)
         axes[0,0].legend(["real", "imag"])
-        axes[0,0].xaxis.set_ticklabels([])
+        # axes[0,0].xaxis.set_ticklabels([])
         axes[0,0].tick_params(labelsize=Labelsize-1)
         axes[0,0].set_ylabel("|ZXX|", fontsize=Fontsize)
-        axes[0,0].grid("major", "both", linestyle="-", linewidth=0.5)
+        axes[0,0].grid("both", "both", linestyle="-", linewidth=0.5)
         if ShowRMS:
             nRMSr = np.around(nRMSZxxr,1)
             nRMSi = np.around(nRMSZxxi,1)
@@ -355,10 +371,10 @@ for s in Sites:
         if ZLimitsXY != ():
             axes[0,1].set_ylim(ZLimitsXY)
         axes[0,1].legend(["real", "imag"])
-        axes[0,1].xaxis.set_ticklabels([])
+        # axes[0,1].xaxis.set_ticklabels([])
         axes[0,1].tick_params(labelsize=Labelsize-1)
         axes[0,1].set_ylabel("|ZXY|", fontsize=Fontsize)
-        axes[0,1].grid("major", "both", linestyle="-", linewidth=0.5)
+        axes[0,1].grid("both", "both", linestyle="-", linewidth=0.5)
         if ShowRMS:
             nRMSr = np.around(nRMSZxyr,1)
             nRMSi = np.around(nRMSZxyi,1)
@@ -412,10 +428,10 @@ for s in Sites:
         if ZLimitsXY != ():
             axes[1,0].set_ylim(ZLimitsXY)
         axes[1,0].legend(["real", "imag"])
-        axes[1,0].xaxis.set_ticklabels([])
+        # axes[1,0].xaxis.set_ticklabels([])
         axes[1,0].tick_params(labelsize=Labelsize-1)
         axes[1,0].set_ylabel("|ZYX|", fontsize=Fontsize)
-        axes[1,0].grid("major", "both", linestyle="-", linewidth=0.5)
+        axes[1,0].grid("both", "both", linestyle="-", linewidth=0.5)
         if ShowRMS:
             nRMSr = np.around(nRMSZyxr,1)
             nRMSi = np.around(nRMSZyxi,1)
@@ -470,10 +486,10 @@ for s in Sites:
         if ZLimitsXX != ():
             axes[1,1].set_ylim(ZLimitsXX)
         axes[1,1].legend(["real", "imag"])
-        axes[1,1].xaxis.set_ticklabels([])
+        # axes[1,1].xaxis.set_ticklabels([])
         axes[1,1].tick_params(labelsize=Labelsize-1)
         axes[1,1].set_ylabel("|ZYY|", fontsize=Fontsize)
-        axes[1,1].grid("major", "both", linestyle="-", linewidth=0.5)
+        axes[1,1].grid("both", "both", linestyle="-", linewidth=0.5)
         if ShowRMS:
             nRMSr = np.around(nRMSZyyr,1)
             nRMSi = np.around(nRMSZyyi,1)
@@ -485,13 +501,14 @@ for s in Sites:
                                bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
     else:
+        fig, axes = plt.subplots(1,2, figsize = FigSize, subplot_kw=dict(box_aspect=1.),
+                         sharex=False, sharey=False)
 
-        fig, axes = plt.subplots(1,2, figsize = FigSize)
 
         fig.suptitle(r"Site: "+s
                      +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
                      +"\nUTMX: "+str(site_utmx)+"   UTMY: "+str(site_utmy)
-                     +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m",
+                     +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m\n",
                      ha="left", x=0.1,fontsize=Fontsize-1)
 
 
@@ -540,7 +557,7 @@ for s in Sites:
         axes[0,].legend(["real", "imag"])
         axes[0,].tick_params(labelsize=Labelsize-1)
         axes[0,].set_ylabel("|ZXY|", fontsize=Fontsize)
-        axes[0,].grid("major", "both", linestyle="-", linewidth=0.5)
+        axes[0,].grid("both", "both", linestyle="-", linewidth=0.5)
         if ShowRMS:
             nRMSr = np.around(nRMSZxyr,1)
             nRMSi = np.around(nRMSZxyi,1)
@@ -595,7 +612,7 @@ for s in Sites:
         axes[1,].legend(["real", "imag"])
         axes[1,].tick_params(labelsize=Labelsize-1)
         axes[1,].set_ylabel("|ZYX|", fontsize=Fontsize)
-        axes[1,].grid("major", "both", linestyle="-", linewidth=0.5)
+        axes[1,].grid("both", "both", linestyle="-", linewidth=0.5)
         if ShowRMS:
             nRMSr = np.around(nRMSZyxr,1)
             nRMSi = np.around(nRMSZyxi,1)
@@ -607,7 +624,7 @@ for s in Sites:
                                bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
 
-    fig.tight_layout()
+    # fig.tight_layout()
 
     for F in PlotFormat:
         plt.savefig(PlotDir+PlotFile+"_"+s+F, dpi=400)

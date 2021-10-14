@@ -126,7 +126,7 @@ dependencies:
   - gcc_linux-64=9.3.0=h1ee779e_30
   - gdal=3.2.1=py38hc0b2d6b_7
   - gdk-pixbuf=2.42.6=h04a7f16_0
-  - geoana=0.0.6=py_1
+  - geoana=0.1.2=py38h1fd1430_0
   - geocoder=1.38.1=py_1
   - geojson=2.5.0=py_0
   - geopandas=0.9.0=py_1
@@ -187,7 +187,7 @@ dependencies:
   - ipyvue=1.6.1=pyhd8ed1ab_0
   - ipyvuetify=1.8.1=pyhd8ed1ab_0
   - ipywebrtc=0.6.0=pyhd8ed1ab_0
-  - ipywidgets=7.6.4=pyhd3eb1b0_0
+  - ipywidgets=7.6.5=pyhd3eb1b0_1
   - isort=5.9.3=pyhd3eb1b0_0
   - jedi=0.18.0=py38h06a4308_1
   - jeepney=0.7.1=pyhd3eb1b0_0
@@ -232,7 +232,7 @@ dependencies:
   - libevent=2.1.10=h9b69904_4
   - libffi=3.3=he6710b0_2
   - libgcc-devel_linux-64=9.3.0=hb95220a_17
-  - libgcc-ng=11.2.0=h1d223b6_10
+  - libgcc-ng=11.2.0=h1d223b6_11
   - libgd=2.3.2=h78a0170_0
   - libgdal=3.2.1=h38ff51b_7
   - libgfortran=3.0.0=1
@@ -240,7 +240,7 @@ dependencies:
   - libgfortran5=9.3.0=ha5ec8a7_17
   - libglib=2.68.4=h3e27bee_0
   - libglu=9.0.0=hf484d3e_1
-  - libgomp=11.2.0=h1d223b6_10
+  - libgomp=11.2.0=h1d223b6_11
   - libgpuarray=0.7.6=h14c3975_0
   - libiconv=1.16=h516909a_0
   - libidn2=2.3.2=h7f8727e_0
@@ -251,6 +251,7 @@ dependencies:
   - libllvm11=11.1.0=h3826bc1_0
   - libnetcdf=4.7.4=nompi_h56d31a8_107
   - libnghttp2=1.41.0=hf8bcb03_2
+  - libnsl=2.0.0=h7f98852_0
   - libogg=1.3.5=h27cfd23_1
   - libopenblas=0.3.12=pthreads_h4812303_1
   - libopus=1.3.1=h7b6447c_0
@@ -263,7 +264,7 @@ dependencies:
   - libspatialite=5.0.1=he52d314_3
   - libssh2=1.9.0=h1ba5d50_1
   - libstdcxx-devel_linux-64=9.3.0=hf0c5c8d_17
-  - libstdcxx-ng=11.2.0=he4da1e4_10
+  - libstdcxx-ng=11.2.0=he4da1e4_11
   - libtasn1=4.16.0=h27cfd23_0
   - libtheora=1.1.1=h5ab3b9f_1
   - libthrift=0.14.1=he6d91bd_2
@@ -331,8 +332,8 @@ dependencies:
   - numba=0.53.1=py38ha9443f7_0
   - numexpr=2.7.3=py38h4be448d_1
   - numpoly=1.2.3=pyhd8ed1ab_0
-  - numpy=1.20.3=py38h3dbb7de_0
-  - numpy-base=1.20.3=py38h39b7dee_0
+  - numpy=1.21.2=py38hd8d4704_0
+  - numpy-base=1.21.2=py38h2b8c604_0
   - numpydoc=1.1.0=pyhd3eb1b0_1
   - olefile=0.46=pyhd3eb1b0_0
   - openh264=2.1.1=h780b84a_0
@@ -408,7 +409,7 @@ dependencies:
   - pysocks=1.7.1=py38h06a4308_0
   - pytest=6.2.4=py38h06a4308_2
   - pytest-runner=5.3.1=pyhd3eb1b0_0
-  - python=3.8.11=h12debd9_0_cpython
+  - python=3.8.12=h12debd9_0
   - python-dateutil=2.8.2=pyhd3eb1b0_0
   - python-decouple=3.4=pyhd3deb0d_0
   - python-lsp-black=1.0.0=pyhd8ed1ab_0
@@ -539,7 +540,7 @@ dependencies:
   - wxpython=4.1.1=py38h98185fb_1
   - x264=1!161.3030=h7f98852_1
   - xarray=0.19.0=pyhd3eb1b0_1
-  - xerces-c=3.2.3=h9d8b166_2
+  - xerces-c=3.2.3=h9d8b166_3
   - xorg-kbproto=1.0.7=h7f98852_1002
   - xorg-libice=1.0.10=h7f98852_0
   - xorg-libsm=1.2.3=hd9c2040_1000

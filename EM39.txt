@@ -177,10 +177,10 @@ ipyvolume                 0.6.0a8            pyhd8ed1ab_0    conda-forge
 ipyvue                    1.6.1              pyhd8ed1ab_0    conda-forge
 ipyvuetify                1.8.1              pyhd8ed1ab_0    conda-forge
 ipywebrtc                 0.6.0              pyhd8ed1ab_0    conda-forge
-ipywidgets                7.6.4              pyhd3eb1b0_0  
+ipywidgets                7.6.5              pyhd3eb1b0_1  
 isort                     5.9.3              pyhd3eb1b0_0  
 jax                       0.2.22             pyhd8ed1ab_0    conda-forge
-jaxlib                    0.1.71           py39hde0f152_0    conda-forge
+jaxlib                    0.1.72           py39hde0f152_0    conda-forge
 jedi                      0.18.0           py39h06a4308_1  
 jeepney                   0.7.1              pyhd3eb1b0_0  
 jinja2                    2.11.3             pyhd3eb1b0_0  
@@ -226,13 +226,13 @@ libev                     4.33                 h7f8727e_1
 libevent                  2.1.10               h9b69904_4    conda-forge
 libffi                    3.3                  he6710b0_2  
 libgcc-devel_linux-64     9.3.0               hb95220a_17  
-libgcc-ng                 11.2.0              h1d223b6_10    conda-forge
+libgcc-ng                 11.2.0              h1d223b6_11    conda-forge
 libgd                     2.3.2                h78a0170_0    conda-forge
 libgdal                   3.3.1                h07ae0cd_2    conda-forge
 libgfortran-ng            9.3.0               ha5ec8a7_17  
 libgfortran5              9.3.0               ha5ec8a7_17  
 libglib                   2.68.4               h3e27bee_0    conda-forge
-libgomp                   11.2.0              h1d223b6_10    conda-forge
+libgomp                   11.2.0              h1d223b6_11    conda-forge
 libgpuarray               0.7.6                h14c3975_0  
 libiconv                  1.16                 h516909a_0    conda-forge
 libidn2                   2.3.2                h7f8727e_0  
@@ -242,6 +242,7 @@ libllvm10                 10.0.1               hbcb73fb_5
 libllvm11                 11.1.0               h3826bc1_0  
 libnetcdf                 4.8.1           nompi_hcd642e3_100    conda-forge
 libnghttp2                1.41.0               hf8bcb03_2  
+libnsl                    2.0.0                h7f98852_0    conda-forge
 libogg                    1.3.5                h27cfd23_1  
 libopenblas               0.3.17          pthreads_h8fe5266_1    conda-forge
 libopus                   1.3.1                h7b6447c_0  
@@ -254,7 +255,7 @@ libspatialindex           1.9.3                h2531618_0
 libspatialite             5.0.1                h8694cbe_6    conda-forge
 libssh2                   1.9.0                h1ba5d50_1  
 libstdcxx-devel_linux-64  9.3.0               hf0c5c8d_17  
-libstdcxx-ng              11.2.0              he4da1e4_10    conda-forge
+libstdcxx-ng              11.2.0              he4da1e4_11    conda-forge
 libtasn1                  4.16.0               h27cfd23_0  
 libthrift                 0.14.2               hcc01f38_0  
 libtiff                   4.3.0                hf544144_0    conda-forge
@@ -499,7 +500,7 @@ wrapt                     1.12.1           py39he8ac12f_1
 wurlitzer                 2.1.1            py39h06a4308_0  
 x264                      1!157.20191217       h7b6447c_0  
 xarray                    0.19.0             pyhd3eb1b0_1  
-xerces-c                  3.2.3                h9d8b166_2    conda-forge
+xerces-c                  3.2.3                h9d8b166_3    conda-forge
 xorg-kbproto              1.0.7             h7f98852_1002    conda-forge
 xorg-libice               1.0.10               h7f98852_0    conda-forge
 xorg-libsm                1.2.3             hd9c2040_1000    conda-forge

@@ -43,14 +43,17 @@ print("\n\n")
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
 cm = 1/2.54  # centimeters in inches
+WorkDir =  r"/home/vrath/work/MT_Data/Reunion/LydiaModel/"
+PredFile = r"/home/vrath/work/MT_Data/Reunion/LydiaModel/reuf3_NLCG_020"
+ObsvFile = r"/home/vrath/work/MT_Data/Reunion/LydiaModel/reuf2dat-net"
 
-WorkDir =  r"/home/vrath/work/MT/Annecy/ANN26/"
-PredFile = r"/home/vrath/work/MT/Annecy/ANN26/Ann26_ZoPT_200_Alpha02_NLCG_013"
-ObsvFile = r"/home/vrath/work/MT/Annecy/ANN26/Ann26_ZoPT"
+# WorkDir =  r"/home/vrath/work/MT_Data/Annecy/ANN26/"
+# PredFile = r"/home/vrath/work/MT_Data/Annecy/ANN26/Ann26_ZoPT_200_Alpha02_NLCG_013"
+# ObsvFile = r"/home/vrath/work/MT_Data/Annecy/ANN26/Ann26_ZoPT"
 
-# WorkDir =  r"/home/vrath/work/MT/Annecy/ANN26/"
-# PredFile = r"/home/vrath/work/MT/Annecy/ANN26/Ann26_ZoPT_200_Alpha04_NLCG_017"
-# ObsvFile = r"/home/vrath/work/MT/Annecy/ANN26/Ann26_ZoPT"
+# WorkDir =  r"/home/vrath/work/MT_Data/Annecy/ANN26/"
+# PredFile = r"/home/vrath/work/MT_Data/Annecy/ANN26/Ann26_ZoPT_200_Alpha04_NLCG_017"
+# ObsvFile = r"/home/vrath/work/MT_Data/Annecy/ANN26/Ann26_ZoPT"
 
 PlotDir = WorkDir + 'Plots/'
 
@@ -71,11 +74,12 @@ PerLimits = (0.00005, 3.)
 TpLimits = (-.5, 0.5)
 ShowErrors = True
 ShowRMS = True
+EPSG = 0 # 5015
 
 FigSize = (16*cm, 8*cm)
 
 PlotFormat = [".pdf", ".png", ".svg"]
-PlotFile = "Annecy26_Tp_Alpha04"
+PlotFile = "Reunion_KydiaModel_Tipper"
 PdfCatalog = True
 if not ".pdf" in PlotFormat:
     error(" No pdfs generated. No catalog possible!")
@@ -87,7 +91,7 @@ PdfCName = PlotFile
 
 required virtual size
 """
-EPSG = 5015
+
 
 start = time.time()
 
@@ -139,9 +143,18 @@ for s in Sites:
     if np.any(test) == True:
         site_lon = lon[site][0]
         site_lat = lat[site][0]
-        site_utmx, site_utmy = utl.proj_latlon_to_utm(site_lat, site_lon, utm_zone=EPSG)
+
+        if EPSG==0:
+            site_utmx = x[site][0]
+            site_utmy = y[site][0]
+        else:
+            site_utmx, site_utmy = utl.proj_latlon_to_utm(site_lat, site_lon,
+                                                          utm_zone=EPSG)
+
         site_utmx = int(np.round(site_utmx))
         site_utmy = int(np.round(site_utmy))
+
+
         site_elev = z[site][0]
 
         cmp ="TX"
@@ -195,14 +208,16 @@ for s in Sites:
             nRMSTpyi, _ = utl.calc_rms(Tpyio, Tpyic, 1.0/Tpye)
 
 
-
-            fig, axes = plt.subplots(1, 2, figsize = FigSize, squeeze=False)
+        fig, axes = plt.subplots(1,2, figsize = FigSize, subplot_kw=dict(box_aspect=1.),
+                         sharex=False, sharey=False)
 
         fig.suptitle(r"Site: "+s
                      +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
                      +"\nUTMX: "+str(site_utmx)+"   UTMY: "+str(site_utmy)
-                     +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m",
+                     +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m\n",
                      ha="left", x=0.1,fontsize=Fontsize-1)
+
+
 
         if PlotPred:
             axes[0,0].plot(Perxc, Tpxrc, color="r",linestyle="-", linewidth=Linewidth)
@@ -232,7 +247,7 @@ for s in Sites:
         # axes[0,0].xaxis.set_ticklabels([])
         axes[0,0].tick_params(labelsize=Labelsize-1)
         axes[0,0].set_ylabel("Tpy", fontsize=Fontsize)
-        axes[0,0].grid("major", "both", linestyle=":", linewidth=0.5)
+        axes[0,0].grid("both", "both", linestyle=":", linewidth=0.5)
         if ShowRMS:
             nRMSr = np.around(nRMSTpxr,1)
             nRMSi = np.around(nRMSTpxi,1)
@@ -273,7 +288,7 @@ for s in Sites:
         # axes[0,1].xaxis.set_ticklabels([])
         axes[0,1].tick_params(labelsize=Labelsize-1)
         axes[0,1].set_ylabel("Tpx", fontsize=Fontsize)
-        axes[0,1].grid("major", "both", linestyle=":", linewidth=0.5)
+        axes[0,1].grid("both", "both", linestyle=":", linewidth=0.5)
         if ShowRMS:
             nRMSr = np.around(nRMSTpyr,1)
             nRMSi = np.around(nRMSTpyi,1)
@@ -285,8 +300,6 @@ for s in Sites:
                                bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
 
-
-        fig.tight_layout()
 
         for F in PlotFormat:
             plt.savefig(PlotDir+PlotFile+"_"+s+F, dpi=400)
