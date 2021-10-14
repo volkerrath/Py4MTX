@@ -81,7 +81,7 @@ if PlotFull:
 else:
     FigSize = (16*cm, 10*cm)
 
-PlotFile = "LaReunion_LydiaModel_OffD"
+PlotFile = "LaReunion_LydiaModel_FullZ"
 PlotFormat = [".pdf", ".png",]
 PdfCatalog = True
 if not ".pdf" in PlotFormat:

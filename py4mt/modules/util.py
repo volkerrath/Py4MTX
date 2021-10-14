@@ -557,8 +557,7 @@ def calc_rms(dcalc=None, dobs=None, Wd=1.0):
 
     return nrms, srms
 
-
-def make_pdf_catalog(WorkDir="./", FileName=None):
+def make_pdf_catalog(WorkDir="./", PdfList= None, FileName=None):
     """
     Make pdf catalog from site-plots
 
@@ -574,17 +573,46 @@ def make_pdf_catalog(WorkDir="./", FileName=None):
     None.
 
     """
-    from PyPDF2 import PdfFileMerger
+    import fitz
 
-    catalog = PdfFileMerger()
-    pdflist = []
-    files = os.listdir(WorkDir)
-    for entry in sorted(files, key=str):
-        if entry.endswith(".pdf") and entry.startswith(FileName+"_"):
-           catalog.append(WorkDir+entry)
-           pdflist.append(entry)
+    catalog = fitz.open()
 
-    CatName = WorkDir+FileName+".pdf"
-    catalog.write(CatName)
-    print("\n"+str(np.size(pdflist))+" files collected to "+CatName)
+    for pdf in PdfList:
+        with fitz.open(pdf) as mfile:
+            catalog.insertPDF(mfile)
 
+    catalog.save(FileName, garbage=4, clean = True, deflate=True)
+    catalog.close()
+
+    print("\n"+str(np.size(PdfList))+" files collected to "+FileName)
+
+
+# def make_pdf_catalog(WorkDir="./", FileName=None):
+#     """
+#     Make pdf catalog from site-plots
+
+#     Parameters
+#     ----------
+#     Workdir : string
+#         Working directory.
+#     Filename : string
+#         Filename. Files to be appended must begin with this string.
+
+#     Returns
+#     -------
+#     None.
+
+#     """
+#     from PyPDF2 import PdfFileMerger
+
+#     catalog = PdfFileMerger()
+#     pdflist = []
+#     files = os.listdir(WorkDir)
+#     for entry in sorted(files, key=str):
+#         if entry.endswith(".pdf") and entry.startswith(FileName+"_"):
+#            catalog.append(WorkDir+entry)
+#            pdflist.append(entry)
+
+#     CatName = WorkDir+FileName+".pdf"
+#     catalog.write(CatName)
+#     print("\n"+str(np.size(pdflist))+" files collected to "+CatName)
