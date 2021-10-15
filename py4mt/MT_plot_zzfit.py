@@ -77,7 +77,7 @@ PlotFull = True
 EPSG = 0  #5644
 
 if PlotFull:
-    FigSize = (16*cm, 16*cm) #
+    FigSize = (18*cm, 16*cm) #
 else:
     FigSize = (16*cm, 10*cm)
 
@@ -152,6 +152,8 @@ for s in Sites:
 
     site_elev = z[site][0]
 
+    siteRes = []
+
     if PlotFull:
         cmp ="ZXX"
         cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
@@ -172,13 +174,16 @@ for s in Sites:
         Zxxrc = Zxxrc[indx]
         Zxxic = Zxxic[indx]
         Perxxc = Perxxc[indx]
-
+        if np.size(cmpo) > 0:
+            np.append(siteRes, (Zxxro-Zxxrc)/Zxxe)
+            np.append(siteRes, (Zxxio-Zxxic)/Zxxe)
 
         if ShowRMS:
             RnormZxxr, ResZxxr = utl.calc_resnorm(Zxxro, Zxxrc, Zxxe)
             nRMSZxxr, _ = utl.calc_rms(Zxxro, Zxxrc, 1.0/Zxxe)
             RnormZxxi, ResZxxi = utl.calc_resnorm(Zxxio, Zxxic, Zxxe)
             nRMSZxxi, _ = utl.calc_rms(Zxxio, Zxxic, 1.0/Zxxe)
+
 
 
     cmp ="ZXY"
@@ -200,6 +205,10 @@ for s in Sites:
     Zxyrc = Zxyrc[indx]
     Zxyic = Zxyic[indx]
     Perxyc = Perxyc[indx]
+    if np.size(cmpo) > 0:
+        np.append(siteRes, (Zxyro-Zxyrc)/Zxye)
+        np.append(siteRes, (Zxyio-Zxyic)/Zxye)
+
     if ShowRMS:
         RnormZxyr, ResZxyr = utl.calc_resnorm(Zxyro, Zxyrc, Zxye)
         nRMSZxyr, _ = utl.calc_rms(Zxyro, Zxyrc, 1.0/Zxye)
@@ -225,11 +234,17 @@ for s in Sites:
     Zyxrc = Zyxrc[indx]
     Zyxic = Zyxic[indx]
     Peryxc = Peryxc[indx]
+    print(np.size(cmpo))
+    if np.size(cmpo) > 0:
+        np.append(siteRes, (Zyxro-Zyxrc)/Zyxe)
+        np.append(siteRes, (Zyxio-Zyxic)/Zyxe)
+
     if ShowRMS:
         RnormZyxr, ResZyxr = utl.calc_resnorm(Zyxro, Zyxrc, Zyxe)
         nRMSZyxr, _ = utl.calc_rms(Zyxro, Zyxrc, 1.0/Zyxe)
         RnormZyxi, ResZyxi = utl.calc_resnorm(Zyxio, Zyxic, Zyxe)
         nRMSZyxi, _ = utl.calc_rms(Zyxio, Zyxic, 1.0/Zyxe)
+
 
     if PlotFull:
         cmp ="ZYY"
@@ -250,6 +265,10 @@ for s in Sites:
         Zyyrc = Zyyrc[indx]
         Zyyic = Zyyic[indx]
         Peryyc = Peryyc[indx]
+        if np.size(cmpo) > 0:
+            np.append(siteRes, (Zyyro-Zyyrc)/Zyye)
+            np.append(siteRes, (Zyyio-Zyyic)/Zyye)
+
         if ShowRMS:
             RnormZyyr, ResZyyr = utl.calc_resnorm(Zyyro, Zyyrc, Zyye)
             nRMSZyyr, _ = utl.calc_rms(Zyyro, Zyyrc, 1.0/Zyye)
@@ -257,6 +276,13 @@ for s in Sites:
             nRMSZyyi, _ = utl.calc_rms(Zyyio, Zyyic, 1.0/Zyye)
 
 
+    sRes = np.asarray(siteRes)
+    print(np.shape(sRes))
+    nD = np.size(sRes)
+    print(sRes)
+    print(nD)
+    siteRMS = np.sqrt(np.sum(np.power(sRes,2.))/float(nD))
+    print("Site nRMS: "+str(siteRMS))
 
 
     if PlotFull:
@@ -264,7 +290,7 @@ for s in Sites:
         fig, axes = plt.subplots(2,2, figsize = FigSize, subplot_kw=dict(box_aspect=1.),
                          sharex=False, sharey=False)
 
-        fig.suptitle(r"Site: "+s
+        fig.suptitle(r"Site: "+s+"   nRMS: "+str(np.around(siteRMS,1))
                      +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
                      +"\nUTMX: "+str(site_utmx)+"   UTMY: "+str(site_utmy)
                      +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m\n",
@@ -501,11 +527,12 @@ for s in Sites:
                                bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
     else:
+
         fig, axes = plt.subplots(1,2, figsize = FigSize, subplot_kw=dict(box_aspect=1.),
                          sharex=False, sharey=False)
 
 
-        fig.suptitle(r"Site: "+s
+        fig.suptitle(r"Site: "+s+"   nRMS: "+str(np.around(siteRMS,1))
                      +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
                      +"\nUTMX: "+str(site_utmx)+"   UTMY: "+str(site_utmy)
                      +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m\n",
