@@ -509,7 +509,7 @@ dependencies:
   - typed-ast=1.4.3=py38h7f8727e_1
   - typing-extensions=3.10.0.2=hd3eb1b0_0
   - typing_extensions=3.10.0.2=pyh06a4308_0
-  - tzcode=2021c=h7f98852_0
+  - tzcode=2021d=h7f98852_0
   - tzdata=2021a=h5d7bf9c_0
   - ujson=4.0.2=py38h2531618_0
   - uncertainpy=1.2.2=pyh9f0ad1d_0
@@ -563,20 +563,28 @@ dependencies:
   - zlib=1.2.11=h7b6447c_3
   - zstd=1.4.9=haebb681_0
   - pip:
+    - attotime==0.2.3
     - autoimpute==0.12.2
+    - colorful==0.5.4
     - configobj==5.0.6
     - configparser==5.0.2
     - espatools==0.1.1
     - fastmat==0.2.post0
     - fastprogress==1.0.0
+    - greenlet==1.1.2
     - imageio-ffmpeg==0.4.3
     - latexcodec==2.0.1
     - lttb==0.3.1
+    - lttbc==0.2.0
+    - lxml==4.6.3
     - mpi-map==2.6
+    - obspy==1.2.2
     - orthpol-light==1.0.1
     - paramonte==2.5.2
     - patsy==0.5.1
     - pip==21.1.1
+    - plotly==4.14.3
+    - prettyprinter==0.18.0
     - prettytable==2.1.0
     - pvgeo==2.1.0
     - pybtex==0.24.0
@@ -588,11 +596,14 @@ dependencies:
     - pypdf2==1.26.0
     - pyproximal==0.1.0
     - qmcpy==1.0
-    - resistics==0.0.6
+    - resistics==1.0.0a3
+    - resistics-readers==0.1.3
+    - retrying==1.3.3
     - semver==2.13.0
     - spectraltoolbox==1.0.12
     - sphinx-gallery==0.9.0
     - sphinxcontrib-bibtex==2.2.0
+    - sqlalchemy==1.4.25
     - statsmodels==0.12.2
     - tensortoolbox==1.0.22
     - theano-pymc==1.1.2

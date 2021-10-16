@@ -476,7 +476,7 @@ dependencies:
   - typed-ast=1.4.3=py39h7f8727e_1
   - typing-extensions=3.10.0.2=hd3eb1b0_0
   - typing_extensions=3.10.0.2=pyh06a4308_0
-  - tzcode=2021c=h7f98852_0
+  - tzcode=2021d=h7f98852_0
   - tzdata=2021a=h5d7bf9c_0
   - ujson=4.0.2=py39h2531618_0
   - unidecode=1.2.0=pyhd3eb1b0_0

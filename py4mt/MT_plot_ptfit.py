@@ -54,7 +54,7 @@ if not os.path.isdir(PlotDir):
     print(' File: %s does not exist, but will be created' % PlotDir)
     os.mkdir(PlotDir)
 
-
+FilesOnly = False
 PlotPred = True
 if PredFile == "":
     PlotPred = False
@@ -74,18 +74,16 @@ if PlotFull:
 else:
     FigSize = (16*cm, 10*cm) #  NoDiag
 
-PlotFile = "Annecy_PhT_Alpha04"
-PlotFormat = [".pdf", ".png", ".svg"]
+
+PlotFormat = [".pdf", ".png",]
+PlotFile = "LaReunion_LydiaModel_Tipper"
+
 PdfCatalog = True
+PdfCName = "LaReunion_LydiaModel_Tipper.pdf"
 if not ".pdf" in PlotFormat:
     error(" No pdfs generated. No catalog possible!")
     PdfCatalog = False
-PdfCName = PlotFile
 
-
-"""
-
-"""
 
 
 start = time.time()
@@ -123,10 +121,22 @@ Markersize = 4
 Grey = 0.7
 Lcycle =Lcycle = (cycler("linestyle", ["-", "--", ":", "-."])
           * cycler("color", ["r", "g", "b", "y"]))
-cm = 1/2.54  # centimeters in inches
+
+"""
+For just plotting to files, choose the cairo backend (eps, pdf, ,png, jpg...).
+If you need to see the plots directly (plots window, or jupyter), simply
+comment out the following line. In this case matplotlib may run into
+memory problems ager a few hundreds of high-resolution plots.
+"""
+if FilesOnly:
+    mpl.use("cairo")
+else:
+    mpl.use("Agg")
+
 
 Sites = np.unique(SiteObs)
 
+pdf_list = []
 for s in Sites:
     print("Plotting site: "+s)
     site = (obs_sit==s)
@@ -148,6 +158,8 @@ for s in Sites:
 
     site_elev = z[site][0]
 
+    siteRes = np.empty([0,0])
+
     cmp ="PTXX"
     cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
     PhTxxo = obs_dat[cmpo]
@@ -164,9 +176,11 @@ for s in Sites:
     PhTxxc = PhTxxc[indx]
     Perxxc = Perxxc[indx]
 
-    if ShowRMS:
-        RnormPhTxx, ResPhTxx = utl.calc_resnorm(PhTxxo, PhTxxc, PhTxxe)
-        nRMSPhTxx, _ = utl.calc_rms(PhTxxo, PhTxxc, 1.0/PhTxxe)
+    if np.size(cmpo) > 0:
+        siteRes = np.append(siteRes, (PhTxxo-PhTxxc)/PhTxxe)
+        if ShowRMS:
+            RnormPhTxx, ResPhTxx = utl.calc_resnorm(PhTxxo, PhTxxc, PhTxxe)
+            nRMSPhTxx, _ = utl.calc_rms(PhTxxo, PhTxxc, 1.0/PhTxxe)
 
 
     cmp ="PTXY"
@@ -184,10 +198,11 @@ for s in Sites:
     indx =np.argsort(Perxyc)
     PhTxyc = PhTxyc[indx]
     Perxyc = Perxyc[indx]
-
-    if ShowRMS:
-        RnormPhTxy, ResPhTxy = utl.calc_resnorm(PhTxyo, PhTxyc, PhTxye)
-        nRMSPhTxy, _ = utl.calc_rms(PhTxyo, PhTxyc, 1.0/PhTxye)
+    if np.size(cmpo) > 0:
+        siteRes = np.append(siteRes, (PhTxyo-PhTxyc)/PhTxye)
+        if ShowRMS:
+            RnormPhTxy, ResPhTxy = utl.calc_resnorm(PhTxyo, PhTxyc, PhTxye)
+            nRMSPhTxy, _ = utl.calc_rms(PhTxyo, PhTxyc, 1.0/PhTxye)
 
     cmp ="PTYX"
     cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
@@ -204,10 +219,11 @@ for s in Sites:
     indx =np.argsort(Peryxc)
     PhTyxc = PhTyxc[indx]
     Peryxc = Peryxc[indx]
-
-    if ShowRMS:
-        RnormPhTyx, ResPhTyx = utl.calc_resnorm(PhTyxo, PhTxyc, PhTyxe)
-        nRMSPhTyx, _ = utl.calc_rms(PhTyxo, PhTyxc, 1.0/PhTyxe)
+    if np.size(cmpo) > 0:
+        siteRes = np.append(siteRes, (PhTyxo-PhTyxc)/PhTyxe)
+        if ShowRMS:
+            RnormPhTyx, ResPhTyx = utl.calc_resnorm(PhTyxo, PhTxyc, PhTyxe)
+            nRMSPhTyx, _ = utl.calc_rms(PhTyxo, PhTyxc, 1.0/PhTyxe)
 
     cmp ="PTYY"
     cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
@@ -224,17 +240,18 @@ for s in Sites:
     indx =np.argsort(Peryyc)
     PhTyyc = PhTyyc[indx]
     Peryyc = Peryyc[indx]
-
-    if ShowRMS:
-        RnormPhTyy, ResPhTyy = utl.calc_resnorm(PhTyyo, PhTyyc, PhTyye)
-        nRMSPhTyy, _ = utl.calc_rms(PhTyyo, PhTyyc, 1.0/PhTyye)
+    if np.size(cmpo) > 0:
+        siteRes = np.append(siteRes, (PhTyyo-PhTyyc)/PhTyye)
+        if ShowRMS:
+            RnormPhTyy, ResPhTyy = utl.calc_resnorm(PhTyyo, PhTyyc, PhTyye)
+            nRMSPhTyy, _ = utl.calc_rms(PhTyyo, PhTyyc, 1.0/PhTyye)
 
 
 
     fig, axes = plt.subplots(2,2, figsize = FigSize, subplot_kw=dict(box_aspect=1.),
                      sharex=False, sharey=False)
 
-    fig.suptitle(r"Site: "+s
+    fig.suptitle(r"Site: "+s+"   nRMS: "+str(np.around(siteRMS,1))
                      +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
                      +"\nUTMX: "+str(site_utmx)+"   UTMY: "+str(site_utmy)
                      +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m\n",
@@ -265,7 +282,7 @@ for s in Sites:
     if PhTLimitsXX != ():
         axes[0,0].set_ylim(PhTLimitsXX)
     axes[0,0].legend(["predicted", "observed"])
-    # axes[0,0].xaxis.set_ticklabels([])
+
     axes[0,0].tick_params(labelsize=Labelsize-1)
     axes[0,0].set_ylabel("PhTXX", fontsize=Fontsize)
     axes[0,0].grid("both", "both", linestyle=":", linewidth=0.5)
@@ -401,10 +418,13 @@ for s in Sites:
     for F in PlotFormat:
         plt.savefig(PlotDir+PlotFile+"_"+s+F, dpi=400)
 
+    if PdfCatalog:
+        pdf_list.append(PlotDir+PlotFile+"_"+s+".pdf")
+
 
     plt.show()
     plt.close(fig)
 
-if PdfCatalog:
-    utl.make_pdf_catalog(PlotDir, PdfCName)
 
+if PdfCatalog:
+    utl.make_pdf_catalog(PlotDir, PdfList=pdf_list, FileName=PdfCName)

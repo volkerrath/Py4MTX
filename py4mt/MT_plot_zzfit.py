@@ -58,7 +58,7 @@ if not os.path.isdir(PlotDir):
     print(' File: %s does not exist, but will be created' % PlotDir)
     os.mkdir(PlotDir)
 
-
+FilesOnly = False
 PlotPred = True
 if PredFile == "":
     PlotPred = False
@@ -81,13 +81,14 @@ if PlotFull:
 else:
     FigSize = (16*cm, 10*cm)
 
-PlotFile = "LaReunion_LydiaModel_FullZ"
 PlotFormat = [".pdf", ".png",]
+PlotFile = "LaReunion_LydiaModel_FullZ"
+
 PdfCatalog = True
+PdfCName = "LaReunion_LydiaModel_FullZ.pdf"
 if not ".pdf" in PlotFormat:
     error(" No pdfs generated. No catalog possible!")
     PdfCatalog = False
-PdfCName = PlotFile
 
 
 """
@@ -131,10 +132,20 @@ Grey = 0.7
 Lcycle =Lcycle = (cycler("linestyle", ["-", "--", ":", "-."])
           * cycler("color", ["r", "g", "b", "y"]))
 
-
+"""
+For just plotting to files, choose the cairo backend (eps, pdf, ,png, jpg...).
+If you need to see the plots directly (plots window, or jupyter), simply
+comment out the following line. In this case matplotlib may run into
+memory problems ager a few hundreds of high-resolution plots.
+"""
+if FilesOnly==True:
+    mpl.use("cairo")
+else:
+    mpl.use("Agg")
 
 Sites = np.unique(SiteObs)
 
+pdf_list = []
 for s in Sites:
     print("Plotting site: "+s)
     site = (obs_sit==s)
@@ -152,7 +163,7 @@ for s in Sites:
 
     site_elev = z[site][0]
 
-    siteRes = []
+    siteRes = np.empty([0,0])
 
     if PlotFull:
         cmp ="ZXX"
@@ -174,15 +185,16 @@ for s in Sites:
         Zxxrc = Zxxrc[indx]
         Zxxic = Zxxic[indx]
         Perxxc = Perxxc[indx]
-        if np.size(cmpo) > 0:
-            np.append(siteRes, (Zxxro-Zxxrc)/Zxxe)
-            np.append(siteRes, (Zxxio-Zxxic)/Zxxe)
 
-        if ShowRMS:
-            RnormZxxr, ResZxxr = utl.calc_resnorm(Zxxro, Zxxrc, Zxxe)
-            nRMSZxxr, _ = utl.calc_rms(Zxxro, Zxxrc, 1.0/Zxxe)
-            RnormZxxi, ResZxxi = utl.calc_resnorm(Zxxio, Zxxic, Zxxe)
-            nRMSZxxi, _ = utl.calc_rms(Zxxio, Zxxic, 1.0/Zxxe)
+        if np.size(cmpo) > 0:
+            siteRes = np.append(siteRes, (Zxxro-Zxxrc)/Zxxe)
+            siteRes = np.append(siteRes, (Zxxio-Zxxic)/Zxxe)
+
+            if ShowRMS:
+                RnormZxxr, ResZxxr = utl.calc_resnorm(Zxxro, Zxxrc, Zxxe)
+                nRMSZxxr, _ = utl.calc_rms(Zxxro, Zxxrc, 1.0/Zxxe)
+                RnormZxxi, ResZxxi = utl.calc_resnorm(Zxxio, Zxxic, Zxxe)
+                nRMSZxxi, _ = utl.calc_rms(Zxxio, Zxxic, 1.0/Zxxe)
 
 
 
@@ -205,15 +217,16 @@ for s in Sites:
     Zxyrc = Zxyrc[indx]
     Zxyic = Zxyic[indx]
     Perxyc = Perxyc[indx]
-    if np.size(cmpo) > 0:
-        np.append(siteRes, (Zxyro-Zxyrc)/Zxye)
-        np.append(siteRes, (Zxyio-Zxyic)/Zxye)
 
-    if ShowRMS:
-        RnormZxyr, ResZxyr = utl.calc_resnorm(Zxyro, Zxyrc, Zxye)
-        nRMSZxyr, _ = utl.calc_rms(Zxyro, Zxyrc, 1.0/Zxye)
-        RnormZxyi, ResZxyi = utl.calc_resnorm(Zxyio, Zxyic, Zxye)
-        nRMSZxyi, _ = utl.calc_rms(Zxyio, Zxyic, 1.0/Zxye)
+    if np.size(cmpo) > 0:
+        siteRes = np.append(siteRes, (Zxyro-Zxyrc)/Zxye)
+        siteRes = np.append(siteRes, (Zxyio-Zxyic)/Zxye)
+
+        if ShowRMS:
+            RnormZxyr, ResZxyr = utl.calc_resnorm(Zxyro, Zxyrc, Zxye)
+            nRMSZxyr, _ = utl.calc_rms(Zxyro, Zxyrc, 1.0/Zxye)
+            RnormZxyi, ResZxyi = utl.calc_resnorm(Zxyio, Zxyic, Zxye)
+            nRMSZxyi, _ = utl.calc_rms(Zxyio, Zxyic, 1.0/Zxye)
 
     cmp ="ZYX"
     cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
@@ -234,16 +247,17 @@ for s in Sites:
     Zyxrc = Zyxrc[indx]
     Zyxic = Zyxic[indx]
     Peryxc = Peryxc[indx]
-    print(np.size(cmpo))
-    if np.size(cmpo) > 0:
-        np.append(siteRes, (Zyxro-Zyxrc)/Zyxe)
-        np.append(siteRes, (Zyxio-Zyxic)/Zyxe)
 
-    if ShowRMS:
-        RnormZyxr, ResZyxr = utl.calc_resnorm(Zyxro, Zyxrc, Zyxe)
-        nRMSZyxr, _ = utl.calc_rms(Zyxro, Zyxrc, 1.0/Zyxe)
-        RnormZyxi, ResZyxi = utl.calc_resnorm(Zyxio, Zyxic, Zyxe)
-        nRMSZyxi, _ = utl.calc_rms(Zyxio, Zyxic, 1.0/Zyxe)
+    if np.size(cmpo) > 0:
+        siteRes = np.append(siteRes, (Zyxro-Zyxrc)/Zyxe)
+        siteRes = np.append(siteRes, (Zyxio-Zyxic)/Zyxe)
+
+        if ShowRMS:
+            RnormZyxr, ResZyxr = utl.calc_resnorm(Zyxro, Zyxrc, Zyxe)
+            nRMSZyxr, _ = utl.calc_rms(Zyxro, Zyxrc, 1.0/Zyxe)
+            RnormZyxi, ResZyxi = utl.calc_resnorm(Zyxio, Zyxic, Zyxe)
+            nRMSZyxi, _ = utl.calc_rms(Zyxio, Zyxic, 1.0/Zyxe)
+
 
 
     if PlotFull:
@@ -265,24 +279,23 @@ for s in Sites:
         Zyyrc = Zyyrc[indx]
         Zyyic = Zyyic[indx]
         Peryyc = Peryyc[indx]
-        if np.size(cmpo) > 0:
-            np.append(siteRes, (Zyyro-Zyyrc)/Zyye)
-            np.append(siteRes, (Zyyio-Zyyic)/Zyye)
 
-        if ShowRMS:
-            RnormZyyr, ResZyyr = utl.calc_resnorm(Zyyro, Zyyrc, Zyye)
-            nRMSZyyr, _ = utl.calc_rms(Zyyro, Zyyrc, 1.0/Zyye)
-            RnormZyyi, ResZyyi = utl.calc_resnorm(Zyyio, Zyyic, Zyye)
-            nRMSZyyi, _ = utl.calc_rms(Zyyio, Zyyic, 1.0/Zyye)
+        if np.size(cmpo) > 0:
+            siteRes = np.append(siteRes, (Zyyro-Zyyrc)/Zyye)
+            siteRes = np.append(siteRes, (Zyyio-Zyyic)/Zyye)
+
+            if ShowRMS:
+                RnormZyyr, ResZyyr = utl.calc_resnorm(Zyyro, Zyyrc, Zyye)
+                nRMSZyyr, _ = utl.calc_rms(Zyyro, Zyyrc, 1.0/Zyye)
+                RnormZyyi, ResZyyi = utl.calc_resnorm(Zyyio, Zyyic, Zyye)
+                nRMSZyyi, _ = utl.calc_rms(Zyyio, Zyyic, 1.0/Zyye)
 
 
     sRes = np.asarray(siteRes)
-    print(np.shape(sRes))
     nD = np.size(sRes)
-    print(sRes)
-    print(nD)
     siteRMS = np.sqrt(np.sum(np.power(sRes,2.))/float(nD))
     print("Site nRMS: "+str(siteRMS))
+    # Ccprint(sRes)
 
 
     if PlotFull:
@@ -340,7 +353,7 @@ for s in Sites:
         if ZLimitsXX != ():
             axes[0,0].set_ylim(ZLimitsXX)
         axes[0,0].legend(["real", "imag"])
-        # axes[0,0].xaxis.set_ticklabels([])
+
         axes[0,0].tick_params(labelsize=Labelsize-1)
         axes[0,0].set_ylabel("|ZXX|", fontsize=Fontsize)
         axes[0,0].grid("both", "both", linestyle="-", linewidth=0.5)
@@ -656,11 +669,13 @@ for s in Sites:
     for F in PlotFormat:
         plt.savefig(PlotDir+PlotFile+"_"+s+F, dpi=400)
 
+    if PdfCatalog:
+        pdf_list.append(PlotDir+PlotFile+"_"+s+".pdf")
+
 
     plt.show()
     plt.close(fig)
 
 
 if PdfCatalog:
-    utl.make_pdf_catalog(PlotDir, PdfCName)
-
+   utl.make_pdf_catalog(PlotDir, PdfList=pdf_list, FileName=PdfCName)

@@ -63,6 +63,7 @@ if not os.path.isdir(PlotDir):
     os.mkdir(PlotDir)
 
 
+FilesOnly = False
 PlotPred = True
 if PredFile == "":
     PlotPred = False
@@ -78,19 +79,14 @@ EPSG = 0 # 5015
 
 FigSize = (16*cm, 8*cm)
 
-PlotFormat = [".pdf", ".png", ".svg"]
-PlotFile = "Reunion_KydiaModel_Tipper"
+PlotFormat = [".pdf", ".png",]
+PlotFile = "LaReunion_LydiaModel_Tipper"
+
 PdfCatalog = True
+PdfCName = "LaReunion_LydiaModel_Tipper.pdf"
 if not ".pdf" in PlotFormat:
     error(" No pdfs generated. No catalog possible!")
     PdfCatalog = False
-PdfCName = PlotFile
-
-
-"""
-
-required virtual size
-"""
 
 
 start = time.time()
@@ -131,10 +127,21 @@ Markersize = 4
 Grey = 0.7
 Lcycle =Lcycle = (cycler("linestyle", ["-", "--", ":", "-."])
           * cycler("color", ["r", "g", "b", "y"]))
+"""
+For just plotting to files, choose the cairo backend (eps, pdf, ,png, jpg...).
+If you need to see the plots directly (plots window, or jupyter), simply
+comment out the following line. In this case matplotlib may run into
+memory problems ager a few hundreds of high-resolution plots.
+"""
+if FilesOnly:
+    mpl.use("cairo")
+else:
+    mpl.use("Agg")
 
 
 Sites = np.unique(SiteObs)
 
+pdf_list = []
 for s in Sites:
     print("Plotting site: "+s)
     site = (obs_sit==s)
@@ -175,12 +182,15 @@ for s in Sites:
         Tpxrc = Tpxrc[indx]
         Tpxic = Tpxic[indx]
         Perxc=Perxc[indx]
+        if np.size(cmpo) > 0:
+            siteRes = np.append(siteRes, (Tpxro-Tpxrc)/Tpxe)
+            siteRes = np.append(siteRes, (Tpxio-Tpxic)/Tpxe)
 
-        if ShowRMS:
-            RnormTpxr, ResTpxr = utl.calc_resnorm(Tpxro, Tpxrc, Tpxe)
-            nRMSTpxr, _ = utl.calc_rms(Tpxro, Tpxrc, 1.0/Tpxe)
-            RnormTpxi, ResTpxi = utl.calc_resnorm(Tpxio, Tpxic, Tpxe)
-            nRMSTpxi, _ = utl.calc_rms(Tpxio, Tpxic, 1.0/Tpxe)
+            if ShowRMS:
+                RnormTpxr, ResTpxr = utl.calc_resnorm(Tpxro, Tpxrc, Tpxe)
+                nRMSTpxr, _ = utl.calc_rms(Tpxro, Tpxrc, 1.0/Tpxe)
+                RnormTpxi, ResTpxi = utl.calc_resnorm(Tpxio, Tpxic, Tpxe)
+                nRMSTpxi, _ = utl.calc_rms(Tpxio, Tpxic, 1.0/Tpxe)
 
         cmp ="TY"
         cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
@@ -201,17 +211,21 @@ for s in Sites:
         Tpyic = Tpyic[indx]
         Peryc=Peryc[indx]
 
-        if ShowRMS:
-            RnormTpyr, ResTpyr = utl.calc_resnorm(Tpyro, Tpyrc, Tpye)
-            nRMSTpyr, _ = utl.calc_rms(Tpyro, Tpyrc, 1.0/Tpye)
-            RnormTpyi, ResTpyi = utl.calc_resnorm(Tpyio, Tpyic, Tpye)
-            nRMSTpyi, _ = utl.calc_rms(Tpyio, Tpyic, 1.0/Tpye)
+        if np.size(cmpo) > 0:
+            siteRes = np.append(siteRes, (Tpyro-Tpyrc)/Tpye)
+            siteRes = np.append(siteRes, (Tpyio-Tpyic)/Tpye)
+
+            if ShowRMS:
+                RnormTpyr, ResTpyr = utl.calc_resnorm(Tpyro, Tpyrc, Tpye)
+                nRMSTpyr, _ = utl.calc_rms(Tpyro, Tpyrc, 1.0/Tpye)
+                RnormTpyi, ResTpyi = utl.calc_resnorm(Tpyio, Tpyic, Tpye)
+                nRMSTpyi, _ = utl.calc_rms(Tpyio, Tpyic, 1.0/Tpye)
 
 
         fig, axes = plt.subplots(1,2, figsize = FigSize, subplot_kw=dict(box_aspect=1.),
                          sharex=False, sharey=False)
 
-        fig.suptitle(r"Site: "+s
+        fig.suptitle(r"Site: "+s+"   nRMS: "+str(np.around(siteRMS,1))
                      +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
                      +"\nUTMX: "+str(site_utmx)+"   UTMY: "+str(site_utmy)
                      +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m\n",
@@ -304,13 +318,13 @@ for s in Sites:
         for F in PlotFormat:
             plt.savefig(PlotDir+PlotFile+"_"+s+F, dpi=400)
 
+        if PdfCatalog:
+            pdf_list.append(PlotDir+PlotFile+"_"+s+".pdf")
 
         plt.show()
         plt.close(fig)
     else:
         print("No Tipper for site "+s+"!")
 
-
 if PdfCatalog:
-    utl.make_pdf_catalog(PlotDir, PdfCName)
-
+    utl.make_pdf_catalog(PlotDir, PdfList=pdf_list, FileName=PdfCName)

@@ -553,6 +553,7 @@ def calc_rms(dcalc=None, dobs=None, Wd=1.0):
     # sum squared scaled symmetric error
     serr = 2.0 * nd * np.abs(rscal) / (abs(dobs.T) + abs(dcalc.T))
     ssq = np.sum(np.power(serr, 2))
+    # print(ssq)
     srms = 100.0 * np.sqrt(ssq / nd)
 
     return nrms, srms
