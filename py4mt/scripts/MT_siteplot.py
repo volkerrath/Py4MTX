@@ -26,6 +26,7 @@ plots for all of them.
 # Import required modules
 
 import os
+import sys
 import numpy as np
 from mtpy.core.mt import MT
 

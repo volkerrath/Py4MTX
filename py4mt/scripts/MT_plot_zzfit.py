@@ -41,7 +41,7 @@ print("\n\n")
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
-cm = 1/2.54  # centimeters in inches
+cm = 1/2.54  # centimeters to inches
 WorkDir =  r"/home/vrath/work/MT_Data/Reunion/LydiaModel/"
 PredFile = r"/home/vrath/work/MT_Data/Reunion/LydiaModel/reuf3_NLCG_020"
 ObsvFile = r"/home/vrath/work/MT_Data/Reunion/LydiaModel/reuf2dat-net"
@@ -59,6 +59,7 @@ if not os.path.isdir(PlotDir):
     os.mkdir(PlotDir)
 
 FilesOnly = False
+
 PlotPred = True
 if PredFile == "":
     PlotPred = False
@@ -72,7 +73,7 @@ ZLimitsXY = ()
 
 ShowErrors = True
 ShowRMS = True
-PlotFull = True
+PlotFull = False
 
 EPSG = 0  #5644
 
@@ -82,18 +83,43 @@ else:
     FigSize = (16*cm, 10*cm)
 
 PlotFormat = [".pdf", ".png",]
-PlotFile = "LaReunion_LydiaModel_FullZ"
+PlotFile = "Reunion_LydiaModel_Zoffd"
 
 PdfCatalog = True
-PdfCName = "LaReunion_LydiaModel_FullZ.pdf"
+PdfCName = PlotFile+".pdf"
 if not ".pdf" in PlotFormat:
     error(" No pdfs generated. No catalog possible!")
     PdfCatalog = False
 
 
 """
+Determine graphical parameter.
++> print(plt.style.available)
+"""
+
+plt.style.use("seaborn-paper")
+mpl.rcParams["figure.dpi"] = 400
+mpl.rcParams["axes.linewidth"] = 0.5
+mpl.rcParams["savefig.facecolor"] = "none"
+Fontsize = 10
+Labelsize = Fontsize
+Linewidth= 1
+Markersize = 4
+Grey = 0.7
+Lcycle =Lcycle = (cycler("linestyle", ["-", "--", ":", "-."])
+          * cycler("color", ["r", "g", "b", "y"]))
 
 """
+For just plotting to files, choose the cairo backend (eps, pdf, ,png, jpg...).
+If you need to see the plots directly (plots window, or jupyter), simply
+comment out the following line. In this case matplotlib may run into
+memory problems ager a few hundreds of high-resolution plots. 
+Find other backends by entering %matplotlib -l
+"""
+if FilesOnly==True:
+    mpl.use("cairo")
+
+
 
 start = time.time()
 FF = ObsvFile
@@ -118,30 +144,7 @@ cal_per = DataCal[:, 0]
 cal_cmp = CompCal
 cal_sit = SiteCal
 
-# Determine graphical parameter.
-# print(plt.style.available)
-plt.style.use("seaborn-paper")
-mpl.rcParams["figure.dpi"] = 400
-mpl.rcParams["axes.linewidth"] = 0.5
-mpl.rcParams["savefig.facecolor"] = "none"
-Fontsize = 10
-Labelsize = Fontsize
-Linewidth= 1
-Markersize = 4
-Grey = 0.7
-Lcycle =Lcycle = (cycler("linestyle", ["-", "--", ":", "-."])
-          * cycler("color", ["r", "g", "b", "y"]))
 
-"""
-For just plotting to files, choose the cairo backend (eps, pdf, ,png, jpg...).
-If you need to see the plots directly (plots window, or jupyter), simply
-comment out the following line. In this case matplotlib may run into
-memory problems ager a few hundreds of high-resolution plots.
-"""
-if FilesOnly==True:
-    mpl.use("cairo")
-else:
-    mpl.use("Agg")
 
 Sites = np.unique(SiteObs)
 
@@ -301,7 +304,7 @@ for s in Sites:
     if PlotFull:
 
         fig, axes = plt.subplots(2,2, figsize = FigSize, subplot_kw=dict(box_aspect=1.),
-                         sharex=False, sharey=False)
+                         sharex=False, sharey=False, constrained_layout=True)
 
         fig.suptitle(r"Site: "+s+"   nRMS: "+str(np.around(siteRMS,1))
                      +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
@@ -542,7 +545,7 @@ for s in Sites:
     else:
 
         fig, axes = plt.subplots(1,2, figsize = FigSize, subplot_kw=dict(box_aspect=1.),
-                         sharex=False, sharey=False)
+                         sharex=False, sharey=False, constrained_layout=True)
 
 
         fig.suptitle(r"Site: "+s+"   nRMS: "+str(np.around(siteRMS,1))

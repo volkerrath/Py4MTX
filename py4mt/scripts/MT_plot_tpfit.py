@@ -87,6 +87,32 @@ PdfCName = "LaReunion_LydiaModel_Tipper.pdf"
 if not ".pdf" in PlotFormat:
     error(" No pdfs generated. No catalog possible!")
     PdfCatalog = False
+    
+"""   
+# Determine graphical parameter.
+# print(plt.style.available)
+"""
+plt.style.use("seaborn-paper")
+mpl.rcParams["figure.dpi"] = 400
+mpl.rcParams["axes.linewidth"] = 0.5
+mpl.rcParams["savefig.facecolor"] = "none"
+Fontsize = 10
+Labelsize = Fontsize
+Linewidth= 1
+Markersize = 4
+Grey = 0.7
+Lcycle =Lcycle = (cycler("linestyle", ["-", "--", ":", "-."])
+          * cycler("color", ["r", "g", "b", "y"]))
+"""
+For just plotting to files, choose the cairo backend (eps, pdf, ,png, jpg...).
+If you need to see the plots directly (plots window, or jupyter), simply
+comment out the following line. In this case matplotlib may run into
+memory problems ager a few hundreds of high-resolution plots.
+Find other backends by entering %matplotlib -l
+"""
+if FilesOnly:
+    mpl.use("cairo")
+
 
 
 start = time.time()
@@ -114,30 +140,6 @@ cal_cmp = CompCal
 cal_sit = SiteCal
 
 
-# Determine graphical parameter.
-# print(plt.style.available)
-plt.style.use("seaborn-paper")
-mpl.rcParams["figure.dpi"] = 400
-mpl.rcParams["axes.linewidth"] = 0.5
-mpl.rcParams["savefig.facecolor"] = "none"
-Fontsize = 10
-Labelsize = Fontsize
-Linewidth= 1
-Markersize = 4
-Grey = 0.7
-Lcycle =Lcycle = (cycler("linestyle", ["-", "--", ":", "-."])
-          * cycler("color", ["r", "g", "b", "y"]))
-"""
-For just plotting to files, choose the cairo backend (eps, pdf, ,png, jpg...).
-If you need to see the plots directly (plots window, or jupyter), simply
-comment out the following line. In this case matplotlib may run into
-memory problems ager a few hundreds of high-resolution plots.
-"""
-if FilesOnly:
-    mpl.use("cairo")
-else:
-    mpl.use("Agg")
-
 
 Sites = np.unique(SiteObs)
 
@@ -163,6 +165,8 @@ for s in Sites:
 
 
         site_elev = z[site][0]
+        
+        siteRes = np.empty([0,0])
 
         cmp ="TX"
         cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
@@ -220,6 +224,13 @@ for s in Sites:
                 nRMSTpyr, _ = utl.calc_rms(Tpyro, Tpyrc, 1.0/Tpye)
                 RnormTpyi, ResTpyi = utl.calc_resnorm(Tpyio, Tpyic, Tpye)
                 nRMSTpyi, _ = utl.calc_rms(Tpyio, Tpyic, 1.0/Tpye)
+
+
+        sRes = np.asarray(siteRes)
+        nD = np.size(sRes)
+        siteRMS = np.sqrt(np.sum(np.power(sRes,2.))/float(nD))
+        print("Site nRMS: "+str(siteRMS))
+        # Ccprint(sRes)
 
 
         fig, axes = plt.subplots(1,2, figsize = FigSize, subplot_kw=dict(box_aspect=1.),

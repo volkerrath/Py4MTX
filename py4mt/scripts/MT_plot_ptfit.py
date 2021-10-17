@@ -69,10 +69,10 @@ ShowErrors = True
 ShowRMS = True
 EPSG = 0 #5015
 
-if PlotFull:
-    FigSize = (16*cm, 16*cm) #
-else:
-    FigSize = (16*cm, 10*cm) #  NoDiag
+# if PlotFull:
+FigSize = (18*cm, 16*cm) #
+# else:
+#     FigSize = (16*cm, 10*cm) #  NoDiag
 
 
 PlotFormat = [".pdf", ".png",]
@@ -83,7 +83,32 @@ PdfCName = "LaReunion_LydiaModel_Tipper.pdf"
 if not ".pdf" in PlotFormat:
     error(" No pdfs generated. No catalog possible!")
     PdfCatalog = False
+    
+"""
+Determine graphical parameter.
+print(plt.style.available)
+"""
+plt.style.use("seaborn-paper")
+mpl.rcParams["figure.dpi"] = 400
+mpl.rcParams["axes.linewidth"] = 0.5
+mpl.rcParams["savefig.facecolor"] = "none"
+Fontsize = 10
+Labelsize = Fontsize
+Linewidth= 1
+Markersize = 4
+Grey = 0.7
+Lcycle =Lcycle = (cycler("linestyle", ["-", "--", ":", "-."])
+          * cycler("color", ["r", "g", "b", "y"]))
 
+"""
+For just plotting to files, choose the cairo backend (eps, pdf, ,png, jpg...).
+If you need to see the plots directly (plots window, or jupyter), simply
+comment out the following line. In this case matplotlib may run into
+memory problems ager a few hundreds of high-resolution plots.
+Find other backends by entering %matplotlib -l
+"""
+if FilesOnly:
+    mpl.use("cairo")
 
 
 start = time.time()
@@ -107,31 +132,6 @@ cal_dat= DataCal[:, 6]
 cal_per= DataCal[:, 0]
 cal_cmp= CompCal
 cal_sit = SiteCal
-
-# Determine graphical parameter.
-# print(plt.style.available)
-plt.style.use("seaborn-paper")
-mpl.rcParams["figure.dpi"] = 400
-mpl.rcParams["axes.linewidth"] = 0.5
-mpl.rcParams["savefig.facecolor"] = "none"
-Fontsize = 10
-Labelsize = Fontsize
-Linewidth= 1
-Markersize = 4
-Grey = 0.7
-Lcycle =Lcycle = (cycler("linestyle", ["-", "--", ":", "-."])
-          * cycler("color", ["r", "g", "b", "y"]))
-
-"""
-For just plotting to files, choose the cairo backend (eps, pdf, ,png, jpg...).
-If you need to see the plots directly (plots window, or jupyter), simply
-comment out the following line. In this case matplotlib may run into
-memory problems ager a few hundreds of high-resolution plots.
-"""
-if FilesOnly:
-    mpl.use("cairo")
-else:
-    mpl.use("Agg")
 
 
 Sites = np.unique(SiteObs)
@@ -248,8 +248,18 @@ for s in Sites:
 
 
 
+
+    sRes = np.asarray(siteRes)
+    nD = np.size(sRes)
+    siteRMS = np.sqrt(np.sum(np.power(sRes,2.))/float(nD))
+    print("Site nRMS: "+str(siteRMS))
+    # Ccprint(sRes)
+
+
+
+
     fig, axes = plt.subplots(2,2, figsize = FigSize, subplot_kw=dict(box_aspect=1.),
-                     sharex=False, sharey=False)
+                     sharex=False, sharey=False, constrained_layout=True)
 
     fig.suptitle(r"Site: "+s+"   nRMS: "+str(np.around(siteRMS,1))
                      +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)

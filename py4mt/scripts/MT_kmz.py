@@ -18,6 +18,7 @@
 # Import required modules
 
 import os
+import sys
 import csv
 import simplekml
 from mtpy.core.mt import MT
