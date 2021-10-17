@@ -83,7 +83,7 @@ PdfCName = "LaReunion_LydiaModel_Tipper.pdf"
 if not ".pdf" in PlotFormat:
     error(" No pdfs generated. No catalog possible!")
     PdfCatalog = False
-    
+
 """
 Determine graphical parameter.
 print(plt.style.available)
@@ -94,6 +94,7 @@ mpl.rcParams["axes.linewidth"] = 0.5
 mpl.rcParams["savefig.facecolor"] = "none"
 Fontsize = 10
 Labelsize = Fontsize
+Titlesize = Fontsize-1
 Linewidth= 1
 Markersize = 4
 Grey = 0.7
@@ -265,7 +266,7 @@ for s in Sites:
                      +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
                      +"\nUTMX: "+str(site_utmx)+"   UTMY: "+str(site_utmy)
                      +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m\n",
-                     ha="left", x=0.1,fontsize=Fontsize-1)
+                     ha="left", x=0.1,fontsize=Titlesize)
 
     if PlotPred:
         axes[0,0].plot(Perxxc, PhTxxc, "-r", linewidth =Linewidth)

@@ -103,6 +103,7 @@ mpl.rcParams["axes.linewidth"] = 0.5
 mpl.rcParams["savefig.facecolor"] = "none"
 Fontsize = 10
 Labelsize = Fontsize
+Titlesize = Fontsize-1
 Linewidth= 1
 Markersize = 4
 Grey = 0.7
@@ -113,7 +114,7 @@ Lcycle =Lcycle = (cycler("linestyle", ["-", "--", ":", "-."])
 For just plotting to files, choose the cairo backend (eps, pdf, ,png, jpg...).
 If you need to see the plots directly (plots window, or jupyter), simply
 comment out the following line. In this case matplotlib may run into
-memory problems ager a few hundreds of high-resolution plots. 
+memory problems ager a few hundreds of high-resolution plots.
 Find other backends by entering %matplotlib -l
 """
 if FilesOnly==True:
@@ -310,7 +311,7 @@ for s in Sites:
                      +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
                      +"\nUTMX: "+str(site_utmx)+"   UTMY: "+str(site_utmy)
                      +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m\n",
-                     ha="left", x=0.1,fontsize=Fontsize-1)
+                     ha="left", x=0.1,fontsize=Titlesize)
 
 #  ZXX
 
@@ -552,7 +553,7 @@ for s in Sites:
                      +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
                      +"\nUTMX: "+str(site_utmx)+"   UTMY: "+str(site_utmy)
                      +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m\n",
-                     ha="left", x=0.1,fontsize=Fontsize-1)
+                     ha="left", x=0.1,fontsize=Titlesize)
 
 
 
