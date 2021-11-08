@@ -41,11 +41,16 @@ print("\n\n")
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
-cm = 1/2.54  # centimeters to inches
-WorkDir =  r"/home/vrath/work/MT_Data/Reunion/LydiaModel/"
-PredFile = r"/home/vrath/work/MT_Data/Reunion/LydiaModel/reuf3_NLCG_020"
-ObsvFile = r"/home/vrath/work/MT_Data/Reunion/LydiaModel/reuf2dat-net"
+cm = 1./2.54  # centimeters to inches
 
+# WorkDir =  r"/home/vrath/work/MT_Data/Reunion/LydiaModel/"
+# PredFile = r"/home/vrath/work/MT_Data/Reunion/LydiaModel/reuf3_NLCG_020"
+# ObsvFile = r"/home/vrath/work/MT_Data/Reunion/LydiaModel/reuf2dat-net"
+
+
+WorkDir =  r"/home/vrath/work/MT_Data/Ubaye/UB19VR/"
+PredFile = r"/home/vrath/work/MT_Data/Ubaye/UB19VR/Ub19c_ZPT_02_NLCG_010"
+ObsvFile = r"/home/vrath/work/MT_Data/Ubaye/UB19VR/Ub19c_ZPT"
 
 # WorkDir =  r"/home/vrath/work/MT/Annecy/ANN26/"
 # PredFile = r"/home/vrath/work/MT/Annecy/ANN26/Ann26_ZoPT_200_Alpha02_NLCG_013"
@@ -67,7 +72,7 @@ PlotObsv = True
 if ObsvFile == "":
     PlotObsv = False
 
-PerLimits = (0.0003, 3000.)
+PerLimits = (0.0001,10.)
 ZLimitsXX = ()
 ZLimitsXY = ()
 
@@ -83,7 +88,7 @@ else:
     FigSize = (16*cm, 10*cm)
 
 PlotFormat = [".pdf", ".png",]
-PlotFile = "Reunion_LydiaModel_Zoffd"
+PlotFile = "Ubaye_Impedance"
 
 PdfCatalog = True
 PdfCName = PlotFile+".pdf"
@@ -309,7 +314,7 @@ for s in Sites:
 
         fig.suptitle(r"Site: "+s+"   nRMS: "+str(np.around(siteRMS,1))
                      +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
-                     +"\nUTMX: "+str(site_utmx)+"   UTMY: "+str(site_utmy)
+                     +"\nX: "+str(site_utmx)+"   Y: "+str(site_utmy)
                      +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m\n",
                      ha="left", x=0.1,fontsize=Titlesize)
 
@@ -551,7 +556,7 @@ for s in Sites:
 
         fig.suptitle(r"Site: "+s+"   nRMS: "+str(np.around(siteRMS,1))
                      +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
-                     +"\nUTMX: "+str(site_utmx)+"   UTMY: "+str(site_utmy)
+                     +"\nX: "+str(site_utmx)+"   Y: "+str(site_utmy)
                      +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m\n",
                      ha="left", x=0.1,fontsize=Titlesize)
 
@@ -681,5 +686,6 @@ for s in Sites:
     plt.close(fig)
 
 
+
 if PdfCatalog:
-   utl.make_pdf_catalog(PlotDir, PdfList=pdf_list, FileName=PdfCName)
+    utl.make_pdf_catalog(PlotDir, PdfList=pdf_list, FileName=PlotDir+PdfCName)

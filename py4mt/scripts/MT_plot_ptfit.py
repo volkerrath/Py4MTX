@@ -44,9 +44,15 @@ warnings.simplefilter(action="ignore", category=FutureWarning)
 
 cm = 1/2.54  # centimeters in inches
 
-WorkDir =  r"/home/vrath/work/MT_Data/Reunion/LydiaModel/"
-PredFile = r"/home/vrath/work/MT_Data/Reunion/LydiaModel/reuf3_NLCG_020"
-ObsvFile = r"/home/vrath/work/MT_Data/Reunion/LydiaModel/reuf2dat-net.dat"
+# WorkDir =  r"/home/vrath/work/MT_Data/Reunion/LydiaModel/"
+# PredFile = r"/home/vrath/work/MT_Data/Reunion/LydiaModel/reuf3_NLCG_020"
+# ObsvFile = r"/home/vrath/work/MT_Data/Reunion/LydiaModel/reuf2dat-net.dat"
+
+
+WorkDir =  r"/home/vrath/work/MT_Data/Ubaye/UB19VR/"
+PredFile = r"/home/vrath/work/MT_Data/Ubaye/UB19VR/Ub19c_ZPT_02_NLCG_010"
+ObsvFile = r"/home/vrath/work/MT_Data/Ubaye/UB19VR/Ub19c_ZPT"
+
 PlotDir = WorkDir + 'Plots/'
 
 print(' Plots written to: %s' % PlotDir)
@@ -62,7 +68,7 @@ PlotObsv = True
 if ObsvFile == "":
     PlotObsv = False
 
-PerLimits = (0.00005, 3.)
+PerLimits = (0.0001,10.)
 PhTLimitsXX = (-5., 5.)
 PhTLimitsXY = (-1., 1.)
 ShowErrors = True
@@ -76,10 +82,10 @@ FigSize = (18*cm, 16*cm) #
 
 
 PlotFormat = [".pdf", ".png",]
-PlotFile = "LaReunion_LydiaModel_Tipper"
+PlotFile = "Ubaye19_PhaseTensor"
 
 PdfCatalog = True
-PdfCName = "LaReunion_LydiaModel_Tipper.pdf"
+PdfCName = "Ubaye19_PhaseTensor.pdf"
 if not ".pdf" in PlotFormat:
     error(" No pdfs generated. No catalog possible!")
     PdfCatalog = False
@@ -264,7 +270,7 @@ for s in Sites:
 
     fig.suptitle(r"Site: "+s+"   nRMS: "+str(np.around(siteRMS,1))
                      +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
-                     +"\nUTMX: "+str(site_utmx)+"   UTMY: "+str(site_utmy)
+                     +"\nX: "+str(site_utmx)+"   Y: "+str(site_utmy)
                      +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m\n",
                      ha="left", x=0.1,fontsize=Titlesize)
 
@@ -438,4 +444,4 @@ for s in Sites:
 
 
 if PdfCatalog:
-    utl.make_pdf_catalog(PlotDir, PdfList=pdf_list, FileName=PdfCName)
+    utl.make_pdf_catalog(PlotDir, PdfList=pdf_list, FileName=PlotDir+PdfCName)

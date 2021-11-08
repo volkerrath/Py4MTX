@@ -43,10 +43,13 @@ print("\n\n")
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
 cm = 1/2.54  # centimeters in inches
-WorkDir =  r"/home/vrath/work/MT_Data/Reunion/LydiaModel/"
-PredFile = r"/home/vrath/work/MT_Data/Reunion/LydiaModel/reuf3_NLCG_020"
-ObsvFile = r"/home/vrath/work/MT_Data/Reunion/LydiaModel/reuf2dat-net"
+# WorkDir =  r"/home/vrath/work/MT_Data/Reunion/LydiaModel/"
+# PredFile = r"/home/vrath/work/MT_Data/Reunion/LydiaModel/reuf3_NLCG_020"
+# ObsvFile = r"/home/vrath/work/MT_Data/Reunion/LydiaModel/reuf2dat-net"
 
+WorkDir =  r"/home/vrath/work/MT_Data/Ubaye/UB19VR/"
+PredFile = r"/home/vrath/work/MT_Data/Ubaye/UB19VR/Ub19c_ZPT_02_NLCG_010"
+ObsvFile = r"/home/vrath/work/MT_Data/Ubaye/UB19VR/Ub19c_ZPT"
 # WorkDir =  r"/home/vrath/work/MT_Data/Annecy/ANN26/"
 # PredFile = r"/home/vrath/work/MT_Data/Annecy/ANN26/Ann26_ZoPT_200_Alpha02_NLCG_013"
 # ObsvFile = r"/home/vrath/work/MT_Data/Annecy/ANN26/Ann26_ZoPT"
@@ -71,7 +74,7 @@ PlotObsv = True
 if ObsvFile == "":
     PlotObsv = False
 
-PerLimits = (0.00005, 3.)
+PerLimits = (0.0001,10.)
 TpLimits = (-.5, 0.5)
 ShowErrors = True
 ShowRMS = True
@@ -80,10 +83,10 @@ EPSG = 0 # 5015
 FigSize = (16*cm, 8*cm)
 
 PlotFormat = [".pdf", ".png",]
-PlotFile = "LaReunion_LydiaModel_Tipper"
+PlotFile = "Ubaye19_Tipper"
 
 PdfCatalog = True
-PdfCName = "LaReunion_LydiaModel_Tipper.pdf"
+PdfCName = "Ubaye19_Tipper.pdf"
 if not ".pdf" in PlotFormat:
     error(" No pdfs generated. No catalog possible!")
     PdfCatalog = False
@@ -235,92 +238,96 @@ for s in Sites:
 
 
         fig, axes = plt.subplots(1,2, figsize = FigSize, subplot_kw=dict(box_aspect=1.),
-                         sharex=False, sharey=False)
+                         sharex=False, sharey=False, constrained_layout=True)
+
+
 
         fig.suptitle(r"Site: "+s+"   nRMS: "+str(np.around(siteRMS,1))
                      +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
-                     +"\nUTMX: "+str(site_utmx)+"   UTMY: "+str(site_utmy)
+                     +"\nX: "+str(site_utmx)+"   Y: "+str(site_utmy)
                      +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m\n",
                      ha="left", x=0.1,fontsize=Titlesize)
 
 
-
         if PlotPred:
-            axes[0,0].plot(Perxc, Tpxrc, color="r",linestyle="-", linewidth=Linewidth)
+            print(np.shape(Peryc))
+            print(np.shape(Tpyrc))
+
+            axes[0,].plot(Perxc, Tpxrc, color="r",linestyle="-", linewidth=Linewidth)
 
         if PlotObsv:
-            axes[0,0].errorbar(Perxo,Tpxro, yerr=Tpxe,
+            axes[0,].errorbar(Perxo,Tpxro, yerr=Tpxe,
                             linestyle="",
                             marker="o",
                             color="r",
                             linewidth=Linewidth,
                             markersize=Markersize)
         if PlotPred:
-            axes[0,0].plot(Perxc, Tpxic, color="b",linestyle="-", linewidth=Linewidth)
+            axes[0,].plot(Perxc, Tpxic, color="b",linestyle="-", linewidth=Linewidth)
 
         if PlotObsv:
-            axes[0,0].errorbar(Perxo,Tpxio, yerr=Tpxe,
+            axes[0,].errorbar(Perxo,Tpxio, yerr=Tpxe,
                             linestyle="",
                             marker="o",
                             color="b",
                             linewidth=Linewidth,
                             markersize=Markersize)
-        axes[0,0].set_xscale("log")
-        axes[0,0].set_xlim(PerLimits)
+        axes[0,].set_xscale("log")
+        axes[0,].set_xlim(PerLimits)
         if TpLimits != ():
-            axes[0,0].set_ylim(TpLimits)
-        axes[0,0].legend(["real", "imag"])
-        # axes[0,0].xaxis.set_ticklabels([])
-        axes[0,0].tick_params(labelsize=Labelsize-1)
-        axes[0,0].set_ylabel("Tpy", fontsize=Fontsize)
-        axes[0,0].grid("both", "both", linestyle=":", linewidth=0.5)
+            axes[0,].set_ylim(TpLimits)
+        axes[0,].legend(["real", "imag"])
+        # axes[0,].xaxis.set_ticklabels([])
+        axes[0,].tick_params(labelsize=Labelsize-1)
+        axes[0,].set_ylabel("Tpy", fontsize=Fontsize)
+        axes[0,].grid("both", "both", linestyle=":", linewidth=0.5)
         if ShowRMS:
             nRMSr = np.around(nRMSTpxr,1)
             nRMSi = np.around(nRMSTpxi,1)
             StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
-            axes[0,0].text(0.05, 0.05,StrRMS,
-                            transform=axes[0,0].transAxes,
+            axes[0,].text(0.05, 0.05,StrRMS,
+                            transform=axes[0,].transAxes,
                             fontsize = Fontsize-2,
                             ha="left", va="bottom",
                             bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
 
         if PlotPred:
-            axes[0,1].plot(Peryc, Tpyrc, color="r",linestyle="-", linewidth=Linewidth)
+            axes[1,].plot(Peryc, Tpyrc, color="r",linestyle="-", linewidth=Linewidth)
 
         if PlotObsv:
-            axes[0,1].errorbar(Peryo,Tpyro, yerr=Tpye,
+            axes[1,].errorbar(Peryo,Tpyro, yerr=Tpye,
                             linestyle="",
                             marker="o",
                             color="r",
                             linewidth=Linewidth,
                             markersize=Markersize)
         if PlotPred:
-            axes[0,1].plot(Peryc, Tpyic, color="b",linestyle="-", linewidth=Linewidth)
+            axes[1,].plot(Peryc, Tpyic, color="b",linestyle="-", linewidth=Linewidth)
 
         if PlotObsv:
-            axes[0,1].errorbar(Peryc,Tpyio, yerr=Tpye,
+            axes[1,].errorbar(Peryc,Tpyio, yerr=Tpye,
                             linestyle="",
                             marker="o",
                             color="b",
                             linewidth=Linewidth,
                             markersize=Markersize)
 
-        axes[0,1].set_xscale("log")
-        axes[0,1].set_xlim(PerLimits)
+        axes[1,].set_xscale("log")
+        axes[1,].set_xlim(PerLimits)
         if TpLimits != ():
-            axes[0,1].set_ylim(TpLimits)
-        axes[0,1].legend(["real", "imag"])
-        # axes[0,1].xaxis.set_ticklabels([])
-        axes[0,1].tick_params(labelsize=Labelsize-1)
-        axes[0,1].set_ylabel("Tpx", fontsize=Fontsize)
-        axes[0,1].grid("both", "both", linestyle=":", linewidth=0.5)
+            axes[1,].set_ylim(TpLimits)
+        axes[1,].legend(["real", "imag"])
+        # axes[1,].xaxis.set_ticklabels([])
+        axes[1,].tick_params(labelsize=Labelsize-1)
+        axes[1,].set_ylabel("Tpx", fontsize=Fontsize)
+        axes[1,].grid("both", "both", linestyle=":", linewidth=0.5)
         if ShowRMS:
             nRMSr = np.around(nRMSTpyr,1)
             nRMSi = np.around(nRMSTpyi,1)
             StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
-            axes[0,1].text(0.05, 0.05,StrRMS,
-                               transform=axes[0,1].transAxes,
+            axes[1,].text(0.05, 0.05,StrRMS,
+                               transform=axes[1,].transAxes,
                                fontsize = Fontsize-2,
                                ha="left", va="bottom",
                                bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
@@ -339,4 +346,4 @@ for s in Sites:
         print("No Tipper for site "+s+"!")
 
 if PdfCatalog:
-    utl.make_pdf_catalog(PlotDir, PdfList=pdf_list, FileName=PdfCName)
+    utl.make_pdf_catalog(PlotDir, PdfList=pdf_list, FileName=PlotDir+PdfCName)

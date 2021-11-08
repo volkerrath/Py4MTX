@@ -580,7 +580,7 @@ def make_pdf_catalog(WorkDir="./", PdfList= None, FileName=None):
 
     for pdf in PdfList:
         with fitz.open(pdf) as mfile:
-            catalog.insertPDF(mfile)
+            catalog.insert_pdf(mfile)
 
     catalog.save(FileName, garbage=4, clean = True, deflate=True)
     catalog.close()
