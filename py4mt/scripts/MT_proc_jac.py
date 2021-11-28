@@ -38,9 +38,9 @@ import scipy.sparse as scp
 import netCDF4 as nc
 
 
-import vtk
-import pyvista as pv
-import PVGeo as pvg
+# import vtk
+# import pyvista as pv
+# import PVGeo as pvg
 
 
 
@@ -85,12 +85,19 @@ calcsens = True
 # DFile = r"/home/vrath/Py4MT/py4mt/data/ANN21_Jacobian/Ann21_T3.dat"
 # MFile = r"/home/vrath/Py4MT/py4mt/data/ANN21_Jacobian/Ann21_Prior100_T_NLCG_033.rho"
 # SFile = r"/home/vrath/Py4MT/py4mt/data/ANN21_Jacobian/Ann21_Prior100_T-Z3.sns"
-JFile = r"/home/vrath/work/MT/Jacobians/Annecy2021/ANN25a_bestjac/Ann25_T.jac"
-JFile = r"/home/vrath/work/MT/Jacobians/Annecy2021/ANN25a_bestjac/Ann25_P.jac"
-JFile = r"/home/vrath/work/MT/Jacobians/Annecy2021/ANN25a_bestjac/Ann25_Z.jac"
-DFile = r"/home/vrath/Py4MT/py4mt/data/ANN21_Jacobian/Ann21_T3.dat"
-MFile = r"/home/vrath/Py4MT/py4mt/data/ANN21_Jacobian/Ann21_Prior100_T_NLCG_033.rho"
-SFile = r"/home/vrath/Py4MT/py4mt/data/ANN21_Jacobian/Ann21_Prior100_T-Z3.sns"
+
+# JFile = r"/home/vrath/work/MT/Jacobians/Annecy2021/ANN25a_bestjac/Ann25_T.jac"
+# JFile = r"/home/vrath/work/MT/Jacobians/Annecy2021/ANN25a_bestjac/Ann25_P.jac"
+# JFile = r"/home/vrath/work/MT/Jacobians/Annecy2021/ANN25a_bestjac/Ann25_Z.jac"
+# DFile = r"/home/vrath/Py4MT/py4mt/data/ANN21_Jacobian/Ann21_T3.dat"
+# MFile = r"/home/vrath/Py4MT/py4mt/data/ANN21_Jacobian/Ann21_Prior100_T_NLCG_033.rho"
+# SFile = r"/home/vrath/Py4MT/py4mt/data/ANN21_Jacobian/Ann21_Prior100_T-Z3.sns"
+
+
+JFile = r"/home/vrath/work/MT_Data/Ubaye/UbJac/UbJac_Z.jac"
+DFile = r"/home/vrath/work/MT_Data/Ubaye/UbJac/UbJac_Z_int4.dat"
+MFile = r"/home/vrath/work/MT_Data/Ubaye/UbJac/UbJac.rho"
+SFile = r"/home/vrath/work/MT_Data/Ubaye/UbJac/UbJac_Z.sns"
 
 
 total = 0.0
