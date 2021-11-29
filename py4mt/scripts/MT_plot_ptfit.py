@@ -55,11 +55,13 @@ cm = 1/2.54  # centimeters in inches
 # ObsvFile = r"/home/vrath/work/MT_Data/Ubaye/UB19VR/Ub19c_ZPT"
 
 
-WorkDir =  r"/home/vrath/work/MT_Data/Ubaye/Volker_RMS/"
-PredFile = r"/home/vrath/work/MT_Data/Ubaye/Volker_RMS/from_Ub22_ZPT_1"
-# PredFile = r"/home/vrath/work/MT_Data/Ubaye/Volker_RMS/Ub22_ZofPT_02_NLCG_014"
-ObsvFile = r"/home/vrath/work/MT_Data/Ubaye/Volker_RMS/Ub22_ZPT"
-PlotFile = "Ubaye_PhTensor_1"
+WorkDir = r"/home/vrath/work/MT_Data/Ubaye/Volker_rms_off/"
+PredFile = r"/home/vrath/work/MT_Data/Ubaye/Volker_rms_off/Ub22_ZoffPT_02_NLCG_014"
+ObsvFile = r"/home/vrath/work/MT_Data/Ubaye/Volker_rms_off/Ub22_ZoffPT"
+
+
+PlotFile = "Ubaye_PhTensorOffa"
+
 
 PlotDir = WorkDir + 'Plots/'
 
@@ -76,15 +78,15 @@ PlotObsv = True
 if ObsvFile == "":
     PlotObsv = False
 
-PerLimits = (0.0001,10.)
+PerLimits = (0.0001,100.)
 PhTLimitsXX = (-5., 5.)
-PhTLimitsXY = (-1., 1.)
+PhTLimitsXY = (-5., 5.)
 ShowErrors = True
 ShowRMS = True
 EPSG = 0 #5015
 
 # if PlotFull:
-FigSize = (18*cm, 16*cm) #
+FigSize = (16*cm, 12*cm) #
 # else:
 #     FigSize = (16*cm, 10*cm) #  NoDiag
 
@@ -266,7 +268,7 @@ for s in Sites:
 
     sRes = np.asarray(siteRes)
     nD = np.size(sRes)
-    siteRMS = np.sqrt(np.sum(np.power(sRes,2.))/float(nD))
+    siteRMS = np.sqrt(np.sum(np.power(sRes,2.))/(float(nD)-1))
     print("Site nRMS: "+str(siteRMS))
     # Ccprint(sRes)
 
@@ -439,7 +441,7 @@ for s in Sites:
                            ha="left", va="bottom",
                            bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
-    fig.subplots_adjust(wspace = 0.4,top = 0.8 )
+    fig.subplots_adjust(wspace = 0.1,top = 0.8 )
 
     for F in PlotFormat:
         plt.savefig(PlotDir+PlotFile+"_"+s+F, dpi=400)

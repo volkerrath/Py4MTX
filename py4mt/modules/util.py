@@ -501,7 +501,7 @@ def fractrans(m=None, x=None , a=0.5):
     """
     Caklculate fractional derivative of m.
 
-    VR Apr 202
+    VR Apr 2021
     """
     import differint as df
 
@@ -586,34 +586,3 @@ def make_pdf_catalog(WorkDir="./", PdfList= None, FileName=None):
     catalog.close()
 
     print("\n"+str(np.size(PdfList))+" files collected to "+FileName)
-
-
-# def make_pdf_catalog(WorkDir="./", FileName=None):
-#     """
-#     Make pdf catalog from site-plots
-
-#     Parameters
-#     ----------
-#     Workdir : string
-#         Working directory.
-#     Filename : string
-#         Filename. Files to be appended must begin with this string.
-
-#     Returns
-#     -------
-#     None.
-
-#     """
-#     from PyPDF2 import PdfFileMerger
-
-#     catalog = PdfFileMerger()
-#     pdflist = []
-#     files = os.listdir(WorkDir)
-#     for entry in sorted(files, key=str):
-#         if entry.endswith(".pdf") and entry.startswith(FileName+"_"):
-#            catalog.append(WorkDir+entry)
-#            pdflist.append(entry)
-
-#     CatName = WorkDir+FileName+".pdf"
-#     catalog.write(CatName)
-#     print("\n"+str(np.size(pdflist))+" files collected to "+CatName)

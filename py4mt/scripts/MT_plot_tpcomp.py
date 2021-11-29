@@ -37,7 +37,7 @@ from version import versionstrg
 Strng, _ = versionstrg()
 now = datetime.now()
 print("\n\n"+Strng)
-print("Plot Magnetic transfer function (tipper) fit"+"\n"+"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%S")))
+print("Plot Magnetic transfer function (tipper) comparison"+"\n"+"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%S")))
 print("\n\n")
 
 
@@ -88,7 +88,7 @@ PlotObsv = True
 if ObsvFile == "":
     PlotObsv = False
 
-PerLimits = (0.0001,10.)
+PerLimits = (0.0001,100.)
 TpLimits = (-1, 1)
 ShowErrors = True
 ShowRMS = True
@@ -298,7 +298,7 @@ for s in Sites:
         axes[0,].legend(["real", "imag"])
         # axes[0,].xaxis.set_ticklabels([])
         axes[0,].tick_params(labelsize=Labelsize-1)
-        axes[0,].set_ylabel("Tpy", fontsize=Fontsize)
+        axes[0,].set_ylabel("Tpx", fontsize=Fontsize)
         axes[0,].grid("both", "both", linestyle=":", linewidth=0.5)
         if ShowRMS:
             nRMSr = np.around(nRMSTpxr,1)
@@ -339,7 +339,7 @@ for s in Sites:
         axes[1,].legend(["real", "imag"])
         # axes[1,].xaxis.set_ticklabels([])
         axes[1,].tick_params(labelsize=Labelsize-1)
-        axes[1,].set_ylabel("Tpx", fontsize=Fontsize)
+        axes[1,].set_ylabel("Tpy", fontsize=Fontsize)
         axes[1,].grid("both", "both", linestyle=":", linewidth=0.5)
         if ShowRMS:
             nRMSr = np.around(nRMSTpyr,1)

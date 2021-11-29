@@ -60,11 +60,10 @@ cm = 1./2.54  # centimeters to inches
 # ObsvFile = r"/home/vrath/work/MT/Annecy/ANN26/Ann26_ZoPT"
 
 
-WorkDir =  r"/home/vrath/work/MT_Data/Ubaye/Volker_RMS/"
-PredFile = r"/home/vrath/work/MT_Data/Ubaye/Volker_RMS/from_Ub22_ZPT_1"
-# PredFile = r"/home/vrath/work/MT_Data/Ubaye/Volker_RMS/Ub22_ZofPT_02_NLCG_014"
-ObsvFile = r"/home/vrath/work/MT_Data/Ubaye/Volker_RMS/Ub22_ZPT"
-PlotFile = "Ubaye_ImpedanceFull_1"
+WorkDir = r"/home/vrath/work/MT_Data/Ubaye/Volker_rms_off/"
+PredFile = r"/home/vrath/work/MT_Data/Ubaye/Volker_rms_off/Ub22_ZoffPT_02_NLCG_014"
+ObsvFile = r"/home/vrath/work/MT_Data/Ubaye/Volker_rms_off/Ub22_ZoffPT"
+PlotFile = "Ubaye_ImpedanceOffa"
 
 PlotDir = WorkDir + 'Plots/'
 
@@ -82,7 +81,7 @@ PlotObsv = True
 if ObsvFile == "":
     PlotObsv = False
 
-PerLimits = (0.0001,10.)
+PerLimits = (0.0001,100.)
 ZLimitsXX = ()
 ZLimitsXY = ()
 
@@ -90,7 +89,7 @@ ShowErrors = True
 ShowRMS = True
 if not PlotPred:
     ShowRMS = False
-PlotFull = True
+PlotFull = False
 
 EPSG = 0  #5644
 
@@ -318,7 +317,7 @@ for s in Sites:
     sRes = np.asarray(siteRes)
     nD = np.size(sRes)
     if PlotPred:
-        siteRMS = np.sqrt(np.sum(np.power(sRes,2.))/float(nD))
+        siteRMS = np.sqrt(np.sum(np.power(sRes,2.))/(float(nD)-1))
         print("Site nRMS: "+str(siteRMS))
 
 

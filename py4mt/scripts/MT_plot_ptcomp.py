@@ -38,29 +38,19 @@ from version import versionstrg
 Strng, _ = versionstrg()
 now = datetime.now()
 print("\n\n"+Strng)
-print("Plot Phase Tensor fit"+"\n"+"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%S")))
+print("Plot Phase Tensor comparison"+"\n"+"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%S")))
 print("\n\n")
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
 cm = 1/2.54  # centimeters in inches
 
-# WorkDir =  r"/home/vrath/work/MT_Data/Reunion/LydiaModel/"
-# PredFile = r"/home/vrath/work/MT_Data/Reunion/LydiaModel/reuf3_NLCG_020"
-# ObsvFile = r"/home/vrath/work/MT_Data/Reunion/LydiaModel/reuf2dat-net.dat"
-
-
-# WorkDir =  r"/home/vrath/work/MT_Data/Ubaye/UB19VR/"
-# PredFile = r"/home/vrath/work/MT_Data/Ubaye/UB19VR/Ub19c_ZPT_02_NLCG_010"
-# ObsvFile = r"/home/vrath/work/MT_Data/Ubaye/UB19VR/Ub19c_ZPT"
-
 
 WorkDir =  r"/home/vrath/work/MT_Data/Ubaye/Volker_RMS/"
-PredFile = r"/home/vrath/work/MT_Data/Ubaye/Volker_RMS/from_Ub22_ZPT_1"
-# PredFile = r"/home/vrath/work/MT_Data/Ubaye/Volker_RMS/Ub22_ZofPT_02_NLCG_014"
-ObsvFile = r"/home/vrath/work/MT_Data/Ubaye/Volker_RMS/Ub22_ZPT"
-PlotFile = "Ubaye_PhTensor_1"
+DataFile = [r"Ub22_ZoffPT", "Ub22_ZoffPT_02_NLCG_014"]
 
+
+PlotFile = "Ubaye22_ZoffPTPhTensor_1"
 PlotDir = WorkDir + 'Plots/'
 
 print(' Plots written to: %s' % PlotDir)
@@ -69,12 +59,6 @@ if not os.path.isdir(PlotDir):
     os.mkdir(PlotDir)
 
 FilesOnly = False
-PlotPred = True
-if PredFile == "":
-    PlotPred = False
-PlotObsv = True
-if ObsvFile == "":
-    PlotObsv = False
 
 PerLimits = (0.0001,10.)
 PhTLimitsXX = (-5., 5.)

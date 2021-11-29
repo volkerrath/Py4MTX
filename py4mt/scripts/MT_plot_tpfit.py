@@ -60,16 +60,12 @@ cm = 1/2.54  # centimeters in inches
 # PredFile = r"/home/vrath/work/MT_Data/Annecy/ANN26/Ann26_ZoPT_200_Alpha04_NLCG_017"
 # ObsvFile = r"/home/vrath/work/MT_Data/Annecy/ANN26/Ann26_ZoPT"
 
-# WorkDir =  r"/home/vrath/Blake2016"
-# PredFile = r""
-# ObsvFile = r"/home/vrath/Blake2016/kil_edited"
 
+WorkDir = r"/home/vrath/work/MT_Data/Ubaye/Volker_rms_off/"
+PredFile = r"/home/vrath/work/MT_Data/Ubaye/Volker_rms_off/Ub22_ZoffPT_02_NLCG_014"
+ObsvFile = r"/home/vrath/work/MT_Data/Ubaye/Volker_rms_off/Ub22_ZoffPT"
 
-WorkDir =  r"/home/vrath/work/MT_Data/Ubaye/Volker_RMS/"
-# PredFile = r"/home/vrath/work/MT_Data/Ubaye/Volker_RMS/from_Ub22_ZPT_100"
-PredFile = r"/home/vrath/work/MT_Data/Ubaye/Volker_RMS/Ub22_ZofPT_02_NLCG_014"
-ObsvFile = r"/home/vrath/work/MT_Data/Ubaye/Volker_RMS/Ub22_ZPT"
-PlotFile = "Ubaye_Tipper"
+PlotFile = "Ubaye_TipperOffa"
 
 
 PlotDir = WorkDir + 'Plots/'
@@ -88,7 +84,7 @@ PlotObsv = True
 if ObsvFile == "":
     PlotObsv = False
 
-PerLimits = (0.0001,10.)
+PerLimits = (0.0001,100.)
 TpLimits = (-1, 1)
 ShowErrors = True
 ShowRMS = True
@@ -251,7 +247,7 @@ for s in Sites:
         nD = np.size(sRes)
 
         if PlotPred:
-            siteRMS = np.sqrt(np.sum(np.power(sRes,2.))/float(nD))
+            siteRMS = np.sqrt(np.sum(np.power(sRes,2.))/(float(nD)-1))
             print("Site nRMS: "+str(siteRMS))
 
 
@@ -298,7 +294,7 @@ for s in Sites:
         axes[0,].legend(["real", "imag"])
         # axes[0,].xaxis.set_ticklabels([])
         axes[0,].tick_params(labelsize=Labelsize-1)
-        axes[0,].set_ylabel("Tpy", fontsize=Fontsize)
+        axes[0,].set_ylabel("Tpx", fontsize=Fontsize)
         axes[0,].grid("both", "both", linestyle=":", linewidth=0.5)
         if ShowRMS:
             nRMSr = np.around(nRMSTpxr,1)
@@ -339,7 +335,7 @@ for s in Sites:
         axes[1,].legend(["real", "imag"])
         # axes[1,].xaxis.set_ticklabels([])
         axes[1,].tick_params(labelsize=Labelsize-1)
-        axes[1,].set_ylabel("Tpx", fontsize=Fontsize)
+        axes[1,].set_ylabel("Tpy", fontsize=Fontsize)
         axes[1,].grid("both", "both", linestyle=":", linewidth=0.5)
         if ShowRMS:
             nRMSr = np.around(nRMSTpyr,1)
