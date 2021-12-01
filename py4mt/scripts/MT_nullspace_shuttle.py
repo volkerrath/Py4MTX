@@ -86,7 +86,7 @@ dx, dy, dz, rho, reference = mod.read_model(MFile)
 elapsed = time.time() - start
 total = total + elapsed
 print(" Used %7.4f s for reading model from %s " % (elapsed, DFile))
-
+nx, ny, nz = np.shape(rho)
 
 start = time.time()
 Site, Comp, Data, Head = mod.read_data(DFile)

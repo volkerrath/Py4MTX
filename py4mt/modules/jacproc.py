@@ -189,25 +189,25 @@ def sparsify_jac(Jac=None, sparse_thresh=1.0e-6, normalized=True, method=None, o
             ns = scp.csr_matrix.count_nonzero(Js)
             print(
                 "sparsifyJac:"
-                +"output J is sparse: %r, and has %i nonzeros, %f percent"
+                +" output J is sparse: %r, and has %i nonzeros, %f percent"
                 % (scp.issparse(Js), ns, 100.0 * ns / nel)
             )
         x = np.random.normal(size=np.shape(Jac)[1])
-        print(np.shape(x))
-        print(np.shape(Js))
+        # print(np.shape(x))
+        # print(np.shape(Js))
         normx = npl.norm(x)
         norma = npl.norm(Js@x)/normx
         normf = npl.norm(Jac@x)/normx
-        print(norma)
-        print(normf)
-        print(" Op-norm J_k = "+str(norma)+", explains "
-              +str(norma*100./normf)+"% of full J.")
+        # print(norma)
+        # print(normf)
+        print(" Sparisified J explains "
+              +str(round(norma*100./normf))+"% of full J.")
 
     if normalized:
         f = 1.0 / Jmax
         Js = f * Js
 
-    return Js
+    return Js, Jmax
 
 
 def normalize_jac(Jac=None, fn=None, out=True):
@@ -220,7 +220,7 @@ def normalize_jac(Jac=None, fn=None, out=True):
     shj = np.shape(Jac)
     shf = np.shape(fn)
     if shf[0] == 1:
-        f = 1.0 / fn
+        f = 1.0 / fn[0]
         Jac = f * Jac
     else:
         erri = np.reshape(1.0 / fn, (shj[0], 1))
@@ -229,9 +229,9 @@ def normalize_jac(Jac=None, fn=None, out=True):
     return Jac
 
 
-def calculate_sens(Jac=None, normalize=True, small=1.0e-14, out=True):
+def calculate_sens(Jac=None, normalize=True, small=1.0e-14, log=False, out=True):
     """
-    Normalize Jacobian from ModEM output.
+    Calculate sensitivity Jacobian from ModEM output.
 
     author: vrath
     last changed: Sep 25, 2020
@@ -242,14 +242,18 @@ def calculate_sens(Jac=None, normalize=True, small=1.0e-14, out=True):
         J = Jac
 
     S = np.sum(np.power(J, 2), axis=0)
+    S=np.sqrt(S)
 
+    Smax = np.amax(S)
     if normalize:
-
-        Smax = np.amax(S)
         S = S / Smax
+
+    if log:
+        S = np.log10(S)
 
     if small >= 1.0e-14:
         S[S < small] = np.NaN
+
 
     return S, Smax
 

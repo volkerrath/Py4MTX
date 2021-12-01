@@ -558,6 +558,9 @@ def calc_rms(dcalc=None, dobs=None, Wd=1.0):
 
     return nrms, srms
 
+def nearly_equal(a,b,sig_fig=6):
+    return (a==b or int(a*10**sig_fig) == int(b*10**sig_fig))
+
 def make_pdf_catalog(WorkDir="./", PdfList= None, FileName=None):
     """
     Make pdf catalog from site-plots

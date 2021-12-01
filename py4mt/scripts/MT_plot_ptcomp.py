@@ -46,10 +46,10 @@ warnings.simplefilter(action="ignore", category=FutureWarning)
 cm = 1/2.54  # centimeters in inches
 
 
-WorkDir =  r"/home/vrath/work/MT_Data/Ubaye/Volker_RMS/"
-DataFile = [r"Ub22_ZoffPT", "Ub22_ZoffPT_02_NLCG_014"]
-
-
+WorkDir =  r"/home/vrath/work/MT_Data/Ubaye/Volker_rms_off/"
+DataFiles = [r"Ub22_ZoffPT", r"Ub22_ZoffPT_02_NLCG_014"]
+DataPlot  = [("r", "o"), ("b","-")]
+DataRef = 0
 PlotFile = "Ubaye22_ZoffPTPhTensor_1"
 PlotDir = WorkDir + 'Plots/'
 
@@ -57,18 +57,17 @@ print(' Plots written to: %s' % PlotDir)
 if not os.path.isdir(PlotDir):
     print(' File: %s does not exist, but will be created' % PlotDir)
     os.mkdir(PlotDir)
-
 FilesOnly = False
 
 PerLimits = (0.0001,10.)
 PhTLimitsXX = (-5., 5.)
-PhTLimitsXY = (-1., 1.)
+PhTLimitsXY = (-5., 5.)
 ShowErrors = True
 ShowRMS = True
 EPSG = 0 #5015
 
 # if PlotFull:
-FigSize = (18*cm, 16*cm) #
+FigSize = (16*cm, 16*cm) #
 # else:
 #     FigSize = (16*cm, 10*cm) #  NoDiag
 
@@ -96,7 +95,7 @@ Titlesize = Fontsize-1
 Linewidth= 1
 Markersize = 4
 Grey = 0.7
-Lcycle =Lcycle = (cycler("linestyle", ["-", "--", ":", "-."])
+Lcycle = (cycler("linestyle", ["-", "--", ":", "-."])
           * cycler("color", ["r", "g", "b", "y"]))
 
 """
@@ -112,159 +111,114 @@ if FilesOnly:
 
 start = time.time()
 
-FF = ObsvFile
-SiteObs, CompObs, DataObs, HeadObs = mod.read_data(FF+".dat")
-obs_dat = DataObs[:, 6]
-obs_err = DataObs[:, 7]
-obs_per = DataObs[:, 0]
-obs_cmp = CompObs
-obs_sit = SiteObs
-lat = DataObs[:,1]
-lon = DataObs[:,2]
-x = DataObs[:,3]
-y = DataObs[:,4]
-z = DataObs[:,5]
 
-FF = PredFile
-SiteCal, CompCal, DataCal, HeadCal = mod.read_data(FF+".dat")
-cal_dat= DataCal[:, 6]
-cal_per= DataCal[:, 0]
-cal_cmp= CompCal
-cal_sit = SiteCal
+Site_list = []
+for ff in np.arange(len(DataFiles)):
+    FF = WorkDir+DataFiles[ff]
+    Site, Comp, Data, Head = mod.read_data(FF+".dat")
+    dat = Data[:, 6]
+    err = Data[:, 7]
+    per = Data[:, 0]
+    cmp = Comp
+    sit = Site
+    lat = Data[:,1]
+    lon = Data[:,2]
+    x = Data[:,3]
+    y = Data[:,4]
+    z = Data[:,5]
 
 
-Sites = np.unique(SiteObs)
+    Sites = np.unique(Site)
+    ss = -1
+    for s in Sites:
+        ss=ss+1
+        print("Plotting site: "+s)
+        site = (sit==s)
+        site_lon = lon[site][0]
+        site_lat = lat[site][0]
+
+        site_lon = lon[site][0]
+        site_lat = lat[site][0]
+
+        if EPSG==0:
+            site_utmx = x[site][0]
+            site_utmy = y[site][0]
+        else:
+            site_utmx, site_utmy = utl.proj_latlon_to_utm(site_lat, site_lon,
+                                                          utm_zone=EPSG)
+
+        site_utmx = int(np.round(site_utmx))
+        site_utmy = int(np.round(site_utmy))
+
+        site_elev = z[site][0]
+
+        siteVal = np.empty([0,0])
+        siteErr = np.empty([0,0])
+        sitePer = np.empty([0,0])
+        siteCmp = np.empty([0,0])
+
+        for comp in ["PTXX", "PTXY", "PTYX", "PTYY"]:
+            cmpi = np.where((cmp==comp) & (sit==s))
+            Val = dat[cmpi]
+            Err = err[cmpi]
+            Per = per[cmpi]
+            Cmp = cmp[cmpi]
+            indx =np.argsort(Per)
+            Val = Val[indx]
+            Err = Err[indx]
+            Per = Per[indx]
+            Cmp = Cmp[indx]
+            siteVal = np.append(siteVal, Val)
+            siteErr = np.append(siteErr, Err)
+            sitePer = np.append(sitePer, Per)
+            siteCmp = np.append(siteCmp, Cmp)
+
+
+        if ss ==0:
+            sVal = np.asarray(siteVal)
+            sErr = np.asarray(siteErr)
+            sPer = np.asarray(sitePer)
+            sCmp = np.asarray(siteCmp)
+
+        else:
+            sVal = np.hstack((sVal, np.asarray(siteVal)))
+            sErr = np.hstack((sErr, np.asarray(siteErr)))
+            sPer = np.hstack((sPer, np.asarray(sitePer)))
+            sCmp = np.hstack((sCmp, np.asarray(siteCmp)))
+
+        print(len(sVal))
+
+    Site_list.append([sVal, sErr, sPer, sCmp])
+
+sValRef, sErrRef, sPerRef, sCmpRef = Site_list[DataRef]
+
+Data_List = Site_list.copy()
+[Data_List].append(0.*sValRef)
+
+for ff in np.arange(len(DataFiles)):
+    sVal, sErr, sPer, sCmp = Site_list[ff]
+    sRes = (sVal - sValRef)/sErrRef
+    Data_List.append([sVal, sErr, sPer, sCmp, sRes])
+
+
+
+
+    # nD = np.size(sVal)
+    # print(nD)
+
 
 pdf_list = []
-for s in Sites:
-    print("Plotting site: "+s)
-    site = (obs_sit==s)
-    site_lon = lon[site][0]
-    site_lat = lat[site][0]
-
-    site_lon = lon[site][0]
-    site_lat = lat[site][0]
-
-    if EPSG==0:
-        site_utmx = x[site][0]
-        site_utmy = y[site][0]
-    else:
-        site_utmx, site_utmy = utl.proj_latlon_to_utm(site_lat, site_lon,
-                                                      utm_zone=EPSG)
-
-    site_utmx = int(np.round(site_utmx))
-    site_utmy = int(np.round(site_utmy))
-
-    site_elev = z[site][0]
-
-    siteRes = np.empty([0,0])
-
-    cmp ="PTXX"
-    cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
-    PhTxxo = obs_dat[cmpo]
-    PhTxxe = obs_err[cmpo]
-    Perxxo = obs_per[cmpo]
-    indx =np.argsort(Perxxo)
-    PhTxxo = PhTxxo[indx]
-    PhTxxe = PhTxxe[indx]
-    Perxxo = Perxxo[indx]
-    cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
-    PhTxxc = cal_dat[cmpc]
-    Perxxc = cal_per[cmpc]
-    indx =np.argsort(Perxxc)
-    PhTxxc = PhTxxc[indx]
-    Perxxc = Perxxc[indx]
-
-    if np.size(cmpo) > 0:
-        siteRes = np.append(siteRes, (PhTxxo-PhTxxc)/PhTxxe)
-        if ShowRMS:
-            RnormPhTxx, ResPhTxx = utl.calc_resnorm(PhTxxo, PhTxxc, PhTxxe)
-            nRMSPhTxx, _ = utl.calc_rms(PhTxxo, PhTxxc, 1.0/PhTxxe)
-
-
-    cmp ="PTXY"
-    cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
-    PhTxyo = obs_dat[cmpo]
-    PhTxye = obs_err[cmpo]
-    Perxyo = obs_per[cmpo]
-    indx =np.argsort(Perxyo)
-    PhTxyo = PhTxyo[indx]
-    PhTxye = PhTxye[indx]
-    Perxyo = Perxyo[indx]
-    cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
-    PhTxyc = cal_dat[cmpc]
-    Perxyc = cal_per[cmpc]
-    indx =np.argsort(Perxyc)
-    PhTxyc = PhTxyc[indx]
-    Perxyc = Perxyc[indx]
-    if np.size(cmpo) > 0:
-        siteRes = np.append(siteRes, (PhTxyo-PhTxyc)/PhTxye)
-        if ShowRMS:
-            RnormPhTxy, ResPhTxy = utl.calc_resnorm(PhTxyo, PhTxyc, PhTxye)
-            nRMSPhTxy, _ = utl.calc_rms(PhTxyo, PhTxyc, 1.0/PhTxye)
-
-    cmp ="PTYX"
-    cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
-    PhTyxo = obs_dat[cmpo]
-    PhTyxe = obs_err[cmpo]
-    Peryxo = obs_per[cmpo]
-    indx =np.argsort(Peryxo)
-    PhTyxo = PhTyxo[indx]
-    PhTyxe = PhTyxe[indx]
-    Peryxo = Peryxo[indx]
-    cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
-    PhTyxc = cal_dat[cmpc]
-    Peryxc = cal_per[cmpc]
-    indx =np.argsort(Peryxc)
-    PhTyxc = PhTyxc[indx]
-    Peryxc = Peryxc[indx]
-    if np.size(cmpo) > 0:
-        siteRes = np.append(siteRes, (PhTyxo-PhTyxc)/PhTyxe)
-        if ShowRMS:
-            RnormPhTyx, ResPhTyx = utl.calc_resnorm(PhTyxo, PhTxyc, PhTyxe)
-            nRMSPhTyx, _ = utl.calc_rms(PhTyxo, PhTyxc, 1.0/PhTyxe)
-
-    cmp ="PTYY"
-    cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
-    PhTyyo = obs_dat[cmpo]
-    PhTyye = obs_err[cmpo]
-    Peryyo = obs_per[cmpo]
-    indx =np.argsort(Peryyo)
-    PhTyyo = PhTyyo[indx]
-    PhTyye = PhTyye[indx]
-    Peryyo = Peryyo[indx]
-    cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
-    PhTyyc = cal_dat[cmpc]
-    Peryyc = cal_per[cmpc]
-    indx =np.argsort(Peryyc)
-    PhTyyc = PhTyyc[indx]
-    Peryyc = Peryyc[indx]
-    if np.size(cmpo) > 0:
-        siteRes = np.append(siteRes, (PhTyyo-PhTyyc)/PhTyye)
-        if ShowRMS:
-            RnormPhTyy, ResPhTyy = utl.calc_resnorm(PhTyyo, PhTyyc, PhTyye)
-            nRMSPhTyy, _ = utl.calc_rms(PhTyyo, PhTyyc, 1.0/PhTyye)
-
-
-
-
-    sRes = np.asarray(siteRes)
-    nD = np.size(sRes)
-    siteRMS = np.sqrt(np.sum(np.power(sRes,2.))/float(nD))
-    print("Site nRMS: "+str(siteRMS))
-    # Ccprint(sRes)
-
-
-
 
     fig, axes = plt.subplots(2,2, figsize = FigSize, subplot_kw=dict(box_aspect=1.),
-                     sharex=False, sharey=False, constrained_layout=True)
+                      sharex=False, sharey=False, constrained_layout=True)
 
     fig.suptitle(r"Site: "+s+"   nRMS: "+str(np.around(siteRMS,1))
-                     +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
-                     +"\nX: "+str(site_utmx)+"   Y: "+str(site_utmy)
-                     +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m\n",
-                     ha="left", x=0.1,fontsize=Titlesize)
+                      +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
+                      +"\nX: "+str(site_utmx)+"   Y: "+str(site_utmy)
+                      +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m\n",
+                      ha="left", x=0.1,fontsize=Titlesize)
+
+
 
     if PlotPred:
         axes[0,0].plot(Perxxc, PhTxxc, "-r", linewidth =Linewidth)
@@ -279,11 +233,11 @@ for s in Sites:
                                     markersize=Markersize)
         else:
             axes[0,0].plot(Perxxo, PhTxxo,
-                           color="b",
-                           marker="o",
-                           linestyle="",
-                           linewidth =Linewidth,
-                           markersize=Markersize)
+                            color="b",
+                            marker="o",
+                            linestyle="",
+                            linewidth =Linewidth,
+                            markersize=Markersize)
 
 
     axes[0,0].set_xscale("log")
@@ -299,10 +253,10 @@ for s in Sites:
         nRMSr = np.around(nRMSPhTxx,1)
         StrRMS = "nRMS = "+str(nRMSr)
         axes[0,0].text(0.05, 0.05,StrRMS,
-                           transform=axes[0,0].transAxes,
-                           fontsize = Fontsize-2,
-                           ha="left", va="bottom",
-                           bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
+                            transform=axes[0,0].transAxes,
+                            fontsize = Fontsize-2,
+                            ha="left", va="bottom",
+                            bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
     if PlotPred:
         axes[0,1].plot(Perxyc, PhTxyc, "-r", linewidth =Linewidth)
@@ -324,11 +278,11 @@ for s in Sites:
                             markersize=Markersize)
         else:
             axes[0,1].plot(Perxyo, PhTxyo,
-                           color="b",
-                           marker="o",
-                           linestyle="",
-                           linewidth =Linewidth,
-                           markersize=Markersize)
+                            color="b",
+                            marker="o",
+                            linestyle="",
+                            linewidth =Linewidth,
+                            markersize=Markersize)
     axes[0,1].set_xscale("log")
     axes[0,1].set_xlim(PerLimits)
     if PhTLimitsXY != ():
@@ -343,10 +297,10 @@ for s in Sites:
         nRMSr = np.around(nRMSPhTxy,1)
         StrRMS = "nRMS = "+str(nRMSr)
         axes[0,1].text(0.05, 0.05,StrRMS,
-                           transform=axes[0,1].transAxes,
-                           fontsize = Fontsize-2,
-                           ha="left", va="bottom",
-                           bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
+                            transform=axes[0,1].transAxes,
+                            fontsize = Fontsize-2,
+                            ha="left", va="bottom",
+                            bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
 
     if PlotPred:
@@ -362,11 +316,11 @@ for s in Sites:
                                     markersize=Markersize)
         else:
             axes[1,0].plot(Peryxo, PhTyxo,
-                           color="b",
-                           marker="o",
-                           linestyle="",
-                           linewidth =Linewidth,
-                           markersize=Markersize)
+                            color="b",
+                            marker="o",
+                            linestyle="",
+                            linewidth =Linewidth,
+                            markersize=Markersize)
 
     axes[1,0].set_xscale("log")
     axes[1,0].set_xlim(PerLimits)
@@ -381,17 +335,17 @@ for s in Sites:
         nRMSr = np.around(nRMSPhTyx,1)
         StrRMS = "nRMS = "+str(nRMSr)
         axes[1,0].text(0.05, 0.05,StrRMS,
-                           transform=axes[1,0].transAxes,
-                           fontsize = Fontsize-2,
-                           ha="left", va="bottom",
-                           bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
+                            transform=axes[1,0].transAxes,
+                            fontsize = Fontsize-2,
+                            ha="left", va="bottom",
+                            bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
     if PlotPred:
         axes[1,1].plot(Peryyc, PhTyyc, "-r", linewidth =Linewidth)
 
     if PlotObsv:
         if ShowErrors:
-           axes[1,1].errorbar(Peryyo,PhTyyo, yerr=PhTyye,
+            axes[1,1].errorbar(Peryyo,PhTyyo, yerr=PhTyye,
                                     linestyle="",
                                     marker="o",
                                     color="b",
@@ -399,11 +353,11 @@ for s in Sites:
                                     markersize=Markersize)
         else:
             axes[1,1].plot(Peryyo, PhTyyo,
-                           color="b",
-                           marker="o",
-                           linestyle="",
-                           linewidth =Linewidth,
-                           markersize=Markersize)
+                            color="b",
+                            marker="o",
+                            linestyle="",
+                            linewidth =Linewidth,
+                            markersize=Markersize)
 
     axes[1,1].set_xscale("log")
     axes[1,1].set_xlim(PerLimits)
@@ -418,10 +372,10 @@ for s in Sites:
         nRMSr = np.around(nRMSPhTyy,1)
         StrRMS = "nRMS = "+str(nRMSr)
         axes[1,1].text(0.05, 0.05,StrRMS,
-                           transform=axes[1,1].transAxes,
-                           fontsize = Fontsize-2,
-                           ha="left", va="bottom",
-                           bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
+                            transform=axes[1,1].transAxes,
+                            fontsize = Fontsize-2,
+                            ha="left", va="bottom",
+                            bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
     fig.subplots_adjust(wspace = 0.4,top = 0.8 )
 

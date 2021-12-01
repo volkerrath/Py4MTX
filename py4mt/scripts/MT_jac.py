@@ -69,7 +69,7 @@ normalize_err = True
 
 normalize_max = False
 
-sparsify = False
+sparsify = True
 sparse_thresh = 1.e-7
 
 WorkDir = r"/home/vrath/work/MT_Data/Ubaye/UB22_jac_best/"
@@ -176,10 +176,10 @@ for f in np.arange(nF):
     total = total + elapsed
     print(" Used %7.4f s for writing Jacobian to %s " % (elapsed, NCFile))
 
-    start = time.time()
-    NPZFile = name +nstr+ ".npz"
-    np.savez_compressed(NPZFile,
-                        Jac=Jac, Data=Data, Site=Site, Comp=Comp)
-    elapsed = time.time() - start
-    total = total + elapsed
-    print(" Used %7.4f s for writing Jacobian to %s " % (elapsed, NPZFile))
+    # start = time.time()
+    # NPZFile = name +nstr+ ".npz"
+    # np.savez_compressed(NPZFile,
+    #                     Jac=Jac, Data=Data, Site=Site, Comp=Comp)
+    # elapsed = time.time() - start
+    # total = total + elapsed
+    # print(" Used %7.4f s for writing Jacobian to %s " % (elapsed, NPZFile))

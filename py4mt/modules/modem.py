@@ -37,19 +37,19 @@ def read_jac(JacFile=None, out=False):
     # nAll = fjac.read_ints(np.int32)
     # print("nAll"+str(nAll))
     nTx = fjac.read_ints(np.int32)
-    print("ntx"+str(nTx))
+    # print("ntx"+str(nTx))
     for i1 in range(nTx[0]):
         nDt = fjac.read_ints(np.int32)
-        print("nDt"+str(nDt))
+        # print("nDt"+str(nDt))
         for i2 in range(nDt[0]):
             nSite = fjac.read_ints(np.int32)
-            print("nSite"+str(nSite))
+            # print("nSite"+str(nSite))
             for i3 in range(nSite[0]):
                 # header2
                 header2 = fjac.read_record(np.byte)
                 h2 = ''.join([chr(item) for item in header2])
-                print(h2)
-                print(i1,i2,i3)
+                # print(h2)
+                # print(i1,i2,i3)
                 nSigma = fjac.read_ints(np.int32)
                 # print("nSigma"+str(nSigma))
                 for i4 in range(nSigma[0]):
@@ -190,14 +190,11 @@ def write_jac_ncd(NCFile=None, Jac=None, Dat=None, Site=None, Comp=None,
         "comp", str, ("data"), zlib=zlib_in, shuffle=shuffle_in)
 
     Per = ncout.createVariable(
-        "Per", "float64", ("data"), zlib=zlib_in, shuffle=shuffle_in
-    )
+        "Per", "float64", ("data"), zlib=zlib_in, shuffle=shuffle_in)
     Lat = ncout.createVariable(
-        "Lat", "float64", ("data"), zlib=zlib_in, shuffle=shuffle_in
-    )
+        "Lat", "float64", ("data"), zlib=zlib_in, shuffle=shuffle_in)
     Lon = ncout.createVariable(
-        "Lon", "float64", ("data"), zlib=zlib_in, shuffle=shuffle_in
-    )
+        "Lon", "float64", ("data"), zlib=zlib_in, shuffle=shuffle_in)
     X = ncout.createVariable(
         "X", "float64", ("data"), zlib=zlib_in, shuffle=shuffle_in)
     Y = ncout.createVariable(
@@ -205,15 +202,12 @@ def write_jac_ncd(NCFile=None, Jac=None, Dat=None, Site=None, Comp=None,
     Z = ncout.createVariable(
         "Z", "float64", ("data"), zlib=zlib_in, shuffle=shuffle_in)
     Val = ncout.createVariable(
-        "Val", "float64", ("data"), zlib=zlib_in, shuffle=shuffle_in
-    )
+        "Val", "float64", ("data"), zlib=zlib_in, shuffle=shuffle_in)
     Err = ncout.createVariable(
-        "Err", "float64", ("data"), zlib=zlib_in, shuffle=shuffle_in
-    )
+        "Err", "float64", ("data"), zlib=zlib_in, shuffle=shuffle_in)
 
     J = ncout.createVariable(
-        "Jac", "float64", ("data", "param"), zlib=zlib_in, shuffle=shuffle_in
-    )
+        "Jac", "float64", ("data", "param"), zlib=zlib_in, shuffle=shuffle_in)
 
     S[:] = Site[
         :,
@@ -235,7 +229,7 @@ def write_jac_ncd(NCFile=None, Jac=None, Dat=None, Site=None, Comp=None,
 
     if out:
         print(
-            "writeJacHD: data written to %s in %s format" %
+            "writeJacNC: data written to %s in %s format" %
             (NCFile, ncout.data_model)
         )
 
@@ -601,6 +595,7 @@ def write_model(ModFile=None, dx=None, dy=None, dz=None, rho=None, reference=Non
 
     """
     dims = np.shape(rho)
+
     nx = dims[0]
     ny = dims[1]
     nz = dims[2]
@@ -608,17 +603,16 @@ def write_model(ModFile=None, dx=None, dy=None, dz=None, rho=None, reference=Non
 
     if trans is not None:
 
-        trans = np.array(trans)
         trans = trans.upper()
 
         if trans == "LOGE":
             rho = np.log(rho)
             if out:
-                print("resistivities to " + ModFile + " transformed to: " + trans)
+                print("values to " + ModFile + " transformed to: " + trans)
         elif trans == "LOG10":
             rho = np.log10(rho)
             if out:
-                print("resistivities to " + ModFile + " transformed to: " + trans)
+                print("values to " + ModFile + " transformed to: " + trans)
         elif trans == "LINEAR":
             pass
 
