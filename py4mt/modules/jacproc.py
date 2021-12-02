@@ -200,7 +200,7 @@ def sparsify_jac(Jac=None, sparse_thresh=1.0e-6, normalized=True, method=None, o
         normf = npl.norm(Jac@x)/normx
         # print(norma)
         # print(normf)
-        print(" Sparisified J explains "
+        print(" Sparsified J explains "
               +str(round(norma*100./normf))+"% of full J.")
 
     if normalized:

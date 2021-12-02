@@ -27,6 +27,7 @@ dependencies:
   - black=19.10b0=py_0
   - blas=2.106=openblas
   - bleach=4.0.0=pyhd3eb1b0_0
+  - blosc=1.21.0=h9c3ff4c_0
   - boost-cpp=1.72.0=h8e57a91_0
   - bottleneck=1.3.2=py38heb32a55_1
   - brotli=1.0.9=he6710b0_2
@@ -52,7 +53,7 @@ dependencies:
   - cookiecutter=1.7.2=pyhd3eb1b0_0
   - cryptography=35.0.0=py38hd23ed53_0
   - curl=7.78.0=h1ccaba5_0
-  - cycler=0.10.0=py38_0
+  - cycler=0.11.0=pyhd3eb1b0_0
   - cytoolz=0.11.0=py38h7b6447c_0
   - daal=2020.3=ha770c72_304
   - daal4py=2020.3.1=py38h0f50a89_0
@@ -67,7 +68,7 @@ dependencies:
   - discretize=0.7.1=py38h2b96118_2
   - docutils=0.17.1=py38h06a4308_1
   - emcee=3.1.1=pyh8a188c0_0
-  - emg3d=1.3.1=pyhd8ed1ab_0
+  - emg3d=1.3.2=pyhd8ed1ab_0
   - empymod=2.1.3=pyhd8ed1ab_0
   - entrypoints=0.3=py38_0
   - expat=2.4.1=h2531618_2
@@ -206,11 +207,12 @@ dependencies:
   - llvm-openmp=12.0.1=h4bd325d_1
   - locket=0.2.1=py38h06a4308_1
   - lz4-c=1.9.2=heb0550a_3
+  - lzo=2.10=h7b6447c_2
   - mapclassify=2.4.3=pyhd3eb1b0_0
   - markdown-it-py=1.1.0=pyhd8ed1ab_0
   - markupsafe=1.1.1=py38h7b6447c_0
-  - matplotlib=3.4.3=py38h06a4308_0
-  - matplotlib-base=3.4.3=py38hbbc1b5f_0
+  - matplotlib=3.5.0=py38h06a4308_0
+  - matplotlib-base=3.5.0=py38h3ed280b_0
   - matplotlib-inline=0.1.2=pyhd3eb1b0_2
   - mccabe=0.6.1=py38_1
   - mdit-py-plugins=0.2.8=pyhd8ed1ab_0
@@ -218,6 +220,7 @@ dependencies:
   - metis=5.1.0=hf484d3e_4
   - mistune=0.8.4=py38h7b6447c_1000
   - mkl=2021.4.0=h06a4308_640
+  - mock=4.0.3=pyhd3eb1b0_0
   - mpfr=4.0.2=hb69a4c5_1
   - mpi=1.0=mpich
   - mpi4py=3.0.3=py38h028fd6f_0
@@ -287,6 +290,7 @@ dependencies:
   - pyqt=5.9.2=py38h05f1152_4
   - pyrsistent=0.18.0=py38heee7806_0
   - pysocks=1.7.1=py38h06a4308_0
+  - pytables=3.6.1=py38h9f153d1_1
   - python=3.8.2=hcf32534_0
   - python-dateutil=2.8.2=pyhd3eb1b0_0
   - python-lsp-black=1.0.0=pyhd3eb1b0_0

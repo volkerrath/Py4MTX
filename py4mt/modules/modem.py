@@ -686,7 +686,7 @@ def read_model(ModFile=None, trans="LINEAR", out=True):
         rho = np.append(rho, np.array([float(sub) for sub in line]))
 
     if out:
-        print("resistivities in " + ModFile + " are: " + trns)
+        print("values in " + ModFile + " are: " + trns)
     if trns == "LOGE":
         rho = np.exp(rho)
     elif trns == "LOG10":
@@ -701,14 +701,14 @@ def read_model(ModFile=None, trans="LINEAR", out=True):
     if trans.lower()[0:4] == "loge" or trans.lower()[0:2] == "ln'":
         rho = np.log(rho)
         if out:
-            print("resistivities transformed to: " + trans)
+            print("values transformed to: " + trans)
     elif trans.lower()[0:5] == "log10":
         rho = np.log10(rho)
         if out:
-            print("resistivities transformed to: " + trans)
+            print("values transformed to: " + trans)
     else:
         if out:
-            print("resistivities transformed to: " + trans)
+            print("values transformed to: " + trans)
         pass
 
     rho = rho.reshape(dims, order="F")
