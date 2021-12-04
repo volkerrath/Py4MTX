@@ -75,26 +75,35 @@ sparse_thresh = 1.e-7
 WorkDir = r"/home/vrath/work/MT_Data/Ubaye/UB22_jac_best/"
 MFile   = WorkDir +r"Ub22_ZoffPT_02_NLCG_014.rho"
 
-JFile = [WorkDir+r"Ub22_Zoff.jac", ]
-DFile = [WorkDir+r"Ub22_Zoff.dat", ]
+# JFile = [WorkDir+r"Ub22_Zoff.jac", ]
+# DFile = [WorkDir+r"Ub22_Zoff.dat", ]
 
 # JFile = [WorkDir+r"Ub22_P.jac", ]
 # DFile = [WorkDir+r"Ub22_P.dat", ]
 
 # JFile = [WorkDir+r"Ub22_T.jac", ]
-# DFile = [WorkDir+r"Ub22_T.dat",]
+# DFile = [WorkDir+r"Ub22_T.dat", ]
+
+JFile = [WorkDir+r"Ub22_Zoff.jac", WorkDir+r"Ub22_P.jac", WorkDir+r"Ub22_T.jac", ]
+DFile = [WorkDir+r"Ub22_Zoff.dat", WorkDir+r"Ub22_P.dat", WorkDir+r"Ub22_T.dat", ]
 
 
 total = 0.0
 
 
 start = time.time()
-dx, dy, dz, rho, reference = mod.read_model(MFile, trans="log10")
+dx, dy, dz, rho, reference = mod.read_model(MFile, trans="linear")
 dims = np.shape(rho)
-# print(dims)
+print(dims)
+print(reference)
 elapsed = time.time() - start
 total = total + elapsed
 print(" Used %7.4f s for reading model from %s " % (elapsed, MFile))
+# rr = rho.copy()
+# SNSFile = os.path.split(MFile)[0]+"_test.rho"
+# np.shape(rr)
+# mod.write_model(SNSFile, dx, dy, dz, rr, reference, trans="linear")
+# dx, dy, dz, rho2, reference = mod.read_model(SNSFile, trans="linear")
 
 
 if np.size(DFile) != np.size(JFile):
@@ -160,18 +169,22 @@ for f in np.arange(nF):
         elapsed = time.time() - start
         total = total + elapsed
         print(" Used %7.4f s for writing sparsified Jacobian to %s " % (elapsed, NPZFile))
+        if f==0:
+            JacStack = Jacs.copy()
+        else:
+            JacStack = scs.vstack([JacStack, Jacs.copy()])
 
 
     start = time.time()
     S, Smax = jac.calculate_sens(Jac, normalize=False, small=1.0e-14)
-    S = np.reshape(S, dims, order="F")
     elapsed = time.time() - start
     total = total + elapsed
     print(" Used %7.4f s for calculating Sensitivity from Jacobian  %s " % (elapsed, JFile[f]))
 
     start = time.time()
     SNSFile = name+nstr+".sns"
-    mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="log10")
+    S = np.reshape(S, dims, order="F")
+    mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="linear")
     elapsed = time.time() - start
     total = total + elapsed
     print(" Used %7.4f s for writing Sensitivity from Jacobian  %s " % (elapsed, JFile[f]))
@@ -183,4 +196,13 @@ for f in np.arange(nF):
     total = total + elapsed
     print(" Used %7.4f s for writing Jacobian to %s " % (elapsed, NCFile))
 
-print("\n\nUsed %7.4f s for processing Jacobian  %s " % (total))
+
+NPZFile = name+nstr+sstr+"_JacStack_jacs.npz"
+scs.save_npz(NPZFile, Jacs)
+NPZFile = name+nstr+sstr+"_JacStack_dats.npz"
+np.savez(NPZFile, Data=Data, Site=Site, Comp=Comp)
+elapsed = time.time() - start
+total = total + elapsed
+print(" Used %7.4f s for writing sparsified Jacobian to %s " % (elapsed, NPZFile))
+
+print("\n\nUsed %7.4f s for processing Jacobian." % (total))

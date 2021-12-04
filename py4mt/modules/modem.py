@@ -48,7 +48,7 @@ def read_jac(JacFile=None, out=False):
                 # header2
                 header2 = fjac.read_record(np.byte)
                 h2 = ''.join([chr(item) for item in header2])
-                # print(h2)
+                print(h2)
                 # print(i1,i2,i3)
                 nSigma = fjac.read_ints(np.int32)
                 # print("nSigma"+str(nSigma))
@@ -68,7 +68,8 @@ def read_jac(JacFile=None, out=False):
                     _ = fjac.read_reals(np.float64)
                     # AirCond
                     _ = fjac.read_reals(np.float64)
-                    ColJac = fjac.read_reals(np.float64).flatten(order="F")
+                    # ColJac = fjac.read_reals(np.float64).flatten(order="F")
+                    ColJac = fjac.read_reals(np.float64).flatten()
                     # print(np.shape(CellSens))
                     # ColJac =  CellSens.flatten(order='F')
                     tmp1.append(ColJac)
