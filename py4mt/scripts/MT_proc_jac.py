@@ -168,7 +168,7 @@ for f in np.arange(nF):
         np.savez(NPZFile, Data=Data, Site=Site, Comp=Comp)
         elapsed = time.time() - start
         total = total + elapsed
-        print(" Used %7.4f s for writing sparsified Jacobian to %s " % (elapsed, NPZFile))
+        print(" Used %7.4f s for writing sparsified Jacobian to %s " % (elapsed, name+nstr+sstr))
         if f==0:
             JacStack = Jacs.copy()
         else:
@@ -203,6 +203,6 @@ NPZFile = name+nstr+sstr+"_JacStack_dats.npz"
 np.savez(NPZFile, Data=Data, Site=Site, Comp=Comp)
 elapsed = time.time() - start
 total = total + elapsed
-print(" Used %7.4f s for writing sparsified Jacobian to %s " % (elapsed, NPZFile))
+print(" Used %7.4f s for writing sparsified Jacobian to %s " % (elapsed, name+nstr+sstr+"_JacStack"))
 
 print("\n\nUsed %7.4f s for processing Jacobian." % (total))

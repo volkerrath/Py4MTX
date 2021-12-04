@@ -228,9 +228,10 @@ def normalize_jac(Jac=None, fn=None, out=True):
     return Jac
 
 
-def calculate_sens(Jac=None, normalize=True, small=1.0e-14, log=False, out=True):
+def calculate_sens(Jac=None, normalize=True, small=1.0e-14, blank=np.nan, log=False, out=True):
     """
     Calculate sensitivity from ModEM Jacobian.
+    Optionally blank elements smaller than theshold, take logarithm, normalize.
 
     author: vrath
     last changed: Sep 25, 2020
@@ -248,8 +249,7 @@ def calculate_sens(Jac=None, normalize=True, small=1.0e-14, log=False, out=True)
     if normalize:
         S = S / Smax
 
-    if small >= 1.0e-14:
-        S[S < small] = 1.0e-20
+    S[S < small] = blank
 
     if log:
         S = np.log10(S)
