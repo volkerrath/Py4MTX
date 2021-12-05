@@ -70,7 +70,7 @@ normalize_err = True
 normalize_max = False
 
 sparsify = True
-sparse_thresh = 1.e-7
+sparse_thresh = 1.e-8
 
 WorkDir = r"/home/vrath/work/MT_Data/Ubaye/UB22_jac_best/"
 MFile   = WorkDir +r"Ub22_ZoffPT_02_NLCG_014.rho"
@@ -94,8 +94,12 @@ total = 0.0
 start = time.time()
 dx, dy, dz, rho, reference = mod.read_model(MFile, trans="linear")
 dims = np.shape(rho)
-print(dims)
-print(reference)
+
+resair = 1.e17
+aircells = np.where(rho>resair/100)
+
+
+
 elapsed = time.time() - start
 total = total + elapsed
 print(" Used %7.4f s for reading model from %s " % (elapsed, MFile))
@@ -145,6 +149,8 @@ for f in np.arange(nF):
     mxLst.append(mx)
     mxVal = np.amax([mxVal,mx])
 
+
+
     if normalize_max:
         nstr = nstr+"_max"
         start = time.time()
@@ -175,6 +181,14 @@ for f in np.arange(nF):
             JacStack = scs.vstack([JacStack, Jacs.copy()])
 
 
+
+    start = time.time()
+    NCFile = name + nstr+".nc"
+    mod.write_jac_ncd(NCFile, Jac, Data, Site, Comp)
+    elapsed = time.time() - start
+    total = total + elapsed
+    print(" Used %7.4f s for writing Jacobian to %s " % (elapsed, NCFile))
+
     start = time.time()
     S, Smax = jac.calculate_sens(Jac, normalize=False, small=1.0e-14)
     elapsed = time.time() - start
@@ -184,17 +198,10 @@ for f in np.arange(nF):
     start = time.time()
     SNSFile = name+nstr+".sns"
     S = np.reshape(S, dims, order="F")
-    mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="linear")
+    mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="linear", air=aircells)
     elapsed = time.time() - start
     total = total + elapsed
     print(" Used %7.4f s for writing Sensitivity from Jacobian  %s " % (elapsed, JFile[f]))
-
-    start = time.time()
-    NCFile = name + nstr+".nc"
-    mod.write_jac_ncd(NCFile, Jac, Data, Site, Comp)
-    elapsed = time.time() - start
-    total = total + elapsed
-    print(" Used %7.4f s for writing Jacobian to %s " % (elapsed, NCFile))
 
 
 NPZFile = name+nstr+sstr+"_JacStack_jacs.npz"

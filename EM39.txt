@@ -199,7 +199,7 @@ jupyterlab                3.2.1              pyhd3eb1b0_1
 jupyterlab_pygments       0.1.2                      py_0  
 jupyterlab_server         2.8.2              pyhd3eb1b0_0  
 jupyterlab_widgets        1.0.0              pyhd3eb1b0_1  
-jupytext                  1.13.2             pyh6002c4b_0    conda-forge
+jupytext                  1.13.3             pyheef035f_0    conda-forge
 jxrlib                    1.1                  h7b6447c_2  
 kealib                    1.4.14               h54c064f_0  
 kernel-headers_linux-64   3.10.0              h57e8cba_10  

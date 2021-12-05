@@ -153,7 +153,7 @@ dependencies:
   - jupyterlab_pygments=0.1.2=py_0
   - jupyterlab_server=2.8.2=pyhd3eb1b0_0
   - jupyterlab_widgets=1.0.0=pyhd3eb1b0_1
-  - jupytext=1.13.2=pyh6002c4b_0
+  - jupytext=1.13.3=pyheef035f_0
   - kealib=1.4.13=hec59c27_0
   - kernel-headers_linux-64=2.6.32=he073ed8_15
   - keyring=23.1.0=py38h06a4308_0

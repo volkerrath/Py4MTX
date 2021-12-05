@@ -574,7 +574,7 @@ def write_model_ncd(
 
 
 def write_model(ModFile=None, dx=None, dy=None, dz=None, rho=None, reference=None,
-                trans=None, out=True):
+                trans=None, air = None, out=True):
     """
     Write ModEM model input.
 
@@ -602,6 +602,11 @@ def write_model(ModFile=None, dx=None, dy=None, dz=None, rho=None, reference=Non
     nz = dims[2]
     dummy = 0
 
+    if not air == None:
+
+        rho.reshape(dims)[air] = np.nan
+
+
     if trans is not None:
 
         trans = trans.upper()
@@ -628,7 +633,7 @@ def write_model(ModFile=None, dx=None, dy=None, dz=None, rho=None, reference=Non
 
     with open(ModFile, "w") as f:
         np.savetxt(
-            f, [" # 3D MT model written by ModEM in WS format"], fmt="%s")
+            f, ["# 3D MT model written by ModEM in WS format"], fmt="%s")
         # line = np.array([nx, ny,nz, dummy, trans],dtype=('i8,i8,i8,i8,U10'))
         line = np.array([nx, ny, nz, dummy, trans])
         np.savetxt(f, line.reshape(1, 5), fmt="%s %s %s %s %s")
@@ -639,9 +644,9 @@ def write_model(ModFile=None, dx=None, dy=None, dz=None, rho=None, reference=Non
         for zi in range(dz.size):
             f.write("\n")
             for yi in range(dy.size):
-                # line = rho[::-1, yi, zi]
+                line = rho[::-1, yi, zi]
                 # line = np.flipud(rho[:, yi, zi])
-                line = rho[:, yi, zi]
+                # line = rho[:, yi, zi]
                 np.savetxt(f, line.reshape(1, nx), fmt="%12.5e")
 
         f.write("\n")
@@ -684,6 +689,7 @@ def read_model(ModFile=None, trans="LINEAR", out=True):
 
     rho = np.array([])
     for line in lines[5:-2]:
+        line = np.flipud(line) #  np.fliplr(line)
         rho = np.append(rho, np.array([float(sub) for sub in line]))
 
     if out:
@@ -699,11 +705,11 @@ def read_model(ModFile=None, trans="LINEAR", out=True):
         sys.exit(1)
 
     # here rho should be in physical units, not log...
-    if trans.lower()[0:4] == "loge" or trans.lower()[0:2] == "ln'":
+    if "loge" in trans.lower() or "ln" in trans.lower():
         rho = np.log(rho)
         if out:
             print("values transformed to: " + trans)
-    elif trans.lower()[0:5] == "log10":
+    elif "log10" in trans.lower():
         rho = np.log10(rho)
         if out:
             print("values transformed to: " + trans)
