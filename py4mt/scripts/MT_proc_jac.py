@@ -81,11 +81,10 @@ MFile   = WorkDir +r"Ub22_ZoffPT_02_NLCG_014.rho"
 # JFile = [WorkDir+r"Ub22_P.jac", ]
 # DFile = [WorkDir+r"Ub22_P.dat", ]
 
-# JFile = [WorkDir+r"Ub22_T.jac", ]
-# DFile = [WorkDir+r"Ub22_T.dat", ]
+JFile = [WorkDir+r"Ub22_T.jac", ]
+DFile = [WorkDir+r"Ub22_T.dat", ]
 
-JFile = [WorkDir+r"Ub22_Zoff.jac", WorkDir+r"Ub22_P.jac", WorkDir+r"Ub22_T.jac", ]
-DFile = [WorkDir+r"Ub22_Zoff.dat", WorkDir+r"Ub22_P.dat", WorkDir+r"Ub22_T.dat", ]
+#
 
 
 total = 0.0
@@ -129,7 +128,7 @@ for f in np.arange(nF):
 
     start = time.time()
     print("Reading Jacobian from "+JFile[f])
-    Jac = mod.read_jac(JFile[f])
+    Jac, Info = mod.read_jac(JFile[f])
     elapsed = time.time() - start
     print(" Used %7.4f s for reading Jacobian from %s " % (elapsed, JFile[f]))
     total = total + elapsed
@@ -149,6 +148,8 @@ for f in np.arange(nF):
     mxLst.append(mx)
     mxVal = np.amax([mxVal,mx])
 
+    NPZFile = name+"_info.npz"
+    np.savez(NPZFile, Info=Info,  Data=Data, Site=Site, Comp=Comp, MaxVal=mxVal)
 
 
     if normalize_max:
@@ -190,7 +191,7 @@ for f in np.arange(nF):
     print(" Used %7.4f s for writing Jacobian to %s " % (elapsed, NCFile))
 
     start = time.time()
-    S, Smax = jac.calculate_sens(Jac, normalize=False, small=1.0e-14)
+    S, Smax = jac.calculate_sens(Jac, normalize=False, small=1.0e-12)
     elapsed = time.time() - start
     total = total + elapsed
     print(" Used %7.4f s for calculating Sensitivity from Jacobian  %s " % (elapsed, JFile[f]))
@@ -205,6 +206,7 @@ for f in np.arange(nF):
 
 
 NPZFile = name+nstr+sstr+"_JacStack_jacs.npz"
+
 scs.save_npz(NPZFile, Jacs)
 NPZFile = name+nstr+sstr+"_JacStack_dats.npz"
 np.savez(NPZFile, Data=Data, Site=Site, Comp=Comp)

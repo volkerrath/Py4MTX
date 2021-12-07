@@ -48,7 +48,8 @@ def read_jac(JacFile=None, out=False):
                 # header2
                 header2 = fjac.read_record(np.byte)
                 h2 = ''.join([chr(item) for item in header2])
-                print(h2)
+                tmp2.append(h2)
+                # print(h2)
                 # print(i1,i2,i3)
                 nSigma = fjac.read_ints(np.int32)
                 # print("nSigma"+str(nSigma))
@@ -76,14 +77,14 @@ def read_jac(JacFile=None, out=False):
                     # print(np.shape(tmp1))
                     # tmp2.append()
     Jac = np.asarray(tmp1)
-    # Inf = np.asarray(tmp2,dtype=object)
+    Inf = np.asarray(tmp2,dtype=object)
 
     fjac.close()
 
     if out:
         print("...done reading " + JacFile)
 
-    return Jac   #, Site, Freq, Comp
+    return Jac, Inf  #, Site, Freq, Comp
 
 
 def read_data_jac(DatFile=None, out=True):
