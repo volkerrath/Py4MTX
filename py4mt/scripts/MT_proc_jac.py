@@ -91,7 +91,7 @@ total = 0.0
 
 
 start = time.time()
-dx, dy, dz, rho, reference = mod.read_model(MFile, trans="linear")
+dx, dy, dz, rho, reference, _ = mod.read_model(MFile, trans="linear")
 dims = np.shape(rho)
 
 resair = 1.e17

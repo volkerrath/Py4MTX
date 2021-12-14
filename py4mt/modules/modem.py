@@ -727,7 +727,7 @@ def read_model(ModFile=None, trans="LINEAR", out=True):
         print(
             "readMod: %i x %i x %i model read from %s" % (nx, ny, nz, ModFile))
 
-    return dx, dy, dz, rho, reference
+    return dx, dy, dz, rho, reference, trans
 
 def linear_interpolation(p1, p2, x0):
     """

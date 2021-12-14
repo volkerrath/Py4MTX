@@ -19,12 +19,12 @@ dependencies:
   - arrow-cpp=4.0.1=py39hed75754_6_cpu
   - arviz=0.11.2=pyhd3eb1b0_0
   - astroid=2.6.6=py39h06a4308_0
-  - astropy=4.3.1=py39h09021b7_0
+  - astropy=5.0=py39h09021b7_0
   - async_generator=1.10=pyhd3eb1b0_0
   - atk-1.0=2.36.0=h28cd5cc_0
   - atomicwrites=1.4.0=py_0
   - attrs=21.2.0=pyhd3eb1b0_0
-  - autopep8=1.5.7=pyhd3eb1b0_0
+  - autopep8=1.6.0=pyhd3eb1b0_0
   - aws-c-cal=0.5.11=h95a6274_0
   - aws-c-common=0.6.2=h7f98852_0
   - aws-c-event-stream=0.2.7=h3541f99_13
@@ -74,7 +74,7 @@ dependencies:
   - coloredlogs=15.0.1=py39h06a4308_0
   - cookiecutter=1.7.2=pyhd3eb1b0_0
   - cryptography=35.0.0=py39hd23ed53_0
-  - curl=7.78.0=h1ccaba5_0
+  - curl=7.80.0=h7f8727e_0
   - cxx-compiler=1.2.0=h4bd325d_0
   - cycler=0.11.0=pyhd3eb1b0_0
   - cytoolz=0.11.0=py39h27cfd23_0
@@ -85,7 +85,7 @@ dependencies:
   - dask-core=2021.10.0=pyhd3eb1b0_0
   - dataclasses=0.8=pyh6d0b6a4_7
   - dbus=1.13.18=hb2f20db_0
-  - dcw-gmt=2.0.0=ha770c72_0
+  - dcw-gmt=2.0.1=ha770c72_0
   - debugpy=1.5.1=py39h295c915_0
   - decorator=5.1.0=pyhd3eb1b0_0
   - defusedxml=0.7.1=pyhd3eb1b0_0
@@ -157,7 +157,7 @@ dependencies:
   - hdf4=4.2.15=h10796ff_3
   - hdf5=1.10.6=nompi_h6a2412b_1114
   - heapdict=1.0.1=pyhd3eb1b0_0
-  - humanfriendly=9.2=py39h06a4308_0
+  - humanfriendly=10.0=py39h06a4308_0
   - icu=68.1=h2531618_0
   - idna=3.3=pyhd3eb1b0_0
   - imagecodecs=2021.7.30=py39h44211f0_0
@@ -171,7 +171,7 @@ dependencies:
   - intervaltree=3.1.0=pyhd3eb1b0_0
   - ipydatawidgets=4.2.0=pyhd3deb0d_0
   - ipykernel=6.4.1=py39h06a4308_1
-  - ipyleaflet=0.15.0=pyhc268e32_1
+  - ipyleaflet=0.15.0=pyhd8ed1ab_3
   - ipympl=0.7.0=pyhd3eb1b0_0
   - ipython=7.29.0=py39hb070fc8_0
   - ipython_genutils=0.2.0=pyhd3eb1b0_1
@@ -182,7 +182,7 @@ dependencies:
   - ipywidgets=7.6.5=pyhd3eb1b0_1
   - isort=5.9.3=pyhd3eb1b0_0
   - jax=0.2.25=pyhd8ed1ab_0
-  - jaxlib=0.1.73=py39hde0f152_2
+  - jaxlib=0.1.75=py39hde0f152_0
   - jedi=0.18.0=py39h06a4308_1
   - jeepney=0.7.1=pyhd3eb1b0_0
   - jinja2=2.11.3=pyhd3eb1b0_0
@@ -201,7 +201,7 @@ dependencies:
   - jupyterlab_pygments=0.1.2=py_0
   - jupyterlab_server=2.8.2=pyhd3eb1b0_0
   - jupyterlab_widgets=1.0.0=pyhd3eb1b0_1
-  - jupytext=1.13.3=pyheef035f_0
+  - jupytext=1.13.4=pyh6002c4b_0
   - jxrlib=1.1=h7b6447c_2
   - kealib=1.4.14=h54c064f_0
   - kernel-headers_linux-64=3.10.0=h57e8cba_10
@@ -220,7 +220,7 @@ dependencies:
   - libbrotlienc=1.0.9=h7f98852_6
   - libcblas=3.9.0=12_linux64_mkl
   - libclang=11.1.0=default_ha53f305_1
-  - libcurl=7.78.0=h0b77cf5_0
+  - libcurl=7.80.0=h0b77cf5_0
   - libdap4=3.20.6=hd7c4107_2
   - libdeflate=1.8=h7f8727e_5
   - libedit=3.1.20210714=h7f8727e_0
@@ -229,7 +229,7 @@ dependencies:
   - libffi=3.3=he6710b0_2
   - libgcc-devel_linux-64=9.3.0=hb95220a_17
   - libgcc-ng=11.2.0=h1d223b6_11
-  - libgd=2.3.2=h78a0170_0
+  - libgd=2.3.3=h695aa2c_0
   - libgdal=3.3.1=h07ae0cd_2
   - libgfortran-ng=9.3.0=ha5ec8a7_17
   - libgfortran5=9.3.0=ha5ec8a7_17
@@ -341,7 +341,7 @@ dependencies:
   - pillow=8.4.0=py39h5aabda8_0
   - pip=21.2.4=py39h06a4308_0
   - pixman=0.40.0=h7f8727e_1
-  - platformdirs=2.3.0=pyhd8ed1ab_0
+  - platformdirs=2.4.0=pyhd3eb1b0_0
   - pluggy=1.0.0=py39h06a4308_0
   - pooch=1.4.0=pyhd3eb1b0_0
   - poppler=21.03.0=h93df280_0
@@ -501,7 +501,7 @@ dependencies:
   - wrapt=1.12.1=py39he8ac12f_1
   - wurlitzer=3.0.2=py39h06a4308_0
   - x264=1!157.20191217=h7b6447c_0
-  - xarray=0.19.0=pyhd3eb1b0_1
+  - xarray=0.20.1=pyhd3eb1b0_1
   - xerces-c=3.2.3=h9d8b166_3
   - xorg-kbproto=1.0.7=h7f98852_1002
   - xorg-libice=1.0.10=h7f98852_0

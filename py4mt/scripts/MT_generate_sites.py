@@ -61,14 +61,19 @@ edi_gen = 'grid'
 # nLon = 31
 # LatLimits = (45.37,45.46)
 # nLat = 31
-LonLimits = (-25.5600, -25.2250)
-nLon = 36
-LatLimits = ( 37.6700,  37.8550)
-nLat = 36
+# LonLimits = (-25.5600, -25.2250)
+# nLon = 36
+# LatLimits = ( 37.6700,  37.8550)
+# nLat = 36
+LonLimits = (-16.90000, -16.483333)
+nLon = 11
+LatLimits = ( 65.66666666,  65.75000)
+nLat = 11
 
 # edi_gen = 'readcsv'
 # # read site list
 # edi_file = r'/home/vrath/AEM_Limerick/Limerick_pilot.csv'
+edi_file = ""
 
 # edi_gen = 'readmod'
 # # read site list
@@ -81,19 +86,19 @@ nLat = 36
 
 # Define the path to your EDI-template:
 
-edi_template = r'/home/vrath/work/MT/MaChaPo/Template.edi'
+edi_template = r'/home/vrath/work/MT_Data/Krafla/Templates/template3.edi'
 print(' Edifile template read from: %s' % edi_template)
 
 
 # Define the path and appended string for saved EDI-files:
 
-edi_out_dir = r'/home/vrath/work/MT/MaChaPo/EDI1/'
+edi_out_dir = r'/home/vrath/work/MT_Data/Krafla/EDI3/'
 print(' Edifiles written to: %s' % edi_out_dir)
 if not os.path.isdir(edi_out_dir):
     print(' File: %s does not exist, but will be created' % edi_out_dir)
     os.mkdir(edi_out_dir)
 
-OutName = 'SM_Simple'
+OutName = 'Krafla_11x11_3'
 
 
 # No changes required after this line!
