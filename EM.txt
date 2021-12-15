@@ -58,7 +58,7 @@ colorful                  0.5.4                    pypi_0    pypi
 configobj                 5.0.6                    pypi_0    pypi
 configparser              5.0.2                    pypi_0    pypi
 cookiecutter              1.7.2              pyhd3eb1b0_0  
-cryptography              35.0.0           py38hd23ed53_0  
+cryptography              36.0.0           py38h9ce1e76_0  
 curl                      7.80.0               h7f8727e_0  
 cvlib                     0.2.6                    pypi_0    pypi
 cycler                    0.11.0             pyhd3eb1b0_0  

@@ -71,7 +71,7 @@ cloudpickle               2.0.0              pyhd3eb1b0_0
 colorama                  0.4.4              pyhd3eb1b0_0  
 coloredlogs               15.0.1           py39h06a4308_0  
 cookiecutter              1.7.2              pyhd3eb1b0_0  
-cryptography              35.0.0           py39hd23ed53_0  
+cryptography              36.0.0           py39h9ce1e76_0  
 curl                      7.80.0               h7f8727e_0  
 cxx-compiler              1.2.0                h4bd325d_0    conda-forge
 cycler                    0.11.0             pyhd3eb1b0_0  
@@ -179,7 +179,7 @@ ipyvuetify                1.8.1              pyhd8ed1ab_0    conda-forge
 ipywebrtc                 0.6.0              pyhd8ed1ab_0    conda-forge
 ipywidgets                7.6.5              pyhd3eb1b0_1  
 isort                     5.9.3              pyhd3eb1b0_0  
-jax                       0.2.25             pyhd8ed1ab_0    conda-forge
+jax                       0.2.26             pyhd8ed1ab_0    conda-forge
 jaxlib                    0.1.75           py39hde0f152_0    conda-forge
 jedi                      0.18.0           py39h06a4308_1  
 jeepney                   0.7.1              pyhd3eb1b0_0  

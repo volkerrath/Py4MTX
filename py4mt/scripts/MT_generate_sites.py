@@ -55,7 +55,7 @@ print("Generate sites on a mesh (various methods)"+"\n"+"".join("Date " + now.st
 print("\n\n")
 
 
-edi_gen = 'grid'
+edi_gen = 'rect'
 # # generate site list
 # LonLimits = ( 6.275, 6.39)
 # nLon = 31
@@ -67,6 +67,18 @@ edi_gen = 'grid'
 # nLat = 36
 LonLimits = (-16.90000, -16.483333)
 nLon = 11
+LatLimits = ( 65.66666666,  65.75000)
+nLat = 11
+
+edi_gen = 'center'
+# Krafla  65.711°, -16.778°
+
+CenterLon = -16.778
+nLon = 20
+
+LonLimits = (-16.90000, -16.483333)
+CenterLat = 65.711
+lonstep = 0.02
 LatLimits = ( 65.66666666,  65.75000)
 nLat = 11
 
@@ -82,6 +94,9 @@ edi_file = ""
 # ny_bnd = 14
 # centerlatlon = ()
 # centermod = ()
+mod_file = ""
+nx_bnd = 0
+ny_bnd = 0
 
 
 # Define the path to your EDI-template:
@@ -106,7 +121,7 @@ OutName = 'Krafla_11x11_3'
 
 # Construct list of EDI-files:
 
-if edi_gen == 'grid':
+if "rect" in edi_gen.lower():
     # generate site list
     Lat, Lon = utl.gen_grid_latlon(LatLimits, nLat, LonLimits, nLon)
     nn = -1
@@ -147,7 +162,7 @@ if edi_gen == 'grid':
                 latlon_format='dd'
             )
 
-elif edi_gen == 'readcsv':
+if "readcsv" in edi_gen.lower():
     # read site list
     Site = []
     Data = []
@@ -196,10 +211,9 @@ elif edi_gen == 'readcsv':
         )
 
 
-elif edi_gen == 'readmod':
-    # read site list
+elif "mod" in edi_gen.lower():
 
-    dx, dy, dz, rho, reference = mod.readMod(mod_file)
+    dx, dy, dz, rho, reference, trans = mod.read_model(mod_file)
 
     nx = np.shape(dx)[0]
     x = np.hstack((0, np.cumsum(dx)))
@@ -219,32 +233,32 @@ elif edi_gen == 'readmod':
 
             Site = '_' + str(ii) + '_' + str(jj)
 
-    for place in Site:
-        # Create an MT object
-        nn = nn + 1
-        file_in = edi_template
-        mt_tmp = MT(file_in)
+        for place in Site:
+            # Create an MT object
+            nn = nn + 1
+            file_in = edi_template
+            mt_tmp = MT(file_in)
 
-        mt_tmp.lat = Lat[nn]
-        mt_tmp.lon = Lon[nn]
-        mt_tmp.station = place
+            mt_tmp.lat = Lat[nn]
+            mt_tmp.lon = Lon[nn]
+            mt_tmp.station = place
 
-        file_out = OutName + '_' + place + '.edi'
+            file_out = OutName + '_' + place + '.edi'
 
-        print('\n Generating ' + edi_out_dir + file_out)
-        print(' site %s at :  % 10.6f % 10.6f' %
-              (mt_tmp.station, mt_tmp.lat, mt_tmp.lon))
+            print('\n Generating ' + edi_out_dir + file_out)
+            print(' site %s at :  % 10.6f % 10.6f' %
+                  (mt_tmp.station, mt_tmp.lat, mt_tmp.lon))
 
-    # # Write a new edi file:
+        # # Write a new edi file:
 
-        print('Writing data to ' + edi_out_dir + file_out)
-        mt_tmp.write_mt_file(
-            save_dir=edi_out_dir,
-            fn_basename=file_out,
-            file_type='edi',
-            longitude_format='LONG',
-            latlon_format='dd'
-        )
+            print('Writing data to ' + edi_out_dir + file_out)
+            mt_tmp.write_mt_file(
+                save_dir=edi_out_dir,
+                fn_basename=file_out,
+                file_type='edi',
+                longitude_format='LONG',
+                latlon_format='dd'
+            )
 
 
 else:

@@ -51,7 +51,7 @@ dependencies:
   - colorama=0.4.4=pyhd3eb1b0_0
   - colorcet=2.0.6=pyhd3eb1b0_0
   - cookiecutter=1.7.2=pyhd3eb1b0_0
-  - cryptography=35.0.0=py38hd23ed53_0
+  - cryptography=36.0.0=py38h9ce1e76_0
   - curl=7.80.0=h7f8727e_0
   - cycler=0.11.0=pyhd3eb1b0_0
   - cytoolz=0.11.0=py38h7b6447c_0
