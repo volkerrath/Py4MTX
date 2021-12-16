@@ -9,7 +9,6 @@ import os
 import sys
 import ast
 import numpy as np
-import pyproj as proj
 from scipy.ndimage import gaussian_filter, laplace, convolve, gaussian_gradient_magnitude
 from scipy.linalg import norm
 from sys import exit as error
@@ -17,6 +16,10 @@ import fnmatch
 # from numba import jit
 # from shapely.geometry import Point
 # from shapely.geometry.polygon import Polygon
+import pyproj
+from pyproj import CRS
+from pyproj.aoi import AreaOfInterest
+from pyproj.database import query_utm_crs_info
 
 
 def list_functions(filename):
@@ -56,22 +59,22 @@ def get_filelist(searchstr=["*"], searchpath="."):
 
     return filelist
 
-def get_utm_list(latitude=None, longitude=None):
+def get_utm_zone(latitude=None, longitude=None):
     """
     Find EPSG from position, using pyproj
 
     VR 04/21
     """
 
-    utm_list = proj.database.query_utm_crs_info(
+    utm_list = query_utm_crs_info(
         datum_name="WGS 84",
-        area_of_interest=proj.aoi.AreaOfInterest(
+        area_of_interest=AreaOfInterest(
         west_lon_degree=longitude,
         south_lat_degree=latitude,
         east_lon_degree=longitude,
         north_lat_degree=latitude, ), )
-    utm_crs = proj.CRS.from_epsg(utm_list[0].code)
-    EPSG = proj.CRS.to_epsg(utm_crs)
+    utm_crs =CRS.from_epsg(utm_list[0].code)
+    EPSG = CRS.to_epsg(utm_crs)
 
     return EPSG, utm_crs
 
@@ -81,9 +84,9 @@ def proj_utm_to_latlon(utm_x, utm_y, utm_zone=32629):
     Look for other EPSG at https://epsg.io/
     VR 04/21
     """
-    prj_wgs = proj.CRS("epsg:4326")
-    prj_utm = proj.CRS("epsg:" + str(utm_zone))
-    latitude, longitude = proj.transform(prj_utm, prj_wgs, utm_x, utm_y)
+    prj_wgs = CRS("epsg:4326")
+    prj_utm = CRS("epsg:" + str(utm_zone))
+    latitude, longitude = pyproj.transform(prj_utm, prj_wgs, utm_x, utm_y)
     return latitude, longitude
 
 
@@ -94,9 +97,9 @@ def proj_latlon_to_utm(latitude, longitude, utm_zone=32629):
 
     VR 04/21
     """
-    prj_wgs = proj.CRS("epsg:4326")
-    prj_utm = proj.CRS("epsg:" + str(utm_zone))
-    utm_x, utm_y = proj.transform(prj_wgs, prj_utm, latitude, longitude)
+    prj_wgs = CRS("epsg:4326")
+    prj_utm = CRS("epsg:" + str(utm_zone))
+    utm_x, utm_y = pyproj.transform(prj_wgs, prj_utm, latitude, longitude)
 
     return utm_x, utm_y
 
@@ -108,9 +111,9 @@ def proj_latlon_to_itm(longitude, latitude):
 
     VR 04/21
     """
-    prj_wgs = proj.CRS("epsg:4326")
-    prj_itm = proj.CRS("epsg:2157")
-    itm_x, itm_y = proj.transform(prj_wgs, prj_itm, latitude, longitude)
+    prj_wgs = CRS("epsg:4326")
+    prj_itm = CRS("epsg:2157")
+    itm_x, itm_y = pyproj.transform(prj_wgs, prj_itm, latitude, longitude)
     return itm_x, itm_y
 
 
@@ -121,9 +124,9 @@ def proj_itm_to_latlon(itm_x, itm_y):
 
     VR 04/21
     """
-    prj_wgs = proj.CRS("epsg:4326")
-    prj_itm = proj.CRS("epsg:2157")
-    latitude, longitude = proj.transform(prj_itm, prj_wgs, itm_x, itm_y)
+    prj_wgs = CRS("epsg:4326")
+    prj_itm = CRS("epsg:2157")
+    latitude, longitude = pyproj.transform(prj_itm, prj_wgs, itm_x, itm_y)
     return latitude, longitude
 
 
@@ -134,9 +137,9 @@ def proj_itm_to_utm(itm_x, itm_y, utm_zone=32629):
 
     VR 04/21
     """
-    prj_utm = proj.CRS("epsg:" + str(utm_zone))
-    prj_itm = proj.CRS("epsg:2157")
-    utm_x, utm_y =proj.transform(prj_itm, prj_utm, itm_x, itm_y)
+    prj_utm = CRS("epsg:" + str(utm_zone))
+    prj_itm = CRS("epsg:2157")
+    utm_x, utm_y =pyproj.transform(prj_itm, prj_utm, itm_x, itm_y)
     return utm_x, utm_y
 
 
@@ -147,9 +150,9 @@ def proj_utm_to_itm(utm_x, utm_y, utm_zone=32629):
 
     VR 04/21
     """
-    prj_utm = proj.CRS("epsg:" + str(utm_zone))
-    prj_itm = proj.CRS("epsg:2157")
-    itm_x, itm_y = proj.transform(prj_utm, prj_itm, utm_x, utm_y)
+    prj_utm = CRS("epsg:" + str(utm_zone))
+    prj_itm = CRS("epsg:2157")
+    itm_x, itm_y = pyproj.transform(prj_utm, prj_itm, utm_x, utm_y)
     return itm_x, itm_y
 
 

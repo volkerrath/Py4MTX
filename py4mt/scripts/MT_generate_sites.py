@@ -56,47 +56,59 @@ print("\n\n")
 
 
 edi_gen = 'rect'
-# # generate site list
-# LonLimits = ( 6.275, 6.39)
-# nLon = 31
-# LatLimits = (45.37,45.46)
-# nLat = 31
-# LonLimits = (-25.5600, -25.2250)
-# nLon = 36
-# LatLimits = ( 37.6700,  37.8550)
-# nLat = 36
-LonLimits = (-16.90000, -16.483333)
-nLon = 11
-LatLimits = ( 65.66666666,  65.75000)
-nLat = 11
+edi_gen = 'center'
+
+if "rect" in edi_gen.lower():
+
+    # # generate site list
+    # LonLimits = ( 6.275, 6.39)
+    # nLon = 31
+    # LatLimits = (45.37,45.46)
+    # nLat = 31
+    # LonLimits = (-25.5600, -25.2250)
+    # nLon = 36
+    # LatLimits = ( 37.6700,  37.8550)
+    # nLat = 36
+    LonLimits = (-16.90000, -16.483333)
+    nLon = 11
+    LatLimits = ( 65.66666666,  65.75000)
+    nLat = 11
 
 edi_gen = 'center'
 # Krafla  65.711°, -16.778°
 
-CenterLon = -16.778
-nLon = 20
+CenterLatLon = [65.771, -16.778]
+epsg = utl.get_utm_zone(latitude=CenterLatLon[0], longitude=CenterLatLon[1])
+UTMCenter = utl.proj_latlon_to_utm(latitude=CenterLatLon[0],
+                                   longitude=CenterLatLon[1],
+                                   utm_zone=epsg[0])
+UTMLimits = utl.proj_latlon_to_utm(latitude=LatLimits,
+                                   longitude=LonLimits,
+                                   utm_zone=epsg[0])
+UTMDistx =np.abs(UTMLimits[0][1]-UTMLimits[0][0])
+UTMDisty =np.abs(UTMLimits[1][1]-UTMLimits[1][0])
+Dx = Dy = 1000
+nX= np.ceil(UTMDistx/Dx)+1
+nY= np.ceil(UTMDisty/Dy)+1
+# Gridx =
 
-LonLimits = (-16.90000, -16.483333)
-CenterLat = 65.711
-lonstep = 0.02
-LatLimits = ( 65.66666666,  65.75000)
-nLat = 11
+if "readcsv" in edi_gen.lower():
+    # edi_gen = 'readcsv'
+    # # read site list
+    # edi_file = r'/home/vrath/AEM_Limerick/Limerick_pilot.csv'
+    edi_file = ""
 
-# edi_gen = 'readcsv'
-# # read site list
-# edi_file = r'/home/vrath/AEM_Limerick/Limerick_pilot.csv'
-edi_file = ""
-
-# edi_gen = 'readmod'
-# # read site list
-# mod_file = r'/home/vrath/AEM_Limerick/Limerick_pilot_etopo.rho'
-# nx_bnd = 14
-# ny_bnd = 14
-# centerlatlon = ()
-# centermod = ()
-mod_file = ""
-nx_bnd = 0
-ny_bnd = 0
+if 'readmod' in edi_gen.lower():
+    error("Option "+edi_gen.lower()+"not yet implemeted! Exit.")
+    # # read site list
+    # mod_file = r'/home/vrath/AEM_Limerick/Limerick_pilot_etopo.rho'
+    # nx_bnd = 14
+    # ny_bnd = 14
+    # centerlatlon = ()
+    # centermod = ()
+    mod_file = ""
+    nx_bnd = 0
+    ny_bnd = 0
 
 
 # Define the path to your EDI-template:
@@ -161,6 +173,14 @@ if "rect" in edi_gen.lower():
                 longitude_format='LONG',
                 latlon_format='dd'
             )
+
+if "center" in edi_gen.lower():
+    UTMx, UTMy = UTM
+
+
+    utl.gen_grid_utm(UTMxLimits, nx, UTMyLimits, nx)
+
+
 
 if "readcsv" in edi_gen.lower():
     # read site list

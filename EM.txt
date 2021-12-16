@@ -35,11 +35,11 @@ brotli                    1.0.9                he6710b0_2
 brotlipy                  0.7.0           py38h27cfd23_1003  
 bzip2                     1.0.8                h7b6447c_0  
 c-ares                    1.17.1               h27cfd23_0  
-ca-certificates           2021.10.26           h06a4308_2  
+ca-certificates           2021.10.8            ha878542_0    conda-forge
 cached-property           1.5.2                    pypi_0    pypi
 cachetools                4.2.2              pyhd3eb1b0_0  
 cairo                     1.16.0            hcf35c78_1003    conda-forge
-certifi                   2021.10.8        py38h06a4308_0  
+certifi                   2021.10.8        py38h578d9bd_1    conda-forge
 cffi                      1.15.0           py38h7f8727e_0  
 cfitsio                   3.470                hb418390_7    conda-forge
 cftime                    1.5.1.1          py38hce1f21e_0  
@@ -288,7 +288,7 @@ numpydoc                  1.1.0              pyhd3eb1b0_1
 olefile                   0.46               pyhd3eb1b0_0  
 openh264                  2.1.0                hd408876_0  
 openjpeg                  2.3.1                hf7af979_3    conda-forge
-openssl                   1.1.1l               h7f8727e_0  
+openssl                   1.1.1l               h7f98852_0    conda-forge
 packaging                 21.3               pyhd3eb1b0_0  
 pandas                    1.3.4            py38h8c16a72_0  
 pandocfilters             1.4.3            py38h06a4308_1  
@@ -343,7 +343,7 @@ pymupdf                   1.19.1                   pypi_0    pypi
 pymupdf-fonts             1.0.4                    pypi_0    pypi
 pyopenssl                 21.0.0             pyhd3eb1b0_1  
 pyparsing                 3.0.4              pyhd3eb1b0_0  
-pyproj                    2.6.1.post1      py38h7521cb9_0    conda-forge
+pyproj                    3.3.0                    pypi_0    pypi
 pyqt                      5.9.2            py38h05f1152_4  
 pyrsistent                0.18.0           py38heee7806_0  
 pysocks                   1.7.1            py38h06a4308_0  

@@ -56,6 +56,7 @@ cached-property           1.5.2                      py_0
 cachetools                4.2.2              pyhd3eb1b0_0  
 cairo                     1.16.0               hf32fb01_1  
 cairocffi                 1.2.0              pyhd8ed1ab_0    conda-forge
+cartopy                   0.20.0           py39h2103e0b_0    conda-forge
 certifi                   2021.10.8        py39h06a4308_0  
 cffi                      1.14.6           py39h400218f_0  
 cfitsio                   3.470                hb418390_7    conda-forge
@@ -70,6 +71,7 @@ cligj                     0.7.2            py39h06a4308_0
 cloudpickle               2.0.0              pyhd3eb1b0_0  
 colorama                  0.4.4              pyhd3eb1b0_0  
 coloredlogs               15.0.1           py39h06a4308_0  
+configparser              5.2.0                    pypi_0    pypi
 cookiecutter              1.7.2              pyhd3eb1b0_0  
 cryptography              36.0.0           py39h9ce1e76_0  
 curl                      7.80.0               h7f8727e_0  
@@ -295,6 +297,7 @@ mpi                       1.0                       mpich
 mpi4py                    3.1.3            py39h6438238_0    conda-forge
 mpich                     3.4.2              h846660c_100    conda-forge
 msgpack-python            1.0.2            py39hff7bd54_1  
+mtpy                      1.1.5                    pypi_0    pypi
 munch                     2.5.0              pyhd3eb1b0_0  
 munkres                   1.1.4                      py_0  
 mypy_extensions           0.4.3            py39h06a4308_0  
@@ -383,6 +386,7 @@ pyqt5-sip                 4.19.18          py39he80948d_8    conda-forge
 pyqtchart                 5.12             py39h0fcd23e_8    conda-forge
 pyqtwebengine             5.12.1           py39h0fcd23e_8    conda-forge
 pyrsistent                0.18.0           py39heee7806_0  
+pyshp                     2.1.3              pyhd3eb1b0_0  
 pysocks                   1.7.1            py39h06a4308_0  
 pytest                    6.2.5            py39h06a4308_2  
 pytest-runner             5.3.1              pyhd3eb1b0_0  
