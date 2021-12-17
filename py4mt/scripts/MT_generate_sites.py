@@ -74,23 +74,13 @@ if "rect" in edi_gen.lower():
     LatLimits = ( 65.66666666,  65.75000)
     nLat = 11
 
-edi_gen = 'center'
-# Krafla  65.711°, -16.778°
+if "center" in edi_gen.lower():
+    # Krafla  65.711°, -16.778°
+    LatLimits = ( 65.66666666,  65.75000)
+    LonLimits = (-16.90000, -16.483333)
+    CenterLatLon = [65.771, -16.778]
+    Dx = Dy = 1000
 
-CenterLatLon = [65.771, -16.778]
-epsg = utl.get_utm_zone(latitude=CenterLatLon[0], longitude=CenterLatLon[1])
-UTMCenter = utl.proj_latlon_to_utm(latitude=CenterLatLon[0],
-                                   longitude=CenterLatLon[1],
-                                   utm_zone=epsg[0])
-UTMLimits = utl.proj_latlon_to_utm(latitude=LatLimits,
-                                   longitude=LonLimits,
-                                   utm_zone=epsg[0])
-UTMDistx =np.abs(UTMLimits[0][1]-UTMLimits[0][0])
-UTMDisty =np.abs(UTMLimits[1][1]-UTMLimits[1][0])
-Dx = Dy = 1000
-nX= np.ceil(UTMDistx/Dx)+1
-nY= np.ceil(UTMDisty/Dy)+1
-# Gridx =
 
 if "readcsv" in edi_gen.lower():
     # edi_gen = 'readcsv'
@@ -175,10 +165,30 @@ if "rect" in edi_gen.lower():
             )
 
 if "center" in edi_gen.lower():
-    UTMx, UTMy = UTM
+
+    epsg = utl.get_utm_zone(latitude=CenterLatLon[0], longitude=CenterLatLon[1])
+    UTMCenter = utl.proj_latlon_to_utm(latitude=CenterLatLon[0],
+                                       longitude=CenterLatLon[1],
+                                       utm_zone=epsg[0])
+    UTMLimits = utl.proj_latlon_to_utm(latitude=LatLimits,
+                                       longitude=LonLimits,
+                                       utm_zone=epsg[0])
+    UTMDistx =np.abs(UTMLimits[0][1]-UTMLimits[0][0])
+    UTMDisty =np.abs(UTMLimits[1][1]-UTMLimits[1][0])
+    Dx = Dy = 1000 # 500
+    nX= np.ceil(UTMDistx/Dx)+1
+    if nX % 2 == 0:
+        nX=nX+1
+    nY= np.ceil(UTMDisty/Dy)+1
+    if nY % 2 == 0:
+        nY=nY+1
+
+    GridX = Dx*np.arange(nX)
+    GridY = Dy*np.arange(nY)
+
+    print(nX, nY)
 
 
-    utl.gen_grid_utm(UTMxLimits, nx, UTMyLimits, nx)
 
 
 
