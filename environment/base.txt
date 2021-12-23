@@ -1,0 +1,89 @@
+# packages in environment at /home/vrath/.Miniconda:
+#
+# Name                    Version                   Build  Channel
+_libgcc_mutex             0.1                 conda_forge    conda-forge
+_openmp_mutex             4.5                      1_llvm    conda-forge
+beautifulsoup4            4.10.0             pyh06a4308_0  
+brotlipy                  0.7.0           py39h27cfd23_1003  
+bzip2                     1.0.8                h7b6447c_0  
+c-ares                    1.17.1               h27cfd23_0  
+ca-certificates           2021.10.8            ha878542_0    conda-forge
+certifi                   2021.10.8        py39hf3d152e_1    conda-forge
+cffi                      1.14.6           py39h400218f_0  
+chardet                   4.0.0           py39h06a4308_1003  
+charset-normalizer        2.0.4              pyhd3eb1b0_0  
+conda                     4.11.0           py39hf3d152e_0    conda-forge
+conda-build               3.21.7           py39h06a4308_0  
+conda-package-handling    1.7.3            py39h27cfd23_1  
+cryptography              36.0.0           py39h9ce1e76_0  
+curl                      7.80.0               h7f8727e_0  
+expat                     2.4.1                h2531618_2  
+filelock                  3.4.0              pyhd3eb1b0_0  
+gettext                   0.21.0               hf68c758_0  
+git                       2.32.0          pl5262hc120c5b_1  
+git-filter-repo           2.33.0             pyhd8ed1ab_0    conda-forge
+glob2                     0.7                pyhd3eb1b0_0  
+icu                       58.2                 he6710b0_3  
+idna                      3.3                pyhd3eb1b0_0  
+jinja2                    2.11.3             pyhd3eb1b0_0  
+krb5                      1.19.2               hac12032_0  
+ld_impl_linux-64          2.35.1               h7274673_9  
+libarchive                3.5.2                hccf745f_1    conda-forge
+libcurl                   7.80.0               h0b77cf5_0  
+libedit                   3.1.20210910         h7f8727e_0  
+libev                     4.33                 h7f8727e_1  
+libffi                    3.3                  he6710b0_2  
+libgcc-ng                 11.2.0              h1d223b6_11    conda-forge
+libiconv                  1.16                 h516909a_0    conda-forge
+liblief                   0.10.1               h2531618_1  
+libmamba                  0.19.1               h3985d26_0    conda-forge
+libmambapy                0.19.1           py39h8bfa403_0    conda-forge
+libnghttp2                1.46.0               hce63b2e_0  
+libsolv                   0.7.19               h780b84a_5    conda-forge
+libssh2                   1.9.0                h1ba5d50_1  
+libstdcxx-ng              11.2.0              he4da1e4_11    conda-forge
+libxml2                   2.9.12               h03d6c58_0  
+llvm-openmp               12.0.1               h4bd325d_1    conda-forge
+lz4-c                     1.9.3                h295c915_1  
+lzo                       2.10              h516909a_1000    conda-forge
+mamba                     0.19.1           py39hfa8f2c8_0    conda-forge
+markupsafe                2.0.1            py39h27cfd23_0  
+ncurses                   6.3                  h7f8727e_2  
+openssl                   1.1.1l               h7f98852_0    conda-forge
+patchelf                  0.13                 h295c915_0  
+pcre2                     10.35                h14c3975_1  
+perl                      5.26.2               h14c3975_0  
+pip                       21.2.4           py39h06a4308_0  
+pkginfo                   1.7.1            py39h06a4308_0  
+psutil                    5.8.0            py39h27cfd23_1  
+py-lief                   0.10.1           py39h2531618_1  
+pybind11-abi              4                    hd8ed1ab_3    conda-forge
+pycosat                   0.6.3            py39h27cfd23_0  
+pycparser                 2.21               pyhd3eb1b0_0  
+pyopenssl                 21.0.0             pyhd3eb1b0_1  
+pysocks                   1.7.1            py39h06a4308_0  
+python                    3.9.7                h12debd9_1  
+python-libarchive-c       2.9                pyhd3eb1b0_1  
+python_abi                3.9                      2_cp39    conda-forge
+pytz                      2021.3             pyhd3eb1b0_0  
+pyyaml                    6.0              py39h7f8727e_1  
+readline                  8.1                  h27cfd23_0  
+reproc                    14.2.3               h7f98852_0    conda-forge
+reproc-cpp                14.2.3               h9c3ff4c_0    conda-forge
+requests                  2.26.0             pyhd3eb1b0_0  
+ripgrep                   12.1.1                        0  
+ruamel_yaml               0.15.100         py39h27cfd23_0  
+setuptools                58.0.4           py39h06a4308_0  
+six                       1.16.0             pyhd3eb1b0_0  
+soupsieve                 2.3.1              pyhd3eb1b0_0  
+sqlite                    3.36.0               hc218d9a_0  
+tk                        8.6.11               h1ccaba5_0  
+tqdm                      4.62.3             pyhd3eb1b0_1  
+tzdata                    2021e                hda174b7_0  
+urllib3                   1.26.7             pyhd3eb1b0_0  
+wheel                     0.37.0             pyhd3eb1b0_1  
+xz                        5.2.5                h7b6447c_0  
+yaml                      0.2.5                h7b6447c_0  
+yaml-cpp                  0.6.3                he1b5a44_4    conda-forge
+zlib                      1.2.11               h7f8727e_4  
+zstd                      1.5.0                ha95c52a_0    conda-forge

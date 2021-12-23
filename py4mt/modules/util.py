@@ -17,7 +17,7 @@ import fnmatch
 # from shapely.geometry import Point
 # from shapely.geometry.polygon import Polygon
 import pyproj
-from pyproj import CRS
+from pyproj import CRS, Transformer
 from pyproj.aoi import AreaOfInterest
 from pyproj.database import query_utm_crs_info
 
@@ -78,17 +78,6 @@ def get_utm_zone(latitude=None, longitude=None):
 
     return EPSG, utm_crs
 
-def proj_utm_to_latlon(utm_x, utm_y, utm_zone=32629):
-    """
-    transform utm to latlon, using pyproj
-    Look for other EPSG at https://epsg.io/
-    VR 04/21
-    """
-    prj_wgs = CRS("epsg:4326")
-    prj_utm = CRS("epsg:" + str(utm_zone))
-    latitude, longitude = pyproj.transform(prj_utm, prj_wgs, utm_x, utm_y)
-    return latitude, longitude
-
 
 def proj_latlon_to_utm(latitude, longitude, utm_zone=32629):
     """
@@ -102,6 +91,17 @@ def proj_latlon_to_utm(latitude, longitude, utm_zone=32629):
     utm_x, utm_y = pyproj.transform(prj_wgs, prj_utm, latitude, longitude)
 
     return utm_x, utm_y
+
+def proj_utm_to_latlon(utm_x, utm_y, utm_zone=32629):
+    """
+    transform utm to latlon, using pyproj
+    Look for other EPSG at https://epsg.io/
+    VR 04/21
+    """
+    prj_wgs = CRS("epsg:4326")
+    prj_utm = CRS("epsg:" + str(utm_zone))
+    latitude, longitude = pyproj.transform(prj_utm, prj_wgs, utm_x, utm_y)
+    return latitude, longitude
 
 
 def proj_latlon_to_itm(longitude, latitude):
@@ -126,7 +126,7 @@ def proj_itm_to_latlon(itm_x, itm_y):
     """
     prj_wgs = CRS("epsg:4326")
     prj_itm = CRS("epsg:2157")
-    latitude, longitude = pyproj.transform(prj_itm, prj_wgs, itm_x, itm_y)
+    longitude, latitude = pyproj.transform(prj_itm, prj_wgs, itm_x, itm_y)
     return latitude, longitude
 
 
@@ -154,6 +154,39 @@ def proj_utm_to_itm(utm_x, utm_y, utm_zone=32629):
     prj_itm = CRS("epsg:2157")
     itm_x, itm_y = pyproj.transform(prj_utm, prj_itm, utm_x, utm_y)
     return itm_x, itm_y
+
+def project_wgs_to_geoid(lat, lon, alt, geoid=3855 ):
+    """
+    transform ellipsoid heigth to geoid, using pyproj
+    Look for other EPSG at https://epsg.io/
+
+    VR 09/21
+
+    """
+
+    geoidtrans =pyproj.crs.CompoundCRS(name="WGS 84 + EGM2008 height", components=[4979, geoid])
+    wgs = pyproj.Transformer.from_crs(
+            pyproj.CRS(4979), geoidtrans, always_xy=True)
+    lat, lon, elev = wgs.transform(lat, lon, alt)
+
+    return lat, lon, elev
+
+def project_utm_to_geoid(utm_x, utm_y, utm_z, utm_zone=32629, geoid=3855):
+    """
+    transform ellipsoid heigth to geoid, using pyproj
+    Look for other EPSG at https://epsg.io/
+
+    VR 09/21
+
+    """
+
+    geoidtrans =pyproj.crs.CompoundCRS(name="UTM + EGM2008 height", components=[utm_zone, geoid])
+    utm = pyproj.Transformer.from_crs(
+            pyproj.CRS(utm_zone), geoidtrans, always_xy=True)
+    utm_x, utm_y, elev = utm.transform(utm_x, utm_y, utm_z)
+
+    return utm_x, utm_y, elev
+
 
 
 def splitall(path):

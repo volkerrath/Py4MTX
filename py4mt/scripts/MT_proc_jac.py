@@ -148,6 +148,41 @@ for f in np.arange(nF):
     mxLst.append(mx)
     mxVal = np.amax([mxVal,mx])
 
+print(" Maximum value is "+str(mxVal))
+
+
+for f in np.arange(nF):
+
+    name, ext = os.path.splitext(JFile[f])
+    start =time.time()
+    print("\nReading Data from "+DFile[f])
+    Data, Site, Freq, Comp, Head = mod.read_data_jac(DFile[f])
+    elapsed = time.time() - start
+    print(" Used %7.4f s for reading Data from %s " % (elapsed, DFile[f]))
+    total = total + elapsed
+
+    start = time.time()
+    print("Reading Jacobian from "+JFile[f])
+    Jac, Info = mod.read_jac(JFile[f])
+    elapsed = time.time() - start
+    print(" Used %7.4f s for reading Jacobian from %s " % (elapsed, JFile[f]))
+    total = total + elapsed
+
+    nstr = ""
+    if normalize_err:
+        nstr = nstr+"_nerr"
+        start = time.time()
+        dsh = np.shape(Data)
+        err = np.reshape(Data[:, 7], (dsh[0], 1))
+        mx0 = np.max(np.abs(Jac))
+        Jac = jac.normalize_jac(Jac, err)
+        elapsed = time.time() - start
+        print(" Used %7.4f s for normalizing Jacobian from %s " % (elapsed, JFile[f]))
+
+    mx = np.max(np.abs(Jac))
+    mxLst.append(mx)
+    mxVal = np.amax([mxVal,mx])
+
     NPZFile = name+"_info.npz"
     np.savez(NPZFile, Info=Info,  Data=Data, Site=Site, Comp=Comp, MaxVal=mxVal)
 
@@ -180,6 +215,7 @@ for f in np.arange(nF):
             JacStack = Jacs.copy()
         else:
             JacStack = scs.vstack([JacStack, Jacs.copy()])
+
 
 
 

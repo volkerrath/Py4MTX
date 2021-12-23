@@ -8,19 +8,27 @@
 #     text_representation:
 #       extension: .py
 #       format_name: light
-#       format_version: '1.5'
+#       format_version: "1.5"
 #       jupytext_version: 1.11.3
 # ---
 
-'''
+"""
 @author: sb & vr oct 2019
-'''
+"""
 
 # Import required modules
 
 import os
 import sys
 import csv
+
+mypath = ["/home/vrath/Py4MT/py4mt/modules/", "/home/vrath/Py4MT/py4mt/scripts/"]
+for pth in mypath:
+    if pth not in sys.path:
+        sys.path.insert(0, pth)
+
+
+
 import simplekml
 from mtpy.core.mt import MT
 
@@ -30,31 +38,31 @@ from mtpy.core.mt import MT
 # plots_2 =  plots produced by MT_mcmcplot.py or  from
 # other sources, with an additional string strn_2 added to the EDI basename.
 
-plots_1 = True
-strng_1 = ''  # '_data'
+plots_1 = False
+strng_1 = ""  # "_data"
 
-plots_2 = True
-strng_2 = '_fwdres500'
+plots_2 = False
+strng_2 = "_fwdres500"
 
 repeats = False
-repeat_string = 'r'
+repeat_string = "r"
 
 bads = False
-bad_string = 'x'
+bad_string = "x"
 
 # Define the path to your EDI-files
 
-# edi_dir = r'/home/vrath/WestTimor/WT8C_edi/'
-edi_dir = r'/home/vrath/Desktop/MauTopo/MauEdi/'
-# '/home/vrath/Py4MT/py4mt/M/MauTopo_fwd/'
-# r'/media/vrath/MT/Ireland/Donegal/Donegal_EDIs_3DGridEdited/'
-print(' Edifiles read from: %s' % edi_dir)
+# edi_dir = r"/home/vrath/WestTimor/WT8C_edi/"
+edi_dir = r"/home/vrath/work/MT_Data/Krafla/EDI/"
+# "/home/vrath/Py4MT/py4mt/M/MauTopo_fwd/"
+# r"/media/vrath/MT/Ireland/Donegal/Donegal_EDIs_3DGridEdited/"
+print(" Edifiles read from: %s" % edi_dir)
 
 if plots_1 or plots_2:
-    plots_dir = edi_dir + 'data_plots/'
-    # r'/media/vrath/MT/Ireland/Northwest_CarboniferousBasin/MT_DATA/EDI/data_plots/'
-    # r'/home/vrath/WestTimor/WT8C_plots/' #edi_dir #'NEW_plots_bbmt_roi_edit/'
-    print(' Plots read from: %s' % plots_dir)
+    plots_dir = edi_dir + "data_plots/"
+    # r"/media/vrath/MT/Ireland/Northwest_CarboniferousBasin/MT_DATA/EDI/data_plots/"
+    # r"/home/vrath/WestTimor/WT8C_plots/" #edi_dir #"NEW_plots_bbmt_roi_edit/"
+    print(" Plots read from: %s" % plots_dir)
 
 
 # Determine which geographical info is added to the KML-tags:
@@ -62,25 +70,25 @@ if plots_1 or plots_2:
 places = []
 
 # open file and read the content in a list
-places_file = edi_dir + 'Sitelist.csv'
-# r'/home/vrath/Py4MT/py4mt/M/FWD/Sitelist.csv'
-# r'/home/vrath/WestTimor/places.csv'
-with open(places_file, 'r') as f:
-    placelist = csv.reader(f, delimiter=' ')
+places_file = edi_dir + "Sitelist.csv"
+# r"/home/vrath/Py4MT/py4mt/M/FWD/Sitelist.csv"
+# r"/home/vrath/WestTimor/places.csv"
+with open(places_file, "r") as f:
+    placelist = csv.reader(f, delimiter=" ")
     for row in placelist:
         print(row)
 
 # Define the path for saving  kml files
 
-kml_dir = ''
-kml_file = edi_dir + 'MauSites'
+kml_dir = ""
+kml_file = edi_dir + "KraflaSites"
 
 
-site_icon = 'icons/star.png'
-site_icon_rept = 'icons/donut.png'
-site_icon_bad = 'icons/triangle.png'
+site_icon =  edi_dir + "icons/placemark_circle.png"
+site_icon_rept =  edi_dir + "icons/placemark_square.png"
+site_icon_bad =  edi_dir + "icons/placemark_square.png"
 
-site_tcolor = simplekml.Color.white  # '#555500' #
+site_tcolor = simplekml.Color.white  # "#555500" #
 site_tscale = 0.8  # scale the text
 
 site_iscale = 1.
@@ -93,7 +101,7 @@ site_rcolor_rept = simplekml.Color.green
 site_icolor_bad = simplekml.Color.red
 site_rcolor_bad = simplekml.Color.red
 # simplekml.Color.rgb(0, 0, 255)
-# 'ffff0000'
+# "ffff0000"
 
 
 # No changes required after this line!
@@ -105,7 +113,7 @@ edi_files = []
 files = os.listdir(edi_dir)
 for entry in files:
    # print(entry)
-    if entry.endswith('.edi') and not entry.startswith('.'):
+    if entry.endswith(".edi") and not entry.startswith("."):
         edi_files.append(entry)
 
 
@@ -120,7 +128,7 @@ site_iref_bad = kml.addfile(site_icon_bad)
 # Loop over edifiles
 
 for filename in edi_files:
-    #print('reading data from '+filename)
+    #print("reading data from "+filename)
     name, ext = os.path.splitext(filename)
     file_i = edi_dir + filename
 
@@ -133,9 +141,9 @@ for filename in edi_files:
     full_name = mt_obj.station
     # nam = full_name[3:]
     nam = full_name
-    # print(full_name, nam,plots_dir+full_name+'.png')
+    # print(full_name, nam,plots_dir+full_name+".png")
     # print(full_name)
-    description = ('')
+    description = ("")
 
 #  Now add the plots to tag:
 
@@ -170,20 +178,20 @@ for filename in edi_files:
             site.style.iconstyle.icon.href = site_iref_rept
             site.style.labelstyle.color = site_rcolor_rept
             site.style.iconstyle.color = site_icolor_rept
-            site.style.balloonstyle.text = 'repeated site'
+            site.style.balloonstyle.text = "repeated site"
             site.style.balloonstyle.textcolor = site_rcolor
         #print(nam, mt_obj.lat, mt_obj.lon, hgt)
-            site.description = description + '  - repeated site'
+            site.description = description + "  - repeated site"
 
     if bads:
         if bad_string in full_name:
             site.style.iconstyle.icon.href = site_iref_bad
             site.style.labelstyle.color = site_rcolor_bad
             site.style.iconstyle.color = site_icolor_bad
-            site.style.balloonstyle.text = 'bad site'
+            site.style.balloonstyle.text = "bad site"
             site.style.balloonstyle.textcolor = site_rcolor
         #print(nam, mt_obj.lat, mt_obj.lon, hgt)
-            site.description = description + '  - repeated site'
+            site.description = description + "  - repeated site"
 
     site.description = description
 
@@ -192,10 +200,10 @@ kml_outfile = kml_dir + kml_file
 
 # Save raw kml file:
 
-kml.save(kml_outfile + '.kml')
+kml.save(kml_outfile + ".kml")
 
 # Compressed kmz file:
 
-kml.savekmz(kml_outfile + '.kmz')
+kml.savekmz(kml_outfile + ".kmz")
 
-print('kml/z written to ' + kml_file)
+print("kml/z written to " + kml_file)

@@ -23,6 +23,7 @@ coordinates and elevations, e. g., for WALDIM analysis.
 # Import required modules
 
 import os
+import sys
 import csv
 from mtpy.core.mt import MT
 import numpy as np
@@ -42,7 +43,7 @@ whatfor = 'nix'
 
 # Define the path to your EDI-files and for the list produced
 # edi_dir = r'/home/vrath/RRV_work/edi_work/BBMT/'
-edi_dir = r'/home/vrath/work/MT/Annecy/ANN22_6/ANN22_edis/'
+edi_dir = r"/home/vrath/work/MT_Data/Krafla/EDI/"
 # r'/home/vrath/Desktop/MauTopo/MauEdi/'
 # r'/media/vrath/MT/Ireland/Northwest_CarboniferousBasin/MT_DATA/EDI/'
 print(' Edifiles read from: %s' % edi_dir)

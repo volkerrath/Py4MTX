@@ -8,7 +8,7 @@
 #     text_representation:
 #       extension: .py
 #       format_name: light
-#       format_version: '1.5'
+#       format_version: "1.5"
 #       jupytext_version: 1.11.3
 #   kernelspec:
 #     display_name: Python 3
@@ -55,8 +55,7 @@ print("Generate sites on a mesh (various methods)"+"\n"+"".join("Date " + now.st
 print("\n\n")
 
 
-edi_gen = 'rect'
-edi_gen = 'center'
+edi_gen = "center" # rect
 
 if "rect" in edi_gen.lower():
 
@@ -76,22 +75,35 @@ if "rect" in edi_gen.lower():
 
 if "center" in edi_gen.lower():
     # Krafla  65.711°, -16.778°
-    LatLimits = ( 65.66666666,  65.75000)
+    LatLimits = ( 65.67,  65.75000)
     LonLimits = (-16.90000, -16.483333)
     CenterLatLon = [65.771, -16.778]
     Dx = Dy = 1000
 
+    epsg = utl.get_utm_zone(latitude=CenterLatLon[0], longitude=CenterLatLon[1])
+    UTMxLimits, UTMyLimits= utl.proj_latlon_to_utm(latitude=LatLimits,
+                                       longitude=LonLimits,
+                                       utm_zone=epsg[0])
+    UTMDistx =np.abs(UTMxLimits[1]-UTMxLimits[0])
+    UTMDisty =np.abs(UTMyLimits[1]-UTMyLimits[0])
+    nX= np.ceil(UTMDistx/Dx)+1
+    if nX % 2 == 1:
+        nX=nX+1
+    nY= np.ceil(UTMDisty/Dy)+1
+    if nY % 2 == 1:
+        nY=nY+1
+
 
 if "readcsv" in edi_gen.lower():
-    # edi_gen = 'readcsv'
+    # edi_gen = "readcsv"
     # # read site list
-    # edi_file = r'/home/vrath/AEM_Limerick/Limerick_pilot.csv'
+    # edi_file = r"/home/vrath/AEM_Limerick/Limerick_pilot.csv"
     edi_file = ""
 
-if 'readmod' in edi_gen.lower():
+if "readmod" in edi_gen.lower():
     error("Option "+edi_gen.lower()+"not yet implemeted! Exit.")
     # # read site list
-    # mod_file = r'/home/vrath/AEM_Limerick/Limerick_pilot_etopo.rho'
+    # mod_file = r"/home/vrath/AEM_Limerick/Limerick_pilot_etopo.rho"
     # nx_bnd = 14
     # ny_bnd = 14
     # centerlatlon = ()
@@ -103,19 +115,19 @@ if 'readmod' in edi_gen.lower():
 
 # Define the path to your EDI-template:
 
-edi_template = r'/home/vrath/work/MT_Data/Krafla/Templates/template3.edi'
-print(' Edifile template read from: %s' % edi_template)
+edi_template = r"/home/vrath/work/MT_Data/Krafla/Templates/template8.edi"
+print(" Edifile template read from: %s" % edi_template)
 
 
 # Define the path and appended string for saved EDI-files:
 
-edi_out_dir = r'/home/vrath/work/MT_Data/Krafla/EDI3/'
-print(' Edifiles written to: %s' % edi_out_dir)
+edi_out_dir = r"/home/vrath/work/MT_Data/Krafla/EDI/"
+print(" Edifiles written to: %s" % edi_out_dir)
 if not os.path.isdir(edi_out_dir):
-    print(' File: %s does not exist, but will be created' % edi_out_dir)
+    print(" File: %s does not exist, but will be created" % edi_out_dir)
     os.mkdir(edi_out_dir)
 
-OutName = 'Krafla_11x11_3'
+OutName = "Krafla_"
 
 
 # No changes required after this line!
@@ -144,24 +156,24 @@ if "rect" in edi_gen.lower():
 
             mt_tmp.lat = Lat[nn]
             mt_tmp.lon = Lon[mm]
-            mt_tmp.station = OutName + nnstr + '_' + mmstr
+            mt_tmp.station = OutName + nnstr + "_" + mmstr
 
-            file_out = OutName + nnstr + '_' + mmstr + '.edi'
+            file_out = OutName + nnstr + "_" + mmstr + ".edi"
 
-            print('\n Generating ' + edi_out_dir + file_out)
+            print("\n Generating " + edi_out_dir + file_out)
             print(
-                ' site %s at :  % 10.6f % 10.6f' %
+                " site %s at :  % 10.6f % 10.6f" %
                 (mt_tmp.station, mt_tmp.lat, mt_tmp.lon))
 
     #  Write a new edi file:
 
-            print('Writing data to ' + edi_out_dir + file_out)
+            print("Writing data to " + edi_out_dir + file_out)
             mt_tmp.write_mt_file(
                 save_dir=edi_out_dir,
                 fn_basename=file_out,
-                file_type='edi',
-                longitude_format='LONG',
-                latlon_format='dd'
+                file_type="edi",
+                longitude_format="LONG",
+                latlon_format="dd"
             )
 
 if "center" in edi_gen.lower():
@@ -170,26 +182,52 @@ if "center" in edi_gen.lower():
     UTMCenter = utl.proj_latlon_to_utm(latitude=CenterLatLon[0],
                                        longitude=CenterLatLon[1],
                                        utm_zone=epsg[0])
-    UTMLimits = utl.proj_latlon_to_utm(latitude=LatLimits,
-                                       longitude=LonLimits,
-                                       utm_zone=epsg[0])
-    UTMDistx =np.abs(UTMLimits[0][1]-UTMLimits[0][0])
-    UTMDisty =np.abs(UTMLimits[1][1]-UTMLimits[1][0])
-    Dx = Dy = 1000 # 500
-    nX= np.ceil(UTMDistx/Dx)+1
-    if nX % 2 == 0:
-        nX=nX+1
-    nY= np.ceil(UTMDisty/Dy)+1
-    if nY % 2 == 0:
-        nY=nY+1
 
-    GridX = Dx*np.arange(nX)
-    GridY = Dy*np.arange(nY)
+    X = Dx*np.arange(nX)
+    XCenter= 0.5*np.abs((X[0]-X[-1]))
+    X=X+UTMCenter[0]-XCenter
+    # print(X)
 
-    print(nX, nY)
+    Y = Dy*np.arange(nY)
+    YCenter = 0.5*np.abs((Y[0]-Y[-1]))
+    Y=Y+UTMCenter[1]-YCenter
+    # print(Y)
 
+    GridX, GridY = np.meshgrid(X, Y,indexing='xy')
+    Lat, Lon = utl.proj_utm_to_latlon(utm_x=GridX, utm_y=GridY, utm_zone=epsg[0])
+    Lat = Lat.flat
+    Lon = Lon.flat
 
+    for nn in range(np.size(Lat)):
+        nnstr = str(nn)
+        print(nnstr)
 
+    # # Create an MT object
+
+        file_in = edi_template
+        mt_tmp = MT(file_in)
+
+        mt_tmp.lat = Lat[nn]
+        mt_tmp.lon = Lon[nn]
+        mt_tmp.station = OutName + nnstr
+
+        file_out = OutName + nnstr + ".edi"
+
+        print("\n Generating " + edi_out_dir + file_out)
+        print(
+            " site %s at :  % 10.6f % 10.6f" %
+            (mt_tmp.station, mt_tmp.lat, mt_tmp.lon))
+
+#  Write a new edi file:
+
+        print("Writing data to " + edi_out_dir + file_out)
+        mt_tmp.write_mt_file(
+            save_dir=edi_out_dir,
+            fn_basename=file_out,
+            file_type="edi",
+            longitude_format="LONG",
+            latlon_format="dd"
+        )
 
 
 if "readcsv" in edi_gen.lower():
@@ -199,7 +237,7 @@ if "readcsv" in edi_gen.lower():
     with open(edi_file) as ef:
         for line in ef:
             print(line)
-            d = line.split(',')
+            d = line.split(",")
             Site.append([d[0]])
             Data.append([float(d[1]), float(d[2]), float(d[3])])
 
@@ -223,25 +261,25 @@ if "readcsv" in edi_gen.lower():
         mt_tmp.lon = Lon[nn]
         mt_tmp.station = place
 
-        file_out = OutName + '_' + place + '.edi'
+        file_out = OutName + "_" + place + ".edi"
 
-        print('\n Generating ' + edi_out_dir + file_out)
-        print(' site %s at :  % 10.6f % 10.6f' %
+        print("\n Generating " + edi_out_dir + file_out)
+        print(" site %s at :  % 10.6f % 10.6f" %
               (mt_tmp.station, mt_tmp.lat, mt_tmp.lon))
 
     # # Write a new edi file:
 
-        print('Writing data to ' + edi_out_dir + file_out)
+        print("Writing data to " + edi_out_dir + file_out)
         mt_tmp.write_mt_file(
             save_dir=edi_out_dir,
             fn_basename=file_out,
-            file_type='edi',
-            longitude_format='LONG',
-            latlon_format='dd'
+            file_type="edi",
+            longitude_format="LONG",
+            latlon_format="dd"
         )
 
 
-elif "mod" in edi_gen.lower():
+if "mod" in edi_gen.lower():
 
     dx, dy, dz, rho, reference, trans = mod.read_model(mod_file)
 
@@ -261,7 +299,7 @@ elif "mod" in edi_gen.lower():
 
         for jj in np.arange(ny_bnd + 1, ny - ny_bnd + 1):
 
-            Site = '_' + str(ii) + '_' + str(jj)
+            Site = "_" + str(ii) + "_" + str(jj)
 
         for place in Site:
             # Create an MT object
@@ -273,24 +311,19 @@ elif "mod" in edi_gen.lower():
             mt_tmp.lon = Lon[nn]
             mt_tmp.station = place
 
-            file_out = OutName + '_' + place + '.edi'
+            file_out = OutName + "_" + place + ".edi"
 
-            print('\n Generating ' + edi_out_dir + file_out)
-            print(' site %s at :  % 10.6f % 10.6f' %
+            print("\n Generating " + edi_out_dir + file_out)
+            print(" site %s at :  % 10.6f % 10.6f" %
                   (mt_tmp.station, mt_tmp.lat, mt_tmp.lon))
 
         # # Write a new edi file:
 
-            print('Writing data to ' + edi_out_dir + file_out)
+            print("Writing data to " + edi_out_dir + file_out)
             mt_tmp.write_mt_file(
                 save_dir=edi_out_dir,
                 fn_basename=file_out,
-                file_type='edi',
-                longitude_format='LONG',
-                latlon_format='dd'
+                file_type="edi",
+                longitude_format="LONG",
+                latlon_format="dd"
             )
-
-
-else:
-    print('Error: option ' + edi_gen + ' not implemented. Exit.\n')
-    sys.exit(1)
