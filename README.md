@@ -22,9 +22,8 @@ This repository contains the following subdirectories:
 - 	**aempy/notebooks**
  	Contains jupyter notebooks for the most important scripts using the toolbox. 
 	  	
-	
-- 	**rcfiles**
-	Contains some useful helper files for working with the conda EM environment.
+- 	**environment**
+	Contains conda environment description files, and some useful helper files for working with the conda EM environment.
 
 
 Get your working copy via git from the command line:
