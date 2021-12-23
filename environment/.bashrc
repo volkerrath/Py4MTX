@@ -133,6 +133,7 @@ alias jab="/opt/jabref/lib/runtime/bin/JabRef"
 alias jabref="/opt/jabref/lib/runtime/bin/JabRef"
 alias JabRef="/opt/jabref/lib/runtime/bin/JabRef"
 
+alias magick7="/usr/local/bin/magick"
 
 alias modclean='rm OAR*; rm Nod*'
 alias foxclean='pkill -9 FoxitReader'
@@ -149,6 +150,7 @@ if ! shopt -oq posix; then
   fi
 fi
 
+# export GCM_CREDENTIAL_STORE=gpg
 export OMP_NUM_THREADS=8
 
 export PATH="/home/vrath/bin:$PATH"
@@ -160,6 +162,8 @@ echo ". /opt/intel/oneapi/setvars.sh intel64 ilp64"
 
 export MKL_PARDISO_OOC_FILE_NAME=/tmp/.pardiso_ooc
 export MKL_PARDISO_OOC_PATH=/tmp/.pardiso_ooc
+
+export GCM_CREDENTIAL_STORE=secretservice
 
 ## >>> conda initialize >>>
 ## !! Contents within this block are managed by 'conda init' !!
