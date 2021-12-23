@@ -23,7 +23,7 @@ This repository contains the following subdirectories:
  	Contains jupyter notebooks for the most important scripts using the toolbox. 
 	  	
 - 	**environment**
-	Contains conda environment description files, and some useful helper files for working with the conda EM environment.
+	Contains conda environment description files, and some useful helper files for working with the conda environment.
 
 
 Get your working copy via git from the command line:
