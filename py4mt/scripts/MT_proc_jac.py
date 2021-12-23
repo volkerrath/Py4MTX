@@ -39,9 +39,9 @@ import scipy.sparse as scs
 import netCDF4 as nc
 
 
-import vtk
-import pyvista as pv
-import PVGeo as pvg
+# import vtk
+# import pyvista as pv
+# import PVGeo as pvg
 
 
 mypath = ["/home/vrath/Py4MT/py4mt/modules/", "/home/vrath/Py4MT/py4mt/scripts/"]
@@ -66,11 +66,11 @@ rng = np.random.default_rng()
 nan = np.nan
 
 normalize_err = True
-
 normalize_max = False
+normalize_vol = True
 
 sparsify = True
-sparse_thresh = 1.e-8
+sparse_thresh = 1.e-6
 
 WorkDir = r"/home/vrath/work/MT_Data/Ubaye/UB22_jac_best/"
 MFile   = WorkDir +r"Ub22_ZoffPT_02_NLCG_014.rho"
@@ -81,8 +81,11 @@ MFile   = WorkDir +r"Ub22_ZoffPT_02_NLCG_014.rho"
 # JFile = [WorkDir+r"Ub22_P.jac", ]
 # DFile = [WorkDir+r"Ub22_P.dat", ]
 
-JFile = [WorkDir+r"Ub22_T.jac", ]
-DFile = [WorkDir+r"Ub22_T.dat", ]
+# JFile = [WorkDir+r"Ub22_T.jac", ]
+# DFile = [WorkDir+r"Ub22_T.dat", ]
+
+JFile = [WorkDir+r"Ub22_T.jac", WorkDir+r"Ub22_P.jac", WorkDir+r"Ub22_Zoff.jac", ]
+DFile = [WorkDir+r"Ub22_T.dat", WorkDir+r"Ub22_P.dat", WorkDir+r"Ub22_Zoff.dat", ]
 
 #
 
@@ -91,7 +94,7 @@ total = 0.0
 
 
 start = time.time()
-dx, dy, dz, rho, reference, _ = mod.read_model(MFile, trans="linear")
+dx, dy, dz, rho, reference, _, vcell = mod.read_model(MFile, trans="linear", volumes=True)
 dims = np.shape(rho)
 
 resair = 1.e17
@@ -145,10 +148,13 @@ for f in np.arange(nF):
         print(" Used %7.4f s for normalizing Jacobian from %s " % (elapsed, JFile[f]))
 
     mx = np.max(np.abs(Jac))
+    print(JFile[f]+" maximum value is "+str(mx))
+
     mxLst.append(mx)
     mxVal = np.amax([mxVal,mx])
 
-print(" Maximum value is "+str(mxVal))
+print(" Merged Maximum value is "+str(mxVal))
+
 
 
 for f in np.arange(nF):
@@ -226,11 +232,20 @@ for f in np.arange(nF):
     total = total + elapsed
     print(" Used %7.4f s for writing Jacobian to %s " % (elapsed, NCFile))
 
+
     start = time.time()
     S, Smax = jac.calculate_sens(Jac, normalize=False, small=1.0e-12)
+    print(" Max sensitivity value is %7.4f " % (Smax))
+    S = S.reshape(np.shape(rho))
+    if normalize_vol:
+        S = np.divide(S,vcell)
+    print(" Max normalized sensitivity value is %7.4f " % (np.max(abs(S))))
+
     elapsed = time.time() - start
     total = total + elapsed
     print(" Used %7.4f s for calculating Sensitivity from Jacobian  %s " % (elapsed, JFile[f]))
+#
+
 
     start = time.time()
     SNSFile = name+nstr+".sns"

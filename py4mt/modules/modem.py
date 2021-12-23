@@ -657,7 +657,7 @@ def write_model(ModFile=None, dx=None, dy=None, dz=None, rho=None, reference=Non
         f.write("%10.2f  \n" % (0.0))
 
 
-def read_model(ModFile=None, trans="LINEAR", out=True):
+def read_model(ModFile=None, trans="LINEAR", volumes=False, out=True):
     """
     Read ModEM model input.
 
@@ -727,7 +727,23 @@ def read_model(ModFile=None, trans="LINEAR", out=True):
         print(
             "readMod: %i x %i x %i model read from %s" % (nx, ny, nz, ModFile))
 
-    return dx, dy, dz, rho, reference, trans
+    if volumes:
+        vcell = np.zeros_like(rho)
+        for ii in np.arange(len(dx)):
+            for jj in np.arange(len(dy)):
+                for kk in np.arange(len(dz)):
+                    vcell[ii,jj,kk] = dx[ii]*dy[jj]*dz[kk]
+
+        if out:
+            print(
+                "readMod: %i x %i x %i cell volumes calculated" % (nx, ny, nz))
+
+        return dx, dy, dz, rho, reference, trans, vcell
+
+
+
+    else:
+        return dx, dy, dz, rho, reference, trans
 
 def linear_interpolation(p1, p2, x0):
     """
