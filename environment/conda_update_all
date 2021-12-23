@@ -1,1 +1,23 @@
-/home/vrath/bin/conda_update_all
+#! /bin/bash
+echo "*********** base"
+conda update conda -y -n base
+conda update --all -y -n base
+
+echo "*********** EM"
+conda update --all -y -n EM 
+# echo "*********** SimPEG"
+# conda update --all -y -n SimPEG
+# echo "*********** Fenics"
+#Rconda update --all -y -n Fenics
+#echo "*********** EarthEngine"
+#conda update --all -y -n EarthEngine
+echo "*********** Gymli"
+conda update --all -y -n Gymli
+echo "*********** Hippy"
+conda update --all -y -n Hippy
+echo "*********** EM39"
+conda update --all -y -n EM39
+echo "*********** GemGIS"
+conda update --all -y -n GemGIS
+
+conda_export_all
