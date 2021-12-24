@@ -68,7 +68,7 @@ daal                      2020.3             ha770c72_304    conda-forge
 daal4py                   2020.3.1         py38h0f50a89_0    conda-forge
 dask-core                 2021.10.0          pyhd3eb1b0_0  
 dbus                      1.13.18              hb2f20db_0  
-dcw-gmt                   2.0.1                ha770c72_0    conda-forge
+dcw-gmt                   2.0.2                ha770c72_0    conda-forge
 debugpy                   1.5.1            py38h295c915_0  
 decorator                 5.1.0              pyhd3eb1b0_0  
 defusedxml                0.7.1              pyhd3eb1b0_0  

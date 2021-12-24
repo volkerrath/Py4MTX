@@ -4,17 +4,17 @@ channels:
   - conda-forge
 dependencies:
   - _libgcc_mutex=0.1=conda_forge
-  - _openmp_mutex=4.5=1_llvm
+  - _openmp_mutex=4.5=1_gnu
   - beautifulsoup4=4.10.0=pyh06a4308_0
   - brotlipy=0.7.0=py39h27cfd23_1003
   - bzip2=1.0.8=h7b6447c_0
   - c-ares=1.17.1=h27cfd23_0
-  - ca-certificates=2021.10.8=ha878542_0
-  - certifi=2021.10.8=py39hf3d152e_1
+  - ca-certificates=2021.10.26=h06a4308_2
+  - certifi=2021.10.8=py39h06a4308_0
   - cffi=1.14.6=py39h400218f_0
   - chardet=4.0.0=py39h06a4308_1003
   - charset-normalizer=2.0.4=pyhd3eb1b0_0
-  - conda=4.11.0=py39hf3d152e_0
+  - conda=4.11.0=py39h06a4308_0
   - conda-build=3.21.7=py39h06a4308_0
   - conda-package-handling=1.7.3=py39h27cfd23_1
   - cryptography=36.0.0=py39h9ce1e76_0
@@ -36,6 +36,7 @@ dependencies:
   - libev=4.33=h7f8727e_1
   - libffi=3.3=he6710b0_2
   - libgcc-ng=11.2.0=h1d223b6_11
+  - libgomp=11.2.0=h1d223b6_11
   - libiconv=1.16=h516909a_0
   - liblief=0.10.1=h2531618_1
   - libmamba=0.19.1=h3985d26_0
@@ -45,13 +46,12 @@ dependencies:
   - libssh2=1.9.0=h1ba5d50_1
   - libstdcxx-ng=11.2.0=he4da1e4_11
   - libxml2=2.9.12=h03d6c58_0
-  - llvm-openmp=12.0.1=h4bd325d_1
   - lz4-c=1.9.3=h295c915_1
-  - lzo=2.10=h516909a_1000
+  - lzo=2.10=h7b6447c_2
   - mamba=0.19.1=py39hfa8f2c8_0
   - markupsafe=2.0.1=py39h27cfd23_0
   - ncurses=6.3=h7f8727e_2
-  - openssl=1.1.1l=h7f98852_0
+  - openssl=1.1.1l=h7f8727e_0
   - patchelf=0.13=h295c915_0
   - pcre2=10.35=h14c3975_1
   - perl=5.26.2=h14c3975_0
@@ -88,5 +88,5 @@ dependencies:
   - yaml=0.2.5=h7b6447c_0
   - yaml-cpp=0.6.3=he1b5a44_4
   - zlib=1.2.11=h7f8727e_4
-  - zstd=1.5.0=ha95c52a_0
+  - zstd=1.5.0=ha4553b6_1
 prefix: /home/vrath/.Miniconda
