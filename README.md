@@ -24,7 +24,9 @@ This repository contains the following subdirectories:
 	  	
 - 	**environment**
 	Contains conda environment description files, and some useful helper files for working 
-	within the conda environment.
+	within the conda environment. The current EM and EM39 environments contain a lot of packages
+	which are not strictly necessary for running aempy, but useful for related geoscientific work.
+	They will be replaced by a streamlined RAFTA environment (Python 3.9) at a later time.
 
 
 Get your working copy via git from the command line:
