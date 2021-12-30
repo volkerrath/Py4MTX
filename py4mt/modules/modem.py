@@ -15,6 +15,28 @@ import netCDF4 as nc
 
 # import h5netcdf as hc
 
+def decode_h2(strng):
+    """
+    Decode header2 string from ModEM Jacobian (old style).
+
+    ----------
+    strng : string
+       header string
+
+    Returns
+    -------
+    i1, i2, i3 : integer
+        frequency, dattype, site numbers
+
+    """
+
+    s = strng.replace(";","").split()
+    i1 = int(s[3])
+    i2 = int(s[5])
+    i3 = int(s[7])
+
+    ivals = [i1, i2, i3]
+    return ivals
 
 def read_jac(JacFile=None, out=False):
     """
@@ -48,7 +70,7 @@ def read_jac(JacFile=None, out=False):
                 # header2
                 header2 = fjac.read_record(np.byte)
                 h2 = ''.join([chr(item) for item in header2])
-                tmp2.append(h2)
+                tmp2.append(decode_h2(h2))
                 # print(h2)
                 # print(i1,i2,i3)
                 nSigma = fjac.read_ints(np.int32)
@@ -77,7 +99,8 @@ def read_jac(JacFile=None, out=False):
                     # print(np.shape(tmp1))
                     # tmp2.append()
     Jac = np.asarray(tmp1)
-    Inf = np.asarray(tmp2,dtype=object)
+    Inf = np.asarray(tmp2)
+#    Inf = np.asarray(tmp2,dtype=object)
 
     fjac.close()
 

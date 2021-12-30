@@ -227,6 +227,27 @@ def normalize_jac(Jac=None, fn=None, out=True):
 
     return Jac
 
+def set_mask(rho=None, pad=[10, 10 , 10, 10, 0, 10], flat=True, out=True):
+    """
+    Set model masc for Jacobian calculations.
+
+    author: vrath
+    last changed: Dec 29, 2021
+
+    """
+    shr = np.shape(rho)
+    jm = np.full(shr, np.nan)
+    print(np.shape(jm))
+
+    jm[0+pad[0]:-1-pad[1], 0+pad[2]:-1-pad[3], 0+pad[4]:-1-pad[5]] = 1
+
+    mask = jm
+    if flat:
+        mask = jm.flatten(order="F")
+
+    return mask
+
+
 
 def calculate_sens(Jac=None, normalize=False, small=1.0e-15, blank=np.nan, log=False, out=True):
     """
@@ -244,8 +265,8 @@ def calculate_sens(Jac=None, normalize=False, small=1.0e-15, blank=np.nan, log=F
     S = np.sum(np.power(J, 2), axis=0)
     S = np.sqrt(S)
 
-    Smax = np.amax(S)
-    Smin = np.amin(S)
+    Smax = np.nanmax(S)
+    Smin = np.nanmin(S)
 
     if out:
         print("Range of S is "+str(Smin)+" to "+str(Smax))

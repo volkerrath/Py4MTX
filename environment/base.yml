@@ -78,7 +78,7 @@ dependencies:
   - setuptools=58.0.4=py39h06a4308_0
   - six=1.16.0=pyhd3eb1b0_0
   - soupsieve=2.3.1=pyhd3eb1b0_0
-  - sqlite=3.36.0=hc218d9a_0
+  - sqlite=3.37.0=hc218d9a_0
   - tk=8.6.11=h1ccaba5_0
   - tqdm=4.62.3=pyhd3eb1b0_1
   - tzdata=2021e=hda174b7_0

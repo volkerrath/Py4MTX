@@ -89,6 +89,10 @@ DFile = [WorkDir+r"Ub22_T.dat", WorkDir+r"Ub22_P.dat", WorkDir+r"Ub22_Zoff.dat",
 
 #
 
+if np.size(DFile) != np.size(JFile):
+    error("Data file number not equal Jac file number! Exit.")
+nF = np.size(DFile)
+
 
 total = 0.0
 
@@ -100,22 +104,16 @@ dims = np.shape(rho)
 resair = 1.e17
 aircells = np.where(rho>resair/100)
 
+jacmask = jac.set_mask(rho=rho, pad=[10, 10 , 10, 10, 0, 10], flat = True, out=True)
+jdims= np.shape(jacmask)
+j0 = jacmask.reshape(dims)
+j0[aircells] = nan
+jacmask = j0.reshape(jdims)
 
 
 elapsed = time.time() - start
 total = total + elapsed
 print(" Used %7.4f s for reading model from %s " % (elapsed, MFile))
-# rr = rho.copy()
-# SNSFile = os.path.split(MFile)[0]+"_test.rho"
-# np.shape(rr)
-# mod.write_model(SNSFile, dx, dy, dz, rr, reference, trans="linear")
-# dx, dy, dz, rho2, reference = mod.read_model(SNSFile, trans="linear")
-
-
-if np.size(DFile) != np.size(JFile):
-    error("Data file number not equal Jac file number! Exit.")
-nF = np.size(DFile)
-
 
 mxVal = 1e-30
 mxLst = []
@@ -142,12 +140,12 @@ for f in np.arange(nF):
         start = time.time()
         dsh = np.shape(Data)
         err = np.reshape(Data[:, 7], (dsh[0], 1))
-        mx0 = np.max(np.abs(Jac))
+        mx0 = np.nanmax(np.abs(Jac*jacmask))
         Jac = jac.normalize_jac(Jac, err)
         elapsed = time.time() - start
         print(" Used %7.4f s for normalizing Jacobian from %s " % (elapsed, JFile[f]))
 
-    mx = np.max(np.abs(Jac))
+    mx = np.nanmax(np.abs(Jac*jacmask))
     print(JFile[f]+" maximum value is "+str(mx))
 
     mxLst.append(mx)
@@ -180,12 +178,12 @@ for f in np.arange(nF):
         start = time.time()
         dsh = np.shape(Data)
         err = np.reshape(Data[:, 7], (dsh[0], 1))
-        mx0 = np.max(np.abs(Jac))
+        mx0 = np.nanmax(np.abs(Jac))
         Jac = jac.normalize_jac(Jac, err)
         elapsed = time.time() - start
         print(" Used %7.4f s for normalizing Jacobian from %s " % (elapsed, JFile[f]))
 
-    mx = np.max(np.abs(Jac))
+    mx = np.nanmax(np.abs(Jac*jacmask))
     mxLst.append(mx)
     mxVal = np.amax([mxVal,mx])
 
@@ -234,12 +232,12 @@ for f in np.arange(nF):
 
 
     start = time.time()
-    S0, Smax = jac.calculate_sens(Jac, normalize=False, small=1.0e-12)
+    S0, Smax = jac.calculate_sens(Jac*jacmask, normalize=False, small=1.0e-12)
     print(" Max sensitivity value is %7.4f " % (Smax))
     S1 = S0.reshape(np.shape(rho))
     if normalize_vol:
         Sz = np.divide(S1,vcell)
-    print(" Max normalized sensitivity value is %7.4f " % (np.max(abs(Sz))))
+    print(" Max normalized sensitivity value is %7.4f " % (np.nanmax(abs(Sz))))
 
     elapsed = time.time() - start
     total = total + elapsed
