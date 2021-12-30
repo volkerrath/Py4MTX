@@ -74,6 +74,7 @@ sparse_thresh = 1.e-6
 
 # WorkDir = r"/home/vrath/work/MT_Data/Ubaye/UB22_jac_best/"
 # MFile   = WorkDir +r"Ub22_ZoffPT_02_NLCG_014.rho"
+# MPad=[12, 12 , 12, 12, 0, 36]
 
 # # JFiles = [WorkDir+r"Ub22_Zoff.jac", ]
 # # DFiles = [WorkDir+r"Ub22_Zoff.dat", ]
@@ -91,6 +92,7 @@ sparse_thresh = 1.e-6
 # KRAFLA case
 WorkDir = r"/media/vrath/BlackOne/MT_Data/Krafla/Krafla1/"
 MFile   = WorkDir +r"Krafla.rho"
+MPad=[15, 15 , 15, 15, 0, 36]
 JFiles = []
 DFiles = []
 files = os.listdir(WorkDir)
@@ -117,7 +119,7 @@ dims = np.shape(rho)
 resair = 1.e17
 aircells = np.where(rho>resair/100)
 
-jacmask = jac.set_mask(rho=rho, pad=[10, 10 , 10, 10, 0, 10], flat = True, out=True)
+jacmask = jac.set_mask(rho=rho, pad=MPad, flat = True, out=True)
 jdims= np.shape(jacmask)
 j0 = jacmask.reshape(dims)
 j0[aircells] = nan
@@ -207,6 +209,16 @@ print(" Merged T Maximum value is "+str(maxValT))
 
 maxValP = np.sqrt(np.nanmax([snsValP]))
 print(" Merged P Maximum value is "+str(maxValP))
+
+snsVal = snsValZ+snsValT+snsValP
+maxVal = np.sqrt(np.nanmax([snsVal]))
+print(" Merged ZTP Maximum value is "+str(maxVal))
+
+start = time.time()
+
+
+
+
 
 # for f in np.arange(nF):
 
