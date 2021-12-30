@@ -26,7 +26,7 @@ This repository contains the following subdirectories:
 	Contains conda environment description files, and some useful helper files for working 
 	within the conda environment. The current EM and EM39 environments contain a lot of packages
 	which are not strictly necessary for running aempy, but useful for related geoscientific work.
-	They will be replaced by a streamlined RAFTA environment (Python 3.9) at a later time.
+	They will be replaced by a streamlined Py4MT environment (Python 3.9) at a later time.
 
 
 Get your working copy via git from the command line:
@@ -35,7 +35,7 @@ _git clone https://github.com/volkerrath/Py4MT/_
 
 This version will run under Python 3.8+ (3.9 works correctly, 3.10 is still missing some important packages). To install it in an Linux environment (e.g. Ubuntu, SuSE), you need to do the following:
 
-(1) Download the latest Anaconda or Miniconda version (https://www.anaconda.com/distribution/), and install by running the downloaded bash script.  In order to make updates secure and avoid inconsistencies, copy .condarc to your home directory. As the Miniconda installer is not updated very frequently, it is useful to run the following within Anaconda:
+(1) Download the latest Anaconda or Miniconda version  (https://docs.conda.io/projects/conda/en/latest/user-guide/install/download.html), and install by running the downloaded bash script.  In order to make updates secure and avoid inconsistencies, copy .condarc to your home directory. As the Miniconda installer is not updated very frequently, it is useful to run the following within Anaconda:
 
 _conda update conda_
 
