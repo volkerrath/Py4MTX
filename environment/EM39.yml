@@ -74,6 +74,7 @@ dependencies:
   - cloudpickle=2.0.0=pyhd3eb1b0_0
   - colorama=0.4.4=pyhd3eb1b0_0
   - coloredlogs=15.0.1=py39h06a4308_0
+  - commonmark=0.9.1=pyhd3eb1b0_0
   - cookiecutter=1.7.2=pyhd3eb1b0_0
   - cryptography=36.0.0=py39h9ce1e76_0
   - curl=7.80.0=h7f8727e_0
@@ -446,6 +447,7 @@ dependencies:
   - regex=2021.8.3=py39h7f8727e_0
   - requests=2.26.0=pyhd3eb1b0_0
   - requests-unixsocket=0.2.0=py_0
+  - rich=10.16.1=pyhd8ed1ab_0
   - rope=0.21.1=pyhd3eb1b0_0
   - rtree=0.9.7=py39h06a4308_1
   - s2n=1.0.10=h9b69904_0
@@ -523,14 +525,14 @@ dependencies:
   - urllib3=1.26.7=pyhd3eb1b0_0
   - utfcpp=3.2.1=h06a4308_0
   - utm=0.7.0=pyhd8ed1ab_0
-  - vaex=4.6.0=pyhd8ed1ab_0
-  - vaex-astro=0.8.3=pyhd8ed1ab_0
-  - vaex-core=4.6.0=py39h50574b8_0
+  - vaex=4.7.0=pyhd8ed1ab_0
+  - vaex-astro=0.9.0=pyhd8ed1ab_0
+  - vaex-core=4.7.0.post1=py39h50574b8_0
   - vaex-hdf5=0.11.1=pyhd8ed1ab_0
-  - vaex-jupyter=0.6.0=pyhd8ed1ab_0
-  - vaex-ml=0.15.0=pyhd8ed1ab_0
-  - vaex-server=0.7.0=pyhd8ed1ab_0
-  - vaex-viz=0.5.0=pyhd8ed1ab_0
+  - vaex-jupyter=0.7.0=pyhd8ed1ab_0
+  - vaex-ml=0.16.0=pyhd8ed1ab_0
+  - vaex-server=0.8.0=pyhd8ed1ab_0
+  - vaex-viz=0.5.1=pyhd8ed1ab_0
   - vectormath=0.2.2=py_0
   - vtk=9.1.0=qt_py39h6e664cc_203
   - watchdog=2.1.6=py39h06a4308_0

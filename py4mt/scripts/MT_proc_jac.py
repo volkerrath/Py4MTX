@@ -67,7 +67,7 @@ nan = np.nan
 
 normalize_err = True
 sparsify = True
-sparse_thresh = 1.e-6
+sparse_thresh = 1.e-8
 
 # Ubaye caase"
 # WorkDir = r"/home/vrath/work/MT_Data/Ubaye/UB22_jac_best/"
@@ -204,7 +204,7 @@ for f in np.arange(nF):
     if sparsify:
         sstr="_sp"+str(round(np.log10(sparse_thresh)))
         start = time.time()
-        Jacs, _ = jac.sparsify_jac(Jac,sparse_thresh=sparse_thresh)
+        Jacs, _ = jac.sparsify_jac(Jac,sparse_thresh=mxVal*sparse_thresh)
         elapsed = time.time() - start
         total = total + elapsed
         print(" Used %7.4f s for sparsifying Jacobian %s " % (elapsed, JFiles[f]))
@@ -221,10 +221,10 @@ for f in np.arange(nF):
             CompStack = Comp.copy()
         else:
             JacStack = scs.vstack([JacStack, Jacs])
-            DataStack = np.vstack([DataStack, Data])
-            SiteStack = np.vstack([SiteStack, Site])
-            FreqStack = np.vstack([FreqStack, Freq])
-            CompStack = np.vstack([CompStack, Comp])
+            DataStack = np.append(DataStack, Data, axis=0)
+            SiteStack = np.append(SiteStack, Site, axis=0)
+            FreqStack = np.append(FreqStack, Freq, axis=0)
+            CompStack = np.append(CompStack, Comp, axis=0)
 
 
 NPZFile = WorkDir+"Krafla1"+nstr+sstr+"_JacStack_jacs.npz"

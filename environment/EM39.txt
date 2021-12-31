@@ -75,6 +75,7 @@ cloudpickle               2.0.0              pyhd3eb1b0_0
 colorama                  0.4.4              pyhd3eb1b0_0  
 coloredlogs               15.0.1           py39h06a4308_0  
 colorful                  0.5.4                    pypi_0    pypi
+commonmark                0.9.1              pyhd3eb1b0_0  
 configparser              5.2.0                    pypi_0    pypi
 cookiecutter              1.7.2              pyhd3eb1b0_0  
 cryptography              36.0.0           py39h9ce1e76_0  
@@ -459,6 +460,7 @@ requests                  2.26.0             pyhd3eb1b0_0
 requests-unixsocket       0.2.0                      py_0    conda-forge
 resistics                 1.0.0a3                  pypi_0    pypi
 retrying                  1.3.3                    pypi_0    pypi
+rich                      10.16.1            pyhd8ed1ab_0    conda-forge
 rope                      0.21.1             pyhd3eb1b0_0  
 rtree                     0.9.7            py39h06a4308_1  
 s2n                       1.0.10               h9b69904_0    conda-forge
@@ -538,14 +540,14 @@ unidecode                 1.2.0              pyhd3eb1b0_0
 urllib3                   1.26.7             pyhd3eb1b0_0  
 utfcpp                    3.2.1                h06a4308_0  
 utm                       0.7.0              pyhd8ed1ab_0    conda-forge
-vaex                      4.6.0              pyhd8ed1ab_0    conda-forge
-vaex-astro                0.8.3              pyhd8ed1ab_0    conda-forge
-vaex-core                 4.6.0            py39h50574b8_0    conda-forge
+vaex                      4.7.0              pyhd8ed1ab_0    conda-forge
+vaex-astro                0.9.0              pyhd8ed1ab_0    conda-forge
+vaex-core                 4.7.0.post1      py39h50574b8_0    conda-forge
 vaex-hdf5                 0.11.1             pyhd8ed1ab_0    conda-forge
-vaex-jupyter              0.6.0              pyhd8ed1ab_0    conda-forge
-vaex-ml                   0.15.0             pyhd8ed1ab_0    conda-forge
-vaex-server               0.7.0              pyhd8ed1ab_0    conda-forge
-vaex-viz                  0.5.0              pyhd8ed1ab_0    conda-forge
+vaex-jupyter              0.7.0              pyhd8ed1ab_0    conda-forge
+vaex-ml                   0.16.0             pyhd8ed1ab_0    conda-forge
+vaex-server               0.8.0              pyhd8ed1ab_0    conda-forge
+vaex-viz                  0.5.1              pyhd8ed1ab_0    conda-forge
 vectormath                0.2.2                      py_0    conda-forge
 vtk                       9.1.0           qt_py39h6e664cc_203    conda-forge
 watchdog                  2.1.6            py39h06a4308_0  

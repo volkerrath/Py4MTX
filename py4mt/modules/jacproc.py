@@ -179,7 +179,7 @@ def sparsify_jac(Jac=None, sparse_thresh=1.0e-6, normalized=False, method=None, 
         )
     Jf = np.abs(Jac.copy())
     Jmax = np.amax(Jf)
-    thresh = Jmax * sparse_thresh
+    thresh = sparse_thresh
     Jf[Jf < thresh] = 0.0
     Js = scp.csr_matrix(Jf)
 
