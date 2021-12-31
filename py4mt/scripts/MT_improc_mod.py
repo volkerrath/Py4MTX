@@ -30,6 +30,7 @@ from sys import exit as error
 import time
 from datetime import datetime
 import warnings
+import gc
 
 import numpy as np
 import math as ma
@@ -47,6 +48,8 @@ for pth in mypath:
 
 import modem as mod
 from version import versionstrg
+
+gc.enable()
 
 Strng, _ = versionstrg()
 now = datetime.now()

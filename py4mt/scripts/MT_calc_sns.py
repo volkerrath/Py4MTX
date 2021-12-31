@@ -24,24 +24,18 @@ Reads ModEM's Jacobian, does fancy things.
 
 import os
 import sys
-
+from sys import exit as error
 # import struct
 import time
 from datetime import datetime
 import warnings
-from sys import exit as error
-
+import gc
 
 import numpy as np
 import numpy.linalg as npl
 import scipy.linalg as spl
 import scipy.sparse as scs
 import netCDF4 as nc
-
-
-# import vtk
-# import pyvista as pv
-# import PVGeo as pvg
 
 
 mypath = ["/home/vrath/Py4MT/py4mt/modules/", "/home/vrath/Py4MT/py4mt/scripts/"]
@@ -60,7 +54,7 @@ print("\n\n"+Strng)
 print("Calculate Sensitivity "+"\n"+"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%S")))
 print("\n\n")
 
-
+gc.enable()
 
 rng = np.random.default_rng()
 nan = np.nan

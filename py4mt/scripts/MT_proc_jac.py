@@ -30,18 +30,13 @@ import time
 from datetime import datetime
 import warnings
 from sys import exit as error
-
+import gc
 
 import numpy as np
 import numpy.linalg as npl
 import scipy.linalg as spl
 import scipy.sparse as scs
 import netCDF4 as nc
-
-
-# import vtk
-# import pyvista as pv
-# import PVGeo as pvg
 
 
 mypath = ["/home/vrath/Py4MT/py4mt/modules/", "/home/vrath/Py4MT/py4mt/scripts/"]
@@ -53,6 +48,8 @@ for pth in mypath:
 import jacproc as jac
 import modem as mod
 from version import versionstrg
+
+gc.enable()
 
 Strng, _ = versionstrg()
 now = datetime.now()
