@@ -67,7 +67,7 @@ nan = np.nan
 
 normalize_err = True
 sparsify = True
-sparse_thresh = 1.e-8
+sparse_thresh = 1.e-12
 
 # Ubaye caase"
 # WorkDir = r"/home/vrath/work/MT_Data/Ubaye/UB22_jac_best/"
@@ -129,6 +129,7 @@ print(" Used %7.4f s for reading model from %s " % (elapsed, MFile))
 
 mxVal = 1e-30
 mxLst = []
+nF = 1
 for f in np.arange(nF):
 
     name, ext = os.path.splitext(JFiles[f])
@@ -159,6 +160,12 @@ for f in np.arange(nF):
 
     mx = np.nanmax(np.abs(Jac*jacmask))
     print(JFiles[f]+" maximum value is "+str(mx))
+    mxwhere = np.where(np.abs(Jac*jacmask) > mx/1000)
+    test0 = np.zeros((1,np.size(rho)))
+    test1 = Jac[71,:]*jacmask
+    index = np.where(np.abs(test1) > np.nanmax(test1)/1000.)
+    test0[index[0]]=1.
+    test0 =test0.reshape(dims)
 
     mxLst.append(mx)
     mxVal = np.amax([mxVal,mx])
