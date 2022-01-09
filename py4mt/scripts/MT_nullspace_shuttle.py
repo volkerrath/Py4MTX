@@ -35,7 +35,7 @@ import gc
 import numpy as np
 import numpy.linalg as npl
 import scipy.linalg as spl
-import scipy.sparse as scp
+import scipy.sparse as scs
 import netCDF4 as nc
 
 
@@ -66,15 +66,32 @@ print("\n\n")
 
 rng = np.random.default_rng()
 nan = np.nan
+# Ubaye caase"
+# WorkDir = r"/home/vrath/work/MT_Data/Ubaye/UB22_jac_best/"
+# MFile   = WorkDir +r"Ub22_ZoffPT_02_NLCG_014.rho"
+# MPad=[12, 12 , 12, 12, 0, 36]
+# # JFile = [WorkDir+r"Ub22_Zoff.jac", ]
+# # DFile = [WorkDir+r"Ub22_Zoff.dat", ]
 
-JFile = r"/home/vrath/Py4MT/py4mt/data/ANN21_Jacobian/Ann21_Prior100_T-T3.jac"
-DFile = r"/home/vrath/Py4MT/py4mt/data/ANN21_Jacobian/Ann21_Prior100_T_NLCG_033.dat"
+# # JFile = [WorkDir+r"Ub22_P.jac", ]
+# # DFile = [WorkDir+r"Ub22_P.dat", ]
+
+# # JFile = [WorkDir+r"Ub22_T.jac", ]
+# # DFile = [WorkDir+r"Ub22_T.dat", ]
+
+
+# KRAFLA case
+WorkDir = r"/media/vrath/BlackOne/MT_Data/Krafla/Krafla1/"
+MFile   = WorkDir +r"Krafla.rho"
+MPad=[15, 15 , 15, 15, 0, 36]
+
+JFile = WorkDir +r"/home/vrath/Py4MT/py4mt/data/ANN21_Jacobian/Ann21_Prior100_T-T3.jac"
 MFile = r"/home/vrath/Py4MT/py4mt/data/ANN21_Jacobian/Ann21_Prior100_T_NLCG_033.rho"
 SFile = r"/home/vrath/Py4MT/py4mt/data/ANN21_Jacobian/Ann21_Prior100_T-Z3.sns"
 
 JThresh  = 1.e-4
 NSingulr = 300
-NSamples = 1000
+NSamples = 10000
 NBodies  = 32
 x_bounds = [-3000., 3000.]
 y_bounds = [-3000., 3000.]
@@ -86,37 +103,20 @@ res_bounds = [-0.3, 0.3]
 
 total = 0.0
 start = time.time()
-dx, dy, dz, rho, reference = mod.read_model(MFile)
+dx, dy, dz, rho, reference, _, vcell = mod.read_model(MFile, trans="log10", volumes=True)
 elapsed = time.time() - start
 total = total + elapsed
-print(" Used %7.4f s for reading model from %s " % (elapsed, DFile))
-nx, ny, nz = np.shape(rho)
+print(" Used %7.4f s for reading model from %s " % (elapsed, MFile))
+dims = np.shape(rho)
+resair = 1.e17
+aircells = np.where(rho>resair/100)
 
 start = time.time()
-Site, Comp, Data, Head = mod.read_data(DFile)
-elapsed = time.time() - start
-total = total + elapsed
-print(" Used %7.4f s for reading data from %s " % (elapsed, DFile))
 
-start = time.time()
 Jac = mod.read_jac(JFile)
 elapsed = time.time() - start
 total = total + elapsed
 print(" Used %7.4f s for reading Jacobian from %s " % (elapsed, JFile))
-
-start = time.time()
-dsh = np.shape(Data)
-err = np.reshape(Data[:, 7], (dsh[0], 1))
-Jac = jac.normalize_jac(Jac, err)
-elapsed = time.time() - start
-total = total + elapsed
-print(" Used %7.4f s for normalizing Jacobian from %s " % (elapsed, JFile))
-
-start = time.time()
-Js = jac.sparsify_jac(Jac, sparse_thresh=JThresh)
-elapsed = time.time() - start
-total = total + elapsed
-print(" Used %7.4f s for sparsifying Jacobian from %s " % (elapsed, JFile))
 
 mu = 0.0
 sigma = 0.5
@@ -130,7 +130,7 @@ print(
     "Used %7.4f s for calculating k = %i SVD from %s " % (elapsed, NSingulr, JFile)
 )
 
-D = U@scp.diags(S[:])@Vt - Jac.T
+D = U@scs.diags(S[:])@Vt - Jac.T
 x_op = np.random.normal(size=np.shape(D)[1])
 n_op = npl.norm(D@x_op)/npl.norm(x_op)
 j_op = npl.norm(Jac.T@x_op)/npl.norm(x_op)
@@ -144,18 +144,11 @@ print(" Op-norm J_k = "+str(n_op)+", explains "
 for isample in np.arange(NSamples):
 
     body = [
-    "ellipsoid",
-    "add",
-    0.,
-    0.,
-    0.,
+    "ellipsoid", "add",
+    0., 0., 0.,
     3000.,
-    1000.,
-    2000.,
-    1000.,
-    0.,
-    0.,
-    30.]
+    1000., 2000., 1000.,
+    0., 0., 30.]
 
 # m = r + np.random.normal(mu, sigma, size=np.shape(r))
 #     t = time.time() - s
@@ -170,3 +163,8 @@ for isample in np.arange(NSamples):
 
 # total = total + elapsed
 # print(" Total time used:  %f s " % (total))
+NSMFile = WorkDir+"Krafla1_Ellipsoids_median.sns"
+tmp = []
+tmp = np.reshape(tmp, dims, order="F")
+mod.write_model(NSMFile, dx, dy, dz, S, reference, trans="linear", air=aircells)
+print(" Sensitivities written to "+NSMFile)

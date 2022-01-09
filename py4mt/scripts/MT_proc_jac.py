@@ -65,7 +65,7 @@ nan = np.nan
 normalize_err = True
 sparsify = True
 sparse_thresh = 1.e-12
-
+blank = np.nan
 # Ubaye caase"
 # WorkDir = r"/home/vrath/work/MT_Data/Ubaye/UB22_jac_best/"
 # MFile   = WorkDir +r"Ub22_ZoffPT_02_NLCG_014.rho"
@@ -86,7 +86,7 @@ sparse_thresh = 1.e-12
 # KRAFLA case
 WorkDir = r"/media/vrath/BlackOne/MT_Data/Krafla/Krafla1/"
 MFile   = WorkDir +r"Krafla.rho"
-MPad=[15, 15 , 15, 15, 0, 36]
+MPad=[13, 13 , 13, 13, 0, 36]
 JFiles = []
 DFiles = []
 files = os.listdir(WorkDir)
@@ -116,7 +116,7 @@ aircells = np.where(rho>resair/100)
 jacmask = jac.set_mask(rho=rho, pad=MPad, flat = True, out=True)
 jdims= np.shape(jacmask)
 j0 = jacmask.reshape(dims)
-j0[aircells] = nan
+j0[aircells] = blank
 jacmask = j0.reshape(jdims)
 
 
@@ -126,7 +126,7 @@ print(" Used %7.4f s for reading model from %s " % (elapsed, MFile))
 
 mxVal = 1e-30
 mxLst = []
-nF = 1
+# nF = 1
 for f in np.arange(nF):
 
     name, ext = os.path.splitext(JFiles[f])
@@ -157,12 +157,22 @@ for f in np.arange(nF):
 
     mx = np.nanmax(np.abs(Jac*jacmask))
     print(JFiles[f]+" maximum value is "+str(mx))
-    mxwhere = np.where(np.abs(Jac*jacmask) > mx/1000)
-    test0 = np.zeros((1,np.size(rho)))
-    test1 = Jac[71,:]*jacmask
-    index = np.where(np.abs(test1) > np.nanmax(test1)/1000.)
-    test0[index[0]]=1.
-    test0 =test0.reshape(dims)
+    if f==0:
+        mxwhere = np.where(np.abs(Jac*jacmask) > mx/1000)
+        test0 = np.zeros((1,np.size(rho)))
+        test1 = Jac[71,:]*jacmask
+        index = np.where(np.abs(test1) > np.nanmax(test1)/1000.)
+        test0[0,index[0]]=1.
+        test0 =test0.reshape(dims)
+        fn = WorkDir+"test_largevals.rho"
+        mod.write_model(fn, dx, dy, dz, test0, reference, trans="linear", air=aircells)
+        fn = WorkDir+"test_sensline.rho"
+        test1 = test1.reshape(dims)
+        mod.write_model(fn, dx, dy, dz, test1, reference, trans="linear", air=aircells)
+        test2 = jacmask.reshape(dims)
+        mod.write_model(fn, dx, dy, dz, test2, reference, trans="linear", air=aircells)
+
+
 
     mxLst.append(mx)
     mxVal = np.amax([mxVal,mx])
@@ -232,7 +242,7 @@ for f in np.arange(nF):
 
 
 NPZFile = WorkDir+"Krafla1"+nstr+sstr+"_JacStack_jacs.npz"
-scs.save_npz(NPZFile, Jacs)
+scs.save_npz(NPZFile, JacStack)
 NPZFile = WorkDir+"Krafla1"+nstr+sstr+"_JacStack_info.npz"
 np.savez(NPZFile, Data=DataStack, Site=SiteStack, Freq=FreqStack,Comp=CompStack)
 elapsed = time.time() - start

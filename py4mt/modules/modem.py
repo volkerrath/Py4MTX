@@ -598,7 +598,7 @@ def write_model_ncd(
 
 
 def write_model(ModFile=None, dx=None, dy=None, dz=None, rho=None, reference=None,
-                trans=None, air = None, out=True):
+                trans=None, aircells = None, rhoair = 1.e17, out=True):
     """
     Write ModEM model input.
 
@@ -626,21 +626,18 @@ def write_model(ModFile=None, dx=None, dy=None, dz=None, rho=None, reference=Non
     nz = dims[2]
     dummy = 0
 
-    if not air == None:
-
-        rho.reshape(dims)[air] = np.nan
-
-
     if trans is not None:
 
         trans = trans.upper()
 
         if trans == "LOGE":
             rho = np.log(rho)
+            rhoair = np.log(rhoair)
             if out:
                 print("values to " + ModFile + " transformed to: " + trans)
         elif trans == "LOG10":
             rho = np.log10(rho)
+            rhoair = np.log10(rhoair)
             if out:
                 print("values to " + ModFile + " transformed to: " + trans)
         elif trans == "LINEAR":
@@ -650,17 +647,22 @@ def write_model(ModFile=None, dx=None, dy=None, dz=None, rho=None, reference=Non
             print("Transformation: " + trans + " not defined!")
             sys.exit(1)
 
-        trans = np.array(trans)
 
     else:
         trans = "LINEAR"
 
+    if not aircells == None:
+        rho.reshape(dims)[aircells] = rhoair
+
+    trans = np.array(trans)
     with open(ModFile, "w") as f:
         np.savetxt(
             f, ["# 3D MT model written by ModEM in WS format"], fmt="%s")
-        # line = np.array([nx, ny,nz, dummy, trans],dtype=('i8,i8,i8,i8,U10'))
-        line = np.array([nx, ny, nz, dummy, trans])
-        np.savetxt(f, line.reshape(1, 5), fmt="%s %s %s %s %s")
+        line = np.array([nx, ny,nz, dummy, trans],dtype="object")
+        # line = np.array([nx, ny, nz, dummy, trans])
+        # np.savetxt(f, line.reshape(1, 5), fmt="   %s"*5)
+        np.savetxt(f, line.reshape(1, 5), fmt =["  %i","  %i","  %i","  %i", "  %s"])
+
         np.savetxt(f, dx.reshape(1, dx.shape[0]), fmt="%12.3f")
         np.savetxt(f, dy.reshape(1, dy.shape[0]), fmt="%12.3f")
         np.savetxt(f, dz.reshape(1, dz.shape[0]), fmt="%12.3f")

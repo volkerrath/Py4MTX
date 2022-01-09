@@ -227,7 +227,7 @@ def normalize_jac(Jac=None, fn=None, out=True):
 
     return Jac
 
-def set_mask(rho=None, pad=[10, 10 , 10, 10, 0, 10], flat=True, out=True):
+def set_mask(rho=None, pad=[10, 10 , 10, 10, 0, 10], blank= np.nan, flat=True, out=True):
     """
     Set model masc for Jacobian calculations.
 
@@ -236,14 +236,18 @@ def set_mask(rho=None, pad=[10, 10 , 10, 10, 0, 10], flat=True, out=True):
 
     """
     shr = np.shape(rho)
-    jm = np.full(shr, np.nan)
-    # print(np.shape(jm))
+    # jm = np.full(shr, np.nan)
+    jm = np.full(shr, blank)
+    print(np.shape(jm))
 
-    jm[0+pad[0]:-1-pad[1], 0+pad[2]:-1-pad[3], 0+pad[4]:-1-pad[5]] = 1
-
+    jm[pad[0]:-pad[1], pad[2]:-pad[3], pad[4]:-pad[5]] = 1.
+    # print(pad[0], -1-pad[1])
+    # jt =jm[0+pa-1-pad[1]-1-pad[1]d[0]:-1-pad[1], 0+pad[2]:-1-pad[3], 0+pad[4]:-1-pad[5]]
+    # print(np.shape(jt))
     mask = jm
     if flat:
-        mask = jm.flatten(order="F")
+        mask = jm.flatten()
+        # mask = jm.flatten(order="F")
 
     return mask
 

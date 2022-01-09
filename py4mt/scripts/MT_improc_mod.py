@@ -33,13 +33,12 @@ import warnings
 import gc
 
 import numpy as np
-import math as ma
-import netCDF4 as nc
+# import netCDF4 as nc
 
 
-import vtk
-import pyvista as pv
-import PVGeo as pvg
+# import vtk
+# import pyvista as pv
+# import PVGeo as pvg
 
 mypath = ["/home/vrath/Py4MT/py4mt/modules/", "/home/vrath/Py4MT/py4mt/scripts/"]
 for pth in mypath:

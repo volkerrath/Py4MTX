@@ -180,7 +180,7 @@ jupyter_core              4.9.1            py38h06a4308_0
 jupyter_server            1.4.1            py38h06a4308_0  
 jupyterlab                3.2.1              pyhd3eb1b0_1  
 jupyterlab_pygments       0.1.2                      py_0  
-jupyterlab_server         2.8.2              pyhd3eb1b0_0  
+jupyterlab_server         2.10.2             pyhd3eb1b0_1  
 jupyterlab_widgets        1.0.0              pyhd3eb1b0_1  
 jupytext                  1.13.5             pyheef035f_0    conda-forge
 kealib                    1.4.13               hec59c27_0    conda-forge
@@ -250,7 +250,6 @@ matplotlib-base           3.5.0            py38h3ed280b_0
 matplotlib-inline         0.1.2              pyhd3eb1b0_2  
 mccabe                    0.6.1                    py38_1  
 mdit-py-plugins           0.3.0              pyhd8ed1ab_0    conda-forge
-meshio                    4.4.6              pyhd8ed1ab_0    conda-forge
 metis                     5.1.0                hf484d3e_4  
 mistune                   0.8.4           py38h7b6447c_1000  
 mkl                       2021.4.0           h06a4308_640  
@@ -269,7 +268,7 @@ mypy_extensions           0.4.3            py38h06a4308_1
 nanoflann                 1.3.1                         0    conda-forge
 nbclassic                 0.2.6              pyhd3eb1b0_0  
 nbclient                  0.5.3              pyhd3eb1b0_0  
-nbconvert                 6.1.0            py38h06a4308_0  
+nbconvert                 6.3.0            py38h06a4308_0  
 nbformat                  5.1.3              pyhd3eb1b0_0  
 ncurses                   6.2                  he6710b0_1  
 nest-asyncio              1.5.1              pyhd3eb1b0_0  
@@ -290,12 +289,12 @@ openh264                  2.1.1                h4ff587b_0
 openjpeg                  2.3.1                hf7af979_3    conda-forge
 openssl                   1.1.1l               h7f8727e_0  
 packaging                 21.3               pyhd3eb1b0_0  
-pandas                    1.3.4            py38h8c16a72_0  
+pandas                    1.3.5            py38h8c16a72_0  
 pandocfilters             1.4.3            py38h06a4308_1  
 pango                     1.42.4               h7062337_4    conda-forge
 param                     1.12.0             pyhd3eb1b0_0  
 paramz                    0.9.5                      py_0    conda-forge
-parso                     0.8.2              pyhd3eb1b0_0  
+parso                     0.8.3              pyhd3eb1b0_0  
 partd                     1.2.0              pyhd3eb1b0_0  
 pathlib                   1.0.1                    pypi_0    pypi
 pathspec                  0.7.0                      py_0  
@@ -357,7 +356,7 @@ python-slugify            5.0.2              pyhd3eb1b0_0
 python-utils              2.5.6                    pypi_0    pypi
 python_abi                3.8                      2_cp38    conda-forge
 pytz                      2021.3             pyhd3eb1b0_0  
-pyvista                   0.32.1             pyhd8ed1ab_0    conda-forge
+pyvista                   0.33.0             pyhd8ed1ab_0    conda-forge
 pyvtk                     0.5.18                   pypi_0    pypi
 pywavelets                1.1.1            py38h7b6447c_2  
 pyxdg                     0.27               pyhd3eb1b0_0  
