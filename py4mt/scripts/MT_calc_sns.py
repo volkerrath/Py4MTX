@@ -215,25 +215,25 @@ Raw sensitivities
 SNSFile = WorkDir+"Krafla1_nerr.sns"
 tmpS = np.sqrt(snsVal)
 S = np.reshape(tmpS, dims, order="F")
-mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="linear", blank=rhoair, air=aircells)
+mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="log10", rhoair=rhoair, air=aircells)
 print(" Sensitivities written to "+SNSFile)
 
 SNSFile = WorkDir+"Krafla1_Z_nerr.sns"
 tmpS = np.sqrt(snsValZ)
 S = np.reshape(tmpS, dims, order="F")
-mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="linear", blank=rhoair, air=aircells)
+mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="log10", rhoair=rhoair, air=aircells)
 print(" Sensitivities written to "+SNSFile)
 
 SNSFile = WorkDir+"Krafla1_T_nerr.sns"
 tmpS = np.sqrt(snsValT)
 S = np.reshape(tmpS, dims, order="F")
-mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="linear", blank=rhoair, air=aircells)
+mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="log10", rhoair=rhoair, air=aircells)
 print(" Sensitivities written to "+SNSFile)
 
 SNSFile = WorkDir+"Krafla1_P_nerr.sns"
 tmpS = np.sqrt(snsValP)
 S = np.reshape(tmpS, dims, order="F")
-mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="linear", blank=rhoair, air=aircells)
+mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="log10", rhoair=rhoair, air=aircells)
 print(" Sensitivities written to "+SNSFile)
 
 """
@@ -242,25 +242,25 @@ Max normalized sensitivities
 SNSFile = WorkDir+"Krafla1_nerr_nmax.sns"
 tmpS = np.sqrt(snsVal)
 S = np.reshape(tmpS, dims, order="F")/maxVal
-mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="linear", blank=rhoair, air=aircells)
+mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="log10", rhoair=rhoair, air=aircells)
 print(" Sensitivities written to "+SNSFile)
 
 SNSFile = WorkDir+"Krafla1_Z_nerr_nmax.sns"
 tmpS = np.sqrt(snsValZ)
 S = np.reshape(tmpS, dims, order="F")/maxValZ
-mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="linear", blank=rhoair, air=aircells)
+mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="log10", rhoair=rhoair, air=aircells)
 print(" Sensitivities written to "+SNSFile)
 
 SNSFile = WorkDir+"Krafla1_T_nerr_nmax.sns"
 tmpS = np.sqrt(snsValT)
 S = np.reshape(tmpS, dims, order="F")/maxValT
-mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="linear", blank=rhoair, air=aircells)
+mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="log10", rhoair=rhoair, air=aircells)
 print(" Sensitivities written to "+SNSFile)
 
 SNSFile = WorkDir+"Krafla1_P_nerr_nmax.sns"
 tmpS = np.sqrt(snsValP)
 S = np.reshape(tmpS, dims, order="F")/maxValP
-mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="linear", blank=rhoair, air=aircells)
+mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="log10", rhoair=rhoair, air=aircells)
 print(" Sensitivities written to "+SNSFile)
 
 """
@@ -269,25 +269,25 @@ Max and vol normalized sensitivities
 SNSFile = WorkDir+"Krafla1_nerr_nmax_nvol.sns"
 tmpS = np.sqrt(snsVal)
 S = np.reshape(tmpS, dims, order="F")/(maxVal*vcell)
-mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="linear", blank=rhoair, air=aircells)
+mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="log10", rhoair=rhoair, air=aircells)
 print(" Sensitivities written to "+SNSFile)
 
 SNSFile = WorkDir+"Krafla1_Z_nerr_nmax_nvol.sns"
 tmpS = np.sqrt(snsValZ)
 S = np.reshape(tmpS, dims, order="F")/(maxValZ*vcell)
-mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="linear", blank=rhoair, air=aircells)
+mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="log10", rhoair=rhoair, air=aircells)
 print(" Sensitivities written to "+SNSFile)
 
 SNSFile = WorkDir+"Krafla1_T_nerr_nmax_nvol.sns"
 tmpS = np.sqrt(snsValT)
 S = np.reshape(tmpS, dims, order="F")/(maxValT*vcell)
-mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="linear", blank=rhoair, air=aircells)
+mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="log10", rhoair=rhoair, air=aircells)
 print(" Sensitivities written to "+SNSFile)
 
 SNSFile = WorkDir+"Krafla1_P_nerr_nmax_nvol.sns"
 tmpS = np.sqrt(snsValP)
 S = np.reshape(tmpS, dims, order="F")/(maxValP*vcell)
-mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="linear", blank=rhoair, air=aircells)
+mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="log10", rhoair=rhoair, air=aircells)
 print(" Sensitivities written to "+SNSFile)
 
 
