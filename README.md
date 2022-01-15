@@ -24,7 +24,7 @@ This repository contains the following subdirectories:
 	  	
 - 	**environment**
 	Contains conda environment description files, and some useful helper files for working 
-	within the conda environment. The current EM and EM39 environments contain a lot of packages
+	within the conda environment. The current EM38 and EM39 environments contain a lot of packages
 	which are not strictly necessary for running aempy, but useful for related geoscientific work.
 	They will be replaced by a streamlined Py4MT environment (Python 3.9) at a later time.
 
@@ -33,7 +33,7 @@ Get your working copy via git from the command line:
 
 _git clone https://github.com/volkerrath/Py4MT/_
 
-This version will run under Python 3.8+ (3.9 works correctly, 3.10 is still missing some important packages). To install it in an Linux environment (e.g. Ubuntu, SuSE), you need to do the following:
+This version will run under Python 3.8+ (3.9 being the current development platform). Moving to 3.10 is not encouraged because it is still missing some important packages. To install it in an Linux environment (e.g. Ubuntu, SuSE), you need to do the following:
 
 (1) Download the latest Anaconda or Miniconda version  (https://docs.conda.io/projects/conda/en/latest/user-guide/install/download.html), and install by running the downloaded bash script.  In order to make updates secure and avoid inconsistencies, copy .condarc to your home directory. As the Miniconda installer is not updated very frequently, it is useful to run the following within Anaconda:
 
@@ -43,19 +43,19 @@ _conda update --all_
 
 Do this regularly to keep everything consistent!
 
-(2) Create an appropriate conda environment (including the necessary prerequisites) from the files EM.yml or EM.txt found in the Py4MT base directory by:
+(2) Create an appropriate conda environment (including the necessary prerequisites) from the files EM39.yml or EM39.txt found in the Py4MT base directory by:
 
-_conda env create -f EM.yml_
+_conda env create -f EM39.yml_
 
 or:
 
-_conda create --name EM --file EM.txt_
+_conda create --name EM39 --file EM39.txt_
 
-This will set up a Python 3.8 environment with all dependencies for aempy. In case you want to use python 3.9, corresponding EM39.yml and EM39.txt are available. Dont forget to update also EM/EM39 regularly, using _conda update --name EM --all_! 
+This will set up a Python 3.9 environment with all dependencies for aempy. In case you want to keep using python 3.8, corresponding EM38.yml and EM38.txt are available. Don't forget to update also EM38/EM39 regularly, using _conda update --name EM39 (EM38) --all_! 
 
 (3) Activate this environment by:
 
-_conda activate EM_
+_conda activate EM39_
 
 (4) Now the remaining open source toolboxes used (i.e., not included in the anaconda framework) need to be installed (currently only mtpy, _https://github.com/MTgeophysics/mtpy_). For mtpy, download the current development version via the git system. Then, enter the download directory (usually called _mtpy_) and execute:
 
