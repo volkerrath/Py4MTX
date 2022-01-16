@@ -83,7 +83,7 @@ if not os.path.isdir(OutModDir):
 
 
 geocenter = [45.938251, 6.084900]
-utm_x, utm_y = utl.proj_latlon_to_utm(geocenter[0], geocenter[1], utm_zone=32631)
+utm_x, utm_y = utl.project_latlon_to_utm(geocenter[0], geocenter[1], utm_zone=32631)
 utmcenter = [utm_x, utm_y, 0.]
 
 ssamples = 10000

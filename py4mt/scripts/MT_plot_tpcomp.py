@@ -175,7 +175,7 @@ for s in Sites:
             site_utmx = x[site][0]
             site_utmy = y[site][0]
         else:
-            site_utmx, site_utmy = utl.proj_latlon_to_utm(site_lat, site_lon,
+            site_utmx, site_utmy = utl.project_latlon_to_utm(site_lat, site_lon,
                                                           utm_zone=EPSG)
 
         site_utmx = int(np.round(site_utmx))

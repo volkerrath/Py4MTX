@@ -80,7 +80,7 @@ if ReferenceType.lower()[0:3] == "sit":
     NewReferenceMod = [409426.000, 412426.000, 350.0+elevation]
     NewReferenceGeo = [37.76242, -25.46609, 350.0+elevation]
 
-    utm_x, utm_y = utl.proj_latlon_to_utm(longitude, latitude, utm_zone=EPSG)
+    utm_x, utm_y = utl.project_latlon_to_utm(longitude, latitude, utm_zone=EPSG)
 
     addstr = "_Refsite_"+SiteReference+".dat"
 

@@ -22,6 +22,16 @@ from pyproj.aoi import AreaOfInterest
 from pyproj.database import query_utm_crs_info
 
 
+
+def parse_ast(filename):
+    with open(filename, "rt") as file:
+
+        return ast.parse(file.read(), filename=filename)
+
+
+def find_functions(body):
+    return (f for f in body if isinstance(f, ast.FunctionDef))
+
 def list_functions(filename):
     """
     Generate list of functions in module.
@@ -33,16 +43,6 @@ def list_functions(filename):
     tree = parse_ast(filename)
     for func in find_functions(tree.body):
         print("  %s" % func.name)
-
-
-def parse_ast(filename):
-    with open(filename, "rt") as file:
-
-        return ast.parse(file.read(), filename=filename)
-
-
-def find_functions(body):
-    return (f for f in body if isinstance(f, ast.FunctionDef))
 
 
 def get_filelist(searchstr=["*"], searchpath="."):
@@ -79,7 +79,7 @@ def get_utm_zone(latitude=None, longitude=None):
     return EPSG, utm_crs
 
 
-def proj_latlon_to_utm(latitude, longitude, utm_zone=32629):
+def project_latlon_to_utm(latitude, longitude, utm_zone=32629):
     """
     transform latlon to utm , using pyproj
     Look for other EPSG at https://epsg.io/
@@ -92,7 +92,7 @@ def proj_latlon_to_utm(latitude, longitude, utm_zone=32629):
 
     return utm_x, utm_y
 
-def proj_utm_to_latlon(utm_x, utm_y, utm_zone=32629):
+def project_utm_to_latlon(utm_x, utm_y, utm_zone=32629):
     """
     transform utm to latlon, using pyproj
     Look for other EPSG at https://epsg.io/
@@ -104,7 +104,7 @@ def proj_utm_to_latlon(utm_x, utm_y, utm_zone=32629):
     return latitude, longitude
 
 
-def proj_latlon_to_itm(longitude, latitude):
+def project_latlon_to_itm(longitude, latitude):
     """
     transform latlon to itm , using pyproj
     Look for other EPSG at https://epsg.io/
@@ -117,7 +117,7 @@ def proj_latlon_to_itm(longitude, latitude):
     return itm_x, itm_y
 
 
-def proj_itm_to_latlon(itm_x, itm_y):
+def project_itm_to_latlon(itm_x, itm_y):
     """
     transform itm to latlon, using pyproj
     Look for other EPSG at https://epsg.io/
@@ -130,7 +130,7 @@ def proj_itm_to_latlon(itm_x, itm_y):
     return latitude, longitude
 
 
-def proj_itm_to_utm(itm_x, itm_y, utm_zone=32629):
+def project_itm_to_utm(itm_x, itm_y, utm_zone=32629):
     """
     transform itm to utm, using pyproj
     Look for other EPSG at https://epsg.io/
@@ -143,7 +143,7 @@ def proj_itm_to_utm(itm_x, itm_y, utm_zone=32629):
     return utm_x, utm_y
 
 
-def proj_utm_to_itm(utm_x, utm_y, utm_zone=32629):
+def project_utm_to_itm(utm_x, utm_y, utm_zone=32629):
     """
     transform utm to itm, using pyproj
     Look for other EPSG at https://epsg.io/
@@ -460,7 +460,7 @@ def choose_data_rect(Data=None, Corners=None, Out=True):
     return Rect
 
 
-def proj_to_line(x, y, line):
+def project_to_line(x, y, line):
     """
     Projects a point onto a line, where line is represented by two arbitrary
     points. as an array

@@ -127,7 +127,7 @@ Get reference point UTM coordinates
 Lat = -34.173965
 Lon = 148.737549
 EPSG,_ = utl.get_utm_list(Lat, Lon)
-UTMx, UTMy = utl.proj_latlon_to_utm(Lat, Lon, utm_zone=EPSG)
+UTMx, UTMy = utl.project_latlon_to_utm(Lat, Lon, utm_zone=EPSG)
 print ("\n")
 print ("Reference Point (WGS84):  "+str(Lat)+"   "+str(Lon))
 print ("Reference Point (UTM)  :  "+str(np.around(UTMx,1))+"   "+str(np.around(UTMy,1)))

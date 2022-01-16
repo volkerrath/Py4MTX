@@ -597,12 +597,12 @@ def write_model_ncd(
 #         f.write("%10.2f  \n" % (0.0))
 
 
-def write_model(ModFile=None, dx=None, dy=None, dz=None, rho=None, reference=None,
-                trans=None, aircells = None, rhoair = 1.e17, out=True):
+def write_model(ModFile=None, dx=None, dy=None, dz=None, mval=None, reference=None,
+                trans=None, aircells = None, mvalair = 1.e17, blank = 1.e17, out=True):
     """
     Write ModEM model input.
 
-    Expects rho in physical units (linear).
+    Expects mval in physical units (linear).
 
     author: vrath
     last changed: Aug 18, 2020
@@ -613,13 +613,13 @@ def write_model(ModFile=None, dx=None, dy=None, dz=None, rho=None, reference=Non
     DO iz = 1,Nz
         DO iy = 1,Ny
             DO ix = Nx,1,-1
-                READ(10,*) rho(ix,iy,iz)
+                READ(10,*) mval(ix,iy,iz)
             ENDDO
         ENDDO
     ENDDO
 
     """
-    dims = np.shape(rho)
+    dims = np.shape(mval)
 
     nx = dims[0]
     ny = dims[1]
@@ -631,13 +631,13 @@ def write_model(ModFile=None, dx=None, dy=None, dz=None, rho=None, reference=Non
         trans = trans.upper()
 
         if trans == "LOGE":
-            rho = np.log(rho)
-            rhoair = np.log(rhoair)
+            mval = np.log(mval)
+            mvalair = np.log(mvalair)
             if out:
                 print("values to " + ModFile + " transformed to: " + trans)
         elif trans == "LOG10":
-            rho = np.log10(rho)
-            rhoair = np.log10(rhoair)
+            mval = np.log10(mval)
+            mvalair = np.log10(mvalair)
             if out:
                 print("values to " + ModFile + " transformed to: " + trans)
         elif trans == "LINEAR":
@@ -652,7 +652,11 @@ def write_model(ModFile=None, dx=None, dy=None, dz=None, rho=None, reference=Non
         trans = "LINEAR"
 
     if not aircells == None:
-        rho.reshape(dims)[aircells] = rhoair
+        mval.reshape(dims)[aircells] = mvalair
+
+    if not blank == None:
+        blanks = np.where(~np.isfinite(mval))
+        mval.reshape(dims)[blanks] = mvalair
 
     trans = np.array(trans)
     with open(ModFile, "w") as f:
@@ -670,9 +674,9 @@ def write_model(ModFile=None, dx=None, dy=None, dz=None, rho=None, reference=Non
         for zi in range(dz.size):
             f.write("\n")
             for yi in range(dy.size):
-                line = rho[::-1, yi, zi]
-                # line = np.flipud(rho[:, yi, zi])
-                # line = rho[:, yi, zi]
+                line = mval[::-1, yi, zi]
+                # line = np.flipud(mval[:, yi, zi])
+                # line = mval[:, yi, zi]
                 np.savetxt(f, line.reshape(1, nx), fmt="%12.5e")
 
         f.write("\n")
@@ -686,7 +690,7 @@ def read_model(ModFile=None, trans="LINEAR", volumes=False, out=True):
     """
     Read ModEM model input.
 
-    Returns rho in physical units
+    Returns mval in physical units
 
     author: vrath
     last changed: Aug 18, 2020
@@ -696,7 +700,7 @@ def read_model(ModFile=None, trans="LINEAR", volumes=False, out=True):
     DO iz = 1,Nz
         DO iy = 1,Ny
             DO ix = Nx,1,-1
-                READ(10,*) rho(ix,iy,iz)
+                READ(10,*) mval(ix,iy,iz)
             ENDDO
         ENDDO
     ENDDO
@@ -713,30 +717,30 @@ def read_model(ModFile=None, trans="LINEAR", volumes=False, out=True):
     dy = np.array([float(sub) for sub in lines[3]])
     dz = np.array([float(sub) for sub in lines[4]])
 
-    rho = np.array([])
+    mval = np.array([])
     for line in lines[5:-2]:
         line = np.flipud(line) #  np.fliplr(line)
-        rho = np.append(rho, np.array([float(sub) for sub in line]))
+        mval = np.append(mval, np.array([float(sub) for sub in line]))
 
     if out:
         print("values in " + ModFile + " are: " + trns)
     if trns == "LOGE":
-        rho = np.exp(rho)
+        mval = np.exp(mval)
     elif trns == "LOG10":
-        rho = np.power(10.0, rho)
+        mval = np.power(10.0, mval)
     elif trns == "LINEAR":
         pass
     else:
         print("Transformation: " + trns + " not defined!")
         sys.exit(1)
 
-    # here rho should be in physical units, not log...
+    # here mval should be in physical units, not log...
     if "loge" in trans.lower() or "ln" in trans.lower():
-        rho = np.log(rho)
+        mval = np.log(mval)
         if out:
             print("values transformed to: " + trans)
     elif "log10" in trans.lower():
-        rho = np.log10(rho)
+        mval = np.log10(mval)
         if out:
             print("values transformed to: " + trans)
     else:
@@ -744,7 +748,7 @@ def read_model(ModFile=None, trans="LINEAR", volumes=False, out=True):
             print("values transformed to: " + trans)
         pass
 
-    rho = rho.reshape(dims, order="F")
+    mval = mval.reshape(dims, order="F")
 
     reference = [float(sub) for sub in lines[-2][0:3]]
 
@@ -753,7 +757,7 @@ def read_model(ModFile=None, trans="LINEAR", volumes=False, out=True):
             "readMod: %i x %i x %i model read from %s" % (nx, ny, nz, ModFile))
 
     if volumes:
-        vcell = np.zeros_like(rho)
+        vcell = np.zeros_like(mval)
         for ii in np.arange(len(dx)):
             for jj in np.arange(len(dy)):
                 for kk in np.arange(len(dz)):
@@ -763,12 +767,12 @@ def read_model(ModFile=None, trans="LINEAR", volumes=False, out=True):
             print(
                 "readMod: %i x %i x %i cell volumes calculated" % (nx, ny, nz))
 
-        return dx, dy, dz, rho, reference, trans, vcell
+        return dx, dy, dz, mval, reference, trans, vcell
 
 
 
     else:
-        return dx, dy, dz, rho, reference, trans
+        return dx, dy, dz, mval, reference, trans
 
 def linear_interpolation(p1, p2, x0):
     """

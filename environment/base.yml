@@ -8,9 +8,9 @@ dependencies:
   - beautifulsoup4=4.10.0=pyh06a4308_0
   - brotlipy=0.7.0=py39h27cfd23_1003
   - bzip2=1.0.8=h7b6447c_0
-  - c-ares=1.17.1=h27cfd23_0
+  - c-ares=1.18.1=h7f8727e_0
   - ca-certificates=2021.10.26=h06a4308_2
-  - certifi=2021.10.8=py39h06a4308_0
+  - certifi=2021.10.8=py39h06a4308_2
   - cffi=1.14.6=py39h400218f_0
   - chardet=4.0.0=py39h06a4308_1003
   - charset-normalizer=2.0.4=pyhd3eb1b0_0
@@ -22,7 +22,7 @@ dependencies:
   - expat=2.4.1=h2531618_2
   - filelock=3.4.0=pyhd3eb1b0_0
   - gettext=0.21.0=hf68c758_0
-  - git=2.32.0=pl5262hc120c5b_1
+  - git=2.34.1=pl5262hc120c5b_0
   - git-filter-repo=2.33.0=pyhd8ed1ab_0
   - glob2=0.7=pyhd3eb1b0_0
   - icu=58.2=he6710b0_3
@@ -51,9 +51,9 @@ dependencies:
   - mamba=0.19.1=py39hfa8f2c8_0
   - markupsafe=2.0.1=py39h27cfd23_0
   - ncurses=6.3=h7f8727e_2
-  - openssl=1.1.1l=h7f8727e_0
+  - openssl=1.1.1m=h7f8727e_0
   - patchelf=0.13=h295c915_0
-  - pcre2=10.35=h14c3975_1
+  - pcre2=10.37=he7ceb23_1
   - perl=5.26.2=h14c3975_0
   - pip=21.2.4=py39h06a4308_0
   - pkginfo=1.7.1=py39h06a4308_0
@@ -69,10 +69,10 @@ dependencies:
   - python_abi=3.9=2_cp39
   - pytz=2021.3=pyhd3eb1b0_0
   - pyyaml=6.0=py39h7f8727e_1
-  - readline=8.1=h27cfd23_0
+  - readline=8.1.2=h7f8727e_1
   - reproc=14.2.3=h7f98852_0
   - reproc-cpp=14.2.3=h9c3ff4c_0
-  - requests=2.26.0=pyhd3eb1b0_0
+  - requests=2.27.1=pyhd3eb1b0_0
   - ripgrep=12.1.1=0
   - ruamel_yaml=0.15.100=py39h27cfd23_0
   - setuptools=58.0.4=py39h06a4308_0
@@ -83,7 +83,7 @@ dependencies:
   - tqdm=4.62.3=pyhd3eb1b0_1
   - tzdata=2021e=hda174b7_0
   - urllib3=1.26.7=pyhd3eb1b0_0
-  - wheel=0.37.0=pyhd3eb1b0_1
+  - wheel=0.37.1=pyhd3eb1b0_0
   - xz=5.2.5=h7b6447c_0
   - yaml=0.2.5=h7b6447c_0
   - yaml-cpp=0.6.3=he1b5a44_4

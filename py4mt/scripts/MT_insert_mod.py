@@ -69,7 +69,7 @@ ModFile_in = r"/home/vrath/work/MT/Annecy/ImageProc/In/ANN20_02_PT_NLCG_016"
 ModFile_out = r"/home/vrath/work/MT/Annecy/ImageProc/Out/ANN20_02_PT_NLCG_016_insert"
 
 geocenter = [45.938251, 6.084900]
-utm_x, utm_y = utl.proj_latlon_to_utm(geocenter[0], geocenter[1], utm_zone=32631)
+utm_x, utm_y = utl.project_latlon_to_utm(geocenter[0], geocenter[1], utm_zone=32631)
 utmcenter = [utm_x, utm_y, 0.0]
 
 ell = ["ell", "rep", 0., 0., 0., 3000., 10000., 2000., 1000., 0., 0., 30.]

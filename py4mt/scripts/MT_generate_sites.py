@@ -81,7 +81,7 @@ if "center" in edi_gen.lower():
     Dx = Dy = 1000
 
     epsg = utl.get_utm_zone(latitude=CenterLatLon[0], longitude=CenterLatLon[1])
-    UTMxLimits, UTMyLimits= utl.proj_latlon_to_utm(latitude=LatLimits,
+    UTMxLimits, UTMyLimits= utl.project_latlon_to_utm(latitude=LatLimits,
                                        longitude=LonLimits,
                                        utm_zone=epsg[0])
     UTMDistx =np.abs(UTMxLimits[1]-UTMxLimits[0])
@@ -179,7 +179,7 @@ if "rect" in edi_gen.lower():
 if "center" in edi_gen.lower():
 
     epsg = utl.get_utm_zone(latitude=CenterLatLon[0], longitude=CenterLatLon[1])
-    UTMCenter = utl.proj_latlon_to_utm(latitude=CenterLatLon[0],
+    UTMCenter = utl.project_latlon_to_utm(latitude=CenterLatLon[0],
                                        longitude=CenterLatLon[1],
                                        utm_zone=epsg[0])
 
@@ -194,7 +194,7 @@ if "center" in edi_gen.lower():
     # print(Y)
 
     GridX, GridY = np.meshgrid(X, Y,indexing='xy')
-    Lat, Lon = utl.proj_utm_to_latlon(utm_x=GridX, utm_y=GridY, utm_zone=epsg[0])
+    Lat, Lon = utl.project_utm_to_latlon(utm_x=GridX, utm_y=GridY, utm_zone=epsg[0])
     Lat = Lat.flat
     Lon = Lon.flat
 

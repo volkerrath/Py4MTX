@@ -27,19 +27,19 @@ binutils_impl_linux-64    2.35.1               h27ae35d_9
 binutils_linux-64         2.35.1              h454624a_30  
 black                     19.10b0                    py_0  
 blas                      2.106                  openblas    conda-forge
-bleach                    4.0.0              pyhd3eb1b0_0  
+bleach                    4.1.0              pyhd3eb1b0_0  
 blosc                     1.21.0               h9c3ff4c_0    conda-forge
 boost-cpp                 1.72.0               h8e57a91_0    conda-forge
 bottleneck                1.3.2            py38heb32a55_1  
 brotli                    1.0.9                he6710b0_2  
 brotlipy                  0.7.0           py38h27cfd23_1003  
 bzip2                     1.0.8                h7b6447c_0  
-c-ares                    1.17.1               h27cfd23_0  
+c-ares                    1.18.1               h7f8727e_0  
 ca-certificates           2021.10.26           h06a4308_2  
 cached-property           1.5.2                    pypi_0    pypi
 cachetools                4.2.2              pyhd3eb1b0_0  
 cairo                     1.16.0            hcf35c78_1003    conda-forge
-certifi                   2021.10.8        py38h06a4308_0  
+certifi                   2021.10.8        py38h06a4308_2  
 cffi                      1.15.0           py38h7f8727e_0  
 cfitsio                   3.470                hb418390_7    conda-forge
 cftime                    1.5.1.1          py38hce1f21e_0  
@@ -68,7 +68,7 @@ daal                      2020.3             ha770c72_304    conda-forge
 daal4py                   2020.3.1         py38h0f50a89_0    conda-forge
 dask-core                 2021.10.0          pyhd3eb1b0_0  
 dbus                      1.13.18              hb2f20db_0  
-dcw-gmt                   2.0.2                ha770c72_0    conda-forge
+dcw-gmt                   2.1.0                ha770c72_0    conda-forge
 debugpy                   1.5.1            py38h295c915_0  
 decorator                 5.1.0              pyhd3eb1b0_0  
 defusedxml                0.7.1              pyhd3eb1b0_0  
@@ -182,7 +182,7 @@ jupyterlab                3.2.1              pyhd3eb1b0_1
 jupyterlab_pygments       0.1.2                      py_0  
 jupyterlab_server         2.10.2             pyhd3eb1b0_1  
 jupyterlab_widgets        1.0.0              pyhd3eb1b0_1  
-jupytext                  1.13.5             pyheef035f_0    conda-forge
+jupytext                  1.13.6             pyheef035f_0    conda-forge
 kealib                    1.4.13               hec59c27_0    conda-forge
 kernel-headers_linux-64   2.6.32              he073ed8_15    conda-forge
 keyring                   23.4.0           py38h06a4308_0  
@@ -287,7 +287,7 @@ numpydoc                  1.1.0              pyhd3eb1b0_1
 olefile                   0.46               pyhd3eb1b0_0  
 openh264                  2.1.1                h4ff587b_0  
 openjpeg                  2.3.1                hf7af979_3    conda-forge
-openssl                   1.1.1l               h7f8727e_0  
+openssl                   1.1.1m               h7f8727e_0  
 packaging                 21.3               pyhd3eb1b0_0  
 pandas                    1.3.5            py38h8c16a72_0  
 pandocfilters             1.4.3            py38h06a4308_1  
@@ -356,7 +356,7 @@ python-slugify            5.0.2              pyhd3eb1b0_0
 python-utils              2.5.6                    pypi_0    pypi
 python_abi                3.8                      2_cp38    conda-forge
 pytz                      2021.3             pyhd3eb1b0_0  
-pyvista                   0.33.0             pyhd8ed1ab_0    conda-forge
+pyvista                   0.33.2             pyhd8ed1ab_0    conda-forge
 pyvtk                     0.5.18                   pypi_0    pypi
 pywavelets                1.1.1            py38h7b6447c_2  
 pyxdg                     0.27               pyhd3eb1b0_0  
@@ -371,16 +371,16 @@ qtconsole                 5.1.1              pyhd3eb1b0_0
 qtpy                      1.10.0             pyhd3eb1b0_0  
 razorback                 0.3.1                    pypi_0    pypi
 rdflib                    6.0.2                    pypi_0    pypi
-readline                  8.1                  h27cfd23_0  
-regex                     2021.8.3         py38h7f8727e_0  
-requests                  2.26.0             pyhd3eb1b0_0  
+readline                  8.1.2                h7f8727e_0  
+regex                     2021.11.2        py38h7f8727e_0  
+requests                  2.27.1             pyhd3eb1b0_0  
 resistics                 1.0.0a3                  pypi_0    pypi
 rhash                     1.4.1                h3c74f83_1  
 rope                      0.21.1             pyhd3eb1b0_0  
 rtree                     0.9.7            py38h06a4308_1  
 schwimmbad                0.3.2            py38h578d9bd_1    conda-forge
 scikit-image              0.18.3           py38h51133e4_0  
-scikit-learn              1.0.1            py38h51133e4_0  
+scikit-learn              1.0.2            py38h51133e4_0  
 scikit-learn-intelex      2021.2.1         py38h578d9bd_1    conda-forge
 scikit-sparse             0.4.6            py38h60dfaa3_1    conda-forge
 scipy                     1.6.3            py38h7b17777_0    conda-forge
@@ -391,7 +391,7 @@ semver                    2.13.0             pyhd3eb1b0_0
 send2trash                1.8.0              pyhd3eb1b0_1  
 setuptools                58.0.4           py38h06a4308_0  
 shapely                   1.7.1            py38ha11d057_1    conda-forge
-simpeg                    0.15.2             pyhd8ed1ab_0    conda-forge
+simpeg                    0.16.0             pyhd8ed1ab_0    conda-forge
 simpleitk                 2.0.2            py38h3fd9d12_0    simpleitk
 simplejson                3.17.5                   pypi_0    pypi
 simplekml                 1.3.6              pyhd8ed1ab_0    conda-forge
@@ -451,13 +451,13 @@ urllib3                   1.26.7             pyhd3eb1b0_0
 utm                       0.7.0              pyhd8ed1ab_0    conda-forge
 uvicorn                   0.15.0                   pypi_0    pypi
 vectormath                0.2.2                      py_0    conda-forge
-vedo                      2021.0.7           pyhd8ed1ab_0    conda-forge
+vedo                      2022.0.1           pyhd8ed1ab_0    conda-forge
 vispy                     0.5.3            py38hee6b756_0  
 vtk                       8.2.0           py38hd6830a8_214    conda-forge
 watchdog                  2.1.6            py38h06a4308_0  
 wcwidth                   0.2.5              pyhd3eb1b0_0  
 webencodings              0.5.1                    py38_1  
-wheel                     0.37.0             pyhd3eb1b0_1  
+wheel                     0.37.1             pyhd3eb1b0_0  
 whichcraft                0.6.1              pyhd3eb1b0_0  
 widgetsnbextension        3.5.1                    py38_0  
 wrapt                     1.12.1           py38h7b6447c_1  
@@ -481,7 +481,7 @@ yaml                      0.2.5                h7b6447c_0
 yapf                      0.31.0             pyhd3eb1b0_0  
 yt                        3.6.1            py38h6323ea4_0  
 zeromq                    4.3.4                h2531618_0  
-zipp                      3.6.0              pyhd3eb1b0_0  
+zipp                      3.7.0              pyhd3eb1b0_0  
 zlib                      1.2.11               h7f8727e_4  
 zstandard                 0.15.2           py38h27cfd23_0  
 zstd                      1.4.5                h9ceee32_0  
