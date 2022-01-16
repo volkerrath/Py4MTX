@@ -21,6 +21,7 @@ from pyproj import CRS, Transformer
 from pyproj.aoi import AreaOfInterest
 from pyproj.database import query_utm_crs_info
 
+from sys import exit as error
 
 
 def parse_ast(filename):
@@ -79,7 +80,7 @@ def get_utm_zone(latitude=None, longitude=None):
     return EPSG, utm_crs
 
 
-def project_latlon_to_utm(latitude, longitude, utm_zone=32629):
+def proj_latlon_to_utm(latitude, longitude, utm_zone=32629):
     """
     transform latlon to utm , using pyproj
     Look for other EPSG at https://epsg.io/
@@ -92,7 +93,7 @@ def project_latlon_to_utm(latitude, longitude, utm_zone=32629):
 
     return utm_x, utm_y
 
-def project_utm_to_latlon(utm_x, utm_y, utm_zone=32629):
+def proj_utm_to_latlon(utm_x, utm_y, utm_zone=32629):
     """
     transform utm to latlon, using pyproj
     Look for other EPSG at https://epsg.io/
@@ -104,7 +105,7 @@ def project_utm_to_latlon(utm_x, utm_y, utm_zone=32629):
     return latitude, longitude
 
 
-def project_latlon_to_itm(longitude, latitude):
+def proj_latlon_to_itm(longitude, latitude):
     """
     transform latlon to itm , using pyproj
     Look for other EPSG at https://epsg.io/
@@ -117,7 +118,7 @@ def project_latlon_to_itm(longitude, latitude):
     return itm_x, itm_y
 
 
-def project_itm_to_latlon(itm_x, itm_y):
+def proj_itm_to_latlon(itm_x, itm_y):
     """
     transform itm to latlon, using pyproj
     Look for other EPSG at https://epsg.io/
@@ -130,7 +131,7 @@ def project_itm_to_latlon(itm_x, itm_y):
     return latitude, longitude
 
 
-def project_itm_to_utm(itm_x, itm_y, utm_zone=32629):
+def proj_itm_to_utm(itm_x, itm_y, utm_zone=32629):
     """
     transform itm to utm, using pyproj
     Look for other EPSG at https://epsg.io/
@@ -143,7 +144,7 @@ def project_itm_to_utm(itm_x, itm_y, utm_zone=32629):
     return utm_x, utm_y
 
 
-def project_utm_to_itm(utm_x, utm_y, utm_zone=32629):
+def proj_utm_to_itm(utm_x, utm_y, utm_zone=32629):
     """
     transform utm to itm, using pyproj
     Look for other EPSG at https://epsg.io/
@@ -460,7 +461,7 @@ def choose_data_rect(Data=None, Corners=None, Out=True):
     return Rect
 
 
-def project_to_line(x, y, line):
+def proj_to_line(x, y, line):
     """
     Projects a point onto a line, where line is represented by two arbitrary
     points. as an array
