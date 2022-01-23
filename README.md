@@ -11,13 +11,14 @@ This repository contains the following subdirectories:
  	including the most important extensions, numpy, scipy, and matplotlib 
  	
  -	**py4mt/modules**
- 	Contains the modules aesys.py, prep.py, inv.py, algs.py, util.py, and 
-	modem.py which are called from the Python scripts run for different tasks of AEM inversion.
+ 	Contains the modules distortion.py, jacproc.py, mimdas.py, modem.py  mtplots.py,  plot.py,  
+	plotrjmcmc.py, and util.py, called from the Python scripts run for different tasks of MT
+	interprretation.
  	
  - 	**py4mt/scripts**
- 	Contains the scripts  for preprocessing, visualization, and one-dimensional inversion of 
- 	MT data, explaining the typical work flow using the toolbox. Also included is a workflow 
-	for static shift correction of MT observations (work in progress).     	 
+ 	Contains the scripts  for preprocessing, visualization, and preparing the inversion of 
+ 	MT data. Also included is a workflow for reading and processing Jacobians from 
+	ModEM outputs (original & new).     	 
  
 - 	**aempy/notebooks**
  	Contains jupyter notebooks for the most important scripts using the toolbox. 
@@ -39,7 +40,7 @@ _git clone https://github.com/volkerrath/Py4MT/_
 
 This version will run under Python 3.8+ (3.9 being the current development platform). Moving to 3.10 is not encouraged because it is still missing some important packages. To install it in an Linux environment (e.g. Ubuntu, SuSE), you need to do the following:
 
-(1) Download the latest Anaconda or Miniconda version  (https://docs.conda.io/projects/conda/en/latest/user-guide/install/download.html), and install by running the downloaded bash script.  In order to make updates secure and avoid inconsistencies, copy .condarc to your home directory. As the Miniconda installer is not updated very frequently, it is useful to run the following within Anaconda:
+(1) Download the latest Anaconda or Miniconda version  (https://docs.conda.io/projects/conda/en/latest/user-guide/install/download.html), and install by running the downloaded bash script.  In order to make updates secure and avoid inconsistencies, copy .condarc to your home directory. As the Miniconda installer is not updated very frequently, it is useful to run the following within the Miniconda base environment:
 
 _conda update conda_
 
