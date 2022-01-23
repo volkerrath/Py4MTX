@@ -158,10 +158,11 @@ for f in np.arange(nF):
     print(" Used %7.4f s for normalizing Jacobian from %s " % (elapsed, JFiles[f]))
 
     mx = np.nanmax(np.abs(Jac))
-    print(JFiles[f]+" maximum Jacobian value is "+str(mx))
+    mn = np.nanmin(np.abs(Jac))
+    print(JFiles[f]+" minimum/maximum Jacobian value is "+str(mn)+"/"+str(mx))
     mx = np.nanmax(np.abs(Jac*jacmask))
-    print(JFiles[f]+" maximum masked Jacobian value is "+str(mx))
-    print(JFiles[f]+" number of elements in masked Jacobian is "+str( np.count_nonzero(~np.isnan(Jac))))
+    print(JFiles[f]+" minimum/maximum masked Jacobian value is "+str(mn)+"/"+str(mx))
+    print(JFiles[f]+" number of elements in masked Jacobian is "+str(np.count_nonzero(~np.isfinite(Jac))))
     # print( np.count_nonzero(~np.isnan(jacmask))*np.shape(Jac)[0])
 
     """

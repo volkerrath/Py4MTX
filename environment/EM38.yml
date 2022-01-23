@@ -1,11 +1,12 @@
-name: EM
+name: EM38
 channels:
   - simpleitk
   - defaults
   - conda-forge
 dependencies:
   - _libgcc_mutex=0.1=conda_forge
-  - _openmp_mutex=4.5=1_llvm
+  - _openmp_mutex=4.5=1_gnu
+  - _sysroot_linux-64_curr_repodata_hack=3=haa98f57_10
   - alabaster=0.7.12=pyhd3eb1b0_0
   - appdirs=1.4.4=pyhd3eb1b0_0
   - argon2-cffi=20.1.0=py38h27cfd23_1
@@ -16,7 +17,7 @@ dependencies:
   - atk=2.36.0=h06a4308_0
   - atk-1.0=2.36.0=haf93ef1_1
   - atomicwrites=1.4.0=py_0
-  - attrs=21.2.0=pyhd3eb1b0_0
+  - attrs=21.4.0=pyhd3eb1b0_0
   - autopep8=1.6.0=pyhd3eb1b0_0
   - babel=2.9.1=pyhd3eb1b0_0
   - backcall=0.2.0=pyhd3eb1b0_0
@@ -24,7 +25,7 @@ dependencies:
   - binutils_impl_linux-64=2.35.1=h27ae35d_9
   - binutils_linux-64=2.35.1=h454624a_30
   - black=19.10b0=py_0
-  - blas=2.106=openblas
+  - blas=1.0=mkl
   - bleach=4.1.0=pyhd3eb1b0_0
   - blosc=1.21.0=h9c3ff4c_0
   - boost-cpp=1.72.0=h8e57a91_0
@@ -77,7 +78,7 @@ dependencies:
   - fastprogress=1.0.0=pyhb85f177_0
   - ffmpeg=4.2.2=h20bf706_0
   - fftw=3.3.9=h27cfd23_1
-  - filelock=3.4.0=pyhd3eb1b0_0
+  - filelock=3.4.2=pyhd3eb1b0_0
   - fiona=1.8.13.post1=py38hc820daa_0
   - flake8=3.9.2=pyhd3eb1b0_0
   - fontconfig=2.13.1=hba837de_1005
@@ -85,7 +86,7 @@ dependencies:
   - freetype=2.11.0=h70c0345_0
   - freexl=1.0.6=h27cfd23_0
   - fribidi=1.0.10=h7b6447c_0
-  - fsspec=2021.10.1=pyhd3eb1b0_0
+  - fsspec=2022.1.0=pyhd3eb1b0_0
   - future=0.18.2=py38_1
   - gcc_impl_linux-64=9.3.0=h6df7d76_17
   - gcc_linux-64=9.3.0=h1ee779e_30
@@ -160,7 +161,7 @@ dependencies:
   - jupyterlab_widgets=1.0.0=pyhd3eb1b0_1
   - jupytext=1.13.6=pyheef035f_0
   - kealib=1.4.13=hec59c27_0
-  - kernel-headers_linux-64=2.6.32=he073ed8_15
+  - kernel-headers_linux-64=3.10.0=h57e8cba_10
   - keyring=23.4.0=py38h06a4308_0
   - kiwisolver=1.3.1=py38h2531618_0
   - krb5=1.19.2=hac12032_0
@@ -168,8 +169,8 @@ dependencies:
   - lazy-object-proxy=1.6.0=py38h27cfd23_0
   - lcms2=2.12=h3be6417_0
   - ld_impl_linux-64=2.35.1=h7274673_9
-  - libblas=3.9.0=6_openblas
-  - libcblas=3.9.0=6_openblas
+  - libblas=3.9.0=12_linux64_mkl
+  - libcblas=3.9.0=12_linux64_mkl
   - libcurl=7.80.0=h0b77cf5_0
   - libdap4=3.20.6=hd7c4107_2
   - libedit=3.1.20210714=h7f8727e_0
@@ -185,12 +186,12 @@ dependencies:
   - libiconv=1.15=h63c8f33_5
   - libidn2=2.3.2=h7f8727e_0
   - libkml=1.3.0=hd79254b_1012
-  - liblapack=3.9.0=6_openblas
-  - liblapacke=3.9.0=6_openblas
+  - liblapack=3.9.0=12_linux64_mkl
+  - liblapacke=3.9.0=12_linux64_mkl
   - libllvm10=10.0.1=hbcb73fb_5
   - libnetcdf=4.7.4=nompi_h9f9fd6a_101
   - libnghttp2=1.46.0=hce63b2e_0
-  - libopenblas=0.3.12=pthreads_h4812303_1
+  - libopenblas=0.3.17=pthreads_h8fe5266_1
   - libopus=1.3.1=h7b6447c_0
   - libpng=1.6.37=hbc83047_0
   - libpq=12.9=hc2c5182_1
@@ -224,12 +225,15 @@ dependencies:
   - metis=5.1.0=hf484d3e_4
   - mistune=0.8.4=py38h7b6447c_1000
   - mkl=2021.4.0=h06a4308_640
+  - mkl-service=2.4.0=py38h7f8727e_0
+  - mkl_fft=1.3.1=py38hd3c417c_0
+  - mkl_random=1.2.2=py38h51133e4_0
   - mock=4.0.3=pyhd3eb1b0_0
   - mpc=1.1.0=h10f8cd9_1
   - mpfr=4.0.2=hb69a4c5_1
   - mpi=1.0=mpich
   - mpi4py=3.0.3=py38h028fd6f_0
-  - mpich=3.3.2=h846660c_4
+  - mpich=3.3.2=external_0
   - mpmath=1.2.1=py38h06a4308_0
   - munch=2.5.0=pyhd3eb1b0_0
   - munkres=1.1.4=py_0
@@ -247,9 +251,9 @@ dependencies:
   - networkx=2.6.3=pyhd3eb1b0_0
   - nlopt=2.6.2=py38haf0142a_1
   - notebook=6.4.6=py38h06a4308_0
-  - numexpr=2.8.1=py38hecfb737_0
-  - numpy=1.21.2=py38hd8d4704_0
-  - numpy-base=1.21.2=py38h2b8c604_0
+  - numexpr=2.8.1=py38h6abb31d_0
+  - numpy=1.21.2=py38h20f2e39_0
+  - numpy-base=1.21.2=py38h79a1101_0
   - numpydoc=1.1.0=pyhd3eb1b0_1
   - olefile=0.46=pyhd3eb1b0_0
   - openh264=2.1.1=h4ff587b_0
@@ -327,7 +331,7 @@ dependencies:
   - rtree=0.9.7=py38h06a4308_1
   - schwimmbad=0.3.2=py38h578d9bd_1
   - scikit-image=0.18.3=py38h51133e4_0
-  - scikit-learn=1.0.2=py38h51133e4_0
+  - scikit-learn=1.0.2=py38h51133e4_1
   - scikit-learn-intelex=2021.2.1=py38h578d9bd_1
   - scikit-sparse=0.4.6=py38h60dfaa3_1
   - scipy=1.6.3=py38h7b17777_0
@@ -357,10 +361,10 @@ dependencies:
   - spyder=5.1.5=py38h06a4308_1
   - spyder-kernels=2.1.3=py38h06a4308_0
   - sqlite=3.37.0=hc218d9a_0
-  - suitesparse=5.10.1=hd8046ac_0
+  - suitesparse=5.10.1=hccbcb17_0
   - sundials=5.4.0=h800c78e_2
   - sympy=1.9=py38h06a4308_0
-  - sysroot_linux-64=2.12=he073ed8_15
+  - sysroot_linux-64=2.17=h57e8cba_10
   - tbb=2020.3=hfd86e86_0
   - terminado=0.9.4=py38h06a4308_0
   - testpath=0.5.0=pyhd3eb1b0_0
@@ -489,4 +493,4 @@ dependencies:
     - uncertainties==3.1.6
     - uvicorn==0.15.0
     - xmltodict==0.12.0
-prefix: /home/vrath/.Miniconda/envs/EM
+prefix: /home/vrath/.Miniconda/envs/EM38

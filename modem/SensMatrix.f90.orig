@@ -6,12 +6,6 @@ module sensMatrix
   use DataSpace
   use ModelSpace
 
-  !use transmitters
-  !use dataTypes
-  !use receivers
-
-  use dataFunc
-
   implicit none
 
   public 	:: create_sensMatrix, deall_sensMatrix
@@ -254,13 +248,8 @@ Contains
     type(sensMatrix_t), pointer	:: sens(:)
     character(*), intent(in)				:: cfile
     ! local
-    integer  iTx,iDt,iRx,nTx,nDt,nSite,nComp,i,j,k,l,istat,ios,nAll
+    integer  iTx,iDt,iRx,nTx,nDt,nSite,nComp,i,j,k,istat,ios,nAll
     character(80) header
-    logical SensWork
-    character(12) sRx
-    real*8 pTx
-
-    SensWork = .true.
 
     if(.not. associated(sens)) then
         call errStop('sensitivity matrix not allocated in write_sensMatrixMTX')
@@ -268,7 +257,6 @@ Contains
 
     open(unit=ioSens, file=cfile, form='unformatted', iostat=ios)
 	write(0,*) 'Output sensitivity matrix...'
-
 
     write(header,*) 'Sensitivity Matrix'
 	nAll = count_sensMatrixMTX(sens)
@@ -279,40 +267,25 @@ Contains
     write(ioSens) nTx
 
     do i = 1,nTx
+
       nDt = sens(i)%nDt
       iTx = sens(i)%tx
-      pTx= txDict(iTx)%period
-
       write(ioSens) nDt
-
+      
       do j = 1,nDt
 
         nComp = sens(i)%v(j)%nComp
         nSite = sens(i)%v(j)%nSite
         iDt   = sens(i)%v(j)%dataType
-        write(*,*)
         write(ioSens) nSite
-
+	
         do k = 1,nSite
-            iRx = sens(i)%v(j)%rx(k)
-            sRX = rxDict(iRx)%id
-
-            if (SensWork) then
-
-
-	         	write(header,*) sRx,' ',nComp,' ',nSite,' ',iDt,' ',pTx
-
-	         	write(*,*) header
-	        	call writeVec_modelParam(nComp,sens(i)%v(j)%dm(:,k),header,cfile)
-
-	        else
-	           	write(header,'(a19,i4,a11,i4,a5,i4)') &
-					'Sensitivity for tx=',iTx,'; dataType=',iDt,'; rx=',iRx
-	            write(*,*) header
-	        	call writeVec_modelParam(nComp,sens(i)%v(j)%dm(:,k),header,cfile)
-
-        	end if
-
+        	! append to the file: writes nComp, header and the values;
+        	! could also write the full transmitter, receiver and data type...
+        	iRx = sens(i)%v(j)%rx(k)
+        	write(header,'(a19,i4,a11,i4,a5,i4)') &
+        		'Sensitivity for tx=',iTx,'; dataType=',iDt,'; rx=',iRx
+        	call writeVec_modelParam(nComp,sens(i)%v(j)%dm(:,k),header,cfile)
         end do ! rx
 
       end do  ! data type
