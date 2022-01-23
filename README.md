@@ -16,12 +16,16 @@ This repository contains the following subdirectories:
  	
  - 	**py4mt/scripts**
  	Contains the scripts  for preprocessing, visualization, and one-dimensional inversion of 
- 	AEM data, explaining the typical work flow using the toolbox. Also included is a workflow 
+ 	MT data, explaining the typical work flow using the toolbox. Also included is a workflow 
 	for static shift correction of MT observations (work in progress).     	 
  
 - 	**aempy/notebooks**
  	Contains jupyter notebooks for the most important scripts using the toolbox. 
 	  	
+- 	**modem**
+	Modified and original ModEM source code files including corresponding Makefiles, useful for 
+	sensitivity output. 
+	
 - 	**environment**
 	Contains conda environment description files, and some useful helper files for working 
 	within the conda environment. The current EM38 and EM39 environments contain a lot of packages
