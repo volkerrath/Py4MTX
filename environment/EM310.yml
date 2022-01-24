@@ -144,7 +144,7 @@ dependencies:
   - networkx=2.6.3=pyhd3eb1b0_0
   - nspr=4.32=h9c3ff4c_1
   - nss=3.74=hb5efdd6_0
-  - numpy=1.22.0=py310h454958d_1
+  - numpy=1.22.1=py310h454958d_0
   - olefile=0.46=pyhd3eb1b0_0
   - openjpeg=2.4.0=h3ad879b_0
   - openssl=1.1.1m=h7f8727e_0
