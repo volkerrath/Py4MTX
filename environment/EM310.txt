@@ -36,14 +36,14 @@ font-ttf-dejavu-sans-mono 2.37                 hd3eb1b0_0
 font-ttf-inconsolata      2.001                hcb22688_0  
 font-ttf-source-code-pro  2.030                hd3eb1b0_0  
 font-ttf-ubuntu           0.83                 h8b1ccd4_0  
-fontconfig                2.13.1            hba837de_1005    conda-forge
+fontconfig                2.13.94              ha180cfb_0    conda-forge
 fonts-anaconda            1                    h8fa9717_0  
 fonts-conda-ecosystem     1                    hd3eb1b0_0  
 fonttools                 4.25.0             pyhd3eb1b0_0  
 freetype                  2.11.0               h70c0345_0  
 freexl                    1.0.6                h27cfd23_0  
 fsspec                    2022.1.0           pyhd3eb1b0_0  
-gcc_impl_linux-64         11.2.0              h82a94d6_11    conda-forge
+gcc_impl_linux-64         11.2.0              h82a94d6_12    conda-forge
 gcc_linux-64              11.2.0               h39a9532_4    conda-forge
 gdal                      3.4.1           py310h222ae0d_0    conda-forge
 geopandas                 0.9.0                      py_1  
@@ -51,14 +51,14 @@ geopandas-base            0.9.0                      py_1
 geos                      3.10.1               h9c3ff4c_1    conda-forge
 geotiff                   1.7.0                h6593c0a_6    conda-forge
 gettext                   0.21.0               hf68c758_0  
-gfortran_impl_linux-64    11.2.0              h7a446d4_11    conda-forge
+gfortran_impl_linux-64    11.2.0              h7a446d4_12    conda-forge
 gfortran_linux-64         11.2.0               h777b47f_4    conda-forge
 giflib                    5.2.1                h7b6447c_0  
 glib                      2.70.2               h780b84a_1    conda-forge
 glib-tools                2.70.2               h780b84a_1    conda-forge
 gst-plugins-base          1.18.5               hf529b03_3    conda-forge
 gstreamer                 1.18.5               ha1a6a79_0  
-gxx_impl_linux-64         11.2.0              h82a94d6_11    conda-forge
+gxx_impl_linux-64         11.2.0              h82a94d6_12    conda-forge
 gxx_linux-64              11.2.0               hacbe6df_4    conda-forge
 hdf4                      4.2.15               h10796ff_3    conda-forge
 hdf5                      1.12.1          nompi_h2750804_103    conda-forge
@@ -91,13 +91,13 @@ libedit                   3.1.20191231         he28a2e2_2    conda-forge
 libev                     4.33                 h7f8727e_1  
 libevent                  2.1.10               h9b69904_4    conda-forge
 libffi                    3.4.2                h295c915_2  
-libgcc-devel_linux-64     11.2.0              h0952999_11    conda-forge
-libgcc-ng                 11.2.0              h1d223b6_11    conda-forge
+libgcc-devel_linux-64     11.2.0              h0952999_12    conda-forge
+libgcc-ng                 11.2.0              h1d223b6_12    conda-forge
 libgdal                   3.4.1                h5ee51d2_0    conda-forge
-libgfortran-ng            11.2.0              h69a702a_11    conda-forge
-libgfortran5              11.2.0              h5c6108e_11    conda-forge
+libgfortran-ng            11.2.0              h69a702a_12    conda-forge
+libgfortran5              11.2.0              h5c6108e_12    conda-forge
 libglib                   2.70.2               h174f98d_1    conda-forge
-libgomp                   11.2.0              h1d223b6_11    conda-forge
+libgomp                   11.2.0              h1d223b6_12    conda-forge
 libiconv                  1.16                 h516909a_0    conda-forge
 libkml                    1.3.0             h238a007_1014    conda-forge
 liblapack                 3.9.0           13_linux64_openblas    conda-forge
@@ -111,12 +111,12 @@ libopus                   1.3.1                h7b6447c_0
 libpng                    1.6.37               hbc83047_0  
 libpq                     14.1                 hd57d9b9_1    conda-forge
 librttopo                 1.1.0                h30b5eef_8    conda-forge
-libsanitizer              11.2.0              he4da1e4_11    conda-forge
+libsanitizer              11.2.0              he4da1e4_12    conda-forge
 libspatialindex           1.9.3                h2531618_0  
 libspatialite             5.0.1               hd55babb_13    conda-forge
 libssh2                   1.9.0                h1ba5d50_1  
-libstdcxx-devel_linux-64  11.2.0              h0952999_11    conda-forge
-libstdcxx-ng              11.2.0              he4da1e4_11    conda-forge
+libstdcxx-devel_linux-64  11.2.0              h0952999_12    conda-forge
+libstdcxx-ng              11.2.0              he4da1e4_12    conda-forge
 libtiff                   4.3.0                h6f004c6_2    conda-forge
 libuuid                   2.32.1            h7f98852_1000    conda-forge
 libvorbis                 1.3.7                h7b6447c_0  

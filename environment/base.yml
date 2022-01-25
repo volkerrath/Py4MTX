@@ -35,8 +35,8 @@ dependencies:
   - libedit=3.1.20210910=h7f8727e_0
   - libev=4.33=h7f8727e_1
   - libffi=3.3=he6710b0_2
-  - libgcc-ng=11.2.0=h1d223b6_11
-  - libgomp=11.2.0=h1d223b6_11
+  - libgcc-ng=11.2.0=h1d223b6_12
+  - libgomp=11.2.0=h1d223b6_12
   - libiconv=1.16=h516909a_0
   - liblief=0.10.1=h2531618_1
   - libmamba=0.19.1=h3985d26_0
@@ -44,7 +44,7 @@ dependencies:
   - libnghttp2=1.46.0=hce63b2e_0
   - libsolv=0.7.19=h780b84a_5
   - libssh2=1.9.0=h1ba5d50_1
-  - libstdcxx-ng=11.2.0=he4da1e4_11
+  - libstdcxx-ng=11.2.0=he4da1e4_12
   - libxml2=2.9.12=h03d6c58_0
   - lz4-c=1.9.3=h295c915_1
   - lzo=2.10=h7b6447c_2

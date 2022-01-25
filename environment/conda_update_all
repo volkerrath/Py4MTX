@@ -3,10 +3,14 @@ echo "*********** base"
 conda update conda -y -n base
 conda update --all -y -n base
 
-echo "*********** EM"
-conda update --all -y -n EM 
-# echo "*********** SimPEG"
-# conda update --all -y -n SimPEG
+echo "*********** EM38"
+conda update --all -y -n EM38
+echo "*********** EM39"
+conda update --all -y -n EM39
+echo "*********** EM310"
+conda update --all -y -n EM310
+echo "*********** jif3d"
+conda update --all -y -n jif3d
 # echo "*********** Fenics"
 #Rconda update --all -y -n Fenics
 #echo "*********** EarthEngine"

@@ -23,7 +23,27 @@ from pyproj.database import query_utm_crs_info
 
 from sys import exit as error
 
+from scipy.fftpack import dct, idct
 
+def dctn(x, norm="ortho"):
+    """
+    Discrete cosine transform (fwd)
+    https://stackoverflow.com/questions/13904851/use-pythons-scipy-dct-ii-to-do-2d-or-nd-dct
+    """
+    for i in range(x.ndim):
+        x = dct(x, axis=i, norm=norm)
+    return x
+
+def idctn(x, norm="ortho"):
+    """
+    Discrete cosine transform (inv)
+    https://stackoverflow.com/questions/13904851/use-pythons-scipy-dct-ii-to-do-2d-or-nd-dct
+    """
+    for i in range(x.ndim):
+        x = idct(x, axis=i, norm=norm)
+    return x
+
+d
 def parse_ast(filename):
     with open(filename, "rt") as file:
 

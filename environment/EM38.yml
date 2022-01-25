@@ -140,7 +140,7 @@ dependencies:
   - isort=5.9.3=pyhd3eb1b0_0
   - itk=5.1.2=py38h578d9bd_0
   - itkwidgets=0.32.0=py38h32f6830_0
-  - jedi=0.18.0=py38h06a4308_1
+  - jedi=0.18.1=py38h06a4308_0
   - jeepney=0.7.1=pyhd3eb1b0_0
   - jinja2=2.11.3=pyhd3eb1b0_0
   - jinja2-time=0.2.0=pyhd3eb1b0_2
@@ -177,12 +177,12 @@ dependencies:
   - libev=4.33=h7f8727e_1
   - libffi=3.2.1=hf484d3e_1007
   - libgcc-devel_linux-64=9.3.0=hb95220a_17
-  - libgcc-ng=11.2.0=h1d223b6_11
+  - libgcc-ng=11.2.0=h1d223b6_12
   - libgd=2.2.5=h8e06009_4
   - libgdal=3.0.4=h9e6407a_4
   - libgfortran-ng=9.3.0=ha5ec8a7_17
   - libgfortran5=9.3.0=ha5ec8a7_17
-  - libgomp=11.2.0=h1d223b6_11
+  - libgomp=11.2.0=h1d223b6_12
   - libiconv=1.15=h63c8f33_5
   - libidn2=2.3.2=h7f8727e_0
   - libkml=1.3.0=hd79254b_1012
@@ -200,7 +200,7 @@ dependencies:
   - libspatialite=4.3.0a=h2482549_1038
   - libssh2=1.9.0=h1ba5d50_1
   - libstdcxx-devel_linux-64=9.3.0=hf0c5c8d_17
-  - libstdcxx-ng=11.2.0=he4da1e4_11
+  - libstdcxx-ng=11.2.0=he4da1e4_12
   - libtasn1=4.16.0=h27cfd23_0
   - libtiff=4.1.0=h2733197_1
   - libunistring=0.9.10=h27cfd23_0

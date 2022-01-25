@@ -38,14 +38,14 @@ dependencies:
   - font-ttf-inconsolata=2.001=hcb22688_0
   - font-ttf-source-code-pro=2.030=hd3eb1b0_0
   - font-ttf-ubuntu=0.83=h8b1ccd4_0
-  - fontconfig=2.13.1=hba837de_1005
+  - fontconfig=2.13.94=ha180cfb_0
   - fonts-anaconda=1=h8fa9717_0
   - fonts-conda-ecosystem=1=hd3eb1b0_0
   - fonttools=4.25.0=pyhd3eb1b0_0
   - freetype=2.11.0=h70c0345_0
   - freexl=1.0.6=h27cfd23_0
   - fsspec=2022.1.0=pyhd3eb1b0_0
-  - gcc_impl_linux-64=11.2.0=h82a94d6_11
+  - gcc_impl_linux-64=11.2.0=h82a94d6_12
   - gcc_linux-64=11.2.0=h39a9532_4
   - gdal=3.4.1=py310h222ae0d_0
   - geopandas=0.9.0=py_1
@@ -53,14 +53,14 @@ dependencies:
   - geos=3.10.1=h9c3ff4c_1
   - geotiff=1.7.0=h6593c0a_6
   - gettext=0.21.0=hf68c758_0
-  - gfortran_impl_linux-64=11.2.0=h7a446d4_11
+  - gfortran_impl_linux-64=11.2.0=h7a446d4_12
   - gfortran_linux-64=11.2.0=h777b47f_4
   - giflib=5.2.1=h7b6447c_0
   - glib=2.70.2=h780b84a_1
   - glib-tools=2.70.2=h780b84a_1
   - gst-plugins-base=1.18.5=hf529b03_3
   - gstreamer=1.18.5=ha1a6a79_0
-  - gxx_impl_linux-64=11.2.0=h82a94d6_11
+  - gxx_impl_linux-64=11.2.0=h82a94d6_12
   - gxx_linux-64=11.2.0=hacbe6df_4
   - hdf4=4.2.15=h10796ff_3
   - hdf5=1.12.1=nompi_h2750804_103
@@ -93,13 +93,13 @@ dependencies:
   - libev=4.33=h7f8727e_1
   - libevent=2.1.10=h9b69904_4
   - libffi=3.4.2=h295c915_2
-  - libgcc-devel_linux-64=11.2.0=h0952999_11
-  - libgcc-ng=11.2.0=h1d223b6_11
+  - libgcc-devel_linux-64=11.2.0=h0952999_12
+  - libgcc-ng=11.2.0=h1d223b6_12
   - libgdal=3.4.1=h5ee51d2_0
-  - libgfortran-ng=11.2.0=h69a702a_11
-  - libgfortran5=11.2.0=h5c6108e_11
+  - libgfortran-ng=11.2.0=h69a702a_12
+  - libgfortran5=11.2.0=h5c6108e_12
   - libglib=2.70.2=h174f98d_1
-  - libgomp=11.2.0=h1d223b6_11
+  - libgomp=11.2.0=h1d223b6_12
   - libiconv=1.16=h516909a_0
   - libkml=1.3.0=h238a007_1014
   - liblapack=3.9.0=13_linux64_openblas
@@ -113,12 +113,12 @@ dependencies:
   - libpng=1.6.37=hbc83047_0
   - libpq=14.1=hd57d9b9_1
   - librttopo=1.1.0=h30b5eef_8
-  - libsanitizer=11.2.0=he4da1e4_11
+  - libsanitizer=11.2.0=he4da1e4_12
   - libspatialindex=1.9.3=h2531618_0
   - libspatialite=5.0.1=hd55babb_13
   - libssh2=1.9.0=h1ba5d50_1
-  - libstdcxx-devel_linux-64=11.2.0=h0952999_11
-  - libstdcxx-ng=11.2.0=he4da1e4_11
+  - libstdcxx-devel_linux-64=11.2.0=h0952999_12
+  - libstdcxx-ng=11.2.0=he4da1e4_12
   - libtiff=4.3.0=h6f004c6_2
   - libuuid=2.32.1=h7f98852_1000
   - libvorbis=1.3.7=h7b6447c_0

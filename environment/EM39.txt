@@ -85,6 +85,7 @@ cryptography              36.0.0           py39h9ce1e76_0
 curl                      7.80.0               h7f8727e_0  
 cxx-compiler              1.2.0                h4bd325d_0    conda-forge
 cycler                    0.11.0             pyhd3eb1b0_0  
+cython                    0.29.26                  pypi_0    pypi
 cytoolz                   0.11.0           py39h27cfd23_0  
 daal                      2021.4.0           h06a4308_729  
 daal4py                   2021.4.0         py39hed5ac8d_0    conda-forge
@@ -123,7 +124,7 @@ font-ttf-dejavu-sans-mono 2.37                 hd3eb1b0_0
 font-ttf-inconsolata      2.001                hcb22688_0  
 font-ttf-source-code-pro  2.030                hd3eb1b0_0  
 font-ttf-ubuntu           0.83                 h8b1ccd4_0  
-fontconfig                2.13.1            hba837de_1005    conda-forge
+fontconfig                2.13.94              ha180cfb_0    conda-forge
 fonts-anaconda            1                    h8fa9717_0  
 fonts-conda-ecosystem     1                    hd3eb1b0_0  
 fonts-conda-forge         1                             0    conda-forge
@@ -208,7 +209,7 @@ isort                     5.9.3              pyhd3eb1b0_0
 jax                       0.2.27             pyhd8ed1ab_0    conda-forge
 jaxlib                    0.1.75           py39hde0f152_0    conda-forge
 jbig                      2.1                  hdba287a_0  
-jedi                      0.18.0           py39h06a4308_1  
+jedi                      0.18.1           py39h06a4308_0  
 jeepney                   0.7.1              pyhd3eb1b0_0  
 jinja2                    2.11.3             pyhd3eb1b0_0  
 jinja2-time               0.2.0              pyhd3eb1b0_2  
@@ -255,7 +256,7 @@ libev                     4.33                 h7f8727e_1
 libevent                  2.1.10               h9b69904_4    conda-forge
 libffi                    3.4.2                h295c915_2  
 libgcc-devel_linux-64     9.3.0               hb95220a_17  
-libgcc-ng                 11.2.0              h1d223b6_11    conda-forge
+libgcc-ng                 11.2.0              h1d223b6_12    conda-forge
 libgd                     2.3.3                h695aa2c_0  
 libgdal                   3.4.0               h4471fe2_11    conda-forge
 libgfortran-ng            9.4.0               h69a702a_11    conda-forge
@@ -263,7 +264,7 @@ libgfortran5              9.4.0               h62347ff_11    conda-forge
 libgirepository           1.70.0               hb520f89_1    conda-forge
 libglib                   2.70.2               h174f98d_1    conda-forge
 libglu                    9.0.0                hf484d3e_1  
-libgomp                   11.2.0              h1d223b6_11    conda-forge
+libgomp                   11.2.0              h1d223b6_12    conda-forge
 libgpuarray               0.7.6                h7f8727e_1  
 libiconv                  1.16                 h516909a_0    conda-forge
 libidn2                   2.3.2                h7f8727e_0  
@@ -287,7 +288,7 @@ libspatialindex           1.9.3                h2531618_0
 libspatialite             5.0.1               hf3ee066_12    conda-forge
 libssh2                   1.9.0                h1ba5d50_1  
 libstdcxx-devel_linux-64  9.3.0               hf0c5c8d_17  
-libstdcxx-ng              11.2.0              he4da1e4_11    conda-forge
+libstdcxx-ng              11.2.0              he4da1e4_12    conda-forge
 libtasn1                  4.16.0               h27cfd23_0  
 libtheora                 1.1.1                h5ab3b9f_1  
 libthrift                 0.15.0               hcc01f38_0  
