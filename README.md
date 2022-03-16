@@ -56,7 +56,9 @@ or:
 
 _conda create --name EM39 --file EM39.txt_
 
-This will set up a Python 3.9 environment with all dependencies for aempy. In case you want to keep using python 3.8, corresponding EM38.yml and EM38.txt are available. Don't forget to update also EM38/EM39 regularly, using _conda update --name EM39 (EM38) --all_! 
+This will set up a Python 3.9 environment with all dependencies for aempy. In case you want to keep using python 3.8, corresponding EM38.yml and EM38.txt are available. Don't forget to update also EM38/EM39 regularly, using _conda update --name EM39 (EM38) --all_! There is a replacement for _conda_, called _mamba_ (see https://github.com/mamba-org/mamba), which is not only considerably faster, but also better in keeping the environments consistent. It can be installed via conda (i. e., _conda install mamba_), and has practically the same syntax as the oroginal package manager.
+
+
 
 (3) Activate this environment by:
 
