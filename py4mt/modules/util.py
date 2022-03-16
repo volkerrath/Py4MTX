@@ -43,7 +43,7 @@ def idctn(x, norm="ortho"):
         x = idct(x, axis=i, norm=norm)
     return x
 
-d
+
 def parse_ast(filename):
     with open(filename, "rt") as file:
 
@@ -620,7 +620,7 @@ def nearly_equal(a,b,sig_fig=6):
 
 def make_pdf_catalog(WorkDir="./", PdfList= None, FileName=None):
     """
-    Make pdf catalog from site-plots
+    Make pdf catalog from site-plot(
 
     Parameters
     ----------
@@ -634,6 +634,8 @@ def make_pdf_catalog(WorkDir="./", PdfList= None, FileName=None):
     None.
 
     """
+    # error("not in 3.9! Exit")
+
     import fitz
 
     catalog = fitz.open()
