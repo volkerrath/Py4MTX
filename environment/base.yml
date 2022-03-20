@@ -72,8 +72,8 @@ dependencies:
   - pytz=2021.3=pyhd3eb1b0_0
   - pyyaml=6.0=py39h7f8727e_1
   - readline=8.1.2=h7f8727e_1
-  - reproc=14.2.4=h295c915_0
-  - reproc-cpp=14.2.4=h295c915_0
+  - reproc=14.2.4=h295c915_1
+  - reproc-cpp=14.2.4=h295c915_1
   - requests=2.27.1=pyhd3eb1b0_0
   - ripgrep=12.1.1=0
   - ruamel_yaml=0.15.100=py39h27cfd23_0

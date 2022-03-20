@@ -38,28 +38,31 @@ from mtpy.core.mt import MT
 # plots_2 =  plots produced by MT_mcmcplot.py or  from
 # other sources, with an additional string strn_2 added to the EDI basename.
 
-plots_1 = False
-strng_1 = ""  # "_data"
+plots_1 = True
+strng_1 = "_Z3P"  # "_data"
 
-plots_2 = False
-strng_2 = "_fwdres500"
+plots_2 = True
+strng_2 = "_edited_imp_rjmcmc"
 
 repeats = False
 repeat_string = "r"
 
 bads = False
-bad_string = "x"
+bad_string = "bad"
 
+kml = False
+kmz = True
 # Define the path to your EDI-files
 
 # edi_dir = r"/home/vrath/WestTimor/WT8C_edi/"
-edi_dir = r"/home/vrath/work/MT_Data/Krafla/EDI/"
+# edi_dir = r"/home/vrath/work/MT_Data/Krafla/EDI/"
+edi_dir = r"/home/vrath/Limerick2022/reports/EDI_edited_Z/"
 # "/home/vrath/Py4MT/py4mt/M/MauTopo_fwd/"
 # r"/media/vrath/MT/Ireland/Donegal/Donegal_EDIs_3DGridEdited/"
 print(" Edifiles read from: %s" % edi_dir)
 
 if plots_1 or plots_2:
-    plots_dir = edi_dir + "data_plots/"
+    plots_dir =  r"/home/vrath/Limerick2022/reports/Plots/"
     # r"/media/vrath/MT/Ireland/Northwest_CarboniferousBasin/MT_DATA/EDI/data_plots/"
     # r"/home/vrath/WestTimor/WT8C_plots/" #edi_dir #"NEW_plots_bbmt_roi_edit/"
     print(" Plots read from: %s" % plots_dir)
@@ -80,18 +83,18 @@ with open(places_file, "r") as f:
 
 # Define the path for saving  kml files
 
-kml_dir = ""
-kml_file = edi_dir + "KraflaSites"
+kml_dir = r"/home/vrath/Limerick2022/reports/"
+kml_file = r"Limerick2022"
 
-
-site_icon =  edi_dir + "icons/placemark_circle.png"
-site_icon_rept =  edi_dir + "icons/placemark_square.png"
-site_icon_bad =  edi_dir + "icons/placemark_square.png"
+icon_dir = r"/home/vrath/GoogleEarth/icons/"
+site_icon =  icon_dir + "placemark_circle.png"
+site_icon_rept =  icon_dir + "placemark_square.png"
+site_icon_bad =  icon_dir + "placemark_square.png"
 
 site_tcolor = simplekml.Color.white  # "#555500" #
-site_tscale = 0.8  # scale the text
+site_tscale = 1.5  # scale the text
 
-site_iscale = 1.
+site_iscale = 1.5
 site_icolor = simplekml.Color.blue
 site_rcolor = simplekml.Color.blue
 
@@ -167,11 +170,6 @@ for filename in edi_files:
 
     site = kml.newpoint(name=nam)
     site.coords = [(lon, lat, hgt)]
-    site.style.labelstyle.color = site_tcolor
-    site.style.labelstyle.scale = site_tscale
-    site.style.iconstyle.icon.href = site_iref
-    site.style.iconstyle.scale = site_iscale
-    site.style.iconstyle.color = site_icolor
 
     if repeats:
         if repeat_string in full_name:
@@ -183,7 +181,7 @@ for filename in edi_files:
         #print(nam, mt_obj.lat, mt_obj.lon, hgt)
             site.description = description + "  - repeated site"
 
-    if bads:
+    elif bads:
         if bad_string in full_name:
             site.style.iconstyle.icon.href = site_iref_bad
             site.style.labelstyle.color = site_rcolor_bad
@@ -191,19 +189,25 @@ for filename in edi_files:
             site.style.balloonstyle.text = "bad site"
             site.style.balloonstyle.textcolor = site_rcolor
         #print(nam, mt_obj.lat, mt_obj.lon, hgt)
-            site.description = description + "  - repeated site"
-
-    site.description = description
+            site.description = description + "  - bad site"
+    else:
+        site.style.labelstyle.color = site_tcolor
+        site.style.labelstyle.scale = site_tscale
+        site.style.iconstyle.icon.href = site_iref
+        site.style.iconstyle.scale = site_iscale
+        site.style.iconstyle.color = site_icolor
+        site.description = description
 
 
 kml_outfile = kml_dir + kml_file
 
 # Save raw kml file:
 
-kml.save(kml_outfile + ".kml")
+if kml:
+    kml.save(kml_outfile + ".kml")
 
 # Compressed kmz file:
-
-kml.savekmz(kml_outfile + ".kmz")
+if kmz:
+    kml.savekmz(kml_outfile + ".kmz")
 
 print("kml/z written to " + kml_file)

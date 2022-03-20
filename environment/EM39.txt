@@ -46,7 +46,7 @@ backcall                  0.2.0              pyhd3eb1b0_0
 binaryornot               0.4.4              pyhd3eb1b0_1  
 binutils                  2.36.1               hdd6e379_2    conda-forge
 binutils_impl_linux-64    2.36.1               h193b22a_2    conda-forge
-binutils_linux-64         2.36                 hf3e587d_7    conda-forge
+binutils_linux-64         2.36                 hf3e587d_8    conda-forge
 black                     19.10b0                    py_0  
 blake3                    0.2.1            py39h860a657_0    conda-forge
 blas                      1.0                         mkl  
@@ -155,12 +155,12 @@ frozendict                2.3.0            py39h3811e60_1    conda-forge
 frozenlist                1.2.0            py39h7f8727e_0  
 fsspec                    2022.2.0           pyhd3eb1b0_0  
 future                    0.18.2           py39h06a4308_1  
-g-ir-build-tools          1.70.0           py39haf67bb6_1    conda-forge
-g-ir-host-tools           1.70.0               h601b988_1    conda-forge
+g-ir-build-tools          1.72.0           py39h3707be2_0    conda-forge
+g-ir-host-tools           1.72.0               h1def2ed_0    conda-forge
 gast                      0.4.0              pyhd3eb1b0_0  
-gcc                       10.3.0               he2824d0_7    conda-forge
+gcc                       10.3.0               he2824d0_8    conda-forge
 gcc_impl_linux-64         10.3.0              hf2f2afa_14    conda-forge
-gcc_linux-64              10.3.0               hc39de41_7    conda-forge
+gcc_linux-64              10.3.0               hc39de41_8    conda-forge
 gdal                      3.4.1            py39h2c27f0e_0  
 gdk-pixbuf                2.42.6               h8cc273a_5  
 geoana                    0.1.2            py39h1a9c180_0    conda-forge
@@ -171,7 +171,7 @@ geotiff                   1.7.0                h6593c0a_6    conda-forge
 gettext                   0.21.0               hf68c758_0  
 gflags                    2.2.2                he6710b0_0  
 gfortran_impl_linux-64    10.3.0              h73f4979_14    conda-forge
-gfortran_linux-64         10.3.0               hb09a455_7    conda-forge
+gfortran_linux-64         10.3.0               hb09a455_8    conda-forge
 ghostscript               9.54.0               h27087fc_2    conda-forge
 giflib                    5.2.1                h7b6447c_0  
 git                       2.34.1          pl5262hc120c5b_0  
@@ -186,7 +186,7 @@ gmpy2                     2.1.2            py39heeb90bb_0
 gmt                       6.3.0                h793420d_4    conda-forge
 gnuplot                   5.4.3                hedd7fda_0    conda-forge
 gnutls                    3.6.15               he1e5248_0  
-gobject-introspection     1.70.0           py39ha6f447c_1    conda-forge
+gobject-introspection     1.72.0           py39habf54e5_0    conda-forge
 google-auth               2.6.0              pyhd3eb1b0_0  
 google-auth-oauthlib      0.4.1                      py_2  
 google-pasta              0.2.0              pyhd3eb1b0_0  
@@ -202,9 +202,9 @@ gsl                       2.7                  he838d99_0    conda-forge
 gst-plugins-base          1.18.5               hf529b03_3    conda-forge
 gstreamer                 1.18.5               ha1a6a79_0  
 gtk2                      2.24.33              h539f30e_1    conda-forge
-gxx                       10.3.0               he2824d0_7    conda-forge
+gxx                       10.3.0               he2824d0_8    conda-forge
 gxx_impl_linux-64         10.3.0              hf2f2afa_14    conda-forge
-gxx_linux-64              10.3.0               h2593f52_7    conda-forge
+gxx_linux-64              10.3.0               h2593f52_8    conda-forge
 h5py                      3.6.0           nompi_py39h7e08c79_100    conda-forge
 harfbuzz                  3.4.0                hb4a5f5f_0    conda-forge
 hdf4                      4.2.15               h10796ff_3    conda-forge
@@ -241,13 +241,13 @@ iris                      3.2.1              pyhd8ed1ab_0    conda-forge
 iris-sample-data          2.4.0              pyhd8ed1ab_0    conda-forge
 isodate                   0.6.1                    pypi_0    pypi
 isort                     5.9.3              pyhd3eb1b0_0  
-jax                       0.3.0              pyhd8ed1ab_0    conda-forge
+jax                       0.3.4              pyhd8ed1ab_0    conda-forge
 jaxlib                    0.1.75           py39hde0f152_0    conda-forge
 jbig                      2.1                  hdba287a_0  
 jedi                      0.18.1           py39h06a4308_1  
 jeepney                   0.7.1              pyhd3eb1b0_0  
 jellyfish                 0.9.0            py39h3811e60_0    conda-forge
-jinja2                    3.0.2              pyhd3eb1b0_0  
+jinja2                    3.0.3              pyhd3eb1b0_0  
 jinja2-time               0.2.0              pyhd8ed1ab_3    conda-forge
 joblib                    1.1.0              pyhd3eb1b0_0  
 jpeg                      9e                   h7f98852_0    conda-forge
@@ -260,7 +260,7 @@ jupyter_client            7.1.2              pyhd3eb1b0_0
 jupyter_console           6.4.3              pyhd3eb1b0_0  
 jupyter_core              4.9.2            py39h06a4308_0  
 jupyter_server            1.13.5             pyhd3eb1b0_0  
-jupyterlab                3.2.9              pyhd3eb1b0_0  
+jupyterlab                3.3.2              pyhd3eb1b0_0  
 jupyterlab_pygments       0.1.2                      py_0  
 jupyterlab_server         2.10.3             pyhd3eb1b0_1  
 jupyterlab_widgets        1.0.0              pyhd3eb1b0_1  
@@ -301,7 +301,7 @@ libgd                     2.3.3                h695aa2c_0
 libgdal                   3.4.1                haddd6ec_5    conda-forge
 libgfortran-ng            11.2.0              h69a702a_14    conda-forge
 libgfortran5              11.2.0              h5c6108e_14    conda-forge
-libgirepository           1.70.0               hb520f89_1    conda-forge
+libgirepository           1.72.0               h26ff761_0    conda-forge
 libglib                   2.70.2               h174f98d_4    conda-forge
 libglu                    9.0.0                hf484d3e_1  
 libgomp                   11.2.0              h1d223b6_14    conda-forge
@@ -312,7 +312,7 @@ libidn2                   2.3.2                h7f8727e_0
 libkml                    1.3.0             h238a007_1014    conda-forge
 liblapack                 3.9.0            12_linux64_mkl    conda-forge
 libllvm10                 10.0.1               hbcb73fb_5  
-libllvm11                 11.1.0               h3826bc1_0  
+libllvm11                 11.1.0               h3826bc1_1  
 libllvm13                 13.0.1               hf817b99_2    conda-forge
 libnetcdf                 4.8.1           mpi_mpich_h319fa22_1    conda-forge
 libnghttp2                1.47.0               h727a467_0    conda-forge
@@ -366,7 +366,7 @@ markdown                  3.3.4            py39h06a4308_0
 markdown-it-py            1.1.0              pyhd8ed1ab_0    conda-forge
 markupsafe                2.0.1            py39h27cfd23_0  
 matplotlib                3.4.0                    pypi_0    pypi
-matplotlib-base           3.5.1            py39ha18d171_0  
+matplotlib-base           3.5.1            py39ha18d171_1  
 matplotlib-inline         0.1.2              pyhd3eb1b0_2  
 matplotlib-scalebar       0.8.1              pyhd8ed1ab_0    conda-forge
 mccabe                    0.6.1            py39h06a4308_1  
@@ -407,7 +407,7 @@ nest-asyncio              1.5.1              pyhd3eb1b0_0
 netcdf-fortran            4.5.4           mpi_mpich_h1364a43_0    conda-forge
 netcdf4                   1.5.7            py39ha0f2276_1  
 nettle                    3.7.3                hbbd107a_1  
-networkx                  2.6.3              pyhd3eb1b0_0  
+networkx                  2.7.1              pyhd3eb1b0_0  
 nibabel                   3.2.2                    pypi_0    pypi
 ninja                     1.10.2           py39hd09550d_3  
 nipype                    1.7.0                    pypi_0    pypi
@@ -432,7 +432,7 @@ packaging                 21.3               pyhd3eb1b0_0
 palettable                3.3.0              pyhd3eb1b0_0  
 pandas                    1.4.1            py39h295c915_0  
 pandocfilters             1.5.0              pyhd3eb1b0_0  
-pango                     1.48.10              h54213e6_2    conda-forge
+pango                     1.48.10              h4dcc4a0_3    conda-forge
 paramz                    0.9.5                    pypi_0    pypi
 parquet-cpp               1.5.1                h34088ae_4  
 parso                     0.8.3              pyhd3eb1b0_0  
@@ -658,7 +658,7 @@ typed-ast                 1.4.3            py39h7f8727e_1
 typer                     0.4.0              pyhd3eb1b0_0  
 typing-extensions         3.10.0.2             hd3eb1b0_0  
 typing_extensions         3.10.0.2           pyh06a4308_0  
-tzcode                    2021e                h7f98852_0    conda-forge
+tzcode                    2022a                h166bdaf_0    conda-forge
 tzdata                    2021e                hda174b7_0  
 udunits2                  2.2.28               hc3e0081_0    conda-forge
 ujson                     4.2.0            py39h295c915_0  

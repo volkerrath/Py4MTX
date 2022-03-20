@@ -48,7 +48,8 @@ class Results():
                 1.,
                 100000.],
             zLog=False,
-            colormap="gray_r"):
+            colormap="gray_r"
+            ):
         self._stationDir = path
         self._outputFileName = outputFileName
 
@@ -556,3 +557,33 @@ class Results():
         gc.collect()
         plt.clf()
         # plt.close("all")
+
+        dataout = True
+        #  export data
+        if dataout:
+            name, ext = os.path.splitext(self._outputFileName)
+            result_filename = name+".dat"
+            depth_out = self._depth
+            nz =np.shape(depth_out)
+            data_out=depth_out.reshape(nz[0],1)
+
+            # med_out = self._props[0]["median"].reshape(nz[0],1)
+            # q10_out = self._props[0]["credmin"].reshape(nz[0],1)
+            # q90_out = self._props[0]["credmax"].reshape(nz[0],1)
+            # mean_out = self._props[0]["mean"].reshape(nz[0],1)
+            # mode_out = self._props[0]["mode"].reshape(nz[0],1)
+
+            med_out = np.power(10., self._props[0]["median"]).reshape(nz[0],1)
+            q10_out = np.power(10., self._props[0]["credmin"]).reshape(nz[0],1)
+            q90_out = np.power(10., self._props[0]["credmax"]).reshape(nz[0],1)
+            mean_out = np.power(10., self._props[0]["mean"]).reshape(nz[0],1)
+            mode_out = np.power(10., self._props[0]["mode"]).reshape(nz[0],1)
+
+
+            data_out = np.append(data_out,med_out, axis = 1)
+            data_out = np.append(data_out,q10_out, axis = 1)
+            data_out = np.append(data_out,q90_out, axis = 1)
+            data_out = np.append(data_out,mean_out, axis = 1)
+            data_out = np.append(data_out,mode_out, axis = 1)
+
+            np.savetxt(result_filename,data_out, delimiter="  ")

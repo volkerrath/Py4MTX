@@ -8,7 +8,7 @@
 #     text_representation:
 #       extension: .py
 #       format_name: light
-#       format_version: '1.5'
+#       format_version: "1.5"
 #       jupytext_version: 1.11.3
 #   kernelspec:
 #     display_name: Python 3
@@ -30,7 +30,8 @@ import os
 import sys
 import numpy as np
 from mtpy.core.mt import MT
-
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 
 PY4MT_ROOT = os.environ["PY4MT_ROOT"]
 mypath = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
@@ -38,55 +39,62 @@ for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
 
+import util
 
 # Graphical paramter. Determine the plot formats produced,
 # and the required resolution:
 
-plot_pdf = True
-plot_png = True
-plot_eps = False
-
+PlotFmt = [".pdf", ".png"]
 dpi = 400
+PdfC = True
+if not ".pdf" in PlotFmt:
+    PdfC = False
+    print("No PDF catalog because no pdf output!")
+PdfCName  = "Limerick2022.pdf"
+
 
 # What should be plotted?
 # 1 = yx and xy; 2 = all 4 components
 # 3 = off diagonal + determinant
 
-plot_z = 2
-no_err = True
+plot_z = 3
+no_err = False
+strng="_Z"+str(plot_z)
 # Plot tipper?
-# 'y' or 'n', followed by 'r','i', or 'ri', for real part, imaginary part, or both, respectively.
-
-plot_t = 'yri'  # 'yri'
-
+# "y" or "n", followed by "r","i", or "ri", for real part, imaginary part, or both, respectively.
+plot_t = "n"
+print (plot_t[0])
+if plot_t[0]=="y":
+    strng = strng+"T"+plot_t[1:]
 # Plot phase tensor?
-# 'y' or 'n'
+# "y" or "n"
+plot_p = "y"
+if plot_p=="y":
+    strng = strng+"P"
 
-plot_p = 'y'
 
-
-PerLimits = (0.0001, 1.)  # AMT
+PerLimits = (0.0001, 10000.)  # AMT
 # PerLimits = (0.001,100000.) #BBMT
 # PerLimits = (0.00003,10000.) #AMT+BBMT
-RhoLimits = (0.1, 10000.)
-PhiLimits = (-180., 180.)
+RhoLimits = (1., 100000.)
+PhiLimits = (-10., 100.)
 Tiplimits = (-.5, 0.5)
 # Define the path to your EDI-files:
-# edi_in_dir = r'/home/vrath/RRV_work/edi_work/Edited/'
-edi_in_dir = r'/home/vrath/Desktop/MauTopo/MauEdi/'
-# r'/home/vrath/MauTopo/MauTopo500_edi/'
-# r'/home/vrath/RRV_work/edifiles_in/'
-# edi_in_dir =  r'/home/vrath/RRV_work/edifiles_r1500m_bbmt/'
-print(' Edifiles read from: %s' % edi_in_dir)
+# edi_in_dir = r"/home/vrath/RRV_work/edi_work/Edited/"
+edi_in_dir = r"/home/vrath/Limerick2022/reports/EDI_edited_Z/"
+# r"/home/vrath/MauTopo/MauTopo500_edi/"
+# r"/home/vrath/RRV_work/edifiles_in/"
+# edi_in_dir =  r"/home/vrath/RRV_work/edifiles_r1500m_bbmt/"
+print(" Edifiles read from: %s" % edi_in_dir)
 
 # Define the path for saving  plots:
 
 
-plots_dir = edi_in_dir + 'data_plots/'
-# plots_dir = r'/home/vrath/RRV_work/edifiles_in/'
-print(' Plots written to: %s' % plots_dir)
+plots_dir = r"/home/vrath/Limerick2022/reports/Plots/"
+# plots_dir = r"/home/vrath/RRV_work/edifiles_in/"
+print(" Plots written to: %s" % plots_dir)
 if not os.path.isdir(plots_dir):
-    print(' File: %s does not exist, but will be created' % plots_dir)
+    print(" File: %s does not exist, but will be created" % plots_dir)
     os.mkdir(plots_dir)
 
 # No changes required after this line!
@@ -98,27 +106,36 @@ edi_files = []
 files = os.listdir(edi_in_dir)
 for entry in files:
     # print(entry)
-    if entry.endswith('.edi') and not entry.startswith('.'):
+    if entry.endswith(".edi") and not entry.startswith("."):
         edi_files.append(entry)
+edi_files = sorted(edi_files)
 
-# Enter loop for plotting
-
-
-for filename in edi_files:
-    print('\n \n \n reading data from ' + filename)
-    name, ext = os.path.splitext(filename)
-
+if PdfC:
+    pdf_list= []
+    for filename in edi_files:
+        name, ext = os.path.splitext(filename)
+        pdf_list.append(plots_dir+name+strng+".pdf")
 # Create an MT object
 
+for filename in edi_files:
+    name, ext = os.path.splitext(filename)
     file_i = edi_in_dir + filename
     mt_obj = MT(file_i)
-    print(' site %s at :  % 10.6f % 10.6f' % (name, mt_obj.lat, mt_obj.lon))
+    print(" site %s at :  % 10.6f % 10.6f" % (name, mt_obj.lat, mt_obj.lon))
+    tmp=mt_obj.Z.z
+    ss=np.shape(tmp)
+    tmp=tmp.reshape(ss[0],4)
+    for ii in np.arange(ss[0]):
+        if any(abs(tmp[ii,:])>1.e30) or any(abs(tmp[ii,:])<1.e-30):
+            tmp[ii,:] = np.nan
+    tmp=tmp.reshape(ss)
+    mt_obj.Z.z = tmp
 
     if no_err is True:
         # mt_obj.Z.z_err = 0.0001*np.ones_like(np.real(mt_obj.Z.z))
         # mt_obj.Tipper.tipper_err = 0.0001*np.ones_like(np.real(mt_obj.Tipper.tipper))
-        mt_obj.Z.z_err = 0.0001 * np.real(mt_obj.Z.z)
-        mt_obj.Tipper.tipper_err = 0.0001 * np.real(mt_obj.Tipper.tipper)
+        mt_obj.Z.z_err = 0.001 * np.real(mt_obj.Z.z)
+        mt_obj.Tipper.tipper_err = 0.001 * np.real(mt_obj.Tipper.tipper)
 
     plot_obj = mt_obj.plot_mt_response(plot_num=plot_z,
                                        plot_tipper=plot_t,
@@ -127,29 +144,16 @@ for filename in edi_files:
                                        res_limits=RhoLimits,
                                        phase_limits=PhiLimits,
                                        tipper_limits=Tiplimits,
-                                       no_err=True
+                                       fig_dpi=400,
+                                       xy_ls="",yx_ls="", det_ls="",
+                                       ellipse_colorby="skew",
+                                       ellipse_range = [-10.,10.,2.]
                                        )
 
 # Finally save figure
 
-    if plot_png:
-        plot_obj.save_plot(
-            os.path.join(
-                plots_dir,
-                name + ".png"),
-            file_format='png',
-            fig_dpi=dpi)
-    if plot_pdf:
-        plot_obj.save_plot(
-            os.path.join(
-                plots_dir,
-                name + ".pdf"),
-            file_format='pdf',
-            fig_dpi=dpi)
-    if plot_eps:
-        plot_obj.save_plot(
-            os.path.join(
-                plots_dir,
-                name + ".eps"),
-            file_format='eps',
-            fig_dpi=dpi)
+    for F in PlotFmt:
+         plot_obj.save_plot(plots_dir+name+strng+F)
+
+if PdfC:
+    util.make_pdf_catalog(plots_dir, PdfList=pdf_list, FileName=plots_dir+PdfCName)
