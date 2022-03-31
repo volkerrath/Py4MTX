@@ -44,21 +44,17 @@ strng_1 = "_Z3P"  # "_data"
 plots_2 = True
 strng_2 = "_edited_imp_rjmcmc"
 
-repeats = False
-repeat_string = "r"
+repeat = True
+repeat_string = "R"
 
-bads = False
-bad_string = "bad"
+reproc = True
+reproc_string = "N"
 
 kml = False
 kmz = True
 # Define the path to your EDI-files
 
-# edi_dir = r"/home/vrath/WestTimor/WT8C_edi/"
-# edi_dir = r"/home/vrath/work/MT_Data/Krafla/EDI/"
 edi_dir = r"/home/vrath/Limerick2022/reports/EDI_edited_Z/"
-# "/home/vrath/Py4MT/py4mt/M/MauTopo_fwd/"
-# r"/media/vrath/MT/Ireland/Donegal/Donegal_EDIs_3DGridEdited/"
 print(" Edifiles read from: %s" % edi_dir)
 
 if plots_1 or plots_2:
@@ -88,8 +84,8 @@ kml_file = r"Limerick2022"
 
 icon_dir = r"/home/vrath/GoogleEarth/icons/"
 site_icon =  icon_dir + "placemark_circle.png"
-site_icon_rept =  icon_dir + "placemark_square.png"
-site_icon_bad =  icon_dir + "placemark_square.png"
+site_icon_rept =  icon_dir + "placemark_circle.png"
+site_icon_repr =  icon_dir + "placemark_circle.png"
 
 site_tcolor = simplekml.Color.white  # "#555500" #
 site_tscale = 1.5  # scale the text
@@ -98,11 +94,11 @@ site_iscale = 1.5
 site_icolor = simplekml.Color.blue
 site_rcolor = simplekml.Color.blue
 
-site_icolor_rept = simplekml.Color.green
-site_rcolor_rept = simplekml.Color.green
+site_icolor_rept = simplekml.Color.yellow
+site_rcolor_rept = simplekml.Color.yellow
 
-site_icolor_bad = simplekml.Color.red
-site_rcolor_bad = simplekml.Color.red
+site_icolor_repr = simplekml.Color.red
+site_rcolor_repr = simplekml.Color.red
 # simplekml.Color.rgb(0, 0, 255)
 # "ffff0000"
 
@@ -126,7 +122,7 @@ kml = simplekml.Kml(open=1)
 
 site_iref = kml.addfile(site_icon)
 site_iref_rept = kml.addfile(site_icon_rept)
-site_iref_bad = kml.addfile(site_icon_bad)
+site_iref_repr = kml.addfile(site_icon_repr)
 
 # Loop over edifiles
 
@@ -143,12 +139,42 @@ for filename in edi_files:
     hgt = mt_obj.elev
     full_name = mt_obj.station
     # nam = full_name[3:]
-    nam = full_name
     # print(full_name, nam,plots_dir+full_name+".png")
     # print(full_name)
     description = ("")
 
+    site = kml.newpoint(name=name)
+    site.coords = [(lon, lat, hgt)]
 #  Now add the plots to tag:
+    normal = (not repeat_string in name[-1]) and (not reproc_string in name[-1])
+    if normal:
+        site.style.labelstyle.color = site_tcolor
+        site.style.labelstyle.scale = site_tscale
+        site.style.iconstyle.icon.href = site_iref
+        site.style.iconstyle.scale = site_iscale
+        site.style.iconstyle.color = site_icolor
+        description = name
+
+    if repeat:
+        if name.endswith(repeat_string):
+            site.style.iconstyle.icon.href = site_iref_rept
+            site.style.labelstyle.color = site_rcolor_rept
+            site.style.iconstyle.color = site_icolor_rept
+            site.style.iconstyle.scale = site_iscale
+            site.style.labelstyle.scale = site_tscale
+            site.style.balloonstyle.textcolor = site_rcolor
+            print(name+" is repeated site")
+            description = name + " - repeated site"
+
+    if reproc:
+        if name.endswith(reproc_string):
+            site.style.iconstyle.icon.href = site_iref_repr
+            site.style.labelstyle.color = site_rcolor_repr
+            site.style.iconstyle.color = site_icolor_repr
+            site.style.iconstyle.scale = site_iscale
+            site.style.labelstyle.scale = site_tscale
+            print(name+" is reprocessed site")
+            description = name + " - reprocessed site"
 
     if plots_1:
         nam_1 = name + strng_1
@@ -160,43 +186,15 @@ for filename in edi_files:
         description = description + description_1
 
     if plots_2:
-        nam__2 = name + strng_2
-        print(nam__2)
-        srcfile_2 = kml.addfile(plots_dir + nam__2 + '.png')
+        nam_2 = name + strng_2
+        print(nam_2)
+        srcfile_2 = kml.addfile(plots_dir + nam_2 + '.png')
         description_2 = (
             '<img width="900" align="left" src="' + srcfile_2 + '"/>'
         )
         description = description + description_2
 
-    site = kml.newpoint(name=nam)
-    site.coords = [(lon, lat, hgt)]
-
-    if repeats:
-        if repeat_string in full_name:
-            site.style.iconstyle.icon.href = site_iref_rept
-            site.style.labelstyle.color = site_rcolor_rept
-            site.style.iconstyle.color = site_icolor_rept
-            site.style.balloonstyle.text = "repeated site"
-            site.style.balloonstyle.textcolor = site_rcolor
-        #print(nam, mt_obj.lat, mt_obj.lon, hgt)
-            site.description = description + "  - repeated site"
-
-    elif bads:
-        if bad_string in full_name:
-            site.style.iconstyle.icon.href = site_iref_bad
-            site.style.labelstyle.color = site_rcolor_bad
-            site.style.iconstyle.color = site_icolor_bad
-            site.style.balloonstyle.text = "bad site"
-            site.style.balloonstyle.textcolor = site_rcolor
-        #print(nam, mt_obj.lat, mt_obj.lon, hgt)
-            site.description = description + "  - bad site"
-    else:
-        site.style.labelstyle.color = site_tcolor
-        site.style.labelstyle.scale = site_tscale
-        site.style.iconstyle.icon.href = site_iref
-        site.style.iconstyle.scale = site_iscale
-        site.style.iconstyle.color = site_icolor
-        site.description = description
+    site.description = description
 
 
 kml_outfile = kml_dir + kml_file
