@@ -6,6 +6,12 @@ module sensMatrix
   use DataSpace
   use ModelSpace
 
+  use transmitters
+  use dataTypes
+  use receivers
+
+  use dataio
+
   implicit none
 
   public 	:: create_sensMatrix, deall_sensMatrix
@@ -73,6 +79,35 @@ module sensMatrix
       logical       :: allocated = .false.
 
   end type sensMatrix_t
+
+  type :: data_file_block
+
+      ! this block of information constitutes user preferences about the data format;
+      ! there is one entry per each transmitter type and data type... (iTxt,iDt)
+      ! if there are multiple data blocks of the same transmitter & data types,
+      ! the last value is used.
+      character(200) :: info_in_file
+      character(20)  :: sign_info_in_file
+      integer        :: sign_in_file
+      character(20)  :: units_in_file
+      real           :: origin_in_file(2)
+      real           :: geographic_orientation
+
+     ! these lists contain the indices into the data vector for each data type;
+     ! they make it possible to sort the data by receiver for output.
+     ! no data denoted by zero index; dimensions (nTx) and (nTx,nRx).
+     ! these indices are typically allocated as we read the data file
+     integer, pointer, dimension(:)   :: tx_index
+     integer, pointer, dimension(:)   :: dt_index
+     integer, pointer, dimension(:,:) :: rx_index
+
+     ! some transmitter types and data types don't go together
+     logical         :: defined
+
+  end type data_file_block
+
+  type (data_file_block), pointer, save, private, dimension(:,:) :: fileInfo
+    
 
 
 Contains
@@ -243,20 +278,35 @@ Contains
   !*********************************************************************
   ! output is a quick fix, as always - reduces to nearly the same thing
   ! as before, a vector of model parameters
-  subroutine write_sensMatrixMTX(sens,cfile)
+  subroutine write_sensMatrixMTX(sens,allData,cfile)
 
     type(sensMatrix_t), pointer	:: sens(:)
+    type(dataVectorMTX_t), intent(in)         :: allData
+
     character(*), intent(in)				:: cfile
     ! local
-    integer  iTx,iDt,iRx,nTx,nDt,nSite,nComp,i,j,k,istat,ios,nAll
-    character(80) header
-
+    integer  iTx,iDt,iRx,nTx,nDt,nSite,nComp,icomp,i,j,k,l,istat,ios,nAll,iTxt
+    real(8), allocatable            :: val(:) ! (ncomp)
+    real(8), allocatable            :: err(:) ! (ncomp)
+    ! logical, allocatable            :: exist(:) ! (ncomp)
+    real(8) :: pTx, xRx(3)
+    character(80) header, fmtstring
+    character(40) sRx, cRx
+    character(20) compid
+    logical  :: SensWork
+    character(200) tmp
+    ! real(kind=prec)	:: xRx(3)
+    ! real :: xRx(3)
+    
+    SensWork = .true.
+	iTxt = 1   
     if(.not. associated(sens)) then
         call errStop('sensitivity matrix not allocated in write_sensMatrixMTX')
     end if
 
     open(unit=ioSens, file=cfile, form='unformatted', iostat=ios)
 	write(0,*) 'Output sensitivity matrix...'
+
 
     write(header,*) 'Sensitivity Matrix'
 	nAll = count_sensMatrixMTX(sens)
@@ -267,27 +317,94 @@ Contains
     write(ioSens) nTx
 
     do i = 1,nTx
-
       nDt = sens(i)%nDt
       iTx = sens(i)%tx
+      pTx= txDict(iTx)%period
+
       write(ioSens) nDt
       
       do j = 1,nDt
-
+      
         nComp = sens(i)%v(j)%nComp
         nSite = sens(i)%v(j)%nSite
         iDt   = sens(i)%v(j)%dataType
+        
+        
+!       SI_factor = ImpUnits(typeDict(iDt)%units,fileInfo(iTxt,iDt)%units_in_file)
+        
+        allocate(val(nComp),err(nComp),STAT=istat)
+        ! write(*,*)
         write(ioSens) nSite
-	
-        do k = 1,nSite
-        	! append to the file: writes nComp, header and the values;
-        	! could also write the full transmitter, receiver and data type...
-        	iRx = sens(i)%v(j)%rx(k)
-        	write(header,'(a19,i4,a11,i4,a5,i4)') &
-        		'Sensitivity for tx=',iTx,'; dataType=',iDt,'; rx=',iRx
-        	call writeVec_modelParam(nComp,sens(i)%v(j)%dm(:,k),header,cfile)
-        end do ! rx
 
+        do k = 1,nSite
+            iRx = sens(i)%v(j)%rx(k)
+            sRx = rxDict(iRx)%id
+            xRx = rxDict(iRx)%x
+ 
+            if (SensWork) then
+                !write(*,*) 'Data Type: ', iDt, nComp, 
+                select case (iDt)
+
+                    !    Full_Impedance              = 1
+                    !    Off_Diagonal_Impedance      = 2
+                    !    Full_Vertical_Components    = 3
+                    !    Full_Interstation_TF        = 4
+                    !    Off_Diagonal_Rho_Phase      = 5
+                    !    Phase_Tensor                = 6
+
+
+                    case(1, 2, 3)
+                        
+                        fmtstring = '(g12.5,a20,3f16.3,a8,3g16.6)'
+                        val = allData%d(i)%data(j)%value(:,k)
+                        err = allData%d(i)%data(j)%error(:,k)
+
+                            
+                        do icomp = 1,nComp/2
+                            compid = typeDict(iDt)%id(icomp)
+                            write(13,fmt=fmtstring) &
+                                pTx,trim(sRx),xRx,trim(compid),&
+                                val(2*icomp-1), val(2*icomp), err(2*icomp)
+                        end do
+                        
+                        write(header,'(a,i10,a,i10,a,i10)') &
+                            'Sensitivity for freq=',iTx,'; dataType=',iDt,'; site=',iRx
+
+                        call writeVec_modelParam(nComp,sens(i)%v(j)%dm(:,k),header,cfile)                       
+
+
+                    case(5, 6)
+                            
+                        fmtstring = '(g12.5,a20,3f16.3,a8,2g16.6)'
+                        val = allData%d(i)%data(j)%value(:,k)
+                        err = allData%d(i)%data(j)%error(:,k)
+
+                        do icomp = 1,nComp
+                            compid = typeDict(iDt)%id(icomp)
+                            write(13,fmt=fmtstring) &
+                            pTx,trim(sRx),xRx,trim(compid),val(icomp),err(icomp)
+                        end do
+                        
+                        write(header,'(a,i10,a,i10,a,i10)') &
+                            'Sensitivity for freq=',iTx,'; dataType=',iDt,'; site=',iRx
+                                
+                        call writeVec_modelParam(nComp,sens(i)%v(j)%dm(:,k),header,cfile)
+                    
+                    end select
+
+
+	        else
+	           	write(header,'(a,i10,a,i10,a,i10)') &
+					'Sensitivity for freq=',iTx,'; dataType=',iDt,'; site=',iRx
+	                write(13,*) header
+	        	call writeVec_modelParam(nComp,sens(i)%v(j)%dm(:,k),header,cfile)
+
+        	end if
+
+        end do ! rx
+        
+        deallocate(val,err,STAT=istat)
+        
       end do  ! data type
 
     end do  ! tx

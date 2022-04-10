@@ -1,67 +1,26 @@
-# Makefile suited for building the Mod3DMT program
-# Generated using: ./fmkmf.pl [OPTIONS] Mod3DMT.f90 > Makefile
-# with command line options
-# -p .:INV:LAPACK:SENS:UTILS:FIELDS/FiniteDiff3D:3D_MT:3D_MT/DICT:3D_MT/modelParam:3D_MT/FWD:3D_MT/FWD/Mod2d:3D_MT/ioMod
-# -f90 gfortran (compiler)
-# -opt -O3 -ffree-line-length-none (compiler optimisation)
-# -lp /usr/lib64 (linking options: path to libraries)
-# -l -llapack -lblas (linking options)
-# -o ./objs/3D_MT/GFortRelease (output directory for object files)
-
-#  Uncomment these lines to make program for Solaris OS (legacy)
-# F90 = f90
-# FFLAGS = -dalign -g -C -w  -L/usr/local/lib
-# LIBS = -xlic_lib=sunperf
-#  Uncomment these lines to make program with g95
-# include Makefile.local
-# OBJDIR = ./objs/3D_MT/G95Debug
-# F90 = g95
-# FFLAGS = -O2
-# FFLAGS = -g -ftrace=frame -fbounds-check
-# MPIFLAGS = -cpp # for serial code
-# MODULE = -fmod=$(OBJDIR)
-# LIBS = -lblas -llapack
-#  Uncomment these lines to make program with Intel compiler
-# include Makefile.local
-# OBJDIR = ./objs/3D_MT/IFortDebug
-# F90 = ifort
-# FFLAGS = -O3 -parallel -openmp #-heap-arrays
-# FFLAGS = -debug all -check bounds -traceback -heap-arrays
-# MPIFLAGS = -cpp # for serial code
-# MODULE = -module $(OBJDIR)
-# LIBS = -lblas -llapack
-#  Uncomment these lines to make program with PGI compiler
-# include Makefile.local
-# OBJDIR = ./objs/3D_MT/PGIDebug
-# F90 = pgf95  # mpif90
-# FFLAGS = -O3
-# FFLAGS = -g -Mprof=lines -Mbounds
-# MPIFLAGS = -Mpreprocess # for serial code
-# MPIFLAGS = -Bstatic  -Mipa=fast  -Mextend  -Kieee -Mpreprocess -DMPI
-# MODULE = -module $(OBJDIR)
-# LIBS = -llapack -lblas
-# LIBS = -L/usr/lib64 -llapack -lblas -lpgftnrtl -Mprof=lines
 
 # ------------------Macro-Defs---------------------
 include Makefile.local
-OBJDIR = ./objs/3D_MT/GFortRelease
-F90 = gfortran 
-FFLAGS = -O3 -g -ffree-line-length-none
-MPIFLAGS = -x f95-cpp-input
+OBJDIR = ./objs/3D_MT/GFortReleaseMPI
+F90 = mpifort
+FFLAGS = -O3 -g -fbounds-check -ffree-line-length-none -std=legacy
+# FFLAGS = -fbounds-check -g -O -ffree-line-length-none -std=legacy
+MPIFLAGS = -x f95-cpp-input -DMPI
 MODULE = --sysroot=$(OBJDIR)
-LIBS_PATH = -L/usr/lib64
-LIBS = -llapack -lblas
-OUTDIR = $(HOME)/bin/
+LIBS_PATH  = -L/home/sbyrd/guix/lib/
+LIBS = -lopenblas
+OUTDIR=/home/sbyrd/bin/
+EXEFILE=gMod3DMTS.x
 
 # -------------------End-macro-Defs---------------------------
-OBJ = $(OBJDIR)/math_constants.o $(OBJDIR)/utilities.o $(OBJDIR)/file_units.o $(OBJDIR)/DataSpace.o $(OBJDIR)/GridDef.o $(OBJDIR)/sg_vector.o $(OBJDIR)/sg_scalar.o $(OBJDIR)/sg_spherical.o $(OBJDIR)/elements.o $(OBJDIR)/GridCalc.o $(OBJDIR)/sg_sparse_vector.o $(OBJDIR)/ModelSpace.o $(OBJDIR)/SensMatrix.o $(OBJDIR)/EMfieldInterp.o $(OBJDIR)/sg_boundary.o $(OBJDIR)/transmitters.o $(OBJDIR)/SolnSpace.o $(OBJDIR)/receivers.o $(OBJDIR)/dataTypes.o $(OBJDIR)/DataFunc.o $(OBJDIR)/DataSens.o $(OBJDIR)/SolverSens.o $(OBJDIR)/sg_diff_oper.o $(OBJDIR)/WSfwd2Dpar.o $(OBJDIR)/WSutils.o $(OBJDIR)/WSfwd1Dmod.o $(OBJDIR)/WSfwd2Dmod.o $(OBJDIR)/FwdTEmod.o $(OBJDIR)/boundary_ws.o $(OBJDIR)/nestedEM.o $(OBJDIR)/modelOperator3D.o $(OBJDIR)/solver.o $(OBJDIR)/EMsolve3D.o $(OBJDIR)/ForwardSolver.o $(OBJDIR)/SensComp.o $(OBJDIR)/SymmetryTest.o $(OBJDIR)/UserCtrl.o $(OBJDIR)/ioAscii.o $(OBJDIR)/DataIO.o $(OBJDIR)/Main.o $(OBJDIR)/NLCG.o $(OBJDIR)/DCG.o $(OBJDIR)/Mod3DMT.o 
+OBJ = $(OBJDIR)/math_constants.o $(OBJDIR)/utilities.o $(OBJDIR)/file_units.o $(OBJDIR)/transmitters.o $(OBJDIR)/receivers.o $(OBJDIR)/dataTypes.o $(OBJDIR)/ioAscii.o $(OBJDIR)/DataIO.o $(OBJDIR)/DataSpace.o $(OBJDIR)/GridDef.o $(OBJDIR)/sg_vector.o $(OBJDIR)/sg_scalar.o $(OBJDIR)/sg_spherical.o $(OBJDIR)/elements.o $(OBJDIR)/GridCalc.o $(OBJDIR)/sg_sparse_vector.o $(OBJDIR)/MPI_declaration.o $(OBJDIR)/ModelSpace.o $(OBJDIR)/SensMatrix.o $(OBJDIR)/EMfieldInterp.o $(OBJDIR)/sg_boundary.o  $(OBJDIR)/SolnSpace.o $(OBJDIR)/DataFunc.o $(OBJDIR)/DataSens.o $(OBJDIR)/SolverSens.o $(OBJDIR)/sg_diff_oper.o $(OBJDIR)/WSfwd2Dpar.o $(OBJDIR)/WSutils.o $(OBJDIR)/WSfwd1Dmod.o $(OBJDIR)/WSfwd2Dmod.o $(OBJDIR)/FwdTEmod.o $(OBJDIR)/boundary_ws.o $(OBJDIR)/nestedEM.o $(OBJDIR)/modelOperator3D.o $(OBJDIR)/solver.o $(OBJDIR)/EMsolve3D.o $(OBJDIR)/ForwardSolver.o $(OBJDIR)/SensComp.o $(OBJDIR)/SymmetryTest.o $(OBJDIR)/UserCtrl.o $(OBJDIR)/Main.o $(OBJDIR)/MPI_sub.o $(OBJDIR)/MPI_main.o $(OBJDIR)/NLCG.o $(OBJDIR)/DCG.o $(OBJDIR)/Mod3DMT.o 
 
 
 all: Mod3DMT 
 
 # Here is the link step 
 Mod3DMT: $(OBJDIR) $(OBJ) 
-	 $(F90) -o $(OUTDIR)/gMod3DMT_serial $(OBJ) $(LIBS_PATH) $(LIBS)
+	 $(F90) -o $(OUTDIR)/$(EXEFILE) $(OBJ) $(LIBS_PATH) $(LIBS)
 
 # Here are the compile steps 
 
@@ -83,6 +42,10 @@ $(OBJDIR)/DataSpace.o:SENS/DataSpace.f90 $(OBJDIR)/utilities.o $(OBJDIR)/math_co
 $(OBJDIR)/GridDef.o:3D_MT/GridDef.f90 $(OBJDIR)/math_constants.o 
 	 $(F90) -c $(MODULE) $(FFLAGS) $(MPIFLAGS) 3D_MT/GridDef.f90 -o $(OBJDIR)/GridDef.o
 
+$(OBJDIR)/transmitters.o:3D_MT/DICT/transmitters.f90 $(OBJDIR)/math_constants.o 
+	 $(F90) -c $(MODULE) $(FFLAGS) $(MPIFLAGS) 3D_MT/DICT/transmitters.f90 -o $(OBJDIR)/transmitters.o
+
+
 $(OBJDIR)/sg_vector.o:FIELDS/FiniteDiff3D/sg_vector.f90 $(OBJDIR)/math_constants.o $(OBJDIR)/utilities.o $(OBJDIR)/GridDef.o 
 	 $(F90) -c $(MODULE) $(FFLAGS) $(MPIFLAGS) FIELDS/FiniteDiff3D/sg_vector.f90 -o $(OBJDIR)/sg_vector.o
 
@@ -101,7 +64,10 @@ $(OBJDIR)/GridCalc.o:3D_MT/GridCalc.f90 $(OBJDIR)/sg_vector.o $(OBJDIR)/sg_scala
 $(OBJDIR)/sg_sparse_vector.o:FIELDS/FiniteDiff3D/sg_sparse_vector.f90 $(OBJDIR)/math_constants.o $(OBJDIR)/GridDef.o $(OBJDIR)/sg_vector.o 
 	 $(F90) -c $(MODULE) $(FFLAGS) $(MPIFLAGS) FIELDS/FiniteDiff3D/sg_sparse_vector.f90 -o $(OBJDIR)/sg_sparse_vector.o
 
-$(OBJDIR)/ModelSpace.o:3D_MT/modelParam/ModelSpace.f90 $(OBJDIR)/GridCalc.o $(OBJDIR)/file_units.o $(OBJDIR)/math_constants.o $(OBJDIR)/utilities.o $(OBJDIR)/sg_scalar.o $(OBJDIR)/sg_vector.o $(OBJDIR)/sg_sparse_vector.o 3D_MT/modelParam/modelCov/RecursiveAR.hd 3D_MT/modelParam/ModelMap.inc 3D_MT/modelParam/modelCov/RecursiveAR.inc 3D_MT/modelParam/modelParamIO/Binary.inc 3D_MT/modelParam/modelParamIO/Mackie.inc 3D_MT/modelParam/modelParamIO/WS.inc
+$(OBJDIR)/MPI_declaration.o:MPI/MPI_declaration.f90  
+	 $(F90) -c $(MODULE) $(FFLAGS) $(MPIFLAGS) MPI/MPI_declaration.f90 -o $(OBJDIR)/MPI_declaration.o
+
+$(OBJDIR)/ModelSpace.o:3D_MT/modelParam/ModelSpace.f90 $(OBJDIR)/GridCalc.o $(OBJDIR)/file_units.o $(OBJDIR)/math_constants.o $(OBJDIR)/utilities.o $(OBJDIR)/sg_scalar.o $(OBJDIR)/sg_vector.o $(OBJDIR)/sg_sparse_vector.o $(OBJDIR)/MPI_declaration.o 3D_MT/modelParam/modelCov/RecursiveAR.hd 3D_MT/modelParam/ModelMap.inc 3D_MT/modelParam/modelCov/RecursiveAR.inc 3D_MT/modelParam/modelParamIO/Binary.inc 3D_MT/modelParam/modelParamIO/Mackie.inc 3D_MT/modelParam/modelParamIO/WS.inc 3D_MT/modelParam/ModelParam_MPI.inc
 	 $(F90) -c $(MODULE) $(FFLAGS) $(MPIFLAGS) 3D_MT/modelParam/ModelSpace.f90 -o $(OBJDIR)/ModelSpace.o
 
 $(OBJDIR)/SensMatrix.o:SENS/SensMatrix.f90 $(OBJDIR)/math_constants.o $(OBJDIR)/file_units.o $(OBJDIR)/utilities.o $(OBJDIR)/DataSpace.o $(OBJDIR)/ModelSpace.o 
@@ -112,9 +78,6 @@ $(OBJDIR)/EMfieldInterp.o:3D_MT/EMfieldInterp.f90 $(OBJDIR)/utilities.o $(OBJDIR
 
 $(OBJDIR)/sg_boundary.o:FIELDS/FiniteDiff3D/sg_boundary.f90 $(OBJDIR)/math_constants.o $(OBJDIR)/GridDef.o $(OBJDIR)/sg_vector.o $(OBJDIR)/sg_sparse_vector.o 
 	 $(F90) -c $(MODULE) $(FFLAGS) $(MPIFLAGS) FIELDS/FiniteDiff3D/sg_boundary.f90 -o $(OBJDIR)/sg_boundary.o
-
-$(OBJDIR)/transmitters.o:3D_MT/DICT/transmitters.f90 $(OBJDIR)/math_constants.o 
-	 $(F90) -c $(MODULE) $(FFLAGS) $(MPIFLAGS) 3D_MT/DICT/transmitters.f90 -o $(OBJDIR)/transmitters.o
 
 $(OBJDIR)/SolnSpace.o:3D_MT/SolnSpace.f90 $(OBJDIR)/math_constants.o $(OBJDIR)/utilities.o $(OBJDIR)/sg_vector.o $(OBJDIR)/sg_boundary.o $(OBJDIR)/sg_sparse_vector.o $(OBJDIR)/transmitters.o 
 	 $(F90) -c $(MODULE) $(FFLAGS) $(MPIFLAGS) 3D_MT/SolnSpace.f90 -o $(OBJDIR)/SolnSpace.o
@@ -188,24 +151,30 @@ $(OBJDIR)/DataIO.o:3D_MT/DataIO.f90 $(OBJDIR)/math_constants.o $(OBJDIR)/file_un
 $(OBJDIR)/Main.o:3D_MT/Main.f90 $(OBJDIR)/ModelSpace.o $(OBJDIR)/DataSpace.o $(OBJDIR)/DataFunc.o $(OBJDIR)/ForwardSolver.o $(OBJDIR)/SensMatrix.o $(OBJDIR)/UserCtrl.o $(OBJDIR)/ioAscii.o $(OBJDIR)/DataIO.o 
 	 $(F90) -c $(MODULE) $(FFLAGS) $(MPIFLAGS) 3D_MT/Main.f90 -o $(OBJDIR)/Main.o
 
-$(OBJDIR)/NLCG.o:INV/NLCG.f90 $(OBJDIR)/SensComp.o $(OBJDIR)/DataIO.o 
+$(OBJDIR)/MPI_sub.o:3D_MT/MPI_sub.f90 $(OBJDIR)/math_constants.o $(OBJDIR)/utilities.o $(OBJDIR)/SolnSpace.o $(OBJDIR)/UserCtrl.o $(OBJDIR)/ForwardSolver.o $(OBJDIR)/MPI_declaration.o 
+	 $(F90) -c $(MODULE) $(FFLAGS) $(MPIFLAGS) 3D_MT/MPI_sub.f90 -o $(OBJDIR)/MPI_sub.o
+
+$(OBJDIR)/MPI_main.o:MPI/MPI_main.f90 $(OBJDIR)/math_constants.o $(OBJDIR)/file_units.o $(OBJDIR)/utilities.o $(OBJDIR)/DataSens.o $(OBJDIR)/SolverSens.o $(OBJDIR)/ForwardSolver.o $(OBJDIR)/SensComp.o $(OBJDIR)/MPI_declaration.o $(OBJDIR)/MPI_sub.o 
+	 $(F90) -c $(MODULE) $(FFLAGS) $(MPIFLAGS) MPI/MPI_main.f90 -o $(OBJDIR)/MPI_main.o
+
+$(OBJDIR)/NLCG.o:INV/NLCG.f90 $(OBJDIR)/SensComp.o $(OBJDIR)/DataIO.o $(OBJDIR)/MPI_main.o $(OBJDIR)/MPI_sub.o 
 	 $(F90) -c $(MODULE) $(FFLAGS) $(MPIFLAGS) INV/NLCG.f90 -o $(OBJDIR)/NLCG.o
 
-$(OBJDIR)/DCG.o:INV/DCG.f90 $(OBJDIR)/math_constants.o $(OBJDIR)/utilities.o $(OBJDIR)/SensComp.o $(OBJDIR)/Main.o 
+$(OBJDIR)/DCG.o:INV/DCG.f90 $(OBJDIR)/math_constants.o $(OBJDIR)/utilities.o $(OBJDIR)/SensComp.o $(OBJDIR)/Main.o $(OBJDIR)/MPI_main.o $(OBJDIR)/MPI_sub.o 
 	 $(F90) -c $(MODULE) $(FFLAGS) $(MPIFLAGS) INV/DCG.f90 -o $(OBJDIR)/DCG.o
 
-$(OBJDIR)/Mod3DMT.o:Mod3DMT.f90 $(OBJDIR)/SensComp.o $(OBJDIR)/SymmetryTest.o $(OBJDIR)/Main.o $(OBJDIR)/NLCG.o $(OBJDIR)/DCG.o 
+$(OBJDIR)/Mod3DMT.o:Mod3DMT.f90 $(OBJDIR)/SensComp.o $(OBJDIR)/SymmetryTest.o $(OBJDIR)/Main.o $(OBJDIR)/NLCG.o $(OBJDIR)/DCG.o $(OBJDIR)/MPI_main.o 
 	 $(F90) -c $(MODULE) $(FFLAGS) $(MPIFLAGS) Mod3DMT.f90 -o $(OBJDIR)/Mod3DMT.o
 
 # Type " make clean " to get rid of all object and module files 
-clean:
-	rm *.mod
+clean: 
+	rm *.mod	
 	cd $(OBJDIR); \
 	rm -f *~ *.o *.obj *.mod *.d *.s00 *.dbg *.stackdump \
 	`find . -mindepth 1 -name "*~"` 
 
 cleanall: clean 
-	rm -f $(OUTDIR)/Mod3DMT 
+	rm -f $(OUTDIR)/Mod3DMT_gnu.x
 
 src: clean 
 	tar cvfz $(ARCHIVE).tgz * 

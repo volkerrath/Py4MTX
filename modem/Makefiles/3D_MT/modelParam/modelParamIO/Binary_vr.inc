@@ -144,7 +144,7 @@
       type(grid_t), target, intent(inout)      :: grid
       integer, intent(in)              :: nSigma
       character(*), intent(in)          :: cfile
-      character(80), intent(out)        :: header
+      character(128), intent(out)        :: header
       type(modelParam_t), intent(inout)   :: m(nSigma)
       integer                :: ios
 
