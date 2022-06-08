@@ -4,58 +4,59 @@ channels:
   - conda-forge
 dependencies:
   - _libgcc_mutex=0.1=conda_forge
-  - _openmp_mutex=4.5=1_gnu
-  - beautifulsoup4=4.10.0=pyh06a4308_0
+  - _openmp_mutex=4.5=2_gnu
+  - beautifulsoup4=4.11.1=py39h06a4308_0
   - brotlipy=0.7.0=py39h27cfd23_1003
   - bzip2=1.0.8=h7b6447c_0
   - c-ares=1.18.1=h7f8727e_0
-  - ca-certificates=2022.3.29=h06a4308_0
-  - certifi=2021.10.8=py39h06a4308_2
+  - ca-certificates=2022.4.26=h06a4308_0
+  - certifi=2022.5.18.1=py39h06a4308_0
   - cffi=1.15.0=py39hd667e15_1
   - chardet=4.0.0=py39h06a4308_1003
   - charset-normalizer=2.0.4=pyhd3eb1b0_0
   - colorama=0.4.4=pyhd3eb1b0_0
   - conda=4.12.0=py39h06a4308_0
-  - conda-build=3.21.8=py39h06a4308_2
+  - conda-build=3.21.9=py39h06a4308_0
   - conda-package-handling=1.8.1=py39h7f8727e_0
-  - cryptography=36.0.0=py39h9ce1e76_0
-  - curl=7.82.0=h7bff187_0
+  - cryptography=37.0.1=py39h9ce1e76_0
+  - curl=7.83.1=h7bff187_0
   - expat=2.4.4=h295c915_2
   - filelock=3.6.0=pyhd3eb1b0_0
   - gettext=0.21.0=hf68c758_0
   - git=2.34.1=pl5262hc120c5b_0
   - git-filter-repo=2.34.0=pyhd8ed1ab_0
   - glob2=0.7=pyhd3eb1b0_0
-  - icu=68.1=h2531618_0
+  - icu=58.2=he6710b0_3
   - idna=3.3=pyhd3eb1b0_0
   - jinja2=2.11.3=pyhd3eb1b0_0
-  - krb5=1.19.2=hac12032_0
-  - ld_impl_linux-64=2.36.1=hea4e1c9_2
-  - libarchive=3.5.2=hccf745f_1
-  - libcurl=7.82.0=h7bff187_0
+  - keyutils=1.6.1=h166bdaf_0
+  - krb5=1.19.3=h3790be6_0
+  - ld_impl_linux-64=2.38=h1181459_1
+  - libarchive=3.5.2=hb890918_2
+  - libcurl=7.83.1=h7bff187_0
   - libedit=3.1.20210910=h7f8727e_0
   - libev=4.33=h7f8727e_1
   - libffi=3.4.2=h295c915_2
-  - libgcc-ng=11.2.0=h1d223b6_15
-  - libgomp=11.2.0=h1d223b6_15
-  - libiconv=1.16=h516909a_0
+  - libgcc-ng=12.1.0=h8d9b700_16
+  - libgomp=12.1.0=h8d9b700_16
+  - libiconv=1.16=h7f8727e_2
   - liblief=0.11.5=h295c915_1
   - libmamba=0.22.1=hd8a31e3_1
   - libmambapy=0.22.1=py39hd55135b_1
   - libnghttp2=1.47.0=h727a467_0
   - libnsl=2.0.0=h7f98852_0
-  - libsolv=0.7.20=h4ff587b_0
-  - libssh2=1.10.0=ha56f1ee_2
-  - libstdcxx-ng=11.2.0=he4da1e4_15
+  - libsolv=0.7.22=h6239696_0
+  - libssh2=1.10.0=h8f2d780_0
+  - libstdcxx-ng=12.1.0=ha89aaad_16
   - libuuid=2.32.1=h7f98852_1000
-  - libxml2=2.9.12=h72842e0_0
-  - libzlib=1.2.11=h36c2ea0_1013
+  - libxml2=2.9.14=h74e7548_0
+  - libzlib=1.2.12=h166bdaf_0
   - lz4-c=1.9.3=h295c915_1
   - lzo=2.10=h7b6447c_2
   - mamba=0.22.1=py39hfa8f2c8_1
   - markupsafe=2.0.1=py39h27cfd23_0
   - ncurses=6.3=h7f8727e_2
-  - openssl=1.1.1n=h7f8727e_0
+  - openssl=1.1.1o=h7f8727e_0
   - patchelf=0.13=h295c915_0
   - pcre2=10.37=he7ceb23_1
   - perl=5.26.2=h14c3975_0
@@ -68,7 +69,7 @@ dependencies:
   - pycparser=2.21=pyhd3eb1b0_0
   - pyopenssl=22.0.0=pyhd3eb1b0_0
   - pysocks=1.7.1=py39h06a4308_0
-  - python=3.9.12=h9a8a25e_1_cpython
+  - python=3.9.13=h9a8a25e_0_cpython
   - python-libarchive-c=2.9=pyhd3eb1b0_1
   - python_abi=3.9=2_cp39
   - pytz=2021.3=pyhd3eb1b0_0
@@ -79,18 +80,18 @@ dependencies:
   - requests=2.27.1=pyhd3eb1b0_0
   - ripgrep=12.1.1=0
   - ruamel_yaml=0.15.100=py39h27cfd23_0
-  - setuptools=58.0.4=py39h06a4308_0
+  - setuptools=61.2.0=py39h06a4308_0
   - six=1.16.0=pyhd3eb1b0_1
   - soupsieve=2.3.1=pyhd3eb1b0_0
-  - sqlite=3.38.2=hc218d9a_0
+  - sqlite=3.38.5=h4ff8645_0
   - tk=8.6.12=h27826a3_0
-  - tqdm=4.63.0=pyhd3eb1b0_0
+  - tqdm=4.64.0=py39h06a4308_0
   - tzdata=2022a=hda174b7_0
-  - urllib3=1.26.8=pyhd3eb1b0_0
+  - urllib3=1.26.9=py39h06a4308_0
   - wheel=0.37.1=pyhd3eb1b0_0
-  - xz=5.2.5=h7b6447c_0
+  - xz=5.2.5=h7f8727e_1
   - yaml=0.2.5=h7b6447c_0
   - yaml-cpp=0.6.3=he1b5a44_4
-  - zlib=1.2.11=h36c2ea0_1013
-  - zstd=1.5.0=ha4553b6_1
+  - zlib=1.2.12=h166bdaf_0
+  - zstd=1.5.2=h8a70e8d_1
 prefix: /home/vrath/.Miniconda

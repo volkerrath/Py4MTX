@@ -32,7 +32,7 @@ import numpy as np
 
 
 # Define the path to your EDI-files and for the list produced
-edi_dir = r"/home/vrath/Limerick2022/reports/EDI_edited_Z/"
+edi_dir = r"/home/vrath/Limerick2022/3D/edi_all/"
 print(" Edifiles read from: %s" % edi_dir)
 
 OutFmt = ".png"
@@ -60,21 +60,21 @@ for pf in plot_freq:
             plot_freq = pf , # frequency to plot
             fig_size = (4,3), # x, y dimensions of figure
             xpad = 0.02, ypad = 0.02, # pad around stations
-            plot_tipper = "n", # "y" + "r" and/or "i" to plot real and/or imaginary
+            plot_tipper = "yr", # "y" + "r" and/or "i" to plot real and/or imaginary
             edgecolor="k", # a matplotlib colour or None for no borders
             lw=0.5, # linewidth for the ellipses
             minorticks_on=True, # whether or not to turn on minor ticks
             ellipse_colorby="skew", # "phimin", "phimax", or "skew"
             ellipse_range = [-12,12,2], # [min,max,step]
-            ellipse_size=0.007, # scaling factor for the ellipses
-            arrow_size=0.00001,
-            arrow_head_width=0.000002, # scaling for arrows (head width)
-            arrow_head_length=0.000002, # scaling for arrows (head length)
+            ellipse_size=0.005, # scaling factor for the ellipses
+            arrow_size=0.025,
+            arrow_head_width=0.001, # scaling for arrows (head width)
+            arrow_head_length=0.001, # scaling for arrows (head length)
             ellipse_cmap="seismic", # matplotlib colormap
-            station_dict={"id":(5,7)} ,
+            # station_dict={"id":(5,7)} ,
             cb_dict = {"position":
             [1.05,0.2,0.02,0.3]}, # colorbar position [x,y,dx,dy]
-            font_size=8  # , background_image="/home/vrath/GSM.tif"
+            font_size=8    , background_image="/home/vrath/GSM.tif"
 
     )
     # save the plot

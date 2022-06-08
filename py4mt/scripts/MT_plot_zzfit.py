@@ -60,10 +60,21 @@ cm = 1./2.54  # centimeters to inches
 # ObsvFile = r"/home/vrath/work/MT/Annecy/ANN26/Ann26_ZoPT"
 
 
-WorkDir = r"/home/vrath/work/MT_Data/Ubaye/Volker_rms_off/"
-PredFile = r"/home/vrath/work/MT_Data/Ubaye/Volker_rms_off/Ub22_ZoffPT_02_NLCG_014"
-ObsvFile = r"/home/vrath/work/MT_Data/Ubaye/Volker_rms_off/Ub22_ZoffPT"
-PlotFile = "Ubaye_ImpedanceOffa"
+# WorkDir = r"/home/vrath/work/MT_Data/Ubaye/Volker_rms_off/"
+# PredFile = r"/home/vrath/work/MT_Data/Ubaye/Volker_rms_off/Ub22_ZoffPT_02_NLCG_014"
+# ObsvFile = r"/home/vrath/work/MT_Data/Ubaye/Volker_rms_off/Ub22_ZoffPT"
+# PlotFile = "Ubaye_ImpedanceOffa"
+
+# WorkDir = r"/home/vrath/work/KraflaView/"
+# PredFile = r"/home/vrath/work/KraflaView/Krafla1_etopo_Z_02_NLCG_047"
+# ObsvFile = r"/home/vrath/work/KraflaView/Krafla1_etopo_Z"
+# PlotFile = "Krafla_02_Impedance"
+
+WorkDir = r"/home/vrath/work/KraflaView/"
+PredFile = r"/home/vrath/work/KraflaView/Krafla1_etopo_Z_04_NLCG_040"
+ObsvFile = r"/home/vrath/work/KraflaView/Krafla1_etopo_Z"
+PlotFile = "Krafla_04_Impedance"
+
 
 PlotDir = WorkDir + 'Plots/'
 
@@ -81,7 +92,7 @@ PlotObsv = True
 if ObsvFile == "":
     PlotObsv = False
 
-PerLimits = (0.0001,100.)
+PerLimits = (0.0001,1000.)
 ZLimitsXX = ()
 ZLimitsXY = ()
 
@@ -89,7 +100,7 @@ ShowErrors = True
 ShowRMS = True
 if not PlotPred:
     ShowRMS = False
-PlotFull = False
+PlotFull = True
 
 EPSG = 0  #5644
 

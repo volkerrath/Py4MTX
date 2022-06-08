@@ -26,6 +26,8 @@ Revision History:
     * minor improvements, less memory
 03/22  VR more options, minor graphical improvements
 
+04/22  VR log z scale does not work
+
 """
 import os
 import sys
@@ -43,6 +45,10 @@ import util
 
 PlotFmt = ".pdf" #".png"
 RhoPlotLim = [0.1, 100000]
+DepthPlotLim = 50000.
+LogDepth = False
+
+
 PdfC = True
 if not ".pdf" in PlotFmt:
     PdfC = False
@@ -50,13 +56,19 @@ if not ".pdf" in PlotFmt:
 OutStrng = "_edited_imp_rjmcmc"
 
 DataOut = True
-DataName= "Limerick2022_results_gps.dat"
-WRef = True
+DataName= "Limerick2022_results.dat"
+WRef = False
+
+# PdfCName  = "Limerick2022_results.pdf"
+# edi_in_dir = r"/home/vrath/Limerick2022/reports/EDI_edited_Z/"
+# results_in_dir =r"/home/vrath/Limerick2022/reports/EDI_edited_Z_results/" #Mar02/out_edited/"
+# plots_dir = r"/home/vrath/Limerick2022/reports/Plots/"  #r"/home/vrath/Limerick2022/work/Mar02/output/"
 
 PdfCName  = "Limerick2022_results.pdf"
-edi_in_dir = r"/home/vrath/Limerick2022/reports/EDI_edited_Z/"
-results_in_dir =r"/home/vrath/Limerick2022/reports/EDI_edited_Z_results/" #Mar02/out_edited/"
-plots_dir = r"/home/vrath/Limerick2022/reports/Plots/"  #r"/home/vrath/Limerick2022/work/Mar02/output/"
+edi_in_dir = r"/home/vrath/Limerick2022/3D/edi_all/"
+results_in_dir =r"/home/vrath/Limerick2022/3D/results_all50km/" #Mar02/out_edited/"
+# plots_dir = r"/home/vrath/Limerick2022/3D/plots_all20km/"  #r"/home/vrath/Limerick2022/work/Mar02/output/"
+plots_dir = r"/home/vrath/Limerick2022/3D/plots_all50km/"  #r"/home/vrath/Limerick2022/work/Mar02/output/"
 
 edi_files = []
 files = os.listdir(edi_in_dir)
@@ -104,8 +116,8 @@ for filename in result_files:
     r = pmc.Results(infile,
                     outfile,
                     plotSizeInches="11x8",
-                    maxDepth=4000,
-                    zLog=False,
+                    maxDepth=DepthPlotLim,
+                    zLog=LogDepth,
                     colormap="rainbow"
                     )
 

@@ -39,26 +39,26 @@ from mtpy.core.mt import MT
 # other sources, with an additional string strn_2 added to the EDI basename.
 
 plots_1 = True
-strng_1 = "_Z3P"  # "_data"
+strng_1 = "_data"
 
 plots_2 = True
 strng_2 = "_edited_imp_rjmcmc"
 
-repeat = True
-repeat_string = "R"
+repeat = False
+repeat_string ="XXXXX"# "R"
 
-reproc = True
-reproc_string = "N"
+reproc = False
+reproc_string ="XXXXX"# "N"
 
 kml = False
 kmz = True
 # Define the path to your EDI-files
 
-edi_dir = r"/home/vrath/Limerick2022/reports/EDI_edited_Z/"
+edi_dir = r"/home/vrath/Krafla_smb/edis/"
 print(" Edifiles read from: %s" % edi_dir)
 
 if plots_1 or plots_2:
-    plots_dir =  r"/home/vrath/Limerick2022/reports/Plots/"
+    plots_dir =   r"/home/vrath/Krafla_smb/plots/"
     # r"/media/vrath/MT/Ireland/Northwest_CarboniferousBasin/MT_DATA/EDI/data_plots/"
     # r"/home/vrath/WestTimor/WT8C_plots/" #edi_dir #"NEW_plots_bbmt_roi_edit/"
     print(" Plots read from: %s" % plots_dir)
@@ -79,8 +79,9 @@ with open(places_file, "r") as f:
 
 # Define the path for saving  kml files
 
-kml_dir = r"/home/vrath/Limerick2022/reports/"
-kml_file = r"Limerick2022"
+
+kml_dir = r"/home/vrath/Krafla_smb/"
+kml_file = r"Krafla"
 
 icon_dir = r"/home/vrath/GoogleEarth/icons/"
 site_icon =  icon_dir + "placemark_circle.png"

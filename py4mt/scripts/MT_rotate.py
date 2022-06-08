@@ -8,7 +8,7 @@
 #     text_representation:
 #       extension: .py
 #       format_name: light
-#       format_version: '1.5'
+#       format_version: "1.5"
 #       jupytext_version: 1.11.3
 #   kernelspec:
 #     display_name: Python 3
@@ -27,6 +27,7 @@ by potentially different angles into NS/EW coordinate system
 # Import required modules
 
 import os
+import sys
 from mtpy.core.mt import MT
 import numpy as np
 
@@ -40,48 +41,60 @@ for pth in mypath:
 
 # Define the path to your EDI-files:
 
-# edi_in_dir = 'edifiles_bbmt_roi_corrected/'
-edi_in_dir = 'test/'
-print(' Edifiles read from: %s' % edi_in_dir)
+# edi_in_dir = "edifiles_bbmt_roi_corrected/"
+edi_in_dir = "/home/vrath/work/Krafla_smb/edis_all_interp/"
+print(" Edifiles read from: %s" % edi_in_dir)
 
 # Define the path anf appended string for saved EDI-files:
 
-# edi_out_dir= 'edifiles_bbmt_roigeo0/'
-edi_out_dir = edi_in_dir
-print(' Edifiles written to: %s' % edi_out_dir)
+# edi_out_dir= "edifiles_bbmt_roigeo0/"
+edi_out_dir = "/home/vrath/work/Krafla_smb/edis_all_interp_geo0_new/"
+print(" Edifiles written to: %s" % edi_out_dir)
 if not os.path.isdir(edi_out_dir):
-    print(' File: %s does not exist, but will be created' % edi_out_dir)
+    print(" File: %s does not exist, but will be created" % edi_out_dir)
     os.mkdir(edi_out_dir)
 
-out_string = '_geo0'
+out_string = ""
+
+searchstrng = "KMT"
+Declination = -15.2     # 2004
+
+# searchstrng = "K-"
+# Declination = -14.4     # 2007
+
+# searchstrng = "NAM"
+# Declination = -13.8     # 2009
 
 # This example brings both angles to the normal (measurement) coordinate
 # system, i. e., afterwards the ZROT and TROT fields in tehe EDI-files are
 # both zero. Here Z_angle and T_angle are the rotation angles from the
-# input EDI-file. _rot=('-1.*Z_angle') and T_rot=('-1.*T_angle'), where
+# input EDI-file. _rot=("-1.*Z_angle") and T_rot=("-1.*T_angle"), where
 # Z_angle has been obtained from the corresponding mt_obj as
 # Z_angle=mt_obj.Z.rotation_angle.
 
-# Z_rot=('-1.*Z_angle')
-# T_rot=('-1.*T_angle')
+# Examples:
+# Z_rot=("-1.*Z_angle")
+# T_rot=("-1.*T_angle")
+
+# Z_rot=("-1.*Z_angle-10.2*np.ones(np.shape(Z_angle))")
+# T_rot=("-1.*T_angle-10.2*np.ones(np.shape(T_angle))")
+
+# Z_rot=("-1.*Z_angle")
+# T_rot=("-1.*T_angle")
 
 
 # Rotate to geographic N:
 
-Z_rot = ('-10.2*np.ones(np.shape(Z_angle))')
-T_rot = ('-10.2*np.ones(np.shape(T_angle))')
-
-# Both:
-
-# Z_rot=('-1.*Z_angle-10.2*np.ones(np.shape(Z_angle))')
-# T_rot=('-1.*T_angle-10.2*np.ones(np.shape(T_angle))')
+Z_rot = ("-Declination*np.ones(np.shape(Z_angle))")
+T_rot = ("-Declination*np.ones(np.shape(T_angle))")
 
 
-# As the actual call is done using the 'eval' function, this script can
+
+# As the actual call is done using the "eval" function, this script can
 # also be used to do rotations of different kind, e.g. when using a rotated
 # coordinate system for modelling. In this case to rotate from the zero system
 # to a sytem rotated 40 degrees clockwise, the string would look like
-# '40.*np.ones(shape(Z_angle))'  or simpler '40.' for Z and T. When correcting
+# "40.*np.ones(shape(Z_angle))"  or simpler "40." for Z and T. When correcting
 # for declination, i.e., from geomagnetic to geographic north, it should be
 # the negative value of the # declination obtained for the time of acquisition
 # and geographic position at
@@ -94,25 +107,26 @@ T_rot = ('-10.2*np.ones(np.shape(T_angle))')
 
 
 edi_files = []
-# input EDI-file. As the actual call is dine using the 'eval' function,
+# input EDI-file. As the actual call is dine using the "eval" function,
 files = os.listdir(edi_in_dir)
 for entry in files:
     # print(entry)
-    if entry.endswith('.edi') and not entry.startswith('.'):
-        edi_files.append(entry)
+    if entry.endswith(".edi") and not entry.startswith("."):
+        if searchstrng in entry:
+            edi_files.append(entry)
 ns = np.size(edi_files)
 
 # Enter loop:
 
 for filename in edi_files:
-    print('\n Reading data from ' + edi_in_dir + filename)
+    print("\n Reading data from " + edi_in_dir + filename)
     name, ext = os.path.splitext(filename)
 
 # Create an MT object
 
     file_in = edi_in_dir + filename
     mt_obj = MT(file_in)
-    print(' site %s at :  % 10.6f % 10.6f' % (name, mt_obj.lat, mt_obj.lon))
+    print(" site %s at :  % 10.6f % 10.6f" % (name, mt_obj.lat, mt_obj.lon))
 
     Z_angle = mt_obj.Z.rotation_angle
     T_angle = mt_obj.Tipper.rotation_angle
@@ -127,13 +141,13 @@ for filename in edi_files:
 # Write a new edi file:
 
     file_out = name + out_string + ext
-    print('Writing data to ' + edi_out_dir + file_out)
+    print("Writing data to " + edi_out_dir + file_out)
     mt_obj.write_mt_file(
         save_dir=edi_out_dir,
         fn_basename=file_out,
-        file_type='edi',
+        file_type="edi",
         new_Z_obj=mt_obj.Z,
         new_Tipper_obj=mt_obj.Tipper,
-        longitude_format='LONG',
-        latlon_format='dd'
+        longitude_format="LONG",
+        latlon_format="dd"
     )
