@@ -8,13 +8,13 @@ brotlipy                  0.7.0           py39h27cfd23_1003
 bzip2                     1.0.8                h7b6447c_0  
 c-ares                    1.18.1               h7f8727e_0  
 ca-certificates           2022.4.26            h06a4308_0  
-certifi                   2022.5.18.1      py39h06a4308_0  
+certifi                   2022.6.15        py39h06a4308_0  
 cffi                      1.15.0           py39hd667e15_1  
 chardet                   4.0.0           py39h06a4308_1003  
 charset-normalizer        2.0.4              pyhd3eb1b0_0  
 colorama                  0.4.4              pyhd3eb1b0_0  
 conda                     4.12.0           py39h06a4308_0  
-conda-build               3.21.9           py39h06a4308_0  
+conda-build               3.21.9           py39hf3d152e_1    conda-forge
 conda-package-handling    1.8.1            py39h7f8727e_0  
 cryptography              37.0.1           py39h9ce1e76_0  
 curl                      7.83.1               h7bff187_0    conda-forge
@@ -26,7 +26,7 @@ git-filter-repo           2.34.0             pyhd8ed1ab_0    conda-forge
 glob2                     0.7                pyhd3eb1b0_0  
 icu                       58.2                 he6710b0_3  
 idna                      3.3                pyhd3eb1b0_0  
-jinja2                    2.11.3             pyhd3eb1b0_0  
+jinja2                    3.0.3              pyhd3eb1b0_0  
 keyutils                  1.6.1                h166bdaf_0    conda-forge
 krb5                      1.19.3               h3790be6_0    conda-forge
 ld_impl_linux-64          2.38                 h1181459_1  
@@ -34,7 +34,7 @@ libarchive                3.5.2                hb890918_2    conda-forge
 libcurl                   7.83.1               h7bff187_0    conda-forge
 libedit                   3.1.20210910         h7f8727e_0  
 libev                     4.33                 h7f8727e_1  
-libffi                    3.4.2                h295c915_2  
+libffi                    3.4.2                h295c915_4  
 libgcc-ng                 12.1.0              h8d9b700_16    conda-forge
 libgomp                   12.1.0              h8d9b700_16    conda-forge
 libiconv                  1.16                 h7f8727e_2  
@@ -48,13 +48,14 @@ libssh2                   1.10.0               h8f2d780_0
 libstdcxx-ng              12.1.0              ha89aaad_16    conda-forge
 libuuid                   2.32.1            h7f98852_1000    conda-forge
 libxml2                   2.9.14               h74e7548_0  
-libzlib                   1.2.12               h166bdaf_0    conda-forge
+libzlib                   1.2.12               h166bdaf_1    conda-forge
 lz4-c                     1.9.3                h295c915_1  
 lzo                       2.10                 h7b6447c_2  
 mamba                     0.22.1           py39hfa8f2c8_1    conda-forge
-markupsafe                2.0.1            py39h27cfd23_0  
+markupsafe                2.1.1            py39h7f8727e_0  
 ncurses                   6.3                  h7f8727e_2  
 openssl                   1.1.1o               h7f8727e_0  
+patch                     2.7.6             h7b6447c_1001  
 patchelf                  0.13                 h295c915_0  
 pcre2                     10.37                he7ceb23_1  
 perl                      5.26.2               h14c3975_0  
@@ -70,7 +71,7 @@ pysocks                   1.7.1            py39h06a4308_0
 python                    3.9.13          h9a8a25e_0_cpython    conda-forge
 python-libarchive-c       2.9                pyhd3eb1b0_1  
 python_abi                3.9                      2_cp39    conda-forge
-pytz                      2021.3             pyhd3eb1b0_0  
+pytz                      2022.1           py39h06a4308_0  
 pyyaml                    6.0              py39h7f8727e_1  
 readline                  8.1.2                h7f8727e_1  
 reproc                    14.2.4               h295c915_1  
@@ -90,5 +91,5 @@ wheel                     0.37.1             pyhd3eb1b0_0
 xz                        5.2.5                h7f8727e_1  
 yaml                      0.2.5                h7b6447c_0  
 yaml-cpp                  0.6.3                he1b5a44_4    conda-forge
-zlib                      1.2.12               h166bdaf_0    conda-forge
+zlib                      1.2.12               h166bdaf_1    conda-forge
 zstd                      1.5.2                h8a70e8d_1    conda-forge
