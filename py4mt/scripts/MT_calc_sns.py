@@ -214,7 +214,7 @@ for f in np.arange(nF):
 maxValZtot = np.nanmax(np.sqrt(snsValZtot))
 print(" Merged Z Maximum value is "+str(maxValZtot))
 # maxValZ = np.nanmax([snsValZ])
-maxValZoff = np.nanmax(np.sqrt(snsValZ))
+maxValZoff = np.nanmax(np.sqrt(snsValZoff))
 print(" Merged Z Maximum value is "+str(maxValZoff))
 
 # maxValT = np.nanmax([snsValT])
@@ -264,8 +264,6 @@ tmpS = snsValP
 S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")
 mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="LINEAR", mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
-
-
 
 
 
