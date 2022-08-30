@@ -137,6 +137,8 @@ print(" Used %7.4f s for reading model from %s " % (elapsed, MFile))
 snsValT = np.zeros(jdims)
 snsValP = np.zeros(jdims)
 snsValZ = np.zeros(jdims)
+snsValZoff = np.zeros(jdims)
+snsValZtot = np.zeros(jdims)
 
 for f in np.arange(nF):
 
@@ -181,10 +183,19 @@ for f in np.arange(nF):
     """
 
     I1 =Info[:,1]
+
+
     tmpJac = Jac[np.where(I1 == 1),:]*jacmask
     tmpValZ = np.nansum(np.power(tmpJac, 2), axis=1)
-    snsValZ = snsValZ + tmpValZ
-    # maxValZ = np.nanmax(np.sqrt(tmpValZ))
+    snsValZtot = snsValZtot + tmpValZ
+    # maxValZ = np.nanmax(np.sqrt(tmpValZoff))
+    # print(" Z Maximum value is "+str(maxValZ))
+
+
+    tmpJac = Jac[np.where(I1 == 2),:]*jacmask
+    tmpValZ = np.nansum(np.power(tmpJac, 2), axis=1)
+    snsValZoff = snsValZoff + tmpValZ
+    # maxValZ = np.nanmax(np.sqrt(tmpValZtot))
     # print(" Z Maximum value is "+str(maxValZ))
 
     tmpJac = Jac[np.where(I1 == 3),:]*jacmask
@@ -200,8 +211,11 @@ for f in np.arange(nF):
     # print(" P Maximum value is "+str(maxValP))
 
 # maxValZ = np.nanmax([snsValZ])
-maxValZ = np.nanmax(np.sqrt(snsValZ))
-print(" Merged Z Maximum value is "+str(maxValZ))
+maxValZtot = np.nanmax(np.sqrt(snsValZtot))
+print(" Merged Z Maximum value is "+str(maxValZtot))
+# maxValZ = np.nanmax([snsValZ])
+maxValZoff = np.nanmax(np.sqrt(snsValZ))
+print(" Merged Z Maximum value is "+str(maxValZoff))
 
 # maxValT = np.nanmax([snsValT])
 maxValT = np.nanmax(np.sqrt(snsValT))
@@ -211,7 +225,7 @@ print(" Merged T Maximum value is "+str(maxValT))
 maxValP = np.nanmax(np.sqrt(snsValP))
 print(" Merged P Maximum value is "+str(maxValP))
 
-snsVal = snsValZ+snsValT+snsValP
+snsVal = snsValZtot+snsValZoff+snsValT+snsValP
 # maxVal = np.nanmax([snsVal])
 maxVal = np.nanmax(np.sqrt(snsVal))
 print(" Merged ZTP Maximum value is "+str(maxVal))
@@ -227,8 +241,14 @@ S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")
 mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="LINEAR", mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
 
-SNSFile = WorkDir+WorkName+"_Z_raw.sns"
-tmpS = snsValZ
+SNSFile = WorkDir+WorkName+"_Ztot_raw.sns"
+tmpS = snsValZtot
+S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")
+mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="LINEAR", mvalair=rhoair, aircells=aircells)
+print(" Sensitivities written to "+SNSFile)
+
+SNSFile = WorkDir+WorkName+"_Zoff_raw.sns"
+tmpS = snsValZoff
 S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")
 mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="LINEAR", mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
@@ -258,8 +278,14 @@ S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")
 mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="LINEAR", mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
 
-SNSFile = WorkDir+WorkName+"_Z_sqrtraw.sns"
-tmpS = np.sqrt(snsValZ)
+SNSFile = WorkDir+WorkName+"_Ztot_sqrtraw.sns"
+tmpS = np.sqrt(snsValZtot)
+S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")
+mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="LINEAR", mvalair=rhoair, aircells=aircells)
+print(" Sensitivities written to "+SNSFile)
+
+SNSFile = WorkDir+WorkName+"_Zoff_sqrtraw.sns"
+tmpS = np.sqrt(snsValZoff)
 S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")
 mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="LINEAR", mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
@@ -285,8 +311,14 @@ S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")/(maxVal*vcell)
 mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="LINEAR", mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
 
-SNSFile = WorkDir+WorkName+"_Z_vol.sns"
-tmpS = np.sqrt(snsValZ)/vcell[:]
+SNSFile = WorkDir+WorkName+"_Ztot_vol.sns"
+tmpS = np.sqrt(snsValZtot)/vcell[:]
+S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")/(maxValZ*vcell)
+mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="LINEAR", mvalair=rhoair, aircells=aircells)
+print(" Sensitivities written to "+SNSFile)
+
+SNSFile = WorkDir+WorkName+"_Zoff_vol.sns"
+tmpS = np.sqrt(snsValZoff)/vcell[:]
 S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")/(maxValZ*vcell)
 mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="LINEAR", mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
@@ -303,6 +335,39 @@ S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")/(maxValP*vcell
 mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="LINEAR", mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
 
+"""
+Max normalized sensitivities
+"""
+SNSFile = WorkDir+WorkName+"_max.sns"
+tmpS = np.sqrt(snsVal)/(maxVal)
+S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")/(maxVal)
+mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="LINEAR", mvalair=rhoair, aircells=aircells)
+print(" Sensitivities written to "+SNSFile)
+
+SNSFile = WorkDir+WorkName+"_Ztot_max.sns"
+tmpS = np.sqrt(snsValZtot)/(maxValZtot)
+S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")/(maxValZ)
+mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="LINEAR", mvalair=rhoair, aircells=aircells)
+print(" Sensitivities written to "+SNSFile)
+
+SNSFile = WorkDir+WorkName+"_Zoff_max.sns"
+tmpS = np.sqrt(snsValZoff)/(maxValZoff)
+S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")/(maxValZ)
+mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="LINEAR", mvalair=rhoair, aircells=aircells)
+print(" Sensitivities written to "+SNSFile)
+
+SNSFile = WorkDir+WorkName+"_T_max.sns"
+tmpS = np.sqrt(snsValT)/(maxValT)
+S = np.reshape(tmpS, dims)
+mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="LINEAR", mvalair=rhoair, aircells=aircells)
+print(" Sensitivities written to "+SNSFile)
+
+SNSFile = WorkDir+WorkName+"_P_max.sns"
+tmpS = np.sqrt(snsValP)/(maxValP)
+S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")/(maxValP)
+mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="LINEAR", mvalair=rhoair, aircells=aircells)
+print(" Sensitivities written to "+SNSFile)
+
 
 """
 Max and vol normalized sensitivities
@@ -313,8 +378,14 @@ S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")/(maxVal*vcell)
 mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="LINEAR", mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
 
-SNSFile = WorkDir+WorkName+"_Z_vol_max.sns"
-tmpS = np.sqrt(snsValZ)/(maxValZ*vcell)
+SNSFile = WorkDir+WorkName+"_Ztot_vol_max.sns"
+tmpS = np.sqrt(snsValZtot)/(maxValZtot*vcell)
+S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")/(maxValZ*vcell)
+mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="LINEAR", mvalair=rhoair, aircells=aircells)
+print(" Sensitivities written to "+SNSFile)
+
+SNSFile = WorkDir+WorkName+"_Zoff_vol_max.sns"
+tmpS = np.sqrt(snsValZoff)/(maxValZoff*vcell)
 S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")/(maxValZ*vcell)
 mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="LINEAR", mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
