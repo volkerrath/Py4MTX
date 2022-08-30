@@ -54,6 +54,10 @@ print("\n\n"+Strng)
 print("Calculate Sensitivity "+"\n"+"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%S")))
 print("\n\n")
 
+
+PY4MT_DATA = os.environ["PY4MT_DATA"]
+
+
 gc.enable()
 
 rng = np.random.default_rng()
@@ -80,8 +84,8 @@ sparse_thresh = 1.e-6
 
 
 # KRAFLA case
-WorkDir = r"/media/vrath/BlackOne/MT_Data/Krafla/"
-MFile   = WorkDir +r"Krafla.rho"
+WorkDir = PY4MT_DATA+"/NewJacobians/"
+MFile   = WorkDir +"Ub22.rho"
 MPad=[13, 13 , 13, 13, 0, 36]
 JFiles = []
 DFiles = []
@@ -91,7 +95,7 @@ for entry in files:
     if entry.endswith(".jac"):
         JFiles.append(entry)
         name, ext = os.path.splitext(entry)
-        DFiles.append(name+".dat")
+        DFiles.append(name+"_jac.dat")
 
 NN = np.size(JFiles)
 if np.size(DFiles) != np.size(JFiles):
@@ -110,7 +114,7 @@ rhoair = 1.e17
 aircells = np.where(rho>rhoair/10)
 
 TSTFile = WorkDir+"Krafla0_MaskTest.rho"
-mod.write_model(TSTFile, dx, dy, dz, rho, reference, trans="LOGE", rhoair=blank, aircells=aircells)
+mod.write_model(TSTFile, dx, dy, dz, rho, reference, trans="LOGE", mvalair=blank, aircells=aircells)
 
 
 jacmask = jac.set_mask(rho=rho, pad=MPad, blank= blank, flat = True, out=True)
@@ -121,7 +125,7 @@ jacmask = j0.reshape(jdims)
 
 rhotest = jacmask.reshape(dims)*rho
 TSTFile = WorkDir+"Krafla1_MaskTest.rho"
-mod.write_model(TSTFile, dx, dy, dz, rhotest, reference, trans="LOGE", rhoair=blank, aircells=aircells)
+mod.write_model(TSTFile, dx, dy, dz, rhotest, reference, trans="LOGE", mvalair=blank, aircells=aircells)
 
 elapsed = time.time() - start
 total = total + elapsed

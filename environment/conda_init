@@ -6,7 +6,6 @@ export AEMPYX_DATA='/home/vrath/work/AEM_Data/Tellus/data/'
 export PY4MT_ROOT='/home/vrath/Py4MT/'
 export PY4MT_DATA='/home/vrath/work/MT/'
 
-
 # >>> conda initialize >>>
 # !! Contents within this block are managed by 'conda init' !!
 # __conda_setup="$('/home/vrath/.Miniconda/bin/conda' 'shell.bash' 'hook' 2> /dev/null)"

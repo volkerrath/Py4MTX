@@ -9,17 +9,17 @@ dependencies:
   - brotlipy=0.7.0=py39h27cfd23_1003
   - bzip2=1.0.8=h7b6447c_0
   - c-ares=1.18.1=h7f8727e_0
-  - ca-certificates=2022.4.26=h06a4308_0
+  - ca-certificates=2022.07.19=h06a4308_0
   - certifi=2022.6.15=py39h06a4308_0
   - cffi=1.15.0=py39hd667e15_1
   - chardet=4.0.0=py39h06a4308_1003
   - charset-normalizer=2.0.4=pyhd3eb1b0_0
-  - colorama=0.4.4=pyhd3eb1b0_0
-  - conda=4.12.0=py39h06a4308_0
+  - colorama=0.4.5=py39h06a4308_0
+  - conda=4.13.0=py39h06a4308_0
   - conda-build=3.21.9=py39hf3d152e_1
   - conda-package-handling=1.8.1=py39h7f8727e_0
   - cryptography=37.0.1=py39h9ce1e76_0
-  - curl=7.83.1=h7bff187_0
+  - curl=7.84.0=h5eee18b_0
   - expat=2.4.4=h295c915_2
   - filelock=3.6.0=pyhd3eb1b0_0
   - gettext=0.21.0=hf68c758_0
@@ -33,7 +33,7 @@ dependencies:
   - krb5=1.19.3=h3790be6_0
   - ld_impl_linux-64=2.38=h1181459_1
   - libarchive=3.5.2=hb890918_2
-  - libcurl=7.83.1=h7bff187_0
+  - libcurl=7.84.0=h91b91d3_0
   - libedit=3.1.20210910=h7f8727e_0
   - libev=4.33=h7f8727e_1
   - libffi=3.4.2=h295c915_4
@@ -41,8 +41,8 @@ dependencies:
   - libgomp=12.1.0=h8d9b700_16
   - libiconv=1.16=h7f8727e_2
   - liblief=0.11.5=h295c915_1
-  - libmamba=0.22.1=hd8a31e3_1
-  - libmambapy=0.22.1=py39hd55135b_1
+  - libmamba=0.25.0=hd8a31e3_1
+  - libmambapy=0.25.0=py39hd55135b_1
   - libnghttp2=1.47.0=h727a467_0
   - libnsl=2.0.0=h7f98852_0
   - libsolv=0.7.22=h6239696_0
@@ -50,20 +50,20 @@ dependencies:
   - libstdcxx-ng=12.1.0=ha89aaad_16
   - libuuid=2.32.1=h7f98852_1000
   - libxml2=2.9.14=h74e7548_0
-  - libzlib=1.2.12=h166bdaf_1
+  - libzlib=1.2.12=h166bdaf_2
   - lz4-c=1.9.3=h295c915_1
   - lzo=2.10=h7b6447c_2
-  - mamba=0.22.1=py39hfa8f2c8_1
+  - mamba=0.25.0=py39hfa8f2c8_1
   - markupsafe=2.1.1=py39h7f8727e_0
-  - ncurses=6.3=h7f8727e_2
-  - openssl=1.1.1o=h7f8727e_0
+  - ncurses=6.3=h5eee18b_3
+  - openssl=1.1.1q=h7f8727e_0
   - patch=2.7.6=h7b6447c_1001
   - patchelf=0.13=h295c915_0
   - pcre2=10.37=he7ceb23_1
   - perl=5.26.2=h14c3975_0
-  - pip=21.2.4=py39h06a4308_0
+  - pip=22.1.2=py39h06a4308_0
   - pkginfo=1.8.2=pyhd3eb1b0_0
-  - psutil=5.8.0=py39h27cfd23_1
+  - psutil=5.9.0=py39h5eee18b_0
   - py-lief=0.11.5=py39h295c915_1
   - pybind11-abi=4=hd8ed1ab_3
   - pycosat=0.6.3=py39h27cfd23_0
@@ -78,7 +78,7 @@ dependencies:
   - readline=8.1.2=h7f8727e_1
   - reproc=14.2.4=h295c915_1
   - reproc-cpp=14.2.4=h295c915_1
-  - requests=2.27.1=pyhd3eb1b0_0
+  - requests=2.28.1=py39h06a4308_0
   - ripgrep=12.1.1=0
   - ruamel_yaml=0.15.100=py39h27cfd23_0
   - setuptools=61.2.0=py39h06a4308_0
@@ -88,11 +88,11 @@ dependencies:
   - tk=8.6.12=h27826a3_0
   - tqdm=4.64.0=py39h06a4308_0
   - tzdata=2022a=hda174b7_0
-  - urllib3=1.26.9=py39h06a4308_0
+  - urllib3=1.26.11=py39h06a4308_0
   - wheel=0.37.1=pyhd3eb1b0_0
   - xz=5.2.5=h7f8727e_1
   - yaml=0.2.5=h7b6447c_0
-  - yaml-cpp=0.6.3=he1b5a44_4
-  - zlib=1.2.12=h166bdaf_1
+  - yaml-cpp=0.7.0=h295c915_1
+  - zlib=1.2.12=h7f8727e_2
   - zstd=1.5.2=h8a70e8d_1
 prefix: /home/vrath/.Miniconda

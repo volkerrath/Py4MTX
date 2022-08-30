@@ -694,12 +694,12 @@ figure.dpi:         400       # figure dots per inch
                             # xpdf intended for production of publication quality files,
                             # but requires ghostscript, xpdf and ps2eps
 #ps.distiller.res:  6000    # dpi
-#ps.fonttype:       3       # Output Type 3 (Type3) or Type 42 (TrueType)
+ps.fonttype:       3       # Output Type 3 (Type3) or Type 42 (TrueType)
 
 ### PDF backend params
 #pdf.compression:    6  # integer from 0 to 9
                         # 0 disables compression (good for debugging)
-#pdf.fonttype:       3  # Output Type 3 (Type3) or Type 42 (TrueType)
+pdf.fonttype:       3  # Output Type 3 (Type3) or Type 42 (TrueType)
 #pdf.use14corefonts : False
 #pdf.inheritcolor:   False
 
