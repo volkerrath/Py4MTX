@@ -129,41 +129,43 @@ def read_data_jac(DatFile=None, out=True):
                 continue
 
             t = line.split()
-            print(t)
-            if "PT" in t[7] or "RH" in t[7] or "PH" in t[7]:
-                tmp1 = [
-                    float(t[0]),
-                    float(t[2]),
-                    float(t[3]),
-                    float(t[4]),
-                    float(t[6]),
-                    float(t[7]),
-                    float(t[8]),
-                ]
-                Data.append(tmp1)
-                Site.append([t[1]])
-                Comp.append([t[5]])
+            # print(t)
+            if t:
+                if "PT" in t[5] or "RH" in t[5] or "PH" in t[5]:
+                    tmp1 = [
+                        float(t[0]),
+                        float(t[2]),
+                        float(t[3]),
+                        float(t[4]),
+                        float(t[6]),
+                        float(t[7]),
+                    ]
+                    Data.append(tmp1)
+                    Site.append([t[1]])
+                    Comp.append([t[5]])
+                else:
+                    tmp1 = [
+                        float(t[0]),
+                        float(t[2]),
+                        float(t[3]),
+                        float(t[4]),
+                        float(t[6]),
+                        float(t[8]),
+                    ]
+                    Data.append(tmp1)
+                    tmp2 = [
+                        float(t[0]),
+                        float(t[2]),
+                        float(t[3]),
+                        float(t[4]),
+                        float(t[7]),
+                        float(t[8]),
+                    ]
+                    Data.append(tmp2)
+                    Comp.append([t[5] + "R", t[5] + "I"])
+                    Site.append([t[1], t[1]])
             else:
-                tmp1 = [
-                    float(t[0]),
-                    float(t[2]),
-                    float(t[3]),
-                    float(t[4]),
-                    float(t[6]),
-                    float(t[8]),
-                ]
-                Data.append(tmp1)
-                tmp2 = [
-                    float(t[0]),
-                    float(t[2]),
-                    float(t[3]),
-                    float(t[4]),
-                    float(t[7]),
-                    float(t[8]),
-                ]
-                Data.append(tmp2)
-                Comp.append([t[5] + "R", t[5] + "I"])
-                Site.append([t[1], t[1]])
+                break
 
     Site = [item for sublist in Site for item in sublist]
     Site = np.asarray(Site, dtype=object)
