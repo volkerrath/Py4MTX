@@ -256,8 +256,8 @@ Contains
                             cycle
                         end if
                         compid = typeDict(iDt)%id(icomp)
-                        write(ioDat,'(es12.6)',    iostat=ios,advance='no') Period
-                        write(ioDat, '(a1)', iostat=ios,advance='no') ' '
+                        write(ioDat,'(es14.6)',    iostat=ios,advance='no') Period
+                        write(ioDat, '(a4)', iostat=ios,advance='no') ' '
                         write(ioDat,'(a40,3f15.3)',iostat=ios,advance='no') trim(siteid),x(:)
                         if (conjugate) then
                             write(ioDat,'(a8,3es15.6)',iostat=ios) trim(compid),value(2*icomp-1),-value(2*icomp),error(2*icomp)
@@ -276,8 +276,8 @@ Contains
                         compid = typeDict(iDt)%id(icomp)
                         ref_siteid = rxDict(iRx)%id_ref
                         ref_x = rxDict(iRx)%r
-                        write(ioDat,'(es12.6)',    iostat=ios,advance='no') Period
-                        write(ioDat, '(a1)', iostat=ios,advance='no') ' '
+                        write(ioDat,'(es14.6)',    iostat=ios,advance='no') Period
+                        write(ioDat, '(a4)', iostat=ios,advance='no') ' '
                         write(ioDat,'(a40,3f15.3)',iostat=ios,advance='no') trim(siteid),x(:)
                         write(ioDat,'(a40,3f15.3)',iostat=ios,advance='no') trim(ref_siteid),ref_x(:)
                         if (conjugate) then
@@ -306,8 +306,8 @@ Contains
                                 error(icomp) = 10**error(icomp)
                             endif
                         end if
-                        write(ioDat,'(es12.6)',    iostat=ios,advance='no') Period
-                        write(ioDat, '(a1)', iostat=ios,advance='no') ' '
+                        write(ioDat,'(es14.6)',    iostat=ios,advance='no') Period
+                        write(ioDat, '(a4)', iostat=ios,advance='no') ' '
                         write(ioDat,'(a40,3f15.3)',iostat=ios,advance='no') trim(siteid),x(:)
                         write(ioDat,'(a8,3es15.6)',iostat=ios) trim(compid),value(icomp),error(icomp)
                         countData = countData + 1
