@@ -129,31 +129,28 @@ def read_data_jac(DatFile=None, out=True):
                 continue
 
             t = line.split()
-
+            print(t)
             if "PT" in t[7] or "RH" in t[7] or "PH" in t[7]:
                 tmp1 = [
                     float(t[0]),
                     float(t[2]),
                     float(t[3]),
                     float(t[4]),
-                    float(t[5]),
                     float(t[6]),
+                    float(t[7]),
                     float(t[8]),
-                    float(t[9]),
                 ]
                 Data.append(tmp1)
                 Site.append([t[1]])
-                Comp.append([t[7]])
+                Comp.append([t[5]])
             else:
                 tmp1 = [
                     float(t[0]),
                     float(t[2]),
                     float(t[3]),
                     float(t[4]),
-                    float(t[5]),
                     float(t[6]),
                     float(t[8]),
-                    float(t[10]),
                 ]
                 Data.append(tmp1)
                 tmp2 = [
@@ -161,13 +158,11 @@ def read_data_jac(DatFile=None, out=True):
                     float(t[2]),
                     float(t[3]),
                     float(t[4]),
-                    float(t[5]),
-                    float(t[6]),
-                    float(t[9]),
-                    float(t[10]),
+                    float(t[7]),
+                    float(t[8]),
                 ]
                 Data.append(tmp2)
-                Comp.append([t[7] + "R", t[7] + "I"])
+                Comp.append([t[5] + "R", t[5] + "I"])
                 Site.append([t[1], t[1]])
 
     Site = [item for sublist in Site for item in sublist]
