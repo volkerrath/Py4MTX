@@ -315,7 +315,7 @@ rope                      0.22.0             pyhd3eb1b0_0
 rtree                     0.9.7           py310h06a4308_1  
 scikit-image              0.19.2          py310h00e6091_0  
 scikit-learn              1.1.1           py310hffb9edd_0    conda-forge
-scipy                     1.9.0           py310hdfbd76f_0    conda-forge
+scipy                     1.9.1           py310hdfbd76f_0    conda-forge
 seaborn                   0.11.2             pyhd3eb1b0_0  
 secretstorage             3.3.1           py310h06a4308_0  
 send2trash                1.8.0              pyhd3eb1b0_1  
