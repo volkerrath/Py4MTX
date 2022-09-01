@@ -156,7 +156,7 @@ fastapi                   0.81.0             pyhd8ed1ab_0    conda-forge
 fasteners                 0.17.3             pyhd8ed1ab_0    conda-forge
 fastprogress              1.0.3              pyhd8ed1ab_0    conda-forge
 ffmpeg                    4.4.1                hd7ab26d_2    conda-forge
-fftw                      3.3.10          nompi_ha7695d1_103    conda-forge
+fftw                      3.3.10          nompi_hf0379b8_4    conda-forge
 filelock                  3.8.0              pyhd8ed1ab_0    conda-forge
 fiona                     1.8.21           py39h54775ec_2    conda-forge
 flake8                    4.0.1              pyhd8ed1ab_2    conda-forge
@@ -204,7 +204,7 @@ gfortran_impl_linux-64    10.4.0              h44b2e72_16    conda-forge
 gfortran_linux-64         10.4.0              h69d5af5_10    conda-forge
 ghostscript               9.54.0               h27087fc_2    conda-forge
 giflib                    5.2.1                h36c2ea0_2    conda-forge
-git                       2.37.2          pl5321h36853c3_1    conda-forge
+git                       2.37.3          pl5321h36853c3_0    conda-forge
 gl2ps                     1.4.2                h70c0345_1  
 glew                      2.1.0                h295c915_3  
 glib                      2.72.1               h6239696_0    conda-forge
@@ -302,7 +302,7 @@ jpeg                      9e                   h166bdaf_1    conda-forge
 json-c                    0.16                 hc379101_0    conda-forge
 json5                     0.9.6              pyhd3eb1b0_0  
 jsoncpp                   1.9.5                h4bd325d_1    conda-forge
-jsonschema                4.14.0             pyhd8ed1ab_0    conda-forge
+jsonschema                4.15.0             pyhd8ed1ab_0    conda-forge
 jupyter                   1.0.0            py39h06a4308_8  
 jupyter_client            7.3.4              pyhd8ed1ab_0    conda-forge
 jupyter_console           6.4.3              pyhd8ed1ab_0    conda-forge
@@ -565,7 +565,7 @@ pybind11-global           2.10.0           py39hf939315_0    conda-forge
 pycairo                   1.21.0           py39h0934665_1    conda-forge
 pycodestyle               2.8.0              pyhd8ed1ab_0    conda-forge
 pycparser                 2.21               pyhd8ed1ab_0    conda-forge
-pydantic                  1.10.0           py39hb9d737c_0    conda-forge
+pydantic                  1.10.1           py39hb9d737c_1    conda-forge
 pydiso                    0.0.3            py39h0c7bc48_1    conda-forge
 pydocstyle                6.1.1              pyhd8ed1ab_0    conda-forge
 pydoe2                    1.3.0                      py_0    conda-forge
@@ -772,9 +772,9 @@ uritemplate               3.0.1                      py_0    conda-forge
 urllib3                   1.26.11          py39h06a4308_0  
 utfcpp                    3.2.1                ha770c72_0    conda-forge
 utm                       0.7.0              pyhd8ed1ab_0    conda-forge
-vaex                      4.11.1             pyhd8ed1ab_0    conda-forge
+vaex                      4.12.0             pyhd8ed1ab_0    conda-forge
 vaex-astro                0.9.1              pyhd8ed1ab_0    conda-forge
-vaex-core                 4.11.1           py39he374153_0    conda-forge
+vaex-core                 4.12.0           py39he374153_0    conda-forge
 vaex-hdf5                 0.12.3             pyhd8ed1ab_0    conda-forge
 vaex-jupyter              0.8.0              pyhd8ed1ab_0    conda-forge
 vaex-ml                   0.18.0             pyhd8ed1ab_0    conda-forge

@@ -34,7 +34,7 @@ program Mod3DMT
 #ifdef MPI
               call  MPI_constructor
 			  if (taskid==0) then
-			      call parseArgs('Mod3DMT',cUserDef) ! OR readStartup(rFile_Startup,cUserDef)
+			      call parseArgs('Mod3DMTS',cUserDef) ! OR readStartup(rFile_Startup,cUserDef)
 			      write(6,*)'I am a PARALLEL version'
 			      call Master_job_Distribute_userdef_control(cUserDef)
 	              open(ioMPI,file=cUserDef%wFile_MPI)
@@ -44,7 +44,7 @@ program Mod3DMT
 			 end if
 
 #else
-             call parseArgs('Mod3DMT',cUserDef) ! OR readStartup(rFile_Startup,cUserDef)
+             call parseArgs('Mod3DMTS',cUserDef) ! OR readStartup(rFile_Startup,cUserDef)
 			 write(6,*)'I am a SERIAL version'
 #endif
 

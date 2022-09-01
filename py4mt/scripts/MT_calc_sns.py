@@ -65,7 +65,7 @@ blank = np.nan
 
 sparsify = True
 sparse_thresh = 1.e-7
-normalize_jacmax = "local"
+normalize_jacmax = "total"
 if "loc" in normalize_jacmax.lower():
     jacmax ="_max"
 else:

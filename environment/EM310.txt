@@ -216,7 +216,7 @@ markdown-it-py            1.1.0              pyhd8ed1ab_0    conda-forge
 markupsafe                2.1.1           py310h7f8727e_0  
 matplotlib                3.5.2           py310h06a4308_0  
 matplotlib-base           3.5.2           py310hf590b9c_0  
-matplotlib-inline         0.1.2              pyhd3eb1b0_2  
+matplotlib-inline         0.1.6           py310h06a4308_0  
 mccabe                    0.6.1           py310h06a4308_2  
 mdit-py-plugins           0.2.8              pyhd8ed1ab_0    conda-forge
 mistune                   0.8.4           py310h7f8727e_1000  
@@ -306,8 +306,8 @@ qdarkstyle                3.0.2              pyhd3eb1b0_0
 qstylizer                 0.1.10             pyhd3eb1b0_0  
 qt                        5.12.9               h1304e3e_6    conda-forge
 qtawesome                 1.0.3              pyhd3eb1b0_0  
-qtconsole                 5.3.1           py310h06a4308_1  
-qtpy                      2.0.1              pyhd3eb1b0_0  
+qtconsole                 5.3.2           py310h06a4308_0  
+qtpy                      2.2.0           py310h06a4308_0  
 readline                  8.1.2                h7f8727e_1  
 regex                     2022.7.9        py310h5eee18b_0  
 requests                  2.28.1          py310h06a4308_0  
@@ -347,7 +347,7 @@ sphinxcontrib-htmlhelp    2.0.0              pyhd3eb1b0_0
 sphinxcontrib-jsmath      1.0.1              pyhd3eb1b0_0  
 sphinxcontrib-qthelp      1.0.3              pyhd3eb1b0_0  
 sphinxcontrib-serializinghtml 1.1.5              pyhd3eb1b0_0  
-spyder                    5.3.2           py310hff52083_0    conda-forge
+spyder                    5.3.3           py310hff52083_0    conda-forge
 spyder-kernels            2.3.3           py310hff52083_0    conda-forge
 sqlalchemy                1.4.39          py310h5eee18b_0  
 sqlite                    3.39.2               h5082296_0  

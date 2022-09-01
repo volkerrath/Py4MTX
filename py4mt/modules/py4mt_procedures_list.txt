@@ -1,0 +1,70 @@
+distortion.py:def find_distortion(z_object, g='det', num_freq=None, lo_dims=None):
+distortion.py:def find_1d_distortion(z_object, include_non1d=False):
+distortion.py:def find_2d_distortion(z_object, include_non2d=False):
+distortion.py:def remove_distortion(z_array=None, z_object=None, num_freq=None, g='det'):
+jacproc.py:def update_avg(k = None, m_k=None, m_a=None, m_v=None):
+jacproc.py:# def update_med(k = None, model_n=None, model_a=None, model_v=None):
+jacproc.py:def rsvd(A, rank=300, n_oversamples=None, n_subspace_iters=None, return_range=False):
+jacproc.py:def find_range(A, n_samples, n_subspace_iters=None):
+jacproc.py:def subspace_iter(A, Y0, n_iters):
+jacproc.py:def ortho_basis(M):
+jacproc.py:def sparsify_jac(Jac=None, sparse_thresh=1.0e-6, normalized=True, method=None, out=True):
+jacproc.py:def normalize_jac(Jac=None, fn=None, out=True):
+jacproc.py:def calculate_sens(Jac=None, normalize=True, small=1.0e-14, out=True):
+jacproc.py:def project_model(m=None, U=None, small=1.0e-14, out=True):
+jacproc.py:def transfrom_model(m=None, M=None, small=1.0e-14, out=True):
+modem.py:def read_jac(JacFile=None, out=False):
+modem.py:def write_jac_ncd(NCFile=None, Jac=None, Dat=None, Site=None, Comp=None,
+modem.py:def read_data_jac(DatFile=None, out=True):
+modem.py:def read_data(DatFile=None, out=True):
+modem.py:def write_data(DatFile=None, Dat=None, Site=None, Comp=None, Head = None, out=True):
+modem.py:def write_data_ncd(
+modem.py:def write_model_ncd(
+modem.py:# def write_model_vtk(ModFile=None, dx=None, dy=None, dz=None, rho=None, reference=None,
+modem.py:def write_model(ModFile=None, dx=None, dy=None, dz=None, rho=None, reference=None,
+modem.py:def read_model(ModFile=None, trans="LINEAR", out=True):
+modem.py:def linear_interpolation(p1, p2, x0):
+modem.py:def clip_model(x, y, z, rho,
+modem.py:def mt1dfwd(freq, sig, d, inmod="r", out="imp"):
+modem.py:def insert_body(
+modem.py:def cells3d(dx, dy, dz, center=False, reference=[0., 0., 0.]):
+modem.py:def in_ellipsoid(
+modem.py:def in_box(
+modem.py:def rotz(theta):
+modem.py:def roty(theta):
+modem.py:def rotx(theta):
+modem.py:def medfilt3D(
+modem.py:def anidiff3D(
+modem.py:def anisodiff3D(
+modem.py:def shock3d(
+modem.py:def gauss3D(Kshape=(3, 3, 3), Ksigma=0.5):
+modem.py:def prepare_model(rho, rhoair=1.0e17):
+mtplots.py:def plotsliceMod(dx=None ,dy=None ,dz=None ,rho=None, position=None):
+mtplots.py:def plot3dMod(dx=None, dy=None, dz=None, rho=None, TopoFile=None,
+plotrjmcmc.py:    def __init__(
+plotrjmcmc.py:    def plot(self):
+plotrjmcmc.py:        def ShrinkAxes(ax, wfactor=1, hfactor=1):
+util.py:def get_filelist(searchstr=["*"], searchpath="."):
+util.py:def growHeader(Header=None, Addstr=None, Out=False):
+util.py:def printHeader(Header):
+util.py:def proj_utm_to_latlon(utm_x, utm_y, utm_zone=32629):
+util.py:def proj_latlon_to_utm(longitude, latitude, utm_zone=32629):
+util.py:def proj_latlon_to_itm(longitude, latitude):
+util.py:def proj_itm_to_latlon(itm_x, itm_y):
+util.py:def proj_itm_to_utm(itm_x, itm_y, utm_zone=32629):
+util.py:def proj_utm_to_itm(utm_x, utm_y, utm_zone=32629):
+util.py:def splitall(path):
+util.py:# def shift(l, n):
+util.py:def get_files(SearchString=None, SearchDirectory="."):
+util.py:def get_header(file, headstr="# ", Out=True):
+util.py:def unique(list, out=False):
+util.py:def strcount(keyword=None, fname=None):
+util.py:def strdelete(keyword=None, fname_in=None, fname_out=None, out=True):
+util.py:def strreplace(key_in=None, key_out=None, fname_in=None, fname_out=None):
+util.py:def gen_grid_latlon(LatLimits=None, nLat=None, LonLimits=None, nLon=None, out=True):
+util.py:def gen_grid_utm(XLimits=None, nX=None, YLimits=None, nY=None, out=True):
+util.py:def choose_data_poly(Data=None, PolyPoints=None, Out=True):
+util.py:def point_inside_polygon(x, y, poly):
+util.py:def choose_data_rect(Data=None, Corners=None, Out=True):
+util.py:def proj_to_line(x, y, line):
+version.py:def versionstrg():
