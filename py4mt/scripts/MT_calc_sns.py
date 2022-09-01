@@ -67,9 +67,9 @@ sparsify = True
 sparse_thresh = 1.e-7
 normalize_jacmax = "total"
 if "loc" in normalize_jacmax.lower():
-    jacmax ="_max"
+    jacmax ="max"
 else:
-    jacmax ="_maxtotal"
+    jacmax ="maxtotal"
 
 outform = "LINEAR"
 outform = outform.upper()
@@ -92,10 +92,13 @@ outform = outform.upper()
 
 
 # Ubaye case
-WorkDir = PY4MT_DATA+"/NewJacobians/"
+WorkDir = PY4MT_DATA+"/NewJacobians/Ubaye/"
 WorkName = "Ub22Jac"
 MFile   = WorkDir +"Ub22.rho"
 MPad=[13, 13 , 13, 13, 0, 36]
+
+
+
 JFiles = []
 DFiles = []
 files = os.listdir(WorkDir)
