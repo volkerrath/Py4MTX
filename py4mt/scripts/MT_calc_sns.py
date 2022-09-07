@@ -67,7 +67,7 @@ sparsify = True
 sparse_thresh = 1.e-7
 normalize_jacmax = "total"
 if "loc" in normalize_jacmax.lower():
-    jacmax ="max"
+    jacmax ="maxlocal"
 else:
     jacmax ="maxtotal"
 
@@ -91,12 +91,24 @@ outform = outform.upper()
 # DFiles = [WorkDir+r"Ub22_T.dat", WorkDir+r"Ub22_P.dat", WorkDir+r"Ub22_Zoff.dat", ]
 
 
-# Ubaye case
-WorkDir = PY4MT_DATA+"/NewJacobians/Ubaye/"
-WorkName = "Ub22Jac"
-MFile   = WorkDir +"Ub22.rho"
-MPad=[13, 13 , 13, 13, 0, 36]
+# # Ubaye case
+# WorkDir = PY4MT_DATA+"/NewJacobians/Ubaye/"
+# WorkName = "Ub22Jac"
+# MFile   = WorkDir +"Ub22.rho"
+# MPad=[13, 13 , 13, 13, 0, 36]
 
+# Annecy case
+WorkDir = PY4MT_DATA+"/NewJacobians/Annecy/work/"
+WorkName = "Ann25Jac"
+MFile   = WorkDir +"Ann25.rho"
+MPad=[22, 22 , 22, 22, 0, 15]
+
+# # Maurienne case
+# WorkDir = PY4MT_DATA+"/NewJacobians/Maurienne/E10/"
+# WorkName = "MauJac"
+# MFile   = WorkDir +"Maur15_500_PTZ_E10_NLCG_016.rho"
+# # MFile   = WorkDir +"Maur15_500_PTZ_E03_NLCG_026.rho"
+# MPad=[14, 14 , 14, 14, 0, 15]
 
 
 JFiles = []
@@ -109,11 +121,16 @@ for entry in files:
         name, ext = os.path.splitext(entry)
         DFiles.append(name+"_jac.dat")
 
+JFiles = sorted(JFiles)
+DFiles = sorted(DFiles)
+
+
 NN = np.size(JFiles)
 if np.size(DFiles) != np.size(JFiles):
     error("Data file number not equal Jac file number! Exit.")
 nF = np.size(DFiles)
-
+print(JFiles)
+print(DFiles)
 
 total = 0.0
 
@@ -121,35 +138,36 @@ total = 0.0
 start = time.time()
 dx, dy, dz, rho, reference, _, vcell = mod.read_model(MFile, trans="linear", volumes=True)
 dims = np.shape(rho)
-vcell = vcell.flatten().reshape((1,-1))
 
 rhoair = 1.e17
 aircells = np.where(rho>rhoair/10)
 
-# TSTFile = WorkDir+WorkName+"0_MaskTest.rho"
-# mod.write_model(TSTFile, dx, dy, dz, rho, reference, trans="LINEAR", mvalair=blank, aircells=aircells)
+
+TSTFile = WorkDir+WorkName+"0_MaskTest.rho"
+mod.write_model(TSTFile, dx, dy, dz, rho, reference, trans="LINEAR", mvalair=blank, aircells=aircells)
 
 
-jacmask = jac.set_mask(rho=rho, pad=MPad, blank= blank, flat = True, out=True)
+jacmask = jac.set_mask(rho=rho, pad=MPad, blank= blank, flat = False, out=True)
 jdims= np.shape(jacmask)
 j0 = jacmask.reshape(dims)
 j0[aircells] = blank
 jacmask = j0.reshape(jdims)
 
-# rhotest = jacmask.reshape(dims)*rho
-# TSTFile = WorkDir+WorkName+"1_MaskTest.rho"
-# mod.write_model(TSTFile, dx, dy, dz, rhotest, reference, trans="LINEAR", mvalair=blank, aircells=aircells)
+rhotest = jacmask.reshape(dims)*rho
+TSTFile = WorkDir+WorkName+"1_MaskTest.rho"
+mod.write_model(TSTFile, dx, dy, dz, rhotest, reference, trans="LINEAR", mvalair=blank, aircells=aircells)
 
 elapsed = time.time() - start
 total = total + elapsed
 print(" Used %7.4f s for reading model from %s " % (elapsed, MFile))
 
+sdims = np.size(rho)
+snsValT = np.zeros(sdims)
+snsValP = np.zeros(sdims)
+snsValZ = np.zeros(sdims)
+snsValZoff = np.zeros(sdims)
+snsValZtot = np.zeros(sdims)
 
-snsValT = np.zeros(jdims)
-snsValP = np.zeros(jdims)
-snsValZ = np.zeros(jdims)
-snsValZoff = np.zeros(jdims)
-snsValZtot = np.zeros(jdims)
 
 for f in np.arange(nF):
 
@@ -172,14 +190,17 @@ for f in np.arange(nF):
     start = time.time()
     dsh = np.shape(Data)
     err = np.reshape(Data[:, 5], (dsh[0], 1))
+    # print(np.amin(err), np.amax(err))
     Jac = jac.normalize_jac(Jac, err)
     elapsed = time.time() - start
     print(" Used %7.4f s for normalizing Jacobian from %s " % (elapsed, JFiles[f]))
 
     mx = np.nanmax(np.abs(Jac))
     mn = np.nanmin(np.abs(Jac))
+    jm = jacmask.flatten(order="F")
     print(JFiles[f]+" minimum/maximum Jacobian value is "+str(mn)+"/"+str(mx))
-    mx = np.nanmax(np.abs(Jac*jacmask))
+    mx = np.nanmax(np.abs(Jac*jm))
+    mn = np.nanmin(np.abs(Jac*jm))
     print(JFiles[f]+" minimum/maximum masked Jacobian value is "+str(mn)+"/"+str(mx))
     print(JFiles[f]+" number of elements in masked Jacobian is "+str(np.count_nonzero(~np.isfinite(Jac))))
     # print( np.count_nonzero(~np.isnan(jacmask))*np.shape(Jac)[0])
@@ -193,52 +214,55 @@ for f in np.arange(nF):
     Phase_Tensor                = 6
     """
 
-    I1 =Info[:,1]
+    Component =Info[:,1]
 
-
-    tmpJac = Jac[np.where(I1 == 1),:]*jacmask
+    noZtot = False
+    tmpJac = Jac[np.where(Component == 1),:]
+    if np.size(tmpJac)== 0:
+        noZtot = True
     tmpValZ = np.nansum(np.power(tmpJac, 2), axis=1)
     snsValZtot = snsValZtot + tmpValZ
-    # maxValZ = np.nanmax(np.sqrt(tmpValZoff))
-    # print(" Z Maximum value is "+str(maxValZ))
 
-
-    tmpJac = Jac[np.where(I1 == 2),:]*jacmask
+    tmpJac = Jac[np.where(Component == 2),:]
+    noZoff = False
+    if np.size(tmpJac)== 0:
+        noZoff = True
     tmpValZ = np.nansum(np.power(tmpJac, 2), axis=1)
     snsValZoff = snsValZoff + tmpValZ
-    # maxValZ = np.nanmax(np.sqrt(tmpValZtot))
-    # print(" Z Maximum value is "+str(maxValZ))
 
-    tmpJac = Jac[np.where(I1 == 3),:]*jacmask
+    tmpJac = Jac[np.where(Component == 3),:]
+    noT = False
+    if np.size(tmpJac)== 0:
+        noT = True
     tmpValT = np.nansum(np.power(tmpJac, 2), axis=1)
     snsValT = snsValT + tmpValT
-    # maxValT = np.nanmax(np.sqrt(tmpValT))
-    # print(" T Maximum value is "+str(maxValT))
 
-    tmpJac = Jac[np.where(I1 == 6),:]*jacmask
+    tmpJac = Jac[np.where(Component == 6),:]
+    noP = False
+    if np.size(tmpJac)== 0:
+        noP = True
     tmpValP = np.nansum(np.power(tmpJac, 2), axis=1)
     snsValP = snsValP + tmpValP
-    # maxValP = np.nanmax(np.sqrt(tmpValP))
-    # print(" P Maximum value is "+str(maxValP))
 
-# maxValZ = np.nanmax([snsValZ])
-maxValZtot = np.nanmax(np.sqrt(snsValZtot))
+
+maxValZtot = np.nanmax(np.sqrt(snsValZtot*jm))
 print(" Merged Z Maximum value is "+str(maxValZtot))
-# maxValZ = np.nanmax([snsValZ])
-maxValZoff = np.nanmax(np.sqrt(snsValZoff))
+snsValZtot = np.reshape(snsValZtot, dims, order="F")
+
+maxValZoff = np.nanmax(np.sqrt(snsValZoff*jm))
 print(" Merged Z Maximum value is "+str(maxValZoff))
+snsValZoff = np.reshape(snsValZoff, dims, order="F")
 
-# maxValT = np.nanmax([snsValT])
-maxValT = np.nanmax(np.sqrt(snsValT))
+maxValT = np.nanmax(np.sqrt(snsValT*jm))
 print(" Merged T Maximum value is "+str(maxValT))
+snsValT = np.reshape(snsValT, dims, order="F")
 
-# maxValP = np.nanmax([snsValP])
-maxValP = np.nanmax(np.sqrt(snsValP))
+maxValP = np.nanmax(np.sqrt(snsValP*jm))
 print(" Merged P Maximum value is "+str(maxValP))
+snsValP = np.reshape(snsValP, dims, order="F")
 
 snsVal = snsValZtot+snsValZoff+snsValT+snsValP
-# maxVal = np.nanmax([snsVal])
-maxVal = np.nanmax(np.sqrt(snsVal))
+maxVal = np.nanmax(snsVal)
 print(" Merged ZTP Maximum value is "+str(maxVal))
 
 start = time.time()
@@ -247,193 +271,212 @@ start = time.time()
 Raw sensitivities
 """
 SNSFile = WorkDir+WorkName+"_raw.sns"
-tmpS = snsVal
-S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")
+S = snsVal
 mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
 
 SNSFile = WorkDir+WorkName+"_Ztot_raw.sns"
-tmpS = snsValZtot
-S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")
+S = snsValZtot
 mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
 
 SNSFile = WorkDir+WorkName+"_Zoff_raw.sns"
-tmpS = snsValZoff
-S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")
+S = snsValZoff
 mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
 
 SNSFile = WorkDir+WorkName+"_T_raw.sns"
-tmpS = snsValT
-S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")
+S = snsValT
 mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
 
 SNSFile = WorkDir+WorkName+"_P_raw.sns"
-tmpS = snsValP
-S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")
-mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
+S = snsValP
+mod.write_model(SNSFile, dx,dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
 
-
-
-"""
-Squareroot Raw sensitivities
-"""
+# """
+# Squareroot Raw sensitivities
+# """
 SNSFile = WorkDir+WorkName+"_sqrtraw.sns"
-tmpS = np.sqrt(snsVal)
-S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")
+S = snsVal
+S = np.sqrt(S)
 mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
 
 SNSFile = WorkDir+WorkName+"_Ztot_sqrtraw.sns"
-tmpS = np.sqrt(snsValZtot)
-S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")
+S = snsValZtot
+S = np.sqrt(S)
 mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
 
 SNSFile = WorkDir+WorkName+"_Zoff_sqrtraw.sns"
-tmpS = np.sqrt(snsValZoff)
-S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")
+S = snsValZoff
+S = np.sqrt(S)
 mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
 
 SNSFile = WorkDir+WorkName+"_T_sqrtraw.sns"
-tmpS = np.sqrt(snsValT)
-S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")
+S = snsValT
+S = np.sqrt(S)
 mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
 
 SNSFile = WorkDir+WorkName+"_P_sqrtraw.sns"
-tmpS = np.sqrt(snsValP)
-S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")
-mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
+S = snsValP
+S = np.sqrt(S)
+mod.write_model(SNSFile, dx,dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
 
-"""
-vol normalized sensitivities
-"""
+
+# """
+# vol normalized sensitivities
+# """
 SNSFile = WorkDir+WorkName+"_vol.sns"
-tmpS = np.sqrt(snsVal)/vcell[:]
-S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")/(maxVal*vcell)
+S = snsVal
+S = np.sqrt(S)/vcell
 mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
 
 SNSFile = WorkDir+WorkName+"_Ztot_vol.sns"
-tmpS = np.sqrt(snsValZtot)/vcell[:]
-S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")/(maxValZ*vcell)
+S = snsValZtot
+S = np.sqrt(S)/vcell
 mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
 
 SNSFile = WorkDir+WorkName+"_Zoff_vol.sns"
-tmpS = np.sqrt(snsValZoff)/vcell[:]
-S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")/(maxValZ*vcell)
+S = snsValZoff
+S = np.sqrt(S)/vcell
 mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
 
 SNSFile = WorkDir+WorkName+"_T_vol.sns"
-tmpS = np.sqrt(snsValT)/vcell[:]
-S = np.reshape(tmpS, dims)
+S = snsValT
+S = np.sqrt(S)/vcell
 mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
 
 SNSFile = WorkDir+WorkName+"_P_vol.sns"
-tmpS = np.sqrt(snsValP)/vcell[:]
-S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")/(maxValP*vcell)
-mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
+S = snsValP
+S = np.sqrt(S)/vcell
+mod.write_model(SNSFile, dx,dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
 
-"""
-Max normalized sensitivities
-"""
+# """
+# Max normalized sensitivities
+# """
 SNSFile = WorkDir+WorkName+"_max.sns"
-tmpS = np.sqrt(snsVal)/(maxVal)
-S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")/(maxVal)
+S = snsVal
+S = np.sqrt(S)/maxVal
 mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
 
-SNSFile = WorkDir+WorkName+"_Ztot_"+jacmax+".sns"
-if "loc" in normalize_jacmax.lower():
-    tmpS = np.sqrt(snsValZtot)/(maxValZtot)
+if noZtot and ("loc" in normalize_jacmax.lower()):
+    print(" No Ztot local maximum values available.")
+
 else:
-    tmpS = np.sqrt(snsValZtot)/(maxVal)
-S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")/(maxValZ)
-mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
-print(" Sensitivities written to "+SNSFile)
+    SNSFile = WorkDir+WorkName+"_Ztot_"+jacmax+".sns"
+    S = snsValZtot
+    scale =maxVal
+    if "loc" in normalize_jacmax.lower():
+        scale = maxValZtot
+    S = np.sqrt(S)/scale
+    mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
+    print(" Sensitivities written to "+SNSFile)
 
-SNSFile = WorkDir+WorkName+"_Zoff_"+jacmax+".sns"
-if "loc" in normalize_jacmax.lower():
-    tmpS = np.sqrt(snsValZoff)/(maxValZoff)
+if noZoff and ("loc" in normalize_jacmax.lower()):
+    print(" No Zoff local maximum values available.")
 else:
-    tmpS = np.sqrt(snsValZoff)/(maxVal)
-S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")/(maxValZ)
-mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
-print(" Sensitivities written to "+SNSFile)
+    SNSFile = WorkDir+WorkName+"_Zoff_"+jacmax+".sns"
+    S = snsValZoff
+    scale =maxVal
+    if "loc" in normalize_jacmax.lower():
+        scale = maxValZoff
+    S = np.sqrt(S)/scale
+    mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
+    print(" Sensitivities written to "+SNSFile)
 
-SNSFile = WorkDir+WorkName+"_T_"+jacmax+".sns"
-if "loc" in normalize_jacmax.lower():
-    tmpS = np.sqrt(snsValT)/(maxValT)
+if noT and ("loc" in normalize_jacmax.lower()):
+    print(" No T local maximum values available.")
 else:
-    tmpS = np.sqrt(snsValT)/(maxVal)
-S = np.reshape(tmpS, dims)
-mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
-print(" Sensitivities written to "+SNSFile)
+    SNSFile = WorkDir+WorkName+"_T_"+jacmax+".sns"
+    S = snsValT
+    scale =maxVal
+    if "loc" in normalize_jacmax.lower():
+        scale = maxValT
+    S = np.sqrt(S)/scale
+    mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
+    print(" Sensitivities written to "+SNSFile)
 
-SNSFile = WorkDir+WorkName+"_P_"+jacmax+".sns"
-if "loc" in normalize_jacmax.lower():
-    tmpS = np.sqrt(snsValP)/(maxValP)
+if noT and ("loc" in normalize_jacmax.lower()) :
+    print(" No P local maximum values available.")
 else:
-    tmpS = np.sqrt(snsValP)/(maxVal)
-S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")/(maxValP)
+    SNSFile = WorkDir+WorkName+"_P_"+jacmax+".sns"
+    S = snsValP
+    scale =maxVal
+    if "loc" in normalize_jacmax.lower():
+        scale = maxValP
+    S = np.sqrt(S)/scale
+    mod.write_model(SNSFile, dx,dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
+    print(" Sensitivities written to "+SNSFile)
+
+# """
+# Max and vol normalized sensitivities
+# """
+SNSFile = WorkDir+WorkName+"_max_vol.sns"
+S = snsVal
+S = np.sqrt(S)/(maxVal*vcell)
 mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
 print(" Sensitivities written to "+SNSFile)
 
-
-"""
-Max and vol normalized sensitivities
-"""
-SNSFile = WorkDir+WorkName+"_vol_max.sns"
-tmpS = np.sqrt(snsVal)/(maxVal*vcell)
-S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")/(maxVal*vcell)
-mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
-print(" Sensitivities written to "+SNSFile)
-
-SNSFile = WorkDir+WorkName+"_Ztot_vol_"+jacmax+".sns"
-if "loc" in normalize_jacmax.lower():
-    tmpS = np.sqrt(snsValZtot)/(maxValZtot*vcell)
+if noZtot and ("loc" in normalize_jacmax.lower()):
+    print(" No Ztot local maximum values available.")
 else:
-    tmpS = np.sqrt(snsValZtot)/(maxVal)
-S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")/(maxValZ*vcell)
-mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
-print(" Sensitivities written to "+SNSFile)
+    SNSFile = WorkDir+WorkName+"_Ztot_"+jacmax+"_vol.sns"
+    S = snsValZtot
+    scale =maxVal
+    if "loc" in normalize_jacmax.lower():
+        scale = maxValZtot
+    S = np.sqrt(S)/(scale*vcell)
+    mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
+    print(" Sensitivities written to "+SNSFile)
 
-SNSFile = WorkDir+WorkName+"_Zoff_vol_"+jacmax+".sns"
-if "loc" in normalize_jacmax.lower():
-    tmpS = np.sqrt(snsValZoff)/(maxValZoff*vcell)
+if noZoff and ("loc" in normalize_jacmax.lower()):
+    print(" No Zoff local maximum values available.")
 else:
-    tmpS = np.sqrt(snsValZoff)/(maxVal)
-S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")/(maxValZ*vcell)
-mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
-print(" Sensitivities written to "+SNSFile)
+    SNSFile = WorkDir+WorkName+"_Zoff_"+jacmax+"_vol.sns"
+    S = snsValZoff
+    scale =maxVal
+    if "loc" in normalize_jacmax.lower():
+        scale = maxValZoff
+    S = np.sqrt(S)/(scale*vcell)
+    mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
+    print(" Sensitivities written to "+SNSFile)
 
-SNSFile = WorkDir+WorkName+"_T_vol_"+jacmax+".sns"
-if "loc" in normalize_jacmax.lower():
-    tmpS = np.sqrt(snsValT)/(maxValT*vcell)
+if noT and ("loc" in normalize_jacmax.lower()):
+    print(" No T local maximum values available.")
 else:
-    tmpS = np.sqrt(snsValT)/(maxVal)
-S = np.reshape(tmpS, dims)
-mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
-print(" Sensitivities written to "+SNSFile)
+    SNSFile = WorkDir+WorkName+"_T_"+jacmax+"_vol.sns"
+    S = snsValT
+    scale =maxVal
+    if "loc" in normalize_jacmax.lower():
+        scale = maxValT
+    S = np.sqrt(S)/(scale*vcell)
+    mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
+    print(" Sensitivities written to "+SNSFile)
 
-SNSFile = WorkDir+WorkName+"_P_vol_"+jacmax+".sns"
-if "loc" in normalize_jacmax.lower():
-    tmpS = np.sqrt(snsValP)/(maxValP*vcell)
+if noP and ("loc" in normalize_jacmax.lower()) :
+    print(" No P local maximum values available.")
 else:
-    tmpS = np.sqrt(snsValP)/(maxVal)
-S = np.reshape(tmpS, dims)# S = np.reshape(tmpS, dims, order="F")/(maxValP*vcell)
-mod.write_model(SNSFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
-print(" Sensitivities written to "+SNSFile)
+    SNSFile = WorkDir+WorkName+"_P_"+jacmax+"_vol.sns"
+    S = snsValP
+    scale =maxVal
+    if "loc" in normalize_jacmax.lower():
+        scale = maxValP
+    S = np.sqrt(S)/(scale*vcell)
+    mod.write_model(SNSFile, dx,dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
+    print(" Sensitivities written to "+SNSFile)
+
 
 
 elapsed = time.time() - start

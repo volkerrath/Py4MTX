@@ -246,8 +246,8 @@ def set_mask(rho=None, pad=[10, 10 , 10, 10, 0, 10], blank= np.nan, flat=True, o
     # print(np.shape(jt))
     mask = jm
     if flat:
-        mask = jm.flatten()
-        # mask = jm.flatten(order="F")
+        # mask = jm.flatten()
+        mask = jm.flatten(order="F")
 
     return mask
 

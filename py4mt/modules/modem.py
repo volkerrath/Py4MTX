@@ -91,10 +91,11 @@ def read_jac(JacFile=None, out=False):
                     _ = fjac.read_reals(np.float64)
                     # AirCond
                     _ = fjac.read_reals(np.float64)
-                    # ColJac = fjac.read_reals(np.float64).flatten(order="F")
-                    ColJac = fjac.read_reals(np.float64).flatten()
+                    ColJac = fjac.read_reals(np.float64)
+                    #ColJac = fjac.read_reals(np.float64).flatten()
                     # print(np.shape(CellSens))
                     # ColJac =  CellSens.flatten(order='F')
+                    # Coljac = np.fromfile(file, dtype=np.float6)
                     tmp1.append(ColJac)
                     # print(np.shape(tmp1))
                     # tmp2.append()
