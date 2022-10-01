@@ -20,7 +20,7 @@ This repository contains the following subdirectories:
  	MT data. Also included is a workflow for reading and processing Jacobians from 
 	ModEM outputs (original & new).     	 
  
-- 	**aempy/notebooks**
+- 	**py4mt/notebooks**
  	Contains jupyter notebooks for the most important scripts using the toolbox. 
 	  	
 - 	**modem**
