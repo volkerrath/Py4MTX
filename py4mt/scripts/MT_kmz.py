@@ -42,7 +42,7 @@ plots_1 = True
 strng_1 = "_data"
 
 plots_2 = True
-strng_2 = "_edited_imp_rjmcmc"
+strng_2 = "_edi_imp_rjmcmc"
 
 repeat = False
 repeat_string ="XXXXX"# "R"
@@ -54,13 +54,17 @@ kml = False
 kmz = True
 # Define the path to your EDI-files
 
-edi_dir = r"/home/vrath/Krafla_smb/edis/"
+# edi_dir = r"/home/vrath/MT_Data/Naser/Limerick2023/mt/reprocessed_quality/reprocessed_bad/"
+# edi_dir = r"/home/vrath/MT_Data/Naser/Limerick2023/mt/reprocessed_quality/reprocessed_good/"
+# edi_dir = r"/home/vrath/MT_Data/Naser/Limerick2023/mt/reprocessed_quality/reprocessed_ugly/"
+edi_dir = r"/home/vrath/MT_Data/Naser/Limerick2023/mt/reprocessed_final/"
 print(" Edifiles read from: %s" % edi_dir)
 
 if plots_1 or plots_2:
-    plots_dir =   r"/home/vrath/Krafla_smb/plots/"
-    # r"/media/vrath/MT/Ireland/Northwest_CarboniferousBasin/MT_DATA/EDI/data_plots/"
-    # r"/home/vrath/WestTimor/WT8C_plots/" #edi_dir #"NEW_plots_bbmt_roi_edit/"
+    # plots_dir =   r"/home/vrath/MT_Data/Naser/Limerick2023/mt/reprocessed_quality/reprocessed_bad/"
+    # plots_dir =   r"/home/vrath/MT_Data/Naser/Limerick2023/mt/reprocessed_quality/reprocessed_good/"
+    #plots_dir =   r"/home/vrath/MT_Data/Naser/Limerick2023/mt/reprocessed_quality/reprocessed_ugly/"
+    plots_dir =   r"/home/vrath/MT_Data/Naser/Limerick2023/mt/reprocessed_plots_3km/"
     print(" Plots read from: %s" % plots_dir)
 
 
@@ -80,8 +84,21 @@ with open(places_file, "r") as f:
 # Define the path for saving  kml files
 
 
-kml_dir = r"/home/vrath/Krafla_smb/"
-kml_file = r"Krafla"
+kml_dir = r"/home/vrath/MT_Data/Naser/Limerick2023/mt/"
+# kml_file = r"Limerick_reprocessed_good"
+# site_icolor = simplekml.Color.green
+# site_rcolor = simplekml.Color.green
+# kml_file = r"Limerick_reprocessed_ugly"
+# site_icolor = simplekml.Color.yellow
+# site_rcolor = simplekml.Color.yellow
+# kml_file = r"Limerick_reprocessed_bad"
+# site_icolor = simplekml.Color.red
+# site_rcolor = simplekml.Color.red
+kml_file = r"Limerick_reprocessed_3km"
+site_icolor = simplekml.Color.blue
+site_rcolor = simplekml.Color.blue
+
+
 
 icon_dir = r"/home/vrath/GoogleEarth/icons/"
 site_icon =  icon_dir + "placemark_circle.png"
@@ -89,11 +106,11 @@ site_icon_rept =  icon_dir + "placemark_circle.png"
 site_icon_repr =  icon_dir + "placemark_circle.png"
 
 site_tcolor = simplekml.Color.white  # "#555500" #
-site_tscale = 1.5  # scale the text
+site_tscale = 1.2  # scale the text
 
 site_iscale = 1.5
-site_icolor = simplekml.Color.blue
-site_rcolor = simplekml.Color.blue
+# site_icolor = simplekml.Color.blue
+# site_rcolor = simplekml.Color.blue
 
 site_icolor_rept = simplekml.Color.yellow
 site_rcolor_rept = simplekml.Color.yellow
@@ -209,4 +226,5 @@ if kml:
 if kmz:
     kml.savekmz(kml_outfile + ".kmz")
 
+print("Done. "+str(len(edi_files))+" files in list.")
 print("kml/z written to " + kml_file)

@@ -24,6 +24,8 @@ coordinates and elevations, e. g., for WALDIM analysis.
 
 import os
 from sys import exit as error
+import csv
+
 from mtpy.core.mt import MT
 from mtpy.analysis.geometry import dimensionality
 from mtpy.imaging.plotstrike import PlotStrike
@@ -35,12 +37,15 @@ import matplotlib.pyplot as plt
 cm = 1/2.54  # centimeters in inches
 
 # Define the path to your EDI-files and for the list produced
-# edi_dir = r"/home/vrath/Limerick2022/reports/EDI_edited_Z/" #"work/Mar02/edi_edited/"
-edi_dir = r"/home/vrath/Limerick2022/3D/edi_all/" #"work/Mar02/edi_edited/"
+edi_dir = r"/home/vrath/MT_Data/Naser/Limerick2023/mt/reprocessed_final/"
 print(" Edifiles read from: %s" % edi_dir)
 
-plotfile = edi_dir+"Dimensionality_pt"
-PlotFmt = [".png"] #".png", ".pdf",]
+plotfile = "/home/vrath/MT_Data/Naser/Limerick2023/mt/reprocessed_final/dimensionality/"
+PlotFmt = [".png", ]
+
+FilesOnly = True
+
+DimFile = "Limerick2023_dims.dat"
 # No changes required after this line!
 
 # Construct list of edi-files:
@@ -73,6 +78,15 @@ Fontsizes = [Fontsize, Labelsize, Titlesize]
 Linewidths= [0.5]
 Markersize = 4
 
+"""
+For just plotting to files, choose the cairo backend (eps, pdf, ,png, jpg...).
+If you need to see the plots directly (plots window, or jupyter), simply
+comment out the following line. In this case matplotlib may run into
+memory problems ager a few hundreds of high-resolution plots.
+Find other backends by entering %matplotlib -l
+"""
+if FilesOnly:
+    mpl.use("cairo")
 
 # Loop over edifiles:
 n3d = 0
@@ -84,6 +98,7 @@ sit = 0
 # fig  = plt.figure()
 # fig.set_figwidth(16*cm)
 
+dimlist = []
 for filename in edi_files:
     sit = sit + 1
     print("reading data from: " + filename)
@@ -113,39 +128,45 @@ for filename in edi_files:
     np.savetxt(fname =name+"_dim.dat",fmt="%12.5f  %3i",X =dims.T)
 
     print("dimensionality:")
+    nel_site = np.size(dim)
+    n1d_site = sum(map(lambda x: x == 1, dim))
+    n2d_site = sum(map(lambda x: x == 2, dim))
+    n3d_site = sum(map(lambda x: x == 3, dim))
+
+    _, sitn = os.path.split(name)
+    dimlist.append([sitn, nel_site, n1d_site, n2d_site, n3d_site])
+
     nel = nel + np.size(dim)
-    n1d = n1d + sum(map(lambda x: x == 1, dim))
-    n2d = n2d + sum(map(lambda x: x == 2, dim))
-    n3d = n3d + sum(map(lambda x: x == 3, dim))
+    n1d = n1d + n1d_site
+    n2d = n2d + n2d_site
+    n3d = n3d + n3d_site
+
+    strikeplot = PlotStrike(fn_list=[file_i],
+                            plot_type=1,
+                            plot_tipper='yr')
+    #
+    strikeplot.save_plot(name+"_Strikes.png",
+                          file_format='.png',
+                          fig_dpi=600)
+    print("  number of undetermined elements = " +
+          str(nel_site - n1d_site - n2d_site- n3d_site) + "\n")
+    print("  number of 1-D elements = " + str(n1d_site) +
+          "  (" + str(round(100 * n1d_site / nel)) + "%)")
+    print("  number of 2-D elements = " + str(n2d_site) +
+          "  (" + str(round(100 * n2d_site / nel)) + "%)")
+    print("  number of 3-D elements = " + str(n3d_site) +
+          "  (" + str(round(100 * n3d_site / nel)) + "%)")
 
 
 strikeplot = PlotStrike(fn_list=edi_files,
                         plot_type=1,
                         plot_tipper='yr')
-# save to file
+#
 strikeplot.save_plot(edi_dir+"AllStrikes.png",
-                     file_format='.png',
-                     fig_dpi=600)
+                      file_format='png',
+                      fig_dpi=600)
 
-    # plt.semilogx(freq,dim,"o")
-
-# plt.xlabel("Frequency (Hz)",fontsize=Fontsizes[1])
-# plt.ylabel("Dimensionality (-)",fontsize=Fontsizes[1])
-# plt.tick_params(labelsize=Fontsizes[0])
-# plt.xlim([0., 4.])
-# plt.grid("major", "both", linestyle=":", lw=0.3)
-
-
-# for F in PlotFmt:
-#     print("Plot written to "+plotfile+F)
-#     plt.savefig(plotfile+F, dpi=600)
-
-# plt.show()
-
-
-
-
-
+print("\n\n\n")
 print("number of sites = " + str(sit))
 print("total number of elements = " + str(nel))
 print("  number of undetermined elements = " +
@@ -156,3 +177,17 @@ print("  number of 2-D elements = " + str(n2d) +
       "  (" + str(round(100 * n2d / nel)) + "%)")
 print("  number of 3-D elements = " + str(n3d) +
       "  (" + str(round(100 * n3d / nel)) + "%)")
+dimlist.append(["all_sites", nel,
+                round(100*n1d/nel),
+                round(100*n2d/nel),
+                round(100*n3d/nel)])
+
+with open(DimFile, "w") as f:
+    sites = csv.writer(f, delimiter = " ")
+    sites.writerow(["Sitename", "Ntot", "N1d%", "N2d%", "N3d%"])
+    sites.writerow([ns, " ", " "])
+
+    for item in dimlist:
+        sites.writerow(item)
+
+    print('Done')
