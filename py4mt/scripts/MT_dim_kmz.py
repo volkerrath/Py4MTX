@@ -135,7 +135,7 @@ for site in places:
         
     sit.append(lst)
          
-ifr = 0
+
 for f in freqs:
     Nams = []
     Lats = []
@@ -144,9 +144,11 @@ for f in freqs:
     
 
     ff = numpy.log10(f)
-    ifr = ifr + 1
-    
-    freq_strng = "Freq"+str(ifr)
+   
+    if ff < 0:
+        freq_strng = "Per"+str(int(round(1/f,0)))+"s"
+    else:
+        freq_strng = "Freq"+str(int(round(f,0)))+"Hz"
     freqfolder = kml.newfolder(name=freq_strng)
 
     ns = len(nam)
@@ -169,7 +171,7 @@ for f in freqs:
     nsites =len(Nams)
     # print (nsites)
     for ii in numpy.arange(nsites):
-        site = freqfolder.newpoint()
+        site = freqfolder.newpoint(name=Nams[ii])
         site.coords = [(Lons[ii], Lats[ii], 0.)]
 
         if Dims[ii]==0:
