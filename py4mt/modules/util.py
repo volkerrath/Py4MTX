@@ -648,3 +648,36 @@ def make_pdf_catalog(WorkDir="./", PdfList= None, FileName=None):
     catalog.close()
 
     print("\n"+str(np.size(PdfList))+" files collected to "+FileName)
+
+def print_title(version="", fname="", form="%m/%d/%Y, %H:%M:%S", out=True):
+    """
+    Print version, calling filename, and modification date.
+    """
+
+    import os.path
+    from datetime import datetime
+
+    title = ""
+
+    if len(version)==0:
+        print("No version string given! Not printed to title.")
+        tstr = ""
+    else:
+       ndat = "\n"+"".join("Date " + datetime.now().strftime(form))
+       tstr =  "Py4MT Version "+version+ndat+ "\n"
+
+    if len(fname)==0:
+        print("No calling filenane given! Not printed to title.")
+        fstr = ""
+    else:
+        fnam = os.path.basename(fname)
+        mdat = datetime.fromtimestamp((os.path.getmtime(fname))).strftime(form)
+        fstr = fnam+", modified "+mdat+"\n"
+        fstr = fstr + fname
+
+    title = tstr+ fstr
+
+    if out:
+        print(title)
+
+    return title
