@@ -14,6 +14,7 @@ coordinates and elevations, e. g., for WALDIM analysis.
 import os
 import re
 
+digits = 6
 edi_in_dir = r"/home/vrath/work/MT_Data/Opf/2023/zips/GLW-ROT/"
 print(" Edifiles read from: %s" % edi_in_dir)
 edi_out_dir = r"/home/vrath/work/MT_Data/Opf/2023/edi_new/"
@@ -48,14 +49,16 @@ for file in edi_files:
                 parts[3]= ".".join((parts[3],parts[4]))
                 # print(line)
                 lat = float(parts[1]) + float(parts[2])/60 + float(parts[3])/(60*60)
-                lat = round(lat,6)
+                if digits!=0:
+                    lat = round(lat,digits)
                 line= (parts[0]+"="+str(lat)+"\n")           
                 fo.write(line)
             elif ("lon" in line.lower()):
                 parts = re.split('[^\d\w]+', line)
                 parts[3]= ".".join((parts[3],parts[4]))
                 lon = float(parts[1]) + float(parts[2])/60 + float(parts[3])/(60*60)
-                lon = round(lon,6)
+                if digits!=0:
+                    lon = round(lon,6)
                 line= (parts[0]+"="+str(lon)+"\n")
                 fo.write(line)
             else:
