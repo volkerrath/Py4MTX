@@ -38,7 +38,7 @@ for file in edi_files:
     print("reading data from: " + file)
     # name, ext = os.path.splitext(file)
     filein = file
-    filout = edi_out_dir+os.path.basename(file)
+    filout = edi_out_dir+os.path.basename(file).lower()
     print("writing data to: " + filout)
     fo = open(filout, "w")
     with open(filein) as fi:
@@ -48,12 +48,14 @@ for file in edi_files:
                 parts[3]= ".".join((parts[3],parts[4]))
                 # print(line)
                 lat = float(parts[1]) + float(parts[2])/60 + float(parts[3])/(60*60)
+                lat = round(lat,6)
                 line= (parts[0]+"="+str(lat)+"\n")           
                 fo.write(line)
             elif ("lon" in line.lower()):
                 parts = re.split('[^\d\w]+', line)
                 parts[3]= ".".join((parts[3],parts[4]))
                 lon = float(parts[1]) + float(parts[2])/60 + float(parts[3])/(60*60)
+                lon = round(lon,6)
                 line= (parts[0]+"="+str(lon)+"\n")
                 fo.write(line)
             else:
