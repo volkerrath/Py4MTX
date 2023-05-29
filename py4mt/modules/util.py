@@ -208,7 +208,16 @@ def project_utm_to_geoid(utm_x, utm_y, utm_z, utm_zone=32629, geoid=3855):
 
     return utm_x, utm_y, elev
 
-
+def project_gk_to_latlon(gk_x, gk_y, gk_zone=5684):
+    """
+    transform utm to latlon, using pyproj
+    Look for other EPSG at https://epsg.io/
+    VR 04/21
+    """
+    prj_wgs = pyproj.CRS("epsg:4326")
+    prj_gk = pyproj.CRS("epsg:" + str(gk_zone))
+    latitude, longitude = pyproj.transform(prj_gk, prj_wgs, gk_x, gk_y)
+    return latitude, longitude
 
 def splitall(path):
     allparts = []
