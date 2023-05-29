@@ -13,7 +13,6 @@ coordinates and elevations, e. g., for WALDIM analysis.
 
 import os
 import re
-import numpy as np
 
 edi_in_dir = r"/home/vrath/work/MT_Data/Opf/2023/zips/GLW-ROT/"
 print(" Edifiles read from: %s" % edi_in_dir)
@@ -30,7 +29,7 @@ for entry in files:
     # print(entry)
     if entry.endswith(".edi") and not entry.startswith("."):
         edi_files.append(edi_in_dir+entry)
-ns = np.size(edi_files)
+ns = len(edi_files)
 if ns ==0:
     error("No edi files found in "+edi_in_dir+"! Exit.")
 
