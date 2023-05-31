@@ -37,15 +37,15 @@ import matplotlib.pyplot as plt
 cm = 1/2.54  # centimeters in inches
 
 # Define the path to your EDI-files and for the list produced
-edi_dir = r"/home/vrath/MT_Data/Naser/Limerick2023/mt/reprocessed_final/"
+edi_dir = r"/home/vrath/work/MT_Data/Opf/2023/edi/"
 print(" Edifiles read from: %s" % edi_dir)
 
-plotfile = "/home/vrath/MT_Data/Naser/Limerick2023/mt/reprocessed_final/dimensionality/"
+plotfile = r"/home/vrath/work/MT_Data/Opf/2023/dim/"
 PlotFmt = [".png", ]
 
 FilesOnly = True
 
-DimFile = "Limerick2023_dims.dat"
+DimFile = "Opf2023_dims.dat"
 # No changes required after this line!
 
 # Construct list of edi-files:

@@ -30,6 +30,7 @@ import os
 import sys
 import numpy as np
 from mtpy.core.mt import MT
+
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
@@ -44,13 +45,13 @@ import util
 # Graphical paramter. Determine the plot formats produced,
 # and the required resolution:
 
-PlotFmt = [".pdf", ".png"]
+PlotFmt = [".png"]
 dpi = 400
 PdfC = True
 if not ".pdf" in PlotFmt:
     PdfC = False
     print("No PDF catalog because no pdf output!")
-PdfCName  = "BHP_data.pdf"
+PdfCName  = "Opf2023_data.pdf"
 
 
 # What should be plotted?
@@ -62,7 +63,7 @@ no_err = False
 strng="_Z"+str(plot_z)
 # Plot tipper?
 # "y" or "n", followed by "r","i", or "ri", for real part, imaginary part, or both, respectively.
-plot_t = "yri" #""yri"
+plot_t = "n" #yri" #""yri"
 print (plot_t[0])
 if plot_t[0]=="y":
     strng = strng+"T"+plot_t[1:]
@@ -74,28 +75,25 @@ if plot_p=="y":
 
 strng="_data"
 
-DatLimits = (0.001, 10.)
 
-
-PerLimits = (0.0003, 30.)  # AMT
+PerLimits = (0.0001, 1.)  # AMT
 # PerLimits = (0.001,100000.) #BBMT
 # PerLimits = (0.00003,10000.) #AMT+BBMT
-RhoLimits = (1., 100000.)
-PhiLimits = (-10., 100.)
+RhoLimits = (10., 10000.)
+PhiLimits = (-180., 180.)
 Tiplimits = (-.5, 0.5)
 # Define the path to your EDI-files:
 # edi_in_dir = r"/home/vrath/RRV_work/edi_work/Edited/"
-edi_in_dir = r"/home/vrath/BHP/edi_masked/"
+edi_in_dir = r"/home/vrath/work/MT_Data/Opf/2023/edi/"
 # r"/home/vrath/MauTopo/MauTopo500_edi/"
 # r"/home/vrath/RRV_work/edifiles_in/"
 # edi_in_dir =  r"/home/vrath/RRV_work/edifiles_r1500m_bbmt/"
 print(" Edifiles read from: %s" % edi_in_dir)
 
-# Define theedi_in_dir path for saving  plots:
+# Define the edi_in_dir path for saving  plots:
 
 
-plots_dir =  r"/home/vrath/BHP/plots/"
-# plots_dir = r"/home/vrath/RRV_work/edifiles_in/"
+plots_dir =  r"/home/vrath/work/MT_Data/Opf/2023/plots/"
 print(" Plots written to: %s" % plots_dir)
 if not os.path.isdir(plots_dir):
     print(" File: %s does not exist, but will be created" % plots_dir)
@@ -124,7 +122,8 @@ if PdfC:
 for filename in edi_files:
     name, ext = os.path.splitext(filename)
     file_i = edi_in_dir + filename
-    mt_obj = MT(file_i)
+    mt_obj   = MT(file_i)
+    
     print(" site %s at :  % 10.6f % 10.6f" % (name, mt_obj.lat, mt_obj.lon))
 
 
@@ -133,8 +132,10 @@ for filename in edi_files:
 
     z = mt_obj.Z.z
     t = mt_obj.Tipper.tipper
-
-
+    print(np.shape(t))
+    print()
+    
+    DatLimits = PerLimits
     fmin = 1./DatLimits[1]
     fmax = 1./DatLimits[0]
 
@@ -156,19 +157,19 @@ for filename in edi_files:
                                        plot_tipper=plot_t,
                                        plot_pt=plot_p,
                                        x_limits=PerLimits,
-                                       res_limits=RhoLimits,
-                                       phase_limits=PhiLimits,
-                                       tipper_limits=Tiplimits,
+                                       # res_limits=RhoLimits,
+                                       # phase_limits=PhiLimits,
+                                       # tipper_limits=Tiplimits,
                                        fig_dpi=400,
                                        xy_ls="",yx_ls="", det_ls="",
-                                       ellipse_colorby="skew",
-                                       ellipse_range = [-10.,10.,2.]
+                                       # ellipse_colorby="skew",
+                                       # ellipse_range = [-10.,10.,2.]
                                        )
 
 # Finally save figure
 
     for F in PlotFmt:
-         plot_obj.save_plot(plots_dir+name+strng+F)
+          plot_obj.save_plot(plots_dir+name+strng+F)
 
-if PdfC:
-    util.make_pdf_catalog(plots_dir, PdfList=pdf_list, FileName=plots_dir+PdfCName)
+# if PdfC:
+#     util.make_pdf_catalog(plots_dir, PdfList=pdf_list, FileName=plots_dir+PdfCName)

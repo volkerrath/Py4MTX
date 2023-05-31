@@ -21,13 +21,9 @@ import simplekml
 from mtpy.core.mt import MT
 
 # Define the path to your EDI-files
-
-# edi_dir = r"/home/vrath/MT_Data/Naser/Limerick2023/mt/reprocessed_quality/reprocessed_bad/"
-# edi_dir = r"/home/vrath/MT_Data/Naser/Limerick2023/mt/reprocessed_quality/reprocessed_good/"
-# edi_dir = r"/home/vrath/MT_Data/Naser/Limerick2023/mt/reprocessed_quality/reprocessed_ugly/"
-edi_dir = r"/home/vrath/MT_Data/Peru/Tacna/edi/"
+edi_dir = r"/home/vrath/work/MT_Data/Opf/2023/edi/"
 print(" Edifiles read from: %s" % edi_dir)
-
+kml_dir =  r"/home/vrath/work/MT_Data/Opf/2023/"
 
 # open file and read the content in a list
 places_file = edi_dir + "Sitelist.csv"
@@ -50,10 +46,9 @@ for row in tmp:
 # Define the path for saving  kml files
 kml = False
 kmz = True
-kml_dir = edi_dir
-kml_file = r"Tacna2023_PTDIM"
+kml_file = "Opf2023_PTDIM"
 
-icon_dir = edi_dir #r"/home/vrath/GoogleEarth/icons/"
+icon_dir = r"/home/vrath/GoogleEarth/icons/"
 site_icon =  icon_dir + "placemark_circle.png"
 
 site_tcolor = simplekml.Color.white  # "#555500" #
