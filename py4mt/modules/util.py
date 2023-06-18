@@ -18,8 +18,7 @@ import fnmatch
 # from shapely.geometry.polygon import Polygon
 import pyproj
 from pyproj import CRS, Transformer
-from pyproj.aoi import AreaOfInterest
-from pyproj.database import query_utm_crs_info
+
 
 from sys import exit as error
 
@@ -80,24 +79,25 @@ def get_filelist(searchstr=["*"], searchpath="."):
 
     return filelist
 
-def get_utm_zone(latitude=None, longitude=None):
-    """
-    Find EPSG from position, using pyproj
+# def get_utm_zone(latitude=None, longitude=None):
+#     """
+#     Find EPSG from position, using pyproj
 
-    VR 04/21
-    """
+#     VR 04/21
+#     """
+#     from pyproj.aoi import AreaOfInterest
+#     from pyproj.database import query_utm_crs_info
+#     utm_list = query_utm_crs_info(
+#         datum_name="WGS 84",
+#         area_of_interest=AreaOfInterest(
+#         west_lon_degree=longitude,
+#         south_lat_degree=latitude,
+#         east_lon_degree=longitude,
+#         north_lat_degree=latitude, ), )
+#     utm_crs =CRS.from_epsg(utm_list[0].code)
+#     EPSG = CRS.to_epsg(utm_crs)
 
-    utm_list = query_utm_crs_info(
-        datum_name="WGS 84",
-        area_of_interest=AreaOfInterest(
-        west_lon_degree=longitude,
-        south_lat_degree=latitude,
-        east_lon_degree=longitude,
-        north_lat_degree=latitude, ), )
-    utm_crs =CRS.from_epsg(utm_list[0].code)
-    EPSG = CRS.to_epsg(utm_crs)
-
-    return EPSG, utm_crs
+#     return EPSG, utm_crs
 
 
 def proj_latlon_to_utm(latitude, longitude, utm_zone=32629):
