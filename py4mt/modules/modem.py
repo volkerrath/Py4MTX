@@ -772,6 +772,95 @@ def read_model(ModFile=None, trans="LINEAR", volumes=False, out=True):
     else:
         return dx, dy, dz, mval, reference, trans
 
+
+def read_covar(CovFile=None, out=True):
+    """
+    Read ModEM covar input.
+
+    Returns mval in physical units
+
+    author: vrath
+    last changed: June, 20230
+
+    In Fortran:
+
+    DO iz = 1,Nz
+        DO iy = 1,Ny
+            DO ix = Nx,1,-1
+                READ(10,*) mval(ix,iy,iz)
+            ENDDO
+        ENDDO
+    ENDDO
+
+    """
+    with open(ModFile, "r") as f:
+        lines = f.readlines()
+
+    lines = [line.split() for line in lines]
+    dims = [int(sub) for sub in lines[1][0:3]]
+    nx, ny, nz = dims
+    trns = lines[1][4]
+    dx = np.array([float(sub) for sub in lines[2]])
+    dy = np.array([float(sub) for sub in lines[3]])
+    dz = np.array([float(sub) for sub in lines[4]])
+
+    mval = np.array([])
+    for line in lines[5:-2]:
+        line = np.flipud(line) #  np.fliplr(line)
+        mval = np.append(mval, np.array([float(sub) for sub in line]))
+
+    if out:
+        print("values in " + ModFile + " are: " + trns)
+    if trns == "LOGE":
+        mval = np.exp(mval)
+    elif trns == "LOG10":
+        mval = np.power(10.0, mval)
+    elif trns == "LINEAR":
+        pass
+    else:
+        print("Transformation: " + trns + " not defined!")
+        sys.exit(1)
+
+    # here mval should be in physical units, not log...
+    if "loge" in trans.lower() or "ln" in trans.lower():
+        mval = np.log(mval)
+        if out:
+            print("values transformed to: " + trans)
+    elif "log10" in trans.lower():
+        mval = np.log10(mval)
+        if out:
+            print("values transformed to: " + trans)
+    else:
+        if out:
+            print("values transformed to: " + trans)
+        pass
+
+    mval = mval.reshape(dims, order="F")
+
+    reference = [float(sub) for sub in lines[-2][0:3]]
+
+    if out:
+        print(
+            "readMod: %i x %i x %i model read from %s" % (nx, ny, nz, ModFile))
+
+    if volumes:
+        vcell = np.zeros_like(mval)
+        for ii in np.arange(len(dx)):
+            for jj in np.arange(len(dy)):
+                for kk in np.arange(len(dz)):
+                    vcell[ii,jj,kk] = dx[ii]*dy[jj]*dz[kk]
+
+        if out:
+            print(
+                "readMod: %i x %i x %i cell volumes calculated" % (nx, ny, nz))
+
+        return dx, dy, dz, mval, reference, trans, vcell
+
+
+
+    else:
+        return dx, dy, dz, mval, reference, trans
+
 def linear_interpolation(p1, p2, x0):
     """
     Function that receives as arguments the coordinates of two points (x,y)

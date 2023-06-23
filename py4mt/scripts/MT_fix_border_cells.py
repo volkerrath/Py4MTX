@@ -14,11 +14,9 @@
 # ---
 
 """
-Reads ModEM'smodel file, adds perturbations.
+Reads ModEM model and covariance files, fix border (padding zones).
 
-Ellipsoids or boxes
-
-@author: vr jan 2021
+@author: vr jun 2023
 
 
 """
@@ -28,18 +26,13 @@ import sys
 from sys import exit as error
 import time
 from datetime import datetime
+import warnings
+warnings.simplefilter(action="ignore", category=FutureWarning)
 
 import numpy as np
 import netCDF4 as nc
 import scipy.ndimage as spn
 import scipy.linalg as spl
-
-import vtk
-import pyvista as pv
-import PVGeo as pvg
-import omf
-import omfvista as ov
-import gdal
 
 mypath = ["/home/vrath/Py4MT/py4mt/modules/",
           "/home/vrath/Py4MT/py4mt/scripts/"]
@@ -52,28 +45,20 @@ import modem as mod
 import util as utl
 from version import versionstrg
 
+
 rng = numpy.random.default_rng()
 nan = numpy.nan  # float("NaN")
 version, _ = versionstrg()
 titstrng = util.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
-rhoair = 1.e17
 
-ModFile_in = r"/home/vrath/work/MT/Annecy/ImageProc/In/ANN20_02_PT_NLCG_016"
-ModFile_out = r"/home/vrath/work/MT/Annecy/ImageProc/Out/ANN20_02_PT_NLCG_016_insert"
+air = 0
+ocean = 9
 
-geocenter = [45.938251, 6.084900]
-utm_x, utm_y = utl.project_latlon_to_utm(geocenter[0], geocenter[1], utm_zone=32631)
-utmcenter = [utm_x, utm_y, 0.0]
+CovFile_in = r"/home/vrath/work/MT/Annecy/ImageProc/In/ANN20_02_PT_NLCG_016"
+CovFile_out = r"/home/vrath/work/MT/Annecy/ImageProc/In/ANN20_02_PT_NLCG_016"
 
-ell = ["ell", "rep", 0., 0., 0., 3000., 10000., 2000., 1000., 0., 0., 30.]
-box = ["box", "rep", 0., 0., 0., 1000., 2000., 1000., 1000., 0., 0., 30.]
-bodies = [ell, box]
-nb = np.shape(bodies)
-# smoother=['gaussian',0.5]
-smoother = ["uniform", 3]
-total = 0
 start = time.time()
 
 dx, dy, dz, rho, reference = mod.readMod(ModFile_in + ".rho", out=True)

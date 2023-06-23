@@ -31,7 +31,6 @@ from sys import exit as error
 import time
 from datetime import datetime
 
-
 import numpy as np
 import netCDF4 as nc
 
@@ -56,17 +55,13 @@ import util as utl
 
 from version import versionstrg
 
-Strng, _ = versionstrg()
-now = datetime.now()
-print("\n\n"+Strng)
-print("Generate Random sets of bodies"+"\n"+"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%S")))
-print("\n\n")
+rng = numpy.random.default_rng()
+nan = numpy.nan  # float("NaN")
+version, _ = versionstrg()
+titstrng = util.print_title(version=version, fname=__file__, out=False)
+print(titstrng+"\n\n")
 
 
-
-
-rng = np.random.default_rng()
-nan = np.nan  # float("NaN")
 
 
 rhoair = 1.e+17
