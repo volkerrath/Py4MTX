@@ -40,16 +40,15 @@ for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
 
-import modules
 import modem as mod
-import util as utl
+import util as  utl
 from version import versionstrg
 
 
-rng = numpy.random.default_rng()
-nan = numpy.nan  # float("NaN")
+rng = np.random.default_rng()
+nan = np.nan  # float("NaN")
 version, _ = versionstrg()
-titstrng = util.print_title(version=version, fname=__file__, out=False)
+titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
 PY4MT_DATA = os.environ["PY4MT_DATA"]
@@ -62,19 +61,19 @@ border = 5
 
 ModFile_in = PY4MT_DATA +"/test/test.rho"
 CovFile_in = PY4MT_DATA +"/test/test.cov"
-CovFile_out = PY4MT_DATA +"/test/test_fix"+str(border)+".cov""
+CovFile_out = PY4MT_DATA +"/test/test_fix"+str(border)+".cov"
 
 start = time.time()
 
-dx, dy, dz, rho, reference = mod.readMod(ModFile_in + ".rho", out=True)
-# writeMod(ModFile_out+'.rho', dx, dy, dz, rho,reference,out = True)
+dx, dy, dz, rho, reference, _ = mod.read_model(ModFile_in, out=True)
+# write_model(ModFile_out+'.rho', dx, dy, dz, rho,reference,out = True)
 elapsed = time.time() - start
-total = total + elapsed
-print(" Used %7.4f s for reading model from %s "
-      % (elapsed, ModFile_in + ".rho"))
+print("Used %7.4f s for reading model from %s "
+      % (elapsed, ModFile_in))
 modsize = np.shape(rho)
 
-
-
-total = total + elapsed
-print(" Total time used:  %f s " % (total))
+start = time.time()
+lines_out = mod.read_covar(CovFile_in, CovFile_out, fixed=fixed, border=border,
+                        out=True)
+elapsed = time.time() - start
+print(" Used %7.4f for reading/writing covar:"  % (elapsed))

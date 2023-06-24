@@ -49,10 +49,10 @@ import modem as mod
 from version import versionstrg
 
 
-rng = numpy.random.default_rng()
-nan = numpy.nan  # float("NaN")
+rng = np.random.default_rng()
+nan = np.nan  # float("NaN")
 version, _ = versionstrg()
-titstrng = util.print_title(version=version, fname=__file__, out=False)
+titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
 PY4MT_DATA = os.environ["PY4MT_DATA"]
@@ -114,7 +114,7 @@ if "smooth" in  action.lower():
 
     rhonew[air] = rhoair_tmp
     Modout = ModFile_out+"_mediankernel"+str(ksize)+"_"+str(maxit)+".rho"
-    mod.writeMod(Modout, dx, dy, dz, rhonew, reference, out=True)
+    mod.write_model(Modout, dx, dy, dz, rhonew, reference, out=True)
     elapsed = time.time() - start
     print(
         " Used %7.4f s for processing/writing model to %s "
@@ -126,7 +126,7 @@ if "med" in  action.lower():
                            boundary_mode=bmode, maxiter=maxit)
     rhonew[air] = rhoair_tmp
     Modout = ModFile_out+"_mediankernel"+str(ksize)+"_"+str(maxit)+".rho"
-    mod.writeMod(Modout, dx, dy, dz, rhonew, reference, out=True)
+    mod.write_model(Modout, dx, dy, dz, rhonew, reference, out=True)
     elapsed = time.time() - start
     print(
         " Used %7.4f s for processing/writing model to %s "
@@ -139,7 +139,7 @@ if "anidiff" in  action.lower():
         Out=True, Plot=True)
     rhonew[air] = rhoair_tmp
     Modout = ModFile_out + "_anisodiff" + str(fopt) + "-" + str(maxit) + ".rho"
-    mod.writeMod(Modout, dx, dy, dz, rhonew, reference, out=True)
+    mod.write_model(Modout, dx, dy, dz, rhonew, reference, out=True)
     elapsed = time.time() - start
     print(" Used %7.4f s for processing/writing model to %s "
           % (elapsed, Modout))

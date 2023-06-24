@@ -51,10 +51,10 @@ import modem as mod
 import util as utl
 from version import versionstrg
 
-rng = numpy.random.default_rng()
-nan = numpy.nan  # float("NaN")
+rng = np.random.default_rng()
+nan = np.nan  # float("NaN")
 version, _ = versionstrg()
-titstrng = util.print_title(version=version, fname=__file__, out=False)
+titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
 PY4MT_DATA = os.environ["PY4MT_DATA"]
@@ -77,8 +77,8 @@ smoother = ["uniform", 3]
 total = 0
 start = time.time()
 
-dx, dy, dz, rho, reference = mod.readMod(ModFile_in + ".rho", out=True)
-# writeMod(ModFile_out+'.rho', dx, dy, dz, rho,reference,out = True)
+dx, dy, dz, rho, reference = mod.read_model(ModFile_in + ".rho", out=True)
+# write_model(ModFile_out+'.rho', dx, dy, dz, rho,reference,out = True)
 elapsed = time.time() - start
 total = total + elapsed
 print(" Used %7.4f s for reading model from %s "
@@ -93,7 +93,7 @@ for ibody in range(nb[0]):
     rhonew = mod.insert_body(dx, dy, dz, rho, body, smooth=smoother)
     rhonew[air] = rhoair
     Modout = ModFile_out+"_"+body[0]+str(ibody)+"_"+smoother[0]+".rho"
-    mod.writeMod(Modout, dx, dy, dz, rhonew, reference, out=True)
+    mod.write_model(Modout, dx, dy, dz, rhonew, reference, out=True)
 
     elapsed = time.time() - start
     print(" Used %7.4f s for processing/writing model to %s"

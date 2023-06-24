@@ -45,7 +45,7 @@ for pth in mypath:
 
 # from modules.jacproc import *
 from modules.modem import *
-#import readJac, writeJacNC, readDat, writeDatNC, sparsifyJac, readMod, rsvd
+#import readJac, writeJacNC, readDat, writeDatNC, sparsifyJac, read_model, rsvd
 
 
 ModFile_in = r'/home/vrath/work/MT/Annecy/ImageProc/In'
@@ -68,7 +68,7 @@ np.savez_compressed(OutDatDir + Fileout,
                     mt_y=site_y, mt_x=site_x, mt_z=site_dem)
 
 start = time.time()
-dx, dy, dz, rho, reference = readMod(ModFile)
+dx, dy, dz, rho, reference = read_model(ModFile)
 elapsed = (time.time() - start)
 total = total + elapsed
 print(' Used %7.4f s for reading model from %s ' % (elapsed, DatFile))

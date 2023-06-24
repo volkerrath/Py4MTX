@@ -83,5 +83,5 @@ mod.write_model(M_Out_Dif, dx=dx, dy=dy, dz=dz, rho=rdiff,
 
 # Rcg = inv.crossgrad(dx, dy, dz, R1, R2)
 
-# writeMod(MCrg, dx=dx, dy=dy, dz=dz, rho=Rcrg,
+# write_model(MCrg, dx=dx, dy=dy, dz=dz, rho=Rcrg,
 #          reference=ref, trans="LINEAR", out=True)

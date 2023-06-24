@@ -49,10 +49,10 @@ import util as utl
 
 
 
-rng = numpy.random.default_rng()
-nan = numpy.nan  # float("NaN")
+rng = np.random.default_rng()
+nan = np.nan  # float("NaN")
 version, _ = versionstrg()
-titstrng = util.print_title(version=version, fname=__file__, out=False)
+titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
 PY4MT_DATA = os.environ["PY4MT_DATA"]
