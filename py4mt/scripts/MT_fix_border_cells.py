@@ -33,9 +33,9 @@ import numpy as np
 import netCDF4 as nc
 import scipy.ndimage as spn
 import scipy.linalg as spl
+PY4MT_ROOT = os.environ["PY4MT_ROOT"]
+mypath = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
 
-mypath = ["/home/vrath/Py4MT/py4mt/modules/",
-          "/home/vrath/Py4MT/py4mt/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -52,12 +52,17 @@ version, _ = versionstrg()
 titstrng = util.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
+PY4MT_DATA = os.environ["PY4MT_DATA"]
+
 
 air = 0
 ocean = 9
+fixed = 3
+border = 5
 
-CovFile_in = r"/home/vrath/work/MT/Annecy/ImageProc/In/ANN20_02_PT_NLCG_016"
-CovFile_out = r"/home/vrath/work/MT/Annecy/ImageProc/In/ANN20_02_PT_NLCG_016"
+ModFile_in = PY4MT_DATA +"/test/test.rho"
+CovFile_in = PY4MT_DATA +"/test/test.cov"
+CovFile_out = PY4MT_DATA +"/test/test_fix"+str(border)+".cov""
 
 start = time.time()
 
@@ -67,22 +72,8 @@ elapsed = time.time() - start
 total = total + elapsed
 print(" Used %7.4f s for reading model from %s "
       % (elapsed, ModFile_in + ".rho"))
+modsize = np.shape(rho)
 
-air = rho > rhoair / 100.
-
-rho = mod.prepare_mod(rho, rhoair=rhoair)
-
-for ibody in range(nb[0]):
-    body = bodies[ibody]
-    rhonew = mod.insert_body(dx, dy, dz, rho, body, smooth=smoother)
-    rhonew[air] = rhoair
-    Modout = ModFile_out+"_"+body[0]+str(ibody)+"_"+smoother[0]+".rho"
-    mod.writeMod(Modout, dx, dy, dz, rhonew, reference, out=True)
-
-    elapsed = time.time() - start
-    print(" Used %7.4f s for processing/writing model to %s"
-          % (elapsed, Modout))
-    print("\n")
 
 
 total = total + elapsed

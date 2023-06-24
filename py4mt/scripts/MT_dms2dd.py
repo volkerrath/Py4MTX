@@ -13,6 +13,10 @@ coordinates and elevations, e. g., for WALDIM analysis.
 
 import os
 import re
+PY4MT_ROOT = os.environ["PY4MT_ROOT"]
+mypath = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
+
+PY4MT_DATA = os.environ["PY4MT_DATA"]
 
 digits = 6
 edi_in_dir = r"/home/vrath/work/MT_Data/Opf/2023/zips/GLW-ROT/"

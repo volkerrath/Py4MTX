@@ -36,16 +36,15 @@ for pth in mypath:
         sys.path.insert(0,pth)
 
 
-
 dialect = "unix"
 delim = " "
 whatfor = "waldim"
 if  "wal" in whatfor:
     delim = " "
 
-
+PY4MT_DATA = os.environ["PY4MT_DATA"]
 # Define the path to your EDI-files and for the list produced
-edi_dir = r"/home/vrath/work/MT_Data/Opf/2023/edi/"
+edi_dir = PY4MT_DATA+"/Opf/2023/edi/"
 # r"/home/vrath/Desktop/MauTopo/MauEdi/"
 # r"/media/vrath/MT/Ireland/Northwest_CarboniferousBasin/MT_DATA/EDI/"
 print(" Edifiles read from: %s" % edi_dir)

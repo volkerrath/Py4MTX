@@ -48,16 +48,15 @@ import modem as mod
 import util as utl
 from version import versionstrg
 
-warnings.simplefilter(action="ignore", category=FutureWarning)
-
-Strng, _ = versionstrg()
-now = datetime.now()
-print("\n\n"+Strng)
-print("Generate Random sets of bodies"+"\n"+"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%S")))
-print("\n\n")
 
 
+rng = numpy.random.default_rng()
+nan = numpy.nan  # float("NaN")
+version, _ = versionstrg()
+titstrng = util.print_title(version=version, fname=__file__, out=False)
+print(titstrng+"\n\n")
 
+PY4MT_DATA = os.environ["PY4MT_DATA"]
 rhoair = 1.0e17
 
 

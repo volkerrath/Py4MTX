@@ -40,9 +40,8 @@ import PVGeo as pvg
 import omf
 import omfvista as ov
 import gdal
-
-mypath = ["/home/vrath/Py4MT/py4mt/modules/",
-          "/home/vrath/Py4MT/py4mt/scripts/"]
+PY4MT_ROOT = os.environ["PY4MT_ROOT"]
+mypath = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -57,6 +56,8 @@ nan = numpy.nan  # float("NaN")
 version, _ = versionstrg()
 titstrng = util.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
+
+PY4MT_DATA = os.environ["PY4MT_DATA"]
 
 rhoair = 1.e17
 

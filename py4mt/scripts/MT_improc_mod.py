@@ -39,8 +39,8 @@ import numpy as np
 # import vtk
 # import pyvista as pv
 # import PVGeo as pvg
-
-mypath = ["/home/vrath/Py4MT/py4mt/modules/", "/home/vrath/Py4MT/py4mt/scripts/"]
+PY4MT_ROOT = os.environ["PY4MT_ROOT"]
+mypath = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0, pth)
@@ -48,16 +48,14 @@ for pth in mypath:
 import modem as mod
 from version import versionstrg
 
-gc.enable()
 
-Strng, _ = versionstrg()
-now = datetime.now()
-print("\n\n"+Strng)
-print("Image processing on model"+"\n"+"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%S")))
-print("\n\n")
+rng = numpy.random.default_rng()
+nan = numpy.nan  # float("NaN")
+version, _ = versionstrg()
+titstrng = util.print_title(version=version, fname=__file__, out=False)
+print(titstrng+"\n\n")
 
-
-warnings.simplefilter(action="ignore", category=FutureWarning)
+PY4MT_DATA = os.environ["PY4MT_DATA"]
 
 rhoair = 1.e17
 

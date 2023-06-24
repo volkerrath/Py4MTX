@@ -61,7 +61,7 @@ version, _ = versionstrg()
 titstrng = util.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
-
+PY4MT_DATA = os.environ["PY4MT_DATA"]
 
 
 rhoair = 1.e+17
