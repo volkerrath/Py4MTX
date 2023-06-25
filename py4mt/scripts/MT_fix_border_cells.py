@@ -54,9 +54,8 @@ print(titstrng+"\n\n")
 PY4MT_DATA = os.environ["PY4MT_DATA"]
 
 
-air = 0
-ocean = 9
-fixed = 3
+
+fixed_zone = "3"
 border = 5
 
 ModFile_in = PY4MT_DATA +"/test/test.rho"
@@ -73,7 +72,7 @@ print("Used %7.4f s for reading model from %s "
 modsize = np.shape(rho)
 
 start = time.time()
-lines_out = mod.read_covar(CovFile_in, CovFile_out, fixed=fixed, border=border,
+lines_out = mod.read_covar(CovFile_in, CovFile_out, fixed=fixed_zone, border=border,
                         out=True)
 elapsed = time.time() - start
 print(" Used %7.4f for reading/writing covar:"  % (elapsed))

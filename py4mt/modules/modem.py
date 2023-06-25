@@ -773,10 +773,10 @@ def read_model(ModFile=None, trans="LINEAR", volumes=False, out=True):
         return dx, dy, dz, mval, reference, trans
 
 
-def read_covar(covfile_in=None, 
-               covfile_out=None,
+def read_covar(covfile_i=None, 
+               covfile_o=None,
                modsize=[], 
-               fixed=3, 
+               fixed="3", 
                border=5, 
                out=True):
     """
@@ -785,33 +785,86 @@ def read_covar(covfile_in=None,
     Returns mval in physical units
 
     author: vrath
-    last changed: June, 20230
+    last changed: June, 2023
 
     In Fortran:
 
 
     """
-    comments = ["#", "|",">", "+"+"/"]
-    lines_out = []
+    air = 0
+    ocean = 9
+    comments = ["#", "|",">", "+","/"]
+
     
-    with open(covfile_in, "r") as f:
-        lines_in = f.readlines()
-        for line in lines_in:
-            if line[0] in comments:
-                lines_out.append(line)
-            else:
-                tmp = line.split()
+    with open(covfile_i, "r") as f_i: 
+       l_i = f_i.readlines()
+       
+       
+       
+    l_o = l_i.copy()
+ 
     
+    done = False
+    for line in l_i:
+        if len(line.split())==3:
+                [block_len, line_len, num_lay] =[int(t) for t in line.split()]
+                print(block_len, line_len, num_lay)
+                done = True
+        if done: 
+            break
+        
+    blocks = [ii for ii in range(len(l_i)) if len(l_i[ii].split()) == 2]
+    if len(blocks) != num_lay:
+        error("read_covar: Number of blocks wrong! Exit.")
+        
+    for ib in blocks:
+        new_block = []
+        block = l_i[ib+1:ib+block_len+1] 
+        tmp =[line.split() for line in block]
+        
+        rows = list(range(0,block_len))
+        index_row1 = [index for index in rows if rows[index] < border]
+        index_row2 = [index for index in rows if rows[index] > block_len-border-1]
+        cols = list(range(0,line_len))
+        index_col1 = [index for index in cols if cols[index] < border]        
+        index_col2 = [index for index in cols if cols[index] > line_len-border-1]
+        
+        # print(index_col1)
+        # print(index_col2)
+        # print(cols)
+
+        for ii in rows:
+            if (ii in index_row1) or (ii in index_row2):
+                  tmp[ii] = [tmp[ii][cell].replace("1", fixed) for cell in cols]
+                  
+            # print(ii,tmp[ii] ,"\n")
+            
+            for jj in cols:
+                if (jj in index_col1) or (jj in index_col2):
+                    tmp[ii][jj] = tmp[ii][jj].replace("1", fixed)
+            # print(ii,tmp[ii] ,"\n")        
+         
+        # print("tmp\n",tmp ,"\n\n")
+      
+            tmp[ii].append("\n")    
+            new_block.append(" ".join(tmp[ii]))
+            
+            # print(ib)
+            # print(new_block)
+            
+        l_o[ib+1:ib+block_len+1] = new_block
+            
+    with open(covfile_o, "w") as f_o: 
+            f_o.writelines(l_o)
+
+
+
     if out:
-        print("read_covar: covariance matrix read from %s" % (covfile_in))
-        print("read_covar: covariance matrix writen to %s" % (covfile_out))
+        print("read_covar: covariance matrix read from %s" % (covfile_i))
+        print("read_covar: covariance matrix writen to %s" % (covfile_o))
         print(str(border)+"border  cells fixed (zone "+str(fixed)+")")
-        return lines_out
 
-
-
-    else:
-        return dx, dy, dz, mval, reference, trans
+    return l_o
 
 def linear_interpolation(p1, p2, x0):
     """
