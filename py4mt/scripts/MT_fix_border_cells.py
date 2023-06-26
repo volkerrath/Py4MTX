@@ -55,12 +55,16 @@ PY4MT_DATA = os.environ["PY4MT_DATA"]
 
 
 
-fixed_zone = "3"
+fixed_zone = "2"
 border = 5
 
-ModFile_in = PY4MT_DATA +"/test/test.rho"
-CovFile_in = PY4MT_DATA +"/test/test.cov"
-CovFile_out = PY4MT_DATA +"/test/test_fix"+str(border)+".cov"
+# ModFile_in = PY4MT_DATA +"/test/test.rho"
+# CovFile_in = PY4MT_DATA +"/test/test.cov"
+# CovFile_out = PY4MT_DATA +"/test/test_fix"+str(border)+".cov"
+ModFile_in = PY4MT_DATA +"/Peru/Tacna/TAC5_fixed-border/TAC_100.rho"
+CovFile_in = PY4MT_DATA +"/Peru/Tacna/TAC5_fixed-border/TAC_04.cov"
+CovFile_out = PY4MT_DATA+"Peru/Tacna/TAC5_fixed-border/TAC_04_border"+str(border)+".cov"
+
 
 start = time.time()
 

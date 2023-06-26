@@ -862,7 +862,7 @@ def read_covar(covfile_i=None,
     if out:
         print("read_covar: covariance matrix read from %s" % (covfile_i))
         print("read_covar: covariance matrix writen to %s" % (covfile_o))
-        print(str(border)+"border  cells fixed (zone "+str(fixed)+")")
+        print(str(border)+" border  cells fixed (zone "+str(fixed)+")")
 
     return l_o
 
