@@ -54,8 +54,12 @@ print(titstrng+"\n\n")
 PY4MT_DATA = os.environ["PY4MT_DATA"]
 
 
-
+"""
+0           treated lnalogous to air/ocean, i.e., no smoothing at boundaries
+2           with smoothing at boundaries
+"""
 fixed_zone = "2"
+# fixed_zone = "0"
 border = 5
 
 # ModFile_in = PY4MT_DATA +"/test/test.rho"
@@ -63,7 +67,7 @@ border = 5
 # CovFile_out = PY4MT_DATA +"/test/test_fix"+str(border)+".cov"
 ModFile_in = PY4MT_DATA +"/Peru/Tacna/TAC5_fixed-border/TAC_100.rho"
 CovFile_in = PY4MT_DATA +"/Peru/Tacna/TAC5_fixed-border/TAC_04.cov"
-CovFile_out = PY4MT_DATA+"Peru/Tacna/TAC5_fixed-border/TAC_04_border"+str(border)+".cov"
+CovFile_out = PY4MT_DATA+"Peru/Tacna/TAC5_fixed-border/TAC_04_border"+str(border)+"_fixed"+str(fixed_zone)+".cov"
 
 
 start = time.time()
