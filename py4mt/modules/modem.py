@@ -773,29 +773,27 @@ def read_model(ModFile=None, trans="LINEAR", volumes=False, out=True):
         return dx, dy, dz, mval, reference, trans
 
 
-def read_covar(covfile_i=None, 
+def proc_covar(covfile_i=None, 
                covfile_o=None,
                modsize=[], 
-               fixed="3", 
+               fixed="2", 
+               method = "border",
                border=5, 
+               fixdist= 30000.,
+               cellcent = [ np.array([]), np.array([])],
+               sitepos = [ np.array([]), np.array([])],               
                out=True):
     """
-    Read ModEM covar input.
-
-    Returns mval in physical units
+    Read and process ModEM covar input.
 
     author: vrath
     last changed: June, 2023
 
-    In Fortran:
-
-
     """
-    air = 0
-    ocean = 9
+    air = "0"
+    ocean = "9"
     comments = ["#", "|",">", "+","/"]
 
-    
     with open(covfile_i, "r") as f_i: 
        l_i = f_i.readlines()
        
@@ -813,6 +811,21 @@ def read_covar(covfile_i=None,
         if done: 
             break
         
+    if "bord" in method.lower():
+        rows = list(range(0, block_len))
+        index_row1 = [index for index in rows if rows[index] < border]
+        index_row2 = [index for index in rows if rows[index] > block_len-border-1]
+        cols = list(range(0, line_len))
+        index_col1 = [index for index in cols if cols[index] < border]        
+        index_col2 = [index for index in cols if cols[index] > line_len-border-1]      
+    if "dist" in method.lower():
+         sits = list(range(0, np.shape(sitepos)[0]))
+         rows = list(range(0, block_len)) 
+         cols = list(range(0, line_len))
+         xs = sitepos[:, 0]
+         ys = sitepos[:, 1]
+         
+         
     blocks = [ii for ii in range(len(l_i)) if len(l_i[ii].split()) == 2]
     if len(blocks) != num_lay:
         error("read_covar: Number of blocks wrong! Exit.")
@@ -822,35 +835,39 @@ def read_covar(covfile_i=None,
         block = l_i[ib+1:ib+block_len+1] 
         tmp =[line.split() for line in block]
         
-        rows = list(range(0,block_len))
-        index_row1 = [index for index in rows if rows[index] < border]
-        index_row2 = [index for index in rows if rows[index] > block_len-border-1]
-        cols = list(range(0,line_len))
-        index_col1 = [index for index in cols if cols[index] < border]        
-        index_col2 = [index for index in cols if cols[index] > line_len-border-1]
-        
-        # print(index_col1)
-        # print(index_col2)
-        # print(cols)
+        if "bord" in method.lower():
 
-        for ii in rows:
-            if (ii in index_row1) or (ii in index_row2):
-                  tmp[ii] = [tmp[ii][cell].replace("1", fixed) for cell in cols]
-                  
-            # print(ii,tmp[ii] ,"\n")
-            
-            for jj in cols:
-                if (jj in index_col1) or (jj in index_col2):
-                    tmp[ii][jj] = tmp[ii][jj].replace("1", fixed)
-            # print(ii,tmp[ii] ,"\n")        
-         
-        # print("tmp\n",tmp ,"\n\n")
-      
-            tmp[ii].append("\n")    
-            new_block.append(" ".join(tmp[ii]))
-            
-            # print(ib)
-            # print(new_block)
+            for ii in rows:
+                if (ii in index_row1) or (ii in index_row2):
+                      tmp[ii] = [tmp[ii][cell].replace("1", fixed) for cell in cols]
+                      
+                # print(ii,tmp[ii] ,"\n")
+                
+                for jj in cols:
+                    if (jj in index_col1) or (jj in index_col2):
+                        tmp[ii][jj] = tmp[ii][jj].replace("1", fixed)
+
+                tmp[ii].append("\n")    
+                new_block.append(" ".join(tmp[ii]))
+                
+
+        if "dist" in method.lower():
+                
+            for ii in rows:
+                xc = cellcent[ii,0]
+                for jj in cols:
+                    yc = cellcent[ii,1]
+                    dist = []
+                    for kk in sits:
+                        dist.append(np.sqrt((xc-xs)**2 + (yc-ys)**2))
+                    
+                    dmin = np.amin(dist)
+                    if dmin > fixdist:
+                        tmp[ii][jj] = tmp[ii][jj].replace("1", fixed)
+                        
+                tmp[ii].append("\n")    
+                new_block.append(" ".join(tmp[ii]))
+                             
             
         l_o[ib+1:ib+block_len+1] = new_block
             
@@ -861,9 +878,12 @@ def read_covar(covfile_i=None,
 
     if out:
         print("read_covar: covariance matrix read from %s" % (covfile_i))
-        print("read_covar: covariance matrix writen to %s" % (covfile_o))
-        print(str(border)+" border  cells fixed (zone "+str(fixed)+")")
-
+        print("read_covar: covariance matrix written to %s" % (covfile_o))
+        if "bord" in method.lower():
+            print(str(border)+" border  cells fixed (zone "+str(fixed)+")")
+        else:
+            print("cells with min distance to site > "+str(distance)+" fixed (zone "+str(fixed)+")")
+        
     return l_o
 
 def linear_interpolation(p1, p2, x0):
