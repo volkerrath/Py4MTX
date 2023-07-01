@@ -1330,9 +1330,11 @@ def crossgrad(m1=np.array([]),
     for k in np.arange(np.size(g1)):
         cgm[k,:] = np.cross (g1[k], g2[k])
 
-    cgm =np.reshape(cgm,(sm+cgdim))    
+    cgm =np.reshape(cgm,(sm+cgdim))
+    
+    cgnm = np.abs(cgm)/(np.abs(gm1)*np.abs(gm2))
 
-    return cgm
+    return cgm, cgmn
 
 def medfilt3D(
         M,
