@@ -1301,6 +1301,38 @@ def rotx(theta):
 
     return M
 
+def crossgrad(m1=np.array([]), 
+                m2=np.array([]),  
+                mesh= [np.array([]), np.array([]), np.array([])],
+                Out=True):
+    """
+    numpy
+
+    vr  July 2023
+    """
+    sm = np.shape(m1)
+    dm = m1.dim
+    if dm==1:
+        error("crossgrad: For dim="+str(dm)+" no crossgrad! Exit.")
+    elif dm==2:
+        cgdim = 1
+    else:
+        cgdim = 3
+        
+    gm1 = np.gradient(m1)
+    gm2 = np.gradient(m2)
+    sgm = np.shape(gm1)
+    
+    g1 = np.ravel(gm1)
+    g2 = np.ravel(gm2)
+    
+    cgm = np.zeros_like(g1,cgdim)
+    for k in np.arange(np.size(g1)):
+        cgm[k,:] = np.cross (g1[k], g2[k])
+
+    cgm =np.reshape(cgm,(sm+cgdim))    
+
+    return cgm
 
 def medfilt3D(
         M,
