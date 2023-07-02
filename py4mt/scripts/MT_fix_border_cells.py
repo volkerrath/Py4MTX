@@ -69,7 +69,7 @@ border = 5
 Distance
 """
 method = "distance"
-distance = 50000.
+distance = 25000.
 
 
 # ModFile_in = PY4MT_DATA +"/test/test.rho"
@@ -95,10 +95,10 @@ modsize = np.shape(rho)
 start = time.time()
 
 if "dist" in method.lower():
-    x = np.append(0., np.cumsum(dx))
-    xc =0.5*(x[0:len(x)-1]+x[1:len(x)]) - reference[0]
-    y = np.append(0., np.cumsum(dy))
-    yc =0.5*(y[0:len(y)-1]+y[1:len(y)]) - reference[1]
+    x = np.append(0., np.cumsum(dx)) + reference[0]
+    xc =0.5*(x[0:len(x)-1]+x[1:len(x)]) 
+    y = np.append(0., np.cumsum(dy)) + reference[1]
+    yc =0.5*(y[0:len(y)-1]+y[1:len(y)]) 
     cellcent = [xc, yc]
     
     print(len(xc),len(yc))

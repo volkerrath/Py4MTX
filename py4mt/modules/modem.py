@@ -864,6 +864,7 @@ def proc_covar(covfile_i=None,
                         dist.append(np.sqrt((xc-xs)**2 + (yc-ys)**2))
                     
                     dmin = np.amin(dist)
+                    print(dmin)
                     if dmin > fixdist:
                         tmp[ii][jj] = tmp[ii][jj].replace("1", fixed)
                         
