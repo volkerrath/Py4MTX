@@ -69,20 +69,20 @@ border = 5
 Distance
 """
 method = "distance"
-distance = 40000.
+distance = 50000.
 
 
 # ModFile_in = PY4MT_DATA +"/test/test.rho"
 # CovFile_in = PY4MT_DATA +"/test/test.cov"
 # CovFile_out = PY4MT_DATA +"/test/test_fix"+str(border)+".cov"
-ModFile_in = PY4MT_DATA +"/Peru/Tacna/TAC5_fixed-border/TAC_100.rho"
-CovFile_in = PY4MT_DATA +"/Peru/Tacna/TAC5_fixed-border/TAC_04.cov"
-DatFile_in = PY4MT_DATA +"/Peru/Tacna/TAC5_fixed-border/TAC6_Z.dat"
+ModFile_in = PY4MT_DATA +"/Peru/Tacna/TAC8/TAC_300.rho"
+CovFile_in = PY4MT_DATA +"/Peru/Tacna/TAC8/TAC6_04.cov"
+DatFile_in = PY4MT_DATA +"/Peru/Tacna/TAC8/TAC6_Z.dat"
 
 if "bord" in method.lower():
-    CovFile_out = PY4MT_DATA+"/Peru/Tacna/TAC5_fixed-border/TAC_04_border"+str(border)+"_fixed"+str(fixed_zone)+".cov"
+    CovFile_out = PY4MT_DATA+"/Peru/Tacna/TAC8/TAC_04_border"+str(border)+"_fixed"+str(fixed_zone)+".cov"
 else:
-    CovFile_out = PY4MT_DATA+"/Peru/Tacna/TAC5_fixed-border/TAC_04_mindist"+str(distance)+"m_fixed"+str(fixed_zone)+".cov"
+    CovFile_out = PY4MT_DATA+"/Peru/Tacna/TAC8/TAC_04_mindist"+str(distance/1000)+"km_fixed"+str(fixed_zone)+".cov"
 
 start = time.time()
 
@@ -98,8 +98,10 @@ if "dist" in method.lower():
     x = np.append(0., np.cumsum(dx))
     xc =0.5*(x[0:len(x)-1]+x[1:len(x)]) - reference[0]
     y = np.append(0., np.cumsum(dy))
-    yc =0.5*(x[0:len(y)-1]+x[1:len(y)]) - reference[1]
-
+    yc =0.5*(y[0:len(y)-1]+y[1:len(y)]) - reference[1]
+    cellcent = [xc, yc]
+    
+    print(len(xc),len(yc))
     Site , _, Data, _ = mod.read_data(DatFile_in, out=True)
     
     xs = []
@@ -115,9 +117,12 @@ if "dist" in method.lower():
             xs.append(Data[idt,3])
             ys.append(Data[idt,4])
             
+    sitepos = [xs, ys]
+    
     lines_out = mod.proc_covar(CovFile_in, 
                                CovFile_out, 
-                               method = method, cellcent = [xc, yc], sitepos = [xs, ys], 
+                               method=method, fixdist=distance, 
+                               cellcent=cellcent, sitepos=sitepos, 
                                out=True)
 
 if "bord" in method.lower():

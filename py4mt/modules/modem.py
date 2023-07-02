@@ -781,7 +781,8 @@ def proc_covar(covfile_i=None,
                border=5, 
                fixdist= 30000.,
                cellcent = [ np.array([]), np.array([])],
-               sitepos = [ np.array([]), np.array([])],               
+               sitepos = [ np.array([]), np.array([])],  
+               unit = "km",
                out=True):
     """
     Read and process ModEM covar input.
@@ -822,8 +823,8 @@ def proc_covar(covfile_i=None,
          sits = list(range(0, np.shape(sitepos)[0]))
          rows = list(range(0, block_len)) 
          cols = list(range(0, line_len))
-         xs = sitepos[:, 0]
-         ys = sitepos[:, 1]
+         xs = sitepos[:][0]
+         ys = sitepos[:][1]
          
          
     blocks = [ii for ii in range(len(l_i)) if len(l_i[ii].split()) == 2]
@@ -854,9 +855,10 @@ def proc_covar(covfile_i=None,
         if "dist" in method.lower():
                 
             for ii in rows:
-                xc = cellcent[ii,0]
+                # print(ii)
+                xc = cellcent[0][ii]
                 for jj in cols:
-                    yc = cellcent[ii,1]
+                    yc = cellcent[1][jj]
                     dist = []
                     for kk in sits:
                         dist.append(np.sqrt((xc-xs)**2 + (yc-ys)**2))
@@ -882,8 +884,13 @@ def proc_covar(covfile_i=None,
         if "bord" in method.lower():
             print(str(border)+" border  cells fixed (zone "+str(fixed)+")")
         else:
-            print("cells with min distance to site > "+str(distance)+" fixed (zone "+str(fixed)+")")
-        
+            if unit=="km":
+                print("cells with min distance to site > "
+                      +str(fixdist/1000)+"km fixed (zone "+str(fixed)+")")
+            else:
+                print("cells with min distance to site > "
+                     +str(fixdist)+"m fixed (zone "+str(fixed)+")")
+       
     return l_o
 
 def linear_interpolation(p1, p2, x0):
@@ -1306,7 +1313,19 @@ def crossgrad(m1=np.array([]),
                 mesh= [np.array([]), np.array([]), np.array([])],
                 Out=True):
     """
-    numpy
+    
+    Crossgrad function
+    
+    
+    See:
+    Rosenkjaer GK, Gasperikova E, Newman, GA, Arnason K, Lindsey NJ (2015) 
+        Comparison of 3D MT inversions for geothermal exploration: Case studies 
+        for Krafla and Hengill geothermal systems in Iceland 
+        Geothermics , Vol. 57, 258-274
+        
+    Schnaidt, S. (2015) 
+        Improving Uncertainty Estimation in Geophysical Inversion Modelling 
+        PhD thesis, University of Adelaide, AU
 
     vr  July 2023
     """
