@@ -60,6 +60,14 @@ PY4MT_DATA = os.environ["PY4MT_DATA"]
 fixed_zone = "2"
 # fixed_zone = "0"
 
+rhofixed = "value"
+if "val" in rhofixed.lower():
+    rhofix = 300.
+    fixmod = True
+else:
+    rhofixed = "prior"
+    fixmod= False
+
 """
 Border 
 """
@@ -80,9 +88,13 @@ CovFile_in = PY4MT_DATA +"/Peru/Tacna/TAC8/TAC6_04.cov"
 DatFile_in = PY4MT_DATA +"/Peru/Tacna/TAC8/TAC6_Z.dat"
 
 if "bord" in method.lower():
-    CovFile_out = PY4MT_DATA+"/Peru/Tacna/TAC8/TAC_04_border"+str(border)+"_fixed"+str(fixed_zone)+".cov"
+    CovFile_out = PY4MT_DATA+"/Peru/Tacna/TAC8/TAC_04_border"+str(border)+"_fixed_prior.cov"
+    if fixmod:
+        ModFile_out=PY4MT_DATA+"/Peru/Tacna/TAC8/TAC_04_border"+str(border)+"_fixed"+str(round(rhofix))+"Ohmm.rho"
 else:
     CovFile_out = PY4MT_DATA+"/Peru/Tacna/TAC8/TAC_04_mindist"+str(distance/1000)+"km_fixed"+str(fixed_zone)+".cov"
+    if fixmod:
+        ModFile_out=PY4MT_DATA+"/Peru/Tacna/TAC8/TAC_04_mindist"+str(distance/1000)+"km_fixed"+str(round(rhofix))+"Ohmm.rho"
 
 start = time.time()
 
