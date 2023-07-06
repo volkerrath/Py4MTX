@@ -773,15 +773,14 @@ def read_model(ModFile=None, trans="LINEAR", volumes=False, out=True):
         return dx, dy, dz, mval, reference, trans
 
 
-def proc_covar(covfile_i=None, 
+def fix_cells( covfile_i=None,
                covfile_o=None,
-               modsize=[], 
+               modfile_i=None, 
+               modfile_o=None,
+               datfile_i=None, 
                fixed="2", 
-               method = "border",
-               border=5, 
-               fixdist= 30000.,
-               cellcent = [ np.array([]), np.array([])],
-               sitepos = [ np.array([]), np.array([])],  
+               method = ["border", 3]
+               fixmod = ["prior"]
                unit = "km",
                out=True):
     """
@@ -794,11 +793,44 @@ def proc_covar(covfile_i=None,
     air = "0"
     ocean = "9"
     comments = ["#", "|",">", "+","/"]
+    
+    
+    dx, dy, dz, rho, reference, _ = mod.read_model(modfile_i, out=True)
+    modsize = np.shape(rho)
+    
+    if "dist" in method[0].lower():
+        fixdist = method[1]
+        x = np.append(0., np.cumsum(dx)) + reference[0]
+        xc =0.5*(x[0:len(x)-1]+x[1:len(x)]) 
+        y = np.append(0., np.cumsum(dy)) + reference[1]
+        yc =0.5*(y[0:len(y)-1]+y[1:len(y)]) 
+        cellcent = [xc, yc]
+        
+        # print(len(xc),len(yc))
+        Site , _, Data, _ = mod.read_data(datfile_i, out=True)
+        
+        xs = []
+        ys = []
+        for idt in range(0, np.size(Site)):            
+            ss = Site[idt]
+            if idt == 0:
+                site = Site[idt]
+                xs.append(Data[idt,3])
+                ys.append(Data[idt,4])
+            elif ss != site:
+                site = Site[idt]
+                xs.append(Data[idt,3])
+                ys.append(Data[idt,4])
+                
+        sitepos = [xs, ys]
+        
+        
+    if "bord" in method[0].lower():
+        border = method[1]
+    
 
     with open(covfile_i, "r") as f_i: 
        l_i = f_i.readlines()
-       
-       
        
     l_o = l_i.copy()
  
@@ -812,7 +844,7 @@ def proc_covar(covfile_i=None,
         if done: 
             break
         
-    if "bord" in method.lower():
+    if "bord" in method[0].lower():
         rows = list(range(0, block_len))
         index_row1 = [index for index in rows if rows[index] < border]
         index_row2 = [index for index in rows if rows[index] > block_len-border-1]
@@ -829,7 +861,7 @@ def proc_covar(covfile_i=None,
          
     blocks = [ii for ii in range(len(l_i)) if len(l_i[ii].split()) == 2]
     if len(blocks) != num_lay:
-        error("read_covar: Number of blocks wrong! Exit.")
+        error("fix_cells: Number of blocks wrong! Exit.")
         
     for ib in blocks:
         new_block = []
@@ -876,12 +908,9 @@ def proc_covar(covfile_i=None,
             
     with open(covfile_o, "w") as f_o: 
             f_o.writelines(l_o)
-
-
-
     if out:
-        print("read_covar: covariance matrix read from %s" % (covfile_i))
-        print("read_covar: covariance matrix written to %s" % (covfile_o))
+        print("fix_cells: covariance control read from %s" % (covfile_i))
+        print("fix_cells: covariance control written to %s" % (covfile_o))
         if "bord" in method.lower():
             print(str(border)+" border  cells fixed (zone "+str(fixed)+")")
         else:
@@ -891,8 +920,16 @@ def proc_covar(covfile_i=None,
             else:
                 print("cells with min distance to site > "
                      +str(fixdist)+"m fixed (zone "+str(fixed)+")")
-       
-    return l_o
+            
+    if "val" in fixmod[0].lower():
+        write_model(ModFile_out, dx, dy, dz, rho,reference,out = True)
+        if out:
+            print("fix_cells: model written to %s" % (covfile_o))
+            print("fix_cells: model in %s fixed to %g Ohm.m" % (covfile_i))
+    else:
+        if out:
+            print("fix_cells: model in %s fixed to prior" % (modfile_i))
+
 
 def linear_interpolation(p1, p2, x0):
     """

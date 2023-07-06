@@ -8,8 +8,8 @@ boltons                   23.0.0             pyhd8ed1ab_0    conda-forge
 brotlipy                  0.7.0           py310h7f8727e_1002  
 bzip2                     1.0.8                hb9a14ef_9    intel
 c-ares                    1.19.0               h5eee18b_0    intel
-ca-certificates           2023.01.10           h06a4308_0    intel
-certifi                   2022.12.7       py310h06a4308_0    intel
+ca-certificates           2023.05.30           h06a4308_0  
+certifi                   2023.5.7           pyhd8ed1ab_0    conda-forge
 cffi                      1.15.1          py310h5eee18b_3  
 charset-normalizer        2.0.4              pyhd3eb1b0_0  
 conda                     23.5.0          py310h06a4308_0  
@@ -34,8 +34,8 @@ libffi                    3.4.4                h6a678d5_0
 libgcc-ng                 13.1.0               he5830b7_0    conda-forge
 libgomp                   13.1.0               he5830b7_0    conda-forge
 libiconv                  1.17                 h166bdaf_0    conda-forge
-libmamba                  1.4.4                h658169a_1    conda-forge
-libmambapy                1.4.4           py310h8aae740_1    conda-forge
+libmamba                  1.4.7                h658169a_0    conda-forge
+libmambapy                1.4.7           py310h8aae740_0    conda-forge
 libnghttp2                1.52.0               h2d74bed_1  
 libnsl                    2.0.0                h7f98852_0    conda-forge
 libsodium                 1.0.18               h36c2ea0_1    conda-forge
@@ -49,7 +49,7 @@ libzlib                   1.2.13               hd590300_5    conda-forge
 llvm-openmp               16.0.6               h4dfa4b3_0    conda-forge
 lz4-c                     1.9.4                hcb278e6_0    conda-forge
 lzo                       2.10              h516909a_1000    conda-forge
-mamba                     1.4.4           py310h51d5547_1    conda-forge
+mamba                     1.4.7           py310h51d5547_0    conda-forge
 ncurses                   6.4                  h6a678d5_0  
 openssl                   3.1.1                hd590300_1    conda-forge
 packaging                 23.0               pyhd8ed1ab_0    conda-forge
@@ -62,7 +62,7 @@ pycparser                 2.21               pyhd3eb1b0_0
 pynacl                    1.5.0           py310h5764c6d_2    conda-forge
 pyopenssl                 23.0.0          py310h06a4308_0  
 pysocks                   1.7.1           py310h06a4308_0  
-python                    3.10.11         he550d4f_0_cpython    conda-forge
+python                    3.10.12         hd12c33a_0_cpython    conda-forge
 python_abi                3.10                    3_cp310    conda-forge
 readline                  8.2                  h5eee18b_0  
 reproc                    14.2.4               h295c915_1  
