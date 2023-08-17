@@ -96,11 +96,11 @@ outform = outform.upper()
 # DFiles = [WorkDir+r"Ub22_T.dat", WorkDir+r"Ub22_P.dat", WorkDir+r"Ub22_Zoff.dat", ]
 
 
-# Ubaye case
-WorkDir = PY4MT_DATA+"/NewJacobians/Ubaye/work/"
-WorkName = "Ub22Jac"
-MFile   = WorkDir +"Ub22.rho"
-MPad=[13, 13 , 13, 13, 0, 36]
+# # Ubaye case
+# WorkDir = PY4MT_DATA+"/NewJacobians/Ubaye/work/"
+# WorkName = "Ub22Jac"
+# MFile   = WorkDir +"Ub22.rho"
+# MPad=[13, 13 , 13, 13, 0, 36]
 
 # # Annecy case
 # WorkDir = PY4MT_DATA+"/NewJacobians/Annecy/work/"
@@ -114,6 +114,16 @@ MPad=[13, 13 , 13, 13, 0, 36]
 # MFile   = WorkDir +"Maur15_500_PTZ_E10_NLCG_016.rho"
 # # MFile   = WorkDir +"Maur15_500_PTZ_E03_NLCG_026.rho"
 # MPad=[14, 14 , 14, 14, 0, 15]
+
+# UBINAS
+WorkDir = PY4MT_DATA+"/Peru/Ubinas/UbiJac/"
+WorkName = "UBI_best"
+MFile   = WorkDir + "UBI_best.rho"
+MPad=[14, 14 , 14, 14, 0, 71]
+
+JFiles = [WorkDir + "UBI_best.jac", ]
+DFiles = [WorkDir + "UBI_best_jac.dat", ]
+
 
 
 JFiles = []
@@ -221,53 +231,61 @@ for f in np.arange(nF):
 
     Component =Info[:,1]
 
-    noZtot = False
+    existZtot = True
     tmpJac = Jac[np.where(Component == 1),:]
     if np.size(tmpJac)== 0:
-        noZtot = True
-    tmpValZ = np.nansum(np.power(tmpJac, 2), axis=1)
-    snsValZtot = snsValZtot + tmpValZ
+        existZtot = False
+    else:
+        tmpValZ = np.nansum(np.power(tmpJac, 2), axis=1)
+        snsValZtot = snsValZtot + tmpValZ
 
     tmpJac = Jac[np.where(Component == 2),:]
-    noZoff = False
+    existZoff = True
     if np.size(tmpJac)== 0:
-        noZoff = True
-    tmpValZ = np.nansum(np.power(tmpJac, 2), axis=1)
-    snsValZoff = snsValZoff + tmpValZ
+        existZoff = False
+    else:
+        tmpValZ = np.nansum(np.power(tmpJac, 2), axis=1)
+        snsValZoff = snsValZoff + tmpValZ
 
     tmpJac = Jac[np.where(Component == 3),:]
-    noT = False
+    existT = True
     if np.size(tmpJac)== 0:
-        noT = True
-    tmpValT = np.nansum(np.power(tmpJac, 2), axis=1)
-    snsValT = snsValT + tmpValT
+        existT = False
+    else:
+        tmpValT = np.nansum(np.power(tmpJac, 2), axis=1)
+        snsValT = snsValT + tmpValT
 
     tmpJac = Jac[np.where(Component == 6),:]
-    noP = False
+    existP = True
     if np.size(tmpJac)== 0:
-        noP = True
-    tmpValP = np.nansum(np.power(tmpJac, 2), axis=1)
-    snsValP = snsValP + tmpValP
-
-
-maxValZtot = np.nanmax(np.sqrt(snsValZtot*jm))
-print(" Merged Z Maximum value is "+str(maxValZtot))
-snsValZtot = np.reshape(snsValZtot, dims, order="F")
-
-maxValZoff = np.nanmax(np.sqrt(snsValZoff*jm))
-print(" Merged Z Maximum value is "+str(maxValZoff))
-snsValZoff = np.reshape(snsValZoff, dims, order="F")
-
-maxValT = np.nanmax(np.sqrt(snsValT*jm))
-print(" Merged T Maximum value is "+str(maxValT))
-snsValT = np.reshape(snsValT, dims, order="F")
-
-maxValP = np.nanmax(np.sqrt(snsValP*jm))
-print(" Merged P Maximum value is "+str(maxValP))
-snsValP = np.reshape(snsValP, dims, order="F")
+        existP = False
+    else:
+        tmpValP = np.nansum(np.power(tmpJac, 2), axis=1)
+        snsValP = snsValP + tmpValP
+        
+if existZtot:    
+    maxValZtot = np.nanmax(np.sqrt(snsValZtot*jm))
+    print(" Merged Ztot Maximum value is "+str(maxValZtot))
+    snsValZtot = np.reshape(snsValZtot, dims, order="F")   
+    
+if existZoff:    
+    maxValZoff = np.nanmax(np.sqrt(snsValZoff*jm))
+    print(" Merged Zoff Maximum value is "+str(maxValZoff))
+    snsValZoff = np.reshape(snsValZoff, dims, order="F")
+        
+if existT:
+    maxValT = np.nanmax(np.sqrt(snsValT*jm))
+    print(" Merged T Maximum value is "+str(maxValT))
+    snsValT = np.reshape(snsValT, dims, order="F")
+    
+if existP:
+    maxValP = np.nanmax(np.sqrt(snsValP*jm))
+    print(" Merged P Maximum value is "+str(maxValP))
+    snsValP = np.reshape(snsValP, dims, order="F")
+    
 
 snsVal = snsValZtot+snsValZoff+snsValT+snsValP
-maxVal = np.nanmax(snsVal)
+maxVal = np.nanmax(np.sqrt(snsVal*jm))
 print(" Merged ZTP Maximum value is "+str(maxVal))
 
 start = time.time()

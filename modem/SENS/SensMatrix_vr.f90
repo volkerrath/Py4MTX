@@ -355,7 +355,7 @@ Contains
 
                     case(1, 2, 3)
                         
-                        fmtstring = '(g12.5,a20,3f16.3,a8,3g16.6)'
+                        fmtstring = '(g12.5,3x,a20,3f16.3,a8,3g16.6)'
                         val = allData%d(i)%data(j)%value(:,k)
                         err = allData%d(i)%data(j)%error(:,k)
 
@@ -375,7 +375,7 @@ Contains
 
                     case(5, 6)
                             
-                        fmtstring = '(g12.5,a20,3f16.3,a8,2g16.6)'
+                        fmtstring = '(g12.5,3x,a20,3f16.3,a8,2g16.6)'
                         val = allData%d(i)%data(j)%value(:,k)
                         err = allData%d(i)%data(j)%error(:,k)
 

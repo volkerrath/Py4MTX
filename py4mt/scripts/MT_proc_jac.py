@@ -47,55 +47,66 @@ for pth in mypath:
 
 import jacproc as jac
 import modem as mod
+import util as utl
 from version import versionstrg
 
 gc.enable()
 
-Strng, _ = versionstrg()
-now = datetime.now()
-print("\n\n"+Strng)
-print("Merge & Sparsify "+"\n"+"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%S")))
-print("\n\n")
-
-
 
 rng = np.random.default_rng()
-nan = np.nan
+nan = np.nan  # float("NaN")
+version, _ = versionstrg()
+titstrng = utl.print_title(version=version, fname=__file__, out=False)
+print(titstrng+"\n\n")
+
+PY4MT_DATA = os.environ["PY4MT_DATA"]
+
+rhoair = 1.e17
 
 normalize_err = True
 sparsify = True
 sparse_thresh = 1.e-12
 blank = np.nan
-# Ubaye caase"
+# Ubaye case"
 # WorkDir = r"/home/vrath/work/MT_Data/Ubaye/UB22_jac_best/"
 # MFile   = WorkDir +r"Ub22_ZoffPT_02_NLCG_014.rho"
 # MPad=[12, 12 , 12, 12, 0, 36]
-# # JFiless = [WorkDir+r"Ub22_Zoff.jac", ]
-# # DFiless = [WorkDir+r"Ub22_Zoff.dat", ]
+# # JFiles = [WorkDir+r"Ub22_Zoff.jac", ]
+# # DFiles = [WorkDir+r"Ub22_Zoff.dat", ]
 
-# # JFiless = [WorkDir+r"Ub22_P.jac", ]
-# # DFiless = [WorkDir+r"Ub22_P.dat", ]
+# # JFiles = [WorkDir+r"Ub22_P.jac", ]
+# # DFiles = [WorkDir+r"Ub22_P.dat", ]
 
-# # JFiless = [WorkDir+r"Ub22_T.jac", ]
-# # DFiless = [WorkDir+r"Ub22_T.dat", ]
+# # JFiles = [WorkDir+r"Ub22_T.jac", ]
+# # DFiles = [WorkDir+r"Ub22_T.dat", ]
 
-# JFiless = [WorkDir+r"Ub22_T.jac", WorkDir+r"Ub22_P.jac", WorkDir+r"Ub22_Zoff.jac", ]
-# DFiless = [WorkDir+r"Ub22_T.dat", WorkDir+r"Ub22_P.dat", WorkDir+r"Ub22_Zoff.dat", ]
+# JFiles = [WorkDir+r"Ub22_T.jac", WorkDir+r"Ub22_P.jac", WorkDir+r"Ub22_Zoff.jac", ]
+# DFiles = [WorkDir+r"Ub22_T.dat", WorkDir+r"Ub22_P.dat", WorkDir+r"Ub22_Zoff.dat", ]
 
 
-# KRAFLA case
-WorkDir = r"/media/vrath/BlackOne/MT_Data/Krafla/Krafla1/"
-MFile   = WorkDir +r"Krafla.rho"
-MPad=[13, 13 , 13, 13, 0, 36]
-JFiles = []
-DFiles = []
-files = os.listdir(WorkDir)
-for entry in files:
-    # print(entry)
-    if entry.endswith(".jac"):
-        JFiles.append(entry)
-        name, ext = os.path.splitext(entry)
-        DFiles.append(name+".dat")
+# KRAFLA 
+# WorkDir = r"/media/vrath/BlackOne/MT_Data/Krafla/Krafla1/"
+# MFile   = WorkDir +r"Krafla.rho"
+# MPad=[13, 13 , 13, 13, 0, 36]
+# JFiles = []
+# DFiles = []
+# files = os.listdir(WorkDir)
+# for entry in files:
+#     # print(entry)
+#     if entry.endswith(".jac"):
+#         JFiles.append(entry)
+#         name, ext = os.path.splitext(entry)
+#         DFiles.append(name+".dat")
+
+# UBINAS
+WorkDir = PY4MT_DATA+"/Peru/Ubinas/UbiJac/"
+
+MFile   = WorkDir + "UBI_best.rho"
+MPad=[14, 14 , 14, 14, 0, 71]
+
+JFiles = [WorkDir + "UBI_best.jac", ]
+DFiles = [WorkDir + "UBI_best_jac.dat", ]
+
 
 NN = np.size(JFiles)
 if np.size(DFiles) != np.size(JFiles):
@@ -110,8 +121,7 @@ start = time.time()
 dx, dy, dz, rho, reference, _, vcell = mod.read_model(MFile, trans="linear", volumes=True)
 dims = np.shape(rho)
 
-resair = 1.e17
-aircells = np.where(rho>resair/100)
+aircells = np.where(rho>rhoair/100)
 
 jacmask = jac.set_mask(rho=rho, pad=MPad, flat = True, out=True)
 jdims= np.shape(jacmask)
@@ -132,14 +142,14 @@ for f in np.arange(nF):
     name, ext = os.path.splitext(JFiles[f])
     start =time.time()
     print("\nReading Data from "+DFiles[f])
-    Data, Site, Freq, Comp, Head = mod.read_data_jac(WorkDir+DFiles[f])
+    Data, Site, Freq, Comp, Head = mod.read_data_jac(DFiles[f])
     elapsed = time.time() - start
     print(" Used %7.4f s for reading Data from %s " % (elapsed, DFiles[f]))
     total = total + elapsed
 
     start = time.time()
     print("Reading Jacobian from "+JFiles[f])
-    Jac, Info = mod.read_jac(WorkDir+JFiles[f])
+    Jac, Info = mod.read_jac(JFiles[f])
     elapsed = time.time() - start
     print(" Used %7.4f s for reading Jacobian from %s " % (elapsed, JFiles[f]))
     total = total + elapsed

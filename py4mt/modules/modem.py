@@ -779,8 +779,8 @@ def fix_cells( covfile_i=None,
                modfile_o=None,
                datfile_i=None, 
                fixed="2", 
-               method = ["border", 3]
-               fixmod = ["prior"]
+               method = ["border", 3],
+               fixmod = ["prior"],
                unit = "km",
                out=True):
     """

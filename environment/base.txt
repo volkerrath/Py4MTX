@@ -5,28 +5,34 @@ _libgcc_mutex             0.1                 conda_forge    conda-forge
 _openmp_mutex             4.5                       2_gnu    conda-forge
 bcrypt                    3.2.2           py310h5764c6d_1    conda-forge
 boltons                   23.0.0             pyhd8ed1ab_0    conda-forge
-brotlipy                  0.7.0           py310h7f8727e_1002  
+brotli                    1.0.9                h166bdaf_8    intel
+brotli-bin                1.0.9                h166bdaf_8    intel
+brotlipy                  0.7.0           py310h5764c6d_1005    intel
 bzip2                     1.0.8                hb9a14ef_9    intel
-c-ares                    1.19.0               h5eee18b_0    intel
-ca-certificates           2023.05.30           h06a4308_0  
-certifi                   2023.5.7           pyhd8ed1ab_0    conda-forge
+c-ares                    1.19.1               hd590300_0    intel
+ca-certificates           2023.7.22            hbcca054_0    conda-forge
+certifi                   2023.7.22          pyhd8ed1ab_0    conda-forge
 cffi                      1.15.1          py310h5eee18b_3  
-charset-normalizer        2.0.4              pyhd3eb1b0_0  
-conda                     23.5.2          py310h06a4308_0  
+charset-normalizer        3.1.0              pyhd8ed1ab_0    intel
+colorama                  0.4.6              pyhd8ed1ab_0    intel
+conda                     23.7.2          py310h06a4308_0  
 conda-content-trust       0.1.3           py310h06a4308_0  
 conda-package-handling    2.0.2           py310h06a4308_0  
-conda-package-streaming   0.7.0           py310h06a4308_0  
-cryptography              39.0.1          py310h9ce1e76_0    intel
+conda-package-streaming   0.8.0              pyhd8ed1ab_0    intel
+cryptography              41.0.1          py310h75e40e8_0    intel
 fmt                       9.1.0                h924138e_0    conda-forge
 icu                       72.1                 hcb278e6_0    conda-forge
 idna                      3.4             py310h06a4308_0  
-intelpython               2023.1.0                      1    intel
+intelpython               2023.2.0                      0    intel
 jsonpatch                 1.32               pyhd8ed1ab_0    conda-forge
 jsonpointer               2.1                pyhd3eb1b0_0  
 keyutils                  1.6.1                h166bdaf_0    conda-forge
 krb5                      1.20.1               h143b758_1  
 ld_impl_linux-64          2.38                 h1181459_1  
 libarchive                3.6.2                h6ac8c49_2  
+libbrotlicommon           1.0.9                h166bdaf_8    intel
+libbrotlidec              1.0.9                h166bdaf_8    intel
+libbrotlienc              1.0.9                h166bdaf_8    intel
 libcurl                   8.1.2                h409715c_0    conda-forge
 libedit                   3.1.20221030         h5eee18b_0  
 libev                     4.33                 h516909a_1    conda-forge
@@ -51,36 +57,36 @@ lz4-c                     1.9.4                hcb278e6_0    conda-forge
 lzo                       2.10              h516909a_1000    conda-forge
 mamba                     1.4.9           py310h51d5547_0    conda-forge
 ncurses                   6.4                  h6a678d5_0  
-openssl                   3.1.1                hd590300_1    conda-forge
-packaging                 23.0               pyhd8ed1ab_0    conda-forge
+openssl                   3.1.2                hd590300_0    conda-forge
+packaging                 23.1               pyhd8ed1ab_0    intel
 paramiko                  2.8.1              pyhd3eb1b0_0  
-pip                       23.0.1          py310h06a4308_0  
-pluggy                    1.0.0           py310h06a4308_1  
+pip                       23.1.2             pyhd8ed1ab_0    intel
+pluggy                    1.0.0              pyhd8ed1ab_5    intel
 pybind11-abi              4                    hd8ed1ab_3    conda-forge
-pycosat                   0.6.4           py310h5eee18b_0  
+pycosat                   0.6.4           py310h5764c6d_1    intel
 pycparser                 2.21               pyhd3eb1b0_0  
 pynacl                    1.5.0           py310h5764c6d_2    conda-forge
-pyopenssl                 23.0.0          py310h06a4308_0  
-pysocks                   1.7.1           py310h06a4308_0  
-python                    3.10.12         hd12c33a_0_cpython    conda-forge
-python_abi                3.10                    3_cp310    conda-forge
-readline                  8.2                  h5eee18b_0  
+pyopenssl                 23.2.0             pyhd8ed1ab_1    intel
+pysocks                   1.7.1              pyha2e5f31_6    intel
+python                    3.10.12              hef7c979_1    intel
+python_abi                3.10                    2_cp310    intel
+readline                  8.2                  h8228510_1    intel
 reproc                    14.2.4               h295c915_1  
 reproc-cpp                14.2.4               h295c915_1  
-requests                  2.28.1          py310h06a4308_1    intel
-ruamel.yaml               0.17.21         py310h5eee18b_0  
-ruamel.yaml.clib          0.2.6           py310h5eee18b_1  
-setuptools                65.6.3          py310h06a4308_0  
+requests                  2.31.0             pyhd8ed1ab_0    intel
+ruamel.yaml               0.17.32         py310h2372a71_0    intel
+ruamel.yaml.clib          0.2.7           py310h1fa729e_1    intel
+setuptools                67.7.2             pyhd8ed1ab_0    intel
 six                       1.16.0             pyhd3eb1b0_1  
 sqlite                    3.41.1               h5eee18b_0  
 tk                        8.6.12               h1ccaba5_0  
 toolz                     0.12.0          py310h06a4308_0  
-tqdm                      4.65.0          py310h2f386ee_0  
+tqdm                      4.65.0             pyhd8ed1ab_1    intel
 tzdata                    2023c                h04d1e81_0  
-urllib3                   1.26.16         py310h06a4308_0  
-wheel                     0.38.4          py310h06a4308_0  
+urllib3                   2.0.3              pyhd8ed1ab_0    intel
+wheel                     0.40.0             pyhd8ed1ab_0    intel
 xz                        5.4.2                h5eee18b_0  
 yaml-cpp                  0.7.0                h27087fc_2    conda-forge
 zlib                      1.2.13               hd590300_5    conda-forge
-zstandard                 0.19.0          py310h5eee18b_0  
+zstandard                 0.19.0          py310hdeb6495_1    intel
 zstd                      1.5.2                h3eb15da_6    conda-forge

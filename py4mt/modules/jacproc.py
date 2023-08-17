@@ -8,6 +8,176 @@ import numpy as np
 import scipy.sparse as scp
 import numpy.linalg as npl
 
+
+
+def calc_sensitivity(Jac=np.array([]),
+                     Type = "euclidean", UseSigma = False, OutInfo = False):
+    """
+    Calculate sensitivities.
+    Expects that Jacobian is already sclaed, i.e Jac = C^(-1/2)*J.
+
+    Several options exist for calculating sensiotivities, all of them
+    used in the literature.
+    Type:
+        "raw"     sensitivities summed along the data axis
+        "abs"     absolute sensitivities summed along the data axis
+                    (often called coverage)
+        "euc"     squared sensitivities summed along the data axis.
+        "cum"     cummulated sensitivities as proposed by
+                  Christiansen & Auken, 2012. Not usable for negative data.
+
+    Usesigma:
+        if true, sensitivities with respect to sigma  are calculated.
+
+    Christiansen, A. V. & Auken, E.
+    A global measure for depth of investigation
+    Geophysics, 2012, 77, WB171-WB177
+
+    from UBC:
+    def depth_of_investigation_christiansen_2012(self, std, thres_hold=0.8):
+        pred = self.survey._pred.copy()
+        delta_d = std * np.log(abs(self.survey.dobs))
+        J = self.getJ(self.model)
+        J_sum = abs(Utils.sdiag(1/delta_d/pred) * J).sum(axis=0)
+        S = np.cumsum(J_sum[::-1])[::-1]
+        active = S-thres_hold > 0.
+        doi = abs(self.survey.depth[active]).max()
+        return doi, active
+
+    T. Guenther
+    Inversion Methods and Resolution Analysis for the 2D/3D Reconstruction
+    of Resistivity Structures from DC Measurements
+    Fakultaet für Geowissenschaften, Geotechnik und Bergbau,
+    Technische Universitaet Bergakademie Freiberg, 2004.
+
+    author:VR 4/23
+
+    """
+
+    if np.size(Jac)==0:
+        error("calc_sensitivity: Jacobian size is 0! Exit.")
+
+    if UseSigma:
+        Jac = -Jac
+
+
+
+    if "raw" in  Type.lower():
+        S = np.sum(Jac,axis=0)
+        if OutInfo:
+            print("raw:", S)
+        # else:
+        #     print("raw sensitivities")
+        smax = np.max(Jac, axis = 0)
+        smin = np.max(Jac, axis = 0)
+    elif "cov" in Type.lower():
+        S = np.sum(np.abs(Jac),axis=0)
+        if OutInfo:
+            print("cov:", S)
+        # else:
+        #     print("coverage")
+
+    elif "euc" in Type.lower():
+        S = np.sum(np.power(Jac,2),axis=0)
+        if OutInfo:
+            print("euc:", S)
+        # else:
+        #     print("euclidean (default)")
+
+    elif "cum" in Type.lower():
+        S = np.sum(np.abs(Jac),axis=0)
+        # print(np.shape(S))
+        # S = np.sum(Jac,axis=0)
+
+        S = np.append(0.+1.e-10, np.cumsum(S[-1:0:-1]))
+        S = np.flipud(S)
+        if OutInfo:
+           print("cumulative:", S)
+        # else:
+        #    print("cumulative sensitivity")
+
+    else:
+        print("calc_sensitivity: Type "
+              +Type.lower()+" not implemented! Default assumed.")
+        S = np.sum(np.power(Jac,2),axis=0)
+
+        if OutInfo:
+            print("euc (default):", S)
+        # else:
+        #     print("euclidean (default)")
+
+        # S = S.reshape[-1,1]
+
+
+    return S
+
+
+def transform_sensitivity(S=np.array([]), V=np.array([]),
+                          Transform=["size","max", "sqrt"], OutInfo=False):
+    """
+    Transform sensitivities.
+
+    Several options exist for transforming sensitivities, all of them
+    used in the literature.
+
+    Normalize options:
+        "siz"       Normalize by the values optional array V ("volume"), 
+                    i.e in our case layer thickness. This should always 
+                    be the first value in Transform list.
+        "max"       Normalize by maximum value.
+        "sur"       Normalize by surface value.
+        "sqr"       Take the square root. Only usefull for euc sensitivities. 
+        "log"       Take the logaritm. This should always be the 
+                    last value in Transform list
+        
+
+    author:VR 4/23
+
+    """
+
+    if np.size(S)==0:
+        error("Transform_sensitivity: Sensitivity size is 0! Exit.")
+    
+    ns = np.shape(S)
+    print("S", np.shape(S))    
+    print("V", np.shape(V))
+    # S = S.ravel()
+    # print("S0", np.shape(S))
+    # reshape((ns,1))
+
+    for item in Transform:       
+        
+        if "siz" in item.lower():
+             print("trans_sensitivity: Transformed by layer thickness.")
+             if np.size(V)==0:
+                 error("Transform_sensitivity: No thicknesses given! Exit.")
+             else:
+                 V = V.reshape(ns)
+                 S = S/V
+                 # print("S0v", np.shape(S))
+                 # print("S0v", np.shape(V))
+                 
+        if "max" in item.lower():
+             print("trans_sensitivity: Transformed by maximum value.")
+             maxval = np.amax(np.abs(S))
+             print("maximum value: ", maxval)
+             S = S/maxval
+             # print("S0m", np.shape(S))
+            
+        elif "sur" in item.lower():
+            S = S/S[0]
+            
+
+        if "sqr" in item.lower():
+            S = np.sqrt(S)
+            # print("S0s", np.shape(S))
+            
+        if "log" in item.lower():    
+            S = np.log10(S)
+            
+    return S
+
+
 def update_avg(k = None, m_k=None, m_a=None, m_v=None):
     """
     Update the mean and variance from data stream.
