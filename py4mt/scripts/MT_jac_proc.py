@@ -126,10 +126,12 @@ DFile = WorkDir + "UBI_best_jac.dat"
 
 
 Splits = ["comp", "site"]
+
 Type = "raw"
+Type = "euc"
 """
 Calculate sensitivities.
-Expects that Jacobian is already sclaed, i.e Jac = C^(-1/2)*J.
+Expects that Jacobian is already error-scaled, i.e Jac = C^(-1/2)*J.
 Options:
     Type = "raw"     sensitivities summed along the data axis
     Type = "abs"     absolute sensitivities summed along the data axis
@@ -140,6 +142,7 @@ Usesigma:
     if true, sensitivities with respect to sigma  are calculated.
 """
 Transform=["max"]
+Transform = ["max", "sqrt", "log"]
 """
 Transform sensitivities. 
 Options:
@@ -270,16 +273,17 @@ for Split in Splits:
         start = time.time()
         
         Sites = Info[:,2]
-        ExistSite = np.unique(Sites)
+        SiteNums = Sites[np.sort(np.unique(Sites, return_index=True)[1])] 
+        SitNames = Site[np.sort(np.unique(Site, return_index=True)[1])] 
     
         
-        for isit in ExistSite:
+        for isit in SiteNums:
            JacTmp = Jac[np.where(Sites == isit),:]
            SensTmp = jac.calc_sensitivity(JacTmp,
                         Type = Type, OutInfo=False)
            SensTmp = jac.transform_sensitivity(S=SensTmp, V=vcell,
                              Transform=Transform, OutInfo=False)
-           SensFile = WorkDir+WorkName+"_site"+str(isit)+"_"+Type+"_"+"_".join(Transform)+".sns"
+           SensFile = WorkDir+WorkName+"_"+SitNames[isit-1].lower()+"_"+Type+"_"+"_".join(Transform)+".sns"
            S = np.reshape(SensTot, dims, order="F") 
            mod.write_model(SensFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
            print(" Sensitivities written to "+SensFile)
