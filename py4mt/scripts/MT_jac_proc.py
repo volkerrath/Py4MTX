@@ -24,18 +24,24 @@ Reads ModEM's Jacobian, does fancy things.
 
 import os
 import sys
-from sys import exit as error
+
 # import struct
 import time
 from datetime import datetime
 import warnings
-import gc
+from sys import exit as error
+
 
 import numpy as np
 import numpy.linalg as npl
 import scipy.linalg as spl
-import scipy.sparse as scs
+import scipy.sparse as scp
 import netCDF4 as nc
+
+
+import vtk
+import pyvista as pv
+import PVGeo as pvg
 
 
 mypath = ["/home/vrath/Py4MT/py4mt/modules/", "/home/vrath/Py4MT/py4mt/scripts/"]
@@ -48,116 +54,38 @@ import jacproc as jac
 import modem as mod
 from version import versionstrg
 
-Strng, _ = versionstrg()
-now = datetime.now()
-print("\n\n"+Strng)
-print("Calculate Sensitivity "+"\n"+"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%S")))
-print("\n\n")
+version, _ = versionstrg()
+titstrng = utl.print_title(version=version, fname=__file__, out=False)
+print(titstrng+"\n\n")
 
-
-PY4MT_DATA = os.environ["PY4MT_DATA"]
-
-
-gc.enable()
 
 rng = np.random.default_rng()
-blank = np.nan
+nan = np.nan
 
 
-Raw = True
-Sqrt = True
-Normalize_vol = False
-Normalize_max =  True
-Normalize_maxtype = "local"
-if "loc" in Normalize_maxtype.lower():
-    maxstrng ="maxlocal"
-else:
-    maxstrng ="maxtotal"
-
+Tasks = ["normalize_err", "sparsify"]
+"""
+"normalize_err", "sparsify". "split", "merge"
+"""
 
 
 outform = "LINEAR"
 outform = outform.upper()
 
-# WorkDir = r"/home/vrath/work/MT_Data/Ubaye/UB22_jac_best/"
-# MFile   = WorkDir +r"Ub22_ZoffPT_02_NLCG_014.rho"
-# MPad=[12, 12 , 12, 12, 0, 36]
-
-# # JFiles = [WorkDir+r"Ub22_Zoff.jac", ]
-# # DFiles = [WorkDir+r"Ub22_Zoff.dat", ]
-
-# # JFiles = [WorkDir+r"Ub22_P.jac", ]
-# # DFiles = [WorkDir+r"Ub22_P.dat", ]
-
-# # JFiles = [WorkDir+r"Ub22_T.jac", ]
-# # DFiles = [WorkDir+r"Ub22_T.dat", ]
-
-# JFiles = [WorkDir+r"Ub22_T.jac", WorkDir+r"Ub22_P.jac", WorkDir+r"Ub22_Zoff.jac", ]
-# DFiles = [WorkDir+r"Ub22_T.dat", WorkDir+r"Ub22_P.dat", WorkDir+r"Ub22_Zoff.dat", ]
-
-
-# # Ubaye case
-# WorkDir = PY4MT_DATA+"/NewJacobians/Ubaye/work/"
-# WorkName = "Ub22Jac"
-# MFile   = WorkDir +"Ub22.rho"
-# MPad=[13, 13 , 13, 13, 0, 36]
-
-# # Annecy case
-# WorkDir = PY4MT_DATA+"/NewJacobians/Annecy/work/"
-# WorkName = "Ann25Jac"
-# MFile   = WorkDir +"Ann25.rho"
-# MPad=[22, 22 , 22, 22, 0, 15]
-
-# # Maurienne case
-# WorkDir = PY4MT_DATA+"/NewJacobians/Maurienne/E10/"
-# WorkName = "MauJac"
-# MFile   = WorkDir +"Maur15_500_PTZ_E10_NLCG_016.rho"
-# # MFile   = WorkDir +"Maur15_500_PTZ_E03_NLCG_026.rho"
-# MPad=[14, 14 , 14, 14, 0, 15]
-
-# UBINAS
 WorkDir = PY4MT_DATA+"/Peru/Ubinas/UbiJac/"
 WorkName = "UBI_best"
 MFile   = WorkDir + "UBI_best.rho"
 MPad=[14, 14 , 14, 14, 0, 71]
 
-JFile = WorkDir + "UBI_best.jac"
-DFile = WorkDir + "UBI_best_jac.dat"
+JFiles = [WorkDir+"UBI_best.jac", ]
+DFiles = [WorkDir+"UBI_best_jac.dat", ]
 
+if np.size(DFiles) != np.size(JFiles):
+    error("Data file number not equal Jac file number! Exit.")
+nF = np.size(DFiles)
 
-Splits = ["comp", "site"]
-
-
-Type = "euc"
-"""
-Calculate sensitivities.
-Expects that Jacobian is already error-scaled, i.e Jac = C^(-1/2)*J.
-Options:
-    Type = "raw"     sensitivities summed along the data axis
-    Type = "abs"     absolute sensitivities summed along the data axis
-                     (often called coverage)
-    Type = "euc"     squared sensitivities summed along the data axis.
-
-Usesigma:
-    if true, sensitivities with respect to sigma  are calculated.
-"""
-
-Transform = ["max", "sqrt", "log"]
-"""
-Transform sensitivities. 
-Options:
-    Transform = "siz",          Normalize by the values optional array V ("volume"), 
-                                i.e in our case layer thickness. This should always 
-                                be the first value in Transform list.
-    Transform = "max"           Normalize by maximum value.
-    Transform = "sur"           Normalize by surface value.
-    Transform = "sqr"           Take the square root. Only usefull for euc sensitivities. 
-    Transform = "log"           Take the logaritm. This should always be the 
-                                last value in Transform list Transf
-"""
 
 total = 0.0
-
 start = time.time()
 dx, dy, dz, rho, reference, _, vcell = mod.read_model(MFile, trans="linear", volumes=True)
 dims = np.shape(rho)
@@ -186,113 +114,82 @@ total = total + elapsed
 print(" Used %7.4f s for reading model from %s " % (elapsed, MFile))
 
 
-name, ext = os.path.splitext(JFile)
-start =time.time()
-print("\nReading Data from "+DFile)
-Data, Site, Freq, Comp, Head = mod.read_data_jac(DFile)
-elapsed = time.time() - start
-print(" Used %7.4f s for reading Data from %s " % (elapsed, DFile))
-total = total + elapsed
-
-start = time.time()
-print("Reading Jacobian from "+JFile)
-Jac, Info = mod.read_jac(JFile)
-elapsed = time.time() - start
-print(" Used %7.4f s for reading Jacobian from %s " % (elapsed, JFile))
-total = total + elapsed
+if np.size(DFiles) != np.size(JFiles):
+    error("Data file number not equal Jac file number! Exit.")
+nF = np.size(DFiles)
 
 
-start = time.time()
-dsh = np.shape(Data)
-err = np.reshape(Data[:, 5], (dsh[0], 1))
-print(np.amin(err), np.amax(err))
-Jac = jac.normalize_jac(Jac, err)
-elapsed = time.time() - start
-print(" Used %7.4f s for normalizing Jacobian with data error from %s " % (elapsed, DFile))
+mxVal = 1e-30
+mxLst = []
+for f in np.arange(nF):
 
-mx = np.nanmax(np.abs(Jac))
-mn = np.nanmin(np.abs(Jac))
-jm = jacmask.flatten(order="F")
-print(JFile+" minimum/maximum Jacobian value is "+str(mn)+"/"+str(mx))
-mx = np.nanmax(np.abs(Jac*jm))
-mn = np.nanmin(np.abs(Jac*jm))
-print(JFile+" minimum/maximum masked Jacobian value is "+str(mn)+"/"+str(mx))
-# print(JFile+" number of elements in masked Jacobian is "+str(np.count_nonzero(~np.isfinite(Jac))))
-# print( np.count_nonzero(~np.isnan(jacmask))*np.shape(Jac)[0])
-V=vcell.flatten(order="F")
-start = time.time()
-print("Jac ", np.shape(Jac))
-SensTmp = jac.calc_sensitivity(Jac,
-                     Type = Type, OutInfo=False)
-print("Sens ",np.shape(SensTmp))
-SensTot = jac.transform_sensitivity(S=SensTmp, V=V,
-                          Transform=Transform, OutInfo=False)
+    name, ext = os.path.splitext(JFile[f])
+    start =time.time()
+    print("\nReading Data from "+DFile[f])
+    Data, Site, Freq, Comp, Head = mod.read_data_jac(DFile[f])
+    elapsed = time.time() - start
+    print(" Used %7.4f s for reading Data from %s " % (elapsed, DFile[f]))
+    total = total + elapsed
 
-SensFile = WorkDir+WorkName+"_"+Type+"_"+"_".join(Transform)+".sns"
-S = np.reshape(SensTot, dims, order="F") 
-mod.write_model(SensFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
-print(" Sensitivities written to "+SensFile)
-elapsed = time.time() - start
-print(" Used %7.4f s for sensitivities " % (elapsed))
-        
-        
-for Split in Splits:
-        
-    if "comp" in Split.lower():
-        
+    start = time.time()
+    print("Reading Jacobian from "+JFile[f])
+    Jac = mod.read_jac(JFile[f])
+    elapsed = time.time() - start
+    print(" Used %7.4f s for reading Jacobian from %s " % (elapsed, JFile[f]))
+    total = total + elapsed
+
+    nstr = ""
+    if normalize_err:
+        nstr = nstr+"_nerr"
         start = time.time()
-    
-        """
-        Full_Impedance              = 1
-        Off_Diagonal_Impedance      = 2
-        Full_Vertical_Components    = 3
-        Full_Interstation_TF        = 4
-        Off_Diagonal_Rho_Phase      = 5
-        Phase_Tensor                = 6
-        """
-        compstr = ["zfull", "zoff", "tp", "rpoff", "pt"]
-    
-        Comps = Info[:,1]
-        ExistComp = np.unique(Comps)
-        
-        for icmp in ExistComp:
-            JacTmp = Jac[np.where(Comps == icmp)]
-            print("Comp1", np.shape(JacTmp))
-            SensTmp = jac.calc_sensitivity(JacTmp,
-                         Type = Type, OutInfo=False)
-            print("Comp2 ", np.shape(SensTmp))
-            SensTmp = jac.transform_sensitivity(S=SensTmp, V=V,
-                              Transform=Transform, OutInfo=False)
-            SensFile = WorkDir+WorkName+"_"+compstr[icmp-1]+"_"+Type+"_"+"_".join(Transform)+".sns"
-            S = np.reshape(SensTot, dims, order="F")
-            mod.write_model(SensFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
-            print(" Sensitivities written to "+SensFile)
-            
+        dsh = np.shape(Data)
+        err = np.reshape(Data[:, 7], (dsh[0], 1))
+        mx0 = np.max(np.abs(Jac))
+        Jac = jac.normalize_jac(Jac, err)
         elapsed = time.time() - start
-        print(" Used %7.4f s for comp sensitivities " % (elapsed))        
-        print("\n")
-    
-    if "site" in Split.lower():
+        print(" Used %7.4f s for normalizing Jacobian from %s " % (elapsed, JFile[f]))
+
+    sstr=""
+    if sparsify:
+        sstr="_sp"+str(round(np.log10(sparse_thresh)))
         start = time.time()
-        
-        Sites = Info[:,2]
-        SiteNums = Sites[np.sort(np.unique(Sites, return_index=True)[1])] 
-        SitNames = Site[np.sort(np.unique(Site, return_index=True)[1])] 
-    
-        
-        for isit in SiteNums:            
-           print("Site ", np.shape(SensTmp))
-           JacTmp = Jac[np.where(Sites == isit)]
-           SensTmp = jac.calc_sensitivity(JacTmp,
-                        Type = Type, OutInfo=False)
-           print("Site ", np.shape(SensTmp))
-           SensTmp = jac.transform_sensitivity(S=SensTmp, V=V,
-                             Transform=Transform, OutInfo=False)
-           SensFile = WorkDir+WorkName+"_"+SitNames[isit-1].lower()+"_"+Type+"_"+"_".join(Transform)+".sns"
-           S = np.reshape(SensTot, dims, order="F") 
-           mod.write_model(SensFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
-           print(" Sensitivities written to "+SensFile)
-        
+        Jacs= jac.sparsify_jac(Jac,sparse_thresh=sparse_thresh)
         elapsed = time.time() - start
-        print(" Used %7.4f s for site sensitivities " % (elapsed))
-        print("\n")
+        total = total + elapsed
+        print(" Used %7.4f s for sparsifying Jacobian %s " % (elapsed, JFile[f]))
+        NPZFile = name+nstr+sstr+".npz"
+        np.savez_compressed(NPZFile,
+                            Jac=Jacs, Data=Data, Site=Site, Comp=Comp)
+        elapsed = time.time() - start
+        total = total + elapsed
+        print(" Used %7.4f s for writing sparsified Jacobian to %s " % (elapsed, NPZFile))
+
+
+    start = time.time()
+    S, Smax = jac.calculate_sens(Jac, normalize=False, small=1.0e-14)
+    S = np.reshape(S, dims, order="F")
+    elapsed = time.time() - start
+    total = total + elapsed
+    print(" Used %7.4f s for calculating Sensitivity from Jacobian  %s " % (elapsed, JFile[f]))
+
+    start = time.time()
+    SNSFile = name+nstr+".sns"
+    mod.write_model(SNSFile, dx, dy, dz, S, reference, trans="log10")
+    elapsed = time.time() - start
+    total = total + elapsed
+    print(" Used %7.4f s for writing Sensitivity from Jacobian  %s " % (elapsed, JFile[f]))
+
+    start = time.time()
+    NCFile = name + nstr+".nc"
+    mod.write_jac_ncd(NCFile, Jac, Data, Site, Comp)
+    elapsed = time.time() - start
+    total = total + elapsed
+    print(" Used %7.4f s for writing Jacobian to %s " % (elapsed, NCFile))
+
+    start = time.time()
+    NPZFile = name +nstr+ ".npz"
+    np.savez_compressed(NPZFile,
+                        Jac=Jac, Data=Data, Site=Site, Comp=Comp)
+    elapsed = time.time() - start
+    total = total + elapsed
+    print(" Used %7.4f s for writing Jacobian to %s " % (elapsed, NPZFile))
