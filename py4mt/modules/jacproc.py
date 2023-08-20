@@ -139,8 +139,8 @@ def transform_sensitivity(S=np.array([]), V=np.array([]),
         error("Transform_sensitivity: Sensitivity size is 0! Exit.")
     
     ns = np.shape(S)
-    print("S", np.shape(S))    
-    print("V", np.shape(V))
+    # print("S", np.shape(S))    
+    # print("V", np.shape(V))
     # S = S.ravel()
     # print("S0", np.shape(S))
     # reshape((ns,1))

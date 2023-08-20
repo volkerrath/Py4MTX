@@ -48,6 +48,29 @@ def parse_ast(filename):
 
         return ast.parse(file.read(), filename=filename)
 
+def check_env(envar="CONDA_PREFIX", action="error"):
+    """
+    Check if environment variable exists
+
+    Parameters
+    ----------
+    envar : strng, optional
+        The default is ["CONDA_PREFIX"].
+
+    Returns
+    -------
+    None.
+
+    """
+    act_env = os.environ[envar]
+    if len(act_env)>0:
+        print("\n\n")
+        print("Active conda Environment  is:  " + act_env)
+        print("\n\n")
+    else:
+        if "err" in action.lower():
+            error("Environment "+ act_env+"is not activated! Exit.")
+
 
 def find_functions(body):
     return (f for f in body if isinstance(f, ast.FunctionDef))

@@ -127,7 +127,7 @@ DFile = WorkDir + "UBI_best_jac.dat"
 
 Splits = ["comp", "site"]
 
-Type = "raw"
+
 Type = "euc"
 """
 Calculate sensitivities.
@@ -135,25 +135,25 @@ Expects that Jacobian is already error-scaled, i.e Jac = C^(-1/2)*J.
 Options:
     Type = "raw"     sensitivities summed along the data axis
     Type = "abs"     absolute sensitivities summed along the data axis
-                    (often called coverage)
+                     (often called coverage)
     Type = "euc"     squared sensitivities summed along the data axis.
 
 Usesigma:
     if true, sensitivities with respect to sigma  are calculated.
 """
-Transform=["max"]
+
 Transform = ["max", "sqrt", "log"]
 """
 Transform sensitivities. 
 Options:
-    Transform = "siz"       Normalize by the values optional array V ("volume"), 
-                            i.e in our case layer thickness. This should always 
-                            be the first value in Transform list.
-    Transform = "max"       Normalize by maximum value.
-    Transform = "sur"       Normalize by surface value.
-    Transform = "sqr"       Take the square root. Only usefull for euc sensitivities. 
-    Transform = "log"       Take the logaritm. This should always be the 
-                            last value in Transform list Transf
+    Transform = "siz",          Normalize by the values optional array V ("volume"), 
+                                i.e in our case layer thickness. This should always 
+                                be the first value in Transform list.
+    Transform = "max"           Normalize by maximum value.
+    Transform = "sur"           Normalize by surface value.
+    Transform = "sqr"           Take the square root. Only usefull for euc sensitivities. 
+    Transform = "log"           Take the logaritm. This should always be the 
+                                last value in Transform list Transf
 """
 
 total = 0.0
@@ -219,12 +219,13 @@ mn = np.nanmin(np.abs(Jac*jm))
 print(JFile+" minimum/maximum masked Jacobian value is "+str(mn)+"/"+str(mx))
 # print(JFile+" number of elements in masked Jacobian is "+str(np.count_nonzero(~np.isfinite(Jac))))
 # print( np.count_nonzero(~np.isnan(jacmask))*np.shape(Jac)[0])
-
+V=vcell.flatten(order="F")
 start = time.time()
+print("Jac ", np.shape(Jac))
 SensTmp = jac.calc_sensitivity(Jac,
                      Type = Type, OutInfo=False)
-print(np.shape(SensTmp))
-SensTot = jac.transform_sensitivity(S=SensTmp, V=vcell,
+print("Sens ",np.shape(SensTmp))
+SensTot = jac.transform_sensitivity(S=SensTmp, V=V,
                           Transform=Transform, OutInfo=False)
 
 SensFile = WorkDir+WorkName+"_"+Type+"_"+"_".join(Transform)+".sns"
@@ -255,10 +256,12 @@ for Split in Splits:
         ExistComp = np.unique(Comps)
         
         for icmp in ExistComp:
-            JacTmp = Jac[np.where(Comps == icmp),:]
+            JacTmp = Jac[np.where(Comps == icmp)]
+            print("Comp1", np.shape(JacTmp))
             SensTmp = jac.calc_sensitivity(JacTmp,
                          Type = Type, OutInfo=False)
-            SensTmp = jac.transform_sensitivity(S=SensTmp, V=vcell,
+            print("Comp2 ", np.shape(SensTmp))
+            SensTmp = jac.transform_sensitivity(S=SensTmp, V=V,
                               Transform=Transform, OutInfo=False)
             SensFile = WorkDir+WorkName+"_"+compstr[icmp-1]+"_"+Type+"_"+"_".join(Transform)+".sns"
             S = np.reshape(SensTot, dims, order="F")
@@ -277,11 +280,13 @@ for Split in Splits:
         SitNames = Site[np.sort(np.unique(Site, return_index=True)[1])] 
     
         
-        for isit in SiteNums:
-           JacTmp = Jac[np.where(Sites == isit),:]
+        for isit in SiteNums:            
+           print("Site ", np.shape(SensTmp))
+           JacTmp = Jac[np.where(Sites == isit)]
            SensTmp = jac.calc_sensitivity(JacTmp,
                         Type = Type, OutInfo=False)
-           SensTmp = jac.transform_sensitivity(S=SensTmp, V=vcell,
+           print("Site ", np.shape(SensTmp))
+           SensTmp = jac.transform_sensitivity(S=SensTmp, V=V,
                              Transform=Transform, OutInfo=False)
            SensFile = WorkDir+WorkName+"_"+SitNames[isit-1].lower()+"_"+Type+"_"+"_".join(Transform)+".sns"
            S = np.reshape(SensTot, dims, order="F") 
