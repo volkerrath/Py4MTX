@@ -596,7 +596,7 @@ def write_model_ncd(
 
 
 def write_model(ModFile=None, dx=None, dy=None, dz=None, mval=None, reference=None,
-                trans=None, aircells = None, mvalair = 1.e17, blank = 1.e17, out=True):
+                trans=None, aircells = None, mvalair = 1.e17, blank = 1.e17, header="", out=True):
     """
     Write ModEM model input.
 
@@ -617,6 +617,9 @@ def write_model(ModFile=None, dx=None, dy=None, dz=None, mval=None, reference=No
     ENDDO
 
     """
+    if len(header)==0:
+        header ="# 3D MT model written by ModEM in WS format"
+     
     dims = np.shape(mval)
 
     nx = dims[0]
@@ -659,7 +662,7 @@ def write_model(ModFile=None, dx=None, dy=None, dz=None, mval=None, reference=No
     trans = np.array(trans)
     with open(ModFile, "w") as f:
         np.savetxt(
-            f, ["# 3D MT model written by ModEM in WS format"], fmt="%s")
+            f, [header], fmt="%s")
         line = np.array([nx, ny,nz, dummy, trans],dtype="object")
         # line = np.array([nx, ny, nz, dummy, trans])
         # np.savetxt(f, line.reshape(1, 5), fmt="   %s"*5)

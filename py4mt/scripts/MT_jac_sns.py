@@ -220,8 +220,9 @@ SensTot = jac.transform_sensitivity(S=SensTmp, V=V,
                           Transform=Transform, OutInfo=False)
 
 SensFile = WorkDir+WorkName+"_"+Type+"_"+"_".join(Transform)+".sns"
+Head = (WorkName+"_"+Type+"_"+"_".join(Transform)).replace("_", " | ")
 S = np.reshape(SensTot, dims, order="F") 
-mod.write_model(SensFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
+mod.write_model(SensFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells, header=Head)
 print(" Sensitivities written to "+SensFile)
 elapsed = time.time() - start
 print(" Used %7.4f s for sensitivities " % (elapsed))
@@ -253,8 +254,9 @@ for Split in Splits:
             SensTmp = jac.transform_sensitivity(S=SensTmp, V=V,
                               Transform=Transform, OutInfo=False)
             SensFile = WorkDir+WorkName+"_"+compstr[icmp-1]+"_"+Type+"_"+"_".join(Transform)+".sns"
+            Head = (WorkName+"_"+compstr[icmp-1]+"_"+Type+"_"+"_".join(Transform)).replace("_", " | ")
             S = np.reshape(SensTot, dims, order="F")
-            mod.write_model(SensFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
+            mod.write_model(SensFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells, header=Head)
             print(" Comp sensitivities written to "+SensFile)
             
         elapsed = time.time() - start
@@ -276,8 +278,9 @@ for Split in Splits:
            SensTmp = jac.transform_sensitivity(S=SensTmp, V=V,
                              Transform=Transform, OutInfo=False)
            SensFile = WorkDir+WorkName+"_"+SiteNames[isit-1].lower()+"_"+Type+"_"+"_".join(Transform)+".sns"
+           Head = (WorkName+"_"+SiteNames[isit-1].lower()+"_"+Type+"_"+"_".join(Transform)).replace("_", " | ")
            S = np.reshape(SensTot, dims, order="F") 
-           mod.write_model(SensFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
+           mod.write_model(SensFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells, header=Head)
            print(" Site sensitivities written to "+SensFile)
         
         elapsed = time.time() - start
@@ -299,7 +302,7 @@ for Split in Splits:
            if np.log10(FreqBands[ibnd][1])<0.:
                uppstr=str(1./FreqBands[ibnd][1])+"s"
            else:
-               lowstr=str(FreqBands[ibnd][0])+"Hz"              
+               lowstr=str(FreqBands[ibnd][1])+"Hz"              
                
 
            freqstr = "" 
@@ -313,9 +316,10 @@ for Split in Splits:
                         Type = Type, OutInfo=False)
            SensTmp = jac.transform_sensitivity(S=SensTmp, V=V,
                              Transform=Transform, OutInfo=False)
-           SensFile = WorkDir+WorkName+"_freqband"+lowstr+"-"+uppstr+"_"+Type+"_"+"_".join(Transform)+".sns"
+           SensFile = WorkDir+WorkName+"_freqband"+lowstr+"to"+uppstr+"_"+Type+"_"+"_".join(Transform)+".sns"
+           Head = (WorkName+"_freqband"+lowstr+"to"+uppstr+"_"+Type+"_"+"_".join(Transform)).replace("_", " | ")
            S = np.reshape(SensTot, dims, order="F") 
-           mod.write_model(SensFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
+           mod.write_model(SensFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells, header=Head)
            print(" Freq sensitivities written to "+SensFile)
         
         elapsed = time.time() - start
