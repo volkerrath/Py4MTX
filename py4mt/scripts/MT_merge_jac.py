@@ -61,7 +61,6 @@ print("Merge & Sparsify "+"\n"+"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%
 print("\n\n")
 
 
-
 rng = np.random.default_rng()
 nan = np.nan
 

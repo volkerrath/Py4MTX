@@ -75,6 +75,7 @@ def check_env(envar="CONDA_PREFIX", action="error"):
 def find_functions(body):
     return (f for f in body if isinstance(f, ast.FunctionDef))
 
+
 def list_functions(filename):
     """
     Generate list of functions in module.

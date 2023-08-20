@@ -4,6 +4,7 @@
 Created on Sun Sep 27 17:36:08 2020
 
 """
+from sys import exit as error
 import numpy as np
 import scipy.sparse as scp
 import numpy.linalg as npl

@@ -115,7 +115,8 @@ DFile = WorkDir + "UBI_best_jac.dat"
 Splits = ["comp", "site", "freq"]
 Splits = ["freq"]
 
-FreqBands = [ (0.01, 0.1 ), ]
+FreqBands = [ [0.01, 0.1], [1., 100.]]
+nF = len(FreqBands)
 
 
 Type = "euc"
@@ -290,19 +291,29 @@ for Split in Splits:
         FreqNums = Freqs[np.sort(np.unique(Freqs, return_index=True)[1])] 
         FreqValues = Freq[np.sort(np.unique(Freq, return_index=True)[1])] 
         
-        for ibnd in FreqBands:  
-           
+        for ibnd in np.arange(nF):  
+           if np.log10(FreqBands[ibnd][0])<0.:
+               lowstr=str(1./FreqBands[ibnd][0])+"s"
+           else:
+               lowstr=str(FreqBands[ibnd][0])+"Hz"
+           if np.log10(FreqBands[ibnd][1])<0.:
+               uppstr=str(1./FreqBands[ibnd][1])+"s"
+           else:
+               lowstr=str(FreqBands[ibnd][0])+"Hz"              
+               
+
+           freqstr = "" 
            FreqList = FreqNums[
-               np.where((Freq>=FreqBands[ibnd][0]) & (Freq<FreqBands[ibnd][1]))
+               np.where((FreqValues>=FreqBands[ibnd][0]) & (FreqValues<FreqBands[ibnd][1]))
                ]
            print(FreqList)
         
-           JacTmp = Jac[np.where(Freqs in FreqList)]
+           JacTmp = Jac[np.where(np.isin(Freqs, FreqList))]
            SensTmp = jac.calc_sensitivity(JacTmp,
                         Type = Type, OutInfo=False)
            SensTmp = jac.transform_sensitivity(S=SensTmp, V=V,
                              Transform=Transform, OutInfo=False)
-           SensFile = WorkDir+WorkName+"_freqband"+str(ibnd)+"_"+Type+"_"+"_".join(Transform)+".sns"
+           SensFile = WorkDir+WorkName+"_freqband"+lowstr+"-"+uppstr+"_"+Type+"_"+"_".join(Transform)+".sns"
            S = np.reshape(SensTot, dims, order="F") 
            mod.write_model(SensFile, dx, dy, dz, S, reference, trans=outform, mvalair=rhoair, aircells=aircells)
            print(" Freq sensitivities written to "+SensFile)
