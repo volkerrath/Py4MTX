@@ -1,0 +1,28 @@
+#! /bin/bash
+
+echo "Bash version ${BASH_VERSION}..."
+
+
+conda update conda -y -n base
+
+for env in $(conda env list | cut -d" " -f1 | tail -n+4)
+do 
+    echo      
+    echo      
+    echo      
+    echo  "*******************************************************************"
+    echo  $env $env $env $env $env $env $env $env
+    echo  "*******************************************************************"
+#     conda update --all -y -n $env
+    conda env export -n $env > ~/Admin/CondaAdmin/$env.yml
+    conda list -n $env > ~/Admin/CondaAdmin/$env.txt
+done
+
+# cp -v ~/Admin/anaconda/EM39.* ~/AEMpyX/environment/linux/
+# cp -v ~/Admin/anaconda/EM39.* ~/Py4MT/environment/
+#
+# cp -v ~/Admin/anaconda/base.* ~/AEMpyX/environment/linux/
+# cp -v ~/Admin/anaconda/base.* ~/Py4MT/environment/
+#
+# cp -v ~/Admin/anaconda/AEMpyX.* ~/AEMpyX/environment/linux/
+

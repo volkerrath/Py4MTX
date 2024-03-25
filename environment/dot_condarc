@@ -1,0 +1,5 @@
+solver: libmamba
+channels:
+  - conda-forge
+  - defaults
+channel_priority: flexible

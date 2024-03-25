@@ -1,0 +1,4 @@
+# Pair notebooks in subfolders of 'notebooks' to scripts in subfolders of 'scripts'
+[formats]
+"/home/vrath/AEMpyX/aempy/notebooks/" = "ipynb"
+"/home/vrath/AEMpyX/aempy/tutorial/" = "py:light"

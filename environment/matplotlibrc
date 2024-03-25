@@ -71,14 +71,14 @@
 ## ***************************************************************************
 ## The default backend.  If you omit this parameter, the first working
 ## backend from the following list is used:
-##     MacOSX Qt5Agg Gtk3Agg TkAgg WxAgg Agg
+##     MacOSX QtAgg Gtk4Agg Gtk3Agg TkAgg WxAgg Agg
 ## Other choices include:
-##     Qt5Cairo GTK3Cairo TkCairo WxCairo Cairo
-##     Qt4Agg Qt4Cairo Wx  # deprecated.
+##     QtCairo GTK4Cairo GTK3Cairo TkCairo WxCairo Cairo
+##     Qt5Agg Qt5Cairo Wx  # deprecated.
 ##     PS PDF SVG Template
 ## You can also deploy your own backend outside of Matplotlib by referring to
 ## the module name (which must be in the PYTHONPATH) as 'module://my_backend'.
-#backend: Agg
+##backend: Agg
 
 ## The port to use for the web server in the WebAgg backend.
 #webagg.port: 8988
@@ -130,10 +130,10 @@
 
 #markers.fillstyle: full  # {full, left, right, bottom, top, none}
 
-#pcolor.shading : flat
-#pcolormesh.snap : True  # Whether to snap the mesh to pixel boundaries. This
-                         # is provided solely to allow old test images to remain
-                         # unchanged. Set to False to obtain the previous behavior.
+#pcolor.shading: auto
+#pcolormesh.snap: True  # Whether to snap the mesh to pixel boundaries. This is
+                        # provided solely to allow old test images to remain
+                        # unchanged. Set to False to obtain the previous behavior.
 
 ## ***************************************************************************
 ## * PATCHES                                                                 *
@@ -276,37 +276,6 @@
 ## for more information on text properties
 #text.color: black
 
-
-## ***************************************************************************
-## * LaTeX                                                                   *
-## ***************************************************************************
-## For more information on LaTeX properties, see
-## https://matplotlib.org/tutorials/text/usetex.html
-#text.usetex: False  # use latex for all text handling. The following fonts
-                     # are supported through the usual rc parameter settings:
-                     # new century schoolbook, bookman, times, palatino,
-                     # zapf chancery, charter, serif, sans-serif, helvetica,
-                     # avant garde, courier, monospace, computer modern roman,
-                     # computer modern sans serif, computer modern typewriter
-                     # If another font is desired which can loaded using the
-                     # LaTeX \usepackage command, please inquire at the
-                     # Matplotlib mailing list
-#text.latex.preamble:   # IMPROPER USE OF THIS FEATURE WILL LEAD TO LATEX FAILURES
-                        # AND IS THEREFORE UNSUPPORTED. PLEASE DO NOT ASK FOR HELP
-                        # IF THIS FEATURE DOES NOT DO WHAT YOU EXPECT IT TO.
-                        # text.latex.preamble is a single line of LaTeX code that
-                        # will be passed on to the LaTeX system. It may contain
-                        # any code that is valid for the LaTeX "preamble", i.e.
-                        # between the "\documentclass" and "\begin{document}"
-                        # statements.
-                        # Note that it has to be put on a single line, which may
-                        # become quite long.
-                        # The following packages are always loaded with usetex, so
-                        # beware of package collisions: color, geometry, graphicx,
-                        # type1cm, textcomp.
-                        # Adobe Postscript (PSSNFS) font packages may also be
-                        # loaded, depending on your font settings.
-
 ## FreeType hinting flag ("foo" corresponds to FT_LOAD_FOO); may be one of the
 ## following (Proprietary Matplotlib-specific synonyms are given in parentheses,
 ## but their use is discouraged):
@@ -321,12 +290,40 @@
 #text.hinting_factor: 8  # Specifies the amount of softness for hinting in the
                          # horizontal direction.  A value of 1 will hint to full
                          # pixels.  A value of 2 will hint to half pixels etc.
-#text.kerning_factor : 0  # Specifies the scaling factor for kerning values. This
-                          # is provided solely to allow old test images to remain
-                          # unchanged. Set to 6 to obtain previous behavior. Values
-                          # other than 0 or 6 have no defined meaning.
+#text.kerning_factor: 0  # Specifies the scaling factor for kerning values.  This
+                         # is provided solely to allow old test images to remain
+                         # unchanged.  Set to 6 to obtain previous behavior.
+                         # Values  other than 0 or 6 have no defined meaning.
 #text.antialiased: True  # If True (default), the text will be antialiased.
                          # This only affects raster outputs.
+
+
+## ***************************************************************************
+## * LaTeX                                                                   *
+## ***************************************************************************
+## For more information on LaTeX properties, see
+## https://matplotlib.org/tutorials/text/usetex.html
+#text.usetex: False  # use latex for all text handling. The following fonts
+                     # are supported through the usual rc parameter settings:
+                     # new century schoolbook, bookman, times, palatino,
+                     # zapf chancery, charter, serif, sans-serif, helvetica,
+                     # avant garde, courier, monospace, computer modern roman,
+                     # computer modern sans serif, computer modern typewriter
+#text.latex.preamble:   # IMPROPER USE OF THIS FEATURE WILL LEAD TO LATEX FAILURES
+                        # AND IS THEREFORE UNSUPPORTED. PLEASE DO NOT ASK FOR HELP
+                        # IF THIS FEATURE DOES NOT DO WHAT YOU EXPECT IT TO.
+                        # text.latex.preamble is a single line of LaTeX code that
+                        # will be passed on to the LaTeX system. It may contain
+                        # any code that is valid for the LaTeX "preamble", i.e.
+                        # between the "\documentclass" and "\begin{document}"
+                        # statements.
+                        # Note that it has to be put on a single line, which may
+                        # become quite long.
+                        # The following packages are always loaded with usetex,
+                        # so beware of package collisions:
+                        #   geometry, inputenc, type1cm.
+                        # PostScript (PSNFSS) font packages may also be
+                        # loaded, depending on your font settings.
 
 ## The following settings allow you to select the fonts in math mode.
 #mathtext.fontset: dejavusans  # Should be 'dejavusans' (default),
@@ -530,6 +527,7 @@
 #legend.scatterpoints: 1        # number of scatter points
 #legend.markerscale:   1.0      # the relative size of legend markers vs. original
 #legend.fontsize:      medium
+#legend.labelcolor:    None
 #legend.title_fontsize: None    # None sets to the same as the default axes.
 
 ## Dimensions as fraction of font size:
@@ -584,12 +582,12 @@ figure.dpi:         400       # figure dots per inch
 ## ***************************************************************************
 ## * IMAGES                                                                  *
 ## ***************************************************************************
-#image.aspect: equal                # {equal, auto} or a number
-#image.interpolation:  antialiased  # see help(imshow) for options
-#image.cmap:   viridis              # A colormap name, gray etc...
-#image.lut:    256                  # the size of the colormap lookup table
-#image.origin: upper                # {lower, upper}
-#image.resample:  True
+#image.aspect:          equal        # {equal, auto} or a number
+#image.interpolation:   antialiased  # see help(imshow) for options
+#image.cmap:            viridis      # A colormap name, gray etc...
+#image.lut:             256          # the size of the colormap lookup table
+#image.origin:          upper        # {lower, upper}
+#image.resample:        True
 #image.composite_image: True  # When True, all the images on a set of axes are
                               # combined into a single composite image before
                               # saving a figure as a vector graphics file,
@@ -672,14 +670,14 @@ figure.dpi:         400       # figure dots per inch
 #savefig.facecolor: auto        # figure face color when saving
 #savefig.edgecolor: auto        # figure edge color when saving
 #savefig.format:    png         # {png, ps, pdf, svg}
-#savefig.bbox:      standard    # {tight, standard}
+savefig.bbox:      tight    # {tight, standard}
                                 # 'tight' is incompatible with pipe-based animation
                                 # backends (e.g. 'ffmpeg') but will work with those
                                 # based on temporary files (e.g. 'ffmpeg_file')
 #savefig.pad_inches:   0.1      # Padding to be used when bbox is set to 'tight'
 #savefig.directory:    ~        # default directory in savefig dialog box,
                                 # leave empty to always use current working directory
-#savefig.transparent: False     # setting that controls whether figures are saved with a
+savefig.transparent: True     # setting that controls whether figures are saved with a
                                 # transparent background by default
 #savefig.orientation: portrait  # Orientation of saved figure
 
@@ -694,13 +692,13 @@ figure.dpi:         400       # figure dots per inch
                             # xpdf intended for production of publication quality files,
                             # but requires ghostscript, xpdf and ps2eps
 #ps.distiller.res:  6000    # dpi
-ps.fonttype:       3       # Output Type 3 (Type3) or Type 42 (TrueType)
+#ps.fonttype:       3       # Output Type 3 (Type3) or Type 42 (TrueType)
 
 ### PDF backend params
-#pdf.compression:    6  # integer from 0 to 9
+pdf.compression:    6  # integer from 0 to 9
                         # 0 disables compression (good for debugging)
-pdf.fonttype:       3  # Output Type 3 (Type3) or Type 42 (TrueType)
-#pdf.use14corefonts : False
+#pdf.fonttype:       3  # Output Type 3 (Type3) or Type 42 (TrueType)
+#pdf.use14corefonts: False
 #pdf.inheritcolor:   False
 
 ### SVG backend params
@@ -743,7 +741,7 @@ pdf.fonttype:       3  # Output Type 3 (Type3) or Type 42 (TrueType)
 #keymap.grid_minor: G           # switching on/off minor grids in current axes
 #keymap.yscale: l               # toggle scaling of y-axes ('log'/'linear')
 #keymap.xscale: k, L            # toggle scaling of x-axes ('log'/'linear')
-#keymap.copy: ctrl+c, cmd+c     # Copy figure to clipboard
+#keymap.copy: ctrl+c, cmd+c     # copy figure to clipboard
 
 
 ## ***************************************************************************
