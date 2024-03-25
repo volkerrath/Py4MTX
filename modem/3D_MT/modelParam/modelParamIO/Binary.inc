@@ -1,1 +1,0 @@
-/home/vrath/ModEM_current/f90/3D_MT/modelParam/modelParamIO/Binary_vr.inc
