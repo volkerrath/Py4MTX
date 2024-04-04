@@ -1,4 +1,7 @@
 # Py4MT (version 2)
+
+# This repo is in a state of reorganization and adaption to Python 3.9+. 
+
 This repository contains simple scripts useful for EM imaging, modelling, and inversion, partly using mtpy (https://github.com/MTgeophysics/mtpy). In particular  there are helper scripts for manipulating edi files, ModEM input data, and model files. There are utilities to manipulate and write data, model, sensitivity and Jacobian in different formats as netcdf or npy/z. It also includes 3-D image processing on models, (possibly random) body insertion (general ellipsoids, boxes), calculation of quantities derived from the Jacobian, nullspace shuttles, and (soon) expansion of 3-D models to low-rank parametrizations (DCT, Legendre, PCA). 
 
 Please keep in mind that this is an experimental software, and will contain errors. Use at your own risk! However, we will frequently update the repository correcting bugs, and adding additional functionality.                 
@@ -15,7 +18,7 @@ This repository contains the following subdirectories:
 	plotrjmcmc.py, and util.py, called from the Python scripts run for different tasks of MT
 	interprretation.
  	
- - 	**py4mt/scripts**
+ - 	**py4mt/scripts** and **py4mt/scripts2**
  	Contains the scripts  for preprocessing, visualization, and preparing the inversion of 
  	MT data. Also included is a workflow for reading and processing Jacobians from 
 	ModEM outputs (original & new).     	 
@@ -25,11 +28,11 @@ This repository contains the following subdirectories:
 	  	
 - 	**modem**
 	Modified and original ModEM source code files including corresponding Makefiles, useful for 
-	sensitivity output. 
+	sensitivity output.  
 	
 - 	**environment**
 	Contains conda environment description files, and some useful helper files for working 
-	within the conda environment. The current EM38 and EM39 environments contain a lot of packages
+	within the conda environment. The current EM39 environments contain a lot of packages
 	which are not strictly necessary for running aempy, but useful for related geoscientific work.
 	They will be replaced by a streamlined Py4MT environment (Python 3.9) at a later time.
 
@@ -38,7 +41,7 @@ Get your working copy via git from the command line:
 
 _git clone https://github.com/volkerrath/Py4MT2/_
 
-This version will run under Python 3.8+ (3.9 being the current development platform). Moving to 3.10 is not encouraged because it is still missing some important packages. To install it in an Linux environment (e.g. Ubuntu, SuSE), you need to do the following:
+This version will run under Python 3.8+ (3.9 being the current development platform). To install it in an Linux environment (e.g. Ubuntu, SuSE), you need to do the following:
 
 (1) Download the latest Anaconda or Miniconda version  (https://docs.conda.io/projects/conda/en/latest/user-guide/install/download.html), and install by running the downloaded bash script.  In order to make updates secure and avoid inconsistencies, copy .condarc to your home directory. As the Miniconda installer is not updated very frequently, it is useful to run the following within the Miniconda base environment:
 
