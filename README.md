@@ -1,6 +1,6 @@
 # Py4MT (version 2)
 
-# This repo is in a state of reorganization and adaption to Python 3.9+. 
+# This repo is in a state of reorganization and adaption to Python 3.9+. Not ready for production use!
 
 This repository contains simple scripts useful for EM imaging, modelling, and inversion, partly using mtpy (https://github.com/MTgeophysics/mtpy). In particular  there are helper scripts for manipulating edi files, ModEM input data, and model files. There are utilities to manipulate and write data, model, sensitivity and Jacobian in different formats as netcdf or npy/z. It also includes 3-D image processing on models, (possibly random) body insertion (general ellipsoids, boxes), calculation of quantities derived from the Jacobian, nullspace shuttles, and (soon) expansion of 3-D models to low-rank parametrizations (DCT, Legendre, PCA). 
 
@@ -59,19 +59,14 @@ or:
 
 _conda create --name EM39 --file EM39.txt_
 
-This will set up a Python 3.9 environment with all dependencies for aempy. In case you want to keep using python 3.8, corresponding EM38.yml and EM38.txt are available. Don't forget to update also EM38/EM39 regularly, using _conda update --name EM39 (EM38) --all_! There is a replacement for _conda_, called _mamba_ (see https://github.com/mamba-org/mamba), which is not only considerably faster, but also better in keeping the environments consistent. It can be installed via conda (i. e., _conda install mamba_), and has practically the same syntax as the oroginal package manager.
-
+This will set up a Python 3.9 environment with all dependencies for aempy. In case you want to keep using python 3.8, corresponding EM38.yml and EM38.txt are available. Don't forget to update also EM38/EM39 regularly, using _conda update --name EM39 (EM38) --all_! 
 
 
 (3) Activate this environment by:
 
 _conda activate EM39_
 
-(4) Now the remaining open source toolboxes used (i.e., not included in the anaconda framework) need to be installed (currently only mtpy, _https://github.com/MTgeophysics/mtpy_). For mtpy, download the current development version via the git system. Then, enter the download directory (usually called _mtpy_) and execute:
-
-_python setup.py install_ or _pip install [-e] ._
-
-(5) In order to reproduce the identical behavior of matplotlib, you should copy the included  _matplotlibrc_ file to the appropriate directory. Under Linux (Ubuntu), this should be : _$HOME/.config/matplotlib/matplotlibrc_. Pertinent changes should be made there, or have to be made within the scripts/modules using the _mpl.rcParams[name]=value_ mechanism. 
+(4) In order to reproduce the identical behavior of matplotlib, you should copy the included  _matplotlibrc_ file to the appropriate directory. Under Linux (Ubuntu), this should be : _$HOME/.config/matplotlib/matplotlibrc_. Pertinent changes should be made there, or have to be made within the scripts/modules using the _mpl.rcParams[name]=value_ mechanism. 
 
 (6) Currently we have defined two environmental variable, _PY4MT_ROOT_ and _PY4MT_DATA_. These need to be set in your .bashrc file pointing to the place where Py4MT is installed, and where you keep your MT data, respectively. Keeping to this scheme makes life much easier when different persons work on the tools.
 
