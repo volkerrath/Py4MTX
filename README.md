@@ -20,8 +20,9 @@ This repository contains the following subdirectories:
  	
  - 	**py4mt/scripts** and **py4mt/scripts2**
  	Contains the scripts  for preprocessing, visualization, and preparing the inversion of 
- 	MT data. Also included is a workflow for reading and processing Jacobians from 
-	ModEM outputs (original & new).     	 
+ 	MT data.  The scripts in the former directory will move to the latter in the process of adaption.
+	The workflow for reading and processing Jacobians from ModEM outputs (original & new)
+	has been moved to https://github.com/volkerrath/JacoPyAN.     	 
  
 - 	**py4mt/notebooks**
  	Contains jupyter notebooks for the most important scripts using the toolbox. 
