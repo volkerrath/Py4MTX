@@ -56,7 +56,7 @@ if not ".pdf" in PlotFmt:
 OutStrng = "_edited_imp_rjmcmc"
 
 DataOut = True
-DataName= "Limerick2022_results.dat"
+DataName= "test_results.dat"
 WRef = False
 
 # PdfCName  = "Limerick2022_results.pdf"
@@ -64,11 +64,11 @@ WRef = False
 # results_in_dir =r"/home/vrath/Limerick2022/reports/EDI_edited_Z_results/" #Mar02/out_edited/"
 # plots_dir = r"/home/vrath/Limerick2022/reports/Plots/"  #r"/home/vrath/Limerick2022/work/Mar02/output/"
 
-PdfCName  = "Limerick2022_results.pdf"
-edi_in_dir = r"/home/vrath/Limerick2022/3D/edi_all/"
-results_in_dir =r"/home/vrath/Limerick2022/3D/results_all50km/" #Mar02/out_edited/"
+PdfCName  = "Test_results.pdf"
+edi_in_dir = r"/home/vrath/rjmcmc_mt/work/edi/"
+results_in_dir =r"/home/vrath/rjmcmc_mt/work/results/" #Mar02/out_edited/"
 # plots_dir = r"/home/vrath/Limerick2022/3D/plots_all20km/"  #r"/home/vrath/Limerick2022/work/Mar02/output/"
-plots_dir = r"/home/vrath/Limerick2022/3D/plots_all50km/"  #r"/home/vrath/Limerick2022/work/Mar02/output/"
+plots_dir = r"/home/vrath/rjmcmc_mt/work/plots/"  #r"/home/vrath/Limerick2022/work/Mar02/output/"
 
 edi_files = []
 files = os.listdir(edi_in_dir)
