@@ -2,10 +2,9 @@
 
 # This repo is in a state of reorganization and adaption to Python 3.9+. Not ready for production use!
 
-This repository contains simple scripts useful for EM imaging, modelling, and inversion, partly using mtpy (https://github.com/MTgeophysics/mtpy). In particular  
-there are helper scripts for manipulating edi files, ModEM input data, and model files.
+This repository contains simple scripts useful for EM imaging, modelling, and inversion, partly using mtpy (https://github.com/MTgeophysics/mtpy). In particular there are helper scripts for manipulating edi files, ModEM input data, and model files.
 
-Please keep in mind that this is an experimental software, and will contain errors. Use at your own risk! However, we will frequently update the repository correcting bugs, and adding additional functionality.                 
+Please keep in mind that this is experimental software, and will contain errors. Use at your own risk! However, we will frequently update the repository correcting bugs, and (re)adding additional functionality.                 
  
 This repository contains the following subdirectories:
 
