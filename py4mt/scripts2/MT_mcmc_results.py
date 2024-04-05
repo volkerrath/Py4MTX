@@ -33,6 +33,7 @@ import os
 import sys
 import numpy as np
 from mtpy.core.mt import MT
+from mt_metadata import TF_XML
 
 PY4MT_ROOT = os.environ["PY4MT_ROOT"]
 myfilename = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
@@ -44,10 +45,11 @@ import plotrjmcmc as pmc
 import util
 
 PlotFmt = ".pdf" #".png"
-RhoPlotLim = [0.1, 100000]
-DepthPlotLim = 50000.
+RhoPlotLim = [1, 10000]
+DepthPlotLim = 25000.
 LogDepth = False
-
+ColorMap ="rainbow"
+#ColorMap ="viridis"
 
 PdfC = True
 if not ".pdf" in PlotFmt:
@@ -118,7 +120,7 @@ for filename in result_files:
                     plotSizeInches="11x8",
                     maxDepth=DepthPlotLim,
                     zLog=LogDepth,
-                    colormap="rainbow"
+                    colormap=ColorMap
                     )
 
     r.plot()
@@ -126,7 +128,8 @@ for filename in result_files:
     if DataOut:
         name_edi, ext = os.path.splitext(filename)
         file_i = edi_in_dir + name_edi+".edi"
-        mt = MT(file_i)
+        mt = MT()
+        mt.read(file_i)
         lat = mt.station_metadata.location.latitude
         lon = mt.station_metadata.location.longitude
         elev = mt.station_metadata.location.elevation
