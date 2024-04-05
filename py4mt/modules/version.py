@@ -15,7 +15,7 @@ def versionstrg():
     Set version string and date.
     """
     now = datetime.now()
-    version = "- Py4MT 0.99.99 -"
+    version = "- Py4MT2 0.99.99 -"
     release_date =now.strftime("%m/%d/%Y, %H:%M:%S")
 
     return version, release_date

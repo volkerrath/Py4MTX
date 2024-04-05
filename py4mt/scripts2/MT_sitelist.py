@@ -54,11 +54,11 @@ if  "wal" in whatfor:
 PY4MT_DATA = os.environ["PY4MT_DATA"]
 
 # Define the path to your EDI-files and for the list produced
-EdiDir = PY4MT_DATA+"/Opf/2023/edi/"
+# EdiDir = PY4MT_DATA+"/Opf/2023/edi/"
+EdiDir = r"/home/vrath/rjmcmc_mt/work/edi/"
 print(" Edifiles read from: %s" % EdiDir)
 CSVFile = EdiDir + "Sitelist.dat"
 print("Writing data to file: " + CSVFile)
-
 
 # No changes required after this line!
 

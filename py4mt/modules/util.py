@@ -682,7 +682,7 @@ def make_pdf_catalog(WorkDir="./", PdfList= None, FileName=None):
 
     print("\n"+str(np.size(PdfList))+" files collected to "+FileName)
 
-def print_title(version="", fname="", form="%m/%d/%Y, %H:%M:%S", out=True):
+def print_title(version="0.99.99", fname="", form="%m/%d/%Y, %H:%M:%S", out=True):
     """
     Print version, calling filename, and modification date.
     """

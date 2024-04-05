@@ -42,6 +42,13 @@ for pth in mypath:
         sys.path.insert(0,pth)
 
 import util
+from version import versionstrg
+
+PY4MT_DATA = os.environ["PY4MT_DATA"]
+
+version, _ = versionstrg()
+titstrng = util.print_title(version=version, fname=__file__, out=False)
+print(titstrng+"\n\n")
 
 # Graphical paramter. Determine the plot formats produced,
 # and the required resolution:

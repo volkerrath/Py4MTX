@@ -32,8 +32,12 @@ Revision History:
 import os
 import sys
 import numpy as np
+from datetime import datetime
+from sys import exit as error
+
 from mtpy.core.mt import MT
 from mt_metadata import TF_XML
+
 
 PY4MT_ROOT = os.environ["PY4MT_ROOT"]
 myfilename = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
@@ -43,6 +47,13 @@ for pth in myfilename:
 
 import plotrjmcmc as pmc
 import util
+
+from version import versionstrg
+
+
+version, _ = versionstrg()
+titstrng = util.print_title(version=version, fname=__file__, out=False)
+print(titstrng+"\n\n")
 
 PlotFmt = ".pdf" #".png"
 RhoPlotLim = [1, 10000]
@@ -55,7 +66,7 @@ PdfC = True
 if not ".pdf" in PlotFmt:
     PdfC = False
     print("No PDF catalog because no pdf output!")
-OutStrng = "_edited_imp_rjmcmc"
+OutStrng = "_test"
 
 DataOut = True
 DataName= "test_results.dat"
