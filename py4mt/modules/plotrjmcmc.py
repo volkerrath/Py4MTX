@@ -236,21 +236,14 @@ class Results():
                     "misfit.%03d.txt" %
                     (chain))
                 d = np.loadtxt(fn)
-                print(self._MF["sample"])
-                print(d.shape[0], self._nchains)
-                print(np.zeros((d.shape[0], self._nchains)))
+
                 if chain==0:
-                # if (self._MF["sample"] == []):
-                    print("1")
                     self._MF["sample"] = np.zeros((d.shape[0], self._nchains))
-                    print("2")
                     self._MF["misfit"] = np.zeros((d.shape[0], self._nchains))
-                # end if
-                print("3")
+
                 self._MF["sample"][:, chain] = np.arange(d.shape[0])
-                print("4")
                 self._MF["misfit"][:, chain] = d                
-                print("5")
+
     # end func
 
     def plot(self):
