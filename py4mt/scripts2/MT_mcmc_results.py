@@ -126,17 +126,20 @@ for filename in result_files:
     if DataOut:
         name_edi, ext = os.path.splitext(filename)
         file_i = edi_in_dir + name_edi+".edi"
-        mt_obj = MT(file_i)
+        mt = MT(file_i)
+        lat = mt.station_metadata.location.latitude
+        lon = mt.station_metadata.location.longitude
+        elev = mt.station_metadata.location.elevation
 
         name_result,_ = os.path.splitext(outfile)
 
         data_in = np.loadtxt(name_result+".dat")
         sd = np.shape(data_in)
-        lon = np.ones_like(data_in[:,0]).reshape(sd[0],1)*mt_obj.lon
-        lat = np.ones_like(data_in[:,0]).reshape(sd[0],1)*mt_obj.lat
+        lon = np.ones_like(data_in[:,0]).reshape(sd[0],1)*lon
+        lat = np.ones_like(data_in[:,0]).reshape(sd[0],1)*lat
 
         if WRef:
-            elev = np.ones_like(data_in[:,0])*mt_obj.elev
+            elev = np.ones_like(data_in[:,0])*elev
             data_in[:,0]= elev.flatten() - data_in[:,0]
 
         data_out=np.append(lat,lon,axis = 1)
