@@ -442,6 +442,7 @@ send2trash                1.8.2              pyh41d4057_0    conda-forge
 setuptools                69.2.0             pyhd8ed1ab_0    conda-forge
 shapely                   2.0.3           py311h2032efe_0    conda-forge
 simpeg                    0.20.0             pyhd8ed1ab_1    conda-forge
+simplekml                 1.3.6              pyhd8ed1ab_0    conda-forge
 sip                       6.7.12          py311hb755f60_0    conda-forge
 six                       1.16.0             pyh6c4a22f_0    conda-forge
 snappy                    1.1.10               h9fff704_0    conda-forge
