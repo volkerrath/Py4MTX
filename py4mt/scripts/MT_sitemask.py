@@ -56,29 +56,25 @@ print(titstrng+"\n\n")
 PerLimits = (0.001, 10.)  # AMT
 
 # Define the path to your EDI-files:
-# edi_in_dir = r"/home/vrath/RRV_work/edi_work/Edited/"
-edi_in_dir = r"/home/vrath/BHP/edi/"
-# r"/home/vrath/MauTopo/MauTopo500_edi/"
-# r"/home/vrath/RRV_work/edifiles_in/"
-# edi_in_dir =  r"/home/vrath/RRV_work/edifiles_r1500m_bbmt/"
-print(" Edifiles read from: %s" % edi_in_dir)
+    
 
-# Define theedi_in_dir path for saving  plots:
+    
+EdiDir_in = r"/home/vrath/rjmcmc_mt/work/edi/"
+print(" Edifiles read from: %s" % EdiDir_in)
+EdiDir_out =  r"/home/vrath/rjmcmc_mt/work/edi/masked/"
+print(" Plots written to: %s" % EdiDir_out)
+if not os.path.isdir(EdiDir_out):
+    print(" File: %s does not exist, but will be created" % EdiDir_out)
+    os.mkdir(EdiDir_out)
 
 
-edi_out_dir =  r"/home/vrath/BHP/edi_masked/"
-print(" Plots written to: %s" % edi_out_dir)
-if not os.path.isdir(edi_out_dir):
-    print(" File: %s does not exist, but will be created" % edi_out_dir)
-    os.mkdir(edi_out_dir)
-
-# No changes required after this line!
+# Probably No changes required after this line!
 
 # Construct list of EDI-files:
 
 
 edi_files = []
-files = os.listdir(edi_in_dir)
+files = os.listdir(EdiDir_in)
 for entry in files:
     # print(entry)
     if entry.endswith(".edi") and not entry.startswith("."):
@@ -88,16 +84,22 @@ edi_files = sorted(edi_files)
 
 for filename in edi_files:
     name, ext = os.path.splitext(filename)
-    file_i = edi_in_dir + filename
-    mt_obj = MT(file_i)
-    print(" site %s at :  % 10.6f % 10.6f" % (name, mt_obj.lat, mt_obj.lon))
+    file_i = EdiDir_in + filename
+    mt = MT()
+    mt.read(file_i)
+    
+    lat = mt.station_metadata.location.latitude
+    lon = mt.station_metadata.location.longitude
+    elev = mt.station_metadata.location.elevation
+    
+    print(" site %s at :  % 10.6f % 10.6f" % (name, lat, lon))
 
 
-    f = mt_obj.Z.freq
+    f = mt.Z.freq
     fs = np.shape(f)
 
-    z = mt_obj.Z.z
-    t = mt_obj.Tipper.tipper
+    z = mt.Z.z
+    t = mt.Tipper.tipper
 
 
     fmin = 1./PerLimits[1]
@@ -117,8 +119,8 @@ for filename in edi_files:
 
     # Write a new edi file (as before)
     file_out = name +"_masked"+".edi"
-    print("Writing data to " + edi_out_dir + file_out)
-    mt_obj.write_mt_file(save_dir=edi_out_dir,
+    print("Writing data to " + EdiDir_out + file_out)
+    mt.write_mt_file(save_dir=EdiDir_out,
     fn_basename= file_out,
     file_type="edi",
     new_Z_obj=new_Z_obj,

@@ -89,22 +89,18 @@ PerLimits = (0.0001, 1.)  # AMT
 RhoLimits = (10., 10000.)
 PhiLimits = (-180., 180.)
 Tiplimits = (-.5, 0.5)
+
+
 # Define the path to your EDI-files:
-# edi_in_dir = r"/home/vrath/RRV_work/edi_work/Edited/"
-edi_in_dir = r"/home/vrath/work/MT_Data/Opf/2023/edi/"
-# r"/home/vrath/MauTopo/MauTopo500_edi/"
-# r"/home/vrath/RRV_work/edifiles_in/"
-# edi_in_dir =  r"/home/vrath/RRV_work/edifiles_r1500m_bbmt/"
-print(" Edifiles read from: %s" % edi_in_dir)
-
-# Define the edi_in_dir path for saving  plots:
-
-
-plots_dir =  r"/home/vrath/work/MT_Data/Opf/2023/plots/"
-print(" Plots written to: %s" % plots_dir)
-if not os.path.isdir(plots_dir):
-    print(" File: %s does not exist, but will be created" % plots_dir)
-    os.mkdir(plots_dir)
+EdiDir = r"/home/vrath/rjmcmc_mt/work/edi/"
+print(" Edifiles read from: %s" % EdiDir)
+    
+# Define the  path for saving  plots:
+PltDir = EdiDir +"/plots/"
+print(" Plots written to: %s" % PltDir)
+if not os.path.isdir(PltDir):
+    print(" File: %s does not exist, but will be created" % PltDir)
+    os.mkdir(PltDir)
 
 # No changes required after this line!
 
@@ -112,7 +108,7 @@ if not os.path.isdir(plots_dir):
 
 
 edi_files = []
-files = os.listdir(edi_in_dir)
+files = os.listdir(EdiDir)
 for entry in files:
     # print(entry)
     if entry.endswith(".edi") and not entry.startswith("."):
@@ -123,60 +119,70 @@ if PdfC:
     pdf_list= []
     for filename in edi_files:
         name, ext = os.path.splitext(filename)
-        pdf_list.append(plots_dir+name+strng+".pdf")
+        pdf_list.append(PltDir+name+strng+".pdf")
 # Create an MT object
 
 for filename in edi_files:
     name, ext = os.path.splitext(filename)
-    file_i = edi_in_dir + filename
-    mt_obj   = MT(file_i)
+    file_i = EdiDir + filename
+    mt = MT()
+    mt.read(file_i)
+
+    lat = mt.station_metadata.location.latitude
+    lon = mt.station_metadata.location.longitude
+    elev = mt.station_metadata.location.elevation
     
-    print(" site %s at :  % 10.6f % 10.6f" % (name, mt_obj.lat, mt_obj.lon))
+    print(" site %s at :  % 10.6f % 10.6f" % (name, lat, lon))
 
 
-    f = mt_obj.Z.freq
-    fs = np.shape(f)
+    # f = mt.Z.freq
+    # fs = np.shape(f)
 
-    z = mt_obj.Z.z
-    t = mt_obj.Tipper.tipper
-    print(np.shape(t))
-    print()
+    # z = mt.Z.z
+    # t = mt.Tipper.tipper
+    # print(np.shape(t))
+    # print()
     
-    DatLimits = PerLimits
-    fmin = 1./DatLimits[1]
-    fmax = 1./DatLimits[0]
+    # DatLimits = PerLimits
+    # fmin = 1./DatLimits[1]
+    # fmax = 1./DatLimits[0]
 
-    for ii in np.arange(fs[0]):
+    # for ii in np.arange(fs[0]):
 
-        if (abs(z[ii,:,:]).any()>1.e30):    z[ii,:,:] = 1.e30
-        if (abs(z[ii,:,:]).any()<1.e-30):   z[ii,:,:] = 1.e-30
-        if (abs(t[ii,:]).any()>1.e30):      t[ii,:] = 1.e30
-        if (abs(t[ii,:]).any()<1.e-30):     t[ii,:] = 1.e-30
+    #     if (abs(z[ii,:,:]).any()>1.e30):    z[ii,:,:] = 1.e30
+    #     if (abs(z[ii,:,:]).any()<1.e-30):   z[ii,:,:] = 1.e-30
+    #     if (abs(t[ii,:]).any()>1.e30):      t[ii,:] = 1.e30
+    #     if (abs(t[ii,:]).any()<1.e-30):     t[ii,:] = 1.e-30
 
 
-    if no_err is True:
-        # mt_obj.Z.z_err = 0.0001*np.ones_like( freq_list = mt_obj.Z.freqnp.real(mt_obj.Z.z))
-        # mt_obj.Tipper.tipper_err = 0.0001*np.ones_like(np.real(mt_obj.Tipper.tipper))
-        mt_obj.Z.z_err = 0.001 * np.real(mt_obj.Z.z)
-        mt_obj.Tipper.tipper_err = 0.001 * np.real(mt_obj.Tipper.tipper)
+    # if no_err is True:
+    #     # mt.Z.z_err = 0.0001*np.ones_like( freq_list = mt.Z.freqnp.real(mt.Z.z))
+    #     # mt.Tipper.tipper_err = 0.0001*np.ones_like(np.real(mt.Tipper.tipper))
+    #     mt.Z.z_err = 0.001 * np.real(mt.Z.z)
+    #     mt.Tipper.tipper_err = 0.001 * np.real(mt.Tipper.tipper)
+        
 
-    plot_obj = mt_obj.plot_mt_response(plot_num=plot_z,
-                                       plot_tipper=plot_t,
-                                       plot_pt=plot_p,
-                                       x_limits=PerLimits,
-                                       # res_limits=RhoLimits,
-                                       # phase_limits=PhiLimits,
-                                       # tipper_limits=Tiplimits,
-                                       fig_dpi=400,
-                                       xy_ls="",yx_ls="", det_ls="",
-                                       # ellipse_colorby="skew",
-                                       # ellipse_range = [-10.,10.,2.]
-                                       )
+    plot = mt.plot_mt_response()  
+    plot.plot_num = 2
+    plot.fig_num = 2
+    
+    # plot_num=plot_z,
+    #                                    plot_tipper=plot_t,
+    #                                    plot_pt=plot_p,
+    #                                    x_limits=PerLimits,
+    #                                    # res_limits=RhoLimits,
+    #                                    # phase_limits=PhiLimits,
+    #                                    # tipper_limits=Tiplimits,
+    #                                    fig_dpi=400,
+    #                                    xy_ls="",yx_ls="", det_ls="",
+    #                                    # ellipse_colorby="skew",
+    #                                    # ellipse_range = [-10.,10.,2.]
+    #                                    )
 
 # Finally save figure
 
     for F in PlotFmt:
-          plot_obj.save_plot(plots_dir+name+strng+F)
+          plot.save_plot(PltDir+name+strng+F)
 
-# if PdfC:
-#     util.make_pdf_catalog(plots_dir, PdfList=pdf_list, FileName=plots_dir+PdfCName)
+if PdfC:
+    util.make_pdf_catalog(PltDir, PdfList=pdf_list, FileName=PltDir+PdfCName)

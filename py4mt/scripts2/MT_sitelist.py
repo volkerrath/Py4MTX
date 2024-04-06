@@ -51,7 +51,6 @@ whatfor = "waldim"
 if  "wal" in whatfor:
     delim = " "
 
-PY4MT_DATA = os.environ["PY4MT_DATA"]
 
 # Define the path to your EDI-files and for the list produced
 # EdiDir = PY4MT_DATA+"/Opf/2023/edi/"
