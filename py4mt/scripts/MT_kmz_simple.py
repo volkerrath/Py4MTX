@@ -10,14 +10,9 @@ import os
 import sys
 import csv
 
-mypath = ["/home/vrath/Py4MT/py4mt/modules/", "/home/vrath/Py4MT/py4mt/scripts/"]
-for pth in mypath:
-    if pth not in sys.path:
-        sys.path.insert(0, pth)
-
-
-import util
 import numpy as np
+from datetime import datetime
+
 
 import simplekml
 # from mtpy.core import mt, transfer_function
@@ -25,6 +20,24 @@ import mtpy.core
 from mtpy.core.z import Z, Tipper
 from mtpy.core.mt import MT
 import matplotlib.pyplot as plt
+
+mypath = ["/home/vrath/Py4MT/py4mt/modules/", "/home/vrath/Py4MT/py4mt/scripts/"]
+for pth in mypath:
+    if pth not in sys.path:
+        sys.path.insert(0, pth)
+
+
+import util as utl
+from version import versionstrg
+
+
+PY4MT_DATA = os.environ["PY4MT_DATA"]
+
+version, _ = versionstrg()
+titstrng = utl.print_title(version=version, fname=__file__, out=False)
+print(titstrng+"\n\n")
+
+cm = 1./2.54  # centimeters to inches
 
 # Determine what is added to the KML-tags:
 # plots_1 =  site plots produced by MT_siteplot.py, with an

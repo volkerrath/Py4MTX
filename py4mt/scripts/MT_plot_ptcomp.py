@@ -35,16 +35,13 @@ import modem as mod
 import util as utl
 from version import versionstrg
 
-Strng, _ = versionstrg()
-now = datetime.now()
-print("\n\n"+Strng)
-print("Plot Phase Tensor comparison"+"\n"+"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%S")))
-print("\n\n")
+PY4MT_DATA = os.environ["PY4MT_DATA"]
 
-warnings.simplefilter(action="ignore", category=FutureWarning)
+version, _ = versionstrg()
+titstrng = utl.print_title(version=version, fname=__file__, out=False)
+print(titstrng+"\n\n")
 
-cm = 1/2.54  # centimeters in inches
-
+cm = 1./2.54  # centimeters to inches
 
 WorkDir =  r"/home/vrath/work/MT_Data/Ubaye/Volker_rms_off/"
 DataFiles = [r"Ub22_ZoffPT", r"Ub22_ZoffPT_02_NLCG_014"]

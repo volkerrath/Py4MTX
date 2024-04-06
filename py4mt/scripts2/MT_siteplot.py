@@ -182,7 +182,7 @@ for filename in edi_files:
 # Finally save figure
 
     for F in PlotFmt:
-          plot.save_plot(PltDir+name+strng+F)
+          plot.save_plot(PltDir+name+strng+F, dpi=400)
 
 if PdfC:
     util.make_pdf_catalog(PltDir, PdfList=pdf_list, FileName=PltDir+PdfCName)

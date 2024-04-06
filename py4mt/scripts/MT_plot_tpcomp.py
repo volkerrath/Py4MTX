@@ -34,16 +34,14 @@ import modem as mod
 import util as utl
 from version import versionstrg
 
-Strng, _ = versionstrg()
-now = datetime.now()
-print("\n\n"+Strng)
-print("Plot Magnetic transfer function (tipper) comparison"+"\n"+"".join("Date " + now.strftime("%m/%d/%Y, %H:%M:%S")))
-print("\n\n")
+PY4MT_DATA = os.environ["PY4MT_DATA"]
 
+version, _ = versionstrg()
+titstrng = utl.print_title(version=version, fname=__file__, out=False)
+print(titstrng+"\n\n")
 
-warnings.simplefilter(action="ignore", category=FutureWarning)
+cm = 1./2.54  # centimeters to inches
 
-cm = 1/2.54  # centimeters in inches
 # WorkDir =  r"/home/vrath/work/MT_Data/Reunion/LydiaModel/"
 # PredFile = r"/home/vrath/work/MT_Data/Reunion/LydiaModel/reuf3_NLCG_020"
 # ObsvFile = r"/home/vrath/work/MT_Data/Reunion/LydiaModel/reuf2dat-net"
