@@ -87,23 +87,7 @@ places = []
 places_file = edi_dir + "Sitelist.csv"
 # r"/home/vrath/Py4MT/py4mt/M/FWD/Sitelist.csv"
 # r"/home/vrath/WestTimor/places.csv"
-with openmypath = ["/home/vrath/Py4MT/py4mt/modules/", "/home/vrath/Py4MT/py4mt/scripts/"]
-for pth in mypath:
-    if pth not in sys.path:
-        sys.path.insert(0, pth)
-
-
-import util as utl
-from version import versionstrg
-
-
-PY4MT_DATA = os.environ["PY4MT_DATA"]
-
-version, _ = versionstrg()
-titstrng = utl.print_title(version=version, fname=__file__, out=False)
-print(titstrng+"\n\n")
-
-cm = 1./2.54  # centimeters to inches(places_file, "r") as f:
+with open(places_file, "r") as f:
     placelist = csv.reader(f, delimiter=" ")
     for row in placelist:
         print(row)

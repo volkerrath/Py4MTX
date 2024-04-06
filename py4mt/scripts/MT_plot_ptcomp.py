@@ -204,7 +204,7 @@ for ff in np.arange(len(DataFiles)):
     # print(nD)
 
 
-pdf_list = []
+    pdf_list = []
 
     fig, axes = plt.subplots(2,2, figsize = FigSize, subplot_kw=dict(box_aspect=1.),
                       sharex=False, sharey=False, constrained_layout=True)
