@@ -66,9 +66,9 @@ PdfCName  = "Opf2023_data.pdf"
 # 1 = yx and xy; 2 = all 4 components
 # 3 = off diagonal + determinant
 
-plot_z = 3
+PlotType = 2
 no_err = False
-strng="_Z"+str(plot_z)
+strng="_Z"+str(PlotType)
 # Plot tipper?
 # "y" or "n", followed by "r","i", or "ri", for real part, imaginary part, or both, respectively.
 plot_t = "n" #yri" #""yri"
@@ -167,11 +167,23 @@ for filename in edi_files:
     #     mt.Tipper.tipper_err = 0.001 * np.real(mt.Tipper.tipper)
         
 
-    plot = mt_obj.plot_mt_response()  
-    plot.plot_num = 2
-    plot.fig_num = 4 
-    plot.res_limits = (1., 1000)
-    plot.set_period_limits([pmin,pmax])
+    zplot = mt_obj.plot_mt_response()  
+    zplot.plot_num = 2
+    zplot.fig_num = 2 
+    zplot.res_limits = (1., 1000.)
+    zplot.x_imits = (3.e-5, 300.)
+    zplot.redraw_plot()
+        
+    for F in PlotFmt:
+        zplot.save_plot(PltDir+name+strng+"_z"+F, fig_dpi=400)
+ 
+    
+    pplot= mt_obj.plot_phase_tensor()
+    for F in PlotFmt:
+          pplot.save_plot(PltDir+name+strng+"_pt"+F, fig_dpi=400)
+    
+        
+    # plot.x_limits(pmin, pmax)
  # |  make_pt_cb(self, ax)
  # |  
  # |  set_period_limits(self, period)
@@ -200,9 +212,5 @@ for filename in edi_files:
     #                                    )
 
 # Finally save figure
-
-    for F in PlotFmt:
-          plot.save_plot(PltDir+name+strng+F, fig_dpi=400)
-
 if PdfC:
     util.make_pdf_catalog(PltDir, PdfList=pdf_list, FileName=PltDir+PdfCName)
