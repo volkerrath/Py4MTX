@@ -34,7 +34,9 @@ from mtpy.core.mt import MT
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
+PY4MT_DATA = os.environ["PY4MT_DATA"]
 PY4MT_ROOT = os.environ["PY4MT_ROOT"]
+
 mypath = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
@@ -43,7 +45,6 @@ for pth in mypath:
 import util
 from version import versionstrg
 
-PY4MT_DATA = os.environ["PY4MT_DATA"]
 
 version, _ = versionstrg()
 titstrng = util.print_title(version=version, fname=__file__, out=False)
@@ -125,18 +126,22 @@ if PdfC:
 for filename in edi_files:
     name, ext = os.path.splitext(filename)
     file_i = EdiDir + filename
-    mt = MT()
-    mt.read(file_i)
-
-    lat = mt.station_metadata.location.latitude
-    lon = mt.station_metadata.location.longitude
-    elev = mt.station_metadata.location.elevation
     
-    print(" site %s at :  % 10.6f % 10.6f" % (name, lat, lon))
+    mt_obj = MT()
+    mt_obj.read(file_i)
+    lat = mt_obj.station_metadata.location.latitude
+    lon = mt_obj.station_metadata.location.longitude
+    elev = mt_obj.station_metadata.location.elevation
+    print(" site %s at :  % 10.6f % 10.6f % 8.1f" % (name, lat, lon, elev ))
 
 
-    # f = mt.Z.freq
-    # fs = np.shape(f)
+# • mt.station_metadata.time_period.start
+    pmin, pmax  = PerLimits
+
+    # mt.station_metadata.time_period.end = 
+       
+    p = mt_obj.Z.period
+    ps = np.shape(p)
 
     # z = mt.Z.z
     # t = mt.Tipper.tipper
@@ -162,9 +167,24 @@ for filename in edi_files:
     #     mt.Tipper.tipper_err = 0.001 * np.real(mt.Tipper.tipper)
         
 
-    plot = mt.plot_mt_response()  
+    plot = mt_obj.plot_mt_response()  
     plot.plot_num = 2
-    plot.fig_num = 2
+    plot.fig_num = 4 
+    plot.res_limits = (1., 1000)
+    plot.set_period_limits([pmin,pmax])
+ # |  make_pt_cb(self, ax)
+ # |  
+ # |  set_period_limits(self, period)
+ # |      set period limits
+ # |      
+ # |      :return: DESCRIPTION
+ # |      :rtype: TYPE
+ # |  
+ # |  set_phase_limits(self, phase, mode='od')
+ # |  
+ # |  set_resistivity_limits(self, resistivity, mode='od', scale='log')
+ # |      set resistivity limits
+    
     
     # plot_num=plot_z,
     #                                    plot_tipper=plot_t,
@@ -182,7 +202,7 @@ for filename in edi_files:
 # Finally save figure
 
     for F in PlotFmt:
-          plot.save_plot(PltDir+name+strng+F, dpi=400)
+          plot.save_plot(PltDir+name+strng+F, fig_dpi=400)
 
 if PdfC:
     util.make_pdf_catalog(PltDir, PdfList=pdf_list, FileName=PltDir+PdfCName)

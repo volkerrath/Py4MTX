@@ -32,12 +32,7 @@ Revision History:
 import os
 import sys
 import numpy as np
-from datetime import datetime
-from sys import exit as error
-
 from mtpy.core.mt import MT
-from mt_metadata import TF_XML
-
 
 PY4MT_ROOT = os.environ["PY4MT_ROOT"]
 myfilename = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
@@ -48,51 +43,42 @@ for pth in myfilename:
 import plotrjmcmc as pmc
 import util
 
-from version import versionstrg
-
-
-version, _ = versionstrg()
-titstrng = util.print_title(version=version, fname=__file__, out=False)
-print(titstrng+"\n\n")
-
 PlotFmt = ".pdf" #".png"
-RhoPlotLim = [1, 10000]
-DepthPlotLim = 25000.
+RhoPlotLim = [0.1, 100000]
+DepthPlotLim = 50000.
 LogDepth = False
-ColorMap ="rainbow"
-#ColorMap ="viridis"
+
 
 PdfC = True
 if not ".pdf" in PlotFmt:
     PdfC = False
     print("No PDF catalog because no pdf output!")
-OutStrng = "_test"
+OutStrng = "_edited_imp_rjmcmc"
 
 DataOut = True
 DataName= "test_results.dat"
 WRef = False
 
 # PdfCName  = "Limerick2022_results.pdf"
-# EdiDir = r"/home/vrath/Limerick2022/reports/EDI_edited_Z/"
-# ResDir =r"/home/vrath/Limerick2022/reports/EDI_edited_Z_results/" #Mar02/out_edited/"
-# PltDir = r"/home/vrath/Limerick2022/reports/Plots/"  #r"/home/vrath/Limerick2022/work/Mar02/output/"
+# edi_in_dir = r"/home/vrath/Limerick2022/reports/EDI_edited_Z/"
+# results_in_dir =r"/home/vrath/Limerick2022/reports/EDI_edited_Z_results/" #Mar02/out_edited/"
+# plots_dir = r"/home/vrath/Limerick2022/reports/Plots/"  #r"/home/vrath/Limerick2022/work/Mar02/output/"
 
-PdfCName    = "Test_results.pdf"
-EdiDir  = r"/home/vrath/rjmcmc_mt/work/edi/"
-ResDir  = r"/home/vrath/rjmcmc_mt/work/results/" #Mar02/out_edited/"
-
-
-PltDir   = r"/home/vrath/rjmcmc_mt/work/plots/"  #r"/home/vrath/Limerick2022/work/Mar02/output/"
+PdfCName  = "Test_results.pdf"
+edi_in_dir = r"/home/vrath/rjmcmc_mt/work/edi/"
+results_in_dir =r"/home/vrath/rjmcmc_mt/work/results/" #Mar02/out_edited/"
+# plots_dir = r"/home/vrath/Limerick2022/3D/plots_all20km/"  #r"/home/vrath/Limerick2022/work/Mar02/output/"
+plots_dir = r"/home/vrath/rjmcmc_mt/work/plots/"  #r"/home/vrath/Limerick2022/work/Mar02/output/"
 
 edi_files = []
-files = os.listdir(EdiDir)
+files = os.listdir(edi_in_dir)
 for entry in files:
     # print(entry)
     if entry.endswith(".edi") and not entry.startswith("."):
         edi_files.append(entry)
 
 result_files = []
-files = os.listdir(ResDir)
+files = os.listdir(results_in_dir)
 for entry in files:
     if not entry.startswith("."):
         result_files.append(entry)
@@ -104,13 +90,13 @@ if PdfC:
     pdf_list= []
     for filename in result_files:
         name, ext = os.path.splitext(filename)
-        pdf_list.append(PltDir+name+OutStrng+".pdf")
+        pdf_list.append(plots_dir+name+OutStrng+".pdf")
 
 
 
-if not os.path.isdir(PltDir):
-    print(" File: %s does not exist, but will be created" % PltDir)
-    os.mkdir(PltDir)
+if not os.path.isdir(plots_dir):
+    print(" File: %s does not exist, but will be created" % plots_dir)
+    os.mkdir(plots_dir)
 
 
 
@@ -121,9 +107,9 @@ for filename in result_files:
     print(str(count) + " of " + str(nfiles))
 
 
-    infile = ResDir+filename
+    infile = results_in_dir+filename
     name, ext = os.path.splitext(filename)
-    outfile = PltDir+name +OutStrng + PlotFmt
+    outfile = plots_dir+name +OutStrng + PlotFmt
     print(infile)
     print(outfile)
 
@@ -132,29 +118,25 @@ for filename in result_files:
                     plotSizeInches="11x8",
                     maxDepth=DepthPlotLim,
                     zLog=LogDepth,
-                    colormap=ColorMap
+                    colormap="rainbow"
                     )
 
     r.plot()
 
     if DataOut:
         name_edi, ext = os.path.splitext(filename)
-        file_i = EdiDir + name_edi+".edi"
-        mt = MT()
-        mt.read(file_i)
-        lat = mt.station_metadata.location.latitude
-        lon = mt.station_metadata.location.longitude
-        elev = mt.station_metadata.location.elevation
+        file_i = edi_in_dir + name_edi+".edi"
+        mt_obj = MT(file_i)
 
         name_result,_ = os.path.splitext(outfile)
 
         data_in = np.loadtxt(name_result+".dat")
         sd = np.shape(data_in)
-        lon = np.ones_like(data_in[:,0]).reshape(sd[0],1)*lon
-        lat = np.ones_like(data_in[:,0]).reshape(sd[0],1)*lat
+        lon = np.ones_like(data_in[:,0]).reshape(sd[0],1)*mt_obj.lon
+        lat = np.ones_like(data_in[:,0]).reshape(sd[0],1)*mt_obj.lat
 
         if WRef:
-            elev = np.ones_like(data_in[:,0])*elev
+            elev = np.ones_like(data_in[:,0])*mt_obj.elev
             data_in[:,0]= elev.flatten() - data_in[:,0]
 
         data_out=np.append(lat,lon,axis = 1)
@@ -173,7 +155,7 @@ for filename in result_files:
 if DataOut:
     header = "All data:  site, lat, lon, depth, median, q10, q90, mean, mode"
     fmt = "%s  %14.7f  %14.7f  %15.5f  %18.5e  %18.5e %18.5e  %18.5e  %18.5e"
-    np.savetxt(PltDir+DataName, data_all, delimiter="  ", header=header, fmt=fmt)
+    np.savetxt(plots_dir+DataName, data_all, delimiter="  ", header=header, fmt=fmt)
 
 if PdfC:
-    util.make_pdf_catalog(PltDir, PdfList=pdf_list, FileName=PltDir+PdfCName)
+    util.make_pdf_catalog(plots_dir, PdfList=pdf_list, FileName=plots_dir+PdfCName)

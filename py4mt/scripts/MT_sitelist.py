@@ -30,6 +30,8 @@ import numpy as np
 
 
 PY4MT_ROOT = os.environ["PY4MT_ROOT"]
+PY4MT_DATA = os.environ["PY4MT_DATA"]
+
 mypath = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
@@ -88,11 +90,11 @@ with open(CSVFile, "w") as f:
         file_i = EdiDir + filename
 
 # Create MT object
-        mt = MT()
-        mt.read(file_i)
-        lat = mt.station_metadata.location.latitude
-        lon = mt.station_metadata.location.longitude
-        elev = mt.station_metadata.location.elevation
+        mt_obj = MT()
+        mt_obj.read(file_i)
+        lat = mt_obj.station_metadata.location.latitude
+        lon = mt_obj.station_metadata.location.longitude
+        elev = mt_obj.station_metadata.location.elevation
         
         # sitename = mt_obj.station
         if "wal" in whatfor:

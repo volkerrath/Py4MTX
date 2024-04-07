@@ -29,13 +29,17 @@ plots for all of them.
 import os
 import sys
 import numpy as np
+
 from mtpy.core.mt import MT
-from mtpy.core.z import Z, Tipper
+import mtpy.core.mt as mt
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
+
+PY4MT_DATA = os.environ["PY4MT_DATA"]
 PY4MT_ROOT = os.environ["PY4MT_ROOT"]
+
 mypath = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
@@ -44,21 +48,16 @@ for pth in mypath:
 import util
 from version import versionstrg
 
-PY4MT_DATA = os.environ["PY4MT_DATA"]
-
 version, _ = versionstrg()
 titstrng = util.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
-# Graphical paramter. Determine the plot formats produced,
-# and the required resolution:
 
-PerLimits = (0.001, 10.)  # AMT
+DecDeg = True
+String_out = ""
 
 # Define the path to your EDI-files:
-    
-
-    
+   
 EdiDir_in = r"/home/vrath/rjmcmc_mt/work/edi/"
 print(" Edifiles read from: %s" % EdiDir_in)
 EdiDir_out =  r"/home/vrath/rjmcmc_mt/work/edi/masked/"
@@ -66,7 +65,11 @@ print(" Plots written to: %s" % EdiDir_out)
 if not os.path.isdir(EdiDir_out):
     print(" File: %s does not exist, but will be created" % EdiDir_out)
     os.mkdir(EdiDir_out)
+SearchStrng = ".edi"
 
+PerLimits = (0.01, 1.)  # AMT
+DecDeg = True
+String_out = ""
 
 # Probably No changes required after this line!
 
@@ -81,49 +84,43 @@ for entry in files:
         edi_files.append(entry)
 edi_files = sorted(edi_files)
 
+pmin, pmax = PerLimits
 
 for filename in edi_files:
     name, ext = os.path.splitext(filename)
     file_i = EdiDir_in + filename
-    mt = MT()
-    mt.read(file_i)
     
-    lat = mt.station_metadata.location.latitude
-    lon = mt.station_metadata.location.longitude
-    elev = mt.station_metadata.location.elevation
     
-    print(" site %s at :  % 10.6f % 10.6f" % (name, lat, lon))
+    mt_obj = MT()
+    mt_obj.read(file_i)
+    
+    lat = mt_obj.station_metadata.location.latitude
+    lon = mt_obj.station_metadata.location.longitude
+    elev = mt_obj.station_metadata.location.elevation
+    print(" site %s at :  % 10.6f % 10.6f % 8.1f" % (name, lat, lon, elev ))
 
-
-    f = mt.Z.freq
-    fs = np.shape(f)
-
-    z = mt.Z.z
-    t = mt.Tipper.tipper
-
-
-    fmin = 1./PerLimits[1]
-    fmax = 1./PerLimits[0]
-
-
-
-    mask = (f>=fmin) & (f<=fmax)
-
-
-    new_Z_obj = Z(z_array=mt_obj.Z.z[mask],
-                  z_err_array=mt_obj.Z.z_err[mask],
-                  freq=mt_obj.Z.freq[mask])
-    new_Tipper_obj = Tipper(tipper_array=mt_obj.Tipper.tipper[mask],
-                            tipper_err_array=mt_obj.Tipper.tipper_err[mask],
-                            freq = mt_obj.Tipper.freq[mask])
-
+    # pz = mt_obj.Z.period
+   
+    z = mt_obj.Z
+    t = mt_obj.Tipper 
+    per = z.period
+    
+    mask= np.where((per>=pmin) & (per<=pmax))
+    new_periods = per[mask]
+    if np.shape(new_periods)[0]==0:
+        print("No data in period range!")
+        continue
+    
+    new_mt_obj = mt_obj.interpolate(new_periods, inplace=False)
+   
+ 
     # Write a new edi file (as before)
-    file_out = name +"_masked"+".edi"
-    print("Writing data to " + EdiDir_out + file_out)
-    mt.write_mt_file(save_dir=EdiDir_out,
-    fn_basename= file_out,
-    file_type="edi",
-    new_Z_obj=new_Z_obj,
-    new_Tipper_obj=new_Tipper_obj,
-    longitude_format='LONG',
-    latlon_format='dd')
+    file_out =EdiDir_out+name+String_out+ext
+    print(" Writing data to "+file_out)
+    if DecDeg:
+        mt_obj.write(file_out, latlon_format='dd')
+    else:
+        mt_obj.write(file_out)
+
+    
+ 

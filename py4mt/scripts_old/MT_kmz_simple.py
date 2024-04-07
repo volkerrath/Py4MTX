@@ -30,7 +30,7 @@ for pth in mypath:
 import util as utl
 from version import versionstrg
 
-
+PY4MT_ROOT = os.environ["PY4MT_ROOT"]
 PY4MT_DATA = os.environ["PY4MT_DATA"]
 
 version, _ = versionstrg()
@@ -57,25 +57,27 @@ kml = False
 kmz = True
 # Define the path to your EDI-files
 
-edi_dir = "/home/vrath/MT_Data/Opf/2023/edi_plus/"
-print(" Edifiles read from: %s" % edi_dir)
 
-kml_dir = r"/home/vrath/MT_Data/Opf/2023/"
-kml_file = r"OldOpf"
+# Define the path to your EDI-files:
+EdiDir = r"/home/vrath/rjmcmc_mt/work/edi/"
+print(" Edifiles read from: %s" % EdiDir)
+    
+# Define the  path for saving  plots:
+PltDir = r"/home/vrath/rjmcmc_mt/work/plots/"
+print(" Plots written to: %s" % PltDir)
+if not os.path.isdir(PltDir):
+    print(" File: %s does not exist, but will be created" % PltDir)
+    os.mkdir(PltDir)
 
-plots_dir =   r"/home/vrath/MT_Data/Opf/2023/plots/"    
-print(" Plots read from: %s" % plots_dir)
 
-
-
-kml_dir = r"/home/vrath/MT_Data/Opf/2023/"
-kml_file = r"OldOpf"
+KmlDir = r"/home/vrath/rjmcmc_mt/work/kml/"
+KmlFile = r"ANN_v2.kml"
 site_icolor = simplekml.Color.blue
 site_rcolor = simplekml.Color.blue
 
 
 
-icon_dir = r"/home/vrath/GoogleEarth/icons/"
+icon_dir = PY4MT_ROOT+ "/py4mt/share/icons/"
 site_icon =  icon_dir + "placemark_circle.png"
 site_icolor = simplekml.Color.red
 site_tcolor = simplekml.Color.white  # "#555500" #
@@ -86,7 +88,7 @@ site_iscale = 1.
 
 # Construct list of EDI-files:
 edi_files = []
-files = os.listdir(edi_dir)
+files = os.listdir(EdiDir)
 for entry in files:
     # print(entry)
     if entry.endswith(".edi") and not entry.startswith("."):
@@ -96,9 +98,9 @@ edi_files = sorted(edi_files)
     
 # Open kml object:
  
-if not os.path.isdir(kml_dir):
-    print("File: %s does not exist, but will be created" % kml_dir)
-    os.mkdir(kml_dir)
+if not os.path.isdir(KmlDir):
+    print("File: %s does not exist, but will be created" % KmlDir)
+    os.mkdir(KmlDir)
     
 kml = simplekml.Kml(open=1)
 
@@ -109,14 +111,15 @@ site_iref = kml.addfile(site_icon)
     
 for edi_name in edi_files:
     name, ext = os.path.splitext(edi_name)
-    file_i = edi_dir + edi_name    
-    
-    mt_obj   = MT(file_i)
-    lat = mt_obj.lat
-    lon = mt_obj.lon
-    elev = mt_obj.elev
-    print(" site %s at :  % 10.6f % 10.6f" % (name, lat, lon))
-       
+    file_i = EdiDir + edi_name    
+    mt_obj = MT()
+    mt_obj.read(file_i)
+
+    lat = mt_obj.station_metadata.location.latitude
+    lon = mt_obj.station_metadata.location.longitude
+    elev = mt_obj.station_metadata.location.elevation
+    print(" site %s at :  % 10.6f % 10.6f % 8.1f" % (name, lat, lon, elev ))
+
     site = kml.newpoint(name=edi_name)
     site.coords = [(lon, lat, elev)]
 #  Now add the plots to tag:
@@ -132,7 +135,7 @@ for edi_name in edi_files:
     if plots_1:
         nam_1 = name + strng_1
         print(nam_1)
-        srcfile_1 = kml.addfile(plots_dir + nam_1 + '.png')
+        srcfile_1 = kml.addfile(PltDir + nam_1 + '.png')
         description_1 = (
             '<img width="800" align="left" src="' + srcfile_1 + '"/>'
         )
@@ -141,7 +144,7 @@ for edi_name in edi_files:
     if plots_2:
         nam_2 = name + strng_2
         print(nam_2)
-        srcfile_2 = kml.addfile(plots_dir + nam_2 + '.png')
+        srcfile_2 = kml.addfile(PltDir + nam_2 + '.png')
         description_2 = (
             '<img width="900" align="left" src="' + srcfile_2 + '"/>'
         )
@@ -150,7 +153,7 @@ for edi_name in edi_files:
     site.description = description
 
 
-kml_outfile = kml_dir + kml_file
+kml_outfile = KmlDir + KmlFile
 
 # # Save raw kml file:
 
@@ -162,4 +165,4 @@ if kmz:
     kml.savekmz(kml_outfile + ".kmz")
 
 print("Done. "+str(len(edi_files))+" files added.")
-print("kml/z written to " + kml_file)
+print("kml/z written to " + KmlFile)

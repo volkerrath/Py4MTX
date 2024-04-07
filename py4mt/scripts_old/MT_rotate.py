@@ -28,10 +28,9 @@ by potentially different angles into NS/EW coordinate system
 
 import os
 import sys
-import numpy as np
-
 from mtpy.core.mt import MT
 import mtpy.core.mt as mt
+import numpy as np
 
 PY4MT_DATA = os.environ["PY4MT_DATA"]
 PY4MT_ROOT = os.environ["PY4MT_ROOT"]
@@ -59,11 +58,9 @@ if not os.path.isdir(EdiDir_out):
     os.mkdir(EdiDir_out)
    
 String_out = ""
+
 SearchStrng = ".edi"
-
 Declination = 2.68   #E
-DecDeg = True
-
 
 # No changes required after this line!
 
@@ -95,6 +92,7 @@ for filename in edi_files:
     elev = mt_obj.station_metadata.location.elevation
     print(" site %s at :  % 10.6f % 10.6f % 8.1f" % (name, lat, lon, elev ))
 
+        
     new_mt_obj = mt_obj.rotate(Declination, inplace=True)
 
 
@@ -103,7 +101,4 @@ for filename in edi_files:
            
     file_out =EdiDir_out+name+String_out+ext
     print(" Writing data to "+file_out)
-    if DecDeg:
-        mt_obj.write(file_out, latlon_format='dd')
-    else:
-        mt_obj.write(file_out)
+    mt_obj.write(file_out, latlon_format='dd')
