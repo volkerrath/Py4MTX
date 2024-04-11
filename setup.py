@@ -17,7 +17,7 @@ setup(
     author="Volker Rath",
     author_email="vrath@cp.dias.ie",
     license="LGPL",
-    url="https://github.com/volkerrath/Py4MT/",
+    url="https://github.com/volkerrath/Py4MT2/",
     include_package_data=True,
     packages=find_packages(),
     package_data={'': ['*.txt', '*.h5', '*.npy', '*.sh', '*.zip', '*.rst']})

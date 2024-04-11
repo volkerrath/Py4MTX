@@ -22,31 +22,46 @@ import os
 import sys
 import csv
 
-mypath = ["/home/vrath/Py4MT/py4mt/modules/", "/home/vrath/Py4MT/py4mt/scripts/"]
-for pth in mypath:
-    if pth not in sys.path:
-        sys.path.insert(0, pth)
-
-
 import numpy
 
 import simplekml
 from mtpy.core.mt import MT
 
+
+
+PY4MT_DATA = os.environ["PY4MT_DATA"]
+PY4MT_ROOT = os.environ["PY4MT_ROOT"]
+
+
+mypath = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
+for pth in mypath:
+    if pth not in sys.path:
+        sys.path.insert(0, pth)
+
+
+
+import util
+from version import versionstrg
+
+version, _ = versionstrg()
+titstrng = util.print_title(version=version, fname=__file__, out=False)
+print(titstrng+"\n\n")
+
+
 # Define the path to your EDI-files
 
-# edi_dir = r"/home/vrath/MT_Data/Naser/Limerick2023/mt/reprocessed_quality/reprocessed_bad/"
-# edi_dir = r"/home/vrath/MT_Data/Naser/Limerick2023/mt/reprocessed_quality/reprocessed_good/"
-# edi_dir = r"/home/vrath/MT_Data/Naser/Limerick2023/mt/reprocessed_quality/reprocessed_ugly/"
-edi_dir = r"/home/vrath/MT_Data/Peru/Tacna/edi/"
-print(" Edifiles read from: %s" % edi_dir)
+EdiDir = r"/home/vrath/MT_Data/Peru/Tacna/edi/"
+print(" Edifiles read from: %s" % EdiDir)
+KmlDir = EdiDir
+KmlFile = r"Tacna2023_dim"
+
 
 
 # open file and read the content in a list
-places_file = edi_dir + "Sitelist.csv"
+SiteFile = EdiDir + "Sitelist.csv"
 
 tmp = []
-with open(places_file, "r") as f:
+with open(SiteFile, "r") as f:
     place_list = csv.reader(f, delimiter=" ")
     for site in place_list:
         tmp.append(site)
@@ -63,10 +78,8 @@ for row in tmp:
 # Define the path for saving  kml files
 kml = False
 kmz = True
-kml_dir = edi_dir
-kml_file = r"Tacna2023_dim"
 
-icon_dir = r"/home/vrath/GoogleEarth/icons/"
+icon_dir = PY4MT_ROOT + "/share/icons/"
 site_icon =  icon_dir + "placemark_circle.png"
 
 site_tcolor = simplekml.Color.white  # "#555500" #
@@ -101,7 +114,7 @@ freqs = []
 for site in places:    
     nam = site[0]
     freqs = []
-    with open(edi_dir+nam+"_dim.dat", "r") as f:
+    with open(EdiDir+nam+"_dim.dat", "r") as f:
         tmp = csv.reader(f)
 
         for site in tmp:
@@ -122,7 +135,7 @@ for site in places:
 
     frq = []
     dim = []
-    with open(edi_dir+site[0]+"_dim.dat", "r") as f:
+    with open(EdiDir+site[0]+"_dim.dat", "r") as f:
         tmp = csv.reader(f)
         for site in tmp:
             site = site[0].split() 
@@ -204,7 +217,7 @@ for f in freqs:
             site.description ="3-D"               
  
     
-kml_outfile = kml_dir + kml_file
+kml_outfile = KmlDir + KmlFile
 
 # Save raw kml file:
 
