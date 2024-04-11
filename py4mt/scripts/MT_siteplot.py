@@ -165,9 +165,9 @@ for filename in edi_files:
         zplot.save_plot(PltDir+name+strng+"_z"+F, fig_dpi=400)
  
     
-    # pplot= mt_obj.plot_phase_tensor()
-    # for F in PlotFmt:
-    #       pplot.save_plot(PltDir+name+strng+"_pt"+F, fig_dpi=400)
+    pplot= mt_obj.plot_phase_tensor()
+    for F in PlotFmt:
+          pplot.save_plot(PltDir+name+strng+"_pt"+F, fig_dpi=400)
     
         
     # plot.x_limits(pmin, pmax)
