@@ -50,9 +50,9 @@ titstrng = util.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
 # Define the path to your EDI-files:
-EdiDir_in = r"/home/vrath/rjmcmc_mt/work/edi/"
+EdiDir_in = PY4MT_ROOT+"/work/orig/"
 print(" Edifiles read from: %s" % EdiDir_in)
-EdiDir_out =  r"/home/vrath/rjmcmc_mt/work/true-north/"
+EdiDir_out =  PY4MT_ROOT+"/work/true-north/"
 print(" Edifiles written to: %s" % EdiDir_out)
 if not os.path.isdir(EdiDir_out):
     print(" File: %s does not exist, but will be created" % EdiDir_out)
@@ -94,7 +94,8 @@ for filename in edi_files:
     lon = mt_obj.station_metadata.location.longitude
     elev = mt_obj.station_metadata.location.elevation
     print(" site %s at :  % 10.6f % 10.6f % 8.1f" % (name, lat, lon, elev ))
-
+    # mt_obj.write(file_i.replace(".edi","_check.edi"))
+    
     new_mt_obj = mt_obj.rotate(Declination, inplace=True)
 
 

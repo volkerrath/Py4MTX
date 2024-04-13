@@ -72,7 +72,7 @@ PlotFmt = [".png", ]
 
 FilesOnly = True
 
-DimFile = EdiDir+"Dimensnions.dat"
+DimFile = EdiDir+"Dimensions.dat"
 
 # No changes required after this line!
 

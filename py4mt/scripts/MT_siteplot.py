@@ -38,47 +38,18 @@ print(titstrng+"\n\n")
 # Graphical paramter. Determine the plot formats produced,
 # and the required resolution:
 
-PlotFmt = [".png"]
+PlotFmt = [".png", ".pdf"]
 dpi = 400
-PdfC = True
+PdfCat = True
 if not ".pdf" in PlotFmt:
     PdfC = False
     print("No PDF catalog because no pdf output!")
+    
 PdfCName  = "Opf2023_data.pdf"
 
 
-# What should be plotted?
-# 1 = yx and xy; 2 = all 4 components
-# 3 = off diagonal + determinant
-
-PlotType = 2
-no_err = False
-strng="_Z"+str(PlotType)
-# Plot tipper?
-# "y" or "n", followed by "r","i", or "ri", for real part, imaginary part, or both, respectively.
-plot_t = "n" #yri" #""yri"
-print (plot_t[0])
-if plot_t[0]=="y":
-    strng = strng+"T"+plot_t[1:]
-# Plot phase tensor?
-# "y" or "n"
-plot_p = "y"
-if plot_p=="y":
-    strng = strng+"P"
-
-strng="_data1"
-
-
-PerLimits = (0.0001, 1.)  # AMT
-# PerLimits = (0.001,100000.) #BBMT
-# PerLimits = (0.00003,10000.) #AMT+BBMT
-RhoLimits = (10., 10000.)
-PhiLimits = (-180., 180.)
-Tiplimits = (-.5, 0.5)
-
-
 # Define the path to your EDI-files:
-EdiDir = r"/home/vrath/rjmcmc_mt/work/edi/"
+EdiDir = PY4MT_ROOT+"/work/orig/"
 print(" Edifiles read from: %s" % EdiDir)
     
 # Define the  path for saving  plots:
@@ -87,6 +58,33 @@ print(" Plots written to: %s" % PltDir)
 if not os.path.isdir(PltDir):
     print(" File: %s does not exist, but will be created" % PltDir)
     os.mkdir(PltDir)
+
+
+PlotStrng="_orig"
+# PerLimits = np.array([]) #None
+PerLimits = np.array([0.00003, 3000.]) # AMT
+# PerLimits = np.array([0.001,100000.]) #BBMT
+# PerLimits = (0.00003,10000.) #AMT+BBMT
+
+# What should be plotted?
+# 1 = yx and xy; 2 = all 4 components
+# 3 = off diagonal + determinant
+
+PlotType = 2
+PlotTipp="yri"
+
+
+# RhoLimits = None
+RhoLimits = np.array([0.1, 10000.])
+
+Plottipper="yri"
+TipLimits = np.array([-.5, 0.5])
+
+                                
+PT_colorby = "skew"  #'phimin'
+PT_cmap = "mt_bl2gr2rd"
+PT_range = [-10.,10.,5.]
+
 
 # No changes required after this line!
 
@@ -101,11 +99,8 @@ for entry in files:
         edi_files.append(entry)
 edi_files = sorted(edi_files)
 
-if PdfC:
+if PdfCat:
     pdf_list= []
-    for filename in edi_files:
-        name, ext = os.path.splitext(filename)
-        pdf_list.append(PltDir+name+strng+".pdf")
 # Create an MT object
 
 for filename in edi_files:
@@ -119,24 +114,9 @@ for filename in edi_files:
     lon = mt_obj.station_metadata.location.longitude
     elev = mt_obj.station_metadata.location.elevation
     print(" site %s at :  % 10.6f % 10.6f % 8.1f" % (name, lat, lon, elev ))
-
-
-# • mt.station_metadata.time_period.start
-    pmin, pmax  = PerLimits
-
-    # mt.station_metadata.time_period.end = 
-       
-    p = mt_obj.Z.period
-    ps = np.shape(p)
-
+    
     # z = mt.Z.z
     # t = mt.Tipper.tipper
-    # print(np.shape(t))
-    # print()
-    
-    # DatLimits = PerLimits
-    # fmin = 1./DatLimits[1]
-    # fmax = 1./DatLimits[0]
 
     # for ii in np.arange(fs[0]):
 
@@ -153,51 +133,25 @@ for filename in edi_files:
     #     mt.Tipper.tipper_err = 0.001 * np.real(mt.Tipper.tipper)
         
 
-    zplot = mt_obj.plot_mt_response(plot_num = 2,fig_num = 2,
-        res_limits = (1., 1000.),x_imits = (3.e-5, 300.))  
-    # zplot.plot_num = 2
-    # zplot.fig_num = 2 
-    # zplot.res_limits = (1., 1000.)
-    # zplot.x_imits = (3.e-5, 300.)
-    # zplot.redraw_plot()
+    zplot = mt_obj.plot_mt_response(plot_num = PlotType,
+                                    fig_num = 2, 
+                                    x_limits = PerLimits,
+                                    res_limits = RhoLimits, 
+                                    tipper_limits = TipLimits,
+                                    plot_tipper=PlotTipp,
+                                    ellipse_colorby = PT_colorby,  #'phimin'
+                                    ellipse_cmap = PT_cmap, 
+                                    ellipse_range = PT_range
+                                    )  
+
         
     for F in PlotFmt:
-        zplot.save_plot(PltDir+name+strng+"_z"+F, fig_dpi=400)
- 
+        zplot.save_plot(PltDir+name+PlotStrng+"_z"+F, fig_dpi=600)
     
-    pplot= mt_obj.plot_phase_tensor()
-    for F in PlotFmt:
-          pplot.save_plot(PltDir+name+strng+"_pt"+F, fig_dpi=400)
+    if PdfCat: 
+        pdf_list.append(PltDir+name+PlotStrng+"_z.pdf")
     
-        
-    # plot.x_limits(pmin, pmax)
- # |  make_pt_cb(self, ax)
- # |  
- # |  set_period_limits(self, period)
- # |      set period limits
- # |      
- # |      :return: DESCRIPTION
- # |      :rtype: TYPE
- # |  
- # |  set_phase_limits(self, phase, mode='od')
- # |  
- # |  set_resistivity_limits(self, resistivity, mode='od', scale='log')
- # |      set resistivity limits
-    
-    
-    # plot_num=plot_z,
-    #                                    plot_tipper=plot_t,
-    #                                    plot_pt=plot_p,
-    #                                    x_limits=PerLimits,
-    #                                    # res_limits=RhoLimits,
-    #                                    # phase_limits=PhiLimits,
-    #                                    # tipper_limits=Tiplimits,
-    #                                    fig_dpi=400,
-    #                                    xy_ls="",yx_ls="", det_ls="",
-    #                                    # ellipse_colorby="skew",
-    #                                    # ellipse_range = [-10.,10.,2.]
-    #                                    )
 
 # Finally save figure
-# if PdfC:
-#     util.make_pdf_catalog(PltDir, PdfList=pdf_list, FileName=PltDir+PdfCName)
+if PdfCat:
+    util.make_pdf_catalog(PltDir, PdfList=pdf_list, FileName=PltDir+PdfCName)

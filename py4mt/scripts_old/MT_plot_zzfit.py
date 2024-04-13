@@ -70,6 +70,8 @@ cm = 1./2.54  # centimeters to inches
 # ObsvFile = r"/home/vrath/work/KraflaView/Krafla1_etopo_Z"
 # PlotFile = "Krafla_02_Impedance"
 
+
+
 WorkDir = r"/home/vrath/work/KraflaView/"
 PredFile = r"/home/vrath/work/KraflaView/Krafla1_etopo_Z_04_NLCG_040"
 ObsvFile = r"/home/vrath/work/KraflaView/Krafla1_etopo_Z"
