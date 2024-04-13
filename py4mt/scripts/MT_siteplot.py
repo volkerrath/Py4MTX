@@ -39,13 +39,13 @@ print(titstrng+"\n\n")
 # and the required resolution:
 
 PlotFmt = [".png", ".pdf"]
-dpi = 400
+DPI = 400
 PdfCat = True
 if not ".pdf" in PlotFmt:
     PdfC = False
     print("No PDF catalog because no pdf output!")
     
-PdfCName  = "Opf2023_data.pdf"
+PdfCName  = "ANN_data.pdf"
 
 
 # Define the path to your EDI-files:
@@ -146,10 +146,10 @@ for filename in edi_files:
 
         
     for F in PlotFmt:
-        zplot.save_plot(PltDir+name+PlotStrng+"_z"+F, fig_dpi=600)
+        zplot.save_plot(PltDir+name+PlotStrng+F, fig_dpi=DPI)
     
     if PdfCat: 
-        pdf_list.append(PltDir+name+PlotStrng+"_z.pdf")
+        pdf_list.append(PltDir+name+PlotStrng+".pdf")
     
 
 # Finally save figure
