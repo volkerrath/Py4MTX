@@ -719,9 +719,7 @@ def wait1d(periods=None, thick=None, res=None):
 
     scale = 1 / (4 * np.pi / 10000000)
     mu = 4 * np.pi * 1e-7 * scale
-
     omega = 2 * np.pi / periods
-    d = np.cumsum(thick)
 
     cond = 1 / np.array(res)
 
@@ -735,14 +733,24 @@ def wait1d(periods=None, thick=None, res=None):
         C = np.zeros(sp, dtype=complex)
         C[-1] = 1 / prop_const
         if len(thick) > 1:
-            for k in reversed(range(len(r) - 1)):
+            for k in reversed(range(len(res) - 1)):
                 prop_layer = np.sqrt(1j*w*mu*cond[k])
-                k1 = (C[k+1] * prop_layer + np.tanh(prop_layer * thickness[k]))
-                k2 = ((C[k+1] * prop_layer * np.tanh(prop_layer * thickness[k])) + 1)
+                k1 = (C[k+1] * prop_layer + np.tanh(prop_layer * thick[k]))
+                k2 = ((C[k+1] * prop_layer * np.tanh(prop_layer * thick[k])) + 1)
                 C[k] = (1 / prop_layer) * (k1 / k2)
         Z[freq] = 1j * w * mu * C[0]
 
-    rhoa = 1/omega*np.abs(Z)**2;
-    phi = np.angle(Z, deg=True);
+    rhoa = 1/omega*np.abs(Z)**2
+    phi = np.angle(Z, deg=True)
     return rhoa, phi, np.real(Z), np.imag(Z)
 
+def z2rp(periods=None, Z=None):
+    
+    # scale = 1 / (4 * np.pi / 10000000)
+    # mu = 4 * np.pi * 1e-7 * scale
+    
+    omega = 2 * np.pi / periods
+    rhoa = 1/omega*np.abs(Z)**2
+    phi = np.angle(Z, deg=True)
+    
+    return rhoa, phi

@@ -16,9 +16,6 @@ import sys
 import numpy as np
 from mtpy.core.mt import MT
 
-import matplotlib as mpl
-import matplotlib.pyplot as plt
-
 PY4MT_DATA = os.environ["PY4MT_DATA"]
 PY4MT_ROOT = os.environ["PY4MT_ROOT"]
 
@@ -49,7 +46,7 @@ PdfCName  = "ANN_data.pdf"
 
 
 # Define the path to your EDI-files:
-EdiDir = PY4MT_ROOT+"/work/orig/"
+EdiDir = PY4MT_ROOT+"/work/true-north/"
 print(" Edifiles read from: %s" % EdiDir)
     
 # Define the  path for saving  plots:
