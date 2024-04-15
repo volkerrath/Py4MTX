@@ -75,7 +75,7 @@ ObsvFile = WorkDir+"Ann26_ZoPT"
 PlotFile = "ANN26_Impedance"
 
 
-PlotDir = WorkDir
+PlotDir = WorkDir+"/plots/"
 
 print(' Plots written to: %s' % PlotDir)
 if not os.path.isdir(PlotDir):

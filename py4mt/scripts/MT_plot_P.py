@@ -56,11 +56,10 @@ cm = 1./2.54  # centimeters to inches
 WorkDir = PY4MT_ROOT+"/work/modem/"
 PredFile = WorkDir+"Ann26_ZoPT_200_Alpha02_NLCG_013"
 ObsvFile = WorkDir+"Ann26_ZoPT"
-PlotFile = "ANN26_Impedance"
+PlotFile = "ANN26_PhaseTensor"
 
 
-PlotDir = WorkDir
-
+PlotDir = WorkDir+"/plots/"
 
 print(' Plots written to: %s' % PlotDir)
 if not os.path.isdir(PlotDir):
