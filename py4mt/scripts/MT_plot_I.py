@@ -99,7 +99,7 @@ ShowErrors = True
 ShowRMS = True
 if not PlotPred:
     ShowRMS = False
-PlotFull = True
+PlotFull = False
 
 EPSG = 0  #5644
 

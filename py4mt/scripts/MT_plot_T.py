@@ -103,7 +103,7 @@ if not ".pdf" in PlotFormat:
 # Determine graphical parameter.
 # print(plt.style.available)
 """
-plt.style.use("seaborn-paper")
+plt.style.use("seaborn-v0_8-paper")
 mpl.rcParams["figure.dpi"] = 400
 mpl.rcParams["axes.linewidth"] = 0.5
 mpl.rcParams["savefig.facecolor"] = "none"
