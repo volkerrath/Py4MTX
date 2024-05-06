@@ -596,10 +596,10 @@ def write_mod_npz(file=None,
         nx ,ny ,nz, nset = dims
     
     
-    if not aircells == None:
+    if not aircells  is None:
         mval[aircells] = mvalair
 
-    if not blank == None:
+    if not blank  is None:
         blanks = np.where(~np.isfinite(mval))
         mval[blanks] = blank
 
@@ -634,7 +634,7 @@ def write_mod_npz(file=None,
 
     trns = np.array(trans)
 
-    if reference==None:
+    if reference is None:
         ncorner = -0.5*np.sum(dx)
         ecorner = -0.5*np.sum(dy)
         elev = 0.
@@ -693,10 +693,10 @@ def write_mod(file=None, modext=".rho",
     dummy = 0
 
 
-    if not aircells == None:
+    if not aircells  is None:
         mval[aircells] = mvalair
 
-    if not blank == None:
+    if not blank  is None:
         blanks = np.where(~np.isfinite(mval))
         mval[blanks] = blank
 
@@ -731,7 +731,7 @@ def write_mod(file=None, modext=".rho",
 
     trns = np.array(trans)
 
-    if reference==None:
+    if reference is None:
         ncorner = -0.5*np.sum(dx)
         ecorner = -0.5*np.sum(dy)
         elev = 0.
@@ -789,10 +789,10 @@ def write_rlm(file=None, modext=".rlm",
 
     nx, ny, nz  = np.shape(mval)
 
-    if not aircells == None:
+    if not aircells  is None:
         mval[aircells] = mvalair
 
-    if not blank == None:
+    if not blank  is None:
         blanks = np.where(~np.isfinite(mval))
         mval[blanks] = blank
 
@@ -805,7 +805,7 @@ def write_rlm(file=None, modext=".rlm",
         
     if len(name)==0:
         name=file
-    if reference==None:
+    if reference is None:
         ncorner = -0.5*np.sum(dx)
         ecorner = -0.5*np.sum(dy)
         elev = 0.
@@ -863,10 +863,10 @@ def write_ubc(file=None,  mshext=".mesh", modext=".ubc",
     dims = np.shape(mval)
 
 
-    if not aircells == None:
+    if not aircells  is None:
         mval.reshape(dims)[aircells] = mvalair
 
-    if not blank == None:
+    if not blank  is None:
         blanks = np.where(~np.isfinite(mval))
         mval.reshape(dims)[blanks] = mvalair
 
@@ -1128,7 +1128,7 @@ def write_mod_vtk(file=None, dx=None, dy=None, dz=None, rho=None,
     """
     from evtk.hl import gridToVTK
     
-    if trim!=None:
+    if trim is not None:
         print("model trimmed"
               +", x="+str(trim[0])
               +", y="+str(trim[1])
@@ -1367,7 +1367,7 @@ def data_to_pv(data=None, site=None, reference=None, scale=1.):
     y =  data[:, 4]
     z =  data[:, 5]    
 
-    if reference!=None:
+    if reference is not None:
         x =  x + reference[0]
         y =  y + reference[1]
         z =  z + reference[2]
@@ -1552,7 +1552,7 @@ def insert_body(dx=None, dy=None, dz=None,
 
     xc, yc, zc = cells3d(dx, dy, dz)
 
-    if reference==None:
+    if reference is None:
         modcenter = [0.5 * np.sum(dx), 0.5 * np.sum(dy), 0.0]
     else: 
         modcenter = reference
@@ -2134,16 +2134,16 @@ def insert_body_ijk(template = None, rho_in=None,
     
     @author: vrath
     """
-    if template==None:
+    if template is None:
         error("insert_body_ijk: no template! Exit.")
         
-    if rho_in==None:
+    if rho_in is None:
         error("insert_body_ijk: no base model! Exit.")
         
-    if perturb==None:
+    if perturb is None:
         error("insert_body_ijk: no perturbation! Exit.")
         
-    if bodymask==None:  
+    if bodymask is None:
         error("insert_body_ijk: no body! Exit.")
         
     rho_out = np.log(rho_in.copy())
@@ -2217,7 +2217,7 @@ def distribute_bodies_ijk(model=None,
        error("distribute_bodies: currently only index sales possible! Exit.")
         
     
-    if model==None:
+    if model is None:
         error("distribute_bodies: no model given! Exit.")
         
     rng = np.random.default_rng()

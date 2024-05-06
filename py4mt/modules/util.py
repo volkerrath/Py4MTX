@@ -338,7 +338,7 @@ def strdelete(keyword=None, fname_in=None, fname_out=None, out=True):
     if out:
         print(str(nn) + " occurances of <" + keyword + "> in " + fname_in)
 
-    # if fname_out == None: fname_out= fname_in
+    # if fname_out  is None: fname_out= fname_in
     with open(fname_in, "r") as fin, open(fname_out, "w") as fou:
         for line in fin:
             if keyword not in line:
@@ -595,7 +595,7 @@ def fractrans(m=None, x=None , a=0.5):
     """
     import differint as df
 
-    if m == None or x == None:
+    if m  is None or x  is None:
         error("No vector for diff given! Exit.")
 
     if np.size(m) != np.size(x):

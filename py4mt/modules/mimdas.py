@@ -82,7 +82,7 @@ def get_randomTX_simple(TXx=None,TXy=None,
     if TXx==[] or TXy==[]:
         error("no data given! Exit.")
 
-    if Ranstate==None:
+    if Ranstate is None::
         rng = np.random.default_rng()
     else:
         rng = Ranstate
@@ -139,7 +139,7 @@ def get_randomTX_constr(TXx=None,TXy=None,
         # NTY = np.shape(TY)
         # print(NTX, NTY)
 
-    if Ranstate==None:
+    if Ranstate is None::
         rng = np.random.default_rng()
     else:
         rng = Ranstate
