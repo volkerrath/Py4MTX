@@ -51,16 +51,18 @@ _conda env create -f Py4MTX.yml_
 
 or:
 
-_conda create --name Py4MT --file Py4MTX.txt_
+_conda create --name Py4MTX --file Py4MTX.txt_
 
-This will set up a Python 3.11 environment with all dependencies for aempy. Don't forget to update also Py4MT regularly, using _conda update --name Py4MT --all_! 
+This will set up a Python 3.11 environment with all dependencies for aempy. Don't forget to update also Py4MTX regularly, using _conda update --name Py4MTX--all_! 
 
 
 (3) Activate this environment by:
-_conda activate Py4MT_
+
+_conda activate Py4MTX_
+
 (4) In order to reproduce the identical behavior of matplotlib, you should copy the included  _matplotlibrc_ file to the appropriate directory. Under Linux (Ubuntu), this should be : _$HOME/.config/matplotlib/matplotlibrc_. Pertinent changes should be made there, or have to be made within the scripts/modules using the _mpl.rcParams[name]=value_ mechanism. 
 
-(6) Currently we have defined two environmental variable, _PY4MTX_ROOT_ and _PY4MTX_DATA_. These need to be set in your .bashrc file pointing to the place where Py4MT is installed, and where you keep your MT data, respectively. Keeping to this scheme makes life much easier when different persons work on the tools.
+(6) Currently we have defined two environmental variable, _PY4MTX_ROOT_ and _PY4MTX_DATA_. These need to be set in your .bashrc file pointing to the place where Py4MTX is installed, and where you keep your MT data, respectively. 
 
 Example: 
 
@@ -68,7 +70,7 @@ _export PY4MT_ROOT='${HOME}/Py4MT/'_
 	
 _export PY4MT_DATA='${HOME}/Py4MT/data/'_
 
- 
+Keeping to this scheme makes life much easier when different persons work on the tools. Never change the sources within the repository, as this may produce conflicts when updating! 
 Please keep in mind that this is experimental software, and will contain errors. Use at your own risk! However, we will frequently update the repository correcting bugs, and (re)adding additional functionality. The tool is currently being merged.       
  
 
