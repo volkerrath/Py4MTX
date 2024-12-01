@@ -43,10 +43,10 @@ import numpy as np
 #import gdal
 
 
-JACOPYAN_DATA = os.environ["JACOPYAN_DATA"]
-JACOPYAN_ROOT = os.environ["JACOPYAN_ROOT"]
+PY4MTX_DATA = os.environ["PY4MTX_DATA"]
+PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
 
-mypath = [JACOPYAN_ROOT+"/modules/", JACOPYAN_ROOT+"/scripts/"]
+mypath = [PY4MTX_ROOT+"/modules/", PY4MTX_ROOT+"/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -65,7 +65,7 @@ print(titstrng+"\n\n")
 
 rhoair = 1.e17
 
-ModFile_in = JACOPYAN_DATA +"/Peru/1_feb_ell/TAC_100"
+ModFile_in = PY4MTX_DATA +"/Peru/1_feb_ell/TAC_100"
 ModFile_out = ModFile_in
 
 # geocenter = [-17.489, -70.031]

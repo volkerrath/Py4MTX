@@ -36,10 +36,10 @@ import netCDF4 as nc
 # from sklearn.utils.extmath import randomized_svd
 from numba import njit
 
-JACOPYAN_DATA = os.environ["JACOPYAN_DATA"]
-JACOPYAN_ROOT = os.environ["JACOPYAN_ROOT"]
+PY4MTX_DATA = os.environ["PY4MTX_DATA"]
+PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
 
-mypath = [JACOPYAN_ROOT+"/modules/", JACOPYAN_ROOT+"/scripts/"]
+mypath = [PY4MTX_ROOT+"/modules/", PY4MTX_ROOT+"/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -54,7 +54,7 @@ from version import versionstrg
 
 # RunParallel = False
 # if RunParallel:
-#     pth = JACOPYAN_ROOT+"/external/PyParSVD/pyparsvd/"
+#     pth = PY4MTX_ROOT+"/external/PyParSVD/pyparsvd/"
 #     if pth not in sys.path:
 #         sys.path.insert(0,pth)
 
@@ -79,14 +79,14 @@ nan = np.nan
 
 
 # Ubinas case
-# WorkDir =  JACOPYAN_DATA+
+# WorkDir =  PY4MTX_DATA+
 WorkDir = "/home/vrath/UBI38_JAC/"
 Orig = [-16.345800 -70.908249] # UBI
 JacName = "Ubi38_ZPT_nerr_sp-8"
 MFile = WorkDir + "Ubi38_ZssPT_Alpha02_NLCG_023"
 
 # # Misti case
-# WorkDir =  JACOPYAN_DATA+"/Peru/Misti/"
+# WorkDir =  PY4MTX_DATA+"/Peru/Misti/"
 # MFile = WorkDir+"Misti10_best"
 # JFile = WorkDir+"Misti_best_Z5_nerr_sp-8"
 # MOrig = [-16.277300, -71.444397]

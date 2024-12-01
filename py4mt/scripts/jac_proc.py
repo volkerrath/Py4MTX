@@ -41,10 +41,10 @@ import scipy.linalg as spl
 import scipy.sparse as scs
 import netCDF4 as nc
 
-JACOPYAN_DATA = os.environ["JACOPYAN_DATA"]
-JACOPYAN_ROOT = os.environ["JACOPYAN_ROOT"]
+PY4MTX_DATA = os.environ["PY4MTX_DATA"]
+PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
 
-mypath = [JACOPYAN_ROOT+"/modules/", JACOPYAN_ROOT+"/scripts/"]
+mypath = [PY4MTX_ROOT+"/modules/", PY4MTX_ROOT+"/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0, pth)
@@ -75,20 +75,20 @@ ErrorScale = True
 Scale = 1.
 
 
-# WorkDir = JACOPYAN_DATA+"/Annecy/Jacobians/"
+# WorkDir = PY4MTX_DATA+"/Annecy/Jacobians/"
 # JFiles = [WorkDir+"ANN_P.jac",WorkDir+"ANN_T.jac", WorkDir+"ANN_Z.jac", WorkDir+"ANN_ZPT.jac"]
 # MFile = WorkDir + "ANN_best.rho"
 
-# WorkDir = JACOPYAN_DATA+"/NewJacTest/"
+# WorkDir = PY4MTX_DATA+"/NewJacTest/"
 # JFiles = [WorkDir+"NewJacTest_P.jac",WorkDir+"NewJacTest_T.jac",WorkDir+"NewJacTest_Z.jac"]
 # MFile = WorkDir + "JacTest.rho"
 
-#WorkDir = JACOPYAN_DATA+"/Peru/Ubinas/"
+#WorkDir = PY4MTX_DATA+"/Peru/Ubinas/"
 #JFiles = [WorkDir+"UBI9_ZPTss.jac"] # WorkDir+"SABA8_Z.jac",]
 #MFile = WorkDir + "UBI9_best"
 
 WorkDir = "/home/vrath/Ubaye/"
-# WorkDir = JACOPYAN_DATA+"/Ubaye/"
+# WorkDir = PY4MTX_DATA+"/Ubaye/"
 JFiles = [WorkDir+"Ubaye26_Z.jac", WorkDir+"Ubaye26_P.jac",  WorkDir+"Ubaye26_T.jac"]
 
 MFile = WorkDir + "Ub26_ZPT_T200_NLCG_014"

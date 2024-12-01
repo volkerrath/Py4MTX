@@ -11,10 +11,10 @@ import os
 import sys
 import numpy as np
 
-JACOPYAN_DATA = os.environ["JACOPYAN_DATA"]
-JACOPYAN_ROOT = os.environ["JACOPYAN_ROOT"]
+PY4MTX_DATA = os.environ["PY4MTX_DATA"]
+PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
 
-mypath = [JACOPYAN_ROOT+"/modules/", JACOPYAN_ROOT+"/scripts/"]
+mypath = [PY4MTX_ROOT+"/modules/", PY4MTX_ROOT+"/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -37,7 +37,7 @@ print(titstrng+"\n\n")
 
 
 total = 0
-ModDir_in = JACOPYAN_DATA + "/Peru/Misti/"
+ModDir_in = PY4MTX_DATA + "/Peru/Misti/"
 # /home/vrath/MT_Data/Peru/Misti/
 ModDir_out = ModDir_in
 

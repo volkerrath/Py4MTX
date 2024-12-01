@@ -16,10 +16,10 @@ from datetime import datetime
 import warnings
 
 
-JACOPYAN_ROOT = os.environ["JACOPYAN_ROOT"]
-JACOPYAN_DATA = os.environ["JACOPYAN_DATA"]
+PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
+PY4MTX_DATA = os.environ["PY4MTX_DATA"]
 
-mypath = [JACOPYAN_ROOT+"/modules/", JACOPYAN_ROOT+"/scripts/"]
+mypath = [PY4MTX_ROOT+"/modules/", PY4MTX_ROOT+"/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)

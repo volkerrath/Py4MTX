@@ -23,10 +23,10 @@ import netCDF4 as nc
 
 import pyevtk.hl as vtx
 
-JACOPYAN_DATA = os.environ["JACOPYAN_DATA"]
-JACOPYAN_ROOT = os.environ["JACOPYAN_ROOT"]
+PY4MTX_DATA = os.environ["PY4MTX_DATA"]
+PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
 
-mypath = [JACOPYAN_ROOT+"/modules/", JACOPYAN_ROOT+"/scripts/"]
+mypath = [PY4MTX_ROOT+"/modules/", PY4MTX_ROOT+"/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -49,7 +49,7 @@ rhoair = 1.e17
 rhoair = np.log10(rhoair)
 
 # Ubinas Ubinas Ubinas Ubinas Ubinas Ubinas Ubinas Ubinas Ubinas Ubinas
-WorkDir = JACOPYAN_DATA+"/Peru/Ubinas/"
+WorkDir = PY4MTX_DATA+"/Peru/Ubinas/"
 # WorkDir = "/home/vrath/UBI38_JAC/"
 
   

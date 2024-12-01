@@ -40,10 +40,10 @@ import numpy as np
 # from sklearn.utils.extmath import randomized_svd
 # from numba import njit
 
-JACOPYAN_DATA = os.environ["JACOPYAN_DATA"]
-JACOPYAN_ROOT = os.environ["JACOPYAN_ROOT"]
+PY4MTX_DATA = os.environ["PY4MTX_DATA"]
+PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
 
-mypath = [JACOPYAN_ROOT+"/modules/", JACOPYAN_ROOT+"/scripts/"]
+mypath = [PY4MTX_ROOT+"/modules/", PY4MTX_ROOT+"/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -55,7 +55,7 @@ from version import versionstrg
 
 # RunParallel = False
 # if RunParallel:
-#     pth = JACOPYAN_ROOT+"/external/PyParSVD/pyparsvd/"
+#     pth = PY4MTX_ROOT+"/external/PyParSVD/pyparsvd/"
 #     if pth not in sys.path:
 #         sys.path.insert(0,pth)
 
@@ -69,7 +69,7 @@ print(titstrng+"\n\n")
 rng = np.random.default_rng()
 nan = np.nan
 
-DatDir_in = JACOPYAN_DATA + "/Fogo/"
+DatDir_in = PY4MTX_DATA + "/Fogo/"
 DatDir_out = DatDir_in 
 
 if not os.path.isdir(DatDir_out):

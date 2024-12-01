@@ -27,10 +27,10 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 
-JACOPYAN_DATA = os.environ["JACOPYAN_DATA"]
-JACOPYAN_ROOT = os.environ["JACOPYAN_ROOT"]
+PY4MTX_DATA = os.environ["PY4MTX_DATA"]
+PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
 
-mypath = [JACOPYAN_ROOT+"/modules/", JACOPYAN_ROOT+"/scripts/"]
+mypath = [PY4MTX_ROOT+"/modules/", PY4MTX_ROOT+"/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -73,7 +73,7 @@ normal = (1., 1., 0.)
 
 # Ubinas Ubinas Ubinas Ubinas Ubinas Ubinas Ubinas Ubinas Ubinas Ubinas
 Title = "Ubinas Volcano, Peru"
-WorkDir = JACOPYAN_DATA+"/Peru/Ubinas/"
+WorkDir = PY4MTX_DATA+"/Peru/Ubinas/"
 if not WorkDir.endswith("/"): WorkDir = WorkDir+"/"
 
 Datfile = WorkDir + "U38_ZPTss1"

@@ -26,10 +26,10 @@ import netCDF4 as nc
 
 from numba import njit
 
-JACOPYAN_DATA = os.environ["JACOPYAN_DATA"]
-JACOPYAN_ROOT = os.environ["JACOPYAN_ROOT"]
+PY4MTX_DATA = os.environ["PY4MTX_DATA"]
+PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
 
-mypath = [JACOPYAN_ROOT+"/modules/", JACOPYAN_ROOT+"/scripts/"]
+mypath = [PY4MTX_ROOT+"/modules/", PY4MTX_ROOT+"/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -57,7 +57,7 @@ OutFormat = "mod rlm" # "ubc"
 ModExt = "_sns.rho"
 
 # Annecy Annecy Annecy Annecy Annecy Annecy Annecy Annecy Annecy Annecy
-# WorkDir = JACOPYAN_DATA+"/Annecy/Jacobians/"
+# WorkDir = PY4MTX_DATA+"/Annecy/Jacobians/"
 # if not WorkDir.endswith("/"):
 #     WorkDir = WorkDir+"/"
 # MFile = WorkDir + "ANN_best"
@@ -65,7 +65,7 @@ ModExt = "_sns.rho"
 # JacName = "ANN_ZPT_nerr_sp-8
 
 # Sabancaya Sabancaya Sabancata Sabancaya Sabancaya Sabancaya Sabancaya
-# WorkDir = JACOPYAN_DATA+"/Peru/Sabancaya/"
+# WorkDir = PY4MTX_DATA+"/Peru/Sabancaya/"
 # if not WorkDir.endswith("/"):
 #     WorkDir = WorkDir+"/"
 # MFile = WorkDir + "SABA8_best"
@@ -73,14 +73,14 @@ ModExt = "_sns.rho"
 # JacName = ""
 
 # Ubinas Ubinas Ubinas Ubinas Ubinas Ubinas Ubinas Ubinas Ubinas Ubinas
-# WorkDir = JACOPYAN_DATA+"/Peru/Ubinas/"
+# WorkDir = PY4MTX_DATA+"/Peru/Ubinas/"
 #WorkDir = "/home/vrath/UBI38_JAC/"
 #MOrig = [-16.345800 -70.908249] # UBI
 #JacName = "Ubi38_ZPT_nerr_sp-8"
 #MFile = WorkDir + "Ubi38_ZssPT_Alpha02_NLCG_023"
 
 # Misti Misti Misti Misti Misti Misti Misti Misti Misti Misti Misti Misti
-#WorkDir = JACOPYAN_DATA+"/Peru/Misti/"
+#WorkDir = PY4MTX_DATA+"/Peru/Misti/"
 #if not WorkDir.endswith("/"):
     #WorkDir = WorkDir+"/"
 #MFile = WorkDir + "Misti10_best"

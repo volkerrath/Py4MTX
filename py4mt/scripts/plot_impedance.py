@@ -24,10 +24,10 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from cycler import cycler
 
-PY4MT_DATA = os.environ["PY4MT_DATA"]
-PY4MT_ROOT = os.environ["PY4MT_ROOT"]
+PY4MTX_DATA = os.environ["PY4MTX_DATA"]
+PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
 
-mypath = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
+mypath = [PY4MTX_ROOT+"/py4mt/modules/", PY4MTX_ROOT+"/py4mt/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -69,7 +69,7 @@ cm = 1./2.54  # centimeters to inches
 # PlotFile = "Krafla_02_Impedance"
 
 
-WorkDir = PY4MT_ROOT+"/work/modem/"
+WorkDir = PY4MTX_ROOT+"/work/modem/"
 PredFile = WorkDir+"Ann26_ZoPT_200_Alpha02_NLCG_013"
 ObsvFile = WorkDir+"Ann26_ZoPT"
 PlotFile = "ANN26_Impedance"
