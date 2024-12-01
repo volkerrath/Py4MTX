@@ -74,7 +74,7 @@ Keeping to this scheme makes life much easier when different persons work on the
 Please keep in mind that this is experimental software, and will contain errors. Use at your own risk! However, we will frequently update the repository correcting bugs, and (re)adding additional functionality. The tool is currently being merged.       
  
 
-# On Jacobian-related functionalities and sensitivities
+# On Jacobian-related functionalities including sensitivities
 
 This repository now also contains $\texttt{python}$ tools for manipulating, processing, analysing Jacobians from 3-D magnetotelluric inversion, including 
 randomized singular value decompositions (SVD), and other tools related to the Nullspace-Shuttle method [1, 2]. Currently, we have implemented the tools necessary
