@@ -25,12 +25,58 @@ from sys import exit as error
 from mtpy import MT , MTData, MTCollection
 
 
+def make_data(edirname=None,
+                    cfilename="./My_Collection.h5",
+                    metaid="my_collection",
+                    survey="my_survey",
+                    savedata=True,
+                    utm_epsg=32629
+                    ):
+
+
+
+    edi_files = []
+    files = os.listdir(edirname)
+    for entry in files:
+        # print(entry)
+        if entry.endswith(".edi") and not entry.startswith("."):
+            edi_files.append(edirname+entry)
+    ns = np.size(edi_files)
+    if ns ==0:
+        error("No edi files found in "+edirname+"! Exit.")
+
+    mtd = MTData()
+    sit = 0
+    for fil in edi_files:
+        sit = sit + 1
+        print("reading data from: " + fil)
+        file_i = fil
+
+    # Create MT object
+
+        mt_obj = MT()
+        mt_obj.read(file_i)
+        mtd.add_statiob(mt_obj)
+
+
+    mtd.utm_crs = utm_epsg
+
+
+    if savedata:
+        with MTCollection() as mtc:
+            mtc.open_collection("cfilename")
+            mtc.from_mt_data(mtd)
+            # mtc.working_dataframe = mtc.master_dataframe.loc[mtc.master_dataframe.survey == survey]
+            mtc.close_collection()
+
+
+    return mtd
 
 def make_collection(edirname=None,
                     cfilename="./My_Collection.h5",
                     metaid="my_collection",
-                    dataout=True,
                     survey="my_survey",
+                    returndata=True,
                     utm_epsg=32629
                     ):
 
@@ -63,10 +109,8 @@ def make_collection(edirname=None,
 
     mtc.working_dataframe = mtc.master_dataframe.loc[mtc.master_dataframe.survey == survey]
     mtc.utm_crs = utm_epsg
-    if dataout:
-        mtd = mtc.to_mt_data()
-        return mtd
     mtc.close_collection()
+
 
 
 def calc_rhoa_phas(freq=None, Z=None):

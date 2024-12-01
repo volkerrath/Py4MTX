@@ -79,6 +79,8 @@ ReadEdi = True
 
 # Construct list of edi-files:
 
+
+
 edi_files = []
 files = os.listdir(edi_dir)
 for entry in files:

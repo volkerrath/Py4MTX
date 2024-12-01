@@ -68,58 +68,21 @@ if MakeMap:
     PltFmt =  [".png", ".pdf", ".svg"]
 
 
-
-# Construct list of edi-files:
-
-edi_files = []
-files = os.listdir(edi_dir)
-for entry in files:
-    # print(entry)
-    if entry.endswith(".edi") and not entry.startswith("."):
-        edi_files.append(edi_dir+entry)
-ns = np.size(edi_files)
-if ns ==0:
-    error("No edi files found in "+edi_dir+"! Exit.")
-
-
-mtd =mtp.make_collection(edirname=edi_dir,
+mtp.make_collection(edirname=edi_dir,
                     cfilename=colfile,
-                    metaid="enfield_data",
-                    dataout=True,
-                    survey="enfield_survey",
+                    metaid="Enfield",
+                    survey="enfield",
                     utm_epsg=32629
                     )
-# # # Loop over edifiles:
-# # n3d = 0
-# # n2d = 0
-# # n1d = 0
-# # nel = 0
-# sit = 0
-
-# mtc = MTCollection()
-# mtc.open_collection(edi_dir+"enfield_collection.h5")
-
-# for filename in edi_files:
-#     sit = sit + 1
-#     print("reading data from: " + filename)
-#     name, ext = os.path.splitext(filename)
-#     file_i = filename
-
-# # Create MT object
-
-#     mt_obj = MT()
-#     mt_obj.read(file_i)
-#     mt_obj.survey_metadata.id = "enfield"
-#     mtc.add_tf(mt_obj)
-
-# mtc.working_dataframe = mtc.master_dataframe.loc[mtc.master_dataframe.survey == "enfield"]
-# mtc.utm_crs = 32629
-# mtd = mtc.to_mt_data()
-# mtc.close_collection()
 
 print("MT Collection written to:", edi_dir+"enfield_collection.h5")
 
 if MakeMap:
+    with MTCollection() as mtc:
+        mtc.open_collection(colfile)
+        # mtc.working_dataframe = mtc.working_dataframe.query('station.str.startswith("en")')
+        mtd = mtc.to_mt_data()
+
     stations_plot = mtd.plot_stations(pad=.005)
     for fmt in PltFmt:
         stations_plot.save_plot(MapFile+fmt, fig_dpi=600)
