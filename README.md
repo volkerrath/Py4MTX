@@ -3,7 +3,7 @@
 
 This repository currently contains simple scripts useful for EM imaging, modelling, and inversion, partly using mtpy (to be downloaded from https://github.com/MTgeophysics/mtpy-v2). The workflows for reading and processing Jacobians from ModEM outputs has been copied from https://github.com/volkerrath/JacoPyAN, and will be further developed here. 
 
-The repositoryIt contains the following subdirectories:
+The repository contains the following subdirectories:
 
 
  -	**py4mt/info**
