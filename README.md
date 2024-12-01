@@ -60,10 +60,10 @@ This will set up a Python 3.11 environment with all dependencies for aempy. Don'
 
 
 (3) Activate this environment by:
-conda activate Py4MT_
+_conda activate Py4MT_
 (4) In order to reproduce the identical behavior of matplotlib, you should copy the included  _matplotlibrc_ file to the appropriate directory. Under Linux (Ubuntu), this should be : _$HOME/.config/matplotlib/matplotlibrc_. Pertinent changes should be made there, or have to be made within the scripts/modules using the _mpl.rcParams[name]=value_ mechanism. 
 
-(6) Currently we have defined two environmental variable, _PY4MT_ROOT_ and _PY4MT_DATA_. These need to be set in your .bashrc file pointing to the place where Py4MT is installed, and where you keep your MT data, respectively. Keeping to this scheme makes life much easier when different persons work on the tools.
+(6) Currently we have defined two environmental variable, _PY4MTX_ROOT_ and _PY4MTX_DATA_. These need to be set in your .bashrc file pointing to the place where Py4MT is installed, and where you keep your MT data, respectively. Keeping to this scheme makes life much easier when different persons work on the tools.
 
 Example: 
 
