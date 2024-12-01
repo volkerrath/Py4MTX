@@ -988,6 +988,26 @@ def read_ubc(file=None, modext=".mod", mshext=".msh",
     return dx, dy, dz, val, refubc, trans
 
 def get_volumes(dx=None, dy=None, dz=None, mval=None, out=True):
+
+    """
+
+    Extract volumes from model.
+
+    Parameters
+    ----------
+    dx, dy, dz : float arrays
+        Mesh cell sizes.
+    mval : float array
+        Resistivity of cells.
+    out : logical, optional
+        Controls ouput. The default is True.
+
+    Returns
+    -------
+    vcell :  float array
+        Cell volumes in model mesh.
+
+    """
     nx, ny,nz = np.shape(mval)
     vcell = np.zeros_like(mval)
     for ii in np.arange(nx):
@@ -1003,31 +1023,59 @@ def get_volumes(dx=None, dy=None, dz=None, mval=None, out=True):
     return vcell
 
 
-def get_topo(dx=None, dy=None, dz=None, mval=None, ref= [0., 0., 0.],
-             mvalair = 1.e17, out=True):
-        nx, ny,nz = np.shape(mval)
+def get_topo(dx=None, dy=None, dz=None, mval=None,
+             ref= [0., 0., 0.],
+             mvalair = 1.e17,
+             out=True):
+    """
+
+    Extract topography from model.
+
+    Parameters
+    ----------
+    dx, dy, dz : float arrays
+        Mesh cell sizes.
+    mval : float array
+        Resistivity of cells.
+    ref : TYPE, optional
+        reference coordinates. The default is [0., 0., 0.].
+    mvalair : float, optional
+        Value for air resistivity. needs to be in the
+        units of input model. The default is 1.e17 (physical values).
+    out : logical, optional
+        Controls ouput. The default is True.
+
+    Returns
+    -------
+    xcnt, ycnt: float arrays
+        Coordinates of cell centers in x-y plane.
+    topo: float array nx x ny
+        Elevation values
+
+    """
+    nx, ny,nz = np.shape(mval)
 
 
-        x = np.append(0.0, np.cumsum(dx))
-        xcnt = 0.5 * (x[0:nx] + x[1:nx+1]) + ref[0]
+    x = np.append(0.0, np.cumsum(dx))
+    xcnt = 0.5 * (x[0:nx] + x[1:nx+1]) + ref[0]
 
-        y = np.append(0.0, np.cumsum(dy))
-        ycnt = 0.5 * (y[0:ny] + y[1:ny+1]) + ref[1]
+    y = np.append(0.0, np.cumsum(dy))
+    ycnt = 0.5 * (y[0:ny] + y[1:ny+1]) + ref[1]
 
-        ztop = np.append(0.0, np.cumsum(dz)) + ref[2]
+    ztop = np.append(0.0, np.cumsum(dz)) + ref[2]
 
-        topo = np.zeros((nx, ny))
-        for ii in np.arange(nx):
-            for jj in np.arange(ny):
-                col = mval[ii,jj,:]
-                nsurf = np.argmax(col<mvalair)
-                topo[ii, jj]= ztop[nsurf]
+    topo = np.zeros((nx, ny))
+    for ii in np.arange(nx):
+        for jj in np.arange(ny):
+            col = mval[ii,jj,:]
+            nsurf = np.argmax(col<mvalair)
+            topo[ii, jj]= ztop[nsurf]
 
-        if out:
-            print(
-                "get topo: %i x %i x %i ccell surfaces marked" % (nx, ny, nz))
+    if out:
+        print(
+            "get topo: %i x %i cell surfaces marked" % (nx, ny))
 
-        return xcnt, ycnt, topo
+    return xcnt, ycnt, topo
 
 def read_mod(file=None, modext=".rho", trans="LINEAR", blank=1.e-30, out=True):
     """
@@ -1554,12 +1602,17 @@ def insert_body(dx=None, dy=None, dz=None,
 
     if reference is None:
         modcenter = [0.5 * np.sum(dx), 0.5 * np.sum(dy), 0.0]
+
     else:
         modcenter = reference
 
-    xc = xc - modcenter[0]
-    yc = yc - modcenter[1]
-    zc = zc - modcenter[2]
+    xc = xc + modcenter[0]
+    yc = yc + modcenter[1]
+    zc = zc + modcenter[2]
+
+    print(" center is", modcenter)
+
+
 
     nx = np.shape(xc)[0]
     ny = np.shape(yc)[0]
@@ -1577,12 +1630,19 @@ def insert_body(dx=None, dy=None, dz=None,
 
     rhoval = np.log(rhoval)
 
-    if action[0:3] == "rep":
+    if "rep" in action:
         actstring = "rhoval"
-    elif action[0:3] == "add":
-        actstring = "rho_out[ii,jj,kk] + rhoval"
+
+    elif "add"  in action:
+
+        if "avg" in action:
+            actstring = "rho_avg + rhoval"
+        else:
+            actstring = "rho_out[point] + rhoval"
+
     else:
         error("Action" + action + " not implemented! Exit.")
+
 
     if out:
         print(
@@ -1592,28 +1652,65 @@ def insert_body(dx=None, dy=None, dz=None,
         print("Body center : " + str(bcent))
         print("Body axes   : " + str(baxes))
         print("Body angles : " + str(bangl))
+        print("Action is "+action)
         print("Smoothed with " + smooth[0] + " filter")
 
-    if "ell" in geom.lower():
 
+    if "ell" in geom.lower():
+        if "avg" in actstring:
+            rho_avg = 0.
+            n_inside = 0
+            for kk in np.arange(0, nz - zpad - 1):
+                 zpoint = zc[kk]
+                 for jj in np.arange(ypad + 1, ny - ypad - 1):
+                     ypoint = yc[jj]
+                     for ii in np.arange(xpad + 1, nx - xpad - 1):
+                         xpoint = xc[ii]
+                         position = [xpoint, ypoint, zpoint]
+                         if in_ellipsoid(position, bcent, baxes, bangl):
+                             n_inside = n_inside +1
+                             rho_avg = rho_avg + rho_out[ii,jj,kk]
+            if n_inside>0:
+                rho_avg = rho_avg/n_inside
+            else:
+                error("insert_body: no points inside ellipsoid! Exit.")
+
+        n_inside = 0
         for kk in np.arange(0, nz - zpad - 1):
             zpoint = zc[kk]
             for jj in np.arange(ypad + 1, ny - ypad - 1):
                 ypoint = yc[jj]
                 for ii in np.arange(xpad + 1, nx - xpad - 1):
                     xpoint = xc[ii]
-
                     position = [xpoint, ypoint, zpoint]
-                    # if Out:
-                    print('position', position)
-                    # print(position)
-                    # print( bcent)
                     if in_ellipsoid(position, bcent, baxes, bangl):
+                        n_inside = n_inside +1
                         rho_out[ii, jj, kk] = eval(actstring)
-                        # if Out:
-                        #     print("cell %i %i %i" % (ii, jj, kk))
+
+
+        print(n_inside, " points in ellipsoid found.")
 
     if "box" in geom.lower():
+        if "avg" in actstring:
+            rho_avg = 0.
+
+            n_inside = 0
+            for kk in np.arange(0, nz - zpad - 1):
+                 zpoint = zc[kk]
+                 for jj in np.arange(ypad + 1, ny - ypad - 1):
+                     ypoint = yc[jj]
+                     for ii in np.arange(xpad + 1, nx - xpad - 1):
+                         xpoint = xc[ii]
+                         position = [xpoint, ypoint, zpoint]
+                         if in_box(position, bcent, baxes, bangl):
+                             n_inside = n_inside +1
+                             rho_avg = rho_avg + rho_out[ii,jj,kk]
+            if n_inside>0:
+                rho_avg = rho_avg/n_inside
+            else:
+                error("insert_body: no points inside box! Exit.")
+
+        n_inside = 0
         for kk in np.arange(0, nz - zpad - 1):
             zpoint = zc[kk]
             for jj in np.arange(ypad + 1, ny - ypad - 1):
@@ -1621,22 +1718,19 @@ def insert_body(dx=None, dy=None, dz=None,
                 for ii in np.arange(xpad + 1, nx - xpad - 1):
                     xpoint = xc[ii]
                     position = [xpoint, ypoint, zpoint]
-                    # if Out:
-                    # print('position')
-                    # print(position)
-                    # print( bcent)
-
                     if in_box(position, bcent, baxes, bangl):
+                        n_inside = n_inside + 1
                         rho_out[ii, jj, kk] = eval(actstring)
-                        # if Out:
-                        #     print("cell %i %i %i" % (ii, jj, kk))
+
+        print(n_inside, " points in box found.")
+
 
     if smooth is not None:
-        if smooth[0][0:3] == "uni":
+        if "uni" in smooth[0].lower():
             fsize = smooth[1]
             rho_out = uniform_filter(rho_out, fsize)
 
-        elif smooth[0][0:3] == "gau":
+        elif "gau" in smooth[0].lower():
             gstd = smooth[1]
             rho_out = gaussian_filter(rho_out, gstd)
 
@@ -2376,3 +2470,54 @@ def mask_mesh(x=None, y=None, z=None, mod=None,
         print(np.shape(ix),np.shape(iy),np.shape(iz))
 
         return x_out, y_out, z_out, mod_out
+
+
+def generate_alphas(dz, beg_lin=[0., 0.1, 0.1], end_lin =[999., 0.9, 0.9]):
+    """
+    Generates linspace depth-dependent horizontal alphas
+
+    Parameters
+    ----------
+    dz: array
+        verical cell sizes.
+    beg_lin, end_lin: tuple
+        depth, val_x, val_y
+
+    Returns
+    -------
+    a_x, a_y : np.arrays
+        Linspace depth-dependent horizontal alphas
+
+
+
+    VR Aug 2024
+
+    """
+
+
+
+    a_x = np.nan * np.ones_like(dz)
+    a_y = np.nan * np.ones_like(dz)
+
+    _, depth = set_mesh(d=dz)
+
+
+    start_z = beg_lin[0]
+    end_z   = end_lin[0]
+
+    i0 = (depth>=start_z).argmax()
+    i1 = (depth>=end_z).argmax()
+    idif =np.abs(i1-i0)
+
+
+
+    a_x[:i0] = beg_lin[1]
+    a_x[i0:i1] = np.linspace(beg_lin[1], end_lin[1], idif)
+    a_x[i1:] = end_lin[1]
+
+    a_y[:i0] = beg_lin[2]
+    a_y[i0:i1] = np.linspace(beg_lin[2], end_lin[2], idif)
+    a_y[i1:] = end_lin[2]
+
+
+    return a_x, a_y

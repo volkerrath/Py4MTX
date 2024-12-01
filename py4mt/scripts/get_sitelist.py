@@ -36,7 +36,7 @@ mypath = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
-        
+
 import util
 from version import versionstrg
 
@@ -56,7 +56,7 @@ if  "wal" in whatfor:
 
 # Define the path to your EDI-files and for the list produced
 EdiDir = PY4MT_ROOT+"/work/orig/"
-EdiDir = "/home/vrath/Enfield/" 
+EdiDir = "/home/vrath/MT_Data/Enfield/"
 print(" Edifiles read from: %s" % EdiDir)
 CSVFile = EdiDir + "Sitelist.dat"
 print("Writing data to file: " + CSVFile)
@@ -95,7 +95,7 @@ with open(CSVFile, "w") as f:
         lat = mt_obj.station_metadata.location.latitude
         lon = mt_obj.station_metadata.location.longitude
         elev = mt_obj.station_metadata.location.elevation
-        
+
         # sitename = mt_obj.station
         if "wal" in whatfor:
             sitelist.writerow([name, lat, lon])

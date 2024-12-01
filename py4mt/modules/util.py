@@ -24,23 +24,9 @@ from sys import exit as error
 
 from scipy.fftpack import dct, idct
 
-def dctn(x, norm="ortho"):
-    """
-    Discrete cosine transform (fwd)
-    https://stackoverflow.com/questions/13904851/use-pythons-scipy-dct-ii-to-do-2d-or-nd-dct
-    """
-    for i in range(x.ndim):
-        x = dct(x, axis=i, norm=norm)
-    return x
+from mtpy import MT , MTData, MTCollection
 
-def idctn(x, norm="ortho"):
-    """
-    Discrete cosine transform (inv)
-    https://stackoverflow.com/questions/13904851/use-pythons-scipy-dct-ii-to-do-2d-or-nd-dct
-    """
-    for i in range(x.ndim):
-        x = idct(x, axis=i, norm=norm)
-    return x
+
 
 
 def parse_ast(filename):
@@ -271,7 +257,6 @@ def get_files(SearchString=None, SearchDirectory="."):
     return FileList
 
 
-
 def unique(list, out=False):
     """
     find unique elements in list/array
@@ -294,6 +279,23 @@ def unique(list, out=False):
 
     return unique_list
 
+def bytes2human(n):
+    """
+    http://code.activestate.com/recipes/578019
+    >>> bytes2human(10000)
+    '9.8K'
+    >>> bytes2human(100001221)
+    '95.4M'
+    """
+    symbols = ('K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y')
+    prefix = {}
+    for i, s in enumerate(symbols):
+        prefix[s] = 1 << (i + 1) * 10
+    for s in reversed(symbols):
+        if abs(n) >= prefix[s]:
+            value = float(n) / prefix[s]
+            return '%.1f%s' % (value, s)
+    return "%sB" % n
 
 def strcount(keyword=None, fname=None):
     """
@@ -587,6 +589,55 @@ def gen_searchgrid(Points=None,
     return p
 
 
+def KLD(P=np.array([]), Q=np.array([]), epsilon= 1.e-8):
+    """
+    Calculates Kullback-Leibler distance
+
+    Parameters
+    ----------
+    P, Q: np.array
+        pdfs
+    epsilon : TYPE
+        Epsilon is used here to avoid conditional code for
+        checking that neither P nor Q is equal to 0.
+
+    Returns
+    -------
+
+    distance: float
+        KL distance
+
+
+    """
+    if P.size * Q.size==0:
+        error("KLD: P or Q not defined! Exit.")
+
+    # You may want to instead make copies to avoid changing the np arrays.
+    PP = P.copy()+epsilon
+    QQ = Q.copy()+epsilon
+
+    distance = np.sum(PP*np.log(PP/QQ))
+
+    return distance
+
+def dctn(x, normused="ortho"):
+    """
+    Discrete cosine transform (fwd)
+    https://stackoverflow.com/questions/13904851/use-pythons-scipy-dct-ii-to-do-2d-or-nd-dct
+    """
+    for i in range(x.ndim):
+        x = dct(x, axis=i, norm=normused)
+    return x
+
+def idctn(x, normused="ortho"):
+    """
+    Discrete cosine transform (inv)
+    https://stackoverflow.com/questions/13904851/use-pythons-scipy-dct-ii-to-do-2d-or-nd-dct
+    """
+    for i in range(x.ndim):
+        x = idct(x, axis=i, norm=normused)
+    return x
+
 def fractrans(m=None, x=None , a=0.5):
     """
     Caklculate fractional derivative of m.
@@ -714,119 +765,3 @@ def print_title(version="0.99.99", fname="", form="%m/%d/%Y, %H:%M:%S", out=True
         print(title)
 
     return title
-
-# def wait1d(periods=None, thick=None, res=None):
-
-    # scale = 1 / (4 * np.pi / 10000000)
-    # mu = 4 * np.pi * 1e-7 * scale
-    # omega = 2 * np.pi / periods
-
-    # cond = 1 / np.array(res)
-
-    # sp = np.size(periods)
-    # Z = np.zeros(sp, dtype=complex)
-    # rhoa = np.zeros(sp)
-    # phi = np.zeros(sp)
-
-    # for freq, w in enumerate(omega):
-    #     prop_const = np.sqrt(1j*mu*cond[-1] * w)
-    #     C = np.zeros(sp, dtype=complex)
-    #     C[-1] = 1 / prop_const
-    #     if len(thick) > 1:
-    #         for k in reversed(range(len(res) - 1)):
-    #             prop_layer = np.sqrt(1j*w*mu*cond[k])
-    #             k1 = (C[k+1] * prop_layer + np.tanh(prop_layer * thick[k]))
-    #             k2 = ((C[k+1] * prop_layer * np.tanh(prop_layer * thick[k])) + 1)
-    #             C[k] = (1 / prop_layer) * (k1 / k2)
-    #     Z[freq] = 1j * w * mu * C[0]
-
-    # rhoa = 1/omega*np.abs(Z)**2
-    # phi = np.angle(Z, deg=True)
-    # return rhoa, phi, np.real(Z), np.imag(Z)
-
-def calc_rhoa_phas(freq=None, Z=None):
-    
-    mu0 = 4.0e-7 * np.pi  # Magnetic Permeability (H/m)
-    omega = 2.*np*freq
-    
-    rhoa = np.power(np.abs(Z), 2) / (mu0 * omega)
-    # phi = np.rad2deg(np.arctan(Z.imag / Z.real))
-    phi = np.angle(Z, deg=True)
-    
-    return rhoa, phi
-
-def mt1dfwd(freq, sig, d, inmod="r", out="imp", magfield="b"):
-    """
-    Calulate 1D magnetotelluric forward response.
-
-    based on A. Pethik's script at www.digitalearthlab.com
-    Last change vr Nov 20, 2020
-    """
-    mu0 = 4.0e-7 * np.pi  # Magnetic Permeability (H/m)
-
-    sig = np.array(sig)
-    freq = np.array(freq)
-    d = np.array(d)
-
-    if inmod[0] == "c":
-        sig = np.array(sig)
-    elif inmod[0] == "r":
-        sig = 1.0 / np.array(sig)
-
-    if sig.ndim > 1:
-        error("IP not yet implemented")
-
-    n = np.size(sig)
-
-    Z = np.zeros_like(freq) + 1j * np.zeros_like(freq)
-    w = np.zeros_like(freq)
-
-    ifr = -1
-    for f in freq:
-        ifr = ifr + 1
-        w[ifr] = 2.0 * np.pi * f
-        imp = np.array(range(n)) + np.array(range(n)) * 1j
-
-        # compute basement impedance
-        imp[n - 1] = np.sqrt(1j * w[ifr] * mu0 / sig[n - 1])
-
-        for layer in range(n - 2, -1, -1):
-            sl = sig[layer]
-            dl = d[layer]
-            # 3. Compute apparent rho from top layer impedance
-            # Step 2. Iterate from bottom layer to top(not the basement)
-            #   Step 2.1 Calculate the intrinsic impedance of current layer
-            dj = np.sqrt(1j * w[ifr] * mu0 * sl)
-            wj = dj / sl
-            #   Step 2.2 Calculate Exponential factor from intrinsic impedance
-            ej = np.exp(-2 * dl * dj)
-
-            #   Step 2.3 Calculate reflection coeficient using current layer
-            #          intrinsic impedance and the below layer impedance
-            impb = imp[layer + 1]
-            rj = (wj - impb) / (wj + impb)
-            re = rj * ej
-            Zj = wj * ((1 - re) / (1 + re))
-            imp[layer] = Zj
-
-        Z[ifr] = imp[0]
-        # print(Z[ifr])
-
-    if out.lower() == "imp":
-
-        if magfield.lower() =="b":
-            return Z/mu0
-        else:
-            return Z
-
-    elif out.lower() == "rho":
-        absZ = np.abs(Z)
-        rhoa = (absZ * absZ) / (mu0 * w)
-        phase = np.rad2deg(np.arctan(Z.imag / Z.real))
-
-        return rhoa, phase
-    else:
-        absZ = np.abs(Z)
-        rhoa = (absZ * absZ) / (mu0 * w)
-        phase = np.rad2deg(np.arctan(Z.imag / Z.real))
-        return Z, rhoa, phase
