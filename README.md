@@ -41,7 +41,7 @@ This repository contains the following subdirectories:
 
 Get your working copy via git from the command line:
 
-_git clone https://github.com/volkerrath/Py4MT2/_
+_git clone https://github.com/volkerrath/Py4MTX/_
 
 This version will run under Python 3.9+ (3.11 being the current development platform). To install it in an Linux environment (e.g. Ubuntu, SuSE), you need to do the following:
 
