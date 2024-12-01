@@ -2,9 +2,9 @@
 
 # This repo is in a state of reorganization and adaption to Python 3.9+ and mtpy-v2. Not ready for production use!
 
-This repository currently contains simple scripts useful for EM imaging, modelling, and inversion, partly using mtpy (https://github.com/MTgeophysics/mtpy). In particular there are helper scripts for manipulating edi files, ModEM input data, and model files.
+This repository currently contains simple scripts useful for EM imaging, modelling, and inversion, partly using mtpy (https://github.com/MTgeophysics/mtpy). 
 
-Please keep in mind that this is experimental software, and will contain errors. Use at your own risk! However, we will frequently update the repository correcting bugs, and (re)adding additional functionality. Thee toolbox related to working on the Jacobian,
+Please keep in mind that this is experimental software, and will contain errors. Use at your own risk! However, we will frequently update the repository correcting bugs, and (re)adding additional functionality. The toolbox related to working on the Jacobian,
 (https://github.com/volkerrath/JacoPyAn) will be re-merged in the near future.       
  
 This repository contains the following subdirectories:
@@ -41,7 +41,7 @@ This repository contains the following subdirectories:
 
 Get your working copy via git from the command line:
 
-_git clone https://github.com/volkerrath/Py4MT2/_
+_git clone https://github.com/volkerrath/Py4MTX/_
 
 This version will run under Python 3.9+ (3.11 being the current development platform). To install it in an Linux environment (e.g. Ubuntu, SuSE), you need to do the following:
 
