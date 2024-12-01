@@ -1,7 +1,9 @@
 # Py4MTX
-# This repo is in a state of reorganization and adaption to Python 3.11, mtpy-v2 and integrating Jacobian-related functionality. Not fully ready for production use!
+# This repo is in a process of reorganization and adaption to Python 3.11, mtpy-v2 and integrating Jacobian-related functionality. Not fully ready for production use!
 
-This repository currently contains simple scripts useful for EM imaging, modelling, and inversion, partly using mtpy (to be downloaded from https://github.com/MTgeophysics/mtpy-v2). Itcontains the following subdirectories:
+This repository currently contains simple scripts useful for EM imaging, modelling, and inversion, partly using mtpy (to be downloaded from https://github.com/MTgeophysics/mtpy-v2). The workflows for reading and processing Jacobians from ModEM outputs has been copied from https://github.com/volkerrath/JacoPyAN, and will be further developed here. 
+
+The repositoryIt contains the following subdirectories:
 
 
  -	**py4mt/info**
@@ -15,9 +17,7 @@ This repository currently contains simple scripts useful for EM imaging, modelli
  	
  - 	**py4mt/scripts** 
  	Contains the scripts  for preprocessing, visualization, and preparing the inversion of 
- 	MT data.  The scripts in the former directory will move to the latter in the process of adaption.
-	The workflow for reading and processing Jacobians from ModEM outputs (original & new)
-	has been moved to https://github.com/volkerrath/JacoPyAN.     	 
+ 	MT data.   	 
  
 
 - 	**modem**
