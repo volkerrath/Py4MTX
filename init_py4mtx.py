@@ -3,7 +3,7 @@ export MY_ROOT=$HOME
 
 export CONDA_ROOT=${HOME}/.Miniconda2024/
 
-export PY4MTX_ENVI=PY4MTX
+export PY4MTX_ENVI=Py4MTX
 export PY4MTX_ROOT=$MY_ROOT/Py4MTX/
 export PY4MTX_DATA=$MY_ROOT/MT_Data/
 
