@@ -128,7 +128,7 @@ for entry in files:
         edi_files.append(entry)
 edi_files = sorted(edi_files)
 
-if PdfCat:
+if PdfCatalog:
     pdf_list= []
 # Create an MT object
 
@@ -177,10 +177,10 @@ for filename in edi_files:
     for F in PlotFmt:
         zplot.save_plot(PltDir+name+PlotStrng+F, fig_dpi=DPI)
 
-    if PdfCat:
+    if PdfCatalog:
         pdf_list.append(PltDir+name+PlotStrng+".pdf")
 
 
 # Finally save figure
-if PdfCat:
-    util.make_pdf_catalog(PltDir, PdfList=pdf_list, FileName=PltDir+PdfCName)
+if PdfCatalog:
+    utl.make_pdf_catalog(PltDir, PdfList=pdf_list, FileName=PltDir+PdfCatalogName)
