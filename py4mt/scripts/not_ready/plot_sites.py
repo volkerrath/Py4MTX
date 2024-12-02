@@ -14,47 +14,79 @@ adapte
 import os
 import sys
 import numpy as np
-from mtpy.core.mt import MT
+from mtpy import MT, MTCollection, MTData
 
-PY4MT_DATA = os.environ["PY4MT_DATA"]
-PY4MT_ROOT = os.environ["PY4MT_ROOT"]
+PY4MT_DATA = os.environ["PY4MTX_DATA"]
+PY4MT_ROOT = os.environ["PY4MTX_ROOT"]
 
 mypath = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
 
-import util
+import util as utl
+import mtproc as mtp
 from version import versionstrg
 
 
 version, _ = versionstrg()
-titstrng = util.print_title(version=version, fname=__file__, out=False)
+titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
+
+PY4MTX_DATA =  "/home/vrath/MT_Data/"
+
+
+EPSG = 32629
+WorkDir = PY4MTX_DATA+"/Enfield/"
+
+# Define the path to your EDI-files:
+EdiDir = WorkDir
+
+# Define the path to your MTCollection file:
+CollFile = WorkDir+"/enfield_collection.h5"
+
+FromEdis = True
+if FromEdis:
+    print(" Edifiles read from: %s" % EdiDir)
+    dataset = mtp.make_collection(edirname=EdiDir,
+                        collection="Collfile",
+                        metaid="enfield",
+                        survey="enfield",
+                        returndata=True,
+                        utm_epsg=EPSG
+                        )
+else:
+    with MTCollection() as mtc:
+        mtc.open_collection(CollFile)
+        mtc.working_dataframe = mtc.master_dataframe.loc[mtc.master_dataframe.survey == "enfield"]
+        mtc.utm_crs = EPSG
+        dataset = mtc.to_mt_data()
+
+
+
+
+
+
+# Define the  path for saving  plots:
+PltDir = WorkDir +"/plots/"
+print(" Plots written to: %s" % PltDir)
+if not os.path.isdir(PltDir):
+    print(" File: %s does not exist, but will be created" % PltDir)
+    os.mkdir(PltDir)
 
 # Graphical paramter. Determine the plot formats produced,
 # and the required resolution:
 
 PlotFmt = [".png", ".pdf"]
-DPI = 400
-PdfCat = True
+DPI = 600
+PdfCatalog = True
 if not ".pdf" in PlotFmt:
-    PdfC = False
+    PdfCatalog= False
     print("No PDF catalog because no pdf output!")
-    
-PdfCName  = "ANN_data.pdf"
+PdfCatalogName  = "ANN_data.pdf"
 
 
-# Define the path to your EDI-files:
-EdiDir = PY4MT_ROOT+"/work/true-north/"
-print(" Edifiles read from: %s" % EdiDir)
-    
-# Define the  path for saving  plots:
-PltDir = EdiDir +"/plots/"
-print(" Plots written to: %s" % PltDir)
-if not os.path.isdir(PltDir):
-    print(" File: %s does not exist, but will be created" % PltDir)
-    os.mkdir(PltDir)
+
 
 
 PlotStrng="_orig"
@@ -77,7 +109,7 @@ RhoLimits = np.array([0.1, 10000.])
 Plottipper="yri"
 TipLimits = np.array([-.5, 0.5])
 
-                                
+
 PT_colorby = "skew"  #'phimin'
 PT_cmap = "mt_bl2gr2rd"
 PT_range = [-10.,10.,5.]
@@ -103,15 +135,15 @@ if PdfCat:
 for filename in edi_files:
     name, ext = os.path.splitext(filename)
     file_i = EdiDir + filename
-    
+
     mt_obj = MT()
     mt_obj.read(file_i)
-    
+
     lat = mt_obj.station_metadata.location.latitude
     lon = mt_obj.station_metadata.location.longitude
     elev = mt_obj.station_metadata.location.elevation
     print(" site %s at :  % 10.6f % 10.6f % 8.1f" % (name, lat, lon, elev ))
-    
+
     # z = mt.Z.z
     # t = mt.Tipper.tipper
 
@@ -128,26 +160,26 @@ for filename in edi_files:
     #     # mt.Tipper.tipper_err = 0.0001*np.ones_like(np.real(mt.Tipper.tipper))
     #     mt.Z.z_err = 0.001 * np.real(mt.Z.z)
     #     mt.Tipper.tipper_err = 0.001 * np.real(mt.Tipper.tipper)
-        
+
 
     zplot = mt_obj.plot_mt_response(plot_num = PlotType,
-                                    fig_num = 2, 
+                                    fig_num = 2,
                                     x_limits = PerLimits,
-                                    res_limits = RhoLimits, 
+                                    res_limits = RhoLimits,
                                     tipper_limits = TipLimits,
                                     plot_tipper=PlotTipp,
                                     ellipse_colorby = PT_colorby,  #'phimin'
-                                    ellipse_cmap = PT_cmap, 
+                                    ellipse_cmap = PT_cmap,
                                     ellipse_range = PT_range
-                                    )  
+                                    )
 
-        
+
     for F in PlotFmt:
         zplot.save_plot(PltDir+name+PlotStrng+F, fig_dpi=DPI)
-    
-    if PdfCat: 
+
+    if PdfCat:
         pdf_list.append(PltDir+name+PlotStrng+".pdf")
-    
+
 
 # Finally save figure
 if PdfCat:

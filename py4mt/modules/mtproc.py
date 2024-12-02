@@ -26,7 +26,7 @@ from mtpy import MT , MTData, MTCollection
 
 
 def make_data(edirname=None,
-                    cfilename="./My_Collection.h5",
+                    collection="./My_Collection.h5",
                     metaid="my_collection",
                     survey="my_survey",
                     savedata=True,
@@ -64,7 +64,7 @@ def make_data(edirname=None,
 
     if savedata:
         with MTCollection() as mtc:
-            mtc.open_collection("cfilename")
+            mtc.open_collection("collection")
             mtc.from_mt_data(mtd)
             # mtc.working_dataframe = mtc.master_dataframe.loc[mtc.master_dataframe.survey == survey]
             mtc.close_collection()
@@ -73,7 +73,7 @@ def make_data(edirname=None,
     return mtd
 
 def make_collection(edirname=None,
-                    cfilename="./My_Collection.h5",
+                    collection="./My_Collection.h5",
                     metaid="my_collection",
                     survey="my_survey",
                     returndata=True,
@@ -93,7 +93,7 @@ def make_collection(edirname=None,
         error("No edi files found in "+edirname+"! Exit.")
 
     mtc = MTCollection()
-    mtc.open_collection(cfilename)
+    mtc.open_collection(collection)
     sit = 0
     for fil in edi_files:
         sit = sit + 1
@@ -109,7 +109,11 @@ def make_collection(edirname=None,
 
     mtc.working_dataframe = mtc.master_dataframe.loc[mtc.master_dataframe.survey == survey]
     mtc.utm_crs = utm_epsg
+    mtd = mtc.to_mt_data()
     mtc.close_collection()
+
+    if returndata:
+        return mtd
 
 
 

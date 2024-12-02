@@ -41,14 +41,13 @@ from mtpy import MT , MTData, MTCollection
 PY4MTX_DATA = os.environ["PY4MTX_DATA"]
 PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
 
-mypath = [PY4MTX_ROOT+"/modules/", PY4MTX_ROOT+"/scripts/"]
+mypath = [PY4MTX_ROOT+"/py4mt/modules/", PY4MTX_ROOT+"/py4mt/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
 
 
-import jacproc as jac
-import modem as mod
+import mtproc as mtp
 import util as utl
 
 from version import versionstrg
@@ -63,150 +62,93 @@ titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
 
-cm = 1/2.54  # centimeters in inches
+
+PY4MTX_DATA =  "/home/vrath/MT_Data/"
+
+
+EPSG = 32629
+WorkDir = PY4MTX_DATA+"/Enfield/"
+
+# Define the path to your EDI-files:
+EdiDir = WorkDir
+
+# Define the path to your MTCollection file:
+CollFile = WorkDir+"/enfield_collection.h5"
+
+FromEdis = True
+if FromEdis:
+    print(" Edifiles read from: %s" % EdiDir)
+    dataset = mtp.make_collection(edirname=EdiDir,
+                        collection="Collfile",
+                        metaid="enfield",
+                        survey="enfield",
+                        returndata=True,
+                        utm_epsg=EPSG
+                        )
+else:
+    with MTCollection() as mtc:
+        mtc.open_collection(CollFile)
+        mtc.working_dataframe = mtc.master_dataframe.loc[mtc.master_dataframe.survey == "enfield"]
+        mtc.utm_crs = EPSG
+        dataset = mtc.to_mt_data()
+
 
 # Define the path to your EDI-files and for the list produced
 
-PY4MTX_DATA =  "/home/vrath/MT_Data/"
-edi_dir = "Enfield/"
-print(" Edifiles read from: %s" % edi_dir)
+# Define the  path for saving  plots:
+PltDir = WorkDir +"/plots/"
+print(" Plots written to: %s" % PltDir)
+if not os.path.isdir(PltDir):
+    print(" File: %s does not exist, but will be created" % PltDir)
+    os.mkdir(PltDir)
+
+# Graphical paramter. Determine the plot formats produced,
+# and the required resolution:
+
 PlotFmt = [".png", ".pdf", ".svg"]
-
-EPSG = 32629
-
-ReadEdi = True
-# No changes re32629quired after this line!
-
-# Construct list of edi-files:
-
+DPI = 600
+PdfCatalog = True
+if not ".pdf" in PlotFmt:
+    PdfCatalog= False
+    print("No PDF catalog because no pdf output!")
+PdfCatalogName  = "ANN_data.pdf"
 
 
-edi_files = []
-files = os.listdir(edi_dir)
-for entry in files:
-    # print(entry)
-    if entry.endswith(".edi") and not entry.startswith("."):
-        edi_files.append(edi_dir+entry)
-ns = np.size(edi_files)
-if ns ==0:
-    error("No edi files found in "+edi_dir+"! Exit.")
-
-
-# Outputfile (e. g., for WALDIM analysis)
+# No changes reuired after this line!
 
 # """
-# Determine graphical parameter.
+# Determine graphical parameter. not working with py4mt?
 # => print(plt.style.available)
 # """
+# cm = 1/2.54  # centimeters in inches
 
-plt.style.use("seaborn-v0_8-paper")
-mpl.rcParams["figure.dpi"] = 600
-mpl.rcParams["axes.linewidth"] = 0.5
-mpl.rcParams["savefig.facecolor"] = "none"
+# plt.style.use("seaborn-v0_8-paper")
+# mpl.rcParams["figure.dpi"] = 600
+# mpl.rcParams["axes.linewidth"] = 0.5
+# mpl.rcParams["savefig.facecolor"] = "none"
 
-# # Loop over edifiles:
-# n3d = 0
-# n2d = 0
-# n1d = 0
-# nel = 0
+
+
+
+stations_plot = dataset.plot_stations(pad=.005)
+for fmt in PlotFmt:
+    stations_plot.save_plot(PltDir+"AllSites"+fmt, fig_dpi=600)
+
+strike_plot_all = dataset.plot_strike()
+for fmt in PlotFmt:
+    stations_plot.save_plot(PltDir+"StrikesAllData"+fmt, fig_dpi=600)
+
+
+strike_plot_dec = dataset.plot_strike(plot_type=1, print_stats=True)
+for fmt in PlotFmt:
+    stations_plot.save_plot(PltDir+"StrikesPerDec"+fmt, fig_dpi=600)
+
+# pt_map = dataset.plot_phase_tensor_map(
+#     plot_tipper="yri",
+#     cx_source=cx.providers.Esri.NatGeoWorldMap,
+#     ellipse_size=.02,
+#     arrow_size=.05
+# )
+
+# # Loop over stations
 sit = 0
-
-
-# mtd = MTData()
-# mtd.open_collection(edi_dir+"enfield_data.h5")
-mtc = MTCollection()
-mtc.open_collection(edi_dir+"enfield_collection.h5")
-
-for filename in edi_files:
-    sit = sit + 1
-    print("reading data from: " + filename)
-    name, ext = os.path.splitext(filename)
-    file_i = filename
-
-# Create MT object
-
-    mt_obj = MT()
-    mt_obj.read(file_i)
-    mt_obj.survey_metadata.id = "enfield"
-    mtc.add_tf(mt_obj)
-
-
-#     lon = mt_obj.lon
-#     lat = mt_obj.lat
-#     elev = mt_obj.elev
-#     east = mt_obj.east
-#     north = mt_obj.north
-#     freq = mt_obj.Z.freq
-# # use the phase tensor to determine which frequencies are 1D/2D/3D
-#     dim = dimensionality(z_object=mt_obj.Z,
-#                          skew_threshold=5,
-#                          # threshold in skew angle (degrees) to determine if
-#                          # data are 3d
-#                          # threshold in phase ellipse eccentricity to determine
-#                          # if data are 2d (vs 1d)
-#                          eccentricity_threshold=0.1
-#                          )
-#     dims = np.vstack([freq,dim])
-#     print(np.shape(dims))
-#     np.savetxt(fname =name+"_dim.dat",fmt="%12.5f  %3i",X =dims.T)
-
-#     print("dimensionality:")
-#     nel = nel + np.size(dim)
-#     n1d = n1d + sum(map(lambda x: x == 1, dim))
-#     n2d = n2d + sum(map(lambda x: x == 2, dim))
-#     n3d = n3d + sum(map(lambda x: x == 3, dim))
-
-#     strikeplot = PlotStrike(fn_list=[file_i],
-#                             plot_type=1,
-#                             plot_tipper='yr')
-#     #
-#     strikeplot.save_plot(name+"_Strikes.png",
-#                           file_format='.png',
-#                           fig_dpi=600)
-#     print("  number of undetermined elements = " +
-#           str(nel - n1d - n2d - n3d) + "\n")
-#     print("  number of 1-D elements = " + str(sum(map(lambda x: x == 1, dim))) +
-#           "  (" + str(round(100 * sum(map(lambda x: x == 1, dim)) / nel)) + "%)")
-#     print("  number of 2-D elements = " + str(sum(map(lambda x: x == 2, dim))) +
-#           "  (" + str(round(100 * sum(map(lambda x: x == 2, dim)) / nel)) + "%)")
-#     print("  number of 3-D elements = " + str(sum(map(lambda x: x == 3, dim))) +
-#           "  (" + str(round(100 * sum(map(lambda x: x == 3, dim)) / nel)) + "%)")
-
-mtc.working_dataframe = mtc.master_dataframe.loc[mtc.master_dataframe.survey == "enfield"]
-mtc.utm_crs = 32629
-mtd = mtc.to_mt_data()
-mtc.close_collection()
-
-
-stations_plot = mtd.plot_stations(pad=.005)
-for fmt in PlotFmt:
-    stations_plot.save_plot(edi_dir+"AllSites"+fmt, fig_dpi=600)
-
-strike_plot_all = mtd.plot_strike()
-for fmt in PlotFmt:
-    stations_plot.save_plot(edi_dir+"StrikesAllData"+fmt, fig_dpi=600)
-
-
-strike_plot_dec = mtd.plot_strike(plot_type=1, print_stats=True)
-for fmt in PlotFmt:
-    stations_plot.save_plot(edi_dir+"StrikesPerDec"+fmt, fig_dpi=600)
-
-pt_map = mtd.plot_phase_tensor_map(
-    plot_tipper="yri",
-    cx_source=cx.providers.Esri.NatGeoWorldMap,
-    ellipse_size=.02,
-    arrow_size=.05
-)
-
-
-# print("\n\n\n")
-# print("number of sites = " + str(sit))
-# print("total number of elements = " + str(nel))
-# print("  number of undetermined elements = " +
-#       str(nel - n1d - n2d - n3d) + "\n")
-# print("  number of 1-D elements = " + str(n1d) +
-#       "  (" + str(round(100 * n1d / nel)) + "%)")
-# print("  number of 2-D elements = " + str(n2d) +
-#       "  (" + str(round(100 * n2d / nel)) + "%)")
-# print("  number of 3-D elements = " + str(n3d) +
-#       "  (" + str(round(100 * n3d / nel)) + "%)")
