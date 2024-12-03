@@ -76,7 +76,7 @@ WorkDir = PY4MTX_DATA+"/Enfield/"
 EdiDir = WorkDir
 
 # Define the path to your MTCollection file:
-CollFile = WorkDir+"/enfield_collection.h5"
+Collection = WorkDir+"/enfield_collection.h5"
 
 FromEdis = True
 if FromEdis:
@@ -90,7 +90,7 @@ if FromEdis:
                         )
 else:
     with MTCollection() as mtc:
-        mtc.open_collection(CollFile)
+        mtc.open_collection(Collection)
         mtc.working_dataframe = mtc.master_dataframe.loc[mtc.master_dataframe.survey == "enfield"]
         mtc.utm_crs = EPSG
         dataset = mtc.to_mt_data()
@@ -110,11 +110,11 @@ if not os.path.isdir(PltDir):
 
 PlotFmt = [".png", ".pdf", ".svg"]
 DPI = 600
-PdfCatalog = True
+PDFCatalog = True
+PDFCatalogName  = "Enfield_strikes.pdf"
 if not ".pdf" in PlotFmt:
-    PdfCatalog= False
+    PDFCatalog= False
     print("No PDF catalog because no pdf output!")
-PdfCatalogName  = "ANN_data.pdf"
 
 
 # No changes reuired after this line!
@@ -124,7 +124,6 @@ PdfCatalogName  = "ANN_data.pdf"
 # => print(plt.style.available)
 # """
 # cm = 1/2.54  # centimeters in inches
-
 # plt.style.use("seaborn-v0_8-paper")
 # mpl.rcParams["figure.dpi"] = 600
 # mpl.rcParams["axes.linewidth"] = 0.5
@@ -142,16 +141,20 @@ for fmt in PlotFmt:
     stations_plot.save_plot(PltDir+"StrikesAllData"+fmt, fig_dpi=600)
 
 
-strike_plot_dec = dataset.plot_strike(plot_type=1, print_stats=True)
+strike_plot_dec = dataset.plot_strike(plot_type=1,
+                                      print_stats=True,
+                                      text_pad=.005,
+                                      plot_pt = True,
+                                      plot_tipper = False,
+                                      plot_invariant = False)
 for fmt in PlotFmt:
     stations_plot.save_plot(PltDir+"StrikesPerDec"+fmt, fig_dpi=600)
 
-# pt_map = dataset.plot_phase_tensor_map(
-#     plot_tipper="yri",
-#     cx_source=cx.providers.Esri.NatGeoWorldMap,
-#     ellipse_size=.02,
-#     arrow_size=.05
-# )
+
 
 # # Loop over stations
 sit = 0
+
+if PDFCatalog:
+    pdf_list = []
+    # catalog = PdfPages(PDFCatalogName)

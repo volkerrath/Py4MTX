@@ -126,7 +126,7 @@ edi_files = mtp.get_edi_list(EdiDir)
 
 if PDFCatalog:
     pdf_list = []
-    catalog = PdfPages(PDFCatalogName)
+    # catalog = PdfPages(PDFCatalogName)
 
 
 for filename in edi_files:
@@ -157,7 +157,7 @@ for filename in edi_files:
 
     if PDFCatalog:
         pdf_list.append(name+PlotStrng+".pdf")
-        catalog.savefig(plot_response)
+        # catalog.savefig(plot_response)
 
     plt.clf()
 
