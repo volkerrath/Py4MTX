@@ -126,7 +126,7 @@ edi_files = mtp.get_edi_list(EdiDir)
 
 if PDFCatalog:
     pdf_list = []
-    # catalog = PdfPages(PDFCatalogName)
+    catalog = PdfPages(PDFCatalogName)
 
 
 for filename in edi_files:
@@ -149,14 +149,15 @@ for filename in edi_files:
             plot_tipper=PlotTipp,
             ellipse_colorby = PT_colorby,  #'phimin'
             ellipse_cmap = PT_cmap,
-            ellipse_range = PT_range)
+            ellipse_range = PT_range,
+            close_plot=False)
 
     for F in PlotFmt:
         plot_response.save_plot(name+PlotStrng+F, fig_dpi=DPI)
 
     if PDFCatalog:
         pdf_list.append(name+PlotStrng+".pdf")
-        # catalog.savefig(plot_response)
+        catalog.savefig(plot_response)
 
     plt.clf()
 
