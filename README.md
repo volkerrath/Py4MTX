@@ -55,6 +55,7 @@ _conda create --name Py4MTX --file Py4MTX.txt_
 
 This will set up a Python 3.11 environment with all dependencies for aempy. Don't forget to update also Py4MTX regularly, using _conda update --name Py4MTX--all_! 
 
+**Warning: the current versions of mtpy-v2 from conda and pip are not working correctly, please install it from source (https://github.com/MTgeophysics/mtpy-v2)!**
 
 (3) Activate this environment by:
 
@@ -71,7 +72,7 @@ _export PY4MT_ROOT='${HOME}/Py4MT/'_
 _export PY4MT_DATA='${HOME}/Py4MT/data/'_
 
 Keeping to this scheme makes life much easier when different persons work on the tools. Never change the sources within the repository, as this may produce conflicts when updating! 
-Please keep in mind that this is experimental software, and will contain errors. Use at your own risk! However, we will frequently update the repository correcting bugs, and (re)adding additional functionality. The tool is currently being merged.       
+Please keep in mind that this is experimental software, and will contain errors. Use at your own risk! However, we will frequently update the repository correcting bugs, and (re)adding additional functionality.  
  
 
 # On Jacobian-related functionalities including sensitivities
@@ -83,12 +84,14 @@ can be used.
 
 **Adapting $\texttt{ModEM}$ for Jacobian output**
 
-The Jacobian  of a data and parameter set is defined as $J_{ij} = \dfrac{\delta d_i}{\delta m_j}$. Before being able to use it for further
-action, a  few steps are necessary. $\texttt{ModEM}$ seeks the MAP solution to the usual Bayesian inverse problem [5] defined by:
+The Jacobian  of a data and parameter set is defined as 
+$J_{ij} = \frac{\delta d_i}{\delta m_j}$. 
+
+Before being able to use it for further action, a  few steps are necessary. $\texttt{ModEM}$ seeks the MAP solution to the usual Bayesian inverse problem [5] defined by:
 
 ```math
 \Theta  = {({\mathbf{g}}({\mathbf{p}}) - {\mathbf{d}})^T}{\mathbf{C}}_{d}^{-1}({\mathbf{g}}({\mathbf{p}}) - {\mathbf{d}}) + {({\mathbf{p}} - {{\mathbf{p}}_a})^T}{\mathbf{C}}_{p}^{-1}({\mathbf{p}} - {{\mathbf{p}}_a}) =
-\left||| {{\mathbf{C}}_{d}^{-1/2}({\mathbf{g}}({\mathbf{p}}) - {\mathbf{d}})} \right|||_2^2 + \left||| {{\mathbf{C}}_{p}^{-1/2}({\mathbf{p}} - {{\mathbf{p}}_a})} \right|||_2^2 
+\left| {{\mathbf{C}}_{d}^{-1/2}({\mathbf{g}}({\mathbf{p}}) - {\mathbf{d}})} \right|_2^2 + \left| {{\mathbf{C}}_{p}^{-1/2}({\mathbf{p}} - {{\mathbf{p}}_a})} \right|_2^2 
 ```
 
 
@@ -111,7 +114,7 @@ leads to the further transformation
 From this we havethe simplified objective function
 
 ```math
-\tilde{\Theta} ({\mathbf{\tilde{p},\tilde{d}}}) = {\left||| {{\mathbf{\tilde d - \tilde g(\tilde p)}}} \right|||_2^2} + \lambda {\left|| {{\mathbf{\tilde p}}} \right||_2^2}.
+\tilde{\Theta} ({\mathbf{\tilde{p},\tilde{d}}}) = {\left| {{\mathbf{\tilde d - \tilde g(\tilde p)}}} \right|_2^2} + \lambda {\left| {{\mathbf{\tilde p}}} \right|_2^2}.
 ```
 The Jacobian used within $\texttt{ModEM}$ is also calculated in the transformed system:
 
@@ -142,29 +145,26 @@ This may be a grave disadvantage in highly non-linear settings, but we believe t
 
 Here, the parameter vector $\mathbf{m}$ is the natural logarithm of resistivity. This Jacobian is first normalized with the data error 
 to obtain $\mathbf{\tilde{J}}$. While this procedure is uncontroversial, the definition of sensitivity is not unique, and various forms
-an be found in the literature, and $\texttt{JacoPyAn}$ calculates several of them:
+an be found in the literature. 
 
+$\texttt{Py4MTX}$ calculates "Euclidean" sensitivities, which are the most commonly used form. They are is defined as: 
 
-1. "Raw" sensitivities, defined as $S_j = \sum_{i=1,n_d} \tilde{J}_{ij}$. No absolute values are involved, hence there may be 
-both, positive and negative, elements. This does not conform to what we expect of sensitivity (positivity), but carries the most direct 
-information on the role of parameter $j$ in the inversion.
+$S^2_j = \sum_{i=1,n_d} \left|\tilde{J}_{ij}\right|^2=diag\left(\mathbf{\tilde{J}}^T\mathbf{\tilde{J}}\right)$.
 
-2. "Euclidean" sensitivities, which are the most commonly used form. They are is defined as: 
-$S^2_j = \sum_{i=1,n_d} \left||\tilde{J}_{ij}\right||^2=diag\left(\mathbf{\tilde{J}}^T\mathbf{\tilde{J}}\right)$.
-This solves the positivity issue of raw sensitivities. The square root of this sensitivity is often preferred, and implemented in 
-many popular inversion codes. 
-    
-3. Coverage. For this form, the absolute values of the Jacobian are used: $\sum_{i=1,n_d} \left||\tilde{J}_{ij}\right||$
+The square root of this sensitivity is often preferred, and is implemented in many popular inversion codes. Also availble
+is coverage where, the absolute values of the Jacobian are summed: 
 
-For a definition of a depth of investigation (DoI), or model blanking/shading, forms (2) and (3) can be used. This, however, requires the 
-choice of a threshold/scale is required, depending on the form applied. 
+$\sum_{i=1,n_d} \left|\tilde{J}_{ij}\right|$
+
+For a definition of a depth of investigation (DoI), or model blanking/shading, both forms can be used. The 
+choice of a threshold/scale, depending on the form applied. 
 
 When moving from the error-normalised Jacobian, $\mathbf{J}_d$ to sensitivity, there are more choices for further normalisation, depending 
 on the understanding and use of this parameter. All mentioned sensitivities are dependent on the underlying mesh. If sensitivity is to be interpreted 
 as an approximation to a continuous field over the volume of the model, it seems useful normalize by the cell volume. On the other hand, the effect of 
 the volume and its geometry is important when investigating the true role of this cell in the inversion. Given that the raw sensitivities for 
 different data types may vary 1-2 orders of magnitude), for some purposes (e.g., comparison of different data (sub)sets or definition of depths of 
-investigation) it may be convenient to do a final normalization by the maximum value in the model. All these options are implemented in the $\texttt{JacoPyAn}$ toolbox. 
+investigation) it may be convenient to do a final normalization by the maximum value in the model. All these options are implemented in the $\texttt{Py4MTX}$ toolbox. 
 
 _[1] M. Deal and G. Nolet (1996) “Nullspace shuttles", Geophysical Journal International, 124, 372–380_
 
