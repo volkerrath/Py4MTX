@@ -143,20 +143,15 @@ This may be a grave disadvantage in highly non-linear settings, but we believe t
 
 Here, the parameter vector $\mathbf{m}$ is the natural logarithm of resistivity. This Jacobian is first normalized with the data error 
 to obtain $\mathbf{\tilde{J}}$. While this procedure is uncontroversial, the definition of sensitivity is not unique, and various forms
-an be found in the literature, and $\texttt{JacoPyAn}$ calculates several of them:
+an be found in the literature. 
 
+$\texttt{Py4MTX}$ calculates "Euclidean" sensitivities, which are the most commonly used form. They are is defined as: 
 
-1. "Raw" sensitivities, defined as $S_j = \sum_{i=1,n_d} \tilde{J}_{ij}$. No absolute values are involved, hence there may be 
-both, positive and negative, elements. This does not conform to what we expect of sensitivity (positivity), but carries the most direct 
-information on the role of parameter $j$ in the inversion.
-
-2. "Euclidean" sensitivities, which are the most commonly used form. They are is defined as: 
 $S^2_j = \sum_{i=1,n_d} \left||\tilde{J}_{ij}\right||^2=diag\left(\mathbf{\tilde{J}}^T\mathbf{\tilde{J}}\right)$.
-This solves the positivity issue of raw sensitivities. The square root of this sensitivity is often preferred, and implemented in 
-many popular inversion codes. 
-    
-3. Coverage. For this form, the absolute values of the Jacobian are used: $\sum_{i=1,n_d} \left||\tilde{J}_{ij}\right||$
 
+The square root of this sensitivity is often preferred, and is implemented in many popular inversion codes. Also availble
+is coverage where, the absolute values of the Jacobian are summed: 
+$\sum_{i=1,n_d} \left||\tilde{J}_{ij}\right||$
 For a definition of a depth of investigation (DoI), or model blanking/shading, forms (2) and (3) can be used. This, however, requires the 
 choice of a threshold/scale is required, depending on the form applied. 
 
@@ -165,7 +160,7 @@ on the understanding and use of this parameter. All mentioned sensitivities are 
 as an approximation to a continuous field over the volume of the model, it seems useful normalize by the cell volume. On the other hand, the effect of 
 the volume and its geometry is important when investigating the true role of this cell in the inversion. Given that the raw sensitivities for 
 different data types may vary 1-2 orders of magnitude), for some purposes (e.g., comparison of different data (sub)sets or definition of depths of 
-investigation) it may be convenient to do a final normalization by the maximum value in the model. All these options are implemented in the $\texttt{JacoPyAn}$ toolbox. 
+investigation) it may be convenient to do a final normalization by the maximum value in the model. All these options are implemented in the $\texttt{Py4MTX}$ toolbox. 
 
 _[1] M. Deal and G. Nolet (1996) “Nullspace shuttles", Geophysical Journal International, 124, 372–380_
 
