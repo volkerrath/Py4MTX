@@ -54,7 +54,7 @@ or:
 _conda create --name Py4MTX --file Py4MTX.txt_
 
 This will set up a Python 3.11 environment with all dependencies for aempy. Don't forget to update also Py4MTX regularly, using _conda update --name Py4MTX--all_! 
-
+_Warning: the current versions of mtpy-v2 from conda and pip are not working correctly, please install it from source (https://github.com/MTgeophysics/mtpy-v2)!_
 
 (3) Activate this environment by:
 
@@ -71,7 +71,7 @@ _export PY4MT_ROOT='${HOME}/Py4MT/'_
 _export PY4MT_DATA='${HOME}/Py4MT/data/'_
 
 Keeping to this scheme makes life much easier when different persons work on the tools. Never change the sources within the repository, as this may produce conflicts when updating! 
-Please keep in mind that this is experimental software, and will contain errors. Use at your own risk! However, we will frequently update the repository correcting bugs, and (re)adding additional functionality. The tool is currently being merged.       
+Please keep in mind that this is experimental software, and will contain errors. Use at your own risk! However, we will frequently update the repository correcting bugs, and (re)adding additional functionality.  
  
 
 # On Jacobian-related functionalities including sensitivities
