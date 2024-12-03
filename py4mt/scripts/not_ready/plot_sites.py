@@ -13,13 +13,23 @@ adapte
 
 import os
 import sys
+
+
+import getpass
+import datetime
+
 import numpy as np
+
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
+
 from mtpy import MT, MTCollection, MTData
 
-PY4MT_DATA = os.environ["PY4MTX_DATA"]
-PY4MT_ROOT = os.environ["PY4MTX_ROOT"]
+PY4MTX_DATA = os.environ["PY4MTX_DATA"]
+PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
 
-mypath = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
+mypath = [PY4MTX_ROOT+"/py4mt/modules/", PY4MTX_ROOT+"/py4mt/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -35,36 +45,30 @@ print(titstrng+"\n\n")
 
 PY4MTX_DATA =  "/home/vrath/MT_Data/"
 
-
-EPSG = 32629
 WorkDir = PY4MTX_DATA+"/Enfield/"
 
 # Define the path to your EDI-files:
 EdiDir = WorkDir
 
 # Define the path to your MTCollection file:
-CollFile = WorkDir+"/enfield_collection.h5"
-
-FromEdis = True
-if FromEdis:
-    print(" Edifiles read from: %s" % EdiDir)
-    dataset = mtp.make_collection(edirname=EdiDir,
-                        collection="Collfile",
-                        metaid="enfield",
-                        survey="enfield",
-                        returndata=True,
-                        utm_epsg=EPSG
-                        )
-else:
-    with MTCollection() as mtc:
-        mtc.open_collection(CollFile)
-        mtc.working_dataframe = mtc.master_dataframe.loc[mtc.master_dataframe.survey == "enfield"]
-        mtc.utm_crs = EPSG
-        dataset = mtc.to_mt_data()
-
-
-
-
+# CollFile = WorkDir+"/enfield_collection.h5"
+# EPSG = 32629
+# FromEdis = True
+# if FromEdis:
+#     print(" Edifiles read from: %s" % EdiDir)
+#     dataset = mtp.make_collection(edirname=EdiDir,
+#                         collection="Collfile",
+#                         metaid="enfield",
+#                         survey="enfield",
+#                         returndata=True,
+#                         utm_epsg=EPSG
+#                         )
+# else:
+#     with MTCollection() as mtc:
+#         mtc.open_collection(CollFile)
+#         mtc.working_dataframe = mtc.master_dataframe.loc[mtc.master_dataframe.survey == "enfield"]
+#         mtc.utm_crs = EPSG
+#         dataset = mtc.to_mt_data()
 
 
 # Define the  path for saving  plots:
@@ -79,19 +83,17 @@ if not os.path.isdir(PltDir):
 
 PlotFmt = [".png", ".pdf"]
 DPI = 600
-PdfCatalog = True
+PDFCatalog = True
+PDFCatalogName  = PltDir+"Enfield_data.pdf"
 if not ".pdf" in PlotFmt:
-    PdfCatalog= False
+    PDFCatalog= False
     print("No PDF catalog because no pdf output!")
-PdfCatalogName  = "ANN_data.pdf"
-
 
 
 
 
 PlotStrng="_orig"
-# PerLimits = np.array([]) #None
-PerLimits = np.array([0.00003, 3000.]) # AMT
+PerLimits = np.array([0.00003, 3.]) # AMT
 # PerLimits = np.array([0.001,100000.]) #BBMT
 # PerLimits = (0.00003,10000.) #AMT+BBMT
 
@@ -103,7 +105,7 @@ PlotType = 2
 PlotTipp="yri"
 
 
-# RhoLimits = None
+#  RhoLimits = None
 RhoLimits = np.array([0.1, 10000.])
 
 Plottipper="yri"
@@ -119,23 +121,18 @@ PT_range = [-10.,10.,5.]
 
 # Construct list of EDI-files:
 
+edi_files = mtp.get_edi_list(EdiDir)
 
-edi_files = []
-files = os.listdir(EdiDir)
-for entry in files:
-    # print(entry)
-    if entry.endswith(".edi") and not entry.startswith("."):
-        edi_files.append(entry)
-edi_files = sorted(edi_files)
 
-if PdfCatalog:
-    pdf_list= []
-# Create an MT object
+if PDFCatalog:
+    pdf_list = []
+    # catalog = PdfPages(PDFCatalogName)
+
 
 for filename in edi_files:
     name, ext = os.path.splitext(filename)
-    file_i = EdiDir + filename
-
+    file_i = filename
+    # Create an MT object
     mt_obj = MT()
     mt_obj.read(file_i)
 
@@ -144,43 +141,33 @@ for filename in edi_files:
     elev = mt_obj.station_metadata.location.elevation
     print(" site %s at :  % 10.6f % 10.6f % 8.1f" % (name, lat, lon, elev ))
 
-    # z = mt.Z.z
-    # t = mt.Tipper.tipper
-
-    # for ii in np.arange(fs[0]):
-
-    #     if (abs(z[ii,:,:]).any()>1.e30):    z[ii,:,:] = 1.e30
-    #     if (abs(z[ii,:,:]).any()<1.e-30):   z[ii,:,:] = 1.e-30
-    #     if (abs(t[ii,:]).any()>1.e30):      t[ii,:] = 1.e30
-    #     if (abs(t[ii,:]).any()<1.e-30):     t[ii,:] = 1.e-30
-
-
-    # if no_err is True:
-    #     # mt.Z.z_err = 0.0001*np.ones_like( freq_list = mt.Z.freqnp.real(mt.Z.z))
-    #     # mt.Tipper.tipper_err = 0.0001*np.ones_like(np.real(mt.Tipper.tipper))
-    #     mt.Z.z_err = 0.001 * np.real(mt.Z.z)
-    #     mt.Tipper.tipper_err = 0.001 * np.real(mt.Tipper.tipper)
-
-
-    zplot = mt_obj.plot_mt_response(plot_num = PlotType,
-                                    fig_num = 2,
-                                    x_limits = PerLimits,
-                                    res_limits = RhoLimits,
-                                    tipper_limits = TipLimits,
-                                    plot_tipper=PlotTipp,
-                                    ellipse_colorby = PT_colorby,  #'phimin'
-                                    ellipse_cmap = PT_cmap,
-                                    ellipse_range = PT_range
-                                    )
-
+    plot_response =mt_obj.plot_mt_response(
+            plot_num = 2, fig_num = 2,
+            x_limits = PerLimits,
+            res_limits = RhoLimits,
+            tipper_limits = TipLimits,
+            plot_tipper=PlotTipp,
+            ellipse_colorby = PT_colorby,  #'phimin'
+            ellipse_cmap = PT_cmap,
+            ellipse_range = PT_range)
 
     for F in PlotFmt:
-        zplot.save_plot(PltDir+name+PlotStrng+F, fig_dpi=DPI)
+        plot_response.save_plot(name+PlotStrng+F, fig_dpi=DPI)
 
-    if PdfCatalog:
-        pdf_list.append(PltDir+name+PlotStrng+".pdf")
+    if PDFCatalog:
+        pdf_list.append(name+PlotStrng+".pdf")
+        # catalog.savefig(plot_response)
+
+    plt.clf()
+
 
 
 # Finally save figure
-if PdfCatalog:
-    utl.make_pdf_catalog(PltDir, PdfList=pdf_list, FileName=PltDir+PdfCatalogName)
+if PDFCatalog:
+    utl.make_pdf_catalog(PltDir, PdfList=pdf_list, FileName=PDFCatalogName)
+    print(pdf_list)
+    # d = catalog.infodict()
+    # d["Title"] =  PDFCatalogName
+    # d["Author"] = getpass.getuser()
+    # d["CreationDate"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    # catalog.close()

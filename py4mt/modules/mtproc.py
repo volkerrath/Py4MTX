@@ -25,6 +25,26 @@ from sys import exit as error
 from mtpy import MT , MTData, MTCollection
 
 
+
+def get_edi_list(edirname=None, sort=False):
+
+
+
+    edi_files = []
+    files = os.listdir(edirname)
+    for entry in files:
+        # print(entry)
+        if entry.endswith(".edi") and not entry.startswith("."):
+            edi_files.append(edirname+entry)
+    ns = np.size(edi_files)
+    if ns ==0:
+        error("No edi files found in "+edirname+"! Exit.")
+
+    if sort:
+        edifiles
+
+    return edi_files
+
 def make_data(edirname=None,
                     collection="./My_Collection.h5",
                     metaid="my_collection",
@@ -32,7 +52,30 @@ def make_data(edirname=None,
                     savedata=True,
                     utm_epsg=32629
                     ):
+    """
+    Make MTData object from edi-files, optionally save to MTCollection
 
+    Parameters
+    ----------
+    edirname : TYPE, optional
+        DESCRIPTION. The default is None.
+    collection : TYPE, optional
+        DESCRIPTION. The default is "./My_Collection.h5".
+    metaid : TYPE, optional
+        DESCRIPTION. The default is "my_collection".
+    survey : TYPE, optional
+        DESCRIPTION. The default is "my_survey".
+    savedata : TYPE, optional
+        DESCRIPTION. The default is True.
+    utm_epsg : TYPE, optional
+        DESCRIPTION. The default is 32629.
+
+    Returns
+    -------
+
+    mtd: MtData object
+
+    """
 
 
     edi_files = []
@@ -79,6 +122,30 @@ def make_collection(edirname=None,
                     returndata=True,
                     utm_epsg=32629
                     ):
+    """
+    Make MTCollectionlection from edi-files, optionally returns MTData object
+
+    Parameters
+    ----------
+    edirname : TYPE, optional
+        DESCRIPTION. The default is None.
+    collection : TYPE, optional
+        DESCRIPTION. The default is "./My_Collection.h5".
+    metaid : TYPE, optional
+        DESCRIPTION. The default is "my_collection".
+    survey : TYPE, optional
+        DESCRIPTION. The default is "my_survey".
+    returndata : TYPE, optional
+        DESCRIPTION. The default is True.
+    utm_epsg : TYPE, optional
+        DESCRIPTION. The default is 32629.
+
+    Returns
+    -------
+    mtd : TYPE
+        DESCRIPTION.
+
+    """
 
 
 

@@ -91,7 +91,7 @@ Before being able to use it for further action, a  few steps are necessary. $\te
 
 ```math
 \Theta  = {({\mathbf{g}}({\mathbf{p}}) - {\mathbf{d}})^T}{\mathbf{C}}_{d}^{-1}({\mathbf{g}}({\mathbf{p}}) - {\mathbf{d}}) + {({\mathbf{p}} - {{\mathbf{p}}_a})^T}{\mathbf{C}}_{p}^{-1}({\mathbf{p}} - {{\mathbf{p}}_a}) =
-\left| {{\mathbf{C}}_{d}^{-1/2}({\mathbf{g}}({\mathbf{p}}) - {\mathbf{d}})} \right|_2^2 + \left| {{\mathbf{C}}_{p}^{-1/2}({\mathbf{p}} - {{\mathbf{p}}_a})} \right|_2^2 
+ \left\Vert {{\mathbf{C}}_{d}^{-1/2}({\mathbf{g}}({\mathbf{p}}) - {\mathbf{d}})}  \right\Vert_2^2 +  \left\Vert {{\mathbf{C}}_{p}^{-1/2}({\mathbf{p}} - {{\mathbf{p}}_a})}  \right\Vert_2^2
 ```
 
 
@@ -114,7 +114,7 @@ leads to the further transformation
 From this we havethe simplified objective function
 
 ```math
-\tilde{\Theta} ({\mathbf{\tilde{p},\tilde{d}}}) = {\left| {{\mathbf{\tilde d - \tilde g(\tilde p)}}} \right|_2^2} + \lambda {\left| {{\mathbf{\tilde p}}} \right|_2^2}.
+\tilde{\Theta} ({\mathbf{\tilde{p},\tilde{d}}}) = { \left\Vert {{\mathbf{\tilde d - \tilde g(\tilde p)}}}  \right\Vert_2^2} + \lambda { \left\Vert {{\mathbf{\tilde p}}}  \right\Vert_2^2}.
 ```
 The Jacobian used within $\texttt{ModEM}$ is also calculated in the transformed system:
 

@@ -21,21 +21,24 @@ coordinates and elevations, e. g., for WALDIM analysis.
 """
 
 # Import required modules
-
 import os
 import sys
-from sys import exit as error
 
-# from mtpy.analysis.geometry import dimensionality
-#from mtpy.imaging.plotstrike import PlotStrike
+
+import getpass
+import datetime
 
 import numpy as np
+
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
+
+from mtpy import MT, MTCollection, MTData
 
 import contextily as cx
 
-from mtpy import MT , MTData, MTCollection
+
 
 
 PY4MTX_DATA = os.environ["PY4MTX_DATA"]
