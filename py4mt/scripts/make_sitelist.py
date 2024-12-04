@@ -30,6 +30,7 @@ import numpy as np
 
 from mtpy import MT , MTData, MTCollection
 
+
 PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
 PY4MTX_DATA = os.environ["PY4MTX_DATA"]
 

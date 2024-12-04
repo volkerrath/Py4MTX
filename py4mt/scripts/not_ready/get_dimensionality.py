@@ -27,9 +27,11 @@ import sys
 from sys import exit as error
 import csv
 
-from mtpy.core.mt import MT
-from mtpy.analysis.geometry import dimensionality
-from mtpy.imaging.plotstrike import PlotStrike
+
+
+from mtpy  import MT, MTCollection, MTData
+from mtpy.core.transfer_function import  Z
+
 
 import numpy as np
 import matplotlib as mpl
@@ -39,21 +41,21 @@ cm = 1/2.54  # centimeters in inches
 
 
 
-PY4MT_DATA = os.environ["PY4MT_DATA"]
-PY4MT_ROOT = os.environ["PY4MT_ROOT"]
+PY4MTX_DATA = os.environ["PY4MTX_DATA"]
+PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
 
-mypath = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
+mypath = [PY4MTX_ROOT+"/py4mt/modules/", PY4MTX_ROOT+"/py4mt/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0, pth)
 
 
-import util
+import util as utl
 from version import versionstrg
 
 
 version, _ = versionstrg()
-titstrng = util.print_title(version=version, fname=__file__, out=False)
+titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
 
@@ -61,7 +63,7 @@ print(titstrng+"\n\n")
 # Define the path to your EDI-files:
 EdiDir = r"/home/vrath/rjmcmc_mt/work/edi/"
 print(" Edifiles read from: %s" % EdiDir)
-    
+
 # Define the  path for saving  plots:
 PlotDir = EdiDir +"/plots/"
 print(" Plots written to: %s" % PlotDir)
@@ -137,6 +139,8 @@ for filename in edi_files:
     mt_obj = MT()
     mt_obj.read(file_i)
 
+    Z = mt_obj.Z
+
     east = mt_obj.east
     north = mt_obj.north
     freq = mt_obj.Z.freq
@@ -146,9 +150,9 @@ for filename in edi_files:
     east = mt_obj.station_metadata.location.east
     north = mt_obj.station_metadata.location.north
     print(" site %s at :  % 10.6f % 10.6f % 8.1f" % (name, lat, lon, elev ))
-    
+
 # use the phase tensor to determine which frequencies are 1D/2D/3D
-    dim = dimensionality(z_object=mt_obj.Z,
+    dim = Z.estimate_dimensionality(
                          skew_threshold=5,
                          # threshold in skew angle (degrees) to determine if
                          # data are 3d

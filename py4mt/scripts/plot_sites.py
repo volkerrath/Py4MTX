@@ -159,7 +159,7 @@ for filename in edi_files:
         pdf_list.append(name+PlotStrng+".pdf")
         # catalog.savefig(plot_response)
 
-    plt.clf()
+    #plt.clf()
 
 
 
