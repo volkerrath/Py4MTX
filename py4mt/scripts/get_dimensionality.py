@@ -120,11 +120,13 @@ for filename in edi_files:
                          )
 
     tmp = [(site, per[ind], dim[ind]) for ind in np.arange(len(dim))]
+    np.savetxt(fname = name+"_dims.dat", X=tmp, delimiter='\t', fmt="%s")
+    print("Dimension writen to", name+"_dims.dat")
     if sit == 0:
         dims = tmp
     else:
         dims = np.vstack((dims, tmp))
-    print(np.shape(dims))
+    # print(np.shape(dims))
 
     print("dimensionality:")
     nel_site = np.size(dim)
@@ -165,7 +167,7 @@ print("  number of 2-D elements = " + str(n2d) +
 print("  number of 3-D elements = " + str(n3d) +
       "  (" + str(round(100 * n3d / nel)) + "%)")
 
-np.savetxt(fname = EdiDir+"All_dims.dat", X=tmp, delimiter='\t', fmt="%s")
+np.savetxt(fname = EdiDir+"All_dims.dat", X=dims, delimiter='\t', fmt="%s")
 
 dimlist.append(["all_sites", nel,
                 round(100*n1d/nel),
