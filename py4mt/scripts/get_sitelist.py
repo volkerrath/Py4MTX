@@ -29,10 +29,10 @@ from mtpy.core.mt import MT
 import numpy as np
 
 
-PY4MT_ROOT = os.environ["PY4MT_ROOT"]
-PY4MT_DATA = os.environ["PY4MT_DATA"]
+PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
+PY4MTX_DATA = os.environ["PY4MTX_DATA"]
 
-mypath = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
+mypath = [PY4MTX_ROOT+"/py4mt/modules/", PY4MTX_ROOT+"/py4mt/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -40,7 +40,7 @@ for pth in mypath:
 import util
 from version import versionstrg
 
-PY4MT_DATA = os.environ["PY4MT_DATA"]
+PY4MTX_DATA = os.environ["PY4MTX_DATA"]
 
 version, _ = versionstrg()
 titstrng = util.print_title(version=version, fname=__file__, out=False)
@@ -55,7 +55,7 @@ if  "wal" in whatfor:
 
 
 # Define the path to your EDI-files and for the list produced
-EdiDir = PY4MT_ROOT+"/work/orig/"
+EdiDir = PY4MTX_ROOT+"/work/orig/"
 EdiDir = "/home/vrath/MT_Data/Enfield/"
 print(" Edifiles read from: %s" % EdiDir)
 CSVFile = EdiDir + "Sitelist.dat"

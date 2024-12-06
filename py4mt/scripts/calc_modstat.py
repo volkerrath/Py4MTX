@@ -23,8 +23,8 @@ import scipy.linalg as spl
 #import PVGeo as pvg
 
 
-PY4MT_ROOT = os.environ["PY4MT_ROOT"]
-mypath = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
+PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
+mypath = [PY4MTX_ROOT+"/PY4MTX/modules/", PY4MTX_ROOT+"/PY4MTX/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -44,19 +44,19 @@ version, _ = versionstrg()
 titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
-PY4MT_DATA =os.environ["PY4MT_DATA"]
+PY4MTX_DATA =os.environ["PY4MTX_DATA"]
 
-# PY4MT_DATA = fullpath you like..
+# PY4MTX_DATA = fullpath you like..
 
-blank =
+blank = 1.e-30
 
 
 Models = [
-    PY4MT_DATA+
+    PY4MTX_DATA+
     ]
 
-ModFileAvg  = PY4MT_DATA+"AvgFile.rho"
-ModFileVar  = PY4MT_DATA+"VarFile.rho"
+ModFileAvg  = PY4MTX_DATA+"AvgFile.rho"
+ModFileVar  = PY4MTX_DATA+"VarFile.rho"
 
 #total = 0
 #start = time.time()

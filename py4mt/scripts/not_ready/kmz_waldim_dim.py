@@ -25,11 +25,11 @@ import csv
 import numpy
 import simplekml
 
-PY4MT_DATA = os.environ["PY4MT_DATA"]
-PY4MT_ROOT = os.environ["PY4MT_ROOT"]
+PY4MTX_DATA = os.environ["PY4MTX_DATA"]
+PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
 
 
-mypath = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
+mypath = [PY4MTX_ROOT+"/py4mt/modules/", PY4MTX_ROOT+"/py4mt/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0, pth)
@@ -89,7 +89,7 @@ freqs = numpy.unique(data[:,3])
 print("freqs")
 print(freqs)
 
-icon_dir = PY4MT_ROOT + "/share/icons/"
+icon_dir = PY4MTX_ROOT + "/share/icons/"
 site_icon =  icon_dir + "placemark_circle.png"
 
 site_tcolor = simplekml.Color.white  # "#555500" #

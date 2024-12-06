@@ -33,9 +33,9 @@ import numpy as np
 from mtpy.core.mt import MT
 import mtpy.core.mt as mt
 
-PY4MT_DATA = os.environ["PY4MT_DATA"]
-PY4MT_ROOT = os.environ["PY4MT_ROOT"]
-mypath = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
+PY4MTX_DATA = os.environ["PY4MTX_DATA"]
+PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
+mypath = [PY4MTX_ROOT+"/py4mt/modules/", PY4MTX_ROOT+"/py4mt/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -50,9 +50,9 @@ titstrng = util.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
 # Define the path to your EDI-files:
-EdiDir_in = PY4MT_ROOT+"/work/orig/"
+EdiDir_in = PY4MTX_ROOT+"/work/orig/"
 print(" Edifiles read from: %s" % EdiDir_in)
-EdiDir_out =  PY4MT_ROOT+"/work/true-north/"
+EdiDir_out =  PY4MTX_ROOT+"/work/true-north/"
 print(" Edifiles written to: %s" % EdiDir_out)
 if not os.path.isdir(EdiDir_out):
     print(" File: %s does not exist, but will be created" % EdiDir_out)

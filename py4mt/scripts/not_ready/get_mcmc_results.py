@@ -41,11 +41,11 @@ from mtpy.core.mt import MT
 from mt_metadata import TF_XML
 
 
-PY4MT_ROOT = os.environ["PY4MT_ROOT"]
-PY4MT_DATA = os.environ["PY4MT_DATA"]
+PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
+PY4MTX_DATA = os.environ["PY4MTX_DATA"]
 
 
-myfilename = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
+myfilename = [PY4MTX_ROOT+"/py4mt/modules/", PY4MTX_ROOT+"/py4mt/scripts/"]
 for pth in myfilename:
     if pth not in sys.path:
         sys.path.insert(0,pth)

@@ -24,9 +24,9 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from cycler import cycler
 
-PY4MT_DATA = os.environ["PY4MT_DATA"]
-PY4MT_ROOT = os.environ["PY4MT_ROOT"]
-mypath = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]
+PY4MTX_DATA = os.environ["PY4MTX_DATA"]
+PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
+mypath = [PY4MTX_ROOT+"/py4mt/modules/", PY4MTX_ROOT+"/py4mt/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -36,7 +36,7 @@ import modem as mod
 import util as utl
 from version import versionstrg
 
-PY4MT_DATA = os.environ["PY4MT_DATA"]
+PY4MTX_DATA = os.environ["PY4MTX_DATA"]
 
 version, _ = versionstrg()
 titstrng = utl.print_title(version=version, fname=__file__, out=False)
@@ -53,7 +53,7 @@ cm = 1./2.54  # centimeters to inches
 # PredFile = r"/home/vrath/work/MT_Data/Ubaye/UB19VR/Ub19c_ZPT_02_NLCG_010"
 # ObsvFile = r"/home/vrath/work/MT_Data/Ubaye/UB19VR/Ub19c_ZPT"
 
-WorkDir = PY4MT_ROOT+"/work/modem/"
+WorkDir = PY4MTX_ROOT+"/work/modem/"
 PredFile = WorkDir+"Ann26_ZoPT_200_Alpha02_NLCG_013"
 ObsvFile = WorkDir+"Ann26_ZoPT"
 PlotFile = "ANN26_PhaseTensor"
