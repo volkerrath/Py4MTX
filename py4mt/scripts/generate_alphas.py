@@ -14,7 +14,7 @@ import numpy as np
 PY4MTX_DATA = os.environ["PY4MTX_DATA"]
 PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
 
-mypath = [PY4MTX_ROOT+"/modules/", PY4MTX_ROOT+"/scripts/"]
+mypath = [PY4MTX_ROOT+"/py4mt/modules/", PY4MTX_ROOT+"/py4mt/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -38,6 +38,7 @@ print(titstrng+"\n\n")
 
 total = 0
 ModDir_in = PY4MTX_DATA + "/Peru/Misti/"
+ModDir_in = "/home/vrath/Py4MTX/work/Misti_alphas/"
 # /home/vrath/MT_Data/Peru/Misti/
 ModDir_out = ModDir_in
 
@@ -55,7 +56,7 @@ dx, dy, dz, base_model, refmod, _ = mod.read_mod(ModFile_in, ".rho",trans="log10
 _, depth = mod.set_mesh(d=dz)
 
 beg_lin = np.array([100., 0.1,0.1])
-end_lin = np.array([25000., 0.8,0.8])
+end_lin = np.array([25000., 0.6,0.6])
 
 ax, ay = mod.generate_alphas(dz, beg_lin=beg_lin, end_lin=end_lin)
 

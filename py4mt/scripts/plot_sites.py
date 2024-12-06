@@ -44,9 +44,7 @@ titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
 PY4MTX_DATA =  "/home/vrath/MT_Data/"
-
 WorkDir = PY4MTX_DATA+"/Enfield/"
-
 # Define the path to your EDI-files:
 EdiDir = WorkDir
 
