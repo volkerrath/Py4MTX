@@ -41,7 +41,7 @@ def get_edi_list(edirname=None, sort=False):
         error("No edi files found in "+edirname+"! Exit.")
 
     if sort:
-        edifiles
+        edi_files
 
     return edi_files
 
@@ -99,15 +99,15 @@ def make_data(edirname=None,
 
         mt_obj = MT()
         mt_obj.read(file_i)
-        mtd.add_statiob(mt_obj)
-
+        mt_obj.survey_metadata.id = survey
+        mtd.add_station(mt_obj)
 
     mtd.utm_crs = utm_epsg
 
 
     if savedata:
         with MTCollection() as mtc:
-            mtc.open_collection("collection")
+            mtc.open_collection(collection)
             mtc.from_mt_data(mtd)
             # mtc.working_dataframe = mtc.master_dataframe.loc[mtc.master_dataframe.survey == survey]
             mtc.close_collection()

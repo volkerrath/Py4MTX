@@ -128,7 +128,7 @@ if PDFCatalog:
 
 
 for filename in edi_files:
-    name, ext = os.path.splitext(filename)
+    name, ext = os.path.splitext(os.path.basename(filename))
     file_i = filename
     # Create an MT object
     mt_obj = MT()
@@ -139,7 +139,7 @@ for filename in edi_files:
     elev = mt_obj.station_metadata.location.elevation
     print(" site %s at :  % 10.6f % 10.6f % 8.1f" % (name, lat, lon, elev ))
 
-    plot_response =mt_obj.plot_mt_response(
+    plot_response = mt_obj.plot_mt_response(
             plot_num = 2, fig_num = 2,
             x_limits = PerLimits,
             res_limits = RhoLimits,
@@ -150,18 +150,19 @@ for filename in edi_files:
             ellipse_range = PT_range,
             close_plot=False)
 
+    plt.show()
     for F in PlotFmt:
-        plot_response.save_plot(name+PlotStrng+F, fig_dpi=DPI)
+        plot_response.save_plot(PltDir+name+PlotStrng+F, fig_dpi=DPI)
 
     if PDFCatalog:
-        pdf_list.append(name+PlotStrng+".pdf")
-        # catalog.savefig(plot_response)
+        pdf_list.append(PltDir+name+PlotStrng+".pdf")
+        # catalog.savefig()
 
-    #plt.clf()
+    plt.clf()
 
 
 
-# Finally save figure
+# Finally save to multipage catalog
 if PDFCatalog:
     utl.make_pdf_catalog(PltDir, PdfList=pdf_list, FileName=PDFCatalogName)
     print(pdf_list)

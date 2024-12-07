@@ -71,9 +71,12 @@ PY4MTX_DATA =  "/home/vrath/MT_Data/"
 
 EPSG = 32629
 WorkDir = PY4MTX_DATA+"/Enfield/"
+surveyname = "enfield"
 
 # Define the path to your EDI-files:
 EdiDir = WorkDir
+file_list = mtp.get_edi_list(EdiDir)
+ns = len(file_list)
 
 # Define the path to your MTCollection file:
 Collection = WorkDir+"/enfield_collection.h5"
@@ -81,13 +84,23 @@ Collection = WorkDir+"/enfield_collection.h5"
 FromEdis = True
 if FromEdis:
     print(" Edifiles read from: %s" % EdiDir)
-    dataset = mtp.make_collection(edirname=EdiDir,
-                        collection="Collfile",
+
+    dataset = mtp.make_data(edirname=EdiDir,
+                        collection=Collection,
                         metaid="enfield",
-                        survey="enfield",
-                        returndata=True,
+                        survey=surveyname,
+                        savedata=True,
                         utm_epsg=EPSG
                         )
+
+    # dataset = mtp.make_collection(
+    #                     collection=Collection,
+    #                     metaid="enfield",
+    #                     survey=surveyname,
+    #                     returndata=True,
+    #                     utm_epsg=EPSG
+    #                     )
+
 else:
     with MTCollection() as mtc:
         mtc.open_collection(Collection)
@@ -138,23 +151,27 @@ for fmt in PlotFmt:
 
 strike_plot_all = dataset.plot_strike()
 for fmt in PlotFmt:
-    stations_plot.save_plot(PltDir+"StrikesAllData"+fmt, fig_dpi=600)
+    strike_plot_all.save_plot(PltDir+"StrikesAllData"+fmt, fig_dpi=600)
 
 
 strike_plot_dec = dataset.plot_strike(plot_type=1,
                                       print_stats=True,
                                       text_pad=.005,
                                       plot_pt = True,
-                                      plot_tipper = False,
-                                      plot_invariant = False)
+                                      plot_tipper = True,
+                                      plot_invariant = True,
+                                      plot_orientation="v")
 for fmt in PlotFmt:
-    stations_plot.save_plot(PltDir+"StrikesPerDec"+fmt, fig_dpi=600)
-
-
-
-# # Loop over stations
-sit = 0
+    strike_plot_dec.save_plot(PltDir+"StrikesPerDec"+fmt, fig_dpi=600)
 
 if PDFCatalog:
     pdf_list = []
     # catalog = PdfPages(PDFCatalogName)
+
+# # # Loop over stations
+    for sit in file_list:
+        site, _ = os.path.splitext(os.path.basename(sit))
+        data = dataset.get_subset([surveyname+"."+site])
+        strike_plot_site = data.plot_strike()
+        for fmt in PlotFmt:
+            strike_plot_site.save_plot(PltDir+"Strikes_"+site+fmt, fig_dpi=600)
