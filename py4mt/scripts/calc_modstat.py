@@ -24,7 +24,7 @@ import scipy.linalg as spl
 
 
 PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
-mypath = [PY4MTX_ROOT+"/PY4MTX/modules/", PY4MTX_ROOT+"/PY4MTX/scripts/"]
+mypath = [PY4MTX_ROOT+"/py4mt/modules/", PY4MTX_ROOT+"/py4mt/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -64,7 +64,7 @@ ModFileVar  = PY4MTX_DATA+"VarFile.rho"
 imod = -1
 for f in Models:
     imod += 1
-    dx, dy, dz, rho, ref, trans = mod.read_mod(file=f, modext=".rho", trans="LOGE", blank=1.e-30, out=True):
+    dx, dy, dz, rho, ref, trans = mod.read_mod(file=f, modext=".rho", trans="LOG10", blank=1.e-30, out=True):
     dims = np.shape(rho)
     aircells = np.where(rho>rhoair)
 
@@ -80,6 +80,22 @@ for f in Models:
 
 ModAvg = np.mean(ModEns, axis=1).reshape(dims)
 ModVar = np.var(ModEns, axis =1).reshape(dims)
+
+ModMed = np.median(ModEns, axis =1).reshape(dims)
+"""
+Percentiles represent the area under the normal curve, increasing from left to right. Each
+standard deviation represents a fixed percentile. Thus, rounding to two decimal places,
+−3σ is the 0.13th percentile,
+−2σ the 2.28th percentile,
+−1σ the 15.87th percentile,
+0σ  the 50th percentile (median of the distribution),
++1σ the 84.13th percentile,
++2σ the 97.72nd percentile,
++3σ the 99.87th percentile.
+"""
+ModQnt = [np.percentile(ModEns, 15.9, axis =1).reshape(dims),
+          np.percentile(ModEns, 50., axis =1).reshape(dims),
+          np.percentile(ModEns, 84.1, axis =1).reshape(dims)]
 
 
 if "mod" in OutFormat.lower():

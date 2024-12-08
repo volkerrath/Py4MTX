@@ -62,23 +62,23 @@ print(titstrng+"\n\n")
 
 PlotFmt = ".pdf" #".png"
 RhoPlotLim = [1, 10000]
-DepthPlotLim = 25000.
+DepthPlotLim = 8000.
 LogDepth = False
 ColorMap ="rainbow"
 #ColorMap ="viridis"
 
-PdfC = True
+PDFC = True
 if not ".pdf" in PlotFmt:
-    PdfC = False
+    PDFC = False
     print("No PDF catalog because no pdf output!")
 OutStrng = "_test"
 
 DataOut = True
-DataName= "test_results.dat"
+DataName= "enfield_results.dat"
 WRef = False
 
 
-PdfCName    = "Test_results.pdf"
+PDFCatalogName    = "Enfield_results.pdf"
 EdiDir  = r"/home/vrath/rjmcmc_mt/work/enfield/edis/"
 ResDir  = r"/home/vrath/rjmcmc_mt/work/enfield/results/" #Mar02/out_edited/"
 PltDir  = r"/home/vrath/rjmcmc_mt/work/enfield/plots/"  #r"/home/vrath/Limerick2022/work/Mar02/output/"
@@ -99,7 +99,7 @@ for entry in files:
 result_files = sorted(result_files)
 nfiles = len(result_files)
 
-if PdfC:
+if PDFC:
     pdf_list= []
     for filename in result_files:
         name, ext = os.path.splitext(filename)
@@ -174,5 +174,5 @@ if DataOut:
     fmt = "%s  %14.7f  %14.7f  %15.5f  %18.5e  %18.5e %18.5e  %18.5e  %18.5e"
     np.savetxt(PltDir+DataName, data_all, delimiter="  ", header=header, fmt=fmt)
 
-if PdfC:
-    util.make_pdf_catalog(PltDir, PdfList=pdf_list, FileName=PltDir+PdfCName)
+if PDFC:
+    util.make_pdf_catalog(PltDir, PdfList=pdf_list, FileName=PltDir+PDFCatalogName)

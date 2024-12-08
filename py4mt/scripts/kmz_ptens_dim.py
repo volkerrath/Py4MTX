@@ -30,14 +30,15 @@ titstrng = util.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
 
+
 # Define the path to your EDI-files
-EdiDir = r"/home/vrath/work/MT_Data/Opf/2023/edi/"
+EdiDir  = r"/home/vrath/rjmcmc_mt/work/enfield/edis/"
 print(" Edifiles read from: %s" % EdiDir)
-KmlDir =  r"/home/vrath/work/MT_Data/Opf/2023/"
-KmlFile = "Opf2023_PTDIM"
+KmlDir =  r"/home/vrath/rjmcmc_mt/work/enfield/"
+KmlFile = "Enfield_PTDIM"
 
 # open file and read the content in a list
-SiteFile = EdiDir + "Sitelist.csv"
+SiteFile = EdiDir + "Sitelist.dat"
 
 tmp = []
 with open(SiteFile, "r") as f:
@@ -58,7 +59,7 @@ for row in tmp:
 kml = False
 kmz = True
 
-icon_dir = PY4MTX_ROOT + "/share/icons/"
+icon_dir = PY4MTX_ROOT + "/py4mt/share/icons/"
 site_icon =  icon_dir + "placemark_circle.png"
 
 site_tcolor = simplekml.Color.white  # "#555500" #
@@ -90,16 +91,16 @@ site_iref = kml.addfile(site_icon)
 # Determine unique freqs.
 
 freqs = []
-for site in places:    
+for site in places:
     nam = site[0]
     freqs = []
-    with open(EdiDir+nam+"_dim.dat", "r") as f:
+    with open(EdiDir+nam+"_dims.dat", "r") as f:
         tmp = csv.reader(f)
 
         for site in tmp:
-            site = site[0].split()            
-            freqs.append(float(site[0]))
-            
+            site = site[0].split()
+            freqs.append(float(site[1]))
+
 freqs = numpy.unique(freqs)
 
 nam = []
@@ -114,29 +115,29 @@ for site in places:
 
     frq = []
     dim = []
-    with open(EdiDir+site[0]+"_dim.dat", "r") as f:
+    with open(EdiDir+site[0]+"_dims.dat", "r") as f:
         tmp = csv.reader(f)
         for site in tmp:
-            site = site[0].split() 
-            frq.append(float(site[0]))
-            dim.append(int(site[1]))
-            
-        dim = numpy.asarray(dim) 
-        frq = numpy.asarray(frq)    
+            site = site[0].split()
+            frq.append(float(site[1]))
+            dim.append(int(site[2]))
+
+        dim = numpy.asarray(dim)
+        frq = numpy.asarray(frq)
         lst = numpy.vstack((frq, dim))
-        
+
     sit.append(lst)
-         
+
 
 for f in freqs:
     Nams = []
     Lats = []
     Lons = []
     Dims = []
-    
+
 
     ff = numpy.log10(f)
-   
+
     if ff < 0:
         freq_strng = "Per"+str(int(round(1/f,0)))+"s"
     else:
@@ -147,7 +148,7 @@ for f in freqs:
     for isit in numpy.arange(ns):
         sf, sd = sit[isit]
         nf = numpy.shape(sf)[0]
-    
+
         for ii in numpy.arange(nf):
             fs = numpy.log10(sf[ii])
             # print(ff,fs)
@@ -157,9 +158,9 @@ for f in freqs:
                 Lats.append(lat[isit])
                 Lons.append(lon[isit])
                 Dims.append(int(sd[ii]))
-                
+
         # F.append([f, Nams, Lats, Lons, Dims])
- 
+
     nsites =len(Nams)
     # print (nsites)
     for ii in numpy.arange(nsites):
@@ -193,9 +194,9 @@ for f in freqs:
             site.style.iconstyle.icon.href = site_icon
             site.style.iconstyle.scale = site_iscale
             site.style.iconstyle.color = site_icolor_3d
-            site.description ="3-D"               
- 
-    
+            site.description ="3-D"
+
+
 kml_outfile = KmlDir + KmlFile
 
 # Save raw kml file:
