@@ -79,11 +79,9 @@ WRef = False
 
 
 PdfCName    = "Test_results.pdf"
-EdiDir  = r"/home/vrath/rjmcmc_mt/work/edi/"
-ResDir  = r"/home/vrath/rjmcmc_mt/work/results/" #Mar02/out_edited/"
-
-
-PltDir   = r"/home/vrath/rjmcmc_mt/work/plots/"  #r"/home/vrath/Limerick2022/work/Mar02/output/"
+EdiDir  = r"/home/vrath/rjmcmc_mt/work/enfield/edis/"
+ResDir  = r"/home/vrath/rjmcmc_mt/work/enfield/results/" #Mar02/out_edited/"
+PltDir  = r"/home/vrath/rjmcmc_mt/work/enfield/plots/"  #r"/home/vrath/Limerick2022/work/Mar02/output/"
 
 edi_files = []
 files = os.listdir(EdiDir)
