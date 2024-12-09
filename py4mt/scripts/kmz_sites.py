@@ -26,20 +26,21 @@ import util
 from version import versionstrg
 
 version, _ = versionstrg()
-titstrng = util.print_title(version=version, fname=__file__, out=False)
+titstrng = util.print_title(version=version, fsf=__file__, out=False)
 print(titstrng+"\n\n")
 
-
-
-# Define the path to your EDI-files
-EdiDir  = r"/home/vrath/rjmcmc_mt/work/enfield/edis/"
+PY4MTX_DATA =  "/home/vrath/MT_Data/"
+WorkDir = PY4MTX_DATA+"/Enfield/"
+EdiDir = WorkDir+"/edis/"
 print(" Edifiles read from: %s" % EdiDir)
-KmlDir =  r"/home/vrath/rjmcmc_mt/work/enfield/"
-KmlFile = "Enfield_PTDIM"
-
-
 # open file and read the content in a list
 SiteFile = EdiDir + "Sitelist.dat"
+
+KmlDir =  WorkDir
+KmlFile = "Enfield_data"
+
+PltDir = WorkDir+"/plots/"
+
 
 tmp = []
 with open(SiteFile, "r") as f:
@@ -59,6 +60,36 @@ for row in tmp:
 # Define the path for saving  kml files
 kml = False
 kmz = True
+
+AddImages = []
+if AddImages.len>0:
+    PltDir = WorkDir+"/plots/"
+    ImageWidth= 800
+
+
+
+AddSpecial = False
+if AddSpecial:
+    SpcDir = WorkDir
+    SpecialDat = SpcDir+"Special.dat"
+    specials = []
+    with open(SpecialDat) as file:
+        for line in file:
+            tmp = line.split(",")
+            tmp[0] = float(tmp[0])
+            tmp[1] = float(tmp[1])
+            tmp[2] = tmp[2].strip()
+            tmp[3] = tmp[3].strip()
+            tmp[4] = float(tmp[4])
+            tmp[5] = tmp[5].strip()
+            specials.append(tmp)
+
+    print("specials:",specials)
+
+
+
+
+
 
 icon_dir = PY4MTX_ROOT + "/py4mt/share/icons/"
 site_icon =  icon_dir + "placemark_circle.png"
@@ -143,7 +174,7 @@ for f in freqs:
         freq_strng = "Per"+str(int(round(1/f,0)))+"s"
     else:
         freq_strng = "Freq"+str(int(round(f,0)))+"Hz"
-    freqfolder = kml.newfolder(name=freq_strng)
+    freqfolder = kml.newfolder(sf=freq_strng)
 
     ns = len(nam)
     for isit in numpy.arange(ns):
@@ -165,7 +196,7 @@ for f in freqs:
     nsites =len(Nams)
     # print (nsites)
     for ii in numpy.arange(nsites):
-        site = freqfolder.newpoint(name=Nams[ii])
+        site = freqfolder.newpoint(sf=Nams[ii])
         site.coords = [(Lons[ii], Lats[ii], 0.)]
 
         if Dims[ii]==0:
@@ -197,6 +228,38 @@ for f in freqs:
             site.style.iconstyle.color = site_icolor_3d
             site.description ="3-D"
 
+
+        if AddImages.len>0:
+            for item in AddImages:
+                if "dat" in item:
+                    d_plot = PltDir+sf+".png"
+                    if os.path.exists(d_plot)==True:
+                        src= kml.addfile(d_plot)
+                        imstring ='<img width="'+str(ImageWidth)+'" align="left" src="' + src + '"/>'
+                        # imstring = '<img width="1200" align="left" src="' + src + '"/>'
+                        d.description = (imstring)
+                    else:
+                        print(d_plot+ " does not exist!")
+
+                if "str" in item:
+                    d_plot = PltDir+sf+"_strike.png"
+                    if os.path.exists(dn_plot)==True:
+                        src= kml.addfile(d_plot)
+                        imstring ='<img width="'+str(ImageWidth)+'" align="left" src="' + src + '"/>'
+                        # imstring = '<img width="1200" align="left" src="' + src + '"/>'
+                        d.description = (imstring)
+                    else:
+                        print(d_plot+ " does not exist!")
+
+                if "mod" in item:
+                    d_plot = PltDir+sf+"_model.png"
+                    if os.path.exists(d_plot)==True:
+                        src= kml.addfile(d_plot)
+                        imstring ='<img width="'+str(ImageWidth)+'" align="left" src="' + src + '"/>'
+                        # imstring = '<img width="1200" align="left" src="' + src + '"/>'
+                        d.description = (imstring)
+                    else:
+                        print(d_plot+ " does not exist!")
 
 kml_outfile = KmlDir + KmlFile
 
