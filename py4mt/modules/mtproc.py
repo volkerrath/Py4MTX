@@ -26,7 +26,7 @@ from mtpy import MT , MTData, MTCollection
 
 
 
-def get_edi_list(edirname=None, sort=False):
+def get_edi_list(edirname=None, sort=False, fullpath=True):
 
 
 
@@ -35,7 +35,11 @@ def get_edi_list(edirname=None, sort=False):
     for entry in files:
         # print(entry)
         if entry.endswith(".edi") and not entry.startswith("."):
-            edi_files.append(edirname+entry)
+            if fullpath:
+                edi_files.append(edirname+entry)
+            else:
+                edi_files.append(entry)
+
     ns = np.size(edi_files)
     if ns ==0:
         error("No edi files found in "+edirname+"! Exit.")

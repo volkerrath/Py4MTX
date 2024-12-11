@@ -60,28 +60,34 @@ version, _ = versionstrg()
 titstrng = util.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
-PlotFmt = ".pdf" #".png"
-RhoPlotLim = [1, 10000]
-DepthPlotLim = 8000.
+PY4MTX_DATA =  "/home/vrath/MT_Data/"
+WorkDir = PY4MTX_DATA+"/Ubaye_best/"
+# Define the path to your EDI-files:
+EdiDir = WorkDir+"/edis/"
+print("Edifiles read from: %s" % EdiDir)
+
+ResDir = WorkDir+"/transdim/results_impedance/"
+PltDir = WorkDir+"/plots/"
+
+
+PlotFmt = ".png"   #.pdf", ".png"
+RhoPlotLim = [0.1, 10000]
+DepthPlotLim =20000.
 LogDepth = False
 ColorMap ="rainbow"
 #ColorMap ="viridis"
 
-PDFC = True
+PDFCatalog = True
+PDFCatalogName    = WorkDir+"Ubaye_results.pdf"
 if not ".pdf" in PlotFmt:
-    PDFC = False
+    PDFCatalog = False
     print("No PDF catalog because no pdf output!")
-OutStrng = "_test"
+OutStrng = "_mod"
 
 DataOut = True
-DataName= "enfield_results.dat"
+DataName= WorkDir+"Ubaye_results.dat"
 WRef = False
 
-
-PDFCatalogName    = "Enfield_results.pdf"
-EdiDir  = r"/home/vrath/rjmcmc_mt/work/enfield/edis/"
-ResDir  = r"/home/vrath/rjmcmc_mt/work/enfield/results/" #Mar02/out_edited/"
-PltDir  = r"/home/vrath/rjmcmc_mt/work/enfield/plots/"  #r"/home/vrath/Limerick2022/work/Mar02/output/"
 
 edi_files = []
 files = os.listdir(EdiDir)
@@ -95,11 +101,10 @@ files = os.listdir(ResDir)
 for entry in files:
     if not entry.startswith("."):
         result_files.append(entry)
-
 result_files = sorted(result_files)
 nfiles = len(result_files)
 
-if PDFC:
+if PDFCatalog:
     pdf_list= []
     for filename in result_files:
         name, ext = os.path.splitext(filename)
@@ -174,5 +179,5 @@ if DataOut:
     fmt = "%s  %14.7f  %14.7f  %15.5f  %18.5e  %18.5e %18.5e  %18.5e  %18.5e"
     np.savetxt(PltDir+DataName, data_all, delimiter="  ", header=header, fmt=fmt)
 
-if PDFC:
+if PDFCatalog:
     util.make_pdf_catalog(PltDir, PdfList=pdf_list, FileName=PltDir+PDFCatalogName)

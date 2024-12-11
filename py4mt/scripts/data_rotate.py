@@ -41,24 +41,21 @@ for pth in mypath:
         sys.path.insert(0,pth)
 
 
-import util
+import util as utl
+import mtproc as mtp
 from version import versionstrg
 
 
 version, _ = versionstrg()
-titstrng = util.print_title(version=version, fname=__file__, out=False)
+titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
 # Define the path to your EDI-files:
-EdiDir_in = PY4MTX_ROOT+"/work/orig/"
-
-
 PY4MTX_DATA =  "/home/vrath/MT_Data/"
 WorkDir = PY4MTX_DATA+"/Ubaye_best/"
-EdiDirIn = WorkDir+"/edis/"
-
+EdiDir_in = WorkDir+"/edis/"
 print(" Edifiles read from: %s" % EdiDir_in)
-EdiDir_out =  EdiDirIn+"/with_pt/"
+EdiDir_out =  EdiDir_in+"/edis_mtpy/"
 print(" Edifiles written to: %s" % EdiDir_out)
 if not os.path.isdir(EdiDir_out):
     print(" File: %s does not exist, but will be created" % EdiDir_out)
@@ -74,14 +71,10 @@ DecDeg = True
 # No changes required after this line!
 
 # Construct list of EDI-files:
-edi_files = []
-# input EDI-file. As the actual call is dine using the "eval" function,
-files = os.listdir(EdiDir_in)
-for entry in files:
-    # print(entry)
-    if entry.endswith(".edi") and not entry.startswith("."):
-        if SearchStrng in entry:
-            edi_files.append(entry)
+
+# Construct list of EDI-files:
+
+edi_files = mtp.get_edi_list(EdiDir_in, fullpath=False)
 ns = np.size(edi_files)
 
 # Enter loop:

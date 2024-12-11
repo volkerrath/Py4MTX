@@ -32,10 +32,14 @@ print(titstrng+"\n\n")
 
 
 # Define the path to your EDI-files
-EdiDir  = r"/home/vrath/rjmcmc_mt/work/enfield/edis/"
-print(" Edifiles read from: %s" % EdiDir)
-KmlDir =  r"/home/vrath/rjmcmc_mt/work/enfield/"
-KmlFile = "Enfield_PTDIM"
+
+
+PY4MTX_DATA =  "/home/vrath/MT_Data/"
+WorkDir = PY4MTX_DATA+"/Ubaye_best/"
+EdiDir = WorkDir+"/edis/"
+print("Edifiles read from: %s" % EdiDir)
+KmlDir =  WorkDir
+KmlFile = "Ubaye_PTDIM"
 
 # open file and read the content in a list
 SiteFile = EdiDir + "Sitelist.dat"

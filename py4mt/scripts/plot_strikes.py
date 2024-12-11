@@ -73,13 +73,17 @@ EPSG = 32629
 WorkDir = PY4MTX_DATA+"/Enfield/"
 surveyname = "enfield"
 
+PY4MTX_DATA =  "/home/vrath/MT_Data/"
+WorkDir = PY4MTX_DATA+"/Ubaye_best/"
+EdiDir = WorkDir+"/edis/"
+surveyname = "ubaye"
+
 # Define the path to your EDI-files:
-EdiDir = WorkDir
 file_list = mtp.get_edi_list(EdiDir)
 ns = len(file_list)
 
 # Define the path to your MTCollection file:
-Collection = WorkDir+"/enfield_collection.h5"
+Collection = WorkDir+"/ubaye_collection.h5"
 
 FromEdis = True
 if FromEdis:
@@ -87,7 +91,7 @@ if FromEdis:
 
     dataset = mtp.make_data(edirname=EdiDir,
                         collection=Collection,
-                        metaid="enfield",
+                        metaid="ubaye",
                         survey=surveyname,
                         savedata=True,
                         utm_epsg=EPSG
@@ -124,7 +128,7 @@ if not os.path.isdir(PltDir):
 PlotFmt = [".png", ".pdf", ".svg"]
 DPI = 600
 PDFCatalog = True
-PDFCatalogName  = "Enfield_strikes.pdf"
+PDFCatalogName  = "Ubaye_strikes.pdf"
 if not ".pdf" in PlotFmt:
     PDFCatalog= False
     print("No PDF catalog because no pdf output!")
@@ -174,4 +178,4 @@ if PDFCatalog:
         data = dataset.get_subset([surveyname+"."+site])
         strike_plot_site = data.plot_strike()
         for fmt in PlotFmt:
-            strike_plot_site.save_plot(PltDir+"Strikes_"+site+fmt, fig_dpi=600)
+            strike_plot_site.save_plot(PltDir+site+"_strikes"+fmt, fig_dpi=600)
