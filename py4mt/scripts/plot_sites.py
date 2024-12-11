@@ -43,10 +43,11 @@ version, _ = versionstrg()
 titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
+
 PY4MTX_DATA =  "/home/vrath/MT_Data/"
-WorkDir = PY4MTX_DATA+"/Enfield/"
-# Define the path to your EDI-files:
-EdiDir = WorkDir
+WorkDir = PY4MTX_DATA+"/Ubaye_best/"
+EdiDir = WorkDir+"/edis/"
+
 
 # Define the path to your MTCollection file:
 # CollFile = WorkDir+"/enfield_collection.h5"
@@ -82,7 +83,7 @@ if not os.path.isdir(PltDir):
 PlotFmt = [".png", ".pdf"]
 DPI = 600
 PDFCatalog = True
-PDFCatalogName  = PltDir+"Enfield_data.pdf"
+PDFCatalogName  = PltDir+"Ubaye_data.pdf"
 if not ".pdf" in PlotFmt:
     PDFCatalog= False
     print("No PDF catalog because no pdf output!")
@@ -90,16 +91,16 @@ if not ".pdf" in PlotFmt:
 
 
 
-PlotStrng="_orig"
-PerLimits = np.array([0.00003, 3.]) # AMT
+PlotStrng="_data"
+# PerLimits = np.array([0.00003, 3.]) # AMT
 # PerLimits = np.array([0.001,100000.]) #BBMT
-# PerLimits = (0.00003,10000.) #AMT+BBMT
+PerLimits = (0.00003,1000.) #AMT+BBMT
 
 # What should be plotted?
 # 1 = yx and xy; 2 = all 4 components
 # 3 = off diagonal + determinant
 
-PlotType = 2
+PlotType = 3
 PlotTipp="yri"
 
 

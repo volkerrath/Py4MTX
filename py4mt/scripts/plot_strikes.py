@@ -134,7 +134,7 @@ if not ".pdf" in PlotFmt:
     print("No PDF catalog because no pdf output!")
 
 
-# No changes reuired after this line!
+# No changes required after this line!
 
 # """
 # Determine graphical parameter. not working with py4mt?

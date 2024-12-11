@@ -57,8 +57,12 @@ if  "wal" in whatfor:
 
 
 # Define the path to your EDI-files and for the list produced
-EdiDir = PY4MTX_ROOT+"/work/orig/"
-EdiDir = "/home/vrath/MT_Data/Enfield/"
+
+
+PY4MTX_DATA =  "/home/vrath/MT_Data/"
+WorkDir = PY4MTX_DATA+"/Ubaye_best/"
+EdiDir = WorkDir+"/edis/"
+
 print(" Edifiles read from: %s" % EdiDir)
 CSVFile = EdiDir + "Sitelist.dat"
 print("Writing data to file: " + CSVFile)

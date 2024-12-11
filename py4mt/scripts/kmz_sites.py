@@ -30,14 +30,14 @@ titstrng = util.print_title(version=version, fsf=__file__, out=False)
 print(titstrng+"\n\n")
 
 PY4MTX_DATA =  "/home/vrath/MT_Data/"
-WorkDir = PY4MTX_DATA+"/Enfield/"
+WorkDir = PY4MTX_DATA+"/Ubaye_best/"
 EdiDir = WorkDir+"/edis/"
 print(" Edifiles read from: %s" % EdiDir)
 # open file and read the content in a list
 SiteFile = EdiDir + "Sitelist.dat"
 
 KmlDir =  WorkDir
-KmlFile = "Enfield_data"
+KmlFile = "Ubaye_data"
 
 PltDir = WorkDir+"/plots/"
 
