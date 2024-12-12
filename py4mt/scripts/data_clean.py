@@ -64,7 +64,7 @@ if not os.path.isdir(EdiDir_out):
 String_out = ""
 SearchStrng = ".edi"
 
-bad = 1.e10
+bad = 0.
 
 # No changes required after this line!
 
@@ -86,6 +86,7 @@ for filename in edi_files:
     file_i = EdiDir_in + filename
     mt_obj= MT()
     mt_obj.read(file_i)
+    # print(mt_obj.station_metadata)
 
     lat = mt_obj.station_metadata.location.latitude
     lon = mt_obj.station_metadata.location.longitude

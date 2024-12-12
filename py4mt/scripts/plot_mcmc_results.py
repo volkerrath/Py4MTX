@@ -72,13 +72,13 @@ PltDir = WorkDir+"/plots/"
 
 PlotFmt = ".png"   #.pdf", ".png"
 RhoPlotLim = [0.1, 10000]
-DepthPlotLim =20000.
+DepthPlotLim =15000.
 LogDepth = False
 ColorMap ="rainbow"
 #ColorMap ="viridis"
 
 PDFCatalog = True
-PDFCatalogName    = WorkDir+"Ubaye_results.pdf"
+PDFCatalogName  = WorkDir+"Ubaye_results.pdf"
 if not ".pdf" in PlotFmt:
     PDFCatalog = False
     print("No PDF catalog because no pdf output!")
@@ -180,4 +180,4 @@ if DataOut:
     np.savetxt(PltDir+DataName, data_all, delimiter="  ", header=header, fmt=fmt)
 
 if PDFCatalog:
-    util.make_pdf_catalog(PltDir, PdfList=pdf_list, FileName=PltDir+PDFCatalogName)
+    util.make_pdf_catalog(PltDir, PdfList=pdf_list, FileName=PDFCatalogName)

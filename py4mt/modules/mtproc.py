@@ -51,7 +51,7 @@ def get_edi_list(edirname=None, sort=False, fullpath=True):
     return edi_files
 
 def clean_data(mt_obj=None,
-               cond=None, bad=1.e12):
+               cond=None, bad=0.):
     """
 
 
@@ -71,39 +71,37 @@ def clean_data(mt_obj=None,
     imp = mt_obj.impedance
     tip = mt_obj.tipper
     per = mt_obj.period
+    meta = mt_obj.station_metadata
 
-    # imps = np.shape(imp)
-    # tips = np.shape(tip)
-    # pers = np.shape(per)
-    # data_xr = xr.DataArray(atae,
-    # coords={'y': lat_atae,'x': lon_atae,'time': time_atae},
-    # dims=["y", "x", "time"])
-
-    # print(np.shape(imp), np.shape(tip), np.shape(per))
-    # print(np.shape(mask_imp), np.shape(mask_tip), np.shape(mask_per))
     imp_list = []
     tip_list = []
     per_list = []
     for iper in np.arange(np.shape(imp)[0]):
-        # condition = eval(cond)
-        condition = (np.any(np.abs(np.ravel(imp[iper,:,:]))>bad)
-                  or np.any(np.abs(np.ravel(tip[iper,:]))>bad))
+        print(np.abs(np.ravel(imp[iper,:,:])))# condition = eval(cond)
+        # print(np.any(np.abs(np.ravel(tip[iper,:,:]))>bad))
+        condition = (np.any(np.abs(np.ravel(imp[iper,:,:]))==bad)
+                  or np.any(np.abs(np.ravel(tip[iper,:]))==bad))
         if condition:
             print("Bad value at period # ", iper)
-            continue
+            break
         else:
             imp_list.append(imp[iper,:,:])
             tip_list.append(tip[iper,:])
             per_list.append(per[iper])
 
+    print(imp_list)
+
     new_imp = xr.concat(imp_list, dim="period")
     new_tip = xr.concat(tip_list, dim="period")
     new_per = np.asarray(per_list)
 
-    new_mt_obj = mt_obj.copy()
-    new_mt_obj.period = new_per
+
+
+    new_mt_obj = MT()
+    new_mt_obj.station_metadata = meta
     new_mt_obj.impedance = new_imp
     new_mt_obj.tipper = new_tip
+    new_mt_obj.period = new_per
 
     return new_mt_obj
 
