@@ -29,7 +29,7 @@ by potentially different angles into NS/EW coordinate system
 import os
 import sys
 import numpy as np
-
+import xarray as xr
 from mtpy.core.mt import MT
 import mtpy.core.mt as mt
 
@@ -64,9 +64,7 @@ if not os.path.isdir(EdiDir_out):
 String_out = ""
 SearchStrng = ".edi"
 
-Declination = 0. # 2.68   #E
-DecDeg = True
-
+bad = 1.e10
 
 # No changes required after this line!
 
@@ -94,22 +92,10 @@ for filename in edi_files:
     elev = mt_obj.station_metadata.location.elevation
     print(" site %s at :  % 10.6f % 10.6f % 8.1f" % (name, lat, lon, elev ))
 
-    Imped = mt_obj.Z
-    Tippr = mt_obj.Tipper
+    new_mt_obj = mtp.clean_data(mt_obj=mt_obj, bad=bad)
 
-    print(np.shape(Imped), np.shape(Tippr))
-
-    # mt_obj.write(file_i.replace(".edi","_check.edi"))
-
-    # new_mt_obj= mt_obj.remove(zxx=bad)
-
-
-# Write a new edi file:
-    # mt_obj.write("newfile.edi", latlon_format='dd', longitude_format='LONG')
-
-    file_out =EdiDir_out+name+String_out+ext
-    print(" Writing data to "+file_out)
-    if DecDeg:
-        mt_obj.write(file_out, latlon_format='dd')
-    else:
-        mt_obj.write(file_out)
+    file_o = EdiDir_out+filename.replace(".edi","_clean.edi")
+    new_mt_obj.write(file_o,
+                     latlon_format='dd',
+                     longitude_format='LONG')
+    print("Data written to ", file_o, "\n")

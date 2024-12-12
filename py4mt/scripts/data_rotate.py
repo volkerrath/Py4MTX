@@ -86,24 +86,24 @@ for filename in edi_files:
 # Create an MT object
 
     file_i = EdiDir_in + filename
-    tf_obj = MT()
-    tf_obj.read(file_i)
+    mt_obj = MT()
+    mt_obj.read(file_i)
 
-    lat = tf_obj.station_metadata.location.latitude
-    lon = tf_obj.station_metadata.location.longitude
-    elev = tf_obj.station_metadata.location.elevation
+    lat = mt_obj.station_metadata.location.latitude
+    lon = mt_obj.station_metadata.location.longitude
+    elev = mt_obj.station_metadata.location.elevation
     print(" site %s at :  % 10.6f % 10.6f % 8.1f" % (name, lat, lon, elev ))
-    # tf_obj.write(file_i.replace(".edi","_check.edi"))
+    # mt_obj.write(file_i.replace(".edi","_check.edi"))
 
-    new_tf_obj = tf_obj.rotate(Declination, inplace=False)
+    new_mt_obj = mt_obj.rotate(Declination, inplace=False)
 
 
 # Write a new edi file:
-    # tf_obj.write("newfile.edi", latlon_format='dd', longitude_format='LONG')
+    # mt_obj.write("newfile.edi", latlon_format='dd', longitude_format='LONG')
 
     file_out =EdiDir_out+name+String_out+ext
     print(" Writing data to "+file_out)
     if DecDeg:
-        tf_obj.write(file_out, latlon_format='dd')
+        mt_obj.write(file_out, latlon_format='dd')
     else:
-        tf_obj.write(file_out)
+        mt_obj.write(file_out)
