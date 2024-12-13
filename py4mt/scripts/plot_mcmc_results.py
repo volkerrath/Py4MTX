@@ -82,7 +82,7 @@ PDFCatalogName  = WorkDir+"Ubaye_results.pdf"
 if not ".pdf" in PlotFmt:
     PDFCatalog = False
     print("No PDF catalog because no pdf output!")
-OutStrng = "_mod"
+OutStrng = "_model"
 
 DataOut = True
 DataName= WorkDir+"Ubaye_results.dat"

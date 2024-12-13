@@ -43,7 +43,7 @@ import numpy as np
 PY4MTX_DATA = os.environ["PY4MTX_DATA"]
 PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
 
-mypath = [PY4MTX_ROOT+"/modules/", PY4MTX_ROOT+"/scripts/"]
+mypath = [PY4MTX_ROOT+"/py4mt/modules/", PY4MTX_ROOT+"/py4mt/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -87,7 +87,8 @@ PerIntervals = [ [0.0001, 0.001],
               [1., 10.], 
               [10., 100.], 
               [100., 1000.], 
-              [1000., 10000.]]
+              [1000., 10000.],
+              10000., 1000000.,]
 
 PerNumMin = 1
 
