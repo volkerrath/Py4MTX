@@ -85,7 +85,7 @@ if not ".pdf" in PlotFmt:
 OutStrng = "_model"
 
 DataOut = True
-DataName= WorkDir+"Ubaye_results.dat"
+DataName= WorkDir+"Ubaye_1dresults.dat"
 WRef = False
 
 

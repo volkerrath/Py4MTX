@@ -97,17 +97,14 @@ for filename in edi_files:
     mt_obj.read(file_i)
 
     site = mt_obj.station_metadata.id
+    lat = mt_obj.station_metadata.location.latitude
+    lon = mt_obj.station_metadata.location.longitude
+    elev = mt_obj.station_metadata.location.elevation
+
     Z = mt_obj.Z
     per = Z.period
-    # east = mt_obj.east
-    # north = mt_obj.north
-    # freq = mt_obj.station_metadata.freq
-    # lat = mt_obj.station_metadata.location.latitude
-    # lon = mt_obj.station_metadata.location.longitude
-    # elev = mt_obj.station_metadata.location.elevation
-    # east = mt_obj.station_metadata.location.east
-    # north = mt_obj.station_metadata.location.north
-    # print(" site %s at :  % 10.6f % 10.6f % 8.1f" % (name, lat, lon, elev ))
+
+    print(" site %s at :  % 10.6f % 10.6f % 8.1f" % (name, lat, lon, elev ))
 
 # use the phase tensor to determine which frequencies are 1D/2D/3D
     dim = Z.estimate_dimensionality(
@@ -119,7 +116,7 @@ for filename in edi_files:
                          eccentricity_threshold=0.1
                          )
 
-    tmp = [(site, per[ind], dim[ind]) for ind in np.arange(len(dim))]
+    tmp = [(site, lat, lon, elev, per[ind], dim[ind]) for ind in np.arange(len(dim))]
     np.savetxt(fname = name+"_dims.dat", X=tmp, delimiter='\t', fmt="%s")
     print("Dimension writen to", name+"_dims.dat")
     if sit == 0:

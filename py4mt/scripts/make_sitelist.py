@@ -39,32 +39,34 @@ for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
 
-import util
+import util as utl
 from version import versionstrg
 
 PY4MTX_DATA = os.environ["PY4MTX_DATA"]
 
 version, _ = versionstrg()
-titstrng = util.print_title(version=version, fname=__file__, out=False)
+titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
 
 dialect = "unix"
 delim = " "
 whatfor = "waldim"
+whatfor = "kml"
 if  "wal" in whatfor:
     delim = " "
 
 
 # Define the path to your EDI-files and for the list produced
-
-
 PY4MTX_DATA =  "/home/vrath/MT_Data/"
 WorkDir = PY4MTX_DATA+"/Ubaye_best/"
 EdiDir = WorkDir+"/edis/"
-
 print(" Edifiles read from: %s" % EdiDir)
-CSVFile = EdiDir + "Sitelist.dat"
+
+if  "wal" in whatfor:
+    CSVFile = EdiDir + "Sitelist_waldim.dat"
+else:
+    CSVFile = EdiDir + "Sitelist.dat"
 print("Writing data to file: " + CSVFile)
 
 # No changes required after this line!
