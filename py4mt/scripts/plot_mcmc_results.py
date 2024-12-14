@@ -70,7 +70,7 @@ ResDir = WorkDir+"/transdim/results_impedance/"
 PltDir = WorkDir+"/plots/"
 
 
-PlotFmt = ".png"   #.pdf", ".png"
+PlotFmt = ".pdf"   #.pdf", ".png"
 RhoPlotLim = [0.1, 10000]
 DepthPlotLim =15000.
 LogDepth = False
@@ -168,6 +168,7 @@ for filename in result_files:
 
         sit = np.full_like(lat, name.split("_")[0], dtype=object)
         tmp = np.append(sit,data_out, axis=1)
+
         if count ==1:
             data_all = tmp
         else:
@@ -177,7 +178,7 @@ for filename in result_files:
 if DataOut:
     header = "All data:  site, lat, lon, depth, median, q10, q90, mean, mode"
     fmt = "%s  %14.7f  %14.7f  %15.5f  %18.5e  %18.5e %18.5e  %18.5e  %18.5e"
-    np.savetxt(PltDir+DataName, data_all, delimiter="  ", header=header, fmt=fmt)
+    np.savetxt(DataName, data_all, delimiter="  ", header=header, fmt=fmt)
 
 if PDFCatalog:
     util.make_pdf_catalog(PltDir, PdfList=pdf_list, FileName=PDFCatalogName)

@@ -22,11 +22,11 @@ for pth in mypath:
         sys.path.insert(0, pth)
 
 
-import util
+import util as utl
 from version import versionstrg
 
 version, _ = versionstrg()
-titstrng = util.print_title(version=version, fname=__file__, out=False)
+titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
 PY4MTX_DATA =  "/home/vrath/MT_Data/"

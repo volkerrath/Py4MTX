@@ -35,24 +35,29 @@ for pth in mypath:
         sys.path.insert(0, pth)
 
 
-import util
+import util as utl
 from version import versionstrg
 
 version, _ = versionstrg()
-titstrng = util.print_title(version=version, fname=__file__, out=False)
+titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
 
 # Define the path to your files
 
-# DimDir = r"/home/vrath/MT_Data/Naser/Limerick2023/mt/reprocessed_quality/reprocessed_bad/"
-# DimDir = r"/home/vrath/MT_Data/Naser/Limerick2023/mt/reprocessed_quality/reprocessed_good/"
-# DimDir = r"/home/vrath/MT_Data/Naser/Limerick2023/mt/reprocessed_quality/reprocessed_ugly/"
-DimDir = r"/home/vrath/MT_Data/Peru/Tacna/edi/"
-print(" Edifiles read from: %s" % DimDir)
-DimFile = "Tac2023_WALDIM.dat"
-KmlDir = DimDir
-KmlFile = r"Tacna2023_WALDIM"
+
+# Define the path to your EDI-files
+
+
+PY4MTX_DATA =  "/home/vrath/MT_Data/"
+WorkDir = PY4MTX_DATA+"/Ubaye_best/"
+DimDir = WorkDir+"/edis/"
+print(" WALdim results read from: %s" % DimDir)
+KmlDir =  WorkDir
+KmlFile = "Ubaye_WALDIM"
+
+DimFile = "UBAYE_DIM_0.15.dat"
+
 
 
 # open file and read the content in a list
@@ -62,7 +67,7 @@ kml = False
 kmz = True
 
 Class3 = True
-Class3 = False
+# Class3 = False
 
 read=[]
 with open(SiteFile, "r") as f:
@@ -89,7 +94,7 @@ freqs = numpy.unique(data[:,3])
 print("freqs")
 print(freqs)
 
-icon_dir = PY4MTX_ROOT + "/share/icons/"
+icon_dir = PY4MTX_ROOT + "/py4mt/share/icons/"
 site_icon =  icon_dir + "placemark_circle.png"
 
 site_tcolor = simplekml.Color.white  # "#555500" #
@@ -202,7 +207,7 @@ else:
     site.style.iconstyle.scale = 2.
     site.style.labelstyle.color = simplekml.Color.yellow
     site.style.labelstyle.scale = 1.8
-    srcfile = kml.addfile(DimDir+"DimColorScheme.png")
+    srcfile = kml.addfile(PY4MTX_ROOT + "/py4mt/share/DimColorScheme.png")
     site.description = ('<img width="800" align="left" src="' + srcfile + '"/>')
     kml_outfile = KmlDir + KmlFile+"_9"
 # Save raw kml file:
