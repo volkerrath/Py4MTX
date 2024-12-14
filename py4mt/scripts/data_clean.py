@@ -97,6 +97,6 @@ for filename in edi_files:
 
     file_o = EdiDir_out+filename.replace(".edi","_clean.edi")
     new_mt_obj.write(file_o,
-                     latlon_format='dd',
-                     longitude_format='LONG')
+                     latlon_format="dd",
+                     longitude_format="LONG")
     print("Data written to ", file_o, "\n")

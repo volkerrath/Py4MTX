@@ -52,7 +52,7 @@ print(titstrng+"\n\n")
 dialect = "unix"
 delim = " "
 whatfor = "waldim"
-whatfor = "kml"
+# whatfor = "kml"
 if  "wal" in whatfor:
     delim = " "
 
