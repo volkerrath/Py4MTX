@@ -242,7 +242,7 @@ class Results():
                     self._MF["misfit"] = np.zeros((d.shape[0], self._nchains))
 
                 self._MF["sample"][:, chain] = np.arange(d.shape[0])
-                self._MF["misfit"][:, chain] = d                
+                self._MF["misfit"][:, chain] = d
 
     # end func
 
@@ -460,7 +460,7 @@ class Results():
         self._ax6.grid(linestyle=":")
         self._ax6.set_xlabel("Change point frequency")
         self._ax6.xaxis.set_label_position("top")
-        # self._ax6.set_yticklabels([])
+        self._ax6.set_yticklabels([])
         # self._ax6.set_xticklabels([])
 
         # Data 1 (Real impedance or App Res data)

@@ -135,6 +135,7 @@ for filename in result_files:
                     outfile,
                     plotSizeInches="11x8",
                     maxDepth=DepthPlotLim,
+                    resLim=RhoPlotLim,
                     zLog=LogDepth,
                     colormap=ColorMap
                     )
