@@ -51,13 +51,13 @@ for pth in myfilename:
         sys.path.insert(0,pth)
 
 import plotrjmcmc as pmc
-import util
+import util as utl
 
 from version import versionstrg
 
 
 version, _ = versionstrg()
-titstrng = util.print_title(version=version, fname=__file__, out=False)
+titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
 PY4MTX_DATA =  "/home/vrath/MT_Data/"
@@ -182,4 +182,4 @@ if DataOut:
     np.savetxt(DataName, data_all, delimiter="  ", header=header, fmt=fmt)
 
 if PDFCatalog:
-    util.make_pdf_catalog(PltDir, PdfList=pdf_list, FileName=PDFCatalogName)
+    utl.make_pdf_catalog(PltDir, PdfList=pdf_list, FileName=PDFCatalogName)
