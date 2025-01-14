@@ -179,3 +179,11 @@ if PDFCatalog:
         strike_plot_site = data.plot_strike()
         for fmt in PlotFmt:
             strike_plot_site.save_plot(PltDir+site+"_strikes"+fmt, fig_dpi=600)
+
+        if PDFCatalog:
+            pdf_list.append(PltDir+site+"_strikes.pdf")
+
+
+
+if PDFCatalog:
+    utl.make_pdf_catalog(PltDir, PdfList=pdf_list, FileName=PDFCatalogName)
