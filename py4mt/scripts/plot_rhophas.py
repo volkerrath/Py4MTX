@@ -49,7 +49,7 @@ cm = 1./2.54  # centimeters to inches
 
 WorkDir = "/home/vrath/Py4MTX/work/results_ploting/"
 DatFile = WorkDir+"Misti_MT.txt"
-SitFile = WorkDir+"Sitelist_femtic.dat"
+SitFile = WorkDir+"Sitelist_femtic.txt"
 PlotDir = WorkDir+"/plots/"
 PlotFile = "Mist01"
 
@@ -132,9 +132,9 @@ data_dict = fem.get_femtic_data(DatFile,SitFile, data_type="rhophas")
 
 
 
+sites = data_dict["sites"]
 
-
-for s in Sites:
+for s in sites:
     print("Plotting site: "+s)
 #     site = (obs_sit==s)
 #     site_lon = lon[site][0]

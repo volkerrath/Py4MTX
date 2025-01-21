@@ -1,4 +1,5 @@
 import numpy as np
+from sys import exit as error
 
 
 def get_femtic_data(data_file=None, site_file=None, data_type="rhophas", out=True):
@@ -92,6 +93,7 @@ def get_femtic_data(data_file=None, site_file=None, data_type="rhophas", out=Tru
 
         data_dict = dict([
             ("sites", sites),
+
             ("cal_rezxx", data[:, 2]),
             ("cal_rezxy", data[:, 4]),
             ("cal_rezyx", data[:, 6]),
@@ -140,6 +142,7 @@ def get_femtic_data(data_file=None, site_file=None, data_type="rhophas", out=Tru
         """
         data_dict = dict([
             ("sites", sites),
+
             ("cal_retzx", data[:, 2]),
             ("cal_retzy", data[:, 4]),
             ("cal_imtzx", data[:, 3]),
@@ -163,5 +166,42 @@ def get_femtic_data(data_file=None, site_file=None, data_type="rhophas", out=Tru
             ("elv", info[:, 3]),
             ("sit", info[:, 0][data[:, 0].astype("int")-1]),
         ])
+
+    elif "pt" in data_type.lower():
+        """
+        Site    Frequency
+        ReTzxCal   ImTzxCal   ReTzyCal   ImTzyCal
+        ReTzxOb    ImTzxObs   ReTzyObs   ImTzyObs
+        ReTzxErr   ImTzxErr   ReTzyErr   ImTzyErr
+        """
+        data_dict = dict([
+            ("sites", sites),
+
+            ("cal_ptxx", data[:, 2]),
+            ("cal_ptxy", data[:, 3]),
+            ("cal_ptyx", data[:, 4]),
+            ("cal_ptyy", data[:, 5]),
+
+            ("obs_ptxx", data[:, 6]),
+            ("obs_ptxy", data[:, 7]),
+            ("obs_ptyx", data[:, 8]),
+            ("obs_ptyy", data[:, 9]),
+
+            ("obs_ptxx_err", data[:, 10]),
+            ("obs_ptxy_err", data[:, 11]),
+            ("obs_ptyx_err", data[:, 12]),
+            ("obs_ptyy_err", data[:, 13]),
+
+
+            ("frq", data[:, 1]),
+            ("per", 1./data[:1]),
+            ("lat", info[:, 1]),
+            ("lon", info[:, 2]),
+            ("elv", info[:, 3]),
+            ("sit", info[:, 0][data[:, 0].astype("int")-1]),
+        ])
+
+    else:
+        error("get_femtic_data: data type "+data_type.lower()+" not implemented! Exit.")
 
     return data_dict
