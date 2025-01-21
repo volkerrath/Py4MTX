@@ -1,6 +1,7 @@
 import numpy as np
 
-def get_femtic_data(data_file=None, site_file=None, data_type="z", out=True):
+
+def get_femtic_data(data_file=None, site_file=None, data_type="rhophas", out=True):
 
     data = []
     with open(data_file, "r") as f:
@@ -27,20 +28,17 @@ def get_femtic_data(data_file=None, site_file=None, data_type="z", out=True):
             info.append(l)
     info = np.array(info)
 
-    sites = np.unique(info[:,0])
-
-    """
-     Site      Frequency     AppRxxCal       PhsxxCal      AppRxyCal       PhsxyCal
-                             AppRyxCal       PhsyxCal      AppRyyCal       PhsyyCal
-                             AppRxxObs       PhsxxObs      AppRxyObs       PhsxyObs
-                             AppRyxObs       PhsyxObs      AppRyyObs       PhsyyObs
-                             AppRxxErr       PhsxxErr      AppRxyErr       PhsxyErr
-                             AppRyxErr       PhsyxErr      AppRyyErr       PhsyyErr
-    """
-
+    sites = np.unique(info[:, 0])
 
     if "rhophas" in data_type.lower():
-        data_dict =dict([
+
+        """
+         Site      Frequency
+         AppRxxCal   PhsxxCal   AppRxyCal   PhsxyCal   AppRyxCal  PhsyxCal  AppRyyCal   PhsyyCal
+         AppRxxObs   PhsxxObs   AppRxyObs   PhsxyObs   AppRyxObs  PhsyxObs  AppRyyObs   PhsyyObs
+         AppRxxErr   PhsxxErr   AppRxyErr   PhsxyErr   AppRyxErr  PhsyxErr  AppRyyErr   PhsyyErr
+        """
+        data_dict = dict([
             ("sites", sites),
             ("cal_rhoxx", data[:, 2]),
             ("cal_rhoxy", data[:, 4]),
@@ -74,15 +72,96 @@ def get_femtic_data(data_file=None, site_file=None, data_type="z", out=True):
             ("obs_phsyy_err", data[:, 25]),
 
 
-            ("per", data[:,1]),
-            ("num", data[:,0]),
+            ("frq", data[:, 1]),
+            ("per", 1./data[:1]),
+            ("num", data[:, 0]),
+            ("lat", info[:, 1]),
+            ("lon", info[:, 2]),
+            ("elv", info[:, 3]),
+            ("sit", info[:, 0][data[:, 0].astype("int")-1]),
+        ])
+
+    elif "imp" in data_type.lower():
+
+        """
+         Site      Frequency
+         ReZxxCal   ImZxxCal   ReZxyCal   ImZxyCal   ReZyxCal  ImZyxCal  ReZyyCal   ImZyyCal
+         ReZxxObs   ImZxxObs   ReZxyObs   ImZxyObs   ReZyxObs  ImZyxObs  ReZyyObs   ImZyyObs
+         ReZxxErr   ImZxxErr   ReZxyErr   ImZxyErr   ReZyxErr  ImZyxErr  ReZyyErr   ImZyyErr
+        """
+
+        data_dict = dict([
+            ("sites", sites),
+            ("cal_rezxx", data[:, 2]),
+            ("cal_rezxy", data[:, 4]),
+            ("cal_rezyx", data[:, 6]),
+            ("cal_rezyy", data[:, 8]),
+
+            ("cal_imzxx", data[:, 3]),
+            ("cal_imzxy", data[:, 5]),
+            ("cal_imzyx", data[:, 7]),
+            ("cal_imzyy", data[:, 9]),
 
 
+            ("obs_rezxx", data[:, 10]),
+            ("obs_rezxy", data[:, 12]),
+            ("obs_rezyx", data[:, 14]),
+            ("obs_rezyy", data[:, 16]),
 
-            ("lat", info[:,1]),
-            ("lon", info[:,2]),
-            ("elv", info[:,3]),
-            ("sit", info[:,0][data[:,0].astype("int")-1]),
-            ])
+            ("obs_imzxx", data[:, 11]),
+            ("obs_imzxy", data[:, 13]),
+            ("obs_imzyx", data[:, 15]),
+            ("obs_imzyy", data[:, 17]),
+
+            ("obs_rezxx_err", data[:, 18]),
+            ("obs_rezxy_err", data[:, 20]),
+            ("obs_rezyx_err", data[:, 22]),
+            ("obs_rezyy_err", data[:, 24]),
+
+            ("obs_imzxx_err", data[:, 19]),
+            ("obs_imzxy_err", data[:, 21]),
+            ("obs_imzyx_err", data[:, 23]),
+            ("obs_imzyy_err", data[:, 25]),
+
+            ("frq", data[:, 1]),
+            ("per", 1./data[:1]),
+            ("lat", info[:, 1]),
+            ("lon", info[:, 2]),
+            ("elv", info[:, 3]),
+            ("sit", info[:, 0][data[:, 0].astype("int")-1]),
+        ])
+
+    elif "vtf" in data_type.lower():
+        """
+        Site    Frequency
+        ReTzxCal   ImTzxCal   ReTzyCal   ImTzyCal
+        ReTzxOb    ImTzxObs   ReTzyObs   ImTzyObs
+        ReTzxErr   ImTzxErr   ReTzyErr   ImTzyErr
+        """
+        data_dict = dict([
+            ("sites", sites),
+            ("cal_retzx", data[:, 2]),
+            ("cal_retzy", data[:, 4]),
+            ("cal_imtzx", data[:, 3]),
+            ("cal_imtzy", data[:, 5]),
+
+            ("obs_retzx", data[:, 6]),
+            ("obs_retzy", data[:, 8]),
+            ("obs_imtzx", data[:, 7]),
+            ("obs_imtzy", data[:, 9]),
+
+            ("obs_retzx_err", data[:, 10]),
+            ("obs_retzy_err", data[:, 12]),
+            ("obs_imtzx_err", data[:, 11]),
+            ("obs_imtzy_err", data[:, 13]),
+
+
+            ("frq", data[:, 1]),
+            ("per", 1./data[:1]),
+            ("lat", info[:, 1]),
+            ("lon", info[:, 2]),
+            ("elv", info[:, 3]),
+            ("sit", info[:, 0][data[:, 0].astype("int")-1]),
+        ])
 
     return data_dict
