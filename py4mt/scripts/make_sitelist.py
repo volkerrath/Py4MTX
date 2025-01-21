@@ -50,23 +50,26 @@ print(titstrng+"\n\n")
 
 
 dialect = "unix"
-delim = " "
-whatfor = "waldim"
+delim = ","
+whatfor = "femtic"
 # whatfor = "kml"
 if  "wal" in whatfor:
     delim = " "
 
 
 # Define the path to your EDI-files and for the list produced
-PY4MTX_DATA =  "/home/vrath/MT_Data/"
-WorkDir = PY4MTX_DATA+"/Ubaye_best/"
-EdiDir = WorkDir+"/edis/"
+PY4MTX_DATA = "/home/vrath/Py4MTX/work/results_ploting/"
+WorkDir = PY4MTX_DATA
+EdiDir =  WorkDir + "/edi_files/"
+
 print(" Edifiles read from: %s" % EdiDir)
 
 if  "wal" in whatfor:
-    CSVFile = EdiDir + "Sitelist_waldim.dat"
+    CSVFile = WorkDir + "Sitelist_waldim.txt"
+elif "fem" in whatfor:
+    CSVFile = WorkDir + "Sitelist_femtic.txt"
 else:
-    CSVFile = EdiDir + "Sitelist.dat"
+    CSVFile = WorkDir + "Sitelist.txt"
 print("Writing data to file: " + CSVFile)
 
 # No changes required after this line!
@@ -80,6 +83,7 @@ for entry in files:
     if entry.endswith(".edi") and not entry.startswith("."):
         edi_files.append(entry)
 ns = np.size(edi_files)
+edi_files = sorted(edi_files)
 
 # Outputfile (e. g., for WALDIM analysis)
 
@@ -91,11 +95,13 @@ with open(CSVFile, "w") as f:
         sitelist.writerow([ns, " ", " "])
 
 # Loop over edifiles:
+    sitenum=0
 
     for filename in edi_files:
         print("reading data from: " + filename)
         name, ext = os.path.splitext(filename)
         file_i = EdiDir + filename
+        sitenum = sitenum + 1
 
 # Create MT object
         mt_obj = MT()
@@ -104,8 +110,12 @@ with open(CSVFile, "w") as f:
         lon = mt_obj.station_metadata.location.longitude
         elev = mt_obj.station_metadata.location.elevation
 
+
+
         # sitename = mt_obj.station
         if "wal" in whatfor:
             sitelist.writerow([name, lat, lon])
+        elif "fem" in whatfor:
+            sitelist.writerow([name, lat, lon, elev, sitenum])
         else:
             sitelist.writerow([name, lat, lon, elev])
