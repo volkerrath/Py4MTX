@@ -1,6 +1,6 @@
 import numpy as np
 
-def read_femtic_data(data_file=None, site_file=None, data_type="z", out=True):
+def get_femtic_data(data_file=None, site_file=None, data_type="z", out=True):
 
     data = []
     with open(data_file, "r") as f:
@@ -21,11 +21,13 @@ def read_femtic_data(data_file=None, site_file=None, data_type="z", out=True):
             l = line.split(',')
             l[1] = float(l[1])
             l[2] = float(l[2])
-            l[3] = int(l[3])
+            l[3] = float(l[3])
+            l[4] = int(l[4])
             print(l)
             info.append(l)
     info = np.array(info)
 
+    sites = np.unique(info[:,0])
 
     """
      Site      Frequency     AppRxxCal       PhsxxCal      AppRxyCal       PhsxyCal
@@ -38,7 +40,8 @@ def read_femtic_data(data_file=None, site_file=None, data_type="z", out=True):
 
 
     if "rhophas" in data_type.lower():
-        data_dict =([
+        data_dict =dict([
+            ("sites", sites),
             ("cal_rhoxx", data[:, 2]),
             ("cal_rhoxy", data[:, 4]),
             ("cal_rhoyx", data[:, 6]),
@@ -78,7 +81,7 @@ def read_femtic_data(data_file=None, site_file=None, data_type="z", out=True):
 
             ("lat", info[:,1]),
             ("lon", info[:,2]),
-            ("pos", info[:,3]),
+            ("elv", info[:,3]),
             ("sit", info[:,0][data[:,0].astype("int")-1]),
             ])
 

@@ -22,6 +22,9 @@ from datetime import datetime
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
+
+
 from cycler import cycler
 
 PY4MTX_DATA = os.environ["PY4MTX_DATA"]
@@ -35,6 +38,7 @@ for pth in mypath:
 import util as utl
 from version import versionstrg
 import modem as mod
+import femtic as fem
 
 version, _ = versionstrg()
 titstrng = utl.print_title(version=version, fname=__file__, out=False)
@@ -43,7 +47,7 @@ print(titstrng+"\n\n")
 cm = 1./2.54  # centimeters to inches
 
 
-WorkDir = "/home/sbyrd/python_scripts/femticPy/projects/misti/input_data/"
+WorkDir = "/home/vrath/Py4MTX/work/results_ploting/"
 DatFile = WorkDir+"Misti_MT.txt"
 SitFile = WorkDir+"Sitelist_femtic.dat"
 PlotDir = WorkDir+"/plots/"
@@ -69,21 +73,29 @@ ShowErrors = True
 ShowRMS = True
 if not PlotPred:
     ShowRMS = False
-PlotFull = False
 
-EPSG = 32718
+EPSG = 32719
 
-if PlotFull:
-    FigSize = (18*cm, 16*cm) #
+
+Orient = "vertical"
+if "vert" in Orient.lower():
+    FigSize = ( 8*cm, 18*cm)
 else:
-    FigSize = (16*cm, 8*cm)
+    FigSize = (18*cm, 10*cm)
+
+
+
+
 
 PlotFormat = [".pdf", ".png", ]
-PdfCatalog = True
-PdfCName = PlotFile+".pdf"
+PDFCatalog = True
+PDFCatalogName = PlotFile+".pdf"
 if not ".pdf" in PlotFormat:
     error(" No pdfs generated. No catalog possible!")
-    PdfCatalog = False
+    PDFCatalog = False
+else:
+    pdf_list = []
+    catalog = PdfPages(PDFCatalogName)
 
 
 """
@@ -115,99 +127,15 @@ if FilesOnly==True:
     mpl.use("cairo")
 
 
-data = []
 
-with open(DatFile, "r") as f:
-    iline=-1
-    for line in f:
-        iline=iline+1
-        if iline > 0:
-            l=line.split()
-            l = [float(x) for x in l]
-            #print(l)
-            l[0] = int(l[0])
-            data.append(l)
-data = np.array(data)
-
-info=[]
-with open(SitFile, "r") as f:
-    for line in f:
-        l = line.split(',')
-        l[1]=float(l[1])
-        l[2]=float(l[2])
-        l[3] = int(l[3])
-        print(l)
-        info.append(l)
-info = np.array(info)
-
-
-"""
- Site      Frequency      AppRxxCal       PhsxxCal      AppRxyCal       PhsxyCal
-                          AppRyxCal       PhsyxCal      AppRyyCal       PhsyyCal
-                          AppRxxObs       PhsxxObs      AppRxyObs       PhsxyObs
-                          AppRyxObs       PhsyxObs      AppRyyObs       PhsyyObs
-                          AppRxxErr       PhsxxErr      AppRxyErr       PhsxyErr
-                          AppRyxErr       PhsyxErr      AppRyyErr       PhsyyErr
-"""
-
-
-start = time.time()
-
-cal_rhoxx = data[:, 2]
-cal_rhoxy = data[:, 4]
-cal_rhoxy = data[:, 6]
-cal_rhoyy = data[:, 8]
-
-cal_phsxx = data[:, 3]
-cal_phsxy = data[:, 5]
-cal_phsxy = data[:, 7]
-cal_phsyy = data[:, 9]
-
-
-obs_rhoxx = data[:, 10]
-obs_rhoxy = data[:, 12]
-obs_rhoxy = data[:, 14]
-obs_rhoyy = data[:, 16]
-
-obs_phsxx = data[:, 11]
-obs_phsxy = data[:, 13]
-obs_phsxy = data[:, 15]
-obs_phsyy = data[:, 17]
-
-obs_rhoxx_err = data[:, 18]
-obs_rhoxy_err = data[:, 20]
-obs_rhoxy_err = data[:, 22]
-obs_rhoyy_err = data[:, 24]
-
-obs_phsxx_err = data[:, 19]
-obs_phsxy_err = data[:, 21]
-obs_phsxy_err = data[:, 23]
-obs_phsyy_err = data[:, 25]
-
-
-obs_per = data[:,1]
-obs_sit = data[:,0]
+data_dict = fem.get_femtic_data(DatFile,SitFile, data_type="rhophas")
 
 
 
-lat = info[:,1]
-lon = info[:,2]
-pos = info[:,3]
-sit = info[:,0]
-
-obs_sit = sit[obs_sit.astype("int")-1]
-#obs_sit = sit[obs_sit]
-# x = data[:,3]
-# y = data[:,4]
-# z = data[:,5]
 
 
-
-# Sites = np.unique(SiteObs)
-
-# pdf_list = []
-# for s in Sites:
-#     print("Plotting site: "+s)
+for s in Sites:
+    print("Plotting site: "+s)
 #     site = (obs_sit==s)
 #     site_lon = lon[site][0]
 #     site_lat = lat[site][0]
@@ -744,7 +672,7 @@ obs_sit = sit[obs_sit.astype("int")-1]
 #     for F in PlotFormat:
 #         plt.savefig(PlotDir+PlotFile+"_"+s+F, dpi=400)
 
-#     if PdfCatalog:
+#     if PDFCatalog:
 #         pdf_list.append(PlotDir+PlotFile+"_"+s+".pdf")
 
 
@@ -753,5 +681,5 @@ obs_sit = sit[obs_sit.astype("int")-1]
 
 
 
-# if PdfCatalog:
-#     utl.make_pdf_catalog(PlotDir, PdfList=pdf_list, FileName=PlotDir+PdfCName)
+# if PDFCatalog:
+#     utl.make_pdf_catalog(PlotDir, PDFList=pdf_list, FileName=PlotDir+PDFCName)
