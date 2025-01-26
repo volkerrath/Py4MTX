@@ -95,7 +95,7 @@ with open(CSVFile, "w") as f:
         sitelist.writerow([ns, " ", " "])
 
 # Loop over edifiles:
-    sitenum=0
+    sitenum=-1
 
     for filename in edi_files:
         print("reading data from: " + filename)

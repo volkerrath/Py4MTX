@@ -60,14 +60,28 @@ if not os.path.isdir(PlotDir):
     print(' File: %s does not exist, but will be created' % PlotDir)
     os.mkdir(PlotDir)
 
-FilesOnly = False
+
 
 PlotPred = True
 PlotObsv = True
+PlotFull = True
+
+PlotType = "rhophas" # "impedance", "vtf", "pt"
 
 PerLimits = (0.0001,1000.)
-ZLimitsXX = ()
-ZLimitsXY = ()
+
+if "rho" in PlotType.lower():
+    RhoLimitsXX = ()
+    PhsLimitsXY = ()
+elif "imp" in PlotType.lower():
+    ImpLimits = ()
+elif "vtf" in PlotType.lower():
+    TipLimits = ()
+elif "pt" in PlotType.lower():
+    PTlimits = (-1., 1.)
+else:
+    error("PlotType "+PlotType.lower()+" not implemented! Exit.")
+
 
 ShowErrors = True
 ShowRMS = True
@@ -96,7 +110,7 @@ if not ".pdf" in PlotFormat:
 else:
     pdf_list = []
     catalog = PdfPages(PDFCatalogName)
-
+FilesOnly = False
 
 """
 Determine graphical parameter.
@@ -129,158 +143,181 @@ if FilesOnly==True:
 
 
 data_dict = fem.get_femtic_data(DatFile,SitFile, data_type="rhophas")
-
-
-
 sites = data_dict["sites"]
-
+lat = data_dict["lat"].reshape(-1,1)
+lon = data_dict["lon"].reshape(-1,1)
+elv = data_dict["elv"].reshape(-1,1)
 for s in sites:
-    print("Plotting site: "+s)
-#     site = (obs_sit==s)
-#     site_lon = lon[site][0]
-#     site_lat = lat[site][0]
-#     if EPSG==0:
-#         site_utmx = x[site][0]
-#         site_utmy = y[site][0]
-#     else:
-#         site_utmx, site_utmy = utl.project_latlon_to_utm(site_lat, site_lon,
-#                                                       utm_zone=EPSG)
+    print("Plotting site: "+str(s))
+    site_lon = lon[s] #[site_index]
+    site_lat = lat[s] #a = [site_index]
+    site_elv = elv[s]
+    site_utmx, site_utmy = utl.proj_latlon_to_utm(site_lat, site_lon, utm_zone=EPSG)
 
-#     site_utmx = int(np.round(site_utmx))
-#     site_utmy = int(np.round(site_utmy))
+    print(s, "at", site_lat[0], site_lon[0], site_elv[0])
 
-#     site_elev = z[site][0]
+    site_index = np.where(data_dict["num"] ==s)
+    print(site_index)
 
-#     siteRes = np.empty([0,0])
+    site_obs = data_dict["obs"][site_index]
+    site_err = data_dict["err"][site_index]
 
-#     if PlotFull:
-#         cmp ="ZXX"
-#         cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
-#         Zxxro = np.abs(obs_rdat[cmpo])
-#         Zxxio = np.abs(obs_idat[cmpo])
-#         Zxxe = obs_err[cmpo]
-#         Perxxo = obs_per[cmpo]
-#         indx =np.argsort(Perxxo)
-#         Zxxro = Zxxro[indx]
-#         Zxxio = Zxxio[indx]
-#         Zxxe = Zxxe[indx]
-#         Perxxo = Perxxo[indx]
-#         if PlotPred:
-#             cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
-#             Zxxrc = np.abs(cal_rdat[cmpc])
-#             Zxxic = np.abs(cal_idat[cmpc])
-#             Perxxc = cal_per[cmpc]
-#             indx =np.argsort(Perxxc)
-#             Zxxrc = Zxxrc[indx]
-#             Zxxic = Zxxic[indx]
-#             Perxxc = Perxxc[indx]
-
-#             if np.size(cmpo) > 0 : #& np.size(cmpc) > 0:
-#                 siteRes = np.append(siteRes, (Zxxro-Zxxrc)/Zxxe)
-#                 siteRes = np.append(siteRes, (Zxxio-Zxxic)/Zxxe)
-
-#                 if ShowRMS:
-#                     RnormZxxr, ResZxxr = utl.calc_resnorm(Zxxro, Zxxrc, Zxxe)
-#                     nRMSZxxr, _ = utl.calc_rms(Zxxro, Zxxrc, 1.0/Zxxe)
-#                     RnormZxxi, ResZxxi = utl.calc_resnorm(Zxxio, Zxxic, Zxxe)
-#                     nRMSZxxi, _ = utl.calc_rms(Zxxio, Zxxic, 1.0/Zxxe)
+    if PlotPred:
+        site_cal = data_dict["err"][site_index]
 
 
 
-#     cmp ="ZXY"
-#     cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
-#     Zxyro = np.abs(obs_rdat[cmpo])
-#     Zxyio = np.abs(obs_idat[cmpo])
-#     Zxye = obs_err[cmpo]
-#     Perxyo = obs_per[cmpo]
-#     indx =np.argsort(Perxyo)
-#     Zxyro = Zxyro[indx]
-#     Zxyio = Zxyio[indx]
-#     Zxye = Zxye[indx]
-#     Perxyo = Perxyo[indx]
-#     if PlotPred:
-#         cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
-#         Zxyrc = np.abs(cal_rdat[cmpc])
-#         Zxyic = np.abs(cal_idat[cmpc])
-#         Perxyc = cal_per[cmpc]
-#         indx =np.argsort(Perxyc)
-#         Zxyrc = Zxyrc[indx]
-#         Zxyic = Zxyic[indx]
-#         Perxyc = Perxyc[indx]
 
-#         if np.size(cmpo) > 0:
-#             siteRes = np.append(siteRes, (Zxyro-Zxyrc)/Zxye)
-#             siteRes = np.append(siteRes, (Zxyio-Zxyic)/Zxye)
+    site_utmx = int(np.round(site_utmx))
+    site_utmy = int(np.round(site_utmy))
 
-#             if ShowRMS:
-#                 RnormZxyr, ResZxyr = utl.calc_resnorm(Zxyro, Zxyrc, Zxye)
-#                 nRMSZxyr, _ = utl.calc_rms(Zxyro, Zxyrc, 1.0/Zxye)
-#                 RnormZxyi, ResZxyi = utl.calc_resnorm(Zxyio, Zxyic, Zxye)
-#                 nRMSZxyi, _ = utl.calc_rms(Zxyio, Zxyic, 1.0/Zxye)
 
-#     cmp ="ZYX"
-#     cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
-#     Zyxro = np.abs(obs_rdat[cmpo])
-#     Zyxio = np.abs(obs_idat[cmpo])
-#     Zyxe = obs_err[cmpo]
-#     Peryxo = obs_per[cmpo]
-#     indx =np.argsort(Peryxo)
-#     Zyxro = Zyxro[indx]
-#     Zyxio = Zyxio[indx]
-#     Zyxe = Zyxe[indx]
-#     Peryxo = Peryxo[indx]
-#     if PlotPred:
-#         cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
-#         Zyxrc = np.abs(cal_rdat[cmpc])
-#         Zyxic = np.abs(cal_idat[cmpc])
-#         Peryxc = cal_per[cmpc]
-#         indx =np.argsort(Peryxc)
-#         Zyxrc = Zyxrc[indx]
-#         Zyxic = Zyxic[indx]
-#         Peryxc = Peryxc[indx]
+    if "rho" in PlotType.lower():
+    #     if PlotFull:
 
-#         if np.size(cmpo) > 0:
-#             siteRes = np.append(siteRes, (Zyxro-Zyxrc)/Zyxe)
-#             siteRes = np.append(siteRes, (Zyxio-Zyxic)/Zyxe)
+    #         fig, axes = plt.subplots(2,2, figsize = FigSize, subplot_kw=dict(box_aspect=1.),
+    #                          sharex=True, sharey=False, constrained_layout=True)
 
-#             if ShowRMS:
-#                 RnormZyxr, ResZyxr = utl.calc_resnorm(Zyxro, Zyxrc, Zyxe)
-#                 nRMSZyxr, _ = utl.calc_rms(Zyxro, Zyxrc, 1.0/Zyxe)
-#                 RnormZyxi, ResZyxi = utl.calc_resnorm(Zyxio, Zyxic, Zyxe)
-#                 nRMSZyxi, _ = utl.calc_rms(Zyxio, Zyxic, 1.0/Zyxe)
+    #         if PlotPred:
+    #             rmsstrng ="   nRMS: "+str(np.around(siteRMS,1))
+    #         else:
+    #             rmsstrng = ""
+
+    #         fig.suptitle(r"Site: "+s+rmsstrng
+    #                      +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
+    #                      +"\nX: "+str(site_utmx)+"   Y: "+str(site_utmy)
+    #                      +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m\n",
+    #                      ha="left", x=0.1,fontsize=Titlesize)
+
+
+        if PlotFull:
+            cmp ="XX"
+        #     cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
+        #     Zxxro = np.abs(obs_rdat[cmpo])
+        #     Zxxio = np.abs(obs_idat[cmpo])
+        #     Zxxe = obs_err[cmpo]
+        #     Perxxo = obs_per[cmpo]
+        #     indx =np.argsort(Perxxo)
+        #     Zxxro = Zxxro[indx]
+        #     Zxxio = Zxxio[indx]
+        #     Zxxe = Zxxe[indx]
+        #     Perxxo = Perxxo[indx]
+        #     if PlotPred:
+        #         cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
+        #         Zxxrc = np.abs(cal_rdat[cmpc])
+        #         Zxxic = np.abs(cal_idat[cmpc])
+        #         Perxxc = cal_per[cmpc]
+        #         indx =np.argsort(Perxxc)
+        #         Zxxrc = Zxxrc[indx]
+        #         Zxxic = Zxxic[indx]
+        #         Perxxc = Perxxc[indx]
+
+        #         if np.size(cmpo) > 0 : #& np.size(cmpc) > 0:
+        #             siteRes = np.append(siteRes, (Zxxro-Zxxrc)/Zxxe)
+        #             siteRes = np.append(siteRes, (Zxxio-Zxxic)/Zxxe)
+
+        #             if ShowRMS:
+        #                 RnormZxxr, ResZxxr = utl.calc_resnorm(Zxxro, Zxxrc, Zxxe)
+        #                 nRMSZxxr, _ = utl.calc_rms(Zxxro, Zxxrc, 1.0/Zxxe)
+        #                 RnormZxxi, ResZxxi = utl.calc_resnorm(Zxxio, Zxxic, Zxxe)
+        #                 nRMSZxxi, _ = utl.calc_rms(Zxxio, Zxxic, 1.0/Zxxe)
 
 
 
-#     if PlotFull:
-#         cmp ="ZYY"
-#         cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
-#         Zyyro = np.abs(obs_rdat[cmpo])
-#         Zyyio = np.abs(obs_idat[cmpo])
-#         Zyye = obs_err[cmpo]
-#         Peryyo = obs_per[cmpo]
-#         indx =np.argsort(Peryyo)
-#         Zyyro = Zyyro[indx]
-#         Zyyio = Zyyio[indx]
-#         Peryyo = Peryyo[indx]
-#         if PlotPred:
-#             cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
-#             Zyyrc = np.abs(cal_rdat[cmpc])
-#             Zyyic = np.abs(cal_idat[cmpc])
-#             Peryyc = cal_per[cmpc]
-#             indx =np.argsort(Peryyc)
-#             Zyyrc = Zyyrc[indx]
-#             Zyyic = Zyyic[indx]
-#             Peryyc = Peryyc[indx]
+        cmp ="XY"
+    #     cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
+    #     Zxyro = np.abs(obs_rdat[cmpo])
+    #     Zxyio = np.abs(obs_idat[cmpo])
+    #     Zxye = obs_err[cmpo]
+    #     Perxyo = obs_per[cmpo]
+    #     indx =np.argsort(Perxyo)
+    #     Zxyro = Zxyro[indx]
+    #     Zxyio = Zxyio[indx]
+    #     Zxye = Zxye[indx]
+    #     Perxyo = Perxyo[indx]
+    #     if PlotPred:
+    #         cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
+    #         Zxyrc = np.abs(cal_rdat[cmpc])
+    #         Zxyic = np.abs(cal_idat[cmpc])
+    #         Perxyc = cal_per[cmpc]
+    #         indx =np.argsort(Perxyc)
+    #         Zxyrc = Zxyrc[indx]
+    #         Zxyic = Zxyic[indx]
+    #         Perxyc = Perxyc[indx]
 
-#             if np.size(cmpo) > 0 : #& np.size(cmpc) > 0:
-#                 siteRes = np.append(siteRes, (Zyyro-Zyyrc)/Zyye)
-#                 siteRes = np.append(siteRes, (Zyyio-Zyyic)/Zyye)
+    #         if np.size(cmpo) > 0:
+    #             siteRes = np.append(siteRes, (Zxyro-Zxyrc)/Zxye)
+    #             siteRes = np.append(siteRes, (Zxyio-Zxyic)/Zxye)
 
-#                 if ShowRMS:
-#                     RnormZyyr, ResZyyr = utl.calc_resnorm(Zyyro, Zyyrc, Zyye)
-#                     nRMSZyyr, _ = utl.calc_rms(Zyyro, Zyyrc, 1.0/Zyye)
-#                     RnormZyyi, ResZyyi = utl.calc_resnorm(Zyyio, Zyyic, Zyye)
-#                     nRMSZyyi, _ = utl.calc_rms(Zyyio, Zyyic, 1.0/Zyye)
+    #             if ShowRMS:
+    #                 RnormZxyr, ResZxyr = utl.calc_resnorm(Zxyro, Zxyrc, Zxye)
+    #                 nRMSZxyr, _ = utl.calc_rms(Zxyro, Zxyrc, 1.0/Zxye)
+    #                 RnormZxyi, ResZxyi = utl.calc_resnorm(Zxyio, Zxyic, Zxye)
+    #                 nRMSZxyi, _ = utl.calc_rms(Zxyio, Zxyic, 1.0/Zxye)
+
+        cmp ="YX"
+    #     cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
+    #     Zyxro = np.abs(obs_rdat[cmpo])
+    #     Zyxio = np.abs(obs_idat[cmpo])
+    #     Zyxe = obs_err[cmpo]
+    #     Peryxo = obs_per[cmpo]
+    #     indx =np.argsort(Peryxo)
+    #     Zyxro = Zyxro[indx]
+    #     Zyxio = Zyxio[indx]
+    #     Zyxe = Zyxe[indx]
+    #     Peryxo = Peryxo[indx]
+    #     if PlotPred:
+    #         cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
+    #         Zyxrc = np.abs(cal_rdat[cmpc])
+    #         Zyxic = np.abs(cal_idat[cmpc])
+    #         Peryxc = cal_per[cmpc]
+    #         indx =np.argsort(Peryxc)
+    #         Zyxrc = Zyxrc[indx]
+    #         Zyxic = Zyxic[indx]
+    #         Peryxc = Peryxc[indx]
+
+    #         if np.size(cmpo) > 0:
+    #             siteRes = np.append(siteRes, (Zyxro-Zyxrc)/Zyxe)
+    #             siteRes = np.append(siteRes, (Zyxio-Zyxic)/Zyxe)
+
+    #             if ShowRMS:
+    #                 RnormZyxr, ResZyxr = utl.calc_resnorm(Zyxro, Zyxrc, Zyxe)
+    #                 nRMSZyxr, _ = utl.calc_rms(Zyxro, Zyxrc, 1.0/Zyxe)
+    #                 RnormZyxi, ResZyxi = utl.calc_resnorm(Zyxio, Zyxic, Zyxe)
+    #                 nRMSZyxi, _ = utl.calc_rms(Zyxio, Zyxic, 1.0/Zyxe)
+
+
+
+        if PlotFull:
+            cmp ="YY"
+    #         cmpo = np.where((obs_cmp==cmp) & (obs_sit==s))
+    #         Zyyro = np.abs(obs_rdat[cmpo])
+    #         Zyyio = np.abs(obs_idat[cmpo])
+    #         Zyye = obs_err[cmpo]
+    #         Peryyo = obs_per[cmpo]
+    #         indx =np.argsort(Peryyo)
+    #         Zyyro = Zyyro[indx]
+    #         Zyyio = Zyyio[indx]
+    #         Peryyo = Peryyo[indx]
+    #         if PlotPred:
+    #             cmpc = np.where((cal_cmp==cmp) & (cal_sit==s))
+    #             Zyyrc = np.abs(cal_rdat[cmpc])
+    #             Zyyic = np.abs(cal_idat[cmpc])
+    #             Peryyc = cal_per[cmpc]
+    #             indx =np.argsort(Peryyc)
+    #             Zyyrc = Zyyrc[indx]
+    #             Zyyic = Zyyic[indx]
+    #             Peryyc = Peryyc[indx]
+
+    #             if np.size(cmpo) > 0 : #& np.size(cmpc) > 0:
+    #                 siteRes = np.append(siteRes, (Zyyro-Zyyrc)/Zyye)
+    #                 siteRes = np.append(siteRes, (Zyyio-Zyyic)/Zyye)
+
+    #                 if ShowRMS:
+    #                     RnormZyyr, ResZyyr = utl.calc_resnorm(Zyyro, Zyyrc, Zyye)
+    #                     nRMSZyyr, _ = utl.calc_rms(Zyyro, Zyyrc, 1.0/Zyye)
+    #                     RnormZyyi, ResZyyi = utl.calc_resnorm(Zyyio, Zyyic, Zyye)
+    #                     nRMSZyyi, _ = utl.calc_rms(Zyyio, Zyyic, 1.0/Zyye)
 
 
 #     sRes = np.asarray(siteRes)
@@ -291,21 +328,6 @@ for s in sites:
 
 
 
-#     if PlotFull:
-
-#         fig, axes = plt.subplots(2,2, figsize = FigSize, subplot_kw=dict(box_aspect=1.),
-#                          sharex=True, sharey=False, constrained_layout=True)
-
-#         if PlotPred:
-#             rmsstrng ="   nRMS: "+str(np.around(siteRMS,1))
-#         else:
-#             rmsstrng = ""
-
-#         fig.suptitle(r"Site: "+s+rmsstrng
-#                      +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
-#                      +"\nX: "+str(site_utmx)+"   Y: "+str(site_utmy)
-#                      +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m\n",
-#                      ha="left", x=0.1,fontsize=Titlesize)
 
 # #  ZXX
 
