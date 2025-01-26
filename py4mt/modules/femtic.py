@@ -25,11 +25,22 @@ def get_femtic_data(data_file=None, site_file=None, data_type="rhophas", out=Tru
             l[2] = float(l[2])
             l[3] = float(l[3])
             l[4] = int(l[4])
-            print(l)
+            # print(l)
             info.append(l)
     info = np.array(info)
 
-    sites = np.unique(info[:, 0])
+    sites = np.unique(data[:, 0]).astype("int")-1
+
+    head_dict = dict([
+        ("sites", sites),
+        ("frq", data[:, 1]),
+        ("per", 1./data[:1]),
+        ("lat", info[:, 1]),
+        ("lon", info[:, 2]),
+        ("elv", info[:, 3]),
+        ("num", data[:, 0].astype("int")),
+        ("nam", info[:, 0][data[:, 0].astype("int")-1])
+        ])
 
     if "rhophas" in data_type.lower():
 
@@ -38,48 +49,17 @@ def get_femtic_data(data_file=None, site_file=None, data_type="rhophas", out=Tru
          AppRxxCal   PhsxxCal   AppRxyCal   PhsxyCal   AppRyxCal  PhsyxCal  AppRyyCal   PhsyyCal
          AppRxxObs   PhsxxObs   AppRxyObs   PhsxyObs   AppRyxObs  PhsyxObs  AppRyyObs   PhsyyObs
          AppRxxErr   PhsxxErr   AppRxyErr   PhsxyErr   AppRyxErr  PhsyxErr  AppRyyErr   PhsyyErr
+
+
         """
-        data_dict = dict([
-            ("sites", sites),
-            ("cal_rhoxx", data[:, 2]),
-            ("cal_rhoxy", data[:, 4]),
-            ("cal_rhoyx", data[:, 6]),
-            ("cal_rhoyy", data[:, 8]),
-
-            ("cal_phsxx", data[:, 3]),
-            ("cal_phsxy", data[:, 5]),
-            ("cal_phsyx", data[:, 7]),
-            ("cal_phsyy", data[:, 9]),
-
-
-            ("obs_rhoxx", data[:, 10]),
-            ("obs_rhoxy", data[:, 12]),
-            ("obs_rhoyx", data[:, 14]),
-            ("obs_rhoyy", data[:, 16]),
-
-            ("obs_phsxx", data[:, 11]),
-            ("obs_phsxy", data[:, 13]),
-            ("obs_phsyx", data[:, 15]),
-            ("obs_phsyy", data[:, 17]),
-
-            ("obs_rhoxx_err", data[:, 18]),
-            ("obs_rhoxy_err", data[:, 20]),
-            ("obs_rhoyx_err", data[:, 22]),
-            ("obs_rhoyy_err", data[:, 24]),
-
-            ("obs_phsxx_err", data[:, 19]),
-            ("obs_phsxy_err", data[:, 21]),
-            ("obs_phsyx_err", data[:, 23]),
-            ("obs_phsyy_err", data[:, 25]),
-
-
-            ("frq", data[:, 1]),
-            ("per", 1./data[:1]),
-            ("num", data[:, 0]),
-            ("lat", info[:, 1]),
-            ("lon", info[:, 2]),
-            ("elv", info[:, 3]),
-            ("sit", info[:, 0][data[:, 0].astype("int")-1]),
+        # print(np.shape(data))
+        # print(np.shape(data[:, 2:10 ]))
+        # print(np.shape(data[:, 10:18 ]))
+        # print(np.shape(data[:, 18:26 ]))
+        type_dict = dict([
+            ("cal", data[:, 2:10]),
+            ("obs", data[:, 10:18 ]),
+            ("err", data[:, 18:26]),
         ])
 
     elif "imp" in data_type.lower():
@@ -91,80 +71,25 @@ def get_femtic_data(data_file=None, site_file=None, data_type="rhophas", out=Tru
          ReZxxErr   ImZxxErr   ReZxyErr   ImZxyErr   ReZyxErr  ImZyxErr  ReZyyErr   ImZyyErr
         """
 
-        data_dict = dict([
-            ("sites", sites),
-
-            ("cal_rezxx", data[:, 2]),
-            ("cal_rezxy", data[:, 4]),
-            ("cal_rezyx", data[:, 6]),
-            ("cal_rezyy", data[:, 8]),
-
-            ("cal_imzxx", data[:, 3]),
-            ("cal_imzxy", data[:, 5]),
-            ("cal_imzyx", data[:, 7]),
-            ("cal_imzyy", data[:, 9]),
-
-
-            ("obs_rezxx", data[:, 10]),
-            ("obs_rezxy", data[:, 12]),
-            ("obs_rezyx", data[:, 14]),
-            ("obs_rezyy", data[:, 16]),
-
-            ("obs_imzxx", data[:, 11]),
-            ("obs_imzxy", data[:, 13]),
-            ("obs_imzyx", data[:, 15]),
-            ("obs_imzyy", data[:, 17]),
-
-            ("obs_rezxx_err", data[:, 18]),
-            ("obs_rezxy_err", data[:, 20]),
-            ("obs_rezyx_err", data[:, 22]),
-            ("obs_rezyy_err", data[:, 24]),
-
-            ("obs_imzxx_err", data[:, 19]),
-            ("obs_imzxy_err", data[:, 21]),
-            ("obs_imzyx_err", data[:, 23]),
-            ("obs_imzyy_err", data[:, 25]),
-
-            ("frq", data[:, 1]),
-            ("per", 1./data[:1]),
-            ("lat", info[:, 1]),
-            ("lon", info[:, 2]),
-            ("elv", info[:, 3]),
-            ("sit", info[:, 0][data[:, 0].astype("int")-1]),
+        type_dict = dict([
+            ("cal", data[:, 2:10 ]),
+            ("obs", data[:, 10:18 ]),
+            ("err", data[:, 18:26]),
         ])
 
     elif "vtf" in data_type.lower():
+
         """
         Site    Frequency
         ReTzxCal   ImTzxCal   ReTzyCal   ImTzyCal
         ReTzxOb    ImTzxObs   ReTzyObs   ImTzyObs
         ReTzxErr   ImTzxErr   ReTzyErr   ImTzyErr
         """
-        data_dict = dict([
-            ("sites", sites),
+        type_dict = dict([
+            ("cal", data[:, 2:6 ]),
+            ("obs", data[:, 6:10 ]),
+            ("err", data[:, 10:15]),
 
-            ("cal_retzx", data[:, 2]),
-            ("cal_retzy", data[:, 4]),
-            ("cal_imtzx", data[:, 3]),
-            ("cal_imtzy", data[:, 5]),
-
-            ("obs_retzx", data[:, 6]),
-            ("obs_retzy", data[:, 8]),
-            ("obs_imtzx", data[:, 7]),
-            ("obs_imtzy", data[:, 9]),
-
-            ("obs_retzx_err", data[:, 10]),
-            ("obs_retzy_err", data[:, 12]),
-            ("obs_imtzx_err", data[:, 11]),
-            ("obs_imtzy_err", data[:, 13]),
-
-
-            ("frq", data[:, 1]),
-            ("per", 1./data[:1]),
-            ("lat", info[:, 1]),
-            ("lon", info[:, 2]),
-            ("elv", info[:, 3]),
-            ("sit", info[:, 0][data[:, 0].astype("int")-1]),
         ])
 
     elif "pt" in data_type.lower():
@@ -174,34 +99,16 @@ def get_femtic_data(data_file=None, site_file=None, data_type="rhophas", out=Tru
         ReTzxOb    ImTzxObs   ReTzyObs   ImTzyObs
         ReTzxErr   ImTzxErr   ReTzyErr   ImTzyErr
         """
-        data_dict = dict([
-            ("sites", sites),
+        type_dict = dict([
+            ("cal", data[:, 2:6 ]),
+            ("obs", data[:, 6:18 ]),
+            ("err", data[:, 10:14]),
 
-            ("cal_ptxx", data[:, 2]),
-            ("cal_ptxy", data[:, 3]),
-            ("cal_ptyx", data[:, 4]),
-            ("cal_ptyy", data[:, 5]),
-
-            ("obs_ptxx", data[:, 6]),
-            ("obs_ptxy", data[:, 7]),
-            ("obs_ptyx", data[:, 8]),
-            ("obs_ptyy", data[:, 9]),
-
-            ("obs_ptxx_err", data[:, 10]),
-            ("obs_ptxy_err", data[:, 11]),
-            ("obs_ptyx_err", data[:, 12]),
-            ("obs_ptyy_err", data[:, 13]),
-
-
-            ("frq", data[:, 1]),
-            ("per", 1./data[:1]),
-            ("lat", info[:, 1]),
-            ("lon", info[:, 2]),
-            ("elv", info[:, 3]),
-            ("sit", info[:, 0][data[:, 0].astype("int")-1]),
         ])
 
     else:
         error("get_femtic_data: data type "+data_type.lower()+" not implemented! Exit.")
+
+    data_dict = {**head_dict, **type_dict}
 
     return data_dict
