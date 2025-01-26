@@ -158,7 +158,7 @@ def transform_sensitivity(S=np.array([]), Vol=np.array([]),
 
     ns = np.shape(S)
     print("transform_sensitivity: Shape = ", ns)
-
+    print("trans_sensitivity:",np.amin(S), np.amax(S))
 
     for item in Transform:
 
@@ -166,9 +166,11 @@ def transform_sensitivity(S=np.array([]), Vol=np.array([]),
         if "sqr" in item.lower():
             S = np.sqrt(S)
             # print("S0s", np.shape(S))
+            print("trans_sensitivity sqr:",np.amin(S), np.amax(S))
 
         if "log" in item.lower():
             S = np.log10(S)
+            print("trans_sensitivity log:",np.amin(S), np.amax(S))
 
         if "asinh" in item.lower():
             maxval = np.amax(S)
@@ -202,18 +204,17 @@ def transform_sensitivity(S=np.array([]), Vol=np.array([]),
         if "max" in item.lower():
              print("trans_sensitivity: Transformed by maximum value.")
              if Maxval is None:
-                 _, maxval = sminmax(np.abs(S))
+                 maxval = np.amax(np.abs(S))
              else:
                  maxval = Maxval
              print("maximum value: ", maxval)
              S = S/maxval
+             print("trans_sensitivity max:",np.amin(S), np.amax(S))
              # print("S0m", np.shape(S))
 
 
     if OutInfo:
-        maxval = np.amax(S)
-        minval = np.amin(S)
-        print("trans_sensitivity:",minval, maxval)
+        print("trans_sensitivity:",np.amin(S), np.amax(S))
 
         S[np.where(np.abs(S)<Small)]=Small
 
