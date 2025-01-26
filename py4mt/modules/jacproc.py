@@ -70,7 +70,7 @@ def calc_sensitivity(Jac=np.array([]),
         #     print("raw sensitivities")
         # smax = Jac.max(axis = 0)
         # smin = Jac.max(axis = 0)
-        
+
     elif "cov" in Type.lower():
         S = Jac.abs().sum(axis=0)
         if OutInfo:
@@ -108,11 +108,20 @@ def calc_sensitivity(Jac=np.array([]),
         #     print("euclidean (default)")
 
         # S = S.reshape[-1,1]
- 
+
+
+    if OutInfo:
+        maxval = np.amax(S)
+        minval = np.amin(S)
+        print("calc_sensitivity:",minval, maxval)
+
+    print("calc: ", np.any(S==0))
     S[np.where(np.abs(S)<Small)]=Small
     print("calc: ", np.any(S==0))
-    # S=S.A1    
+    # S=S.A1
     S = np.asarray(S).ravel()
+
+
     return S
 
 
@@ -126,18 +135,18 @@ def transform_sensitivity(S=np.array([]), Vol=np.array([]),
     used in the literature.
 
     Normalize options:
-        "siz"       Normalize by the values optional array V ("volume"), 
-                    i.e in our case layer thickness. 
+        "siz"       Normalize by the values optional array V ("volume"),
+                    i.e in our case layer thickness.
         "max"       Normalize by maximum value.
         "sur"       Normalize by surface value.
-        "sqr"       Take the square root. Only usefull for euc sensitivities. 
-        "log"       Take the logaritm. This should always be the 
+        "sqr"       Take the square root. Only usefull for euc sensitivities.
+        "log"       Take the logaritm. This should always be the
                     last value in Transform list
-                    
-        "asinh"     asinh transform. WARNING: excludes log option, 
+
+        "asinh"     asinh transform. WARNING: excludes log option,
                     and should be used only for raw sensitivities
-                    (C. Scholl, Die Periodizitaet von Sendesignalen 
-                    bei Long-Offset Transient Electromagnetics, 
+                    (C. Scholl, Die Periodizitaet von Sendesignalen
+                    bei Long-Offset Transient Electromagnetics,
                     Diploma Thesis, Universität zu Koeln, 2001).
 
     author:VR 4/23
@@ -146,19 +155,19 @@ def transform_sensitivity(S=np.array([]), Vol=np.array([]),
 
     if np.size(S)==0:
         error("transform_sensitivity: Sensitivity size is 0! Exit.")
-    
+
     ns = np.shape(S)
     print("transform_sensitivity: Shape = ", ns)
-    
 
-    for item in Transform:       
-        
-            
+
+    for item in Transform:
+
+
         if "sqr" in item.lower():
             S = np.sqrt(S)
             # print("S0s", np.shape(S))
-            
-        if "log" in item.lower():    
+
+        if "log" in item.lower():
             S = np.log10(S)
 
         if "asinh" in item.lower():
@@ -174,7 +183,7 @@ def transform_sensitivity(S=np.array([]), Vol=np.array([]),
                     scale = get_scale(S, method=asinhpar[0])
 
                     S = np.arcsinh(S/scale)
-        
+
         if ("siz" in item.lower()) or ("vol" in item.lower()):
              print("transformed_sensitivity: Transformed by volumes/layer thickness.")
              if np.size(Vol)==0:
@@ -199,11 +208,16 @@ def transform_sensitivity(S=np.array([]), Vol=np.array([]),
              print("maximum value: ", maxval)
              S = S/maxval
              # print("S0m", np.shape(S))
-             
-             
+
+
+    if OutInfo:
+        maxval = np.amax(S)
+        minval = np.amin(S)
+        print("trans_sensitivity:",minval, maxval)
+
         S[np.where(np.abs(S)<Small)]=Small
 
-        
+
     return S, maxval
 
 def get_scale(d=np.array([]), f=0.1, method = "other", OutInfo = False):
@@ -248,7 +262,7 @@ def get_scale(d=np.array([]), f=0.1, method = "other", OutInfo = False):
 
 def sparsmat_to_array(mat=None):
     """
-    
+
 
     Parameters
     ----------
@@ -265,10 +279,10 @@ def sparsmat_to_array(mat=None):
 
     """
     arr = np.array([])
-    
+
     # data = mat.A1
     arr= np.asarray(mat).ravel()
-    
+
     return arr
 
 
@@ -427,8 +441,8 @@ def ortho_basis(M):
     return Q
 
 
-def sparsify_jac(Jac=None, 
-                 sparse_thresh=1.0e-6, normalized=False, scalval = 1., 
+def sparsify_jac(Jac=None,
+                 sparse_thresh=1.0e-6, normalized=False, scalval = 1.,
                  method=None, out=True):
     """
     Sparsifies error_scaled Jacobian from ModEM output
@@ -443,25 +457,25 @@ def sparsify_jac(Jac=None,
             "sparsify_jac: dimension of original J is %i x %i = %i elements"
             % (shj[0], shj[1], nel)
         )
-        
-    
+
+
     Jf = Jac.copy()
     # print(np.shape(Jf))
-    
+
     if scalval <0.:
         Scaleval = np.amax(np.abs(Jf))
-        print("sparsify_jac: scaleval is %g (max Jacobian)" % (Scaleval))  
-    else: 
+        print("sparsify_jac: scaleval is %g (max Jacobian)" % (Scaleval))
+    else:
         Scaleval = abs(scalval)
-        print("sparsify_jac: scaleval is  %g" % (Scaleval))  
-        
-    if normalized:        
-        print("sparsify_jac: output J is scaled by %g" % (Scaleval)) 
+        print("sparsify_jac: scaleval is  %g" % (Scaleval))
+
+    if normalized:
+        print("sparsify_jac: output J is scaled by %g" % (Scaleval))
         f = 1.0 / Scaleval
         Jf = normalize_jac(Jac=Jf, fn=f)
-    
+
     Jf[np.abs(Jf)/Scaleval < sparse_thresh] = 0.0
-    
+
     # print(np.shape(Jf))
 
     Js = scs.csr_matrix(Jf)
@@ -475,19 +489,19 @@ def sparsify_jac(Jac=None,
         test = np.random.default_rng().normal(size=np.shape(Jac)[1])
         normx = npl.norm(Jf@test)
         normo = npl.norm(Jf@test-Js@test)
-        
+
 
         normd = npl.norm((Jac-Jf), ord="fro")
         normf = npl.norm(Jac, ord="fro")
         # print(norma)
-        # print(normf)        
+        # print(normf)
         print(" Sparsified J explains "
               +str(round(100.-100.*normo/normx,2))+"% of full J (Spectral norm)")
         print(" Sparsified J explains "
               +str(round(100.-100.*normd/normf,2))+"% of full J (Frobenius norm)")
         # print("****", nel, ns, 100.0 * ns / nel, round(100.-100.*normd/normf,3) )
 
-       
+
 
     return Js, Scaleval
 
@@ -554,7 +568,7 @@ def set_airmask(rho=None, aircells=np.array([]), blank= 1.e-30, flat=False, out=
     # jm = np.full(shr, np.nan)
     jm = np.full(shr, 1.)
     print(np.shape(jm), shr)
-    
+
     jm[aircells] = blank
     mask = jm
     if flat:
@@ -598,18 +612,18 @@ def project_models(m=None, U=None, tst_sample= None, nsamp=1, small=1.0e-14, out
     """
     if m.ndim(m)>1:
         m = m.flatten(order="F")
-    
+
     if tst_sample  is None:
         print("project_model: "+str(nsamp)+" sample models will be generated!")
         if nsamp==0:
-           error("project_model: No number of samples given! Exit.") 
+           error("project_model: No number of samples given! Exit.")
         tst_sample = m + np.random.default_rng().normal(0., 1., (nsamp, len(m)))
-        
+
     else:
         nsamp = np.shape(tst_sample)[0]
-        
+
     nss_sample = np.zeros(nsamp, len(m))
-    
+
     for isamp in np.arange(nsamp):
         b = U.T@tst_sample[isamp,:]
         nss_sample[isamp, :] = m - U@b
@@ -631,43 +645,43 @@ def sample_pcovar(cpsqrti=None, m=None, tst_sample = None,
 
     References:
 
-    Osypov K, Yang Y, Fournier A, Ivanova N, Bachrach R, 
+    Osypov K, Yang Y, Fournier A, Ivanova N, Bachrach R,
         Can EY, You Y, Nichols D, Woodward M (2013)
-        Model-uncertainty quantification in seismic tomography: method and applications 
+        Model-uncertainty quantification in seismic tomography: method and applications
         Geophysical Prospecting, 61, pp. 1114–1134, 2013, doi: 10.1111/1365-2478.12058.
-  
+
 
     """
     error("sample_pcovar: Not yet fully implemented! Exit.")
-    
+
     if (cpsqrti is None) or  (m is None):
         error("sample_pcovar: No covarince or ref model given! Exit.")
-    
 
-    
+
+
     if tst_sample is None:
         print("sample_pcovar: "+str(nsamp)+" sample models will be generated!")
         if nsamp==0:
-           error("sample_pcovar: No number of samples given! Exit.") 
+           error("sample_pcovar: No number of samples given! Exit.")
         tst_sample = np.random.default_rng().normal(0., 1., (nsamp, len(m)))
-        
+
     else:
         nsamp = np.shape(tst_sample)[0]
-        
-        
+
+
     spc_sample = np.zeros(nsamp, len(m))
-        
+
     for isamp in np.arange(nsamp):
         spc_sample[isamp,:] = m + cpsqrti@tst_sample[isamp,:]
-    
+
     return spc_sample
 
 
 def mult_by_cmsqr(m_like_in=None, smooth=[None, None, None], small=1.0e-14, out=True):
     """
     Multyiply by sqrt of paramter prior covariance (aka "smoothing")
-    baed on the ModEM fortran code 
-    
+    baed on the ModEM fortran code
+
     Parameters
     ----------
     m_like_in : TYPE, optional
@@ -682,30 +696,30 @@ def mult_by_cmsqr(m_like_in=None, smooth=[None, None, None], small=1.0e-14, out=
     None.
 
     =============================================================================
-    
+
        subroutine RecursiveAR(w,v,n)
-    
+
         ! Implements the recursive autoregression algorithm for a 3D real array.
         ! In our case, the assumed-shape array would be e.g. conductivity
         ! in each cell of the Nx x Ny x NzEarth grid.
-    
+
         real (kind=prec), intent(in)     :: w(:,:,:)
         real (kind=prec), intent(out)    :: v(:,:,:)
         integer, intent(in)                      :: n
         integer                                  :: Nx, Ny, NzEarth, i, j, k, iSmooth
-    
+
         Nx      = size(w,1)
      	Ny      = size(w,2)
      	NzEarth = size(w,3)
-    
+
      	if (maxval(abs(shape(w) - shape(v)))>0) then
     		call errStop('The input arrays should be of the same shapes in RecursiveAR')
      	end if
-    
+
      	v = w
-    
+
      	do iSmooth = 1,n
-    
+
     		! smooth in the X-direction (Sx)
      	    do k = 1,NzEarth
     	    	do j = 1,Ny
@@ -715,7 +729,7 @@ def mult_by_cmsqr(m_like_in=None, smooth=[None, None, None], small=1.0e-14, out=
      	    		end do
     	    	end do
      	    end do
-    
+
     		! smooth in the Y-direction (Sy)
      	    do k = 1,NzEarth
     	    	do i = 1,Nx
@@ -725,7 +739,7 @@ def mult_by_cmsqr(m_like_in=None, smooth=[None, None, None], small=1.0e-14, out=
      	    		end do
     	    	end do
      	    end do
-    
+
     		! smooth in the Z-direction (Sz)
      	    do j = 1,Ny
     	    	do i = 1,Nx
@@ -745,7 +759,7 @@ def mult_by_cmsqr(m_like_in=None, smooth=[None, None, None], small=1.0e-14, out=
      	    		end do
     	    	end do
      	    end do
-    
+
     		! smooth in the Y-direction (Sy^T)
      	    do k = NzEarth,1,-1
     	    	do i = Nx,1,-1
@@ -755,7 +769,7 @@ def mult_by_cmsqr(m_like_in=None, smooth=[None, None, None], small=1.0e-14, out=
      	    		end do
     	    	end do
      	    end do
-    
+
      	    ! smooth in the X-direction (Sx^T)
      	    do k = NzEarth,1,-1
     	    	do j = Ny,1,-1
@@ -765,9 +779,9 @@ def mult_by_cmsqr(m_like_in=None, smooth=[None, None, None], small=1.0e-14, out=
      	    		end do
     	    	end do
      	    end do
-    
+
         end do
-    
+
      	! apply the scaling operator C
         do k = 1,NzEarth
          	do j = 1,Ny
@@ -776,22 +790,22 @@ def mult_by_cmsqr(m_like_in=None, smooth=[None, None, None], small=1.0e-14, out=
         		end do
          	end do
         end do
-    
+
       end subroutine RecursiveAR
     =============================================================================
 
     """
     # nsmooth = 1
-    
-    
+
+
     error("mult_by_cmsq: Not yet implemented. Exit")
-    
+
     tmp = m_like_in.copy()
-    
+
     nx, ny,nz = np.shape(m_like_in)
-    
-    sm_x, sm_y, sm_z = smooth   
-    
+
+    sm_x, sm_y, sm_z = smooth
+
     """
     		! smooth in the Z-direction (Sz)
      	    for jj in  np.arange(0,ny)
@@ -817,37 +831,37 @@ def mult_by_cmsqr(m_like_in=None, smooth=[None, None, None], small=1.0e-14, out=
        i = ii
        for jj in np.arange(0,ny):
           j =jj
-          for kk in np.arange(2, nz): 
+          for kk in np.arange(2, nz):
               k = kk
               tmp[i,j,k] = sm_z[i,j,k-1] * tmp[i,j,k-1] + tmp[i,j,k]
-               
+
     for ii in  np.arange(nx,0,-1):
        i = ii-1
        for jj in np.arange(ny, 0, -1):
           j =jj-1
-          for kk in np.arange(2, nz): 
+          for kk in np.arange(2, nz):
               k = kk-1
               tmp[i,j,k-1] = tmp[i,j,k-1] * sm_z[i,j,k-1] + tmp[i,j,k]
-               
+
     m_like_out =  m_like_in
-    return m_like_out    
+    return m_like_out
 
 def print_stats(jac=np.array([]), jacmask=np.array([]), outfile=None):
     """
     Prints dome info on jacobian
     """
-    
+
     jdims = np.shape(jac)
     print("stats: Jacobian dimensions are:", jdims)
     if outfile is not None:
         outfile.write("Jacobian dimensions are:"+str(jdims))
-    
+
     if jdims[0]==0:
         return
-        
+
     mx = np.amax(jac)
     mn = np.amin(jac)
-    print("stats: minimum/maximum Jacobian value is "+str(mn)+"/"+str(mx))  
+    print("stats: minimum/maximum Jacobian value is "+str(mn)+"/"+str(mx))
     if outfile is not None:
         outfile.write("Mminimum/maximum Jacobian value is "+str(mn)+"/"+str(mx))
     mn = np.amin(np.abs(jac))
@@ -855,7 +869,7 @@ def print_stats(jac=np.array([]), jacmask=np.array([]), outfile=None):
     print("stats: minimum/maximum abs Jacobian value is "+str(mn)+"/"+str(mx))
     if outfile is not None:
         outfile.write("Minimum/maximum abs Jacobian value is "+str(mn)+"/"+str(mx))
-  
+
     mjac = jac*scs.diags(jacmask,0)
     mx = np.amax(mjac)
     mn = np.amin(mjac)
@@ -885,5 +899,3 @@ def sminmax(S=None, aircells=None, seacells=None, out=True):
         print("S min =", s_min," S max =", s_max)
 
     return s_min, s_max
-
-
