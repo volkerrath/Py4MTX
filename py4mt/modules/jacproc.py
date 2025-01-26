@@ -115,9 +115,9 @@ def calc_sensitivity(Jac=np.array([]),
         minval = np.amin(S)
         print("calc_sensitivity:",minval, maxval)
 
-    print("calc: ", np.any(S==0))
+    # print("calc: ", np.any(S==0))
     S[np.where(np.abs(S)<Small)]=Small
-    print("calc: ", np.any(S==0))
+    # print("calc: ", np.any(S==0))
     # S=S.A1
     S = np.asarray(S).ravel()
 
