@@ -149,7 +149,7 @@ for filename in edi_files:
             ellipse_colorby = PT_colorby,  #'phimin'
             ellipse_cmap = PT_cmap,
             ellipse_range = PT_range,
-            close_plot=False)
+            close_plot=True)
 
     plt.show()
     for F in PlotFmt:
