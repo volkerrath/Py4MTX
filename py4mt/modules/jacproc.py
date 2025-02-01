@@ -890,8 +890,10 @@ def sminmax(S=None, aircells=None, seacells=None, out=True):
     """
 
     tmp = S.copy()
-    tmp[aircells] = np.nan
-    tmp[seacells] = np.nan
+    if aircells is not None:
+        tmp[aircells] = np.nan
+    if seacells is not None:
+        tmp[seacells] = np.nan
 
     s_min = np.nanmin(tmp)
     s_max = np.nanmax(tmp)

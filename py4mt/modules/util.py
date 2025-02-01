@@ -688,9 +688,10 @@ def calc_rms(dcalc=None, dobs=None, Wd=1.0):
     sizedat = np.shape(dcalc)
     nd = sizedat[0]
     rscal = Wd * (dobs - dcalc).T
-    # print(sizedat,nd)
+    print(sizedat,nd)
     # normalized root mean square error
     nrms = np.sqrt(np.sum(np.power(abs(rscal), 2)) / (nd - 1))
+    
     # sum squared scaled symmetric error
     serr = 2.0 * nd * np.abs(rscal) / (abs(dobs.T) + abs(dcalc.T))
     ssq = np.sum(np.power(serr, 2))
