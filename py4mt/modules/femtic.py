@@ -38,8 +38,8 @@ def get_femtic_data(data_file=None, site_file=None, data_type="rhophas", out=Tru
         ("lat", info[:, 1]),
         ("lon", info[:, 2]),
         ("elv", info[:, 3]),
-        ("num", data[:, 0].astype("int")),
-        ("nam", info[:, 0][data[:, 0].astype("int")-1])
+        ("num", data[:, 0].astype("int")-1),
+        ("nam", info[:, 0][sites.astype("int")-1])
         ])
 
     if "rhophas" in data_type.lower():
