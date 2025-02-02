@@ -47,8 +47,8 @@ print(titstrng+"\n\n")
 cm = 1./2.54  # centimeters to inches
 
 
-WorkDir = "/home/vrath/Py4MTX/work/results_ploting/"
-DatFile = WorkDir+"Misti_MT.txt"
+WorkDir = "/home/vrath/Py4MTX/work/results/"
+DatFile = WorkDir+"Misti_MT_rhophas.txt"
 SitFile = WorkDir+"Sitelist_femtic.txt"
 PlotDir = WorkDir+"/plots/"
 PlotFile = "Mist01"
@@ -66,21 +66,10 @@ PlotPred = True
 PlotObsv = True
 PlotFull = True
 
-PlotType = "rhophas" # "impedance", "vtf", "pt"
 
-PerLimits = (0.0001,1000.)
-
-if "rho" in PlotType.lower():
-    RhoLimitsXX = ()
-    PhsLimitsXY = ()
-elif "imp" in PlotType.lower():
-    ImpLimits = ()
-elif "vtf" in PlotType.lower():
-    TipLimits = ()
-elif "pt" in PlotType.lower():
-    PTlimits = (-1., 1.)
-else:
-    error("PlotType "+PlotType.lower()+" not implemented! Exit.")
+PerLimits = [0.0001,1000.]
+RhoLimits = []
+PhsLimitsXY = []
 
 
 ShowErrors = True
