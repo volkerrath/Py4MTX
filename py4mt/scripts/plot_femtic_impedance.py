@@ -47,8 +47,8 @@ print(titstrng+"\n\n")
 cm = 1./2.54  # centimeters to inches
 
 
-WorkDir = "/home/vrath/Py4MTX/work/results/"
-DatFile = WorkDir+"Misti_imped.txt"
+WorkDir = "/home/vrath/Py4MTX/work/Misti_results/"
+DatFile = WorkDir+"MISTI_Results_imped.txt"
 SitFile = WorkDir+"Sitelist_femtic.txt"
 PlotDir = WorkDir+"/plots/"
 PlotFile = "Mist01"
