@@ -90,17 +90,6 @@ if not PlotPred:
 
 EPSG = 32719
 
-
-Orient = "vertical"
-if "vert" in Orient.lower():
-    FigSize = ( 8*cm, 18*cm)
-else:
-    FigSize = (18*cm, 10*cm)
-
-
-
-
-
 PlotFormat = [".pdf", ".png", ]
 PDFCatalog = True
 PDFCatalogName = PlotFile+".pdf"
@@ -112,6 +101,7 @@ else:
     catalog = PdfPages(PDFCatalogName)
 FilesOnly = False
 
+
 """
 Determine graphical parameter.
 +> print(plt.style.available)
@@ -121,6 +111,8 @@ plt.style.use("seaborn-v0_8-paper")
 mpl.rcParams["figure.dpi"] = 600
 mpl.rcParams["axes.linewidth"] = 0.5
 mpl.rcParams["savefig.facecolor"] = "none"
+
+FigSize = (16*cm, 18*cm)
 Fontsize = 10
 Labelsize = Fontsize
 Titlesize = Fontsize-1
@@ -129,6 +121,7 @@ Markersize = 4
 Grey = 0.7
 Lcycle =Lcycle = (cycler("linestyle", ["-", "--", ":", "-."])
           * cycler("color", ["r", "g", "b", "y"]))
+
 
 """
 For just plotting to files, choose the cairo backend (eps, pdf, ,png, jpg...).
@@ -147,19 +140,20 @@ sites = data_dict["sites"]
 lat = data_dict["lat"].reshape(-1,1)
 lon = data_dict["lon"].reshape(-1,1)
 elv = data_dict["elv"].reshape(-1,1)
-
+nam = data_dict["nam"].reshape(-1,1)
 
 
 for s in sites:
     print("Plotting site: "+str(s))
+    print("Site name is ", nam[s][0])
     site_lon = lon[s] #[site_index]
     site_lat = lat[s] #a = [site_index]
-    site_elev = elv[s]
+    site_elev = elv[s][0]
     site_utmx, site_utmy = utl.proj_latlon_to_utm(site_lat, site_lon, utm_zone=EPSG)
     site_utmx = int(np.round(site_utmx))
     site_utmy = int(np.round(site_utmy))
     print(s, "at", site_lat[0], site_lon[0], site_elev[0])
-
+    site_nam = nam[s][0]
     site_index = np.where(data_dict["num"] ==s)
     print(site_index)
 
@@ -260,397 +254,262 @@ for s in sites:
     else:
         rmsstrng = "" 
 
-
-    if   "hor" in Orient.lower:
-        fig, axes = plt.subplots(1,2, figsize = FigSize, subplot_kw=dict(box_aspect=1.),
-                         sharex=True, sharey=False, constrained_layout=True)
-    elif "ver" in Orient.lower:
-        fig, axes = plt.subplots(2,1, figsize = FigSize, subplot_kw=dict(box_aspect=1.),
-                         sharex=True, sharey=False, constrained_layout=True)
-    else:
-        fig, axes = plt.subplots(2,2, figsize = FigSize, subplot_kw=dict(box_aspect=1.),
+    fig, axes = plt.subplots(2,2, figsize = FigSize, subplot_kw=dict(box_aspect=1.),
                  sharex=True, sharey=False, constrained_layout=True)
     
-    fig.suptitle(r"Site: "+s+rmsstrng
+    fig.suptitle(r"Site: "+site_nam+rmsstrng
                  +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
-                 +"\nX: "+str(site_utmx)+"   Y: "+str(site_utmy)
-                 +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m\n",
+                 +"\nEasting: "+str(site_utmx)+"   Northing: "+str(site_utmy)
+                 +" (EPSG="+str(EPSG)+")  \nElev: "+ str(site_elev)+" m\n",
                  ha="left", x=0.1,fontsize=Titlesize)
 
        
-# # #  ZXX
+#  ZXX
 
-# #         if PlotPred:
-# #             axes[0,0].plot(Perxxc, Zxxrc, color="r",linestyle="-", linewidth=Linewidth)
+        if PlotPred:
+            axes[0,0].plot(Perxxc, Zxxrc, color="r",linestyle="-", linewidth=Linewidth)
 
-# #         if PlotObsv:
-# #             if ShowErrors:
-# #                 axes[0,0].errorbar(Perxxo,zxx_obs_real, yerr=Zxxe,
-# #                                 linestyle="",
-# #                                 marker="o",
-# #                                 color="r",
-# #                                 linewidth=Linewidth,
-# #                                 markersize=Markersize)
-# #             else:
-# #                 axes[0,0].plot(Perxxo, zxx_obs_real,
-# #                                color="r",
-# #                                linestyle="",
-# #                                marker="o",
-# #                                markersize=Markersize)
+        if PlotObsv:
+            if ShowErrors:
+                axes[0,0].errorbar(Perxxo,zxx_obs_real, yerr=Zxxe,
+                                linestyle="",
+                                marker="o",
+                                color="r",
+                                linewidth=Linewidth,
+                                markersize=Markersize)
+            else:
+                axes[0,0].plot(Perxxo, zxx_obs_real,
+                               color="r",
+                               linestyle="",
+                               marker="o",
+                               markersize=Markersize)
 
-# #         if PlotPred:
-# #             axes[0,0].plot(Perxxc, Zxxic, color="b",linestyle="-", linewidth=Linewidth)
+        if PlotPred:
+            axes[0,0].plot(Perxxc, Zxxic, color="b",linestyle="-", linewidth=Linewidth)
 
-# #         if PlotObsv:
-# #             if ShowErrors:
-# #                 axes[0,0].errorbar(Perxxo,Zxxio, yerr=Zxxe,
-# #                                 linestyle="",
-# #                                 marker="o",
-# #                                 color="b",
-# #                                 linewidth=Linewidth,
-# #                                 markersize=Markersize)
-# #             else:
-# #                 axes[0,0].plot(Perxxo, Zxxio,
-# #                                color="b",
-# #                                linestyle="",
-# #                                marker="o",
-# #                                markersize=Markersize)
+        if PlotObsv:
+            if ShowErrors:
+                axes[0,0].errorbar(Perxxo,Zxxio, yerr=Zxxe,
+                                linestyle="",
+                                marker="o",
+                                color="b",
+                                linewidth=Linewidth,
+                                markersize=Markersize)
+            else:
+                axes[0,0].plot(Perxxo, Zxxio,
+                               color="b",
+                               linestyle="",
+                               marker="o",
+                               markersize=Markersize)
 
-# #         axes[0,0].set_xscale("log")
-# #         axes[0,0].set_yscale("log")
-# #         axes[0,0].set_xlim(PerLimits)
-# #         if ZLimitsXX != ():
-# #             axes[0,0].set_ylim(ZLimitsXX)
-# #         axes[0,0].legend(["real", "imag"])
+        axes[0,0].set_xscale("log")
+        axes[0,0].set_yscale("log")
+        axes[0,0].set_xlim(PerLimits)
+        if ZLimitsXX != ():
+            axes[0,0].set_ylim(ZLimitsXX)
+        axes[0,0].legend(["real", "imag"])
 
-# #         axes[0,0].tick_params(labelsize=Labelsize-1)
-# #         axes[0,0].set_ylabel("|ZXX|", fontsize=Fontsize)
-# #         axes[0,0].grid("both", "both", linestyle="-", linewidth=0.5)
-# #         if ShowRMS:
-# #             nRMSr = np.around(nRMSZxxr,1)
-# #             nRMSi = np.around(nRMSZxxi,1)
-# #             StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
-# #             axes[0,0].text(0.05, 0.05,StrRMS,
-# #                                transform=axes[0,1].transAxes,
-# #                                fontsize = Fontsize-2,
-# #                                ha="left", va="bottom",
-# #                                bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
-
-
-# # #  ZXY
-# #         if PlotPred:
-# #            axes[0,1].plot(Perxyc, Zxyrc, color="r",linestyle="-", linewidth=Linewidth)
-
-# #         if PlotObsv:
-# #             if ShowErrors:
-# #                 axes[0,1].errorbar(Perxyo,Zxyro, yerr=Zxye,
-# #                                 linestyle="",
-# #                                 marker="o",
-# #                                 color="r",
-# #                                 linewidth=Linewidth,
-# #                                 markersize=Markersize)
-# #             else:
-# #                 axes[0,1].plot(Perxyo,
-# #                                Zxyro, color="r",
-# #                                linestyle="",
-# #                                marker="o",
-# #                                markersize=Markersize)
-
-# #         if PlotPred:
-# #             axes[0,1].plot(Perxyc, Zxyic, color="b",linestyle="-", linewidth=Linewidth)
-# #         if PlotObsv:
-# #             if ShowErrors:
-# #                 axes[0,1].errorbar(Perxyo,Zxyio, yerr=Zxye,
-# #                                 linestyle="",
-# #                                 marker="o",
-# #                                 color="b",
-# #                                 linewidth=Linewidth,
-# #                                 markersize=Markersize)
-# #             else:
-# #                 axes[0,1].plot(Perxyo, Zxyio,
-# #                                color="b",
-# #                                linestyle="",
-# #                                marker="o",
-# #                                markersize=Markersize)
-
-# #         axes[0,1].set_xscale("log")
-# #         axes[0,1].set_yscale("log")
-# #         axes[0,1].set_xlim(PerLimits)
-# #         if ZLimitsXY != ():
-# #             axes[0,1].set_ylim(ZLimitsXY)
-# #         axes[0,1].legend(["real", "imag"])
-# #         # axes[0,1].xaxis.set_ticklabels([])
-# #         axes[0,1].tick_params(labelsize=Labelsize-1)
-# #         axes[0,1].set_ylabel("|ZXY|", fontsize=Fontsize)
-# #         axes[0,1].grid("both", "both", linestyle="-", linewidth=0.5)
-# #         if ShowRMS:
-# #             nRMSr = np.around(nRMSZxyr,1)
-# #             nRMSi = np.around(nRMSZxyi,1)
-# #             StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
-# #             axes[0,1].text(0.05, 0.05,StrRMS,
-# #                                transform=axes[0,1].transAxes,
-# #                                fontsize = Fontsize-2,
-# #                                ha="left", va="bottom",
-# #                                bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
+        axes[0,0].tick_params(labelsize=Labelsize-1)
+        axes[0,0].set_ylabel("|ZXX|", fontsize=Fontsize)
+        axes[0,0].grid("both", "both", linestyle="-", linewidth=0.5)
+        if ShowRMS:
+            nRMSr = np.around(nRMSZxxr,1)
+            nRMSi = np.around(nRMSZxxi,1)
+            StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
+            axes[0,0].text(0.05, 0.05,StrRMS,
+                               transform=axes[0,1].transAxes,
+                               fontsize = Fontsize-2,
+                               ha="left", va="bottom",
+                               bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
 
-# # #  ZYX
-# #         if PlotPred:
-# #            axes[1,0].plot(Peryxc, Zyxrc, color="r",linestyle="-", linewidth=Linewidth)
+#  ZXY
+        if PlotPred:
+           axes[0,1].plot(Perxyc, Zxyrc, color="r",linestyle="-", linewidth=Linewidth)
 
-# #         if PlotObsv:
-# #             if ShowErrors:
-# #                 axes[1,0].errorbar(Peryxo,Zyxro, yerr=Zyxe,
-# #                                 linestyle="",
-# #                                 marker="o",
-# #                                 color="r",
-# #                                 linewidth=Linewidth,
-# #                                 markersize=Markersize)
-# #             else:
-# #                 axes[1,0].plot(Peryxo,
-# #                                Zyxro, color="r",
-# #                                linestyle="",
-# #                                marker="o",
-# #                                markersize=Markersize)
+        if PlotObsv:
+            if ShowErrors:
+                axes[0,1].errorbar(Perxyo,Zxyro, yerr=Zxye,
+                                linestyle="",
+                                marker="o",
+                                color="r",
+                                linewidth=Linewidth,
+                                markersize=Markersize)
+            else:
+                axes[0,1].plot(Perxyo,
+                               Zxyro, color="r",
+                               linestyle="",
+                               marker="o",
+                               markersize=Markersize)
 
-# #         if PlotPred:
-# #             axes[1,0].plot(Peryxc, Zyxic, color="b",linestyle="-", linewidth=Linewidth)
-# #         if PlotObsv:
-# #             if ShowErrors:
-# #                 axes[1,0].errorbar(Peryxo,Zyxio, yerr=Zyxe,
-# #                                 linestyle="",
-# #                                 marker="o",
-# #                                 color="b",
-# #                                 linewidth=Linewidth,
-# #                                 markersize=Markersize)
-# #             else:
-# #                 axes[1,0].plot(Peryxo, Zyxio,
-# #                                color="b",
-# #                                linestyle="",
-# #                                marker="o",
-# #                                markersize=Markersize)
+        if PlotPred:
+            axes[0,1].plot(Perxyc, Zxyic, color="b",linestyle="-", linewidth=Linewidth)
+        if PlotObsv:
+            if ShowErrors:
+                axes[0,1].errorbar(Perxyo,Zxyio, yerr=Zxye,
+                                linestyle="",
+                                marker="o",
+                                color="b",
+                                linewidth=Linewidth,
+                                markersize=Markersize)
+            else:
+                axes[0,1].plot(Perxyo, Zxyio,
+                               color="b",
+                               linestyle="",
+                               marker="o",
+                               markersize=Markersize)
 
-# #         axes[1,0].set_xscale("log")
-# #         axes[1,0].set_yscale("log")
-# #         axes[1,0].set_xlim(PerLimits)
-# #         if ZLimitsXY != ():
-# #             axes[1,0].set_ylim(ZLimitsXY)
-# #         axes[1,0].legend(["real", "imag"])
-# #         # axes[1,0].xaxis.set_ticklabels([])
-# #         axes[1,0].tick_params(labelsize=Labelsize-1)
-# #         axes[1,0].set_ylabel("|ZYX|", fontsize=Fontsize)
-# #         axes[1,0].grid("both", "both", linestyle="-", linewidth=0.5)
-# #         if ShowRMS:
-# #             nRMSr = np.around(nRMSZyxr,1)
-# #             nRMSi = np.around(nRMSZyxi,1)
-# #             StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
-# #             axes[1,0].text(0.05, 0.05,StrRMS,
-# #                                transform=axes[1,0].transAxes,
-# #                                fontsize = Fontsize-2,
-# #                                ha="left", va="bottom",
-# #                                bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
-
-# # #  ZYY
-
-# #         if PlotPred:
-# #             axes[1,1].plot(Peryyc, Zyyrc, color="r",linestyle="-", linewidth=Linewidth)
-
-# #         if PlotObsv:
-# #             if ShowErrors:
-# #                 axes[1,1].errorbar(Peryyo,Zyyro, yerr=Zyye,
-# #                                 linestyle="",
-# #                                 marker="o",
-# #                                 color="r",
-# #                                 linewidth=Linewidth,
-# #                                 markersize=Markersize)
-# #             else:
-# #                 axes[1,1].plot(Peryyo, Zyyro,
-# #                                color="r",
-# #                                linestyle="",
-# #                                marker="o",
-# #                                markersize=Markersize)
-
-# #         if PlotPred:
-# #             axes[1,1].plot(Peryyc, Zyyic, color="b",linestyle="-", linewidth=Linewidth)
-
-# #         if PlotObsv:
-# #             if ShowErrors:
-# #                 axes[1,1].errorbar(Peryyo,Zyyio, yerr=Zyye,
-# #                                 linestyle="",
-# #                                 marker="o",
-# #                                 color="b",
-# #                                 linewidth=Linewidth,
-# #                                 markersize=Markersize)
-# #             else:
-# #                 axes[1,1].plot(Peryyo, Zyyio,
-# #                                color="b",
-# #                                linestyle="",
-# #                                marker="o",
-# #                                markersize=Markersize)
-
-# #         axes[1,1].set_xscale("log")
-# #         axes[1,1].set_yscale("log")
-# #         axes[1,1].set_xlim(PerLimits)
-# #         if ZLimitsXX != ():
-# #             axes[1,1].set_ylim(ZLimitsXX)
-# #         axes[1,1].legend(["real", "imag"])
-# #         # axes[1,1].xaxis.set_ticklabels([])
-# #         axes[1,1].tick_params(labelsize=Labelsize-1)
-# #         axes[1,1].set_ylabel("|ZYY|", fontsize=Fontsize)
-# #         axes[1,1].grid("both", "both", linestyle="-", linewidth=0.5)
-# #         if ShowRMS:
-# #             nRMSr = np.around(nRMSZyyr,1)
-# #             nRMSi = np.around(nRMSZyyi,1)
-# #             StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
-# #             axes[1,1].text(0.05, 0.05,StrRMS,
-# #                                transform=axes[0,1].transAxes,
-# #                                fontsize = Fontsize-2,
-# #                                ha="left", va="bottom",
-# #                                bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
-
-# #     else:
-
-# #         fig, axes = plt.subplots(1,2, figsize = FigSize, subplot_kw=dict(box_aspect=1.),
-# #                          sharex=True, sharey=False, constrained_layout=True)
-
-# #         if PlotPred:
-# #             rmsstrng ="   nRMS: "+str(np.around(siteRMS,1))
-# #         else:
-# #             rmsstrng = ""
-
-# #         fig.suptitle(r"Site: "+s+rmsstrng
-# #                      +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
-# #                      +"\nX: "+str(site_utmx)+"   Y: "+str(site_utmy)
-# #                      +" (EPSG="+str(EPSG)+")  \nElev: "+ str(abs(site_elev))+" m\n",
-# #                      ha="left", x=0.1,fontsize=Titlesize)
+        axes[0,1].set_xscale("log")
+        axes[0,1].set_yscale("log")
+        axes[0,1].set_xlim(PerLimits)
+        if ZLimitsXY != ():
+            axes[0,1].set_ylim(ZLimitsXY)
+        axes[0,1].legend(["real", "imag"])
+        # axes[0,1].xaxis.set_ticklabels([])
+        axes[0,1].tick_params(labelsize=Labelsize-1)
+        axes[0,1].set_ylabel("|ZXY|", fontsize=Fontsize)
+        axes[0,1].grid("both", "both", linestyle="-", linewidth=0.5)
+        if ShowRMS:
+            nRMSr = np.around(nRMSZxyr,1)
+            nRMSi = np.around(nRMSZxyi,1)
+            StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
+            axes[0,1].text(0.05, 0.05,StrRMS,
+                               transform=axes[0,1].transAxes,
+                               fontsize = Fontsize-2,
+                               ha="left", va="bottom",
+                               bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
 
+#  ZYX
+        if PlotPred:
+           axes[1,0].plot(Peryxc, Zyxrc, color="r",linestyle="-", linewidth=Linewidth)
 
-# #         if PlotPred:
-# #             axes[0,].plot(Perxyc, Zxyrc, color="r",linestyle="-", linewidth=Linewidth)
+        if PlotObsv:
+            if ShowErrors:
+                axes[1,0].errorbar(Peryxo,Zyxro, yerr=Zyxe,
+                                linestyle="",
+                                marker="o",
+                                color="r",
+                                linewidth=Linewidth,
+                                markersize=Markersize)
+            else:
+                axes[1,0].plot(Peryxo,
+                               Zyxro, color="r",
+                               linestyle="",
+                               marker="o",
+                               markersize=Markersize)
 
-# #         if PlotObsv:
-# #             if ShowErrors:
-# #                 axes[0,].errorbar(Perxyo,Zxyro, yerr=Zxye,
-# #                                 linestyle="",
-# #                                 marker="o",
-# #                                 color="r",
-# #                                 linewidth=Linewidth,
-# #                                 markersize=Markersize)
-# #             else:
-# #                 axes[0,].plot(Perxyo,
-# #                                Zxyro, color="r",
-# #                                linestyle="",
-# #                                marker="o",
-# #                                markersize=Markersize)
+        if PlotPred:
+            axes[1,0].plot(Peryxc, Zyxic, color="b",linestyle="-", linewidth=Linewidth)
+        if PlotObsv:
+            if ShowErrors:
+                axes[1,0].errorbar(Peryxo,Zyxio, yerr=Zyxe,
+                                linestyle="",
+                                marker="o",
+                                color="b",
+                                linewidth=Linewidth,
+                                markersize=Markersize)
+            else:
+                axes[1,0].plot(Peryxo, Zyxio,
+                               color="b",
+                               linestyle="",
+                               marker="o",
+                               markersize=Markersize)
 
-# #         if PlotPred:
-# #             axes[0,].plot(Perxyc, Zxyic, color="b",linestyle="-", linewidth=Linewidth)
+        axes[1,0].set_xscale("log")
+        axes[1,0].set_yscale("log")
+        axes[1,0].set_xlim(PerLimits)
+        if ZLimitsXY != ():
+            axes[1,0].set_ylim(ZLimitsXY)
+        axes[1,0].legend(["real", "imag"])
+        # axes[1,0].xaxis.set_ticklabels([])
+        axes[1,0].tick_params(labelsize=Labelsize-1)
+        axes[1,0].set_ylabel("|ZYX|", fontsize=Fontsize)
+        axes[1,0].grid("both", "both", linestyle="-", linewidth=0.5)
+        if ShowRMS:
+            nRMSr = np.around(nRMSZyxr,1)
+            nRMSi = np.around(nRMSZyxi,1)
+            StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
+            axes[1,0].text(0.05, 0.05,StrRMS,
+                               transform=axes[1,0].transAxes,
+                               fontsize = Fontsize-2,
+                               ha="left", va="bottom",
+                               bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
-# #         if PlotObsv:
-# #             if ShowErrors:
-# #                 axes[0,].errorbar(Perxyo,Zxyio, yerr=Zxye,
-# #                                 linestyle="",
-# #                                 marker="o",
-# #                                 color="b",
-# #                                 linewidth=Linewidth,
-# #                                 markersize=Markersize)
-# #             else:
-# #                 axes[0,].plot(Perxyo, Zxyio,
-# #                                color="b",
-# #                                linestyle="",
-# #                                marker="o",
-# #                                markersize=Markersize)
+#  ZYY
 
-# #         axes[0,].set_xscale("log")
-# #         axes[0,].set_yscale("log")
-# #         axes[0,].set_xlim(PerLimits)
-# #         if ZLimitsXY != ():
-# #             axes[0,].set_ylim(ZLimitsXY)
-# #         axes[0,].legend(["real", "imag"])
-# #         axes[0,].tick_params(labelsize=Labelsize-1)
-# #         axes[0,].set_ylabel("|ZXY|", fontsize=Fontsize)
-# #         axes[0,].grid("both", "both", linestyle="-", linewidth=0.5)
-# #         if ShowRMS:
-# #             nRMSr = np.around(nRMSZxyr,1)
-# #             nRMSi = np.around(nRMSZxyi,1)
-# #             StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
-# #             axes[0,].text(0.05, 0.05,StrRMS,
-# #                                transform=axes[0,].transAxes,
-# #                                fontsize = Fontsize-2,
-# #                                ha="left", va="bottom",
-# #                                bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
+        if PlotPred:
+            axes[1,1].plot(Peryyc, Zyyrc, color="r",linestyle="-", linewidth=Linewidth)
 
-# #         if PlotPred:
-# #             axes[1,].plot(Peryxc, Zyxrc, color="r",linestyle="-", linewidth=Linewidth)
+        if PlotObsv:
+            if ShowErrors:
+                axes[1,1].errorbar(Peryyo,Zyyro, yerr=Zyye,
+                                linestyle="",
+                                marker="o",
+                                color="r",
+                                linewidth=Linewidth,
+                                markersize=Markersize)
+            else:
+                axes[1,1].plot(Peryyo, Zyyro,
+                               color="r",
+                               linestyle="",
+                               marker="o",
+                               markersize=Markersize)
 
-# #         if PlotObsv:
-# #             if ShowErrors:
-# #                 axes[1,].errorbar(Peryxo,Zyxro, yerr=Zyxe,
-# #                                 linestyle="",
-# #                                 marker="o",
-# #                                 color="r",
-# #                                 linewidth=Linewidth,
-# #                                 markersize=Markersize)
-# #             else:
-# #                 axes[1,].plot(Peryxo, Zyxro,
-# #                                color="r",
-# #                                linestyle="",
-# #                                marker="o",
-# #                                markersize=Markersize)
+        if PlotPred:
+            axes[1,1].plot(Peryyc, Zyyic, color="b",linestyle="-", linewidth=Linewidth)
 
-# #         if PlotPred:
-# #             axes[1,].plot(Peryxc, Zyxic, color="b",linestyle="-", linewidth=Linewidth)
+        if PlotObsv:
+            if ShowErrors:
+                axes[1,1].errorbar(Peryyo,Zyyio, yerr=Zyye,
+                                linestyle="",
+                                marker="o",
+                                color="b",
+                                linewidth=Linewidth,
+                                markersize=Markersize)
+            else:
+                axes[1,1].plot(Peryyo, Zyyio,
+                               color="b",
+                               linestyle="",
+                               marker="o",
+                               markersize=Markersize)
 
-# #         if PlotObsv:
-# #             if ShowErrors:
-# #                 axes[1,].errorbar(Peryxo,Zyxio, yerr=Zyxe,
-# #                                 linestyle="",
-# #                                 marker="o",
-# #                                 color="b",
-# #                                 linewidth=Linewidth,
-# #                                 markersize=Markersize)
-# #             else:
-# #                 axes[1,].plot(Peryxo, Zyxio,
-# #                                color="b",
-# #                                linestyle="",
-# #                                marker="o",
-# #                                markersize=Markersize)
-
-# #         axes[1,].set_xscale("log")
-# #         axes[1,].set_yscale("log")
-# #         axes[1,].set_xlim(PerLimits)
-# #         if ZLimitsXY != ():
-# #             axes[1,].set_ylim(ZLimitsXY)
-# #         axes[1,].legend(["real", "imag"])
-# #         axes[1,].tick_params(labelsize=Labelsize-1)
-# #         axes[1,].set_ylabel("|ZYX|", fontsize=Fontsize)
-# #         axes[1,].grid("both", "both", linestyle="-", linewidth=0.5)
-# #         if ShowRMS:
-# #             nRMSr = np.around(nRMSZyxr,1)
-# #             nRMSi = np.around(nRMSZyxi,1)
-# #             StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
-# #             axes[1,].text(0.05, 0.05,StrRMS,
-# #                                transform=axes[1,].transAxes,
-# #                                fontsize = Fontsize-2,
-# #                                ha="left", va="bottom",
-# #                                bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
-
-# #     fig.subplots_adjust(wspace = 0.4,top = 0.8 )
-# #     # fig.subplots_adjust(wspace = 0.25)
-# #     # fig.tight_layout()
-
-# #     for F in PlotFormat:
-# #         plt.savefig(PlotDir+PlotFile+"_"+s+F, dpi=400)
-
-# #     if PDFCatalog:
-# #         pdf_list.append(PlotDir+PlotFile+"_"+s+".pdf")
+        axes[1,1].set_xscale("log")
+        axes[1,1].set_yscale("log")
+        axes[1,1].set_xlim(PerLimits)
+        if ZLimitsXX != ():
+            axes[1,1].set_ylim(ZLimitsXX)
+        axes[1,1].legend(["real", "imag"])
+        # axes[1,1].xaxis.set_ticklabels([])
+        axes[1,1].tick_params(labelsize=Labelsize-1)
+        axes[1,1].set_ylabel("|ZYY|", fontsize=Fontsize)
+        axes[1,1].grid("both", "both", linestyle="-", linewidth=0.5)
+        if ShowRMS:
+            nRMSr = np.around(nRMSZyyr,1)
+            nRMSi = np.around(nRMSZyyi,1)
+            StrRMS = "nRMS = "+str(nRMSr)+" | "+str(nRMSi)
+            axes[1,1].text(0.05, 0.05,StrRMS,
+                               transform=axes[0,1].transAxes,
+                               fontsize = Fontsize-2,
+                               ha="left", va="bottom",
+                               bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
 
 
-# #     plt.show()
-# #     plt.close(fig)
+    fig.subplots_adjust(wspace = 0.4,top = 0.8 )
+    # fig.subplots_adjust(wspace = 0.25)
+    # fig.tight_layout()
+
+    for F in PlotFormat:
+        plt.savefig(PlotDir+PlotFile+"_"+s+F, dpi=400)
+
+    if PDFCatalog:
+        pdf_list.append(PlotDir+PlotFile+"_"+s+".pdf")
+
+
+    plt.show()
+    plt.close(fig)
 
 
 
-# # if PDFCatalog:
-# #     utl.make_pdf_catalog(PlotDir, PDFList=pdf_list, FileName=PlotDir+PDFCName)
+if PDFCatalog:
+    utl.make_pdf_catalog(PlotDir, PDFList=pdf_list, FileName=PlotDir+PDFCName)
