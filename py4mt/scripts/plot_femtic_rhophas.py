@@ -250,6 +250,8 @@ for s in sites:
                  +"\nEasting: "+str(site_utmx)+"   Northing: "+str(site_utmy)
                  +" (EPSG="+str(EPSG)+")  \nElev: "+ str(site_elev)+" m\n",
                  ha="left", x=0.1,fontsize=Titlesize)
+        
+        
         #  ZXX
         
         if PlotFull:
