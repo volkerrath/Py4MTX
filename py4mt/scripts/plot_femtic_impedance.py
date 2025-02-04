@@ -1,15 +1,4 @@
 #!/usr/bin/env python3
-# ---
-# jupyter:
-#   jupytext:
-#     cell_metadata_filter: -all
-#     formats: py:light,ipynb
-#     text_representation:
-#       extension: .py
-#       format_name: light
-#       format_version: '1.5'
-#       jupytext_version: 1.11.3
-# ---
 
 import os
 import sys
@@ -44,11 +33,10 @@ version, _ = versionstrg()
 titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
-cm = 1./2.54  # centimeters to inches
 
 
 WorkDir = "/home/vrath/Py4MTX/work/Misti_results/"
-DatFile = WorkDir+"MISTI_Results_rhophas.txt"
+DatFile = WorkDir+"MISTI_Results_imped.txt"
 SitFile = WorkDir+"Sitelist_femtic.txt"
 PlotDir = WorkDir+"/plots/"
 PlotFile = "Mist01"
@@ -99,6 +87,7 @@ mpl.rcParams["figure.dpi"] = 600
 mpl.rcParams["axes.linewidth"] = 0.5
 mpl.rcParams["savefig.facecolor"] = "none"
 
+cm = 1./2.54  # centimeters to inches
 FigSize = (16*cm, 18*cm)
 Fontsize = 10
 Labelsize = Fontsize
@@ -123,10 +112,10 @@ if FilesOnly==True:
 
 data_dict = fem.get_femtic_data(DatFile,SitFile, data_type="rhophas")
 sites = data_dict["sites"]
-lat = data_dict["lat"].reshape(-1,1)
-lon = data_dict["lon"].reshape(-1,1)
-elv = data_dict["elv"].reshape(-1,1)
-nam = data_dict["nam"].reshape(-1,1)
+lat = np.float64(data_dict["lat"])  #.reshape(-1,1)
+lon = np.float64(data_dict["lon"])  #.reshape(-1,1)
+elv = np.float64(data_dict["elv"])  #.reshape(-1,1)
+nam = data_dict["nam"]# .reshape(-1,1)
 
 
 
@@ -139,8 +128,8 @@ for s in sites:
     site_utmx, site_utmy = utl.proj_latlon_to_utm(site_lat, site_lon, utm_zone=EPSG)
     site_utmx = int(np.round(site_utmx))
     site_utmy = int(np.round(site_utmy))
-    print(s, "at", site_lat[0], site_lon[0], site_elev[0])
-    site_nam = nam[s][0]
+    print(s, "at", site_lat, site_lon, site_elev)
+    site_nam = nam[s]
     site_index = np.where(data_dict["num"] ==s)
     print(site_index)
 
@@ -152,7 +141,7 @@ for s in sites:
         site_res = np.ones_like(site_cal)
 
     site_per =  1./data_dict["frq"][site_index]
-    nsite = np.shape(site_per)[0]
+    # nsite = np.shape(site_per)[0]
 
 
     nn = 8
@@ -241,14 +230,19 @@ for s in sites:
             rmsstrng = "" 
         
         
-        fig, axes = plt.subplots(2,2, figsize = FigSize, subplot_kw=dict(box_aspect=1.),
-                 sharex=True, sharey=False, constrained_layout=True)
-        
+        # fig, axes = plt.subplots(2,2, figsize = FigSize, # subplot_kw=dict(box_aspect=1.),
+        #          sharex=True, sharey=False) #, constrained_layout=True)
+
+        fig, axes = plt.subplots(2,2, figsize = FigSize, 
+                                 subplot_kw=dict(box_aspect=1.),
+                                 sharex=True) #constrained_layout=True)
+
         fig.suptitle(r"Site: "+site_nam+rmsstrng
-                 +"\nLat: "+str(site_lat)+"   Lon: "+str(site_lon)
+                 +"\nLat: "+str(np.around(site_lat, 6))
+                 +"   Lon: "+str(np.around(site_lon, 6))
                  +"\nEasting: "+str(site_utmx)+"   Northing: "+str(site_utmy)
                  +" (EPSG="+str(EPSG)+")  \nElev: "+ str(site_elev)+" m\n",
-                 ha="left", x=0.1,fontsize=Titlesize)
+                 ha="left", x=0.1, fontsize=Titlesize)
         
         
         #  ZXX
@@ -293,12 +287,12 @@ for s in sites:
             axes[0,0].set_xscale("log")
             axes[0,0].set_yscale("log")
             axes[0,0].set_xlim(PerLimits)
-            if ZLimits != ():
+            if len(ZLimits) != 0:
                 axes[0,0].set_ylim(ZLimits)
             axes[0,0].legend(["real", "imag"])
             
             axes[0,0].tick_params(labelsize=Labelsize-1)
-            axes[0,0].set_ylabel("|ZXX|", fontsize=Fontsize)
+            axes[0,0].set_title("|ZXX|", fontsize=Fontsize)
             axes[0,0].grid("both", "both", linestyle="-", linewidth=0.5)
             if ShowRMS:
                 nRMSr = np.around(nrmszxx_real,1)
@@ -350,12 +344,12 @@ for s in sites:
         axes[0,1].set_xscale("log")
         axes[0,1].set_yscale("log")
         axes[0,1].set_xlim(PerLimits)
-        if ZLimits != ():
+        if len(ZLimits) != 0:
             axes[0,1].set_ylim(ZLimits)
         axes[0,1].legend(["real", "imag"])
         # axes[0,1].xaxis.set_ticklabels([])
         axes[0,1].tick_params(labelsize=Labelsize-1)
-        axes[0,1].set_ylabel("|ZXY|", fontsize=Fontsize)
+        axes[0,1].set_title("|ZXY|", fontsize=Fontsize)
         axes[0,1].grid("both", "both", linestyle="-", linewidth=0.5)
         if ShowRMS:
             nRMSr = np.around(nrmszxy_real,1)
@@ -408,12 +402,12 @@ for s in sites:
         axes[1,0].set_xscale("log")
         axes[1,0].set_yscale("log")
         axes[1,0].set_xlim(PerLimits)
-        if ZLimits != ():
+        if len(ZLimits) != 0:
             axes[1,0].set_ylim(ZLimits)
         axes[1,0].legend(["real", "imag"])
         # axes[1,0].xaxis.set_ticklabels([])
         axes[1,0].tick_params(labelsize=Labelsize-1)
-        axes[1,0].set_ylabel("|ZYX|", fontsize=Fontsize)
+        axes[1,0].set_title("|ZYX|", fontsize=Fontsize)
         axes[1,0].grid("both", "both", linestyle="-", linewidth=0.5)
         if ShowRMS:
             nRMSr = np.around(nrmszyx_real,1)
@@ -467,12 +461,12 @@ for s in sites:
             axes[1,1].set_xscale("log")
             axes[1,1].set_yscale("log")
             axes[1,1].set_xlim(PerLimits)
-            if ZLimits != ():
+            if len(ZLimits) != 0:
                 axes[1,1].set_ylim(ZLimits)
             axes[1,1].legend(["real", "imag"])
             # axes[1,1].xaxis.set_ticklabels([])
             axes[1,1].tick_params(labelsize=Labelsize-1)
-            axes[1,1].set_ylabel("|ZYY|", fontsize=Fontsize)
+            axes[1,1].set_title("|ZYY|", fontsize=Fontsize)
             axes[1,1].grid("both", "both", linestyle="-", linewidth=0.5)
             if ShowRMS:
                 nRMSr = np.around(nrmszyy_real,1)
@@ -485,15 +479,16 @@ for s in sites:
                                    bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )
     
         
-        fig.subplots_adjust(wspace = 0.4,top = 0.8 )
-        # fig.subplots_adjust(wspace = 0.25)
-        # fig.tight_layout()
+
+        fig.subplots_adjust(top=0.15, bottom=0.15, hspace=0.0, wspace=0.0)
+
+        #fig.tight_layout()
         
         for F in PlotFormat:
-            plt.savefig(PlotDir+PlotFile+"_"+s+F, dpi=400)
+            plt.savefig(PlotDir+PlotFile+"_"+nam[s]+F, dpi=400)
         
         if PDFCatalog:
-            pdf_list.append(PlotDir+PlotFile+"_"+s+".pdf")
+            pdf_list.append(PlotDir+PlotFile+"_"+nam[s]+".pdf")
         
         
         plt.show()
@@ -502,4 +497,4 @@ for s in sites:
 
 
 if PDFCatalog:
-    utl.make_pdf_catalog(PlotDir, PDFList=pdf_list, FileName=PlotDir+PDFCatalogName)
+    utl.make_pdf_catalog(PlotDir, pdflist=pdf_list, filename=PlotDir+PDFCatalogName)

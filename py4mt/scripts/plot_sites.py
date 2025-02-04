@@ -165,7 +165,7 @@ for filename in edi_files:
 
 # Finally save to multipage catalog
 if PDFCatalog:
-    utl.make_pdf_catalog(PltDir, PdfList=pdf_list, FileName=PDFCatalogName)
+    utl.make_pdf_catalog(PltDir, pdflist=pdf_list, filename=PDFCatalogName)
     print(pdf_list)
     # d = catalog.infodict()
     # d["Title"] =  PDFCatalogName

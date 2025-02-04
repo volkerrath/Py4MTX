@@ -44,9 +44,6 @@ version, _ = versionstrg()
 titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
-cm = 1./2.54  # centimeters to inches
-
-
 WorkDir = "/home/vrath/Py4MTX/work/Misti_results/"
 DatFile = WorkDir+"MISTI_Results_rhophas.txt"
 SitFile = WorkDir+"Sitelist_femtic.txt"
@@ -100,6 +97,7 @@ mpl.rcParams["figure.dpi"] = 600
 mpl.rcParams["axes.linewidth"] = 0.5
 mpl.rcParams["savefig.facecolor"] = "none"
 
+cm = 1./2.54  # centimeters to inches
 FigSize = (16*cm, 18*cm)
 Fontsize = 10
 Labelsize = Fontsize
@@ -124,10 +122,10 @@ if FilesOnly==True:
 
 data_dict = fem.get_femtic_data(DatFile,SitFile, data_type="rhophas")
 sites = data_dict["sites"]
-lat = data_dict["lat"].reshape(-1,1)
-lon = data_dict["lon"].reshape(-1,1)
-elv = data_dict["elv"].reshape(-1,1)
-nam = data_dict["nam"].reshape(-1,1)
+lat = np.float64(data_dict["lat"])  #.reshape(-1,1)
+lon = np.float64(data_dict["lon"])  #.reshape(-1,1)
+elv = np.float64(data_dict["elv"])  #.reshape(-1,1)
+nam = data_dict["nam"]# .reshape(-1,1)
 
 
 
@@ -158,78 +156,78 @@ for s in sites:
 
     nn = 8
     site_res = np.empty((1,nn))
-    reals = [ix for ix in range(nn) if ix % 2 == 0]
-    imags = [ix for ix in range(nn) if ix % 2 == 1]
-    obs_real = site_obs[:,reals]
-    obs_imag = site_obs[:,imags]
-    err_real = site_err[:,reals]
-    err_imag = site_err[:,imags]
+    rhos = [ix for ix in range(nn) if ix % 2 == 0]
+    phass = [ix for ix in range(nn) if ix % 2 == 1]
+    obs_rho = site_obs[:,rhos]
+    obs_phas = site_obs[:,phass]
+    err_rho = site_err[:,rhos]
+    err_phas = site_err[:,phass]
     if PlotPred:
-        cal_real = site_cal[:,reals]
-        cal_imag = site_cal[:,imags]
+        cal_rho = site_cal[:,rhos]
+        cal_phas = site_cal[:,phass]
 
     if PlotFull:
         cmp ="ZXX"        
-        zxx_obs_real = np.abs(obs_real[:, 0])
-        zxx_obs_imag = np.abs(obs_imag[:, 0])
-        zxx_err_real = err_real[:,0]
-        zxx_err_imag = err_imag[:,0]
+        zxx_obs_rho = np.abs(obs_rho[:, 0])
+        zxx_obs_phas = np.abs(obs_phas[:, 0])
+        zxx_err_rho = err_rho[:,0]
+        zxx_err_phas = err_phas[:,0]
         if PlotPred:
-            zxx_cal_real = np.abs(obs_real[:, 0])
-            zxx_cal_imag = np.abs(obs_imag[:, 0])
-            site_res = np.append(site_res, (zxx_obs_real-zxx_cal_real)/zxx_err_real)
-            site_res = np.append(site_res, (zxx_obs_imag-zxx_cal_imag)/zxx_err_imag)  
+            zxx_cal_rho = np.abs(obs_rho[:, 0])
+            zxx_cal_phas = np.abs(obs_phas[:, 0])
+            site_res = np.append(site_res, (zxx_obs_rho-zxx_cal_rho)/zxx_err_rho)
+            site_res = np.append(site_res, (zxx_obs_phas-zxx_cal_phas)/zxx_err_phas)  
             if ShowRMS:
-                nrmszxx_real, _ = utl.calc_rms(zxx_obs_real, zxx_cal_real, 1.0/zxx_err_real)
-                nrmszxx_imag, _ = utl.calc_rms(zxx_obs_imag, zxx_cal_imag, 1.0/zxx_err_imag)
+                nrmszxx_rho, _ = utl.calc_rms(zxx_obs_rho, zxx_cal_rho, 1.0/zxx_err_rho)
+                nrmszxx_phas, _ = utl.calc_rms(zxx_obs_phas, zxx_cal_phas, 1.0/zxx_err_phas)
 
 
     cmp ="ZXY"
-    zxy_obs_real = np.abs(obs_real[:, 1])
-    zxy_obs_imag = np.abs(obs_imag[:, 1])
-    zxy_err_real = err_real[:,1]
-    zxy_err_imag = err_imag[:,1]
+    zxy_obs_rho = np.abs(obs_rho[:, 1])
+    zxy_obs_phas = np.abs(obs_phas[:, 1])
+    zxy_err_rho = err_rho[:,1]
+    zxy_err_phas = err_phas[:,1]
     if PlotPred:
-        zxy_cal_real = np.abs(obs_real[:, 1])
-        zxy_cal_imag = np.abs(obs_imag[:, 1])
-        site_res = np.append(site_res, (zxy_obs_real-zxy_cal_real)/zxy_err_real)
-        site_res = np.append(site_res, (zxy_obs_imag-zxy_cal_imag)/zxy_err_imag)  
+        zxy_cal_rho = np.abs(obs_rho[:, 1])
+        zxy_cal_phas = np.abs(obs_phas[:, 1])
+        site_res = np.append(site_res, (zxy_obs_rho-zxy_cal_rho)/zxy_err_rho)
+        site_res = np.append(site_res, (zxy_obs_phas-zxy_cal_phas)/zxy_err_phas)  
         if ShowRMS:
-            nrmszxy_real, _ = utl.calc_rms(zxy_obs_real, zxy_cal_real, 1.0/zxy_err_real)
-            nrmszxy_imag, _ = utl.calc_rms(zxy_obs_imag, zxy_cal_imag, 1.0/zxy_err_imag)
+            nrmszxy_rho, _ = utl.calc_rms(zxy_obs_rho, zxy_cal_rho, 1.0/zxy_err_rho)
+            nrmszxy_phas, _ = utl.calc_rms(zxy_obs_phas, zxy_cal_phas, 1.0/zxy_err_phas)
 
 
     cmp ="ZYX"
-    zyx_obs_real = np.abs(obs_real[:, 2])
-    zyx_obs_imag = np.abs(obs_imag[:, 2])
-    zyx_err_real = err_real[:,2]
-    zyx_err_imag = err_imag[:,2]
+    zyx_obs_rho = np.abs(obs_rho[:, 2])
+    zyx_obs_phas = np.abs(obs_phas[:, 2])
+    zyx_err_rho = err_rho[:,2]
+    zyx_err_phas = err_phas[:,2]
     if PlotPred:
-        zyx_cal_real = np.abs(obs_real[:, 2])
-        zyx_cal_imag = np.abs(obs_imag[:, 2])
-        site_res = np.append(site_res, (zyx_obs_real-zyx_cal_real)/zyx_err_real)
-        site_res = np.append(site_res, (zyx_obs_imag-zyx_cal_imag)/zyx_err_imag)  
+        zyx_cal_rho = np.abs(obs_rho[:, 2])
+        zyx_cal_phas = np.abs(obs_phas[:, 2])
+        site_res = np.append(site_res, (zyx_obs_rho-zyx_cal_rho)/zyx_err_rho)
+        site_res = np.append(site_res, (zyx_obs_phas-zyx_cal_phas)/zyx_err_phas)  
         if ShowRMS:
-            nrmszyx_real, _ = utl.calc_rms(zyx_obs_real, zyx_cal_real, 1.0/zyx_err_real)
-            nrmszyx_imag, _ = utl.calc_rms(zyx_obs_imag, zyx_cal_imag, 1.0/zyx_err_imag)
+            nrmszyx_rho, _ = utl.calc_rms(zyx_obs_rho, zyx_cal_rho, 1.0/zyx_err_rho)
+            nrmszyx_phas, _ = utl.calc_rms(zyx_obs_phas, zyx_cal_phas, 1.0/zyx_err_phas)
 
 
 
 
     if PlotFull:
         cmp ="ZYY"
-        zyy_obs_real = np.abs(obs_real[:, 3])
-        zyy_obs_imag = np.abs(obs_imag[:, 3])
-        zyy_err_real = err_real[:,3]
-        zyy_err_imag = err_imag[:,3]
+        zyy_obs_rho = np.abs(obs_rho[:, 3])
+        zyy_obs_phas = np.abs(obs_phas[:, 3])
+        zyy_err_rho = err_rho[:,3]
+        zyy_err_phas = err_phas[:,3]
         if PlotPred:
-            zyy_cal_real = np.abs(obs_real[:, 3])
-            zyy_cal_imag = np.abs(obs_imag[:, 3])
-            site_res = np.append(site_res, (zyy_obs_real-zyy_cal_real)/zyy_err_real)
-            site_res = np.append(site_res, (zyy_obs_imag-zyy_cal_imag)/zyy_err_imag)  
+            zyy_cal_rho = np.abs(obs_rho[:, 3])
+            zyy_cal_phas = np.abs(obs_phas[:, 3])
+            site_res = np.append(site_res, (zyy_obs_rho-zyy_cal_rho)/zyy_err_rho)
+            site_res = np.append(site_res, (zyy_obs_phas-zyy_cal_phas)/zyy_err_phas)  
             if ShowRMS:
-                nrmszyy_real, _ = utl.calc_rms(zyy_obs_real, zyy_cal_real, 1.0/zyy_err_real)
-                nrmszyy_imag, _ = utl.calc_rms(zyy_obs_imag, zyy_cal_imag, 1.0/zyy_err_imag)
+                nrmszyy_rho, _ = utl.calc_rms(zyy_obs_rho, zyy_cal_rho, 1.0/zyy_err_rho)
+                nrmszyy_phas, _ = utl.calc_rms(zyy_obs_phas, zyy_cal_phas, 1.0/zyy_err_phas)
 
 
         sRes = np.asarray(site_res)
@@ -256,36 +254,36 @@ for s in sites:
         
         if PlotFull:
             if PlotPred:
-                axes[0,0].plot(Perxxc, Zxxrc, color="r",linestyle="-", linewidth=Linewidth)
+                axes[0,0].plot(site_per, Zxxrc, color="r",linestyle="-", linewidth=Linewidth)
             
             if PlotObsv:
                 if ShowErrors:
-                    axes[0,0].errorbar(Perxxo,zxx_obs_real, yerr=Zxxe,
+                    axes[0,0].errorbar(site_per,zxx_obs_rho, yerr=Zxxe,
                                     linestyle="",
                                     marker="o",
                                     color="r",
                                     linewidth=Linewidth,
                                     markersize=Markersize)
                 else:
-                    axes[0,0].plot(Perxxo, zxx_obs_real,
+                    axes[0,0].plot(site_per, zxx_obs_rho,
                                    color="r",
                                    linestyle="",
                                    marker="o",
                                    markersize=Markersize)
             
             if PlotPred:
-                axes[0,0].plot(Perxxc, Zxxic, color="b",linestyle="-", linewidth=Linewidth)
+                axes[0,0].plot(site_per, Zxxic, color="b",linestyle="-", linewidth=Linewidth)
             
             if PlotObsv:
                 if ShowErrors:
-                    axes[0,0].errorbar(Perxxo,Zxxio, yerr=Zxxe,
+                    axes[0,0].errorbar(site_per,Zxxio, yerr=Zxxe,
                                     linestyle="",
                                     marker="o",
                                     color="b",
                                     linewidth=Linewidth,
                                     markersize=Markersize)
                 else:
-                    axes[0,0].plot(Perxxo, Zxxio,
+                    axes[0,0].plot(site_per, Zxxio,
                                    color="b",
                                    linestyle="",
                                    marker="o",
@@ -296,7 +294,7 @@ for s in sites:
             axes[0,0].set_xlim(PerLimits)
             if ZLimitsXX != ():
                 axes[0,0].set_ylim(ZLimitsXX)
-            axes[0,0].legend(["real", "imag"])
+            axes[0,0].legend(["rho", "phas"])
             
             axes[0,0].tick_params(labelsize=Labelsize-1)
             axes[0,0].set_ylabel("|ZXX|", fontsize=Fontsize)
@@ -314,35 +312,35 @@ for s in sites:
         
         #  ZXY
         if PlotPred:
-           axes[0,1].plot(Perxyc, Zxyrc, color="r",linestyle="-", linewidth=Linewidth)
+           axes[0,1].plot(site_per, Zxyrc, color="r",linestyle="-", linewidth=Linewidth)
         
         if PlotObsv:
             if ShowErrors:
-                axes[0,1].errorbar(Perxyo,Zxyro, yerr=Zxye,
+                axes[0,1].errorbar(site_per,Zxyro, yerr=Zxye,
                                 linestyle="",
                                 marker="o",
                                 color="r",
                                 linewidth=Linewidth,
                                 markersize=Markersize)
             else:
-                axes[0,1].plot(Perxyo,
+                axes[0,1].plot(site_per,
                                Zxyro, color="r",
                                linestyle="",
                                marker="o",
                                markersize=Markersize)
         
         if PlotPred:
-            axes[0,1].plot(Perxyc, Zxyic, color="b",linestyle="-", linewidth=Linewidth)
+            axes[0,1].plot(site_per, Zxyic, color="b",linestyle="-", linewidth=Linewidth)
         if PlotObsv:
             if ShowErrors:
-                    axes[0,1].errorbar(Perxyo,Zxyio, yerr=Zxye,
+                    axes[0,1].errorbar(site_per,Zxyio, yerr=Zxye,
                                     linestyle="",
                                     marker="o",
                                     color="b",
                                     linewidth=Linewidth,
                                     markersize=Markersize)
             else:
-                    axes[0,1].plot(Perxyo, Zxyio,
+                    axes[0,1].plot(site_per, Zxyio,
                                    color="b",
                                    linestyle="",
                                    marker="o",
@@ -353,7 +351,7 @@ for s in sites:
         axes[0,1].set_xlim(PerLimits)
         if ZLimitsXY != ():
             axes[0,1].set_ylim(ZLimitsXY)
-        axes[0,1].legend(["real", "imag"])
+        axes[0,1].legend(["rho", "phas"])
         # axes[0,1].xaxis.set_ticklabels([])
         axes[0,1].tick_params(labelsize=Labelsize-1)
         axes[0,1].set_ylabel("|ZXY|", fontsize=Fontsize)
@@ -371,36 +369,36 @@ for s in sites:
         
         #  ZYX
         if PlotPred:
-           axes[1,0].plot(Peryxc, Zyxrc, color="r",linestyle="-", linewidth=Linewidth)
+           axes[1,0].plot(site_per, Zyxrc, color="r",linestyle="-", linewidth=Linewidth)
         
         if PlotObsv:
             if ShowErrors:
-                axes[1,0].errorbar(Peryxo,Zyxro, yerr=Zyxe,
+                axes[1,0].errorbar(site_per,Zyxro, yerr=Zyxe,
                                 linestyle="",
                                 marker="o",
                                 color="r",
                                 linewidth=Linewidth,
                                 markersize=Markersize)
             else:
-                axes[1,0].plot(Peryxo,
+                axes[1,0].plot(site_per,
                                Zyxro, color="r",
                                linestyle="",
                                marker="o",
                                markersize=Markersize)
         
         if PlotPred:
-            axes[1,0].plot(Peryxc, Zyxic, color="b",linestyle="-", linewidth=Linewidth)
+            axes[1,0].plot(site_per, Zyxic, color="b",linestyle="-", linewidth=Linewidth)
             
         if PlotObsv:
             if ShowErrors:
-                axes[1,0].errorbar(Peryxo,Zyxio, yerr=Zyxe,
+                axes[1,0].errorbar(site_per,Zyxio, yerr=Zyxe,
                                 linestyle="",
                                 marker="o",
                                 color="b",
                                 linewidth=Linewidth,
                                 markersize=Markersize)
             else:
-                axes[1,0].plot(Peryxo, Zyxio,
+                axes[1,0].plot(site_per, Zyxio,
                                color="b",
                                linestyle="",
                                marker="o",
@@ -411,7 +409,7 @@ for s in sites:
         axes[1,0].set_xlim(PerLimits)
         if ZLimitsXY != ():
             axes[1,0].set_ylim(ZLimitsXY)
-        axes[1,0].legend(["real", "imag"])
+        axes[1,0].legend(["rho", "phas"])
         # axes[1,0].xaxis.set_ticklabels([])
         axes[1,0].tick_params(labelsize=Labelsize-1)
         axes[1,0].set_ylabel("|ZYX|", fontsize=Fontsize)
@@ -430,36 +428,36 @@ for s in sites:
         #  ZYY
         if PlotFull:
             if PlotPred:
-                axes[1,1].plot(Peryyc, Zyyrc, color="r",linestyle="-", linewidth=Linewidth)
+                axes[1,1].plot(site_per, Zyyrc, color="r",linestyle="-", linewidth=Linewidth)
         
             if PlotObsv:
                 if ShowErrors:
-                    axes[1,1].errorbar(Peryyo,Zyyro, yerr=Zyye,
+                    axes[1,1].errorbar(site_per,Zyyro, yerr=Zyye,
                                     linestyle="",
                                     marker="o",
                                     color="r",
                                     linewidth=Linewidth,
                                     markersize=Markersize)
                 else:
-                    axes[1,1].plot(Peryyo, Zyyro,
+                    axes[1,1].plot(site_per, Zyyro,
                                    color="r",
                                    linestyle="",
                                    marker="o",
                                    markersize=Markersize)
         
             if PlotPred:
-                axes[1,1].plot(Peryyc, Zyyic, color="b",linestyle="-", linewidth=Linewidth)
+                axes[1,1].plot(site_per, Zyyic, color="b",linestyle="-", linewidth=Linewidth)
         
             if PlotObsv:
                 if ShowErrors:
-                    axes[1,1].errorbar(Peryyo,Zyyio, yerr=Zyye,
+                    axes[1,1].errorbar(site_per,Zyyio, yerr=Zyye,
                                     linestyle="",
                                     marker="o",
                                     color="b",
                                     linewidth=Linewidth,
                                     markersize=Markersize)
                 else:
-                    axes[1,1].plot(Peryyo, Zyyio,
+                    axes[1,1].plot(site_per, Zyyio,
                                    color="b",
                                    linestyle="",
                                    marker="o",
@@ -470,7 +468,7 @@ for s in sites:
             axes[1,1].set_xlim(PerLimits)
             if ZLimitsXX != ():
                 axes[1,1].set_ylim(ZLimitsXX)
-            axes[1,1].legend(["real", "imag"])
+            axes[1,1].legend(["rho", "phas"])
             # axes[1,1].xaxis.set_ticklabels([])
             axes[1,1].tick_params(labelsize=Labelsize-1)
             axes[1,1].set_ylabel("|ZYY|", fontsize=Fontsize)
@@ -503,4 +501,5 @@ for s in sites:
 
 
 if PDFCatalog:
-    utl.make_pdf_catalog(PlotDir, PDFList=pdf_list, FileName=PlotDir+PDFCatalogName)
+    utl.make_pdf_catalog(PlotDir, pdflist=pdf_list, filename=PlotDir+PDFCatalogName)
+
