@@ -703,7 +703,7 @@ def calc_rms(dcalc=None, dobs=None, Wd=1.0):
 def nearly_equal(a,b,sig_fig=6):
     return (a==b or int(a*10**sig_fig) == int(b*10**sig_fig))
 
-def make_pdf_catalog(WorkDir="./", PdfList= None, FileName=None):
+def make_pdf_catalog(workdir="./", pdflist= None, filename=None):
     """
     Make pdf catalog from site-plot(
 
@@ -725,14 +725,14 @@ def make_pdf_catalog(WorkDir="./", PdfList= None, FileName=None):
 
     catalog = fitz.open()
 
-    for pdf in PdfList:
+    for pdf in pdflist:
         with fitz.open(pdf) as mfile:
             catalog.insert_pdf(mfile)
 
-    catalog.save(FileName, garbage=4, clean = True, deflate=True)
+    catalog.save(filename, garbage=4, clean = True, deflate=True)
     catalog.close()
 
-    print("\n"+str(np.size(PdfList))+" files collected to "+FileName)
+    print("\n"+str(np.size(pdflist))+" files collected to "+filename)
 
 def print_title(version="0.99.99", fname="", form="%m/%d/%Y, %H:%M:%S", out=True):
     """

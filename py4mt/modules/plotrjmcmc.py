@@ -30,8 +30,6 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 import matplotlib.ticker as ticker
 
-#from matplotlib.ticker import MultipleLocator
-# import click
 import matplotlib.style as mplstyle
 mplstyle.use("fast")
 #plt.rc("text", usetex=True)
@@ -44,9 +42,7 @@ class Results():
             outputFileName,
             plotSizeInches="11x8",
             maxDepth=2000,
-            resLims=[
-                1.,
-                100000.],
+            resLims=[1., 100000.],
             zLog=False,
             colormap="gray_r"
             ):
@@ -541,7 +537,7 @@ class Results():
         if (self._dtImpedance):
             self._ax2.set_ylabel("Imag Impedance \n[mv/km/nT]")
         else:
-            self._ax2.set_ylabel("Apparent Phase [Deg]")
+            self._ax2.set_ylabel("Phase [Deg]")
 
         plt.suptitle(self._titleString, x=0.3, y=1.05)
         plt.subplots_adjust(

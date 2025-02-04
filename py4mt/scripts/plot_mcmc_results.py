@@ -182,4 +182,4 @@ if DataOut:
     np.savetxt(DataName, data_all, delimiter="  ", header=header, fmt=fmt)
 
 if PDFCatalog:
-    utl.make_pdf_catalog(PltDir, PdfList=pdf_list, FileName=PDFCatalogName)
+    utl.make_pdf_catalog(PltDir, pdflist=pdf_list, filename=PDFCatalogName)
