@@ -35,9 +35,9 @@ def get_femtic_data(data_file=None, site_file=None, data_type="rhophas", out=Tru
         ("sites", sites),
         ("frq", data[:, 1]),
         ("per", 1./data[:1]),
-        ("lat", info[:, 1]),
-        ("lon", info[:, 2]),
-        ("elv", info[:, 3]),
+        ("lat", np.float64(info[:, 1])),
+        ("lon", np.float64(info[:, 2])),
+        ("elv", np.float64(info[:, 3])),
         ("num", data[:, 0].astype("int")-1),
         ("nam", info[:, 0][sites.astype("int")-1])
         ])
