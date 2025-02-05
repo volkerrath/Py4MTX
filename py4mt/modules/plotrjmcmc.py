@@ -321,9 +321,11 @@ class Results():
             self._ax3.set_ylabel("Data Misfit")
 
         # Layers histogram
-        self._ax4.bar(self._layerNum, self._layerNumHist, ec="w")
+        self._ax4.bar(self._layerNum, self._layerNumHist/1000., ec="w")
         self._ax4.ticklabel_format(style="sci", axis="y")
-        self._ax4.yaxis.set_tick_params(labelrotation=90.)
+        self._ax4.yaxis.set_tick_params(labelrotation=90.) # direction = "in")
+        self._ax4.set_ylabel("freqency/1000", rotation="vertical", labelpad=-25)
+        
         ml = ticker.MultipleLocator(1)
         self._ax4.xaxis.set_minor_locator(ml)
 
@@ -409,7 +411,7 @@ class Results():
             lw=1,
             label="Mode")
 
-        self._ax5.set_xlabel(r"Resistivity [$\Omega . m$]")
+        self._ax5.set_xlabel(r"Resistivity [$\Omega$m]")
 
         self._ax5.legend(loc=3)
         self._ax5.grid(linestyle=":")
@@ -492,9 +494,9 @@ class Results():
         self._ax1.set_xlabel("Period [s]")
         self._ax1.grid(linestyle=":", which="major", axis="both")
         if (self._dtImpedance):
-            self._ax1.set_ylabel("Real Impedance \n[mv/km/nT]")
+            self._ax1.set_ylabel("Real Impedance [mv/km/nT]")
         else:
-            self._ax1.set_ylabel(r"Apparent Resistivity \n[$\Omega . m$]")
+            self._ax1.set_ylabel(r"Apparent Resistivity [$\Omega$m]")
 
         # Data 2 (Imaginary impedance or App phase data)
         self._ax2.errorbar(
@@ -535,9 +537,9 @@ class Results():
         self._ax2.set_xticklabels([])
         self._ax2.grid(linestyle=":", which="major", axis="both")
         if (self._dtImpedance):
-            self._ax2.set_ylabel("Imag Impedance \n[mv/km/nT]")
+            self._ax2.set_ylabel("Imag Impedance [mv/km/nT]")
         else:
-            self._ax2.set_ylabel("Phase [Deg]")
+            self._ax2.set_ylabel("Phase [$^\circ$]")
 
         plt.suptitle(self._titleString, x=0.3, y=1.05)
         plt.subplots_adjust(

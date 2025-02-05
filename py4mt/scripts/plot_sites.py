@@ -5,7 +5,7 @@ This script constructs a list of edifiles in a given directory, and produces
 plots for all of them.
 
 @author: sb & vr oct 2019
-adapte
+adapted by jc feb 2025
 
 """
 
@@ -43,10 +43,9 @@ version, _ = versionstrg()
 titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
-
-PY4MTX_DATA =  "/home/vrath/MT_Data/"
-WorkDir = PY4MTX_DATA+"/Ubaye_best/"
-EdiDir = WorkDir+"/edis/"
+PY4MTX_DATA =  "C:/Users/charroyj/Documents/MT/software/Py4MTX_DATA/"
+WorkDir = PY4MTX_DATA+"/annecy_2025/"
+EdiDir = WorkDir+"edis/"
 
 
 # Define the path to your MTCollection file:
@@ -81,9 +80,9 @@ if not os.path.isdir(PltDir):
 # and the required resolution:
 
 PlotFmt = [".png", ".pdf"]
-DPI = 600
+DPI = 1200
 PDFCatalog = True
-PDFCatalogName  = PltDir+"Ubaye_data.pdf"
+PDFCatalogName  = PltDir+"Annecy_2025.pdf"
 if not ".pdf" in PlotFmt:
     PDFCatalog= False
     print("No PDF catalog because no pdf output!")
@@ -94,27 +93,26 @@ if not ".pdf" in PlotFmt:
 PlotStrng="_data"
 # PerLimits = np.array([0.00003, 3.]) # AMT
 # PerLimits = np.array([0.001,100000.]) #BBMT
-PerLimits = (0.00003,1000.) #AMT+BBMT
+PerLimits = (0.001,30.) #Annecy MT
 
 # What should be plotted?
 # 1 = yx and xy; 2 = all 4 components
 # 3 = off diagonal + determinant
 
-PlotType = 3
+PlotType = 1
 PlotTipp="yri"
-
+TipLimits = np.array([-.5, 0.5])
 
 #  RhoLimits = None
-RhoLimits = np.array([0.1, 10000.])
-
-Plottipper="yri"
-TipLimits = np.array([-.5, 0.5])
+RhoLimits = np.array([0.1, 50000.])
 
 
 PT_colorby = "skew"  #'phimin'
 PT_cmap = "mt_bl2gr2rd"
 PT_range = [-10.,10.,5.]
 
+#Do we also plot depth of investigation (Niblett)-Bostick transformation)?
+Plotdoi=True
 
 # No changes required after this line!
 
@@ -141,7 +139,7 @@ for filename in edi_files:
     print(" site %s at :  % 10.6f % 10.6f % 8.1f" % (name, lat, lon, elev ))
 
     plot_response = mt_obj.plot_mt_response(
-            plot_num = 2, fig_num = 2,
+            plot_num = PlotType, fig_num = 1,
             x_limits = PerLimits,
             res_limits = RhoLimits,
             tipper_limits = TipLimits,
@@ -149,7 +147,7 @@ for filename in edi_files:
             ellipse_colorby = PT_colorby,  #'phimin'
             ellipse_cmap = PT_cmap,
             ellipse_range = PT_range,
-            close_plot=True)
+            close_plot=False)
 
     plt.show()
     for F in PlotFmt:
@@ -158,6 +156,11 @@ for filename in edi_files:
     if PDFCatalog:
         pdf_list.append(PltDir+name+PlotStrng+".pdf")
         # catalog.savefig()
+    if Plotdoi:
+        plot_doi = mt_obj.plot_depth_of_penetration()
+        plt.show()
+        for F in PlotFmt:
+            plot_doi.save_plot(PltDir+name+'_doi'+F, fig_dpi=DPI)
 
     plt.clf()
 
@@ -165,7 +168,7 @@ for filename in edi_files:
 
 # Finally save to multipage catalog
 if PDFCatalog:
-    utl.make_pdf_catalog(PltDir, pdflist=pdf_list, filename=PDFCatalogName)
+    utl.make_pdf_catalog(PltDir, PdfList=pdf_list, FileName=PDFCatalogName)
     print(pdf_list)
     # d = catalog.infodict()
     # d["Title"] =  PDFCatalogName
