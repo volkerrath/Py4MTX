@@ -292,7 +292,7 @@ for s in sites:
         
         axes[0,0].set_xscale("log")
         axes[0,0].set_yscale("log")
-        axes[0,0].set_ylabel("impedance (mV km$^{-1}$ n$^{-1}$)" )
+        axes[0,0].set_ylabel("impedance [mV km$^{-1}$ n$^{-1}$]")
         axes[0,0].set_xlim(PerLimits)
         if len(ZLimits) != 0:
             axes[0,0].set_ylim(ZLimits)
@@ -352,7 +352,7 @@ for s in sites:
     
     axes[0,1].set_xscale("log")
     axes[0,1].set_yscale("log")
-    axes[0,1].set_ylabel("impedance (mV km$^{-1}$ n$^{-1}$)" )
+    axes[0,1].set_ylabel("impedance [mV km$^{-1}$ n$^{-1}$]")
     axes[0,1].set_xlim(PerLimits)
     if len(ZLimits) != 0:
         axes[0,1].set_ylim(ZLimits)
@@ -414,7 +414,7 @@ for s in sites:
     axes[1,0].set_xscale("log")
     axes[1,0].set_yscale("log")
     axes[1,0].set_xlabel("period (s)")
-    axes[1,0].set_ylabel("impedance (mV km$^{-1}$ n$^{-1}$)" )
+    axes[1,0].set_ylabel("impedance [mV km$^{-1}$ n$^{-1}$]" )
     axes[1,0].set_xlim(PerLimits)
     if len(ZLimits) != 0:
         axes[1,0].set_ylim(ZLimits)
@@ -477,7 +477,7 @@ for s in sites:
         axes[1,1].set_xscale("log")
         axes[1,1].set_yscale("log")
         axes[1,1].set_xlabel("period (s)")
-        axes[1,1].set_ylabel("impedance (mV km$^{-1}$ n$^{-1}$)" )
+        axes[1,1].set_ylabel("impedance [mV km$^{-1}$ n$^{-1}$]")
         axes[1,1].set_xlim(PerLimits)
         if len(ZLimits) != 0:
             axes[1,1].set_ylim(ZLimits)
