@@ -27,11 +27,12 @@ from scipy.fftpack import dct, idct
 from mtpy import MT , MTData, MTCollection
 
 
-
+def dictget(d, *k):
+    """Get the values corresponding to the given keys in the provided dict."""
+    return [d[i] for i in k]
 
 def parse_ast(filename):
     with open(filename, "rt") as file:
-
         return ast.parse(file.read(), filename=filename)
 
 def check_env(envar="CONDA_PREFIX", action="error"):
