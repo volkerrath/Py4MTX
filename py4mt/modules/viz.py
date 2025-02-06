@@ -26,6 +26,324 @@ import cycler
 
 import util as utl
 
+def plot_impedance(thisaxis=None, data=None, **pltargs):
+    """
+    Plot impedances
+    
+
+    Parameters
+    ----------
+    thisaxis : axis object, optional
+        Determines where to plot, if None, new fig/ax pair is generated and plotted
+        The default is None.
+    data : np.array
+        Data to plot. The default is None.
+    **pltargs : dict
+        kwargs for plotting.
+
+    Returns
+    -------
+    ax : TYPE
+        DESCRIPTION.
+
+    """
+
+    if thisaxis is None:
+        fig, ax =  plt.subplots(1, figsize=pltargs["pltsize"])
+        # fig.suptitle(pltargs["title"], fontsize=pltargs["fontsizes"][2])
+    else:
+        ax = thisaxis
+    
+    
+    
+    [points, dats] = np.shape(data)     
+        
+    
+    per = data[:,0]
+    obs_real = data[:,1]
+    obs_imag = data[:,2]
+    
+    plot_err = False
+    if dats > 3: 
+        err_real = data[:,3]
+        err_imag = data[:,4]  
+        plot_err = True
+        
+    plot_cal = False
+    if dats > 6: 
+        cal_real = data[:,5]
+        cal_imag = data[:,6] 
+        plot_cal = True
+            
+
+    if plot_cal:
+       ax.plot(per, cal_real, 
+               color=pltargs["c_cal"][0], linestyle="-", linewidth=pltargs["l_cal"])
+    
+  
+    if plot_err:
+        ax.errorbar(per,
+                    obs_real,
+                    yerr=err_real,
+                    linestyle="",
+                    marker=pltargs["m_obs"][0],
+                    markersize=pltargs["m_size"],
+                    color=pltargs["c_obs"][0],
+                    linewidth=pltargs["l_cal"],
+                    capsize=2, capthick=0.5)
+    else:
+        ax.plot(per,
+                obs_real,
+                linestyle="",
+                marker=pltargs["m_obs"][0],
+                markersize=pltargs["m_size"],
+                linewidth=pltargs["l_cal"],
+                color=pltargs["c_obs"][0])
+        
+    if plot_cal:
+       ax.plot(per, cal_imag, 
+               color=pltargs["c_cal"][1], linestyle="-", linewidth=pltargs["l_cal"])
+    
+  
+    if plot_err:
+        ax.errorbar(per,
+                    obs_imag,
+                    yerr=err_imag,
+                    linestyle="",
+                    marker=pltargs["m_obs"][1],
+                    markersize=pltargs["m_size"],
+                    color=pltargs["c_obs"][1],
+                    linewidth=pltargs["l_cal"],
+                    capsize=2, capthick=0.5)
+    else:
+        ax.plot(per,
+                obs_imag,
+                linestyle="",
+                marker=pltargs["m_obs"][1],
+                markersize=pltargs["m_size"],
+                linewidth=pltargs["l_cal"],
+                color=pltargs["c_obs"][1])
+    
+    
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_ylabel("impedance [mv km$^{-1}$ nT$^{-1}$]")
+    ax.set_xlim(pltargs["perlimits"])
+    if len(pltargs["zlimits"]) != 0:
+        ax.set_ylim(pltargs["zlimits"])
+    ax.legend(["real", "imag"])
+    # ax.xaxis.set_ticklabels([])
+    ax.tick_params(labelsize=pltargs["labelsize"]-1)
+    ax.set_title(pltargs["title"], fontsize=pltargs["fontsize"])
+    ax.grid("both", "both", linestyle="-", linewidth=0.5)
+    if len(pltargs["nrms"])==2:
+        nrmsr = np.around(pltargs["nrms"][0],1)
+        nrmsi = np.around(pltargs["nrms"][1],1)
+        strrms = "nrms = "+str(nrmsr)+" | "+str(nrmsi)
+        ax.text(0.05, 0.05,strrms,
+                           transform=ax.transaxes,
+                           fontsize = pltargs["fontsize"]-2,
+                           ha="left", va="bottom",
+                           bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )       
+        
+        
+        
+    if thisaxis is None:
+        for f in pltargs["pltformat"]:
+            matplotlib.pyplot.savefig(pltargs["pltfile"]+f)
+        # matplotlib.pyplot.show()
+        # matplotlib.pyplot.clf()
+        
+    return ax
+
+def plot_rhophas(thisaxis=None, data=None, **pltargs):
+    """
+    
+
+    Parameters
+    ----------
+    thisax : axis object
+        DESCRIPTION.
+    period : TYPE
+        DESCRIPTION.
+    data : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    thisaxis : axis object
+        DESCRIPTION.
+        DESCRIPTION.
+
+    """
+
+    if thisaxis is None:
+        fig, ax =  plt.subplots(1,  figsize=pltargs["figsize"])
+        # fig.suptitle(pltargs["title"], fontsize=pltargs["fontsizes"][2])
+    else:
+        ax = thisaxis
+        
+    return thisaxis
+
+def plot_phastens(thisaxis=None, data=None, **pltargs):
+    """
+    Plot phase tensor
+    
+
+    Parameters
+    ----------
+    thisaxis : axis object, optional
+        Determines where to plot, if None, new fig/ax pair is generated and plotted
+        The default is None.
+
+    data : np.array
+        Data to plot. The default is None.
+    **pltargs : dict
+        kwargs for plotting.
+
+    Returns
+    -------
+    ax : TYPE
+        DESCRIPTION.
+
+    """
+
+    if thisaxis is None:
+        fig, ax =  plt.subplots(1, 1, figsize=pltargs["pltsize"])
+        # fig.suptitle(pltargs["title"], fontsize=pltargs["fontsizes"][2])
+    else:
+        ax = thisaxis
+    
+       
+    [points, dats] = np.shape(data)     
+        
+    
+    per = data[:,0]
+    obs_real = data[:,1]
+    obs_imag = data[:,2]
+    
+    plot_err = False
+    if dats > 3: 
+        err_real = data[:,3]
+        err_imag = data[:,4]  
+        plot_err = True
+        
+    plot_cal = False
+    if dats > 6: 
+        cal_real = data[:,5]
+        cal_imag = data[:,6] 
+        plot_cal = True
+            
+
+    if plot_cal:
+       ax.plot(per, cal_real, 
+               color=pltargs["c_cal"][0], linestyle="-", linewidth=pltargs["l_cal"])
+    
+  
+    if plot_err:
+        ax.errorbar(per,
+                    obs_real,
+                    yerr=err_real,
+                    linestyle="",
+                    marker=pltargs["m_obs"][0],
+                    markersize=pltargs["m_size"],
+                    color=pltargs["c_obs"][0],
+                    linewidth=pltargs["l_cal"],
+                    capsize=2, capthick=0.5)
+    else:
+        ax.plot(per,
+                obs_real,
+                linestyle="",
+                marker=pltargs["m_obs"][0],
+                markersize=pltargs["m_size"],
+                linewidth=pltargs["l_cal"],
+                color=pltargs["c_obs"][0])
+        
+    if plot_cal:
+       ax.plot(per, cal_imag, 
+               color=pltargs["c_cal"][1], linestyle="-", linewidth=pltargs["l_cal"])
+    
+  
+    if plot_err:
+        ax.errorbar(per,
+                    obs_imag,
+                    yerr=err_imag,
+                    linestyle="",
+                    marker=pltargs["m_obs"][1],
+                    markersize=pltargs["m_size"],
+                    color=pltargs["c_obs"][1],
+                    linewidth=pltargs["l_cal"],
+                    capsize=2, capthick=0.5)
+    else:
+        ax.plot(per,
+                obs_imag,
+                linestyle="",
+                marker=pltargs["m_obs"][1],
+                markersize=pltargs["m_size"],
+                linewidth=pltargs["l_cal"],
+                color=pltargs["c_obs"][1])
+    
+    
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_ylabel("impedance [mv km$^{-1}$ nT$^{-1}$]")
+    ax.set_xlim(pltargs["perlimits"])
+    if len(pltargs["zlimits"]) != 0:
+        ax.set_ylim(pltargs["zlimits"])
+    ax.legend(["real", "imag"])
+    # ax.xaxis.set_ticklabels([])
+    ax.tick_params(labelsize=pltargs["labelsize"]-1)
+    ax.set_title(pltargs["title"], fontsize=pltargs["fontsize"])
+    ax.grid("both", "both", linestyle="-", linewidth=0.5)
+    if len(pltargs["nrms"])==2:
+        nrmsr = np.around(pltargs["nrms"][0],1)
+        nrmsi = np.around(pltargs["nrms"][1],1)
+        strrms = "nrms = "+str(nrmsr)+" | "+str(nrmsi)
+        ax.text(0.05, 0.05,strrms,
+                           transform=ax.transaxes,
+                           fontsize = pltargs["fontsize"]-2,
+                           ha="left", va="bottom",
+                           bbox={"pad": 2, "facecolor": "white", "edgecolor": "white" ,"alpha": 0.8} )       
+        
+        
+    if thisaxis is None:
+        for f in pltargs["pltformat"]:
+            matplotlib.pyplot.savefig(pltargs["pltfile"]+f)
+        # matplotlib.pyplot.show()
+        # matplotlib.pyplot.clf()
+   
+    return ax
+
+
+def plot_vtf(thisaxis=None, plotfile=None, period=None, data=None, **pltargs):
+    """
+    
+
+    Parameters
+    ----------
+    thisax : axis object
+        DESCRIPTION.
+    period : TYPE
+        DESCRIPTION.
+    data : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    thisaxis : axis object
+        DESCRIPTION.
+        DESCRIPTION.
+
+    """
+
+    if thisaxis is None:
+        fig, ax =  plt.subplots(1, figsize=pltargs["figsize"])
+        # fig.suptitle(pltargs["title"], fontsize=pltargs["fontsizes"][2])
+    else:
+        ax = thisaxis
+        
+    return thisaxis
+
 
 def plot_depth_prof(
         ThisAxis = None,
