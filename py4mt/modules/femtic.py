@@ -3,6 +3,30 @@ from sys import exit as error
 
 
 def get_femtic_data(data_file=None, site_file=None, data_type="rhophas", out=True):
+    """
+    
+
+    Parameters
+    ----------
+    data_file : TYPE, optional
+        DESCRIPTION. The default is None.
+    site_file : TYPE, optional
+        DESCRIPTION. The default is None.
+    data_type : TYPE, optional
+        DESCRIPTION. The default is "rhophas".
+    out : TYPE, optional
+        DESCRIPTION. The default is True.
+
+    Returns
+    -------
+    data_dict : TYPE
+        DESCRIPTION.
+
+   Note: Conversion to appropriate units: FEMTIC uses ohms
+         1 ohm = 10000(4*pi) [mV/km/nT]
+ 
+    """
+
 
     data = []
     with open(data_file, "r") as f:
@@ -69,12 +93,15 @@ def get_femtic_data(data_file=None, site_file=None, data_type="rhophas", out=Tru
          ReZxxCal   ImZxxCal   ReZxyCal   ImZxyCal   ReZyxCal  ImZyxCal  ReZyyCal   ImZyyCal
          ReZxxObs   ImZxxObs   ReZxyObs   ImZxyObs   ReZyxObs  ImZyxObs  ReZyyObs   ImZyyObs
          ReZxxErr   ImZxxErr   ReZxyErr   ImZxyErr   ReZyxErr  ImZyxErr  ReZyyErr   ImZyyErr
+         
+         Z_femtic in Ohm: 1 Ohm = 1e4*(4*pi) [mV/km/nT] => Z =  1.e-4/(4*np.pi)*Z_femtic
+         
         """
-
+        ufact = 1.e-4/(4*np.pi)
         type_dict = dict([
-            ("cal", data[:, 2:10 ]),
-            ("obs", data[:, 10:18 ]),
-            ("err", data[:, 18:26]),
+            ("cal", ufact*data[:, 2:10 ]),
+            ("obs", ufact*data[:, 10:18 ]),
+            ("err", ufact*data[:, 18:26]),
         ])
 
     elif "vtf" in data_type.lower():
