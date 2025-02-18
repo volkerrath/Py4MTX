@@ -48,6 +48,11 @@ version, _ = versionstrg()
 titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
+Coords = "utm"
+if "utm" in Coords.lower:
+    EPSG =32629 
+else:
+    EPSG = None
 
 dialect = "unix"
 delim = ","
@@ -55,6 +60,7 @@ whatfor = "femtic"
 # whatfor = "kml"
 if  "wal" in whatfor:
     delim = " "
+    Coords= "latlon"
 
 
 # Define the path to your EDI-files and for the list produced
@@ -110,8 +116,13 @@ with open(CSVFile, "w") as f:
         lon = mt_obj.station_metadata.location.longitude
         elev = mt_obj.station_metadata.location.elevation
 
-
-
+        if "utm" in Coords.lower():
+            if EPSG is not None:
+                easting, northing =  utl.proj_latlon_to_utm(latitude=lat, longitude=lon, utm_zone=EPSG)
+            else:
+                sys.exit("make sitelis: utm required, but no EPSG given!. Exit.")
+                
+                
         # sitename = mt_obj.station
         if "wal" in whatfor:
             sitelist.writerow([name, lat, lon])
