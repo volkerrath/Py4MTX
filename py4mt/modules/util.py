@@ -7,6 +7,7 @@ Created on Sun Nov  1 17:08:06 2020
 
 import os
 import sys
+from sys import exit as error
 import ast
 import numpy as np
 from scipy.ndimage import gaussian_filter, laplace, convolve, gaussian_gradient_magnitude

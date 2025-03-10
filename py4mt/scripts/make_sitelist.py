@@ -24,6 +24,7 @@ coordinates and elevations, e. g., for WALDIM analysis.
 
 import os
 import sys
+from sys import exit as error
 import csv
 from mtpy.core.mt import MT
 import numpy as np
@@ -120,7 +121,7 @@ with open(CSVFile, "w") as f:
             if EPSG is not None:
                 easting, northing =  utl.proj_latlon_to_utm(latitude=lat, longitude=lon, utm_zone=EPSG)
             else:
-                sys.exit("make sitelis: utm required, but no EPSG given!. Exit.")
+                sys.exit("make sitelist: utm required, but no EPSG given!. Exit.")
                 
                 
         # sitename = mt_obj.station
