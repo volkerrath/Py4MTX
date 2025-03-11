@@ -80,6 +80,7 @@ def calc_sensitivity(Jac=np.array([]),
 
     elif "euc" in Type.lower():
         S = Jac.power(2).sum(axis=0)
+        S = np.sqrt(S)
         if OutInfo:
             print("euc:", S)
         # else:
@@ -140,7 +141,7 @@ def transform_sensitivity(S=np.array([]), Vol=np.array([]),
         "max"       Normalize by maximum value.
         "sur"       Normalize by surface value.
         "sqr"       Take the square root. Only usefull for euc sensitivities.
-        "log"       Take the logaritm. This should always be the
+        "log"       Take the logarithm. This should always be the
                     last value in Transform list
 
         "asinh"     asinh transform. WARNING: excludes log option,
@@ -163,10 +164,10 @@ def transform_sensitivity(S=np.array([]), Vol=np.array([]),
     for item in Transform:
 
 
-        if "sqr" in item.lower():
-            S = np.sqrt(S)
-            # print("S0s", np.shape(S))
-            print("trans_sensitivity sqr:",np.amin(S), np.amax(S))
+        # if "sqr" in item.lower():
+        #     S = np.sqrt(S)
+        #     # print("S0s", np.shape(S))
+        #     print("trans_sensitivity sqr:",np.amin(S), np.amax(S))
 
         if "log" in item.lower():
             S = np.log10(S)
