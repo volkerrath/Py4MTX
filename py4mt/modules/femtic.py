@@ -70,10 +70,6 @@ def get_femtic_sites(imp_file='result_MT.txt',
             print(pt_file,'does not exist!')    
         else:
             print('pt_file not defined!')
-            
-    
-            
-
 
 
 
