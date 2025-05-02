@@ -25,29 +25,29 @@ for pth in mypath:
 import util as utl
 from version import versionstrg
 
-def get_femtic_sorted_jacfiles(files=[], out=True):
+def get_femtic_sorted(files=[], out=True):
     numbers = []
     for file in files:
         numbers.append(int(file[11:]))
     numbers = sorted(numbers)
 
-    jacfiles = []
+    listfiles = []
     for ii in numbers:
         fil = 'sensMatFreq'+str(ii)
-        jacfiles.append(fil)
+        listfiles.append(fil)
 
     if out:
-        print(jacfiles)
-    return jacfiles
+        print(listfiles)
+    return listfiles
 
 datadir = '/home/vrath/work/tmp/inversion_1/'
-freqread=True
+sensread=True
 
 
 
-if freqread:
-    filelist = utl.get_filelist(searchstr=['sensMatFreq*'], searchpath=datadir)
-    filelist = get_femtic_sorted_jacfiles(filelist)
+if sensread:
+    filelist = utl.get_filelist(searchstr=['sensMatFreq*.bin'], searchpath=datadir)
+    filelist = get_femtic_sorted(filelist)
     
     fcount = -1
     for file in filelist:
@@ -86,9 +86,42 @@ JJT = J@J.T
 np.savez_compressed(datadir+'JacobianProducts', JTJ = JTJ, JJT = JJT)
 
 
-with open(datadir+'roughening_matrix.out', 'r') as readfile:
-       tmprough = readfile.readlines()
-       #.append((tmprough,line), axis=1)
+# with open(datadir+'roughening_matrix.out', 'r') as readfile:
+#        tmprough = readfile.readlines()
+#        #.append((tmprough,line), axis=1)
 
-print(np.shape(tmprough))
+# print(np.shape(tmprough))
 
+# if sensread:
+#     filelist = utl.get_filelist(searchstr=['sensMatFreq*Mod.bin'], searchpath=datadir)
+#     filelist = get_femtic_sorted(filelist)
+    
+#     fcount = -1
+#     for file in filelist:
+#         fcount = fcount+1
+#         with open(datadir+file,'rb') as readfile:
+#             tmp = readfile.read(4)
+#             numdata=int(struct.unpack('i', tmp)[0])
+#             tmp = readfile.read(4)
+#             numpara=int(struct.unpack('i', tmp)[0])     
+#             jacsiz = numdata*numpara
+#             tmpjac = np.zeros((jacsiz,1))
+#             print('jacobian is', numdata, 'times', numpara,':',jacsiz)
+#             for jj in np.arange(jacsiz):
+#                 tmp = readfile.read(8)
+#                 tmpjac[jj,0] = float(struct.unpack('d', tmp)[0])
+                
+#         tmpjac = np.reshape(tmpjac, (numpara, numdata))
+        
+    
+#         if fcount == 0:
+#             jac = tmpjac
+#         else:
+#             jac = np.hstack((jac, tmpjac))
+              
+#     print(np.shape(jac))
+    
+#     J = jac.T
+#     np.savez_compressed(datadir+'JacobianFull', J = J)
+# else:
+#     J = np.load(datadir+'JacobianFull.npz')['J']
