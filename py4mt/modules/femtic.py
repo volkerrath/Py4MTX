@@ -3,6 +3,108 @@ import numpy as np
 import os
 import sys
 from sys import exit as error
+import shutil
+
+import numpy as np
+
+
+def generate_directories(dir_base='./run_', N_samples=1, out = True):
+    file_list = ['control.dat', 
+                 'observe.dat', 
+                 'mesh.dat',     
+                 'resistivity_block_iter0.dat',
+                 'distortion_iter0.dat'] 
+    dir_list = []
+    for iens in np.arange(N_samples):
+        directory=dir_base+str(iens)+'/'
+        os.makedirs(os.path.dirname(directory), exist_ok=True)
+        shutil.copy(file_list, directory)
+        dir_list.append(directory)
+        
+    if out:
+        print('list of directories:')
+        print(dir_list)
+        
+        
+    return dir_list
+        
+        
+        
+
+def generate_data_ensemble(dir_base ='./run_',
+                           N_samples=1,
+                           fil_in='observe.dat', 
+                           fac = 1.,
+                           out=True):
+    '''
+    for i = 1 : nsamples do
+        Draw perturbed data set: d_pert ∼ N(d, Cd)
+        
+    '''
+    
+    obs_list = []
+    for iens in np.arange(N_samples):
+        file_in = dir_base+str(iens)+'/'+fil_in
+        shutil.copy(file_in, file_in.replace('.dat', '_orig.dat'))
+        """
+        Generate perturbed observe.dat
+        """
+
+        file_out = file_in
+        obs_list.append(file_out)
+
+    if out:
+        print('list of perturbed observation files:')
+        print(obs_list)
+        
+        
+    return obs_list
+        
+
+def generate_model_ensemble(dir_base ='./run_',
+                           N_samples=1,
+                           file_in='resistivity_block_iter0.dat', 
+
+                           Cm = None,
+                           out=True):
+    '''
+    for i = 1 : nsamples do
+        Draw model: m_pert ∼ N (m, Cm)
+
+    '''
+
+    mod_list = []
+    for iens in np.arange(N_samples):
+            file_in = dir_base+str(iens)+'/'+file_in
+            shutil.copy(file_in, file_in.replace('.dat', '_orig.dat'))
+            '''
+            generate perturbed model
+            '''
+
+
+    if out:
+        print('list of perturbed model files:')
+        print(mod_list)
+        
+    return mod_list
+
+
+
+def get_femtic_sorted(files=[], out=True):
+    numbers = []
+    for file in files:
+        numbers.append(int(file[11:]))
+    numbers = sorted(numbers)
+
+    listfiles = []
+    for ii in numbers:
+        fil = 'sensMatFreq'+str(ii)
+        listfiles.append(fil)
+
+    if out:
+        print(listfiles)
+    return listfiles
+
 
 def get_femtic_sites(imp_file='result_MT.txt',
                      vtf_file = 'result_VTF.txt',
