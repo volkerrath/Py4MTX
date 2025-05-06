@@ -38,6 +38,8 @@ import os
 import sys
 import shutil
 import numpy as np
+import functools
+import inspect
 
 
 PY4MTX_DATA = os.environ["PY4MTX_DATA"]
@@ -61,28 +63,41 @@ from sklearn.covariance import empirical_covariance
 rng = np.random.default_rng()
 nan = np.nan  # float("NaN")
 version, _ = versionstrg()
-titstrng = utl.print_title(version=version, fname=__file__, out=False)
+fname = inspect.getfile(inspect.currentframe())
+titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng+"\n\n")
 
 
-"""
-Draw perturbed data set: d  ̃ ∼ N (d, Cd)
-"""
-d_ens = generate_data_ensemble(dref=d_obs, dact=d_act,
-                                       nens=nsamples,
-                                       perturb=["gauss", d_err],
-                                       out=OutInfo)
-# print(d_ens)
-# print("@@@")
-# print(d_err)
-# print("@@@")
-"""
-Draw prior model: m̃ ∼ N (0, 1 (LT L)−1 )
-"""
-m_ens = generate_param_ensemble(mref=m_ref, mact=m_act,
-                                        nens=nsamples,
-                                        perturb=["gauss", c_ref,
-                                                 numpy.array([])],
-                                        out=OutInfo)
+N_samples = 3
+EnsembleDir = r'./'
+Templates = EnsembleDir+'templates/'
+Files = ['control.dat', 
+         'observe.dat', 
+         'mesh.dat',     
+         'resistivity_block_iter0.dat',
+         'distortion_iter0.dat',
+         'run_femtic_dub.sh',
+         'run_femtic_oar.sh']
 
-# @ray.remote
+dir_list = fem.generate_directories(
+        dir_base=EnsembleDir+'ens_',
+        templates=Templates,
+        file_list=Files, 
+        N_samples=10, 
+        out = True)
+
+# """
+# Draw perturbed data set: d  ̃ ∼ N (d, Cd)
+# """
+# d_ens = generate_data_ensemble(dref=d_obs, dact=d_act,
+#                                        nens=nsamples,
+#                                        perturb=["gauss", d_err],
+#                                        out=OutInfo)
+# """
+# Draw prior model: m̃ ∼ N (0, 1 (LT L)−1 )
+# """
+# m_ens = generate_param_ensemble(mref=m_ref, mact=m_act,
+#                                         nens=nsamples,
+#                                         perturb=["gauss", c_ref,
+#                                                  numpy.array([])],
+#                                                  out=OutInfo)
