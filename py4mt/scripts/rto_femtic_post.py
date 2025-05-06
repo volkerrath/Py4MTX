@@ -5,13 +5,42 @@ Created on Wed Apr 30 16:33:13 2025
 
 @author: vrath
 """
-iPY4MTX_DATA = os.environ["PY4MTX_DATA"]
+import os
+import sys
+import shutil
+import numpy as np
+
+
+import sklearn as skl
+from sklearn.covariance import empirical_covariance
+
+PY4MTX_DATA = os.environ["PY4MTX_DATA"]
 PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
 
 mypath = [PY4MTX_ROOT+"/py4mt/modules/", PY4MTX_ROOT+"/py4mt/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
+
+import femtic as fem
+import util as utl
+from version import versionstrg
+
+
+
+
+rng = np.random.default_rng()
+nan = np.nan  # float("NaN")
+version, _ = versionstrg()
+titstrng = utl.print_title(version=version, fname=__file__, out=False)
+print(titstrng+"\n\n")
+
+
+N_samples = 3
+EnsembleDir = r'./'
+
+import sklearn as skl
+from sklearn.covariance import empirical_covariance
 
 #import modules
 import femtic as fem
