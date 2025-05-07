@@ -14,6 +14,8 @@ from sys import exit as error
 import time
 from datetime import datetime
 import warnings
+import inspect
+import tarfile
 
 import numpy as np
 import numpy.linalg as npl
@@ -25,7 +27,7 @@ import scipy.sparse as scs
 from osgeo import gdal
 
 import discretize
-import tarfile
+
 
 
 
@@ -51,7 +53,7 @@ import util as utl
 
 
 version, _ = versionstrg()
-titstrng = utl.print_title(version=version, fname=__file__, out=False)
+titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.currentframe()), out=False)
 print(titstrng+"\n\n")
 
 # general plottin parameters

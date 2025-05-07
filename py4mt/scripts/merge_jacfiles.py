@@ -10,8 +10,10 @@ import os
 import sys
 import binascii
 import struct
-import numpy as np
+import inspect
 import fnmatch
+
+import numpy as np
 
 PY4MTX_DATA = os.environ["PY4MTX_DATA"]
 PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]

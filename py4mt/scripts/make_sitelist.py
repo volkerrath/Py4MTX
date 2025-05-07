@@ -26,6 +26,8 @@ import os
 import sys
 from sys import exit as error
 import csv
+import inspect
+
 from mtpy.core.mt import MT
 import numpy as np
 
@@ -46,7 +48,7 @@ from version import versionstrg
 PY4MTX_DATA = os.environ["PY4MTX_DATA"]
 
 version, _ = versionstrg()
-titstrng = utl.print_title(version=version, fname=__file__, out=False)
+titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.currentframe()), out=False)
 print(titstrng+"\n\n")
 
 Coords = "utm"

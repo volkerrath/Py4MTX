@@ -19,13 +19,13 @@
 import sys
 import os
 
-sys.path.append(os.path.dirname(__file__))
+sys.path.append(os.path.dirname(inspect.getfile(inspect.currentframe())))
 
 from . import modules
 from . import scripts
 
 # define custEM version
-with open(os.path.dirname(__file__) + '/version.txt', 'r') as v_file:
+with open(os.path.dirname(inspect.getfile(inspect.currentframe())) + '/version.txt', 'r') as v_file:
     version = v_file.readline()[:7]
     release_date = v_file.readline()[:10]
 

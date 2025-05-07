@@ -18,6 +18,7 @@ import time
 
 from sys import exit as error
 from datetime import datetime
+import inspect
 
 import numpy as np
 import matplotlib as mpl
@@ -37,7 +38,7 @@ from version import versionstrg
 import modem as mod
 
 version, _ = versionstrg()
-titstrng = utl.print_title(version=version, fname=__file__, out=False)
+titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.currentframe()), out=False)
 print(titstrng+"\n\n")
 
 cm = 1./2.54  # centimeters to inches

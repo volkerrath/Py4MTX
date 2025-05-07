@@ -17,12 +17,12 @@ os.environ["OPENBLAS_NUM_THREADS"] = str(nthreads)
 os.environ["MKL_NUM_THREADS"] = str(nthreads)
 
 import sys
-
+import inspect
 # import struct
 import time
 from datetime import datetime
 import warnings
-import gc
+
 
 import jax.numpy as nj
 import jax.scipy as sj
@@ -62,7 +62,7 @@ from version import versionstrg
 
 
 version, _ = versionstrg()
-titstrng = utl.print_title(version=version, fname=__file__, out=False)
+titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.currentframe()), out=False)
 print(titstrng+"\n\n")
 
 rng = np.random.default_rng()

@@ -13,6 +13,7 @@ adapted by jc feb 2025
 
 import os
 import sys
+import inspect
 
 
 import getpass
@@ -40,7 +41,7 @@ from version import versionstrg
 
 
 version, _ = versionstrg()
-titstrng = utl.print_title(version=version, fname=__file__, out=False)
+titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.currentframe()), out=False)
 print(titstrng+"\n\n")
 
 PY4MTX_DATA =  "C:/Users/charroyj/Documents/MT/software/Py4MTX_DATA/"

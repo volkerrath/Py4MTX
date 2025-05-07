@@ -23,6 +23,7 @@ coordinates and elevations, e. g., for WALDIM analysis.
 # Import required modules
 import os
 import sys
+import inspect
 
 
 import getpass
@@ -61,7 +62,7 @@ blank = 1.e-30 # np.nan
 rhoair = 1.e17
 
 version, _ = versionstrg()
-titstrng = utl.print_title(version=version, fname=__file__, out=False)
+titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.currentframe()), out=False)
 print(titstrng+"\n\n")
 
 

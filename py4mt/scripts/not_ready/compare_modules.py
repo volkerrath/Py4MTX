@@ -9,6 +9,7 @@ Created on Sun Jan 16 18:57:47 2022
 import os
 import sys
 import ast
+import inspect
 
 PY4MT_ROOT = os.environ["PY4MT_ROOT"]
 mypath = [PY4MT_ROOT+"/py4mt/modules/", PY4MT_ROOT+"/py4mt/scripts/"]

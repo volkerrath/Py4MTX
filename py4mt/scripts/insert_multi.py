@@ -27,6 +27,8 @@ Created on Sun Jan 17 15:09:34 2021
 import os
 import sys
 from sys import exit as error
+import inspect
+
 # import struct
 import time
 from datetime import datetime
@@ -60,7 +62,7 @@ blank = 1.e-30 # np.nan
 rhoair = 1.e17
 
 version, _ = versionstrg()
-titstrng = utl.print_title(version=version, fname=__file__, out=False)
+titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.currentframe()), out=False)
 print(titstrng+"\n\n")
 
 

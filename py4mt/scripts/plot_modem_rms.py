@@ -8,6 +8,8 @@ Created on Mon Nov 25 17:13:18 2024
 
 import os
 import sys
+import inspect
+
 
 import numpy as np
 import matplotlib.pyplot as plt

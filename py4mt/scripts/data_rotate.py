@@ -13,6 +13,8 @@ by potentially different angles into NS/EW coordinate system
 
 import os
 import sys
+import inspect
+
 import numpy as np
 
 from mtpy.core.mt import MT
@@ -32,7 +34,7 @@ from version import versionstrg
 
 
 version, _ = versionstrg()
-titstrng = utl.print_title(version=version, fname=__file__, out=False)
+titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.currentframe()), out=False)
 print(titstrng+"\n\n")
 
 # Define the path to your EDI-files:

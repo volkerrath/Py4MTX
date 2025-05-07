@@ -26,6 +26,8 @@ Ellipsoids or boxes
 import os
 import sys
 from sys import exit as error
+import inspect
+
 import time
 from datetime import datetime
 
@@ -60,7 +62,7 @@ from version import versionstrg
 rng = np.random.default_rng()
 nan = np.nan  # float("NaN")
 version, _ = versionstrg()
-titstrng = utl.print_title(version=version, fname=__file__, out=False)
+titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.currentframe()), out=False)
 print(titstrng+"\n\n")
 
 rhoair = 1.e17
