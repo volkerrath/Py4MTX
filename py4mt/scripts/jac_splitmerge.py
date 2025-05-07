@@ -24,6 +24,7 @@ Reads ModEM's Jacobian, does fancy things.
 
 import os
 import sys
+import inspect
 
 # import struct
 import time
@@ -55,7 +56,7 @@ import util as utl
 from version import versionstrg
 
 version, _ = versionstrg()
-titstrng = utl.print_title(version=version, fname=__file__, out=False)
+titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.currentframe()), out=False)
 print(titstrng+"\n\n")
 
 

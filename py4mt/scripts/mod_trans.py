@@ -7,6 +7,8 @@ Created on Mon Aug 28 17:17:16 2023
 """
 import os
 import sys
+import inspect
+
 import numpy as np
 
 from sys import exit as error
@@ -31,7 +33,7 @@ from version import versionstrg
 import util as utl
 
 version, _ = versionstrg()
-titstrng = utl.print_title(version=version, fname=__file__, out=False)
+titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.currentframe()), out=False)
 print(titstrng+"\n\n")
 
 debug = False

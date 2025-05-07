@@ -9,6 +9,8 @@ import os
 import sys
 from sys import exit as error
 import ast
+import inspect
+
 import numpy as np
 import xarray as xr
 from scipy.ndimage import gaussian_filter, laplace, convolve, gaussian_gradient_magnitude

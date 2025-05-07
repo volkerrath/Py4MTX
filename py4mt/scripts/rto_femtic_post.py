@@ -8,6 +8,9 @@ Created on Wed Apr 30 16:33:13 2025
 import os
 import sys
 import shutil
+import inspect
+
+
 import numpy as np
 
 
@@ -32,7 +35,7 @@ from version import versionstrg
 rng = np.random.default_rng()
 nan = np.nan  # float("NaN")
 version, _ = versionstrg()
-titstrng = utl.print_title(version=version, fname=__file__, out=False)
+titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.currentframe()), out=False)
 print(titstrng+"\n\n")
 
 
@@ -50,7 +53,7 @@ from version import versionstrg
 rng = np.random.default_rng()
 nan = np.nan  # float("NaN")
 version, _ = versionstrg()
-titstrng = utl.print_title(version=version, fname=__file__, out=False)
+titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.currentframe()), out=False)
 print(titstrng+"\n\n")
 
 

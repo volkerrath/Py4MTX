@@ -8,6 +8,8 @@
 import os
 import sys
 import csv
+import inspect
+
 import numpy
 import simplekml
 
@@ -26,7 +28,7 @@ import util
 from version import versionstrg
 
 version, _ = versionstrg()
-titstrng = util.print_title(version=version, fname=__file__, out=False)
+titstrng = util.print_title(version=version, fname=inspect.getfile(inspect.currentframe()), out=False)
 print(titstrng+"\n\n")
 
 

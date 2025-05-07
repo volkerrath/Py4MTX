@@ -12,6 +12,8 @@ from sys import exit as error
 import time
 from datetime import datetime
 import warnings
+import inspect
+
 
 import numpy as np
 import netCDF4 as nc
@@ -41,7 +43,7 @@ rhoair = 1.e17
 
 
 version, _ = versionstrg()
-titstrng = utl.print_title(version=version, fname=__file__, out=False)
+titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.currentframe()), out=False)
 print(titstrng+"\n\n")
 
 PY4MTX_DATA =os.environ["PY4MTX_DATA"]
