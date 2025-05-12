@@ -59,33 +59,48 @@ import sklearn as skl
 from sklearn.covariance import empirical_covariance
 
 
-
 rng = np.random.default_rng()
 nan = np.nan  # float("NaN")
 version, _ = versionstrg()
 fname = inspect.getfile(inspect.currentframe())
+
 titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng+"\n\n")
 
 
 N_samples = 3
-EnsembleDir = r'./'
+EnsembleDir = r'/home/vrath/work/Ensemble/Ubinas_ens/'
 Templates = EnsembleDir+'templates/'
-Files = ['control.dat', 
-         'observe.dat', 
-         'mesh.dat',     
+Files = ['control.dat',
+         'observe.dat',
+         'mesh.dat',
          'resistivity_block_iter0.dat',
          'distortion_iter0.dat',
          'run_femtic_dub.sh',
          'run_femtic_oar.sh']
+Mod_pdf = ['normal', 0., 0.5]
+Dat_pdf = ['normal', 0., 1.]
+
+os.chdir(EnsembleDir)
 
 dir_list = fem.generate_directories(
-        dir_base=EnsembleDir+'ens_',
-        templates=Templates,
-        file_list=Files, 
-        N_samples=10, 
-        out = True)
+    dir_base=EnsembleDir+'ens_',
+    templates=Templates,
+    file_list=Files,
+    N_samples=N_samples,
+    out=True)
 
+model_ensemble = fem.generate_model_ensemble(dir_base=EnsembleDir+'ens_',
+                                          N_samples=N_samples,
+                                          file_in='resistivity_block_iter0.dat',
+                                          draw_from=Mod_pdf,
+                                          out=True)
+# print('\n')
+# data_ensemble = fem.generate_data_ensemble(dir_base=EnsembleDir+'ens_',
+#                                           N_samples=N_samples,
+#                                           file_in='observe.dat',
+#                                           draw_from=Dat_pdf,
+#                                           out=True)
 # """
 # Draw perturbed data set: d  ̃ ∼ N (d, Cd)
 # """

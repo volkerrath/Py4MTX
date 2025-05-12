@@ -742,7 +742,7 @@ def make_pdf_catalog(workdir="./", pdflist= None, filename=None):
 
 def print_title(version="0.99.99", fname="", form="%m/%d/%Y, %H:%M:%S", out=True):
     """
-    Print version, calling filename, and modification date.
+    Print version, calling file name, and modification date.
     """
 
     import os.path
