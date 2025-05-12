@@ -16,76 +16,134 @@ import scipy.sparse
 
 import joblib
 
+
 def generate_directories(
         dir_base='./ens_',
-        templates = '',
-        file_list = ['control.dat', 
-                 'observe.dat', 
-                 'mesh.dat',     
-                 'resistivity_block_iter0.dat',
-                 'distortion_iter0.dat',
-                 'run_dub.sh',
-                 'run_oar_sh'], 
-        N_samples=1, 
-        out = True):
-    
+        templates='',
+        file_list=['control.dat',
+                   'observe.dat',
+                   'mesh.dat',
+                   'resistivity_block_iter0.dat',
+                   'distortion_iter0.dat',
+                   'run_dub.sh',
+                   'run_oar_sh'],
+        N_samples=1,
+        out=True):
+
     dir_list = []
     for iens in np.arange(N_samples):
-        directory=dir_base+str(iens)+'/'
+        directory = dir_base+str(iens)+'/'
         os.makedirs(directory, exist_ok=True)
         copy_files(file_list, directory, templates)
         dir_list.append(directory)
-        
+
     if out:
         print('list of directories:')
         print(dir_list)
-       
-        
-    return dir_list
-        
-def copy_files(filelist, directory, templates):
-        for f in np.arange(len(filelist)):
-            ff = templates+filelist[f]
-            # shutil.copy(ff, directory)
-            shutil.copy2(ff, directory)
-              
 
-def generate_data_ensemble(dir_base ='./ens_',
+    return dir_list
+
+
+def copy_files(filelist, directory, templates):
+    for f in np.arange(len(filelist)):
+        ff = templates+filelist[f]
+        # shutil.copy(ff, directory)
+        shutil.copy2(ff, directory)
+
+
+def generate_data_ensemble(dir_base='./ens_',
                            N_samples=1,
-                           fil_in='observe.dat', 
-                           fac = 1.,
-                           Cd = None,
+                           fil_in='observe.dat',
+                           draw_from=['normal', 0., 1.],
                            out=True):
     '''
     for i = 1 : nsamples do
         Draw perturbed data set: d_pert ∼ N(d, Cd)
         
     '''
-    
+
     obs_list = []
     for iens in np.arange(N_samples):
-        file_in = dir_base+str(iens)+'/'+fil_in
-        shutil.copy(file_in, file_in.replace('.dat', '_orig.dat'))
+        file = dir_base+str(iens)+'/'+fil_in
+        shutil.copy(file, file.replace('.dat', '_orig.dat'))
         '''
         Generate perturbed observe.dat
         '''
-
-        file_out = file_in
-        obs_list.append(file_out)
+        perturb_data(template_file=file,
+                     draw_from=draw_from,
+                     out=out)
+        obs_list.append(file)
 
     if out:
         print('list of perturbed observation files:')
         print(obs_list)
-        
-        
-    return obs_list
-        
 
-def generate_model_ensemble(dir_base ='./ens_',
-                           N_samples=1,
-                           file_in='resistivity_block_iter0.dat', 
-                           Cm = None,
-                           out=True):
+    return obs_list
+
+
+def perturb_data(template_file='observe.dat',
+                  draw_from=['normal', 0., 1.],
+                  out=True):
+    '''
+    Created on Thu Apr 17 17:13:38 2025
+    
+    @author:   vrath   
+    '''
+#    import numpy as np
+
+    rng = np.random.default_rng()
+    if template_file is None:
+        template_file = 'resistivity_block_iter0.dat'
+
+    with open(template_file, 'r') as file:
+        content = file.readlines()
+
+    nn = content[0].split()
+    nn = [int(tmp) for tmp in nn]
+
+    new_lines = []
+
+    line = '\n         0        1.000000e+09   1.000000e-20   1.000000e+20   1.000000e+00         1\n'
+    new_lines.append(line)
+
+    n_samples = nn[1]
+
+    if 'normal' in draw_from[0]:
+        samples = np.random.normal(
+            loc=draw_from[1], scale=draw_from[2], size=n_samples)
+    else:
+        samples = np.random.normal(
+            low=draw_from[1], high=draw_from[2], size=n_samples)
+
+    s_num = -1
+    for ell in range(nn[0], nn[0]+nn[1]):  # 54587 inclusive
+        s_num = s_num + 1
+        # print(ell, nn)
+        x_log = np.log10(float(content[ell].split()[0]))
+        x_log = x_log + samples[s_num]
+        x = 10.**(x_log)
+        line = f' {s_num:9d}        {x:.6e}   1.000000e-20   1.000000e+20   1.000000e+00         0\n'
+        new_lines.append(line)
+
+    # print (np.shape(content))
+    with open(template_file, 'w') as f:
+        f.writelines(content[0:nn[0]+2])
+        f.writelines(new_lines)
+
+    if out:
+        print('File '+template_file+' successfully written.')
+        print('Number of perturbations', len(samples))
+        print('Average perturbation', np.mean(samples))
+        print('StdDev perturbation', np.std(samples))
+
+    return samples
+
+
+def generate_model_ensemble(dir_base='./ens_',
+                            N_samples=1,
+                            file_in='resistivity_block_iter0.dat',
+                            draw_from=['normal', 0., 1.],
+                            out=True):
     '''
     for i = 1 : nsamples do
         Draw model: m_pert ∼ N (m, Cm)
@@ -94,18 +152,79 @@ def generate_model_ensemble(dir_base ='./ens_',
 
     mod_list = []
     for iens in np.arange(N_samples):
-            file_in = dir_base+str(iens)+'/'+file_in
-            shutil.copy(file_in, file_in.replace('.dat', '_orig.dat'))
-            '''
-            generate perturbed model
-            '''
-
+        file = dir_base+str(iens)+'/'+file_in
+        shutil.copy(file, file.replace('.dat', '_orig.dat'))
+        '''
+        generate perturbed model
+        '''
+        perturb_model(template_file=file,
+                      draw_from=draw_from,
+                      out=out)
+        mod_list.append(file)
 
     if out:
+        print('\n')
         print('list of perturbed model files:')
         print(mod_list)
-        
+
     return mod_list
+
+
+def perturb_model(template_file='resistivity_block_iter0.dat',
+                  draw_from=['normal', 0., 1.],
+                  out=True):
+    '''
+    Created on Thu Apr 17 17:13:38 2025
+    
+    @author:     charroyj
+                 vrath   
+    '''
+#    import numpy as np
+
+    rng = np.random.default_rng()
+    if template_file is None:
+        template_file = 'resistivity_block_iter0.dat'
+
+    with open(template_file, 'r') as file:
+        content = file.readlines()
+
+    nn = content[0].split()
+    nn = [int(tmp) for tmp in nn]
+
+
+
+    n_samples = nn[1]
+
+    if 'normal' in draw_from[0]:
+        samples = np.random.normal(
+            loc=draw_from[1], scale=draw_from[2], size=n_samples)
+    else:
+        samples = np.random.normal(
+            low=draw_from[1], high=draw_from[2], size=n_samples)
+        
+    new_lines = ['\n         0        1.000000e+09   1.000000e-20   1.000000e+20   1.000000e+00         1\n']
+
+    s_num =0
+    for ell in range(nn[0], nn[0]+nn[1]-1):  # 54587 inclusive
+        s_num = s_num + 1
+        # print(float(content[ell].split()[1]))
+        x_log = np.log10(float(content[ell].split()[1])) + samples[s_num-1]
+        x = 10.**(x_log)
+        line = f' {s_num:9d}        {x:.6e}   1.000000e-20   1.000000e+20   1.000000e+00         0\n'
+        new_lines.append(line)
+
+    # print (np.shape(content))
+    with open(template_file, 'w') as f:
+        f.writelines(content[0:nn[0]+1])
+        f.writelines(new_lines)
+
+    if out:
+        print('File '+template_file+' successfully written.')
+        print('Number of perturbations', len(samples))
+        print('Average perturbation', np.mean(samples))
+        print('StdDev perturbation', np.std(samples))
+
+    return samples
 
 
 def calc_covar_simple(x=np.array([]),

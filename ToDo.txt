@@ -1,1 +1,0 @@
--     Rotate needs adaption when Z is rotated but not T (Timor)?
