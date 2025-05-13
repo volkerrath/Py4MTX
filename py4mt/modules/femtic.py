@@ -53,7 +53,7 @@ def copy_files(filelist, directory, templates):
 
 def generate_data_ensemble(dir_base='./ens_',
                            N_samples=1,
-                           fil_in='observe.dat',
+                           file_in='observe.dat',
                            draw_from=['normal', 0., 1.],
                            out=True):
     '''
@@ -64,7 +64,7 @@ def generate_data_ensemble(dir_base='./ens_',
 
     obs_list = []
     for iens in np.arange(N_samples):
-        file = dir_base+str(iens)+'/'+fil_in
+        file = dir_base+str(iens)+'/'+file_in
         shutil.copy(file, file.replace('.dat', '_orig.dat'))
         '''
         Generate perturbed observe.dat
@@ -82,8 +82,8 @@ def generate_data_ensemble(dir_base='./ens_',
 
 
 def perturb_data(template_file='observe.dat',
-                  draw_from=['normal', 0., 1.],
-                  out=True):
+                 draw_from=['normal', 0., 1.],
+                 out=True):
     '''
     Created on Thu Apr 17 17:13:38 2025
     
@@ -93,50 +93,111 @@ def perturb_data(template_file='observe.dat',
 
     rng = np.random.default_rng()
     if template_file is None:
-        template_file = 'resistivity_block_iter0.dat'
+        template_file = 'observe.dat'
+
+    print('\n', template_file, ':')
 
     with open(template_file, 'r') as file:
         content = file.readlines()
 
-    nn = content[0].split()
-    nn = [int(tmp) for tmp in nn]
+    line = content[0].split()
+    obs_type = line[0]
+    num_site = int(line[1])
 
-    new_lines = []
+    '''  
+    find data blocks
+    
+    '''
+    start_lines_datablock = []
+    for number, line in enumerate(content, 0):
+        l = line.split()
+        if len(l) == 2:
+          start_lines_datablock.append(number)
+          print(' data block', l[0], 'with',
+                l[1], 'sites begins at line', number)
 
-    line = '\n         0        1.000000e+09   1.000000e-20   1.000000e+20   1.000000e+00         1\n'
-    new_lines.append(line)
 
-    n_samples = nn[1]
+    '''  
+     loop over  data blocks
+     
+    '''
+    num_datablock = len(start_lines_datablock)
+    for num_block in np.arange(num_datablock):
+        start_lines_site = []
+        if num_block == num_datablock-1:
+            data_block = content[start_lines_datablock[num_block]:-1]
+        else:
+            data_block = content[start_lines_datablock[num_block]:
+                                 start_lines_datablock[num_block+1]]
+        '''  
+        find sites
+        '''
+        start_lines_site = []
+        for number, line in enumerate(data_block, 0):
+            l = line.split()
+            if len(l) == 4:
+              start_lines_site.append(number)
+              print('  site', l[0], 'begins at line', number)
 
-    if 'normal' in draw_from[0]:
-        samples = np.random.normal(
-            loc=draw_from[1], scale=draw_from[2], size=n_samples)
-    else:
-        samples = np.random.normal(
-            low=draw_from[1], high=draw_from[2], size=n_samples)
 
-    s_num = -1
-    for ell in range(nn[0], nn[0]+nn[1]):  # 54587 inclusive
-        s_num = s_num + 1
-        # print(ell, nn)
-        x_log = np.log10(float(content[ell].split()[0]))
-        x_log = x_log + samples[s_num]
-        x = 10.**(x_log)
-        line = f' {s_num:9d}        {x:.6e}   1.000000e-20   1.000000e+20   1.000000e+00         0\n'
-        new_lines.append(line)
+    # '''  
+    # find sitesblocks
+    # '''
+    
+    # line_start = 1
+    # nsite = 0
+    # for isite in np.arange(num_site-1):
+    #     block = []
+    #     for ilin in np.arange(line_start,len(content)):
+    #         print(ilin, len(content))
+    #         line = content[ilin].split()
+    #         block.append(line) 
+    #         print(len(block))
+    #         if len(line)==4:
+    #             line_start=ilin
+    #             nsite = nsite+1
+    #             print('site', nsite, 'done!')
 
-    # print (np.shape(content))
-    with open(template_file, 'w') as f:
-        f.writelines(content[0:nn[0]+2])
-        f.writelines(new_lines)
+                
+    #     nlines = len(block) 
+    #     print(nlines)
+        
+        
+        
+        
+    # if 'normal' in draw_from[0]:
+    #     samples = np.random.normal(
+    #         loc=draw_from[1], scale=draw_from[2], size=n_smp)
+    # else:
+    #     samples = np.random.normal(
+    #         low=draw_from[1], high=draw_from[2], size=n_smp)
 
-    if out:
-        print('File '+template_file+' successfully written.')
-        print('Number of perturbations', len(samples))
-        print('Average perturbation', np.mean(samples))
-        print('StdDev perturbation', np.std(samples))
+    # new_lines = []
 
-    return samples
+    # line = '\n         0        1.000000e+09   1.000000e-20   1.000000e+20   1.000000e+00         1\n'
+    # new_lines.append(line)
+    # s_num = -1
+    # for ell in range(nn[0], nn[0]+nn[1]):  # 54587 inclusive
+    #     s_num = s_num + 1
+    #     # print(ell, nn)
+    #     x_log = np.log10(float(content[ell].split()[0]))
+    #     x_log = x_log + samples[s_num]
+    #     x = 10.**(x_log)
+    #     line = f' {s_num:9d}        {x:.6e}   1.000000e-20   1.000000e+20   1.000000e+00         0\n'
+    #     new_lines.append(line)
+
+    # # print (np.shape(content))
+    # with open(template_file, 'w') as f:
+    #     f.writelines(content)
+
+
+    # if out:
+    #     print('File '+template_file+' successfully written.')
+    #     print('Number of perturbations', len(samples))
+    #     print('Average perturbation', np.mean(samples))
+    #     print('StdDev perturbation', np.std(samples))
+
+    # return samples
 
 
 def generate_model_ensemble(dir_base='./ens_',
@@ -193,14 +254,14 @@ def perturb_model(template_file='resistivity_block_iter0.dat',
 
 
 
-    n_samples = nn[1]
+    n_cells = nn[1]
 
     if 'normal' in draw_from[0]:
         samples = np.random.normal(
-            loc=draw_from[1], scale=draw_from[2], size=n_samples)
+            loc=draw_from[1], scale=draw_from[2], size=n_cells)
     else:
         samples = np.random.normal(
-            low=draw_from[1], high=draw_from[2], size=n_samples)
+            low=draw_from[1], high=draw_from[2], size=n_cells)
         
     new_lines = ['\n         0        1.000000e+09   1.000000e-20   1.000000e+20   1.000000e+00         1\n']
 
