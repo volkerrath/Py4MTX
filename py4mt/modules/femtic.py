@@ -122,13 +122,12 @@ def perturb_data(template_file='observe.dat',
      
     '''
     num_datablock = len(start_lines_datablock)
-    for num_block in np.arange(num_datablock):
-        start_lines_site = []
-        if num_block == num_datablock-1:
-            data_block = content[start_lines_datablock[num_block]:-1]
+    for block in np.arange(num_datablock):
+        if block == num_datablock-1:
+            data_block = content[start_lines_datablock[block]:-1]
         else:
-            data_block = content[start_lines_datablock[num_block]:
-                                 start_lines_datablock[num_block+1]]
+            data_block = content[start_lines_datablock[block]:
+                                 start_lines_datablock[block+1]]
         '''  
         find sites
         '''
@@ -138,8 +137,33 @@ def perturb_data(template_file='observe.dat',
             if len(l) == 4:
               start_lines_site.append(number)
               print('  site', l[0], 'begins at line', number)
+              
+        num_sites = len(start_lines_site)
+        for site in np.arange(num_sites):
+            start_site = start_lines_site[site]
+            if site == num_sites-1:
+                end_site = -1
+            else:
+                end_site = start_lines_site[site+1]
+    
+            site_block = data_block[start_site:end_site]
+            # print(site_block)
+                        
+            if 'MT' in obs_type:
 
 
+                num_freq = int(site_block[1].split()[0])
+                print('   site ',site,'has',num_freq,'frequencies' )
+                obs  = []
+                for line in site_block[3:-1]:
+                    tmp = [float(x) for x in line.split()]
+                    obs.append(tmp)
+                    
+                print(np.shape(obs))       
+                
+                # for freq in np.arange(num_freq):
+
+            
     # '''  
     # find sitesblocks
     # '''
