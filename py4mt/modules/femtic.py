@@ -83,6 +83,7 @@ def generate_data_ensemble(dir_base='./ens_',
 
 def perturb_data(template_file='observe.dat',
                  draw_from=['normal', 0., 1.],
+                 scalfac=1.,
                  out=True):
     '''
     Created on Thu Apr 17 17:13:38 2025
@@ -123,47 +124,62 @@ def perturb_data(template_file='observe.dat',
     '''
     num_datablock = len(start_lines_datablock)
     for block in np.arange(num_datablock):
+        start_block = start_lines_datablock[block]
         if block == num_datablock-1:
-            data_block = content[start_lines_datablock[block]:-1]
+            end_block = -1
         else:
-            data_block = content[start_lines_datablock[block]:
-                                 start_lines_datablock[block+1]]
+            end_block = start_lines_datablock[block+1]
+    
+        data_block = content[start_block:end_block]
         '''  
         find sites
         '''
+        print(np.shape(data_block))
         start_lines_site = []
+        num_freqs = []
         for number, line in enumerate(data_block, 0):
             l = line.split()
             if len(l) == 4:
+              print(l)
               start_lines_site.append(number)
-              print('  site', l[0], 'begins at line', number)
+              num_freqs.append(int(data_block[number+1].split()[0]))
+              
+              print('  site', l[0],'begins at line', number)
+
+              
+        # print(start_lines_site)
+        # print(num_freqs)
               
         num_sites = len(start_lines_site)
         for site in np.arange(num_sites):
             start_site = start_lines_site[site]
-            if site == num_sites-1:
-                end_site = -1
-            else:
-                end_site = start_lines_site[site+1]
-    
+            end_site = start_site+num_freqs[site]+2
             site_block = data_block[start_site:end_site]
+            # print('site',site+1) 
+            # print(np.shape(site_block))
             # print(site_block)
                         
             if 'MT' in obs_type:
-
+                dat_length = 8
 
                 num_freq = int(site_block[1].split()[0])
                 print('   site ',site,'has',num_freq,'frequencies' )
                 obs  = []
-                for line in site_block[3:-1]:
+                for line in site_block[2:]:
                     tmp = [float(x) for x in line.split()]
                     obs.append(tmp)
                     
-                print(np.shape(obs))       
+                # print('obs',np.shape(obs))   
+                # print(obs)
                 
-                # for freq in np.arange(num_freq):
+                for freq in np.arange(num_freq):
+                     for ii in np.arange(1,dat_length):
+                         val = obs[freq][ii]
+                         err = obs[freq][ii+dat_length]*scalfac
+                         obs[freq][ii] = np.random.normal(loc=val, scale=err)
 
-            
+
+
     # '''  
     # find sitesblocks
     # '''
@@ -176,7 +192,12 @@ def perturb_data(template_file='observe.dat',
     #         print(ilin, len(content))
     #         line = content[ilin].split()
     #         block.append(line) 
-    #         print(len(block))
+    #         print(len(block) # if 'normal' in draw_from[0]:
+    #     samples = np.random.normal(
+    #         loc=draw_from[1], scale=draw_from[2], size=n_smp)
+    # else:
+    #     samples = np.random.normal(
+    #         low=draw_from[1], high=draw_from[2], size=n_smp))
     #         if len(line)==4:
     #             line_start=ilin
     #             nsite = nsite+1
@@ -189,12 +210,7 @@ def perturb_data(template_file='observe.dat',
         
         
         
-    # if 'normal' in draw_from[0]:
-    #     samples = np.random.normal(
-    #         loc=draw_from[1], scale=draw_from[2], size=n_smp)
-    # else:
-    #     samples = np.random.normal(
-    #         low=draw_from[1], high=draw_from[2], size=n_smp)
+   
 
     # new_lines = []
 
