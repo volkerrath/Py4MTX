@@ -126,7 +126,7 @@ def perturb_data(template_file='observe.dat',
     for block in np.arange(num_datablock):
         start_block = start_lines_datablock[block]
         if block == num_datablock-1:
-            end_block = -1
+            end_block = ''
         else:
             end_block = start_lines_datablock[block+1]
     
@@ -177,67 +177,33 @@ def perturb_data(template_file='observe.dat',
                          val = obs[freq][ii]
                          err = obs[freq][ii+dat_length]*scalfac
                          obs[freq][ii] = np.random.normal(loc=val, scale=err)
-
-
-
-    # '''  
-    # find sitesblocks
-    # '''
-    
-    # line_start = 1
-    # nsite = 0
-    # for isite in np.arange(num_site-1):
-    #     block = []
-    #     for ilin in np.arange(line_start,len(content)):
-    #         print(ilin, len(content))
-    #         line = content[ilin].split()
-    #         block.append(line) 
-    #         print(len(block) # if 'normal' in draw_from[0]:
-    #     samples = np.random.normal(
-    #         loc=draw_from[1], scale=draw_from[2], size=n_smp)
-    # else:
-    #     samples = np.random.normal(
-    #         low=draw_from[1], high=draw_from[2], size=n_smp))
-    #         if len(line)==4:
-    #             line_start=ilin
-    #             nsite = nsite+1
-    #             print('site', nsite, 'done!')
-
+                         
+                '''
+                now write new values
                 
-    #     nlines = len(block) 
-    #     print(nlines)
+                '''
+                site_block[2:] = 
+                         
+            else:
+                
+                error(obs_type+' not yet implemented! Exit.')
+
+            data_block[start_site:end_site] = site_block
+            
         
+        content[start_block:end_block] = data_block            
         
-        
-        
+
    
-
-    # new_lines = []
-
-    # line = '\n         0        1.000000e+09   1.000000e-20   1.000000e+20   1.000000e+00         1\n'
-    # new_lines.append(line)
-    # s_num = -1
-    # for ell in range(nn[0], nn[0]+nn[1]):  # 54587 inclusive
-    #     s_num = s_num + 1
-    #     # print(ell, nn)
-    #     x_log = np.log10(float(content[ell].split()[0]))
-    #     x_log = x_log + samples[s_num]
-    #     x = 10.**(x_log)
-    #     line = f' {s_num:9d}        {x:.6e}   1.000000e-20   1.000000e+20   1.000000e+00         0\n'
-    #     new_lines.append(line)
-
-    # # print (np.shape(content))
-    # with open(template_file, 'w') as f:
-    #     f.writelines(content)
+    print (np.shape(content))
+    with open(template_file, 'w') as f:
+        f.writelines(content)
 
 
-    # if out:
-    #     print('File '+template_file+' successfully written.')
-    #     print('Number of perturbations', len(samples))
-    #     print('Average perturbation', np.mean(samples))
-    #     print('StdDev perturbation', np.std(samples))
+    if out:
+        print('File '+template_file+' successfully written.')
 
-    # return samples
+
 
 
 def generate_model_ensemble(dir_base='./ens_',
@@ -325,7 +291,7 @@ def perturb_model(template_file='resistivity_block_iter0.dat',
         print('Average perturbation', np.mean(samples))
         print('StdDev perturbation', np.std(samples))
 
-    return samples
+    # return samples
 
 
 def calc_covar_simple(x=np.array([]),
