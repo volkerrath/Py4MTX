@@ -69,7 +69,7 @@ def generate_data_ensemble(dir_base='./ens_',
         '''
         Generate perturbed observe.dat
         '''
-        perturb_data(template_file=file,
+        modify_data(template_file=file,
                      draw_from=draw_from,
                      out=out)
         obs_list.append(file)
@@ -81,7 +81,7 @@ def generate_data_ensemble(dir_base='./ens_',
     return obs_list
 
 
-def perturb_data(template_file='observe.dat',
+def modify_data(template_file='observe.dat',
                  draw_from=['normal', 0., 1.],
                  scalfac=1.,
                  out=True):
@@ -104,6 +104,7 @@ def perturb_data(template_file='observe.dat',
     line = content[0].split()
     obs_type = line[0]
     num_site = int(line[1])
+    print(len(content))
 
     '''  
     find data blocks
@@ -116,20 +117,19 @@ def perturb_data(template_file='observe.dat',
           start_lines_datablock.append(number)
           print(' data block', l[0], 'with',
                 l[1], 'sites begins at line', number)
-
-
+        if "END" in l:
+            start_lines_datablock.append(number-1)
+            print(" no firurther data block in file")
     '''  
      loop over  data blocks
      
     '''
-    num_datablock = len(start_lines_datablock)
+    num_datablock = len(start_lines_datablock)-1
     for block in np.arange(num_datablock):
         start_block = start_lines_datablock[block]
-        if block == num_datablock-1:
-            end_block = ''
-        else:
-            end_block = start_lines_datablock[block+1]
-    
+        end_block = start_lines_datablock[block+1]
+        # print(start_block, end_block)
+        # print(type(start_block), type(end_block))
         data_block = content[start_block:end_block]
         '''  
         find sites
@@ -142,11 +142,12 @@ def perturb_data(template_file='observe.dat',
             if len(l) == 4:
               print(l)
               start_lines_site.append(number)
-              num_freqs.append(int(data_block[number+1].split()[0]))
-              
+              num_freqs.append(int(data_block[number+1].split()[0]))          
               print('  site', l[0],'begins at line', number)
-
-              
+            if "END" in l:
+                 start_lines_datablock.append(number-1)
+                 print(" no further site block in file")
+        print('\n')   
         # print(start_lines_site)
         # print(num_freqs)
               
@@ -161,29 +162,40 @@ def perturb_data(template_file='observe.dat',
                         
             if 'MT' in obs_type:
                 dat_length = 8
-
+                
                 num_freq = int(site_block[1].split()[0])
                 print('   site ',site,'has',num_freq,'frequencies' )
                 obs  = []
                 for line in site_block[2:]:
+                    # print(line)
                     tmp = [float(x) for x in line.split()]
                     obs.append(tmp)
                     
-                # print('obs',np.shape(obs))   
+                # print('obs',np.shape(obs), np.shape(site_block))   
                 # print(obs)
+                # print(np.arange(num_freq))
                 
-                for freq in np.arange(num_freq):
-                     for ii in np.arange(1,dat_length):
-                         val = obs[freq][ii]
-                         err = obs[freq][ii+dat_length]*scalfac
-                         obs[freq][ii] = np.random.normal(loc=val, scale=err)
+                for line in obs:
+                     # print(np.arange(1,dat_length+1))
+                     # print(freq)
+                     for ii in np.arange(1,dat_length+1):
+                         print(site, '   ',ii, ii+dat_length)
+                         val = line[ii]
+                         err = line[ii+dat_length]*scalfac
+                         line[ii] = np.random.normal(loc=val, scale=err)
                          
                 '''
                 now write new values
                 
                 '''
-                site_block[2:] = 
-                         
+                print('obs',np.shape(obs), np.shape(site_block))  
+                print(np.arange(num_freq))
+                for f in  np.arange(num_freq-1):
+                    print(f)
+                    print( site_block[f+2])
+                    print( obs[f])
+                    site_block[f+2] = "    ".join([f"{x:.8E}" for x in obs[f]])
+                    print( site_block[f+2])     
             else:
                 
                 error(obs_type+' not yet implemented! Exit.')
@@ -224,7 +236,7 @@ def generate_model_ensemble(dir_base='./ens_',
         '''
         generate perturbed model
         '''
-        perturb_model(template_file=file,
+        modify_model(template_file=file,
                       draw_from=draw_from,
                       out=out)
         mod_list.append(file)
@@ -237,7 +249,7 @@ def generate_model_ensemble(dir_base='./ens_',
     return mod_list
 
 
-def perturb_model(template_file='resistivity_block_iter0.dat',
+def modify_model(template_file='resistivity_block_iter0.dat',
                   draw_from=['normal', 0., 1.],
                   out=True):
     '''
