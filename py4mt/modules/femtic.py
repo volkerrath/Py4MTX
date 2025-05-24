@@ -119,7 +119,7 @@ def modify_data(template_file='observe.dat',
                 l[1], 'sites begins at line', number)
         if "END" in l:
             start_lines_datablock.append(number-1)
-            print(" no firurther data block in file")
+            print(" no further data block in file")
     '''  
      loop over  data blocks
      
@@ -161,6 +161,7 @@ def modify_data(template_file='observe.dat',
             # print(site_block)
                         
             if 'MT' in obs_type:
+
                 dat_length = 8
                 
                 num_freq = int(site_block[1].split()[0])
@@ -196,6 +197,44 @@ def modify_data(template_file='observe.dat',
                     print( obs[f])
                     site_block[f+2] = "    ".join([f"{x:.8E}" for x in obs[f]])
                     print( site_block[f+2])     
+
+            elif 'VTF' in obs_type:
+
+                dat_length = 4
+
+                num_freq = int(site_block[1].split()[0])
+                print('   site ',site,'has',num_freq,'frequencies' )
+                obs  = []
+                for line in site_block[2:]:
+                    # print(line)
+                    tmp = [float(x) for x in line.split()]
+                    obs.append(tmp)
+
+                # print('obs',np.shape(obs), np.shape(site_block))
+                # print(obs)
+                # print(np.arange(num_freq))
+
+                for line in obs:
+                     # print(np.arange(1,dat_length+1))
+                     # print(freq)
+                     for ii in np.arange(1,dat_length+1):
+                         print(site, '   ',ii, ii+dat_length)
+                         val = line[ii]
+                         err = line[ii+dat_length]*scalfac
+                         line[ii] = np.random.normal(loc=val, scale=err)
+
+                '''
+                now write new values
+
+                '''
+                print('obs',np.shape(obs), np.shape(site_block))
+                print(np.arange(num_freq))
+                for f in  np.arange(num_freq-1):
+                    print(f)
+                    print( site_block[f+2])
+                    print( obs[f])
+                    site_block[f+2] = "    ".join([f"{x:.8E}" for x in obs[f]])
+                    print( site_block[f+2])
             else:
                 
                 error(obs_type+' not yet implemented! Exit.')
@@ -910,3 +949,8 @@ def get_femtic_data(data_file=None, site_file=None, data_type='rhophas', out=Tru
     data_dict = {**head_dict, **type_dict}
 
     return data_dict
+
+def get_work_model(directory=None, file=None, out=True):
+    
+    work_model = []
+    return work_model
