@@ -587,7 +587,7 @@ def gen_searchgrid(Points=None,
             rlist = incol[np.where(yp[incol] == iy)[0]]
             p[ix,iy]=rlist
 
-    # pout = np.array(p,dtype=object)
+    # pout = np.array(p,dtype=object)np.log10(float(content[ell].split()[1])) +
 
             if Out:
                print("mesh cell: "+str(ix)+" "+str(iy))

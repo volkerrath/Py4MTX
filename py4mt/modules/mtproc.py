@@ -363,3 +363,5 @@ def wait1d(periods=None, thick=None, res=None):
     rhoa = 1/omega*np.abs(Z)**2
     phi = np.angle(Z, deg=True)
     return rhoa, phi, np.real(Z), np.imag(Z)
+
+
