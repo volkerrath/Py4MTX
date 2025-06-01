@@ -92,7 +92,7 @@ def modify_data(template_file='observe.dat',
     '''
 #    import numpy as np
 
-    rng = np.random.default_rng()
+#
     if template_file is None:
         template_file = 'observe.dat'
 
@@ -290,6 +290,7 @@ def generate_model_ensemble(dir_base='./ens_',
 
 def modify_model(template_file='resistivity_block_iter0.dat',
                   draw_from=['normal', 0., 1.],
+                  method='replace',
                   out=True):
     '''
     Created on Thu Apr 17 17:13:38 2025
@@ -299,7 +300,7 @@ def modify_model(template_file='resistivity_block_iter0.dat',
     '''
 #    import numpy as np
 
-    rng = np.random.default_rng()
+    # rng = np.random.default_rng()
     if template_file is None:
         template_file = 'resistivity_block_iter0.dat'
 
@@ -317,7 +318,7 @@ def modify_model(template_file='resistivity_block_iter0.dat',
         samples = np.random.normal(
             loc=draw_from[1], scale=draw_from[2], size=n_cells)
     else:
-        samples = np.random.normal(
+        samples = np.random.uniform(
             low=draw_from[1], high=draw_from[2], size=n_cells)
         
     new_lines = ['\n         0        1.000000e+09   1.000000e-20   1.000000e+20   1.000000e+00         1\n']
@@ -326,7 +327,11 @@ def modify_model(template_file='resistivity_block_iter0.dat',
     for ell in range(nn[0], nn[0]+nn[1]-1):  # 54587 inclusive
         s_num = s_num + 1
         # print(float(content[ell].split()[1]))
-        x_log = np.log10(float(content[ell].split()[1])) + samples[s_num-1]
+        if 'add' in method:
+            x_log = np.log10(float(content[ell].split()[1])) + samples[s_num-1]
+        else:
+            x_log = samples[s_num-1]
+            
         x = 10.**(x_log)
         line = f' {s_num:9d}        {x:.6e}   1.000000e-20   1.000000e+20   1.000000e+00         0\n'
         new_lines.append(line)
