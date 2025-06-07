@@ -1,4 +1,4 @@
-import sklearn.cluster
+import sklearn.cluster as scl
 import numpy as np
 
 def kmeans_missing(X, n_clusters=3, max_iter=10):
@@ -25,7 +25,7 @@ def kmeans_missing(X, n_clusters=3, max_iter=10):
         if i == 0:
 
             # do multiple random initializations in parallel
-            cls = sklearn.cluster.KMeans(n_clusters)
+            cls = scl.KMeans(n_clusters)
             # cls = sklearn.cluster.MiniBatchKMeans(n_clusters)
 
             labels = cls.fit_predict(X_hat)
@@ -40,7 +40,7 @@ def kmeans_missing(X, n_clusters=3, max_iter=10):
             # faster and makes it easier to check convergence (since labels
             # won't be permuted on every iteration), but might be more prone to
             # getting stuck in local minima.
-            cls = sklearn.cluster.MiniBatchKMeans(n_clusters, init=prev_centroids)
+            cls = scl.MiniBatchKMeans(n_clusters, init=prev_centroids)
             # cls = sklearn.cluster.MiniBatchKMeans(n_clusters, 4, init=prev_centroids)
             labels = cls.fit_predict(X_hat)
             centroids = cls.cluster_centers_

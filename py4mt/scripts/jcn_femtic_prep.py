@@ -43,7 +43,6 @@ titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng+"\n\n")
 
 
-N_samples = 32
 EnsembleDir = r'/home/vrath/work/Ensemble/Ubinas_ens/'
 Templates = EnsembleDir+'templates/'
 Files = ['control.dat',
@@ -55,7 +54,15 @@ Files = ['control.dat',
          'run_femtic_oar.sh']
 
 ChoiceMode = ['site', ]
-# ChoiceMode = ['subset', 5]
+if 'site' in ChoiceMode:
+    with open(Templates+'control.dat', 'r') as file:
+       content = file.readlines() 
+       
+tmp = content[0].split()
+        
+# N_samples = 32
+# ChoiceMode = ['subset', N_samples]
+
 
 
 os.chdir(EnsembleDir)

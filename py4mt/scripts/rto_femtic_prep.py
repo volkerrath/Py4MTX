@@ -68,7 +68,7 @@ titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng+"\n\n")
 
 
-N_samples = 3
+N_samples = 32
 EnsembleDir = r'/home/vrath/work/Ensemble/Ubinas_ens/'
 Templates = EnsembleDir+'templates/'
 Files = ['control.dat',
@@ -78,8 +78,13 @@ Files = ['control.dat',
          'distortion_iter0.dat',
          'run_femtic_dub.sh',
          'run_femtic_oar.sh']
-Mod_pdf = ['normal', 0., 0.5]
-Dat_pdf = ['normal', 0., 1.]
+
+PerturbMod = True
+if PerturbMod:
+    Mod_pdf = ['normal', 0., 1.]
+PerturbDat = True 
+if PerturbDat:
+    Dat_pdf = ['normal', 0., 1.]
 
 os.chdir(EnsembleDir)
 
@@ -90,29 +95,24 @@ dir_list = fem.generate_directories(
     N_samples=N_samples,
     out=True)
 
+"""
+Draw perturbed model sets: d  ̃ ∼ N (m, Cm)
+"""
+
+
 model_ensemble = fem.generate_model_ensemble(dir_base=EnsembleDir+'ens_',
                                           N_samples=N_samples,
                                           file_in='resistivity_block_iter0.dat',
                                           draw_from=Mod_pdf,
                                           out=True)
-# print('\n')
-# data_ensemble = fem.generate_data_ensemble(dir_base=EnsembleDir+'ens_',
-#                                           N_samples=N_samples,
-#                                           file_in='observe.dat',
-#                                           draw_from=Dat_pdf,
-#                                           out=True)
-# """
-# Draw perturbed data set: d  ̃ ∼ N (d, Cd)
-# """
-# d_ens = generate_data_ensemble(dref=d_obs, dact=d_act,
-#                                        nens=nsamples,
-#                                        perturb=["gauss", d_err],
-#                                        out=OutInfo)
-# """
-# Draw prior model: m̃ ∼ N (0, 1 (LT L)−1 )
-# """
-# m_ens = generate_param_ensemble(mref=m_ref, mact=m_act,
-#                                         nens=nsamples,
-#                                         perturb=["gauss", c_ref,
-#                                                  numpy.array([])],
-#                                                  out=OutInfo)
+print('\n')
+
+"""
+Draw perturbed data sets: d  ̃ ∼ N (d, Cd)
+"""
+
+data_ensemble = fem.generate_data_ensemble(dir_base=EnsembleDir+'ens_',
+                                          N_samples=N_samples,
+                                          file_in='observe.dat',
+                                          draw_from=Dat_pdf,
+                                          out=True)

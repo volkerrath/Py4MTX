@@ -350,6 +350,219 @@ def modify_model(template_file='resistivity_block_iter0.dat',
     # return samples
 
 
+def read_model(model_file=None,  model_trans='log10',  out=True):
+    '''
+    
+    vrath   Sat Jun  7 06:03:58 PM CEST 2025
+
+    '''
+#    import numpy as np
+
+    # rng = np.random.default_rng()
+    if model_file is None:
+        exit('No model file given! Exit.')
+
+    with open(model_file, 'r') as file:
+        content = file.readlines()
+
+    nn = content[0].split()
+    nn = [int(tmp) for tmp in nn]
+    
+    # print(nn)
+
+    s_num =0
+    for elem in range(nn[0]+1, nn[0]+nn[1]+1): 
+        s_num = s_num + 1
+        x = float(content[elem].split()[1])
+        if s_num==1:
+            model = [x]
+        else:
+            model.append(x)
+ 
+    model = np.array(model)    
+    # print(model[0], model[nn[1]-1])
+    if 'log10' in model_trans:
+       model = np.log10(model)
+ 
+    return model
+
+
+def modify_data_fcn(template_file='observe.dat',
+                 draw_from=['normal', 0., 1.],
+                 scalfac=1.,
+                 out=True):
+    '''
+    Created on Thu Apr 17 17:13:38 2025
+    
+    @author:   vrath   
+    '''
+#    import numpy as np
+
+#
+    if template_file is None:
+        template_file = 'observe.dat'
+
+    print('\n', template_file, ':')
+
+    with open(template_file, 'r') as file:
+        content = file.readlines()
+
+    line = content[0].split()
+    obs_type = line[0]
+    num_site = int(line[1])
+    print(len(content))
+
+    '''  
+    find data blocks
+    
+    '''
+    start_lines_datablock = []
+    for number, line in enumerate(content, 0):
+        l = line.split()
+        if len(l) == 2:
+          start_lines_datablock.append(number)
+          print(' data block', l[0], 'with',
+                l[1], 'sites begins at line', number)
+        if "END" in l:
+            start_lines_datablock.append(number-1)
+            print(" no further data block in file")
+    '''  
+     loop over  data blocks
+     
+    '''
+    num_datablock = len(start_lines_datablock)-1
+    for block in np.arange(num_datablock):
+        start_block = start_lines_datablock[block]
+        end_block = start_lines_datablock[block+1]
+        # print(start_block, end_block)
+        # print(type(start_block), type(end_block))
+        data_block = content[start_block:end_block]
+        '''  
+        find sites
+        '''
+        print(np.shape(data_block))
+        start_lines_site = []
+        num_freqs = []
+        for number, line in enumerate(data_block, 0):
+            l = line.split()
+            if len(l) == 4:
+              print(l)
+              start_lines_site.append(number)
+              num_freqs.append(int(data_block[number+1].split()[0]))          
+              print('  site', l[0],'begins at line', number)
+            if "END" in l:
+                 start_lines_datablock.append(number-1)
+                 print(" no further site block in file")
+        print('\n')   
+        # print(start_lines_site)
+        # print(num_freqs)
+              
+        num_sites = len(start_lines_site)
+        for site in np.arange(num_sites):
+            start_site = start_lines_site[site]
+            end_site = start_site+num_freqs[site]+2
+            site_block = data_block[start_site:end_site]
+            # print('site',site+1) 
+            # print(np.shape(site_block))
+            # print(site_block)
+                        
+            if 'MT' in obs_type:
+
+                dat_length = 8
+                
+                num_freq = int(site_block[1].split()[0])
+                print('   site ',site,'has',num_freq,'frequencies' )
+                obs  = []
+                for line in site_block[2:]:
+                    # print(line)
+                    tmp = [float(x) for x in line.split()]
+                    obs.append(tmp)
+                    
+                # print('obs',np.shape(obs), np.shape(site_block))   
+                # print(obs)
+                # print(np.arange(num_freq))
+                
+                for line in obs:
+                     # print(np.arange(1,dat_length+1))
+                     # print(freq)
+                     for ii in np.arange(1,dat_length+1):
+                         print(site, '   ',ii, ii+dat_length)
+                         val = line[ii]
+                         err = line[ii+dat_length]*scalfac
+                         line[ii] = np.random.normal(loc=val, scale=err)
+                         
+                '''
+                now write new values
+                
+                '''
+                print('obs',np.shape(obs), np.shape(site_block))  
+                print(np.arange(num_freq))
+                for f in  np.arange(num_freq-1):
+                    print(f)
+                    print( site_block[f+2])
+                    print( obs[f])
+                    site_block[f+2] = "    ".join([f"{x:.8E}" for x in obs[f]])
+                    print( site_block[f+2])     
+
+            elif 'VTF' in obs_type:
+
+                dat_length = 4
+
+                num_freq = int(site_block[1].split()[0])
+                print('   site ',site,'has',num_freq,'frequencies' )
+                obs  = []
+                for line in site_block[2:]:
+                    # print(line)
+                    tmp = [float(x) for x in line.split()]
+                    obs.append(tmp)
+
+                # print('obs',np.shape(obs), np.shape(site_block))
+                # print(obs)
+                # print(np.arange(num_freq))
+
+                for line in obs:
+                     # print(np.arange(1,dat_length+1))
+                     # print(freq)
+                     for ii in np.arange(1,dat_length+1):
+                         print(site, '   ',ii, ii+dat_length)
+                         val = line[ii]
+                         err = line[ii+dat_length]*scalfac
+                         line[ii] = np.random.normal(loc=val, scale=err)
+
+                '''
+                now write new values
+
+                '''
+                print('obs',np.shape(obs), np.shape(site_block))
+                print(np.arange(num_freq))
+                for f in  np.arange(num_freq-1):
+                    print(f)
+                    print( site_block[f+2])
+                    print( obs[f])
+                    site_block[f+2] = "    ".join([f"{x:.8E}" for x in obs[f]])
+                    print( site_block[f+2])
+            else:
+                
+                error(obs_type+' not yet implemented! Exit.')
+
+            data_block[start_site:end_site] = site_block
+            
+        
+        content[start_block:end_block] = data_block            
+        
+
+   
+    print (np.shape(content))
+    with open(template_file, 'w') as f:
+        f.writelines(content)
+
+
+    if out:
+        print('File '+template_file+' successfully written.')
+
+
+
+
 def calc_covar_simple(x=np.array([]),
                 y=np.array([]),
                 covscovale=np.array([]),

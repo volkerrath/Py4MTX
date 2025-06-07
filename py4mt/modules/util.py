@@ -80,20 +80,32 @@ def list_functions(filename):
     for func in find_functions(tree.body):
         print("  %s" % func.name)
 
-
-def get_filelist(searchstr=["*"], searchpath="."):
+def get_filelist(searchstr=["*"], searchpath="./", sortedlist =True, fullpath=False):
     """
     Generate filelist from path and unix wildcard list.
 
     author: VR 3/20
+
+    last change 4/23
     """
 
     filelist = fnmatch.filter(os.listdir(searchpath), "*")
+    print("\n ")
+    print(filelist)
     for sstr in searchstr:
         filelist = fnmatch.filter(filelist, sstr)
-        print(filelist)
+
+    filelist = [os.path.basename(f) for f in filelist]
+
+    if sortedlist:
+        filelist = sorted(filelist)
+
+    if fullpath:
+       filelist = [os.path.join(searchpath,filelist[ii]) for ii in range(len(filelist))]
+
 
     return filelist
+
 
 # def get_utm_zone(latitude=None, longitude=None):
 #     """
