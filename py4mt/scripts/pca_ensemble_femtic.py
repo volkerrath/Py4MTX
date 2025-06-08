@@ -53,7 +53,8 @@ model_count = -1
 for dir in dir_list:
     print('\nInversion run',dir)
     cnv_file = dir+"/femtic.cnv"
-    if not os.path.isfile(cnv_file.isfile()):
+    if not os.path.isfile(cnv_file):
+        print(cnv_file, 'not found, run skipped.')
         continue
     
     with open(cnv_file) as file:
@@ -63,7 +64,7 @@ for dir in dir_list:
     nrms = float(info[8])
 
     if nrms > NRMSmax:
-        print(dir,'not converged, file skipped.')
+        print(dir,'not converged, run skipped.')
         continue
     model_count = model_count+1
     mod_file = dir+'/resistivity_block_iter'+str(numit)+'.dat'
@@ -78,13 +79,17 @@ for dir in dir_list:
     else:
         X = np.vstack((X, model))
     
-print(np.shape(X))
+# print(np.shape(X))
 
 pca = PCA(n_components=6)
 pca.fit(X)
 
-
+print('\n')
+print('explained variance:')
 print(pca.explained_variance_ratio_)
+print('cummulative eplained variance:')
+print(np.cumsum(pca.explained_variance_ratio_))
+print ('singular_values:')
 print(pca.singular_values_)
     
 C = empirical_covariance(X) 
