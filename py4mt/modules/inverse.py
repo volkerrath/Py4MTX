@@ -7,7 +7,7 @@ import scipy as scp
 import scipy.linalg as scl
 import scipy.ndimage as sci
 
-# import sklearn.cluster as scl
+import sklearn.cluster as scl
 
 
 def soft_thresh(x, lam):

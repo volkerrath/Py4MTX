@@ -52,7 +52,11 @@ model_list = []
 model_count = -1
 for dir in dir_list:
     print('\nInversion run',dir)
-    with open(dir+"/femtic.cnv") as file:
+    cnv_file = dir+"/femtic.cnv"
+    if not os.path.isfile(cnv_file.isfile()):
+        continue
+    
+    with open(cnv_file) as file:
         cnv = file.readlines()
     info = cnv[-1].split()
     numit = int(info[0])
@@ -74,8 +78,17 @@ for dir in dir_list:
     else:
         X = np.vstack((X, model))
     
-    print(np.shape(X))
-    SS = PCA(X)
+print(np.shape(X))
+
+pca = PCA(n_components=6)
+pca.fit(X)
+
+
+print(pca.explained_variance_ratio_)
+print(pca.singular_values_)
+    
+C = empirical_covariance(X) 
+
 
 # model_ensemble = fem.generate_model_ensemble(dir_base=EnsembleDir+'ens_',
 #                                           N_samples=N_samples,
