@@ -69,7 +69,7 @@ print(titstrng+"\n\n")
 
 
 N_samples = 32
-EnsembleDir = r'/home/vrath/work/Ensemble/Ubinas_ens/'
+EnsembleDir = r'/home/vrath/work/Ensemble/Test3/'
 Templates = EnsembleDir+'templates/'
 Files = ['control.dat',
          'observe.dat',
@@ -79,31 +79,39 @@ Files = ['control.dat',
          'run_femtic_dub.sh',
          'run_femtic_oar.sh']
 
+EnsembleName = 'test_'
 PerturbMod = True
 if PerturbMod:
-    Mod_pdf = ['normal', 0., 1.]
+    Mod_method = 'add'
+    Mod_pdf = ['normal', 0., 0.3]
+    
 PerturbDat = True 
 if PerturbDat:
-    Dat_pdf = ['normal', 0., 1.]
+    Dat_method ='add',
+    Dat_pdf = ['normal', 0., 1.0]
 
 os.chdir(EnsembleDir)
 
 dir_list = fem.generate_directories(
-    dir_base=EnsembleDir+'ens_',
+    dir_base=EnsembleDir+'test_',
     templates=Templates,
     file_list=Files,
     N_samples=N_samples,
     out=True)
+
+
+
 
 """
 Draw perturbed model sets: d  ̃ ∼ N (m, Cm)
 """
 
 
-model_ensemble = fem.generate_model_ensemble(dir_base=EnsembleDir+'ens_',
+model_ensemble = fem.generate_model_ensemble(dir_base=EnsembleDir+EnsembleName,
                                           N_samples=N_samples,
                                           file_in='resistivity_block_iter0.dat',
                                           draw_from=Mod_pdf,
+                                          method=Mod_method,
                                           out=True)
 print('\n')
 
@@ -111,8 +119,9 @@ print('\n')
 Draw perturbed data sets: d  ̃ ∼ N (d, Cd)
 """
 
-data_ensemble = fem.generate_data_ensemble(dir_base=EnsembleDir+'ens_',
+data_ensemble = fem.generate_data_ensemble(dir_base=EnsembleDir+EnsembleName,
                                           N_samples=N_samples,
                                           file_in='observe.dat',
                                           draw_from=Dat_pdf,
+                                          method=Dat_method,
                                           out=True)

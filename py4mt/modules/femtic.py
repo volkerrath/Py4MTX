@@ -55,6 +55,7 @@ def generate_data_ensemble(dir_base='./ens_',
                            N_samples=1,
                            file_in='observe.dat',
                            draw_from=['normal', 0., 1.],
+                           method='add',
                            out=True):
     '''
     for i = 1 : nsamples do
@@ -71,6 +72,7 @@ def generate_data_ensemble(dir_base='./ens_',
         '''
         modify_data(template_file=file,
                      draw_from=draw_from,
+                     method=method,
                      out=out)
         obs_list.append(file)
 
@@ -83,6 +85,7 @@ def generate_data_ensemble(dir_base='./ens_',
 
 def modify_data(template_file='observe.dat',
                  draw_from=['normal', 0., 1.],
+                 method='add',
                  scalfac=1.,
                  out=True):
     '''
@@ -195,7 +198,7 @@ def modify_data(template_file='observe.dat',
                     print(f)
                     print( site_block[f+2])
                     print( obs[f])
-                    site_block[f+2] = "    ".join([f"{x:.8E}" for x in obs[f]])
+                    site_block[f+2] = "    ".join([f"{x:.8E}" for x in obs[f]])+'\n'
                     print( site_block[f+2])     
 
             elif 'VTF' in obs_type:
@@ -233,7 +236,7 @@ def modify_data(template_file='observe.dat',
                     print(f)
                     print( site_block[f+2])
                     print( obs[f])
-                    site_block[f+2] = "    ".join([f"{x:.8E}" for x in obs[f]])
+                    site_block[f+2] = "    ".join([f"{x:.8E}" for x in obs[f]])+'\n'
                     print( site_block[f+2])
             else:
                 
@@ -261,6 +264,7 @@ def generate_model_ensemble(dir_base='./ens_',
                             N_samples=1,
                             file_in='resistivity_block_iter0.dat',
                             draw_from=['normal', 0., 1.],
+                            method='add',
                             out=True):
     '''
     for i = 1 : nsamples do
@@ -277,6 +281,7 @@ def generate_model_ensemble(dir_base='./ens_',
         '''
         modify_model(template_file=file,
                       draw_from=draw_from,
+                      method=method,
                       out=out)
         mod_list.append(file)
 
@@ -290,7 +295,7 @@ def generate_model_ensemble(dir_base='./ens_',
 
 def modify_model(template_file='resistivity_block_iter0.dat',
                   draw_from=['normal', 0., 1.],
-                  method='replace',
+                  method='add',
                   out=True):
     '''
     Created on Thu Apr 17 17:13:38 2025
@@ -309,34 +314,42 @@ def modify_model(template_file='resistivity_block_iter0.dat',
 
     nn = content[0].split()
     nn = [int(tmp) for tmp in nn]
-
-
-
     n_cells = nn[1]
 
     if 'normal' in draw_from[0]:
         samples = np.random.normal(
-            loc=draw_from[1], scale=draw_from[2], size=n_cells)
+            loc=draw_from[1], scale=draw_from[2], size=n_cells-2)
     else:
         samples = np.random.uniform(
-            low=draw_from[1], high=draw_from[2], size=n_cells)
-        
-    new_lines = ['\n         0        1.000000e+09   1.000000e-20   1.000000e+20   1.000000e+00         1\n']
+            low=draw_from[1], high=draw_from[2], size=n_cells-2)
+    
+    # element groups: air and seawater fixed
+    new_lines = [
+        '         0        1.000000e+09   1.000000e-20   1.000000e+20   1.000000e+00         1\n',
+        '         1        2.500000e-01   1.000000e-20   1.000000e+20   1.000000e+00         1\n'
+    ]
 
-    s_num =0
-    for ell in range(nn[0], nn[0]+nn[1]-1):  # 54587 inclusive
-        s_num = s_num + 1
-        # print(float(content[ell].split()[1]))
+    print(nn[0], nn[0]+nn[1]-1, nn[1]-1, np.shape(samples))
+    
+    e_num = 1
+    for elem in range(nn[0]+3, nn[0]+nn[1]+1):
+        e_num = e_num + 1
+        line = content[elem].split()
+        x = float(line[1])
+      
         if 'add' in method:
-            x_log = np.log10(float(content[ell].split()[1])) + samples[s_num-1]
+            x_log = np.log10(x) + samples[e_num-2]
         else:
-            x_log = samples[s_num-1]
+            x_log = samples[e_num-2]  
             
         x = 10.**(x_log)
-        line = f' {s_num:9d}        {x:.6e}   1.000000e-20   1.000000e+20   1.000000e+00         0\n'
-        new_lines.append(line)
 
-    # print (np.shape(content))
+        line = f' {e_num:9d}        {x:.6e}   1.000000e-20   1.000000e+20   1.000000e+00         0\n'
+        new_lines.append(line)
+    
+  
+    new_lines = ''.join(new_lines)
+
     with open(template_file, 'w') as f:
         f.writelines(content[0:nn[0]+1])
         f.writelines(new_lines)
@@ -367,8 +380,6 @@ def read_model(model_file=None,  model_trans='log10',  out=True):
 
     nn = content[0].split()
     nn = [int(tmp) for tmp in nn]
-    
-    # print(nn)
 
     s_num =0
     for elem in range(nn[0]+1, nn[0]+nn[1]+1): 
@@ -382,6 +393,7 @@ def read_model(model_file=None,  model_trans='log10',  out=True):
     model = np.array(model)    
     # print(model[0], model[nn[1]-1])
     if 'log10' in model_trans:
+       print('model is log10 resistivity!')
        model = np.log10(model)
  
     return model
