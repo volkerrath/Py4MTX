@@ -325,8 +325,8 @@ def modify_model(template_file='resistivity_block_iter0.dat',
     
     # element groups: air and seawater fixed
     new_lines = [
-        '         0        1.000000e+09   1.000000e-20   1.000000e+20   1.000000e+00         1\n',
-        '         1        2.500000e-01   1.000000e-20   1.000000e+20   1.000000e+00         1\n'
+        '         0        1.000000e+09   1.000000e-20   1.000000e+20   1.000000e+00         1',
+        '         1        2.500000e-01   1.000000e-20   1.000000e+20   1.000000e+00         1'
     ]
 
     print(nn[0], nn[0]+nn[1]-1, nn[1]-1, np.shape(samples))
@@ -344,11 +344,11 @@ def modify_model(template_file='resistivity_block_iter0.dat',
             
         x = 10.**(x_log)
 
-        line = f' {e_num:9d}        {x:.6e}   1.000000e-20   1.000000e+20   1.000000e+00         0\n'
+        line = f' {e_num:9d}        {x:.6e}   1.000000e-20   1.000000e+20   1.000000e+00         0'
         new_lines.append(line)
     
   
-    new_lines = ''.join(new_lines)
+    new_lines = '\n'.join(new_lines)
 
     with open(template_file, 'w') as f:
         f.writelines(content[0:nn[0]+1])
