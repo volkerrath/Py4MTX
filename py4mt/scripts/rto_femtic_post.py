@@ -35,11 +35,14 @@ version, _ = versionstrg()
 titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng+"\n\n")
 
-EnsembleDir = r'/home/vrath/work/Ensemble/Test/'
+EnsembleDir = r'/home/vrath/work/Ensemble/rto/'
 NRMSmax = 1.2
 
+# Percentiles = numpy.array([10., 20., 30., 40., 50., 60., 70., 80., 90.]) # linear
+Percentiles = [2.3, 15.9, 50., 84.1,97.7]                   # 95/68
 
-dir_list = utl.get_filelist(searchstr=["*ens*"], searchpath=EnsembleDir,fullpath=True)
+
+dir_list = utl.get_filelist(searchstr=["*rto*"], searchpath=EnsembleDir,fullpath=True)
 
 model_list = []
 model_count = -1
@@ -68,11 +71,9 @@ for dir in dir_list:
     model = fem.read_model(model_file=mod_file, model_trans='log10', out=True)
     
     if model_count==0:
-        X = model
+        rto_ens = model
     else:
-        X = np.vstack((X, model))
-    
-# print(np.shape(X))
+        rto_ens = np.vstack((rto_ens, model))
 
 # pca = PCA(n_components=6)
 # pca.fit(X)
@@ -85,40 +86,31 @@ for dir in dir_list:
 # print ('singular_values:')
 # print(pca.singular_values_)
     
-C = empirical_covariance(X) 
+ensemble_covariance = empirical_covariance(rto_ens) 
 
 
-# for isample in np.arange(N_samples):
-#     if isample == 0:
-#         rto_ens = m
-#     else:
-#         rto_ens = numpy.vstack((rto_ens, m))
 
-# ne = numpy.shape(rto_ens)
-# rto_avg = numpy.mean(rto_ens, axis=1)
-# # rto_std = numpy.std(rto_ens, axis=1)
-# rto_var = numpy.var(rto_ens, axis=1)
-# rto_med = numpy.median(rto_ens, axis=1)
-# # print(numpy.shape(rto_ens), numpy.shape(rto_med))
-# # print(ne)
-# mm = numpy.tile(rto_med, (ne[1], 1))
-# # print(numpy.shape(mm))
+ne = np.shape(rto_ens)
+rto_avg = np.mean(rto_ens, axis=1)
+# rto_std = np.std(rto_ens, axis=1)
+rto_var = np.var(rto_ens, axis=1)
+rto_med = np.median(rto_ens, axis=1)
+# print(np.shape(rto_ens), np.shape(rto_med))
+# print(ne)
+rto_mad = np.median(
+    np.abs(rto_ens.T - np.tile(rto_med, (ne[1], 1))))
+rto_prc = np.percentile(rto_ens, Percentiles)
 
-# rto_mad = numpy.median(
-#     numpy.abs(rto_ens.T - numpy.tile(rto_med, (ne[1], 1))))
+rtofields = (
+    ("rto_avg", rto_avg),
+    ("rto_var", rto_var),
+    ("rto_med", rto_med),
+    ("rto_mad", rto_mad),
+    ("rto_prc", rto_prc)
+)
+rto_results.update(rtofields)
 
-# rto_prc = numpy.percentile(rto_ens, Percentiles)
+if "ens" in rto_out:
+    rto_results["jcn_ens"] = rto_ens
 
-# rtofields = (
-#     ("rto_avg", rto_avg),
-#     ("rto_var", rto_var),
-#     ("rto_med", rto_med),
-#     ("rto_mad", rto_mad),
-#     ("rto_prc", rto_prc)
-# )
-# rto_results.update(rtofields)
-
-# if "ens" in rto_out:
-#     rto_results["jcn_ens"] = rto_ens
-
-# return rto_results
+return rto_results
