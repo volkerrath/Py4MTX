@@ -56,6 +56,7 @@ def generate_data_ensemble(dir_base='./ens_',
                            file_in='observe.dat',
                            draw_from=['normal', 0., 1.],
                            method='add',
+                           errors=[],
                            out=True):
     '''
     for i = 1 : nsamples do
@@ -73,6 +74,7 @@ def generate_data_ensemble(dir_base='./ens_',
         modify_data(template_file=file,
                      draw_from=draw_from,
                      method=method,
+                     errors=errors,
                      out=out)
         obs_list.append(file)
 
@@ -86,7 +88,7 @@ def generate_data_ensemble(dir_base='./ens_',
 def modify_data(template_file='observe.dat',
                  draw_from=['normal', 0., 1.],
                  method='add',
-                 scalfac=1.,
+                 errors=[],
                  out=True):
     '''
     Created on Thu Apr 17 17:13:38 2025
@@ -185,7 +187,7 @@ def modify_data(template_file='observe.dat',
                      for ii in np.arange(1,dat_length+1):
                          print(site, '   ',ii, ii+dat_length)
                          val = line[ii]
-                         err = line[ii+dat_length]*scalfac
+                         err = line[ii+dat_length]
                          line[ii] = np.random.normal(loc=val, scale=err)
                          
                 '''
@@ -223,7 +225,7 @@ def modify_data(template_file='observe.dat',
                      for ii in np.arange(1,dat_length+1):
                          print(site, '   ',ii, ii+dat_length)
                          val = line[ii]
-                         err = line[ii+dat_length]*scalfac
+                         err = line[ii+dat_length]
                          line[ii] = np.random.normal(loc=val, scale=err)
 
                 '''
