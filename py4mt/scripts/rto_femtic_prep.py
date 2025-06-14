@@ -69,7 +69,7 @@ print(titstrng+"\n\n")
 
 
 N_samples = 32
-EnsembleDir = r'/home/vrath/work/Ensemble/Test3/'
+EnsembleDir = r'/home/vrath/work/Ensemble/RTO/'
 Templates = EnsembleDir+'templates/'
 Files = ['control.dat',
          'observe.dat',
@@ -79,21 +79,31 @@ Files = ['control.dat',
          'run_femtic_dub.sh',
          'run_femtic_oar.sh']
 
-EnsembleName = 'test_'
+EnsembleName = 'rto_'
 PerturbMod = True
 if PerturbMod:
     Mod_method = 'add'
     Mod_pdf = ['normal', 0., 0.3]
     
 PerturbDat = True 
-if PerturbDat:
+if PerturbDat: 
     Dat_method ='add',
     Dat_pdf = ['normal', 0., 1.0]
 
-os.chdir(EnsembleDir)
+ResetErrors=True
+if ResetErrors:
+    Errors =[
+        [15., 4.,  5., 15.],        # Impeedance in percent
+        [0.03, 0.03],               # VTF
+        [.5, .2,  .2, .5],          # PT
+        ]
+else:
+    Errors =[]
+
+# os.chdir(EnsembleDir)
 
 dir_list = fem.generate_directories(
-    dir_base=EnsembleDir+'test_',
+    dir_base=EnsembleDir+EnsembleName,
     templates=Templates,
     file_list=Files,
     N_samples=N_samples,
@@ -124,4 +134,5 @@ data_ensemble = fem.generate_data_ensemble(dir_base=EnsembleDir+EnsembleName,
                                           file_in='observe.dat',
                                           draw_from=Dat_pdf,
                                           method=Dat_method,
+                                          errors = Errors,
                                           out=True)
