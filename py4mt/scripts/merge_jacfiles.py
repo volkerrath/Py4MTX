@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
+'''
 Created on Sun Apr 20 12:34:21 2025
 
 @author: vrath
-"""
+'''
 
 import os
 import sys
@@ -15,10 +15,10 @@ import fnmatch
 
 import numpy as np
 
-PY4MTX_DATA = os.environ["PY4MTX_DATA"]
-PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
+PY4MTX_DATA = os.environ['PY4MTX_DATA']
+PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
 
-mypath = [PY4MTX_ROOT+"/py4mt/modules/", PY4MTX_ROOT+"/py4mt/scripts/"]
+mypath = [PY4MTX_ROOT+'/py4mt/modules/', PY4MTX_ROOT+'/py4mt/scripts/']
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)

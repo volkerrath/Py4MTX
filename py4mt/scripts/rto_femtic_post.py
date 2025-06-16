@@ -36,15 +36,17 @@ titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng+'\n\n')
 
 EnsembleDir = r'/home/vrath/Ensembles/RTO/'
-EnsembleName = '*rto*'
+EnsembleName = 'rto_*'
 NRMSmax = 1.4
-
 # Percentiles = numpy.array([10., 20., 30., 40., 50., 60., 70., 80., 90.]) # linear
 Percentiles = [2.3, 15.9, 50., 84.1,97.7]                   # 95/68
+EnsembleResults = EnsembleDir+'RTO_results.npz'
 
+dir_list = utl.get_filelist(
+    searchstr=[EnsembleName],
+    searchpath=EnsembleDir,
+    fullpath=True)
 
-dir_list = utl.get_filelist(searchstr=[EnsembleName], searchpath=EnsembleDir,fullpath=True)
-dir_list.remove('templates')
 
 model_list = []
 model_count = -1
@@ -61,6 +63,7 @@ for dir in dir_list:
     numit = int(info[0])
     nrms = float(info[8])
 
+
     if nrms > NRMSmax:
         print(dir,'nRMS =',nrms)
         print(dir,'not converged, run skipped.')
@@ -69,7 +72,7 @@ for dir in dir_list:
     mod_file = dir+'/resistivity_block_iter'+str(numit)+'.dat'
     print( mod_file, ':')
     print(numit, nrms)
-      
+    model_list.append([mod_file,numit, nrms])
         
     model = fem.read_model(model_file=mod_file, model_trans='log10', out=True)
     
@@ -78,7 +81,7 @@ for dir in dir_list:
     else:
         rto_ens = np.vstack((rto_ens, model))
 
-rto_result['rto_ens'] = rto_ens
+rto_cov = empirical_covariance(rto_ens)
 
 # pca = PCA(n_components=6)
 # pca.fit(X)
@@ -91,8 +94,6 @@ rto_result['rto_ens'] = rto_ens
 # print ('singular_values:')
 # print(pca.singular_values_)
     
-rto_cov = empirical_covariance(rto_ens)
-rto_results['rto_cov'] = rto_cov
 
 ne = np.shape(rto_ens)
 rto_avg = np.mean(rto_ens, axis=1)
@@ -105,15 +106,14 @@ rto_mad = np.median(
     np.abs(rto_ens.T - np.tile(rto_med, (ne[1], 1))))
 rto_prc = np.percentile(rto_ens, Percentiles)
 
-rto_stats = (
-    ('rto_avg', rto_avg),
-    ('rto_var', rto_var),
-    ('rto_med', rto_med),
-    ('rto_mad', rto_mad),
-    ('rto_prc', rto_prc)
-)
+results_dict ={'model_list' : model_list,
+    'rto_ens' : rto_ens,
+    'rto_cov' : rto_cov,
+    'rto_avg' : rto_avg,
+    'rto_var' : rto_var,
+    'rto_med' : rto_med,
+    'rto_mad' : rto_mad,
+    'rto_prc' : rto_prc}
 
-
-rto_results.update(rto_stats)
-
+np.savez_compressed(EnsembleResults, **results_dict)
 
