@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
+'''
 Created on Wed Apr 30 16:33:13 2025
 
 @author: vrath
-"""
+'''
 import os
 import sys
 import shutil
@@ -15,10 +15,10 @@ import sklearn as skl
 from sklearn.covariance import empirical_covariance
 from sklearn.decomposition import PCA, IncrementalPCA, SparsePCA, TruncatedSVD
 
-PY4MTX_DATA = os.environ["PY4MTX_DATA"]
-PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
+PY4MTX_DATA = os.environ['PY4MTX_DATA']
+PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
 
-mypath = [PY4MTX_ROOT+"/py4mt/modules/", PY4MTX_ROOT+"/py4mt/scripts/"]
+mypath = [PY4MTX_ROOT+'/py4mt/modules/', PY4MTX_ROOT+'/py4mt/scripts/']
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -30,25 +30,27 @@ from version import versionstrg
 
 
 rng = np.random.default_rng()
-nan = np.nan  # float("NaN")
+nan = np.nan  # float('NaN')
 version, _ = versionstrg()
 titstrng = utl.print_title(version=version, fname=__file__, out=False)
-print(titstrng+"\n\n")
+print(titstrng+'\n\n')
 
-EnsembleDir = r'/home/vrath/work/Ensemble/rto/'
-NRMSmax = 1.2
+EnsembleDir = r'/home/vrath/Ensembles/RTO/'
+EnsembleName = '*rto*'
+NRMSmax = 1.4
 
 # Percentiles = numpy.array([10., 20., 30., 40., 50., 60., 70., 80., 90.]) # linear
 Percentiles = [2.3, 15.9, 50., 84.1,97.7]                   # 95/68
 
 
-dir_list = utl.get_filelist(searchstr=["*rto*"], searchpath=EnsembleDir,fullpath=True)
+dir_list = utl.get_filelist(searchstr=[EnsembleName], searchpath=EnsembleDir,fullpath=True)
+dir_list.remove('templates')
 
 model_list = []
 model_count = -1
 for dir in dir_list:
     print('\nInversion run',dir)
-    cnv_file = dir+"/femtic.cnv"
+    cnv_file = dir+'/femtic.cnv'
     if not os.path.isfile(cnv_file):
         print(cnv_file, 'not found, run skipped.')
         continue
@@ -60,6 +62,7 @@ for dir in dir_list:
     nrms = float(info[8])
 
     if nrms > NRMSmax:
+        print(dir,'nRMS =',nrms)
         print(dir,'not converged, run skipped.')
         continue
     model_count = model_count+1
@@ -75,6 +78,8 @@ for dir in dir_list:
     else:
         rto_ens = np.vstack((rto_ens, model))
 
+rto_result['rto_ens'] = rto_ens
+
 # pca = PCA(n_components=6)
 # pca.fit(X)
 
@@ -86,9 +91,8 @@ for dir in dir_list:
 # print ('singular_values:')
 # print(pca.singular_values_)
     
-ensemble_covariance = empirical_covariance(rto_ens) 
-
-
+rto_cov = empirical_covariance(rto_ens)
+rto_results['rto_cov'] = rto_cov
 
 ne = np.shape(rto_ens)
 rto_avg = np.mean(rto_ens, axis=1)
@@ -101,16 +105,15 @@ rto_mad = np.median(
     np.abs(rto_ens.T - np.tile(rto_med, (ne[1], 1))))
 rto_prc = np.percentile(rto_ens, Percentiles)
 
-rtofields = (
-    ("rto_avg", rto_avg),
-    ("rto_var", rto_var),
-    ("rto_med", rto_med),
-    ("rto_mad", rto_mad),
-    ("rto_prc", rto_prc)
+rto_stats = (
+    ('rto_avg', rto_avg),
+    ('rto_var', rto_var),
+    ('rto_med', rto_med),
+    ('rto_mad', rto_mad),
+    ('rto_prc', rto_prc)
 )
-rto_results.update(rtofields)
 
-if "ens" in rto_out:
-    rto_results["jcn_ens"] = rto_ens
 
-return rto_results
+rto_results.update(rto_stats)
+
+
