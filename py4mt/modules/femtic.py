@@ -98,6 +98,10 @@ def modify_data(template_file='observe.dat',
 #    import numpy as np
 
 #
+
+
+        
+        
     if template_file is None:
         template_file = 'observe.dat'
 
@@ -108,7 +112,7 @@ def modify_data(template_file='observe.dat',
 
     line = content[0].split()
     obs_type = line[0]
-    num_site = int(line[1])
+    # num_site = int(line[1])
     print(len(content))
 
     '''  
@@ -166,6 +170,9 @@ def modify_data(template_file='observe.dat',
             # print(site_block)
                         
             if 'MT' in obs_type:
+                
+                if len(errors[0])!=0:
+                    set_errors = True
 
                 dat_length = 8
                 
@@ -177,13 +184,21 @@ def modify_data(template_file='observe.dat',
                     tmp = [float(x) for x in line.split()]
                     obs.append(tmp)
                     
-                # print('obs',np.shape(obs), np.shape(site_block))   
-                # print(obs)
-                # print(np.arange(num_freq))
+                if set_errors:
+                    new_errors = errors[0]
+                    print('MT errors will be replaced with relative errors:')
+                    print(new_errors)
+                    for line in obs:
+                        # print(np.arange(1,dat_length+1))
+                        # print(freq)
+                        for ii in np.arange(1, dat_length+1):
+                            print(site, '   ', ii, ii+dat_length)
+                            val = line[ii]
+                            err = val*new_errors
+                            line[ii+dat_length] = err
                 
                 for line in obs:
-                     # print(np.arange(1,dat_length+1))
-                     # print(freq)
+
                      for ii in np.arange(1,dat_length+1):
                          print(site, '   ',ii, ii+dat_length)
                          val = line[ii]
@@ -204,6 +219,9 @@ def modify_data(template_file='observe.dat',
                     print( site_block[f+2])     
 
             elif 'VTF' in obs_type:
+                
+                if len(errors[1])!=0:
+                    set_errors = True
 
                 dat_length = 4
 
@@ -214,19 +232,28 @@ def modify_data(template_file='observe.dat',
                     # print(line)
                     tmp = [float(x) for x in line.split()]
                     obs.append(tmp)
-
-                # print('obs',np.shape(obs), np.shape(site_block))
-                # print(obs)
-                # print(np.arange(num_freq))
-
-                for line in obs:
-                     # print(np.arange(1,dat_length+1))
-                     # print(freq)
-                     for ii in np.arange(1,dat_length+1):
-                         print(site, '   ',ii, ii+dat_length)
-                         val = line[ii]
-                         err = line[ii+dat_length]
-                         line[ii] = np.random.normal(loc=val, scale=err)
+                    
+                    if set_errors:
+                        new_errors = errors[1]
+                        print('VTF errors will be replaced with relative errors:')
+                        print(new_errors)
+                        for line in obs:
+                            # print(np.arange(1,dat_length+1))
+                            # print(freq)
+                            for ii in np.arange(1, dat_length+1):
+                                print(site, '   ', ii, ii+dat_length)
+                                val = line[ii]
+                                err = val*new_errors
+                                line[ii+dat_length] = err
+                    
+                    for line in obs:
+                        # print(np.arange(1,dat_length+1))
+                        # print(freq)
+                        for ii in np.arange(1, dat_length+1):
+                            print(site, '   ', ii, ii+dat_length)
+                            val = line[ii]
+                            err = line[ii+dat_length]
+                            line[ii] = np.random.normal(loc=val, scale=err)
 
                 '''
                 now write new values
