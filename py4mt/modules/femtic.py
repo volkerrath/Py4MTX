@@ -172,7 +172,7 @@ def modify_data(template_file='observe.dat',
             if 'MT' in obs_type:
                 
                 if len(errors[0])!=0:
-                    set_errors = True
+                    set_errors_mt = True
 
                 dat_length = 8
                 
@@ -184,7 +184,7 @@ def modify_data(template_file='observe.dat',
                     tmp = [float(x) for x in line.split()]
                     obs.append(tmp)
                     
-                if set_errors:
+                if set_errors_mt:
                     new_errors = errors[0]
                     print('MT errors will be replaced with relative errors:')
                     print(new_errors)
@@ -221,7 +221,7 @@ def modify_data(template_file='observe.dat',
             elif 'VTF' in obs_type:
                 
                 if len(errors[1])!=0:
-                    set_errors = True
+                    set_errors_vtf = True
 
                 dat_length = 4
 
@@ -233,7 +233,7 @@ def modify_data(template_file='observe.dat',
                     tmp = [float(x) for x in line.split()]
                     obs.append(tmp)
                     
-                    if set_errors:
+                    if set_errors_vtf:
                         new_errors = errors[1]
                         print('VTF errors will be replaced with relative errors:')
                         print(new_errors)
@@ -243,7 +243,57 @@ def modify_data(template_file='observe.dat',
                             for ii in np.arange(1, dat_length+1):
                                 print(site, '   ', ii, ii+dat_length)
                                 val = line[ii]
-                                err = val*new_errors
+                                err = new_errors
+                                line[ii+dat_length] = err
+                    
+                    for line in obs:
+                        # print(np.arange(1,dat_length+1))
+                        # print(freq)
+                        for ii in np.arange(1, dat_length+1):
+                            print(site, '   ', ii, ii+dat_length)
+                            val = line[ii]
+                            err = line[ii+dat_length]
+                            line[ii] = np.random.normal(loc=val, scale=err)
+
+                '''
+                now write new values
+
+                '''
+                print('obs',np.shape(obs), np.shape(site_block))
+                print(np.arange(num_freq))
+                for f in  np.arange(num_freq-1):
+                    print(f)
+                    print( site_block[f+2])
+                    print( obs[f])
+                    site_block[f+2] = "    ".join([f"{x:.8E}" for x in obs[f]])+'\n'
+                    print( site_block[f+2])
+                    
+            elif 'PT' in obs_type:
+                
+                if len(errors[2])!=0:
+                    set_errors_pt = True
+
+                dat_length = 4
+
+                num_freq = int(site_block[1].split()[0])
+                print('   site ',site,'has',num_freq,'frequencies' )
+                obs  = []
+                for line in site_block[2:]:
+                    # print(line)
+                    tmp = [float(x) for x in line.split()]
+                    obs.append(tmp)
+                    
+                    if set_errors_pt:
+                        new_errors = errors[1]
+                        print('VTF errors will be replaced with relative errors:')
+                        print(new_errors)
+                        for line in obs:
+                            # print(np.arange(1,dat_length+1))
+                            # print(freq)
+                            for ii in np.arange(1, dat_length+1):
+                                print(site, '   ', ii, ii+dat_length)
+                                val = line[ii]
+                                err = new_errors
                                 line[ii+dat_length] = err
                     
                     for line in obs:
