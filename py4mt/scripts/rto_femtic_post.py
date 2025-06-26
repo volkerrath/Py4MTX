@@ -15,6 +15,11 @@ import sklearn as skl
 from sklearn.covariance import empirical_covariance
 from sklearn.decomposition import PCA, IncrementalPCA, SparsePCA, TruncatedSVD
 
+import scipy as sc
+import scipy.linalg as scl
+import scipy.ndimage as sci
+import scipy.sparse as scs
+
 PY4MTX_DATA = os.environ['PY4MTX_DATA']
 PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
 
@@ -35,7 +40,7 @@ version, _ = versionstrg()
 titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng+'\n\n')
 
-EnsembleDir = r'/home/vrath/Ensembles/RTO/'
+EnsembleDir = r'/home/vrath/work/Ensembles/RTO/'
 EnsembleName = 'rto_*'
 NRMSmax = 1.4
 # Percentiles = numpy.array([10., 20., 30., 40., 50., 60., 70., 80., 90.]) # linear
@@ -83,17 +88,14 @@ for dir in dir_list:
 
 rto_cov = empirical_covariance(rto_ens)
 
-# pca = PCA(n_components=6)
-# pca.fit(X)
+tmp = rto_cov.copy()
+maxval = np.amax(tmp)
+tmp[np.abs(tmp)/np.amax(tmp) <= 1.e-8] = 0.
+rto_covs = scs.csr_matrix(tmp)
+from sksparse.cholmod import cholesky
+factor = cholesky(rto_covs)
 
-# print('\n')
-# print('explained variance:')
-# print(pca.explained_variance_ratio_)
-# print('cummulative eplained variance:')
-# print(np.cumsum(pca.explained_variance_ratio_))
-# print ('singular_values:')
-# print(pca.singular_values_)
-    
+       
 
 ne = np.shape(rto_ens)
 rto_avg = np.mean(rto_ens, axis=1)

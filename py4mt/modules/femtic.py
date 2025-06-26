@@ -88,7 +88,7 @@ def generate_data_ensemble(dir_base='./ens_',
 def modify_data(template_file='observe.dat',
                  draw_from=['normal', 0., 1.],
                  method='add',
-                 errors=[],
+                 errors=[ [], [], [] ],
                  out=True):
     '''
     Created on Thu Apr 17 17:13:38 2025
@@ -476,6 +476,74 @@ def read_model(model_file=None,  model_trans='log10',  out=True):
        model = np.log10(model)
  
     return model
+
+
+
+def replace_model(template_file='resistivity_block_iter0.dat',
+                  data=None,
+                  data_file=None,
+                  data_name= "",
+                  out=True):
+    '''
+    Created on Thu Apr 17 17:13:38 2025
+    
+    @author:     vrath   
+    '''
+    # import numpy as np
+    # rng = np.random.default_rng()
+    
+    if data is None:
+        error("No data given! Exit.")
+        
+    if data_file is None:
+        error("No data file given! Exit.")
+        
+    if template_file is None:
+        template_file = 'resistivity_block_iter0.dat'
+        
+    data_file = template_file.replace(".dat", data_name+".dat")
+
+    with open(template_file, 'r') as file:
+        content = file.readlines()
+
+    nn = content[0].split()
+    nn = [int(tmp) for tmp in nn]
+    n_cells = nn[1]
+
+    size=n_cells-2
+    
+    # element groups: air and seawater fixed
+    new_lines = [
+        '         0        1.000000e+09   1.000000e-20   1.000000e+20   1.000000e+00         1',
+        '         1        2.500000e-01   1.000000e-20   1.000000e+20   1.000000e+00         1'
+    ]
+
+    print(nn[0], nn[0]+nn[1]-1, nn[1]-1, np.shape(data))
+    
+    e_num = 1
+    for elem in range(nn[0]+3, nn[0]+nn[1]+1):
+        e_num = e_num + 1
+        line = content[elem].split()
+
+            
+        x = 10.**(x_log)
+
+        line = f' {e_num:9d}        {x:.6e}   1.000000e-20   1.000000e+20   1.000000e+00         0'
+        new_lines.append(line)
+    
+  
+    new_lines = '\n'.join(new_lines)
+
+    with open(template_file, 'w') as f:
+        f.writelines(content[0:nn[0]+1])
+        f.writelines(new_lines)
+
+    if out:
+        print('File '+template_file+' successfully written.')
+        print('Number of data replaced', len(data))
+
+    # return samples
+
 
 
 def modify_data_fcn(template_file='observe.dat',

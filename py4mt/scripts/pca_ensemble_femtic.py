@@ -42,17 +42,24 @@ titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng+"\n\n")
 
 
-EnsembleDir = r'/home/vrath/work/Ensemble/Test/'
-NRMSmax = 1.2
+EnsembleDir = r'/home/vrath/work/Ensembles/RTO/'
+EnsembleName = 'rto_*'
+NRMSmax = 1.4
+# Percentiles = numpy.array([10., 20., 30., 40., 50., 60., 70., 80., 90.]) # linear
+Percentiles = [2.3, 15.9, 50., 84.1,97.7]                   # 95/68
+EnsembleResults = EnsembleDir+'RTO_pca.npz'
 
+dir_list = utl.get_filelist(
+    searchstr=[EnsembleName],
+    searchpath=EnsembleDir,
+    fullpath=True)
 
-dir_list = utl.get_filelist(searchstr=["*ens*"], searchpath=EnsembleDir,fullpath=True)
 
 model_list = []
 model_count = -1
 for dir in dir_list:
     print('\nInversion run',dir)
-    cnv_file = dir+"/femtic.cnv"
+    cnv_file = dir+'/femtic.cnv'
     if not os.path.isfile(cnv_file):
         print(cnv_file, 'not found, run skipped.')
         continue
@@ -63,40 +70,37 @@ for dir in dir_list:
     numit = int(info[0])
     nrms = float(info[8])
 
+
     if nrms > NRMSmax:
+        print(dir,'nRMS =',nrms)
         print(dir,'not converged, run skipped.')
         continue
     model_count = model_count+1
     mod_file = dir+'/resistivity_block_iter'+str(numit)+'.dat'
     print( mod_file, ':')
     print(numit, nrms)
-      
+    model_list.append([mod_file,numit, nrms])
         
     model = fem.read_model(model_file=mod_file, model_trans='log10', out=True)
     
     if model_count==0:
-        X = model
+        ensemble = model
     else:
-        X = np.vstack((X, model))
+        ensemble = np.vstack((ensemble, model))
     
-# print(np.shape(X))
+for ipca in np.arange(1, model_count):
+    pca = PCA(n_components=ipca)
+    pca.fit(ensemble)
+    print('\n')
+    print(ipca, 'explained variance:')
+    print(pca.explained_variance_ratio_)
+    print(ipca, 'cummulative eplained variance:')
+    print(np.cumsum(pca.explained_variance_ratio_))
+    print (ipca, 'singular_values:')
+    print(pca.singular_values_)
 
-pca = PCA(n_components=6)
-pca.fit(X)
+results_dict ={'model_list' : model_list,
+    'ensemble' : ensemble,
+}
 
-print('\n')
-print('explained variance:')
-print(pca.explained_variance_ratio_)
-print('cummulative eplained variance:')
-print(np.cumsum(pca.explained_variance_ratio_))
-print ('singular_values:')
-print(pca.singular_values_)
-    
-C = empirical_covariance(X) 
-
-
-# model_ensemble = fem.generate_model_ensemble(dir_base=EnsembleDir+'ens_',
-#                                           N_samples=N_samples,
-#                                           file_in='resistivity_block_iter0.dat',
-#                                           draw_from=Mod_pdf,
-#                                           out=True)
+np.savez_compressed(EnsembleResults, **results_dict)
