@@ -47,6 +47,9 @@ NRMSmax = 1.4
 Percentiles = [2.3, 15.9, 50., 84.1,97.7]                   # 95/68
 EnsembleResults = EnsembleDir+'RTO_results.npz'
 
+GenerateNewEnsemble = True
+NewEnsemble =  EnsembleDir+'OSY_ensemble.npz'
+
 dir_list = utl.get_filelist(
     searchstr=[EnsembleName],
     searchpath=EnsembleDir,
@@ -107,7 +110,7 @@ rto_mad = np.median(
     np.abs(rto_ens.T - np.tile(rto_med, (ne[1], 1))))
 rto_prc = np.percentile(rto_ens, Percentiles)
 
-results_dict ={'model_list' : model_list,
+rto_dict ={'model_list' : model_list,
     'rto_ens' : rto_ens,
     'rto_cov' : rto_cov,
     'rto_avg' : rto_avg,
@@ -116,5 +119,11 @@ results_dict ={'model_list' : model_list,
     'rto_mad' : rto_mad,
     'rto_prc' : rto_prc}
 
-np.savez_compressed(EnsembleResults, **results_dict)
+np.savez_compressed(EnsembleResults, **rto_dict)
+
+# now generte new ensemble after Osypov(2013).
+
+ensemble_dict ={'model_list' : model_list}
+np.savez_compressed(NewEnsemble, **ensemble_dict)
+
 
