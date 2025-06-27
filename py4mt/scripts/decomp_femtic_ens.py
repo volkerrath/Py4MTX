@@ -30,8 +30,8 @@ import util as utl
 from version import versionstrg
 
 import sklearn as skl
-from sklearn.covariance import empirical_covariance
-from sklearn.decomposition import PCA, IncrementalPCA, SparsePCA, TruncatedSVD
+import sklearn.covariance 
+import sklearn.decomposition 
 
 rng = np.random.default_rng()
 nan = np.nan  # float("NaN")
@@ -45,9 +45,11 @@ print(titstrng+"\n\n")
 EnsembleDir = r'/home/vrath/work/Ensembles/RTO/'
 EnsembleName = 'rto_*'
 NRMSmax = 1.4
+
+Proc = 'pca'
 # Percentiles = numpy.array([10., 20., 30., 40., 50., 60., 70., 80., 90.]) # linear
 Percentiles = [2.3, 15.9, 50., 84.1,97.7]                   # 95/68
-EnsembleResults = EnsembleDir+'RTO_pca.npz'
+EnsembleResults = EnsembleDir+'PCA.npz'
 
 dir_list = utl.get_filelist(
     searchstr=[EnsembleName],
@@ -87,20 +89,38 @@ for dir in dir_list:
         ensemble = model
     else:
         ensemble = np.vstack((ensemble, model))
-    
-for ipca in np.arange(1, model_count):
-    pca = PCA(n_components=ipca)
-    pca.fit(ensemble)
-    print('\n')
-    print(ipca, 'explained variance:')
-    print(pca.explained_variance_ratio_)
-    print(ipca, 'cummulative eplained variance:')
-    print(np.cumsum(pca.explained_variance_ratio_))
-    print (ipca, 'singular_values:')
-    print(pca.singular_values_)
-
+        
 results_dict ={'model_list' : model_list,
-    'ensemble' : ensemble,
-}
+    'ensemble' : ensemble}
+
+        
+if 'increment' in Proc.lower():  
+    for ipca in np.arange(1, model_count):
+        pca = sklearn.decomposition.PCA(n_components=ipca)
+        pca.fit(ensemble)
+        print('\n')
+        print(ipca, 'explained variance:')
+        print(pca.explained_variance_ratio_)
+        print(ipca, 'cummulative eplained variance:')
+        print(np.cumsum(pca.explained_variance_ratio_))
+        print (ipca, 'singular_values:')
+        print(pca.singular_values_)
+        
+elif 'pca' in Proc.lower():
+    for ipca in np.arange(1, model_count):
+        pca = sklearn.decomposition.PCA(n_components=ipca)
+        pca.fit(ensemble)
+        print('\n')
+        print(ipca, 'explained variance:')
+        print(pca.explained_variance_ratio_)
+        print(ipca, 'cummulative eplained variance:')
+        print(np.cumsum(pca.explained_variance_ratio_))
+        print (ipca, 'singular_values:')
+        print(pca.singular_values_)
+    
+elif 'ica' in Proc.lower():
+        ica = sklearn.decomposition.ICA(n_components=ipca)
+        ica.fit(ensemble)
+
 
 np.savez_compressed(EnsembleResults, **results_dict)

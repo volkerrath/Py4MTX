@@ -12,8 +12,8 @@ import numpy as np
 
 
 import sklearn as skl
-from sklearn.covariance import empirical_covariance
-from sklearn.decomposition import PCA, IncrementalPCA, SparsePCA, TruncatedSVD
+import sklearn.covariance 
+import sklearn.decomposition 
 
 import scipy as sc
 import scipy.linalg as scl
@@ -86,7 +86,7 @@ for dir in dir_list:
     else:
         rto_ens = np.vstack((rto_ens, model))
 
-rto_cov = empirical_covariance(rto_ens)
+rto_cov = sklearn.covariance.empirical_covariance(rto_ens)
 
 tmp = rto_cov.copy()
 maxval = np.amax(tmp)
@@ -96,7 +96,6 @@ from sksparse.cholmod import cholesky
 factor = cholesky(rto_covs)
 
        
-
 ne = np.shape(rto_ens)
 rto_avg = np.mean(rto_ens, axis=1)
 # rto_std = np.std(rto_ens, axis=1)
