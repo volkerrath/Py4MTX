@@ -379,8 +379,7 @@ def modify_model(template_file='resistivity_block_iter0.dat',
     '''
     Created on Thu Apr 17 17:13:38 2025
     
-    @author:     charroyj
-                 vrath   
+    @author:       vrath   
     '''
 #    import numpy as np
 
@@ -479,7 +478,7 @@ def read_model(model_file=None,  model_trans='log10',  out=True):
 
 
 
-def replace_model(template_file='resistivity_block_iter0.dat',
+def insert_model(template_file='resistivity_block_iter0.dat',
                   data=None,
                   data_file=None,
                   data_name= "",
@@ -520,26 +519,30 @@ def replace_model(template_file='resistivity_block_iter0.dat',
 
     print(nn[0], nn[0]+nn[1]-1, nn[1]-1, np.shape(data))
     
+    nn = content[0].split()
+    nn = [int(tmp) for tmp in nn]
+
+    data = np.power(10.,data)
+ 
     e_num = 1
+    s_num = -1
     for elem in range(nn[0]+3, nn[0]+nn[1]+1):
         e_num = e_num + 1
-        line = content[elem].split()
-
-            
-        x = 10.**(x_log)
+        s_num = s_num + 1
+        x = data[s_num]
 
         line = f' {e_num:9d}        {x:.6e}   1.000000e-20   1.000000e+20   1.000000e+00         0'
         new_lines.append(line)
     
-  
     new_lines = '\n'.join(new_lines)
+    
 
-    with open(template_file, 'w') as f:
+    with open(data_file, 'w') as f:
         f.writelines(content[0:nn[0]+1])
         f.writelines(new_lines)
 
     if out:
-        print('File '+template_file+' successfully written.')
+        print('File '+data_file+' successfully written.')
         print('Number of data replaced', len(data))
 
     # return samples

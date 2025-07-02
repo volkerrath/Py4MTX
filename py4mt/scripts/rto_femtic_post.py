@@ -47,9 +47,6 @@ NRMSmax = 1.4
 Percentiles = [2.3, 15.9, 50., 84.1,97.7]                   # 95/68
 EnsembleResults = EnsembleDir+'RTO_results.npz'
 
-GenerateNewEnsemble = True
-NewEnsemble =  EnsembleDir+'OSY_ensemble.npz'
-
 dir_list = utl.get_filelist(
     searchstr=[EnsembleName],
     searchpath=EnsembleDir,
@@ -120,10 +117,4 @@ rto_dict ={'model_list' : model_list,
     'rto_prc' : rto_prc}
 
 np.savez_compressed(EnsembleResults, **rto_dict)
-
-# now generte new ensemble after Osypov(2013).
-
-ensemble_dict ={'model_list' : model_list}
-np.savez_compressed(NewEnsemble, **ensemble_dict)
-
 
