@@ -1583,9 +1583,203 @@ def mt1dfwd(freq, sig, d, inmod="r", out="imp", magfield="b"):
         return Z, rhoa, phase
 
 
+def insert_body_condition(dx=None, dy=None, dz=None,
+    rho_in=None, body=None,
+    smooth=None, scale=1.0, 
+    reference = None, pad=[0, 0, 0], 
+    out=True):
+    """
+    Insert 3d body (ellipsoid or box) into given model.
+
+    Created on Sun Jan 3 10:35:28 2021
+
+    @author: vrath
+    """
+    xpad = pad[0]
+    ypad = pad[1]
+    zpad = pad[2]
+
+    xc, yc, zc = cells3d(dx, dy, dz)
+
+    if reference is None:
+        modcenter = [0.5 * np.sum(dx), 0.5 * np.sum(dy), 0.0]
+
+    else:
+        modcenter = reference
+
+    xc = xc + modcenter[0]
+    yc = yc + modcenter[1]
+    zc = zc + modcenter[2]
+
+    print(" center is", modcenter)
+
+
+
+    nx = np.shape(xc)[0]
+    ny = np.shape(yc)[0]
+    nz = np.shape(zc)[0]
+
+    rho_out = np.log(rho_in.copy())
+
+    # geom= body[0]
+    # action = body[1]
+    # rhoval = body[2]
+    # bcent = body[3:6]
+    # baxes = body[6:9]
+    # bangl = body[9:12]
+    # ell = ["ell", action, 10000.,    0., 0., 10000.,    30000., 30000., 5000.,     0., 0.,0.]
+    geom= body[0]
+    action = body[1]
+    condit = body[2]
+    bcent = body[3:6]
+    baxes = body[6:9]
+    bangl = body[9:12]
+    # action = ["rep", 30.]
+    # condition = "val <= np.log10(30.)"
+    # ell = ["ell", action, condition,    0., 0., 10000.,    30000., 30000., 5000.,     0., 0.,0.]
+    rhoval = action[1]
+    rhoval = np.log(rhoval)
+
+    if "rep" in action[0]:
+        actstring = "rhoval"
+
+    elif "add"  in action[0]:
+        if "avg" in action[0]: 
+            if condit is None:
+                actstring = "rho_avg + rhoval"
+            else:
+                error("Average add option not consistent with contition! Exit.")
+        else:
+            actstring = "rho_out[point] + rhoval"       
+
+    else:
+        error("Action" + action + " not implemented! Exit.")
+
+
+    if out:
+        print(
+            "Body type   : " + geom + ", " + action[0] + " rho =",
+            str(np.exp(rhoval)) + " Ohm.m",
+        )
+        print("Body center : " + str(bcent))
+        print("Body axes   : " + str(baxes))
+        print("Body angles : " + str(bangl))
+        print("Action is "+action[0])
+        print("Smoothed with " + smooth[0] + " filter")
+
+
+    if "ell" in geom.lower():
+        if "avg" in actstring:
+            rho_avg = 0.
+            n_inside = 0
+            for kk in np.arange(0, nz - zpad - 1):
+                 zpoint = zc[kk]
+                 for jj in np.arange(ypad + 1, ny - ypad - 1):
+                     ypoint = yc[jj]
+                     for ii in np.arange(xpad + 1, nx - xpad - 1):
+                         xpoint = xc[ii]                     
+                         point = [ii,jj,kk]
+                         position = [xpoint, ypoint, zpoint]
+                         if in_ellipsoid(position, bcent, baxes, bangl):
+                             n_inside = n_inside +1
+                             rho_avg = rho_avg + rho_out[ii,jj,kk]
+            if n_inside>0:
+                rho_avg = rho_avg/n_inside
+            else:
+                error("insert_body: no cell centers inside ellipsoid! Exit.")
+
+        n_inside = 0
+        n_changed = 0
+        for kk in np.arange(0, nz - zpad - 1):
+            zpoint = zc[kk]
+            for jj in np.arange(ypad + 1, ny - ypad - 1):
+                ypoint = yc[jj]
+                for ii in np.arange(xpad + 1, nx - xpad - 1):
+                    xpoint = xc[ii]
+                    point = [ii,jj,kk]
+                
+                    position = [xpoint, ypoint, zpoint]
+                    if in_ellipsoid(position, bcent, baxes, bangl):
+                        n_inside = n_inside +1
+                        if condit is None:                  
+                            rho_out[ii, jj, kk] = eval(actstring)
+                        else:
+                            val = rho_out[ii, jj, kk]
+                            if eval(condit):
+                                n_changed = n_changed +1
+                                rho_out[ii, jj, kk] = eval(actstring)
+
+
+        if n_inside>0:
+            print(n_inside, " cell centers in ellipsoid found.")
+            print(n_changed, " cells changed.") 
+        else:
+            error("insert_body: no cell centers inside ellipsoid! Exit.")
+
+    if "box" in geom.lower():
+        if "avg" in actstring:
+            rho_avg = 0.
+            n_inside = 0
+            for kk in np.arange(0, nz - zpad - 1):
+                 zpoint = zc[kk]
+                 for jj in np.arange(ypad + 1, ny - ypad - 1):
+                     ypoint = yc[jj]
+                     for ii in np.arange(xpad + 1, nx - xpad - 1):
+                         xpoint = xc[ii]
+                         point = [ii,jj,kk]
+                         position = [xpoint, ypoint, zpoint]
+                         if in_box(position, bcent, baxes, bangl):
+                             n_inside = n_inside +1
+                             rho_avg = rho_avg + rho_out[ii,jj,kk]
+            if n_inside>0:
+                rho_avg = rho_avg/n_inside
+            else:
+                error("insert_body: no cell centers inside box! Exit.")
+
+        n_inside = 0
+        n_changed = 0 
+        for kk in np.arange(0, nz - zpad - 1):
+            zpoint = zc[kk]
+            for jj in np.arange(ypad + 1, ny - ypad - 1):
+                ypoint = yc[jj]
+                for ii in np.arange(xpad + 1, nx - xpad - 1):
+                    xpoint = xc[ii]
+                    point = [ii,jj,kk]
+                    position = [xpoint, ypoint, zpoint]
+                    if in_box(position, bcent, baxes, bangl):
+                        n_inside = n_inside + 1
+                        if condit is None:                  
+                            rho_out[ii, jj, kk] = eval(actstring)
+                        else:
+                            val = rho_out[ii, jj, kk]
+                            if eval(condit):
+                                n_changed = n_changed +1
+                                rho_out[ii, jj, kk] = eval(actstring)
+        if n_inside>0:
+            print(n_inside, " cell centers in box found.")     
+            print(n_changed, " cells changed.")                            
+        else:
+            error("insert_body: no cell centers inside box! Exit.")
+
+    if smooth is not None:
+        if "uni" in smooth[0].lower():
+            fsize = smooth[1]
+            rho_out = uniform_filter(rho_out, fsize)
+
+        elif "gau" in smooth[0].lower():
+            gstd = smooth[1]
+            rho_out = gaussian_filter(rho_out, gstd)
+
+        else:
+            error("Smoothing filter  " + smooth[0] + " not implemented! Exit.")
+
+    rho_out = np.exp(rho_out)
+
+    return rho_out
+
 def insert_body(dx=None, dy=None, dz=None,
     rho_in=None, body=None,
-    pad=[0, 0, 0],
+    pad=[0, 0, 0], 
     smooth=None, scale=1.0, reference = None,
     out=True):
     """
@@ -1640,6 +1834,9 @@ def insert_body(dx=None, dy=None, dz=None,
             actstring = "rho_avg + rhoval"
         else:
             actstring = "rho_out[point] + rhoval"
+            
+
+        
 
     else:
         error("Action" + action + " not implemented! Exit.")

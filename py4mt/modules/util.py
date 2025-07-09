@@ -9,7 +9,6 @@ import os
 import sys
 from sys import exit as error
 import ast
-from sys import exit as error
 import fnmatch
 import inspect
 
