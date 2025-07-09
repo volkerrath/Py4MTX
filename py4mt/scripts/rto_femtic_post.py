@@ -3,6 +3,26 @@
 '''
 Created on Wed Apr 30 16:33:13 2025
 
+Randomize-then-Optimize approach: postprocessing
+
+References:
+    
+    Bardsley, J. M.; Solonen, A.; Haario, H. & Laine, M.
+        Randomize-Then-Optimize: a Method for Sampling from Posterior
+        Distributions in Nonlinear Inverse Problems
+        SIAM J. Sci. Comp., 2014, 36, A1895-A1910
+
+    Blatter, D.; Morzfeld, M.; Key, K. & Constable, S.
+        Uncertainty quantification for regularized inversion of electromagnetic
+        geophysical data. Part I: Motivation and Theory
+        Geophysical Journal International, doi:10.1093/gji/ggac241, 2022
+
+    Blatter, D.; Morzfeld, M.; Key, K. & Constable, S.
+        Uncertainty quantification for regularized inversion of electromagnetic
+        geophysical data – Part II: application in 1-D and 2-D problems
+        Geophysical Journal International, , doi:10.1093/gji/ggac242, 2022
+
+
 @author: vrath
 '''
 import os
@@ -47,6 +67,9 @@ NRMSmax = 1.4
 Percentiles = [2.3, 15.9, 50., 84.1,97.7]                   # 95/68
 EnsembleResults = EnsembleDir+'RTO_results.npz'
 
+Sparsify = True
+SparseThresh = 1.e-8
+
 dir_list = utl.get_filelist(
     searchstr=[EnsembleName],
     searchpath=EnsembleDir,
@@ -88,12 +111,12 @@ for dir in dir_list:
 
 rto_cov = sklearn.covariance.empirical_covariance(rto_ens)
 
-tmp = rto_cov.copy()
-maxval = np.amax(tmp)
-tmp[np.abs(tmp)/np.amax(tmp) <= 1.e-8] = 0.
-rto_covs = scs.csr_matrix(tmp)
-from sksparse.cholmod import cholesky
-factor = cholesky(rto_covs)
+if Sparsify:
+    tmp = rto_cov.copy()
+    maxval = np.amax(tmp)
+    tmp[np.abs(tmp)/np.amax(tmp) <= SparseThresh] = 0.
+    rto_covs = scs.csr_matrix(tmp)
+
 
        
 ne = np.shape(rto_ens)

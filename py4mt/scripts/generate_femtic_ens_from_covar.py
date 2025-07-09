@@ -2,6 +2,15 @@
 # -*- coding: utf-8 -*-
 '''
 Created on Wed Apr 30 16:33:13 2025
+Generate equivalent ensemble based on covariance
+
+References:
+    
+K Osypov, Y Yang, A Fournier, N Ivanova, R Bachrach, C E Yarman, Y You, 
+    D Nichols & M Woodward (2013):  Model-uncertainty quantification in 
+    seismic tomography: method and applications
+    Geophysical Prospecting, 61, 1114--1134, doi: 10.1111/1365-2478.12058
+
 
 @author: vrath
 '''
@@ -14,6 +23,9 @@ import numpy as np
 import sklearn as skl
 import sklearn.covariance 
 import sklearn.decomposition 
+
+
+from sksparse.cholmod import cholesky
 
 import scipy as sc
 import scipy.linalg as scl
@@ -54,17 +66,24 @@ cov = tmp['rto_cov']
 ref = tmp['rto_avg']
 var = tmp['rto_var']
 
+# from sksparse.cholmod import cholesky
+
+sqrtcov = cholesky(cov)
+
+
 # now generte new ensemble after Osypov(2013).
 
 model_size = np.shape(ref)[0]
 for imod in np.arange(NewEnsembleSize):
-    sample = ref + np.random.normal(loc=0., scale=1., size=model_size)
+    sample = ref + sqrtcov * np.random.normal(loc=0., scale=1., size=model_size)
     if imod==0:
         new_ens = sample
     else:
         new_ens = np.vstack((new_ens, sample))
 
-ensemble_dict ={' new_ens' : new_ens}
+ensemble_dict ={'new_ens' : new_ens,
+                'sqrtcov' : sqrtcov,
+                'ref' : ref}
 np.savez_compressed(NewEnsembleFile, **ensemble_dict)
 
 

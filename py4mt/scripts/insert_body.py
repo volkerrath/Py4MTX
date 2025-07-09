@@ -48,7 +48,7 @@ import numpy as np
 PY4MTX_DATA = os.environ["PY4MTX_DATA"]
 PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
 
-mypath = [PY4MTX_ROOT+"/modules/", PY4MTX_ROOT+"/scripts/"]
+mypath = [PY4MTX_ROOT+"/py4mt/modules/", PY4MTX_ROOT+"/py4mt/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -74,13 +74,18 @@ ModFile_out = ModFile_in
 # utm_x, utm_y = utl.proj_latlon_to_utm(geocenter[0], geocenter[1], utm_zone=32719)
 # utmcenter = [utm_x, utm_y, 0.0]
 
+action = ["rep", 30.]
+condition = "val <= np.log10(30.)"
+ell = ["ell", action, condition,    0., 0., 10000.,    30000., 30000., 5000.,     0., 0.,0.]
+condition = None
+ell = ["ell", action, condition,    0., 0., 10000.,    30000., 30000., 5000.,     0., 0.,0.]
 
+bodies = [ell]
 #                    rho           center            axes                angles
-ell = ["ell", "rep", 10000.,    0., 0., 10000.,    30000., 30000., 5000.,     0., 0.,0.]
-box = ["box", "rep", 10.,       0., 0., 35000,     10000., 20000., 10000.,    45., -45., 30.]
-#cyl = []
+# ell = ["ell", action, 10000.,    0., 0., 10000.,    30000., 30000., 5000.,     0., 0.,0.]
+# box = ["box", action, 10.,       0., 0., 35000,     10000., 20000., 10000.,    45., -45., 30.]
+# bodies = [ell, box]
 
-bodies = [ell, box]
 additive = False
 nb = len(bodies)
 
@@ -104,8 +109,8 @@ rho_in = mod.prepare_model(rho, rhoair=rhoair)
 
 for ibody in range(nb):
     body = bodies[ibody]
-    if not additive:
-        rho_out = mod.insert_body(dx, dy, dz, rho_in,
+    if not "add" in action:
+        rho_out = mod.insert_body_condition(dx, dy, dz, rho_in,
                                   body, smooth=smoother, reference= refmod)
 
         Modout = ModFile_out+"_"+body[0]+str(ibody)+"_"+smoother[0]
@@ -122,7 +127,7 @@ for ibody in range(nb):
           % (elapsed, Modout))
     print("\n")
 
-if additive:
+if "add" in action:
         Modout = ModFile_out+"_final"
         mod.write_mod(Modout, modext="_new.rho",trans = "LOGE",
                   dx=dx, dy=dy, dz=dz, mval=rho_out,
