@@ -71,13 +71,10 @@ PY4MTX_DATA =  "/home/vrath/MT_Data/"
 
 
 EPSG = 32629
-WorkDir = PY4MTX_DATA+"/Enfield/"
-surveyname = "enfield"
+WorkDir = PY4MTX_DATA+"/France/annecy_2025_dist/edi_files/"
+EdiDir = WorkDir
+surveyname = "Annecy"
 
-PY4MTX_DATA =  "/home/vrath/MT_Data/"
-WorkDir = PY4MTX_DATA+"/Ubaye_best/"
-EdiDir = WorkDir+"/edis/"
-surveyname = "ubaye"
 
 # Define the path to your EDI-files:
 file_list = mtp.get_edi_list(EdiDir)
@@ -126,7 +123,7 @@ if not os.path.isdir(PltDir):
 # Graphical paramter. Determine the plot formats produced,
 # and the required resolution:
 
-PlotFmt = [".png", ".pdf", ".svg"]
+PlotFmt = [".png"]
 DPI = 600
 PDFCatalog = True
 PDFCatalogName  = "Ubaye_strikes.pdf"
@@ -172,17 +169,22 @@ for fmt in PlotFmt:
 if PDFCatalog:
     pdf_list = []
     # catalog = PdfPages(PDFCatalogName)
-
+    
+############################################################################
+# no svg/pdf possible
+# file_list.remove('/home/vrath/MT_Data//France/annecy_2025_dist/edi_files/Brom.edi')
+# file_list.remove('/home/vrath/MT_Data//France/annecy_2025_dist/edi_files/Mach.edi')
+############################################################################
 # # # Loop over stations
-    for sit in file_list:
-        site, _ = os.path.splitext(os.path.basename(sit))
-        data = dataset.get_subset([surveyname+"."+site])
-        strike_plot_site = data.plot_strike()
-        for fmt in PlotFmt:
-            strike_plot_site.save_plot(PltDir+site+"_strikes"+fmt, fig_dpi=600)
+for sit in file_list:
+    site, _ = os.path.splitext(os.path.basename(sit))
+    data = dataset.get_subset([surveyname+"."+site])
+    strike_plot_site = data.plot_strike()
+    for fmt in PlotFmt:
+        strike_plot_site.save_plot(PltDir+site+"_strikes"+fmt, fig_dpi=600)
 
-        if PDFCatalog:
-            pdf_list.append(PltDir+site+"_strikes.pdf")
+    if PDFCatalog:
+        pdf_list.append(PltDir+site+"_strikes.pdf")
 
 
 

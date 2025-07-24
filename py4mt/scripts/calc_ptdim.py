@@ -61,7 +61,7 @@ titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.curren
 print(titstrng+"\n\n")
 
 PY4MTX_DATA =  "/home/vrath/MT_Data/"
-WorkDir = PY4MTX_DATA+"/Enfield/"
+WorkDir = PY4MTX_DATA+"/France/annecy_2025_dist/edi_files/"
 # Define the path to your EDI-files:
 EdiDir = WorkDir
 print(" Edifiles read from: %s" % EdiDir)

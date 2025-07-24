@@ -84,7 +84,7 @@ site_icon =  icon_dir + "placemark_circle.png"
 
 site_tcolor = simplekml.Color.white  # "#555500" #
 site_tscale = 1.2  # scale the text
-site_iscale = 1.5
+site_iscale = 2.5
 
 
 site_icolor = simplekml.Color.red
