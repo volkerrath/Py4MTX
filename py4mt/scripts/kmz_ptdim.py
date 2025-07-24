@@ -36,20 +36,22 @@ print(titstrng+"\n\n")
 # Define the path to your EDI-files
 
 PY4MTX_DATA =  "/home/vrath/MT_Data/"
-WorkDir = PY4MTX_DATA+"/Ubaye_best/"
-EdiDir = WorkDir+"/edis/"
+WorkDir = PY4MTX_DATA+"/France/annecy_2025_dist/"
+EdiDir = WorkDir+"/edi_files/"
 print(" Edifiles read from: %s" % EdiDir)
 
-print(" Edifiles read from: %s" % EdiDir)
+
+
+NoNames =True
 KmlDir = WorkDir
-KmlFile = "Ubaye_PTDIM"
+KmlFile = "Annecy_PTDIM"
 
 # open file and read the content in a list
 SiteFile = EdiDir + "Sitelist.dat"
 
 tmp = []
 with open(SiteFile, "r") as f:
-    place_list = csv.reader(f, delimiter=" ")
+    place_list = csv.reader(f, delimiter=",")
     for site in place_list:
         tmp.append(site)
 tmp = tmp[2:]
@@ -126,8 +128,8 @@ for site in places:
         tmp = csv.reader(f)
         for site in tmp:
             site = site[0].split()
-            frq.append(float(site[1]))
-            dim.append(int(site[2]))
+            frq.append(float(site[4]))
+            dim.append(int(site[5]))
 
         dim = numpy.asarray(dim)
         frq = numpy.asarray(frq)
@@ -136,7 +138,7 @@ for site in places:
     sit.append(lst)
 
 
-for f in freqs:
+for f in frq:
     Nams = []
     Lats = []
     Lons = []
@@ -145,10 +147,10 @@ for f in freqs:
 
     ff = numpy.log10(f)
 
-    if ff < 0:
-        freq_strng = "Per"+str(int(round(1/f,0)))+"s"
+    if ff > 0:
+        freq_strng = "Per"+str(int(round(f,0)))+"s"
     else:
-        freq_strng = "Freq"+str(int(round(f,0)))+"Hz"
+        freq_strng = "Freq"+str(int(round(1/f,0)))+"Hz"
     freqfolder = kml.newfolder(name=freq_strng)
 
     ns = len(nam)
@@ -171,7 +173,10 @@ for f in freqs:
     nsites =len(Nams)
     # print (nsites)
     for ii in numpy.arange(nsites):
-        site = freqfolder.newpoint(name=Nams[ii])
+        if NoNames:
+            site = freqfolder.newpoint()
+        else:
+            site = freqfolder.newpoint(name=Nams[ii])
         site.coords = [(Lons[ii], Lats[ii], 0.)]
 
         if Dims[ii]==0:

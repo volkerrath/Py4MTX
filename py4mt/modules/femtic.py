@@ -949,7 +949,164 @@ def get_femtic_data(data_file=None, site_file=None, data_type='rhophas', out=Tru
 
     return data_dict
 
-def get_work_model(directory=None, file=None, out=True):
+# def get_work_model(directory=None, file=None, out=True):
     
-    work_model = []
-    return work_model
+#     work_model = []
+#     return work_model
+
+
+def centroid_tetrahedron(nodes=None):
+    """
+    Created on Thu Jul 17 08:36:04 2025
+    
+    @author: vrath
+    """
+
+    
+    if nodes is None:
+        sys.exit("Nodes not set! Exit.")
+    
+    if np.shape(nodes) != [3,4]:
+      sys.exit("Nodes shape is not (3,4)! Exit.")  
+    
+    # nodes = np.nan*np.zeros((3,4))
+    
+    centre = np.mean(nodes, axis = 0)
+    
+    
+    return centre
+
+
+def make_prior_cov(filerough="roughening_matrix.out", out=True):
+    '''
+    generate prior covariance for 
+    ensenmble perturbations
+    
+    Note: does not include air/sea/distortion parameters!
+
+    Parameters
+    ----------
+    filerough : string
+        name of femtic roughness file . The default is None.
+
+    Returns
+    -------
+    cov : np.array
+        
+    author: vrath,  created on Thu Jul 21, 2025
+    
+    ResistivityBlock.cpp. l1778ff
+
+    RougheningMatrix.cpp/RougheningMatrix.cpp: 4
+     57: 24: void RougheningMatrix::setStructureAndAddValueByTripletFormat( const int row, const int col, const double val ){
+     58: 22: 	DoubleSparseMatrix::setStructureAndAddValueByTripletFormat( row, col, val );
+     80: 15: 				RTRMatrix.setStructureAndAddValueByTripletFormat(row, col, value);
+     86: 13: 		RTRMatrix.setStructureAndAddValueByTripletFormat(iCol, iCol, smallValueOnDiagonals);
+    RougheningMatrix.h/RougheningMatrix.h: 1
+     47: 15: 	virtual void setStructureAndAddValueByTripletFormat( const int row, const int col, const double val );
+    RougheningSquareMatrix.cpp/RougheningSquareMatrix.cpp: 4
+     58: 30: void RougheningSquareMatrix::setStructureAndAddValueByTripletFormat( const int row, const int col, const double val ){
+     59: 22: 	DoubleSparseMatrix::setStructureAndAddValueByTripletFormat( row, col, val );
+     81: 15: 				RTRMatrix.setStructureAndAddValueByTripletFormat(row, col, value);
+     87: 13: 		RTRMatrix.setStructureAndAddValueByTripletFormat(iRow, iRow, smallValueOnDiagonals);
+    RougheningSquareMatrix.h/RougheningSquareMatrix.h: 1
+     47: 15: 	virtual void setStructureAndAddValueByTripletFormat( const int row, const int col, const double val );
+
+    
+    // *******************************************************************************************************
+    // Calculate roughning matrix from user-defined roughning factor
+    void ResistivityBlock::calcRougheningMatrixUserDefined( const double factor ){
+    
+    	// Read user-defined roughening matrix
+    	const std::string fileName = "roughening_matrix.dat";
+    	std::ifstream ifs( fileName.c_str(), std::ios::in );
+    
+    	if( ifs.fail() ){
+    		OutputFiles::m_logFile << "File open error : " << fileName.c_str() << " !!" << std::endl;
+    		exit(1);
+    	}
+    
+    	OutputFiles::m_logFile << "# Read user-defined roughening matrix from " << fileName.c_str() << "." << std::endl;
+    
+    	int ibuf(0);
+    	ifs >> ibuf;
+    	const int numBlock(ibuf);
+    	if( numBlock <= 0 ){
+    		OutputFiles::m_logFile << "Error : Total number of resistivity blocks must be positive !! : " << numBlock << std::endl;
+    		exit(1);
+    	}
+    
+    	for( int iBlock = 0 ; iBlock < numBlock; ++iBlock ){
+    		ifs >> ibuf;
+    		if( iBlock != ibuf ){
+    			OutputFiles::m_logFile << "Error : Resistivity block numbers must be numbered consecutively from zero !!" << std::endl;
+    			exit(1);
+    		}
+    
+    		ifs >> ibuf;
+    		const int numNonzeros(ibuf);
+    		std::vector< std::pair<int, double> > blockIDAndFactor;
+    		blockIDAndFactor.resize(numNonzeros);
+    		for( int innz = 0 ; innz < numNonzeros; ++innz ){
+    			ifs >> ibuf;
+    			blockIDAndFactor[innz].first = ibuf;
+    		}
+    		for( int innz = 0 ; innz < numNonzeros; ++innz ){
+    			double dbuf(0.0);
+    			ifs >> dbuf;
+    			blockIDAndFactor[innz].second = dbuf;
+    		}
+    		for( int innz = 0 ; innz < numNonzeros; ++innz ){
+    			m_rougheningMatrix.setStructureAndAddValueByTripletFormat( iBlock, blockIDAndFactor[innz].first, blockIDAndFactor[innz].second );
+    		}
+    	}
+    
+    	ifs.close();
+    
+    }
+
+    '''
+    from scipy.sparse import csr_matrix
+    
+    print('Reading from', filerough)
+    irow = []
+    icol = []
+    vals  = []
+    with open(filerough, 'r') as file:
+        content = file.readlines()
+    
+    numlines = int(content[0].split()[0])
+    # print(numlines)
+    
+    iline = 0
+    while iline < len(content)-2:
+        iline = iline + 1
+        # print(content[iline])
+        ele = int(content[iline].split()[0])
+        nel = int(content[iline+1].split()[0])
+        if nel == 0:
+            iline = iline + 1
+            print('passed', ele)
+            continue
+        else:
+            irow += [ele]*nel
+            col = [int(x) for x in content[iline+1].split()[1:]]
+            icol += col
+            val = [float(x) for x in content[iline+2].split()]
+            vals += val
+            iline = iline + 2
+                
+            
+    irow = np.asarray(irow)
+    icol = np.asarray(icol)
+    vals = np.asarray(vals)        
+    print(np.shape(irow), np.shape(icol), np.shape(vals) )
+
+                
+    return irow, icol, vals
+                
+    
+        
+    # cov = []
+    
+    # return cov
