@@ -52,6 +52,14 @@ from version import versionstrg
 import sklearn as skl
 from sklearn.covariance import empirical_covariance
 
+from os import environ
+
+N_THREADS = '16'
+environ['OMP_NUM_THREADS'] = N_THREADS
+environ['OPENBLAS_NUM_THREADS'] = N_THREADS
+environ['MKL_NUM_THREADS'] = N_THREADS
+environ['VECLIB_MAXIMUM_THREADS'] = N_THREADS
+environ['NUMEXPR_NUM_THREADS'] = N_THREADS
 
 rng = np.random.default_rng()
 nan = np.nan  # float("NaN")
