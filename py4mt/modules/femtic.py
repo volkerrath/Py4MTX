@@ -977,7 +977,10 @@ def centroid_tetrahedron(nodes=None):
     return centre
 
 
-def make_prior_cov(filerough="roughening_matrix.out", out=True):
+def make_prior_cov(filerough="roughening_matrix.out", 
+                   small = 1.e-5,
+                   rout = False,
+                   out=True):
     '''
     generate prior covariance for 
     ensenmble perturbations
@@ -1066,7 +1069,8 @@ def make_prior_cov(filerough="roughening_matrix.out", out=True):
     }
 
     '''
-    from scipy.sparse import csr_matrix
+    from scipy.sparse import csr_array, identity
+    from scipy.sparse.linalg import inv
     
     print('Reading from', filerough)
     irow = []
@@ -1101,12 +1105,24 @@ def make_prior_cov(filerough="roughening_matrix.out", out=True):
     icol = np.asarray(icol)
     vals = np.asarray(vals)        
     print(np.shape(irow), np.shape(icol), np.shape(vals) )
+    # d = np.array([3, 4, 5, 7, 2, 6])     # data
+    # r = np.array([0, 0, 1, 1, 3, 3])     # rows
+    # c = np.array([2, 4, 2, 3, 1, 2])     # cols
 
-                
-    return irow, icol, vals
-                
+    R = csr_array((vals, (irow, icol))) 
+    print(R.shape, R.nnz)
+    # RTR = R.transpose()@R + small*identity(R.shape[0])
+    # print(RTR.shape, RTR.nnz)
+    # + eye_array 
+    RI = inv(R)
+
+    Test = R@RI
+    print(Test.shape, Test.nnz)
+
+    # print(R.shape, R.nnz)
+    C = RI@RI.transpose()
     
-        
-    # cov = []
-    
-    # return cov
+    if rout:
+        return R, RI
+    else:            
+        return C

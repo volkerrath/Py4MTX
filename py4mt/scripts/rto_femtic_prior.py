@@ -64,4 +64,4 @@ print(titstrng+"\n\n")
 ModelDir = PY4MTX_DATA+'Misti/test/'
 RoughFile = ModelDir + "roughening_matrix.out"
 
-ii, jj, val = fem.make_prior_cov(filerough=RoughFile , out=True)
+r, rtr = fem.make_prior_cov(filerough=RoughFile , out=True)
