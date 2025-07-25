@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
+'''
 
 Get prior model covariance for  randomize-then-optimize (RTO) algorithm:
 
@@ -27,7 +27,7 @@ Created on Thu Jul 24 10:25:11 2025
 
 @author: vrath
 
-"""
+'''
 import os
 import sys
 import shutil
@@ -36,10 +36,17 @@ import functools
 import inspect
 import time 
 
-PY4MTX_DATA = os.environ["PY4MTX_DATA"]
-PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
+import sklearn as skl
+from sklearn.covariance import empirical_covariance
+import scipy.sparse as scs
 
-mypath = [PY4MTX_ROOT+"/py4mt/modules/", PY4MTX_ROOT+"/py4mt/scripts/"]
+from os import environ
+
+
+PY4MTX_DATA = os.environ['PY4MTX_DATA']
+PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
+
+mypath = [PY4MTX_ROOT+'/py4mt/modules/', PY4MTX_ROOT+'/py4mt/scripts/']
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -49,12 +56,8 @@ import femtic as fem
 import util as utl
 from version import versionstrg
 
-import sklearn as skl
-from sklearn.covariance import empirical_covariance
 
-from os import environ
-
-N_THREADS = '16'
+N_THREADS = '32'
 environ['OMP_NUM_THREADS'] = N_THREADS
 environ['OPENBLAS_NUM_THREADS'] = N_THREADS
 environ['MKL_NUM_THREADS'] = N_THREADS
@@ -62,14 +65,15 @@ environ['VECLIB_MAXIMUM_THREADS'] = N_THREADS
 environ['NUMEXPR_NUM_THREADS'] = N_THREADS
 
 rng = np.random.default_rng()
-nan = np.nan  # float("NaN")
+nan = np.nan  # float('NaN')
 version, _ = versionstrg()
 fname = inspect.getfile(inspect.currentframe())
 
 titstrng = utl.print_title(version=version, fname=fname, out=False)
-print(titstrng+"\n\n")
+print(titstrng+'\n\n')
 
-ModelDir = PY4MTX_DATA+'Misti/MISTI_test/'
-RoughFile = ModelDir + "roughening_matrix.out"
+ModelDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
+RoughFile = ModelDir + 'roughening_matrix.out'
 
-r, rtr = fem.make_prior_cov(filerough=RoughFile , out=True)
+cov = fem.make_prior_cov(filerough=RoughFile , out=True)
+scs.save_npz(ModelDir +'covariance.npz', matrix=cov)
