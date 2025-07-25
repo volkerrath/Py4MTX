@@ -5,6 +5,9 @@ from sys import exit as error
 import shutil
 import copy
 import inspect
+import time
+from datetime import datetime
+
 
 import numpy as np
 import scipy
@@ -1070,8 +1073,10 @@ def make_prior_cov(filerough="roughening_matrix.out",
 
     '''
     from scipy.sparse import csr_array, identity
-    from scipy.sparse.linalg import inv
+    from scipy.sparse.linalg import inv, solve
+    import pypardiso
     
+    start = time.perf_counter()
     print('Reading from', filerough)
     irow = []
     icol = []
@@ -1081,7 +1086,9 @@ def make_prior_cov(filerough="roughening_matrix.out",
     
     numlines = int(content[0].split()[0])
     # print(numlines)
+    print(' File read:', time.perf_counter() - start,'s')
     
+    start = time.perf_counter()
     iline = 0
     while iline < len(content)-2:
         iline = iline + 1
@@ -1104,24 +1111,29 @@ def make_prior_cov(filerough="roughening_matrix.out",
     irow = np.asarray(irow)
     icol = np.asarray(icol)
     vals = np.asarray(vals)        
-    print(np.shape(irow), np.shape(icol), np.shape(vals) )
+    # print(np.shape(irow), np.shape(icol), np.shape(vals) )
     # d = np.array([3, 4, 5, 7, 2, 6])     # data
     # r = np.array([0, 0, 1, 1, 3, 3])     # rows
     # c = np.array([2, 4, 2, 3, 1, 2])     # cols
 
     R = csr_array((vals, (irow, icol))) 
+    print(' R generated:', time.perf_counter() - start,'s')
     print(R.shape, R.nnz)
     # RTR = R.transpose()@R + small*identity(R.shape[0])
     # print(RTR.shape, RTR.nnz)
     # + eye_array 
-    RI = inv(R)
+    
+    start = time.perf_counter()
+    RI = inv(R + small*identity(R.shape[0]))
+    print('R inverted:', time.perf_counter() - start,'s')
 
     Test = R@RI
     print(Test.shape, Test.nnz)
 
     # print(R.shape, R.nnz)
     C = RI@RI.transpose()
-    
+    print('C generated:', time.perf_counter() - start,'s')
+          
     if rout:
         return R, RI
     else:            
