@@ -1073,7 +1073,7 @@ def make_prior_cov(filerough="roughening_matrix.out",
 
     '''
     from scipy.sparse import csr_array, identity
-    from scipy.sparse.linalg import inv, solve
+    from scipy.sparse.linalg import inv, spsolve
     import pypardiso
     
     start = time.perf_counter()
@@ -1122,6 +1122,7 @@ def make_prior_cov(filerough="roughening_matrix.out",
     # RTR = R.transpose()@R + small*identity(R.shape[0])
     # print(RTR.shape, RTR.nnz)
     # + eye_array 
+    # x = pypardiso.spsolve(A, b)
     
     start = time.perf_counter()
     RI = inv(R + small*identity(R.shape[0]))
