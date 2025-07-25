@@ -34,7 +34,7 @@ import shutil
 import numpy as np
 import functools
 import inspect
-
+import time 
 
 PY4MTX_DATA = os.environ["PY4MTX_DATA"]
 PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
@@ -61,7 +61,7 @@ fname = inspect.getfile(inspect.currentframe())
 titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng+"\n\n")
 
-ModelDir = PY4MTX_DATA+'Misti/test/'
+ModelDir = PY4MTX_DATA+'Misti/MISTI_test/'
 RoughFile = ModelDir + "roughening_matrix.out"
 
 r, rtr = fem.make_prior_cov(filerough=RoughFile , out=True)
