@@ -36,11 +36,11 @@ import functools
 import inspect
 import time 
 
-import sklearn as skl
 import scipy.sparse as scs
 
-PY4MTX_DATA = os.os.environ['PY4MTX_DATA']
-PY4MTX_ROOT = os.os.environ['PY4MTX_ROOT']
+
+PY4MTX_DATA = os.environ['PY4MTX_DATA']
+PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
 
 mypath = [PY4MTX_ROOT+'/py4mt/modules/', PY4MTX_ROOT+'/py4mt/scripts/']
 for pth in mypath:
@@ -69,13 +69,16 @@ titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng+'\n\n')
 
 ModelDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
-
+RoughFile = ModelDir + 'roughening_matrix.out'
 RtR = False
-
 if RtR:
-    RoughFile = ModelDir +'RTR.npz'
+    RoughNew = ModelDir +'RTR.npz'
 else:
-    RoughFile = ModelDir +'R.npz'
+    RoughNew = ModelDir +'R.npz'
 
-R = scs.load_npz(RoughNew, matrix=r_out)
+r_out   = fem.get_roughness(filerough=RoughFile,
+                   small = 1.e-5,
+                   rtr = RtR,
+                   out=True)
 
+scs.save_npz(RoughNew, matrix=r_out)

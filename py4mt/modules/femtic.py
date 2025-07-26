@@ -1139,3 +1139,155 @@ def make_prior_cov(filerough="roughening_matrix.out",
         return R, RI
     else:            
         return C
+
+
+
+def get_roughness(filerough="roughening_matrix.out",
+                   small = 1.e-5,
+                   rtr = False,
+                   out=True):
+    '''
+    generate prior covariance for
+    ensenmble perturbations
+
+    Note: does not include air/sea/distortion parameters!
+
+    Parameters
+    ----------
+    filerough : string
+        name of femtic roughness file . The default is None.
+
+    Returns
+    -------
+    r or rtr : np.array
+
+    author: vrath,  created on Thu Jul 21, 2025
+
+    ResistivityBlock.cpp. l1778ff
+
+    RougheningMatrix.cpp/RougheningMatrix.cpp: 4
+     57: 24: void RougheningMatrix::setStructureAndAddValueByTripletFormat( const int row, const int col, const double val ){
+     58: 22: 	DoubleSparseMatrix::setStructureAndAddValueByTripletFormat( row, col, val );
+     80: 15: 				RTRMatrix.setStructureAndAddValueByTripletFormat(row, col, value);
+     86: 13: 		RTRMatrix.setStructureAndAddValueByTripletFormat(iCol, iCol, smallValueOnDiagonals);
+    RougheningMatrix.h/RougheningMatrix.h: 1
+     47: 15: 	virtual void setStructureAndAddValueByTripletFormat( const int row, const int col, const double val );
+    RougheningSquareMatrix.cpp/RougheningSquareMatrix.cpp: 4
+     58: 30: void RougheningSquareMatrix::setStructureAndAddValueByTripletFormat( const int row, const int col, const double val ){
+     59: 22: 	DoubleSparseMatrix::setStructureAndAddValueByTripletFormat( row, col, val );
+     81: 15: 				RTRMatrix.setStructureAndAddValueByTripletFormat(row, col, value);
+     87: 13: 		RTRMatrix.setStructureAndAddValueByTripletFormat(iRow, iRow, smallValueOnDiagonals);
+    RougheningSquareMatrix.h/RougheningSquareMatrix.h: 1
+     47: 15: 	virtual void setStructureAndAddValueByTripletFormat( const int row, const int col, const double val );
+
+
+    // *******************************************************************************************************
+    // Calculate roughning matrix from user-defined roughning factor
+    void ResistivityBlock::calcRougheningMatrixUserDefined( const double factor ){
+
+    	// Read user-defined roughening matrix
+    	const std::string fileName = "roughening_matrix.dat";
+    	std::ifstream ifs( fileName.c_str(), std::ios::in );
+
+    	if( ifs.fail() ){
+    		OutputFiles::m_logFile << "File open error : " << fileName.c_str() << " !!" << std::endl;
+    		exit(1);
+    	}
+
+    	OutputFiles::m_logFile << "# Read user-defined roughening matrix from " << fileName.c_str() << "." << std::endl;
+
+    	int ibuf(0);
+    	ifs >> ibuf;
+    	const int numBlock(ibuf);
+    	if( numBlock <= 0 ){
+    		OutputFiles::m_logFile << "Error : Total number of resistivity blocks must be positive !! : " << numBlock << std::endl;
+    		exit(1);
+    	}
+
+    	for( int iBlock = 0 ; iBlock < numBlock; ++iBlock ){
+    		ifs >> ibuf;
+    		if( iBlock != ibuf ){
+    			OutputFiles::m_logFile << "Error : Resistivity block numbers must be numbered consecutively from zero !!" << std::endl;
+    			exit(1);
+    		}
+
+    		ifs >> ibuf;
+    		const int numNonzeros(ibuf);
+    		std::vector< std::pair<int, double> > blockIDAndFactor;
+    		blockIDAndFactor.resize(numNonzeros);
+    		for( int innz = 0 ; innz < numNonzeros; ++innz ){
+    			ifs >> ibuf;
+    			blockIDAndFactor[innz].first = ibuf;
+    		}
+    		for( int innz = 0 ; innz < numNonzeros; ++innz ){
+    			double dbuf(0.0);
+    			ifs >> dbuf;
+    			blockIDAndFactor[innz].second = dbuf;
+    		}
+    		for( int innz = 0 ; innz < numNonzeros; ++innz ){
+    			m_rougheningMatrix.setStructureAndAddValueByTripletFormat( iBlock, blockIDAndFactor[innz].first, blockIDAndFactor[innz].second );
+    		}
+    	}
+
+    	ifs.close();
+
+    }
+
+    '''
+    from scipy.sparse import csr_array, identity
+
+    start = time.perf_counter()
+    print('Reading from', filerough)
+    irow = []
+    icol = []
+    vals  = []
+    with open(filerough, 'r') as file:
+        content = file.readlines()
+
+    numlines = int(content[0].split()[0])
+    # print(numlines)
+    print(' File read:', time.perf_counter() - start,'s')
+
+    start = time.perf_counter()
+    iline = 0
+    while iline < len(content)-2:
+        iline = iline + 1
+        # print(content[iline])
+        ele = int(content[iline].split()[0])
+        nel = int(content[iline+1].split()[0])
+        if nel == 0:
+            iline = iline + 1
+            print('passed', ele)
+            continue
+        else:
+            irow += [ele]*nel
+            col = [int(x) for x in content[iline+1].split()[1:]]
+            icol += col
+            val = [float(x) for x in content[iline+2].split()]
+            vals += val
+            iline = iline + 2
+
+
+    irow = np.asarray(irow)
+    icol = np.asarray(icol)
+    vals = np.asarray(vals)
+
+    R = csr_array((vals, (irow, icol)))
+    if small is not None:
+        R = R+small*identity(R.shape[0]))
+        if out:
+            print(small, 'added to diag(R)')
+
+    print('R generated:', time.perf_counter() - start,'s')
+    if out:
+        print(R.shape, R.nnz)
+
+    if rtr:
+        if out:
+            print('Returning RTR.')
+        RTR = R.transpose()@R
+        return RTR
+    else:
+        if out:
+            print('Returning R.')
+
