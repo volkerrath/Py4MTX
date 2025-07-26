@@ -1133,7 +1133,8 @@ def get_roughness(filerough='roughening_matrix.out',
 
 def make_prior_cov(rough=None,
                    small = 1.e-5,
-                   rout = False,
+                   ntrunc= 300,
+                   rtr = False,
                    out=True):
     '''
     generate prior covariance for
@@ -1145,6 +1146,12 @@ def make_prior_cov(rough=None,
     ----------
     rough : sparse array
         name of femtic roughness. The default is None.
+    rtr : logical
+        decides on type of roughness, r, or rtr.
+    small : float
+        small value to stabilize. The default is 1.e-5
+    ntrunc : int
+        truncation for randomized SVD calculation.
 
     Returns
     -------
@@ -1158,6 +1165,9 @@ def make_prior_cov(rough=None,
     from scipy.sparse import csr_array, identity
     from scipy.sparse.linalg import inv, spsolve
     import pypardiso
+
+    if rough is None:
+        sys.exit('No roughness matrix given! Exit.')
 
     start = time.perf_counter()
     RI = inv(R + small*identity(R.shape[0]))
