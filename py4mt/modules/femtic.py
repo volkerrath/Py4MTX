@@ -129,9 +129,9 @@ def modify_data(template_file='observe.dat',
           start_lines_datablock.append(number)
           print(' data block', l[0], 'with',
                 l[1], 'sites begins at line', number)
-        if "END" in l:
+        if 'END' in l:
             start_lines_datablock.append(number-1)
-            print(" no further data block in file")
+            print(' no further data block in file')
     '''  
      loop over  data blocks
      
@@ -156,9 +156,9 @@ def modify_data(template_file='observe.dat',
               start_lines_site.append(number)
               num_freqs.append(int(data_block[number+1].split()[0]))          
               print('  site', l[0],'begins at line', number)
-            if "END" in l:
+            if 'END' in l:
                  start_lines_datablock.append(number-1)
-                 print(" no further site block in file")
+                 print(' no further site block in file')
         print('\n')   
         # print(start_lines_site)
         # print(num_freqs)
@@ -218,7 +218,7 @@ def modify_data(template_file='observe.dat',
                     print(f)
                     print( site_block[f+2])
                     print( obs[f])
-                    site_block[f+2] = "    ".join([f"{x:.8E}" for x in obs[f]])+'\n'
+                    site_block[f+2] = '    '.join([f'{x:.8E}' for x in obs[f]])+'\n'
                     print( site_block[f+2])     
 
             elif 'VTF' in obs_type:
@@ -268,7 +268,7 @@ def modify_data(template_file='observe.dat',
                     print(f)
                     print( site_block[f+2])
                     print( obs[f])
-                    site_block[f+2] = "    ".join([f"{x:.8E}" for x in obs[f]])+'\n'
+                    site_block[f+2] = '    '.join([f'{x:.8E}' for x in obs[f]])+'\n'
                     print( site_block[f+2])
                     
             elif 'PT' in obs_type:
@@ -318,7 +318,7 @@ def modify_data(template_file='observe.dat',
                     print(f)
                     print( site_block[f+2])
                     print( obs[f])
-                    site_block[f+2] = "    ".join([f"{x:.8E}" for x in obs[f]])+'\n'
+                    site_block[f+2] = '    '.join([f'{x:.8E}' for x in obs[f]])+'\n'
                     print( site_block[f+2])
             else:
                 
@@ -484,7 +484,7 @@ def read_model(model_file=None,  model_trans='log10',  out=True):
 def insert_model(template_file='resistivity_block_iter0.dat',
                   data=None,
                   data_file=None,
-                  data_name= "",
+                  data_name= '',
                   out=True):
     '''
     Created on Thu Apr 17 17:13:38 2025
@@ -495,15 +495,15 @@ def insert_model(template_file='resistivity_block_iter0.dat',
     # rng = np.random.default_rng()
     
     if data is None:
-        error("No data given! Exit.")
+        error('No data given! Exit.')
         
     if data_file is None:
-        error("No data file given! Exit.")
+        error('No data file given! Exit.')
         
     if template_file is None:
         template_file = 'resistivity_block_iter0.dat'
         
-    data_file = template_file.replace(".dat", data_name+".dat")
+    data_file = template_file.replace('.dat', data_name+'.dat')
 
     with open(template_file, 'r') as file:
         content = file.readlines()
@@ -588,9 +588,9 @@ def modify_data_fcn(template_file='observe.dat',
           start_lines_datablock.append(number)
           print(' data block', l[0], 'with',
                 l[1], 'sites begins at line', number)
-        if "END" in l:
+        if 'END' in l:
             start_lines_datablock.append(number-1)
-            print(" no further data block in file")
+            print(' no further data block in file')
     '''  
      loop over  data blocks
      
@@ -615,9 +615,9 @@ def modify_data_fcn(template_file='observe.dat',
               start_lines_site.append(number)
               num_freqs.append(int(data_block[number+1].split()[0]))          
               print('  site', l[0],'begins at line', number)
-            if "END" in l:
+            if 'END' in l:
                  start_lines_datablock.append(number-1)
-                 print(" no further site block in file")
+                 print(' no further site block in file')
         print('\n')   
         # print(start_lines_site)
         # print(num_freqs)
@@ -666,7 +666,7 @@ def modify_data_fcn(template_file='observe.dat',
                     print(f)
                     print( site_block[f+2])
                     print( obs[f])
-                    site_block[f+2] = "    ".join([f"{x:.8E}" for x in obs[f]])
+                    site_block[f+2] = '    '.join([f'{x:.8E}' for x in obs[f]])
                     print( site_block[f+2])     
 
             elif 'VTF' in obs_type:
@@ -704,7 +704,7 @@ def modify_data_fcn(template_file='observe.dat',
                     print(f)
                     print( site_block[f+2])
                     print( obs[f])
-                    site_block[f+2] = "    ".join([f"{x:.8E}" for x in obs[f]])
+                    site_block[f+2] = '    '.join([f'{x:.8E}' for x in obs[f]])
                     print( site_block[f+2])
             else:
                 
@@ -959,18 +959,18 @@ def get_femtic_data(data_file=None, site_file=None, data_type='rhophas', out=Tru
 
 
 def centroid_tetrahedron(nodes=None):
-    """
+    '''
     Created on Thu Jul 17 08:36:04 2025
     
     @author: vrath
-    """
+    '''
 
     
     if nodes is None:
-        sys.exit("Nodes not set! Exit.")
+        sys.exit('Nodes not set! Exit.')
     
     if np.shape(nodes) != [3,4]:
-      sys.exit("Nodes shape is not (3,4)! Exit.")  
+      sys.exit('Nodes shape is not (3,4)! Exit.')
     
     # nodes = np.nan*np.zeros((3,4))
     
@@ -980,169 +980,8 @@ def centroid_tetrahedron(nodes=None):
     return centre
 
 
-def make_prior_cov(filerough="roughening_matrix.out", 
-                   small = 1.e-5,
-                   rout = False,
-                   out=True):
-    '''
-    generate prior covariance for 
-    ensenmble perturbations
-    
-    Note: does not include air/sea/distortion parameters!
 
-    Parameters
-    ----------
-    filerough : string
-        name of femtic roughness file . The default is None.
-
-    Returns
-    -------
-    cov : np.array
-        
-    author: vrath,  created on Thu Jul 21, 2025
-    
-    ResistivityBlock.cpp. l1778ff
-
-    RougheningMatrix.cpp/RougheningMatrix.cpp: 4
-     57: 24: void RougheningMatrix::setStructureAndAddValueByTripletFormat( const int row, const int col, const double val ){
-     58: 22: 	DoubleSparseMatrix::setStructureAndAddValueByTripletFormat( row, col, val );
-     80: 15: 				RTRMatrix.setStructureAndAddValueByTripletFormat(row, col, value);
-     86: 13: 		RTRMatrix.setStructureAndAddValueByTripletFormat(iCol, iCol, smallValueOnDiagonals);
-    RougheningMatrix.h/RougheningMatrix.h: 1
-     47: 15: 	virtual void setStructureAndAddValueByTripletFormat( const int row, const int col, const double val );
-    RougheningSquareMatrix.cpp/RougheningSquareMatrix.cpp: 4
-     58: 30: void RougheningSquareMatrix::setStructureAndAddValueByTripletFormat( const int row, const int col, const double val ){
-     59: 22: 	DoubleSparseMatrix::setStructureAndAddValueByTripletFormat( row, col, val );
-     81: 15: 				RTRMatrix.setStructureAndAddValueByTripletFormat(row, col, value);
-     87: 13: 		RTRMatrix.setStructureAndAddValueByTripletFormat(iRow, iRow, smallValueOnDiagonals);
-    RougheningSquareMatrix.h/RougheningSquareMatrix.h: 1
-     47: 15: 	virtual void setStructureAndAddValueByTripletFormat( const int row, const int col, const double val );
-
-    
-    // *******************************************************************************************************
-    // Calculate roughning matrix from user-defined roughning factor
-    void ResistivityBlock::calcRougheningMatrixUserDefined( const double factor ){
-    
-    	// Read user-defined roughening matrix
-    	const std::string fileName = "roughening_matrix.dat";
-    	std::ifstream ifs( fileName.c_str(), std::ios::in );
-    
-    	if( ifs.fail() ){
-    		OutputFiles::m_logFile << "File open error : " << fileName.c_str() << " !!" << std::endl;
-    		exit(1);
-    	}
-    
-    	OutputFiles::m_logFile << "# Read user-defined roughening matrix from " << fileName.c_str() << "." << std::endl;
-    
-    	int ibuf(0);
-    	ifs >> ibuf;
-    	const int numBlock(ibuf);
-    	if( numBlock <= 0 ){
-    		OutputFiles::m_logFile << "Error : Total number of resistivity blocks must be positive !! : " << numBlock << std::endl;
-    		exit(1);
-    	}
-    
-    	for( int iBlock = 0 ; iBlock < numBlock; ++iBlock ){
-    		ifs >> ibuf;
-    		if( iBlock != ibuf ){
-    			OutputFiles::m_logFile << "Error : Resistivity block numbers must be numbered consecutively from zero !!" << std::endl;
-    			exit(1);
-    		}
-    
-    		ifs >> ibuf;
-    		const int numNonzeros(ibuf);
-    		std::vector< std::pair<int, double> > blockIDAndFactor;
-    		blockIDAndFactor.resize(numNonzeros);
-    		for( int innz = 0 ; innz < numNonzeros; ++innz ){
-    			ifs >> ibuf;
-    			blockIDAndFactor[innz].first = ibuf;
-    		}
-    		for( int innz = 0 ; innz < numNonzeros; ++innz ){
-    			double dbuf(0.0);
-    			ifs >> dbuf;
-    			blockIDAndFactor[innz].second = dbuf;
-    		}
-    		for( int innz = 0 ; innz < numNonzeros; ++innz ){
-    			m_rougheningMatrix.setStructureAndAddValueByTripletFormat( iBlock, blockIDAndFactor[innz].first, blockIDAndFactor[innz].second );
-    		}
-    	}
-    
-    	ifs.close();
-    
-    }
-
-    '''
-    from scipy.sparse import csr_array, identity
-    from scipy.sparse.linalg import inv, spsolve
-    import pypardiso
-    
-    start = time.perf_counter()
-    print('Reading from', filerough)
-    irow = []
-    icol = []
-    vals  = []
-    with open(filerough, 'r') as file:
-        content = file.readlines()
-    
-    numlines = int(content[0].split()[0])
-    # print(numlines)
-    print(' File read:', time.perf_counter() - start,'s')
-    
-    start = time.perf_counter()
-    iline = 0
-    while iline < len(content)-2:
-        iline = iline + 1
-        # print(content[iline])
-        ele = int(content[iline].split()[0])
-        nel = int(content[iline+1].split()[0])
-        if nel == 0:
-            iline = iline + 1
-            print('passed', ele)
-            continue
-        else:
-            irow += [ele]*nel
-            col = [int(x) for x in content[iline+1].split()[1:]]
-            icol += col
-            val = [float(x) for x in content[iline+2].split()]
-            vals += val
-            iline = iline + 2
-                
-            
-    irow = np.asarray(irow)
-    icol = np.asarray(icol)
-    vals = np.asarray(vals)        
-    # print(np.shape(irow), np.shape(icol), np.shape(vals) )
-    # d = np.array([3, 4, 5, 7, 2, 6])     # data
-    # r = np.array([0, 0, 1, 1, 3, 3])     # rows
-    # c = np.array([2, 4, 2, 3, 1, 2])     # cols
-
-    R = csr_array((vals, (irow, icol))) 
-    print(' R generated:', time.perf_counter() - start,'s')
-    print(R.shape, R.nnz)
-    # RTR = R.transpose()@R + small*identity(R.shape[0])
-    # print(RTR.shape, RTR.nnz)
-    # + eye_array 
-    # x = pypardiso.spsolve(A, b)
-    
-    start = time.perf_counter()
-    RI = inv(R + small*identity(R.shape[0]))
-    print('R inverted:', time.perf_counter() - start,'s')
-
-    Test = R@RI
-    print(Test.shape, Test.nnz)
-
-    # print(R.shape, R.nnz)
-    C = RI@RI.transpose()
-    print('C generated:', time.perf_counter() - start,'s')
-          
-    if rout:
-        return R, RI
-    else:            
-        return C
-
-
-
-def get_roughness(filerough="roughening_matrix.out",
+def get_roughness(filerough='roughening_matrix.out',
                    small = 1.e-5,
                    rtr = False,
                    out=True):
@@ -1186,28 +1025,28 @@ def get_roughness(filerough="roughening_matrix.out",
     void ResistivityBlock::calcRougheningMatrixUserDefined( const double factor ){
 
     	// Read user-defined roughening matrix
-    	const std::string fileName = "roughening_matrix.dat";
+    	const std::string fileName = 'roughening_matrix.dat';
     	std::ifstream ifs( fileName.c_str(), std::ios::in );
 
     	if( ifs.fail() ){
-    		OutputFiles::m_logFile << "File open error : " << fileName.c_str() << " !!" << std::endl;
+    		OutputFiles::m_logFile << 'File open error : ' << fileName.c_str() << ' !!' << std::endl;
     		exit(1);
     	}
 
-    	OutputFiles::m_logFile << "# Read user-defined roughening matrix from " << fileName.c_str() << "." << std::endl;
+    	OutputFiles::m_logFile << '# Read user-defined roughening matrix from ' << fileName.c_str() << '.' << std::endl;
 
     	int ibuf(0);
     	ifs >> ibuf;
     	const int numBlock(ibuf);
     	if( numBlock <= 0 ){
-    		OutputFiles::m_logFile << "Error : Total number of resistivity blocks must be positive !! : " << numBlock << std::endl;
+    		OutputFiles::m_logFile << 'Error : Total number of resistivity blocks must be positive !! : ' << numBlock << std::endl;
     		exit(1);
     	}
 
     	for( int iBlock = 0 ; iBlock < numBlock; ++iBlock ){
     		ifs >> ibuf;
     		if( iBlock != ibuf ){
-    			OutputFiles::m_logFile << "Error : Resistivity block numbers must be numbered consecutively from zero !!" << std::endl;
+    			OutputFiles::m_logFile << 'Error : Resistivity block numbers must be numbered consecutively from zero !!' << std::endl;
     			exit(1);
     		}
 
@@ -1290,4 +1129,50 @@ def get_roughness(filerough="roughening_matrix.out",
     else:
         if out:
             print('Returning R.')
+
+
+def make_prior_cov(rough=None,
+                   small = 1.e-5,
+                   rout = False,
+                   out=True):
+    '''
+    generate prior covariance for
+    ensenmble perturbations
+
+    Note: does not include air/sea/distortion parameters!
+
+    Parameters
+    ----------
+    rough : sparse array
+        name of femtic roughness. The default is None.
+
+    Returns
+    -------
+    cov : sparse array
+        femtic covariance
+
+    author: vrath,  created on Thu Jul 26, 2025
+
+
+    '''
+    from scipy.sparse import csr_array, identity
+    from scipy.sparse.linalg import inv, spsolve
+    import pypardiso
+
+    start = time.perf_counter()
+    RI = inv(R + small*identity(R.shape[0]))
+    print('R inverted:', time.perf_counter() - start,'s')
+
+    Test = R@RI - identity(R.shape[0])
+    print(Test.shape, Test.nnz)
+
+    # print(R.shape, R.nnz)
+    C = RI@RI.transpose()
+
+    print('C generated:', time.perf_counter() - start,'s')
+
+    if rout:
+        return R, RI
+    else:
+        return C
 
