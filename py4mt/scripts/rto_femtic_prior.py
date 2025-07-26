@@ -79,3 +79,9 @@ else:
 
 R = scs.load_npz(RoughNew, matrix=r_out)
 
+C = fem.make_prior_cov(rough=R,
+                   small = 1.e-5,
+                   rtr = RtR,
+                   out=True)
+
+
