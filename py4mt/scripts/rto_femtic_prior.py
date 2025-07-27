@@ -39,6 +39,7 @@ import time
 import sklearn as skl
 import scipy.sparse as scs
 
+
 PY4MTX_DATA = os.os.environ['PY4MTX_DATA']
 PY4MTX_ROOT = os.os.environ['PY4MTX_ROOT']
 
@@ -72,16 +73,21 @@ ModelDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
 
 RtR = False
 
+
 if RtR:
     RoughFile = ModelDir +'RTR.npz'
 else:
     RoughFile = ModelDir +'R.npz'
 
-R = scs.load_npz(RoughNew, matrix=r_out)
+RoughNew =  ModelDir +'Ri.npz'
 
-C = fem.make_prior_cov(rough=R,
+R = scs.load_npz(RoughNew, matrix=r_out)
+print('R sparse format is', R.getformat())
+
+R_inv = fem.make_prior_cov(rough=R,
                    small = 1.e-5,
                    rtr = RtR,
                    out=True)
 
 
+scs.save_npz(RoughNew, matrix=R_inv)

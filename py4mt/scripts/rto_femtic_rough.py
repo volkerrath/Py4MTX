@@ -76,9 +76,13 @@ if RtR:
 else:
     RoughNew = ModelDir +'R.npz'
 
-r_out   = fem.get_roughness(filerough=RoughFile,
+SparseFormat = 'csr'
+
+R   = fem.get_roughness(filerough=RoughFile,
                    small = 1.e-5,
+                   spformat = SparseFormat,
                    rtr = RtR,
                    out=True)
+print('R sparse format is', R.getformat())
 
-scs.save_npz(RoughNew, matrix=r_out)
+scs.save_npz(RoughNew, matrix=R)

@@ -983,6 +983,7 @@ def centroid_tetrahedron(nodes=None):
 
 def get_roughness(filerough='roughening_matrix.out',
                    small = 1.e-5,
+                   spformat = 'csc',
                    rtr = False,
                    out=True):
     '''
@@ -1110,8 +1111,10 @@ def get_roughness(filerough='roughening_matrix.out',
     irow = np.asarray(irow)
     icol = np.asarray(icol)
     vals = np.asarray(vals)
-
-    R = csr_array((vals, (irow, icol)))
+    if spformat = 'csc':
+        R = csc_array((vals, (irow, icol)))
+    else:
+        R = csr_array((vals, (irow, icol)))
     if small is not None:
         R = R+small*identity(R.shape[0]))
         if out:
@@ -1133,6 +1136,7 @@ def get_roughness(filerough='roughening_matrix.out',
 
 def make_prior_cov(rough=None,
                    small = 1.e-5,
+                   spformat = 'csc',
                    ntrunc= 300,
                    rtr = False,
                    out=True):
@@ -1162,27 +1166,45 @@ def make_prior_cov(rough=None,
 
 
     '''
-    from scipy.sparse import csr_array, identity
-    from scipy.sparse.linalg import inv, spsolve
-    import pypardiso
+    from scipy.sparse import csr_array, csc_array, identity
+    from scipy.sparse.linalg import inv, spsolve, factorized
+    #import sklearn
+    #import pypardiso
 
     if rough is None:
         sys.exit('No roughness matrix given! Exit.')
 
+
     start = time.perf_counter()
-    RI = inv(R + small*identity(R.shape[0]))
-    print('R inverted:', time.perf_counter() - start,'s')
 
-    Test = R@RI - identity(R.shape[0])
-    print(Test.shape, Test.nnz)
+    if rough.getformat() != csc:
+        R = csc_array(rough)
+    else:
+        R = rough
 
-    # print(R.shape, R.nnz)
-    C = RI@RI.transpose()
+    I =  identity(R.shape[0])
+
+    LUsolve = factorized(R)
+
+    C = LUsolve(I)
 
     print('C generated:', time.perf_counter() - start,'s')
 
-    if rout:
-        return R, RI
-    else:
-        return C
+
+
+
+    #start = time.perf_counter()
+    #RI = inv(R + small*identity(R.shape[0]))
+    #print('R inverted:', time.perf_counter() - start,'s')
+
+    #Test = R@RI - identity(R.shape[0])
+    #print(Test.shape, Test.nnz)
+
+    ## print(R.shape, R.nnz)
+    #C = RI@RI.transpose()
+
+    #print('C generated:', time.perf_counter() - start,'s')
+
+    return C
+
 
