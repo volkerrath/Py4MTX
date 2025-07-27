@@ -54,7 +54,7 @@ import util as utl
 from version import versionstrg
 
 
-N_THREADS = '32'
+N_THREADS = '16'
 os.environ['OMP_NUM_THREADS'] = N_THREADS
 os.environ['OPENBLAS_NUM_THREADS'] = N_THREADS
 os.environ['MKL_NUM_THREADS'] = N_THREADS
