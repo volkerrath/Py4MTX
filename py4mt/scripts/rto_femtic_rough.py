@@ -39,8 +39,8 @@ import time
 import scipy.sparse as scs
 
 
-PY4MTX_DATA = os.os.environ['PY4MTX_DATA']
-PY4MTX_ROOT = os.os.environ['PY4MTX_ROOT']
+PY4MTX_DATA = os.environ['PY4MTX_DATA']
+PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
 
 mypath = [PY4MTX_ROOT+'/py4mt/modules/', PY4MTX_ROOT+'/py4mt/scripts/']
 for pth in mypath:
@@ -54,11 +54,11 @@ from version import versionstrg
 
 
 N_THREADS = '32'
-os.os.environ['OMP_NUM_THREADS'] = N_THREADS
-os.os.environ['OPENBLAS_NUM_THREADS'] = N_THREADS
-os.os.environ['MKL_NUM_THREADS'] = N_THREADS
-#os.os.environ['VECLIB_MAXIMUM_THREADS'] = N_THREADS
-#os.os.environ['NUMEXPR_NUM_THREADS'] = N_THREADS
+os.environ['OMP_NUM_THREADS'] = N_THREADS
+os.environ['OPENBLAS_NUM_THREADS'] = N_THREADS
+os.environ['MKL_NUM_THREADS'] = N_THREADS
+#os.environ['VECLIB_MAXIMUM_THREADS'] = N_THREADS
+#os.environ['NUMEXPR_NUM_THREADS'] = N_THREADS
 
 rng = np.random.default_rng()
 nan = np.nan  # float('NaN')
@@ -83,6 +83,7 @@ R   = fem.get_roughness(filerough=RoughFile,
                    spformat = SparseFormat,
                    rtr = RtR,
                    out=True)
-print('R sparse format is', R.getformat())
+
+print('R sparse format is', R.format)
 
 scs.save_npz(RoughNew, matrix=R)

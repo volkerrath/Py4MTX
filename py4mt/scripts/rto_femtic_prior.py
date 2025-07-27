@@ -40,8 +40,8 @@ import sklearn as skl
 import scipy.sparse as scs
 
 
-PY4MTX_DATA = os.os.environ['PY4MTX_DATA']
-PY4MTX_ROOT = os.os.environ['PY4MTX_ROOT']
+PY4MTX_DATA = os.environ['PY4MTX_DATA']
+PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
 
 mypath = [PY4MTX_ROOT+'/py4mt/modules/', PY4MTX_ROOT+'/py4mt/scripts/']
 for pth in mypath:
@@ -82,7 +82,7 @@ else:
 RoughNew =  ModelDir +'Ri.npz'
 
 R = scs.load_npz(RoughNew, matrix=r_out)
-print('R sparse format is', R.getformat())
+print('R sparse format is', R.format)
 
 R_inv = fem.make_prior_cov(rough=R,
                    small = 1.e-5,
