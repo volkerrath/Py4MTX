@@ -1169,10 +1169,12 @@ def make_prior_cov(rough=None,
 
 
     '''
-    from scipy.sparse import csr_array, csc_array, identity
+    from scipy.sparse import csr_array, csc_array, eye_array
     from scipy.sparse.linalg import inv, spsolve, factorized
     #import sklearn
     #import pypardiso
+
+    nout = 1000
 
     if rough is None:
         sys.exit('No roughness matrix given! Exit.')
@@ -1185,22 +1187,33 @@ def make_prior_cov(rough=None,
     else:
         R = rough
 
+    n = R.shape[0]
 
-    I =  identity(R.shape[0])
+    #I = eye_array(R.shape[0])
+    invR = np.zeros((n, n))
 
     LUsolve = factorized(R)
 
-    for k in np.arange(R.shape[0]):
-        if np.mod(k,10)==0 and out:
-            print(k, 'lines')
-        vtmp = LUsolve(I[:,k])
-        if k == 0:
-            Ri = vtmp
-        else:
-            Ri = np.vstack((Ri, vtmp))
+    for k in np.arange(n):
+
+        if np.mod(k,nout)==0 and out:
+            print(k, 'lines:', time.perf_counter() - start,'s')
+
+        rhs = np.zeros(n)
+        rhs[k] = 1.
+
+        invR[k,:] = LUsolve(rhs)
+
+
+        #if k == 0:
+            #invR = vtmp
+        #else:
+            ##invR = np.vstack((invR, vtmp))
+            #invR = np.concatenate(((invR, vtmp),axis=0)
+        # print(np.shape(invR))
 
     print('invR generated:', time.perf_counter() - start,'s')
-    print(Ri.shape, Ri.nnz)
+    print(invR.shape, invR.nnz)
 
 
 
@@ -1216,6 +1229,6 @@ def make_prior_cov(rough=None,
 
     #print('C generated:', time.perf_counter() - start,'s')
 
-    return Ri
+    return invR
 
 
