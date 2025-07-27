@@ -1074,7 +1074,7 @@ def get_roughness(filerough='roughening_matrix.out',
     }
 
     '''
-    from scipy.sparse import csr_array, identity
+    from scipy.sparse import csr_array, csc_array, identity
 
     start = time.perf_counter()
     print('Reading from', filerough)
@@ -1111,17 +1111,20 @@ def get_roughness(filerough='roughening_matrix.out',
     irow = np.asarray(irow)
     icol = np.asarray(icol)
     vals = np.asarray(vals)
-    if spformat = 'csc':
+
+    if 'csc' in spformat.lower():
         R = csc_array((vals, (irow, icol)))
     else:
         R = csr_array((vals, (irow, icol)))
+
     if small is not None:
-        R = R+small*identity(R.shape[0]))
+        R = R+small*identity(R.shape[0])
         if out:
             print(small, 'added to diag(R)')
 
     print('R generated:', time.perf_counter() - start,'s')
     if out:
+        print('R sparse format is', R.format)
         print(R.shape, R.nnz)
 
     if rtr:
@@ -1132,7 +1135,7 @@ def get_roughness(filerough='roughening_matrix.out',
     else:
         if out:
             print('Returning R.')
-
+        return R
 
 def make_prior_cov(rough=None,
                    small = 1.e-5,
@@ -1177,7 +1180,7 @@ def make_prior_cov(rough=None,
 
     start = time.perf_counter()
 
-    if rough.getformat() != csc:
+    if rough.getformat() != 'csc':
         R = csc_array(rough)
     else:
         R = rough
@@ -1186,7 +1189,7 @@ def make_prior_cov(rough=None,
 
     LUsolve = factorized(R)
 
-    C = LUsolve(I)
+    Ri = LUsolve(I)
 
     print('C generated:', time.perf_counter() - start,'s')
 
@@ -1205,6 +1208,6 @@ def make_prior_cov(rough=None,
 
     #print('C generated:', time.perf_counter() - start,'s')
 
-    return C
+    return Ri
 
 
