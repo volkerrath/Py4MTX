@@ -1180,19 +1180,27 @@ def make_prior_cov(rough=None,
 
     start = time.perf_counter()
 
-    if rough.getformat() != 'csc':
+    if rough.format != 'csc':
         R = csc_array(rough)
     else:
         R = rough
+
 
     I =  identity(R.shape[0])
 
     LUsolve = factorized(R)
 
-    Ri = LUsolve(I)
+    for k in np.arange(R.shape[0]):
+        if np.mod(k,10)==0 and out:
+            print(k, 'lines')
+        vtmp = LUsolve(I[:,k])
+        if k == 0:
+            Ri = vtmp
+        else:
+            Ri = np.vstack((Ri, vtmp))
 
-    print('C generated:', time.perf_counter() - start,'s')
-
+    print('invR generated:', time.perf_counter() - start,'s')
+    print(Ri.shape, Ri.nnz)
 
 
 

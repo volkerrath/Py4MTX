@@ -81,7 +81,8 @@ else:
 
 RoughNew =  ModelDir +'Ri.npz'
 
-R = scs.load_npz(RoughNew, matrix=r_out)
+R = scs.load_npz(RoughFile)
+print(type(R))
 print('R sparse format is', R.format)
 
 R_inv = fem.make_prior_cov(rough=R,
@@ -89,5 +90,6 @@ R_inv = fem.make_prior_cov(rough=R,
                    rtr = RtR,
                    out=True)
 
+print('invR sparse format is', R_inv.format)
 
 scs.save_npz(RoughNew, matrix=R_inv)
