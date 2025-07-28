@@ -322,7 +322,7 @@ def modify_data(template_file='observe.dat',
                     print( site_block[f+2])
             else:
                 
-                error(obs_type+' not yet implemented! Exit.')
+                sys.exit('modify_data:'+obs_type+' not yet implemented! Exit.')
 
             data_block[start_site:end_site] = site_block
             
@@ -495,10 +495,10 @@ def insert_model(template_file='resistivity_block_iter0.dat',
     # rng = np.random.default_rng()
     
     if data is None:
-        error('No data given! Exit.')
+        sys.exit('insert_model: No data given! Exit.')
         
     if data_file is None:
-        error('No data file given! Exit.')
+        sys.exit('insert_model: No data file given! Exit.')
         
     if template_file is None:
         template_file = 'resistivity_block_iter0.dat'
@@ -708,7 +708,7 @@ def modify_data_fcn(template_file='observe.dat',
                     print( site_block[f+2])
             else:
                 
-                error(obs_type+' not yet implemented! Exit.')
+                sys.exit('modify_data: '+obs_type+' not yet implemented! Exit.')
 
             data_block[start_site:end_site] = site_block
             
@@ -946,7 +946,7 @@ def get_femtic_data(data_file=None, site_file=None, data_type='rhophas', out=Tru
         ])
 
     else:
-        error('get_femtic_data: data type '+data_type.lower()+' not implemented! Exit.')
+        sys.exit('get_femtic_data: data type '+data_type.lower()+' not implemented! Exit.')
 
     data_dict = {**head_dict, **type_dict}
 
@@ -967,10 +967,10 @@ def centroid_tetrahedron(nodes=None):
 
     
     if nodes is None:
-        sys.exit('Nodes not set! Exit.')
+        sys.exit('centroid: Nodes not set! Exit.')
     
     if np.shape(nodes) != [3,4]:
-      sys.exit('Nodes shape is not (3,4)! Exit.')
+      sys.exit('centroid: Nodes shape is not (3,4)! Exit.')
     
     # nodes = np.nan*np.zeros((3,4))
     
@@ -1240,4 +1240,24 @@ def make_prior_cov(rough=None,
 
     return invR
 
+def sparsify(matrix=None,
+             spformat= 'csr',
+             thresh=1.e-6):
 
+
+from scipy.sparse import csr_array, csc_array, csc_array
+
+    if matrix is None:
+        sys.exit('sparsify: no matrix given! Exit.')
+
+    mmax = np.amax(matrix)
+    matrix[np.abs(matrix)<thresh]= 0.
+
+    if 'csr' in spformat.lower():
+        matrix = csr_array(matrix)
+    if 'csc' in spformat.lower():
+        matrix = csc_array(matrix)
+    if 'coo' in spformat.lower():
+        matrix = coo_array(matrix)
+
+    return matrix
