@@ -984,7 +984,7 @@ def centroid_tetrahedron(nodes=None):
 def get_roughness(filerough='roughening_matrix.out',
                    small = 1.e-5,
                    spformat = 'csc',
-                   rtr = False,
+                   rtype = 0,
                    out=True):
     '''
     generate prior covariance for
@@ -999,7 +999,7 @@ def get_roughness(filerough='roughening_matrix.out',
 
     Returns
     -------
-    r or rtr : np.array
+    r,rt, or rtr : np.array
 
     author: vrath,  created on Thu Jul 21, 2025
 
@@ -1036,7 +1036,7 @@ def get_roughness(filerough='roughening_matrix.out',
 
     	OutputFiles::m_logFile << '# Read user-defined roughening matrix from ' << fileName.c_str() << '.' << std::endl;
 
-    	int ibuf(0);
+    	int ibuf(0);RoughType
     	ifs >> ibuf;
     	const int numBlock(ibuf);
     	if( numBlock <= 0 ){
@@ -1074,7 +1074,7 @@ def get_roughness(filerough='roughening_matrix.out',
     }
 
     '''
-    from scipy.sparse import csr_array, csc_array, identity
+    from scipy.sparse import csr_array, csc_array, eye_array
 
     start = time.perf_counter()
     print('Reading from', filerough)
@@ -1118,7 +1118,7 @@ def get_roughness(filerough='roughening_matrix.out',
         R = csr_array((vals, (irow, icol)))
 
     if small is not None:
-        R = R+small*identity(R.shape[0])
+        R = R+small*eye_array(R.shape[0])
         if out:
             print(small, 'added to diag(R)')
 
@@ -1127,11 +1127,20 @@ def get_roughness(filerough='roughening_matrix.out',
         print('R sparse format is', R.format)
         print(R.shape, R.nnz)
 
-    if rtr:
+
+    if rtype==0:
+        if out:
+            print('Returning R.')
+        return R
+    elif rtype==1:
+        if out:
+            print('Returning RT.')
+        return R
+    elif rtype==2:
         if out:
             print('Returning RTR.')
-        RTR = R.transpose()@R
-        return RTR
+        #RTR = R.transpose()@R
+        return R
     else:
         if out:
             print('Returning R.')
@@ -1141,7 +1150,8 @@ def make_prior_cov(rough=None,
                    small = 1.e-5,
                    spformat = 'csc',
                    ntrunc= 300,
-                   rtr = False,
+                   ilu = False,
+                   rtype = 0,
                    out=True):
     '''
     generate prior covariance for
@@ -1153,8 +1163,9 @@ def make_prior_cov(rough=None,
     ----------
     rough : sparse array
         name of femtic roughness. The default is None.
-    rtr : logical
-        decides on type of roughness, r, or rtr.
+    rtype : integer
+        decides on type of roughness, r, rt, or rtr.
+        DEfault is 0.
     small : float
         small value to stabilize. The default is 1.e-5
     ntrunc : int
@@ -1170,9 +1181,7 @@ def make_prior_cov(rough=None,
 
     '''
     from scipy.sparse import csr_array, csc_array, eye_array
-    from scipy.sparse.linalg import inv, spsolve, factorized
-    #import sklearn
-    #import pypardiso
+    from scipy.sparse.linalg import inv, spsolve, factorized, splu,spilu
 
     nout = 1000
 
@@ -1213,7 +1222,7 @@ def make_prior_cov(rough=None,
         # print(np.shape(invR))
 
     print('invR generated:', time.perf_counter() - start,'s')
-    print(invR.shape, invR.nnz)
+    #print(invR.shape)
 
 
 

@@ -70,21 +70,27 @@ print(titstrng+'\n\n')
 
 ModelDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
 RoughFile = ModelDir + 'roughening_matrix.out'
-RtR = False
-
-if RtR:
-    RoughNew = ModelDir +'RTR.npz'
-else:
-    RoughNew = ModelDir +'R.npz'
 
 SparseFormat = 'csc'
+
+RoughType = 2 # 1=transpose, 2 = rtr
+if RoughType==0:
+    RoughNew = ModelDir +'R_'+SparseFormat+'.npz'
+elif RoughType==1:
+    RoughNew = ModelDir +'RT_'+SparseFormat+'.npz'
+else:
+    RoughNew = ModelDir +'RTR_'+SparseFormat+'.npz'
+
+
 
 R   = fem.get_roughness(filerough=RoughFile,
                    small = 1.e-5,
                    spformat = SparseFormat,
-                   rtr = RtR,
+                   rtype = RoughType,
                    out=True)
 
+print('saved to', RoughNew)
 print('R sparse format is', R.format)
+
 
 scs.save_npz(RoughNew, matrix=R)

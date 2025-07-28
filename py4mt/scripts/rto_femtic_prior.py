@@ -69,27 +69,32 @@ fname = inspect.getfile(inspect.currentframe())
 titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng+'\n\n')
 
-ModelDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
+WorkDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
 
-RtR = False
+RoughFile = WorkDir +'R_csc.npz'
 
-
-if RtR:
-    RoughFile = ModelDir +'RTR.npz'
+RoughType = 0 # 1=transpose, 2 = rtr
+if RoughType==0:
+    RoughNew = WorkDir +'invR.npz'
+elif RoughType==1:
+    RoughNew = WorkDir +'invRT.npz'
+elif RoughType==2:
+    RoughNew = WorkDir +'invRTR.npz'
 else:
-    RoughFile = ModelDir +'R.npz'
+    RoughNew = WorkDir +'invR.npz'
 
-RoughNew =  ModelDir +'Ri.npz'
 
 R = scs.load_npz(RoughFile)
 print(type(R))
 print('R sparse format is', R.format)
 
-R_inv = fem.make_prior_cov(rough=R,
+invR = fem.make_prior_cov(rough=R,
                    small = 1.e-5,
-                   rtr = RtR,
+                   rtype = RoughType,
                    out=True)
 
-print('invR sparse format is', R_inv.format)
+print('invR type is', type(R))
 
-scs.save_npz(RoughNew, matrix=R_inv)
+np.savez_compressed(RoughNew, matrix=R_inv)
+#print('invR (',RoughType,') format is', R_inv.format)
+#scs.save_npz(RoughNew, matrix=R_inv)
