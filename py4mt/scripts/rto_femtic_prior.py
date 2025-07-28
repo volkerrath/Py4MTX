@@ -71,13 +71,11 @@ print(titstrng+'\n\n')
 
 WorkDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
 
-RoughFile = WorkDir +'RTR_csc.npz'
-
-RoughType = 2 # 1=transpose, 2 = rtr
-
+RoughFile = WorkDir +'RT_csc.npz'
 RoughNew = WorkDir +RoughFile.replace('/R','/invR')
 
-
+RoughType = 1 # 1=transpose, 2 = rtr
+Sparsify =1.e-6
 
 R = scs.load_npz(RoughFile)
 print(type(R))
@@ -89,6 +87,9 @@ invR = fem.make_prior_cov(rough=R,
                    out=True)
 
 print('invR type is', type(invR))
+if Sparsify is not None:
+    invR = fem.sparsify(matrix=invR,
+                        thresh=Sparsify)
 
 np.savez_compressed(RoughNew, matrix=invR)
 #print('invR (',RoughType,') format is', R_inv.format)
