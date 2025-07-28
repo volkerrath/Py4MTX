@@ -71,17 +71,12 @@ print(titstrng+'\n\n')
 
 WorkDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
 
-RoughFile = WorkDir +'R_csc.npz'
+RoughFile = WorkDir +'RTR_csc.npz'
 
-RoughType = 0 # 1=transpose, 2 = rtr
-if RoughType==0:
-    RoughNew = WorkDir +'invR.npz'
-elif RoughType==1:
-    RoughNew = WorkDir +'invRT.npz'
-elif RoughType==2:
-    RoughNew = WorkDir +'invRTR.npz'
-else:
-    RoughNew = WorkDir +'invR.npz'
+RoughType = 2 # 1=transpose, 2 = rtr
+
+RoughNew = WorkDir +RoughFile.replace('/R','/invR')
+
 
 
 R = scs.load_npz(RoughFile)
@@ -93,8 +88,8 @@ invR = fem.make_prior_cov(rough=R,
                    rtype = RoughType,
                    out=True)
 
-print('invR type is', type(R))
+print('invR type is', type(invR))
 
-np.savez_compressed(RoughNew, matrix=R_inv)
+np.savez_compressed(RoughNew, matrix=invR)
 #print('invR (',RoughType,') format is', R_inv.format)
 #scs.save_npz(RoughNew, matrix=R_inv)

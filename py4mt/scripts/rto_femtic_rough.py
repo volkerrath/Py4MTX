@@ -68,18 +68,18 @@ fname = inspect.getfile(inspect.currentframe())
 titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng+'\n\n')
 
-ModelDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
-RoughFile = ModelDir + 'roughening_matrix.out'
+WorkDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
+RoughFile = WorkDir + 'roughening_matrix.out'
 
 SparseFormat = 'csc'
 
 RoughType = 2 # 1=transpose, 2 = rtr
 if RoughType==0:
-    RoughNew = ModelDir +'R_'+SparseFormat+'.npz'
+    RoughNew = WorkDir +'R_'+SparseFormat+'.npz'
 elif RoughType==1:
-    RoughNew = ModelDir +'RT_'+SparseFormat+'.npz'
+    RoughNew = WorkDir +'RT_'+SparseFormat+'.npz'
 else:
-    RoughNew = ModelDir +'RTR_'+SparseFormat+'.npz'
+    RoughNew = WorkDir +'RTR_'+SparseFormat+'.npz'
 
 
 
