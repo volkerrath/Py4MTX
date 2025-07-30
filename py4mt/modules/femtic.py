@@ -980,10 +980,10 @@ def centroid_tetrahedron(nodes=None):
     return centre
 
 
-
 def get_roughness(filerough='roughening_matrix.out',
                    small = 1.e-5,
                    spformat = 'csc',
+                   spthresh = 1.e-6,
                    rtype = 0,
                    out=True):
     '''
@@ -1149,39 +1149,43 @@ def get_roughness(filerough='roughening_matrix.out',
 def make_prior_cov(rough=None,
                    small = 1.e-5,
                    spformat = 'csc',
-                   ntrunc= 300,
+                   spthresh = 1.e-6,
                    ilu = False,
-                   rtype = 0,
+                   drop= 1.e-6,
+                   fill=30,
+                   returncov= False,
                    out=True):
     '''
-    generate prior covariance for
-    ensenmble perturbations
+    Generate prior covariance for ensemble perturbations
 
     Note: does not include air/sea/distortion parameters!
 
     Parameters
     ----------
     rough : sparse array
-        name of femtic roughness. The default is None.
+        Name of femtic roughness. The default is None.
     rtype : integer
         decides on type of roughness, r, rt, or rtr.
-        DEfault is 0.
+        Default is 0.
     small : float
-        small value to stabilize. The default is 1.e-5
-    ntrunc : int
-        truncation for randomized SVD calculation.
+        Small value to stabilize. The default is 1.e-5
+    ilu, drop, fill: logical, floats
+        Truncation for incomplete LU
+    returncov : logical
+         Return covariance C or factor invR
 
     Returns
     -------
-    cov : sparse array
-        femtic covariance
+    cov, invR : sparse arrays
+        femtic equivalent covariance C or factor invR
+
 
     author: vrath,  created on Thu Jul 26, 2025
 
 
     '''
-    from scipy.sparse import csr_array, csc_array, eye_array
-    from scipy.sparse.linalg import inv, spsolve, factorized, splu,spilu
+    from scipy.sparse import csr_array, csc_array, coo_array, eye_array
+    from scipy.sparse.linalg import inv, spsolve, factorized, splu, spilu
 
     nout = 1000
 
@@ -1201,7 +1205,12 @@ def make_prior_cov(rough=None,
     #I = eye_array(R.shape[0])
     invR = np.zeros((n, n))
 
-    LUsolve = factorized(R)
+    if ilu:
+        LU = spilu(R, drop_tol=drop, fill_factor=fill)
+    else:
+        LU = splu(R)
+
+    # LUsolve = factorized(R)
 
     for k in np.arange(n):
 
@@ -1211,44 +1220,47 @@ def make_prior_cov(rough=None,
         rhs = np.zeros(n)
         rhs[k] = 1.
 
-        invR[k,:] = LUsolve(rhs)
 
-
-        #if k == 0:
-            #invR = vtmp
-        #else:
-            ##invR = np.vstack((invR, vtmp))
-            #invR = np.concatenate(((invR, vtmp),axis=0)
-        # print(np.shape(invR))
+        invR[k,:] = LU.solve(rhs)
+        #invR[k,:] = LUsolve(rhs)
 
     print('invR generated:', time.perf_counter() - start,'s')
-    #print(invR.shape)
+
+
+    if rtype==0:
+        C = invR.transpose()@invR
+    elif rtype==1:
+        C = invR@invR.transpose()
+    else:
+        C = invR
+    print('Cov generated:', time.perf_counter() - start,'s')
 
 
 
-    #start = time.perf_counter()
-    #RI = inv(R + small*identity(R.shape[0]))
-    #print('R inverted:', time.perf_counter() - start,'s')
-
-    #Test = R@RI - identity(R.shape[0])
-    #print(Test.shape, Test.nnz)
-
-    ## print(R.shape, R.nnz)
-    #C = RI@RI.transpose()
-
-    #print('C generated:', time.perf_counter() - start,'s')
+    if returncov:
+        if spthresh is not None:
+            C = fem.sparsify(matrix=C,
+                        thresh=spthresh)
+        return C
+    else:
+        if spthresh is not None:
+            invR = fem.sparsify(matrix=invR,
+                            thresh=spthresh)
 
     return invR
 
 def sparsify(matrix=None,
              spformat= 'csr',
-             thresh=1.e-6):
+             spthresh=1.e-6):
 
-
-from scipy.sparse import csr_array, csc_array, csc_array
+    from scipy.sparse import csr_array, csc_array, coo_array, issparse
 
     if matrix is None:
         sys.exit('sparsify: no matrix given! Exit.')
+    if issparse(matrix):
+        print('sparsify: already sparse as ', matrix.format)
+        return matrix
+
 
     mmax = np.amax(matrix)
     matrix[np.abs(matrix)<thresh]= 0.
@@ -1260,4 +1272,5 @@ from scipy.sparse import csr_array, csc_array, csc_array
     if 'coo' in spformat.lower():
         matrix = coo_array(matrix)
 
+    print('sparsified as', matrix.format)
     return matrix
