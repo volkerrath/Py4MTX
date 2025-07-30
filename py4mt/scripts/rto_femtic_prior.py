@@ -71,10 +71,11 @@ print(titstrng+'\n\n')
 
 WorkDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
 
-RoughFile = WorkDir +'RT_csc.npz'
-RoughNew = WorkDir +RoughFile.replace('/R','/invR')
+RoughFile = WorkDir +'RTR_sparse.npz'
 
-RoughType = 1 # 1=transpose, 2 = rtr
+
+RoughType = 2 # 1=transpose, 2 = rtr
+RoughOut = 'csr'
 Sparsify =1.e-6
 
 R = scs.load_npz(RoughFile)
@@ -82,15 +83,25 @@ print(type(R))
 print('R sparse format is', R.format)
 
 invR = fem.make_prior_cov(rough=R,
-                   small = 1.e-5,
-                   rtype = RoughType,
-                   out=True)
+                          small = 1.e-5,
+                          spformat = 'csc',
+                          spthresh = 1.e-6,
+                          ilu = False,
+                          drop= 1.e-6,
+                          fill=30,
+                          returncov= False,
+                          out=True)
 
 print('invR type is', type(invR))
-if Sparsify is not None:
-    invR = fem.sparsify(matrix=invR,
-                        thresh=Sparsify)
 
-np.savez_compressed(RoughNew, matrix=invR)
-#print('invR (',RoughType,') format is', R_inv.format)
-#scs.save_npz(RoughNew, matrix=R_inv)
+if not scs.issparse(invR) and RoughOut is not None:
+    RoughNew = WorkDir +RoughFile.replace('/R','/invR')
+    invR = fem.sparsify(matrix=invR,
+                        thresh=Sparsify,
+                        spformat=RoughOut)
+    print('invR (',RoughType,') format is', invR.format)
+    scs.save_npz(RoughNew, matrix=invR)
+else:
+    RoughNew = WorkDir +RoughFile.replace('/R','/invR')
+    np.savez_compressed(RoughNew, matrix=invR)
+

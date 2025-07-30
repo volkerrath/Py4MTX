@@ -73,13 +73,13 @@ RoughFile = WorkDir + 'roughening_matrix.out'
 
 SparseFormat = 'csc'
 
-RoughType = 2 # 1=transpose, 2 = rtr
+RoughType = 0 # 1=transpose, 2 = rtr
 if RoughType==0:
-    RoughNew = WorkDir +'R_'+SparseFormat+'.npz'
+    RoughNew = WorkDir +'R_sparse.npz'
 elif RoughType==1:
-    RoughNew = WorkDir +'RT_'+SparseFormat+'.npz'
+    RoughNew = WorkDir +'RT_sparse.npz'
 else:
-    RoughNew = WorkDir +'RTR_'+SparseFormat+'.npz'
+    RoughNew = WorkDir +'RTR_sparse.npz'
 
 
 
