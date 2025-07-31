@@ -71,37 +71,51 @@ print(titstrng+'\n\n')
 
 WorkDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
 
-RoughFile = WorkDir +'RTR_sparse.npz'
-
-
 RoughType = 2 # 1=transpose, 2 = rtr
-RoughOut = 'csr'
-Sparsify =1.e-6
+FormatIn =  'csc'
+RoughFile = WorkDir +'R_'+str(RoughType)+'_'+FormatIn+'.npz'
+
+
+ReturnCov = True
+
+if ReturnCov:
+    FormatOut = 'csr'
+    Sparsify =1.e-6
+    RoughNew = WorkDir +RoughFile.replace('/R','/Cov')
+    RoughNew = RoughNew.replace(FormatIn, FormatOut)
+else:
+    FormatOut = 'csr'
+    Sparsify =1.e-6
+    RoughNew = WorkDir +RoughFile.replace('/R','/invR')
+    RoughNew = RoughNew.replace(FormatIn, FormatOut)
+
+
 
 R = scs.load_npz(RoughFile)
 print(type(R))
 print('R sparse format is', R.format)
 
-invR = fem.make_prior_cov(rough=R,
+out_matrix = fem.make_prior_cov(rough=R,
                           small = 1.e-5,
-                          spformat = 'csc',
-                          spthresh = 1.e-6,
+                          spformat = FormatOut,
+                          spthresh = Sparsify,
                           ilu = False,
                           drop= 1.e-6,
                           fill=30,
-                          returncov= False,
+                          rtype=RoughType,
+                          returncov= ReturnCov,
                           out=True)
 
-print('invR type is', type(invR))
+print('out_matrix type is', type(out_matrix))
 
-if not scs.issparse(invR) and RoughOut is not None:
-    RoughNew = WorkDir +RoughFile.replace('/R','/invR')
-    invR = fem.sparsify(matrix=invR,
-                        thresh=Sparsify,
-                        spformat=RoughOut)
-    print('invR (',RoughType,') format is', invR.format)
-    scs.save_npz(RoughNew, matrix=invR)
+if not scs.issparse(out_matrix) and Sparsify is not None:
+    out_matrix = fem.sparsify(matrix=out_matrix,
+                        spthresh=Sparsify,
+                        spformat=FormatOut)
+    print('out_matrix (',RoughType,') format is', invR.format)
+
+if scs.issparse(out_matrix):
+    scs.save_npz(RoughNew, matrix=out_matrix)
 else:
-    RoughNew = WorkDir +RoughFile.replace('/R','/invR')
-    np.savez_compressed(RoughNew, matrix=invR)
+    np.savez_compressed(RoughNew, matrix=out_matrix)
 
