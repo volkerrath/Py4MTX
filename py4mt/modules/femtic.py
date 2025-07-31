@@ -345,6 +345,7 @@ def modify_data(template_file='observe.dat',
 def generate_model_ensemble(dir_base='./ens_',
                             N_samples=1,
                             file_in='resistivity_block_iter0.dat',
+                            priorcov=None,
                             draw_from=['normal', 0., 1.],
                             method='add',
                             out=True):
@@ -378,6 +379,9 @@ def generate_model_ensemble(dir_base='./ens_',
 def modify_model(template_file='resistivity_block_iter0.dat',
                   draw_from=['normal', 0., 1.],
                   method='add',
+                  priorcov=None,
+                  decomposed=False,
+                  small=1.e-8,
                   out=True):
     '''
     Created on Thu Apr 17 17:13:38 2025
@@ -403,6 +407,24 @@ def modify_model(template_file='resistivity_block_iter0.dat',
     else:
         samples = np.random.uniform(
             low=draw_from[1], high=draw_from[2], size=n_cells-2)
+
+    if priorcov is not None:
+        if decomposed:
+            S = priorcov
+        else:
+            # sparse LU decomposition
+            n =priorcov.shape[0]
+            M = priorcov.copy() + numpy.identity(n)*small
+            LU = scipy.sparse.linalg.splu(M, diag_pivot_thresh=0)
+            # check the matrix A is positive definite.
+            if (LU.perm_r == numpy.arange(n)).all() and (LU.U.diagonal() > 0).all():
+                S = LU.L.dot(scipy.sparse.diags(LU.U.diagonal() ** 0.5))
+
+        # generate samples with given covariance structure
+        for ismp in np.arange(n_cells-2):
+            samples[ismp] = S@samples[ismp]
+
+
     
     # element groups: air and seawater fixed
     new_lines = [
@@ -1153,6 +1175,7 @@ def make_prior_cov(rough=None,
                    ilu = False,
                    drop= 1.e-6,
                    fill=30,
+                   rtype = 2,
                    returncov= False,
                    out=True):
     '''
@@ -1227,26 +1250,28 @@ def make_prior_cov(rough=None,
     print('invR generated:', time.perf_counter() - start,'s')
 
 
-    if rtype==0:
-        C = invR.transpose()@invR
-    elif rtype==1:
-        C = invR@invR.transpose()
-    else:
-        C = invR
-    print('Cov generated:', time.perf_counter() - start,'s')
-
-
-
     if returncov:
+        if rtype==0:
+            C = invR.transpose()@invR
+        elif rtype==1:
+            C = invR@invR.transpose()
+        else:
+            C = invR
+        print('Cov generated:', time.perf_counter() - start,'s')
+
+
+
         if spthresh is not None:
-            C = fem.sparsify(matrix=C,
-                        thresh=spthresh)
+            C = sparsify(matrix=C,
+                        spthresh=spthresh,
+                        spformat=spformat)
         return C
+
     else:
         if spthresh is not None:
-            invR = fem.sparsify(matrix=invR,
-                            thresh=spthresh)
-
+            invR = sparsify(matrix=invR,
+                            spthresh=spthresh,
+                            spformat=spformat)
     return invR
 
 def sparsify(matrix=None,
@@ -1263,7 +1288,7 @@ def sparsify(matrix=None,
 
 
     mmax = np.amax(matrix)
-    matrix[np.abs(matrix)<thresh]= 0.
+    matrix[np.abs(matrix)<spthresh*mmax]= 0.
 
     if 'csr' in spformat.lower():
         matrix = csr_array(matrix)
