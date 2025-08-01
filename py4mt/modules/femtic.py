@@ -1177,6 +1177,7 @@ def make_prior_cov(rough=None,
                    fill=30,
                    rtype = 2,
                    returncov= False,
+                   alpha=1.,
                    out=True):
     '''
     Generate prior covariance for ensemble perturbations
@@ -1207,7 +1208,7 @@ def make_prior_cov(rough=None,
 
 
     '''
-    from scipy.sparse import csr_array, csc_array, coo_array, eye_array
+    from scipy.sparse import csr_array, csc_array, coo_array, eye_array, issparse
     from scipy.sparse.linalg import inv, spsolve, factorized, splu, spilu
 
     nout = 1000
@@ -1248,31 +1249,37 @@ def make_prior_cov(rough=None,
         #invR[k,:] = LUsolve(rhs)
 
     print('invR generated:', time.perf_counter() - start,'s')
-
+    print('invR', type(invR))
 
     if returncov:
+        start = time.perf_counter()
         if rtype==0:
             C = invR.transpose()@invR
         elif rtype==1:
             C = invR@invR.transpose()
         else:
             C = invR
+
         print('Cov generated:', time.perf_counter() - start,'s')
-
-
-
-        if spthresh is not None:
+        print('Cov', type(Cov))
+        if not issparse(C) and spthresh is not None:
             C = sparsify(matrix=C,
                         spthresh=spthresh,
                         spformat=spformat)
+
+        C = (alpha**2)*C
         return C
 
+
     else:
-        if spthresh is not None:
+
+        if not issparse(invR) and spthresh is not None:
             invR = sparsify(matrix=invR,
                             spthresh=spthresh,
                             spformat=spformat)
-    return invR
+
+        C = alpha*C
+        return invR
 
 def sparsify(matrix=None,
              spformat= 'csr',
@@ -1282,12 +1289,14 @@ def sparsify(matrix=None,
 
     if matrix is None:
         sys.exit('sparsify: no matrix given! Exit.')
+
     if issparse(matrix):
         print('sparsify: already sparse as ', matrix.format)
         return matrix
 
 
-    mmax = np.amax(matrix)
+    mmax = np.amax(np.abs(matrix))
+    print('sparsity',mmax, spthresh*mmax)
     matrix[np.abs(matrix)<spthresh*mmax]= 0.
 
     if 'csr' in spformat.lower():
