@@ -71,22 +71,22 @@ print(titstrng+'\n\n')
 
 WorkDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
 
-RoughType = 2 # 1=transpose, 2 = rtr
+RoughType = 1 # 1=transpose, 2 = rtr
 FormatIn =  'csc'
 RoughFile = WorkDir +'R_'+str(RoughType)+'_'+FormatIn+'.npz'
-
+Alpha = 1.
 
 ReturnCov = True
 
 if ReturnCov:
     FormatOut = 'csr'
-    Sparsify =1.e-6
-    RoughNew = WorkDir +RoughFile.replace('/R','/Cov')
+    Sparsify =1.e-4
+    RoughNew = RoughFile.replace('/R','/Cov')
     RoughNew = RoughNew.replace(FormatIn, FormatOut)
 else:
     FormatOut = 'csr'
-    Sparsify =1.e-6
-    RoughNew = WorkDir +RoughFile.replace('/R','/invR')
+    Sparsify =1.e-4
+    RoughNew = RoughFile.replace('/R','/invR')
     RoughNew = RoughNew.replace(FormatIn, FormatOut)
 
 
@@ -100,10 +100,11 @@ out_matrix = fem.make_prior_cov(rough=R,
                           spformat = FormatOut,
                           spthresh = Sparsify,
                           ilu = False,
-                          drop= 1.e-6,
+                          drop= 1.e-5,
                           fill=30,
                           rtype=RoughType,
                           returncov= ReturnCov,
+                          alpha=Alpha,
                           out=True)
 
 print('out_matrix type is', type(out_matrix))
@@ -112,7 +113,7 @@ if not scs.issparse(out_matrix) and Sparsify is not None:
     out_matrix = fem.sparsify(matrix=out_matrix,
                         spthresh=Sparsify,
                         spformat=FormatOut)
-    print('out_matrix (',RoughType,') format is', invR.format)
+    print('out_matrix (',RoughType,') format is', out_matrix.format)
 
 if scs.issparse(out_matrix):
     scs.save_npz(RoughNew, matrix=out_matrix)
