@@ -76,14 +76,16 @@ FormatIn =  'csc'
 RoughFile = WorkDir +'R_'+str(RoughType)+'_'+FormatIn+'.npz'
 Alpha = 1.
 
-ReturnCov = True
+ReturnCov = False
 
 if ReturnCov:
+    Factor = 1./Alpha**2
     FormatOut = 'csr'
     Sparsify =1.e-4
     RoughNew = RoughFile.replace('/R','/Cov')
     RoughNew = RoughNew.replace(FormatIn, FormatOut)
 else:
+    Factor = 1./Alpha
     FormatOut = 'csr'
     Sparsify =1.e-4
     RoughNew = RoughFile.replace('/R','/invR')
@@ -96,24 +98,24 @@ print(type(R))
 print('R sparse format is', R.format)
 
 out_matrix = fem.make_prior_cov(rough=R,
-                          small = 1.e-5,
+                          small = 1.e-4,
                           spformat = FormatOut,
                           spthresh = Sparsify,
                           ilu = False,
-                          drop= 1.e-5,
+                          drop= 1.e-4,
                           fill=30,
                           rtype=RoughType,
                           returncov= ReturnCov,
-                          alpha=Alpha,
+                          factor=Factor,
                           out=True)
 
-print('out_matrix type is', type(out_matrix))
+print('out_matrix (',RoughType,') format is', out_matrix.format)
 
-if not scs.issparse(out_matrix) and Sparsify is not None:
-    out_matrix = fem.sparsify(matrix=out_matrix,
-                        spthresh=Sparsify,
-                        spformat=FormatOut)
-    print('out_matrix (',RoughType,') format is', out_matrix.format)
+#if not scs.issparse(out_matrix) and Sparsify is not None:
+    #out_matrix = fem.sparsify(matrix=out_matrix,
+                        #spthresh=Sparsify,
+                        #spformat=FormatOut)
+    #print('out_matrix (',RoughType,') format is', out_matrix.format)
 
 if scs.issparse(out_matrix):
     scs.save_npz(RoughNew, matrix=out_matrix)
