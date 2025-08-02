@@ -72,7 +72,7 @@ WorkDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
 RoughFile = WorkDir + 'roughening_matrix.out'
 
 SparseFormat = 'csr'
-RoughType = 0 # 1=transpose, 2 = rtr
+RoughType = 1 # 1=transpose, 2 = rtr
 
 RoughNew = WorkDir +'R'+'_'+str(RoughType)+'_'+SparseFormat+'.npz'
 
