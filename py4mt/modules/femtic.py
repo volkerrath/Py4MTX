@@ -1004,8 +1004,7 @@ def centroid_tetrahedron(nodes=None):
 
 def get_roughness(filerough='roughening_matrix.out',
                    small = 1.e-5,
-                   spformat = 'csc',
-                   spthresh = 1.e-6,
+                   spformat = 'coo',
                    rtype = 0,
                    out=True):
     '''
@@ -1091,12 +1090,13 @@ def get_roughness(filerough='roughening_matrix.out',
     		}
     	}
 
+
     	ifs.close();
 
     }
 
     '''
-    from scipy.sparse import csr_array, csc_array, eye_array
+    from scipy.sparse import csr_array, csc_array, coo_array, eye_array
 
     start = time.perf_counter()
     print('Reading from', filerough)
@@ -1112,14 +1112,14 @@ def get_roughness(filerough='roughening_matrix.out',
 
     start = time.perf_counter()
     iline = 0
-    while iline < len(content)-2:
+    while iline < len(content)-1: #-2
         iline = iline + 1
         # print(content[iline])
         ele = int(content[iline].split()[0])
         nel = int(content[iline+1].split()[0])
         if nel == 0:
             iline = iline + 1
-            print('passed', ele)
+            print('passed', ele, nel, iline)
             continue
         else:
             irow += [ele]*nel
@@ -1128,19 +1128,22 @@ def get_roughness(filerough='roughening_matrix.out',
             val = [float(x) for x in content[iline+2].split()]
             vals += val
             iline = iline + 2
+            print('used', ele, nel, iline)
 
 
     irow = np.asarray(irow)
     icol = np.asarray(icol)
     vals = np.asarray(vals)
 
-    if 'csc' in spformat.lower():
-        R = csc_array((vals, (irow, icol)))
-    else:
-        R = csr_array((vals, (irow, icol)))
+
+
+    R = csr_array((vals, (irow, icol)))
+
+
+    print('R sparse format is', R.format)
 
     if small is not None:
-        R = R+small*eye_array(R.shape[0])
+        R = R+small*eye_array(R.shape[0], format=spformat.lower())
         if out:
             print(small, 'added to diag(R)')
 
@@ -1153,20 +1156,31 @@ def get_roughness(filerough='roughening_matrix.out',
     if rtype==0:
         if out:
             print('Returning R.')
-        return R
+            pass
     elif rtype==1:
         if out:
-            print('Returning RT.')
-        return R
+            print('Returning RT.')     
+        R = R.transpose()
     elif rtype==2:
         if out:
             print('Returning RTR.')
-        #RTR = R.transpose()@R
-        return R
+        R = R.transpose()@R
+
+
+    if 'csc' in spformat.lower():
+        R = csc_array((vals, (irow, icol)))
+    elif 'csr' in spformat.lower():
+        R = csr_array((vals, (irow, icol)))
     else:
-        if out:
-            print('Returning R.')
-        return R
+        R = coo_array((vals, (irow, icol)))
+
+    if out:
+        print('Output sparse format:', spformat)
+        print('R sparse format is', R.format)
+        print(R.shape, R.nnz)
+        print(R.nnz,'nonzeros, ', R.nnz/R.shape[0]**2, 'percent')
+
+    return R
 
 def make_prior_cov(rough=None,
                    small = 1.e-5,
@@ -1177,7 +1191,7 @@ def make_prior_cov(rough=None,
                    fill=30,
                    rtype = 2,
                    returncov= False,
-                   alpha=1.,
+                   factor=1.,
                    out=True):
     '''
     Generate prior covariance for ensemble perturbations
@@ -1223,7 +1237,7 @@ def make_prior_cov(rough=None,
         R = csc_array(rough)
     else:
         R = rough
-
+    print(R.shape)
     n = R.shape[0]
 
     #I = eye_array(R.shape[0])
@@ -1251,6 +1265,11 @@ def make_prior_cov(rough=None,
     print('invR generated:', time.perf_counter() - start,'s')
     print('invR', type(invR))
 
+    if not issparse(invR) and spthresh is not None:
+        invR = sparsify(matrix=invR,
+                        spthresh=spthresh,
+                        spformat=spformat)
+
     if returncov:
         start = time.perf_counter()
         if rtype==0:
@@ -1261,24 +1280,14 @@ def make_prior_cov(rough=None,
             C = invR
 
         print('Cov generated:', time.perf_counter() - start,'s')
-        print('Cov', type(Cov))
-        if not issparse(C) and spthresh is not None:
-            C = sparsify(matrix=C,
-                        spthresh=spthresh,
-                        spformat=spformat)
-
-        C = (alpha**2)*C
+        print('Cov', type(C))
+        C = factor*C
         return C
 
 
     else:
 
-        if not issparse(invR) and spthresh is not None:
-            invR = sparsify(matrix=invR,
-                            spthresh=spthresh,
-                            spformat=spformat)
-
-        C = alpha*C
+        invR = factor*invR
         return invR
 
 def sparsify(matrix=None,
@@ -1294,7 +1303,7 @@ def sparsify(matrix=None,
         print('sparsify: already sparse as ', matrix.format)
         return matrix
 
-
+    n = matrixshape[0]
     mmax = np.amax(np.abs(matrix))
     print('sparsity',mmax, spthresh*mmax)
     matrix[np.abs(matrix)<spthresh*mmax]= 0.
@@ -1307,4 +1316,24 @@ def sparsify(matrix=None,
         matrix = coo_array(matrix)
 
     print('sparsified as', matrix.format)
+    print(matrix.nnz,'nonzeros, ', matrix.nnz/n**2, 'percent')
+
+
     return matrix
+
+def plot_coo_array(m):
+    if not isinstance(m, coo_array):
+        m = coo_array(m)
+    fig = plt.figure()
+    ax = fig.add_subplot(111, facecolor='black')
+    ax.plot(m.col, m.row, 's', color='white', ms=1)
+    ax.set_xlim(0, m.shape[1])
+    ax.set_ylim(0, m.shape[0])
+    ax.set_aspect('equal')
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.invert_yaxis()
+    ax.set_aspect('equal')
+    ax.set_xticks([])
+    ax.set_yticks([])
+    return ax
