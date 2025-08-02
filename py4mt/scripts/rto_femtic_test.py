@@ -18,7 +18,12 @@ import time
 
 import sklearn as skl
 import scipy.sparse as scs
+from scipy.sparse import csr_array, csc_array, coo_array, eye_array, issparse
+from scipy.sparse.linalg import inv, spsolve, factorized, splu, spilu
 from scipy.sparse.linalg import norm
+import matspy
+
+
 
 PY4MTX_DATA = os.environ['PY4MTX_DATA']
 PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
@@ -51,21 +56,29 @@ print(titstrng+'\n\n')
 
 WorkDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
 
-RoughFile0 = WorkDir +'R_csc.npz'
-RoughFile1 = WorkDir +'RT_csc.npz'
-Roughfile2 = WorkDir +'RTR_csc.npz'
+RoughFile0 = WorkDir +'R_0_coo.npz'
+RoughFile1 = WorkDir +'R_1_coo.npz'
+Roughfile2 = WorkDir +'R_2_coo.npz'
 
-InvFile0 = WorkDir +'InvR.npz'
-InvFile1 = WorkDir +'InvRT.npz'
-Invfile2 = WorkDir +'InvRTR.npz'
+#InvFile0 = WorkDir +'InvR.npz'
+#InvFile1 = WorkDir +'InvRT.npz'
+#Invfile2 = WorkDir +'InvRTR.npz'
 
 
 R0 = scs.load_npz(RoughFile0)
 R1 = scs.load_npz(RoughFile1)
 R2 = scs.load_npz(RoughFile2)
 
-R3 = R1@R0
+#R3 = R1@R0
 
-Test = np.norm(R3-R2)
-print('invR type is', type(invR))
+#Test = np.norm(R3-R2)
+#print('invR type is', type(invR))
 
+fig, ax = matspy.spy_to_mpl(R0)
+fig.savefig("spy0.png", bbox_inches='tight')
+
+fig, ax = matspy.spy_to_mpl(R1)
+fig.savefig("spy1.png", bbox_inches='tight')
+
+fig, ax = matspy.spy_to_mpl(R2)
+fig.savefig("spy3.png", bbox_inches='tight')
