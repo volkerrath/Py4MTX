@@ -48,7 +48,8 @@ print(titstrng+'\n\n')
 
 WorkDir = r'/home/vrath/work/Ensemble/'
 
-PlotName  = WorkDir+'Misti'+'_Convergence'
+WhatPlot = 'nrms'
+PlotName  = WorkDir+'Misti'+'_nRMS'
 
 
 
@@ -81,33 +82,34 @@ for directory in dir_list:
     nrmse = c[4,:]
     
     
-    fig, ax = plt.subplots()
-    
-    plt.loglog(itern, nrmse, 
-             color='green', 
-             marker='o', 
-             linestyle='dashed',
-             linewidth=1, 
-             markersize=7,
-             markeredgecolor='red',
-             markerfacecolor='white'
-             )
-    
-    # for k in np.arange(len(i)):
-    #     alph = round(a[k], -int(np.floor(np.log10(abs(a[k])))))
-    #     plt.annotate(str(alph),[m[k],r[k]])
-    
-    # misftformula = '$\parallel\mathbf{C}_d^{-1/2} (\mathbf{d}_{obs}-\mathbf{d}_{calc})\parallel_2$'
-    # roughformula = '$\parallel\mathbf{C}_m^{-1/2} \mathbf{m}\parallel_2$'
-    nrmsformula = '$\sqrt{1/N \mathbf{C}_d^{-1/2} (\mathbf{d}_{obs}-\mathbf{d}_{calc})_2}$'
-    
-    
-    plt.xlabel(r'iteration',fontsize=18)  
-    plt.ylabel(r'nRMS'+nrmsformula,fontsize=18)
-    
-    # plt.tick_params(labelsize='x-large')
-    plt.grid('on')
-    plt.tight_layout()
-    
-    plt.savefig(PlotName+'.pdf')
-    plt.savefig(PlotName+'.png')
+    if 'nrms' in WhatPlot.lower():
+        fig, ax = plt.subplots()
+        
+        plt.loglog(itern, nrmse, 
+                 color='green', 
+                 marker='o', 
+                 linestyle='dashed',
+                 linewidth=1, 
+                 markersize=7,
+                 markeredgecolor='red',
+                 markerfacecolor='white'
+                 )
+        
+        # for k in np.arange(len(i)):
+        #     alph = round(a[k], -int(np.floor(np.log10(abs(a[k])))))
+        #     plt.annotate(str(alph),[m[k],r[k]])
+        
+        # misftformula = '$\parallel\mathbf{C}_d^{-1/2} (\mathbf{d}_{obs}-\mathbf{d}_{calc})\parallel_2$'
+        # roughformula = '$\parallel\mathbf{C}_m^{-1/2} \mathbf{m}\parallel_2$'
+        nrmsformula = '$\sqrt{1/N \mathbf{C}_d^{-1/2} (\mathbf{d}_{obs}-\mathbf{d}_{calc})_2}$'
+        
+        
+        plt.xlabel(r'iteration',fontsize=18)  
+        plt.ylabel(r'nRMS'+nrmsformula,fontsize=18)
+        
+        # plt.tick_params(labelsize='x-large')
+        plt.grid('on')
+        plt.tight_layout()
+        
+        plt.savefig(PlotName+'.pdf')
+        plt.savefig(PlotName+'.png')
