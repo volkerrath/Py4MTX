@@ -48,7 +48,7 @@ print(titstrng+'\n\n')
 
 WorkDir = r'/home/vrath/work/Ensemble/'
 
-PlotName  = WorkDir+'Misti'+'_L-Curve'
+PlotName  = WorkDir+'Misti'+'_Convergence'
 
 
 
@@ -59,49 +59,55 @@ dir_list = utl.get_filelist(searchstr=[SearchStrng], searchpath=WorkDir,
 
 # dir_list = []
 
-l_curve=[]
 for directory in dir_list:
+    convergence = []
     with open(directory+'femtic.cnv') as cnv:
         content=np.load(cnv)
-
-    line = content[-1].split()
-    print(line)
-    alpha = float(line[2])
-    rough = float(line[5])
-    misft = float(line[7])
-    nrmse = float(line[8])
+        for line in content:
+            nline = line.split()
+            itern = int(line(0))
+            alpha = float(line[2])
+            rough = float(line[5])
+            misft = float(line[7])
+            nrmse = float(line[8])
     
-    l_curve.append = [alpha, rough, misft]
+            convergence.append = [itern, alpha, rough, misft, nrmse]
     
-lc = np.array(l_curve).reshape((3,-1))
-a = lc[0,:]
-r = lc[1,:]
-m = lc[2,:]
-fig, ax = plt.subplots()
-
-plt.loglog(m, r, 
-         color='green', 
-         marker='o', 
-         linestyle='dashed',
-         linewidth=1, 
-         markersize=7,
-         markeredgecolor='red',
-         markerfacecolor='white'
-         )
-
-for k in np.arange(len(l_curve)):
-    alph = round(a[k], -int(np.floor(np.log10(abs(a[k])))))
-    plt.annotate(str(alph),[m[k],r[k]])
-
-xformula = '$\parallel\mathbf{C}_d^{-1/2} (\mathbf{d}_{obs}-\mathbf{d}_{calc})\parallel_2$'
-plt.xlabel(r'misfit '+xformula,fontsize=18)
-
-yformula = '$\parallel\mathbf{C}_m^{-1/2} \mathbf{m}\parallel_2$'
-plt.ylabel(r'roughness'+yformula,fontsize=18)
-
-# plt.tick_params(labelsize='x-large')
-plt.grid('on')
-plt.tight_layout()
-
-plt.savefig(PlotName+'.pdf')
-plt.savefig(PlotName+'.png')
+    c = np.array(convergence).reshape((5,-1))
+    itern = c[0,:]
+    alpha = c[1,:]
+    rough = c[2,:]
+    misft = c[3,:]
+    nrmse = c[4,:]
+    
+    
+    fig, ax = plt.subplots()
+    
+    plt.loglog(itern, nrmse, 
+             color='green', 
+             marker='o', 
+             linestyle='dashed',
+             linewidth=1, 
+             markersize=7,
+             markeredgecolor='red',
+             markerfacecolor='white'
+             )
+    
+    # for k in np.arange(len(i)):
+    #     alph = round(a[k], -int(np.floor(np.log10(abs(a[k])))))
+    #     plt.annotate(str(alph),[m[k],r[k]])
+    
+    # misftformula = '$\parallel\mathbf{C}_d^{-1/2} (\mathbf{d}_{obs}-\mathbf{d}_{calc})\parallel_2$'
+    # roughformula = '$\parallel\mathbf{C}_m^{-1/2} \mathbf{m}\parallel_2$'
+    nrmsformula = '$\sqrt{1/N \mathbf{C}_d^{-1/2} (\mathbf{d}_{obs}-\mathbf{d}_{calc})_2}$'
+    
+    
+    plt.xlabel(r'iteration',fontsize=18)  
+    plt.ylabel(r'nRMS'+nrmsformula,fontsize=18)
+    
+    # plt.tick_params(labelsize='x-large')
+    plt.grid('on')
+    plt.tight_layout()
+    
+    plt.savefig(PlotName+'.pdf')
+    plt.savefig(PlotName+'.png')
