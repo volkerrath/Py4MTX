@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""
+'''
 Created on Sun Nov  1 17:08:06 2020
 
 @author: vrath
-"""
+'''
 
 import os
 import sys
@@ -32,35 +32,35 @@ from mtpy import MT , MTData, MTCollection
 
 
 def dictget(d, *k):
-    """Get the values corresponding to the given keys in the provided dict."""
+    '''Get the values corresponding to the given keys in the provided dict.'''
     return [d[i] for i in k]
 
 def parse_ast(filename):
-    with open(filename, "rt") as file:
+    with open(filename, 'rt') as file:
         return ast.parse(file.read(), filename=filename)
 
-def check_env(envar="CONDA_PREFIX", action="error"):
-    """
+def check_env(envar='CONDA_PREFIX', action='error'):
+    '''
     Check if environment variable exists
 
     Parameters
     ----------
     envar : strng, optional
-        The default is ["CONDA_PREFIX"].
+        The default is ['CONDA_PREFIX'].
 
     Returns
     -------
     None.
 
-    """
+    '''
     act_env = os.environ[envar]
     if len(act_env)>0:
-        print("\n\n")
-        print("Active conda Environment  is:  " + act_env)
-        print("\n\n")
+        print('\n\n')
+        print('Active conda Environment  is:  ' + act_env)
+        print('\n\n')
     else:
-        if "err" in action.lower():
-            error("Environment "+ act_env+"is not activated! Exit.")
+        if 'err' in action.lower():
+            error('Environment '+ act_env+'is not activated! Exit.')
 
 
 def find_functions(body):
@@ -68,28 +68,28 @@ def find_functions(body):
 
 
 def list_functions(filename):
-    """
+    '''
     Generate list of functions in module.
 
     author: VR 3/21
-    """
+    '''
 
     print(filename)
     tree = parse_ast(filename)
     for func in find_functions(tree.body):
-        print("  %s" % func.name)
+        print('  %s' % func.name)
 
-def get_filelist(searchstr=["*"], searchpath="./", sortedlist =True, fullpath=False):
-    """
+def get_filelist(searchstr=['*'], searchpath='./', sortedlist =True, fullpath=False):
+    '''
     Generate filelist from path and unix wildcard list.
 
     author: VR 3/20
 
     last change 4/23
-    """
+    '''
 
-    filelist = fnmatch.filter(os.listdir(searchpath), "*")
-    print("\n ")
+    filelist = fnmatch.filter(os.listdir(searchpath), '*')
+    print('\n ')
     print(filelist)
     for sstr in searchstr:
         filelist = fnmatch.filter(filelist, sstr)
@@ -107,15 +107,15 @@ def get_filelist(searchstr=["*"], searchpath="./", sortedlist =True, fullpath=Fa
 
 
 # def get_utm_zone(latitude=None, longitude=None):
-#     """
+#     '''
 #     Find EPSG from position, using pyproj
 
 #     VR 04/21
-#     """
+#     '''
 #     from pyproj.aoi import AreaOfInterest
 #     from pyproj.database import query_utm_crs_info
 #     utm_list = query_utm_crs_info(
-#         datum_name="WGS 84",
+#         datum_name='WGS 84',
 #         area_of_interest=AreaOfInterest(
 #         west_lon_degree=longitude,
 #         south_lat_degree=latitude,
@@ -128,91 +128,91 @@ def get_filelist(searchstr=["*"], searchpath="./", sortedlist =True, fullpath=Fa
 
 
 def proj_latlon_to_utm(latitude, longitude, utm_zone=32629):
-    """
+    '''
     transform latlon to utm , using pyproj
     Look for other EPSG at https://epsg.io/
 
     VR 04/21
-    """
-    prj_wgs = CRS("epsg:4326")
-    prj_utm = CRS("epsg:" + str(utm_zone))
+    '''
+    prj_wgs = CRS('epsg:4326')
+    prj_utm = CRS('epsg:' + str(utm_zone))
     utm_x, utm_y = pyproj.transform(prj_wgs, prj_utm, latitude, longitude)
 
     return utm_x, utm_y
 
 def proj_utm_to_latlon(utm_x, utm_y, utm_zone=32629):
-    """
+    '''
     transform utm to latlon, using pyproj
     Look for other EPSG at https://epsg.io/
     VR 04/21
-    """
-    prj_wgs = CRS("epsg:4326")
-    prj_utm = CRS("epsg:" + str(utm_zone))
+    '''
+    prj_wgs = CRS('epsg:4326')
+    prj_utm = CRS('epsg:' + str(utm_zone))
     latitude, longitude = pyproj.transform(prj_utm, prj_wgs, utm_x, utm_y)
     return latitude, longitude
 
 
 def proj_latlon_to_itm(longitude, latitude):
-    """
+    '''
     transform latlon to itm , using pyproj
     Look for other EPSG at https://epsg.io/
 
     VR 04/21
-    """
-    prj_wgs = CRS("epsg:4326")
-    prj_itm = CRS("epsg:2157")
+    '''
+    prj_wgs = CRS('epsg:4326')
+    prj_itm = CRS('epsg:2157')
     itm_x, itm_y = pyproj.transform(prj_wgs, prj_itm, latitude, longitude)
     return itm_x, itm_y
 
 
 def proj_itm_to_latlon(itm_x, itm_y):
-    """
+    '''
     transform itm to latlon, using pyproj
     Look for other EPSG at https://epsg.io/
 
     VR 04/21
-    """
-    prj_wgs = CRS("epsg:4326")
-    prj_itm = CRS("epsg:2157")
+    '''
+    prj_wgs = CRS('epsg:4326')
+    prj_itm = CRS('epsg:2157')
     longitude, latitude = pyproj.transform(prj_itm, prj_wgs, itm_x, itm_y)
     return latitude, longitude
 
 
 def proj_itm_to_utm(itm_x, itm_y, utm_zone=32629):
-    """
+    '''
     transform itm to utm, using pyproj
     Look for other EPSG at https://epsg.io/
 
     VR 04/21
-    """
-    prj_utm = CRS("epsg:" + str(utm_zone))
-    prj_itm = CRS("epsg:2157")
+    '''
+    prj_utm = CRS('epsg:' + str(utm_zone))
+    prj_itm = CRS('epsg:2157')
     utm_x, utm_y =pyproj.transform(prj_itm, prj_utm, itm_x, itm_y)
     return utm_x, utm_y
 
 
 def proj_utm_to_itm(utm_x, utm_y, utm_zone=32629):
-    """
+    '''
     transform utm to itm, using pyproj
     Look for other EPSG at https://epsg.io/
 
     VR 04/21
-    """
-    prj_utm = CRS("epsg:" + str(utm_zone))
-    prj_itm = CRS("epsg:2157")
+    '''
+    prj_utm = CRS('epsg:' + str(utm_zone))
+    prj_itm = CRS('epsg:2157')
     itm_x, itm_y = pyproj.transform(prj_utm, prj_itm, utm_x, utm_y)
     return itm_x, itm_y
 
 def project_wgs_to_geoid(lat, lon, alt, geoid=3855 ):
-    """
+    '''
     transform ellipsoid heigth to geoid, using pyproj
     Look for other EPSG at https://epsg.io/
 
     VR 09/21
 
-    """
+    '''
 
-    geoidtrans =pyproj.crs.CompoundCRS(name="WGS 84 + EGM2008 height", components=[4979, geoid])
+    geoidtrans =pyproj.crs.CompoundCRS(name='WGS 84 + EGM2008 height', components=[4979, geoid])
     wgs = pyproj.Transformer.from_crs(
             pyproj.CRS(4979), geoidtrans, always_xy=True)
     lat, lon, elev = wgs.transform(lat, lon, alt)
@@ -220,15 +220,15 @@ def project_wgs_to_geoid(lat, lon, alt, geoid=3855 ):
     return lat, lon, elev
 
 def project_utm_to_geoid(utm_x, utm_y, utm_z, utm_zone=32629, geoid=3855):
-    """
+    '''
     transform ellipsoid heigth to geoid, using pyproj
     Look for other EPSG at https://epsg.io/
 
     VR 09/21
 
-    """
+    '''
 
-    geoidtrans =pyproj.crs.CompoundCRS(name="UTM + EGM2008 height", components=[utm_zone, geoid])
+    geoidtrans =pyproj.crs.CompoundCRS(name='UTM + EGM2008 height', components=[utm_zone, geoid])
     utm = pyproj.Transformer.from_crs(
             pyproj.CRS(utm_zone), geoidtrans, always_xy=True)
     utm_x, utm_y, elev = utm.transform(utm_x, utm_y, utm_z)
@@ -236,13 +236,13 @@ def project_utm_to_geoid(utm_x, utm_y, utm_z, utm_zone=32629, geoid=3855):
     return utm_x, utm_y, elev
 
 def project_gk_to_latlon(gk_x, gk_y, gk_zone=5684):
-    """
+    '''
     transform utm to latlon, using pyproj
     Look for other EPSG at https://epsg.io/
     VR 04/21
-    """
-    prj_wgs = pyproj.CRS("epsg:4326")
-    prj_gk = pyproj.CRS("epsg:" + str(gk_zone))
+    '''
+    prj_wgs = pyproj.CRS('epsg:4326')
+    prj_gk = pyproj.CRS('epsg:' + str(gk_zone))
     latitude, longitude = pyproj.transform(prj_gk, prj_wgs, gk_x, gk_y)
     return latitude, longitude
 
@@ -262,24 +262,24 @@ def splitall(path):
     return allparts
 
 
-def get_files(SearchString=None, SearchDirectory="."):
-    """
+def get_files(SearchString=None, SearchDirectory='.'):
+    '''
     FileList = get_files(Filterstring) produces a list
     of files from a searchstring (allows wildcards)
 
     VR 11/20
-    """
+    '''
     FileList = fnmatch.filter(os.listdir(SearchDirectory), SearchString)
 
     return FileList
 
 
 def unique(list, out=False):
-    """
+    '''
     find unique elements in list/array
 
     VR 9/20
-    """
+    '''
 
     # intilize a null list
     unique_list = []
@@ -297,13 +297,13 @@ def unique(list, out=False):
     return unique_list
 
 def bytes2human(n):
-    """
+    '''
     http://code.activestate.com/recipes/578019
     >>> bytes2human(10000)
     '9.8K'
     >>> bytes2human(100001221)
     '95.4M'
-    """
+    '''
     symbols = ('K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y')
     prefix = {}
     for i, s in enumerate(symbols):
@@ -312,10 +312,10 @@ def bytes2human(n):
         if abs(n) >= prefix[s]:
             value = float(n) / prefix[s]
             return '%.1f%s' % (value, s)
-    return "%sB" % n
+    return '%sB' % n
 
 def strcount(keyword=None, fname=None):
-    """
+    '''
     count occurences of keyword in file
      Parameters
     ----------
@@ -325,14 +325,14 @@ def strcount(keyword=None, fname=None):
         DESCRIPTION. The default is None.
 
     VR 9/20
-    """
-    with open(fname, "r") as fin:
+    '''
+    with open(fname, 'r') as fin:
         return sum([1 for line in fin if keyword in line])
     # sum([1 for line in fin if keyword not in line])
 
 
 def strdelete(keyword=None, fname_in=None, fname_out=None, out=True):
-    """
+    '''
     delete lines containing on of the keywords in list
 
     Parameters
@@ -351,21 +351,21 @@ def strdelete(keyword=None, fname_in=None, fname_out=None, out=True):
     None.
 
     VR 9/20
-    """
+    '''
     nn = strcount(keyword, fname_in)
 
     if out:
-        print(str(nn) + " occurances of <" + keyword + "> in " + fname_in)
+        print(str(nn) + ' occurances of <' + keyword + '> in ' + fname_in)
 
     # if fname_out  is None: fname_out= fname_in
-    with open(fname_in, "r") as fin, open(fname_out, "w") as fou:
+    with open(fname_in, 'r') as fin, open(fname_out, 'w') as fou:
         for line in fin:
             if keyword not in line:
                 fou.write(line)
 
 
 def strreplace(key_in=None, key_out=None, fname_in=None, fname_out=None):
-    """
+    '''
     replaces key_in in keywords by key_out
 
     Parameters
@@ -385,9 +385,9 @@ def strreplace(key_in=None, key_out=None, fname_in=None, fname_out=None):
 
     VR 9/20
 
-    """
+    '''
 
-    with open(fname_in, "r") as fin, open(fname_out, "w") as fou:
+    with open(fname_in, 'r') as fin, open(fname_out, 'w') as fou:
         for line in fin:
             fou.write(line.replace(key_in, key_out))
 
@@ -398,11 +398,11 @@ def gen_grid_latlon(
         LonLimits=None,
         nLon=None,
         out=True):
-    """
+    '''
      Generates equidistant 1-d grids in latLong.
 
      VR 11/20
-    """
+    '''
     small = 0.000001
 # LonLimits = ( 6.275, 6.39)
 # nLon = 31
@@ -418,11 +418,11 @@ def gen_grid_latlon(
 
 
 def gen_grid_utm(XLimits=None, nX=None, YLimits=None, nY=None, out=True):
-    """
+    '''
      Generates equidistant 1-d grids in m.
 
      VR 11/20
-    """
+    '''
 
     small = 0.000001
 # LonLimits = ( 6.275, 6.39)
@@ -439,21 +439,21 @@ def gen_grid_utm(XLimits=None, nX=None, YLimits=None, nY=None, out=True):
 
 
 def choose_data_poly(Data=None, PolyPoints=None, Out=True):
-    """
+    '''
      Chooses polygon area from aempy data set, given
      PolyPoints = [[X1 Y1,...[XN YN]]. First and last points will
      be connected for closure.
 
      VR 11/20
-    """
+    '''
     if Data.size == 0:
-        error("No Data given!")
+        error('No Data given!')
     if not PolyPoints:
-        error("No Rectangle given!")
+        error('No Rectangle given!')
 
     Ddims = np.shape(Data)
     if Out:
-        print("data matrix input: " + str(Ddims))
+        print('data matrix input: ' + str(Ddims))
 
     Poly = []
     for row in np.arange(Ddims[0] - 1):
@@ -463,7 +463,7 @@ def choose_data_poly(Data=None, PolyPoints=None, Out=True):
     Poly = np.asarray(Poly, dtype=float)
     if Out:
         Ddims = np.shape(Poly)
-        print("data matrix output: " + str(Ddims))
+        print('data matrix output: ' + str(Ddims))
 
     return Poly
 
@@ -481,12 +481,12 @@ def choose_data_poly(Data=None, PolyPoints=None, Out=True):
 
 
 def point_inside_polygon(x, y, poly):
-    """
+    '''
     Determine if a point is inside a given polygon or not, where
     the Polygon is given as a list of (x,y) pairs.
     Returns True  when point (x,y) ins inside polygon poly, False otherwise
 
-    """
+    '''
     # @jit(nopython=True)
     n = len(poly)
     inside = False
@@ -507,19 +507,19 @@ def point_inside_polygon(x, y, poly):
 
 
 def choose_data_rect(Data=None, Corners=None, Out=True):
-    """
+    '''
      Chooses rectangular area from aempy data set, giveb
      the left lower and right uper corners in m as [minX maxX minY maxY]
 
-    """
+    '''
     if Data.size == 0:
-        error("No Data given!")
+        error('No Data given!')
     if not Corners:
-        error("No Rectangle given!")
+        error('No Rectangle given!')
 
     Ddims = np.shape(Data)
     if Out:
-        print("data matrix input: " + str(Ddims))
+        print('data matrix input: ' + str(Ddims))
     Rect = []
     for row in np.arange(Ddims[0] - 1):
         if (Data[row, 1] > Corners[0] and Data[row, 1] < Corners[1] and
@@ -528,16 +528,16 @@ def choose_data_rect(Data=None, Corners=None, Out=True):
     Rect = np.asarray(Rect, dtype=float)
     if Out:
         Ddims = np.shape(Rect)
-        print("data matrix output: " + str(Ddims))
+        print('data matrix output: ' + str(Ddims))
 
     return Rect
 
 
 def proj_to_line(x, y, line):
-    """
+    '''
     Projects a point onto a line, where line is represented by two arbitrary
     points. as an array
-    """
+    '''
 #    http://www.vcskicks.com/code-snippet/point-projection.php
 #    private Point Project(Point line1, Point line2, Point toProject)
 # {
@@ -564,11 +564,11 @@ def proj_to_line(x, y, line):
 
 def gen_searchgrid(Points=None,
                    XLimits=None, dX=None, YLimits=None, dY=None, Out=False):
-    """
+    '''
     Generate equidistant grid for searching (in m).
 
     VR 02/21
-    """
+    '''
     small = 0.1
 
     datax = Points[:, 0]
@@ -580,9 +580,9 @@ def gen_searchgrid(Points=None,
     Y = np.arange(np.min(YLimits), np.max(YLimits)+ small, dY)
     nYc = np.shape(Y)[0]-1
     if Out:
-        print("Mesh size: "+str(nXc)+"X"+str(nYc)
-              +"\nCell sizes: "+str(dX)+"X"+str(dY)
-              +"\nNuber of data = "+str(nD))
+        print('Mesh size: '+str(nXc)+'X'+str(nYc)
+              +'\nCell sizes: '+str(dX)+'X'+str(dY)
+              +'\nNuber of data = '+str(nD))
 
 
     p = np.zeros((nXc, nYc), dtype=object)
@@ -601,13 +601,13 @@ def gen_searchgrid(Points=None,
     # pout = np.array(p,dtype=object)np.log10(float(content[ell].split()[1])) +
 
             if Out:
-               print("mesh cell: "+str(ix)+" "+str(iy))
+               print('mesh cell: '+str(ix)+' '+str(iy))
 
     return p
 
 
 def KLD(P=np.array([]), Q=np.array([]), epsilon= 1.e-8):
-    """
+    '''
     Calculates Kullback-Leibler distance
 
     Parameters
@@ -625,9 +625,9 @@ def KLD(P=np.array([]), Q=np.array([]), epsilon= 1.e-8):
         KL distance
 
 
-    """
+    '''
     if P.size * Q.size==0:
-        error("KLD: P or Q not defined! Exit.")
+        error('KLD: P or Q not defined! Exit.')
 
     # You may want to instead make copies to avoid changing the np arrays.
     PP = P.copy()+epsilon
@@ -637,37 +637,37 @@ def KLD(P=np.array([]), Q=np.array([]), epsilon= 1.e-8):
 
     return distance
 
-def dctn(x, normused="ortho"):
-    """
+def dctn(x, normused='ortho'):
+    '''
     Discrete cosine transform (fwd)
     https://stackoverflow.com/questions/13904851/use-pythons-scipy-dct-ii-to-do-2d-or-nd-dct
-    """
+    '''
     for i in range(x.ndim):
         x = dct(x, axis=i, norm=normused)
     return x
 
-def idctn(x, normused="ortho"):
-    """
+def idctn(x, normused='ortho'):
+    '''
     Discrete cosine transform (inv)
     https://stackoverflow.com/questions/13904851/use-pythons-scipy-dct-ii-to-do-2d-or-nd-dct
-    """
+    '''
     for i in range(x.ndim):
         x = idct(x, axis=i, norm=normused)
     return x
 
 def fractrans(m=None, x=None , a=0.5):
-    """
+    '''
     Caklculate fractional derivative of m.
 
     VR Apr 2021
-    """
+    '''
     import differint as df
 
     if m  is None or x  is None:
-        error("No vector for diff given! Exit.")
+        error('No vector for diff given! Exit.')
 
     if np.size(m) != np.size(x):
-        error("Vectors m and x have different length! Exit.")
+        error('Vectors m and x have different length! Exit.')
 
     x0 = x[0]
     x1 = x[-1]
@@ -678,12 +678,12 @@ def fractrans(m=None, x=None , a=0.5):
 
 
 def calc_resnorm(data_obs=None, data_calc=None, data_std=None, p=2):
-    """
+    '''
     Calculate the p-norm of the residuals.
 
     VR Jan 2021
 
-    """
+    '''
     if data_std is None:
         data_std = np.ones(np.shape(data_obs))
 
@@ -696,12 +696,12 @@ def calc_resnorm(data_obs=None, data_calc=None, data_std=None, p=2):
 
 
 def calc_rms(dcalc=None, dobs=None, Wd=1.0):
-    """
+    '''
     Calculate the NRMS ans SRMS.
 
     VR Jan 2021
 
-    """
+    '''
     sizedat = np.shape(dcalc)
     nd = sizedat[0]
     rscal = Wd * (dobs - dcalc).T
@@ -720,8 +720,8 @@ def calc_rms(dcalc=None, dobs=None, Wd=1.0):
 def nearly_equal(a,b,sig_fig=6):
     return (a==b or int(a*10**sig_fig) == int(b*10**sig_fig))
 
-def make_pdf_catalog(workdir="./", pdflist= None, filename=None):
-    """
+def make_pdf_catalog(workdir='./', pdflist= None, filename=None):
+    '''
     Make pdf catalog from site-plot(
 
     Parameters
@@ -735,8 +735,8 @@ def make_pdf_catalog(workdir="./", pdflist= None, filename=None):
     -------
     None.
 
-    """
-    # error("not in 3.9! Exit")
+    '''
+    # error('not in 3.9! Exit')
 
     import fitz
 
@@ -749,32 +749,32 @@ def make_pdf_catalog(workdir="./", pdflist= None, filename=None):
     catalog.save(filename, garbage=4, clean = True, deflate=True)
     catalog.close()
 
-    print("\n"+str(np.size(pdflist))+" files collected to "+filename)
+    print('\n'+str(np.size(pdflist))+' files collected to '+filename)
 
-def print_title(version="0.99.99", fname="", form="%m/%d/%Y, %H:%M:%S", out=True):
-    """
+def print_title(version='0.99.99', fname='', form='%m/%d/%Y, %H:%M:%S', out=True):
+    '''
     Print version, calling file name, and modification date.
-    """
+    '''
 
     import os.path
     from datetime import datetime
 
-    title = ""
+    title = ''
 
     if len(version)==0:
-        print("No version string given! Not printed to title.")
-        tstr = ""
+        print('No version string given! Not printed to title.')
+        tstr = ''
     else:
-       ndat = "\n"+"".join("Date " + datetime.now().strftime(form))
-       tstr =  "Py4MT Version "+version+ndat+ "\n"
+       ndat = '\n'+''.join('Date ' + datetime.now().strftime(form))
+       tstr =  'Py4MT Version '+version+ndat+ '\n'
 
     if len(fname)==0:
-        print("No calling filenane given! Not printed to title.")
-        fstr = ""
+        print('No calling filenane given! Not printed to title.')
+        fstr = ''
     else:
         fnam = os.path.basename(fname)
         mdat = datetime.fromtimestamp((os.path.getmtime(fname))).strftime(form)
-        fstr = fnam+", modified "+mdat+"\n"
+        fstr = fnam+', modified '+mdat+'\n'
         fstr = fstr + fname
 
     title = tstr+ fstr
