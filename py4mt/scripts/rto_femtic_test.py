@@ -20,8 +20,11 @@ import sklearn as skl
 import scipy.sparse as scs
 from scipy.sparse import csr_array, csc_array, coo_array, eye_array, issparse
 from scipy.sparse.linalg import inv, spsolve, factorized, splu, spilu
+from scipy.sparse import csr_matrix, csc_matrix, coo_matrix
 from scipy.sparse.linalg import norm
-import matspy
+
+import matplotlib.pyplot as plt
+from matspy import spy_to_mpl, spy
 
 
 
@@ -56,9 +59,11 @@ print(titstrng+'\n\n')
 
 WorkDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
 
-RoughFile0 = WorkDir +'R_0_coo.npz'
-RoughFile1 = WorkDir +'R_1_coo.npz'
-Roughfile2 = WorkDir +'R_2_coo.npz'
+SparseFormat = 'coo'
+
+RoughFile0 = WorkDir+'R_0_'+SparseFormat+'.npz'
+RoughFile1 = WorkDir+'R_1_'+SparseFormat+'.npz'
+RoughFile2 = WorkDir+'R_2_'+SparseFormat+'.npz'
 
 #InvFile0 = WorkDir +'InvR.npz'
 #InvFile1 = WorkDir +'InvRT.npz'
@@ -74,11 +79,20 @@ R2 = scs.load_npz(RoughFile2)
 #Test = np.norm(R3-R2)
 #print('invR type is', type(invR))
 
-fig, ax = matspy.spy_to_mpl(R0)
-fig.savefig("spy0.png", bbox_inches='tight')
+R0 = coo_matrix(R0)
+fig, ax = spy_to_mpl(R0)
+fig.show()
+fig.savefig(WorkDir+'spy0.png', bbox_inches='tight')
+plt.close()
 
-fig, ax = matspy.spy_to_mpl(R1)
-fig.savefig("spy1.png", bbox_inches='tight')
+R1 = coo_matrix(R1)
+fig, ax = spy_to_mpl(R1)
+fig.show()
+fig.savefig(WorkDir+'spy1.png', bbox_inches='tight')
+plt.close()
 
-fig, ax = matspy.spy_to_mpl(R2)
-fig.savefig("spy3.png", bbox_inches='tight')
+R2 = coo_matrix(R2)
+fig, ax = spy_to_mpl(R2)
+fig.show()
+fig.savefig(WorkDir+'spy2.png', bbox_inches='tight')
+plt.close()
