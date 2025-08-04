@@ -63,7 +63,7 @@ dir_list = utl.get_filelist(searchstr=[SearchStrng], searchpath=WorkDir,
 for directory in dir_list:
     convergence = []
     with open(directory+'femtic.cnv') as cnv:
-        content=np.load(cnv)
+        content = cnv.readlines()
         for line in content:
             nline = line.split()
             itern = int(line(0))

@@ -62,7 +62,7 @@ dir_list = utl.get_filelist(searchstr=[SearchStrng], searchpath=WorkDir,
 l_curve=[]
 for directory in dir_list:
     with open(directory+'femtic.cnv') as cnv:
-        content=np.load(cnv)
+        content=cnv.readlines()
 
     line = content[-1].split()
     print(line)
