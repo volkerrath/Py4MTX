@@ -381,7 +381,7 @@ def modify_model(template_file='resistivity_block_iter0.dat',
                   method='add',
                   priorcov=None,
                   decomposed=False,
-                  small=1.e-8,
+                  regeps=1.e-8,
                   out=True):
     '''
     Created on Thu Apr 17 17:13:38 2025
@@ -414,7 +414,7 @@ def modify_model(template_file='resistivity_block_iter0.dat',
         else:
             # sparse LU decomposition
             n =priorcov.shape[0]
-            M = priorcov.copy() + numpy.identity(n)*small
+            M = priorcov.copy() + numpy.identity(n)*regeps
             LU = scipy.sparse.linalg.splu(M, diag_pivot_thresh=0)
             # check the matrix A is positive definite.
             if (LU.perm_r == numpy.arange(n)).all() and (LU.U.diagonal() > 0).all():
@@ -1003,13 +1003,12 @@ def centroid_tetrahedron(nodes=None):
 
 
 def get_roughness(filerough='roughening_matrix.out',
-                   small = 1.e-5,
-                   spformat = 'coo',
-                   rtype = 0,
+                   regeps = 1.e-4,
+                   spformat = 'csc',
                    out=True):
     '''
     generate prior covariance for
-    ensenmble perturbations
+    ensemble perturbations
 
     Note: does not include air/sea/distortion parameters!
 
@@ -1142,29 +1141,18 @@ def get_roughness(filerough='roughening_matrix.out',
 
     print('R sparse format is', R.format)
 
-    if small is not None:
-        R = R+small*eye_array(R.shape[0], format=spformat.lower())
+    if regeps is not None:
+        R = R+regeps*eye_array(R.shape[0], format=spformat.lower())
         if out:
-            print(small, 'added to diag(R)')
+            print(regeps, 'added to diag(R)')
 
     print('R generated:', time.perf_counter() - start,'s')
     if out:
         print('R sparse format is', R.format)
         print(R.shape, R.nnz)
 
-
-    if rtype==0:
-        if out:
-            print('Returning R.')
-            pass
-    elif rtype==1:
-        if out:
-            print('Returning RT.')     
-        R = R.transpose()
-    elif rtype==2:
-        if out:
+    if out:
             print('Returning RTR.')
-        R = R.transpose()@R
 
 
     if 'csc' in spformat.lower():
@@ -1176,21 +1164,19 @@ def get_roughness(filerough='roughening_matrix.out',
 
     if out:
         print('Output sparse format:', spformat)
-        print('R sparse format is', R.format)
+        print('RTR sparse format is', R.format)
         print(R.shape, R.nnz)
         print(R.nnz,'nonzeros, ', R.nnz/R.shape[0]**2, 'percent')
 
     return R
 
 def make_prior_cov(rough=None,
-                   small = 1.e-5,
+                   regeps = None,
                    spformat = 'csc',
                    spthresh = 1.e-6,
                    ilu = False,
                    drop= 1.e-6,
                    fill=30,
-                   rtype = 2,
-                   returncov= False,
                    factor=1.,
                    out=True):
     '''
@@ -1205,7 +1191,7 @@ def make_prior_cov(rough=None,
     rtype : integer
         decides on type of roughness, r, rt, or rtr.
         Default is 0.
-    small : float
+    regeps : float
         Small value to stabilize. The default is 1.e-5
     ilu, drop, fill: logical, floats
         Truncation for incomplete LU
@@ -1228,19 +1214,32 @@ def make_prior_cov(rough=None,
     nout = 1000
 
     if rough is None:
-        sys.exit('No roughness matrix given! Exit.')
+        sys.exit('make_prior_cov: No roughness matrix given! Exit.')
+
+    if not issparse(rough):
+        sys.exit('make_prior_cov: Roughness matrix is not sparse! Exit.')
 
 
     start = time.perf_counter()
+
+
+    print('Shape of input roughness is',rough.shape)
+    print('Format of input roughness is',rough.format)
+
+    if regeps is not None:
+        rough = rough +regeps*eye_array(rough.shape[0], format=spformat.lower())
+        if out:
+            print(regeps, 'added to diag(R)')
+
 
     if rough.format != 'csc':
         R = csc_array(rough)
     else:
         R = rough
     print(R.shape)
-    n = R.shape[0]
 
-    #I = eye_array(R.shape[0])
+
+    n = R.shape[0]
     invR = np.zeros((n, n))
 
     if ilu:
@@ -1263,32 +1262,20 @@ def make_prior_cov(rough=None,
         #invR[k,:] = LUsolve(rhs)
 
     print('invR generated:', time.perf_counter() - start,'s')
-    print('invR', type(invR))
+    print('invR Format', type(invR))
 
     if not issparse(invR) and spthresh is not None:
         invR = sparsify(matrix=invR,
                         spthresh=spthresh,
                         spformat=spformat)
 
-    if returncov:
-        start = time.perf_counter()
-        if rtype==0:
-            C = invR.transpose()@invR
-        elif rtype==1:
-            C = invR@invR.transpose()
-        else:
-            C = invR
+    C = factor*invR
 
-        print('Cov generated:', time.perf_counter() - start,'s')
-        print('Cov', type(C))
-        C = factor*C
-        return C
+    print('Cov generated:', time.perf_counter() - start,'s')
+    print('Cov', type(C))
+    print('Cov', C.format)
+    return C
 
-
-    else:
-
-        invR = factor*invR
-        return invR
 
 def sparsify(matrix=None,
              spformat= 'csr',
