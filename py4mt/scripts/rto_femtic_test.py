@@ -59,40 +59,39 @@ print(titstrng+'\n\n')
 
 WorkDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
 
-SparseFormat = 'coo'
+SparseFormat = 'csr'
 
-RoughFile0 = WorkDir+'R_0_'+SparseFormat+'.npz'
-RoughFile1 = WorkDir+'R_1_'+SparseFormat+'.npz'
-RoughFile2 = WorkDir+'R_2_'+SparseFormat+'.npz'
+RoughFile = WorkDir+'RTR_'+SparseFormat+'.npz'
 
-#InvFile0 = WorkDir +'InvR.npz'
-#InvFile1 = WorkDir +'InvRT.npz'
-#Invfile2 = WorkDir +'InvRTR.npz'
+#CovFile0 = WorkDir +'COV_'+SparseFormat+'.npz'
 
 
-R0 = scs.load_npz(RoughFile0)
-R1 = scs.load_npz(RoughFile1)
-R2 = scs.load_npz(RoughFile2)
+
+R = scs.load_npz(RoughFile)
+
 
 #R3 = R1@R0
 
 #Test = np.norm(R3-R2)
 #print('invR type is', type(invR))
 
-R0 = coo_matrix(R0)
-fig, ax = spy_to_mpl(R0)
-fig.show()
-fig.savefig(WorkDir+'spy0.png', bbox_inches='tight')
-plt.close()
+R = coo_matrix(R)
 
-R1 = coo_matrix(R1)
-fig, ax = spy_to_mpl(R1)
-fig.show()
-fig.savefig(WorkDir+'spy1.png', bbox_inches='tight')
-plt.close()
+T = R.T - R
+print(' R-R^T max/min:', T.max(), T.min())
+if T.max()+T.min()==0.:
+    print('Matrix is symmetric!')
 
-R2 = coo_matrix(R2)
-fig, ax = spy_to_mpl(R2)
+
+# Plotting
+options = {'title': '$R^TR$, Sparsity Pattern',
+           'figsize': 8.,      #  inches
+           'dpi': 300,
+           'shading': 'binary', # 'absolute' 'relative'
+           'spy_aa_tweaks_enabled': True,
+           'color_full': 'red'} 
+fig, ax = spy_to_mpl(R, **options)
 fig.show()
-fig.savefig(WorkDir+'spy2.png', bbox_inches='tight')
+fig.savefig(WorkDir+'RTR_spy.png', bbox_inches='tight')
+fig.savefig(WorkDir+'RTR_spy.pdf', bbox_inches='tight')
 plt.close()
