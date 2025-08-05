@@ -1264,36 +1264,64 @@ def make_prior_cov(rough=None,
     print('invR generated:', time.perf_counter() - start,'s')
     print('invR Format', type(invR))
 
-    if not issparse(invR) and spthresh is not None:
-        invR = sparsify(matrix=invR,
-                        spthresh=spthresh,
-                        spformat=spformat)
+    if spthresh is not None:
+        invR = matrix_reduce(matrix=invR,
+                            spthresh=spthresh,
+                            spformat=spformat)
 
     C = factor*invR
 
     print('Cov generated:', time.perf_counter() - start,'s')
     print('Cov', type(C))
     print('Cov', C.format)
+
     return C
 
 
-def sparsify(matrix=None,
+def matrix_reduce(matrix=None,
              spformat= 'csr',
              spthresh=1.e-6):
 
     from scipy.sparse import csr_array, csc_array, coo_array, issparse
 
     if matrix is None:
-        sys.exit('sparsify: no matrix given! Exit.')
+        sys.exit('sparse_reduce: no matrix given! Exit.')
+
 
     if issparse(matrix):
-        print('sparsify: already sparse as ', matrix.format)
-        return matrix
 
-    n = matrix.shape[0]
-    mmax = np.amax(np.abs(matrix))
-    print('sparsity',mmax, spthresh*mmax)
-    matrix[np.abs(matrix)<spthresh*mmax]= 0.
+        n = matrix.shape[0]
+        print('Type:', type(matrix))
+        print('Format:', matrix.format)
+        print('Shape:', matrix.shape)
+        print(matrix.nnz,'nonzeros, ', matrix.nnz/n**2, 'percent')
+
+        test = matrix - matrix.T
+        if test.max()+test.min()==0.:
+            print('Matrix is symmetric!')
+
+        nonzero_mask = np.array(np.abs(matrix[matrix.nonzero()]) < spthresh)[0]
+
+        rows = matrix.nonzero()[0][nonzero_mask]
+        cols = matrix.nonzero()[1][nonzero_mask]
+
+        matrix[rows, cols] = 0.
+
+    else:
+
+        print('Type:', type(matrix))
+        print('Shape:', np.shape(matrix))
+
+        n = np.shape(matrix)[0]
+        mmax = np.amax(np.abs(matrix))
+        print('sparsity',mmax, spthresh*mmax)
+        matrix[np.abs(matrix)<spthresh*mmax]= 0.
+
+        test = matrix - matrix.T
+        if np.max(test)+np.mintest.min()==0.:
+            print('Matrix is symmetric!')
+
+
 
     if 'csr' in spformat.lower():
         matrix = csr_array(matrix)
@@ -1302,11 +1330,14 @@ def sparsify(matrix=None,
     if 'coo' in spformat.lower():
         matrix = coo_array(matrix)
 
-    print('sparsified as', matrix.format)
+
+    print('New Format:', matrix.format)
+    print('Shape:', matrix.shape)
     print(matrix.nnz,'nonzeros, ', matrix.nnz/n**2, 'percent')
 
 
     return matrix
+
 
 def plot_coo_array(m):
     from scipy.sparse import csr_array, csc_array, coo_array, issparse
