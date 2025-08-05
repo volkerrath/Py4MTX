@@ -90,6 +90,7 @@ options = {'title': '$R^TR$, Sparsity Pattern',
            'shading': 'binary', # 'absolute' 'relative'
            'spy_aa_tweaks_enabled': True,
            'color_full': 'red'} 
+
 fig, ax = spy_to_mpl(R, **options)
 fig.show()
 fig.savefig(WorkDir+'RTR_spy.png', bbox_inches='tight')

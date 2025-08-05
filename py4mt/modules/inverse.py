@@ -438,5 +438,38 @@ def ortho_basis(M):
 
 
 
+def check_sparse_matrix(M):
+    '''
+    
 
+    Parameters
+    ----------
+    M : sparse array
+        Matrix to be tested
+    Returns
+    -------
+    None.
 
+    '''
+    
+    from scipy.sparse import csr_array, csc_array, coo_array, issparse
+    
+
+    if M is None:
+        sys.exit('check_sparse_matrix: No roughness matrix given! Exit.')
+
+    if not issparse(M):
+        sys.exit('check_sparse_matrix: Roughness matrix is not sparse! Exit.')
+
+    print('Type:', type(M))
+    print('Format:', M.format)
+    print('Shape:', M.shape)
+    
+    is_symm = False
+    test = M - M.T
+    print(' R-R^T max/min:', test.max(), test.min())
+    if test.max()+test.min()==0.:
+        print('Matrix is symmetric!')
+        is_symm = True
+
+    return M.format, M.shape, is_symm

@@ -1290,7 +1290,7 @@ def sparsify(matrix=None,
         print('sparsify: already sparse as ', matrix.format)
         return matrix
 
-    n = matrixshape[0]
+    n = matrix.shape[0]
     mmax = np.amax(np.abs(matrix))
     print('sparsity',mmax, spthresh*mmax)
     matrix[np.abs(matrix)<spthresh*mmax]= 0.
@@ -1309,6 +1309,8 @@ def sparsify(matrix=None,
     return matrix
 
 def plot_coo_array(m):
+    from scipy.sparse import csr_array, csc_array, coo_array, issparse
+    import matplotlib.pyplot as plt
     if not isinstance(m, coo_array):
         m = coo_array(m)
     fig = plt.figure()
