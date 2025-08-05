@@ -51,6 +51,7 @@ for pth in mypath:
 #import modules
 import femtic as fem
 import util as utl
+import inverse as inv
 from version import versionstrg
 
 
@@ -79,8 +80,8 @@ Alpha = 1.
 Factor = 1./Alpha**2
 RegEps = 1.e-4
 FormatOut = 'csr'
-Sparsify = 1.e-7
-RoughNew = RoughFile.replace('/RTR','/Cov')
+Sparsify = 1.e-5
+RoughNew = RoughFile.replace('/RTR','/COV')
 RoughNew = RoughNew.replace(FormatIn, FormatOut)
 
 
@@ -103,4 +104,6 @@ if scs.issparse(out_matrix):
     scs.save_npz(RoughNew, matrix=out_matrix)
 else:
     np.savez_compressed(RoughNew, matrix=out_matrix)
+
+check_sparse_matrix(matrix)
 
