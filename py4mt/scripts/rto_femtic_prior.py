@@ -77,10 +77,10 @@ RoughFile = WorkDir +'RTR_'+FormatIn+'.npz'
 
 Alpha = 1.
 Factor = 1./Alpha**2
-RegEps = None
+RegEps = 1.e-4
 FormatOut = 'csr'
-Sparsify = 1.e-6
-RoughNew = RoughFile.replace('/R','/Cov')
+Sparsify = 1.e-7
+RoughNew = RoughFile.replace('/RTR','/Cov')
 RoughNew = RoughNew.replace(FormatIn, FormatOut)
 
 
@@ -92,13 +92,10 @@ out_matrix = fem.make_prior_cov(rough=R,
                           regeps = RegEps,
                           spformat = FormatOut,
                           spthresh = Sparsify,
-                          ilu = False,
-                          drop= 1.e-4,
-                          fill=30,
                           factor=Factor,
                           out=True)
 
-print('out_matrix (',RoughType,') format is', out_matrix.format)
+print('out_matrix format is', out_matrix.format)
 
 
 
