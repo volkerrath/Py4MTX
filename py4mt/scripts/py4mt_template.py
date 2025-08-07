@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
+'''
 Created on Thu May 29 10:09:45 2025
 
 @author: vrath
-"""
+'''
 
 
 # Import python modules
 # edit according to your needs
 import os
 import sys
-from sys import exit as error
+
 import time
 from datetime import datetime
 import warnings
@@ -23,8 +23,8 @@ import numpy as np
 from mtpy.core.mt import MT
 
 # addpy4mt modules to pythonpath
-mypath = ["/home/vrath/Py4MT/py4mt/modules/",
-          "/home/vrath/Py4MT/py4mt/scripts/"]
+mypath = ['/home/vrath/Py4MT/py4mt/modules/',
+          '/home/vrath/Py4MT/py4mt/scripts/']
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -44,9 +44,9 @@ from version import versionstrg
 
 
 rng = np.random.default_rng()
-nan = np.nan  # float("NaN")
+nan = np.nan  # float('NaN')
 version, _ = versionstrg()
 fname = inspect.getfile(inspect.currentframe())
 
 titstrng = utl.print_title(version=version, fname=fname, out=False)
-print(titstrng+"\n\n")
+print(titstrng+'\n\n')

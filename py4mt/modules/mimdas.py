@@ -1,29 +1,29 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
+'''
 Created on Sun Apr 25 13:40:12 2021
 
 @author: vrath
-"""
+'''
 import os
 import sys
 import warnings
 import time
 import inspect
 
-from sys import exit as error
+
 from datetime import datetime
 
 import numpy as np
 
 def read_csem_data(DatFile=None, out=True):
-    """
+    '''
     Read CSEM MIMDAS input data.
 
     Volker Rath
     last changed: Apr 28, 2021
 
-    """
+    '''
     Data = []
     Head = []
 
@@ -36,7 +36,7 @@ def read_csem_data(DatFile=None, out=True):
                 continue
 
             tmp = line.split()
-            tmp =["1.e32" if x=="*" else x for x in tmp]
+            tmp =['1.e32' if x=='*' else x for x in tmp]
             Data.append(tmp)
 
 
@@ -45,23 +45,23 @@ def read_csem_data(DatFile=None, out=True):
 
     nD = np.shape(Data)
     if out:
-        print("readDat: %i data read from %s" % (nD[0], DatFile))
+        print('readDat: %i data read from %s' % (nD[0], DatFile))
 
     return Data, Head
 
 
 def write_csem_data(DatFile=None, Dat=None, Head = None,
                out=True):
-    """
+    '''
     Write ModEM input data file.
 
     Volker Rath
     last changed: Apr 30, 2021
-    """
-    fmt = "%14e"+" %12.1f "*3+" %20s"+" %12.1f "*3+" %14e"*3
+    '''
+    fmt = '%14e'+' %12.1f '*3+' %20s'+' %12.1f '*3+' %14e'*3
 
 
-    with open(DatFile,"w") as fd:
+    with open(DatFile,'w') as fd:
 
          fd.write(Head)
          np.savetxt(fd,Dat, fmt = fmt)
@@ -70,7 +70,7 @@ def get_randomTX_simple(TXx=None,TXy=None,
                         Nsamples=None,
                         Ranstate=None,
                         d_margin=0.01):
-    """
+    '''
     Generate  uniform  distribution
     of sampling points.
 
@@ -79,9 +79,9 @@ def get_randomTX_simple(TXx=None,TXy=None,
 
     Volker Rath, May 2021
 
-    """
+    '''
     if TXx==[] or TXy==[]:
-        error("no data given! Exit.")
+        Inv'no data given! Exit.')
 
     if Ranstate is None::
         rng = np.random.default_rng()
@@ -120,7 +120,7 @@ def get_randomTX_constr(TXx=None,TXy=None,
                         Nsamples=None,
                         Ranstate=None,
                         Mindist=250., d_margin=0.01):
-    """
+    '''
     Generate  uniform  distribution
     of sampling points.
 
@@ -129,10 +129,10 @@ def get_randomTX_constr(TXx=None,TXy=None,
 
     Volker Rath, May 2021
 
-    """
+    '''
 
     if TXx==[] or TXy==[]:
-        error("no data given! Exit.")
+        Inv'no data given! Exit.')
     else:
         TX = np.unique(TXx)
         TY = np.unique(TXy)
@@ -187,14 +187,14 @@ def get_randomTX_constr(TXx=None,TXy=None,
 
 
 def error_model(data_obs, daterr_mul=0., daterr_add=0.):
-    """
+    '''
     Generate errors.
 
     Error model including multiplicative and additive noise
 
     VR Apr 2021
 
-    """
+    '''
 
     daterr_a = daterr_add * np.ones_like(data_obs)
     daterr_m = daterr_mul * np.ones_like(data_obs)

@@ -13,12 +13,12 @@
 #       jupytext_version: 1.11.3
 # ---
 
-"""
+'''
 Reads ModEM's Jacobian, does fancy things.
 
 @author: vrath   Feb 2021
 
-"""
+'''
 
 # Import required modules
 
@@ -30,7 +30,7 @@ import inspect
 import time
 from datetime import datetime
 import warnings
-from sys import exit as error
+
 
 
 import numpy as np
@@ -41,10 +41,10 @@ import scipy.sparse as scs
 
 
 
-PY4MTX_DATA = os.environ["PY4MTX_DATA"]
-PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
+PY4MTX_DATA = os.environ['PY4MTX_DATA']
+PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
 
-mypath = [PY4MTX_ROOT+"/modules/", PY4MTX_ROOT+"/scripts/"]
+mypath = [PY4MTX_ROOT+'/modules/', PY4MTX_ROOT+'/scripts/']
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -57,28 +57,28 @@ from version import versionstrg
 
 version, _ = versionstrg()
 titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.currentframe()), out=False)
-print(titstrng+"\n\n")
+print(titstrng+'\n\n')
 
 
-#WorkDir = PY4MTX_ROOT+"/work/"
-WorkDir = PY4MTX_DATA+"/Peru/Sababcaya/SABA8_Jac/"
-if not WorkDir.endswith("/"): WorkDir=WorkDir+"/"
+#WorkDir = PY4MTX_ROOT+'/work/'
+WorkDir = PY4MTX_DATA+'/Peru/Sababcaya/SABA8_Jac/'
+if not WorkDir.endswith('/'): WorkDir=WorkDir+'/'
 
-Task = "merge"
-MergedFile = "SABA8_ZPT__nerr_sp-8_merged"
-MFiles = [WorkDir+"SABA8_Z_nerr_sp-8", WorkDir+"SABA8_P_nerr_sp-8",WorkDir+"SABA8_T_nerr_sp-8",]
+Task = 'merge'
+MergedFile = 'SABA8_ZPT__nerr_sp-8_merged'
+MFiles = [WorkDir+'SABA8_Z_nerr_sp-8', WorkDir+'SABA8_P_nerr_sp-8',WorkDir+'SABA8_T_nerr_sp-8',]
 nF = np.size(MFiles)
-print(" The following files will be merged:")
+print(' The following files will be merged:')
 print(MFiles)
 
-# Task = "split"
-SFile = WorkDir+"merged/UBI_ZPT_sp-8_merged"
+# Task = 'split'
+SFile = WorkDir+'merged/UBI_ZPT_sp-8_merged'
 
 
 
-Split = "dtype  site  freq  comp"
+Split = 'dtype  site  freq  comp'
 print(SFile)
-print(" The file will be split into components:")
+print(' The file will be split into components:')
 print(Split)
 PerIntervals = [ [0.0001, 0.001], 
               [0.001, 0.01], 
@@ -89,27 +89,27 @@ PerIntervals = [ [0.0001, 0.001],
               [100., 1000.], 
               [1000., 10000.]]
 
-if "mer" in Task.lower():
+if 'mer' in Task.lower():
     
     
     for ifile in np.arange(nF):     
        
         start =time.perf_counter()
-        print("\nReading Data from "+MFiles[ifile])
-        Jac = scs.load_npz(MFiles[ifile] +"_jac.npz")
+        print('\nReading Data from '+MFiles[ifile])
+        Jac = scs.load_npz(MFiles[ifile] +'_jac.npz')
         
         
-        tmp = np.load( MFiles[ifile] +"_info.npz", allow_pickle=True)
-        Freq = tmp["Freq"]
-        Comp = tmp["Comp"]
-        Site = tmp["Site"]
-        DTyp = tmp["DTyp"]
-        Data = tmp["Data"]
-        Scale = tmp["Scale"]
-        Info = tmp["Info"]
+        tmp = np.load( MFiles[ifile] +'_info.npz', allow_pickle=True)
+        Freq = tmp['Freq']
+        Comp = tmp['Comp']
+        Site = tmp['Site']
+        DTyp = tmp['DTyp']
+        Data = tmp['Data']
+        Scale = tmp['Scale']
+        Info = tmp['Info']
         
         elapsed = time.perf_counter() - start
-        print(" Used %7.4f s for reading Jacobian from %s " % (elapsed, MFiles[ifile]))
+        print(' Used %7.4f s for reading Jacobian from %s ' % (elapsed, MFiles[ifile]))
         
         
        
@@ -138,39 +138,39 @@ if "mer" in Task.lower():
             
 
     start = time.perf_counter()
-    np.savez_compressed(WorkDir+MergedFile+"_info.npz",
+    np.savez_compressed(WorkDir+MergedFile+'_info.npz',
                         Freq=Freq_merged, Data=Data_merged, Site=Site_merged, 
                         Comp=Comp_merged, Info=Infblk, DTyp=DTyp_merged, 
                         Scale=Scales, allow_pickle=True)
-    scs.save_npz(WorkDir+MergedFile+"_jac.npz", matrix=Jac_merged, compressed=True)
+    scs.save_npz(WorkDir+MergedFile+'_jac.npz', matrix=Jac_merged, compressed=True)
 
     elapsed = time.perf_counter() - start
-    print(" Used %7.4f s for storing Jacobian to %s " % (elapsed, WorkDir+MergedFile))
+    print(' Used %7.4f s for storing Jacobian to %s ' % (elapsed, WorkDir+MergedFile))
     
     
     
 
-if "spl" in Task.lower():
+if 'spl' in Task.lower():
 
     start =time.perf_counter()
-    print("\nReading Data from "+SFile)
-    Jac = scs.load_npz(SFile+"_jac.npz")
+    print('\nReading Data from '+SFile)
+    Jac = scs.load_npz(SFile+'_jac.npz')
     if scs.issparse(Jac): sparse= True
-    tmp = np.load(SFile+"_info.npz", allow_pickle=True)
-    Freq = tmp["Freq"]
-    Comp = tmp["Comp"]
-    Site = tmp["Site"]
-    DTyp = tmp["DTyp"]
-    Data = tmp["Data"]
-    Scal = tmp["Scale"]
-    Info = tmp["Info"]
+    tmp = np.load(SFile+'_info.npz', allow_pickle=True)
+    Freq = tmp['Freq']
+    Comp = tmp['Comp']
+    Site = tmp['Site']
+    DTyp = tmp['DTyp']
+    Data = tmp['Data']
+    Scal = tmp['Scale']
+    Info = tmp['Info']
     
     tmpinfo =  np.reshape(Info,(len(Info),3))
     freq =  tmpinfo[:,0]
     jcmp =  tmpinfo[:,1]
     nsit =  tmpinfo[:,1]
     
-    if "fre" in Split.lower():
+    if 'fre' in Split.lower():
 
         start = time.perf_counter()
         
@@ -178,8 +178,8 @@ if "spl" in Task.lower():
     
     
         for ibnd in np.arange(nF):  
-            lowstr=str(1./PerIntervals[ibnd][0])+"Hz"
-            uppstr=str(1./PerIntervals[ibnd][1])+"Hz"
+            lowstr=str(1./PerIntervals[ibnd][0])+'Hz'
+            uppstr=str(1./PerIntervals[ibnd][1])+'Hz'
               
      
             indices = np.where((Freq>=PerIntervals[ibnd][0]) & (Freq<PerIntervals[ibnd][1]))
@@ -195,41 +195,41 @@ if "spl" in Task.lower():
 
            
            
-            Name = SFile+"_freqband"+lowstr+"_to_"+uppstr
-            Head =os.path.basename(Name).replace("_", " | ")              
+            Name = SFile+'_freqband'+lowstr+'_to_'+uppstr
+            Head =os.path.basename(Name).replace('_', ' | ')
            
-            np.savez_compressed(Name +"_info.npz", 
+            np.savez_compressed(Name +'_info.npz',
                                 Freq=FreqTmp, Data=DataTmp, Site=SiteTmp, 
                                 Comp=CompTmp, Info=InfoTmp, DTyp=DTypTmp, 
                                 Scale=ScalTmp, allow_pickle=True)
             if scs.issparse(JacTmp):
-                scs.save_npz( Name +"_jac.npz", matrix=JacTmp) #, compressed=True)
+                scs.save_npz( Name +'_jac.npz', matrix=JacTmp) #, compressed=True)
             else:
-                np.savez_compressed(Name +"_jac.npz", JacTmp)
+                np.savez_compressed(Name +'_jac.npz', JacTmp)
             
        
                
         elapsed = time.perf_counter() - start
-        print(" Used %7.4f s for splitting into frequency bands " % (elapsed))        
-        print("\n")
+        print(' Used %7.4f s for splitting into frequency bands ' % (elapsed))
+        print('\n')
         
         
-    if "comp" in Split.lower():
+    if 'comp' in Split.lower():
                
             start = time.perf_counter()
         
-            """
+            '''
             Full_Impedance              =  ZXX, ZYY, ZYX, ZXY
             Off_Diagonal_Impedance      =  ZYX, ZXY
             Full_Vertical_Components    = TXR, TYR
             Full_Interstation_TF        = ?
             Off_Diagonal_Rho_Phase      = ?
             Phase_Tensor                =  PTXX, PTYY, PTXY, PTYX
-            """
+            '''
             compstr = [
-                "zxy", "zyx", "zxx", "zyy",
-                "txr",  "tyr", "txi", "txr",
-                "ptxy", "ptyx", "ptxx", "ptyy"]
+                'zxy', 'zyx', 'zxx', 'zyy',
+                'txr',  'tyr', 'txi', 'txr',
+                'ptxy', 'ptyx', 'ptxx', 'ptyy']
 
 
             ExistComp = np.unique(Comp)
@@ -251,37 +251,37 @@ if "spl" in Task.lower():
               
                 
                 
-                Name = SFile+"_Comp"+compstr[icmp-1]
-                Head =os.path.basename(Name).replace("_", " | ")
+                Name = SFile+'_Comp'+compstr[icmp-1]
+                Head =os.path.basename(Name).replace('_', ' | ')
         
-                np.savez_compressed(Name +"_info.npz", 
+                np.savez_compressed(Name +'_info.npz',
                                     Freq=FreqTmp, Data=DataTmp, Site=SiteTmp, 
                                     Comp=CompTmp, Info=InfoTmp, DTyp=DTypTmp, 
                                     Scale=ScalTmp, allow_pickle=True)
                 if scs.issparse(JacTmp):
-                    scs.save_npz( Name +"_jac.npz", matrix=JacTmp) #, compressed=True)
+                    scs.save_npz( Name +'_jac.npz', matrix=JacTmp) #, compressed=True)
                 else:
-                    np.savez_compressed(Name +"_jac.npz", JacTmp)
+                    np.savez_compressed(Name +'_jac.npz', JacTmp)
       
                     
             elapsed = time.perf_counter() - start
-            print(" Used %7.4f s for splitting into components " % (elapsed))        
-            print("\n")
+            print(' Used %7.4f s for splitting into components ' % (elapsed))
+            print('\n')
             
 
-    if "dtyp" in Split.lower():
+    if 'dtyp' in Split.lower():
            
         start = time.perf_counter()
     
-        """
+        '''
         Full_Impedance              = 1
         Off_Diagonal_Impedance      = 2
         Full_Vertical_Components    = 3
         Full_Interstation_TF        = 4
         Off_Diagonal_Rho_Phase      = 5
         Phase_Tensor                = 6
-        """
-        typestr = ["zfull", "zoff", "tp", "mf", "rpoff", "pt"]
+        '''
+        typestr = ['zfull', 'zoff', 'tp', 'mf', 'rpoff', 'pt']
     
         ExistType = np.unique(DTyp)
                 
@@ -303,24 +303,24 @@ if "spl" in Task.lower():
             
             
             
-            Name = SFile+"_DType"+typestr[ityp-1]
-            Head =os.path.basename(Name).replace("_", " | ")
+            Name = SFile+'_DType'+typestr[ityp-1]
+            Head =os.path.basename(Name).replace('_', ' | ')
     
-            np.savez_compressed(Name +"_info.npz", 
+            np.savez_compressed(Name +'_info.npz',
                                 Freq=FreqTmp, Data=DataTmp, Site=SiteTmp, 
                                 Comp=CompTmp, Info=InfoTmp, DTyp=DTypTmp, 
                                 Scale=ScalTmp, allow_pickle=True)
             if scs.issparse(JacTmp):
-                scs.save_npz( Name +"_jac.npz", matrix=JacTmp) #, compressed=True)
+                scs.save_npz( Name +'_jac.npz', matrix=JacTmp) #, compressed=True)
             else:
-                np.savez_compressed(Name +"_jac.npz", JacTmp)
+                np.savez_compressed(Name +'_jac.npz', JacTmp)
   
                 
         elapsed = time.perf_counter() - start
-        print(" Used %7.4f s for splitting into components " % (elapsed))        
-        print("\n")
+        print(' Used %7.4f s for splitting into components ' % (elapsed))
+        print('\n')
         
-    if "sit" in Split.lower():          
+    if 'sit' in Split.lower():
         
         start = time.perf_counter()
         
@@ -340,20 +340,20 @@ if "spl" in Task.lower():
             ScalTmp=Scal
             
            
-            Name = SFile+"_"+sit.lower()
-            Head =os.path.basename(Name).replace("_", " | ")              
+            Name = SFile+'_'+sit.lower()
+            Head =os.path.basename(Name).replace('_', ' | ')
            
-            np.savez_compressed(Name +"_info.npz", 
+            np.savez_compressed(Name +'_info.npz',
                                 Freq=FreqTmp, Data=DataTmp, Site=SiteTmp, 
                                 Comp=CompTmp, Info=InfoTmp, DTyp=DTypTmp, 
                                 Scale=ScalTmp, allow_pickle=True)
             if scs.issparse(JacTmp):
-                scs.save_npz( Name +"_jac.npz", matrix=JacTmp) #, compressed=True)
+                scs.save_npz( Name +'_jac.npz', matrix=JacTmp) #, compressed=True)
             else:
-                np.savez_compressed(Name +"_jac.npz", JacTmp)
+                np.savez_compressed(Name +'_jac.npz', JacTmp)
             
                 
         elapsed = time.perf_counter() - start
-        print(" Used %7.4f s for splitting into sites " % (elapsed))        
-        print("\n")
+        print(' Used %7.4f s for splitting into sites ' % (elapsed))
+        print('\n')
         

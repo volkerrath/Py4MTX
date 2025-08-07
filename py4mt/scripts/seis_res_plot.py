@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
+'''
 Created on Sat Jan 11 13:48:20 2025
 
 @author: sbyrd
-"""
+'''
 
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 
-"""
+'''
 
 Visualizes  statistics for Seismicity-Resistivity correlation
 
@@ -18,11 +18,11 @@ Visualizes  statistics for Seismicity-Resistivity correlation
 @author: Svetlana Byrdina & Volker Rath,  Jan 2025
 
 
-"""
+'''
 
 import os
 import sys
-from sys import exit as error
+
 import time
 from datetime import datetime
 import csv
@@ -33,10 +33,10 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 
 
-JACOPYAN_DATA = os.environ["JACOPYAN_DATA"]
-JACOPYAN_ROOT = os.environ["JACOPYAN_ROOT"]
+JACOPYAN_DATA = os.environ['JACOPYAN_DATA']
+JACOPYAN_ROOT = os.environ['JACOPYAN_ROOT']
 
-mypath = [JACOPYAN_ROOT+"/modules/", JACOPYAN_ROOT+"/scripts/"]
+mypath = [JACOPYAN_ROOT+'/modules/', JACOPYAN_ROOT+'/scripts/']
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -47,20 +47,20 @@ from version import versionstrg
 
 
 rng = np.random.default_rng()
-nan = np.nan  # float("NaN")
+nan = np.nan  # float('NaN')
 
 version, _ = versionstrg()
 titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.currentframe()), out=False)
-print(titstrng+"\n\n")
+print(titstrng+'\n\n')
 
 
-SeisFile = r"/home/sbyrd/Desktop/PEROU/MT_Profil/STAT/Catalog_new_shallow.csv"
-ModFile = r"/home/sbyrd/Desktop/PEROU/MT_Profil/STAT/TACG_Z2_Alpha02_NLCG_016"
+SeisFile = r'/home/sbyrd/Desktop/PEROU/MT_Profil/STAT/Catalog_new_shallow.csv'
+ModFile = r'/home/sbyrd/Desktop/PEROU/MT_Profil/STAT/TACG_Z2_Alpha02_NLCG_016'
 
 
-temp = np.load(SeisFile.replace(".csv",".npz"))
-num_out = temp["num_out"]
-rho_out = temp["rho_out"]
+temp = np.load(SeisFile.replace('.csv','.npz'))
+num_out = temp['num_out']
+rho_out = temp['rho_out']
 
 index = np.where(np.isfinite(rho_out))
 res0 = rho_out[index]
@@ -94,12 +94,12 @@ plt.rc('font', **font)
 
 
 fig, ax = plt.subplots()
-plt.bar(res_bin, num_bin, width=width,  edgecolor="white", linewidth=0.7)
+plt.bar(res_bin, num_bin, width=width,  edgecolor='white', linewidth=0.7)
 #plt.stairs(num_bin, res_int, linewidth=2)
 
 
-plt.ylabel("Number of events")
-plt.xlabel("Log10 resistivity")
+plt.ylabel('Number of events')
+plt.xlabel('Log10 resistivity')
 
-plt.grid("on")
-plt.savefig(SeisFile.replace(".csv",".png"), dpi=600, bbox_inches='tight')
+plt.grid('on')
+plt.savefig(SeisFile.replace('.csv','.png'), dpi=600, bbox_inches='tight')

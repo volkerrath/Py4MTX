@@ -8,7 +8,7 @@
 #     text_representation:
 #       extension: .py
 #       format_name: light
-#       format_version: "1.5"
+#       format_version: '1.5'
 #       jupytext_version: 1.11.3
 #   kernelspec:
 #     display_name: Python 3
@@ -16,17 +16,17 @@
 #     name: python3
 # ---
 
-"""
+'''
 generate pseudo dat for forward modelling studies
 
 @author: sb & vr July 2020
 
-"""
+'''
 
 # Import required modules
 import os
 import sys
-from sys import exit as error
+
 import time
 from datetime import datetime
 import warnings
@@ -36,8 +36,8 @@ import inspect
 
 import numpy as np
 
-mypath = ["/home/vrath/Py4MT/py4mt/modules/",
-          "/home/vrath/Py4MT/py4mt/scripts/"]
+mypath = ['/home/vrath/Py4MT/py4mt/modules/',
+          '/home/vrath/Py4MT/py4mt/scripts/']
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -52,33 +52,33 @@ from version import versionstrg
 
 
 rng = np.random.default_rng()
-nan = np.nan  # float("NaN")
+nan = np.nan  # float('NaN')
 version, _ = versionstrg()
 fname = inspect.getfile(inspect.currentframe())
 
 titstrng = utl.print_title(version=version, fname=fname, out=False)
-print(titstrng+"\n\n")
+print(titstrng+'\n\n')
 
 # Define the path to your EDI-template:
 
-edi_template = r"/home/vrath/work/MT_Data/Krafla/Templates/template8.edi"
-print(" Edifile template read from: %s" % edi_template)
+edi_template = r'/home/vrath/work/MT_Data/Krafla/Templates/template8.edi'
+print(' Edifile template read from: %s' % edi_template)
 
 
 # Define the path and appended string for saved EDI-files:
 
-edi_out_dir = r"/home/vrath/work/MT_Data/Krafla/EDI/"
-print(" Edifiles written to: %s" % edi_out_dir)
+edi_out_dir = r'/home/vrath/work/MT_Data/Krafla/EDI/'
+print(' Edifiles written to: %s' % edi_out_dir)
 if not os.path.isdir(edi_out_dir):
-    print(" File: %s does not exist, but will be created" % edi_out_dir)
+    print(' File: %s does not exist, but will be created' % edi_out_dir)
     os.mkdir(edi_out_dir)
 
-OutName = "Krafla_"
+OutName = 'Krafla_'
 
-edi_gen = "rect regular" # rect
-# edi_gen = "rect random" # rect
+edi_gen = 'rect regular' # rect
+# edi_gen = 'rect random' # rect
 
-if "rect" in edi_gen.lower():
+if 'rect' in edi_gen.lower():
 
     # Krafla  65.711°, -16.778°
     LatLimits = ( 65.67,  65.75000)
@@ -109,7 +109,7 @@ if "rect" in edi_gen.lower():
 
 # Construct list of EDI-files:
 
-if "rect" in edi_gen.lower():
+if 'rect' in edi_gen.lower():
     # generate site list
 
     epsg = utl.get_utm_zone(latitude=CenterLatLon[0], longitude=CenterLatLon[1])
@@ -145,21 +145,21 @@ if "rect" in edi_gen.lower():
         mt_tmp.lon = Lon[nn]
         mt_tmp.station = OutName + nnstr
 
-        file_out = OutName + nnstr + ".edi"
+        file_out = OutName + nnstr + '.edi'
 
-        print("\n Generating " + edi_out_dir + file_out)
+        print('\n Generating ' + edi_out_dir + file_out)
         print(
-            " site %s at :  % 10.6f % 10.6f" %
+            ' site %s at :  % 10.6f % 10.6f' %
             (mt_tmp.station, mt_tmp.lat, mt_tmp.lon))
 
 #  Write a new edi file:
 
-        print("Writing data to " + edi_out_dir + file_out)
+        print('Writing data to ' + edi_out_dir + file_out)
         mt_tmp.write_mt_file(
             save_dir=edi_out_dir,
             fn_basename=file_out,
-            file_type="edi",
-            longitude_format="LONG",
-            latlon_format="dd"
+            file_type='edi',
+            longitude_format='LONG',
+            latlon_format='dd'
         )
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""
+'''
 @author: sb & vr oct 2019
-"""
+'''
 
 # Import required modules
 
@@ -15,10 +15,10 @@ import simplekml
 
 from mtpy.core.mt import MT
 
-PY4MTX_DATA = os.environ["PY4MTX_DATA"]
-PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
+PY4MTX_DATA = os.environ['PY4MTX_DATA']
+PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
 
-mypath = [PY4MTX_ROOT+"/py4mt/modules/", PY4MTX_ROOT+"/py4mt/scripts/"]
+mypath = [PY4MTX_ROOT+'/py4mt/modules/', PY4MTX_ROOT+'/py4mt/scripts/']
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0, pth)
@@ -29,19 +29,19 @@ from version import versionstrg
 
 version, _ = versionstrg()
 titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.currentframe()), out=False)
-print(titstrng+"\n\n")
+print(titstrng+'\n\n')
 
-PY4MTX_DATA =  "/home/vrath/MT_Data/"
-WorkDir = PY4MTX_DATA+"/Ubaye_best/"
-EdiDir = WorkDir+"/edis/"
-print(" Edifiles read from: %s" % EdiDir)
+PY4MTX_DATA =  '/home/vrath/MT_Data/'
+WorkDir = PY4MTX_DATA+'/Ubaye_best/'
+EdiDir = WorkDir+'/edis/'
+print(' Edifiles read from: %s' % EdiDir)
 # open file and read the content in a list
-SiteFile = EdiDir + "Sitelist.dat"
+SiteFile = EdiDir + 'Sitelist.dat'
 
 KmlDir =  WorkDir
-KmlFile = "Ubaye_all"
+KmlFile = 'Ubaye_all'
 
-PltDir = WorkDir+"/plots/"
+PltDir = WorkDir+'/plots/'
 
 
 # print(places)
@@ -49,9 +49,9 @@ PltDir = WorkDir+"/plots/"
 kml = False
 kmz = True
 
-AddImages = "model" # "strikes" # "data", "strikes", "model"
+AddImages = 'model' # 'strikes' # 'data', 'strikes', 'model'
 if len(AddImages)>0:
-    PltDir = WorkDir+"/plots/"
+    PltDir = WorkDir+'/plots/'
     ImageWidth= 800
 
 
@@ -59,11 +59,11 @@ if len(AddImages)>0:
 AddSpecial = False
 if AddSpecial:
     SpcDir = WorkDir
-    SpecialDat = SpcDir+"Special.dat"
+    SpecialDat = SpcDir+'Special.dat'
     specials = []
     with open(SpecialDat) as file:
         for line in file:
-            tmp = line.split(",")
+            tmp = line.split(',')
             tmp[0] = float(tmp[0])
             tmp[1] = float(tmp[1])
             tmp[2] = tmp[2].strip()
@@ -72,17 +72,17 @@ if AddSpecial:
             tmp[5] = tmp[5].strip()
             specials.append(tmp)
 
-    print("specials:",specials)
+    print('specials:',specials)
 
 
 
 
 
 
-icon_dir = PY4MTX_ROOT + "/py4mt/share/icons/"
-site_icon =  icon_dir + "placemark_circle.png"
+icon_dir = PY4MTX_ROOT + '/py4mt/share/icons/'
+site_icon =  icon_dir + 'placemark_circle.png'
 
-site_tcolor = simplekml.Color.white  # "#555500" #
+site_tcolor = simplekml.Color.white  # '#555500' #
 site_tscale = 1.2  # scale the text
 site_iscale = 2.5
 
@@ -109,7 +109,7 @@ Lons = []
 
 with open(SiteFile) as file:
     for line in file:
-        sit =line.split(" ")
+        sit =line.split(' ')
         Nams.append(sit[0])
         Lats.append(float(sit[1]))
         Lons.append(float(sit[2]))
@@ -133,42 +133,42 @@ for ii in numpy.arange(nsites):
 
     if len(AddImages)>0:
 
-        if "dat" in AddImages:
-            sf = Nams[ii]+"_data"
-            d_plot = PltDir+sf+".png"
+        if 'dat' in AddImages:
+            sf = Nams[ii]+'_data'
+            d_plot = PltDir+sf+'.png'
             if os.path.exists(d_plot)==True:
                 src= kml.addfile(d_plot)
-                imstring ='<img width="'+str(ImageWidth)+'" align="left" src="' + src + '"/>'
-                # imstring = '<img width="1200" align="left" src="' + src + '"/>'
+                imstring ='<img width=''+str(ImageWidth)+'' align='left' src='' + src + ''/>'
+                # imstring = '<img width='1200' align='left' src='' + src + ''/>'
                 site.description = (imstring)
             else:
-                print(d_plot+ " does not exist!")
+                print(d_plot+ ' does not exist!')
 
-        if "str" in AddImages:
-            sf = Nams[ii]+"_strikes"
-            d_plot = PltDir+sf+".png"
+        if 'str' in AddImages:
+            sf = Nams[ii]+'_strikes'
+            d_plot = PltDir+sf+'.png'
             if os.path.exists(d_plot)==True:
                 src= kml.addfile(d_plot)
-                imstring ='<img width="'+str(ImageWidth)+'" align="left" src="' + src + '"/>'
-                # imstring = '<img width="1200" align="left" src="' + src + '"/>'
+                imstring ='<img width=''+str(ImageWidth)+'' align='left' src='' + src + ''/>'
+                # imstring = '<img width='1200' align='left' src='' + src + ''/>'
                 site.description = (imstring)
             else:
-                print(d_plot+ " does not exist!")
+                print(d_plot+ ' does not exist!')
 
-        if "mod" in AddImages:
-            sf = Nams[ii]+"_model"
-            d_plot = PltDir+sf+".png"
+        if 'mod' in AddImages:
+            sf = Nams[ii]+'_model'
+            d_plot = PltDir+sf+'.png'
             if os.path.exists(d_plot)==True:
                 src= kml.addfile(d_plot)
-                imstring ='<img width="'+str(ImageWidth)+'" align="left" src="' + src + '"/>'
-                # imstring = '<img width="1200" align="left" src="' + src + '"/>'
+                imstring ='<img width=''+str(ImageWidth)+'' align='left' src='' + src + ''/>'
+                # imstring = '<img width='1200' align='left' src='' + src + ''/>'
                 site.description = (imstring)
             else:
-                print(d_plot+ " does not exist!")
+                print(d_plot+ ' does not exist!')
 
 
 
 kml_outfile = KmlDir + KmlFile + AddImages
-kml.savekmz(kml_outfile + ".kmz")
+kml.savekmz(kml_outfile + '.kmz')
 
-print("Done. kml/z written to " + kml_outfile)
+print('Done. kml/z written to ' + kml_outfile)
