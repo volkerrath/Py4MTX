@@ -7,7 +7,6 @@ Created on Sun Nov  30, 2024
 
 import os
 import sys
-from sys import exit as error
 import ast
 import inspect
 
@@ -46,7 +45,7 @@ def get_edi_list(edirname=None, sort=False, fullpath=True):
 
     ns = np.size(edi_files)
     if ns ==0:
-        error("No edi files found in "+edirname+"! Exit.")
+        sys.exit("No edi files found in "+edirname+"! Exit.")
 
     if sort:
         edi_files
@@ -150,7 +149,7 @@ def make_data(edirname=None,
             edi_files.append(edirname+entry)
     ns = np.size(edi_files)
     if ns ==0:
-        error("No edi files found in "+edirname+"! Exit.")
+        sys.exit("No edi files found in "+edirname+"! Exit.")
 
     mtd = MTData()
     sit = 0
@@ -221,7 +220,7 @@ def make_collection(edirname=None,
             edi_files.append(edirname+entry)
     ns = np.size(edi_files)
     if ns ==0:
-        error("No edi files found in "+edirname+"! Exit.")
+        sys.exit("No edi files found in "+edirname+"! Exit.")
 
     mtc = MTCollection()
     mtc.open_collection(collection)
@@ -278,7 +277,7 @@ def mt1dfwd(freq, sig, d, inmod="r", out="imp", magfield="b"):
         sig = 1.0 / np.array(sig)
 
     if sig.ndim > 1:
-        error("IP not yet implemented")
+        sys.exit("IP not yet implemented")
 
     n = np.size(sig)
 

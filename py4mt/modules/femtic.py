@@ -1,7 +1,6 @@
 
 import os
 import sys
-from sys import exit as error
 import shutil
 import copy
 import inspect
