@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
+'''
 
 Run the randomize-then-optimize (RTO) algorithm:
 
@@ -33,7 +33,7 @@ vr July 2022
 Created on Wed Apr 30 16:33:13 2025
 
 @author: vrath
-"""
+'''
 import os
 import sys
 import shutil
@@ -42,10 +42,10 @@ import functools
 import inspect
 
 
-PY4MTX_DATA = os.environ["PY4MTX_DATA"]
-PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
+PY4MTX_DATA = os.environ['PY4MTX_DATA']
+PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
 
-mypath = [PY4MTX_ROOT+"/py4mt/modules/", PY4MTX_ROOT+"/py4mt/scripts/"]
+mypath = [PY4MTX_ROOT+'/py4mt/modules/', PY4MTX_ROOT+'/py4mt/scripts/']
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -60,12 +60,12 @@ from sklearn.covariance import empirical_covariance
 
 
 rng = np.random.default_rng()
-nan = np.nan  # float("NaN")
+nan = np.nan  # float('NaN')
 version, _ = versionstrg()
 fname = inspect.getfile(inspect.currentframe())
 
 titstrng = utl.print_title(version=version, fname=fname, out=False)
-print(titstrng+"\n\n")
+print(titstrng+'\n\n')
 
 
 N_samples = 32
@@ -112,9 +112,9 @@ dir_list = fem.generate_directories(
 
 
 
-"""
+'''
 Draw perturbed model sets: d  ̃ ∼ N (m, Cm)
-"""
+'''
 
 
 model_ensemble = fem.generate_model_ensemble(dir_base=EnsembleDir+EnsembleName,
@@ -125,9 +125,9 @@ model_ensemble = fem.generate_model_ensemble(dir_base=EnsembleDir+EnsembleName,
                                           out=True)
 print('\n')
 
-"""
+'''
 Draw perturbed data sets: d  ̃ ∼ N (d, Cd)
-"""
+'''
 
 data_ensemble = fem.generate_data_ensemble(dir_base=EnsembleDir+EnsembleName,
                                           N_samples=N_samples,

@@ -8,17 +8,17 @@
 #     text_representation:
 #       extension: .py
 #       format_name: light
-#       format_version: "1.5"
+#       format_version: '1.5'
 #       jupytext_version: 1.11.3
 # ---
 
-"""
+'''
 
 This script produces a site list containing site names,
 coordinates and elevations, e. g., for WALDIM analysis.
 
 @author: sb & vr dec 2019
-"""
+'''
 
 # Import required modules
 import os
@@ -42,10 +42,10 @@ import contextily as cx
 
 
 
-PY4MTX_DATA = os.environ["PY4MTX_DATA"]
-PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
+PY4MTX_DATA = os.environ['PY4MTX_DATA']
+PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
 
-mypath = [PY4MTX_ROOT+"/py4mt/modules/", PY4MTX_ROOT+"/py4mt/scripts/"]
+mypath = [PY4MTX_ROOT+'/py4mt/modules/', PY4MTX_ROOT+'/py4mt/scripts/']
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -57,23 +57,23 @@ import util as utl
 from version import versionstrg
 
 rng = np.random.default_rng()
-nan = np.nan  # float("NaN")
+nan = np.nan  # float('NaN')
 blank = 1.e-30 # np.nan
 rhoair = 1.e17
 
 version, _ = versionstrg()
 titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.currentframe()), out=False)
-print(titstrng+"\n\n")
+print(titstrng+'\n\n')
 
 
 
-PY4MTX_DATA =  "/home/vrath/MT_Data/"
+PY4MTX_DATA =  '/home/vrath/MT_Data/'
 
 
 EPSG = 32629
-WorkDir = PY4MTX_DATA+"/France/annecy_2025_dist/edi_files/"
+WorkDir = PY4MTX_DATA+'/France/annecy_2025_dist/edi_files/'
 EdiDir = WorkDir
-surveyname = "Annecy"
+surveyname = 'Annecy'
 
 
 # Define the path to your EDI-files:
@@ -81,15 +81,15 @@ file_list = mtp.get_edi_list(EdiDir)
 ns = len(file_list)
 
 # Define the path to your MTCollection file:
-Collection = WorkDir+"/ubaye_collection.h5"
+Collection = WorkDir+'/ubaye_collection.h5'
 
 FromEdis = True
 if FromEdis:
-    print(" Edifiles read from: %s" % EdiDir)
+    print(' Edifiles read from: %s' % EdiDir)
 
     dataset = mtp.make_data(edirname=EdiDir,
                         collection=Collection,
-                        metaid="ubaye",
+                        metaid='ubaye',
                         survey=surveyname,
                         savedata=True,
                         utm_epsg=EPSG
@@ -97,7 +97,7 @@ if FromEdis:
 
     # dataset = mtp.make_collection(
     #                     collection=Collection,
-    #                     metaid="enfield",
+    #                     metaid='enfield',
     #                     survey=surveyname,
     #                     returndata=True,
     #                     utm_epsg=EPSG
@@ -106,7 +106,7 @@ if FromEdis:
 else:
     with MTCollection() as mtc:
         mtc.open_collection(Collection)
-        mtc.working_dataframe = mtc.master_dataframe.loc[mtc.master_dataframe.survey == "enfield"]
+        mtc.working_dataframe = mtc.master_dataframe.loc[mtc.master_dataframe.survey == 'enfield']
         mtc.utm_crs = EPSG
         dataset = mtc.to_mt_data()
 
@@ -114,46 +114,46 @@ else:
 # Define the path to your EDI-files and for the list produced
 
 # Define the  path for saving  plots:
-PltDir = WorkDir +"/plots/"
-print(" Plots written to: %s" % PltDir)
+PltDir = WorkDir +'/plots/'
+print(' Plots written to: %s' % PltDir)
 if not os.path.isdir(PltDir):
-    print(" File: %s does not exist, but will be created" % PltDir)
+    print(' File: %s does not exist, but will be created' % PltDir)
     os.mkdir(PltDir)
 
 # Graphical paramter. Determine the plot formats produced,
 # and the required resolution:
 
-PlotFmt = [".png"]
+PlotFmt = ['.png']
 DPI = 600
 PDFCatalog = True
-PDFCatalogName  = "Ubaye_strikes.pdf"
-if not ".pdf" in PlotFmt:
+PDFCatalogName  = 'Ubaye_strikes.pdf'
+if not '.pdf' in PlotFmt:
     PDFCatalog= False
-    print("No PDF catalog because no pdf output!")
+    print('No PDF catalog because no pdf output!')
 
 
 # No changes required after this line!
 
-# """
+# '''
 # Determine graphical parameter. not working with py4mt?
 # => print(plt.style.available)
-# """
+# '''
 # cm = 1/2.54  # centimeters in inches
-# plt.style.use("seaborn-v0_8-paper")
-# mpl.rcParams["figure.dpi"] = 600
-# mpl.rcParams["axes.linewidth"] = 0.5
-# mpl.rcParams["savefig.facecolor"] = "none"
+# plt.style.use('seaborn-v0_8-paper')
+# mpl.rcParams['figure.dpi'] = 600
+# mpl.rcParams['axes.linewidth'] = 0.5
+# mpl.rcParams['savefig.facecolor'] = 'none'
 
 
 
 
 stations_plot = dataset.plot_stations(pad=.005)
 for fmt in PlotFmt:
-    stations_plot.save_plot(PltDir+"AllSites"+fmt, fig_dpi=600)
+    stations_plot.save_plot(PltDir+'AllSites'+fmt, fig_dpi=600)
 
 strike_plot_all = dataset.plot_strike()
 for fmt in PlotFmt:
-    strike_plot_all.save_plot(PltDir+"StrikesAllData"+fmt, fig_dpi=600)
+    strike_plot_all.save_plot(PltDir+'StrikesAllData'+fmt, fig_dpi=600)
 
 
 strike_plot_dec = dataset.plot_strike(plot_type=1,
@@ -162,9 +162,9 @@ strike_plot_dec = dataset.plot_strike(plot_type=1,
                                       plot_pt = True,
                                       plot_tipper = True,
                                       plot_invariant = True,
-                                      plot_orientation="v")
+                                      plot_orientation='v')
 for fmt in PlotFmt:
-    strike_plot_dec.save_plot(PltDir+"StrikesPerDec"+fmt, fig_dpi=600)
+    strike_plot_dec.save_plot(PltDir+'StrikesPerDec'+fmt, fig_dpi=600)
 
 if PDFCatalog:
     pdf_list = []
@@ -178,13 +178,13 @@ if PDFCatalog:
 # # # Loop over stations
 for sit in file_list:
     site, _ = os.path.splitext(os.path.basename(sit))
-    data = dataset.get_subset([surveyname+"."+site])
+    data = dataset.get_subset([surveyname+'.'+site])
     strike_plot_site = data.plot_strike()
     for fmt in PlotFmt:
-        strike_plot_site.save_plot(PltDir+site+"_strikes"+fmt, fig_dpi=600)
+        strike_plot_site.save_plot(PltDir+site+'_strikes'+fmt, fig_dpi=600)
 
     if PDFCatalog:
-        pdf_list.append(PltDir+site+"_strikes.pdf")
+        pdf_list.append(PltDir+site+'_strikes.pdf')
 
 
 

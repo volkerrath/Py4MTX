@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""
+'''
 Plots WALDIM output as KMZ-file
 
 @author: sb & vr may 2023
@@ -14,7 +14,7 @@ Martí A, Queralt P, Ledo J, Farquharson C (2010)
 Dimensionality imprint of electrical anisotropy in magnetotelluric responses
 Physics of the Earth and Planetary Interiors, 182, 139-151.
 
-"""
+'''
 
 # Import required modules
 
@@ -27,11 +27,11 @@ import inspect
 import numpy
 import simplekml
 
-PY4MTX_DATA = os.environ["PY4MTX_DATA"]
-PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
+PY4MTX_DATA = os.environ['PY4MTX_DATA']
+PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
 
 
-mypath = [PY4MTX_ROOT+"/py4mt/modules/", PY4MTX_ROOT+"/py4mt/scripts/"]
+mypath = [PY4MTX_ROOT+'/py4mt/modules/', PY4MTX_ROOT+'/py4mt/scripts/']
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0, pth)
@@ -42,7 +42,7 @@ from version import versionstrg
 
 version, _ = versionstrg()
 titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.currentframe()), out=False)
-print(titstrng+"\n\n")
+print(titstrng+'\n\n')
 
 
 # Define the path to your files
@@ -51,14 +51,14 @@ print(titstrng+"\n\n")
 # Define the path to your EDI-files
 
 
-PY4MTX_DATA =  "/home/vrath/MT_Data/"
-WorkDir = PY4MTX_DATA+"/Ubaye_best/"
-DimDir = WorkDir+"/edis/"
-print(" WALdim results read from: %s" % DimDir)
+PY4MTX_DATA =  '/home/vrath/MT_Data/'
+WorkDir = PY4MTX_DATA+'/Ubaye_best/'
+DimDir = WorkDir+'/edis/'
+print(' WALdim results read from: %s' % DimDir)
 KmlDir =  WorkDir
-KmlFile = "Ubaye_WALDIM"
+KmlFile = 'Ubaye_WALDIM'
 
-DimFile = "UBAYE_DIM_0.15.dat"
+DimFile = 'UBAYE_DIM_0.15.dat'
 
 
 
@@ -72,7 +72,7 @@ Class3 = True
 # Class3 = False
 
 read=[]
-with open(SiteFile, "r") as f:
+with open(SiteFile, 'r') as f:
     place_list = csv.reader(f)
 
     for site in place_list:
@@ -89,17 +89,17 @@ for line in read:
         line[5] = int(line[5])
         print(line)
         data.append(line)
-data =  numpy.asarray(data, dtype="object")
+data =  numpy.asarray(data, dtype='object')
 ndt = numpy.shape(data)
 
 freqs = numpy.unique(data[:,3])
-print("freqs")
+print('freqs')
 print(freqs)
 
-icon_dir = PY4MTX_ROOT + "/py4mt/share/icons/"
-site_icon =  icon_dir + "placemark_circle.png"
+icon_dir = PY4MTX_ROOT + '/py4mt/share/icons/'
+site_icon =  icon_dir + 'placemark_circle.png'
 
-site_tcolor = simplekml.Color.white  # "#555500" #
+site_tcolor = simplekml.Color.white  # '#555500' #
 site_tscale = 1.2  # scale the text
 site_iscale = 1.5
 
@@ -114,7 +114,7 @@ else:
     from matplotlib import cm, colors
     cols = cm.get_cmap('rainbow', 9)
     # dimcolors = [(1., 1., 1., 1.)]
-    dimcolors = ["ffffff"]
+    dimcolors = ['ffffff']
     for c in range(cols.N):
         rgba = cols(c)
         # dimcolors.append(rgba)
@@ -122,16 +122,16 @@ else:
         dimcolors.append(hexo)
 
     desc =[
-    "0: UNDETERMINED",
-    "1: 1D",
-    "2: 2D",
-    "3: 3D/2D only twist",
-    "4: 3D/2D general",
-    "5: 3D",
-    "6: 3D/2D with diagonal regional tensor",
-    "7: 3D/2D or 3D/1D indistinguishable",
-    "8: Anisotropy hint 1: homogeneous anisotropic medium",
-    "9: Anisotropy hint 2: anisotropic body within a 2D medium"
+    '0: UNDETERMINED',
+    '1: 1D',
+    '2: 2D',
+    '3: 3D/2D only twist',
+    '4: 3D/2D general',
+    '5: 3D',
+    '6: 3D/2D with diagonal regional tensor',
+    '7: 3D/2D or 3D/1D indistinguishable',
+    '8: Anisotropy hint 1: homogeneous anisotropic medium',
+    '9: Anisotropy hint 2: anisotropic body within a 2D medium'
         ]
 
 
@@ -151,9 +151,9 @@ for f in freqs:
     ff = numpy.log10(f)
 
     if ff < 0:
-        freq_strng = "Per"+str(int(round(1/f,0)))+"s"
+        freq_strng = 'Per'+str(int(round(1/f,0)))+'s'
     else:
-        freq_strng = "Freq"+str(int(round(f,0)))+"Hz"
+        freq_strng = 'Freq'+str(int(round(f,0)))+'Hz'
 
     freqfolder = kml.newfolder(name=freq_strng)
 
@@ -179,16 +179,16 @@ for f in freqs:
         if Class3:
             if Dims[ii]==0:
                 site.style.iconstyle.color = site_icolor_none
-                site.description ="undetermined"
+                site.description ='undetermined'
             if Dims[ii]==1:
                 site.style.iconstyle.color = site_icolor_1d
-                site.description ="1-D"
+                site.description ='1-D'
             if Dims[ii]==2:
                 site.style.iconstyle.color = site_icolor_2d
-                site.description ="2-D"
+                site.description ='2-D'
             if Dims[ii]>2:
                 site.style.iconstyle.color = site_icolor_3d
-                site.description ="3-D"
+                site.description ='3-D'
         else:
             # print(Dims[ii], desc[Dims[ii]], dimcolors[Dims[ii]])
             site.style.iconstyle.color = simplekml.Color.hex(dimcolors[Dims[ii]])
@@ -197,26 +197,26 @@ for f in freqs:
             site.description = desc[Dims[ii]]
 
 if Class3:
-    kml_outfile = KmlDir + KmlFile+"_3"
+    kml_outfile = KmlDir + KmlFile+'_3'
 else:
     loncenter=numpy.mean(Lons)
     latcenter=numpy.mean(Lats)
-    site = kml.newpoint(name="Legend")
-    leg_icon =  icon_dir + "star.png"
+    site = kml.newpoint(name='Legend')
+    leg_icon =  icon_dir + 'star.png'
     site.coords = [(loncenter, latcenter, 0.)]
     site.style.iconstyle.icon.href = leg_icon
     site.style.iconstyle.color =  simplekml.Color.yellow
     site.style.iconstyle.scale = 2.
     site.style.labelstyle.color = simplekml.Color.yellow
     site.style.labelstyle.scale = 1.8
-    srcfile = kml.addfile(PY4MTX_ROOT + "/py4mt/share/DimColorScheme.png")
-    site.description = ('<img width="800" align="left" src="' + srcfile + '"/>')
-    kml_outfile = KmlDir + KmlFile+"_9"
+    srcfile = kml.addfile(PY4MTX_ROOT + '/py4mt/share/DimColorScheme.png')
+    site.description = ('<img width='800' align='left' src='' + srcfile + ''/>')
+    kml_outfile = KmlDir + KmlFile+'_9'
 # Save raw kml file:
 
 
 # Compressed kmz file:
 if kmz:
-    kml.savekmz(kml_outfile + ".kmz")
+    kml.savekmz(kml_outfile + '.kmz')
 
-print("Done. kml/z written to " + kml_outfile)
+print('Done. kml/z written to ' + kml_outfile)

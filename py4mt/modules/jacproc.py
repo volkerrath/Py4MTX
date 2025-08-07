@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""
+'''
 Created on Sun Sep 27 17:36:08 2020
 
-"""
-from sys import exit as error
+'''
+
 import numpy as np
 import scipy.sparse as scs
 import numpy.linalg as npl
@@ -12,19 +12,19 @@ from numba import jit
 
 
 def calc_sensitivity(Jac=np.array([]),
-                     Type = "euclidean", UseSigma = False, Small = 1.e-30, OutInfo = False):
-    """
+                     Type = 'euclidean', UseSigma = False, Small = 1.e-30, OutInfo = False):
+    '''
     Calculate sensitivities.
     Expects that Jacobian is already scaled, i.e Jac = C^(-1/2)*J.
 
     Several options exist for calculating sensiotivities, all of them
     used in the literature.
     Type:
-        "raw"     sensitivities summed along the data axis
-        "abs"     absolute sensitivities summed along the data axis
+        'raw'     sensitivities summed along the data axis
+        'abs'     absolute sensitivities summed along the data axis
                     (often called coverage)
-        "euc"     squared sensitivities summed along the data axis.
-        "cum"     cummulated sensitivities as proposed by
+        'euc'     squared sensitivities summed along the data axis.
+        'cum'     cummulated sensitivities as proposed by
                   Christiansen & Auken, 2012. Not usable for negative data.
 
     Usesigma:
@@ -53,40 +53,40 @@ def calc_sensitivity(Jac=np.array([]),
 
     author:VR 9/23
 
-    """
+    '''
 
     if np.size(Jac)==0:
-        error("calc_sensitivity: Jacobian size is 0! Exit.")
+        sys.exit('calc_sensitivity: Jacobian size is 0! Exit.')
 
     if UseSigma:
         Jac = -Jac
 
 
-    if "raw" in  Type.lower():
+    if 'raw' in  Type.lower():
         S = Jac.sum(axis=0)
         if OutInfo:
-            print("raw:", S)
+            print('raw:', S)
         # else:
-        #     print("raw sensitivities")
+        #     print('raw sensitivities')
         # smax = Jac.max(axis = 0)
         # smin = Jac.max(axis = 0)
 
-    elif "cov" in Type.lower():
+    elif 'cov' in Type.lower():
         S = Jac.abs().sum(axis=0)
         if OutInfo:
-            print("cov:", S)
+            print('cov:', S)
         # else:
-        #     print("coverage")
+        #     print('coverage')
 
-    elif "euc" in Type.lower():
+    elif 'euc' in Type.lower():
         S = Jac.power(2).sum(axis=0)
         S = np.sqrt(S)
         if OutInfo:
-            print("euc:", S)
+            print('euc:', S)
         # else:
-        #     print("euclidean (default)")
+        #     print('euclidean (default)')
 
-    elif "cum" in Type.lower():
+    elif 'cum' in Type.lower():
         S = Jac.abs().sum(axis=0)
         # print(np.shape(S))
         # S = np.sum(Jac,axis=0)
@@ -94,19 +94,19 @@ def calc_sensitivity(Jac=np.array([]),
         S = np.append(0.+1.e-10, np.cumsum(S[-1:0:-1]))
         S = np.flipud(S)
         if OutInfo:
-           print("cumulative:", S)
+           print('cumulative:', S)
         # else:
-        #    print("cumulative sensitivity")
+        #    print('cumulative sensitivity')
 
     else:
-        print("calc_sensitivity: Type "
-              +Type.lower()+" not implemented! Default assumed.")
+        print('calc_sensitivity: Type '
+              +Type.lower()+' not implemented! Default assumed.')
         S = Jac.power(2).sum(axis=0)
 
         if OutInfo:
-            print("euc (default):", S)
+            print('euc (default):', S)
         # else:
-        #     print("euclidean (default)")
+        #     print('euclidean (default)')
 
         # S = S.reshape[-1,1]
 
@@ -114,11 +114,11 @@ def calc_sensitivity(Jac=np.array([]),
     if OutInfo:
         maxval = np.amax(S)
         minval = np.amin(S)
-        print("calc_sensitivity:",minval, maxval)
+        print('calc_sensitivity:',minval, maxval)
 
-    # print("calc: ", np.any(S==0))
+    # print('calc: ', np.any(S==0))
     S[np.where(np.abs(S)<Small)]=Small
-    # print("calc: ", np.any(S==0))
+    # print('calc: ', np.any(S==0))
     # S=S.A1
     S = np.asarray(S).ravel()
 
@@ -127,24 +127,24 @@ def calc_sensitivity(Jac=np.array([]),
 
 
 def transform_sensitivity(S=np.array([]), Vol=np.array([]),
-                          Transform=["sqrt", "size","max", ],
+                          Transform=['sqrt', 'size','max', ],
                           asinhpar=[0.], Maxval=None, Small= 1.e-30, OutInfo=False):
-    """
+    '''
     Transform sensitivities.
 
     Several options exist for transforming sensitivities, all of them
     used in the literature.
 
     Normalize options:
-        "siz"       Normalize by the values optional array V ("volume"),
+        'siz'       Normalize by the values optional array V ('volume'),
                     i.e in our case layer thickness.
-        "max"       Normalize by maximum value.
-        "sur"       Normalize by surface value.
-        "sqr"       Take the square root. Only usefull for euc sensitivities.
-        "log"       Take the logarithm. This should always be the
+        'max'       Normalize by maximum value.
+        'sur'       Normalize by surface value.
+        'sqr'       Take the square root. Only usefull for euc sensitivities.
+        'log'       Take the logarithm. This should always be the
                     last value in Transform list
 
-        "asinh"     asinh transform. WARNING: excludes log option,
+        'asinh'     asinh transform. WARNING: excludes log option,
                     and should be used only for raw sensitivities
                     (C. Scholl, Die Periodizitaet von Sendesignalen
                     bei Long-Offset Transient Electromagnetics,
@@ -152,32 +152,32 @@ def transform_sensitivity(S=np.array([]), Vol=np.array([]),
 
     author:VR 4/23
 
-    """
+    '''
 
     if np.size(S)==0:
-        error("transform_sensitivity: Sensitivity size is 0! Exit.")
+        sys.exit('transform_sensitivity: Sensitivity size is 0! Exit.')
 
     ns = np.shape(S)
-    print("transform_sensitivity: Shape = ", ns)
-    print("trans_sensitivity:",np.amin(S), np.amax(S))
+    print('transform_sensitivity: Shape = ', ns)
+    print('trans_sensitivity:',np.amin(S), np.amax(S))
 
     for item in Transform:
 
 
-        # if "sqr" in item.lower():
+        # if 'sqr' in item.lower():
         #     S = np.sqrt(S)
-        #     # print("S0s", np.shape(S))
-        #     print("trans_sensitivity sqr:",np.amin(S), np.amax(S))
+        #     # print('S0s', np.shape(S))
+        #     print('trans_sensitivity sqr:',np.amin(S), np.amax(S))
 
-        if "log" in item.lower():
+        if 'log' in item.lower():
             S = np.log10(S)
-            print("trans_sensitivity log:",np.amin(S), np.amax(S))
+            print('trans_sensitivity log:',np.amin(S), np.amax(S))
 
-        if "asinh" in item.lower():
+        if 'asinh' in item.lower():
             maxval = np.amax(S)
             minval = np.amin(S)
             if maxval>0 and minval>0:
-                print("transform_sensitivity: No negatives, switched to log transform!")
+                print('transform_sensitivity: No negatives, switched to log transform!')
                 S = np.log10(S)
             else:
                 if len(asinhpar)==1:
@@ -187,43 +187,43 @@ def transform_sensitivity(S=np.array([]), Vol=np.array([]),
 
                     S = np.arcsinh(S/scale)
 
-        if ("siz" in item.lower()) or ("vol" in item.lower()):
-             print("transformed_sensitivity: Transformed by volumes/layer thickness.")
+        if ('siz' in item.lower()) or ('vol' in item.lower()):
+             print('transformed_sensitivity: Transformed by volumes/layer thickness.')
              if np.size(Vol)==0:
-                 error("Transform_sensitivity: no volumes given! Exit.")
+                 sys.exit('Transform_sensitivity: no volumes given! Exit.')
 
              else:
                  maxval = np.amax(S)
                  minval = np.amin(S)
-                 print("before volume:",minval, maxval)
-                 print("volume:", np.amax(Vol),np.amax(Vol) )
+                 print('before volume:',minval, maxval)
+                 print('volume:', np.amax(Vol),np.amax(Vol) )
                  S = S/Vol.ravel()
                  maxval = np.amax(S)
                  minval = np.amin(S)
-                 print("after volume:",minval, maxval)
+                 print('after volume:',minval, maxval)
 
-        if "max" in item.lower():
-             print("trans_sensitivity: Transformed by maximum value.")
+        if 'max' in item.lower():
+             print('trans_sensitivity: Transformed by maximum value.')
              if Maxval is None:
                  maxval = np.amax(np.abs(S))
              else:
                  maxval = Maxval
-             print("maximum value: ", maxval)
+             print('maximum value: ', maxval)
              S = S/maxval
-             print("trans_sensitivity max:",np.amin(S), np.amax(S))
-             # print("S0m", np.shape(S))
+             print('trans_sensitivity max:',np.amin(S), np.amax(S))
+             # print('S0m', np.shape(S))
 
 
     if OutInfo:
-        print("trans_sensitivity:",np.amin(S), np.amax(S))
+        print('trans_sensitivity:',np.amin(S), np.amax(S))
 
         S[np.where(np.abs(S)<Small)]=Small
 
 
     return S, maxval
 
-def get_scale(d=np.array([]), f=0.1, method = "other", OutInfo = False):
-    """
+def get_scale(d=np.array([]), f=0.1, method = 'other', OutInfo = False):
+    '''
     Get optimal Scale for arcsin transformation.
 
     Parameters
@@ -243,12 +243,12 @@ def get_scale(d=np.array([]), f=0.1, method = "other", OutInfo = False):
         Diploma Thesis, Institut für Geophysik und Meteorologie der Universität zu Koeln, 2001.
 
 
-    """
+    '''
 
     if np.size(d)==0:
-        error("get_S: No data given! Exit.")
+        sys.exit('get_S: No data given! Exit.')
 
-    if "s2007" in method.lower():
+    if 's2007' in method.lower():
         scale = f * np.nanmax(np.abs(d))
 
     else:
@@ -258,12 +258,12 @@ def get_scale(d=np.array([]), f=0.1, method = "other", OutInfo = False):
         scale = np.abs(dmax/denom)
 
     if OutInfo:
-        print("Scale value S is "+str(scale)+", method "+method)
+        print('Scale value S is '+str(scale)+', method '+method)
 
     return scale
 
 def sparsmat_to_array(mat=None):
-    """
+    '''
 
 
     Parameters
@@ -279,7 +279,7 @@ def sparsmat_to_array(mat=None):
          The default is np.array([]).YPE
 
 
-    """
+    '''
     arr = np.array([])
 
     # data = mat.A1
@@ -289,7 +289,7 @@ def sparsmat_to_array(mat=None):
 
 
 def update_avg(k = None, m_k=None, m_a=None, m_v=None):
-    """
+    '''
     Update the mean and variance from data stream.
 
     Note: final variance needs to be divided by k-1.
@@ -310,7 +310,7 @@ def update_avg(k = None, m_k=None, m_a=None, m_v=None):
     M3 += term1 * delta_n * (n - 2) - 3 * delta_n * M2;
     M2 += term1;
 
-    """
+    '''
     if k == 1:
         m_avg = m_k
         m_var = np.zeros_like(m_avg)
@@ -325,23 +325,23 @@ def update_avg(k = None, m_k=None, m_a=None, m_v=None):
     return m_avg, m_var
 
 # def update_med(k = None, model_n=None, model_a=None, model_v=None):
-#     """
+#     '''
 #     Estimate the quantiles from data stream.
 
 #     T-digest
 
 #     VR  Mar , 2021
-#     """
+#     '''
 
 #     return m_med, m_q1, m_q2
 
 def rsvd(A, rank=300, n_oversamples=None, n_subspace_iters=None, return_range=False):
-    """
+    '''
     =============================================================================
     Randomized SVD. See Halko, Martinsson, Tropp's 2011 SIAM paper:
 
-    "Finding structure with randomness: Probabilistic algorithms for constructing
-    approximate matrix decompositions"
+    'Finding structure with randomness: Probabilistic algorithms for constructing
+    approximate matrix decompositions'
     Author: Gregory Gundersen, Princeton, Jan 2019
     =============================================================================
     Randomized SVD (p. 227 of Halko et al).
@@ -352,7 +352,7 @@ def rsvd(A, rank=300, n_oversamples=None, n_subspace_iters=None, return_range=Fa
     :param n_subspace_iters: Number of power iterations.
     :param return_range:     If `True`, return basis for approximate range of A.
     :return:                 U, S, and Vt as in truncated SVD.
-    """
+    '''
     if n_oversamples is None:
         # This is the default used in the paper.
         n_samples = 2 * rank
@@ -385,7 +385,7 @@ def rsvd(A, rank=300, n_oversamples=None, n_subspace_iters=None, return_range=Fa
 
 
 def find_range(A, n_samples, n_subspace_iters=None):
-    """Algorithm 4.1: Randomized range finder (p. 240 of Halko et al).
+    '''Algorithm 4.1: Randomized range finder (p. 240 of Halko et al).
 
     Given a matrix A and a number of samples, computes an orthonormal matrix
     that approximates the range of A.
@@ -394,7 +394,7 @@ def find_range(A, n_samples, n_subspace_iters=None):
     :param n_samples:        Number of Gaussian random samples.
     :param n_subspace_iters: Number of subspace iterations.
     :return:                 Orthonormal basis for approximate range of A.
-    """
+    '''
     # print('here we are in range-finder')
     m, n = A.shape
     O = np.random.default_rng().normal(0., 1., (n, n_samples))
@@ -410,7 +410,7 @@ def find_range(A, n_samples, n_subspace_iters=None):
 
 
 def subspace_iter(A, Y0, n_iters):
-    """Algorithm 4.4: Randomized subspace iteration (p. 244 of Halko et al).
+    '''Algorithm 4.4: Randomized subspace iteration (p. 244 of Halko et al).
 
     Uses a numerically stable subspace iteration algorithm to down-weight
     smaller singular values.
@@ -420,7 +420,7 @@ def subspace_iter(A, Y0, n_iters):
     :param n_iters: Number of subspace iterations.
     :return:        Orthonormalized approximate range of A after power
                     iterations.
-    """
+    '''
     # print('herere we are in subspace-iter')
     Q = ortho_basis(Y0)
     for _ in range(n_iters):
@@ -433,11 +433,11 @@ def subspace_iter(A, Y0, n_iters):
 
 
 def ortho_basis(M):
-    """Computes an orthonormal basis for a matrix.
+    '''Computes an orthonormal basis for a matrix.
 
     :param M: (m x n) matrix.
     :return:  An orthonormal basis for M.
-    """
+    '''
     # print('herere we are in ortho')
     Q, _ = np.linalg.qr(M)
     return Q
@@ -446,17 +446,17 @@ def ortho_basis(M):
 def sparsify_jac(Jac=None,
                  sparse_thresh=1.0e-6, normalized=False, scalval = 1.,
                  method=None, out=True):
-    """
+    '''
     Sparsifies error_scaled Jacobian from ModEM output
 
     author: vrath
     last changed: Sep 10, 2023
-    """
+    '''
     shj = np.shape(Jac)
     if out:
         nel = shj[0] * shj[1]
         print(
-            "sparsify_jac: dimension of original J is %i x %i = %i elements"
+            'sparsify_jac: dimension of original J is %i x %i = %i elements'
             % (shj[0], shj[1], nel)
         )
 
@@ -466,13 +466,13 @@ def sparsify_jac(Jac=None,
 
     if scalval <0.:
         Scaleval = np.amax(np.abs(Jf))
-        print("sparsify_jac: scaleval is %g (max Jacobian)" % (Scaleval))
+        print('sparsify_jac: scaleval is %g (max Jacobian)' % (Scaleval))
     else:
         Scaleval = abs(scalval)
-        print("sparsify_jac: scaleval is  %g" % (Scaleval))
+        print('sparsify_jac: scaleval is  %g' % (Scaleval))
 
     if normalized:
-        print("sparsify_jac: output J is scaled by %g" % (Scaleval))
+        print('sparsify_jac: output J is scaled by %g' % (Scaleval))
         f = 1.0 / Scaleval
         Jf = normalize_jac(Jac=Jf, fn=f)
 
@@ -485,23 +485,23 @@ def sparsify_jac(Jac=None,
 
     if out:
         ns = Js.count_nonzero()
-        print("sparsify_jac:"
-                +" output J is sparse, and has %i nonzeros, %f percent"
+        print('sparsify_jac:'
+                +' output J is sparse, and has %i nonzeros, %f percent'
                 % (ns, 100.0 * ns / nel))
         test = np.random.default_rng().normal(size=np.shape(Jac)[1])
         normx = npl.norm(Jf@test)
         normo = npl.norm(Jf@test-Js@test)
 
 
-        normd = npl.norm((Jac-Jf), ord="fro")
-        normf = npl.norm(Jac, ord="fro")
+        normd = npl.norm((Jac-Jf), ord='fro')
+        normf = npl.norm(Jac, ord='fro')
         # print(norma)
         # print(normf)
-        print(" Sparsified J explains "
-              +str(round(100.-100.*normo/normx,2))+"% of full J (Spectral norm)")
-        print(" Sparsified J explains "
-              +str(round(100.-100.*normd/normf,2))+"% of full J (Frobenius norm)")
-        # print("****", nel, ns, 100.0 * ns / nel, round(100.-100.*normd/normf,3) )
+        print(' Sparsified J explains '
+              +str(round(100.-100.*normo/normx,2))+'% of full J (Spectral norm)')
+        print(' Sparsified J explains '
+              +str(round(100.-100.*normd/normf,2))+'% of full J (Frobenius norm)')
+        # print('****', nel, ns, 100.0 * ns / nel, round(100.-100.*normd/normf,3) )
 
 
 
@@ -509,15 +509,15 @@ def sparsify_jac(Jac=None,
 
 
 def normalize_jac(Jac=None, fn=None, out=True):
-    """
+    '''
     normalize Jacobian from ModEM data err.
 
     author: vrath
     last changed: Sep30, 2023
-    """
+    '''
     shj = np.shape(Jac)
     shf = np.shape(fn)
-    # print("fn = ")
+    # print('fn = ')
     # print(fn)
     if shf[0] == 1:
         f = 1.0 / fn[0]
@@ -526,7 +526,7 @@ def normalize_jac(Jac=None, fn=None, out=True):
         fd = 1./fn[:]
         fd = fd.flatten()
         print(fd.shape)
-        erri = scs.diags([fd], [0], format="csr")
+        erri = scs.diags([fd], [0], format='csr')
         Jac = erri @ Jac
         #erri = np.reshape(1.0 / fn, (shj[0], 1))
         #Jac = erri[:] * Jac
@@ -534,13 +534,13 @@ def normalize_jac(Jac=None, fn=None, out=True):
     return Jac
 
 def set_padmask(rho=None, pad=[0, 0 , 0, 0, 0, 0], blank= np.nan, flat=True, out=True):
-    """
+    '''
     Set model masc for Jacobian calculations.
 
     author: vrath
     last changed: Dec 29, 2021
 
-    """
+    '''
     shr = np.shape(rho)
     # jm = np.full(shr, np.nan)
     jm = np.full(shr, blank)
@@ -553,19 +553,19 @@ def set_padmask(rho=None, pad=[0, 0 , 0, 0, 0, 0], blank= np.nan, flat=True, out
     mask = jm
     if flat:
         # mask = jm.flatten()
-        mask = jm.flatten(order="F")
+        mask = jm.flatten(order='F')
 
     return mask
 
 
 def set_airmask(rho=None, aircells=np.array([]), blank= 1.e-30, flat=False, out=True):
-    """
+    '''
     Set aircell masc for Jacobian calculations.
 
     author: vrath
     last changed: Dec 29, 2021
 
-    """
+    '''
     shr = np.shape(rho)
     # jm = np.full(shr, np.nan)
     jm = np.full(shr, 1.)
@@ -575,13 +575,13 @@ def set_airmask(rho=None, aircells=np.array([]), blank= 1.e-30, flat=False, out=
     mask = jm
     if flat:
         # mask = jm.flatten()
-        mask = jm.flatten(order="F")
+        mask = jm.flatten(order='F')
 
     return mask
 
 
 def project_nullspace(U=np.array([]), m_test=np.array([])):
-    """
+    '''
     Calculates nullspace projection of a vector
 
     Parameters
@@ -596,29 +596,29 @@ def project_nullspace(U=np.array([]), m_test=np.array([])):
     m: numpy array, float
         projected model
 
-    """
+    '''
     if np.size(U) == 0:
-        error("project_nullspace: V not defined! Exit.")
+        sys.exit('project_nullspace: V not defined! Exit.')
 
     m_proj = m_test - U@(U.T@m_test)
 
     return m_proj
 
 def project_models(m=None, U=None, tst_sample= None, nsamp=1, small=1.0e-14, out=True):
-    """
+    '''
     Project to Nullspace.
 
     (see Munoz & Rath, 2006)
     author: vrath
     last changed: Feb 29, 2024
-    """
+    '''
     if m.ndim(m)>1:
-        m = m.flatten(order="F")
+        m = m.flatten(order='F')
 
     if tst_sample  is None:
-        print("project_model: "+str(nsamp)+" sample models will be generated!")
+        print('project_model: '+str(nsamp)+' sample models will be generated!')
         if nsamp==0:
-           error("project_model: No number of samples given! Exit.")
+           sys.exit('project_model: No number of samples given! Exit.')
         tst_sample = m + np.random.default_rng().normal(0., 1., (nsamp, len(m)))
 
     else:
@@ -634,7 +634,7 @@ def project_models(m=None, U=None, tst_sample= None, nsamp=1, small=1.0e-14, out
 
 def sample_pcovar(cpsqrti=None, m=None, tst_sample = None,
                   nsamp = 1, small=1.0e-14, out=True):
-    """
+    '''
     Sample Posterior Covariance.
     Algorithm given by  Osypov (2013)
 
@@ -653,18 +653,18 @@ def sample_pcovar(cpsqrti=None, m=None, tst_sample = None,
         Geophysical Prospecting, 61, pp. 1114–1134, 2013, doi: 10.1111/1365-2478.12058.
 
 
-    """
-    error("sample_pcovar: Not yet fully implemented! Exit.")
+    '''
+    sys.exit('sample_pcovar: Not yet fully implemented! Exit.')
 
     if (cpsqrti is None) or  (m is None):
-        error("sample_pcovar: No covarince or ref model given! Exit.")
+        sys.exit('sample_pcovar: No covarince or ref model given! Exit.')
 
 
 
     if tst_sample is None:
-        print("sample_pcovar: "+str(nsamp)+" sample models will be generated!")
+        print('sample_pcovar: '+str(nsamp)+' sample models will be generated!')
         if nsamp==0:
-           error("sample_pcovar: No number of samples given! Exit.")
+           sys.exit('sample_pcovar: No number of samples given! Exit.')
         tst_sample = np.random.default_rng().normal(0., 1., (nsamp, len(m)))
 
     else:
@@ -680,8 +680,8 @@ def sample_pcovar(cpsqrti=None, m=None, tst_sample = None,
 
 
 def mult_by_cmsqr(m_like_in=None, smooth=[None, None, None], small=1.0e-14, out=True):
-    """
-    Multyiply by sqrt of paramter prior covariance (aka "smoothing")
+    '''
+    Multyiply by sqrt of paramter prior covariance (aka 'smoothing')
     baed on the ModEM fortran code
 
     Parameters
@@ -796,11 +796,11 @@ def mult_by_cmsqr(m_like_in=None, smooth=[None, None, None], small=1.0e-14, out=
       end subroutine RecursiveAR
     =============================================================================
 
-    """
+    '''
     # nsmooth = 1
 
 
-    error("mult_by_cmsq: Not yet implemented. Exit")
+    sys.exit('mult_by_cmsq: Not yet implemented. Exit')
 
     tmp = m_like_in.copy()
 
@@ -808,7 +808,7 @@ def mult_by_cmsqr(m_like_in=None, smooth=[None, None, None], small=1.0e-14, out=
 
     sm_x, sm_y, sm_z = smooth
 
-    """
+    '''
     		! smooth in the Z-direction (Sz)
      	    for jj in  np.arange(0,ny)
     	    	do i = 1,Nx
@@ -828,7 +828,7 @@ def mult_by_cmsqr(m_like_in=None, smooth=[None, None, None], small=1.0e-14, out=
      	    		end do
     	    	end do
      	    end dom_like_in=None, smooth=[None, None, None]
-    """
+    '''
     for ii in  np.arange(0,nx):
        i = ii
        for jj in np.arange(0,ny):
@@ -849,46 +849,46 @@ def mult_by_cmsqr(m_like_in=None, smooth=[None, None, None], small=1.0e-14, out=
     return m_like_out
 
 def print_stats(jac=np.array([]), jacmask=np.array([]), outfile=None):
-    """
+    '''
     Prints dome info on jacobian
-    """
+    '''
 
     jdims = np.shape(jac)
-    print("stats: Jacobian dimensions are:", jdims)
+    print('stats: Jacobian dimensions are:', jdims)
     if outfile is not None:
-        outfile.write("Jacobian dimensions are:"+str(jdims))
+        outfile.write('Jacobian dimensions are:'+str(jdims))
 
     if jdims[0]==0:
         return
 
     mx = np.amax(jac)
     mn = np.amin(jac)
-    print("stats: minimum/maximum Jacobian value is "+str(mn)+"/"+str(mx))
+    print('stats: minimum/maximum Jacobian value is '+str(mn)+'/'+str(mx))
     if outfile is not None:
-        outfile.write("Mminimum/maximum Jacobian value is "+str(mn)+"/"+str(mx))
+        outfile.write('Mminimum/maximum Jacobian value is '+str(mn)+'/'+str(mx))
     mn = np.amin(np.abs(jac))
     mx = np.amax(np.abs(jac))
-    print("stats: minimum/maximum abs Jacobian value is "+str(mn)+"/"+str(mx))
+    print('stats: minimum/maximum abs Jacobian value is '+str(mn)+'/'+str(mx))
     if outfile is not None:
-        outfile.write("Minimum/maximum abs Jacobian value is "+str(mn)+"/"+str(mx))
+        outfile.write('Minimum/maximum abs Jacobian value is '+str(mn)+'/'+str(mx))
 
     mjac = jac*scs.diags(jacmask,0)
     mx = np.amax(mjac)
     mn = np.amin(mjac)
-    print("stats: minimum/maximum masked Jacobian value is "+str(mn)+"/"+str(mx))
+    print('stats: minimum/maximum masked Jacobian value is '+str(mn)+'/'+str(mx))
     if outfile is not None:
-        outfile.write("Minimum/maximum masked Jacobian value is "+str(mn)+"/"+str(mx))
+        outfile.write('Minimum/maximum masked Jacobian value is '+str(mn)+'/'+str(mx))
     mx = np.amax(np.abs(mjac))
     mn = np.amin(np.abs(mjac))
-    print("stats: minimum/maximum masked abs Jacobian value is "+str(mn)+"/"+str(mx))
-    if outfile is not None: outfile.write("Minimum/maximum masked abs Jacobian value is "+str(mn)+"/"+str(mx)+"\n")
-    print("\n")
+    print('stats: minimum/maximum masked abs Jacobian value is '+str(mn)+'/'+str(mx))
+    if outfile is not None: outfile.write('Minimum/maximum masked abs Jacobian value is '+str(mn)+'/'+str(mx)+'\n')
+    print('\n')
 
 
 def sminmax(S=None, aircells=None, seacells=None, out=True):
-    """
+    '''
     Calculates min/max for regular subsurface cells
-    """
+    '''
 
     tmp = S.copy()
     if aircells is not None:
@@ -900,6 +900,6 @@ def sminmax(S=None, aircells=None, seacells=None, out=True):
     s_max = np.nanmax(tmp)
 
     if out:
-        print("S min =", s_min," S max =", s_max)
+        print('S min =', s_min,' S max =', s_max)
 
     return s_min, s_max

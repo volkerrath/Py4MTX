@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
+'''
 
 Calculate PCA for model ensemble
 
 Sat Jun  7 04:53:42 PM CEST 2025
 
 @author: vrath
-"""
+'''
 import os
 import sys
 import shutil
@@ -16,10 +16,10 @@ import functools
 import inspect
 
 
-PY4MTX_DATA = os.environ["PY4MTX_DATA"]
-PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
+PY4MTX_DATA = os.environ['PY4MTX_DATA']
+PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
 
-mypath = [PY4MTX_ROOT+"/py4mt/modules/", PY4MTX_ROOT+"/py4mt/scripts/"]
+mypath = [PY4MTX_ROOT+'/py4mt/modules/', PY4MTX_ROOT+'/py4mt/scripts/']
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -34,12 +34,12 @@ import sklearn.covariance
 import sklearn.decomposition 
 
 rng = np.random.default_rng()
-nan = np.nan  # float("NaN")
+nan = np.nan  # float('NaN')
 version, _ = versionstrg()
 fname = inspect.getfile(inspect.currentframe())
 
 titstrng = utl.print_title(version=version, fname=fname, out=False)
-print(titstrng+"\n\n")
+print(titstrng+'\n\n')
 
 
 EnsembleDir = r'/home/vrath/work/Ensembles/RTO/'

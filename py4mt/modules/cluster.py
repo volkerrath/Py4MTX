@@ -2,7 +2,7 @@ import sklearn.cluster as scl
 import numpy as np
 
 def kmeans_missing(X, n_clusters=3, max_iter=10):
-    """Perform K-Means clustering on data with missing values.
+    '''Perform K-Means clustering on data with missing values.
 
     Args:
       X: An [n_samples, n_features] array of data to cluster.
@@ -13,7 +13,7 @@ def kmeans_missing(X, n_clusters=3, max_iter=10):
       labels: An [n_samples] vector of integer labels.
       centroids: An [n_clusters, n_features] array of cluster centroids.
       X_hat: Copy of X with the missing values filled in.
-    """
+    '''
 
     # Initialize missing values to their column means
     missing = ~np.isfinite(X)

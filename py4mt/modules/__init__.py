@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""
+'''
 Modules
 ===
 
 Submodules:
 
 ################################################################################
-"""
+'''
 from . import plotrjmcmc
 from . import mtproc
 from . import jacproc

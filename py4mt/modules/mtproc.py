@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""
+'''
 Created on Sun Nov  30, 2024
 
 @author: vrath
-"""
+'''
 
 import os
 import sys
@@ -23,7 +23,7 @@ import pyproj
 from pyproj import CRS, Transformer
 
 
-from sys import exit as error
+
 
 from mtpy import MT , MTData, MTCollection
 
@@ -37,7 +37,7 @@ def get_edi_list(edirname=None, sort=False, fullpath=True):
     files = os.listdir(edirname)
     for entry in files:
         # print(entry)
-        if entry.endswith(".edi") and not entry.startswith("."):
+        if entry.endswith('.edi') and not entry.startswith('.'):
             if fullpath:
                 edi_files.append(edirname+entry)
             else:
@@ -45,7 +45,7 @@ def get_edi_list(edirname=None, sort=False, fullpath=True):
 
     ns = np.size(edi_files)
     if ns ==0:
-        sys.exit("No edi files found in "+edirname+"! Exit.")
+        sys.exit('No edi files found in '+edirname+'! Exit.')
 
     if sort:
         edi_files
@@ -54,7 +54,7 @@ def get_edi_list(edirname=None, sort=False, fullpath=True):
 
 def clean_data(mt_obj=None,
                cond=None, bad=0.):
-    """
+    '''
 
 
     Parameters
@@ -69,7 +69,7 @@ def clean_data(mt_obj=None,
     new_mt_obj : mt_obj
         New mt object
 
-    """
+    '''
     imp = mt_obj.impedance
     tip = mt_obj.tipper
     per = mt_obj.period
@@ -84,7 +84,7 @@ def clean_data(mt_obj=None,
         condition = (np.any(np.abs(np.ravel(imp[iper,:,:]))==bad)
                   or np.any(np.abs(np.ravel(tip[iper,:]))==bad))
         if condition:
-            print("Bad value at period # ", iper)
+            print('Bad value at period # ', iper)
             break
         else:
             imp_list.append(imp[iper,:,:])
@@ -93,8 +93,8 @@ def clean_data(mt_obj=None,
 
     print(imp_list)
 
-    new_imp = xr.concat(imp_list, dim="period")
-    new_tip = xr.concat(tip_list, dim="period")
+    new_imp = xr.concat(imp_list, dim='period')
+    new_tip = xr.concat(tip_list, dim='period')
     new_per = np.asarray(per_list)
 
 
@@ -109,13 +109,13 @@ def clean_data(mt_obj=None,
 
 
 def make_data(edirname=None,
-                    collection="./My_Collection.h5",
-                    metaid="my_collection",
-                    survey="my_survey",
+                    collection='./My_Collection.h5',
+                    metaid='my_collection',
+                    survey='my_survey',
                     savedata=True,
                     utm_epsg=32629
                     ):
-    """
+    '''
     Make MTData object from edi-files, optionally save to MTCollection
 
     Parameters
@@ -123,11 +123,11 @@ def make_data(edirname=None,
     edirname : TYPE, optional
         DESCRIPTION. The default is None.
     collection : TYPE, optional
-        DESCRIPTION. The default is "./My_Collection.h5".
+        DESCRIPTION. The default is './My_Collection.h5'.
     metaid : TYPE, optional
-        DESCRIPTION. The default is "my_collection".
+        DESCRIPTION. The default is 'my_collection'.
     survey : TYPE, optional
-        DESCRIPTION. The default is "my_survey".
+        DESCRIPTION. The default is 'my_survey'.
     savedata : TYPE, optional
         DESCRIPTION. The default is True.
     utm_epsg : TYPE, optional
@@ -138,24 +138,24 @@ def make_data(edirname=None,
 
     mtd: MtData object
 
-    """
+    '''
 
 
     edi_files = []
     files = os.listdir(edirname)
     for entry in files:
         # print(entry)
-        if entry.endswith(".edi") and not entry.startswith("."):
+        if entry.endswith('.edi') and not entry.startswith('.'):
             edi_files.append(edirname+entry)
     ns = np.size(edi_files)
     if ns ==0:
-        sys.exit("No edi files found in "+edirname+"! Exit.")
+        sys.exit('No edi files found in '+edirname+'! Exit.')
 
     mtd = MTData()
     sit = 0
     for fil in edi_files:
         sit = sit + 1
-        print("reading data from: " + fil)
+        print('reading data from: ' + fil)
         file_i = fil
 
     # Create MT object
@@ -179,13 +179,13 @@ def make_data(edirname=None,
     return mtd
 
 def make_collection(edirname=None,
-                    collection="./My_Collection.h5",
-                    metaid="my_collection",
-                    survey="my_survey",
+                    collection='./My_Collection.h5',
+                    metaid='my_collection',
+                    survey='my_survey',
                     returndata=True,
                     utm_epsg=32629
                     ):
-    """
+    '''
     Make MTCollectionlection from edi-files, optionally returns MTData object
 
     Parameters
@@ -193,11 +193,11 @@ def make_collection(edirname=None,
     edirname : TYPE, optional
         DESCRIPTION. The default is None.
     collection : TYPE, optional
-        DESCRIPTION. The default is "./My_Collection.h5".
+        DESCRIPTION. The default is './My_Collection.h5'.
     metaid : TYPE, optional
-        DESCRIPTION. The default is "my_collection".
+        DESCRIPTION. The default is 'my_collection'.
     survey : TYPE, optional
-        DESCRIPTION. The default is "my_survey".
+        DESCRIPTION. The default is 'my_survey'.
     returndata : TYPE, optional
         DESCRIPTION. The default is True.
     utm_epsg : TYPE, optional
@@ -208,7 +208,7 @@ def make_collection(edirname=None,
     mtd : TYPE
         DESCRIPTION.
 
-    """
+    '''
 
 
 
@@ -216,18 +216,18 @@ def make_collection(edirname=None,
     files = os.listdir(edirname)
     for entry in files:
         # print(entry)
-        if entry.endswith(".edi") and not entry.startswith("."):
+        if entry.endswith('.edi') and not entry.startswith('.'):
             edi_files.append(edirname+entry)
     ns = np.size(edi_files)
     if ns ==0:
-        sys.exit("No edi files found in "+edirname+"! Exit.")
+        sys.exit('No edi files found in '+edirname+'! Exit.')
 
     mtc = MTCollection()
     mtc.open_collection(collection)
     sit = 0
     for fil in edi_files:
         sit = sit + 1
-        print("reading data from: " + fil)
+        print('reading data from: ' + fil)
         file_i = fil
 
     # Create MT object
@@ -258,26 +258,26 @@ def calc_rhoa_phas(freq=None, Z=None):
 
     return rhoa, phi
 
-def mt1dfwd(freq, sig, d, inmod="r", out="imp", magfield="b"):
-    """
+def mt1dfwd(freq, sig, d, inmod='r', out='imp', magfield='b'):
+    '''
     Calulate 1D magnetotelluric forward response.
 
     based on A. Pethik's script at www.digitalearthlab.com
     Last change vr Nov 20, 2020
-    """
+    '''
     mu0 = 4.0e-7 * np.pi  # Magnetic Permeability (H/m)
 
     sig = np.array(sig)
     freq = np.array(freq)
     d = np.array(d)
 
-    if inmod[0] == "c":
+    if inmod[0] == 'c':
         sig = np.array(sig)
-    elif inmod[0] == "r":
+    elif inmod[0] == 'r':
         sig = 1.0 / np.array(sig)
 
     if sig.ndim > 1:
-        sys.exit("IP not yet implemented")
+        sys.exit('IP not yet implemented')
 
     n = np.size(sig)
 
@@ -315,14 +315,14 @@ def mt1dfwd(freq, sig, d, inmod="r", out="imp", magfield="b"):
         Z[ifr] = imp[0]
         # print(Z[ifr])
 
-    if out.lower() == "imp":
+    if out.lower() == 'imp':
 
-        if magfield.lower() =="b":
+        if magfield.lower() =='b':
             return Z/mu0
         else:
             return Z
 
-    elif out.lower() == "rho":
+    elif out.lower() == 'rho':
         absZ = np.abs(Z)
         rhoa = (absZ * absZ) / (mu0 * w)
         phase = np.rad2deg(np.arctan(Z.imag / Z.real))

@@ -2,18 +2,18 @@
 # -*- coding: utf-8 -*-
 
 
-"""
+'''
 calculates  statistics for Seismicity-Resistivity correlation
 
 
 @author: Svetlana Byrdina & Volker Rath,  Jan 2025
 
 
-"""
+'''
 
 import os
 import sys
-from sys import exit as error
+
 import time
 from datetime import datetime
 import csv
@@ -21,10 +21,10 @@ import inspect
 
 import numpy as np
 
-PY4MTX_DATA = os.environ["PY4MTX_DATA"]
-PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
+PY4MTX_DATA = os.environ['PY4MTX_DATA']
+PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
 
-mypath = [PY4MTX_ROOT+"/py4mt/modules/", PY4MTX_ROOT+"/py4mt/scripts/"]
+mypath = [PY4MTX_ROOT+'/py4mt/modules/', PY4MTX_ROOT+'/py4mt/scripts/']
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -37,18 +37,18 @@ from version import versionstrg
 import matplotlib.pyplot as plt
 
 rng = np.random.default_rng()
-nan = np.nan  # float("NaN")
+nan = np.nan  # float('NaN')
 
 version, _ = versionstrg()
 titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.currentframe()), out=False)
-print(titstrng+"\n\n")
+print(titstrng+'\n\n')
 
 rhoair = 1.e17
 
 
 
-SeisFile = r"/home/vrath/work/MT_Data/SeisRes/data/Catalog_new_shallow.csv"
-ModFile = r"/home/vrath/work/MT_Data/SeisRes/data/TACG_Z2_Alpha02_NLCG_016"
+SeisFile = r'/home/vrath/work/MT_Data/SeisRes/data/Catalog_new_shallow.csv'
+ModFile = r'/home/vrath/work/MT_Data/SeisRes/data/TACG_Z2_Alpha02_NLCG_016'
 
 geocenter = [-17.489151, -70.031403] #Tac
 
@@ -63,7 +63,7 @@ profile_center = [profile[0] + 0.5*(profile[1] - profile[0]),
                   profile[2] + 0.5*(profile[3] - profile[2])]
 
 
-boundary = ["box", profile_center[1], profile_center[0], 15000., 100000., 60000., 15000., 0., 0., -30.] #north is y!
+boundary = ['box', profile_center[1], profile_center[0], 15000., 100000., 60000., 15000., 0., 0., -30.] #north is y!
 
 n_ml = 6
 ml_bins = np.linspace(0., 5., n_ml)
@@ -85,15 +85,15 @@ Ns = N_sutm - utmcenter[1]
 Zs = Z_s - utmcenter[2]
 
 
-dx, dy, dz, rho, reference,_= mod.read_mod(ModFile , out=True, trans="LOG10")
+dx, dy, dz, rho, reference,_= mod.read_mod(ModFile , out=True, trans='LOG10')
 # write_model_mod(ModFile_out+'.rho', dx, dy, dz, rho,reference,out = True)
 
 aircells = np.where(rho>rhoair/10)
 
 elapsed = time.perf_counter() - start
 total = total + elapsed
-print(" Used %7.4f s for reading model from %s "
-      % (elapsed, ModFile + ".rho"))
+print(' Used %7.4f s for reading model from %s '
+      % (elapsed, ModFile + '.rho'))
 
 xc, yc, zc = mod.cells3d(dx, dy, dz)
 
@@ -106,7 +106,7 @@ xc = xc + modcenter[0]
 yc = yc + modcenter[1]
 zc = zc + modcenter[2]
 
-print(" center is", modcenter)
+print(' center is', modcenter)
 
 nx = np.shape(xc)[0]
 ny = np.shape(yc)[0]
@@ -147,7 +147,7 @@ for event in np.arange(np.shape(seis)[0]):
 #for event in np.arange(50):
     position = [Es[event], Ns[event], Zs[event]]
     magnitude = M_l[event]
-    print("event number", event)
+    print('event number', event)
     for kk in np.arange(nz-1):
         for jj in np.arange(ny-1):
             for ii in np.arange(nx-1):
@@ -167,7 +167,7 @@ index = np.where(np.isfinite(rho_out))
 v1 = rho_out[index]
 v2 = num_out[index]
 
-np.savez_compressed(SeisFile.replace(".csv",".npz"),
+np.savez_compressed(SeisFile.replace('.csv','.npz'),
                     index= index,
                     num_out=num_out,
                     rho_out=rho_out,
@@ -177,9 +177,9 @@ np.savez_compressed(SeisFile.replace(".csv",".npz"),
 
 elapsed = time.perf_counter() - start
 
-print(" Used %7.4f s for processing/writing model "
+print(' Used %7.4f s for processing/writing model '
      % (elapsed))
-print("\n")
+print('\n')
 
 total = total + elapsed
-print(" Total time used:  %f s " % (total))
+print(' Total time used:  %f s ' % (total))
