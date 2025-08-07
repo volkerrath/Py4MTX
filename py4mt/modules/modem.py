@@ -195,7 +195,7 @@ def read_data_jac(Datfile=None, out=True):
     Data = np.asarray(Data)
 
     if np.shape(Data)[0]==0:
-        Inv'read_data_jac: No data read! Exit.')
+        sys.exit('read_data_jac: No data read! Exit.')
 
     Freq = Data[:,0]
 

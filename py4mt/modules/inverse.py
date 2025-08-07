@@ -5,6 +5,7 @@ import inspect
 import numpy as np
 import scipy as scp
 import scipy.linalg as scl
+import scipy.sparse as scs
 import scipy.ndimage as sci
 
 import sklearn.cluster as scl
@@ -240,12 +241,12 @@ def msqrt_sparse(M=np.array([]), smallval=1.e-12):
     n =M.shape[0]
     MM = M.copy() + np.identity(n)*smallval
 
-    LU = scipy.sparse.linalg.splu(
+    LU = scs.linalg.splu(
         MM, diag_pivot_thresh=0)  # sparse LU decomposition
 
     # check the matrix A is positive definite.
     if (LU.perm_r == np.arange(n)).all() and (LU.U.diagonal() > 0).all():
-        SqrtM = LU.L.dot(scipy.sparse.diags(LU.U.diagonal() ** 0.5))
+        SqrtM = LU.L.dot(scs.diags(LU.U.diagonal() ** 0.5))
 
     else:
         sys.exit('The matrix is not positive definite')
@@ -292,13 +293,13 @@ def msqrt(M=np.array([]), method='cho', smallval=1.e-12):
 
     if 'eig' in method.lower():
         # compute eigenvalues and eigenvectors
-        Mevals, Mevecs = scipy.linalg.eigh(MM)
+        Mevals, Mevecs = scl.eigh(MM)
         Mevals = Mevals.clip(min=0.0)
         SqrtM = Mevecs * np.sqrt(Mevals)
         return SqrtM, Mevals, Mevecs
 
     if 'cho' in method.lower():
-        SqrtM = scipy.linalg.cholesky(MM)
+        SqrtM = scl.cholesky(MM)
 
 
     return SqrtM

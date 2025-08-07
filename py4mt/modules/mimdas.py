@@ -81,7 +81,7 @@ def get_randomTX_simple(TXx=None,TXy=None,
 
     '''
     if TXx==[] or TXy==[]:
-        Inv'no data given! Exit.')
+        sys.exit('no data given! Exit.')
 
     if Ranstate is None::
         rng = np.random.default_rng()
@@ -132,7 +132,7 @@ def get_randomTX_constr(TXx=None,TXy=None,
     '''
 
     if TXx==[] or TXy==[]:
-        Inv'no data given! Exit.')
+        sys.exit('no data given! Exit.')
     else:
         TX = np.unique(TXx)
         TY = np.unique(TXy)
