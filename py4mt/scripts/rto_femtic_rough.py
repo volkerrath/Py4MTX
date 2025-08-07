@@ -75,7 +75,7 @@ SparseFormat = 'csr'
 RoughNew = WorkDir+'RTR_'+SparseFormat+'.npz'
 
 R   = fem.get_roughness(filerough=RoughFile,
-                   regeps = 1.e-4,
+                   regeps = None,
                    spformat = SparseFormat,
                    out=True)
 

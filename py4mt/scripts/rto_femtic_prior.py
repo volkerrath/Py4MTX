@@ -78,10 +78,10 @@ RoughFile = WorkDir +'RTR_'+FormatIn+'.npz'
 
 Alpha = 1.
 Factor = 1./Alpha**2
-RegEps = 1.e-4
+RegEps = None
 FormatOut = 'csr'
-Sparsify = 1.e-5
-RoughNew = RoughFile.replace('/RTR','/COV')
+Sparsify = 1.e-4
+RoughNew = RoughFile.replace('/RTR','/COV_noeps')
 RoughNew = RoughNew.replace(FormatIn, FormatOut)
 
 

@@ -1279,6 +1279,7 @@ def make_prior_cov(rough=None,
 
 
 def matrix_reduce(matrix=None,
+             howto='absolute',
              spformat= 'csr',
              spthresh=1.e-6):
 
@@ -1300,7 +1301,11 @@ def matrix_reduce(matrix=None,
         if test.max()+test.min()==0.:
             print('Matrix is symmetric!')
 
-        nonzero_mask = np.array(np.abs(matrix[matrix.nonzero()]) < spthresh)[0]
+        if 'abs' in howto.lower():
+            nonzero_mask = np.array(np.abs(matrix[matrix.nonzero()]) < spthresh)[0]
+        else:
+            maxmatrix = np.max(np.array(np.abs(matrix[matrix.nonzero()]))
+            nonzero_mask = np.array(np.abs(matrix[matrix.nonzero()]) < maxmatrix*spthresh)[0]
 
         rows = matrix.nonzero()[0][nonzero_mask]
         cols = matrix.nonzero()[1][nonzero_mask]
@@ -1311,15 +1316,20 @@ def matrix_reduce(matrix=None,
 
         print('Type:', type(matrix))
         print('Shape:', np.shape(matrix))
+        test = matrix - matrix.T
+        if np.max(test)+np.min(test)==0.:
+            print('Matrix is symmetric!')
 
         n = np.shape(matrix)[0]
-        mmax = np.amax(np.abs(matrix))
-        print('sparsity',mmax, spthresh*mmax)
-        matrix[np.abs(matrix)<spthresh*mmax]= 0.
 
-        test = matrix - matrix.T
-        if np.max(test)+np.mintest.min()==0.:
-            print('Matrix is symmetric!')
+        if 'abs' in howto.lower():
+            matrix[np.abs(matrix)<spthresh]= 0.
+        else:
+            maxmatrix = np.amax(np.abs(matrix))
+            print('sparsity',maxmatrix, spthresh*maxmatrix)
+            matrix[np.abs(matrix)<spthresh*maxmatrix]= 0.
+
+
 
 
 
