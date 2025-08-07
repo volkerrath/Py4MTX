@@ -7,7 +7,6 @@ Created on Sun Nov  1 17:08:06 2020
 
 import os
 import sys
-from sys import exit as error
 import ast
 import fnmatch
 import inspect
@@ -22,9 +21,6 @@ from scipy.linalg import norm
 # from shapely.geometry.polygon import Polygon
 import pyproj
 from pyproj import CRS, Transformer
-
-
-from sys import exit as error
 
 from scipy.fftpack import dct, idct
 
@@ -60,7 +56,7 @@ def check_env(envar='CONDA_PREFIX', action='error'):
         print('\n\n')
     else:
         if 'err' in action.lower():
-            error('Environment '+ act_env+'is not activated! Exit.')
+            sys.exit('Environment '+ act_env+'is not activated! Exit.')
 
 
 def find_functions(body):
@@ -447,9 +443,9 @@ def choose_data_poly(Data=None, PolyPoints=None, Out=True):
      VR 11/20
     '''
     if Data.size == 0:
-        error('No Data given!')
+        sys.exit('No Data given!')
     if not PolyPoints:
-        error('No Rectangle given!')
+        sys.exit('No Rectangle given!')
 
     Ddims = np.shape(Data)
     if Out:
@@ -513,9 +509,9 @@ def choose_data_rect(Data=None, Corners=None, Out=True):
 
     '''
     if Data.size == 0:
-        error('No Data given!')
+        sys.exit('No Data given!')
     if not Corners:
-        error('No Rectangle given!')
+        sys.exit('No Rectangle given!')
 
     Ddims = np.shape(Data)
     if Out:
@@ -627,7 +623,7 @@ def KLD(P=np.array([]), Q=np.array([]), epsilon= 1.e-8):
 
     '''
     if P.size * Q.size==0:
-        error('KLD: P or Q not defined! Exit.')
+        sys.exit('KLD: P or Q not defined! Exit.')
 
     # You may want to instead make copies to avoid changing the np arrays.
     PP = P.copy()+epsilon
@@ -664,10 +660,10 @@ def fractrans(m=None, x=None , a=0.5):
     import differint as df
 
     if m  is None or x  is None:
-        error('No vector for diff given! Exit.')
+        sys.exit('No vector for diff given! Exit.')
 
     if np.size(m) != np.size(x):
-        error('Vectors m and x have different length! Exit.')
+        sys.exit('Vectors m and x have different length! Exit.')
 
     x0 = x[0]
     x1 = x[-1]
@@ -736,7 +732,7 @@ def make_pdf_catalog(workdir='./', pdflist= None, filename=None):
     None.
 
     '''
-    # error('not in 3.9! Exit')
+    # sys.exit('not in 3.9! Exit')
 
     import fitz
 

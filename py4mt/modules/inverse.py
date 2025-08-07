@@ -76,7 +76,7 @@ def calc_covar_simple(x=np.array([]),
     '''
 
     if (x.size == 0) and (y.size == 0):
-        error('covalcov_encovovar: No data given! Exit.')
+        sys.exit('covalcov_encovovar: No data given! Exit.')
 
     X = x - np.mean(x, axis=0)
     if (y.size == 0):
@@ -248,7 +248,7 @@ def msqrt_sparse(M=np.array([]), smallval=1.e-12):
         SqrtM = LU.L.dot(scipy.sparse.diags(LU.U.diagonal() ** 0.5))
 
     else:
-        error('The matrix is not positive definite')
+        sys.exit('The matrix is not positive definite')
 
     return SqrtM
 
