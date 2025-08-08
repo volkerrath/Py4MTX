@@ -1141,7 +1141,7 @@ def get_roughness(filerough='roughening_matrix.out',
     print('R sparse format is', R.format)
 
     if regeps is not None:
-        R = R+regeps*eye_array(R.shape[0], format=spformat.lower())
+        R = R + regeps*eye_array(R.shape[0],format='csr')
         if out:
             print(regeps, 'added to diag(R)')
 
@@ -1149,9 +1149,6 @@ def get_roughness(filerough='roughening_matrix.out',
     if out:
         print('R sparse format is', R.format)
         print(R.shape, R.nnz)
-
-    if out:
-            print('Returning RTR.')
 
 
     if 'csc' in spformat.lower():
@@ -1163,7 +1160,7 @@ def get_roughness(filerough='roughening_matrix.out',
 
     if out:
         print('Output sparse format:', spformat)
-        print('RTR sparse format is', R.format)
+        print('R sparse format is', R.format)
         print(R.shape, R.nnz)
         print(R.nnz,'nonzeros, ', R.nnz/R.shape[0]**2, 'percent')
 
@@ -1173,9 +1170,9 @@ def make_prior_cov(rough=None,
                    regeps = None,
                    spformat = 'csc',
                    spthresh = 1.e-6,
-                   ilu = False,
-                   drop= 1.e-6,
-                   fill=30,
+                   #ilu = False,
+                   #drop= 1.e-6,
+                   #fill=30,
                    factor=1.,
                    out=True):
     '''
@@ -1241,12 +1238,12 @@ def make_prior_cov(rough=None,
     n = R.shape[0]
     invR = np.zeros((n, n))
 
-    if ilu:
-        LU = spilu(R, drop_tol=drop, fill_factor=fill)
-    else:
-        LU = splu(R)
+    #if ilu:
+        #LU = spilu(R, drop_tol=drop, fill_factor=fill)
+    #else:
+        #LU = splu(R)
 
-    # LUsolve = factorized(R)
+    LUsolve = factorized(R)
 
     for k in np.arange(n):
 
@@ -1257,8 +1254,8 @@ def make_prior_cov(rough=None,
         rhs[k] = 1.
 
 
-        invR[k,:] = LU.solve(rhs)
-        #invR[k,:] = LUsolve(rhs)
+        # invR[k,:] = LU.solve(rhs)
+        invR[k,:] = LUsolve(rhs)
 
     print('invR generated:', time.perf_counter() - start,'s')
     print('invR Format', type(invR))
@@ -1268,13 +1265,18 @@ def make_prior_cov(rough=None,
                             spthresh=spthresh,
                             spformat=spformat)
 
-    C = factor*invR
+    if returncov:
+         M = factor*invR@invR.T
+    else:
+         M = factor*invR
 
-    print('Cov generated:', time.perf_counter() - start,'s')
-    print('Cov', type(C))
-    print('Cov', C.format)
+    print('M generated:', time.perf_counter() - start,'s')
+    print('M', type(M))
+    print('M', M.format)
 
-    return C
+    check_sparse_matrix(M)
+
+    return M
 
 
 def matrix_reduce(matrix=None,
@@ -1299,6 +1301,8 @@ def matrix_reduce(matrix=None,
         test = matrix - matrix.T
         if test.max()+test.min()==0.:
             print('Matrix is symmetric!')
+        else:
+            print('Matrix is not symmetric!')
 
         if 'abs' in howto.lower():
             nonzero_mask = np.array(np.abs(matrix[matrix.nonzero()]) < spthresh)[0]
@@ -1348,21 +1352,68 @@ def matrix_reduce(matrix=None,
     return matrix
 
 
-def plot_coo_array(m):
+def check_sparse_matrix(M):
+    '''
+    Check sparse matrix
+
+    Parameters
+    ----------
+    M : sparse array
+        Matrix to be tested
+    Returns
+    -------
+    None.
+
+    '''
+
     from scipy.sparse import csr_array, csc_array, coo_array, issparse
-    import matplotlib.pyplot as plt
-    if not isinstance(m, coo_array):
-        m = coo_array(m)
-    fig = plt.figure()
-    ax = fig.add_subplot(111, facecolor='black')
-    ax.plot(m.col, m.row, 's', color='white', ms=1)
-    ax.set_xlim(0, m.shape[1])
-    ax.set_ylim(0, m.shape[0])
-    ax.set_aspect('equal')
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-    ax.invert_yaxis()
-    ax.set_aspect('equal')
-    ax.set_xticks([])
-    ax.set_yticks([])
-    return ax
+
+
+    if M is None:
+        sys.exit('check_sparse_matrix: No roughness matrix given! Exit.')
+
+    if not issparse(M):
+        sys.exit('check_sparse_matrix: Roughness matrix is not sparse! Exit.')
+
+    print('Type:', type(M))
+    print('Format:', M.format)
+    print('Shape:', M.shape)
+    print(M.nnz,'nonzeros, ', M.nnz/M.shape[0]**2, 'percent')
+
+    if M.shape[0] == M.shape[1]:
+        print('Matrix is square!')
+        test = M - M.T
+        print('R-R^T max/min:', test.max(), test.min())
+        if test.max()+test.min()==0.:
+            print('Matrix is symmetric!')
+        else:
+            print'Matrix is not symmetric!')
+
+    maxaM = np.amax(np.abs(M))
+    minaM = np.amin(np.abs(M))
+    print('M max/min:', M.max(), M.min())
+    print('M abs max/min:',maxaM, minaM)
+
+    if np.any(np.abs(diags_array(M)) == 0):
+        print('M diagonal element is 0!')
+        print((np.abs(diags_array(M)) == 0).nonzero())
+
+
+#def plot_coo_array(m):
+    #from scipy.sparse import csr_array, csc_array, coo_array, issparse
+    #import matplotlib.pyplot as plt
+    #if not isinstance(m, coo_array):
+        #m = coo_array(m)
+    #fig = plt.figure()
+    #ax = fig.add_subplot(111, facecolor='black')
+    #ax.plot(m.col, m.row, 's', color='white', ms=1)
+    #ax.set_xlim(0, m.shape[1])
+    #ax.set_ylim(0, m.shape[0])
+    #ax.set_aspect('equal')
+    #for spine in ax.spines.values():
+        #spine.set_visible(False)
+    #ax.invert_yaxis()
+    #ax.set_aspect('equal')
+    #ax.set_xticks([])
+    #ax.set_yticks([])
+    #return ax
