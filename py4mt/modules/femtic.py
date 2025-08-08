@@ -1307,7 +1307,7 @@ def matrix_reduce(matrix=None,
         if 'abs' in howto.lower():
             nonzero_mask = np.array(np.abs(matrix[matrix.nonzero()]) < spthresh)[0]
         else:
-            maxmatrix = np.max(np.array(np.abs(matrix[matrix.nonzero()]))
+            maxmatrix = np.max(np.array(np.abs(matrix[matrix.nonzero()])))
             nonzero_mask = np.array(np.abs(matrix[matrix.nonzero()]) < maxmatrix*spthresh)[0]
 
         rows = matrix.nonzero()[0][nonzero_mask]
