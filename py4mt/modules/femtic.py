@@ -1204,7 +1204,7 @@ def make_prior_cov(rough=None,
 
 
     '''
-    from scipy.sparse import csr_array, csc_array, coo_array, eye_array, issparse
+    from scipy.sparse import csr_array, csc_array, coo_array, eye_array, diags_array, issparse
     from scipy.sparse.linalg import inv, spsolve, factorized, splu, spilu
 
     nout = 1000
@@ -1331,7 +1331,7 @@ def matrix_reduce(M=None,
             M[np.abs(M)<spthresh*maxM]= 0.
 
 
-    if 'csr' in spformat.lower():matrix
+    if 'csr' in spformat.lower():
         M = csr_array(M)
     if 'csc' in spformat.lower():
         M = csc_array(M)
@@ -1341,7 +1341,7 @@ def matrix_reduce(M=None,
 
     print('New Format:', M.format)
     print('Shape:', M.shape)
-    print(M.nnz,'nonzeros, ', M.nnz/n**2, 'percent')
+    print(M.nnz,'nonzeros, ', 100*M.nnz/n**2, 'percent')
 
     check_sparse_matrix(M)
 
@@ -1363,6 +1363,7 @@ def check_sparse_matrix(M):
     '''
 
     from scipy.sparse import csr_array, csc_array, coo_array, issparse
+    from scipy.sparse import diags_array
 
 
     if M is None:
@@ -1374,7 +1375,7 @@ def check_sparse_matrix(M):
     print('Type:', type(M))
     print('Format:', M.format)
     print('Shape:', M.shape)
-    print(M.nnz,'nonzeros, ', M.nnz/M.shape[0]**2, 'percent')
+    print(M.nnz,'nonzeros, ', 100*M.nnz/M.shape[0]**2, 'percent')
 
     if M.shape[0] == M.shape[1]:
         print('Matrix is square!')
@@ -1390,9 +1391,9 @@ def check_sparse_matrix(M):
     print('M max/min:', M.max(), M.min())
     print('M abs max/min:',maxaM, minaM)
 
-    if np.any(np.abs(diags_array(M)) == 0):
+    if np.any(np.abs(M.diagonal(0)) == 0):
         print('M diagonal element is 0!')
-        print((np.abs(diags_array(M)) == 0).nonzero())
+        print(np.abs(M.diagonal(0) == 0).nonzero())
 
 
 #def plot_coo_array(m):
