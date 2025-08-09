@@ -61,19 +61,14 @@ WorkDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
 
 SparseFormat = 'csr'
 
-RoughFile = WorkDir+'RTR_'+SparseFormat+'.npz'
+RoughFile = WorkDir+'R_'+SparseFormat+'.npz'
 
 #CovFile0 = WorkDir +'COV_'+SparseFormat+'.npz'
 
 
 
 R = scs.load_npz(RoughFile)
-
-
-#R3 = R1@R0
-
-#Test = np.norm(R3-R2)
-#print('invR type is', type(invR))
+fem.check_sparse_matrix(R)
 
 R = coo_matrix(R)
 
@@ -84,7 +79,7 @@ if T.max()+T.min()==0.:
 
 
 # Plotting
-options = {'title': '$R^TR$, Sparsity Pattern',
+options = {'title': '$\mathbf{R}$, Sparsity Pattern',
            'figsize': 8.,      #  inches
            'dpi': 300,
            'shading': 'binary', # 'absolute' 'relative'
@@ -93,6 +88,6 @@ options = {'title': '$R^TR$, Sparsity Pattern',
 
 fig, ax = spy_to_mpl(R, **options)
 fig.show()
-fig.savefig(WorkDir+'RTR_spy.png', bbox_inches='tight')
-fig.savefig(WorkDir+'RTR_spy.pdf', bbox_inches='tight')
+fig.savefig(WorkDir+'R_spy.png', bbox_inches='tight')
+fig.savefig(WorkDir+'R_spy.pdf', bbox_inches='tight')
 plt.close()

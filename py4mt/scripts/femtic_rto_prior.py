@@ -74,14 +74,14 @@ WorkDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
 
 
 FormatIn =  'csr'
-RoughFile = WorkDir +'RTR_'+FormatIn+'.npz'
+RoughFile = WorkDir +'R_'+FormatIn+'.npz'
 
 Alpha = 1.
 Factor = 1./Alpha**2
-RegEps = None
+RegEps = 1.e-4
 FormatOut = 'csr'
-Sparsify = 1.e-4
-RoughNew = RoughFile.replace('/RTR','/COV_noeps')
+Sparsify = 1.e-6
+RoughNew = RoughFile.replace('/R_','/COV_')
 RoughNew = RoughNew.replace(FormatIn, FormatOut)
 
 
@@ -89,21 +89,20 @@ R = scs.load_npz(RoughFile)
 print(type(R))
 print('R sparse format is', R.format)
 
-out_matrix = fem.make_prior_cov(rough=R,
+M = fem.make_prior_cov(rough=R,
                           regeps = RegEps,
                           spformat = FormatOut,
                           spthresh = Sparsify,
                           factor=Factor,
                           out=True)
 
-print('out_matrix format is', out_matrix.format)
 
-
-
-if scs.issparse(out_matrix):
-    scs.save_npz(RoughNew, matrix=out_matrix)
+if scs.issparse(M):
+    print('M is sparse.')
+    scs.save_npz(RoughNew, matrix=M)
 else:
-    np.savez_compressed(RoughNew, matrix=out_matrix)
+    print('M is dense.')
+    np.savez_compressed(RoughNew, matrix=M)
 
-check_sparse_matrix(matrix)
+fem.check_sparse_matrix(M)
 

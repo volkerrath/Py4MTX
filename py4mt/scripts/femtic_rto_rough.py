@@ -83,3 +83,6 @@ print('saved to', RoughNew)
 print('R sparse format is', R.format)
 
 scs.save_npz(RoughNew, matrix=R)
+
+
+fem.check_sparse_matrix(R)

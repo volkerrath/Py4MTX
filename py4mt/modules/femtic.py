@@ -1261,14 +1261,12 @@ def make_prior_cov(rough=None,
     print('invR Format', type(invR))
 
     if spthresh is not None:
-        invR = matrix_reduce(matrix=invR,
+        invR = matrix_reduce(M=invR,
                             spthresh=spthresh,
                             spformat=spformat)
 
-    if returncov:
-         M = factor*invR@invR.T
-    else:
-         M = factor*invR
+    M = factor*invR@invR.T
+
 
     print('M generated:', time.perf_counter() - start,'s')
     print('M', type(M))
@@ -1279,77 +1277,75 @@ def make_prior_cov(rough=None,
     return M
 
 
-def matrix_reduce(matrix=None,
+def matrix_reduce(M=None,
              howto='absolute',
              spformat= 'csr',
              spthresh=1.e-6):
 
     from scipy.sparse import csr_array, csc_array, coo_array, issparse
 
-    if matrix is None:
-        sys.exit('sparse_reduce: no matrix given! Exit.')
+    if M is None:
+        sys.exit('matrix_reduce: no matrix given! Exit.')
 
 
-    if issparse(matrix):
+    if issparse(M):
+        print('Matrix is sparse.')
+        n = M.shape[0]
+        print('Type:', type(M))
+        print('Format:', M.format)
+        print('Shape:', M.shape)
+        print(M.nnz,'nonzeros, ', M.nnz/n**2, 'percent')
 
-        n = matrix.shape[0]
-        print('Type:', type(matrix))
-        print('Format:', matrix.format)
-        print('Shape:', matrix.shape)
-        print(matrix.nnz,'nonzeros, ', matrix.nnz/n**2, 'percent')
-
-        test = matrix - matrix.T
+        test = M - M.T
         if test.max()+test.min()==0.:
             print('Matrix is symmetric!')
         else:
             print('Matrix is not symmetric!')
 
         if 'abs' in howto.lower():
-            nonzero_mask = np.array(np.abs(matrix[matrix.nonzero()]) < spthresh)[0]
+            nonzero_mask = np.array(np.abs(M[M.nonzero()]) < spthresh)[0]
         else:
-            maxmatrix = np.max(np.array(np.abs(matrix[matrix.nonzero()])))
-            nonzero_mask = np.array(np.abs(matrix[matrix.nonzero()]) < maxmatrix*spthresh)[0]
+            maxM = np.max(np.array(np.abs(M[M.nonzero()])))
+            nonzero_mask = np.array(np.abs(M[M.nonzero()]) < maxM*spthresh)[0]
 
-        rows = matrix.nonzero()[0][nonzero_mask]
-        cols = matrix.nonzero()[1][nonzero_mask]
+        rows = M.nonzero()[0][nonzero_mask]
+        cols = M.nonzero()[1][nonzero_mask]
 
-        matrix[rows, cols] = 0.
+        M[rows, cols] = 0.
 
     else:
-
-        print('Type:', type(matrix))
-        print('Shape:', np.shape(matrix))
-        test = matrix - matrix.T
+        print('Matrix is dense.')
+        print('Type:', type(M))
+        print('Shape:', np.shape(M))
+        test = M - M.T
         if np.max(test)+np.min(test)==0.:
             print('Matrix is symmetric!')
 
-        n = np.shape(matrix)[0]
+        n = np.shape(M)[0]
 
         if 'abs' in howto.lower():
-            matrix[np.abs(matrix)<spthresh]= 0.
+            M[np.abs(M)<spthresh]= 0.
         else:
-            maxmatrix = np.amax(np.abs(matrix))
-            print('sparsity',maxmatrix, spthresh*maxmatrix)
-            matrix[np.abs(matrix)<spthresh*maxmatrix]= 0.
+            maxM = np.amax(np.abs(M))
+            print('sparsity',maxM, spthresh*maxM)
+            M[np.abs(M)<spthresh*maxM]= 0.
 
 
-
-
-
-    if 'csr' in spformat.lower():
-        matrix = csr_array(matrix)
+    if 'csr' in spformat.lower():matrix
+        M = csr_array(M)
     if 'csc' in spformat.lower():
-        matrix = csc_array(matrix)
+        M = csc_array(M)
     if 'coo' in spformat.lower():
-        matrix = coo_array(matrix)
+        M = coo_array(M)
 
 
-    print('New Format:', matrix.format)
-    print('Shape:', matrix.shape)
-    print(matrix.nnz,'nonzeros, ', matrix.nnz/n**2, 'percent')
+    print('New Format:', M.format)
+    print('Shape:', M.shape)
+    print(M.nnz,'nonzeros, ', M.nnz/n**2, 'percent')
 
+    check_sparse_matrix(M)
 
-    return matrix
+    return M
 
 
 def check_sparse_matrix(M):
@@ -1387,7 +1383,7 @@ def check_sparse_matrix(M):
         if test.max()+test.min()==0.:
             print('Matrix is symmetric!')
         else:
-            print'Matrix is not symmetric!')
+            print('Matrix is not symmetric!')
 
     maxaM = np.amax(np.abs(M))
     minaM = np.amin(np.abs(M))
