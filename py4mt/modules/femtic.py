@@ -1118,24 +1118,26 @@ def get_roughness(filerough='roughening_matrix.out',
         if nel == 0:
             iline = iline + 1
             print('passed', ele, nel, iline)
+            # pass
             continue
         else:
+            print(nel, type(nel))
             irow += [ele]*nel
             col = [int(x) for x in content[iline+1].split()[1:]]
             icol += col
             val = [float(x) for x in content[iline+2].split()]
             vals += val
             iline = iline + 2
-            print('used', ele, nel, iline)
+            print('used', ele, nel, irow[-1], icol[-1], iline, val)
 
-
+    print(irow[0],icol[0])
     irow = np.asarray(irow)
     icol = np.asarray(icol)
     vals = np.asarray(vals)
 
 
 
-    R = csr_array((vals, (irow, icol)))
+    R = coo_array((vals, (irow, icol)), shape=)
 
 
     print('R sparse format is', R.format)
@@ -1302,6 +1304,9 @@ def matrix_reduce(M=None,
         else:
             print('Matrix is not symmetric!')
 
+        # stackoverflow
+        # nonzero_mask = np.array(np.abs(x[x.nonzero()]) < 3)[0]
+
         if 'abs' in howto.lower():
             nonzero_mask = np.array(np.abs(M[M.nonzero()]) < spthresh)[0]
         else:
@@ -1312,6 +1317,7 @@ def matrix_reduce(M=None,
         cols = M.nonzero()[1][nonzero_mask]
 
         M[rows, cols] = 0.
+        M.eliminate_zeros()
 
     else:
         print('Matrix is dense.')
@@ -1394,6 +1400,7 @@ def check_sparse_matrix(M):
     if np.any(np.abs(M.diagonal(0)) == 0):
         print('M diagonal element is 0!')
         print(np.abs(M.diagonal(0) == 0).nonzero())
+        print(np.abs(M.diagonal(0) == 0))
 
 
 #def plot_coo_array(m):
