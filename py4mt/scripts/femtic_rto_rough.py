@@ -71,7 +71,7 @@ print(titstrng+'\n\n')
 WorkDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
 RoughFile = WorkDir + 'roughening_matrix.out'
 
-SparseFormat = 'csr'
+SparseFormat = 'coo'
 RoughNew = WorkDir+'R_'+SparseFormat+'.npz'
 
 R   = fem.get_roughness(filerough=RoughFile,

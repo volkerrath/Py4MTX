@@ -413,10 +413,10 @@ def modify_model(template_file='resistivity_block_iter0.dat',
         else:
             # sparse LU decomposition
             n =priorcov.shape[0]
-            M = priorcov.copy() + numpy.identity(n)*regeps
+            M = priorcov.copy() + np.identity(n)*regeps
             LU = scipy.sparse.linalg.splu(M, diag_pivot_thresh=0)
             # check the matrix A is positive definite.
-            if (LU.perm_r == numpy.arange(n)).all() and (LU.U.diagonal() > 0).all():
+            if (LU.perm_r == np.arange(n)).all() and (LU.U.diagonal() > 0).all():
                 S = LU.L.dot(scipy.sparse.diags(LU.U.diagonal() ** 0.5))
 
         # generate samples with given covariance structure
@@ -1104,9 +1104,26 @@ def get_roughness(filerough='roughening_matrix.out',
     with open(filerough, 'r') as file:
         content = file.readlines()
 
-    numlines = int(content[0].split()[0])
-    # print(numlines)
+    num_elem = int(content[0].split()[0])
     print(' File read:', time.perf_counter() - start,'s')
+    print('Number of elements:',num_elem)
+    
+    
+    iline = 0
+    zeros = 0
+    while iline < len(content)-1: #-2
+        iline = iline + 1
+        # print(content[iline])
+        ele = int(content[iline].split()[0])
+        nel = int(content[iline+1].split()[0])
+        if nel == 0:
+            iline = iline + 1
+            zeros = zeros + 1
+            print('passed', ele, nel, iline)
+        else:
+            iline = iline + 2
+            
+    print('Zero elements:', zeros)
 
     start = time.perf_counter()
     iline = 0
@@ -1121,14 +1138,13 @@ def get_roughness(filerough='roughening_matrix.out',
             # pass
             continue
         else:
-            print(nel, type(nel))
-            irow += [ele]*nel
-            col = [int(x) for x in content[iline+1].split()[1:]]
+            irow += [ele-zeros]*nel
+            col = [int(x)-zeros for x in content[iline+1].split()[1:]]
             icol += col
             val = [float(x) for x in content[iline+2].split()]
             vals += val
             iline = iline + 2
-            print('used', ele, nel, irow[-1], icol[-1], iline, val)
+            print('used', ele, nel, iline, val)
 
     print(irow[0],icol[0])
     irow = np.asarray(irow)
@@ -1137,7 +1153,8 @@ def get_roughness(filerough='roughening_matrix.out',
 
 
 
-    R = coo_array((vals, (irow, icol)), shape=)
+    R = coo_array((vals, (irow, icol)))
+    print(R.shape)
 
 
     print('R sparse format is', R.format)
