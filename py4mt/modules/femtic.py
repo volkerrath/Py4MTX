@@ -1160,7 +1160,7 @@ def get_roughness(filerough='roughening_matrix.out',
     print('R sparse format is', R.format)
 
     if regeps is not None:
-        R = R + regeps*eye_array(R.shape[0],format='csr')
+        R = R + regeps*eye_array(R.shape[0],format=R.format)
         if out:
             print(regeps, 'added to diag(R)')
 
