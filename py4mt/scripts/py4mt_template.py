@@ -18,11 +18,11 @@ import warnings
 import csv
 import inspect
 
-# Import numoerical or other specialsed modules
+# Import numerical or other specialised modules
 import numpy as np
 from mtpy.core.mt import MT
 
-# addpy4mt modules to pythonpath
+# add py4mt modules to pythonpath
 mypath = ['/home/vrath/Py4MT/py4mt/modules/',
           '/home/vrath/Py4MT/py4mt/scripts/']
 for pth in mypath:
