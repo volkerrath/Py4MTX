@@ -77,11 +77,11 @@ FormatIn =  'csr'
 RoughFile = WorkDir +'R_'+FormatIn+'.npz'
 
 Alpha = 1.
-Factor = 1./Alpha**2
-RegEps = 1.e-4
+Factor = 1./Alpha
+RegEps = None
 FormatOut = 'csr'
 Sparsify = 1.e-6
-RoughNew = RoughFile.replace('/R_','/COV_')
+RoughNew = RoughFile.replace('/R_','/SQCOV_')
 RoughNew = RoughNew.replace(FormatIn, FormatOut)
 
 
