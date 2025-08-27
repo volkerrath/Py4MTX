@@ -46,22 +46,21 @@ titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng+'\n\n')
 
 
-WorkDir = r'/home/vrath/work/Ensemble/'
-
+WorkDir = r'/home/vrath/FEMTIC_work/Misti_lcurve/'
 PlotName  = WorkDir+'Misti'+'_L-Curve'
 
-
-
 # os.chdir(EnsembleDir)
-SearchStrng = 'Misti'
+SearchStrng = 'lc_*'
 dir_list = utl.get_filelist(searchstr=[SearchStrng], searchpath=WorkDir, 
                             sortedlist =True, fullpath=True)
 
-# dir_list = []
+PlotWhat = 'nrms'
+FontLabel = 16
+
 
 l_curve=[]
 for directory in dir_list:
-    with open(directory+'femtic.cnv') as cnv:
+    with open(directory+'/'+'femtic.cnv') as cnv:
         content=cnv.readlines()
 
     line = content[-1].split()
@@ -71,37 +70,80 @@ for directory in dir_list:
     misft = float(line[7])
     nrmse = float(line[8])
     
-    l_curve.append = [alpha, rough, misft]
-    
-lc = np.array(l_curve).reshape((3,-1))
-a = lc[0,:]
-r = lc[1,:]
-m = lc[2,:]
+    l_curve.append([alpha, rough, misft, nrmse ])
+  
+ 
+lc = np.array(l_curve).reshape((-1,4))
+ind = np.argsort( lc[:,0] ); 
+lc_sorted  = lc[ind]
+lc_sorted = np.delete(lc_sorted, 0, 0)
+#lc_sorted = np.sort(lc, axis=1)
+
+a = lc_sorted[:,0]
+r = lc_sorted[:,1]
+m = lc_sorted[:,2]
+n = lc_sorted[:,3]
+
 fig, ax = plt.subplots()
 
-plt.loglog(m, r, 
-         color='green', 
-         marker='o', 
-         linestyle='dashed',
-         linewidth=1, 
-         markersize=7,
-         markeredgecolor='red',
-         markerfacecolor='white'
-         )
+if 'nrms' in PlotWhat.lower():
 
-for k in np.arange(len(l_curve)):
-    alph = round(a[k], -int(np.floor(np.log10(abs(a[k])))))
-    plt.annotate(str(alph),[m[k],r[k]])
-
-xformula = '$\parallel\mathbf{C}_d^{-1/2} (\mathbf{d}_{obs}-\mathbf{d}_{calc})\parallel_2$'
-plt.xlabel(r'misfit '+xformula,fontsize=18)
-
-yformula = '$\parallel\mathbf{C}_m^{-1/2} \mathbf{m}\parallel_2$'
-plt.ylabel(r'roughness'+yformula,fontsize=18)
+    plt.plot(n, r, 
+             color='green', 
+             marker='o', 
+             linestyle='dashed',
+             linewidth=1, 
+             markersize=7,
+             markeredgecolor='red',
+             markerfacecolor='white'
+             )
+    
+    for k in np.arange(len(lc_sorted)):
+        alph = round(a[k], -int(np.floor(np.log10(abs(a[k])))))
+        plt.annotate(str(alph),[n[k],r[k]])
+        
+    
+    
+    xformula = '$nRMS$'
+    plt.xlabel(r'misfit '+xformula,fontsize=FontLabel)
+    
+    yformula = '$\parallel\mathbf{C}_m^{-1/2} \mathbf{m}\parallel_2$'
+    plt.ylabel(r'roughness '+yformula,fontsize=FontLabel)
 
 # plt.tick_params(labelsize='x-large')
-plt.grid('on')
-plt.tight_layout()
+    plt.grid('on')
+    plt.tight_layout()
+    
+    plt.savefig(PlotName+'.pdf')
+    plt.savefig(PlotName+'.png')
 
-plt.savefig(PlotName+'.pdf')
-plt.savefig(PlotName+'.png')
+else:
+    
+    plt.plot(m, r, 
+             color='green', 
+             marker='o', 
+             linestyle='dashed',
+             linewidth=1, 
+             markersize=7,
+             markeredgecolor='red',
+             markerfacecolor='white'
+             )
+    
+    for k in np.arange(len(lc_sorted)):
+        alph = round(a[k], -int(np.floor(np.log10(abs(a[k])))))
+        plt.annotate(str(alph),[n[k],r[k]])
+        
+    
+    
+    xformula = '$\parallel\mathbf{C}_d^{-1/2} (\mathbf{d}_{obs}-\mathbf{d}_{calc})\parallel_2$'
+    plt.xlabel(r'misfit '+xformula,fontsize=FontLabel)
+    
+    yformula = '$\parallel\mathbf{C}_m^{-1/2} \mathbf{m}\parallel_2$'
+    plt.ylabel(r'roughness '+yformula,fontsize=FontLabel)
+
+# plt.tick_params(labelsize='x-large')
+    plt.grid('on')
+    plt.tight_layout()
+    
+    plt.savefig(PlotName+'.pdf')
+    plt.savefig(PlotName+'.png')
