@@ -89,16 +89,16 @@ def get_filelist(searchstr=['*'], searchpath='./', sortedlist =True, fullpath=Fa
     print(filelist)
     for sstr in searchstr:
         filelist = fnmatch.filter(filelist, sstr)
-
+        
     filelist = [os.path.basename(f) for f in filelist]
 
     if sortedlist:
         filelist = sorted(filelist)
-
+        print(filelist)
     if fullpath:
        filelist = [os.path.join(searchpath,filelist[ii]) for ii in range(len(filelist))]
 
-
+    print(filelist)
     return filelist
 
 
