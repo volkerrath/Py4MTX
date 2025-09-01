@@ -78,10 +78,10 @@ RoughFile = WorkDir +'R_'+FormatIn+'.npz'
 
 Alpha = 1.
 Factor = 1./Alpha
-RegEps = None
+RegEps = 1.e-4
 FormatOut = 'csr'
 Sparsify = 1.e-6
-SpSolver = None
+SpSolver = 'scipy'
 RoughNew = RoughFile.replace('/R_','/COV_')
 RoughNew = RoughNew.replace(FormatIn, FormatOut)
 
@@ -92,7 +92,7 @@ print('R sparse format is', R.format)
 
 M = fem.make_prior_cov(rough=R,
                           regeps = RegEps,
-                          spsolver = SpSolver
+                          spsolver = SpSolver,
                           spformat = FormatOut,
                           spthresh = Sparsify,
                           factor=Factor,
