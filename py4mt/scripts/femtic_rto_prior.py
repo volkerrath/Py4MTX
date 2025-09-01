@@ -81,8 +81,7 @@ Factor = 1./Alpha
 RegEps = 1.e-4
 FormatOut = 'csr'
 Sparsify = 1.e-6
-SpSolver = 'scipy'
-RoughNew = RoughFile.replace('/R_','/COV_')
+RoughNew = RoughFile.replace('/R_','/SQCOV_')
 RoughNew = RoughNew.replace(FormatIn, FormatOut)
 
 

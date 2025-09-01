@@ -59,7 +59,7 @@ print(titstrng+'\n\n')
 
 WorkDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
 
-SparseFormat = 'csr'
+SparseFormat = 'coo'
 
 RoughFile = WorkDir+'R_'+SparseFormat+'.npz'
 
@@ -81,10 +81,10 @@ if T.max()+T.min()==0.:
 # Plotting
 options = {'title': '$\mathbf{R}$, Sparsity Pattern',
            'figsize': 8.,      #  inches
-           'dpi': 300,
-           'shading': 'binary', # 'absolute' 'relative'
+           'dpi': 600,
+           'shading': 'binary', # 'absolute' 'relative' 'binary'
            'spy_aa_tweaks_enabled': True,
-           'color_full': 'red'} 
+           'color_full': 'black'} 
 
 fig, ax = spy_to_mpl(R, **options)
 fig.show()
