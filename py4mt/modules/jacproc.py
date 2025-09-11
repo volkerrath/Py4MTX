@@ -11,6 +11,35 @@ import numpy.linalg as npl
 
 from numba import jit
 
+def calc_gradient(Jac=None, resid=None, small = 1.e-30, out = False):
+    '''
+    Calculate sgradient.
+    Expects that Jacobian is already scaled, i.e Jac = C^(-1/2)*J.
+
+    author:VR 9/25
+
+    '''
+
+    if Jac is None:
+        sys.exit('calc_sensitivity: Jacobian size is 0! Exit.')
+
+    [ndat, npar] = np.shape(Jac)
+
+    G = np.zeros((1, npar))
+    if out:
+
+        maxval = np.amax(G)
+        minval = np.amin(G)
+        print('calc_sensitivity:',minval, maxval)
+
+    # print('calc: ', np.any(S==0))
+    G[np.where(np.abs(G)<small)]=small
+    # print('calc: ', np.any(S==0))
+    # S=S.A1
+    G = np.asarray(G).ravel()
+
+
+    return G
 
 def calc_sensitivity(Jac=np.array([]),
                      Type = 'euclidean', UseSigma = False, Small = 1.e-30, OutInfo = False):
