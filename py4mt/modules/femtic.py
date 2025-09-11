@@ -1189,9 +1189,7 @@ def make_prior_cov(rough=None,
                    regeps = None,
                    spformat = 'csc',
                    spthresh = 1.e-6,
-                   #ilu = False,
-                   #drop= 1.e-6,
-                   #fill=30,
+                   spsolver = None,
                    factor=1.,
                    out=True):
     '''
@@ -1208,23 +1206,25 @@ def make_prior_cov(rough=None,
         Default is 0.
     regeps : float
         Small value to stabilize. The default is 1.e-5
-    ilu, drop, fill: logical, floats
-        Truncation for incomplete LU
-    returncov : logical
-         Return covariance C or factor invR
 
     Returns
     -------
-    cov, invR : sparse arrays
-        femtic equivalent covariance C or factor invR
+    M: sparse arrays
+        femtic equivalent sqrt of covariance C or inverse of invR
 
 
     author: vrath,  created on Thu Jul 26, 2025
 
 
     '''
+
     from scipy.sparse import csr_array, csc_array, coo_array, eye_array, diags_array, issparse
-    from scipy.sparse.linalg import inv, spsolve, factorized, splu, spilu
+    from scipy.sparse.linalg import inv, spsolve, factorized
+
+    if 'pard' in spsolver.lower():
+        from pypardiso import spsolve, factorized
+    else:
+        from scipy.sparse.linalg import spsolve, factorized
 
     nout = 1000
 
@@ -1255,14 +1255,9 @@ def make_prior_cov(rough=None,
 
 
     n = R.shape[0]
-    invR = np.zeros((n, n))
+    invR = np.zeros((n,n))
 
-    #if ilu:
-        #LU = spilu(R, drop_tol=drop, fill_factor=fill)
-    #else:
-        #LU = splu(R)
-
-    LUsolve = factorized(R)
+    solver = factorized(R)
 
     for k in np.arange(n):
 
@@ -1271,10 +1266,9 @@ def make_prior_cov(rough=None,
 
         rhs = np.zeros(n)
         rhs[k] = 1.
-
-
-        # invR[k,:] = LU.solve(rhs)
-        invR[k,:] = LUsolve(rhs)
+        s = solver(rhs)
+        print(np.shape(rhs), np.shape(s), np.shape(invR))
+        invR[k,:] = solver(rhs)
 
     print('invR generated:', time.perf_counter() - start,'s')
     print('invR Format', type(invR))

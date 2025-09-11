@@ -45,8 +45,7 @@ fname = inspect.getfile(inspect.currentframe())
 titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng+'\n\n')
 
-
-WorkDir = r'/home/vrath/work/Ensemble/'
+WorkDir = r'/home/vrath/FEMTIC_work/Misti_lcurve/'
 
 WhatPlot = 'nrms'
 PlotName  = WorkDir+'Misti'+'_nRMS'
@@ -54,7 +53,7 @@ PlotName  = WorkDir+'Misti'+'_nRMS'
 
 
 # os.chdir(EnsembleDir)
-SearchStrng = 'Misti'
+SearchStrng = 'lc_'
 dir_list = utl.get_filelist(searchstr=[SearchStrng], searchpath=WorkDir, 
                             sortedlist =True, fullpath=True)
 
