@@ -36,7 +36,6 @@ import util as utl
 from version import versionstrg
 
 
-
 rng = np.random.default_rng()
 nan = np.nan  # float('NaN')
 version, _ = versionstrg()
@@ -45,19 +44,17 @@ fname = inspect.getfile(inspect.currentframe())
 titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng+'\n\n')
 
+
 WorkDir = r'/home/vrath/FEMTIC_work/Misti_lcurve/'
-
-WhatPlot = 'nrms'
-PlotName  = WorkDir+'Misti'+'_nRMS'
-
+PlotName  = WorkDir+'Misti'+'_Convergence'
 
 
 # os.chdir(EnsembleDir)
-SearchStrng = 'lc_'
-dir_list = utl.get_filelist(searchstr=[SearchStrng], searchpath=WorkDir, 
-                            sortedlist =True, fullpath=True)
+#SearchStrng = 'lc_'
+#dir_list = utl.get_filelist(searchstr=[SearchStrng], searchpath=WorkDir,
+                            #sortedlist =True, fullpath=True)
 
-# dir_list = []
+dir_list = []
 
 for directory in dir_list:
     convergence = []

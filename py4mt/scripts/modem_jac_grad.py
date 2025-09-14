@@ -134,18 +134,6 @@ PerIntervals = [
                 ]
 
 
-'''
-Transform sensitivities.
-Options:
-    Transform = 'vol', 'siz'    Normalize by the values optional array vol ('volume'),
-                                i.e in our case layer thickness. This should always
-                                be the first value in Transform list.
-    Transform = 'max'           Normalize by maximum (absolute) value.
-    Transform = 'sur'           Normalize by surface value.
-    Transform = 'sqr'           Take the square root. Only usefull for euc sensitivities.
-    Transform = 'log'           Take the logaritm. This should always be the
-                                last value in Transform list
-'''
 snsstring = 'gradient'
 
 SensDir = WorkDir+'/sens_'+snsstring+'/'

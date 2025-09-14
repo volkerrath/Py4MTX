@@ -45,7 +45,7 @@ import netCDF4 as nc
 PY4MTX_DATA = os.environ['PY4MTX_DATA']
 PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
 
-mypath = [PY4MTX_ROOT+'/modules/', PY4MTX_ROOT+'/scripts/']
+mypath = [PY4MTX_ROOT+'/py4mt/modules/', PY4MTX_ROOT+'/py4mt/scripts/']
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0, pth)
@@ -60,7 +60,7 @@ titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.curren
 print(titstrng+'\n\n')
 
 
-gc.enable()
+#gc.enable()
 
 rng = np.random.default_rng()
 nan = np.nan
@@ -88,11 +88,11 @@ Scale = 1.
 #JFiles = [WorkDir+'UBI9_ZPTss.jac'] # WorkDir+'SABA8_Z.jac',]
 #MFile = WorkDir + 'UBI9_best'
 
-WorkDir = '/home/vrath/Ubaye/'
-# WorkDir = PY4MTX_DATA+'/Ubaye/'
-JFiles = [WorkDir+'Ubaye26_Z.jac', WorkDir+'Ubaye26_P.jac',  WorkDir+'Ubaye26_T.jac']
+WorkDir = '/home/vrath/Annecy_Nullspace/'
 
-MFile = WorkDir + 'Ub26_ZPT_T200_NLCG_014'
+JFiles = [WorkDir+'annecy.jac']
+
+MFile = WorkDir + 'annecy25_Z_Aplha02_NLCG_027'
 
 
 

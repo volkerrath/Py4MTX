@@ -1134,7 +1134,7 @@ def get_roughness(filerough='roughening_matrix.out',
         nel = int(content[iline+1].split()[0])
         if nel == 0:
             iline = iline + 1
-            print('passed', ele, nel, iline)
+            #print('passed', ele, nel, iline)
             # pass
             continue
         else:
@@ -1144,9 +1144,9 @@ def get_roughness(filerough='roughening_matrix.out',
             val = [float(x) for x in content[iline+2].split()]
             vals += val
             iline = iline + 2
-            print('used', ele, nel, iline, val)
+            #print('used', ele, nel, iline, val)
 
-    print(irow[0],icol[0])
+    #print(irow[0],icol[0])
     irow = np.asarray(irow)
     icol = np.asarray(icol)
     vals = np.asarray(vals)
@@ -1219,7 +1219,10 @@ def make_prior_cov(rough=None,
     '''
 
     from scipy.sparse import csr_array, csc_array, coo_array, eye_array, diags_array, issparse
-    from scipy.sparse.linalg import inv, spsolve, factorized
+    from scipy.sparse.linalg import inv
+
+    if spsolver is None:
+        spsolver = 'scipy'
 
     if 'pard' in spsolver.lower():
         from pypardiso import spsolve, factorized
@@ -1267,7 +1270,7 @@ def make_prior_cov(rough=None,
         rhs = np.zeros(n)
         rhs[k] = 1.
         s = solver(rhs)
-        print(np.shape(rhs), np.shape(s), np.shape(invR))
+        #print(np.shape(rhs), np.shape(s), np.shape(invR))
         invR[k,:] = solver(rhs)
 
     print('invR generated:', time.perf_counter() - start,'s')
