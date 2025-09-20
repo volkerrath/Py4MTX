@@ -411,7 +411,8 @@ def write_data(Datfile=None, Dat=None, Site=None, Comp=None, Head = None,
                     print(np.shape(block))
 
             else:
-                print('Data type '+blockheader[3]+'not implemented! Exit.')
+
+                print('Data type '+blockheader[2]+'not implemented! Exit.')
 
             np.savetxt(fd,block, fmt = fmt)
 

@@ -91,7 +91,6 @@ print('R sparse format is', R.format)
 
 M = fem.make_prior_cov(rough=R,
                           regeps = RegEps,
-                          spsolver = SpSolver,
                           spformat = FormatOut,
                           spthresh = Sparsify,
                           factor=Factor,

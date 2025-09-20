@@ -90,17 +90,12 @@ ModExt = '_sns.rho'
 ## JacName = 'Misti_best_Z5_nerr_sp-8'
 #JacName = 'Misti_best_ZT_extended_nerr_sp-8'
 
-WorkDir = '/home/vrath/Ubaye/'
+WorkDir = '/home/vrath/Annecy_Nullspace/'
 
-#JacName = 'Ubaye26_P_nerr_sp-8'
-#JFile = WorkDir + JacName
-JacName = 'Ubaye26_T_nerr_sp-8'
+JName = 'annecy_nerr_sp-8'
 JFile = WorkDir + JacName
-#JacName = 'Ubaye26_Z_nerr_sp-8'
-#JFile = WorkDir + JacName
 
-
-MFile = WorkDir + 'Ub26_ZPT_T200_NLCG_014'
+MFile = WorkDir + 'annecy25_Z_Aplha02_NLCG_027'
 MOrig = [0., 0.]
 
 
@@ -150,8 +145,8 @@ Usesigma:
 '''
 
 #Transform = [ 'sqr']
-#Transform = [ 'sqr', 'max']
-Transform = [ 'sqr','vol','max']
+Transform = [ 'sqr', 'max']
+#Transform = [ 'sqr','vol','max']
 
 '''
 Transform sensitivities.

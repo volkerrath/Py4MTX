@@ -149,11 +149,12 @@ for ibody in range(model_set):
         nix = 0
 
 
-# mod.write_mod_npz(file=None,
-                    # dx=None, dy=None, dz=None, mval=None, reference=None,
-                    # compressed=True, trans='LINEAR',
-                    # aircells=None, mvalair=1.e17, blank=1.e-30, header='',
-                    # out=True):
+    mod.write_mod_npz(
+        file=None,
+        dx=None, dy=None, dz=None, mval=None, reference=None,
+        compressed=True, trans='LINEAR',
+        aircells=None, mvalair=1.e17, blank=1.e-30, header='',
+        out=True):
 
 
 total = total + elapsed
