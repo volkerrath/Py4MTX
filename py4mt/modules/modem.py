@@ -411,7 +411,7 @@ def write_data(Datfile=None, Dat=None, Site=None, Comp=None, Head = None,
                     print(np.shape(block))
 
             else:
-                Inv'Data type '+blockheader[3]+'not implemented! Exit.')
+                print('Data type '+blockheader[3]+'not implemented! Exit.')
 
             np.savetxt(fd,block, fmt = fmt)
 
@@ -1313,7 +1313,7 @@ def fix_cells( covfile_i=None,
 
     blocks = [ii for ii in range(len(l_i)) if len(l_i[ii].split()) == 2]
     if len(blocks) != num_lay:
-        Inv'fix_cells: Number of blocks wrong! Exit.')
+        print('fix_cells: Number of blocks wrong! Exit.')
 
     for ib in blocks:
         new_block = []
@@ -1525,7 +1525,7 @@ def mt1dfwd(freq, sig, d, inmod='r', out='imp', magfield='b'):
         sig = 1.0 / np.array(sig)
 
     if sig.ndim > 1:
-        Inv'IP not yet implemented')
+        print('IP not yet implemented')
 
     n = np.size(sig)
 
@@ -1648,12 +1648,12 @@ def insert_body_condition(dx=None, dy=None, dz=None,
             if condit is None:
                 actstring = 'rho_avg + rhoval'
             else:
-                Inv'Average add option not consistent with contition! Exit.')
+                print('Average add option not consistent with contition! Exit.')
         else:
             actstring = 'rho_out[point] + rhoval'
 
     else:
-        Inv'Action' + action + ' not implemented! Exit.')
+        print('Action' + action + ' not implemented! Exit.')
 
 
     if out:
@@ -1686,7 +1686,7 @@ def insert_body_condition(dx=None, dy=None, dz=None,
             if n_inside>0:
                 rho_avg = rho_avg/n_inside
             else:
-                Inv'insert_body: no cell centers inside ellipsoid! Exit.')
+                print('insert_body: no cell centers inside ellipsoid! Exit.')
 
         n_inside = 0
         n_changed = 0
@@ -1714,7 +1714,7 @@ def insert_body_condition(dx=None, dy=None, dz=None,
             print(n_inside, ' cell centers in ellipsoid found.')
             print(n_changed, ' cells changed.')
         else:
-            Inv'insert_body: no cell centers inside ellipsoid! Exit.')
+            print('insert_body: no cell centers inside ellipsoid! Exit.')
 
     if 'box' in geom.lower():
         if 'avg' in actstring:
@@ -1734,7 +1734,7 @@ def insert_body_condition(dx=None, dy=None, dz=None,
             if n_inside>0:
                 rho_avg = rho_avg/n_inside
             else:
-                Inv'insert_body: no cell centers inside box! Exit.')
+                print('insert_body: no cell centers inside box! Exit.')
 
         n_inside = 0
         n_changed = 0 
@@ -1759,7 +1759,7 @@ def insert_body_condition(dx=None, dy=None, dz=None,
             print(n_inside, ' cell centers in box found.')
             print(n_changed, ' cells changed.')
         else:
-            Inv'insert_body: no cell centers inside box! Exit.')
+            print('insert_body: no cell centers inside box! Exit.')
 
     if smooth is not None:
         if 'uni' in smooth[0].lower():
@@ -1771,7 +1771,7 @@ def insert_body_condition(dx=None, dy=None, dz=None,
             rho_out = gaussian_filter(rho_out, gstd)
 
         else:
-            Inv'Smoothing filter  ' + smooth[0] + ' not implemented! Exit.')
+            print('Smoothing filter  ' + smooth[0] + ' not implemented! Exit.')
 
     rho_out = np.exp(rho_out)
 
@@ -1839,7 +1839,7 @@ def insert_body(dx=None, dy=None, dz=None,
         
 
     else:
-        Inv'Action' + action + ' not implemented! Exit.')
+        print('Action' + action + ' not implemented! Exit.')
 
 
     if out:
@@ -1871,7 +1871,7 @@ def insert_body(dx=None, dy=None, dz=None,
             if n_inside>0:
                 rho_avg = rho_avg/n_inside
             else:
-                Inv'insert_body: no points inside ellipsoid! Exit.')
+                print('insert_body: no points inside ellipsoid! Exit.')
 
         n_inside = 0
         for kk in np.arange(0, nz - zpad - 1):
@@ -1906,7 +1906,7 @@ def insert_body(dx=None, dy=None, dz=None,
             if n_inside>0:
                 rho_avg = rho_avg/n_inside
             else:
-                Inv'insert_body: no points inside box! Exit.')
+                print('insert_body: no points inside box! Exit.')
 
         n_inside = 0
         for kk in np.arange(0, nz - zpad - 1):
@@ -1933,7 +1933,7 @@ def insert_body(dx=None, dy=None, dz=None,
             rho_out = gaussian_filter(rho_out, gstd)
 
         else:
-            Inv'Smoothing filter  ' + smooth[0] + ' not implemented! Exit.')
+            print('Smoothing filter  ' + smooth[0] + ' not implemented! Exit.')
 
     rho_out = np.exp(rho_out)
 
@@ -2120,7 +2120,7 @@ def crossgrad(m1=np.array([]),
     sm = np.shape(m1)
     dm = m1.dim
     if dm==1:
-        Inv'crossgrad: For dim='+str(dm)+' no crossgrad! Exit.')
+        print('crossgrad: For dim='+str(dm)+' no crossgrad! Exit.')
     elif dm==2:
         cgdim = 1
     else:
@@ -2344,7 +2344,7 @@ def shock3d(
         signcall = '-1./(1. + np.exp(-scale *L))'
 
     else:
-        Inv'sign func ' + signfunc + ' not defined! Exit.')
+        print('sign func ' + signfunc + ' not defined! Exit.')
 
     kersiz = (filt[0], filt[1], filt[2])
     kerstd = filt[3]
@@ -2428,16 +2428,16 @@ def insert_body_ijk(template = None, rho_in=None,
     @author: vrath
     '''
     if template is None:
-        Inv'insert_body_ijk: no template! Exit.')
+        print('insert_body_ijk: no template! Exit.')
 
     if rho_in is None:
-        Inv'insert_body_ijk: no base model! Exit.')
+        print('insert_body_ijk: no base model! Exit.')
 
     if perturb is None:
-        Inv'insert_body_ijk: no perturbation! Exit.')
+        print('insert_body_ijk: no perturbation! Exit.')
 
     if bodymask is None:
-        Inv'insert_body_ijk: no body! Exit.')
+        print('insert_body_ijk: no body! Exit.')
 
     rho_out = np.log(rho_in.copy())
 
@@ -2507,11 +2507,11 @@ def distribute_bodies_ijk(model=None,
 
     '''
     if 'ijk' not in scale:
-       Inv'distribute_bodies: currently only index sales possible! Exit.')
+       print('distribute_bodies: currently only index sales possible! Exit.')
 
 
     if model is None:
-        Inv'distribute_bodies: no model given! Exit.')
+        print('distribute_bodies: no model given! Exit.')
 
     rng = np.random.default_rng()
     template = np.zeros_like(model)
@@ -2542,7 +2542,7 @@ def distribute_bodies_ijk(model=None,
             template[centi[ibody], centj[ibody], centk[ibody]] = val
 
     elif 'ran' in method[0].lower():
-        Inv'distribute_bodies: method'+method.lower()+'not implemented! Exit.')
+        print('distribute_bodies: method'+method.lower()+'not implemented! Exit.')
 
         bnum = method[1]
         bbox = method[2]
@@ -2573,7 +2573,7 @@ def distribute_bodies_ijk(model=None,
                     else:
                         print('distribute_bodies: too near!')
     else:
-        Inv'distribute_bodies: method'+method.lower()+'not implemented! Exit.')
+        print('distribute_bodies: method'+method.lower()+'not implemented! Exit.')
 
 
     return template
