@@ -181,7 +181,7 @@ for sit in file_list:
     data = dataset.get_subset([surveyname+'.'+site])
     strike_plot_site = data.plot_strike()
     for fmt in PlotFmt:
-        strike_plot_site.save_plot(PltDir+site+'_strikes'+fmt, fig_dpi=600)
+        strike_plot_site.save_plot(PltDir+site+'_strikes'+fmt, fig_dpi=DPI)
 
     if PDFCatalog:
         pdf_list.append(PltDir+site+'_strikes.pdf')
