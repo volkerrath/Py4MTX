@@ -31,7 +31,7 @@ from numba import njit
 PY4MTX_DATA = os.environ['PY4MTX_DATA']
 PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
 
-mypath = [PY4MTX_ROOT+'/modules/', PY4MTX_ROOT+'/scripts/']
+mypath = [PY4MTX_ROOT+'/py4mt/modules/', PY4MTX_ROOT+'/py4mt/scripts/']
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -47,7 +47,7 @@ titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.curren
 print(titstrng+'\n\n')
 
 
-gc.enable()
+# gc.enable()
 
 rng = np.random.default_rng()
 Blank = 1.e-30 # np.nan
@@ -64,7 +64,7 @@ ModExt = '_sns.rho'
 #     WorkDir = WorkDir+'/'
 # MFile = WorkDir + 'ANN_best'
 # MOrig = [45.941551, 6.079800] # ANN
-# JacName = 'ANN_ZPT_nerr_sp-8
+# JName = 'ANN_ZPT_nerr_sp-8
 
 # Sabancaya Sabancaya Sabancata Sabancaya Sabancaya Sabancaya Sabancaya
 # WorkDir = PY4MTX_DATA+'/Peru/Sabancaya/'
@@ -72,13 +72,13 @@ ModExt = '_sns.rho'
 #     WorkDir = WorkDir+'/'
 # MFile = WorkDir + 'SABA8_best'
 # MOrig = [15.767401, -71.854095]
-# JacName = ''
+# JName = ''
 
 # Ubinas Ubinas Ubinas Ubinas Ubinas Ubinas Ubinas Ubinas Ubinas Ubinas
 # WorkDir = PY4MTX_DATA+'/Peru/Ubinas/'
 #WorkDir = '/home/vrath/UBI38_JAC/'
 #MOrig = [-16.345800 -70.908249] # UBI
-#JacName = 'Ubi38_ZPT_nerr_sp-8'
+#JName = 'Ubi38_ZPT_nerr_sp-8'
 #MFile = WorkDir + 'Ubi38_ZssPT_Alpha02_NLCG_023'
 
 # Misti Misti Misti Misti Misti Misti Misti Misti Misti Misti Misti Misti
@@ -87,26 +87,26 @@ ModExt = '_sns.rho'
     #WorkDir = WorkDir+'/'
 #MFile = WorkDir + 'Misti10_best'
 #MOrig = [-16.277300, -71.444397]# Misti
-## JacName = 'Misti_best_Z5_nerr_sp-8'
-#JacName = 'Misti_best_ZT_extended_nerr_sp-8'
+## JName = 'Misti_best_Z5_nerr_sp-8'
+#JName = 'Misti_best_ZT_extended_nerr_sp-8'
 
-WorkDir = '/home/vrath/Annecy_Nullspace/'
+WorkDir = '/home/vrath/Annecy_NullSpace/'
 
 JName = 'annecy_nerr_sp-8'
-JFile = WorkDir + JacName
+JFile = WorkDir + JName
 
-MFile = WorkDir + 'annecy25_Z_Aplha02_NLCG_027'
+MFile = WorkDir + 'annecy25_Z_Alpha02_NLCG_027'
 MOrig = [0., 0.]
 
 
-VolExtract = True
+VolExtract = False
 if VolExtract:
     VolFile = MFile
     VolFmt = ''
 
-TopoExtract = True
+TopoExtract = False
 if TopoExtract:
-    TopoFile = WorkDir + 'Ubaye_Topo.dat'
+    TopoFile = WorkDir + 'annecy_Topo.dat'
     TopoFmt = ''
 
 
@@ -129,23 +129,24 @@ PerIntervals = [
                 ]
 
 
-Type = 'euc'
+Type = 'abs'
 # Type = 'euc'
 '''
 Calculate sensitivities.
 Expects that Jacobian is already error-scaled, i.e Jac = C^(-1/2)*J.
 Options:
-    Type = 'raw'     sensitivities summed along the data axis
-    Type = 'abs'     absolute sensitivities summed along the data axis
-                     (often called coverage)
-    Type = 'euc'     squared sensitivities summed along the data axis.
+    Type = 'raw'            sensitivities summed along the data axis
+    Type = 'abs', 'cov'     absolute sensitivities summed along the data axis
+                            (often called coverage)
+    Type = 'euc'            squared sensitivities summed along the data axis.
 
 Usesigma:
     if true, sensitivities with respect to sigma  are calculated.
 '''
 
 #Transform = [ 'sqr']
-Transform = [ 'sqr', 'max']
+Transform = [ 'max']
+Transform = [ '']
 #Transform = [ 'sqr','vol','max']
 
 '''
@@ -156,13 +157,16 @@ Options:
                                 be the first value in Transform list.
     Transform = 'max'           Normalize by maximum (absolute) value.
     Transform = 'sur'           Normalize by surface value.
-    Transform = 'sqr'           Take the square root. Only usefull for euc sensitivities.
-    Transform = 'log'           Take the logaritm. This should always be the
+    Transform = 'sqr'           Take the square root. Only useful for euc sensitivities.
+    Transform = 'log'           Take the logarithm. This should always be the
                                 last value in Transform list
 '''
-snsstring = Type.lower()+'_'+'_'.join(Transform)
-
+if Transform is None:
+    snsstring = Type.lower()
+else:
+    snsstring = Type.lower()+'_'+Transform.lower()
 SensDir = WorkDir+'/sens_'+snsstring+'/'
+
 if not SensDir.endswith('/'):
     SensDir = SensDir+'/'
 if not os.path.isdir(SensDir):
@@ -200,7 +204,7 @@ if TopoExtract:
 
 
 if VolExtract or ('size' in Transform):
-    vol = mod.get_volumes(dx=dx, dy=dy, dz=dz, mval=refmod, out=True)
+    vol = mod.get_volumes(dx=dx, dy=dy, dz=dz, mval=rho, out=True)
     print(np.shape(vol), np.shape(rho))
     Header = '# '+MFile
 
@@ -237,7 +241,7 @@ jacflat = jacmask.flatten(order='F')
 name, ext = os.path.splitext(MFile)
 
 # ofile = name
-# Header = JacName
+# Header = JName
 # trans = 'LINEAR'
 
 # mod.write_mod(ofile, modext='_mod.rho', trans = trans,
@@ -251,11 +255,11 @@ name, ext = os.path.splitext(MFile)
 # #                   dx=dx, dy=dy, dz=dz, mval=rho, reference=refubc, mvalair=Blank, aircells=aircells, header=Header)
 # # print(' Model (UBC format) written to '+ofile)
 
-# TSTFile = WorkDir+JacName+'0_MaskTest'
+# TSTFile = WorkDir+JName+'0_MaskTest'
 # mod.write_mod(TSTFile, modext='_mod.rho', trans = trans,
 #             dx=dx, dy=dy, dz=dz, mval=rho, reference=refmod, mvalair=Blank, aircells=aircells, header=Header)
 # rhotest = jacmask.reshape(dims)*rho
-# TSTFile = WorkDir+JacName+'1_MaskTest'
+# TSTFile = WorkDir+JName+'1_MaskTest'
 # mod.write_mod(TSTFile, modext='_mod.rho', trans = trans,
 #             dx=dx, dy=dy, dz=dz, mval=rhotest, reference=refmod, mvalair=Blank, aircells=aircells, header=Header)
 
@@ -304,10 +308,14 @@ if 'tot'in Splits.lower():
 
     SensTmp = jac.calc_sensitivity(Jac,
                         Type = Type, OutInfo=False)
-    SensTot, MaxTotal = jac.transform_sensitivity(S=SensTmp, Vol=vol,
+    if Transform is None:
+        SensTot = SensTmp
+        Maxtotal = np.amax(SensTot)
+    else:
+        SensTot, MaxTotal = jac.transform_sensitivity(S=SensTmp, Vol=vol,
                             Transform=Transform, OutInfo=False)
 
-    SensFile = SensDir+JacName+'_total_'+snsstring
+    SensFile = SensDir+JName+'_total_'+snsstring
     Header = '# '+SensFile.replace('_', ' | ')
 
     S = SensTot.reshape(mdims, order='F')
@@ -367,12 +375,15 @@ if 'dtyp' in Splits.lower():
 
         SensTmp = jac.calc_sensitivity(JacTmp,
                      Type = Type, OutInfo=False)
-        SensTmp, _ = jac.transform_sensitivity(S=SensTmp, Vol=vol,
-                          Transform=Transform, Maxval=maxval, OutInfo=False)
+        if Transform is None:
+            pass
+        else:
+            SensTmp, _ = jac.transform_sensitivity(S=SensTmp, Vol=vol,
+                            Transform=Transform, Maxval=maxval, OutInfo=False)
         S = np.reshape(SensTmp, mdims, order='F')
 
 
-        SensFile = SensDir+JacName+'_Dtype_'+typestr[ityp-1]+'_'+snsstring
+        SensFile = SensDir+JName+'_Dtype_'+typestr[ityp-1]+'_'+snsstring
         Header = '# '+SensFile.replace('_', ' | ')
 
 
@@ -435,11 +446,14 @@ if 'comp' in Splits.lower():
 
         SensTmp = jac.calc_sensitivity(JacTmp,
                      Type = Type, OutInfo=False)
-        SensTmp, _ = jac.transform_sensitivity(S=SensTmp, Vol=vol,
+        if Transform is None:
+            pass
+        else:
+            SensTmp, _ = jac.transform_sensitivity(S=SensTmp, Vol=vol,
                           Transform=Transform, Maxval=maxval, OutInfo=False)
         S = np.reshape(SensTmp, mdims, order='F')
 
-        SensFile = SensDir+JacName+'_'+icmp+'_'+snsstring
+        SensFile = SensDir+JName+'_'+icmp+'_'+snsstring
         Header = '# '+SensFile.replace('_', ' | ')
 
         if 'mod' in OutFormat.lower():
@@ -488,11 +502,14 @@ if 'site' in Splits.lower():
 
         SensTmp = jac.calc_sensitivity(JacTmp,
                      Type = Type, OutInfo=False)
-        SensTmp, _  = jac.transform_sensitivity(S=SensTmp, Vol=vol,
+        if Transform is None:
+            pass
+        else:
+            SensTmp, _  = jac.transform_sensitivity(S=SensTmp, Vol=vol,
                           Transform=Transform, Maxval=maxval, OutInfo=False)
         S = np.reshape(SensTmp, mdims, order='F')
 
-        SensFile = SensDir+JacName+'_'+sit.lower()+'_'+snsstring
+        SensFile = SensDir+JName+'_'+sit.lower()+'_'+snsstring
         Header = '# '+SensFile.replace('_', ' | ')
 
 
@@ -547,11 +564,14 @@ if 'freq' in Splits.lower():
 
            SensTmp = jac.calc_sensitivity(JacTmp,
                         Type = Type, OutInfo=False)
-           SensTmp, _  = jac.transform_sensitivity(S=SensTmp, Vol=vol,
-                             Transform=Transform, Maxval=maxval, OutInfo=False)
+           if Transform is None:
+                pass
+           else:
+                SensTmp, _ = jac.transform_sensitivity(S=SensTmp, Vol=vol,
+                                Transform=Transform, Maxval=maxval, OutInfo=False)
            S = np.reshape(SensTmp, mdims, order='F')
 
-           SensFile = SensDir+JacName+'_freqband'+lowstr+'_to_'+uppstr+'_'+snsstring
+           SensFile = SensDir+JName+'_freqband'+lowstr+'_to_'+uppstr+'_'+snsstring
            Header = '# '+SensFile.replace('_', ' | ')
 
            if 'mod' in OutFormat.lower():

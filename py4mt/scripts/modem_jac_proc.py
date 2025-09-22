@@ -66,7 +66,7 @@ rng = np.random.default_rng()
 nan = np.nan
 
 
-SparseThresh = 1.e-8
+SparseThresh = 1.e-6
 Sparse = SparseThresh > 0
 
 '''
@@ -88,11 +88,11 @@ Scale = 1.
 #JFiles = [WorkDir+'UBI9_ZPTss.jac'] # WorkDir+'SABA8_Z.jac',]
 #MFile = WorkDir + 'UBI9_best'
 
-WorkDir = '/home/vrath/Annecy_Nullspace/'
+WorkDir = '/home/vrath/Annecy_NullSpace/'
 
 JFiles = [WorkDir+'annecy.jac']
 
-MFile = WorkDir + 'annecy25_Z_Aplha02_NLCG_027'
+MFile = WorkDir + 'annecy25_Z_Alpha02_NLCG_027'
 
 
 

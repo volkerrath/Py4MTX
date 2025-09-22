@@ -57,13 +57,13 @@ InpFormat = 'sparse'
 
 # WorkDir = PY4MTX_DATA+'/Annecy/Jacobians/'
 # WorkDir = PY4MTX_DATA+'/Peru/Sabancaya//SABA8_Jac/'
-WorkDir = '/home/vrath/work/MT_Data/Sabancaya/Saba_best/SABA13a/'
+WorkDir = PY4MTX_DATA+'/Peru/Ubinas/'
 
 if not WorkDir.endswith('/'):
     WorkDir = WorkDir+'/'
     
 # MFile = WorkDir + 'SABA8_best.rho'
-MFile = WorkDir + 'Saba13a'
+MFile = WorkDir + 'UBI9_best'
 
 # necessary for ubc, but not relevant  for synthetic model
 #MOrig = [-15.767401, -71.854095] # ANN
