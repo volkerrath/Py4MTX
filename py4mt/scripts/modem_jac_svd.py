@@ -39,7 +39,7 @@ from numba import njit
 PY4MTX_DATA = os.environ['PY4MTX_DATA']
 PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
 
-mypath = [PY4MTX_ROOT+'/modules/', PY4MTX_ROOT+'/scripts/']
+mypath = [PY4MTX_ROOT+'/py4mt/modules/', PY4MTX_ROOT+'/py4mt/scripts/']
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
@@ -80,10 +80,10 @@ nan = np.nan
 
 # Ubinas case
 # WorkDir =  PY4MTX_DATA+
-WorkDir = '/home/vrath/UBI38_JAC/'
-Orig = [-16.345800 -70.908249] # UBI
-JacName = 'Ubi38_ZPT_nerr_sp-8'
-MFile = WorkDir + 'Ubi38_ZssPT_Alpha02_NLCG_023'
+WorkDir = '/home/vrath/Annecy_NullSpace/'
+# Orig = [-16.345800 -70.908249] # UBI
+JName = 'annecy_nerr_sp-6'
+MFile = WorkDir + 'annecy25_Z_Alpha02_NLCG_027'
 
 # # Misti case
 # WorkDir =  PY4MTX_DATA+'/Peru/Misti/'
@@ -92,10 +92,10 @@ MFile = WorkDir + 'Ubi38_ZssPT_Alpha02_NLCG_023'
 # MOrig = [-16.277300, -71.444397]
 
 
-JFile = WorkDir+JacName
-OutName = '_run_subsit'
-# NumSingular = [ 100, 200, 300, 400, 500, 1000]
-NumSingular = [ 500]
+JFile = WorkDir+JName
+OutName = '_SVD'
+NumSingular = [ 100, 200, 300, 400, 500, 1000]
+#NumSingular = [ 300]
 OverSample =  [2]
 SubspaceIt = [0]
 

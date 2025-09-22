@@ -191,6 +191,8 @@ def transform_sensitivity(S=np.array([]), Vol=np.array([]),
     print('transform_sensitivity: Shape = ', ns)
     print('trans_sensitivity:',np.amin(S), np.amax(S))
 
+
+    scaleval = 1.
     for item in Transform:
 
 
@@ -242,6 +244,7 @@ def transform_sensitivity(S=np.array([]), Vol=np.array([]),
              S = S/maxval
              print('trans_sensitivity max:',np.amin(S), np.amax(S))
              # print('S0m', np.shape(S))
+             scaleval = maxval
 
 
     if OutInfo:
@@ -250,7 +253,7 @@ def transform_sensitivity(S=np.array([]), Vol=np.array([]),
         S[np.where(np.abs(S)<Small)]=Small
 
 
-    return S, maxval
+    return S, scaleval
 
 def get_scale(d=np.array([]), f=0.1, method = 'other', OutInfo = False):
     '''
