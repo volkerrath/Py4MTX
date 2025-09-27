@@ -74,11 +74,11 @@ ModFile_out = ModFile_in
 # utm_x, utm_y = utl.proj_latlon_to_utm(geocenter[0], geocenter[1], utm_zone=32719)
 # utmcenter = [utm_x, utm_y, 0.0]
 
-action = ['rep', 30.]
-condition = 'val <= np.log10(30.)'
+action = ['rep', 1.]
+condition = 'val <= np.log(1.)'
 ell = ['ell', action, condition,    0., 0., 10000.,    30000., 30000., 5000.,     0., 0.,0.]
-condition = None
-ell = ['ell', action, condition,    0., 0., 10000.,    30000., 30000., 5000.,     0., 0.,0.]
+# condition = None
+# ell = ['ell', action, condition,    0., 0., 10000.,    30000., 30000., 5000.,     0., 0.,0.]
 
 bodies = [ell]
 #                    rho           center            axes                angles
