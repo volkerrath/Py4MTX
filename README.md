@@ -1,7 +1,7 @@
 # Py4MTX
 # This repo is in a process of reorganization and adding tools related to FEMTIC.
 
-This repository currently contains scripts useful for EM imaging, modelling, and inversion, partly using mtpy (to be downloaded from https://github.com/MTgeophysics/mtpy-v2). The workflows for reading and processing Jacobians from ModEM outputs has been copied from https://github.com/volkerrath/JacoPyAN, and will be further developed here. The tools refer to the 3D magnetotelluric inversion codes ModEM (available at https://github.com/magnetotellurics/ModEM) and FEMTIC (available at http://https://github.com/yoshiya-usui/femtic). Please be aware that parts of these tools are not in production state. It is availablee under MIT licese V3. 
+This repository currently contains scripts useful for EM imaging, modelling, and inversion, partly using mtpy (to be downloaded from https://github.com/MTgeophysics/mtpy-v2). The workflows for reading and processing Jacobians from ModEM outputs has been copied from https://github.com/volkerrath/JacoPyAN, and will be further developed here. The tools refer to the 3D magnetotelluric inversion codes ModEM (available at https://github.com/magnetotellurics/ModEM) and FEMTIC (available at http://https://github.com/yoshiya-usui/femtic). Please be aware that parts of these tools are not in production state. It is availablee under GNU public license V3. 
 
 The repository contains the following subdirectories:
 
