@@ -156,8 +156,7 @@ is coverage where, the absolute values of the Jacobian are summed:
 
 $\sum_{i=1,n_d} \left|\tilde{J}_{ij}\right|$
 
-For a definition of a depth of investigation (DoI), or model blanking/shading, both forms can be used. The 
-choice of a threshold/scale, depending on the form applied. 
+For a definition of a depth of investigation (DoI), or model blanking/shading, both forms can be used. 
 
 When moving from the error-normalised Jacobian, $\mathbf{J}_d$ to sensitivity, there are more choices for further normalisation, depending 
 on the understanding and use of this parameter. All mentioned sensitivities are dependent on the underlying mesh. If sensitivity is to be interpreted 
