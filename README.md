@@ -85,7 +85,10 @@ can be used.
 **Adapting $\texttt{ModEM}$ for Jacobian output**
 
 The Jacobian  of a data and parameter set is defined as 
-$J_{ij} = \frac{\delta d_i}{\delta m_j}$. 
+
+```math
+J_{ij} = \frac{\delta d_i}{\delta m_j}. 
+```
 
 Before being able to use it for further action, a  few steps are necessary. $\texttt{ModEM}$ seeks the MAP solution to the usual Bayesian inverse problem [5] defined by:
 
