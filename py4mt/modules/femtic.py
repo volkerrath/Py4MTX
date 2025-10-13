@@ -1269,7 +1269,7 @@ def make_prior_cov(rough=None,
 
         rhs = np.zeros(n)
         rhs[k] = 1.
-        s = solver(rhs)
+        #s = solver(rhs)
         #print(np.shape(rhs), np.shape(s), np.shape(invR))
         invR[k,:] = solver(rhs)
 
