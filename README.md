@@ -1,7 +1,8 @@
 # Py4MTX
-# This repo is in a process of reorganization and adaption to Python 3.11, mtpy-v2 and integrating Jacobian-related functionality. Not fully ready for production use!
+# Python Tools for MT
 
-This repository currently contains simple scripts useful for EM imaging, modelling, and inversion, partly using mtpy (to be downloaded from https://github.com/MTgeophysics/mtpy-v2). The workflows for reading and processing Jacobians from ModEM outputs has been copied from https://github.com/volkerrath/JacoPyAN, and will be further developed here. 
+
+This repository currently contains scripts useful for EM imaging, modelling, and inversion, partly using mtpy (to be downloaded from https://github.com/MTgeophysics/mtpy-v2). The workflows for reading and processing Jacobians from ModEM outputs has been copied from https://github.com/volkerrath/JacoPyAN, and will be further developed here. The tools refer to the 3D magnetotelluric inversion codes ModEM (available at https://github.com/magnetotellurics/ModEM) and FEMTIC (available at http://https://github.com/yoshiya-usui/femtic). Please be aware that this repo is under active development, and currently in a process of reorganization and adding tools related to FEMTIC. Parts of these tools are not in production state. It is made available under GNU public license V3. 
 
 The repository contains the following subdirectories:
 
@@ -19,11 +20,14 @@ The repository contains the following subdirectories:
  	Contains the scripts  for preprocessing, visualization, and preparing the inversion of 
  	MT data.   	 
  
-
 - 	**modem**
-	Modified and original ModEM source code files including corresponding Makefiles, useful for 
-	sensitivity output.  
-	
+	Modified and original ModEM source code including corresponding Makefiles, useful for 
+	Jacobian related output. We used compiler directives for the changes.
+
+- 	**femtic**
+	Modified and original FEMTIC source code, including corresponding Makefiles, useful for 
+	Jacobian related output. We used compiler directives for the changes.
+
 - 	**environment**
 	Contains conda environment description files, and some useful helper files for working 
 	within the conda environment. The current Py4MT environments contain a lot of packages
@@ -85,7 +89,10 @@ can be used.
 **Adapting $\texttt{ModEM}$ for Jacobian output**
 
 The Jacobian  of a data and parameter set is defined as 
-$J_{ij} = \frac{\delta d_i}{\delta m_j}$. 
+
+```math
+J_{ij} = \frac{\delta d_i}{\delta m_j}. 
+```
 
 Before being able to use it for further action, a  few steps are necessary. $\texttt{ModEM}$ seeks the MAP solution to the usual Bayesian inverse problem [5] defined by:
 
@@ -156,8 +163,7 @@ is coverage where, the absolute values of the Jacobian are summed:
 
 $\sum_{i=1,n_d} \left|\tilde{J}_{ij}\right|$
 
-For a definition of a depth of investigation (DoI), or model blanking/shading, both forms can be used. The 
-choice of a threshold/scale, depending on the form applied. 
+For a definition of a depth of investigation (DoI), or model blanking/shading, both forms can be used. 
 
 When moving from the error-normalised Jacobian, $\mathbf{J}_d$ to sensitivity, there are more choices for further normalisation, depending 
 on the understanding and use of this parameter. All mentioned sensitivities are dependent on the underlying mesh. If sensitivity is to be interpreted 
