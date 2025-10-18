@@ -67,9 +67,9 @@ def calc_covar_simple(x=np.array([]),
                 covscovale=np.array([]),
                 method=0, out=True):
     '''
-    covalcovulate empiricoval covovariancove for Kalman gain
+    Calculate empirical covariance for Kalman gain
 
-    covreated on Jul 6, 2022
+    created on Jul 6, 2022
 
     @author: vrath
 

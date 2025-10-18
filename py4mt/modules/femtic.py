@@ -1002,7 +1002,7 @@ def centroid_tetrahedron(nodes=None):
 
 
 def get_roughness(filerough='roughening_matrix.out',
-                   regeps = 1.e-4,
+                   regeps = None,
                    spformat = 'csc',
                    out=True):
     '''
@@ -1018,7 +1018,7 @@ def get_roughness(filerough='roughening_matrix.out',
 
     Returns
     -------
-    r,rt, or rtr : np.array
+    r or rtr : np.array
 
     author: vrath,  created on Thu Jul 21, 2025
 
@@ -1187,7 +1187,7 @@ def get_roughness(filerough='roughening_matrix.out',
 
 def make_prior_cov(rough=None,
                    regeps = None,
-                   spformat = 'csc',
+                   spformat = 'csr',
                    spthresh = 1.e-6,
                    spsolver = None,
                    factor=1.,
@@ -1219,14 +1219,18 @@ def make_prior_cov(rough=None,
     '''
 
     from scipy.sparse import csr_array, csc_array, coo_array, eye_array, diags_array, issparse
-    from scipy.sparse.linalg import inv
 
     if spsolver is None:
         spsolver = 'scipy'
 
+
     if 'pard' in spsolver.lower():
-        from pypardiso import spsolve, factorized
+        use_pardiso = True
+        from pypardiso import PyPardisoSolver as PardisoSolver
+        from pypardiso import spsolve
+
     else:
+        use_pardiso = False
         from scipy.sparse.linalg import spsolve, factorized
 
     nout = 1000
@@ -1250,31 +1254,33 @@ def make_prior_cov(rough=None,
             print(regeps, 'added to diag(R)')
 
 
-    if rough.format != 'csc':
-        R = csc_array(rough)
+    if use_pardiso:
+        R = csr_array(rough)
+        RHS = eye_array(R.shape[0], format=R.format)
+        solver = PardisoSolver()
+        solver.is_symmetric = True
+        #mrequired = max(solver.iparm[15],solver.iparm[16] + solver.iparm[18]*8/1024)/1024/1024
+        #print(mrequired)
+        solver.iparm[59] = 2
+        solver.iparm[23] = 1
+
+        solver.factorize(R)
+
+        mrequired = max(solver.iparm[15],solver.iparm[16] + solver.iparm[18]*8/1024)/1024/1024
+        print(mrequired)
+
+        print('factorization done')
+
+
+        invR = solver.solve(RHS)
     else:
-        R = rough
-    print(R.shape)
-
-
-    n = R.shape[0]
-    invR = np.zeros((n,n))
-
-    solver = factorized(R)
-
-    for k in np.arange(n):
-
-        if np.mod(k,nout)==0 and out:
-            print(k, 'lines:', time.perf_counter() - start,'s')
-
-        rhs = np.zeros(n)
-        rhs[k] = 1.
-        s = solver(rhs)
-        #print(np.shape(rhs), np.shape(s), np.shape(invR))
-        invR[k,:] = solver(rhs)
+        R = csc_array(rough)
+        RHS = eye_array(R.shape[0], format=R.format)
+        invR = spsolve(R, RHS)
 
     print('invR generated:', time.perf_counter() - start,'s')
-    print('invR Format', type(invR))
+    print('invR type', type(invR))
+    print('invR format', invR.format)
 
     if spthresh is not None:
         invR = matrix_reduce(M=invR,
@@ -1288,13 +1294,13 @@ def make_prior_cov(rough=None,
     print('M', type(M))
     print('M', M.format)
 
-    check_sparse_matrix(M)
+    #check_sparse_matrix(M)
 
     return M
 
 
 def matrix_reduce(M=None,
-             howto='absolute',
+             howto='relative',
              spformat= 'csr',
              spthresh=1.e-6):
 
@@ -1322,13 +1328,13 @@ def matrix_reduce(M=None,
         # nonzero_mask = np.array(np.abs(x[x.nonzero()]) < 3)[0]
 
         if 'abs' in howto.lower():
-            nonzero_mask = np.array(np.abs(M[M.nonzero()]) < spthresh)[0]
+            zero_mask = np.array(np.abs(M[M.nonzero()]) < spthresh)[0]
         else:
             maxM = np.max(np.array(np.abs(M[M.nonzero()])))
-            nonzero_mask = np.array(np.abs(M[M.nonzero()]) < maxM*spthresh)[0]
+            zero_mask = np.array(np.abs(M[M.nonzero()]) < maxM*spthresh)[0]
 
-        rows = M.nonzero()[0][nonzero_mask]
-        cols = M.nonzero()[1][nonzero_mask]
+        rows = M.nonzero()[0][zero_mask]
+        cols = M.nonzero()[1][zero_mask]
 
         M[rows, cols] = 0.
         M.eliminate_zeros()
@@ -1368,7 +1374,7 @@ def matrix_reduce(M=None,
     return M
 
 
-def check_sparse_matrix(M):
+def check_sparse_matrix(M, condition=True):
     '''
     Check sparse matrix
 
@@ -1415,6 +1421,8 @@ def check_sparse_matrix(M):
         print('M diagonal element is 0!')
         print(np.abs(M.diagonal(0) == 0).nonzero())
         print(np.abs(M.diagonal(0) == 0))
+
+    #condition = ???
 
 
 #def plot_coo_array(m):

@@ -71,12 +71,7 @@ R = scs.load_npz(RoughFile)
 fem.check_sparse_matrix(R)
 
 R = coo_matrix(R)
-
-T = R.T - R
-print(' R-R^T max/min:', T.max(), T.min())
-if T.max()+T.min()==0.:
-    print('Matrix is symmetric!')
-
+fem.check_sparse_matrix(R)
 
 # Plotting
 options = {'title': '$\mathbf{R}$, Sparsity Pattern',

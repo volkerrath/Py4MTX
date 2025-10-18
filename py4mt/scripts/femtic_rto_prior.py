@@ -50,15 +50,16 @@ for pth in mypath:
 
 #import modules
 import femtic as fem
-import util as utl
-import inverse as inv
+#import util as utl
+#import inverse as inv
 from version import versionstrg
 
 
-N_THREADS = '16'
+N_THREADS = '32'
 os.environ['OMP_NUM_THREADS'] = N_THREADS
 os.environ['OPENBLAS_NUM_THREADS'] = N_THREADS
 os.environ['MKL_NUM_THREADS'] = N_THREADS
+os.environ['MKL_PARDISO_OOC_MAX_CORE_SIZE'] = '10000'
 #os.environ['VECLIB_MAXIMUM_THREADS'] = N_THREADS
 #os.environ['NUMEXPR_NUM_THREADS'] = N_THREADS
 
@@ -67,13 +68,13 @@ nan = np.nan  # float('NaN')
 version, _ = versionstrg()
 fname = inspect.getfile(inspect.currentframe())
 
-titstrng = utl.print_title(version=version, fname=fname, out=False)
-print(titstrng+'\n\n')
+#titstrng = utl.print_title(version=version, fname=fname, out=False)
+#print(titstrng+'\n\n')
 
 WorkDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
 
 
-FormatIn =  'csr'
+FormatIn =  'coo'
 RoughFile = WorkDir +'R_'+FormatIn+'.npz'
 
 Alpha = 1.
@@ -81,21 +82,24 @@ Factor = 1./Alpha
 RegEps = 1.e-4
 FormatOut = 'csr'
 Sparsify = 1.e-6
-RoughNew = RoughFile.replace('/R_','/SQCOV_')
+RoughNew = RoughFile.replace('/R_','INVR_')
 RoughNew = RoughNew.replace(FormatIn, FormatOut)
 
 
 R = scs.load_npz(RoughFile)
 print(type(R))
-print('R sparse format is', R.format)
+print('Sparse format is', R.format)
 
 M = fem.make_prior_cov(rough=R,
                           regeps = RegEps,
                           spformat = FormatOut,
                           spthresh = Sparsify,
+                          spsolver = None, #'pardiso'
                           factor=Factor,
                           out=True)
 
+# fem.check_sparse_matrix(M)
+print('matrix done')
 
 if scs.issparse(M):
     print('M is sparse.')
@@ -104,5 +108,5 @@ else:
     print('M is dense.')
     np.savez_compressed(RoughNew, matrix=M)
 
-fem.check_sparse_matrix(M)
+print('all done')
 
