@@ -62,7 +62,7 @@ os.environ['MKL_NUM_THREADS'] = N_THREADS
 os.environ['MKL_PARDISO_OOC_MAX_CORE_SIZE'] = '10000'
 #os.environ['VECLIB_MAXIMUM_THREADS'] = N_THREADS
 #os.environ['NUMEXPR_NUM_THREADS'] = N_THREADS
-
+n_threads = int(N_THREADS)
 rng = np.random.default_rng()
 nan = np.nan  # float('NaN')
 version, _ = versionstrg()
@@ -73,20 +73,24 @@ fname = inspect.getfile(inspect.currentframe())
 
 WorkDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
 
-InMatrix = 'R'
+MatrixIn = 'R'
 FormatIn =  'coo'
-RoughFile = WorkDir +InMatrix+'_'+FormatIn+'.npz'
+RoughFile = WorkDir +MatrixIn+'_'+FormatIn+'.npz'
 
 Alpha = 1.
 Factor = 1./Alpha**2
 RegEps = 1.e-4
-FormatOut = 'csr'
 Sparsify = 1.e-6
 MatrixOut = 'invRTR'
+FormatOut = 'csr'
 
 R = scs.load_npz(RoughFile)
 print(type(R))
 print('Sparse format is', R.format)
+
+RoughNew = RoughFile.replace(MatrixIn, MatrixOut)
+RoughNew = RoughNew.replace(FormatIn, FormatOut)
+print('Output M will be written to ', RoughNew)
 
     #def make_prior_cov(rough=None,
                     #regeps = 1.e-5,
@@ -105,16 +109,14 @@ M = fem.make_prior_cov(rough=R,
                           spthresh = Sparsify,
                           spsolver = 'ilu',
                           spmeth =  'basic,area',
+                          nthreads = n_threads,
                           out=True)
 
 # fem.check_sparse_matrix(M)
 print('matrix done')
 
-M = Faktor*M
+M = Factor*M
 
-RoughNew = RoughFile.replace(MatrixIn, MatrixOut)
-RoughNew = RoughNew.replace(FormatIn, FormatOut)
-print('Output M will be written to ', RoughNew)
 
 if scs.issparse(M):
     print('M is sparse.')

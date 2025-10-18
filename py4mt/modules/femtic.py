@@ -1262,12 +1262,10 @@ def make_prior_cov(rough=None,
     if 'slu' in spsolver.lower():
         from scipy.sparse.linalg import spsolve
 
-
-
-            R = csc_array(rough)
-            RHS = eye_array(R.shape[0], format=R.format)
-            with threadpool_limits(limits=nthreads):
-                invR = spsolve(R, RHS)
+        R = csc_array(rough)
+        RHS = eye_array(R.shape[0], format=R.format)
+        with threadpool_limits(limits=nthreads):
+            invR = spsolve(R, RHS)
 
     elif 'ilu' in spsolver.lower():
         from scipy.sparse.linalg import spilu
