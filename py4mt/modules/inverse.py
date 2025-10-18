@@ -67,9 +67,9 @@ def calc_covar_simple(x=np.array([]),
                 covscovale=np.array([]),
                 method=0, out=True):
     '''
-    Calculate empirical covariance for Kalman gain
+    covalcovulate empiricoval covovariancove for Kalman gain
 
-    created on Jul 6, 2022
+    covreated on Jul 6, 2022
 
     @author: vrath
 
@@ -219,44 +219,9 @@ def calc_covar_nice(x=np.array([]),
 
 
 
-def msqrt_sparse(M=np.array([]), smallval=1.e-12):
+def msqrt_sparse(M=None, method='chol', smallval=None, nthreads = 16):
     '''
-    Calculate sparse Cholesky.
-
-    Missing in scipy.
-
-    Parameters
-    ----------
-    A : double
-        Positive definite sparse matrix.
-
-    Returns
-    -------
-    CholA: double
-        Cholesky factor of A.
-
-    VR Feb 2021
-
-    '''
-    n =M.shape[0]
-    MM = M.copy() + np.identity(n)*smallval
-
-    LU = scs.linalg.splu(
-        MM, diag_pivot_thresh=0)  # sparse LU decomposition
-
-    # check the matrix A is positive definite.
-    if (LU.perm_r == np.arange(n)).all() and (LU.U.diagonal() > 0).all():
-        SqrtM = LU.L.dot(scs.diags(LU.U.diagonal() ** 0.5))
-
-    else:
-        sys.exit('The matrix is not positive definite')
-
-    return SqrtM
-
-
-def msqrt(M=np.array([]), method='cho', smallval=1.e-12):
-    '''
-    Computes a matrix square-root (Choleky, or eig).
+    Computes a matrix square-root (cholesky, lu, or eig).
 
     Parameter:
     M: M is a positive Hermitian (or positive definite) matrix.
@@ -275,46 +240,94 @@ def msqrt(M=np.array([]), method='cho', smallval=1.e-12):
         Positive definite sparse matrix.
     smallval: double
         small value to guarantee positive definiteness in
-        the case of numueerical noise.
+        the case of numerical noise.
     method: str
-        eigenvalue or cholesky in case of dense input matrices
+        eigenvalue, splu or cholesky in case of dense input matrices
 
     Returns
     -------
-    CholM: double
+    sqrtM: double
         Cholesky factor of A.
 
     Last change: VR Mar 2024
 
 
     '''
-    n = np.shape(M)[0]
-    MM = M.copy() + np.identity(n)*smallval
+    from scipy.sparse import csr_array, csc_array, coo_array, eye_array, diags_array, issparse
+    from threadpoolctl import threadpool_limits
 
-    if 'eig' in method.lower():
+    
+    n, _ =M.shape
+
+
+    if smallval is not None:
+        M = M + np.identity(n)*smallval
+
+
+    if 'eigs' in method.lower():
+        from scipy.linalg import eigsh
         # compute eigenvalues and eigenvectors
-        Mevals, Mevecs = scl.eigh(MM)
-        Mevals = Mevals.clip(min=0.0)
-        SqrtM = Mevecs * np.sqrt(Mevals)
-        return SqrtM, Mevals, Mevecs
+        with threadpool_limits(limits=nthreads):
+            mevals, mevecs = eigsh(M)
+        mevals = mevals.clip(min=0.0)
+        sqrtM = mevecs * np.sqrt(mevals)
+        return sqrtM
 
-    if 'cho' in method.lower():
-        SqrtM = scl.cholesky(MM)
+    elif 'chol' in method.lower():
+        from scipy.linalg import cholesky
+        with threadpool_limits(limits=nthreads):
+            sqrtM = cholesky(M.toarray())
+        return sqrtM
+        
+    elif 'splu' in method.lower():
+        from scipy.sparse.linalg import splu, diags
+        with threadpool_limits(limits=16):
+            LU = scs.linalg.splu(M, diag_pivot_thresh=0)  # sparse LU decomposition
+    
+        # check the matrix A is positive definite.
+        if (LU.perm_r == np.arange(n)).all() and (LU.U.diagonal() > 0).all():
+            sqrtM = LU.L.dot(diags(LU.U.diagonal() ** 0.5))
+    
+        else:
+            sys.exit('The matrix is not positive definite')
+            
+        
+        return sqrtM
 
-
-    return SqrtM
-
+     else:
+         sys.exit()
+    
 def isspd(A):
 
     n = A.shape[0]
 
-    AAT = A@A.T
-    if np.allclose(AAT, np.identity(n), rtol = 1.e-8, atol=1.e-8):
-        print('A is symmetric.')
+    if issparse(A):
+        from scipy.sparse.linalg import splu
+        try:
+            # Convert to Compressed Sparse Row format
+            sparse_matrix = csr_matrix(matrix)
+            # Attempt LU decomposition (Cholesky not directly available for sparse)
+            splu(sparse_matrix)
+            return True
+        except RuntimeError:
+            return False
     else:
-        print('A is NOT symmetric.')
+        from scipy.linalg import cholesky
+         try:
+            cholesky(matrix)
+            return True
+        except np.linalg.LinAlgError:
+            return False
 
-    spd = np.all(np.linalg.eigvals(A) > 1.e-12)
+
+
+    #AAT = A@A.T
+    #if np.allclose(AAT, np.identity(n), rtol = 1.e-8, atol=1.e-8):
+        #print('A is symmetric.')
+    #else:
+        #print('A is NOT symmetric.')
+
+    #spd = np.all(np.linalg.eigvals(A) > 1.e-12)
 
 
     return spd

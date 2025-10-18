@@ -1193,6 +1193,7 @@ def make_prior_cov(rough=None,
                    spsolver = None,
                    spmeth =  'basic,area',
                    outmatrix = 'invRTR',
+                   nthreads = 16,
                    out=True):
     '''
     Generate prior covariance for ensemble perturbations
@@ -1235,6 +1236,9 @@ def make_prior_cov(rough=None,
     '''
 
     from scipy.sparse import csr_array, csc_array, coo_array, eye_array, diags_array, issparse
+    from threadpoolctl import threadpool_limits
+
+
 
     if rough is None:
         sys.exit('make_prior_cov: No roughness matrix given! Exit.')
@@ -1257,20 +1261,23 @@ def make_prior_cov(rough=None,
 
     if 'slu' in spsolver.lower():
         from scipy.sparse.linalg import spsolve
-        from threadpoolctl import threadpool_limits
-        R = csc_array(rough)
-        RHS = eye_array(R.shape[0], format=R.format)
-        invR = spsolve(R, RHS)
+
+
+
+            R = csc_array(rough)
+            RHS = eye_array(R.shape[0], format=R.format)
+            with threadpool_limits(limits=nthreads):
+                invR = spsolve(R, RHS)
 
     elif 'ilu' in spsolver.lower():
         from scipy.sparse.linalg import spilu
-        from threadpoolctl import threadpool_limits
+
         R = csc_array(rough)
         RHS = eye_array(R.shape[0], format=R.format)
         #RHS = np.eye(R.shape[0])
         beg = time.perf_counter()
 
-        with threadpool_limits(limits=16):
+        with threadpool_limits(limits=nthreads):
             iluR = spilu(R, drop_tol=spthresh, fill_factor=spfill)
             print('spilu decomposed:', time.perf_counter() - beg,'s')
 
@@ -1290,10 +1297,14 @@ def make_prior_cov(rough=None,
                             spthresh=spthresh,
                             spformat=spformat)
 
-    M = InvR
+    M = invR
     if 'rtr' in outmatrix.lower():
-
         M = invR@invR.T
+        if 'deco' in outmatrix.lower():
+            from inverse import msqrt_sparse
+            # calculate cholesky factor of M
+            M = msqrt_sparse(M)
+
 
     if out:
 
@@ -1315,6 +1326,7 @@ def matrix_reduce(M=None,
     if M is None:
         sys.exit('matrix_reduce: no matrix given! Exit.')
 
+    n, _ = np.shape(M)
 
     if issparse(M):
         print('Matrix is sparse.')
