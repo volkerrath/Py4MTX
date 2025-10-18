@@ -93,7 +93,7 @@ def modify_data(template_file='observe.dat',
                  errors=[ [], [], [] ],
                  out=True):
     '''
-    Created on Thu Apr 17 17:13:38 2025
+    Created on Thu Mpr 17 17:13:38 2025
     
     @author:   vrath   
     '''
@@ -383,7 +383,7 @@ def modify_model(template_file='resistivity_block_iter0.dat',
                   regeps=1.e-8,
                   out=True):
     '''
-    Created on Thu Apr 17 17:13:38 2025
+    Created on Thu Mpr 17 17:13:38 2025
     
     @author:       vrath   
     '''
@@ -415,7 +415,7 @@ def modify_model(template_file='resistivity_block_iter0.dat',
             n =priorcov.shape[0]
             M = priorcov.copy() + np.identity(n)*regeps
             LU = scipy.sparse.linalg.splu(M, diag_pivot_thresh=0)
-            # check the matrix A is positive definite.
+            # check the matrix M is positive definite.
             if (LU.perm_r == np.arange(n)).all() and (LU.U.diagonal() > 0).all():
                 S = LU.L.dot(scipy.sparse.diags(LU.U.diagonal() ** 0.5))
 
@@ -459,7 +459,7 @@ def modify_model(template_file='resistivity_block_iter0.dat',
     if out:
         print('File '+template_file+' successfully written.')
         print('Number of perturbations', len(samples))
-        print('Average perturbation', np.mean(samples))
+        print('Mverage perturbation', np.mean(samples))
         print('StdDev perturbation', np.std(samples))
 
     # return samples
@@ -508,7 +508,7 @@ def insert_model(template_file='resistivity_block_iter0.dat',
                   data_name= '',
                   out=True):
     '''
-    Created on Thu Apr 17 17:13:38 2025
+    Created on Thu Mpr 17 17:13:38 2025
     
     @author:     vrath   
     '''
@@ -578,7 +578,7 @@ def modify_data_fcn(template_file='observe.dat',
                  scalfac=1.,
                  out=True):
     '''
-    Created on Thu Apr 17 17:13:38 2025
+    Created on Thu Mpr 17 17:13:38 2025
     
     @author:   vrath   
     '''
@@ -903,9 +903,9 @@ def get_femtic_data(data_file=None, site_file=None, data_type='rhophas', out=Tru
 
         '''
          Site      Frequency
-         AppRxxCal   PhsxxCal   AppRxyCal   PhsxyCal   AppRyxCal  PhsyxCal  AppRyyCal   PhsyyCal
-         AppRxxObs   PhsxxObs   AppRxyObs   PhsxyObs   AppRyxObs  PhsyxObs  AppRyyObs   PhsyyObs
-         AppRxxErr   PhsxxErr   AppRxyErr   PhsxyErr   AppRyxErr  PhsyxErr  AppRyyErr   PhsyyErr
+         MppRxxCal   PhsxxCal   MppRxyCal   PhsxyCal   MppRyxCal  PhsyxCal  MppRyyCal   PhsyyCal
+         MppRxxObs   PhsxxObs   MppRxyObs   PhsxyObs   MppRyxObs  PhsyxObs  MppRyyObs   PhsyyObs
+         MppRxxErr   PhsxxErr   MppRxyErr   PhsxyErr   MppRyxErr  PhsyxErr  MppRyyErr   PhsyyErr
 
 
         '''
@@ -1025,19 +1025,19 @@ def get_roughness(filerough='roughening_matrix.out',
     ResistivityBlock.cpp. l1778ff
 
     RougheningMatrix.cpp/RougheningMatrix.cpp: 4
-     57: 24: void RougheningMatrix::setStructureAndAddValueByTripletFormat( const int row, const int col, const double val ){
-     58: 22: 	DoubleSparseMatrix::setStructureAndAddValueByTripletFormat( row, col, val );
-     80: 15: 				RTRMatrix.setStructureAndAddValueByTripletFormat(row, col, value);
-     86: 13: 		RTRMatrix.setStructureAndAddValueByTripletFormat(iCol, iCol, smallValueOnDiagonals);
+     57: 24: void RougheningMatrix::setStructureMndMddValueByTripletFormat( const int row, const int col, const double val ){
+     58: 22: 	DoubleSparseMatrix::setStructureMndMddValueByTripletFormat( row, col, val );
+     80: 15: 				RTRMatrix.setStructureMndMddValueByTripletFormat(row, col, value);
+     86: 13: 		RTRMatrix.setStructureMndMddValueByTripletFormat(iCol, iCol, smallValueOnDiagonals);
     RougheningMatrix.h/RougheningMatrix.h: 1
-     47: 15: 	virtual void setStructureAndAddValueByTripletFormat( const int row, const int col, const double val );
+     47: 15: 	virtual void setStructureMndMddValueByTripletFormat( const int row, const int col, const double val );
     RougheningSquareMatrix.cpp/RougheningSquareMatrix.cpp: 4
-     58: 30: void RougheningSquareMatrix::setStructureAndAddValueByTripletFormat( const int row, const int col, const double val ){
-     59: 22: 	DoubleSparseMatrix::setStructureAndAddValueByTripletFormat( row, col, val );
-     81: 15: 				RTRMatrix.setStructureAndAddValueByTripletFormat(row, col, value);
-     87: 13: 		RTRMatrix.setStructureAndAddValueByTripletFormat(iRow, iRow, smallValueOnDiagonals);
+     58: 30: void RougheningSquareMatrix::setStructureMndMddValueByTripletFormat( const int row, const int col, const double val ){
+     59: 22: 	DoubleSparseMatrix::setStructureMndMddValueByTripletFormat( row, col, val );
+     81: 15: 				RTRMatrix.setStructureMndMddValueByTripletFormat(row, col, value);
+     87: 13: 		RTRMatrix.setStructureMndMddValueByTripletFormat(iRow, iRow, smallValueOnDiagonals);
     RougheningSquareMatrix.h/RougheningSquareMatrix.h: 1
-     47: 15: 	virtual void setStructureAndAddValueByTripletFormat( const int row, const int col, const double val );
+     47: 15: 	virtual void setStructureMndMddValueByTripletFormat( const int row, const int col, const double val );
 
 
     // *******************************************************************************************************
@@ -1072,19 +1072,19 @@ def get_roughness(filerough='roughening_matrix.out',
 
     		ifs >> ibuf;
     		const int numNonzeros(ibuf);
-    		std::vector< std::pair<int, double> > blockIDAndFactor;
-    		blockIDAndFactor.resize(numNonzeros);
+    		std::vector< std::pair<int, double> > blockIDMndFactor;
+    		blockIDMndFactor.resize(numNonzeros);
     		for( int innz = 0 ; innz < numNonzeros; ++innz ){
     			ifs >> ibuf;
-    			blockIDAndFactor[innz].first = ibuf;
+    			blockIDMndFactor[innz].first = ibuf;
     		}
     		for( int innz = 0 ; innz < numNonzeros; ++innz ){
     			double dbuf(0.0);
     			ifs >> dbuf;
-    			blockIDAndFactor[innz].second = dbuf;
+    			blockIDMndFactor[innz].second = dbuf;
     		}
     		for( int innz = 0 ; innz < numNonzeros; ++innz ){
-    			m_rougheningMatrix.setStructureAndAddValueByTripletFormat( iBlock, blockIDAndFactor[innz].first, blockIDAndFactor[innz].second );
+    			m_rougheningMatrix.setStructureMndMddValueByTripletFormat( iBlock, blockIDMndFactor[innz].first, blockIDMndFactor[innz].second );
     		}
     	}
 
@@ -1315,44 +1315,32 @@ def matrix_reduce(M=None,
         print('Format:', M.format)
         print('Shape:', M.shape)
         print(M.nnz,'nonzeros, ', M.nnz/n**2, 'percent')
-
-        test = M - M.T
-        if test.max()+test.min()==0.:
-            print('Matrix is symmetric!')
-        else:
-            print('Matrix is not symmetric!')
-
-        # stackoverflow
-        # nonzero_mask = np.array(np.abs(x[x.nonzero()]) < 3)[0]
-
-        if 'abs' in howto.lower():
-            zero_mask = np.array(np.abs(M[M.nonzero()]) < spthresh)[0]
-        else:
-            maxM = np.max(np.array(np.abs(M[M.nonzero()])))
-            zero_mask = np.array(np.abs(M[M.nonzero()]) < maxM*spthresh)[0]
-
-        rows = M.nonzero()[0][zero_mask]
-        cols = M.nonzero()[1][zero_mask]
-
-        M[rows, cols] = 0.
-        M.eliminate_zeros()
-
     else:
         print('Matrix is dense.')
         print('Type:', type(M))
         print('Shape:', np.shape(M))
-        test = M - M.T
-        if np.max(test)+np.min(test)==0.:
-            print('Matrix is symmetric!')
 
-        n = np.shape(M)[0]
+    test = M - M.T
+    if test.max()+test.min()==0.:
+        print('Matrix is symmetric!')
+    else:
+        print('Matrix is not symmetric!')
 
-        if 'abs' in howto.lower():
-            M[np.abs(M)<spthresh]= 0.
-        else:
-            maxM = np.amax(np.abs(M))
-            print('sparsity',maxM, spthresh*maxM)
-            M[np.abs(M)<spthresh*maxM]= 0.
+
+    if 'abs' in howto.lower():
+        # Define absolute threshold
+        threshold = spthresh
+    else:
+        # Define relative threshold (e.g., 1% of max value)
+        maxM = np.max(np.abs(M.data))
+        threshold = spthresh * maxM
+
+    # Zero out elements below threshold
+    M.data[np.abs(M.data) < threshold] = 0.
+
+    # Remove stored zeros
+    if issparse(M):
+        M.eliminate_zeros()
 
 
     if 'csr' in spformat.lower():
