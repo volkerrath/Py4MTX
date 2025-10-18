@@ -36,7 +36,7 @@ import functools
 import inspect
 import time 
 
-import sklearn as skl
+# import sklearn as skl
 import scipy.sparse as scs
 
 
@@ -73,33 +73,48 @@ fname = inspect.getfile(inspect.currentframe())
 
 WorkDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
 
-
+InMatrix = 'R'
 FormatIn =  'coo'
-RoughFile = WorkDir +'R_'+FormatIn+'.npz'
+RoughFile = WorkDir +InMatrix+'_'+FormatIn+'.npz'
 
 Alpha = 1.
-Factor = 1./Alpha
+Factor = 1./Alpha**2
 RegEps = 1.e-4
 FormatOut = 'csr'
 Sparsify = 1.e-6
-RoughNew = RoughFile.replace('/R_','INVR_')
-RoughNew = RoughNew.replace(FormatIn, FormatOut)
-
+MatrixOut = 'invRTR'
 
 R = scs.load_npz(RoughFile)
 print(type(R))
 print('Sparse format is', R.format)
 
+    #def make_prior_cov(rough=None,
+                    #regeps = 1.e-5,
+                    #spformat = 'csr',
+                    #spthresh = 1.e-4,
+                    #spfill = 10.,
+                    #spsolver = None,
+                    #spmeth =  'basic,area',
+                    #outmatrix = 'invRTR',
+                    #out=True):
+
 M = fem.make_prior_cov(rough=R,
+                          outmatrix = MatrixOut,
                           regeps = RegEps,
                           spformat = FormatOut,
                           spthresh = Sparsify,
-                          spsolver = None, #'pardiso'
-                          factor=Factor,
+                          spsolver = 'ilu',
+                          spmeth =  'basic,area',
                           out=True)
 
 # fem.check_sparse_matrix(M)
 print('matrix done')
+
+M = Faktor*M
+
+RoughNew = RoughFile.replace(MatrixIn, MatrixOut)
+RoughNew = RoughNew.replace(FormatIn, FormatOut)
+print('Output M will be written to ', RoughNew)
 
 if scs.issparse(M):
     print('M is sparse.')

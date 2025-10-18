@@ -1186,11 +1186,13 @@ def get_roughness(filerough='roughening_matrix.out',
     return R
 
 def make_prior_cov(rough=None,
-                   regeps = None,
+                   regeps = 1.e-5,
                    spformat = 'csr',
-                   spthresh = 1.e-6,
+                   spthresh = 1.e-4,
+                   spfill = 10.,
                    spsolver = None,
-                   factor=1.,
+                   spmeth =  'basic,area',
+                   outmatrix = 'invRTR',
                    out=True):
     '''
     Generate prior covariance for ensemble perturbations
@@ -1200,17 +1202,31 @@ def make_prior_cov(rough=None,
     Parameters
     ----------
     rough : sparse array
-        Name of femtic roughness. The default is None.
-    rtype : integer
-        decides on type of roughness, r, rt, or rtr.
-        Default is 0.
+        Name of femtic roughness. (Default: None).
     regeps : float
-        Small value to stabilize. The default is 1.e-5
+        Small value to stabilize. (Default: 1.e-5).
+    spsolver: str
+        Available:
+            'slu'/sparse LU
+            'ilu'/sparse incomplete LU
+    spformat : str
+        Output sparse format from list ['csr','coo', 'csc'].
+        (Default: 'csr')
+    spthresh : float
+        Threshold for drops in ILU decomposition. (Default: 1.e-4).
+    spfill : float
+        Max Fill factor. (Default: 10.).
+    spmeth: list of str
+        Comma-separated string of drop rules to use.
+        Available rules: basic, prows, column, area, secondary, dynamic, interp.
+        (Default: 'basic,area').
+   outmatrix: str
+        Available: 'invR', 'invRTR'
 
     Returns
     -------
-    M: sparse arrays
-        femtic equivalent sqrt of covariance C or inverse of invR
+    M: sparse array
+        femtic equivalent of covariance C or inverse of invR
 
 
     author: vrath,  created on Thu Jul 26, 2025
@@ -1220,31 +1236,18 @@ def make_prior_cov(rough=None,
 
     from scipy.sparse import csr_array, csc_array, coo_array, eye_array, diags_array, issparse
 
-    if spsolver is None:
-        spsolver = 'scipy'
-
-
-    if 'pard' in spsolver.lower():
-        use_pardiso = True
-        from pypardiso import PyPardisoSolver as PardisoSolver
-        from pypardiso import spsolve
-
-    else:
-        use_pardiso = False
-        from scipy.sparse.linalg import spsolve, factorized
-
     if rough is None:
         sys.exit('make_prior_cov: No roughness matrix given! Exit.')
 
     if not issparse(rough):
-        sys.exit('make_prior_cov: Roughness matrix is not sparse! Exit.')
+        exit('make_prior_cov: Roughness matrix is not sparse! Exit.')
 
 
     start = time.perf_counter()
 
-
-    print('Shape of input roughness is',rough.shape)
-    print('Format of input roughness is',rough.format)
+    if out:
+        print('Shape of input roughness is',rough.shape)
+        print('Format of input roughness is',rough.format)
 
     if regeps is not None:
         rough = rough +regeps*eye_array(rough.shape[0], format=spformat.lower())
@@ -1252,47 +1255,52 @@ def make_prior_cov(rough=None,
             print(regeps, 'added to diag(R)')
 
 
-    if use_pardiso:
-        R = csr_array(rough)
-        RHS = eye_array(R.shape[0], format=R.format)
-        solver = PardisoSolver()
-        solver.is_symmetric = True
-        #mrequired = max(solver.iparm[15],solver.iparm[16] + solver.iparm[18]*8/1024)/1024/1024
-        #print(mrequired)
-        solver.iparm[59] = 2
-        solver.iparm[23] = 1
-
-        solver.factorize(R)
-
-        mrequired = max(solver.iparm[15],solver.iparm[16] + solver.iparm[18]*8/1024)/1024/1024
-        print(mrequired)
-
-        print('factorization done')
-
-
-        invR = solver.solve(RHS)
-    else:
+    if 'slu' in spsolver.lower():
+        from scipy.sparse.linalg import spsolve
+        from threadpoolctl import threadpool_limits
         R = csc_array(rough)
         RHS = eye_array(R.shape[0], format=R.format)
         invR = spsolve(R, RHS)
 
-    print('invR generated:', time.perf_counter() - start,'s')
-    print('invR type', type(invR))
-    print('invR format', invR.format)
+    elif 'ilu' in spsolver.lower():
+        from scipy.sparse.linalg import spilu
+        from threadpoolctl import threadpool_limits
+        R = csc_array(rough)
+        RHS = eye_array(R.shape[0], format=R.format)
+        #RHS = np.eye(R.shape[0])
+        beg = time.perf_counter()
+
+        with threadpool_limits(limits=16):
+            iluR = spilu(R, drop_tol=spthresh, fill_factor=spfill)
+            print('spilu decomposed:', time.perf_counter() - beg,'s')
+
+            beg = time.perf_counter()
+            invR = iluR.solve(RHS.toarray())
+            print('spilu solved:', time.perf_counter() - beg,'s')
+    else:
+        sys.exit('make_prior_cov: solver'+spsolver.lower()+'not available! Exit')
+
+    if out:
+        print('invR generated:', time.perf_counter() - start,'s')
+        print('invR type', type(invR))
+        #print('invR format', invR.format)
 
     if spthresh is not None:
         invR = matrix_reduce(M=invR,
                             spthresh=spthresh,
                             spformat=spformat)
 
-    M = factor*invR@invR.T
+    M = InvR
+    if 'rtr' in outmatrix.lower():
 
+        M = invR@invR.T
 
-    print('M generated:', time.perf_counter() - start,'s')
-    print('M', type(M))
-    print('M', M.format)
+    if out:
 
-    #check_sparse_matrix(M)
+        print('M generated:', time.perf_counter() - start,'s')
+        print('M is',outmatrix)
+        print('M', type(M))
+        print('M', M.format)
 
     return M
 
@@ -1314,11 +1322,14 @@ def matrix_reduce(M=None,
         print('Type:', type(M))
         print('Format:', M.format)
         print('Shape:', M.shape)
-        print(M.nnz,'nonzeros, ', M.nnz/n**2, 'percent')
+
     else:
         print('Matrix is dense.')
         print('Type:', type(M))
         print('Shape:', np.shape(M))
+        M = coo_array(M)
+
+    print(M.nnz,'nonzeros, ', M.nnz/n**2, 'percent')
 
     test = M - M.T
     if test.max()+test.min()==0.:
