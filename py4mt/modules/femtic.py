@@ -1233,8 +1233,6 @@ def make_prior_cov(rough=None,
         use_pardiso = False
         from scipy.sparse.linalg import spsolve, factorized
 
-    nout = 1000
-
     if rough is None:
         sys.exit('make_prior_cov: No roughness matrix given! Exit.')
 
