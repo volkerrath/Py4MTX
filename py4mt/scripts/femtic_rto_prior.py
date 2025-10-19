@@ -62,7 +62,9 @@ os.environ['MKL_NUM_THREADS'] = N_THREADS
 os.environ['MKL_PARDISO_OOC_MAX_CORE_SIZE'] = '10000'
 #os.environ['VECLIB_MAXIMUM_THREADS'] = N_THREADS
 #os.environ['NUMEXPR_NUM_THREADS'] = N_THREADS
+
 n_threads = int(N_THREADS)
+
 rng = np.random.default_rng()
 nan = np.nan  # float('NaN')
 version, _ = versionstrg()
@@ -80,35 +82,28 @@ RoughFile = WorkDir +MatrixIn+'_'+FormatIn+'.npz'
 Alpha = 1.
 Factor = 1./Alpha**2
 RegEps = 1.e-4
-Sparsify = 1.e-6
-MatrixOut = 'invRTR'
+Sparsify = [1.e-6, 128]
+MatrixOut = 'invRTR_'+str(int(np.abs(np.log10(Sparsify[0]))))+'-'+str(Sparsify[1])
 FormatOut = 'csr'
 
-R = scs.load_npz(RoughFile)
-print(type(R))
-print('Sparse format is', R.format)
 
 RoughNew = RoughFile.replace(MatrixIn, MatrixOut)
 RoughNew = RoughNew.replace(FormatIn, FormatOut)
 print('Output M will be written to ', RoughNew)
 
-    #def make_prior_cov(rough=None,
-                    #regeps = 1.e-5,
-                    #spformat = 'csr',
-                    #spthresh = 1.e-4,
-                    #spfill = 10.,
-                    #spsolver = None,
-                    #spmeth =  'basic,area',
-                    #outmatrix = 'invRTR',
-                    #out=True):
+R = scs.load_npz(RoughFile)
+print(type(R))
+print('Sparse format is', R.format)
+
 
 M = fem.make_prior_cov(rough=R,
                           outmatrix = MatrixOut,
                           regeps = RegEps,
                           spformat = FormatOut,
-                          spthresh = Sparsify,
+                          spthresh = Sparsify[0],
+                          spfill = Sparsify[1],
                           spsolver = 'ilu',
-                          spmeth =  'basic,area',
+                          spmeth = 'basic,area',
                           nthreads = n_threads,
                           out=True)
 
