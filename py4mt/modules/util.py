@@ -10,6 +10,7 @@ import sys
 import ast
 import fnmatch
 import inspect
+import math
 
 import numpy as np
 from scipy.ndimage import gaussian_filter, laplace, convolve, gaussian_gradient_magnitude
@@ -24,7 +25,7 @@ from pyproj import CRS, Transformer
 
 from scipy.fftpack import dct, idct
 
-from mtpy import MT , MTData, MTCollection
+# from mtpy import MT , MTData, MTCollection
 
 
 def dictget(d, *k):
@@ -106,7 +107,7 @@ def get_filelist(searchstr=['*'], searchpath='./', sortedlist =True, fullpath=Fa
 #     '''
 #     Find EPSG from position, using pyproj
 
-#     VR 04/21
+#     VR 04/21 (does not work after update)
 #     '''
 #     from pyproj.aoi import AreaOfInterest
 #     from pyproj.database import query_utm_crs_info
@@ -122,6 +123,18 @@ def get_filelist(searchstr=['*'], searchpath='./', sortedlist =True, fullpath=Fa
 
 #     return EPSG, utm_crs
 
+def get_utm_zone(lat=None, lon=None):
+
+    # normalize longitude to (-180, 180]
+    lon = ((lon + 180) % 360) - 180
+    if abs(lat) > 84.0:
+        raise ValueError("UTM undefined for |lat| > 84 degrees")
+    zone = int((math.floor((lon + 180) / 6) % 60) + 1)
+    base = 32600 if lat >= 0 else 32700
+    epsg = base + zone
+    # validate
+    CRS.from_epsg(epsg)  # will raise if invalid
+    return epsg
 
 def proj_latlon_to_utm(latitude, longitude, utm_zone=32629):
     '''
@@ -436,7 +449,7 @@ def gen_grid_utm(XLimits=None, nX=None, YLimits=None, nY=None, out=True):
 
 def choose_data_poly(Data=None, PolyPoints=None, Out=True):
     '''
-     Chooses polygon area from aempy data set, given
+     Chooses polygon area from data set, given
      PolyPoints = [[X1 Y1,...[XN YN]]. First and last points will
      be connected for closure.
 
@@ -715,6 +728,37 @@ def calc_rms(dcalc=None, dobs=None, Wd=1.0):
 
 def nearly_equal(a,b,sig_fig=6):
     return (a==b or int(a*10**sig_fig) == int(b*10**sig_fig))
+
+
+# rot_otation matrices (right-handed, active rotations)
+def rot_z(angle_deg):
+    t = np.radians(angle_deg)
+    return np.array([[ np.cos(t), -np.sin(t), 0.0],
+                     [ np.sin(t),  np.cos(t), 0.0],
+                     [ 0.0,         0.0,      1.0]])
+
+def rot_x(angle_deg):
+    t = np.radians(angle_deg)
+    return np.array([[1.0, 0.0,         0.0       ],
+                     [0.0, np.cos(t), -np.sin(t)],
+                     [0.0, np.sin(t),  np.cos(t)]])
+
+def rot_y(angle_deg):
+    t = np.radians(angle_deg)
+    return np.array([[ np.cos(t), 0.0, np.sin(t)],
+                     [ 0.0,       1.0, 0.0      ],
+                     [-np.sin(t), 0.0, np.cos(t)]])
+
+def rot_full(T, angle_deg_x, angle_deg_y, angle_deg_z):
+    T0 = T.copy
+    # Combined rotation: rot_ = rot_z @ rot_y @ rot_x
+    rot = rot_z(angle_deg_z) @ rot_y(angle_deg_y) @ rot_x(angle_deg_x)
+
+    # rotate tensor
+    T_rot = rot @ T0 @ rot.T
+    return T_rot
+
+
 
 def make_pdf_catalog(workdir='./', pdflist= None, filename=None):
     '''

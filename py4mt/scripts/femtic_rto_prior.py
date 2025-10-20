@@ -50,7 +50,7 @@ for pth in mypath:
 
 #import modules
 import femtic as fem
-#import util as utl
+import util as utl
 #import inverse as inv
 from version import versionstrg
 
@@ -70,8 +70,8 @@ nan = np.nan  # float('NaN')
 version, _ = versionstrg()
 fname = inspect.getfile(inspect.currentframe())
 
-#titstrng = utl.print_title(version=version, fname=fname, out=False)
-#print(titstrng+'\n\n')
+titstrng = utl.print_title(version=version, fname=fname, out=False)
+print(titstrng+'\n\n')
 
 WorkDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
 
