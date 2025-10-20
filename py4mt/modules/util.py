@@ -21,8 +21,7 @@ from scipy.linalg import norm
 # from shapely.geometry import Point
 # from shapely.geometry.polygon import Polygon
 import pyproj
-from pyproj import CRS, Transformer
-
+from pyproj import CRS, database, Transformer
 from scipy.fftpack import dct, idct
 
 # from mtpy import MT , MTData, MTCollection
@@ -124,6 +123,40 @@ def get_filelist(searchstr=['*'], searchpath='./', sortedlist =True, fullpath=Fa
 #     return EPSG, utm_crs
 
 def get_utm_zone(lat=None, lon=None):
+    '''
+    Get utm-zone from lat and lon 
+    
+    Typical usage:
+        
+        epsg = get_utm_epsg(lon, lat)
+        crs = CRS.from_epsg(epsg)
+        transformer = Transformer.from_crs(CRS.from_epsg(4326), crs, always_xy=True)
+        x, y = transformer.transform(lon, lat)
+
+    For more accuracy, cross‑border work, or points near zone boundaries,
+    consider querying local/national projected CRSs instead.
+
+    Parameters
+    ----------
+    lat : float
+        latitude . The default is None.
+    lon : float
+        longitude. The default is None.
+
+
+    Returns
+    -------
+    epsg : int
+        EPSG value for utm-zone.
+        
+    Raises
+    ------
+        ValueError if invalid EPSG.
+    
+    
+    vr 10/25 + copilot
+
+    '''
 
     # normalize longitude to (-180, 180]
     lon = ((lon + 180) % 360) - 180
@@ -135,6 +168,40 @@ def get_utm_zone(lat=None, lon=None):
     # validate
     CRS.from_epsg(epsg)  # will raise if invalid
     return epsg
+
+def get_local_crs(lon=None, lat=None, buffer_deg=1.0, max_results= 10):
+    """
+    Query pyproj database for projected CRSs overlapping a bbox around the point.
+    Returns a list of dicts: [{'epsg': int, 'name': str, 'extent': (west,south,east,north)}...]
+    buffer_deg is the half-width/half-height of the bbox in degrees (approx).
+    
+    vr 10/25 + copilot
+    """
+    # build zone of interest (west, south, east, north)
+    west = lon - buffer_deg
+    east = lon + buffer_deg
+    south = lat - buffer_deg
+    north = lat + buffer_deg
+
+    # query CRSs from the pyproj database (authority = 'EPSG')
+    info_list = database.query_crs_info(auth_name='EPSG', bbox=(west, south, east, north))
+    results = []
+    for info in info_list[:max_results]:
+        # info is a pyproj.database.CRSInfo object with attributes: name, code, auth_name, area_of_use, bbox
+        try:
+            epsg_code = int(info.code)
+            crs = CRS.from_epsg(epsg_code)
+            # keep only projected CRSs (not geographic)
+            if crs.is_projected:
+                results.append({
+                    'epsg': epsg_code,
+                    'name': info.name,
+                    'area_of_use': info.area_of_use,
+                    'bbox': info.bbox
+                })
+        except Exception:
+            continue
+    return results
 
 def proj_latlon_to_utm(latitude, longitude, utm_zone=32629):
     '''
