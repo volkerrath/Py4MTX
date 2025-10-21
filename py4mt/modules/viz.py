@@ -780,6 +780,33 @@ def plot_sparsity_pattern(
          fig.savefig(PlotFile+PlotStrng+fmt, bbox_inches='tight')
          
     plt.close()
+    
+def plot_plane_cross(ax, position, 
+                     tensor, 
+                     plane, 
+                     colors=('red','blue', 'green'), 
+                     scale=1.0):
+    
+    
+    idx = {'XY': (0,1), 'XZ': (0,2), 'YZ': (1,2)}[plane]
+    i, j = idx
+    block = tensor[[i,j],:][:,[i,j]]
+    eigvals, eigvecs = np.linalg.eigh(block)
+    order = np.argsort(eigvals)[::-1]
+    eigvals = eigvals[order]
+    eigvecs = eigvecs[:, order]
+    # max_ev = np.max(np.abs(eigvals))
+    for k in range(2):
+        v = eigvecs[:, k]
+        mag = eigvals[k] * scale
+        x_coords = np.array([-v[0]*mag, v[0]*mag])
+        y_coords = np.array([-v[1]*mag, v[1]*mag])
+        ax.plot(x_coords, y_coords, 
+                color=colors[k], 
+                linewidth=3,
+                solid_capstyle='butt')
+
+
 
 def make_pdf_catalog(workdir='./', pdflist= None, filename=None):
     '''
