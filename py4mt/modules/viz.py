@@ -25,6 +25,9 @@ import mpl_toolkits.axes_grid1
 import matplotlib.ticker
 import cycler
 
+import scipy.sparse as scs
+
+
 import util as utl
 
 def plot_impedance(thisaxis=None, data=None, **pltargs):
@@ -742,6 +745,43 @@ def plot_matrix(
 
     return ax
 
+def plot_sparse(
+        PlotFile = '',
+        PlotTitle = '$\mathbf{M}$, Sparsity Pattern',
+        PlotFormat = ['png', '.pdf'],
+        FigSize = [8.5*0.3937, 8.5*0.3937],
+        Matrix = [],
+        PlotStrng='',
+        StrngPos=[0.05,0.05],
+        Aspect = 'auto',
+        Invalid=1.e30,
+        Transpose=False):
+
+    from scipy.sparse import csr_array, csc_array, coo_array, eye_array, issparse
+    from scipy.sparse import csr_matrix, csc_matrix, coo_matrix
+    from matspy import spy_to_mpl, spy
+
+    import femtic as fem 
+    
+    M = coo_matrix(Matrix)
+    fem.check_sparse_matrix(M)
+    
+    # Plotting
+    options = {'title': PlotTitle,
+               'figsize': 8.,      #  inches
+               'dpi': 600,
+               'shading': 'binary', # 'absolute' 'relative' 'binary'
+               'spy_aa_tweaks_enabled': True,
+               'color_full': 'black'} 
+    
+    fig, ax = spy_to_mpl(M, **options)
+    
+    fig.show()
+
+    for fmt in PlotFormat:
+         fig.savefig(PlotFile+PlotStrng+fmt, bbox_inches='tight')
+         
+    plt.close()
 
 def make_pdf_catalog(workdir='./', pdflist= None, filename=None):
     '''
