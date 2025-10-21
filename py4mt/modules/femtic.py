@@ -63,7 +63,7 @@ def generate_data_ensemble(dir_base='./ens_',
     '''
     for i = 1 : nsamples do
         Draw perturbed data set: d_pert ∼ N(d, Cd)
-        
+
     '''
 
     obs_list = []
@@ -74,10 +74,10 @@ def generate_data_ensemble(dir_base='./ens_',
         Generate perturbed observe.dat
         '''
         modify_data(template_file=file,
-                     draw_from=draw_from,
-                     method=method,
-                     errors=errors,
-                     out=out)
+                    draw_from=draw_from,
+                    method=method,
+                    errors=errors,
+                    out=out)
         obs_list.append(file)
 
     if out:
@@ -88,22 +88,19 @@ def generate_data_ensemble(dir_base='./ens_',
 
 
 def modify_data(template_file='observe.dat',
-                 draw_from=['normal', 0., 1.],
-                 method='add',
-                 errors=[ [], [], [] ],
-                 out=True):
+                draw_from=['normal', 0., 1.],
+                method='add',
+                errors=[[], [], []],
+                out=True):
     '''
     Created on Thu Mpr 17 17:13:38 2025
-    
+
     @author:   vrath   
     '''
 #    import numpy as np
 
 #
 
-
-        
-        
     if template_file is None:
         template_file = 'observe.dat'
 
@@ -125,9 +122,9 @@ def modify_data(template_file='observe.dat',
     for number, line in enumerate(content, 0):
         l = line.split()
         if len(l) == 2:
-          start_lines_datablock.append(number)
-          print(' data block', l[0], 'with',
-                l[1], 'sites begins at line', number)
+            start_lines_datablock.append(number)
+            print(' data block', l[0], 'with',
+                  l[1], 'sites begins at line', number)
         if 'END' in l:
             start_lines_datablock.append(number-1)
             print(' no further data block in file')
@@ -151,41 +148,41 @@ def modify_data(template_file='observe.dat',
         for number, line in enumerate(data_block, 0):
             l = line.split()
             if len(l) == 4:
-              print(l)
-              start_lines_site.append(number)
-              num_freqs.append(int(data_block[number+1].split()[0]))          
-              print('  site', l[0],'begins at line', number)
+                print(l)
+                start_lines_site.append(number)
+                num_freqs.append(int(data_block[number+1].split()[0]))
+                print('  site', l[0], 'begins at line', number)
             if 'END' in l:
-                 start_lines_datablock.append(number-1)
-                 print(' no further site block in file')
-        print('\n')   
+                start_lines_datablock.append(number-1)
+                print(' no further site block in file')
+        print('\n')
         # print(start_lines_site)
         # print(num_freqs)
-              
+
         num_sites = len(start_lines_site)
         for site in np.arange(num_sites):
             start_site = start_lines_site[site]
             end_site = start_site+num_freqs[site]+2
             site_block = data_block[start_site:end_site]
-            # print('site',site+1) 
+            # print('site',site+1)
             # print(np.shape(site_block))
             # print(site_block)
-                        
+
             if 'MT' in obs_type:
-                
-                if len(errors[0])!=0:
+
+                if len(errors[0]) != 0:
                     set_errors_mt = True
 
                 dat_length = 8
-                
+
                 num_freq = int(site_block[1].split()[0])
-                print('   site ',site,'has',num_freq,'frequencies' )
-                obs  = []
+                print('   site ', site, 'has', num_freq, 'frequencies')
+                obs = []
                 for line in site_block[2:]:
                     # print(line)
                     tmp = [float(x) for x in line.split()]
                     obs.append(tmp)
-                    
+
                 if set_errors_mt:
                     new_errors = errors[0]
                     print('MT errors will be replaced with relative errors:')
@@ -198,43 +195,44 @@ def modify_data(template_file='observe.dat',
                             val = line[ii]
                             err = val*new_errors
                             line[ii+dat_length] = err
-                
+
                 for line in obs:
 
-                     for ii in np.arange(1,dat_length+1):
-                         print(site, '   ',ii, ii+dat_length)
-                         val = line[ii]
-                         err = line[ii+dat_length]
-                         line[ii] = np.random.normal(loc=val, scale=err)
-                         
+                    for ii in np.arange(1, dat_length+1):
+                        print(site, '   ', ii, ii+dat_length)
+                        val = line[ii]
+                        err = line[ii+dat_length]
+                        line[ii] = np.random.normal(loc=val, scale=err)
+
                 '''
                 now write new values
                 
                 '''
-                print('obs',np.shape(obs), np.shape(site_block))  
+                print('obs', np.shape(obs), np.shape(site_block))
                 print(np.arange(num_freq))
-                for f in  np.arange(num_freq-1):
+                for f in np.arange(num_freq-1):
                     print(f)
-                    print( site_block[f+2])
-                    print( obs[f])
-                    site_block[f+2] = '    '.join([f'{x:.8E}' for x in obs[f]])+'\n'
-                    print( site_block[f+2])     
+                    print(site_block[f+2])
+                    print(obs[f])
+                    site_block[f +
+                               2] = '    '.join([f'{x:.8E}' for x in obs[f]])+'\n'
+                    print(site_block[f+2])
 
             elif 'VTF' in obs_type:
-                
-                if len(errors[1])!=0:
+
+                if len(errors[1]) != 0:
                     set_errors_vtf = True
 
                 dat_length = 4
 
                 num_freq = int(site_block[1].split()[0])
-                print('   site ',site,'has',num_freq,'frequencies' )
-                obs  = []
+                print('   site ', site, 'has', num_freq, 'frequencies')
+                obs = []
                 for line in site_block[2:]:
                     # print(line)
                     tmp = [float(x) for x in line.split()]
                     obs.append(tmp)
-                    
+
                     if set_errors_vtf:
                         new_errors = errors[1]
                         print('VTF errors will be replaced with relative errors:')
@@ -247,7 +245,7 @@ def modify_data(template_file='observe.dat',
                                 val = line[ii]
                                 err = new_errors
                                 line[ii+dat_length] = err
-                    
+
                     for line in obs:
                         # print(np.arange(1,dat_length+1))
                         # print(freq)
@@ -261,30 +259,31 @@ def modify_data(template_file='observe.dat',
                 now write new values
 
                 '''
-                print('obs',np.shape(obs), np.shape(site_block))
+                print('obs', np.shape(obs), np.shape(site_block))
                 print(np.arange(num_freq))
-                for f in  np.arange(num_freq-1):
+                for f in np.arange(num_freq-1):
                     print(f)
-                    print( site_block[f+2])
-                    print( obs[f])
-                    site_block[f+2] = '    '.join([f'{x:.8E}' for x in obs[f]])+'\n'
-                    print( site_block[f+2])
-                    
+                    print(site_block[f+2])
+                    print(obs[f])
+                    site_block[f +
+                               2] = '    '.join([f'{x:.8E}' for x in obs[f]])+'\n'
+                    print(site_block[f+2])
+
             elif 'PT' in obs_type:
-                
-                if len(errors[2])!=0:
+
+                if len(errors[2]) != 0:
                     set_errors_pt = True
 
                 dat_length = 4
 
                 num_freq = int(site_block[1].split()[0])
-                print('   site ',site,'has',num_freq,'frequencies' )
-                obs  = []
+                print('   site ', site, 'has', num_freq, 'frequencies')
+                obs = []
                 for line in site_block[2:]:
                     # print(line)
                     tmp = [float(x) for x in line.split()]
                     obs.append(tmp)
-                    
+
                     if set_errors_pt:
                         new_errors = errors[1]
                         print('VTF errors will be replaced with relative errors:')
@@ -297,7 +296,7 @@ def modify_data(template_file='observe.dat',
                                 val = line[ii]
                                 err = new_errors
                                 line[ii+dat_length] = err
-                    
+
                     for line in obs:
                         # print(np.arange(1,dat_length+1))
                         # print(freq)
@@ -311,34 +310,29 @@ def modify_data(template_file='observe.dat',
                 now write new values
 
                 '''
-                print('obs',np.shape(obs), np.shape(site_block))
+                print('obs', np.shape(obs), np.shape(site_block))
                 print(np.arange(num_freq))
-                for f in  np.arange(num_freq-1):
+                for f in np.arange(num_freq-1):
                     print(f)
-                    print( site_block[f+2])
-                    print( obs[f])
-                    site_block[f+2] = '    '.join([f'{x:.8E}' for x in obs[f]])+'\n'
-                    print( site_block[f+2])
+                    print(site_block[f+2])
+                    print(obs[f])
+                    site_block[f +
+                               2] = '    '.join([f'{x:.8E}' for x in obs[f]])+'\n'
+                    print(site_block[f+2])
             else:
-                
+
                 sys.exit('modify_data:'+obs_type+' not yet implemented! Exit.')
 
             data_block[start_site:end_site] = site_block
-            
-        
-        content[start_block:end_block] = data_block            
-        
 
-   
-    print (np.shape(content))
+        content[start_block:end_block] = data_block
+
+    print(np.shape(content))
     with open(template_file, 'w') as f:
         f.writelines(content)
 
-
     if out:
         print('File '+template_file+' successfully written.')
-
-
 
 
 def generate_model_ensemble(dir_base='./ens_',
@@ -362,9 +356,9 @@ def generate_model_ensemble(dir_base='./ens_',
         generate perturbed model
         '''
         modify_model(template_file=file,
-                      draw_from=draw_from,
-                      method=method,
-                      out=out)
+                     draw_from=draw_from,
+                     method=method,
+                     out=out)
         mod_list.append(file)
 
     if out:
@@ -376,15 +370,15 @@ def generate_model_ensemble(dir_base='./ens_',
 
 
 def modify_model(template_file='resistivity_block_iter0.dat',
-                  draw_from=['normal', 0., 1.],
-                  method='add',
-                  priorcov=None,
-                  decomposed=False,
-                  regeps=1.e-8,
-                  out=True):
+                 draw_from=['normal', 0., 1.],
+                 method='add',
+                 priorcov=None,
+                 decomposed=False,
+                 regeps=1.e-8,
+                 out=True):
     '''
     Created on Thu Mpr 17 17:13:38 2025
-    
+
     @author:       vrath   
     '''
 #    import numpy as np
@@ -412,7 +406,7 @@ def modify_model(template_file='resistivity_block_iter0.dat',
             S = priorcov
         else:
             # sparse LU decomposition
-            n =priorcov.shape[0]
+            n = priorcov.shape[0]
             M = priorcov.copy() + np.identity(n)*regeps
             LU = scipy.sparse.linalg.splu(M, diag_pivot_thresh=0)
             # check the matrix M is positive definite.
@@ -423,8 +417,6 @@ def modify_model(template_file='resistivity_block_iter0.dat',
         for ismp in np.arange(n_cells-2):
             samples[ismp] = S@samples[ismp]
 
-
-    
     # element groups: air and seawater fixed
     new_lines = [
         '         0        1.000000e+09   1.000000e-20   1.000000e+20   1.000000e+00         1',
@@ -432,24 +424,23 @@ def modify_model(template_file='resistivity_block_iter0.dat',
     ]
 
     print(nn[0], nn[0]+nn[1]-1, nn[1]-1, np.shape(samples))
-    
+
     e_num = 1
     for elem in range(nn[0]+3, nn[0]+nn[1]+1):
         e_num = e_num + 1
         line = content[elem].split()
         x = float(line[1])
-      
+
         if 'add' in method:
             x_log = np.log10(x) + samples[e_num-2]
         else:
-            x_log = samples[e_num-2]  
-            
+            x_log = samples[e_num-2]
+
         x = 10.**(x_log)
 
         line = f' {e_num:9d}        {x:.6e}   1.000000e-20   1.000000e+20   1.000000e+00         0'
         new_lines.append(line)
-    
-  
+
     new_lines = '\n'.join(new_lines)
 
     with open(template_file, 'w') as f:
@@ -467,7 +458,7 @@ def modify_model(template_file='resistivity_block_iter0.dat',
 
 def read_model(model_file=None,  model_trans='log10',  out=True):
     '''
-    
+
     vrath   Sat Jun  7 06:03:58 PM CEST 2025
 
     '''
@@ -483,47 +474,46 @@ def read_model(model_file=None,  model_trans='log10',  out=True):
     nn = content[0].split()
     nn = [int(tmp) for tmp in nn]
 
-    s_num =0
-    for elem in range(nn[0]+1, nn[0]+nn[1]+1): 
+    s_num = 0
+    for elem in range(nn[0]+1, nn[0]+nn[1]+1):
         s_num = s_num + 1
         x = float(content[elem].split()[1])
-        if s_num==1:
+        if s_num == 1:
             model = [x]
         else:
             model.append(x)
- 
-    model = np.array(model)    
+
+    model = np.array(model)
     # print(model[0], model[nn[1]-1])
     if 'log10' in model_trans:
-       print('model is log10 resistivity!')
-       model = np.log10(model)
- 
+        print('model is log10 resistivity!')
+        model = np.log10(model)
+
     return model
 
 
-
 def insert_model(template_file='resistivity_block_iter0.dat',
-                  data=None,
-                  data_file=None,
-                  data_name= '',
-                  out=True):
+                 data=None,
+                 data_file=None,
+                 data_name='',
+                 out=True):
     '''
     Created on Thu Mpr 17 17:13:38 2025
-    
+
     @author:     vrath   
     '''
     # import numpy as np
     # rng = np.random.default_rng()
-    
+
     if data is None:
         sys.exit('insert_model: No data given! Exit.')
-        
+
     if data_file is None:
         sys.exit('insert_model: No data file given! Exit.')
-        
+
     if template_file is None:
         template_file = 'resistivity_block_iter0.dat'
-        
+
     data_file = template_file.replace('.dat', data_name+'.dat')
 
     with open(template_file, 'r') as file:
@@ -533,8 +523,8 @@ def insert_model(template_file='resistivity_block_iter0.dat',
     nn = [int(tmp) for tmp in nn]
     n_cells = nn[1]
 
-    size=n_cells-2
-    
+    size = n_cells-2
+
     # element groups: air and seawater fixed
     new_lines = [
         '         0        1.000000e+09   1.000000e-20   1.000000e+20   1.000000e+00         1',
@@ -542,12 +532,12 @@ def insert_model(template_file='resistivity_block_iter0.dat',
     ]
 
     print(nn[0], nn[0]+nn[1]-1, nn[1]-1, np.shape(data))
-    
+
     nn = content[0].split()
     nn = [int(tmp) for tmp in nn]
 
-    data = np.power(10.,data)
- 
+    data = np.power(10., data)
+
     e_num = 1
     s_num = -1
     for elem in range(nn[0]+3, nn[0]+nn[1]+1):
@@ -557,9 +547,8 @@ def insert_model(template_file='resistivity_block_iter0.dat',
 
         line = f' {e_num:9d}        {x:.6e}   1.000000e-20   1.000000e+20   1.000000e+00         0'
         new_lines.append(line)
-    
+
     new_lines = '\n'.join(new_lines)
-    
 
     with open(data_file, 'w') as f:
         f.writelines(content[0:nn[0]+1])
@@ -572,14 +561,13 @@ def insert_model(template_file='resistivity_block_iter0.dat',
     # return samples
 
 
-
 def modify_data_fcn(template_file='observe.dat',
-                 draw_from=['normal', 0., 1.],
-                 scalfac=1.,
-                 out=True):
+                    draw_from=['normal', 0., 1.],
+                    scalfac=1.,
+                    out=True):
     '''
     Created on Thu Mpr 17 17:13:38 2025
-    
+
     @author:   vrath   
     '''
 #    import numpy as np
@@ -606,9 +594,9 @@ def modify_data_fcn(template_file='observe.dat',
     for number, line in enumerate(content, 0):
         l = line.split()
         if len(l) == 2:
-          start_lines_datablock.append(number)
-          print(' data block', l[0], 'with',
-                l[1], 'sites begins at line', number)
+            start_lines_datablock.append(number)
+            print(' data block', l[0], 'with',
+                  l[1], 'sites begins at line', number)
         if 'END' in l:
             start_lines_datablock.append(number-1)
             print(' no further data block in file')
@@ -632,71 +620,33 @@ def modify_data_fcn(template_file='observe.dat',
         for number, line in enumerate(data_block, 0):
             l = line.split()
             if len(l) == 4:
-              print(l)
-              start_lines_site.append(number)
-              num_freqs.append(int(data_block[number+1].split()[0]))          
-              print('  site', l[0],'begins at line', number)
+                print(l)
+                start_lines_site.append(number)
+                num_freqs.append(int(data_block[number+1].split()[0]))
+                print('  site', l[0], 'begins at line', number)
             if 'END' in l:
-                 start_lines_datablock.append(number-1)
-                 print(' no further site block in file')
-        print('\n')   
+                start_lines_datablock.append(number-1)
+                print(' no further site block in file')
+        print('\n')
         # print(start_lines_site)
         # print(num_freqs)
-              
+
         num_sites = len(start_lines_site)
         for site in np.arange(num_sites):
             start_site = start_lines_site[site]
             end_site = start_site+num_freqs[site]+2
             site_block = data_block[start_site:end_site]
-            # print('site',site+1) 
+            # print('site',site+1)
             # print(np.shape(site_block))
             # print(site_block)
-                        
+
             if 'MT' in obs_type:
 
                 dat_length = 8
-                
-                num_freq = int(site_block[1].split()[0])
-                print('   site ',site,'has',num_freq,'frequencies' )
-                obs  = []
-                for line in site_block[2:]:
-                    # print(line)
-                    tmp = [float(x) for x in line.split()]
-                    obs.append(tmp)
-                    
-                # print('obs',np.shape(obs), np.shape(site_block))   
-                # print(obs)
-                # print(np.arange(num_freq))
-                
-                for line in obs:
-                     # print(np.arange(1,dat_length+1))
-                     # print(freq)
-                     for ii in np.arange(1,dat_length+1):
-                         print(site, '   ',ii, ii+dat_length)
-                         val = line[ii]
-                         err = line[ii+dat_length]*scalfac
-                         line[ii] = np.random.normal(loc=val, scale=err)
-                         
-                '''
-                now write new values
-                
-                '''
-                print('obs',np.shape(obs), np.shape(site_block))  
-                print(np.arange(num_freq))
-                for f in  np.arange(num_freq-1):
-                    print(f)
-                    print( site_block[f+2])
-                    print( obs[f])
-                    site_block[f+2] = '    '.join([f'{x:.8E}' for x in obs[f]])
-                    print( site_block[f+2])     
-
-            elif 'VTF' in obs_type:
-
-                dat_length = 4
 
                 num_freq = int(site_block[1].split()[0])
-                print('   site ',site,'has',num_freq,'frequencies' )
-                obs  = []
+                print('   site ', site, 'has', num_freq, 'frequencies')
+                obs = []
                 for line in site_block[2:]:
                     # print(line)
                     tmp = [float(x) for x in line.split()]
@@ -707,46 +657,79 @@ def modify_data_fcn(template_file='observe.dat',
                 # print(np.arange(num_freq))
 
                 for line in obs:
-                     # print(np.arange(1,dat_length+1))
-                     # print(freq)
-                     for ii in np.arange(1,dat_length+1):
-                         print(site, '   ',ii, ii+dat_length)
-                         val = line[ii]
-                         err = line[ii+dat_length]*scalfac
-                         line[ii] = np.random.normal(loc=val, scale=err)
+                    # print(np.arange(1,dat_length+1))
+                    # print(freq)
+                    for ii in np.arange(1, dat_length+1):
+                        print(site, '   ', ii, ii+dat_length)
+                        val = line[ii]
+                        err = line[ii+dat_length]*scalfac
+                        line[ii] = np.random.normal(loc=val, scale=err)
+
+                '''
+                now write new values
+                
+                '''
+                print('obs', np.shape(obs), np.shape(site_block))
+                print(np.arange(num_freq))
+                for f in np.arange(num_freq-1):
+                    print(f)
+                    print(site_block[f+2])
+                    print(obs[f])
+                    site_block[f+2] = '    '.join([f'{x:.8E}' for x in obs[f]])
+                    print(site_block[f+2])
+
+            elif 'VTF' in obs_type:
+
+                dat_length = 4
+
+                num_freq = int(site_block[1].split()[0])
+                print('   site ', site, 'has', num_freq, 'frequencies')
+                obs = []
+                for line in site_block[2:]:
+                    # print(line)
+                    tmp = [float(x) for x in line.split()]
+                    obs.append(tmp)
+
+                # print('obs',np.shape(obs), np.shape(site_block))
+                # print(obs)
+                # print(np.arange(num_freq))
+
+                for line in obs:
+                    # print(np.arange(1,dat_length+1))
+                    # print(freq)
+                    for ii in np.arange(1, dat_length+1):
+                        print(site, '   ', ii, ii+dat_length)
+                        val = line[ii]
+                        err = line[ii+dat_length]*scalfac
+                        line[ii] = np.random.normal(loc=val, scale=err)
 
                 '''
                 now write new values
 
                 '''
-                print('obs',np.shape(obs), np.shape(site_block))
+                print('obs', np.shape(obs), np.shape(site_block))
                 print(np.arange(num_freq))
-                for f in  np.arange(num_freq-1):
+                for f in np.arange(num_freq-1):
                     print(f)
-                    print( site_block[f+2])
-                    print( obs[f])
+                    print(site_block[f+2])
+                    print(obs[f])
                     site_block[f+2] = '    '.join([f'{x:.8E}' for x in obs[f]])
-                    print( site_block[f+2])
+                    print(site_block[f+2])
             else:
-                
-                sys.exit('modify_data: '+obs_type+' not yet implemented! Exit.')
+
+                sys.exit('modify_data: '+obs_type +
+                         ' not yet implemented! Exit.')
 
             data_block[start_site:end_site] = site_block
-            
-        
-        content[start_block:end_block] = data_block            
-        
 
-   
-    print (np.shape(content))
+        content[start_block:end_block] = data_block
+
+    print(np.shape(content))
     with open(template_file, 'w') as f:
         f.writelines(content)
 
-
     if out:
         print('File '+template_file+' successfully written.')
-
-
 
 
 def get_femtic_sorted(files=[], out=True):
@@ -766,8 +749,8 @@ def get_femtic_sorted(files=[], out=True):
 
 
 def get_femtic_sites(imp_file='result_MT.txt',
-                     vtf_file = 'result_VTF.txt',
-                     pt_file = 'results_PT.txt'):
+                     vtf_file='result_VTF.txt',
+                     pt_file='results_PT.txt'):
     '''
     Created on Thu Feb 27 10:23:16 2025
     This creates the files called sites_vtf.txt and sites_imp.txt based on 
@@ -775,69 +758,65 @@ def get_femtic_sites(imp_file='result_MT.txt',
     to femtic inversion results
     @authors: charroyj + vrath
     '''
-    
-    
-    #neither inputs nor outputs should normally need to be changed.
-    
-    
-    if len(imp_file)>0 and os.path.exists(imp_file): 
+
+    # neither inputs nor outputs should normally need to be changed.
+
+    if len(imp_file) > 0 and os.path.exists(imp_file):
         with open(imp_file, 'r') as filein_imp:
-            site=''
+            site = ''
             fileout_imp = open(imp_file.replace('results', 'sites'), 'w')
             filein_imp.readline()
             for line in filein_imp:
                 nextsite = line.strip().split()[0]
-                if nextsite!=site:
+                if nextsite != site:
                     fileout_imp.write(nextsite+' '+nextsite+'\n')
-                    site=nextsite
+                    site = nextsite
             fileout_imp.close()
-    else: 
-        if len(imp_file)>0:  
-            print(imp_file,'does not exist!')    
+    else:
+        if len(imp_file) > 0:
+            print(imp_file, 'does not exist!')
         else:
             print('pt_file not defined!')
-            
-    if len(vtf_file)>0 and os.path.exists(vtf_file): 
+
+    if len(vtf_file) > 0 and os.path.exists(vtf_file):
         with open(vtf_file, 'r') as filein_vtf:
-            site=''
+            site = ''
             fileout_vtf = open(vtf_file.replace('results', 'sites'), 'w')
             filein_imp.readline()
             filein_vtf.readline()
             for line in filein_vtf:
                 nextsite = line.strip().split()[0]
-                if nextsite!=site:
+                if nextsite != site:
                     fileout_vtf.write(nextsite+' '+nextsite+'\n')
-                    site=nextsite
+                    site = nextsite
             fileout_vtf.close()
-    else: 
-        if len(vtf_file)>0:
-            print(vtf_file,'does not exist!')
+    else:
+        if len(vtf_file) > 0:
+            print(vtf_file, 'does not exist!')
         else:
             print('vtf_file does not exist!')
-        
-    if len(pt_file)>0 and os.path.exists(pt_file): 
+
+    if len(pt_file) > 0 and os.path.exists(pt_file):
         with open(pt_file, 'r') as filein_pt:
-            site=''
+            site = ''
             fileout_pt = open(vtf_file.replace('results', 'sites'), 'w')
             filein_pt.readline()
             for line in filein_pt:
                 nextsite = line.strip().split()[0]
-                if nextsite!=site:
+                if nextsite != site:
                     fileout_pt.write(nextsite+' '+nextsite+'\n')
-                    site=nextsite
+                    site = nextsite
             fileout_pt.close()
-    else: 
-        if len(vtf_file)>0:  
-            print(pt_file,'does not exist!')    
+    else:
+        if len(vtf_file) > 0:
+            print(pt_file, 'does not exist!')
         else:
             print('pt_file not defined!')
 
 
-
-
 def get_femtic_data(data_file=None, site_file=None, data_type='rhophas', out=True):
     '''
-    
+
 
     Parameters
     ----------
@@ -857,9 +836,8 @@ def get_femtic_data(data_file=None, site_file=None, data_type='rhophas', out=Tru
 
    Note: Conversion to appropriate units: FEMTIC uses ohms
          1 ohm = 10000(4*pi) [mV/km/nT]
- 
-    '''
 
+    '''
 
     data = []
     with open(data_file, 'r') as f:
@@ -897,7 +875,7 @@ def get_femtic_data(data_file=None, site_file=None, data_type='rhophas', out=Tru
         ('elv', np.float64(info[:, 3])),
         ('num', data[:, 0].astype('int')-1),
         ('nam', info[:, 0][sites.astype('int')-1])
-        ])
+    ])
 
     if 'rhophas' in data_type.lower():
 
@@ -915,7 +893,7 @@ def get_femtic_data(data_file=None, site_file=None, data_type='rhophas', out=Tru
         # print(np.shape(data[:, 18:26 ]))
         type_dict = dict([
             ('cal', data[:, 2:10]),
-            ('obs', data[:, 10:18 ]),
+            ('obs', data[:, 10:18]),
             ('err', data[:, 18:26]),
         ])
 
@@ -926,14 +904,14 @@ def get_femtic_data(data_file=None, site_file=None, data_type='rhophas', out=Tru
          ReZxxCal   ImZxxCal   ReZxyCal   ImZxyCal   ReZyxCal  ImZyxCal  ReZyyCal   ImZyyCal
          ReZxxObs   ImZxxObs   ReZxyObs   ImZxyObs   ReZyxObs  ImZyxObs  ReZyyObs   ImZyyObs
          ReZxxErr   ImZxxErr   ReZxyErr   ImZxyErr   ReZyxErr  ImZyxErr  ReZyyErr   ImZyyErr
-         
+
          Z_femtic in Ohm: 1 Ohm = 1e4*(4*pi) [mV/km/nT] => Z =  1.e-4/(4*np.pi)*Z_femtic
-         
+
         '''
         ufact = 1.e-4/(4*np.pi)
         type_dict = dict([
-            ('cal', ufact*data[:, 2:10 ]),
-            ('obs', ufact*data[:, 10:18 ]),
+            ('cal', ufact*data[:, 2:10]),
+            ('obs', ufact*data[:, 10:18]),
             ('err', ufact*data[:, 18:26]),
         ])
 
@@ -946,8 +924,8 @@ def get_femtic_data(data_file=None, site_file=None, data_type='rhophas', out=Tru
         ReTzxErr   ImTzxErr   ReTzyErr   ImTzyErr
         '''
         type_dict = dict([
-            ('cal', data[:, 2:6 ]),
-            ('obs', data[:, 6:10 ]),
+            ('cal', data[:, 2:6]),
+            ('obs', data[:, 6:10]),
             ('err', data[:, 10:15]),
 
         ])
@@ -960,21 +938,22 @@ def get_femtic_data(data_file=None, site_file=None, data_type='rhophas', out=Tru
         ReTzxErr   ImTzxErr   ReTzyErr   ImTzyErr
         '''
         type_dict = dict([
-            ('cal', data[:, 2:6 ]),
-            ('obs', data[:, 6:18 ]),
+            ('cal', data[:, 2:6]),
+            ('obs', data[:, 6:18]),
             ('err', data[:, 10:14]),
 
         ])
 
     else:
-        sys.exit('get_femtic_data: data type '+data_type.lower()+' not implemented! Exit.')
+        sys.exit('get_femtic_data: data type ' +
+                 data_type.lower()+' not implemented! Exit.')
 
     data_dict = {**head_dict, **type_dict}
 
     return data_dict
 
 # def get_work_model(directory=None, file=None, out=True):
-    
+
 #     work_model = []
 #     return work_model
 
@@ -982,29 +961,27 @@ def get_femtic_data(data_file=None, site_file=None, data_type='rhophas', out=Tru
 def centroid_tetrahedron(nodes=None):
     '''
     Created on Thu Jul 17 08:36:04 2025
-    
+
     @author: vrath
     '''
 
-    
     if nodes is None:
         sys.exit('centroid: Nodes not set! Exit.')
-    
-    if np.shape(nodes) != [3,4]:
-      sys.exit('centroid: Nodes shape is not (3,4)! Exit.')
-    
+
+    if np.shape(nodes) != [3, 4]:
+        sys.exit('centroid: Nodes shape is not (3,4)! Exit.')
+
     # nodes = np.nan*np.zeros((3,4))
-    
-    centre = np.mean(nodes, axis = 0)
-    
-    
+
+    centre = np.mean(nodes, axis=0)
+
     return centre
 
 
 def get_roughness(filerough='roughening_matrix.out',
-                   regeps = None,
-                   spformat = 'csc',
-                   out=True):
+                  regeps=None,
+                  spformat='csc',
+                  out=True):
     '''
     generate prior covariance for
     ensemble perturbations
@@ -1044,52 +1021,52 @@ def get_roughness(filerough='roughening_matrix.out',
     // Calculate roughning matrix from user-defined roughning factor
     void ResistivityBlock::calcRougheningMatrixUserDefined( const double factor ){
 
-    	// Read user-defined roughening matrix
-    	const std::string fileName = 'roughening_matrix.dat';
-    	std::ifstream ifs( fileName.c_str(), std::ios::in );
+        // Read user-defined roughening matrix
+        const std::string fileName = 'roughening_matrix.dat';
+        std::ifstream ifs( fileName.c_str(), std::ios::in );
 
-    	if( ifs.fail() ){
-    		OutputFiles::m_logFile << 'File open error : ' << fileName.c_str() << ' !!' << std::endl;
-    		exit(1);
-    	}
+        if( ifs.fail() ){
+                OutputFiles::m_logFile << 'File open error : ' << fileName.c_str() << ' !!' << std::endl;
+                exit(1);
+        }
 
-    	OutputFiles::m_logFile << '# Read user-defined roughening matrix from ' << fileName.c_str() << '.' << std::endl;
+        OutputFiles::m_logFile << '# Read user-defined roughening matrix from ' << fileName.c_str() << '.' << std::endl;
 
-    	int ibuf(0);RoughType
-    	ifs >> ibuf;
-    	const int numBlock(ibuf);
-    	if( numBlock <= 0 ){
-    		OutputFiles::m_logFile << 'Error : Total number of resistivity blocks must be positive !! : ' << numBlock << std::endl;
-    		exit(1);
-    	}
+        int ibuf(0);RoughType
+        ifs >> ibuf;
+        const int numBlock(ibuf);
+        if( numBlock <= 0 ){
+                OutputFiles::m_logFile << 'Error : Total number of resistivity blocks must be positive !! : ' << numBlock << std::endl;
+                exit(1);
+        }
 
-    	for( int iBlock = 0 ; iBlock < numBlock; ++iBlock ){
-    		ifs >> ibuf;
-    		if( iBlock != ibuf ){
-    			OutputFiles::m_logFile << 'Error : Resistivity block numbers must be numbered consecutively from zero !!' << std::endl;
-    			exit(1);
-    		}
+        for( int iBlock = 0 ; iBlock < numBlock; ++iBlock ){
+                ifs >> ibuf;
+                if( iBlock != ibuf ){
+                        OutputFiles::m_logFile << 'Error : Resistivity block numbers must be numbered consecutively from zero !!' << std::endl;
+                        exit(1);
+                }
 
-    		ifs >> ibuf;
-    		const int numNonzeros(ibuf);
-    		std::vector< std::pair<int, double> > blockIDMndFactor;
-    		blockIDMndFactor.resize(numNonzeros);
-    		for( int innz = 0 ; innz < numNonzeros; ++innz ){
-    			ifs >> ibuf;
-    			blockIDMndFactor[innz].first = ibuf;
-    		}
-    		for( int innz = 0 ; innz < numNonzeros; ++innz ){
-    			double dbuf(0.0);
-    			ifs >> dbuf;
-    			blockIDMndFactor[innz].second = dbuf;
-    		}
-    		for( int innz = 0 ; innz < numNonzeros; ++innz ){
-    			m_rougheningMatrix.setStructureMndMddValueByTripletFormat( iBlock, blockIDMndFactor[innz].first, blockIDMndFactor[innz].second );
-    		}
-    	}
+                ifs >> ibuf;
+                const int numNonzeros(ibuf);
+                std::vector< std::pair<int, double> > blockIDMndFactor;
+                blockIDMndFactor.resize(numNonzeros);
+                for( int innz = 0 ; innz < numNonzeros; ++innz ){
+                        ifs >> ibuf;
+                        blockIDMndFactor[innz].first = ibuf;
+                }
+                for( int innz = 0 ; innz < numNonzeros; ++innz ){
+                        double dbuf(0.0);
+                        ifs >> dbuf;
+                        blockIDMndFactor[innz].second = dbuf;
+                }
+                for( int innz = 0 ; innz < numNonzeros; ++innz ){
+                        m_rougheningMatrix.setStructureMndMddValueByTripletFormat( iBlock, blockIDMndFactor[innz].first, blockIDMndFactor[innz].second );
+                }
+        }
 
 
-    	ifs.close();
+        ifs.close();
 
     }
 
@@ -1100,18 +1077,17 @@ def get_roughness(filerough='roughening_matrix.out',
     print('get_roughness: Reading from', filerough)
     irow = []
     icol = []
-    vals  = []
+    vals = []
     with open(filerough, 'r') as file:
         content = file.readlines()
 
     num_elem = int(content[0].split()[0])
-    print('get_roughness: File read:', time.perf_counter() - start,'s')
-    print('get_roughness: Number of elements:',num_elem)
-    
-    
+    print('get_roughness: File read:', time.perf_counter() - start, 's')
+    print('get_roughness: Number of elements:', num_elem)
+
     iline = 0
     zeros = 0
-    while iline < len(content)-1: #-2
+    while iline < len(content)-1:  # -2
         iline = iline + 1
         # print(content[iline])
         ele = int(content[iline].split()[0])
@@ -1122,19 +1098,19 @@ def get_roughness(filerough='roughening_matrix.out',
             print('passed', ele, nel, iline)
         else:
             iline = iline + 2
-            
+
     print('Zero elements:', zeros)
 
     start = time.perf_counter()
     iline = 0
-    while iline < len(content)-1: #-2
+    while iline < len(content)-1:  # -2
         iline = iline + 1
         # print(content[iline])
         ele = int(content[iline].split()[0])
         nel = int(content[iline+1].split()[0])
         if nel == 0:
             iline = iline + 1
-            #print('passed', ele, nel, iline)
+            # print('passed', ele, nel, iline)
             # pass
             continue
         else:
@@ -1144,31 +1120,27 @@ def get_roughness(filerough='roughening_matrix.out',
             val = [float(x) for x in content[iline+2].split()]
             vals += val
             iline = iline + 2
-            #print('used', ele, nel, iline, val)
+            # print('used', ele, nel, iline, val)
 
-    #print(irow[0],icol[0])
+    # print(irow[0],icol[0])
     irow = np.asarray(irow)
     icol = np.asarray(icol)
     vals = np.asarray(vals)
 
-
-
     R = coo_array((vals, (irow, icol)))
     print(R.shape)
-
 
     print('get_roughness: R sparse format is', R.format)
 
     if regeps is not None:
-        R = R + regeps*eye_array(R.shape[0],format=R.format)
+        R = R + regeps*eye_array(R.shape[0], format=R.format)
         if out:
             print(regeps, 'added to diag(R)')
 
-    print('get_roughness: R generated:', time.perf_counter() - start,'s')
+    print('get_roughness: R generated:', time.perf_counter() - start, 's')
     if out:
         print('get_roughness: R sparse format is', R.format)
         print(R.shape, R.nnz)
-
 
     if 'csc' in spformat.lower():
         R = csc_array((vals, (irow, icol)))
@@ -1181,21 +1153,22 @@ def get_roughness(filerough='roughening_matrix.out',
         print('get_roughness: Output sparse format:', spformat)
         print('get_roughness: R sparse format is', R.format)
         print(R.shape, R.nnz)
-        print(R.nnz,'nonzeros, ', 100*R.nnz/R.shape[0]**2, 'percent')
-        
+        print(R.nnz, 'nonzeros, ', 100*R.nnz/R.shape[0]**2, '%')
+
         print('get_roughness: Done!\n\n')
 
     return R
 
+
 def make_prior_cov(rough=None,
-                   regeps = 1.e-5,
-                   spformat = 'csr',
-                   spthresh = 1.e-4,
-                   spfill = 10.,
-                   spsolver = None,
-                   spmeth =  'basic,area',
-                   outmatrix = 'invRTR',
-                   nthreads = 16,
+                   regeps=1.e-5,
+                   spformat='csr',
+                   spthresh=1.e-4,
+                   spfill=10.,
+                   spsolver=None,
+                   spmeth='basic,area',
+                   outmatrix='invRTR',
+                   nthreads=16,
                    out=True):
     '''
     Generate prior covariance for ensemble perturbations
@@ -1240,26 +1213,23 @@ def make_prior_cov(rough=None,
     from scipy.sparse import csr_array, csc_array, coo_array, eye_array, diags_array, issparse
     from threadpoolctl import threadpool_limits
 
-
-
     if rough is None:
         sys.exit('make_prior_cov: No roughness matrix given! Exit.')
 
     if not issparse(rough):
         exit('make_prior_cov: Roughness matrix is not sparse! Exit.')
 
-
     start = time.perf_counter()
 
     if out:
-        print('make_prior_cov: Shape of input roughness is',rough.shape)
-        print('make_prior_cov: Format of input roughness is',rough.format)
+        print('make_prior_cov: Shape of input roughness is', rough.shape)
+        print('make_prior_cov: Format of input roughness is', rough.format)
 
     if regeps is not None:
-        rough = rough +regeps*eye_array(rough.shape[0], format=spformat.lower())
+        rough = rough + regeps * \
+            eye_array(rough.shape[0], format=spformat.lower())
         if out:
             print(regeps, 'added to diag(R)')
-
 
     if 'slu' in spsolver.lower():
         from scipy.sparse.linalg import spsolve
@@ -1274,28 +1244,30 @@ def make_prior_cov(rough=None,
 
         R = csc_array(rough)
         RHS = eye_array(R.shape[0], format=R.format)
-        #RHS = np.eye(R.shape[0])
+        # RHS = np.eye(R.shape[0])
         beg = time.perf_counter()
 
         with threadpool_limits(limits=nthreads):
             iluR = spilu(R, drop_tol=spthresh, fill_factor=spfill)
-            print('spilu decomposed:', time.perf_counter() - beg,'s')
+            print('spilu decomposed:', time.perf_counter() - beg, 's')
 
             beg = time.perf_counter()
             invR = iluR.solve(RHS.toarray())
-            print('spilu solved:', time.perf_counter() - beg,'s')
+            print('spilu solved:', time.perf_counter() - beg, 's')
     else:
-        sys.exit('make_prior_cov: solver'+spsolver.lower()+'not available! Exit')
+        sys.exit('make_prior_cov: solver' +
+                 spsolver.lower()+'not available! Exit')
 
     if out:
-        print('make_prior_cov: invR generated:', time.perf_counter() - start,'s')
+        print('make_prior_cov: invR generated:',
+              time.perf_counter() - start, 's')
         print('make_prior_cov: invR type', type(invR))
-        #print('invR format', invR.format)
+        # print('invR format', invR.format)
 
     if spthresh is not None:
         invR = matrix_reduce(M=invR,
-                            spthresh=spthresh,
-                            spformat=spformat)
+                             spthresh=spthresh,
+                             spformat=spformat)
 
     M = invR
     if 'rtr' in outmatrix.lower():
@@ -1305,16 +1277,13 @@ def make_prior_cov(rough=None,
             # calculate cholesky factor of M
             M = msqrt_sparse(M)
 
-
     if out:
 
-        print('make_prior_cov: M generated:', time.perf_counter() - start,'s')
-        print('make_prior_cov: M is',outmatrix)
+        print('make_prior_cov: M generated:', time.perf_counter() - start, 's')
+        print('make_prior_cov: M is', outmatrix)
         print('make_prior_cov: M', type(M))
         print('M', M.format)
-        
-        
-    
+
     print('make_prior_cov:  Done!\n\n')
 
     return M
@@ -1346,18 +1315,18 @@ def prune_rebuild(M, threshold):
     if not keep.all():
         # build new CSR from filtered coordinates
         M = csr_array((coo.data[keep], (coo.row[keep], coo.col[keep])),
-                                 shape=M.shape)
+                      shape=M.shape)
         return M
     else:
         return M.tocsr()
 
 
-
 def matrix_reduce(M=None,
-             howto='relative',
-             spformat= 'csr',
-             spthresh=1.e-6,
-             out=True):
+                  howto='relative',
+                  spformat='csr',
+                  spthresh=1.e-6,
+                  prune='rebuild',
+                  out=True):
 
     from scipy.sparse import csr_array, csc_array, coo_array, issparse
 
@@ -1367,7 +1336,7 @@ def matrix_reduce(M=None,
     n, _ = np.shape(M)
 
     if issparse(M):
-        M = M.tocsr() #  coo_array(M)   
+        M = M.tocsr()  # coo_array(M)
         if out:
             print('matrix_reduce: Matrix is sparse.')
             print('matrix_reduce: Type:', type(M))
@@ -1375,21 +1344,20 @@ def matrix_reduce(M=None,
             print('matrix_reduce: Shape:', M.shape)
 
     else:
-        M = csr_array(M) #  coo_array(M)
+        M = csr_array(M)  # coo_array(M)
         if out:
             print('matrix_reduce: Matrix is dense.')
             print('matrix_reduce: Type:', type(M))
             print('matrix_reduce: Shape:', np.shape(M))
 
     if out:
-        print('matrix_reduce:' ,M.nnz,'nonzeros, ', 100*M.nnz/n**2, 'percent')
+        print('matrix_reduce:', M.nnz, 'nonzeros, ', 100*M.nnz/n**2, '%')
 
     # test = M - M.T
     # if test.max()+test.min()==0.:
     #     if out: print('matrix_reduce: Matrix is symmetric!')
     # else:
     #     if out: print('matrix_reduce: Matrix is not symmetric!')
-
 
     if 'abs' in howto.lower():
         # Define absolute threshold
@@ -1400,24 +1368,26 @@ def matrix_reduce(M=None,
         threshold = spthresh * maxM
 
     if issparse(M):
-    # Zero out elements below threshold
-        M = prune_inplace(M, threshold)
+        # Zero out elements below threshold
+        if 'in' in prune:
+            M = prune_inplace(M, threshold)
+        else:
+            M = prune_inplace(M, threshold)
     else:
         M[np.abs(M.data) < threshold] = 0.
 
-
     if 'csr' in spformat.lower():
-        M = M.tocsr() #csr_array(M)
+        M = M.tocsr()  # csr_array(M)
     if 'csc' in spformat.lower():
-        M = M.tocsc()  #csc_array(M)
+        M = M.tocsc()  # csc_array(M)
     if 'coo' in spformat.lower():
-        M = M.tocoo() #coo_array(M)
+        M = M.tocoo()  # coo_array(M)
 
     if out:
-      
+
         print('matrix_reduce: New Format:', M.format)
         print('matrix_reduce: Shape:', M.shape)
-        print('matrix_reduce:' ,M.nnz,'nonzeros, ', 100*M.nnz/n**2, 'percent')
+        print('matrix_reduce:', M.nnz, 'nonzeros, ', 100*M.nnz/n**2, '%')
 
     check_sparse_matrix(M)
 
@@ -1442,7 +1412,6 @@ def check_sparse_matrix(M, condition=True):
     from scipy.sparse import csr_array, csc_array, coo_array, issparse
     from scipy.sparse import diags_array
 
-
     if M is None:
         sys.exit('check_sparse_matrix: No roughness matrix given! Exit.')
 
@@ -1452,13 +1421,14 @@ def check_sparse_matrix(M, condition=True):
     print('check_sparse_matrix: Type:', type(M))
     print('check_sparse_matrix: Format:', M.format)
     print('check_sparse_matrix: Shape:', M.shape)
-    print('check_sparse_matrix:',M.nnz,'nonzeros, ', 100*M.nnz/M.shape[0]**2, 'percent')
+    print('check_sparse_matrix:', M.nnz, 'nonzeros, ',
+          100*M.nnz/M.shape[0]**2, '%')
 
     if M.shape[0] == M.shape[1]:
         print('check_sparse_matrix: Matrix is square!')
         test = M - M.T
         print('   R-R^T max/min:', test.max(), test.min())
-        if test.max()+test.min()==0.:
+        if test.max()+test.min() == 0.:
             print('check_sparse_matrix: Matrix is symmetric!')
         else:
             print('check_sparse_matrix: Matrix is not symmetric!')
@@ -1466,14 +1436,12 @@ def check_sparse_matrix(M, condition=True):
     maxaM = np.amax(np.abs(M))
     minaM = np.amin(np.abs(M))
     print('check_sparse_matrix: M max/min:', M.max(), M.min())
-    print('check_sparse_matrix: M abs max/min:',maxaM, minaM)
+    print('check_sparse_matrix: M abs max/min:', maxaM, minaM)
 
     if np.any(np.abs(M.diagonal(0)) == 0):
         print('check_sparse_matrix: M diagonal element is 0!')
         print(np.abs(M.diagonal(0) == 0).nonzero())
         print(np.abs(M.diagonal(0) == 0))
-        
+
     print('check_sparse_matrix: Done!\n\n')
-    #condition = ???
-
-
+    # condition = ???
