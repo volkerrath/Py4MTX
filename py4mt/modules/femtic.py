@@ -1320,6 +1320,39 @@ def make_prior_cov(rough=None,
     return M
 
 
+def prune_inplace(M, threshold):
+    from scipy.sparse import csr_array, issparse
+    # ensure CSR for data/indices/indptr access
+    if issparse(M):
+        if not M.format == 'csr':  # isspmatrix_csr(M):
+            M = M.tocsr()
+    else:
+        M = csr_array(M)
+
+    # mark tiny entries as explicit zeros in data array
+    mask = np.abs(M.data) < threshold
+    if mask.any():
+        M.data[mask] = 0
+        M.eliminate_zeros()
+    return M
+
+
+def prune_rebuild(M, threshold):
+    from scipy.sparse import csr_array, issparse
+    # convert to COO format (triplet)
+    coo = M.tocoo()
+    absdata = np.abs(coo.data)
+    keep = absdata >= threshold
+    if not keep.all():
+        # build new CSR from filtered coordinates
+        M = csr_array((coo.data[keep], (coo.row[keep], coo.col[keep])),
+                                 shape=M.shape)
+        return M
+    else:
+        return M.tocsr()
+
+
+
 def matrix_reduce(M=None,
              howto='relative',
              spformat= 'csr',
@@ -1334,6 +1367,7 @@ def matrix_reduce(M=None,
     n, _ = np.shape(M)
 
     if issparse(M):
+        M = M.tocsr() #  coo_array(M)   
         if out:
             print('matrix_reduce: Matrix is sparse.')
             print('matrix_reduce: Type:', type(M))
@@ -1341,7 +1375,7 @@ def matrix_reduce(M=None,
             print('matrix_reduce: Shape:', M.shape)
 
     else:
-        M = coo_array(M)
+        M = csr_array(M) #  coo_array(M)
         if out:
             print('matrix_reduce: Matrix is dense.')
             print('matrix_reduce: Type:', type(M))
@@ -1350,11 +1384,11 @@ def matrix_reduce(M=None,
     if out:
         print('matrix_reduce:' ,M.nnz,'nonzeros, ', 100*M.nnz/n**2, 'percent')
 
-    test = M - M.T
-    if test.max()+test.min()==0.:
-        if out: print('matrix_reduce: Matrix is symmetric!')
-    else:
-        if out: print('matrix_reduce: Matrix is not symmetric!')
+    # test = M - M.T
+    # if test.max()+test.min()==0.:
+    #     if out: print('matrix_reduce: Matrix is symmetric!')
+    # else:
+    #     if out: print('matrix_reduce: Matrix is not symmetric!')
 
 
     if 'abs' in howto.lower():
@@ -1365,20 +1399,19 @@ def matrix_reduce(M=None,
         maxM = np.max(np.abs(M.data))
         threshold = spthresh * maxM
 
-    # Zero out elements below threshold
-    M.data[np.abs(M.data) < threshold] = 0.
-
-    # Remove stored zeros
     if issparse(M):
-        M.eliminate_zeros()
+    # Zero out elements below threshold
+        M = prune_inplace(M, threshold)
+    else:
+        M[np.abs(M.data) < threshold] = 0.
 
 
     if 'csr' in spformat.lower():
-        M = csr_array(M)
+        M = M.tocsr() #csr_array(M)
     if 'csc' in spformat.lower():
-        M = csc_array(M)
+        M = M.tocsc()  #csc_array(M)
     if 'coo' in spformat.lower():
-        M = coo_array(M)
+        M = M.tocoo() #coo_array(M)
 
     if out:
       
