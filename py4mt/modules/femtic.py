@@ -1097,7 +1097,7 @@ def get_roughness(filerough='roughening_matrix.out',
     from scipy.sparse import csr_array, csc_array, coo_array, eye_array
 
     start = time.perf_counter()
-    print('Reading from', filerough)
+    print('get_roughness: Reading from', filerough)
     irow = []
     icol = []
     vals  = []
@@ -1105,8 +1105,8 @@ def get_roughness(filerough='roughening_matrix.out',
         content = file.readlines()
 
     num_elem = int(content[0].split()[0])
-    print(' File read:', time.perf_counter() - start,'s')
-    print('Number of elements:',num_elem)
+    print('get_roughness: File read:', time.perf_counter() - start,'s')
+    print('get_roughness: Number of elements:',num_elem)
     
     
     iline = 0
@@ -1157,16 +1157,16 @@ def get_roughness(filerough='roughening_matrix.out',
     print(R.shape)
 
 
-    print('R sparse format is', R.format)
+    print('get_roughness: R sparse format is', R.format)
 
     if regeps is not None:
         R = R + regeps*eye_array(R.shape[0],format=R.format)
         if out:
             print(regeps, 'added to diag(R)')
 
-    print('R generated:', time.perf_counter() - start,'s')
+    print('get_roughness: R generated:', time.perf_counter() - start,'s')
     if out:
-        print('R sparse format is', R.format)
+        print('get_roughness: R sparse format is', R.format)
         print(R.shape, R.nnz)
 
 
@@ -1178,10 +1178,12 @@ def get_roughness(filerough='roughening_matrix.out',
         R = coo_array((vals, (irow, icol)))
 
     if out:
-        print('Output sparse format:', spformat)
-        print('R sparse format is', R.format)
+        print('get_roughness: Output sparse format:', spformat)
+        print('get_roughness: R sparse format is', R.format)
         print(R.shape, R.nnz)
-        print(R.nnz,'nonzeros, ', R.nnz/R.shape[0]**2, 'percent')
+        print(R.nnz,'nonzeros, ', 100*R.nnz/R.shape[0]**2, 'percent')
+        
+        print('get_roughness: Done!\n\n')
 
     return R
 
@@ -1250,8 +1252,8 @@ def make_prior_cov(rough=None,
     start = time.perf_counter()
 
     if out:
-        print('Shape of input roughness is',rough.shape)
-        print('Format of input roughness is',rough.format)
+        print('make_prior_cov: Shape of input roughness is',rough.shape)
+        print('make_prior_cov: Format of input roughness is',rough.format)
 
     if regeps is not None:
         rough = rough +regeps*eye_array(rough.shape[0], format=spformat.lower())
@@ -1286,8 +1288,8 @@ def make_prior_cov(rough=None,
         sys.exit('make_prior_cov: solver'+spsolver.lower()+'not available! Exit')
 
     if out:
-        print('invR generated:', time.perf_counter() - start,'s')
-        print('invR type', type(invR))
+        print('make_prior_cov: invR generated:', time.perf_counter() - start,'s')
+        print('make_prior_cov: invR type', type(invR))
         #print('invR format', invR.format)
 
     if spthresh is not None:
@@ -1306,10 +1308,14 @@ def make_prior_cov(rough=None,
 
     if out:
 
-        print('M generated:', time.perf_counter() - start,'s')
-        print('M is',outmatrix)
-        print('M', type(M))
+        print('make_prior_cov: M generated:', time.perf_counter() - start,'s')
+        print('make_prior_cov: M is',outmatrix)
+        print('make_prior_cov: M', type(M))
         print('M', M.format)
+        
+        
+    
+    print('make_prior_cov:  Done!\n\n')
 
     return M
 
@@ -1317,7 +1323,8 @@ def make_prior_cov(rough=None,
 def matrix_reduce(M=None,
              howto='relative',
              spformat= 'csr',
-             spthresh=1.e-6):
+             spthresh=1.e-6,
+             out=True):
 
     from scipy.sparse import csr_array, csc_array, coo_array, issparse
 
@@ -1327,25 +1334,27 @@ def matrix_reduce(M=None,
     n, _ = np.shape(M)
 
     if issparse(M):
-        print('Matrix is sparse.')
-        n = M.shape[0]
-        print('Type:', type(M))
-        print('Format:', M.format)
-        print('Shape:', M.shape)
+        if out:
+            print('matrix_reduce: Matrix is sparse.')
+            print('matrix_reduce: Type:', type(M))
+            print('matrix_reduce: Format:', M.format)
+            print('matrix_reduce: Shape:', M.shape)
 
     else:
-        print('Matrix is dense.')
-        print('Type:', type(M))
-        print('Shape:', np.shape(M))
         M = coo_array(M)
+        if out:
+            print('matrix_reduce: Matrix is dense.')
+            print('matrix_reduce: Type:', type(M))
+            print('matrix_reduce: Shape:', np.shape(M))
 
-    print(M.nnz,'nonzeros, ', M.nnz/n**2, 'percent')
+    if out:
+        print('matrix_reduce:' ,M.nnz,'nonzeros, ', 100*M.nnz/n**2, 'percent')
 
     test = M - M.T
     if test.max()+test.min()==0.:
-        print('Matrix is symmetric!')
+        if out: print('matrix_reduce: Matrix is symmetric!')
     else:
-        print('Matrix is not symmetric!')
+        if out: print('matrix_reduce: Matrix is not symmetric!')
 
 
     if 'abs' in howto.lower():
@@ -1371,13 +1380,15 @@ def matrix_reduce(M=None,
     if 'coo' in spformat.lower():
         M = coo_array(M)
 
-
-    print('New Format:', M.format)
-    print('Shape:', M.shape)
-    print(M.nnz,'nonzeros, ', 100*M.nnz/n**2, 'percent')
+    if out:
+      
+        print('matrix_reduce: New Format:', M.format)
+        print('matrix_reduce: Shape:', M.shape)
+        print('matrix_reduce:' ,M.nnz,'nonzeros, ', 100*M.nnz/n**2, 'percent')
 
     check_sparse_matrix(M)
 
+    print('matrix_reduce: Done!\n\n')
     return M
 
 
@@ -1405,48 +1416,31 @@ def check_sparse_matrix(M, condition=True):
     if not issparse(M):
         sys.exit('check_sparse_matrix: Roughness matrix is not sparse! Exit.')
 
-    print('Type:', type(M))
-    print('Format:', M.format)
-    print('Shape:', M.shape)
-    print(M.nnz,'nonzeros, ', 100*M.nnz/M.shape[0]**2, 'percent')
+    print('check_sparse_matrix: Type:', type(M))
+    print('check_sparse_matrix: Format:', M.format)
+    print('check_sparse_matrix: Shape:', M.shape)
+    print('check_sparse_matrix:',M.nnz,'nonzeros, ', 100*M.nnz/M.shape[0]**2, 'percent')
 
     if M.shape[0] == M.shape[1]:
-        print('Matrix is square!')
+        print('check_sparse_matrix: Matrix is square!')
         test = M - M.T
-        print('R-R^T max/min:', test.max(), test.min())
+        print('   R-R^T max/min:', test.max(), test.min())
         if test.max()+test.min()==0.:
-            print('Matrix is symmetric!')
+            print('check_sparse_matrix: Matrix is symmetric!')
         else:
-            print('Matrix is not symmetric!')
+            print('check_sparse_matrix: Matrix is not symmetric!')
 
     maxaM = np.amax(np.abs(M))
     minaM = np.amin(np.abs(M))
-    print('M max/min:', M.max(), M.min())
-    print('M abs max/min:',maxaM, minaM)
+    print('check_sparse_matrix: M max/min:', M.max(), M.min())
+    print('check_sparse_matrix: M abs max/min:',maxaM, minaM)
 
     if np.any(np.abs(M.diagonal(0)) == 0):
-        print('M diagonal element is 0!')
+        print('check_sparse_matrix: M diagonal element is 0!')
         print(np.abs(M.diagonal(0) == 0).nonzero())
         print(np.abs(M.diagonal(0) == 0))
-
+        
+    print('check_sparse_matrix: Done!\n\n')
     #condition = ???
 
 
-#def plot_coo_array(m):
-    #from scipy.sparse import csr_array, csc_array, coo_array, issparse
-    #import matplotlib.pyplot as plt
-    #if not isinstance(m, coo_array):
-        #m = coo_array(m)
-    #fig = plt.figure()
-    #ax = fig.add_subplot(111, facecolor='black')
-    #ax.plot(m.col, m.row, 's', color='white', ms=1)
-    #ax.set_xlim(0, m.shape[1])
-    #ax.set_ylim(0, m.shape[0])
-    #ax.set_aspect('equal')
-    #for spine in ax.spines.values():
-        #spine.set_visible(False)
-    #ax.invert_yaxis()
-    #ax.set_aspect('equal')
-    #ax.set_xticks([])
-    #ax.set_yticks([])
-    #return ax
