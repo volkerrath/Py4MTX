@@ -745,7 +745,7 @@ def plot_matrix(
 
     return ax
 
-def plot_sparse(
+def plot_sparsity_pattern(
         PlotFile = '',
         PlotTitle = '$\mathbf{M}$, Sparsity Pattern',
         PlotFormat = ['png', '.pdf'],
@@ -753,9 +753,7 @@ def plot_sparse(
         Matrix = [],
         PlotStrng='',
         StrngPos=[0.05,0.05],
-        Aspect = 'auto',
-        Invalid=1.e30,
-        Transpose=False):
+        Aspect = 'auto'):
 
     from scipy.sparse import csr_array, csc_array, coo_array, eye_array, issparse
     from scipy.sparse import csr_matrix, csc_matrix, coo_matrix
