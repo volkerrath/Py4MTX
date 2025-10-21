@@ -752,7 +752,7 @@ def plot_sparsity_pattern(
         FigSize = [8.5*0.3937, 8.5*0.3937],
         Matrix = [],
         PlotStrng='',
-        StrngPos=[0.05,0.05],
+        PlotStrngPos=[0.05,0.05],
         Aspect = 'auto'):
 
     from scipy.sparse import csr_array, csc_array, coo_array, eye_array, issparse
@@ -773,7 +773,7 @@ def plot_sparsity_pattern(
                'color_full': 'black'} 
     
     fig, ax = spy_to_mpl(M, **options)
-    
+    fig.text(PlotStrngPos[0], PlotStrngPos[1],PlotStrng)
     fig.show()
 
     for fmt in PlotFormat:
