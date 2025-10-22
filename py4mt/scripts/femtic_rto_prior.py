@@ -82,7 +82,7 @@ RoughFile = WorkDir +MatrixIn+'_'+FormatIn+'.npz'
 Alpha = 1.
 Factor = 1./Alpha**2
 RegEps = 1.e-4
-Sparsify = [1.e-6, 128]
+Sparsify = [1.e-6, 64]
 MatrixOut = 'invRTR_'+str(int(np.abs(np.log10(Sparsify[0]))))+'-'+str(Sparsify[1])
 FormatOut = 'csr'
 
@@ -102,6 +102,7 @@ M = fem.make_prior_cov(rough=R,
                           spformat = FormatOut,
                           spthresh = Sparsify[0],
                           spfill = Sparsify[1],
+                          
                           spsolver = 'ilu',
                           spmeth = 'basic,area',
                           nthreads = n_threads,

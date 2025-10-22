@@ -1395,9 +1395,9 @@ def matrix_reduce(M=None,
         if 'in' in prune:
             M = prune_inplace(M, threshold)
         else:
-            M = prune_inplace(M, threshold)
+            M = prune_rebuild(M, threshold)
     else:
-        M = dense_to_csr()
+        M = dense_to_csr(M, threshold=threshold, chunk_rows=10000)
 
     if 'csr' in spformat.lower():
         M = M.tocsr()  # csr_array(M)
