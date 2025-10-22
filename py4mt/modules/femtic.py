@@ -1321,7 +1321,7 @@ def prune_rebuild(M, threshold):
         return M.tocsr()
     
 def dense_to_csr(M, threshold=0.0, chunk_rows=1000, dtype=None):
-    from scipy.sparse import csr_array, issparse
+    from scipy.sparse import csr_array
     # from collections import deque
     rows_list = []
     cols_list = []
@@ -1359,6 +1359,9 @@ def save_spilu(filename='ILU.npz', ILU=None):
     Returns
     -------
     None.
+    
+    Load with:
+        load_spilu(ILU=ILU)
     
     
     vrath + copilot  Oct 22, 2025
