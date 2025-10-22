@@ -1026,8 +1026,8 @@ def get_volumes(dx=None, dy=None, dz=None, mval=None, out=True):
 
 
 def get_topo(dx=None, dy=None, dz=None, mval=None,
-             ref= [0., 0., 0.],
-             mvalair = 1.e17,
+             ref=[0., 0., 0.],
+             mvalair=1.e17,
              out=True):
     '''
 
@@ -1055,8 +1055,7 @@ def get_topo(dx=None, dy=None, dz=None, mval=None,
         Elevation values
 
     '''
-    nx, ny,nz = np.shape(mval)
-
+    nx, ny, nz = np.shape(mval)
 
     x = np.append(0.0, np.cumsum(dx))
     xcnt = 0.5 * (x[0:nx] + x[1:nx+1]) + ref[0]
@@ -1069,9 +1068,9 @@ def get_topo(dx=None, dy=None, dz=None, mval=None,
     topo = np.zeros((nx, ny))
     for ii in np.arange(nx):
         for jj in np.arange(ny):
-            col = mval[ii,jj,:]
-            nsurf = np.argmax(col<mvalair)
-            topo[ii, jj]= ztop[nsurf]
+            col = mval[ii, jj, :]
+            nsurf = np.argmax(col < mvalair)
+            topo[ii, jj] = ztop[nsurf]
 
     if out:
         print(
@@ -1079,7 +1078,12 @@ def get_topo(dx=None, dy=None, dz=None, mval=None,
 
     return xcnt, ycnt, topo
 
-def read_mod(file=None, modext='.rho', trans='LINEAR', blank=1.e-30, out=True):
+
+def read_mod(file=None, 
+             modext='.rho', 
+             trans='LINEAR', 
+             blank=1.e-30, 
+             out=True):
     '''
     Read ModEM model input.
 
@@ -1089,7 +1093,6 @@ def read_mod(file=None, modext='.rho', trans='LINEAR', blank=1.e-30, out=True):
     last changed: Aug 31, 2023
 
     '''
-
 
     modf = file+modext
 
@@ -1106,10 +1109,8 @@ def read_mod(file=None, modext='.rho', trans='LINEAR', blank=1.e-30, out=True):
 
     mval = np.array([])
     for line in lines[5:-2]:
-        line = np.flipud(line) #  np.fliplr(line)
+        line = np.flipud(line)  # np.fliplr(line)
         mval = np.append(mval, np.array([float(sub) for sub in line]))
-
-
 
     if out:
         print('values in ' + file + ' are: ' + trns)
@@ -1124,10 +1125,8 @@ def read_mod(file=None, modext='.rho', trans='LINEAR', blank=1.e-30, out=True):
         print('Transformation: ' + trns + ' not defined!')
         sys.exit(1)
 
-
     # here mval should be in physical units, not log...
-    mval[np.where(np.abs(mval)<blank)]=blank
-
+    mval[np.where(np.abs(mval) < blank)] = blank
 
     if 'loge' in trans.lower() or 'ln' in trans.lower():
         mval = np.log(mval)
@@ -1144,16 +1143,100 @@ def read_mod(file=None, modext='.rho', trans='LINEAR', blank=1.e-30, out=True):
 
     mval = mval.reshape(dims, order='F')
 
-
     reference = [float(sub) for sub in lines[-2][0:3]]
 
     if out:
         print(
             'read_model: %i x %i x %i model read from %s' % (nx, ny, nz, file))
 
-
-
     return dx, dy, dz, mval, reference, trans
+
+
+def read_mod_aniso(file=None, 
+                   components=3, 
+                   modext='.rho', 
+                   trans='LINEAR', 
+                   blank=1.e-30, 
+                   out=True):
+    '''
+    Read ModEM model input.
+
+
+    author: vrath
+    last changed: Oct 22, 2025
+
+    '''
+
+    modf = file+modext
+
+    with open(modf, 'r') as f:
+        lines = f.readlines()
+
+    lines = [line.split() for line in lines]
+    dims = [int(sub) for sub in lines[1][0:3]]
+    nx, ny, nz = dims
+    trns = lines[1][4]
+    dx = np.array([float(sub) for sub in lines[2]])
+    dy = np.array([float(sub) for sub in lines[3]])
+    dz = np.array([float(sub) for sub in lines[4]])
+    if out:
+        print('values in ' + file + ' are: ' + trns)
+    
+
+    mcomps = []
+    for icmp in np.arange(components):
+        mval = np.array([])
+        for line in lines[5:-2]:
+            line = np.flipud(line)  # np.fliplr(line)
+            mval = np.append(mval, np.array([float(sub) for sub in line]))
+    
+    
+        if out:
+            print(
+            'read_model %i : %i x %i x %i model read from %s' % (icmp, nx, ny, nz, file))
+
+
+        if trns == 'LOGE':
+            mval = np.exp(mval)
+        elif trns == 'LOG10':
+            mval = np.power(10.0, mval)
+        elif trns == 'LINEAR':
+            pass
+        else:
+            print('Transformation: ' + trns + ' not defined!')
+            sys.exit(1)
+    
+        # here mval should be in physical units, not log...
+        mval[np.where(np.abs(mval) < blank)] = blank
+    
+        if 'loge' in trans.lower() or 'ln' in trans.lower():
+            mval = np.log(mval)
+            if out:
+                print('values transformed to: ' + trans)
+        elif 'log10' in trans.lower():
+            mval = np.log10(mval)
+            if out:
+                print('values transformed to: ' + trans)
+        else:
+            if out:
+                print('values transformed to: ' + trans)
+            pass
+    
+        mval = mval.reshape(dims, order='F')
+        
+        if components>1:
+            mcomps.append(mval)
+        else:
+            mcomps = mval
+        
+    
+    reference = [float(sub) for sub in lines[-2][0:3]]
+
+
+    return dx, dy, dz, mcomps, reference, trans
+
+
+
 
         # if trim:
         #     for ix in range(trim[0]):
