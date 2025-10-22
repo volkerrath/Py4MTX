@@ -1254,6 +1254,7 @@ def make_prior_cov(rough=None,
             beg = time.perf_counter()
             invR = iluR.solve(RHS.toarray())
             print('spilu solved:', time.perf_counter() - beg, 's')
+        
     else:
         sys.exit('make_prior_cov: solver' +
                  spsolver.lower()+'not available! Exit')
@@ -1342,6 +1343,65 @@ def dense_to_csr(M, threshold=0.0, chunk_rows=1000, dtype=None):
     cols = np.concatenate(cols_list)
     data = np.concatenate(data_list)
     return csr_array((data, (rows, cols)), shape=M.shape)
+
+
+def save_spilu(filename='ILU.npz', ILU=None):
+    '''
+    Save spilu decomposition (ILU object) to a single .npz file."""
+
+    Parameters
+    ----------
+    filename : str, optional
+        The default is 'ILU.npz'.
+    ILU : ILU object
+        The default is None.
+
+    Returns
+    -------
+    None.
+    
+    
+    vrath + copilot  Oct 22, 2025
+
+    '''
+    if ILU is None:
+        sys.exit('No ILU object given! Exit.')
+        
+    np.savez(filename,
+             L_data=ILU.L.data, L_indices=ILU.L.indices,
+             L_indptr=ILU.L.indptr, L_shape=ILU.L.shape,
+             U_data=ILU.U.data, U_indices=ILU.U.indices,
+             U_indptr=ILU.U.indptr, U_shape=ILU.U.shape,
+             perm_r=ILU.perm_r, perm_c=ILU.perm_c)
+
+
+def load_spilu(filename='ILU.npz'):
+    '''
+    Load spilu decomposition components from a .npz file.
+
+    Parameters
+    ----------
+    filename : str
+        npz file (default is 'ILU.npz')
+
+    Returns
+    -------
+    L, U, perm_r, perm_c : 
+        Data from ILU decomposition object
+
+    vrath + copilot  Oct 22, 2025
+    '''
+    from scipy.sparse import csc_array
+    
+    data = np.load(filename)
+    L = csc_array((data["L_data"], data["L_indices"], data["L_indptr"]),
+                  shape=tuple(data["L_shape"]))
+    U = csc_array((data["U_data"], data["U_indices"], data["U_indptr"]),
+                  shape=tuple(data["U_shape"]))
+    perm_r = data["perm_r"]
+    perm_c = data["perm_c"]
+    
+    return L, U, perm_r, perm_c
 
 
 def matrix_reduce(M=None,
