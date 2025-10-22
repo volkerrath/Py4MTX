@@ -1314,11 +1314,34 @@ def prune_rebuild(M, threshold):
     keep = absdata >= threshold
     if not keep.all():
         # build new CSR from filtered coordinates
-        M = csr_array((coo.data[keep], (coo.row[keep], coo.col[keep])),
+        return csr_array((coo.data[keep], (coo.row[keep], coo.col[keep])),
                       shape=M.shape)
-        return M
     else:
         return M.tocsr()
+    
+def dense_to_csr(M, threshold=0.0, chunk_rows=1000, dtype=None):
+    from scipy.sparse import csr_array, issparse
+    # from collections import deque
+    rows_list = []
+    cols_list = []
+    data_list = []
+    nrows = M.shape[0]
+    for r0 in range(0, nrows, chunk_rows):
+        r1 = min(nrows, r0 + chunk_rows)
+        block = M[r0:r1]
+        mask = np.abs(block) > threshold
+        rr, cc = np.nonzero(mask)
+        rows_list.append((rr + r0).astype(np.int64))
+        cols_list.append(cc.astype(np.int64))
+        data_list.append(block[rr, cc].astype(dtype if dtype is not None else M.dtype))
+        
+    if not rows_list:
+        return csr_array(M.shape, dtype=dtype if dtype is not None else M.dtype)
+    
+    rows = np.concatenate(rows_list)
+    cols = np.concatenate(cols_list)
+    data = np.concatenate(data_list)
+    return csr_array((data, (rows, cols)), shape=M.shape)
 
 
 def matrix_reduce(M=None,
@@ -1374,7 +1397,7 @@ def matrix_reduce(M=None,
         else:
             M = prune_inplace(M, threshold)
     else:
-        M[np.abs(M.data) < threshold] = 0.
+        M = dense_to_csr()
 
     if 'csr' in spformat.lower():
         M = M.tocsr()  # csr_array(M)
