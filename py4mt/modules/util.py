@@ -753,6 +753,105 @@ def fractrans(m=None, x=None , a=0.5):
     return mm
 
 
+def calc_lc_corner(dnorm=np.array([]), mnorm=np.array([])):
+    '''
+    Calculates corner of thhe L-curve.
+
+    Parameters
+    ----------
+    dnorm                   data norm
+    mnorm                   Generalized inverse times J^T
+
+    Returns
+    -------
+    lcc_val                 value of gcv function)
+
+    see:
+
+        Per Christian Hansen:
+        Discrete Inverse Problems: Insight and Algorithms
+        SIAM, Philadelphia, 2010
+
+        Per Christian Hansen:
+        The L-Curve and its Use in the Numerical Treatment of Inverse Problems
+        In: P. Johnston ,Computational Inverse Problems in Electrocardiology
+        WIT Press, 2001
+        119-142
+
+        Per Christian Hansen:
+        Rank Deficient and Discrete Ill-Posed Problems
+        SIAM, Philadelphia, 1998
+
+    VR June 2022
+    '''
+    if (np.size(dnorm) == 0) or (np.size(mnorm) == 0):
+        sys.exit('calc_lcc: parameters missing! Exit.')
+
+    lcurvature = curvature(np.log(dnorm), np.log(mnorm))
+
+    indexmax = np.argmax(lcurvature)
+
+    return indexmax
+
+def curvature(x_data, y_data):
+    '''
+    Calculates curvature for all interior points
+    on a curve whose coordinates are provided
+    Used for l-curve corner estimation.
+    Input:
+        - x_data: list of n x-coordinates
+        - y_data: list of n y-coordinates
+    Output:
+        - curvature: list of n-2 curvature values
+
+    originally written by Hunter Ratliff on 2019-02-03
+    '''
+    curvature = []
+    for i in range(1, len(x_data)-1):
+        R = circumradius(x_data[i-1:i+2], y_data[i-1:i+2])
+        if (R == 0):
+            print('Failed: points are either collinear or not distinct')
+            return 0
+        curvature.append(1/R)
+    return curvature
+
+
+def circumradius(xvals, yvals):
+    '''
+    Calculates the circumradius for three 2D points
+
+    originally written by Hunter Ratliff on 2019-02-03
+    '''
+    x1, x2, x3, y1, y2, y3 = xvals[0], xvals[1], xvals[2], yvals[0], yvals[1], yvals[2]
+    den = 2.*((x2-x1)*(y3-y2)-(y2-y1)*(x3-x2))
+    num = ((((x2-x1)**2) + ((y2-y1)**2))
+           * (((x3-x2)**2)+((y3-y2)**2))
+           * (((x1-x3)**2)+((y1-y3)**2)))**(0.5)
+    if (den == 0.):
+        print('Failed: points are either collinear or not distinct')
+        return 0.
+    R = abs(num/den)
+
+    return R
+
+
+def circumcenter(xvals, yvals):
+    '''
+    Calculates the circumcenter for three 2D points
+
+    originally written by Hunter Ratliff on 2019-02-03
+    '''
+    x1, x2, x3, y1, y2, y3 = xvals[0], xvals[1], xvals[2], yvals[0], yvals[1], yvals[2]
+    A = 0.5*((x2-x1)*(y3-y2)-(y2-y1)*(x3-x2))
+    if (A == 0):
+        print('Failed: points are either collinear or not distinct')
+        return 0
+    xnum = ((y3 - y1)*(y2 - y1)*(y3 - y2)) - \
+        ((x2**2 - x1**2)*(y3 - y2)) + ((x3**2 - x2**2)*(y2 - y1))
+    x = xnum/(-4*A)
+    y = (-1*(x2 - x1)/(y2 - y1))*(x-0.5*(x1 + x2)) + 0.5*(y1 + y2)
+    return x, y
+
 def calc_resnorm(data_obs=None, data_calc=None, data_std=None, p=2):
     '''
     Calculate the p-norm of the residuals.
