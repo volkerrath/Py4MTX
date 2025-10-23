@@ -24,6 +24,7 @@ import inspect
 # Import numerical or other specialised modules
 import numpy as np
 # from mtpy.core.mt import MT
+from scipy.interpolate import RegularGridInterpolator
 
 # add py4mt modules to pythonpath
 mypath = ['/home/vrath/Py4MT/py4mt/modules/',
@@ -55,73 +56,42 @@ fname = inspect.getfile(inspect.currentframe())
 titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng+'\n\n')
 
-Anisotropy = True
-
+Components = 3
+UseAniso = True
+    
 
 WorkDir = '/home/vrath/FEMTIC_work/test/'  # PY4MTX_DATA+'Misti/MISTI_test/'
 ModFile = [WorkDir+'/Peru/1_feb_ell/TAC_100']
 
-rho = []
-if Anisotropy:
-    dx, dy, dz, rhotmp, refmod, _ = mod.read_mod_aniso(
-        ModFile, '.rho', trans='log10')
-    print(' read model from %s ' % (ModFile + '.rho'))
-    # rhotmp = mod.prepare_model(rhotmp, rhoair=rhoair)
-
-else:
-    dx, dy, dz, rhotmp, refmod, _ = mod.read_mod(
-        ModFile, '.rho', trans='log10')
-    print(' read model from %s ' % (ModFile + '.rho'))
-    # rhotmp = mod.prepare_model(rhotmp, rhoair=rhoair)
-    rho.append(rhotmp)
-
-aircells = np.where(rho > rhoair/10)
 PlotFile = WorkDir+'XXX'
 
 
-# function [nx, ny, nz] = write_WS3d_model_P3(fname,x,y,z,rho,nzAir,type,origin,rotation)
-# % writes a 3D resistivity model in Weerachai Siripunvaraporn's format;
-# % allows for natural log resistivity by setting type = 'LOGE'
-# %  (c) Anna Kelbert, 2009
-# %  open file for output
-# fid = fopen(fname,'w');
-# [nx, ny, nz, na] = size(rho); na = 3;
-# if nargin <= 8
-#     type = 'LOGE';
-# end
-# % output file
-# comment = 'Written by Matlab write_WS3d_model script';
-# fprintf(fid, '# %s\n', comment);
-# fprintf(fid, '%d %d %d %d %s\n', nx, ny, nz, 0, type);
-# for j = 1:nx
-#     status = fprintf(fid,'%G ',x(j));
-# end
-# fprintf(fid, '\n');
-# for j = 1:ny
-#     status = fprintf(fid,'%G ',y(j));
-# end
-# fprintf(fid, '\n');
-# for j = 1:nz
-#     status = fprintf(fid,'%G ',z(j));
-# end
-# fprintf(fid, '\n');
-# for ia = 1:na
-#     for k = 1:nz
-#         fprintf(fid,'\n');
-#         for j = 1:ny
-#             % x index incremented fastest
-#             for i = nx:-1:1
-#                 fprintf(fid,'%15.5E',rho(i,j,k,ia));
-#             end
-#             fprintf(fid, '\n');
-#         end
-#     end
-# end
-# %  add origin, rotation angle to end
-# if nargin <= 8
-#     origin = [0 0 0];
-#     rotation = 0;
-# end
-# fprintf(fid, '%d %d %d\n', origin);
-# fprintf(fid, '%d\n', rotation);
-# status = fclose(fid);
+rho = []
+
+dx, dy, dz, rho, refmod, _ = mod.read_mod_aniso(
+    ModFile,
+    components=Components,
+    trans='log10')
+print(' read',str(Components),' model components from %s ' % (ModFile + '.rho'))
+# rhotmp = mod.prepare_model(rhotmp, rhoair=rhoair)
+
+print(np.shape(rho))
+aircells = np.where(rho > rhoair/10)
+
+rho_ref = np.mean(rho, axis=0)
+print(np.shape(rho_ref))
+
+
+# get cell centers
+
+# to meshgrid
+
+for ii in np.arange(np.shape(rho)[0]):
+    # do something
+
+
+
+
+
+
+
