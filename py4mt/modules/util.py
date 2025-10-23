@@ -924,7 +924,31 @@ def rot_full(T, angle_deg_x, angle_deg_y, angle_deg_z):
     T_rot = rot @ T0 @ rot.T
     return T_rot
 
+def imp_to_vec(z=None):
+    '''
+    
 
+    Parameters
+    ----------
+    z : complex
+        Default is None.
+
+    Returns
+    -------
+    interlaced : float
+        interlaced resl vector from elements of z
+
+    '''
+    if z is None:
+        sys.exit('imp_to_vec : No z given! Exit.')
+        
+    z = z.flat
+    # Create interlaced array: [Re0, Im0, Re1, Im1, Re2, Im2, ...]
+    interlaced = np.empty(z.size * 2, dtype=z.real.dtype)
+    interlaced[0::2] = z.real
+    interlaced[1::2] = z.imag
+    
+    return interlaced
 
 def make_pdf_catalog(workdir='./', pdflist= None, filename=None):
     '''
