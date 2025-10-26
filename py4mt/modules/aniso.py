@@ -1,173 +1,355 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Oct 23 15:08:41 2025
-
-@author: vrath
-"""
 import numpy as np
-import math
+"""
+module for 1-D anisotropic mt calculations
+based on:
 
+     Pek, J. and Santos, F. A. M., 2002. Magnetotelluric impedances and
+         parametric sensitivities for 1-D generally anisotropic layered 
+         media, Computers & Geosciences, 28
+         doi:10.1016/S0098-3004(02)00014-6
+         https://doi.org/10.1016/S0098-3004(02)00014-6}
+    
+    python routines translated with the help of CoPilot
+    
+    vr, Oct 26, 2025
+"""
 
-def dphase(Z):
+def zs1anis(
+    layani, h, rop, ustr, udip, usla, al, at, blt, nl, per,
+    z, dzdal, dzdat, dzdbs, dzdh,
+    dzdsgpx, dzdsgpy, dzdsgpz, dzdstr, dzddip, dzdsla
+):
     """
-    Computes the phase (angle) of a complex number z16 in radians,
-    using atan2 for robust quadrant handling.
-    """
-    return math.atan2(Z.imag, Z.real)
-
-
-def cpanis(rop, ustr, udip, usla):
-    """
-    Computes effective azimuthal anisotropy parameters from principal resistivities
-    and Euler angles for a stack of anisotropic layers.
+    Compute impedance tensor and sensitivities including geographic and orientation parameters.
 
     Parameters:
-    ----------
-    rop : ndarray of shape (nl, 3)
-        Principal resistivities [Ohm·m]
-    ustr, udip, usla : ndarray of shape (nl,)
-        Euler angles [degrees]: strike, dip, slant
-
-    Returns:
-    -------
-    sg : ndarray of shape (nl, 3, 3)
-        Conductivity tensors [S/m]
-    al : ndarray of shape (nl,)
-        Maximum effective horizontal conductivities [S/m]
-    at : ndarray of shape (nl,)
-        Minimum effective horizontal conductivities [S/m]
-    blt : ndarray of shape (nl,)
-        Effective horizontal anisotropy strike [radians]
+        layani : (nl,) int array
+        h      : (nl,) float array - layer thicknesses
+        rop    : (nl, 3) float array - survey positions (x, y, z)
+        ustr   : (nl,) float array - strike angles (radians)
+        udip   : (nl,) float array - dip angles (radians)
+        usla   : (nl,) float array - slant angles (radians)
+        al, at : (nl,) float arrays - principal conductivities
+        blt    : (nl,) float array - anisotropy strike
+        per    : float - period
+        z      : (2, 2) complex array - output impedance tensor
+        dzdal, dzdat, dzdbs, dzdh : (nl, 2, 2) complex arrays - parametric sensitivities
+        dzdsgpx, dzdsgpy, dzdsgpz, dzdstr, dzddip, dzdsla : (nl, 2, 2) complex arrays - geographic sensitivities
     """
-    pi = np.pi
-    nl = rop.shape[0]
-    sg = np.zeros((nl, 3, 3), dtype=np.float64)
-    al = np.zeros(nl, dtype=np.float64)
-    at = np.zeros(nl, dtype=np.float64)
-    blt = np.zeros(nl, dtype=np.float64)
+    for i in range(nl):
+        # Extract orientation and location
+        strike = ustr[i]
+        dip = udip[i]
+        slant = usla[i]
+        sgpx, sgpy, sgpz = rop[i]
 
-    sgp = 1.0 / rop.astype(np.float64)
+        # Rotate conductivity tensor and compute derivatives
+        sigma, dsigma_dstrike, dsigma_ddip, dsigma_dslant = rotate_conductivity_tensor_with_derivatives(
+            al[i], at[i], strike, dip, slant
+        )
 
-    for layer in range(nl):
-        rstr = pi * ustr[layer] / 180.0
-        rdip = pi * udip[layer] / 180.0
-        rsla = pi * usla[layer] / 180.0
+        # Extract 2D impedance-plane components
+        axx, axy, ayy = sigma[0, 0], sigma[0, 1], sigma[1, 1]
+        daxx_dstr, daxy_dstr, dayy_dstr = dsigma_dstrike[0, 0], dsigma_dstrike[0, 1], dsigma_dstrike[1, 1]
+        daxx_ddip, daxy_ddip, dayy_ddip = dsigma_ddip[0, 0], dsigma_ddip[0, 1], dsigma_ddip[1, 1]
+        daxx_dsla, daxy_dsla, dayy_dsla = dsigma_dslant[0, 0], dsigma_dslant[0, 1], dsigma_dslant[1, 1]
 
-        sps, cps = np.sin(rstr), np.cos(rstr)
-        sth, cth = np.sin(rdip), np.cos(rdip)
-        sfi, cfi = np.sin(rsla), np.cos(rsla)
+        # Store geographic sensitivities
+        dzdstr[i]  = np.array([[daxx_dstr, daxy_dstr], [daxy_dstr, dayy_dstr]], dtype=np.complex128)
+        dzddip[i]  = np.array([[daxx_ddip, daxy_ddip], [daxy_ddip, dayy_ddip]], dtype=np.complex128)
+        dzdsla[i]  = np.array([[daxx_dsla, daxy_dsla], [daxy_dsla, dayy_dsla]], dtype=np.complex128)
 
-        pom1 = sgp[layer, 0] * cfi**2 + sgp[layer, 1] * sfi**2
-        pom2 = sgp[layer, 0] * sfi**2 + sgp[layer, 1] * cfi**2
-        pom3 = (sgp[layer, 0] - sgp[layer, 1]) * sfi * cfi
+        # Placeholder: sensitivities w.r.t. survey position (assumed zero unless spatial variation is modeled)
+        dzdsgpx[i] = np.zeros((2, 2), dtype=np.complex128)
+        dzdsgpy[i] = np.zeros((2, 2), dtype=np.complex128)
+        dzdsgpz[i] = np.zeros((2, 2), dtype=np.complex128)
 
-        c2ps, s2ps = cps**2, sps**2
-        c2th, s2th = cth**2, sth**2
-        csps, csth = cps * sps, cth * sth
+        # Update al, at, blt with rotated tensor components if needed
+        al[i] = axx
+        at[i] = ayy
+        blt[i] = 0.5 * np.arctan2(2 * axy, axx - ayy)  # Effective anisotropy strike
 
-        # Conductivity tensor
-        sg[layer, 0, 0] = pom1 * c2ps + pom2 * s2ps * c2th - \
-            2.0 * pom3 * cth * csps + sgp[layer, 2] * s2th * s2ps
-        sg[layer, 0, 1] = pom1 * csps - pom2 * c2th * csps + \
-            pom3 * cth * (c2ps - s2ps) - sgp[layer, 2] * s2th * csps
-        sg[layer, 0, 2] = -pom2 * csth * sps + pom3 * \
-            sth * cps + sgp[layer, 2] * csth * sps
-        sg[layer, 1, 0] = sg[layer, 0, 1]
-        sg[layer, 1, 1] = pom1 * s2ps + pom2 * c2ps * c2th + \
-            2.0 * pom3 * cth * csps + sgp[layer, 2] * s2th * c2ps
-        sg[layer, 1, 2] = pom2 * csth * cps + pom3 * \
-            sth * sps - sgp[layer, 2] * csth * cps
-        sg[layer, 2, 0] = sg[layer, 0, 2]
-        sg[layer, 2, 1] = sg[layer, 1, 2]
-        sg[layer, 2, 2] = pom2 * s2th + sgp[layer, 2] * c2th
+    # Call zs1anef to compute impedance and parametric sensitivities
+    z, dzdal, dzdat, dzdbs, dzdh = zs1anef(layani, h, al, at, blt, nl, per)
 
-        # Effective horizontal conductivity tensor
-        axx = sg[layer, 0, 0] - sg[layer, 0, 2] * \
-            sg[layer, 2, 0] / sg[layer, 2, 2]
-        axy = sg[layer, 0, 1] - sg[layer, 0, 2] * \
-            sg[layer, 2, 1] / sg[layer, 2, 2]
-        ayx = sg[layer, 1, 0] - sg[layer, 2, 0] * \
-            sg[layer, 1, 2] / sg[layer, 2, 2]
-        ayy = sg[layer, 1, 1] - sg[layer, 1, 2] * \
-            sg[layer, 2, 1] / sg[layer, 2, 2]
+    return z, dzdal, dzdat, dzdbs, dzdh, dzdsgpx, dzdsgpy, dzdsgpz, dzdstr, dzddip, dzdsla
 
-        da12 = np.sqrt((axx - ayy)**2 + 4.0 * axy * ayx)
-        al[layer] = 0.5 * (axx + ayy + da12)
-        at[layer] = 0.5 * (axx + ayy - da12)
-
-        # Anisotropy strike
-        if da12 >= np.finfo(float).tiny:
-            blt[layer] = 0.5 * np.arccos((axx - ayy) / da12)
-        else:
-            blt[layer] = 0.0
-        if axy < 0.0:
-            blt[layer] = -blt[layer]
-
-    return sg, al, at, blt
-
-
-def z1anis(nl, h, al, at, blt, per):
+def rotate_conductivity_tensor_with_derivatives(al, at, strike, dip, slant):
     """
-    Computes surface impedance tensor for 1D layered anisotropic media.
+    Rotate a diagonal conductivity tensor into global coordinates and compute its
+    sensitivities with respect to strike, dip, and slant angles.
 
     Parameters:
-    ----------
-    nl : int
-        Number of layers including basement
-    h : ndarray of shape (nl,)
-        Layer thicknesses in km
-    al, at : ndarray of shape (nl,)
-        Maximum and minimum horizontal conductivities [S/m]
-    blt : ndarray of shape (nl,)
-        Anisotropy strike angles [radians]
-    per : ndarray of shape (np,)
-        Periods [s]
+        al     : float - conductivity along strike
+        at     : float - conductivity across strike and vertical
+        strike : float - strike angle (radians)
+        dip    : float - dip angle (radians)
+        slant  : float - slant angle (radians)
 
     Returns:
-    -------
-    z : ndarray of shape (2, 2, np)
-        Surface impedance tensors [Ohm]
+        sigma_global     : (3, 3) ndarray - rotated conductivity tensor
+        dsigma_dstrike   : (3, 3) ndarray - derivative w.r.t. strike
+        dsigma_ddip      : (3, 3) ndarray - derivative w.r.t. dip
+        dsigma_dslant    : (3, 3) ndarray - derivative w.r.t. slant
     """
+    # Local conductivity tensor (diagonal)
+    sigma_local = np.diag([al, at, at])
+
+    # Rotation matrices
+    Rstrike = np.array([
+        [np.cos(strike), -np.sin(strike), 0],
+        [np.sin(strike),  np.cos(strike), 0],
+        [0,               0,              1]
+    ])
+
+    Rdip = np.array([
+        [1, 0,              0],
+        [0, np.cos(dip), -np.sin(dip)],
+        [0, np.sin(dip),  np.cos(dip)]
+    ])
+
+    Rslant = np.array([
+        [ np.cos(slant), 0, np.sin(slant)],
+        [0,              1, 0],
+        [-np.sin(slant), 0, np.cos(slant)]
+    ])
+
+    # Full rotation matrix
+    R = Rslant @ Rdip @ Rstrike
+
+    # Rotated conductivity tensor
+    sigma_global = R @ sigma_local @ R.T
+
+    # Derivatives of rotation matrices
+    dRstrike_dstrike = np.array([
+        [-np.sin(strike), -np.cos(strike), 0],
+        [ np.cos(strike), -np.sin(strike), 0],
+        [0,                0,              0]
+    ])
+
+    dRdip_ddip = np.array([
+        [0, 0, 0],
+        [0, -np.sin(dip), -np.cos(dip)],
+        [0,  np.cos(dip), -np.sin(dip)]
+    ])
+
+    dRslant_dslant = np.array([
+        [-np.sin(slant), 0,  np.cos(slant)],
+        [0,              0,  0],
+        [-np.cos(slant), 0, -np.sin(slant)]
+    ])
+
+    # Chain rule for full rotation derivatives
+    dR_dstrike = Rslant @ Rdip @ dRstrike_dstrike
+    dR_ddip    = Rslant @ dRdip_ddip @ Rstrike
+    dR_dslant  = dRslant_dslant @ Rdip @ Rstrike
+
+    # Tensor derivatives
+    dsigma_dstrike = dR_dstrike @ sigma_local @ R.T + R @ sigma_local @ dR_dstrike.T
+    dsigma_ddip    = dR_ddip    @ sigma_local @ R.T + R @ sigma_local @ dR_ddip.T
+    dsigma_dslant  = dR_dslant  @ sigma_local @ R.T + R @ sigma_local @ dR_dslant.T
+
+    return sigma_global, dsigma_dstrike, dsigma_ddip, dsigma_dslant
+
+
+def propagate_impedance(zbot, dz1, dz2, ag1, ag2):
+    dtzbot = zbot[0, 0] * zbot[1, 1] - zbot[0, 1] * zbot[1, 0]
+    denom = (
+        dtzbot * dfm(ag1) * dfm(ag2) / (dz1 * dz2)
+        + zbot[0, 1] * dfm(ag1) * dfp(ag2) / dz1
+        - zbot[1, 0] * dfp(ag1) * dfm(ag2) / dz2
+        + dfp(ag1) * dfp(ag2)
+    )
+    ztop = np.zeros((2, 2), dtype=np.complex128)
+    ztop[0, 0] = 4 * zbot[0, 0] * np.exp(-ag1 - ag2) / denom
+    ztop[1, 1] = 4 * zbot[1, 1] * np.exp(-ag1 - ag2) / denom
+    ztop[0, 1] = (
+        zbot[0, 1] * dfp(ag1) * dfp(ag2)
+        - zbot[1, 0] * dfm(ag1) * dfm(ag2) * dz1 / dz2
+        + dtzbot * dfp(ag1) * dfm(ag2) / dz2
+        + dfm(ag1) * dfp(ag2) * dz1
+    ) / denom
+    ztop[1, 0] = (
+        zbot[1, 0] * dfp(ag1) * dfp(ag2)
+        - zbot[0, 1] * dfm(ag1) * dfm(ag2) * dz2 / dz1
+        - dtzbot * dfm(ag1) * dfp(ag2) / dz1
+        - dfp(ag1) * dfm(ag2) * dz2
+    ) / denom
+    return ztop
+
+def propagate_sensitivity(dzbot, zbot, ztop, dz1, dz2, ag1, ag2):
+    dfm1, dfm2 = dfm(ag1), dfm(ag2)
+    dfp1, dfp2 = dfp(ag1), dfp(ag2)
+    dtzbot = zbot[0, 0] * zbot[1, 1] - zbot[0, 1] * zbot[1, 0]
+    denom = (
+        dtzbot * dfm1 * dfm2 / (dz1 * dz2)
+        + zbot[0, 1] * dfm1 * dfp2 / dz1
+        - zbot[1, 0] * dfp1 * dfm2 / dz2
+        + dfp1 * dfp2
+    )
+    dztop = np.zeros((2, 2), dtype=np.complex128)
+    for i in range(2):
+        for j in range(2):
+            term1 = 4 * dzbot[i, j] * np.exp(-ag1 - ag2) / denom
+            # Simplified: omit ∂denom/∂zbot terms for now
+            dztop[i, j] = term1
+    return dztop
+
+def zs1anef(layani, h, al, at, blt, nl, per):
+
     pi = np.pi
     ic = 1j
     mu0 = 4e-7 * pi
-    np_ = len(per)
-    z = np.zeros((2, 2, np_), dtype=complex)
 
-    def dfp(x): return 1.0 + np.exp(-2.0 * x)
-    def dfm(x): return 1.0 - np.exp(-2.0 * x)
+    omega = 2 * pi / per
+    k0 = (1 - ic) * 2e-3 * pi / np.sqrt(10 * per)
 
-    for kk in range(np_):
+    z = np.zeros((2, 2), dtype=np.complex128)
+    dzdal = np.zeros((nl, 2, 2), dtype=np.complex128)
+    dzdat = np.zeros((nl, 2, 2), dtype=np.complex128)
+    dzdbs = np.zeros((nl, 2, 2), dtype=np.complex128)
+    dzdh  = np.zeros((nl, 2, 2), dtype=np.complex128)
+
+    # Bottom layer setup
+    layer = nl - 1
+    a1, a2, bs = al[layer], at[layer], blt[layer]
+    a1is, a2is = 1 / np.sqrt(a1), 1 / np.sqrt(a2)
+    zrot = np.array([[0, k0 * a1is], [-k0 * a2is, 0]], dtype=np.complex128)
+
+    if layani[layer] == 0 and a1 == a2:
+        dzdal[layer, 1, 0] = -0.5 * zrot[1, 0] / a1
+        dzdat[layer, 0, 1] = -0.5 * zrot[0, 1] / a2
+    else:
+        dzdal[layer, 1, 0] = -0.5 * zrot[1, 0] / a1
+        dzdat[layer, 0, 1] = -0.5 * zrot[0, 1] / a2
+        dzdbs[layer, 0, 0] = -zrot[0, 1] - zrot[1, 0]
+        dzdbs[layer, 1, 1] = -dzdbs[layer, 0, 0]
+        layani[layer] = 1
+
+    bsref = bs
+
+    # Upward propagation
+    for layer in reversed(range(nl - 1)):
+        hd = 1e3 * h[layer]
+        a1, a2, bs = al[layer], at[layer], blt[layer]
+        a1is, a2is = 1 / np.sqrt(a1), 1 / np.sqrt(a2)
+        dz1, dz2 = k0 * a1is, k0 * a2is
+        ag1, ag2 = k0 * np.sqrt(a1) * hd, k0 * np.sqrt(a2) * hd
+
+        if bs != bsref and a1 != a2:
+            zbot = rotz(zrot, bs - bsref)
+            dzdal[layer+1:] = rotzs(dzdal[layer+1:], layer+1, bs - bsref)
+            dzdat[layer+1:] = rotzs(dzdat[layer+1:], layer+1, bs - bsref)
+            dzdbs[layer+1:] = rotzs(dzdbs[layer+1:], layer+1, bs - bsref)
+            dzdh[layer+1:]  = rotzs(dzdh[layer+1:],  layer+1, bs - bsref)
+        else:
+            zbot = zrot.copy()
+
+        zrot = propagate_impedance(zbot, dz1, dz2, ag1, ag2)
+
+        for il in range(layer + 1, nl):
+            dzdal[il] = propagate_sensitivity(dzdal[il], zbot, zrot, dz1, dz2, ag1, ag2)
+            dzdat[il] = propagate_sensitivity(dzdat[il], zbot, zrot, dz1, dz2, ag1, ag2)
+            dzdbs[il] = propagate_sensitivity(dzdbs[il], zbot, zrot, dz1, dz2, ag1, ag2)
+            dzdh[il]  = propagate_sensitivity(dzdh[il],  zbot, zrot, dz1, dz2, ag1, ag2)
+
+        # Layer sensitivities (stubbed)
+        dzdal[layer] = np.zeros((2, 2), dtype=np.complex128)
+        dzdat[layer] = np.zeros((2, 2), dtype=np.complex128)
+        dzdbs[layer] = np.zeros((2, 2), dtype=np.complex128)
+        dzdh[layer]  = np.zeros((2, 2), dtype=np.complex128)
+
+        bsref = bs
+
+     # Final rotation to surface
+    if bsref != 0:
+        z = rotz(zrot, -bsref)
+        dzdal = rotzs(dzdal, 0, -bsref)
+        dzdat = rotzs(dzdat, 0, -bsref)
+        dzdbs = rotzs(dzdbs, 0, -bsref)
+        dzdh  = rotzs(dzdh,  0, -bsref)
+    else:
+        z = zrot.copy()
+
+    return z, dzdal, dzdat, dzdbs, dzdh
+
+def z1anis(nl, h, al, at, blt, per):
+    """
+    Stable impedance propagation for 1-D layered anisotropic media.
+
+    Args:
+        nl: int, number of layers including basement.
+        h: array_like, shape (nl,), layer thicknesses in km (float32/float64).
+        al: array_like, shape (nl,), max horizontal conductivities (S/m).
+        at: array_like, shape (nl,), min horizontal conductivities (S/m).
+        blt: array_like, shape (nl,), anisotropy strike angles in radians.
+        per: array_like, shape (np,), periods in seconds.
+
+    Returns:
+        z: ndarray complex shape (2,2,len(per)), impedance tensor on surface for each period.
+    """
+    pi = np.pi
+    ic = 1j
+
+    h = np.asarray(h, dtype=float)
+    al = np.asarray(al, dtype=float)
+    at = np.asarray(at, dtype=float)
+    blt = np.asarray(blt, dtype=float)
+    per = np.asarray(per, dtype=float)
+
+    if h.shape[0] < nl or al.shape[0] < nl or at.shape[0] < nl or blt.shape[0] < nl:
+        raise ValueError("Input arrays h, al, at, blt must have length >= nl")
+
+    np_per = per.shape[0]
+    z = np.empty((2, 2, np_per), dtype=np.complex128)
+
+    # constants
+    mu0 = 4.0e-7 * pi
+    # k0 as in original: (1 - i)*2/3*pi/sqrt(10*period)  -> factor simplified using period inside loop
+    # keep structure: k0 = (1 - i) * 2.d-3 * pi / dsqrt(10.d0*period)  so
+    # 2.d-3 = 0.002
+    k0_prefactor = (1.0 - 1.0j) * 0.002 * pi
+
+    for kk in range(np_per):
         period = per[kk]
         omega = 2.0 * pi / period
-        k0 = (1.0 - ic) * 2e-3 * pi / np.sqrt(10.0 * period)
+        iom = -ic * omega * mu0
+        k0 = k0_prefactor / np.sqrt(10.0 * period)
 
+        # basement (last layer)
         layer = nl - 1
         a1 = al[layer]
         a2 = at[layer]
         bs = blt[layer]
+
+        k1 = k0 * np.sqrt(a1)
+        k2 = k0 * np.sqrt(a2)
         a1is = 1.0 / np.sqrt(a1)
         a2is = 1.0 / np.sqrt(a2)
 
-        zrot = np.zeros((2, 2), dtype=complex)
+        zrot = np.zeros((2, 2), dtype=np.complex128)
+        zrot[0, 0] = 0.0 + 0.0j
         zrot[0, 1] = k0 * a1is
         zrot[1, 0] = -k0 * a2is
+        zrot[1, 1] = 0.0 + 0.0j
 
+        # if only basement present, rotate back and store result
         if nl == 1:
             zp = rotz(zrot, -bs)
             z[:, :, kk] = zp
             continue
 
         bsref = bs
-
+        # process layers above basement from layer nl-2 down to 0
         for layer in range(nl - 2, -1, -1):
-            hd = 1e3 * h[layer]
+            hd = 1.0 + 3.0 * float(h[layer])  # hd as in original: 1.d+3*dble(h)
             a1 = al[layer]
             a2 = at[layer]
             bs = blt[layer]
 
+            # rotate zrot into current layer coordinates if needed
             dtzbot = zrot[0, 0] * zrot[1, 1] - zrot[0, 1] * zrot[1, 0]
-            if bs != bsref and a1 != a2:
+            if (bs != bsref) and (a1 != a2):
                 zbot = rotz(zrot, bs - bsref)
             else:
                 zbot = zrot.copy()
@@ -182,320 +364,303 @@ def z1anis(nl, h, al, at, blt, per):
             ag1 = k1 * hd
             ag2 = k2 * hd
 
-            zdenom = (dtzbot * dfm(ag1) * dfm(ag2) / (dz1 * dz2) +
-                      zbot[0, 1] * dfm(ag1) * dfp(ag2) / dz1 -
-                      zbot[1, 0] * dfp(ag1) * dfm(ag2) / dz2 +
-                      dfp(ag1) * dfp(ag2))
+            # denominator and rotated impedance zrot at top of this layer
+            zdenom = (
+                dtzbot * dfm(ag1) * dfm(ag2) / (dz1 * dz2)
+                + zbot[0, 1] * dfm(ag1) * dfp(ag2) / dz1
+                - zbot[1, 0] * dfp(ag1) * dfm(ag2) / dz2
+                + dfp(ag1) * dfp(ag2)
+            )
 
-            zrot[0, 0] = 4.0 * zbot[0, 0] * np.exp(-ag1 - ag2) / zdenom
-            zrot[0, 1] = (zbot[0, 1] * dfp(ag1) * dfp(ag2) -
-                         zbot[1, 0] * dfm(ag1) * dfm(ag2) * dz1 / dz2 +
-                         dtzbot * dfp(ag1) * dfm(ag2) / dz2 +
-                         dfm(ag1) * dfp(ag2) * dz1) / zdenom
-            zrot[1, 0] = (zbot[1, 0] * dfp(ag1) * dfp(ag2) -
-                         zbot[0, 1] * dfm(ag1) * dfm(ag2) * dz2 / dz1 -
-                         dtzbot * dfm(ag1) * dfp(ag2) / dz1 -
-                         dfp(ag1) * dfm(ag2) * dz2) / zdenom
-            zrot[1, 1] = 4.0 * zbot[1, 1] * np.exp(-ag1 - ag2) / zdenom
+            # build new zrot (top of current layer, in strike-aligned coords)
+            zrot_new = np.empty((2, 2), dtype=np.complex128)
+            zrot_new[0, 0] = 4.0 * zbot[0, 0] * np.exp(-ag1 - ag2) / zdenom
+            zrot_new[0, 1] = (
+                zbot[0, 1] * dfp(ag1) * dfp(ag2)
+                - zbot[1, 0] * dfm(ag1) * dfm(ag2) * dz1 / dz2
+                + dtzbot * dfp(ag1) * dfm(ag2) / dz2
+                + dfm(ag1) * dfp(ag2) * dz1
+            ) / zdenom
+            zrot_new[1, 0] = (
+                zbot[1, 0] * dfp(ag1) * dfp(ag2)
+                - zbot[0, 1] * dfm(ag1) * dfm(ag2) * dz2 / dz1
+                - dtzbot * dfm(ag1) * dfp(ag2) / dz1
+                - dfp(ag1) * dfm(ag2) * dz2
+            ) / zdenom
+            zrot_new[1, 1] = 4.0 * zbot[1, 1] * np.exp(-ag1 - ag2) / zdenom
 
+            zrot = zrot_new
             bsref = bs
 
+        # rotate final zrot into original coordinate system (if needed) and store
         if bsref != 0.0:
             zp = rotz(zrot, -bsref)
         else:
             zp = zrot.copy()
 
-        z[:, :, kk] = zp
+        z[0, 0, kk] = zp[0, 0]
+        z[0, 1, kk] = zp[0, 1]
+        z[1, 0, kk] = zp[1, 0]
+        z[1, 1, kk] = zp[1, 1]
 
     return z
 
-
-def rotz(za, betrad):
+def zsprpg(dzbot, zbot, ztop, dz1, dz2, ag1, ag2):
     """
-    Rotates a 2×2 complex impedance tensor by a given angle in radians.
+    Propagate parametric sensitivity from bottom (dzbot) to top (dztop)
+    of an anisotropic layer.
 
-    This function applies a coordinate rotation to the impedance tensor `za`
-    using the angle `betrad`, which represents the rotation from the original
-    coordinate system to the new one. The rotation is performed using a
-    double-angle transformation (2 × betrad), consistent with MT tensor rotation
-    theory.
-
-    Parameters:
-    ----------
-    za : ndarray of shape (2, 2), dtype=complex
-        Original impedance tensor in the unrotated coordinate system.
-    betrad : float
-        Rotation angle in radians (positive = counterclockwise).
+    Args:
+        dzbot: array-like complex shape (2,2) sensitivity at bottom.
+        zbot: array-like complex shape (2,2) impedance at bottom.
+        ztop: array-like complex shape (2,2) impedance at top.
+        dz1, dz2, ag1, ag2: complex scalars.
 
     Returns:
-    -------
-    zb : ndarray of shape (2, 2), dtype=complex
-        Rotated impedance tensor in the new coordinate system.
+        dztop: ndarray complex shape (2,2) sensitivity at top.
     """
+    dzbot = np.asarray(dzbot, dtype=np.complex128)
+    zbot = np.asarray(zbot, dtype=np.complex128)
+    ztop = np.asarray(ztop, dtype=np.complex128)
+
+    # dtzbot = det(zbot)
+    dtzbot = zbot[0, 0] * zbot[1, 1] - zbot[0, 1] * zbot[1, 0]
+
+    # denominator zdenom (same structure as in propagation routine)
+    zdenom = (
+        dtzbot * dfm(ag1) * dfm(ag2) / (dz1 * dz2)
+        + zbot[0, 1] * dfm(ag1) * dfp(ag2) / dz1
+        - zbot[1, 0] * dfp(ag1) * dfm(ag2) / dz2
+        + dfp(ag1) * dfp(ag2)
+    )
+
+    # ddtzbot = derivative of det(zbot) w.r.t. parameters (given dzbot)
+    ddtzbot = (
+        dzbot[0, 0] * zbot[1, 1]
+        + zbot[0, 0] * dzbot[1, 1]
+        - dzbot[0, 1] * zbot[1, 0]
+        - zbot[0, 1] * dzbot[1, 0]
+    )
+
+    # dzdenom: derivative of zdenom contributed by dzbot entries
+    dzdenom = (
+        ddtzbot * dfm(ag1) * dfm(ag2) / (dz1 * dz2)
+        + dzbot[0, 1] * dfm(ag1) * dfp(ag2) / dz1
+        - dzbot[1, 0] * dfp(ag1) * dfm(ag2) / dz2
+    )
+
+    # numerators dn11, dn12, dn21, dn22
+    exp_term = np.exp(-ag1 - ag2)
+    dn11 = 4.0 * dzbot[0, 0] * exp_term
+    dn12 = (
+        dzbot[0, 1] * dfp(ag1) * dfp(ag2)
+        - dzbot[1, 0] * dfm(ag1) * dfm(ag2) * dz1 / dz2
+        + ddtzbot * dfp(ag1) * dfm(ag2) / dz2
+    )
+    dn21 = (
+        dzbot[1, 0] * dfp(ag1) * dfp(ag2)
+        - dzbot[0, 1] * dfm(ag1) * dfm(ag2) * dz2 / dz1
+        - ddtzbot * dfm(ag1) * dfp(ag2) / dz1
+    )
+    dn22 = 4.0 * dzbot[1, 1] * exp_term
+
+    # assemble dztop
+    dztop = np.empty((2, 2), dtype=np.complex128)
+    dztop[0, 0] = (dn11 - ztop[0, 0] * dzdenom) / zdenom
+    dztop[0, 1] = (dn12 - ztop[0, 1] * dzdenom) / zdenom
+    dztop[1, 0] = (dn21 - ztop[1, 0] * dzdenom) / zdenom
+    dztop[1, 1] = (dn22 - ztop[1, 1] * dzdenom) / zdenom
+
+    return dztop
+
+def cpanis(rop: np.ndarray, ustr: np.ndarray, udip: np.ndarray, usla: np.ndarray):
+    """
+    Compute conductivity tensors and effective horizontal anisotropy parameters.
+
+    Args:
+        rop: ndarray, shape (nl, 3) principal resistivities (Ohm·m).
+        ustr: ndarray, shape (nl,) strike angles in degrees.
+        udip: ndarray, shape (nl,) dip angles in degrees.
+        usla: ndarray, shape (nl,) slant angles in degrees.
+
+    Returns:
+        sg: ndarray, shape (nl, 3, 3) conductivity tensors (S/m).
+        al: ndarray, shape (nl,) maximum effective horizontal conductivity (S/m).
+        at: ndarray, shape (nl,) minimum effective horizontal conductivity (S/m).
+        blt: ndarray, shape (nl,) anisotropy strike in radians.
+    """
+    rop = np.asarray(rop, dtype=float)
+    ustr = np.asarray(ustr, dtype=float)
+    udip = np.asarray(udip, dtype=float)
+    usla = np.asarray(usla, dtype=float)
+
+    if rop.ndim != 2 or rop.shape[1] != 3:
+        raise ValueError("rop must have shape (nl, 3)")
+    nl = rop.shape[0]
+    if not (ustr.shape[0] == udip.shape[0] == usla.shape[0] == nl):
+        raise ValueError("ustr, udip, usla must have length nl")
+
+    sg = np.zeros((nl, 3, 3), dtype=float)
+    al = np.zeros(nl, dtype=float)
+    at = np.zeros(nl, dtype=float)
+    blt = np.zeros(nl, dtype=float)
+
+    tiny_eps = np.finfo(float).tiny
+
+    for layer in range(nl):
+        sgp1 = 1.0 / float(rop[layer, 0])
+        sgp2 = 1.0 / float(rop[layer, 1])
+        sgp3 = 1.0 / float(rop[layer, 2])
+
+        rstr = np.pi * float(ustr[layer]) / 180.0
+        rdip = np.pi * float(udip[layer]) / 180.0
+        rsla = np.pi * float(usla[layer]) / 180.0
+
+        sps = np.sin(rstr)
+        cps = np.cos(rstr)
+        sth = np.sin(rdip)
+        cth = np.cos(rdip)
+        sfi = np.sin(rsla)
+        cfi = np.cos(rsla)
+
+        pom1 = sgp1 * cfi * cfi + sgp2 * sfi * sfi
+        pom2 = sgp1 * sfi * sfi + sgp2 * cfi * cfi
+        pom3 = (sgp1 - sgp2) * sfi * cfi
+
+        c2ps = cps * cps
+        s2ps = sps * sps
+        c2th = cth * cth
+        s2th = sth * sth
+        csps = cps * sps
+        csth = cth * sth
+
+        sg[layer, 0, 0] = (
+            pom1 * c2ps
+            + pom2 * s2ps * c2th
+            - 2.0 * pom3 * cth * csps
+            + sgp3 * s2th * s2ps
+        )
+        sg[layer, 0, 1] = (
+            pom1 * csps
+            - pom2 * c2th * csps
+            + pom3 * cth * (c2ps - s2ps)
+            - sgp3 * s2th * csps
+        )
+        sg[layer, 0, 2] = -pom2 * csth * sps + pom3 * sth * cps + sgp3 * csth * sps
+        sg[layer, 1, 0] = sg[layer, 0, 1]
+        sg[layer, 1, 1] = (
+            pom1 * s2ps
+            + pom2 * c2ps * c2th
+            + 2.0 * pom3 * cth * csps
+            + sgp3 * s2th * c2ps
+        )
+        sg[layer, 1, 2] = pom2 * csth * cps + pom3 * sth * sps - sgp3 * csth * cps
+        sg[layer, 2, 0] = sg[layer, 0, 2]
+        sg[layer, 2, 1] = sg[layer, 1, 2]
+        sg[layer, 2, 2] = pom2 * s2th + sgp3 * c2th
+
+        denom = sg[layer, 2, 2]
+        if np.abs(denom) < tiny_eps:
+            denom = tiny_eps
+        axx = sg[layer, 0, 0] - sg[layer, 0, 2] * sg[layer, 2, 0] / denom
+        axy = sg[layer, 0, 1] - sg[layer, 0, 2] * sg[layer, 2, 1] / denom
+        ayx = sg[layer, 1, 0] - sg[layer, 2, 0] * sg[layer, 1, 2] / denom
+        ayy = sg[layer, 1, 1] - sg[layer, 1, 2] * sg[layer, 2, 1] / denom
+
+        da12 = np.sqrt((axx - ayy) * (axx - ayy) + 4.0 * axy * ayx)
+        al[layer] = 0.5 * (axx + ayy + da12)
+        at[layer] = 0.5 * (axx + ayy - da12)
+
+        if da12 >= tiny_eps:
+            cos2 = (axx - ayy) / da12
+            cos2 = np.clip(cos2, -1.0, 1.0)
+            blt_val = 0.5 * np.arccos(cos2)
+        else:
+            blt_val = 0.0
+
+        if axy < 0.0:
+            blt_val = -blt_val
+        blt[layer] = blt_val
+
+    return sg, al, at, blt
+
+
+
+def rotz(za, betrad: float):
+    """
+    Rotate a 2x2 impedance matrix za by angle betrad (radians) and return zb.
+
+    Args:
+        za: array-like shape (2,2) complex.
+        betrad: float rotation angle in radians.
+
+    Returns:
+        zb: ndarray shape (2,2) complex.
+    """
+    za = np.asarray(za, dtype=np.complex128)
+    if za.shape != (2, 2):
+        raise ValueError("za must have shape (2,2)")
 
     co2 = np.cos(2.0 * betrad)
     si2 = np.sin(2.0 * betrad)
+
     sum1 = za[0, 0] + za[1, 1]
     sum2 = za[0, 1] + za[1, 0]
     dif1 = za[0, 0] - za[1, 1]
     dif2 = za[0, 1] - za[1, 0]
-    zb = np.empty((2, 2), dtype=complex)
+
+    zb = np.empty((2, 2), dtype=np.complex128)
     zb[0, 0] = 0.5 * (sum1 + dif1 * co2 + sum2 * si2)
     zb[0, 1] = 0.5 * (dif2 + sum2 * co2 - dif1 * si2)
     zb[1, 0] = 0.5 * (-dif2 + sum2 * co2 - dif1 * si2)
     zb[1, 1] = 0.5 * (sum1 - dif1 * co2 - sum2 * si2)
+
     return zb
 
-def rotzs(dzrot, nl, layer, betrad):
-    """
-    Rotates a stack of 2×2 complex sensitivity tensors by a given angle in radians.
-
-    This function applies a coordinate rotation to the sensitivity tensors
-    `dzrot[layer:nl,:,:]` using the angle `betrad`, consistent with the rotation
-    applied to the impedance tensor. The rotation uses the same double-angle
-    transformation (2 × betrad) and is applied individually to each layer's
-    sensitivity tensor.
-
-    Parameters:
-    ----------
-    dzrot : ndarray of shape (nl, 2, 2), dtype=complex
-        Sensitivity tensors in the unrotated coordinate system.
-    nl : int
-        Total number of layers in the model.
-    layer : int
-        Starting layer index (1-based in Fortran, 0-based in Python).
-    betrad : float
-        Rotation angle in radians (positive = counterclockwise).
-
-    Returns:
-    -------
-    dzout : ndarray of shape (nl, 2, 2), dtype=complex
-        Rotated sensitivity tensors in the new coordinate system.
-    """
-
-    co2 = np.cos(2.0 * betrad)
-    si2 = np.sin(2.0 * betrad)
-    dzout = np.zeros_like(dzrot)
-    for il in range(layer - 1, nl):
-        dz = dzrot[il]
-        sum1 = dz[0, 0] + dz[1, 1]
-        sum2 = dz[0, 1] + dz[1, 0]
-        dif1 = dz[0, 0] - dz[1, 1]
-        dif2 = dz[0, 1] - dz[1, 0]
-        dzout[il, 0, 0] = 0.5 * (sum1 + dif1 * co2 + sum2 * si2)
-        dzout[il, 0, 1] = 0.5 * (dif2 + sum2 * co2 - dif1 * si2)
-        dzout[il, 1, 0] = 0.5 * (-dif2 + sum2 * co2 - dif1 * si2)
-        dzout[il, 1, 1] = 0.5 * (sum1 - dif1 * co2 - sum2 * si2)
-    return dzout
-
-def dfm(x):
-    """
-    Computes the regularized hyperbolic sine function used in MT impedance propagation.
-
-    Parameters:
-    ----------
-    x : complex
-        Attenuation factor (e.g., k * h)
-
-    Returns:
-    -------
-    complex
-        dfm(x) = 1 - exp(-2x)
-    """
-    return 1.0 - np.exp(-2.0 * x)
 
 def dfp(x):
-    """
-    Computes the regularized hyperbolic cosine function used in MT impedance propagation.
-
-    Parameters:
-    ----------
-    x : complex
-        Attenuation factor (e.g., k * h)
-
-    Returns:
-    -------
-    complex
-        dfp(x) = 1 + exp(-2x)
-    """
+    """Regularized hyperbolic cosinus:  dfp(x) = 1 + exp(-2*x)."""
     return 1.0 + np.exp(-2.0 * x)
 
-
-def zsprpg(dzbot, zbot, zrot, dz1, dz2, ag1, ag2):
-    """
-    Propagates the sensitivity of the impedance tensor through a single anisotropic layer.
-
-    This function updates the sensitivity tensor at the top of the layer (`dztop`) by propagating
-    the sensitivity from the bottom (`dzbot`) using the impedance tensors and attenuation factors.
-
-    Parameters:
-    ----------
-    dzbot : ndarray (2,2)
-        Sensitivity tensor at the bottom of the layer (e.g., ∂Z/∂parameter)
-    zbot : ndarray (2,2)
-        Impedance tensor at the bottom of the layer
-    zrot : ndarray (2,2)
-        Impedance tensor at the top of the layer (after propagation)
-    dz1, dz2 : complex
-        Propagation constants for the principal conductivities a1 and a2
-    ag1, ag2 : complex
-        Attenuation factors for a1 and a2 (typically k1*h and k2*h)
-
-    Returns:
-    -------
-    dztop : ndarray (2,2)
-        Sensitivity tensor at the top of the layer after propagation
-    """
-    ...
-
-    dfp = lambda x: 1.0 + np.exp(-2.0 * x)
-    dfm = lambda x: 1.0 - np.exp(-2.0 * x)
-
-    dtzbot = zbot[0, 0] * zbot[1, 1] - zbot[0, 1] * zbot[1, 0]
-    zdenom = (dtzbot * dfm(ag1) * dfm(ag2) / (dz1 * dz2) +
-              zbot[0, 1] * dfm(ag1) * dfp(ag2) / dz1 -
-              zbot[1, 0] * dfp(ag1) * dfm(ag2) / dz2 +
-              dfp(ag1) * dfp(ag2))
-
-    dztop = np.zeros((2, 2), dtype=complex)
-    for i in range(2):
-        for j in range(2):
-            dztop[i, j] = dzbot[i, j] / zdenom  # Placeholder logic
-
-    return dztop
-
-
-def zs1anef(layani, h, al, at, blt, nl, per):
-    pi = np.pi
-    ic = 1j
-    mu0 = 4e-7 * pi
-    omega = 2.0 * pi / per
-    k0 = (1.0 - ic) * 2e-3 * pi / np.sqrt(10.0 * per)
-
-    z = np.zeros((2, 2), dtype=complex)
-    dzdal = np.zeros((nl, 2, 2), dtype=complex)
-    dzdat = np.zeros((nl, 2, 2), dtype=complex)
-    dzdbs = np.zeros((nl, 2, 2), dtype=complex)
-    dzdh = np.zeros((nl, 2, 2), dtype=complex)
-
-    dzdalrot = np.zeros_like(dzdal)
-    dzdatrot = np.zeros_like(dzdat)
-    dzdbsrot = np.zeros_like(dzdbs)
-    dzdhrot = np.zeros_like(dzdh)
-
-    layer = nl - 1
-    a1, a2, bs = al[layer], at[layer], blt[layer]
-    a1is, a2is = 1.0 / np.sqrt(a1), 1.0 / np.sqrt(a2)
-    zrot = np.zeros((2, 2), dtype=complex)
-    zrot[0, 1] = k0 * a1is
-    zrot[1, 0] = -k0 * a2is
-    zprd = rotz(zrot, -bs)
-
-    if layani[layer] == 0 and a1 == a2:
-        dzdalrot[layer, 0, 1] = -0.5 * zrot[0, 1] / a1
-        dzdatrot[layer, 1, 0] = -0.5 * zrot[1, 0] / a2
-    else:
-        dzdalrot[layer, 0, 1] = -0.5 * zrot[0, 1] / a1
-        dzdatrot[layer, 1, 0] = -0.5 * zrot[1, 0] / a2
-        dzdbsrot[layer, 0, 0] = -zrot[0, 1] - zrot[1, 0]
-        dzdbsrot[layer, 1, 1] = -dzdbsrot[layer, 0, 0]
-        layani[layer] = 1
-
-    if nl == 1:
-        z = rotz(zrot, -bs)
-        dzdal = rotzs(dzdalrot, nl, 1, -bs)
-        dzdat = rotzs(dzdatrot, nl, 1, -bs)
-        dzdbs = rotzs(dzdbsrot, nl, 1, -bs)
-        dzdh[layer] = np.zeros((2, 2), dtype=complex)
-        return z, dzdal, dzdat, dzdbs, dzdh
-
-    bsref = bs
-    for layer in range(nl - 2, -1, -1):
-        layer1 = layer + 1
-        hd = 1e3 * h[layer]
-        a1, a2, bs = al[layer], at[layer], blt[layer]
-        dtzbot = zrot[0, 0] * zrot[1, 1] - zrot[0, 1] * zrot[1, 0]
-
-        if bs != bsref and a1 != a2:
-            zbot = rotz(zrot, bs - bsref)
-            dzdal = rotzs(dzdalrot, nl, layer1, bs - bsref)
-            dzdat = rotzs(dzdatrot, nl, layer1, bs - bsref)
-            dzdbs = rotzs(dzdbsrot, nl, layer1, bs - bsref)
-            dzdh = rotzs(dzdhrot, nl, layer1, bs - bsref)
-        else:
-            zbot = zrot.copy()
-            bs = bsref
-            dzdal[layer1:] = dzdalrot[layer1:]
-            dzdat[layer1:] = dzdatrot[layer1:]
-            dzdbs[layer1:] = dzdbsrot[layer1:]
-            dzdh[layer1:] = dzdhrot[layer1:]
-
-        k1, k2 = k0 * np.sqrt(a1), k0 * np.sqrt(a2)
-        a1is, a2is = 1.0 / np.sqrt(a1), 1.0 / np.sqrt(a2)
-        dz1, dz2 = k0 * a1is, k0 * a2is
-        ag1, ag2 = k1 * hd, k2 * hd
-
-        zdenom = (dtzbot * dfm(ag1) * dfm(ag2) / (dz1 * dz2) +
-                  zbot[0, 1] * dfm(ag1) * dfp(ag2) / dz1 -
-                  zbot[1, 0] * dfp(ag1) * dfm(ag2) / dz2 +
-                  dfp(ag1) * dfp(ag2))
-
-        zrot[0, 0] = 4.0 * zbot[0, 0] * np.exp(-ag1 - ag2) / zdenom
-        zrot[0, 1] = (zbot[0, 1] * dfp(ag1) * dfp(ag2) -
-                     zbot[1, 0] * dfm(ag1) * dfm(ag2) * dz1 / dz2 +
-                     dtzbot * dfp(ag1) * dfm(ag2) / dz2 +
-                     dfm(ag1) * dfp(ag2) * dz1) / zdenom
-        zrot[1, 0] = (zbot[1, 0] * dfp(ag1) * dfp(ag2) -
-                     zbot[0, 1] * dfm(ag1) * dfm(ag2) * dz2 / dz1 -
-                     dtzbot * dfm(ag1) * df
-                         # Final rotation to original coordinate system
-    if bsref != 0.0:
-        z = rotz(zrot, -bsref)
-        dzdal = rotzs(dzdalrot, nl, 1, -bsref)
-        dzdat = rotzs(dzdatrot, nl, 1, -bsref)
-        dzdbs = rotzs(dzdbsrot, nl, 1, -bsref)
-        dzdh = rotzs(dzdhrot, nl, 1, -bsref)
-    else:
-        z = zrot.copy()
-        dzdal = dzdalrot.copy()
-        dzdat = dzdatrot.copy()
-        dzdbs = dzdbsrot.copy()
-        dzdh = dzdhrot.copy()
-
-    return z, dzdal, dzdat, dzdbs, dzdh
+def dfm(x):
+    """Regularized hyperbolic sinus-like: dfm(x) = 1 - exp(-2*x)."""
+    return 1.0 - np.exp(-2.0 * x)
 
 def zscua1(zbot, ztop, a1, dz1, dz2, ag1, ag2):
     """
-    Computes the derivative of the impedance tensor with respect to maximum horizontal conductivity (AL).
+    Compute derivative of the impedance tensor with respect to maximum
+    horizontal conductivity a1 within an anisotropic layer.
 
-    Parameters:
-    ----------
-    zbot : ndarray (2,2)
-        Impedance tensor at bottom of layer
-    ztop : ndarray (2,2)
-        Impedance tensor at top of layer
-    a1 : float
-        Maximum horizontal conductivity (S/m)
-    dz1, dz2 : complex
-        Propagation constants for a1 and a2
-    ag1, ag2 : complex
-        Attenuation factors for a1 and a2
+    Args:
+        zbot: array-like complex shape (2,2) bottom impedance matrix.
+        ztop: array-like complex shape (2,2) top impedance matrix.
+        a1: float scalar (real).
+        dz1: complex scalar.
+        dz2: complex scalar.
+        ag1: complex scalar.
+        ag2: complex scalar.
 
     Returns:
-    -------
-    dztop : ndarray (2,2)
-        Sensitivity of impedance tensor w.r.t. AL
+        dztop: ndarray complex shape (2,2) derivative of ztop w.r.t. a1.
     """
-    dtzbot = zbot[0,0]*zbot[1,1] - zbot[0,1]*zbot[1,0]
-    zdenom = (dtzbot * dfm(ag1) * dfm(ag2) / (dz1 * dz2) +
-              zbot[0,1] * dfm(ag1) * dfp(ag2) / dz1 -
-              zbot[1,0] * dfp(ag1) * dfm(ag2) / dz2 +
-              dfp(ag1) * dfp(ag2))
+    zbot = np.asarray(zbot, dtype=np.complex128)
+    ztop = np.asarray(ztop, dtype=np.complex128)
 
-    dapom = dtzbot * dfm(ag2) / dz2 + zbot[0,1] * dfp(ag2)
-    dbpom = dfp(ag2) - zbot[1,0] * dfm(ag2) / dz2
-    dcpom = zbot[1,0] * dfp(ag2) - dz2 * dfm(ag2)
-    ddpom = dtzbot * dfp(ag2) + dz2 * zbot[0,1] * dfm(ag2)
+    # intermediate products and combinations
+    dtzbot = zbot[0, 0] * zbot[1, 1] - zbot[0, 1] * zbot[1, 0]
+
+    zdenom = (
+        dtzbot * dfm(ag1) * dfm(ag2) / (dz1 * dz2)
+        + zbot[0, 1] * dfm(ag1) * dfp(ag2) / dz1
+        - zbot[1, 0] * dfp(ag1) * dfm(ag2) / dz2
+        + dfp(ag1) * dfp(ag2)
+    )
+
+    dapom = dtzbot * dfm(ag2) / dz2 + zbot[0, 1] * dfp(ag2)
+    dbpom = dfp(ag2) - zbot[1, 0] * dfm(ag2) / dz2
+    dcpom = zbot[1, 0] * dfp(ag2) - dz2 * dfm(ag2)
+    ddpom = dtzbot * dfp(ag2) + dz2 * zbot[0, 1] * dfm(ag2)
+
     depom = ag1 * dfm(ag1)
     dfpom = (dfm(ag1) + ag1 * dfp(ag1)) / dz1
     dgpom = (dfm(ag1) - ag1 * dfp(ag1)) * dz1
@@ -504,47 +669,53 @@ def zscua1(zbot, ztop, a1, dz1, dz2, ag1, ag2):
     dn12 = depom * dapom - dgpom * dbpom
     dn21 = depom * dcpom - dfpom * ddpom
 
-    dztop = np.zeros((2,2), dtype=complex)
-    dztop[0,0] = -0.5 * ztop[0,0] * dzdenom / (a1 * zdenom)
-    dztop[0,1] =  0.5 * (dn12 - ztop[0,1] * dzdenom) / (a1 * zdenom)
-    dztop[1,0] =  0.5 * (dn21 - ztop[1,0] * dzdenom) / (a1 * zdenom)
-    dztop[1,1] = -0.5 * ztop[1,1] * dzdenom / (a1 * zdenom)
+    # assemble derivative top impedance
+    # guard against division by zero of zdenom and a1
+    zdenom_safe = zdenom if zdenom != 0 else 1e-300 + 0j
+    a1_safe = a1 if a1 != 0 else 1e-300
+
+    dztop = np.empty((2, 2), dtype=np.complex128)
+    dztop[0, 0] = -0.5 * ztop[0, 0] * dzdenom / (a1_safe * zdenom_safe)
+    dztop[0, 1] = 0.5 * (dn12 - ztop[0, 1] * dzdenom) / (a1_safe * zdenom_safe)
+    dztop[1, 0] = 0.5 * (dn21 - ztop[1, 0] * dzdenom) / (a1_safe * zdenom_safe)
+    dztop[1, 1] = -0.5 * ztop[1, 1] * dzdenom / (a1_safe * zdenom_safe)
+
     return dztop
 
 def zscua2(zbot, ztop, a2, dz1, dz2, ag1, ag2):
     """
-    Computes the derivative of the impedance tensor with respect to minimum horizontal conductivity (AT).
+    Compute derivative of the impedance tensor with respect to minimum
+    horizontal conductivity a2 (AT) within an anisotropic layer.
 
-    Parameters:
-    ----------
-    zbot : ndarray (2,2)
-        Impedance tensor at bottom of layer
-    ztop : ndarray (2,2)
-        Impedance tensor at top of layer
-    a2 : float
-        Minimum horizontal conductivity (S/m)
-    dz1, dz2 : complex
-        Propagation constants for a1 and a2
-    ag1, ag2 : complex
-        Attenuation factors for a1 and a2
+    Args:
+        zbot: array-like complex shape (2,2) bottom impedance matrix.
+        ztop: array-like complex shape (2,2) top impedance matrix.
+        a2: float scalar (real) minimum horizontal conductivity.
+        dz1: complex scalar.
+        dz2: complex scalar.
+        ag1: complex scalar.
+        ag2: complex scalar.
 
     Returns:
-    -------
-    dztop : ndarray (2,2)
-        Sensitivity of impedance tensor w.r.t. AT
+        dztop: ndarray complex shape (2,2) derivative of ztop w.r.t. a2.
     """
-    ...
+    zbot = np.asarray(zbot, dtype=np.complex128)
+    ztop = np.asarray(ztop, dtype=np.complex128)
 
-    dtzbot = zbot[0,0]*zbot[1,1] - zbot[0,1]*zbot[1,0]
-    zdenom = (dtzbot * dfm(ag1) * dfm(ag2) / (dz1 * dz2) +
-              zbot[0,1] * dfm(ag1) * dfp(ag2) / dz1 -
-              zbot[1,0] * dfp(ag1) * dfm(ag2) / dz2 +
-              dfp(ag1) * dfp(ag2))
+    dtzbot = zbot[0, 0] * zbot[1, 1] - zbot[0, 1] * zbot[1, 0]
 
-    dapom = dtzbot * dfm(ag1) / dz1 - zbot[1,0] * dfp(ag1)
-    dbpom = dfp(ag1) + zbot[0,1] * dfm(ag1) / dz1
-    dcpom = zbot[0,1] * dfp(ag1) + dz1 * dfm(ag1)
-    ddpom = dtzbot * dfp(ag1) - dz1 * zbot[1,0] * dfm(ag1)
+    zdenom = (
+        dtzbot * dfm(ag1) * dfm(ag2) / (dz1 * dz2)
+        + zbot[0, 1] * dfm(ag1) * dfp(ag2) / dz1
+        - zbot[1, 0] * dfp(ag1) * dfm(ag2) / dz2
+        + dfp(ag1) * dfp(ag2)
+    )
+
+    dapom = dtzbot * dfm(ag1) / dz1 - zbot[1, 0] * dfp(ag1)
+    dbpom = dfp(ag1) + zbot[0, 1] * dfm(ag1) / dz1
+    dcpom = zbot[0, 1] * dfp(ag1) + dz1 * dfm(ag1)
+    ddpom = dtzbot * dfp(ag1) - dz1 * zbot[1, 0] * dfm(ag1)
+
     depom = ag2 * dfm(ag2)
     dfpom = (dfm(ag2) + ag2 * dfp(ag2)) / dz2
     dgpom = (dfm(ag2) - ag2 * dfp(ag2)) * dz2
@@ -553,112 +724,172 @@ def zscua2(zbot, ztop, a2, dz1, dz2, ag1, ag2):
     dn12 = depom * dcpom + dfpom * ddpom
     dn21 = -depom * dapom + dgpom * dbpom
 
-    dztop = np.zeros((2,2), dtype=complex)
-    dztop[0,0] = -0.5 * ztop[0,0] * dzdenom / (a2 * zdenom)
-    dztop[0,1] =  0.5 * (dn12 - ztop[0,1] * dzdenom) / (a2 * zdenom)
-    dztop[1,0] =  0.5 * (dn21 - ztop[1,0] * dzdenom) / (a2 * zdenom)
-    dztop[1,1] = -0.5 * ztop[1,1] * dzdenom / (a2 * zdenom)
-    return dztop
+    # guard against division by zero
+    zdenom_safe = zdenom if zdenom != 0 else 1e-300 + 0j
+    a2_safe = a2 if a2 != 0 else 1e-300
 
+    dztop = np.empty((2, 2), dtype=np.complex128)
+    dztop[0, 0] = -0.5 * ztop[0, 0] * dzdenom / (a2_safe * zdenom_safe)
+    dztop[0, 1] = 0.5 * (dn12 - ztop[0, 1] * dzdenom) / (a2_safe * zdenom_safe)
+    dztop[1, 0] = 0.5 * (dn21 - ztop[1, 0] * dzdenom) / (a2_safe * zdenom_safe)
+    dztop[1, 1] = -0.5 * ztop[1, 1] * dzdenom / (a2_safe * zdenom_safe)
+
+    return dztop
 
 def zscubs(zbot, ztop, dz1, dz2, ag1, ag2):
     """
-    Computes the derivative of the impedance tensor with respect to anisotropy strike (BLT).
+    Compute derivative of the impedance tensor with respect to the
+    effective horizontal anisotropy strike (in the strike-aligned frame).
 
-    Parameters:
-    ----------
-    zbot : ndarray (2,2)
-        Impedance tensor at bottom of layer
-    ztop : ndarray (2,2)
-        Impedance tensor at top of layer
-    dz1, dz2 : complex
-        Propagation constants for a1 and a2
-    ag1, ag2 : complex
-        Attenuation factors for a1 and a2
+    Args:
+        zbot: array-like complex shape (2,2) bottom impedance matrix.
+        ztop: array-like complex shape (2,2) top impedance matrix.
+        dz1: complex scalar.
+        dz2: complex scalar.
+        ag1: complex scalar.
+        ag2: complex scalar.
 
     Returns:
-    -------
-    dztop : ndarray (2,2)
-        Sensitivity of impedance tensor w.r.t. BLT
+        dztop: ndarray complex shape (2,2) derivative of ztop w.r.t. strike.
     """
-    ...
+    zbot = np.asarray(zbot, dtype=np.complex128)
+    ztop = np.asarray(ztop, dtype=np.complex128)
 
-    dtzbot = zbot[0,0]*zbot[1,1] - zbot[0,1]*zbot[1,0]
-    zdenom = (dtzbot * dfm(ag1) * dfm(ag2) / (dz1 * dz2) +
-              zbot[0,1] * dfm(ag1) * dfp(ag2) / dz1 -
-              zbot[1,0] * dfp(ag1) * dfm(ag2) / dz2 +
-              dfp(ag1) * dfp(ag2))
+    # initial part: derivative components from ztop
+    dztop = np.empty((2, 2), dtype=np.complex128)
+    dztop[0, 0] = -ztop[0, 1] - ztop[1, 0]
+    dztop[0, 1] = ztop[0, 0] - ztop[1, 1]
+    dztop[1, 0] = dztop[0, 1]
+    dztop[1, 1] = -dztop[0, 0]
 
-    dzbot = np.zeros((2,2), dtype=complex)
-    dzbot[0,0] = 4.0 * (zbot[0,1] + zbot[1,0]) * np.exp(-ag1 - ag2)
-    dzbot[0,1] = (zbot[0,0] - zbot[1,1]) * (dfm(ag1)*dfm(ag2)*dz1/dz2 - dfp(ag1)*dfp(ag2))
-    dzbot[1,0] = (zbot[0,0] - zbot[1,1]) * (dfm(ag1)*dfm(ag2)*dz2/dz1 - dfp(ag1)*dfp(ag2))
-    dzbot[1,1] = -dzbot[0,0]
+    # determinant-like combination of zbot
+    dtzbot = zbot[0, 0] * zbot[1, 1] - zbot[0, 1] * zbot[1, 0]
 
-    dpom = (zbot[0,0] - zbot[1,1]) * (dfm(ag1)*dfp(ag2)/dz1 - dfp(ag1)*dfm(ag2)/dz2)
+    # denominator used in correction terms
+    zdenom = (
+        dtzbot * dfm(ag1) * dfm(ag2) / (dz1 * dz2)
+        + zbot[0, 1] * dfm(ag1) * dfp(ag2) / dz1
+        - zbot[1, 0] * dfp(ag1) * dfm(ag2) / dz2
+        + dfp(ag1) * dfp(ag2)
+    )
 
-    dztop = np.zeros((2,2), dtype=complex)
-    dztop[0,0] = -ztop[0,1] - ztop[1,0] + (dzbot[0,0] + dpom * ztop[0,0]) / zdenom
-    dztop[0,1] =  ztop[0,0] - ztop[1,1] + (dzbot[0,1] + dpom * ztop[0,1]) / zdenom
-    dztop[1,0] =  dztop[0,1]
-    dztop[1,1] = -dztop[0,0]
+    # dzbot components
+    exp_term = np.exp(- (ag1 + ag2))
+    dzbot = np.empty((2, 2), dtype=np.complex128)
+    dzbot[0, 0] = 4.0 * (zbot[0, 1] + zbot[1, 0]) * exp_term
+    dzbot[0, 1] = (zbot[0, 0] - zbot[1, 1]) * (
+        dfm(ag1) * dfm(ag2) * dz1 / dz2 - dfp(ag1) * dfp(ag2)
+    )
+    dzbot[1, 0] = (zbot[0, 0] - zbot[1, 1]) * (
+        dfm(ag1) * dfm(ag2) * dz2 / dz1 - dfp(ag1) * dfp(ag2)
+    )
+    dzbot[1, 1] = -4.0 * (zbot[0, 1] + zbot[1, 0]) * exp_term
+
+    # dpom
+    dpom = (zbot[0, 0] - zbot[1, 1]) * (
+        dfm(ag1) * dfp(ag2) / dz1 - dfp(ag1) * dfm(ag2) / dz2
+    )
+
+    # add correction terms to dztop
+    # guard against zero denominator by relying on numpy complex behavior
+    dztop[0, 0] = dztop[0, 0] + (dzbot[0, 0] + dpom * ztop[0, 0]) / zdenom
+    dztop[0, 1] = dztop[0, 1] + (dzbot[0, 1] + dpom * ztop[0, 1]) / zdenom
+    dztop[1, 0] = dztop[1, 0] + (dzbot[1, 0] + dpom * ztop[1, 0]) / zdenom
+    dztop[1, 1] = dztop[1, 1] + (dzbot[1, 1] + dpom * ztop[1, 1]) / zdenom
+
     return dztop
 
-def zscuh(zbot, ztop, a1, a2, dz1, dz2, ag1, ag2):
+def dphase(z16):
     """
-    Computes the derivative of the impedance tensor with respect to layer thickness h.
+    Compute the real phase (float) of a complex value z16, following the
+    original Fortran logic and returning an angle in radians in the range
+    (-pi, pi].
 
-    Parameters:
-    ----------
-    zbot : ndarray (2,2)
-        Impedance tensor at bottom of layer
-    ztop : ndarray (2,2)
-        Impedance tensor at top of layer
-    a1, a2 : float
-        Maximum and minimum horizontal conductivities
-    dz1, dz2 : complex
-        Propagation constants for a1 and a2
-    ag1, ag2 : complex
-        Attenuation factors for a1 and a2
+    Args:
+        z16: complex or numpy scalar of complex dtype
 
     Returns:
-    -------
-    dztop : ndarray (2,2)
-        Sensitivity of impedance tensor w.r.t. layer thickness
+        float: phase of z16 in radians
     """
-    dtzbot = zbot[0,0]*zbot[1,1] - zbot[0,1]*zbot[1,0]
-    zdenom = (dtzbot * dfm(ag1) * dfm(ag2) / (dz1 * dz2) +
-              zbot[0,1] * dfm(ag1) * dfp(ag2) / dz1 -
-              zbot[1,0] * dfp(ag1) * dfm(ag2) / dz2 +
-              dfp(ag1) * dfp(ag2))
+    pi = np.pi
+    tiny = np.finfo(float).tiny
 
-    k1 = a1 * dz1
-    k2 = a2 * dz2
+    # ensure a Python complex for scalar operations
+    z = complex(z16)
+    re = z.real
+    im = z.imag
 
-    # Partial derivatives w.r.t. ag1 and ag2
-    dapom1 = dtzbot * dfm(ag1) / dz1 - zbot[1,0] * dfp(ag1)
-    dbpom1 = dfp(ag1) + zbot[0,1] * dfm(ag1) / dz1
-    dcpom1 = zbot[0,1] * dfp(ag1) + dz1 * dfm(ag1)
-    ddpom1 = dtzbot * dfp(ag1) - dz1 * zbot[1,0] * dfm(ag1)
+    if abs(re) >= tiny:
+        pom = np.arctan(im / re)
+        if re < 0.0:
+            if im >= 0.0:
+                return float(pom + pi)
+            else:
+                return float(pom - pi)
+        else:
+            return float(pom)
+    else:
+        if im < tiny:
+            return 0.0
+        else:
+            if im > 0.0:
+                return 0.5 * pi
+            else:
+                return -0.5 * pi
 
-    dapom2 = dtzbot * dfm(ag2) / dz2 + zbot[0,1] * dfp(ag2)
-    dbpom2 = dfp(ag2) - zbot[1,0] * dfm(ag2) / dz2
-    dcpom2 = zbot[1,0] * dfp(ag2) - dz2 * dfm(ag2)
-    ddpom2 = dtzbot * dfp(ag2) + dz2 * zbot[0,1] * dfm(ag2)
 
-    dzdenom = (k1 * (dapom2 * dfp(ag1) / dz1 + dbpom2 * dfm(ag1)) +
-               k2 * (dapom1 * dfp(ag2) / dz2 + dbpom1 * dfm(ag2)))
+def rotzs(dza, la: int, nla: int, betrad: float):
+    """
+    Rotate sensitivity matrices dza for layers la..nla (inclusive) by angle betrad (radians).
+    Args:
+        dza: array-like, shape (nl, 2, 2), complex. Sensitivities for all layers.
+        la: int, start layer index (Python 0-based).
+        nla: int, end layer index (Python 0-based, inclusive).
+        betrad: float, rotation angle in radians.
+    Returns:
+        dzb: ndarray, shape (nl, 2, 2), complex. Rotated sensitivities (same shape as dza).
+    """
+    dza = np.asarray(dza, dtype=np.complex128)
+    if dza.ndim != 3 or dza.shape[1:] != (2, 2):
+        raise ValueError("dza must have shape (nl, 2, 2)")
+    nl = dza.shape[0]
+    if not (0 <= la <= nla < nl):
+        raise ValueError("la and nla must be 0 <= la <= nla < nl (Python 0-based indices)")
 
-    dn12 = (k1 * (dapom2 * dfm(ag1) + dbpom2 * dz1 * dfp(ag1)) +
-            k2 * (dcpom1 * dfm(ag2) + ddpom1 * dfp(ag2) / dz2))
+    co2 = np.cos(2.0 * betrad)
+    si2 = np.sin(2.0 * betrad)
 
-    dn21 = (k1 * (dcpom2 * dfm(ag1) - ddpom2 * dfp(ag1) / dz1) -
-            k2 * (dapom1 * dfm(ag2) + dbpom1 * dz2 * dfp(ag2)))
+    dzb = np.array(dza, copy=True)  # preserve shape and dtype
 
-    dztop = np.zeros((2,2), dtype=complex)
-    dztop[0,0] = -ztop[0,0] * dzdenom / zdenom
-    dztop[0,1] = (dn12 - ztop[0,1] * dzdenom) / zdenom
-    dztop[1,0] = (dn21 - ztop[1,0] * dzdenom) / zdenom
-    dztop[1,1] = -ztop[1,1] * dzdenom / zdenom
+    for l in range(la, nla + 1):
+        sum1 = dza[l, 0, 0] + dza[l, 1, 1]
+        sum2 = dza[l, 0, 1] + dza[l, 1, 0]
+        dif1 = dza[l, 0, 0] - dza[l, 1, 1]
+        dif2 = dza[l, 0, 1] - dza[l, 1, 0]
 
-    return dztop
+        dzb[l, 0, 0] = 0.5 * (sum1 + dif1 * co2 + sum2 * si2)
+        dzb[l, 0, 1] = 0.5 * (dif2 + sum2 * co2 - dif1 * si2)
+        dzb[l, 1, 0] = 0.5 * (-dif2 + sum2 * co2 - dif1 * si2)
+        dzb[l, 1, 1] = 0.5 * (sum1 - dif1 * co2 - sum2 * si2)
+
+    return
+
+#if __name__ == "__main__":
+    ## small self-test example
+    #rop = np.array([[100.0, 200.0, 300.0]])
+    #ustr = np.array([0.0])
+    #udip = np.array([0.0])
+    #usla = np.array([0.0])
+
+    #sg, al, at, blt = cpanis(rop, ustr, udip, usla)
+    #print("sg[0]:\n", sg[0])
+    #print("al, at, blt (rad):", al[0], at[0], blt[0])
+
+    ## dfp examples
+    #print("dfp(0.5) =", dfp(0.5))
+    #print("dfp(1+0.2j) =", dfp(1 + 0.2j))
+
+    ## rotz example
+    #za = np.array([[1 + 2j, 0.3 - 0.1j], [-0.1 + 0.2j, 0.5 + 0.6j]])
+    #zb = rotz(za, np.pi / 6)
+    #print("zb:\n", zb)
