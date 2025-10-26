@@ -82,15 +82,16 @@ sg, al, at, blt = cpanis(rop[:nl], ustr[:nl], udip[:nl], usla[:nl])
 with open(ResFile, 'w') as f:
     line = '# Model parameters'
     f.write(line + "\n")    
-    line = '# layer, thick (km)  res_max, res_min, strike' 
+    line = '# layer, thick (km)  res_max, res_min, strike, dip, slant' 
     f.write(line + "\n")
     for layer in range(nl):      
-        line =  f'{layer:5d} {h[layer]:12.4f}'
-        pars = '' 
-        for i in range(3):
-            for j in range(3):
-                pars = pars +f'  {sg[layer, i, j]:14.5f}'
-        line = line +pars
+        pars =  f'{layer:5d} {h[layer]:12.4f}'
+        rops = f'   {rop[layer,0]:12.4f} {rop[layer,1]:12.4f} {rop[layer,2]:12.4f} ' 
+        angs = f'   {ustr[layer]:12.4f} {udip[layer]:12.4f} {usla[layer]:12.0f} ' 
+        # for i in range(3):
+        #     for j in range(3):
+        #         pars = pars +f'  {sg[layer, i, j]:14.5f}'
+        line = pars+rops+angs
         f.write(line + "\n")
 # === Loop over periods ===
 with open(ImpFile, 'w') as f:
