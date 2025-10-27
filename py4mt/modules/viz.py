@@ -93,7 +93,7 @@ def plot_impedance(thisaxis=None, data=None, **pltargs):
                     marker=pltargs['m_obs'][0],
                     markersize=pltargs['m_size'],
                     color=pltargs['c_obs'][0],
-                    linewidth=pltargs['l_cal'],
+                    linewidth=pltargs['l_obs'],
                     capsize=2, capthick=0.5)
     else:
         ax.plot(per,
@@ -101,7 +101,7 @@ def plot_impedance(thisaxis=None, data=None, **pltargs):
                 linestyle='',
                 marker=pltargs['m_obs'][0],
                 markersize=pltargs['m_size'],
-                linewidth=pltargs['l_cal'],
+                linewidth=pltargs['l_obs'],
                 color=pltargs['c_obs'][0])
         
     if plot_cal:
@@ -117,7 +117,7 @@ def plot_impedance(thisaxis=None, data=None, **pltargs):
                     marker=pltargs['m_obs'][1],
                     markersize=pltargs['m_size'],
                     color=pltargs['c_obs'][1],
-                    linewidth=pltargs['l_cal'],
+                    linewidth=pltargs['l_obs'],
                     capsize=2, capthick=0.5)
     else:
         ax.plot(per,
@@ -125,20 +125,22 @@ def plot_impedance(thisaxis=None, data=None, **pltargs):
                 linestyle='',
                 marker=pltargs['m_obs'][1],
                 markersize=pltargs['m_size'],
-                linewidth=pltargs['l_cal'],
+                linewidth=pltargs['l_obs'],
                 color=pltargs['c_obs'][1])
     
     
     ax.set_xscale('log')
-    ax.set_yscale('log')
-    ax.set_ylabel('impedance [mv km$^{-1}$ nT$^{-1}$]')
-    ax.set_xlim(pltargs['perlimits'])
+    ax.set_xlabel('period [s]',fontsize=pltargs['fontsizes'][1])
+    ax.set_yscale(pltargs['yscale'])
+    ax.set_ylabel('impedance [mv km$^{-1}$ nT$^{-1}$]',fontsize=pltargs['fontsizes'][1])
+    if len(pltargs['zlimits']) != 0:
+        ax.set_xlim(pltargs['perlimits'])
     if len(pltargs['zlimits']) != 0:
         ax.set_ylim(pltargs['zlimits'])
     ax.legend(['real', 'imag'])
     # ax.xaxis.set_ticklabels([])
-    ax.tick_params(labelsize=pltargs['labelsize']-1)
-    ax.set_title(pltargs['title'], fontsize=pltargs['fontsize'])
+    ax.tick_params(labelsize=pltargs['fontsizes'][1])
+    ax.set_title(pltargs['title'], fontsize=pltargs['fontsizes'][2])
     ax.grid('both', 'both', linestyle='-', linewidth=0.5)
     if len(pltargs['nrms'])==2:
         nrmsr = np.around(pltargs['nrms'][0],1)
@@ -146,10 +148,10 @@ def plot_impedance(thisaxis=None, data=None, **pltargs):
         strrms = 'nrms = '+str(nrmsr)+' | '+str(nrmsi)
         ax.text(0.05, 0.05,strrms,
                            transform=ax.transaxes,
-                           fontsize = pltargs['fontsize']-2,
+                           fontsize = pltargs['fontsizes'][1],
                            ha='left', va='bottom',
                            bbox={'pad': 2, 'facecolor': 'white', 'edgecolor': 'white' ,'alpha': 0.8} )
-        
+     
         
         
     if thisaxis is None:
