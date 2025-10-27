@@ -24,8 +24,6 @@ import pyproj
 from pyproj import CRS, database, Transformer
 from scipy.fftpack import dct, idct
 
-# from mtpy import MT , MTData, MTCollection
-
 
 def dictget(d, *k):
     '''Get the values corresponding to the given keys in the provided dict.'''

@@ -55,7 +55,6 @@ Periods = np.logspace(-4., 4., 41)
 
 pi = np.pi
 mu0 = 4e-7 * pi
-nlmax = 1001
 
 
 SearchStrng = '*.edi'
