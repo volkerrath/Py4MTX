@@ -6,9 +6,7 @@ Created on Thu Oct 23 15:19:01 2025
 @author: vrath
 '''
 
-from aniso import *
-import util as utl
-from version import versionstrg
+
 import os
 import sys
 import time
@@ -32,10 +30,10 @@ from version import versionstrg
 
 import util as utl
 import viz
-import modem 
-from aniso import *
+from aniso import cpanis, z1anis, dphase
 
-rhoair = 1.e17
+pi = np.pi
+mu0 = 4e-7 * pi
 rng = np.random.default_rng()
 nan = np.nan  # float('NaN')
 version, _ = versionstrg()
@@ -50,33 +48,43 @@ ResFile = ModFile.replace('.dat', '_summary.dat')
 ImpFile = ModFile.replace('.dat', '_impedance.dat')
 RhoFile = ModFile.replace('.dat', '_rhophas.dat')
 
-Periods = np.logspace(-4., 4., 41)
+Periods = np.logspace(-2., 2., 41)
 
-pi = np.pi
-mu0 = 4e-7 * pi
-nlmax = 1001
+'''
+Model A from Pek, J. and Santos, F. A. M., 2002.
+'''
+NLayer = 4
+Model = [
+    [10.,  10000.,  10000.,  10000.,    0.,  0.,  0.,],
+    [18.,    200.,  20000.,    200.,   15.,  0.,  0.,],
+    [100.,  1000.,   2000.,   1000.,  -75.,  0.,  0.,],
+    [0.,     100.,    100.,    100.,    0.,  0.,  0.,]
+        ]
 
+
+# '''
+# Model B from Pek, J. and Santos, F. A. M., 2002.
+# '''
+# NLayer = 2
+# Model = [
+#     [10.,   1000.,   1000.,   1000.,    0.,  0.,  0.,],
+#     [0.,     10.,    300.,    100.,   15., 60., 30.,]
+# ]
+
+model = np.array(Model) 
 
 # Allocate arrays
-h = np.zeros(nlmax)
-rop = np.zeros((nlmax, 3))
-ustr = np.zeros(nlmax)
-udip = np.zeros(nlmax)
-usla = np.zeros(nlmax)
 
-# === Read model parameters ===
-with open(ModFile, 'r') as f:
-    nl = int(f.readline())
-    for layer in range(nl):
-        line = f.readline().split()
-        h[layer] = float(line[0])
-        rop[layer, :] = list(map(float, line[1:4]))
-        ustr[layer] = float(line[4])
-        udip[layer] = float(line[5])
-        usla[layer] = float(line[6])
+h   = model[:,0]
+rop = model[:,1:4]
+ustr = model[:,4]
+udip =  model[:,5]
+usla =  model[:,6]
+
+
 
 # === Compute conductivity tensors and effective parameters ===
-sg, al, at, blt = cpanis(rop[:nl], ustr[:nl], udip[:nl], usla[:nl])
+sg, al, at, blt = cpanis(rop[:NLayer], ustr[:NLayer], udip[:NLayer], usla[:NLayer])
 
 # === Write model summary ===
 with open(ResFile, 'w') as f:
@@ -84,7 +92,7 @@ with open(ResFile, 'w') as f:
     f.write(line + "\n")    
     line = '# layer, thick (km)  res_max, res_min, strike, dip, slant' 
     f.write(line + "\n")
-    for layer in range(nl):      
+    for layer in range(NLayer):      
         pars =  f'{layer:5d} {h[layer]:12.4f}'
         rops = f'   {rop[layer,0]:12.4f} {rop[layer,1]:12.4f} {rop[layer,2]:12.4f} ' 
         angs = f'   {ustr[layer]:12.4f} {udip[layer]:12.4f} {usla[layer]:12.0f} ' 
@@ -98,8 +106,8 @@ with open(ImpFile, 'w') as f:
     line = '#   PERIOD,  Re Zxx,  Im Zxx,  Re Zxy,  Im Zxy ,  Re Zyx,  Im Zyx,  Re Zyy,  Im Zyy'
     f.write(line + "\n")
     for per in Periods:
-        z = z1anis(nl, h[:nl], al[:nl], at[:nl],
-                   blt[:nl], np.array([per]))[:, :, 0]
+        z = z1anis(NLayer, h[:NLayer], al[:NLayer], at[:NLayer],
+                   blt[:NLayer], np.array([per]))[:, :, 0]
         z_flat = z.flatten()
         interlaced = [f"{tmp.real:.5e} {tmp.imag:.5e}" for tmp in z_flat]
         line = f"{per:.5e} " + "  ".join(interlaced)
@@ -109,8 +117,8 @@ with open(RhoFile, 'w') as f:
     line = '#   PERIOD,  Rhoa xx,  Phs xx,  Rhoa xy,  Phs xy,  Rhoa yx,  Phs yx,  Rhoa yy,  Phs yy'
     f.write(line + "\n")
     for per in Periods:
-        z = z1anis(nl, h[:nl], al[:nl], at[:nl],
-                   blt[:nl], np.array([per]))[:, :, 0]
+        z = z1anis(NLayer, h[:NLayer], al[:NLayer], at[:NLayer],
+                   blt[:NLayer], np.array([per]))[:, :, 0]
         omega = 2.0 * pi / per
         prev = 1.0 / (omega * mu0)
         rapp = np.abs(z)**2 * prev
