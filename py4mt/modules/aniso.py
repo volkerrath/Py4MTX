@@ -7,6 +7,11 @@ Created on Thu Oct 23 15:08:41 2025
 """
 import numpy as np
 
+def aniso1d_fwd(model=None):
+    data = []
+    
+    return data
+
 
 def cpanis(rop, ustr, udip, usla):
     """
