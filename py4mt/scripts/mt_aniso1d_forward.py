@@ -50,6 +50,9 @@ titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng+'\n\n')
 
 WorkDir = '/home/vrath/Py4MTX/aniso/'
+if not os.path.isdir(WorkDir):
+    print(' File: %s does not exist, but will be created' % WorkDir)
+    os.mkdir(WorkDir)
 
 SumOut = True
 ResFile = WorkDir+ 'summary.dat'
@@ -83,27 +86,37 @@ if RhoPlt or ImpPlt:
     'yscale' : 'linear'
     }
 
-Periods = np.logspace(-2., 2., 41)
+Periods = np.logspace(-4., 4., 21)
+
+'''
+Testmodel
+'''
+# NLayer = 4
+# Model = [
+#     [2.,  10000.,  10000.,  10000.,    0.,  0.,  0., 1],
+#     [3.,    200.,  20000.,    200.,   15.,  0.,  0., 1],
+#     [5.,   1000.,   2000.,   1000.,  -75.,  0.,  0., 1],
+#     [0.,    100.,    100.,    100.,    0.,  0.,  0., 1]
+#         ]
 
 '''
 Model A from Pek, J. and Santos, F. A. M., 2002.
 '''
 NLayer = 4
 Model = [
-    [10.,  10000.,  10000.,  10000.,    0.,  0.,  0.,],
-    [18.,    200.,  20000.,    200.,   15.,  0.,  0.,],
-    [100.,  1000.,   2000.,   1000.,  -75.,  0.,  0.,],
-    [0.,     100.,    100.,    100.,    0.,  0.,  0.,]
+    [10000.,  10000.,  10000.,  10000.,    0.,  0.,  0., 1.],
+    [18000.,    200.,  20000.,    200.,   15.,  0.,  0., 1],
+    [100000.,  1000.,   2000.,   1000.,  -75.,  0.,  0., 1],
+    [0.,     100.,    100.,    100.,    0.,  0.,  0., 1]
         ]
-
 
 # '''
 # Model B from Pek, J. and Santos, F. A. M., 2002.
 # '''
 # NLayer = 2
 # Model = [
-#     [10.,   1000.,   1000.,   1000.,    0.,  0.,  0.,],
-#     [0.,     10.,    300.,    100.,   15., 60., 30.,]
+#     [10.,   1000.,   1000.,   1000.,    0.,  0.,  0., 1],
+#     [0.,     10.,    300.,    100.,   15., 60., 30., 1]
 # ]
 
 model = np.array(Model) 
@@ -124,9 +137,9 @@ sg, al, at, blt = cpanis(rop[:NLayer], ustr[:NLayer], udip[:NLayer], usla[:NLaye
 # === Write model summary ===
 with open(ResFile, 'w') as f:
     line = '# Model parameters'
-    f.write(line + "\n")    
+    f.write(line + '\n')    
     line = '# layer, thick (km)  res_x, res_y, res_z, strike, dip, slant' 
-    f.write(line + "\n")
+    f.write(line + '\n')
     for layer in range(NLayer):      
         pars =  f'{layer:5d} {h[layer]:12.4f}'
         rops = f'   {rop[layer,0]:12.4f} {rop[layer,1]:12.4f} {rop[layer,2]:12.4f} ' 
@@ -135,7 +148,7 @@ with open(ResFile, 'w') as f:
         #     for j in range(3):
         #         pars = pars +f'  {sg[layer, i, j]:14.5f}'
         line = pars+rops+angs
-        f.write(line + "\n")
+        f.write(line + '\n')
         
 # === Loop over periods for impedances ===
 Z = []
@@ -156,59 +169,71 @@ Z = interlaced
 if ImpOut:    
     with open(ImpFile, 'w') as f:
         line = '#   PERIOD,  Re Zxx,  Im Zxx,  Re Zxy,  Im Zxy ,  Re Zyx,  Im Zyx,  Re Zyy,  Im Zyy'
-        f.write(line + "\n")
+        f.write(line + '\n')
         for iper in np.arange(len(Periods)):
-            interlaced = "  ".join([f"{tmp.real:.5e} {tmp.imag:.5e}" for tmp in Z[iper,:]])
-            line = f"{per:.5e} " + interlaced
-            f.write(line + "\n")
+            real_imag = '  '.join([f'{tmp.real:.5e} {tmp.imag:.5e}' for tmp in Z[iper,:]])
+            line = f'{per:.5e} ' + real_imag
+            f.write(line + '\n')
 
+if ImpPlt:
+    fig, ax =  plt.subplots(2,2, figsize=pltargs['pltsize'])
+    fig.suptitle(pltargs['title'], fontsize=pltargs['fontsizes'][2])
+    
+    
+    data = np.zeros((len(Periods),3))     
+    data[:,0] = Periods[:]
+    
+    
+    data[:,1] = Z[:,0]
+    data[:,2] = Z[:,1]
+    pltargs['title']='Zxx'
+    viz.plot_impedance(thisaxis=ax[0,0], data=data, **pltargs)
+    
+    
+    
+    
+    data[:,1] = Z[:,2]
+    data[:,2] = Z[:,3]
+    pltargs['title']='Zxy'
+    viz.plot_impedance(thisaxis=ax[0,1], data=data, **pltargs)
+    
+    
+    data[:,1] = Z[:,4]
+    data[:,2] = Z[:,5]
+    pltargs['title']='Zyx'
+    viz.plot_impedance(thisaxis=ax[1,0], data=data, **pltargs)
+    
+    data[:,1] = Z[:,6]
+    data[:,2] = Z[:,7]
+    pltargs['title']='Zyy'
+    viz.plot_impedance(thisaxis=ax[1,1], data=data, **pltargs)
 
-fig, ax =  plt.subplots(2,2, figsize=pltargs['pltsize'])
-fig.suptitle(pltargs['title'], fontsize=pltargs['fontsizes'][2])
-
-
-data = np.zeros((len(Periods),3))     
-data[:,0] = Periods[:]
-
-
-data[:,1] = Z[:,0]
-data[:,2] = Z[:,1]
-pltargs['title']='Zxx'
-viz.plot_impedance(thisaxis=ax[0,0], data=data, **pltargs)
-
-
-
-data[:,1] = Z[:,2]
-data[:,2] = Z[:,3]
-pltargs['title']='Zxy'
-viz.plot_impedance(thisaxis=ax[0,1], data=data, **pltargs)
-
-
-data[:,1] = Z[:,4]
-data[:,2] = Z[:,5]
-pltargs['title']='Zyx'
-viz.plot_impedance(thisaxis=ax[1,0], data=data, **pltargs)
-
-data[:,1] = Z[:,6]
-data[:,2] = Z[:,7]
-pltargs['title']='Zyy'
-viz.plot_impedance(thisaxis=ax[1,1], data=data, **pltargs)
-
-# with open(RhoFile, 'w') as f:
-#     line = '#   PERIOD,  Rhoa xx,  Phs xx,  Rhoa xy,  Phs xy,  Rhoa yx,  Phs yx,  Rhoa yy,  Phs yy'
-#     f.write(line + "\n")
-#     for per in Periods:
+if RhoOut:
+    deg = 180./pi
+    with open(RhoFile, 'w') as f:
+        line = '#   PERIOD,  Rhoa xx,  Phs xx,  Rhoa xy,  Phs xy,  Rhoa yx,  Phs yx,  Rhoa yy,  Phs yy'
+        f.write(line + '\n')
+        for iper in np.arange(len(Periods)):
+            per = Periods[iper]
+            omega = 2.0 * pi /  per
+            prev = 1.0 / (omega * mu0)
+            print(Z[iper,:])
+            rhoa = np.ravel([[np.abs(tmp)**2 * prev for tmp in Z[iper,0::2]]])
+            phas = np.ravel([[deg*dphase(tmp) for tmp in Z[iper,1::2]]])      
+            rhoa_phas = ''.join([f'{float(rhoa[ii]):12.5f} {float(phas[ii]):12.3f}' for ii in range(4)])
+            line = f'{per:.5e} ' + rhoa_phas
+            f.write(''.join(line) + '\n')
+#     for pef.write('  '.join(line) + '\n')r in Periods:
 #         z = z1anis(NLayer, h[:NLayer], al[:NLayer], at[:NLayer],
 #                    blt[:NLayer], np.array([per]))[:, :, 0]
-#         omega = 2.0 * pi / per
-#         prev = 1.0 / (omega * mu0)
+
 #         rapp = np.abs(z)**2 * prev
 #         papp = np.array(
 #             [[180.0 * dphase(z[ii, jj]) / pi for jj in range(2)] for ii in range(2)])
-#         line = [f"{per:.5e}"]
+#         line = [f'{per:.5e}']
 #         for i in range(2):
 #             for j in range(2):
-#                 line.append(f"{rapp[i, j]:.5e}")
-#                 line.append(f"{papp[i, j]:.1f}")
-#         f.write("  ".join(line) + "\n")
+#                 line.append(f'{rapp[i, j]:.5e}')
+#                 line.append(f'{papp[i, j]:.1f}')
+#         f.write('  '.join(line) + '\n')
 
