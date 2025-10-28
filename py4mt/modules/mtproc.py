@@ -250,13 +250,13 @@ def make_collection(edirname=None,
 def calc_rhoa_phas(freq=None, Z=None):
 
     mu0 = 4.0e-7 * np.pi  # Magnetic Permeability (H/m)
-    omega = 2.*np*freq
+    omega = 2.*np.pi*freq
 
-    rhoa = np.power(np.abs(Z), 2) / (mu0 * omega)
-    # phi = np.rad2deg(np.arctan(Z.imag / Z.real))
-    phi = np.angle(Z, deg=True)
+    absZ2 = np.power(np.abs(Z),2)
+    rhoa = absZ2 / (mu0 * omega)
+    phase = np.rad2deg(np.angle(Z))
 
-    return rhoa, phi
+    return rhoa, phase
 
 def mt1dfwd(freq, sig, d, inmod='r', out='imp', magfield='b'):
     '''
@@ -325,13 +325,13 @@ def mt1dfwd(freq, sig, d, inmod='r', out='imp', magfield='b'):
     elif out.lower() == 'rho':
         absZ = np.abs(Z)
         rhoa = (absZ * absZ) / (mu0 * w)
-        phase = np.rad2deg(np.arctan(Z.imag / Z.real))
+        phase = np.rad2deg(np.angle(Z))
 
         return rhoa, phase
     else:
         absZ = np.abs(Z)
         rhoa = (absZ * absZ) / (mu0 * w)
-        phase = np.rad2deg(np.arctan(Z.imag / Z.real))
+        phase = np.rad2deg(np.angle(Z))
         return Z, rhoa, phase
 
 def wait1d(periods=None, thick=None, res=None):
