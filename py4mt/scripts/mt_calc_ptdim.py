@@ -101,13 +101,13 @@ for filename in edi_files:
     lon = mt_obj.station_metadata.location.longitude
     elev = mt_obj.station_metadata.location.elevation
 
-    Z = mt_obj.Z
-    per = Z.period
+    Z_obj = mt_obj.Z
+    per = Z_obj.period
 
     print(' site %s at :  % 10.6f % 10.6f % 8.1f' % (name, lat, lon, elev ))
 
 # use the phase tensor to determine which frequencies are 1D/2D/3D
-    dim = Z.estimate_dimensionality(
+    dim = Z_obj.estimate_dimensionality(
                          skew_threshold=3,
                          # threshold in skew angle (degrees) to determine if
                          # data are 3d

@@ -19,6 +19,8 @@ import inspect
 
 # Import numerical or other specialised modules
 import numpy as np
+from mtpy.core.mt import MT
+import mtpy.core.mt as mt
 
 PY4MTX_DATA = os.environ['PY4MTX_DATA']
 PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
@@ -33,7 +35,7 @@ from version import versionstrg
 import util as utl
 import viz
 import modem 
-from aniso import *
+from aniso import z1anis, zs1anis, dphase
 
 rhoair = 1.e17
 rng = np.random.default_rng()
@@ -45,11 +47,12 @@ titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng+'\n\n')
 
 WorkDir = PY4MTX_ROOT+'/aniso/'
+if not os.path.isdir(WorkDir):
+    print(' File: %s does not exist, but will be created' % WorkDir)
+    os.mkdir(WorkDir)
+EdiDir = WorkDir+'edi'
+ResDir = WorkDir+'results'
 
-ModFile = WorkDir+'ana.dat'
-ResFile = ModFile.replace('.dat', '_summary.dat')
-ImpFile = ModFile.replace('.dat', '_impedance.dat')
-RhoFile = ModFile.replace('.dat', '_rhophas.dat')
 
 Periods = np.logspace(-4., 4., 41)
 
@@ -58,10 +61,29 @@ mu0 = 4e-7 * pi
 
 
 SearchStrng = '*.edi'
-dir_list = utl.get_filelist(searchstr=[SearchStrng], searchpath=WorkDir, 
+dir_list = utl.get_filelist(searchstr=[SearchStrng], searchpath=EdiDir, 
                             sortedlist =True, fullpath=True)
 
+dimlist = []
+for filename in edi_files:
+    sit = sit + 1
+    print('reading data from: ' + filename)
+    name, ext = os.path.splitext(filename)
+    file_i = filename
 
+# Create MT object
+    mt_obj = MT()
+    mt_obj.read(file_i)
+
+    site = mt_obj.station_metadata.id
+    lat = mt_obj.station_metadata.location.latitude
+    lon = mt_obj.station_metadata.location.longitude
+    elev = mt_obj.station_metadata.location.elevation
+
+    Z_obj = mt_obj.Z
+    per = Z_obj.period
+
+    print(' site %s at :  % 10.6f % 10.6f % 8.1f' % (name, lat, lon, elev ))
 
 # hstart = np.log10(100./1000.) 
 # hfinal = np.log10(3000./1000.)
