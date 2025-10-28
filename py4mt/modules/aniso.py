@@ -7,10 +7,68 @@ Created on Thu Oct 23 15:08:41 2025
 """
 import numpy as np
 
-def aniso1d_fwd(model=None):
+def aniso1d_fwd(model=None, per=None, out=False):
+    '''
+    Calculates data vector from parameter vector
+
+    Parameters
+    ----------
+    model : np.array of shape (nl, 7)
+        Model definition. The default is None.
+        Flattened concatenation of:
+            h : ndarray of shape (nl,)
+            rop : ndarray of shape (nl, 3)
+                Principal resistivities [Ohm·m]
+            ustr, udip, usla : ndarray of shape (nl,)
+                Euler angles [degrees]: strike, dip, slant
+
+    per : np.array
+        Periods. The default is None.
+    out : logical
+        Output control. The default is None.
+
+    Returns
+    -------
+    data : np. array
+        DESCRIPTION.
+
+    '''
+    
+    # unpack model
+    h   = model[:,0]
+    rop = model[:,1:4]
+    ustr = model[:,4]
+    udip =  model[:,5]
+    usla =  model[:,6]
+    
+    
+
     data = []
     
     return data
+
+
+def pack_model(h, rop, ustr, udip, usla):
+    # model = np.zeros((h.shape[0],7))
+    # model[:,0] = h
+    # model[:,1:4] = rop
+    # model[:,4] = ustr
+    # model[:,5] = udip
+    # model[:,6] = usla
+    model = np.hstack((h, rop, ustr, udip, usla))
+    return model
+
+def unpack_model(model):
+    
+    h   = model[:,0]
+    rop = model[:,1:4]
+    ustr = model[:,4]
+    udip =  model[:,5]
+    usla =  model[:,6]
+    
+    return h, rop, ustr, udip, usla
+
+
 
 
 def cpanis(rop, ustr, udip, usla):
