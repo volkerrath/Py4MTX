@@ -79,53 +79,56 @@ def plot_impedance(thisaxis=None, data=None, **pltargs):
         cal_imag = data[:,6] 
         plot_cal = True
             
-
     if plot_cal:
        ax.plot(per, cal_real, 
-               color=pltargs['c_cal'][0], linestyle='-', linewidth=pltargs['l_cal'])
+               color=pltargs['c_cal'][0], 
+               linestyle=pltargs['l_cal'][0], 
+               inewidth=pltargs['l_cal'][1])
     
   
     if plot_err:
         ax.errorbar(per,
                     obs_real,
                     yerr=err_real,
-                    linestyle='',
+                    linestyle=pltargs['l_obs'][0],
                     marker=pltargs['m_obs'][0],
                     markersize=pltargs['m_size'],
                     color=pltargs['c_obs'][0],
-                    linewidth=pltargs['l_obs'],
+                    linewidth=pltargs['l_obs'][1],
                     capsize=2, capthick=0.5)
     else:
         ax.plot(per,
                 obs_real,
-                linestyle='',
+                linestyle=pltargs['l_cal'][0],
                 marker=pltargs['m_obs'][0],
                 markersize=pltargs['m_size'],
-                linewidth=pltargs['l_obs'],
+                linewidth=pltargs['l_obs'][1],
                 color=pltargs['c_obs'][0])
         
     if plot_cal:
        ax.plot(per, cal_imag, 
-               color=pltargs['c_cal'][1], linestyle='-', linewidth=pltargs['l_cal'])
+              color=pltargs['c_cal'][0], 
+              linestyle=pltargs['l_cal'][0], 
+              linewidth=pltargs['l_cal'][1])
     
   
     if plot_err:
         ax.errorbar(per,
                     obs_imag,
                     yerr=err_imag,
-                    linestyle='',
+                    linestyle=pltargs['l_obs'][0],
                     marker=pltargs['m_obs'][1],
                     markersize=pltargs['m_size'],
                     color=pltargs['c_obs'][1],
-                    linewidth=pltargs['l_obs'],
+                    linewidth=pltargs['l_obs'][1],
                     capsize=2, capthick=0.5)
     else:
         ax.plot(per,
                 obs_imag,
-                linestyle='',
+                linestyle=pltargs['l_obs'][0],
                 marker=pltargs['m_obs'][1],
                 markersize=pltargs['m_size'],
-                linewidth=pltargs['l_obs'],
+                linewidth=pltargs['l_obs'][1],
                 color=pltargs['c_obs'][1])
     
     
@@ -214,7 +217,7 @@ def plot_rhophas(thisaxis=None, data=None, **pltargs):
 
     if plot_cal:
        ax.plot(per, cal_rhoa, 
-               color=pltargs['c_cal'][0], linestyle='-', linewidth=pltargs['l_cal'])
+              color=pltargs['c_cal'][0], linestyle=pltargs['l_cal'][0], linewidth=pltargs['l_cal'][1])
     
   
     if plot_err:
@@ -238,7 +241,7 @@ def plot_rhophas(thisaxis=None, data=None, **pltargs):
         
     if plot_cal:
        ax.plot(per, cal_phas, 
-               color=pltargs['c_cal'][1], linestyle='-', linewidth=pltargs['l_cal'])
+              color=pltargs['c_cal'][1], linestyle=pltargs['l_cal'][0], linewidth=pltargs['l_cal'][1])
     
   
     if plot_err:

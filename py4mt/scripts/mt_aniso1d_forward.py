@@ -38,7 +38,7 @@ from version import versionstrg
 import util as utl
 import viz
 from mtproc import  calc_rhoa_phas
-from aniso import cpanis, z1anis, dphase
+from aniso import cpanis, z1anis
 
 pi = np.pi
 mu0 = 4e-7 * pi
@@ -74,10 +74,10 @@ if RhoPlt or ImpPlt:
     'm_size' : 8,
     'c_obs' : ['b', 'r'],
     'm_obs' : ['s', 'o' ],
-    'l_obs' : 2,
+    'l_obs' : ['-', 2],
     'c_cal' : ['b', 'r'],
     'm_cal' : ['.', '.' ],
-    'l_cal' : 2,
+    'l_cal' : ['-', 2],
     'nrms'  : [],
     'perlimits' : [], # [1e-3, 1e3],
     'zlimits' : [],
