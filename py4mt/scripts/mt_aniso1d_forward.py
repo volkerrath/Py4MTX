@@ -60,14 +60,14 @@ ResFile = WorkDir + 'summary.dat'
 
 ImpOut = True
 ImpFile = WorkDir + 'impedance.dat'
-ImpPlt = False
+ImpPlt = True
 
 RhoOut = True
 RhoFile = WorkDir + 'rhophas.dat'  
 RhoPlt = True
 
 PlotFormat = ['.png']
-PlotFile = 'AnisoTest'
+PlotFile = WorkDir+'AnisoTest'
 
 if RhoPlt or ImpPlt:
     pltargs = {
@@ -83,7 +83,7 @@ if RhoPlt or ImpPlt:
         'nrms': [],
         'xlimits': [],  # [1e-3, 1e3],
         'ylimits': [],
-        'title': 'Anisotropic model Test',
+        'suptitle': 'Anisotropic model Test',
     }
 
 Periods = np.logspace(-3, 5., 41)
@@ -93,13 +93,19 @@ print('periods:', Periods)
 Testmodel
 '''
 NLayer = 4
+# Model = [
+#     [2.,  100.,  100.,  100.,    0.,  0.,  0., 1.],
+#     [6.,  200.,  20.,    200.,   15.,  0.,  0., 1],
+#     [6.,  1000.,   2000.,   10.,  -75.,  0.,  0., 1],
+#     [0.,     100.,    100.,    100.,    0.,  0.,  0., 1]
+# ]
+NLayer = 4
 Model = [
     [2.,  100.,  100.,  100.,    0.,  0.,  0., 1.],
-    [6.,  200.,  20.,    200.,   15.,  0.,  0., 1],
-    [6.,  1000.,   2000.,   10.,  -75.,  0.,  0., 1],
+    [6.,  100.,  10.,    10.,   15.,  0.,  0., 1],
+    [6.,  100.,   1000., 10.,  -75.,  0.,  0., 1],
     [0.,     100.,    100.,    100.,    0.,  0.,  0., 1]
 ]
-
 # '''
 # Model A from Pek, J. and Santos, F. A. M., 2002.
 # '''
@@ -185,7 +191,7 @@ if ImpPlt:
     Imp = interlaced
 
     fig, ax = plt.subplots(2, 2, figsize=pltargs['pltsize'])
-    fig.suptitle(pltargs['title'], fontsize=pltargs['fontsizes'][2])
+    fig.suptitle(pltargs['suptitle'], fontsize=pltargs['fontsizes'][2])
 
     pltargs['yscale'] = 'linear'
     pltargs['ylabel'] = r'impedance [$\Omega$]'
@@ -242,7 +248,7 @@ if RhoPlt:
     rhoa, phas = calc_rhoa_phas(freq=freqs, Z=Z)
 
     fig, ax = plt.subplots(2, 2, figsize=pltargs['pltsize'])
-    fig.suptitle(pltargs['title'], fontsize=pltargs['fontsizes'][2])
+    fig.suptitle(pltargs['suptitle'], fontsize=pltargs['fontsizes'][2])
 
     data = np.zeros((len(Periods), 3))
     data[:, 0] = Periods[:]
@@ -256,10 +262,10 @@ if RhoPlt:
     pltargs['ylabel'] = r'$\rho_a$  [$\Omega$ m]'
     viz.plot_rhophas(thisaxis=ax[0, 0], data=data, **pltargs)
 
-    data[:, 1] = phas[:, 1]
-    data[:, 2] = phas[:, 2]
+    data[:, 1] = phas[:, 1]+90.
+    data[:, 2] = phas[:, 2]-90.
     pltargs['title'] = 'Phas xy/yx'
-    pltargs['legend'] = [r'$\phi_{xy}$', 'r$\phi_{yx}$']
+    pltargs['legend'] = [r'$\phi_{xy}$', r'$\phi_{yx}$']
     pltargs['yscale'] = 'linear'
     pltargs['ylimits'] = []
     pltargs['ylabel'] = r'$\phi$ [$^\circ$]'
@@ -274,8 +280,8 @@ if RhoPlt:
     pltargs['ylabel'] = r'$\rho_a$  [$\Omega$ m]'
     viz.plot_rhophas(thisaxis=ax[0, 1], data=data, **pltargs)
 
-    data[:, 1] = phas[:, 0]
-    data[:, 2] = phas[:, 3]
+    data[:, 1] = phas[:, 0]-90.
+    data[:, 2] = phas[:, 3]+90.
     pltargs['title'] = 'Phas xx/yy'
     pltargs['legend'] = [r'$\phi_{xx}$', r'$\phi_{yy}$']
     pltargs['yscale'] = 'linear'
