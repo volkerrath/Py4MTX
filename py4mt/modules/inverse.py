@@ -294,10 +294,11 @@ def msqrt_sparse(M=None, method='chol', smallval=None, nthreads = 16):
         
         return sqrtM
 
-     else:
+    else:
          sys.exit()
     
 def isspd(A):
+    from scipy.sparse import csr_array, csc_array, coo_array, eye_array, diags_array, issparse
 
     n = A.shape[0]
 
@@ -305,16 +306,16 @@ def isspd(A):
         from scipy.sparse.linalg import splu
         try:
             # Convert to Compressed Sparse Row format
-            sparse_matrix = csr_matrix(matrix)
+            spm = csr_array(A)
             # Attempt LU decomposition (Cholesky not directly available for sparse)
-            splu(sparse_matrix)
+            splu(spm)
             return True
         except RuntimeError:
             return False
     else:
         from scipy.linalg import cholesky
-         try:
-            cholesky(matrix)
+        try:
+            cholesky(A)
             return True
         except np.linalg.LinAlgError:
             return False
