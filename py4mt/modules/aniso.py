@@ -69,8 +69,6 @@ def unpack_model(model):
     return h, rop, ustr, udip, usla
 
 
-
-
 def cpanis(rop, ustr, udip, usla):
     """
     Computes effective azimuthal anisotropy parameters from principal resistivities

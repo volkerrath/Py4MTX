@@ -851,7 +851,7 @@ def plot_model_ensemble(
 
     ax = ThisAxis
 
-    if numpy.size(ModEns)==0:
+    if np.size(ModEns)==0:
        sys.exit('No parameter ensemble given!! Exit.')
        # nopar=True
 
@@ -866,12 +866,12 @@ def plot_model_ensemble(
 
 
     if 'per' in PlotType.lower():
-        np = numpy.size(Percentiles)
-        medval=numpy.percentile(ModEns, 50., axis=0)
+        nperc = np.size(Percentiles)
+        medval=np.percentile(ModEns, 50., axis=0)
 
-        for p in numpy.arange(np):
-                mlow = numpy.percentile(ModEns,      Percentiles[p], axis=0)
-                mupp = numpy.percentile(ModEns, 100.-Percentiles[p], axis=0)
+        for p in np.arange(nperc):
+                mlow = np.percentile(ModEns,      Percentiles[p], axis=0)
+                mupp = np.percentile(ModEns, 100.-Percentiles[p], axis=0)
                 plabel = None
                 ax.fill_betweenx(Depth, mlow, mupp, step='post',
                                    linewidth=Linewidth[0],
@@ -883,11 +883,11 @@ def plot_model_ensemble(
             linewidth=Linewidth[0], color= Linecolor[1],
             label='medval')
 
-        for p in numpy.arange(np):
+        for p in np.arange(nperc):
             plabel = 'p='\
                 +str(100.-Percentiles[p]-Percentiles[p])+' %'
-            mlow = numpy.percentile(ModEns,      Percentiles[p], axis=0)
-            mupp = numpy.percentile(ModEns, 100.-Percentiles[p], axis=0)
+            mlow = np.percentile(ModEns,      Percentiles[p], axis=0)
+            mupp = np.percentile(ModEns, 100.-Percentiles[p], axis=0)
             ax.step(mlow, Depth, where='pre',
                     linewidth=Linewidth[0]/2, color= Linecolor[p+2])
             ax.step(mupp, Depth, where='pre',
@@ -895,12 +895,12 @@ def plot_model_ensemble(
                     label=plabel)
 
     if 'qua' in PlotType.lower():
-        np = numpy.size(Quantiles)
-        medval=numpy.quantile(ModEns, 0.5, axis=0)
+        nperc = np.size(Quantiles)
+        medval=np.quantile(ModEns, 0.5, axis=0)
 
-        for p in numpy.arange(np):
-                mlow = numpy.quantile(ModEns,      Quantiles[p], axis=0)
-                mupp = numpy.quantile(ModEns, 1.-Quantiles[p], axis=0)
+        for p in np.arange(nperc):
+                mlow = np.quantile(ModEns,      Quantiles[p], axis=0)
+                mupp = np.quantile(ModEns, 1.-Quantiles[p], axis=0)
                 plabel = None
                 ax.fill_betweenx(Depth, mlow, mupp, step='post',
                                    linewidth=Linewidth[0],
@@ -912,11 +912,11 @@ def plot_model_ensemble(
             linewidth=Linewidth[0], color= Linecolor[1],
             label='medval')
 
-        for p in numpy.arange(np):
+        for p in np.arange(nperc):
             plabel = 'q='\
                 +str(1.-Quantiles[p]-Quantiles[p])
-            mlow = numpy.quantile(ModEns,      Quantiles[p], axis=0)
-            mupp = numpy.quantile(ModEns, 1.-Quantiles[p], axis=0)
+            mlow = np.quantile(ModEns,      Quantiles[p], axis=0)
+            mupp = np.quantile(ModEns, 1.-Quantiles[p], axis=0)
             ax.step(mlow, Depth, where='pre',
                     linewidth=Linewidth[0]/2, color= Linecolor[p+2])
             ax.step(mupp, Depth, where='pre',
@@ -925,13 +925,13 @@ def plot_model_ensemble(
 
     elif 'lin' in PlotType.lower():
 
-        nens = numpy.shape(ModEns)
+        nens = np.shape(ModEns)
         if nens[0] > Maxlines:
             sys.exit('plot_model_ensemble: too many lines! Exit.')
 
-        medval=numpy.percentile(ModEns, 50., axis=0)
+        medval=np.percentile(ModEns, 50., axis=0)
 
-        for ne in numpy.arange(nens):
+        for ne in np.arange(nens):
             plabel = None
 
             ax.step(ModEns[1], Depth,
@@ -1002,7 +1002,7 @@ def plot_data_ensemble(
 
     cm = 1/2.54  # centimeters to inches
 
-    if numpy.size(DatEns)==0:
+    if np.size(DatEns)==0:
         sys.exit('No data ensemble given!! Exit.')
         # nodat=True
 
@@ -1016,10 +1016,10 @@ def plot_data_ensemble(
         fig.suptitle(PlotTitle, fontsize=Fontsizes[2])
         Legend = True
 
-    _, NN, _, _, Pars =  aesys.get_system_params(System)
+    #_, NN, _, _, Pars =  aesys.get_system_params(System)
 
 
-    np = numpy.size(Percentiles)
+    nperc = np.size(Percentiles)
 
     if 'aem05' in System.lower():
         XLabel = 'frequency (kHz)'
@@ -1027,35 +1027,35 @@ def plot_data_ensemble(
         XAxis = Pars[0]/1000.
 
 
-        nsmp,ndat = numpy.shape(DatEns)
+        nsmp,ndat = np.shape(DatEns)
 
         Qens =   DatEns[:,0:4]
         Iens =   DatEns[:,4:8]
 
-        print(numpy.shape(XAxis), numpy.shape(Qens))
+        print(np.shape(XAxis), np.shape(Qens))
 
         if ('per' in PlotType.lower()) or ('qua' in PlotType.lower()):
 
 
-            for p in numpy.arange(np):
+            for p in np.arange(np):
 
 
 
                 if 'per' in PlotType.lower():
-                    medQens = numpy.percentile(Qens, 50., axis=0)
+                    medQens = np.percentile(Qens, 50., axis=0)
                     plabel = 'p='\
                         +str(100.-Percentiles[p]-Percentiles[p])+' %'
 
-                    dlow = numpy.percentile(Qens,      Percentiles[p], axis=0)
-                    dupp = numpy.percentile(Qens, 100.-Percentiles[p], axis=0)
+                    dlow = np.percentile(Qens,      Percentiles[p], axis=0)
+                    dupp = np.percentile(Qens, 100.-Percentiles[p], axis=0)
 
                 else:
-                    medQens = numpy.percentile(Qens, 0.5, axis=0)
+                    medQens = np.percentile(Qens, 0.5, axis=0)
                     plabel = 'p='\
                         +str(1.-Quantiles[p]-Quantiles[p])+' %'
 
-                    dlow = numpy.quantile(Qens,    Quantiles[p], axis=0)
-                    dupp = numpy.quantile(Qens, 1.-Quantiles[p], axis=0)
+                    dlow = np.quantile(Qens,    Quantiles[p], axis=0)
+                    dupp = np.quantile(Qens, 1.-Quantiles[p], axis=0)
 
 
 
@@ -1077,23 +1077,23 @@ def plot_data_ensemble(
                         label='medval')
 
 
-            for p in numpy.arange(np):
+            for p in np.arange(np):
 
                 if 'per' in PlotType.lower():
-                    medIens = numpy.percentile(Iens, 50., axis=0)
+                    medIens = np.percentile(Iens, 50., axis=0)
                     plabel = 'p='\
                         +str(100.-Percentiles[p]-Percentiles[p])+' %'
 
-                    dlow = numpy.percentile(Iens,      Percentiles[p], axis=0)
-                    dupp = numpy.percentile(Iens, 100.-Percentiles[p], axis=0)
+                    dlow = np.percentile(Iens,      Percentiles[p], axis=0)
+                    dupp = np.percentile(Iens, 100.-Percentiles[p], axis=0)
 
                 else:
-                    medIens = numpy.percentile(Iens, 0.5, axis=0)
+                    medIens = np.percentile(Iens, 0.5, axis=0)
                     plabel = 'p='\
                         +str(1.-Quantiles[p]-Quantiles[p])+' %'
 
-                    dlow = numpy.quantile(Iens,    Quantiles[p], axis=0)
-                    dupp = numpy.quantile(Iens, 1.-Quantiles[p], axis=0)
+                    dlow = np.quantile(Iens,    Quantiles[p], axis=0)
+                    dupp = np.quantile(Iens, 1.-Quantiles[p], axis=0)
 
                 ax.fill_between(XAxis, dlow, dupp,
                                         linewidth=Linewidth[0]/2,
@@ -1118,12 +1118,12 @@ def plot_data_ensemble(
 
         elif 'lin' in PlotType.lower():
 
-            nens = numpy.shape(Qens)
+            nens = np.shape(Qens)
             if nens[0] > Maxlines:
                 sys.exit('plot_data_ensemble: too many lines! Exit.')
 
             plabel = None
-            medQens = numpy.percentile(Qens, 50., axis=0)
+            medQens = np.percentile(Qens, 50., axis=0)
             ax.plot(XAxis, Qens,
                         linewidth=Linewidth[0]/2,
                         color= Linecolor[0], alpha=0.5,
@@ -1134,7 +1134,7 @@ def plot_data_ensemble(
                     linewidth=Linewidth[0], color= Linecolor[2], linestyle=Linetype[2],
                     label='Q, median')
 
-            medIens = numpy.percentile(Iens, 50., axis=0)
+            medIens = np.percentile(Iens, 50., axis=0)
             ax.plot(XAxis, Iens,
                         linewidth=Linewidth[0]/2,
                         color= Linecolor[0], alpha=0.5,
@@ -1168,17 +1168,16 @@ def plot_data_ensemble(
     elif 'gen' in System.lower():
         XLabel = 'time (ms)'
         YLabel = 'ppm (-)'
-        XAxis = Pars[0]
+        #XAxis = Pars[0]
 
-        nsmp,ndat = numpy.shape(DatEns)
+        nsmp,ndat = np.shape(DatEns)
 
         Hens =   DatEns[:,0:11]
         Zens =   DatEns[:,11:22]
 
         if DataTrans==2:
-           S = numpy.amin(DatEns)
-           Hens = Hens, _, _ = inverse.transform_data(d_vec=Hens, d_trn=DataTrans, scale=S)
-           Zens = Zens, _, _ = inverse.transform_data(d_vec=Zens, d_trn=DataTrans, scale=S)
+           S = np.amin(DatEns)
+#
 
            YLabel = 'atanh H/Z (-)'
            ax.set_yscale('linear')
@@ -1195,23 +1194,23 @@ def plot_data_ensemble(
 
 
 
-                for p in numpy.arange(np):
+                for p in np.arange(np):
 
                     if 'per' in PlotType.lower():
-                        medHens = numpy.percentile(Hens, 50., axis=0)
+                        medHens = np.percentile(Hens, 50., axis=0)
                         plabel = 'p='\
                             +str(100.-Percentiles[p]-Percentiles[p])+' %'
 
-                        dlow = numpy.percentile(Hens,      Percentiles[p], axis=0)
-                        dupp = numpy.percentile(Hens, 100.-Percentiles[p], axis=0)
+                        dlow = np.percentile(Hens,      Percentiles[p], axis=0)
+                        dupp = np.percentile(Hens, 100.-Percentiles[p], axis=0)
 
                     else:
-                        medHens = numpy.percentile(Hens, 0.5, axis=0)
+                        medHens = np.percentile(Hens, 0.5, axis=0)
                         plabel = 'p='\
                             +str(1.-Quantiles[p]-Quantiles[p])
 
-                        dlow = numpy.quantile(Hens,    Quantiles[p], axis=0)
-                        dupp = numpy.quantile(Hens, 1.-Quantiles[p], axis=0)
+                        dlow = np.quantile(Hens,    Quantiles[p], axis=0)
+                        dupp = np.quantile(Hens, 1.-Quantiles[p], axis=0)
 
 
                     ax.fill_between(XAxis, dlow, dupp,
@@ -1232,23 +1231,23 @@ def plot_data_ensemble(
                             label='medval')
 
 
-                for p in numpy.arange(np):
+                for p in np.arange(np):
 
                     if 'per' in PlotType.lower():
-                        medZens = numpy.percentile(Zens, 50., axis=0)
+                        medZens = np.percentile(Zens, 50., axis=0)
                         plabel = 'p='\
                             +str(100.-Percentiles[p]-Percentiles[p])+' %'
 
-                        dlow = numpy.percentile(Zens,      Percentiles[p], axis=0)
-                        dupp = numpy.percentile(Zens, 100.-Percentiles[p], axis=0)
+                        dlow = np.percentile(Zens,      Percentiles[p], axis=0)
+                        dupp = np.percentile(Zens, 100.-Percentiles[p], axis=0)
 
                     else:
-                        medZens = numpy.percentile(Zens, 0.5, axis=0)
+                        medZens = np.percentile(Zens, 0.5, axis=0)
                         plabel = 'p='\
                             +str(1.-Quantiles[p]-Quantiles[p])
 
-                        dlow = numpy.quantile(Zens,    Quantiles[p], axis=0)
-                        dupp = numpy.quantile(Zens, 1.-Quantiles[p], axis=0)
+                        dlow = np.quantile(Zens,    Quantiles[p], axis=0)
+                        dupp = np.quantile(Zens, 1.-Quantiles[p], axis=0)
 
                     plabel = None
                     ax.fill_between(XAxis, dlow, dupp,
@@ -1274,12 +1273,12 @@ def plot_data_ensemble(
 
         elif 'lin' in PlotType.lower():
 
-            nens = numpy.shape(Hens)
+            nens = np.shape(Hens)
             if nens[0] > Maxlines:
                 sys.exit('plot_data_ensemble: too many lines! Exit.')
 
             plabel = None
-            medHens = numpy.percentile(Hens, 50., axis=0)
+            medHens = np.percentile(Hens, 50., axis=0)
             ax.plot(XAxis, Hens,
                         linewidth=Linewidth[0]/2,
                         color= Linecolor[0], alpha=0.5,
@@ -1289,7 +1288,7 @@ def plot_data_ensemble(
                         linewidth=Linewidth[0], color= Linecolor[2], linestyle=Linetype[2],
                         label='H, median')
 
-            medZens = numpy.percentile(Zens, 50., axis=0)
+            medZens = np.percentile(Zens, 50., axis=0)
             ax.plot(XAxis, Zens,
                         linewidth=Linewidth[0]/2,
                         color= Linecolor[0], alpha=0.5,
