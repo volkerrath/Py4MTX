@@ -102,22 +102,25 @@ def calc_sensitivity(Jac=np.array([]),
         # smin = Jac.max(axis = 0)
 
     elif 'cov' in Type.lower():
-        S = Jac.abs().sum(axis=0)
+        S = np.abs(Jac)
+        S = np.sum(S, axis=0)
         if OutInfo:
             print('cov:', S)
         # else:
         #     print('coverage')
 
     elif 'euc' in Type.lower():
-        S = Jac.power(2).sum(axis=0)
-        S = np.sqrt(S)
+        S = np.power(Jac, 2)
+        S = S.sum(axis=0)
+        #S = np.sqrt(S)
         if OutInfo:
             print('euc:', S)
         # else:
         #     print('euclidean (default)')
 
     elif 'cum' in Type.lower():
-        S = Jac.abs().sum(axis=0)
+        S = np.abs(Jac)
+        S = S.sum(axis=0)
         # print(np.shape(S))
         # S = np.sum(Jac,axis=0)
 
@@ -131,8 +134,9 @@ def calc_sensitivity(Jac=np.array([]),
     else:
         print('calc_sensitivity: Type '
               +Type.lower()+' not implemented! Default assumed.')
-        S = Jac.power(2).sum(axis=0)
-
+        #S = Jac.power(2).sum(axis=0)
+        S = np.power(Jac, 2)
+        S = S.sum(axis=0)
         if OutInfo:
             print('euc (default):', S)
         # else:
@@ -157,7 +161,7 @@ def calc_sensitivity(Jac=np.array([]),
 
 
 def transform_sensitivity(S=np.array([]), Vol=np.array([]),
-                          Transform=['sqrt', 'size','max', ],
+                          Transform=['max', ],
                           asinhpar=[0.], Maxval=None, Small= 1.e-30, OutInfo=False):
     '''
     Transform sensitivities.
@@ -193,7 +197,10 @@ def transform_sensitivity(S=np.array([]), Vol=np.array([]),
 
 
     scaleval = 1.
-    for item in Transform:
+
+    transform = Transform.split(' ')
+
+    for item in transform:
 
 
         # if 'sqr' in item.lower():

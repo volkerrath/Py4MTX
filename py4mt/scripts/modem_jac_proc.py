@@ -88,11 +88,11 @@ Scale = 1.
 #JFiles = [WorkDir+'UBI9_ZPTss.jac'] # WorkDir+'SABA8_Z.jac',]
 #MFile = WorkDir + 'UBI9_best'
 
-WorkDir = '/home/vrath/Annecy_NullSpace/'
+WorkDir = '/home/vrath/ModEM_work/Ub25_ZT_600_PT_jac/'
 
-JFiles = [WorkDir+'annecy.jac']
+JFiles = [WorkDir+'Ub25_Z.jac']
 
-MFile = WorkDir + 'annecy25_Z_Alpha02_NLCG_027'
+MFile = WorkDir + 'Ub_600ZT4_PT_NLCG_009'
 
 
 
