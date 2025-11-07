@@ -34,8 +34,9 @@ for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0, pth)
 
-from aniso import cpanis, z1anis
+from aniso import prep_aniso, mt1d_aniso
 from mtproc import calc_rhoa_phas
+from mcmc_funcs import pack_model, unpack_model
 import viz
 import util as utl
 from version import versionstrg
@@ -136,9 +137,13 @@ ustr = model[:, 4]
 udip = model[:, 5]
 usla = model[:, 6]
 
+ani_flag = np.ones_like(h, dtype=int)
+
+
+
 
 # === Compute conductivity tensors and effective parameters ===
-sg, al, at, blt = cpanis(rop[:NLayer], ustr[:NLayer],
+sg, al, at, blt = prep_aniso(rop[:NLayer], ustr[:NLayer],
                          udip[:NLayer], usla[:NLayer])
 
 # === Write model summary ===
@@ -160,8 +165,9 @@ with open(ResFile, 'w') as f:
 # === Loop over periods for impedances ===
 Z = []
 for per in Periods:
-    z = z1anis(NLayer, h[:NLayer], al[:NLayer], at[:NLayer],
-               blt[:NLayer], np.array([per]))[:, :, 0]
+    print()
+    z, _, _, _, _ = mt1d_aniso(ani_flag[:NLayer], h[:NLayer], al[:NLayer], at[:NLayer],
+               blt[:NLayer], per)
     z_flat = z.flatten()
     Z.append(z_flat)
 Z = np.array(Z)

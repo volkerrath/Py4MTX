@@ -7,100 +7,128 @@ Created on Thu Oct 30 19:58:45 2025
 """
 
 import numpy as np
+#import multiprocessing as mp
+#import emcee
+#import pymc
+
+from aniso import prep_aniso, mt1d_aniso
+
+
+def rhophi_all(Z, per):
+    """Return all 4 apparent resistivities and phases for 2x2 impedance tensor Z."""
+    mu0 = 4e-7 * np.pi
+    w = 2.0 * np.pi / per
+    out = np.zeros(8)
+    n = 0
+    for i in range(2):
+        for j in range(2):
+            Zij = Z[i, j]
+            rho = (abs(Zij)**2) / (mu0 * w)
+            phi = np.degrees(np.arctan2(np.imag(Zij), np.real(Zij)))
+            out[n:n+2] = [rho.real, phi]
+            n += 2
+    # order: xx, xy, yx, yy
+    return out
+
+
+def aniso1d_fwd(model=None, per=None, dataout='rhophi'):
+    """
+    1-D generally anisotropic MT forward, returns 
+    full 2x2 impedance and all rho/phi pairs.
+
+    Parameters
+    ----------
+    model : ndarray (nl,7)
+        Layer parameters [h_km, rop1, rop2, rop3, ustr_deg, udip_deg, usla_deg]
+    per : ndarray (m,)
+        Periods [s]
+    outputs :  str
+        Any of "Z" or "rhophi"
+
+    Returns
+    -------
+      Imped  : (m,4) complex arrays, surface impedance per period
+      rhophi : (m,8) float array, per period:
+                  [ρxx, φxx, ρxy, φxy, ρyx, φyx, ρyy, φyy]
+    """
+    if model is None or per is None:
+        raise ValueError("Provide model (nl,7) and per (m,)")
+
+    model = np.asarray(model, dtype=float)
+    per = np.asarray(per, dtype=float)
+
+    if model.ndim != 2 or model.shape[1] != 7:
+        raise ValueError(
+            "model must be (nl,7): [h, rop1, rop2, rop3, ustr, udip, usla]")
+
+     
+    h, rop, ustr, udip, usla = unpack_model(model)
+
+    sg, al, at, blt = prep_aniso(rop, ustr, udip, usla)
+    layani = np.where(np.isclose(al, at), 0, 1).astype(int)
+
+
+    imped = np.zeros((per.size, 8), dtype=float)
+    if 'rho' in dataout.lower():
+       rhoph = np.zeros((per.size, 8), dtype=complex)
+
+    for iper, psec in enumerate(per):
+        Z, _, _, _, _ = mt1d_aniso(layani, h, al, at, blt, psec)
+        imped[iper,:] = Z
+        if 'rho' in dataout.lower():
+            rhoph[iper, :] = rhophi_all(Z, psec)
+        else:
+            imped[iper,:] = Z
+            
+
+        if 'rho' in dataout.lower():
+            data = rhoph
+        else:
+            data = imped
+
+    return data
+
+
+def pack_model(h, rop, ustr, udip, usla):
+    # model = np.zeros((h.shape[0],7))
+    # model[:,0] = h
+    # model[:,1:4] = rop
+    # model[:,4] = ustr
+    # model[:,5] = udip
+    # model[:,6] = usla
+    model = np.hstack((h, rop, ustr, udip, usla))
+    return model
+
+
+def unpack_model(model):
+
+    h = model[:, 0]
+    rop = model[:, 1:4]
+    ustr = model[:, 4]
+    udip = model[:, 5]
+    usla = model[:, 6]
+
+    return h, rop, ustr, udip, usla
+
 
 # def run_mcmc_emcee(model, data, **kwargs):
-#     results = {} 
-#     return results  
-    
+#     results = {}
+#     return results
 
-def run_emcee(nwalkers, ndim, log_posterior, **args):
-    import multiprocessing as mp
-    import emcee 
 
-    
-    with mp.Pool() as pool:
-        sampler = emcee.EnsembleSampler(nwalkers, ndim, log_posterior, args=(spacings, y_obs, sigma_obs), pool=pool)
-        # burn-in
-        pos, prob, state = sampler.run_mcmc(p0, 1000, progress=True)
-        sampler.reset()
-        # production
-        sampler.run_mcmc(pos, 30000, progress=True)
-        return sampler
+# def run_emcee(nwalkers, ndim, log_posterior, **args):
 
-    sampler = run_emcee()
-    
-    
-    
-def run_pmc():
-    
-    import pymc as pm
-    import matplotlib.pyplot as plt
-    import arviz as az
-    
-    sampler = pm.NUTS()
-    
-    
-    
-    
-    with pm.Model() as model:
-        
-        # Log-scale parameters
-        log_p1 = pm.Normal("log_p1", mu=0, sigma=1)
-        log_p2 = pm.Normal("log_p2", mu=0, sigma=1)
-        log_p3 = pm.Normal("log_p3", mu=0, sigma=1)
-    
-        p1 = pm.Deterministic("p1", pm.math.exp(log_p1))
-        p2 = pm.Deterministic("p2", pm.math.exp(log_p2))
-        p3 = pm.Deterministic("p3", pm.math.exp(log_p3))
-    
-        # Linear parameters
-        p4 = pm.Normal("p4", mu=0, sigma=1)
-        p5 = pm.Normal("p5", mu=0, sigma=1)
-        p6 = pm.Normal("p6", mu=0, sigma=1)
-    
-        # Nonlinear model
-        y_est = p1 * pm.math.exp(-p2 * x_data) + p3 + p4 * x_data + p5 * x_data**2 + p6
-    
-        # Likelihood
-        y_obs = pm.Normal("y_obs", mu=y_est, sigma=0.1, observed=y_data)
-    
-        # Sample using NUTS
-        trace = pm.sample(draws=2000, tune=1000, target_accept=0.95, return_inferencedata=True)
+#     with mp.Pool() as pool:
+#         sampler = emcee.EnsembleSampler(nwalkers, ndim, log_posterior, args=(
+#             spacings, y_obs, sigma_obs), pool=pool)
+#         # burn-in
+#         pos, prob, state = sampler.run_mcmc(p0, 1000, progress=True)
+#         sampler.reset()
+#         # production
+#         sampler.run_mcmc(pos, 30000, progress=True)
+#     return sampler
 
-        # Sample with NUTS (tune and target_accept tuned for stability)
-        trace = pm.sample(step = samplwe, 
-                          draws=2000,
-                          tune=2000, 
-                          chains=4, 
-                          cores=4, 
-                          target_accept=0.9, 
-                          return_inferencedata=True)
-# # -------------------------
-#     # Diagnostics and results
-#     # -------------------------
-#     # Summary
-#     print(az.summary(trace, var_names=["rho1", "rho2", "h1", "sigma"], round_to=2))
-    
-#     # Trace and pair plots
-#     az.plot_trace(trace, var_names=["rho1", "rho2", "h1"]);
-#     az.plot_pair(trace, var_names=["rho1", "rho2", "h1"], kind="kde", marginals=True);
-    
-#     # Posterior predictive
-#     with model:
-#         ppc = pm.sample_posterior_predictive(trace, var_names=["obs"], random_seed=2)
-#     ppc_y = ppc["obs"]
-    
-#     # Plot fit
-#     plt.figure(figsize=(7,4))
-#     plt.errorbar(spacings, y_obs, yerr=sigma_obs, fmt="k.", label="observed")
-#     # plot posterior predictive percentiles
-#     ppc_q = np.percentile(ppc_y, [5,50,95], axis=0)
-#     plt.semilogx(spacings, ppc_q[1], color="C1", label="median posterior pred")
-#     plt.fill_between(spacings, ppc_q[0], ppc_q[2], color="C1", alpha=0.3, label="90% CI")
-#     plt.xlabel("Spacing (a.u.)")
-#     plt.ylabel("Apparent resistivity (Ohm·m)")
-#     plt.legend()
-#     plt.tight_layout()
-#     plt.show()
-
-# https://copilot.microsoft.com/shares/c9Gb1SVGqT11eAmR942fw
+# sampler = run_emcee()
+# def run_mcmc_emcee(model, data, **kwargs):
+#     results = {}
+#     return results
