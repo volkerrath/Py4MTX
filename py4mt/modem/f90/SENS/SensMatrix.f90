@@ -10,7 +10,6 @@ module sensMatrix
   use transmitters
   use dataTypes
   use receivers
-
   use dataio
 #endif
 
