@@ -160,7 +160,7 @@ def calc_sensitivity(Jac=np.array([]),
     return S
 
 
-def transform_sensitivity(S=np.array([]), Vol=np.array([]),
+def transform_sensitivity(S=np.array([]), Siz=np.array([]),
                           Transform=['max', ],
                           asinhpar=[0.], Maxval=None, Small= 1.e-30, OutInfo=False):
     '''
@@ -225,21 +225,40 @@ def transform_sensitivity(S=np.array([]), Vol=np.array([]),
                     scale = get_scale(S, method=asinhpar[0])
 
                     S = np.arcsinh(S/scale)
-
-        if ('siz' in item.lower()) or ('vol' in item.lower()):
+                    
+        if 'vol' in item.lower():
              print('transformed_sensitivity: Transformed by volumes/layer thickness.')
-             if np.size(Vol)==0:
+             if np.size(Siz)==0:
                  sys.exit('Transform_sensitivity: no volumes given! Exit.')
 
              else:
                  maxval = np.amax(S)
                  minval = np.amin(S)
-                 print('before volume:',minval, maxval)
-                 print('volume:', np.amax(Vol),np.amax(Vol) )
+                 print('before volume normalization:',minval, maxval)
+                 print('volume:', np.amax(Siz),np.amax(Siz) )
+                 if 'sqr'  in item.lower():
+                     Vol = np.cbrt(Siz)
                  S = S/Vol.ravel()
                  maxval = np.amax(S)
                  minval = np.amin(S)
-                 print('after volume:',minval, maxval)
+                 print('after size normalization:',minval, maxval)
+
+        if 'siz' in item.lower():
+             print('transformed_sensitivity: Transformed by other size measure.')
+             if np.size(Siz)==0:
+                 sys.exit('Transform_sensitivity: no volumes given! Exit.')
+
+             else:
+                 maxval = np.amax(S)
+                 minval = np.amin(S)
+                 print('before size normalization:',minval, maxval)
+                 print('size:', np.amax(Siz),np.amax(Siz) )
+                 if 'sqr'  in item.lower():
+                     Siz = np.cbrt(Siz)
+                 S = S/Siz.ravel()
+                 maxval = np.amax(S)
+                 minval = np.amin(S)
+                 print('after size normalization:',minval, maxval)
 
         if 'max' in item.lower():
              print('trans_sensitivity: Transformed by maximum value.')
