@@ -253,8 +253,6 @@ def transform_sensitivity(S=np.array([]), Siz=np.array([]),
                  minval = np.amin(S)
                  print('before size normalization:',minval, maxval)
                  print('size:', np.amax(Siz),np.amax(Siz) )
-                 if 'sqr'  in item.lower():
-                     Siz = np.cbrt(Siz)
                  S = S/Siz.ravel()
                  maxval = np.amax(S)
                  minval = np.amin(S)

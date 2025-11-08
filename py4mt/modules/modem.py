@@ -1019,10 +1019,68 @@ def get_volumes(dx=None, dy=None, dz=None, mval=None, out=True):
 
     if out:
         print(
-            'ger_volumes: %i x %i x %i cell volumes calculated' %
+            'get_volumes: %i x %i x %i cell volumes calculated' %
             (nx, ny, nz))
 
     return vcell
+
+def get_sizepar(dx=None, dy=None, dz=None, mval=None, how='vol', out=True):
+
+    '''
+
+    Extract volumes from model.
+
+    Parameters
+    ----------
+    dx, dy, dz : float arrays
+        Mesh cell sizes.
+    mval : float array
+        Resistivity of cells.
+    out : logical, optional
+        Controls ouput. The default is True.
+
+    Returns
+    -------
+    vcell :  float array
+        Cell volumes in model mesh.
+
+    '''
+    nx, ny,nz = np.shape(mval)
+    cell_size = np.zeros_like(mval)
+    
+    if 'vol' in how.lower():    
+        for ii in np.arange(nx):
+            for jj in np.arange(ny):
+                for kk in np.arange(nz):
+                    cell_size[ii,jj,kk] = dx[ii]*dy[jj]*dz[kk]
+
+        if out:
+            print(
+                'ger_volumes: %i x %i x %i cell volumes calculated' %
+                (nx, ny, nz))
+            
+    elif 'hsiz' in how.lower():
+        for ii in np.arange(nx):
+            for jj in np.arange(ny):
+                for kk in np.arange(nz):
+                    cell_size[ii,jj,kk] = np.min([dx[ii],dy[jj]])
+                    
+    elif 'vsiz' in how.lower():    
+        for ii in np.arange(nx):
+                for jj in np.arange(ny):
+                    for kk in np.arange(nz):
+                        cell_size[ii,jj,kk] = dz[kk]
+    elif 'area' in how.lower():    
+        for ii in np.arange(nx):
+                for jj in np.arange(ny):
+                    for kk in np.arange(nz):
+                        cell_size[ii,jj,kk] = dx[ii]*dy[jj]
+    else:
+        sys.exit('get siszepar: method '+how.lower(),'not implemented! Exit.')
+
+        
+    return cell_size
+
 
 
 def get_topo(dx=None, dy=None, dz=None, mval=None,
