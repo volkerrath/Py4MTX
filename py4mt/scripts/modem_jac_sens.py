@@ -90,23 +90,33 @@ ModExt = '_sns.rho'
 ## JName = 'Misti_best_Z5_nerr_sp-8'
 #JName = 'Misti_best_ZT_extended_nerr_sp-8'
 
-WorkDir = '/home/vrath/Annecy_NullSpace/'
+#WorkDir = '/home/vrath/Annecy_NullSpace/'
+#MFile = WorkDir + 'annecy25_Z_Alpha02_NLCG_027'
 
-JName = 'annecy_nerr_sp-8'
+WorkDir = '/home/vrath/ModEM_work/Ub25_ZT_600_PT_jac/'
+JName = 'Ub25_ZPT_nerr_sp-6'
 JFile = WorkDir + JName
 
-MFile = WorkDir + 'annecy25_Z_Alpha02_NLCG_027'
+
+
+MFile = WorkDir + 'Ub_600ZT4_PT_NLCG_009'
+
+
 MOrig = [0., 0.]
 
+SizExtract = True
+if SizExtract:
+    SizFile = MFile+'.siz'
+    SizFmt = ''
 
-VolExtract = False
+VolExtract = True
 if VolExtract:
-    VolFile = MFile
+    VolFile = MFile+'.vol'
     VolFmt = ''
 
-TopoExtract = False
+TopoExtract =True
 if TopoExtract:
-    TopoFile = WorkDir + 'annecy_Topo.dat'
+    TopoFile = MFile+'.top'
     TopoFmt = ''
 
 
@@ -129,7 +139,7 @@ PerIntervals = [
                 ]
 
 
-Type = 'abs'
+Type = 'cov'
 # Type = 'euc'
 '''
 Calculate sensitivities.
@@ -145,9 +155,9 @@ Usesigma:
 '''
 
 #Transform = [ 'sqr']
-Transform = [ 'max']
-Transform = [ '']
-#Transform = [ 'sqr','vol','max']
+#Transform = [ 'max']
+#Transform = [ '']
+Transform = 'vol max'
 
 '''
 Transform sensitivities.
@@ -164,8 +174,9 @@ Options:
 if Transform is None:
     snsstring = Type.lower()
 else:
-    snsstring = Type.lower()+'_'+Transform.lower()
-SensDir = WorkDir+'/sens_'+snsstring+'/'
+    snsstring = Type.lower()+'_'+Transform.replace(' ', '-').lower()
+
+SensDir = WorkDir+JName+'_sens_'+snsstring+'/'
 
 if not SensDir.endswith('/'):
     SensDir = SensDir+'/'
@@ -203,7 +214,7 @@ if TopoExtract:
 
 
 
-if VolExtract or ('size' in Transform):
+if VolExtract:
     vol = mod.get_volumes(dx=dx, dy=dy, dz=dz, mval=rho, out=True)
     print(np.shape(vol), np.shape(rho))
     Header = '# '+MFile
@@ -228,8 +239,35 @@ if VolExtract or ('size' in Transform):
                       dx=dx, dy=dy, dz=dz, mval=vol, reference=refmod, mvalair=Blank, aircells=aircells, comment=Header)
         print(' Cell volumes (CGG format) written to '+VolFile)
 
+    siz = vol
+
+if SizExtract:
+    siz = mod.get_sizepar(dx=dx, dy=dy, dz=dz, mval=rho, how='vol' out=True)
+    print(np.shape(siz), np.shape(rho))
+    Header = '# '+MFile
+
+    if 'mod' in OutFormat.lower():
+        # for modem_readable files
+
+        mod.write_mod(SizFile, modext='_siz.rho',
+                      dx=dx, dy=dy, dz=dz, mval=siz,
+                      reference=refmod, mvalair=Blank, aircells=aircells, header=Header)
+        print(' Cell volumes (ModEM format) written to '+SizFile)
+
+    if 'ubc' in OutFormat.lower():
+        elev = -refmod[2]
+        refubc =  [MOrig[0], MOrig[1], elev]
+        mod.write_ubc(SizFile, modext='_ubc.siz', mshext='_ubc.msh',
+                      dx=dx, dy=dy, dz=dz, mval=siz, reference=refubc, mvalair=Blank, aircells=aircells, header=Header)
+        print(' Cell volumes (UBC format) written to '+SizFile)
+
+    if 'rlm' in OutFormat.lower():
+        mod.write_rlm(SizFile, modext='_siz.rlm',
+                      dx=dx, dy=dy, dz=dz, mval=siz, reference=refmod, mvalair=Blank, aircells=aircells, comment=Header)
+        print(' Cell volumes (CGG format) written to '+SizFile)
+
 else:
-    vol = np.array([])
+    siz = np.array([])
 
 
 # sys.exit()
@@ -433,8 +471,8 @@ if 'comp' in Splits.lower():
 
     for icmp in ExistComp:
 
-        indices = np.where(icmp in Comps)
-        JacTmp = Jac[indices]
+        #indices = np.where(icmp in Comps)
+        JacTmp = Jac[icmp in Comps]
         print('Component: ',icmp)
         jac.print_stats(jac=JacTmp, jacmask=jacflat)
         print('\n')

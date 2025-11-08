@@ -80,16 +80,21 @@ nan = np.nan
 
 # Ubinas case
 # WorkDir =  PY4MTX_DATA+
-WorkDir = '/home/vrath/Annecy_NullSpace/'
-# Orig = [-16.345800 -70.908249] # UBI
-JName = 'annecy_nerr_sp-6'
-MFile = WorkDir + 'annecy25_Z_Alpha02_NLCG_027'
+#WorkDir = '/home/vrath/Annecy_NullSpace/'
+## Orig = [-16.345800 -70.908249] # UBI
+#JName = 'annecy_nerr_sp-6'
+#MFile = WorkDir + 'annecy25_Z_Alpha02_NLCG_027'
 
 # # Misti case
 # WorkDir =  PY4MTX_DATA+'/Peru/Misti/'
 # MFile = WorkDir+'Misti10_best'
 # JFile = WorkDir+'Misti_best_Z5_nerr_sp-8'
 # MOrig = [-16.277300, -71.444397]
+
+WorkDir = '/home/vrath/ModEM_work/Ub25_ZT_600_PT_jac/'
+JName = 'Ub25_ZPT_nerr_sp-6'
+JFile = WorkDir + JName
+MFile = WorkDir + 'Ub_600ZT4_PT_NLCG_009'
 
 
 JFile = WorkDir+JName
@@ -136,7 +141,7 @@ for noversmp in OverSample:
                                 n_subspace_iters=nsubspit)
             elapsed = time.perf_counter() - start
             print('Used %7.4f s for calculating k = %i SVD ' % (elapsed, nsingval))
-            print('Oversamplinng factor =  ', str(noversmp))
+            print('Oversampling factor =  ', str(noversmp))
             print('Subspace iterations  =  ', str(nsubspit))
 
             D = U@scs.diags(S[:])@Vt - Jac.T
