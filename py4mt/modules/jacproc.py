@@ -161,7 +161,7 @@ def calc_sensitivity(Jac=np.array([]),
 
 
 def transform_sensitivity(S=np.array([]), Siz=np.array([]),
-                          Transform=['max', ],
+                          Transform='max',
                           asinhpar=[0.], Maxval=None, Small= 1.e-30, OutInfo=False):
     '''
     Transform sensitivities.
@@ -274,7 +274,7 @@ def transform_sensitivity(S=np.array([]), Siz=np.array([]),
     if OutInfo:
         print('trans_sensitivity:',np.amin(S), np.amax(S))
 
-        S[np.where(np.abs(S)<Small)]=Small
+    S[np.where(np.abs(S)<Small)]=Small
 
 
     return S, scaleval
