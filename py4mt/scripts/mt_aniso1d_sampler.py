@@ -22,6 +22,11 @@ import numpy as np
 from mtpy.core.mt import MT
 import mtpy.core.mt as mt
 
+import pymc as pm
+from aesara.compile.ops import as_op
+import aesara.tensor as at
+
+
 PY4MTX_DATA = os.environ['PY4MTX_DATA']
 PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
 
@@ -84,6 +89,9 @@ for filename in edi_files:
     per = Z_obj.period
 
     print(' site %s at :  % 10.6f % 10.6f % 8.1f' % (name, lat, lon, elev ))
+    
+    
+
 
 # hstart = np.log10(100./1000.) 
 # hfinal = np.log10(3000./1000.)
