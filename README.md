@@ -165,7 +165,7 @@ $\texttt{Py4MTX}$ calculates "Euclidean" sensitivities, which are the most commo
 $S^2_j = \sum_{i=1,n_d} \left|\tilde{J}_{ij}\right|^2=diag\left(\mathbf{\tilde{J}}^T\mathbf{\tilde{J}}\right)$.
 
 The square root of this sensitivity is often preferred, and is implemented in many popular inversion codes. Also availble
-is coverage where, the absolute values of the Jacobian are summed: 
+is coverage, where the absolute values of the Jacobian are summed: 
 
 $\sum_{i=1,n_d} \left|\tilde{J}_{ij}\right|$
 
