@@ -26,7 +26,7 @@ Created by ChatGPT (GPT-5 Thinking) on 2025-11-09
 from typing import Literal, Optional, Tuple
 import numpy as np
 import matplotlib.pyplot as plt
-from borehole_viz import plot_vertical_profile, plot_vertical_profiles
+from femtic_borehole_viz import plot_vertical_profile, plot_vertical_profiles
 
 
 # ------------------------
@@ -140,6 +140,20 @@ def vertical_profile_rbf_local(x0: float,
     cx, cy, cz = centroids[:,0], centroids[:,1], centroids[:,2]
 
     for i, z in enumerate(z_samples):
+    # Exclude fixed elements (flag==1) if provided as separate array or in centroids column 5
+    try:
+        _flag = None
+        # If caller passed a dict-like 'data' or we are in CLI, this block is skipped; here we only use args
+    except Exception:
+        pass
+    # If a separate 'flag' variable is available in outer scope, functions won't see it; so rely on inputs
+    if centroids.shape[0] == values.shape[0]:
+        # Try to detect a flag column in centroids (6th column, index 5)
+        if centroids.shape[1] >= 6:
+            _mask = centroids[:, 5] != 1
+            centroids = centroids[_mask]
+            values = values[_mask]
+    # Note: the CLI also applies masking using a separate 'flag' vector if present in the NPZ
         # Query point
         q = np.array([x0, y0, z])
 
@@ -203,6 +217,20 @@ def vertical_profile_idw(x0: float,
     cx, cy, cz = centroids[:,0], centroids[:,1], centroids[:,2]
     out_log = np.empty_like(z_samples, dtype=float)
     for i, z in enumerate(z_samples):
+    # Exclude fixed elements (flag==1) if provided as separate array or in centroids column 5
+    try:
+        _flag = None
+        # If caller passed a dict-like 'data' or we are in CLI, this block is skipped; here we only use args
+    except Exception:
+        pass
+    # If a separate 'flag' variable is available in outer scope, functions won't see it; so rely on inputs
+    if centroids.shape[0] == values.shape[0]:
+        # Try to detect a flag column in centroids (6th column, index 5)
+        if centroids.shape[1] >= 6:
+            _mask = centroids[:, 5] != 1
+            centroids = centroids[_mask]
+            values = values[_mask]
+    # Note: the CLI also applies masking using a separate 'flag' vector if present in the NPZ
         d2 = (cx - x0)**2 + (cy - y0)**2 + (cz - z)**2 + eps**2
         w = 1.0 / (d2 ** (power/2.0))
         out_log[i] = np.sum(w * v_log) / np.sum(w)
@@ -305,6 +333,12 @@ def _cli():
             values = data["resistivity"]; in_space = "linear"
         else:
             raise KeyError(f"Could not find values under '{args.values_key}', 'log10_resistivity', or 'resistivity'.")
+
+    # Optional masking: if 'flag' present, drop rows with flag==1 (fixed)
+    if 'flag' in data:
+        _m = (data['flag'] != 1)
+        centroids = centroids[_m]
+        values = values[_m]
 
     z_samples = _np.linspace(args.zmin, args.zmax, args.nsamples)
 
