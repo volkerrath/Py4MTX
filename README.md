@@ -12,9 +12,7 @@ The repository contains the following subdirectories:
  	including the most important extensions, numpy, scipy, and matplotlib 
  	
  -	**py4mt/modules**
- 	Contains the modules mtproc.py, jacproc.py, inversion.py, femtic.py, modem.py, aniso.py, mcmc_funcs.py, edi_funcs.py, viz.py,  
-	plotrjmcmc.py, and util.py, called from the Python scripts run for different tasks of MT
-	interpretation.
+ 	Contains the modules mtproc.py, jacproc.py, inversion.py, femtic.py, modem.py, aniso.py, mcmc_funcs.py, edi_funcs.py, viz.py, plotrjmcmc.py, and util.py, called from the Python scripts run for different tasks of MT 	interpretation.
  	
  - 	**py4mt/scripts** 
  	Contains the scripts  for preprocessing, visualization, and preparing the inversion of 
@@ -39,7 +37,7 @@ Get your working copy via git from the command line:
 
 _git clone https://github.com/volkerrath/Py4MTX/_
 
-This version will run under Python 3.9+ (3.13 being the current development platform). To install it in an Linux environment (e.g. Ubuntu, SuSE), you need to do the following:
+This version will run under Python 3.9+ (3.13 being the current development platform). To install it in a Linux environment (e.g. Ubuntu, SuSE), you need to do the following:
 
 (1) Download the latest Anaconda or Miniconda version  (https://docs.conda.io/projects/conda/en/latest/user-guide/install/download.html), and install by running the downloaded bash script.  In order to make updates secure and avoid inconsistencies, copy .condarc to your home directory. As the Miniconda installer is not updated very frequently, it is useful to run the following within the Miniconda base environment:
 
@@ -59,7 +57,7 @@ _conda create --name Py4MTX --file Py4MTX.txt_
 
 This will set up a Python 3.11 environment with all dependencies for aempy. Don't forget to update also Py4MTX regularly, using _conda update --name Py4MTX--all_! 
 
-**Warning: the current versions of mtpy-v2 from conda and pip are not working correctly, please install it from source (https://github.com/MTgeophysics/mtpy-v2)!**
+**Warning: the current versions of mtpy-v2 from conda and pip are not working correctly, please install it from source (https://github.com/MTgeophysics/mtpy-v2)! In the near future all dependcies  on mtpy will be removed!**
 
 (3) Activate this environment by:
 
@@ -165,7 +163,7 @@ $\texttt{Py4MTX}$ calculates "Euclidean" sensitivities, which are the most commo
 $S^2_j = \sum_{i=1,n_d} \left|\tilde{J}_{ij}\right|^2=diag\left(\mathbf{\tilde{J}}^T\mathbf{\tilde{J}}\right)$.
 
 The square root of this sensitivity is often preferred, and is implemented in many popular inversion codes. Also availble
-is coverage where, the absolute values of the Jacobian are summed: 
+is coverage, where the absolute values of the Jacobian are summed: 
 
 $\sum_{i=1,n_d} \left|\tilde{J}_{ij}\right|$
 
