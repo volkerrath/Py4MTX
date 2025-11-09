@@ -12,9 +12,7 @@ The repository contains the following subdirectories:
  	including the most important extensions, numpy, scipy, and matplotlib 
  	
  -	**py4mt/modules**
- 	Contains the modules mtproc.py, jacproc.py, inversion.py, femtic.py, modem.py, aniso.py, mcmc_funcs.py, edi_funcs.py, viz.py,  
-	plotrjmcmc.py, and util.py, called from the Python scripts run for different tasks of MT
-	interpretation.
+ 	Contains the modules mtproc.py, jacproc.py, inversion.py, femtic.py, modem.py, aniso.py, mcmc_funcs.py, edi_funcs.py, viz.py, plotrjmcmc.py, and util.py, called from the Python scripts run for different tasks of MT 	interpretation.
  	
  - 	**py4mt/scripts** 
  	Contains the scripts  for preprocessing, visualization, and preparing the inversion of 
