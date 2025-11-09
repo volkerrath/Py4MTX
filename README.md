@@ -57,7 +57,7 @@ _conda create --name Py4MTX --file Py4MTX.txt_
 
 This will set up a Python 3.11 environment with all dependencies for aempy. Don't forget to update also Py4MTX regularly, using _conda update --name Py4MTX--all_! 
 
-**Warning: the current versions of mtpy-v2 from conda and pip are not working correctly, please install it from source (https://github.com/MTgeophysics/mtpy-v2)!**
+**Warning: the current versions of mtpy-v2 from conda and pip are not working correctly, please install it from source (https://github.com/MTgeophysics/mtpy-v2)! In the near future all dependcies  on mtpy will be removed!**
 
 (3) Activate this environment by:
 
