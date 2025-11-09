@@ -37,7 +37,7 @@ Get your working copy via git from the command line:
 
 _git clone https://github.com/volkerrath/Py4MTX/_
 
-This version will run under Python 3.9+ (3.13 being the current development platform). To install it in an Linux environment (e.g. Ubuntu, SuSE), you need to do the following:
+This version will run under Python 3.9+ (3.13 being the current development platform). To install it in a Linux environment (e.g. Ubuntu, SuSE), you need to do the following:
 
 (1) Download the latest Anaconda or Miniconda version  (https://docs.conda.io/projects/conda/en/latest/user-guide/install/download.html), and install by running the downloaded bash script.  In order to make updates secure and avoid inconsistencies, copy .condarc to your home directory. As the Miniconda installer is not updated very frequently, it is useful to run the following within the Miniconda base environment:
 
