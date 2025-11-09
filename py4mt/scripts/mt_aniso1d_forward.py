@@ -36,7 +36,7 @@ for pth in mypath:
 
 from aniso import prep_aniso, mt1d_aniso
 from mtproc import calc_rhoa_phas
-from mcmc_funcs import pack_model, unpack_model
+#from mcmc_funcs import pack_model, unpack_model
 import viz
 import util as utl
 from version import versionstrg
