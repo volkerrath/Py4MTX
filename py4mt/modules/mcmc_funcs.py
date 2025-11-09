@@ -1,10 +1,27 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Thu Oct 30 19:58:45 2025
+Utilities for 1-D anisotropic MT forward modeling and PyMC-based sampling helpers.
 
-@author: vrath
+This module groups small functions that prepare/pack model vectors for the
+`aniso` forward solver and (optionally) support probabilistic inversion with PyMC.
+It imports the public API from `aniso`:
+    - `prep_aniso` : build conductivity tensors and effective horizontals
+    - `mt1d_aniso` : compute 2×2 surface impedance tensor and sensitivities
+
+The functions here are intentionally minimal and NumPy-centric to keep them
+compatible with PyMC/PyTensor wrappers in higher-level scripts.
+
+Dependencies
+------------
+- numpy
+- pymc (optional; imported but not required to use the packing utilities)
+- pytensor (optional)
+
+Author: Volker Rath (DIAS)
+Created by ChatGPT (GPT-5 Thinking) on 2025-11-09 11:07:03 UTC
 """
+
 import sys
 import numpy as np
 #import multiprocessing as mp
@@ -91,6 +108,33 @@ from aniso import prep_aniso, mt1d_aniso
 
 
 def pack_model(h, rop, ustr, udip, usla):
+    """
+Pack layered model arrays into a single 2D model matrix for convenience.
+
+Parameters
+----------
+h : array_like, shape (nl, 1) or (nl,)
+    Layer thicknesses in kilometers. If a 1D array is provided, it will be reshaped to (nl, 1).
+rop : array_like, shape (nl, 3)
+    Principal resistivities [Ω·m] per layer: (ρ1, ρ2, ρ3).
+ustr : array_like, shape (nl, 1) or (nl,)
+    Strike (Euler α) in degrees of the ρ1 axis.
+udip : array_like, shape (nl, 1) or (nl,)
+    Dip (Euler β) in degrees.
+usla : array_like, shape (nl, 1) or (nl,)
+    Slant/roll (Euler γ) in degrees.
+
+Returns
+-------
+model : numpy.ndarray, shape (nl, 7)
+    Model matrix with columns: [h_km, ρ1, ρ2, ρ3, ustr_deg, udip_deg, usla_deg].
+
+Notes
+-----
+- This is a light-weight utility: no validation besides array concatenation.
+- Use `unpack_model` to retrieve the individual arrays from `model`.
+
+    """
     # model = np.zeros((h.shape[0],7))
     # model[:,0] = h
     # model[:,1:4] = rop
@@ -102,6 +146,41 @@ def pack_model(h, rop, ustr, udip, usla):
 
 
 def unpack_model(model):
+
+    """
+Unpack a (nl, 7) layered model matrix into its constituent arrays.
+
+Parameters
+----------
+model : array_like, shape (nl, 7)
+    Model matrix with columns: [h_km, ρ1, ρ2, ρ3, ustr_deg, udip_deg, usla_deg].
+
+Returns
+-------
+h : numpy.ndarray, shape (nl,)
+    Layer thicknesses in kilometers.
+rop : numpy.ndarray, shape (nl, 3)
+    Principal resistivities [Ω·m] per layer: (ρ1, ρ2, ρ3).
+ustr : numpy.ndarray, shape (nl,)
+    Strike (Euler α) in degrees of the ρ1 axis.
+udip : numpy.ndarray, shape (nl,)
+    Dip (Euler β) in degrees.
+usla : numpy.ndarray, shape (nl,)
+    Slant/roll (Euler γ) in degrees.
+
+Raises
+------
+ValueError
+    If `model` does not have exactly 7 columns.
+
+Notes
+-----
+- This function assumes the conventional column order used across the EDI project.
+
+    """
+    # Basic validation to help catch shape issues early
+    if model.ndim != 2 or model.shape[1] != 7:
+        raise ValueError("model must have shape (nl, 7)")
 
     h = model[:, 0]
     rop = model[:, 1:4]
