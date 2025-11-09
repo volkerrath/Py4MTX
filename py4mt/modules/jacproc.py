@@ -110,9 +110,9 @@ def calc_sensitivity(Jac=np.array([]),
         #     print('coverage')
 
     elif 'euc' in Type.lower():
-        S = np.power(Jac, 2)
-        S = S.sum(axis=0)
-        #S = np.sqrt(S)
+        S = Jac.power(2).sum(axis=0)
+        #S = S.sum(axis=0)
+        S = np.sqrt(S)
         if OutInfo:
             print('euc:', S)
         # else:
@@ -134,8 +134,7 @@ def calc_sensitivity(Jac=np.array([]),
     else:
         print('calc_sensitivity: Type '
               +Type.lower()+' not implemented! Default assumed.')
-        #S = Jac.power(2).sum(axis=0)
-        S = np.power(Jac, 2)
+        S = Jac.power(2).sum(axis=0)
         S = S.sum(axis=0)
         if OutInfo:
             print('euc (default):', S)
@@ -237,8 +236,8 @@ def transform_sensitivity(S=np.array([]), Siz=np.array([]),
                  print('before volume normalization:',minval, maxval)
                  print('volume:', np.amax(Siz),np.amax(Siz) )
                  if 'sqr'  in item.lower():
-                     Vol = np.cbrt(Siz)
-                 S = S/Vol.ravel()
+                     Siz = np.cbrt(Siz)
+                 S = S/Siz.ravel()
                  maxval = np.amax(S)
                  minval = np.amin(S)
                  print('after size normalization:',minval, maxval)
