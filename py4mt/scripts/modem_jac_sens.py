@@ -140,7 +140,7 @@ PerIntervals = [
 
 
 Type = 'cov'
-# Type = 'euc'
+#Type = 'euc'
 '''
 Calculate sensitivities.
 Expects that Jacobian is already error-scaled, i.e Jac = C^(-1/2)*J.
@@ -154,11 +154,8 @@ Usesigma:
     if true, sensitivities with respect to sigma  are calculated.
 '''
 
-#Transform = [ 'sqr']
-#Transform = [ 'max']
-#Transform = [ '']
-Transform = 'vol max'
-
+#Transform = 'vol max'
+Transform = 'max'
 '''
 Transform sensitivities.
 Options:
@@ -167,7 +164,6 @@ Options:
                                 be the first value in Transform list.
     Transform = 'max'           Normalize by maximum (absolute) value.
     Transform = 'sur'           Normalize by surface value.
-    Transform = 'sqr'           Take the square root. Only useful for euc sensitivities.
     Transform = 'log'           Take the logarithm. This should always be the
                                 last value in Transform list
 '''
@@ -242,7 +238,7 @@ if VolExtract:
     siz = vol
 
 if SizExtract:
-    siz = mod.get_sizepar(dx=dx, dy=dy, dz=dz, mval=rho, how='vol' out=True)
+    siz = mod.get_sizepar(dx=dx, dy=dy, dz=dz, mval=rho, how='vol', out=True)
     print(np.shape(siz), np.shape(rho))
     Header = '# '+MFile
 
@@ -350,7 +346,7 @@ if 'tot'in Splits.lower():
         SensTot = SensTmp
         Maxtotal = np.amax(SensTot)
     else:
-        SensTot, MaxTotal = jac.transform_sensitivity(S=SensTmp, Vol=vol,
+        SensTot, MaxTotal = jac.transform_sensitivity(S=SensTmp, Siz=vol,
                             Transform=Transform, OutInfo=False)
 
     SensFile = SensDir+JName+'_total_'+snsstring
@@ -416,7 +412,7 @@ if 'dtyp' in Splits.lower():
         if Transform is None:
             pass
         else:
-            SensTmp, _ = jac.transform_sensitivity(S=SensTmp, Vol=vol,
+            SensTmp, _ = jac.transform_sensitivity(S=SensTmp, Siz=vol,
                             Transform=Transform, Maxval=maxval, OutInfo=False)
         S = np.reshape(SensTmp, mdims, order='F')
 
@@ -487,7 +483,7 @@ if 'comp' in Splits.lower():
         if Transform is None:
             pass
         else:
-            SensTmp, _ = jac.transform_sensitivity(S=SensTmp, Vol=vol,
+            SensTmp, _ = jac.transform_sensitivity(S=SensTmp, Siz=vol,
                           Transform=Transform, Maxval=maxval, OutInfo=False)
         S = np.reshape(SensTmp, mdims, order='F')
 
@@ -543,7 +539,7 @@ if 'site' in Splits.lower():
         if Transform is None:
             pass
         else:
-            SensTmp, _  = jac.transform_sensitivity(S=SensTmp, Vol=vol,
+            SensTmp, _  = jac.transform_sensitivity(S=SensTmp, Siz=vol,
                           Transform=Transform, Maxval=maxval, OutInfo=False)
         S = np.reshape(SensTmp, mdims, order='F')
 
@@ -605,7 +601,7 @@ if 'freq' in Splits.lower():
            if Transform is None:
                 pass
            else:
-                SensTmp, _ = jac.transform_sensitivity(S=SensTmp, Vol=vol,
+                SensTmp, _ = jac.transform_sensitivity(S=SensTmp, Siz=vol,
                                 Transform=Transform, Maxval=maxval, OutInfo=False)
            S = np.reshape(SensTmp, mdims, order='F')
 
