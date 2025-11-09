@@ -79,21 +79,21 @@ for filename in edi_files:
     name, ext = os.path.splitext(filename)
     file_i = filename
 
-# Create MT object
-    mt_obj = MT()
-    mt_obj.read(file_i)
+# # Create MT object
+#     mt_obj = MT()
+#     mt_obj.read(file_i)
 
-    site = mt_obj.station_metadata.id
-    lat = mt_obj.station_metadata.location.latitude
-    lon = mt_obj.station_metadata.location.longitude
-    elev = mt_obj.station_metadata.location.elevation
+#     site = mt_obj.station_metadata.id
+#     lat = mt_obj.station_metadata.location.latitude
+#     lon = mt_obj.station_metadata.location.longitude
+#     elev = mt_obj.station_metadata.location.elevation
 
-    Z_obj = mt_obj.Z
-    per = Z_obj.period
+#     Z_obj = mt_obj.Z
+#     per = Z_obj.period
 
-    print(' site %s at :  % 10.6f % 10.6f % 8.1f' % (name, lat, lon, elev ))
+#     print(' site %s at :  % 10.6f % 10.6f % 8.1f' % (name, lat, lon, elev ))
     
-    print(type(per))
+#     print(type(per))
 # --- 0) Imports & wiring (PyMC5 + PyTensor) ---
 # --- 1) Observations (choose Z OR rhophi) ---
 # per = np.asarray(PERIODS, float)  # (nper,) in seconds

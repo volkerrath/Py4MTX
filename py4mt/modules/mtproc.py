@@ -25,7 +25,7 @@ from pyproj import CRS, Transformer
 
 
 
-from mtpy import MT , MTData, MTCollection
+# from mtpy import MT , MTData, MTCollection
 
 
 
