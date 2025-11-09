@@ -14,6 +14,34 @@ and the **Phase Tensor** Φ = Im(Z) @ inv(Re(Z)). It supports two data sources:
        • upper triangle = Im{cross-spectra}
    - Compute Z = S_EH @ inv(S_HH), T = S_BH @ inv(S_HH).
 
+   - Potentially important: conjugation -see m-file below:
+
+        function[output_spec] = spec2spec(input_spec)
+                % Spectra data comes into the script as [nch x nch] matrix
+                fspec = input_spec;
+                nch = size(fspec,1);
+
+                % Rearrange spectra for mtpy methods
+                mspec = nan(size(fspec));
+                for i = 1:nch
+                    for j = i:nch
+                        if i==j
+                            mspec(i,j) = fspec(i,j);
+                        else
+                            % complex conjugation of the original entries
+                            mspec(i,j) = fspec(j,i)-1i*fspec(i,j);
+                            % keep complex conjugated entries in the lower
+                            % triangular matrix:
+                            mspec(j,i) = fspec(j,i)+1i*fspec(i,j);
+                        end
+                    end
+                end
+                output_spec = mspec;
+            end
+
+
+
+
 2) Standard EDI **impedance/tipper tables** (ZXX,ZXY,ZYX,ZYY per frequency, optional TX,TY):
    - Parse values directly from the EDI.
    - Compute Phase Tensor and derived quantities.
