@@ -96,9 +96,6 @@ ModExt = '_sns.rho'
 WorkDir = '/home/vrath/ModEM_work/Ub25_ZT_600_PT_jac/'
 JName = 'Ub25_ZPT_nerr_sp-6'
 JFile = WorkDir + JName
-
-
-
 MFile = WorkDir + 'Ub_600ZT4_PT_NLCG_009'
 
 
@@ -171,6 +168,12 @@ if Transform is None:
     snsstring = Type.lower()
 else:
     snsstring = Type.lower()+'_'+Transform.replace(' ', '-').lower()
+
+if 'siz' in Transform.lower():
+    if NormLocal:
+        snsstring = Type.lower()+'_'+Transform.replace(' ', '-').lower()+'_local'
+    else:
+        snsstring = Type.lower()+'_'+Transform.replace(' ', '-').lower()+'_global'
 
 SensDir = WorkDir+JName+'_sens_'+snsstring+'/'
 
@@ -273,32 +276,6 @@ aircells = np.where(rho>Rhoair/10)
 jacmask = jac.set_airmask(rho=rho, aircells=aircells, blank=Blank, flat = False, out=True)
 jacflat = jacmask.flatten(order='F')
 name, ext = os.path.splitext(MFile)
-
-# ofile = name
-# Header = JName
-# trans = 'LINEAR'
-
-# mod.write_mod(ofile, modext='_mod.rho', trans = trans,
-#                   dx=dx, dy=dy, dz=dz, mval=rho,
-#                   reference=refmod, mvalair=Blank, aircells=aircells, header=Header)
-# print(' Model (ModEM format) written to '+ofile)
-
-# # elev = -refmod[2]
-# # refubc =  [MOrig[0], MOrig[1], elev]
-# # mod.write_ubc(OFile, modext='_rho_ubc.mod', mshext='_rho_ubc.msh',
-# #                   dx=dx, dy=dy, dz=dz, mval=rho, reference=refubc, mvalair=Blank, aircells=aircells, header=Header)
-# # print(' Model (UBC format) written to '+ofile)
-
-# TSTFile = WorkDir+JName+'0_MaskTest'
-# mod.write_mod(TSTFile, modext='_mod.rho', trans = trans,
-#             dx=dx, dy=dy, dz=dz, mval=rho, reference=refmod, mvalair=Blank, aircells=aircells, header=Header)
-# rhotest = jacmask.reshape(dims)*rho
-# TSTFile = WorkDir+JName+'1_MaskTest'
-# mod.write_mod(TSTFile, modext='_mod.rho', trans = trans,
-#             dx=dx, dy=dy, dz=dz, mval=rhotest, reference=refmod, mvalair=Blank, aircells=aircells, header=Header)
-
-
-# name, ext = os.path.splitext(JFile)
 
 start = time.perf_counter()
 print('Reading Jacobian from '+JFile)
