@@ -1024,7 +1024,7 @@ def get_volumes(dx=None, dy=None, dz=None, mval=None, out=True):
 
     return vcell
 
-def get_sizepar(dx=None, dy=None, dz=None, mval=None, how='vol', out=True):
+def get_size(dx=None, dy=None, dz=None, mval=None, how='vol', out=True):
 
     '''
 

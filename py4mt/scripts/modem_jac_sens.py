@@ -114,7 +114,7 @@ if VolExtract:
     VolFile = MFile+'.vol'
     VolFmt = ''
 
-TopoExtract =True
+TopoExtract =False
 if TopoExtract:
     TopoFile = MFile+'.top'
     TopoFmt = ''
@@ -154,8 +154,8 @@ Usesigma:
     if true, sensitivities with respect to sigma  are calculated.
 '''
 
-#Transform = 'vol max'
-Transform = 'max'
+Transform = 'vol max'
+# Transform = 'max'
 '''
 Transform sensitivities.
 Options:
@@ -238,7 +238,7 @@ if VolExtract:
     siz = vol
 
 if SizExtract:
-    siz = mod.get_sizepar(dx=dx, dy=dy, dz=dz, mval=rho, how='vol', out=True)
+    siz = mod.get_size(dx=dx, dy=dy, dz=dz, mval=rho, how='vol', out=True)
     print(np.shape(siz), np.shape(rho))
     Header = '# '+MFile
 
@@ -262,6 +262,7 @@ if SizExtract:
                       dx=dx, dy=dy, dz=dz, mval=siz, reference=refmod, mvalair=Blank, aircells=aircells, comment=Header)
         print(' Cell volumes (CGG format) written to '+SizFile)
 
+    
 else:
     siz = np.array([])
 
