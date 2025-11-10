@@ -280,14 +280,21 @@ def _cli():
     """
     import argparse
 
-    ap = argparse.ArgumentParser(description="Build per-element data and export to CSV/JSON/HDF5/NPZ")
+    ap = argparse.ArgumentParser(
+        description="Build per-element data and export to CSV/JSON/HDF5/NPZ")
     ap.add_argument("--mesh", required=True, help="Path to mesh.dat")
-    ap.add_argument("--rho", default=None, help="Path to resistivity_block_iterX.dat")
-    ap.add_argument("--margin", type=float, default=0.5, help="Log10 margin for lower/upper limits")
-    ap.add_argument("--out-csv", default=None, help="Write compact CSV (id, region, nodes, centroid, log10, lower, upper)")
-    ap.add_argument("--json", dest="out_json", default=None, help="Write full JSON with coords included")
-    ap.add_argument("--out-hdf5", default=None, help="Write HDF5 with full arrays including coords")
-    ap.add_argument("--out-npz", default=None, help="Write compressed NumPy NPZ archive with all arrays")
+    ap.add_argument("--rho", default=None,
+                    help="Path to resistivity_block_iterX.dat")
+    ap.add_argument("--margin", type=float, default=0.5,
+                    help="Log10 margin for lower/upper limits")
+    ap.add_argument("--out-csv", default=None,
+                    help="Write compact CSV (id, region, nodes, centroid, log10, lower, upper)")
+    ap.add_argument("--json", dest="out_json", default=None,
+                    help="Write full JSON with coords included")
+    ap.add_argument("--out-hdf5", default=None,
+                    help="Write HDF5 with full arrays including coords")
+    ap.add_argument("--out-npz", default=None,
+                    help="Write compressed NumPy NPZ archive with all arrays")
     args = ap.parse_args()
 
     mesh = load_femtic_mesh(args.mesh, args.rho)

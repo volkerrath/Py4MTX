@@ -124,10 +124,12 @@ def _cli():
     """Command-line interface for fast FEMTIC element array building and export."""
     import argparse
 
-    ap = argparse.ArgumentParser(description="FEMTIC element arrays (pure NumPy, fast).")
+    ap = argparse.ArgumentParser(
+        description="FEMTIC element arrays (pure NumPy, fast).")
     ap.add_argument("--mesh", required=True, help="mesh.dat")
     ap.add_argument("--rho", default=None, help="resistivity_block_iterX.dat")
-    ap.add_argument("--margin", type=float, default=0.5, help="log10 margin for bounds")
+    ap.add_argument("--margin", type=float, default=0.5,
+                    help="log10 margin for bounds")
     ap.add_argument("--out-npz", default=None, help="write NPZ file")
     ap.add_argument("--out-hdf5", default=None, help="write HDF5 file")
     ap.add_argument("--out-csv", default=None, help="write compact CSV")
