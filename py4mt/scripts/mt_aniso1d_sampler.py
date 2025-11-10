@@ -34,13 +34,14 @@ for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0, pth)
 
+
+import modem
+from mtproc import calc_rhoa_phas
+from aniso import prep_aniso, mt1d_aniso
+import viz
+import util as utl
 from version import versionstrg
 
-import util as utl
-import viz
-import modem 
-from aniso import prep_aniso, mt1d_aniso
-from mtproc import calc_rhoa_phas
 # from mcmc_funcs import pack_model, unpack_model
 
 
@@ -53,10 +54,16 @@ fname = inspect.getfile(inspect.currentframe())
 titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng+'\n\n')
 
+PY4MTX_DATA = os.environ['PY4MTX_DATA']
+PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
+
+
 WorkDir = PY4MTX_ROOT+'/aniso/'
 if not os.path.isdir(WorkDir):
     print(' File: %s does not exist, but will be created' % WorkDir)
     os.mkdir(WorkDir)
+
+
 EdiDir = WorkDir+'edi'
 ResDir = WorkDir+'results'
 
@@ -68,8 +75,8 @@ mu0 = 4e-7 * pi
 
 
 SearchStrng = '*.edi'
-edi_files = utl.get_filelist(searchstr=[SearchStrng], searchpath=EdiDir, 
-                            sortedlist =True, fullpath=True)
+edi_files = utl.get_filelist(searchstr=[SearchStrng], searchpath=EdiDir,
+                             sortedlist=True, fullpath=True)
 
 dimlist = []
 sit = 0
@@ -78,7 +85,7 @@ for filename in edi_files:
     print('reading data from: ' + filename)
     name, ext = os.path.splitext(filename)
     file_i = filename
-
+    
 # # Create MT object
 #     mt_obj = MT()
 #     mt_obj.read(file_i)
@@ -92,7 +99,7 @@ for filename in edi_files:
 #     per = Z_obj.period
 
 #     print(' site %s at :  % 10.6f % 10.6f % 8.1f' % (name, lat, lon, elev ))
-    
+
 #     print(type(per))
 # --- 0) Imports & wiring (PyMC5 + PyTensor) ---
 # --- 1) Observations (choose Z OR rhophi) ---
