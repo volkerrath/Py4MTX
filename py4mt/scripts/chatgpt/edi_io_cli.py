@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-femtic_io_cli.py
+edi_io_cli.py
 ================
-Standalone CLI wrapper around `femtic_io.py` helpers.
+Standalone CLI wrapper around `edi_io.py` helpers.
 
 Subcommands
 -----------
@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from femtic_io import load_site_npz, load_meta_json
+from edi_io import load_site_npz, load_meta_json
 
 def main(argv=None) -> None:
     """Entry point for the CLI wrapper.
@@ -60,7 +60,7 @@ def main(argv=None) -> None:
         pprint.pprint(meta)
 
     elif args.cmd == "to-csv":
-        from femtic_io import load_site_npz as _load, SiteTF
+        from edi_io import load_site_npz as _load, SiteTF
         import pandas as pd
         import numpy as np
         site = _load(str(args.npz))

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-femtic_io.py
+edi_io.py
 ============
 I/O helpers for EDI transfer-function artifacts written by `edi_processor.py`.
 

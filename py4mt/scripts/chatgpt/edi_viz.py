@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-femtic_edi_viz.py
+edi_viz.py
 =================
 Plotting utilities for EDI transfer-function outputs produced by `edi_processor.py`.
 
