@@ -12,6 +12,7 @@ from typing import Optional, List, Tuple
 import numpy as np
 import matplotlib.pyplot as plt
 
+
 def plot_vertical_profile(
     z: np.ndarray,
     v: np.ndarray,
@@ -37,6 +38,7 @@ def plot_vertical_profile(
     ax.grid(True, which="both", alpha=0.3)
     fig.tight_layout()
     return fig, ax
+
 
 def plot_vertical_profiles(
     z: np.ndarray,

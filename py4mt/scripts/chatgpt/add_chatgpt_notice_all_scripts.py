@@ -17,10 +17,13 @@ Options:
   --author "Name"    Set a specific author line (defaults to "Volker Rath (DIAS)").
 """
 
-import sys, re, argparse
+import sys
+import re
+import argparse
 from pathlib import Path
 
 CHATGPT_TAG = "Generated or modified by ChatGPT"
+
 
 def build_notice(date_str: str, author: str) -> str:
     return f"""
@@ -31,11 +34,13 @@ Date: {date_str}
 ---
 """.strip("\n").format(author=author, date_str=date_str)
 
-def insert_into_python_docstring(text: str, notice: str, force: bool=False) -> str:
+
+def insert_into_python_docstring(text: str, notice: str, force: bool = False) -> str:
     pattern = r'^(?P<prefix>\ufeff?\s*)(?P<quote>["\']{3})(?P<body>.*?)(?P=quote)'
     m = re.search(pattern, text, flags=re.DOTALL)
     if m:
-        prefix, quote, body = m.group("prefix"), m.group("quote"), m.group("body")
+        prefix, quote, body = m.group(
+            "prefix"), m.group("quote"), m.group("body")
         if (CHATGPT_TAG in body) and not force:
             return text
         new_doc = f'{prefix}{quote}{body.rstrip()}\n{notice}{quote}'
@@ -44,6 +49,7 @@ def insert_into_python_docstring(text: str, notice: str, force: bool=False) -> s
         if (CHATGPT_TAG in text) and not force:
             return text
         return f'"""\n{notice}\n"""\n' + text
+
 
 def process_file(path: Path, args, notice: str) -> bool:
     try:
@@ -57,18 +63,25 @@ def process_file(path: Path, args, notice: str) -> bool:
         return True
     return False
 
+
 def iter_files(root: Path):
     for p in root.rglob("*.py"):
         if p.is_file() and p.name != Path(__file__).name:
             yield p
 
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("paths", nargs="+", help="Files or directories to update")
-    parser.add_argument("--dry-run", action="store_true", help="Preview changes; do not write")
-    parser.add_argument("--force", action="store_true", help="Force write even if notice exists")
-    parser.add_argument("--date", default="2025-11-09", help="Date to write into notice (YYYY-MM-DD)")
-    parser.add_argument('--author', default="Volker Rath (DIAS)", help='Author line to use')
+    parser.add_argument("paths", nargs="+",
+                        help="Files or directories to update")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Preview changes; do not write")
+    parser.add_argument("--force", action="store_true",
+                        help="Force write even if notice exists")
+    parser.add_argument("--date", default="2025-11-09",
+                        help="Date to write into notice (YYYY-MM-DD)")
+    parser.add_argument(
+        '--author', default="Volker Rath (DIAS)", help='Author line to use')
     args = parser.parse_args()
 
     notice = build_notice(args.date, args.author)
@@ -91,6 +104,7 @@ def main():
 
     mode = "dry-run" if args.dry_run else "updated"
     print(f"Scanned: {scanned} .py files; {mode}: {changed} files.")
+
 
 if __name__ == "__main__":
     main()

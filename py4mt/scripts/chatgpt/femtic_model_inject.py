@@ -20,9 +20,11 @@ Created by ChatGPT (GPT-5 Thinking) on 2025-11-09
 from typing import List, Tuple, Optional
 import numpy as np
 
+
 def parse_ro_file_lines(path: str) -> List[str]:
     with open(path, "r") as f:
         return f.readlines()
+
 
 def _is_number(tok: str) -> bool:
     try:
@@ -31,11 +33,13 @@ def _is_number(tok: str) -> bool:
     except Exception:
         return False
 
+
 def _find_last_numeric_index(parts: List[str]) -> Optional[int]:
     for j in range(len(parts) - 1, -1, -1):
         if _is_number(parts[j]):
             return j
     return None
+
 
 def inject_values_into_columns(lines: List[str],
                                values: np.ndarray,
@@ -68,7 +72,8 @@ def inject_values_into_columns(lines: List[str],
 
         tgt_v = vcol0 if vcol0 is not None else _find_last_numeric_index(parts)
         if tgt_v is None or vi >= len(values):
-            out.append(ln); continue
+            out.append(ln)
+            continue
 
         parts[tgt_v] = fmt.format(float(values[vi]))
 
@@ -87,8 +92,10 @@ def inject_values_into_columns(lines: List[str],
         vi += 1
 
     if vi < len(values):
-        print(f"[WARN] Only injected {vi} of {len(values)} values; extra values ignored.")
+        print(f"[WARN] Only injected {vi} of {
+              len(values)} values; extra values ignored.")
     return out
+
 
 def write_ro_from_npz(template_ro: str,
                       npz_path: str,
@@ -108,14 +115,18 @@ def write_ro_from_npz(template_ro: str,
     lo_log = data.get("rho_lower", None)
     hi_log = data.get("rho_upper", None)
 
-    reg_ids = np.unique(region.astype(int)); reg_ids.sort()
+    reg_ids = np.unique(region.astype(int))
+    reg_ids.sort()
     v_agg = np.empty_like(reg_ids, dtype=float)
-    lo_agg = np.empty_like(reg_ids, dtype=float) if lo_log is not None else None
-    hi_agg = np.empty_like(reg_ids, dtype=float) if hi_log is not None else None
+    lo_agg = np.empty_like(
+        reg_ids, dtype=float) if lo_log is not None else None
+    hi_agg = np.empty_like(
+        reg_ids, dtype=float) if hi_log is not None else None
     for i, rid in enumerate(reg_ids):
         m = (region == rid)
         vals = v_log[m]
-        v_agg[i] = float(np.mean(vals)) if method == "mean_log10" else float(np.median(vals))
+        v_agg[i] = float(np.mean(vals)) if method == "mean_log10" else float(
+            np.median(vals))
         if lo_agg is not None:
             lo_agg[i] = float(np.median(lo_log[m]))
         if hi_agg is not None:
@@ -139,6 +150,7 @@ def write_ro_from_npz(template_ro: str,
     with open(out_ro, "w") as f:
         f.writelines(new_lines)
 
+
 def write_ro_from_vector(template_ro: str,
                          values: np.ndarray,
                          out_ro: str,
@@ -161,22 +173,36 @@ def write_ro_from_vector(template_ro: str,
     with open(out_ro, "w") as f:
         f.writelines(new_lines)
 
+
 def _cli():
-    import argparse, os
-    ap = argparse.ArgumentParser(description="Inject updated values into a FEMTIC ro-file (fixed columns for lower/upper/n).")
-    ap.add_argument("--template", required=True, help="Template ro-file to read and modify.")
+    import argparse
+    import os
+    ap = argparse.ArgumentParser(
+        description="Inject updated values into a FEMTIC ro-file (fixed columns for lower/upper/n).")
+    ap.add_argument("--template", required=True,
+                    help="Template ro-file to read and modify.")
     ap.add_argument("--out", required=True, help="Output ro-file path.")
     mode = ap.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--from-npz", dest="from_npz", help="Path to NPZ (from femtic_element_array). Aggregates per region.")
-    mode.add_argument("--from-vector", dest="from_vector", help="Path to .npy or .npz containing 'values' (and optional 'lower','upper').")
-    ap.add_argument("--method", choices=["median_log10","mean_log10"], default="median_log10", help="Aggregation for --from-npz.")
-    ap.add_argument("--space", choices=["linear","log10"], default="linear", help="Write values in this numeric space.")
-    ap.add_argument("--value-col", type=int, default=None, help="1-based numeric column of the main value (default: last numeric in line)")
-    ap.add_argument("--lower-col", type=int, default=2, help="1-based column for lower bound (default: 2)")
-    ap.add_argument("--upper-col", type=int, default=3, help="1-based column for upper bound (default: 3)")
-    ap.add_argument("--n-col", type=int, default=4, help="1-based column for sharpness n (default: 4)")
-    ap.add_argument("--n", dest="override_n", type=int, choices=[1,2,3], default=None, help="Override sharpness n (otherwise keep original)")
-    ap.add_argument("--format", dest="fmt", default="{:.6g}", help="Number format for floats, e.g. '{:.6f}'")
+    mode.add_argument("--from-npz", dest="from_npz",
+                      help="Path to NPZ (from femtic_element_array). Aggregates per region.")
+    mode.add_argument("--from-vector", dest="from_vector",
+                      help="Path to .npy or .npz containing 'values' (and optional 'lower','upper').")
+    ap.add_argument("--method", choices=["median_log10", "mean_log10"],
+                    default="median_log10", help="Aggregation for --from-npz.")
+    ap.add_argument("--space", choices=["linear", "log10"],
+                    default="linear", help="Write values in this numeric space.")
+    ap.add_argument("--value-col", type=int, default=None,
+                    help="1-based numeric column of the main value (default: last numeric in line)")
+    ap.add_argument("--lower-col", type=int, default=2,
+                    help="1-based column for lower bound (default: 2)")
+    ap.add_argument("--upper-col", type=int, default=3,
+                    help="1-based column for upper bound (default: 3)")
+    ap.add_argument("--n-col", type=int, default=4,
+                    help="1-based column for sharpness n (default: 4)")
+    ap.add_argument("--n", dest="override_n", type=int, choices=[
+                    1, 2, 3], default=None, help="Override sharpness n (otherwise keep original)")
+    ap.add_argument("--format", dest="fmt",
+                    default="{:.6g}", help="Number format for floats, e.g. '{:.6f}'")
     args = ap.parse_args()
 
     if args.from_npz:
@@ -187,18 +213,23 @@ def _cli():
                           override_n=args.override_n, fmt=args.fmt)
         print(f"Wrote ro-file: {args.out}")
     else:
-        vals = None; lo = None; hi = None
+        vals = None
+        lo = None
+        hi = None
         if args.from_vector.endswith(".npz"):
             d = np.load(args.from_vector)
             if "values" in d:
                 vals = d["values"]
             else:
-                raise ValueError("NPZ must contain a 'values' array for --from-vector.")
-            lo = d.get("lower", None); hi = d.get("upper", None)
+                raise ValueError(
+                    "NPZ must contain a 'values' array for --from-vector.")
+            lo = d.get("lower", None)
+            hi = d.get("upper", None)
         elif args.from_vector.endswith(".npy"):
             vals = np.load(args.from_vector)
         else:
-            raise ValueError("--from-vector must be .npy or .npz with 'values'.")
+            raise ValueError(
+                "--from-vector must be .npy or .npz with 'values'.")
         write_ro_from_vector(args.template, vals, args.out,
                              lower=lo, upper=hi,
                              override_n=args.override_n,
@@ -206,6 +237,7 @@ def _cli():
                              lower_col=args.lower_col, upper_col=args.upper_col, n_col=args.n_col,
                              fmt=args.fmt)
         print(f"Wrote ro-file: {args.out}")
+
 
 if __name__ == "__main__":
     _cli()

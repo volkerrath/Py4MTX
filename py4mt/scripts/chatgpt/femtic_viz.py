@@ -53,6 +53,7 @@ import numpy as np
 # Loading and basic helpers
 # ------------------------------
 
+
 def load_femtic_mesh(mesh_file: str, resistivity_file: Optional[str] = None) -> Dict[str, Any]:
     """
     Load a FEMTIC TETRA mesh and optional resistivity mapping.
@@ -94,10 +95,12 @@ def load_femtic_mesh(mesh_file: str, resistivity_file: Optional[str] = None) -> 
     with open(mesh_file, "r") as f:
         lines = [ln.strip() for ln in f if ln.strip()]
 
-    assert lines[0].upper().startswith("TETRA"), "Unsupported mesh type; only 'TETRA' is supported."
+    assert lines[0].upper().startswith(
+        "TETRA"), "Unsupported mesh type; only 'TETRA' is supported."
 
     pos = 1
-    n_nodes = int(lines[pos].split()[0]); pos += 1
+    n_nodes = int(lines[pos].split()[0])
+    pos += 1
 
     # Node block
     # Accept both 0-based and 1-based IDs; store into array by given index.
@@ -114,11 +117,14 @@ def load_femtic_mesh(mesh_file: str, resistivity_file: Optional[str] = None) -> 
         x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
         # If IDs are 1-based, place at idx-1; if 0-based, place at idx.
         target = idx if zero_based_seen and not one_based_seen else (idx - 1)
-        nodes[target, 0] = x; nodes[target, 1] = y; nodes[target, 2] = z
+        nodes[target, 0] = x
+        nodes[target, 1] = y
+        nodes[target, 2] = z
         pos += 1
 
     # Element block
-    n_elems = int(lines[pos].split()[0]); pos += 1
+    n_elems = int(lines[pos].split()[0])
+    pos += 1
     elements = np.zeros((n_elems, 4), dtype=int)
     for e in range(n_elems):
         ints = []
@@ -148,13 +154,15 @@ def load_femtic_mesh(mesh_file: str, resistivity_file: Optional[str] = None) -> 
             if len(parts) < 2:
                 continue
             try:
-                ei = int(parts[0]); ri = int(parts[-1])
+                ei = int(parts[0])
+                ri = int(parts[-1])
             except ValueError:
                 continue
             if 0 <= ei < n_elems:
                 regions[ei] = ri
 
-    mesh: Dict[str, Any] = {"nodes": nodes, "elements": elements, "regions": regions}
+    mesh: Dict[str, Any] = {"nodes": nodes,
+                            "elements": elements, "regions": regions}
 
     # Optional resistivity mapping
     if resistivity_file is not None:
@@ -221,6 +229,7 @@ def map_regions_to_resistivity(regions: np.ndarray, resistivity: Optional[np.nda
 # Matplotlib plotting (pure)
 # ---------------------------------
 
+
 def plot_scatter_3d_matplotlib(
     mesh: Dict[str, Any],
     mode: str = "centroids",
@@ -255,10 +264,13 @@ def plot_scatter_3d_matplotlib(
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 
-    nodes = mesh["nodes"]; elements = mesh["elements"]; regions = mesh["regions"]
+    nodes = mesh["nodes"]
+    elements = mesh["elements"]
+    regions = mesh["regions"]
     if mode == "centroids":
         xyz = element_centroids(nodes, elements)
-        scalars = map_regions_to_resistivity(regions, mesh.get("resistivity")) if color_by == "resistivity" else regions.astype(float)
+        scalars = map_regions_to_resistivity(regions, mesh.get(
+            "resistivity")) if color_by == "resistivity" else regions.astype(float)
         title = f"Elements ({color_by})"
     elif mode == "nodes":
         xyz = nodes
@@ -268,7 +280,8 @@ def plot_scatter_3d_matplotlib(
                 if np.isnan(region_nodes[v]):
                     region_nodes[v] = regions[ei]
         if color_by == "resistivity" and "resistivity" in mesh:
-            scalars = map_regions_to_resistivity(np.nan_to_num(region_nodes, nan=1).astype(int), mesh["resistivity"])
+            scalars = map_regions_to_resistivity(np.nan_to_num(
+                region_nodes, nan=1).astype(int), mesh["resistivity"])
         else:
             scalars = np.nan_to_num(region_nodes, nan=0.0)
         title = f"Nodes (~{color_by})"
@@ -277,8 +290,11 @@ def plot_scatter_3d_matplotlib(
 
     fig = plt.figure()
     ax = fig.add_subplot(111, projection="3d")
-    sc = ax.scatter(xyz[:, 0], xyz[:, 1], xyz[:, 2], s=point_size, alpha=alpha, c=scalars)
-    ax.set_xlabel("X"); ax.set_ylabel("Y"); ax.set_zlabel("Z")
+    sc = ax.scatter(xyz[:, 0], xyz[:, 1], xyz[:, 2],
+                    s=point_size, alpha=alpha, c=scalars)
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.set_zlabel("Z")
     ax.set_title(title)
     fig.colorbar(sc, ax=ax, label=color_by)
     if show:
@@ -333,10 +349,13 @@ def slice_scatter_matplotlib(
         raise ValueError("axis must be one of 'x','y','z'")
     axid = axis_map[axis]
 
-    nodes = mesh["nodes"]; elements = mesh["elements"]; regions = mesh["regions"]
+    nodes = mesh["nodes"]
+    elements = mesh["elements"]
+    regions = mesh["regions"]
     if mode == "centroids":
         xyz = element_centroids(nodes, elements)
-        scalars = map_regions_to_resistivity(regions, mesh.get("resistivity")) if color_by == "resistivity" else regions.astype(float)
+        scalars = map_regions_to_resistivity(regions, mesh.get(
+            "resistivity")) if color_by == "resistivity" else regions.astype(float)
         label = f"Elements ({color_by})"
     elif mode == "nodes":
         xyz = nodes
@@ -346,7 +365,8 @@ def slice_scatter_matplotlib(
                 if np.isnan(region_nodes[v]):
                     region_nodes[v] = regions[ei]
         if color_by == "resistivity" and "resistivity" in mesh:
-            scalars = map_regions_to_resistivity(np.nan_to_num(region_nodes, nan=1).astype(int), mesh["resistivity"])
+            scalars = map_regions_to_resistivity(np.nan_to_num(
+                region_nodes, nan=1).astype(int), mesh["resistivity"])
         else:
             scalars = np.nan_to_num(region_nodes, nan=0.0)
         label = f"Nodes (~{color_by})"
@@ -354,7 +374,8 @@ def slice_scatter_matplotlib(
         raise ValueError("mode must be 'centroids' or 'nodes'")
 
     mask = np.abs(xyz[:, axid] - value) <= tol
-    pts = xyz[mask]; c = scalars[mask]
+    pts = xyz[mask]
+    c = scalars[mask]
 
     fig, ax = plt.subplots()
     if pts.size == 0:
@@ -364,7 +385,8 @@ def slice_scatter_matplotlib(
         return fig, ax
 
     other = [i for i in (0, 1, 2) if i != axid]
-    sc = ax.scatter(pts[:, other[0]], pts[:, other[1]], s=point_size, alpha=alpha, c=c)
+    sc = ax.scatter(pts[:, other[0]], pts[:, other[1]],
+                    s=point_size, alpha=alpha, c=c)
     ax.set_xlabel(["X", "Y", "Z"][other[0]])
     ax.set_ylabel(["X", "Y", "Z"][other[1]])
     ax.set_title(f"{label} on {axis}={value} (±{tol})")
@@ -376,6 +398,7 @@ def slice_scatter_matplotlib(
 # ------------------------------
 # PyVista utilities (optional)
 # ------------------------------
+
 
 def _require_pyvista():
     """
@@ -394,7 +417,8 @@ def _require_pyvista():
     try:
         import pyvista as pv  # type: ignore
     except Exception as exc:
-        raise ImportError("PyVista functions require 'pyvista' (and VTK). Please install them first.") from exc
+        raise ImportError(
+            "PyVista functions require 'pyvista' (and VTK). Please install them first.") from exc
     return pv
 
 
@@ -415,12 +439,15 @@ def to_pyvista_unstructured(mesh: Dict[str, Any]):
         - 'resistivity'  : float rho per cell (if available).
     """
     pv = _require_pyvista()
-    nodes = mesh["nodes"]; elements = mesh["elements"]; regions = mesh["regions"]
+    nodes = mesh["nodes"]
+    elements = mesh["elements"]
+    regions = mesh["regions"]
 
     # VTK expects: for each cell -> [npts, i0, i1, i2, i3]
     n_cells = elements.shape[0]
     npts = 4
-    cells = np.hstack([np.full((n_cells, 1), npts, dtype=np.int64), elements.astype(np.int64)]).ravel(order="C")
+    cells = np.hstack([np.full((n_cells, 1), npts, dtype=np.int64),
+                      elements.astype(np.int64)]).ravel(order="C")
     celltypes = np.full(n_cells, pv.CellType.TETRA, dtype=np.uint8)
 
     grid = pv.UnstructuredGrid(cells, celltypes, nodes)
@@ -482,7 +509,8 @@ def pyvista_slice_axis(grid, axis: str = "z", value: float = 0.0, thickness: Opt
         Plotter with the slice added, ready to show().
     """
     pv = _require_pyvista()
-    normal_map = {'x': (1.0, 0.0, 0.0), 'y': (0.0, 1.0, 0.0), 'z': (0.0, 0.0, 1.0)}
+    normal_map = {'x': (1.0, 0.0, 0.0), 'y': (
+        0.0, 1.0, 0.0), 'z': (0.0, 0.0, 1.0)}
     if axis not in normal_map:
         raise ValueError("axis must be one of 'x','y','z'")
     normal = normal_map[axis]
@@ -492,15 +520,17 @@ def pyvista_slice_axis(grid, axis: str = "z", value: float = 0.0, thickness: Opt
     if thickness is not None and thickness > 0:
         bounds = list(grid.bounds)
         idx = {'x': 0, 'y': 2, 'z': 4}[axis]
-        bounds[idx]   = value - thickness
+        bounds[idx] = value - thickness
         bounds[idx+1] = value + thickness
         src = grid.clip_box(bounds, invert=False)
 
-    sl = src.slice(normal=normal, origin=(value if axis=='x' else 0.0,
-                                          value if axis=='y' else 0.0,
-                                          value if axis=='z' else 0.0))
+    sl = src.slice(normal=normal, origin=(value if axis == 'x' else 0.0,
+                                          value if axis == 'y' else 0.0,
+                                          value if axis == 'z' else 0.0))
     plotter = pv.Plotter()
     plotter.add_mesh(sl, scalars=scalars, show_edges=False)
-    plotter.add_axes(); plotter.show_grid()
-    plotter.camera_position = "xy" if axis == "z" else ("xz" if axis == "y" else "yz")
+    plotter.add_axes()
+    plotter.show_grid()
+    plotter.camera_position = "xy" if axis == "z" else (
+        "xz" if axis == "y" else "yz")
     return plotter
