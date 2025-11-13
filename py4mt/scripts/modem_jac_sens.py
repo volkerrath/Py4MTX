@@ -109,12 +109,7 @@ if SizExtract:
     SizFile = MFile+'.siz'
     SizFmt = ''
 
-VolExtract = True
-if VolExtract:
-    VolFile = MFile+'.vol'
-    VolFmt = ''
-
-TopoExtract =False
+TopoExtract =True
 if TopoExtract:
     TopoFile = MFile+'.top'
     TopoFmt = ''
@@ -139,8 +134,8 @@ PerIntervals = [
                 ]
 
 
-Type = 'cov'
-#Type = 'euc'
+#Type = 'cov'
+Type = 'euc'
 '''
 Calculate sensitivities.
 Expects that Jacobian is already error-scaled, i.e Jac = C^(-1/2)*J.
@@ -154,8 +149,8 @@ Usesigma:
     if true, sensitivities with respect to sigma  are calculated.
 '''
 
-Transform = 'vol max'
-# Transform = 'max'
+Transform = 'siz vol max'
+#Transform = 'max'
 '''
 Transform sensitivities.
 Options:
@@ -210,35 +205,23 @@ if TopoExtract:
 
 
 
-if VolExtract:
-    vol = mod.get_volumes(dx=dx, dy=dy, dz=dz, mval=rho, out=True)
-    print(np.shape(vol), np.shape(rho))
-    Header = '# '+MFile
+if 'siz' in Transform.lower():
+    if 'vol' in Transform.lower():
+        siztyp = 'vol'
+    elif 'area' in Transform.lower():
+        siztyp = 'area'
+    elif 'hsiz' in Transform.lower():
+        siztyp = 'hsiz'
+    elif 'vsiz' in Transform.lower():
+        siztyp = 'vsiz'
+    else:
+        siztyp = 'vol'
 
-    if 'mod' in OutFormat.lower():
-        # for modem_readable files
-
-        mod.write_mod(VolFile, modext='_vol.rho',
-                      dx=dx, dy=dy, dz=dz, mval=vol,
-                      reference=refmod, mvalair=Blank, aircells=aircells, header=Header)
-        print(' Cell volumes (ModEM format) written to '+VolFile)
-
-    if 'ubc' in OutFormat.lower():
-        elev = -refmod[2]
-        refubc =  [MOrig[0], MOrig[1], elev]
-        mod.write_ubc(VolFile, modext='_ubc.vol', mshext='_ubc.msh',
-                      dx=dx, dy=dy, dz=dz, mval=vol, reference=refubc, mvalair=Blank, aircells=aircells, header=Header)
-        print(' Cell volumes (UBC format) written to '+VolFile)
-
-    if 'rlm' in OutFormat.lower():
-        mod.write_rlm(VolFile, modext='_vol.rlm',
-                      dx=dx, dy=dy, dz=dz, mval=vol, reference=refmod, mvalair=Blank, aircells=aircells, comment=Header)
-        print(' Cell volumes (CGG format) written to '+VolFile)
-
-    siz = vol
+    siz = mod.get_size(dx=dx, dy=dy, dz=dz, mval=rho, how=siztyp, out=True)
 
 if SizExtract:
-    siz = mod.get_size(dx=dx, dy=dy, dz=dz, mval=rho, how='vol', out=True)
+
+    siz = mod.get_size(dx=dx, dy=dy, dz=dz, mval=rho, how=siztyp, out=True)
     print(np.shape(siz), np.shape(rho))
     Header = '# '+MFile
 
@@ -262,7 +245,6 @@ if SizExtract:
                       dx=dx, dy=dy, dz=dz, mval=siz, reference=refmod, mvalair=Blank, aircells=aircells, comment=Header)
         print(' Cell volumes (CGG format) written to '+SizFile)
 
-    
 else:
     siz = np.array([])
 
@@ -347,7 +329,7 @@ if 'tot'in Splits.lower():
         SensTot = SensTmp
         Maxtotal = np.amax(SensTot)
     else:
-        SensTot, MaxTotal = jac.transform_sensitivity(S=SensTmp, Siz=vol,
+        SensTot, MaxTotal = jac.transform_sensitivity(S=SensTmp, Siz=siz,
                             Transform=Transform, OutInfo=False)
 
     SensFile = SensDir+JName+'_total_'+snsstring
@@ -413,7 +395,7 @@ if 'dtyp' in Splits.lower():
         if Transform is None:
             pass
         else:
-            SensTmp, _ = jac.transform_sensitivity(S=SensTmp, Siz=vol,
+            SensTmp, _ = jac.transform_sensitivity(S=SensTmp, Siz=siz,
                             Transform=Transform, Maxval=maxval, OutInfo=False)
         S = np.reshape(SensTmp, mdims, order='F')
 
@@ -484,7 +466,7 @@ if 'comp' in Splits.lower():
         if Transform is None:
             pass
         else:
-            SensTmp, _ = jac.transform_sensitivity(S=SensTmp, Siz=vol,
+            SensTmp, _ = jac.transform_sensitivity(S=SensTmp, Siz=siz,
                           Transform=Transform, Maxval=maxval, OutInfo=False)
         S = np.reshape(SensTmp, mdims, order='F')
 
@@ -540,7 +522,7 @@ if 'site' in Splits.lower():
         if Transform is None:
             pass
         else:
-            SensTmp, _  = jac.transform_sensitivity(S=SensTmp, Siz=vol,
+            SensTmp, _  = jac.transform_sensitivity(S=SensTmp, Siz=siz,
                           Transform=Transform, Maxval=maxval, OutInfo=False)
         S = np.reshape(SensTmp, mdims, order='F')
 
@@ -602,7 +584,7 @@ if 'freq' in Splits.lower():
            if Transform is None:
                 pass
            else:
-                SensTmp, _ = jac.transform_sensitivity(S=SensTmp, Siz=vol,
+                SensTmp, _ = jac.transform_sensitivity(S=SensTmp, Siz=siz,
                                 Transform=Transform, Maxval=maxval, OutInfo=False)
            S = np.reshape(SensTmp, mdims, order='F')
 
