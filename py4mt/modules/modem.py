@@ -20,6 +20,7 @@ import netCDF4 as nc
 
 # import h5netcdf as hc
 
+
 def decode_h2(strng):
     '''
     Decode header2 string from ModEM Jacobian (old style).
@@ -50,6 +51,7 @@ def decode_h2(strng):
 
     ivals = [i1, i2, i3]
     return ivals
+
 
 def read_jac(Jacfile=None, out=False):
     '''
@@ -118,7 +120,7 @@ def read_jac(Jacfile=None, out=False):
                     # AirCond
                     _ = fjac.read_reals(np.float64)
                     ColJac = fjac.read_reals(np.float64)
-                    #ColJac = fjac.read_reals(np.float64).flatten()
+                    # ColJac = fjac.read_reals(np.float64).flatten()
                     # print(np.shape(CellSens))
                     # ColJac =  CellSens.flatten(order='F')
                     # Coljac = np.fromfile(file, dtype=np.float6)
@@ -127,7 +129,6 @@ def read_jac(Jacfile=None, out=False):
                     # tmp2.append()
         #     if eof: break
         # if eof: break
-
 
     Jac = np.asarray(tmp1)
     Inf = np.asarray(tmp2)
@@ -138,7 +139,7 @@ def read_jac(Jacfile=None, out=False):
     if out:
         print('...done reading ' + Jacfile)
 
-    return Jac, Inf  #, Site, Freq, Comp
+    return Jac, Inf  # , Site, Freq, Comp
 
 
 def read_data_jac(Datfile=None, out=True):
@@ -171,33 +172,32 @@ def read_data_jac(Datfile=None, out=True):
             t = line.split()
 
             if t:
-                if int(t[8]) in [1,2,3,6,5]:
+                if int(t[8]) in [1, 2, 3, 6, 5]:
 
-                    #print(' 1: ', t[5], t[6], len(t))
-                    tmp= [
+                    # print(' 1: ', t[5], t[6], len(t))
+                    tmp = [
                         float(t[0]), float(t[2]), float(t[3]), float(t[4]),
                         float(t[5]), float(t[6]), float(t[9]), float(t[10]),
-                        ]
+                    ]
                     Data.append(tmp)
                     Site.append([t[1]])
                     Comp.append([t[7]])
                     Dtyp.append([int(t[8])])
-
 
     Site = [item for sublist in Site for item in sublist]
     Site = np.asarray(Site, dtype=object)
     Comp = [item for sublist in Comp for item in sublist]
     Comp = np.asarray(Comp, dtype=object)
 
-    Dtyp =  [item for sublist in Dtyp for item in sublist]
-    Dtyp =  np.asarray(Dtyp, dtype=object)
+    Dtyp = [item for sublist in Dtyp for item in sublist]
+    Dtyp = np.asarray(Dtyp, dtype=object)
 
     Data = np.asarray(Data)
 
-    if np.shape(Data)[0]==0:
+    if np.shape(Data)[0] == 0:
         sys.exit('read_data_jac: No data read! Exit.')
 
-    Freq = Data[:,0]
+    Freq = Data[:, 0]
 
     nD = np.shape(Data)
     if out:
@@ -207,7 +207,7 @@ def read_data_jac(Datfile=None, out=True):
 
 
 def write_jac_ncd(NCfile=None, Jac=None, Dat=None, Site=None, Comp=None,
-               zlib_in=True, shuffle_in=True, out=True):
+                  zlib_in=True, shuffle_in=True, out=True):
     '''
     Write Jacobian from ModEM output to NETCDF/HDF5 file.
 
@@ -280,7 +280,6 @@ def write_jac_ncd(NCfile=None, Jac=None, Dat=None, Site=None, Comp=None,
         )
 
 
-
 def read_data(Datfile=None,  modext='.dat', out=True):
     '''
     Read ModEM input data.
@@ -326,13 +325,11 @@ def read_data(Datfile=None,  modext='.dat', out=True):
                 Comp.append([t[7]])
                 Site.append([t[1]])
 
-
     Site = [item for sublist in Site for item in sublist]
     Site = np.asarray(Site, dtype=object)
     Comp = [item for sublist in Comp for item in sublist]
     Comp = np.asarray(Comp, dtype=object)
     Data = np.asarray(Data)
-
 
     nD = np.shape(Data)
     if out:
@@ -341,7 +338,7 @@ def read_data(Datfile=None,  modext='.dat', out=True):
     return Site, Comp, Data, Head
 
 
-def write_data(Datfile=None, Dat=None, Site=None, Comp=None, Head = None,
+def write_data(Datfile=None, Dat=None, Site=None, Comp=None, Head=None,
                out=True):
     '''
     Write ModEM input data file.
@@ -349,7 +346,8 @@ def write_data(Datfile=None, Dat=None, Site=None, Comp=None, Head = None,
     author: vrath
     last changed: Feb 10, 2021
     '''
-    datablock =np.column_stack((Dat[:,0], Site[:], Dat[:,1:6], Comp[:], Dat[:,6:10]))
+    datablock = np.column_stack(
+        (Dat[:, 0], Site[:], Dat[:, 1:6], Comp[:], Dat[:, 6:10]))
     nD, _ = np.shape(datablock)
 
     hlin = 0
@@ -357,7 +355,7 @@ def write_data(Datfile=None, Dat=None, Site=None, Comp=None, Head = None,
     nblck = int(nhead/8)
     print(str(nblck)+' blocks will be written.')
 
-    with open(Datfile,'w') as fd:
+    with open(Datfile, 'w') as fd:
 
         for ib in np.arange(nblck):
             blockheader = Head[hlin:hlin+8]
@@ -374,7 +372,7 @@ def write_data(Datfile=None, Dat=None, Site=None, Comp=None, Head = None,
                 for ii in np.arange(len(Comp)):
                     if ('ZX' in Comp[ii]) or ('ZY' in Comp[ii]):
                         indices.append(ii)
-                        block.append(datablock[ii,:])
+                        block.append(datablock[ii, :])
 
                 if out:
                     print('Impedances')
@@ -389,7 +387,7 @@ def write_data(Datfile=None, Dat=None, Site=None, Comp=None, Head = None,
                 for ii in np.arange(len(Comp)):
                     if ('TX' == Comp[ii]) or ('TY' == Comp[ii]):
                         indices.append(ii)
-                        block.append(datablock[ii,:])
+                        block.append(datablock[ii, :])
 
                 if out:
                     print('Tipper')
@@ -404,7 +402,7 @@ def write_data(Datfile=None, Dat=None, Site=None, Comp=None, Head = None,
                 for ii in np.arange(len(Comp)):
                     if ('PT' in Comp[ii]):
                         indices.append(ii)
-                        block.append(datablock[ii,:])
+                        block.append(datablock[ii, :])
 
                 if out:
                     print('Phase Tensor')
@@ -414,13 +412,13 @@ def write_data(Datfile=None, Dat=None, Site=None, Comp=None, Head = None,
 
                 print('Data type '+blockheader[2]+'not implemented! Exit.')
 
-            np.savetxt(fd,block, fmt = fmt)
+            np.savetxt(fd, block, fmt=fmt)
 
 
 def write_data_ncd(
         NCfile=None, Dat=None, Site=None, Comp=None,
         zlib_in=True, shuffle_in=True, out=True
-        ):
+):
     '''
     Write Jacobian from ModEM output to NETCDF file.
 
@@ -574,10 +572,10 @@ def write_mod_ncd(
 
 
 def write_mod_npz(file=None,
-                    dx=None, dy=None, dz=None, mval=None, reference=None,
-                    compressed=True, trans='LINEAR',
-                    aircells=None, mvalair=1.e17, blank=1.e-30, header='',
-                    out=True):
+                  dx=None, dy=None, dz=None, mval=None, reference=None,
+                  compressed=True, trans='LINEAR',
+                  aircells=None, mvalair=1.e17, blank=1.e-30, header='',
+                  out=True):
     '''
     Write ModEM model input.
 
@@ -588,25 +586,21 @@ def write_mod_npz(file=None,
 
     '''
 
-
-
-
     dims = np.shape(mval)
-    if mval.dim==3:
+    if mval.dim == 3:
         nx, ny, nz = dims
     else:
-        nx ,ny ,nz, nset = dims
+        nx, ny, nz, nset = dims
 
-
-    if not aircells  is None:
+    if not aircells is None:
         mval[aircells] = mvalair
 
-    if not blank  is None:
+    if not blank is None:
         blanks = np.where(~np.isfinite(mval))
         mval[blanks] = blank
 
-    if len(header)==0:
-        header ='# 3D MT model written by ModEM in WS format'
+    if len(header) == 0:
+        header = '# 3D MT model written by ModEM in WS format'
 
     if header[0] != '#':
         header = '#'+header
@@ -647,22 +641,23 @@ def write_mod_npz(file=None,
     info = np.array([trns], dtype='object')
 
     if compressed:
-        modext='.npz'
+        modext = '.npz'
         modf = file+modext
 
         np.savez_compressed(modf, header=header, info=info,
                             dx=dx, dy=dy, dz=dz, mval=mval, reference=cnt)
         print('model written to '+modf)
     else:
-        modext='.npy'
+        modext = '.npy'
         modf = file+modext
         np.savez(modf, header=header, info=info,
-                            dx=dx, dy=dy, dz=dz, mval=mval, reference=cnt)
+                 dx=dx, dy=dy, dz=dz, mval=mval, reference=cnt)
         print('model written to '+modf)
 
+
 def write_mod(file=None, modext='.rho',
-                    dx=None, dy=None, dz=None, mval=None, reference=None,
-                    trans='LINEAR', aircells = None, mvalair = 1.e17, blank = 1.e-30, header='', out=True):
+              dx=None, dy=None, dz=None, mval=None, reference=None,
+              trans='LINEAR', aircells=None, mvalair=1.e17, blank=1.e-30, header='', out=True):
     '''
     Write ModEM model input.
 
@@ -684,7 +679,6 @@ def write_mod(file=None, modext='.rho',
 
     '''
 
-
     modf = file+modext
 
     dims = np.shape(mval)
@@ -694,16 +688,15 @@ def write_mod(file=None, modext='.rho',
     nz = dims[2]
     dummy = 0
 
-
-    if not aircells  is None:
+    if not aircells is None:
         mval[aircells] = mvalair
 
-    if not blank  is None:
+    if not blank is None:
         blanks = np.where(~np.isfinite(mval))
         mval[blanks] = blank
 
-    if len(header)==0:
-        header ='# 3D MT model written by ModEM in WS format'
+    if len(header) == 0:
+        header = '# 3D MT model written by ModEM in WS format'
 
     if header[0] != '#':
         header = '#'+header
@@ -741,14 +734,14 @@ def write_mod(file=None, modext='.rho',
     else:
         cnt = np.asarray(reference)
 
-
     with open(modf, 'w') as f:
         np.savetxt(
             f, [header], fmt='%s')
-        line = np.array([nx, ny,nz, dummy, trns],dtype='object')
+        line = np.array([nx, ny, nz, dummy, trns], dtype='object')
         # line = np.array([nx, ny, nz, dummy, trans])
         # np.savetxt(f, line.reshape(1, 5), fmt='   %s'*5)
-        np.savetxt(f, line.reshape(1, 5), fmt =['  %i','  %i','  %i','  %i', '  %s'])
+        np.savetxt(f, line.reshape(1, 5), fmt=[
+                   '  %i', '  %i', '  %i', '  %i', '  %s'])
 
         np.savetxt(f, dx.reshape(1, dx.shape[0]), fmt='%12.3f')
         np.savetxt(f, dy.reshape(1, dy.shape[0]), fmt='%12.3f')
@@ -764,14 +757,14 @@ def write_mod(file=None, modext='.rho',
 
         f.write('\n')
 
-
         np.savetxt(f, cnt.reshape(1, cnt.shape[0]), fmt='%10.1f')
         f.write('%10.2f  \n' % (0.0))
 
+
 def write_rlm(file=None, modext='.rlm',
-                    dx=None, dy=None, dz=None, mval=None, reference=None,
-                    aircells = None, mvalair = 1.e17, blank = 1.e-30,
-                    comment='', name='', out=True):
+              dx=None, dy=None, dz=None, mval=None, reference=None,
+              aircells=None, mvalair=1.e17, blank=1.e-30,
+              comment='', name='', out=True):
     '''
     Write GGG model input.
 
@@ -786,27 +779,26 @@ def write_rlm(file=None, modext='.rlm',
 
     '''
 
-
     modf = file+modext
 
-    nx, ny, nz  = np.shape(mval)
+    nx, ny, nz = np.shape(mval)
 
-    if not aircells  is None:
+    if not aircells is None:
         mval[aircells] = mvalair
 
-    if not blank  is None:
+    if not blank is None:
         blanks = np.where(~np.isfinite(mval))
         mval[blanks] = blank
 
-    if len(comment)==0:
-        comment ='# 3D MT model in RLM format'
+    if len(comment) == 0:
+        comment = '# 3D MT model in RLM format'
 
     comment = comment.strip()
     if comment[0] != '#':
         comment = '#'+comment
 
-    if len(name)==0:
-        name=file
+    if len(name) == 0:
+        name = file
     if reference is None:
         ncorner = -0.5*np.sum(dx)
         ecorner = -0.5*np.sum(dy)
@@ -817,8 +809,8 @@ def write_rlm(file=None, modext='.rlm',
 
     with open(modf, 'w') as f:
 
-        line = np.array([nx, ny,nz],dtype='object')
-        np.savetxt(f, line.reshape(1, 3), fmt ='  %i')
+        line = np.array([nx, ny, nz], dtype='object')
+        np.savetxt(f, line.reshape(1, 3), fmt='  %i')
         np.savetxt(f, dx.reshape(1, dx.shape[0]), fmt='%12.3f')
         np.savetxt(f, dy.reshape(1, dy.shape[0]), fmt='%12.3f')
         np.savetxt(f, dz.reshape(1, dz.shape[0]), fmt='%12.3f')
@@ -829,7 +821,6 @@ def write_rlm(file=None, modext='.rlm',
             for yi in range(dy.size):
                 line = mval[:, yi, zi]
                 np.savetxt(f, line.reshape(1, nx), fmt='%12.5e')
-
 
         np.savetxt(
             f, [comment], fmt='%s')
@@ -844,10 +835,9 @@ def write_rlm(file=None, modext='.rlm',
         np.savetxt(f, [cnt[2]], fmt='%16.6g')
 
 
-
 def write_ubc(file=None,  mshext='.mesh', modext='.ubc',
-                    dx=None, dy=None, dz=None, mval=None, reference=None,
-                    aircells = None, mvalair = 1.e17, blank = 1.e17, header='', out=True):
+              dx=None, dy=None, dz=None, mval=None, reference=None,
+              aircells=None, mvalair=1.e17, blank=1.e17, header='', out=True):
     '''
     Write UBC model input.
 
@@ -861,18 +851,14 @@ def write_ubc(file=None,  mshext='.mesh', modext='.ubc',
     modf = file+modext
     mesh = file+mshext
 
-
     dims = np.shape(mval)
 
-
-    if not aircells  is None:
+    if not aircells is None:
         mval.reshape(dims)[aircells] = mvalair
 
-    if not blank  is None:
+    if not blank is None:
         blanks = np.where(~np.isfinite(mval))
         mval.reshape(dims)[blanks] = mvalair
-
-
 
     dyu = np.flipud(dx.reshape(1, dx.shape[0]))
     dxu = dy.reshape(1, dy.shape[0])
@@ -880,23 +866,21 @@ def write_ubc(file=None,  mshext='.mesh', modext='.ubc',
 
     lat = reference[0]
     lon = reference[1]
-    utm_zone = utl.get_utm_zone(lat,lon)
+    utm_zone = utl.get_utm_zone(lat, lon)
     utme, utmn = utl.proj_latlon_to_utm(lat, lon, utm_zone=utm_zone[0])
     ubce = utme - 0.5*np.sum(dxu)
     ubcn = utmn - 0.5*np.sum(dyu)
-    refu = np.array([ubce, ubcn, reference[2], utm_zone[0]]).reshape(1,4)
+    refu = np.array([ubce, ubcn, reference[2], utm_zone[0]]).reshape(1, 4)
     # print(refu)
 
-
-    val = np.transpose(mval, (1,0,2))
+    val = np.transpose(mval, (1, 0, 2))
 
     dimu = np.shape(val)
     dimu = np.asarray(dimu)
     dimu = dimu.reshape(1, dimu.shape[0])
     val = val.flatten(order='C')
 
-
-    with open(mesh , 'w') as f:
+    with open(mesh, 'w') as f:
         np.savetxt(f, dimu, fmt='%i')
         np.savetxt(f, refu, fmt='%14.3f %14.3f %14.3f %10i')
 
@@ -904,16 +888,12 @@ def write_ubc(file=None,  mshext='.mesh', modext='.ubc',
         np.savetxt(f, dyu, fmt='%12.3f')
         np.savetxt(f, dzu, fmt='%12.3f')
 
-
-
-    with open(modf , 'w') as f:
+    with open(modf, 'w') as f:
         np.savetxt(f, val, fmt='%14.5g')
 
 
-
-
 def read_ubc(file=None, modext='.mod', mshext='.msh',
-                   trans='LINEAR', volumes=False, out=True):
+             trans='LINEAR', volumes=False, out=True):
     '''
     Read UBC model input.
 
@@ -924,7 +904,6 @@ def read_ubc(file=None, modext='.mod', mshext='.msh',
 
     modf = file+modext
     mesh = file+mshext
-
 
     with open(mesh, 'r') as f:
         lines = f.readlines()
@@ -937,7 +916,6 @@ def read_ubc(file=None, modext='.mod', mshext='.msh',
     dxu = np.array([float(sub) for sub in lines[2]])
     dyu = np.array([float(sub) for sub in lines[3]])
     dzu = np.array([float(sub) for sub in lines[4]])
-
 
     dx = np.flipud(dyu.reshape(1, dyu.shape[0]))
     nx = dx.size
@@ -958,7 +936,6 @@ def read_ubc(file=None, modext='.mod', mshext='.msh',
     utmz = refs[3]
     refubc = np.array([refx, refy, refz, utmz])
 
-
     with open(modf, 'r') as f:
         lines = f.readlines()
 
@@ -966,8 +943,7 @@ def read_ubc(file=None, modext='.mod', mshext='.msh',
     for line in lines:
         val = np.append(val, float(line))
     val = np.reshape(val, (ny, nx, nz))
-    val = np.transpose(val, (1,0,2))
-
+    val = np.transpose(val, (1, 0, 2))
 
     # here mval should be in physical units, not log...
     if 'loge' in trans.lower() or 'ln' in trans.lower():
@@ -989,8 +965,8 @@ def read_ubc(file=None, modext='.mod', mshext='.msh',
 
     return dx, dy, dz, val, refubc, trans
 
-def get_volumes(dx=None, dy=None, dz=None, mval=None, out=True):
 
+def get_volumes(dx=None, dy=None, dz=None, mval=None, out=True):
     '''
 
     Extract volumes from model.
@@ -1010,12 +986,12 @@ def get_volumes(dx=None, dy=None, dz=None, mval=None, out=True):
         Cell volumes in model mesh.
 
     '''
-    nx, ny,nz = np.shape(mval)
+    nx, ny, nz = np.shape(mval)
     vcell = np.zeros_like(mval)
     for ii in np.arange(nx):
         for jj in np.arange(ny):
             for kk in np.arange(nz):
-                vcell[ii,jj,kk] = dx[ii]*dy[jj]*dz[kk]
+                vcell[ii, jj, kk] = dx[ii]*dy[jj]*dz[kk]
 
     if out:
         print(
@@ -1024,8 +1000,8 @@ def get_volumes(dx=None, dy=None, dz=None, mval=None, out=True):
 
     return vcell
 
-def get_size(dx=None, dy=None, dz=None, mval=None, how='vol', out=True):
 
+def get_size(dx=None, dy=None, dz=None, mval=None, how='vol', out=True):
     '''
 
     Extract volumes from model.
@@ -1045,42 +1021,40 @@ def get_size(dx=None, dy=None, dz=None, mval=None, how='vol', out=True):
         Cell volumes in model mesh.
 
     '''
-    nx, ny,nz = np.shape(mval)
+    nx, ny, nz = np.shape(mval)
     cell_size = np.zeros_like(mval)
-    
-    if 'vol' in how.lower():    
-        for ii in np.arange(nx):
+
+    if 'vol' in how.lower():
+        for ii in np.arange(nx)[::-1]:
             for jj in np.arange(ny):
                 for kk in np.arange(nz):
-                    cell_size[ii,jj,kk] = dx[ii]*dy[jj]*dz[kk]
+                    cell_size[ii, jj, kk] = dx[ii]*dy[jj]*dz[kk]
 
         if out:
             print(
-                'ger_volumes: %i x %i x %i cell volumes calculated' %
+                'get_volumes: %i x %i x %i cell volumes calculated' %
                 (nx, ny, nz))
-            
+
     elif 'hsiz' in how.lower():
-        for ii in np.arange(nx):
+        for ii in np.arange(nx)[::-1]:
             for jj in np.arange(ny):
                 for kk in np.arange(nz):
-                    cell_size[ii,jj,kk] = np.min([dx[ii],dy[jj]])
-                    
-    elif 'vsiz' in how.lower():    
-        for ii in np.arange(nx):
-                for jj in np.arange(ny):
-                    for kk in np.arange(nz):
-                        cell_size[ii,jj,kk] = dz[kk]
-    elif 'area' in how.lower():    
-        for ii in np.arange(nx):
-                for jj in np.arange(ny):
-                    for kk in np.arange(nz):
-                        cell_size[ii,jj,kk] = dx[ii]*dy[jj]
+                    cell_size[ii, jj, kk] = np.min([dx[ii], dy[jj]])
+
+    elif 'vsiz' in how.lower():
+        for ii in np.arange(nx)[::-1]:
+            for jj in np.arange(ny):
+                for kk in np.arange(nz):
+                    cell_size[ii, jj, kk] = dz[kk]
+    elif 'area' in how.lower():
+        for ii in np.arange(nx)[::-1]:
+            for jj in np.arange(ny):
+                for kk in np.arange(nz):
+                    cell_size[ii, jj, kk] = dx[ii]*dy[jj]
     else:
-        sys.exit('get siszepar: method '+how.lower(),'not implemented! Exit.')
+        sys.exit('get siszepar: method '+how.lower(), 'not implemented! Exit.')
 
-        
     return cell_size
-
 
 
 def get_topo(dx=None, dy=None, dz=None, mval=None,
@@ -1137,10 +1111,10 @@ def get_topo(dx=None, dy=None, dz=None, mval=None,
     return xcnt, ycnt, topo
 
 
-def read_mod(file=None, 
-             modext='.rho', 
-             trans='LINEAR', 
-             blank=1.e-30, 
+def read_mod(file=None,
+             modext='.rho',
+             trans='LINEAR',
+             blank=1.e-30,
              out=True):
     '''
     Read ModEM model input.
@@ -1210,11 +1184,11 @@ def read_mod(file=None,
     return dx, dy, dz, mval, reference, trans
 
 
-def read_mod_aniso(file=None, 
-                   components=3, 
-                   modext='.rho', 
-                   trans='LINEAR', 
-                   blank=1.e-30, 
+def read_mod_aniso(file=None,
+                   components=3,
+                   modext='.rho',
+                   trans='LINEAR',
+                   blank=1.e-30,
                    out=True):
     '''
     Read ModEM model input.
@@ -1239,7 +1213,6 @@ def read_mod_aniso(file=None,
     dz = np.array([float(sub) for sub in lines[4]])
     if out:
         print('values in ' + file + ' are: ' + trns)
-    
 
     mcomps = []
     for icmp in np.arange(components):
@@ -1247,12 +1220,10 @@ def read_mod_aniso(file=None,
         for line in lines[5:-2]:
             line = np.flipud(line)  # np.fliplr(line)
             mval = np.append(mval, np.array([float(sub) for sub in line]))
-    
-    
+
         if out:
             print(
-            'read_model %i : %i x %i x %i model read from %s' % (icmp, nx, ny, nz, file))
-
+                'read_model %i : %i x %i x %i model read from %s' % (icmp, nx, ny, nz, file))
 
         if trns == 'LOGE':
             mval = np.exp(mval)
@@ -1263,10 +1234,10 @@ def read_mod_aniso(file=None,
         else:
             print('Transformation: ' + trns + ' not defined!')
             sys.exit(1)
-    
+
         # here mval should be in physical units, not log...
         mval[np.where(np.abs(mval) < blank)] = blank
-    
+
         if 'loge' in trans.lower() or 'ln' in trans.lower():
             mval = np.log(mval)
             if out:
@@ -1279,35 +1250,31 @@ def read_mod_aniso(file=None,
             if out:
                 print('values transformed to: ' + trans)
             pass
-    
+
         mval = mval.reshape(dims, order='F')
-        
-        if components>1:
+
+        if components > 1:
             mcomps.append(mval)
         else:
             mcomps = mval
-        
-    
-    reference = [float(sub) for sub in lines[-2][0:3]]
 
+    reference = [float(sub) for sub in lines[-2][0:3]]
 
     return dx, dy, dz, mcomps, reference, trans
 
+    # if trim:
+    #     for ix in range(trim[0]):
+    #         model.dx_delete(0)
+    #         model.dx_delete(model.nx)
+    #     for ix in range(trim[1]):
+    #         model.dy_delete(0)
+    #         model.dy_delete(model.ny)
+    #     for ix in range(trim[2]):
+    #         model.dz_delete(model.nz)
 
-
-
-        # if trim:
-        #     for ix in range(trim[0]):
-        #         model.dx_delete(0)
-        #         model.dx_delete(model.nx)
-        #     for ix in range(trim[1]):
-        #         model.dy_delete(0)
-        #         model.dy_delete(model.ny)
-        #     for ix in range(trim[2]):
-        #         model.dz_delete(model.nz)
 
 def write_mod_vtk(file=None, dx=None, dy=None, dz=None, rho=None,
-                  trim=[10, 10, 30], reference=None, scale = [1., 1., -1.],
+                  trim=[10, 10, 30], reference=None, scale=[1., 1., -1.],
                   trans='LINEAR', out=True):
     '''
     write ModEM model input in
@@ -1321,31 +1288,28 @@ def write_mod_vtk(file=None, dx=None, dy=None, dz=None, rho=None,
 
     if trim is not None:
         print('model trimmed'
-              +', x='+str(trim[0])
-              +', y='+str(trim[1])
-              +', z='+str(trim[2])
+              + ', x='+str(trim[0])
+              + ', y='+str(trim[1])
+              + ', z='+str(trim[2])
               )
 
         for ix in range(trim[0]):
-            dx  = np.delete(dx, (0,-1))
+            dx = np.delete(dx, (0, -1))
         for ix in range(trim[1]):
-            dy  = np.delete(dy, (0,-1))
+            dy = np.delete(dy, (0, -1))
         for ix in range(trim[2]):
-            dz  = np.delete(dz, (-1))
+            dz = np.delete(dz, (-1))
 
+    X = np.append(0.0, np.cumsum(dy))*scale[1]
+    Y = np.append(0.0, np.cumsum(dx))*scale[1]
+    Z = np.append(0.0, np.cumsum(dz))*scale[2]
 
-    X =  np.append(0.0, np.cumsum(dy))*scale[1]
-    Y =  np.append(0.0, np.cumsum(dx))*scale[1]
-    Z =  np.append(0.0, np.cumsum(dz))*scale[2]
-
-
-
-    gridToVTK(file, X, Y, -Z , cellData = {'resistivity (in Ohm)' : rho})
+    gridToVTK(file, X, Y, -Z, cellData={'resistivity (in Ohm)': rho})
     print('model-like parameter written to %s' % (file))
 
 
 def write_dat_vtk(Sitfile=None, sx=None, sy=None, sz=None, sname=None,
-                   reference=None, scale = [1., 1., -1.], out=True):
+                  reference=None, scale=[1., 1., -1.], out=True):
     '''
     Convert ModEM data file to VTK station set (unstructured grid)
 
@@ -1353,30 +1317,28 @@ def write_dat_vtk(Sitfile=None, sx=None, sy=None, sz=None, sname=None,
     '''
     from evtk.hl import pointsToVTK
 
-
     N = sx*scale[0]
     E = sy*scale[1]
     D = sz*scale[2]
 
-
-    #dummy scalar values
+    # dummy scalar values
     dummy = np.ones((len(N)))
 
-    pointsToVTK(Sitfile, N, E, D, data = {'value' : dummy})
+    pointsToVTK(Sitfile, N, E, D, data={'value': dummy})
 
     print('site positions written to %s' % (Sitfile))
 
 
-def fix_cells( covfile_i=None,
-               covfile_o=None,
-               modfile_i=None,
-               modfile_o=None,
-               datfile_i=None,
-               fixed='2',
-               method = ['border', 3],
-               fixmod = ['prior'],
-               unit = 'km',
-               out=True):
+def fix_cells(covfile_i=None,
+              covfile_o=None,
+              modfile_i=None,
+              modfile_o=None,
+              datfile_i=None,
+              fixed='2',
+              method=['border', 3],
+              fixmod=['prior'],
+              unit='km',
+              out=True):
     '''
     Read and process ModEM covar input.
 
@@ -1386,8 +1348,7 @@ def fix_cells( covfile_i=None,
     '''
     air = '0'
     ocean = '9'
-    comments = ['#', '|','>', '+','/']
-
+    comments = ['#', '|', '>', '+', '/']
 
     dx, dy, dz, rho, reference, _ = read_mod(modfile_i, out=True)
     modsize = np.shape(rho)
@@ -1395,13 +1356,13 @@ def fix_cells( covfile_i=None,
     if 'dist' in method[0].lower():
         fixdist = method[1]
         x = np.append(0., np.cumsum(dx)) + reference[0]
-        xc =0.5*(x[0:len(x)-1]+x[1:len(x)])
+        xc = 0.5*(x[0:len(x)-1]+x[1:len(x)])
         y = np.append(0., np.cumsum(dy)) + reference[1]
-        yc =0.5*(y[0:len(y)-1]+y[1:len(y)])
+        yc = 0.5*(y[0:len(y)-1]+y[1:len(y)])
         cellcent = [xc, yc]
 
         # print(len(xc),len(yc))
-        Site , _, Data, _ = read_data(datfile_i, out=True)
+        Site, _, Data, _ = read_data(datfile_i, out=True)
 
         xs = []
         ys = []
@@ -1409,49 +1370,47 @@ def fix_cells( covfile_i=None,
             ss = Site[idt]
             if idt == 0:
                 site = Site[idt]
-                xs.append(Data[idt,3])
-                ys.append(Data[idt,4])
+                xs.append(Data[idt, 3])
+                ys.append(Data[idt, 4])
             elif ss != site:
                 site = Site[idt]
-                xs.append(Data[idt,3])
-                ys.append(Data[idt,4])
+                xs.append(Data[idt, 3])
+                ys.append(Data[idt, 4])
 
         sitepos = [xs, ys]
-
 
     if 'bord' in method[0].lower():
         border = method[1]
 
-
     with open(covfile_i, 'r') as f_i:
-       l_i = f_i.readlines()
+        l_i = f_i.readlines()
 
     l_o = l_i.copy()
 
-
     done = False
     for line in l_i:
-        if len(line.split())==3:
-                [block_len, line_len, num_lay] =[int(t) for t in line.split()]
-                print(block_len, line_len, num_lay)
-                done = True
+        if len(line.split()) == 3:
+            [block_len, line_len, num_lay] = [int(t) for t in line.split()]
+            print(block_len, line_len, num_lay)
+            done = True
         if done:
             break
 
     if 'bord' in method[0].lower():
         rows = list(range(0, block_len))
         index_row1 = [index for index in rows if rows[index] < border]
-        index_row2 = [index for index in rows if rows[index] > block_len-border-1]
+        index_row2 = [index for index in rows if rows[index]
+                      > block_len-border-1]
         cols = list(range(0, line_len))
         index_col1 = [index for index in cols if cols[index] < border]
-        index_col2 = [index for index in cols if cols[index] > line_len-border-1]
+        index_col2 = [index for index in cols if cols[index]
+                      > line_len-border-1]
     if 'dist' in method.lower():
-         sits = list(range(0, np.shape(sitepos)[0]))
-         rows = list(range(0, block_len))
-         cols = list(range(0, line_len))
-         xs = sitepos[:][0]
-         ys = sitepos[:][1]
-
+        sits = list(range(0, np.shape(sitepos)[0]))
+        rows = list(range(0, block_len))
+        cols = list(range(0, line_len))
+        xs = sitepos[:][0]
+        ys = sitepos[:][1]
 
     blocks = [ii for ii in range(len(l_i)) if len(l_i[ii].split()) == 2]
     if len(blocks) != num_lay:
@@ -1460,13 +1419,14 @@ def fix_cells( covfile_i=None,
     for ib in blocks:
         new_block = []
         block = l_i[ib+1:ib+block_len+1]
-        tmp =[line.split() for line in block]
+        tmp = [line.split() for line in block]
 
         if 'bord' in method.lower():
 
             for ii in rows:
                 if (ii in index_row1) or (ii in index_row2):
-                      tmp[ii] = [tmp[ii][cell].replace('1', fixed) for cell in cols]
+                    tmp[ii] = [tmp[ii][cell].replace(
+                        '1', fixed) for cell in cols]
 
                 # print(ii,tmp[ii] ,'\n')
 
@@ -1476,7 +1436,6 @@ def fix_cells( covfile_i=None,
 
                 tmp[ii].append('\n')
                 new_block.append(' '.join(tmp[ii]))
-
 
         if 'dist' in method.lower():
 
@@ -1497,33 +1456,31 @@ def fix_cells( covfile_i=None,
                 tmp[ii].append('\n')
                 new_block.append(' '.join(tmp[ii]))
 
-
         l_o[ib+1:ib+block_len+1] = new_block
 
     with open(covfile_o, 'w') as f_o:
-            f_o.writelines(l_o)
+        f_o.writelines(l_o)
     if out:
         print('fix_cells: covariance control read from %s' % (covfile_i))
         print('fix_cells: covariance control written to %s' % (covfile_o))
         if 'bord' in method.lower():
             print(str(border)+' border  cells fixed (zone '+str(fixed)+')')
         else:
-            if unit=='km':
+            if unit == 'km':
                 print('cells with min distance to site > '
-                      +str(fixdist/1000)+'km fixed (zone '+str(fixed)+')')
+                      + str(fixdist/1000)+'km fixed (zone '+str(fixed)+')')
             else:
                 print('cells with min distance to site > '
-                     +str(fixdist)+'m fixed (zone '+str(fixed)+')')
+                      + str(fixdist)+'m fixed (zone '+str(fixed)+')')
 
     if 'val' in fixmod[0].lower():
-        write_mod(modfile_o, dx, dy, dz, rho,reference,out = True)
+        write_mod(modfile_o, dx, dy, dz, rho, reference, out=True)
         if out:
             print('fix_cells: model written to %s' % (covfile_o))
             print('fix_cells: model in %s fixed to %g Ohm.m' % (covfile_i))
     else:
         if out:
             print('fix_cells: model in %s fixed to prior' % (modfile_i))
-
 
 
 def linear_interpolation(p1, p2, x0):
@@ -1550,22 +1507,18 @@ def linear_interpolation(p1, p2, x0):
     return y0
 
 
-
-
 def data_to_pv(data=None, site=None, reference=None, scale=1.):
 
-    x =  data[:, 3]
-    y =  data[:, 4]
-    z =  data[:, 5]
+    x = data[:, 3]
+    y = data[:, 4]
+    z = data[:, 5]
 
     if reference is not None:
-        x =  x + reference[0]
-        y =  y + reference[1]
-        z =  z + reference[2]
+        x = x + reference[0]
+        y = y + reference[1]
+        z = z + reference[2]
 
-    y, x, z  = scale*x, scale*y, -scale*z
-
-
+    y, x, z = scale*x, scale*y, -scale*z
 
     sites, siteindex = np.unique(site, return_index=True)
     x = x[siteindex]
@@ -1573,27 +1526,25 @@ def data_to_pv(data=None, site=None, reference=None, scale=1.):
     z = z[siteindex]
 
     sites = sites.astype('<U4')
-    siten= np.array([ii for ii in np.arange(len(z))])
+    siten = np.array([ii for ii in np.arange(len(z))])
 
     # z = -z
 
     return x, y, z, sites, siten
 
 
-def model_to_pv(dx=None, dy=None,dz=None, rho=None, reference=None,
-                scale=1., pad = [12, 12, 30.]):
-
+def model_to_pv(dx=None, dy=None, dz=None, rho=None, reference=None,
+                scale=1., pad=[12, 12, 30.]):
 
     x, y, z = cells3d(dx, dy, dz)
 
+    x = x + reference[0]
+    y = y + reference[1]
+    z = z + reference[2]
 
-    x =  x + reference[0]
-    y =  y + reference[1]
-    z =  z + reference[2]
+    x, y, z = scale*x, scale*y, scale*z
 
-    x, y, z  = scale*x, scale*y, scale*z
-
-    x, y, z, rho = clip_model(x, y, z, rho, pad = pad)
+    x, y, z, rho = clip_model(x, y, z, rho, pad=pad)
 
     # vals = np.swapaxes(np.flip(rho, 2), 0, 1).flatten(order='F')
     vals = rho.copy()
@@ -1707,7 +1658,7 @@ def mt1dfwd(freq, sig, d, inmod='r', out='imp', magfield='b'):
 
     if out.lower() == 'imp':
 
-        if magfield.lower() =='b':
+        if magfield.lower() == 'b':
             return Z/mu0
         else:
             return Z
@@ -1726,10 +1677,10 @@ def mt1dfwd(freq, sig, d, inmod='r', out='imp', magfield='b'):
 
 
 def insert_body_condition(dx=None, dy=None, dz=None,
-    rho_in=None, body=None,
-    smooth=None, scale=1.0, 
-    reference = None, pad=[0, 0, 0], 
-    out=True):
+                          rho_in=None, body=None,
+                          smooth=None, scale=1.0,
+                          reference=None, pad=[0, 0, 0],
+                          out=True):
     '''
     Insert 3d body (ellipsoid or box) into given model.
 
@@ -1755,8 +1706,6 @@ def insert_body_condition(dx=None, dy=None, dz=None,
 
     print(' center is', modcenter)
 
-
-
     nx = np.shape(xc)[0]
     ny = np.shape(yc)[0]
     nz = np.shape(zc)[0]
@@ -1770,7 +1719,7 @@ def insert_body_condition(dx=None, dy=None, dz=None,
     # baxes = body[6:9]
     # bangl = body[9:12]
     # ell = ['ell', action, 10000.,    0., 0., 10000.,    30000., 30000., 5000.,     0., 0.,0.]
-    geom= body[0]
+    geom = body[0]
     action = body[1]
     condit = body[2]
     bcent = body[3:6]
@@ -1785,7 +1734,7 @@ def insert_body_condition(dx=None, dy=None, dz=None,
     if 'rep' in action[0]:
         actstring = 'rhoval'
 
-    elif 'add'  in action[0]:
+    elif 'add' in action[0]:
         if 'avg' in action[0]:
             if condit is None:
                 actstring = 'rho_avg + rhoval'
@@ -1796,7 +1745,6 @@ def insert_body_condition(dx=None, dy=None, dz=None,
 
     else:
         print('Action' + action + ' not implemented! Exit.')
-
 
     if out:
         print(
@@ -1809,23 +1757,22 @@ def insert_body_condition(dx=None, dy=None, dz=None,
         print('Action is '+action[0])
         print('Smoothed with ' + smooth[0] + ' filter')
 
-
     if 'ell' in geom.lower():
         if 'avg' in actstring:
             rho_avg = 0.
             n_inside = 0
             for kk in np.arange(0, nz - zpad - 1):
-                 zpoint = zc[kk]
-                 for jj in np.arange(ypad + 1, ny - ypad - 1):
-                     ypoint = yc[jj]
-                     for ii in np.arange(xpad + 1, nx - xpad - 1):
-                         xpoint = xc[ii]                     
-                         point = [ii,jj,kk]
-                         position = [xpoint, ypoint, zpoint]
-                         if in_ellipsoid(position, bcent, baxes, bangl):
-                             n_inside = n_inside +1
-                             rho_avg = rho_avg + rho_out[ii,jj,kk]
-            if n_inside>0:
+                zpoint = zc[kk]
+                for jj in np.arange(ypad + 1, ny - ypad - 1):
+                    ypoint = yc[jj]
+                    for ii in np.arange(xpad + 1, nx - xpad - 1):
+                        xpoint = xc[ii]
+                        point = [ii, jj, kk]
+                        position = [xpoint, ypoint, zpoint]
+                        if in_ellipsoid(position, bcent, baxes, bangl):
+                            n_inside = n_inside + 1
+                            rho_avg = rho_avg + rho_out[ii, jj, kk]
+            if n_inside > 0:
                 rho_avg = rho_avg/n_inside
             else:
                 print('insert_body: no cell centers inside ellipsoid! Exit.')
@@ -1838,21 +1785,20 @@ def insert_body_condition(dx=None, dy=None, dz=None,
                 ypoint = yc[jj]
                 for ii in np.arange(xpad + 1, nx - xpad - 1):
                     xpoint = xc[ii]
-                    point = [ii,jj,kk]
-                
+                    point = [ii, jj, kk]
+
                     position = [xpoint, ypoint, zpoint]
                     if in_ellipsoid(position, bcent, baxes, bangl):
-                        n_inside = n_inside +1
-                        if condit is None:                  
+                        n_inside = n_inside + 1
+                        if condit is None:
                             rho_out[ii, jj, kk] = eval(actstring)
                         else:
                             val = rho_out[ii, jj, kk]
                             if eval(condit):
-                                n_changed = n_changed +1
+                                n_changed = n_changed + 1
                                 rho_out[ii, jj, kk] = eval(actstring)
 
-
-        if n_inside>0:
+        if n_inside > 0:
             print(n_inside, ' cell centers in ellipsoid found.')
             print(n_changed, ' cells changed.')
         else:
@@ -1863,41 +1809,41 @@ def insert_body_condition(dx=None, dy=None, dz=None,
             rho_avg = 0.
             n_inside = 0
             for kk in np.arange(0, nz - zpad - 1):
-                 zpoint = zc[kk]
-                 for jj in np.arange(ypad + 1, ny - ypad - 1):
-                     ypoint = yc[jj]
-                     for ii in np.arange(xpad + 1, nx - xpad - 1):
-                         xpoint = xc[ii]
-                         point = [ii,jj,kk]
-                         position = [xpoint, ypoint, zpoint]
-                         if in_box(position, bcent, baxes, bangl):
-                             n_inside = n_inside +1
-                             rho_avg = rho_avg + rho_out[ii,jj,kk]
-            if n_inside>0:
+                zpoint = zc[kk]
+                for jj in np.arange(ypad + 1, ny - ypad - 1):
+                    ypoint = yc[jj]
+                    for ii in np.arange(xpad + 1, nx - xpad - 1):
+                        xpoint = xc[ii]
+                        point = [ii, jj, kk]
+                        position = [xpoint, ypoint, zpoint]
+                        if in_box(position, bcent, baxes, bangl):
+                            n_inside = n_inside + 1
+                            rho_avg = rho_avg + rho_out[ii, jj, kk]
+            if n_inside > 0:
                 rho_avg = rho_avg/n_inside
             else:
                 print('insert_body: no cell centers inside box! Exit.')
 
         n_inside = 0
-        n_changed = 0 
+        n_changed = 0
         for kk in np.arange(0, nz - zpad - 1):
             zpoint = zc[kk]
             for jj in np.arange(ypad + 1, ny - ypad - 1):
                 ypoint = yc[jj]
                 for ii in np.arange(xpad + 1, nx - xpad - 1):
                     xpoint = xc[ii]
-                    point = [ii,jj,kk]
+                    point = [ii, jj, kk]
                     position = [xpoint, ypoint, zpoint]
                     if in_box(position, bcent, baxes, bangl):
                         n_inside = n_inside + 1
-                        if condit is None:                  
+                        if condit is None:
                             rho_out[ii, jj, kk] = eval(actstring)
                         else:
                             val = rho_out[ii, jj, kk]
                             if eval(condit):
-                                n_changed = n_changed +1
+                                n_changed = n_changed + 1
                                 rho_out[ii, jj, kk] = eval(actstring)
-        if n_inside>0:
+        if n_inside > 0:
             print(n_inside, ' cell centers in box found.')
             print(n_changed, ' cells changed.')
         else:
@@ -1919,11 +1865,12 @@ def insert_body_condition(dx=None, dy=None, dz=None,
 
     return rho_out
 
+
 def insert_body(dx=None, dy=None, dz=None,
-    rho_in=None, body=None,
-    pad=[0, 0, 0], 
-    smooth=None, scale=1.0, reference = None,
-    out=True):
+                rho_in=None, body=None,
+                pad=[0, 0, 0],
+                smooth=None, scale=1.0, reference=None,
+                out=True):
     '''
     Insert 3d body (ellipsoid or box) into given model.
 
@@ -1949,40 +1896,33 @@ def insert_body(dx=None, dy=None, dz=None,
 
     print(' center is', modcenter)
 
-
-
     nx = np.shape(xc)[0]
     ny = np.shape(yc)[0]
     nz = np.shape(zc)[0]
 
     rho_out = np.log(rho_in.copy())
 
-    geom= body[0]
+    geom = body[0]
     action = body[1]
     rhoval = body[2]
     bcent = body[3:6]
     baxes = body[6:9]
     bangl = body[9:12]
 
-
     rhoval = np.log(rhoval)
 
     if 'rep' in action:
         actstring = 'rhoval'
 
-    elif 'add'  in action:
+    elif 'add' in action:
 
         if 'avg' in action:
             actstring = 'rho_avg + rhoval'
         else:
             actstring = 'rho_out[point] + rhoval'
-            
-
-        
 
     else:
         print('Action' + action + ' not implemented! Exit.')
-
 
     if out:
         print(
@@ -1995,22 +1935,21 @@ def insert_body(dx=None, dy=None, dz=None,
         print('Action is '+action)
         print('Smoothed with ' + smooth[0] + ' filter')
 
-
     if 'ell' in geom.lower():
         if 'avg' in actstring:
             rho_avg = 0.
             n_inside = 0
             for kk in np.arange(0, nz - zpad - 1):
-                 zpoint = zc[kk]
-                 for jj in np.arange(ypad + 1, ny - ypad - 1):
-                     ypoint = yc[jj]
-                     for ii in np.arange(xpad + 1, nx - xpad - 1):
-                         xpoint = xc[ii]
-                         position = [xpoint, ypoint, zpoint]
-                         if in_ellipsoid(position, bcent, baxes, bangl):
-                             n_inside = n_inside +1
-                             rho_avg = rho_avg + rho_out[ii,jj,kk]
-            if n_inside>0:
+                zpoint = zc[kk]
+                for jj in np.arange(ypad + 1, ny - ypad - 1):
+                    ypoint = yc[jj]
+                    for ii in np.arange(xpad + 1, nx - xpad - 1):
+                        xpoint = xc[ii]
+                        position = [xpoint, ypoint, zpoint]
+                        if in_ellipsoid(position, bcent, baxes, bangl):
+                            n_inside = n_inside + 1
+                            rho_avg = rho_avg + rho_out[ii, jj, kk]
+            if n_inside > 0:
                 rho_avg = rho_avg/n_inside
             else:
                 print('insert_body: no points inside ellipsoid! Exit.')
@@ -2024,9 +1963,8 @@ def insert_body(dx=None, dy=None, dz=None,
                     xpoint = xc[ii]
                     position = [xpoint, ypoint, zpoint]
                     if in_ellipsoid(position, bcent, baxes, bangl):
-                        n_inside = n_inside +1
+                        n_inside = n_inside + 1
                         rho_out[ii, jj, kk] = eval(actstring)
-
 
         print(n_inside, ' points in ellipsoid found.')
 
@@ -2036,16 +1974,16 @@ def insert_body(dx=None, dy=None, dz=None,
 
             n_inside = 0
             for kk in np.arange(0, nz - zpad - 1):
-                 zpoint = zc[kk]
-                 for jj in np.arange(ypad + 1, ny - ypad - 1):
-                     ypoint = yc[jj]
-                     for ii in np.arange(xpad + 1, nx - xpad - 1):
-                         xpoint = xc[ii]
-                         position = [xpoint, ypoint, zpoint]
-                         if in_box(position, bcent, baxes, bangl):
-                             n_inside = n_inside +1
-                             rho_avg = rho_avg + rho_out[ii,jj,kk]
-            if n_inside>0:
+                zpoint = zc[kk]
+                for jj in np.arange(ypad + 1, ny - ypad - 1):
+                    ypoint = yc[jj]
+                    for ii in np.arange(xpad + 1, nx - xpad - 1):
+                        xpoint = xc[ii]
+                        position = [xpoint, ypoint, zpoint]
+                        if in_box(position, bcent, baxes, bangl):
+                            n_inside = n_inside + 1
+                            rho_avg = rho_avg + rho_out[ii, jj, kk]
+            if n_inside > 0:
                 rho_avg = rho_avg/n_inside
             else:
                 print('insert_body: no points inside box! Exit.')
@@ -2063,7 +2001,6 @@ def insert_body(dx=None, dy=None, dz=None,
                         rho_out[ii, jj, kk] = eval(actstring)
 
         print(n_inside, ' points in box found.')
-
 
     if smooth is not None:
         if 'uni' in smooth[0].lower():
@@ -2113,11 +2050,11 @@ def cells3d(dx, dy, dz, center=False, reference=[0., 0., 0.]):
 
 
 def in_ellipsoid(
-    point=None,
-    cent=[0.0, 0.0, 0.0],
-    axs=[1.0, 1.0, 1.0],
-    ang=[0.0, 0.0, 0.0],
-    find_inside=True):
+        point=None,
+        cent=[0.0, 0.0, 0.0],
+        axs=[1.0, 1.0, 1.0],
+        ang=[0.0, 0.0, 0.0],
+        find_inside=True):
     '''
     Find points inside arbitrary box.
 
@@ -2150,11 +2087,11 @@ def in_ellipsoid(
 
 
 def in_box(
-    point=None,
-    cent=[0.0, 0.0, 0.0],
-    axs=[1.0, 1.0, 1.0],
-    ang=[0.0, 0.0, 0.0],
-    find_inside=True,):
+        point=None,
+        cent=[0.0, 0.0, 0.0],
+        axs=[1.0, 1.0, 1.0],
+        ang=[0.0, 0.0, 0.0],
+        find_inside=True,):
     '''
     Find points inside arbitrary ellipsoid.
 
@@ -2238,10 +2175,11 @@ def rotx(theta):
 
     return M
 
+
 def crossgrad(m1=np.array([]),
-                m2=np.array([]),
-                mesh= [np.array([]), np.array([]), np.array([])],
-                Out=True):
+              m2=np.array([]),
+              mesh=[np.array([]), np.array([]), np.array([])],
+              Out=True):
     '''
 
     Crossgrad function
@@ -2261,9 +2199,9 @@ def crossgrad(m1=np.array([]),
     '''
     sm = np.shape(m1)
     dm = m1.dim
-    if dm==1:
+    if dm == 1:
         print('crossgrad: For dim='+str(dm)+' no crossgrad! Exit.')
-    elif dm==2:
+    elif dm == 2:
         cgdim = 1
     else:
         cgdim = 3
@@ -2275,15 +2213,16 @@ def crossgrad(m1=np.array([]),
     g1 = np.ravel(gm1)
     g2 = np.ravel(gm2)
 
-    cgm = np.zeros_like(g1,cgdim)
+    cgm = np.zeros_like(g1, cgdim)
     for k in np.arange(np.size(g1)):
-        cgm[k,:] = np.cross (g1[k], g2[k])
+        cgm[k, :] = np.cross(g1[k], g2[k])
 
-    cgm =np.reshape(cgm,(sm+cgdim))
+    cgm = np.reshape(cgm, (sm+cgdim))
 
     cgnm = np.abs(cgm)/(np.abs(gm1)*np.abs(gm2))
 
     return cgm, cgnm
+
 
 def medfilt3D(
         M,
@@ -2562,7 +2501,7 @@ def prepare_model(rho, rhoair=1.0e17):
     return rho_new
 
 
-def insert_body_ijk(template = None, rho_in=None,
+def insert_body_ijk(template=None, rho_in=None,
                     perturb=None, bodymask=None, out=True):
     '''
     Insert 3d box into given model.
@@ -2583,7 +2522,6 @@ def insert_body_ijk(template = None, rho_in=None,
 
     rho_out = np.log(rho_in.copy())
 
-
     if out:
         print('Perturbation amplitude: '+str(perturb) + ' log10')
 
@@ -2594,23 +2532,23 @@ def insert_body_ijk(template = None, rho_in=None,
 
     for ibody in np.arange(nbody):
 
-        bc = centers[:,ibody]
+        bc = centers[:, ibody]
 
-        ib = np.arange(bc[0]-bw[0],bc[0]+bw[0]+1)
-        jb = np.arange(bc[1]-bw[1],bc[1]+bw[1]+1)
-        kb = np.arange(bc[1]-bw[1],bc[1]+bw[1]+1)
+        ib = np.arange(bc[0]-bw[0], bc[0]+bw[0]+1)
+        jb = np.arange(bc[1]-bw[1], bc[1]+bw[1]+1)
+        kb = np.arange(bc[1]-bw[1], bc[1]+bw[1]+1)
         rho_out[ib, jb, kb] = template[bc]*perturb+rho_in[ib, jb, kb]
-
 
         if out:
             print('Body center at: ' + str(bc))
 
-
     return rho_out
 
+
 def distribute_bodies_ijk(model=None,
-                      method=['random', 25, 'uniform', [1, 1,   1, 1,   1, 1]],
-                      valmark=1, flip='alternate', scale='ijk'):
+                          method=['random', 25, 'uniform',
+                                  [1, 1,   1, 1,   1, 1]],
+                          valmark=1, flip='alternate', scale='ijk'):
     '''
     construct templates for  distributing test boduies  within model.
 
@@ -2649,8 +2587,7 @@ def distribute_bodies_ijk(model=None,
 
     '''
     if 'ijk' not in scale:
-       print('distribute_bodies: currently only index sales possible! Exit.')
-
+        print('distribute_bodies: currently only index sales possible! Exit.')
 
     if model is None:
         print('distribute_bodies: no model given! Exit.')
@@ -2658,14 +2595,14 @@ def distribute_bodies_ijk(model=None,
     rng = np.random.default_rng()
     template = np.zeros_like(model)
 
-    if   'reg' in method[0].lower():
+    if 'reg' in method[0].lower():
 
         bbox = method[1]
         step = method[2]
 
-        ci = np.arange(bbox[0],bbox[1],step[0])
-        cj = np.arange(bbox[2],bbox[3],step[1])
-        ck = np.arange(bbox[4],bbox[5],step[2])
+        ci = np.arange(bbox[0], bbox[1], step[0])
+        cj = np.arange(bbox[2], bbox[3], step[1])
+        ck = np.arange(bbox[4], bbox[5], step[2])
         centi, centj, centk = np.meshgrid(ci, cj, ck, indexing='ij')
 
         bnum = np.shape(centi)
@@ -2674,49 +2611,48 @@ def distribute_bodies_ijk(model=None,
         for ibody in np.arange(bnum):
             val = valmark
             if 'alt' in flip:
-                if  np.mod(ibody,2)==0:
+                if np.mod(ibody, 2) == 0:
                     val = -valmark
             if 'ran' in flip:
-                if rng.random()>0.5:
+                if rng.random() > 0.5:
                     val = -valmark
-
 
             template[centi[ibody], centj[ibody], centk[ibody]] = val
 
     elif 'ran' in method[0].lower():
-        print('distribute_bodies: method'+method.lower()+'not implemented! Exit.')
+        print('distribute_bodies: method' +
+              method.lower()+'not implemented! Exit.')
 
         bnum = method[1]
         bbox = method[2]
         bpdf = method[3]
-        print('distribute_bodies: currently only uniform diributions'\
-              +' implemented! input pdf ignored!')
+        print('distribute_bodies: currently only uniform diributions'
+              + ' implemented! input pdf ignored!')
         mdist = method[4]
 
-
-        ci = np.arange(bbox[0],bbox[1],1)
-        cj = np.arange(bbox[2],bbox[3],1)
-        ck = np.arange(bbox[4],bbox[5],1)
+        ci = np.arange(bbox[0], bbox[1], 1)
+        cj = np.arange(bbox[2], bbox[3], 1)
+        ck = np.arange(bbox[4], bbox[5], 1)
         centers = []
 
         for ibody in np.arange(bnum):
             centi = rng.choice(ci)
             centj = rng.choice(cj)
             centk = rng.choice(ck)
-            ctest = np.array([centi, centj,centk])
-            if ibody==0:
+            ctest = np.array([centi, centj, centk])
+            if ibody == 0:
                 centers = ctest
             else:
                 print(np.shape(centers))
                 for itest in np.arange(np.shape(centers)[1]):
                     test = norm(ctest-centers[itest-1])
-                    if test>=mdist:
+                    if test >= mdist:
                         template[centi, centj, centk] = val
                     else:
                         print('distribute_bodies: too near!')
     else:
-        print('distribute_bodies: method'+method.lower()+'not implemented! Exit.')
-
+        print('distribute_bodies: method' +
+              method.lower()+'not implemented! Exit.')
 
     return template
 
@@ -2734,13 +2670,14 @@ def set_mesh(d=None, center=False):
 
     if center:
         c = 0.5*(xn[ncell] - xn[0])
-        xn = xn -c
+        xn = xn - c
 
     return xn, xc
 
+
 def mask_mesh(x=None, y=None, z=None, mod=None,
               mask=None,
-              ref = [0., 0., 0.],
+              ref=[0., 0., 0.],
               method='index'):
     '''
     mask model-like parameters and mesh
@@ -2752,7 +2689,6 @@ def mask_mesh(x=None, y=None, z=None, mod=None,
     x_out = x.copy()
     y_out = y.copy()
     z_out = z.copy()
-
 
     if ('ind' in method.lower()) or ('ijk' in method.lower()):
 
@@ -2769,9 +2705,9 @@ def mask_mesh(x=None, y=None, z=None, mod=None,
 
     elif 'dis' in method.lower():
 
-        x =  x + ref[0]
-        y =  y + ref[1]
-        z =  z + ref[2]
+        x = x + ref[0]
+        y = y + ref[1]
+        z = z + ref[2]
 
         xc = 0.5 * (x[0:msh[0]] + x[1:msh[0]+1])
         yc = 0.5 * (y[0:msh[1]] + y[1:msh[1]+1])
@@ -2779,40 +2715,40 @@ def mask_mesh(x=None, y=None, z=None, mod=None,
 
         ix = []
         for ii in np.arange(len(xc)):
-            if np.logical_and(xc[ii]>=mask[0], xc[ii]<=mask[1]):
-                 ix.append(ii)
+            if np.logical_and(xc[ii] >= mask[0], xc[ii] <= mask[1]):
+                ix.append(ii)
         aixt = tuple(np.array(ix).T)
 
         iy = []
         for ii in np.arange(len(yc)):
-            if np.logical_and(yc[ii]>=mask[2], yc[ii]<=mask[3]):
-                 iy.append(ii)
+            if np.logical_and(yc[ii] >= mask[2], yc[ii] <= mask[3]):
+                iy.append(ii)
         aiyt = tuple(np.array(iy).T)
 
         iz = []
         for ii in np.arange(len(zc)):
-            if np.logical_and(zc[ii]>=mask[2], zc[ii]<=mask[3]):
-                 iz.append(ii)
+            if np.logical_and(zc[ii] >= mask[2], zc[ii] <= mask[3]):
+                iz.append(ii)
         aizt = tuple(np.array(iz).T)
 
         x_out = x_out[ix.append(ix[-1]+1)]
         y_out = y_out[iy.append(iy[-1]+1)]
         z_out = z_out[iz.append(iz[-1]+1)]
         # np.append(ix,ix[-1]+1)
-        print('x ',x_out)
-        print('y ',y_out)
-        print('x ',z_out)
+        print('x ', x_out)
+        print('y ', y_out)
+        print('x ', z_out)
 
-        mod_out =mod_out[aixt,:,:]
-        mod_out =mod_out[:,aiyt,:]
-        mod_out =mod_out[:,:,aizt]
+        mod_out = mod_out[aixt, :, :]
+        mod_out = mod_out[:, aiyt, :]
+        mod_out = mod_out[:, :, aizt]
         print(np.shape(mod_out))
-        print(np.shape(ix),np.shape(iy),np.shape(iz))
+        print(np.shape(ix), np.shape(iy), np.shape(iz))
 
         return x_out, y_out, z_out, mod_out
 
 
-def generate_alphas(dz, beg_lin=[0., 0.1, 0.1], end_lin =[999., 0.9, 0.9]):
+def generate_alphas(dz, beg_lin=[0., 0.1, 0.1], end_lin=[999., 0.9, 0.9]):
     '''
     Generates linspace depth-dependent horizontal alphas
 
@@ -2834,22 +2770,17 @@ def generate_alphas(dz, beg_lin=[0., 0.1, 0.1], end_lin =[999., 0.9, 0.9]):
 
     '''
 
-
-
     a_x = np.nan * np.ones_like(dz)
     a_y = np.nan * np.ones_like(dz)
 
     _, depth = set_mesh(d=dz)
 
-
     start_z = beg_lin[0]
-    end_z   = end_lin[0]
+    end_z = end_lin[0]
 
-    i0 = (depth>=start_z).argmax()
-    i1 = (depth>=end_z).argmax()
-    idif =np.abs(i1-i0)
-
-
+    i0 = (depth >= start_z).argmax()
+    i1 = (depth >= end_z).argmax()
+    idif = np.abs(i1-i0)
 
     a_x[:i0] = beg_lin[1]
     a_x[i0:i1] = np.linspace(beg_lin[1], end_lin[1], idif)
@@ -2858,6 +2789,5 @@ def generate_alphas(dz, beg_lin=[0., 0.1, 0.1], end_lin =[999., 0.9, 0.9]):
     a_y[:i0] = beg_lin[2]
     a_y[i0:i1] = np.linspace(beg_lin[2], end_lin[2], idif)
     a_y[i1:] = end_lin[2]
-
 
     return a_x, a_y
