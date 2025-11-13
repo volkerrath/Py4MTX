@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-edi_funcs.py
+ediproc.py
 =================
 Consolidated I/O utilities for Magnetotelluric EDI files used in the EDI project.
 
 This module extracts and refactors the input/output functions scattered across
 `edi_processor.py` and `edi_writer.py` into a clean, reusable API. It supports:
 - Reading/parsing EDI text for standard Z/T tables and Phoenix SPECTRA blocks.
-- Reconstructing complex spectral matrices and deriving Z/T from Phoenix 7×7 spectra.
-- Loading EDI from disk with a single convenience function that returns (freq, Z, T, station, source_kind).
+- Reconstructing complex spectral matrices and deriving Z/T from 
+  Phoenix 7×7 spectra.
+- Loading EDI from disk with a single convenience function that returns 
+  (freq, Z, T, station, source_kind).
 - Writing EDI files from arrays or from NPZ bundles written by the processor.
 - Optional support for variance blocks (.VAR) for Z, T, and Phase Tensor (PT).
 
@@ -21,14 +23,16 @@ Public API
 - ZT_from_S(S, ref='RH')
 - parse_block_values(edi_text)
 - load_edi(path, prefer_spectra=True, ref='RH', rotate_deg=0.0, fill_invalid=None)
-- write_edi(path, *, station, freq, Z, T=None, lat_deg=None, lon_deg=None, elev_m=None,
+- write_edi(path, *, station, freq, Z, T=None, lat_deg=None, lon_deg=None, 
+            elev_m=None,
             header_meta=None, numbers_per_line=6, Z_var_re=None, Z_var_im=None,
             T_var_re=None, T_var_im=None, PT=None, PT_var=None)
-- write_edi_from_npz(npz_path, out_path=None, *, numbers_per_line=6, lat_deg=None, lon_deg=None, elev_m=None)
+- write_edi_from_npz(npz_path, out_path=None, *, numbers_per_line=6, 
+                     lat_deg=None, lon_deg=None, elev_m=None)
 
 Notes
 -----
-- Rotation and fill-invalid logic are kept for convenience when loading EDIs, mirroring `edi_processor`.
+- Rotation and fill-invalid logic are kept for convenience when loading EDIs
 - All functions have low-level docstrings as requested for this project.
 
 Author: Volker Rath (DIAS)
@@ -42,6 +46,7 @@ from pathlib import Path
 import re
 import io
 import numpy as np
+import pandas as pd
 
 MU0: float = 4e-7 * np.pi
 
@@ -154,6 +159,74 @@ COMP_LIST = ['hx', 'hy', 'hz', 'ex', 'ey', 'rhx', 'rhy']
 IDX = {c: i for i, c in enumerate(COMP_LIST)}
 
 
+def dataframe_from_arrays(freq: np.ndarray, Z: np.ndarray, T: Optional[np.ndarray] = None) -> pd.DataFrame:
+    """Build a pandas DataFrame with columns matching `edi_processor` CSV schema.
+
+    Parameters
+    ----------
+    freq : ndarray, shape (n,)
+        Frequencies in Hz.
+    Z : ndarray, shape (n,2,2), complex128
+        Impedance tensor per frequency.
+    T : ndarray or None, shape (n,1,2), complex128, optional
+        Tipper per frequency. If None, zeroed columns are used.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns: freq, Zxx_re/_im, Zxy_re/_im, Zyx_re/_im, Zyy_re/_im,
+                 Tx_re/_im, Ty_re/_im, plus derived rho/phi and PT entries.
+    """
+    n = freq.shape[0]
+    df = pd.DataFrame({
+        'freq': freq,
+        'Zxx_re': Z[:,0,0].real, 'Zxx_im': Z[:,0,0].imag,
+        'Zxy_re': Z[:,0,1].real, 'Zxy_im': Z[:,0,1].imag,
+        'Zyx_re': Z[:,1,0].real, 'Zyx_im': Z[:,1,0].imag,
+        'Zyy_re': Z[:,1,1].real, 'Zyy_im': Z[:,1,1].imag,
+    })
+    if T is None:
+        df['Tx_re'] = 0.0; df['Tx_im'] = 0.0
+        df['Ty_re'] = 0.0; df['Ty_im'] = 0.0
+    else:
+        df['Tx_re'] = T[:,0,0].real; df['Tx_im'] = T[:,0,0].imag
+        df['Ty_re'] = T[:,0,1].real; df['Ty_im'] = T[:,0,1].imag
+
+    # Derived quantities
+    period = 1.0 / np.asarray(freq, dtype=float)
+    omega_mu = 2*np.pi*freq*MU0
+
+    for lab, zr, zi in (
+        ('xx', df['Zxx_re'].to_numpy(), df['Zxx_im'].to_numpy()),
+        ('xy', df['Zxy_re'].to_numpy(), df['Zxy_im'].to_numpy()),
+        ('yx', df['Zyx_re'].to_numpy(), df['Zyx_im'].to_numpy()),
+        ('yy', df['Zyy_re'].to_numpy(), df['Zyy_im'].to_numpy()),
+    ):
+        Zc = zr + 1j*zi
+        rho = np.abs(Zc)**2 / omega_mu
+        phi = np.degrees(np.arctan2(zi, zr))
+        df[f'rho_{{lab}}'] = rho
+        df[f'phi_{{lab}}'] = phi
+
+    # Phase Tensor
+    PT = np.zeros((n,2,2), dtype=float)
+    for i in range(n):
+        X = np.array([[df['Zxx_re'].iat[i], df['Zxy_re'].iat[i]],
+                      [df['Zyx_re'].iat[i], df['Zyy_re'].iat[i]]], dtype=float)
+        Y = np.array([[df['Zxx_im'].iat[i], df['Zxy_im'].iat[i]],
+                      [df['Zyx_im'].iat[i], df['Zyy_im'].iat[i]]], dtype=float)
+        try:
+            Xinv = np.linalg.inv(X)
+        except np.linalg.LinAlgError:
+            Xinv = np.linalg.pinv(X)
+        PT[i] = Y @ Xinv
+    df['ptxx_re'] = PT[:,0,0]; df['ptxy_re'] = PT[:,0,1]
+    df['ptyx_re'] = PT[:,1,0]; df['ptyy_re'] = PT[:,1,1]
+
+    return df
+
+
+
 def read_edi_text(path: Path | str) -> str:
     """Read EDI file as text using latin-1 with 'ignore' errors.
 
@@ -191,15 +264,18 @@ def parse_spectra_blocks(edi_text: str):
     for m in re.finditer(r'>SPECTRA[^\n]*\n((?:[^\n]*\n)+?)(?=>SPECTRA|>END|$)', edi_text):
         header = m.group(0).splitlines()[0]
         body = m.group(1)
-        fm = re.search(r'FREQ\s*=\s*([0-9.]+[ED][+\-]?\d+|[0-9.]+)', header, flags=re.IGNORECASE)
+        fm = re.search(
+            r'FREQ\s*=\s*([0-9.]+[ED][+\-]?\d+|[0-9.]+)', header, flags=re.IGNORECASE)
         if not fm:
             continue
         f = float(fm.group(1).replace('D', 'E'))
-        am = re.search(r'AVGT\s*=\s*([0-9.]+[ED][+\-]?\d+|[0-9.]+)', header, flags=re.IGNORECASE)
+        am = re.search(
+            r'AVGT\s*=\s*([0-9.]+[ED][+\-]?\d+|[0-9.]+)', header, flags=re.IGNORECASE)
         avgt = float(am.group(1).replace('D', 'E')) if am else np.nan
         rows = [ln for ln in body.splitlines() if ln.strip()]
         arr = np.array([
-            list(map(float, re.findall(r'[-+]?(?:\d+\.\d*|\d*\.\d+|\d+)(?:[EeDd][+\-]?\d+)?', ln)))
+            list(map(float, re.findall(
+                r'[-+]?(?:\d+\.\d*|\d*\.\d+|\d+)(?:[EeDd][+\-]?\d+)?', ln)))
             for ln in rows
         ])
         if arr.shape == (7, 7):
@@ -251,8 +327,10 @@ def ZT_from_S(S: np.ndarray, ref: str = 'RH'):
     else:
         h1, h2 = IDX['rhx'], IDX['rhy']
     ex, ey, hz = IDX['ex'], IDX['ey'], IDX['hz']
-    SHH = np.array([[S[h1, h1], S[h1, h2]], [S[h2, h1], S[h2, h2]]], dtype=np.complex128)
-    SEH = np.array([[S[ex, h1], S[ex, h2]], [S[ey, h1], S[ey, h2]]], dtype=np.complex128)
+    SHH = np.array([[S[h1, h1], S[h1, h2]], [
+                   S[h2, h1], S[h2, h2]]], dtype=np.complex128)
+    SEH = np.array([[S[ex, h1], S[ex, h2]], [
+                   S[ey, h1], S[ey, h2]]], dtype=np.complex128)
     SBH = np.array([[S[hz, h1], S[hz, h2]]], dtype=np.complex128)
     try:
         SHH_inv = np.linalg.inv(SHH)
@@ -285,10 +363,12 @@ def parse_block_values(edi_text: str):
     Mirrors the behavior used in `edi_processor.py`. Reference implementation:
     see project source (function names and regex layout preserved).
     """
-    f_matches = re.findall(r'FREQ\s*=\s*([0-9.]+[ED][+\-]?\d+|[0-9.]+)', edi_text, flags=re.IGNORECASE)
+    f_matches = re.findall(
+        r'FREQ\s*=\s*([0-9.]+[ED][+\-]?\d+|[0-9.]+)', edi_text, flags=re.IGNORECASE)
     if not f_matches:
         return None
-    freqs = np.array([float(s.replace('D', 'E')) for s in f_matches], dtype=float)
+    freqs = np.array([float(s.replace('D', 'E'))
+                     for s in f_matches], dtype=float)
     n = freqs.size
 
     def get_arr(tag: str):
@@ -296,7 +376,8 @@ def parse_block_values(edi_text: str):
         m = re.search(pat, edi_text, flags=re.IGNORECASE)
         if not m:
             return None
-        nums = re.findall(r'[-+]?(?:\d+\.\d*|\d*\.\d+|\d+)(?:[EeDd][+\-]?\d+)?', m.group(1))
+        nums = re.findall(
+            r'[-+]?(?:\d+\.\d*|\d*\.\d+|\d+)(?:[EeDd][+\-]?\d+)?', m.group(1))
         arr = np.array([float(v.replace('D', 'E')) for v in nums], dtype=float)
         return arr[:n] if arr.size >= n else None
 
@@ -357,7 +438,8 @@ def load_edi(path: Path | str, *, prefer_spectra: bool = True, ref: str = 'RH',
     any CSV/HDF5 writing or plotting. This function is intended purely for I/O.
     """
     text = read_edi_text(path)
-    m = re.search(r'DATAID\s*=\s*"?([A-Za-z0-9_\-\.]+)"?', text, flags=re.IGNORECASE)
+    m = re.search(
+        r'DATAID\s*=\s*"?([A-Za-z0-9_\-\.]+)"?', text, flags=re.IGNORECASE)
     station = m.group(1) if m else 'UNKNOWN'
 
     spectra_blocks = list(parse_spectra_blocks(text))
@@ -376,7 +458,8 @@ def load_edi(path: Path | str, *, prefer_spectra: bool = True, ref: str = 'RH',
     else:
         parsed = parse_block_values(text)
         if parsed is None:
-            raise RuntimeError("Could not find SPECTRA blocks or standard Z/T tables in EDI.")
+            raise RuntimeError(
+                "Could not find SPECTRA blocks or standard Z/T tables in EDI.")
         freq, Z, T = parsed
         source_kind = 'tables'
 
@@ -501,12 +584,14 @@ def write_edi(path: Path | str, *, station: str, freq: np.ndarray, Z: np.ndarray
     freq = _ensure_1d(np.asarray(freq, dtype=float), "freq")
     Z = np.asarray(Z)
     if Z.shape != (freq.size, 2, 2):
-        raise ValueError(f"Z must have shape (n,2,2) with n={freq.size}, got {Z.shape}")
+        raise ValueError(
+            f"Z must have shape (n,2,2) with n={freq.size}, got {Z.shape}")
 
     if T is not None:
         T = np.asarray(T)
         if T.shape != (freq.size, 1, 2):
-            raise ValueError(f"T must have shape (n,1,2) with n={freq.size}, got {T.shape}")
+            raise ValueError(
+                f"T must have shape (n,1,2) with n={freq.size}, got {T.shape}")
 
     def _check_opt(name: str, arr: Optional[np.ndarray], shape: Tuple[int, ...]) -> Optional[np.ndarray]:
         if arr is None:
@@ -518,8 +603,10 @@ def write_edi(path: Path | str, *, station: str, freq: np.ndarray, Z: np.ndarray
 
     Z_var_re = _check_opt("Z_var_re", Z_var_re, (freq.size, 2, 2))
     Z_var_im = _check_opt("Z_var_im", Z_var_im, (freq.size, 2, 2))
-    T_var_re = _check_opt("T_var_re", T_var_re, (freq.size, 1, 2)) if T is not None else None
-    T_var_im = _check_opt("T_var_im", T_var_im, (freq.size, 1, 2)) if T is not None else None
+    T_var_re = _check_opt("T_var_re", T_var_re,
+                          (freq.size, 1, 2)) if T is not None else None
+    T_var_im = _check_opt("T_var_im", T_var_im,
+                          (freq.size, 1, 2)) if T is not None else None
 
     # Phase Tensor: compute if not provided
     if PT is None:
@@ -535,9 +622,13 @@ def write_edi(path: Path | str, *, station: str, freq: np.ndarray, Z: np.ndarray
     else:
         PT = _check_opt("PT", PT, (freq.size, 2, 2))
 
-    PT_var = _check_opt("PT_var", PT_var, (freq.size, 2, 2)) if PT_var is not None else None
+    PT_var = _check_opt("PT_var", PT_var, (freq.size, 2, 2)
+                        ) if PT_var is not None else None
 
-    Zxx = Z[:, 0, 0]; Zxy = Z[:, 0, 1]; Zyx = Z[:, 1, 0]; Zyy = Z[:, 1, 1]
+    Zxx = Z[:, 0, 0]
+    Zxy = Z[:, 0, 1]
+    Zyx = Z[:, 1, 0]
+    Zyy = Z[:, 1, 1]
     blocks: Dict[str, np.ndarray] = {
         "ZXXR": Zxx.real, "ZXXI": Zxx.imag,
         "ZXYR": Zxy.real, "ZXYI": Zxy.imag,
@@ -558,14 +649,18 @@ def write_edi(path: Path | str, *, station: str, freq: np.ndarray, Z: np.ndarray
 
     if T is not None:
         Tx, Ty = T[:, 0, 0], T[:, 0, 1]
-        blocks.update({"TXR": Tx.real, "TXI": Tx.imag, "TYR": Ty.real, "TYI": Ty.imag})
+        blocks.update({"TXR": Tx.real, "TXI": Tx.imag,
+                      "TYR": Ty.real, "TYI": Ty.imag})
         if T_var_re is not None:
-            blocks.update({"TXR.VAR": T_var_re[:, 0, 0], "TYR.VAR": T_var_re[:, 0, 1]})
+            blocks.update(
+                {"TXR.VAR": T_var_re[:, 0, 0], "TYR.VAR": T_var_re[:, 0, 1]})
         if T_var_im is not None:
-            blocks.update({"TXI.VAR": T_var_im[:, 0, 0], "TYI.VAR": T_var_im[:, 0, 1]})
+            blocks.update(
+                {"TXI.VAR": T_var_im[:, 0, 0], "TYI.VAR": T_var_im[:, 0, 1]})
 
     # Phase Tensor real components (+ optional variances)
-    blocks.update({"PTXX": PT[:, 0, 0], "PTXY": PT[:, 0, 1], "PTYX": PT[:, 1, 0], "PTYY": PT[:, 1, 1]})
+    blocks.update({"PTXX": PT[:, 0, 0], "PTXY": PT[:, 0, 1],
+                  "PTYX": PT[:, 1, 0], "PTYY": PT[:, 1, 1]})
     if PT_var is not None:
         blocks.update({"PTXX.VAR": PT_var[:, 0, 0], "PTXY.VAR": PT_var[:, 0, 1],
                        "PTYX.VAR": PT_var[:, 1, 0], "PTYY.VAR": PT_var[:, 1, 1]})
@@ -585,19 +680,21 @@ def write_edi(path: Path | str, *, station: str, freq: np.ndarray, Z: np.ndarray
             buf.write(f"    {k}= {v}\n")
 
     buf.write(">FREQ\n")
-    buf.write(_fmt_block(freq, per_line=numbers_per_line)); buf.write("\n")
+    buf.write(_fmt_block(freq, per_line=numbers_per_line))
+    buf.write("\n")
 
     preferred_order = [
-        "ZXXR","ZXXI","ZXYR","ZXYI","ZYXR","ZYXI","ZYYR","ZYYI",
-        "ZXXR.VAR","ZXXI.VAR","ZXYR.VAR","ZXYI.VAR","ZYXR.VAR","ZYXI.VAR","ZYYR.VAR","ZYYI.VAR",
-        "TXR","TXI","TYR","TYI","TXR.VAR","TXI.VAR","TYR.VAR","TYI.VAR",
-        "PTXX","PTXY","PTYX","PTYY","PTXX.VAR","PTXY.VAR","PTYX.VAR","PTYY.VAR",
+        "ZXXR", "ZXXI", "ZXYR", "ZXYI", "ZYXR", "ZYXI", "ZYYR", "ZYYI",
+        "ZXXR.VAR", "ZXXI.VAR", "ZXYR.VAR", "ZXYI.VAR", "ZYXR.VAR", "ZYXI.VAR", "ZYYR.VAR", "ZYYI.VAR",
+        "TXR", "TXI", "TYR", "TYI", "TXR.VAR", "TXI.VAR", "TYR.VAR", "TYI.VAR",
+        "PTXX", "PTXY", "PTYX", "PTYY", "PTXX.VAR", "PTXY.VAR", "PTYX.VAR", "PTYY.VAR",
     ]
     for tag in preferred_order:
         if tag not in blocks:
             continue
         buf.write(f">{tag}\n")
-        buf.write(_fmt_block(blocks[tag], per_line=numbers_per_line)); buf.write("\n")
+        buf.write(_fmt_block(blocks[tag], per_line=numbers_per_line))
+        buf.write("\n")
 
     buf.write(">END\n")
     path.write_text(buf.getvalue(), encoding="utf-8")
@@ -637,7 +734,7 @@ def write_edi_from_npz(npz_path: Path | str, out_path: Optional[Path | str] = No
     header_meta = {
         "SOURCE_FILE": str(npz_path.name),
     }
-    for k in ("source_kind","ref","rotate_deg","prefer_spectra"):
+    for k in ("source_kind", "ref", "rotate_deg", "prefer_spectra"):
         if k in data.files:
             header_meta[k.upper()] = str(data[k])
     return write_edi(
