@@ -136,7 +136,7 @@ The Jacobian used within $\texttt{ModEM}$ is also calculated in the transformed 
 ```
 For this reason, some minor changes in the $\texttt{ModEM}$ source code were made. They do not touch the original functionality, as they are controlled by 
 compiler directives. Activating the new code is done by adding $\texttt{-DJAC}$ to the $\texttt{FFLAGS}$ line in the corresponding 
-$\texttt{Makefile}$. The adapted code can be found in the $\texttt{modem}$ subdirectory of the  $\texttt{JacoPyAn}$ repository, and 
+$\texttt{Makefile}$. The adapted code can be found in the $\texttt{modem}$ subdirectory of the  $\texttt{Py4MTX}$ repository, and 
 can be simply copied to the original $\texttt{f90}$ subdirectory in the original source code. 
 
 The changes made in the souce code will only be relevant to the parts used  by the calculation and storage of the Jacobian. In addition to the 
@@ -180,8 +180,7 @@ investigation) it may be convenient to do a final normalization by the maximum v
 
 _[1] M. Deal and G. Nolet (1996) “Nullspace shuttles", Geophysical Journal International, 124, 372–380_
 
-_[2] G. Muñoz and V. Rath (2006)
-“Beyond smooth inversion: the use of nullspace projection for the exploration of non-uniqueness in MT", Geophysical Journal International, 164, 301–311, 2006, doi:10.1111/j.1365-246X.2005.02825.x_
+_[2] G. Muñoz and V. Rath (2006) “Beyond smooth inversion: the use of nullspace projection for the exploration of non-uniqueness in MT", Geophysical Journal International, 164, 301–311, 2006, doi:10.1111/j.1365-246X.2005.02825.x_
 
 _[3] G. D. Egbert and A. Kelbert (2012) “Computational recipes for electromagnetic inverse problems”, Geophysical Journal International, 189, 251–267, doi:10.1111/j.1365-246X.2011.05347.x_
 
