@@ -20,6 +20,7 @@ import inspect
 # Import numerical or other specialised modules
 import numpy as np
 import scipy as sci
+import matplotlib.pyplot as plt
 
 PY4MTX_DATA = os.environ['PY4MTX_DATA']
 PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
@@ -41,8 +42,8 @@ import viz
 import inverse as inv
 import femtic as fem
 
-import mtviz_funcs as mtv
-import mtio_funcs as mtio
+from ediviz import add_phase, add_rho, add_tipper, add_pt
+from ediproc import load_edi, dataframe_from_arrays
 #import cluster as fcm
 from version import versionstrg
 
@@ -64,5 +65,21 @@ edi_files = mtp.get_edi_list(EdiDir, fullpath=False)
 ns = np.size(edi_files)
 
 String_out = ''
-Declination = 0. # 2.68   #E
-DecDeg = True
+
+Rotate = True
+if Rotate:
+    Declination = 0. # 2.68   #E
+    DecDeg = True
+    
+    
+
+freq, Z, T, station, _ = load_edi("mysite.edi")
+df = dataframe_from_arrays(freq, Z, T)
+
+fig, axs = plt.subplots(2, 2, figsize=(10, 7), sharex=True)
+add_rho(df, comps="xy,yx", ax=axs[0,0])
+add_phase(df, comps="xy,yx", ax=axs[0,1])
+add_tipper(df, ax=axs[1,0])
+add_pt(df, ax=axs[1,1])
+fig.suptitle(station)
+plt.show()
