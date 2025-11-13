@@ -966,45 +966,45 @@ def read_ubc(file=None, modext='.mod', mshext='.msh',
     return dx, dy, dz, val, refubc, trans
 
 
-def get_volumes(dx=None, dy=None, dz=None, mval=None, out=True):
-    '''
+# def get_volumes(dx=None, dy=None, dz=None, mval=None, out=True):
+#     '''
 
-    Extract volumes from model.
+#     Extract volumes from model.
 
-    Parameters
-    ----------
-    dx, dy, dz : float arrays
-        Mesh cell sizes.
-    mval : float array
-        Resistivity of cells.
-    out : logical, optional
-        Controls ouput. The default is True.
+#     Parameters
+#     ----------
+#     dx, dy, dz : float arrays
+#         Mesh cell sizes.
+#     mval : float array
+#         Resistivity of cells.
+#     out : logical, optional
+#         Controls ouput. The default is True.
 
-    Returns
-    -------
-    vcell :  float array
-        Cell volumes in model mesh.
+#     Returns
+#     -------
+#     vcell :  float array
+#         Cell volumes in model mesh.
 
-    '''
-    nx, ny, nz = np.shape(mval)
-    vcell = np.zeros_like(mval)
-    for ii in np.arange(nx):
-        for jj in np.arange(ny):
-            for kk in np.arange(nz):
-                vcell[ii, jj, kk] = dx[ii]*dy[jj]*dz[kk]
+#     '''
+#     nx, ny, nz = np.shape(mval)
+#     vcell = np.zeros_like(mval)
+#     for ii in np.arange(nx):
+#         for jj in np.arange(ny):
+#             for kk in np.arange(nz):
+#                 vcell[ii, jj, kk] = dx[ii]*dy[jj]*dz[kk]
 
-    if out:
-        print(
-            'get_volumes: %i x %i x %i cell volumes calculated' %
-            (nx, ny, nz))
+#     if out:
+#         print(
+#             'get_volumes: %i x %i x %i cell volumes calculated' %
+#             (nx, ny, nz))
 
-    return vcell
+#     return vcell
 
 
 def get_size(dx=None, dy=None, dz=None, mval=None, how='vol', out=True):
     '''
 
-    Extract volumes from model.
+    Extract volumes or oother measures of size from model.
 
     Parameters
     ----------
@@ -1017,7 +1017,7 @@ def get_size(dx=None, dy=None, dz=None, mval=None, how='vol', out=True):
 
     Returns
     -------
-    vcell :  float array
+    cell_size :  float array
         Cell volumes in model mesh.
 
     '''

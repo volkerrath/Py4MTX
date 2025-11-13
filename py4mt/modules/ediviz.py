@@ -17,8 +17,9 @@ from __future__ import annotations
 
 from typing import Optional, List, Tuple
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 
-from edi_viz import dataframe_from_arrays  # convenience re-export
 
 def _parse_comps(comp_str: Optional[str]) -> List[str]:
     """Validate a comma-separated component list ('xx,xy,yx,yy').
