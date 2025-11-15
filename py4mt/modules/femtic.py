@@ -29,11 +29,11 @@ def generate_directories(
                    'distortion_iter0.dat',
                    'run_dub.sh',
                    'run_oar_sh'],
-        N_samples=1,
+        n_samples=1,
         out=True):
 
     dir_list = []
-    for iens in np.arange(N_samples):
+    for iens in np.arange(n_samples):
         directory = dir_base+str(iens)+'/'
         os.makedirs(directory, exist_ok=True)
         copy_files(file_list, directory, templates)
@@ -54,7 +54,8 @@ def copy_files(filelist, directory, templates):
 
 
 def generate_data_ensemble(dir_base='./ens_',
-                           N_samples=1,
+                           n_samples=1,
+                           fromto = None,
                            file_in='observe.dat',
                            draw_from=['normal', 0., 1.],
                            method='add',
@@ -65,9 +66,11 @@ def generate_data_ensemble(dir_base='./ens_',
         Draw perturbed data set: d_pert ∼ N(d, Cd)
 
     '''
+    if fromto is None:
+        fromto = np.arange(n_samples)
 
     obs_list = []
-    for iens in np.arange(N_samples):
+    for iens in fromto:
         file = dir_base+str(iens)+'/'+file_in
         shutil.copy(file, file.replace('.dat', '_orig.dat'))
         '''
@@ -95,7 +98,7 @@ def modify_data(template_file='observe.dat',
     '''
     Created on Thu Mpr 17 17:13:38 2025
 
-    @author:   vrath   
+    @author:   vrath
     '''
 #    import numpy as np
 
@@ -114,9 +117,9 @@ def modify_data(template_file='observe.dat',
     # num_site = int(line[1])
     print(len(content))
 
-    '''  
+    '''
     find data blocks
-    
+
     '''
     start_lines_datablock = []
     for number, line in enumerate(content, 0):
@@ -128,9 +131,9 @@ def modify_data(template_file='observe.dat',
         if 'END' in l:
             start_lines_datablock.append(number-1)
             print(' no further data block in file')
-    '''  
+    '''
      loop over  data blocks
-     
+
     '''
     num_datablock = len(start_lines_datablock)-1
     for block in np.arange(num_datablock):
@@ -139,7 +142,7 @@ def modify_data(template_file='observe.dat',
         # print(start_block, end_block)
         # print(type(start_block), type(end_block))
         data_block = content[start_block:end_block]
-        '''  
+        '''
         find sites
         '''
         print(np.shape(data_block))
@@ -206,7 +209,7 @@ def modify_data(template_file='observe.dat',
 
                 '''
                 now write new values
-                
+
                 '''
                 print('obs', np.shape(obs), np.shape(site_block))
                 print(np.arange(num_freq))
@@ -336,7 +339,8 @@ def modify_data(template_file='observe.dat',
 
 
 def generate_model_ensemble(dir_base='./ens_',
-                            N_samples=1,
+                            n_samples=1,
+                            fromto = None,
                             file_in='resistivity_block_iter0.dat',
                             priorcov=None,
                             draw_from=['normal', 0., 1.],
@@ -349,7 +353,7 @@ def generate_model_ensemble(dir_base='./ens_',
     '''
 
     mod_list = []
-    for iens in np.arange(N_samples):
+    for iens in np.arange(n_samples):
         file = dir_base+str(iens)+'/'+file_in
         shutil.copy(file, file.replace('.dat', '_orig.dat'))
         '''
@@ -379,7 +383,7 @@ def modify_model(template_file='resistivity_block_iter0.dat',
     '''
     Created on Thu Mpr 17 17:13:38 2025
 
-    @author:       vrath   
+    @author:       vrath
     '''
 #    import numpy as np
 
@@ -500,7 +504,7 @@ def insert_model(template_file='resistivity_block_iter0.dat',
     '''
     Created on Thu Mpr 17 17:13:38 2025
 
-    @author:     vrath   
+    @author:     vrath
     '''
     # import numpy as np
     # rng = np.random.default_rng()
@@ -568,7 +572,7 @@ def modify_data_fcn(template_file='observe.dat',
     '''
     Created on Thu Mpr 17 17:13:38 2025
 
-    @author:   vrath   
+    @author:   vrath
     '''
 #    import numpy as np
 
@@ -586,9 +590,9 @@ def modify_data_fcn(template_file='observe.dat',
     num_site = int(line[1])
     print(len(content))
 
-    '''  
+    '''
     find data blocks
-    
+
     '''
     start_lines_datablock = []
     for number, line in enumerate(content, 0):
@@ -600,9 +604,9 @@ def modify_data_fcn(template_file='observe.dat',
         if 'END' in l:
             start_lines_datablock.append(number-1)
             print(' no further data block in file')
-    '''  
+    '''
      loop over  data blocks
-     
+
     '''
     num_datablock = len(start_lines_datablock)-1
     for block in np.arange(num_datablock):
@@ -611,7 +615,7 @@ def modify_data_fcn(template_file='observe.dat',
         # print(start_block, end_block)
         # print(type(start_block), type(end_block))
         data_block = content[start_block:end_block]
-        '''  
+        '''
         find sites
         '''
         print(np.shape(data_block))
@@ -667,7 +671,7 @@ def modify_data_fcn(template_file='observe.dat',
 
                 '''
                 now write new values
-                
+
                 '''
                 print('obs', np.shape(obs), np.shape(site_block))
                 print(np.arange(num_freq))
@@ -753,8 +757,8 @@ def get_femtic_sites(imp_file='result_MT.txt',
                      pt_file='results_PT.txt'):
     '''
     Created on Thu Feb 27 10:23:16 2025
-    This creates the files called sites_vtf.txt and sites_imp.txt based on 
-    files result_VTF.txt and result_MT.txt as output from applying mergeResultOfFEMTIC 
+    This creates the files called sites_vtf.txt and sites_imp.txt based on
+    files result_VTF.txt and result_MT.txt as output from applying mergeResultOfFEMTIC
     to femtic inversion results
     @authors: charroyj + vrath
     '''
@@ -1254,7 +1258,7 @@ def make_prior_cov(rough=None,
             beg = time.perf_counter()
             invR = iluR.solve(RHS.toarray())
             print('spilu solved:', time.perf_counter() - beg, 's')
-        
+
     else:
         sys.exit('make_prior_cov: solver' +
                  spsolver.lower()+'not available! Exit')
@@ -1319,7 +1323,7 @@ def prune_rebuild(M, threshold):
                       shape=M.shape)
     else:
         return M.tocsr()
-    
+
 def dense_to_csr(M, threshold=0.0, chunk_rows=1000, dtype=None):
     from scipy.sparse import csr_array
     # from collections import deque
@@ -1335,10 +1339,10 @@ def dense_to_csr(M, threshold=0.0, chunk_rows=1000, dtype=None):
         rows_list.append((rr + r0).astype(np.int64))
         cols_list.append(cc.astype(np.int64))
         data_list.append(block[rr, cc].astype(dtype if dtype is not None else M.dtype))
-        
+
     if not rows_list:
         return csr_array(M.shape, dtype=dtype if dtype is not None else M.dtype)
-    
+
     rows = np.concatenate(rows_list)
     cols = np.concatenate(cols_list)
     data = np.concatenate(data_list)
@@ -1359,17 +1363,17 @@ def save_spilu(filename='ILU.npz', ILU=None):
     Returns
     -------
     None.
-    
+
     Load with:
         load_spilu(ILU=ILU)
-    
-    
+
+
     vrath + copilot  Oct 22, 2025
 
     '''
     if ILU is None:
         sys.exit('No ILU object given! Exit.')
-        
+
     np.savez(filename,
              L_data=ILU.L.data, L_indices=ILU.L.indices,
              L_indptr=ILU.L.indptr, L_shape=ILU.L.shape,
@@ -1389,13 +1393,13 @@ def load_spilu(filename='ILU.npz'):
 
     Returns
     -------
-    L, U, perm_r, perm_c : 
+    L, U, perm_r, perm_c :
         Data from ILU decomposition object
 
     vrath + copilot  Oct 22, 2025
     '''
     from scipy.sparse import csc_array
-    
+
     data = np.load(filename)
     L = csc_array((data["L_data"], data["L_indices"], data["L_indptr"]),
                   shape=tuple(data["L_shape"]))
@@ -1403,7 +1407,7 @@ def load_spilu(filename='ILU.npz'):
                   shape=tuple(data["U_shape"]))
     perm_r = data["perm_r"]
     perm_c = data["perm_c"]
-    
+
     return L, U, perm_r, perm_c
 
 
