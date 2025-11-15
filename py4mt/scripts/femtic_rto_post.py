@@ -6,7 +6,7 @@ Created on Wed Apr 30 16:33:13 2025
 Randomize-then-Optimize approach: postprocessing
 
 References:
-    
+
     Bardsley, J. M.; Solonen, A.; Haario, H. & Laine, M.
         Randomize-Then-Optimize: a Method for Sampling from Posterior
         Distributions in Nonlinear Inverse Problems
@@ -32,8 +32,8 @@ import numpy as np
 
 
 import sklearn as skl
-import sklearn.covariance 
-import sklearn.decomposition 
+import sklearn.covariance
+import sklearn.decomposition
 
 import scipy as sc
 import scipy.linalg as scl
@@ -62,6 +62,7 @@ print(titstrng+'\n\n')
 
 EnsembleDir = r'/home/vrath/work/Ensembles/RTO/'
 EnsembleName = 'rto_*'
+
 NRMSmax = 1.4
 # Percentiles = numpy.array([10., 20., 30., 40., 50., 60., 70., 80., 90.]) # linear
 Percentiles = [2.3, 15.9, 50., 84.1,97.7]                   # 95/68
@@ -84,7 +85,7 @@ for dir in dir_list:
     if not os.path.isfile(cnv_file):
         print(cnv_file, 'not found, run skipped.')
         continue
-    
+
     with open(cnv_file) as file:
         cnv = file.readlines()
     info = cnv[-1].split()
@@ -101,9 +102,9 @@ for dir in dir_list:
     print( mod_file, ':')
     print(numit, nrms)
     model_list.append([mod_file,numit, nrms])
-        
+
     model = fem.read_model(model_file=mod_file, model_trans='log10', out=True)
-    
+
     if model_count==0:
         rto_ens = model
     else:
@@ -118,7 +119,7 @@ if Sparsify:
     rto_covs = scs.csr_matrix(tmp)
 
 
-       
+
 ne = np.shape(rto_ens)
 rto_avg = np.mean(rto_ens, axis=1)
 # rto_std = np.std(rto_ens, axis=1)
@@ -140,4 +141,3 @@ rto_dict ={'model_list' : model_list,
     'rto_prc' : rto_prc}
 
 np.savez_compressed(EnsembleResults, **rto_dict)
-

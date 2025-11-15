@@ -34,6 +34,9 @@ Created on Wed Apr 30 16:33:13 2025
 
 @author: vrath
 '''
+from sklearn.covariance import empirical_covariance
+import sklearn as skl
+
 import os
 import sys
 import shutil
@@ -48,16 +51,12 @@ PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
 mypath = [PY4MTX_ROOT+'/py4mt/modules/', PY4MTX_ROOT+'/py4mt/scripts/']
 for pth in mypath:
     if pth not in sys.path:
-        sys.path.insert(0,pth)
+        sys.path.insert(0, pth)
 
-#import modules
-import femtic as fem
-import util as utl
+# import modules
 from version import versionstrg
-
-import sklearn as skl
-from sklearn.covariance import empirical_covariance
-
+import util as utl
+import femtic as fem
 
 rng = np.random.default_rng()
 nan = np.nan  # float('NaN')
@@ -80,25 +79,32 @@ Files = ['control.dat',
          'run_femtic_oar.sh']
 
 EnsembleName = 'rto_'
+FromTo = np.arange(0, N_samples)
+
 PerturbMod = True
 if PerturbMod:
     Mod_method = 'add'
+    # if ModCov is noy None, this needs to be normal
     Mod_pdf = ['normal', 0., 0.3]
-    
-PerturbDat = True 
-if PerturbDat: 
-    Dat_method ='add',
+    # ['exp', L], ['gauss', L], ['matern], L, MatPars], ['femtic']
+    Mod_cov = ['exponential', 2.]
+
+PerturbDat = True
+if PerturbDat:
+    Dat_method = 'add',
     Dat_pdf = ['normal', 0., 1.0]
 
-ResetErrors=True
+ResetErrors = True
 if ResetErrors:
-    Errors =[
+    Errors = [
         [15., 4.,  5., 15.],        # Impeedance in percent
         [0.03, 0.03],               # VTF
         [.5, .2,  .2, .5],          # PT
-        ]
+    ]
 else:
-    Errors =[]
+    Errors = []
+
+# now define
 
 # os.chdir(EnsembleDir)
 
@@ -106,10 +112,9 @@ dir_list = fem.generate_directories(
     dir_base=EnsembleDir+EnsembleName,
     templates=Templates,
     file_list=Files,
-    N_samples=N_samples,
+    n_samples=N_samples,
+    fromto = FromTo,
     out=True)
-
-
 
 
 '''
@@ -118,11 +123,13 @@ Draw perturbed model sets: d  ̃ ∼ N (m, Cm)
 
 
 model_ensemble = fem.generate_model_ensemble(dir_base=EnsembleDir+EnsembleName,
-                                          N_samples=N_samples,
-                                          file_in='resistivity_block_iter0.dat',
-                                          draw_from=Mod_pdf,
-                                          method=Mod_method,
-                                          out=True)
+                                             n_samples=N_samples,
+                                             fromto = FromTo,
+                                             file_in='resistivity_block_iter0.dat',
+                                             draw_from=Mod_pdf,
+                                             method=Mod_method,
+                                             priorcov=Mod_cov,
+                                             out=True)
 print('\n')
 
 '''
@@ -130,9 +137,10 @@ Draw perturbed data sets: d  ̃ ∼ N (d, Cd)
 '''
 
 data_ensemble = fem.generate_data_ensemble(dir_base=EnsembleDir+EnsembleName,
-                                          N_samples=N_samples,
-                                          file_in='observe.dat',
-                                          draw_from=Dat_pdf,
-                                          method=Dat_method,
-                                          errors = Errors,
-                                          out=True)
+                                           n_samples=N_samples,
+                                           fromto = FromTo,
+                                           file_in='observe.dat',
+                                           draw_from=Dat_pdf,
+                                           method=Dat_method,
+                                           errors=Errors,
+                                           out=True)
