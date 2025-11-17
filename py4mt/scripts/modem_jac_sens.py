@@ -93,8 +93,8 @@ ModExt = '_sns.rho'
 #WorkDir = '/home/vrath/Annecy_NullSpace/'
 #MFile = WorkDir + 'annecy25_Z_Alpha02_NLCG_027'
 
-WorkDir = '/home/vrath/ModEM_work/Ub25_ZT_600_PT_jac/'
-JName = 'Ub25_ZPT_nerr_sp-6'
+WorkDir = './'   #home/vrath/ModEM_work/Ub25_ZT_600_PT_jac/'
+JName = 'Ub25_ZPT_nerr_sp-8'
 JFile = WorkDir + JName
 
 
@@ -134,8 +134,8 @@ PerIntervals = [
                 ]
 
 
-#Type = 'cov'
-Type = 'euc'
+Type = 'cov'
+#Type = 'euc'
 '''
 Calculate sensitivities.
 Expects that Jacobian is already error-scaled, i.e Jac = C^(-1/2)*J.
@@ -219,6 +219,12 @@ if 'siz' in Transform.lower():
 
     siz = mod.get_size(dx=dx, dy=dy, dz=dz, mval=rho, how=siztyp, out=True)
 
+else:
+
+    siztyp = 'vol'
+
+
+
 if SizExtract:
 
     siz = mod.get_size(dx=dx, dy=dy, dz=dz, mval=rho, how=siztyp, out=True)
@@ -226,7 +232,7 @@ if SizExtract:
     Header = '# '+MFile
 
     if 'mod' in OutFormat.lower():
-        # for modem_readable files
+        # for modem-readable files
 
         mod.write_mod(SizFile, modext='_siz.rho',
                       dx=dx, dy=dy, dz=dz, mval=siz,

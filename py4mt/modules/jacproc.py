@@ -13,7 +13,7 @@ from numba import jit
 
 def calc_gradient(Jac=None, resid=None, small = 1.e-30, out = False):
     '''
-    Calculate sgradient.
+    Calculate gradient.
     Expects that Jacobian is already scaled, i.e Jac = C^(-1/2)*J.
 
     author:VR 9/25
@@ -225,27 +225,28 @@ def transform_sensitivity(S=np.array([]), Siz=np.array([]),
 
                     S = np.arcsinh(S/scale)
                     
-        if 'vol' in item.lower():
-             print('transformed_sensitivity: Transformed by volumes/layer thickness.')
-             if np.size(Siz)==0:
-                 sys.exit('Transform_sensitivity: no volumes given! Exit.')
+        #if 'vol' in item.lower():
+             #print('transformed_sensitivity: Transformed by volumes/layer thickness.')
+             #if np.size(Siz)==0:
+                 #sys.exit('transform_sensitivity: no volumes given! Exit.')
 
-             else:
-                 maxval = np.amax(S)
-                 minval = np.amin(S)
-                 print('before volume normalization:',minval, maxval)
-                 print('volume:', np.amax(Siz),np.amax(Siz) )
-                 if 'sqr'  in item.lower():
-                     Siz = np.cbrt(Siz)
-                 S = S/Siz.ravel()
-                 maxval = np.amax(S)
-                 minval = np.amin(S)
-                 print('after size normalization:',minval, maxval)
+             #else:
+                 #maxval = np.amax(S)
+                 #minval = np.amin(S)
+                 #print('before volume normalization:',minval, maxval)
+                 #print('volume:', np.amax(Siz),np.amax(Siz) )
+                 #if 'sqr'  in item.lower():
+                     #Siz = np.cbrt(Siz)
+                 #S = S/Siz.ravel()
+                 #maxval = np.amax(S)
+                 #minval = np.amin(S)
+                 #print('after size normalization:',minval, maxval)
 
         if 'siz' in item.lower():
+             print(np.shape(S), np.shape(Siz))
              print('transformed_sensitivity: Transformed by other size measure.')
              if np.size(Siz)==0:
-                 sys.exit('Transform_sensitivity: no volumes given! Exit.')
+                 sys.exit('transform_sensitivity: no volumes given! Exit.')
 
              else:
                  maxval = np.amax(S)
