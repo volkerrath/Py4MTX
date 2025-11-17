@@ -488,6 +488,37 @@ def write_data_ncd(
             % (NCfile, ncout.data_model)
         )
 
+def write_pars(
+    parfile=None,
+    outformat='mod',
+    dx=None,
+    dy=None,
+    dz=None,
+    val=None,
+    reference=None,
+    mvalair=None,
+    aircells=None,
+    header=''
+               ):
+
+        # for modem-readable files
+        if 'mod' in outfmt.lower():
+            mod.write_mod(parfile+'_mod', modext='.rho',
+                        dx=dx, dy=dy, dz=dz, mval=val,
+                        reference=reference, mvalair=Blank, aircells=aircells, header=header)
+            print(' Cell volumes (ModEM format) written to '+parfile)
+        elif 'ubc' in outfmt.lower():
+            elev = -reference[2]
+            refubc =  [reference[0], reference[1], elev]
+            mod.write_ubc(parfile+'_ubc', modext='.mod', mshext='.msh',
+                        dx=dx, dy=dy, dz=dz, mval=val, reference=refubc, mvalair=mvalair, aircells=aircells, header=header)
+            print(' Cell volumes (UBC format) written to '+parfile)
+
+        elif 'rlm' in outfmt.lower():
+            mod.write_rlm(parfile+'_rlm', modext='_siz.rlm',
+                        dx=dx, dy=dy, dz=dz, mval=val, reference=reference, mvalair=Blank, aircells=aircells, comment=header)
+            print(' Cell volumes (CGG format) written to '+parfile)
+
 
 def write_mod_ncd(
     NCfile=None,
@@ -1025,34 +1056,39 @@ def get_size(dx=None, dy=None, dz=None, mval=None, how='vol', out=True):
     cell_size = np.zeros_like(mval)
 
     if 'vol' in how.lower():
-        for ii in np.arange(nx)[::-1]:
+        # for ii in np.arange(nx)[::-1]:
+        for ii in np.arange(nx):
             for jj in np.arange(ny):
                 for kk in np.arange(nz):
                     cell_size[ii, jj, kk] = dx[ii]*dy[jj]*dz[kk]
 
         if out:
             print(
-                'get_volumes: %i x %i x %i cell volumes calculated' %
+                'get_size: %i x %i x %i cell volumes calculated' %
                 (nx, ny, nz))
 
     elif 'hsiz' in how.lower():
-        for ii in np.arange(nx)[::-1]:
+        #for ii in np.arange(nx)[::-1]:
+        for ii in np.arange(nx):
             for jj in np.arange(ny):
                 for kk in np.arange(nz):
                     cell_size[ii, jj, kk] = np.min([dx[ii], dy[jj]])
 
     elif 'vsiz' in how.lower():
-        for ii in np.arange(nx)[::-1]:
+        #for ii in np.arange(nx)[::-1]:
+        for ii in np.arange(nx):
             for jj in np.arange(ny):
                 for kk in np.arange(nz):
                     cell_size[ii, jj, kk] = dz[kk]
+
     elif 'area' in how.lower():
-        for ii in np.arange(nx)[::-1]:
+        #for ii in np.arange(nx)[::-1]:
+        for ii in np.arange(nx):
             for jj in np.arange(ny):
                 for kk in np.arange(nz):
                     cell_size[ii, jj, kk] = dx[ii]*dy[jj]
     else:
-        sys.exit('get siszepar: method '+how.lower(), 'not implemented! Exit.')
+        sys.exit('get size: method '+how.lower(), 'not implemented! Exit.')
 
     return cell_size
 
