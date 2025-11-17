@@ -16,6 +16,7 @@ from datetime import datetime
 import warnings
 import csv
 import inspect
+import argparse
 
 # Import numerical or other specialised modules
 import numpy as np
@@ -30,7 +31,7 @@ mypath = [PY4MTX_ROOT+'/py4mt/modules/',
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0,pth)
-        
+
 # Import required py4mt modules for your script
 import util as utl
 import modem as mod

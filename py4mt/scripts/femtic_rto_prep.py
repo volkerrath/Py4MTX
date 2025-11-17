@@ -27,15 +27,11 @@ Blatter, D.; Morzfeld, M.; Key, K. & Constable, S.
     geophysical data – Part II: application in 1-D and 2-D problems
     Geophysical Journal International, , doi:10.1093/gji/ggac242, 2022
 
-vr July 2022
-
 
 Created on Wed Apr 30 16:33:13 2025
 
 @author: vrath
 '''
-from sklearn.covariance import empirical_covariance
-import sklearn as skl
 
 import os
 import sys
@@ -44,11 +40,20 @@ import numpy as np
 import functools
 import inspect
 
+'''
+specialized toolboxes settings and imports.
+'''
+# import sklearn as skl
+# from sklearn.covariance import empirical_covariance
 
+
+'''
+Py4MTX-specific settings and imports.
+'''
 PY4MTX_DATA = os.environ['PY4MTX_DATA']
 PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
 
-mypath = [PY4MTX_ROOT+'/py4mt/modules/', PY4MTX_ROOT+'/py4mt/scripts/']
+mypath = [PY4MTX_ROOT + '/py4mt/modules/', PY4MTX_ROOT + '/py4mt/scripts/']
 for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0, pth)
@@ -64,12 +69,14 @@ version, _ = versionstrg()
 fname = inspect.getfile(inspect.currentframe())
 
 titstrng = utl.print_title(version=version, fname=fname, out=False)
-print(titstrng+'\n\n')
+print(titstrng + '\n\n')
 
-
+'''
+Base setup.
+'''
 N_samples = 32
 EnsembleDir = r'/home/vrath/work/Ensemble/RTO/'
-Templates = EnsembleDir+'templates/'
+Templates = EnsembleDir + 'templates/'
 Files = ['control.dat',
          'observe.dat',
          'mesh.dat',
@@ -79,15 +86,32 @@ Files = ['control.dat',
          'run_femtic_oar.sh']
 
 EnsembleName = 'rto_'
+
+'''
+Control number of ensemble members for increase of smple number or restart
+of badly converged samples (see femtic_rto_post.py)
+'''
 FromTo = np.arange(0, N_samples)
 
+
+'''
+Set up mode of model perturbations.
+'''
 PerturbMod = True
 if PerturbMod:
     Mod_method = 'add'
-    # if ModCov is noy None, this needs to be normal
+    # if ModCov is not None, this needs to be normal
     Mod_pdf = ['normal', 0., 0.3]
-    # ['exp', L], ['gauss', L], ['matern], L, MatPars], ['femtic']
+    # ['exp', L], ['gauss', L], ['matern], L, MatPars], ['femtic'], None
     Mod_cov = ['exponential', 2.]
+    Cov_read = False
+    Cov_file = ''
+else:
+    Mod_cov = None
+
+'''
+Set up mode of data perturbations.
+'''
 
 PerturbDat = True
 if PerturbDat:
@@ -97,23 +121,40 @@ if PerturbDat:
 ResetErrors = True
 if ResetErrors:
     Errors = [
-        [15., 4.,  5., 15.],        # Impeedance in percent
+        [15., 4., 5., 15.],        # Impeedance in percent
         [0.03, 0.03],               # VTF
-        [.5, .2,  .2, .5],          # PT
+        [.5, .2, .2, .5],          # PT
     ]
 else:
     Errors = []
 
-# now define
 
-# os.chdir(EnsembleDir)
+'''
+Read or generate prior parameter covariance for perturbations,
+if needed. If the demtic mode is chosen, the martix needs to be
+read from external file.
+'''
+
+if Mod_cov is not None:
+    if Cov_read:
+        Cmp = np.load(EnsembleDir + EnsembleName + Cov_file + '.npz')['Cmp']
+    else:
+        Cmp = None
+
+
+
+
+
+'''
+Geenrate ensemble directories.
+'''
 
 dir_list = fem.generate_directories(
-    dir_base=EnsembleDir+EnsembleName,
+    dir_base=EnsembleDir + EnsembleName,
     templates=Templates,
     file_list=Files,
     n_samples=N_samples,
-    fromto = FromTo,
+    fromto=FromTo,
     out=True)
 
 
@@ -122,9 +163,9 @@ Draw perturbed model sets: d  ̃ ∼ N (m, Cm)
 '''
 
 
-model_ensemble = fem.generate_model_ensemble(dir_base=EnsembleDir+EnsembleName,
+model_ensemble = fem.generate_model_ensemble(dir_base=EnsembleDir + EnsembleName,
                                              n_samples=N_samples,
-                                             fromto = FromTo,
+                                             fromto=FromTo,
                                              file_in='resistivity_block_iter0.dat',
                                              draw_from=Mod_pdf,
                                              method=Mod_method,
@@ -136,9 +177,9 @@ print('\n')
 Draw perturbed data sets: d  ̃ ∼ N (d, Cd)
 '''
 
-data_ensemble = fem.generate_data_ensemble(dir_base=EnsembleDir+EnsembleName,
+data_ensemble = fem.generate_data_ensemble(dir_base=EnsembleDir + EnsembleName,
                                            n_samples=N_samples,
-                                           fromto = FromTo,
+                                           fromto=FromTo,
                                            file_in='observe.dat',
                                            draw_from=Dat_pdf,
                                            method=Dat_method,
