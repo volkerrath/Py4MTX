@@ -253,7 +253,7 @@ def transform_sensitivity(S=np.array([]), Siz=np.array([]),
                  minval = np.amin(S)
                  print('before size normalization:',minval, maxval)
                  print('size:', np.amax(Siz),np.amax(Siz) )
-                 S = S/Siz.ravel()
+                 S = S/Siz.ravel('F')
                  maxval = np.amax(S)
                  minval = np.amin(S)
                  print('after size normalization:',minval, maxval)

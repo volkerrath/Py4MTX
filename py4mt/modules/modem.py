@@ -1,4 +1,4 @@
-import os
+senssimport os
 import sys
 
 import string
