@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-mt_dataviz.py
+ediviz.py
 =================
 Matplotlib helpers to add MT (magnetotelluric) plots into an existing figure layout.
 
@@ -42,30 +42,96 @@ def _maybe_ax(ax=None):
 
 def add_rho(df, comps: Optional[str] = None, ax: Optional[plt.Axes] = None,
             legend: bool = True, **line_kw) -> plt.Axes:
-    """Add apparent resistivity curves to an axes (period on X, log-log)."""
+    """Add apparent resistivity curves to an axes.
+
+    This helper plots apparent resistivity as a function of period on a
+    log-log scale.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Input data frame containing at least ``freq`` and ``rho_*`` columns.
+    comps : str, optional
+        Comma-separated list of tensor components (``"xx,xy,yx,yy"``).
+        If None, a sensible default subset is used.
+    ax : matplotlib.axes.Axes, optional
+        Target axes. If None, a new figure and axes are created.
+    legend : bool, optional
+        If True, draw a legend (default is True).
+    **line_kw :
+        Additional keyword arguments forwarded to Matplotlib ``loglog``.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The axes instance with the curves added.
+    """
     fig, ax, _ = _maybe_ax(ax)
     comps_list = _parse_comps(comps)
     period = 1.0 / df['freq'].to_numpy()
     for c in comps_list:
-        ax.loglog(period, df[f'rho_{c}'].to_numpy(), marker='o', linestyle='-', label=f'ρa {c.upper()}', **line_kw)
-    ax.invert_xaxis(); ax.set_xlabel('Period (s)'); ax.set_ylabel('Apparent resistivity (Ω·m)')
+        ax.loglog(period, df[f'rho_{c}'].to_numpy(), marker='o', linestyle='-', label=f'$\\rho_a\\,{c.upper()}$', **line_kw)
+    ax.invert_xaxis(); ax.set_xlabel('Period (s)'); ax.set_ylabel('Apparent resistivity $\\rho_a$ ($\\Omega\\,\\mathrm{m}$)')
     if legend: ax.legend()
+    ax.grid(True, linestyle=":")
     return ax
 
 def add_phase(df, comps: Optional[str] = None, ax: Optional[plt.Axes] = None,
               legend: bool = True, **line_kw) -> plt.Axes:
-    """Add impedance phase curves to an axes (period on X, semilogx)."""
+    """Add impedance phase curves to an axes.
+
+    This helper plots impedance phase as a function of period on a
+    semi-logarithmic scale (log-period, linear phase).
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Input data frame containing at least ``freq`` and ``phi_*`` columns.
+    comps : str, optional
+        Comma-separated list of tensor components (``"xx,xy,yx,yy"``).
+        If None, a sensible default subset is used.
+    ax : matplotlib.axes.Axes, optional
+        Target axes. If None, a new figure and axes are created.
+    legend : bool, optional
+        If True, draw a legend (default is True).
+    **line_kw :
+        Additional keyword arguments forwarded to Matplotlib ``semilogx``.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The axes instance with the curves added.
+    """
     fig, ax, _ = _maybe_ax(ax)
     comps_list = _parse_comps(comps)
     period = 1.0 / df['freq'].to_numpy()
     for c in comps_list:
-        ax.semilogx(period, df[f'phi_{c}'].to_numpy(), marker='o', linestyle='-', label=f'φ {c.upper()}', **line_kw)
-    ax.invert_xaxis(); ax.set_xlabel('Period (s)'); ax.set_ylabel('Phase (deg)')
+        ax.semilogx(period, df[f'phi_{c}'].to_numpy(), marker='o', linestyle='-', label=f'$\\phi\\,{c.upper()}$', **line_kw)
+    ax.invert_xaxis(); ax.set_xlabel('Period (s)'); ax.set_ylabel('Phase $\\phi$ (deg)')
+    ax.grid(True, linestyle=":")
     if legend: ax.legend()
     return ax
 
 def add_tipper(df, ax: Optional[plt.Axes] = None, legend: bool = True, **line_kw) -> plt.Axes:
-    """Add tipper (Tx, Ty) real/imag components to an axes (period on X)."""
+    """Add tipper (Tx, Ty) real/imaginary components to an axes.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Input data frame containing at least ``freq`` and tipper columns
+        ``Tx_re``, ``Tx_im``, ``Ty_re``, ``Ty_im``.
+    ax : matplotlib.axes.Axes, optional
+        Target axes. If None, a new figure and axes are created.
+    legend : bool, optional
+        If True, draw a legend (default is True).
+    **line_kw :
+        Additional keyword arguments forwarded to Matplotlib ``semilogx``.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The axes instance with the curves added.
+    """
     fig, ax, _ = _maybe_ax(ax)
     period = 1.0 / df['freq'].to_numpy()
     ax.semilogx(period, df['Tx_re'].to_numpy(), marker='o', linestyle='-', label='Re(Tx)', **line_kw)
@@ -73,11 +139,30 @@ def add_tipper(df, ax: Optional[plt.Axes] = None, legend: bool = True, **line_kw
     ax.semilogx(period, df['Ty_re'].to_numpy(), marker='s', linestyle='-', label='Re(Ty)', **line_kw)
     ax.semilogx(period, df['Ty_im'].to_numpy(), marker='d', linestyle='--', label='Im(Ty)', **line_kw)
     ax.invert_xaxis(); ax.set_xlabel('Period (s)'); ax.set_ylabel('Tipper (dimensionless)')
+    ax.grid(True, linestyle=":")
     if legend: ax.legend()
     return ax
 
 def add_pt(df, ax: Optional[plt.Axes] = None, legend: bool = True, **line_kw) -> plt.Axes:
-    """Add Phase Tensor components (PTxx, PTxy, PTyx, PTyy) to an axes."""
+    """Add Phase Tensor components (PTxx, PTxy, PTyx, PTyy) to an axes.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Input data frame containing at least ``freq`` and PT columns
+        ``ptxx_re``, ``ptxy_re``, ``ptyx_re``, ``ptyy_re``.
+    ax : matplotlib.axes.Axes, optional
+        Target axes. If None, a new figure and axes are created.
+    legend : bool, optional
+        If True, draw a legend (default is True).
+    **line_kw :
+        Additional keyword arguments forwarded to Matplotlib ``semilogx``.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The axes instance with the curves added.
+    """
     fig, ax, _ = _maybe_ax(ax)
     period = 1.0 / df['freq'].to_numpy()
     ax.semilogx(period, df['ptxx_re'].to_numpy(), marker='o', linestyle='-', label='PTxx', **line_kw)
@@ -85,5 +170,6 @@ def add_pt(df, ax: Optional[plt.Axes] = None, legend: bool = True, **line_kw) ->
     ax.semilogx(period, df['ptyx_re'].to_numpy(), marker='s', linestyle='-', label='PTyx', **line_kw)
     ax.semilogx(period, df['ptyy_re'].to_numpy(), marker='d', linestyle='-', label='PTyy', **line_kw)
     ax.invert_xaxis(); ax.set_xlabel('Period (s)'); ax.set_ylabel('Phase Tensor (dimensionless)')
+    ax.grid(True, linestyle=":")
     if legend: ax.legend()
     return ax

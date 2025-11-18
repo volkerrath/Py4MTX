@@ -103,9 +103,9 @@ if PerturbMod:
     # if ModCov is not None, this needs to be normal
     Mod_pdf = ['normal', 0., 0.3]
     # ['exp', L], ['gauss', L], ['matern], L, MatPars], ['femtic'], None
-    Mod_cov = ['exponential', 2.]
+    Mod_cov = ['femtic']
     Cov_read = False
-    Cov_file = ''
+    Cov_file = 'R_coo'
 else:
     Mod_cov = None
 
@@ -135,11 +135,11 @@ if needed. If the demtic mode is chosen, the martix needs to be
 read from external file.
 '''
 
-if Mod_cov is not None:
-    if Cov_read:
-        Cmp = np.load(EnsembleDir + EnsembleName + Cov_file + '.npz')['Cmp']
-    else:
-        Cmp = None
+if 'fem' in Mod_cov.lower():
+        R = np.load(EnsembleDir + EnsembleName + Cov_file + '.npz')['Cmp']
+else:
+    sys.exit('Analyticl covariances not yet implemented.')
+
 
 
 
