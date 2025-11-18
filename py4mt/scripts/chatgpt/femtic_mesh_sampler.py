@@ -1,16 +1,19 @@
-'''
+"""
 femtic_mesh_sampler.py
 ======================
 
-CLI to sample lognormal resistivity fields on a FEMTIC TETRA mesh using
-spatial covariance (Matern/Exponential/Gaussian).
+Command-line interface to sample lognormal resistivity fields on a
+FEMTIC TETRA mesh using spatial covariance (Matérn, Exponential, or
+Gaussian kernels).
 
 Author: Volker Rath (DIAS)
-Created by ChatGPT (GPT-5 Thinking) on 2025-11-11
-'''
+Created by ChatGPT (GPT-5 Thinking) on 2025-11-18
+"""
+
 from __future__ import annotations
 
 import argparse
+
 import numpy as np
 
 from femtic_mesh_io import read_femtic_tetra_centroids
@@ -18,21 +21,100 @@ from femtic_sample_resistivity import draw_logrho_field
 
 
 def main() -> None:
-    '''Parse CLI arguments, sample a resistivity field, and save NPZ.'''
-    ap = argparse.ArgumentParser(description="Sample a covariance-driven resistivity field on a FEMTIC TETRA mesh.")
-    ap.add_argument("--mesh", required=True, help="Path to FEMTIC mesh.dat (TETRA format).")
-    ap.add_argument("--kernel", default="matern", choices=["matern", "exponential", "gaussian"])
-    ap.add_argument("--ell", type=float, default=500.0, help="Length-scale (units of mesh coordinates).")
-    ap.add_argument("--sigma2", type=float, default=0.5, help="Log-space marginal variance.")
-    ap.add_argument("--nu", type=float, default=1.5, help="Matern smoothness (if used).")
-    ap.add_argument("--nugget", type=float, default=1e-6, help="Diagonal nugget (log-space).")
-    ap.add_argument("--mean", type=float, default=float(np.log(100.0)), help="Mean of log-resistivity.")
-    ap.add_argument("--strategy", default="sparse", choices=["dense", "sparse"], help="Dense (Cholesky) or sparse (trunc-eig).")
-    ap.add_argument("--radius", type=float, default=None, help="Neighborhood radius for sparse K (default ~ 2.5*ell).")
-    ap.add_argument("--trunc_k", type=int, default=1024, help="Rank for truncated-eig sampling when sparse.")
-    ap.add_argument("--seed", type=int, default=None, help="Random seed.")
-    ap.add_argument("--out", default="rho_sample_on_mesh.npz", help="Output NPZ path.")
-    args = ap.parse_args()
+    """
+    Parse CLI arguments, sample a resistivity field, and save the result.
+
+    The script reads a FEMTIC TETRA mesh, builds a covariance matrix on
+    tetra centroids, draws a Gaussian field in log-resistivity space,
+    exponentiates to obtain resistivity, and writes everything to an NPZ
+    file.
+
+    The NPZ file contains:
+
+        - ``rho``: resistivity samples (Ohm·m),
+        - ``logrho``: log-resistivity Gaussian field,
+        - ``centroids``: tetra centroids,
+        - ``tet_ids``: tetra indices from the mesh file,
+        - ``meta``: a dictionary of the command-line arguments.
+    """
+    parser = argparse.ArgumentParser(
+        description=(
+            "Sample a covariance-driven lognormal resistivity field "
+            "on a FEMTIC TETRA mesh."
+        ),
+    )
+    parser.add_argument(
+        "--mesh",
+        required=True,
+        help="Path to FEMTIC mesh.dat (TETRA format).",
+    )
+    parser.add_argument(
+        "--kernel",
+        default="matern",
+        choices=["matern", "exponential", "gaussian"],
+        help="Covariance kernel family.",
+    )
+    parser.add_argument(
+        "--ell",
+        type=float,
+        default=500.0,
+        help="Correlation length scale (same units as mesh coordinates).",
+    )
+    parser.add_argument(
+        "--sigma2",
+        type=float,
+        default=0.5,
+        help="Log-space marginal variance.",
+    )
+    parser.add_argument(
+        "--nu",
+        type=float,
+        default=1.5,
+        help="Matérn smoothness parameter (if Matérn kernel is used).",
+    )
+    parser.add_argument(
+        "--nugget",
+        type=float,
+        default=1e-6,
+        help="Diagonal nugget term in log-space.",
+    )
+    parser.add_argument(
+        "--mean",
+        type=float,
+        default=float(np.log(100.0)),
+        help="Mean of log-resistivity.",
+    )
+    parser.add_argument(
+        "--strategy",
+        default="sparse",
+        choices=["dense", "sparse"],
+        help="Sampling strategy: dense (Cholesky) or sparse (trunc-eig).",
+    )
+    parser.add_argument(
+        "--radius",
+        type=float,
+        default=None,
+        help="Neighborhood radius for sparse covariance (default ~ 2.5*ell).",
+    )
+    parser.add_argument(
+        "--trunc_k",
+        type=int,
+        default=1024,
+        help="Rank for truncated-eigen sampling when using sparse covariance.",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Random seed for reproducibility.",
+    )
+    parser.add_argument(
+        "--out",
+        default="rho_sample_on_mesh.npz",
+        help="Output NPZ file path.",
+    )
+
+    args = parser.parse_args()
 
     centroids, tet_ids = read_femtic_tetra_centroids(args.mesh)
 
