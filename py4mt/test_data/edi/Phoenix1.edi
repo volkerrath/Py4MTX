@@ -1,13 +1,13 @@
 >HEAD
 
-    DATAID="VUA018-02A"
+    DATAID="PHX_MTU5A"
     ACQBY="Phoenix"
     FILEBY="Phoenix"
     ACQDATE=05/15/18
     FILEDATE=05/18/18
-    LAT=45:59:58.8
-    LONG=005:59:19.7
-    ELEV=473
+    LAT=45:24:58.8
+    LONG=005:33:19.7
+    ELEV=500
     UNITS=M
     STDVERS="SEG 1.0"
     PROGVERS="MT-Editor Ver 0.99.2.90"
@@ -17,9 +17,9 @@
 >INFO
 
              RUN INFORMATION                     STATION 1             
-    PROCESSED FROM DFT TIME SERIES     STN Number: VUA018-02A          
+    PROCESSED FROM DFT TIME SERIES     STN Number: PHX_MTU5A
      SURVEY: ALPS                      Site Desc; BadR: 0 SatR: 103    
-    COMPANY: DIAS                      Lat  45:59:588N Long 005:59:197E
+    COMPANY: DIAS                      Lat  45:24:588N Long 005:33:197E
         JOB: VUA                       Elevation: 473    Meters.       
                                        Reference Site: VUA001A         
     HARDWARE: MTU5A MTU5A              Site Permitted by:              
@@ -56,9 +56,9 @@
     REFTYPE=CART
 
 >!****THE X,Y OFFSETS ARE RELATIVE TO THIS REFERENCE****!
-    REFLAT=45:59:58.8
-    REFLONG=005:59:19.7
-    REFELEV=473
+    REFLAT=45:22:58.8
+    REFLONG=005:44:19.7
+    REFELEV=300
 
 >!****DEFINE MEASUREMENTS FOR MT SOUNDING****!
 >HMEAS ID=021.002 CHTYPE=HX X=8.5 Y=8.5 AZM=0 ACQCHAN=CH3
@@ -71,7 +71,7 @@
 
 >!****FINAL SUMMED AND EDITED SPECTRA****!
 >=SPECTRASECT
-   SECTID="VUA018-02A"
+   SECTID="PHX_MTU5A"
    NCHAN=7
    NFREQ=100
    MAXBLKS=100
