@@ -13,7 +13,7 @@ import inspect
 import numpy
 import simplekml
 
-from mtpy.core.mt import MT
+import ediproc as edp
 
 PY4MTX_DATA = os.environ['PY4MTX_DATA']
 PY4MTX_ROOT = os.environ['PY4MTX_ROOT']

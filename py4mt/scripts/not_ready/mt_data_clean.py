@@ -1,20 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# ---
-# jupyter:
-#   jupytext:
-#     cell_metadata_filter: -all
-#     formats: py:light,ipynb
-#     text_representation:
-#       extension: .py
-#       format_name: light
-#       format_version: '1.5'
-#       jupytext_version: 1.11.3
-#   kernelspec:
-#     display_name: Python 3
-#     language: python
-#     name: python3
-# ---
 
 '''
 Rotate imedance tensor (Z) and tipper (T)
@@ -32,8 +17,6 @@ import inspect
 
 import numpy as np
 import xarray as xr
-from mtpy.core.mt import MT
-import mtpy.core.mt as mt
 
 PY4MTX_DATA = os.environ['PY4MTX_DATA']
 PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
@@ -46,7 +29,7 @@ for pth in mypath:
 import util as utl
 import mtproc as mtp
 from version import versionstrg
-
+import ediproc as edp
 
 version, _ = versionstrg()
 titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.currentframe()), out=False)

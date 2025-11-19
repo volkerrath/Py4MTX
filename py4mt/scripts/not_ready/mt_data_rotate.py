@@ -17,9 +17,6 @@ import inspect
 
 import numpy as np
 
-from mtpy.core.mt import MT
-import mtpy.core.mt as mt
-
 PY4MTX_DATA = os.environ['PY4MTX_DATA']
 PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
 mypath = [PY4MTX_ROOT+'/py4mt/modules/', PY4MTX_ROOT+'/py4mt/scripts/']
@@ -31,7 +28,7 @@ for pth in mypath:
 import util as utl
 import mtproc as mtp
 from version import versionstrg
-
+import ediproc as edp
 
 version, _ = versionstrg()
 titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.currentframe()), out=False)
