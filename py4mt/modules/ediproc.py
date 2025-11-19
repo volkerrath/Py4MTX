@@ -92,6 +92,7 @@ __all__ = [
     "ZT_from_S",
     "parse_block_values",
     "load_edi",
+    "compute_phase_tensor",
     "dataframe_from_arrays",
     "write_edi",
     "save_edi",
@@ -872,7 +873,6 @@ def _format_values(values: np.ndarray, numbers_per_line: int = 6) -> str:
         buf.write("\n")
     return buf.getvalue()
 
-
 def write_edi(
     path: Path | str,
     *,
@@ -880,47 +880,21 @@ def write_edi(
     freq: np.ndarray,
     Z: np.ndarray,
     T: Optional[np.ndarray] = None,
+    PT: Optional[np.ndarray] = None,
     lat_deg: Optional[float] = None,
     lon_deg: Optional[float] = None,
     elev_m: Optional[float] = None,
     header_meta: Optional[Dict[str, str]] = None,
     numbers_per_line: int = 6,
 ) -> str:
-    """Write a simple EDI file from arrays.
-
-    This writer creates a minimal but valid EDI that contains:
-
-    - A >HEAD section with station name and optional location.
-    - A >FREQ block with all frequencies.
-    - Z blocks: ZXXR, ZXXI, ZXYR, ZXYI, ZYXR, ZYXI, ZYYR, ZYYI.
-    - Optional T blocks: TXR, TXI, TYR, TYI if T is provided.
-
-    Parameters
-    ----------
-    path : str or pathlib.Path
-        Output EDI file path.
-    station : str
-        Station name for DATAID and header.
-    freq : numpy.ndarray
-        Frequencies in Hz, shape (n,).
-    Z : numpy.ndarray
-        Impedance tensor of shape (n, 2, 2).
-    T : numpy.ndarray, optional
-        Tipper array of shape (n, 1, 2). If None, no tipper blocks are written.
-    lat_deg, lon_deg, elev_m : float, optional
-        Optional location metadata written into HEAD.
-    header_meta : dict, optional
-        Additional key-value pairs written into HEAD.
-    numbers_per_line : int, optional
-        Number of values per line in the numeric blocks.
-
-    Returns
-    -------
-    str
-        Path to the written EDI file as a string.
-    """
+    """Write a simple EDI file from arrays, including optional PT blocks."""
     path = Path(path)
+    freq = np.asarray(freq, dtype=float).ravel()
     n = freq.size
+
+    Z = np.asarray(Z, dtype=np.complex128)
+    if Z.shape != (n, 2, 2):
+        raise ValueError("Z must have shape (n, 2, 2).")
 
     meta: Dict[str, str] = dict(header_meta) if header_meta is not None else {}
     meta.setdefault("DATAID", station)
@@ -928,26 +902,23 @@ def write_edi(
     meta.setdefault("FILEBY", "ediproc.py")
 
     with path.open("w", encoding="latin-1") as f:
-        # HEAD section
         f.write(">HEAD\n")
-        f.write(f"DATAID={station}\n")
+        f.write("DATAID={0}\n".format(station))
         if lat_deg is not None and lon_deg is not None:
-            f.write(f"LAT={lat_deg: .6f}\n")
-            f.write(f"LON={lon_deg: .6f}\n")
+            f.write("LAT={0: .6f}\n".format(lat_deg))
+            f.write("LON={0: .6f}\n".format(lon_deg))
         if elev_m is not None:
-            f.write(f"ELEV={elev_m: .2f}\n")
+            f.write("ELEV={0: .2f}\n".format(elev_m))
         for k, v in meta.items():
             if k.upper() in {"DATAID", "LAT", "LON", "ELEV"}:
                 continue
-            f.write(f"{k}={v}\n")
+            f.write("{0}={1}\n".format(k, v))
         f.write(">END\n\n")
 
-        # Frequency block
-        f.write(f">FREQ NFREQ={n:d}\n")
+        f.write(">FREQ NFREQ={0:d}\n".format(n))
         f.write(_format_values(freq, numbers_per_line))
         f.write(">END\n\n")
 
-        # Z blocks
         comps = {
             "ZXX": (0, 0),
             "ZXY": (0, 1),
@@ -958,16 +929,18 @@ def write_edi(
             re_vals = np.real(Z[:, i, j])
             im_vals = np.imag(Z[:, i, j])
 
-            f.write(f">{name}R\n")
+            f.write(">{0}R\n".format(name))
             f.write(_format_values(re_vals, numbers_per_line))
             f.write(">END\n\n")
 
-            f.write(f">{name}I\n")
+            f.write(">{0}I\n".format(name))
             f.write(_format_values(im_vals, numbers_per_line))
             f.write(">END\n\n")
 
-        # Optional T blocks
         if T is not None:
+            T = np.asarray(T, dtype=np.complex128)
+            if T.shape != (n, 1, 2):
+                raise ValueError("T must have shape (n, 1, 2).")
             tx_re = np.real(T[:, 0, 0])
             tx_im = np.imag(T[:, 0, 0])
             ty_re = np.real(T[:, 0, 1])
@@ -989,8 +962,24 @@ def write_edi(
             f.write(_format_values(ty_im, numbers_per_line))
             f.write(">END\n\n")
 
-    return str(path)
+        if PT is not None:
+            PT = np.asarray(PT, dtype=float)
+            if PT.shape != (n, 2, 2):
+                raise ValueError("PT must have shape (n, 2, 2).")
 
+            pt_comps = {
+                "PTXX": (0, 0),
+                "PTXY": (0, 1),
+                "PTYX": (1, 0),
+                "PTYY": (1, 1),
+            }
+            for name, (i, j) in pt_comps.items():
+                vals = PT[:, i, j]
+                f.write(">{0}\n".format(name))
+                f.write(_format_values(vals, numbers_per_line))
+                f.write(">END\n\n")
+
+    return str(path)
 
 # ----------------------------------------------------------------------
 # High-level "load, clean, save" helper
@@ -1012,7 +1001,9 @@ def save_edi(
     lon_deg: Optional[float] = None,
     elev_m: Optional[float] = None,
     header_meta: Optional[Dict[str, str]] = None,
+    add_pt_blocks: bool = False,          # <- NEW
 ) -> str:
+
     """Load an EDI file, optionally clean/rotate it, and write a new EDI file.
 
     This is a high-level convenience wrapper around :func:`load_edi` and
@@ -1062,13 +1053,14 @@ def save_edi(
 
     freq, Z, T, station, source_kind = load_edi(
         edi_path,
-        prefer_spectra=prefer_spectra,
         ref=ref,
         rotate_deg=rotate_deg,
         fill_invalid=fill_invalid,
         drop_invalid_periods=drop_invalid_periods,
         invalid_sentinel=invalid_sentinel,
     )
+    # Optionally compute phase tensor for writing PT blocks.
+    PT = compute_phase_tensor(Z) if add_pt_blocks else None
 
     if out_path is None:
         out_path = edi_path.with_suffix(".proc.edi")
@@ -1088,18 +1080,20 @@ def save_edi(
     for key, value in auto_meta.items():
         meta.setdefault(key, value)
 
+
     return write_edi(
-        out_path,
-        station=station,
-        freq=freq,
-        Z=Z,
-        T=T,
-        lat_deg=lat_deg,
-        lon_deg=lon_deg,
-        elev_m=elev_m,
-        header_meta=meta,
-        numbers_per_line=numbers_per_line,
-    )
+           out_path,
+           station=station,
+           freq=freq,
+           Z=Z,
+           T=T,
+           PT=PT,
+           lat_deg=lat_deg,
+           lon_deg=lon_deg,
+           elev_m=elev_m,
+           header_meta=meta,
+           numbers_per_line=numbers_per_line,
+       )
 
 
 # ----------------------------------------------------------------------
@@ -1151,6 +1145,7 @@ def write_edi_from_npz(
         freq = data["freq"]
         Z = data["Z"]
         T = data["T"] if "T" in data else None
+        PT = data["PT"] if "PT" in data else None   # <- NEW
         if "station" in data:
             station_val = data["station"]
             if np.ndim(station_val) == 0:
@@ -1176,6 +1171,7 @@ def write_edi_from_npz(
         freq=freq,
         Z=Z,
         T=T,
+        PT=PT,
         lat_deg=lat_deg,
         lon_deg=lon_deg,
         elev_m=elev_m,
