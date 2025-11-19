@@ -20,8 +20,7 @@ import re
 
 import numpy as np
 
-from mtpy.core.mt import MT
-# import mtpy.core.mt as mt
+import ediproc as edp
 
 PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
 mypath = [PY4MTX_ROOT+'/py4mt/modules/', PY4MTX_ROOT+'/py4mt/scripts/']

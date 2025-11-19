@@ -39,6 +39,7 @@ for pth in mypath:
 
 import util as utl
 from version import versionstrg
+import ediproc as edp
 
 version, _ = versionstrg()
 titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.currentframe()), out=False)
