@@ -121,6 +121,6 @@ for edi in edi_files:
         fig.suptitle(station)
 
         for f in PlotFormat:
-            plt.savefig(station + String_out + f, dpi=600)
+            plt.savefig(WorkDir+station + String_out + f, dpi=600)
 
         plt.show()
