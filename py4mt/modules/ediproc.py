@@ -55,9 +55,6 @@ High-level functions
            lat_deg=None, lon_deg=None, elev_m=None,
            header_meta=None, add_pt_blocks=False,
            lon_keyword='LON')
-- write_edi_from_npz(npz_path, out_path=None, *,
-                     numbers_per_line=6,
-                     lat_deg=None, lon_deg=None, elev_m=None)
 
 Notes
 -----
@@ -879,6 +876,143 @@ def load_edi(
     return result
 
 
+def compute_pt(
+    Z: np.ndarray,
+    Z_err: Optional[np.ndarray] = None,
+    *,
+    err_kind: str = "std",
+) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+    """
+    Compute phase tensor P and optionally propagate impedance errors.
+
+    Parameters
+    ----------
+    Z : array_like, shape (n, 2, 2) or (2, 2)
+        Complex impedance tensor Z = X + i Y for one or several periods.
+    Z_err : array_like, shape (n, 2, 2) or (2, 2), optional
+        Uncertainties of the complex impedance components. Depending on
+        ``err_kind`` they are interpreted as standard deviations or variances
+        of the complex impedance entries. If provided, uncertainties for the
+        phase tensor are returned.
+    err_kind : {'std', 'var'}, optional
+        Interpretation of the values in ``Z_err``:
+        - 'std': Z_err contains 1-sigma standard deviations.
+        - 'var': Z_err contains variances.
+        Default is 'std'.
+
+    Returns
+    -------
+    PT : ndarray, shape (n, 2, 2) or (2, 2)
+        Real phase tensor for each period, defined as P = X^{-1} Y with
+        X = Re(Z), Y = Im(Z).
+    PT_err : ndarray or None
+        If ``Z_err`` is given, array of the same shape as PT containing
+        propagated uncertainties for the phase tensor. If ``err_kind`` is
+        'std', these are 1-sigma standard deviations; if 'var', they are
+        variances. If ``Z_err`` is None, PT_err is None.
+
+    Notes
+    -----
+    Phase tensor is computed as in Caldwell et al. (2004):
+
+        Z = X + i Y,    P = X^{-1} Y
+
+    Error propagation uses the linear approximation
+
+        δP = -X^{-1} (δX) X^{-1} Y + X^{-1} (δY),
+
+    assuming that:
+    - different impedance components are uncorrelated, and
+    - real and imaginary parts of a given component share the same variance.
+
+    Under these assumptions the variance of P_ij is
+
+        Var(P_ij) = sum_ab [
+            (∂P_ij/∂X_ab)^2 Var(X_ab) + (∂P_ij/∂Y_ab)^2 Var(Y_ab)
+        ],
+
+    where ∂P/∂X_ab and ∂P/∂Y_ab are evaluated from the expression above.
+
+    In practice we take Var(X_ab) = Var(Y_ab) equal to the variance implied
+    by ``Z_err[a,b]`` for that component.
+    """
+    Z = np.asarray(Z, dtype=np.complex128)
+    single = False
+    if Z.shape == (2, 2):
+        Z = Z[None, ...]
+        single = True
+    if Z.ndim != 3 or Z.shape[1:] != (2, 2):
+        raise ValueError("Z must have shape (n, 2, 2) or (2, 2).")
+
+    n = Z.shape[0]
+    PT = np.empty((n, 2, 2), dtype=float)
+    PT_err: Optional[np.ndarray] = None
+
+    if Z_err is not None:
+        Z_err = np.asarray(Z_err, dtype=float)
+        if Z_err.shape == (2, 2):
+            Z_err = Z_err[None, ...]
+        if Z_err.shape != (n, 2, 2):
+            raise ValueError("Z_err must have shape (n, 2, 2) or (2, 2) matching Z.")
+        PT_err = np.full((n, 2, 2), np.nan, dtype=float)
+        if err_kind not in {"std", "var"}:
+            raise ValueError("err_kind must be 'std' or 'var'.")
+        as_var = err_kind == "var"
+    else:
+        as_var = False  # unused, just to keep the name defined
+
+    for k in range(n):
+        Zk = Z[k]
+        X = Zk.real
+        Y = Zk.imag
+
+        # Invert X for the phase tensor
+        try:
+            X_inv = np.linalg.inv(X)
+        except np.linalg.LinAlgError:
+            PT[k, :, :] = np.nan
+            if PT_err is not None:
+                PT_err[k, :, :] = np.nan
+            continue
+
+        Pk = X_inv @ Y
+        PT[k, :, :] = Pk
+
+        if PT_err is not None:
+            var_P = np.zeros((2, 2), dtype=float)
+
+            for a in range(2):
+                for b in range(2):
+                    val = Z_err[k, a, b]
+                    if not np.isfinite(val):
+                        continue
+
+                    # Interpret error value as std or variance
+                    var_val = val if as_var else val ** 2
+
+                    # Unit matrix for the (a, b) perturbation
+                    E = np.zeros((2, 2), dtype=float)
+                    E[a, b] = 1.0
+
+                    # Derivatives w.r.t. X_ab and Y_ab
+                    dP_dX = -X_inv @ E @ X_inv @ Y
+                    dP_dY = X_inv @ E
+
+                    dP_dX = dP_dX.real
+                    dP_dY = dP_dY.real
+
+                    # Assume same variance for X_ab and Y_ab, add contributions
+                    var_P += (dP_dX ** 2 + dP_dY ** 2) * var_val
+
+            PT_err[k, :, :] = np.sqrt(var_P) if not as_var else var_P
+
+    if single:
+        PT = PT[0]
+        if PT_err is not None:
+            PT_err = PT_err[0]
+
+    return PT, PT_err
+
 
 # ----------------------------------------------------------------------
 # EDI writer
@@ -917,6 +1051,9 @@ def write_edi(
     Z: np.ndarray,
     T: Optional[np.ndarray] = None,
     PT: Optional[np.ndarray] = None,
+    Z_err: Optional[np.ndarray] = None,
+    T_err: Optional[np.ndarray] = None,
+    PT_err: Optional[np.ndarray] = None,
     lat_deg: Optional[float] = None,
     lon_deg: Optional[float] = None,
     elev_m: Optional[float] = None,
@@ -924,155 +1061,176 @@ def write_edi(
     numbers_per_line: int = 6,
     lon_keyword: str = "LON",
 ) -> str:
-    """Write a simple EDI file from arrays, including optional PT blocks.
+    """Low-level EDI writer.
 
-    Parameters
-    ----------
-    path : str or pathlib.Path
-        Output EDI file path.
-    station : str
-        Station name, written as DATAID in the HEAD block.
-    freq : numpy.ndarray
-        Frequency array of shape (n,).
-    Z : numpy.ndarray
-        Complex impedance tensor of shape (n, 2, 2).
-    T : numpy.ndarray, optional
-        Complex tipper of shape (n, 1, 2), or None if no tipper.
-    PT : numpy.ndarray, optional
-        Phase tensor of shape (n, 2, 2). If given, PT blocks (PTXX, PTXY,
-        PTYX, PTYY) are written.
-    lat_deg, lon_deg : float, optional
-        Site latitude and longitude in decimal degrees (DD). If both are
-        not None, LAT is written and longitude is written using the header
-        key given in ``lon_keyword``.
-    elev_m : float, optional
-        Site elevation in metres (ELEV header).
-    header_meta : dict, optional
-        Extra HEAD entries. Keys DATAID, LAT, LON, LONG, ELEV are reserved
-        and handled explicitly; any such keys in ``header_meta`` are skipped.
-    numbers_per_line : int, optional
-        Maximum count of numeric values per line in numeric blocks.
-    lon_keyword : {"LON", "LONG"}, optional
-        Header keyword used for longitude. Default is "LON".
+    Parameters are as in :func:`save_edi`, but here PT_err and Z_err/T_err
+    all directly control optional *.VAR blocks for Z, T and PT.
     """
     path = Path(path)
     freq = np.asarray(freq, dtype=float).ravel()
+    Z = np.asarray(Z, dtype=np.complex128)
     n = freq.size
 
-    Z = np.asarray(Z, dtype=np.complex128)
     if Z.shape != (n, 2, 2):
-        raise ValueError("Z must have shape (n, 2, 2).")
+        raise ValueError("Z must have shape (n, 2, 2) and match freq.size.")
 
-    lon_key = lon_keyword.upper()
-    if lon_key not in {"LON", "LONG"}:
-        raise ValueError("lon_keyword must be 'LON' or 'LONG'.")
+    if T is not None:
+        T = np.asarray(T, dtype=np.complex128)
+        if T.shape != (n, 1, 2):
+            raise ValueError("T must have shape (n, 1, 2) and match freq.size.")
 
-    meta: Dict[str, str] = dict(header_meta) if header_meta is not None else {}
-    meta.setdefault("DATAID", station)
-    meta.setdefault("ACQBY", "UNKNOWN")
-    meta.setdefault("FILEBY", "ediproc.py")
+    if PT is not None:
+        PT = np.asarray(PT, dtype=float)
+        if PT.shape != (n, 2, 2):
+            raise ValueError("PT must have shape (n, 2, 2) and match freq.size.")
 
-    with path.open("w", encoding="latin-1") as f:
-        # --- HEAD block ----------------------------------------------------
-        f.write(">HEAD\n")
-        f.write("DATAID={0}\n".format(station))
-        if lat_deg is not None and lon_deg is not None:
-            f.write("LAT={0: .6f}\n".format(lat_deg))
-            f.write("{0}={1: .6f}\n".format(lon_key, lon_deg))
-        if elev_m is not None:
-            f.write("ELEV={0: .2f}\n".format(elev_m))
+    if Z_err is not None:
+        Z_err = np.asarray(Z_err, dtype=float)
+        if Z_err.shape != (n, 2, 2):
+            raise ValueError("Z_err must have shape (n, 2, 2) and match freq.size.")
 
-        # write remaining meta entries, excluding reserved keys
-        reserved = {"DATAID", "LAT", "LON", "LONG", "ELEV"}
-        for k, v in meta.items():
-            if k.upper() in reserved:
+    if T_err is not None:
+        T_err = np.asarray(T_err, dtype=float)
+        if T_err.shape != (n, 1, 2):
+            raise ValueError("T_err must have shape (n, 1, 2) and match freq.size.")
+
+    if PT_err is not None:
+        PT_err = np.asarray(PT_err, dtype=float)
+        if PT_err.shape != (n, 2, 2):
+            raise ValueError("PT_err must have shape (n, 2, 2) and match freq.size.")
+
+    lines: list[str] = []
+
+    # ------------------------------------------------------------------ HEAD
+    # (use your existing header construction; this is schematic)
+    lines.append(">HEAD")
+    lines.append(f"   DATAID= \"{station}\"")
+    if lat_deg is not None:
+        lines.append(f"   LAT={lat_deg:12.6f}")
+    if lon_deg is not None:
+        lines.append(f"   {lon_keyword}={lon_deg:12.6f}")
+    if elev_m is not None:
+        lines.append(f"   ELEV={elev_m:12.2f}")
+    if header_meta:
+        for k, v in header_meta.items():
+            lines.append(f"   {k}={v}")
+    lines.append(">END")
+
+    # ------------------------------------------------------------------ FREQ
+    lines.append(">FREQ")
+    lines.extend(_format_values(freq, numbers_per_line))
+    lines.append(">END")
+
+    # ------------------------------------------------------------------ Z blocks (R/I)
+    comp_map = {
+        "ZXX": (0, 0),
+        "ZXY": (0, 1),
+        "ZYX": (1, 0),
+        "ZYY": (1, 1),
+    }
+    for name, (i, j) in comp_map.items():
+        zr = Z[:, i, j].real
+        zi = Z[:, i, j].imag
+
+        lines.append(f">{name}R")
+        lines.extend(_format_values(zr, numbers_per_line))
+        lines.append(">END")
+
+        lines.append(f">{name}I")
+        lines.extend(_format_values(zi, numbers_per_line))
+        lines.append(">END")
+
+    # ------------------------------------------------------------------ Z error blocks
+    if Z_err is not None:
+        for name, (i, j) in comp_map.items():
+            err = Z_err[:, i, j]
+            if not np.isfinite(err).any():
                 continue
-            f.write("{0}={1}\n".format(k, v))
-        f.write(">END\n\n")
+            lines.append(f">{name}.VAR")
+            lines.extend(_format_values(err, numbers_per_line))
+            lines.append(">END")
 
-        # --- FREQ block ----------------------------------------------------
-        f.write(">FREQ NFREQ={0:d}\n".format(n))
-        f.write(_format_values(freq, numbers_per_line))
-        f.write(">END\n\n")
+    # ------------------------------------------------------------------ T blocks (R/I)
+    if T is not None:
+        txr = T[:, 0, 0].real
+        txi = T[:, 0, 0].imag
+        tyr = T[:, 0, 1].real
+        tyi = T[:, 0, 1].imag
 
-        # --- Z blocks ------------------------------------------------------
-        comps = {
-            "ZXX": (0, 0),
-            "ZXY": (0, 1),
-            "ZYX": (1, 0),
-            "ZYY": (1, 1),
+        lines.append(">TXR")
+        lines.extend(_format_values(txr, numbers_per_line))
+        lines.append(">END")
+
+        lines.append(">TXI")
+        lines.extend(_format_values(txi, numbers_per_line))
+        lines.append(">END")
+
+        lines.append(">TYR")
+        lines.extend(_format_values(tyr, numbers_per_line))
+        lines.append(">END")
+
+        lines.append(">TYI")
+        lines.extend(_format_values(tyi, numbers_per_line))
+        lines.append(">END")
+
+    # ------------------------------------------------------------------ T error blocks
+    if T_err is not None:
+        txe = T_err[:, 0, 0]
+        tye = T_err[:, 0, 1]
+
+        if np.isfinite(txe).any():
+            lines.append(">TX.VAR")
+            lines.extend(_format_values(txe, numbers_per_line))
+            lines.append(">END")
+
+        if np.isfinite(tye).any():
+            lines.append(">TY.VAR")
+            lines.extend(_format_values(tye, numbers_per_line))
+            lines.append(">END")
+
+    # ------------------------------------------------------------------ PT blocks
+    if PT is not None:
+        pt_map = {
+            "PTXX": (0, 0),
+            "PTXY": (0, 1),
+            "PTYX": (1, 0),
+            "PTYY": (1, 1),
         }
-        for name, (i, j) in comps.items():
-            re_vals = np.real(Z[:, i, j])
-            im_vals = np.imag(Z[:, i, j])
+        for name, (i, j) in pt_map.items():
+            vals = PT[:, i, j]
+            lines.append(f">{name}")
+            lines.extend(_format_values(vals, numbers_per_line))
+            lines.append(">END")
 
-            f.write(">{0}R\n".format(name))
-            f.write(_format_values(re_vals, numbers_per_line))
-            f.write(">END\n\n")
+        # -------------------------------------------------------------- PT error blocks
+        if PT_err is not None:
+            for name, (i, j) in pt_map.items():
+                err = PT_err[:, i, j]
+                if not np.isfinite(err).any():
+                    continue
+                lines.append(f">{name}.VAR")
+                lines.extend(_format_values(err, numbers_per_line))
+                lines.append(">END")
 
-            f.write(">{0}I\n".format(name))
-            f.write(_format_values(im_vals, numbers_per_line))
-            f.write(">END\n\n")
-
-        # --- Tipper blocks -------------------------------------------------
-        if T is not None:
-            T = np.asarray(T, dtype=np.complex128)
-            if T.shape != (n, 1, 2):
-                raise ValueError("T must have shape (n, 1, 2).")
-
-            tx_re = np.real(T[:, 0, 0])
-            tx_im = np.imag(T[:, 0, 0])
-            ty_re = np.real(T[:, 0, 1])
-            ty_im = np.imag(T[:, 0, 1])
-
-            f.write(">TXR\n")
-            f.write(_format_values(tx_re, numbers_per_line))
-            f.write(">END\n\n")
-
-            f.write(">TXI\n")
-            f.write(_format_values(tx_im, numbers_per_line))
-            f.write(">END\n\n")
-
-            f.write(">TYR\n")
-            f.write(_format_values(ty_re, numbers_per_line))
-            f.write(">END\n\n")
-
-            f.write(">TYI\n")
-            f.write(_format_values(ty_im, numbers_per_line))
-            f.write(">END\n\n")
-
-        # --- Phase tensor blocks ------------------------------------------
-        if PT is not None:
-            PT = np.asarray(PT, dtype=float)
-            if PT.shape != (n, 2, 2):
-                raise ValueError("PT must have shape (n, 2, 2).")
-
-            pt_comps = {
-                "PTXX": (0, 0),
-                "PTXY": (0, 1),
-                "PTYX": (1, 0),
-                "PTYY": (1, 1),
-            }
-            for name, (i, j) in pt_comps.items():
-                vals = PT[:, i, j]
-                f.write(">{0}\n".format(name))
-                f.write(_format_values(vals, numbers_per_line))
-                f.write(">END\n\n")
-
+    # ------------------------------------------------------------------ final write
+    text = "\n".join(lines) + "\n"
+    path.write_text(text, encoding="latin-1")
     return str(path)
+
 
 def save_edi(
     out_path: Path | str,
     edi: Dict[str, Any],
     *,
     PT: Optional[np.ndarray] = None,
+    PT_err: Optional[np.ndarray] = None,
     numbers_per_line: int = 6,
     header_meta: Optional[Dict[str, str]] = None,
     add_pt_blocks: bool = False,
     lon_keyword: str = "LON",
+    pt_err_kind: str = "std",
 ) -> str:
-    """
-    Write a processed EDI file from a dictionary (e.g. from :func:`load_edi`).
+    """Write a processed EDI file from a dictionary (e.g. from :func:`load_edi`).
 
     The dictionary is expected to contain at least:
 
@@ -1083,16 +1241,16 @@ def save_edi(
     - ``'source_kind'`` : "spectra" or "tables" (optional).
     - ``'lat_deg'``, ``'lon_deg'``, ``'elev_m'`` : location metadata (optional).
 
-    If phase tensor data is supplied, it can be provided either as:
+    Phase tensor information can be supplied or computed:
 
-    - ``PT`` argument (preferred), or
-    - ``edi['PT']`` entry in the dictionary.
+    - ``PT`` argument and ``PT_err`` argument (preferred),
+    - or ``edi['PT']`` / ``edi['PT_err']`` entries,
+    - or, if ``add_pt_blocks`` is True, PT (and PT_err if Z_err is present)
+      are computed from Z (and Z_err) via :func:`compute_pt`.
 
-    If neither is given and ``add_pt_blocks`` is True, the phase tensor is
-    computed from Z using :func:`compute_phase_tensor`.
-
-    Error arrays (``'Z_err'`` and ``'T_err'``) may be present in the dict but
-    are currently ignored when writing the EDI (no VAR/ERR blocks are written).
+    Error arrays (``'Z_err'`` and ``'T_err'``) in the dict are passed on to
+    :func:`write_edi`, which writes standard ``*.VAR`` blocks for Z and T.
+    Phase tensor errors are written as PT??.VAR blocks if available.
 
     Parameters
     ----------
@@ -1103,8 +1261,11 @@ def save_edi(
         :func:`load_edi`.
     PT : numpy.ndarray, optional
         Phase tensor of shape (n, 2, 2). If provided, PT blocks (PTXX, PTXY,
-        PTYX, PTYY) are written to the EDI. If None and ``add_pt_blocks`` is
-        False and ``edi`` contains a "PT" entry, that entry is used.
+        PTYX, PTYY) are written to the EDI.
+    PT_err : numpy.ndarray, optional
+        Uncertainties (std or var, see pt_err_kind) for the phase tensor,
+        shape (n, 2, 2). If present, dedicated PTXX.VAR, PTXY.VAR, PTYX.VAR
+        and PTYY.VAR blocks are written.
     numbers_per_line : int, optional
         Maximum number of values per numeric line in the output blocks.
     header_meta : dict, optional
@@ -1112,10 +1273,17 @@ def save_edi(
         any "header_meta" entry present in ``edi`` (if any), with this
         parameter taking precedence on conflicts.
     add_pt_blocks : bool, optional
-        If True and ``PT`` is None, compute the phase tensor from Z using
-        :func:`compute_phase_tensor` and write PTXX, PTXY, PTYX, PTYY blocks.
+        If True and PT is None and no PT is stored in ``edi``, compute the
+        phase tensor (and optionally its errors) from Z using
+        :func:`compute_pt`.
     lon_keyword : {"LON", "LONG"}, optional
         Header keyword used for longitude in the output EDI. Default "LON".
+    pt_err_kind : {"std", "var"}, optional
+        Interpretation of the numbers in PT_err (and PT_err computed from
+        Z_err via :func:`compute_pt`):
+        - "std" : PT_err is 1-sigma standard deviation.
+        - "var" : PT_err is variance.
+        This is passed through unchanged; it is only informational here.
 
     Returns
     -------
@@ -1124,7 +1292,7 @@ def save_edi(
     """
     out_path = Path(out_path)
 
-    # Extract core fields from dictionary
+    # Extract core fields from dictionary ------------------------------------
     freq = np.asarray(edi["freq"], dtype=float).ravel()
     Z = np.asarray(edi["Z"], dtype=np.complex128)
     T = edi.get("T")
@@ -1136,6 +1304,9 @@ def save_edi(
     lon_deg = edi.get("lon_deg")
     elev_m = edi.get("elev_m")
 
+    Z_err = edi.get("Z_err")
+    T_err = edi.get("T_err")
+
     n = freq.size
     if Z.shape != (n, 2, 2):
         raise ValueError("edi['Z'] must have shape (n, 2, 2) and match freq.size.")
@@ -1146,17 +1317,51 @@ def save_edi(
             raise ValueError("edi['T'] must have shape (n, 1, 2) and match freq.size.")
 
     # Phase tensor handling --------------------------------------------------
-    if PT is None:
-        PT = edi.get("PT")
-
+    # Priority order:
+    #   1. PT argument / PT_err argument
+    #   2. edi["PT"] / edi["PT_err"]
+    #   3. compute_pt(Z, Z_err) if add_pt_blocks is True
     if PT is not None:
         PT = np.asarray(PT, dtype=float)
         if PT.shape != (n, 2, 2):
             raise ValueError("PT must have shape (n, 2, 2) and match freq.size.")
-    elif add_pt_blocks:
-        PT = compute_phase_tensor(Z)
+
+        if PT_err is None:
+            if "PT_err" in edi:
+                PT_err = np.asarray(edi["PT_err"], dtype=float)
+        elif PT_err is not None:
+            PT_err = np.asarray(PT_err, dtype=float)
+            if PT_err.shape != (n, 2, 2):
+                raise ValueError("PT_err must have shape (n, 2, 2) and match freq.size.")
+
     else:
-        PT = None
+        # no PT argument: try dict
+        if "PT" in edi:
+            PT = np.asarray(edi["PT"], dtype=float)
+            if PT.shape != (n, 2, 2):
+                raise ValueError("edi['PT'] must have shape (n, 2, 2) and match freq.size.")
+            if "PT_err" in edi and PT_err is None:
+                PT_err = np.asarray(edi["PT_err"], dtype=float)
+                if PT_err.shape != (n, 2, 2):
+                    raise ValueError("edi['PT_err'] must have shape (n, 2, 2) and match freq.size.")
+        elif add_pt_blocks:
+            # compute from Z (and Z_err if available)
+            Z_err_arr = None
+            if Z_err is not None:
+                Z_err_arr = np.asarray(Z_err, dtype=float)
+                if Z_err_arr.shape != (n, 2, 2):
+                    raise ValueError("edi['Z_err'] must have shape (n, 2, 2) and match freq.size.")
+
+            from .ediprocx import compute_pt  # adjust import if needed
+
+            PT_auto, PT_err_auto = compute_pt(Z, Z_err_arr, err_kind=pt_err_kind)
+            PT = np.asarray(PT_auto, dtype=float)
+            if PT.shape != (n, 2, 2):
+                raise RuntimeError("compute_pt returned PT with unexpected shape.")
+            if PT_err is None and PT_err_auto is not None:
+                PT_err = np.asarray(PT_err_auto, dtype=float)
+                if PT_err.shape != (n, 2, 2):
+                    raise RuntimeError("compute_pt returned PT_err with unexpected shape.")
 
     # Header meta: merge edi['header_meta'] (if any) with header_meta argument
     meta: Dict[str, str] = {}
@@ -1177,6 +1382,9 @@ def save_edi(
         Z=Z,
         T=T,
         PT=PT,
+        Z_err=Z_err,
+        T_err=T_err,
+        PT_err=PT_err,
         lat_deg=lat_deg,
         lon_deg=lon_deg,
         elev_m=elev_m,
