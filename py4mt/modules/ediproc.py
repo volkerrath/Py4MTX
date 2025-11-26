@@ -112,12 +112,15 @@ Created by ChatGPT (GPT-5 Thinking) on 2025-11-20
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-import re
+import pandas as pd
+from scipy.interpolate import make_smoothing_spline
 
+_MU0: float = 4.0 * np.pi * 1.0e-7
 
 # ---------------------------------------------------------------------------
 # Basic text helpers
@@ -1144,3 +1147,422 @@ def save_edi(
             lines.append("")
 
     p.write_text("\n".join(lines) + "\n", encoding="latin-1")
+
+
+def dataframe_from_edi(
+    edi: Dict[str, Any],
+    *,
+    include_rho_phi: bool = True,
+    include_tipper: bool = True,
+    include_pt: bool = True,
+    add_period: bool = True,
+    err_kind: Optional[str] = None,
+    mu0: float = _MU0,
+) -> pd.DataFrame:
+    """Build a tidy :class:`pandas.DataFrame` from an EDI dictionary.
+
+    Parameters
+    ----------
+    edi : dict
+        EDI dictionary, typically returned by :func:`ediproc.load_edi`. It
+        must contain at least:
+
+        ``"freq"`` : 1-D array of frequencies [Hz].
+        ``"Z"``    : complex impedance, shape ``(n, 2, 2)``.
+
+        Additional optional keys that are recognised:
+
+        ``"T"`` : complex tipper, shape ``(n, 1, 2)``.
+        ``"PT"`` : phase tensor, shape ``(n, 2, 2)`` (real).
+        ``"Z_err"`` : impedance uncertainties, same shape as ``"Z"``.
+        ``"T_err"`` : tipper uncertainties, same shape as ``"T"``.
+        ``"PT_err"`` : phase tensor uncertainties, same shape as ``"PT"``.
+        ``"rot_deg"`` : rotation angles in degrees, shape ``(n,)``.
+        ``"station"``, ``"lat_deg"``, ``"lon_deg"``, ``"elev_m"``,
+        ``"err_kind"`` : metadata copied into ``df.attrs``.
+
+    include_rho_phi : bool, optional
+        If True (default), compute apparent resistivity and phase from Z
+        and add corresponding columns.
+    include_tipper : bool, optional
+        If True (default) and a tipper array is present, include tipper
+        components and their uncertainties.
+    include_pt : bool, optional
+        If True (default) and a phase tensor array is present, include PT
+        components and their uncertainties.
+    add_period : bool, optional
+        If True (default), add a ``"period"`` column (1/f).
+    err_kind : {"var", "std"} or None, optional
+        Interpretation of ``Z_err``, ``T_err`` and ``PT_err``. If None
+        (default), the function tries to infer from ``edi.get("err_kind")``
+        and falls back to ``"var"``.
+    mu0 : float, optional
+        Magnetic permeability [H/m] for converting impedance magnitude to
+        apparent resistivity. Default is the vacuum value.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Dataframe with columns and attributes as described above.
+
+    Notes
+    -----
+    - Error propagation is approximate; it assumes independent Gaussian
+      uncertainties for each impedance/tipper component.
+    - For impedance, ``Z_err`` is interpreted as variance (or std) of the
+      complex entry; real and imaginary parts are treated symmetrically.
+    """
+    if "freq" not in edi or "Z" not in edi:
+        raise KeyError("edi must contain at least 'freq' and 'Z' keys.")
+
+    freq = np.asarray(edi["freq"], dtype=float).ravel()
+    Z = np.asarray(edi["Z"], dtype=np.complex128)
+    if Z.shape != (freq.size, 2, 2):
+        raise ValueError("edi['Z'] must have shape (n, 2, 2) matching freq.")
+
+    n = freq.size
+    df = pd.DataFrame({"freq": freq})
+
+    if add_period:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            period = np.where(freq > 0.0, 1.0 / freq, np.nan)
+        df["period"] = period
+
+    # Optional rotation column
+    rot_deg = edi.get("rot_deg")
+    if rot_deg is not None:
+        rot_arr = np.asarray(rot_deg, dtype=float).ravel()
+        if rot_arr.size == n:
+            df["rot_deg"] = rot_arr
+
+    # err_kind handling
+    if err_kind is None:
+        err_kind = edi.get("err_kind", "var")
+    if err_kind not in ("var", "std"):
+        raise ValueError("err_kind must be 'var' or 'std'.")
+
+    # ------------------------------------------------------------------ ρ and φ
+    if include_rho_phi:
+        omega = 2.0 * np.pi * freq  # angular frequency
+        comp_map = {"xx": (0, 0), "xy": (0, 1), "yx": (1, 0), "yy": (1, 1)}
+
+        for name, (i, j) in comp_map.items():
+            Zij = Z[:, i, j]
+            mag = np.abs(Zij)
+            rho = (mag**2) / (mu0 * omega)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                phi = np.degrees(np.arctan2(Zij.imag, Zij.real))
+            df[f"rho_{name}"] = rho
+            df[f"phi_{name}"] = phi
+
+        Z_err = edi.get("Z_err")
+        if Z_err is not None:
+            Z_err = np.asarray(Z_err, dtype=float)
+            if Z_err.shape != Z.shape:
+                raise ValueError("edi['Z_err'] must have the same shape as 'Z'.")
+
+            if err_kind == "var":
+                sigma_Z = np.sqrt(Z_err)
+            else:
+                sigma_Z = Z_err
+
+            for name, (i, j) in comp_map.items():
+                Zij = Z[:, i, j]
+                mag = np.abs(Zij)
+                rho = df[f"rho_{name}"].to_numpy()
+                denom = mu0 * omega
+
+                # Approximate std of ρ using error propagation
+                std_rho = 2.0 * sigma_Z[:, i, j] * mag / np.where(
+                    denom > 0.0, denom, np.nan
+                )
+                df[f"rho_{name}_err"] = std_rho
+
+                # Phase error (radians) ~ σ / |Z|
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    std_phi_rad = np.where(mag > 0.0, sigma_Z[:, i, j] / mag, np.nan)
+                std_phi_deg = std_phi_rad * (180.0 / np.pi)
+                df[f"phi_{name}_err"] = std_phi_deg
+
+    # ------------------------------------------------------------------ Tipper
+    if include_tipper and "T" in edi and edi["T"] is not None:
+        T = np.asarray(edi["T"], dtype=np.complex128)
+        if T.shape != (n, 1, 2):
+            raise ValueError("edi['T'] must have shape (n, 1, 2).")
+
+        tx = T[:, 0, 0]
+        ty = T[:, 0, 1]
+        df["Tx_re"] = tx.real
+        df["Tx_im"] = tx.imag
+        df["Ty_re"] = ty.real
+        df["Ty_im"] = ty.imag
+
+        T_err = edi.get("T_err")
+        if T_err is not None:
+            T_err = np.asarray(T_err, dtype=float)
+            if T_err.shape != T.shape:
+                raise ValueError("edi['T_err'] must have the same shape as 'T'.")
+
+            if err_kind == "var":
+                sigma_T = np.sqrt(T_err)
+            else:
+                sigma_T = T_err
+
+            # Same sigma for real and imaginary parts of a given component
+            df["Tx_re_err"] = sigma_T[:, 0, 0]
+            df["Tx_im_err"] = sigma_T[:, 0, 0]
+            df["Ty_re_err"] = sigma_T[:, 0, 1]
+            df["Ty_im_err"] = sigma_T[:, 0, 1]
+
+    # ------------------------------------------------------------------ Phase tensor
+    if include_pt and "PT" in edi and edi["PT"] is not None:
+        PT = np.asarray(edi["PT"], dtype=float)
+        if PT.shape != (n, 2, 2):
+            raise ValueError("edi['PT'] must have shape (n, 2, 2).")
+
+        df["ptxx_re"] = PT[:, 0, 0]
+        df["ptxy_re"] = PT[:, 0, 1]
+        df["ptyx_re"] = PT[:, 1, 0]
+        df["ptyy_re"] = PT[:, 1, 1]
+
+        PT_err = edi.get("PT_err")
+        if PT_err is not None:
+            PT_err = np.asarray(PT_err, dtype=float)
+            if PT_err.shape != PT.shape:
+                raise ValueError("edi['PT_err'] must have the same shape as 'PT'.")
+
+            if err_kind == "var":
+                sigma_PT = np.sqrt(PT_err)
+            else:
+                sigma_PT = PT_err
+
+            df["ptxx_re_err"] = sigma_PT[:, 0, 0]
+            df["ptxy_re_err"] = sigma_PT[:, 0, 1]
+            df["ptyx_re_err"] = sigma_PT[:, 1, 0]
+            df["ptyy_re_err"] = sigma_PT[:, 1, 1]
+
+    # ------------------------------------------------------------------ Metadata in attrs
+    meta_keys = ("station", "lat_deg", "lon_deg", "elev_m", "err_kind", "rot_deg")
+    for key in meta_keys:
+        if key in edi:
+            if key == "err_kind":
+                df.attrs[key] = err_kind
+            else:
+                df.attrs[key] = edi[key]
+
+    return df
+
+
+def make_spline(x: np.ndarray, y: np.ndarray, lam: float | None = None):
+    """
+    Fit a smoothing spline using SciPy's make_smoothing_spline.
+    Ensures x is sorted ascending.
+
+    Parameters
+    ----------
+    x : np.ndarray
+        1D array of x-values.
+    y : np.ndarray
+        1D array of y-values.
+    lam : float, optional
+        Smoothing parameter.
+
+    Returns
+    -------
+    spline : PPoly
+        Fitted spline object.
+
+    Remarks
+    -------
+    Author: Volker Rath (DIAS), Date: 2025-11-21
+    Generated by Copilot v1.0
+    """
+    sort_idx = np.argsort(x)
+    x_sorted, y_sorted = x[sort_idx], y[sort_idx]
+    sobj = make_smoothing_spline(x_sorted, y_sorted, lam=lam)
+
+    if lam is None:
+        print("$\lambda$ chosen via GCV (not exposed by BSpline)")
+    else:
+        print("$\lambsa$ is", lam)
+    return sobj
+
+def estimate_variance(y_true: np.ndarray, y_fit: np.ndarray) -> float:
+    """
+    Estimate residual variance.
+
+    Parameters
+    ----------
+    y_true : np.ndarray
+        Observed data.
+    y_fit : np.ndarray
+        Fitted values from spline.
+
+    Returns
+    -------
+    var : float
+        Residual variance estimate.
+
+    Remarks
+    -------
+    Author: Volker Rath (DIAS), Date: 2025-11-21
+    Generated by Copilot v1.0
+    """
+    residuals = y_true - y_fit
+    return np.var(residuals, ddof=1)
+
+
+def bootstrap_confidence_band(
+    x: np.ndarray,
+    y: np.ndarray,
+    lam: float | None = None,
+    n_bootstrap: int = 1000,
+    ci: float = 0.95
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Compute bootstrap confidence intervals for spline predictions.
+    Ensures each resample is strictly ascending before fitting.
+
+    Parameters
+    ----------
+    x : np.ndarray
+        Input x-values for evaluation.
+    y : np.ndarray
+        Observed y-values.
+    lam : float, optional
+        Smoothing parameter for spline.
+    n_bootstrap : int
+        Number of bootstrap resamples.
+    ci : float
+        Confidence level (e.g., 0.95 for 95%).
+
+    Returns
+    -------
+    x_eval : np.ndarray
+        Sorted x-values used for evaluation.
+    lower : np.ndarray
+        Lower confidence band.
+    upper : np.ndarray
+        Upper confidence band.
+
+    Remarks
+    -------
+    Author: Volker Rath (DIAS), Date: 2025-11-21
+    Generated by Copilot v1.0
+    """
+    # define evaluation grid (sorted original x)
+    sort_idx = np.argsort(x)
+    x_eval, y_sorted = x[sort_idx], y[sort_idx]
+    n = len(x_eval)
+    preds = np.zeros((n_bootstrap, n))
+
+    for i in range(n_bootstrap):
+        idx = np.random.choice(len(x), len(x), replace=True)
+        x_res, y_res = x[idx], y[idx]
+
+        # sort resampled data
+        sort_idx_res = np.argsort(x_res)
+        x_res_sorted, y_res_sorted = x_res[sort_idx_res], y_res[sort_idx_res]
+
+        # enforce strictly ascending x by removing duplicates
+        unique_x, unique_idx = np.unique(x_res_sorted, return_index=True)
+        y_res_unique = y_res_sorted[unique_idx]
+
+        if len(unique_x) < 4:
+            # not enough unique points to fit spline, skip this bootstrap
+            continue
+
+        spline_res = make_smoothing_spline(unique_x, y_res_unique, lam=lam)
+        preds[i, :] = spline_res(x_eval)
+
+    alpha = 1 - ci
+    lower = np.percentile(preds, 100 * alpha / 2, axis=0)
+    upper = np.percentile(preds, 100 * (1 - alpha / 2), axis=0)
+    return x_eval, lower, upper
+
+
+def choose_lambda_gcv(x, y, lam_grid=None):
+    if lam_grid is None:
+        lam_grid = np.logspace(-3, 3, 50)
+    best_score, best_lam, best_spline = np.inf, None, None
+    for lam in lam_grid:
+        spline = make_smoothing_spline(x, y, lam=lam)
+        residuals = y - spline(x)
+        score = np.mean((residuals**2)) / (1 - (len(spline.c) / len(x)))**2
+        if score < best_score:
+            best_score, best_lam, best_spline = score, lam, spline
+    return best_spline, best_lam
+
+
+
+def save_hdf(
+    df: pd.DataFrame,
+    path: str | Path,
+    *,
+    key: str = "mt",
+    mode: str = "w",
+    complevel: int = 4,
+    complib: str = "zlib",
+    **kwargs: Any,
+) -> None:
+    """Save a dataframe to an HDF5 file via :mod:`pandas`."""
+    path = Path(path)
+    try:
+        df.to_hdf(
+            path.as_posix(),
+            key=key,
+            mode=mode,
+            complevel=complevel,
+            complib=complib,
+            **kwargs,
+        )
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise ImportError(
+            "pandas HDF5 support requires the 'tables' package."
+        ) from exc
+
+
+def save_ncd(
+    df: pd.DataFrame,
+    path: str | Path,
+    *,
+    engine: Optional[str] = None,
+    dim: str = "period",
+    dataset_name: str = "mt",
+) -> None:
+    """Save a dataframe to a NetCDF file using :mod:`xarray`."""
+    try:
+        import xarray as xr  # type: ignore[import]
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise ImportError("save_netcdf requires the 'xarray' package.") from exc
+
+    path = Path(path)
+
+    if dim in df.columns:
+        coord = df[dim].to_numpy()
+        dim_name = dim
+    elif "freq" in df.columns:
+        coord = df["freq"].to_numpy()
+        dim_name = "freq"
+    else:
+        raise ValueError(
+            "DataFrame must contain either the dimension column given by 'dim' "
+            "or a 'freq' column."
+        )
+
+    data_vars = {}
+    for col in df.columns:
+        if col == dim_name:
+            continue
+        data = df[col].to_numpy()
+        data_vars[col] = (dim_name, data)
+
+    coords = {dim_name: coord}
+    ds = xr.Dataset(data_vars=data_vars, coords=coords)
+
+    # Propagate attributes
+    for k, v in df.attrs.items():
+        ds.attrs[k] = v
+    ds.attrs["dataset_name"] = dataset_name
+
+    ds.to_netcdf(path.as_posix(), engine=engine)
