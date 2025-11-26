@@ -2,13 +2,17 @@ import os
 import sys
 import inspect
 
+from typing import Any, Dict, List, Optional, Tuple
+
 import numpy as np
 import scipy as scp
 import scipy.linalg as scl
 import scipy.sparse as scs
 import scipy.ndimage as sci
+from scipy.interpolate import make_smoothing_spline
 
 import sklearn.cluster as scl
+
 
 
 def soft_thresh(x, lam):
@@ -53,10 +57,10 @@ def splitbreg(J, y, lam, D, c=0., tol=1.e-5, maxiter=10):
         s = soft_thresh(c+D@x+d, lam/mu)
         d = s - c
         b = b + D@x -s
-        
+
         if ((kk>0) and (np.norm(xold-x)/np.norm(x)<tol)):
             break
-        
+
         xold = x
 
     return x
@@ -120,27 +124,27 @@ def calc_covar_nice(x=np.array([]),
                  out=True):
     '''
     Calculate empirical covariance for Kalman gain
-    
-    
+
+
     Method described in:
-        
+
     Vishny, D., Morzfeld M., Gwirtz K., Bach, E., Dunbar, O.R.A. & Hodyss, D.
     High dimensional covariance estimation from a small number of samples
     Journal of Advances in Modeling Earth Systems, 16, 2024,
     doi:10.1029/2024MS004417
- 
+
 
     Created on Jul 6, 2022
 
     @author: vrath
-    
-    Matlab version: 
+
+    Matlab version:
     function [Cov_NICE,Corr_NICE,L_NICE] = NICE(X,Y,fac)
-    Ne = size(X,2) ; 
+    Ne = size(X,2) ;
     [CorrXY,~] = corr(X',Y');
     std_rho = (1-CorrXY.^2)/sqrt(Ne);
     sig_rho = sqrt(sum(sum(std_rho.^2)));
-    
+
     expo2 = 2:2:8;
     for kk = 1:length(expo2)
         L = abs(CorrXY).^expo2(kk);
@@ -153,7 +157,7 @@ def calc_covar_nice(x=np.array([]),
     expo1 = expo2-2;
     rho_exp1 = CorrXY.^expo1;
     rho_exp2 = CorrXY.^expo2;
-    
+
     al = 0.1:.1:1;
     for kk=1:length(al)
         L = (1-al(kk))*rho_exp1+al(kk)*rho_exp2;
@@ -172,16 +176,16 @@ def calc_covar_nice(x=np.array([]),
     Cov_NICE = Vx*Corr_NICE*Vy;
     end
     '''
-    
+
     nc = np.shape(x)[1]
     x = (x - np.mean(x, axis=0))/np.std(x,axis=0)
     y = (y - np.mean(y, axis=0))/np.std(y,axis=0)
     corr = (np.dot(y.T, x)/y.shape[0])[0]
-    
+
     std_rho = (1.-np.power(corr,2))/np.sqrt(nc)
     sig_rho = np.sqrt(np.sum(np.sum(np.power(std_rho, 2))))
-    
-    
+
+
     expo2 = np.arange(2, 8, 2)
     for k in np.arange(len(expo2)):
         t = np.power(np.abs(corr),expo2(k))
@@ -189,7 +193,7 @@ def calc_covar_nice(x=np.array([]),
         if np.norm(corr_nice - corr,'fro') > fac*sig_rho:
             expo2 = expo2(k)
             break
-     
+
     expo1 = expo2-2
     rho_exp1 = np.power(corr, expo1)
     rho_exp2 = np.power(corr, expo2)
@@ -201,20 +205,20 @@ def calc_covar_nice(x=np.array([]),
         t = (1.-a(k))*rho_exp1+a(k)*rho_exp2
         corr_nice = t*corr
 
-        
+
         if k>0 and np.norm(corr_nice - corr,'fro') > fac*sig_rho:
             corr_nice = prevcorr
             break
         elif np.norm(corr_nice - corr,'fro') > fac*sig_rho:
             break
-        
+
         prevcorr = corr_nice
         l_nice = t
-        
+
         vy = np.diag(np.std(y,axis=1))
         vx = np.diag(np.std(x,axis=1));
         cov_nice = vx@corr_nice@vy;
-        
+
     return cov_nice,corr_nice,l_nice
 
 
@@ -256,7 +260,7 @@ def msqrt_sparse(M=None, method='chol', smallval=None, nthreads = 16):
     from scipy.sparse import csr_array, csc_array, coo_array, eye_array, diags_array, issparse
     from threadpoolctl import threadpool_limits
 
-    
+
     n, _ =M.shape
 
 
@@ -278,25 +282,25 @@ def msqrt_sparse(M=None, method='chol', smallval=None, nthreads = 16):
         with threadpool_limits(limits=nthreads):
             sqrtM = cholesky(M.toarray())
         return sqrtM
-        
+
     elif 'splu' in method.lower():
         from scipy.sparse.linalg import splu, diags
         with threadpool_limits(limits=16):
             LU = scs.linalg.splu(M, diag_pivot_thresh=0)  # sparse LU decomposition
-    
+
         # check the matrix A is positive definite.
         if (LU.perm_r == np.arange(n)).all() and (LU.U.diagonal() > 0).all():
             sqrtM = LU.L.dot(diags(LU.U.diagonal() ** 0.5))
-    
+
         else:
             sys.exit('The matrix is not positive definite')
-            
-        
+
+
         return sqrtM
 
     else:
          sys.exit()
-    
+
 def isspd(A):
     from scipy.sparse import csr_array, csc_array, coo_array, eye_array, diags_array, issparse
 
@@ -331,7 +335,7 @@ def isspd(A):
     #spd = np.all(np.linalg.eigvals(A) > 1.e-12)
 
 
-    return spd
+    # return spd
 
 def rsvd(A, rank=300,
          n_oversamples=300,
@@ -387,7 +391,7 @@ def rsvd(A, rank=300,
 
 def find_range(A, n_samples, n_subspace_iters=None):
     '''
-    
+
     Algorithm 4.1: Randomized range finder (p. 240 of Halko et al).
 
     Given a matrix A and a number of samples, computes an orthonormal matrix
@@ -452,3 +456,254 @@ def ortho_basis(M):
     return Q
 
 
+def make_spline(x: np.ndarray, y: np.ndarray, lam: float | None = None):
+    """
+    Fit a smoothing spline using SciPy's make_smoothing_spline.
+    Ensures x is sorted ascending.
+
+    Parameters
+    ----------
+    x : np.ndarray
+        1D array of x-values.
+    y : np.ndarray
+        1D array of y-values.
+    lam : float, optional
+        Smoothing parameter.
+
+    Returns
+    -------
+    spline : PPoly
+        Fitted spline object.
+
+    Remarks
+    -------
+    Author: Volker Rath (DIAS), Date: 2025-11-21
+    Generated by Copilot v1.0
+    """
+    sort_idx = np.argsort(x)
+    x_sorted, y_sorted = x[sort_idx], y[sort_idx]
+    sobj = make_smoothing_spline(x_sorted, y_sorted, lam=lam)
+    if lam is None:
+        print("$\lambda$ chosen via GCV (not exposed by BSpline)")
+    else:
+        print("$\lambsa$ is", lam)
+    return sobj
+
+def estimate_variance(y_true: np.ndarray, y_fit: np.ndarray) -> float:
+    """
+    Estimate residual variance.
+
+    Parameters
+    ----------
+    y_true : np.ndarray
+        Observed data.
+    y_fit : np.ndarray
+        Fitted values from spline.
+
+    Returns
+    -------
+    var : float
+        Residual variance estimate.
+
+    Remarks
+    -------
+    Author: Volker Rath (DIAS), Date: 2025-11-21
+    Generated by Copilot v1.0
+    """
+    residuals = y_true - y_fit
+    return np.var(residuals, ddof=1)
+
+
+def bootstrap_confidence_band(
+def make_spline(x: np.ndarray, y: np.ndarray, lam: float | None = None):
+    """
+    Fit a smoothing spline using SciPy's make_smoothing_spline.
+    Ensures x is sorted ascending.
+
+    Parameters
+    ----------
+    x : np.ndarray
+        1D array of x-values.
+    y : np.ndarray
+        1D array of y-values.
+    lam : float, optional
+        Smoothing parameter.
+
+    Returns
+    -------
+    spline : PPoly
+        Fitted spline object.
+
+    Remarks
+    -------
+    Author: Volker Rath (DIAS), Date: 2025-11-21
+    Generated by Copilot v1.0
+    """
+    sort_idx = np.argsort(x)
+    x_sorted, y_sorted = x[sort_idx], y[sort_idx]
+    sobj = make_smoothing_spline(x_sorted, y_sorted, lam=lam)
+    if lam is None:
+        print("$\lambda$ chosen via GCV (not exposed by BSpline)")
+    else:
+        print("$\lambsa$ is", lam)
+    return sobj
+
+def estimate_variance(y_true: np.ndarray, y_fit: np.ndarray) -> float:
+    """
+    Estimate residual variance.
+
+    Parameters
+    ----------
+    y_true : np.ndarray
+        Observed data.
+    y_fit : np.ndarray
+        Fitted values from spline.
+
+    Returns
+    -------
+    var : float
+        Residual variance estimate.
+
+    Remarks
+    -------
+    Author: Volker Rath (DIAS), Date: 2025-11-21
+    Generated by Copilot v1.0
+    """
+    residuals = y_true - y_fit
+    return np.var(residuals, ddof=1)
+
+
+def bootstrap_confidence_band(
+    x: np.ndarray,
+    y: np.ndarray,
+    lam: float | None = None,
+    n_bootstrap: int = 1000,
+    ci: float = 0.95
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Compute bootstrap confidence intervals for spline predictions.
+    Ensures each resample is strictly ascending before fitting.
+
+    Parameters
+    ----------
+    x : np.ndarray
+        Input x-values for evaluation.
+    y : np.ndarray
+        Observed y-values.
+    lam : float, optional
+        Smoothing parameter for spline.
+    n_bootstrap : int
+        Number of bootstrap resamples.
+    ci : float
+        Confidence level (e.g., 0.95 for 95%).
+
+    Returns
+    -------
+    x_eval : np.ndarray
+        Sorted x-values used for evaluation.
+    lower : np.ndarray
+        Lower confidence band.
+    upper : np.ndarray
+        Upper confidence band.
+
+    Remarks
+    -------
+    Author: Volker Rath (DIAS), Date: 2025-11-21
+    Generated by Copilot v1.0
+    """
+    # define evaluation grid (sorted original x)
+    sort_idx = np.argsort(x)
+    x_eval, y_sorted = x[sort_idx], y[sort_idx]
+    n = len(x_eval)
+    preds = np.zeros((n_bootstrap, n))
+
+    for i in range(n_bootstrap):
+        idx = np.random.choice(len(x), len(x), replace=True)
+        x_res, y_res = x[idx], y[idx]
+
+        # sort resampled data
+        sort_idx_res = np.argsort(x_res)
+        x_res_sorted, y_res_sorted = x_res[sort_idx_res], y_res[sort_idx_res]
+
+        # enforce strictly ascending x by removing duplicates
+        unique_x, unique_idx = np.unique(x_res_sorted, return_index=True)
+        y_res_unique = y_res_sorted[unique_idx]
+
+        if len(unique_x) < 4:
+            # not enough unique points to fit spline, skip this bootstrap
+            continue
+
+        spline_res = make_smoothing_spline(unique_x, y_res_unique, lam=lam)
+        preds[i, :] = spline_res(x_eval)
+
+    alpha = 1 - ci
+    lower = np.percentile(preds, 100 * alpha / 2, axis=0)
+    upper = np.percentile(preds, 100 * (1 - alpha / 2), axis=0)
+    return x_eval, lower, upper
+
+    x: np.ndarray,
+    y: np.ndarray,
+    lam: float | None = None,
+    n_bootstrap: int = 1000,
+    ci: float = 0.95
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Compute bootstrap confidence intervals for spline predictions.
+    Ensures each resample is strictly ascending before fitting.
+
+    Parameters
+    ----------
+    x : np.ndarray
+        Input x-values for evaluation.
+    y : np.ndarray
+        Observed y-values.
+    lam : float, optional
+        Smoothing parameter for spline.
+    n_bootstrap : int
+        Number of bootstrap resamples.
+    ci : float
+        Confidence level (e.g., 0.95 for 95%).
+
+    Returns
+    -------
+    x_eval : np.ndarray
+        Sorted x-values used for evaluation.
+    lower : np.ndarray
+        Lower confidence band.
+    upper : np.ndarray
+        Upper confidence band.
+
+    Remarks
+    -------
+    Author: Volker Rath (DIAS), Date: 2025-11-21
+    Generated by Copilot v1.0
+    """
+    # define evaluation grid (sorted original x)
+    sort_idx = np.argsort(x)
+    x_eval, y_sorted = x[sort_idx], y[sort_idx]
+    n = len(x_eval)
+    preds = np.zeros((n_bootstrap, n))
+
+    for i in range(n_bootstrap):
+        idx = np.random.choice(len(x), len(x), replace=True)
+        x_res, y_res = x[idx], y[idx]
+
+        # sort resampled data
+        sort_idx_res = np.argsort(x_res)
+        x_res_sorted, y_res_sorted = x_res[sort_idx_res], y_res[sort_idx_res]
+
+        # enforce strictly ascending x by removing duplicates
+        unique_x, unique_idx = np.unique(x_res_sorted, return_index=True)
+        y_res_unique = y_res_sorted[unique_idx]
+
+        if len(unique_x) < 4:
+            # not enough unique points to fit spline, skip this bootstrap
+            continue
+
+        spline_res = make_smoothing_spline(unique_x, y_res_unique, lam=lam)
+        preds[i, :] = spline_res(x_eval)
+
+    alpha = 1 - ci
+    lower = np.percentile(preds, 100 * alpha / 2, axis=0)
+    upper = np.percentile(preds, 100 * (1 - alpha / 2), axis=0)
+    return x_eval, lower, upper

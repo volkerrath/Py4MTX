@@ -20,6 +20,7 @@ import inspect
 # Import numerical or other specialised modules
 import numpy as np
 import scipy as sci
+import pandas as pd
 import matplotlib.pyplot as plt
 
 PY4MTX_DATA = os.environ['PY4MTX_DATA']
@@ -41,9 +42,10 @@ import mtproc as mtp
 import viz
 import inverse as inv
 import femtic as fem
-
+from scipy.interpolate import make_smoothing_spline
 from ediviz import add_phase, add_rho, add_tipper, add_pt
-from ediproc import load_edi, dataframe_from_arrays, save_edi, compute_phase_tensor
+from ediproc import load_edi, save_edi, save_ncd, save_hdf
+from ediproc import compute_pt, dataframe_from_arrays, set_errors
 # import cluster as fcm
 from version import versionstrg
 
@@ -65,15 +67,22 @@ EdiDir = WorkDir  # +'/edi/'
 edi_files = mtp.get_edi_list(EdiDir, fullpath=True)
 ns = np.size(edi_files)
 
-Out = True
-OutFile = '.edi'
+OutFiles ='edi, ncd, hdf'
 
 Plot = True
 if Plot:
     PlotFormat = ['.png', '.pdf']
 String_out = '_processed'
 
+SetErrors = False
+Errors = {'Zerr': [0.1, 0.1, 0.1, 0.1],
+          'Terr': [0.03, 0.03, 0.03, 0.03],
+          'PTerr': [0.1, 0.1, 0.1, 0.1]
+          }
+
 PhasTens = True
+
+
 Rotate = True
 if Rotate:
     Declination = 0.  # 2.68   #E
@@ -81,34 +90,71 @@ if Rotate:
 
 for edi in edi_files:
 
-    freq, Z, T, station, _ = load_edi(edi, drop_invalid_periods=True)
+    edi_dict = load_edi(edi, drop_invalid_periods=True)
+
+    station = edi_dict['station']
+    Z = edi_dict['Z']
+    Zerr = edi_dict['Zerr']
+    T = edi_dict['T']
+    Terr = edi_dict['Terr']
+
+    '''
+    Task block
+    '''
 
     if PhasTens:
-        PT = compute_phase_tensor(Z)
-        df = dataframe_from_arrays(
-            freq,
-            Z,
-            T=T,
-            PT=PT,          # <- now PT columns appear again
-            station=station,
-        )
-    else:
-        df = dataframe_from_arrays(
-            freq,
-            Z,
-            T=T,
-            station=station,
-        )
+        # generate phase tensors+errors, if not already in edi_dict
+        PT, PTerr = compute_pt(Z)
+        edi_dict['PT'] = PT
+        edi_dict['PTerr'] = PTerr
 
 
+    if SetErrors:
+        edi_dict = set_errors(edi_dict=edi_dict, errors=Errors)
 
-    if Out:
-        if 'edi' in OutFile.lower():
-            _ = save_edi(edi,
-                         station + '_processed',
-                         drop_invalid_periods=True,
-                         rotate_deg=0.0,
-                         )
+
+    '''
+    store final dict into pandas data frame for export to hdf/netcdf
+    and plotting
+    '''
+
+    df = pd.DataFrame(edi_dict)
+
+
+    if 'edi' in OutFiles.lower():
+        _ = save_edi(edi_dict,
+                     station + '_processed.edi',
+                     drop_invalid_periods=True,
+                     rotate_deg=0.0,
+                     )
+
+    if 'ncd' in OutFiles.lower():
+        _ = save_edi(edi_dict,
+                     station + '_processed.ncd',
+                     drop_invalid_periods=True,
+                     rotate_deg=0.0,
+                     )
+        # df: pd.DataFrame,
+        # path: str | Path,
+        # *,
+        # engine: Optional[str] = None,
+        # dim: str = "period",
+        # dataset_name: str = "mt",
+    if 'hdf' in OutFiles.lower():
+        _ = save_edi(edi_dict,
+                     station + '_processed.hdf',
+                     drop_invalid_periods=True,
+                     rotate_deg=0.0,
+                     )
+        # df: pd.DataFrame,
+        # path: str | Path,
+        # *,
+        # key: str = "mt",
+        # mode: str = "w",
+        # complevel: int = 4,
+        # complib: str = "zlib",
+        # **kwargs: Any,
+
 
     if Plot:
         fig, axs = plt.subplots(3, 2, figsize=(8, 14), sharex=True)
@@ -120,7 +166,12 @@ for edi in edi_files:
         add_pt(df, ax=axs[2, 1])
         fig.suptitle(station)
 
+        # Remove empty axes
+        for ax in axs:
+            if not ax.lines and not ax.images and not ax.collections:
+                fig.delaxes(ax)
+
         for f in PlotFormat:
-            plt.savefig(WorkDir+station + String_out + f, dpi=600)
+            plt.savefig(WorkDir + station + String_out + f, dpi=600)
 
         plt.show()
