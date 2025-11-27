@@ -112,6 +112,8 @@ Created by ChatGPT (GPT-5 Thinking) on 2025-11-20
 
 from __future__ import annotations
 
+import sys
+import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -806,6 +808,7 @@ def estimate_errors(edi_dict: Dict[str, Any],
         with errors replaced.
 
     '''
+    sys.exit('estimate_errors: not yet implementd! Exit.')
     edi_dict_new = edi_dict.copy
 
 
@@ -838,6 +841,7 @@ def interpolate_data(edi_dict: Dict[str, Any],
         DESCRIPTION.
 
     '''
+    sys.exit('interpolate_data: not yet implementd! Exit.')
     edi_dict_new = edi_dict.copy
 
     alg = method[0]
@@ -869,6 +873,7 @@ def set_errors(edi_dict: Dict[str, Any],
         with errors replaced.
 
     '''
+    sys.exit('set_errors: not yet implementd! Exit.')
     edi_dict_new = edi_dict.copy
 
 
@@ -897,7 +902,7 @@ def rotate_data(edi_dict: Dict[str, Any],
         edi_dict with rotated data
 
     '''
-
+    sys.exit('rotate_data: not yet implementd! Exit.')
     edi_dict_new = edi_dict.copy
 
 
