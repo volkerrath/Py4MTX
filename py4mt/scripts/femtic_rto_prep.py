@@ -103,11 +103,10 @@ if PerturbMod:
     # if ModCov is not None, this needs to be normal
     Mod_pdf = ['normal', 0., 0.3]
     # ['exp', L], ['gauss', L], ['matern], L, MatPars], ['femtic'], None
-    Mod_cov = ['femtic']
-    Cov_read = False
-    Cov_file = 'R_coo'
+    Mod_R = 'femtic R'
+    R_file = 'R_coo'
 else:
-    Mod_cov = None
+    Mod_R = None
 
 '''
 Set up mode of data perturbations.
@@ -121,7 +120,7 @@ if PerturbDat:
 ResetErrors = True
 if ResetErrors:
     Errors = [
-        [15., 4., 5., 15.],        # Impeedance in percent
+        [15., 4., 5., 15.],        # Impedance in percent
         [0.03, 0.03],               # VTF
         [.5, .2, .2, .5],          # PT
     ]
@@ -130,23 +129,7 @@ else:
 
 
 '''
-Read or generate prior parameter covariance for perturbations,
-if needed. If the demtic mode is chosen, the martix needs to be
-read from external file.
-'''
-
-if 'fem' in Mod_cov.lower():
-        R = np.load(EnsembleDir + EnsembleName + Cov_file + '.npz')['Cmp']
-else:
-    sys.exit('Analyticl covariances not yet implemented.')
-
-
-
-
-
-
-'''
-Geenrate ensemble directories.
+Generate ensemble directories and copy template files.
 '''
 
 dir_list = fem.generate_directories(
@@ -160,7 +143,16 @@ dir_list = fem.generate_directories(
 
 '''
 Draw perturbed model sets: d  ̃ ∼ N (m, Cm)
+
+Read prior parameter precision Q = R^T@R for perturbations
+if needed. If the femtic mode is chosen, the martix needs to be
+read from external file.
 '''
+if 'Q' in Mod_R:
+    Q = np.load(EnsembleDir + EnsembleName + R_file + '.npz')['R']
+else:
+    R = np.load(EnsembleDir + EnsembleName + R_file + '.npz')['R']
+    Q = R.T@R
 
 
 model_ensemble = fem.generate_model_ensemble(dir_base=EnsembleDir + EnsembleName,
@@ -169,7 +161,7 @@ model_ensemble = fem.generate_model_ensemble(dir_base=EnsembleDir + EnsembleName
                                              file_in='resistivity_block_iter0.dat',
                                              draw_from=Mod_pdf,
                                              method=Mod_method,
-                                             priorcov=Mod_cov,
+                                             priorq=Q,
                                              out=True)
 print('\n')
 

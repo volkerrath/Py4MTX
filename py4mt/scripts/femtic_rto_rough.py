@@ -34,7 +34,7 @@ import shutil
 import numpy as np
 import functools
 import inspect
-import time 
+import time
 
 import scipy.sparse as scs
 
@@ -77,7 +77,7 @@ SparseFormat = 'coo'
 RoughNew = WorkDir+'R_'+SparseFormat+'.npz'
 
 
-OutRough = 'RTR'
+OutRough = 'R'
 SparseFormat = 'coo'
 
 
@@ -87,18 +87,18 @@ R   = fem.get_roughness(filerough=RoughFile,
                    out=True)
 
 
-if 'rtr' in OutRough.lower():
+if 'Q' in OutRough.lower():
     R = R.T@R
     fem.check_sparse_matrix(R)
-    RoughNew = WorkDir+'RTR_'+SparseFormat+'.npz'
+    RoughNew = WorkDir+'Q_'+SparseFormat+'.npz'
     print('saved to', RoughNew)
     print('Sparse format is', R.format)
+    M = {'Q': R}
 else:
     fem.check_sparse_matrix(R)
     RoughNew = WorkDir+'R_'+SparseFormat+'.npz'
     print('saved to', RoughNew)
     print('Sparse format is', R.format)
+    M = {'R': R}
 
-
-scs.save_npz(RoughNew, matrix=R)
-
+scs.save_npz(RoughNew, **M)
