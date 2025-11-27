@@ -784,6 +784,125 @@ def load_edi(
     return edi
 
 
+# if EstimateErrors:
+#     edi_dict = estimate_errors(edi_dict=edi_dict, method=ErrMethod)
+
+def estimate_errors(edi_dict: Dict[str, Any],
+               method: List)-> Dict[str, Any]:
+    '''
+    Estimate new errors using real spread of data.
+
+    Parameters
+    ----------
+    edi_dict : Dict[str, Any]
+        data dictionary
+    errors : Dict[str,np.ndarray]
+        error dictionary which will be uded to replace the errors.
+        relative errors.
+
+    Returns
+    -------
+    new_edi_dict
+        with errors replaced.
+
+    '''
+    edi_dict_new = edi_dict.copy
+
+
+    return edi_dict_new
+
+
+
+
+# if Interpolate:
+#     edi_dict = interpolate_data(edi_dict=edi_dict, method=Method)
+def interpolate_data(edi_dict: Dict[str, Any],
+               method: List,
+               )-> Dict[str, Any]:
+    '''
+    Interpolate data to k points per decade for all data
+
+
+    Parameters
+    ----------
+    edi_dict : Dict[str, Any]
+        DESCRIPTION.
+    Method : Dict[str, Any]
+        DESCRIPTION.
+     : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    Dict[str, Any]
+        DESCRIPTION.
+
+    '''
+    edi_dict_new = edi_dict.copy
+
+    alg = method[0]
+    k = method[1]
+
+
+    return edi_dict_new
+
+
+
+# if SetErrors:
+#     edi_dict = set_errors(edi_dict=edi_dict, errors=Errors)
+def set_errors(edi_dict: Dict[str, Any],
+               errors: Dict[str,np.ndarray])-> Dict[str, Any]:
+    '''
+    Replace errors with given relative errors.
+
+    Parameters
+    ----------
+    edi_dict : Dict[str, Any]
+        data dictionary
+    errors : Dict[str,np.ndarray]
+        error dictionary which will be uded to replace the errors.
+        relative errors.
+
+    Returns
+    -------
+    new_edi_dict
+        with errors replaced.
+
+    '''
+    edi_dict_new = edi_dict.copy
+
+
+    return edi_dict_new
+
+# if Rotation:
+#     edi_dict = rotate_data(edi_dict=edi_dict, angle=Angle)
+def rotate_data(edi_dict: Dict[str, Any],
+               angle: float = 0.,
+               degrees=True )-> Dict[str, Any]:
+    '''
+    Rotate data (e.g for magnetic to geographic system)
+
+    Parameters
+    ----------
+    edi_dict : Dict[str, Any]
+        DESCRIPTION.
+    angle : float
+        Rotation angle.
+    degrees : boolean, optional
+        DESCRIPTION. The default is True.
+
+    Returns
+    -------
+    Dict[str, Any]
+        edi_dict with rotated data
+
+    '''
+
+    edi_dict_new = edi_dict.copy
+
+
+    return edi_dict_new
+
 # ---------------------------------------------------------------------------
 # Phase tensor + Monte-Carlo error propagation
 # ---------------------------------------------------------------------------
@@ -797,7 +916,8 @@ def compute_pt(
     nsim: int = 200,
     random_state: Optional[np.random.Generator] = None,
 ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
-    """Compute the phase tensor from impedance and optionally propagate errors.
+    """
+    Compute the phase tensor from impedance and optionally propagate errors.
 
     The phase tensor Φ is defined as
 
