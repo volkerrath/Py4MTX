@@ -167,7 +167,27 @@ def rotate_raster(in_path, out_path, angle_deg):
     return out_path
 
 
-def geotiff_to_xyz(in_path, out_path="output.xyz"):
+def geotiff_to_xyz(in_path, out_path=None):
+    '''
+    gdal_translate -of XYZ input.tif output.xyz
+
+    Parameters
+    ----------
+    in_path : string
+        Geotiff file
+    out_path : string, optional
+        xyz-file. The default is "output.xyz".
+
+    Returns
+    -------
+    out_path : string, optional
+        xyz-file. The default is "output.xyz".
+
+
+    '''
+    if out_path is None:
+        out_path = in_path.replace('.tif','.xyz')
+
     with rasterio.open(in_path) as src:
         band = src.read(1)
         rows, cols = np.where(band != src.nodata)
