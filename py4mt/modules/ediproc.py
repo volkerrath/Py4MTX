@@ -55,7 +55,7 @@ EDI format. It supports two main data sources:
        Assemble the complex tipper ``T`` (and optional variance ``T_err``).
    - Rotation:
        If a ``>ZROT`` block is present, it is parsed into a per-frequency
-       rotation angle array in degrees and stored as ``edi["rot_deg"]``.
+       rotation angle array in degrees and stored as ``edi["rot"]``.
 
 High-level functions
 --------------------
@@ -67,7 +67,7 @@ High-level functions
     errors via Monte-Carlo.
 - :func:`save_edi`
     Write an EDI dictionary back to a classical table-style EDI file,
-    optionally including PT blocks, variance blocks and a ``>ZROT`` block.
+    optionally including P blocks, variance blocks and a ``>ZROT`` block.
 
 Returned dictionary layout
 --------------------------
@@ -80,9 +80,9 @@ Typical output from :func:`load_edi`::
         "T": (n, 1, 2) complex or None,
         "Z_err": (n, 2, 2) float or None,   # from .VAR blocks (tables only)
         "T_err": (n, 1, 2) float or None,
-        "PT": (n, 2, 2) float or None,      # filled by compute_pt
-        "PT_err": (n, 2, 2) float or None,
-        "rot_deg": (n,) float or None,      # from ROTSPEC or ZROT if present
+        "P": (n, 2, 2) float or None,      # filled by compute_pt
+        "P_err": (n, 2, 2) float or None,
+        "rot": (n,) float or None,      # from ROTSPEC or ZROT if present
         "err_kind": "var" or "std",         # meaning of *_err arrays
         "station": str or None,
         "lat_deg": float or None,
@@ -414,12 +414,12 @@ def parse_spectra_blocks(
     Returns
     -------
     list of tuples
-        Each tuple is ``(f, avgt, rot_deg, mat7)`` where
+        Each tuple is ``(f, avgt, rot, mat7)`` where
 
         * ``f`` is the frequency in Hz (float),
         * ``avgt`` is the averaging time in seconds (float, or NaN if not
           present),
-        * ``rot_deg`` is the rotation angle from ``ROTSPEC`` in degrees
+        * ``rot`` is the rotation angle from ``ROTSPEC`` in degrees
           (float, or NaN if not present),
         * ``mat7`` is a real-valued (7, 7) array in Phoenix encoding:
 
@@ -469,7 +469,7 @@ def parse_spectra_blocks(
             block_text,
             flags=re.IGNORECASE,
         )
-        rot_deg = float(rm.group(1).replace("D", "E")) if rm else float("nan")
+        rot = float(rm.group(1).replace("D", "E")) if rm else float("nan")
 
         num_strings: List[str] = []
         for ln in block_lines:
@@ -484,7 +484,7 @@ def parse_spectra_blocks(
 
         vals = [float(s.replace("D", "E")) for s in num_strings[:49]]
         mat7 = np.array(vals, dtype=float).reshape(7, 7)
-        blocks.append((f, avgt, rot_deg, mat7))
+        blocks.append((f, avgt, rot, mat7))
 
     return blocks
 
@@ -577,7 +577,7 @@ def _load_from_spectra(
     *,
     ref: str = "RH",
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """High-level helper: build freq, Z, T, rot_deg from Phoenix ``>SPECTRA``."""
+    """High-level helper: build freq, Z, T, rot from Phoenix ``>SPECTRA``."""
     blocks = parse_spectra_blocks(text)
     if not blocks:
         raise RuntimeError("No usable >SPECTRA blocks found in EDI text.")
@@ -586,17 +586,17 @@ def _load_from_spectra(
     freq = np.empty(n, dtype=float)
     Z = np.empty((n, 2, 2), dtype=np.complex128)
     T = np.empty((n, 1, 2), dtype=np.complex128)
-    rot_deg = np.empty(n, dtype=float)
+    rot = np.empty(n, dtype=float)
 
     for k, (f, avgt, rot, mat7) in enumerate(blocks):
         freq[k] = f
-        rot_deg[k] = rot
+        rot[k] = rot
         S = reconstruct_S_phoenix(mat7)
         Zk, Tk = ZT_from_S(S, ref=ref)
         Z[k] = Zk
         T[k] = Tk
 
-    return freq, Z, T, rot_deg
+    return freq, Z, T, rot
 
 
 # ---------------------------------------------------------------------------
@@ -668,10 +668,10 @@ def load_edi(
     # Decide which path to use
     use_spectra = _has_spectra(text) and prefer_spectra
 
-    rot_deg: Optional[np.ndarray]
+    rot: Optional[np.ndarray]
 
     if use_spectra:
-        freq, Z, T, rot_deg = _load_from_spectra(text, ref=ref)
+        freq, Z, T, rot = _load_from_spectra(text, ref=ref)
         Z_var = None
         T_var = None
         source_kind = "spectra"
@@ -727,9 +727,9 @@ def load_edi(
                 raise ValueError(
                     "ZROT block has fewer entries than frequencies."
                 )
-            rot_deg = zrot_vals[: freq.size].copy()
+            rot = zrot_vals[: freq.size].copy()
         else:
-            rot_deg = None
+            rot = None
 
         source_kind = "tables"
 
@@ -743,8 +743,8 @@ def load_edi(
         Z_var = Z_var[order]
     if T_var is not None:
         T_var = T_var[order]
-    if rot_deg is not None:
-        rot_deg = np.asarray(rot_deg, dtype=float)[order]
+    if rot is not None:
+        rot = np.asarray(rot, dtype=float)[order]
 
     # Optionally drop invalid rows
     mask_valid = np.ones(freq.shape, dtype=bool)
@@ -766,8 +766,8 @@ def load_edi(
         T = T[mask_valid]
     if T_var is not None:
         T_var = T_var[mask_valid]
-    if rot_deg is not None:
-        rot_deg = rot_deg[mask_valid]
+    if rot is not None:
+        rot = rot[mask_valid]
 
     edi: Dict[str, Any] = {
         "freq": freq,
@@ -775,9 +775,9 @@ def load_edi(
         "T": T,
         "Z_err": Z_var if Z_var is not None else None,
         "T_err": T_var if T_var is not None else None,
-        "PT": None,
-        "PT_err": None,
-        "rot_deg": rot_deg if rot_deg is not None else None,
+        "P": None,
+        "P_err": None,
+        "rot": rot if rot is not None else None,
         "err_kind": err_kind,
         "header_raw": header_lines,
         "source_kind": source_kind,
@@ -920,20 +920,24 @@ def rotate_data(edi_dict: Dict[str, Any],
     Zerr = edi_dict_new['Zerr']
     T = edi_dict_new['T']
     Terr = edi_dict_new['Terr']
-    PT = edi_dict_new['PT']
-    PTerr = edi_dict_new['PTerr']
+    P = edi_dict_new['P']
+    Perr = edi_dict_new['Perr']
 
     for f in np.arange(len(freq)):
         Z = R @ Z[f,:,:] @ R.T
         Zerr = R @ Zerr[f,:,:] @ R.T
+        T = R @ T[f,:,:]
+        Terr = R @ Terr[f,:,:]
+        P = R @ P[f,:,:] @ R.T
+        Perr = R @ Perr[f,:,:] @ R.T
 
     edi_dict_new ['rot'] = rot + angle*np.ones_like(rot)
     edi_dict_new ['Z'] = Z
     edi_dict_new ['Zerr'] = Zerr
     edi_dict_new ['T'] = T
     edi_dict_new ['Terr'] = Terr
-    edi_dict_new ['PT'] = PT
-    edi_dict_new ['PTerr'] = PTerr
+    edi_dict_new ['P'] = P
+    edi_dict_new ['Perr'] = Perr
 
     return edi_dict_new
 
@@ -989,17 +993,17 @@ def compute_pt(
 
     Returns
     -------
-    PT : numpy.ndarray
+    P : numpy.ndarray
         Phase tensor array with shape ``(n, 2, 2)``.
-    PT_err : numpy.ndarray or None
+    P_err : numpy.ndarray or None
         Estimated variance or standard deviation of Φ entries with the same
-        shape as ``PT``. If ``Z_err`` is None, ``PT_err`` is None.
+        shape as ``P``. If ``Z_err`` is None, ``P_err`` is None.
 
     Notes
     -----
     - The Monte-Carlo approach assumes independent Gaussian errors for each
       complex impedance entry.
-    - ``PT_err`` contains **variances** if ``err_kind="var"`` and standard
+    - ``P_err`` contains **variances** if ``err_kind="var"`` and standard
       deviations if ``err_kind="std"``.
     """
     Z = np.asarray(Z, dtype=np.complex128)
@@ -1007,7 +1011,7 @@ def compute_pt(
         raise ValueError("Z must have shape (n, 2, 2).")
 
     n = Z.shape[0]
-    PT = np.zeros((n, 2, 2), dtype=float)
+    P = np.zeros((n, 2, 2), dtype=float)
 
     # Deterministic phase tensor
     for k in range(n):
@@ -1016,12 +1020,12 @@ def compute_pt(
         try:
             X_inv = np.linalg.inv(X)
         except np.linalg.LinAlgError:
-            PT[k] = np.nan
+            P[k] = np.nan
             continue
-        PT[k] = X_inv @ Y
+        P[k] = X_inv @ Y
 
     if Z_err is None:
-        return PT, None
+        return P, None
 
     Z_err = np.asarray(Z_err, dtype=float)
     if Z_err.shape != Z.shape:
@@ -1039,7 +1043,7 @@ def compute_pt(
     else:
         raise ValueError("err_kind must be 'var' or 'std'.")
 
-    PT_sims = np.zeros((nsim, n, 2, 2), dtype=float)
+    P_sims = np.zeros((nsim, n, 2, 2), dtype=float)
     for s in range(nsim):
         d_re = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
         d_im = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
@@ -1050,19 +1054,19 @@ def compute_pt(
             try:
                 X_inv = np.linalg.inv(X)
             except np.linalg.LinAlgError:
-                PT_sims[s, k] = np.nan
+                P_sims[s, k] = np.nan
                 continue
-            PT_sims[s, k] = X_inv @ Y
+            P_sims[s, k] = X_inv @ Y
 
     with np.errstate(invalid="ignore"):
-        var_PT = np.nanvar(PT_sims, axis=0)
+        var_P = np.nanvar(P_sims, axis=0)
 
     if err_kind == "var":
-        PT_err = var_PT
+        P_err = var_P
     else:
-        PT_err = np.sqrt(var_PT)
+        P_err = np.sqrt(var_P)
 
-    return PT, PT_err
+    return P, P_err
 
 
 # ---------------------------------------------------------------------------
@@ -1098,16 +1102,16 @@ def save_edi(
         Output EDI file path.
     edi : dict
         EDI dictionary with keys such as ``"freq"``, ``"Z"``, ``"T"``,
-        ``"Z_err"``, ``"T_err"``, ``"PT"``, ``"PT_err"``, and metadata like
+        ``"Z_err"``, ``"T_err"``, ``"P"``, ``"P_err"``, and metadata like
         ``"station"``, ``"lat_deg"``, ``"lon_deg"``, ``"elev_m"``.
     numbers_per_line : int, optional
         Number of numeric values printed per data line. Default is 6.
     add_pt_blocks : bool, optional
-        If True (default) and ``"PT"`` is present, write phase tensor blocks
-        ``PTXX``, ``PTXY``, ``PTYX``, ``PTYY`` and, if available, corresponding
-        variance blocks ``PTXX.VAR``, etc.
+        If True (default) and ``"P"`` is present, write phase tensor blocks
+        ``PXX``, ``PXY``, ``PYX``, ``PYY`` and, if available, corresponding
+        variance blocks ``PXX.VAR``, etc.
     pt_err_kind : {"var", "std"} or None, optional
-        How to interpret ``edi["PT_err"]``. If ``"var"``, values are written
+        How to interpret ``edi["P_err"]``. If ``"var"``, values are written
         as variances. If ``"std"``, values are squared before writing so that
         the EDI file stores variances. If None (default), the function tries
         to infer a sensible value from ``edi.get("err_kind")``.
@@ -1125,9 +1129,9 @@ def save_edi(
     Z_err = edi.get("Z_err")
     T = edi.get("T")
     T_err = edi.get("T_err")
-    PT = edi.get("PT")
-    PT_err = edi.get("PT_err")
-    rot_deg = edi.get("rot_deg")
+    P = edi.get("P")
+    P_err = edi.get("P_err")
+    rot = edi.get("rot")
 
     station = edi.get("station", "UNKNOWN")
     lat_deg = edi.get("lat_deg")
@@ -1158,10 +1162,10 @@ def save_edi(
     lines.append("")
 
     # Optional rotation block (ZROT)
-    if rot_deg is not None:
-        rot_arr = np.asarray(rot_deg, dtype=float).ravel()
+    if rot is not None:
+        rot_arr = np.asarray(rot, dtype=float).ravel()
         if rot_arr.size != freq.size:
-            raise ValueError("rot_deg must have same length as freq.")
+            raise ValueError("rot must have same length as freq.")
         lines.append(">ZROT")
         lines.append(_format_block(rot_arr, n_per_line=numbers_per_line))
         lines.append("")
@@ -1248,55 +1252,55 @@ def save_edi(
             lines.append("")
 
     # Phase tensor blocks (optional)
-    if add_pt_blocks and PT is not None:
-        PT = np.asarray(PT, dtype=float)
-        if PT.shape != (n, 2, 2):
-            raise ValueError("edi['PT'] must have shape (n, 2, 2).")
+    if add_pt_blocks and P is not None:
+        P = np.asarray(P, dtype=float)
+        if P.shape != (n, 2, 2):
+            raise ValueError("edi['P'] must have shape (n, 2, 2).")
 
-        lines.append(">PTXX")
-        lines.append(_format_block(PT[:, 0, 0], n_per_line=numbers_per_line))
+        lines.append(">PXX")
+        lines.append(_format_block(P[:, 0, 0], n_per_line=numbers_per_line))
         lines.append("")
-        lines.append(">PTXY")
-        lines.append(_format_block(PT[:, 0, 1], n_per_line=numbers_per_line))
+        lines.append(">PXY")
+        lines.append(_format_block(P[:, 0, 1], n_per_line=numbers_per_line))
         lines.append("")
-        lines.append(">PTYX")
-        lines.append(_format_block(PT[:, 1, 0], n_per_line=numbers_per_line))
+        lines.append(">PYX")
+        lines.append(_format_block(P[:, 1, 0], n_per_line=numbers_per_line))
         lines.append("")
-        lines.append(">PTYY")
-        lines.append(_format_block(PT[:, 1, 1], n_per_line=numbers_per_line))
+        lines.append(">PYY")
+        lines.append(_format_block(P[:, 1, 1], n_per_line=numbers_per_line))
         lines.append("")
 
-        if PT_err is not None:
-            PT_err_arr = np.asarray(PT_err, dtype=float)
-            if PT_err_arr.shape != PT.shape:
-                raise ValueError("edi['PT_err'] must have the same shape as edi['PT'].")
+        if P_err is not None:
+            P_err_arr = np.asarray(P_err, dtype=float)
+            if P_err_arr.shape != P.shape:
+                raise ValueError("edi['P_err'] must have the same shape as edi['P'].")
 
             if pt_err_kind is None:
                 pt_err_kind = err_kind
 
             if pt_err_kind == "std":
-                var_xx = PT_err_arr[:, 0, 0] ** 2
-                var_xy = PT_err_arr[:, 0, 1] ** 2
-                var_yx = PT_err_arr[:, 1, 0] ** 2
-                var_yy = PT_err_arr[:, 1, 1] ** 2
+                var_xx = P_err_arr[:, 0, 0] ** 2
+                var_xy = P_err_arr[:, 0, 1] ** 2
+                var_yx = P_err_arr[:, 1, 0] ** 2
+                var_yy = P_err_arr[:, 1, 1] ** 2
             elif pt_err_kind == "var":
-                var_xx = PT_err_arr[:, 0, 0]
-                var_xy = PT_err_arr[:, 0, 1]
-                var_yx = PT_err_arr[:, 1, 0]
-                var_yy = PT_err_arr[:, 1, 1]
+                var_xx = P_err_arr[:, 0, 0]
+                var_xy = P_err_arr[:, 0, 1]
+                var_yx = P_err_arr[:, 1, 0]
+                var_yy = P_err_arr[:, 1, 1]
             else:
                 raise ValueError("pt_err_kind must be 'std', 'var', or None.")
 
-            lines.append(">PTXX.VAR")
+            lines.append(">PXX.VAR")
             lines.append(_format_block(var_xx, n_per_line=numbers_per_line))
             lines.append("")
-            lines.append(">PTXY.VAR")
+            lines.append(">PXY.VAR")
             lines.append(_format_block(var_xy, n_per_line=numbers_per_line))
             lines.append("")
-            lines.append(">PTYX.VAR")
+            lines.append(">PYX.VAR")
             lines.append(_format_block(var_yx, n_per_line=numbers_per_line))
             lines.append("")
-            lines.append(">PTYY.VAR")
+            lines.append(">PYY.VAR")
             lines.append(_format_block(var_yy, n_per_line=numbers_per_line))
             lines.append("")
 
@@ -1327,11 +1331,11 @@ def dataframe_from_edi(
         Additional optional keys that are recognised:
 
         ``"T"`` : complex tipper, shape ``(n, 1, 2)``.
-        ``"PT"`` : phase tensor, shape ``(n, 2, 2)`` (real).
+        ``"P"`` : phase tensor, shape ``(n, 2, 2)`` (real).
         ``"Z_err"`` : impedance uncertainties, same shape as ``"Z"``.
         ``"T_err"`` : tipper uncertainties, same shape as ``"T"``.
-        ``"PT_err"`` : phase tensor uncertainties, same shape as ``"PT"``.
-        ``"rot_deg"`` : rotation angles in degrees, shape ``(n,)``.
+        ``"P_err"`` : phase tensor uncertainties, same shape as ``"P"``.
+        ``"rot"`` : rotation angles in degrees, shape ``(n,)``.
         ``"station"``, ``"lat_deg"``, ``"lon_deg"``, ``"elev_m"``,
         ``"err_kind"`` : metadata copied into ``df.attrs``.
 
@@ -1342,12 +1346,12 @@ def dataframe_from_edi(
         If True (default) and a tipper array is present, include tipper
         components and their uncertainties.
     include_pt : bool, optional
-        If True (default) and a phase tensor array is present, include PT
+        If True (default) and a phase tensor array is present, include P
         components and their uncertainties.
     add_period : bool, optional
         If True (default), add a ``"period"`` column (1/f).
     err_kind : {"var", "std"} or None, optional
-        Interpretation of ``Z_err``, ``T_err`` and ``PT_err``. If None
+        Interpretation of ``Z_err``, ``T_err`` and ``P_err``. If None
         (default), the function tries to infer from ``edi.get("err_kind")``
         and falls back to ``"var"``.
     mu0 : float, optional
@@ -1383,11 +1387,11 @@ def dataframe_from_edi(
         df["period"] = period
 
     # Optional rotation column
-    rot_deg = edi.get("rot_deg")
-    if rot_deg is not None:
-        rot_arr = np.asarray(rot_deg, dtype=float).ravel()
+    rot = edi.get("rot")
+    if rot is not None:
+        rot_arr = np.asarray(rot, dtype=float).ravel()
         if rot_arr.size == n:
-            df["rot_deg"] = rot_arr
+            df["rot"] = rot_arr
 
     # err_kind handling
     if err_kind is None:
@@ -1469,34 +1473,34 @@ def dataframe_from_edi(
             df["Ty_im_err"] = sigma_T[:, 0, 1]
 
     # ------------------------------------------------------------------ Phase tensor
-    if include_pt and "PT" in edi and edi["PT"] is not None:
-        PT = np.asarray(edi["PT"], dtype=float)
-        if PT.shape != (n, 2, 2):
-            raise ValueError("edi['PT'] must have shape (n, 2, 2).")
+    if include_pt and "P" in edi and edi["P"] is not None:
+        P = np.asarray(edi["P"], dtype=float)
+        if P.shape != (n, 2, 2):
+            raise ValueError("edi['P'] must have shape (n, 2, 2).")
 
-        df["ptxx_re"] = PT[:, 0, 0]
-        df["ptxy_re"] = PT[:, 0, 1]
-        df["ptyx_re"] = PT[:, 1, 0]
-        df["ptyy_re"] = PT[:, 1, 1]
+        df["ptxx_re"] = P[:, 0, 0]
+        df["ptxy_re"] = P[:, 0, 1]
+        df["ptyx_re"] = P[:, 1, 0]
+        df["ptyy_re"] = P[:, 1, 1]
 
-        PT_err = edi.get("PT_err")
-        if PT_err is not None:
-            PT_err = np.asarray(PT_err, dtype=float)
-            if PT_err.shape != PT.shape:
-                raise ValueError("edi['PT_err'] must have the same shape as 'PT'.")
+        P_err = edi.get("P_err")
+        if P_err is not None:
+            P_err = np.asarray(P_err, dtype=float)
+            if P_err.shape != P.shape:
+                raise ValueError("edi['P_err'] must have the same shape as 'P'.")
 
             if err_kind == "var":
-                sigma_PT = np.sqrt(PT_err)
+                sigma_P = np.sqrt(P_err)
             else:
-                sigma_PT = PT_err
+                sigma_P = P_err
 
-            df["ptxx_re_err"] = sigma_PT[:, 0, 0]
-            df["ptxy_re_err"] = sigma_PT[:, 0, 1]
-            df["ptyx_re_err"] = sigma_PT[:, 1, 0]
-            df["ptyy_re_err"] = sigma_PT[:, 1, 1]
+            df["ptxx_re_err"] = sigma_P[:, 0, 0]
+            df["ptxy_re_err"] = sigma_P[:, 0, 1]
+            df["ptyx_re_err"] = sigma_P[:, 1, 0]
+            df["ptyy_re_err"] = sigma_P[:, 1, 1]
 
     # ------------------------------------------------------------------ Metadata in attrs
-    meta_keys = ("station", "lat_deg", "lon_deg", "elev_m", "err_kind", "rot_deg")
+    meta_keys = ("station", "lat_deg", "lon_deg", "elev_m", "err_kind", "rot")
     for key in meta_keys:
         if key in edi:
             if key == "err_kind":
