@@ -902,9 +902,38 @@ def rotate_data(edi_dict: Dict[str, Any],
         edi_dict with rotated data
 
     '''
-    sys.exit('rotate_data: not yet implementd! Exit.')
     edi_dict_new = edi_dict.copy
 
+    if degrees:
+        ang = np.radians(angle)
+    else:
+        ang = angle
+
+    c = np.cos(ang)
+    s = np.sin(ang)
+    R = np.array([[c,  s], [-s,  c]])
+
+
+    freq = edi_dict_new['freq']
+    rot = edi_dict_new['rot']
+    Z = edi_dict_new['Z']
+    Zerr = edi_dict_new['Zerr']
+    T = edi_dict_new['T']
+    Terr = edi_dict_new['Terr']
+    PT = edi_dict_new['PT']
+    PTerr = edi_dict_new['PTerr']
+
+    for f in np.arange(len(freq)):
+        Z = R @ Z[f,:,:] @ R.T
+        Zerr = R @ Zerr[f,:,:] @ R.T
+
+    edi_dict_new ['rot'] = rot + angle*np.ones_like(rot)
+    edi_dict_new ['Z'] = Z
+    edi_dict_new ['Zerr'] = Zerr
+    edi_dict_new ['T'] = T
+    edi_dict_new ['Terr'] = Terr
+    edi_dict_new ['PT'] = PT
+    edi_dict_new ['PTerr'] = PTerr
 
     return edi_dict_new
 
