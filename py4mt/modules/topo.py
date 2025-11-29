@@ -20,7 +20,9 @@ import os
 import math
 import requests
 import zipfile
+
 import numpy as np
+import pandas as pd
 import rasterio
 from rasterio.merge import merge
 from rasterio import Affine
@@ -73,7 +75,8 @@ def download_srtm_tile(tile, continent="Eurasia", out_dir="srtm"):
         Path to extracted .hgt file.
     """
     os.makedirs(out_dir, exist_ok=True)
-    url = f"https://dds.cr.usgs.gov/srtm/version2_1/SRTM3/{continent}/{tile}.hgt.zip"
+    url = f"https://dds.cr.usgs.gov/srtm/version2_1/SRTM3/{
+        continent}/{tile}.hgt.zip"
     zpath = os.path.join(out_dir, f"{tile}.hgt.zip")
     hgt_path = os.path.join(out_dir, f"{tile}.hgt")
 
@@ -167,38 +170,52 @@ def rotate_raster(in_path, out_path, angle_deg):
     return out_path
 
 
-def geotiff_to_xyz(in_path, out_path=None):
-    '''
-    gdal_translate -of XYZ input.tif output.xyz
+def geotiff_to_xyz(in_path, out_path=None, as_dataframe=False, step=1):
+    """
+    Convert a GeoTIFF raster into XYZ coordinates.
 
     Parameters
     ----------
-    in_path : string
-        Geotiff file
-    out_path : string, optional
-        xyz-file. The default is "output.xyz".
+    in_path : str
+        Path to input GeoTIFF.
+    out_path : str, optional
+        Path to save XYZ file. If None, no file is written.
+    as_dataframe : bool
+        If True, return a Pandas DataFrame. Otherwise, return a NumPy array.
+    step : int
+        Downsampling factor. Use 1 for full resolution, 2 for every second pixel, etc.
 
     Returns
     -------
-    out_path : string, optional
-        xyz-file. The default is "output.xyz".
-
-
-    '''
+    np.ndarray or pd.DataFrame
+        Array/DataFrame with columns [x, y, z].
+    """
     if out_path is None:
-        out_path = in_path.replace('.tif','.xyz')
+        out_path = in_path.replace('.tif', '.xyz')
 
     with rasterio.open(in_path) as src:
         band = src.read(1)
-        rows, cols = np.where(band != src.nodata)
-        xs, ys = src.xy(rows, cols)
+        nodata = src.nodata
+
+        # Apply downsampling step
+        rows, cols = np.where(band != nodata)
+        rows = rows[::step]
+        cols = cols[::step]
         zs = band[rows, cols]
 
-        with open(out_path, "w") as f:
-            for x, y, z in zip(xs, ys, zs):
-                f.write(f"{x:.6f} {y:.6f} {z:.2f}\n")
+        xs, ys = src.xy(rows, cols)
+        data = np.column_stack([xs, ys, zs])
 
-    return out_path
+        if out_path:
+            with open(out_path, "w") as f:
+                for x, y, z in data:
+                    f.write(f"{x:.6f} {y:.6f} {z:.2f}\n")
+
+        if as_dataframe:
+            return pd.DataFrame(data, columns=["x", "y", "z"])
+        else:
+            return data
+
 
 def process_srtm(lat_min, lat_max, lon_min, lon_max, angle_deg, continent="Eurasia", out_dir="srtm"):
     """
@@ -221,7 +238,10 @@ def process_srtm(lat_min, lat_max, lon_min, lon_max, angle_deg, continent="Euras
         Path to rotated DEM.
     """
     tiles = tiles_for_bbox(lat_min, lat_max, lon_min, lon_max)
-    hgt_files = [download_srtm_tile(t, continent=continent, out_dir=out_dir) for t in tiles]
-    mosaic_path = mosaic_hgt(hgt_files, out_path=os.path.join(out_dir, "srtm_mosaic.tif"))
-    rotated_path = rotate_raster(mosaic_path, os.path.join(out_dir, "srtm_mosaic_rot.tif"), angle_deg)
+    hgt_files = [download_srtm_tile(
+        t, continent=continent, out_dir=out_dir) for t in tiles]
+    mosaic_path = mosaic_hgt(
+        hgt_files, out_path=os.path.join(out_dir, "srtm_mosaic.tif"))
+    rotated_path = rotate_raster(mosaic_path, os.path.join(
+        out_dir, "srtm_mosaic_rot.tif"), angle_deg)
     return rotated_path
