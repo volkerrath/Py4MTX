@@ -1530,6 +1530,14 @@ def make_spline(x: np.ndarray, y: np.ndarray, lam: float | None = None):
     spline : PPoly
         Fitted spline object.
 
+    Usage:
+
+    # Choose new x-values for interpolation
+    x_new = np.linspace(0, 10, 200)
+
+    # Evaluate spline at new points
+    y_new = spline_obj(x_new)
+
     Remarks
     -------
     Author: Volker Rath (DIAS), Date: 2025-11-21
@@ -1537,13 +1545,13 @@ def make_spline(x: np.ndarray, y: np.ndarray, lam: float | None = None):
     """
     sort_idx = np.argsort(x)
     x_sorted, y_sorted = x[sort_idx], y[sort_idx]
-    sobj = make_smoothing_spline(x_sorted, y_sorted, lam=lam)
+    spline_obj = make_smoothing_spline(x_sorted, y_sorted, lam=lam)
 
     if lam is None:
         print("$\lambda$ chosen via GCV (not exposed by BSpline)")
     else:
         print("$\lambsa$ is", lam)
-    return sobj
+    return spline_obj
 
 def estimate_variance(y_true: np.ndarray, y_fit: np.ndarray) -> float:
     """
@@ -1803,3 +1811,38 @@ def write_emtf_xml(data, path):
 
     tree = ET.ElementTree(root)
     tree.write(path, encoding="utf-8", xml_declaration=True)
+
+ # ----------------------------------------------------------------------
+# Conversion helpers: EDI <-> EMTF-XML
+# ----------------------------------------------------------------------
+
+def edi_to_emtf(edi_path, emtf_path):
+    """
+    Convert an EDI file into EMTF-XML.
+
+    Parameters
+    ----------
+    edi_path : str
+        Path to input EDI file.
+    emtf_path : str
+        Path to output EMTF-XML file.
+    """
+    data = load_edi(edi_path)          # parse EDI into dict
+    write_emtf_xml(data, emtf_path)    # write dict into EMTF-XML
+    return emtf_path
+
+
+def emtf_to_edi(emtf_path, edi_path):
+    """
+    Convert an EMTF-XML file into EDI.
+
+    Parameters
+    ----------
+    emtf_path : str
+        Path to input EMTF-XML file.
+    edi_path : str
+        Path to output EDI file.
+    """
+    data = read_emtf_xml(emtf_path)    # parse EMTF-XML into dict
+    save_edi(data, edi_path)          # write dict into EDI
+    return edi_path

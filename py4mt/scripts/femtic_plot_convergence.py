@@ -46,7 +46,7 @@ print(titstrng+'\n\n')
 
 WorkDir = r'/home/vrath/FEMTIC_work/krafla6big_L2_L_curve/'
 PlotName  = r'Krafla_L2_Convergence'
-PlotWhat = 'nrms'
+PlotWhat = 'rough'
 
 # os.chdir(EnsembleDir)
 SearchStrng = 'kra*'
@@ -78,11 +78,15 @@ for directory in dir_list:
             nrmse = float(nline[8])
     
             convergence.append([iteration, alpha, rough, misft, nrmse])
-    
+
+    if len(convergence)==0:
+        print (directory, '/femtic.cnv', ' is empty!')
+        continue
+
     c = np.array(convergence)
-    #print(np.shape(c))
-    ind = np.argsort( c[:,0] );
-    c_sorted  = c[ind]
+    print(np.shape(c))
+    #ind = np.argsort( c[:,0] );
+    #c_sorted  = c  #[ind]
 
     #print(c)
     itern = c[:,0]
@@ -91,9 +95,10 @@ for directory in dir_list:
     misft = c[:,3]
     nrmse = c[:,4]
     
-    print(r'\n#iter', itern)
+    print('#iter', itern)
     print('#misfit', misft)
     print('#nrmse', nrmse)
+    print('#rough', rough)
 
 
 
@@ -101,6 +106,7 @@ for directory in dir_list:
     fig, ax = plt.subplots()
 
     if 'mis' in PlotWhat.lower():
+        print('plotting misfit')
         conv = misft
         formula = r'$\Vert\mathbf{C}_d^{-1/2} (\mathbf{d}_{obs}-\mathbf{d}_{calc})\Vert_2$'
         plt.semilogy(itern, conv,
@@ -112,15 +118,15 @@ for directory in dir_list:
             markeredgecolor='red',
             markerfacecolor='white'
             )
-
         plt.title(PlotName+r'   $\alpha$ = '+str(round(alpha[0],2)))
-        plt.xlabel(r'iteration',fontsize=16)
-        plt.ylabel(r'misfit '+formula,fontsize=16)
+        plt.xlabel(r'iteration',fontsize=14)
+        plt.ylabel(r'misfit '+formula,fontsize=14)
         # plt.tick_params(labelsize='x-large')
         plt.grid('on')
         plt.tight_layout()
 
     elif 'rms' in PlotWhat.lower():
+        print('plotting nrmse')
         conv = nrmse
         formula = r'$\sqrt{N^{-1} \mathbf{C}_d^{-1/2} (\mathbf{d}_{obs}-\mathbf{d}_{calc})_2}$'
         plt.plot(itern, conv,
@@ -132,13 +138,33 @@ for directory in dir_list:
                 markeredgecolor='red',
                 markerfacecolor='white'
                 )
-
-        plt.title(PlotName+r'   $\alpha$ = '+str(round(alpha[0],2)))
-        plt.xlabel(r'iteration',fontsize=16)
-        plt.ylabel(r'nRMS '+formula,fontsize=16)
+        plt.title(PlotName.replace('_',' ')+r' |   $\alpha$ = '+str(round(alpha[0],2)))
+        plt.xlabel(r'iteration',fontsize=14)
+        plt.ylabel(r'nRMS '+formula,fontsize=14)
         # plt.tick_params(labelsize='x-large')
         plt.grid('on')
         plt.tight_layout()
+
+    elif 'rough' in PlotWhat.lower():
+        print('plotting roughness')
+        conv = rough
+        formula = r'$\Vert\mathbf{C}_m^{-1/2} \mathbf{m}\Vert_2$'
+        plt.semilogy(itern, conv,
+                color='green',
+                marker='o',
+                linestyle='dashed',
+                linewidth=1,
+                markersize=7,
+                markeredgecolor='red',
+                markerfacecolor='white'
+                )
+        plt.title(PlotName.replace('_',' ')+r' |   $\alpha$ = '+str(round(alpha[0],2)))
+        plt.xlabel(r'iteration',fontsize=14)
+        plt.ylabel(r'roughness '+formula,fontsize=14)
+        # plt.tick_params(labelsize='x-large')
+        plt.grid('on')
+        plt.tight_layout()
+
 
     else:
         sys.exit('plot_convergence: plotting parameter',PlotWhat.lower(),'not implemented! Exit.')
