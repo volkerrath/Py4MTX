@@ -376,7 +376,7 @@ def generate_model_ensemble(dir_base='./ens_',
 def modify_model(template_file='resistivity_block_iter0.dat',
                  draw_from=['normal', 0., 1.],
                  method='add',
-                 priorcov=None,
+                 priorQ=None,
                  decomposed=False,
                  regeps=1.e-8,
                  out=True):
@@ -387,7 +387,16 @@ def modify_model(template_file='resistivity_block_iter0.dat',
     '''
 #    import numpy as np
 
+
+    # def sample_gaussian_precision_rtr(
+    #     R: np.ndarray | "scipy.sparse.spmatrix",
+    #     n_samples: int = 1,
+    #     lam: float = 0.0,
+    #     solver: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+    #     rng: Optional[Generator] = None,
+    # ) -> np.ndarray:
     # rng = np.random.default_rng()
+
     if template_file is None:
         template_file = 'resistivity_block_iter0.dat'
 
@@ -405,7 +414,7 @@ def modify_model(template_file='resistivity_block_iter0.dat',
         samples = np.random.uniform(
             low=draw_from[1], high=draw_from[2], size=n_cells-2)
 
-    if priorcov is not None:
+    if priorQ is not None:
         if decomposed:
             S = priorcov
         else:
