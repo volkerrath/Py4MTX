@@ -46,7 +46,7 @@ print(titstrng+'\n\n')
 
 WorkDir = r'/home/vrath/FEMTIC_work/krafla6big_L2_L_curve/'
 PlotName  = r'Krafla_L2_Convergence'
-
+PlotWhat = 'nrms'
 
 # os.chdir(EnsembleDir)
 SearchStrng = 'kra*'
@@ -56,12 +56,14 @@ dir_list = utl.get_filelist(searchstr=[SearchStrng], searchpath=WorkDir,
 
 for directory in dir_list:
     convergence = []
+    iteration = -1
     with open(directory+'/femtic.cnv') as cnv:
         content = cnv.readlines()
         for line in content:
 
             if '#' in line:
                 continue
+            iteration = iteration +1
             #print (line)
             nline = line.split()
             #print(nline)
@@ -69,13 +71,13 @@ for directory in dir_list:
             retry = int(nline[1])
             if retry>0:
                 itern = itern+retry
-            print(itern)
+            # print(itern)
             alpha = float(nline[2])
             rough = float(nline[5])
             misft = float(nline[7])
             nrmse = float(nline[8])
     
-            convergence.append([itern, alpha, rough, misft, nrmse])
+            convergence.append([iteration, alpha, rough, misft, nrmse])
     
     c = np.array(convergence)
     #print(np.shape(c))
@@ -89,13 +91,19 @@ for directory in dir_list:
     misft = c[:,3]
     nrmse = c[:,4]
     
-    print('#iter', itern)
+    print(r'\n#iter', itern)
     print('#misfit', misft)
+    print('#nrmse', nrmse)
+
+
 
 
     fig, ax = plt.subplots()
 
-    plt.semilogy(itern, misft,
+    if 'mis' in PlotWhat.lower():
+        conv = misft
+        formula = r'$\Vert\mathbf{C}_d^{-1/2} (\mathbf{d}_{obs}-\mathbf{d}_{calc})\Vert_2$'
+        plt.semilogy(itern, conv,
             color='green',
             marker='o',
             linestyle='dashed',
@@ -105,15 +113,35 @@ for directory in dir_list:
             markerfacecolor='white'
             )
 
-    #nrmsformula = r'$\sqrt{N^{-1} \mathbf{C}_d^{-1/2} (\mathbf{d}_{obs}-\mathbf{d}_{calc})_2}$'
-    formula = r'$\Vert\mathbf{C}_d^{-1/2} (\mathbf{d}_{obs}-\mathbf{d}_{calc})\Vert_2$'
+        plt.title(PlotName+r'   $\alpha$ = '+str(round(alpha[0],2)))
+        plt.xlabel(r'iteration',fontsize=16)
+        plt.ylabel(r'misfit '+formula,fontsize=16)
+        # plt.tick_params(labelsize='x-large')
+        plt.grid('on')
+        plt.tight_layout()
 
-    plt.title(PlotName+r'   $\alpha$ = '+str(round(alpha[0],2)))
-    plt.xlabel(r'iteration',fontsize=18)
-    plt.ylabel(r'misfit '+formula,fontsize=18)
+    elif 'rms' in PlotWhat.lower():
+        conv = nrmse
+        formula = r'$\sqrt{N^{-1} \mathbf{C}_d^{-1/2} (\mathbf{d}_{obs}-\mathbf{d}_{calc})_2}$'
+        plt.plot(itern, conv,
+                color='green',
+                marker='o',
+                linestyle='dashed',
+                linewidth=1,
+                markersize=7,
+                markeredgecolor='red',
+                markerfacecolor='white'
+                )
 
-    # plt.tick_params(labelsize='x-large')
-    plt.grid('on')
-    plt.tight_layout()
-        
-    plt.savefig(WorkDir+PlotName+'_alpha'+str(round(alpha[0],2))+'.pdf')
+        plt.title(PlotName+r'   $\alpha$ = '+str(round(alpha[0],2)))
+        plt.xlabel(r'iteration',fontsize=16)
+        plt.ylabel(r'nRMS '+formula,fontsize=16)
+        # plt.tick_params(labelsize='x-large')
+        plt.grid('on')
+        plt.tight_layout()
+
+    else:
+        sys.exit('plot_convergence: plotting parameter',PlotWhat.lower(),'not implemented! Exit.')
+
+
+    plt.savefig(WorkDir+PlotName+'_'+PlotWhat.lower()+'_alpha'+str(round(alpha[0],2))+'.pdf')

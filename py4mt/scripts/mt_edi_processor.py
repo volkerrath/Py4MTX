@@ -45,8 +45,8 @@ import mtproc as mtp
 from scipy.interpolate import make_smoothing_spline
 from ediviz import add_phase, add_rho, add_tipper, add_pt
 from ediproc import load_edi, save_edi, save_ncd, save_hdf
-from ediproc import compute_pt, dataframe_from_arrays
-from ediproc import set_errors, estimate_errors, rotate_z
+from ediproc import compute_pt, dataframe_from_arrays, interpolate_data
+from ediproc import set_errors, estimate_errors, rotate_data
 
 from version import versionstrg
 

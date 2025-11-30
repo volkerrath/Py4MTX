@@ -1724,3 +1724,82 @@ def save_ncd(
     ds.attrs["dataset_name"] = dataset_name
 
     ds.to_netcdf(path.as_posix(), engine=engine)
+
+# ----------------------------------------------------------------------
+# EMTF-XML I/O (new)
+# ----------------------------------------------------------------------
+
+def read_emtf_xml(path):
+    """
+    Read MT data from an EMTF-XML file.
+
+    Parameters
+    ----------
+    path : str
+        Path to EMTF-XML file.
+
+    Returns
+    -------
+    dict
+        Dictionary with metadata and transfer functions.
+    """
+    import xml.etree.ElementTree as ET
+
+    tree = ET.parse(path)
+    root = tree.getroot()
+
+    ns = {"emtf": "http://emtf.org/schema"}  # adjust namespace if needed
+
+    # Example: parse station metadata
+    station = root.find("emtf:Station", ns)
+    metadata = {
+        "id": station.get("id"),
+        "name": station.findtext("emtf:Name", default="", namespaces=ns),
+        "latitude": float(station.findtext("emtf:Latitude", default="nan", namespaces=ns)),
+        "longitude": float(station.findtext("emtf:Longitude", default="nan", namespaces=ns)),
+    }
+
+    # Example: parse transfer function values
+    tf_elements = root.findall("emtf:TransferFunction/emtf:Component", ns)
+    transfer_functions = {}
+    for comp in tf_elements:
+        cname = comp.get("name")
+        values = [float(v.text) for v in comp.findall("emtf:Value", ns)]
+        transfer_functions[cname] = np.array(values)
+
+    return {"metadata": metadata, "transfer_functions": transfer_functions}
+
+
+def write_emtf_xml(data, path):
+    """
+    Write MT data to an EMTF-XML file.
+
+    Parameters
+    ----------
+    data : dict
+        Dictionary with metadata and transfer functions.
+    path : str
+        Output file path.
+    """
+    import xml.etree.ElementTree as ET
+
+    ns = "http://emtf.org/schema"
+    ET.register_namespace("emtf", ns)
+
+    root = ET.Element("{%s}EMTF" % ns)
+
+    # Station metadata
+    station = ET.SubElement(root, "{%s}Station" % ns, id=data["metadata"].get("id", ""))
+    ET.SubElement(station, "{%s}Name" % ns).text = data["metadata"].get("name", "")
+    ET.SubElement(station, "{%s}Latitude" % ns).text = str(data["metadata"].get("latitude", ""))
+    ET.SubElement(station, "{%s}Longitude" % ns).text = str(data["metadata"].get("longitude", ""))
+
+    # Transfer functions
+    tf = ET.SubElement(root, "{%s}TransferFunction" % ns)
+    for cname, values in data["transfer_functions"].items():
+        comp = ET.SubElement(tf, "{%s}Component" % ns, name=cname)
+        for v in values:
+            ET.SubElement(comp, "{%s}Value" % ns).text = str(v)
+
+    tree = ET.ElementTree(root)
+    tree.write(path, encoding="utf-8", xml_declaration=True)

@@ -110,7 +110,7 @@ if 'nrms' in PlotWhat.lower():
         
     
     
-    xformula = r'nRMS'
+    xformula = r'$\Vert\mathbf{C}_d^{-1/2} (\mathbf{d}_{obs}-\mathbf{d}_{calc})\Vert_2$'
     plt.xlabel(r'misfit '+xformula,fontsize=FontLabel)
     
     yformula = r'$\Vert\mathbf{C}_m^{-1/2} \mathbf{m}\Vert_2$'
