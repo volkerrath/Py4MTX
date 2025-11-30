@@ -55,7 +55,7 @@ dir_list = utl.get_filelist(searchstr=[SearchStrng], searchpath=WorkDir,
                             sortedlist =True, fullpath=True)
 
 PlotWhat = 'nrms'
-FontLabel = 14
+
 
 
 l_curve=[]
@@ -71,8 +71,8 @@ for directory in dir_list:
     nrmse = float(line[8])
     
     l_curve.append([alpha, rough, misft, nrmse ])
-  
- 
+
+
 lc = np.array(l_curve).reshape((-1,4))
 ind = np.argsort( lc[:,0] ); 
 lc_sorted  = lc[ind]
@@ -88,7 +88,6 @@ print('r',r)
 print('m',m)
 print('n',n)
 
-#plt.rcParams['text.usetex'] = True
 
 fig, ax = plt.subplots()
 
@@ -109,12 +108,13 @@ if 'nrms' in PlotWhat.lower():
         plt.annotate(str(alph),[n[k],r[k]])
         
     
-    
+    plt.title(PlotName.replace('_',' '))
+
     xformula = r'$\Vert\mathbf{C}_d^{-1/2} (\mathbf{d}_{obs}-\mathbf{d}_{calc})\Vert_2$'
-    plt.xlabel(r'misfit '+xformula,fontsize=FontLabel)
+    plt.xlabel(r'misfit '+xformula,fontsize=14)
     
     yformula = r'$\Vert\mathbf{C}_m^{-1/2} \mathbf{m}\Vert_2$'
-    plt.ylabel(r'roughness '+yformula,fontsize=FontLabel)
+    plt.ylabel(r'roughness '+yformula,fontsize=14)
 
 # plt.tick_params(labelsize='x-large')
     plt.grid('on')
@@ -142,10 +142,10 @@ else:
     
     
     xformula = r'$\Vert\mathbf{C}_d^{-1/2} (\mathbf{d}_{obs}-\mathbf{d}_{calc})\Vert_2$'
-    plt.xlabel(r'misfit '+xformula,fontsize=FontLabel)
+    plt.xlabel(r'misfit '+xformula,fontsize=14)
     
     yformula = r'$\Vert\mathbf{C}_m^{-1/2} \mathbf{m}\Vert_2$'
-    plt.ylabel(r'roughness '+yformula,fontsize=FontLabel)
+    plt.ylabel(r'roughness '+yformula,fontsize=14)
 
 # plt.tick_params(labelsize='x-large')
     plt.grid('on')
