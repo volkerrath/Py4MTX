@@ -46,16 +46,16 @@ titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng+'\n\n')
 
 
-WorkDir = r'/home/vrath/FEMTIC_work/Misti_lcurve/'
-PlotName  = WorkDir+'Misti'+'_L-Curve'
+WorkDir = r'/home/vrath/FEMTIC_work/krafla6big_L2_L_curve/'
+PlotName  = WorkDir+'Krafla_L2_L-Curve'
 
 # os.chdir(EnsembleDir)
-SearchStrng = 'lc_*'
+SearchStrng = 'kra*'
 dir_list = utl.get_filelist(searchstr=[SearchStrng], searchpath=WorkDir, 
                             sortedlist =True, fullpath=True)
 
 PlotWhat = 'nrms'
-FontLabel = 16
+FontLabel = 14
 
 
 l_curve=[]
@@ -76,19 +76,25 @@ for directory in dir_list:
 lc = np.array(l_curve).reshape((-1,4))
 ind = np.argsort( lc[:,0] ); 
 lc_sorted  = lc[ind]
-lc_sorted = np.delete(lc_sorted, 0, 0)
+#lc_sorted = np.delete(lc_sorted, 0, 0)
 #lc_sorted = np.sort(lc, axis=1)
 
 a = lc_sorted[:,0]
 r = lc_sorted[:,1]
 m = lc_sorted[:,2]
 n = lc_sorted[:,3]
+print('a',a)
+print('r',r)
+print('m',m)
+print('n',n)
+
+#plt.rcParams['text.usetex'] = True
 
 fig, ax = plt.subplots()
 
 if 'nrms' in PlotWhat.lower():
 
-    plt.plot(n, r, 
+    plt.plot(n, r,
              color='green', 
              marker='o', 
              linestyle='dashed',
@@ -104,10 +110,10 @@ if 'nrms' in PlotWhat.lower():
         
     
     
-    xformula = '$nRMS$'
+    xformula = r'nRMS'
     plt.xlabel(r'misfit '+xformula,fontsize=FontLabel)
     
-    yformula = '$\parallel\mathbf{C}_m^{-1/2} \mathbf{m}\parallel_2$'
+    yformula = r'$\Vert\mathbf{C}_m^{-1/2} \mathbf{m}\Vert_2$'
     plt.ylabel(r'roughness '+yformula,fontsize=FontLabel)
 
 # plt.tick_params(labelsize='x-large')
@@ -135,10 +141,10 @@ else:
         
     
     
-    xformula = '$\parallel\mathbf{C}_d^{-1/2} (\mathbf{d}_{obs}-\mathbf{d}_{calc})\parallel_2$'
+    xformula = r'$\Vert\mathbf{C}_d^{-1/2} (\mathbf{d}_{obs}-\mathbf{d}_{calc})\Vert_2$'
     plt.xlabel(r'misfit '+xformula,fontsize=FontLabel)
     
-    yformula = '$\parallel\mathbf{C}_m^{-1/2} \mathbf{m}\parallel_2$'
+    yformula = r'$\Vert\mathbf{C}_m^{-1/2} \mathbf{m}\Vert_2$'
     plt.ylabel(r'roughness '+yformula,fontsize=FontLabel)
 
 # plt.tick_params(labelsize='x-large')
