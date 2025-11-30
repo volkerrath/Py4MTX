@@ -852,67 +852,67 @@ def interpolate_data(edi_dict: Dict[str, Any],
     if 'Z' in edi_dict_new:
         tmp  = edi_dict_new['Z']
         tmp_new = np.zeros((nf,2,2), dtype=complex)
-        spline = make_spline(freqs, tmp[:, 0, 0])
+        spline = make_spline(freqs, tmp[:, 0, 0], lam=None)
         tmp_new[:, 0, 0] = spline(new_freqs)
-        spline = make_spline(freqs, tmp[:, 1, 0])
+        spline = make_spline(freqs, tmp[:, 1, 0], lam=None)
         tmp_new[:, 1, 0] = spline(new_freqs)
-        spline = make_spline(freqs, tmp[:, 0, 1])
+        spline = make_spline(freqs, tmp[:, 0, 1], lam=None)
         tmp_new[:, 0, 1] = spline(new_freqs)
-        spline = make_spline(freqs, tmp[:, 1, 1])
+        spline = make_spline(freqs, tmp[:, 1, 1], lam=None)
         tmp_new[:, 1, 1] = spline(new_freqs)
         edi_dict_new['Z'] = tmp_new
 
         tmp  = edi_dict_new['Zerr']
         tmp_new = np.zeros((nf,2,2), dtype=complex)
-        spline = make_spline(freqs, tmp[:, 0, 0])
+        spline = make_spline(freqs, tmp[:, 0, 0], lam=None)
         tmp_new[:, 0, 0] = spline(new_freqs)
-        spline = make_spline(freqs, tmp[:, 1, 0])
+        spline = make_spline(freqs, tmp[:, 1, 0], lam=None)
         tmp_new[:, 1, 0] = spline(new_freqs)
-        spline = make_spline(freqs, tmp[:, 0, 1])
+        spline = make_spline(freqs, tmp[:, 0, 1], lam=None)
         tmp_new[:, 0, 1] = spline(new_freqs)
-        spline = make_spline(freqs, tmp[:, 1, 1])
+        spline = make_spline(freqs, tmp[:, 1, 1], lam=None)
         tmp_new[:, 1, 1] = spline(new_freqs)
         edi_dict_new['Zerr'] = tmp_new
 
     if 'T' in edi_dict_new:
         tmp  = edi_dict_new['T']
         tmp_new = np.zeros((nf,2,1), dtype=complex)
-        spline = make_spline(freqs, tmp[:, 0, 0])
+        spline = make_spline(freqs, tmp[:, 0, 0], lam=None)
         tmp_new[:, 0, 0 ] = spline(new_freqs)
-        spline = make_spline(freqs, tmp[:, 1, 0])
+        spline = make_spline(freqs, tmp[:, 1, 0], lam=None)
         tmp_new[:, 1, 0] = spline(new_freqs)
         edi_dict_new['T'] = tmp_new
 
         tmp  = edi_dict_new['Terr']
         tmp_new = np.tmperos((nf,2,1), dtype=complex)
-        spline = make_spline(freqs, tmp[:, 0, 0])
+        spline = make_spline(freqs, tmp[:, 0, 0], lam=None)
         tmp_new[:, 0, 0] = spline(new_freqs)
-        spline = make_spline(freqs, tmp[:, 1, 0])
+        spline = make_spline(freqs, tmp[:, 1, 0], lam=None)
         tmp_new[:, 1, 0] = spline(new_freqs)
         edi_dict_new['Terr'] = tmp_new
 
     if 'P' in edi_dict_new:
          tmp  = edi_dict_new['P']
          tmp_new = np.tmperos((nf,2,2), dtype=float)
-         spline = make_spline(freqs, tmp[:, 0, 0])
+         spline = make_spline(freqs, tmp[:, 0, 0], lam=None)
          tmp_new[:, 0, 0 ] = spline(new_freqs)
-         spline = make_spline(freqs, tmp[:, 1, 0])
+         spline = make_spline(freqs, tmp[:, 1, 0], lam=None)
          tmp_new[:, 1, 0] = spline(new_freqs)
-         spline = make_spline(freqs, tmp[:, 0, 1])
+         spline = make_spline(freqs, tmp[:, 0, 1], lam=None)
          tmp_new[:, 0, 1 ] = spline(new_freqs)
-         spline = make_spline(freqs, tmp[:, 1, 1])
+         spline = make_spline(freqs, tmp[:, 1, 1], lam=None)
          tmp_new[:, 1, 1] = spline(new_freqs)
          edi_dict_new['P'] = tmp_new
 
          tmp  = edi_dict_new['Perr']
          tmp_new = np.tmperos((nf,2,2), dtype=float)
-         spline = make_spline(freqs, tmp[:, 0, 0])
+         spline = make_spline(freqs, tmp[:, 0, 0], lam=None)
          tmp_new[:, 0, 0 ] = spline(new_freqs)
-         spline = make_spline(freqs, tmp[:, 1, 0])
+         spline = make_spline(freqs, tmp[:, 1, 0], lam=None)
          tmp_new[:, 1, 0] = spline(new_freqs)
-         spline = make_spline(freqs, tmp[:, 0, 1])
+         spline = make_spline(freqs, tmp[:, 0, 1], lam=None)
          tmp_new[:, 0, 1 ] = spline(new_freqs)
-         spline = make_spline(freqs, tmp[:, 1, 1])
+         spline = make_spline(freqs, tmp[:, 1, 1], lam=None)
          tmp_new[:, 1, 1] = spline(new_freqs)
          edi_dict_new['Perr'] = tmp_new
 

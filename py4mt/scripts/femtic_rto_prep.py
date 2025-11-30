@@ -161,7 +161,7 @@ model_ensemble = fem.generate_model_ensemble(dir_base=EnsembleDir + EnsembleName
                                              file_in='resistivity_block_iter0.dat',
                                              draw_from=Mod_pdf,
                                              method=Mod_method,
-                                             priorq=Q,
+                                             q=Q,
                                              out=True)
 print('\n')
 
