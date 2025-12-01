@@ -35,7 +35,6 @@ import scipy
 from scipy.spatial.distance import cdist
 
 
-
 from scipy.sparse.linalg import LinearOperator, cg, eigsh
 
 
