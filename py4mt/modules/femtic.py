@@ -1,4 +1,7 @@
 
+from __future__ import annotations
+
+
 import os
 import sys
 import shutil
@@ -8,7 +11,6 @@ import time
 from datetime import datetime
 
 
-from __future__ import annotations
 
 from typing import Callable, Optional, Sequence, Tuple, Dict, Literal
 from numpy.random import Generator, default_rng
