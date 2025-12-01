@@ -73,13 +73,9 @@ RoughFile = WorkDir + 'roughening_matrix.out'
 
 
 
-SparseFormat = 'coo'
-RoughNew = WorkDir+'R_'+SparseFormat+'.npz'
-
-
 OutRough = 'R'
 SparseFormat = 'coo'
-
+RoughNew = WorkDir+OutRough+'_'+SparseFormat+'.npz'
 
 
 R   = fem.get_roughness(filerough=RoughFile,
