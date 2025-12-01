@@ -12,6 +12,8 @@ import ast
 import fnmatch
 import inspect
 import math
+import pathlib
+import shutil
 
 import numpy as np
 from scipy.ndimage import gaussian_filter, laplace, convolve, gaussian_gradient_magnitude
@@ -1022,3 +1024,82 @@ def print_title(version='0.99.99', fname='', form='%m/%d/%Y, %H:%M:%S', out=True
         print(title)
 
     return title
+
+def symlink(src: str, dst: str) -> None:
+    """
+    Create a symbolic link with force option (like `ln -sf`).
+
+    Parameters
+    ----------
+    src : str
+        Path to the source file or directory.
+    dst : str
+        Path to the destination symlink.
+
+    Notes
+    -----
+    - If `dst` already exists (file, symlink, or directory), it will be removed.
+    - Directories are removed recursively if non-empty.
+    - This function mimics the Unix `ln -sf` behavior.
+
+    Author: Volker Rath (DIAS)
+    Copilot (version) and date: Copilot v1.0, 2025-12-01
+    """
+    try:
+        dst_path = pathlib.Path(dst)
+
+        # Remove existing destination if present
+        if dst_path.exists() or dst_path.is_symlink():
+            if dst_path.is_dir() and not dst_path.is_symlink():
+                shutil.rmtree(dst_path)  # remove non-empty directory
+            else:
+                dst_path.unlink()  # remove file or symlink
+
+        os.symlink(src, dst)
+        print(f"Symlink created: {dst} → {src}")
+
+    except Exception as e:
+        raise RuntimeError(f"Failed to create symlink {dst} → {src}: {e}") from e
+
+
+
+def filecopy(src: str, dst: str) -> None:
+    """
+    Copy a file or directory with force option (like `cp -f`).
+
+    Parameters
+    ----------
+    src : str
+        Path to the source file or directory.
+    dst : str
+        Path to the destination file or directory.
+
+    Notes
+    -----
+    - If `dst` already exists, it will be removed before copying.
+    - Directories are copied recursively.
+    - Metadata (timestamps, permissions) are preserved for files.
+    """
+    try:
+        src_path = pathlib.Path(src)
+        dst_path = pathlib.Path(dst)
+
+        if not src_path.exists():
+            raise FileNotFoundError(f"Source {src} does not exist")
+
+        # Remove existing destination
+        if dst_path.exists():
+            if dst_path.is_dir():
+                shutil.rmtree(dst_path)
+            else:
+                dst_path.unlink()
+
+        if src_path.is_dir():
+            shutil.copytree(src_path, dst_path)
+        else:
+            shutil.copy2(src_path, dst_path)
+
+        print(f"Copied {src} → {dst}")
+
+    except Exception as e:
+        raise RuntimeError(f"Failed to copy {src} → {dst}: {e}") from e
