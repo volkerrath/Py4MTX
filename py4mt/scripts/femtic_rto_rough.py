@@ -68,12 +68,12 @@ fname = inspect.getfile(inspect.currentframe())
 titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng+'\n\n')
 
-WorkDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
+WorkDir = '/home/vrath/Ensembles/misti_rto/work/' #PY4MTX_DATA+'Misti/MISTI_test/'
 RoughFile = WorkDir + 'roughening_matrix.out'
 
 
 
-OutRough = 'R'
+OutRough = 'Q'
 SparseFormat = 'coo'
 RoughNew = WorkDir+OutRough+'_'+SparseFormat+'.npz'
 
@@ -83,18 +83,16 @@ R   = fem.get_roughness(filerough=RoughFile,
                    out=True)
 
 
-if 'Q' in OutRough.lower():
-    R = R.T@R
-    fem.check_sparse_matrix(R)
+if 'q' in OutRough.lower():
+    Q = R.T@R
+    fem.check_sparse_matrix(Q)
     RoughNew = WorkDir+'Q_'+SparseFormat+'.npz'
     print('saved to', RoughNew)
-    print('Sparse format is', R.format)
-    M = {'Q': R}
+    print('Sparse format is', Q.format)
+    scs.save_npz(RoughNew, Q)
 else:
     fem.check_sparse_matrix(R)
     RoughNew = WorkDir+'R_'+SparseFormat+'.npz'
     print('saved to', RoughNew)
     print('Sparse format is', R.format)
-    M = {'R': R}
-
-scs.save_npz(RoughNew, **M)
+    scs.save_npz(RoughNew, R)
