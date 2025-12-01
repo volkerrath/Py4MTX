@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Author: Volker Rath (DIAS)
+# Copilot (version) and date: v1.0, 2025-12-01
+
+# Purpose: Safely create or overwrite a symbolic link with provenance tracking
+# Usage: safe_ln /path/to/source /path/to/link true
+#     -e checks if the target exists (file, dir, or symlink).
+#     -L checks specifically for symlinks.
+set -euo pipefail
+
+SOURCE="$1"
+TARGET="$2"
+BACKUP="${3:-false}"   # optional third argument: "true" to enable backup
+
+# Check if target exists
+if [ -e "$TARGET" ] || [ -L "$TARGET" ]; then
+    echo "Target '$TARGET' already exists."
+
+    if [ "$BACKUP" = "true" ]; then
+        BACKUP_NAME="${TARGET}.bak.$(date +%Y%m%d%H%M%S)"
+        echo "Backing up existing target to '$BACKUP_NAME'..."
+        mv "$TARGET" "$BACKUP_NAME"
+    else
+        echo "Removing existing target..."
+        rm -rf "$TARGET"
+    fi
+fi
+
+# Create symbolic link
+ln -s "$SOURCE" "$TARGET"
+echo "Symlink created: $TARGET → $SOURCE"
+
