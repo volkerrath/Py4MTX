@@ -399,9 +399,7 @@ def generate_model_ensemble(dir_base='./ens_',
         DESCRIPTION.
 
     '''
-    '''
 
-        '''
     samples = sample_gaussian_precision_rtr(
         R=q,
         n_samples=n_samples,
@@ -1835,10 +1833,11 @@ def sample_gaussian_precision_rtr(
 
     samples = np.empty((n_samples, n), dtype=np.float64)
 
-    for i in range(n_samples):
+    for ix in range(n_samples):
+        print('Sample:', str(ix), 'of', str(n_samples))
         xi = rng.standard_normal(size=m)
         b = R.T @ xi
-        samples[i, :] = solver(b)
+        samples[ix, :] = solver(b)
 
     return samples
 

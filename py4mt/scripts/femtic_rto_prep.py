@@ -64,6 +64,11 @@ from version import versionstrg
 import util as utl
 import femtic as fem
 
+N_THREADS = '10'
+os.environ['OMP_NUM_THREADS'] = N_THREADS
+os.environ['OPENBLAS_NUM_THREADS'] = N_THREADS
+os.environ['MKL_NUM_THREADS'] = N_THREADS
+
 rng = np.random.default_rng()
 nan = np.nan  # float('NaN')
 version, _ = versionstrg()
@@ -142,7 +147,24 @@ dir_list = fem.generate_directories(
     fromto=FromTo,
     out=True)
 
+print('\n')
 
+'''
+Draw perturbed data sets: d  ̃ ∼ N (d, Cd)
+'''
+
+data_ensemble = fem.generate_data_ensemble(dir_base=EnsembleDir + EnsembleName,
+                                           n_samples=N_samples,
+                                           fromto=FromTo,
+                                           file_in='observe.dat',
+                                           draw_from=Dat_pdf,
+                                           method=Dat_method,
+                                           errors=Errors,
+                                           out=True)
+
+print('data ensemble ready!')
+
+print('\n')
 '''
 Draw perturbed model sets: d  ̃ ∼ N (m, Cm)
 
@@ -165,16 +187,4 @@ model_ensemble = fem.generate_model_ensemble(dir_base=EnsembleDir + EnsembleName
                                              q=Q,
                                              out=True)
 print('\n')
-
-'''
-Draw perturbed data sets: d  ̃ ∼ N (d, Cd)
-'''
-
-data_ensemble = fem.generate_data_ensemble(dir_base=EnsembleDir + EnsembleName,
-                                           n_samples=N_samples,
-                                           fromto=FromTo,
-                                           file_in='observe.dat',
-                                           draw_from=Dat_pdf,
-                                           method=Dat_method,
-                                           errors=Errors,
-                                           out=True)
+print('model ensemble ready!')
