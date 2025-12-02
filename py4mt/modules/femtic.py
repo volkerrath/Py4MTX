@@ -208,22 +208,22 @@ def modify_data(template_file='observe.dat',
                     new_errors = errors[0]
                     print('MT errors will be replaced with relative errors:')
                     print(new_errors)
-                    for line in obs:
+                    for comp in obs:
                         # print(np.arange(1,dat_length+1))
                         # print(freq)
                         for ii in np.arange(1, dat_length+1):
                             print(site, '   ', ii, ii+dat_length)
-                            val = line[ii]
+                            val = comp[ii]
                             err = val*new_errors
-                            line[ii+dat_length] = err
+                            comp[ii+dat_length] = err
 
-                for line in obs:
+                for comp in obs:
 
                     for ii in np.arange(1, dat_length+1):
                         print(site, '   ', ii, ii+dat_length)
-                        val = line[ii]
-                        err = line[ii+dat_length]
-                        line[ii] = np.random.normal(loc=val, scale=err)
+                        val = comp[ii]
+                        err = comp[ii+dat_length]
+                        comp[ii] = np.random.normal(loc=val, scale=err)
 
                 '''
                 now write new values
@@ -267,14 +267,14 @@ def modify_data(template_file='observe.dat',
                                 err = new_errors
                                 line[ii+dat_length] = err
 
-                    for line in obs:
+                    for comp in obs:
                         # print(np.arange(1,dat_length+1))
                         # print(freq)
                         for ii in np.arange(1, dat_length+1):
                             print(site, '   ', ii, ii+dat_length)
-                            val = line[ii]
-                            err = line[ii+dat_length]
-                            line[ii] = np.random.normal(loc=val, scale=err)
+                            val = comp[ii]
+                            err = comp[ii+dat_length]
+                            comp[ii] = np.random.normal(loc=val, scale=err)
 
                 '''
                 now write new values
@@ -309,23 +309,23 @@ def modify_data(template_file='observe.dat',
                         new_errors = errors[1]
                         print('VTF errors will be replaced with relative errors:')
                         print(new_errors)
-                        for line in obs:
+                        for comp in obs:
                             # print(np.arange(1,dat_length+1))
                             # print(freq)
                             for ii in np.arange(1, dat_length+1):
                                 print(site, '   ', ii, ii+dat_length)
-                                val = line[ii]
+                                val = comp[ii]
                                 err = new_errors
-                                line[ii+dat_length] = err
+                                comp[ii+dat_length] = err
 
-                    for line in obs:
+                    for comp in obs:
                         # print(np.arange(1,dat_length+1))
                         # print(freq)
                         for ii in np.arange(1, dat_length+1):
                             print(site, '   ', ii, ii+dat_length)
-                            val = line[ii]
-                            err = line[ii+dat_length]
-                            line[ii] = np.random.normal(loc=val, scale=err)
+                            val = comp[ii]
+                            err = comp[ii+dat_length]
+                            comp[ii] = np.random.normal(loc=val, scale=err)
 
                 '''
                 now write new values
@@ -1914,7 +1914,8 @@ def sample_low_rank_from_precision_eigpairs(
 
     inv_sqrt = 1.0 / np.sqrt(eigvals)
 
-    for i in range(n_samples):
+    for ix in range(n_samples):
+        print('Sample:', str(ix), 'of', str(n_samples))
         z = rng.standard_normal(size=k)
         scaled = inv_sqrt * z
         x = eigvecs @ scaled
@@ -1923,7 +1924,7 @@ def sample_low_rank_from_precision_eigpairs(
             z_perp = rng.standard_normal(size=n)
             x = x + np.sqrt(sigma2_residual) * z_perp
 
-        samples[i, :] = x
+        samples[ix, :] = x
 
     return samples
 
