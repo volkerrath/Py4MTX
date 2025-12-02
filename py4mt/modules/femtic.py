@@ -40,10 +40,18 @@ def generate_directories(
                    'run_dub.sh',
                    'run_oar_sh'],
         n_samples=1,
+        fromto = None,
         out=True):
 
+
+    if fromto is None:
+        from_to = np.arange(n_samples)
+    else:
+        from_to = np.arange(fromto[0],fromto[1])
+
+
     dir_list = []
-    for iens in np.arange(n_samples):
+    for iens in from_to:
         directory = dir_base+str(iens)+'/'
         os.makedirs(directory, exist_ok=True)
         copy_files(file_list, directory, templates)
@@ -351,7 +359,7 @@ def modify_data(template_file='observe.dat',
 def generate_model_ensemble(dir_base='./ens_',
                             n_samples=1,
                             fromto = None,
-                            template='resistivity_block_iter0.dat',
+                            refmod='resistivity_block_iter0.dat',
                             q=None,
                             method='add',
                             out=True):
@@ -376,7 +384,7 @@ def generate_model_ensemble(dir_base='./ens_',
         DESCRIPTION. The default is 1.
     fromto : TYPE, optional
         DESCRIPTION. The default is None.
-    template : TYPE, optional
+    refmod : TYPE, optional
         DESCRIPTION. The default is 'resistivity_block_iter0.dat'.
     q : TYPE, optional
         DESCRIPTION. The default is None.
@@ -401,12 +409,12 @@ def generate_model_ensemble(dir_base='./ens_',
 
     mod_list = []
     for iens in np.arange(n_samples):
-        file = dir_base+str(iens)+'/'+template
+        file = dir_base+str(iens)+'/'+refmod
         shutil.copy(file, file.replace('.dat', '_orig.dat'))
         '''
         generate perturbed model
         '''
-        insert_model(template =template,
+        insert_model(refmod =refmod,
                          data=samples[iens,:],
                          data_file=None,
                          data_name='sample'+str(iens))
@@ -1714,7 +1722,8 @@ def build_rtr_operator(
 def make_cg_precision_solver(
     R: np.ndarray | "scipy.sparse.spmatrix",
     lam: float = 0.0,
-    tol: float = 1e-8,
+    rtol: float = 1e-6,
+    atol: float =0.,
     maxiter: Optional[int] = None,
     M: Optional[LinearOperator] = None,
 ) -> Callable[[np.ndarray], np.ndarray]:
@@ -1758,7 +1767,7 @@ def make_cg_precision_solver(
 
     def solve_Q(b: np.ndarray) -> np.ndarray:
         """Solve Q x = b with conjugate gradients."""
-        x, info = cg(Q_op, b, tol=tol, maxiter=maxiter, M=M)
+        x, info = cg(Q_op, b, rtol=rtol, maxiter=maxiter, M=M)
         if info != 0:
             raise RuntimeError(f"CG did not converge, info={info}")
         return x

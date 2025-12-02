@@ -46,6 +46,7 @@ specialized toolboxes settings and imports.
 # import sklearn as skl
 # from sklearn.covariance import empirical_covariance
 
+import scipy.sparse as scs
 
 '''
 Py4MTX-specific settings and imports.
@@ -75,23 +76,23 @@ print(titstrng + '\n\n')
 Base setup.
 '''
 N_samples = 32
-EnsembleDir = r'/home/vrath/work/Ensemble/RTO/'
+EnsembleDir = r'/home/vrath/FEMTIC_work/misti_ens/'
 Templates = EnsembleDir + 'templates/'
 Files = ['control.dat',
          'observe.dat',
          'mesh.dat',
          'resistivity_block_iter0.dat',
          'distortion_iter0.dat',
-         'run_femtic_dub.sh',
-         'run_femtic_oar.sh']
+         'run_femtic_dias.sh',]
+# 'run_femtic_kraken.sh']
 
-EnsembleName = 'rto_'
+EnsembleName = 'misti_rto_'
 
 '''
 Control number of ensemble members for increase of smple number or restart
 of badly converged samples (see femtic_rto_post.py)
 '''
-FromTo = np.arange(0, N_samples)
+FromTo = None
 
 
 '''
@@ -99,6 +100,7 @@ Set up mode of model perturbations.
 '''
 PerturbMod = True
 if PerturbMod:
+    Mod_ref = 'resistivity_block_iter30.dat'
     Mod_method = 'add'
     # if ModCov is not None, this needs to be normal
     Mod_pdf = ['normal', 0., 0.3]
@@ -149,17 +151,16 @@ if needed. If the femtic mode is chosen, the martix needs to be
 read from external file.
 '''
 if 'Q' in Mod_R:
-    Q = np.load(EnsembleDir + EnsembleName + R_file + '.npz')['R']
+    Q = scs.load_npz(EnsembleDir + EnsembleName + R_file + '.npz')
 else:
-    R = np.load(EnsembleDir + EnsembleName + R_file + '.npz')['R']
-    Q = R.T@R
+    R = scs.load_npz(EnsembleDir + EnsembleName + R_file + '.npz')
+    Q = R.T @ R
 
 
 model_ensemble = fem.generate_model_ensemble(dir_base=EnsembleDir + EnsembleName,
                                              n_samples=N_samples,
                                              fromto=FromTo,
-                                             file_in='resistivity_block_iter0.dat',
-                                             draw_from=Mod_pdf,
+                                             refmod=Mod_ref,
                                              method=Mod_method,
                                              q=Q,
                                              out=True)
