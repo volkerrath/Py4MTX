@@ -39,7 +39,7 @@ import numpy as np
 from datetime import datetime
 
 
-from mtpy.core.mt import MT
+from ediproc import load_edi
 from mt_metadata import TF_XML
 
 
@@ -147,11 +147,22 @@ for filename in result_files:
     if DataOut:
         name_edi, ext = os.path.splitext(filename)
         file_i = EdiDir + name_edi+'.edi'
-        mt_obj = MT()
-        mt_obj.read(file_i)
-        lat = mt_obj.station_metadata.location.latitude
-        lon = mt_obj.station_metadata.location.longitude
-        elev = mt_obj.station_metadata.location.elevation
+
+        # def load_edi(
+        #     path: str | Path,
+        #     *,
+        #     prefer_spectra: bool = True,
+        #     ref: str = "RH",
+        #     err_kind: str = "var",
+        #     drop_invalid_periods: bool = True,
+        #     invalid_sentinel: float = 1.0e30,
+        # ) -> Dict[str, Any]:
+        mt_dict = load_edi(file_i)
+
+        site = mt_dict['station']
+        lat = mt_dict['lat']
+        lon = mt_dict['lon']
+        elev =mt_dict['elev']
 
         name_result,_ = os.path.splitext(outfile)
 

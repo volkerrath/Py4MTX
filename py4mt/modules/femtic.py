@@ -1776,7 +1776,7 @@ def make_cg_precision_solver(
 def sample_gaussian_precision_rtr(
     R: np.ndarray | "scipy.sparse.spmatrix",
     n_samples: int = 1,
-    lam: float = 0.0,
+    lam: float = 1.e-4,
     solver: Optional[Callable[[np.ndarray], np.ndarray]] = None,
     rng: Optional[Generator] = None,
 ) -> np.ndarray:

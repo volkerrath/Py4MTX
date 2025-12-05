@@ -644,8 +644,8 @@ def load_edi(
         The value is stored under ``"err_kind"`` in the output dictionary.
     drop_invalid_periods : bool, optional
         If True (default), rows that contain missing values (NaN or absolute
-        values exceeding ``invalid_sentinel``) in any impedance component
-        are dropped before returning the dictionary.
+        values exceeding ``invalid_sentinel``) in any impedance or tipper
+        component *or their errors* are dropped before returning the dictionary.
     invalid_sentinel : float, optional
         Values with absolute magnitude larger than this threshold are treated
         as invalid. Default is ``1.0e30``.
@@ -659,11 +659,22 @@ def load_edi(
     ------
     RuntimeError
         If neither SPECTRA nor classical Z/T blocks can be interpreted.
+    ValueError
+        If an unknown ``err_kind`` is given.
     """
+    if err_kind not in {"var", "std"}:
+        raise ValueError(f"Unknown err_kind {err_kind!r}; expected 'var' or 'std'.")
+
     text = read_edi_text(path)
     lines = _split_lines(text)
     header_lines = _extract_header_lines(lines)
     meta = _parse_simple_meta(header_lines)
+
+    # Extract basic site metadata (if available) for explicit inclusion
+    lat = meta.get("lat", None)
+    # normalise lon: prefer 'lon', fall back to 'long'
+    lon = meta.get("lon", meta.get("long", None))
+    elev = meta.get("elev", None)
 
     # Decide which path to use
     use_spectra = _has_spectra(text) and prefer_spectra
@@ -746,17 +757,39 @@ def load_edi(
     if rot is not None:
         rot = np.asarray(rot, dtype=float)[order]
 
-    # Optionally drop invalid rows
+    # Optionally drop invalid rows (Z, T, and their errors)
     mask_valid = np.ones(freq.shape, dtype=bool)
     if drop_invalid_periods:
-        large = np.abs(Z.real) > invalid_sentinel
-        large |= np.abs(Z.imag) > invalid_sentinel
-        mask_valid &= ~np.any(large, axis=(1, 2))
+        def _collapse_any(bad: np.ndarray) -> np.ndarray:
+            if bad.ndim == 1:
+                return bad
+            axes = tuple(range(1, bad.ndim))
+            return np.any(bad, axis=axes)
 
+        # Z itself
+        bad_Z = ~np.isfinite(Z.real) | ~np.isfinite(Z.imag)
+        bad_Z |= (np.abs(Z.real) > invalid_sentinel) | (
+            np.abs(Z.imag) > invalid_sentinel
+        )
+        mask_valid &= ~_collapse_any(bad_Z)
+
+        # T itself (if present)
         if T is not None:
-            large_T = np.abs(T.real) > invalid_sentinel
-            large_T |= np.abs(T.imag) > invalid_sentinel
-            mask_valid &= ~np.any(large_T, axis=(1, 2))
+            bad_T = ~np.isfinite(T.real) | ~np.isfinite(T.imag)
+            bad_T |= (np.abs(T.real) > invalid_sentinel) | (
+                np.abs(T.imag) > invalid_sentinel
+            )
+            mask_valid &= ~_collapse_any(bad_T)
+
+        # Z variances/errors (if present)
+        if Z_var is not None:
+            bad_Zvar = ~np.isfinite(Z_var) | (np.abs(Z_var) > invalid_sentinel)
+            mask_valid &= ~_collapse_any(bad_Zvar)
+
+        # T variances/errors (if present)
+        if T_var is not None:
+            bad_Tvar = ~np.isfinite(T_var) | (np.abs(T_var) > invalid_sentinel)
+            mask_valid &= ~_collapse_any(bad_Tvar)
 
     freq = freq[mask_valid]
     Z = Z[mask_valid]
@@ -769,20 +802,38 @@ def load_edi(
     if rot is not None:
         rot = rot[mask_valid]
 
+    # Map internal variance arrays -> returned error arrays depending on err_kind
+    if Z_var is not None:
+        Z_err = Z_var if err_kind == "var" else np.sqrt(Z_var)
+    else:
+        Z_err = None
+
+    if T_var is not None:
+        T_err = T_var if err_kind == "var" else np.sqrt(T_var)
+    else:
+        T_err = None
+
     edi: Dict[str, Any] = {
         "freq": freq,
         "Z": Z,
         "T": T,
-        "Z_err": Z_var if Z_var is not None else None,
-        "T_err": T_var if T_var is not None else None,
+        "Z_err": Z_err,
+        "T_err": T_err,
         "P": None,
         "P_err": None,
         "rot": rot if rot is not None else None,
         "err_kind": err_kind,
         "header_raw": header_lines,
         "source_kind": source_kind,
+        # explicit site metadata (normalised)
+        "lat": lat,
+        "lon": lon,
+        "elev": elev,
     }
+
+    # Add everything else from meta (site name, survey info, possibly 'long', etc.)
     edi.update(meta)
+
     return edi
 
 
