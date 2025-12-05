@@ -25,8 +25,8 @@ import scipy.sparse
 
 import joblib
 
-from scipy.sparse.linalg import LinearOperator, cg, eigsh
-
+from scipy.sparse.linalg import LinearOperator, cg, eigsh, bicgstab, spilu
+from scipy.sparse import isspmatrix, issparse
 
 
 def generate_directories(
@@ -1716,62 +1716,86 @@ def build_rtr_operator(
 
     return LinearOperator((n, n), matvec=matvec, rmatvec=matvec, dtype=np.float64)
 
-
-def make_cg_precision_solver(
-    R: np.ndarray | "scipy.sparse.spmatrix",
-    lam: float = 0.0,
-    rtol: float = 1e-6,
-    atol: float =0.,
-    maxiter: Optional[int] = None,
-    M: Optional[LinearOperator] = None,
-) -> Callable[[np.ndarray], np.ndarray]:
-    """Construct a solver for Q x = b with Q = R.T @ R + lam * I using CG.
+def make_preconditioner(R, lam: float = 0.0, kind: str = "jacobi") -> LinearOperator:
+    """
+    Build a preconditioner M for Q = R.T @ R + lam * I.
 
     Parameters
     ----------
     R : array_like or sparse matrix, shape (m, n)
-        Matrix defining the precision Q = R.T @ R (+ lam * I). R is typically
-        sparse and should be such that Q is symmetric positive definite.
+        Matrix defining Q = R.T @ R + lam * I.
     lam : float, optional
-        Diagonal Tikhonov regularisation parameter. The default is 0.0.
-    tol : float, optional
-        Relative tolerance for the conjugate-gradient solver. The default is
-        1e-8.
-    maxiter : int, optional
-        Maximum number of CG iterations. If None, SciPy chooses a default.
-        The default is None.
-    M : scipy.sparse.linalg.LinearOperator, optional
-        Preconditioner for Q. If provided, M should approximate Q^{-1} in
-        some sense and be inexpensive to apply. The default is None.
+        Diagonal Tikhonov regularisation parameter. Default is 0.0.
+    kind : {"jacobi", "ilu", "identity"}, optional
+        Type of preconditioner:
+        - "jacobi": diagonal scaling (cheap, safe default).
+        - "ilu": incomplete LU factorization (stronger, more expensive).
+        - "identity": no preconditioning.
 
     Returns
     -------
-    solve_Q : callable
-        Function ``solve_Q(b: np.ndarray) -> np.ndarray`` that returns the
-        CG solution x of Q x = b.
+    M : scipy.sparse.linalg.LinearOperator
+        Preconditioner approximating Q^{-1}.
+    """
+    # Build Q operator explicitly if needed
+    Q = R.T @ R + lam * np.eye(R.shape[1])
 
-    Notes
-    -----
-    This wrapper hides the SciPy interface and provides a convenient closure
-    that can be used inside sampling routines. For badly conditioned systems
-    it is recommended to supply an appropriate preconditioner M to improve
-    convergence.
+    if kind == "jacobi":
+        diag_Q = np.diag(Q) if not isspmatrix(Q) else Q.diagonal()
+        inv_diag = 1.0 / diag_Q
+        return LinearOperator(Q.shape, matvec=lambda x: inv_diag * x)
 
+    elif kind == "ilu":
+        if not isspmatrix(Q):
+            raise ValueError("ILU requires sparse Q matrix.")
+        ilu = spilu(Q.tocsc())
+        return LinearOperator(Q.shape, matvec=lambda x: ilu.solve(x))
+
+    elif kind == "identity":
+        return LinearOperator(Q.shape, matvec=lambda x: x)
+
+    else:
+        raise ValueError(f"Unknown preconditioner kind: {kind}")
+
+def make_precision_solver(
+    R: np.ndarray | "scipy.sparse.spmatrix",
+    lam: float = 0.0,
+    rtol: float = 1e-6,
+    atol: float = 0.0,
+    maxiter: Optional[int] = None,
+    M: Optional[LinearOperator] = None,
+    msolver: Optional[str] = 'bicg',
+    mprec: Optional[str] = 'ilu',
+) -> Callable[[np.ndarray], np.ndarray]:
+    """
+    Construct a solver for Q x = b with Q = R.T @ R + lam * I using iterative methods.
 
     Author: Volker Rath (DIAS)
-    Created by ChatGPT (GPT-5 Thinking) on 2025-11-16
+    Copilot (GPT-5 Thinking), 2025-11-16
     """
     Q_op = build_rtr_operator(R, lam=lam)
 
+    # If no preconditioner is supplied, build a Jacobi preconditioner
+    if M is None:
+        M = make_preconditioner(R, lam=lam, kind=mprec)
+        # # Extract diagonal of Q efficiently
+        # diag_Q = Q_op(np.eye(Q_op.shape[1]))[:, range(Q_op.shape[1])]
+        # inv_diag = 1.0 / diag_Q
+        # M = LinearOperator(Q_op.shape, matvec=lambda x: inv_diag * x)
+
     def solve_Q(b: np.ndarray) -> np.ndarray:
-        """Solve Q x = b with conjugate gradients."""
-        x, info = cg(Q_op, b, rtol=rtol, maxiter=maxiter, M=M)
-        if info != 0:
-            raise RuntimeError(f"CG did not converge, info={info}")
+        """Solve Q x = b with iterative methods."""
+        solver = bicgstab if 'bicg' in msolver else cg
+        x, info = solver(Q_op, b, rtol=rtol, atol=atol, maxiter=maxiter, M=M)
+
+        if info > 0:
+            raise RuntimeError(f"Solver did not converge within {info} iterations.")
+        elif info < 0:
+            raise RuntimeError(f"Solver failed with illegal input or breakdown (info={info}).")
+
         return x
 
     return solve_Q
-
 
 def sample_gaussian_precision_rtr(
     R: np.ndarray | "scipy.sparse.spmatrix",
@@ -1796,7 +1820,7 @@ def sample_gaussian_precision_rtr(
         C = (R.T @ R + lam * I)^{-1}. The default is 0.0.
     solver : callable, optional
         Existing solver for Q x = b. If None, a CG-based solver is created
-        via :func:`make_cg_precision_solver`. The default is None.
+        via :func:`make_precision_solver`. The default is None.
     rng : numpy.random.Generator, optional
         Random number generator to use. If None, ``default_rng()`` is used.
 
@@ -1829,7 +1853,7 @@ def sample_gaussian_precision_rtr(
     m, n = R.shape
 
     if solver is None:
-        solver = make_cg_precision_solver(R, lam=lam)
+        solver = make_precision_solver(R, lam=lam)
 
     samples = np.empty((n_samples, n), dtype=np.float64)
 
