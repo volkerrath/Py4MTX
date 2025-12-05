@@ -399,11 +399,23 @@ def generate_model_ensemble(dir_base='./ens_',
         DESCRIPTION.
 
     '''
+    low_rank = True
+    if low_rank:
+        # def sample_rtr_low_rank(
+        #     eigvals: np.ndarray,
+        #     eigvecs: np.ndarray,
+        #     n_samples: int = 1,
+        #     sigma2_residual: float = 0.0,
+        #     rng: Optional[Generator] = None,
+        # ) -> np.ndarray:
 
-    samples = sample_gaussian_precision_rtr(
-        R=q,
-        n_samples=n_samples,
-        lam = 0.0,)
+        samples = sample_rtr_low_rank(
+            )
+    else:
+        samples = sample_rtr_full_rank(
+            R=q,
+            n_samples=n_samples,
+            lam = 0.0,)
 
     mod_list = []
     for iens in np.arange(n_samples):
@@ -476,7 +488,7 @@ def modify_model(template_file='resistivity_block_iter0.dat',
     @author:       vrath
     '''
 
-    # def sample_gaussian_precision_rtr(
+    # def sample_rtr_full_rank(
     #     R: np.ndarray | "scipy.sparse.spmatrix",
     #     n_samples: int = 1,
     #     lam: float = 0.0,
@@ -1797,7 +1809,7 @@ def make_precision_solver(
 
     return solve_Q
 
-def sample_gaussian_precision_rtr(
+def sample_rtr_full_rank(
     R: np.ndarray | "scipy.sparse.spmatrix",
     n_samples: int = 1,
     lam: float = 1.e-4,
@@ -1866,10 +1878,9 @@ def sample_gaussian_precision_rtr(
     return samples
 
 
-def sample_low_rank_from_precision_eigpairs(
-    eigvals: np.ndarray,
-    eigvecs: np.ndarray,
+def sample_rtr_low_rank(R,
     n_samples: int = 1,
+    n_eig: int = 32,
     sigma2_residual: float = 0.0,
     rng: Optional[Generator] = None,
 ) -> np.ndarray:
@@ -1921,6 +1932,11 @@ def sample_low_rank_from_precision_eigpairs(
     """
     rng = default_rng() if rng is None else rng
 
+    eigvals, eigvecs = estimate_low_rank_eigpairs(R.T@R,
+        k=n_eig,
+        which="SM",
+    )
+
     eigvals = np.asarray(eigvals, dtype=np.float64)
     eigvecs = np.asarray(eigvecs, dtype=np.float64)
 
@@ -1953,7 +1969,7 @@ def sample_low_rank_from_precision_eigpairs(
     return samples
 
 
-def estimate_low_rank_eigpairs_from_precision(
+def estimate_low_rank_eigpairs(
     Q: "scipy.sparse.spmatrix | LinearOperator",
     k: int,
     which: str = "SM",
