@@ -64,6 +64,8 @@ from version import versionstrg
 import util as utl
 import femtic as fem
 
+from util import stop
+
 N_THREADS = '10'
 os.environ['OMP_NUM_THREADS'] = N_THREADS
 os.environ['OPENBLAS_NUM_THREADS'] = N_THREADS
@@ -178,7 +180,7 @@ else:
     R = scs.load_npz(EnsembleDir + EnsembleName + R_file + '.npz')
     Q = R.T @ R
 
-
+stop(' data done')
 model_ensemble = fem.generate_model_ensemble(dir_base=EnsembleDir + EnsembleName,
                                              n_samples=N_samples,
                                              fromto=FromTo,

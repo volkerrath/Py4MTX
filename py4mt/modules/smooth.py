@@ -215,6 +215,14 @@ class SplineSelectorBSpline:
         upper = yhat + z * se
         return self.x, lower, upper
 
+    def hat_matrix_weighted(self, lam, W):
+        # W is diagonal weights (n,), typically 1/Var(y_i)
+        WX = (W[:, None] * self.X)
+        XtWX = self.X.T @ (W[:, None] * self.X)
+        A = XtWX + lam * self.penalty_matrix
+        A_inv = la.inv(A)
+        return WX @ A_inv @ self.X.T
+
 # 1) Generate synthetic data
 n = 150
 x = np.linspace(0, 1, n)
