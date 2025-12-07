@@ -27,6 +27,25 @@ import pyproj
 from pyproj import CRS, database, Transformer
 from scipy.fftpack import dct, idct
 
+def stop(s: str = ''):
+    '''
+    Simple stopping utility
+
+    Parameters
+    ----------
+    s : str, optional
+        additional string fot output. The default is None.
+
+    Returns
+    -------
+    None.
+
+    '''
+    from sys import exit
+    exit('Execution stopped. '+s)
+
+
+
 """
 nan_like.py
 

@@ -859,11 +859,56 @@ def estimate_errors(edi_dict: Dict[str, Any],
         with errors replaced.
 
     '''
-    sys.exit('estimate_errors: not yet implementd! Exit.')
     edi_dict_new = edi_dict.copy
 
+    log_freqs = np.log10(edi_dict_new['freq'])
+
+    meth = method['meth']
+
+    log_freqs = method['newfreqs']
+    nf = len(log_freqs)
+
+    if 'Z' in edi_dict_new:
+        tmp  = edi_dict_new['Z']
+        tmp_new = np.zeros((nf,2,2), dtype=complex)
+        spline = make_spline(log_freqs, tmp[:, 0, 0], lam=None)
+        tmp_new[:, 0, 0] = spline(log_freqs)
+        spline = make_spline(log_freqs, tmp[:, 1, 0], lam=None)
+        tmp_new[:, 1, 0] = spline(log_freqs)
+        spline = make_spline(log_freqs, tmp[:, 0, 1], lam=None)
+        tmp_new[:, 0, 1] = spline(log_freqs)
+        spline = make_spline(log_freqs, tmp[:, 1, 1], lam=None)
+        tmp_new[:, 1, 1] = spline(log_freqs)
+        edi_dict_new['Z'] = tmp_new
+        edi_dict_new['Zerr'] = np.std(tmp_new-tmp, axis=0)
+
+
+    if 'T' in edi_dict_new:
+        tmp  = edi_dict_new['T']
+        tmp_new = np.zeros((nf,2,1), dtype=complex)
+        spline = make_spline(log_freqs, tmp[:, 0, 0], lam=None)
+        tmp_new[:, 0, 0 ] = spline(log_freqs)
+        spline = make_spline(log_freqs, tmp[:, 1, 0], lam=None)
+        tmp_new[:, 1, 0] = spline(log_freqs)
+        edi_dict_new['T'] = tmp_new
+        edi_dict_new['Terr'] = np.std(tmp_new-tmp, axis=0)
+
+    if 'P' in edi_dict_new:
+         tmp  = edi_dict_new['P']
+         tmp_new = np.zeros((nf,2,2), dtype=float)
+         spline = make_spline(log_freqs, tmp[:, 0, 0], lam=None)
+         tmp_new[:, 0, 0 ] = spline(log_freqs)
+         spline = make_spline(log_freqs, tmp[:, 1, 0], lam=None)
+         tmp_new[:, 1, 0] = spline(log_freqs)
+         spline = make_spline(log_freqs, tmp[:, 0, 1], lam=None)
+         tmp_new[:, 0, 1 ] = spline(log_freqs)
+         spline = make_spline(log_freqs, tmp[:, 1, 1], lam=None)
+         tmp_new[:, 1, 1] = spline(log_freqs)
+         edi_dict_new['P'] = tmp_new
+         edi_dict_new['Perr'] = np.std(tmp_new-tmp, axis=0)
 
     return edi_dict_new
+
 
 
 
@@ -871,8 +916,7 @@ def estimate_errors(edi_dict: Dict[str, Any],
 # if Interpolate:
 #     edi_dict = interpolate_data(edi_dict=edi_dict, method=Method)
 def interpolate_data(edi_dict: Dict[str, Any],
-               method: List,
-               )-> Dict[str, Any]:
+               method: List)-> Dict[str, Any]:
     '''
     Interpolate data to k points per decade for all data
 
@@ -895,75 +939,78 @@ def interpolate_data(edi_dict: Dict[str, Any],
     # sys.exit('interpolate_data: not yet implementd! Exit.')
     edi_dict_new = edi_dict.copy
 
-    freqs = edi_dict_new['freq']
-    spl_meth = method['meth']
-    new_freqs = method['logfreq']
+    meth = method['meth']
+
+    old_freqs = np.log10(edi_dict_new['freq'])
+    new_freqs = method['newfreqs']
+    edi_dict_new['freq'] = np.power(10., new_freqs)
+
     nf = len(new_freqs)
 
     if 'Z' in edi_dict_new:
         tmp  = edi_dict_new['Z']
         tmp_new = np.zeros((nf,2,2), dtype=complex)
-        spline = make_spline(freqs, tmp[:, 0, 0], lam=None)
+        spline = make_spline(old_freqs, tmp[:, 0, 0], lam=None)
         tmp_new[:, 0, 0] = spline(new_freqs)
-        spline = make_spline(freqs, tmp[:, 1, 0], lam=None)
+        spline = make_spline(old_freqs, tmp[:, 1, 0], lam=None)
         tmp_new[:, 1, 0] = spline(new_freqs)
-        spline = make_spline(freqs, tmp[:, 0, 1], lam=None)
+        spline = make_spline(old_freqs, tmp[:, 0, 1], lam=None)
         tmp_new[:, 0, 1] = spline(new_freqs)
-        spline = make_spline(freqs, tmp[:, 1, 1], lam=None)
+        spline = make_spline(old_freqs, tmp[:, 1, 1], lam=None)
         tmp_new[:, 1, 1] = spline(new_freqs)
         edi_dict_new['Z'] = tmp_new
 
         tmp  = edi_dict_new['Zerr']
         tmp_new = np.zeros((nf,2,2), dtype=complex)
-        spline = make_spline(freqs, tmp[:, 0, 0], lam=None)
+        spline = make_spline(old_freqs, tmp[:, 0, 0], lam=None)
         tmp_new[:, 0, 0] = spline(new_freqs)
-        spline = make_spline(freqs, tmp[:, 1, 0], lam=None)
+        spline = make_spline(old_freqs, tmp[:, 1, 0], lam=None)
         tmp_new[:, 1, 0] = spline(new_freqs)
-        spline = make_spline(freqs, tmp[:, 0, 1], lam=None)
+        spline = make_spline(old_freqs, tmp[:, 0, 1], lam=None)
         tmp_new[:, 0, 1] = spline(new_freqs)
-        spline = make_spline(freqs, tmp[:, 1, 1], lam=None)
+        spline = make_spline(old_freqs, tmp[:, 1, 1], lam=None)
         tmp_new[:, 1, 1] = spline(new_freqs)
         edi_dict_new['Zerr'] = tmp_new
 
     if 'T' in edi_dict_new:
         tmp  = edi_dict_new['T']
         tmp_new = np.zeros((nf,2,1), dtype=complex)
-        spline = make_spline(freqs, tmp[:, 0, 0], lam=None)
+        spline = make_spline(old_freqs, tmp[:, 0, 0], lam=None)
         tmp_new[:, 0, 0 ] = spline(new_freqs)
-        spline = make_spline(freqs, tmp[:, 1, 0], lam=None)
+        spline = make_spline(old_freqs, tmp[:, 1, 0], lam=None)
         tmp_new[:, 1, 0] = spline(new_freqs)
         edi_dict_new['T'] = tmp_new
 
         tmp  = edi_dict_new['Terr']
-        tmp_new = np.tmperos((nf,2,1), dtype=complex)
-        spline = make_spline(freqs, tmp[:, 0, 0], lam=None)
+        tmp_new = np.zeros((nf,2,1), dtype=complex)
+        spline = make_spline(old_freqs, tmp[:, 0, 0], lam=None)
         tmp_new[:, 0, 0] = spline(new_freqs)
-        spline = make_spline(freqs, tmp[:, 1, 0], lam=None)
+        spline = make_spline(old_freqs, tmp[:, 1, 0], lam=None)
         tmp_new[:, 1, 0] = spline(new_freqs)
         edi_dict_new['Terr'] = tmp_new
 
     if 'P' in edi_dict_new:
          tmp  = edi_dict_new['P']
-         tmp_new = np.tmperos((nf,2,2), dtype=float)
-         spline = make_spline(freqs, tmp[:, 0, 0], lam=None)
+         tmp_new = np.zeros((nf,2,2), dtype=float)
+         spline = make_spline(old_freqs, tmp[:, 0, 0], lam=None)
          tmp_new[:, 0, 0 ] = spline(new_freqs)
-         spline = make_spline(freqs, tmp[:, 1, 0], lam=None)
+         spline = make_spline(old_freqs, tmp[:, 1, 0], lam=None)
          tmp_new[:, 1, 0] = spline(new_freqs)
-         spline = make_spline(freqs, tmp[:, 0, 1], lam=None)
+         spline = make_spline(old_freqs, tmp[:, 0, 1], lam=None)
          tmp_new[:, 0, 1 ] = spline(new_freqs)
-         spline = make_spline(freqs, tmp[:, 1, 1], lam=None)
+         spline = make_spline(old_freqs, tmp[:, 1, 1], lam=None)
          tmp_new[:, 1, 1] = spline(new_freqs)
          edi_dict_new['P'] = tmp_new
 
          tmp  = edi_dict_new['Perr']
-         tmp_new = np.tmperos((nf,2,2), dtype=float)
-         spline = make_spline(freqs, tmp[:, 0, 0], lam=None)
+         tmp_new = np.zeros((nf,2,2), dtype=float)
+         spline = make_spline(old_freqs, tmp[:, 0, 0], lam=None)
          tmp_new[:, 0, 0 ] = spline(new_freqs)
-         spline = make_spline(freqs, tmp[:, 1, 0], lam=None)
+         spline = make_spline(old_freqs, tmp[:, 1, 0], lam=None)
          tmp_new[:, 1, 0] = spline(new_freqs)
-         spline = make_spline(freqs, tmp[:, 0, 1], lam=None)
+         spline = make_spline(old_freqs, tmp[:, 0, 1], lam=None)
          tmp_new[:, 0, 1 ] = spline(new_freqs)
-         spline = make_spline(freqs, tmp[:, 1, 1], lam=None)
+         spline = make_spline(old_freqs, tmp[:, 1, 1], lam=None)
          tmp_new[:, 1, 1] = spline(new_freqs)
          edi_dict_new['Perr'] = tmp_new
 
