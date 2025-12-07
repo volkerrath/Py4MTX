@@ -145,9 +145,9 @@ for edi in edi_files:
         edi_dict = set_errors(edi_dict=edi_dict, errors=Errors)
 
     if Interpolate:
-        edi_dict = interpolate_data(edi_dict=edi_dict, method=Method)
+        edi_dict = interpolate_data(edi_dict=edi_dict, method=IntMethod)
 
-    if Rotation:
+    if Rotate:
         edi_dict = rotate_data(edi_dict=edi_dict, angle=Angle)
 
     '''
