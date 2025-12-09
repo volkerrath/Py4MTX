@@ -2012,3 +2012,403 @@ def estimate_low_rank_eigpairs(
     # SciPy's eigsh expects a matrix or LinearOperator; we simply forward it.
     eigvals, eigvecs = eigsh(Q, k=k, which=which)
     return eigvals, eigvecs
+
+
+# ============================================================================
+# NPZ → HDF5 / NetCDF exporters
+# ============================================================================
+
+def npz_to_hdf5(
+    npz_path: str,
+    hdf5_path: str,
+    group: str = "femtic_model",
+    compression: str = "gzip",
+    compression_opts: int = 4,
+) -> None:
+    """Write all arrays from a FEMTIC NPZ file to an HDF5 file.
+
+    Parameters
+    ----------
+    npz_path : str
+        Input NPZ file created by a FEMTIC-related NPZ exporter.
+    hdf5_path : str
+        Output HDF5 file.
+    group : str, optional
+        Name of the top-level group into which all datasets are written
+        (default ``"femtic_model"``).
+    compression : str, optional
+        HDF5 compression method for datasets (default ``"gzip"``).
+    compression_opts : int, optional
+        Compression level (only used for some compressors such as ``"gzip"``).
+
+    Notes
+    -----
+    - Each key in the NPZ is written as one dataset under the given group.
+    - Scalar values (0-D arrays) are written as scalar datasets.
+    - A few basic attributes (``"source_npz"``, ``"created_by"``) are
+      attached to the group for provenance.
+
+    Author: Volker Rath (DIAS)
+    Created by ChatGPT (GPT-5 Thinking) on 2025-12-09
+    """)
+    try:
+        import h5py
+    except Exception as exc:  # pragma: no cover
+        raise ImportError("npz_to_hdf5 requires the 'h5py' package.") from exc
+
+    data = np.load(npz_path)
+
+    with h5py.File(hdf5_path, "w") as h5:
+        g = h5.create_group(group)
+        g.attrs["source_npz"] = str(npz_path)
+        g.attrs["created_by"] = "femtic.npz_to_hdf5"
+
+        for key in data.files:
+            arr = data[key]
+            if arr.shape == ():
+                # scalar dataset
+                dset = g.create_dataset(key, data=arr[()])
+            else:
+                dset = g.create_dataset(
+                    key,
+                    data=arr,
+                    compression=compression,
+                    compression_opts=compression_opts,
+                )
+            dset.attrs["dtype"] = str(arr.dtype)
+
+
+def npz_to_netcdf(
+    npz_path: str,
+    netcdf_path: str,
+) -> None:
+    """Convert a FEMTIC NPZ file to a NetCDF4 file with named dimensions.
+
+    Parameters
+    ----------
+    npz_path : str
+        Input NPZ file created by a FEMTIC-related NPZ exporter.
+    netcdf_path : str
+        Output NetCDF file (NetCDF4 format).
+
+    Notes
+    -----
+    If the standard FEMTIC NPZ layout is present, the function creates
+    the following dimensions and variables:
+
+    * Dimensions:
+
+      - ``"node"``, ``"xyz"`` for nodes (nn, 3)
+      - ``"cell"``, ``"nne"`` for connectivity (nelem, 4)
+      - ``"region"`` for region-based arrays (length nreg)
+
+    * Variables:
+
+      - ``"nodes(node, xyz)"``
+      - ``"conn(cell, nne)"``
+      - ``"centroid(cell, xyz)"`` (if present)
+      - scalar ``"nelem"``, ``"nreg"``
+      - region-based arrays: ``"region_rho"``, ``"region_rho_lower"``,
+        ``"region_rho_upper"``, ``"region_n"``, ``"region_flag"``
+      - cell-based arrays: ``"region_of_elem"``, ``"log10_resistivity"``,
+        ``"rho_lower"``, ``"rho_upper"``, ``"flag"``, ``"n"``
+
+    Any remaining arrays in the NPZ that do not fit these patterns are
+    stored using auto-generated dimensions ``"<key>_dim0"``, ``"<key>_dim1"``, …
+
+    Author: Volker Rath (DIAS)
+    Created by ChatGPT (GPT-5 Thinking) on 2025-12-09
+    """)
+    try:
+        from netCDF4 import Dataset
+    except Exception as exc:  # pragma: no cover
+        raise ImportError("npz_to_netcdf requires the 'netCDF4' package.") from exc
+
+    data = np.load(npz_path)
+
+    ds = Dataset(netcdf_path, "w", format="NETCDF4")
+    ds.setncattr("source_npz", str(npz_path))
+    ds.setncattr("created_by", "femtic.npz_to_netcdf")
+
+    def ensure_dim(name: str, size: int) -> None:
+        """Create a dimension if it does not yet exist."""
+        if name not in ds.dimensions:
+            ds.createDimension(name, size)
+
+    # Nodes: (nn, 3) → dims ("node", "xyz")
+    if "nodes" in data:
+        nodes = data["nodes"]
+        if nodes.ndim == 2:
+            nn, nxyz = nodes.shape
+            ensure_dim("node", nn)
+            ensure_dim("xyz", nxyz)
+            var = ds.createVariable("nodes", "f8", ("node", "xyz"))
+            var[:, :] = nodes
+
+    # Connectivity: (nelem, 4) → dims ("cell", "nne")
+    if "conn" in data:
+        conn = data["conn"]
+        if conn.ndim == 2:
+            nelem, nne = conn.shape
+            ensure_dim("cell", nelem)
+            ensure_dim("nne", nne)
+            var = ds.createVariable("conn", "i4", ("cell", "nne"))
+            var[:, :] = conn
+
+    # Element centroids: (nelem, 3) → dims ("cell", "xyz")
+    if "centroid" in data and "cell" in ds.dimensions and "xyz" in ds.dimensions:
+        cent = data["centroid"]
+        if cent.shape == (len(ds.dimensions["cell"]), len(ds.dimensions["xyz"])):
+            var = ds.createVariable("centroid", "f8", ("cell", "xyz"))
+            var[:, :] = cent
+
+    # Scalars nelem / nreg
+    if "nelem" in data:
+        var = ds.createVariable("nelem", "i4")
+        var[...] = int(data["nelem"])
+    if "nreg" in data:
+        var = ds.createVariable("nreg", "i4")
+        var[...] = int(data["nreg"])
+
+    # Region-based arrays
+    if "nreg" in data:
+        nreg = int(data["nreg"])
+        ensure_dim("region", nreg)
+        region_keys = [
+            "region_rho",
+            "region_rho_lower",
+            "region_rho_upper",
+            "region_n",
+            "region_flag",
+        ]
+        for key in region_keys:
+            if key in data:
+                arr = data[key]
+                if arr.ndim == 1 and arr.shape[0] == nreg:
+                    dtype = "f8" if arr.dtype.kind in "fc" else "i4"
+                    var = ds.createVariable(key, dtype, ("region",))
+                    var[:] = arr
+
+    # Cell-based arrays
+    if "cell" in ds.dimensions:
+        nelem = len(ds.dimensions["cell"])
+        cell_keys = [
+            "region_of_elem",
+            "log10_resistivity",
+            "rho_lower",
+            "rho_upper",
+            "flag",
+            "n",
+        ]
+        for key in cell_keys:
+            if key in data:
+                arr = data[key]
+                if arr.ndim == 1 and arr.shape[0] == nelem:
+                    dtype = "f8" if arr.dtype.kind in "fc" else "i4"
+                    var = ds.createVariable(key, dtype, ("cell",))
+                    var[:] = arr
+
+    # Any remaining arrays that have not yet been written
+    written = set(ds.variables.keys())
+    for key in data.files:
+        if key in written:
+            continue
+
+        arr = data[key]
+        if arr.shape == ():
+            var = ds.createVariable(key, "f8")
+            var[...] = arr[()]
+            continue
+
+        dims = []
+        for iax, size in enumerate(arr.shape):
+            dname = f"{key}_dim{iax}"
+            ensure_dim(dname, size)
+            dims.append(dname)
+        dtype = "f8" if arr.dtype.kind in "fc" else "i4"
+        var = ds.createVariable(key, dtype, tuple(dims))
+        var[...] = arr
+
+    ds.close()
+
+
+# ============================================================================
+# Command-line interface
+# ============================================================================
+
+def _cli_sample_field(args: argparse.Namespace) -> int:
+    """CLI wrapper around :func:`sampler1`.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed command-line arguments.
+
+    Returns
+    -------
+    int
+        Exit status code (0 on success).
+    """
+    sampler1(args)
+    return 0
+
+
+def _cli_npz_to_hdf5(args: argparse.Namespace) -> int:
+    """CLI wrapper for :func:`npz_to_hdf5`."""
+    npz_to_hdf5(npz_path=args.npz, hdf5_path=args.out_hdf5, group=args.group)
+    return 0
+
+
+def _cli_npz_to_netcdf(args: argparse.Namespace) -> int:
+    """CLI wrapper for :func:`npz_to_netcdf`."""
+    npz_to_netcdf(npz_path=args.npz, netcdf_path=args.out_nc)
+    return 0
+
+
+def main(argv: Optional[Sequence[str]] | None = None) -> int:
+    """Entry point for the ``femtic.py`` command-line interface.
+
+    The following sub-commands are provided:
+
+    ``sample-field``
+        Sample a covariance-driven resistivity field on a FEMTIC TETRA mesh
+        using :func:`sampler1`.
+
+    ``npz-to-hdf5``
+        Convert a FEMTIC NPZ model to an HDF5 file via :func:`npz_to_hdf5`.
+
+    ``npz-to-netcdf``
+        Convert a FEMTIC NPZ model to a NetCDF4 file via :func:`npz_to_netcdf`.
+
+    Parameters
+    ----------
+    argv : sequence of str, optional
+        Optional argument list (defaults to :data:`sys.argv[1:]`).
+
+    Returns
+    -------
+    int
+        Exit status code (0 on success).
+
+    Author: Volker Rath (DIAS)
+    Created by ChatGPT (GPT-5 Thinking) on 2025-12-09
+    """
+    parser = argparse.ArgumentParser(
+        prog="femtic",
+        description=(
+            "FEMTIC ensemble utilities: sampling roughness-based models and "
+            "exporting NPZ models to HDF5 / NetCDF."
+        ),
+    )
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    # sample-field sub-command
+    p_sample = sub.add_parser(
+        "sample-field",
+        help="Sample a covariance-driven resistivity field on a FEMTIC mesh.",
+    )
+    p_sample.add_argument(
+        "--mesh",
+        required=True,
+        help="Path to FEMTIC mesh.dat (TETRA format).",
+    )
+    p_sample.add_argument(
+        "--kernel",
+        default="matern",
+        choices=["matern", "exponential", "gaussian"],
+        help="Covariance kernel.",
+    )
+    p_sample.add_argument(
+        "--ell",
+        type=float,
+        default=500.0,
+        help="Length-scale in mesh coordinate units (default 500).",
+    )
+    p_sample.add_argument(
+        "--sigma2",
+        type=float,
+        default=0.5,
+        help="Log-space marginal variance.",
+    )
+    p_sample.add_argument(
+        "--nu",
+        type=float,
+        default=1.5,
+        help="Matern smoothness (if used).",
+    )
+    p_sample.add_argument(
+        "--nugget",
+        type=float,
+        default=1e-6,
+        help="Diagonal nugget (log-space).",
+    )
+    p_sample.add_argument(
+        "--mean",
+        type=float,
+        default=float(np.log(100.0)),
+        help="Mean of log-resistivity (default log(100)).",
+    )
+    p_sample.add_argument(
+        "--strategy",
+        default="sparse",
+        choices=["dense", "sparse"],
+        help="Dense (Cholesky) or sparse (truncated-eig) sampling strategy.",
+    )
+    p_sample.add_argument(
+        "--radius",
+        type=float,
+        default=None,
+        help="Neighborhood radius for sparse K (default ≈ 2.5 * ell).",
+    )
+    p_sample.add_argument(
+        "--trunc_k",
+        type=int,
+        default=1024,
+        help="Rank for truncated-eig sampling when strategy='sparse'.",
+    )
+    p_sample.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Random seed.",
+    )
+    p_sample.add_argument(
+        "--out",
+        default="rho_sample_on_mesh.npz",
+        help="Output NPZ file path.",
+    )
+    p_sample.set_defaults(func=_cli_sample_field)
+
+    # npz-to-hdf5 sub-command
+    p_n2h = sub.add_parser(
+        "npz-to-hdf5",
+        help="Write FEMTIC NPZ content to an HDF5 file.",
+    )
+    p_n2h.add_argument("--npz", required=True, help="Input NPZ file.")
+    p_n2h.add_argument("--out-hdf5", required=True, help="Output HDF5 file.")
+    p_n2h.add_argument(
+        "--group",
+        default="femtic_model",
+        help="Top-level group name inside the HDF5 file.",
+    )
+    p_n2h.set_defaults(func=_cli_npz_to_hdf5)
+
+    # npz-to-netcdf sub-command
+    p_n2nc = sub.add_parser(
+        "npz-to-netcdf",
+        help="Convert FEMTIC NPZ model to a NetCDF4 file.",
+    )
+    p_n2nc.add_argument("--npz", required=True, help="Input NPZ file.")
+    p_n2nc.add_argument("--out-nc", required=True, help="Output NetCDF file.")
+    p_n2nc.set_defaults(func=_cli_npz_to_netcdf)
+
+    args = parser.parse_args(list(argv) if argv is not None else None)
+
+    if not hasattr(args, "func"):
+        parser.error("No sub-command selected.")
+    return args.func(args)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())
+
