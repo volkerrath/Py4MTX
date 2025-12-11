@@ -20,7 +20,6 @@ import argparse
 
 # Import numerical or other specialised modules
 import numpy as np
-from mtpy.core.mt import MT
 
 PY4MTX_DATA = os.environ['PY4MTX_DATA']
 PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
@@ -35,12 +34,14 @@ for pth in mypath:
 # Import required py4mt modules for your script
 import util as utl
 import modem as mod
-import jacproc as jac
-import mtproc as proc
+import jacproc as jp
+import mtproc as mp
+import dataproc as dp
 import plotrjmcmc as plmc
 import viz
 import inverse as inv
 import femtic as fem
+import femtic_viz as femviz
 import cluster as fcm
 from version import versionstrg
 
