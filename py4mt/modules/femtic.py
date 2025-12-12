@@ -1,1299 +1,1343 @@
+#!/usr/bin/env python3
+"""
+femtic_core.py
 
+Unified FEMTIC utilities for:
+
+- Generating data and model ensembles (perturbed observe.dat and resistivity
+  blocks) driven by Gaussian covariance / precision constructions.
+- Building and analysing roughness matrices and prior covariance proxies based
+  on FEMTIC's user-defined roughening_matrix files.
+- Gaussian sampling with precision matrix Q = R.T @ R (+ λI) using iterative
+  solvers and low-rank eigendecompositions.
+- Converting between FEMTIC mesh/dat formats and compact NPZ model files:
+    * mesh.dat + resistivity_block_iterX.dat → NPZ
+    * NPZ → mesh.dat + resistivity_block_iterX.dat
+    * NPZ → VTK / VTU unstructured grids (PyVista).
+
+The goal is to have a single importable (and CLI-callable) module that
+collects:
+
+- The ensemble / precision tools from femtic.py.
+- The mesh/NPZ conversion tools from femtic_mesh_to_npz.py.
+- The NPZ → VTK exporter from femtic_npz_to_vtk.py.
+- The NPZ → FEMTIC reconstructor from femtic_npz_to_mesh.py.
+
+Command-line interface
+----------------------
+The module provides a simple subcommand-style CLI:
+
+    python femtic_core.py mesh-to-npz \\
+        --mesh mesh.dat \\
+        --rho-block resistivity_block_iter0.dat \\
+        --out-npz femtic_model.npz
+
+    python femtic_core.py npz-to-vtk \\
+        --npz femtic_model.npz \\
+        --out-vtu model.vtu \\
+        --out-legacy model.vtk
+
+    python femtic_core.py npz-to-femtic \\
+        --npz femtic_model.npz \\
+        --mesh-out mesh_reconstructed.dat \\
+        --rho-block-out resistivity_block_iter0_reconstructed.dat
+
+All functionality is also available as regular Python functions.
+
+Author: Volker Rath (DIAS)
+Created by ChatGPT (GPT-5 Thinking) on 2025-12-09
+"""
 from __future__ import annotations
-
 
 import os
 import sys
 import shutil
-import copy
-import inspect
 import time
-from datetime import datetime
-
-
-
-from typing import Callable, Optional, Sequence, Tuple, Dict, Literal
-from numpy.random import Generator, default_rng
+from pathlib import Path
+from typing import (
+    Callable,
+    Optional,
+    Sequence,
+    Tuple,
+    Dict,
+    Literal,
+)
 
 import numpy as np
 import scipy
 import scipy.linalg
-import scipy.sparse.linalg
-import scipy.special
-import scipy.fftpack
 import scipy.sparse
+import scipy.sparse.linalg
 
-import joblib
-
-from scipy.sparse.linalg import LinearOperator, cg, eigsh, bicgstab, spilu
+from numpy.random import Generator, default_rng
 from scipy.sparse import isspmatrix, issparse
+from scipy.sparse.linalg import LinearOperator, cg, eigsh, bicgstab, spilu
+
+# Optional but kept for compatibility with earlier versions
+import joblib  # noqa: F401
+
+
+# ============================================================================
+# SECTION 1: directory & data / model ensemble utilities (from femtic.py)
+# ============================================================================
 
 
 def generate_directories(
-        dir_base='./ens_',
-        templates='',
-        file_list=['control.dat',
-                   'observe.dat',
-                   'mesh.dat',
-                   'resistivity_block_iter0.dat',
-                   'distortion_iter0.dat',
-                   'run_dub.sh',
-                   'run_oar_sh'],
-        n_samples=1,
-        fromto = None,
-        out=True):
+    dir_base: str = "./ens_",
+    templates: str = "",
+    file_list: Sequence[str] = (
+        "control.dat",
+        "observe.dat",
+        "mesh.dat",
+        "resistivity_block_iter0.dat",
+        "distortion_iter0.dat",
+        "run_dub.sh",
+        "run_oar_sh",
+    ),
+    n_samples: int = 1,
+    fromto: Optional[Tuple[int, int]] = None,
+    out: bool = True,
+) -> list[str]:
+    """
+    Create ensemble directories and copy template files into each of them.
 
+    Parameters
+    ----------
+    dir_base : str, optional
+        Base name for ensemble directories (e.g. "./ens_").
+    templates : str, optional
+        Directory prefix from which the template files are copied.
+    file_list : sequence of str
+        Names of files to copy into each ensemble directory.
+    n_samples : int
+        Number of ensemble members if ``fromto`` is None.
+    fromto : (int, int), optional
+        Explicit start/stop indices (Python-style: start, stop) for ensemble
+        member numbering. If None, indices range from 0..n_samples-1.
+    out : bool, optional
+        If True, print status messages.
 
+    Returns
+    -------
+    dir_list : list of str
+        List of created ensemble directory paths.
+    """
     if fromto is None:
         from_to = np.arange(n_samples)
     else:
-        from_to = np.arange(fromto[0],fromto[1])
+        from_to = np.arange(fromto[0], fromto[1])
 
-
-    dir_list = []
+    dir_list: list[str] = []
     for iens in from_to:
-        directory = dir_base+str(iens)+'/'
+        directory = f"{dir_base}{iens}/"
         os.makedirs(directory, exist_ok=True)
         copy_files(file_list, directory, templates)
         dir_list.append(directory)
 
     if out:
-        print('list of directories:')
+        print("list of directories:")
         print(dir_list)
 
     return dir_list
 
 
-def copy_files(filelist, directory, templates):
-    for f in np.arange(len(filelist)):
-        ff = templates+filelist[f]
-        # shutil.copy(ff, directory)
-        shutil.copy2(ff, directory)
+def copy_files(filelist: Sequence[str], directory: str, templates: str) -> None:
+    """
+    Copy a list of files from `templates` prefix into `directory`.
+
+    Parameters
+    ----------
+    filelist : sequence of str
+        Files to copy.
+    directory : str
+        Target directory.
+    templates : str
+        Template directory (prefix) for input files.
+    """
+    for fname in filelist:
+        src = templates + fname
+        shutil.copy2(src, directory)
 
 
-def generate_data_ensemble(dir_base='./ens_',
-                           n_samples=1,
-                           fromto = None,
-                           file_in='observe.dat',
-                           draw_from=['normal', 0., 1.],
-                           method='add',
-                           errors=[],
-                           out=True):
-    '''
-    for i = 1 : nsamples do
-        Draw perturbed data set: d_pert ∼ N(d, Cd)
+def generate_data_ensemble(
+    dir_base: str = "./ens_",
+    n_samples: int = 1,
+    fromto: Optional[Tuple[int, int]] = None,
+    file_in: str = "observe.dat",
+    draw_from: Sequence[float | str] = ("normal", 0.0, 1.0),
+    method: str = "add",
+    errors: Sequence[Sequence[float]] | Sequence[list] = (),
+    out: bool = True,
+) -> list[str]:
+    """
+    Generate an ensemble of perturbed observation files in ensemble directories.
 
-    '''
+    For each ensemble member i, reads
+        dir_base + f"{i}/{file_in}"
+    makes a backup <file>_orig.dat,
+    and calls :func:`modify_data` to inject Gaussian noise.
+
+    Parameters
+    ----------
+    dir_base : str
+        Base directory for ensemble members (e.g. "./ens_").
+    n_samples : int
+        Number of ensemble members if ``fromto`` is None.
+    fromto : (int, int), optional
+        Explicit start/end indices (Python-style).
+    file_in : str
+        Name of the observation file in each ensemble directory.
+    draw_from : sequence
+        Currently kept for future extension; noise is driven by errors.
+    method : str
+        Placeholder for different perturbation strategies (currently unused).
+    errors : sequence
+        Error specifications forwarded to :func:`modify_data`.
+    out : bool
+        If True, print status messages.
+
+    Returns
+    -------
+    obs_list : list of str
+        Paths to the perturbed observation files.
+    """
     if fromto is None:
-        fromto = np.arange(n_samples)
+        fromto_arr = np.arange(n_samples)
+    else:
+        fromto_arr = np.arange(fromto[0], fromto[1])
 
-    obs_list = []
-    for iens in fromto:
-        file = dir_base+str(iens)+'/'+file_in
-        shutil.copy(file, file.replace('.dat', '_orig.dat'))
-        '''
-        Generate perturbed observe.dat
-        '''
-        modify_data(template_file=file,
-                    draw_from=draw_from,
-                    method=method,
-                    errors=errors,
-                    out=out)
+    obs_list: list[str] = []
+    for iens in fromto_arr:
+        file = f"{dir_base}{iens}/{file_in}"
+        shutil.copy(file, file.replace(".dat", "_orig.dat"))
+        modify_data(
+            template_file=file,
+            draw_from=draw_from,
+            method=method,
+            errors=errors,
+            out=out,
+        )
         obs_list.append(file)
 
     if out:
-        print('list of perturbed observation files:')
+        print("list of perturbed observation files:")
         print(obs_list)
 
     return obs_list
 
 
-def modify_data(template_file='observe.dat',
-                draw_from=['normal', 0., 1.],
-                method='add',
-                errors=[[], [], []],
-                out=True):
-    '''
-    Created on Thu Mpr 17 17:13:38 2025
+def modify_data(
+    template_file: str = "observe.dat",
+    draw_from: Sequence[float | str] = ("normal", 0.0, 1.0),
+    method: str = "add",
+    errors: Sequence[Sequence[float]] | Sequence[list] = ([], [], []),
+    out: bool = True,
+) -> None:
+    """
+    Modify an MT/VTF/PT FEMTIC-style observe.dat in-place by drawing perturbed data.
 
-    @author:   vrath
-    '''
-#    import numpy as np
+    The function parses the FEMTIC data layout:
 
-#
+    - header line with obs_type and number of sites
+    - data blocks (MT, VTF, or PT)
+    - site blocks with frequencies and data + error columns
 
+    For each datum d with associated error σ:
+
+        d_new ~ N(d, σ)
+
+    Optionally, relative errors can be (re)set from the ``errors`` parameter.
+
+    Parameters
+    ----------
+    template_file : str
+        Path to observe.dat.
+    draw_from : sequence
+        Noise distribution specification (currently fixed to normal).
+    method : str
+        Placeholder for different perturbation strategies (unused).
+    errors : sequence of length 3
+        [errors_MT, errors_VTF, errors_PT], each itself a list/array specifying
+        relative errors that will be used to overwrite existing error columns
+        before drawing perturbed values.
+    out : bool
+        If True, print status messages.
+
+    Notes
+    -----
+    The implementation mirrors the original femtic.py logic and is verbose
+    in its printing when ``out=True``. It assumes the usual FEMTIC text
+    layout for MT/VTF/PT observation files.
+    """
     if template_file is None:
-        template_file = 'observe.dat'
+        template_file = "observe.dat"
 
-    print('\n', template_file, ':')
-
-    with open(template_file, 'r') as file:
+    with open(template_file, "r") as file:
         content = file.readlines()
 
-    line = content[0].split()
-    obs_type = line[0]
-    # num_site = int(line[1])
-    print(len(content))
+    line0 = content[0].split()
+    obs_type = line0[0]
 
-    '''
-    find data blocks
-
-    '''
-    start_lines_datablock = []
+    # locate data blocks
+    start_lines_datablock: list[int] = []
     for number, line in enumerate(content, 0):
         l = line.split()
         if len(l) == 2:
             start_lines_datablock.append(number)
-            print(' data block', l[0], 'with',
-                  l[1], 'sites begins at line', number)
-        if 'END' in l:
-            start_lines_datablock.append(number-1)
-            print(' no further data block in file')
-    '''
-     loop over  data blocks
+            if out:
+                print(" data block", l[0], "with", l[1], "sites begins at line", number)
+        if "END" in l:
+            start_lines_datablock.append(number - 1)
+            if out:
+                print(" no further data block in file")
 
-    '''
-    num_datablock = len(start_lines_datablock)-1
+    num_datablock = len(start_lines_datablock) - 1
     for block in np.arange(num_datablock):
         start_block = start_lines_datablock[block]
-        end_block = start_lines_datablock[block+1]
-        # print(start_block, end_block)
-        # print(type(start_block), type(end_block))
+        end_block = start_lines_datablock[block + 1]
         data_block = content[start_block:end_block]
-        '''
-        find sites
-        '''
-        print(np.shape(data_block))
-        start_lines_site = []
-        num_freqs = []
+
+        if out:
+            print(np.shape(data_block))
+        start_lines_site: list[int] = []
+        num_freqs: list[int] = []
         for number, line in enumerate(data_block, 0):
             l = line.split()
             if len(l) == 4:
-                print(l)
+                if out:
+                    print(l)
                 start_lines_site.append(number)
-                num_freqs.append(int(data_block[number+1].split()[0]))
-                print('  site', l[0], 'begins at line', number)
-            if 'END' in l:
-                start_lines_datablock.append(number-1)
-                print(' no further site block in file')
-        print('\n')
-        # print(start_lines_site)
-        # print(num_freqs)
+                num_freqs.append(int(data_block[number + 1].split()[0]))
+                if out:
+                    print("  site", l[0], "begins at line", number)
+            if "END" in l:
+                start_lines_datablock.append(number - 1)
+                if out:
+                    print(" no further site block in file")
+        if out:
+            print("\n")
 
         num_sites = len(start_lines_site)
         for site in np.arange(num_sites):
             start_site = start_lines_site[site]
-            end_site = start_site+num_freqs[site]+2
+            end_site = start_site + num_freqs[site] + 2
             site_block = data_block[start_site:end_site]
-            # print('site',site+1)
-            # print(np.shape(site_block))
-            # print(site_block)
 
-            if 'MT' in obs_type:
-
-                if len(errors[0]) != 0:
-                    set_errors_mt = True
-
+            if "MT" in obs_type:
+                set_errors_mt = len(errors[0]) != 0
                 dat_length = 8
-
                 num_freq = int(site_block[1].split()[0])
-                print('   site ', site, 'has', num_freq, 'frequencies')
-                obs = []
+                if out:
+                    print("   site ", site, "has", num_freq, "frequencies")
+
+                obs: list[list[float]] = []
                 for line in site_block[2:]:
-                    # print(line)
                     tmp = [float(x) for x in line.split()]
                     obs.append(tmp)
 
                 if set_errors_mt:
-                    new_errors = errors[0]
-                    print('MT errors will be replaced with relative errors:')
-                    print(new_errors)
+                    new_errors = np.asarray(errors[0], dtype=float)
+                    if out:
+                        print("MT errors will be replaced with relative errors:")
+                        print(new_errors)
                     for comp in obs:
-                        # print(np.arange(1,dat_length+1))
-                        # print(freq)
-                        for ii in np.arange(1, dat_length+1):
-                            print(site, '   ', ii, ii+dat_length)
+                        for ii in range(1, dat_length + 1):
                             val = comp[ii]
-                            err = val*new_errors
-                            comp[ii+dat_length] = err
+                            err = val * new_errors
+                            comp[ii + dat_length] = err
 
                 for comp in obs:
-
-                    for ii in np.arange(1, dat_length+1):
-                        print(site, '   ', ii, ii+dat_length)
+                    for ii in range(1, dat_length + 1):
                         val = comp[ii]
-                        err = comp[ii+dat_length]
+                        err = comp[ii + dat_length]
                         comp[ii] = np.random.normal(loc=val, scale=err)
 
-                '''
-                now write new values
+                for f in range(num_freq - 1):
+                    site_block[f + 2] = "    ".join(
+                        f"{x:.8E}" for x in obs[f]
+                    ) + "\n"
 
-                '''
-                print('obs', np.shape(obs), np.shape(site_block))
-                print(np.arange(num_freq))
-                for f in np.arange(num_freq-1):
-                    print(f)
-                    print(site_block[f+2])
-                    print(obs[f])
-                    site_block[f +
-                               2] = '    '.join([f'{x:.8E}' for x in obs[f]])+'\n'
-                    print(site_block[f+2])
-
-            elif 'VTF' in obs_type:
-
-                if len(errors[1]) != 0:
-                    set_errors_vtf = True
-
+            elif "VTF" in obs_type:
+                set_errors_vtf = len(errors[1]) != 0
                 dat_length = 4
-
                 num_freq = int(site_block[1].split()[0])
-                print('   site ', site, 'has', num_freq, 'frequencies')
+                if out:
+                    print("   site ", site, "has", num_freq, "frequencies")
+
                 obs = []
                 for line in site_block[2:]:
-                    # print(line)
                     tmp = [float(x) for x in line.split()]
                     obs.append(tmp)
 
-                    if set_errors_vtf:
-                        new_errors = errors[1]
-                        print('VTF errors will be replaced with relative errors:')
+                if set_errors_vtf:
+                    new_errors = np.asarray(errors[1], dtype=float)
+                    if out:
+                        print("VTF errors will be replaced with relative errors:")
                         print(new_errors)
-                        for line in obs:
-                            # print(np.arange(1,dat_length+1))
-                            # print(freq)
-                            for ii in np.arange(1, dat_length+1):
-                                print(site, '   ', ii, ii+dat_length)
-                                val = line[ii]
-                                err = new_errors
-                                line[ii+dat_length] = err
+                    for line in obs:
+                        for ii in range(1, dat_length + 1):
+                            val = line[ii]
+                            err = new_errors
+                            line[ii + dat_length] = err
 
-                    for comp in obs:
-                        # print(np.arange(1,dat_length+1))
-                        # print(freq)
-                        for ii in np.arange(1, dat_length+1):
-                            print(site, '   ', ii, ii+dat_length)
-                            val = comp[ii]
-                            err = comp[ii+dat_length]
-                            comp[ii] = np.random.normal(loc=val, scale=err)
+                for comp in obs:
+                    for ii in range(1, dat_length + 1):
+                        val = comp[ii]
+                        err = comp[ii + dat_length]
+                        comp[ii] = np.random.normal(loc=val, scale=err)
 
-                '''
-                now write new values
+                for f in range(num_freq - 1):
+                    site_block[f + 2] = "    ".join(
+                        f"{x:.8E}" for x in obs[f]
+                    ) + "\n"
 
-                '''
-                print('obs', np.shape(obs), np.shape(site_block))
-                print(np.arange(num_freq))
-                for f in np.arange(num_freq-1):
-                    print(f)
-                    print(site_block[f+2])
-                    print(obs[f])
-                    site_block[f +
-                               2] = '    '.join([f'{x:.8E}' for x in obs[f]])+'\n'
-                    print(site_block[f+2])
-
-            elif 'PT' in obs_type:
-
-                if len(errors[2]) != 0:
-                    set_errors_pt = True
-
+            elif "PT" in obs_type:
+                set_errors_pt = len(errors[2]) != 0
                 dat_length = 4
-
                 num_freq = int(site_block[1].split()[0])
-                print('   site ', site, 'has', num_freq, 'frequencies')
+                if out:
+                    print("   site ", site, "has", num_freq, "frequencies")
+
                 obs = []
                 for line in site_block[2:]:
-                    # print(line)
                     tmp = [float(x) for x in line.split()]
                     obs.append(tmp)
 
-                    if set_errors_pt:
-                        new_errors = errors[1]
-                        print('VTF errors will be replaced with relative errors:')
+                if set_errors_pt:
+                    new_errors = np.asarray(errors[2], dtype=float)
+                    if out:
+                        print("PT errors will be replaced with relative errors:")
                         print(new_errors)
-                        for comp in obs:
-                            # print(np.arange(1,dat_length+1))
-                            # print(freq)
-                            for ii in np.arange(1, dat_length+1):
-                                print(site, '   ', ii, ii+dat_length)
-                                val = comp[ii]
-                                err = new_errors
-                                comp[ii+dat_length] = err
-
                     for comp in obs:
-                        # print(np.arange(1,dat_length+1))
-                        # print(freq)
-                        for ii in np.arange(1, dat_length+1):
-                            print(site, '   ', ii, ii+dat_length)
+                        for ii in range(1, dat_length + 1):
                             val = comp[ii]
-                            err = comp[ii+dat_length]
-                            comp[ii] = np.random.normal(loc=val, scale=err)
+                            err = new_errors
+                            comp[ii + dat_length] = err
 
-                '''
-                now write new values
+                for comp in obs:
+                    for ii in range(1, dat_length + 1):
+                        val = comp[ii]
+                        err = comp[ii + dat_length]
+                        comp[ii] = np.random.normal(loc=val, scale=err)
 
-                '''
-                print('obs', np.shape(obs), np.shape(site_block))
-                print(np.arange(num_freq))
-                for f in np.arange(num_freq-1):
-                    print(f)
-                    print(site_block[f+2])
-                    print(obs[f])
-                    site_block[f +
-                               2] = '    '.join([f'{x:.8E}' for x in obs[f]])+'\n'
-                    print(site_block[f+2])
+                for f in range(num_freq - 1):
+                    site_block[f + 2] = "    ".join(
+                        f"{x:.8E}" for x in obs[f]
+                    ) + "\n"
             else:
-
-                sys.exit('modify_data:'+obs_type+' not yet implemented! Exit.')
+                sys.exit(f"modify_data: {obs_type} not yet implemented! Exit.")
 
             data_block[start_site:end_site] = site_block
 
         content[start_block:end_block] = data_block
 
-    print(np.shape(content))
-    with open(template_file, 'w') as f:
+    with open(template_file, "w") as f:
         f.writelines(content)
 
     if out:
-        print('File '+template_file+' successfully written.')
+        print(f"File {template_file} successfully written.")
 
 
-def generate_model_ensemble(dir_base='./ens_',
-                            n_samples=1,
-                            fromto = None,
-                            refmod='resistivity_block_iter0.dat',
-                            q=None,
-                            method='add',
-                            out=True):
-    '''
+def generate_model_ensemble(
+    dir_base: str = "./ens_",
+    n_samples: int = 1,
+    fromto: Optional[Tuple[int, int]] = None,
+    refmod: str = "resistivity_block_iter0.dat",
+    q: Optional[scipy.sparse.spmatrix | np.ndarray] = None,
+    method: str = "add",
+    out: bool = True,
+) -> list[str]:
+    """
+    Generate a resistivity model ensemble based on a precision matrix R (roughness).
 
-    Generate perturbed model based on precision matrix.
+    Two sampling strategies are supported:
 
-    See:
+    - low_rank = True:
+        Use :func:`sample_rtr_low_rank` with eigenpairs of Q = R.T @ R
+        (currently estimating them internally).
+    - low_rank = False:
+        Use :func:`sample_rtr_full_rank`.
 
-    Rue, H. & Held, L., 2005.
-        Gaussian Markov Random Fields: Theory and Applications.
-        Monographs on Statistics and Applied Probability, Vol. 104,
-        Chapman and Hall/CRC. doi:10.1201/9780203492024
-
-
+    The resulting log10-resistivity samples are inserted into
+    FEMTIC resistivity_block_iter0.dat files in each ensemble directory.
 
     Parameters
     ----------
-    dir_base : TYPE, optional
-        DESCRIPTION. The default is './ens_'.
-    n_samples : TYPE, optional
-        DESCRIPTION. The default is 1.
-    fromto : TYPE, optional
-        DESCRIPTION. The default is None.
-    refmod : TYPE, optional
-        DESCRIPTION. The default is 'resistivity_block_iter0.dat'.
-    q : TYPE, optional
-        DESCRIPTION. The default is None.
-    method : TYPE, optional
-        DESCRIPTION. The default is 'add'.
-    out : TYPE, optional
-        DESCRIPTION. The default is True.
+    dir_base : str
+        Ensemble base directory (e.g. "./ens_").
+    n_samples : int
+        Number of samples to generate.
+    fromto : (int, int), optional
+        Ensemble index range. If None, use 0..n_samples-1.
+    refmod : str
+        Name of the reference block file inside each ensemble directory.
+    q : ndarray or sparse matrix, optional
+        Roughness matrix R to define Q = R.T @ R. If None, the low-rank
+        branch is currently a placeholder.
+    method : {"add", "replace"}
+        How to combine samples with existing log10 resistivity:
+        - "add": add perturbation to log10(rho_ref).
+        - "replace": ignore original and directly use the samples.
+    out : bool
+        If True, print status messages.
 
     Returns
     -------
-    mod_list : TYPE
-        DESCRIPTION.
-
-    '''
+    mod_list : list of str
+        Paths to the perturbed resistivity block files.
+    """
     low_rank = True
     if low_rank:
-        # def sample_rtr_low_rank(
-        #     eigvals: np.ndarray,
-        #     eigvecs: np.ndarray,
-        #     n_samples: int = 1,
-        #     sigma2_residual: float = 0.0,
-        #     rng: Optional[Generator] = None,
-        # ) -> np.ndarray:
-
+        # Placeholder: currently estimates eigpairs from R.T @ R internally.
+        # For large problems, pre-compute eigpairs and pass them instead.
         samples = sample_rtr_low_rank(
-            )
+            q if q is not None else np.eye(4),  # dummy fallback
+            n_samples=n_samples,
+            n_eig=32,
+            sigma2_residual=0.0,
+        )
     else:
+        if q is None:
+            raise ValueError("generate_model_ensemble: q must be provided for full-rank.")
         samples = sample_rtr_full_rank(
             R=q,
             n_samples=n_samples,
-            lam = 0.0,)
+            lam=0.0,
+        )
 
-    mod_list = []
-    for iens in np.arange(n_samples):
-        file = dir_base+str(iens)+'/'+refmod
-        shutil.copy(file, file.replace('.dat', '_orig.dat'))
-        '''
-        generate perturbed model
-        '''
-        insert_model(refmod =refmod,
-                         data=samples[iens,:],
-                         data_file=None,
-                         data_name='sample'+str(iens))
+    if fromto is None:
+        fromto_arr = np.arange(n_samples)
+    else:
+        fromto_arr = np.arange(fromto[0], fromto[1])
+
+    mod_list: list[str] = []
+    for iens, sample in zip(fromto_arr, samples):
+        file = f"{dir_base}{iens}/{refmod}"
+        shutil.copy(file, file.replace(".dat", "_orig.dat"))
+        insert_model(
+            template=refmod,
+            data=sample,
+            data_file=file,
+            data_name=f"sample{iens}",
+        )
         mod_list.append(file)
 
     if out:
-        print('\n')
-        print('list of perturbed model files:')
+        print("\nlist of perturbed model files:")
         print(mod_list)
 
     return mod_list
 
 
-def read_model(model_file=None,  model_trans='log10',  out=True):
-    '''
+def read_model(
+    model_file: str | Path,
+    model_trans: str = "log10",
+    out: bool = True,
+) -> np.ndarray:
+    """
+    Read a FEMTIC resistivity_block_iterX.dat and return log10-resistivity vector.
 
-    vrath   Sat Jun  7 06:03:58 PM CEST 2025
+    Parameters
+    ----------
+    model_file : str or Path
+        Path to FEMTIC resistivity block file.
+    model_trans : {"log10", "none"}
+        If "log10", return log10(rho); otherwise return rho itself.
+    out : bool
+        If True, print small info.
 
-    '''
-#    import numpy as np
-
-    # rng = np.random.default_rng()
+    Returns
+    -------
+    model : ndarray, shape (n_cells - 2,)
+        Model values in requested space. The first two region indices (air,
+        ocean) are skipped, following the convention of the other routines.
+    """
     if model_file is None:
-        exit('No model file given! Exit.')
+        sys.exit("read_model: No model file given! Exit.")
 
-    with open(model_file, 'r') as file:
+    with open(model_file, "r") as file:
         content = file.readlines()
 
-    nn = content[0].split()
-    nn = [int(tmp) for tmp in nn]
+    nn = [int(tmp) for tmp in content[0].split()]
 
-    s_num = 0
-    for elem in range(nn[0]+1, nn[0]+nn[1]+1):
-        s_num = s_num + 1
+    values: list[float] = []
+    for elem in range(nn[0] + 1, nn[0] + nn[1] + 1):
         x = float(content[elem].split()[1])
-        if s_num == 1:
-            model = [x]
-        else:
-            model.append(x)
+        values.append(x)
 
-    model = np.array(model)
-    # print(model[0], model[nn[1]-1])
-    if 'log10' in model_trans:
-        print('model is log10 resistivity!')
+    model = np.asarray(values, dtype=float)
+
+    if "log10" in model_trans.lower():
+        if out:
+            print("model is log10 resistivity!")
         model = np.log10(model)
 
     return model
 
 
+def modify_model(
+    template_file: str = "resistivity_block_iter0.dat",
+    draw_from: Sequence[float | str] = ("normal", 0.0, 1.0),
+    method: str = "add",
+    q: Optional[scipy.sparse.spmatrix | np.ndarray] = None,
+    decomposed: bool = False,
+    regeps: float = 1.0e-8,
+    out: bool = True,
+) -> None:
+    """
+    Modify a FEMTIC resistivity_block_iter0.dat in-place by adding random
+    perturbations in log10-resistivity.
 
-def modify_model(template_file='resistivity_block_iter0.dat',
-                 draw_from=['normal', 0., 1.],
-                 method='add',
-                 q=None,
-                 decomposed=False,
-                 regeps=1.e-8,
-                 out=True):
-    '''
-    Created on Thu Mpr 17 17:13:38 2025
+    Parameters
+    ----------
+    template_file : str
+        Path to block file.
+    draw_from : sequence
+        Either ["normal", mu, sigma] or ["uniform", a, b].
+    method : {"add", "replace"}
+        If "add", add the perturbation in log10 domain. If "replace", ignore
+        original rho and use the random samples as log10(rho).
+    q : sparse or dense matrix, optional
+        Placeholder for covariance-based perturbations (not used in this
+        simplified version; noise is i.i.d.).
+    decomposed : bool
+        Placeholder flag for pre-decomposed covariance (unused).
+    regeps : float
+        Placeholder diagonal regularisation (unused).
+    out : bool
+        If True, print statistics about perturbations.
 
-    @author:       vrath
-    '''
-
-    # def sample_rtr_full_rank(
-    #     R: np.ndarray | "scipy.sparse.spmatrix",
-    #     n_samples: int = 1,
-    #     lam: float = 0.0,
-    #     solver: Optional[Callable[[np.ndarray], np.ndarray]] = None,
-    #     rng: Optional[Generator] = None,
-    # ) -> np.ndarray:
-    # rng = np.random.default_rng()
-
+    Notes
+    -----
+    The first two region entries (0 = air, 1 = ocean) are kept fixed,
+    matching FEMTIC conventions.
+    """
     if template_file is None:
-        template_file = 'resistivity_block_iter0.dat'
+        template_file = "resistivity_block_iter0.dat"
 
-    with open(template_file, 'r') as file:
+    with open(template_file, "r") as file:
         content = file.readlines()
 
-    nn = content[0].split()
-    nn = [int(tmp) for tmp in nn]
+    nn = [int(tmp) for tmp in content[0].split()]
     n_cells = nn[1]
 
-    if 'normal' in draw_from[0]:
+    if "normal" in str(draw_from[0]).lower():
         samples = np.random.normal(
-            loc=draw_from[1], scale=draw_from[2], size=n_cells-2)
+            loc=float(draw_from[1]),
+            scale=float(draw_from[2]),
+            size=n_cells - 2,
+        )
     else:
         samples = np.random.uniform(
-            low=draw_from[1], high=draw_from[2], size=n_cells-2)
+            low=float(draw_from[1]),
+            high=float(draw_from[2]),
+            size=n_cells - 2,
+        )
 
-
-    # element groups: air and seawater fixed
-    new_lines = [
-        '         0        1.000000e+09   1.000000e-20   1.000000e+20   1.000000e+00         1',
-        '         1        2.500000e-01   1.000000e-20   1.000000e+20   1.000000e+00         1'
+    new_lines: list[str] = [
+        "         0        1.000000e+09   1.000000e-20   1.000000e+20   1.000000e+00         1",
+        "         1        2.500000e-01   1.000000e-20   1.000000e+20   1.000000e+00         1",
     ]
 
-    print(nn[0], nn[0]+nn[1]-1, nn[1]-1, np.shape(samples))
+    if out:
+        print(nn[0], nn[0] + nn[1] - 1, nn[1] - 1, np.shape(samples))
 
     e_num = 1
-    for elem in range(nn[0]+3, nn[0]+nn[1]+1):
-        e_num = e_num + 1
-        line = content[elem].split()
-        x = float(line[1])
+    for elem in range(nn[0] + 3, nn[0] + nn[1] + 1):
+        e_num += 1
+        line_parts = content[elem].split()
+        x = float(line_parts[1])
 
-        if 'add' in method:
-            x_log = np.log10(x) + samples[e_num-2]
+        if "add" in method.lower():
+            x_log = np.log10(x) + samples[e_num - 2]
         else:
-            x_log = samples[e_num-2]
+            x_log = samples[e_num - 2]
 
-        x = 10.**(x_log)
-
-        line = f' {e_num:9d}        {x:.6e}   1.000000e-20   1.000000e+20   1.000000e+00         0'
+        x_new = 10.0 ** x_log
+        line = (
+            f" {e_num:9d}        {x_new:.6e}   1.000000e-20   1.000000e+20   "
+            f"1.000000e+00         0"
+        )
         new_lines.append(line)
 
-    new_lines = '\n'.join(new_lines)
+    new_blob = "\n".join(new_lines) + "\n"
 
-    with open(template_file, 'w') as f:
-        f.writelines(content[0:nn[0]+1])
-        f.writelines(new_lines)
+    with open(template_file, "w") as f:
+        f.writelines(content[0 : nn[0] + 1])
+        f.write(new_blob)
 
     if out:
-        print('File '+template_file+' successfully written.')
-        print('Number of perturbations', len(samples))
-        print('Mverage perturbation', np.mean(samples))
-        print('StdDev perturbation', np.std(samples))
-
-    # return samples
+        print(f"File {template_file} successfully written.")
+        print("Number of perturbations", len(samples))
+        print("Average perturbation", np.mean(samples))
+        print("StdDev perturbation", np.std(samples))
 
 
-def insert_model(template='resistivity_block_iter0.dat',
-                 data=None,
-                 data_file=None,
-                 data_name='',
-                 out=True):
-    '''
-    Created on Thu Mpr 17 17:13:38 2025
+def insert_model(
+    template: str = "resistivity_block_iter0.dat",
+    data: np.ndarray | Sequence[float] | None = None,
+    data_file: Optional[str] = None,
+    data_name: str = "",
+    out: bool = True,
+) -> None:
+    """
+    Insert a log10-resistivity vector into a FEMTIC resistivity block file.
 
-    @author:     vrath
-    '''
-    # import numpy as np
-    # rng = np.random.default_rng()
+    The input `data` is interpreted as log10(ρ) for all regions except the
+    first two (air, ocean), which are kept fixed with standard values:
 
+        region 0 → 1e9 Ωm, fixed
+        region 1 → 0.25 Ωm, fixed (ocean)
+
+    Parameters
+    ----------
+    template : str
+        Template block file to read header and region mapping from.
+    data : array-like, shape (nreg - 2,)
+        Log10-resistivity values for regions 2..nreg-1.
+    data_file : str, optional
+        Output file. If None, overwrite `template`.
+    data_name : str
+        Optional label (unused, for bookkeeping).
+    out : bool
+        If True, print summary.
+    """
     if data is None:
-        sys.exit('insert_model: No data given! Exit.')
-
+        sys.exit("insert_model: No data given! Exit.")
 
     if template is None:
-        template = 'resistivity_block_iter0.dat'
-
+        template = "resistivity_block_iter0.dat"
 
     if data_file is None:
         data_file = template
 
-    with open(template, 'r') as file:
+    with open(template, "r") as file:
         content = file.readlines()
 
-    nn = content[0].split()
-    nn = [int(tmp) for tmp in nn]
+    nn = [int(tmp) for tmp in content[0].split()]
     n_cells = nn[1]
 
-    size = n_cells-2
+    size = n_cells - 2
+    data_arr = np.asarray(data, dtype=float)
+    if data_arr.size != size:
+        raise ValueError(
+            f"insert_model: expected {size} entries, got {data_arr.size}."
+        )
 
-    # element groups: air and seawater fixed
-    new_lines = [
-        '         0        1.000000e+09   1.000000e-20   1.000000e+20   1.000000e+00         1',
-        '         1        2.500000e-01   1.000000e-20   1.000000e+20   1.000000e+00         1'
+    new_lines: list[str] = [
+        "         0        1.000000e+09   1.000000e-20   1.000000e+20   1.000000e+00         1",
+        "         1        2.500000e-01   1.000000e-20   1.000000e+20   1.000000e+00         1",
     ]
 
-    print(nn[0], nn[0]+nn[1]-1, nn[1]-1, np.shape(data))
+    if out:
+        print(nn[0], nn[0] + nn[1] - 1, nn[1] - 1, np.shape(data_arr))
 
-    nn = content[0].split()
-    nn = [int(tmp) for tmp in nn]
-
-    data = np.power(10., data)
+    rho = np.power(10.0, data_arr)
 
     e_num = 1
     s_num = -1
-    for elem in range(nn[0]+3, nn[0]+nn[1]+1):
-        e_num = e_num + 1
-        s_num = s_num + 1
-        x = data[s_num]
-
-        line = f' {e_num:9d}        {x:.6e}   1.000000e-20   1.000000e+20   1.000000e+00         0'
+    for elem in range(nn[0] + 3, nn[0] + nn[1] + 1):
+        e_num += 1
+        s_num += 1
+        x = rho[s_num]
+        line = (
+            f" {e_num:9d}        {x:.6e}   1.000000e-20   1.000000e+20   "
+            f"1.000000e+00         0"
+        )
         new_lines.append(line)
 
-    new_lines = '\n'.join(new_lines)
+    new_blob = "\n".join(new_lines) + "\n"
 
-    with open(data_file, 'w') as f:
-        f.writelines(content[0:nn[0]+1])
-        f.writelines(new_lines)
+    with open(data_file, "w") as f:
+        f.writelines(content[0 : nn[0] + 1])
+        f.write(new_blob)
 
     if out:
-        print('File '+data_file+' successfully written.')
-        print('Number of data replaced', len(data))
-
-    # return samples
+        print(f"File {data_file} successfully written.")
+        print("Number of data replaced", len(data_arr))
 
 
-def modify_data_fcn(template_file='observe.dat',
-                    draw_from=['normal', 0., 1.],
-                    scalfac=1.,
-                    out=True):
-    '''
-    Created on Thu Mpr 17 17:13:38 2025
+def modify_data_fcn(
+    template_file: str = "observe.dat",
+    draw_from: Sequence[float | str] = ("normal", 0.0, 1.0),
+    scalfac: float = 1.0,
+    out: bool = True,
+) -> None:
+    """
+    Simpler variant of :func:`modify_data` using existing error columns scaled
+    by a factor `scalfac`.
 
-    @author:   vrath
-    '''
-#    import numpy as np
+    Parameters
+    ----------
+    template_file : str
+        FEMTIC observe.dat path.
+    draw_from : sequence
+        Noise distribution spec (currently normal only).
+    scalfac : float
+        Scale factor applied to existing error columns before sampling.
+    out : bool
+        If True, print status messages.
 
-#
+    Notes
+    -----
+    This function preserves existing relative error structure, only scales it
+    and draws noise accordingly.
+    """
     if template_file is None:
-        template_file = 'observe.dat'
+        template_file = "observe.dat"
 
-    print('\n', template_file, ':')
-
-    with open(template_file, 'r') as file:
+    with open(template_file, "r") as file:
         content = file.readlines()
 
-    line = content[0].split()
-    obs_type = line[0]
-    num_site = int(line[1])
-    print(len(content))
+    line0 = content[0].split()
+    obs_type = line0[0]
 
-    '''
-    find data blocks
-
-    '''
-    start_lines_datablock = []
+    start_lines_datablock: list[int] = []
     for number, line in enumerate(content, 0):
         l = line.split()
         if len(l) == 2:
             start_lines_datablock.append(number)
-            print(' data block', l[0], 'with',
-                  l[1], 'sites begins at line', number)
-        if 'END' in l:
-            start_lines_datablock.append(number-1)
-            print(' no further data block in file')
-    '''
-     loop over  data blocks
+            if out:
+                print(" data block", l[0], "with", l[1], "sites begins at line", number)
+        if "END" in l:
+            start_lines_datablock.append(number - 1)
+            if out:
+                print(" no further data block in file")
 
-    '''
-    num_datablock = len(start_lines_datablock)-1
+    num_datablock = len(start_lines_datablock) - 1
     for block in np.arange(num_datablock):
         start_block = start_lines_datablock[block]
-        end_block = start_lines_datablock[block+1]
-        # print(start_block, end_block)
-        # print(type(start_block), type(end_block))
+        end_block = start_lines_datablock[block + 1]
         data_block = content[start_block:end_block]
-        '''
-        find sites
-        '''
-        print(np.shape(data_block))
-        start_lines_site = []
-        num_freqs = []
+
+        if out:
+            print(np.shape(data_block))
+        start_lines_site: list[int] = []
+        num_freqs: list[int] = []
         for number, line in enumerate(data_block, 0):
             l = line.split()
             if len(l) == 4:
-                print(l)
+                if out:
+                    print(l)
                 start_lines_site.append(number)
-                num_freqs.append(int(data_block[number+1].split()[0]))
-                print('  site', l[0], 'begins at line', number)
-            if 'END' in l:
-                start_lines_datablock.append(number-1)
-                print(' no further site block in file')
-        print('\n')
-        # print(start_lines_site)
-        # print(num_freqs)
+                num_freqs.append(int(data_block[number + 1].split()[0]))
+                if out:
+                    print("  site", l[0], "begins at line", number)
+            if "END" in l:
+                start_lines_datablock.append(number - 1)
+                if out:
+                    print(" no further site block in file")
+        if out:
+            print("\n")
 
         num_sites = len(start_lines_site)
         for site in np.arange(num_sites):
             start_site = start_lines_site[site]
-            end_site = start_site+num_freqs[site]+2
+            end_site = start_site + num_freqs[site] + 2
             site_block = data_block[start_site:end_site]
-            # print('site',site+1)
-            # print(np.shape(site_block))
-            # print(site_block)
 
-            if 'MT' in obs_type:
-
+            if "MT" in obs_type:
                 dat_length = 8
-
                 num_freq = int(site_block[1].split()[0])
-                print('   site ', site, 'has', num_freq, 'frequencies')
-                obs = []
+                if out:
+                    print("   site ", site, "has", num_freq, "frequencies")
+
+                obs: list[list[float]] = []
                 for line in site_block[2:]:
-                    # print(line)
                     tmp = [float(x) for x in line.split()]
                     obs.append(tmp)
 
-                # print('obs',np.shape(obs), np.shape(site_block))
-                # print(obs)
-                # print(np.arange(num_freq))
-
                 for line in obs:
-                    # print(np.arange(1,dat_length+1))
-                    # print(freq)
-                    for ii in np.arange(1, dat_length+1):
-                        print(site, '   ', ii, ii+dat_length)
+                    for ii in range(1, dat_length + 1):
                         val = line[ii]
-                        err = line[ii+dat_length]*scalfac
+                        err = line[ii + dat_length] * scalfac
                         line[ii] = np.random.normal(loc=val, scale=err)
 
-                '''
-                now write new values
+                for f in range(num_freq - 1):
+                    site_block[f + 2] = "    ".join(
+                        f"{x:.8E}" for x in obs[f]
+                    ) + "\n"
 
-                '''
-                print('obs', np.shape(obs), np.shape(site_block))
-                print(np.arange(num_freq))
-                for f in np.arange(num_freq-1):
-                    print(f)
-                    print(site_block[f+2])
-                    print(obs[f])
-                    site_block[f+2] = '    '.join([f'{x:.8E}' for x in obs[f]])
-                    print(site_block[f+2])
-
-            elif 'VTF' in obs_type:
-
+            elif "VTF" in obs_type:
                 dat_length = 4
-
                 num_freq = int(site_block[1].split()[0])
-                print('   site ', site, 'has', num_freq, 'frequencies')
+                if out:
+                    print("   site ", site, "has", num_freq, "frequencies")
+
                 obs = []
                 for line in site_block[2:]:
-                    # print(line)
                     tmp = [float(x) for x in line.split()]
                     obs.append(tmp)
 
-                # print('obs',np.shape(obs), np.shape(site_block))
-                # print(obs)
-                # print(np.arange(num_freq))
-
                 for line in obs:
-                    # print(np.arange(1,dat_length+1))
-                    # print(freq)
-                    for ii in np.arange(1, dat_length+1):
-                        print(site, '   ', ii, ii+dat_length)
+                    for ii in range(1, dat_length + 1):
                         val = line[ii]
-                        err = line[ii+dat_length]*scalfac
+                        err = line[ii + dat_length] * scalfac
                         line[ii] = np.random.normal(loc=val, scale=err)
 
-                '''
-                now write new values
-
-                '''
-                print('obs', np.shape(obs), np.shape(site_block))
-                print(np.arange(num_freq))
-                for f in np.arange(num_freq-1):
-                    print(f)
-                    print(site_block[f+2])
-                    print(obs[f])
-                    site_block[f+2] = '    '.join([f'{x:.8E}' for x in obs[f]])
-                    print(site_block[f+2])
+                for f in range(num_freq - 1):
+                    site_block[f + 2] = "    ".join(
+                        f"{x:.8E}" for x in obs[f]
+                    ) + "\n"
             else:
-
-                sys.exit('modify_data: '+obs_type +
-                         ' not yet implemented! Exit.')
+                sys.exit(f"modify_data_fcn: {obs_type} not yet implemented! Exit.")
 
             data_block[start_site:end_site] = site_block
 
         content[start_block:end_block] = data_block
 
-    print(np.shape(content))
-    with open(template_file, 'w') as f:
+    with open(template_file, "w") as f:
         f.writelines(content)
 
     if out:
-        print('File '+template_file+' successfully written.')
+        print(f"File {template_file} successfully written.")
 
 
-def get_femtic_sorted(files=[], out=True):
-    numbers = []
-    for file in files:
-        numbers.append(int(file[11:]))
+def get_femtic_sorted(files: Sequence[str], out: bool = True) -> list[str]:
+    """
+    Sort FEMTIC sensitivity matrix files of the form 'sensMatFreqXXXX'
+    by their integer suffix and return a sorted list.
+
+    Parameters
+    ----------
+    files : sequence of str
+        File names.
+    out : bool
+        If True, print the sorted list.
+
+    Returns
+    -------
+    listfiles : list of str
+        Sorted file names.
+    """
+    numbers = [int(f[11:]) for f in files]
     numbers = sorted(numbers)
 
-    listfiles = []
-    for ii in numbers:
-        fil = 'sensMatFreq'+str(ii)
-        listfiles.append(fil)
-
+    listfiles = [f"sensMatFreq{ii}" for ii in numbers]
     if out:
         print(listfiles)
+
     return listfiles
 
 
-def get_femtic_sites(imp_file='result_MT.txt',
-                     vtf_file='result_VTF.txt',
-                     pt_file='results_PT.txt'):
-    '''
-    Created on Thu Feb 27 10:23:16 2025
-    This creates the files called sites_vtf.txt and sites_imp.txt based on
-    files result_VTF.txt and result_MT.txt as output from applying mergeResultOfFEMTIC
-    to femtic inversion results
-    @authors: charroyj + vrath
-    '''
+def get_femtic_sites(
+    imp_file: str = "result_MT.txt",
+    vtf_file: str = "result_VTF.txt",
+    pt_file: str = "results_PT.txt",
+) -> None:
+    """
+    Generate sites_XXX.txt files from FEMTIC results files.
 
-    # neither inputs nor outputs should normally need to be changed.
+    Parameters
+    ----------
+    imp_file : str
+        MT result file -> sites_MT.txt
+    vtf_file : str
+        VTF result file -> sites_VTF.txt
+    pt_file : str
+        PT result file -> sites_PT.txt
 
+    Notes
+    -----
+    The function mirrors the original femtic.py behaviour but fixes some
+    minor robustness issues. It writes files where each line is
+
+        sitename sitename
+
+    for each unique site encountered in the corresponding results file.
+    """
+    # MT
     if len(imp_file) > 0 and os.path.exists(imp_file):
-        with open(imp_file, 'r') as filein_imp:
-            site = ''
-            fileout_imp = open(imp_file.replace('results', 'sites'), 'w')
+        with open(imp_file, "r") as filein_imp:
+            site = ""
+            fileout_imp = open(imp_file.replace("results", "sites"), "w")
             filein_imp.readline()
             for line in filein_imp:
                 nextsite = line.strip().split()[0]
                 if nextsite != site:
-                    fileout_imp.write(nextsite+' '+nextsite+'\n')
+                    fileout_imp.write(nextsite + " " + nextsite + "\n")
                     site = nextsite
             fileout_imp.close()
     else:
         if len(imp_file) > 0:
-            print(imp_file, 'does not exist!')
+            print(imp_file, "does not exist!")
         else:
-            print('pt_file not defined!')
+            print("imp_file not defined!")
 
+    # VTF
     if len(vtf_file) > 0 and os.path.exists(vtf_file):
-        with open(vtf_file, 'r') as filein_vtf:
-            site = ''
-            fileout_vtf = open(vtf_file.replace('results', 'sites'), 'w')
-            filein_imp.readline()
+        with open(vtf_file, "r") as filein_vtf:
+            site = ""
+            fileout_vtf = open(vtf_file.replace("results", "sites"), "w")
             filein_vtf.readline()
             for line in filein_vtf:
                 nextsite = line.strip().split()[0]
                 if nextsite != site:
-                    fileout_vtf.write(nextsite+' '+nextsite+'\n')
+                    fileout_vtf.write(nextsite + " " + nextsite + "\n")
                     site = nextsite
             fileout_vtf.close()
     else:
         if len(vtf_file) > 0:
-            print(vtf_file, 'does not exist!')
+            print(vtf_file, "does not exist!")
         else:
-            print('vtf_file does not exist!')
+            print("vtf_file not defined!")
 
+    # PT
     if len(pt_file) > 0 and os.path.exists(pt_file):
-        with open(pt_file, 'r') as filein_pt:
-            site = ''
-            fileout_pt = open(vtf_file.replace('results', 'sites'), 'w')
+        with open(pt_file, "r") as filein_pt:
+            site = ""
+            fileout_pt = open(pt_file.replace("results", "sites"), "w")
             filein_pt.readline()
             for line in filein_pt:
                 nextsite = line.strip().split()[0]
                 if nextsite != site:
-                    fileout_pt.write(nextsite+' '+nextsite+'\n')
+                    fileout_pt.write(nextsite + " " + nextsite + "\n")
                     site = nextsite
             fileout_pt.close()
     else:
-        if len(vtf_file) > 0:
-            print(pt_file, 'does not exist!')
+        if len(pt_file) > 0:
+            print(pt_file, "does not exist!")
         else:
-            print('pt_file not defined!')
+            print("pt_file not defined!")
 
 
-def get_femtic_data(data_file=None, site_file=None, data_type='rhophas', out=True):
-    '''
-
+def get_femtic_data(
+    data_file: str,
+    site_file: str,
+    data_type: str = "rhophas",
+    out: bool = True,
+) -> Dict[str, np.ndarray]:
+    """
+    Read FEMTIC results (MT, VTF or PT) and site information.
 
     Parameters
     ----------
-    data_file : TYPE, optional
-        DESCRIPTION. The default is None.
-    site_file : TYPE, optional
-        DESCRIPTION. The default is None.
-    data_type : TYPE, optional
-        DESCRIPTION. The default is 'rhophas'.
-    out : TYPE, optional
-        DESCRIPTION. The default is True.
+    data_file : str
+        results_XXX.txt file from FEMTIC.
+    site_file : str
+        site metadata CSV-like file with columns:
+            name, lat, lon, elev, num
+    data_type : {"rhophas", "imp", "vtf", "pt"}
+        Type of FEMTIC results file.
+    out : bool
+        If True, print debugging info.
 
     Returns
     -------
-    data_dict : TYPE
-        DESCRIPTION.
-
-   Note: Conversion to appropriate units: FEMTIC uses ohms
-         1 ohm = 10000(4*pi) [mV/km/nT]
-
-    '''
-
-    data = []
-    with open(data_file, 'r') as f:
+    data_dict : dict
+        Dictionary containing:
+            - "sites": site indices (0-based)
+            - "frq": frequencies
+            - "per": periods
+            - "lat", "lon", "elv"
+            - "num": site index (0-based)
+            - "nam": site name
+            - "cal", "obs", "err" (arrays of appropriate shape)
+    """
+    data: list[list[float]] = []
+    with open(data_file, "r") as f:
         iline = -1
         for line in f:
-            iline = iline+1
-            if iline > 0:
-                l = line.split()
-                l = [float(x) for x in l]
-                # print(l)
-                l[0] = int(l[0])
-                data.append(l)
-    data = np.array(data)
+            iline += 1
+            if iline == 0:
+                continue
+            l = [float(x) for x in line.split()]
+            l[0] = int(l[0])
+            data.append(l)
+    data_arr = np.asarray(data, dtype=float)
 
-    info = []
-    with open(site_file, 'r') as f:
+    info: list[list[float | str]] = []
+    with open(site_file, "r") as f:
         for line in f:
-            l = line.split(',')
+            l = line.split(",")
             l[1] = float(l[1])
             l[2] = float(l[2])
             l[3] = float(l[3])
             l[4] = int(l[4])
-            # print(l)
             info.append(l)
-    info = np.array(info)
+    info_arr = np.asarray(info, dtype=object)
 
-    sites = np.unique(data[:, 0]).astype('int')-1
+    sites = np.unique(data_arr[:, 0]).astype(int) - 1
 
-    head_dict = dict([
-        ('sites', sites),
-        ('frq', data[:, 1]),
-        ('per', 1./data[:1]),
-        ('lat', np.float64(info[:, 1])),
-        ('lon', np.float64(info[:, 2])),
-        ('elv', np.float64(info[:, 3])),
-        ('num', data[:, 0].astype('int')-1),
-        ('nam', info[:, 0][sites.astype('int')-1])
-    ])
+    head_dict: Dict[str, np.ndarray] = {
+        "sites": sites,
+        "frq": data_arr[:, 1],
+        "per": 1.0 / data_arr[:, 1],
+        "lat": np.asarray(info_arr[:, 1], dtype=float),
+        "lon": np.asarray(info_arr[:, 2], dtype=float),
+        "elv": np.asarray(info_arr[:, 3], dtype=float),
+        "num": data_arr[:, 0].astype(int) - 1,
+        "nam": np.asarray(info_arr[:, 0])[sites.astype(int)],
+    }
 
-    if 'rhophas' in data_type.lower():
-
-        '''
-         Site      Frequency
-         MppRxxCal   PhsxxCal   MppRxyCal   PhsxyCal   MppRyxCal  PhsyxCal  MppRyyCal   PhsyyCal
-         MppRxxObs   PhsxxObs   MppRxyObs   PhsxyObs   MppRyxObs  PhsyxObs  MppRyyObs   PhsyyObs
-         MppRxxErr   PhsxxErr   MppRxyErr   PhsxyErr   MppRyxErr  PhsyxErr  MppRyyErr   PhsyyErr
-
-
-        '''
-        # print(np.shape(data))
-        # print(np.shape(data[:, 2:10 ]))
-        # print(np.shape(data[:, 10:18 ]))
-        # print(np.shape(data[:, 18:26 ]))
-        type_dict = dict([
-            ('cal', data[:, 2:10]),
-            ('obs', data[:, 10:18]),
-            ('err', data[:, 18:26]),
-        ])
-
-    elif 'imp' in data_type.lower():
-
-        '''
-         Site      Frequency
-         ReZxxCal   ImZxxCal   ReZxyCal   ImZxyCal   ReZyxCal  ImZyxCal  ReZyyCal   ImZyyCal
-         ReZxxObs   ImZxxObs   ReZxyObs   ImZxyObs   ReZyxObs  ImZyxObs  ReZyyObs   ImZyyObs
-         ReZxxErr   ImZxxErr   ReZxyErr   ImZxyErr   ReZyxErr  ImZyxErr  ReZyyErr   ImZyyErr
-
-         Z_femtic in Ohm: 1 Ohm = 1e4*(4*pi) [mV/km/nT] => Z =  1.e-4/(4*np.pi)*Z_femtic
-
-        '''
-        ufact = 1.e-4/(4*np.pi)
-        type_dict = dict([
-            ('cal', ufact*data[:, 2:10]),
-            ('obs', ufact*data[:, 10:18]),
-            ('err', ufact*data[:, 18:26]),
-        ])
-
-    elif 'vtf' in data_type.lower():
-
-        '''
-        Site    Frequency
-        ReTzxCal   ImTzxCal   ReTzyCal   ImTzyCal
-        ReTzxOb    ImTzxObs   ReTzyObs   ImTzyObs
-        ReTzxErr   ImTzxErr   ReTzyErr   ImTzyErr
-        '''
-        type_dict = dict([
-            ('cal', data[:, 2:6]),
-            ('obs', data[:, 6:10]),
-            ('err', data[:, 10:15]),
-
-        ])
-
-    elif 'pt' in data_type.lower():
-        '''
-        Site    Frequency
-        ReTzxCal   ImTzxCal   ReTzyCal   ImTzyCal
-        ReTzxOb    ImTzxObs   ReTzyObs   ImTzyObs
-        ReTzxErr   ImTzxErr   ReTzyErr   ImTzyErr
-        '''
-        type_dict = dict([
-            ('cal', data[:, 2:6]),
-            ('obs', data[:, 6:18]),
-            ('err', data[:, 10:14]),
-
-        ])
-
+    dtyp = data_type.lower()
+    if "rhophas" in dtyp:
+        type_dict = {
+            "cal": data_arr[:, 2:10],
+            "obs": data_arr[:, 10:18],
+            "err": data_arr[:, 18:26],
+        }
+    elif "imp" in dtyp:
+        ufact = 1.0e-4 / (4.0 * np.pi)
+        type_dict = {
+            "cal": ufact * data_arr[:, 2:10],
+            "obs": ufact * data_arr[:, 10:18],
+            "err": ufact * data_arr[:, 18:26],
+        }
+    elif "vtf" in dtyp:
+        type_dict = {
+            "cal": data_arr[:, 2:6],
+            "obs": data_arr[:, 6:10],
+            "err": data_arr[:, 10:14],
+        }
+    elif "pt" in dtyp:
+        type_dict = {
+            "cal": data_arr[:, 2:6],
+            "obs": data_arr[:, 6:10],
+            "err": data_arr[:, 10:14],
+        }
     else:
-        sys.exit('get_femtic_data: data type ' +
-                 data_type.lower()+' not implemented! Exit.')
+        sys.exit(f"get_femtic_data: data type {dtyp} not implemented! Exit.")
 
     data_dict = {**head_dict, **type_dict}
-
+    if out:
+        print("get_femtic_data: loaded", data_type, "with shape", data_arr.shape)
     return data_dict
 
-# def get_work_model(directory=None, file=None, out=True):
 
-#     work_model = []
-#     return work_model
-
-
-def centroid_tetrahedron(nodes=None):
-    '''
-    Created on Thu Jul 17 08:36:04 2025
-
-    @author: vrath
-    '''
-
-    if nodes is None:
-        sys.exit('centroid: Nodes not set! Exit.')
-
-    if np.shape(nodes) != [3, 4]:
-        sys.exit('centroid: Nodes shape is not (3,4)! Exit.')
-
-    # nodes = np.nan*np.zeros((3,4))
-
-    centre = np.mean(nodes, axis=0)
-
-    return centre
-
-
-def get_roughness(filerough='roughening_matrix.out',
-                  regeps=None,
-                  spformat='csc',
-                  out=True):
-    '''
-    generate prior covariance for
-    ensemble perturbations
-
-    Note: does not include air/sea/distortion parameters!
+def centroid_tetrahedron(nodes: np.ndarray) -> np.ndarray:
+    """
+    Compute centroid of a tetrahedron given node coordinates.
 
     Parameters
     ----------
-    filerough : string
-        name of femtic roughness file . The default is None.
+    nodes : ndarray, shape (4, 3) or (3, 4)
+        Node coordinates of the tetrahedron. Both shapes are accepted;
+        the function will transpose if needed.
 
     Returns
     -------
-    r or rtr : np.array
-
-    author: vrath,  created on Thu Jul 21, 2025
-
-    ResistivityBlock.cpp. l1778ff
-
-    RougheningMatrix.cpp/RougheningMatrix.cpp: 4
-     57: 24: void RougheningMatrix::setStructureMndMddValueByTripletFormat( const int row, const int col, const double val ){
-     58: 22: 	DoubleSparseMatrix::setStructureMndMddValueByTripletFormat( row, col, val );
-     80: 15: 				RTRMatrix.setStructureMndMddValueByTripletFormat(row, col, value);
-     86: 13: 		RTRMatrix.setStructureMndMddValueByTripletFormat(iCol, iCol, smallValueOnDiagonals);
-    RougheningMatrix.h/RougheningMatrix.h: 1
-     47: 15: 	virtual void setStructureMndMddValueByTripletFormat( const int row, const int col, const double val );
-    RougheningSquareMatrix.cpp/RougheningSquareMatrix.cpp: 4
-     58: 30: void RougheningSquareMatrix::setStructureMndMddValueByTripletFormat( const int row, const int col, const double val ){
-     59: 22: 	DoubleSparseMatrix::setStructureMndMddValueByTripletFormat( row, col, val );
-     81: 15: 				RTRMatrix.setStructureMndMddValueByTripletFormat(row, col, value);
-     87: 13: 		RTRMatrix.setStructureMndMddValueByTripletFormat(iRow, iRow, smallValueOnDiagonals);
-    RougheningSquareMatrix.h/RougheningSquareMatrix.h: 1
-     47: 15: 	virtual void setStructureMndMddValueByTripletFormat( const int row, const int col, const double val );
+    centre : ndarray, shape (3,)
+        Centroid coordinates.
+    """
+    arr = np.asarray(nodes, dtype=float)
+    if arr.shape == (3, 4):
+        arr = arr.T
+    if arr.shape != (4, 3):
+        sys.exit("centroid_tetrahedron: Nodes shape must be (4,3) or (3,4)! Exit.")
+    centre = np.mean(arr, axis=0)
+    return centre
 
 
-    // *******************************************************************************************************
-    // Calculate roughning matrix from user-defined roughning factor
-    void ResistivityBlock::calcRougheningMatrixUserDefined( const double factor ){
-
-        // Read user-defined roughening matrix
-        const std::string fileName = 'roughening_matrix.dat';
-        std::ifstream ifs( fileName.c_str(), std::ios::in );
-
-        if( ifs.fail() ){
-                OutputFiles::m_logFile << 'File open error : ' << fileName.c_str() << ' !!' << std::endl;
-                exit(1);
-        }
-
-        OutputFiles::m_logFile << '# Read user-defined roughening matrix from ' << fileName.c_str() << '.' << std::endl;
-
-        int ibuf(0);RoughType
-        ifs >> ibuf;
-        const int numBlock(ibuf);
-        if( numBlock <= 0 ){
-                OutputFiles::m_logFile << 'Error : Total number of resistivity blocks must be positive !! : ' << numBlock << std::endl;
-                exit(1);
-        }
-
-        for( int iBlock = 0 ; iBlock < numBlock; ++iBlock ){
-                ifs >> ibuf;
-                if( iBlock != ibuf ){
-                        OutputFiles::m_logFile << 'Error : Resistivity block numbers must be numbered consecutively from zero !!' << std::endl;
-                        exit(1);
-                }
-
-                ifs >> ibuf;
-                const int numNonzeros(ibuf);
-                std::vector< std::pair<int, double> > blockIDMndFactor;
-                blockIDMndFactor.resize(numNonzeros);
-                for( int innz = 0 ; innz < numNonzeros; ++innz ){
-                        ifs >> ibuf;
-                        blockIDMndFactor[innz].first = ibuf;
-                }
-                for( int innz = 0 ; innz < numNonzeros; ++innz ){
-                        double dbuf(0.0);
-                        ifs >> dbuf;
-                        blockIDMndFactor[innz].second = dbuf;
-                }
-                for( int innz = 0 ; innz < numNonzeros; ++innz ){
-                        m_rougheningMatrix.setStructureMndMddValueByTripletFormat( iBlock, blockIDMndFactor[innz].first, blockIDMndFactor[innz].second );
-                }
-        }
+# ============================================================================
+# SECTION 2: roughness / prior covariance / matrix tools (from femtic.py)
+# ============================================================================
 
 
-        ifs.close();
+def get_roughness(
+    filerough: str = "roughening_matrix.out",
+    regeps: Optional[float] = None,
+    spformat: str = "csc",
+    out: bool = True,
+) -> scipy.sparse.spmatrix:
+    """
+    Read FEMTIC roughening_matrix.dat and build sparse roughness matrix R.
 
-    }
+    Parameters
+    ----------
+    filerough : str
+        Path to roughening_matrix.dat file.
+    regeps : float or None
+        If not None, add regeps * I to R.
+    spformat : {"csr", "csc", "coo"}
+        Sparse format of the returned matrix.
+    out : bool
+        If True, print timings and matrix statistics.
 
-    '''
-    from scipy.sparse import csr_array, csc_array, coo_array, eye_array
+    Returns
+    -------
+    R : sparse matrix
+        Roughness matrix in chosen sparse format.
+
+    Notes
+    -----
+    The function implements the logic implied by FEMTIC's C++ code for
+    user-defined roughening matrices. It first counts blocks with zero
+    non-zeros, then builds the triplet arrays (row, col, val).
+    """
+    from scipy.sparse import csr_array, csc_array, coo_array, eye as eye_array
 
     start = time.perf_counter()
-    print('get_roughness: Reading from', filerough)
-    irow = []
-    icol = []
-    vals = []
-    with open(filerough, 'r') as file:
+    if out:
+        print("get_roughness: Reading from", filerough)
+    irow: list[int] = []
+    icol: list[int] = []
+    vals: list[float] = []
+
+    with open(filerough, "r") as file:
         content = file.readlines()
 
     num_elem = int(content[0].split()[0])
-    print('get_roughness: File read:', time.perf_counter() - start, 's')
-    print('get_roughness: Number of elements:', num_elem)
+    if out:
+        print("get_roughness: File read:", time.perf_counter() - start, "s")
+        print("get_roughness: Number of elements:", num_elem)
 
     iline = 0
     zeros = 0
-    while iline < len(content)-1:  # -2
-        iline = iline + 1
-        # print(content[iline])
+    # first pass: count zero blocks
+    while iline < len(content) - 1:
+        iline += 1
         ele = int(content[iline].split()[0])
-        nel = int(content[iline+1].split()[0])
+        nel = int(content[iline + 1].split()[0])
         if nel == 0:
-            iline = iline + 1
-            zeros = zeros + 1
-            print('passed', ele, nel, iline)
+            iline += 1
+            zeros += 1
+            if out:
+                print("passed", ele, nel, iline)
         else:
-            iline = iline + 2
+            iline += 2
+    if out:
+        print("Zero elements:", zeros)
 
-    print('Zero elements:', zeros)
-
+    # second pass: collect non-zero triplets
     start = time.perf_counter()
     iline = 0
-    while iline < len(content)-1:  # -2
-        iline = iline + 1
-        # print(content[iline])
+    while iline < len(content) - 1:
+        iline += 1
         ele = int(content[iline].split()[0])
-        nel = int(content[iline+1].split()[0])
+        nel = int(content[iline + 1].split()[0])
         if nel == 0:
-            iline = iline + 1
-            # print('passed', ele, nel, iline)
-            # pass
+            iline += 1
             continue
         else:
-            irow += [ele-zeros]*nel
-            col = [int(x)-zeros for x in content[iline+1].split()[1:]]
+            irow += [ele - zeros] * nel
+            col = [int(x) - zeros for x in content[iline + 1].split()[1:]]
             icol += col
-            val = [float(x) for x in content[iline+2].split()]
+            val = [float(x) for x in content[iline + 2].split()]
             vals += val
-            iline = iline + 2
-            # print('used', ele, nel, iline, val)
+            iline += 2
 
-    # print(irow[0],icol[0])
-    irow = np.asarray(irow)
-    icol = np.asarray(icol)
-    vals = np.asarray(vals)
+    irow_arr = np.asarray(irow, dtype=int)
+    icol_arr = np.asarray(icol, dtype=int)
+    vals_arr = np.asarray(vals, dtype=float)
 
-    R = coo_array((vals, (irow, icol)))
-    print(R.shape)
-
-    print('get_roughness: R sparse format is', R.format)
+    R = coo_array((vals_arr, (irow_arr, icol_arr)))
+    if out:
+        print(R.shape)
+        print("get_roughness: R sparse format is", R.format)
 
     if regeps is not None:
-        R = R + regeps*eye_array(R.shape[0], format=R.format)
+        R = R + regeps * eye_array(R.shape[0], format=R.format)
         if out:
-            print(regeps, 'added to diag(R)')
+            print(regeps, "added to diag(R)")
 
-    print('get_roughness: R generated:', time.perf_counter() - start, 's')
     if out:
-        print('get_roughness: R sparse format is', R.format)
+        print("get_roughness: R generated:", time.perf_counter() - start, "s")
+        print("get_roughness: R sparse format is", R.format)
         print(R.shape, R.nnz)
 
-    if 'csc' in spformat.lower():
-        R = csc_array((vals, (irow, icol)))
-    elif 'csr' in spformat.lower():
-        R = csr_array((vals, (irow, icol)))
+    if "csc" in spformat.lower():
+        R = csc_array((vals_arr, (irow_arr, icol_arr)))
+    elif "csr" in spformat.lower():
+        R = csr_array((vals_arr, (irow_arr, icol_arr)))
     else:
-        R = coo_array((vals, (irow, icol)))
+        R = coo_array((vals_arr, (irow_arr, icol_arr)))
 
     if out:
-        print('get_roughness: Output sparse format:', spformat)
-        print('get_roughness: R sparse format is', R.format)
+        print("get_roughness: Output sparse format:", spformat)
+        print("get_roughness: R sparse format is", R.format)
         print(R.shape, R.nnz)
-        print(R.nnz, 'nonzeros, ', 100*R.nnz/R.shape[0]**2, '%')
-
-        print('get_roughness: Done!\n\n')
+        print(R.nnz, "nonzeros, ", 100 * R.nnz / R.shape[0] ** 2, "%")
+        print("get_roughness: Done!\n\n")
 
     return R
 
 
-def make_prior_cov(rough=None,
-                   regeps=1.e-5,
-                   spformat='csr',
-                   spthresh=1.e-4,
-                   spfill=10.,
-                   spsolver=None,
-                   spmeth='basic,area',
-                   outmatrix='invRTR',
-                   nthreads=16,
-                   out=True):
-    '''
-    Generate prior covariance for ensemble perturbations
+def make_prior_cov(
+    rough: scipy.sparse.spmatrix,
+    regeps: float = 1.0e-5,
+    spformat: str = "csr",
+    spthresh: float = 1.0e-4,
+    spfill: float = 10.0,
+    spsolver: Optional[str] = "ilu",
+    spmeth: str = "basic,area",
+    outmatrix: str = "invRTR",
+    nthreads: int = 16,
+    out: bool = True,
+) -> scipy.sparse.spmatrix | np.ndarray:
+    """
+    Generate a prior covariance proxy M from a roughness matrix R.
 
-    Note: does not include air/sea/distortion parameters!
+    Strategy
+    --------
+    1. Stabilise by adding a small diagonal (regeps).
+    2. Invert R (approximately) using either:
+       - sparse LU ("slu"), or
+       - incomplete LU ("ilu").
+    3. Optionally sparsify the inverse via :func:`matrix_reduce`.
+    4. Build
+
+           M = invR @ invR.T        if outmatrix contains "rtr"
+           M = invR                 otherwise
 
     Parameters
     ----------
-    rough : sparse array
-        Name of femtic roughness. (Default: None).
+    rough : sparse matrix
+        Roughness matrix R.
     regeps : float
-        Small value to stabilize. (Default: 1.e-5).
-    spsolver: str
-        Available:
-            'slu'/sparse LU
-            'ilu'/sparse incomplete LU
-    spformat : str
-        Output sparse format from list ['csr','coo', 'csc'].
-        (Default: 'csr')
+        Small diagonal added to R for stability.
+    spformat : {"csr", "csc", "coo"}
+        Sparse format used in some steps.
     spthresh : float
-        Threshold for drops in ILU decomposition. (Default: 1.e-4).
+        Drop tolerance for ILU and for matrix_reduce.
     spfill : float
-        Max Fill factor. (Default: 10.).
-    spmeth: list of str
-        Comma-separated string of drop rules to use.
-        Available rules: basic, prows, column, area, secondary, dynamic, interp.
-        (Default: 'basic,area').
-   outmatrix: str
-        Available: 'invR', 'invRTR'
+        Fill-factor for ILU.
+    spsolver : {"slu", "ilu"}
+        Choice of sparse direct solve / factorization.
+    spmeth : str
+        Drop-rule string for ILU; currently not used explicitly.
+    outmatrix : {"invR", "invRTR", "invRTR_deco"}
+        Output matrix type.
+    nthreads : int
+        Thread limit for underlying BLAS/LAPACK where supported.
+    out : bool
+        If True, print info.
 
     Returns
     -------
-    M: sparse array
-        femtic equivalent of covariance C or inverse of invR
-
-
-    author: vrath,  created on Thu Jul 26, 2025
-
-
-    '''
-
-    from scipy.sparse import csr_array, csc_array, coo_array, eye_array, diags_array, issparse
+    M : sparse or dense array
+        Prior covariance proxy.
+    """
+    from scipy.sparse import (
+        csr_array,
+        csc_array,
+        coo_array,
+        eye as eye_array,
+        issparse,
+    )
     from threadpoolctl import threadpool_limits
 
     if rough is None:
-        sys.exit('make_prior_cov: No roughness matrix given! Exit.')
+        sys.exit("make_prior_cov: No roughness matrix given! Exit.")
 
     if not issparse(rough):
-        exit('make_prior_cov: Roughness matrix is not sparse! Exit.')
+        sys.exit("make_prior_cov: Roughness matrix is not sparse! Exit.")
 
     start = time.perf_counter()
 
     if out:
-        print('make_prior_cov: Shape of input roughness is', rough.shape)
-        print('make_prior_cov: Format of input roughness is', rough.format)
+        print("make_prior_cov: Shape of input roughness is", rough.shape)
+        print("make_prior_cov: Format of input roughness is", rough.format)
 
     if regeps is not None:
-        rough = rough + regeps * \
-            eye_array(rough.shape[0], format=spformat.lower())
+        rough = rough + regeps * eye_array(rough.shape[0], format=spformat.lower())
         if out:
-            print(regeps, 'added to diag(R)')
+            print(regeps, "added to diag(R)")
 
-    if 'slu' in spsolver.lower():
+    if spsolver is None:
+        sys.exit("make_prior_cov: spsolver must be 'slu' or 'ilu'.")
+
+    if "slu" in spsolver.lower():
         from scipy.sparse.linalg import spsolve
 
         R = csc_array(rough)
@@ -1301,93 +1345,137 @@ def make_prior_cov(rough=None,
         with threadpool_limits(limits=nthreads):
             invR = spsolve(R, RHS)
 
-    elif 'ilu' in spsolver.lower():
-        from scipy.sparse.linalg import spilu
-
+    elif "ilu" in spsolver.lower():
         R = csc_array(rough)
         RHS = eye_array(R.shape[0], format=R.format)
-        # RHS = np.eye(R.shape[0])
         beg = time.perf_counter()
-
         with threadpool_limits(limits=nthreads):
             iluR = spilu(R, drop_tol=spthresh, fill_factor=spfill)
-            print('spilu decomposed:', time.perf_counter() - beg, 's')
-
+            if out:
+                print("spilu decomposed:", time.perf_counter() - beg, "s")
             beg = time.perf_counter()
             invR = iluR.solve(RHS.toarray())
-            print('spilu solved:', time.perf_counter() - beg, 's')
-
+            if out:
+                print("spilu solved:", time.perf_counter() - beg, "s")
     else:
-        sys.exit('make_prior_cov: solver' +
-                 spsolver.lower()+'not available! Exit')
+        sys.exit(f"make_prior_cov: solver {spsolver} not available! Exit")
 
     if out:
-        print('make_prior_cov: invR generated:',
-              time.perf_counter() - start, 's')
-        print('make_prior_cov: invR type', type(invR))
-        # print('invR format', invR.format)
+        print("make_prior_cov: invR generated:", time.perf_counter() - start, "s")
+        print("make_prior_cov: invR type", type(invR))
 
     if spthresh is not None:
-        invR = matrix_reduce(M=invR,
-                             spthresh=spthresh,
-                             spformat=spformat)
+        invR = matrix_reduce(
+            M=invR,
+            howto="relative",
+            spthresh=spthresh,
+            spformat=spformat,
+            out=out,
+        )
 
     M = invR
-    if 'rtr' in outmatrix.lower():
-        M = invR@invR.T
-        if 'deco' in outmatrix.lower():
-            from inverse import msqrt_sparse
-            # calculate cholesky factor of M
-            M = msqrt_sparse(M)
+    if "rtr" in outmatrix.lower():
+        M = invR @ invR.T
 
     if out:
-
-        print('make_prior_cov: M generated:', time.perf_counter() - start, 's')
-        print('make_prior_cov: M is', outmatrix)
-        print('make_prior_cov: M', type(M))
-        print('M', M.format)
-
-    print('make_prior_cov:  Done!\n\n')
-
+        print("make_prior_cov: M generated:", time.perf_counter() - start, "s")
+        print("make_prior_cov: M is", outmatrix)
+        print("make_prior_cov: M type", type(M))
+        print("make_prior_cov:  Done!\n\n")
     return M
 
 
-def prune_inplace(M, threshold):
+def prune_inplace(M: scipy.sparse.spmatrix, threshold: float) -> scipy.sparse.spmatrix:
+    """
+    In-place pruning of small entries in a CSR sparse matrix.
+
+    Parameters
+    ----------
+    M : sparse matrix
+        Sparse matrix to prune.
+    threshold : float
+        Entries with |M_ij| < threshold are set to zero.
+
+    Returns
+    -------
+    M : sparse matrix
+        The pruned matrix (same object, modified in-place).
+    """
     from scipy.sparse import csr_array, issparse
-    # ensure CSR for data/indices/indptr access
+
     if issparse(M):
-        if not M.format == 'csr':  # isspmatrix_csr(M):
+        if M.format != "csr":
             M = M.tocsr()
     else:
         M = csr_array(M)
 
-    # mark tiny entries as explicit zeros in data array
     mask = np.abs(M.data) < threshold
     if mask.any():
-        M.data[mask] = 0
+        M.data[mask] = 0.0
         M.eliminate_zeros()
     return M
 
 
-def prune_rebuild(M, threshold):
-    from scipy.sparse import csr_array, issparse
-    # convert to COO format (triplet)
+def prune_rebuild(M: scipy.sparse.spmatrix, threshold: float) -> scipy.sparse.spmatrix:
+    """
+    Rebuild a CSR sparse matrix from COO representation after pruning.
+
+    Parameters
+    ----------
+    M : sparse matrix
+        Matrix to prune.
+    threshold : float
+        Entries with |M_ij| < threshold are dropped.
+
+    Returns
+    -------
+    M_csr : sparse matrix
+        New CSR matrix with pruned entries.
+    """
+    from scipy.sparse import csr_array
+
     coo = M.tocoo()
     absdata = np.abs(coo.data)
     keep = absdata >= threshold
     if not keep.all():
-        # build new CSR from filtered coordinates
-        return csr_array((coo.data[keep], (coo.row[keep], coo.col[keep])),
-                      shape=M.shape)
+        return csr_array(
+            (coo.data[keep], (coo.row[keep], coo.col[keep])),
+            shape=M.shape,
+        )
     else:
         return M.tocsr()
 
-def dense_to_csr(M, threshold=0.0, chunk_rows=1000, dtype=None):
+
+def dense_to_csr(
+    M: np.ndarray,
+    threshold: float = 0.0,
+    chunk_rows: int = 1000,
+    dtype: Optional[np.dtype] = None,
+) -> scipy.sparse.spmatrix:
+    """
+    Convert a dense matrix to CSR, dropping entries below a threshold.
+
+    Parameters
+    ----------
+    M : ndarray
+        Dense matrix.
+    threshold : float
+        Entries with |M_ij| <= threshold are dropped.
+    chunk_rows : int
+        Process rows in chunks of this size to reduce memory peaks.
+    dtype : numpy dtype, optional
+        Output dtype; if None, use M.dtype.
+
+    Returns
+    -------
+    M_csr : sparse matrix
+        CSR matrix.
+    """
     from scipy.sparse import csr_array
-    # from collections import deque
-    rows_list = []
-    cols_list = []
-    data_list = []
+
+    rows_list: list[np.ndarray] = []
+    cols_list: list[np.ndarray] = []
+    data_list: list[np.ndarray] = []
     nrows = M.shape[0]
     for r0 in range(0, nrows, chunk_rows):
         r1 = min(nrows, r0 + chunk_rows)
@@ -1396,7 +1484,9 @@ def dense_to_csr(M, threshold=0.0, chunk_rows=1000, dtype=None):
         rr, cc = np.nonzero(mask)
         rows_list.append((rr + r0).astype(np.int64))
         cols_list.append(cc.astype(np.int64))
-        data_list.append(block[rr, cc].astype(dtype if dtype is not None else M.dtype))
+        data_list.append(
+            block[rr, cc].astype(dtype if dtype is not None else M.dtype)
+        )
 
     if not rows_list:
         return csr_array(M.shape, dtype=dtype if dtype is not None else M.dtype)
@@ -1407,319 +1497,247 @@ def dense_to_csr(M, threshold=0.0, chunk_rows=1000, dtype=None):
     return csr_array((data, (rows, cols)), shape=M.shape)
 
 
-def save_spilu(filename='ILU.npz', ILU=None):
-    '''
-    Save spilu decomposition (ILU object) to a single .npz file."""
-
-    Parameters
-    ----------
-    filename : str, optional
-        The default is 'ILU.npz'.
-    ILU : ILU object
-        The default is None.
-
-    Returns
-    -------
-    None.
-
-    Load with:
-        load_spilu(ILU=ILU)
-
-
-    vrath + copilot  Oct 22, 2025
-
-    '''
-    if ILU is None:
-        sys.exit('No ILU object given! Exit.')
-
-    np.savez(filename,
-             L_data=ILU.L.data, L_indices=ILU.L.indices,
-             L_indptr=ILU.L.indptr, L_shape=ILU.L.shape,
-             U_data=ILU.U.data, U_indices=ILU.U.indices,
-             U_indptr=ILU.U.indptr, U_shape=ILU.U.shape,
-             perm_r=ILU.perm_r, perm_c=ILU.perm_c)
-
-
-def load_spilu(filename='ILU.npz'):
-    '''
-    Load spilu decomposition components from a .npz file.
+def save_spilu(filename: str = "ILU.npz", ILU=None) -> None:
+    """
+    Save a SciPy ILU decomposition object to a single .npz file.
 
     Parameters
     ----------
     filename : str
-        npz file (default is 'ILU.npz')
+        Output npz file.
+    ILU : object
+        ILU object returned by scipy.sparse.linalg.spilu.
 
-    Returns
-    -------
-    L, U, perm_r, perm_c :
-        Data from ILU decomposition object
+    Notes
+    -----
+    To restore, use :func:`load_spilu`.
+    """
+    if ILU is None:
+        sys.exit("save_spilu: No ILU object given! Exit.")
 
-    vrath + copilot  Oct 22, 2025
-    '''
-    from scipy.sparse import csc_array
-
-    data = np.load(filename)
-    L = csc_array((data["L_data"], data["L_indices"], data["L_indptr"]),
-                  shape=tuple(data["L_shape"]))
-    U = csc_array((data["U_data"], data["U_indices"], data["U_indptr"]),
-                  shape=tuple(data["U_shape"]))
-    perm_r = data["perm_r"]
-    perm_c = data["perm_c"]
-
-    return L, U, perm_r, perm_c
-
-
-def matrix_reduce(M=None,
-                  howto='relative',
-                  spformat='csr',
-                  spthresh=1.e-6,
-                  prune='rebuild',
-                  out=True):
-
-    from scipy.sparse import csr_array, csc_array, coo_array, issparse
-
-    if M is None:
-        sys.exit('matrix_reduce: no matrix given! Exit.')
-
-    n, _ = np.shape(M)
-
-    if issparse(M):
-        M = M.tocsr()  # coo_array(M)
-        if out:
-            print('matrix_reduce: Matrix is sparse.')
-            print('matrix_reduce: Type:', type(M))
-            print('matrix_reduce: Format:', M.format)
-            print('matrix_reduce: Shape:', M.shape)
-
-    else:
-        M = csr_array(M)  # coo_array(M)
-        if out:
-            print('matrix_reduce: Matrix is dense.')
-            print('matrix_reduce: Type:', type(M))
-            print('matrix_reduce: Shape:', np.shape(M))
-
-    if out:
-        print('matrix_reduce:', M.nnz, 'nonzeros, ', 100*M.nnz/n**2, '%')
-
-    # test = M - M.T
-    # if test.max()+test.min()==0.:
-    #     if out: print('matrix_reduce: Matrix is symmetric!')
-    # else:
-    #     if out: print('matrix_reduce: Matrix is not symmetric!')
-
-    if 'abs' in howto.lower():
-        # Define absolute threshold
-        threshold = spthresh
-    else:
-        # Define relative threshold (e.g., 1% of max value)
-        maxM = np.max(np.abs(M.data))
-        threshold = spthresh * maxM
-
-    if issparse(M):
-        # Zero out elements below threshold
-        if 'in' in prune:
-            M = prune_inplace(M, threshold)
-        else:
-            M = prune_rebuild(M, threshold)
-    else:
-        M = dense_to_csr(M, threshold=threshold, chunk_rows=10000)
-
-    if 'csr' in spformat.lower():
-        M = M.tocsr()  # csr_array(M)
-    if 'csc' in spformat.lower():
-        M = M.tocsc()  # csc_array(M)
-    if 'coo' in spformat.lower():
-        M = M.tocoo()  # coo_array(M)
-
-    if out:
-
-        print('matrix_reduce: New Format:', M.format)
-        print('matrix_reduce: Shape:', M.shape)
-        print('matrix_reduce:', M.nnz, 'nonzeros, ', 100*M.nnz/n**2, '%')
-
-    check_sparse_matrix(M)
-
-    print('matrix_reduce: Done!\n\n')
-    return M
+    np.savez(
+        filename,
+        L_data=ILU.L.data,
+        L_indices=ILU.L.indices,
+        L_indptr=ILU.L.indptr,
+        L_shape=ILU.L.shape,
+        U_data=ILU.U.data,
+        U_indices=ILU.U.indices,
+        U_indptr=ILU.U.indptr,
+        U_shape=ILU.U.shape,
+        perm_r=ILU.perm_r,
+        perm_c=ILU.perm_c,
+    )
 
 
-def check_sparse_matrix(M, condition=True):
-    '''
-    Check sparse matrix
+def load_spilu(filename: str = "ILU.npz"):
+    """
+    Load ILU decomposition components from npz file.
 
     Parameters
     ----------
-    M : sparse array
-        Matrix to be tested
+    filename : str
+        npz file created by :func:`save_spilu`.
+
     Returns
     -------
-    None.
+    L, U, perm_r, perm_c
+        Components of the ILU decomposition.
+    """
+    from scipy.sparse import csc_array
 
-    '''
+    data = np.load(filename)
+    L = csc_array(
+        (data["L_data"], data["L_indices"], data["L_indptr"]),
+        shape=tuple(data["L_shape"]),
+    )
+    U = csc_array(
+        (data["U_data"], data["U_indices"], data["U_indptr"]),
+        shape=tuple(data["U_shape"]),
+    )
+    perm_r = data["perm_r"]
+    perm_c = data["perm_c"]
+    return L, U, perm_r, perm_c
 
+
+def matrix_reduce(
+    M: np.ndarray | scipy.sparse.spmatrix,
+    howto: str = "relative",
+    spformat: str = "csr",
+    spthresh: float = 1.0e-6,
+    prune: str = "rebuild",
+    out: bool = True,
+) -> scipy.sparse.spmatrix:
+    """
+    Reduce a (possibly dense) matrix to sparse form by dropping small entries.
+
+    Parameters
+    ----------
+    M : array_like or sparse matrix
+        Matrix to sparsify.
+    howto : {"relative", "absolute"}
+        If "relative", use spthresh * max(|M|) as threshold;
+        if "absolute", use spthresh directly.
+    spformat : {"csr", "csc", "coo"}
+        Output sparse format.
+    spthresh : float
+        Threshold parameter.
+    prune : {"inplace", "rebuild"}
+        Strategy for pruning; currently "rebuild" is more robust.
+    out : bool
+        If True, print info.
+
+    Returns
+    -------
+    M_sp : sparse matrix
+        Sparsified matrix.
+    """
     from scipy.sparse import csr_array, csc_array, coo_array, issparse
-    from scipy.sparse import diags_array
 
     if M is None:
-        sys.exit('check_sparse_matrix: No roughness matrix given! Exit.')
+        sys.exit("matrix_reduce: no matrix given! Exit.")
+
+    if issparse(M):
+        M_sp = M.tocsr()
+        if out:
+            print("matrix_reduce: Matrix is sparse.")
+            print("matrix_reduce: Type:", type(M_sp))
+            print("matrix_reduce: Format:", M_sp.format)
+            print("matrix_reduce: Shape:", M_sp.shape)
+    else:
+        M_sp = csr_array(M)
+        if out:
+            print("matrix_reduce: Matrix is dense.")
+            print("matrix_reduce: Type:", type(M_sp))
+            print("matrix_reduce: Shape:", M_sp.shape)
+
+    n = M_sp.shape[0]
+    if out:
+        print(
+            "matrix_reduce:",
+            M_sp.nnz,
+            "nonzeros, ",
+            100 * M_sp.nnz / n ** 2,
+            "%",
+        )
+
+    if "abs" in howto.lower():
+        threshold = spthresh
+    else:
+        maxM = np.max(np.abs(M_sp.data))
+        threshold = spthresh * maxM
+
+    if issparse(M_sp):
+        if "in" in prune:
+            M_sp = prune_inplace(M_sp, threshold)
+        else:
+            M_sp = prune_rebuild(M_sp, threshold)
+    else:
+        M_sp = dense_to_csr(M_sp, threshold=threshold, chunk_rows=10000)
+
+    if "csr" in spformat.lower():
+        M_sp = M_sp.tocsr()
+    elif "csc" in spformat.lower():
+        M_sp = M_sp.tocsc()
+    else:
+        M_sp = M_sp.tocoo()
+
+    if out:
+        print("matrix_reduce: New Format:", M_sp.format)
+        print("matrix_reduce: Shape:", M_sp.shape)
+        print(
+            "matrix_reduce:",
+            M_sp.nnz,
+            "nonzeros, ",
+            100 * M_sp.nnz / n ** 2,
+            "%",
+        )
+        print("matrix_reduce: Done!\n\n")
+    return M_sp
+
+
+def check_sparse_matrix(M: scipy.sparse.spmatrix, condition: bool = True) -> None:
+    """
+    Print diagnostic information about a sparse matrix.
+
+    Parameters
+    ----------
+    M : sparse matrix
+        Matrix to be tested.
+    condition : bool
+        Placeholder (not used).
+
+    Returns
+    -------
+    None
+    """
+    from scipy.sparse import issparse
+
+    if M is None:
+        sys.exit("check_sparse_matrix: No matrix given! Exit.")
 
     if not issparse(M):
-        sys.exit('check_sparse_matrix: Roughness matrix is not sparse! Exit.')
+        sys.exit("check_sparse_matrix: Matrix is not sparse! Exit.")
 
-    print('check_sparse_matrix: Type:', type(M))
-    print('check_sparse_matrix: Format:', M.format)
-    print('check_sparse_matrix: Shape:', M.shape)
-    print('check_sparse_matrix:', M.nnz, 'nonzeros, ',
-          100*M.nnz/M.shape[0]**2, '%')
+    print("check_sparse_matrix: Type:", type(M))
+    print("check_sparse_matrix: Format:", M.format)
+    print("check_sparse_matrix: Shape:", M.shape)
+    print(
+        "check_sparse_matrix:",
+        M.nnz,
+        "nonzeros, ",
+        100 * M.nnz / M.shape[0] ** 2,
+        "%",
+    )
 
     if M.shape[0] == M.shape[1]:
-        print('check_sparse_matrix: Matrix is square!')
+        print("check_sparse_matrix: Matrix is square!")
         test = M - M.T
-        print('   R-R^T max/min:', test.max(), test.min())
-        if test.max()+test.min() == 0.:
-            print('check_sparse_matrix: Matrix is symmetric!')
+        print("   R-R^T max/min:", test.max(), test.min())
+        if test.max() + test.min() == 0.0:
+            print("check_sparse_matrix: Matrix is symmetric!")
         else:
-            print('check_sparse_matrix: Matrix is not symmetric!')
+            print("check_sparse_matrix: Matrix is not symmetric!")
 
     maxaM = np.amax(np.abs(M))
     minaM = np.amin(np.abs(M))
-    print('check_sparse_matrix: M max/min:', M.max(), M.min())
-    print('check_sparse_matrix: M abs max/min:', maxaM, minaM)
+    print("check_sparse_matrix: M max/min:", M.max(), M.min())
+    print("check_sparse_matrix: M abs max/min:", maxaM, minaM)
 
-    if np.any(np.abs(M.diagonal(0)) == 0):
-        print('check_sparse_matrix: M diagonal element is 0!')
-        print(np.abs(M.diagonal(0) == 0).nonzero())
-        print(np.abs(M.diagonal(0) == 0))
+    if np.any(np.abs(M.diagonal()) == 0):
+        print("check_sparse_matrix: M diagonal element is 0!")
+        print(np.where(np.abs(M.diagonal()) == 0))
 
-    print('check_sparse_matrix: Done!\n\n')
-    # condition = ???
-
-def sampler1(args):
-
-    '''
-        import argparse
-        import numpy as np
+    print("check_sparse_matrix: Done!\n\n")
 
 
+# ============================================================================
+# SECTION 3: Gaussian sampling with Q = R.T @ R (+ λI)
+# ============================================================================
 
-
-        ap = argparse.ArgumentParser(description="Sample a covariance-driven resistivity field on a FEMTIC TETRA mesh.")
-        ap.add_argument("--mesh", required=True, help="Path to FEMTIC mesh.dat (TETRA format).")
-        ap.add_argument("--kernel", default="matern", choices=["matern", "exponential", "gaussian"])
-        ap.add_argument("--ell", type=float, default=500.0, help="Length-scale (units of mesh coordinates).")
-        ap.add_argument("--sigma2", type=float, default=0.5, help="Log-space marginal variance.")
-        ap.add_argument("--nu", type=float, default=1.5, help="Matern smoothness (if used).")
-        ap.add_argument("--nugget", type=float, default=1e-6, help="Diagonal nugget (log-space).")
-        ap.add_argument("--mean", type=float, default=float(np.log(100.0)), help="Mean of log-resistivity.")
-        ap.add_argument("--strategy", default="sparse", choices=["dense", "sparse"], help="Dense (Cholesky) or sparse (trunc-eig).")
-        ap.add_argument("--radius", type=float, default=None, help="Neighborhood radius for sparse K (default ~ 2.5*ell).")
-        ap.add_argument("--trunc_k", type=int, default=1024, help="Rank for truncated-eig sampling when sparse.")
-        ap.add_argument("--seed", type=int, default=None, help="Random seed.")
-        ap.add_argument("--out", default="rho_sample_on_mesh.npz", help="Output NPZ path.")
-        args = ap.parse_args()
-    '''
-    from femtic_mesh_io import read_femtic_tetra_centroids
-    from femtic_sample_resistivity import draw_logrho_field
-
-    centroids, tet_ids = read_femtic_tetra_centroids(args.mesh)
-
-    if args.strategy == "dense":
-        rho, logrho = draw_logrho_field(
-            centroids,
-            kernel=args.kernel,
-            sigma2=args.sigma2,
-            ell=args.ell,
-            nu=args.nu,
-            nugget=args.nugget,
-            mean_log_rho=args.mean,
-            strategy="dense",
-            random_state=args.seed,
-        )
-    else:
-        radius = args.radius if args.radius is not None else 2.5 * args.ell
-        rho, logrho = draw_logrho_field(
-            centroids,
-            kernel=args.kernel,
-            sigma2=args.sigma2,
-            ell=args.ell,
-            nu=args.nu,
-            nugget=args.nugget,
-            mean_log_rho=args.mean,
-            strategy="sparse",
-            radius=radius,
-            trunc_k=args.trunc_k,
-            random_state=args.seed,
-        )
-
-    np.savez(
-        args.out,
-        rho=rho,
-        logrho=logrho,
-        centroids=centroids,
-        tet_ids=tet_ids,
-        meta=dict(vars(args)),
-    )
-
-"""Gaussian sampling with precision matrix Q = R.T @ R.
-
-This module provides tools to sample from multivariate Gaussian distributions
-with zero mean and covariance C = (R.T @ R + lambda * I)^{-1}, where R is a
-large, typically sparse matrix. The focus is on matrix-free methods that avoid
-forming the covariance explicitly and that can exploit sparse linear algebra.
-
-Main ideas
-----------
-1. Treat Q = R.T @ R (+ lambda * I) as a precision matrix and work with Q
-   via matrix-vector products rather than forming C explicitly.
-2. Use conjugate gradients (CG) on Q to solve linear systems Q x = b, which
-   is the core operation in many simulation algorithms.
-3. Optionally use a low-rank approximation based on eigenpairs of Q for
-   reduced-rank or smoothed sampling.
-
-The functions in this module are designed to be reasonably general while
-remaining explicit about the underlying numerical linear algebra.
-
-Author: Volker Rath (DIAS)
-Created by ChatGPT (GPT-5 Thinking) on 2025-11-16
-"""
 
 def build_rtr_operator(
-    R: np.ndarray | "scipy.sparse.spmatrix",
+    R: np.ndarray | scipy.sparse.spmatrix,
     lam: float = 0.0,
 ) -> LinearOperator:
-    """Create a LinearOperator representing Q = R.T @ R + lam * I.
+    """
+    Create a LinearOperator representing Q = R.T @ R + lam * I.
 
     Parameters
     ----------
     R : array_like or sparse matrix, shape (m, n)
         Matrix defining the precision Q = R.T @ R. R is typically sparse.
     lam : float, optional
-        Diagonal Tikhonov regularisation parameter. If non-zero, the operator
-        represents Q = R.T @ R + lam * I, corresponding to covariance
-        C = (R.T @ R + lam * I)^{-1}. The default is 0.0.
+        Diagonal Tikhonov regularization parameter.
 
     Returns
     -------
     Q_op : scipy.sparse.linalg.LinearOperator, shape (n, n)
         Linear operator that applies Q to a vector via matrix-vector products.
-
-    Notes
-    -----
-    This function avoids forming Q explicitly. The matvec uses two sparse
-    matrix-vector products: y = R @ x and z = R.T @ y, plus a possible
-    diagonal shift lam * x.
-
-    This is suitable for use with iterative solvers such as conjugate
-    gradients (CG).
-
-    Author: Volker Rath (DIAS)
-    Created by ChatGPT (GPT-5 Thinking) on 2025-11-16
     """
-    R = R  # no copy; caller controls storage
     m, n = R.shape
 
     def matvec(x: np.ndarray) -> np.ndarray:
-        """Matrix-vector product z = Q @ x."""
         y = R @ x
         z = R.T @ y
         if lam != 0.0:
@@ -1728,138 +1746,118 @@ def build_rtr_operator(
 
     return LinearOperator((n, n), matvec=matvec, rmatvec=matvec, dtype=np.float64)
 
-def make_preconditioner(R, lam: float = 0.0, kind: str = "jacobi") -> LinearOperator:
+
+def make_preconditioner(
+    R: np.ndarray | scipy.sparse.spmatrix,
+    lam: float = 0.0,
+    kind: str = "jacobi",
+) -> LinearOperator:
     """
     Build a preconditioner M for Q = R.T @ R + lam * I.
 
     Parameters
     ----------
     R : array_like or sparse matrix, shape (m, n)
-        Matrix defining Q = R.T @ R + lam * I.
-    lam : float, optional
-        Diagonal Tikhonov regularisation parameter. Default is 0.0.
-    kind : {"jacobi", "ilu", "identity"}, optional
-        Type of preconditioner:
-        - "jacobi": diagonal scaling (cheap, safe default).
-        - "ilu": incomplete LU factorization (stronger, more expensive).
-        - "identity": no preconditioning.
+    lam : float
+    kind : {"jacobi", "ilu", "identity"}
 
     Returns
     -------
-    M : scipy.sparse.linalg.LinearOperator
-        Preconditioner approximating Q^{-1}.
+    M : LinearOperator
+        Approximation to Q^{-1}.
     """
-    # Build Q operator explicitly if needed
     Q = R.T @ R + lam * np.eye(R.shape[1])
 
     if kind == "jacobi":
         diag_Q = np.diag(Q) if not isspmatrix(Q) else Q.diagonal()
         inv_diag = 1.0 / diag_Q
         return LinearOperator(Q.shape, matvec=lambda x: inv_diag * x)
-
     elif kind == "ilu":
         if not isspmatrix(Q):
             raise ValueError("ILU requires sparse Q matrix.")
         ilu = spilu(Q.tocsc())
         return LinearOperator(Q.shape, matvec=lambda x: ilu.solve(x))
-
     elif kind == "identity":
         return LinearOperator(Q.shape, matvec=lambda x: x)
-
     else:
         raise ValueError(f"Unknown preconditioner kind: {kind}")
 
+
 def make_precision_solver(
-    R: np.ndarray | "scipy.sparse.spmatrix",
+    R: np.ndarray | scipy.sparse.spmatrix,
     lam: float = 0.0,
-    rtol: float = 1e-6,
+    rtol: float = 1.0e-6,
     atol: float = 0.0,
     maxiter: Optional[int] = None,
     M: Optional[LinearOperator] = None,
-    msolver: Optional[str] = 'bicg',
-    mprec: Optional[str] = 'ilu',
+    msolver: Optional[str] = "bicg",
+    mprec: Optional[str] = "jacobi",
 ) -> Callable[[np.ndarray], np.ndarray]:
     """
     Construct a solver for Q x = b with Q = R.T @ R + lam * I using iterative methods.
 
-    Author: Volker Rath (DIAS)
-    Copilot (GPT-5 Thinking), 2025-11-16
+    Parameters
+    ----------
+    R : array_like or sparse matrix
+    lam : float
+    rtol, atol : float
+        Tolerances for iterative solver.
+    maxiter : int, optional
+        Maximum number of iterations.
+    M : LinearOperator, optional
+        Preconditioner; if None, built via :func:`make_preconditioner`.
+    msolver : {"bicg", "cg"}
+        Choice of iterative solver.
+    mprec : {"jacobi", "ilu", "identity"}
+        Preconditioner type if M is None.
+
+    Returns
+    -------
+    solve_Q : callable
+        Function solve_Q(b) that returns solution x to Q x = b.
     """
     Q_op = build_rtr_operator(R, lam=lam)
 
-    # If no preconditioner is supplied, build a Jacobi preconditioner
     if M is None:
         M = make_preconditioner(R, lam=lam, kind=mprec)
-        # # Extract diagonal of Q efficiently
-        # diag_Q = Q_op(np.eye(Q_op.shape[1]))[:, range(Q_op.shape[1])]
-        # inv_diag = 1.0 / diag_Q
-        # M = LinearOperator(Q_op.shape, matvec=lambda x: inv_diag * x)
 
     def solve_Q(b: np.ndarray) -> np.ndarray:
-        """Solve Q x = b with iterative methods."""
-        solver = bicgstab if 'bicg' in msolver else cg
+        solver = bicgstab if "bicg" in str(msolver).lower() else cg
         x, info = solver(Q_op, b, rtol=rtol, atol=atol, maxiter=maxiter, M=M)
 
         if info > 0:
             raise RuntimeError(f"Solver did not converge within {info} iterations.")
         elif info < 0:
-            raise RuntimeError(f"Solver failed with illegal input or breakdown (info={info}).")
-
+            raise RuntimeError(
+                f"Solver failed with illegal input or breakdown (info={info})."
+            )
         return x
 
     return solve_Q
 
+
 def sample_rtr_full_rank(
-    R: np.ndarray | "scipy.sparse.spmatrix",
+    R: np.ndarray | scipy.sparse.spmatrix,
     n_samples: int = 1,
-    lam: float = 1.e-4,
+    lam: float = 1.0e-4,
     solver: Optional[Callable[[np.ndarray], np.ndarray]] = None,
     rng: Optional[Generator] = None,
 ) -> np.ndarray:
-    """Sample from N(0, C) with C = (R.T @ R + lam * I)^{-1}.
+    """
+    Sample from N(0, C) with C = (R.T @ R + lam * I)^{-1}.
 
     Parameters
     ----------
     R : array_like or sparse matrix, shape (m, n)
-        Matrix defining the precision Q = R.T @ R (+ lam * I). R should have
-        full column rank (or be regularised via lam > 0) so that Q is
-        positive definite.
-    n_samples : int, optional
-        Number of independent samples to generate. The default is 1.
-    lam : float, optional
-        Diagonal Tikhonov regularisation parameter. If non-zero, the precision
-        is Q = R.T @ R + lam * I and the covariance is
-        C = (R.T @ R + lam * I)^{-1}. The default is 0.0.
+    n_samples : int
+    lam : float
     solver : callable, optional
-        Existing solver for Q x = b. If None, a CG-based solver is created
-        via :func:`make_precision_solver`. The default is None.
+        If None, create a CG-based solver via :func:`make_precision_solver`.
     rng : numpy.random.Generator, optional
-        Random number generator to use. If None, ``default_rng()`` is used.
 
     Returns
     -------
     samples : ndarray, shape (n_samples, n)
-        Array of Gaussian samples. Each row is one draw x ~ N(0, C).
-
-    Notes
-    -----
-    The sampling algorithm uses the identity
-
-        x = argmin_y ||R y - xi||_2^2
-
-    with xi ~ N(0, I_m), which yields
-
-        x = (R.T @ R + lam * I)^{-1} R.T @ xi,
-
-    and hence Cov(x) = (R.T @ R + lam * I)^{-1}. Each sample requires one
-    multiplication by R and R.T and one solve with Q.
-
-    This scheme is closely related to simulation of Gaussian Markov random
-    fields using sparse precision matrices.
-
-
-    Author: Volker Rath (DIAS)
-    Created by ChatGPT (GPT-5 Thinking) on 2025-11-16
     """
     rng = default_rng() if rng is None else rng
     m, n = R.shape
@@ -1868,9 +1866,7 @@ def sample_rtr_full_rank(
         solver = make_precision_solver(R, lam=lam)
 
     samples = np.empty((n_samples, n), dtype=np.float64)
-
     for ix in range(n_samples):
-        print('Sample:', str(ix), 'of', str(n_samples))
         xi = rng.standard_normal(size=m)
         b = R.T @ xi
         samples[ix, :] = solver(b)
@@ -1878,64 +1874,59 @@ def sample_rtr_full_rank(
     return samples
 
 
-def sample_rtr_low_rank(R,
+def estimate_low_rank_eigpairs(
+    Q: scipy.sparse.spmatrix | LinearOperator,
+    k: int,
+    which: str = "SM",
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Compute k extremal eigenpairs of a symmetric precision matrix Q.
+
+    Parameters
+    ----------
+    Q : sparse matrix or LinearOperator, shape (n, n)
+    k : int
+    which : {"LM", "SM"}
+
+    Returns
+    -------
+    eigvals : ndarray, shape (k,)
+    eigvecs : ndarray, shape (n, k)
+    """
+    eigvals, eigvecs = eigsh(Q, k=k, which=which)
+    return eigvals, eigvecs
+
+
+def sample_rtr_low_rank(
+    R: np.ndarray | scipy.sparse.spmatrix,
     n_samples: int = 1,
     n_eig: int = 32,
     sigma2_residual: float = 0.0,
     rng: Optional[Generator] = None,
 ) -> np.ndarray:
-    """Sample approximately from N(0, Q^{-1}) using low-rank eigendecomposition.
+    """
+    Approximate sampling from N(0, Q^{-1}) using a low-rank eigendecomposition.
 
     Parameters
     ----------
-    eigvals : ndarray, shape (k,)
-        Eigenvalues of the precision matrix Q corresponding to the columns
-        of ``eigvecs``. Typically these are the smallest eigenvalues,
-        representing the directions of largest variance.
-    eigvecs : ndarray, shape (n, k)
-        Matrix of eigenvectors of Q. Columns are assumed orthonormal.
-    n_samples : int, optional
-        Number of independent samples to generate. The default is 1.
-    sigma2_residual : float, optional
-        Isotropic residual variance added in directions orthogonal to the
-        span of ``eigvecs``. If positive, the effective covariance is
-        C ≈ V Λ^{-1} V.T + sigma2_residual * I, where V and Λ are given by
-        eigvecs and eigvals. The default is 0.0 (pure low-rank covariance).
+    R : array_like or sparse
+        Matrix defining Q = R.T @ R (precision).
+    n_samples : int
+    n_eig : int
+        Number of smallest eigenvalues to use.
+    sigma2_residual : float
+        Residual isotropic variance orthogonal to the subspace spanned by
+        the retained eigenvectors.
     rng : numpy.random.Generator, optional
-        Random number generator to use. If None, ``default_rng()`` is used.
 
     Returns
     -------
     samples : ndarray, shape (n_samples, n)
-        Array of approximate Gaussian samples. Each row is one draw.
-
-    Notes
-    -----
-    This function implements
-
-        C_k = V Λ^{-1} V^T
-
-    with eigenpairs (λ_i, v_i). A sample from N(0, C_k) is given by
-
-        x = V Λ^{-1/2} z,  z ~ N(0, I_k).
-
-    If ``sigma2_residual > 0``, an additional isotropic component is added,
-
-        x = V Λ^{-1/2} z_k + sqrt(sigma2_residual) * z_perp,
-
-    where z_perp ~ N(0, I_n). In high dimensions the second term can be
-    expensive; often sigma2_residual is kept at zero or used only when n is
-    moderate.
-
-    Author: Volker Rath (DIAS)
-    Created by ChatGPT (GPT-5 Thinking) on 2025-11-16
     """
     rng = default_rng() if rng is None else rng
 
-    eigvals, eigvecs = estimate_low_rank_eigpairs(R.T@R,
-        k=n_eig,
-        which="SM",
-    )
+    Q = R.T @ R
+    eigvals, eigvecs = estimate_low_rank_eigpairs(Q, k=n_eig, which="SM")
 
     eigvals = np.asarray(eigvals, dtype=np.float64)
     eigvecs = np.asarray(eigvecs, dtype=np.float64)
@@ -1945,17 +1936,13 @@ def sample_rtr_low_rank(R,
     if eigvecs.ndim != 2:
         raise ValueError("eigvecs must be a 2D array of eigenvectors.")
     if eigvecs.shape[1] != eigvals.shape[0]:
-        raise ValueError(
-            "eigvecs.shape[1] must equal eigvals.shape[0] (one eigenvalue per vector)."
-        )
+        raise ValueError("eigvecs.shape[1] must equal eigvals.shape[0].")
 
     n, k = eigvecs.shape
     samples = np.empty((n_samples, n), dtype=np.float64)
-
     inv_sqrt = 1.0 / np.sqrt(eigvals)
 
     for ix in range(n_samples):
-        print('Sample:', str(ix), 'of', str(n_samples))
         z = rng.standard_normal(size=k)
         scaled = inv_sqrt * z
         x = eigvecs @ scaled
@@ -1969,54 +1956,488 @@ def sample_rtr_low_rank(R,
     return samples
 
 
-def estimate_low_rank_eigpairs(
-    Q: "scipy.sparse.spmatrix | LinearOperator",
-    k: int,
-    which: str = "SM",
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Compute k extremal eigenpairs of a symmetric precision matrix Q.
+def sample_prior_from_roughness(
+    R: np.ndarray | scipy.sparse.spmatrix,
+    n_samples: int = 1,
+    lam: float = 1.0e-4,
+    mode: Literal["full", "low-rank"] = "full",
+    n_eig: int = 32,
+    sigma2_residual: float = 0.0,
+    rng: Optional[Generator] = None,
+    msolver: Optional[str] = "bicg",
+    mprec: Optional[str] = "jacobi",
+    rtol: float = 1.0e-6,
+    atol: float = 0.0,
+    maxiter: Optional[int] = None,
+) -> np.ndarray:
+    """
+    Sample from the Gaussian prior implied by a FEMTIC roughness matrix.
+
+    This is a convenience wrapper around :func:`sample_rtr_full_rank` and
+    :func:`sample_rtr_low_rank`, assuming the precision matrix
+
+        Q = R.T @ R + lam * I.
 
     Parameters
     ----------
-    Q : sparse matrix or LinearOperator, shape (n, n)
-        Symmetric positive definite precision matrix. Q can be provided as
-        a SciPy sparse matrix or as a LinearOperator with an appropriate
-        matvec implementation.
-    k : int
-        Number of eigenpairs to compute.
-    which : {{'LM', 'SM'}}, optional
-        Which eigenvalues to compute. 'LM' requests the largest magnitude
-        eigenvalues, 'SM' the smallest magnitude ones. For low-rank covariance
-        approximations of Q^{-1}, 'SM' is typically appropriate because the
-        smallest eigenvalues correspond to the largest variances in the
-        covariance. The default is 'SM'.
+    R : array_like or sparse matrix, shape (m, n)
+        Roughness matrix. Typically obtained from :func:`get_roughness`.
+    n_samples : int, optional
+        Number of independent samples to draw.
+    lam : float, optional
+        Small diagonal Tikhonov regularisation term added to Q.
+    mode : {"full", "low-rank"}, optional
+        - "full": use the iterative full-rank sampler based on CG/BiCGStab.
+        - "low-rank": use the low-rank eigenpair approximation.
+    n_eig : int, optional
+        Number of smallest eigenvalues/eigenvectors to use in "low-rank" mode.
+    sigma2_residual : float, optional
+        Residual isotropic variance outside the low-rank subspace (only used
+        in "low-rank" mode).
+    rng : numpy.random.Generator, optional
+        Random number generator. If None, a new default_rng() is created.
+    msolver : {"bicg", "cg"}, optional
+        Iterative solver used in "full" mode (forwarded to
+        :func:`make_precision_solver`).
+    mprec : {"jacobi", "ilu", "identity"}, optional
+        Preconditioner type in "full" mode.
+    rtol, atol : float, optional
+        Relative / absolute tolerances for the iterative solver in "full" mode.
+    maxiter : int or None, optional
+        Maximum number of iterations for the iterative solver in "full" mode.
 
     Returns
     -------
-    eigvals : ndarray, shape (k,)
-        Eigenvalues of Q.
-    eigvecs : ndarray, shape (n, k)
-        Corresponding eigenvectors of Q (columns).
+    samples : ndarray, shape (n_samples, n)
+        Realisations from N(0, Q^{-1}), where Q = R.T @ R + lam * I.
 
     Notes
     -----
-    This is a thin wrapper around :func:`scipy.sparse.linalg.eigsh`. For very
-    large problems, more specialised eigen-solvers or problem-specific
-    techniques may be required. The resulting eigenpairs can be passed to
-    :func:`sample_low_rank_from_precision_eigpairs` to construct a reduced-rank
-    Gaussian sampler.
+    This function does **not** apply any mean shift; if you want to sample
+    around a reference model m0 (e.g. log10 ρ), simply add it afterwards:
 
-    Author: Volker Rath (DIAS)
-    Created by ChatGPT (GPT-5 Thinking) on 2025-11-16
+        samples_m = m0[None, :] + samples
     """
-    # SciPy's eigsh expects a matrix or LinearOperator; we simply forward it.
-    eigvals, eigvecs = eigsh(Q, k=k, which=which)
-    return eigvals, eigvecs
+    mode_l = str(mode).lower()
+
+    if mode_l.startswith("low"):
+        return sample_rtr_low_rank(
+            R=R,
+            n_samples=n_samples,
+            n_eig=n_eig,
+            sigma2_residual=sigma2_residual,
+            rng=rng,
+        )
+
+    # Full-rank (iterative) mode
+    if rng is None:
+        rng = default_rng()
+
+    solver = make_precision_solver(
+        R=R,
+        lam=lam,
+        rtol=rtol,
+        atol=atol,
+        maxiter=maxiter,
+        msolver=msolver,
+        mprec=mprec,
+    )
+    return sample_rtr_full_rank(
+        R=R,
+        n_samples=n_samples,
+        lam=lam,
+        solver=solver,
+        rng=rng,
+    )
 
 
 # ============================================================================
-# NPZ → HDF5 / NetCDF exporters
+# SECTION 4: mesh.dat + resistivity_block_iterX.dat → NPZ
 # ============================================================================
+
+
+def read_femtic_mesh(mesh_path: str) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Read a FEMTIC TETRA mesh file and return node coordinates and connectivity.
+
+    Parameters
+    ----------
+    mesh_path : str
+        Path to the mesh file (usually "mesh.dat").
+
+    Returns
+    -------
+    nodes : ndarray, shape (nn, 3)
+        Node coordinates [x, y, z].
+    conn : ndarray, shape (nelem, 4)
+        Tetrahedral connectivity (0-based node indices).
+    """
+    with open(mesh_path, "r", errors="ignore") as f:
+        header = f.readline().strip()
+        if header.upper() != "TETRA":
+            raise ValueError(f"Unsupported mesh type '{header}', expected 'TETRA'.")
+
+        nn_line = f.readline().split()
+        if not nn_line:
+            raise ValueError("Missing node count after 'TETRA' header.")
+        nn = int(nn_line[0])
+
+        nodes = np.empty((nn, 3), dtype=float)
+        for _ in range(nn):
+            line = f.readline()
+            if not line:
+                raise ValueError("Unexpected EOF while reading node coordinates.")
+            parts = line.split()
+            if len(parts) < 4:
+                raise ValueError(f"Node line has too few columns: {line!r}")
+            idx = int(parts[0])
+            x, y, z = map(float, parts[1:4])
+            if not (0 <= idx < nn):
+                raise ValueError(f"Node index {idx} out of range 0..{nn-1}.")
+            nodes[idx] = (x, y, z)
+
+        nelem_line = f.readline().split()
+        if not nelem_line:
+            raise ValueError("Missing element count line after node block.")
+        nelem = int(nelem_line[0])
+
+        conn = np.empty((nelem, 4), dtype=int)
+        for _ in range(nelem):
+            line = f.readline()
+            if not line:
+                raise ValueError("Unexpected EOF while reading element block.")
+            parts = line.split()
+            if len(parts) < 9:
+                raise ValueError(f"Element line has too few columns: {line!r}")
+            ie = int(parts[0])
+            n1, n2, n3, n4 = map(int, parts[-4:])
+            if not (0 <= ie < nelem):
+                raise ValueError(f"Element index {ie} out of range 0..{nelem-1}.")
+            conn[ie] = (n1, n2, n3, n4)
+
+    return nodes, conn
+
+
+def read_resistivity_block(block_path: str) -> Dict[str, np.ndarray]:
+    """
+    Read a FEMTIC resistivity_block_iterX.dat and return region-based data.
+
+    Parameters
+    ----------
+    block_path : str
+        Path to resistivity_block_iterX.dat file.
+
+    Returns
+    -------
+    data : dict
+        Keys:
+            "nelem", "nreg",
+            "region_of_elem",
+            "region_rho", "region_rho_lower", "region_rho_upper",
+            "region_n", "region_flag"
+    """
+    with open(block_path, "r", errors="ignore") as f:
+        first = f.readline().split()
+        if len(first) < 2:
+            raise ValueError("First line must contain 'nelem nreg'.")
+        nelem = int(first[0])
+        nreg = int(first[1])
+
+        region_of_elem = np.empty(nelem, dtype=int)
+        for _ in range(nelem):
+            line = f.readline()
+            if not line:
+                raise ValueError("Unexpected EOF while reading element-region map.")
+            parts = line.split()
+            if len(parts) < 2:
+                raise ValueError(f"Element-region line has too few columns: {line!r}")
+            ie = int(parts[0])
+            ireg = int(parts[1])
+            if not (0 <= ie < nelem):
+                raise ValueError(f"Element index {ie} out of range 0..{nelem-1}.")
+            region_of_elem[ie] = ireg
+
+        region_rho = np.empty(nreg, dtype=float)
+        region_rho_lower = np.empty(nreg, dtype=float)
+        region_rho_upper = np.empty(nreg, dtype=float)
+        region_n = np.empty(nreg, dtype=float)
+        region_flag = np.empty(nreg, dtype=int)
+
+        for _ in range(nreg):
+            line = f.readline()
+            if not line:
+                raise ValueError("Unexpected EOF while reading region lines.")
+            parts = line.split()
+            if len(parts) < 6:
+                raise ValueError(f"Region line has too few columns: {line!r}")
+            ireg = int(parts[0])
+            rho = float(parts[1])
+            rho_min = float(parts[2])
+            rho_max = float(parts[3])
+            n = float(parts[4])
+            flag = int(parts[5])
+            if not (0 <= ireg < nreg):
+                raise ValueError(f"Region index {ireg} out of range 0..{nreg-1}.")
+            region_rho[ireg] = rho
+            region_rho_lower[ireg] = rho_min
+            region_rho_upper[ireg] = rho_max
+            region_n[ireg] = n
+            region_flag[ireg] = flag
+
+    return {
+        "nelem": np.array(nelem, dtype=int),
+        "nreg": np.array(nreg, dtype=int),
+        "region_of_elem": region_of_elem,
+        "region_rho": region_rho,
+        "region_rho_lower": region_rho_lower,
+        "region_rho_upper": region_rho_upper,
+        "region_n": region_n,
+        "region_flag": region_flag,
+    }
+
+
+def build_element_arrays(
+    nodes: np.ndarray,
+    conn: np.ndarray,
+    region_of_elem: np.ndarray,
+    region_rho: np.ndarray,
+    region_rho_lower: np.ndarray,
+    region_rho_upper: np.ndarray,
+    region_n: np.ndarray,
+    region_flag: np.ndarray,
+    clip_eps: float = 1.0e-30,
+) -> Dict[str, np.ndarray]:
+    """
+    Build per-element arrays (centroids, log10 resistivity, bounds, flags, n).
+
+    Parameters
+    ----------
+    nodes : ndarray, shape (nn, 3)
+    conn : ndarray, shape (nelem, 4)
+    region_of_elem : ndarray, shape (nelem,)
+    region_rho, region_rho_lower, region_rho_upper : ndarray, shape (nreg,)
+    region_n : ndarray, shape (nreg,)
+    region_flag : ndarray, shape (nreg,)
+    clip_eps : float
+        Values smaller than this are clipped before log10.
+
+    Returns
+    -------
+    arrays : dict
+        Element-based arrays, including:
+            centroid, region, log10_resistivity,
+            rho_lower, rho_upper, flag, n
+    """
+    nodes = np.asarray(nodes, dtype=float)
+    conn = np.asarray(conn, dtype=int)
+    region_of_elem = np.asarray(region_of_elem, dtype=int)
+
+    nelem = conn.shape[0]
+    if region_of_elem.shape[0] != nelem:
+        raise ValueError("region_of_elem length does not match number of elements.")
+
+    coords = nodes[conn]
+    centroid = coords.mean(axis=1)
+
+    rho = np.clip(region_rho, clip_eps, np.inf)
+    rho_min = np.clip(region_rho_lower, clip_eps, np.inf)
+    rho_max = np.clip(region_rho_upper, clip_eps, np.inf)
+
+    rid = region_of_elem
+    rho_elem = rho[rid]
+    rho_min_elem = rho_min[rid]
+    rho_max_elem = rho_max[rid]
+    n_elem = region_n[rid]
+    flag_elem = region_flag[rid]
+
+    log10_rho = np.log10(rho_elem)
+    log10_rho_min = np.log10(rho_min_elem)
+    log10_rho_max = np.log10(rho_max_elem)
+
+    return {
+        "centroid": centroid,
+        "region": rid,
+        "log10_resistivity": log10_rho,
+        "rho_lower": log10_rho_min,
+        "rho_upper": log10_rho_max,
+        "flag": flag_elem,
+        "n": n_elem,
+    }
+
+
+def save_element_npz_with_mesh_and_regions(
+    out_path: str,
+    nodes: np.ndarray,
+    conn: np.ndarray,
+    block: Dict[str, np.ndarray],
+    arrays: Dict[str, np.ndarray],
+) -> None:
+    """
+    Save mesh, region data, and element arrays into a compressed NPZ file.
+
+    Parameters
+    ----------
+    out_path : str
+        Output npz path.
+    nodes : ndarray, shape (nn, 3)
+    conn : ndarray, shape (nelem, 4)
+    block : dict
+        Region-level data from :func:`read_resistivity_block`.
+    arrays : dict
+        Element arrays from :func:`build_element_arrays`.
+    """
+    np.savez_compressed(
+        out_path,
+        nodes=nodes,
+        conn=conn,
+        nelem=block["nelem"],
+        nreg=block["nreg"],
+        region_of_elem=block["region_of_elem"],
+        region_rho=block["region_rho"],
+        region_rho_lower=block["region_rho_lower"],
+        region_rho_upper=block["region_rho_upper"],
+        region_n=block["region_n"],
+        region_flag=block["region_flag"],
+        **arrays,
+    )
+
+
+def mesh_and_block_to_npz(
+    mesh_path: str,
+    rho_block_path: str,
+    out_npz: str,
+) -> None:
+    """
+    High-level helper: mesh.dat + resistivity_block_iterX.dat → element NPZ.
+
+    Parameters
+    ----------
+    mesh_path : str
+        FEMTIC mesh.dat.
+    rho_block_path : str
+        FEMTIC resistivity_block_iterX.dat.
+    out_npz : str
+        Output npz file.
+    """
+    nodes, conn = read_femtic_mesh(mesh_path)
+    block = read_resistivity_block(rho_block_path)
+    arrays = build_element_arrays(
+        nodes=nodes,
+        conn=conn,
+        region_of_elem=block["region_of_elem"],
+        region_rho=block["region_rho"],
+        region_rho_lower=block["region_rho_lower"],
+        region_rho_upper=block["region_rho_upper"],
+        region_n=block["region_n"],
+        region_flag=block["region_flag"],
+    )
+    save_element_npz_with_mesh_and_regions(out_npz, nodes, conn, block, arrays)
+
+
+# ============================================================================
+# SECTION 5: NPZ → VTK/VTU
+# ============================================================================
+
+
+def npz_to_unstructured_grid(npz_path: str):
+    """
+    Build a PyVista UnstructuredGrid from a FEMTIC NPZ file.
+
+    Parameters
+    ----------
+    npz_path : str
+        NPZ created by :func:`mesh_and_block_to_npz`.
+
+    Returns
+    -------
+    grid : pyvista.UnstructuredGrid
+        Unstructured grid with cell_data fields.
+    """
+    try:
+        import pyvista as pv
+    except Exception as exc:  # pragma: no cover
+        raise ImportError("pyvista is required for VTK export.") from exc
+
+    data = np.load(npz_path)
+    if "nodes" not in data or "conn" not in data:
+        raise KeyError("NPZ must at least contain 'nodes' and 'conn'.")
+
+    nodes = np.asarray(data["nodes"], dtype=float)
+    conn = np.asarray(data["conn"], dtype=int)
+
+    nelem = conn.shape[0]
+    if conn.shape[1] != 4:
+        raise ValueError("Connectivity must have 4 nodes per element (tetra).")
+
+    n_per_cell = 4
+    cells = np.hstack(
+        [np.full((nelem, 1), n_per_cell, dtype=np.int64), conn.astype(np.int64)]
+    ).ravel()
+
+    try:
+        celltypes = np.full(nelem, pv.CellType.TETRA, dtype=np.uint8)
+    except Exception:  # old pyvista
+        celltypes = np.full(nelem, 10, dtype=np.uint8)
+
+    grid = pv.UnstructuredGrid(cells, celltypes, nodes)
+
+    preferred_keys = [
+        "log10_resistivity",
+        "rho_lower",
+        "rho_upper",
+        "flag",
+        "n",
+        "region",
+        "region_of_elem",
+    ]
+    for key in preferred_keys:
+        if key in data:
+            arr = np.asarray(data[key])
+            if arr.shape[0] == nelem:
+                name = "region" if key == "region_of_elem" else key
+                grid.cell_data[name] = arr
+
+    return grid
+
+
+def save_vtk_from_npz(
+    npz_path: str,
+    out_vtu: str,
+    out_legacy: Optional[str] = None,
+    scalar_name: str = "log10_resistivity",
+) -> None:
+    """
+    Export a FEMTIC NPZ model to VTK/VTU unstructured grid file(s).
+
+    Parameters
+    ----------
+    npz_path : str
+    out_vtu : str
+        VTU output file.
+    out_legacy : str, optional
+        Optional legacy .vtk file.
+    scalar_name : str
+        Name of scalar to use for plotting.
+    """
+    grid = npz_to_unstructured_grid(npz_path)
+    grid.save(out_vtu)
+    print("Wrote VTU:", out_vtu)
+
+    if out_legacy is not None:
+        grid.save(out_legacy)
+        print("Wrote legacy VTK:", out_legacy)
+
+    if scalar_name in grid.cell_data:
+        print(f"Scalar '{scalar_name}' available for plotting.")
+    else:
+        print(f"Scalar '{scalar_name}' not present in grid.cell_data.")
+
+
+# ============================================================================
+# ============================================================================
+# SECTION 6: NPZ ↔ HDF5 / NetCDF
+# ============================================================================
+
 
 def npz_to_hdf5(
     npz_path: str,
@@ -2025,39 +2446,37 @@ def npz_to_hdf5(
     compression: str = "gzip",
     compression_opts: int = 4,
 ) -> None:
-    """Write all arrays from a FEMTIC NPZ file to an HDF5 file.
+    """
+    Write all arrays from a FEMTIC NPZ file to an HDF5 file.
 
     Parameters
     ----------
     npz_path : str
-        Input NPZ file created by a FEMTIC-related NPZ exporter.
+        Input NPZ file created by :func:`mesh_and_block_to_npz`.
     hdf5_path : str
         Output HDF5 file.
     group : str, optional
-        Name of the top-level group into which all datasets are written
-        (default ``"femtic_model"``).
+        Name of the top-level group into which all datasets are written.
     compression : str, optional
-        HDF5 compression method for datasets (default ``"gzip"``).
+        HDF5 compression method for datasets (default "gzip").
     compression_opts : int, optional
-        Compression level (only used for some compressors such as ``"gzip"``).
+        Compression level (only used for some compressors such as "gzip").
 
     Notes
     -----
     - Each key in the NPZ is written as one dataset under the given group.
     - Scalar values (0-D arrays) are written as scalar datasets.
-    - A few basic attributes (``"source_npz"``, ``"created_by"``) are
-      attached to the group for provenance.
+    - Basic attributes "source_npz" and "created_by" are attached to the group.
 
     Author: Volker Rath (DIAS)
-    Created by ChatGPT (GPT-5 Thinking) on 2025-12-09
-    """)
+    Created by ChatGPT (GPT-5 Thinking) on 2025-12-12
+    """
     try:
         import h5py
     except Exception as exc:  # pragma: no cover
-        raise ImportError("npz_to_hdf5 requires the 'h5py' package.") from exc
+        raise ImportError("h5py is required for npz_to_hdf5().") from exc
 
     data = np.load(npz_path)
-
     with h5py.File(hdf5_path, "w") as h5:
         g = h5.create_group(group)
         g.attrs["source_npz"] = str(npz_path)
@@ -2066,7 +2485,6 @@ def npz_to_hdf5(
         for key in data.files:
             arr = data[key]
             if arr.shape == ():
-                # scalar dataset
                 dset = g.create_dataset(key, data=arr[()])
             else:
                 dset = g.create_dataset(
@@ -2078,51 +2496,87 @@ def npz_to_hdf5(
             dset.attrs["dtype"] = str(arr.dtype)
 
 
+def hdf5_to_npz(
+    hdf5_path: str,
+    npz_path: str,
+    group: str = "femtic_model",
+) -> None:
+    """
+    Convert a FEMTIC-style HDF5 file back to NPZ.
+
+    Parameters
+    ----------
+    hdf5_path : str
+        Input HDF5 file previously written by :func:`npz_to_hdf5`.
+    npz_path : str
+        Output NPZ file path.
+    group : str, optional
+        Name of the group that contains the FEMTIC datasets. If the group
+        is not found, the HDF5 root is used instead.
+
+    Notes
+    -----
+    The function simply restores one NPZ field per dataset contained in
+    the group.
+
+    Author: Volker Rath (DIAS)
+    Created by ChatGPT (GPT-5 Thinking) on 2025-12-12
+    """
+    try:
+        import h5py
+    except Exception as exc:  # pragma: no cover
+        raise ImportError("hdf5_to_npz requires the 'h5py' package.") from exc
+
+    import numpy as _np
+
+    with h5py.File(hdf5_path, "r") as h5:
+        if group in h5:
+            g = h5[group]
+        else:
+            g = h5
+        arrays: dict[str, _np.ndarray] = {}
+        for key, item in g.items():
+            if isinstance(item, h5py.Dataset):
+                arrays[key] = _np.array(item[()])
+
+    _np.savez(npz_path, **arrays)
+
+
 def npz_to_netcdf(
     npz_path: str,
     netcdf_path: str,
 ) -> None:
-    """Convert a FEMTIC NPZ file to a NetCDF4 file with named dimensions.
+    """
+    Convert a FEMTIC NPZ file to a NetCDF file with simple, named dimensions.
 
     Parameters
     ----------
     npz_path : str
-        Input NPZ file created by a FEMTIC-related NPZ exporter.
+        Input NPZ file created by :func:`mesh_and_block_to_npz`.
     netcdf_path : str
         Output NetCDF file (NetCDF4 format).
 
     Notes
     -----
-    If the standard FEMTIC NPZ layout is present, the function creates
-    the following dimensions and variables:
+    The function tries to create meaningful dimensions when the standard FEMTIC
+    NPZ layout is present:
 
-    * Dimensions:
+    - "node", "xyz" for ``nodes`` (nn, 3)
+    - "cell", "nne" for ``conn`` (nelem, 4)
+    - "cell" for cell-based 1-D arrays (e.g. ``log10_resistivity``)
+    - "region" for region-based arrays (e.g. ``region_rho``)
 
-      - ``"node"``, ``"xyz"`` for nodes (nn, 3)
-      - ``"cell"``, ``"nne"`` for connectivity (nelem, 4)
-      - ``"region"`` for region-based arrays (length nreg)
-
-    * Variables:
-
-      - ``"nodes(node, xyz)"``
-      - ``"conn(cell, nne)"``
-      - ``"centroid(cell, xyz)"`` (if present)
-      - scalar ``"nelem"``, ``"nreg"``
-      - region-based arrays: ``"region_rho"``, ``"region_rho_lower"``,
-        ``"region_rho_upper"``, ``"region_n"``, ``"region_flag"``
-      - cell-based arrays: ``"region_of_elem"``, ``"log10_resistivity"``,
-        ``"rho_lower"``, ``"rho_upper"``, ``"flag"``, ``"n"``
-
-    Any remaining arrays in the NPZ that do not fit these patterns are
-    stored using auto-generated dimensions ``"<key>_dim0"``, ``"<key>_dim1"``, …
+    Any remaining arrays are stored using automatically generated dimensions.
 
     Author: Volker Rath (DIAS)
-    Created by ChatGPT (GPT-5 Thinking) on 2025-12-09
-    """)
+    Created by ChatGPT (GPT-5 Thinking) on 2025-12-12
+    """
     try:
         from netCDF4 import Dataset
     except Exception as exc:  # pragma: no cover
-        raise ImportError("npz_to_netcdf requires the 'netCDF4' package.") from exc
+        raise ImportError("netCDF4 is required for npz_to_netcdf().") from exc
+
+    import numpy as _np
 
     data = np.load(npz_path)
 
@@ -2232,183 +2686,338 @@ def npz_to_netcdf(
     ds.close()
 
 
-# ============================================================================
-# Command-line interface
-# ============================================================================
-
-def _cli_sample_field(args: argparse.Namespace) -> int:
-    """CLI wrapper around :func:`sampler1`.
-
-    Parameters
-    ----------
-    args : argparse.Namespace
-        Parsed command-line arguments.
-
-    Returns
-    -------
-    int
-        Exit status code (0 on success).
+def netcdf_to_npz(
+    netcdf_path: str,
+    npz_path: str,
+) -> None:
     """
-    sampler1(args)
-    return 0
-
-
-def _cli_npz_to_hdf5(args: argparse.Namespace) -> int:
-    """CLI wrapper for :func:`npz_to_hdf5`."""
-    npz_to_hdf5(npz_path=args.npz, hdf5_path=args.out_hdf5, group=args.group)
-    return 0
-
-
-def _cli_npz_to_netcdf(args: argparse.Namespace) -> int:
-    """CLI wrapper for :func:`npz_to_netcdf`."""
-    npz_to_netcdf(npz_path=args.npz, netcdf_path=args.out_nc)
-    return 0
-
-
-def main(argv: Optional[Sequence[str]] | None = None) -> int:
-    """Entry point for the ``femtic.py`` command-line interface.
-
-    The following sub-commands are provided:
-
-    ``sample-field``
-        Sample a covariance-driven resistivity field on a FEMTIC TETRA mesh
-        using :func:`sampler1`.
-
-    ``npz-to-hdf5``
-        Convert a FEMTIC NPZ model to an HDF5 file via :func:`npz_to_hdf5`.
-
-    ``npz-to-netcdf``
-        Convert a FEMTIC NPZ model to a NetCDF4 file via :func:`npz_to_netcdf`.
+    Convert a NetCDF file written by :func:`npz_to_netcdf` back to NPZ.
 
     Parameters
     ----------
-    argv : sequence of str, optional
-        Optional argument list (defaults to :data:`sys.argv[1:]`).
+    netcdf_path : str
+        Input NetCDF file (NetCDF4 format).
+    npz_path : str
+        Output NPZ file path.
 
-    Returns
-    -------
-    int
-        Exit status code (0 on success).
+    Notes
+    -----
+    This helper is deliberately simple: it converts each NetCDF variable to
+    one NPZ field with the same name. Masked values (if any) are filled with
+    ``NaN`` before being written.
 
     Author: Volker Rath (DIAS)
-    Created by ChatGPT (GPT-5 Thinking) on 2025-12-09
+    Created by ChatGPT (GPT-5 Thinking) on 2025-12-12
     """
-    parser = argparse.ArgumentParser(
-        prog="femtic",
-        description=(
-            "FEMTIC ensemble utilities: sampling roughness-based models and "
-            "exporting NPZ models to HDF5 / NetCDF."
-        ),
-    )
-    sub = parser.add_subparsers(dest="cmd", required=True)
+    try:
+        from netCDF4 import Dataset
+    except Exception as exc:  # pragma: no cover
+        raise ImportError("netcdf_to_npz requires the 'netCDF4' package.") from exc
 
-    # sample-field sub-command
-    p_sample = sub.add_parser(
-        "sample-field",
-        help="Sample a covariance-driven resistivity field on a FEMTIC mesh.",
+    import numpy as _np
+    import numpy.ma as _ma
+
+    ds = Dataset(netcdf_path, "r")
+    arrays: dict[str, _np.ndarray] = {}
+    try:
+        for name, var in ds.variables.items():
+            data = var[...]
+            if isinstance(data, _ma.MaskedArray):
+                data = data.filled(_np.nan)
+            arrays[name] = _np.array(data)
+    finally:
+        ds.close()
+
+    _np.savez(npz_path, **arrays)
+
+
+# SECTION 7: NPZ → FEMTIC mesh.dat + resistivity_block
+# ============================================================================
+
+
+def write_femtic_mesh(
+    out_path: str,
+    nodes: np.ndarray,
+    conn: np.ndarray,
+) -> None:
+    """
+    Write a FEMTIC-style mesh.dat from nodes and connectivity.
+
+    Parameters
+    ----------
+    out_path : str
+    nodes : ndarray, shape (nn, 3)
+    conn : ndarray, shape (nelem, 4)
+    """
+    nodes = np.asarray(nodes, dtype=float)
+    conn = np.asarray(conn, dtype=int)
+    nn = nodes.shape[0]
+    nelem = conn.shape[0]
+
+    with open(out_path, "w") as f:
+        f.write("TETRA\n")
+        f.write(f"{nn:d}\n")
+        for i in range(nn):
+            x, y, z = nodes[i]
+            f.write(f"{i:d} {x:.8e} {y:.8e} {z:.8e}\n")
+
+        f.write(f"{nelem:d}\n")
+        for ie in range(nelem):
+            n1, n2, n3, n4 = conn[ie]
+            f.write(f"{ie:d} -1 -1 -1 -1 {n1:d} {n2:d} {n3:d} {n4:d}\n")
+
+
+def write_resistivity_block(
+    out_path: str,
+    nelem: int,
+    nreg: int,
+    region_of_elem: np.ndarray,
+    region_rho: np.ndarray,
+    region_rho_lower: np.ndarray,
+    region_rho_upper: np.ndarray,
+    region_n: np.ndarray,
+    region_flag: np.ndarray,
+    fmt: str = "{:.6g}",
+) -> None:
+    """
+    Write a FEMTIC resistivity_block_iterX.dat from region arrays.
+
+    Parameters
+    ----------
+    out_path : str
+    nelem : int
+    nreg : int
+    region_of_elem : ndarray, shape (nelem,)
+    region_rho, region_rho_lower, region_rho_upper : ndarray, shape (nreg,)
+    region_n : ndarray, shape (nreg,)
+    region_flag : ndarray, shape (nreg,)
+    fmt : str
+        Float format.
+    """
+    region_of_elem = np.asarray(region_of_elem, dtype=int)
+    region_rho = np.asarray(region_rho, dtype=float)
+    region_rho_lower = np.asarray(region_rho_lower, dtype=float)
+    region_rho_upper = np.asarray(region_rho_upper, dtype=float)
+    region_n = np.asarray(region_n, dtype=float)
+    region_flag = np.asarray(region_flag, dtype=int)
+
+    if region_of_elem.shape[0] != nelem:
+        raise ValueError("region_of_elem length does not match nelem.")
+    if any(
+        arr.shape[0] != nreg
+        for arr in [region_rho, region_rho_lower, region_rho_upper, region_n, region_flag]
+    ):
+        raise ValueError("Region arrays must all have length nreg.")
+
+    with open(out_path, "w") as f:
+        f.write(f"{nelem:d} {nreg:d}\n")
+        for ie in range(nelem):
+            f.write(f"{ie:d} {int(region_of_elem[ie]):d}\n")
+
+        for ireg in range(nreg):
+            rho = fmt.format(region_rho[ireg])
+            rmin = fmt.format(region_rho_lower[ireg])
+            rmax = fmt.format(region_rho_upper[ireg])
+            nval = int(region_n[ireg])
+            flag = int(region_flag[ireg])
+            f.write(f"{ireg:d} {rho} {rmin} {rmax} {nval:d} {flag:d}\n")
+
+
+def npz_to_femtic(
+    npz_path: str,
+    mesh_out: str,
+    rho_block_out: str,
+    fmt: str = "{:.6g}",
+) -> None:
+    """
+    Reconstruct FEMTIC mesh.dat and resistivity_block_iterX.dat from NPZ.
+
+    Parameters
+    ----------
+    npz_path : str
+    mesh_out : str
+    rho_block_out : str
+    fmt : str
+        Float format for resistivities and bounds.
+    """
+    data = np.load(npz_path)
+
+    required = [
+        "nodes",
+        "conn",
+        "nelem",
+        "nreg",
+        "region_of_elem",
+        "region_rho",
+        "region_rho_lower",
+        "region_rho_upper",
+        "region_n",
+        "region_flag",
+    ]
+    missing = [k for k in required if k not in data]
+    if missing:
+        raise KeyError(f"NPZ is missing required arrays: {missing}")
+
+    nodes = data["nodes"]
+    conn = data["conn"]
+    nelem = int(data["nelem"])
+    nreg = int(data["nreg"])
+    region_of_elem = data["region_of_elem"]
+    region_rho = data["region_rho"]
+    region_rho_lower = data["region_rho_lower"]
+    region_rho_upper = data["region_rho_upper"]
+    region_n = data["region_n"]
+    region_flag = data["region_flag"]
+
+    write_femtic_mesh(mesh_out, nodes, conn)
+    write_resistivity_block(
+        rho_block_out,
+        nelem,
+        nreg,
+        region_of_elem,
+        region_rho,
+        region_rho_lower,
+        region_rho_upper,
+        region_n,
+        region_flag,
+        fmt=fmt,
     )
-    p_sample.add_argument(
-        "--mesh",
+
+
+# ============================================================================
+# SECTION 7: CLI wrapper for unified module
+# ============================================================================
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    """
+    CLI entry point for femtic_core.py with subcommands:
+
+    - mesh-to-npz
+    - npz-to-vtk
+    - npz-to-femtic
+    """
+    import argparse
+
+    ap = argparse.ArgumentParser(
+        description="Unified FEMTIC utilities: ensembles, mesh↔NPZ↔VTK/FEMTIC."
+    )
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    # mesh-to-npz
+    p_m2n = sub.add_parser(
+        "mesh-to-npz",
+        help="Build FEMTIC mesh + region + element NPZ from mesh.dat and block.",
+    )
+    p_m2n.add_argument("--mesh", required=True, help="Path to FEMTIC mesh.dat.")
+    p_m2n.add_argument(
+        "--rho-block",
         required=True,
-        help="Path to FEMTIC mesh.dat (TETRA format).",
+        help="Path to resistivity_block_iterX.dat.",
     )
-    p_sample.add_argument(
-        "--kernel",
-        default="matern",
-        choices=["matern", "exponential", "gaussian"],
-        help="Covariance kernel.",
-    )
-    p_sample.add_argument(
-        "--ell",
-        type=float,
-        default=500.0,
-        help="Length-scale in mesh coordinate units (default 500).",
-    )
-    p_sample.add_argument(
-        "--sigma2",
-        type=float,
-        default=0.5,
-        help="Log-space marginal variance.",
-    )
-    p_sample.add_argument(
-        "--nu",
-        type=float,
-        default=1.5,
-        help="Matern smoothness (if used).",
-    )
-    p_sample.add_argument(
-        "--nugget",
-        type=float,
-        default=1e-6,
-        help="Diagonal nugget (log-space).",
-    )
-    p_sample.add_argument(
-        "--mean",
-        type=float,
-        default=float(np.log(100.0)),
-        help="Mean of log-resistivity (default log(100)).",
-    )
-    p_sample.add_argument(
-        "--strategy",
-        default="sparse",
-        choices=["dense", "sparse"],
-        help="Dense (Cholesky) or sparse (truncated-eig) sampling strategy.",
-    )
-    p_sample.add_argument(
-        "--radius",
-        type=float,
-        default=None,
-        help="Neighborhood radius for sparse K (default ≈ 2.5 * ell).",
-    )
-    p_sample.add_argument(
-        "--trunc_k",
-        type=int,
-        default=1024,
-        help="Rank for truncated-eig sampling when strategy='sparse'.",
-    )
-    p_sample.add_argument(
-        "--seed",
-        type=int,
-        default=None,
-        help="Random seed.",
-    )
-    p_sample.add_argument(
-        "--out",
-        default="rho_sample_on_mesh.npz",
-        help="Output NPZ file path.",
-    )
-    p_sample.set_defaults(func=_cli_sample_field)
+    p_m2n.add_argument("--out-npz", required=True, help="Output NPZ file.")
 
-    # npz-to-hdf5 sub-command
-    p_n2h = sub.add_parser(
-        "npz-to-hdf5",
-        help="Write FEMTIC NPZ content to an HDF5 file.",
+    # npz-to-vtk
+    p_n2v = sub.add_parser(
+        "npz-to-vtk",
+        help="Export FEMTIC NPZ model to VTK/VTU unstructured grid.",
     )
-    p_n2h.add_argument("--npz", required=True, help="Input NPZ file.")
-    p_n2h.add_argument("--out-hdf5", required=True, help="Output HDF5 file.")
-    p_n2h.add_argument(
+    p_n2v.add_argument("--npz", required=True, help="Input NPZ file.")
+    p_n2v.add_argument("--out-vtu", required=True, help="Output VTU file.")
+    p_n2v.add_argument("--out-legacy", default=None, help="Optional legacy .vtk file.")
+    p_n2v.add_argument(
+        "--scalar",
+        default="log10_resistivity",
+        help="Cell scalar name for plotting (default 'log10_resistivity').",
+    )
+
+    # hdf5-to-npz
+    p_h2n = sub.add_parser(
+        "hdf5-to-npz",
+        help="Convert FEMTIC-style HDF5 (written by npz-to-hdf5) back to NPZ.",
+    )
+    p_h2n.add_argument("--hdf5", required=True, help="Input HDF5 file.")
+    p_h2n.add_argument("--out-npz", required=True, help="Output NPZ file.")
+    p_h2n.add_argument(
         "--group",
         default="femtic_model",
-        help="Top-level group name inside the HDF5 file.",
+        help="HDF5 group containing the FEMTIC datasets (default 'femtic_model').",
     )
-    p_n2h.set_defaults(func=_cli_npz_to_hdf5)
 
-    # npz-to-netcdf sub-command
-    p_n2nc = sub.add_parser(
-        "npz-to-netcdf",
-        help="Convert FEMTIC NPZ model to a NetCDF4 file.",
+    # netcdf-to-npz
+    p_nc2n = sub.add_parser(
+        "netcdf-to-npz",
+        help="Convert FEMTIC-style NetCDF (written by npz-to-netcdf) back to NPZ.",
     )
-    p_n2nc.add_argument("--npz", required=True, help="Input NPZ file.")
-    p_n2nc.add_argument("--out-nc", required=True, help="Output NetCDF file.")
-    p_n2nc.set_defaults(func=_cli_npz_to_netcdf)
+    p_nc2n.add_argument("--netcdf", required=True, help="Input NetCDF file.")
+    p_nc2n.add_argument("--out-npz", required=True, help="Output NPZ file.")
 
-    args = parser.parse_args(list(argv) if argv is not None else None)
+    # npz-to-femtic
+    p_n2f = sub.add_parser(
+        "npz-to-femtic",
+        help="Recreate FEMTIC mesh.dat and resistivity_block from NPZ.",
+    )
+    p_n2f.add_argument("--npz", required=True, help="Input NPZ file.")
+    p_n2f.add_argument("--mesh-out", required=True, help="Output mesh.dat.")
+    p_n2f.add_argument(
+        "--rho-block-out",
+        required=True,
+        help="Output resistivity_block_iterX.dat.",
+    )
+    p_n2f.add_argument(
+        "--format",
+        dest="fmt",
+        default="{:.6g}",
+        help='Float format for resistivity and bounds (default "{:.6g}").',
+    )
 
-    if not hasattr(args, "func"):
-        parser.error("No sub-command selected.")
-    return args.func(args)
+    args = ap.parse_args(list(argv) if argv is not None else None)
+
+    if args.cmd == "mesh-to-npz":
+        mesh_and_block_to_npz(args.mesh, args.rho_block, args.out_npz)
+        print("Saved mesh + region + element NPZ:", args.out_npz)
+        return 0
+
+    if args.cmd == "npz-to-vtk":
+        save_vtk_from_npz(
+            npz_path=args.npz,
+            out_vtu=args.out_vtu,
+            out_legacy=args.out_legacy,
+            scalar_name=args.scalar,
+        )
+        return 0
+
+    if args.cmd == "hdf5-to-npz":
+        hdf5_to_npz(
+            hdf5_path=args.hdf5,
+            npz_path=args.out_npz,
+            group=args.group,
+        )
+        print("Wrote NPZ:", args.out_npz)
+        return 0
+
+    if args.cmd == "netcdf-to-npz":
+        netcdf_to_npz(
+            netcdf_path=args.netcdf,
+            npz_path=args.out_npz,
+        )
+        print("Wrote NPZ:", args.out_npz)
+        return 0
+
+    if args.cmd == "npz-to-femtic":
+        npz_to_femtic(
+            npz_path=args.npz,
+            mesh_out=args.mesh_out,
+            rho_block_out=args.rho_block_out,
+            fmt=args.fmt,
+        )
+        print("Wrote mesh to:", args.mesh_out)
+        print("Wrote resistivity block to:", args.rho_block_out)
+        return 0
+
+    ap.error(f"Unknown command {args.cmd!r}")
+    return 1
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     raise SystemExit(main())
-
