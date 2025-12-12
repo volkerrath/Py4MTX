@@ -19,7 +19,7 @@ The goal is to have a single importable (and CLI-callable) module that
 collects:
 
 - The ensemble / precision tools from femtic.py.
-- The mesh/NPZ conversion tools from femtic_mesh_to_npz.py.
+- The mesh/NPZ conversion tools from femtic_femtic_to_npz.py.
 - The NPZ → VTK exporter from femtic_npz_to_vtk.py.
 - The NPZ → FEMTIC reconstructor from femtic_npz_to_mesh.py.
 
@@ -27,7 +27,7 @@ Command-line interface
 ----------------------
 The module provides a simple subcommand-style CLI:
 
-    python femtic_core.py mesh-to-npz \\
+    python femtic_core.py femtic-to-npz \\
         --mesh mesh.dat \\
         --rho-block resistivity_block_iter0.dat \\
         --out-npz femtic_model.npz
@@ -2893,7 +2893,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     """
     CLI entry point for femtic_core.py with subcommands:
 
-    - mesh-to-npz
+    - femtic-to-npz
     - npz-to-vtk
     - npz-to-femtic
     """
@@ -2904,9 +2904,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    # mesh-to-npz
+    # femtic-to-npz
     p_m2n = sub.add_parser(
-        "mesh-to-npz",
+        "femtic-to-npz",
         help="Build FEMTIC mesh + region + element NPZ from mesh.dat and block.",
     )
     p_m2n.add_argument("--mesh", required=True, help="Path to FEMTIC mesh.dat.")
@@ -2973,7 +2973,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     args = ap.parse_args(list(argv) if argv is not None else None)
 
-    if args.cmd == "mesh-to-npz":
+    if args.cmd == "femtic-to-npz":
         mesh_and_block_to_npz(args.mesh, args.rho_block, args.out_npz)
         print("Saved mesh + region + element NPZ:", args.out_npz)
         return 0
