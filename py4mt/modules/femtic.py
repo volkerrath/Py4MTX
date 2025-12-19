@@ -1712,75 +1712,296 @@ def check_sparse_matrix(M: scipy.sparse.spmatrix, condition: bool = True) -> Non
 
 
 # ============================================================================
+# ============================================================================
 # SECTION 3: Gaussian sampling with Q = R.T @ R (+ λI)
 # ============================================================================
+
+import warnings
 
 
 def build_rtr_operator(
     R: np.ndarray | scipy.sparse.spmatrix,
     lam: float = 0.0,
 ) -> LinearOperator:
-    """
-    Create a LinearOperator representing Q = R.T @ R + lam * I.
+    """Create a LinearOperator representing Q = R.T @ R + lam * I.
+
+    This is the **matrix-free** representation used by iterative solvers.
 
     Parameters
     ----------
-    R : array_like or sparse matrix, shape (m, n)
-        Matrix defining the precision Q = R.T @ R. R is typically sparse.
+    R : array_like or scipy.sparse.spmatrix, shape (m, n)
+        Matrix defining the precision via Q = R.T @ R. In FEMTIC workflows,
+        this is typically a roughness / regularisation operator.
     lam : float, optional
-        Diagonal Tikhonov regularization parameter.
+        Diagonal Tikhonov shift. If ``lam > 0`` then
+        Q = R.T @ R + lam * I is strictly positive definite.
 
     Returns
     -------
     Q_op : scipy.sparse.linalg.LinearOperator, shape (n, n)
-        Linear operator that applies Q to a vector via matrix-vector products.
+        Linear operator that applies Q to a vector.
+
+    Notes
+    -----
+    The matvec evaluates::
+
+        y = R @ x
+        z = R.T @ y
+        z += lam * x
+
+    without explicitly forming Q.
+
+    Author: Volker Rath (DIAS)
+    Created by ChatGPT (GPT-5 Thinking) on 2025-12-19
     """
-    m, n = R.shape
+    _, n = R.shape
 
     def matvec(x: np.ndarray) -> np.ndarray:
+        """Compute z = (R.T @ R + lam * I) @ x."""
         y = R @ x
         z = R.T @ y
         if lam != 0.0:
             z = z + lam * x
-        return z
+        return np.asarray(z, dtype=np.float64)
 
     return LinearOperator((n, n), matvec=matvec, rmatvec=matvec, dtype=np.float64)
 
 
-def make_preconditioner(
-    R: np.ndarray | scipy.sparse.spmatrix,
-    lam: float = 0.0,
-    kind: str = "jacobi",
-) -> LinearOperator:
-    """
-    Build a preconditioner M for Q = R.T @ R + lam * I.
+def _diag_rtr(R: np.ndarray | scipy.sparse.spmatrix) -> np.ndarray:
+    """Compute diag(R.T @ R) without forming R.T @ R.
 
     Parameters
     ----------
     R : array_like or sparse matrix, shape (m, n)
-    lam : float
-    kind : {"jacobi", "ilu", "identity"}
 
     Returns
     -------
-    M : LinearOperator
-        Approximation to Q^{-1}.
-    """
-    Q = R.T @ R + lam * np.eye(R.shape[1])
+    d : ndarray, shape (n,)
+        Column-wise sum of squares of R, i.e. diag(R.T R).
 
-    if kind == "jacobi":
-        diag_Q = np.diag(Q) if not isspmatrix(Q) else Q.diagonal()
-        inv_diag = 1.0 / diag_Q
-        return LinearOperator(Q.shape, matvec=lambda x: inv_diag * x)
-    elif kind == "ilu":
-        if not isspmatrix(Q):
-            raise ValueError("ILU requires sparse Q matrix.")
-        ilu = spilu(Q.tocsc())
-        return LinearOperator(Q.shape, matvec=lambda x: ilu.solve(x))
-    elif kind == "identity":
-        return LinearOperator(Q.shape, matvec=lambda x: x)
-    else:
-        raise ValueError(f"Unknown preconditioner kind: {kind}")
+    Notes
+    -----
+    For sparse R, this uses element-wise square and column sum. For dense
+    R, it uses ``(R**2).sum(axis=0)``.
+
+    Author: Volker Rath (DIAS)
+    Created by ChatGPT (GPT-5 Thinking) on 2025-12-19
+    """
+    if scipy.sparse.issparse(R):
+        # (R.multiply(R)) keeps sparsity pattern, column sum returns (1, n).
+        d = np.asarray(R.multiply(R).sum(axis=0)).ravel()
+        return d.astype(np.float64, copy=False)
+    arr = np.asarray(R, dtype=np.float64)
+    return np.sum(arr * arr, axis=0)
+
+
+def make_rtr_preconditioner(
+    R: np.ndarray | scipy.sparse.spmatrix,
+    lam: float = 0.0,
+    *,
+    precond: Optional[str] = None,
+    precond_kwargs: Optional[dict] = None,
+) -> Optional[LinearOperator]:
+    """Build a CG-compatible preconditioner M ≈ Q^{-1} for Q = R.T@R + lam*I.
+
+    Parameters
+    ----------
+    R : array_like or sparse matrix, shape (m, n)
+        Operator defining Q.
+    lam : float, optional
+        Diagonal shift used in Q.
+    precond : {None, 'jacobi', 'ilu', 'amg', 'identity'}, optional
+        Preconditioner type:
+
+        - None: no preconditioning (M = None).
+        - 'jacobi': diagonal (inverse) preconditioner using diag(R.T R) + lam.
+          **Does not form Q**.
+        - 'ilu': incomplete LU on sparse Q (forms Q as sparse).
+        - 'amg': algebraic multigrid on sparse Q (requires `pyamg`, forms Q).
+        - 'identity': explicit identity operator.
+
+    precond_kwargs : dict, optional
+        Options for the chosen preconditioner.
+
+        For 'jacobi':
+            - min_diagonal (float): floor on the diagonal before inversion
+              (default 1e-30).
+
+        For 'ilu' (scipy.sparse.linalg.spilu):
+            - drop_tol (float)
+            - fill_factor (float)
+            - diag_pivot_thresh (float)
+            - permc_spec (str)
+
+        For 'amg' (pyamg.smoothed_aggregation_solver):
+            - any kwargs accepted by pyamg, plus:
+            - tol (float): solve tolerance used per application (default 1e-8)
+            - maxiter (int): max iterations per application (default 1)
+
+    Returns
+    -------
+    M : scipy.sparse.linalg.LinearOperator or None
+        Preconditioner suitable for SciPy iterative solvers.
+
+    Author: Volker Rath (DIAS)
+    Created by ChatGPT (GPT-5 Thinking) on 2025-12-19
+    """
+    if precond is None:
+        return None
+
+    key = str(precond).strip().lower()
+    opts = {} if precond_kwargs is None else dict(precond_kwargs)
+
+    if key in {"none"}:
+        return None
+
+    if key in {"identity", "i"}:
+        n = R.shape[1]
+        return LinearOperator((n, n), matvec=lambda x: x, dtype=np.float64)
+
+    if key in {"jacobi", "diag"}:
+        d = _diag_rtr(R)
+        if lam != 0.0:
+            d = d + float(lam)
+        floor = float(opts.pop("min_diagonal", 1.0e-30))
+        d = np.maximum(d, floor)
+        invd = 1.0 / d
+
+        def mvec(x: np.ndarray) -> np.ndarray:
+            """Apply Jacobi Mx = diag(Q)^{-1} x."""
+            return invd * x
+
+        return LinearOperator((invd.size, invd.size), matvec=mvec, dtype=np.float64)
+
+    # The remaining options require forming sparse Q.
+    if not scipy.sparse.issparse(R):
+        raise ValueError(
+            f"Preconditioner {precond!r} requires sparse R (to form sparse Q)."
+        )
+
+    Q = (R.T @ R).tocsc()
+    if lam != 0.0:
+        Q = Q + float(lam) * scipy.sparse.identity(Q.shape[0], format="csc")
+
+    if key in {"ilu"}:
+        ilu = scipy.sparse.linalg.spilu(
+            Q,
+            drop_tol=float(opts.pop("drop_tol", 1.0e-4)),
+            fill_factor=float(opts.pop("fill_factor", 10.0)),
+            diag_pivot_thresh=float(opts.pop("diag_pivot_thresh", 0.0)),
+            permc_spec=str(opts.pop("permc_spec", "COLAMD")),
+        )
+
+        def mvec(x: np.ndarray) -> np.ndarray:
+            """Apply ILU preconditioner via one triangular solve."""
+            return ilu.solve(x)
+
+        return LinearOperator(Q.shape, matvec=mvec, dtype=np.float64)
+
+    if key in {"amg"}:
+        try:
+            import pyamg  # type: ignore
+        except Exception as exc:  # pragma: no cover
+            raise ImportError("Preconditioner 'amg' requires pyamg.") from exc
+
+        tol = float(opts.pop("tol", 1.0e-8))
+        maxiter = int(opts.pop("maxiter", 1))
+        ml = pyamg.smoothed_aggregation_solver(Q, **opts)
+
+        def mvec(x: np.ndarray) -> np.ndarray:
+            """Apply one (or few) AMG V-cycles as approximate inverse."""
+            return ml.solve(x, tol=tol, maxiter=maxiter)
+
+        return LinearOperator(Q.shape, matvec=mvec, dtype=np.float64)
+
+    raise ValueError(
+        "Unknown preconditioner. Use None|'jacobi'|'ilu'|'amg'|'identity' "
+        f"(got {precond!r})."
+    )
+
+
+def make_sparse_cholesky_precision_solver(
+    R: np.ndarray | scipy.sparse.spmatrix,
+    lam: float = 0.0,
+    *,
+    use_cholmod: bool = True,
+) -> Callable[[np.ndarray], np.ndarray]:
+    """Construct a direct solver for Qx=b using sparse Cholesky (or fallback LU).
+
+    Parameters
+    ----------
+    R : array_like or sparse matrix, shape (m, n)
+        Matrix defining Q = R.T @ R (+ lam * I).
+    lam : float, optional
+        Diagonal shift added to Q.
+    use_cholmod : bool, optional
+        If True (default), try SuiteSparse CHOLMOD via ``scikit-sparse``.
+        If unavailable, fall back to SciPy sparse LU with a RuntimeWarning.
+
+    Returns
+    -------
+    solve_Q : callable
+        A function solving Qx=b.
+
+    Notes
+    -----
+    For large 3-D problems, explicit factorisation can be memory intensive
+    due to fill-in. It is most useful when Q is moderate in size or when many
+    solves with the same Q are needed.
+
+    Author: Volker Rath (DIAS)
+    Created by ChatGPT (GPT-5 Thinking) on 2025-12-19
+    """
+    if scipy.sparse.issparse(R):
+        Q = (R.T @ R).tocsc()
+        if lam != 0.0:
+            Q = Q + float(lam) * scipy.sparse.identity(Q.shape[0], format="csc")
+
+        if use_cholmod:
+            try:
+                from sksparse.cholmod import cholesky  # type: ignore
+            except Exception:  # pragma: no cover
+                warnings.warn(
+                    "CHOLMOD (scikit-sparse) not available; falling back to SciPy splu.",
+                    RuntimeWarning,
+                )
+                lu = scipy.sparse.linalg.splu(Q)
+
+                def solve_Q(b: np.ndarray) -> np.ndarray:
+                    """Solve using SciPy sparse LU."""
+                    return lu.solve(b)
+
+                return solve_Q
+
+            factor = cholesky(Q)
+
+            def solve_Q(b: np.ndarray) -> np.ndarray:
+                """Solve using CHOLMOD sparse Cholesky."""
+                return factor(b)
+
+            return solve_Q
+
+        lu = scipy.sparse.linalg.splu(Q)
+
+        def solve_Q(b: np.ndarray) -> np.ndarray:
+            """Solve using SciPy sparse LU."""
+            return lu.solve(b)
+
+        return solve_Q
+
+    # Dense fallback (small problems)
+    Rm = np.asarray(R, dtype=np.float64)
+    Q = Rm.T @ Rm
+    if lam != 0.0:
+        Q = Q + float(lam) * np.identity(Q.shape[0], dtype=np.float64)
+
+    c, lower = scipy.linalg.cho_factor(Q, overwrite_a=False, check_finite=True)
+
+    def solve_Q(b: np.ndarray) -> np.ndarray:
+        """Solve using dense Cholesky."""
+        return scipy.linalg.cho_solve((c, lower), b, check_finite=True)
+
+    return solve_Q
 
 
 def make_precision_solver(
@@ -1790,48 +2011,90 @@ def make_precision_solver(
     atol: float = 0.0,
     maxiter: Optional[int] = None,
     M: Optional[LinearOperator] = None,
-    msolver: Optional[str] = "bicg",
+    msolver: Optional[str] = "cg",
     mprec: Optional[str] = "jacobi",
+    *,
+    solver_method: Optional[str] = None,
+    precond: Optional[str] = None,
+    precond_kwargs: Optional[dict] = None,
+    use_cholmod: bool = True,
 ) -> Callable[[np.ndarray], np.ndarray]:
-    """
-    Construct a solver for Q x = b with Q = R.T @ R + lam * I using iterative methods.
+    """Construct a solver for Qx=b with Q = R.T@R + lam*I.
+
+    This is a compatibility-preserving upgrade of the earlier FEMTIC helper:
+
+    - **Iterative solvers**: CG (recommended for SPD Q) and BiCGStab.
+    - **Direct solver**: sparse Cholesky via CHOLMOD (or SciPy LU fallback).
 
     Parameters
     ----------
     R : array_like or sparse matrix
-    lam : float
-    rtol, atol : float
-        Tolerances for iterative solver.
+        Operator defining the precision Q.
+    lam : float, optional
+        Diagonal shift.
+    rtol, atol : float, optional
+        Iterative solver tolerances (SciPy style).
     maxiter : int, optional
-        Maximum number of iterations.
+        Maximum number of iterations for iterative solvers.
     M : LinearOperator, optional
-        Preconditioner; if None, built via :func:`make_preconditioner`.
-    msolver : {"bicg", "cg"}
-        Choice of iterative solver.
-    mprec : {"jacobi", "ilu", "identity"}
-        Preconditioner type if M is None.
+        Explicit preconditioner. If provided, it overrides ``mprec/precond``.
+    msolver : {"cg", "bicg", "bicgstab"}, optional
+        Iterative solver choice (legacy argument name).
+    mprec : {"jacobi", "ilu", "amg", "identity", None}, optional
+        Preconditioner choice (legacy argument name). See ``precond``.
+    solver_method : {"cg", "cholesky", "bicgstab"}, optional
+        New preferred name for the solver. If provided, overrides ``msolver``.
+    precond : {None, "jacobi", "ilu", "amg", "identity"}, optional
+        New preferred name for the preconditioner. If provided, overrides
+        ``mprec``.
+    precond_kwargs : dict, optional
+        Extra options for the chosen preconditioner.
+    use_cholmod : bool, optional
+        If True (default), try CHOLMOD for the 'cholesky' method.
 
     Returns
     -------
     solve_Q : callable
-        Function solve_Q(b) that returns solution x to Q x = b.
+        Function that solves Qx=b.
+
+    Author: Volker Rath (DIAS)
+    Created by ChatGPT (GPT-5 Thinking) on 2025-12-19
     """
+    meth = (solver_method or msolver or "cg").strip().lower()
+
+    if meth in {"chol", "cholesky", "sparse_cholesky", "direct"}:
+        return make_sparse_cholesky_precision_solver(
+            R=R,
+            lam=lam,
+            use_cholmod=use_cholmod,
+        )
+
+    # Iterative branch
     Q_op = build_rtr_operator(R, lam=lam)
 
     if M is None:
-        M = make_preconditioner(R, lam=lam, kind=mprec)
+        M = make_rtr_preconditioner(
+            R=R,
+            lam=lam,
+            precond=precond if precond is not None else mprec,
+            precond_kwargs=precond_kwargs,
+        )
 
     def solve_Q(b: np.ndarray) -> np.ndarray:
-        solver = bicgstab if "bicg" in str(msolver).lower() else cg
-        x, info = solver(Q_op, b, rtol=rtol, atol=atol, maxiter=maxiter, M=M)
+        """Solve Qx=b using the selected iterative method."""
+        if meth in {"cg", "pcg"}:
+            x, info = cg(Q_op, b, rtol=rtol, atol=atol, maxiter=maxiter, M=M)
+        else:
+            # BiCGStab can handle non-SPD, but is not needed if Q is SPD.
+            x, info = bicgstab(Q_op, b, rtol=rtol, atol=atol, maxiter=maxiter, M=M)
 
         if info > 0:
-            raise RuntimeError(f"Solver did not converge within {info} iterations.")
-        elif info < 0:
             raise RuntimeError(
-                f"Solver failed with illegal input or breakdown (info={info})."
+                f"Iterative solver did not converge within {info} iterations."
             )
-        return x
+        if info < 0:
+            raise RuntimeError(f"Iterative solver failed (info={info}).")
+        return np.asarray(x, dtype=np.float64)
 
     return solve_Q
 
@@ -1842,28 +2105,52 @@ def sample_rtr_full_rank(
     lam: float = 1.0e-4,
     solver: Optional[Callable[[np.ndarray], np.ndarray]] = None,
     rng: Optional[Generator] = None,
+    *,
+    solver_method: str = "cg",
+    solver_kwargs: Optional[dict] = None,
 ) -> np.ndarray:
-    """
-    Sample from N(0, C) with C = (R.T @ R + lam * I)^{-1}.
+    """Sample from N(0, (R.T@R + lam I)^{-1}) using full-rank solves.
 
     Parameters
     ----------
     R : array_like or sparse matrix, shape (m, n)
-    n_samples : int
-    lam : float
+        Matrix defining the precision.
+    n_samples : int, optional
+        Number of samples.
+    lam : float, optional
+        Diagonal shift added to the precision.
     solver : callable, optional
-        If None, create a CG-based solver via :func:`make_precision_solver`.
+        Pre-built solver for Qx=b. If None, it is created from ``solver_method``.
     rng : numpy.random.Generator, optional
+        Random generator.
+    solver_method : {"cg", "cholesky", "bicgstab"}, optional
+        Solver used when ``solver`` is None.
+    solver_kwargs : dict, optional
+        Extra args passed to :func:`make_precision_solver`.
 
     Returns
     -------
     samples : ndarray, shape (n_samples, n)
+
+    Notes
+    -----
+    Uses the identity::
+
+        x = (R.T R + lam I)^{-1} R.T ξ,   ξ ~ N(0, I)
+
+    Author: Volker Rath (DIAS)
+    Created by ChatGPT (GPT-5 Thinking) on 2025-12-19
     """
     rng = default_rng() if rng is None else rng
     m, n = R.shape
 
     if solver is None:
-        solver = make_precision_solver(R, lam=lam)
+        solver = make_precision_solver(
+            R=R,
+            lam=lam,
+            solver_method=solver_method,
+            **(solver_kwargs or {}),
+        )
 
     samples = np.empty((n_samples, n), dtype=np.float64)
     for ix in range(n_samples):
@@ -1879,19 +2166,23 @@ def estimate_low_rank_eigpairs(
     k: int,
     which: str = "SM",
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Compute k extremal eigenpairs of a symmetric precision matrix Q.
+    """Compute k extremal eigenpairs of a symmetric precision operator.
 
     Parameters
     ----------
-    Q : sparse matrix or LinearOperator, shape (n, n)
+    Q : sparse matrix or LinearOperator
+        Symmetric positive (semi-)definite operator.
     k : int
-    which : {"LM", "SM"}
+        Number of eigenpairs.
+    which : {"SM", "LM"}, optional
+        Smallest / largest magnitude eigenvalues.
 
     Returns
     -------
-    eigvals : ndarray, shape (k,)
-    eigvecs : ndarray, shape (n, k)
+    eigvals, eigvecs
+
+    Author: Volker Rath (DIAS)
+    Created by ChatGPT (GPT-5 Thinking) on 2025-12-19
     """
     eigvals, eigvecs = eigsh(Q, k=k, which=which)
     return eigvals, eigvecs
@@ -1903,40 +2194,45 @@ def sample_rtr_low_rank(
     n_eig: int = 32,
     sigma2_residual: float = 0.0,
     rng: Optional[Generator] = None,
+    *,
+    which: str = "SM",
 ) -> np.ndarray:
-    """
-    Approximate sampling from N(0, Q^{-1}) using a low-rank eigendecomposition.
+    """Approximate sampling from N(0, (R.T R)^{-1}) using k eigenpairs.
 
     Parameters
     ----------
-    R : array_like or sparse
-        Matrix defining Q = R.T @ R (precision).
+    R : array_like or sparse matrix
+        Matrix defining Q = R.T @ R.
     n_samples : int
+        Number of samples.
     n_eig : int
-        Number of smallest eigenvalues to use.
+        Number of eigenpairs.
     sigma2_residual : float
-        Residual isotropic variance orthogonal to the subspace spanned by
-        the retained eigenvectors.
+        Optional isotropic residual variance.
     rng : numpy.random.Generator, optional
+    which : {"SM", "LM"}
+        Which eigenvalues to request from eigsh.
 
     Returns
     -------
     samples : ndarray, shape (n_samples, n)
+
+    Notes
+    -----
+    This uses ``eigsh`` on a **LinearOperator** for Q, avoiding explicit
+    formation of Q. For very large systems, computing smallest eigenpairs
+    can still be expensive.
+
+    Author: Volker Rath (DIAS)
+    Created by ChatGPT (GPT-5 Thinking) on 2025-12-19
     """
     rng = default_rng() if rng is None else rng
+    Q_op = build_rtr_operator(R, lam=0.0)
 
-    Q = R.T @ R
-    eigvals, eigvecs = estimate_low_rank_eigpairs(Q, k=n_eig, which="SM")
+    eigvals, eigvecs = estimate_low_rank_eigpairs(Q_op, k=n_eig, which=which)
 
     eigvals = np.asarray(eigvals, dtype=np.float64)
     eigvecs = np.asarray(eigvecs, dtype=np.float64)
-
-    if eigvals.ndim != 1:
-        raise ValueError("eigvals must be a 1D array of eigenvalues.")
-    if eigvecs.ndim != 2:
-        raise ValueError("eigvecs must be a 2D array of eigenvectors.")
-    if eigvecs.shape[1] != eigvals.shape[0]:
-        raise ValueError("eigvecs.shape[1] must equal eigvals.shape[0].")
 
     n, k = eigvecs.shape
     samples = np.empty((n_samples, n), dtype=np.float64)
@@ -1944,13 +2240,9 @@ def sample_rtr_low_rank(
 
     for ix in range(n_samples):
         z = rng.standard_normal(size=k)
-        scaled = inv_sqrt * z
-        x = eigvecs @ scaled
-
+        x = eigvecs @ (inv_sqrt * z)
         if sigma2_residual > 0.0:
-            z_perp = rng.standard_normal(size=n)
-            x = x + np.sqrt(sigma2_residual) * z_perp
-
+            x = x + np.sqrt(sigma2_residual) * rng.standard_normal(size=n)
         samples[ix, :] = x
 
     return samples
@@ -1964,62 +2256,52 @@ def sample_prior_from_roughness(
     n_eig: int = 32,
     sigma2_residual: float = 0.0,
     rng: Optional[Generator] = None,
-    msolver: Optional[str] = "bicg",
+    msolver: Optional[str] = "cg",
     mprec: Optional[str] = "jacobi",
     rtol: float = 1.0e-6,
     atol: float = 0.0,
     maxiter: Optional[int] = None,
+    *,
+    solver_method: Optional[str] = None,
+    precond: Optional[str] = None,
+    precond_kwargs: Optional[dict] = None,
+    use_cholmod: bool = True,
 ) -> np.ndarray:
-    """
-    Sample from the Gaussian prior implied by a FEMTIC roughness matrix.
+    """Sample from the Gaussian prior implied by a FEMTIC roughness matrix.
 
-    This is a convenience wrapper around :func:`sample_rtr_full_rank` and
-    :func:`sample_rtr_low_rank`, assuming the precision matrix
+    The implied precision is::
 
-        Q = R.T @ R + lam * I.
+        Q = R.T @ R + lam * I
 
     Parameters
     ----------
-    R : array_like or sparse matrix, shape (m, n)
-        Roughness matrix. Typically obtained from :func:`get_roughness`.
-    n_samples : int, optional
-        Number of independent samples to draw.
-    lam : float, optional
-        Small diagonal Tikhonov regularisation term added to Q.
-    mode : {"full", "low-rank"}, optional
-        - "full": use the iterative full-rank sampler based on CG/BiCGStab.
-        - "low-rank": use the low-rank eigenpair approximation.
-    n_eig : int, optional
-        Number of smallest eigenvalues/eigenvectors to use in "low-rank" mode.
-    sigma2_residual : float, optional
-        Residual isotropic variance outside the low-rank subspace (only used
-        in "low-rank" mode).
+    R : array_like or sparse matrix
+        Roughness matrix.
+    n_samples : int
+        Number of samples.
+    lam : float
+        Diagonal shift in Q.
+    mode : {"full", "low-rank"}
+        Full-rank sampling uses iterative/direct solves. Low-rank uses eigenpairs.
+    n_eig : int
+        Number of eigenpairs in low-rank mode.
+    sigma2_residual : float
+        Residual isotropic variance in low-rank mode.
     rng : numpy.random.Generator, optional
-        Random number generator. If None, a new default_rng() is created.
-    msolver : {"bicg", "cg"}, optional
-        Iterative solver used in "full" mode (forwarded to
-        :func:`make_precision_solver`).
-    mprec : {"jacobi", "ilu", "identity"}, optional
-        Preconditioner type in "full" mode.
-    rtol, atol : float, optional
-        Relative / absolute tolerances for the iterative solver in "full" mode.
-    maxiter : int or None, optional
-        Maximum number of iterations for the iterative solver in "full" mode.
+    msolver, mprec, rtol, atol, maxiter
+        Legacy iterative-solver settings (kept for compatibility).
+    solver_method, precond, precond_kwargs, use_cholmod
+        Preferred new names; see :func:`make_precision_solver`.
 
     Returns
     -------
     samples : ndarray, shape (n_samples, n)
-        Realisations from N(0, Q^{-1}), where Q = R.T @ R + lam * I.
+        Samples from N(0, Q^{-1}).
 
-    Notes
-    -----
-    This function does **not** apply any mean shift; if you want to sample
-    around a reference model m0 (e.g. log10 ρ), simply add it afterwards:
-
-        samples_m = m0[None, :] + samples
+    Author: Volker Rath (DIAS)
+    Created by ChatGPT (GPT-5 Thinking) on 2025-12-19
     """
     mode_l = str(mode).lower()
-
     if mode_l.startswith("low"):
         return sample_rtr_low_rank(
             R=R,
@@ -2029,10 +2311,6 @@ def sample_prior_from_roughness(
             rng=rng,
         )
 
-    # Full-rank (iterative) mode
-    if rng is None:
-        rng = default_rng()
-
     solver = make_precision_solver(
         R=R,
         lam=lam,
@@ -2041,6 +2319,10 @@ def sample_prior_from_roughness(
         maxiter=maxiter,
         msolver=msolver,
         mprec=mprec,
+        solver_method=solver_method,
+        precond=precond,
+        precond_kwargs=precond_kwargs,
+        use_cholmod=use_cholmod,
     )
     return sample_rtr_full_rank(
         R=R,
@@ -2048,10 +2330,11 @@ def sample_prior_from_roughness(
         lam=lam,
         solver=solver,
         rng=rng,
+        solver_method=solver_method or (msolver or "cg"),
+        solver_kwargs={},  # solver already built above
     )
 
 
-# ============================================================================
 # SECTION 4: mesh.dat + resistivity_block_iterX.dat → NPZ
 # ============================================================================
 
