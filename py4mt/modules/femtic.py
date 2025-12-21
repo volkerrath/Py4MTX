@@ -387,116 +387,17 @@ def read_model(
 
     return model
 
-
-def modify_model(
-    template_file: str = "resistivity_block_iter0.dat",
-    draw_from: Sequence[float | str] = ("normal", 0.0, 1.0),
-    method: str = "add",
-    q: Optional[scipy.sparse.spmatrix | np.ndarray] = None,
-    decomposed: bool = False,
-    regeps: float = 1.0e-8,
-    out: bool = True,
-) -> None:
-    """
-    Modify a FEMTIC resistivity_block_iter0.dat in-place by adding random
-    perturbations in log10-resistivity.
-
-    Parameters
-    ----------
-    template_file : str
-        Path to block file.
-    draw_from : sequence
-        Either ["normal", mu, sigma] or ["uniform", a, b].
-    method : {"add", "replace"}
-        If "add", add the perturbation in log10 domain. If "replace", ignore
-        original rho and use the random samples as log10(rho).
-    q : sparse or dense matrix, optional
-        Placeholder for covariance-based perturbations (not used in this
-        simplified version; noise is i.i.d.).
-    decomposed : bool
-        Placeholder flag for pre-decomposed covariance (unused).
-    regeps : float
-        Placeholder diagonal regularisation (unused).
-    out : bool
-        If True, print statistics about perturbations.
-
-    Notes
-    -----
-    The first two region entries (0 = air, 1 = ocean) are kept fixed,
-    matching FEMTIC conventions.
-    """
-    if template_file is None:
-        template_file = "resistivity_block_iter0.dat"
-
-    with open(template_file, "r") as file:
-        content = file.readlines()
-
-    nn = [int(tmp) for tmp in content[0].split()]
-    n_cells = nn[1]
-
-    if "normal" in str(draw_from[0]).lower():
-        samples = np.random.normal(
-            loc=float(draw_from[1]),
-            scale=float(draw_from[2]),
-            size=n_cells - 2,
-        )
-    else:
-        samples = np.random.uniform(
-            low=float(draw_from[1]),
-            high=float(draw_from[2]),
-            size=n_cells - 2,
-        )
-
-    new_lines: list[str] = [
-        "         0        1.000000e+09   1.000000e-20   1.000000e+20   1.000000e+00         1",
-        "         1        2.500000e-01   1.000000e-20   1.000000e+20   1.000000e+00         1",
-    ]
-
-    if out:
-        print(nn[0], nn[0] + nn[1] - 1, nn[1] - 1, np.shape(samples))
-
-    e_num = 1
-    for elem in range(nn[0] + 3, nn[0] + nn[1] + 1):
-        e_num += 1
-        line_parts = content[elem].split()
-        x = float(line_parts[1])
-
-        if "add" in method.lower():
-            x_log = np.log10(x) + samples[e_num - 2]
-        else:
-            x_log = samples[e_num - 2]
-
-        x_new = 10.0 ** x_log
-        line = (
-            f" {e_num:9d}        {x_new:.6e}   1.000000e-20   1.000000e+20   "
-            f"1.000000e+00         0"
-        )
-        new_lines.append(line)
-
-    new_blob = "\n".join(new_lines) + "\n"
-
-    with open(template_file, "w") as f:
-        f.writelines(content[0 : nn[0] + 1])
-        f.write(new_blob)
-
-    if out:
-        print(f"File {template_file} successfully written.")
-        print("Number of perturbations", len(samples))
-        print("Average perturbation", np.mean(samples))
-        print("StdDev perturbation", np.std(samples))
-
-
 def insert_model(
     template: str = "resistivity_block_iter0.dat",
-    data: np.ndarray | Sequence[float] | None = None,
-    data_file: Optional[str] = None,
-    data_name: str = "",
+    model: np.ndarray | Sequence[float] | None = None,
+    model_file: Optional[str] = None,
+    model_name: str = "",
     out: bool = True,
 ) -> None:
     """
     Insert a log10-resistivity vector into a FEMTIC resistivity block file.
 
-    The input `data` is interpreted as log10(ρ) for all regions except the
+    The input `model` is interpreted as log10(ρ) for all regions except the
     first two (air, ocean), which are kept fixed with standard values:
 
         region 0 → 1e9 Ωm, fixed
@@ -506,23 +407,23 @@ def insert_model(
     ----------
     template : str
         Template block file to read header and region mapping from.
-    data : array-like, shape (nreg - 2,)
+    model : array-like, shape (nreg - 2,)
         Log10-resistivity values for regions 2..nreg-1.
-    data_file : str, optional
+    model_file : str, optional
         Output file. If None, overwrite `template`.
-    data_name : str
+    model_name : str
         Optional label (unused, for bookkeeping).
     out : bool
         If True, print summary.
     """
-    if data is None:
-        sys.exit("insert_model: No data given! Exit.")
+    if model is None:
+        sys.exit("insert_model: No model given! Exit.")
 
     if template is None:
         template = "resistivity_block_iter0.dat"
 
-    if data_file is None:
-        data_file = template
+    if model_file is None:
+        model_file = template
 
     with open(template, "r") as file:
         content = file.readlines()
@@ -531,10 +432,10 @@ def insert_model(
     n_cells = nn[1]
 
     size = n_cells - 2
-    data_arr = np.asarray(data, dtype=float)
-    if data_arr.size != size:
+    model_arr = np.asarray(model, dtype=float)
+    if model_arr.size != size:
         raise ValueError(
-            f"insert_model: expected {size} entries, got {data_arr.size}."
+            f"insert_model: expected {size} entries, got {model_arr.size}."
         )
 
     new_lines: list[str] = [
@@ -543,9 +444,9 @@ def insert_model(
     ]
 
     if out:
-        print(nn[0], nn[0] + nn[1] - 1, nn[1] - 1, np.shape(data_arr))
+        print(nn[0], nn[0] + nn[1] - 1, nn[1] - 1, np.shape(model_arr))
 
-    rho = np.power(10.0, data_arr)
+    rho = np.power(10.0, model_arr)
 
     e_num = 1
     s_num = -1
@@ -561,13 +462,13 @@ def insert_model(
 
     new_blob = "\n".join(new_lines) + "\n"
 
-    with open(data_file, "w") as f:
+    with open(model_file, "w") as f:
         f.writelines(content[0 : nn[0] + 1])
         f.write(new_blob)
 
     if out:
-        print(f"File {data_file} successfully written.")
-        print("Number of data replaced", len(data_arr))
+        print(f"File {model_file} successfully written.")
+        print("Number of model replaced", len(model_arr))
 
 
 def modify_data_fcn(

@@ -958,16 +958,6 @@ def compute_eofs(
     raise ValueError(f"Unknown method='{method}'. Use 'svd' or 'sample_space'.")
 
 
-# ---- example ----
-# E = np.random.randn(100_000, 100)
-# eofs, pcs, evals, frac, mean = compute_eofs(E, k=10, method="svd")
-# eofs2, pcs2, evals2, frac2, mean2 = compute_eofs(E, k=10, method="sample_space")
-
-
-
-
-
-
 # ---------------------------------------------------------------------------
 # Weighted KL decomposition on FEMTIC mesh
 # ---------------------------------------------------------------------------
