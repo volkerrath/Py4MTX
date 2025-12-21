@@ -57,7 +57,7 @@ print(titstrng+'\n\n')
 
 EnsembleDir = r'/home/vrath/FEMTIC_work/ens_annecy/'
 EnsembleName = 'ann_'
-
+EnsembleFile = 'AnnecyEOF.npz'
 
 SearchStrng = EnsembleName+'*'
 dir_list = utl.get_filelist(searchstr=[SearchStrng], searchpath=EnsembleDir,
@@ -66,42 +66,7 @@ dir_list = utl.get_filelist(searchstr=[SearchStrng], searchpath=EnsembleDir,
 ens_num = -1
 for directory in dir_list:
     ens_num = ens_num + 1
-    convergence = []
-    fline = -1
-    nret = 0
-    with open(directory+'/femtic.cnv') as cnv:
-        content = cnv.readlines()
-
-        for line in content:
-
-            if '#' in line:
-                continue
-            fline = fline + 1
-            #print (line)
-            nline = line.split()
-            #print(nline)
-            itern = int(nline[0])
-            retry = int(nline[1])
-            if retry>0:
-                nret = nret+retry
-            # print(itern)
-            alpha = float(nline[2])
-            rough = float(nline[5])
-            misft = float(nline[7])
-            nrmse = float(nline[8])
-
-            convergence.append([itern, retry, alpha, rough, misft, nrmse])
-
-    if len(convergence)==0:
-        print (directory, '/femtic.cnv', ' is empty!')
-        continue
-
-    #print(convergence)
-
-    c = np.array(convergence)
-    index_min = np.argmin(c[:,5])
-    nrm_best = c[index_min,5]
-    num_best = int(round(c[index_min,0]))
+    num_best, nrm_best = fem.get_nrms(directory)
 
     print('\n', directory)
     print('min(nrmse) = ', nrm_best,'at iteration',num_best)
@@ -120,3 +85,6 @@ for directory in dir_list:
     else:
         ensemble = np.concatenate((ensemble, modl), axis = 1)
     print(np.shape(ensemble))
+
+storedict = {'ensemble': ensemble}
+np.savez_compressed(EnsembleDir+EnsembleFile,**storedict)

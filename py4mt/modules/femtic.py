@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-femtic_core.py
+"""femtic.py
 
 Unified FEMTIC utilities for:
 
@@ -27,17 +26,17 @@ Command-line interface
 ----------------------
 The module provides a simple subcommand-style CLI:
 
-    python femtic_core.py femtic-to-npz \\
+    python femtic.py femtic-to-npz \\
         --mesh mesh.dat \\
         --rho-block resistivity_block_iter0.dat \\
         --out-npz femtic_model.npz
 
-    python femtic_core.py npz-to-vtk \\
+    python femtic.py npz-to-vtk \\
         --npz femtic_model.npz \\
         --out-vtu model.vtu \\
         --out-legacy model.vtk
 
-    python femtic_core.py npz-to-femtic \\
+    python femtic.py npz-to-femtic \\
         --npz femtic_model.npz \\
         --mesh-out mesh_reconstructed.dat \\
         --rho-block-out resistivity_block_iter0_reconstructed.dat
@@ -45,7 +44,7 @@ The module provides a simple subcommand-style CLI:
 All functionality is also available as regular Python functions.
 
 Author: Volker Rath (DIAS)
-Created by ChatGPT (GPT-5 Thinking) on 2025-12-09
+Created by ChatGPT (GPT-5 Thinking) on 2025-12-21 (UTC)
 """
 from __future__ import annotations
 
@@ -76,154 +75,6 @@ from scipy.sparse.linalg import LinearOperator, cg, eigsh, bicgstab, spilu
 # Optional but kept for compatibility with earlier versions
 import joblib  # noqa: F401
 
-
-# ============================================================================
-# SECTION 1: directory & data / model ensemble utilities (from femtic.py)
-# ============================================================================
-
-
-def generate_directories(
-    dir_base: str = "./ens_",
-    templates: str = "",
-    file_list: Sequence[str] = (
-        "control.dat",
-        "observe.dat",
-        "mesh.dat",
-        "resistivity_block_iter0.dat",
-        "distortion_iter0.dat",
-        "run_dub.sh",
-        "run_oar_sh",
-    ),
-    n_samples: int = 1,
-    fromto: Optional[Tuple[int, int]] = None,
-    out: bool = True,
-) -> list[str]:
-    """
-    Create ensemble directories and copy template files into each of them.
-
-    Parameters
-    ----------
-    dir_base : str, optional
-        Base name for ensemble directories (e.g. "./ens_").
-    templates : str, optional
-        Directory prefix from which the template files are copied.
-    file_list : sequence of str
-        Names of files to copy into each ensemble directory.
-    n_samples : int
-        Number of ensemble members if ``fromto`` is None.
-    fromto : (int, int), optional
-        Explicit start/stop indices (Python-style: start, stop) for ensemble
-        member numbering. If None, indices range from 0..n_samples-1.
-    out : bool, optional
-        If True, print status messages.
-
-    Returns
-    -------
-    dir_list : list of str
-        List of created ensemble directory paths.
-    """
-    if fromto is None:
-        from_to = np.arange(n_samples)
-    else:
-        from_to = np.arange(fromto[0], fromto[1])
-
-    dir_list: list[str] = []
-    for iens in from_to:
-        directory = f"{dir_base}{iens}/"
-        os.makedirs(directory, exist_ok=True)
-        copy_files(file_list, directory, templates)
-        dir_list.append(directory)
-
-    if out:
-        print("list of directories:")
-        print(dir_list)
-
-    return dir_list
-
-
-def copy_files(filelist: Sequence[str], directory: str, templates: str) -> None:
-    """
-    Copy a list of files from `templates` prefix into `directory`.
-
-    Parameters
-    ----------
-    filelist : sequence of str
-        Files to copy.
-    directory : str
-        Target directory.
-    templates : str
-        Template directory (prefix) for input files.
-    """
-    for fname in filelist:
-        src = templates + fname
-        shutil.copy2(src, directory)
-
-
-def generate_data_ensemble(
-    dir_base: str = "./ens_",
-    n_samples: int = 1,
-    fromto: Optional[Tuple[int, int]] = None,
-    file_in: str = "observe.dat",
-    draw_from: Sequence[float | str] = ("normal", 0.0, 1.0),
-    method: str = "add",
-    errors: Sequence[Sequence[float]] | Sequence[list] = (),
-    out: bool = True,
-) -> list[str]:
-    """
-    Generate an ensemble of perturbed observation files in ensemble directories.
-
-    For each ensemble member i, reads
-        dir_base + f"{i}/{file_in}"
-    makes a backup <file>_orig.dat,
-    and calls :func:`modify_data` to inject Gaussian noise.
-
-    Parameters
-    ----------
-    dir_base : str
-        Base directory for ensemble members (e.g. "./ens_").
-    n_samples : int
-        Number of ensemble members if ``fromto`` is None.
-    fromto : (int, int), optional
-        Explicit start/end indices (Python-style).
-    file_in : str
-        Name of the observation file in each ensemble directory.
-    draw_from : sequence
-        Currently kept for future extension; noise is driven by errors.
-    method : str
-        Placeholder for different perturbation strategies (currently unused).
-    errors : sequence
-        Error specifications forwarded to :func:`modify_data`.
-    out : bool
-        If True, print status messages.
-
-    Returns
-    -------
-    obs_list : list of str
-        Paths to the perturbed observation files.
-    """
-    if fromto is None:
-        fromto_arr = np.arange(n_samples)
-    else:
-        fromto_arr = np.arange(fromto[0], fromto[1])
-
-    obs_list: list[str] = []
-    for iens in fromto_arr:
-        file = f"{dir_base}{iens}/{file_in}"
-        shutil.copy(file, file.replace(".dat", "_orig.dat"))
-        modify_data(
-            template_file=file,
-            draw_from=draw_from,
-            method=method,
-            errors=errors,
-            out=out,
-        )
-        obs_list.append(file)
-
-    if out:
-        print("list of perturbed observation files:")
-        print(obs_list)
-
-    return obs_list
 
 
 def modify_data(
@@ -438,96 +289,58 @@ def modify_data(
         print(f"File {template_file} successfully written.")
 
 
-def generate_model_ensemble(
-    dir_base: str = "./ens_",
-    n_samples: int = 1,
-    fromto: Optional[Tuple[int, int]] = None,
-    refmod: str = "resistivity_block_iter0.dat",
-    q: Optional[scipy.sparse.spmatrix | np.ndarray] = None,
-    method: str = "add",
-    out: bool = True,
-) -> list[str]:
-    """
-    Generate a resistivity model ensemble based on a precision matrix R (roughness).
-
-    Two sampling strategies are supported:
-
-    - low_rank = True:
-        Use :func:`sample_rtr_low_rank` with eigenpairs of Q = R.T @ R
-        (currently estimating them internally).
-    - low_rank = False:
-        Use :func:`sample_rtr_full_rank`.
-
-    The resulting log10-resistivity samples are inserted into
-    FEMTIC resistivity_block_iter0.dat files in each ensemble directory.
+def get_nrms(directory=None):
+    '''
+    Get best (smallest) nRMS from FEMTIC run.
 
     Parameters
     ----------
-    dir_base : str
-        Ensemble base directory (e.g. "./ens_").
-    n_samples : int
-        Number of samples to generate.
-    fromto : (int, int), optional
-        Ensemble index range. If None, use 0..n_samples-1.
-    refmod : str
-        Name of the reference block file inside each ensemble directory.
-    q : ndarray or sparse matrix, optional
-        Roughness matrix R to define Q = R.T @ R. If None, the low-rank
-        branch is currently a placeholder.
-    method : {"add", "replace"}
-        How to combine samples with existing log10 resistivity:
-        - "add": add perturbation to log10(rho_ref).
-        - "replace": ignore original and directly use the samples.
-    out : bool
-        If True, print status messages.
+    directory : string, optional
+        Directory containing FEMTIC convergence file. The default is None.
 
     Returns
     -------
-    mod_list : list of str
-        Paths to the perturbed resistivity block files.
-    """
-    low_rank = True
-    if low_rank:
-        # Placeholder: currently estimates eigpairs from R.T @ R internally.
-        # For large problems, pre-compute eigpairs and pass them instead.
-        samples = sample_rtr_low_rank(
-            q if q is not None else np.eye(4),  # dummy fallback
-            n_samples=n_samples,
-            n_eig=32,
-            sigma2_residual=0.0,
-        )
+    num_best : int
+        DESCRIPTION.
+    nrm_best : float
+        DESCRIPTION.
+
+    '''
+    if directory is None:
+        sys.exit('get_nrms: No directory given! Exit.')
+    convergence = []
+    fline = -1
+    with open(directory+'/femtic.cnv') as cnv:
+        content = cnv.readlines()
+
+        for line in content:
+
+            if '#' in line:
+                continue
+            fline = fline + 1
+            #print (line)
+            nline = line.split()
+            #print(nline)
+            itern = int(nline[0])
+            retry = int(nline[1])
+            alpha = float(nline[2])
+            rough = float(nline[5])
+            misft = float(nline[7])
+            nrmse = float(nline[8])
+
+            convergence.append([itern, retry, alpha, rough, misft, nrmse])
+
+    if len(convergence)==0:
+        print (directory, '/femtic.cnv', ' is empty!')
+        num_best = -1
+        nrm_best = 1e32
     else:
-        if q is None:
-            raise ValueError("generate_model_ensemble: q must be provided for full-rank.")
-        samples = sample_rtr_full_rank(
-            R=q,
-            n_samples=n_samples,
-            lam=0.0,
-        )
+        c = np.array(convergence)
+        index_min = np.argmin(c[:,5])
+        nrm_best = c[index_min,5]
+        num_best = int(round(c[index_min,0]))
 
-    if fromto is None:
-        fromto_arr = np.arange(n_samples)
-    else:
-        fromto_arr = np.arange(fromto[0], fromto[1])
-
-    mod_list: list[str] = []
-    for iens, sample in zip(fromto_arr, samples):
-        file = f"{dir_base}{iens}/{refmod}"
-        shutil.copy(file, file.replace(".dat", "_orig.dat"))
-        insert_model(
-            template=refmod,
-            data=sample,
-            data_file=file,
-            data_name=f"sample{iens}",
-        )
-        mod_list.append(file)
-
-    if out:
-        print("\nlist of perturbed model files:")
-        print(mod_list)
-
-    return mod_list
-
+    return num_best, nrm_best
 
 def read_model(
     model_file: str | Path,
@@ -1711,629 +1524,6 @@ def check_sparse_matrix(M: scipy.sparse.spmatrix, condition: bool = True) -> Non
     print("check_sparse_matrix: Done!\n\n")
 
 
-# ============================================================================
-# ============================================================================
-# SECTION 3: Gaussian sampling with Q = R.T @ R (+ λI)
-# ============================================================================
-
-import warnings
-
-
-def build_rtr_operator(
-    R: np.ndarray | scipy.sparse.spmatrix,
-    lam: float = 0.0,
-) -> LinearOperator:
-    """Create a LinearOperator representing Q = R.T @ R + lam * I.
-
-    This is the **matrix-free** representation used by iterative solvers.
-
-    Parameters
-    ----------
-    R : array_like or scipy.sparse.spmatrix, shape (m, n)
-        Matrix defining the precision via Q = R.T @ R. In FEMTIC workflows,
-        this is typically a roughness / regularisation operator.
-    lam : float, optional
-        Diagonal Tikhonov shift. If ``lam > 0`` then
-        Q = R.T @ R + lam * I is strictly positive definite.
-
-    Returns
-    -------
-    Q_op : scipy.sparse.linalg.LinearOperator, shape (n, n)
-        Linear operator that applies Q to a vector.
-
-    Notes
-    -----
-    The matvec evaluates::
-
-        y = R @ x
-        z = R.T @ y
-        z += lam * x
-
-    without explicitly forming Q.
-
-    Author: Volker Rath (DIAS)
-    Created by ChatGPT (GPT-5 Thinking) on 2025-12-19
-    """
-    _, n = R.shape
-
-    def matvec(x: np.ndarray) -> np.ndarray:
-        """Compute z = (R.T @ R + lam * I) @ x."""
-        y = R @ x
-        z = R.T @ y
-        if lam != 0.0:
-            z = z + lam * x
-        return np.asarray(z, dtype=np.float64)
-
-    return LinearOperator((n, n), matvec=matvec, rmatvec=matvec, dtype=np.float64)
-
-
-def _diag_rtr(R: np.ndarray | scipy.sparse.spmatrix) -> np.ndarray:
-    """Compute diag(R.T @ R) without forming R.T @ R.
-
-    Parameters
-    ----------
-    R : array_like or sparse matrix, shape (m, n)
-
-    Returns
-    -------
-    d : ndarray, shape (n,)
-        Column-wise sum of squares of R, i.e. diag(R.T R).
-
-    Notes
-    -----
-    For sparse R, this uses element-wise square and column sum. For dense
-    R, it uses ``(R**2).sum(axis=0)``.
-
-    Author: Volker Rath (DIAS)
-    Created by ChatGPT (GPT-5 Thinking) on 2025-12-19
-    """
-    if scipy.sparse.issparse(R):
-        # (R.multiply(R)) keeps sparsity pattern, column sum returns (1, n).
-        d = np.asarray(R.multiply(R).sum(axis=0)).ravel()
-        return d.astype(np.float64, copy=False)
-    arr = np.asarray(R, dtype=np.float64)
-    return np.sum(arr * arr, axis=0)
-
-
-def make_rtr_preconditioner(
-    R: np.ndarray | scipy.sparse.spmatrix,
-    lam: float = 0.0,
-    *,
-    precond: Optional[str] = None,
-    precond_kwargs: Optional[dict] = None,
-) -> Optional[LinearOperator]:
-    """Build a CG-compatible preconditioner M ≈ Q^{-1} for Q = R.T@R + lam*I.
-
-    Parameters
-    ----------
-    R : array_like or sparse matrix, shape (m, n)
-        Operator defining Q.
-    lam : float, optional
-        Diagonal shift used in Q.
-    precond : {None, 'jacobi', 'ilu', 'amg', 'identity'}, optional
-        Preconditioner type:
-
-        - None: no preconditioning (M = None).
-        - 'jacobi': diagonal (inverse) preconditioner using diag(R.T R) + lam.
-          **Does not form Q**.
-        - 'ilu': incomplete LU on sparse Q (forms Q as sparse).
-        - 'amg': algebraic multigrid on sparse Q (requires `pyamg`, forms Q).
-        - 'identity': explicit identity operator.
-
-    precond_kwargs : dict, optional
-        Options for the chosen preconditioner.
-
-        For 'jacobi':
-            - min_diagonal (float): floor on the diagonal before inversion
-              (default 1e-30).
-
-        For 'ilu' (scipy.sparse.linalg.spilu):
-            - drop_tol (float)
-            - fill_factor (float)
-            - diag_pivot_thresh (float)
-            - permc_spec (str)
-
-        For 'amg' (pyamg.smoothed_aggregation_solver):
-            - any kwargs accepted by pyamg, plus:
-            - tol (float): solve tolerance used per application (default 1e-8)
-            - maxiter (int): max iterations per application (default 1)
-
-    Returns
-    -------
-    M : scipy.sparse.linalg.LinearOperator or None
-        Preconditioner suitable for SciPy iterative solvers.
-
-    Author: Volker Rath (DIAS)
-    Created by ChatGPT (GPT-5 Thinking) on 2025-12-19
-    """
-    if precond is None:
-        return None
-
-    key = str(precond).strip().lower()
-    opts = {} if precond_kwargs is None else dict(precond_kwargs)
-
-    if key in {"none"}:
-        return None
-
-    if key in {"identity", "i"}:
-        n = R.shape[1]
-        return LinearOperator((n, n), matvec=lambda x: x, dtype=np.float64)
-
-    if key in {"jacobi", "diag"}:
-        d = _diag_rtr(R)
-        if lam != 0.0:
-            d = d + float(lam)
-        floor = float(opts.pop("min_diagonal", 1.0e-30))
-        d = np.maximum(d, floor)
-        invd = 1.0 / d
-
-        def mvec(x: np.ndarray) -> np.ndarray:
-            """Apply Jacobi Mx = diag(Q)^{-1} x."""
-            return invd * x
-
-        return LinearOperator((invd.size, invd.size), matvec=mvec, dtype=np.float64)
-
-    # The remaining options require forming sparse Q.
-    if not scipy.sparse.issparse(R):
-        raise ValueError(
-            f"Preconditioner {precond!r} requires sparse R (to form sparse Q)."
-        )
-
-    Q = (R.T @ R).tocsc()
-    if lam != 0.0:
-        Q = Q + float(lam) * scipy.sparse.identity(Q.shape[0], format="csc")
-
-    if key in {"ilu"}:
-        ilu = scipy.sparse.linalg.spilu(
-            Q,
-            drop_tol=float(opts.pop("drop_tol", 1.0e-4)),
-            fill_factor=float(opts.pop("fill_factor", 10.0)),
-            diag_pivot_thresh=float(opts.pop("diag_pivot_thresh", 0.0)),
-            permc_spec=str(opts.pop("permc_spec", "COLAMD")),
-        )
-
-        def mvec(x: np.ndarray) -> np.ndarray:
-            """Apply ILU preconditioner via one triangular solve."""
-            return ilu.solve(x)
-
-        return LinearOperator(Q.shape, matvec=mvec, dtype=np.float64)
-
-    if key in {"amg"}:
-        try:
-            import pyamg  # type: ignore
-        except Exception as exc:  # pragma: no cover
-            raise ImportError("Preconditioner 'amg' requires pyamg.") from exc
-
-        tol = float(opts.pop("tol", 1.0e-8))
-        maxiter = int(opts.pop("maxiter", 1))
-        ml = pyamg.smoothed_aggregation_solver(Q, **opts)
-
-        def mvec(x: np.ndarray) -> np.ndarray:
-            """Apply one (or few) AMG V-cycles as approximate inverse."""
-            return ml.solve(x, tol=tol, maxiter=maxiter)
-
-        return LinearOperator(Q.shape, matvec=mvec, dtype=np.float64)
-
-    raise ValueError(
-        "Unknown preconditioner. Use None|'jacobi'|'ilu'|'amg'|'identity' "
-        f"(got {precond!r})."
-    )
-
-
-def make_sparse_cholesky_precision_solver(
-    R: np.ndarray | scipy.sparse.spmatrix,
-    lam: float = 0.0,
-    *,
-    use_cholmod: bool = True,
-) -> Callable[[np.ndarray], np.ndarray]:
-    """Construct a direct solver for Qx=b using sparse Cholesky (or fallback LU).
-
-    Parameters
-    ----------
-    R : array_like or sparse matrix, shape (m, n)
-        Matrix defining Q = R.T @ R (+ lam * I).
-    lam : float, optional
-        Diagonal shift added to Q.
-    use_cholmod : bool, optional
-        If True (default), try SuiteSparse CHOLMOD via ``scikit-sparse``.
-        If unavailable, fall back to SciPy sparse LU with a RuntimeWarning.
-
-    Returns
-    -------
-    solve_Q : callable
-        A function solving Qx=b.
-
-    Notes
-    -----
-    For large 3-D problems, explicit factorisation can be memory intensive
-    due to fill-in. It is most useful when Q is moderate in size or when many
-    solves with the same Q are needed.
-
-    Author: Volker Rath (DIAS)
-    Created by ChatGPT (GPT-5 Thinking) on 2025-12-19
-    """
-    if scipy.sparse.issparse(R):
-        Q = (R.T @ R).tocsc()
-        if lam != 0.0:
-            Q = Q + float(lam) * scipy.sparse.identity(Q.shape[0], format="csc")
-
-        if use_cholmod:
-            try:
-                from sksparse.cholmod import cholesky  # type: ignore
-            except Exception:  # pragma: no cover
-                warnings.warn(
-                    "CHOLMOD (scikit-sparse) not available; falling back to SciPy splu.",
-                    RuntimeWarning,
-                )
-                lu = scipy.sparse.linalg.splu(Q)
-
-                def solve_Q(b: np.ndarray) -> np.ndarray:
-                    """Solve using SciPy sparse LU."""
-                    return lu.solve(b)
-
-                return solve_Q
-
-            factor = cholesky(Q)
-
-            def solve_Q(b: np.ndarray) -> np.ndarray:
-                """Solve using CHOLMOD sparse Cholesky."""
-                return factor(b)
-
-            return solve_Q
-
-        lu = scipy.sparse.linalg.splu(Q)
-
-        def solve_Q(b: np.ndarray) -> np.ndarray:
-            """Solve using SciPy sparse LU."""
-            return lu.solve(b)
-
-        return solve_Q
-
-    # Dense fallback (small problems)
-    Rm = np.asarray(R, dtype=np.float64)
-    Q = Rm.T @ Rm
-    if lam != 0.0:
-        Q = Q + float(lam) * np.identity(Q.shape[0], dtype=np.float64)
-
-    c, lower = scipy.linalg.cho_factor(Q, overwrite_a=False, check_finite=True)
-
-    def solve_Q(b: np.ndarray) -> np.ndarray:
-        """Solve using dense Cholesky."""
-        return scipy.linalg.cho_solve((c, lower), b, check_finite=True)
-
-    return solve_Q
-
-
-def make_precision_solver(
-    R: np.ndarray | scipy.sparse.spmatrix,
-    lam: float = 0.0,
-    rtol: float = 1.0e-6,
-    atol: float = 0.0,
-    maxiter: Optional[int] = None,
-    M: Optional[LinearOperator] = None,
-    msolver: Optional[str] = "cg",
-    mprec: Optional[str] = "jacobi",
-    *,
-    solver_method: Optional[str] = None,
-    precond: Optional[str] = None,
-    precond_kwargs: Optional[dict] = None,
-    use_cholmod: bool = True,
-) -> Callable[[np.ndarray], np.ndarray]:
-    """Construct a solver for Qx=b with Q = R.T@R + lam*I.
-
-    This is a compatibility-preserving upgrade of the earlier FEMTIC helper:
-
-    - **Iterative solvers**: CG (recommended for SPD Q) and BiCGStab.
-    - **Direct solver**: sparse Cholesky via CHOLMOD (or SciPy LU fallback).
-
-    Parameters
-    ----------
-    R : array_like or sparse matrix
-        Operator defining the precision Q.
-    lam : float, optional
-        Diagonal shift.
-    rtol, atol : float, optional
-        Iterative solver tolerances (SciPy style).
-    maxiter : int, optional
-        Maximum number of iterations for iterative solvers.
-    M : LinearOperator, optional
-        Explicit preconditioner. If provided, it overrides ``mprec/precond``.
-    msolver : {"cg", "bicg", "bicgstab"}, optional
-        Iterative solver choice (legacy argument name).
-    mprec : {"jacobi", "ilu", "amg", "identity", None}, optional
-        Preconditioner choice (legacy argument name). See ``precond``.
-    solver_method : {"cg", "cholesky", "bicgstab"}, optional
-        New preferred name for the solver. If provided, overrides ``msolver``.
-    precond : {None, "jacobi", "ilu", "amg", "identity"}, optional
-        New preferred name for the preconditioner. If provided, overrides
-        ``mprec``.
-    precond_kwargs : dict, optional
-        Extra options for the chosen preconditioner.
-    use_cholmod : bool, optional
-        If True (default), try CHOLMOD for the 'cholesky' method.
-
-    Returns
-    -------
-    solve_Q : callable
-        Function that solves Qx=b.
-
-    Author: Volker Rath (DIAS)
-    Created by ChatGPT (GPT-5 Thinking) on 2025-12-19
-    """
-    meth = (solver_method or msolver or "cg").strip().lower()
-
-    if meth in {"chol", "cholesky", "sparse_cholesky", "direct"}:
-        return make_sparse_cholesky_precision_solver(
-            R=R,
-            lam=lam,
-            use_cholmod=use_cholmod,
-        )
-
-    # Iterative branch
-    Q_op = build_rtr_operator(R, lam=lam)
-
-    if M is None:
-        M = make_rtr_preconditioner(
-            R=R,
-            lam=lam,
-            precond=precond if precond is not None else mprec,
-            precond_kwargs=precond_kwargs,
-        )
-
-    def solve_Q(b: np.ndarray) -> np.ndarray:
-        """Solve Qx=b using the selected iterative method."""
-        if meth in {"cg", "pcg"}:
-            x, info = cg(Q_op, b, rtol=rtol, atol=atol, maxiter=maxiter, M=M)
-        else:
-            # BiCGStab can handle non-SPD, but is not needed if Q is SPD.
-            x, info = bicgstab(Q_op, b, rtol=rtol, atol=atol, maxiter=maxiter, M=M)
-
-        if info > 0:
-            raise RuntimeError(
-                f"Iterative solver did not converge within {info} iterations."
-            )
-        if info < 0:
-            raise RuntimeError(f"Iterative solver failed (info={info}).")
-        return np.asarray(x, dtype=np.float64)
-
-    return solve_Q
-
-
-def sample_rtr_full_rank(
-    R: np.ndarray | scipy.sparse.spmatrix,
-    n_samples: int = 1,
-    lam: float = 1.0e-4,
-    solver: Optional[Callable[[np.ndarray], np.ndarray]] = None,
-    rng: Optional[Generator] = None,
-    *,
-    solver_method: str = "cg",
-    solver_kwargs: Optional[dict] = None,
-) -> np.ndarray:
-    """Sample from N(0, (R.T@R + lam I)^{-1}) using full-rank solves.
-
-    Parameters
-    ----------
-    R : array_like or sparse matrix, shape (m, n)
-        Matrix defining the precision.
-    n_samples : int, optional
-        Number of samples.
-    lam : float, optional
-        Diagonal shift added to the precision.
-    solver : callable, optional
-        Pre-built solver for Qx=b. If None, it is created from ``solver_method``.
-    rng : numpy.random.Generator, optional
-        Random generator.
-    solver_method : {"cg", "cholesky", "bicgstab"}, optional
-        Solver used when ``solver`` is None.
-    solver_kwargs : dict, optional
-        Extra args passed to :func:`make_precision_solver`.
-
-    Returns
-    -------
-    samples : ndarray, shape (n_samples, n)
-
-    Notes
-    -----
-    Uses the identity::
-
-        x = (R.T R + lam I)^{-1} R.T ξ,   ξ ~ N(0, I)
-
-    Author: Volker Rath (DIAS)
-    Created by ChatGPT (GPT-5 Thinking) on 2025-12-19
-    """
-    rng = default_rng() if rng is None else rng
-    m, n = R.shape
-
-    if solver is None:
-        solver = make_precision_solver(
-            R=R,
-            lam=lam,
-            solver_method=solver_method,
-            **(solver_kwargs or {}),
-        )
-
-    samples = np.empty((n_samples, n), dtype=np.float64)
-    for ix in range(n_samples):
-        xi = rng.standard_normal(size=m)
-        b = R.T @ xi
-        samples[ix, :] = solver(b)
-
-    return samples
-
-
-def estimate_low_rank_eigpairs(
-    Q: scipy.sparse.spmatrix | LinearOperator,
-    k: int,
-    which: str = "SM",
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Compute k extremal eigenpairs of a symmetric precision operator.
-
-    Parameters
-    ----------
-    Q : sparse matrix or LinearOperator
-        Symmetric positive (semi-)definite operator.
-    k : int
-        Number of eigenpairs.
-    which : {"SM", "LM"}, optional
-        Smallest / largest magnitude eigenvalues.
-
-    Returns
-    -------
-    eigvals, eigvecs
-
-    Author: Volker Rath (DIAS)
-    Created by ChatGPT (GPT-5 Thinking) on 2025-12-19
-    """
-    eigvals, eigvecs = eigsh(Q, k=k, which=which)
-    return eigvals, eigvecs
-
-
-def sample_rtr_low_rank(
-    R: np.ndarray | scipy.sparse.spmatrix,
-    n_samples: int = 1,
-    n_eig: int = 32,
-    sigma2_residual: float = 0.0,
-    rng: Optional[Generator] = None,
-    *,
-    which: str = "SM",
-) -> np.ndarray:
-    """Approximate sampling from N(0, (R.T R)^{-1}) using k eigenpairs.
-
-    Parameters
-    ----------
-    R : array_like or sparse matrix
-        Matrix defining Q = R.T @ R.
-    n_samples : int
-        Number of samples.
-    n_eig : int
-        Number of eigenpairs.
-    sigma2_residual : float
-        Optional isotropic residual variance.
-    rng : numpy.random.Generator, optional
-    which : {"SM", "LM"}
-        Which eigenvalues to request from eigsh.
-
-    Returns
-    -------
-    samples : ndarray, shape (n_samples, n)
-
-    Notes
-    -----
-    This uses ``eigsh`` on a **LinearOperator** for Q, avoiding explicit
-    formation of Q. For very large systems, computing smallest eigenpairs
-    can still be expensive.
-
-    Author: Volker Rath (DIAS)
-    Created by ChatGPT (GPT-5 Thinking) on 2025-12-19
-    """
-    rng = default_rng() if rng is None else rng
-    Q_op = build_rtr_operator(R, lam=0.0)
-
-    eigvals, eigvecs = estimate_low_rank_eigpairs(Q_op, k=n_eig, which=which)
-
-    eigvals = np.asarray(eigvals, dtype=np.float64)
-    eigvecs = np.asarray(eigvecs, dtype=np.float64)
-
-    n, k = eigvecs.shape
-    samples = np.empty((n_samples, n), dtype=np.float64)
-    inv_sqrt = 1.0 / np.sqrt(eigvals)
-
-    for ix in range(n_samples):
-        z = rng.standard_normal(size=k)
-        x = eigvecs @ (inv_sqrt * z)
-        if sigma2_residual > 0.0:
-            x = x + np.sqrt(sigma2_residual) * rng.standard_normal(size=n)
-        samples[ix, :] = x
-
-    return samples
-
-
-def sample_prior_from_roughness(
-    R: np.ndarray | scipy.sparse.spmatrix,
-    n_samples: int = 1,
-    lam: float = 1.0e-4,
-    mode: Literal["full", "low-rank"] = "full",
-    n_eig: int = 32,
-    sigma2_residual: float = 0.0,
-    rng: Optional[Generator] = None,
-    msolver: Optional[str] = "cg",
-    mprec: Optional[str] = "jacobi",
-    rtol: float = 1.0e-6,
-    atol: float = 0.0,
-    maxiter: Optional[int] = None,
-    *,
-    solver_method: Optional[str] = None,
-    precond: Optional[str] = None,
-    precond_kwargs: Optional[dict] = None,
-    use_cholmod: bool = True,
-) -> np.ndarray:
-    """Sample from the Gaussian prior implied by a FEMTIC roughness matrix.
-
-    The implied precision is::
-
-        Q = R.T @ R + lam * I
-
-    Parameters
-    ----------
-    R : array_like or sparse matrix
-        Roughness matrix.
-    n_samples : int
-        Number of samples.
-    lam : float
-        Diagonal shift in Q.
-    mode : {"full", "low-rank"}
-        Full-rank sampling uses iterative/direct solves. Low-rank uses eigenpairs.
-    n_eig : int
-        Number of eigenpairs in low-rank mode.
-    sigma2_residual : float
-        Residual isotropic variance in low-rank mode.
-    rng : numpy.random.Generator, optional
-    msolver, mprec, rtol, atol, maxiter
-        Legacy iterative-solver settings (kept for compatibility).
-    solver_method, precond, precond_kwargs, use_cholmod
-        Preferred new names; see :func:`make_precision_solver`.
-
-    Returns
-    -------
-    samples : ndarray, shape (n_samples, n)
-        Samples from N(0, Q^{-1}).
-
-    Author: Volker Rath (DIAS)
-    Created by ChatGPT (GPT-5 Thinking) on 2025-12-19
-    """
-    mode_l = str(mode).lower()
-    if mode_l.startswith("low"):
-        return sample_rtr_low_rank(
-            R=R,
-            n_samples=n_samples,
-            n_eig=n_eig,
-            sigma2_residual=sigma2_residual,
-            rng=rng,
-        )
-
-    solver = make_precision_solver(
-        R=R,
-        lam=lam,
-        rtol=rtol,
-        atol=atol,
-        maxiter=maxiter,
-        msolver=msolver,
-        mprec=mprec,
-        solver_method=solver_method,
-        precond=precond,
-        precond_kwargs=precond_kwargs,
-        use_cholmod=use_cholmod,
-    )
-    return sample_rtr_full_rank(
-        R=R,
-        n_samples=n_samples,
-        lam=lam,
-        solver=solver,
-        rng=rng,
-        solver_method=solver_method or (msolver or "cg"),
-        solver_kwargs={},  # solver already built above
-    )
-
 
 # SECTION 4: mesh.dat + resistivity_block_iterX.dat → NPZ
 # ============================================================================
@@ -3014,10 +2204,6 @@ def netcdf_to_npz(
     _np.savez(npz_path, **arrays)
 
 
-# SECTION 7: NPZ → FEMTIC mesh.dat + resistivity_block
-# ============================================================================
-
-
 def write_femtic_mesh(
     out_path: str,
     nodes: np.ndarray,
@@ -3174,7 +2360,7 @@ def npz_to_femtic(
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     """
-    CLI entry point for femtic_core.py with subcommands:
+    CLI entry point for femtic.py with subcommands:
 
     - femtic-to-npz
     - npz-to-vtk
