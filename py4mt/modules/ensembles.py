@@ -821,6 +821,7 @@ def generate_data_ensemble(alg: str = 'rto',
         print(obs_list)
 
     return obs_list
+
 def compute_eofs(
     E: np.ndarray,
     *,

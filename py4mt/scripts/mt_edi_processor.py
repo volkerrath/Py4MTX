@@ -41,12 +41,12 @@ import mtproc as mtp
 # import plotrjmcmc as plmc
 # import viz
 # import inverse as inv
-# import femtic as fem
+import femtic as fem
 from scipy.interpolate import make_smoothing_spline
-from ediviz import add_phase, add_rho, add_tipper, add_pt
-from ediproc import load_edi, save_edi, save_ncd, save_hdf
-from ediproc import compute_pt, dataframe_from_arrays, interpolate_data
-from ediproc import set_errors, estimate_errors, rotate_data
+from dataviz import add_phase, add_rho, add_tipper, add_pt
+from dataproc import load_edi, save_edi, save_ncd, save_hdf
+from dataproc import compute_pt, dataframe_from_arrays, interpolate_data
+from dataproc import set_errors, estimate_errors, rotate_data
 
 from version import versionstrg
 
