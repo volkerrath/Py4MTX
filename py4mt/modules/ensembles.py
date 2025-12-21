@@ -19,7 +19,7 @@ This module contains:
 All functions are importable; no code is executed on import.
 
 Author: Volker Rath (DIAS)
-Created by ChatGPT (GPT-5 Thinking) on 2025-12-21 (UTC)
+Created with the help of ChatGPT (GPT-5 Thinking) on 2025-12-21 (UTC)
 """
 
 from __future__ import annotations
@@ -1616,9 +1616,9 @@ def _diag_rtr(R: np.ndarray | scipy.sparse.spmatrix) -> np.ndarray:
 
 def make_rtr_preconditioner(
     R: np.ndarray | scipy.sparse.spmatrix,
-    lam: float = 0.0001,
+    lam: float = 0.0,
     *,
-    precond: Optional[str] = 'jacobi',
+    precond: Optional[str] = None,
     precond_kwargs: Optional[dict] = None,
 ) -> Optional[LinearOperator]:
     """Build a CG-compatible preconditioner M ≈ Q^{-1} for Q = R.T@R + lam*I.

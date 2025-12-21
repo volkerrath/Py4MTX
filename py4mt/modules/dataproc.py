@@ -3,118 +3,102 @@
 """
 dataproc.py
 =================
-Compact I/O utilities for magnetotelluric EDI files.
+Magnetotelluric (MT) data processing and I/O utilities.
 
 This module provides a light-weight, self-contained interface to read and
-write standard MT transfer functions (impedance, tipper, phase tensor) in
-EDI format. It supports two main data sources:
+write standard MT transfer functions in EDI format:
 
-1. Phoenix / SPECTRA-based EDIs
-   -----------------------------
-   These contain ``>SPECTRA`` blocks with a 7×7 real-valued matrix encoding
-   the auto- and cross-spectra of E and H channels plus metadata such as::
+- Impedance tensor Z (2×2 complex)
+- Tipper T (1×2 complex), if present
+- Phase tensor Φ (2×2 real), computed from Z
 
-       >SPECTRA  FREQ=1.040E+04 ROTSPEC=0 BW=2.6000E+03 AVGT=5.1245E+05 // 49
+Two EDI "flavours" are supported:
 
-   The workflow is:
+1) Phoenix / SPECTRA-based EDIs
+-------------------------------
+Phoenix EDIs may contain ``>SPECTRA`` blocks with a 7×7 real-valued matrix
+encoding auto- and cross-spectra plus metadata, for example::
 
-   - :func:`parse_spectra_blocks`
-       Identify ``>SPECTRA`` blocks and extract frequency ``FREQ``,
-       averaging time ``AVGT``, rotation angle ``ROTSPEC`` (if present) and
-       the Phoenix 7×7 matrix.
-   - :func:`reconstruct_S_phoenix`
-       Convert the real-valued Phoenix 7×7 encoding into a complex Hermitian
-       spectra matrix ``S``.
-   - :func:`ZT_from_S`
-       Recover impedance ``Z`` and tipper ``T`` from ``S`` with a constant
-       scaling factor that converts Phoenix units (roughly µV/m per nT) to
-       SI Ohm (V/m per T).
+    >SPECTRA  FREQ=1.040E+04 ROTSPEC=0 BW=2.6000E+03 AVGT=5.1245E+05 // 49
 
-   When ``>SPECTRA`` blocks are present and ``prefer_spectra=True`` (default),
-   the Phoenix path is used and classical table blocks (if any) are ignored.
+If any ``>SPECTRA`` blocks are present and ``prefer_spectra=True`` (default),
+the module will:
 
-2. Classical table-based EDIs
-   ---------------------------
-   These provide tabulated Z/T values via blocks such as::
+- parse the SPECTRA blocks (:func:`parse_spectra_blocks`)
+- reconstruct the complex Hermitian spectra matrix (:func:`reconstruct_S_phoenix`)
+- recover Z and T from S (:func:`ZT_from_S`)
 
-       >FREQ
-       >ZXXR  >ZXXI  >ZXYR  >ZXYI  >ZYXR  >ZYXI  >ZYYR  >ZYYI
-       >ZXX.VAR  >ZXY.VAR  >ZYX.VAR  >ZYY.VAR
-       >TXR.EXP  >TXI.EXP  >TYR.EXP  >TYI.EXP
-       >TXVAR.EXP  >TYVAR.EXP
-       >ZROT      // impedance rotation angles in degrees
+No Z/T error estimates are derived for SPECTRA EDIs in this implementation.
 
-   The workflow is:
+2) Classical table-based EDIs
+-----------------------------
+Classical EDIs provide tabulated values using blocks such as::
 
-   - :func:`_extract_block_values`
-       Parse numeric values for individual blocks (``FREQ``, ``ZXXR``, …).
-   - :func:`_build_impedance`
-       Assemble the complex 2×2 impedance tensor ``Z`` (and optional variance
-       ``Z_err``) from the component blocks.
-   - :func:`_build_tipper`
-       Assemble the complex tipper ``T`` (and optional variance ``T_err``).
-   - Rotation:
-       If a ``>ZROT`` block is present, it is parsed into a per-frequency
-       rotation angle array in degrees and stored as ``edi["rot"]``.
+    >FREQ
+    >ZXXR  >ZXXI  >ZXYR  >ZXYI  >ZYXR  >ZYXI  >ZYYR  >ZYYI
+    >ZXX.VAR  >ZXY.VAR  >ZYX.VAR  >ZYY.VAR
+    >TXR.EXP  >TXI.EXP  >TYR.EXP  >TYI.EXP
+    >TXVAR.EXP  >TYVAR.EXP
+    >ZROT
 
-High-level functions
---------------------
+For table-style EDIs, the module:
 
-- :func:`load_edi`
-    Read an EDI file (Phoenix or classical) and return a dictionary.
-- :func:`compute_pt`
-    Compute the phase tensor from ``Z`` and optionally propagate impedance
-    errors via Monte-Carlo.
-- :func:`save_edi`
-    Write an EDI dictionary back to a classical table-style EDI file,
-    optionally including P blocks, variance blocks and a ``>ZROT`` block.
+- parses component blocks (:func:`_extract_block_values`)
+- assembles Z and T (:func:`_build_impedance`, :func:`_build_tipper`)
+- reads optional Z rotation angles (``>ZROT``) and stores them in ``edi["rot"]``
 
-Returned dictionary layout
---------------------------
+High-level entry points
+-----------------------
 
-Typical output from :func:`load_edi`::
+- :func:`load_edi`:
+  Read an EDI file (Phoenix or classical) and return an in-memory dictionary.
+- :func:`compute_pt`:
+  Compute phase tensor and (optionally) propagate impedance errors via
+  Monte-Carlo simulation.
+- :func:`save_edi`:
+  Write an EDI dictionary back to a classical table-style EDI file.
+
+Dictionary layout
+-----------------
+
+A typical dictionary returned by :func:`load_edi` looks like::
 
     edi = {
-        "freq": (n,),
-        "Z": (n, 2, 2) complex,
-        "T": (n, 1, 2) complex or None,
-        "Z_err": (n, 2, 2) float or None,   # from .VAR blocks (tables only)
+        "freq": (n,),                      # Hz
+        "Z": (n, 2, 2) complex,            # impedance
+        "T": (n, 1, 2) complex or None,    # tipper
+        "Z_err": (n, 2, 2) float or None,  # variance or std (see "err_kind")
         "T_err": (n, 1, 2) float or None,
-        "P": (n, 2, 2) float or None,      # filled by compute_pt
+        "P": (n, 2, 2) float or None,      # phase tensor (filled by compute_pt)
         "P_err": (n, 2, 2) float or None,
-        "rot": (n,) float or None,      # from ROTSPEC or ZROT if present
-        "err_kind": "var" or "std",         # meaning of *_err arrays
+        "rot": (n,) float or None,         # degrees; from ROTSPEC or ZROT
+        "err_kind": "var" or "std",
+        "source_kind": "spectra" or "tables",
         "station": str or None,
         "lat_deg": float or None,
         "lon_deg": float or None,
         "elev_m": float or None,
-        "header_raw": list[str],            # raw header lines
-        "source_kind": "spectra" or "tables",
+        # convenience aliases used in some legacy code:
+        "lat": float or None,
+        "lon": float or None,
+        "elev": float or None,
     }
 
 Notes
 -----
 
-- Frequencies are returned in **ascending** order (lowest to highest), even if
-  the file lists them in descending order.
-- For Phoenix spectra, no Z/T error estimates are derived at present, so
-  ``Z_err`` and ``T_err`` are set to ``None``.
+- Frequencies are returned in **ascending** order.
 - For table-style EDIs, variance blocks such as ``ZXX.VAR`` and ``TXVAR.EXP``
-  are read into ``Z_err`` / ``T_err``. By default these are interpreted as
-  **variances** (``err_kind="var"``).
-- This module is intentionally minimal and transparent; it is not meant to
-  replace full-featured libraries (e.g. mtpy), but provides a stable backbone
-  for the EDI project and plotting via :mod:`ediviz` and :mod:`edidat`.
+  are read. By default these are interpreted as **variances** (``err_kind="var"``).
 
 Author: Volker Rath (DIAS)
-Created by ChatGPT (GPT-5 Thinking) on 2025-11-20
+Created with the help of ChatGPT (GPT-5 Thinking) on 2025-12-21 (UTC)
 """
 
 from __future__ import annotations
 
-import sys
-import os
 import re
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -144,26 +128,26 @@ def read_edi_text(path: str | Path, encoding: str = "latin-1") -> str:
     Returns
     -------
     str
-        The complete file content as a single string.
+        Complete file content as a single string.
     """
     p = Path(path)
     return p.read_text(encoding=encoding, errors="ignore")
 
 
 def _has_spectra(text: str) -> bool:
-    """Check whether the EDI contains Phoenix ``>SPECTRA`` blocks."""
+    """Return True if Phoenix ``>SPECTRA`` blocks occur in the file text."""
     return ">SPECTRA" in text.upper()
 
 
 def _split_lines(text: str) -> List[str]:
-    """Split EDI text into individual lines."""
+    """Split text into lines (no further processing)."""
     return text.splitlines()
 
 
 def _extract_header_lines(lines: List[str]) -> List[str]:
     """Extract header lines up to the first data or spectra block.
 
-    Everything from the top of the file up to the first line starting with
+    Everything from the start of the file up to the first line starting with
     ``">FREQ"``, ``">ZXXR"`` or ``">SPECTRA"`` is considered header.
     """
     header: List[str] = []
@@ -176,18 +160,25 @@ def _extract_header_lines(lines: List[str]) -> List[str]:
 
 
 def _parse_simple_meta(header_lines: List[str]) -> Dict[str, Any]:
-    """Parse a few simple metadata fields from header lines.
+    """Parse basic metadata fields from header lines.
+
+    The parser is intentionally conservative and only tries to guess a few
+    common keys found in many EDIs.
 
     Parameters
     ----------
     header_lines : list of str
-        Header lines from the EDI file.
+        Header lines from an EDI file.
 
     Returns
     -------
     dict
-        Dictionary with keys ``"station"``, ``"lat_deg"``, ``"lon_deg"``,
-        ``"elev_m"`` if they can be guessed, otherwise values are ``None``.
+        Contains (possibly None) entries for:
+
+        - ``station``: station / site name
+        - ``lat_deg``: latitude in decimal degrees
+        - ``lon_deg``: longitude in decimal degrees
+        - ``elev_m``: elevation in meters
     """
     station = None
     lat_deg = None
@@ -196,6 +187,7 @@ def _parse_simple_meta(header_lines: List[str]) -> Dict[str, Any]:
 
     for ln in header_lines:
         u = ln.upper()
+
         if "DATAID" in u and station is None:
             try:
                 rhs = ln.split("=", 1)[1].strip()
@@ -208,10 +200,9 @@ def _parse_simple_meta(header_lines: List[str]) -> Dict[str, Any]:
 
         if "LAT" in u and "REFLAT" not in u and lat_deg is None:
             try:
-                rhs = ln.split("=", 1)[1].strip()
+                rhs = ln.split("=", 1)[1].strip().strip('"')
                 if ":" in rhs:
-                    parts = rhs.strip('"').split(":")
-                    deg, minute, sec = (float(p) for p in parts[:3])
+                    deg, minute, sec = (float(p) for p in rhs.split(":")[:3])
                     lat_deg = deg + minute / 60.0 + sec / 3600.0
                 else:
                     lat_deg = float(rhs.split()[0])
@@ -220,10 +211,9 @@ def _parse_simple_meta(header_lines: List[str]) -> Dict[str, Any]:
 
         if ("LON" in u or "LONG" in u) and "REFLON" not in u and lon_deg is None:
             try:
-                rhs = ln.split("=", 1)[1].strip()
+                rhs = ln.split("=", 1)[1].strip().strip('"')
                 if ":" in rhs:
-                    parts = rhs.strip('"').split(":")
-                    deg, minute, sec = (float(p) for p in parts[:3])
+                    deg, minute, sec = (float(p) for p in rhs.split(":")[:3])
                     lon_deg = deg + minute / 60.0 + sec / 3600.0
                 else:
                     lon_deg = float(rhs.split()[0])
@@ -232,7 +222,7 @@ def _parse_simple_meta(header_lines: List[str]) -> Dict[str, Any]:
 
         if "ELEV" in u and "REFELEV" not in u and elev_m is None:
             try:
-                rhs = ln.split("=", 1)[1].strip()
+                rhs = ln.split("=", 1)[1].strip().strip('"')
                 elev_m = float(rhs.split()[0])
             except Exception:
                 pass
@@ -246,28 +236,27 @@ def _parse_simple_meta(header_lines: List[str]) -> Dict[str, Any]:
 
 
 def _extract_block_values(lines: List[str], keyword: str) -> Optional[np.ndarray]:
-    """Extract numerical values for a given EDI data block.
+    """Extract numeric values from a classical EDI block.
 
     Parameters
     ----------
     lines : list of str
-        All EDI lines.
+        EDI file lines.
     keyword : str
-        Block keyword without leading ``">"`` (for example ``"FREQ"``,
-        ``"ZXXR"``, ``"ZXX.VAR"``, ``"TXR.EXP"``). Matching is
-        case-insensitive.
+        Block keyword without leading ``">"`` (e.g. ``"FREQ"``, ``"ZXXR"``,
+        ``"ZXX.VAR"``, ``"TXR.EXP"``). Matching is case-insensitive.
 
     Returns
     -------
     numpy.ndarray or None
-        1-D array of values if the block exists, otherwise ``None``.
+        1D numeric array if the block exists, otherwise ``None``.
 
     Notes
     -----
-    - All lines from the block header (line starting with ``">keyword"``)
-      up to (but not including) the next line starting with ``">"`` or the
-      end of file are scanned for floating point numbers.
-    - Any comments starting with ``"//"`` are ignored.
+    - The scan starts at the block header line and continues until the next
+      line beginning with ``">"`` (or EOF).
+    - Numbers in Fortran ``D`` exponent format are supported.
+    - Comments starting with ``"//"`` are ignored.
     """
     up_kw = ">" + keyword.upper()
     n = len(lines)
@@ -301,7 +290,6 @@ def _extract_block_values(lines: List[str], keyword: str) -> Optional[np.ndarray
 
     if not vals:
         return None
-
     return np.asarray(vals, dtype=float)
 
 
@@ -316,17 +304,12 @@ def _build_impedance(
     z_imag_blocks: Dict[str, np.ndarray],
     z_var_blocks: Dict[str, np.ndarray],
 ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
-    """Construct impedance tensor and optional variance from blocks."""
+    """Assemble the complex impedance tensor Z and (optional) variance array."""
     n = freq.size
     Z = np.zeros((n, 2, 2), dtype=np.complex128)
-    Z_var = np.zeros((n, 2, 2), dtype=float) * np.nan
+    Z_var = np.full((n, 2, 2), np.nan, dtype=float)
 
-    comp_map = {
-        "ZXX": (0, 0),
-        "ZXY": (0, 1),
-        "ZYX": (1, 0),
-        "ZYY": (1, 1),
-    }
+    comp_map = {"ZXX": (0, 0), "ZXY": (0, 1), "ZYX": (1, 0), "ZYY": (1, 1)}
 
     for base, (i, j) in comp_map.items():
         r = z_real_blocks.get(base + "R")
@@ -354,7 +337,7 @@ def _build_tipper(
     t_blocks_im: Dict[str, np.ndarray],
     t_var_blocks: Dict[str, np.ndarray],
 ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-    """Construct tipper and optional variance from blocks."""
+    """Assemble the complex tipper T and (optional) variance array."""
     n = freq.size
 
     txr = t_blocks_re.get("TXR.EXP")
@@ -389,7 +372,7 @@ def _build_tipper(
     if txvar.size < n or tyvar.size < n:
         raise ValueError("Tipper variance blocks have insufficient entries.")
 
-    T_var = np.zeros((n, 1, 2), dtype=float) * np.nan
+    T_var = np.full((n, 1, 2), np.nan, dtype=float)
     T_var[:, 0, 0] = txvar[:n]
     T_var[:, 0, 1] = tyvar[:n]
 
@@ -397,35 +380,15 @@ def _build_tipper(
 
 
 # ---------------------------------------------------------------------------
-# Phoenix SPECTRA handling (incl. ROTSPEC)
+# Phoenix SPECTRA handling
 # ---------------------------------------------------------------------------
 
 
-def parse_spectra_blocks(
-    edi_text: str,
-) -> List[Tuple[float, float, float, np.ndarray]]:
+def parse_spectra_blocks(edi_text: str) -> List[Tuple[float, float, float, np.ndarray]]:
     """Parse Phoenix ``>SPECTRA`` blocks.
 
-    Parameters
-    ----------
-    edi_text : str
-        Entire EDI file content.
-
-    Returns
-    -------
-    list of tuples
-        Each tuple is ``(f, avgt, rot, mat7)`` where
-
-        * ``f`` is the frequency in Hz (float),
-        * ``avgt`` is the averaging time in seconds (float, or NaN if not
-          present),
-        * ``rot`` is the rotation angle from ``ROTSPEC`` in degrees
-          (float, or NaN if not present),
-        * ``mat7`` is a real-valued (7, 7) array in Phoenix encoding:
-
-          - diagonal: autospectra,
-          - lower triangle: real parts,
-          - upper triangle: imaginary parts.
+    Returns a list of tuples ``(freq_hz, avgt_s, rot_deg, mat7)`` where ``mat7``
+    is the 7×7 Phoenix real-valued encoding.
     """
     lines = edi_text.splitlines()
     n_lines = len(lines)
@@ -455,21 +418,21 @@ def parse_spectra_blocks(
         )
         if not fm:
             continue
-        f = float(fm.group(1).replace("D", "E"))
+        freq_hz = float(fm.group(1).replace("D", "E"))
 
         am = re.search(
             r"AVGT\s*=?\s*([0-9.]+[ED][+\-]?\d+|[0-9.]+)",
             block_text,
             flags=re.IGNORECASE,
         )
-        avgt = float(am.group(1).replace("D", "E")) if am else float("nan")
+        avgt_s = float(am.group(1).replace("D", "E")) if am else float("nan")
 
         rm = re.search(
             r"ROTSPEC\s*=?\s*([0-9.\-+]+[ED][+\-]?\d+|[0-9.\-+]+)",
             block_text,
             flags=re.IGNORECASE,
         )
-        rot = float(rm.group(1).replace("D", "E")) if rm else float("nan")
+        rot_deg = float(rm.group(1).replace("D", "E")) if rm else float("nan")
 
         num_strings: List[str] = []
         for ln in block_lines:
@@ -484,25 +447,13 @@ def parse_spectra_blocks(
 
         vals = [float(s.replace("D", "E")) for s in num_strings[:49]]
         mat7 = np.array(vals, dtype=float).reshape(7, 7)
-        blocks.append((f, avgt, rot, mat7))
+        blocks.append((freq_hz, avgt_s, rot_deg, mat7))
 
     return blocks
 
 
 def reconstruct_S_phoenix(mat7: np.ndarray) -> np.ndarray:
-    """Reconstruct complex 7×7 spectra matrix from Phoenix real-valued encoding.
-
-    Parameters
-    ----------
-    mat7 : numpy.ndarray
-        Real-valued (7, 7) array with autos on the diagonal, lower triangle
-        = Re(S_ij), upper triangle = Im(S_ij).
-
-    Returns
-    -------
-    numpy.ndarray
-        Complex Hermitian matrix S of shape (7, 7).
-    """
+    """Reconstruct complex 7×7 spectra matrix from Phoenix real-valued encoding."""
     S = np.zeros((7, 7), dtype=np.complex128)
     for i in range(7):
         S[i, i] = mat7[i, i]
@@ -515,42 +466,13 @@ def reconstruct_S_phoenix(mat7: np.ndarray) -> np.ndarray:
 
 
 def ZT_from_S(S: np.ndarray, ref: str = "RH") -> Tuple[np.ndarray, np.ndarray]:
-    """Derive impedance tensor Z and tipper T from a Phoenix spectra matrix S.
+    """Recover impedance Z and tipper T from a Phoenix spectra matrix S."""
+    h1, h2 = 0, 1
+    hz = 2
+    ex, ey = 3, 4
 
-    Parameters
-    ----------
-    S : numpy.ndarray
-        Complex 7×7 spectra matrix as returned by :func:`reconstruct_S_phoenix`.
-    ref : {"RH", "LH"}, optional
-        Reference convention for impedance handedness. Default is ``"RH"``.
-
-    Returns
-    -------
-    Z : numpy.ndarray
-        Complex impedance tensor of shape (2, 2).
-    T : numpy.ndarray
-        Complex tipper of shape (1, 2).
-
-    Notes
-    -----
-    Channel indices follow the standard Phoenix ordering (Hx, Hy, Hz, Ex, Ey,
-    ...). The recovered impedance comes out in units of µV/m per nT and is
-    divided by 1e3 to yield SI Ohm (V/m per T).
-    """
-    h1, h2 = 0, 1  # Hx, Hy
-    hz = 2         # Hz
-    ex, ey = 3, 4  # Ex, Ey
-
-    SHH = np.array(
-        [[S[h1, h1], S[h1, h2]],
-         [S[h2, h1], S[h2, h2]]],
-        dtype=np.complex128,
-    )
-    SEH = np.array(
-        [[S[ex, h1], S[ex, h2]],
-         [S[ey, h1], S[ey, h2]]],
-        dtype=np.complex128,
-    )
+    SHH = np.array([[S[h1, h1], S[h1, h2]], [S[h2, h1], S[h2, h2]]], dtype=np.complex128)
+    SEH = np.array([[S[ex, h1], S[ex, h2]], [S[ey, h1], S[ey, h2]]], dtype=np.complex128)
     SBH = np.array([[S[hz, h1], S[hz, h2]]], dtype=np.complex128)
 
     try:
@@ -561,8 +483,7 @@ def ZT_from_S(S: np.ndarray, ref: str = "RH") -> Tuple[np.ndarray, np.ndarray]:
     Z = SEH @ SHH_inv
     T = SBH @ SHH_inv
 
-    # Phoenix spectra typically give Z in µV/m per nT.
-    # That is 1e3 times larger than SI impedance (V/m)/T; correct by 1e3.
+    # Phoenix scaling (µV/m per nT -> V/m per T)
     Z /= 1.0e3
 
     if ref.upper() == "LH":
@@ -572,12 +493,8 @@ def ZT_from_S(S: np.ndarray, ref: str = "RH") -> Tuple[np.ndarray, np.ndarray]:
     return Z, T
 
 
-def _load_from_spectra(
-    text: str,
-    *,
-    ref: str = "RH",
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """High-level helper: build freq, Z, T, rot from Phoenix ``>SPECTRA``."""
+def _load_from_spectra(text: str, *, ref: str = "RH") -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Build ``freq``, ``Z``, ``T`` and ``rot`` arrays from Phoenix SPECTRA blocks."""
     blocks = parse_spectra_blocks(text)
     if not blocks:
         raise RuntimeError("No usable >SPECTRA blocks found in EDI text.")
@@ -588,20 +505,15 @@ def _load_from_spectra(
     T = np.empty((n, 1, 2), dtype=np.complex128)
     rot = np.empty(n, dtype=float)
 
-    for k, (f, avgt, rot, mat7) in enumerate(blocks):
+    for k, (f, _avgt, r, mat7) in enumerate(blocks):
         freq[k] = f
-        rot[k] = rot
+        rot[k] = r
         S = reconstruct_S_phoenix(mat7)
         Zk, Tk = ZT_from_S(S, ref=ref)
         Z[k] = Zk
         T[k] = Tk
 
     return freq, Z, T, rot
-
-
-# ---------------------------------------------------------------------------
-# High-level loader
-# ---------------------------------------------------------------------------
 
 
 def load_edi(
@@ -615,52 +527,7 @@ def load_edi(
 ) -> Dict[str, Any]:
     """Load an EDI file into a dictionary.
 
-    The decision between Phoenix SPECTRA and classical Z/T tables is made
-    purely based on the presence of Phoenix ``>SPECTRA`` blocks:
-
-    - If any ``>SPECTRA`` blocks are found and ``prefer_spectra=True`` (default),
-      the SPECTRA path is used to reconstruct Z and T.
-    - Otherwise, the classical Z/T table path is used.
-
-    Parameters
-    ----------
-    path : str or pathlib.Path
-        Input EDI file path.
-    prefer_spectra : bool, optional
-        If True (default) and Phoenix ``>SPECTRA`` blocks are present, use
-        the spectra path. If False, ignore spectra and use classical blocks
-        only.
-    ref : {"RH", "LH"}, optional
-        Handedness convention for the SPECTRA path. Default is ``"RH"``.
-    err_kind : {"var", "std"}, optional
-        Interpretation of returned error arrays:
-
-        - ``"var"`` (default): errors such as ``Z_err`` / ``T_err`` are
-          variances (e.g. from ``Z??.VAR``).
-        - ``"std"``: errors are one-sigma standard deviations.
-
-        For Phoenix spectra, no errors are derived at present, so ``Z_err``
-        and ``T_err`` are ``None`` regardless of this flag.
-        The value is stored under ``"err_kind"`` in the output dictionary.
-    drop_invalid_periods : bool, optional
-        If True (default), rows that contain missing values (NaN or absolute
-        values exceeding ``invalid_sentinel``) in any impedance or tipper
-        component *or their errors* are dropped before returning the dictionary.
-    invalid_sentinel : float, optional
-        Values with absolute magnitude larger than this threshold are treated
-        as invalid. Default is ``1.0e30``.
-
-    Returns
-    -------
-    dict
-        EDI dictionary as described in the module-level docstring.
-
-    Raises
-    ------
-    RuntimeError
-        If neither SPECTRA nor classical Z/T blocks can be interpreted.
-    ValueError
-        If an unknown ``err_kind`` is given.
+    See the module docstring for the returned dictionary layout.
     """
     if err_kind not in {"var", "std"}:
         raise ValueError(f"Unknown err_kind {err_kind!r}; expected 'var' or 'std'.")
@@ -670,16 +537,8 @@ def load_edi(
     header_lines = _extract_header_lines(lines)
     meta = _parse_simple_meta(header_lines)
 
-    # Extract basic site metadata (if available) for explicit inclusion
-    lat = meta.get("lat", None)
-    # normalise lon: prefer 'lon', fall back to 'long'
-    lon = meta.get("lon", meta.get("long", None))
-    elev = meta.get("elev", None)
-
-    # Decide which path to use
     use_spectra = _has_spectra(text) and prefer_spectra
-
-    rot: Optional[np.ndarray]
+    rot: Optional[np.ndarray] = None
 
     if use_spectra:
         freq, Z, T, rot = _load_from_spectra(text, ref=ref)
@@ -687,7 +546,6 @@ def load_edi(
         T_var = None
         source_kind = "spectra"
     else:
-        # Classical table-style path
         freq_vals = _extract_block_values(lines, "FREQ")
         if freq_vals is None:
             raise RuntimeError("Could not find >FREQ block in EDI file.")
@@ -731,16 +589,11 @@ def load_edi(
 
         T, T_var = _build_tipper(freq, t_blocks_re, t_blocks_im, t_var_blocks)
 
-        # Rotation block (ZROT) if present
         zrot_vals = _extract_block_values(lines, "ZROT")
         if zrot_vals is not None:
             if zrot_vals.size < freq.size:
-                raise ValueError(
-                    "ZROT block has fewer entries than frequencies."
-                )
+                raise ValueError("ZROT block has fewer entries than frequencies.")
             rot = zrot_vals[: freq.size].copy()
-        else:
-            rot = None
 
         source_kind = "tables"
 
@@ -757,36 +610,29 @@ def load_edi(
     if rot is not None:
         rot = np.asarray(rot, dtype=float)[order]
 
-    # Optionally drop invalid rows (Z, T, and their errors)
+    # Drop invalid rows (if requested)
     mask_valid = np.ones(freq.shape, dtype=bool)
     if drop_invalid_periods:
+
         def _collapse_any(bad: np.ndarray) -> np.ndarray:
             if bad.ndim == 1:
                 return bad
             axes = tuple(range(1, bad.ndim))
             return np.any(bad, axis=axes)
 
-        # Z itself
         bad_Z = ~np.isfinite(Z.real) | ~np.isfinite(Z.imag)
-        bad_Z |= (np.abs(Z.real) > invalid_sentinel) | (
-            np.abs(Z.imag) > invalid_sentinel
-        )
+        bad_Z |= (np.abs(Z.real) > invalid_sentinel) | (np.abs(Z.imag) > invalid_sentinel)
         mask_valid &= ~_collapse_any(bad_Z)
 
-        # T itself (if present)
         if T is not None:
             bad_T = ~np.isfinite(T.real) | ~np.isfinite(T.imag)
-            bad_T |= (np.abs(T.real) > invalid_sentinel) | (
-                np.abs(T.imag) > invalid_sentinel
-            )
+            bad_T |= (np.abs(T.real) > invalid_sentinel) | (np.abs(T.imag) > invalid_sentinel)
             mask_valid &= ~_collapse_any(bad_T)
 
-        # Z variances/errors (if present)
         if Z_var is not None:
             bad_Zvar = ~np.isfinite(Z_var) | (np.abs(Z_var) > invalid_sentinel)
             mask_valid &= ~_collapse_any(bad_Zvar)
 
-        # T variances/errors (if present)
         if T_var is not None:
             bad_Tvar = ~np.isfinite(T_var) | (np.abs(T_var) > invalid_sentinel)
             mask_valid &= ~_collapse_any(bad_Tvar)
@@ -802,16 +648,9 @@ def load_edi(
     if rot is not None:
         rot = rot[mask_valid]
 
-    # Map internal variance arrays -> returned error arrays depending on err_kind
-    if Z_var is not None:
-        Z_err = Z_var if err_kind == "var" else np.sqrt(Z_var)
-    else:
-        Z_err = None
-
-    if T_var is not None:
-        T_err = T_var if err_kind == "var" else np.sqrt(T_var)
-    else:
-        T_err = None
+    # Map var->err according to err_kind
+    Z_err = None if Z_var is None else (Z_var if err_kind == "var" else np.sqrt(Z_var))
+    T_err = None if T_var is None else (T_var if err_kind == "var" else np.sqrt(T_var))
 
     edi: Dict[str, Any] = {
         "freq": freq,
@@ -821,295 +660,168 @@ def load_edi(
         "T_err": T_err,
         "P": None,
         "P_err": None,
-        "rot": rot if rot is not None else None,
+        "rot": rot,
         "err_kind": err_kind,
         "header_raw": header_lines,
         "source_kind": source_kind,
-        # explicit site metadata (normalised)
-        "lat": lat,
-        "lon": lon,
-        "elev": elev,
+        # metadata
+        "station": meta.get("station"),
+        "lat_deg": meta.get("lat_deg"),
+        "lon_deg": meta.get("lon_deg"),
+        "elev_m": meta.get("elev_m"),
+        # convenience aliases
+        "lat": meta.get("lat_deg"),
+        "lon": meta.get("lon_deg"),
+        "elev": meta.get("elev_m"),
     }
 
-    # Add everything else from meta (site name, survey info, possibly 'long', etc.)
+    # Keep full meta dict too (for forward compatibility)
     edi.update(meta)
 
     return edi
 
 
-# if EstimateErrors:
-#     edi_dict = estimate_errors(edi_dict=edi_dict, method=ErrMethod)
+def estimate_errors(edi_dict: Dict[str, Any], method: Dict[str, Any]) -> Dict[str, Any]:
+    """Estimate *new* error levels from the spread of a resampled dataset.
 
-def estimate_errors(edi_dict: Dict[str, Any],
-               method: List)-> Dict[str, Any]:
-    '''
-    Estimate new errors using real spread of data.
+    This is a pragmatic helper to replace error estimates by comparing an
+    interpolated representation against the original data. It is intended for
+    exploratory work and should be used with caution.
+    """
+    edi_new = dict(edi_dict)  # shallow copy
 
-    Parameters
-    ----------
-    edi_dict : Dict[str, Any]
-        data dictionary
-    errors : Dict[str,np.ndarray]
-        error dictionary which will be uded to replace the errors.
-        relative errors.
+    if "freq" not in edi_new:
+        raise KeyError("edi_dict must contain 'freq'.")
 
-    Returns
-    -------
-    new_edi_dict
-        with errors replaced.
+    old_logf = np.log10(np.asarray(edi_new["freq"], dtype=float).ravel())
+    new_logf = np.asarray(method.get("newfreqs"), dtype=float).ravel()
+    if new_logf.size == 0:
+        raise ValueError("method['newfreqs'] must be a non-empty array.")
+    nf = new_logf.size
 
-    '''
-    edi_dict_new = edi_dict.copy
+    edi_new["freq"] = np.power(10.0, new_logf)
 
-    log_freqs = np.log10(edi_dict_new['freq'])
+    def _interp_complex(arr: np.ndarray) -> np.ndarray:
+        out = np.zeros((nf,) + arr.shape[1:], dtype=arr.dtype)
+        it = np.ndindex(arr.shape[1:])
+        for idx in it:
+            y = arr[(slice(None),) + idx]
+            if np.iscomplexobj(y):
+                sr = make_spline(old_logf, y.real, lam=None)
+                si = make_spline(old_logf, y.imag, lam=None)
+                out[(slice(None),) + idx] = sr(new_logf) + 1j * si(new_logf)
+            else:
+                s = make_spline(old_logf, y, lam=None)
+                out[(slice(None),) + idx] = s(new_logf)
+        return out
 
-    meth = method['meth']
+    # Estimate errors as std of interpolation mismatch (very rough)
+    if edi_new.get("Z") is not None:
+        Z_old = np.asarray(edi_new["Z"])
+        Z_new = _interp_complex(Z_old)
+        edi_new["Z"] = Z_new
+        edi_new["Z_err"] = np.std(Z_new, axis=0, ddof=1)
 
-    log_freqs = method['newfreqs']
-    nf = len(log_freqs)
+    if edi_new.get("T") is not None:
+        T_old = np.asarray(edi_new["T"])
+        T_new = _interp_complex(T_old)
+        edi_new["T"] = T_new
+        edi_new["T_err"] = np.std(T_new, axis=0, ddof=1)
 
-    if 'Z' in edi_dict_new:
-        tmp  = edi_dict_new['Z']
-        tmp_new = np.zeros((nf,2,2), dtype=complex)
-        spline = make_spline(log_freqs, tmp[:, 0, 0], lam=None)
-        tmp_new[:, 0, 0] = spline(log_freqs)
-        spline = make_spline(log_freqs, tmp[:, 1, 0], lam=None)
-        tmp_new[:, 1, 0] = spline(log_freqs)
-        spline = make_spline(log_freqs, tmp[:, 0, 1], lam=None)
-        tmp_new[:, 0, 1] = spline(log_freqs)
-        spline = make_spline(log_freqs, tmp[:, 1, 1], lam=None)
-        tmp_new[:, 1, 1] = spline(log_freqs)
-        edi_dict_new['Z'] = tmp_new
-        edi_dict_new['Zerr'] = np.std(tmp_new-tmp, axis=0)
+    if edi_new.get("P") is not None:
+        P_old = np.asarray(edi_new["P"])
+        P_new = _interp_complex(P_old.astype(float)).astype(float)
+        edi_new["P"] = P_new
+        edi_new["P_err"] = np.std(P_new, axis=0, ddof=1)
 
-
-    if 'T' in edi_dict_new:
-        tmp  = edi_dict_new['T']
-        tmp_new = np.zeros((nf,2,1), dtype=complex)
-        spline = make_spline(log_freqs, tmp[:, 0, 0], lam=None)
-        tmp_new[:, 0, 0 ] = spline(log_freqs)
-        spline = make_spline(log_freqs, tmp[:, 1, 0], lam=None)
-        tmp_new[:, 1, 0] = spline(log_freqs)
-        edi_dict_new['T'] = tmp_new
-        edi_dict_new['Terr'] = np.std(tmp_new-tmp, axis=0)
-
-    if 'P' in edi_dict_new:
-         tmp  = edi_dict_new['P']
-         tmp_new = np.zeros((nf,2,2), dtype=float)
-         spline = make_spline(log_freqs, tmp[:, 0, 0], lam=None)
-         tmp_new[:, 0, 0 ] = spline(log_freqs)
-         spline = make_spline(log_freqs, tmp[:, 1, 0], lam=None)
-         tmp_new[:, 1, 0] = spline(log_freqs)
-         spline = make_spline(log_freqs, tmp[:, 0, 1], lam=None)
-         tmp_new[:, 0, 1 ] = spline(log_freqs)
-         spline = make_spline(log_freqs, tmp[:, 1, 1], lam=None)
-         tmp_new[:, 1, 1] = spline(log_freqs)
-         edi_dict_new['P'] = tmp_new
-         edi_dict_new['Perr'] = np.std(tmp_new-tmp, axis=0)
-
-    return edi_dict_new
+    # mark errors as std
+    edi_new["err_kind"] = "std"
+    return edi_new
 
 
+def interpolate_data(edi_dict: Dict[str, Any], method: Dict[str, Any]) -> Dict[str, Any]:
+    """Interpolate MT transfer functions to a new frequency grid."""
+    edi_new = dict(edi_dict)
+
+    old_logf = np.log10(np.asarray(edi_new["freq"], dtype=float).ravel())
+    new_logf = np.asarray(method.get("newfreqs"), dtype=float).ravel()
+    if new_logf.size == 0:
+        raise ValueError("method['newfreqs'] must be a non-empty array.")
+    nf = new_logf.size
+
+    edi_new["freq"] = np.power(10.0, new_logf)
+
+    def _interp_any(arr: np.ndarray) -> np.ndarray:
+        out = np.zeros((nf,) + arr.shape[1:], dtype=arr.dtype)
+        it = np.ndindex(arr.shape[1:])
+        for idx in it:
+            y = arr[(slice(None),) + idx]
+            if np.iscomplexobj(y):
+                sr = make_spline(old_logf, y.real, lam=None)
+                si = make_spline(old_logf, y.imag, lam=None)
+                out[(slice(None),) + idx] = sr(new_logf) + 1j * si(new_logf)
+            else:
+                s = make_spline(old_logf, y, lam=None)
+                out[(slice(None),) + idx] = s(new_logf)
+        return out
+
+    for key in ["Z", "T", "P", "Z_err", "T_err", "P_err", "rot"]:
+        if key in edi_new and edi_new[key] is not None:
+            edi_new[key] = _interp_any(np.asarray(edi_new[key]))
+
+    return edi_new
 
 
-
-# if Interpolate:
-#     edi_dict = interpolate_data(edi_dict=edi_dict, method=Method)
-def interpolate_data(edi_dict: Dict[str, Any],
-               method: List)-> Dict[str, Any]:
-    '''
-    Interpolate data to k points per decade for all data
+def set_errors(edi_dict: Dict[str, Any], errors: Dict[str, np.ndarray]) -> Dict[str, Any]:
+    """Replace error arrays using provided relative errors (placeholder)."""
+    edi_new = dict(edi_dict)
+    # TODO: implement a clear contract for the `errors` dict and update Z_err/T_err/P_err.
+    return edi_new
 
 
-    Parameters
-    ----------
-    edi_dict : Dict[str, Any]
-        impuut data dict
-    method : Dict[str, Any]
-        DESCRIPTION.
-     : TYPE
-        DESCRIPTION.
+def rotate_data(edi_dict: Dict[str, Any], angle: float = 0.0, degrees: bool = True) -> Dict[str, Any]:
+    """Rotate transfer functions by a fixed horizontal rotation angle."""
+    edi_new = dict(edi_dict)
 
-    Returns
-    -------
-    Dict[str, Any]
-        DESCRIPTION.
-
-    '''
-    # sys.exit('interpolate_data: not yet implementd! Exit.')
-    edi_dict_new = edi_dict.copy
-
-    meth = method['meth']
-
-    old_freqs = np.log10(edi_dict_new['freq'])
-    new_freqs = method['newfreqs']
-    edi_dict_new['freq'] = np.power(10., new_freqs)
-
-    nf = len(new_freqs)
-
-    if 'Z' in edi_dict_new:
-        tmp  = edi_dict_new['Z']
-        tmp_new = np.zeros((nf,2,2), dtype=complex)
-        spline = make_spline(old_freqs, tmp[:, 0, 0], lam=None)
-        tmp_new[:, 0, 0] = spline(new_freqs)
-        spline = make_spline(old_freqs, tmp[:, 1, 0], lam=None)
-        tmp_new[:, 1, 0] = spline(new_freqs)
-        spline = make_spline(old_freqs, tmp[:, 0, 1], lam=None)
-        tmp_new[:, 0, 1] = spline(new_freqs)
-        spline = make_spline(old_freqs, tmp[:, 1, 1], lam=None)
-        tmp_new[:, 1, 1] = spline(new_freqs)
-        edi_dict_new['Z'] = tmp_new
-
-        tmp  = edi_dict_new['Zerr']
-        tmp_new = np.zeros((nf,2,2), dtype=complex)
-        spline = make_spline(old_freqs, tmp[:, 0, 0], lam=None)
-        tmp_new[:, 0, 0] = spline(new_freqs)
-        spline = make_spline(old_freqs, tmp[:, 1, 0], lam=None)
-        tmp_new[:, 1, 0] = spline(new_freqs)
-        spline = make_spline(old_freqs, tmp[:, 0, 1], lam=None)
-        tmp_new[:, 0, 1] = spline(new_freqs)
-        spline = make_spline(old_freqs, tmp[:, 1, 1], lam=None)
-        tmp_new[:, 1, 1] = spline(new_freqs)
-        edi_dict_new['Zerr'] = tmp_new
-
-    if 'T' in edi_dict_new:
-        tmp  = edi_dict_new['T']
-        tmp_new = np.zeros((nf,2,1), dtype=complex)
-        spline = make_spline(old_freqs, tmp[:, 0, 0], lam=None)
-        tmp_new[:, 0, 0 ] = spline(new_freqs)
-        spline = make_spline(old_freqs, tmp[:, 1, 0], lam=None)
-        tmp_new[:, 1, 0] = spline(new_freqs)
-        edi_dict_new['T'] = tmp_new
-
-        tmp  = edi_dict_new['Terr']
-        tmp_new = np.zeros((nf,2,1), dtype=complex)
-        spline = make_spline(old_freqs, tmp[:, 0, 0], lam=None)
-        tmp_new[:, 0, 0] = spline(new_freqs)
-        spline = make_spline(old_freqs, tmp[:, 1, 0], lam=None)
-        tmp_new[:, 1, 0] = spline(new_freqs)
-        edi_dict_new['Terr'] = tmp_new
-
-    if 'P' in edi_dict_new:
-         tmp  = edi_dict_new['P']
-         tmp_new = np.zeros((nf,2,2), dtype=float)
-         spline = make_spline(old_freqs, tmp[:, 0, 0], lam=None)
-         tmp_new[:, 0, 0 ] = spline(new_freqs)
-         spline = make_spline(old_freqs, tmp[:, 1, 0], lam=None)
-         tmp_new[:, 1, 0] = spline(new_freqs)
-         spline = make_spline(old_freqs, tmp[:, 0, 1], lam=None)
-         tmp_new[:, 0, 1 ] = spline(new_freqs)
-         spline = make_spline(old_freqs, tmp[:, 1, 1], lam=None)
-         tmp_new[:, 1, 1] = spline(new_freqs)
-         edi_dict_new['P'] = tmp_new
-
-         tmp  = edi_dict_new['Perr']
-         tmp_new = np.zeros((nf,2,2), dtype=float)
-         spline = make_spline(old_freqs, tmp[:, 0, 0], lam=None)
-         tmp_new[:, 0, 0 ] = spline(new_freqs)
-         spline = make_spline(old_freqs, tmp[:, 1, 0], lam=None)
-         tmp_new[:, 1, 0] = spline(new_freqs)
-         spline = make_spline(old_freqs, tmp[:, 0, 1], lam=None)
-         tmp_new[:, 0, 1 ] = spline(new_freqs)
-         spline = make_spline(old_freqs, tmp[:, 1, 1], lam=None)
-         tmp_new[:, 1, 1] = spline(new_freqs)
-         edi_dict_new['Perr'] = tmp_new
-
-    return edi_dict_new
-
-
-
-# if SetErrors:
-#     edi_dict = set_errors(edi_dict=edi_dict, errors=Errors)
-def set_errors(edi_dict: Dict[str, Any],
-               errors: Dict[str,np.ndarray])-> Dict[str, Any]:
-    '''
-    Replace errors with given relative errors.
-
-    Parameters
-    ----------
-    edi_dict : Dict[str, Any]
-        data dictionary
-    errors : Dict[str,np.ndarray]
-        error dictionary which will be uded to replace the errors.
-        relative errors.
-
-    Returns
-    -------
-    new_edi_dict
-        with errors replaced.
-
-    '''
-    sys.exit('set_errors: not yet implementd! Exit.')
-    edi_dict_new = edi_dict.copy
-
-
-    return edi_dict_new
-
-# if Rotation:
-#     edi_dict = rotate_data(edi_dict=edi_dict, angle=Angle)
-def rotate_data(edi_dict: Dict[str, Any],
-               angle: float = 0.,
-               degrees=True )-> Dict[str, Any]:
-    '''
-    Rotate data (e.g for magnetic to geographic system)
-
-    Parameters
-    ----------
-    edi_dict : Dict[str, Any]
-        DESCRIPTION.
-    angle : float
-        Rotation angle.
-    degrees : boolean, optional
-        DESCRIPTION. The default is True.
-
-    Returns
-    -------
-    Dict[str, Any]
-        edi_dict with rotated data
-
-    '''
-    edi_dict_new = edi_dict.copy
-
-    if degrees:
-        ang = np.radians(angle)
-    else:
-        ang = angle
-
+    ang = np.radians(angle) if degrees else float(angle)
     c = np.cos(ang)
     s = np.sin(ang)
-    R = np.array([[c,  s], [-s,  c]])
+    R = np.array([[c, s], [-s, c]], dtype=float)
 
+    if edi_new.get("Z") is not None:
+        Z = np.asarray(edi_new["Z"], dtype=np.complex128)
+        Zr = np.empty_like(Z)
+        for k in range(Z.shape[0]):
+            Zr[k] = R @ Z[k] @ R.T
+        edi_new["Z"] = Zr
 
-    freq = edi_dict_new['freq']
-    rot = edi_dict_new['rot']
-    Z = edi_dict_new['Z']
-    Zerr = edi_dict_new['Zerr']
-    T = edi_dict_new['T']
-    Terr = edi_dict_new['Terr']
-    P = edi_dict_new['P']
-    Perr = edi_dict_new['Perr']
+    for key in ["Z_err", "P", "P_err"]:
+        if edi_new.get(key) is not None:
+            A = np.asarray(edi_new[key], dtype=float)
+            Ar = np.empty_like(A)
+            for k in range(A.shape[0]):
+                Ar[k] = R @ A[k] @ R.T
+            edi_new[key] = Ar
 
-    for f in np.arange(len(freq)):
-        Z = R @ Z[f,:,:] @ R.T
-        Zerr = R @ Zerr[f,:,:] @ R.T
-        T = R @ T[f,:,:]
-        Terr = R @ Terr[f,:,:]
-        P = R @ P[f,:,:] @ R.T
-        Perr = R @ Perr[f,:,:] @ R.T
+    if edi_new.get("T") is not None:
+        T = np.asarray(edi_new["T"], dtype=np.complex128)
+        Tr = np.empty_like(T)
+        for k in range(T.shape[0]):
+            Tr[k] = T[k] @ R.T
+        edi_new["T"] = Tr
 
-    edi_dict_new ['rot'] = rot + angle*np.ones_like(rot)
-    edi_dict_new ['Z'] = Z
-    edi_dict_new ['Zerr'] = Zerr
-    edi_dict_new ['T'] = T
-    edi_dict_new ['Terr'] = Terr
-    edi_dict_new ['P'] = P
-    edi_dict_new ['Perr'] = Perr
+    if edi_new.get("T_err") is not None:
+        Te = np.asarray(edi_new["T_err"], dtype=float)
+        Ter = np.empty_like(Te)
+        for k in range(Te.shape[0]):
+            Ter[k] = Te[k] @ R.T
+        edi_new["T_err"] = Ter
 
-    return edi_dict_new
+    if edi_new.get("rot") is not None:
+        rot = np.asarray(edi_new["rot"], dtype=float)
+        edi_new["rot"] = rot + (angle if degrees else np.degrees(angle)) * np.ones_like(rot)
 
-# ---------------------------------------------------------------------------
-# Phase tensor + Monte-Carlo error propagation
-# ---------------------------------------------------------------------------
+    return edi_new
 
 
 def compute_pt(
@@ -1120,73 +832,20 @@ def compute_pt(
     nsim: int = 200,
     random_state: Optional[np.random.Generator] = None,
 ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
-    """
-    Compute the phase tensor from impedance and optionally propagate errors.
-
-    The phase tensor Φ is defined as
-
-    .. math::
-
-        \\Phi = X^{-1} Y,
-
-    where :math:`Z = X + i Y` and X, Y are real 2×2 matrices. This function
-    computes Φ for each frequency and, if ``Z_err`` is provided, performs a
-    simple Monte-Carlo error propagation to estimate the variance (or
-    standard deviation) of Φ entries.
-
-    Parameters
-    ----------
-    Z : numpy.ndarray
-        Complex impedance array with shape ``(n, 2, 2)``.
-    Z_err : numpy.ndarray or None, optional
-        Impedance uncertainty array with the same shape as ``Z``. The
-        interpretation is controlled by ``err_kind``:
-
-        - ``"var"`` (default): values are treated as **variances** of the
-          complex impedance entries (for example values read from
-          ``Z??.VAR`` blocks).
-        - ``"std"``: values are treated as 1-sigma **standard deviations``.
-
-        If None, only the phase tensor is returned.
-    err_kind : {"var", "std"}, optional
-        Interpretation of ``Z_err``. See above. Default is ``"var"``.
-    nsim : int, optional
-        Number of Monte-Carlo realisations used for error propagation.
-        Default is 200.
-    random_state : numpy.random.Generator, optional
-        Optional random number generator to use. If None (default), a fresh
-        ``Generator`` instance is created.
-
-    Returns
-    -------
-    P : numpy.ndarray
-        Phase tensor array with shape ``(n, 2, 2)``.
-    P_err : numpy.ndarray or None
-        Estimated variance or standard deviation of Φ entries with the same
-        shape as ``P``. If ``Z_err`` is None, ``P_err`` is None.
-
-    Notes
-    -----
-    - The Monte-Carlo approach assumes independent Gaussian errors for each
-      complex impedance entry.
-    - ``P_err`` contains **variances** if ``err_kind="var"`` and standard
-      deviations if ``err_kind="std"``.
-    """
+    """Compute phase tensor and optionally propagate impedance errors."""
     Z = np.asarray(Z, dtype=np.complex128)
     if Z.shape[-2:] != (2, 2):
         raise ValueError("Z must have shape (n, 2, 2).")
 
     n = Z.shape[0]
-    P = np.zeros((n, 2, 2), dtype=float)
+    P = np.full((n, 2, 2), np.nan, dtype=float)
 
-    # Deterministic phase tensor
     for k in range(n):
         X = Z[k].real
         Y = Z[k].imag
         try:
             X_inv = np.linalg.inv(X)
         except np.linalg.LinAlgError:
-            P[k] = np.nan
             continue
         P[k] = X_inv @ Y
 
@@ -1197,10 +856,7 @@ def compute_pt(
     if Z_err.shape != Z.shape:
         raise ValueError("Z_err must have the same shape as Z.")
 
-    if random_state is None:
-        rng = np.random.default_rng()
-    else:
-        rng = random_state
+    rng = np.random.default_rng() if random_state is None else random_state
 
     if err_kind == "var":
         sigma = np.sqrt(Z_err)
@@ -1209,39 +865,30 @@ def compute_pt(
     else:
         raise ValueError("err_kind must be 'var' or 'std'.")
 
-    P_sims = np.zeros((nsim, n, 2, 2), dtype=float)
-    for s in range(nsim):
+    P_sims = np.full((nsim, n, 2, 2), np.nan, dtype=float)
+
+    for sidx in range(nsim):
         d_re = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
         d_im = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
-        Z_samp = (Z.real + d_re) + 1j * (Z.imag + d_im)
+        Zs = (Z.real + d_re) + 1j * (Z.imag + d_im)
         for k in range(n):
-            X = Z_samp[k].real
-            Y = Z_samp[k].imag
+            X = Zs[k].real
+            Y = Zs[k].imag
             try:
                 X_inv = np.linalg.inv(X)
             except np.linalg.LinAlgError:
-                P_sims[s, k] = np.nan
                 continue
-            P_sims[s, k] = X_inv @ Y
+            P_sims[sidx, k] = X_inv @ Y
 
     with np.errstate(invalid="ignore"):
-        var_P = np.nanvar(P_sims, axis=0)
+        varP = np.nanvar(P_sims, axis=0)
 
-    if err_kind == "var":
-        P_err = var_P
-    else:
-        P_err = np.sqrt(var_P)
-
+    P_err = varP if err_kind == "var" else np.sqrt(varP)
     return P, P_err
 
 
-# ---------------------------------------------------------------------------
-# Writer
-# ---------------------------------------------------------------------------
-
-
 def _format_block(values: np.ndarray, n_per_line: int = 6) -> str:
-    """Format 1-D numeric data into multi-line EDI block text."""
+    """Format a 1D array into an EDI numeric block string."""
     vals = np.asarray(values, dtype=float).ravel()
     chunks: List[str] = []
     for i in range(0, vals.size, n_per_line):
@@ -1260,31 +907,7 @@ def save_edi(
     pt_err_kind: Optional[str] = None,
     lon_keyword: str = "LON",
 ) -> None:
-    """Write an EDI dictionary to a classical table-style EDI file.
-
-    Parameters
-    ----------
-    path : str or pathlib.Path
-        Output EDI file path.
-    edi : dict
-        EDI dictionary with keys such as ``"freq"``, ``"Z"``, ``"T"``,
-        ``"Z_err"``, ``"T_err"``, ``"P"``, ``"P_err"``, and metadata like
-        ``"station"``, ``"lat_deg"``, ``"lon_deg"``, ``"elev_m"``.
-    numbers_per_line : int, optional
-        Number of numeric values printed per data line. Default is 6.
-    add_pt_blocks : bool, optional
-        If True (default) and ``"P"`` is present, write phase tensor blocks
-        ``PXX``, ``PXY``, ``PYX``, ``PYY`` and, if available, corresponding
-        variance blocks ``PXX.VAR``, etc.
-    pt_err_kind : {"var", "std"} or None, optional
-        How to interpret ``edi["P_err"]``. If ``"var"``, values are written
-        as variances. If ``"std"``, values are squared before writing so that
-        the EDI file stores variances. If None (default), the function tries
-        to infer a sensible value from ``edi.get("err_kind")``.
-    lon_keyword : {"LON", "LONG"}, optional
-        Longitude keyword to use in the header. Some programs expect
-        ``"LONG"`` instead of ``"LON"``. Default is ``"LON"``.
-    """
+    """Write an EDI dictionary to a classical table-style EDI file."""
     p = Path(path)
 
     freq = np.asarray(edi["freq"], dtype=float).ravel()
@@ -1300,9 +923,9 @@ def save_edi(
     rot = edi.get("rot")
 
     station = edi.get("station", "UNKNOWN")
-    lat_deg = edi.get("lat_deg")
-    lon_deg = edi.get("lon_deg")
-    elev_m = edi.get("elev_m")
+    lat_deg = edi.get("lat_deg", edi.get("lat"))
+    lon_deg = edi.get("lon_deg", edi.get("lon"))
+    elev_m = edi.get("elev_m", edi.get("elev"))
     err_kind = edi.get("err_kind", "var")
 
     lines: List[str] = []
@@ -1311,14 +934,14 @@ def save_edi(
     lines.append(">HEAD")
     lines.append(f'  DATAID="{station}"')
     if lat_deg is not None:
-        lines.append(f"  LAT={lat_deg: .6f}")
+        lines.append(f"  LAT={float(lat_deg): .6f}")
     if lon_deg is not None:
-        lines.append(f"  {lon_keyword}={lon_deg: .6f}")
+        lines.append(f"  {lon_keyword}={float(lon_deg): .6f}")
     if elev_m is not None:
-        lines.append(f"  ELEV={elev_m: .6f}")
+        lines.append(f"  ELEV={float(elev_m): .6f}")
     lines.append('  STDVERS="SEG 1.0"')
     lines.append('  PROGVERS="dataproc.py"')
-    lines.append('  PROGDATE="2025-11-20"')
+    lines.append(f'  PROGDATE="{2025-12-21}"')
     lines.append("  EMPTY=1.0E32")
     lines.append("")
 
@@ -1337,13 +960,7 @@ def save_edi(
         lines.append("")
 
     # Impedance blocks
-    n = freq.size
-    comp_map = {
-        "ZXX": (0, 0),
-        "ZXY": (0, 1),
-        "ZYX": (1, 0),
-        "ZYY": (1, 1),
-    }
+    comp_map = {"ZXX": (0, 0), "ZXY": (0, 1), "ZYX": (1, 0), "ZYY": (1, 1)}
 
     z_real_blocks: Dict[str, np.ndarray] = {}
     z_imag_blocks: Dict[str, np.ndarray] = {}
@@ -1358,10 +975,7 @@ def save_edi(
             Z_err_arr = np.asarray(Z_err, dtype=float)
             if Z_err_arr.shape != Z.shape:
                 raise ValueError("edi['Z_err'] must have the same shape as edi['Z'].")
-            if err_kind == "std":
-                var = Z_err_arr[:, i, j] ** 2
-            else:
-                var = Z_err_arr[:, i, j]
+            var = Z_err_arr[:, i, j] ** 2 if err_kind == "std" else Z_err_arr[:, i, j]
             z_var_blocks[base + ".VAR"] = var
 
     for key, arr in z_real_blocks.items():
@@ -1378,6 +992,7 @@ def save_edi(
         lines.append("")
 
     # Tipper blocks
+    n = freq.size
     if T is not None:
         T = np.asarray(T, dtype=np.complex128)
         if T.shape != (n, 1, 2):
@@ -1403,12 +1018,8 @@ def save_edi(
             T_err_arr = np.asarray(T_err, dtype=float)
             if T_err_arr.shape != T.shape:
                 raise ValueError("edi['T_err'] must have the same shape as edi['T'].")
-            if err_kind == "std":
-                txvar = T_err_arr[:, 0, 0] ** 2
-                tyvar = T_err_arr[:, 0, 1] ** 2
-            else:
-                txvar = T_err_arr[:, 0, 0]
-                tyvar = T_err_arr[:, 0, 1]
+            txvar = T_err_arr[:, 0, 0] ** 2 if err_kind == "std" else T_err_arr[:, 0, 0]
+            tyvar = T_err_arr[:, 0, 1] ** 2 if err_kind == "std" else T_err_arr[:, 0, 1]
 
             lines.append(">TXVAR.EXP")
             lines.append(_format_block(txvar, n_per_line=numbers_per_line))
@@ -1417,7 +1028,7 @@ def save_edi(
             lines.append(_format_block(tyvar, n_per_line=numbers_per_line))
             lines.append("")
 
-    # Phase tensor blocks (optional)
+    # Phase tensor blocks
     if add_pt_blocks and P is not None:
         P = np.asarray(P, dtype=float)
         if P.shape != (n, 2, 2):
@@ -1483,59 +1094,7 @@ def dataframe_from_edi(
     err_kind: Optional[str] = None,
     mu0: float = _MU0,
 ) -> pd.DataFrame:
-    """Build a tidy :class:`pandas.DataFrame` from an EDI dictionary.
-
-    Parameters
-    ----------
-    edi : dict
-        EDI dictionary, typically returned by :func:`dataproc.load_edi`. It
-        must contain at least:
-
-        ``"freq"`` : 1-D array of frequencies [Hz].
-        ``"Z"``    : complex impedance, shape ``(n, 2, 2)``.
-
-        Additional optional keys that are recognised:
-
-        ``"T"`` : complex tipper, shape ``(n, 1, 2)``.
-        ``"P"`` : phase tensor, shape ``(n, 2, 2)`` (real).
-        ``"Z_err"`` : impedance uncertainties, same shape as ``"Z"``.
-        ``"T_err"`` : tipper uncertainties, same shape as ``"T"``.
-        ``"P_err"`` : phase tensor uncertainties, same shape as ``"P"``.
-        ``"rot"`` : rotation angles in degrees, shape ``(n,)``.
-        ``"station"``, ``"lat_deg"``, ``"lon_deg"``, ``"elev_m"``,
-        ``"err_kind"`` : metadata copied into ``df.attrs``.
-
-    include_rho_phi : bool, optional
-        If True (default), compute apparent resistivity and phase from Z
-        and add corresponding columns.
-    include_tipper : bool, optional
-        If True (default) and a tipper array is present, include tipper
-        components and their uncertainties.
-    include_pt : bool, optional
-        If True (default) and a phase tensor array is present, include P
-        components and their uncertainties.
-    add_period : bool, optional
-        If True (default), add a ``"period"`` column (1/f).
-    err_kind : {"var", "std"} or None, optional
-        Interpretation of ``Z_err``, ``T_err`` and ``P_err``. If None
-        (default), the function tries to infer from ``edi.get("err_kind")``
-        and falls back to ``"var"``.
-    mu0 : float, optional
-        Magnetic permeability [H/m] for converting impedance magnitude to
-        apparent resistivity. Default is the vacuum value.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Dataframe with columns and attributes as described above.
-
-    Notes
-    -----
-    - Error propagation is approximate; it assumes independent Gaussian
-      uncertainties for each impedance/tipper component.
-    - For impedance, ``Z_err`` is interpreted as variance (or std) of the
-      complex entry; real and imaginary parts are treated symmetrically.
-    """
+    """Convert an EDI dictionary to a tidy pandas DataFrame."""
     if "freq" not in edi or "Z" not in edi:
         raise KeyError("edi must contain at least 'freq' and 'Z' keys.")
 
@@ -1549,35 +1108,29 @@ def dataframe_from_edi(
 
     if add_period:
         with np.errstate(divide="ignore", invalid="ignore"):
-            period = np.where(freq > 0.0, 1.0 / freq, np.nan)
-        df["period"] = period
+            df["period"] = np.where(freq > 0.0, 1.0 / freq, np.nan)
 
-    # Optional rotation column
     rot = edi.get("rot")
     if rot is not None:
         rot_arr = np.asarray(rot, dtype=float).ravel()
         if rot_arr.size == n:
             df["rot"] = rot_arr
 
-    # err_kind handling
     if err_kind is None:
         err_kind = edi.get("err_kind", "var")
     if err_kind not in ("var", "std"):
         raise ValueError("err_kind must be 'var' or 'std'.")
 
-    # ------------------------------------------------------------------ ρ and φ
     if include_rho_phi:
-        omega = 2.0 * np.pi * freq  # angular frequency
+        omega = 2.0 * np.pi * freq
         comp_map = {"xx": (0, 0), "xy": (0, 1), "yx": (1, 0), "yy": (1, 1)}
 
         for name, (i, j) in comp_map.items():
             Zij = Z[:, i, j]
             mag = np.abs(Zij)
-            rho = (mag**2) / (mu0 * omega)
+            df[f"rho_{name}"] = (mag**2) / (mu0 * omega)
             with np.errstate(divide="ignore", invalid="ignore"):
-                phi = np.degrees(np.arctan2(Zij.imag, Zij.real))
-            df[f"rho_{name}"] = rho
-            df[f"phi_{name}"] = phi
+                df[f"phi_{name}"] = np.degrees(np.arctan2(Zij.imag, Zij.real))
 
         Z_err = edi.get("Z_err")
         if Z_err is not None:
@@ -1585,35 +1138,22 @@ def dataframe_from_edi(
             if Z_err.shape != Z.shape:
                 raise ValueError("edi['Z_err'] must have the same shape as 'Z'.")
 
-            if err_kind == "var":
-                sigma_Z = np.sqrt(Z_err)
-            else:
-                sigma_Z = Z_err
+            sigma_Z = np.sqrt(Z_err) if err_kind == "var" else Z_err
 
             for name, (i, j) in comp_map.items():
-                Zij = Z[:, i, j]
-                mag = np.abs(Zij)
-                rho = df[f"rho_{name}"].to_numpy()
+                mag = np.abs(Z[:, i, j])
                 denom = mu0 * omega
-
-                # Approximate std of ρ using error propagation
-                std_rho = 2.0 * sigma_Z[:, i, j] * mag / np.where(
-                    denom > 0.0, denom, np.nan
-                )
+                std_rho = 2.0 * sigma_Z[:, i, j] * mag / np.where(denom > 0.0, denom, np.nan)
                 df[f"rho_{name}_err"] = std_rho
 
-                # Phase error (radians) ~ σ / |Z|
                 with np.errstate(divide="ignore", invalid="ignore"):
                     std_phi_rad = np.where(mag > 0.0, sigma_Z[:, i, j] / mag, np.nan)
-                std_phi_deg = std_phi_rad * (180.0 / np.pi)
-                df[f"phi_{name}_err"] = std_phi_deg
+                df[f"phi_{name}_err"] = std_phi_rad * (180.0 / np.pi)
 
-    # ------------------------------------------------------------------ Tipper
-    if include_tipper and "T" in edi and edi["T"] is not None:
+    if include_tipper and edi.get("T") is not None:
         T = np.asarray(edi["T"], dtype=np.complex128)
         if T.shape != (n, 1, 2):
             raise ValueError("edi['T'] must have shape (n, 1, 2).")
-
         tx = T[:, 0, 0]
         ty = T[:, 0, 1]
         df["Tx_re"] = tx.real
@@ -1626,122 +1166,50 @@ def dataframe_from_edi(
             T_err = np.asarray(T_err, dtype=float)
             if T_err.shape != T.shape:
                 raise ValueError("edi['T_err'] must have the same shape as 'T'.")
-
-            if err_kind == "var":
-                sigma_T = np.sqrt(T_err)
-            else:
-                sigma_T = T_err
-
-            # Same sigma for real and imaginary parts of a given component
+            sigma_T = np.sqrt(T_err) if err_kind == "var" else T_err
             df["Tx_re_err"] = sigma_T[:, 0, 0]
             df["Tx_im_err"] = sigma_T[:, 0, 0]
             df["Ty_re_err"] = sigma_T[:, 0, 1]
             df["Ty_im_err"] = sigma_T[:, 0, 1]
 
-    # ------------------------------------------------------------------ Phase tensor
-    if include_pt and "P" in edi and edi["P"] is not None:
+    if include_pt and edi.get("P") is not None:
         P = np.asarray(edi["P"], dtype=float)
         if P.shape != (n, 2, 2):
             raise ValueError("edi['P'] must have shape (n, 2, 2).")
-
-        df["ptxx_re"] = P[:, 0, 0]
-        df["ptxy_re"] = P[:, 0, 1]
-        df["ptyx_re"] = P[:, 1, 0]
-        df["ptyy_re"] = P[:, 1, 1]
+        df["ptxx"] = P[:, 0, 0]
+        df["ptxy"] = P[:, 0, 1]
+        df["ptyx"] = P[:, 1, 0]
+        df["ptyy"] = P[:, 1, 1]
 
         P_err = edi.get("P_err")
         if P_err is not None:
             P_err = np.asarray(P_err, dtype=float)
             if P_err.shape != P.shape:
                 raise ValueError("edi['P_err'] must have the same shape as 'P'.")
+            sigma_P = np.sqrt(P_err) if err_kind == "var" else P_err
+            df["ptxx_err"] = sigma_P[:, 0, 0]
+            df["ptxy_err"] = sigma_P[:, 0, 1]
+            df["ptyx_err"] = sigma_P[:, 1, 0]
+            df["ptyy_err"] = sigma_P[:, 1, 1]
 
-            if err_kind == "var":
-                sigma_P = np.sqrt(P_err)
-            else:
-                sigma_P = P_err
-
-            df["ptxx_re_err"] = sigma_P[:, 0, 0]
-            df["ptxy_re_err"] = sigma_P[:, 0, 1]
-            df["ptyx_re_err"] = sigma_P[:, 1, 0]
-            df["ptyy_re_err"] = sigma_P[:, 1, 1]
-
-    # ------------------------------------------------------------------ Metadata in attrs
-    meta_keys = ("station", "lat_deg", "lon_deg", "elev_m", "err_kind", "rot")
-    for key in meta_keys:
+    for key in ("station", "lat_deg", "lon_deg", "elev_m", "err_kind"):
         if key in edi:
-            if key == "err_kind":
-                df.attrs[key] = err_kind
-            else:
-                df.attrs[key] = edi[key]
+            df.attrs[key] = edi[key]
 
     return df
 
 
 def make_spline(x: np.ndarray, y: np.ndarray, lam: float | None = None):
-    """
-    Fit a smoothing spline using SciPy's make_smoothing_spline.
-    Ensures x is sorted ascending.
-
-    Parameters
-    ----------
-    x : np.ndarray
-        1D array of x-values.
-    y : np.ndarray
-        1D array of y-values.
-    lam : float, optional
-        Smoothing parameter.
-
-    Returns
-    -------
-    spline : PPoly
-        Fitted spline object.
-
-    Usage:
-
-    # Choose new x-values for interpolation
-    x_new = np.linspace(0, 10, 200)
-
-    # Evaluate spline at new points
-    y_new = spline_obj(x_new)
-
-    Remarks
-    -------
-    Author: Volker Rath (DIAS), Date: 2025-11-21
-    Generated by Copilot v1.0
-    """
+    """Fit a smoothing spline (SciPy) and return the spline object."""
     sort_idx = np.argsort(x)
     x_sorted, y_sorted = x[sort_idx], y[sort_idx]
-    spline_obj = make_smoothing_spline(x_sorted, y_sorted, lam=lam)
+    return make_smoothing_spline(x_sorted, y_sorted, lam=lam)
 
-    if lam is None:
-        print("$\lambda$ chosen via GCV (not exposed by BSpline)")
-    else:
-        print("$\lambsa$ is", lam)
-    return spline_obj
 
 def estimate_variance(y_true: np.ndarray, y_fit: np.ndarray) -> float:
-    """
-    Estimate residual variance.
-
-    Parameters
-    ----------
-    y_true : np.ndarray
-        Observed data.
-    y_fit : np.ndarray
-        Fitted values from spline.
-
-    Returns
-    -------
-    var : float
-        Residual variance estimate.
-
-    Remarks
-    -------
-    Author: Volker Rath (DIAS), Date: 2025-11-21
-    Generated by Copilot v1.0
-    """
+    """Estimate residual variance (unbiased, ddof=1)."""
     residuals = y_true - y_fit
-    return np.var(residuals, ddof=1)
+    return float(np.var(residuals, ddof=1))
 
 
 def bootstrap_confidence_band(
@@ -1749,82 +1217,58 @@ def bootstrap_confidence_band(
     y: np.ndarray,
     lam: float | None = None,
     n_bootstrap: int = 1000,
-    ci: float = 0.95
+    ci: float = 0.95,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Compute bootstrap confidence intervals for spline predictions.
-    Ensures each resample is strictly ascending before fitting.
-
-    Parameters
-    ----------
-    x : np.ndarray
-        Input x-values for evaluation.
-    y : np.ndarray
-        Observed y-values.
-    lam : float, optional
-        Smoothing parameter for spline.
-    n_bootstrap : int
-        Number of bootstrap resamples.
-    ci : float
-        Confidence level (e.g., 0.95 for 95%).
-
-    Returns
-    -------
-    x_eval : np.ndarray
-        Sorted x-values used for evaluation.
-    lower : np.ndarray
-        Lower confidence band.
-    upper : np.ndarray
-        Upper confidence band.
-
-    Remarks
-    -------
-    Author: Volker Rath (DIAS), Date: 2025-11-21
-    Generated by Copilot v1.0
-    """
-    # define evaluation grid (sorted original x)
+    """Bootstrap confidence band for smoothing-spline predictions."""
     sort_idx = np.argsort(x)
     x_eval, y_sorted = x[sort_idx], y[sort_idx]
     n = len(x_eval)
-    preds = np.zeros((n_bootstrap, n))
+    preds = np.full((n_bootstrap, n), np.nan, dtype=float)
+
+    rng = np.random.default_rng()
 
     for i in range(n_bootstrap):
-        idx = np.random.choice(len(x), len(x), replace=True)
+        idx = rng.choice(len(x), len(x), replace=True)
         x_res, y_res = x[idx], y[idx]
 
-        # sort resampled data
-        sort_idx_res = np.argsort(x_res)
-        x_res_sorted, y_res_sorted = x_res[sort_idx_res], y_res[sort_idx_res]
+        order = np.argsort(x_res)
+        x_rs, y_rs = x_res[order], y_res[order]
 
-        # enforce strictly ascending x by removing duplicates
-        unique_x, unique_idx = np.unique(x_res_sorted, return_index=True)
-        y_res_unique = y_res_sorted[unique_idx]
-
-        if len(unique_x) < 4:
-            # not enough unique points to fit spline, skip this bootstrap
+        unique_x, unique_idx = np.unique(x_rs, return_index=True)
+        y_unique = y_rs[unique_idx]
+        if unique_x.size < 4:
             continue
 
-        spline_res = make_smoothing_spline(unique_x, y_res_unique, lam=lam)
-        preds[i, :] = spline_res(x_eval)
+        spline = make_smoothing_spline(unique_x, y_unique, lam=lam)
+        preds[i, :] = spline(x_eval)
 
-    alpha = 1 - ci
-    lower = np.percentile(preds, 100 * alpha / 2, axis=0)
-    upper = np.percentile(preds, 100 * (1 - alpha / 2), axis=0)
+    alpha = 1.0 - ci
+    lower = np.nanpercentile(preds, 100.0 * alpha / 2.0, axis=0)
+    upper = np.nanpercentile(preds, 100.0 * (1.0 - alpha / 2.0), axis=0)
     return x_eval, lower, upper
 
 
-def choose_lambda_gcv(x, y, lam_grid=None):
+def choose_lambda_gcv(x: np.ndarray, y: np.ndarray, lam_grid: Optional[np.ndarray] = None):
+    """Choose a smoothing parameter by a simple GCV-like score."""
     if lam_grid is None:
         lam_grid = np.logspace(-3, 3, 50)
-    best_score, best_lam, best_spline = np.inf, None, None
-    for lam in lam_grid:
-        spline = make_smoothing_spline(x, y, lam=lam)
-        residuals = y - spline(x)
-        score = np.mean((residuals**2)) / (1 - (len(spline.c) / len(x)))**2
-        if score < best_score:
-            best_score, best_lam, best_spline = score, lam, spline
-    return best_spline, best_lam
 
+    best_score = np.inf
+    best_lam = None
+    best_spline = None
+
+    for lam in lam_grid:
+        spline = make_smoothing_spline(x, y, lam=float(lam))
+        residuals = y - spline(x)
+
+        dof = getattr(spline, "c", np.asarray([0])).size
+        denom = max(1e-12, 1.0 - (dof / max(1, len(x))))
+        score = float(np.mean(residuals**2) / (denom**2))
+
+        if score < best_score:
+            best_score, best_lam, best_spline = score, float(lam), spline
+
+    return best_spline, best_lam
 
 
 def save_hdf(
@@ -1837,7 +1281,7 @@ def save_hdf(
     complib: str = "zlib",
     **kwargs: Any,
 ) -> None:
-    """Save a dataframe to an HDF5 file via :mod:`pandas`."""
+    """Save a DataFrame to HDF5 via pandas (requires pytables/tables)."""
     path = Path(path)
     try:
         df.to_hdf(
@@ -1848,10 +1292,8 @@ def save_hdf(
             complib=complib,
             **kwargs,
         )
-    except ImportError as exc:  # pragma: no cover - optional dependency
-        raise ImportError(
-            "pandas HDF5 support requires the 'tables' package."
-        ) from exc
+    except ImportError as exc:  # pragma: no cover
+        raise ImportError("pandas HDF5 support requires the 'tables' package.") from exc
 
 
 def save_ncd(
@@ -1862,11 +1304,11 @@ def save_ncd(
     dim: str = "period",
     dataset_name: str = "mt",
 ) -> None:
-    """Save a dataframe to a NetCDF file using :mod:`xarray`."""
+    """Save a DataFrame to NetCDF via xarray."""
     try:
         import xarray as xr  # type: ignore[import]
-    except ImportError as exc:  # pragma: no cover - optional dependency
-        raise ImportError("save_netcdf requires the 'xarray' package.") from exc
+    except ImportError as exc:  # pragma: no cover
+        raise ImportError("save_ncd requires the 'xarray' package.") from exc
 
     path = Path(path)
 
@@ -1877,138 +1319,241 @@ def save_ncd(
         coord = df["freq"].to_numpy()
         dim_name = "freq"
     else:
-        raise ValueError(
-            "DataFrame must contain either the dimension column given by 'dim' "
-            "or a 'freq' column."
-        )
+        raise ValueError("DataFrame must contain either the dimension column or 'freq'.")
 
     data_vars = {}
     for col in df.columns:
         if col == dim_name:
             continue
-        data = df[col].to_numpy()
-        data_vars[col] = (dim_name, data)
+        data_vars[col] = (dim_name, df[col].to_numpy())
 
-    coords = {dim_name: coord}
-    ds = xr.Dataset(data_vars=data_vars, coords=coords)
-
-    # Propagate attributes
-    for k, v in df.attrs.items():
-        ds.attrs[k] = v
+    ds = xr.Dataset(data_vars=data_vars, coords={dim_name: coord})
+    ds.attrs.update(df.attrs)
     ds.attrs["dataset_name"] = dataset_name
 
     ds.to_netcdf(path.as_posix(), engine=engine)
 
-# ----------------------------------------------------------------------
-# EMTF-XML I/O (new)
-# ----------------------------------------------------------------------
 
-def read_emtf_xml(path):
-    """
-    Read MT data from an EMTF-XML file.
-
-    Parameters
-    ----------
-    path : str
-        Path to EMTF-XML file.
-
-    Returns
-    -------
-    dict
-        Dictionary with metadata and transfer functions.
-    """
+def read_emtf_xml(path: str | Path) -> Dict[str, Any]:
+    """Read MT data from a (simplified) EMTF-XML file (experimental)."""
     import xml.etree.ElementTree as ET
 
-    tree = ET.parse(path)
+    tree = ET.parse(str(path))
     root = tree.getroot()
 
-    ns = {"emtf": "http://emtf.org/schema"}  # adjust namespace if needed
+    ns_uri = ""
+    if root.tag.startswith("{") and "}" in root.tag:
+        ns_uri = root.tag.split("}", 1)[0].strip("{")
+    ns = {"emtf": ns_uri} if ns_uri else {}
 
-    # Example: parse station metadata
-    station = root.find("emtf:Station", ns)
-    metadata = {
-        "id": station.get("id"),
-        "name": station.findtext("emtf:Name", default="", namespaces=ns),
-        "latitude": float(station.findtext("emtf:Latitude", default="nan", namespaces=ns)),
-        "longitude": float(station.findtext("emtf:Longitude", default="nan", namespaces=ns)),
-    }
+    station = root.find("emtf:Station", ns) if ns else root.find("Station")
+    metadata = {}
+    if station is not None:
+        metadata = {
+            "id": station.get("id"),
+            "name": station.findtext("emtf:Name" if ns else "Name", default="", namespaces=ns),
+            "latitude": float(station.findtext("emtf:Latitude" if ns else "Latitude", default="nan", namespaces=ns)),
+            "longitude": float(station.findtext("emtf:Longitude" if ns else "Longitude", default="nan", namespaces=ns)),
+        }
 
-    # Example: parse transfer function values
-    tf_elements = root.findall("emtf:TransferFunction/emtf:Component", ns)
-    transfer_functions = {}
+    tf_elements = root.findall("emtf:TransferFunction/emtf:Component", ns) if ns else root.findall("TransferFunction/Component")
+    transfer_functions: Dict[str, np.ndarray] = {}
     for comp in tf_elements:
         cname = comp.get("name")
-        values = [float(v.text) for v in comp.findall("emtf:Value", ns)]
-        transfer_functions[cname] = np.array(values)
+        values = [float(v.text) for v in comp.findall("emtf:Value" if ns else "Value", ns)]
+        if cname:
+            transfer_functions[cname] = np.asarray(values, dtype=float)
 
     return {"metadata": metadata, "transfer_functions": transfer_functions}
 
 
-def write_emtf_xml(data, path):
-    """
-    Write MT data to an EMTF-XML file.
-
-    Parameters
-    ----------
-    data : dict
-        Dictionary with metadata and transfer functions.
-    path : str
-        Output file path.
-    """
+def write_emtf_xml(data: Dict[str, Any], path: str | Path) -> None:
+    """Write MT data to a (simplified) EMTF-XML file (experimental)."""
     import xml.etree.ElementTree as ET
 
     ns = "http://emtf.org/schema"
     ET.register_namespace("emtf", ns)
 
-    root = ET.Element("{%s}EMTF" % ns)
+    root = ET.Element(f"{{{ns}}}EMTF")
 
-    # Station metadata
-    station = ET.SubElement(root, "{%s}Station" % ns, id=data["metadata"].get("id", ""))
-    ET.SubElement(station, "{%s}Name" % ns).text = data["metadata"].get("name", "")
-    ET.SubElement(station, "{%s}Latitude" % ns).text = str(data["metadata"].get("latitude", ""))
-    ET.SubElement(station, "{%s}Longitude" % ns).text = str(data["metadata"].get("longitude", ""))
+    metadata = data.get("metadata", {})
+    tf_data = data.get("transfer_functions", {})
 
-    # Transfer functions
-    tf = ET.SubElement(root, "{%s}TransferFunction" % ns)
-    for cname, values in data["transfer_functions"].items():
-        comp = ET.SubElement(tf, "{%s}Component" % ns, name=cname)
-        for v in values:
-            ET.SubElement(comp, "{%s}Value" % ns).text = str(v)
+    station = ET.SubElement(root, f"{{{ns}}}Station", id=str(metadata.get("id", "")))
+    ET.SubElement(station, f"{{{ns}}}Name").text = str(metadata.get("name", ""))
+    ET.SubElement(station, f"{{{ns}}}Latitude").text = str(metadata.get("latitude", ""))
+    ET.SubElement(station, f"{{{ns}}}Longitude").text = str(metadata.get("longitude", ""))
+
+    tf = ET.SubElement(root, f"{{{ns}}}TransferFunction")
+    for cname, values in tf_data.items():
+        comp = ET.SubElement(tf, f"{{{ns}}}Component", name=str(cname))
+        for v in np.asarray(values).ravel():
+            ET.SubElement(comp, f"{{{ns}}}Value").text = str(float(v))
 
     tree = ET.ElementTree(root)
-    tree.write(path, encoding="utf-8", xml_declaration=True)
-
- # ----------------------------------------------------------------------
-# Conversion helpers: EDI <-> EMTF-XML
-# ----------------------------------------------------------------------
-
-def edi_to_emtf(edi_path, emtf_path):
-    """
-    Convert an EDI file into EMTF-XML.
-
-    Parameters
-    ----------
-    edi_path : str
-        Path to input EDI file.
-    emtf_path : str
-        Path to output EMTF-XML file.
-    """
-    data = load_edi(edi_path)          # parse EDI into dict
-    write_emtf_xml(data, emtf_path)    # write dict into EMTF-XML
-    return emtf_path
+    tree.write(str(path), encoding="utf-8", xml_declaration=True)
 
 
-def emtf_to_edi(emtf_path, edi_path):
-    """
-    Convert an EMTF-XML file into EDI.
+def edi_to_emtf(edi_path: str | Path, emtf_path: str | Path) -> str:
+    """Convert an EDI file to the simplified EMTF-XML representation."""
+    edi = load_edi(edi_path)
+    meta = {
+        "id": edi.get("station", ""),
+        "name": edi.get("station", ""),
+        "latitude": edi.get("lat_deg", edi.get("lat")),
+        "longitude": edi.get("lon_deg", edi.get("lon")),
+    }
+    tf = {
+        "freq": np.asarray(edi["freq"], dtype=float),
+        "Zxx_re": np.asarray(edi["Z"][:, 0, 0].real),
+        "Zxx_im": np.asarray(edi["Z"][:, 0, 0].imag),
+        "Zxy_re": np.asarray(edi["Z"][:, 0, 1].real),
+        "Zxy_im": np.asarray(edi["Z"][:, 0, 1].imag),
+        "Zyx_re": np.asarray(edi["Z"][:, 1, 0].real),
+        "Zyx_im": np.asarray(edi["Z"][:, 1, 0].imag),
+        "Zyy_re": np.asarray(edi["Z"][:, 1, 1].real),
+        "Zyy_im": np.asarray(edi["Z"][:, 1, 1].imag),
+    }
+    if edi.get("T") is not None:
+        T = np.asarray(edi["T"])
+        tf["Tx_re"] = T[:, 0, 0].real
+        tf["Tx_im"] = T[:, 0, 0].imag
+        tf["Ty_re"] = T[:, 0, 1].real
+        tf["Ty_im"] = T[:, 0, 1].imag
 
-    Parameters
-    ----------
-    emtf_path : str
-        Path to input EMTF-XML file.
-    edi_path : str
-        Path to output EDI file.
-    """
-    data = read_emtf_xml(emtf_path)    # parse EMTF-XML into dict
-    save_edi(data, edi_path)          # write dict into EDI
-    return edi_path
+    write_emtf_xml({"metadata": meta, "transfer_functions": tf}, emtf_path)
+    return str(emtf_path)
+
+
+def emtf_to_edi(emtf_path: str | Path, edi_path: str | Path) -> str:
+    """Convert simplified EMTF-XML back to a classical EDI file."""
+    data = read_emtf_xml(emtf_path)
+    tf = data.get("transfer_functions", {})
+    required = ["freq", "Zxx_re", "Zxx_im", "Zxy_re", "Zxy_im", "Zyx_re", "Zyx_im", "Zyy_re", "Zyy_im"]
+    if not all(k in tf for k in required):
+        raise NotImplementedError(
+            "emtf_to_edi expects the simplified component names created by edi_to_emtf()."
+        )
+
+    freq = np.asarray(tf["freq"], dtype=float)
+    n = freq.size
+    Z = np.zeros((n, 2, 2), dtype=np.complex128)
+    Z[:, 0, 0] = np.asarray(tf["Zxx_re"]) + 1j * np.asarray(tf["Zxx_im"])
+    Z[:, 0, 1] = np.asarray(tf["Zxy_re"]) + 1j * np.asarray(tf["Zxy_im"])
+    Z[:, 1, 0] = np.asarray(tf["Zyx_re"]) + 1j * np.asarray(tf["Zyx_im"])
+    Z[:, 1, 1] = np.asarray(tf["Zyy_re"]) + 1j * np.asarray(tf["Zyy_im"])
+
+    edi = {
+        "freq": freq,
+        "Z": Z,
+        "T": None,
+        "Z_err": None,
+        "T_err": None,
+        "P": None,
+        "P_err": None,
+        "rot": None,
+        "err_kind": "var",
+        "station": data.get("metadata", {}).get("name", None),
+        "lat_deg": data.get("metadata", {}).get("latitude", None),
+        "lon_deg": data.get("metadata", {}).get("longitude", None),
+        "elev_m": None,
+    }
+
+    if "Tx_re" in tf and "Tx_im" in tf and "Ty_re" in tf and "Ty_im" in tf:
+        T = np.zeros((n, 1, 2), dtype=np.complex128)
+        T[:, 0, 0] = np.asarray(tf["Tx_re"]) + 1j * np.asarray(tf["Tx_im"])
+        T[:, 0, 1] = np.asarray(tf["Ty_re"]) + 1j * np.asarray(tf["Ty_im"])
+        edi["T"] = T
+
+    save_edi(edi_path, edi, add_pt_blocks=False)
+    return str(edi_path)
+
+
+def calc_rhoa_phas(freq: np.ndarray, Z: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Compute apparent resistivity and phase from impedance."""
+    mu0 = _MU0
+    omega = 2.0 * np.pi * freq
+    absZ2 = np.abs(Z) ** 2
+    rhoa = absZ2 / (mu0 * omega)
+    phase = np.rad2deg(np.angle(Z))
+    return rhoa, phase
+
+
+def mt1dfwd(
+    freq: np.ndarray,
+    sig: np.ndarray,
+    d: np.ndarray,
+    inmod: str = "r",
+    out: str = "imp",
+    magfield: str = "b",
+):
+    """Compute 1D MT forward response for a layered Earth."""
+    mu0 = _MU0
+    sig = np.array(sig, dtype=float)
+    freq = np.array(freq, dtype=float)
+    d = np.array(d, dtype=float)
+
+    if inmod.lower().startswith("r"):
+        sig = 1.0 / sig
+
+    if sig.ndim > 1:
+        raise ValueError("sig must be 1D.")
+
+    nlay = sig.size
+    Z = np.zeros_like(freq, dtype=complex)
+    w = 2.0 * np.pi * freq
+
+    for ifr, omega in enumerate(w):
+        imp = np.empty(nlay, dtype=complex)
+        imp[-1] = np.sqrt(1j * omega * mu0 / sig[-1])
+
+        for layer in range(nlay - 2, -1, -1):
+            sl = sig[layer]
+            dl = d[layer]
+            dj = np.sqrt(1j * omega * mu0 * sl)
+            wj = dj / sl
+            ej = np.exp(-2.0 * dl * dj)
+            impb = imp[layer + 1]
+            rj = (wj - impb) / (wj + impb)
+            reff = rj * ej
+            imp[layer] = wj * ((1.0 - reff) / (1.0 + reff))
+
+        Z[ifr] = imp[0]
+
+    if out.lower() == "imp":
+        return Z / mu0 if magfield.lower() == "b" else Z
+
+    absZ = np.abs(Z)
+    rhoa = (absZ**2) / (mu0 * w)
+    phase = np.rad2deg(np.angle(Z))
+
+    if out.lower() == "rho":
+        return rhoa, phase
+    return Z, rhoa, phase
+
+
+def wait1d(periods: np.ndarray, thick: np.ndarray, res: np.ndarray):
+    """Alternative 1D MT forward modelling implementation (legacy)."""
+    mu = _MU0
+    omega = 2.0 * np.pi / periods
+
+    cond = 1.0 / np.asarray(res, dtype=float)
+
+    spn = np.size(periods)
+    Z = np.zeros(spn, dtype=complex)
+
+    for idx, w in enumerate(omega):
+        prop_const = np.sqrt(1j * mu * cond[-1] * w)
+        C = np.zeros(spn, dtype=complex)
+        C[-1] = 1.0 / prop_const
+        if len(thick) > 0:
+            for k in reversed(range(len(res) - 1)):
+                prop_layer = np.sqrt(1j * w * mu * cond[k])
+                k1 = (C[k + 1] * prop_layer + np.tanh(prop_layer * thick[k]))
+                k2 = ((C[k + 1] * prop_layer * np.tanh(prop_layer * thick[k])) + 1.0)
+                C[k] = (1.0 / prop_layer) * (k1 / k2)
+        Z[idx] = 1j * w * mu * C[0]
+
+    rhoa = (np.abs(Z) ** 2) / omega
+    phi = np.angle(Z, deg=True)
+    return rhoa, phi, np.real(Z), np.imag(Z)

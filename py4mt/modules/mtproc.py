@@ -1,9 +1,25 @@
 # -*- coding: utf-8 -*-
-'''
-Created on Sun Nov  30, 2024
+"""
+mtproc.py
 
-@author: vrath
-'''
+Utilities for magnetotelluric (MT) data preparation and small forward-modelling helpers.
+
+The functions in this module cover:
+- Simple discovery of EDI files in a directory.
+- Convenience wrappers around mtpy to build MTData / MTCollection objects.
+- Derived quantities such as apparent resistivity and phase.
+- Lightweight 1-D layered-earth forward modelling for quick checks.
+
+Dependencies
+------------
+- numpy
+- xarray
+- pyproj
+- mtpy (optional; required for make_data/make_collection)
+
+Author: Volker Rath (DIAS)
+Created by ChatGPT (GPT-5 Thinking) on 2025-12-21
+"""
 
 import os
 import sys
@@ -33,6 +49,28 @@ def get_edi_list(edirname=None, sort=False, fullpath=True):
 
 
 
+    """
+    List EDI files in a directory.
+    
+    Parameters
+    ----------
+    edirname : str
+        Directory containing EDI files.
+    sort : bool
+        If True, return files in sorted order.
+    fullpath : bool
+        If True, return full paths; otherwise return file names only.
+    
+    Returns
+    -------
+    edi_files : list[str]
+        List of EDI file paths or names.
+    
+    Notes
+    -----
+    Hidden files (starting with '.') are ignored. Raises SystemExit if no EDI files
+    are found.
+    """
     edi_files = []
     files = os.listdir(edirname)
     for entry in files:
@@ -54,22 +92,29 @@ def get_edi_list(edirname=None, sort=False, fullpath=True):
 
 def clean_data(mt_obj=None,
                cond=None, bad=0.):
-    '''
-
-
+    """
+    Remove periods containing flagged/bad values from an MT object.
+    
     Parameters
     ----------
-    mt_obj : mt_object
-        The default is None.
-    bad : float, optional
-        Threshold for impedance and tipper values. The default is 1.e12.
-
+    mt_obj : object
+        MT transfer-function container with impedance, tipper and period
+        attributes.
+    cond : str | None
+        Optional condition expression (currently unused).
+    bad : float
+        Bad-value marker or threshold (default 0.0).
+    
     Returns
     -------
-    new_mt_obj : mt_obj
-        New mt object
-
-    '''
+    new_mt_obj : object
+        New MT object with filtered impedance/tipper/period arrays.
+    
+    Notes
+    -----
+    The function iterates over periods and stops at the first period that contains
+    a bad value. This mirrors the original workflow in the project.
+    """
     imp = mt_obj.impedance
     tip = mt_obj.tipper
     per = mt_obj.period
@@ -115,30 +160,34 @@ def make_data(edirname=None,
                     savedata=True,
                     utm_epsg=32629
                     ):
-    '''
-    Make MTData object from edi-files, optionally save to MTCollection
-
+    """
+    Build an MTData object from a directory of EDI files (optionally saved to an MTCollection).
+    
     Parameters
     ----------
-    edirname : TYPE, optional
-        DESCRIPTION. The default is None.
-    collection : TYPE, optional
-        DESCRIPTION. The default is './My_Collection.h5'.
-    metaid : TYPE, optional
-        DESCRIPTION. The default is 'my_collection'.
-    survey : TYPE, optional
-        DESCRIPTION. The default is 'my_survey'.
-    savedata : TYPE, optional
-        DESCRIPTION. The default is True.
-    utm_epsg : TYPE, optional
-        DESCRIPTION. The default is 32629.
-
+    edirname : str
+        Directory containing EDI files.
+    collection : str
+        Path of output MTCollection (HDF5) file.
+    metaid : str
+        Collection identifier.
+    survey : str
+        Survey identifier written into station metadata.
+    savedata : bool
+        If True, persist to MTCollection.
+    utm_epsg : int
+        EPSG code for UTM projection stored in MTData.
+    
     Returns
     -------
-
-    mtd: MtData object
-
-    '''
+    mtd : object
+        MTData instance containing all stations.
+    
+    Notes
+    -----
+    Requires mtpy (MT, MTData, MTCollection). If mtpy is not available, a
+    RuntimeError is raised.
+    """
 
 
     edi_files = []
@@ -185,30 +234,33 @@ def make_collection(edirname=None,
                     returndata=True,
                     utm_epsg=32629
                     ):
-    '''
-    Make MTCollectionlection from edi-files, optionally returns MTData object
-
+    """
+    Build an MTCollection from EDI files and optionally return an MTData object.
+    
     Parameters
     ----------
-    edirname : TYPE, optional
-        DESCRIPTION. The default is None.
-    collection : TYPE, optional
-        DESCRIPTION. The default is './My_Collection.h5'.
-    metaid : TYPE, optional
-        DESCRIPTION. The default is 'my_collection'.
-    survey : TYPE, optional
-        DESCRIPTION. The default is 'my_survey'.
-    returndata : TYPE, optional
-        DESCRIPTION. The default is True.
-    utm_epsg : TYPE, optional
-        DESCRIPTION. The default is 32629.
-
+    edirname : str
+        Directory containing EDI files.
+    collection : str
+        Path of output MTCollection (HDF5) file.
+    metaid : str
+        Collection identifier written into station metadata.
+    survey : str
+        Survey identifier used for working dataframe selection.
+    returndata : bool
+        If True, return an MTData object converted from the collection.
+    utm_epsg : int
+        EPSG code for UTM projection stored in the collection.
+    
     Returns
     -------
-    mtd : TYPE
-        DESCRIPTION.
-
-    '''
+    mtd : object | None
+        MTData instance if returndata=True, else None.
+    
+    Notes
+    -----
+    Requires mtpy. The function writes/updates the collection on disk.
+    """
 
 
 
@@ -249,6 +301,27 @@ def make_collection(edirname=None,
 
 def calc_rhoa_phas(freq=None, Z=None):
 
+    """
+    Compute apparent resistivity and phase from complex impedance.
+    
+    Parameters
+    ----------
+    freq : array_like
+        Frequencies in Hz.
+    Z : array_like
+        Complex impedance values (any shape broadcastable with freq).
+    
+    Returns
+    -------
+    rhoa : ndarray
+        Apparent resistivity in Ω·m.
+    phase : ndarray
+        Phase in degrees.
+    
+    Notes
+    -----
+    Uses ρa = |Z|^2 / (μ0 ω) and phase = arg(Z) in degrees.
+    """
     mu0 = 4.0e-7 * np.pi  # Magnetic Permeability (H/m)
     omega = 2.*np.pi*freq
 
@@ -259,12 +332,35 @@ def calc_rhoa_phas(freq=None, Z=None):
     return rhoa, phase
 
 def mt1dfwd(freq, sig, d, inmod='r', out='imp', magfield='b'):
-    '''
-    Calulate 1D magnetotelluric forward response.
-
-    based on A. Pethik's script at www.digitalearthlab.com
-    Last change vr Nov 20, 2020
-    '''
+    """
+    Compute 1-D magnetotelluric forward response for a layered Earth.
+    
+    Parameters
+    ----------
+    freq : array_like
+        Frequencies in Hz.
+    sig : array_like
+        Layer conductivities or resistivities depending on inmod.
+    d : array_like
+        Layer thicknesses (same length as sig, excluding basement thickness).
+    inmod : str
+        Input model type: 'r' for resistivity, 'c' for conductivity.
+    out : str
+        Return type: 'imp' for impedance, 'rho' for (ρa, phase), else return (Z,
+        ρa, phase).
+    magfield : str
+        If out='imp', return impedance for magnetic field 'b' (Z/μ0) or electric
+        field otherwise.
+    
+    Returns
+    -------
+    outval : ndarray | tuple
+        Impedance array or (ρa, phase) depending on 'out'.
+    
+    Notes
+    -----
+    Implements recursive impedance computation from bottom layer to surface.
+    """
     mu0 = 4.0e-7 * np.pi  # Magnetic Permeability (H/m)
 
     sig = np.array(sig)
@@ -336,6 +432,33 @@ def mt1dfwd(freq, sig, d, inmod='r', out='imp', magfield='b'):
 
 def wait1d(periods=None, thick=None, res=None):
 
+    """
+    Compute 1-D MT response using a Wait recursion variant.
+    
+    Parameters
+    ----------
+    periods : array_like
+        Periods in seconds.
+    thick : array_like
+        Layer thicknesses.
+    res : array_like
+        Layer resistivities (Ω·m).
+    
+    Returns
+    -------
+    rhoa : ndarray
+        Apparent resistivity.
+    phi : ndarray
+        Phase (deg).
+    Zre : ndarray
+        Real part of impedance.
+    Zim : ndarray
+        Imaginary part of impedance.
+    
+    Notes
+    -----
+    Alternative forward computation used in some legacy workflows.
+    """
     scale = 1 / (4 * np.pi / 10000000)
     mu = 4 * np.pi * 1e-7 * scale
     omega = 2 * np.pi / periods

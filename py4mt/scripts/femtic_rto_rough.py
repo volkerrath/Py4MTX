@@ -49,6 +49,7 @@ for pth in mypath:
 
 #import modules
 import femtic as fem
+import ensembles as ens
 import util as utl
 from version import versionstrg
 

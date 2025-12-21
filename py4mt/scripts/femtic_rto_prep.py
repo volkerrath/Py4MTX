@@ -63,6 +63,7 @@ for pth in mypath:
 from version import versionstrg
 import util as utl
 import femtic as fem
+import ensembles as ens
 
 from util import stop
 
@@ -141,13 +142,13 @@ else:
 Generate ensemble directories and copy template files.
 '''
 
-dir_list = fem.generate_directories(
-    dir_base=EnsembleDir + EnsembleName,
-    templates=Templates,
-    file_list=Files,
-    n_samples=N_samples,
-    fromto=FromTo,
-    out=True)
+dir_list = ens.generate_directories(alg='rto',
+                                    dir_base=EnsembleDir + EnsembleName,
+                                    templates=Templates,
+                                    file_list=Files,
+                                    n_samples=N_samples,
+                                    fromto=FromTo,
+                                    out=True)
 
 print('\n')
 
@@ -155,7 +156,8 @@ print('\n')
 Draw perturbed data sets: d  ̃ ∼ N (d, Cd)
 '''
 
-data_ensemble = fem.generate_data_ensemble(dir_base=EnsembleDir + EnsembleName,
+data_ensemble = ens.generate_data_ensemble(alg='rto',
+                                           dir_base=EnsembleDir + EnsembleName,
                                            n_samples=N_samples,
                                            fromto=FromTo,
                                            file_in='observe.dat',

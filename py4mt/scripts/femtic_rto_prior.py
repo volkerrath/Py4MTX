@@ -34,7 +34,7 @@ import shutil
 import numpy as np
 import functools
 import inspect
-import time 
+import time
 
 # import sklearn as skl
 import scipy.sparse as scs
@@ -50,6 +50,7 @@ for pth in mypath:
 
 #import modules
 import femtic as fem
+import ensembles as ens
 import util as utl
 #import inverse as inv
 from version import versionstrg
@@ -121,4 +122,3 @@ else:
     np.savez_compressed(RoughNew, matrix=M)
 
 print('all done')
-

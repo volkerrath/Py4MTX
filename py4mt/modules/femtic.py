@@ -44,7 +44,7 @@ The module provides a simple subcommand-style CLI:
 All functionality is also available as regular Python functions.
 
 Author: Volker Rath (DIAS)
-Created by ChatGPT (GPT-5 Thinking) on 2025-12-21 (UTC)
+Created with the help of ChatGPT (GPT-5 Thinking) on 2025-12-21 (UTC)
 """
 from __future__ import annotations
 
