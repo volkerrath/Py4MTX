@@ -26,11 +26,11 @@ PY4MTX_DATA = os.environ['PY4MTX_DATA']
 PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
 
 # add py4mt modules to pythonpath
-mypath = [PY4MTX_ROOT+'/py4mt/modules/',
-          PY4MTX_ROOT+'/py4mt/scripts/']
+mypath = [PY4MTX_ROOT + '/py4mt/modules/',
+          PY4MTX_ROOT + '/py4mt/scripts/']
 for pth in mypath:
     if pth not in sys.path:
-        sys.path.insert(0,pth)
+        sys.path.insert(0, pth)
 
 # Import required py4mt modules for your script
 import util as utl
@@ -42,6 +42,7 @@ import plotrjmcmc as plmc
 import viz
 import inverse as inv
 import femtic as fem
+import ensembles as ens
 import femtic_viz as femviz
 import cluster as fcm
 from version import versionstrg
@@ -52,16 +53,16 @@ nan = np.nan  # float('NaN')
 version, _ = versionstrg()
 fname = inspect.getfile(inspect.currentframe())
 titstrng = utl.print_title(version=version, fname=fname, out=False)
-print(titstrng+'\n\n')
+print(titstrng + '\n\n')
 
 
 EnsembleDir = r'/home/vrath/FEMTIC_work/ens_annecy/'
 EnsembleName = 'ann_'
 EnsembleFile = 'AnnecyEOF.npz'
 
-SearchStrng = EnsembleName+'*'
+SearchStrng = EnsembleName + '*'
 dir_list = utl.get_filelist(searchstr=[SearchStrng], searchpath=EnsembleDir,
-                            sortedlist =True, fullpath=True)
+                            sortedlist=True, fullpath=True)
 
 ens_num = -1
 for directory in dir_list:
@@ -69,22 +70,21 @@ for directory in dir_list:
     num_best, nrm_best = fem.get_nrms(directory)
 
     print('\n', directory)
-    print('min(nrmse) = ', nrm_best,'at iteration',num_best)
-    mesh_file = directory+'/mesh.dat'
-    modl_file = directory+'/resistivity_block_iter'+str(num_best)+'.dat'
+    print('min(nrmse) = ', nrm_best, 'at iteration', num_best)
+    mesh_file = directory + '/mesh.dat'
+    modl_file = directory + '/resistivity_block_iter' + str(num_best) + '.dat'
     print(modl_file)
 
     modl = fem.read_model(
         model_file=modl_file,
-        model_trans = "log10")
+        model_trans="log10")
 
-
-    modl = modl[:,None]
-    if ens_num==0:
+    modl = modl[:, None]
+    if ens_num == 0:
         ensemble = modl
     else:
-        ensemble = np.concatenate((ensemble, modl), axis = 1)
+        ensemble = np.concatenate((ensemble, modl), axis=1)
     print(np.shape(ensemble))
 
 storedict = {'ensemble': ensemble}
-np.savez_compressed(EnsembleDir+EnsembleFile,**storedict)
+np.savez_compressed(EnsembleDir + EnsembleFile, **storedict)

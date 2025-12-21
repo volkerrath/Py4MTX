@@ -1,3 +1,22 @@
+"""
+modem.py
+
+File I/O and utility routines for the ModEM 3-D MT inversion package.
+
+Includes Jacobian/data/model readers and writers, NetCDF export, format conversions (UBC/RLM), and a collection of numerical utilities used in model preparation.
+
+Dependencies
+------------
+- numpy
+- scipy
+- netCDF4
+- numba (optional)
+- pyproj (optional; only needed if util.py is absent)
+
+Author: Volker Rath (DIAS)
+Created by ChatGPT (GPT-5 Thinking) on 2025-12-21
+"""
+
 import os
 import sys
 
@@ -12,8 +31,61 @@ from scipy.ndimage import laplace, convolve
 from scipy.ndimage import uniform_filter, gaussian_filter, median_filter
 from numba import jit
 
-import util as utl
+try:
+    import util as utl  # Project-local helpers (coordinate conversion, etc.).
+except Exception:  # pragma: no cover
+    utl = None
 
+    def _get_utm_zone(lat: float, lon: float):
+        """Return (zone_number, hemisphere) for WGS84 UTM."""
+        zone = int((lon + 180.0) // 6.0) + 1
+        hemi = "N" if lat >= 0.0 else "S"
+        return zone, hemi
+
+    def _proj_latlon_to_utm(lat: float, lon: float, utm_zone: int, hemisphere: str = "N"):
+        """Project WGS84 lat/lon to UTM easting/northing using pyproj if available."""
+        try:
+            import pyproj
+        except Exception as exc:
+            raise RuntimeError("pyproj is required for UTM projections when util is unavailable") from exc
+        epsg = (32600 + int(utm_zone)) if hemisphere.upper().startswith("N") else (32700 + int(utm_zone))
+        crs_utm = pyproj.CRS.from_epsg(epsg)
+        crs_ll = pyproj.CRS.from_epsg(4326)
+        transformer = pyproj.Transformer.from_crs(crs_ll, crs_utm, always_xy=True)
+        e, n = transformer.transform(lon, lat)
+        return e, n
+
+    def _proj_utm_to_latlon(e: float, n: float, utm_zone: int, hemisphere: str = "N"):
+        """Project UTM easting/northing to WGS84 lat/lon using pyproj if available."""
+        try:
+            import pyproj
+        except Exception as exc:
+            raise RuntimeError("pyproj is required for UTM projections when util is unavailable") from exc
+        epsg = (32600 + int(utm_zone)) if hemisphere.upper().startswith("N") else (32700 + int(utm_zone))
+        crs_utm = pyproj.CRS.from_epsg(epsg)
+        crs_ll = pyproj.CRS.from_epsg(4326)
+        transformer = pyproj.Transformer.from_crs(crs_utm, crs_ll, always_xy=True)
+        lon, lat = transformer.transform(e, n)
+        return lat, lon
+
+    class _UtlFallback:
+        """Minimal subset of the original `util` API used by this module."""
+
+        @staticmethod
+        def get_utm_zone(lat: float, lon: float):
+            return _get_utm_zone(lat, lon)
+
+        @staticmethod
+        def proj_latlon_to_utm(lat: float, lon: float, utm_zone: int):
+            _, hemi = _get_utm_zone(lat, lon)
+            return _proj_latlon_to_utm(lat, lon, utm_zone, hemisphere=hemi)
+
+        @staticmethod
+        def proj_utm_to_latlon(e: float, n: float, utm_zone: int):
+            hemi = os.environ.get("MODEM_UTM_HEMISPHERE", os.environ.get("UTM_HEMISPHERE", "N"))
+            return _proj_utm_to_latlon(e, n, utm_zone, hemisphere=hemi)
+
+    utl = _UtlFallback()
 # import scipy.sparse as scs
 
 import netCDF4 as nc
@@ -22,19 +94,27 @@ import netCDF4 as nc
 
 
 def decode_h2(strng):
-    '''
-    Decode header2 string from ModEM Jacobian (old style).
-
+    """
+    decode_h2.
+    
+    Parameters
     ----------
-    strng : string
-       header string
-
+    strng : object
+        Parameter strng.
+    
     Returns
     -------
-    i1, i2, i3 : integer
-        frequency, dattype, site numbers
-
-    '''
+    out : object
+        Function return value.
+    
+    Notes
+    -----
+    Decode header2 string from ModEM Jacobian (old style).
+    
+    ---------- strng : string    header string
+    
+    Returns ------- i1, i2, i3 : integer     frequency, dattype, site numbers
+    """
     # old format
     # s = strng.replace(';','').split()
     # i1 = int(s[3])
@@ -54,12 +134,27 @@ def decode_h2(strng):
 
 
 def read_jac(Jacfile=None, out=False):
-    '''
+    """
+    read_jac.
+    
+    Parameters
+    ----------
+    Jacfile : object
+        Parameter Jacfile.
+    out : object
+        Parameter out.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Read Jacobian from ModEM output.
-
-    author: vrath
-    last changed: Dec 17, 2023
-    '''
+    
+    author: vrath last changed: Dec 17, 2023
+    """
     if out:
         print('Opening and reading ' + Jacfile)
 
@@ -143,12 +238,27 @@ def read_jac(Jacfile=None, out=False):
 
 
 def read_data_jac(Datfile=None, out=True):
-    '''
+    """
+    read_data_jac.
+    
+    Parameters
+    ----------
+    Datfile : object
+        Parameter Datfile.
+    out : object
+        Parameter out.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Read ModEM input data.
-
-    author: vrath
-    last changed: Dec 17, 2023
-    '''
+    
+    author: vrath last changed: Dec 17, 2023
+    """
     Data = []
     Site = []
     Comp = []
@@ -208,12 +318,39 @@ def read_data_jac(Datfile=None, out=True):
 
 def write_jac_ncd(NCfile=None, Jac=None, Dat=None, Site=None, Comp=None,
                   zlib_in=True, shuffle_in=True, out=True):
-    '''
+    """
+    write_jac_ncd.
+    
+    Parameters
+    ----------
+    NCfile : object
+        Parameter NCfile.
+    Jac : object
+        Parameter Jac.
+    Dat : object
+        Parameter Dat.
+    Site : object
+        Parameter Site.
+    Comp : object
+        Parameter Comp.
+    zlib_in : object
+        Parameter zlib_in.
+    shuffle_in : object
+        Parameter shuffle_in.
+    out : object
+        Parameter out.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Write Jacobian from ModEM output to NETCDF/HDF5 file.
-
-    author: vrath
-    last changed: July 25, 2020
-    '''
+    
+    author: vrath last changed: July 25, 2020
+    """
     JacDim = np.shape(Jac)
     DatDim = np.shape(Dat)
 
@@ -281,14 +418,29 @@ def write_jac_ncd(NCfile=None, Jac=None, Dat=None, Site=None, Comp=None,
 
 
 def read_data(Datfile=None,  modext='.dat', out=True):
-    '''
+    """
+    read_data.
+    
+    Parameters
+    ----------
+    Datfile : object
+        Parameter Datfile.
+    modext : object
+        Parameter modext.
+    out : object
+        Parameter out.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Read ModEM input data.
-
-    author: vrath
-    last changed: Feb 10, 2024
-
-
-    '''
+    
+    author: vrath last changed: Feb 10, 2024
+    """
 
     file = Datfile+modext
 
@@ -340,12 +492,35 @@ def read_data(Datfile=None,  modext='.dat', out=True):
 
 def write_data(Datfile=None, Dat=None, Site=None, Comp=None, Head=None,
                out=True):
-    '''
+    """
+    write_data.
+    
+    Parameters
+    ----------
+    Datfile : object
+        Parameter Datfile.
+    Dat : object
+        Parameter Dat.
+    Site : object
+        Parameter Site.
+    Comp : object
+        Parameter Comp.
+    Head : object
+        Parameter Head.
+    out : object
+        Parameter out.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Write ModEM input data file.
-
-    author: vrath
-    last changed: Feb 10, 2021
-    '''
+    
+    author: vrath last changed: Feb 10, 2021
+    """
     datablock = np.column_stack(
         (Dat[:, 0], Site[:], Dat[:, 1:6], Comp[:], Dat[:, 6:10]))
     nD, _ = np.shape(datablock)
@@ -419,12 +594,37 @@ def write_data_ncd(
         NCfile=None, Dat=None, Site=None, Comp=None,
         zlib_in=True, shuffle_in=True, out=True
 ):
-    '''
+    """
+    write_data_ncd.
+    
+    Parameters
+    ----------
+    NCfile : object
+        Parameter NCfile.
+    Dat : object
+        Parameter Dat.
+    Site : object
+        Parameter Site.
+    Comp : object
+        Parameter Comp.
+    zlib_in : object
+        Parameter zlib_in.
+    shuffle_in : object
+        Parameter shuffle_in.
+    out : object
+        Parameter out.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Write Jacobian from ModEM output to NETCDF file.
-
-    author: vrath
-    last changed: July 24, 2020
-    '''
+    
+    author: vrath last changed: July 24, 2020
+    """
     try:
         NCfile.close
     except BaseException:
@@ -502,6 +702,41 @@ def write_pars(
                ):
 
         # for modem-readable files
+        """
+        write_pars.
+        
+        Parameters
+        ----------
+        parfile : object
+            Parameter parfile.
+        outformat : object
+            Parameter outformat.
+        dx : object
+            Parameter dx.
+        dy : object
+            Parameter dy.
+        dz : object
+            Parameter dz.
+        val : object
+            Parameter val.
+        reference : object
+            Parameter reference.
+        mvalair : object
+            Parameter mvalair.
+        aircells : object
+            Parameter aircells.
+        header : object
+            Parameter header.
+        
+        Returns
+        -------
+        out : object
+            Function return value.
+        
+        Notes
+        -----
+        Auto-generated docstring for write_pars.
+        """
         if 'mod' in outfmt.lower():
             mod.write_mod(parfile+'_mod', modext='.rho',
                         dx=dx, dy=dy, dz=dz, mval=val,
@@ -533,12 +768,45 @@ def write_mod_ncd(
     shuffle_in=True,
     out=True,
 ):
-    '''
+    """
+    write_mod_ncd.
+    
+    Parameters
+    ----------
+    NCfile : object
+        Parameter NCfile.
+    x : object
+        Parameter x.
+    y : object
+        Parameter y.
+    z : object
+        Parameter z.
+    Mod : object
+        Parameter Mod.
+    Sens : object
+        Parameter Sens.
+    Ref : object
+        Parameter Ref.
+    trans : object
+        Parameter trans.
+    zlib_in : object
+        Parameter zlib_in.
+    shuffle_in : object
+        Parameter shuffle_in.
+    out : object
+        Parameter out.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Write Model from ModEM output to NETCDF/HDF5 file.
-
-    author: vrath
-    last changed: Jan 21, 2021
-    '''
+    
+    author: vrath last changed: Jan 21, 2021
+    """
     ModDim = np.shape(Mod)
 
     ncout = nc.Dataset(NCfile, 'w', format='NETCDF4')
@@ -607,15 +875,51 @@ def write_mod_npz(file=None,
                   compressed=True, trans='LINEAR',
                   aircells=None, mvalair=1.e17, blank=1.e-30, header='',
                   out=True):
-    '''
+    """
+    write_mod_npz.
+    
+    Parameters
+    ----------
+    file : object
+        Parameter file.
+    dx : object
+        Parameter dx.
+    dy : object
+        Parameter dy.
+    dz : object
+        Parameter dz.
+    mval : object
+        Parameter mval.
+    reference : object
+        Parameter reference.
+    compressed : object
+        Parameter compressed.
+    trans : object
+        Parameter trans.
+    aircells : object
+        Parameter aircells.
+    mvalair : object
+        Parameter mvalair.
+    blank : object
+        Parameter blank.
+    header : object
+        Parameter header.
+    out : object
+        Parameter out.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Write ModEM model input.
-
+    
     Expects mval in physical units (linear).
-
-    author: vrath
-    last changed: Feb 26, 2024
-
-    '''
+    
+    author: vrath last changed: Feb 26, 2024
+    """
 
     dims = np.shape(mval)
     if mval.dim == 3:
@@ -689,26 +993,56 @@ def write_mod_npz(file=None,
 def write_mod(file=None, modext='.rho',
               dx=None, dy=None, dz=None, mval=None, reference=None,
               trans='LINEAR', aircells=None, mvalair=1.e17, blank=1.e-30, header='', out=True):
-    '''
+    """
+    write_mod.
+    
+    Parameters
+    ----------
+    file : object
+        Parameter file.
+    modext : object
+        Parameter modext.
+    dx : object
+        Parameter dx.
+    dy : object
+        Parameter dy.
+    dz : object
+        Parameter dz.
+    mval : object
+        Parameter mval.
+    reference : object
+        Parameter reference.
+    trans : object
+        Parameter trans.
+    aircells : object
+        Parameter aircells.
+    mvalair : object
+        Parameter mvalair.
+    blank : object
+        Parameter blank.
+    header : object
+        Parameter header.
+    out : object
+        Parameter out.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Write ModEM model input.
-
+    
     Expects mval in physical units (linear).
-
-    author: vrath
-    last changed: Aug 28, 2023
-
-
+    
+    author: vrath last changed: Aug 28, 2023
+    
     Modem model format in Fortran:
-
-    DO iz = 1,Nz
-        DO iy = 1,Ny
-            DO ix = Nx,1,-1
-                READ(10,*) mval(ix,iy,iz)
-            ENDDO
-        ENDDO
-    ENDDO
-
-    '''
+    
+    DO iz = 1,Nz     DO iy = 1,Ny         DO ix = Nx,1,-1             READ(10,*)
+    mval(ix,iy,iz)         ENDDO     ENDDO ENDDO
+    """
 
     modf = file+modext
 
@@ -796,19 +1130,52 @@ def write_rlm(file=None, modext='.rlm',
               dx=None, dy=None, dz=None, mval=None, reference=None,
               aircells=None, mvalair=1.e17, blank=1.e-30,
               comment='', name='', out=True):
-    '''
+    """
+    write_rlm.
+    
+    Parameters
+    ----------
+    file : object
+        Parameter file.
+    modext : object
+        Parameter modext.
+    dx : object
+        Parameter dx.
+    dy : object
+        Parameter dy.
+    dz : object
+        Parameter dz.
+    mval : object
+        Parameter mval.
+    reference : object
+        Parameter reference.
+    aircells : object
+        Parameter aircells.
+    mvalair : object
+        Parameter mvalair.
+    blank : object
+        Parameter blank.
+    comment : object
+        Parameter comment.
+    name : object
+        Parameter name.
+    out : object
+        Parameter out.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Write GGG model input.
-
-    conventions:
-        x = east, y = south, z = down
-        expects mval in physical units (?).
-
-
-    author: vrath
-    last changed: jan 18, 2024
-
-
-    '''
+    
+    conventions:     x = east, y = south, z = down     expects mval in physical
+    units (?).
+    
+    author: vrath last changed: jan 18, 2024
+    """
 
     modf = file+modext
 
@@ -869,15 +1236,51 @@ def write_rlm(file=None, modext='.rlm',
 def write_ubc(file=None,  mshext='.mesh', modext='.ubc',
               dx=None, dy=None, dz=None, mval=None, reference=None,
               aircells=None, mvalair=1.e17, blank=1.e17, header='', out=True):
-    '''
+    """
+    write_ubc.
+    
+    Parameters
+    ----------
+    file : object
+        Parameter file.
+    mshext : object
+        Parameter mshext.
+    modext : object
+        Parameter modext.
+    dx : object
+        Parameter dx.
+    dy : object
+        Parameter dy.
+    dz : object
+        Parameter dz.
+    mval : object
+        Parameter mval.
+    reference : object
+        Parameter reference.
+    aircells : object
+        Parameter aircells.
+    mvalair : object
+        Parameter mvalair.
+    blank : object
+        Parameter blank.
+    header : object
+        Parameter header.
+    out : object
+        Parameter out.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Write UBC model input.
-
+    
     Expects mval in physical units (linear).
-
-    author: vrath
-    last changed: Aug 28, 2023
-
-    '''
+    
+    author: vrath last changed: Aug 28, 2023
+    """
 
     modf = file+modext
     mesh = file+mshext
@@ -925,13 +1328,35 @@ def write_ubc(file=None,  mshext='.mesh', modext='.ubc',
 
 def read_ubc(file=None, modext='.mod', mshext='.msh',
              trans='LINEAR', volumes=False, out=True):
-    '''
+    """
+    read_ubc.
+    
+    Parameters
+    ----------
+    file : object
+        Parameter file.
+    modext : object
+        Parameter modext.
+    mshext : object
+        Parameter mshext.
+    trans : object
+        Parameter trans.
+    volumes : object
+        Parameter volumes.
+    out : object
+        Parameter out.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Read UBC model input.
-
-    author: vrath
-    last changed: Aug 30, 2023
-
-    '''
+    
+    author: vrath last changed: Aug 30, 2023
+    """
 
     modf = file+modext
     mesh = file+mshext
@@ -1033,25 +1458,39 @@ def read_ubc(file=None, modext='.mod', mshext='.msh',
 
 
 def get_size(dx=None, dy=None, dz=None, mval=None, how='vol', out=True):
-    '''
-
-    Extract volumes or oother measures of size from model.
-
+    """
+    get_size.
+    
     Parameters
     ----------
-    dx, dy, dz : float arrays
-        Mesh cell sizes.
-    mval : float array
-        Resistivity of cells.
-    out : logical, optional
-        Controls ouput. The default is True.
-
+    dx : object
+        Parameter dx.
+    dy : object
+        Parameter dy.
+    dz : object
+        Parameter dz.
+    mval : object
+        Parameter mval.
+    how : object
+        Parameter how.
+    out : object
+        Parameter out.
+    
     Returns
     -------
-    cell_size :  float array
-        Cell volumes in model mesh.
-
-    '''
+    out : object
+        Function return value.
+    
+    Notes
+    -----
+    Extract volumes or oother measures of size from model.
+    
+    Parameters ---------- dx, dy, dz : float arrays     Mesh cell sizes. mval :
+    float array     Resistivity of cells. out : logical, optional     Controls
+    ouput. The default is True.
+    
+    Returns ------- cell_size :  float array     Cell volumes in model mesh.
+    """
     nx, ny, nz = np.shape(mval)
     cell_size = np.zeros_like(mval)
 
@@ -1097,32 +1536,45 @@ def get_topo(dx=None, dy=None, dz=None, mval=None,
              ref=[0., 0., 0.],
              mvalair=1.e17,
              out=True):
-    '''
-
-    Extract topography from model.
-
+    """
+    get_topo.
+    
     Parameters
     ----------
-    dx, dy, dz : float arrays
-        Mesh cell sizes.
-    mval : float array
-        Resistivity of cells.
-    ref : TYPE, optional
-        reference coordinates. The default is [0., 0., 0.].
-    mvalair : float, optional
-        Value for air resistivity. needs to be in the
-        units of input model. The default is 1.e17 (physical values).
-    out : logical, optional
-        Controls ouput. The default is True.
-
+    dx : object
+        Parameter dx.
+    dy : object
+        Parameter dy.
+    dz : object
+        Parameter dz.
+    mval : object
+        Parameter mval.
+    ref : object
+        Parameter ref.
+    mvalair : object
+        Parameter mvalair.
+    out : object
+        Parameter out.
+    
     Returns
     -------
-    xcnt, ycnt: float arrays
-        Coordinates of cell centers in x-y plane.
-    topo: float array nx x ny
-        Elevation values
-
-    '''
+    out : object
+        Function return value.
+    
+    Notes
+    -----
+    Extract topography from model.
+    
+    Parameters ---------- dx, dy, dz : float arrays     Mesh cell sizes. mval :
+    float array     Resistivity of cells. ref : TYPE, optional     reference
+    coordinates. The default is [0., 0., 0.]. mvalair : float, optional     Value
+    for air resistivity. needs to be in the     units of input model. The default
+    is 1.e17 (physical values). out : logical, optional     Controls ouput. The
+    default is True.
+    
+    Returns ------- xcnt, ycnt: float arrays     Coordinates of cell centers in x-y
+    plane. topo: float array nx x ny     Elevation values
+    """
     nx, ny, nz = np.shape(mval)
 
     x = np.append(0.0, np.cumsum(dx))
@@ -1152,15 +1604,35 @@ def read_mod(file=None,
              trans='LINEAR',
              blank=1.e-30,
              out=True):
-    '''
+    """
+    read_mod.
+    
+    Parameters
+    ----------
+    file : object
+        Parameter file.
+    modext : object
+        Parameter modext.
+    trans : object
+        Parameter trans.
+    blank : object
+        Parameter blank.
+    out : object
+        Parameter out.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Read ModEM model input.
-
+    
     Returns mval in physical units
-
-    author: vrath
-    last changed: Aug 31, 2023
-
-    '''
+    
+    author: vrath last changed: Aug 31, 2023
+    """
 
     modf = file+modext
 
@@ -1226,14 +1698,35 @@ def read_mod_aniso(file=None,
                    trans='LINEAR',
                    blank=1.e-30,
                    out=True):
-    '''
+    """
+    read_mod_aniso.
+    
+    Parameters
+    ----------
+    file : object
+        Parameter file.
+    components : object
+        Parameter components.
+    modext : object
+        Parameter modext.
+    trans : object
+        Parameter trans.
+    blank : object
+        Parameter blank.
+    out : object
+        Parameter out.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Read ModEM model input.
-
-
-    author: vrath
-    last changed: Oct 22, 2025
-
-    '''
+    
+    author: vrath last changed: Oct 22, 2025
+    """
 
     modf = file+modext
 
@@ -1312,14 +1805,43 @@ def read_mod_aniso(file=None,
 def write_mod_vtk(file=None, dx=None, dy=None, dz=None, rho=None,
                   trim=[10, 10, 30], reference=None, scale=[1., 1., -1.],
                   trans='LINEAR', out=True):
-    '''
+    """
+    write_mod_vtk.
+    
+    Parameters
+    ----------
+    file : object
+        Parameter file.
+    dx : object
+        Parameter dx.
+    dy : object
+        Parameter dy.
+    dz : object
+        Parameter dz.
+    rho : object
+        Parameter rho.
+    trim : object
+        Parameter trim.
+    reference : object
+        Parameter reference.
+    scale : object
+        Parameter scale.
+    trans : object
+        Parameter trans.
+    out : object
+        Parameter out.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     write ModEM model input in
-
-
-    author: vrath
-    last changed: Mar 13, 2024
-
-    '''
+    
+    author: vrath last changed: Mar 13, 2024
+    """
     from evtk.hl import gridToVTK
 
     if trim is not None:
@@ -1346,11 +1868,37 @@ def write_mod_vtk(file=None, dx=None, dy=None, dz=None, rho=None,
 
 def write_dat_vtk(Sitfile=None, sx=None, sy=None, sz=None, sname=None,
                   reference=None, scale=[1., 1., -1.], out=True):
-    '''
+    """
+    write_dat_vtk.
+    
+    Parameters
+    ----------
+    Sitfile : object
+        Parameter Sitfile.
+    sx : object
+        Parameter sx.
+    sy : object
+        Parameter sy.
+    sz : object
+        Parameter sz.
+    sname : object
+        Parameter sname.
+    reference : object
+        Parameter reference.
+    scale : object
+        Parameter scale.
+    out : object
+        Parameter out.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Convert ModEM data file to VTK station set (unstructured grid)
-
-
-    '''
+    """
     from evtk.hl import pointsToVTK
 
     N = sx*scale[0]
@@ -1375,13 +1923,43 @@ def fix_cells(covfile_i=None,
               fixmod=['prior'],
               unit='km',
               out=True):
-    '''
+    """
+    fix_cells.
+    
+    Parameters
+    ----------
+    covfile_i : object
+        Parameter covfile_i.
+    covfile_o : object
+        Parameter covfile_o.
+    modfile_i : object
+        Parameter modfile_i.
+    modfile_o : object
+        Parameter modfile_o.
+    datfile_i : object
+        Parameter datfile_i.
+    fixed : object
+        Parameter fixed.
+    method : object
+        Parameter method.
+    fixmod : object
+        Parameter fixmod.
+    unit : object
+        Parameter unit.
+    out : object
+        Parameter out.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Read and process ModEM covar input.
-
-    author: vrath
-    last changed: June, 2023
-
-    '''
+    
+    author: vrath last changed: June, 2023
+    """
     air = '0'
     ocean = '9'
     comments = ['#', '|', '>', '+', '/']
@@ -1520,24 +2098,37 @@ def fix_cells(covfile_i=None,
 
 
 def linear_interpolation(p1, p2, x0):
-    '''
-    Function that receives as arguments the coordinates of two points (x,y)
-    and returns the linear interpolation of a y0 in a given x0 position. This is the
-    equivalent to obtaining y0 = y1 + (y2 - y1)*((x0-x1)/(x2-x1)).
-    Look into https://en.wikipedia.org/wiki/Linear_interpolation for more
-    information.
-
+    """
+    linear_interpolation.
+    
     Parameters
     ----------
-    p1     : tuple (floats)
-        Tuple (x,y) of a first point in a line.
-    p2     : tuple (floats)
-        Tuple (x,y) of a second point in a line.
-    x0     : float
-        X coordinate on which you want to interpolate a y0.
-
+    p1 : object
+        Parameter p1.
+    p2 : object
+        Parameter p2.
+    x0 : object
+        Parameter x0.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
+    Function that receives as arguments the coordinates of two points (x,y)
+    
+    and returns the linear interpolation of a y0 in a given x0 position. This is
+    the equivalent to obtaining y0 = y1 + (y2 - y1)*((x0-x1)/(x2-x1)). Look into
+    https://en.wikipedia.org/wiki/Linear_interpolation for more information.
+    
+    Parameters ---------- p1     : tuple (floats)     Tuple (x,y) of a first point
+    in a line. p2     : tuple (floats)     Tuple (x,y) of a second point in a line.
+    x0     : float     X coordinate on which you want to interpolate a y0.
+    
     Return float (interpolated y0 value)
-    '''
+    """
     y0 = p1[1] + (p2[1] - p1[1]) * ((x0 - p1[0]) / (p2[0] - p1[0]))
 
     return y0
@@ -1545,6 +2136,29 @@ def linear_interpolation(p1, p2, x0):
 
 def data_to_pv(data=None, site=None, reference=None, scale=1.):
 
+    """
+    data_to_pv.
+    
+    Parameters
+    ----------
+    data : object
+        Parameter data.
+    site : object
+        Parameter site.
+    reference : object
+        Parameter reference.
+    scale : object
+        Parameter scale.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
+    Auto-generated docstring for data_to_pv.
+    """
     x = data[:, 3]
     y = data[:, 4]
     z = data[:, 5]
@@ -1572,6 +2186,35 @@ def data_to_pv(data=None, site=None, reference=None, scale=1.):
 def model_to_pv(dx=None, dy=None, dz=None, rho=None, reference=None,
                 scale=1., pad=[12, 12, 30.]):
 
+    """
+    model_to_pv.
+    
+    Parameters
+    ----------
+    dx : object
+        Parameter dx.
+    dy : object
+        Parameter dy.
+    dz : object
+        Parameter dz.
+    rho : object
+        Parameter rho.
+    reference : object
+        Parameter reference.
+    scale : object
+        Parameter scale.
+    pad : object
+        Parameter pad.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
+    Auto-generated docstring for model_to_pv.
+    """
     x, y, z = cells3d(dx, dy, dz)
 
     x = x + reference[0]
@@ -1594,27 +2237,43 @@ def model_to_pv(dx=None, dy=None, dz=None, rho=None, reference=None,
 
 def clip_model(x, y, z, rho,
                pad=[0, 0, 0], centers=False, scale=[1., 1., 1.]):
-    '''
-    Clip model to ROI.
-
+    """
+    clip_model.
+    
     Parameters
     ----------
-    x, y, z : float
-        Node coordinates
-    rho : float
-        resistivity/sensitivity/diff values.
-    pad : integer, optional
-        padding in x/y/z. The default is [0, 0, 0].
-    centers: bool, optional
-        nodes or centers. The default is False (i.e. nodes).
-    scale: float
-        scling, e.g. to km (1E-3). The default is [1., 1.,1.].
-
+    x : object
+        Parameter x.
+    y : object
+        Parameter y.
+    z : object
+        Parameter z.
+    rho : object
+        Parameter rho.
+    pad : object
+        Parameter pad.
+    centers : object
+        Parameter centers.
+    scale : object
+        Parameter scale.
+    
     Returns
     -------
-    xn, yn, zn, rhon
-
-    '''
+    out : object
+        Function return value.
+    
+    Notes
+    -----
+    Clip model to ROI.
+    
+    Parameters ---------- x, y, z : float     Node coordinates rho : float
+    resistivity/sensitivity/diff values. pad : integer, optional     padding in
+    x/y/z. The default is [0, 0, 0]. centers: bool, optional     nodes or centers.
+    The default is False (i.e. nodes). scale: float     scling, e.g. to km (1E-3).
+    The default is [1., 1.,1.].
+    
+    Returns ------- xn, yn, zn, rhon
+    """
     if np.size(scale) == 1:
         scale = [scale, scale, scale]
 
@@ -1636,12 +2295,36 @@ def clip_model(x, y, z, rho,
 
 
 def mt1dfwd(freq, sig, d, inmod='r', out='imp', magfield='b'):
-    '''
+    """
+    mt1dfwd.
+    
+    Parameters
+    ----------
+    freq : object
+        Parameter freq.
+    sig : object
+        Parameter sig.
+    d : object
+        Parameter d.
+    inmod : object
+        Parameter inmod.
+    out : object
+        Parameter out.
+    magfield : object
+        Parameter magfield.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Calulate 1D magnetotelluric forward response.
-
-    based on A. Pethik's script at www.digitalearthlab.com
-    Last change vr Nov 20, 2020
-    '''
+    
+    based on A. Pethik's script at www.digitalearthlab.com Last change vr Nov 20,
+    2020
+    """
     mu0 = 4.0e-7 * np.pi  # Magnetic Permeability (H/m)
 
     sig = np.array(sig)
@@ -1717,13 +2400,45 @@ def insert_body_condition(dx=None, dy=None, dz=None,
                           smooth=None, scale=1.0,
                           reference=None, pad=[0, 0, 0],
                           out=True):
-    '''
+    """
+    insert_body_condition.
+    
+    Parameters
+    ----------
+    dx : object
+        Parameter dx.
+    dy : object
+        Parameter dy.
+    dz : object
+        Parameter dz.
+    rho_in : object
+        Parameter rho_in.
+    body : object
+        Parameter body.
+    smooth : object
+        Parameter smooth.
+    scale : object
+        Parameter scale.
+    reference : object
+        Parameter reference.
+    pad : object
+        Parameter pad.
+    out : object
+        Parameter out.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Insert 3d body (ellipsoid or box) into given model.
-
+    
     Created on Sun Jan 3 10:35:28 2021
-
+    
     @author: vrath
-    '''
+    """
     xpad = pad[0]
     ypad = pad[1]
     zpad = pad[2]
@@ -1907,13 +2622,45 @@ def insert_body(dx=None, dy=None, dz=None,
                 pad=[0, 0, 0],
                 smooth=None, scale=1.0, reference=None,
                 out=True):
-    '''
+    """
+    insert_body.
+    
+    Parameters
+    ----------
+    dx : object
+        Parameter dx.
+    dy : object
+        Parameter dy.
+    dz : object
+        Parameter dz.
+    rho_in : object
+        Parameter rho_in.
+    body : object
+        Parameter body.
+    pad : object
+        Parameter pad.
+    smooth : object
+        Parameter smooth.
+    scale : object
+        Parameter scale.
+    reference : object
+        Parameter reference.
+    out : object
+        Parameter out.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Insert 3d body (ellipsoid or box) into given model.
-
+    
     Created on Sun Jan 3 10:35:28 2021
-
+    
     @author: vrath
-    '''
+    """
     xpad = pad[0]
     ypad = pad[1]
     zpad = pad[2]
@@ -2056,15 +2803,35 @@ def insert_body(dx=None, dy=None, dz=None,
 
 
 def cells3d(dx, dy, dz, center=False, reference=[0., 0., 0.]):
-    '''
+    """
+    cells3d.
+    
+    Parameters
+    ----------
+    dx : object
+        Parameter dx.
+    dy : object
+        Parameter dy.
+    dz : object
+        Parameter dz.
+    center : object
+        Parameter center.
+    reference : object
+        Parameter reference.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Define cell coordinates.
-
-    dx, dy, dz in m,
-    Created on Sat Jan 2 10:35:28 2021
-
+    
+    dx, dy, dz in m, Created on Sat Jan 2 10:35:28 2021
+    
     @author: vrath
-
-    '''
+    """
     x = np.append(0.0, np.cumsum(dx))
     y = np.append(0.0, np.cumsum(dy))
     z = np.append(0.0, np.cumsum(dz))
@@ -2091,13 +2858,33 @@ def in_ellipsoid(
         axs=[1.0, 1.0, 1.0],
         ang=[0.0, 0.0, 0.0],
         find_inside=True):
-    '''
+    """
+    in_ellipsoid.
+    
+    Parameters
+    ----------
+    point : object
+        Parameter point.
+    cent : object
+        Parameter cent.
+    axs : object
+        Parameter axs.
+    ang : object
+        Parameter ang.
+    find_inside : object
+        Parameter find_inside.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Find points inside arbitrary box.
-
-    Defined by the 3-vectors cent, axs, ang
-    vr dec 2020
-
-    '''
+    
+    Defined by the 3-vectors cent, axs, ang vr dec 2020
+    """
     # subtract center
     p = np.array(point) - np.array(cent)
     # rotation matrices
@@ -2128,13 +2915,33 @@ def in_box(
         axs=[1.0, 1.0, 1.0],
         ang=[0.0, 0.0, 0.0],
         find_inside=True,):
-    '''
+    """
+    in_box.
+    
+    Parameters
+    ----------
+    point : object
+        Parameter point.
+    cent : object
+        Parameter cent.
+    axs : object
+        Parameter axs.
+    ang : object
+        Parameter ang.
+    find_inside : object
+        Parameter find_inside.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Find points inside arbitrary ellipsoid.
-
-    Defined by the 3-vectors cent, axs, ang
-    vr dec 2020
-
-    '''
+    
+    Defined by the 3-vectors cent, axs, ang vr dec 2020
+    """
     # subtract center
     p = np.array(point) - np.array(cent)
     # rotation matrices
@@ -2168,11 +2975,25 @@ def in_box(
 
 
 def rotz(theta):
-    '''
+    """
+    rotz.
+    
+    Parameters
+    ----------
+    theta : object
+        Parameter theta.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Calculate 3x3 rotation matriz for rotation around z axis.
-
+    
     vr dec 2020
-    '''
+    """
     t = np.radians(theta)
     s = np.sin(t)
     c = np.cos(t)
@@ -2183,11 +3004,25 @@ def rotz(theta):
 
 
 def roty(theta):
-    '''
+    """
+    roty.
+    
+    Parameters
+    ----------
+    theta : object
+        Parameter theta.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Calculate 3x3 rotation matrix for rotationa around y axis.
-
+    
     vr dec 2020
-    '''
+    """
     t = np.radians(theta)
     s = np.sin(t)
     c = np.cos(t)
@@ -2198,11 +3033,25 @@ def roty(theta):
 
 
 def rotx(theta):
-    '''
+    """
+    rotx.
+    
+    Parameters
+    ----------
+    theta : object
+        Parameter theta.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Calculate 3x3 rotation matriz for rotation around x axis.
-
+    
     vr dec 2020
-    '''
+    """
     t = np.radians(theta)
     s = np.sin(t)
     c = np.cos(t)
@@ -2216,23 +3065,39 @@ def crossgrad(m1=np.array([]),
               m2=np.array([]),
               mesh=[np.array([]), np.array([]), np.array([])],
               Out=True):
-    '''
-
+    """
+    crossgrad.
+    
+    Parameters
+    ----------
+    m1 : object
+        Parameter m1.
+    m2 : object
+        Parameter m2.
+    mesh : object
+        Parameter mesh.
+    Out : object
+        Parameter Out.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Crossgrad function
-
-
-    See:
-    Rosenkjaer GK, Gasperikova E, Newman, GA, Arnason K, Lindsey NJ (2015)
-        Comparison of 3D MT inversions for geothermal exploration: Case studies
-        for Krafla and Hengill geothermal systems in Iceland
-        Geothermics , Vol. 57, 258-274
-
-    Schnaidt, S. (2015)
-        Improving Uncertainty Estimation in Geophysical Inversion Modelling
-        PhD thesis, University of Adelaide, AU
-
+    
+    See: Rosenkjaer GK, Gasperikova E, Newman, GA, Arnason K, Lindsey NJ (2015)
+    Comparison of 3D MT inversions for geothermal exploration: Case studies     for
+    Krafla and Hengill geothermal systems in Iceland     Geothermics , Vol. 57,
+    258-274
+    
+    Schnaidt, S. (2015)     Improving Uncertainty Estimation in Geophysical
+    Inversion Modelling     PhD thesis, University of Adelaide, AU
+    
     vr  July 2023
-    '''
+    """
     sm = np.shape(m1)
     dm = m1.dim
     if dm == 1:
@@ -2263,11 +3128,33 @@ def crossgrad(m1=np.array([]),
 def medfilt3D(
         M,
         kernel_size=[3, 3, 3], boundary_mode='nearest', maxiter=1, Out=True):
-    '''
+    """
+    medfilt3D.
+    
+    Parameters
+    ----------
+    M : object
+        Parameter M.
+    kernel_size : object
+        Parameter kernel_size.
+    boundary_mode : object
+        Parameter boundary_mode.
+    maxiter : object
+        Parameter maxiter.
+    Out : object
+        Parameter Out.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Run iterated median filter in nD.
-
+    
     vr  Jan 2021
-    '''
+    """
     tmp = M.copy()
     for it in range(maxiter):
         if Out:
@@ -2282,11 +3169,35 @@ def medfilt3D(
 def anidiff3D(
         M,
         ckappa=50, dgamma=0.1, foption=1, maxiter=30, Out=True):
-    '''
+    """
+    anidiff3D.
+    
+    Parameters
+    ----------
+    M : object
+        Parameter M.
+    ckappa : object
+        Parameter ckappa.
+    dgamma : object
+        Parameter dgamma.
+    foption : object
+        Parameter foption.
+    maxiter : object
+        Parameter maxiter.
+    Out : object
+        Parameter Out.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Apply anisotropic nonlinear diffusion in nD.
-
+    
     vr  Jan 2021
-    '''
+    """
     tmp = M.copy()
 
     tmp = anisodiff3D(
@@ -2306,62 +3217,73 @@ def anisodiff3D(
         stack,
         niter=1, kappa=50, gamma=0.1, step=(1.0, 1.0, 1.0), option=1,
         ploton=False):
-    '''
+    """
+    anisodiff3D.
+    
+    Parameters
+    ----------
+    stack : object
+        Parameter stack.
+    niter : object
+        Parameter niter.
+    kappa : object
+        Parameter kappa.
+    gamma : object
+        Parameter gamma.
+    step : object
+        Parameter step.
+    option : object
+        Parameter option.
+    ploton : object
+        Parameter ploton.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Apply 3D Anisotropic diffusion.
-
-    Usage:
-    stackout = anisodiff(stack, niter, kappa, gamma, option)
-
-    Arguments:
-            stack  - input stack
-            niter  - number of iterations
-            kappa  - conduction coefficient 20-100 ?
-            gamma  - max value of .25 for stability
-            step   - tuple, the distance between adjacent pixels in (z,y,x)
-            option - 1 Perona Malik diffusion equation No 1
-                     2 Perona Malik diffusion equation No 2
-            ploton - if True, the middle z-plane will be plotted on every
-                     iteration
-
-    Returns:
-            stackout   - diffused stack.
-
-    kappa controls conduction as a function of gradient.  If kappa is low
-    small intensity gradients are able to block conduction and hence diffusion
-    across step edges.  A large value reduces the influence of intensity
-    gradients on conduction.
-
-    gamma controls speed of diffusion (you usually want it at a maximum of
-    0.25)
-
-    step is used to scale the gradients in case the spacing between adjacent
-    pixels differs in the x,y and/or z axes
-
+    
+    Usage: stackout = anisodiff(stack, niter, kappa, gamma, option)
+    
+    Arguments:         stack  - input stack         niter  - number of iterations
+    kappa  - conduction coefficient 20-100 ?         gamma  - max value of .25 for
+    stability         step   - tuple, the distance between adjacent pixels in
+    (z,y,x)         option - 1 Perona Malik diffusion equation No 1
+    2 Perona Malik diffusion equation No 2         ploton - if True, the middle
+    z-plane will be plotted on every                  iteration
+    
+    Returns:         stackout   - diffused stack.
+    
+    kappa controls conduction as a function of gradient.  If kappa is low small
+    intensity gradients are able to block conduction and hence diffusion across
+    step edges.  A large value reduces the influence of intensity gradients on
+    conduction.
+    
+    gamma controls speed of diffusion (you usually want it at a maximum of 0.25)
+    
+    step is used to scale the gradients in case the spacing between adjacent pixels
+    differs in the x,y and/or z axes
+    
     Diffusion equation 1 favours high contrast edges over low contrast ones.
     Diffusion equation 2 favours wide regions over smaller ones.
-
-    Reference:
-    P. Perona and J. Malik.
-    Scale-space and edge detection using ansotropic diffusion.
-    IEEE Transactions on Pattern Analysis and Machine Intelligence,
-    12(7):629-639, July 1990.
-
-    Original MATLAB code by Peter Kovesi
-    School of Computer Science & Software Engineering
-    The University of Western Australia
-    pk @ csse uwa edu au
+    
+    Reference: P. Perona and J. Malik. Scale-space and edge detection using
+    ansotropic diffusion. IEEE Transactions on Pattern Analysis and Machine
+    Intelligence, 12(7):629-639, July 1990.
+    
+    Original MATLAB code by Peter Kovesi School of Computer Science & Software
+    Engineering The University of Western Australia pk @ csse uwa edu au
     <http://www.csse.uwa.edu.au>
-
-    Translated to Python and optimised by Alistair Muldal
-    Department of Pharmacology
-    University of Oxford
-    <alistair.muldal@pharm.ox.ac.uk>
-
-    June 2000  original version.
-    March 2002 corrected diffusion eqn No 2.
-    July 2012 translated to Python
-    Jan 2021 slightly adapted python3 VR
-    '''
+    
+    Translated to Python and optimised by Alistair Muldal Department of
+    Pharmacology University of Oxford <alistair.muldal@pharm.ox.ac.uk>
+    
+    June 2000  original version. March 2002 corrected diffusion eqn No 2. July 2012
+    translated to Python Jan 2021 slightly adapted python3 VR
+    """
     # initialize output array
     if ploton:
         import pylab as pl
@@ -2448,11 +3370,35 @@ def shock3d(
         M,
         dt=0.2, maxiter=30, filt=[3, 3, 3, 0.5],
         boundary_mode='nearest', signfunc=None):
-    '''
+    """
+    shock3d.
+    
+    Parameters
+    ----------
+    M : object
+        Parameter M.
+    dt : object
+        Parameter dt.
+    maxiter : object
+        Parameter maxiter.
+    filt : object
+        Parameter filt.
+    boundary_mode : object
+        Parameter boundary_mode.
+    signfunc : object
+        Parameter signfunc.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Apply shock filter in nD.
-
+    
     vr  Jan 2021
-    '''
+    """
     if signfunc is None or signfunc == 'sign':
         signcall = '-np.sign(L)'
 
@@ -2488,14 +3434,29 @@ def shock3d(
 
 
 def gauss3D(Kshape=(3, 3, 3), Ksigma=0.5):
-    '''
+    """
+    gauss3D.
+    
+    Parameters
+    ----------
+    Kshape : object
+        Parameter Kshape.
+    Ksigma : object
+        Parameter Ksigma.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Define 2D gaussian mask.
-
-    Should give the same result as MATLAB's
-    fspecial('gaussian',[shape],[sigma])
-
+    
+    Should give the same result as MATLAB's fspecial('gaussian',[shape],[sigma])
+    
     vr  Jan 2021
-    '''
+    """
     k, m, n = [(ss - 1) / 2 for ss in Kshape]
     x, y, z = np.ogrid[-n:n+1, -m:m+1, -k:k+1]
     h = np.exp(-(x * x + y * y + z * z) / (2.0 * Ksigma * Ksigma))
@@ -2510,15 +3471,30 @@ def gauss3D(Kshape=(3, 3, 3), Ksigma=0.5):
 
 
 def prepare_model(rho, rhoair=1.0e17):
-    '''
+    """
+    prepare_model.
+    
+    Parameters
+    ----------
+    rho : object
+        Parameter rho.
+    rhoair : object
+        Parameter rhoair.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Prepare model for filtering etc.
-
-    Mainly redefining the boundaries (in the case of topograpy)
-    Air domain is filed with vertical surface value
-    Created on Tue Jan  5 11:59:42 2021
-
+    
+    Mainly redefining the boundaries (in the case of topograpy) Air domain is filed
+    with vertical surface value Created on Tue Jan  5 11:59:42 2021
+    
     @author: vrath
-    '''
+    """
     nn = np.shape(rho)
 
     rho_new = rho.copy()
@@ -2539,11 +3515,33 @@ def prepare_model(rho, rhoair=1.0e17):
 
 def insert_body_ijk(template=None, rho_in=None,
                     perturb=None, bodymask=None, out=True):
-    '''
+    """
+    insert_body_ijk.
+    
+    Parameters
+    ----------
+    template : object
+        Parameter template.
+    rho_in : object
+        Parameter rho_in.
+    perturb : object
+        Parameter perturb.
+    bodymask : object
+        Parameter bodymask.
+    out : object
+        Parameter out.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Insert 3d box into given model.
-
+    
     @author: vrath
-    '''
+    """
     if template is None:
         print('insert_body_ijk: no template! Exit.')
 
@@ -2585,43 +3583,54 @@ def distribute_bodies_ijk(model=None,
                           method=['random', 25, 'uniform',
                                   [1, 1,   1, 1,   1, 1]],
                           valmark=1, flip='alternate', scale='ijk'):
-    '''
-    construct templates for  distributing test boduies  within model.
-
+    """
+    distribute_bodies_ijk.
+    
     Parameters
     ----------
-    model : np.array, float
-        model setup in ModEM format. The default is None.
-    method : list of objects, optional
-
-        Contains parameters  for  generating centers.
-
-        method[0] = 'regular':
-            ['regular', bounding box (cell indices), bodymask, step]
-            Example: method = ['regular', [1, 1,   1, 1,   1, 1], [4, 4, 6],]
-
-        method[0] = 'ramdom':
-            ['random', number of bodies, bounding box (cell indices),
-             distribution (currently only uniform), minimum distance]
-            Example: method = ['random', 25, [1, 1,   1, 1,   1, 1], 'uniform', ].
-
-    valmark : float
-            Marker value (e.g 1.),
-
-    flip : string or None
-         flip = 'alt'          sign change modulo 2
-         flip = 'ran'          random sign change
-
-
+    model : object
+        Parameter model.
+    method : object
+        Parameter method.
+    valmark : object
+        Parameter valmark.
+    flip : object
+        Parameter flip.
+    scale : object
+        Parameter scale.
+    
     Returns
     -------
-    template : np.array, float
-        zeros, like input model, with marker values at body centers git push
-
-
+    out : object
+        Function return value.
+    
+    Notes
+    -----
+    construct templates for  distributing test boduies  within model.
+    
+    Parameters ---------- model : np.array, float     model setup in ModEM format.
+    The default is None. method : list of objects, optional
+    
+    Contains parameters  for  generating centers.
+    
+    method[0] = 'regular':         ['regular', bounding box (cell indices),
+    bodymask, step]         Example: method = ['regular', [1, 1,   1, 1,   1, 1],
+    [4, 4, 6],]
+    
+    method[0] = 'ramdom':         ['random', number of bodies, bounding box (cell
+    indices),          distribution (currently only uniform), minimum distance]
+    Example: method = ['random', 25, [1, 1,   1, 1,   1, 1], 'uniform', ].
+    
+    valmark : float         Marker value (e.g 1.),
+    
+    flip : string or None      flip = 'alt'          sign change modulo 2      flip
+    = 'ran'          random sign change
+    
+    Returns ------- template : np.array, float     zeros, like input model, with
+    marker values at body centers git push
+    
     @author: vrath, Feb 2024
-
-    '''
+    """
     if 'ijk' not in scale:
         print('distribute_bodies: currently only index sales possible! Exit.')
 
@@ -2694,12 +3703,27 @@ def distribute_bodies_ijk(model=None,
 
 
 def set_mesh(d=None, center=False):
-    '''
+    """
+    set_mesh.
+    
+    Parameters
+    ----------
+    d : object
+        Parameter d.
+    center : object
+        Parameter center.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     Define cell geometry.
-
+    
     VR Jan 2024
-
-    '''
+    """
     ncell = np.shape(d)[0]
     xn = np.append(0.0, np.cumsum(d))
     xc = 0.5 * (xn[0:ncell] + xn[1:ncell+1])
@@ -2715,11 +3739,37 @@ def mask_mesh(x=None, y=None, z=None, mod=None,
               mask=None,
               ref=[0., 0., 0.],
               method='index'):
-    '''
+    """
+    mask_mesh.
+    
+    Parameters
+    ----------
+    x : object
+        Parameter x.
+    y : object
+        Parameter y.
+    z : object
+        Parameter z.
+    mod : object
+        Parameter mod.
+    mask : object
+        Parameter mask.
+    ref : object
+        Parameter ref.
+    method : object
+        Parameter method.
+    
+    Returns
+    -------
+    out : object
+        Function return value.
+    
+    Notes
+    -----
     mask model-like parameters and mesh
-
+    
     VR Jan 2024
-    '''
+    """
     msh = np.shape(mod)
     mod_out = mod.copy()
     x_out = x.copy()
@@ -2785,26 +3835,37 @@ def mask_mesh(x=None, y=None, z=None, mod=None,
 
 
 def generate_alphas(dz, beg_lin=[0., 0.1, 0.1], end_lin=[999., 0.9, 0.9]):
-    '''
-    Generates linspace depth-dependent horizontal alphas
-
+    """
+    generate_alphas.
+    
     Parameters
     ----------
-    dz: array
-        verical cell sizes.
-    beg_lin, end_lin: tuple
-        depth, val_x, val_y
-
+    dz : object
+        Parameter dz.
+    beg_lin : object
+        Parameter beg_lin.
+    end_lin : object
+        Parameter end_lin.
+    
     Returns
     -------
-    a_x, a_y : np.arrays
-        Linspace depth-dependent horizontal alphas
-
-
-
+    out : object
+        Function return value.
+    
+    Notes
+    -----
+    Generates linspace depth-dependent horizontal alphas
+    
+    Parameters ---------- dz: array     verical cell sizes. beg_lin, end_lin: tuple
+    depth, val_x, val_y
+    
+    Returns ------- a_x, a_y : np.arrays     Linspace depth-dependent horizontal
+    alphas
+    
+    
+    
     VR Aug 2024
-
-    '''
+    """
 
     a_x = np.nan * np.ones_like(dz)
     a_y = np.nan * np.ones_like(dz)

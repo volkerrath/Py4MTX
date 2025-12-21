@@ -1,439 +1,368 @@
-import os
-import sys
-import inspect
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+inverse.py
+==========
+Numerical helpers for inverse problems and ensemble-based estimation.
 
-from typing import Any, Dict, List, Optional, Tuple
+This module collects small, self-contained numerical routines that are useful
+in geophysical inverse problems and ensemble methods. The focus is on:
+
+- Thresholding and TV-style regularisation (Split Bregman)
+- Empirical covariance estimation (including NICE shrinkage)
+- Matrix square-roots for SPD matrices (dense and sparse)
+- Randomised SVD utilities (Halko et al., 2011)
+- Simple spline fitting and bootstrap confidence bands
+
+The functions are written to be robust for both dense NumPy arrays and common
+SciPy sparse matrix types.
+
+Author: Volker Rath (DIAS)
+Created with the help of ChatGPT (GPT-5 Thinking) on 2025-12-21 (UTC)
+"""
+
+from __future__ import annotations
+
+from typing import Optional, Tuple
 
 import numpy as np
-import scipy as scp
-import scipy.linalg as scl
-import scipy.sparse as scs
-import scipy.ndimage as sci
+import scipy.linalg as la
+import scipy.sparse as sp
+import scipy.sparse.linalg as spla
 from scipy.interpolate import make_smoothing_spline
 
-import sklearn.cluster as scl
+
+def soft_thresh(x: np.ndarray, lam: float) -> np.ndarray:
+    """Soft-thresholding operator (prox of the ℓ1 norm).
+
+    Parameters
+    ----------
+    x : numpy.ndarray
+        Input array.
+    lam : float
+        Threshold parameter (must be non-negative).
+
+    Returns
+    -------
+    numpy.ndarray
+        Thresholded array with the same shape as ``x``.
+    """
+    lam = float(lam)
+    if lam < 0.0:
+        raise ValueError("lam must be non-negative.")
+    return np.sign(x) * np.maximum(np.abs(x) - lam, 0.0)
 
 
+def splitbreg(
+    J: sp.spmatrix | np.ndarray,
+    y: np.ndarray,
+    lam: float,
+    D: sp.spmatrix | np.ndarray,
+    c: float | np.ndarray = 0.0,
+    tol: float = 1e-5,
+    maxiter: int = 50,
+) -> np.ndarray:
+    """Solve a TV-regularised least-squares problem using Split Bregman.
 
-def soft_thresh(x, lam):
-    '''
-    function S_lambda = soft_thresh(x,lambda)
-        S_lambda = sign(x) .*  max(abs(x) - lambda,0);
-    end
-    '''
-    s_lam = np.sign(x) *  np.amax(np.abs(x) - lam, 0.)
+    Minimises::
 
-    return s_lam
+        0.5 * ||Jx - y||_2^2 + lam * ||Dx - c||_1
 
-def splitbreg(J, y, lam, D, c=0., tol=1.e-5, maxiter=10):
-    '''
-    Solves a constrained optimization problem using
-    the Split Bregman method with Total Variation (TV) regularization.
+    Parameters
+    ----------
+    J : numpy.ndarray or scipy.sparse.spmatrix
+        Forward operator / Jacobian of shape (nd, nm).
+    y : numpy.ndarray
+        Data vector of shape (nd,) or (nd, 1).
+    lam : float
+        Regularisation weight.
+    D : numpy.ndarray or scipy.sparse.spmatrix
+        Difference operator of shape (m, nm).
+    c : float or numpy.ndarray, optional
+        Offset for Dx (defaults to 0).
+    tol : float, optional
+        Relative convergence tolerance on x.
+    maxiter : int, optional
+        Maximum iterations.
 
-    Inputs:
-        J    - Forward operator (Jacobian)
-        y    - Observed data vector
-        lam  - Regularization parameter
-        D    - Difference operator
-        c    - Set to zero when using for generate blocky models
+    Returns
+    -------
+    numpy.ndarray
+        Solution vector of shape (nm,).
+    """
+    lam = float(lam)
+    if lam <= 0.0:
+        raise ValueError("lam must be positive.")
 
-    Output:
-        x    - Recovered solution
+    y = np.asarray(y, dtype=float).reshape(-1)
+    c_arr = np.asarray(c, dtype=float)
 
-    '''
+    J_is_sparse = sp.issparse(J)
+    D_is_sparse = sp.issparse(D)
 
-    (nd,nm) = np.shape(J)
+    nd, nm = J.shape
+    if y.size != nd:
+        raise ValueError(f"y must have length {nd}, got {y.size}.")
 
-    mu = 2.*lam
+    m, nm2 = D.shape
+    if nm2 != nm:
+        raise ValueError(f"D must have shape (m, {nm}); got {D.shape}.")
 
-    b = np.zeros((nd, 1))
-    d = np.zeros((nd, 1))
+    mu = 2.0 * lam
 
-    A = np.array([J], [np.sqrt(mu)*D])
-    xold = np.nan*np.ones((nm,1))
-    for kk in np.arange(maxiter):
-        r = np.array[[y],[np.sqrt(mu)*(d-b)]]
-        x = scl.solve(A,r, assume_a='general')
-        s = soft_thresh(c+D@x+d, lam/mu)
-        d = s - c
-        b = b + D@x -s
+    def JTJ_mv(xv: np.ndarray) -> np.ndarray:
+        return (J.T @ (J @ xv)) if J_is_sparse else (J.T @ (J @ xv))
 
-        if ((kk>0) and (np.norm(xold-x)/np.norm(x)<tol)):
+    def DTD_mv(xv: np.ndarray) -> np.ndarray:
+        return (D.T @ (D @ xv)) if D_is_sparse else (D.T @ (D @ xv))
+
+    Aop = spla.LinearOperator((nm, nm), matvec=lambda xv: JTJ_mv(xv) + mu * DTD_mv(xv), dtype=float)
+
+    x = np.zeros(nm, dtype=float)
+    b = np.zeros(m, dtype=float)
+    d = np.zeros(m, dtype=float)
+
+    JTy = (J.T @ y) if J_is_sparse else (J.T @ y)
+
+    x_old = x.copy()
+
+    for _ in range(int(maxiter)):
+        rhs = JTy + mu * (D.T @ (d - b + c_arr)) if D_is_sparse else (JTy + mu * (D.T @ (d - b + c_arr)))
+
+        x, info = spla.cg(Aop, rhs, x0=x, rtol=1e-10, atol=0.0, maxiter=10_000)
+        if info != 0:
+            if nm <= 4000 and not (J_is_sparse or D_is_sparse):
+                A_dense = (J.T @ J) + mu * (D.T @ D)
+                x = la.solve(A_dense, rhs, assume_a="sym")
+            else:
+                raise RuntimeError(f"CG did not converge (info={info}).")
+
+        Dx = (D @ x) if D_is_sparse else (D @ x)
+        d = soft_thresh(Dx + b - c_arr, lam / mu)
+        b = b + Dx - d - c_arr
+
+        denom = max(1e-14, np.linalg.norm(x))
+        if np.linalg.norm(x - x_old) / denom < tol:
             break
-
-        xold = x
+        x_old = x.copy()
 
     return x
 
 
-def calc_covar_simple(x=np.array([]),
-                y=np.array([]),
-                covscovale=np.array([]),
-                method=0, out=True):
-    '''
-    covalcovulate empiricoval covovariancove for Kalman gain
+def calc_covar_simple(
+    x: np.ndarray,
+    y: Optional[np.ndarray] = None,
+    method: str = "fast",
+    out: bool = True,
+) -> np.ndarray:
+    """Compute the empirical cross-covariance between two ensembles.
 
-    covreated on Jul 6, 2022
+    Ensembles are stored as rows: shape (Ne, Nvar).
 
-    @author: vrath
+    Returns a matrix of shape (Nx, Ny).
+    """
+    X = np.asarray(x, dtype=float)
+    Y = X if y is None else np.asarray(y, dtype=float)
 
+    if X.ndim != 2 or Y.ndim != 2:
+        raise ValueError("x and y must be 2D arrays of shape (Ne, Nvar).")
+    if X.shape[0] != Y.shape[0]:
+        raise ValueError("x and y must have the same number of samples (rows).")
 
-    '''
+    Xc = X - X.mean(axis=0, keepdims=True)
+    Yc = Y - Y.mean(axis=0, keepdims=True)
+    Ne = X.shape[0]
+    if Ne < 2:
+        raise ValueError("Need at least 2 samples to estimate covariance.")
 
-    if (x.size == 0) and (y.size == 0):
-        sys.exit('covalcov_encovovar: No data given! Exit.')
-
-    X = x - np.mean(x, axis=0)
-    if (y.size == 0):
-        Y = X
+    if method == "naive":
+        cov = np.zeros((X.shape[1], Y.shape[1]), dtype=float)
+        for _ in range(Ne):
+            cov += Xc.T @ Yc
+        cov /= (Ne - 1)
     else:
-        Y = y - np.mean(y, axis=0)
-
-    [N_e, N_x] = np.shape(X)
-    [N_e, N_y] = np.shape(Y)
-
-    if method == 0:
-        # print(N_e, N_x, N_y)
-        # naive version, library versions probably faster)
-        cov = np.zeros((N_x, N_y))
-        for n in np.arange(N_e):
-            # print('XT  ',X.T)
-            # print('Y   ',Y)
-            covn = X.T@Y
-            # print(covn)
-            cov = cov + covn
-
-        cov = cov/(N_e-1)
-
-    else:
-        # numpy version
-        for n in np.arange(N_e):
-            X = np.stacovk((X, Y), axis=0)
-            # cov = np.covov((X,Y))
-            cov = np.covov((X))
+        cov = (Xc.T @ Yc) / (Ne - 1)
 
     if out:
-        print('Ensemble covovariancove is '+str(np.shape(cov)))
-
+        print(f"Ensemble covariance shape: {cov.shape}")
     return cov
 
 
-def calc_covar_nice(x=np.array([]),
-                y=np.array([]),
-                fac=np.array([]),
-                 out=True):
-    '''
-    Calculate empirical covariance for Kalman gain
+def calc_covar_nice(
+    x: np.ndarray,
+    y: np.ndarray,
+    fac: float,
+    out: bool = False,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """NICE covariance shrinkage estimator (Vishny et al., 2024)."""
+    X = np.asarray(x, dtype=float)
+    Y = np.asarray(y, dtype=float)
+    if X.ndim != 2 or Y.ndim != 2:
+        raise ValueError("x and y must be 2D arrays of shape (Ne, Nvar).")
+    if X.shape[0] != Y.shape[0]:
+        raise ValueError("x and y must have the same number of samples (rows).")
 
+    Ne = X.shape[0]
+    if Ne < 3:
+        raise ValueError("NICE requires at least 3 samples for stable estimation.")
 
-    Method described in:
+    Xc = X - X.mean(axis=0, keepdims=True)
+    Yc = Y - Y.mean(axis=0, keepdims=True)
+    sx = Xc.std(axis=0, ddof=1)
+    sy = Yc.std(axis=0, ddof=1)
+    sx[sx == 0.0] = np.nan
+    sy[sy == 0.0] = np.nan
+    Xz = Xc / sx
+    Yz = Yc / sy
 
-    Vishny, D., Morzfeld M., Gwirtz K., Bach, E., Dunbar, O.R.A. & Hodyss, D.
-    High dimensional covariance estimation from a small number of samples
-    Journal of Advances in Modeling Earth Systems, 16, 2024,
-    doi:10.1029/2024MS004417
+    CorrXY = (Xz.T @ Yz) / (Ne - 1)
 
+    std_rho = (1.0 - CorrXY**2) / np.sqrt(Ne)
+    sig_rho = float(np.sqrt(np.sum(std_rho**2)))
 
-    Created on Jul 6, 2022
-
-    @author: vrath
-
-    Matlab version:
-    function [Cov_NICE,Corr_NICE,L_NICE] = NICE(X,Y,fac)
-    Ne = size(X,2) ;
-    [CorrXY,~] = corr(X',Y');
-    std_rho = (1-CorrXY.^2)/sqrt(Ne);
-    sig_rho = sqrt(sum(sum(std_rho.^2)));
-
-    expo2 = 2:2:8;
-    for kk = 1:length(expo2)
-        L = abs(CorrXY).^expo2(kk);
-        Corr_NICE = L.*CorrXY;
-        if norm(Corr_NICE - CorrXY,'fro') > fac*sig_rho
-            expo2 = expo2(kk);
-            break
-        end
-    end
-    expo1 = expo2-2;
-    rho_exp1 = CorrXY.^expo1;
-    rho_exp2 = CorrXY.^expo2;
-
-    al = 0.1:.1:1;
-    for kk=1:length(al)
-        L = (1-al(kk))*rho_exp1+al(kk)*rho_exp2;
-        Corr_NICE = L.*CorrXY;
-        if kk>1 && norm(Corr_NICE - CorrXY,'fro') > fac*sig_rho
-            Corr_NICE = PrevCorr;
-            break
-        elseif norm(Corr_NICE - CorrXY,'fro') > fac*sig_rho
-            break
-        end
-        PrevCorr = Corr_NICE;
-        L_NICE = L;
-    end
-    Vy = diag(std(Y,0,2));
-    Vx = diag(std(X,0,2));
-    Cov_NICE = Vx*Corr_NICE*Vy;
-    end
-    '''
-
-    nc = np.shape(x)[1]
-    x = (x - np.mean(x, axis=0))/np.std(x,axis=0)
-    y = (y - np.mean(y, axis=0))/np.std(y,axis=0)
-    corr = (np.dot(y.T, x)/y.shape[0])[0]
-
-    std_rho = (1.-np.power(corr,2))/np.sqrt(nc)
-    sig_rho = np.sqrt(np.sum(np.sum(np.power(std_rho, 2))))
-
-
-    expo2 = np.arange(2, 8, 2)
-    for k in np.arange(len(expo2)):
-        t = np.power(np.abs(corr),expo2(k))
-        corr_nice = t*corr
-        if np.norm(corr_nice - corr,'fro') > fac*sig_rho:
-            expo2 = expo2(k)
+    expo2_candidates = np.array([2, 4, 6, 8], dtype=int)
+    expo2 = int(expo2_candidates[-1])
+    for e2 in expo2_candidates:
+        L = np.abs(CorrXY) ** int(e2)
+        Corr_try = L * CorrXY
+        if np.linalg.norm(Corr_try - CorrXY, ord="fro") > fac * sig_rho:
+            expo2 = int(e2)
             break
 
-    expo1 = expo2-2
-    rho_exp1 = np.power(corr, expo1)
-    rho_exp2 = np.power(corr, expo2)
+    expo1 = expo2 - 2
+    rho_exp1 = CorrXY ** expo1
+    rho_exp2 = CorrXY ** expo2
 
+    alphas = np.arange(0.1, 1.01, 0.1)
+    Corr_prev = CorrXY.copy()
+    L_nice = np.ones_like(CorrXY)
 
-    a = np.arange(0.1, 1., 0.1)
-    prevcorr=np.nan_like(corr)
-    for k in np.arange(len(a)):
-        t = (1.-a(k))*rho_exp1+a(k)*rho_exp2
-        corr_nice = t*corr
-
-
-        if k>0 and np.norm(corr_nice - corr,'fro') > fac*sig_rho:
-            corr_nice = prevcorr
+    for a in alphas:
+        L = (1.0 - a) * rho_exp1 + a * rho_exp2
+        Corr_try = L * CorrXY
+        if np.linalg.norm(Corr_try - CorrXY, ord="fro") > fac * sig_rho:
+            Corr_try = Corr_prev
             break
-        elif np.norm(corr_nice - corr,'fro') > fac*sig_rho:
-            break
+        Corr_prev = Corr_try
+        L_nice = L
 
-        prevcorr = corr_nice
-        l_nice = t
+    Corr_nice = Corr_try
 
-        vy = np.diag(np.std(y,axis=1))
-        vx = np.diag(np.std(x,axis=1));
-        cov_nice = vx@corr_nice@vy;
+    cov_nice = np.diag(sx) @ Corr_nice @ np.diag(sy)
 
-    return cov_nice,corr_nice,l_nice
+    if out:
+        print(f"NICE: expo2={expo2}, fac={fac}")
 
-
-
-def msqrt_sparse(M=None, method='chol', smallval=None, nthreads = 16):
-    '''
-    Computes a matrix square-root (cholesky, lu, or eig).
-
-    Parameter:
-    M: M is a positive Hermitian (or positive definite) matrix.
-
-    Return:
-    SqrtM, Mevals, Mevecs:
-    Here, SqrtM is a matrix such that SqrtM * SqrtM.T = M.
-    The vector Mevals contains the eigenvectors of M,
-    and the matrix Mevecs the corresponding eigenvectors.
-
-    Also Calculate sparse Cholesky, missing in scipy.
-
-    Parameters
-    ----------
-    A : double
-        Positive definite sparse matrix.
-    smallval: double
-        small value to guarantee positive definiteness in
-        the case of numerical noise.
-    method: str
-        eigenvalue, splu or cholesky in case of dense input matrices
-
-    Returns
-    -------
-    sqrtM: double
-        Cholesky factor of A.
-
-    Last change: VR Mar 2024
+    return cov_nice, Corr_nice, L_nice
 
 
-    '''
-    from scipy.sparse import csr_array, csc_array, coo_array, eye_array, diags_array, issparse
+def msqrt_sparse(
+    M: sp.spmatrix | np.ndarray,
+    method: str = "chol",
+    smallval: Optional[float] = None,
+    nthreads: int = 16,
+    k_eigs: Optional[int] = None,
+) -> np.ndarray:
+    """Compute a matrix factor S such that S @ S.T ≈ M."""
     from threadpoolctl import threadpool_limits
 
+    n, n2 = M.shape
+    if n != n2:
+        raise ValueError("M must be square.")
 
-    n, _ =M.shape
-
-
-    if smallval is not None:
-        M = M + np.identity(n)*smallval
-
-
-    if 'eigs' in method.lower():
-        from scipy.linalg import eigsh
-        # compute eigenvalues and eigenvectors
-        with threadpool_limits(limits=nthreads):
-            mevals, mevecs = eigsh(M)
-        mevals = mevals.clip(min=0.0)
-        sqrtM = mevecs * np.sqrt(mevals)
-        return sqrtM
-
-    elif 'chol' in method.lower():
-        from scipy.linalg import cholesky
-        with threadpool_limits(limits=nthreads):
-            sqrtM = cholesky(M.toarray())
-        return sqrtM
-
-    elif 'splu' in method.lower():
-        from scipy.sparse.linalg import splu, diags
-        with threadpool_limits(limits=16):
-            LU = scs.linalg.splu(M, diag_pivot_thresh=0)  # sparse LU decomposition
-
-        # check the matrix A is positive definite.
-        if (LU.perm_r == np.arange(n)).all() and (LU.U.diagonal() > 0).all():
-            sqrtM = LU.L.dot(diags(LU.U.diagonal() ** 0.5))
-
+    if smallval is not None and smallval != 0.0:
+        if sp.issparse(M):
+            M = M + smallval * sp.identity(n, format="csc")
         else:
-            sys.exit('The matrix is not positive definite')
+            M = np.asarray(M, dtype=float) + smallval * np.eye(n)
+
+    mth = method.lower()
+
+    if "eigs" in mth:
+        if sp.issparse(M):
+            k = int(min(max(2, k_eigs or 50), n - 1))
+            with threadpool_limits(limits=nthreads):
+                evals, evecs = spla.eigsh(M, k=k, which="LA")
+            evals = np.clip(evals, 0.0, None)
+            return evecs * np.sqrt(evals)
+        A = np.asarray(M, dtype=float)
+        with threadpool_limits(limits=nthreads):
+            evals, evecs = la.eigh(A)
+        evals = np.clip(evals, 0.0, None)
+        return evecs * np.sqrt(evals)
+
+    if "chol" in mth:
+        A = M.toarray() if sp.issparse(M) else np.asarray(M, dtype=float)
+        with threadpool_limits(limits=nthreads):
+            return la.cholesky(A, lower=True)
+
+    if "splu" in mth:
+        A = M.tocsc() if sp.issparse(M) else sp.csc_matrix(np.asarray(M, dtype=float))
+        with threadpool_limits(limits=nthreads):
+            LU = spla.splu(A, diag_pivot_thresh=0.0)
+
+        if not (np.all(LU.perm_r == np.arange(n)) and np.all(LU.U.diagonal() > 0)):
+            raise ValueError("Matrix does not appear SPD under LU decomposition.")
+        return (LU.L @ sp.diags(np.sqrt(LU.U.diagonal()))).toarray()
+
+    raise ValueError("Unknown method. Use 'chol', 'eigs', or 'splu'.")
 
 
-        return sqrtM
-
-    else:
-         sys.exit()
-
-def isspd(A):
-    from scipy.sparse import csr_array, csc_array, coo_array, eye_array, diags_array, issparse
-
-    n = A.shape[0]
-
-    if issparse(A):
-        from scipy.sparse.linalg import splu
-        try:
-            # Convert to Compressed Sparse Row format
-            spm = csr_array(A)
-            # Attempt LU decomposition (Cholesky not directly available for sparse)
-            splu(spm)
-            return True
-        except RuntimeError:
+def isspd(A: sp.spmatrix | np.ndarray, *, atol: float = 1e-12) -> bool:
+    """Heuristic check for symmetric positive definiteness."""
+    if sp.issparse(A):
+        if (A - A.T).nnz != 0:
             return False
-    else:
-        from scipy.linalg import cholesky
         try:
-            cholesky(A)
-            return True
-        except np.linalg.LinAlgError:
+            evals = spla.eigsh(A, k=1, which="SA", return_eigenvectors=False)
+            return bool(evals[0] > atol)
+        except Exception:
             return False
 
+    try:
+        la.cholesky(np.asarray(A, dtype=float), lower=True)
+        return True
+    except Exception:
+        return False
 
 
-    #AAT = A@A.T
-    #if np.allclose(AAT, np.identity(n), rtol = 1.e-8, atol=1.e-8):
-        #print('A is symmetric.')
-    #else:
-        #print('A is NOT symmetric.')
+def rsvd(
+    A: sp.spmatrix | np.ndarray,
+    rank: int = 300,
+    n_oversamples: int = 20,
+    n_subspace_iters: Optional[int] = None,
+    return_range: bool = False,
+):
+    """Randomised SVD (Halko, Martinsson & Tropp, 2011)."""
+    n_samples = int(rank) + int(n_oversamples)
 
-    #spd = np.all(np.linalg.eigvals(A) > 1.e-12)
-
-
-    # return spd
-
-def rsvd(A, rank=300,
-         n_oversamples=300,
-         n_subspace_iters=None,
-         return_range=False):
-    '''
-    =============================================================================
-    Randomized SVD. See Halko, Martinsson, Tropp's 2011 SIAM paper:
-
-    'Finding structure with randomness: Probabilistic algorithms for constructing
-    approximate matrix decompositions'
-    Author: Gregory Gundersen, Princeton, Jan 2019
-    =============================================================================
-    Randomized SVD (p. 227 of Halko et al).
-
-    :param A:                (m x n) matrix.
-    :param rank:             Desired rank approximation.
-    :param n_oversamples:    Oversampling parameter for Gaussian random samples.
-    :param n_subspace_iters: Number of power iterations.
-    :param return_range:     If `True`, return basis for approximate range of A.
-    :return:                 U, S, and Vt as in truncated SVD.
-    '''
-    if n_oversamples is None:
-        # This is the default used in the paper.
-        n_samples = 2 * rank
-    else:
-        n_samples = rank + n_oversamples
-
-    # Stage A.
-    # print(' stage A')
     Q = find_range(A, n_samples, n_subspace_iters)
-
-    # Stage B.
-    # print(' stage B')
     B = Q.T @ A
-    # print(np.shape(B))
-    # print(' stage B before linalg')
-    U_tilde, S, Vt = np.linalg.svd(B)
-    # print(' stage B after linalg')
+    U_tilde, S, Vt = np.linalg.svd(np.asarray(B), full_matrices=False)
     U = Q @ U_tilde
 
-    # Truncate.
-    U, S, Vt = U[:, :rank], S[:rank], Vt[:rank, :]
+    U = U[:, :rank]
+    S = S[:rank]
+    Vt = Vt[:rank, :]
 
-    # This is useful for computing the actual error of our approximation.
     if return_range:
         return U, S, Vt, Q
     return U, S, Vt
 
 
-# ------------------------------------------------------------------------------
-
-
-def find_range(A, n_samples, n_subspace_iters=None):
-    '''
-
-    Algorithm 4.1: Randomized range finder (p. 240 of Halko et al).
-
-    Given a matrix A and a number of samples, computes an orthonormal matrix
-    that approximates the range of A.
-
-    :param A:                (m x n) matrix.
-    :param n_samples:        Number of Gaussian random samples.
-    :param n_subspace_iters: Number of subspace iterations.
-    :return:                 Orthonormal basis for approximate range of A.
-    '''
-    # print('here we are in range-finder')
+def find_range(A: sp.spmatrix | np.ndarray, n_samples: int, n_subspace_iters: Optional[int] = None) -> np.ndarray:
+    """Randomised range finder (Algorithm 4.1 in Halko et al.)."""
     rng = np.random.default_rng()
-
-    m, n = A.shape
-    # print(A.shape)
+    _, n = A.shape
     O = rng.normal(size=(n, n_samples))
-    # print(O.shape)
     Y = A @ O
-
-    if n_subspace_iters:
-        return subspace_iter(A, Y, n_subspace_iters)
-    else:
-        return ortho_basis(Y)
+    if n_subspace_iters and n_subspace_iters > 0:
+        return subspace_iter(A, Y, int(n_subspace_iters))
+    return ortho_basis(Y)
 
 
-# ------------------------------------------------------------------------------
-
-
-def subspace_iter(A, Y0, n_iters):
-    '''
-    Algorithm 4.4: Randomized subspace iteration (p. 244 of Halko et al).
-
-    Uses a numerically stable subspace iteration algorithm to down-weight
-    smaller singular values.
-
-    :param A:       (m x n) matrix.
-    :param Y0:      Initial approximate range of A.
-    :param n_iters: Number of subspace iterations.
-    :return:        Orthonormalized approximate range of A after power
-                    iterations.
-    '''
-    # print('herere we are in subspace-iter')
+def subspace_iter(A: sp.spmatrix | np.ndarray, Y0: np.ndarray, n_iters: int) -> np.ndarray:
+    """Randomised subspace iteration (Algorithm 4.4 in Halko et al.)."""
     Q = ortho_basis(Y0)
     for _ in range(n_iters):
         Z = ortho_basis(A.T @ Q)
@@ -441,77 +370,24 @@ def subspace_iter(A, Y0, n_iters):
     return Q
 
 
-# ------------------------------------------------------------------------------
-
-
-def ortho_basis(M):
-    '''
-    Computes an orthonormal basis for a matrix.
-
-    :param M: (m x n) matrix.
-    :return:  An orthonormal basis for M.
-    '''
-    # print('herere we are in ortho')
-    Q, _ = np.linalg.qr(M)
+def ortho_basis(M: np.ndarray) -> np.ndarray:
+    """Compute an orthonormal basis for the range of M using QR."""
+    Q, _ = np.linalg.qr(np.asarray(M), mode="reduced")
     return Q
 
 
 def make_spline(x: np.ndarray, y: np.ndarray, lam: float | None = None):
-    """
-    Fit a smoothing spline using SciPy's make_smoothing_spline.
-    Ensures x is sorted ascending.
+    """Fit a smoothing spline using SciPy and return the spline object."""
+    order = np.argsort(x)
+    x_sorted = np.asarray(x)[order]
+    y_sorted = np.asarray(y)[order]
+    return make_smoothing_spline(x_sorted, y_sorted, lam=lam)
 
-    Parameters
-    ----------
-    x : np.ndarray
-        1D array of x-values.
-    y : np.ndarray
-        1D array of y-values.
-    lam : float, optional
-        Smoothing parameter.
-
-    Returns
-    -------
-    spline : PPoly
-        Fitted spline object.
-
-    Remarks
-    -------
-    Author: Volker Rath (DIAS), Date: 2025-11-21
-    Generated by Copilot v1.0
-    """
-    sort_idx = np.argsort(x)
-    x_sorted, y_sorted = x[sort_idx], y[sort_idx]
-    sobj = make_smoothing_spline(x_sorted, y_sorted, lam=lam)
-    if lam is None:
-        print("$\lambda$ chosen via GCV (not exposed by BSpline)")
-    else:
-        print("$\lambsa$ is", lam)
-    return sobj
 
 def estimate_variance(y_true: np.ndarray, y_fit: np.ndarray) -> float:
-    """
-    Estimate residual variance.
-
-    Parameters
-    ----------
-    y_true : np.ndarray
-        Observed data.
-    y_fit : np.ndarray
-        Fitted values from spline.
-
-    Returns
-    -------
-    var : float
-        Residual variance estimate.
-
-    Remarks
-    -------
-    Author: Volker Rath (DIAS), Date: 2025-11-21
-    Generated by Copilot v1.0
-    """
-    residuals = y_true - y_fit
-    return np.var(residuals, ddof=1)
+    """Estimate residual variance with ddof=1."""
+    res = np.asarray(y_true) - np.asarray(y_fit)
+    return float(np.var(res, ddof=1))
 
 
 def bootstrap_confidence_band(
@@ -519,65 +395,37 @@ def bootstrap_confidence_band(
     y: np.ndarray,
     lam: float | None = None,
     n_bootstrap: int = 1000,
-    ci: float = 0.95
+    ci: float = 0.95,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Compute bootstrap confidence intervals for spline predictions.
-    Ensures each resample is strictly ascending before fitting.
+    """Bootstrap confidence bands for spline predictions."""
+    x = np.asarray(x)
+    y = np.asarray(y)
+    order = np.argsort(x)
+    x_eval = x[order]
+    y_sorted = y[order]
 
-    Parameters
-    ----------
-    x : np.ndarray
-        Input x-values for evaluation.
-    y : np.ndarray
-        Observed y-values.
-    lam : float, optional
-        Smoothing parameter for spline.
-    n_bootstrap : int
-        Number of bootstrap resamples.
-    ci : float
-        Confidence level (e.g., 0.95 for 95%).
-
-    Returns
-    -------
-    x_eval : np.ndarray
-        Sorted x-values used for evaluation.
-    lower : np.ndarray
-        Lower confidence band.
-    upper : np.ndarray
-        Upper confidence band.
-
-    Remarks
-    -------
-    Author: Volker Rath (DIAS), Date: 2025-11-21
-    Generated by Copilot v1.0
-    """
-    # define evaluation grid (sorted original x)
-    sort_idx = np.argsort(x)
-    x_eval, y_sorted = x[sort_idx], y[sort_idx]
-    n = len(x_eval)
-    preds = np.zeros((n_bootstrap, n))
+    n = x_eval.size
+    preds = np.full((n_bootstrap, n), np.nan, dtype=float)
+    rng = np.random.default_rng()
 
     for i in range(n_bootstrap):
-        idx = np.random.choice(len(x), len(x), replace=True)
-        x_res, y_res = x[idx], y[idx]
+        idx = rng.choice(n, size=n, replace=True)
+        x_res = x_eval[idx]
+        y_res = y_sorted[idx]
 
-        # sort resampled data
-        sort_idx_res = np.argsort(x_res)
-        x_res_sorted, y_res_sorted = x_res[sort_idx_res], y_res[sort_idx_res]
+        ord2 = np.argsort(x_res)
+        x_rs = x_res[ord2]
+        y_rs = y_res[ord2]
 
-        # enforce strictly ascending x by removing duplicates
-        unique_x, unique_idx = np.unique(x_res_sorted, return_index=True)
-        y_res_unique = y_res_sorted[unique_idx]
-
-        if len(unique_x) < 4:
-            # not enough unique points to fit spline, skip this bootstrap
+        ux, uidx = np.unique(x_rs, return_index=True)
+        if ux.size < 4:
             continue
+        y_u = y_rs[uidx]
 
-        spline_res = make_smoothing_spline(unique_x, y_res_unique, lam=lam)
-        preds[i, :] = spline_res(x_eval)
+        spline = make_smoothing_spline(ux, y_u, lam=lam)
+        preds[i, :] = spline(x_eval)
 
-    alpha = 1 - ci
-    lower = np.percentile(preds, 100 * alpha / 2, axis=0)
-    upper = np.percentile(preds, 100 * (1 - alpha / 2), axis=0)
+    alpha = 1.0 - float(ci)
+    lower = np.nanpercentile(preds, 100.0 * alpha / 2.0, axis=0)
+    upper = np.nanpercentile(preds, 100.0 * (1.0 - alpha / 2.0), axis=0)
     return x_eval, lower, upper

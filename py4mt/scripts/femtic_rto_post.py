@@ -49,6 +49,7 @@ for pth in mypath:
         sys.path.insert(0,pth)
 
 import femtic as fem
+import ensembles as ens
 import util as utl
 from version import versionstrg
 
