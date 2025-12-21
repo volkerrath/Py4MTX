@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ediproc.py
+dataproc.py
 =================
 Compact I/O utilities for magnetotelluric EDI files.
 
@@ -1317,7 +1317,7 @@ def save_edi(
     if elev_m is not None:
         lines.append(f"  ELEV={elev_m: .6f}")
     lines.append('  STDVERS="SEG 1.0"')
-    lines.append('  PROGVERS="ediproc.py"')
+    lines.append('  PROGVERS="dataproc.py"')
     lines.append('  PROGDATE="2025-11-20"')
     lines.append("  EMPTY=1.0E32")
     lines.append("")
@@ -1488,7 +1488,7 @@ def dataframe_from_edi(
     Parameters
     ----------
     edi : dict
-        EDI dictionary, typically returned by :func:`ediproc.load_edi`. It
+        EDI dictionary, typically returned by :func:`dataproc.load_edi`. It
         must contain at least:
 
         ``"freq"`` : 1-D array of frequencies [Hz].
