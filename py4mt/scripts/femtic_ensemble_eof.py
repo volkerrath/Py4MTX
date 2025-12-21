@@ -34,17 +34,12 @@ for pth in mypath:
 
 # Import required py4mt modules for your script
 import util as utl
-import modem as mod
-import jacproc as jp
-import mtproc as mp
-import dataproc as dp
-import plotrjmcmc as plmc
 import viz
 import inverse as inv
 import femtic as fem
 import ensembles as ens
 import femtic_viz as femviz
-import cluster as fcm
+
 from version import versionstrg
 
 
@@ -58,7 +53,8 @@ print(titstrng + '\n\n')
 
 EnsembleDir = r'/home/vrath/FEMTIC_work/ens_annecy/'
 EnsembleName = 'ann_'
-EnsembleFile = 'AnnecyEOF.npz'
+EnsembleFile = 'AnnecyENS.npz'
+EnsembleEOF = 'AnnecyEOF.npz'
 
 SearchStrng = EnsembleName + '*'
 dir_list = utl.get_filelist(searchstr=[SearchStrng], searchpath=EnsembleDir,
@@ -77,7 +73,7 @@ for directory in dir_list:
 
     modl = fem.read_model(
         model_file=modl_file,
-        model_trans="log10")
+        model_trans="log10")[2:,]
 
     modl = modl[:, None]
     if ens_num == 0:
@@ -86,5 +82,30 @@ for directory in dir_list:
         ensemble = np.concatenate((ensemble, modl), axis=1)
     print(np.shape(ensemble))
 
+# ensemble = ensemble.T
 storedict = {'ensemble': ensemble}
 np.savez_compressed(EnsembleDir + EnsembleFile, **storedict)
+
+eofs, pcs, w_k, frac, mean = ens.compute_eofs(E=ensemble, method="svd", demean=True,)
+
+print('eofs:', np.shape(eofs))
+print('pcs:', np.shape(pcs))
+print('frac:', np.shape(frac))
+print('w_k:', np.shape(w_k))
+print('mean:', np.shape(mean))
+
+storedict = {'eofs': eofs,
+             'pcs': pcs,
+             'frac': frac,
+             'w_k' : w_k,
+             'mean': mean
+             }
+np.savez_compressed(EnsembleDir + EnsembleEOF, **storedict)
+
+for pc in np.arange(np.shape(ensemble)[1]):
+     file = EnsembleDir + EnsembleEOF.replace('.npz', str(pc)+'.npz')
+     fem.insert_model(
+         template = EnsembleDir+'resistivity_block_iter.dat',
+         model = eofs[:,pc],
+         model_file=file,
+     )
