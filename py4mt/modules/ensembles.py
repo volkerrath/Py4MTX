@@ -42,6 +42,7 @@ from typing import (
     Dict,
     Literal,
     List,
+    ArrayLike,
 )
 
 import numpy as np
@@ -957,6 +958,121 @@ def compute_eofs(
 
     raise ValueError(f"Unknown method='{method}'. Use 'svd' or 'sample_space'.")
 
+
+def eof_reconstruct(
+    eofs: ArrayLike,
+    pcs: ArrayLike,
+    mean: ArrayLike | None = None,
+    *,
+    nmodes: int | None = None,
+) -> np.ndarray:
+    """
+    Reconstruct a physical ensemble from EOFs and PC coefficients.
+
+    Parameters
+    ----------
+    eofs : array_like, shape (ncells, r)
+        EOF spatial modes (columns). Typically orthonormal.
+    pcs : array_like, shape (r, nsamples)
+        Principal component coefficients for each sample.
+        If you got EOFs from SVD X = U S Vt, then pcs = S @ Vt.
+    mean : array_like or None, shape (ncells,), optional
+        Spatial mean field that was removed before EOF analysis.
+        If provided, it is added back to the reconstruction.
+    nmodes : int or None, optional
+        If given, truncate to the first `nmodes` EOFs/PCs.
+
+    Returns
+    -------
+    ensemble_rec : ndarray, shape (ncells, nsamples)
+        Reconstructed ensemble in physical space.
+
+    Notes
+    -----
+    Reconstruction formula:
+        E_rec = mean[:, None] + EOFs_k @ PCs_k
+    """
+    U = np.asarray(eofs, dtype=float)
+    A = np.asarray(pcs, dtype=float)
+
+    if U.ndim != 2 or A.ndim != 2:
+        raise ValueError("eofs and pcs must be 2-D arrays.")
+    if U.shape[1] != A.shape[0]:
+        raise ValueError(f"Shape mismatch: eofs {U.shape}, pcs {A.shape}.")
+
+    if nmodes is not None:
+        if nmodes <= 0 or nmodes > U.shape[1]:
+            raise ValueError("nmodes must be in [1, r].")
+        U = U[:, :nmodes]
+        A = A[:nmodes, :]
+
+    Erec = U @ A
+
+    if mean is not None:
+        mu = np.asarray(mean, dtype=float).reshape(-1)
+        if mu.shape[0] != Erec.shape[0]:
+            raise ValueError("mean has wrong length.")
+        Erec = Erec + mu[:, None]
+
+    return Erec
+
+
+def eof_reconstruct_from_svd(
+    U: ArrayLike,
+    s: ArrayLike,
+    Vt: ArrayLike,
+    mean: ArrayLike | None = None,
+    *,
+    nmodes: int | None = None,
+) -> np.ndarray:
+    """
+    Reconstruct a physical ensemble directly from an SVD of anomalies.
+
+    Parameters
+    ----------
+    U : array_like, shape (ncells, r)
+        Left singular vectors (EOFs).
+    s : array_like, shape (r,)
+        Singular values.
+    Vt : array_like, shape (r, nsamples)
+        Right singular vectors (transposed).
+    mean : array_like or None, shape (ncells,), optional
+        Mean field to add back.
+    nmodes : int or None, optional
+        Truncate to first nmodes.
+
+    Returns
+    -------
+    ensemble_rec : ndarray, shape (ncells, nsamples)
+        Reconstructed ensemble.
+    """
+    U = np.asarray(U, dtype=float)
+    s = np.asarray(s, dtype=float).reshape(-1)
+    Vt = np.asarray(Vt, dtype=float)
+
+    if U.ndim != 2 or Vt.ndim != 2 or s.ndim != 1:
+        raise ValueError("U and Vt must be 2-D; s must be 1-D.")
+    r = U.shape[1]
+    if s.shape[0] != r or Vt.shape[0] != r:
+        raise ValueError("Inconsistent SVD shapes.")
+
+    if nmodes is not None:
+        if nmodes <= 0 or nmodes > r:
+            raise ValueError("nmodes must be in [1, r].")
+        U = U[:, :nmodes]
+        s = s[:nmodes]
+        Vt = Vt[:nmodes, :]
+
+    # anomalies reconstruction: X = U diag(s) Vt
+    Xrec = U @ (s[:, None] * Vt)
+
+    if mean is not None:
+        mu = np.asarray(mean, dtype=float).reshape(-1)
+        if mu.shape[0] != Xrec.shape[0]:
+            raise ValueError("mean has wrong length.")
+        return Xrec + mu[:, None]
+
+    return Xrec
 
 # ---------------------------------------------------------------------------
 # Weighted KL decomposition on FEMTIC mesh
