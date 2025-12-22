@@ -21,6 +21,7 @@ import argparse
 # Import numerical or other specialised modules
 import numpy as np
 import scipy as sc
+import numpy.linalg as nla
 
 PY4MTX_DATA = os.environ['PY4MTX_DATA']
 PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
@@ -60,6 +61,9 @@ SearchStrng = EnsembleName + '*'
 dir_list = utl.get_filelist(searchstr=[SearchStrng], searchpath=EnsembleDir,
                             sortedlist=True, fullpath=True)
 
+nens = len(dir_list)
+
+
 ens_num = -1
 for directory in dir_list:
     ens_num = ens_num + 1
@@ -82,17 +86,41 @@ for directory in dir_list:
         ensemble = np.concatenate((ensemble, modl), axis=1)
     print(np.shape(ensemble))
 
-# ensemble = ensemble.T
+
 storedict = {'ensemble': ensemble}
 np.savez_compressed(EnsembleDir + EnsembleFile, **storedict)
 
-eofs, pcs, w_k, frac, mean = ens.compute_eofs(E=ensemble, method="svd", demean=True,)
 
+eofs, pcs, w_k, frac, mean = ens.compute_eofs(E=ensemble, method="svd", demean=True,)
 print('eofs:', np.shape(eofs))
-print('pcs:', np.shape(pcs))
-print('frac:', np.shape(frac))
-print('w_k:', np.shape(w_k))
-print('mean:', np.shape(mean))
+
+pnorm = []
+cnorm = []
+for ie in np.arange(nens):
+    pnorm.append(nla.norm(eofs[:,ie], axis=0))
+
+
+# pnorm = np.array(pnorm)
+# cnorm = np.array(cnorm)
+# print(pnorm)
+# print(cnorm)
+
+# pnorm = pnorm/cnorm[-1]
+# cnorm = cnorm/cnorm[-1]
+# print('\nnorm cum eofs: (percent)')
+# print(100.*cnorm)
+# print('\nnorm eofs: (percent)')
+# print(100.*pnorm)
+# def eof_reconstruct(
+#     eofs: ArrayLike,
+#     pcs: ArrayLike,
+#     mean: ArrayLike | None = None,
+#     *,
+#     nmodes: int | None = None,
+# ) -> np.ndarray:
+
+
+
 
 storedict = {'eofs': eofs,
              'pcs': pcs,
@@ -106,6 +134,6 @@ for pc in np.arange(np.shape(ensemble)[1]):
      file = EnsembleDir + EnsembleEOF.replace('.npz', str(pc)+'.npz')
      fem.insert_model(
          template = EnsembleDir+'resistivity_block_iter.dat',
-         model = eofs[:,pc],
+         model = eofs[:,pc]+mean,
          model_file=file,
      )
