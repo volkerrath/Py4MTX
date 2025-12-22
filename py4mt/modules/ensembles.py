@@ -42,8 +42,8 @@ from typing import (
     Dict,
     Literal,
     List,
-    ArrayLike,
 )
+from numpy.typing import ArrayLike
 
 import numpy as np
 from numpy.polynomial.hermite import hermval
@@ -959,38 +959,51 @@ def compute_eofs(
     raise ValueError(f"Unknown method='{method}'. Use 'svd' or 'sample_space'.")
 
 
-def eof_reconstruct(
+def eof_sample(
     eofs: ArrayLike,
     pcs: ArrayLike,
     mean: ArrayLike | None = None,
     *,
-    nmodes: int | None = None,
+    k0: int = 0,
+    k1: int | None = None,
+    groups: list[tuple[int, int]] | None = None,
+    rng: np.random.Generator | None = None,
+    method: str = "empirical_diag",
+    whitened: bool = False,
+    ddof: int = 1,
+    return_components: bool = False,
 ) -> np.ndarray:
     """
-    Reconstruct a physical ensemble from EOFs and PC coefficients.
+    Draw one new physical-space sample from a truncated EOF model.
 
     Parameters
     ----------
-    eofs : array_like, shape (ncells, r)
-        EOF spatial modes (columns). Typically orthonormal.
-    pcs : array_like, shape (r, nsamples)
-        Principal component coefficients for each sample.
-        If you got EOFs from SVD X = U S Vt, then pcs = S @ Vt.
-    mean : array_like or None, shape (ncells,), optional
-        Spatial mean field that was removed before EOF analysis.
-        If provided, it is added back to the reconstruction.
-    nmodes : int or None, optional
-        If given, truncate to the first `nmodes` EOFs/PCs.
+    eofs : (ncells, r)
+        EOF spatial modes (columns).
+    pcs : (r, nsamples)
+        Training PCs. Used to estimate per-mode variance unless whitened=True.
+    mean : (ncells,), optional
+        Mean field to add back.
+    k0, k1 : int
+        Truncation window [k0, k1) in Python slicing convention.
+    groups : list[(k0,k1)] or None
+        If provided, sample each window; return sum (default) or components.
+    rng : np.random.Generator, optional
+        Random generator. If None, uses default_rng().
+    method : {"empirical_diag", "empirical_full"}
+        - "empirical_diag": assume PCs independent; use per-mode variance.
+        - "empirical_full": estimate full covariance across selected modes.
+    whitened : bool
+        If True, assume PCs already have unit variance; sample N(0, I).
+    ddof : int
+        ddof for variance/covariance estimation.
+    return_components : bool
+        If True, return (ngroups, ncells) components; else sum to (ncells,).
 
     Returns
     -------
-    ensemble_rec : ndarray, shape (ncells, nsamples)
-        Reconstructed ensemble in physical space.
-
-    Notes
-    -----
-    Reconstruction formula:
-        E_rec = mean[:, None] + EOFs_k @ PCs_k
+    x : ndarray
+        Sample in physical space: (ncells,) or (ngroups, ncells).
     """
     U = np.asarray(eofs, dtype=float)
     A = np.asarray(pcs, dtype=float)
@@ -1000,20 +1013,162 @@ def eof_reconstruct(
     if U.shape[1] != A.shape[0]:
         raise ValueError(f"Shape mismatch: eofs {U.shape}, pcs {A.shape}.")
 
-    if nmodes is not None:
-        if nmodes <= 0 or nmodes > U.shape[1]:
-            raise ValueError("nmodes must be in [1, r].")
-        U = U[:, :nmodes]
-        A = A[:nmodes, :]
+    r = U.shape[1]
+    if k1 is None:
+        k1 = r
+    if groups is None:
+        groups = [(k0, k1)]
 
-    Erec = U @ A
+    for a, b in groups:
+        if not (0 <= a < b <= r):
+            raise ValueError(f"Invalid mode window (k0,k1)=({a},{b}) for r={r}.")
+
+    if rng is None:
+        rng = np.random.default_rng()
+
+    comps = []
+    for a, b in groups:
+        Ui = U[:, a:b]          # (ncells, m)
+        Pi = A[a:b, :]          # (m, nsamples)
+        m = b - a
+
+        if whitened:
+            coeff = rng.standard_normal(size=m)
+        else:
+            if method == "empirical_diag":
+                var = Pi.var(axis=1, ddof=ddof)
+                var = np.maximum(var, 0.0)
+                coeff = rng.standard_normal(size=m) * np.sqrt(var)
+            elif method == "empirical_full":
+                # covariance across modes: (m, m)
+                Ci = np.cov(Pi, bias=(ddof == 0))  # uses ddof=1 if bias=False
+                # numerical safety
+                Ci = 0.5 * (Ci + Ci.T)
+                # sample N(0, Ci) via eig
+                w, V = np.linalg.eigh(Ci)
+                w = np.maximum(w, 0.0)
+                z = rng.standard_normal(size=m)
+                coeff = V @ (np.sqrt(w) * (V.T @ z))
+            else:
+                raise ValueError("method must be 'empirical_diag' or 'empirical_full'.")
+
+        comps.append(Ui @ coeff)  # (ncells,)
+
+    comps_arr = np.stack(comps, axis=0)  # (ngroups, ncells)
 
     if mean is not None:
         mu = np.asarray(mean, dtype=float).reshape(-1)
-        if mu.shape[0] != Erec.shape[0]:
+        if mu.shape[0] != U.shape[0]:
             raise ValueError("mean has wrong length.")
-        Erec = Erec + mu[:, None]
+        comps_arr = comps_arr + mu[None, :]
 
+    return comps_arr if return_components else comps_arr.sum(axis=0)
+
+
+def _normalize_groups(
+    r: int,
+    *,
+    nmodes: int | None = None,
+    k0: int | None = None,
+    k1: int | None = None,
+    groups: list[tuple[int, int]] | None = None,
+) -> list[tuple[int, int]]:
+    """
+    Build a list of mode windows [(k0,k1), ...] in Python slice convention.
+
+    Priority:
+      1) groups if provided
+      2) (k0,k1) if provided
+      3) nmodes if provided -> (0, nmodes)
+      4) default -> (0, r)
+    """
+    if groups is not None:
+        windows = list(groups)
+    elif (k0 is not None) or (k1 is not None):
+        a = 0 if k0 is None else int(k0)
+        b = r if k1 is None else int(k1)
+        windows = [(a, b)]
+    elif nmodes is not None:
+        windows = [(0, int(nmodes))]
+    else:
+        windows = [(0, r)]
+
+    norm: list[tuple[int, int]] = []
+    for a, b in windows:
+        a = int(a)
+        b = int(b)
+        if a < 0 or b < 0 or a > r or b > r or b <= a:
+            raise ValueError(f"Invalid mode window (k0,k1)=({a},{b}) for r={r}.")
+        norm.append((a, b))
+    return norm
+
+
+def eof_reconstruct(
+    eofs: ArrayLike,
+    pcs: ArrayLike,
+    mean: ArrayLike | None = None,
+    *,
+    nmodes: int | None = None,
+    k0: int | None = None,
+    k1: int | None = None,
+    groups: list[tuple[int, int]] | None = None,
+    return_components: bool = False,
+) -> np.ndarray:
+    """
+    Reconstruct a physical ensemble from EOFs and PC coefficients with optional grouping.
+
+    Parameters
+    ----------
+    eofs : array_like, shape (ncells, r)
+        EOF spatial modes (columns).
+    pcs : array_like, shape (r, nsamples)
+        PC coefficients.
+    mean : array_like or None, shape (ncells,), optional
+        Mean field to add back.
+    nmodes : int or None, optional
+        Convenience for using modes (0, nmodes).
+    k0, k1 : int or None, optional
+        Mode window in Python slicing convention: modes k0..k1-1.
+    groups : list of (k0,k1) or None, optional
+        Multiple mode windows; each window is reconstructed and either summed or returned.
+    return_components : bool, optional
+        If False (default), sum all group reconstructions into one ensemble.
+        If True, return stacked components with shape (ngroups, ncells, nsamples).
+
+    Returns
+    -------
+    ensemble_rec : ndarray
+        If return_components=False: (ncells, nsamples)
+        If return_components=True:  (ngroups, ncells, nsamples)
+    """
+    U = np.asarray(eofs, dtype=float)
+    A = np.asarray(pcs, dtype=float)
+
+    if U.ndim != 2 or A.ndim != 2:
+        raise ValueError("eofs and pcs must be 2-D arrays.")
+    if U.shape[1] != A.shape[0]:
+        raise ValueError(f"Shape mismatch: eofs {U.shape}, pcs {A.shape}.")
+
+    r = U.shape[1]
+    windows = _normalize_groups(r, nmodes=nmodes, k0=k0, k1=k1, groups=groups)
+
+    comps = []
+    for a, b in windows:
+        comps.append(U[:, a:b] @ A[a:b, :])
+    comps_arr = np.stack(comps, axis=0)  # (ngroups, ncells, nsamples)
+
+    if mean is not None:
+        mu = np.asarray(mean, dtype=float).reshape(-1)
+        if mu.shape[0] != U.shape[0]:
+            raise ValueError("mean has wrong length.")
+        comps_arr = comps_arr + mu[None, :, None] if return_components else comps_arr
+
+    if return_components:
+        return comps_arr
+
+    Erec = comps_arr.sum(axis=0)
+    if mean is not None:
+        Erec = Erec + mu[:, None]
     return Erec
 
 
@@ -1024,27 +1179,16 @@ def eof_reconstruct_from_svd(
     mean: ArrayLike | None = None,
     *,
     nmodes: int | None = None,
+    k0: int | None = None,
+    k1: int | None = None,
+    groups: list[tuple[int, int]] | None = None,
+    return_components: bool = False,
 ) -> np.ndarray:
     """
-    Reconstruct a physical ensemble directly from an SVD of anomalies.
+    Reconstruct a physical ensemble from SVD of anomalies: X = U diag(s) Vt,
+    with optional grouping (k0-k1 windows).
 
-    Parameters
-    ----------
-    U : array_like, shape (ncells, r)
-        Left singular vectors (EOFs).
-    s : array_like, shape (r,)
-        Singular values.
-    Vt : array_like, shape (r, nsamples)
-        Right singular vectors (transposed).
-    mean : array_like or None, shape (ncells,), optional
-        Mean field to add back.
-    nmodes : int or None, optional
-        Truncate to first nmodes.
-
-    Returns
-    -------
-    ensemble_rec : ndarray, shape (ncells, nsamples)
-        Reconstructed ensemble.
+    Returns same shapes as eof_reconstruct.
     """
     U = np.asarray(U, dtype=float)
     s = np.asarray(s, dtype=float).reshape(-1)
@@ -1052,27 +1196,431 @@ def eof_reconstruct_from_svd(
 
     if U.ndim != 2 or Vt.ndim != 2 or s.ndim != 1:
         raise ValueError("U and Vt must be 2-D; s must be 1-D.")
+
     r = U.shape[1]
     if s.shape[0] != r or Vt.shape[0] != r:
         raise ValueError("Inconsistent SVD shapes.")
 
-    if nmodes is not None:
-        if nmodes <= 0 or nmodes > r:
-            raise ValueError("nmodes must be in [1, r].")
-        U = U[:, :nmodes]
-        s = s[:nmodes]
-        Vt = Vt[:nmodes, :]
+    windows = _normalize_groups(r, nmodes=nmodes, k0=k0, k1=k1, groups=groups)
 
-    # anomalies reconstruction: X = U diag(s) Vt
-    Xrec = U @ (s[:, None] * Vt)
+    comps = []
+    for a, b in windows:
+        # X_ab = U[:,a:b] diag(s[a:b]) Vt[a:b,:]
+        comps.append(U[:, a:b] @ (s[a:b, None] * Vt[a:b, :]))
+    comps_arr = np.stack(comps, axis=0)  # (ngroups, ncells, nsamples)
 
+    if return_components:
+        if mean is not None:
+            mu = np.asarray(mean, dtype=float).reshape(-1)
+            if mu.shape[0] != U.shape[0]:
+                raise ValueError("mean has wrong length.")
+            comps_arr = comps_arr + mu[None, :, None]
+        return comps_arr
+
+    Xrec = comps_arr.sum(axis=0)
     if mean is not None:
         mu = np.asarray(mean, dtype=float).reshape(-1)
         if mu.shape[0] != Xrec.shape[0]:
             raise ValueError("mean has wrong length.")
-        return Xrec + mu[:, None]
-
+        Xrec = Xrec + mu[:, None]
     return Xrec
+
+def eof_check_orthonormal(eofs: ArrayLike, *, tol: float = 1e-6) -> float:
+    """
+    Return max absolute deviation of (U^T U) from identity.
+    """
+    U = np.asarray(eofs, dtype=float)
+    G = U.T @ U
+    I = np.eye(G.shape[0])
+    return float(np.max(np.abs(G - I)))
+
+
+
+def eof_captured_curve_from_pcs(pcs: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Cumulative captured anomaly energy fraction from PCs only.
+
+    Assumes EOFs are orthonormal (usual EOF/SVD case), so captured fraction
+    by modes 0..k-1 equals sum_{i<k} ||PC_i||^2 / sum_{all} ||PC_i||^2.
+
+    Parameters
+    ----------
+    pcs : ndarray, shape (r, nsamples)
+        PC coefficients for ensemble anomalies.
+
+    Returns
+    -------
+    k : ndarray, shape (r,)
+        Mode counts 1..r
+    frac : ndarray, shape (r,)
+        Cumulative captured fraction for first k modes.
+    """
+
+
+    A = np.asarray(pcs, dtype=float)
+    if A.ndim != 2:
+        raise ValueError("pcs must be 2-D (r, nsamples).")
+
+    # energy per mode = sum over samples of PC^2
+    e_mode = np.sum(A * A, axis=1)  # (r,)
+    total = float(np.sum(e_mode))
+    if total <= 0.0:
+        k = np.arange(1, A.shape[0] + 1)
+        return k, np.zeros_like(k, dtype=float)
+
+    frac = np.cumsum(e_mode) / total
+    k = np.arange(1, A.shape[0] + 1)
+    return k, frac
+
+
+def plot_eof_captured_curve(pcs: np.ndarray, *,
+                            title: str = "EOF cumulative captured fraction") -> None:
+    """
+    Plot cumulative captured fraction vs number of EOF modes.
+
+    """
+    import matplotlib.pyplot as plt
+    k, frac = eof_captured_curve_from_pcs(pcs)
+
+    plt.figure()
+    plt.plot(k, frac)
+    plt.xlabel("Number of EOF modes (k)")
+    plt.ylabel("Cumulative captured fraction")
+    plt.title(title)
+    plt.ylim(0.0, 1.0)
+    plt.grid(True, linestyle=":")
+    plt.tight_layout()
+    plt.show()
+
+
+# --- Example usage ---
+# pcs = ...  # your array, shape (r, nsamples)
+# plot_eof_captured_curve(pcs)
+
+def eof_captured_fraction_from_pcs(
+    pcs: ArrayLike,
+    *,
+    k0: int = 0,
+    k1: int | None = None,
+    groups: list[tuple[int, int]] | None = None,
+) -> float:
+    """
+    Fraction of anomaly energy captured by a truncated EOF reconstruction, using PCs only.
+
+    Assumes EOFs are orthonormal so that ||U_S A_S||_F^2 = ||A_S||_F^2.
+
+    Parameters
+    ----------
+    pcs : (r, nsamples)
+        PC coefficient matrix for the ensemble anomalies.
+    k0, k1 : int
+        Mode window [k0, k1). Ignored if groups is provided.
+    groups : list[(k0,k1)] or None
+        Multiple windows included together (union).
+
+    Returns
+    -------
+    frac : float
+        Captured anomaly energy fraction in [0, 1].
+    """
+    A = np.asarray(pcs, dtype=float)
+    if A.ndim != 2:
+        raise ValueError("pcs must be 2-D (r, nsamples).")
+
+    r = A.shape[0]
+    if k1 is None:
+        k1 = r
+    if groups is None:
+        groups = [(k0, k1)]
+
+    mask = np.zeros(r, dtype=bool)
+    for a, b in groups:
+        a = int(a)
+        b = int(b)
+        if not (0 <= a < b <= r):
+            raise ValueError(f"Invalid mode window (k0,k1)=({a},{b}) for r={r}.")
+        mask[a:b] = True
+
+    den = float(np.sum(A * A))
+    if den <= 0.0:
+        return 0.0
+
+    num = float(np.sum(A[mask, :] * A[mask, :]))
+    return num / den
+
+
+def eof_generate_ensemble(
+    eofs: ArrayLike,
+    pcs: ArrayLike,
+    mean: ArrayLike | None = None,
+    *,
+    nmodes: int | None = None,
+) -> np.ndarray:
+
+
+
+
+    """
+    EOF-based ensemble model + random physical ensemble generator.
+
+    This module builds an EOF model from an existing ensemble (ncells × nsamples)
+    and can generate new random “physical” realizations by sampling in EOF space
+    and mapping back to the original parameter space.
+
+    Conventions
+    -----------
+    - Input ensemble X has shape (ncells, nsamples).
+    - EOF model uses anomalies A = X - mean[:, None].
+    - Sampling is Gaussian by default: x = mean + U_k @ (sqrt(lam_k) * z),
+      where z ~ N(0, I).
+
+    Prewhitening option
+    -------------------
+    If prewhiten=True, anomalies are scaled cellwise by inverse standard deviation
+    before EOF decomposition:
+        Aw = W @ A,   W = diag(1 / (std + eps))
+    Then sampling occurs in the whitened space, and realizations are unwhitened:
+        A = W^{-1} @ Aw
+
+    This is a pragmatic variance-normalization (not full whitening of covariance).
+
+    Author: Volker Rath (DIAS)
+    Created with the help of ChatGPT (GPT-5 Thinking) on 2025-12-22
+    """
+
+@dataclass(frozen=True)
+class EOFModel:
+    """Container for an EOF model suitable for fast ensemble sampling.
+
+    Attributes
+    ----------
+    mean : (ncells,) ndarray
+        Ensemble mean in physical space.
+    U : (ncells, k) ndarray
+        EOF modes (left singular vectors) in the *whitened* space if prewhiten=True,
+        otherwise in physical space.
+    s : (k,) ndarray
+        Singular values corresponding to the retained modes (from SVD of anomalies).
+    n_samples_fit : int
+        Number of samples used to fit the model.
+    prewhiten : bool
+        Whether the model was fit with variance-normalizing prewhitening.
+    w : (ncells,) ndarray or None
+        Prewhitening weights w = 1/(std+eps). Present only if prewhiten=True.
+    eps : float
+        Epsilon used for stable prewhitening.
+    """
+
+    mean: np.ndarray
+    U: np.ndarray
+    s: np.ndarray
+    n_samples_fit: int
+    prewhiten: bool
+    w: Optional[np.ndarray]
+    eps: float
+
+
+def fit_eof_model(
+    X: np.ndarray,
+    *,
+    nmodes: Optional[int] = None,
+    var_fraction: Optional[float] = None,
+    prewhiten: bool = False,
+    eps: float = 1.0e-12,
+    demean: bool = True,
+    dtype: np.dtype = np.float64,
+) -> EOFModel:
+    """Fit an EOF model to an ensemble matrix X (ncells × nsamples).
+
+    Parameters
+    ----------
+    X : ndarray, shape (ncells, nsamples)
+        Input ensemble (each column is one realization).
+    nmodes : int, optional
+        Number of EOF modes to retain. If None, determined by var_fraction
+        (if provided) or defaults to full rank.
+    var_fraction : float, optional
+        If provided, retain the smallest k such that cumulative explained
+        variance >= var_fraction (0 < var_fraction <= 1). Ignored if nmodes
+        is given.
+    prewhiten : bool, optional
+        If True, scale anomalies cellwise by inverse std before EOF decomposition
+        and unscale when generating realizations.
+    eps : float, optional
+        Stabilizer for std in prewhitening weights: w = 1/(std + eps).
+    demean : bool, optional
+        If True (default), subtract the ensemble mean before decomposition.
+        If False, mean is set to zeros and decomposition uses X as-is.
+    dtype : numpy dtype, optional
+        Computation dtype (default float64).
+
+    Returns
+    -------
+    EOFModel
+        Model containing mean, retained modes, singular values, and (optionally)
+        prewhitening weights.
+
+    Notes
+    -----
+    Uses economy SVD on the (ncells × nsamples) anomaly matrix (or its whitened
+    version). This is typically efficient for ncells up to O(1e5) with nsamples
+    O(1e2).
+    """
+    X = np.asarray(X, dtype=dtype)
+    if X.ndim != 2:
+        raise ValueError(f"X must be 2D (ncells, nsamples); got shape {X.shape}")
+
+    ncells, ns = X.shape
+    if ns < 2:
+        raise ValueError("Need at least 2 samples to fit an EOF model.")
+
+    if demean:
+        mean = np.mean(X, axis=1)
+        A = X - mean[:, None]
+    else:
+        mean = np.zeros(ncells, dtype=dtype)
+        A = X
+
+    w = None
+    if prewhiten:
+        std = np.std(A, axis=1, ddof=1)
+        w = 1.0 / (std + eps)
+        Aw = w[:, None] * A
+    else:
+        Aw = A
+
+    # Economy SVD: Aw = U S V^T, with U: (ncells, r), S: (r,), r<=ns
+    U, s, _Vt = np.linalg.svd(Aw, full_matrices=False)
+
+    # Decide how many modes to keep
+    r = s.size
+    if nmodes is not None:
+        k = int(nmodes)
+        if k < 1 or k > r:
+            raise ValueError(f"nmodes must be in [1, {r}], got {nmodes}")
+    elif var_fraction is not None:
+        vf = float(var_fraction)
+        if not (0.0 < vf <= 1.0):
+            raise ValueError("var_fraction must be in (0, 1].")
+        # Explained variance proportional to s^2
+        ev = s**2
+        cumev = np.cumsum(ev) / np.sum(ev)
+        k = int(np.searchsorted(cumev, vf) + 1)
+    else:
+        k = r
+
+    return EOFModel(
+        mean=mean,
+        U=U[:, :k].copy(),
+        s=s[:k].copy(),
+        n_samples_fit=ns,
+        prewhiten=prewhiten,
+        w=None if w is None else w.copy(),
+        eps=float(eps),
+    )
+
+
+def sample_physical_ensemble(
+    model: EOFModel,
+    nsamples: int,
+    *,
+    rng: Optional[np.random.Generator] = None,
+    coef: Literal["gaussian", "rademacher"] = "gaussian",
+    scale: float = 1.0,
+    dtype: Optional[np.dtype] = None,
+) -> np.ndarray:
+    """Generate a new random physical ensemble from a fitted EOFModel.
+
+    Parameters
+    ----------
+    model : EOFModel
+        A model returned by fit_eof_model().
+    nsamples : int
+        Number of new realizations to generate.
+    rng : numpy.random.Generator, optional
+        Random generator. If None, uses np.random.default_rng().
+    coef : {"gaussian", "rademacher"}, optional
+        Distribution of latent coefficients z:
+        - "gaussian": z ~ N(0, 1)
+        - "rademacher": z in {-1, +1} with equal probability (sometimes useful
+          for stress-testing / non-Gaussian perturbations)
+    scale : float, optional
+        Overall scale factor applied to sampled anomalies (default 1.0).
+        Values > 1 inflate variability; values < 1 deflate it.
+    dtype : numpy dtype, optional
+        Output dtype. If None, uses model.mean dtype.
+
+    Returns
+    -------
+    Xnew : ndarray, shape (ncells, nsamples)
+        New ensemble in physical space.
+
+    Notes
+    -----
+    If the model was fit with SVD of anomalies Aw = U S V^T, then
+    covariance in that space is:
+        Cov(Aw) = U diag(S^2/(n-1)) U^T
+    To sample consistent anomalies:
+        Aw_sample = U @ (S/sqrt(n-1) * z)
+    then optionally unwhiten and add mean.
+    """
+    if nsamples < 1:
+        raise ValueError("nsamples must be >= 1.")
+
+    if rng is None:
+        rng = np.random.default_rng()
+
+    out_dtype = model.mean.dtype if dtype is None else np.dtype(dtype)
+
+    U = model.U
+    s = model.s
+    k = s.size
+    nfit = model.n_samples_fit
+    if nfit < 2:
+        raise ValueError("Model was fit with too few samples (need >=2).")
+
+    if coef == "gaussian":
+        Z = rng.standard_normal(size=(k, nsamples))
+    elif coef == "rademacher":
+        Z = rng.integers(0, 2, size=(k, nsamples)) * 2 - 1
+        Z = Z.astype(out_dtype, copy=False)
+    else:
+        raise ValueError("coef must be 'gaussian' or 'rademacher'.")
+
+    # Map latent coefficients to anomalies in (possibly whitened) space
+    # factor = S/sqrt(n-1) gives sqrt(eigenvalues) scaling
+    factor = (s / np.sqrt(nfit - 1.0))[:, None]
+    Aw_new = (U @ (factor * Z)) * float(scale)
+
+    if model.prewhiten:
+        if model.w is None:
+            raise ValueError("Model indicates prewhiten=True but has no weights.")
+        # Unwhiten: A = W^{-1} Aw = Aw / w
+        A_new = Aw_new / model.w[:, None]
+    else:
+        A_new = Aw_new
+
+    X_new = (model.mean[:, None] + A_new).astype(out_dtype, copy=False)
+    return X_new
+
+
+# --- Minimal example (comment out in your library code) ---
+if __name__ == "__main__":
+    ncells, ns = 100_000, 100
+    rng = np.random.default_rng(0)
+
+    # Toy training ensemble
+    X = rng.standard_normal((ncells, ns))
+
+    # Fit EOF model (try prewhiten=True for variance-normalized modes)
+    model = fit_eof_model(X, var_fraction=0.95, prewhiten=True)
+
+    # Generate new random physical ensemble
+    Xnew = sample_physical_ensemble(model, nsamples=200, rng=rng)
+
+    print(X.shape, "->", Xnew.shape)
+
+
 
 # ---------------------------------------------------------------------------
 # Weighted KL decomposition on FEMTIC mesh
