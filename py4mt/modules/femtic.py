@@ -323,7 +323,9 @@ def get_nrms(directory=None):
             fline = fline + 1
             #print (line)
             nline = line.split()
-            #print(nline)
+            if len(nline)==0:
+                continue
+            print(nline)
             itern = int(nline[0])
             retry = int(nline[1])
             alpha = float(nline[2])
