@@ -59,7 +59,7 @@ EnsembleEOF = 'AnnecyEOF'
 
 MinRMS = 1.5
 OutStrng = '_trunc'
-GetComponents = False
+GetComponents = True
 if GetComponents:
     OutStrng = '_comp'
 
@@ -133,7 +133,8 @@ for ie in np.arange(nens):
     if GetComponents:
         k0, k1 = ie, ie+1
     else:
-        k0, k1 = 0, min(max(1, ie), min(ie, nens))
+        k0, k1 = 0, ie+1
+        # min(max(1, ie), min(ie, nens))
     print(k0, k1, nens)
     trunc = ens.eof_sample(eofs, pcs, mean, k0=k0, k1=k1,
         method="empirical_diag", return_components=False,
