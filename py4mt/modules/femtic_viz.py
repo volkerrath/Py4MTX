@@ -25,10 +25,27 @@ Created by ChatGPT (GPT-5 Thinking) on 2025-12-09
 
 from __future__ import annotations
 
-# NOTE:
-# The contents below are taken from the original visualization modules.
-# They are concatenated here so that all FEMTIC plotting utilities can
-# be imported from a single module: ``femtic_viz``.
+import csv
+from pathlib import Path
+from typing import (
+    Callable,
+    Optional,
+    Sequence,
+    Tuple,
+    Dict,
+    Literal,
+    List,
+)
+from numpy.typing import ArrayLike
+
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+import pyvista as pv
+
+
+# from femtic_slice_matplotlib import curtain_slice  # reuse interpolation
 
 
 
@@ -59,13 +76,6 @@ scripts for both Matplotlib-based map views and PyVista-based curtain or
 Author: Volker Rath (DIAS)
 Created by ChatGPT (GPT-5 Thinking) on 2025-12-09
 """
-
-
-from pathlib import Path
-from typing import Iterable, Literal
-
-import numpy as np
-
 
 def load_resistivity_blocks(path: str | Path) -> np.ndarray:
     """Load a 1D resistivity block vector from a FEMTIC-style file.
@@ -120,7 +130,8 @@ def prepare_rho_for_plotting(
     ocean_value: float | None = 1.0e-10,
     mask_air: bool = True,
 ) -> np.ndarray:
-    """Prepare a resistivity block vector for plotting.
+    """
+    Prepare a resistivity block vector for plotting.
 
     This function applies the standard FEMTIC-style conventions for air
     and ocean blocks before plotting:
@@ -170,7 +181,6 @@ def map_blocks_to_cells(
     values = np.asarray(block_values)[np.asarray(block_indices)]
     return values
 
-
 # ===== End femtic_resistivity_plotting.py =====
 
 
@@ -188,31 +198,6 @@ Author: Volker Rath (DIAS)
 Created by ChatGPT (GPT-5 Thinking) on 2025-12-07
 """
 
-from typing import Optional, Sequence, Tuple
-import numpy as np
-import matplotlib.pyplot as plt
-import numpy as np
-
-def load_resistivity_blocks(path: str) -> np.ndarray:
-    """Load 1D resistivity block vector from FEMTIC resistivity_block...dat file.
-
-    The first two entries have a special meaning and are usually fixed:
-
-    - index 0: air
-    - index 1: ocean
-
-    Returns
-    -------
-    rho : ndarray, shape (n_blocks,)
-        Resistivity per block as loaded from the file (no modifications).
-
-    """
-    rho = np.loadtxt(path, dtype=float)
-    if rho.ndim != 1:
-        raise ValueError(
-            f"Expected 1D resistivity vector, got shape {rho.shape!r}"
-        )
-    return rho
 
 
 def prepare_rho_for_plotting(
@@ -780,6 +765,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
+
 def _select_depth_window(
     centroids: np.ndarray,
     vals_log10: np.ndarray,
@@ -1127,8 +1113,6 @@ Author: Volker Rath (DIAS)
 Created by ChatGPT (GPT-5 Thinking) on 2025-12-08
 """
 
-import numpy as np
-
 
 def build_curtain_grid_from_npz(
     npz_path: str,
@@ -1141,8 +1125,10 @@ def build_curtain_grid_from_npz(
     ns: int = 301,
     interp: str = "idw",
     power: float = 2.0,
-) -> "pyvista.StructuredGrid":
-    """Build a PyVista StructuredGrid for a vertical curtain.
+) -> pv.StructuredGrid:
+
+    """
+    Build a PyVista StructuredGrid for a vertical curtain.
 
     Parameters
     ----------
@@ -1168,14 +1154,7 @@ def build_curtain_grid_from_npz(
     grid : pyvista.StructuredGrid
         Structured grid in (S, z) coordinates with 'log10_rho' and 'rho'.
     """
-    try:
-        import pyvista as pv
-    except Exception as exc:  # pragma: no cover
-        raise ImportError("pyvista is required for curtain plotting.") from exc
 
-    from femtic_slice_matplotlib import curtain_slice  # reuse interpolation
-
-    import csv
 
     data = np.load(npz_path)
     if "centroid" not in data or "log10_resistivity" not in data:
@@ -1488,7 +1467,7 @@ def build_map_grid_from_npz(
     ymax: float | None = None,
     interp: str = "idw",
     power: float = 2.0,
-) -> "pyvista.StructuredGrid":
+) -> pv.StructuredGrid:
     """Build a PyVista StructuredGrid for a horizontal slice at depth z0."""
     try:
         import pyvista as pv
@@ -1605,4 +1584,3 @@ if __name__ == "__main__":  # pragma: no cover
 
 
 # ===== End femtic_map_slice_pyvista.py =====
-
