@@ -1,422 +1,244 @@
-# femtic_viz — Unified visualization utilities for FEMTIC resistivity models
+# README_femticviz.md
 
-`femtic_viz.py` collects the various visualization helpers that were
-previously spread over several standalone scripts:
+Visualisation helpers for **FEMTIC** meshes and resistivity models.
 
-- `femtic_resistivity_plotting.py`
-- `femtic_borehole_viz.py`
-- `femtic_slice_matplotlib.py`
-- `femtic_map_slice_matplotlib.py`
-- `femtic_slice_pyvista.py`
-- `femtic_map_slice_pyvista.py`
+This README documents the cleaned `femtic_viz` module (the version generated here as
+`femtic_viz_clean.py`). It is designed to be compatible with the NPZ products created
+by `femtic.py`, especially the element-based NPZ written by
+`femtic.save_element_npz_with_mesh_and_regions(...)`.
 
-The goal is that **all FEMTIC plotting utilities can be imported from a single
-module**.
+---
 
-It provides:
+## What this module does
 
-- Matplotlib helpers (1D & 2D)
-- PyVista helpers (2D structured grids in VTK space)
-- Consistent handling of special resistivity blocks (air, ocean)
-- A common NPZ model format for slices
+- **Curtain slices** (vertical sections) along an arbitrary XY polyline
+  - Matplotlib plot helper
+  - Optional PyVista `StructuredGrid` builder (if you want 3‑D/interactive plotting)
+- **Map slices** (horizontal/depth-window slices) on a regular XY grid
+  - Matplotlib plot helper
+- **Air / ocean handling** for plotting:
+  - *Air* (region 0) can be masked to `NaN` (transparent/blank)
+  - *Ocean* (region 1) can be kept as-is or forced to a user-selected value
 
+Conventions: **z is positive downward** (depth). This matches typical FEMTIC usage.
 
-## 1. Scope and conventions
+---
 
-The module assumes a **FEMTIC-style unstructured resistivity model**:
+## Dependencies
 
-- A tetrahedral mesh (`mesh.dat` etc., handled elsewhere).
-- A 1D **block resistivity vector** stored in text files such as  
-  `resistivity_block_iter0.dat`.
-- A preprocessed **NPZ file** with per-element information, typically
-  produced by `femtic_mesh_to_npz.py`:
+Required:
+- Python ≥ 3.10
+- NumPy
 
-  - `centroid` — `(nelem, 3)` array of cell centroids `[x, y, z]`
-  - `log10_resistivity` — `(nelem,)` array with `log10(ρ [Ω·m])`
-  - `flag` — optional `(nelem,)` integer array with `1` for “fixed” cells  
-    (these are automatically excluded from interpolation in the slice
-    routines).
+Optional (only needed for specific features):
+- SciPy (recommended): fast kNN interpolation via `scipy.spatial.cKDTree`
+- Matplotlib: plotting
+- PyVista: building `StructuredGrid` output (curtain grids)
 
-### Air and ocean blocks
+The module is written so it can be imported without SciPy/Matplotlib/PyVista; those
+imports happen lazily inside the relevant functions.
 
-For the **block resistivity vector** (as read from
-`resistivity_block...dat`), the first two entries have a special meaning:
+---
 
-- index `0` — air  
-- index `1` — ocean
+## Input data format (NPZ)
 
-`femtic_viz` provides helpers that:
+The visualisation routines expect an NPZ file with at least:
 
-- set **air → NaN** for plotting (transparent/white)
-- optionally enforce a **fixed ocean resistivity** (e.g. `1e-10 Ω·m`)
-
-These conventions are *only* applied when you explicitly call the helper
-functions documented below, so they do not interfere with inversion or
-other processing.
-
-
-## 2. Dependencies
-
-Core:
-
-- `numpy`
-- `matplotlib`
+- `centroid` **or** `centroids` : shape `(n_cells, 3)`  
+  Cell centroids (x, y, z) with **z positive down**.
+- `log10_resistivity` **or** `log10_rho` : shape `(n_cells,)`  
+  Per-cell log10 resistivity.
 
 Optional (recommended):
 
-- `scipy`  
-  - used for `scipy.spatial.cKDTree` (fast nearest-neighbour)
-  - and `scipy.interpolate.RBFInterpolator` (RBF interpolation)
-- `pyvista` (and optionally `pyvistaqt` / a plotting backend)  
-  for interactive curtain / map slices and VTK export.
+- `region` (or one of: `regions`, `reg`, `elem_region`, `element_region`) : `(n_cells,)`  
+  Region index per cell. Used for masking air and optionally forcing ocean.
 
-If SciPy is not available:
+Air/ocean convention used by the helpers (only applied if `region` is available):
+- `region == 0` → air
+- `region == 1` → ocean
 
-- RBF-based methods (`interp="rbf"`) will raise an `ImportError`.
-- Nearest-neighbour methods automatically fall back to a **pure NumPy**
-  (but slower) implementation.
+### Producing a compatible NPZ with `femtic.py`
 
+In `femtic.py`, the typical route is:
 
-## 3. Resistivity block helpers (air/ocean handling)
+1. Read a FEMTIC mesh (`nodes`, `conn`) and resistivity block (`block`)
+2. Build element arrays (centroids, per-cell log10 resistivity, region index, …)
+3. Save everything as NPZ
 
-### 3.1 Load a block vector
+Functions involved (names from `femtic.py`):
+- `build_element_arrays(...)`
+- `save_element_npz_with_mesh_and_regions(...)`
 
-```python
-from femtic_viz import load_resistivity_blocks
+---
 
-rho = load_resistivity_blocks("resistivity_block_iter0.dat")
-# rho.shape == (n_blocks,)
-# rho[0] = air, rho[1] = ocean
+## Quick start
+
+### 1) Install / place the module
+
+If you generated `femtic_viz_clean.py`, you can either:
+
+- Rename it to `femtic_viz.py` and put it next to `femtic.py`, **or**
+- Keep the filename and import it explicitly.
+
+Example:
+```bash
+cp femtic_viz_clean.py femtic_viz.py
 ```
 
-The function expects a simple text file with one number per line (or
-whitespace-separated values) that `numpy.loadtxt` can parse into a 1D
-array. A `ValueError` is raised if the loaded array is not 1D.
+### 2) Curtain plot (Matplotlib) from NPZ
 
+Command-line example (repeat `--xy` to define the polyline):
 
-### 3.2 Prepare resistivities for plotting
+```bash
+python femtic_viz.py curtain   --npz model_with_mesh.npz   --zmin 0 --zmax 6000   --nz 251 --ns 401   --interp idw --k 8 --power 2.0   --xy 450000 8200000   --xy 470000 8200000   --xy 490000 8210000
+```
+
+Notes:
+- `--interp nearest` is faster (no IDW), but less smooth.
+- Use `--linear` to plot **Ohm·m** instead of log10(Ohm·m).
+- Use `--ocean-log10 -10` (example) to force ocean to a chosen log10 resistivity.
+- Add `--no-mask-air` if you want air values to remain visible.
+
+### 3) Map slice (Matplotlib) from NPZ
+
+```bash
+python femtic_viz.py map   --npz model_with_mesh.npz   --zmin 1000 --zmax 1500   --nx 401 --ny 401   --interp idw --k 8 --power 2.0   --bounds 430000 510000 8180000 8230000
+```
+
+`--zmin/--zmax` define a *depth window*; the map uses cells whose centroid z lies
+in that window, then interpolates onto a regular XY grid.
+
+---
+
+## Python API overview
+
+Typical usage pattern:
 
 ```python
-from femtic_viz import prepare_rho_for_plotting
-
-rho_plot = prepare_rho_for_plotting(
-    rho,
-    ocean_value=1.0e-10,  # None → keep original rho[1]
-    mask_air=True,        # False → keep original rho[0]
+from femtic_viz import (
+    curtain_slice_from_npz,
+    plot_curtain_matplotlib,
+    map_slice_from_npz,
+    plot_map_slice_matplotlib,
 )
-```
 
-Behaviour:
-
-- if `mask_air=True` and `rho.size >= 1`:
-  - `rho_plot[0] = NaN` (air → transparent/white in plots)
-- if `ocean_value is not None` and `rho.size >= 2`:
-  - `rho_plot[1] = float(ocean_value)` (enforce special ocean value)
-
-The input `rho` is **not** modified in-place; a copy is returned.
-
-
-### 3.3 Map block values to per-cell values
-
-```python
-from femtic_viz import map_blocks_to_cells
-
-# block_indices: e.g. per-element block indices from FEMTIC mesh
-values_on_cells = map_blocks_to_cells(rho_plot, block_indices)
-```
-
-This is a simple helper that applies `values = block_values[block_indices]`
-(with basic sanity handling via `np.asarray`).
-
-
-## 4. Borehole visualization (Matplotlib, 1D)
-
-The borehole utilities are designed for vertical profiles of resistivity
-(or any scalar) vs. depth.
-
-### 4.1 Single vertical profile
-
-```python
-import numpy as np
-from femtic_viz import plot_vertical_profile
-
-z = np.linspace(0, 3000, 151)      # depth or elevation samples
-rho_profile = 10 ** np.random.randn(z.size)
-
-fig, ax = plot_vertical_profile(
-    z,
-    rho_profile,
-    label="BH-01",
-    logx=True,             # log-scale in resistivity (x-axis)
-    z_positive_down=True,  # typical geophysical convention
+curt = curtain_slice_from_npz(
+    "model_with_mesh.npz",
+    polyline_xy=[[0, 0], [10000, 0]],
+    zmin=0, zmax=6000,
+    nz=201, ns=301,
+    interp="idw", k=8, power=2.0,
+    mask_air=True,
+    ocean_log10_rho=None,
 )
-fig.savefig("borehole_BH01.png", dpi=200)
-```
 
-- If `z_positive_down=True`, the function **inverts the y-axis** if
-  needed so that increasing `z` corresponds to increasing depth.
-- If multiple profiles share the same `z`, you can use multiple calls or
-  `plot_vertical_profiles` below.
+fig, ax = plot_curtain_matplotlib(curt)
 
-
-### 4.2 Multiple vertical profiles on one axis
-
-```python
-import numpy as np
-from femtic_viz import plot_vertical_profiles
-
-z = np.linspace(0, 3000, 151)
-profiles = [
-    10 ** np.random.randn(z.size),
-    10 ** np.random.randn(z.size),
-]
-labels = ["BH-01", "BH-02"]
-
-fig, ax = plot_vertical_profiles(
-    z,
-    profiles,
-    labels=labels,
-    logx=True,
-    z_positive_down=True,
+m = map_slice_from_npz(
+    "model_with_mesh.npz",
+    zmin=1000, zmax=1500,
+    nx=301, ny=301,
+    bounds=None,        # or (xmin, xmax, ymin, ymax)
+    interp="idw", k=8, power=2.0,
 )
-fig.savefig("boreholes_combined.png", dpi=200)
+fig2, ax2 = plot_map_slice_matplotlib(m)
 ```
 
-Both functions are pure Matplotlib wrappers; they return `(fig, ax)` so
-you can further customize axes (titles, annotations, etc.).
+### PyVista structured curtain grid
 
-
-## 5. Vertical curtain slices (NPZ → Matplotlib)
-
-The vertical slice routines work directly on the **NPZ element file**
-created by `femtic_mesh_to_npz.py` and follow these steps:
-
-1. Construct a polyline in the `(x, y)` plane.
-2. Sample this polyline at `ns` equally spaced arclength positions → `S`.
-3. For each sampled `(x, y)` and each depth `z`, interpolate
-   `log10_resistivity` from cell centroids in 3D.
-4. Convert to `ρ` if required and plot as an image (`S` vs. `z`).
-
-
-### 5.1 Building the curtain (low-level API)
-
-The actual interpolation is handled by:
-
-- `sample_polyline(points_xy, ns)`
-- `curtain_slice_idw(...)`
-- `curtain_slice_nearest(...)`
-- `curtain_slice_rbf(...)`
-- `curtain_slice(...)` (dispatcher: `"idw"`, `"nearest"`, `"rbf"`)
-
-For typical use you do not need to call these directly, but they are
-available for more specialized workflows (e.g. embedding into external
-plotting frameworks).
-
-
-### 5.2 High-level helper: `femtic_slice_from_npz_matplotlib`
+If PyVista is installed:
 
 ```python
-import numpy as np
-from femtic_viz import femtic_slice_from_npz_matplotlib
+from femtic_viz import build_curtain_structured_grid_from_npz
 
-# Option 1: polyline from code
-polyline_xy = np.array([
-    [  0.0,   0.0],
-    [500.0, 100.0],
-    [800.0, 400.0],
-])
-
-femtic_slice_from_npz_matplotlib(
-    npz_path="femtic_model.npz",
-    polyline_xy=polyline_xy,
-    polyline_csv=None,     # or provide CSV instead
-    zmin=0.0,
-    zmax=3000.0,
-    nz=201,
-    ns=301,
-    power=2.0,
-    interp="idw",          # "idw", "nearest", or "rbf"
-    logscale=True,         # plot log10(ρ) by default
-    z_positive_down=True,
-    cmap="viridis",
-    vmin=None,
-    vmax=None,
-    out_npz="curtain.npz", # optional; stores S, Z, V_log10, XY
-    out_csv="curtain.csv", # optional; long table with (s, z, log10_rho)
-    out_png="curtain.png", # optional; uses Matplotlib figure
-    title="Curtain slice",
-)
-```
-
-Alternatively, you can provide `polyline_csv="polyline.csv"` with simple
-`x,y` lines; if present, it overrides `polyline_xy`.
-
-Cells with `flag == 1` in the NPZ are automatically excluded from
-interpolation (masked out).
-
-
-### 5.3 Curtain plotting function
-
-If you already have sampled values (e.g. from your own interpolation),
-you can call the plotting function directly:
-
-```python
-from femtic_viz import plot_curtain_matplotlib
-
-fig, ax = plot_curtain_matplotlib(
-    S,              # 1D arclength coordinate
-    Z,              # 1D depths
-    V,              # 2D resistivity (ρ) array, shape (nz, ns)
-    logscale=True,
-    z_positive_down=True,
-    cmap="viridis",
-    vmin=None,
-    vmax=None,
-    title="Curtain slice",
-)
-```
-
-
-## 6. Horizontal map slices (NPZ → Matplotlib)
-
-Horizontal slices are constructed by:
-
-1. Selecting all centroids within a depth window around `z0`:
-   `z0 - dz/2 ≤ z ≤ z0 + dz/2`.
-2. Interpolating `log10_resistivity` onto a regular `(x, y)` grid using
-   IDW / nearest / RBF.
-3. Converting to `ρ` as needed and plotting a colored map.
-
-
-### 6.1 High-level helper: `femtic_map_slice_from_npz_matplotlib`
-
-```python
-from femtic_viz import femtic_map_slice_from_npz_matplotlib
-
-femtic_map_slice_from_npz_matplotlib(
-    npz_path="femtic_model.npz",
-    z0=1500.0,      # target depth [m]
-    dz=200.0,       # vertical window thickness
-    nx=200,
-    ny=200,
-    xmin=None,      # None → auto from centroids
-    xmax=None,
-    ymin=None,
-    ymax=None,
-    power=2.0,
-    interp="idw",   # "idw", "nearest", or "rbf"
-    logscale=True,
-    cmap="viridis",
-    vmin=None,
-    vmax=None,
-    out_npz="map_slice.npz",  # optional
-    out_csv="map_slice.csv",  # optional
-    out_png="map_slice.png",  # optional
-    title="Horizontal slice",
-)
-```
-
-Internally, this calls:
-
-- `_select_depth_window(...)`
-- `_grid_2d(...)` with the chosen interpolation method
-- `plot_map_slice_matplotlib(...)`
-
-You can also call `plot_map_slice_matplotlib(X, Y, V, ...)` directly if
-you have precomputed grids.
-
-
-## 7. PyVista grids (curtains & maps → VTK)
-
-For integration into 3D visualization pipelines or Paraview, `femtic_viz`
-provides **PyVista StructuredGrid builders** that mirror the Matplotlib
-slice utilities.
-
-
-### 7.1 Vertical curtain grid
-
-```python
-import numpy as np
-from femtic_viz import build_curtain_grid_from_npz
-
-polyline_xy = np.array([
-    [  0.0,   0.0],
-    [500.0, 100.0],
-    [800.0, 400.0],
-])
-
-grid = build_curtain_grid_from_npz(
-    npz_path="femtic_model.npz",
-    polyline_xy=polyline_xy,  # or polyline_csv="polyline.csv"
-    polyline_csv=None,
-    zmin=0.0,
-    zmax=3000.0,
-    nz=201,
-    ns=301,
+grid = build_curtain_structured_grid_from_npz(
+    "model_with_mesh.npz",
+    polyline_xy=[[0, 0], [10000, 0]],
+    zmin=0, zmax=6000,
+    nz=201, ns=301,
     interp="idw",
-    power=2.0,
 )
-
-# cell data:
-#   "log10_rho"  — log10(ρ [Ω·m])
-#   "rho"        — ρ [Ω·m]
-
-grid.save("curtain.vts")  # Paraview-readable
-
-# quick look
-grid.plot(scalars="log10_rho", cmap="viridis")
+# grid is a pyvista.StructuredGrid
 ```
 
-The grid lives in a 2D `(S, z)` plane with `y = 0`. The original polyline
-coordinates `(x, y)` in the model space are stored as `grid.field_data["polyline_xy"]`.
+---
+
+## Interpolation notes (performance)
+
+- The IDW path uses **k-nearest neighbors** via `scipy.spatial.cKDTree` and is
+  suitable for large meshes (100k–millions of cells).
+- `k` controls smoothness/cost; typical values: 6–16.
+- `power` controls how quickly weights decay with distance; typical: 1.5–3.0.
+- If SciPy is not installed, only the `"nearest"` interpolation is available.
+
+---
+
+## Troubleshooting
+
+- **ImportError for SciPy/Matplotlib/PyVista**  
+  Only install what you need. The module imports optional dependencies lazily.
+
+- **Blank plot / nothing visible**  
+  Check that your `zmin/zmax` window overlaps your model depth range and that
+  you didn’t mask everything (e.g., plotting only air).
+
+- **Wrong “up/down” direction**  
+  The module assumes **z positive down**. If your NPZ uses z positive up,
+  flip sign before exporting or when constructing `centroid`.
+
+---
+
+## File list
+
+- `femtic_viz.py` (or `femtic_viz_clean.py`): visualisation module
+- `README_femticviz.md`: this document
 
 
-### 7.2 Horizontal map grid
 
-```python
-from femtic_viz import build_map_grid_from_npz
+---
 
-grid = build_map_grid_from_npz(
-    npz_path="femtic_model.npz",
-    z0=1500.0,
-    dz=200.0,
-    nx=200,
-    ny=200,
-    xmin=None,
-    xmax=None,
-    ymin=None,
-    ymax=None,
-    interp="idw",
-    power=2.0,
-)
+## Native PyVista (no interpolation)
 
-grid.save("map_slice_z1500.vts")
-grid.plot(scalars="log10_rho", cmap="viridis")
+If your NPZ was produced by `femtic.py` and contains `nodes` + `conn`, you can
+plot **directly on the unstructured tetrahedral mesh** without resampling to any
+regular grid.
+
+The updated module provides these CLI subcommands:
+
+### Plane slice at depth z0
+
+```bash
+python femtic_viz.py pv-plane \
+  --npz model_with_mesh.npz \
+  --z0 1200 \
+  --scalar log10_resistivity
 ```
 
-Here the grid is a 2D `(x, y)` plane at constant depth `z0`. The
-log-resistivity and resistivity fields are attached as cell data, as
-above.
+### Depth window (slab) rendered from above
 
+```bash
+python femtic_viz.py pv-window \
+  --npz model_with_mesh.npz \
+  --zmin 1000 --zmax 1500 \
+  --scalar log10_resistivity
+```
 
-## 8. Notes and recommended workflow
+### Curtain as a set of true mesh slices along a polyline
 
-A typical workflow in the FEMTIC context might be:
+```bash
+python femtic_viz.py pv-curtain \
+  --npz model_with_mesh.npz \
+  --zmin 0 --zmax 6000 \
+  --ns 51 --corridor 500 \
+  --scalar log10_resistivity \
+  --xy 450000 8200000 \
+  --xy 470000 8200000 \
+  --xy 490000 8210000
+```
 
-1. **Generate NPZ** from FEMTIC mesh and resistivities (using
-   `femtic_mesh_to_npz.py` or an equivalent tool).
-2. Use `femtic_viz` for visualization:
+Notes:
+- `--corridor` first extracts only cells close to the polyline (faster and local).
+- `--no-mask-air` keeps air cells (region 0) if present.
+- `--ocean-log10 VALUE` forces ocean cells (region 1) to a chosen value.
 
-   - 1D **borehole-style profiles** from any vertical samples.
-   - 2D **vertical curtains** following arbitrary polylines.
-   - 2D **horizontal maps** at chosen depths.
-   - Optional **VTK/PyVista exports** (`.vts`/`.vtk`) for Paraview or
-     more complex 3D scenes.
-
-3. Use the **air/ocean helpers** for consistent treatment of boundary
-   regions in all plots (mask air, enforce special ocean conductivities).
-
-The module is designed to be conservative and explicit: most high-level
-functions simply wrap core numerical building blocks, so that you can
-easily extract pieces and re-use them in your own scripts or Jupyter
-notebooks without changing your overall FEMTIC workflow.

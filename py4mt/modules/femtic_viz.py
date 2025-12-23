@@ -1,1586 +1,1656 @@
-"""Unified visualization utilities for FEMTIC resistivity models.
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+femtic_viz.py
 
-This module collects the various visualization helpers that were
-previously spread over several modules:
+Visualisation utilities for FEMTIC meshes and resistivity models.
 
-- femtic_resistivity_plotting
-- femtic_borehole_viz
-- femtic_slice_matplotlib
-- femtic_map_slice_matplotlib
-- femtic_slice_pyvista
-- femtic_map_slice_pyvista
+This module is designed to work with the NPZ products created by
+:mod:`femtic` (for example by a mesh+model export helper). It provides:
 
-It provides Matplotlib and PyVista helpers for:
+- Lightweight Matplotlib map slices of log10-resistivity at a depth window.
+- Lightweight Matplotlib vertical "curtain" slices along an arbitrary XY polyline.
+- Optional PyVista structured grids for the same curtain slices.
 
-- Borehole visualization.
-- Vertical curtain slices.
-- Horizontal map slices.
-- Consistent handling of special resistivity blocks:
-  index 0 = air (not plotted / transparent),
-  index 1 = ocean (special conductive value).
+Air / ocean conventions
+-----------------------
+FEMTIC block files typically encode two special "regions":
+
+- Region/index 0: air
+- Region/index 1: ocean
+
+For plotting it is usually desirable to hide air and optionally force the
+ocean to a fixed conductive value. Helpers in this module therefore allow:
+
+- air -> NaN (transparent / blank)
+- ocean -> either kept as-is or forced to a user value
+
+Coordinate conventions
+----------------------
+This module assumes the FEMTIC mesh coordinates use **z positive downward**
+(depth). That is the convention used in the associated plotting functions
+(e.g., a curtain plot uses z increasing downward).
+
+Dependencies
+------------
+Only NumPy is required for importing this module.
+
+Matplotlib and SciPy are imported lazily inside plotting/interpolation
+functions. PyVista is entirely optional; functions that require PyVista
+import it lazily and raise a clear ImportError if unavailable.
 
 Author: Volker Rath (DIAS)
-Created by ChatGPT (GPT-5 Thinking) on 2025-12-09
+Created with the help of ChatGPT (GPT-5 Thinking) on 2025-12-23 (UTC)
 """
 
 from __future__ import annotations
 
-import csv
+from dataclasses import dataclass
 from pathlib import Path
-from typing import (
-    Callable,
-    Optional,
-    Sequence,
-    Tuple,
-    Dict,
-    Literal,
-    List,
-)
-from numpy.typing import ArrayLike
-
+from typing import TYPE_CHECKING, Iterable, Literal, Mapping, Sequence
 
 import numpy as np
-import matplotlib.pyplot as plt
+from numpy.typing import ArrayLike
 
-import pyvista as pv
-
-
-# from femtic_slice_matplotlib import curtain_slice  # reuse interpolation
+if TYPE_CHECKING:  # pragma: no cover
+    import pyvista as pv
 
 
+Interp3D = Literal["idw", "nearest"]
+Interp2D = Literal["idw", "nearest"]
+RhoSpace = Literal["log10", "linear"]
 
-# ===== Begin femtic_resistivity_plotting.py =====
+
+# -----------------------------------------------------------------------------
+# Small data containers
+# -----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class NPZModel:
+    """Minimal FEMTIC NPZ container used by plotting and interpolation.
+
+    Attributes
+    ----------
+    centroids : ndarray, shape (n_cells, 3)
+        Element centroids (x, y, z) in model units.
+    log10_rho : ndarray, shape (n_cells,)
+        Per-cell log10-resistivity. This may include air/ocean cells depending
+        on how the NPZ was produced.
+    region : ndarray, shape (n_cells,), dtype int
+        Per-cell region indices. If absent in the NPZ, this array is filled
+        with -1 (unknown), and air/ocean masking cannot be applied reliably.
+    """
+
+    centroids: np.ndarray
+    log10_rho: np.ndarray
+    region: np.ndarray
 
 
-"""Utilities for plotting FEMTIC resistivity blocks with special handling for air and ocean.
+# -----------------------------------------------------------------------------
+# IO helpers
+# -----------------------------------------------------------------------------
 
-This module provides helper functions and example plotting routines that
-respect the special meaning of the first two resistivity blocks in
-``resistivity_block...dat`` files used by FEMTIC-style meshes:
-
-- Block index 0: air
-- Block index 1: ocean
-
-The convention implemented here is:
-
-* Air (index 0) is set to NaN before plotting, so that it becomes
-  transparent or white (depending on the plotting backend and settings).
-* Ocean (index 1) can optionally be forced to a very conductive value
-  (e.g. 1e-10 Ohm·m) so that it is clearly distinguishable in the color
-  scale.
-
-The functions are written to be easy to integrate into existing plotting
-scripts for both Matplotlib-based map views and PyVista-based curtain or
-3D views.
-
-Author: Volker Rath (DIAS)
-Created by ChatGPT (GPT-5 Thinking) on 2025-12-09
-"""
-
-def load_resistivity_blocks(path: str | Path) -> np.ndarray:
-    """Load a 1D resistivity block vector from a FEMTIC-style file.
-
-    The function reads a text file (e.g. ``resistivity_block_iter0.dat``)
-    and returns the values as a one-dimensional NumPy array. It does not
-    apply any special handling to air or ocean; this is delegated to
-    :func:`prepare_rho_for_plotting`.
+def load_npz_model(npz_path: str | Path) -> NPZModel:
+    """Load the minimum arrays needed for visualisation from a FEMTIC NPZ.
 
     Parameters
     ----------
-    path : str or pathlib.Path
-        Path to the resistivity block file. The file is expected to
-        contain one numerical value per line or a simple whitespace-
-        separated list of values that :func:`numpy.loadtxt` can parse
-        into a one-dimensional array.
+    npz_path : str or pathlib.Path
+        Path to an NPZ created from a FEMTIC mesh/model export. The NPZ must
+        contain at least:
+            - ``centroid`` or ``centroids``: (n_cells, 3)
+            - ``log10_rho`` or ``log10_resistivity``: (n_cells,)
+
+        If available, a region array is also read from one of:
+            - ``region``, ``regions``, ``reg``, ``elem_region``
 
     Returns
     -------
-    rho : numpy.ndarray of shape (n_blocks,)
-        Raw resistivity values per block [Ohm·m] as stored in the file.
+    model : NPZModel
+        Loaded model container.
 
     Raises
     ------
-    ValueError
-        If the loaded array is not one-dimensional.
+    FileNotFoundError
+        If the NPZ file does not exist.
+    KeyError
+        If required arrays are missing.
 
     Notes
     -----
-    The first two entries in the returned array typically have a fixed
-    meaning in FEMTIC-style workflows:
-
-    * ``rho[0]``: air
-    * ``rho[1]``: ocean
-
-    These entries are not modified here so that the caller has full
-    control over how they are treated in different contexts (plotting,
-    inversion, etc.).
+    This function intentionally keeps the contract small to remain compatible
+    across NPZ flavours. If you want a full PyVista grid from an NPZ, use
+    :func:`femtic.npz_to_unstructured_grid`.
     """
-    path = Path(path)
-    rho = np.loadtxt(path, dtype=float)
+    npz_path = Path(npz_path)
+    if not npz_path.is_file():
+        raise FileNotFoundError(str(npz_path))
 
-    if rho.ndim != 1:
-        raise ValueError(f"Expected 1D resistivity vector, got shape {rho.shape!r}")
+    with np.load(npz_path) as d:
+        keys = set(d.files)
 
-    return rho
+        # centroids
+        if "centroid" in keys:
+            centroids = d["centroid"]
+        elif "centroids" in keys:
+            centroids = d["centroids"]
+        else:
+            raise KeyError("NPZ must contain 'centroid' or 'centroids' array.")
+
+        # log10 rho
+        if "log10_rho" in keys:
+            log10_rho = d["log10_rho"]
+        elif "log10_resistivity" in keys:
+            log10_rho = d["log10_resistivity"]
+        elif "log10_res" in keys:
+            log10_rho = d["log10_res"]
+        else:
+            raise KeyError(
+                "NPZ must contain 'log10_rho' or 'log10_resistivity' array."
+            )
+
+        # region (optional)
+        region_keys = ["region", "regions", "reg", "elem_region", "element_region"]
+        region = None
+        for rk in region_keys:
+            if rk in keys:
+                region = d[rk]
+                break
+        if region is None:
+            region = -np.ones(len(log10_rho), dtype=int)
+
+    centroids = np.asarray(centroids, dtype=float)
+    log10_rho = np.asarray(log10_rho, dtype=float).reshape(-1)
+    region = np.asarray(region, dtype=int).reshape(-1)
+
+    if centroids.ndim != 2 or centroids.shape[1] != 3:
+        raise ValueError(f"centroids must have shape (n_cells,3); got {centroids.shape}.")
+    if log10_rho.shape[0] != centroids.shape[0]:
+        raise ValueError("log10_rho length does not match centroids.")
+    if region.shape[0] != centroids.shape[0]:
+        raise ValueError("region length does not match centroids.")
+
+    return NPZModel(centroids=centroids, log10_rho=log10_rho, region=region)
 
 
-def prepare_rho_for_plotting(
-    rho: np.ndarray,
+# -----------------------------------------------------------------------------
+# Air / ocean handling
+# -----------------------------------------------------------------------------
+
+def prepare_log10_rho_for_plotting(
+    log10_rho: ArrayLike,
+    region: ArrayLike | None = None,
     *,
-    ocean_value: float | None = 1.0e-10,
     mask_air: bool = True,
+    ocean_log10_rho: float | None = None,
 ) -> np.ndarray:
-    """
-    Prepare a resistivity block vector for plotting.
-
-    This function applies the standard FEMTIC-style conventions for air
-    and ocean blocks before plotting:
-
-    * Air (index 0) is set to NaN if ``mask_air=True``. Most plotting
-      libraries treat NaNs as transparent or ignore them in color
-      mapping, which effectively removes air from the plot.
-    * Ocean (index 1) is optionally forced to a fixed value,
-      ``ocean_value``. This is useful to ensure that ocean appears with
-      a clearly defined, very conductive value in the color scale.
+    """Prepare per-cell log10-resistivity for plotting.
 
     Parameters
     ----------
-    rho : numpy.ndarray of shape (n_blocks,)
-        Raw resistivity values per block [Ohm·m]. This array is not
-        modified in-place; a copy is returned.
-    ocean_value : float or None, optional
-        If not None, the ocean block (index 1) is set to this value.
-        Use e.g. ``1e-10`` for a very conductive ocean. If None, the
-        original value in ``rho[1]`` is left unchanged.
+    log10_rho : array_like, shape (n_cells,)
+        Per-cell log10-resistivity.
+    region : array_like or None, shape (n_cells,), optional
+        Region index per cell. If provided and ``mask_air=True``, region 0
+        values are set to NaN. If ``ocean_log10_rho`` is provided, region 1 is
+        set to that value.
     mask_air : bool, optional
-        If True (default), air (index 0) is set to NaN. If False, the
-        original value in ``rho[0]`` is left unchanged.
+        If True (default), set air (region 0) to NaN. If region is None or
+        contains only -1 (unknown), no masking is applied.
+    ocean_log10_rho : float or None, optional
+        If not None, force ocean (region 1) to this log10-resistivity value,
+        e.g. ``np.log10(1e-10) = -10``. If None, leave ocean unchanged.
 
     Returns
     -------
-    rho_plot : numpy.ndarray of shape (n_blocks,)
-        Copy of the input array with modifications applied to indices 0
-        and 1 as requested.
+    out : ndarray, shape (n_cells,)
+        Prepared array for plotting.
     """
-    rho_plot = np.asarray(rho, dtype=float).copy()
+    out = np.asarray(log10_rho, dtype=float).reshape(-1).copy()
+    if region is None:
+        return out
 
-    if rho_plot.size >= 1 and mask_air:
-        rho_plot[0] = np.nan
+    reg = np.asarray(region, dtype=int).reshape(-1)
+    if reg.shape[0] != out.shape[0]:
+        raise ValueError("region length does not match log10_rho.")
 
-    if rho_plot.size >= 2 and ocean_value is not None:
-        rho_plot[1] = float(ocean_value)
+    # Unknown region encoding: do nothing
+    if np.all(reg < 0):
+        return out
 
-    return rho_plot
+    if mask_air:
+        out[reg == 0] = np.nan
 
+    if ocean_log10_rho is not None:
+        out[reg == 1] = float(ocean_log10_rho)
 
-def map_blocks_to_cells(
-    block_values: np.ndarray,
-    block_indices: np.ndarray,
-) -> np.ndarray:
-    """Map block-wise values to per-cell or per-node values."""
-    values = np.asarray(block_values)[np.asarray(block_indices)]
-    return values
-
-# ===== End femtic_resistivity_plotting.py =====
-
+    return out
 
 
-# ===== Begin femtic_borehole_viz.py =====
-
-
-"""
-femtic_borehole_viz.py
-
-Plotting utilities for vertical borehole resistivity profiles using pure
-Matplotlib.
-
-Author: Volker Rath (DIAS)
-Created by ChatGPT (GPT-5 Thinking) on 2025-12-07
-"""
-
-
-
-def prepare_rho_for_plotting(
-    rho: np.ndarray,
-    *,
-    ocean_value: float | None = 1.0e-10,
-    mask_air: bool = True,
-) -> np.ndarray:
-    """Modify block resistivities for plotting with special handling of air and ocean.
-
-    - air (index 0) is set to NaN if ``mask_air=True`` so that it becomes
-      transparent/white in plots.
-    - ocean (index 1) is optionally forced to ``ocean_value`` to give a
-      distinct very conductive value.
+def log10_to_rho(log10_rho: ArrayLike) -> np.ndarray:
+    """Convert log10-resistivity to linear resistivity.
 
     Parameters
     ----------
-    rho : ndarray, shape (n_blocks,)
-        Raw resistivity block values as loaded from file.
-    ocean_value : float or None, optional
-        If not None, the ocean block (index 1) is set to this value.
-        Use e.g. 1e-10 for “very conductive water”.
-    mask_air : bool, optional
-        If True, air (index 0) is set to NaN for transparency.
+    log10_rho : array_like
+        log10-resistivity values.
 
     Returns
     -------
-    rho_plot : ndarray, shape (n_blocks,)
-        Modified resistivity vector for plotting.
-
+    rho : ndarray
+        Linear resistivity (Ohm·m), computed as ``10**log10_rho``.
     """
-    rho_plot = np.asarray(rho, dtype=float).copy()
-
-    if rho_plot.size >= 1 and mask_air:
-        # air → transparent (NaN)
-        rho_plot[0] = np.nan
-
-    if rho_plot.size >= 2 and ocean_value is not None:
-        # ocean → enforce special value
-        rho_plot[1] = float(ocean_value)
-
-    return rho_plot
+    return np.power(10.0, np.asarray(log10_rho, dtype=float))
 
 
-def plot_vertical_profile(
-    z: np.ndarray,
-    values: np.ndarray,
+# -----------------------------------------------------------------------------
+# Geometry helpers (polyline sampling)
+# -----------------------------------------------------------------------------
+
+def sample_polyline_xy(
+    polyline_xy: ArrayLike,
     *,
-    label: Optional[str] = None,
-    ax: Optional[plt.Axes] = None,
-    logx: bool = False,
-    z_positive_down: bool = True,
-) -> Tuple[plt.Figure, plt.Axes]:
-    """
-    Plot a single vertical profile values(z).
+    n_samples: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Sample a polyline in XY into equally spaced arc-length positions.
 
     Parameters
     ----------
-    z : ndarray, shape (n,)
-        Depth or elevation samples.
-    values : ndarray, shape (n,)
-        Corresponding profile values (e.g., resistivity).
-    label : str, optional
-        Curve label for the legend.
-    ax : matplotlib.axes.Axes, optional
-        Existing axis to plot into. If None, a new figure and axis are created.
-    logx : bool, optional
-        If True, use logarithmic scaling on the x-axis.
-    z_positive_down : bool, optional
-        If True, orient the axis such that depth increases downwards.
+    polyline_xy : array_like, shape (n_vertices, 2)
+        Polyline vertices as (x, y).
+    n_samples : int
+        Number of equally spaced samples along the polyline.
 
     Returns
     -------
-    fig, ax : Figure, Axes
-        The Matplotlib figure and axes containing the plot.
+    xy : ndarray, shape (n_samples, 2)
+        Sampled XY points along the polyline.
+    s : ndarray, shape (n_samples,)
+        Cumulative distance (arc length) from the first vertex to each sample.
+
+    Notes
+    -----
+    The returned ``s`` can be used as the horizontal axis for curtain plots.
     """
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(4.0, 6.0))
-    else:
-        fig = ax.figure
+    pts = np.asarray(polyline_xy, dtype=float)
+    if pts.ndim != 2 or pts.shape[1] != 2:
+        raise ValueError(f"polyline_xy must have shape (n,2); got {pts.shape}.")
+    if pts.shape[0] < 2:
+        raise ValueError("polyline_xy must contain at least 2 vertices.")
+    if n_samples < 2:
+        raise ValueError("n_samples must be >= 2.")
 
-    ax.plot(values, z, label=label)
-    ax.set_xlabel("Resistivity")
-    ax.set_ylabel("Depth z")
-
-    if logx:
-        ax.set_xscale("log")
-
-    if z_positive_down:
-        if z.size >= 2 and z[1] < z[0]:
-            ax.invert_yaxis()
-    else:
-        if z.size >= 2 and z[1] > z[0]:
-            ax.invert_yaxis()
-
-    if label is not None:
-        ax.legend()
-
-    ax.grid(True, which="both", alpha=0.3)
-    fig.tight_layout()
-    return fig, ax
-
-
-def plot_vertical_profiles(
-    z: np.ndarray,
-    profiles: Sequence[np.ndarray],
-    *,
-    labels: Optional[Sequence[str]] = None,
-    ax: Optional[plt.Axes] = None,
-    logx: bool = False,
-    z_positive_down: bool = True,
-) -> Tuple[plt.Figure, plt.Axes]:
-    """
-    Plot multiple vertical profiles on a shared z-axis.
-
-    Parameters
-    ----------
-    z : ndarray, shape (n,)
-        Depth or elevation samples.
-    profiles : sequence of ndarray
-        Collection of profiles values(z) to plot.
-    labels : sequence of str, optional
-        Labels for each profile curve.
-    ax : matplotlib.axes.Axes, optional
-        Existing axis to plot into. If None, a new figure and axis are created.
-    logx : bool, optional
-        If True, use logarithmic scaling on the x-axis.
-    z_positive_down : bool, optional
-        If True, orient the axis such that depth increases downwards.
-
-    Returns
-    -------
-    fig, ax : Figure, Axes
-        The Matplotlib figure and axes containing the plot.
-    """
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(4.5, 6.5))
-    else:
-        fig = ax.figure
-
-    for i, prof in enumerate(profiles):
-        lab = labels[i] if (labels is not None and i < len(labels)) else None
-        ax.plot(prof, z, label=lab)
-
-    ax.set_xlabel("Resistivity")
-    ax.set_ylabel("Depth z")
-
-    if logx:
-        ax.set_xscale("log")
-
-    if z_positive_down:
-        if z.size >= 2 and z[1] < z[0]:
-            ax.invert_yaxis()
-    else:
-        if z.size >= 2 and z[1] > z[0]:
-            ax.invert_yaxis()
-
-    if labels is not None:
-        ax.legend()
-
-    ax.grid(True, which="both", alpha=0.3)
-    fig.tight_layout()
-    return fig, ax
-
-
-# ===== End femtic_borehole_viz.py =====
-
-
-
-# ===== Begin femtic_slice_matplotlib.py =====
-
-
-#!/usr/bin/env python3
-"""
-femtic_slice_matplotlib.py
-
-Vertical FEMTIC resistivity slices (curtains) from NPZ, pure Matplotlib, with
-pluggable interpolation (idw / nearest / rbf).
-
-NPZ is expected to contain at least:
-    centroid            (nelem, 3)
-    log10_resistivity   (nelem,)
-    flag                (nelem,)  [optional, 1 = fixed]
-
-Author: Volker Rath (DIAS)
-Created by ChatGPT (GPT-5 Thinking) on 2025-12-08
-"""
-
-from typing import Tuple
-import numpy as np
-import matplotlib.pyplot as plt
-
-
-def _build_s(points_xy: np.ndarray) -> np.ndarray:
-    """Cumulative arclength along a polyline."""
-    points_xy = np.asarray(points_xy, dtype=float)
-    diffs = np.diff(points_xy, axis=0)
-    seglen = np.sqrt(np.sum(diffs**2, axis=1))
-    return np.concatenate([[0.0], np.cumsum(seglen)])
-
-
-def sample_polyline(points_xy: np.ndarray, ns: int) -> Tuple[np.ndarray, np.ndarray]:
-    """Sample a polyline at ns equally spaced arclength positions."""
-    points_xy = np.asarray(points_xy, dtype=float)
-    if points_xy.shape[0] < 2:
-        raise ValueError("Polyline must contain at least two vertices.")
-    s = _build_s(points_xy)
-    total = s[-1]
+    seg = pts[1:] - pts[:-1]
+    seglen = np.sqrt(np.sum(seg * seg, axis=1))
+    cum = np.concatenate([[0.0], np.cumsum(seglen)])
+    total = float(cum[-1])
     if total <= 0.0:
-        raise ValueError("Polyline length must be positive.")
-    S = np.linspace(0.0, total, ns)
-    XY = np.empty((ns, 2), dtype=float)
-    for i, si in enumerate(S):
-        j = np.searchsorted(s, si, side="right") - 1
-        j = max(0, min(j, len(s) - 2))
-        denom = max(s[j + 1] - s[j], 1e-12)
-        t = (si - s[j]) / denom
-        XY[i] = (1.0 - t) * points_xy[j] + t * points_xy[j + 1]
-    return S, XY
+        raise ValueError("polyline length is zero.")
+
+    s = np.linspace(0.0, total, n_samples)
+    xy = np.empty((n_samples, 2), dtype=float)
+
+    # For each s, find containing segment and interpolate
+    j = 0
+    for i, si in enumerate(s):
+        while j < len(seglen) - 1 and si > cum[j + 1]:
+            j += 1
+        t = (si - cum[j]) / seglen[j] if seglen[j] > 0 else 0.0
+        xy[i] = pts[j] * (1.0 - t) + pts[j + 1] * t
+
+    return xy, s
 
 
-def _idw_point(q: np.ndarray, pts: np.ndarray, vals: np.ndarray,
-               power: float = 2.0, eps: float = 1e-6) -> float:
-    """Inverse distance weighting in 3D for a single point (log10-space)."""
-    d2 = np.sum((pts - q) ** 2, axis=1) + eps**2
-    w = 1.0 / (d2 ** (power / 2.0))
-    return float(np.sum(w * vals) / np.sum(w))
+# -----------------------------------------------------------------------------
+# Interpolation (KDTree-based)
+# -----------------------------------------------------------------------------
 
-
-def curtain_slice_idw(points_xy: np.ndarray, z_samples: np.ndarray,
-                      centroids: np.ndarray, vals_log10: np.ndarray,
-                      power: float = 2.0, ns: int = 301
-                      ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Curtain slice using 3D IDW on log10 values."""
-    centroids = np.asarray(centroids, dtype=float)
-    vals_log10 = np.asarray(vals_log10, dtype=float)
-    Z = np.asarray(z_samples, dtype=float)
-    S, XY = sample_polyline(points_xy, ns)
-    V = np.empty((Z.size, S.size), dtype=float)
-    for j, (x, y) in enumerate(XY):
-        for i, z in enumerate(Z):
-            V[i, j] = _idw_point(np.array([x, y, z], float),
-                                 centroids, vals_log10, power=power)
-    return S, Z, V, XY
-
-
-def curtain_slice_nearest(points_xy: np.ndarray, z_samples: np.ndarray,
-                          centroids: np.ndarray, vals_log10: np.ndarray,
-                          ns: int = 301
-                          ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Curtain slice using nearest neighbour in 3D (no smoothing)."""
-    centroids = np.asarray(centroids, dtype=float)
-    vals_log10 = np.asarray(vals_log10, dtype=float)
-    Z = np.asarray(z_samples, dtype=float)
-    S, XY = sample_polyline(points_xy, ns)
-    V = np.empty((Z.size, S.size), dtype=float)
+def _require_scipy() -> None:
+    """Raise an ImportError with a clear message if SciPy is missing."""
     try:
-        from scipy.spatial import cKDTree  # type: ignore[attr-defined]
-        tree = cKDTree(centroids)
-        queries = np.stack(
-            [np.repeat(XY[:, 0], Z.size),
-             np.repeat(XY[:, 1], Z.size),
-             np.tile(Z, XY.shape[0])],
-            axis=1,
-        )
-        _, idx = tree.query(queries)
-        V[:] = vals_log10[idx].reshape(Z.size, XY.shape[0], order="F")
-    except Exception:
-        for j, (x, y) in enumerate(XY):
-            for i, z in enumerate(Z):
-                q = np.array([x, y, z], float)
-                d2 = np.sum((centroids - q) ** 2, axis=1)
-                k = int(np.argmin(d2))
-                V[i, j] = vals_log10[k]
-    return S, Z, V, XY
-
-
-def curtain_slice_rbf(points_xy: np.ndarray, z_samples: np.ndarray,
-                      centroids: np.ndarray, vals_log10: np.ndarray,
-                      ns: int = 301
-                      ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Curtain slice using 3D RBF interpolation (SciPy)."""
-    try:
-        from scipy.interpolate import RBFInterpolator  # type: ignore[attr-defined]
+        import scipy  # noqa: F401
     except Exception as exc:  # pragma: no cover
         raise ImportError(
-            "RBF interpolation requires scipy.interpolate.RBFInterpolator."
+            "This function requires SciPy (scipy.spatial.cKDTree). "
+            "Install SciPy or choose an interpolation method that does not require it."
         ) from exc
-    centroids = np.asarray(centroids, dtype=float)
-    vals_log10 = np.asarray(vals_log10, dtype=float)
-    Z = np.asarray(z_samples, dtype=float)
-    S, XY = sample_polyline(points_xy, ns)
-    rbf = RBFInterpolator(centroids, vals_log10, kernel="thin_plate_spline")
-    XX = np.repeat(XY[:, 0][None, :], Z.size, axis=0)
-    YY = np.repeat(XY[:, 1][None, :], Z.size, axis=0)
-    ZZ = np.repeat(Z[:, None], XY.shape[0], axis=1)
-    Q = np.column_stack([XX.ravel(), YY.ravel(), ZZ.ravel()])
-    V_flat = rbf(Q)
-    V = V_flat.reshape(Z.size, XY.shape[0])
-    return S, Z, V, XY
 
 
-def curtain_slice(points_xy: np.ndarray, z_samples: np.ndarray,
-                  centroids: np.ndarray, vals_log10: np.ndarray,
-                  *, interp: str = "idw", power: float = 2.0, ns: int = 301
-                  ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Dispatch curtain interpolation according to interp method."""
-    interp = interp.lower()
-    if interp == "idw":
-        return curtain_slice_idw(points_xy, z_samples, centroids, vals_log10,
-                                 power=power, ns=ns)
-    if interp == "nearest":
-        return curtain_slice_nearest(points_xy, z_samples, centroids, vals_log10,
-                                     ns=ns)
-    if interp == "rbf":
-        return curtain_slice_rbf(points_xy, z_samples, centroids, vals_log10,
-                                 ns=ns)
-    raise ValueError(f"Unknown interp '{interp}' (expected idw, nearest, rbf).")
+def _idw_from_knn(d: np.ndarray, v: np.ndarray, power: float) -> np.ndarray:
+    """Compute inverse-distance weighted values from kNN distances.
+
+    Parameters
+    ----------
+    d : ndarray, shape (..., k)
+        Distances to k neighbors. Distances may include zeros.
+    v : ndarray, shape (..., k)
+        Values at the k neighbors.
+    power : float
+        Weight exponent. Common choice is 2.
+
+    Returns
+    -------
+    out : ndarray, shape (...)
+        Interpolated values.
+
+    Notes
+    -----
+    If any distance is exactly zero, the corresponding neighbor value is
+    returned (no averaging).
+    """
+    d = np.asarray(d, dtype=float)
+    v = np.asarray(v, dtype=float)
+
+    # If any exact hit: take the first exact-hit value (stable behaviour).
+    hit = d == 0.0
+    if np.any(hit):
+        # Choose first hit along last axis
+        idx = np.argmax(hit, axis=-1)
+        # fancy take
+        out = np.take_along_axis(v, idx[..., None], axis=-1)[..., 0]
+        return out
+
+    w = 1.0 / np.power(d, float(power))
+    wsum = np.sum(w, axis=-1)
+    # avoid divide-by-zero (should not happen if d>0)
+    wsum = np.where(wsum > 0.0, wsum, np.nan)
+    return np.sum(w * v, axis=-1) / wsum
 
 
-def plot_curtain_matplotlib(S: np.ndarray, Z: np.ndarray, V: np.ndarray,
-                            *, logscale: bool = True,
-                            z_positive_down: bool = True,
-                            cmap: str = "viridis",
-                            vmin: float | None = None,
-                            vmax: float | None = None,
-                            title: str = "Curtain slice"
-                            ) -> tuple[plt.Figure, plt.Axes]:
-    """Plot a curtain slice using Matplotlib."""
-    S = np.asarray(S, float)
-    Z = np.asarray(Z, float)
-    V = np.asarray(V, float)
-    if logscale:
-        data = np.log10(np.clip(V, 1e-30, np.inf))
-        cbar_label = "log10(ρ) [Ω·m]"
-    else:
-        data = V
-        cbar_label = "ρ [Ω·m]"
-    fig, ax = plt.subplots(figsize=(6.0, 4.0))
-    if z_positive_down:
-        extent = [S.min(), S.max(), Z.max(), Z.min()]
-        origin = "upper"
-    else:
-        extent = [S.min(), S.max(), Z.min(), Z.max()]
-        origin = "lower"
-    im = ax.imshow(
-        data,
-        extent=extent,
-        origin=origin,
-        aspect="auto",
-        cmap=cmap,
-        vmin=vmin,
-        vmax=vmax,
-    )
-    ax.set_xlabel("Distance along slice S")
-    ax.set_ylabel("Depth z")
-    ax.set_title(title)
-    cbar = fig.colorbar(im, ax=ax)
-    cbar.set_label(cbar_label)
-    fig.tight_layout()
-    return fig, ax
-
-
-def femtic_slice_from_npz_matplotlib(
-    npz_path: str,
+def interpolate_points_3d(
+    xyz_data: np.ndarray,
+    values: np.ndarray,
+    xyz_query: np.ndarray,
     *,
-    polyline_xy: np.ndarray | None = None,
-    polyline_csv: str | None = None,
+    method: Interp3D = "idw",
+    k: int = 8,
+    power: float = 2.0,
+) -> np.ndarray:
+    """Interpolate scattered 3-D data to query points using kNN.
+
+    Parameters
+    ----------
+    xyz_data : ndarray, shape (n, 3)
+        Data point coordinates.
+    values : ndarray, shape (n,)
+        Values at data points.
+    xyz_query : ndarray, shape (m, 3)
+        Query point coordinates.
+    method : {"idw", "nearest"}, optional
+        Interpolation method.
+    k : int, optional
+        Number of neighbors used for "idw". Ignored for "nearest".
+    power : float, optional
+        IDW power exponent.
+
+    Returns
+    -------
+    out : ndarray, shape (m,)
+        Interpolated values at query points.
+
+    Notes
+    -----
+    Uses SciPy's :class:`scipy.spatial.cKDTree`. For large grids, this is
+    significantly faster than per-point brute force.
+    """
+    _require_scipy()
+    from scipy.spatial import cKDTree  # type: ignore
+
+    xyz_data = np.asarray(xyz_data, dtype=float)
+    values = np.asarray(values, dtype=float).reshape(-1)
+    xyz_query = np.asarray(xyz_query, dtype=float)
+
+    if xyz_data.ndim != 2 or xyz_data.shape[1] != 3:
+        raise ValueError("xyz_data must have shape (n, 3).")
+    if xyz_query.ndim != 2 or xyz_query.shape[1] != 3:
+        raise ValueError("xyz_query must have shape (m, 3).")
+    if xyz_data.shape[0] != values.shape[0]:
+        raise ValueError("values length must match xyz_data length.")
+
+    tree = cKDTree(xyz_data)
+
+    method = method.lower()
+    if method == "nearest":
+        d, idx = tree.query(xyz_query, k=1)
+        return values[idx]
+
+    if method == "idw":
+        kk = int(max(1, k))
+        d, idx = tree.query(xyz_query, k=kk)
+        # Ensure 2-D (..., k)
+        if kk == 1:
+            return values[idx]
+        v = values[idx]
+        return _idw_from_knn(d, v, power=float(power))
+
+    raise ValueError("method must be 'idw' or 'nearest'.")
+
+
+def interpolate_points_2d(
+    xy_data: np.ndarray,
+    values: np.ndarray,
+    xy_query: np.ndarray,
+    *,
+    method: Interp2D = "idw",
+    k: int = 8,
+    power: float = 2.0,
+) -> np.ndarray:
+    """Interpolate scattered 2-D data to query points using kNN.
+
+    Parameters
+    ----------
+    xy_data : ndarray, shape (n, 2)
+        Data point coordinates.
+    values : ndarray, shape (n,)
+        Values at data points.
+    xy_query : ndarray, shape (m, 2)
+        Query point coordinates.
+    method : {"idw", "nearest"}, optional
+        Interpolation method.
+    k : int, optional
+        Number of neighbors for "idw". Ignored for "nearest".
+    power : float, optional
+        IDW power exponent.
+
+    Returns
+    -------
+    out : ndarray, shape (m,)
+        Interpolated values at query points.
+    """
+    _require_scipy()
+    from scipy.spatial import cKDTree  # type: ignore
+
+    xy_data = np.asarray(xy_data, dtype=float)
+    values = np.asarray(values, dtype=float).reshape(-1)
+    xy_query = np.asarray(xy_query, dtype=float)
+
+    if xy_data.ndim != 2 or xy_data.shape[1] != 2:
+        raise ValueError("xy_data must have shape (n, 2).")
+    if xy_query.ndim != 2 or xy_query.shape[1] != 2:
+        raise ValueError("xy_query must have shape (m, 2).")
+    if xy_data.shape[0] != values.shape[0]:
+        raise ValueError("values length must match xy_data length.")
+
+    tree = cKDTree(xy_data)
+
+    method = method.lower()
+    if method == "nearest":
+        d, idx = tree.query(xy_query, k=1)
+        return values[idx]
+
+    if method == "idw":
+        kk = int(max(1, k))
+        d, idx = tree.query(xy_query, k=kk)
+        if kk == 1:
+            return values[idx]
+        v = values[idx]
+        return _idw_from_knn(d, v, power=float(power))
+
+    raise ValueError("method must be 'idw' or 'nearest'.")
+
+
+# -----------------------------------------------------------------------------
+# Curtain slices
+# -----------------------------------------------------------------------------
+
+def curtain_slice_from_npz(
+    npz_path: str | Path,
+    *,
+    polyline_xy: ArrayLike,
     zmin: float,
     zmax: float,
     nz: int = 201,
     ns: int = 301,
+    interp: Interp3D = "idw",
+    k: int = 8,
     power: float = 2.0,
-    interp: str = "idw",
-    logscale: bool = True,
-    z_positive_down: bool = True,
-    cmap: str = "viridis",
+    mask_air: bool = True,
+    ocean_log10_rho: float | None = None,
+    value_space: RhoSpace = "log10",
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Compute a vertical curtain slice from a FEMTIC NPZ model.
+
+    Parameters
+    ----------
+    npz_path : str or pathlib.Path
+        Input NPZ containing centroids and log10-resistivity.
+    polyline_xy : array_like, shape (n_vertices, 2)
+        Curtain trace polyline in the XY plane.
+    zmin, zmax : float
+        Depth range (z positive downward) sampled uniformly.
+    nz : int, optional
+        Number of depth samples (default 201).
+    ns : int, optional
+        Number of samples along the polyline arc length (default 301).
+    interp : {"idw", "nearest"}, optional
+        Interpolation method in 3-D based on centroid data.
+    k : int, optional
+        Neighbors for IDW.
+    power : float, optional
+        IDW power exponent.
+    mask_air : bool, optional
+        If True, set air region to NaN before interpolation.
+    ocean_log10_rho : float or None, optional
+        If not None, force ocean region to this value (log10 units).
+    value_space : {"log10", "linear"}, optional
+        Output value space. If "linear", returns linear resistivity (Ohm·m).
+
+    Returns
+    -------
+    S : ndarray, shape (ns,)
+        Arc-length coordinate along the polyline (same units as XY).
+    Z : ndarray, shape (nz,)
+        Depth samples (z positive downward).
+    V : ndarray, shape (nz, ns)
+        Interpolated slice values. Rows correspond to Z, columns to S.
+
+    Notes
+    -----
+    For performance, interpolation uses a single KDTree built on the centroid
+    coordinates and queries all (ns*nz) points at once.
+    """
+    if nz < 2 or ns < 2:
+        raise ValueError("nz and ns must be >= 2.")
+    if zmax <= zmin:
+        raise ValueError("Require zmax > zmin.")
+
+    model = load_npz_model(npz_path)
+    log10_plot = prepare_log10_rho_for_plotting(
+        model.log10_rho,
+        model.region,
+        mask_air=mask_air,
+        ocean_log10_rho=ocean_log10_rho,
+    )
+
+    xy, S = sample_polyline_xy(polyline_xy, n_samples=ns)
+    Z = np.linspace(float(zmin), float(zmax), int(nz))
+
+    # Build full query grid (ns*nz, 3)
+    Xq = np.repeat(xy[:, 0][None, :], nz, axis=0)
+    Yq = np.repeat(xy[:, 1][None, :], nz, axis=0)
+    Zq = np.repeat(Z[:, None], ns, axis=1)
+    xyz_query = np.column_stack([Xq.ravel(), Yq.ravel(), Zq.ravel()])
+
+    vals = interpolate_points_3d(
+        model.centroids,
+        log10_plot,
+        xyz_query,
+        method=interp,
+        k=k,
+        power=power,
+    ).reshape(nz, ns)
+
+    if value_space == "linear":
+        vals = log10_to_rho(vals)
+
+    return S, Z, vals
+
+
+def plot_curtain_matplotlib(
+    S: ArrayLike,
+    Z: ArrayLike,
+    V: ArrayLike,
+    *,
+    ax=None,
+    title: str | None = None,
+    cbar_label: str | None = None,
     vmin: float | None = None,
     vmax: float | None = None,
-    out_npz: str | None = None,
-    out_csv: str | None = None,
-    out_png: str | None = None,
-    title: str = "Curtain slice",
-) -> None:
-    """High-level helper: build & plot curtain from FEMTIC NPZ."""
-    import csv
+    cmap: str | None = None,
+) -> object:
+    """Plot a curtain slice with Matplotlib.
 
-    data = np.load(npz_path)
-    if "centroid" not in data or "log10_resistivity" not in data:
-        raise KeyError("NPZ must contain 'centroid' and 'log10_resistivity'.")
-    centroids = data["centroid"]
-    vals_log10 = data["log10_resistivity"]
-    if "flag" in data:
-        mask = data["flag"] != 1
-        centroids = centroids[mask]
-        vals_log10 = vals_log10[mask]
+    Parameters
+    ----------
+    S : array_like, shape (ns,)
+        Arc-length coordinates.
+    Z : array_like, shape (nz,)
+        Depth coordinates (z positive downward).
+    V : array_like, shape (nz, ns)
+        Slice values (log10 or linear). NaNs are rendered transparent.
+    ax : matplotlib Axes or None, optional
+        If None, a new figure+axes are created.
+    title : str or None, optional
+        Plot title.
+    cbar_label : str or None, optional
+        Colorbar label.
+    vmin, vmax : float or None, optional
+        Color scale bounds.
+    cmap : str or None, optional
+        Matplotlib colormap name. If None, Matplotlib default is used.
 
-    if polyline_csv is not None:
-        pts = []
-        with open(polyline_csv, "r") as f:
-            lines=f.readlines()
-            for line in lines:
-                xy = np.fromstring(line, dtype=float, sep=',')
-                x = float(xy[0])
-                y = float(xy[1])
-                pts.append([x, y])
-        print(pts)
-        if len(pts) < 2:
-            raise ValueError("Polyline CSV must contain at least two vertices.")
-        poly_xy = np.asarray(pts, dtype=float)
-    else:
-        if polyline_xy is None or polyline_xy.shape[0] < 2:
-            raise ValueError("Provide at least two polyline vertices via polyline_xy.")
-        poly_xy = np.asarray(polyline_xy, dtype=float)
+    Returns
+    -------
+    ax : matplotlib Axes
+        The axes used for plotting.
 
-    Z = np.linspace(zmin, zmax, nz)
-    S, Z, V_log10, XY = curtain_slice(
-        poly_xy,
-        Z,
-        centroids,
-        vals_log10,
-        interp=interp,
-        power=power,
-        ns=ns,
-    )
+    Notes
+    -----
+    The plot uses ``pcolormesh`` with ``shading='auto'``.
+    """
+    import matplotlib.pyplot as plt  # lazy
 
-    if out_npz is not None:
-        np.savez_compressed(out_npz, S=S, Z=Z, V_log10=V_log10, XY=XY, interp=interp)
-        print("Saved curtain NPZ:", out_npz)
+    S = np.asarray(S, dtype=float).reshape(-1)
+    Z = np.asarray(Z, dtype=float).reshape(-1)
+    V = np.asarray(V, dtype=float)
 
-    if out_csv is not None:
-        with open(out_csv, "w", newline="") as f:
-            w = csv.writer(f)
-            w.writerow(["s", "z", "log10_rho"])
-            for j, s in enumerate(S):
-                for i, z in enumerate(Z):
-                    w.writerow([s, z, V_log10[i, j]])
-        print("Saved curtain CSV:", out_csv)
+    if V.shape != (Z.size, S.size):
+        raise ValueError(f"V must have shape (nz, ns)=({Z.size},{S.size}); got {V.shape}.")
 
-    V_plot = 10.0 ** V_log10
-    fig, ax = plot_curtain_matplotlib(
-        S,
-        Z,
-        V_plot,
-        logscale=logscale,
-        z_positive_down=z_positive_down,
-        cmap=cmap,
-        vmin=vmin,
-        vmax=vmax,
-        title=title,
-    )
+    if ax is None:
+        _, ax = plt.subplots()
 
-    if out_png is not None:
-        fig.savefig(out_png, dpi=200, bbox_inches="tight")
-        print("Saved PNG:", out_png)
-    else:
-        try:
-            plt.show()
-        except Exception:
-            pass
+    mesh = ax.pcolormesh(S, Z, V, shading="auto", vmin=vmin, vmax=vmax, cmap=cmap)
+    ax.set_xlabel("Distance along polyline")
+    ax.set_ylabel("Depth (z positive down)")
+    ax.invert_yaxis()  # visually: depth increases downward on the page
+    if title:
+        ax.set_title(title)
+    ax.grid(True, linestyle=":")
+
+    cbar = plt.colorbar(mesh, ax=ax)
+    if cbar_label:
+        cbar.set_label(cbar_label)
+
+    return ax
 
 
-def main() -> None:
-    """CLI entry point for vertical FEMTIC slices."""
-    import argparse
-
-    ap = argparse.ArgumentParser(
-        description="Vertical FEMTIC slices along arbitrary XY polylines (Matplotlib)."
-    )
-    ap.add_argument("--npz", required=True, help="Element NPZ from femtic_mesh_to_npz.py.")
-    ap.add_argument("--polyline-csv", help="CSV file with x,y columns for polyline vertices.")
-    ap.add_argument(
-        "--xy",
-        action="append",
-        nargs=2,
-        type=float,
-        metavar=("X", "Y"),
-        help="Polyline vertex (X Y). Repeat to build polyline.",
-    )
-    ap.add_argument("--zmin", type=float, required=True, help="Minimum depth of slice.")
-    ap.add_argument("--zmax", type=float, required=True, help="Maximum depth of slice.")
-    ap.add_argument("--nz", type=int, default=201, help="Number of depth samples.")
-    ap.add_argument("--ns", type=int, default=301, help="Number of samples along slice.")
-    ap.add_argument("--power", type=float, default=2.0, help="IDW power exponent (interp='idw').")
-    ap.add_argument(
-        "--interp",
-        choices=["idw", "nearest", "rbf"],
-        default="idw",
-        help="Interpolation method.",
-    )
-    ap.add_argument("--logscale", action="store_true", help="Plot in log10(ρ).")
-    ap.add_argument(
-        "--z-positive-down",
-        action="store_true",
-        help="Depth increases downwards in plot.",
-    )
-    ap.add_argument("--cmap", default="viridis", help="Matplotlib colormap.")
-    ap.add_argument("--vmin", type=float, default=None, help="Color scale minimum.")
-    ap.add_argument("--vmax", type=float, default=None, help="Color scale maximum.")
-    ap.add_argument("--out-npz", default=None, help="Optional output NPZ for curtain.")
-    ap.add_argument("--out-csv", default=None, help="Optional output CSV for curtain.")
-    ap.add_argument("--out-png", default=None, help="Optional PNG output for the plot.")
-    ap.add_argument("--title", default="Curtain slice", help="Plot title.")
-    args = ap.parse_args()
-
-    polyline_xy = None
-    if args.polyline_csv is None:
-        if not args.xy or len(args.xy) < 2:
-            raise ValueError(
-                "Provide a polyline via --polyline-csv or at least two --xy X Y pairs."
-            )
-        polyline_xy = np.asarray([[x, y] for x, y in args.xy], dtype=float)
-
-    femtic_slice_from_npz_matplotlib(
-        npz_path=args.npz,
-        polyline_xy=polyline_xy,
-        polyline_csv=args.polyline_csv,
-        zmin=args.zmin,
-        zmax=args.zmax,
-        nz=args.nz,
-        ns=args.ns,
-        power=args.power,
-        interp=args.interp,
-        logscale=args.logscale,
-        z_positive_down=args.z_positive_down,
-        cmap=args.cmap,
-        vmin=args.vmin,
-        vmax=args.vmax,
-        out_npz=args.out_npz,
-        out_csv=args.out_csv,
-        out_png=args.out_png,
-        title=args.title,
-    )
-
-
-if __name__ == "__main__":
-    main()
-
-
-# ===== End femtic_slice_matplotlib.py =====
-
-
-
-# ===== Begin femtic_map_slice_matplotlib.py =====
-
-
-#!/usr/bin/env python3
-"""
-femtic_map_slice_matplotlib.py
-
-Horizontal FEMTIC resistivity slices (maps) at fixed depth from NPZ, pure
-Matplotlib, with pluggable interpolation (idw / nearest / rbf).
-
-NPZ is expected to contain at least:
-    centroid            (nelem, 3)
-    log10_resistivity   (nelem,)
-    flag                (nelem,)  [optional, 1 = fixed]
-
-Author: Volker Rath (DIAS)
-Created by ChatGPT (GPT-5 Thinking) on 2025-12-08
-"""
-
-from typing import Tuple
-import numpy as np
-import matplotlib.pyplot as plt
-
-
-
-def _select_depth_window(
-    centroids: np.ndarray,
-    vals_log10: np.ndarray,
-    z0: float,
-    dz: float,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Select centroids and log10 values within a vertical window around z0."""
-    centroids = np.asarray(centroids, dtype=float)
-    vals_log10 = np.asarray(vals_log10, dtype=float)
-    z = centroids[:, 2]
-    half = dz / 2.0
-    mask = (z >= z0 - half) & (z <= z0 + half)
-    if not np.any(mask):
-        raise ValueError("No centroids found in the depth window around z0.")
-    pts_xy = centroids[mask, :2]
-    vals_sel = vals_log10[mask]
-    return pts_xy, vals_sel
-
-
-def _idw_grid_2d(
-    x: np.ndarray,
-    y: np.ndarray,
-    pts_xy: np.ndarray,
-    vals_log10: np.ndarray,
-    power: float = 2.0,
-    eps: float = 1e-6,
-) -> np.ndarray:
-    """2D IDW on regular (x, y) grid (log10-space)."""
-    x = np.asarray(x, float)
-    y = np.asarray(y, float)
-    pts_xy = np.asarray(pts_xy, float)
-    vals_log10 = np.asarray(vals_log10, float)
-    nx = x.size
-    ny = y.size
-    V = np.empty((ny, nx), float)
-    px = pts_xy[:, 0]
-    py = pts_xy[:, 1]
-    for j in range(ny):
-        yj = y[j]
-        dy2 = (py - yj) ** 2
-        for i in range(nx):
-            xi = x[i]
-            d2 = (px - xi) ** 2 + dy2 + eps**2
-            w = 1.0 / (d2 ** (power / 2.0))
-            V[j, i] = float(np.sum(w * vals_log10) / np.sum(w))
-    return V
-
-
-def _nearest_grid_2d(
-    x: np.ndarray,
-    y: np.ndarray,
-    pts_xy: np.ndarray,
-    vals_log10: np.ndarray,
-) -> np.ndarray:
-    """2D nearest neighbour interpolation on regular grid."""
-    x = np.asarray(x, float)
-    y = np.asarray(y, float)
-    pts_xy = np.asarray(pts_xy, float)
-    vals_log10 = np.asarray(vals_log10, float)
-    nx = x.size
-    ny = y.size
-    V = np.empty((ny, nx), float)
-    try:
-        from scipy.spatial import cKDTree  # type: ignore[attr-defined]
-        tree = cKDTree(pts_xy)
-        XX, YY = np.meshgrid(x, y)
-        Q = np.column_stack([XX.ravel(), YY.ravel()])
-        _, idx = tree.query(Q)
-        V[:] = vals_log10[idx].reshape(ny, nx)
-    except Exception:
-        px = pts_xy[:, 0]
-        py = pts_xy[:, 1]
-        for j in range(ny):
-            yj = y[j]
-            dy2 = (py - yj) ** 2
-            for i in range(nx):
-                xi = x[i]
-                d2 = (px - xi) ** 2 + dy2
-                k = int(np.argmin(d2))
-                V[j, i] = vals_log10[k]
-    return V
-
-
-def _rbf_grid_2d(
-    x: np.ndarray,
-    y: np.ndarray,
-    pts_xy: np.ndarray,
-    vals_log10: np.ndarray,
-) -> np.ndarray:
-    """2D RBF interpolation on regular grid (SciPy)."""
-    try:
-        from scipy.interpolate import RBFInterpolator  # type: ignore[attr-defined]
-    except Exception as exc:  # pragma: no cover
-        raise ImportError(
-            "RBF interpolation requires scipy.interpolate.RBFInterpolator."
-        ) from exc
-    x = np.asarray(x, float)
-    y = np.asarray(y, float)
-    pts_xy = np.asarray(pts_xy, float)
-    vals_log10 = np.asarray(vals_log10, float)
-    rbf = RBFInterpolator(pts_xy, vals_log10, kernel="thin_plate_spline")
-    XX, YY = np.meshgrid(x, y)
-    Q = np.column_stack([XX.ravel(), YY.ravel()])
-    V_flat = rbf(Q)
-    return V_flat.reshape(y.size, x.size)
-
-
-def _grid_2d(
-    x: np.ndarray,
-    y: np.ndarray,
-    pts_xy: np.ndarray,
-    vals_log10: np.ndarray,
+def femtic_curtain_from_npz_matplotlib(
+    npz_path: str | Path,
     *,
-    interp: str = "idw",
+    polyline_xy: ArrayLike,
+    zmin: float,
+    zmax: float,
+    nz: int = 201,
+    ns: int = 301,
+    interp: Interp3D = "idw",
+    k: int = 8,
     power: float = 2.0,
-) -> np.ndarray:
-    """Dispatch 2D interpolation on a regular grid."""
-    interp = interp.lower()
-    if interp == "idw":
-        return _idw_grid_2d(x, y, pts_xy, vals_log10, power=power)
-    if interp == "nearest":
-        return _nearest_grid_2d(x, y, pts_xy, vals_log10)
-    if interp == "rbf":
-        return _rbf_grid_2d(x, y, pts_xy, vals_log10)
-    raise ValueError(f"Unknown interp '{interp}' (expected idw, nearest, rbf).")
+    mask_air: bool = True,
+    ocean_log10_rho: float | None = None,
+    value_space: RhoSpace = "log10",
+    title: str | None = None,
+) -> object:
+    """Convenience wrapper: compute and plot a curtain slice from an NPZ.
+
+    Parameters
+    ----------
+    npz_path : str or pathlib.Path
+        Input NPZ model.
+    polyline_xy : array_like
+        Curtain trace polyline XY vertices.
+    zmin, zmax : float
+        Depth range.
+    nz, ns : int
+        Sampling of depth and arc length.
+    interp, k, power : see :func:`curtain_slice_from_npz`.
+    mask_air, ocean_log10_rho : see :func:`prepare_log10_rho_for_plotting`.
+    value_space : {"log10", "linear"}
+        Output value space.
+    title : str or None
+        Plot title.
+
+    Returns
+    -------
+    ax : matplotlib Axes
+        Axes with the plot.
+    """
+    S, Z, V = curtain_slice_from_npz(
+        npz_path,
+        polyline_xy=polyline_xy,
+        zmin=zmin,
+        zmax=zmax,
+        nz=nz,
+        ns=ns,
+        interp=interp,
+        k=k,
+        power=power,
+        mask_air=mask_air,
+        ocean_log10_rho=ocean_log10_rho,
+        value_space=value_space,
+    )
+    cbar_label = "log10(resistivity)" if value_space == "log10" else "resistivity (Ohm·m)"
+    return plot_curtain_matplotlib(S, Z, V, title=title, cbar_label=cbar_label)
+
+
+# -----------------------------------------------------------------------------
+# Map slices (horizontal)
+# -----------------------------------------------------------------------------
+
+def map_slice_from_npz(
+    npz_path: str | Path,
+    *,
+    zmin: float,
+    zmax: float,
+    nx: int = 301,
+    ny: int = 301,
+    bounds: tuple[float, float, float, float] | None = None,
+    interp: Interp2D = "idw",
+    k: int = 8,
+    power: float = 2.0,
+    mask_air: bool = True,
+    ocean_log10_rho: float | None = None,
+    value_space: RhoSpace = "log10",
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Compute a horizontal map slice by averaging over a depth window.
+
+    Parameters
+    ----------
+    npz_path : str or pathlib.Path
+        Input NPZ model.
+    zmin, zmax : float
+        Depth window (z positive down). Cells with centroid z in [zmin, zmax]
+        are selected.
+    nx, ny : int, optional
+        Grid size in x and y for the output map (default 301×301).
+    bounds : (xmin, xmax, ymin, ymax) or None, optional
+        Bounds of the output grid. If None, bounds are derived from the selected
+        cell centroids.
+    interp : {"idw", "nearest"}, optional
+        Interpolation method in 2-D based on XY centroids.
+    k : int, optional
+        Neighbors for IDW.
+    power : float, optional
+        IDW power exponent.
+    mask_air, ocean_log10_rho : see :func:`prepare_log10_rho_for_plotting`.
+    value_space : {"log10", "linear"}, optional
+        Output value space.
+
+    Returns
+    -------
+    X : ndarray, shape (ny, nx)
+        X grid (meshgrid output).
+    Y : ndarray, shape (ny, nx)
+        Y grid.
+    V : ndarray, shape (ny, nx)
+        Interpolated slice values on the grid.
+
+    Notes
+    -----
+    Within the selected depth window, this function performs a simple
+    per-cell averaging in case multiple cells project to similar XY positions.
+    It then interpolates the resulting scattered XY data to a regular grid.
+    """
+    if nx < 2 or ny < 2:
+        raise ValueError("nx and ny must be >= 2.")
+    if zmax <= zmin:
+        raise ValueError("Require zmax > zmin.")
+
+    model = load_npz_model(npz_path)
+    log10_plot = prepare_log10_rho_for_plotting(
+        model.log10_rho,
+        model.region,
+        mask_air=mask_air,
+        ocean_log10_rho=ocean_log10_rho,
+    )
+
+    z = model.centroids[:, 2]
+    sel = (z >= float(zmin)) & (z <= float(zmax)) & np.isfinite(log10_plot)
+    if not np.any(sel):
+        raise ValueError("No cells found in the requested depth window (after masking).")
+
+    xy = model.centroids[sel, :2]
+    vv = log10_plot[sel]
+
+    if bounds is None:
+        xmin, ymin = np.min(xy, axis=0)
+        xmax, ymax = np.max(xy, axis=0)
+    else:
+        xmin, xmax, ymin, ymax = map(float, bounds)
+
+    x = np.linspace(xmin, xmax, int(nx))
+    y = np.linspace(ymin, ymax, int(ny))
+    X, Y = np.meshgrid(x, y)
+
+    vq = interpolate_points_2d(
+        xy,
+        vv,
+        np.column_stack([X.ravel(), Y.ravel()]),
+        method=interp,
+        k=k,
+        power=power,
+    ).reshape(ny, nx)
+
+    if value_space == "linear":
+        vq = log10_to_rho(vq)
+
+    return X, Y, vq
 
 
 def plot_map_slice_matplotlib(
-    X: np.ndarray,
-    Y: np.ndarray,
-    V: np.ndarray,
+    X: ArrayLike,
+    Y: ArrayLike,
+    V: ArrayLike,
     *,
-    logscale: bool = True,
-    cmap: str = "viridis",
+    ax=None,
+    title: str | None = None,
+    cbar_label: str | None = None,
     vmin: float | None = None,
     vmax: float | None = None,
-    title: str = "Horizontal slice",
-    z_label: str | None = None,
-) -> tuple[plt.Figure, plt.Axes]:
-    """Plot a horizontal map slice using Matplotlib."""
-    X = np.asarray(X, float)
-    Y = np.asarray(Y, float)
-    V = np.asarray(V, float)
-    if logscale:
-        data = np.log10(np.clip(V, 1e-30, np.inf))
-        cbar_label = "log10(ρ) [Ω·m]"
-    else:
-        data = V
-        cbar_label = "ρ [Ω·m]"
-    fig, ax = plt.subplots(figsize=(6.0, 5.0))
-    pc = ax.pcolormesh(X, Y, data, shading="auto", cmap=cmap,
-                       vmin=vmin, vmax=vmax)
-    ax.set_aspect("equal")
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
-    full_title = title
-    if z_label is not None:
-        full_title = f"{title} ({z_label})"
-    ax.set_title(full_title)
-    cbar = fig.colorbar(pc, ax=ax)
-    cbar.set_label(cbar_label)
-    fig.tight_layout()
-    return fig, ax
+    cmap: str | None = None,
+    equal_aspect: bool = True,
+) -> object:
+    """Plot a map slice on an XY grid with Matplotlib.
+
+    Parameters
+    ----------
+    X, Y : array_like, shape (ny, nx)
+        Grid coordinates (as returned by :func:`map_slice_from_npz`).
+    V : array_like, shape (ny, nx)
+        Slice values.
+    ax : matplotlib Axes or None, optional
+        If None, creates a new figure+axes.
+    title : str or None
+        Plot title.
+    cbar_label : str or None
+        Colorbar label.
+    vmin, vmax : float or None
+        Color scale bounds.
+    cmap : str or None
+        Matplotlib colormap name.
+    equal_aspect : bool, optional
+        If True (default), set equal XY aspect ratio.
+
+    Returns
+    -------
+    ax : matplotlib Axes
+        Axes used for plotting.
+    """
+    import matplotlib.pyplot as plt  # lazy
+
+    X = np.asarray(X, dtype=float)
+    Y = np.asarray(Y, dtype=float)
+    V = np.asarray(V, dtype=float)
+    if X.shape != Y.shape or X.shape != V.shape:
+        raise ValueError("X, Y, and V must have identical shapes (ny, nx).")
+
+    if ax is None:
+        _, ax = plt.subplots()
+
+    mesh = ax.pcolormesh(X, Y, V, shading="auto", vmin=vmin, vmax=vmax, cmap=cmap)
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    if equal_aspect:
+        ax.set_aspect("equal", adjustable="box")
+    if title:
+        ax.set_title(title)
+    ax.grid(True, linestyle=":")
+
+    cbar = plt.colorbar(mesh, ax=ax)
+    if cbar_label:
+        cbar.set_label(cbar_label)
+
+    return ax
 
 
 def femtic_map_slice_from_npz_matplotlib(
-    npz_path: str,
+    npz_path: str | Path,
     *,
-    z0: float,
-    dz: float,
-    nx: int = 200,
-    ny: int = 200,
-    xmin: float | None = None,
-    xmax: float | None = None,
-    ymin: float | None = None,
-    ymax: float | None = None,
+    zmin: float,
+    zmax: float,
+    nx: int = 301,
+    ny: int = 301,
+    bounds: tuple[float, float, float, float] | None = None,
+    interp: Interp2D = "idw",
+    k: int = 8,
     power: float = 2.0,
-    interp: str = "idw",
-    logscale: bool = True,
-    cmap: str = "viridis",
-    vmin: float | None = None,
-    vmax: float | None = None,
-    out_npz: str | None = None,
-    out_csv: str | None = None,
-    out_png: str | None = None,
-    title: str = "Horizontal slice",
-) -> None:
-    """High-level helper: compute horizontal map slice from FEMTIC NPZ and plot."""
-    import csv
-
-    data = np.load(npz_path)
-    if "centroid" not in data or "log10_resistivity" not in data:
-        raise KeyError("NPZ must contain 'centroid' and 'log10_resistivity'.")
-    centroids = data["centroid"]
-    vals_log10 = data["log10_resistivity"]
-    if "flag" in data:
-        mask = data["flag"] != 1
-        centroids = centroids[mask]
-        vals_log10 = vals_log10[mask]
-
-    pts_xy, vals_sel = _select_depth_window(centroids, vals_log10, z0=z0, dz=dz)
-
-    if xmin is None:
-        xmin = float(pts_xy[:, 0].min())
-    if xmax is None:
-        xmax = float(pts_xy[:, 0].max())
-    if ymin is None:
-        ymin = float(pts_xy[:, 1].min())
-    if ymax is None:
-        ymax = float(pts_xy[:, 1].max())
-
-    dx = xmax - xmin
-    dy = ymax - ymin
-    xmin -= 0.02 * dx
-    xmax += 0.02 * dx
-    ymin -= 0.02 * dy
-    ymax += 0.02 * dy
-
-    x = np.linspace(xmin, xmax, nx)
-    y = np.linspace(ymin, ymax, ny)
-    V_log10 = _grid_2d(x, y, pts_xy, vals_sel, interp=interp, power=power)
-    X, Y = np.meshgrid(x, y)
-
-    if out_npz is not None:
-        np.savez_compressed(out_npz, X=X, Y=Y, V_log10=V_log10, z0=z0, interp=interp)
-        print("Saved map slice NPZ:", out_npz)
-
-    if out_csv is not None:
-        with open(out_csv, "w", newline="") as f:
-            w = csv.writer(f)
-            w.writerow(["x", "y", "log10_rho", "z"])
-            for j in range(ny):
-                for i in range(nx):
-                    w.writerow([X[j, i], Y[j, i], V_log10[j, i], z0])
-        print("Saved map slice CSV:", out_csv)
-
-    V_plot = 10.0 ** V_log10
-    z_label = f"z = {z0:g} m"
-    fig, ax = plot_map_slice_matplotlib(
-        X,
-        Y,
-        V_plot,
-        logscale=logscale,
-        cmap=cmap,
-        vmin=vmin,
-        vmax=vmax,
-        title=title,
-        z_label=z_label,
+    mask_air: bool = True,
+    ocean_log10_rho: float | None = None,
+    value_space: RhoSpace = "log10",
+    title: str | None = None,
+) -> object:
+    """Convenience wrapper: compute and plot a map slice from an NPZ model."""
+    X, Y, V = map_slice_from_npz(
+        npz_path,
+        zmin=zmin,
+        zmax=zmax,
+        nx=nx,
+        ny=ny,
+        bounds=bounds,
+        interp=interp,
+        k=k,
+        power=power,
+        mask_air=mask_air,
+        ocean_log10_rho=ocean_log10_rho,
+        value_space=value_space,
     )
-
-    if out_png is not None:
-        fig.savefig(out_png, dpi=200, bbox_inches="tight")
-        print("Saved PNG:", out_png)
-    else:
-        try:
-            plt.show()
-        except Exception:
-            pass
+    cbar_label = "log10(resistivity)" if value_space == "log10" else "resistivity (Ohm·m)"
+    return plot_map_slice_matplotlib(X, Y, V, title=title, cbar_label=cbar_label)
 
 
-def main() -> None:
-    """CLI entry point for computing & plotting FEMTIC horizontal slices."""
-    import argparse
+# -----------------------------------------------------------------------------
+# Optional PyVista curtain grids
+# -----------------------------------------------------------------------------
 
-    ap = argparse.ArgumentParser(
-        description="Horizontal FEMTIC resistivity slices at fixed depth (Matplotlib)."
-    )
-    ap.add_argument("--npz", required=True, help="Element NPZ from femtic_mesh_to_npz.py.")
-    ap.add_argument("--z0", type=float, required=True, help="Central depth of slice.")
-    ap.add_argument("--dz", type=float, required=True, help="Thickness of vertical window around z0.")
-    ap.add_argument("--nx", type=int, default=200, help="Number of grid points in x.")
-    ap.add_argument("--ny", type=int, default=200, help="Number of grid points in y.")
-    ap.add_argument("--xmin", type=float, default=None, help="Minimum x for grid.")
-    ap.add_argument("--xmax", type=float, default=None, help="Maximum x for grid.")
-    ap.add_argument("--ymin", type=float, default=None, help="Minimum y for grid.")
-    ap.add_argument("--ymax", type=float, default=None, help="Maximum y for grid.")
-    ap.add_argument("--power", type=float, default=2.0, help="IDW power exponent (interp='idw').")
-    ap.add_argument(
-        "--interp",
-        choices=["idw", "nearest", "rbf"],
-        default="idw",
-        help="Interpolation method.",
-    )
-    ap.add_argument("--logscale", action="store_true", help="Plot in log10(ρ).")
-    ap.add_argument("--cmap", default="viridis", help="Matplotlib colormap name.")
-    ap.add_argument("--vmin", type=float, default=None, help="Color scale minimum.")
-    ap.add_argument("--vmax", type=float, default=None, help="Color scale maximum.")
-    ap.add_argument("--out-npz", default=None, help="Optional output NPZ for map slice.")
-    ap.add_argument("--out-csv", default=None, help="Optional output CSV for map slice.")
-    ap.add_argument("--out-png", default=None, help="Optional PNG output for the plot.")
-    ap.add_argument("--title", default="Horizontal slice", help="Plot title.")
-    args = ap.parse_args()
-
-    femtic_map_slice_from_npz_matplotlib(
-        npz_path=args.npz,
-        z0=args.z0,
-        dz=args.dz,
-        nx=args.nx,
-        ny=args.ny,
-        xmin=args.xmin,
-        xmax=args.xmax,
-        ymin=args.ymin,
-        ymax=args.ymax,
-        power=args.power,
-        interp=args.interp,
-        logscale=args.logscale,
-        cmap=args.cmap,
-        vmin=args.vmin,
-        vmax=args.vmax,
-        out_npz=args.out_npz,
-        out_csv=args.out_csv,
-        out_png=args.out_png,
-        title=args.title,
-    )
-
-
-if __name__ == "__main__":
-    main()
-
-
-# ===== End femtic_map_slice_matplotlib.py =====
-
-
-
-# ===== Begin femtic_slice_pyvista.py =====
-
-
-#!/usr/bin/env python3
-"""
-femtic_slice_pyvista.py
-
-Vertical FEMTIC resistivity slices (curtains) from NPZ using PyVista.
-
-This script reuses the interpolation logic from femtic_slice_matplotlib
-(curtain_slice) and builds a 2-D PyVista StructuredGrid in (S, z)-space, where:
-
-    S : distance along polyline
-    z : depth (positive downwards if requested)
-
-Cell data:
-    log10_rho  (log10_resistivity in NPZ)
-    rho        (10**log10_rho)
-
-Author: Volker Rath (DIAS)
-Created by ChatGPT (GPT-5 Thinking) on 2025-12-08
-"""
-
-
-def build_curtain_grid_from_npz(
-    npz_path: str,
+def build_curtain_structured_grid_from_npz(
+    npz_path: str | Path,
     *,
-    polyline_xy: np.ndarray | None = None,
-    polyline_csv: str | None = None,
+    polyline_xy: ArrayLike,
     zmin: float,
     zmax: float,
     nz: int = 201,
     ns: int = 301,
-    interp: str = "idw",
+    interp: Interp3D = "idw",
+    k: int = 8,
     power: float = 2.0,
-) -> pv.StructuredGrid:
-
-    """
-    Build a PyVista StructuredGrid for a vertical curtain.
+    mask_air: bool = True,
+    ocean_log10_rho: float | None = None,
+    value_space: RhoSpace = "log10",
+    name: str = "value",
+) -> "pv.StructuredGrid":
+    """Build a PyVista StructuredGrid for a curtain slice from an NPZ model.
 
     Parameters
     ----------
-    npz_path : str
-        FEMTIC NPZ created by femtic_mesh_to_npz.py.
-    polyline_xy : ndarray, shape (m, 2), optional
-        Polyline vertices in XY. Ignored if polyline_csv is given.
-    polyline_csv : str, optional
-        CSV file with at least 'x,y' in the first two columns.
-    zmin, zmax : float
-        Depth range of curtain.
-    nz : int
-        Number of samples in depth.
-    ns : int
-        Number of samples along polyline.
-    interp : {'idw', 'nearest', 'rbf'}
-        Interpolation method (same as femtic_slice_matplotlib).
-    power : float
-        IDW exponent if interp='idw'.
+    npz_path : str or pathlib.Path
+        Input NPZ model.
+    polyline_xy, zmin, zmax, nz, ns, interp, k, power :
+        Same meaning as in :func:`curtain_slice_from_npz`.
+    mask_air, ocean_log10_rho :
+        Same meaning as in :func:`prepare_log10_rho_for_plotting`.
+    value_space : {"log10", "linear"}
+        Value space of the grid point data.
+    name : str, optional
+        Name of the point-data array attached to the grid (default "value").
 
     Returns
     -------
     grid : pyvista.StructuredGrid
-        Structured grid in (S, z) coordinates with 'log10_rho' and 'rho'.
+        Structured grid with point data named ``name``.
+
+    Raises
+    ------
+    ImportError
+        If PyVista is not installed.
+
+    Notes
+    -----
+    The grid has dimensions (ns, nz, 1). Values are stored as point data
+    consistent with the point coordinates.
     """
+    try:
+        import pyvista as pv  # type: ignore
+    except Exception as exc:  # pragma: no cover
+        raise ImportError("PyVista is required for build_curtain_structured_grid_from_npz.") from exc
 
-
-    data = np.load(npz_path)
-    if "centroid" not in data or "log10_resistivity" not in data:
-        raise KeyError("NPZ must contain 'centroid' and 'log10_resistivity'.")
-
-    centroids = data["centroid"]
-    vals_log10 = data["log10_resistivity"]
-    if "flag" in data:
-        mask = data["flag"] != 1
-        centroids = centroids[mask]
-        vals_log10 = vals_log10[mask]
-
-    if polyline_csv is not None:
-        pts = []
-        with open(polyline_csv, "r") as f:
-            r = csv.reader(f)
-            for row in r:
-                if not row:
-                    continue
-                try:
-                    x = float(row[0])
-                    y = float(row[1])
-                except Exception:
-                    continue
-                pts.append([x, y])
-        if len(pts) < 2:
-            raise ValueError("Polyline CSV must contain at least two vertices.")
-        poly_xy = np.asarray(pts, dtype=float)
-    else:
-        if polyline_xy is None or polyline_xy.shape[0] < 2:
-            raise ValueError("Provide at least two polyline vertices via polyline_xy.")
-        poly_xy = np.asarray(polyline_xy, dtype=float)
-
-    Z = np.linspace(zmin, zmax, nz)
-    S, Z, V_log10, XY = curtain_slice(
-        poly_xy,
-        Z,
-        centroids,
-        vals_log10,
-        interp=interp,
-        power=power,
+    S, Z, V = curtain_slice_from_npz(
+        npz_path,
+        polyline_xy=polyline_xy,
+        zmin=zmin,
+        zmax=zmax,
+        nz=nz,
         ns=ns,
+        interp=interp,
+        k=k,
+        power=power,
+        mask_air=mask_air,
+        ocean_log10_rho=ocean_log10_rho,
+        value_space=value_space,
     )
 
-    # Build StructuredGrid in (S, z) plane, y=0
-    S2, Z2 = np.meshgrid(S, Z)  # (nz, ns)
-    X = S2
-    Y = np.zeros_like(S2)
-    Zcoords = Z2
+    # Build coordinates arrays for StructuredGrid: shape (ns, nz, 1)
+    xy, _ = sample_polyline_xy(polyline_xy, n_samples=ns)
+    x = np.repeat(xy[:, 0][:, None], nz, axis=1)[:, :, None]
+    y = np.repeat(xy[:, 1][:, None], nz, axis=1)[:, :, None]
+    z = np.repeat(Z[None, :], ns, axis=0)[:, :, None]
 
-    # Shape to (nz, ns, 1) for StructuredGrid
-    X3 = X[:, :, None]
-    Y3 = Y[:, :, None]
-    Z3 = Zcoords[:, :, None]
+    grid = pv.StructuredGrid(x, y, z)
+    # V is (nz, ns) -> point ordering expects (ns, nz, 1) flattened in Fortran order.
+    V_p = np.asarray(V, dtype=float).T[:, :, None]  # (ns, nz, 1)
+    grid.point_data[name] = V_p.ravel(order="F")
+    grid.point_data["s"] = np.repeat(S[:, None], nz, axis=1).ravel(order="F")
+    grid.point_data["z"] = z.ravel(order="F")
+    return grid
 
-    grid = pv.StructuredGrid(X3, Y3, Z3)
-    grid["log10_rho"] = V_log10.ravel(order="C")
-    grid["rho"] = (10.0 ** V_log10).ravel(order="C")
 
-    # Optionally store polyline locations as field data
-    grid.field_data["polyline_xy"] = XY
+# -----------------------------------------------------------------------------
+# CLI
+# -----------------------------------------------------------------------------
+
+def _parse_xy_pairs(pairs: Sequence[Sequence[float]]) -> np.ndarray:
+    """Parse --xy arguments into a (n,2) array."""
+    pts = np.asarray(pairs, dtype=float)
+    if pts.ndim != 2 or pts.shape[1] != 2:
+        raise ValueError("Need at least two --xy pairs, each with two floats.")
+    if pts.shape[0] < 2:
+        raise ValueError("Need at least two --xy pairs.")
+    return pts
+
+
+# -----------------------------------------------------------------------------
+# Native PyVista mesh visualisation (no regular-grid interpolation)
+# -----------------------------------------------------------------------------
+
+
+def native_grid_from_npz(npz_path: str):
+    """Build a PyVista :class:`pyvista.UnstructuredGrid` from a FEMTIC NPZ file.
+
+    This function prefers the implementation in :mod:`femtic` if it is importable,
+    because that keeps the NPZ-to-grid logic in one place. If :mod:`femtic` is not
+    available, a small fallback implementation is used.
+
+    Parameters
+    ----------
+    npz_path : str
+        Path to an NPZ created by FEMTIC (must contain at least ``nodes`` and ``conn``).
+
+    Returns
+    -------
+    grid : pyvista.UnstructuredGrid
+        Unstructured tetrahedral grid with per-cell arrays attached as ``cell_data``
+        where possible.
+
+    Notes
+    -----
+    This path performs **no interpolation**. All slicing/clipping is done on the
+    native unstructured tetrahedral mesh.
+
+    Raises
+    ------
+    ImportError
+        If PyVista is not installed.
+    KeyError
+        If required NPZ keys are missing.
+    """
+    # Prefer femtic's implementation if present.
+    try:
+        import femtic  # type: ignore
+
+        return femtic.npz_to_unstructured_grid(npz_path)
+    except Exception:
+        pass
+
+    try:
+        import numpy as np
+        import pyvista as pv
+    except ImportError as e:  # pragma: no cover
+        raise ImportError(
+            "PyVista (and NumPy) are required for native mesh visualisation."
+        ) from e
+
+    data = np.load(npz_path)
+    if "nodes" not in data or "conn" not in data:
+        raise KeyError("NPZ must contain 'nodes' and 'conn' arrays for native plotting.")
+
+    nodes = np.asarray(data["nodes"], dtype=float)
+    conn = np.asarray(data["conn"], dtype=np.int64)
+    nelem = int(conn.shape[0])
+
+    if conn.ndim != 2 or conn.shape[1] != 4:
+        raise ValueError("Connectivity 'conn' must have shape (nelem, 4) for tetrahedra.")
+
+    cells = np.hstack([np.full((nelem, 1), 4, dtype=np.int64), conn]).ravel()
+
+    try:
+        celltypes = np.full(nelem, pv.CellType.TETRA, dtype=np.uint8)  # type: ignore[attr-defined]
+    except Exception:  # pragma: no cover
+        celltypes = np.full(nelem, 10, dtype=np.uint8)  # VTK_TETRA = 10
+
+    grid = pv.UnstructuredGrid(cells, celltypes, nodes)
+
+    # Attach any 1-D arrays of length nelem as cell_data.
+    for key in getattr(data, "files", []):
+        if key in ("nodes", "conn"):
+            continue
+        arr = np.asarray(data[key])
+        if arr.ndim == 1 and arr.shape[0] == nelem:
+            name = "region" if key == "region_of_elem" else key
+            grid.cell_data[name] = arr
 
     return grid
 
 
-def main() -> None:
-    """CLI entry point for PyVista curtain slices."""
-    import argparse
-    import pyvista as pv
+def _apply_air_ocean_on_cell_scalar(
+    grid,
+    *,
+    scalar_name: str,
+    mask_air: bool = True,
+    ocean_log10_rho: float | None = None,
+):
+    """Apply FEMTIC air/ocean conventions on a grid's scalar array (in-place).
 
-    ap = argparse.ArgumentParser(
-        description="Vertical FEMTIC curtain slices in (S, z) using PyVista."
+    Parameters
+    ----------
+    grid : pyvista.UnstructuredGrid
+        Grid whose ``cell_data`` contains the scalar.
+    scalar_name : str
+        Name of the scalar in ``grid.cell_data``.
+    mask_air : bool, optional
+        If True (default), air cells (region == 0) are removed by extraction.
+        If False, air is kept.
+    ocean_log10_rho : float or None, optional
+        If not None, sets the scalar value of ocean cells (region == 1) to this value.
+
+    Returns
+    -------
+    grid2 : pyvista.UnstructuredGrid
+        Possibly extracted grid. If no extraction is required, returns the input grid.
+
+    Notes
+    -----
+    This helper assumes FEMTIC's common region convention:
+
+    - region 0: air
+    - region 1: ocean
+
+    If the grid does not have a ``region`` cell array, no masking/forcing is applied.
+    """
+    try:
+        import numpy as np
+    except ImportError:  # pragma: no cover
+        return grid
+
+    if scalar_name not in grid.cell_data:
+        raise KeyError(f"Scalar '{scalar_name}' not found in grid.cell_data.")
+
+    if "region" not in grid.cell_data:
+        return grid
+
+    reg = np.asarray(grid.cell_data["region"])
+    scal = np.asarray(grid.cell_data[scalar_name])
+
+    if ocean_log10_rho is not None:
+        ocean_mask = reg == 1
+        if ocean_mask.any():
+            scal2 = scal.copy()
+            scal2[ocean_mask] = float(ocean_log10_rho)
+            grid.cell_data[scalar_name] = scal2
+
+    if mask_air:
+        keep = np.where(reg != 0)[0]
+        return grid.extract_cells(keep)
+
+    return grid
+
+
+def native_extract_depth_window(
+    npz_path: str,
+    *,
+    zmin: float,
+    zmax: float,
+    scalar_name: str = "log10_resistivity",
+    mask_air: bool = True,
+    ocean_log10_rho: float | None = None,
+):
+    """Extract cells whose centroid depth lies in a window (native mesh, no interpolation).
+
+    Parameters
+    ----------
+    npz_path : str
+        FEMTIC NPZ path.
+    zmin, zmax : float
+        Depth window in model coordinates (z positive down).
+    scalar_name : str, optional
+        Scalar field name in cell_data for plotting (default: ``log10_resistivity``).
+    mask_air : bool, optional
+        If True (default), removes air cells (region 0) if region information exists.
+    ocean_log10_rho : float or None, optional
+        If given, forces ocean cells (region 1) to this scalar value (log10 space).
+
+    Returns
+    -------
+    sub : pyvista.UnstructuredGrid
+        Extracted subgrid containing only cells in the depth window.
+
+    Notes
+    -----
+    This is the most robust way to obtain a "map slice" on an unstructured mesh
+    without resampling: extract a depth slab and render it from above.
+    """
+    try:
+        import numpy as np
+    except ImportError as e:  # pragma: no cover
+        raise ImportError("NumPy is required.") from e
+
+    grid = native_grid_from_npz(npz_path)
+    grid = _apply_air_ocean_on_cell_scalar(
+        grid, scalar_name=scalar_name, mask_air=mask_air, ocean_log10_rho=ocean_log10_rho
     )
-    ap.add_argument("--npz", required=True, help="Element NPZ from femtic_mesh_to_npz.py.")
-    ap.add_argument("--polyline-csv", help="CSV file with x,y columns for polyline vertices.")
-    ap.add_argument(
+
+    centers = np.asarray(grid.cell_centers().points)
+    idx = np.where((centers[:, 2] >= float(zmin)) & (centers[:, 2] <= float(zmax)))[0]
+    return grid.extract_cells(idx)
+
+
+def native_plane_slice(
+    npz_path: str,
+    *,
+    z0: float,
+    scalar_name: str = "log10_resistivity",
+    mask_air: bool = True,
+    ocean_log10_rho: float | None = None,
+):
+    """Create a horizontal plane slice at depth ``z0`` (native mesh, no interpolation).
+
+    Parameters
+    ----------
+    npz_path : str
+        FEMTIC NPZ path.
+    z0 : float
+        Depth of the horizontal slicing plane (z positive down).
+    scalar_name : str, optional
+        Scalar in cell_data to visualise (default: ``log10_resistivity``).
+    mask_air : bool, optional
+        If True (default), removes air cells (region 0) if region info exists.
+    ocean_log10_rho : float or None, optional
+        If given, forces ocean cells (region 1) to this scalar value (log10 space).
+
+    Returns
+    -------
+    sl : pyvista.PolyData
+        Sliced surface polydata.
+    """
+    grid = native_grid_from_npz(npz_path)
+    grid = _apply_air_ocean_on_cell_scalar(
+        grid, scalar_name=scalar_name, mask_air=mask_air, ocean_log10_rho=ocean_log10_rho
+    )
+    sl = grid.slice(normal=(0.0, 0.0, 1.0), origin=(0.0, 0.0, float(z0)))
+    return sl
+
+
+def project_points_to_polyline_xy(
+    xy: np.ndarray,
+    polyline_xy: np.ndarray,
+):
+    """Project XY points onto a polyline and compute arc-length coordinate.
+
+    Parameters
+    ----------
+    xy : ndarray, shape (n, 2)
+        XY points to project.
+    polyline_xy : ndarray, shape (m, 2)
+        Polyline vertices.
+
+    Returns
+    -------
+    s : ndarray, shape (n,)
+        Arc-length coordinate along the polyline of the closest projection.
+    d : ndarray, shape (n,)
+        Minimum Euclidean distance from each point to the polyline.
+    """
+    import numpy as np
+
+    pts = np.asarray(xy, dtype=float)
+    poly = np.asarray(polyline_xy, dtype=float)
+    if pts.ndim != 2 or pts.shape[1] != 2:
+        raise ValueError("xy must be (n,2).")
+    if poly.ndim != 2 or poly.shape[1] != 2 or poly.shape[0] < 2:
+        raise ValueError("polyline_xy must be (m,2) with m>=2.")
+
+    seg = poly[1:] - poly[:-1]
+    seglen = np.sqrt(np.sum(seg**2, axis=1))
+    cum = np.concatenate([[0.0], np.cumsum(seglen)])
+    # Avoid division by zero for degenerate segments
+    seglen2 = np.where(seglen > 0.0, seglen**2, 1.0)
+
+    s_best = np.zeros(pts.shape[0], dtype=float)
+    d_best2 = np.full(pts.shape[0], np.inf, dtype=float)
+
+    for i in range(seg.shape[0]):
+        a = poly[i]
+        v = seg[i]
+        # t = ((p-a)·v)/(v·v) clamped
+        w = pts - a
+        t = (w[:, 0] * v[0] + w[:, 1] * v[1]) / seglen2[i]
+        t = np.clip(t, 0.0, 1.0)
+        proj = a + t[:, None] * v[None, :]
+        d2 = np.sum((pts - proj) ** 2, axis=1)
+
+        upd = d2 < d_best2
+        if np.any(upd):
+            d_best2[upd] = d2[upd]
+            s_best[upd] = cum[i] + t[upd] * seglen[i]
+
+    return s_best, np.sqrt(d_best2)
+
+
+def native_curtain_slices(
+    npz_path: str,
+    *,
+    polyline_xy: ArrayLike,
+    zmin: float,
+    zmax: float,
+    ns: int = 51,
+    corridor: float | None = None,
+    scalar_name: str = "log10_resistivity",
+    mask_air: bool = True,
+    ocean_log10_rho: float | None = None,
+):
+    """Create a MultiBlock of vertical plane slices along a polyline (no interpolation).
+
+    This generates a series of vertical planes approximately perpendicular to the
+    polyline direction and slices the **native** unstructured mesh with those planes.
+    It is intended for interactive PyVista viewing.
+
+    Parameters
+    ----------
+    npz_path : str
+        FEMTIC NPZ path.
+    polyline_xy : array_like, shape (m, 2)
+        Polyline vertices in XY.
+    zmin, zmax : float
+        Depth range to clip the slices to (z positive down).
+    ns : int, optional
+        Number of slicing planes along the polyline (default: 51).
+    corridor : float or None, optional
+        If given, first extracts only those cells whose centroid is within this XY
+        distance from the polyline. This keeps slices local and fast.
+    scalar_name : str, optional
+        Cell scalar to visualise (default: ``log10_resistivity``).
+    mask_air : bool, optional
+        If True (default), removes air cells (region 0) if region info exists.
+    ocean_log10_rho : float or None, optional
+        If given, forces ocean cells (region 1) to this scalar value (log10 space).
+
+    Returns
+    -------
+    blocks : pyvista.MultiBlock
+        MultiBlock containing one PolyData slice per plane.
+    s : ndarray, shape (ns,)
+        Arc-length coordinate of each slicing plane along the polyline.
+
+    Notes
+    -----
+    This is not a "curtain grid". It is a set of true geometric slices through
+    the tetrahedral mesh. You may merge blocks (`blocks.combine()`) or inspect
+    them individually.
+    """
+    try:
+        import numpy as np
+        import pyvista as pv
+    except ImportError as e:  # pragma: no cover
+        raise ImportError("PyVista and NumPy are required for native curtain slicing.") from e
+
+    poly = np.asarray(polyline_xy, dtype=float)
+    xy_samp, s = sample_polyline_xy(poly, n_samples=int(ns))
+
+    grid = native_grid_from_npz(npz_path)
+    grid = _apply_air_ocean_on_cell_scalar(
+        grid, scalar_name=scalar_name, mask_air=mask_air, ocean_log10_rho=ocean_log10_rho
+    )
+
+    if corridor is not None and corridor > 0.0:
+        centers = np.asarray(grid.cell_centers().points)
+        _, d = project_points_to_polyline_xy(centers[:, :2], poly)
+        keep = np.where(d <= float(corridor))[0]
+        grid = grid.extract_cells(keep)
+
+    # Depth clipping bounds for clip_box: (xmin, xmax, ymin, ymax, zmin, zmax)
+    b = grid.bounds
+    clip_bounds = (b[0], b[1], b[2], b[3], float(zmin), float(zmax))
+
+    z0 = 0.5 * (float(zmin) + float(zmax))
+    blocks = pv.MultiBlock()
+
+    for i in range(xy_samp.shape[0]):
+        # Tangent from neighbors (central difference)
+        i0 = max(i - 1, 0)
+        i1 = min(i + 1, xy_samp.shape[0] - 1)
+        t = xy_samp[i1] - xy_samp[i0]
+        nt = float(np.hypot(t[0], t[1]))
+        if nt <= 0.0:
+            continue
+
+        # Normal is perpendicular to tangent in XY (vertical plane).
+        normal = (t[1] / nt, -t[0] / nt, 0.0)
+        origin = (float(xy_samp[i, 0]), float(xy_samp[i, 1]), z0)
+
+        sl = grid.slice(normal=normal, origin=origin)
+        try:
+            sl = sl.clip_box(bounds=clip_bounds, invert=False)
+        except Exception:
+            # If clip_box is not available for some PyVista/VTK combos, keep un-clipped slice.
+            pass
+
+        blocks[f"slice_{i:04d}"] = sl
+
+    return blocks, s
+
+
+def pv_plot_dataset(
+    dataset,
+    *,
+    scalar_name: str = "log10_resistivity",
+    view_xy: bool = False,
+    show_edges: bool = False,
+):
+    """Convenience plotter for PyVista datasets (interactive).
+
+    Parameters
+    ----------
+    dataset : pyvista.DataSet or pyvista.MultiBlock
+        Dataset to plot.
+    scalar_name : str, optional
+        Scalar name to plot (default: ``log10_resistivity``).
+    view_xy : bool, optional
+        If True, sets a top-down XY view.
+    show_edges : bool, optional
+        If True, draws mesh edges.
+
+    Returns
+    -------
+    None
+        This function calls :meth:`pyvista.DataSet.plot`.
+    """
+    try:
+        import pyvista as pv
+    except ImportError as e:  # pragma: no cover
+        raise ImportError("PyVista is required for pv_plot_dataset.") from e
+
+    kwargs = {"scalars": scalar_name, "show_edges": bool(show_edges)}
+    if view_xy:
+        kwargs["viewup"] = (0.0, 1.0, 0.0)
+
+    # Many PyVista objects support .plot directly (DataSet and MultiBlock).
+    dataset.plot(**kwargs)
+
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Command-line entry point.
+
+    This CLI is intentionally small and focuses on quick-look plots.
+
+    Subcommands
+    -----------
+    curtain
+        Curtain slice along a polyline to Matplotlib (regular-grid interpolation).
+    map
+        Horizontal map slice (depth window) to Matplotlib (regular-grid interpolation).
+    pv-plane
+        Native PyVista horizontal plane slice at depth z0 (no interpolation).
+    pv-window
+        Native PyVista depth-window extraction rendered from above (no interpolation).
+    pv-curtain
+        Native PyVista multi-slice curtain along a polyline (no interpolation).
+
+    Parameters
+    ----------
+    argv : sequence of str or None, optional
+        Argument vector without the program name. If None, uses sys.argv[1:].
+
+    Returns
+    -------
+    code : int
+        Exit status code (0 = success).
+    """
+    import argparse
+    import sys
+
+    p = argparse.ArgumentParser(prog="femtic_viz", description="FEMTIC visualisation helpers.")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    pc = sub.add_parser("curtain", help="Curtain slice from NPZ (Matplotlib).")
+    pc.add_argument("--npz", required=True, help="NPZ produced from FEMTIC mesh/model.")
+    pc.add_argument("--zmin", type=float, required=True, help="Minimum depth (z positive down).")
+    pc.add_argument("--zmax", type=float, required=True, help="Maximum depth (z positive down).")
+    pc.add_argument("--nz", type=int, default=201, help="Depth samples.")
+    pc.add_argument("--ns", type=int, default=301, help="Samples along polyline.")
+    pc.add_argument("--interp", choices=["idw", "nearest"], default="idw", help="Interpolation method.")
+    pc.add_argument("--k", type=int, default=8, help="k neighbors for IDW.")
+    pc.add_argument("--power", type=float, default=2.0, help="IDW power exponent.")
+    pc.add_argument("--ocean-log10", type=float, default=None, help="Force ocean to this log10 resistivity.")
+    pc.add_argument("--no-mask-air", action="store_true", help="Do not mask air region to NaN.")
+    pc.add_argument("--linear", action="store_true", help="Output linear resistivity (Ohm·m).")
+    pc.add_argument("--title", default=None, help="Plot title.")
+    pc.add_argument(
         "--xy",
         action="append",
         nargs=2,
         type=float,
         metavar=("X", "Y"),
         help="Polyline vertex (X Y). Repeat to build polyline.",
-    )
-    ap.add_argument("--zmin", type=float, required=True, help="Minimum depth of slice.")
-    ap.add_argument("--zmax", type=float, required=True, help="Maximum depth of slice.")
-    ap.add_argument("--nz", type=int, default=201, help="Number of depth samples.")
-    ap.add_argument("--ns", type=int, default=301, help="Number of samples along slice.")
-    ap.add_argument(
-        "--interp",
-        choices=["idw", "nearest", "rbf"],
-        default="idw",
-        help="Interpolation method.",
-    )
-    ap.add_argument("--power", type=float, default=2.0, help="IDW power exponent.")
-    ap.add_argument("--out-vtk", default=None, help="Optional output .vts/.vtk file.")
-    ap.add_argument(
-        "--no-show",
-        action="store_true",
-        help="Do not open interactive PyVista window.",
-    )
-    args = ap.parse_args()
-
-    polyline_xy = None
-    if args.polyline_csv is None:
-        if not args.xy or len(args.xy) < 2:
-            raise ValueError(
-                "Provide a polyline via --polyline-csv or at least two --xy X Y pairs."
-            )
-        polyline_xy = np.asarray([[x, y] for x, y in args.xy], dtype=float)
-
-    grid = build_curtain_grid_from_npz(
-        args.npz,
-        polyline_xy=polyline_xy,
-        polyline_csv=args.polyline_csv,
-        zmin=args.zmin,
-        zmax=args.zmax,
-        nz=args.nz,
-        ns=args.ns,
-        interp=args.interp,
-        power=args.power,
+        required=True,
     )
 
-    if args.out_vtk is not None:
-        grid.save(args.out_vtk)
-        print("Saved curtain grid to:", args.out_vtk)
+    pm = sub.add_parser("map", help="Map slice from NPZ (Matplotlib).")
+    pm.add_argument("--npz", required=True, help="NPZ produced from FEMTIC mesh/model.")
+    pm.add_argument("--zmin", type=float, required=True, help="Minimum depth (z positive down).")
+    pm.add_argument("--zmax", type=float, required=True, help="Maximum depth (z positive down).")
+    pm.add_argument("--nx", type=int, default=301, help="Grid samples in X.")
+    pm.add_argument("--ny", type=int, default=301, help="Grid samples in Y.")
+    pm.add_argument("--interp", choices=["idw", "nearest"], default="idw", help="Interpolation method.")
+    pm.add_argument("--k", type=int, default=8, help="k neighbors for IDW.")
+    pm.add_argument("--power", type=float, default=2.0, help="IDW power exponent.")
+    pm.add_argument("--ocean-log10", type=float, default=None, help="Force ocean to this log10 resistivity.")
+    pm.add_argument("--no-mask-air", action="store_true", help="Do not mask air region to NaN.")
+    pm.add_argument("--linear", action="store_true", help="Output linear resistivity (Ohm·m).")
+    pm.add_argument("--title", default=None, help="Plot title.")
+    pm.add_argument("--bounds", nargs=4, type=float, metavar=("XMIN", "XMAX", "YMIN", "YMAX"), default=None)
 
-    if not args.no_show:
-        grid.plot(
-            scalars="log10_rho",
-            cmap="viridis",
+
+    # Native PyVista (no-interpolation) subcommands
+    pp = sub.add_parser("pv-plane", help="Native PyVista plane slice at depth z0 (no interpolation).")
+    pp.add_argument("--npz", required=True, help="NPZ produced from FEMTIC mesh/model.")
+    pp.add_argument("--z0", type=float, required=True, help="Slice depth (z positive down).")
+    pp.add_argument("--scalar", default="log10_resistivity", help="Cell scalar name to plot.")
+    pp.add_argument("--ocean-log10", type=float, default=None, help="Force ocean to this log10 resistivity.")
+    pp.add_argument("--no-mask-air", action="store_true", help="Do not remove air cells (region 0).")
+    pp.add_argument("--edges", action="store_true", help="Show mesh edges in PyVista view.")
+
+    pw = sub.add_parser("pv-window", help="Native PyVista depth-window extraction (no interpolation).")
+    pw.add_argument("--npz", required=True, help="NPZ produced from FEMTIC mesh/model.")
+    pw.add_argument("--zmin", type=float, required=True, help="Minimum depth (z positive down).")
+    pw.add_argument("--zmax", type=float, required=True, help="Maximum depth (z positive down).")
+    pw.add_argument("--scalar", default="log10_resistivity", help="Cell scalar name to plot.")
+    pw.add_argument("--ocean-log10", type=float, default=None, help="Force ocean to this log10 resistivity.")
+    pw.add_argument("--no-mask-air", action="store_true", help="Do not remove air cells (region 0).")
+    pw.add_argument("--no-view-xy", action="store_true", help="Do not force top-down XY view.")
+    pw.add_argument("--edges", action="store_true", help="Show mesh edges in PyVista view.")
+
+    pcv = sub.add_parser("pv-curtain", help="Native PyVista curtain as a set of slices (no interpolation).")
+    pcv.add_argument("--npz", required=True, help="NPZ produced from FEMTIC mesh/model.")
+    pcv.add_argument("--zmin", type=float, required=True, help="Minimum depth (z positive down).")
+    pcv.add_argument("--zmax", type=float, required=True, help="Maximum depth (z positive down).")
+    pcv.add_argument("--ns", type=int, default=51, help="Number of slicing planes along the polyline.")
+    pcv.add_argument("--corridor", type=float, default=None, help="Optional corridor half-width (XY) in model units.")
+    pcv.add_argument("--scalar", default="log10_resistivity", help="Cell scalar name to plot.")
+    pcv.add_argument("--ocean-log10", type=float, default=None, help="Force ocean to this log10 resistivity.")
+    pcv.add_argument("--no-mask-air", action="store_true", help="Do not remove air cells (region 0).")
+    pcv.add_argument("--edges", action="store_true", help="Show mesh edges in PyVista view.")
+    pcv.add_argument(
+        "--xy",
+        action="append",
+        nargs=2,
+        type=float,
+        metavar=("X", "Y"),
+        help="Polyline vertex (X Y). Repeat to build polyline.",
+        required=True,
+    )
+
+    args = p.parse_args(list(argv) if argv is not None else None)
+
+    if args.cmd == "curtain":
+        poly = _parse_xy_pairs(args.xy)
+        value_space: RhoSpace = "linear" if args.linear else "log10"
+        femtic_curtain_from_npz_matplotlib(
+            args.npz,
+            polyline_xy=poly,
+            zmin=args.zmin,
+            zmax=args.zmax,
+            nz=args.nz,
+            ns=args.ns,
+            interp=args.interp,
+            k=args.k,
+            power=args.power,
+            mask_air=not args.no_mask_air,
+            ocean_log10_rho=args.ocean_log10,
+            value_space=value_space,
+            title=args.title,
         )
+        import matplotlib.pyplot as plt
+        plt.show()
+        return 0
+
+    if args.cmd == "map":
+        value_space = "linear" if args.linear else "log10"
+        femtic_map_slice_from_npz_matplotlib(
+            args.npz,
+            zmin=args.zmin,
+            zmax=args.zmax,
+            nx=args.nx,
+            ny=args.ny,
+            bounds=None if args.bounds is None else tuple(args.bounds),
+            interp=args.interp,
+            k=args.k,
+            power=args.power,
+            mask_air=not args.no_mask_air,
+            ocean_log10_rho=args.ocean_log10,
+            value_space=value_space,
+            title=args.title,
+        )
+        import matplotlib.pyplot as plt
+        plt.show()
+        return 0
+
+    
+    if args.cmd == "pv-plane":
+        sl = native_plane_slice(
+            args.npz,
+            z0=args.z0,
+            scalar_name=args.scalar,
+            mask_air=not args.no_mask_air,
+            ocean_log10_rho=args.ocean_log10,
+        )
+        pv_plot_dataset(sl, scalar_name=args.scalar, view_xy=False, show_edges=args.edges)
+        return 0
+
+    if args.cmd == "pv-window":
+        subg = native_extract_depth_window(
+            args.npz,
+            zmin=args.zmin,
+            zmax=args.zmax,
+            scalar_name=args.scalar,
+            mask_air=not args.no_mask_air,
+            ocean_log10_rho=args.ocean_log10,
+        )
+        pv_plot_dataset(
+            subg,
+            scalar_name=args.scalar,
+            view_xy=not args.no_view_xy,
+            show_edges=args.edges,
+        )
+        return 0
+
+    if args.cmd == "pv-curtain":
+        poly = _parse_xy_pairs(args.xy)
+        blocks, _s = native_curtain_slices(
+            args.npz,
+            polyline_xy=poly,
+            zmin=args.zmin,
+            zmax=args.zmax,
+            ns=args.ns,
+            corridor=args.corridor,
+            scalar_name=args.scalar,
+            mask_air=not args.no_mask_air,
+            ocean_log10_rho=args.ocean_log10,
+        )
+        pv_plot_dataset(blocks, scalar_name=args.scalar, view_xy=False, show_edges=args.edges)
+        return 0
+
+print("Unknown command.", file=sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":  # pragma: no cover
-    main()
-
-
-# ===== End femtic_slice_pyvista.py =====
-
-
-
-# ===== Begin femtic_map_slice_pyvista.py =====
-
-
-#!/usr/bin/env python3
-"""
-femtic_map_slice_pyvista.py
-
-Horizontal FEMTIC resistivity slices (maps) at fixed depth using PyVista.
-
-This script mirrors femtic_map_slice_matplotlib: it selects centroids in a
-depth window around z0, interpolates onto a regular (x, y) grid using one
-of:
-
-    interp = 'idw'      (inverse-distance weighting)
-    interp = 'nearest'  (nearest neighbour)
-    interp = 'rbf'      (Radial Basis Function, SciPy)
-
-and builds a 2-D PyVista StructuredGrid at constant depth z0.
-
-Cell data:
-    log10_rho  (log10_resistivity)
-    rho        (10**log10_rho)
-
-Author: Volker Rath (DIAS)
-Created by ChatGPT (GPT-5 Thinking) on 2025-12-08
-"""
-
-from typing import Tuple
-import numpy as np
-
-
-def _select_depth_window(
-    centroids: np.ndarray,
-    vals_log10: np.ndarray,
-    z0: float,
-    dz: float,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Select centroids and log10 values within a vertical window around z0."""
-    centroids = np.asarray(centroids, dtype=float)
-    vals_log10 = np.asarray(vals_log10, dtype=float)
-    z = centroids[:, 2]
-    half = dz / 2.0
-    mask = (z >= z0 - half) & (z <= z0 + half)
-    if not np.any(mask):
-        raise ValueError("No centroids found in the depth window around z0.")
-    pts_xy = centroids[mask, :2]
-    vals_sel = vals_log10[mask]
-    return pts_xy, vals_sel
-
-
-def _idw_grid_2d(
-    x: np.ndarray,
-    y: np.ndarray,
-    pts_xy: np.ndarray,
-    vals_log10: np.ndarray,
-    power: float = 2.0,
-    eps: float = 1e-6,
-) -> np.ndarray:
-    """2D IDW on regular (x, y) grid (log10-space)."""
-    x = np.asarray(x, float)
-    y = np.asarray(y, float)
-    pts_xy = np.asarray(pts_xy, float)
-    vals_log10 = np.asarray(vals_log10, float)
-    nx = x.size
-    ny = y.size
-    V = np.empty((ny, nx), float)
-    px = pts_xy[:, 0]
-    py = pts_xy[:, 1]
-    for j in range(ny):
-        yj = y[j]
-        dy2 = (py - yj) ** 2
-        for i in range(nx):
-            xi = x[i]
-            d2 = (px - xi) ** 2 + dy2 + eps**2
-            w = 1.0 / (d2 ** (power / 2.0))
-            V[j, i] = float(np.sum(w * vals_log10) / np.sum(w))
-    return V
-
-
-def _nearest_grid_2d(
-    x: np.ndarray,
-    y: np.ndarray,
-    pts_xy: np.ndarray,
-    vals_log10: np.ndarray,
-) -> np.ndarray:
-    """2D nearest neighbour interpolation on regular grid."""
-    x = np.asarray(x, float)
-    y = np.asarray(y, float)
-    pts_xy = np.asarray(pts_xy, float)
-    vals_log10 = np.asarray(vals_log10, float)
-    nx = x.size
-    ny = y.size
-    V = np.empty((ny, nx), float)
-    try:
-        from scipy.spatial import cKDTree  # type: ignore[attr-defined]
-        tree = cKDTree(pts_xy)
-        XX, YY = np.meshgrid(x, y)
-        Q = np.column_stack([XX.ravel(), YY.ravel()])
-        _, idx = tree.query(Q)
-        V[:] = vals_log10[idx].reshape(ny, nx)
-    except Exception:
-        px = pts_xy[:, 0]
-        py = pts_xy[:, 1]
-        for j in range(ny):
-            yj = y[j]
-            dy2 = (py - yj) ** 2
-            for i in range(nx):
-                xi = x[i]
-                d2 = (px - xi) ** 2 + dy2
-                k = int(np.argmin(d2))
-                V[j, i] = vals_log10[k]
-    return V
-
-
-def _rbf_grid_2d(
-    x: np.ndarray,
-    y: np.ndarray,
-    pts_xy: np.ndarray,
-    vals_log10: np.ndarray,
-) -> np.ndarray:
-    """2D RBF interpolation on regular grid (SciPy)."""
-    try:
-        from scipy.interpolate import RBFInterpolator  # type: ignore[attr-defined]
-    except Exception as exc:  # pragma: no cover
-        raise ImportError(
-            "RBF interpolation requires scipy.interpolate.RBFInterpolator."
-        ) from exc
-    x = np.asarray(x, float)
-    y = np.asarray(y, float)
-    pts_xy = np.asarray(pts_xy, float)
-    vals_log10 = np.asarray(vals_log10, float)
-    rbf = RBFInterpolator(pts_xy, vals_log10, kernel="thin_plate_spline")
-    XX, YY = np.meshgrid(x, y)
-    Q = np.column_stack([XX.ravel(), YY.ravel()])
-    V_flat = rbf(Q)
-    return V_flat.reshape(y.size, x.size)
-
-
-def _grid_2d(
-    x: np.ndarray,
-    y: np.ndarray,
-    pts_xy: np.ndarray,
-    vals_log10: np.ndarray,
-    *,
-    interp: str = "idw",
-    power: float = 2.0,
-) -> np.ndarray:
-    """Dispatch 2D interpolation on a regular grid."""
-    interp = interp.lower()
-    if interp == "idw":
-        return _idw_grid_2d(x, y, pts_xy, vals_log10, power=power)
-    if interp == "nearest":
-        return _nearest_grid_2d(x, y, pts_xy, vals_log10)
-    if interp == "rbf":
-        return _rbf_grid_2d(x, y, pts_xy, vals_log10)
-    raise ValueError(f"Unknown interp '{interp}' (expected idw, nearest, rbf).")
-
-
-def build_map_grid_from_npz(
-    npz_path: str,
-    *,
-    z0: float,
-    dz: float,
-    nx: int = 200,
-    ny: int = 200,
-    xmin: float | None = None,
-    xmax: float | None = None,
-    ymin: float | None = None,
-    ymax: float | None = None,
-    interp: str = "idw",
-    power: float = 2.0,
-) -> pv.StructuredGrid:
-    """Build a PyVista StructuredGrid for a horizontal slice at depth z0."""
-    try:
-        import pyvista as pv
-    except Exception as exc:  # pragma: no cover
-        raise ImportError("pyvista is required for map plotting.") from exc
-
-    data = np.load(npz_path)
-    if "centroid" not in data or "log10_resistivity" not in data:
-        raise KeyError("NPZ must contain 'centroid' and 'log10_resistivity'.")
-
-    centroids = data["centroid"]
-    vals_log10 = data["log10_resistivity"]
-    if "flag" in data:
-        mask = data["flag"] != 1
-        centroids = centroids[mask]
-        vals_log10 = vals_log10[mask]
-
-    pts_xy, vals_sel = _select_depth_window(centroids, vals_log10, z0=z0, dz=dz)
-
-    if xmin is None:
-        xmin = float(pts_xy[:, 0].min())
-    if xmax is None:
-        xmax = float(pts_xy[:, 0].max())
-    if ymin is None:
-        ymin = float(pts_xy[:, 1].min())
-    if ymax is None:
-        ymax = float(pts_xy[:, 1].max())
-
-    dx = xmax - xmin
-    dy = ymax - ymin
-    xmin -= 0.02 * dx
-    xmax += 0.02 * dx
-    ymin -= 0.02 * dy
-    ymax += 0.02 * dy
-
-    x = np.linspace(xmin, xmax, nx)
-    y = np.linspace(ymin, ymax, ny)
-    V_log10 = _grid_2d(x, y, pts_xy, vals_sel, interp=interp, power=power)
-    X, Y = np.meshgrid(x, y)
-
-    # Build StructuredGrid in (x, y, z0)
-    Z = np.full_like(X, z0, dtype=float)
-    X3 = X[:, :, None]
-    Y3 = Y[:, :, None]
-    Z3 = Z[:, :, None]
-
-    import pyvista as pv
-
-    grid = pv.StructuredGrid(X3, Y3, Z3)
-    grid["log10_rho"] = V_log10.ravel(order="C")
-    grid["rho"] = (10.0 ** V_log10).ravel(order="C")
-    return grid
-
-
-def main() -> None:
-    """CLI entry point for PyVista horizontal map slices."""
-    import argparse
-    import pyvista as pv
-
-    ap = argparse.ArgumentParser(
-        description="Horizontal FEMTIC resistivity slices at fixed depth using PyVista."
-    )
-    ap.add_argument("--npz", required=True, help="Element NPZ from femtic_mesh_to_npz.py.")
-    ap.add_argument("--z0", type=float, required=True, help="Central depth of slice.")
-    ap.add_argument("--dz", type=float, required=True, help="Thickness of vertical window around z0.")
-    ap.add_argument("--nx", type=int, default=200, help="Number of grid points in x.")
-    ap.add_argument("--ny", type=int, default=200, help="Number of grid points in y.")
-    ap.add_argument("--xmin", type=float, default=None, help="Minimum x for grid.")
-    ap.add_argument("--xmax", type=float, default=None, help="Maximum x for grid.")
-    ap.add_argument("--ymin", type=float, default=None, help="Minimum y for grid.")
-    ap.add_argument("--ymax", type=float, default=None, help="Maximum y for grid.")
-    ap.add_argument(
-        "--interp",
-        choices=["idw", "nearest", "rbf"],
-        default="idw",
-        help="Interpolation method.",
-    )
-    ap.add_argument("--power", type=float, default=2.0, help="IDW power exponent (interp='idw').")
-    ap.add_argument("--out-vtk", default=None, help="Optional output .vts/.vtk file.")
-    ap.add_argument(
-        "--no-show",
-        action="store_true",
-        help="Do not open interactive PyVista window.",
-    )
-    args = ap.parse_args()
-
-    grid = build_map_grid_from_npz(
-        args.npz,
-        z0=args.z0,
-        dz=args.dz,
-        nx=args.nx,
-        ny=args.ny,
-        xmin=args.xmin,
-        xmax=args.xmax,
-        ymin=args.ymin,
-        ymax=args.ymax,
-        interp=args.interp,
-        power=args.power,
-    )
-
-    if args.out_vtk is not None:
-        grid.save(args.out_vtk)
-        print("Saved map grid to:", args.out_vtk)
-
-    if not args.no_show:
-        grid.plot(
-            scalars="log10_rho",
-            cmap="viridis",
-        )
-
-
-if __name__ == "__main__":  # pragma: no cover
-    main()
-
-
-# ===== End femtic_map_slice_pyvista.py =====
+    raise SystemExit(main())

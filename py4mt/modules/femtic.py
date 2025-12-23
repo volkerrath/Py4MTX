@@ -1430,7 +1430,7 @@ def check_sparse_matrix(M: scipy.sparse.spmatrix, condition: bool = True) -> Non
     print("check_sparse_matrix: Done!\n\n")
 
 
-
+# ============================================================================
 # SECTION 4: mesh.dat + resistivity_block_iterX.dat → NPZ
 # ============================================================================
 
