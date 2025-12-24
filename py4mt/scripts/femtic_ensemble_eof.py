@@ -35,11 +35,11 @@ for pth in mypath:
 
 # Import required py4mt modules for your script
 import util as utl
-import viz
-import inverse as inv
+#import viz
+#import inverse as inv
 import femtic as fem
 import ensembles as ens
-import femtic_viz as femviz
+import femtic_viz as fviz
 
 from version import versionstrg
 
@@ -59,7 +59,7 @@ EnsembleEOF = 'AnnecyEOF'
 
 MinRMS = 1.5
 OutStrng = '_trunc'
-GetComponents = True
+GetComponents = False
 if GetComponents:
     OutStrng = '_comp'
 
