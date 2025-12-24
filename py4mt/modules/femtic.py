@@ -62,6 +62,7 @@ from typing import (
     Dict,
     Literal,
     List,
+    TYPE_CHECKING,
 )
 from numpy.typing import ArrayLike
 
