@@ -44,7 +44,7 @@ The module provides a simple subcommand-style CLI:
 All functionality is also available as regular Python functions.
 
 Author: Volker Rath (DIAS)
-Created with the help of ChatGPT (GPT-5 Thinking) on 2025-12-21 (UTC)
+Created with the help of ChatGPT (GPT-5 Thinking) on 2025-12-27 (UTC)
 """
 from __future__ import annotations
 
@@ -348,135 +348,336 @@ def get_nrms(directory=None):
 
     return num_best, nrm_best
 
+def _parse_region_line(line: str) -> tuple[int, float, float, float, float, int]:
+    """Parse one region line from a FEMTIC resistivity block.
+
+    Expected format (whitespace-separated columns):
+
+        ireg  rho  rho_lower  rho_upper  n  flag
+
+    Returns
+    -------
+    (ireg, rho, rho_lower, rho_upper, n, flag)
+    """
+    parts = line.split()
+    if len(parts) < 6:
+        raise ValueError(f"Invalid region line (need ≥6 columns): {line!r}")
+    ireg = int(parts[0])
+    rho = float(parts[1])
+    rho_lower = float(parts[2])
+    rho_upper = float(parts[3])
+    n = float(parts[4])
+    flag = int(parts[5])
+    return ireg, rho, rho_lower, rho_upper, n, flag
+
+
+def _format_region_line(
+    ireg: int,
+    rho: float,
+    rho_lower: float,
+    rho_upper: float,
+    n: float,
+    flag: int,
+) -> str:
+    """Format a region line in FEMTIC resistivity block style."""
+    return (
+        f" {ireg:9d}        {rho:.6e}   {rho_lower:.6e}   {rho_upper:.6e}   "
+        f"{n:.6e} {flag:9d}"
+    )
+
+
+def _infer_ocean_present(region1_line: str) -> bool:
+    """Infer whether region 1 is an 'ocean' fixed block.
+
+    Heuristic (conservative):
+    - flag == 1 (fixed)
+    - rho <= 1 Ωm (very conductive, typical ocean ~0.25 Ωm)
+
+    This can be overridden by passing ``ocean=True`` or ``ocean=False`` to
+    :func:`read_model` / :func:`insert_model`.
+    """
+    _, rho, _, _, _, flag = _parse_region_line(region1_line)
+    return (flag == 1) and (rho <= 1.0)
+
+
 def read_model(
     model_file: str | Path,
     model_trans: str = "log10",
     out: bool = True,
+    *,
+    ocean: bool | None = None,
+    include_fixed: bool = False,
 ) -> np.ndarray:
-    """
-    Read a FEMTIC resistivity_block_iterX.dat and return log10-resistivity vector.
+    """Read a FEMTIC ``resistivity_block_iterX.dat`` and return a model vector.
+
+    FEMTIC resistivity blocks define ``nreg`` regions. Each region has a resistivity
+    value (ρ) and additional metadata columns. Regions may be marked *fixed* via a
+    ``flag`` column (typically ``flag == 1``).
+
+    Common conventions are:
+
+    - region 0: **air** (always treated as fixed by this helper)
+    - region 1: **ocean** (often fixed, but **may be absent** in some setups)
+
+    In addition, **other fixed regions** may exist (e.g., prescribed background blocks).
+    Therefore, this function no longer assumes that only air (and maybe ocean) are fixed.
+
+    Default behaviour (``include_fixed=False``):
+
+    - always excludes region 0 (air),
+    - excludes any region with ``flag == 1``,
+    - additionally excludes region 1 if it is treated as ocean (auto-inferred unless
+      overridden via ``ocean=...``).
 
     Parameters
     ----------
-    model_file : str or Path
+    model_file
         Path to FEMTIC resistivity block file.
-    model_trans : {"log10", "none"}
-        If "log10", return log10(rho); otherwise return rho itself.
-    out : bool
-        If True, print small info.
+    model_trans
+        Either ``"log10"`` (default) to return ``log10(rho)``, or ``"none"`` to
+        return ``rho`` in Ωm.
+    out
+        If True, print a short info line.
+    ocean
+        If ``None`` (default), attempt to infer whether region 1 is ocean.
+        If ``True`` / ``False``, force ocean-present / ocean-absent handling.
+        Note that fixed-ness is still governed by the region flag: a fixed region
+        (``flag == 1``) stays fixed even if ``ocean=False``.
+    include_fixed
+        If True, include *all* regions (including air and any fixed regions).
 
     Returns
     -------
-    model : ndarray, shape (n_cells - 2,)
-        Model values in requested space. The first two region indices (air,
-        ocean) are skipped, following the convention of the other routines.
+    np.ndarray
+        1-D vector of model parameters in region-index order (selected regions only).
+
+    Notes
+    -----
+    Ocean inference is intentionally conservative (see :func:`_infer_ocean_present`).
+    If the heuristic mis-classifies region 1, pass ``ocean=True`` or ``ocean=False``.
     """
-    if model_file is None:
-        sys.exit("read_model: No model file given! Exit.")
+    model_path = Path(model_file)
 
-    with open(model_file, "r") as file:
-        content = file.readlines()
+    with model_path.open("r", encoding="utf-8", errors="replace") as f:
+        header = f.readline()
+        hdr_parts = header.split()
+        if len(hdr_parts) < 2:
+            raise ValueError(f"Invalid resistivity block header: {hdr_parts!r}")
+        nelem = int(hdr_parts[0])
+        nreg = int(hdr_parts[1])
 
-    nn = [int(tmp) for tmp in content[0].split()]
+        # Skip element->region mapping
+        for _ in range(nelem):
+            f.readline()
 
-    values: list[float] = []
-    for elem in range(nn[0] + 1, nn[0] + nn[1] + 1):
-        x = float(content[elem].split()[1])
-        values.append(x)
+        if nreg <= 0:
+            raise ValueError("No regions in resistivity block (nreg<=0).")
 
-    model = np.asarray(values, dtype=float)
+        region_lines: list[str] = []
+        region_rho = np.zeros(nreg, dtype=float)
+        region_flag = np.zeros(nreg, dtype=int)
 
-    if "log10" in model_trans.lower():
-        if out:
-            print("model is log10 resistivity!")
-        model = np.log10(model)
+        for i in range(nreg):
+            line = f.readline()
+            if not line:
+                raise ValueError(
+                    f"Unexpected EOF while reading region lines: expected {nreg}, got {i}."
+                )
+            ireg, rho, _, _, _, flag = _parse_region_line(line)
+            if ireg != i:
+                raise ValueError(f"Expected region index {i} at line {i}, got {ireg}.")
+            region_lines.append(line)
+            region_rho[i] = rho
+            region_flag[i] = flag
 
-    return model
+    # Decide whether region 1 is treated as ocean (optional)
+    ocean_present = False
+    if nreg > 1:
+        if ocean is None:
+            ocean_present = _infer_ocean_present(region_lines[1])
+        else:
+            ocean_present = bool(ocean)
 
+    # Determine fixed regions: air + flagged fixed + optional ocean
+    fixed_mask = np.zeros(nreg, dtype=bool)
+    fixed_mask[0] = True  # air always fixed here
+    fixed_mask |= (region_flag == 1)
+    if nreg > 1 and ocean_present:
+        fixed_mask[1] = True
+
+    if include_fixed:
+        sel = np.arange(nreg, dtype=int)
+    else:
+        sel = np.where(~fixed_mask)[0]
+
+    rho_sel = region_rho[sel].astype(float, copy=False)
+
+    if model_trans.lower() == "log10":
+        out_vec = np.log10(rho_sel)
+    elif model_trans.lower() in ("none", "rho"):
+        out_vec = rho_sel
+    else:
+        raise ValueError(f"Unknown model_trans={model_trans!r}; use 'log10' or 'none'.")
+
+    if out:
+        n_fixed = int(fixed_mask.sum())
+        print(
+            f"read_model: file={model_path.name}, nelem={nelem}, nreg={nreg}, "
+            f"ocean_present={ocean_present}, fixed={n_fixed}, returned={out_vec.size}."
+        )
+
+    return out_vec
 def insert_model(
     template: str = "resistivity_block_iter0.dat",
     model: np.ndarray | Sequence[float] | None = None,
     model_file: Optional[str] = None,
     model_name: str = "",
     out: bool = True,
+    *,
+    ocean: bool | None = None,
+    air_rho: float = 1.0e9,
+    ocean_rho: float = 2.5e-1,
 ) -> None:
-    """
-    Insert a log10-resistivity vector into a FEMTIC resistivity block file.
+    """Insert a (log10) resistivity vector into a FEMTIC resistivity block file.
 
-    The input `model` is interpreted as log10(ρ) for all regions except the
-    first two (air, ocean), which are kept fixed with standard values:
+    The input ``model`` is interpreted as **log10(ρ)** values for *free* regions.
 
-        region 0 → 1e9 Ωm, fixed
-        region 1 → 0.25 Ωm, fixed (ocean)
+    Fixed-region handling (updated):
+
+    - region 0 (air) is always treated as fixed by this helper and written as ``air_rho``.
+    - any region with ``flag == 1`` in the template is treated as fixed and preserved.
+    - region 1 is additionally treated as fixed and written as ``ocean_rho`` if it is
+      treated as ocean (auto-inferred unless overridden via ``ocean=...``).
+
+    This update supports **additional fixed blocks** beyond air/ocean.
+
+    The template's metadata columns (lower/upper bounds, ``n``, and flag) are preserved;
+    only the resistivity value is replaced for free regions (and optionally air/ocean).
 
     Parameters
     ----------
-    template : str
-        Template block file to read header and region mapping from.
-    model : array-like, shape (nreg - 2,)
-        Log10-resistivity values for regions 2..nreg-1.
-    model_file : str, optional
-        Output file. If None, overwrite `template`.
-    model_name : str
-        Optional label (unused, for bookkeeping).
-    out : bool
-        If True, print summary.
+    template
+        Template block file to read header, mapping and region metadata from.
+    model
+        1-D array-like of **log10(ρ)** values for *free* regions (i.e., regions that
+        are not fixed by the rules above).
+    model_file
+        Output file name. If None, derived from ``template`` and ``model_name``.
+    model_name
+        Optional suffix for output file naming.
+    out
+        If True, print small info.
+    ocean
+        If ``None`` (default), infer whether region 1 is ocean (see
+        :func:`_infer_ocean_present`). If ``True`` / ``False``, force ocean-present /
+        ocean-absent handling.
+    air_rho
+        Resistivity enforced for region 0 (air).
+    ocean_rho
+        Resistivity enforced for region 1 if treated as ocean.
+
+    Returns
+    -------
+    None
+        Writes the modified resistivity block to ``model_file``.
     """
     if model is None:
-        sys.exit("insert_model: No model given! Exit.")
+        raise ValueError("insert_model: 'model' must be provided (free-region vector).")
 
-    if template is None:
-        template = "resistivity_block_iter0.dat"
+    model_arr = np.asarray(model, dtype=float).ravel()
 
+    template_path = Path(template)
     if model_file is None:
-        model_file = template
+        stem = template_path.name
+        if model_name:
+            model_file = f"{stem}.{model_name}"
+        else:
+            model_file = f"{stem}.new"
+    out_path = Path(model_file)
 
-    with open(template, "r") as file:
-        content = file.readlines()
+    with template_path.open("r", encoding="utf-8", errors="replace") as fin, out_path.open(
+        "w", encoding="utf-8"
+    ) as fout:
+        header = fin.readline()
+        hdr_parts = header.split()
+        if len(hdr_parts) < 2:
+            raise ValueError(f"Invalid resistivity block header: {hdr_parts!r}")
+        nelem = int(hdr_parts[0])
+        nreg = int(hdr_parts[1])
 
-    nn = [int(tmp) for tmp in content[0].split()]
-    n_cells = nn[1]
+        # Write header and element->region mapping unchanged
+        fout.write(header)
+        for _ in range(nelem):
+            fout.write(fin.readline())
 
-    size = n_cells - 2
-    model_arr = np.asarray(model, dtype=float)
-    if model_arr.size != size:
-        raise ValueError(
-            f"insert_model: expected {size} entries, got {model_arr.size}."
-        )
+        if nreg <= 0:
+            raise ValueError("No regions in resistivity block (nreg<=0).")
 
-    new_lines: list[str] = [
-        "         0        1.000000e+09   1.000000e-20   1.000000e+20   1.000000e+00         1",
-        "         1        2.500000e-01   1.000000e-20   1.000000e+20   1.000000e+00         1",
-    ]
+        # Read all region lines first (we need flags to identify fixed blocks)
+        reg_meta: list[tuple[int, float, float, float, float, int]] = []
+        reg_lines: list[str] = []
+        for i in range(nreg):
+            line = fin.readline()
+            if not line:
+                raise ValueError(
+                    f"Unexpected EOF while reading region lines: expected {nreg}, got {i}."
+                )
+            ireg, rho, lo, hi, nn, flag = _parse_region_line(line)
+            if ireg != i:
+                raise ValueError(f"Expected region index {i} at line {i}, got {ireg}.")
+            reg_lines.append(line)
+            reg_meta.append((ireg, rho, lo, hi, nn, flag))
+
+        # Determine whether region 1 is treated as ocean (optional)
+        ocean_present = False
+        if nreg > 1:
+            if ocean is None:
+                ocean_present = _infer_ocean_present(reg_lines[1])
+            else:
+                ocean_present = bool(ocean)
+
+        region_flag = np.array([m[5] for m in reg_meta], dtype=int)
+
+        fixed_mask = np.zeros(nreg, dtype=bool)
+        fixed_mask[0] = True  # air always fixed here
+        fixed_mask |= (region_flag == 1)
+        if nreg > 1 and ocean_present:
+            fixed_mask[1] = True
+
+        free_idx = np.where(~fixed_mask)[0].tolist()
+        n_free = len(free_idx)
+        n_fixed = int(fixed_mask.sum())
+
+        if model_arr.size != n_free:
+            raise ValueError(
+                "insert_model: size mismatch for free-region model."
+                f"  template: nreg={nreg}, fixed={n_fixed}, free={n_free}"
+                f"  provided model size={model_arr.size}"
+                "Hint: your template may contain additional fixed regions (flag==1). "
+                "Use read_model(...) on the same template to get a consistent free vector."
+            )
+
+        # Write regions, preserving metadata; replace rho for free regions (and air/ocean)
+        model_ptr = 0
+        for ireg, rho0, lo, hi, nn, flag in reg_meta:
+            if ireg == 0:
+                rho = float(air_rho)
+            elif ireg == 1 and ocean_present:
+                rho = float(ocean_rho)
+            elif fixed_mask[ireg]:
+                rho = float(rho0)  # preserve fixed-region rho from template
+            else:
+                rho = float(10.0 ** model_arr[model_ptr])
+                model_ptr += 1
+
+            fout.write(_format_region_line(ireg, rho, lo, hi, nn, flag) + "")
 
     if out:
-        print(nn[0], nn[0] + nn[1] - 1, nn[1] - 1, np.shape(model_arr))
-
-    rho = np.power(10.0, model_arr)
-
-    e_num = 1
-    s_num = -1
-    for elem in range(nn[0] + 3, nn[0] + nn[1] + 1):
-        e_num += 1
-        s_num += 1
-        x = rho[s_num]
-        line = (
-            f" {e_num:9d}        {x:.6e}   1.000000e-20   1.000000e+20   "
-            f"1.000000e+00         0"
+        print(f"File {out_path} successfully written.")
+        print(
+            f"insert_model: nreg={nreg}, ocean_present={ocean_present}, "
+            f"fixed={n_fixed}, free={n_free}."
         )
-        new_lines.append(line)
-
-    new_blob = "\n".join(new_lines) + "\n"
-
-    with open(model_file, "w") as f:
-        f.writelines(content[0 : nn[0] + 1])
-        f.write(new_blob)
-
-    if out:
-        print(f"File {model_file} successfully written.")
-        print("Number of model replaced", len(model_arr))
-
-
 def modify_data_fcn(
     template_file: str = "observe.dat",
     draw_from: Sequence[float | str] = ("normal", 0.0, 1.0),

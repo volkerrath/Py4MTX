@@ -18,6 +18,7 @@
 
 import sys
 import os
+import inspect
 
 sys.path.append(os.path.dirname(inspect.getfile(inspect.currentframe())))
 
