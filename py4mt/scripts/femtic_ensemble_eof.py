@@ -56,6 +56,7 @@ EnsembleDir = r'/home/vrath/FEMTIC_work/ens_annecy/'
 EnsembleName = 'ann_'
 EnsembleFile = 'AnnecyENS'
 EnsembleEOF = 'AnnecyEOF'
+MeshFile =  '/mesh.dat'
 
 MinRMS = 1.5
 OutStrng = '_trunc'
@@ -81,11 +82,13 @@ for directory in dir_list:
     if nrm_best > MinRMS:
         print(nrm_best, 'is larger than required minimum:',MinRMS)
         continue
-
     print('min(nrmse) = ', nrm_best, 'at iteration', num_best)
-    mesh_file = directory + '/mesh.dat'
+
+    mesh_file = directory + MeshFile
+    if ens_num == 0:
+        nodes, conns = fem.read_femtic_mesh(mesh_file)
+
     modl_file = directory + '/resistivity_block_iter' + str(num_best) + '.dat'
-    print(modl_file)
 
     modl = fem.read_model(
         model_file=modl_file,
@@ -101,7 +104,9 @@ for directory in dir_list:
 
 nens = np.shape(ensemble)[1]
 
-storedict = {'ensemble': ensemble}
+storedict = {'ensemble': ensemble,
+             'nodes': nodes,
+             'conns': conns}
 np.savez_compressed(EnsembleDir + EnsembleFile +'.npz', **storedict)
 
 """
@@ -116,8 +121,10 @@ storedict = {'eofs': eofs,
              'pcs': pcs,
              'frac': frac,
              'w_k': w_k,
-             'mean': mean
-             }
+             'mean': mean,
+             'ensemble': ensemble,
+             'nodes': nodes,
+             'conns': conns}
 np.savez_compressed(EnsembleDir + EnsembleEOF + '.npz', **storedict)
 
 
@@ -150,8 +157,21 @@ enorms = np.array(eof_norms)
 
 print('\nfractions:',enorms)
 
+"""
+store into files
 
+"""
 tens = len(eof_results)
+for ie in np.arange(tens):
+    file = EnsembleDir + EnsembleEOF + OutStrng + str(ie) + '.npz'
+    fem.insert_model(
+        template=EnsembleDir + 'resistivity_block_iter.dat',
+        model=eof_results[ie],
+        model_file=file,
+    )
+"""
+plot
+"""
 for ie in np.arange(tens):
     file = EnsembleDir + EnsembleEOF + OutStrng + str(ie) + '.npz'
     fem.insert_model(

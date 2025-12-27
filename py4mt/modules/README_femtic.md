@@ -1,173 +1,157 @@
-# FEMTIC Python utilities (`femtic.py`)
+# README_femtic.md
 
-This repository contains a single-file Python helper module **`femtic.py`** that bundles
-common tasks around **FEMTIC** model/data handling, roughness/precision matrices, Gaussian
-sampling, and **mesh/model format conversions**.
+Utilities for working with **FEMTIC** mesh/model/data files in Python.
 
-It is intended to be:
+This module bundles helpers for:
 
-- **Importable** as a normal Python module (no code runs on import)
-- **CLI-callable** for the most common format conversions
+- Reading / writing **FEMTIC resistivity blocks** (`resistivity_block_iter*.dat`)
+- Converting between FEMTIC text formats and compact **NPZ** model files
+- Exporting models to **VTK/VTU** (PyVista)
+- Ensemble / covariance / sampling utilities used in FEMTIC-style workflows
 
-> If you also use ensemble generation / EOF / KL / PCE tools, see **`ReadMe_ensembles.md`**.
-
----
-
-## What `femtic.py` provides
-
-### 1) FEMTIC observe.dat perturbation helpers
-
-Core routines for perturbing a FEMTIC-style `observe.dat` **in-place**:
-
-- `modify_data(...)` — perturb observations by drawing random noise and applying it
-- `get_nrms(...)` — compute N-RMS between two observation files
-- `get_femtic_sites(...)`, `get_femtic_data(...)` — light helpers for site/data access
-
-### 2) Resistivity model helpers
-
-- `read_model(...)`, `modify_model(...)`, `insert_model(...)` — read/perturb/insert
-  resistivity-block style models (region-based)
-
-### 3) Roughness / precision matrix helpers and Gaussian sampling
-
-- `get_roughness(...)` — read a FEMTIC roughness/roughening-matrix file
-- `make_prior_cov(...)` — build prior covariance proxies from roughness matrices
-- `make_precision_solver(...)` — build a solver for systems involving **Q = RᵀR (+ λI)**
-- `sample_rtr_full_rank(...)`, `sample_rtr_low_rank(...)`, `sample_prior_from_roughness(...)`
-  — sample Gaussian vectors consistent with the roughness/precision model
-
-### 4) Mesh/model format conversion: FEMTIC ↔ NPZ ↔ VTK/VTU
-
-- `read_femtic_mesh(...)` / `write_femtic_mesh(...)`
-- `read_resistivity_block(...)` / `write_resistivity_block(...)`
-- `mesh_and_block_to_npz(...)` — `mesh.dat` + `resistivity_block_iterX.dat` → compact NPZ
-- `npz_to_femtic(...)` — NPZ → `mesh.dat` + `resistivity_block_iterX.dat`
-- `save_vtk_from_npz(...)` — NPZ → VTU (and optional legacy VTK), for PyVista/ParaView
-- Optional container formats:
-  - `npz_to_hdf5(...)` / `hdf5_to_npz(...)`
-  - `npz_to_netcdf(...)` / `netcdf_to_npz(...)`
+> This README reflects the updated behaviour where the **ocean block (region 1) is optional**
+> and where **additional fixed blocks** may be present.
 
 ---
 
-## Requirements
+## Files and conventions
 
-Minimum:
+### Resistivity block: `resistivity_block_iterX.dat`
 
-- Python 3.10+
-- `numpy`
-- `scipy`
+Typical structure:
 
-Optional (only needed if you use the corresponding functionality):
+1. Header line:  
+   `nelem  nreg`
+2. `nelem` lines mapping elements → region indices
+3. `nreg` lines defining region parameters (at least 6 columns)
 
-- `pyvista` (and VTK) for VTU/VTK export helpers
-- `h5py` for HDF5 conversions
-- `netCDF4` or `xarray` backend support for NetCDF conversions (depending on your environment)
+A common region-line convention is:
+
+```
+ireg  rho  rho_lower  rho_upper  n  flag
+```
+
+where `flag` typically indicates whether a region is **fixed** (`flag == 1`) or **free**
+(`flag == 0`).
+
+Common special regions:
+
+- **Region 0**: *air* (often fixed, very resistive)
+- **Region 1**: *ocean* (often fixed, very conductive) — **may be absent**
+- Other regions may also be fixed (e.g., prescribed background blocks), not only air/ocean.
 
 ---
 
-## CLI usage (format conversions)
+## Fixed blocks and optional ocean (important)
 
-`femtic.py` includes a small CLI with subcommands.
-
-### Convert FEMTIC mesh + resistivity block → NPZ
-
-```bash
-python femtic.py femtic-to-npz \
-  --mesh mesh.dat \
-  --rho-block resistivity_block_iter0.dat \
-  --out-npz model_iter0.npz
-```
-
-### Convert NPZ → VTU (and optional legacy VTK)
-
-```bash
-python femtic.py npz-to-vtk \
-  --npz model_iter0.npz \
-  --out-vtu model_iter0.vtu \
-  --out-legacy model_iter0.vtk
-```
-
-You can choose which cell scalar to export (defaults to `log10_resistivity`):
-
-```bash
-python femtic.py npz-to-vtk --npz model_iter0.npz --out-vtu model_iter0.vtu --scalar log10_resistivity
-```
-
-### Convert FEMTIC-style HDF5 / NetCDF → NPZ
-
-```bash
-python femtic.py hdf5-to-npz --hdf5 model.h5 --out-npz model.npz --group femtic_model
-python femtic.py netcdf-to-npz --netcdf model.nc --out-npz model.npz
-```
-
-### Convert NPZ → FEMTIC mesh.dat + resistivity_block
-
-```bash
-python femtic.py npz-to-femtic \
-  --npz model_iter0.npz \
-  --mesh-out mesh_out.dat \
-  --rho-block-out resistivity_block_iter0_out.dat
-```
-
----
-
-## Python usage examples
-
-### Mesh + resistivity block → NPZ (library usage)
+### `read_model(...)`
 
 ```python
-import femtic as fem
+m = read_model("resistivity_block_iter0.dat", model_trans="log10")
+```
 
-fem.mesh_and_block_to_npz(
-    mesh_path="mesh.dat",
-    rho_block_path="resistivity_block_iter0.dat",
-    out_npz="model_iter0.npz",
+Default behaviour (`include_fixed=False`, `ocean=None`):
+
+- always skips **region 0 (air)**,
+- skips **any region with `flag == 1`** (fixed blocks),
+- additionally skips **region 1** *if treated as ocean* (auto-inferred unless you override).
+
+So the returned vector is the **free** model vector (by default `log10(rho)`) for all
+regions that are not fixed by the rules above.
+
+Control parameters:
+
+- `ocean=None` *(default)*: infer whether region 1 is ocean (conservative heuristic)
+- `ocean=True`: force “treat region 1 as ocean” (skip it as fixed + optionally enforce `ocean_rho` on writing)
+- `ocean=False`: force “do not treat region 1 as ocean”
+  - Note: if region 1 has `flag == 1`, it is still skipped because it is fixed.
+- `include_fixed=True`: return **all** regions, including air and any fixed blocks
+
+Ocean detection heuristic (conservative):
+
+- region 1 has `flag == 1` (fixed), and
+- `rho <= 1 Ωm` (very conductive; typical seawater ~0.25 Ωm)
+
+### `insert_model(...)`
+
+```python
+m_free = read_model("resistivity_block_iter0.dat")  # free only (log10)
+m_free2 = m_free + 0.1                              # example update
+
+insert_model(
+    template="resistivity_block_iter0.dat",
+    model=m_free2,
+    model_file="resistivity_block_iter0.new",
 )
 ```
 
-### NPZ → VTU (for PyVista/ParaView)
+Default behaviour:
+
+- **Region 0 (air)** is always written as fixed (`air_rho`, default `1e9 Ωm`)
+- **Any region with `flag == 1`** is preserved from the template (fixed blocks)
+- **Region 1 (ocean)** is written as fixed **only if treated as ocean** (auto-inferred unless overridden)
+- all remaining (free) regions are written from `model` (interpreted as **log10(ρ)**)
+
+Metadata columns from the template (bounds, `n`, `flag`) are preserved.
+
+Control parameters:
+
+- `ocean=None/True/False`: same meaning as for `read_model`
+- `air_rho`: resistivity enforced for region 0
+- `ocean_rho`: resistivity enforced for region 1 **if treated as ocean**
+
+---
+
+## Quick recipes
+
+### Case A: file has air + ocean fixed blocks, plus additional fixed regions
 
 ```python
-import femtic as fem
-
-fem.save_vtk_from_npz(
-    npz_path="model_iter0.npz",
-    out_vtu="model_iter0.vtu",
-    out_legacy=None,  # or "model_iter0.vtk"
-)
+m = read_model("resistivity_block_iter0.dat")   # returns only free regions
+insert_model("resistivity_block_iter0.dat", m, model_file="rho_out.dat")
 ```
 
-### Perturb an `observe.dat` in-place
+### Case B: file has air only (no ocean region)
+
+If region 1 is actually your first free region, just use defaults (the code will *not*
+treat it as ocean unless it looks like a fixed conductive ocean block):
 
 ```python
-import femtic as fem
+m = read_model("resistivity_block_iter0.dat")   # region 1 included if free
+insert_model("resistivity_block_iter0.dat", m, model_file="rho_out.dat")
+```
 
-# Add N(0,1) noise scaled by the file's error columns (see function docstring)
-fem.modify_data(
-    template_file="observe.dat",
-    draw_from=("normal", 0.0, 1.0),
-    method="add",
-    out=True,
-)
+### Case C: ocean inference is wrong (force behaviour)
+
+```python
+# Force ocean handling:
+m = read_model("resistivity_block_iter0.dat", ocean=True)
+insert_model("resistivity_block_iter0.dat", m, ocean=True, model_file="rho_ocean.dat")
+
+# Force no-ocean special-casing:
+m = read_model("resistivity_block_iter0.dat", ocean=False)
+insert_model("resistivity_block_iter0.dat", m, ocean=False, model_file="rho_no_ocean.dat")
+```
+
+### Return full region vector (including fixed regions)
+
+```python
+rho_all = read_model("resistivity_block_iter0.dat", model_trans="none", include_fixed=True)
 ```
 
 ---
 
-## Notes and conventions
+## Notes / troubleshooting
 
-- Many routines follow FEMTIC naming conventions such as:
-  - `observe.dat`
-  - `mesh.dat`
-  - `resistivity_block_iterX.dat`
-  - `roughening_matrix_*.dat`
-- **Air / ocean regions:** if you also plot models, keep in mind FEMTIC commonly uses
-  special regions for air/ocean (your visualization module may treat them specially).
+- If `insert_model` complains about a size mismatch, your template likely contains
+  additional fixed regions (`flag == 1`). Use `read_model(...)` on the **same template**
+  to generate a consistent free vector length.
+- If ocean inference mis-classifies region 1 (e.g., a very conductive non-ocean fixed block),
+  pass `ocean=True/False` explicitly.
 
 ---
 
 ## License / attribution
 
-If you redistribute, please keep the module header and docstrings intact.
-
 Author: Volker Rath (DIAS)  
-Created by ChatGPT (GPT-5 Thinking) on 2025-12-21 (UTC)
+Created/updated with assistance from ChatGPT.
