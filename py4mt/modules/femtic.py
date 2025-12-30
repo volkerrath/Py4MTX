@@ -79,6 +79,54 @@ from scipy.sparse.linalg import LinearOperator, cg, eigsh, bicgstab, spilu
 # Optional but kept for compatibility with earlier versions
 import joblib  # noqa: F401
 
+"""
+modify_data.py
+
+Utilities to perturb FEMTIC-style observation files (observe.dat) in-place.
+
+This module provides a single function, :func:`modify_data`, which reads a
+FEMTIC-style observation file containing MT, VTF, or PT data blocks and
+perturbs each datum using Gaussian noise with standard deviation given by
+its associated error column. Optionally, error columns can be overwritten
+using user-provided *relative* errors.
+
+Author: Volker Rath (DIAS)
+Created with the help of ChatGPT (GPT-5 Thinking) on 2025-12-30
+"""
+
+
+def _rel_err_array(err_spec: Sequence[float] | Sequence[str] | list, dat_length: int) -> np.ndarray | None:
+    """
+    Normalize a relative-error specification to a length-``dat_length`` array.
+
+    Parameters
+    ----------
+    err_spec : sequence or list
+        Relative error specification. Supported forms:
+        - empty -> None (do not overwrite existing error columns)
+        - scalar -> broadcast to length ``dat_length``
+        - vector of length ``dat_length`` -> used component-wise
+    dat_length : int
+        Number of data components per frequency (MT: 8, VTF/PT: 4).
+
+    Returns
+    -------
+    rel : ndarray or None
+        Relative error array of shape ``(dat_length,)`` or None if no overwrite.
+
+    Raises
+    ------
+    ValueError
+        If a non-empty vector is provided but does not have length 1 or ``dat_length``.
+    """
+    a = np.asarray(err_spec, dtype=float).ravel()
+    if a.size == 0:
+        return None
+    if a.size == 1:
+        return np.repeat(float(a.item()), dat_length)
+    if a.size != dat_length:
+        raise ValueError(f"Relative error length must be 1 or {dat_length}, got {a.size}")
+    return a
 
 
 def modify_data(
@@ -89,52 +137,66 @@ def modify_data(
     out: bool = True,
 ) -> None:
     """
-    Modify an MT/VTF/PT FEMTIC-style observe.dat in-place by drawing perturbed data.
+    Modify an MT/VTF/PT FEMTIC-style ``observe.dat`` in-place by drawing perturbed data.
 
     The function parses the FEMTIC data layout:
 
-    - header line with obs_type and number of sites
+    - header line with ``obs_type`` and number of sites
     - data blocks (MT, VTF, or PT)
     - site blocks with frequencies and data + error columns
 
-    For each datum d with associated error σ:
+    For each datum ``d`` with associated error ``σ`` (interpreted as a standard deviation):
 
         d_new ~ N(d, σ)
 
-    Optionally, relative errors can be (re)set from the ``errors`` parameter.
+    Optionally, *relative* errors can be (re)set from the ``errors`` parameter. If
+    provided, the error columns are overwritten as:
+
+        σ := |d| * rel_error
 
     Parameters
     ----------
     template_file : str
-        Path to observe.dat.
+        Path to the observation file (typically ``observe.dat``).
     draw_from : sequence
-        Noise distribution specification (currently fixed to normal).
+        Noise distribution specification. Currently only normal noise is used.
+        The argument is kept for compatibility with legacy logic.
     method : str
         Placeholder for different perturbation strategies (unused).
     errors : sequence of length 3
-        [errors_MT, errors_VTF, errors_PT], each itself a list/array specifying
-        relative errors that will be used to overwrite existing error columns
-        before drawing perturbed values.
+        ``[errors_MT, errors_VTF, errors_PT]``. Each element can be:
+        - [] (empty): keep existing per-datum error columns
+        - [scalar]: broadcast to all components
+        - [vector]: component-wise relative errors (length MT=8, VTF/PT=4)
     out : bool
         If True, print status messages.
 
     Notes
     -----
-    The implementation mirrors the original femtic.py logic and is verbose
-    in its printing when ``out=True``. It assumes the usual FEMTIC text
-    layout for MT/VTF/PT observation files.
+    This implementation is intentionally conservative: it avoids writing NumPy arrays
+    into the data rows. Each value written back to the file is a plain Python float
+    formatted as ``%.8E``.
     """
-    if template_file is None:
-        template_file = "observe.dat"
+    # Keep legacy args for compatibility; not used currently.
+    _ = draw_from, method
 
-    with open(template_file, "r") as file:
+    p = Path(template_file)
+    if not p.exists():
+        raise FileNotFoundError(str(p))
+
+    with p.open("r", encoding="utf-8") as file:
         content = file.readlines()
 
+    if not content:
+        raise ValueError(f"Empty file: {p}")
+
     line0 = content[0].split()
+    if not line0:
+        raise ValueError(f"Invalid header line in {p}")
     obs_type = line0[0]
 
-    # locate data blocks
-    start_lines_datablock: list[int] = []
+    # Locate data blocks: lines with exactly two tokens are assumed to be block headers.
+    start_lines_datablock: List[int] = []
     for number, line in enumerate(content, 0):
         l = line.split()
         if len(l) == 2:
@@ -142,155 +204,92 @@ def modify_data(
             if out:
                 print(" data block", l[0], "with", l[1], "sites begins at line", number)
         if "END" in l:
+            # mark end (line before END); used as slicing boundary
             start_lines_datablock.append(number - 1)
             if out:
                 print(" no further data block in file")
 
-    num_datablock = len(start_lines_datablock) - 1
-    for block in np.arange(num_datablock):
+    num_datablock = max(0, len(start_lines_datablock) - 1)
+    for block in range(num_datablock):
         start_block = start_lines_datablock[block]
         end_block = start_lines_datablock[block + 1]
         data_block = content[start_block:end_block]
 
         if out:
-            print(np.shape(data_block))
-        start_lines_site: list[int] = []
-        num_freqs: list[int] = []
+            print(" block shape:", np.shape(data_block))
+
+        # Locate site blocks: lines with exactly 4 tokens are assumed to be site headers
+        start_lines_site: List[int] = []
+        num_freqs: List[int] = []
         for number, line in enumerate(data_block, 0):
             l = line.split()
             if len(l) == 4:
-                if out:
-                    print(l)
                 start_lines_site.append(number)
-                num_freqs.append(int(data_block[number + 1].split()[0]))
+                try:
+                    nf = int(data_block[number + 1].split()[0])
+                except Exception as e:
+                    raise ValueError(f"Cannot read number of frequencies near block line {number}: {e}") from e
+                num_freqs.append(nf)
                 if out:
-                    print("  site", l[0], "begins at line", number)
-            if "END" in l:
-                start_lines_datablock.append(number - 1)
-                if out:
-                    print(" no further site block in file")
-        if out:
-            print("\n")
+                    print("  site header:", l, "begins at line", number, "with", nf, "freqs")
 
         num_sites = len(start_lines_site)
-        for site in np.arange(num_sites):
+        for site in range(num_sites):
             start_site = start_lines_site[site]
-            end_site = start_site + num_freqs[site] + 2
+            end_site = start_site + num_freqs[site] + 2  # header + numfreq line + num_freq data lines
             site_block = data_block[start_site:end_site]
 
-            if "MT" in obs_type:
-                set_errors_mt = len(errors[0]) != 0
+            # Parse numeric rows
+            if obs_type == "MT":
                 dat_length = 8
-                num_freq = int(site_block[1].split()[0])
-                if out:
-                    print("   site ", site, "has", num_freq, "frequencies")
-
-                obs: list[list[float]] = []
-                for line in site_block[2:]:
-                    tmp = [float(x) for x in line.split()]
-                    obs.append(tmp)
-
-                if set_errors_mt:
-                    new_errors = np.asarray(errors[0], dtype=float)
-                    if out:
-                        print("MT errors will be replaced with relative errors:")
-                        print(new_errors)
-                    for comp in obs:
-                        for ii in range(1, dat_length + 1):
-                            val = comp[ii]
-                            err = val * new_errors
-                            comp[ii + dat_length] = err
-
-                for comp in obs:
-                    for ii in range(1, dat_length + 1):
-                        val = comp[ii]
-                        err = comp[ii + dat_length]
-                        comp[ii] = np.random.normal(loc=val, scale=err)
-
-                for f in range(num_freq - 1):
-                    site_block[f + 2] = "    ".join(
-                        f"{x:.8E}" for x in obs[f]
-                    ) + "\n"
-
-            elif "VTF" in obs_type:
-                set_errors_vtf = len(errors[1]) != 0
+                rel = _rel_err_array(errors[0], dat_length)
+            elif obs_type == "VTF":
                 dat_length = 4
-                num_freq = int(site_block[1].split()[0])
-                if out:
-                    print("   site ", site, "has", num_freq, "frequencies")
-
-                obs = []
-                for line in site_block[2:]:
-                    tmp = [float(x) for x in line.split()]
-                    obs.append(tmp)
-
-                if set_errors_vtf:
-                    new_errors = np.asarray(errors[1], dtype=float)
-                    if out:
-                        print("VTF errors will be replaced with relative errors:")
-                        print(new_errors)
-                    for line in obs:
-                        for ii in range(1, dat_length + 1):
-                            val = line[ii]
-                            err = new_errors
-                            line[ii + dat_length] = err
-
-                for comp in obs:
-                    for ii in range(1, dat_length + 1):
-                        val = comp[ii]
-                        err = comp[ii + dat_length]
-                        comp[ii] = np.random.normal(loc=val, scale=err)
-
-                for f in range(num_freq - 1):
-                    site_block[f + 2] = "    ".join(
-                        f"{x:.8E}" for x in obs[f]
-                    ) + "\n"
-
-            elif "PT" in obs_type:
-                set_errors_pt = len(errors[2]) != 0
+                rel = _rel_err_array(errors[1], dat_length)
+            elif obs_type == "PT":
                 dat_length = 4
-                num_freq = int(site_block[1].split()[0])
-                if out:
-                    print("   site ", site, "has", num_freq, "frequencies")
-
-                obs = []
-                for line in site_block[2:]:
-                    tmp = [float(x) for x in line.split()]
-                    obs.append(tmp)
-
-                if set_errors_pt:
-                    new_errors = np.asarray(errors[2], dtype=float)
-                    if out:
-                        print("PT errors will be replaced with relative errors:")
-                        print(new_errors)
-                    for comp in obs:
-                        for ii in range(1, dat_length + 1):
-                            val = comp[ii]
-                            err = new_errors
-                            comp[ii + dat_length] = err
-
-                for comp in obs:
-                    for ii in range(1, dat_length + 1):
-                        val = comp[ii]
-                        err = comp[ii + dat_length]
-                        comp[ii] = np.random.normal(loc=val, scale=err)
-
-                for f in range(num_freq - 1):
-                    site_block[f + 2] = "    ".join(
-                        f"{x:.8E}" for x in obs[f]
-                    ) + "\n"
+                rel = _rel_err_array(errors[2], dat_length)
             else:
-                sys.exit(f"modify_data: {obs_type} not yet implemented! Exit.")
+                raise NotImplementedError(f"modify_data: {obs_type} not yet implemented!")
+
+            num_freq = int(site_block[1].split()[0])
+            if out:
+                print("   site", site, "has", num_freq, "frequencies (dat_length =", dat_length, ")")
+                if rel is not None:
+                    print("   errors overwritten with relatives:", rel)
+
+            obs: List[List[float]] = []
+            for line in site_block[2:]:
+                # Each data line: frequency + dat_length values + dat_length error values (typical FEMTIC)
+                obs.append([float(x) for x in line.split()])
+
+            # Overwrite error columns if requested, then draw perturbations using the (new) errors
+            for comp in obs:
+                for ii in range(1, dat_length + 1):
+                    val = float(comp[ii])
+                    if rel is not None:
+                        err = float(abs(val) * rel[ii - 1])
+                        comp[ii + dat_length] = err
+                    else:
+                        err = float(comp[ii + dat_length])
+
+                    comp[ii] = float(np.random.normal(loc=val, scale=err))
+
+            # Write back all frequencies
+            for f in range(num_freq-1):
+                print(f, num_freq)
+                row = np.asarray(obs[f], dtype=float).ravel()
+                site_block[f + 2] = "    ".join(f"{float(v):.8E}" for v in row) + "\n"
 
             data_block[start_site:end_site] = site_block
 
         content[start_block:end_block] = data_block
 
-    with open(template_file, "w") as f:
+    with p.open("w", encoding="utf-8") as f:
         f.writelines(content)
 
     if out:
-        print(f"File {template_file} successfully written.")
+        print(f"File {p} successfully written.")
 
 
 def get_nrms(directory=None):
@@ -527,6 +526,7 @@ def read_model(
         )
 
     return out_vec
+
 def insert_model(
     template: str = "resistivity_block_iter0.dat",
     model: np.ndarray | Sequence[float] | None = None,
@@ -678,6 +678,7 @@ def insert_model(
             f"insert_model: nreg={nreg}, ocean_present={ocean_present}, "
             f"fixed={n_fixed}, free={n_free}."
         )
+
 def modify_data_fcn(
     template_file: str = "observe.dat",
     draw_from: Sequence[float | str] = ("normal", 0.0, 1.0),

@@ -68,6 +68,7 @@ except Exception:  # pragma: no cover
 
 
 def generate_directories(
+    alg: str = "rto",
     dir_base: str = "./ens_",
     templates: str = "",
     file_list: Sequence[str] = (

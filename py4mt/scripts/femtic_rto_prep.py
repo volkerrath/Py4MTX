@@ -63,6 +63,7 @@ for pth in mypath:
 from version import versionstrg
 import util as utl
 import femtic as fem
+import femtic_viz as viz
 import ensembles as ens
 
 from util import stop
@@ -84,7 +85,7 @@ print(titstrng + '\n\n')
 Base setup.
 '''
 N_samples = 32
-EnsembleDir = r'/home/vrath/FEMTIC_work/misti_ens/'
+EnsembleDir = r'/home/vrath/FEMTIC_work/ens_misti/'
 Templates = EnsembleDir + 'templates/'
 Files = ['control.dat',
          'observe.dat',
@@ -130,8 +131,8 @@ if PerturbDat:
 ResetErrors = True
 if ResetErrors:
     Errors = [
-        [15., 4., 5., 15.],        # Impedance in percent
-        [0.03, 0.03],               # VTF
+        [0.15, .05, .05, 0.15]*2,        # Impedance
+        [0.03, 0.03]*2,               # VTF
         [.5, .2, .2, .5],          # PT
     ]
 else:
@@ -182,8 +183,9 @@ else:
     R = scs.load_npz(EnsembleDir + EnsembleName + R_file + '.npz')
     Q = R.T @ R
 
-stop(' data done')
-model_ensemble = fem.generate_model_ensemble(dir_base=EnsembleDir + EnsembleName,
+# stop(' data done')
+model_ensemble = ens.generate_model_ensemble(alg='rto',
+                                             dir_base=EnsembleDir + EnsembleName,
                                              n_samples=N_samples,
                                              fromto=FromTo,
                                              refmod=Mod_ref,
