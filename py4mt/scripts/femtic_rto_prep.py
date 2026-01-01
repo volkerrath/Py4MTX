@@ -68,7 +68,7 @@ import ensembles as ens
 
 from util import stop
 
-N_THREADS = '10'
+N_THREADS = '32'
 os.environ['OMP_NUM_THREADS'] = N_THREADS
 os.environ['OPENBLAS_NUM_THREADS'] = N_THREADS
 os.environ['MKL_NUM_THREADS'] = N_THREADS
@@ -184,6 +184,9 @@ else:
     Q = R.T @ R
 
 # stop(' data done')
+print('roughness loaded with shape:', np.shape(Q))
+
+
 model_ensemble = ens.generate_model_ensemble(alg='rto',
                                              dir_base=EnsembleDir + EnsembleName,
                                              n_samples=N_samples,
