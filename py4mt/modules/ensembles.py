@@ -752,6 +752,7 @@ def generate_model_ensemble(
             data_name=f"sample{iens}",
         )
         mod_list.append(file)
+        print(file)
 
     if out:
         print("\nlist of perturbed model files:")

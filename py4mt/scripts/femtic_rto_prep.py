@@ -138,6 +138,8 @@ if ResetErrors:
 else:
     Errors = []
 
+PlotData = True
+
 
 '''
 Generate ensemble directories and copy template files.

@@ -2462,6 +2462,916 @@ def npz_to_femtic(
     )
 
 
+"""
+read_data.py
+
+Read, perturb, and rewrite FEMTIC-style observation files (typically ``observe.dat``).
+
+The FEMTIC observation file format used here consists of one or more *blocks*.
+Each block starts with a header line
+
+    <OBS_TYPE>  <N_SITES>
+
+where ``OBS_TYPE`` is one of ``MT``, ``VTF``, or ``PT``. A block contains one or
+more *site* sections, each of the form:
+
+- a site header line with **exactly 4 tokens** (kept verbatim)
+- a line containing the number of frequencies (integer)
+- ``N_FREQ`` data rows
+
+Each data row is assumed to contain:
+
+- frequency (first column)
+- ``dat_length`` data values
+- ``dat_length`` error values (standard deviations, σ)
+
+so the minimum number of numeric columns is ``1 + 2 * dat_length``.
+
+For ``MT`` blocks (``dat_length=8``), the data columns are assumed to be ordered as
+real/imag pairs:
+
+    Zxx_re, Zxx_im, Zxy_re, Zxy_im, Zyx_re, Zyx_im, Zyy_re, Zyy_im
+
+and similarly for errors.
+
+Derived MT quantities (optional)
+--------------------------------
+For MT sites the parser can compute and attach derived quantities to each site dict:
+
+1) Phase tensor Φ and bootstrap standard deviations per element
+2) Determinant impedance (Berdichevsky invariant):
+       Zdet = sqrt(det(Z)) = sqrt(Zxx*Zyy - Zxy*Zyx)
+   and bootstrap standard deviations of Re/Im
+3) SSQ impedance (Rung-Arunwan / Szarka & Menvielle invariant):
+       Zssq = sqrt( (Zxx^2 + Zxy^2 + Zyx^2 + Zyy^2) / 2 )
+   and bootstrap standard deviations of Re/Im
+
+Bootstrap here means Monte-Carlo resampling consistent with the per-component
+standard deviations provided in the file: for each draw we perturb the real/imag
+parts independently by ``Normal(0, σ)`` and recompute the derived quantity.
+
+This module provides:
+
+- :func:`read_observe_dat`   -> parse file into a nested dict structure
+- :func:`sites_as_dict_list` -> flatten sites into a list of dicts (EDI-like convenience)
+- :func:`modify_data`        -> overwrite error columns from relative errors (optional),
+                               draw Gaussian perturbations, and rewrite the file
+
+Author: Volker Rath (DIAS)
+Created with the help of ChatGPT (GPT-5 Thinking) on 2025-12-31
+"""
+
+_OBS_DATALEN: dict[str, int] = {
+    "MT": 8,
+    "VTF": 4,
+    "PT": 4,
+}
+
+
+_COMPONENT_LABELS: dict[str, list[str]] = {
+    # Conventional MT complex impedance ordering (real/imag pairs).
+    "MT": ["Zxx_re", "Zxx_im", "Zxy_re", "Zxy_im", "Zyx_re", "Zyx_im", "Zyy_re", "Zyy_im"],
+    # Labels for VTF/PT can vary between workflows; keep generic but stable.
+    "VTF": ["c0", "c1", "c2", "c3"],
+    "PT": ["c0", "c1", "c2", "c3"],
+}
+
+
+def _is_block_header(tokens: list[str]) -> bool:
+    """Return True if a tokenized line is a FEMTIC data-block header.
+
+    Parameters
+    ----------
+    tokens : list of str
+        Tokens obtained by splitting a line.
+
+    Returns
+    -------
+    bool
+        True if the token sequence matches the expected block-header pattern.
+
+    Notes
+    -----
+    A block-header line is recognized as:
+
+    - exactly two tokens
+    - first token in {'MT', 'VTF', 'PT'}
+    - second token parseable as int (number of sites)
+
+    This heuristic deliberately avoids mis-detecting other lines.
+    """
+    if len(tokens) != 2:
+        return False
+    if tokens[0] not in _OBS_DATALEN:
+        return False
+    try:
+        int(tokens[1])
+    except Exception:
+        return False
+    return True
+
+
+def _rel_err_array(
+    err_spec: Sequence[float] | Sequence[int] | np.ndarray,
+    dat_length: int,
+) -> np.ndarray | None:
+    """Normalize a relative-error specification to a length-``dat_length`` array.
+
+    Parameters
+    ----------
+    err_spec : sequence or ndarray
+        Relative error specification. Supported forms are:
+
+        - empty (length 0): return None (do not overwrite existing error columns)
+        - scalar (length 1): broadcast to length ``dat_length``
+        - vector (length ``dat_length``): used component-wise
+    dat_length : int
+        Number of data components per frequency for the current observation type.
+
+    Returns
+    -------
+    ndarray or None
+        Relative error array of shape ``(dat_length,)`` or None if no overwrite.
+
+    Raises
+    ------
+    ValueError
+        If a non-empty vector is provided but does not have length 1 or ``dat_length``.
+    """
+    a = np.asarray(err_spec, dtype=float).ravel()
+    if a.size == 0:
+        return None
+    if a.size == 1:
+        return np.repeat(float(a.item()), dat_length)
+    if a.size != dat_length:
+        raise ValueError(f"Relative error length must be 1 or {dat_length}, got {a.size}")
+    return a
+
+
+def _find_end_index(lines: list[str]) -> int:
+    """Return the index of the first line containing token ``END`` (exclusive boundary).
+
+    Parameters
+    ----------
+    lines : list of str
+        File lines including newlines.
+
+    Returns
+    -------
+    int
+        Index of the first ``END`` line. If no such line exists, returns ``len(lines)``.
+
+    Notes
+    -----
+    The returned index is intended to be used as an exclusive upper bound when slicing.
+    """
+    for i, line in enumerate(lines):
+        if "END" in line.split():
+            return i
+    return len(lines)
+
+
+def _format_float(v: float) -> str:
+    """Format a float in a stable scientific notation used for rewritten data rows.
+
+    Parameters
+    ----------
+    v : float
+        Value to format.
+
+    Returns
+    -------
+    str
+        Formatted float string.
+    """
+    return f"{float(v):.8E}"
+
+
+def _format_row(values: Sequence[float]) -> str:
+    """Format a numeric row as a whitespace-separated FEMTIC data line.
+
+    Parameters
+    ----------
+    values : sequence of float
+        Numeric values, expected to begin with frequency, followed by data and errors.
+
+    Returns
+    -------
+    str
+        A single formatted line **including** the trailing newline character.
+    """
+    return "    ".join(_format_float(v) for v in values) + "\n"
+
+
+def _mt_data_to_tensor(data_row: np.ndarray) -> np.ndarray:
+    """Convert one MT data row (length 8: re/im pairs) to a 2x2 complex tensor.
+
+    Parameters
+    ----------
+    data_row : ndarray
+        One row of MT data values with length 8 and ordering:
+        ``Zxx_re, Zxx_im, Zxy_re, Zxy_im, Zyx_re, Zyx_im, Zyy_re, Zyy_im``.
+
+    Returns
+    -------
+    ndarray
+        Complex tensor ``Z`` of shape (2, 2) with entries:
+        ``[[Zxx, Zxy], [Zyx, Zyy]]``.
+    """
+    zxx = complex(float(data_row[0]), float(data_row[1]))
+    zxy = complex(float(data_row[2]), float(data_row[3]))
+    zyx = complex(float(data_row[4]), float(data_row[5]))
+    zyy = complex(float(data_row[6]), float(data_row[7]))
+    return np.array([[zxx, zxy], [zyx, zyy]], dtype=np.complex128)
+
+
+def _phase_tensor_from_Z(Z: np.ndarray) -> np.ndarray:
+    """Compute the phase tensor Φ from an MT impedance tensor Z.
+
+    Parameters
+    ----------
+    Z : ndarray
+        Complex impedance tensor of shape (2, 2).
+
+    Returns
+    -------
+    ndarray
+        Phase tensor Φ of shape (2, 2), real-valued.
+
+    Notes
+    -----
+    Using the standard definition:
+
+        Z = X + iY,   Φ = X^{-1} Y
+
+    where X=Re(Z) and Y=Im(Z).
+    """
+    X = np.real(Z).astype(float)
+    Y = np.imag(Z).astype(float)
+    try:
+        phi = np.linalg.solve(X, Y)
+    except np.linalg.LinAlgError:
+        phi = np.full((2, 2), np.nan, dtype=float)
+    return phi
+
+
+def _zdet_from_Z(Z: np.ndarray) -> complex:
+    """Compute determinant impedance invariant Zdet = sqrt(det(Z))."""
+    detZ = Z[0, 0] * Z[1, 1] - Z[0, 1] * Z[1, 0]
+    return complex(np.sqrt(detZ))
+
+
+def _zssq_from_Z(Z: np.ndarray) -> complex:
+    """Compute SSQ impedance invariant Zssq = sqrt((sum(Zij^2))/2)."""
+    ssq = (Z[0, 0] ** 2 + Z[0, 1] ** 2 + Z[1, 0] ** 2 + Z[1, 1] ** 2) / 2.0
+    return complex(np.sqrt(ssq))
+
+
+def _bootstrap_mt_derived(
+    data: np.ndarray,
+    error: np.ndarray,
+    *,
+    n_boot: int,
+    rng: Generator,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Bootstrap MT-derived quantities using per-component standard deviations.
+
+    Parameters
+    ----------
+    data : ndarray
+        MT data array of shape (nfreq, 8) in re/im pairs order.
+    error : ndarray
+        MT error array of shape (nfreq, 8), interpreted as std deviations per numeric component.
+    n_boot : int
+        Number of bootstrap draws.
+    rng : numpy.random.Generator
+        RNG used for resampling.
+
+    Returns
+    -------
+    phi_std : ndarray
+        Standard deviation of phase tensor elements, shape (nfreq, 2, 2).
+    zdet_std_re : ndarray
+        Standard deviation of Re(Zdet), shape (nfreq,).
+    zdet_std_im : ndarray
+        Standard deviation of Im(Zdet), shape (nfreq,).
+    zssq_std_reim : ndarray
+        Standard deviations of Re/Im(Zssq), shape (nfreq, 2).
+
+    Notes
+    -----
+    The implementation perturbs each real/imag component independently by Normal(0, σ).
+    """
+    nfreq = int(data.shape[0])
+    phi_boot = np.full((n_boot, nfreq, 2, 2), np.nan, dtype=float)
+    zdet_boot = np.full((n_boot, nfreq), np.nan, dtype=np.complex128)
+    zssq_boot = np.full((n_boot, nfreq), np.nan, dtype=np.complex128)
+
+    sigma = np.asarray(error, dtype=float)
+    base = np.asarray(data, dtype=float)
+
+    for b in range(n_boot):
+        pert = base + rng.normal(loc=0.0, scale=sigma, size=base.shape)
+        for i in range(nfreq):
+            Z = _mt_data_to_tensor(pert[i, :])
+            phi_boot[b, i, :, :] = _phase_tensor_from_Z(Z)
+            zdet_boot[b, i] = _zdet_from_Z(Z)
+            zssq_boot[b, i] = _zssq_from_Z(Z)
+
+    phi_std = np.nanstd(phi_boot, axis=0, ddof=1)
+
+    zdet_std_re = np.nanstd(np.real(zdet_boot), axis=0, ddof=1)
+    zdet_std_im = np.nanstd(np.imag(zdet_boot), axis=0, ddof=1)
+
+    zssq_std_re = np.nanstd(np.real(zssq_boot), axis=0, ddof=1)
+    zssq_std_im = np.nanstd(np.imag(zssq_boot), axis=0, ddof=1)
+    zssq_std_reim = np.stack([zssq_std_re, zssq_std_im], axis=1)
+
+    return phi_std, zdet_std_re, zdet_std_im, zssq_std_reim
+
+
+def _augment_mt_site(
+    site: dict[str, Any],
+    *,
+    n_boot: int,
+    rng: Generator,
+) -> None:
+    """Compute MT derived quantities and attach them to the site dict in-place.
+
+    Parameters
+    ----------
+    site : dict
+        Site dictionary with keys ``data`` and ``error`` for MT (shapes (nfreq,8)).
+    n_boot : int
+        Number of bootstrap draws for error estimates. If <= 0, errors are not computed
+        (only the point estimates are attached).
+    rng : numpy.random.Generator
+        RNG used for bootstrap resampling.
+    """
+    data = np.asarray(site["data"], dtype=float)
+    err = np.asarray(site["error"], dtype=float)
+    nfreq = int(site["nfreq"])
+
+    phi = np.full((nfreq, 2, 2), np.nan, dtype=float)
+    zdet = np.full(nfreq, np.nan + 1j * np.nan, dtype=np.complex128)
+    zssq = np.full(nfreq, np.nan + 1j * np.nan, dtype=np.complex128)
+
+    for i in range(nfreq):
+        Z = _mt_data_to_tensor(data[i, :])
+        phi[i, :, :] = _phase_tensor_from_Z(Z)
+        zdet[i] = _zdet_from_Z(Z)
+        zssq[i] = _zssq_from_Z(Z)
+
+    site["phase_tensor"] = phi
+    site["Zdet"] = zdet
+    site["Zssq"] = zssq
+
+    if n_boot and n_boot > 0:
+        phi_std, zdet_std_re, zdet_std_im, zssq_std_reim = _bootstrap_mt_derived(
+            data,
+            err,
+            n_boot=int(n_boot),
+            rng=rng,
+        )
+        site["phase_tensor_err"] = phi_std
+        site["Zdet_err"] = zdet_std_re.astype(float) + 1j * zdet_std_im.astype(float)
+        site["Zssq_err"] = zssq_std_reim[:, 0].astype(float) + 1j * zssq_std_reim[:, 1].astype(float)
+
+
+def read_observe_dat(
+    path: str | Path,
+    *,
+    compute_mt_derived: bool = True,
+    bootstrap_n: int = 200,
+    bootstrap_rng: Generator | None = None,
+) -> dict[str, Any]:
+    """Parse a FEMTIC-style ``observe.dat`` into a structured nested dictionary.
+
+    Parameters
+    ----------
+    path : str or pathlib.Path
+        Path to the observation file.
+    compute_mt_derived : bool
+        If True, compute and attach MT derived quantities (phase tensor, Zdet, Zssq)
+        to each MT site dictionary.
+    bootstrap_n : int
+        Number of bootstrap draws for MT derived-error estimates. If <= 0, errors are
+        not computed (point estimates only).
+    bootstrap_rng : numpy.random.Generator, optional
+        RNG used for bootstrap resampling. If None, ``default_rng(0)`` is used for
+        reproducible error estimates.
+
+    Returns
+    -------
+    dict
+        Parsed structure with keys:
+
+        - ``preamble_lines`` : list[str]
+            Any lines before the first detected block header (kept verbatim).
+        - ``blocks`` : list[dict]
+            Each block dict contains:
+
+            - ``obs_type`` : str
+            - ``n_sites_header`` : int
+            - ``header_line`` : str (verbatim)
+            - ``sites`` : list[dict]
+
+        - ``end_line`` : str or None
+            The ``END`` line (verbatim) if present.
+        - ``tail_lines`` : list[str]
+            Lines after ``END`` (kept verbatim).
+
+        Each site dict contains:
+
+        - ``site_header_tokens`` : list[str]
+        - ``site_header_line`` : str (verbatim)
+        - ``nfreq`` : int
+        - ``freq`` : ndarray, shape (nfreq,)
+        - ``data`` : ndarray, shape (nfreq, dat_length)
+        - ``error`` : ndarray, shape (nfreq, dat_length)
+        - ``extras`` : list[list[float]]
+            Any numeric columns after the expected ``1 + 2*dat_length`` values per row.
+        - ``component_labels`` : list[str]
+
+        If ``obs_type`` is MT and ``compute_mt_derived`` is True, additional keys are added:
+
+        - ``phase_tensor`` : ndarray, shape (nfreq, 2, 2)
+        - ``phase_tensor_err`` : ndarray, shape (nfreq, 2, 2)  (bootstrap std), if bootstrap_n > 0
+        - ``Zdet`` : complex ndarray, shape (nfreq,)
+        - ``Zdet_err`` : complex ndarray, shape (nfreq,)   (std(Re) + i*std(Im)), if bootstrap_n > 0
+        - ``Zssq`` : complex ndarray, shape (nfreq,)
+        - ``Zssq_err`` : complex ndarray, shape (nfreq,)   (std(Re) + i*std(Im)), if bootstrap_n > 0
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``path`` does not exist.
+    ValueError
+        If the file cannot be parsed according to the expected layout.
+    """
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(str(p))
+
+    boot_rng = default_rng(0) if bootstrap_rng is None else bootstrap_rng
+
+    lines = p.read_text(encoding="utf-8").splitlines(keepends=True)
+    if not lines:
+        raise ValueError(f"Empty file: {p}")
+
+    end_idx = _find_end_index(lines)
+    end_line = lines[end_idx] if end_idx < len(lines) else None
+    tail_lines = lines[end_idx + 1 :] if end_idx + 1 < len(lines) else []
+
+    # Detect block headers up to END.
+    block_starts: list[int] = []
+    for i in range(0, end_idx):
+        toks = lines[i].split()
+        if _is_block_header(toks):
+            block_starts.append(i)
+
+    if not block_starts:
+        raise ValueError(f"No data blocks detected in {p}.")
+
+    preamble_lines = lines[: block_starts[0]]
+
+    # Append the END boundary as a sentinel for slicing.
+    block_starts.append(end_idx)
+
+    blocks: list[dict[str, Any]] = []
+    for bi in range(len(block_starts) - 1):
+        start = block_starts[bi]
+        stop = block_starts[bi + 1]
+        block_lines = lines[start:stop]
+
+        hdr_toks = block_lines[0].split()
+        if not _is_block_header(hdr_toks):
+            raise ValueError(f"Expected block header at line {start + 1} in {p}")
+
+        obs_type = hdr_toks[0]
+        n_sites_header = int(hdr_toks[1])
+        dat_length = _OBS_DATALEN[obs_type]
+        component_labels = _COMPONENT_LABELS.get(obs_type, [f"c{i}" for i in range(dat_length)])
+
+        sites: list[dict[str, Any]] = []
+        li = 1  # cursor within block_lines (after header)
+        while li < len(block_lines):
+            toks = block_lines[li].split()
+
+            # Skip blank lines inside block.
+            if len(toks) == 0:
+                li += 1
+                continue
+
+            # Site header must be exactly 4 tokens by convention here.
+            if len(toks) != 4:
+                raise ValueError(
+                    f"Cannot parse site header at line {start + li + 1} in {p}: "
+                    f"expected 4 tokens, got {len(toks)}."
+                )
+
+            site_header_line = block_lines[li]
+            site_header_tokens = toks[:]
+            if li + 1 >= len(block_lines):
+                raise ValueError(f"Unexpected end of block after site header near line {start + li + 1} in {p}")
+
+            try:
+                nfreq = int(block_lines[li + 1].split()[0])
+            except Exception as e:
+                raise ValueError(
+                    f"Cannot read number of frequencies after site header near line {start + li + 1} in {p}: {e}"
+                ) from e
+
+            data_start = li + 2
+            data_stop = data_start + nfreq
+            if data_stop > len(block_lines):
+                raise ValueError(
+                    f"Site near line {start + li + 1} in {p} claims {nfreq} frequencies, "
+                    f"but block ends early."
+                )
+
+            freq = np.empty(nfreq, dtype=float)
+            data = np.empty((nfreq, dat_length), dtype=float)
+            error = np.empty((nfreq, dat_length), dtype=float)
+            extras: list[list[float]] = []
+
+            for ri, row_line in enumerate(block_lines[data_start:data_stop]):
+                row_toks = row_line.split()
+                try:
+                    row = [float(x) for x in row_toks]
+                except Exception as e:
+                    raise ValueError(f"Non-numeric data row at line {start + data_start + ri + 1} in {p}: {e}") from e
+
+                expected = 1 + 2 * dat_length
+                if len(row) < expected:
+                    raise ValueError(
+                        f"Data row at line {start + data_start + ri + 1} has {len(row)} columns "
+                        f"but expected at least {expected} (freq + {dat_length} data + {dat_length} error)."
+                    )
+
+                freq[ri] = row[0]
+                data[ri, :] = row[1 : 1 + dat_length]
+                error[ri, :] = row[1 + dat_length : 1 + 2 * dat_length]
+                extras.append(row[1 + 2 * dat_length :])
+
+            site_dict: dict[str, Any] = {
+                "obs_type": obs_type,
+                "site_header_tokens": site_header_tokens,
+                "site_header_line": site_header_line,
+                "nfreq": nfreq,
+                "freq": freq,
+                "data": data,
+                "error": error,
+                "extras": extras,
+                "component_labels": component_labels,
+                "nfreq_line": block_lines[li + 1],
+            }
+
+            if compute_mt_derived and obs_type == "MT":
+                _augment_mt_site(site_dict, n_boot=int(bootstrap_n), rng=boot_rng)
+
+            sites.append(site_dict)
+            li = data_stop  # move to next site
+
+        blocks.append(
+            {
+                "obs_type": obs_type,
+                "n_sites_header": n_sites_header,
+                "header_line": block_lines[0],
+                "sites": sites,
+            }
+        )
+
+    return {
+        "path": str(p),
+        "preamble_lines": preamble_lines,
+        "blocks": blocks,
+        "end_line": end_line,
+        "tail_lines": tail_lines,
+    }
+
+
+def sites_as_dict_list(parsed: dict[str, Any]) -> list[dict[str, Any]]:
+    """Flatten a parsed observe.dat structure into a list of per-site dictionaries.
+
+    Parameters
+    ----------
+    parsed : dict
+        Output from :func:`read_observe_dat`.
+
+    Returns
+    -------
+    list of dict
+        A list where each element corresponds to one site section. Each dict contains
+        (at least) keys: ``obs_type``, ``site_header_tokens``, ``nfreq``, ``freq``,
+        ``data``, ``error``, and ``component_labels``.
+    """
+    sites: list[dict[str, Any]] = []
+    for block in parsed.get("blocks", []):
+        for site in block.get("sites", []):
+            sites.append(site)
+    return sites
+
+
+def write_observe_dat(parsed: dict[str, Any], path: str | Path) -> None:
+    """Write a parsed (and possibly modified) observe.dat structure to disk.
+
+    Parameters
+    ----------
+    parsed : dict
+        Parsed structure produced by :func:`read_observe_dat` (potentially modified).
+    path : str or pathlib.Path
+        Output path to write.
+
+    Notes
+    -----
+    - Preamble lines, header lines, site header lines, the END line, and tail lines are
+      written back verbatim where available.
+    - Data rows are rewritten in a clear numeric layout: frequency first, then values,
+      then errors, and finally any extra numeric columns if present.
+    - Floats are formatted in scientific notation with 8 digits after the decimal.
+    """
+    out = Path(path)
+
+    out_lines: list[str] = []
+    out_lines.extend(parsed.get("preamble_lines", []))
+
+    blocks = parsed.get("blocks", [])
+    for block in blocks:
+        obs_type = str(block["obs_type"])
+        dat_length = _OBS_DATALEN.get(obs_type)
+        if dat_length is None:
+            raise NotImplementedError(f"write_observe_dat: obs_type={obs_type!r} not supported")
+
+        # Keep original header line if present; otherwise create a minimal one.
+        header_line = block.get("header_line")
+        if header_line is None:
+            n_sites = len(block.get("sites", []))
+            header_line = f"{obs_type}    {n_sites}\n"
+        if not header_line.endswith("\n"):
+            header_line = header_line + "\n"
+        out_lines.append(header_line)
+
+        for site in block.get("sites", []):
+            shl = site.get("site_header_line", "")
+            if not shl.endswith("\n"):
+                shl = shl + "\n"
+            out_lines.append(shl)
+
+            nfl = site.get("nfreq_line")
+            if nfl is None:
+                nfl = f"{int(site['nfreq'])}\n"
+            if not nfl.endswith("\n"):
+                nfl = nfl + "\n"
+            out_lines.append(nfl)
+
+            freq = np.asarray(site["freq"], dtype=float).ravel()
+            data = np.asarray(site["data"], dtype=float)
+            err = np.asarray(site["error"], dtype=float)
+            extras = site.get("extras", [])
+
+            nfreq = int(site["nfreq"])
+            if freq.size != nfreq or data.shape[0] != nfreq or err.shape[0] != nfreq:
+                raise ValueError("write_observe_dat: inconsistent nfreq vs array shapes in site data")
+
+            for i in range(nfreq):
+                row_vals: list[float] = [float(freq[i])]
+                row_vals.extend([float(x) for x in data[i, :].tolist()])
+                row_vals.extend([float(x) for x in err[i, :].tolist()])
+
+                extra_row = extras[i] if i < len(extras) else []
+                row_vals.extend([float(x) for x in extra_row])
+
+                out_lines.append(_format_row(row_vals))
+
+    end_line = parsed.get("end_line")
+    if end_line is not None:
+        if not end_line.endswith("\n"):
+            end_line = end_line + "\n"
+        out_lines.append(end_line)
+
+    out_lines.extend(parsed.get("tail_lines", []))
+
+    out.write_text("".join(out_lines), encoding="utf-8")
+
+
+def modify_data(
+    template_file: str | Path = "observe.dat",
+    *,
+    errors: Sequence[Sequence[float] | np.ndarray] = ([], [], []),
+    rng: Generator | None = None,
+    out: bool = True,
+    return_sites: bool = False,
+    compute_mt_derived: bool = True,
+    bootstrap_n: int = 200,
+    bootstrap_rng: Generator | None = None,
+) -> list[dict[str, Any]] | None:
+    """Perturb a FEMTIC-style observation file (``observe.dat``) and rewrite it in-place.
+
+    For each datum ``d`` with associated standard deviation ``σ`` the perturbation is:
+
+        ``d_new = Normal(d, σ)``
+
+    If *relative* errors are provided via ``errors`` for the current observation type,
+    the error columns are overwritten before drawing perturbations:
+
+        ``σ := abs(d) * rel_error``
+
+    Parameters
+    ----------
+    template_file : str or pathlib.Path
+        Path to the observation file. The file is rewritten **in-place**.
+    errors : sequence of length 3
+        ``[errors_MT, errors_VTF, errors_PT]``. Each element can be:
+
+        - [] (empty): keep existing per-datum error columns
+        - [scalar]: broadcast to all components
+        - [vector]: component-wise relative errors (length MT=8, VTF/PT=4)
+    rng : numpy.random.Generator, optional
+        Random number generator used for perturbations. If None, ``default_rng()`` is used.
+    out : bool
+        If True, print basic status messages about detected blocks and sites.
+    return_sites : bool
+        If True, return a flattened list of per-site dictionaries (see
+        :func:`sites_as_dict_list`). If False, return None.
+    compute_mt_derived : bool
+        If True, compute and attach MT derived quantities (phase tensor, Zdet, Zssq)
+        to each MT site dictionary after perturbation.
+    bootstrap_n : int
+        Number of bootstrap draws for MT derived-error estimates. If <= 0, errors are
+        not computed (point estimates only).
+    bootstrap_rng : numpy.random.Generator, optional
+        RNG used for bootstrap resampling. If None, ``default_rng(0)`` is used for
+        reproducible error estimates.
+
+    Returns
+    -------
+    list of dict or None
+        If ``return_sites`` is True, returns a flattened list of per-site dictionaries
+        after perturbation. Otherwise returns None.
+    """
+    rng = default_rng() if rng is None else rng
+    boot_rng = default_rng(0) if bootstrap_rng is None else bootstrap_rng
+
+    parsed = read_observe_dat(
+        template_file,
+        compute_mt_derived=False,  # recompute after perturbation
+        bootstrap_n=0,
+        bootstrap_rng=boot_rng,
+    )
+    blocks = parsed["blocks"]
+
+    if out:
+        print(f"Detected {len(blocks)} data block(s) in {parsed['path']}.")
+
+    for bi, block in enumerate(blocks):
+        obs_type = str(block["obs_type"])
+        dat_length = _OBS_DATALEN.get(obs_type)
+        if dat_length is None:
+            raise NotImplementedError(f"modify_data: obs_type={obs_type!r} not supported")
+
+        # Select relative errors for this block type (if given).
+        rel: np.ndarray | None
+        if obs_type == "MT":
+            rel = _rel_err_array(errors[0], dat_length)
+        elif obs_type == "VTF":
+            rel = _rel_err_array(errors[1], dat_length)
+        elif obs_type == "PT":
+            rel = _rel_err_array(errors[2], dat_length)
+        else:
+            rel = None
+
+        if out:
+            print(f"Block {bi}: {obs_type} (sites: {len(block.get('sites', []))})")
+
+        for si, site in enumerate(block.get("sites", [])):
+            data = np.asarray(site["data"], dtype=float)
+            err = np.asarray(site["error"], dtype=float)
+
+            if data.shape != err.shape or data.shape[1] != dat_length:
+                raise ValueError("modify_data: inconsistent data/error shapes in site")
+
+            nfreq = int(site["nfreq"])
+            if out:
+                msg = f"  Site {si}: nfreq={nfreq}"
+                if rel is not None:
+                    msg += " (overwriting errors from relative errors)"
+                print(msg)
+
+            # Overwrite errors (optional) and draw perturbations component-wise.
+            for i in range(nfreq):
+                for k in range(dat_length):
+                    val = float(data[i, k])
+
+                    if rel is not None:
+                        sigma = float(abs(val) * float(rel[k]))
+                        err[i, k] = sigma
+                    else:
+                        sigma = float(err[i, k])
+
+                    if not np.isfinite(sigma) or sigma <= 0.0:
+                        continue
+
+                    data[i, k] = float(rng.normal(loc=val, scale=sigma))
+
+            site["data"] = data
+            site["error"] = err
+
+            if compute_mt_derived and obs_type == "MT":
+                _augment_mt_site(site, n_boot=int(bootstrap_n), rng=boot_rng)
+
+    # Rewrite in-place (frequency first, values then errors).
+    write_observe_dat(parsed, template_file)
+
+    if out:
+        print(f"File {template_file} successfully written.")
+
+    if return_sites:
+        return sites_as_dict_list(parsed)
+    return None
+
+def convert_observe_dat(
+    in_path: str | Path,
+    out_path: str | Path,
+    *,
+    compute_mt_derived: bool = True,
+    bootstrap_n: int = 200,
+    bootstrap_seed: int = 0,
+    sites_out: str | Path | None = None,
+) -> list[dict[str, Any]]:
+    """Convert an ``observe.dat`` file to a rewritten output file and return site dicts.
+
+    Parameters
+    ----------
+    in_path : str or pathlib.Path
+        Input observe.dat path.
+    out_path : str or pathlib.Path
+        Output path to write. The file is written in the same clear numeric layout used
+        by :func:`write_observe_dat` (frequency first, then values, then errors).
+    compute_mt_derived : bool
+        If True, compute and attach MT derived quantities (phase tensor, Zdet, Zssq)
+        to each MT site dictionary.
+    bootstrap_n : int
+        Number of bootstrap draws for MT derived-error estimates. If <= 0, errors are
+        not computed (point estimates only).
+    bootstrap_seed : int
+        Seed for the bootstrap RNG (for reproducibility).
+    sites_out : str or pathlib.Path, optional
+        If given, save the flattened list of per-site dictionaries. Supported formats:
+
+        - ``.npz`` : saved as a compressed NumPy object array (key: ``sites``)
+        - ``.pkl`` : saved via pickle
+
+    Returns
+    -------
+    list of dict
+        Flattened list of per-site dictionaries (EDI-like container).
+    """
+    boot_rng = default_rng(int(bootstrap_seed))
+    parsed = read_observe_dat(
+        in_path,
+        compute_mt_derived=bool(compute_mt_derived),
+        bootstrap_n=int(bootstrap_n),
+        bootstrap_rng=boot_rng,
+    )
+    write_observe_dat(parsed, out_path)
+    sites = sites_as_dict_list(parsed)
+
+    if sites_out is not None:
+        _save_sites(sites, sites_out)
+
+    return sites
+
+
+def _save_sites(sites: list[dict[str, Any]], sites_out: str | Path) -> None:
+    """Save a site list to disk in either NPZ (object array) or pickle format.
+
+    Parameters
+    ----------
+    sites : list of dict
+        Flattened per-site dictionaries (possibly containing numpy arrays and complex).
+    sites_out : str or pathlib.Path
+        Output filename. If suffix is ``.npz``, saves an object array under key ``sites``.
+        If suffix is ``.pkl``, saves via pickle.
+
+    Raises
+    ------
+    ValueError
+        If the file suffix is not supported.
+    """
+    out = Path(sites_out)
+    suf = out.suffix.lower()
+    if suf == ".npz":
+        np.savez_compressed(out, sites=np.asarray(sites, dtype=object))
+        return
+    if suf == ".pkl":
+        import pickle
+
+        with out.open("wb") as f:
+            pickle.dump(sites, f, protocol=pickle.HIGHEST_PROTOCOL)
+        return
+    raise ValueError(f"Unsupported sites_out format {out.suffix!r}; use .npz or .pkl")
+
 # ============================================================================
 # SECTION 7: CLI wrapper for unified module
 # ============================================================================
