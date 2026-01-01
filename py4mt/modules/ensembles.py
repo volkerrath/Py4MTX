@@ -675,6 +675,7 @@ def generate_model_ensemble(
     fromto: Optional[Tuple[int, int]] = None,
     refmod: str = "resistivity_block_iter0.dat",
     q: Optional[scipy.sparse.spmatrix | np.ndarray] = None,
+    low_rank: bool = False,
     method: str = "add",
     out: bool = True,
 ) -> list[str]:
@@ -711,13 +712,12 @@ def generate_model_ensemble(
         - "replace": ignore original and directly use the samples.
     out : bool
         If True, print status messages.
-
+    low_rank = False
     Returns
     -------
     mod_list : list of str
         Paths to the perturbed resistivity block files.
     """
-    low_rank = True
     if low_rank:
         # Placeholder: currently estimates eigpairs from R.T @ R internally.
         # For large problems, pre-compute eigpairs and pass them instead.
@@ -727,6 +727,7 @@ def generate_model_ensemble(
             n_eig=32,
             sigma2_residual=0.0,
         )
+        print('low-rank decomp done.')
     else:
         if q is None:
             raise ValueError("generate_model_ensemble: q must be provided for full-rank.")
@@ -735,6 +736,7 @@ def generate_model_ensemble(
             n_samples=n_samples,
             lam=0.0,
         )
+        print('full-rank decomp done.')
 
     if fromto is None:
         fromto_arr = np.arange(n_samples)
@@ -752,7 +754,7 @@ def generate_model_ensemble(
             data_name=f"sample{iens}",
         )
         mod_list.append(file)
-        print(file)
+        print('smaple:',file)
 
     if out:
         print("\nlist of perturbed model files:")
