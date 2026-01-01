@@ -276,8 +276,8 @@ def modify_data(
                     comp[ii] = float(np.random.normal(loc=val, scale=err))
 
             # Write back all frequencies
-            for f in range(num_freq-1):
-                print(f, num_freq)
+            for f in range(num_freq):
+                # print(f, num_freq)
                 row = np.asarray(obs[f], dtype=float).ravel()
                 site_block[f + 2] = "    ".join(f"{float(v):.8E}" for v in row) + "\n"
 
