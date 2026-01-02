@@ -719,6 +719,7 @@ def generate_model_ensemble(
         Paths to the perturbed resistivity block files.
     """
     if low_rank:
+        print('start low-rank decomp.')
         # Placeholder: currently estimates eigpairs from R.T @ R internally.
         # For large problems, pre-compute eigpairs and pass them instead.
         samples = sample_rtr_low_rank(
@@ -729,6 +730,7 @@ def generate_model_ensemble(
         )
         print('low-rank decomp done.')
     else:
+        print('start full-rank decomp.')
         if q is None:
             raise ValueError("generate_model_ensemble: q must be provided for full-rank.")
         samples = sample_rtr_full_rank(
@@ -754,7 +756,7 @@ def generate_model_ensemble(
             data_name=f"sample{iens}",
         )
         mod_list.append(file)
-        print('smaple:',file)
+        print('sample:',file)
 
     if out:
         print("\nlist of perturbed model files:")
@@ -815,8 +817,6 @@ def generate_data_ensemble(alg: str = 'rto',
         shutil.copy(file, file.replace(".dat", "_orig.dat"))
         fem.modify_data(
             template_file=file,
-            draw_from=draw_from,
-            method=method,
             errors=errors,
             out=out,
         )
