@@ -19,7 +19,7 @@ This module contains:
 All functions are importable; no code is executed on import.
 
 Author: Volker Rath (DIAS)
-Created with the help of ChatGPT (GPT-5 Thinking) on 2025-12-21 (UTC)
+Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-02 (UTC)
 """
 
 from __future__ import annotations
@@ -719,7 +719,6 @@ def generate_model_ensemble(
         Paths to the perturbed resistivity block files.
     """
     if low_rank:
-        print('start low-rank decomp.')
         # Placeholder: currently estimates eigpairs from R.T @ R internally.
         # For large problems, pre-compute eigpairs and pass them instead.
         samples = sample_rtr_low_rank(
@@ -730,7 +729,6 @@ def generate_model_ensemble(
         )
         print('low-rank decomp done.')
     else:
-        print('start full-rank decomp.')
         if q is None:
             raise ValueError("generate_model_ensemble: q must be provided for full-rank.")
         samples = sample_rtr_full_rank(
@@ -756,7 +754,7 @@ def generate_model_ensemble(
             data_name=f"sample{iens}",
         )
         mod_list.append(file)
-        print('sample:',file)
+        print('smaple:',file)
 
     if out:
         print("\nlist of perturbed model files:")
@@ -817,6 +815,8 @@ def generate_data_ensemble(alg: str = 'rto',
         shutil.copy(file, file.replace(".dat", "_orig.dat"))
         fem.modify_data(
             template_file=file,
+            draw_from=draw_from,
+            method=method,
             errors=errors,
             out=out,
         )
@@ -2483,6 +2483,112 @@ def make_sparse_cholesky_precision_solver(
     return solve_Q
 
 
+def _rtr_diag(
+    R: np.ndarray | scipy.sparse.spmatrix,
+) -> np.ndarray:
+    """Compute the diagonal of ``R.T @ R`` without forming the product.
+
+    Parameters
+    ----------
+    R
+        Dense or sparse matrix of shape (m, n).
+
+    Returns
+    -------
+    ndarray
+        1-D array of length ``n`` with entries ``diag(R.T @ R)``.
+
+    Notes
+    -----
+    For a matrix ``R``, the diagonal entries of ``R.T @ R`` are the column-wise
+    sum of squares::
+
+        diag(R.T @ R)[j] = sum_i R[i, j]^2
+
+    This helper computes that efficiently for both dense and sparse inputs.
+    """
+    if issparse(R):
+        Rsq = R.multiply(R)
+        d = np.asarray(Rsq.sum(axis=0)).ravel()
+        return d.astype(np.float64, copy=False)
+
+    A = np.asarray(R, dtype=np.float64)
+    if A.ndim != 2:
+        raise ValueError(f"_rtr_diag: R must be 2-D, got shape {A.shape}.")
+    return np.sum(A * A, axis=0, dtype=np.float64)
+
+
+def pick_lam_from_rtr_diag(
+    R: np.ndarray | scipy.sparse.spmatrix,
+    *,
+    alpha: float = 1.0e-5,
+    statistic: str = "median",
+    min_lam: float = 0.0,
+) -> float:
+    """Pick a diagonal shift ``lam`` from the scale of ``diag(R.T @ R)``.
+
+    Implements the practical rule-of-thumb discussed in the chat:
+
+        ``lam = alpha * median(diag(R.T @ R))``
+
+    with ``alpha`` typically in the range ``1e-6 ... 1e-3``.
+
+    Parameters
+    ----------
+    R
+        Dense or sparse matrix defining the roughness / precision proxy.
+    alpha
+        Scale factor applied to the chosen statistic of ``diag(R.T @ R)``.
+    statistic
+        Which statistic to use for the diagonal scale. Supported values:
+        ``"median"`` (default) and ``"mean"``.
+    min_lam
+        Lower bound for the returned lambda.
+
+    Returns
+    -------
+    float
+        Suggested ``lam`` value.
+
+    Notes
+    -----
+    The diagonal entries of ``R.T @ R`` can contain zeros (e.g., constrained / fixed
+    parameters). This helper uses only finite entries, and prefers positive entries
+    when computing the statistic.
+    """
+    a = float(alpha)
+    if not np.isfinite(a) or a < 0.0:
+        raise ValueError(f"pick_lam_from_rtr_diag: alpha must be finite and >=0, got {alpha!r}.")
+
+    d = _rtr_diag(R)
+    finite = np.isfinite(d)
+    if not finite.any():
+        return float(min_lam)
+
+    dfin = d[finite]
+    pos = dfin > 0.0
+    if pos.any():
+        dsel = dfin[pos]
+    else:
+        dsel = dfin
+
+    stat = statistic.strip().lower()
+    if stat in {"median", "med"}:
+        scale = float(np.median(dsel))
+    elif stat in {"mean", "avg", "average"}:
+        scale = float(np.mean(dsel))
+    else:
+        raise ValueError(f"pick_lam_from_rtr_diag: unsupported statistic={statistic!r}.")
+
+    if not np.isfinite(scale) or scale <= 0.0:
+        return float(min_lam)
+
+    lam = a * scale
+    if not np.isfinite(lam):
+        lam = float(min_lam)
+    return float(max(float(min_lam), float(lam)))
+
+
 def make_precision_solver(
     R: np.ndarray | scipy.sparse.spmatrix,
     lam: float = 0.0,
@@ -2497,74 +2603,125 @@ def make_precision_solver(
     precond: Optional[str] = None,
     precond_kwargs: Optional[dict] = None,
     use_cholmod: bool = True,
+    lam_mode: str = "fixed",
+    lam_alpha: Optional[float] = None,
+    lam_statistic: str = "median",
+    lam_min: float = 0.0,
 ) -> Callable[[np.ndarray], np.ndarray]:
-    """Construct a solver for Qx=b with Q = R.T@R + lam*I.
+    """Construct a solver for ``Qx=b`` with ``Q = R.T@R + lam*I``.
 
     This is a compatibility-preserving upgrade of the earlier FEMTIC helper:
 
     - **Iterative solvers**: CG (recommended for SPD Q) and BiCGStab.
     - **Direct solver**: sparse Cholesky via CHOLMOD (or SciPy LU fallback).
 
+    New in this cleaned-up version
+    ------------------------------
+    Optional automatic diagonal shift selection:
+
+        ``lam = alpha * median(diag(R.T @ R))``
+
+    This can be enabled by setting ``lam_mode``.
+
     Parameters
     ----------
-    R : array_like or sparse matrix
+    R
         Operator defining the precision Q.
-    lam : float, optional
-        Diagonal shift.
-    rtol, atol : float, optional
+    lam
+        Diagonal shift (used when ``lam_mode='fixed'``).
+    rtol, atol
         Iterative solver tolerances (SciPy style).
-    maxiter : int, optional
+    maxiter
         Maximum number of iterations for iterative solvers.
-    M : LinearOperator, optional
+    M
         Explicit preconditioner. If provided, it overrides ``mprec/precond``.
-    msolver : {"cg", "bicg", "bicgstab"}, optional
+    msolver
         Iterative solver choice (legacy argument name).
-    mprec : {"jacobi", "ilu", "amg", "identity", None}, optional
+    mprec
         Preconditioner choice (legacy argument name). See ``precond``.
-    solver_method : {"cg", "cholesky", "bicgstab"}, optional
+    solver_method
         New preferred name for the solver. If provided, overrides ``msolver``.
-    precond : {None, "jacobi", "ilu", "amg", "identity"}, optional
-        New preferred name for the preconditioner. If provided, overrides
-        ``mprec``.
-    precond_kwargs : dict, optional
+    precond
+        New preferred name for the preconditioner. If provided, overrides ``mprec``.
+    precond_kwargs
         Extra options for the chosen preconditioner.
-    use_cholmod : bool, optional
+    use_cholmod
         If True (default), try CHOLMOD for the 'cholesky' method.
+    lam_mode
+        How to interpret / choose ``lam``:
+
+        - ``"fixed"``: use ``lam`` exactly (default).
+        - ``"scaled_median_diag"`` (alias: ``"median_diag"``):
+          use ``lam = alpha * median(diag(R.T@R))`` where ``alpha`` is
+          ``lam_alpha`` if provided, otherwise ``lam``.
+        - ``"auto"``: if ``lam > 0`` use it, else fall back to the scaled
+          median-diagonal rule.
+    lam_alpha
+        Scale factor ``alpha`` for the scaled-diagonal rule. If None and
+        ``lam_mode`` uses the rule, ``lam`` is interpreted as ``alpha``.
+    lam_statistic
+        Statistic used for the diagonal scale ("median" or "mean").
+    lam_min
+        Lower bound applied to the chosen ``lam``.
 
     Returns
     -------
-    solve_Q : callable
-        Function that solves Qx=b.
+    solve_Q
+        Callable that solves ``Qx=b``.
 
     Author: Volker Rath (DIAS)
-    Created by ChatGPT (GPT-5 Thinking) on 2025-12-19
+    Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-02 (UTC)
     """
     meth = (solver_method or msolver or "cg").strip().lower()
+
+    # Resolve lam (optionally from diag(R.T R))
+    mode = str(lam_mode).strip().lower()
+    lam_eff = float(lam)
+    if mode in {"scaled_median_diag", "median_diag", "scaled_diag", "diag"}:
+        alpha = float(lam_alpha) if lam_alpha is not None else float(lam)
+        lam_eff = pick_lam_from_rtr_diag(
+            R,
+            alpha=alpha,
+            statistic=lam_statistic,
+            min_lam=lam_min,
+        )
+    elif mode in {"auto", "auto_diag", "auto_median_diag"}:
+        if not np.isfinite(lam_eff) or lam_eff <= 0.0:
+            alpha = float(lam_alpha) if lam_alpha is not None else 1.0e-5
+            lam_eff = pick_lam_from_rtr_diag(
+                R,
+                alpha=alpha,
+                statistic=lam_statistic,
+                min_lam=lam_min,
+            )
+        else:
+            lam_eff = float(max(float(lam_min), lam_eff))
+    else:
+        lam_eff = float(max(float(lam_min), lam_eff))
 
     if meth in {"chol", "cholesky", "sparse_cholesky", "direct"}:
         return make_sparse_cholesky_precision_solver(
             R=R,
-            lam=lam,
+            lam=lam_eff,
             use_cholmod=use_cholmod,
         )
 
     # Iterative branch
-    Q_op = build_rtr_operator(R, lam=lam)
+    Q_op = build_rtr_operator(R, lam=lam_eff)
 
     if M is None:
         M = make_rtr_preconditioner(
             R=R,
-            lam=lam,
+            lam=lam_eff,
             precond=precond if precond is not None else mprec,
             precond_kwargs=precond_kwargs,
         )
 
     def solve_Q(b: np.ndarray) -> np.ndarray:
-        """Solve Qx=b using the selected iterative method."""
+        """Solve ``Qx=b`` using the selected iterative method."""
         if meth in {"cg", "pcg"}:
             x, info = cg(Q_op, b, rtol=rtol, atol=atol, maxiter=maxiter, M=M)
         else:
-            # BiCGStab can handle non-SPD, but is not needed if Q is SPD.
             x, info = bicgstab(Q_op, b, rtol=rtol, atol=atol, maxiter=maxiter, M=M)
 
         if info > 0:
@@ -2587,29 +2744,39 @@ def sample_rtr_full_rank(
     *,
     solver_method: str = "cg",
     solver_kwargs: Optional[dict] = None,
+    lam_mode: str = "fixed",
+    lam_alpha: Optional[float] = None,
+    lam_statistic: str = "median",
+    lam_min: float = 0.0,
 ) -> np.ndarray:
-    """Sample from N(0, (R.T@R + lam I)^{-1}) using full-rank solves.
+    """Sample from ``N(0, (R.T@R + lam I)^{-1})`` using full-rank solves.
 
     Parameters
     ----------
-    R : array_like or sparse matrix, shape (m, n)
-        Matrix defining the precision.
-    n_samples : int, optional
+    R
+        Dense or sparse matrix of shape (m, n) defining the precision.
+    n_samples
         Number of samples.
-    lam : float, optional
-        Diagonal shift added to the precision.
-    solver : callable, optional
-        Pre-built solver for Qx=b. If None, it is created from ``solver_method``.
-    rng : numpy.random.Generator, optional
+    lam
+        Diagonal shift. Interpreted according to ``lam_mode``.
+    solver
+        Pre-built solver for ``Qx=b``. If None, it is created from ``solver_method``.
+    rng
         Random generator.
-    solver_method : {"cg", "cholesky", "bicgstab"}, optional
-        Solver used when ``solver`` is None.
-    solver_kwargs : dict, optional
+    solver_method
+        Solver used when ``solver`` is None ("cg", "bicgstab", "cholesky").
+    solver_kwargs
         Extra args passed to :func:`make_precision_solver`.
+    lam_mode, lam_alpha, lam_statistic, lam_min
+        Passed through to :func:`make_precision_solver`. In particular,
+
+        - ``lam_mode='scaled_median_diag'`` activates
+          ``lam = alpha * median(diag(R.T@R))``.
 
     Returns
     -------
-    samples : ndarray, shape (n_samples, n)
+    ndarray
+        Array of shape ``(n_samples, n)``.
 
     Notes
     -----
@@ -2618,17 +2785,22 @@ def sample_rtr_full_rank(
         x = (R.T R + lam I)^{-1} R.T ξ,   ξ ~ N(0, I)
 
     Author: Volker Rath (DIAS)
-    Created by ChatGPT (GPT-5 Thinking) on 2025-12-19
+    Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-02 (UTC)
     """
     rng = default_rng() if rng is None else rng
     m, n = R.shape
 
     if solver is None:
+        kw = dict(solver_kwargs or {})
         solver = make_precision_solver(
             R=R,
             lam=lam,
             solver_method=solver_method,
-            **(solver_kwargs or {}),
+            lam_mode=lam_mode,
+            lam_alpha=lam_alpha,
+            lam_statistic=lam_statistic,
+            lam_min=lam_min,
+            **kw,
         )
 
     samples = np.empty((n_samples, n), dtype=np.float64)

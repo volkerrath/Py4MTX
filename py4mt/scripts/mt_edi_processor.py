@@ -68,7 +68,7 @@ EdiDir = WorkDir  # +'/edi/'
 edi_files = mtp.get_edi_list(EdiDir, fullpath=True)
 ns = np.size(edi_files)
 
-OutFiles = 'edi, ncd, hdf'
+OutFiles = 'edi, ncd, hdf, npz'
 
 Plot = True
 if Plot:
