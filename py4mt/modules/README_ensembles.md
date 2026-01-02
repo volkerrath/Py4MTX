@@ -1,226 +1,120 @@
-# Ensemble utilities (`ensembles.py`)
+# ReadMe_ensembles.md
 
-`ensembles.py` is a companion module to `femtic.py` that focuses on **ensemble generation**
-and **ensemble analysis** for FEMTIC workflows, including:
+This module (`ensembles.py`) provides utilities for **Gaussian ensemble generation** and **precision / covariance-based sampling** used in FEMTIC-style workflows, in particular sampling from precisions of the form:
 
-- Creating per-ensemble working directories
-- Generating **data ensembles** (perturbed `observe.dat`)
-- Generating **model ensembles** (perturbed resistivity blocks) via roughness/precision sampling
-- Ensemble analysis: **EOFs/PCA**
-- Weighted **KL decomposition**
-- A practical **KL + PCE surrogate** builder for log-resistivity fields on FEMTIC meshes
+\[
+Q = R^\top R + \lambda I
+\]
 
-The module is designed to be imported (no side effects on import).
+where `R` is typically a FEMTIC *roughness* (regularization) operator.
 
 ---
 
-## Relationship to `femtic.py`
+## Key features
 
-`ensembles.py` calls several functions from `femtic.py` (imported as `femtic` / `fem`).
-
-Make sure that either:
-
-- both files live in the same directory and you run Python from there, **or**
-- your project is a package and you import via package name, **or**
-- `femtic.py` is on your `PYTHONPATH`.
+- Build **matrix-free** precision operators `Q` for large problems using `scipy.sparse.linalg.LinearOperator`.
+- Solve `Q x = b` with iterative solvers (`cg`, `bicgstab`, …) and optional preconditioning.
+- Generate **Gaussian draws** (e.g., for prior ensembles) driven by `R` / `Q`.
+- Optional **automatic diagonal shift** selection (`lam`) to improve conditioning and avoid nullspace issues.
 
 ---
 
-## Requirements
+## Important update: automatic \(\lambda\) selection
 
-Minimum:
+Many roughness operators have a **nullspace** (e.g., constants), making `R.T @ R` singular or poorly conditioned.
+To improve robustness, `ensembles.py` now supports an optional rule:
 
-- Python 3.10+
-- `numpy`
-- `scipy`
+\[
+\lambda = \alpha \cdot \mathrm{median}\big(\mathrm{diag}(R^\top R)\big),
+\quad \alpha \approx 10^{-6} \ldots 10^{-3}.
+\]
 
-Optional:
+### API
 
-- `joblib` (imported; used in some environments for parallel patterns)
+The following new options are available (primarily in `make_precision_solver()` and propagated to sampling helpers):
 
----
+- `lam_mode`: one of  
+  - `"fixed"` (default): use the provided `lam`  
+  - `"scaled_median_diag"` / `"median_diag"`: compute `lam` from `alpha * median(diag(R.T R))`  
+  - `"auto"`: compute from the rule **only if** the provided `lam <= 0`
+- `lam_alpha`: the \(\alpha\) factor (recommended range `1e-6 … 1e-3`)
+- `lam_statistic`: currently `"median"` (future-proof hook)
+- `lam_min`: lower bound to enforce `lam >= lam_min`
 
-## Directory/ensemble helpers
+A convenience helper is provided:
 
-### Create a directory structure
-
-```python
-from ensembles import generate_directories
-
-dirs = generate_directories(dir_base="./ens_", n_samples=50, out=True)
-# creates: ./ens_0, ./ens_1, ..., ./ens_49
-```
-
-### Copy template files into each ensemble directory
-
-```python
-from ensembles import copy_files
-
-copy_files(
-    dir_base="./ens_",
-    n_samples=50,
-    files=["observe.dat", "mesh.dat", "resistivity_block_iter0.dat"],
-)
-```
+- `pick_lam_from_rtr_diag(R, alpha=..., statistic="median", min_lam=...)`
 
 ---
 
-## Data ensemble: perturb `observe.dat`
+## Core functions (high level)
 
-```python
-from ensembles import generate_data_ensemble
+### `make_precision_solver(...)`
 
-obs_files = generate_data_ensemble(
-    dir_base="./ens_",
-    n_samples=50,
-    file_in="observe.dat",
-    draw_from=("normal", 0.0, 1.0),
-    method="add",
-    out=True,
-)
-```
+Constructs a callable `solve_Q(b)` that solves `Q x = b` for multiple right-hand sides, where
 
-This function:
+- `Q = R.T@R + lam*I` (with optional automatic lam via `lam_mode`).
 
-1. expects `./ens_i/observe.dat` to exist for each `i`
-2. makes `observe_orig.dat` backups
-3. perturbs in-place using `femtic.modify_data(...)`
+Key parameters:
 
----
-
-## Model ensemble: perturb resistivity blocks
-
-### Full-rank sampling from a supplied precision/roughness matrix
-
-```python
-import scipy.sparse as sp
-from ensembles import generate_model_ensemble
-
-# q should represent a roughness matrix R (or a precision factor you use consistently)
-# Example: q = sp.load_npz("roughness_R.npz")
-q = sp.load_npz("roughness_R.npz")
-
-models = generate_model_ensemble(
-    dir_base="./ens_",
-    n_samples=50,
-    refmod="resistivity_block_iter0.dat",
-    q=q,
-    method="add",
-    out=True,
-)
-```
-
-This function writes a perturbed resistivity block into each `./ens_i/` directory
-based on sampling from the implied Gaussian prior.
-
-### Low-rank sampling workflow (when available)
-
-`ensembles.py` also provides utilities for estimating low-rank eigenspaces and
-sampling in that subspace:
-
-- `estimate_low_rank_eigpairs(...)`
-- `sample_rtr_low_rank(...)`
-
-Use these when your number of cells is very large and you want faster approximate sampling.
-
----
-
-## EOFs / PCA from an ensemble matrix
-
-`compute_eofs(E, method=...)` assumes an ensemble matrix `E` with shape:
-
-- `(ncells, nsamples)` where each **column** is one sample.
-
-Two options are implemented:
-
-- `method="svd"` (default): SVD-based EOFs
-- `method="sample_space"`: eigen-decomposition in sample space (efficient when `nsamples << ncells`)
+- `R`: roughness operator (`numpy.ndarray` or `scipy.sparse` matrix)
+- `solver_method` / legacy `msolver`: `"cg"` (default) or `"bicgstab"` etc.
+- `precond` / legacy `mprec`: `"jacobi"` (default), `"ilu"`, `"amg"`, or `None`
+- tolerances: `rtol`, `atol`, and `maxiter`
+- **new**: `lam_mode`, `lam_alpha`, `lam_statistic`, `lam_min`
 
 Example:
 
 ```python
-import numpy as np
-from ensembles import compute_eofs
+from ensembles import make_precision_solver
 
-# E shape (ncells, nsamples)
-E = np.random.randn(100_000, 100)
-
-eofs, pcs, evals, frac, mean = compute_eofs(E, k=10, method="svd")
-```
-
-Returned arrays:
-
-- `eofs`: spatial EOF patterns, shape `(ncells, k)`
-- `pcs`: principal components per sample, shape `(k, nsamples)`
-- `evals`: eigenvalues (variance), shape `(k,)`
-- `frac`: explained variance fraction, shape `(k,)`
-- `mean`: removed mean field, shape `(ncells,)`
-
----
-
-## Weighted KL decomposition
-
-`compute_weighted_kl(...)` supports weighting (e.g., element volumes) in the inner product.
-
-Typical use:
-
-```python
-from ensembles import compute_weighted_kl
-
-# fields shape (ncells, nsamples)
-# weights shape (ncells,) e.g. element volumes
-Phi, scores, evals, mean = compute_weighted_kl(fields, weights, k=20)
-```
-
----
-
-## KL + PCE surrogate (non-intrusive)
-
-For surrogate modelling, the module contains:
-
-- multi-index generation (`total_degree_multiindex`)
-- orthonormal Hermite/Legendre polynomials
-- design matrix construction (`build_design_matrix`)
-- per-mode PCE fitting (`fit_pce_for_kl_modes`)
-- a compact model container: `KLPCEModel` with:
-  - `fit_kl_pce_model(...)`
-  - `evaluate_kl_pce_surrogate(...)`
-
-High-level pattern:
-
-```python
-from ensembles import fit_kl_pce_model, evaluate_kl_pce_surrogate
-
-model = fit_kl_pce_model(
-    fields=fields,         # (ncells, nsamples)
-    xi=xi,                 # (nsamples, ndims) input random variables
-    weights=weights,       # (ncells,)
-    k_kl=20,
-    pce_degree=3,
+solve_Q = make_precision_solver(
+    R,
+    lam=0.0,
+    lam_mode="scaled_median_diag",
+    lam_alpha=1e-5,      # try 1e-6 … 1e-3
+    precond="ilu",       # typically much better than jacobi for large problems
+    rtol=1e-4,
+    maxiter=20000,
 )
 
-# Evaluate surrogate at new random inputs xi_new (n_new, ndims)
-fields_pred = evaluate_kl_pce_surrogate(model, xi_new)
+x = solve_Q(b)
 ```
 
----
+### Sampling helpers
 
-## Precision solvers / preconditioning (advanced)
-
-Sampling and linear solves involving `RᵀR` can be configured via:
-
-- `make_rtr_preconditioner(...)`
-- `make_sparse_cholesky_precision_solver(...)` (if sparse factorization is available)
-- `make_precision_solver(...)` (dispatches between solvers)
-- `sample_rtr_full_rank(...)`, `sample_rtr_low_rank(...)`
-
-These are intended for large-scale problems where direct dense factorization is impossible.
+If you use functions that ultimately rely on `make_precision_solver` (for example `sample_rtr_full_rank(...)`),
+you can pass the same `lam_mode/lam_alpha/...` arguments to get consistent behaviour.
 
 ---
 
-## License / attribution
+## Notes on solver convergence
 
-If you redistribute, please keep module headers/docstrings intact.
+If you see:
 
-Author: Volker Rath (DIAS)  
-Created by ChatGPT (GPT-5 Thinking) on 2025-12-21 (UTC)
+> `RuntimeError: Iterative solver did not converge within ... iterations`
+
+Typical fixes:
+
+1. Enable/strengthen the diagonal shift: use `lam_mode="scaled_median_diag"` with `lam_alpha=1e-6 … 1e-3`.
+2. Use stronger preconditioning (`precond="ilu"` or `precond="amg"` if available).
+3. Relax tolerances for sampling (`rtol=1e-3 … 1e-4`) if exact solves are not required.
+
+---
+
+## Dependencies
+
+- `numpy`
+- `scipy`
+- Optional:
+  - `pyamg` (if you choose `precond="amg"`)
+  - `sksparse` / CHOLMOD (if you use the CHOLMOD branch for direct solves)
+
+---
+
+## Version / provenance
+
+This README corresponds to the `ensembles.py` found alongside it in this project snapshot.
+
+- Updated: 2026-01-02 (UTC)
+
