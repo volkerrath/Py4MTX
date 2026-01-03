@@ -1,83 +1,121 @@
-# ReadMe_femtic.md
+# FEMTIC resistivity-block model workflow (read → NPZ → modify → write)
 
-`femtic.py` is a unified utility module for FEMTIC-related workflows, including:
+This refactor introduces a clean 3-step workflow for FEMTIC resistivity-block models
+(``resistivity_block_iterX.dat``):
 
-- reading/writing FEMTIC **mesh** and **resistivity block** files
-- conversion to/from compact **NPZ** model files
-- optional export to **VTK/VTU** via PyVista
-- assorted helpers for FEMTIC outputs (roughness matrices, results parsing, etc.)
+1. **Read** FEMTIC model → **NPZ** (self-contained, includes mapping, region table, fixed mask)
+2. **Modify** the NPZ (updates **free regions only**, fixed regions preserved)
+3. **Write** FEMTIC model from NPZ (+ optional updated NPZ copy)
 
----
+The workflow is implemented in `femtic.py` via:
 
-## What’s in this snapshot
+- `read_model_to_npz(...)`
+- `modify_model_npz(...)`
+- `write_model_from_npz(...)`
 
-### Cleanups
-- Removed a duplicate import (`from pathlib import Path`) and minor style cleanups.
+## Fixed regions and sampling compatibility
 
-### No behavioural changes required for your new \(\lambda\) rule
-The new \(\lambda\) selection rule was implemented in **`ensembles.py`**, where the precision
-solver lives. `femtic.py` remains focused on file formats and conversions.
+The NPZ stores:
 
----
+- `fixed_mask` (boolean per region)
+- `free_idx` (indices of regions that may change)
+- `model_free` (free-vector in `model_trans` space, default: log10(ρ))
 
-## Command line interface
+Fixed regions are defined as:
 
-`femtic.py` provides a subcommand-style CLI.
+- region 0 (air) always fixed
+- any region with `flag == 1` fixed
+- region 1 treated as ocean-fixed if `ocean_present` is true
 
-### mesh.dat + resistivity_block → NPZ
+When using precision-matrix sampling, `modify_model_npz(method='precision_sample')`:
 
-```bash
-python femtic.py femtic-to-npz --mesh mesh.dat --rho-block resistivity_block_iter0.dat --out-npz model.npz
-```
+- accepts `R` directly or reads `roughening_matrix.out` via `get_roughness()`
+- supports both `R.shape[1] == n_free` and `R.shape[1] == nreg` (auto-slices to `free_idx`)
+- forwards `lam_mode`, `lam_alpha`, `lam_statistic`, `lam_min` to the sampler in `ensembles.py`
 
-### NPZ → VTU (PyVista)
+## Quick examples
 
-```bash
-python femtic.py npz-to-vtk --npz model.npz --out-vtu model.vtu
-```
-
-### NPZ → FEMTIC files
-
-```bash
-python femtic.py npz-to-femtic --npz model.npz --mesh-out mesh_out.dat --rho-block-out resistivity_block_out.dat
-```
-
----
-
-## Python usage examples
-
-### Convert FEMTIC files to NPZ
+### 1) Read model → NPZ
 
 ```python
-from femtic import mesh_and_block_to_npz
+from femtic import read_model_to_npz
 
-mesh_and_block_to_npz("mesh.dat", "resistivity_block_iter0.dat", "model.npz")
+read_model_to_npz(
+    model_file="resistivity_block_iter0.dat",
+    npz_file="model_iter0.npz",
+    model_trans="log10",
+)
 ```
 
-### Load NPZ as a PyVista grid and export
+### 2a) Modify by adding Gaussian noise (log10-space)
 
 ```python
-from femtic import save_vtk_from_npz
+from femtic import modify_model_npz
 
-save_vtk_from_npz("model.npz", "model.vtu", out_legacy="model.vtk")
+modify_model_npz(
+    npz_in="model_iter0.npz",
+    npz_out="model_iter0_noisy.npz",
+    method="add_noise",
+    add_sigma=0.05,   # log10(ρ) std-dev
+)
 ```
 
----
+### 2b) Modify by precision-matrix sampling (uses roughness matrix)
 
-## Dependencies
+```python
+from femtic import modify_model_npz
 
-- `numpy`
-- `scipy`
-- Optional:
-  - `pyvista` (for VTK/VTU export)
-  - `h5py` (for HDF5 conversion helpers)
-  - `netCDF4` (for NetCDF conversion helpers)
+modify_model_npz(
+    npz_in="model_iter0.npz",
+    npz_out="model_iter0_prior_draw.npz",
+    method="precision_sample",
+    roughness="roughening_matrix.out",
+    lam_mode="scaled_median_diag",
+    lam_alpha=1e-5,
+    solver_method="cg",
+    scale=1.0,
+    add_to_current=True,
+)
+```
 
----
 
-## Version / provenance
+### 2c) Precision sampling with preconditioning (recommended)
 
-This README corresponds to the `femtic.py` found alongside it in this project snapshot.
+`solver_method="cg"` uses iterative solves of `Qx=b`. You can enable preconditioning via
+either:
 
-- Updated: 2026-01-02 (UTC)
+- `precond="jacobi" | "ilu" | "amg" | "identity" | None` (convenience args), or
+- `solver_kwargs={"precond": "...", "precond_kwargs": {...}, "rtol": ..., "maxiter": ...}`.
+
+Notes:
+- `"jacobi"` does **not** form `Q` explicitly and is the safest default.
+- `"ilu"` and `"amg"` require **sparse** `R` (because they build sparse `Q = R.T@R`).
+
+```python
+from femtic import modify_model_npz
+
+modify_model_npz(
+    npz_in="model_iter0.npz",
+    npz_out="model_iter0_prior_draw_pcg.npz",
+    method="precision_sample",
+    roughness="roughening_matrix.out",
+    lam_mode="scaled_median_diag",
+    lam_alpha=1e-5,
+    solver_method="cg",
+    precond="jacobi",
+    scale=1.0,
+)
+```
+
+### 3) Write FEMTIC model from NPZ
+
+```python
+from femtic import write_model_from_npz
+
+write_model_from_npz(
+    npz_file="model_iter0_prior_draw.npz",
+    model_file="resistivity_block_iter0_new.dat",
+    also_write_npz="resistivity_block_iter0_new.npz",
+)
+```
 
