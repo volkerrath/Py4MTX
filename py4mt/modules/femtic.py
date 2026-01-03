@@ -52,6 +52,8 @@ import os
 import sys
 import shutil
 import time
+import json
+import datetime
 from pathlib import Path
 from typing import (
     Callable,
@@ -457,7 +459,7 @@ def insert_model(
                 rho = float(10.0 ** model_arr[model_ptr])
                 model_ptr += 1
 
-            fout.write(_format_region_line(ireg, rho, lo, hi, nn, flag) + "")
+            fout.write(_format_region_line(ireg, rho, lo, hi, nn, flag) + "\n")
 
     if out:
         print(f"File {out_path} successfully written.")
@@ -465,6 +467,613 @@ def insert_model(
             f"insert_model: nreg={nreg}, ocean_present={ocean_present}, "
             f"fixed={n_fixed}, free={n_free}."
         )
+
+
+# ============================================================================
+# SECTION 1B: FEMTIC resistivity-block model workflow (read → NPZ → modify → write)
+# ============================================================================
+
+
+def read_model_to_npz(
+    model_file: str | Path,
+    npz_file: str | Path,
+    *,
+    model_trans: str = "log10",
+    ocean: bool | None = None,
+    air_rho: float = 1.0e9,
+    ocean_rho: float = 2.5e-1,
+    out: bool = True,
+) -> Path:
+    """Read a FEMTIC resistivity block file and write a compact NPZ representation.
+
+    This is step (1) of the 3-step model workflow:
+
+        (1) read FEMTIC model → NPZ
+        (2) modify model in NPZ (free regions only)
+        (3) write FEMTIC model from NPZ (+ updated NPZ)
+
+    The produced NPZ is designed to be **compatible with precision-matrix sampling**
+    conventions:
+
+    - It stores the full region table (ρ, bounds, n, flag) and the element→region
+      mapping, so the file can be reconstructed exactly.
+    - It stores ``fixed_mask`` and ``free_idx`` so downstream modification and
+      sampling can operate strictly on the *free* parameters.
+    - It stores ``model_free`` in the chosen transform space (default: log10(ρ))
+      for direct use as a parameter vector in sampling / inversion.
+
+    Parameters
+    ----------
+    model_file
+        Path to ``resistivity_block_iterX.dat``.
+    npz_file
+        Output NPZ path (written with ``np.savez_compressed``).
+    model_trans
+        Parameterisation for the stored free vector:
+
+        - ``"log10"`` (default): store ``log10(ρ)`` for free regions.
+        - ``"none"`` / ``"rho"``: store ρ in Ωm for free regions.
+    ocean
+        If None (default), infer whether region 1 is an ocean block.
+        If True / False, force the decision.
+    air_rho, ocean_rho
+        Conventional resistivities used when enforcing fixed air/ocean on write.
+        Stored in metadata so later steps are consistent.
+    out
+        If True, print a one-line summary.
+
+    Returns
+    -------
+    Path
+        Path to the written NPZ file.
+
+    Author: Volker Rath (DIAS)
+    Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-02 (UTC)
+    """
+    struct = _read_resistivity_block_struct(
+        model_file=model_file,
+        model_trans=model_trans,
+        ocean=ocean,
+        air_rho=air_rho,
+        ocean_rho=ocean_rho,
+        out=out,
+    )
+    _save_resistivity_block_npz(struct, npz_file=npz_file, out=out)
+    return Path(npz_file)
+
+
+def modify_model_npz(
+    npz_in: str | Path,
+    npz_out: str | Path,
+    *,
+    method: str = "precision_sample",
+    # --- general modifiers
+    set_free: np.ndarray | Sequence[float] | None = None,
+    add_sigma: float | np.ndarray | Sequence[float] | None = None,
+    rng: Generator | None = None,
+    # --- precision sampling options
+    roughness: str | Path | None = None,
+    R: np.ndarray | scipy.sparse.spmatrix | None = None,
+    n_samples: int = 1,
+    add_to_current: bool = True,
+    lam: float = 1.0e-5,
+    lam_mode: str = "fixed",
+    lam_alpha: float | None = None,
+    lam_statistic: str = "median",
+    lam_min: float = 0.0,
+    solver_method: str = "cg",
+    solver_kwargs: dict | None = None,
+    precond: str | None = None,
+    precond_kwargs: dict | None = None,
+    scale: float = 1.0,
+    enforce_air_ocean: bool = True,
+    out: bool = True,
+) -> Path:
+    """Modify a resistivity-block NPZ (free regions only) and write an updated NPZ.
+
+    This is step (2) of the 3-step model workflow.
+
+    The modification always respects fixed regions: **only entries in ``free_idx``**
+    may change. Fixed regions (air/ocean and any ``flag==1`` blocks) are preserved.
+
+    Supported methods
+    -----------------
+    ``method`` (case-insensitive) selects the update rule:
+
+    - ``"set_free"``:
+        Replace the free-parameter vector with ``set_free`` (in the NPZ' transform
+        space, i.e. log10(ρ) by default).
+
+    - ``"add_noise"``:
+        Add i.i.d. Gaussian noise to the free vector:
+            ``m_free_new = m_free + N(0, add_sigma)``
+        where ``add_sigma`` can be a scalar or length ``n_free``.
+
+    - ``"precision_sample"`` (default):
+        Draw a perturbation from the Gaussian prior induced by a roughness matrix:
+
+            δ ~ N(0, (R.T R + λ I)^{-1})
+
+        using the precision-matrix sampler from ``ensembles.py`` (if available).
+        The diagonal shift λ is chosen according to ``lam_mode`` and friends
+        (notably ``lam_mode='scaled_median_diag'``).
+
+        The update is then either:
+
+        - additive: ``m_free_new = m_free + scale * δ`` (default), or
+        - replacement: ``m_free_new = scale * δ`` if ``add_to_current=False``.
+
+    Roughness / precision compatibility
+    -----------------------------------
+    The roughness matrix can be provided in two ways:
+
+    - ``roughness=...``: path to FEMTIC ``roughening_matrix.out`` (parsed with
+      :func:`get_roughness`).
+    - ``R=...``: matrix already in memory.
+
+    The sampler expects the number of columns of R to match the number of model
+    parameters being sampled. This function supports both common situations:
+
+    - ``R.shape[1] == n_free`` (already restricted): used as-is.
+    - ``R.shape[1] == nreg`` (includes fixed): internally sliced to free columns.
+
+    Parameters
+    ----------
+    npz_in, npz_out
+        Input and output NPZ files.
+    method
+        One of ``set_free``, ``add_noise``, ``precision_sample``.
+    set_free
+        Free-parameter vector for ``method='set_free'``.
+    add_sigma
+        Noise level for ``method='add_noise'`` (scalar or length n_free).
+    rng
+        Random number generator. If None, uses ``default_rng()``.
+    roughness, R
+        Roughness matrix source for ``method='precision_sample'``.
+    n_samples
+        Number of samples drawn (only the first is applied; remaining are ignored).
+        This is mainly for convenience / debugging.
+    add_to_current
+        If True (default), add the draw to the current free model. If False, replace.
+    lam, lam_mode, lam_alpha, lam_statistic, lam_min
+        Diagonal shift controls passed to the precision sampler.
+    solver_method, solver_kwargs
+        Precision solver controls passed through to the sampler.
+    precond, precond_kwargs
+        Optional convenience arguments for iterative preconditioning. If provided,
+        they are injected into ``solver_kwargs`` as ``{'precond': precond, 'precond_kwargs': precond_kwargs}``
+        unless those keys are already present.
+    scale
+        Multiplier applied to the draw before applying it to the free model.
+    enforce_air_ocean
+        If True, enforce ``air_rho`` / ``ocean_rho`` for region 0/1 (if ocean-present),
+        regardless of their values in the NPZ.
+    out
+        If True, print status.
+
+    Returns
+    -------
+    Path
+        Path to the updated NPZ.
+
+    Raises
+    ------
+    ValueError
+        If inputs are inconsistent (missing R for precision sampling, size mismatch, etc).
+
+    Author: Volker Rath (DIAS)
+    Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-02 (UTC)
+    """
+    rng = default_rng() if rng is None else rng
+
+    struct = _load_resistivity_block_npz(npz_in)
+    meta = struct["meta"]
+    free_idx = struct["free_idx"]
+    fixed_mask = struct["fixed_mask"]
+    model_trans = meta.get("model_trans", "log10")
+
+    m_free = struct["model_free"].astype(float, copy=True)
+
+    meth = str(method).strip().lower()
+    if meth in {"set", "set_free", "replace"}:
+        if set_free is None:
+            raise ValueError("modify_model_npz(method='set_free'): 'set_free' must be provided.")
+        m_new = np.asarray(set_free, dtype=float).ravel()
+        if m_new.size != m_free.size:
+            raise ValueError(
+                f"modify_model_npz(set_free): size mismatch: got {m_new.size}, expected {m_free.size}."
+            )
+        m_free_new = m_new
+
+    elif meth in {"add_noise", "noise", "gauss", "gaussian"}:
+        if add_sigma is None:
+            raise ValueError("modify_model_npz(method='add_noise'): 'add_sigma' must be provided.")
+        sig = np.asarray(add_sigma, dtype=float)
+        if sig.ndim == 0:
+            eps = rng.standard_normal(size=m_free.size) * float(sig)
+        else:
+            sig = sig.ravel()
+            if sig.size != m_free.size:
+                raise ValueError(
+                    f"modify_model_npz(add_noise): add_sigma must be scalar or length {m_free.size}, got {sig.size}."
+                )
+            eps = rng.standard_normal(size=m_free.size) * sig
+        m_free_new = m_free + eps
+
+    elif meth in {"precision_sample", "precision", "rtr", "prior"}:
+        # Acquire roughness matrix
+        if R is None:
+            if roughness is None:
+                raise ValueError(
+                    "modify_model_npz(method='precision_sample') requires 'R' or 'roughness=...'."
+                )
+            R_use = get_roughness(str(roughness), spformat="csc", out=out)
+        else:
+            R_use = R
+
+        # Restrict to free parameters if required
+        nreg = int(struct["region_rho"].size)
+        nfree = int(free_idx.size)
+        if R_use.shape[1] == nreg:
+            R_use = R_use[:, free_idx]
+        elif R_use.shape[1] != nfree:
+            raise ValueError(
+                "modify_model_npz(precision_sample): R has incompatible number of columns. "
+                f"Got {R_use.shape[1]}, expected {nfree} (free) or {nreg} (all regions)."
+            )
+
+        # Import sampling tools from ensembles.py (preferred implementation)
+        sampler = _import_precision_sampler()
+
+        kw = dict(solver_kwargs or {})
+        if precond is not None and ("precond" not in kw) and ("mprec" not in kw):
+            kw["precond"] = str(precond)
+        if precond_kwargs is not None and ("precond_kwargs" not in kw):
+            kw["precond_kwargs"] = dict(precond_kwargs)
+
+        draw = sampler(
+            R_use,
+            n_samples=int(n_samples),
+            lam=float(lam),
+            solver_method=str(solver_method),
+            solver_kwargs=kw,
+            lam_mode=str(lam_mode),
+            lam_alpha=lam_alpha,
+            lam_statistic=str(lam_statistic),
+            lam_min=float(lam_min),
+            rng=rng,
+        )
+        delta = np.asarray(draw[0], dtype=float).ravel()
+        if delta.size != m_free.size:
+            raise RuntimeError(
+                f"Precision sampler returned wrong size: got {delta.size}, expected {m_free.size}."
+            )
+
+        if add_to_current:
+            m_free_new = m_free + float(scale) * delta
+        else:
+            m_free_new = float(scale) * delta
+
+    else:
+        raise ValueError(f"modify_model_npz: unsupported method={method!r}.")
+
+    # Apply update to region resistivities while preserving fixed regions
+    region_rho = struct["region_rho"].astype(float, copy=True)
+
+    if model_trans.lower() == "log10":
+        rho_free = 10.0 ** m_free_new
+    elif model_trans.lower() in {"none", "rho"}:
+        rho_free = m_free_new
+    else:
+        raise ValueError(f"modify_model_npz: unknown model_trans={model_trans!r} in NPZ meta.")
+
+    region_rho[free_idx] = rho_free
+
+    if enforce_air_ocean:
+        air_rho = float(meta.get("air_rho", 1.0e9))
+        ocean_rho = float(meta.get("ocean_rho", 2.5e-1))
+        ocean_present = bool(meta.get("ocean_present", False))
+        region_rho[0] = air_rho
+        if ocean_present and region_rho.size > 1:
+            region_rho[1] = ocean_rho
+
+    # Store back into struct
+    struct["region_rho"] = region_rho
+    struct["model_free"] = np.asarray(m_free_new, dtype=float)
+    struct["fixed_mask"] = np.asarray(fixed_mask, dtype=bool)
+
+    # History / provenance
+    hist = list(meta.get("history", []))
+    hist.append(
+        {
+            "timestamp_utc": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "action": "modify_model_npz",
+            "method": str(method),
+            "lam_mode": str(lam_mode),
+            "lam": float(lam),
+            "scale": float(scale),
+            "add_to_current": bool(add_to_current),
+        }
+    )
+    meta["history"] = hist
+    struct["meta"] = meta
+
+    _save_resistivity_block_npz(struct, npz_file=npz_out, out=out)
+    return Path(npz_out)
+
+
+def write_model_from_npz(
+    npz_file: str | Path,
+    model_file: str | Path,
+    *,
+    also_write_npz: str | Path | None = None,
+    out: bool = True,
+) -> Path:
+    """Write a FEMTIC resistivity block from an NPZ representation.
+
+    This is step (3) of the 3-step model workflow.
+
+    The output file is a standard ``resistivity_block_iterX.dat``-style block:
+
+    - header line: ``nelem nreg``
+    - element→region mapping (nelem lines)
+    - region table (nreg lines with ρ and metadata)
+
+    Parameters
+    ----------
+    npz_file
+        NPZ produced by :func:`read_model_to_npz` and optionally updated by
+        :func:`modify_model_npz`.
+    model_file
+        Output FEMTIC resistivity block file.
+    also_write_npz
+        If provided, write an additional NPZ copy (useful for provenance when
+        you want the NPZ to sit next to the written FEMTIC file). If None, no
+        extra NPZ is written.
+    out
+        If True, print status.
+
+    Returns
+    -------
+    Path
+        Path to the written FEMTIC model file.
+
+    Author: Volker Rath (DIAS)
+    Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-02 (UTC)
+    """
+    struct = _load_resistivity_block_npz(npz_file)
+    _write_resistivity_block_struct(struct, model_file=model_file, out=out)
+
+    if also_write_npz is not None:
+        _save_resistivity_block_npz(struct, npz_file=also_write_npz, out=out)
+
+    return Path(model_file)
+
+
+def _read_resistivity_block_struct(
+    model_file: str | Path,
+    *,
+    model_trans: str = "log10",
+    ocean: bool | None = None,
+    air_rho: float = 1.0e9,
+    ocean_rho: float = 2.5e-1,
+    out: bool = True,
+) -> dict:
+    """Low-level reader producing a complete in-memory structure for a resistivity block."""
+    model_path = Path(model_file)
+
+    with model_path.open("r", encoding="utf-8", errors="replace") as f:
+        header = f.readline().split()
+        if len(header) < 2:
+            raise ValueError(f"Invalid resistivity block header: {header!r}")
+        nelem = int(header[0])
+        nreg = int(header[1])
+
+        elem_region = np.empty(nelem, dtype=np.int32)
+        for i in range(nelem):
+            parts = f.readline().split()
+            if len(parts) < 2:
+                raise ValueError(f"Invalid element-region line at element {i}: {parts!r}")
+            ie = int(parts[0])
+            ir = int(parts[1])
+            if ie != i:
+                # FEMTIC typically uses 0..nelem-1, but don't hard-fail if different.
+                # We still store in file order.
+                pass
+            elem_region[i] = ir
+
+        region_rho = np.empty(nreg, dtype=np.float64)
+        region_lo = np.empty(nreg, dtype=np.float64)
+        region_hi = np.empty(nreg, dtype=np.float64)
+        region_n = np.empty(nreg, dtype=np.float64)
+        region_flag = np.empty(nreg, dtype=np.int32)
+
+        region_lines: list[str] = []
+        for i in range(nreg):
+            line = f.readline()
+            if not line:
+                raise ValueError(f"Unexpected EOF while reading region lines at i={i}.")
+            ireg, rho, lo, hi, nn, flag = _parse_region_line(line)
+            if ireg != i:
+                raise ValueError(f"Expected region index {i} but got {ireg}.")
+            region_lines.append(line)
+            region_rho[i] = rho
+            region_lo[i] = lo
+            region_hi[i] = hi
+            region_n[i] = nn
+            region_flag[i] = flag
+
+    # Ocean inference (optional)
+    ocean_present = False
+    if nreg > 1:
+        if ocean is None:
+            ocean_present = _infer_ocean_present(region_lines[1])
+        else:
+            ocean_present = bool(ocean)
+
+    fixed_mask = np.zeros(nreg, dtype=bool)
+    fixed_mask[0] = True
+    fixed_mask |= (region_flag == 1)
+    if nreg > 1 and ocean_present:
+        fixed_mask[1] = True
+
+    free_idx = np.where(~fixed_mask)[0].astype(np.int32)
+
+    if model_trans.lower() == "log10":
+        model_free = np.log10(region_rho[free_idx])
+    elif model_trans.lower() in {"none", "rho"}:
+        model_free = region_rho[free_idx].copy()
+    else:
+        raise ValueError(f"Unknown model_trans={model_trans!r}; use 'log10' or 'none'.")
+
+    meta = {
+        "source_model_file": str(model_path),
+        "model_trans": str(model_trans),
+        "ocean_present": bool(ocean_present),
+        "air_rho": float(air_rho),
+        "ocean_rho": float(ocean_rho),
+        "created_utc": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "history": [
+            {
+                "timestamp_utc": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "action": "read_model_to_npz",
+                "model_file": str(model_path),
+            }
+        ],
+    }
+
+    if out:
+        print(
+            f"_read_resistivity_block_struct: file={model_path.name}, nelem={nelem}, nreg={nreg}, "
+            f"ocean_present={ocean_present}, fixed={int(fixed_mask.sum())}, free={int(free_idx.size)}."
+        )
+
+    return {
+        "nelem": int(nelem),
+        "nreg": int(nreg),
+        "elem_region": elem_region,
+        "region_rho": region_rho,
+        "region_lo": region_lo,
+        "region_hi": region_hi,
+        "region_n": region_n,
+        "region_flag": region_flag,
+        "fixed_mask": fixed_mask,
+        "free_idx": free_idx,
+        "model_free": np.asarray(model_free, dtype=np.float64),
+        "meta": meta,
+    }
+
+
+def _write_resistivity_block_struct(struct: dict, model_file: str | Path, *, out: bool = True) -> None:
+    """Low-level writer for the resistivity-block structure."""
+    out_path = Path(model_file)
+
+    nelem = int(struct["nelem"])
+    nreg = int(struct["nreg"])
+    elem_region = np.asarray(struct["elem_region"], dtype=np.int64).ravel()
+    region_rho = np.asarray(struct["region_rho"], dtype=np.float64).ravel()
+    region_lo = np.asarray(struct["region_lo"], dtype=np.float64).ravel()
+    region_hi = np.asarray(struct["region_hi"], dtype=np.float64).ravel()
+    region_n = np.asarray(struct["region_n"], dtype=np.float64).ravel()
+    region_flag = np.asarray(struct["region_flag"], dtype=np.int64).ravel()
+
+    if elem_region.size != nelem:
+        raise ValueError(f"_write_resistivity_block_struct: elem_region size mismatch: {elem_region.size} vs {nelem}.")
+    if region_rho.size != nreg:
+        raise ValueError(f"_write_resistivity_block_struct: region arrays size mismatch: {region_rho.size} vs {nreg}.")
+
+    with out_path.open("w", encoding="utf-8") as f:
+        f.write(f"{nelem:10d} {nreg:10d}\n")
+        for i in range(nelem):
+            f.write(f"{i:10d} {int(elem_region[i]):10d}\n")
+        for i in range(nreg):
+            f.write(
+                _format_region_line(
+                    ireg=int(i),
+                    rho=float(region_rho[i]),
+                    rho_lower=float(region_lo[i]),
+                    rho_upper=float(region_hi[i]),
+                    n=float(region_n[i]),
+                    flag=int(region_flag[i]),
+                )
+                + "\n"
+            )
+
+    if out:
+        print(f"_write_resistivity_block_struct: wrote {out_path} (nelem={nelem}, nreg={nreg}).")
+
+
+def _save_resistivity_block_npz(struct: dict, *, npz_file: str | Path, out: bool = True) -> None:
+    """Save resistivity-block structure to NPZ with JSON metadata."""
+    npz_path = Path(npz_file)
+
+    meta_json = json.dumps(struct["meta"], sort_keys=True)
+    np.savez_compressed(
+        npz_path,
+        nelem=np.asarray(struct["nelem"], dtype=np.int64),
+        nreg=np.asarray(struct["nreg"], dtype=np.int64),
+        elem_region=np.asarray(struct["elem_region"], dtype=np.int32),
+        region_rho=np.asarray(struct["region_rho"], dtype=np.float64),
+        region_lo=np.asarray(struct["region_lo"], dtype=np.float64),
+        region_hi=np.asarray(struct["region_hi"], dtype=np.float64),
+        region_n=np.asarray(struct["region_n"], dtype=np.float64),
+        region_flag=np.asarray(struct["region_flag"], dtype=np.int32),
+        fixed_mask=np.asarray(struct["fixed_mask"], dtype=np.bool_),
+        free_idx=np.asarray(struct["free_idx"], dtype=np.int32),
+        model_free=np.asarray(struct["model_free"], dtype=np.float64),
+        meta_json=np.asarray(meta_json, dtype=object),
+    )
+
+    if out:
+        print(f"_save_resistivity_block_npz: wrote {npz_path}.")
+
+
+def _load_resistivity_block_npz(npz_file: str | Path) -> dict:
+    """Load resistivity-block NPZ created by :func:`read_model_to_npz`."""
+    p = Path(npz_file)
+    with np.load(p, allow_pickle=True) as z:
+        meta_json = z["meta_json"].item()
+        meta = json.loads(meta_json) if isinstance(meta_json, str) else json.loads(str(meta_json))
+        return {
+            "nelem": int(np.asarray(z["nelem"]).ravel()[0]),
+            "nreg": int(np.asarray(z["nreg"]).ravel()[0]),
+            "elem_region": np.asarray(z["elem_region"], dtype=np.int32),
+            "region_rho": np.asarray(z["region_rho"], dtype=np.float64),
+            "region_lo": np.asarray(z["region_lo"], dtype=np.float64),
+            "region_hi": np.asarray(z["region_hi"], dtype=np.float64),
+            "region_n": np.asarray(z["region_n"], dtype=np.float64),
+            "region_flag": np.asarray(z["region_flag"], dtype=np.int32),
+            "fixed_mask": np.asarray(z["fixed_mask"], dtype=bool),
+            "free_idx": np.asarray(z["free_idx"], dtype=np.int32),
+            "model_free": np.asarray(z["model_free"], dtype=np.float64),
+            "meta": meta,
+        }
+
+
+def _import_precision_sampler() -> Callable[..., np.ndarray]:
+    """Import the preferred precision-matrix sampler from ``ensembles.py``.
+
+    Returns a function with signature compatible with::
+
+        sampler(R, n_samples=..., lam=..., solver_method=..., solver_kwargs=...,
+                lam_mode=..., lam_alpha=..., lam_statistic=..., lam_min=..., rng=...)
+
+    The current preferred implementation is ``ensembles.sample_rtr_full_rank``.
+    """
+    try:
+        # Local import to avoid hard dependency during non-UQ use.
+        import ensembles  # type: ignore
+
+        if hasattr(ensembles, "sample_rtr_full_rank"):
+            return ensembles.sample_rtr_full_rank  # type: ignore[attr-defined]
+        raise ImportError("ensembles.sample_rtr_full_rank not found.")
+    except Exception as exc:  # pragma: no cover
+        raise ImportError(
+            "Precision sampler not available. Ensure ensembles.py is importable "
+            "and provides sample_rtr_full_rank (cleaned version with lam_mode support)."
+        ) from exc
+
 
 def modify_data_fcn(
     template_file: str = "observe.dat",
