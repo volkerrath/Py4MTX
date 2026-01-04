@@ -2243,6 +2243,400 @@ def build_element_arrays(
     }
 
 
+
+def _rotation_matrix_zyx(angles_deg: Sequence[float]) -> np.ndarray:
+    """Return a 3x3 rotation matrix for intrinsic Z-Y-X (yaw-pitch-roll) rotations.
+
+    Parameters
+    ----------
+    angles_deg : sequence of float
+        Three angles in degrees interpreted as ``(yaw_z, pitch_y, roll_x)``.
+        The rotations are applied in the order:
+
+            1) yaw about global z-axis
+            2) pitch about global y-axis
+            3) roll about global x-axis
+
+        The returned matrix ``R`` maps **local** coordinates to **global** coordinates:
+
+            p_global = R @ p_local
+
+        Therefore, to transform a global point into the local ellipsoid frame, use:
+
+            p_local = R.T @ (p_global - center)
+
+    Returns
+    -------
+    ndarray, shape (3, 3)
+        Rotation matrix.
+
+    Notes
+    -----
+    This convention is chosen because it is common in geoscience workflows and easy
+    to invert (via transpose). If you need a different convention, implement a
+    dedicated helper and use it in :func:`ellipsoid_mask`.
+    """
+    ang = np.asarray(list(angles_deg), dtype=float).ravel()
+    if ang.size != 3:
+        raise ValueError(f"_rotation_matrix_zyx: expected 3 angles, got {ang.size}.")
+    yaw, pitch, roll = np.deg2rad(ang)
+
+    cz, sz = float(np.cos(yaw)), float(np.sin(yaw))
+    cy, sy = float(np.cos(pitch)), float(np.sin(pitch))
+    cx, sx = float(np.cos(roll)), float(np.sin(roll))
+
+    Rz = np.array([[cz, -sz, 0.0], [sz, cz, 0.0], [0.0, 0.0, 1.0]], dtype=float)
+    Ry = np.array([[cy, 0.0, sy], [0.0, 1.0, 0.0], [-sy, 0.0, cy]], dtype=float)
+    Rx = np.array([[1.0, 0.0, 0.0], [0.0, cx, -sx], [0.0, sx, cx]], dtype=float)
+
+    # Intrinsic Z-Y-X
+    return Rz @ Ry @ Rx
+
+
+def _rotation_matrix_sds(angles_deg: Sequence[float]) -> np.ndarray:
+    """Return a 3x3 rotation matrix for strike/dip/slant angles.
+
+    Parameters
+    ----------
+    angles_deg : sequence of float
+        Three angles in degrees interpreted as ``(strike, dip, slant)``.
+
+        This uses a common geophysical Euler-angle convention:
+
+            R = Rz(strike) @ Rx(dip) @ Rz(slant)
+
+        where rotations are **right-handed** about the indicated axes, and the
+        returned matrix ``R`` maps **local** coordinates to **global** coordinates:
+
+            p_global = R @ p_local
+
+        To transform a global point into the local ellipsoid frame:
+
+            p_local = R.T @ (p_global - center)
+
+    Returns
+    -------
+    ndarray, shape (3, 3)
+        Rotation matrix.
+
+    Notes
+    -----
+    The meaning of strike depends on your coordinate system. This implementation
+    treats ``strike`` as a right-handed rotation about the +z axis in the model
+    coordinate system.
+
+    If your strike is defined clockwise from North (common in geology), convert
+    to a mathematical CCW-from +x convention before calling, e.g.:
+
+        strike_math = 90.0 - strike_geo
+    """
+    ang = np.asarray(list(angles_deg), dtype=float).ravel()
+    if ang.size != 3:
+        raise ValueError(f"_rotation_matrix_sds: expected 3 angles, got {ang.size}.")
+    strike, dip, slant = np.deg2rad(ang)
+
+    cz1, sz1 = float(np.cos(strike)), float(np.sin(strike))
+    cx, sx = float(np.cos(dip)), float(np.sin(dip))
+    cz2, sz2 = float(np.cos(slant)), float(np.sin(slant))
+
+    Rz1 = np.array([[cz1, -sz1, 0.0], [sz1, cz1, 0.0], [0.0, 0.0, 1.0]], dtype=float)
+    Rx = np.array([[1.0, 0.0, 0.0], [0.0, cx, -sx], [0.0, sx, cx]], dtype=float)
+    Rz2 = np.array([[cz2, -sz2, 0.0], [sz2, cz2, 0.0], [0.0, 0.0, 1.0]], dtype=float)
+
+    return Rz1 @ Rx @ Rz2
+
+
+def ellipsoid_mask(
+    centroids: np.ndarray,
+    *,
+    center: Sequence[float],
+    axes: Sequence[float],
+    angles_deg: Sequence[float] = (0.0, 0.0, 0.0),
+    convention: Literal["zyx", "sds"] = "zyx",
+) -> np.ndarray:
+    """Compute a boolean mask for points inside a rotated ellipsoid.
+
+    Parameters
+    ----------
+    centroids : ndarray, shape (n, 3)
+        Point coordinates (typically element centroids).
+    center : sequence of float
+        Ellipsoid centre ``(cx, cy, cz)`` in the same coordinate system as centroids.
+    axes : sequence of float
+        Semi-axis lengths ``(a, b, c)``. Must be positive.
+    angles_deg : sequence of float, optional
+        Rotation angles in degrees. Interpretation depends on ``convention``.
+        Default is no rotation.
+    convention : {"zyx", "sds"}
+        Rotation convention.
+
+        - ``"zyx"``: intrinsic Z-Y-X (yaw, pitch, roll), see :func:`_rotation_matrix_zyx`.
+        - ``"sds"``: strike/dip/slant, see :func:`_rotation_matrix_sds`.
+
+    Returns
+    -------
+    ndarray, shape (n,)
+        Boolean mask where True indicates the point lies inside (or on) the ellipsoid:
+
+            (x/a)^2 + (y/b)^2 + (z/c)^2 <= 1
+
+        after translating by ``center`` and rotating into the ellipsoid frame.
+
+    Raises
+    ------
+    ValueError
+        If input shapes or parameters are invalid.
+    """
+    pts = np.asarray(centroids, dtype=float)
+    if pts.ndim != 2 or pts.shape[1] != 3:
+        raise ValueError(f"ellipsoid_mask: centroids must have shape (n,3); got {pts.shape}.")
+
+    c = np.asarray(list(center), dtype=float).ravel()
+    if c.size != 3:
+        raise ValueError(f"ellipsoid_mask: center must have length 3; got {c.size}.")
+
+    ax = np.asarray(list(axes), dtype=float).ravel()
+    if ax.size != 3:
+        raise ValueError(f"ellipsoid_mask: axes must have length 3; got {ax.size}.")
+    if np.any(ax <= 0.0) or not np.all(np.isfinite(ax)):
+        raise ValueError("ellipsoid_mask: axes must be finite and > 0.")
+
+    conv = str(convention).strip().lower()
+    if conv == "zyx":
+        R = _rotation_matrix_zyx(angles_deg)
+    elif conv == "sds":
+        R = _rotation_matrix_sds(angles_deg)
+    else:
+        raise ValueError(f"ellipsoid_mask: unsupported convention={convention!r}.")
+
+    # Transform to local ellipsoid coordinates: p_local = R^T (p - c)
+    local = (pts - c[None, :]) @ R  # (p-c) @ R == (R^T (p-c))^T, but we need per-row
+    # Above uses row-vectors; equivalent to local_i = (p_i-c) * R
+    # Test quadratic form
+    q = (local[:, 0] / ax[0]) ** 2 + (local[:, 1] / ax[1]) ** 2 + (local[:, 2] / ax[2]) ** 2
+    return q <= 1.0
+
+
+def ellipsoid_fill_element_npz(
+    npz_in: str | Path,
+    npz_out: str | Path,
+    *,
+    center: Sequence[float],
+    axes: Sequence[float],
+    angles_deg: Sequence[float] = (0.0, 0.0, 0.0),
+    angle_convention: Literal["zyx", "sds"] = "zyx",
+    fill_value: float,
+    fill_space: Literal["log10", "rho"] = "log10",
+    fill_flag: int = 0,
+    fill_bounds: tuple[float, float] | None = None,
+    fill_n: float = 1.0,
+    respect_fixed: bool = True,
+    out: bool = True,
+) -> Path:
+    """Fill an ellipsoidal region (by element centroids) in an *element* NPZ model.
+
+    This helper operates on the NPZ format produced by :func:`mesh_and_block_to_npz`,
+    i.e. the file that contains:
+
+    - ``nodes``, ``conn`` (mesh)
+    - ``region_of_elem`` and per-region tables (``region_rho``, bounds, flags, ...)
+    - per-element arrays (``centroid``, ``log10_resistivity``, ...)
+
+    Because FEMTIC resistivity blocks are region-based, a *spatially local* edit is
+    implemented by:
+
+    1) creating a **new region** with the requested resistivity (``fill_value``),
+    2) re-assigning elements whose centroids fall inside the ellipsoid to that new region,
+    3) updating the per-element arrays so they remain consistent.
+
+    Fixed-region compatibility
+    --------------------------
+    If ``respect_fixed=True`` (default), elements belonging to fixed regions are not
+    re-assigned. Fixed regions are defined as:
+
+    - region 0 (air) always treated as fixed for this operation
+    - any region with ``region_flag == 1``
+
+    Parameters
+    ----------
+    npz_in, npz_out
+        Input and output NPZ paths.
+    center, axes, angles_deg, angle_convention
+        Ellipsoid parameters; see :func:`ellipsoid_mask`.
+    fill_value
+        Fill value for the new region. Interpreted according to ``fill_space``.
+    fill_space
+        ``"log10"`` (default) means ``fill_value`` is log10(ρ) and is converted to ρ.
+        ``"rho"`` means ``fill_value`` is ρ in Ωm.
+    fill_flag
+        Region flag for the new region (default 0 = free). Use 1 to make the filled
+        region fixed in subsequent workflows.
+    fill_bounds
+        Optional (rho_lower, rho_upper) bounds for the new region (in Ωm). If None,
+        bounds are set equal to the fill resistivity.
+    fill_n
+        Region ``n`` value written for the new region (stored as float).
+    respect_fixed
+        If True, do not re-assign elements that belong to fixed regions.
+    out
+        If True, print a one-line summary.
+
+    Returns
+    -------
+    Path
+        Path to the written NPZ.
+
+    Raises
+    ------
+    KeyError
+        If required NPZ fields are missing.
+    ValueError
+        If shapes/parameters are inconsistent.
+
+    Author: Volker Rath (DIAS)
+    Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-03 (UTC)
+    """
+    p_in = Path(npz_in)
+    with np.load(p_in, allow_pickle=True) as z:
+        data = {k: z[k] for k in z.files}
+
+    required = [
+        "nodes",
+        "conn",
+        "region_of_elem",
+        "region_rho",
+        "region_rho_lower",
+        "region_rho_upper",
+        "region_n",
+        "region_flag",
+    ]
+    missing = [k for k in required if k not in data]
+    if missing:
+        raise KeyError(f"ellipsoid_fill_element_npz: NPZ missing required fields: {missing}")
+
+    nodes = np.asarray(data["nodes"], dtype=float)
+    conn = np.asarray(data["conn"], dtype=int)
+    region_of_elem = np.asarray(data["region_of_elem"], dtype=int).ravel()
+
+    nelem = int(region_of_elem.size)
+    if conn.shape[0] != nelem:
+        raise ValueError(
+            "ellipsoid_fill_element_npz: conn and region_of_elem inconsistent: "
+            f"conn has {conn.shape[0]} elements, region_of_elem has {nelem}."
+        )
+
+    # Centroids: use stored centroids if present, otherwise compute.
+    if "centroid" in data:
+        centroid = np.asarray(data["centroid"], dtype=float)
+        if centroid.shape != (nelem, 3):
+            raise ValueError(
+                f"ellipsoid_fill_element_npz: centroid shape mismatch: {centroid.shape} vs ({nelem},3)."
+            )
+    else:
+        centroid = nodes[conn].mean(axis=1)
+
+    # Compute mask for elements inside ellipsoid
+    inside = ellipsoid_mask(centroid, center=center, axes=axes, angles_deg=angles_deg, convention=angle_convention)
+
+    region_rho = np.asarray(data["region_rho"], dtype=float).ravel()
+    region_rho_lo = np.asarray(data["region_rho_lower"], dtype=float).ravel()
+    region_rho_hi = np.asarray(data["region_rho_upper"], dtype=float).ravel()
+    region_n = np.asarray(data["region_n"], dtype=float).ravel()
+    region_flag = np.asarray(data["region_flag"], dtype=int).ravel()
+
+    nreg_old = int(region_rho.size)
+    if any(arr.size != nreg_old for arr in [region_rho_lo, region_rho_hi, region_n, region_flag]):
+        raise ValueError("ellipsoid_fill_element_npz: region arrays must all have length nreg.")
+
+    # Determine elements allowed to change
+    if respect_fixed:
+        fixed_regions = set([0])
+        fixed_regions.update(np.where(region_flag == 1)[0].tolist())
+        can_change = ~np.isin(region_of_elem, np.asarray(sorted(fixed_regions), dtype=int))
+        sel = inside & can_change
+    else:
+        sel = inside
+
+    # Convert fill value to rho
+    fs = str(fill_space).strip().lower()
+    if fs == "log10":
+        rho_fill = float(10.0 ** float(fill_value))
+    elif fs in {"rho", "none"}:
+        rho_fill = float(fill_value)
+    else:
+        raise ValueError(f"ellipsoid_fill_element_npz: fill_space must be 'log10' or 'rho', got {fill_space!r}.")
+
+    if not np.isfinite(rho_fill) or rho_fill <= 0.0:
+        raise ValueError("ellipsoid_fill_element_npz: fill resistivity must be finite and > 0.")
+
+    if fill_bounds is None:
+        rho_lo_fill = rho_fill
+        rho_hi_fill = rho_fill
+    else:
+        rho_lo_fill = float(fill_bounds[0])
+        rho_hi_fill = float(fill_bounds[1])
+
+    # Append new region
+    new_reg = nreg_old
+    region_rho = np.concatenate([region_rho, np.array([rho_fill], dtype=float)])
+    region_rho_lo = np.concatenate([region_rho_lo, np.array([rho_lo_fill], dtype=float)])
+    region_rho_hi = np.concatenate([region_rho_hi, np.array([rho_hi_fill], dtype=float)])
+    region_n = np.concatenate([region_n, np.array([float(fill_n)], dtype=float)])
+    region_flag = np.concatenate([region_flag, np.array([int(fill_flag)], dtype=int)])
+
+    # Reassign selected elements to new region
+    region_of_elem_new = region_of_elem.copy()
+    region_of_elem_new[sel] = int(new_reg)
+
+    # Update derived per-element arrays if they exist
+    rid = region_of_elem_new
+    clip_eps = 1.0e-30
+    rho_clip = np.clip(region_rho, clip_eps, np.inf)
+    rho_lo_clip = np.clip(region_rho_lo, clip_eps, np.inf)
+    rho_hi_clip = np.clip(region_rho_hi, clip_eps, np.inf)
+
+    log10_rho = np.log10(rho_clip[rid])
+    log10_rho_lo = np.log10(rho_lo_clip[rid])
+    log10_rho_hi = np.log10(rho_hi_clip[rid])
+    flag_elem = region_flag[rid]
+    n_elem = region_n[rid]
+
+    # Write output NPZ preserving all keys, updating the consistent ones
+    data["nreg"] = np.array(int(new_reg + 1), dtype=int)
+    data["region_rho"] = region_rho
+    data["region_rho_lower"] = region_rho_lo
+    data["region_rho_upper"] = region_rho_hi
+    data["region_n"] = region_n
+    data["region_flag"] = region_flag
+    data["region_of_elem"] = region_of_elem_new
+
+    if "region" in data:
+        data["region"] = region_of_elem_new
+    if "log10_resistivity" in data:
+        data["log10_resistivity"] = log10_rho
+    if "rho_lower" in data:
+        data["rho_lower"] = log10_rho_lo
+    if "rho_upper" in data:
+        data["rho_upper"] = log10_rho_hi
+    if "flag" in data:
+        data["flag"] = flag_elem
+    if "n" in data:
+        data["n"] = n_elem
+    if "centroid" not in data:
+        data["centroid"] = centroid
+
+    p_out = Path(npz_out)
+    np.savez_compressed(p_out, **data)
+
+    if out:
+        n_inside = int(inside.sum())
+        n_sel = int(sel.sum())
+        print(
+            f"ellipsoid_fill_element_npz: in={p_in.name}, out={p_out.name}, "
+            f"inside={n_inside}, modified={n_sel}, new_region={new_reg}."
+        )
+
+    return p_out
 def save_element_npz_with_mesh_and_regions(
     out_path: str,
     nodes: np.ndarray,
@@ -3855,6 +4249,87 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         help='Float format for resistivity and bounds (default "{:.6g}").',
     )
 
+    # npz-ellipsoid-fill
+    p_ell = sub.add_parser(
+        "npz-ellipsoid-fill",
+        help="Create a new region and fill an ellipsoid (by element centroids) in an element NPZ model.",
+    )
+    p_ell.add_argument("npz_in", help="Input element NPZ (from mesh-and-block-to-npz).")
+    p_ell.add_argument("npz_out", help="Output element NPZ.")
+    p_ell.add_argument(
+        "--center",
+        nargs=3,
+        type=float,
+        required=True,
+        metavar=("CX", "CY", "CZ"),
+        help="Ellipsoid center (cx cy cz) in model coordinates.",
+    )
+    p_ell.add_argument(
+        "--axes",
+        nargs=3,
+        type=float,
+        required=True,
+        metavar=("A", "B", "C"),
+        help="Ellipsoid semi-axes (a b c), must be > 0.",
+    )
+    p_ell.add_argument(
+        "--angles",
+        nargs=3,
+        type=float,
+        default=(0.0, 0.0, 0.0),
+        metavar=("A1", "A2", "A3"),
+        help="Rotation angles in degrees. Interpretation depends on --angle-convention.",
+    )
+
+    p_ell.add_argument(
+        "--angle-convention",
+        choices=["zyx", "sds"],
+        default="zyx",
+        help=(
+            "Angle convention for --angles: "
+            "'zyx' = intrinsic Z-Y-X (yaw, pitch, roll); "
+            "'sds' = strike/dip/slant (Rz(strike)@Rx(dip)@Rz(slant))."
+        ),
+    )
+    p_ell.add_argument(
+        "--fill",
+        type=float,
+        required=True,
+        help="Fill value (interpretation depends on --fill-space).",
+    )
+    p_ell.add_argument(
+        "--fill-space",
+        choices=["log10", "rho"],
+        default="log10",
+        help="Interpretation of --fill: 'log10' (default) or 'rho' (Ohm m).",
+    )
+    p_ell.add_argument(
+        "--fill-flag",
+        type=int,
+        default=0,
+        choices=[0, 1],
+        help="Flag for the new region: 0=free (default), 1=fixed.",
+    )
+    p_ell.add_argument(
+        "--fill-bounds",
+        nargs=2,
+        type=float,
+        default=None,
+        metavar=("RHO_LO", "RHO_HI"),
+        help="Optional bounds for the new region (rho_lower rho_upper) in Ohm m.",
+    )
+    p_ell.add_argument(
+        "--fill-n",
+        type=float,
+        default=1.0,
+        help="Optional 'n' value for the new region (default 1.0).",
+    )
+    p_ell.add_argument(
+        "--no-respect-fixed",
+        action="store_true",
+        help="If set, also modify elements in fixed regions (NOT recommended).",
+    )
+
     args = ap.parse_args(list(argv) if argv is not None else None)
 
     if args.cmd == "femtic-to-npz":
@@ -3897,6 +4372,25 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
         print("Wrote mesh to:", args.mesh_out)
         print("Wrote resistivity block to:", args.rho_block_out)
+        return 0
+
+    if args.cmd == "npz-ellipsoid-fill":
+        ellipsoid_fill_element_npz(
+            args.npz_in,
+            args.npz_out,
+            center=args.center,
+            axes=args.axes,
+            angles_deg=args.angles,
+            angle_convention=args.angle_convention,
+            fill_value=args.fill,
+            fill_space=args.fill_space,
+            fill_flag=args.fill_flag,
+            fill_bounds=tuple(args.fill_bounds) if args.fill_bounds is not None else None,
+            fill_n=args.fill_n,
+            respect_fixed=not args.no_respect_fixed,
+            out=True,
+        )
+        print("Wrote NPZ:", args.npz_out)
         return 0
 
     ap.error(f"Unknown command {args.cmd!r}")
