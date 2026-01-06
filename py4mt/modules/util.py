@@ -27,6 +27,43 @@ import pyproj
 from pyproj import CRS, database, Transformer
 from scipy.fftpack import dct, idct
 
+from types import ModuleType
+from typing import List
+
+"""
+Utility: module_introspection.py
+Author: Volker Rath (DIAS)
+Copilot (version) and date: <auto-filled>
+
+Provides utilities for introspecting Python modules.
+"""
+def list_module_callables(module: ModuleType, public_only: bool = False) -> List[str]:
+    """
+    Return a list of callable objects defined in a module.
+
+    Parameters
+    ----------
+    module : ModuleType
+        The module to inspect.
+    public_only : bool, optional
+        If True, exclude names starting with '_'.
+
+    Returns
+    -------
+    List[str]
+        Sorted list of callable names defined in the module.
+    """
+    callables = [
+        name for name, obj in inspect.getmembers(module)
+        if callable(obj) and obj.__module__ == module.__name__
+    ]
+
+    if public_only:
+        callables = [name for name in callables if not name.startswith("_")]
+
+    return sorted(callables)
+
+
 def stop(s: str = ''):
     '''
     Simple stopping utility
@@ -412,7 +449,7 @@ def unique(list, out=False):
     VR 9/20
     '''
 
-    # intilize a null list
+    # intialize a null list
     unique_list = []
 
     # traverse for all elements
@@ -517,6 +554,18 @@ def strreplace(key_in=None, key_out=None, fname_in=None, fname_out=None):
     VR 9/20
 
     '''
+    if key_in is None:
+        sys.exit('strreplace: input key.missing!')
+
+    if key_out is None:
+        sys.exit('strreplace: output key.missing!')
+
+    if fname_in is None:
+        sys.exit('strreplace: input file not given!')
+
+    if fname_out is None:
+        fname_out = fname_in
+        print('strreplace: warning outpu file overwrites input file!')
 
     with open(fname_in, 'r') as fin, open(fname_out, 'w') as fou:
         for line in fin:
