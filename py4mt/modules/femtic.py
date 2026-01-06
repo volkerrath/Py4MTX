@@ -3863,6 +3863,225 @@ def sites_as_dict_list(parsed: dict[str, Any]) -> list[dict[str, Any]]:
     return sites
 
 
+def _site_header_to_meta(site_header_tokens: list[str]) -> dict[str, Any]:
+    """
+    Parse FEMTIC site header tokens (length 4) into a small metadata dict.
+
+    Parameters
+    ----------
+    site_header_tokens : list of str
+        Exactly 4 tokens as read from observe.dat.
+
+    Returns
+    -------
+    meta : dict
+        Contains:
+        - name : str
+        - xyz  : ndarray shape (3,) if tokens[1:4] parse as float, else None
+        - raw_tokens : list[str]
+    """
+    name = str(site_header_tokens[0])
+    xyz = None
+    try:
+        xyz = np.asarray([float(site_header_tokens[1]), float(site_header_tokens[2]), float(site_header_tokens[3])], dtype=float)
+    except Exception:
+        xyz = None
+    return {"name": name, "xyz": xyz, "raw_tokens": site_header_tokens[:]}
+
+
+def _mt_arrays_to_complex_tensors(
+    data: np.ndarray,
+    err: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Convert MT real/imag pair arrays to complex 2x2 tensors per frequency.
+
+    Parameters
+    ----------
+    data : ndarray, shape (nfreq, 8)
+        Columns: Zxx_re, Zxx_im, Zxy_re, Zxy_im, Zyx_re, Zyx_im, Zyy_re, Zyy_im
+    err : ndarray, shape (nfreq, 8)
+        Same ordering as data, standard deviations for each real/imag component.
+
+    Returns
+    -------
+    Z : ndarray, shape (nfreq, 2, 2), complex128
+        Complex impedance tensor per frequency.
+    Zerr : ndarray, shape (nfreq, 2, 2), complex128
+        Complex “error tensor” with std(Re) + i*std(Im) for each component.
+    """
+    d = np.asarray(data, dtype=float)
+    e = np.asarray(err, dtype=float)
+    if d.shape[1] != 8 or e.shape[1] != 8:
+        raise ValueError("_mt_arrays_to_complex_tensors: expected (nfreq, 8) for MT data/error.")
+
+    Zxx = d[:, 0] + 1j * d[:, 1]
+    Zxy = d[:, 2] + 1j * d[:, 3]
+    Zyx = d[:, 4] + 1j * d[:, 5]
+    Zyy = d[:, 6] + 1j * d[:, 7]
+
+    Z = np.empty((d.shape[0], 2, 2), dtype=np.complex128)
+    Z[:, 0, 0] = Zxx
+    Z[:, 0, 1] = Zxy
+    Z[:, 1, 0] = Zyx
+    Z[:, 1, 1] = Zyy
+
+    Zxxe = e[:, 0] + 1j * e[:, 1]
+    Zxye = e[:, 2] + 1j * e[:, 3]
+    Zyxe = e[:, 4] + 1j * e[:, 5]
+    Zyye = e[:, 6] + 1j * e[:, 7]
+
+    Zerr = np.empty((e.shape[0], 2, 2), dtype=np.complex128)
+    Zerr[:, 0, 0] = Zxxe
+    Zerr[:, 0, 1] = Zxye
+    Zerr[:, 1, 0] = Zyxe
+    Zerr[:, 1, 1] = Zyye
+
+    return Z, Zerr
+
+
+def _mt_rhoa_phase_from_Z(
+    freq: np.ndarray,
+    Z: np.ndarray,
+    Zerr: np.ndarray | None = None,
+    *,
+    n_mc: int = 200,
+    seed: int = 0,
+) -> dict[str, Any]:
+    """
+    Compute apparent resistivity and phase from complex impedance tensors.
+
+    Uses:
+        rhoa = |Z|^2 / (mu0 * omega),  omega = 2*pi*f
+        phase = atan2(Im(Z), Re(Z)) in degrees
+
+    If Zerr is provided, uncertainty is estimated by Monte Carlo assuming
+    independent Gaussian errors in Re and Im with std given by Zerr.
+
+    Parameters
+    ----------
+    freq : ndarray, shape (nfreq,)
+        Frequencies in Hz.
+    Z : ndarray, shape (nfreq, 2, 2)
+        Complex impedance tensor.
+    Zerr : ndarray, shape (nfreq, 2, 2), optional
+        Complex error tensor std(Re) + i*std(Im) per component.
+    n_mc : int
+        Number of Monte Carlo draws (per frequency) for derived error estimates.
+    seed : int
+        RNG seed.
+
+    Returns
+    -------
+    out : dict
+        Keys:
+        - rhoa : ndarray (nfreq, 2, 2)
+        - phase_deg : ndarray (nfreq, 2, 2)
+        - rhoa_err : ndarray (nfreq, 2, 2) or None
+        - phase_err_deg : ndarray (nfreq, 2, 2) or None
+    """
+    f = np.asarray(freq, dtype=float).ravel()
+    if f.ndim != 1:
+        raise ValueError("_mt_rhoa_phase_from_Z: freq must be 1D.")
+    if Z.shape[0] != f.size:
+        raise ValueError("_mt_rhoa_phase_from_Z: Z and freq size mismatch.")
+
+    mu0 = 4.0e-7 * np.pi
+    omega = 2.0 * np.pi * f
+    omega = omega[:, None, None]
+
+    absZ2 = np.abs(Z) ** 2
+    rhoa = absZ2 / (mu0 * omega)
+    phase_deg = np.degrees(np.arctan2(Z.imag, Z.real))
+
+    rhoa_err = None
+    phase_err_deg = None
+
+    if Zerr is not None and n_mc > 0:
+        rng = default_rng(int(seed))
+        sig_re = np.asarray(Zerr.real, dtype=float)
+        sig_im = np.asarray(Zerr.imag, dtype=float)
+
+        rhoa_samp = np.empty((n_mc, f.size, 2, 2), dtype=float)
+        ph_samp = np.empty((n_mc, f.size, 2, 2), dtype=float)
+
+        # vectorized MC: draw Re/Im perturbations
+        for j in range(n_mc):
+            d_re = rng.normal(loc=0.0, scale=sig_re)
+            d_im = rng.normal(loc=0.0, scale=sig_im)
+            Zj = (Z.real + d_re) + 1j * (Z.imag + d_im)
+
+            rhoa_samp[j, ...] = (np.abs(Zj) ** 2) / (mu0 * omega)
+            ph_samp[j, ...] = np.degrees(np.arctan2(Zj.imag, Zj.real))
+
+        rhoa_err = rhoa_samp.std(axis=0, ddof=1)
+        phase_err_deg = ph_samp.std(axis=0, ddof=1)
+
+    return {
+        "rhoa": rhoa,
+        "phase_deg": phase_deg,
+        "rhoa_err": rhoa_err,
+        "phase_err_deg": phase_err_deg,
+    }
+
+
+def observe_to_site_viz_list(
+    observe_path: str,
+    *,
+    obs_type: Literal["MT", "VTF", "PT"] = "MT",
+    compute_mt_derived: bool = True,
+    bootstrap_n: int = 200,
+    bootstrap_seed: int = 0,
+    add_rhoa_phase: bool = True,
+    mc_n: int = 200,
+) -> list[dict[str, Any]]:
+    """
+    Read observe.dat and return a per-site list of plot-ready dictionaries.
+
+    This is the most convenient form for data_viz routines that loop over sites
+    and plot curves vs period/frequency.
+
+    Parameters
+    ----------
+    observe_path : str
+        Path to observe.dat.
+    obs_type : {"MT","VTF","PT"}
+        Which block type to return (filters if multiple blocks exist).
+    compute_mt_derived : bool
+        If True, keep parser's MT-derived fields (phase tensor, Zdet, Zssq).
+    bootstrap_n : int
+        Bootstrap draws for those MT-derived errors in the parser.
+    bootstrap_seed : int
+        Seed for parser bootstrap RNG.
+    add_rhoa_phase : bool
+        If True and obs_type=="MT", also compute rhoa/phase (+ optional MC errors).
+    mc_n : int
+        Monte Carlo draws for rhoa/phase errors (uses per-component Re/Im std).
+
+    Returns
+    -------
+    sites_viz : list[dict]
+        Each entry contains at least:
+        - name, xyz, freq, per
+        - raw data/error arrays
+        For MT additionally:
+        - Z, Zerr (complex 2x2 tensors)
+        - rhoa, phase_deg (and *_err if possible)
+        - plus any parser-derived keys if enabled (phase_tensor, Zdet, Zssq, ...)
+    """
+    parsed = read_observe_dat(
+        observe_path,
+        compute_mt_derived=bool(compute_mt_derived),
+        bootstrap_n=int(bootstrap_n),
+        bootstrap_rng=default_rng(int(bootstrap_seed)),
+    )
+
+    out: list[dict[str, Any]] = []
+    for site in sites_as_dict_list(parsed):
+        if str(site.get("obs_type")) != obs_type:
+            c
+
+
 def write_observe_dat(parsed: dict[str, Any], path: str | Path) -> None:
     """Write a parsed (and possibly modified) observe.dat structure to disk.
 
