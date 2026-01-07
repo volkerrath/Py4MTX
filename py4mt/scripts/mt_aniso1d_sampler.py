@@ -40,6 +40,7 @@ from mtproc import calc_rhoa_phas
 from aniso import prep_aniso, mt1d_aniso
 import viz
 import util as utl
+from util import dict_to_namespace
 from version import versionstrg
 
 # from mcmc_funcs import pack_model, unpack_model
@@ -64,7 +65,7 @@ if not os.path.isdir(WorkDir):
     os.mkdir(WorkDir)
 
 
-EdiDir = WorkDir+'edi'
+EdiDir = WorkDir+'data'
 ResDir = WorkDir+'results'
 
 
@@ -75,25 +76,25 @@ mu0 = 4e-7 * pi
 
 
 SearchStrng = '*.edi'
-edi_files = utl.get_filelist(searchstr=[SearchStrng], searchpath=EdiDir,
+dat_files = utl.get_filelist(searchstr=[SearchStrng], searchpath=EdiDir,
                              sortedlist=True, fullpath=True)
 
 dimlist = []
 sit = 0
-for filename in edi_files:
+for filename in dat_files:
     sit = sit + 1
     print('reading data from: ' + filename)
     name, ext = os.path.splitext(filename)
-    file_i = filename
-    
-# # Create MT object
-#     mt_obj = MT()
-#     mt_obj.read(file_i)
+    if 'npz' in ext.lower():
+        data_dict = np.load(filename)
+    else:
+        sys.exit('mt_aniso1d_sampler: direct edi load not yet implented')
 
-#     site = mt_obj.station_metadata.id
-#     lat = mt_obj.station_metadata.location.latitude
-#     lon = mt_obj.station_metadata.location.longitude
-#     elev = mt_obj.station_metadata.location.elevation
+
+
+
+    params = utl.dict_to_namespace(data_dict)
+
 
 #     Z_obj = mt_obj.Z
 #     per = Z_obj.period

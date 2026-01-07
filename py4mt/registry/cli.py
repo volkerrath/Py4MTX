@@ -1,107 +1,44 @@
-"""
-registry/cli.py
-Author: Volker Rath (DIAS)
-Copilot (version) and date: 2026-01-06
+# registry
 
-Command-line interface for the registry toolkit.
-Provides introspection, registry building, and documentation generation.
-"""
+A lightweight, provenance‑aware introspection and documentation toolkit for scientific Python modules.
+`registry` automatically discovers callables, extracts metadata, captures provenance blocks, and generates clean, navigable documentation artifacts (Markdown, JSON, dashboards, etc.).
 
-import argparse
-import importlib
-from pathlib import Path
-import json
+It is designed for scientific codebases that value **traceability**, **reproducibility**, and **modular architecture**.
 
-from .introspection import introspect_module
-from .registry import ModuleRegistry
-from .docgen import write_markdown_docs
+---
 
+## ✨ Features
 
-def main():
-    parser = argparse.ArgumentParser(
-        prog="module-registry",
-        description="Provenance-aware module introspection and documentation generator."
-    )
+- **Module introspection**
+  - Detects functions, classes, and other callables
+  - Captures signatures, docstrings, and provenance metadata
+  - Filters out imported callables for clean module‑local inventories
 
-    subparsers = parser.add_subparsers(dest="command")
+- **Provenance extraction**
+  - Reads structured metadata from docstrings:
+    - `Author:`
+    - `Copilot (version) and date:`
+    - `Date:`
+  - Ensures traceability across scientific workflows
 
-    # -------------------------------
-    # introspect
-    # -------------------------------
-    p_introspect = subparsers.add_parser(
-        "introspect",
-        help="Extract callable metadata from a module."
-    )
-    p_introspect.add_argument("module", help="Module to introspect (e.g., mypackage.mymodule)")
-    p_introspect.add_argument("--json", help="Write output to JSON file", default=None)
+- **Registry system**
+  - Stores callable metadata in a queryable structure
+  - Supports filtering by module, type, tags, provenance fields, etc.
+  - Exportable to Markdown, JSON, or other formats
 
-    # -------------------------------
-    # build-registry
-    # -------------------------------
-    p_registry = subparsers.add_parser(
-        "build-registry",
-        help="Build a registry from one or more modules and export JSON."
-    )
-    p_registry.add_argument("modules", nargs="+", help="Modules to introspect")
-    p_registry.add_argument("--out", required=True, help="Output JSON file")
+- **Documentation generation**
+  - Auto‑generates Markdown pages per module
+  - Produces clean, human‑readable summaries of callables
+  - Embeds provenance blocks directly into documentation
 
-    # -------------------------------
-    # generate-docs
-    # -------------------------------
-    p_docs = subparsers.add_parser(
-        "generate-docs",
-        help="Generate Markdown documentation for modules."
-    )
-    p_docs.add_argument("modules", nargs="+", help="Modules to document")
-    p_docs.add_argument("--outdir", required=True, help="Output directory for Markdown files")
+- **Extensible architecture**
+  - Add tags (e.g., “mesh”, “RBF”, “GIS”)
+  - Add dependency graphs or AST‑based call maps
+  - Integrate with Sphinx, MkDocs, or dashboard frameworks
 
-    args = parser.parse_args()
+---
 
-    # Dispatch
-    if args.command == "introspect":
-        _cmd_introspect(args)
+## 📦 Installation
 
-    elif args.command == "build-registry":
-        _cmd_build_registry(args)
-
-    elif args.command == "generate-docs":
-        _cmd_generate_docs(args)
-
-    else:
-        parser.print_help()
-
-
-# ============================================================
-# Command implementations
-# ============================================================
-
-def _cmd_introspect(args):
-    module = importlib.import_module(args.module)
-    entries = introspect_module(module)
-
-    if args.json:
-        Path(args.json).write_text(json.dumps(entries, indent=2))
-    else:
-        print(json.dumps(entries, indent=2))
-
-
-def _cmd_build_registry(args):
-    registry = ModuleRegistry()
-
-    for modname in args.modules:
-        module = importlib.import_module(modname)
-        entries = introspect_module(module)
-        registry.add_entries(entries)
-
-    Path(args.out).write_text(json.dumps(registry._entries, indent=2))
-
-
-def _cmd_generate_docs(args):
-    registry = ModuleRegistry()
-
-    for modname in args.modules:
-        module = importlib.import_module(modname)
-        entries = introspect_module(module)
-        registry.add_entries(entries)
-
-    write_markdown_docs(registry._entries, Path(args.outdir))
+```bash
+pip install registry

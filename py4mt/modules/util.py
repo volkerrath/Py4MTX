@@ -1129,8 +1129,6 @@ def symlink(src: str, dst: str) -> None:
     except Exception as e:
         raise RuntimeError(f"Failed to create symlink {dst} → {src}: {e}") from e
 
-
-
 def filecopy(src: str, dst: str) -> None:
     """
     Copy a file or directory with force option (like `cp -f`).
@@ -1171,3 +1169,36 @@ def filecopy(src: str, dst: str) -> None:
 
     except Exception as e:
         raise RuntimeError(f"Failed to copy {src} → {dst}: {e}") from e
+"""
+Utility function for converting dictionaries into simple
+attribute-accessible objects.
+
+Author: Volker Rath (DIAS)
+Copilot (version) and date
+"""
+
+from types import SimpleNamespace
+
+def dict_to_namespace(d):
+    """
+    Convert a dictionary into a SimpleNamespace with attribute access.
+
+    Parameters
+    ----------
+    d : dict
+        Dictionary whose keys become attributes.
+
+    Returns
+    -------
+    SimpleNamespace
+        Object with attribute-style access to dictionary entries.
+
+    Notes
+    -----
+    - Keys must be valid Python identifiers.
+    - Values are stored as-is.
+    """
+    for key in d:
+        if not key.isidentifier():
+            raise ValueError(f"Invalid key for attribute access: {key}")
+    return SimpleNamespace(**d)
