@@ -90,16 +90,41 @@ for filename in dat_files:
     else:
         sys.exit('mt_aniso1d_sampler: direct edi load not yet implented')
 
+    # edi: Dict[str, Any] = {
+    #     "freq": freq,
+    #     "Z": Z,
+    #     "T": T,
+    #     "Z_err": Z_err,
+    #     "T_err": T_err,
+    #     "P": None,
+    #     "P_err": None,
+    #     "rot": rot,
+    #     "err_kind": err_kind,
+    #     "header_raw": header_lines,
+    #     "source_kind": source_kind,
+    #     # metadata
+    #     "station": meta.get("station"),
+    #     "lat_deg": meta.get("lat_deg"),
+    #     "lon_deg": meta.get("lon_deg"),
+    #     "elev_m": meta.get("elev_m"),
+    #     # convenience aliases
+    #     "lat": meta.get("lat_deg"),
+    #     "lon": meta.get("lon_deg"),
+    #     "elev": meta.get("elev_m"),
+    # }
 
+    site = data_dict['station']
+    lat = data_dict['lat']
+    lon = data_dict['lon']
+    elev = data_dict['elev']
 
+    freq =  data_dict['freq']
+    imp = data_dict['Z']
+    imp_err =  data_dict['Z_err']
+    pht =  data_dict['P']
+    pht_err = data_dict['P_err']
 
-    params = utl.dict_to_namespace(data_dict)
-
-
-#     Z_obj = mt_obj.Z
-#     per = Z_obj.period
-
-#     print(' site %s at :  % 10.6f % 10.6f % 8.1f' % (name, lat, lon, elev ))
+    print(' site %s at :  % 10.6f % 10.6f % 8.1f' % (site, lat, lon, elev ))
 
 #     print(type(per))
 # --- 0) Imports & wiring (PyMC5 + PyTensor) ---

@@ -34,7 +34,12 @@ for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0, pth)
 
-from aniso import prep_aniso, mt1d_aniso
+from aniso import aniso1d_impedance_sens
+from dataviz import add_phase, add_rho, add_tipper, add_pt
+from dataproc import load_edi, save_edi, save_ncd, save_hdf
+from dataproc import compute_pt, dataframe_from_arrays, interpolate_data
+from dataproc import set_errors, estimate_errors, rotate_data
+
 from mtproc import calc_rhoa_phas
 #from mcmc_funcs import pack_model, unpack_model
 import viz
@@ -64,7 +69,7 @@ ImpFile = WorkDir + 'impedance.dat'
 ImpPlt = True
 
 RhoOut = True
-RhoFile = WorkDir + 'rhophas.dat'  
+RhoFile = WorkDir + 'rhophas.dat'
 RhoPlt = True
 
 PlotFormat = ['.png']
@@ -93,7 +98,7 @@ print('periods:', Periods)
 '''
 Testmodel
 '''
-NLayer = 4
+# NLayer = 4
 # Model = [
 #     [2.,  100.,  100.,  100.,    0.,  0.,  0., 1.],
 #     [6.,  200.,  20.,    200.,   15.,  0.,  0., 1],
@@ -101,12 +106,22 @@ NLayer = 4
 #     [0.,     100.,    100.,    100.,    0.,  0.,  0., 1]
 # ]
 NLayer = 4
-Model = [
-    [2.,  100.,  100.,  100.,    0.,  0.,  0., 1.],
-    [6.,  100.,  10.,    100.,   15.,  0.,  0., 1],
-    [6.,  100.,   1000., 100.,  -75.,  0.,  0., 1],
-    [0.,     100.,    100.,    100.,    0.,  0.,  0., 1]
+Model = {'h': np.array([2000,6000.,6000.,0]),
+         'rho': [
+    [2000.,  100.,  100.,  100.,    0.,  0.,  0., 1.],
+    [6000.,  100.,  10.,    100.,   15.,  0.,  0., 1],
+    [6000.,  100.,   1000., 100.,  -75.,  0.,  0., 1],
+    [0.,     100.,    100.,    100.]
+
+
+# ,    0.,  0.,  0., 1]
+
+#     [2000.,  100.,  100.,  100.,    0.,  0.,  0., 1.],
+#     [6000.,  100.,  10.,    100.,   15.,  0.,  0., 1],
+#     [6000.,  100.,   1000., 100.,  -75.,  0.,  0., 1],
+#     [0.,     100.,    100.,    100.,    0.,  0.,  0., 1]
 ]
+         }
 # '''
 # Model A from Pek, J. and Santos, F. A. M., 2002.
 # '''
@@ -141,6 +156,17 @@ ani_flag = np.ones_like(h, dtype=int)
 
 
 
+
+res = aniso1d_impedance_sens(
+periods_s=periods, # (nper,)
+h_m=h_m, # (nl,)
+rop=rop, # (nl,3)
+ustr_deg=ustr_deg, # (nl,)
+udip_deg=udip_deg, # (nl,)
+usla_deg=usla_deg, # (nl,)
+compute_sens=True,
+)
+Z = res.Z # (nper,2,2)
 
 # === Compute conductivity tensors and effective parameters ===
 sg, al, at, blt = prep_aniso(rop[:NLayer], ustr[:NLayer],
@@ -226,7 +252,7 @@ if ImpPlt:
     data[:, 2] = Imp[:, 7]
     pltargs['title'] = 'Zyy'
     viz.plot_impedance(thisaxis=ax[1, 1], data=data, **pltargs)
-    
+
     for f in PlotFormat:
             plt.savefig(PlotFile+'_imped'+f)
 
@@ -297,3 +323,22 @@ if RhoPlt:
 
     for f in PlotFormat:
             plt.savefig(PlotFile+'_rhophas'+f)
+
+    if Plot:
+        fig, axs = plt.subplots(3, 2, figsize=(8, 14), sharex=True)
+        add_rho(df, comps="xy,yx", ax=axs[0, 0])
+        add_phase(df, comps="xy,yx", ax=axs[0, 1])
+        add_rho(df, comps="xx,yy", ax=axs[1, 0])
+        add_phase(df, comps="xx,yy", ax=axs[1, 1])
+        add_pt(df, ax=axs[2, 1])
+        fig.suptitle(station)
+
+        # Remove empty axes
+        for ax in axs:
+            if not ax.lines and not ax.images and not ax.collections:
+                fig.delaxes(ax)
+
+        for f in PlotFormat:
+            plt.savefig(WorkDir + station + String_out + f, dpi=600)
+
+        plt.show()

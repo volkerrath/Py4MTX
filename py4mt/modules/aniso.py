@@ -46,13 +46,17 @@ Only the following parameterization is supported:
    - ``rop``  (nl,3) principal resistivities [Ohm·m]
    - ``ustr_deg``, ``udip_deg``, ``usla_deg``  (nl,) Euler angles in degrees
 
+   Optional:
+   - ``is_iso`` (nl,) boolean/int flag: if True, treat the layer as **isotropic**.
+     For isotropic layers, only ``rop[k,0]`` is used as the layer resistivity
+     (``rho_iso``); ``rop[k,1:3]`` and all Euler angles are ignored. Internally we set
+     ``AL = AT = 1/rho_iso`` and ``BLT = 0`` for that layer.
+
 Author: Volker Rath (DIAS)
 Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-08 (UTC)
 """
 
 from __future__ import annotations
-
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
@@ -173,6 +177,7 @@ def cpanis(
     ustr_deg: np.ndarray,
     udip_deg: np.ndarray,
     usla_deg: np.ndarray,
+    is_iso: np.ndarray | None = None,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Compute conductivity tensors and effective horizontal anisotropy parameters.
 
@@ -182,6 +187,14 @@ def cpanis(
         Principal resistivities (Ohm·m). Each row is (rho1, rho2, rho3).
     ustr_deg, udip_deg, usla_deg : ndarray, shape (nl,)
         Euler angles (degrees): strike, dip, slant.
+    is_iso : ndarray, shape (nl,), optional
+        Boolean/int flags for isotropic layers. If True for a layer, only ``rop_ohmm[k,0]``
+        is used and the returned tensor is isotropic (``sigma * I``) with ``AL = AT = sigma``
+        and ``BLT = 0`` for that layer.
+    is_iso : ndarray, shape (nl,), optional
+        Boolean/int array flagging isotropic layers. If True for a layer, the layer is
+        treated as isotropic with resistivity ``rop[k,0]`` (Ohm·m); the other two
+        principal resistivities and all Euler angles are ignored.
 
     Returns
     -------
@@ -205,14 +218,48 @@ def cpanis(
     if not (ustr_deg.shape == udip_deg.shape == usla_deg.shape == (nl,)):
         raise ValueError("ustr_deg, udip_deg, usla_deg must all have shape (nl,).")
 
+    # Optional isotropy flags (broadcastable to (nl,))
+    if is_iso is None:
+        is_iso_arr = None
+    else:
+        is_iso_arr = np.asarray(is_iso).astype(bool).ravel()
+        if is_iso_arr.size == 1:
+            is_iso_arr = np.full(nl, bool(is_iso_arr[0]), dtype=bool)
+        if is_iso_arr.size != nl:
+            raise ValueError("is_iso must have shape (nl,) or be scalar/broadcastable.")
+    is_iso = is_iso_arr
+
     sg = np.zeros((nl, 3, 3), dtype=float)
     al = np.zeros(nl, dtype=float)
     at = np.zeros(nl, dtype=float)
     blt = np.zeros(nl, dtype=float)
 
+    # Optional isotropy flags: True -> isotropic layer (ignore rop[:,1:], angles)
+    if is_iso is None:
+        is_iso_arr = np.zeros(nl, dtype=bool)
+    else:
+        is_iso_arr = np.asarray(is_iso).astype(bool).ravel()
+        if is_iso_arr.size == 1:
+            is_iso_arr = np.full(nl, bool(is_iso_arr[0]), dtype=bool)
+        if is_iso_arr.size != nl:
+            raise ValueError("is_iso must have shape (nl,) or be scalar/broadcastable.")
+
     tiny = np.finfo(float).tiny
 
     for k in range(nl):
+        if is_iso_arr[k]:
+            # Isotropic layer: sigma * I, no preferred direction.
+            rho_iso = float(rop_ohmm[k, 0])
+            if rho_iso <= 0.0:
+                raise ValueError(f"Isotropic layer resistivity must be > 0 (layer {k}: {rho_iso}).")
+            sig = 1.0 / rho_iso
+            sg[k, 0, 0] = sig
+            sg[k, 1, 1] = sig
+            sg[k, 2, 2] = sig
+            al[k] = sig
+            at[k] = sig
+            blt[k] = 0.0
+            continue
         sgp1 = 1.0 / float(rop_ohmm[k, 0])
         sgp2 = 1.0 / float(rop_ohmm[k, 1])
         sgp3 = 1.0 / float(rop_ohmm[k, 2])
@@ -503,32 +550,24 @@ def _dZ_dh_layer_fdiff(
     return (zp - zm) / denom
 
 
-@dataclass
-class ForwardResult:
-    """Container returned by :func:`aniso1d_impedance_sens`.
 
-    Notes
-    -----
-    The public API parameterizes the model by principal resistivities and Euler angles
-    (strike/dip/slant, degrees) converted via :func:`cpanis`.
+# Result dictionaries ---------------------------------------------------------
 
-    If ``compute_sens=True``, the returned derivatives are with respect to the public
-    parameters (``rop``, ``ustr_deg``, ``udip_deg``, ``usla_deg``, ``h_m``). For
-    advanced use, the intermediate derivatives with respect to ``al``, ``at``, and
-    ``blt_rad`` may also be populated.
-    """
-
-    Z: np.ndarray
-    dZ_drop: Optional[np.ndarray] = None
-    dZ_dustr_deg: Optional[np.ndarray] = None
-    dZ_dudip_deg: Optional[np.ndarray] = None
-    dZ_dusla_deg: Optional[np.ndarray] = None
-    dZ_dh_m: Optional[np.ndarray] = None
-
-    # Intermediate sensitivities (conductivity parameterization).
-    dZ_dal: Optional[np.ndarray] = None
-    dZ_dat: Optional[np.ndarray] = None
-    dZ_dblt: Optional[np.ndarray] = None
+ForwardResult = Dict[str, Optional[np.ndarray]]
+# Type alias for result dictionaries returned by the forward model.
+#
+# Keys
+# ----
+# Always present:
+# - ``'Z'``: ndarray, shape (nper, 2, 2)
+#
+# Present when sensitivities are computed:
+# - ``'dZ_drop'``: ndarray, shape (nper, nl, 3, 2, 2)
+# - ``'dZ_dustr_deg'`` / ``'dZ_dudip_deg'`` / ``'dZ_dusla_deg'``: ndarray, shape (nper, nl, 2, 2)
+# - ``'dZ_dh_m'``: ndarray, shape (nper, nl, 2, 2)
+#
+# Intermediate (optional / debug) keys (conductivity parameterization):
+# - ``'dZ_dal'`` / ``'dZ_dat'`` / ``'dZ_dblt'``: ndarray, shape (nper, nl, 2, 2)
 
 
 def _aniso1d_impedance_sens_alat(
@@ -545,7 +584,7 @@ def _aniso1d_impedance_sens_alat(
 
     Returns
     -------
-    ForwardResult
+    dict
         ``Z`` has shape ``(nper, 2, 2)``.
         Sensitivities (if requested) have shape ``(nper, nl, 2, 2)``.
     """
@@ -649,7 +688,13 @@ def _aniso1d_impedance_sens_alat(
         else:
             Z[ip] = zrot
 
-    return ForwardResult(Z=Z, dZ_dal=dZ_dal, dZ_dat=dZ_dat, dZ_dblt=dZ_dblt, dZ_dh_m=dZ_dh)
+    return {
+        "Z": Z,
+        "dZ_dal": dZ_dal,
+        "dZ_dat": dZ_dat,
+        "dZ_dblt": dZ_dblt,
+        "dZ_dh_m": dZ_dh,
+    }
 
 def aniso1d_impedance_sens(
     periods_s: np.ndarray,
@@ -658,6 +703,7 @@ def aniso1d_impedance_sens(
     ustr_deg: np.ndarray,
     udip_deg: np.ndarray,
     usla_deg: np.ndarray,
+    is_iso: np.ndarray | None = None,
     *,
     compute_sens: bool = True,
     dh_rel: float = 1e-6,
@@ -673,6 +719,9 @@ def aniso1d_impedance_sens(
     - ``h_m`` (nl,)
     - ``rop``  (nl, 3) principal resistivities [Ohm·m]
     - ``ustr_deg``, ``udip_deg``, ``usla_deg`` (nl,) Euler angles in degrees
+
+    - ``is_iso`` (nl,), optional boolean/int flag: mark layers to be treated as isotropic.
+      If True, only ``rop[k,0]`` is used; ``rop[k,1:3]`` and Euler angles are ignored.
 
     Parameters
     ----------
@@ -697,7 +746,7 @@ def aniso1d_impedance_sens(
 
     Returns
     -------
-    ForwardResult
+    dict
         ``Z`` has shape ``(nper, 2, 2)``.
 
         If ``compute_sens=True``:
@@ -726,7 +775,7 @@ def aniso1d_impedance_sens(
     if not (ustr_deg.shape == udip_deg.shape == usla_deg.shape == (nl,)):
         raise ValueError("ustr_deg, udip_deg, usla_deg must all have shape (nl,).")
 
-    _sg, al, at, blt_rad = cpanis(rop, ustr_deg, udip_deg, usla_deg)
+    _sg, al, at, blt_rad = cpanis(rop, ustr_deg, udip_deg, usla_deg, is_iso=is_iso)
 
     base = _aniso1d_impedance_sens_alat(
         periods_s,
@@ -739,13 +788,18 @@ def aniso1d_impedance_sens(
     )
 
     if not compute_sens:
-        return ForwardResult(Z=base.Z)
+        return {"Z": base['Z']}
 
-    dZ_dal = base.dZ_dal
-    dZ_dat = base.dZ_dat
-    dZ_dblt = base.dZ_dblt
+    dZ_dal = base.get('dZ_dal')
+    dZ_dat = base.get('dZ_dat')
+    dZ_dblt = base.get('dZ_dblt')
     if dZ_dal is None or dZ_dat is None or dZ_dblt is None:
         raise RuntimeError("Internal sensitivities were not computed as requested.")
+
+    # For isotropic layers BLT is physically irrelevant; zero the intermediate derivative
+    # to avoid confusion if users inspect the intermediate outputs.
+    if is_iso is not None and np.any(is_iso):
+        dZ_dblt[:, is_iso, :, :] = 0.0
 
     nper = periods_s.size
 
@@ -762,7 +816,7 @@ def aniso1d_impedance_sens(
             step = float(fd_rel_rop) * max(abs(float(rop[k, j])), 1.0)
             rop_p = rop.copy()
             rop_p[k, j] = float(rop_p[k, j]) + step
-            _sgp, al_p, at_p, blt_p = cpanis(rop_p, ustr_deg, udip_deg, usla_deg)
+            _sgp, al_p, at_p, blt_p = cpanis(rop_p, ustr_deg, udip_deg, usla_deg, is_iso=is_iso)
             dal = (float(al_p[k]) - float(al[k])) / step
             dat = (float(at_p[k]) - float(at[k])) / step
             dblt = (float(blt_p[k]) - float(blt_rad[k])) / step
@@ -777,30 +831,28 @@ def aniso1d_impedance_sens(
             arr_p = arr.copy()
             arr_p[k] = float(arr_p[k]) + step
             if which == "ustr":
-                _sgp, al_p, at_p, blt_p = cpanis(rop, arr_p, udip_deg, usla_deg)
+                _sgp, al_p, at_p, blt_p = cpanis(rop, arr_p, udip_deg, usla_deg, is_iso=is_iso)
             elif which == "udip":
-                _sgp, al_p, at_p, blt_p = cpanis(rop, ustr_deg, arr_p, usla_deg)
+                _sgp, al_p, at_p, blt_p = cpanis(rop, ustr_deg, arr_p, usla_deg, is_iso=is_iso)
             else:
-                _sgp, al_p, at_p, blt_p = cpanis(rop, ustr_deg, udip_deg, arr_p)
+                _sgp, al_p, at_p, blt_p = cpanis(rop, ustr_deg, udip_deg, arr_p, is_iso=is_iso)
 
             dal = (float(al_p[k]) - float(al[k])) / step
             dat = (float(at_p[k]) - float(at[k])) / step
             dblt = (float(blt_p[k]) - float(blt_rad[k])) / step
             out[:, k, :, :] = _apply_chain(k, dal, dat, dblt)
 
-    return ForwardResult(
-        Z=base.Z,
-        dZ_drop=dZ_drop,
-        dZ_dustr_deg=dZ_dustr,
-        dZ_dudip_deg=dZ_dudip,
-        dZ_dusla_deg=dZ_dusla,
-        dZ_dh_m=base.dZ_dh_m,
-        dZ_dal=dZ_dal,
-        dZ_dat=dZ_dat,
-        dZ_dblt=dZ_dblt,
-    )
-
-
+    return {
+        "Z": base['Z'],
+        "dZ_drop": dZ_drop,
+        "dZ_dustr_deg": dZ_dustr,
+        "dZ_dudip_deg": dZ_dudip,
+        "dZ_dusla_deg": dZ_dusla,
+        "dZ_dh_m": base.get('dZ_dh_m'),
+        "dZ_dal": dZ_dal,
+        "dZ_dat": dZ_dat,
+        "dZ_dblt": dZ_dblt,
+    }
 # --- CLI ----------------------------------------------------------------------
 
 def _parse_periods_arg(s: str) -> np.ndarray:
@@ -822,7 +874,10 @@ def _load_model_npz(model_path: Path) -> Dict[str, np.ndarray]:
     - ``udip_deg`` (nl,)
     - ``usla_deg`` (nl,)
 
-    Returns a dict with keys: ``h_m, rop, ustr_deg, udip_deg, usla_deg``.
+    Optional:
+    - ``is_iso`` (nl,) boolean/int flag (isotropic layers)
+
+    Returns a dict with keys: ``h_m, rop, ustr_deg, udip_deg, usla_deg, is_iso``.
     """
     with np.load(model_path, allow_pickle=False) as npz:
         keys = set(npz.files)
@@ -833,13 +888,30 @@ def _load_model_npz(model_path: Path) -> Dict[str, np.ndarray]:
                 f"(found: {sorted(keys)})"
             )
 
-        h_m = np.asarray(npz["h_m"], dtype=float).ravel()
-        rop = np.asarray(npz["rop"], dtype=float)
-        ustr = np.asarray(npz["ustr_deg"], dtype=float).ravel()
-        udip = np.asarray(npz["udip_deg"], dtype=float).ravel()
-        usla = np.asarray(npz["usla_deg"], dtype=float).ravel()
+        h_m = np.asarray(npz['h_m'], dtype=float).ravel()
+        rop = np.asarray(npz['rop'], dtype=float)
+        ustr = np.asarray(npz['ustr_deg'], dtype=float).ravel()
+        udip = np.asarray(npz['udip_deg'], dtype=float).ravel()
+        usla = np.asarray(npz['usla_deg'], dtype=float).ravel()
 
-    return {"h_m": h_m, "rop": rop, "ustr_deg": ustr, "udip_deg": udip, "usla_deg": usla}
+        # Optional isotropy flags
+        if "is_iso" in keys:
+            is_iso = np.asarray(npz['is_iso']).astype(bool).ravel()
+        else:
+            is_iso = np.zeros(h_m.size, dtype=bool)
+        if is_iso.size == 1:
+            is_iso = np.full(h_m.size, bool(is_iso[0]), dtype=bool)
+        if is_iso.size != h_m.size:
+            raise ValueError("is_iso must have shape (nl,) or be scalar/broadcastable.")
+
+    return {
+        "h_m": h_m,
+        "rop": rop,
+        "ustr_deg": ustr,
+        "udip_deg": udip,
+        "usla_deg": usla,
+        "is_iso": is_iso,
+    }
 
 
 def _cli_run(args) -> int:
@@ -852,28 +924,29 @@ def _cli_run(args) -> int:
     periods = _parse_periods_arg(args.periods) if args.periods else np.loadtxt(args.periods_file, ndmin=1)
     res = aniso1d_impedance_sens(
         periods_s=periods,
-        h_m=model["h_m"],
-        rop=model["rop"],
-        ustr_deg=model["ustr_deg"],
-        udip_deg=model["udip_deg"],
-        usla_deg=model["usla_deg"],
+        h_m=model['h_m'],
+        rop=model['rop'],
+        ustr_deg=model['ustr_deg'],
+        udip_deg=model['udip_deg'],
+        usla_deg=model['usla_deg'],
+        is_iso=model.get('is_iso'),
         compute_sens=bool(args.sens),
         dh_rel=float(args.dh_rel),
     )
 
-    out_dict = {"periods_s": periods, "Z": res.Z}
+    out_dict = {"periods_s": periods, "Z": res['Z']}
     if args.sens:
         out_dict.update(
             {
-                "dZ_drop": res.dZ_drop,
-                "dZ_dustr_deg": res.dZ_dustr_deg,
-                "dZ_dudip_deg": res.dZ_dudip_deg,
-                "dZ_dusla_deg": res.dZ_dusla_deg,
-                "dZ_dh_m": res.dZ_dh_m,
+                "dZ_drop": res.get('dZ_drop'),
+                "dZ_dustr_deg": res.get('dZ_dustr_deg'),
+                "dZ_dudip_deg": res.get('dZ_dudip_deg'),
+                "dZ_dusla_deg": res.get('dZ_dusla_deg'),
+                "dZ_dh_m": res.get('dZ_dh_m'),
                 # Intermediate derivatives (optional / debug)
-                "dZ_dal": res.dZ_dal,
-                "dZ_dat": res.dZ_dat,
-                "dZ_dblt": res.dZ_dblt,
+                "dZ_dal": res.get('dZ_dal'),
+                "dZ_dat": res.get('dZ_dat'),
+                "dZ_dblt": res.get('dZ_dblt'),
             }
         )
 
@@ -883,9 +956,9 @@ def _cli_run(args) -> int:
     if not args.quiet:
         print(f"Wrote: {out_path}")
         print(f"  periods: {periods.size}, layers: {model['h_m'].size}")
-        print(f"  Z shape: {res.Z.shape}")
+        print(f"  Z shape: {res['Z'].shape}")
         if args.sens:
-            print(f"  dZ_drop shape: {res.dZ_drop.shape}")
+            print(f"  dZ_drop shape: {res.get('dZ_drop').shape}")
 
     return 0
 
