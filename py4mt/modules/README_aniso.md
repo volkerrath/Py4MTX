@@ -56,10 +56,10 @@ res = aniso1d_impedance_sens(
     usla_deg=usla_deg,     # (nl,)
     compute_sens=True,
 )
-Z = res.Z                 # (nper,2,2)
+Z = res['Z']                 # (nper,2,2)
 ```
 
-Returned object: `ForwardResult`
+Returned object: `dict`
 
 Always present:
 - `Z` — complex impedance tensor, shape `(nper, 2, 2)`
