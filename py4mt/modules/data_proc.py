@@ -1274,6 +1274,19 @@ def choose_lambda_gcv(x: np.ndarray, y: np.ndarray, lam_grid: Optional[np.ndarra
     return best_spline, best_lam
 
 
+def save_npz(
+    data_dict: dict| Any,
+    path: str | Path,
+) -> None:
+    """Save a DataFrame to HDF5 via pandas (requires pytables/tables)."""
+    path = Path(path)
+    np.savez_compressed(
+        path.as_posix(),
+        data_dict = data_dict,
+        allow_pickle=True)
+
+
+
 def save_hdf(
     df: pd.DataFrame,
     path: str | Path,
