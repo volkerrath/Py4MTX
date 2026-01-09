@@ -81,10 +81,9 @@ PhTFile = WorkDir + 'rhophas.dat'
 PhTPlt = True
 
 
-PlotFormat = ['.png']
-PlotFile = WorkDir+'AnisoTest'
-
 if RhoPlt or ImpPlt or PhTPlt:
+    PlotFormat = ['.png']
+    PlotFile = WorkDir+'AnisoTest'
     pltargs = {
         'pltsize': [16., 16.],
         'fontsizes': [18, 20, 24, 18],  # axis, label, title
@@ -394,7 +393,7 @@ if PhTPlt:
 
     freqs = (1./periods).reshape(-1, 1)
 
-    pltargs['pltsize'] = [16., 10.]
+    pltargs['pltsize'] = [16.,8.]
     fig, ax = plt.subplots(1, 2, figsize=pltargs['pltsize'])
     fig.suptitle(pltargs['suptitle'], fontsize=pltargs['fontsizes'][2])
 
@@ -404,7 +403,7 @@ if PhTPlt:
     data[:, 1] = P[:, 1]
     data[:, 2] = P[:, 2]
     pltargs['title'] = r'Phase Tensor xy/yx'
-    pltargs['legend'] = [r'$\Phi_{a, xy}$', r'$\Phi_{a, xy}$']
+    pltargs['legend'] = [r'$\Phi_{xy}$', r'$\Phi_{yx}$']
     pltargs['yscale'] = 'linear'
     pltargs['ylimits'] = [] #[1.e1, 1.e3]
     pltargs['ylabel'] = r'$\Phi$  [-]'
@@ -412,15 +411,13 @@ if PhTPlt:
 
     data[:, 1] = P[:, 0]
     data[:, 2] = P[:, 3]
+    print(data)
     pltargs['title'] = r'Phase Tensor xx/yy'
     pltargs['legend'] = [r'$\Phi_{xx}$', r'$\Phi_{yy}$']
     pltargs['yscale'] = 'linear'
     pltargs['ylimits'] = []
     pltargs['ylabel'] = r'$\Phi$ [-]'
     viz.plot_phastens(thisaxis=ax[1], data=data, **pltargs)
-
-
-
 
     for f in PlotFormat:
             plt.savefig(PlotFile+'_phstens'+f)
