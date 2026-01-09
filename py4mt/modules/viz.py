@@ -29,21 +29,22 @@ import scipy.sparse as scs
 
 
 import util as utl
-    # pltargs = {
-    #     'pltsize': [16., 16.],
-    #     'fontsizes': [18, 20, 24, 18],  # axis, label, title
-    #     'm_size': 10,
-    #     'c_obs': ['b', 'r'],
-    #     'm_obs': ['s', 'o'],
-    #     'l_obs': ['-', 2],
-    #     'c_cal': ['b', 'r'],
-    #     'm_cal': ['.', '.'],
-    #     'l_cal': ['-', 2],
-    #     'nrms': [],
-    #     'xlimits': [],  # [1e-3, 1e3],
-    #     'ylimits': [],
-    #     'suptitle': 'Anisotropic model Rong et al. (2022)',
-    # }
+# pltargs = {
+#     'pltsize': [16., 16.],
+#     'fontsizes': [18, 20, 24, 18],  # axis, label, title
+#     'm_size': 10,
+#     'c_obs': ['b', 'r'],
+#     'm_obs': ['s', 'o'],
+#     'l_obs': ['-', 2],
+#     'c_cal': ['b', 'r'],
+#     'm_cal': ['.', '.'],
+#     'l_cal': ['-', 2],
+#     'nrms': [],
+#     'xlimits': [],  # [1e-3, 1e3],
+#     'ylimits': [],
+#     'suptitle': 'Anisotropic model Rong et al. (2022)',
+# }
+
 
 def plot_impedance(thisaxis=None, data=None, **pltargs):
     '''
@@ -68,38 +69,34 @@ def plot_impedance(thisaxis=None, data=None, **pltargs):
     '''
 
     if thisaxis is None:
-        fig, ax =  plt.subplots(1, figsize=pltargs['pltsize'])
+        fig, ax = plt.subplots(1, figsize=pltargs['pltsize'])
         # fig.suptitle(pltargs['title'], fontsize=pltargs['fontsizes'][2])
     else:
         ax = thisaxis
 
-
-
     [points, dats] = np.shape(data)
 
-
-    per = data[:,0]
-    obs_real = data[:,1]
-    obs_imag = data[:,2]
+    per = data[:, 0]
+    obs_real = data[:, 1]
+    obs_imag = data[:, 2]
 
     plot_err = False
     if dats > 3:
-        err_real = data[:,3]
-        err_imag = data[:,4]
+        err_real = data[:, 3]
+        err_imag = data[:, 4]
         plot_err = True
 
     plot_cal = False
     if dats > 6:
-        cal_real = data[:,5]
-        cal_imag = data[:,6]
+        cal_real = data[:, 5]
+        cal_imag = data[:, 6]
         plot_cal = True
 
     if plot_cal:
-       ax.plot(per, cal_real,
-               color=pltargs['c_cal'][0],
-               linestyle=pltargs['l_cal'][0],
-               inewidth=pltargs['l_cal'][1])
-
+        ax.plot(per, cal_real,
+                color=pltargs['c_cal'][0],
+                linestyle=pltargs['l_cal'][0],
+                inewidth=pltargs['l_cal'][1])
 
     if plot_err:
         ax.errorbar(per,
@@ -121,11 +118,10 @@ def plot_impedance(thisaxis=None, data=None, **pltargs):
                 color=pltargs['c_obs'][0])
 
     if plot_cal:
-       ax.plot(per, cal_imag,
-              color=pltargs['c_cal'][0],
-              linestyle=pltargs['l_cal'][0],
-              linewidth=pltargs['l_cal'][1])
-
+        ax.plot(per, cal_imag,
+                color=pltargs['c_cal'][0],
+                linestyle=pltargs['l_cal'][0],
+                linewidth=pltargs['l_cal'][1])
 
     if plot_err:
         ax.errorbar(per,
@@ -146,11 +142,10 @@ def plot_impedance(thisaxis=None, data=None, **pltargs):
                 linewidth=pltargs['l_obs'][1],
                 color=pltargs['c_obs'][1])
 
-
     ax.set_xscale('log')
-    ax.set_xlabel('period [s]',fontsize=pltargs['fontsizes'][1])
+    ax.set_xlabel('period [s]', fontsize=pltargs['fontsizes'][1])
     ax.set_yscale(pltargs['yscale'])
-    ax.set_ylabel(pltargs['ylabel'],fontsize=pltargs['fontsizes'][1])
+    ax.set_ylabel(pltargs['ylabel'], fontsize=pltargs['fontsizes'][1])
     # ax.set_ylabel(r'impedance [$\Omega$]',fontsize=pltargs['fontsizes'][1])
     if len(pltargs['xlimits']) != 0:
         ax.set_xlim(pltargs['xlimits'])
@@ -161,25 +156,24 @@ def plot_impedance(thisaxis=None, data=None, **pltargs):
     ax.tick_params(labelsize=pltargs['fontsizes'][1])
     ax.set_title(pltargs['title'], fontsize=pltargs['fontsizes'][2])
     ax.grid('both', 'both', linestyle='-', linewidth=0.5)
-    if len(pltargs['nrms'])==2:
-        nrmsr = np.around(pltargs['nrms'][0],1)
-        nrmsi = np.around(pltargs['nrms'][1],1)
-        strrms = 'nrms = '+str(nrmsr)+' | '+str(nrmsi)
-        ax.text(0.05, 0.05,strrms,
-                           transform=ax.transaxes,
-                           fontsize = pltargs['fontsizes'][1],
-                           ha='left', va='bottom',
-                           bbox={'pad': 2, 'facecolor': 'white', 'edgecolor': 'white' ,'alpha': 0.8} )
-
-
+    if len(pltargs['nrms']) == 2:
+        nrmsr = np.around(pltargs['nrms'][0], 1)
+        nrmsi = np.around(pltargs['nrms'][1], 1)
+        strrms = 'nrms = ' + str(nrmsr) + ' | ' + str(nrmsi)
+        ax.text(0.05, 0.05, strrms,
+                transform=ax.transaxes,
+                fontsize=pltargs['fontsizes'][1],
+                ha='left', va='bottom',
+                bbox={'pad': 2, 'facecolor': 'white', 'edgecolor': 'white', 'alpha': 0.8})
 
     if thisaxis is None:
         for f in pltargs['pltformat']:
-            matplotlib.pyplot.savefig(pltargs['pltfile']+f)
+            matplotlib.pyplot.savefig(pltargs['pltfile'] + f)
         # matplotlib.pyplot.show()
         # matplotlib.pyplot.clf()
 
     return ax
+
 
 def plot_rhophas(thisaxis=None, data=None, **pltargs):
     '''
@@ -204,37 +198,32 @@ def plot_rhophas(thisaxis=None, data=None, **pltargs):
     '''
 
     if thisaxis is None:
-        fig, ax =  plt.subplots(1, figsize=pltargs['pltsize'])
+        fig, ax = plt.subplots(1, figsize=pltargs['pltsize'])
         # fig.suptitle(pltargs['title'], fontsize=pltargs['fontsizes'][2])
     else:
         ax = thisaxis
 
-
-
     [points, dats] = np.shape(data)
 
-
-    per = data[:,0]
-    obs_rhoa = data[:,1]
-    obs_phas = data[:,2]
+    per = data[:, 0]
+    obs_rhoa = data[:, 1]
+    obs_phas = data[:, 2]
 
     plot_err = False
     if dats > 3:
-        err_rhoa = data[:,3]
-        err_phas = data[:,4]
+        err_rhoa = data[:, 3]
+        err_phas = data[:, 4]
         plot_err = True
 
     plot_cal = False
     if dats > 6:
-        cal_rhoa = data[:,5]
-        cal_phas = data[:,6]
+        cal_rhoa = data[:, 5]
+        cal_phas = data[:, 6]
         plot_cal = True
 
-
     if plot_cal:
-       ax.plot(per, cal_rhoa,
-              color=pltargs['c_cal'][0], linestyle=pltargs['l_cal'][0], linewidth=pltargs['l_cal'][1])
-
+        ax.plot(per, cal_rhoa,
+                color=pltargs['c_cal'][0], linestyle=pltargs['l_cal'][0], linewidth=pltargs['l_cal'][1])
 
     if plot_err:
         ax.errorbar(per,
@@ -256,9 +245,8 @@ def plot_rhophas(thisaxis=None, data=None, **pltargs):
                 color=pltargs['c_obs'][0])
 
     if plot_cal:
-       ax.plot(per, cal_phas,
-              color=pltargs['c_cal'][1], linestyle=pltargs['l_cal'][0], linewidth=pltargs['l_cal'][1])
-
+        ax.plot(per, cal_phas,
+                color=pltargs['c_cal'][1], linestyle=pltargs['l_cal'][0], linewidth=pltargs['l_cal'][1])
 
     if plot_err:
         ax.errorbar(per,
@@ -279,11 +267,10 @@ def plot_rhophas(thisaxis=None, data=None, **pltargs):
                 linewidth=pltargs['l_obs'][1],
                 color=pltargs['c_obs'][1])
 
-
     ax.set_xscale('log')
-    ax.set_xlabel('period [s]',fontsize=pltargs['fontsizes'][1])
+    ax.set_xlabel('period [s]', fontsize=pltargs['fontsizes'][1])
     ax.set_yscale(pltargs['yscale'])
-    ax.set_ylabel(pltargs['ylabel'],fontsize=pltargs['fontsizes'][1])
+    ax.set_ylabel(pltargs['ylabel'], fontsize=pltargs['fontsizes'][1])
     if len(pltargs['xlimits']) != 0:
         ax.set_xlim(pltargs['xlimits'])
     if len(pltargs['ylimits']) != 0:
@@ -294,25 +281,24 @@ def plot_rhophas(thisaxis=None, data=None, **pltargs):
     ax.tick_params(labelsize=pltargs['fontsizes'][0])
     ax.set_title(pltargs['title'], fontsize=pltargs['fontsizes'][2])
     ax.grid('both', 'both', linestyle='-', linewidth=0.5)
-    if len(pltargs['nrms'])==2:
-        nrmsr = np.around(pltargs['nrms'][0],1)
-        nrmsi = np.around(pltargs['nrms'][1],1)
-        strrms = 'nrms = '+str(nrmsr)+' | '+str(nrmsi)
-        ax.text(0.05, 0.05,strrms,
-                           transform=ax.transaxes,
-                           fontsize = pltargs['fontsizes'][1],
-                           ha='left', va='bottom',
-                           bbox={'pad': 2, 'facecolor': 'white', 'edgecolor': 'white' ,'alpha': 0.8} )
-
-
+    if len(pltargs['nrms']) == 2:
+        nrmsr = np.around(pltargs['nrms'][0], 1)
+        nrmsi = np.around(pltargs['nrms'][1], 1)
+        strrms = 'nrms = ' + str(nrmsr) + ' | ' + str(nrmsi)
+        ax.text(0.05, 0.05, strrms,
+                transform=ax.transaxes,
+                fontsize=pltargs['fontsizes'][1],
+                ha='left', va='bottom',
+                bbox={'pad': 2, 'facecolor': 'white', 'edgecolor': 'white', 'alpha': 0.8})
 
     if thisaxis is None:
         for f in pltargs['pltformat']:
-            matplotlib.pyplot.savefig(pltargs['pltfile']+f)
+            matplotlib.pyplot.savefig(pltargs['pltfile'] + f)
         # matplotlib.pyplot.show()
         # matplotlib.pyplot.clf()
 
     return ax
+
 
 def plot_phastens(thisaxis=None, data=None, **pltargs):
     '''
@@ -338,31 +324,28 @@ def plot_phastens(thisaxis=None, data=None, **pltargs):
     '''
 
     if thisaxis is None:
-        fig, ax =  plt.subplots(1, 1, figsize=pltargs['pltsize'])
+        fig, ax = plt.subplots(1, 1, figsize=pltargs['pltsize'])
         # fig.suptitle(pltargs['title'], fontsize=pltargs['fontsizes'][2])
     else:
         ax = thisaxis
 
-
     [points, dats] = np.shape(data)
 
+    per = data[:, 0]
 
-    per = data[:,0]
-    obs_phast = data[:,1]
+    ax.semilogx(per, data[:, 1],
+                color=pltargs['c_obs'][0],
+                linestyle=pltargs['l_obs'][0],
+                linewidth=pltargs['l_obs'][1],
+                marker=pltargs['m_obs'][0],
+                markersize=pltargs['m_size'])
 
-    plot_err = False
-    if dats > 2:
-        err_phast = data[:,2]
-        plot_err = True
-
-    plot_cal = False
-    if dats > 3:
-        cal_phast = data[:,3]
-        plot_cal = True
-
-
-
-
+    ax.semilogx(per, data[:, 2],
+                color=pltargs['c_obs'][1],
+                linestyle=pltargs['l_obs'][0],
+                linewidth=pltargs['l_obs'][1],
+                marker=pltargs['m_obs'][1],
+                markersize=pltargs['m_size'])
 
     ax.set_ylabel('phase tensor [-]')
     ax.set_yscale('linear')
@@ -372,25 +355,25 @@ def plot_phastens(thisaxis=None, data=None, **pltargs):
         ax.set_xlim(pltargs['xlimits'])
     if len(pltargs['ylimits']) != 0:
         ax.set_ylim(pltargs['ylimits'])
-    # ax.legend(['phast', 'imag'])
+
+    ax.legend(pltargs['legend'], fontsize=pltargs['fontsizes'][3])
     # ax.xaxis.set_ticklabels([])
     ax.tick_params(labelsize=pltargs['fontsizes'][1])
     ax.set_title(pltargs['title'], fontsize=pltargs['fontsizes'][2])
     ax.grid('both', 'both', linestyle='-', linewidth=0.5)
-    if len(pltargs['nrms'])==2:
-        nrmsr = np.around(pltargs['nrms'][0],1)
-        nrmsi = np.around(pltargs['nrms'][1],1)
-        strrms = 'nrms = '+str(nrmsr)+' | '+str(nrmsi)
-        ax.text(0.05, 0.05,strrms,
-                           transform=ax.transaxes,
-                           fontsize = pltargs['fontsizes'][0],
-                           ha='left', va='bottom',
-                           bbox={'pad': 2, 'facecolor': 'white', 'edgecolor': 'white' ,'alpha': 0.8} )
-
+    if len(pltargs['nrms']) == 2:
+        nrmsr = np.around(pltargs['nrms'][0], 1)
+        nrmsi = np.around(pltargs['nrms'][1], 1)
+        strrms = 'nrms = ' + str(nrmsr) + ' | ' + str(nrmsi)
+        ax.text(0.05, 0.05, strrms,
+                transform=ax.transaxes,
+                fontsize=pltargs['fontsizes'][0],
+                ha='left', va='bottom',
+                bbox={'pad': 2, 'facecolor': 'white', 'edgecolor': 'white', 'alpha': 0.8})
 
     if thisaxis is None:
         for f in pltargs['pltformat']:
-            matplotlib.pyplot.savefig(pltargs['pltfile']+f)
+            matplotlib.pyplot.savefig(pltargs['pltfile'] + f)
         # matplotlib.pyplot.show()
         # matplotlib.pyplot.clf()
 
@@ -419,46 +402,45 @@ def plot_vtf(thisaxis=None, data=None, **pltargs):
     '''
 
     if thisaxis is None:
-        fig, ax =  plt.subplots(1, figsize=pltargs['figsize'])
+        fig, ax = plt.subplots(1, figsize=pltargs['figsize'])
         fig.suptitle(pltargs['suptitle'], fontsize=pltargs['fontsizes'][2])
     else:
         ax = thisaxis
 
-
     if thisaxis is None:
         for f in pltargs['plotformat']:
-            matplotlib.pyplot.savefig(pltargs['plotfile']+f)
+            matplotlib.pyplot.savefig(pltargs['plotfile'] + f)
 
     return ax
 
 
 def plot_depth_prof(
-        thisaxis = None,
-        PlotFile = '',
-        PlotFormat = ['png',],
-        PlotTitle = '',
-        FigSize = [8.5*0.3937, 8.5*0.3937],
-        Depth = [],
-        DLimits = [],
-        DLabel = ' Depth (m)',
-        Params = [],
-        Partyp = '',
-        PLabel = '',
-        PLimits = [],
-        Shade = [ 0.25 ],
-        XScale = 'log',
-        PlotType = 'steps',
-        Legend = [],
-        Linecolor = ['r', 'g', 'b', 'm', 'y'],
-        Linetypes =  ['-','-','-','-','-'],
-        Linewidth =  [1, 1, 1, 1,1,],
-        Marker = ['v'],
-        Markersize =[4],
-        Fillcolor = [[0.7, 0.7, 0.7]],
-        Logplot = True,
-        Fontsizes =[10, 10, 12],
+        thisaxis=None,
+        PlotFile='',
+        PlotFormat=['png',],
+        PlotTitle='',
+        FigSize=[8.5 * 0.3937, 8.5 * 0.3937],
+        Depth=[],
+        DLimits=[],
+        DLabel=' Depth (m)',
+        Params=[],
+        Partyp='',
+        PLabel='',
+        PLimits=[],
+        Shade=[0.25],
+        XScale='log',
+        PlotType='steps',
+        Legend=[],
+        Linecolor=['r', 'g', 'b', 'm', 'y'],
+        Linetypes=['-', '-', '-', '-', '-'],
+        Linewidth=[1, 1, 1, 1, 1,],
+        Marker=['v'],
+        Markersize=[4],
+        Fillcolor=[[0.7, 0.7, 0.7]],
+        Logplot=True,
+        Fontsizes=[10, 10, 12],
         PlotStrng='',
-        StrngPos=[0.05,0.05],
+        StrngPos=[0.05, 0.05],
         Invalid=1.e30,
         **pltargs):
     '''
@@ -516,14 +498,13 @@ def plot_depth_prof(
 
     '''
 
-    cm = 1/2.54  # centimeters in inches
+    cm = 1 / 2.54  # centimeters in inches
 
     if thisaxis is None:
-        fig, ax =  plt.subplots(1, figsize=pltargs['figsize'])
+        fig, ax = plt.subplots(1, figsize=pltargs['figsize'])
         fig.suptitle(pltargs['suptitle'], fontsize=pltargs['fontsizes'][2])
     else:
         ax = thisaxis
-
 
     for iparset in range(len(Params)):
 
@@ -532,101 +513,97 @@ def plot_depth_prof(
         npar = np.shape(P)[0]
         ndat = np.shape(D)[0]
 
-        df = D[-1] + 3*np.abs(D[-1]-D[-2])
+        df = D[-1] + 3 * np.abs(D[-1] - D[-2])
 
-
-        if Partyp=='':
+        if Partyp == '':
 
             if 'steps' in PlotType.lower():
                 d = D
                 for pp in np.arange(npar):
-                    print('PPPP ',P[pp])
-                    p = np.append(P[pp],P[pp][-1])
-                    ax.step(p , d ,
-                         where='pre',
-                         c=Linecolor[pp],
-                         ls=Linetypes[pp], lw=Linewidth[pp])
+                    print('PPPP ', P[pp])
+                    p = np.append(P[pp], P[pp][-1])
+                    ax.step(p, d,
+                            where='pre',
+                            c=Linecolor[pp],
+                            ls=Linetypes[pp], lw=Linewidth[pp])
             else:
                 d = D
                 for pp in np.arange(npar):
                     p = P[pp]
-                    p = np.append(P[pp],P[pp][-1])
-                    ax.plot(p , d,
+                    p = np.append(P[pp], P[pp][-1])
+                    ax.plot(p, d,
                             c=Linecolor[pp],
                             ls=Linetypes[pp], lw=Linewidth[pp])
-
 
         if 'sens' in Partyp.lower():
             if 'steps' in PlotType.lower():
                 d = D
                 for pp in np.arange(npar):
                     p = P[pp]
-                    print(np.shape(d),np.shape(p))
-                    ax.step(p , d ,
-                         where='pre',
-                         c=Linecolor[pp],
-                         ls=Linetypes[pp], lw=Linewidth[pp])
+                    print(np.shape(d), np.shape(p))
+                    ax.step(p, d,
+                            where='pre',
+                            c=Linecolor[pp],
+                            ls=Linetypes[pp], lw=Linewidth[pp])
             else:
                 d = D[:-1]
                 for pp in np.arange(npar):
                     p = P[pp]
-                    ax.plot(p , d,
+                    ax.plot(p, d,
                             c=Linecolor[pp],
                             ls=Linetypes[pp], lw=Linewidth[pp])
-
 
         if 'model' in Partyp.lower():
 
             d = np.append(D, df)
             # d = D
 
-            if npar==3:
+            if npar == 3:
 
-
-                p = np.append(P[0],P[0][-1])
-                ep = np.append(P[1],P[1][-1])
-                em = np.append(P[2],P[2][-1])
+                p = np.append(P[0], P[0][-1])
+                ep = np.append(P[1], P[1][-1])
+                em = np.append(P[2], P[2][-1])
                 # p = P[0]
                 # ep = P[1]
                 # em = P[2]
-                print(np.shape(d),np.shape(em),np.shape(ep))
+                print(np.shape(d), np.shape(em), np.shape(ep))
 
                 if 'fill' in PlotType.lower():
                     ax.fill_betweenx(d, em, ep,
-                                step='post',
-                                color=Fillcolor[0],
-                                ls=Linetypes[0], lw=Linewidth[0],
-                                alpha=Shade)
+                                     step='post',
+                                     color=Fillcolor[0],
+                                     ls=Linetypes[0], lw=Linewidth[0],
+                                     alpha=Shade)
 
-                ax.step(p , d ,
-                         where='pre',
-                         c=Linecolor[0],
-                         ls=Linetypes[0], lw=Linewidth[0])
-                ax.plot(p[-1] , d[-1],
-                        c=Linecolor[0],  ls=Linetypes[0], lw=0,
+                ax.step(p, d,
+                        where='pre',
+                        c=Linecolor[0],
+                        ls=Linetypes[0], lw=Linewidth[0])
+                ax.plot(p[-1], d[-1],
+                        c=Linecolor[0], ls=Linetypes[0], lw=0,
                         marker=Marker[0], markersize=Markersize[0])
-                ax.step(em , d ,
-                         where='pre',
-                         c=Linecolor[1],
-                         ls=Linetypes[1], lw=Linewidth[1])
-                ax.step(ep , d ,
-                         where='pre',
-                         c=Linecolor[1],
-                         ls=Linetypes[1], lw=Linewidth[1])
+                ax.step(em, d,
+                        where='pre',
+                        c=Linecolor[1],
+                        ls=Linetypes[1], lw=Linewidth[1])
+                ax.step(ep, d,
+                        where='pre',
+                        c=Linecolor[1],
+                        ls=Linetypes[1], lw=Linewidth[1])
 
             else:
 
                 if 'step' in PlotType.lower():
                     for pp in np.arange(npar):
                         p = P[pp]
-                        ax.step(p , d,
+                        ax.step(p, d,
                                 where='pre',
                                 color=Linecolor[pp],
-                                    ls=Linetypes[pp],lw=Linewidth[0])
+                                ls=Linetypes[pp], lw=Linewidth[0])
                 else:
                     for pp in np.arange(npar):
                         p = P[pp]
-                        ax.plot(p , d,
+                        ax.plot(p, d,
                                 c=Linecolor[pp],
                                 ls=Linetypes[pp], lw=Linewidth[0])
 
@@ -644,9 +621,7 @@ def plot_depth_prof(
         if 'lin' not in XScale:
             ax.set_xscale(XScale)
 
-
-
-        ax.legend(Legend, fontsize=Fontsizes[1]-2, loc='best', ncol=1)
+        ax.legend(Legend, fontsize=Fontsizes[1] - 2, loc='best', ncol=1)
 
         if PLimits != []:
             ax.set_xlim(PLimits)
@@ -657,35 +632,36 @@ def plot_depth_prof(
 
         ax.grid('major', 'both', linestyle=':', lw=0.3)
         ax.text(StrngPos[0], StrngPos[1],
-                 PlotStrng, fontsize=Fontsizes[1]-1,transform=ax.transAxes,
-                 bbox=dict(facecolor='white', alpha=0.5) )
+                PlotStrng, fontsize=Fontsizes[1] - 1, transform=ax.transAxes,
+                bbox=dict(facecolor='white', alpha=0.5))
 
         if thisaxis is None:
             for F in PlotFormat:
-                 matplotlib.pyplot.savefig(PlotFile+F)
+                matplotlib.pyplot.savefig(PlotFile + F)
 
             matplotlib.pyplot.show()
             matplotlib.pyplot.clf()
 
         return ax
 
+
 def plot_matrix(
-        ThisAxis = None,
-        PlotFile = '',
-        PlotTitle = '',
-        PlotFormat = ['png',],
-        FigSize = [8.5*0.3937, 8.5*0.3937],
-        Matrix = [],
+        ThisAxis=None,
+        PlotFile='',
+        PlotTitle='',
+        PlotFormat=['png',],
+        FigSize=[8.5 * 0.3937, 8.5 * 0.3937],
+        Matrix=[],
         TickStr='',
-        AxLabels = ['layer #', 'layer #'],
-        AxTicks = [[], []],
-        AxTickLabels = [[], []],
+        AxLabels=['layer #', 'layer #'],
+        AxTicks=[[], []],
+        AxTickLabels=[[], []],
         ColorMap='viridis',
-        Fontsizes=[10,10,12],
-        Unit = '',
+        Fontsizes=[10, 10, 12],
+        Unit='',
         PlotStrng='',
-        StrngPos=[0.05,0.05],
-        Aspect = 'auto',
+        StrngPos=[0.05, 0.05],
+        Aspect='auto',
         Invalid=1.e30,
         Transpose=False):
     '''
@@ -716,12 +692,12 @@ def plot_matrix(
         Matrix = Matrix.T
 
     npar = nn[0]
-    if Matrix.ndim==1:
-        npar =math.isqrt(nn[0])
-        Matrix = Matrix.reshape((npar,npar))
+    if Matrix.ndim == 1:
+        npar = math.isqrt(nn[0])
+        Matrix = Matrix.reshape((npar, npar))
 
     if ThisAxis is None:
-        fig, ax =  matplotlib.pyplot.subplots(1, 1, figsize=(FigSize))
+        fig, ax = matplotlib.pyplot.subplots(1, 1, figsize=(FigSize))
         fig.suptitle(PlotTitle, fontsize=Fontsizes[2])
     else:
         ax = ThisAxis
@@ -732,7 +708,7 @@ def plot_matrix(
     xlabels = AxTickLabels[0]
     # print(xticks)
     # print(xlabels)
-    ax.set_xticks(xticks, xlabels) #, minor=False)
+    ax.set_xticks(xticks, xlabels)  # , minor=False)
     ax.set_xlabel(AxLabels[0], fontsize=Fontsizes[1])
     ax.xaxis.set_ticks_position('top')
     ax.xaxis.set_label_position('top')
@@ -741,11 +717,11 @@ def plot_matrix(
     ylabels = AxTickLabels[1]
     # print(yticks)
     # print(ylabels)
-    ax.set_yticks(yticks, ylabels) #, minor=False)
+    ax.set_yticks(yticks, ylabels)  # , minor=False)
     ax.set_ylabel(AxLabels[1], fontsize=Fontsizes[1])
 
     if Aspect == 'equal':
-        ax.set_aspect('equal','box')
+        ax.set_aspect('equal', 'box')
     else:
         ax.set_aspect(Aspect)
 
@@ -756,7 +732,7 @@ def plot_matrix(
 
     if PlotStrng != '':
 
-        props = dict(facecolor='white', alpha=0.9) # boxstyle='round'
+        props = dict(facecolor='white', alpha=0.9)  # boxstyle='round'
         ax.text(StrngPos[0], StrngPos[1], PlotStrng,
                 transform=ax.transAxes,
                 fontsize=Fontsizes[1],
@@ -764,22 +740,23 @@ def plot_matrix(
 
     if ThisAxis is None:
         for F in PlotFormat:
-             matplotlib.pyplot.savefig(PlotFile+F)
+            matplotlib.pyplot.savefig(PlotFile + F)
 
         # matplotlib.pyplot.show()
         # matplotlib.pyplot.clf()
 
     return ax
 
+
 def plot_sparsity_pattern(
-        PlotFile = '',
-        PlotTitle = '$\mathbf{M}$, Sparsity Pattern',
-        PlotFormat = ['png', '.pdf'],
-        FigSize = [8.5*0.3937, 8.5*0.3937],
-        Matrix = [],
+        PlotFile='',
+        PlotTitle='$\mathbf{M}$, Sparsity Pattern',
+        PlotFormat=['png', '.pdf'],
+        FigSize=[8.5 * 0.3937, 8.5 * 0.3937],
+        Matrix=[],
         PlotStrng='',
-        PlotStrngPos=[0.05,0.05],
-        Aspect = 'auto'):
+        PlotStrngPos=[0.05, 0.05],
+        Aspect='auto'):
 
     from scipy.sparse import csr_array, csc_array, coo_array, eye_array, issparse
     from scipy.sparse import csr_matrix, csc_matrix, coo_matrix
@@ -792,31 +769,31 @@ def plot_sparsity_pattern(
 
     # Plotting
     options = {'title': PlotTitle,
-               'figsize': 8.,      #  inches
+               'figsize': 8.,  # inches
                'dpi': 600,
-               'shading': 'binary', # 'absolute' 'relative' 'binary'
+               'shading': 'binary',  # 'absolute' 'relative' 'binary'
                'spy_aa_tweaks_enabled': True,
                'color_full': 'black'}
 
     fig, ax = spy_to_mpl(M, **options)
-    fig.text(PlotStrngPos[0], PlotStrngPos[1],PlotStrng)
+    fig.text(PlotStrngPos[0], PlotStrngPos[1], PlotStrng)
     fig.show()
 
     for fmt in PlotFormat:
-         fig.savefig(PlotFile+PlotStrng+fmt, bbox_inches='tight')
+        fig.savefig(PlotFile + PlotStrng + fmt, bbox_inches='tight')
 
     plt.close()
+
 
 def plot_plane_cross(ax, position,
                      tensor,
                      plane,
-                     colors=('red','blue', 'green'),
+                     colors=('red', 'blue', 'green'),
                      scale=1.0):
 
-
-    idx = {'XY': (0,1), 'XZ': (0,2), 'YZ': (1,2)}[plane]
+    idx = {'XY': (0, 1), 'XZ': (0, 2), 'YZ': (1, 2)}[plane]
     i, j = idx
-    block = tensor[[i,j],:][:,[i,j]]
+    block = tensor[[i, j], :][:, [i, j]]
     eigvals, eigvecs = np.linalg.eigh(block)
     order = np.argsort(eigvals)[::-1]
     eigvals = eigvals[order]
@@ -825,8 +802,8 @@ def plot_plane_cross(ax, position,
     for k in range(2):
         v = eigvecs[:, k]
         mag = eigvals[k] * scale
-        x_coords = np.array([-v[0]*mag, v[0]*mag])
-        y_coords = np.array([-v[1]*mag, v[1]*mag])
+        x_coords = np.array([-v[0] * mag, v[0] * mag])
+        y_coords = np.array([-v[1] * mag, v[1] * mag])
         ax.plot(x_coords, y_coords,
                 color=colors[k],
                 linewidth=3,
@@ -882,8 +859,6 @@ def plot_plane_cross(ax, position,
     #                                       gridspec_kw={'height_ratios': [1]})
     #     fig.suptitle(PlotTitle, fontsize=Fontsizes[2])
     #     Legend = True
-
-
 
     # if 'per' in PlotType.lower():
     #     nperc = np.size(Percentiles)
@@ -1059,7 +1034,6 @@ def plot_plane_cross(ax, position,
 #             for p in np.arange(np):
 
 
-
 #                 if 'per' in PlotType.lower():
 #                     medQens = np.percentile(Qens, 50., axis=0)
 #                     plabel = 'p='\
@@ -1075,7 +1049,6 @@ def plot_plane_cross(ax, position,
 
 #                     dlow = np.quantile(Qens,    Quantiles[p], axis=0)
 #                     dupp = np.quantile(Qens, 1.-Quantiles[p], axis=0)
-
 
 
 #                 ax.fill_between(XAxis, dlow, dupp,
@@ -1121,7 +1094,6 @@ def plot_plane_cross(ax, position,
 #                                         label=None)
 
 
-
 #                 ax.plot(XAxis, dlow,
 #                         linewidth=Linewidth[0]/2, color= Linecolor[p+2])
 #                 ax.plot(XAxis, dupp,
@@ -1131,8 +1103,6 @@ def plot_plane_cross(ax, position,
 #                 ax.plot(XAxis, medIens,
 #                         linewidth=Linewidth[0], color= Linecolor[0], linestyle=Linetype[2],
 #                         label=None)
-
-
 
 
 #         elif 'lin' in PlotType.lower():
@@ -1212,7 +1182,6 @@ def plot_plane_cross(ax, position,
 #         if ('per' in PlotType.lower()) or ('qua' in PlotType.lower()):
 
 
-
 #                 for p in np.arange(np):
 
 #                     if 'per' in PlotType.lower():
@@ -1276,7 +1245,6 @@ def plot_plane_cross(ax, position,
 #                                             label=None)
 
 
-
 #                     ax.plot(XAxis, dlow,
 #                             linewidth=Linewidth[0]/2, color= Linecolor[p+2])
 #                     ax.plot(XAxis, dupp,
@@ -1287,7 +1255,6 @@ def plot_plane_cross(ax, position,
 #                     ax.plot(XAxis, medZens,
 #                             linewidth=Linewidth[0]/2, color= Linecolor[2], linestyle=Linetype[2],
 #                             label=None)
-
 
 
 #         elif 'lin' in PlotType.lower():
@@ -1318,7 +1285,6 @@ def plot_plane_cross(ax, position,
 #                         )
 
 
-
 #         ax.set_xscale('log')
 #         if len(XLimits) !=0:
 #             ax.set_xlim(XLimits)
@@ -1346,7 +1312,7 @@ def plot_plane_cross(ax, position,
 #     # matplotlib.pyplot.clf()
 
 #     return ax
-def make_pdf_catalog(workdir='./', pdflist= None, filename=None):
+def make_pdf_catalog(workdir='./', pdflist=None, filename=None):
     '''
     Make pdf catalog from site-plot(
 
@@ -1372,7 +1338,7 @@ def make_pdf_catalog(workdir='./', pdflist= None, filename=None):
         with fitz.open(pdf) as mfile:
             catalog.insert_pdf(mfile)
 
-    catalog.save(filename, garbage=4, clean = True, deflate=True)
+    catalog.save(filename, garbage=4, clean=True, deflate=True)
     catalog.close()
 
-    print('\n'+str(np.size(pdflist))+' files collected to '+filename)
+    print('\n' + str(np.size(pdflist)) + ' files collected to ' + filename)
