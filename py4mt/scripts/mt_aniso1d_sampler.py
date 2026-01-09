@@ -34,10 +34,12 @@ for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0, pth)
 
+from aniso import aniso1d_impedance_sens
+from data_viz import add_phase, add_rho, add_tipper, add_pt
+from data_proc import load_edi, save_edi, save_ncd, save_hdf, save_npz
+from data_proc import compute_pt, interpolate_data
+from data_proc import set_errors, estimate_errors, rotate_data
 
-import modem
-from mtproc import calc_rhoa_phas
-from aniso import prep_aniso, mt1d_aniso
 import viz
 import util as utl
 from util import dict_to_namespace
@@ -58,18 +60,15 @@ print(titstrng+'\n\n')
 PY4MTX_DATA = os.environ['PY4MTX_DATA']
 PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
 
-
-WorkDir = PY4MTX_ROOT+'/aniso/'
+WorkDir = '/home/vrath/Py4MTX/work/EPS_2025_Annecy/edi/Sites_Name/'
+# WorkDir = PY4MTX_ROOT+'/aniso/'
 if not os.path.isdir(WorkDir):
     print(' File: %s does not exist, but will be created' % WorkDir)
     os.mkdir(WorkDir)
 
 
-EdiDir = WorkDir+'data'
-ResDir = WorkDir+'results'
-
-
-Periods = np.logspace(-4., 4., 41)
+EdiDir = WorkDir+'edi'
+ResDir = EdiDir
 
 pi = np.pi
 mu0 = 4e-7 * pi
@@ -87,9 +86,14 @@ for filename in dat_files:
     name, ext = os.path.splitext(filename)
     if 'npz' in ext.lower():
         data_dict = np.load(filename)
-    else:
-        sys.exit('mt_aniso1d_sampler: direct edi load not yet implented')
+    elif 'edi' in ext.lower():
+        data_dict = load_edi(filename, prefer_spectra=True, err_kind="var")
+        P, P_err = compute_pt(data_dict["Z"], data_dict.get("Z_err"), err_kind=data_dict.get("err_kind", "var"))
+        data_dict["P"] = P
+        data_dict["P_err"] = P_err
+        save_npz(filename.replace('.edi', '.npz'), data_dict=data_dict)
 
+    utl.stop()
     # edi: Dict[str, Any] = {
     #     "freq": freq,
     #     "Z": Z,
