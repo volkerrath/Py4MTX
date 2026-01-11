@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ediviz.py
+
+data_viz.py
 =================
 Matplotlib helpers for magnetotelluric (MT) transfer-function plots.
 
@@ -43,17 +44,265 @@ The following columns are recognised (all optional except ``freq``):
 All plotters share the arguments ``show_errors``, ``error_suffix`` and
 ``error_alpha`` to control the error visualisation.
 
+
+EDIDict support
+---------------
+
+In addition to :class:`pandas.DataFrame`, the main plotters can accept an
+"EDI dict" (``Mapping[str, Any]``) with the common keys produced by the
+EDI parsers in this project:
+
+- ``freq`` : (nf,) frequency array [Hz] (required)
+- ``Z`` : (nf, 2, 2) complex impedance tensor
+- ``Z_err`` : (nf, 2, 2) complex or real 1-sigma errors (optional)
+- ``T`` : (nf, 2) complex tipper (Tx, Ty)
+- ``T_err`` : (nf, 2) complex or real 1-sigma errors (optional)
+- ``P`` : (nf, 2, 2) real phase tensor (optional)
+- ``P_err`` : (nf, 2, 2) real 1-sigma errors (optional)
+
+When an EDI dict is provided, it is converted internally into a plotting
+DataFrame with the expected flat column names (``rho_xy``, ``phi_xy``,
+``Tx_re``, ``ptxx_re``, ...). Metadata (station, location, rotation, etc.)
+is preserved in ``df.attrs``.
+
 Author: Volker Rath (DIAS)
-Created by ChatGPT (GPT-5 Thinking) on 2025-11-20
+Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-11
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Optional
+from collections.abc import Mapping
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+
+# Physical constant
+MU0 = 4.0e-7 * np.pi  # magnetic permeability of free space [H/m]
+
+
+def _as_array(x: Any) -> Optional[np.ndarray]:
+    """Convert a list/tuple/ndarray to ndarray; return None for unsupported types."""
+    if x is None:
+        return None
+    if isinstance(x, np.ndarray):
+        return x
+    if isinstance(x, (list, tuple)):
+        return np.asarray(x)
+    return None
+
+
+def _zcomp_name(i: int, j: int) -> str:
+    """Map tensor indices to component labels ('xx','xy','yx','yy')."""
+    return ("x" if i == 0 else "y") + ("x" if j == 0 else "y")
+
+
+def _split_complex_1d(
+    cols: dict[str, np.ndarray],
+    base: str,
+    arr: np.ndarray,
+    *,
+    suffix_re: str = "_re",
+    suffix_im: str = "_im",
+) -> None:
+    """Store a 1D complex array as base_re and base_im."""
+    cols[base + suffix_re] = np.asarray(arr.real)
+    cols[base + suffix_im] = np.asarray(arr.imag)
+
+
+def _complex_sigma_abs(err: np.ndarray) -> np.ndarray:
+    """
+    Convert an error array to an absolute sigma for |z|.
+
+    - complex: sigma_abs = hypot(re, im)
+    - real:    sigma_abs = abs(err)
+    """
+    err = np.asarray(err)
+    if np.iscomplexobj(err):
+        return np.hypot(err.real, err.imag)
+    return np.abs(err)
+
+
+def edidict_to_plot_df(edidict: Mapping[str, Any]) -> pd.DataFrame:
+    """
+    Convert an EDI dict (freq, Z, T, P plus optional *_err) to a plotting DataFrame.
+
+    The returned DataFrame contains:
+
+    - ``freq`` and ``period``
+    - ``rho_<comp>`` and ``phi_<comp>`` derived from ``Z`` (if present)
+    - tipper columns ``Tx_re``, ``Tx_im``, ``Ty_re``, ``Ty_im`` derived from ``T`` (if present)
+    - phase tensor columns ``ptxx_re``, ``ptxy_re``, ``ptyx_re``, ``ptyy_re`` derived from ``P`` (if present)
+
+    When ``Z_err`` is present and has compatible shape, approximate 1-sigma
+    errors are added as ``rho_<comp>_err`` and ``phi_<comp>_err``.
+
+    Metadata keys (station, location, rotation, etc.) are copied into ``df.attrs``.
+    """
+    freq = _as_array(edidict.get("freq"))
+    if freq is None or np.asarray(freq).ndim != 1:
+        raise ValueError("edidict['freq'] must be a 1D array.")
+    freq = np.asarray(freq, dtype=float)
+    n = int(freq.size)
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        period = np.where(freq > 0.0, 1.0 / freq, np.nan)
+    omega = 2.0 * np.pi * freq
+
+    cols: dict[str, np.ndarray] = {"freq": freq, "period": period}
+
+    # Pass-through if already present as 1D arrays of length n
+    for k, v in edidict.items():
+        if k in cols:
+            continue
+        arr = _as_array(v)
+        if arr is not None and np.asarray(arr).ndim == 1 and int(np.asarray(arr).size) == n:
+            # do not overwrite derived columns later unless explicitly derived
+            cols.setdefault(k, np.asarray(arr))
+
+    # --- Z: accept (n,2,2) or (n,4)
+    Z = _as_array(edidict.get("Z"))
+    if Z is not None:
+        Z = np.asarray(Z)
+        if Z.shape[0] != n:
+            raise ValueError(f"edidict['Z'] first dimension must be nf={n}; got {Z.shape}.")
+        if Z.ndim == 2 and Z.shape[1] == 4:
+            Z = Z.reshape(n, 2, 2)
+        if Z.ndim != 3 or Z.shape[1:] != (2, 2):
+            raise ValueError(f"edidict['Z'] expected shape (nf,2,2) or (nf,4); got {Z.shape}.")
+        if not np.iscomplexobj(Z):
+            Z = Z.astype(np.complex128)
+
+        for i in range(2):
+            for j in range(2):
+                comp = _zcomp_name(i, j)
+                z = Z[:, i, j]
+                # Derived rho/phi (do not force if already present in cols)
+                zabs = np.abs(z)
+                rho = (zabs ** 2) / (MU0 * omega)
+                phi = np.degrees(np.arctan2(z.imag, z.real))
+                cols.setdefault(f"rho_{comp}", rho)
+                cols.setdefault(f"phi_{comp}", phi)
+
+        # optional error propagation
+        Zerr = _as_array(edidict.get("Z_err"))
+        if Zerr is not None:
+            Zerr = np.asarray(Zerr)
+            if Zerr.shape[0] == n:
+                if Zerr.ndim == 2 and Zerr.shape[1] == 4:
+                    Zerr = Zerr.reshape(n, 2, 2)
+                if Zerr.ndim == 3 and Zerr.shape[1:] == (2, 2):
+                    for i in range(2):
+                        for j in range(2):
+                            comp = _zcomp_name(i, j)
+                            z = Z[:, i, j]
+                            zabs = np.abs(z)
+                            sig_abs = _complex_sigma_abs(Zerr[:, i, j])
+
+                            cols.setdefault(
+                                f"rho_{comp}_err",
+                                (2.0 * zabs * sig_abs) / (MU0 * omega),
+                            )
+
+                            with np.errstate(divide="ignore", invalid="ignore"):
+                                sig_phi = (sig_abs / np.where(zabs == 0.0, np.nan, zabs)) * (
+                                    180.0 / np.pi
+                                )
+                            cols.setdefault(f"phi_{comp}_err", sig_phi)
+
+    # --- T: accept (n,2) or (n,2,1) or (n,1,2)
+    T = _as_array(edidict.get("T"))
+    if T is not None:
+        T = np.asarray(T)
+        if T.shape[0] != n:
+            raise ValueError(f"edidict['T'] first dimension must be nf={n}; got {T.shape}.")
+        if T.ndim == 3:
+            if T.shape[1:] == (2, 1):
+                T = T[:, :, 0]
+            elif T.shape[1:] == (1, 2):
+                T = T[:, 0, :]
+        if T.ndim != 2 or T.shape[1] != 2:
+            raise ValueError(f"edidict['T'] expected shape (nf,2); got {T.shape}.")
+        if not np.iscomplexobj(T):
+            T = T.astype(np.complex128)
+
+        _split_complex_1d(cols, "Tx", T[:, 0])
+        _split_complex_1d(cols, "Ty", T[:, 1])
+
+        Terr = _as_array(edidict.get("T_err"))
+        if Terr is not None:
+            Terr = np.asarray(Terr)
+            if Terr.shape[0] == n:
+                if Terr.ndim == 3:
+                    if Terr.shape[1:] == (2, 1):
+                        Terr = Terr[:, :, 0]
+                    elif Terr.shape[1:] == (1, 2):
+                        Terr = Terr[:, 0, :]
+                if Terr.ndim == 2 and Terr.shape[1] == 2:
+                    if not np.iscomplexobj(Terr):
+                        Terr = Terr.astype(np.complex128)
+                    cols["Tx_re_err"] = np.asarray(Terr[:, 0].real)
+                    cols["Tx_im_err"] = np.asarray(Terr[:, 0].imag)
+                    cols["Ty_re_err"] = np.asarray(Terr[:, 1].real)
+                    cols["Ty_im_err"] = np.asarray(Terr[:, 1].imag)
+
+    # --- P: accept (n,2,2) or (n,4)
+    P = _as_array(edidict.get("P"))
+    if P is not None:
+        P = np.asarray(P)
+        if P.shape[0] != n:
+            raise ValueError(f"edidict['P'] first dimension must be nf={n}; got {P.shape}.")
+        if P.ndim == 2 and P.shape[1] == 4:
+            P = P.reshape(n, 2, 2)
+        if P.ndim != 3 or P.shape[1:] != (2, 2):
+            raise ValueError(f"edidict['P'] expected shape (nf,2,2) or (nf,4); got {P.shape}.")
+        cols.setdefault("ptxx_re", np.asarray(P[:, 0, 0], dtype=float))
+        cols.setdefault("ptxy_re", np.asarray(P[:, 0, 1], dtype=float))
+        cols.setdefault("ptyx_re", np.asarray(P[:, 1, 0], dtype=float))
+        cols.setdefault("ptyy_re", np.asarray(P[:, 1, 1], dtype=float))
+
+        Perr = _as_array(edidict.get("P_err"))
+        if Perr is not None:
+            Perr = np.asarray(Perr)
+            if Perr.shape[0] == n:
+                if Perr.ndim == 2 and Perr.shape[1] == 4:
+                    Perr = Perr.reshape(n, 2, 2)
+                if Perr.ndim == 3 and Perr.shape[1:] == (2, 2):
+                    cols.setdefault("ptxx_re_err", np.asarray(Perr[:, 0, 0], dtype=float))
+                    cols.setdefault("ptxy_re_err", np.asarray(Perr[:, 0, 1], dtype=float))
+                    cols.setdefault("ptyx_re_err", np.asarray(Perr[:, 1, 0], dtype=float))
+                    cols.setdefault("ptyy_re_err", np.asarray(Perr[:, 1, 1], dtype=float))
+
+    df = pd.DataFrame(cols)
+
+    # Copy common metadata into attrs
+    for meta_k in (
+        "rot",
+        "err_kind",
+        "header_raw",
+        "source_kind",
+        "station",
+        "lat_deg",
+        "lon_deg",
+        "elev_m",
+        "lat",
+        "lon",
+        "elev",
+    ):
+        if meta_k in edidict:
+            v = edidict[meta_k]
+            df.attrs[meta_k] = v if isinstance(v, (str, int, float, bool, type(None), np.number)) else repr(v)
+
+    return df
+
+
+def _ensure_df(data: pd.DataFrame | Mapping[str, Any]) -> pd.DataFrame:
+    """Accept a DataFrame or EDI dict; always return a plotting DataFrame."""
+    if isinstance(data, pd.DataFrame):
+        return data
+    return edidict_to_plot_df(data)
 
 
 def _parse_comps(comp_str: Optional[str]) -> List[str]:
@@ -109,7 +358,7 @@ def _period_from_df(df: pd.DataFrame) -> np.ndarray:
 
     Parameters
     ----------
-    df : pandas.DataFrame
+    data : pandas.DataFrame or Mapping[str, Any]
         Input dataframe with a ``"freq"`` column in Hz and optionally a
         ``"period"`` column.
 
@@ -161,7 +410,7 @@ def _maybe_fill_between(
 
 
 def add_rho(
-    df: pd.DataFrame,
+    data: pd.DataFrame | Mapping[str, Any],
     comps: Optional[str] = None,
     ax: Optional[plt.Axes] = None,
     legend: bool = True,
@@ -175,7 +424,7 @@ def add_rho(
 
     Parameters
     ----------
-    df : pandas.DataFrame
+    data : pandas.DataFrame or Mapping[str, Any]
         Dataframe containing at least the columns ``"freq"`` and some of
         ``"rho_xx"``, ``"rho_xy"``, ``"rho_yx"``, ``"rho_yy"`` in Ω·m.
     comps : str, optional
@@ -202,6 +451,8 @@ def add_rho(
     matplotlib.axes.Axes
         The axes instance with the curves added.
     """
+    df = _ensure_df(data)
+
     fig, ax, _ = _maybe_ax(ax)
     period = _period_from_df(df)
     comps_list = _parse_comps(comps)
@@ -235,7 +486,7 @@ def add_rho(
 
 
 def add_phase(
-    df: pd.DataFrame,
+    data: pd.DataFrame | Mapping[str, Any],
     comps: Optional[str] = None,
     ax: Optional[plt.Axes] = None,
     legend: bool = True,
@@ -249,7 +500,7 @@ def add_phase(
 
     Parameters
     ----------
-    df : pandas.DataFrame
+    data : pandas.DataFrame or Mapping[str, Any]
         Dataframe containing at least ``"freq"`` and some of ``"phi_xx"``,
         ``"phi_xy"``, ``"phi_yx"``, ``"phi_yy"`` in degrees.
     comps : str, optional
@@ -276,6 +527,8 @@ def add_phase(
     matplotlib.axes.Axes
         The axes instance with the curves added.
     """
+    df = _ensure_df(data)
+
     fig, ax, _ = _maybe_ax(ax)
     period = _period_from_df(df)
     comps_list = _parse_comps(comps)
@@ -309,7 +562,7 @@ def add_phase(
 
 
 def add_tipper(
-    df: pd.DataFrame,
+    data: pd.DataFrame | Mapping[str, Any],
     ax: Optional[plt.Axes] = None,
     legend: bool = True,
     *,
@@ -322,7 +575,7 @@ def add_tipper(
 
     Parameters
     ----------
-    df : pandas.DataFrame
+    data : pandas.DataFrame or Mapping[str, Any]
         Dataframe containing at least ``"freq"`` and some of
         ``"Tx_re"``, ``"Tx_im"``, ``"Ty_re"``, ``"Ty_im"``.
     ax : matplotlib.axes.Axes, optional
@@ -345,6 +598,8 @@ def add_tipper(
     matplotlib.axes.Axes
         The axes instance with the curves added.
     """
+    df = _ensure_df(data)
+
     fig, ax, _ = _maybe_ax(ax)
     period = _period_from_df(df)
 
@@ -383,7 +638,7 @@ def add_tipper(
 
 
 def add_pt(
-    df: pd.DataFrame,
+    data: pd.DataFrame | Mapping[str, Any],
     ax: Optional[plt.Axes] = None,
     legend: bool = True,
     *,
@@ -419,6 +674,8 @@ def add_pt(
     matplotlib.axes.Axes
         The axes instance with the curves added.
     """
+    df = _ensure_df(data)
+
     fig, ax, _ = _maybe_ax(ax)
     period = _period_from_df(df)
 

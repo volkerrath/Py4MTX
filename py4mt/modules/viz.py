@@ -18,7 +18,7 @@ import math
 import numpy as np
 
 import matplotlib as mpl
-import matplotlib.pyplot as plt
+import plt as plt
 import matplotlib.colors as col
 import matplotlib.cm as cm
 import mpl_toolkits.axes_grid1
@@ -30,8 +30,10 @@ import scipy.sparse as scs
 
 import util as utl
 # pltargs = {
+#     'pltformat: ['.png', '.pdf'],
+#     'pltfile: ['vertical_prof'],
 #     'pltsize': [16., 16.],
-#     'fontsizes': [18, 20, 24, 18],  # axis, label, title
+#     'fontsizes': [18, 20, 24, 18],  # axis, label, title, legend
 #     'm_size': 10,
 #     'c_obs': ['b', 'r'],
 #     'm_obs': ['s', 'o'],
@@ -168,9 +170,9 @@ def plot_impedance(thisaxis=None, data=None, **pltargs):
 
     if thisaxis is None:
         for f in pltargs['pltformat']:
-            matplotlib.pyplot.savefig(pltargs['pltfile'] + f)
-        # matplotlib.pyplot.show()
-        # matplotlib.pyplot.clf()
+            plt.savefig(pltargs['pltfile'] + f)
+        # plt.show()
+        # plt.clf()
 
     return ax
 
@@ -293,9 +295,9 @@ def plot_rhophas(thisaxis=None, data=None, **pltargs):
 
     if thisaxis is None:
         for f in pltargs['pltformat']:
-            matplotlib.pyplot.savefig(pltargs['pltfile'] + f)
-        # matplotlib.pyplot.show()
-        # matplotlib.pyplot.clf()
+            plt.savefig(pltargs['pltfile'] + f)
+        # plt.show()
+        # plt.clf()
 
     return ax
 
@@ -373,9 +375,9 @@ def plot_phastens(thisaxis=None, data=None, **pltargs):
 
     if thisaxis is None:
         for f in pltargs['pltformat']:
-            matplotlib.pyplot.savefig(pltargs['pltfile'] + f)
-        # matplotlib.pyplot.show()
-        # matplotlib.pyplot.clf()
+            plt.savefig(pltargs['pltfile'] + f)
+        # plt.show()
+        # plt.clf()
 
     return ax
 
@@ -409,40 +411,40 @@ def plot_vtf(thisaxis=None, data=None, **pltargs):
 
     if thisaxis is None:
         for f in pltargs['plotformat']:
-            matplotlib.pyplot.savefig(pltargs['plotfile'] + f)
+            plt.savefig(pltargs['plotfile'] + f)
 
     return ax
 
 
-def plot_depth_prof(
-        thisaxis=None,
-        PlotFile='',
-        PlotFormat=['png',],
-        PlotTitle='',
-        FigSize=[8.5 * 0.3937, 8.5 * 0.3937],
-        Depth=[],
-        DLimits=[],
-        DLabel=' Depth (m)',
-        Params=[],
-        Partyp='',
-        PLabel='',
-        PLimits=[],
-        Shade=[0.25],
-        XScale='log',
-        PlotType='steps',
-        Legend=[],
-        Linecolor=['r', 'g', 'b', 'm', 'y'],
-        Linetypes=['-', '-', '-', '-', '-'],
-        Linewidth=[1, 1, 1, 1, 1,],
-        Marker=['v'],
-        Markersize=[4],
-        Fillcolor=[[0.7, 0.7, 0.7]],
-        Logplot=True,
-        Fontsizes=[10, 10, 12],
-        PlotStrng='',
-        StrngPos=[0.05, 0.05],
-        Invalid=1.e30,
-        **pltargs):
+def plot_depth_prof(thisaxis=None, params=None, **pltargs):
+        # thisaxis=None,
+        # plotfile='',
+        # plotformat=['png',],
+        # plottitle='',
+        # figsize=[8.5 * 0.3937, 8.5 * 0.3937],
+        # depth=[],
+        # dlimits=[],
+        # dlabel=' depth (m)',
+        # params=[],
+        # partyp='',
+        # plabel='',
+        # plimits=[],
+        # shade=[0.25],
+        # xscale='log',
+        # plottype='steps',
+        # legend=[],
+        # linecolor=['r', 'g', 'b', 'm', 'y'],
+        # linetypes=['-', '-', '-', '-', '-'],
+        # linewidth=[1, 1, 1, 1, 1,],
+        # marker=['v'],
+        # markersize=[4],
+        # fillcolor=[[0.7, 0.7, 0.7]],
+        # logplot=true,
+        # fontsizes=[10, 10, 12],
+        # plotstrng='',
+        # strngpos=[0.05, 0.05],
+        # invalid=1.e30,
+        # **pltargs):
     '''
     General plot of (multiple) depth profiiles
 
@@ -506,10 +508,10 @@ def plot_depth_prof(
     else:
         ax = thisaxis
 
-    for iparset in range(len(Params)):
+    for iparset in np.arange(len(params)):
 
-        P = Params[iparset]
-        D = Depth[iparset]
+        p = params[iparset]
+        d = depth[iparset]
         npar = np.shape(P)[0]
         ndat = np.shape(D)[0]
 
@@ -636,34 +638,36 @@ def plot_depth_prof(
                 bbox=dict(facecolor='white', alpha=0.5))
 
         if thisaxis is None:
-            for F in PlotFormat:
-                matplotlib.pyplot.savefig(PlotFile + F)
+            for F in pltargs['pltformat']:
+                plt.savefig(pltargs['pltfileFile'] + F)
 
-            matplotlib.pyplot.show()
-            matplotlib.pyplot.clf()
+            plt.show()
+            plt.clf()
 
         return ax
 
 
-def plot_matrix(
-        ThisAxis=None,
-        PlotFile='',
-        PlotTitle='',
-        PlotFormat=['png',],
-        FigSize=[8.5 * 0.3937, 8.5 * 0.3937],
-        Matrix=[],
-        TickStr='',
-        AxLabels=['layer #', 'layer #'],
-        AxTicks=[[], []],
-        AxTickLabels=[[], []],
-        ColorMap='viridis',
-        Fontsizes=[10, 10, 12],
-        Unit='',
-        PlotStrng='',
-        StrngPos=[0.05, 0.05],
-        Aspect='auto',
-        Invalid=1.e30,
-        Transpose=False):
+def plot_matrix(matrix,
+        thisaxis=none, matrix=none,
+        invalid=1.e30,
+        transpose=false, **pltargs):
+        plotfile = '',
+        plottitle = '',
+        plotformat = ['png',],
+        figsize = [8.5 * 0.3937, 8.5 * 0.3937],
+        matrix = [],
+        tickstr = '',
+        axlabels = ['layer #', 'layer #'],
+        axticks = [[], []],
+        axticklabels = [[], []],
+        colormap = 'viridis',
+        fontsizes = [10, 10, 12],
+        unit = '',
+        plotstrng = '',
+        strngpos = [0.05, 0.05],
+        aspect = 'auto',
+      ):
+
     '''
     Plots jacobians, covariance and resolution matrices.
 
@@ -687,76 +691,76 @@ def plot_matrix(
     @author: vrath
 
     '''
-    nn = np.shape(Matrix)
-    if Transpose:
-        Matrix = Matrix.T
+    nn = np.shape(matrix)
+    if transpose:
+        matrix = matrix.t
 
     npar = nn[0]
-    if Matrix.ndim == 1:
+    if matrix.ndim == 1:
         npar = math.isqrt(nn[0])
-        Matrix = Matrix.reshape((npar, npar))
+        matrix = matrix.reshape((npar, npar))
 
-    if ThisAxis is None:
-        fig, ax = matplotlib.pyplot.subplots(1, 1, figsize=(FigSize))
-        fig.suptitle(PlotTitle, fontsize=Fontsizes[2])
+    if thisaxis is none:
+        fig, ax = plt.subplots(1, 1, figsize=(figsize))
+        fig.suptitle(plottitle, fontsize=fontsizes[2])
     else:
-        ax = ThisAxis
+        ax = thisaxis
 
-    im = ax.imshow(Matrix, cmap=ColorMap, origin='upper')
+    im = ax.imshow(matrix, cmap=colormap, origin='upper')
 
-    xticks = AxTicks[0]
-    xlabels = AxTickLabels[0]
+    xticks = axticks[0]
+    xlabels = axticklabels[0]
     # print(xticks)
     # print(xlabels)
-    ax.set_xticks(xticks, xlabels)  # , minor=False)
-    ax.set_xlabel(AxLabels[0], fontsize=Fontsizes[1])
+    ax.set_xticks(xticks, xlabels)  # , minor=false)
+    ax.set_xlabel(axlabels[0], fontsize=fontsizes[1])
     ax.xaxis.set_ticks_position('top')
     ax.xaxis.set_label_position('top')
 
-    yticks = AxTicks[1]
-    ylabels = AxTickLabels[1]
+    yticks = axticks[1]
+    ylabels = axticklabels[1]
     # print(yticks)
     # print(ylabels)
-    ax.set_yticks(yticks, ylabels)  # , minor=False)
-    ax.set_ylabel(AxLabels[1], fontsize=Fontsizes[1])
+    ax.set_yticks(yticks, ylabels)  # , minor=false)
+    ax.set_ylabel(axlabels[1], fontsize=fontsizes[1])
 
-    if Aspect == 'equal':
+    if aspect == 'equal':
         ax.set_aspect('equal', 'box')
     else:
-        ax.set_aspect(Aspect)
+        ax.set_aspect(aspect)
 
     divider = mpl_toolkits.axes_grid1.make_axes_locatable(ax)
     cax = divider.append_axes('right', size='5%', pad=0.1)
-    cb = matplotlib.pyplot.colorbar(im, cax=cax)
-    cb.ax.set_title(Unit)
+    cb = plt.colorbar(im, cax=cax)
+    cb.ax.set_title(unit)
 
-    if PlotStrng != '':
+    if plotstrng != '':
 
         props = dict(facecolor='white', alpha=0.9)  # boxstyle='round'
-        ax.text(StrngPos[0], StrngPos[1], PlotStrng,
-                transform=ax.transAxes,
-                fontsize=Fontsizes[1],
+        ax.text(strngpos[0], strngpos[1], plotstrng,
+                transform=ax.transaxes,
+                fontsize=fontsizes[1],
                 verticalalignment='center', bbox=props)
 
-    if ThisAxis is None:
-        for F in PlotFormat:
-            matplotlib.pyplot.savefig(PlotFile + F)
+        if thisaxis is none:
+            for f in pltargs['pltformat']:
+                plt.savefig(pltargs['pltfilefile'] + f)
 
-        # matplotlib.pyplot.show()
-        # matplotlib.pyplot.clf()
+        # plt.show()
+        # plt.clf()
 
     return ax
 
 
 def plot_sparsity_pattern(
-        PlotFile='',
-        PlotTitle='$\mathbf{M}$, Sparsity Pattern',
-        PlotFormat=['png', '.pdf'],
-        FigSize=[8.5 * 0.3937, 8.5 * 0.3937],
-        Matrix=[],
-        PlotStrng='',
-        PlotStrngPos=[0.05, 0.05],
-        Aspect='auto'):
+        plotfile='',
+        plottitle='$\mathbf{m}$, sparsity pattern',
+        plotformat=['png', '.pdf'],
+        figsize=[8.5 * 0.3937, 8.5 * 0.3937],
+        matrix=[],
+        plotstrng='',
+        plotstrngpos=[0.05, 0.05],
+        aspect='auto'):
 
     from scipy.sparse import csr_array, csc_array, coo_array, eye_array, issparse
     from scipy.sparse import csr_matrix, csc_matrix, coo_matrix
@@ -764,23 +768,23 @@ def plot_sparsity_pattern(
 
     import femtic as fem
 
-    M = coo_matrix(Matrix)
-    fem.check_sparse_matrix(M)
+    m = coo_matrix(matrix)
+    fem.check_sparse_matrix(m)
 
-    # Plotting
-    options = {'title': PlotTitle,
+    # plotting
+    options = {'title': plottitle,
                'figsize': 8.,  # inches
                'dpi': 600,
                'shading': 'binary',  # 'absolute' 'relative' 'binary'
-               'spy_aa_tweaks_enabled': True,
+               'spy_aa_tweaks_enabled': true,
                'color_full': 'black'}
 
-    fig, ax = spy_to_mpl(M, **options)
-    fig.text(PlotStrngPos[0], PlotStrngPos[1], PlotStrng)
+    fig, ax = spy_to_mpl(m, **options)
+    fig.text(plotstrngpos[0], plotstrngpos[1], plotstrng)
     fig.show()
 
-    for fmt in PlotFormat:
-        fig.savefig(PlotFile + PlotStrng + fmt, bbox_inches='tight')
+    for fmt in plotformat:
+        fig.savefig(plotfile + plotstrng + fmt, bbox_inches='tight')
 
     plt.close()
 
@@ -791,7 +795,7 @@ def plot_plane_cross(ax, position,
                      colors=('red', 'blue', 'green'),
                      scale=1.0):
 
-    idx = {'XY': (0, 1), 'XZ': (0, 2), 'YZ': (1, 2)}[plane]
+    idx = {'xy': (0, 1), 'xz': (0, 2), 'yz': (1, 2)}[plane]
     i, j = idx
     block = tensor[[i, j], :][:, [i, j]]
     eigvals, eigvecs = np.linalg.eigh(block)
@@ -854,7 +858,7 @@ def plot_plane_cross(ax, position,
 
     # if ThisAxis is None:
     #     nplots = 1
-    #     fig, ax = matplotlib.pyplot.subplots(1,
+    #     fig, ax = plt.subplots(1,
     #                                       figsize=(PlotSize[0]*cm, nplots*PlotSize[0]*cm),
     #                                       gridspec_kw={'height_ratios': [1]})
     #     fig.suptitle(PlotTitle, fontsize=Fontsizes[2])
@@ -958,9 +962,9 @@ def plot_plane_cross(ax, position,
 
     # if ThisAxis is None:
     #     for F in PlotFormat:
-    #         matplotlib.pyplot.savefig(PlotFile+F)
-    #     # matplotlib.pyplot.show()
-    #     # matplotlib.pyplot.clf()
+    #         plt.savefig(PlotFile+F)
+    #     # plt.show()
+    #     # plt.clf()
 
     # return ax
 
@@ -1004,7 +1008,7 @@ def plot_plane_cross(ax, position,
 
 #     if ThisAxis is None:
 #         nplots = 1
-#         fig, ax = matplotlib.pyplot.subplots(1,
+#         fig, ax = plt.subplots(1,
 #                                           figsize=(PlotSize[0]*cm, nplots*PlotSize[0]*cm),
 #                                           gridspec_kw={'height_ratios': [1]})
 #         fig.suptitle(PlotTitle, fontsize=Fontsizes[2])
@@ -1307,9 +1311,9 @@ def plot_plane_cross(ax, position,
 
 #     if ThisAxis is None:
 #         for F in PlotFormat:
-#             matplotlib.pyplot.savefig(PlotFile+F)
-#     # matplotlib.pyplot.show()
-#     # matplotlib.pyplot.clf()
+#             plt.savefig(PlotFile+F)
+#     # plt.show()
+#     # plt.clf()
 
 #     return ax
 def make_pdf_catalog(workdir='./', pdflist=None, filename=None):

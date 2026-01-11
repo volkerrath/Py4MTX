@@ -103,7 +103,11 @@ import os
 import inspect
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Mapping
+
+import numpy as np
+import pandas as pd
+
 
 import numpy as np
 import pandas as pd
@@ -887,7 +891,177 @@ def compute_pt(
         varP = np.nanvar(P_sims, axis=0)
 
     P_err = varP if err_kind == "var" else np.sqrt(varP)
+    print('Perr\n', P_err)
     return P, P_err
+
+
+
+def compute_zdet(
+    Z: np.ndarray,
+    Z_err: Optional[np.ndarray] = None,
+    *,
+    err_kind: str = "var",
+    nsim: int = 200,
+    random_state: Optional[np.random.Generator] = None,
+) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+    """Compute the determinant (Berdichevsky) rotational invariant of the MT impedance tensor.
+
+    The determinant impedance is defined as:
+
+        Z_det = sqrt(det(Z)) = sqrt(Z_xx Z_yy - Z_xy Z_yx)
+
+    Parameters
+    ----------
+    Z : numpy.ndarray
+        Complex impedance tensor of shape (n, 2, 2).
+    Z_err : numpy.ndarray, optional
+        Error measure for Z with the same shape as Z.
+
+        Interpretation follows :func:`compute_pt`:
+
+        - if ``err_kind="var"``: entries are treated as variances of the complex
+          impedance elements.
+        - if ``err_kind="std"``: entries are treated as standard deviations.
+
+        The uncertainty propagation assumes independent Gaussian noise on the
+        real and imaginary parts with equal variance (so that the complex
+        variance is split equally across real/imag).
+    err_kind : {"var", "std"}, optional
+        Specifies whether ``Z_err`` is variance or standard deviation.
+        Default is ``"var"``.
+    nsim : int, optional
+        Number of Monte-Carlo realizations used for error propagation.
+        Default is 200.
+    random_state : numpy.random.Generator, optional
+        Random generator to use.
+
+    Returns
+    -------
+    zdet : numpy.ndarray
+        Complex determinant impedance of shape (n,).
+    zdet_err : numpy.ndarray or None
+        If ``Z_err`` is provided, returns an array of shape (n,) containing the
+        propagated uncertainty of ``zdet`` in the same convention as ``err_kind``
+        (variance or standard deviation). Otherwise ``None``.
+    """
+    Z = np.asarray(Z, dtype=np.complex128)
+    if Z.shape[-2:] != (2, 2):
+        raise ValueError("Z must have shape (n, 2, 2).")
+
+    detZ = Z[:, 0, 0] * Z[:, 1, 1] - Z[:, 0, 1] * Z[:, 1, 0]
+    zdet = np.sqrt(detZ)
+
+    if Z_err is None:
+        return zdet, None
+
+    Z_err = np.asarray(Z_err, dtype=float)
+    if Z_err.shape != Z.shape:
+        raise ValueError("Z_err must have the same shape as Z.")
+
+    if err_kind == "var":
+        sigma = np.sqrt(Z_err)
+    elif err_kind == "std":
+        sigma = Z_err
+    else:
+        raise ValueError("err_kind must be 'var' or 'std'.")
+
+    rng = np.random.default_rng() if random_state is None else random_state
+
+    zdet_sims = np.full((nsim, Z.shape[0]), np.nan + 1j * np.nan, dtype=np.complex128)
+    for sidx in range(nsim):
+        d_re = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
+        d_im = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
+        Zs = (Z.real + d_re) + 1j * (Z.imag + d_im)
+        detZs = Zs[:, 0, 0] * Zs[:, 1, 1] - Zs[:, 0, 1] * Zs[:, 1, 0]
+        zdet_sims[sidx] = np.sqrt(detZs)
+
+    with np.errstate(invalid="ignore"):
+        var_re = np.nanvar(zdet_sims.real, axis=0)
+        var_im = np.nanvar(zdet_sims.imag, axis=0)
+        var_c = var_re + var_im
+
+    zdet_err = var_c if err_kind == "var" else np.sqrt(var_c)
+    return zdet, zdet_err
+
+
+def compute_zssq(
+    Z: np.ndarray,
+    Z_err: Optional[np.ndarray] = None,
+    *,
+    err_kind: str = "var",
+    nsim: int = 200,
+    random_state: Optional[np.random.Generator] = None,
+) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+    """Compute the ssq (sum-of-squared-elements) rotational invariant of MT impedances.
+
+    Following Szarka & Menvielle (1997) and later usage by Rung-Arunwan et al.,
+    the ssq impedance is defined as:
+
+        Z_ssq = sqrt( (Z_xx^2 + Z_xy^2 + Z_yx^2 + Z_yy^2) / 2 )
+
+    Parameters
+    ----------
+    Z : numpy.ndarray
+        Complex impedance tensor of shape (n, 2, 2).
+    Z_err : numpy.ndarray, optional
+        Error measure for Z with the same shape as Z. See :func:`compute_zdet`
+        (and :func:`compute_pt`) for the convention.
+    err_kind : {"var", "std"}, optional
+        Specifies whether ``Z_err`` is variance or standard deviation.
+        Default is ``"var"``.
+    nsim : int, optional
+        Number of Monte-Carlo realizations used for error propagation.
+        Default is 200.
+    random_state : numpy.random.Generator, optional
+        Random generator to use.
+
+    Returns
+    -------
+    zssq : numpy.ndarray
+        Complex ssq impedance of shape (n,).
+    zssq_err : numpy.ndarray or None
+        If ``Z_err`` is provided, returns an array of shape (n,) containing the
+        propagated uncertainty of ``zssq`` in the same convention as ``err_kind``
+        (variance or standard deviation). Otherwise ``None``.
+    """
+    Z = np.asarray(Z, dtype=np.complex128)
+    if Z.shape[-2:] != (2, 2):
+        raise ValueError("Z must have shape (n, 2, 2).")
+
+    ssqZ = (Z[:, 0, 0] ** 2 + Z[:, 0, 1] ** 2 + Z[:, 1, 0] ** 2 + Z[:, 1, 1] ** 2) / 2.0
+    zssq = np.sqrt(ssqZ)
+
+    if Z_err is None:
+        return zssq, None
+
+    Z_err = np.asarray(Z_err, dtype=float)
+    if Z_err.shape != Z.shape:
+        raise ValueError("Z_err must have the same shape as Z.")
+
+    if err_kind == "var":
+        sigma = np.sqrt(Z_err)
+    elif err_kind == "std":
+        sigma = Z_err
+    else:
+        raise ValueError("err_kind must be 'var' or 'std'.")
+
+    rng = np.random.default_rng() if random_state is None else random_state
+
+    zssq_sims = np.full((nsim, Z.shape[0]), np.nan + 1j * np.nan, dtype=np.complex128)
+    for sidx in range(nsim):
+        d_re = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
+        d_im = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
+        Zs = (Z.real + d_re) + 1j * (Z.imag + d_im)
+        ssqZs = (Zs[:, 0, 0] ** 2 + Zs[:, 0, 1] ** 2 + Zs[:, 1, 0] ** 2 + Zs[:, 1, 1] ** 2) / 2.0
+        zssq_sims[sidx] = np.sqrt(ssqZs)
+
+    with np.errstate(invalid="ignore"):
+        var_re = np.nanvar(zssq_sims.real, axis=0)
+        var_im = np.nanvar(zssq_sims.imag, axis=0)
+        var_c = var_re + var_im
+
+    zssq_err = var_c if err_kind == "var" else np.sqrt(var_c)
+    return zssq, zssq_err
 
 
 def _format_block(values: np.ndarray, n_per_line: int = 6) -> str:
@@ -1286,9 +1460,140 @@ def save_npz(
         allow_pickle=True)
 
 
+def _is_scalar(x: Any) -> bool:
+    return isinstance(x, (str, bytes, int, float, bool, np.number))
+
+
+def _as_1d_array(x: Any) -> Optional[np.ndarray]:
+    """Try to coerce x to a 1D numpy array (or return None)."""
+    if isinstance(x, np.ndarray):
+        if x.ndim == 1:
+            return x
+        return None
+    if isinstance(x, (list, tuple)):
+        arr = np.asarray(x)
+        return arr if arr.ndim == 1 else None
+    return None
+
+
+def _flatten_meta_for_attrs(meta: Mapping[str, Any], *, sep: str = ".") -> dict[str, Any]:
+    """
+    Flatten nested dict-ish metadata to simple key/value attrs.
+
+    NetCDF/HDF attrs work best with scalars and short strings.
+    For non-simple types, we store a string repr.
+    """
+    out: dict[str, Any] = {}
+
+    def rec(prefix: str, obj: Any) -> None:
+        if isinstance(obj, Mapping):
+            for k, v in obj.items():
+                rec(f"{prefix}{sep}{k}" if prefix else str(k), v)
+            return
+        if _is_scalar(obj):
+            out[prefix] = obj
+            return
+        # numpy scalar
+        if isinstance(obj, np.generic):
+            out[prefix] = obj.item()
+            return
+        # small 1D arrays -> store as repr (attrs can't safely hold big arrays)
+        if isinstance(obj, np.ndarray):
+            if obj.ndim == 0:
+                out[prefix] = obj.item()
+            else:
+                out[prefix] = repr(obj)
+            return
+        out[prefix] = repr(obj)
+
+    rec("", meta)
+    return out
+
+
+def _edidict_to_dataframe(
+    data_dict: Mapping[str, Any],
+    *,
+    dim_preference: Tuple[str, ...] = ("period", "freq"),
+) -> tuple[pd.DataFrame, dict[str, Any], str]:
+    """
+    Convert an data_dict to a DataFrame containing only tabular vars, plus meta.
+
+    Rules:
+    - Choose a main dimension (period or freq) if present as 1D array.
+    - Include 1D arrays of length N as columns.
+    - Expand arrays with shape (N, ... ) into multiple columns.
+    - Complex arrays become *_re / *_im columns.
+    - Everything else goes into meta.
+    """
+    # 1) choose dimension / coordinate
+    dim_name = None
+    coord = None
+    for d in dim_preference:
+        arr = _as_1d_array(data_dict.get(d))
+        if arr is not None and arr.size > 0:
+            dim_name = d
+            coord = np.asarray(arr)
+            break
+    if dim_name is None:
+        raise ValueError(f"data_dict must contain a 1D '{dim_preference[0]}' or '{dim_preference[1]}' array.")
+
+    n = int(coord.size)
+
+    cols: dict[str, np.ndarray] = {dim_name: coord}
+    meta: dict[str, Any] = {}
+
+    def add_column(name: str, arr: np.ndarray) -> None:
+        cols[name] = np.asarray(arr)
+
+    def expand(name: str, arr: np.ndarray) -> None:
+        # arr has shape (n, ...)
+        if np.iscomplexobj(arr):
+            expand(name + "_re", np.asarray(arr.real))
+            expand(name + "_im", np.asarray(arr.imag))
+            return
+
+        if arr.ndim == 1:
+            add_column(name, arr)
+            return
+
+        # flatten remaining dimensions into separate columns
+        tail = int(np.prod(arr.shape[1:]))
+        flat = arr.reshape(n, tail)
+        for j in range(tail):
+            add_column(f"{name}_{j}", flat[:, j])
+
+    # 2) populate table/meta
+    for k, v in data_dict.items():
+        if k == dim_name:
+            continue
+
+        if _is_scalar(v) or v is None:
+            meta[k] = v
+            continue
+
+        if isinstance(v, np.ndarray):
+            arr = v
+        elif isinstance(v, (list, tuple)):
+            arr = np.asarray(v)
+        else:
+            # nested dicts or custom objects -> meta
+            meta[k] = v
+            continue
+
+        if arr.ndim == 1 and arr.size == n:
+            expand(k, arr)
+        elif arr.ndim >= 2 and arr.shape[0] == n:
+            expand(k, arr)
+        else:
+            meta[k] = v
+
+    df = pd.DataFrame(cols)
+    df.attrs.update(meta)
+    return df, meta, dim_name
+
 
 def save_hdf(
-    df: pd.DataFrame,
+    data_dict: Mapping[str, Any] | pd.DataFrame,
     path: str | Path,
     *,
     key: str = "mt",
@@ -1297,13 +1602,38 @@ def save_hdf(
     complib: str = "zlib",
     **kwargs: Any,
 ) -> None:
-    """Save a DataFrame to HDF5 via pandas (requires pytables/tables)."""
+    """
+    Save an edidict (preferred) or DataFrame to HDF5 via pandas (requires pytables/tables).
+
+    What gets written:
+    - f"{key}/table": the tabular DataFrame (period/freq + expanded columns)
+    - f"{key}/meta" : 1-row DataFrame of metadata (from df.attrs / non-tabular items)
+    """
     path = Path(path)
+
+    if isinstance(data_dict, pd.DataFrame):
+        df = data_dict
+        meta = dict(df.attrs)
+    else:
+        df, meta, _ = _edidict_to_dataframe(data_dict)
+
+    # store meta as a single-row frame (object dtype allowed)
+    meta_df = pd.DataFrame([meta])
+
     try:
         df.to_hdf(
             path.as_posix(),
-            key=key,
+            key=f"{key}/table",
             mode=mode,
+            complevel=complevel,
+            complib=complib,
+            **kwargs,
+        )
+        # append meta in same file
+        meta_df.to_hdf(
+            path.as_posix(),
+            key=f"{key}/meta",
+            mode="a",
             complevel=complevel,
             complib=complib,
             **kwargs,
@@ -1313,14 +1643,21 @@ def save_hdf(
 
 
 def save_ncd(
-    df: pd.DataFrame,
+    data_dict: Mapping[str, Any] | pd.DataFrame,
     path: str | Path,
     *,
     engine: Optional[str] = None,
     dim: str = "period",
     dataset_name: str = "mt",
 ) -> None:
-    """Save a DataFrame to NetCDF via xarray."""
+    """
+    Save an edidict (preferred) or DataFrame to NetCDF via xarray.
+
+    Notes:
+    - Complex arrays are stored as two variables: <name>_re and <name>_im
+    - Arrays with first dimension N (freq/period) become data variables.
+    - Scalars / non-tabular entries go to ds.attrs (flattened).
+    """
     try:
         import xarray as xr  # type: ignore[import]
     except ImportError as exc:  # pragma: no cover
@@ -1328,27 +1665,42 @@ def save_ncd(
 
     path = Path(path)
 
-    if dim in df.columns:
-        coord = df[dim].to_numpy()
-        dim_name = dim
-    elif "freq" in df.columns:
-        coord = df["freq"].to_numpy()
-        dim_name = "freq"
+    if isinstance(data_dict, pd.DataFrame):
+        df = data_dict
+        # infer dim_name + coord from df
+        if dim in df.columns:
+            dim_name = dim
+            coord = df[dim].to_numpy()
+        elif "freq" in df.columns:
+            dim_name = "freq"
+            coord = df["freq"].to_numpy()
+        else:
+            raise ValueError("DataFrame must contain either the dimension column or 'freq'.")
+        meta = dict(df.attrs)
+        data_vars = {c: (dim_name, df[c].to_numpy()) for c in df.columns if c != dim_name}
+        ds = xr.Dataset(data_vars=data_vars, coords={dim_name: coord})
     else:
-        raise ValueError("DataFrame must contain either the dimension column or 'freq'.")
+        # build from data_dict directly
+        # choose dim using requested name first, then fallback
+        dim_preference = (dim, "freq") if dim != "freq" else ("freq", "period")
+        df, meta, dim_name = _edidict_to_dataframe(data_dict, dim_preference=dim_preference)
+        coord = df[dim_name].to_numpy()
 
-    data_vars = {}
-    for col in df.columns:
-        if col == dim_name:
-            continue
-        data_vars[col] = (dim_name, df[col].to_numpy())
+        data_vars = {}
+        for col in df.columns:
+            if col == dim_name:
+                continue
+            arr = df[col].to_numpy()
+            # ensure numeric if possible; leave object as-is (xarray will try)
+            data_vars[col] = (dim_name, arr)
 
-    ds = xr.Dataset(data_vars=data_vars, coords={dim_name: coord})
-    ds.attrs.update(df.attrs)
+        ds = xr.Dataset(data_vars=data_vars, coords={dim_name: coord})
+
+    # attrs
+    ds.attrs.update(_flatten_meta_for_attrs(meta))
     ds.attrs["dataset_name"] = dataset_name
 
     ds.to_netcdf(path.as_posix(), engine=engine)
-
 
 def read_emtf_xml(path: str | Path) -> Dict[str, Any]:
     """Read MT data from a (simplified) EMTF-XML file (experimental)."""
