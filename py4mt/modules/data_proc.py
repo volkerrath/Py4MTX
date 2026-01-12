@@ -1449,17 +1449,72 @@ def choose_lambda_gcv(x: np.ndarray, y: np.ndarray, lam_grid: Optional[np.ndarra
 
 
 def save_npz(
-    data_dict: dict| Any,
+    data_dict: Any,
     path: str | Path,
+    *,
+    key: str = "data_dict",
 ) -> None:
-    """Save a DataFrame to HDF5 via pandas (requires pytables/tables)."""
+    """
+    Save an arbitrary Python object to a NumPy ``.npz`` archive.
+
+    Stores any picklable Python object (including nested dicts, lists, arrays)
+    as a single object array inside the NPZ file.
+
+    Notes
+    -----
+    Loading requires ``np.load(..., allow_pickle=True)``.
+    """
     path = Path(path)
-    np.savez_compressed(
-        path.as_posix(),
-        data_dict = data_dict,
-        allow_pickle=True)
+    obj_arr = np.array(data_dict, dtype=object)
+    np.savez_compressed(path.as_posix(), **{key: obj_arr})
 
 
+def load_npz(
+    path: str | Path,
+    *,
+    key: str = "data_dict",
+) -> Any:
+    """
+    Load an arbitrary Python object from a NumPy ``.npz`` archive.
+    """
+    path = Path(path)
+    with np.load(path.as_posix(), allow_pickle=True) as z:
+        obj = z[key]
+    return obj.tolist()
+
+
+def save_list_of_dicts_npz(
+    records: list[dict[str, Any]],
+    path: str | Path,
+    *,
+    key: str = "records",
+) -> None:
+    """
+    Save a list of dictionaries to a compressed ``.npz`` file (Option A).
+
+    Stores the list as a NumPy object array (pickle-based).
+
+    Notes
+    -----
+    Loading requires ``np.load(..., allow_pickle=True)``.
+    """
+    path = Path(path)
+    arr = np.array(records, dtype=object)
+    np.savez_compressed(path.as_posix(), **{key: arr})
+
+
+def load_list_of_dicts_npz(
+    path: str | Path,
+    *,
+    key: str = "records",
+) -> list[dict[str, Any]]:
+    """
+    Load a list of dictionaries written by :func:`save_list_of_dicts_npz`.
+    """
+    path = Path(path)
+    with np.load(path.as_posix(), allow_pickle=True) as z:
+        arr = z[key]
+    return list(arr.tolist())
 def _is_scalar(x: Any) -> bool:
     return isinstance(x, (str, bytes, int, float, bool, np.number))
 
@@ -1507,6 +1562,67 @@ def _flatten_meta_for_attrs(meta: Mapping[str, Any], *, sep: str = ".") -> dict[
         out[prefix] = repr(obj)
 
     rec("", meta)
+    return out
+
+
+def _sanitize_meta_for_hdf(meta: Mapping[str, Any]) -> dict[str, Any]:
+    """
+    Sanitize metadata for storage in an HDF5 table without PyTables pickling.
+
+    Pandas/PyTables will pickle columns of dtype ``object`` that contain
+    non-scalar Python objects (e.g. lists, dicts). This is slow and can be
+    fragile across versions. This helper converts non-scalar values to strings.
+
+    Rules
+    -----
+    - Scalars (str/bytes/int/float/bool/numpy scalar) are kept.
+    - ``None`` is kept as ``None`` (later castable to pandas StringDtype if desired).
+    - lists/tuples/dicts are JSON-serialized (fallback: ``repr``).
+    - numpy arrays and other objects become ``repr`` strings.
+
+    Parameters
+    ----------
+    meta : mapping
+        Metadata dict.
+
+    Returns
+    -------
+    dict
+        Sanitized metadata dict safe to write as a single-row HDF table.
+    """
+    import json
+
+    out: dict[str, Any] = {}
+    for k, v in meta.items():
+        if v is None:
+            out[k] = None
+            continue
+
+        if _is_scalar(v):
+            out[k] = v
+            continue
+
+        if isinstance(v, np.generic):
+            out[k] = v.item()
+            continue
+
+        if isinstance(v, (list, tuple, dict)):
+            try:
+                s = json.dumps(v, ensure_ascii=False, default=str)
+                if len(s) > 200000:
+                    s = s[:200000] + " ... (truncated)"
+                out[k] = s
+            except Exception:
+                out[k] = repr(v)
+            continue
+
+        if isinstance(v, np.ndarray):
+            # arrays in attrs are usually not intended; store a compact repr
+            out[k] = repr(v)
+            continue
+
+        out[k] = repr(v)
+
     return out
 
 
@@ -1618,7 +1734,13 @@ def save_hdf(
         df, meta, _ = _edidict_to_dataframe(data_dict)
 
     # store meta as a single-row frame (object dtype allowed)
-    meta_df = pd.DataFrame([meta])
+    meta_safe = _sanitize_meta_for_hdf(meta)
+    meta_df = pd.DataFrame([meta_safe])
+    # Ensure HDF5 compatibility for metadata: avoid pandas' nullable StringDtype
+    # (PyTables expects a dtype.itemsize attribute for table columns).
+    for c in meta_df.columns:
+        if pd.api.types.is_string_dtype(meta_df[c].dtype):
+            meta_df[c] = meta_df[c].astype("object")
 
     try:
         df.to_hdf(
@@ -1629,14 +1751,28 @@ def save_hdf(
             complib=complib,
             **kwargs,
         )
+
         # append meta in same file
+        #
+        # IMPORTANT:
+        # We intentionally store metadata with `format="fixed"` to avoid a PyTables
+        # limitation with pandas' nullable StringDtype when using `format="table"`
+        # (PyTables expects a dtype.itemsize attribute).
+        meta_kwargs = dict(kwargs)
+        for kk in ("format", "data_columns", "min_itemsize", "append", "complevel", "complib"):
+            meta_kwargs.pop(kk, None)
+
+        # Ensure meta columns are plain object dtype (avoid pandas StringDtype)
+        for c in meta_df.columns:
+            if pd.api.types.is_string_dtype(meta_df[c].dtype):
+                meta_df[c] = meta_df[c].astype("object")
+
         meta_df.to_hdf(
             path.as_posix(),
             key=f"{key}/meta",
             mode="a",
-            complevel=complevel,
-            complib=complib,
-            **kwargs,
+            format="fixed",
+            **meta_kwargs,
         )
     except ImportError as exc:  # pragma: no cover
         raise ImportError("pandas HDF5 support requires the 'tables' package.") from exc
