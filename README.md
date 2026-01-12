@@ -81,8 +81,8 @@ Please keep in mind that this is experimental software, and will contain errors.
 
 **Warning: the software found there is highly experimental, often untested, and may not work at all!** 
 
-Since this summer we have been experimenting with AI tools such as ChatGPT or CoPilot to implement further scripts/modules, which turned out to be very useful. The scripts will be found in **py4mt/scripts/chatgpt**. 
-A note concerning AI (co)authorship has been added to the docstrings. Parts of these scripts may find their way into the modules later, keeping the docstrings.
+Since this summer we have been experimenting with AI tools such as ChatGPT or CoPilot to implement further scripts/modules, which turned out to be very useful.  
+A note concerning AI (co)authorship has been added to the docstrings. Parts of these scripts have found their way into the modules later, keeping the docstrings.
 
 # Note: Jacobian-related functionalities including sensitivities
 
