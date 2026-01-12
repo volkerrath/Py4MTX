@@ -44,10 +44,11 @@ import mtproc as mtp
 import femtic as fem
 from scipy.interpolate import make_smoothing_spline
 from data_viz import add_phase, add_rho, add_tipper, add_pt
-from data_proc import load_edi, save_edi, save_ncd, save_hdf, save_npz
-from data_proc import compute_pt, compute_zdet, compute_zssq
-from data_proc import dataframe_from_edi, interpolate_data
-from data_proc import set_errors, estimate_errors, rotate_data
+from data_proc import (
+    load_edi, save_edi, save_ncd, save_hdf, save_npz,
+    save_list_of_dicts_npz, dataframe_from_edi,
+    interpolate_data, set_errors, estimate_errors, rotate_data,
+    compute_pt, compute_zdet, compute_zssq)
 
 from version import versionstrg
 
@@ -60,7 +61,7 @@ titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng + '\n\n')
 
 # WorkDir = '/home/vrath/ChatGPT_tests/'
-WorkDir = '/home/vrath/Py4MTX/work/EPS_2025_Annecy/edi/Sites_Name/'
+WorkDir = '/home/vrath/Py4MTX/work/edis_2025/'
 
 if not os.path.isdir(WorkDir):
     print(' File: %s does not exist, but will be created' % WorkDir)
@@ -106,7 +107,7 @@ if Rotate:
     Angle = 0.  # 2.68   #E
     DecDeg = True
 
-
+all_data = []
 for edi in edi_files:
 
     edi_dict = load_edi(edi, drop_invalid_periods=True)
@@ -138,10 +139,10 @@ for edi in edi_files:
 
     if Invars:
 
-        Zdet, Zdeterr = compute_zdet(Z)
+        Zdet, Zdeterr = compute_zdet(Z, Zerr)
         edi_dict['Zdet'] = Zdet
         edi_dict['Zdet_err'] = Zdeterr
-        Zssq, Zssqerr = compute_zssq(Z)
+        Zssq, Zssqerr = compute_zssq(Z, Zerr)
         edi_dict['Zssq'] = Zssq
         edi_dict['Zssq_err'] = Zssqerr
 
@@ -157,6 +158,7 @@ for edi in edi_files:
     if Rotate:
         edi_dict = rotate_data(edi_dict=edi_dict, angle=Angle)
 
+    all_data.append(edi_dict)
 
     # print(np.shape(Z), np.shape(Zerr),
     #       np.shape(T), np.shape(Terr),
@@ -167,25 +169,24 @@ for edi in edi_files:
 
     if 'edi' in OutFiles.lower():
         _ = save_edi(
-            path=DataDir + station + NameStr+'.edi',
+            path=DataDir + station + NameStr + '.edi',
             edi=edi_dict
         )
 
     if 'ncd' in OutFiles.lower():
         _ = save_ncd(
-            path = DataDir + station + NameStr+'.ncd',
+            path=DataDir + station + NameStr + '.ncd',
             data_dict=edi_dict)
 
     if 'hdf' in OutFiles.lower():
         _ = save_hdf(
-            path = DataDir + station + NameStr+'.hdf',
+            path=DataDir + station + NameStr + '.hdf',
             data_dict=edi_dict)
 
-
     if 'npz' in OutFiles.lower():
-            _ = save_npz(
-            path = DataDir + station + NameStr+'.npz',
-            data_dict = edi_dict)
+        _ = save_npz(
+            path=DataDir + station + NameStr + '.npz',
+            data_dict=edi_dict)
 
     if Plot:
         fig, axs = plt.subplots(3, 2, figsize=(8, 14), sharex=True)
@@ -209,3 +210,8 @@ for edi in edi_files:
             plt.savefig(WorkDir + station + NameStr + f, dpi=600)
 
         plt.show()
+
+
+save_list_of_dicts_npz(
+    records=all_data,
+    path=DataDir + station + NameStr + '_collection.npz')
