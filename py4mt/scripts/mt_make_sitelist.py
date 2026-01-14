@@ -53,10 +53,8 @@ titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.curren
 print(titstrng+'\n\n')
 
 Coords = 'utm'
-if 'utm' in Coords.lower():
-    EPSG =  32631 #32629
-else:
-    EPSG = None
+# EPSG =  32631
+EPSG =   None
 
 dialect = 'unix'
 delim = ','
@@ -126,6 +124,7 @@ with open(CSVFile, 'w') as f:
             if EPSG is not None:
                 easting, northing =  utl.proj_latlon_to_utm(latitude=lat, longitude=lon, utm_zone=EPSG)
             else:
+                EPSG = utl.get_utm_zone(lat=lat, lon=lon)
                 sys.exit('make sitelist: utm required, but no EPSG given!. Exit.')
 
 
