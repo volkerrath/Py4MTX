@@ -210,7 +210,7 @@ else:
     site.style.labelstyle.color = simplekml.Color.yellow
     site.style.labelstyle.scale = 1.8
     srcfile = kml.addfile(PY4MTX_ROOT + '/py4mt/share/DimColorScheme.png')
-    site.description = f"<img width='800' align='left' src='{srcfile}'/>"
+    site.description = f"<img width='300' align='left' src='{srcfile}'/>"
     #site.description = ('<img width='800' align='left' src='' + srcfile + ''/>')
     kml_outfile = KmlDir + KmlFile+'_9'
 # Save raw kml file:
