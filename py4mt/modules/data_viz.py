@@ -45,11 +45,11 @@ All plotters share the arguments ``show_errors``, ``error_suffix`` and
 ``error_alpha`` to control the error visualisation.
 
 
-EDIDict support
+datadict support
 ---------------
 
 In addition to :class:`pandas.DataFrame`, the main plotters can accept an
-"EDI dict" (``Mapping[str, Any]``) with the common keys produced by the
+"data_dict" (``Mapping[str, Any]``) with the common keys produced by the
 EDI parsers in this project:
 
 - ``freq`` : (nf,) frequency array [Hz] (required)
@@ -60,7 +60,7 @@ EDI parsers in this project:
 - ``P`` : (nf, 2, 2) real phase tensor (optional)
 - ``P_err`` : (nf, 2, 2) real 1-sigma errors (optional)
 
-When an EDI dict is provided, it is converted internally into a plotting
+When an data_dict is provided, it is converted internally into a plotting
 DataFrame with the expected flat column names (``rho_xy``, ``phi_xy``,
 ``Tx_re``, ``ptxx_re``, ...). Metadata (station, location, rotation, etc.)
 is preserved in ``df.attrs``.
@@ -125,7 +125,7 @@ def _complex_sigma_abs(err: np.ndarray) -> np.ndarray:
     return np.abs(err)
 
 
-def edidict_to_plot_df(edidict: Mapping[str, Any]) -> pd.DataFrame:
+def datadict_to_plot_df(datadict: Mapping[str, Any]) -> pd.DataFrame:
     """
     Convert an EDI dict (freq, Z, T, P plus optional *_err) to a plotting DataFrame.
 
@@ -141,9 +141,9 @@ def edidict_to_plot_df(edidict: Mapping[str, Any]) -> pd.DataFrame:
 
     Metadata keys (station, location, rotation, etc.) are copied into ``df.attrs``.
     """
-    freq = _as_array(edidict.get("freq"))
+    freq = _as_array(datadict.get("freq"))
     if freq is None or np.asarray(freq).ndim != 1:
-        raise ValueError("edidict['freq'] must be a 1D array.")
+        raise ValueError("datadict['freq'] must be a 1D array.")
     freq = np.asarray(freq, dtype=float)
     n = int(freq.size)
 
@@ -154,7 +154,7 @@ def edidict_to_plot_df(edidict: Mapping[str, Any]) -> pd.DataFrame:
     cols: dict[str, np.ndarray] = {"freq": freq, "period": period}
 
     # Pass-through if already present as 1D arrays of length n
-    for k, v in edidict.items():
+    for k, v in datadict.items():
         if k in cols:
             continue
         arr = _as_array(v)
@@ -163,15 +163,15 @@ def edidict_to_plot_df(edidict: Mapping[str, Any]) -> pd.DataFrame:
             cols.setdefault(k, np.asarray(arr))
 
     # --- Z: accept (n,2,2) or (n,4)
-    Z = _as_array(edidict.get("Z"))
+    Z = _as_array(datadict.get("Z"))
     if Z is not None:
         Z = np.asarray(Z)
         if Z.shape[0] != n:
-            raise ValueError(f"edidict['Z'] first dimension must be nf={n}; got {Z.shape}.")
+            raise ValueError(f"datadict['Z'] first dimension must be nf={n}; got {Z.shape}.")
         if Z.ndim == 2 and Z.shape[1] == 4:
             Z = Z.reshape(n, 2, 2)
         if Z.ndim != 3 or Z.shape[1:] != (2, 2):
-            raise ValueError(f"edidict['Z'] expected shape (nf,2,2) or (nf,4); got {Z.shape}.")
+            raise ValueError(f"datadict['Z'] expected shape (nf,2,2) or (nf,4); got {Z.shape}.")
         if not np.iscomplexobj(Z):
             Z = Z.astype(np.complex128)
 
@@ -187,7 +187,7 @@ def edidict_to_plot_df(edidict: Mapping[str, Any]) -> pd.DataFrame:
                 cols.setdefault(f"phi_{comp}", phi)
 
         # optional error propagation
-        Zerr = _as_array(edidict.get("Z_err"))
+        Zerr = _as_array(datadict.get("Z_err"))
         if Zerr is not None:
             Zerr = np.asarray(Zerr)
             if Zerr.shape[0] == n:
@@ -213,25 +213,25 @@ def edidict_to_plot_df(edidict: Mapping[str, Any]) -> pd.DataFrame:
                             cols.setdefault(f"phi_{comp}_err", sig_phi)
 
     # --- T: accept (n,2) or (n,2,1) or (n,1,2)
-    T = _as_array(edidict.get("T"))
+    T = _as_array(datadict.get("T"))
     if T is not None:
         T = np.asarray(T)
         if T.shape[0] != n:
-            raise ValueError(f"edidict['T'] first dimension must be nf={n}; got {T.shape}.")
+            raise ValueError(f"datadict['T'] first dimension must be nf={n}; got {T.shape}.")
         if T.ndim == 3:
             if T.shape[1:] == (2, 1):
                 T = T[:, :, 0]
             elif T.shape[1:] == (1, 2):
                 T = T[:, 0, :]
         if T.ndim != 2 or T.shape[1] != 2:
-            raise ValueError(f"edidict['T'] expected shape (nf,2); got {T.shape}.")
+            raise ValueError(f"datadict['T'] expected shape (nf,2); got {T.shape}.")
         if not np.iscomplexobj(T):
             T = T.astype(np.complex128)
 
         _split_complex_1d(cols, "Tx", T[:, 0])
         _split_complex_1d(cols, "Ty", T[:, 1])
 
-        Terr = _as_array(edidict.get("T_err"))
+        Terr = _as_array(datadict.get("T_err"))
         if Terr is not None:
             Terr = np.asarray(Terr)
             if Terr.shape[0] == n:
@@ -249,21 +249,21 @@ def edidict_to_plot_df(edidict: Mapping[str, Any]) -> pd.DataFrame:
                     cols["Ty_im_err"] = np.asarray(Terr[:, 1].imag)
 
     # --- P: accept (n,2,2) or (n,4)
-    P = _as_array(edidict.get("P"))
+    P = _as_array(datadict.get("P"))
     if P is not None:
         P = np.asarray(P)
         if P.shape[0] != n:
-            raise ValueError(f"edidict['P'] first dimension must be nf={n}; got {P.shape}.")
+            raise ValueError(f"datadict['P'] first dimension must be nf={n}; got {P.shape}.")
         if P.ndim == 2 and P.shape[1] == 4:
             P = P.reshape(n, 2, 2)
         if P.ndim != 3 or P.shape[1:] != (2, 2):
-            raise ValueError(f"edidict['P'] expected shape (nf,2,2) or (nf,4); got {P.shape}.")
+            raise ValueError(f"datadict['P'] expected shape (nf,2,2) or (nf,4); got {P.shape}.")
         cols.setdefault("ptxx_re", np.asarray(P[:, 0, 0], dtype=float))
         cols.setdefault("ptxy_re", np.asarray(P[:, 0, 1], dtype=float))
         cols.setdefault("ptyx_re", np.asarray(P[:, 1, 0], dtype=float))
         cols.setdefault("ptyy_re", np.asarray(P[:, 1, 1], dtype=float))
 
-        Perr = _as_array(edidict.get("P_err"))
+        Perr = _as_array(datadict.get("P_err"))
         if Perr is not None:
             Perr = np.asarray(Perr)
             if Perr.shape[0] == n:
@@ -291,8 +291,8 @@ def edidict_to_plot_df(edidict: Mapping[str, Any]) -> pd.DataFrame:
         "lon",
         "elev",
     ):
-        if meta_k in edidict:
-            v = edidict[meta_k]
+        if meta_k in datadict:
+            v = datadict[meta_k]
             df.attrs[meta_k] = v if isinstance(v, (str, int, float, bool, type(None), np.number)) else repr(v)
 
     return df
@@ -302,7 +302,7 @@ def _ensure_df(data: pd.DataFrame | Mapping[str, Any]) -> pd.DataFrame:
     """Accept a DataFrame or EDI dict; always return a plotting DataFrame."""
     if isinstance(data, pd.DataFrame):
         return data
-    return edidict_to_plot_df(data)
+    return datadict_to_plot_df(data)
 
 
 def _parse_comps(comp_str: Optional[str]) -> List[str]:
@@ -451,7 +451,14 @@ def add_rho(
     matplotlib.axes.Axes
         The axes instance with the curves added.
     """
+    required = {}
+
+    required = {"freq", "Z", "Z_err"}
+    missing = required - data.keys()
+    if missing:
+        raise KeyError(f"Missing keys: {sorted(missing)}")
     df = _ensure_df(data)
+
 
     fig, ax, _ = _maybe_ax(ax)
     period = _period_from_df(df)
@@ -527,6 +534,12 @@ def add_phase(
     matplotlib.axes.Axes
         The axes instance with the curves added.
     """
+    required = {"freq", "Z", "Z_err"}
+    missing = required - data.keys()
+    if missing:
+        raise KeyError(f"Missing keys: {sorted(missing)}")
+
+
     df = _ensure_df(data)
 
     fig, ax, _ = _maybe_ax(ax)
@@ -598,6 +611,12 @@ def add_tipper(
     matplotlib.axes.Axes
         The axes instance with the curves added.
     """
+
+    required = {"freq", "Z", "Z_err"}
+    missing = required - data.keys()
+    if missing:
+        raise KeyError(f"Missing keys: {sorted(missing)}")
+
     df = _ensure_df(data)
 
     fig, ax, _ = _maybe_ax(ax)
@@ -674,6 +693,11 @@ def add_pt(
     matplotlib.axes.Axes
         The axes instance with the curves added.
     """
+    required = {"freq", "Z", "Z_err"}
+    missing = required - data.keys()
+    if missing:
+        raise KeyError(f"Missing keys: {sorted(missing)}")
+
     df = _ensure_df(data)
 
     fig, ax, _ = _maybe_ax(ax)

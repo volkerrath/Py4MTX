@@ -72,14 +72,15 @@ DataDir = WorkDir  # +'/edi/'
 edi_files = mtp.get_edi_list(DataDir, fullpath=True)
 ns = np.size(edi_files)
 
-OutFiles = 'edi, ncd, hdf, npz'
+OutFiles = 'edi, npz'
 
 Plot = True
 if Plot:
+    pltargs = {'show_errors': True}
     PlotFormat = ['.png', '.pdf']
 # %%
 NameStr = '_processed'
-
+CollName = 'Annecy2025'
 
 SetErrors = False
 Errors = {'Zerr': [0.1, 0.1, 0.1, 0.1],
@@ -111,15 +112,6 @@ all_data = []
 for edi in edi_files:
 
     edi_dict = load_edi(edi, drop_invalid_periods=True)
-    # def load_edi(
-    #     path: str | Path,
-    #     *,
-    #     prefer_spectra: bool = True,
-    #     ref: str = "RH",
-    #     err_kind: str = "var",
-    #     drop_invalid_periods: bool = True,
-    #     invalid_sentinel: float = 1.0e30,
-    # ) -> Dict[str, Any]:
 
     station = edi_dict['station']
     Z = edi_dict['Z']
@@ -165,7 +157,6 @@ for edi in edi_files:
     #       np.shape(P), np.shape(Perr))
     # print(list(edi_dict.keys()))
 
-    pltargs = {'show_errors': True}
 
     if 'edi' in OutFiles.lower():
         _ = save_edi(
@@ -214,4 +205,4 @@ for edi in edi_files:
 
 save_list_of_dicts_npz(
     records=all_data,
-    path=DataDir + station + NameStr + '_collection.npz')
+    path=DataDir + CollName + NameStr + '_collection.npz')

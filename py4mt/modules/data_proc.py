@@ -831,22 +831,319 @@ def rotate_data(edi_dict: Dict[str, Any], angle: float = 0.0, degrees: bool = Tr
     return edi_new
 
 
+# ---------------------------------------------------------------------------
+# Error propagation helpers (analytic delta method and parametric bootstrap)
+# ---------------------------------------------------------------------------
+
+def _sigma_from_err(
+    err: np.ndarray,
+    *,
+    err_kind: str,
+) -> np.ndarray:
+    """Convert an error/uncertainty array to 1-sigma standard deviations.
+
+    Parameters
+    ----------
+    err : numpy.ndarray
+        Error array (typically ``Z_err``) of shape ``(n, 2, 2)``.
+    err_kind : {"var", "std"}
+        Interpretation of ``err``. If ``"var"``, entries are variances and
+        are square-rooted. If ``"std"``, entries are already 1-sigma standard
+        deviations.
+
+    Returns
+    -------
+    numpy.ndarray
+        1-sigma standard deviations with the same shape as ``err``.
+
+    Notes
+    -----
+    This helper treats the provided errors as referring to the *complex*
+    impedance entry. When generating perturbations, real and imaginary parts
+    are assumed independent and receive equal variance, i.e.
+    ``Var(Re Z) = Var(Im Z) = sigma_complex**2 / 2``.
+    """
+    err = np.asarray(err, dtype=float)
+    if err_kind == "var":
+        return np.sqrt(err)
+    if err_kind == "std":
+        return err
+    raise ValueError("err_kind must be 'var' or 'std'.")
+
+
+def _z_to_x8(Zk: np.ndarray) -> np.ndarray:
+    """Pack a complex 2×2 impedance into an 8-vector [Re/Im per entry].
+
+    Parameters
+    ----------
+    Zk : numpy.ndarray
+        Complex impedance matrix of shape ``(2, 2)``.
+
+    Returns
+    -------
+    numpy.ndarray
+        1-D float array of length 8 ordered as::
+
+            [Zxx_re, Zxx_im, Zxy_re, Zxy_im, Zyx_re, Zyx_im, Zyy_re, Zyy_im]
+    """
+    Zk = np.asarray(Zk, dtype=np.complex128)
+    return np.array(
+        [
+            Zk[0, 0].real, Zk[0, 0].imag,
+            Zk[0, 1].real, Zk[0, 1].imag,
+            Zk[1, 0].real, Zk[1, 0].imag,
+            Zk[1, 1].real, Zk[1, 1].imag,
+        ],
+        dtype=float,
+    )
+
+
+def _x8_to_z(x: np.ndarray) -> np.ndarray:
+    """Unpack an 8-vector [Re/Im per entry] into a complex 2×2 impedance.
+
+    Parameters
+    ----------
+    x : numpy.ndarray
+        1-D float array of length 8 as produced by :func:`_z_to_x8`.
+
+    Returns
+    -------
+    numpy.ndarray
+        Complex array of shape ``(2, 2)``.
+    """
+    x = np.asarray(x, dtype=float).ravel()
+    if x.size != 8:
+        raise ValueError("x must have length 8.")
+    return np.array(
+        [
+            [x[0] + 1j * x[1], x[2] + 1j * x[3]],
+            [x[4] + 1j * x[5], x[6] + 1j * x[7]],
+        ],
+        dtype=np.complex128,
+    )
+
+
+def _x8_part_variances(sigma_complex_2x2: np.ndarray) -> np.ndarray:
+    """Build per-component variances for the 8-vector representation.
+
+    Parameters
+    ----------
+    sigma_complex_2x2 : numpy.ndarray
+        1-sigma standard deviations of complex impedance entries, shape
+        ``(2, 2)``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Variances for the packed 8-vector (length 8) assuming independent
+        real/imag parts with equal split, i.e. ``Var(Re)=Var(Im)=sigma^2/2``.
+    """
+    s = np.asarray(sigma_complex_2x2, dtype=float)
+    if s.shape != (2, 2):
+        raise ValueError("sigma_complex_2x2 must have shape (2, 2).")
+    v00 = (s[0, 0] ** 2) / 2.0
+    v01 = (s[0, 1] ** 2) / 2.0
+    v10 = (s[1, 0] ** 2) / 2.0
+    v11 = (s[1, 1] ** 2) / 2.0
+    return np.array([v00, v00, v01, v01, v10, v10, v11, v11], dtype=float)
+
+
+def _finite_diff_jacobian(
+    fun,
+    x0: np.ndarray,
+    *,
+    eps: float = 1.0e-6,
+) -> np.ndarray:
+    """Central finite-difference Jacobian of a vector-valued function.
+
+    Parameters
+    ----------
+    fun : callable
+        Function mapping ``x -> y`` where ``x`` is shape ``(p,)`` and the
+        returned ``y`` is 1-D (shape ``(m,)``).
+    x0 : numpy.ndarray
+        Expansion point (shape ``(p,)``).
+    eps : float, optional
+        Relative step factor. The step for component i is
+        ``h_i = eps * (abs(x0_i) + 1)``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Jacobian matrix with shape ``(m, p)``.
+    """
+    x0 = np.asarray(x0, dtype=float).ravel()
+    y0 = np.asarray(fun(x0), dtype=float).ravel()
+    m = y0.size
+    p = x0.size
+    J = np.zeros((m, p), dtype=float)
+
+    for i in range(p):
+        h = eps * (abs(x0[i]) + 1.0)
+        xp = x0.copy()
+        xm = x0.copy()
+        xp[i] += h
+        xm[i] -= h
+        yp = np.asarray(fun(xp), dtype=float).ravel()
+        ym = np.asarray(fun(xm), dtype=float).ravel()
+        if yp.size != m or ym.size != m:
+            raise ValueError("fun must return a consistent 1-D shape.")
+        J[:, i] = (yp - ym) / (2.0 * h)
+
+    return J
+
+
+def _analytic_var_from_Z(
+    Z: np.ndarray,
+    sigma: np.ndarray,
+    fun_real,
+    *,
+    fd_eps: float = 1.0e-6,
+) -> np.ndarray:
+    """Delta-method variances for real-valued outputs derived from Z.
+
+    Parameters
+    ----------
+    Z : numpy.ndarray
+        Complex impedance tensor of shape ``(n, 2, 2)``.
+    sigma : numpy.ndarray
+        1-sigma standard deviations of the complex impedance entries with the
+        same shape as ``Z``.
+    fun_real : callable
+        Function accepting a complex ``(2, 2)`` impedance matrix and returning
+        a real-valued array (any shape). The function is applied per frequency.
+    fd_eps : float, optional
+        Relative step factor for finite differences.
+
+    Returns
+    -------
+    numpy.ndarray
+        Variances of the flattened output for each frequency, shape
+        ``(n, m)`` where ``m`` is the number of output entries. The caller
+        can reshape the last dimension to match ``fun_real`` output.
+    """
+    Z = np.asarray(Z, dtype=np.complex128)
+    sigma = np.asarray(sigma, dtype=float)
+    if Z.shape != sigma.shape or Z.shape[-2:] != (2, 2):
+        raise ValueError("Z and sigma must have the same shape (n, 2, 2).")
+
+    n = Z.shape[0]
+    # Determine output size
+    y0 = np.asarray(fun_real(Z[0]), dtype=float).ravel()
+    m = y0.size
+    var_out = np.full((n, m), np.nan, dtype=float)
+
+    for k in range(n):
+        Zk = Z[k]
+        sigk = sigma[k]
+        x0 = _z_to_x8(Zk)
+        var_x = _x8_part_variances(sigk)
+
+        def wrap(x):
+            return np.asarray(fun_real(_x8_to_z(x)), dtype=float).ravel()
+
+        J = _finite_diff_jacobian(wrap, x0, eps=fd_eps)
+        var_out[k] = np.sum((J ** 2) * var_x[None, :], axis=1)
+
+    return var_out
+
+
+def _analytic_var_complex_scalar_from_Z(
+    Z: np.ndarray,
+    sigma: np.ndarray,
+    fun_complex,
+    *,
+    fd_eps: float = 1.0e-6,
+) -> np.ndarray:
+    """Delta-method variance for a complex scalar derived from Z.
+
+    Parameters
+    ----------
+    Z : numpy.ndarray
+        Complex impedance tensor of shape ``(n, 2, 2)``.
+    sigma : numpy.ndarray
+        1-sigma standard deviations of the complex impedance entries with the
+        same shape as ``Z``.
+    fun_complex : callable
+        Function accepting a complex ``(2, 2)`` impedance matrix and returning
+        a complex scalar (Python complex or 0-D numpy complex).
+    fd_eps : float, optional
+        Relative step factor for finite differences.
+
+    Returns
+    -------
+    numpy.ndarray
+        Variance proxy for the complex output, shape ``(n,)``. We compute
+        variances of real and imaginary parts and return their sum.
+    """
+    def fun_realimag(Zk):
+        v = complex(fun_complex(Zk))
+        return np.array([v.real, v.imag], dtype=float)
+
+    var_ri = _analytic_var_from_Z(Z, sigma, fun_realimag, fd_eps=fd_eps)
+    return var_ri[:, 0] + var_ri[:, 1]
+
+
 def compute_pt(
     Z: np.ndarray,
     Z_err: Optional[np.ndarray] = None,
     *,
     err_kind: str = "var",
+    err_method: str = "bootstrap",
     nsim: int = 200,
+    fd_eps: float = 1.0e-6,
     random_state: Optional[np.random.Generator] = None,
 ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
-    """Compute phase tensor and optionally propagate impedance errors."""
+    """Compute phase tensor and optionally propagate impedance errors.
+
+    Parameters
+    ----------
+    Z : numpy.ndarray
+        Complex impedance tensor of shape ``(n, 2, 2)``.
+    Z_err : numpy.ndarray or None, optional
+        Impedance uncertainties with the same shape as ``Z``. Interpretation
+        is set by ``err_kind``.
+    err_kind : {"var", "std"}, optional
+        Specifies whether ``Z_err`` contains variances (``"var"``) or
+        1-sigma standard deviations (``"std"``) of the *complex* impedance
+        entries. Default is ``"var"``.
+    err_method : {"none", "analytic", "bootstrap", "both"}, optional
+        Error propagation method:
+
+        - ``"none"``: do not compute errors (return ``PT_err=None``).
+        - ``"analytic"``: delta-method (finite-difference Jacobian).
+        - ``"bootstrap"``: parametric bootstrap (Monte-Carlo) using ``nsim``.
+        - ``"both"``: return a dict with both error arrays.
+
+        Default is ``"bootstrap"`` to keep backward behaviour.
+    nsim : int, optional
+        Number of bootstrap realisations for ``err_method="bootstrap"``.
+        Default is 200.
+    fd_eps : float, optional
+        Relative finite-difference step for ``err_method="analytic"``.
+        Default is 1e-6.
+    random_state : numpy.random.Generator, optional
+        Random generator to use for bootstrap. If None, a fresh generator is
+        created.
+
+    Returns
+    -------
+    PT : numpy.ndarray
+        Phase tensor array of shape ``(n, 2, 2)`` (real-valued).
+    PT_err : numpy.ndarray or None
+        Error estimate with shape ``(n, 2, 2)`` in the same convention as
+        ``err_kind`` (variance if ``"var"``, standard deviation if ``"std"``),
+        or a dict ``{"analytic": ..., "bootstrap": ...}`` if
+        ``err_method="both"``.
+    """
     Z = np.asarray(Z, dtype=np.complex128)
     if Z.shape[-2:] != (2, 2):
         raise ValueError("Z must have shape (n, 2, 2).")
 
     n = Z.shape[0]
-    P = np.full((n, 2, 2), np.nan, dtype=float)
+    PT = np.full((n, 2, 2), np.nan, dtype=float)
 
+    # Deterministic phase tensor
     for k in range(n):
         X = Z[k].real
         Y = Z[k].imag
@@ -854,46 +1151,67 @@ def compute_pt(
             X_inv = np.linalg.inv(X)
         except np.linalg.LinAlgError:
             continue
-        P[k] = X_inv @ Y
+        PT[k] = X_inv @ Y
 
-    if Z_err is None:
-        return P, None
+    if Z_err is None or err_method.lower() in ("none", "off", "false", "0"):
+        return PT, None
 
     Z_err = np.asarray(Z_err, dtype=float)
     if Z_err.shape != Z.shape:
         raise ValueError("Z_err must have the same shape as Z.")
 
-    rng = np.random.default_rng() if random_state is None else random_state
+    method = err_method.lower()
+    if method not in ("analytic", "bootstrap", "both"):
+        raise ValueError("err_method must be one of: 'none', 'analytic', 'bootstrap', 'both'.")
 
-    if err_kind == "var":
-        sigma = np.sqrt(Z_err)
-    elif err_kind == "std":
-        sigma = Z_err
-    else:
-        raise ValueError("err_kind must be 'var' or 'std'.")
+    sigma = _sigma_from_err(Z_err, err_kind=err_kind)
 
-    P_sims = np.full((nsim, n, 2, 2), np.nan, dtype=float)
+    # ---------------------- analytic (delta method)
+    PT_err_analytic = None
+    if method in ("analytic", "both"):
 
-    for sidx in range(nsim):
-        d_re = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
-        d_im = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
-        Zs = (Z.real + d_re) + 1j * (Z.imag + d_im)
-        for k in range(n):
-            X = Zs[k].real
-            Y = Zs[k].imag
+        def fun_real(Zk):
+            X = Zk.real
+            Y = Zk.imag
             try:
                 X_inv = np.linalg.inv(X)
             except np.linalg.LinAlgError:
-                continue
-            P_sims[sidx, k] = X_inv @ Y
+                return np.full((2, 2), np.nan, dtype=float)
+            return (X_inv @ Y)
 
-    with np.errstate(invalid="ignore"):
-        varP = np.nanvar(P_sims, axis=0)
+        var_flat = _analytic_var_from_Z(Z, sigma, fun_real, fd_eps=fd_eps)
+        var_PT = var_flat.reshape(n, 2, 2)
+        PT_err_analytic = var_PT if err_kind == "var" else np.sqrt(var_PT)
 
-    P_err = varP if err_kind == "var" else np.sqrt(varP)
-    print('Perr\n', P_err)
-    return P, P_err
+    # ---------------------- bootstrap (parametric)
+    PT_err_boot = None
+    if method in ("bootstrap", "both"):
+        rng = np.random.default_rng() if random_state is None else random_state
+        P_sims = np.full((nsim, n, 2, 2), np.nan, dtype=float)
 
+        for sidx in range(nsim):
+            d_re = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
+            d_im = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
+            Zs = (Z.real + d_re) + 1j * (Z.imag + d_im)
+
+            for k in range(n):
+                X = Zs[k].real
+                Y = Zs[k].imag
+                try:
+                    X_inv = np.linalg.inv(X)
+                except np.linalg.LinAlgError:
+                    continue
+                P_sims[sidx, k] = X_inv @ Y
+
+        with np.errstate(invalid="ignore"):
+            var_PT = np.nanvar(P_sims, axis=0)
+        PT_err_boot = var_PT if err_kind == "var" else np.sqrt(var_PT)
+
+    if method == "analytic":
+        return PT, PT_err_analytic
+    if method == "bootstrap":
+        return PT, PT_err_boot
+    return PT, {"analytic": PT_err_analytic, "bootstrap": PT_err_boot}
 
 
 def compute_zdet(
@@ -901,48 +1219,44 @@ def compute_zdet(
     Z_err: Optional[np.ndarray] = None,
     *,
     err_kind: str = "var",
+    err_method: str = "bootstrap",
     nsim: int = 200,
+    fd_eps: float = 1.0e-6,
     random_state: Optional[np.random.Generator] = None,
 ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
-    """Compute the determinant (Berdichevsky) rotational invariant of the MT impedance tensor.
+    """Compute Berdichevsky's determinant rotational invariant of impedance.
 
-    The determinant impedance is defined as:
+    The determinant impedance is:
 
-        Z_det = sqrt(det(Z)) = sqrt(Z_xx Z_yy - Z_xy Z_yx)
+        ``Z_det = sqrt(det(Z)) = sqrt(Z_xx Z_yy - Z_xy Z_yx)``
 
     Parameters
     ----------
     Z : numpy.ndarray
-        Complex impedance tensor of shape (n, 2, 2).
-    Z_err : numpy.ndarray, optional
-        Error measure for Z with the same shape as Z.
-
-        Interpretation follows :func:`compute_pt`:
-
-        - if ``err_kind="var"``: entries are treated as variances of the complex
-          impedance elements.
-        - if ``err_kind="std"``: entries are treated as standard deviations.
-
-        The uncertainty propagation assumes independent Gaussian noise on the
-        real and imaginary parts with equal variance (so that the complex
-        variance is split equally across real/imag).
+        Complex impedance tensor of shape ``(n, 2, 2)``.
+    Z_err : numpy.ndarray or None, optional
+        Impedance uncertainties with the same shape as ``Z``. Interpretation
+        is controlled by ``err_kind``.
     err_kind : {"var", "std"}, optional
-        Specifies whether ``Z_err`` is variance or standard deviation.
-        Default is ``"var"``.
+        Interpretation of ``Z_err`` (variance or standard deviation of the
+        complex impedance entries). Default is ``"var"``.
+    err_method : {"none", "analytic", "bootstrap", "both"}, optional
+        Error propagation method. See :func:`compute_pt` for details.
+        Default is ``"bootstrap"``.
     nsim : int, optional
-        Number of Monte-Carlo realizations used for error propagation.
-        Default is 200.
+        Number of bootstrap realisations (if requested). Default is 200.
+    fd_eps : float, optional
+        Relative step for the analytic delta method. Default is 1e-6.
     random_state : numpy.random.Generator, optional
-        Random generator to use.
+        Random generator for bootstrap.
 
     Returns
     -------
     zdet : numpy.ndarray
-        Complex determinant impedance of shape (n,).
+        Complex determinant impedance, shape ``(n,)``.
     zdet_err : numpy.ndarray or None
-        If ``Z_err`` is provided, returns an array of shape (n,) containing the
-        propagated uncertainty of ``zdet`` in the same convention as ``err_kind``
-        (variance or standard deviation). Otherwise ``None``.
+        Error estimate of shape ``(n,)`` (variance or standard deviation,
+        depending on ``err_kind``), or a dict if ``err_method="both"``.
     """
     Z = np.asarray(Z, dtype=np.complex128)
     if Z.shape[-2:] != (2, 2):
@@ -951,37 +1265,54 @@ def compute_zdet(
     detZ = Z[:, 0, 0] * Z[:, 1, 1] - Z[:, 0, 1] * Z[:, 1, 0]
     zdet = np.sqrt(detZ)
 
-    if Z_err is None:
+    if Z_err is None or err_method.lower() in ("none", "off", "false", "0"):
         return zdet, None
 
     Z_err = np.asarray(Z_err, dtype=float)
     if Z_err.shape != Z.shape:
         raise ValueError("Z_err must have the same shape as Z.")
 
-    if err_kind == "var":
-        sigma = np.sqrt(Z_err)
-    elif err_kind == "std":
-        sigma = Z_err
-    else:
-        raise ValueError("err_kind must be 'var' or 'std'.")
+    method = err_method.lower()
+    if method not in ("analytic", "bootstrap", "both"):
+        raise ValueError("err_method must be one of: 'none', 'analytic', 'bootstrap', 'both'.")
 
-    rng = np.random.default_rng() if random_state is None else random_state
+    sigma = _sigma_from_err(Z_err, err_kind=err_kind)
 
-    zdet_sims = np.full((nsim, Z.shape[0]), np.nan + 1j * np.nan, dtype=np.complex128)
-    for sidx in range(nsim):
-        d_re = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
-        d_im = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
-        Zs = (Z.real + d_re) + 1j * (Z.imag + d_im)
-        detZs = Zs[:, 0, 0] * Zs[:, 1, 1] - Zs[:, 0, 1] * Zs[:, 1, 0]
-        zdet_sims[sidx] = np.sqrt(detZs)
+    # analytic
+    zdet_err_analytic = None
+    if method in ("analytic", "both"):
 
-    with np.errstate(invalid="ignore"):
-        var_re = np.nanvar(zdet_sims.real, axis=0)
-        var_im = np.nanvar(zdet_sims.imag, axis=0)
+        def fun_complex(Zk):
+            detk = Zk[0, 0] * Zk[1, 1] - Zk[0, 1] * Zk[1, 0]
+            return np.sqrt(detk)
+
+        var_c = _analytic_var_complex_scalar_from_Z(Z, sigma, fun_complex, fd_eps=fd_eps)
+        zdet_err_analytic = var_c if err_kind == "var" else np.sqrt(var_c)
+
+    # bootstrap
+    zdet_err_boot = None
+    if method in ("bootstrap", "both"):
+        rng = np.random.default_rng() if random_state is None else random_state
+        sims = np.full((nsim, zdet.size), np.nan, dtype=np.complex128)
+
+        for sidx in range(nsim):
+            d_re = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
+            d_im = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
+            Zs = (Z.real + d_re) + 1j * (Z.imag + d_im)
+            dets = Zs[:, 0, 0] * Zs[:, 1, 1] - Zs[:, 0, 1] * Zs[:, 1, 0]
+            sims[sidx] = np.sqrt(dets)
+
+        with np.errstate(invalid="ignore"):
+            var_re = np.nanvar(sims.real, axis=0)
+            var_im = np.nanvar(sims.imag, axis=0)
         var_c = var_re + var_im
+        zdet_err_boot = var_c if err_kind == "var" else np.sqrt(var_c)
 
-    zdet_err = var_c if err_kind == "var" else np.sqrt(var_c)
-    return zdet, zdet_err
+    if method == "analytic":
+        return zdet, zdet_err_analytic
+    if method == "bootstrap":
+        return zdet, zdet_err_boot
+    return zdet, {"analytic": zdet_err_analytic, "bootstrap": zdet_err_boot}
 
 
 def compute_zssq(
@@ -989,40 +1320,44 @@ def compute_zssq(
     Z_err: Optional[np.ndarray] = None,
     *,
     err_kind: str = "var",
+    err_method: str = "bootstrap",
     nsim: int = 200,
+    fd_eps: float = 1.0e-6,
     random_state: Optional[np.random.Generator] = None,
 ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
-    """Compute the ssq (sum-of-squared-elements) rotational invariant of MT impedances.
+    """Compute the ssq rotational invariant (Rung–Arunwan / Szarka–Menvielle).
 
-    Following Szarka & Menvielle (1997) and later usage by Rung-Arunwan et al.,
-    the ssq impedance is defined as:
+    Definition (one common convention):
 
-        Z_ssq = sqrt( (Z_xx^2 + Z_xy^2 + Z_yx^2 + Z_yy^2) / 2 )
+        ``Z_ssq = sqrt( (Z_xx^2 + Z_xy^2 + Z_yx^2 + Z_yy^2) / 2 )``
 
     Parameters
     ----------
     Z : numpy.ndarray
-        Complex impedance tensor of shape (n, 2, 2).
-    Z_err : numpy.ndarray, optional
-        Error measure for Z with the same shape as Z. See :func:`compute_zdet`
-        (and :func:`compute_pt`) for the convention.
+        Complex impedance tensor of shape ``(n, 2, 2)``.
+    Z_err : numpy.ndarray or None, optional
+        Impedance uncertainties with the same shape as ``Z``. Interpretation
+        is controlled by ``err_kind``.
     err_kind : {"var", "std"}, optional
-        Specifies whether ``Z_err`` is variance or standard deviation.
-        Default is ``"var"``.
+        Interpretation of ``Z_err`` (variance or standard deviation of the
+        complex impedance entries). Default is ``"var"``.
+    err_method : {"none", "analytic", "bootstrap", "both"}, optional
+        Error propagation method. See :func:`compute_pt` for details.
+        Default is ``"bootstrap"``.
     nsim : int, optional
-        Number of Monte-Carlo realizations used for error propagation.
-        Default is 200.
+        Number of bootstrap realisations (if requested). Default is 200.
+    fd_eps : float, optional
+        Relative step for the analytic delta method. Default is 1e-6.
     random_state : numpy.random.Generator, optional
-        Random generator to use.
+        Random generator for bootstrap.
 
     Returns
     -------
     zssq : numpy.ndarray
-        Complex ssq impedance of shape (n,).
+        Complex ssq impedance, shape ``(n,)``.
     zssq_err : numpy.ndarray or None
-        If ``Z_err`` is provided, returns an array of shape (n,) containing the
-        propagated uncertainty of ``zssq`` in the same convention as ``err_kind``
-        (variance or standard deviation). Otherwise ``None``.
+        Error estimate of shape ``(n,)`` (variance or standard deviation,
+        depending on ``err_kind``), or a dict if ``err_method="both"``.
     """
     Z = np.asarray(Z, dtype=np.complex128)
     if Z.shape[-2:] != (2, 2):
@@ -1031,37 +1366,54 @@ def compute_zssq(
     ssqZ = (Z[:, 0, 0] ** 2 + Z[:, 0, 1] ** 2 + Z[:, 1, 0] ** 2 + Z[:, 1, 1] ** 2) / 2.0
     zssq = np.sqrt(ssqZ)
 
-    if Z_err is None:
+    if Z_err is None or err_method.lower() in ("none", "off", "false", "0"):
         return zssq, None
 
     Z_err = np.asarray(Z_err, dtype=float)
     if Z_err.shape != Z.shape:
         raise ValueError("Z_err must have the same shape as Z.")
 
-    if err_kind == "var":
-        sigma = np.sqrt(Z_err)
-    elif err_kind == "std":
-        sigma = Z_err
-    else:
-        raise ValueError("err_kind must be 'var' or 'std'.")
+    method = err_method.lower()
+    if method not in ("analytic", "bootstrap", "both"):
+        raise ValueError("err_method must be one of: 'none', 'analytic', 'bootstrap', 'both'.")
 
-    rng = np.random.default_rng() if random_state is None else random_state
+    sigma = _sigma_from_err(Z_err, err_kind=err_kind)
 
-    zssq_sims = np.full((nsim, Z.shape[0]), np.nan + 1j * np.nan, dtype=np.complex128)
-    for sidx in range(nsim):
-        d_re = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
-        d_im = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
-        Zs = (Z.real + d_re) + 1j * (Z.imag + d_im)
-        ssqZs = (Zs[:, 0, 0] ** 2 + Zs[:, 0, 1] ** 2 + Zs[:, 1, 0] ** 2 + Zs[:, 1, 1] ** 2) / 2.0
-        zssq_sims[sidx] = np.sqrt(ssqZs)
+    # analytic
+    zssq_err_analytic = None
+    if method in ("analytic", "both"):
 
-    with np.errstate(invalid="ignore"):
-        var_re = np.nanvar(zssq_sims.real, axis=0)
-        var_im = np.nanvar(zssq_sims.imag, axis=0)
+        def fun_complex(Zk):
+            ssqk = (Zk[0, 0] ** 2 + Zk[0, 1] ** 2 + Zk[1, 0] ** 2 + Zk[1, 1] ** 2) / 2.0
+            return np.sqrt(ssqk)
+
+        var_c = _analytic_var_complex_scalar_from_Z(Z, sigma, fun_complex, fd_eps=fd_eps)
+        zssq_err_analytic = var_c if err_kind == "var" else np.sqrt(var_c)
+
+    # bootstrap
+    zssq_err_boot = None
+    if method in ("bootstrap", "both"):
+        rng = np.random.default_rng() if random_state is None else random_state
+        sims = np.full((nsim, zssq.size), np.nan, dtype=np.complex128)
+
+        for sidx in range(nsim):
+            d_re = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
+            d_im = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
+            Zs = (Z.real + d_re) + 1j * (Z.imag + d_im)
+            ssq = (Zs[:, 0, 0] ** 2 + Zs[:, 0, 1] ** 2 + Zs[:, 1, 0] ** 2 + Zs[:, 1, 1] ** 2) / 2.0
+            sims[sidx] = np.sqrt(ssq)
+
+        with np.errstate(invalid="ignore"):
+            var_re = np.nanvar(sims.real, axis=0)
+            var_im = np.nanvar(sims.imag, axis=0)
         var_c = var_re + var_im
+        zssq_err_boot = var_c if err_kind == "var" else np.sqrt(var_c)
 
-    zssq_err = var_c if err_kind == "var" else np.sqrt(var_c)
-    return zssq, zssq_err
+    if method == "analytic":
+        return zssq, zssq_err_analytic
+    if method == "bootstrap":
+        return zssq, zssq_err_boot
+    return zssq, {"analytic": zssq_err_analytic, "bootstrap": zssq_err_boot}
 
 
 def _format_block(values: np.ndarray, n_per_line: int = 6) -> str:
@@ -1973,14 +2325,154 @@ def emtf_to_edi(emtf_path: str | Path, edi_path: str | Path) -> str:
     return str(edi_path)
 
 
-def calc_rhoa_phas(freq: np.ndarray, Z: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    """Compute apparent resistivity and phase from impedance."""
-    mu0 = _MU0
+def compute_rhophas(
+    freq: np.ndarray,
+    Z: np.ndarray,
+    Z_err: Optional[np.ndarray] = None,
+    *,
+    err_kind: str = "var",
+    err_method: str = "analytic",
+    nsim: int = 200,
+    mu0: float = _MU0,
+    random_state: Optional[np.random.Generator] = None,
+) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray], Optional[np.ndarray]]:
+    """Compute apparent resistivity and phase from impedance, optionally with errors.
+
+    Parameters
+    ----------
+    freq : numpy.ndarray
+        Frequencies in Hz, shape ``(n,)``.
+    Z : numpy.ndarray
+        Complex impedance tensor of shape ``(n, 2, 2)``.
+    Z_err : numpy.ndarray or None, optional
+        Impedance uncertainties with the same shape as ``Z`` (variance or
+        standard deviation, see ``err_kind``).
+    err_kind : {"var", "std"}, optional
+        Interpretation of ``Z_err`` (variance or standard deviation of the
+        complex impedance entries). Default is ``"var"``.
+    err_method : {"none", "analytic", "bootstrap", "both"}, optional
+        Error propagation method:
+
+        - ``"none"``: return ``rho_err=None`` and ``phi_err=None``.
+        - ``"analytic"``: first-order propagation (delta method) assuming
+          independent real/imag parts with equal variance split.
+        - ``"bootstrap"``: parametric bootstrap (Monte-Carlo) using ``nsim``.
+        - ``"both"``: return dicts for both error estimates.
+
+        Default is ``"analytic"`` because it is fast and often sufficient.
+    nsim : int, optional
+        Number of bootstrap realisations for ``err_method="bootstrap"``.
+        Default is 200.
+    mu0 : float, optional
+        Magnetic permeability used in the resistivity conversion. Default is
+        vacuum permeability ``_MU0``.
+    random_state : numpy.random.Generator, optional
+        Random generator to use for bootstrap.
+
+    Returns
+    -------
+    rho : numpy.ndarray
+        Apparent resistivity ``rho_a`` in Ω·m, shape ``(n, 2, 2)``.
+    phi : numpy.ndarray
+        Phase in degrees, shape ``(n, 2, 2)``.
+    rho_err : numpy.ndarray or None
+        Error estimate for ``rho`` with the same shape, returned as variance
+        if ``err_kind="var"`` or as standard deviation if ``err_kind="std"``.
+        If ``err_method="both"``, a dict is returned with keys
+        ``"analytic"`` and ``"bootstrap"``.
+    phi_err : numpy.ndarray or None
+        Error estimate for ``phi`` with the same shape (variance/std as above),
+        or dict if ``err_method="both"``.
+
+    Notes
+    -----
+    This function uses the standard MT definition:
+
+        ``rho_a = |Z|^2 / (mu0 * omega)``, with ``omega = 2π f``.
+
+    Analytic error propagation uses commonly applied approximations:
+
+    - ``std(rho_a) ≈ 2 |Z| std(Z) / (mu0 * omega)``
+    - ``std(phi_rad) ≈ std(Z) / |Z|``, converted to degrees.
+
+    Bootstrap treats ``Z_err`` as defining independent Gaussian perturbations
+    on the complex entries.
+    """
+    freq = np.asarray(freq, dtype=float).ravel()
+    Z = np.asarray(Z, dtype=np.complex128)
+    if Z.shape != (freq.size, 2, 2):
+        raise ValueError("Z must have shape (n, 2, 2) matching freq.")
     omega = 2.0 * np.pi * freq
-    absZ2 = np.abs(Z) ** 2
-    rhoa = absZ2 / (mu0 * omega)
-    phase = np.rad2deg(np.angle(Z))
-    return rhoa, phase
+    denom = mu0 * omega[:, None, None]
+
+    rho = (np.abs(Z) ** 2) / denom
+    phi = np.degrees(np.angle(Z))
+
+    method = err_method.lower()
+    if Z_err is None or method in ("none", "off", "false", "0"):
+        return rho, phi, None, None
+
+    Z_err = np.asarray(Z_err, dtype=float)
+    if Z_err.shape != Z.shape:
+        raise ValueError("Z_err must have the same shape as Z.")
+    if method not in ("analytic", "bootstrap", "both"):
+        raise ValueError("err_method must be one of: 'none', 'analytic', 'bootstrap', 'both'.")
+
+    sigma = _sigma_from_err(Z_err, err_kind=err_kind)
+    absZ = np.abs(Z)
+
+    # ------------- analytic approximations
+    rho_err_analytic = None
+    phi_err_analytic = None
+    if method in ("analytic", "both"):
+        with np.errstate(divide="ignore", invalid="ignore"):
+            std_rho = 2.0 * sigma * absZ / denom
+            std_phi_deg = (sigma / absZ) * (180.0 / np.pi)
+        if err_kind == "var":
+            rho_err_analytic = std_rho ** 2
+            phi_err_analytic = std_phi_deg ** 2
+        else:
+            rho_err_analytic = std_rho
+            phi_err_analytic = std_phi_deg
+
+    # ------------- bootstrap
+    rho_err_boot = None
+    phi_err_boot = None
+    if method in ("bootstrap", "both"):
+        rng = np.random.default_rng() if random_state is None else random_state
+        rho_sims = np.full((nsim,) + rho.shape, np.nan, dtype=float)
+        phi_sims = np.full((nsim,) + phi.shape, np.nan, dtype=float)
+
+        for sidx in range(nsim):
+            d_re = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
+            d_im = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
+            Zs = (Z.real + d_re) + 1j * (Z.imag + d_im)
+            rho_sims[sidx] = (np.abs(Zs) ** 2) / denom
+            phi_sims[sidx] = np.degrees(np.angle(Zs))
+
+        with np.errstate(invalid="ignore"):
+            var_rho = np.nanvar(rho_sims, axis=0)
+            var_phi = np.nanvar(phi_sims, axis=0)
+        if err_kind == "var":
+            rho_err_boot = var_rho
+            phi_err_boot = var_phi
+        else:
+            rho_err_boot = np.sqrt(var_rho)
+            phi_err_boot = np.sqrt(var_phi)
+
+    if method == "analytic":
+        return rho, phi, rho_err_analytic, phi_err_analytic
+    if method == "bootstrap":
+        return rho, phi, rho_err_boot, phi_err_boot
+    return rho, phi, {"analytic": rho_err_analytic, "bootstrap": rho_err_boot}, {"analytic": phi_err_analytic, "bootstrap": phi_err_boot}
+
+def calc_rhoa_phas(freq: np.ndarray, Z: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Compute apparent resistivity and phase from impedance (no errors).
+
+    This is a backward-compatible wrapper around :func:`compute_rhophas`.
+    """
+    rho, phi, _, _ = compute_rhophas(freq, Z, Z_err=None, err_method="none")
+    return rho, phi
 
 
 def mt1dfwd(

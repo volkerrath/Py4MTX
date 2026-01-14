@@ -1,174 +1,139 @@
-# README — `data_proc.py`
+# data_proc.py — EDI / MT data processing utilities
 
-Utilities for **magnetotelluric (MT) transfer-function I/O and light processing**.
+This module contains utilities to read/write EDI-style MT data, compute derived quantities
+(e.g., phase tensor and invariants), and convert an EDI dictionary into a tidy `pandas.DataFrame`.
 
-The module centers on an **EDI dictionary** representation (frequency/period + impedance/tipper + optional errors + derived quantities). It supports two common EDI “flavours”:
+## New / updated in this version
 
-- **Phoenix / SPECTRA EDIs** (`>SPECTRA` blocks): parses spectra matrices and reconstructs **Z** (and **T** if present).
-- **Classical table EDIs** (`>FREQ`, `>ZXXR`, … blocks): reads tabulated Z/T (and optional variance columns).
+### Apparent resistivity + phase with optional uncertainties
 
----
+#### `compute_rhophas(freq, Z, Z_err=None, *, err_kind="var", err_method="analytic", nsim=200, ...)`
 
-## Dependencies
+Computes apparent resistivity and phase from the complex impedance tensor:
 
-Required:
+- `rho_a = |Z|^2 / (mu0 * omega)` with `omega = 2π f`
+- `phi = angle(Z)` in degrees
 
-- `numpy`
-- `pandas`
-- `scipy` (used for smoothing-spline utilities)
+Optional uncertainty propagation:
 
-Optional:
+- `err_method="none"`: no errors returned
+- `err_method="analytic"`: fast first-order (delta-method) propagation
+- `err_method="bootstrap"`: parametric bootstrap / Monte-Carlo perturbation of `Z`
+- `err_method="both"`: returns both analytic and bootstrap error estimates
 
-- `tables` (PyTables) — needed for `save_hdf()`
-- `xarray` — needed for `save_ncd()`
+`err_kind` controls how `Z_err` is interpreted (`"var"` or `"std"`) and how returned errors are reported.
 
----
-
-## Core data structure: the “EDI dict”
-
-A typical dictionary returned by `load_edi()` looks like:
+Example:
 
 ```python
-edi = {
-    "freq":    (n,),              # Hz (ascending)
-    "Z":       (n,2,2) complex,   # impedance tensor
-    "T":       (n,1,2) complex,   # tipper (optional)
-    "Z_err":   (n,2,2) float,     # variance or std (optional)
-    "T_err":   (n,1,2) float,     # variance or std (optional)
-    "P":       (n,2,2) float,     # phase tensor (optional, via compute_pt)
-    "P_err":   (n,2,2) float,     # optional
-    "rot":     (n,) float,        # degrees (optional)
-    "err_kind": "var" | "std",
-    "source_kind": "spectra" | "tables",
-    "station": str | None,
-    "lat_deg": float | None,
-    "lon_deg": float | None,
-    "elev_m": float | None,
+rho, phi, rho_err, phi_err = compute_rhophas(
+    edi["freq"], edi["Z"], edi.get("Z_err"),
+    err_kind=edi.get("err_kind", "var"),
+    err_method="bootstrap",
+    nsim=500,
+)
+```
+
+### Error-method switch for compute procedures
+
+The following compute procedures now support a consistent error-method switch:
+
+- `compute_pt(...)`
+- `compute_zdet(...)`
+- `compute_zssq(...)`
+- `compute_rhophas(...)`
+
+Common keyword pattern:
+
+- `err_method={"none","analytic","bootstrap","both"}`
+- `err_kind={"var","std"}`
+- `nsim` for bootstrap
+- `fd_eps` for analytic finite-difference Jacobians (where applicable)
+
+## Notes
+
+- Bootstrap here is implemented as **parametric Monte-Carlo**: `Z` is perturbed using the provided `Z_err`
+  (interpreted as variance or standard deviation), assuming independent Gaussian perturbations of the complex entries.
+- Analytic propagation is a first-order approximation and is substantially faster; bootstrap is more robust but
+  can be slower depending on `nsim`.
+
+## Bootstrap / Monte-Carlo uncertainty references (BibTeX)
+
+Copy/paste as needed:
+
+```bibtex
+@article{Efron1979Bootstrap,
+  title   = {Bootstrap Methods: Another Look at the Jackknife},
+  author  = {Efron, Bradley},
+  journal = {The Annals of Statistics},
+  year    = {1979},
+  volume  = {7},
+  number  = {1},
+  pages   = {1--26},
+  doi     = {10.1214/aos/1176344552}
+}
+
+@article{EiselEgbert2001Stability,
+  title   = {On the stability of magnetotelluric transfer function estimates and the reliability of their variances},
+  author  = {Eisel, Markus and Egbert, Gary D.},
+  journal = {Geophysical Journal International},
+  year    = {2001},
+  volume  = {144},
+  number  = {1},
+  pages   = {65--82},
+  doi     = {10.1046/j.1365-246x.2001.00292.x}
+}
+
+@article{NeukirchGarcia2014Nonstationary,
+  title   = {Nonstationary magnetotelluric data processing with instantaneous parameter},
+  author  = {Neukirch, M. and Garc{\'i}a, X.},
+  journal = {Journal of Geophysical Research: Solid Earth},
+  year    = {2014},
+  volume  = {119},
+  number  = {3},
+  pages   = {1634--1654},
+  doi     = {10.1002/2013JB010494}
+}
+
+@article{Chen2012EMDMarineMT,
+  title   = {Using empirical mode decomposition to process marine magnetotelluric data},
+  author  = {Chen, J. and others},
+  journal = {Geophysical Journal International},
+  year    = {2012},
+  volume  = {190},
+  number  = {1},
+  pages   = {293--309},
+  doi     = {10.1111/j.1365-246X.2012.05536.x}
+}
+
+@article{UsuiEtAl2024RRMS,
+  title   = {New robust remote reference estimator using robust multivariate linear regression},
+  author  = {Usui, Yoshiya and Uyeshima, Makoto and Sakanaka, Shin'ya and Hashimoto, Tasuku and Ichiki, Masahiro and Kaida, Toshiki and Yamaya, Yusuke and Ogawa, Yasuo and Masuda, Masataka and Akiyama, Takahiro},
+  journal = {Geophysical Journal International},
+  year    = {2024},
+  volume  = {238},
+  number  = {2},
+  pages   = {943--959},
+  doi     = {10.1093/gji/ggae199}
+}
+
+@article{UsuiEtAl2025FRB_MT,
+  title   = {Application of the fast and robust bootstrap method to the uncertainty analysis of the magnetotelluric transfer function},
+  author  = {Usui, Yoshiya and Uyeshima, Makoto and Sakanaka, Shin'ya and Hashimoto, Tasuku and Ichiki, Masahiro and Kaida, Toshiki and Yamaya, Yusuke and Ogawa, Yasuo and Masuda, Masataka and Akiyama, Takahiro},
+  journal = {Geophysical Journal International},
+  year    = {2025},
+  volume  = {242},
+  number  = {1},
+  doi     = {10.1093/gji/ggaf162}
+}
+
+@article{SalibianBarrera2008FRB,
+  title   = {Fast and robust bootstrap},
+  author  = {Salibi{\'a}n-Barrera, Mat{\'i}as and Van Aelst, Stefan and Willems, Gert},
+  journal = {Statistical Methods \& Applications},
+  year    = {2008},
+  volume  = {17},
+  pages   = {41--71},
+  doi     = {10.1007/s10260-007-0048-6}
 }
 ```
-
----
-
-## Main API
-
-- `load_edi(path, ...)` — read an EDI file (Phoenix spectra or classic tables) into an EDI dict.
-- `save_edi(edi, path, ...)` — write an EDI dict back to a classical table-style EDI.
-- `compute_pt(edi, ...)` — compute phase tensor (Φ) and optionally propagate impedance uncertainty.
-
-Persistence helpers:
-
-- `save_hdf(data_dict_or_df, path, key="mt", ...)` — write a table + metadata to HDF5 via pandas.
-- `save_ncd(data_dict_or_df, path, ...)` — write a NetCDF file via xarray.
-- `save_npz(obj, path, key="data_dict")` / `load_npz(path, key=...)` — store/load arbitrary picklable Python objects as a single NPZ entry.
-- `save_list_of_dicts_npz(records, path, key="records")` / `load_list_of_dicts_npz(...)` — convenience wrappers for a collection like `sites = [site0, site1, ...]`.
-
----
-
-## Common workflows
-
-### 1) Read an EDI
-
-```python
-from data_proc import load_edi
-
-edi = load_edi("SITE001.edi")
-Z = edi["Z"]
-freq = edi["freq"]
-```
-
-### 2) Compute phase tensor (Φ)
-
-```python
-from data_proc import compute_pt
-
-edi = compute_pt(edi, n_mc=200)  # MC propagation optional
-P = edi["P"]
-```
-
-### 3) Write a classical EDI
-
-```python
-from data_proc import save_edi
-
-save_edi(edi, "SITE001_out.edi")
-```
-
----
-
-## Persisting results
-
-### A) NPZ: save/load arbitrary Python objects (pickle-based)
-
-```python
-from data_proc import save_npz, load_npz
-
-save_npz(edi, "site001.npz", key="edi")
-edi2 = load_npz("site001.npz", key="edi")
-```
-
-### B) NPZ: save/load a list of dicts (Option A)
-
-```python
-from data_proc import save_list_of_dicts_npz, load_list_of_dicts_npz
-
-sites = [
-    {"station": "A001", "freq": [1.0, 0.1], "Z": Z0},
-    {"station": "A002", "freq": [1.0, 0.1], "Z": Z1},
-]
-
-save_list_of_dicts_npz(sites, "sites.npz", key="records")
-sites2 = load_list_of_dicts_npz("sites.npz", key="records")
-```
-
-### C) HDF5: save a table plus metadata (`save_hdf`)
-
-`save_hdf()` writes two datasets:
-
-- `f"{key}/table"` — a DataFrame with tabular variables (freq/period + expanded columns)
-- `f"{key}/meta"` — a single-row DataFrame with metadata (`df.attrs` / non-tabular entries)
-
-```python
-from data_proc import save_hdf
-
-save_hdf(edi, "site001.h5", key="mt")
-```
-
-#### Avoiding the PyTables “pickling object types” warning
-
-Pandas/PyTables warns when writing columns of dtype `object` that contain **mixed Python objects** (for example `header_raw` as a list). In that case it falls back to **pickling**, which is slower and less portable.
-
-To avoid this, `save_hdf()` sanitizes metadata using:
-
-- `_sanitize_meta_for_hdf(meta)` — converts non-scalar metadata to JSON strings (fallback: `repr(...)`).
-
-### D) NetCDF: save via xarray (`save_ncd`)
-
-```python
-from data_proc import save_ncd
-
-save_ncd(edi, "site001.nc", dim="freq", dataset_name="mt")
-```
-
-Notes:
-
-- Complex arrays are stored as `<name>_re` and `<name>_im`.
-- Metadata is flattened into NetCDF attributes (`ds.attrs`).
-
----
-
-## Other utilities
-
-- Smoothing / uncertainty helpers (smoothing splines, GCV-like lambda choice, bootstrap CI utilities)
-- Experimental EMTF-XML reader: `read_emtf_xml(...)`
-
----
-
-## Notes and gotchas
-
-- Frequencies are returned in **ascending** order.
-- Table-style EDI variance blocks are interpreted as variances by default (`err_kind="var"`).
-- The NPZ helpers store Python objects (NumPy object arrays). Loading uses `allow_pickle=True` internally.
-
-### Security note (NPZ pickling)
-
-Pickle can execute arbitrary code when loading malicious files. Only load `.npz` files created by you or from sources you trust.
