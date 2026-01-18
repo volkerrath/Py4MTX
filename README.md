@@ -80,8 +80,7 @@ Please keep in mind that this is experimental software, and will contain errors.
 
 # Note: AI generated scripts
 
-Since this summer we have been experimenting with AI tools such as ChatGPT or CoPilot to implement further scripts/modules, which turned out to be very useful.  
-A note concerning AI (co)authorship has been added to the docstrings. Parts of these scripts have found their way into the modules later, keeping the docstrings.
+Since this summer we have been experimenting with AI tools such as ChatGPT or CoPilot to implement further scripts/modules, which turned out to be very useful. A note concerning AI (co)authorship has been added to the docstrings. Parts of these scripts have found their way into the modules later, keeping the docstrings.
  
 # $\texttt{ModEM}$: Jacobian-related functionalities including sensitivities
 
