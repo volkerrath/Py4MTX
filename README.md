@@ -80,12 +80,10 @@ Please keep in mind that this is experimental software, and will contain errors.
 
 # Note: AI generated scripts
 
-**Warning: the software found there is highly experimental, often untested, and may not work at all!** 
-
 Since this summer we have been experimenting with AI tools such as ChatGPT or CoPilot to implement further scripts/modules, which turned out to be very useful.  
 A note concerning AI (co)authorship has been added to the docstrings. Parts of these scripts have found their way into the modules later, keeping the docstrings.
-
-# Note: Jacobian-related functionalities including sensitivities
+ 
+# $\texttt{ModEM}$: Jacobian-related functionalities including sensitivities
 
 This repository now also contains $\texttt{python}$ tools for manipulating, processing, analysing Jacobians from 3-D magnetotelluric inversion, including 
 randomized singular value decompositions (SVD), and other tools related to the Nullspace-Shuttle method [1, 2]. Currently, we have implemented the tools necessary
