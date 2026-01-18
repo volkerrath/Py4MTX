@@ -51,19 +51,21 @@ print(titstrng+'\n\n')
 # Define the path to your EDI-files
 
 #
-PY4MTX_DATA =  '/home/vrath/MT_Data/waldim/'
-WorkDir = PY4MTX_DATA
-DimDir = WorkDir+'/edi_files/'
+WorkDir = '/home/vrath/MT_Data/waldim/'
+# EdiDir =  WorkDir + '/edi_jc/'
+# EdiDir =  WorkDir + '/edi_noss/'
+EdiDir =  WorkDir + '/edi_eps/'
+
+DimDir = WorkDir
 print(' WALdim results read from: %s' % DimDir)
-KmlDir =  WorkDir
-KmlFile = 'Annecy_WALDIM'
 
-DimFile = 'ANN_DIM_0.15.dat'
+KmlDir =  EdiDir
+KmlFile = 'Annecy_eps_WALDIM'
+
+DimFile = EdiDir+'ANN_DIM_0.15.dat'
 
 
 
-# open file and read the content in a list
-SiteFile = DimDir + DimFile
 # # Define the path for saving  kml files
 kml = False
 kmz = True
@@ -72,7 +74,7 @@ kmz = True
 Class3 = False
 
 read=[]
-with open(SiteFile, 'r') as f:
+with open(DimFile, 'r') as f:
     place_list = csv.reader(f)
 
     for site in place_list:

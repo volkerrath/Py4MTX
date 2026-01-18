@@ -63,6 +63,42 @@ def list_module_callables(module: ModuleType, public_only: bool = False) -> List
 
     return sorted(callables)
 
+def running_in_notebook() -> bool:
+    """
+    Return True if running inside a Jupyter notebook / JupyterLab / qtconsole kernel.
+    Return False for plain Python, scripts, and most terminals.
+    """
+    try:
+        from IPython import get_ipython  # type: ignore
+        ip = get_ipython()
+        if ip is None:
+            return False
+        # Kernel is usually present in notebook/lab/qtconsole
+        return "IPKernelApp" in ip.config
+    except Exception:
+        return False
+
+
+def runtime_env() -> str:
+    # Spyder
+    if os.environ.get("SPYDER_KERNEL") == "True" or "spyder_kernels" in sys.modules:
+        return "spyder"
+
+    # Jupyter / notebook-like
+    try:
+        from IPython import get_ipython  # type: ignore
+        ip = get_ipython()
+        if ip is None:
+            return "python"
+        name = ip.__class__.__name__
+        if name == "ZMQInteractiveShell":
+            return "jupyter"          # notebook/lab/qtconsole
+        if name == "TerminalInteractiveShell":
+            return "ipython-terminal"
+        return f"ipython-{name}"
+    except Exception:
+        return "python"
+
 
 def stop(s: str = ''):
     '''

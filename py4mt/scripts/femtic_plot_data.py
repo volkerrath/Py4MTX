@@ -72,12 +72,11 @@ for pth in mypath:
 from version import versionstrg
 import util as utl
 import femtic as fem
-import ensembles as ens
 
-from dataviz import add_phase, add_rho, add_tipper, add_pt
-from dataproc import load_edi, save_edi, save_ncd, save_hdf
-from dataproc import compute_pt, dataframe_from_arrays, interpolate_data
-from dataproc import set_errors, estimate_errors, rotate_data
+from data_viz import add_phase, add_rho, add_tipper, add_pt
+from data_proc import load_edi, save_edi, save_ncd, save_hdf
+from data_proc import compute_pt, dataframe_from_arrays, interpolate_data
+from data_proc import set_errors, estimate_errors, rotate_data
 
 
 from util import stop
@@ -98,17 +97,42 @@ print(titstrng + '\n\n')
 '''
 Base setup.
 '''
-N_samples = 1
 DatDir = r'/home/vrath/FEMTIC_work/ens_misti/misti_rto_01/'
+PltDir = DatDir + '/plots'
+
 DatList= ['misti_rto_01/observation.dat']
 NPZList =  ['misti_rto_01/observation.npz']
+
+
+StrngOut = ''
+
+# The next block determines the graphical output. if _PDFCatalog_ is set, a catalogue
+# including all generated figures, named _PDFCatName_ is generated. This option is only
+# available if '.pdf' is included in the output file format list (_PlotFmt_).
+
+FilesOnly = False    # for headless plotting.
+PltFmt = ['.png', '.pdf']
+
+CatName = PltDir+'Annecy_processed.pdf'
+Catalog = True
+if '.pdf' in PltFmt:
+    pass
+else:
+    print(' No pdf files generated. No catalog possible!')
+    Catalog = False
+
+pltargs = {
+    }
 
 
 '''
 plot data sets
 '''
+
+
 for site in NPZList:
     data = np.load(site)
+    station = data['station']
 
     df = pd.DataFrame(data)
 
@@ -128,8 +152,8 @@ for ax in axs:
     if not ax.lines and not ax.images and not ax.collections:
         fig.delaxes(ax)
 
-for f in PlotFormat:
-    plt.savefig(WorkDir + station + String_out + f, dpi=600)
+for f in PltFormat:
+    plt.savefig(PltDir + station + StrngOut + f, dpi=600)
 
 plt.show()
 
