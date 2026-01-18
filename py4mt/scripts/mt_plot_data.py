@@ -43,6 +43,8 @@ import time
 from datetime import datetime
 import warnings
 import csv
+import getpass
+
 '''
 specialized toolboxes settings and imports.
 '''
@@ -55,6 +57,7 @@ from scipy.interpolate import make_smoothing_spline
 import numpy as np
 import scipy as sci
 import pandas as pd
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 '''
@@ -96,12 +99,27 @@ print(titstrng + '\n\n')
 
 '''
 Base setup.
+
 '''
 DatDir = r'/home/vrath/FEMTIC_work/ens_misti/misti_rto_01/'
 PltDir = DatDir + '/plots'
 
-DatList= ['misti_rto_01/observation.dat']
-NPZList =  ['misti_rto_01/observation.npz']
+UseEDI = False
+UseNPZ = True
+UseDAT = False
+
+
+if UseDAT:
+    DatList= [DatDir+'/observation.dat']
+
+elif UseEDI:
+    edi_files = utl.get_filelist(searchstr=['.edi'], searchpath=DatDir, sortedlist =True, fullpath=True)
+    ns = np.size(edi_files)
+
+    DatList =  ['misti_rto_01/observation.npz']
+
+elif UseNPZ:
+    DatList =  ['misti_rto_01/observation.npz']
 
 
 StrngOut = ''
@@ -121,8 +139,47 @@ else:
     print(' No pdf files generated. No catalog possible!')
     Catalog = False
 
+# This block sets graphical parameters related to the \textit{matplotlib}.
+# package. A list of available plotting styles can be found on matplotlib's
+# website at https://matplotlib.org/stable/users/explain/customizing.htm, or
+# entering the python command
+# _print(matplotlib.pyplot.style.available)} in an appropriate_
+# window.
+#
+
+plt.style.use('seaborn-v0_8-paper')
+
+
+# For just plotting to files ('headless plotting'), choose the
+# cairo backend (eps, pdf, png, jpg...).
+
+if FilesOnly:
+    mpl.use('cairo')
+
+if Catalog:
+    pdf_list = []
+    catalog =mpl.backends.backend_pdf.PdfPages(CatName)
+
 pltargs = {
-    }
+    'figure.dpi' :  400,
+    'axes.linewidth' :  0.5,
+    'savefig.facecolor' : 'none',
+    'savefig.transparent' : True,
+    'savefig.bbox' : 'tight'}
+
+Fontsize = 8
+Labelsize = Fontsize
+Titlesize = 8
+Fontsizes = [Fontsize, Labelsize, Titlesize]
+
+Linewidths= [0.6]
+Markersize = 4
+
+ncols = 11
+Colors = plt.cm.jet(np.linspace(0,1,ncols))
+Grey = 0.7
+
+
 
 
 '''
@@ -130,7 +187,7 @@ plot data sets
 '''
 
 
-for site in NPZList:
+for site in DatList:
     data = np.load(site)
     station = data['station']
 
@@ -146,14 +203,29 @@ for site in NPZList:
     add_tipper(df, ax=axs[2, 0])
     add_pt(df, ax=axs[2, 1])
     fig.suptitle(station)
+    # Remove empty axes
+    for ax in axs:
+        if not ax.lines and not ax.images and not ax.collections:
+            fig.delaxes(ax)
 
-# Remove empty axes
-for ax in axs:
-    if not ax.lines and not ax.images and not ax.collections:
-        fig.delaxes(ax)
+    for f in PltFmt:
+        plt.savefig(PltDir + station + StrngOut + f, dpi=600)
 
-for f in PltFormat:
-    plt.savefig(PltDir + station + StrngOut + f, dpi=600)
+
+    if Catalog:
+       catalog.savefig(fig)
+
+
+
+if Catalog:
+    print(pdf_list)
+    # viz.make_pdf_catalog(PDFList=pdf_list, FileName=PDFCatName)
+    d = catalog.infodict()
+    d['Title'] =  CatName
+    d['Author'] = getpass.getuser()
+    d['CreationDate'] = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
+    catalog.close()
+
 
 plt.show()
 
