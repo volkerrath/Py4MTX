@@ -2,7 +2,9 @@
 # Python Tools for MT
 
 
-This repository currently contains scripts useful for EM imaging, modelling, and inversion, partly using mtpy (to be downloaded from https://github.com/MTgeophysics/mtpy-v2). The workflows for reading and processing Jacobians from ModEM outputs has been copied from https://github.com/volkerrath/JacoPyAN, and will be further developed here. The tools refer to the 3D magnetotelluric inversion codes ModEM (available at https://github.com/magnetotellurics/ModEM) and FEMTIC (available at http://https://github.com/yoshiya-usui/femtic). Please be aware that this repo is under active development, and currently in a process of reorganization and adding tools related to FEMTIC. Parts of these tools are not in production state. It is made available under GNU public license V3. 
+This repository currently contains scripts useful for EM imaging, modelling, and inversion. The workflows for reading and processing Jacobians from ModEM outputs has been merged from https://github.com/volkerrath/JacoPyAN, and will be further developed here. The tools refer to the 3D magnetotelluric inversion codes ModEM (available at https://github.com/magnetotellurics/ModEM) and FEMTIC (available at http://https://github.com/yoshiya-usui/femtic). Please be aware that this repo is under active development, and currently in a process of reorganization and adding tools related to FEMTIC, and thus some of these tools are not in production state. This collection is made available under GNU public license V3. 
+
+**Dependencies on mtpy have been removed from this toolbox.**
 
 The repository contains the following subdirectories:
 
@@ -14,7 +16,7 @@ The repository contains the following subdirectories:
  -	**py4mt/modules**
  	Contains the modules mtproc.py, jacproc.py, inversion.py, femtic.py, modem.py, aniso.py, mcmc_funcs.py, edi_funcs.py, viz.py, plotrjmcmc.py, and util.py, called from the Python scripts run for different tasks of MT 	interpretation.
  	
- - 	**py4mt/scripts** 
+ - 	**py4mt/scripts**  918795 
  	Contains the scripts  for preprocessing, visualization, and preparing the inversion of 
  	MT data.   	 
  
@@ -57,7 +59,6 @@ _conda create --name Py4MTX --file Py4MTX.txt_
 
 This will set up a Python 3.11 environment with all dependencies for aempy. Don't forget to update also Py4MTX regularly, using _conda update --name Py4MTX--all_! 
 
-**Warning: the current versions of mtpy-v2 from conda and pip are not working correctly, please install it from source (https://github.com/MTgeophysics/mtpy-v2)! In the near future all dependcies  on mtpy will be removed!**
 
 (3) Activate this environment by:
 
