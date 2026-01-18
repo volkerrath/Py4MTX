@@ -120,6 +120,51 @@ _MU0: float = 4.0 * np.pi * 1.0e-7
 # ---------------------------------------------------------------------------
 
 
+def get_edi_list(edirname=None, sort=False, fullpath=True):
+
+
+
+    """
+    List EDI files in a directory.
+
+    Parameters
+    ----------
+    edirname : str
+        Directory containing EDI files.
+    sort : bool
+        If True, return files in sorted order.
+    fullpath : bool
+        If True, return full paths; otherwise return file names only.
+
+    Returns
+    -------
+    edi_files : list[str]
+        List of EDI file paths or names.
+
+    Notes
+    -----
+    Hidden files (starting with '.') are ignored. Raises SystemExit if no EDI files
+    are found.
+    """
+    edi_files = []
+    files = os.listdir(edirname)
+    for entry in files:
+        # print(entry)
+        if entry.endswith('.edi') and not entry.startswith('.'):
+            if fullpath:
+                edi_files.append(edirname+entry)
+            else:
+                edi_files.append(entry)
+
+    ns = np.size(edi_files)
+    if ns ==0:
+        sys.exit('No edi files found in '+edirname+'! Exit.')
+
+    if sort:
+        edi_files
+
+    return edi_files
+
 def read_edi_text(path: str | Path, encoding: str = "latin-1") -> str:
     """Read an EDI file as raw text.
 
