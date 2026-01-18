@@ -69,16 +69,18 @@ if  'wal' in whatfor:
 # Define the path to your EDI-files and for the list produced
 # PY4MTX_DATA = '/home/vrath/Py4MTX/work/results_ploting/'
 WorkDir = '/home/vrath/MT_Data/waldim/'
-EdiDir =  WorkDir + '/edi_files/'
+EdiDir =  WorkDir + '/edi_jc/'
+# EdiDir =  WorkDir + '/edi_noss/'
+# EdiDir =  WorkDir + '/edi_eps/'
 
 print(' Edifiles read from: %s' % EdiDir)
 
 if  'wal' in whatfor.lower():
-    CSVFile = WorkDir + 'Sitelist_waldim.txt'
+    CSVFile = EdiDir + 'Sitelist_waldim.txt'
 elif 'fem' in whatfor.lower():
-    CSVFile = WorkDir + 'Sitelist_femtic.txt'
+    CSVFile = EdiDir + 'Sitelist_femtic.txt'
 else:
-    CSVFile = WorkDir + 'Sitelist.txt'
+    CSVFile = EdiDir + 'Sitelist.txt'
 print('Writing data to file: ' + CSVFile)
 
 # No changes required after this line!
