@@ -82,6 +82,7 @@ Example
     udip = np.zeros(h_m.size)
     usla = np.zeros(h_m.size)
 
+    # If you want to keep thicknesses fixed, add fix_h=True
     inv = EmceeAnisoMTSampler(
         data_site=edi,
         periods_s=1.0 / edi["freq"],
@@ -914,6 +915,13 @@ class EmceeAnisoMTSampler:
         Simple uniform bounds for physical parameters.
     param_config : ParamConfig, optional
         Which parameters to sample vs keep fixed.
+    fix_h : bool, default False
+        Convenience option: if True and ``param_config`` is None, layer thicknesses
+        are treated as fixed (not sampled).
+    h_m_fixed : ndarray, optional
+        If provided, these thicknesses are used as fixed reference thicknesses
+        (requires ``fix_h=True`` unless you also provide an explicit
+        ``param_config``).
 
     Notes
     -----
@@ -940,6 +948,8 @@ class EmceeAnisoMTSampler:
         sigma_floor_P: float = 0.0,
         prior_bounds: Optional[PriorBounds] = None,
         param_config: Optional[ParamConfig] = None,
+        fix_h: bool = False,
+        h_m_fixed: Optional[np.ndarray] = None,
         log10_positive: bool = True,
     ):
         self.data_site = data_site
@@ -954,6 +964,31 @@ class EmceeAnisoMTSampler:
         self.compute_pt_if_missing = bool(compute_pt_if_missing)
         self.log10_positive = bool(log10_positive)
 
+        # Thickness handling
+        # ------------------
+        # In anisotropic 1-D inversion it is common to keep the layer thicknesses
+        # fixed (e.g., from independent constraints) and invert only for
+        # resistivities + Euler angles. This is provided as a convenience
+        # option. For fine control, pass an explicit ParamConfig instead.
+        self.fix_h = bool(fix_h)
+        if h_m_fixed is not None and not self.fix_h and param_config is None:
+            raise ValueError('h_m_fixed was provided but fix_h=False and param_config=None. '
+                             'Either set fix_h=True or provide an explicit ParamConfig.')
+
+        h_ref = np.asarray(h_m_fixed if h_m_fixed is not None else h_m0, dtype=float).ravel()
+
+        if self.fix_h and param_config is None:
+            nl = h_ref.size
+            sample_h = np.zeros(nl, dtype=bool)
+            sample_rop = np.ones((nl, 3), dtype=bool)
+            sample_angles = np.ones(nl, dtype=bool)
+            param_config = ParamConfig(
+                sample_h=sample_h,
+                sample_rop=sample_rop,
+                sample_angles=sample_angles,
+                include_basement_thickness=False,
+            )
+
         self.packed = pack_site_data(
             data_site,
             z_comps=self.z_comps,
@@ -965,7 +1000,7 @@ class EmceeAnisoMTSampler:
         )
 
         self.transform = ParameterTransform(
-            h_m0=h_m0,
+            h_m0=h_ref,
             rop0=rop0,
             ustr_deg0=ustr_deg0,
             udip_deg0=udip_deg0,
