@@ -77,7 +77,7 @@ import util as utl
 import femtic as fem
 
 from data_viz import add_phase, add_rho, add_tipper, add_pt
-from data_proc import load_edi, save_edi, save_ncd, save_hdf
+from data_proc import load_edi, save_edi, save_ncd, save_hdf, save_npz
 from data_proc import compute_pt, dataframe_from_arrays, interpolate_data
 from data_proc import set_errors, estimate_errors, rotate_data
 
@@ -160,25 +160,25 @@ if Catalog:
     pdf_list = []
     catalog =mpl.backends.backend_pdf.PdfPages(CatName)
 
+
+mpl.rcParams['figure.dpi'] = 400
+mpl.rcParams['axes.linewidth'] = 0.5
+mpl.rcParams['savefig.facecolor'] = 'none'
+mpl.rcParams['savefig.transparent'] = True
+mpl.rcParams['savefig.bbox'] = 'tight'
+
+
+ncols  = 11
+colors = plt.cm.jet(np.linspace(0,1,ncols))
 pltargs = {
-    'figure.dpi' :  400,
-    'axes.linewidth' :  0.5,
-    'savefig.facecolor' : 'none',
-    'savefig.transparent' : True,
-    'savefig.bbox' : 'tight'}
-
-Fontsize = 8
-Labelsize = Fontsize
-Titlesize = 8
-Fontsizes = [Fontsize, Labelsize, Titlesize]
-
-Linewidths= [0.6]
-Markersize = 4
-
-ncols = 11
-Colors = plt.cm.jet(np.linspace(0,1,ncols))
-Grey = 0.7
-
+'Fontsize' :8,
+'Labelsize' :10,
+'Titlesize' :10,
+'Linewidths' : [0.6],
+'Markersize' :4,
+'Colors' :colors,
+'Grey' : 0.7,
+}
 
 
 
@@ -196,10 +196,10 @@ for site in DatList:
 
     fig, axs = plt.subplots(3, 2, figsize=(8, 14), sharex=True)
 
-    add_rho(df, comps="xy,yx", ax=axs[0, 0])
-    add_phase(df, comps="xy,yx", ax=axs[0, 1])
-    add_rho(df, comps="xx,yy", ax=axs[1, 0])
-    add_phase(df, comps="xx,yy", ax=axs[1, 1])
+    add_rho(df, comps="xy,yx", ax=axs[0, 0], **pltargs)
+    add_phase(df, comps="xy,yx", ax=axs[0, 1], **pltargs)
+    add_rho(df, comps="xx,yy", ax=axs[1, 0], **pltargs)
+    add_phase(df, comps="xx,yy", ax=axs[1, 1], **pltargs)
     add_tipper(df, ax=axs[2, 0])
     add_pt(df, ax=axs[2, 1])
     fig.suptitle(station)
@@ -209,13 +209,15 @@ for site in DatList:
             fig.delaxes(ax)
 
     for f in PltFmt:
-        plt.savefig(PltDir + station + StrngOut + f, dpi=600)
+        pltfilename =PltDir + station + StrngOut + f
+        plt.savefig(pltfilename, dpi=600)
 
 
     if Catalog:
-       catalog.savefig(fig)
+        pdf_list.append(pltfilename)
+        catalog.savefig(fig)
 
-
+    plt.show()
 
 if Catalog:
     print(pdf_list)
@@ -227,7 +229,6 @@ if Catalog:
     catalog.close()
 
 
-plt.show()
 
 
 print('data plots ready!')

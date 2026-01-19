@@ -2446,7 +2446,8 @@ def compute_rhophas(
     freq = np.asarray(freq, dtype=float).ravel()
     Z = np.asarray(Z, dtype=np.complex128)
     if Z.shape != (freq.size, 2, 2):
-        raise ValueError("Z must have shape (n, 2, 2) matching freq.")
+        Z.reshape((freq.size,2, 2))
+        # raise ValueError("Z must have shape (n, 2, 2) matching freq.")
     omega = 2.0 * np.pi * freq
     denom = mu0 * omega[:, None, None]
 
