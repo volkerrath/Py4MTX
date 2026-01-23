@@ -478,7 +478,7 @@ else:
     nl = int(model0.rop.shape[0])
 
     # Build parameter specification
-    spec = mcmc.ParamSpec(
+    spec = mcmc.make_param_spec(
         nl=nl,
         fix_h=bool(FIX_H),
         sample_last_thickness=False,
