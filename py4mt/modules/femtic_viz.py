@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """femtic_viz_new.py
 
 Visualisation utilities for FEMTIC resistivity models.
