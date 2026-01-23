@@ -897,11 +897,6 @@ def plot_phase_tensor_element(
     P_qhi = get_array(summary, "P_qhi", dtype=np.float64)
 
     q = qpairs if qpairs is not None else summary.get("pred_qpairs", None)
-    if rho_q == "conductivity" and rho_med.size:
-        rho_med = np.maximum(1e-18, 1.0 / rho_med)
-        if rho_qlo.size and rho_qhi.size:
-            # invert and swap bounds
-            rho_qlo, rho_qhi = np.maximum(1e-18, 1.0 / rho_qhi), np.maximum(1e-18, 1.0 / rho_qlo)
 
     qn = normalize_qpairs(q) if q is not None else np.zeros((0, 2), dtype=np.float64)
 
