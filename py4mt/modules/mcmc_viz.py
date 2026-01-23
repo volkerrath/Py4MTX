@@ -48,8 +48,7 @@ from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 import matplotlib.pyplot as plt
-
-
+import data_proc as dp
 # Magnetic permeability of vacuum [H/m]
 MU0 = 4e-7 * np.pi
 
@@ -250,30 +249,6 @@ def period_from_freq(freq_hz: np.ndarray) -> np.ndarray:
     f = np.asarray(freq_hz, dtype=np.float64)
     return 1.0 / f
 
-
-def z_to_rho_phase(freq_hz: np.ndarray, Z: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Convert impedance Z(f) to apparent resistivity and phase.
-
-    Parameters
-    ----------
-    freq_hz : ndarray, shape (nper,)
-        Frequencies in Hz.
-    Z : ndarray, shape (nper, 2, 2), complex
-        Complex impedance tensor.
-
-    Returns
-    -------
-    rho : ndarray, shape (nper, 2, 2)
-        Apparent resistivity (Ohm·m).
-    phase_deg : ndarray, shape (nper, 2, 2)
-        Phase in degrees.
-    """
-    freq_hz = np.asarray(freq_hz, dtype=np.float64)
-    omega = 2.0 * np.pi * freq_hz[:, None, None]
-    rho = (np.abs(Z) ** 2) / (MU0 * omega)
-    phase_deg = np.degrees(np.arctan2(np.imag(Z), np.real(Z)))
-    return rho, phase_deg
 
 
 # -----------------------------------------------------------------------------
@@ -836,7 +811,7 @@ def plot_rho_phase_fit(
     per = period_from_freq(freq)
 
     Z_obs = np.asarray(summary["Z_obs"], dtype=np.complex128)
-    rho_obs, ph_obs = z_to_rho_phase(freq, Z_obs)
+    rho_obs, ph_obs, _, _ = dp.compute_rhophas(freq, Z_obs, None, err_method="none", err_kind="var")
 
     rho_q = str(rho_quantity).strip().lower()
     if rho_q not in {"resistivity", "conductivity"}:
