@@ -38,7 +38,7 @@ Typical usage (sketch)
 >>> fig.show()
 
 Author: Volker Rath (DIAS)
-Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-22
+Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-23
 """
 
 from __future__ import annotations
@@ -490,6 +490,148 @@ def plot_theta_density(
 # -----------------------------------------------------------------------------
 
 
+def plot_depth_resistivity(
+    ax: plt.Axes,
+    summary: Mapping[str, Any],
+    comp: int = 0,
+    quantity: str = "resistivity",
+    use_log10: bool = True,
+    qpairs: Optional[Sequence[Sequence[float]]] = None,
+    label_intervals: bool = False,
+    legend: bool = False,
+    invert_y: bool = True,
+    sigma_floor: float = 1e-18,
+) -> plt.Axes:
+    """
+    Plot depth profiles (layer steps) and credible envelopes for one principal component.
+
+    This function is intended for *layered* (piecewise constant) model parameters,
+    plotted versus depth-to-layer-bottom.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axis to draw on.
+    summary : mapping
+        Summary dict loaded from ``*_pmc_summary.npz``.
+        Must contain ``z_bot_med`` plus medians for the chosen quantity.
+    comp : int
+        Principal component index (0..2).
+    quantity : str
+        Either ``"resistivity"`` (default) or ``"conductivity"``.
+        Conductivity is plotted as ``sigma = 1/rho`` in S/m.
+    use_log10 : bool
+        If True, plot on a log10 scale in x (i.e., x values are log10 of the quantity).
+        If False, plot the quantity on a linear x-axis (but you may still set log-scale
+        on the axis outside this function if desired).
+    qpairs : sequence of pairs or None
+        Credible-interval pairs (in percent) to label envelopes when present.
+        If None, uses ``summary.get("model_qpairs")``.
+    label_intervals : bool
+        If True, add labels like "10-90%" for each filled interval.
+    legend : bool
+        If True, draw a legend.
+    invert_y : bool
+        If True, invert y-axis so depth increases downward (positive down).
+    sigma_floor : float
+        Floor for conductivity to avoid division-by-zero when converting 1/rho.
+        Only used for ``quantity="conductivity"``.
+
+    Returns
+    -------
+    ax : matplotlib.axes.Axes
+        The same axis, for chaining.
+    """
+    quantity_n = str(quantity).strip().lower()
+    if quantity_n not in {"resistivity", "conductivity"}:
+        raise ValueError("quantity must be 'resistivity' or 'conductivity'.")
+
+    z_bot = np.asarray(summary["z_bot_med"], dtype=np.float64).ravel()
+    q = qpairs if qpairs is not None else summary.get("model_qpairs", None)
+
+    # Base arrays in resistivity space (Ohm·m)
+    rop_med = get_array(summary, "rop_med", dtype=np.float64)
+    log10_rop_med = get_array(summary, "log10_rop_med", dtype=np.float64)
+    rop_qlo = get_array(summary, "rop_qlo", dtype=np.float64)
+    rop_qhi = get_array(summary, "rop_qhi", dtype=np.float64)
+    log10_rop_qlo = get_array(summary, "log10_rop_qlo", dtype=np.float64)
+    log10_rop_qhi = get_array(summary, "log10_rop_qhi", dtype=np.float64)
+
+    if use_log10:
+        if quantity_n == "resistivity":
+            if log10_rop_med.size:
+                med = np.asarray(log10_rop_med, dtype=np.float64)[:, comp]
+            else:
+                if not rop_med.size:
+                    raise KeyError("summary must contain rop_med or log10_rop_med")
+                med = np.log10(np.asarray(rop_med, dtype=np.float64)[:, comp])
+
+            qlo_all = log10_rop_qlo if log10_rop_qlo.size else (np.log10(rop_qlo) if rop_qlo.size else np.array([]))
+            qhi_all = log10_rop_qhi if log10_rop_qhi.size else (np.log10(rop_qhi) if rop_qhi.size else np.array([]))
+            xlabel = "log10 ρ  [Ohm·m]" if quantity_n == "resistivity" else "log10 σ  [S/m]"
+        else:
+            # conductivity in log10: log10(sigma)= -log10(rho)
+            if log10_rop_med.size:
+                med = -np.asarray(log10_rop_med, dtype=np.float64)[:, comp]
+            else:
+                if not rop_med.size:
+                    raise KeyError("summary must contain rop_med or log10_rop_med")
+                med = np.log10(np.maximum(sigma_floor, 1.0 / np.asarray(rop_med, dtype=np.float64)[:, comp]))
+
+            # Credible bounds: convert in resistivity space, then transform
+            if log10_rop_qlo.size and log10_rop_qhi.size:
+                qlo_all = -np.asarray(log10_rop_qhi, dtype=np.float64)  # note swap
+                qhi_all = -np.asarray(log10_rop_qlo, dtype=np.float64)
+            elif rop_qlo.size and rop_qhi.size:
+                qlo_all = np.log10(np.maximum(sigma_floor, 1.0 / np.asarray(rop_qhi, dtype=np.float64)))  # swap
+                qhi_all = np.log10(np.maximum(sigma_floor, 1.0 / np.asarray(rop_qlo, dtype=np.float64)))
+            else:
+                qlo_all = np.array([])
+                qhi_all = np.array([])
+            xlabel = "log10 σ  [S/m]"
+    else:
+        if quantity_n == "resistivity":
+            if not rop_med.size:
+                raise KeyError("summary must contain rop_med for use_log10=False")
+            med = np.asarray(rop_med, dtype=np.float64)[:, comp]
+            qlo_all = rop_qlo
+            qhi_all = rop_qhi
+            xlabel = "ρ  [Ohm·m]"
+        else:
+            if not rop_med.size:
+                raise KeyError("summary must contain rop_med for use_log10=False")
+            med = np.maximum(sigma_floor, 1.0 / np.asarray(rop_med, dtype=np.float64)[:, comp])
+            if rop_qlo.size and rop_qhi.size:
+                qlo_all = np.maximum(sigma_floor, 1.0 / np.asarray(rop_qhi, dtype=np.float64))  # swap
+                qhi_all = np.maximum(sigma_floor, 1.0 / np.asarray(rop_qlo, dtype=np.float64))
+            else:
+                qlo_all = np.array([])
+                qhi_all = np.array([])
+            xlabel = "σ  [S/m]"
+
+    v_qlo = v_qhi = None
+    if qlo_all.size and qhi_all.size:
+        v_qlo = np.asarray(qlo_all, dtype=np.float64)[:, :, comp]
+        v_qhi = np.asarray(qhi_all, dtype=np.float64)[:, :, comp]
+
+    plot_layer_steps(
+        ax,
+        z_bot,
+        med,
+        v_qlo=v_qlo,
+        v_qhi=v_qhi,
+        qpairs=q,
+        label_intervals=label_intervals,
+        invert_y=invert_y,
+    )
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel("depth [m]")
+    ax.set_title(f"component {comp+1}", fontsize=10)
+    if legend:
+        ax.legend(fontsize=8, loc="best")
+    return ax
+
+
 def plot_vertical_resistivity(
     ax: plt.Axes,
     summary: Mapping[str, Any],
@@ -500,46 +642,52 @@ def plot_vertical_resistivity(
     legend: bool = False,
 ) -> plt.Axes:
     """
-    Plot vertical credible intervals for one principal resistivity component.
+    Deprecated wrapper for backward compatibility.
+
+    Use :func:`plot_depth_resistivity` instead.
     """
-    z_bot = np.asarray(summary["z_bot_med"], dtype=np.float64).ravel()
-    q = qpairs if qpairs is not None else summary.get("model_qpairs", None)
-
-    if use_log10:
-        med = np.asarray(summary["log10_rop_med"], dtype=np.float64)[:, comp]
-        qlo_all = get_array(summary, "log10_rop_qlo", dtype=np.float64)
-        qhi_all = get_array(summary, "log10_rop_qhi", dtype=np.float64)
-        xlabel = "log10 ρ  [Ohm·m]"
-    else:
-        med = np.asarray(summary["rop_med"], dtype=np.float64)[:, comp]
-        qlo_all = get_array(summary, "rop_qlo", dtype=np.float64)
-        qhi_all = get_array(summary, "rop_qhi", dtype=np.float64)
-        xlabel = "ρ  [Ohm·m]"
-
-    v_qlo = v_qhi = None
-    if qlo_all.size and qhi_all.size:
-        v_qlo = qlo_all[:, :, comp]
-        v_qhi = qhi_all[:, :, comp]
-
-    plot_layer_steps(ax, z_bot, med, v_qlo=v_qlo, v_qhi=v_qhi, qpairs=q, label_intervals=label_intervals)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel("depth [m]")
-    ax.set_title(f"ρ{comp+1}", fontsize=10)
-    if legend:
-        ax.legend(fontsize=8, loc="best")
-    return ax
+    return plot_depth_resistivity(
+        ax=ax,
+        summary=summary,
+        comp=comp,
+        quantity="resistivity",
+        use_log10=use_log10,
+        qpairs=qpairs,
+        label_intervals=label_intervals,
+        legend=legend,
+    )
 
 
-def plot_vertical_angle(
+def plot_depth_angle(
     ax: plt.Axes,
     summary: Mapping[str, Any],
     key: str = "ustr_deg",
     qpairs: Optional[Sequence[Sequence[float]]] = None,
     label_intervals: bool = False,
     legend: bool = False,
+    invert_y: bool = True,
 ) -> plt.Axes:
     """
-    Plot vertical credible intervals for one Euler angle (strike/dip/slant).
+    Plot depth profiles (layer steps) and credible envelopes for one Euler-angle field.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axis to draw on.
+    summary : mapping
+        Summary dict loaded from ``*_pmc_summary.npz``.
+        Must contain ``z_bot_med`` and the chosen angle key.
+    key : str
+        One of: ``"ustr_deg"``, ``"udip_deg"``, ``"usla_deg"`` (or any other
+        field stored in the summary with suffixes ``_med/_qlo/_qhi``).
+    qpairs, label_intervals, legend : see :func:`plot_depth_resistivity`.
+    invert_y : bool
+        If True, invert y-axis so depth increases downward (positive down).
+
+    Returns
+    -------
+    ax : matplotlib.axes.Axes
+        The same axis, for chaining.
     """
     z_bot = np.asarray(summary["z_bot_med"], dtype=np.float64).ravel()
     q = qpairs if qpairs is not None else summary.get("model_qpairs", None)
@@ -556,10 +704,9 @@ def plot_vertical_angle(
         v_qhi=(qhi if qhi.size else None),
         qpairs=q,
         label_intervals=label_intervals,
+        invert_y=invert_y,
     )
-
-    xlabel = {"ustr_deg": "strike [deg]", "udip_deg": "dip [deg]", "usla_deg": "slant [deg]"}.get(key, key)
-    ax.set_xlabel(xlabel)
+    ax.set_xlabel("angle [deg]")
     ax.set_ylabel("depth [m]")
     ax.set_title(key, fontsize=10)
     if legend:
@@ -567,18 +714,66 @@ def plot_vertical_angle(
     return ax
 
 
-def plot_vertical_thickness(
+def plot_vertical_angle(
     ax: plt.Axes,
     summary: Mapping[str, Any],
+    key: str = "ustr_deg",
     qpairs: Optional[Sequence[Sequence[float]]] = None,
     label_intervals: bool = False,
     legend: bool = False,
 ) -> plt.Axes:
     """
-    Plot vertical credible intervals for layer thickness.
+    Deprecated wrapper for backward compatibility.
+
+    Use :func:`plot_depth_angle` instead.
+    """
+    return plot_depth_angle(
+        ax=ax,
+        summary=summary,
+        key=key,
+        qpairs=qpairs,
+        label_intervals=label_intervals,
+        legend=legend,
+    )
+
+
+def plot_depth_thickness(
+    ax: plt.Axes,
+    summary: Mapping[str, Any],
+    qpairs: Optional[Sequence[Sequence[float]]] = None,
+    label_intervals: bool = False,
+    legend: bool = False,
+    invert_y: bool = True,
+) -> plt.Axes:
+    """
+    Plot layer thickness as a depth-referenced step plot with optional credible envelopes.
+
+    Note
+    ----
+    Thickness is a per-layer quantity; plotting it against depth can still be useful
+    for comparing thickness credibility to the depth of interfaces.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axis to draw on.
+    summary : mapping
+        Summary dict loaded from ``*_pmc_summary.npz``.
+        Must contain ``z_bot_med`` and ``h_m_med`` (unless thickness is fixed).
+    qpairs, label_intervals, legend : see :func:`plot_depth_resistivity`.
+    invert_y : bool
+        If True, invert y-axis so depth increases downward (positive down).
+
+    Returns
+    -------
+    ax : matplotlib.axes.Axes
+        The same axis, for chaining.
     """
     z_bot = np.asarray(summary["z_bot_med"], dtype=np.float64).ravel()
     q = qpairs if qpairs is not None else summary.get("model_qpairs", None)
+
+    if "h_m_med" not in summary:
+        raise KeyError("summary does not contain h_m_med (thickness may have been fixed).")
 
     med = np.asarray(summary["h_m_med"], dtype=np.float64).ravel()
     qlo = get_array(summary, "h_m_qlo", dtype=np.float64)
@@ -592,8 +787,9 @@ def plot_vertical_thickness(
         v_qhi=(qhi if qhi.size else None),
         qpairs=q,
         label_intervals=label_intervals,
+        invert_y=invert_y,
     )
-    ax.set_xlabel("thickness h [m]")
+    ax.set_xlabel("thickness [m]")
     ax.set_ylabel("depth [m]")
     ax.set_title("thickness", fontsize=10)
     if legend:
@@ -601,9 +797,25 @@ def plot_vertical_thickness(
     return ax
 
 
-# -----------------------------------------------------------------------------
-# Data-fit plots
-# -----------------------------------------------------------------------------
+def plot_vertical_thickness(
+    ax: plt.Axes,
+    summary: Mapping[str, Any],
+    qpairs: Optional[Sequence[Sequence[float]]] = None,
+    label_intervals: bool = False,
+    legend: bool = False,
+) -> plt.Axes:
+    """
+    Deprecated wrapper for backward compatibility.
+
+    Use :func:`plot_depth_thickness` instead.
+    """
+    return plot_depth_thickness(
+        ax=ax,
+        summary=summary,
+        qpairs=qpairs,
+        label_intervals=label_intervals,
+        legend=legend,
+    )
 
 
 def plot_rho_phase_fit(
@@ -611,19 +823,26 @@ def plot_rho_phase_fit(
     ax_phase: plt.Axes,
     summary: Mapping[str, Any],
     comp: str = "xy",
+    rho_quantity: str = "resistivity",
     use_predictive: bool = True,
     qpairs: Optional[Sequence[Sequence[float]]] = None,
     label_intervals: bool = False,
     legend: bool = False,
 ) -> Tuple[plt.Axes, plt.Axes]:
     """
-    Plot apparent resistivity and phase vs period for one impedance component.
+    Plot apparent resistivity (or apparent conductivity) and phase vs period for one impedance component.
     """
     freq = np.asarray(summary["freq"], dtype=np.float64)
     per = period_from_freq(freq)
 
     Z_obs = np.asarray(summary["Z_obs"], dtype=np.complex128)
     rho_obs, ph_obs = z_to_rho_phase(freq, Z_obs)
+
+    rho_q = str(rho_quantity).strip().lower()
+    if rho_q not in {"resistivity", "conductivity"}:
+        raise ValueError("rho_quantity must be 'resistivity' or 'conductivity'.")
+    if rho_q == "conductivity":
+        rho_obs = np.maximum(1e-18, 1.0 / np.asarray(rho_obs, dtype=np.float64))
 
     i, j = comp_to_ij(comp)
 
@@ -636,6 +855,12 @@ def plot_rho_phase_fit(
     ph_qhi = get_array(summary, "phase_deg_qhi", dtype=np.float64)
 
     q = qpairs if qpairs is not None else summary.get("pred_qpairs", None)
+    if rho_q == "conductivity" and rho_med.size:
+        rho_med = np.maximum(1e-18, 1.0 / rho_med)
+        if rho_qlo.size and rho_qhi.size:
+            # invert and swap bounds
+            rho_qlo, rho_qhi = np.maximum(1e-18, 1.0 / rho_qhi), np.maximum(1e-18, 1.0 / rho_qlo)
+
     qn = normalize_qpairs(q) if q is not None else np.zeros((0, 2), dtype=np.float64)
 
     if use_predictive and rho_med.size and ph_med.size:
@@ -656,7 +881,7 @@ def plot_rho_phase_fit(
 
     ax_rho.set_xscale("log")
     ax_rho.set_yscale("log")
-    ax_rho.set_ylabel("ρ [Ohm·m]")
+    ax_rho.set_ylabel("ρ [Ohm·m]" if rho_q == "resistivity" else "σ_app [S/m]")
     ax_rho.set_title(f"Z{comp.lower()}", fontsize=10)
     ax_rho.grid(True, which="both", alpha=0.2)
 
@@ -697,6 +922,12 @@ def plot_phase_tensor_element(
     P_qhi = get_array(summary, "P_qhi", dtype=np.float64)
 
     q = qpairs if qpairs is not None else summary.get("pred_qpairs", None)
+    if rho_q == "conductivity" and rho_med.size:
+        rho_med = np.maximum(1e-18, 1.0 / rho_med)
+        if rho_qlo.size and rho_qhi.size:
+            # invert and swap bounds
+            rho_qlo, rho_qhi = np.maximum(1e-18, 1.0 / rho_qhi), np.maximum(1e-18, 1.0 / rho_qlo)
+
     qn = normalize_qpairs(q) if q is not None else np.zeros((0, 2), dtype=np.float64)
 
     if use_predictive and P_med.size:
