@@ -56,17 +56,19 @@ In PyMC we typically sample on transformed variables:
 - resistivities: ``log10(rop)``
 - angles: degrees (bounded)
 
-The mapping is controlled by a plain ``ParamSpec`` dict and :func:`build_pymc_model`.
+The mapping is controlled by :class:`ParamSpec` and :func:`build_pymc_model`.
 
 Author: Volker Rath (DIAS)
 Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-20
 """
 
 from __future__ import annotations
-
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 
 import numpy as np
+import os
+from pathlib import Path
+
 
 # -------------------------------------------------------------------------
 # Import guards:
@@ -107,29 +109,30 @@ def _prepare_optional_deps() -> None:
 _prepare_optional_deps()
 
 
-# PyMC / Aesara
+# PyMC / PyTensor
 import pymc as pm
-import aesara
-import aesara.tensor as at
+import pytensor
+import pytensor.tensor as pt
 
 # -------------------------------------------------------------------------
-# Aesara configuration:
+# PyTensor configuration:
 # Some minimal/container environments lack Python development headers
-# (Python.h), which breaks Aesara's C compilation. Force pure-Python
+# (Python.h), which breaks PyTensor's C compilation. Force pure-Python
 # execution to keep PyMC usable.
 # -------------------------------------------------------------------------
 try:
-    aesara.config.cxx = ""  # disable C compilation
-    aesara.config.linker = "py"  # pure-Python linker
-    aesara.config.mode = "FAST_COMPILE"
+    pytensor.config.cxx = ""  # disable C compilation
+    pytensor.config.linker = "py"  # pure-Python linker
+    pytensor.config.mode = "FAST_COMPILE"
 except Exception:
     pass
-from aesara.graph.op import Op
-from aesara.graph.basic import Apply
+from pytensor.graph.op import Op
+from pytensor.graph.basic import Apply
 
 # Local forward model
 import aniso
-import data_proc as dp
+
+
 ArrayLike = Union[np.ndarray, Sequence[float]]
 
 
@@ -227,25 +230,34 @@ def _comp_indices(comps: Sequence[str]) -> List[Tuple[int, int]]:
 
 
 def phase_tensor_from_Z(Z: np.ndarray) -> np.ndarray:
-    """Compute phase tensor P from complex impedance Z via :func:`data_proc.compute_pt`.
+    """
+    Compute Phase Tensor P from complex impedance Z.
+
+    P is defined as:
+        P = inv(Re(Z)) @ Im(Z)
 
     Parameters
     ----------
-    Z : ndarray
-        Complex impedance array of shape ``(nper, 2, 2)``.
+    Z
+        Complex impedance array of shape (nper, 2, 2).
 
     Returns
     -------
     ndarray
-        Phase tensor array ``P`` of shape ``(nper, 2, 2)``, float64.
+        Phase tensor array of shape (nper, 2, 2), float64.
 
     Notes
     -----
-    This wrapper intentionally reuses the project-wide implementation in
-    ``data_proc.compute_pt`` and requests *no* error propagation.
+    This function does **not** compute uncertainties for P.
     """
-    P, _ = dp.compute_pt(Z, None, err_method='none', err_kind='var')
-    return np.asarray(P, dtype=np.float64)
+    Z = np.asarray(Z)
+    X = np.real(Z)
+    Y = np.imag(Z)
+    nper = Z.shape[0]
+    P = np.empty((nper, 2, 2), dtype=np.float64)
+    for k in range(nper):
+        P[k] = np.linalg.solve(X[k], Y[k])
+    return P
 
 
 def _pack_Z(
@@ -311,115 +323,115 @@ def _pack_P(
             out[p] = P[k, i, j]
             p += 1
     return out
-
-
-ParamSpec = Dict[str, object]
-
-
-def make_param_spec(
-    nl: int,
-    *,
-    fix_h: bool = False,
-    sample_last_thickness: bool = False,
-    log10_h_bounds: Tuple[float, float] = (0.0, 5.0),
-    log10_rho_bounds: Tuple[float, float] = (-1.0, 6.0),
-    ustr_bounds_deg: Tuple[float, float] = (-180.0, 180.0),
-    udip_bounds_deg: Tuple[float, float] = (0.0, 90.0),
-    usla_bounds_deg: Tuple[float, float] = (-180.0, 180.0),
-) -> ParamSpec:
-    """Create a parameter specification dictionary.
-
-    Notes
-    -----
-    The project previously used a dataclass for this. To keep the codebase
-    uniform and lightweight, this module now uses plain dictionaries.
-
-    Returns
-    -------
-    dict
-        Keys: nl, fix_h, sample_last_thickness, log10_h_bounds, log10_rho_bounds,
-        ustr_bounds_deg, udip_bounds_deg, usla_bounds_deg.
+class ParamSpec:
     """
-    return {
-        'nl': int(nl),
-        'fix_h': bool(fix_h),
-        'sample_last_thickness': bool(sample_last_thickness),
-        'log10_h_bounds': tuple(log10_h_bounds),
-        'log10_rho_bounds': tuple(log10_rho_bounds),
-        'ustr_bounds_deg': tuple(ustr_bounds_deg),
-        'udip_bounds_deg': tuple(udip_bounds_deg),
-        'usla_bounds_deg': tuple(usla_bounds_deg),
-    }
+    Parameter specification for the PyMC inversion.
 
-
-def spec_nl(spec: Mapping[str, object]) -> int:
-    """Return number of layers from a ParamSpec-like mapping.
-
-    Parameters
+    Attributes
     ----------
-    spec
-        ParamSpec dict (or any mapping with key 'nl').
-
-    Returns
-    -------
-    int
-        Number of layers (including basement).
+    nl
+        Number of layers (including basement layer).
+    fix_h
+        If True, thicknesses are fixed and not sampled.
+    sample_last_thickness
+        If True, include the last thickness entry in sampling. In many MT
+        parameterizations the basement thickness is unused (often set to 0);
+        in that case set this to False.
+    log10_h_bounds
+        (low, high) bounds for log10 thickness [m] when sampled.
+    log10_rho_bounds
+        (low, high) bounds for log10 resistivity [Ohm·m].
+    ustr_bounds_deg
+        Strike bounds in degrees.
+    udip_bounds_deg
+        Dip bounds in degrees.
+    usla_bounds_deg
+        Slant bounds in degrees.
     """
-    return int(spec['nl'])
+
+    def __init__(
+        self,
+        nl: int,
+        fix_h: bool = False,
+        sample_last_thickness: bool = False,
+        log10_h_bounds: Tuple[float, float] = (0.0, 5.0),          # 1 m .. 100 km
+        log10_rho_bounds: Tuple[float, float] = (-1.0, 6.0),       # 0.1 .. 1e6 Ohm m
+        ustr_bounds_deg: Tuple[float, float] = (-180.0, 180.0),
+        udip_bounds_deg: Tuple[float, float] = (0.0, 90.0),
+        usla_bounds_deg: Tuple[float, float] = (-180.0, 180.0),
+    ) -> None:
+        """Create a parameter specification (no dataclass).
+
+        Parameters
+        ----------
+        nl : int
+            Number of layers (including basement).
+        fix_h : bool, optional
+            If True, thicknesses are fixed and not sampled.
+        sample_last_thickness : bool, optional
+            If True, include the last thickness entry in sampling.
+        log10_h_bounds : tuple of float, optional
+            Bounds for log10 thickness [m] when sampled.
+        log10_rho_bounds : tuple of float, optional
+            Bounds for log10 resistivity [Ohm·m].
+        ustr_bounds_deg, udip_bounds_deg, usla_bounds_deg : tuple of float, optional
+            Bounds for strike/dip/slant angles in degrees.
+        """
+        self.nl = int(nl)
+        self.fix_h = bool(fix_h)
+        self.sample_last_thickness = bool(sample_last_thickness)
+        self.log10_h_bounds = (float(log10_h_bounds[0]), float(log10_h_bounds[1]))
+        self.log10_rho_bounds = (float(log10_rho_bounds[0]), float(log10_rho_bounds[1]))
+        self.ustr_bounds_deg = (float(ustr_bounds_deg[0]), float(ustr_bounds_deg[1]))
+        self.udip_bounds_deg = (float(udip_bounds_deg[0]), float(udip_bounds_deg[1]))
+        self.usla_bounds_deg = (float(usla_bounds_deg[0]), float(usla_bounds_deg[1]))
 
 
-def spec_nh(spec: Mapping[str, object]) -> int:
-    """Return number of sampled thickness parameters.
+    def nh(self) -> int:
+        """
+        Number of thickness parameters that are sampled.
 
-    Parameters
-    ----------
-    spec
-        ParamSpec dict (keys: nl, fix_h, sample_last_thickness).
+        Returns
+        -------
+        int
+            Number of sampled thickness entries.
+        """
+        if self.fix_h:
+            return 0
+        return self.nl if self.sample_last_thickness else max(self.nl - 1, 0)
 
-    Returns
-    -------
-    int
-        Number of sampled thickness entries (0 if fix_h).
-    """
-    if bool(spec.get('fix_h', False)):
-        return 0
-    nl = spec_nl(spec)
-    if bool(spec.get('sample_last_thickness', False)):
-        return nl
-    return max(nl - 1, 0)
+    def nrho(self) -> int:
+        """
+        Number of resistivity parameters (flattened).
 
+        Returns
+        -------
+        int
+            nl * 3.
+        """
+        return self.nl * 3
 
-def spec_nrho(spec: Mapping[str, object]) -> int:
-    """Return number of resistivity parameters (flattened).
+    def nang(self) -> int:
+        """
+        Number of angle parameters (flattened).
 
-    Returns
-    -------
-    int
-        nl * 3.
-    """
-    return spec_nl(spec) * 3
+        Returns
+        -------
+        int
+            nl * 3.
+        """
+        return self.nl * 3
 
+    def ndim(self) -> int:
+        """
+        Total parameter dimension.
 
-def spec_nang(spec: Mapping[str, object]) -> int:
-    """Return number of angle parameters (flattened).
-
-    Returns
-    -------
-    int
-        nl * 3.
-    """
-    return spec_nl(spec) * 3
-
-
-def spec_ndim(spec: Mapping[str, object]) -> int:
-    """Return total theta dimension.
-
-    Returns
-    -------
-    int
-        nh + nrho + nang.
-    """
-    return spec_nh(spec) + spec_nrho(spec) + spec_nang(spec)
+        Returns
+        -------
+        int
+            Total number of scalar parameters in theta.
+        """
+        return self.nh() + self.nrho() + self.nang()
 
 
 def theta_to_model(
@@ -454,10 +466,10 @@ def theta_to_model(
     back to linear space here.
     """
     theta = _as_1d_float(theta, "theta")
-    if theta.size != spec_ndim(spec):
-        raise ValueError(f"theta has size {theta.size}, expected {spec_ndim(spec)}")
+    if theta.size != spec.ndim():
+        raise ValueError(f"theta has size {theta.size}, expected {spec.ndim()}")
 
-    nl = spec_nl(spec)
+    nl = spec.nl
     # Initialize from fixed arrays
     if h_m_fixed is None:
         h_m = np.ones(nl, dtype=np.float64)
@@ -489,23 +501,23 @@ def theta_to_model(
     p = 0
 
     # Thicknesses (log10)
-    if not bool(spec.get('fix_h', False)):
-        nh = spec_nh(spec)
+    if not spec.fix_h:
+        nh = spec.nh()
         log10_h = theta[p : p + nh]
         p += nh
         h_m[:nh] = 10.0 ** log10_h
-        if not bool(spec.get('sample_last_thickness', False)) and nl > nh:
+        if not spec.sample_last_thickness and nl > nh:
             # Keep last thickness as provided (often 0 basement)
             pass
 
     # Resistivities (log10), always sampled unless user passes fixed by changing spec externally
-    log10_rop = theta[p : p + spec_nrho(spec)]
-    p += spec_nrho(spec)
+    log10_rop = theta[p : p + spec.nrho()]
+    p += spec.nrho()
     rop[:] = (10.0 ** log10_rop).reshape((nl, 3))
 
     # Angles (degrees)
-    ang = theta[p : p + spec_nang(spec)]
-    p += spec_nang(spec)
+    ang = theta[p : p + spec.nang()]
+    p += spec.nang()
     ang = ang.reshape((nl, 3))
     ustr_deg[:] = ang[:, 0]
     udip_deg[:] = ang[:, 1]
@@ -635,8 +647,8 @@ class _AnisoMTContext:
             self.is_iso = None
         else:
             is_iso = np.asarray(is_iso).astype(bool)
-            if is_iso.shape != (self.spec_nl(spec),):
-                raise ValueError(f"is_iso must have shape ({self.spec_nl(spec)},), got {is_iso.shape}")
+            if is_iso.shape != (self.spec.nl,):
+                raise ValueError(f"is_iso must have shape ({self.spec.nl},), got {is_iso.shape}")
             self.is_iso = is_iso
 
         # Constants for loglike
@@ -883,14 +895,14 @@ class _AnisoMTContext:
                     g *= (np.log(10.0) * float(xlin))
             grad_acc[theta_slice] += g
 
-        ndim = self.spec_ndim(spec)
+        ndim = self.spec.ndim()
         grad = np.zeros(ndim, dtype=np.float64)
 
         p = 0
 
         # Thickness params
-        if not self.bool(spec.get('fix_h', False)):
-            nh = self.spec_nh(spec)
+        if not self.spec.fix_h:
+            nh = self.spec.nh()
             dZ_dh = out["dZ_dh_m"]  # (nper,nl,2,2)
             for j in range(nh):
                 # d/dlog10(h) = ln(10)*h * d/dh
@@ -899,13 +911,13 @@ class _AnisoMTContext:
 
         # Resistivity params
         dZ_drop = out["dZ_drop"]  # (nper,nl,3,2,2)
-        nrho = self.spec_nrho(spec)
-        log10_rop = theta[p : p + nrho].reshape((self.spec_nl(spec), 3))
+        nrho = self.spec.nrho()
+        log10_rop = theta[p : p + nrho].reshape((self.spec.nl, 3))
         # rop linear:
         rop_lin = 10.0 ** log10_rop
         # For each rop scalar
         idx = 0
-        for il in range(self.spec_nl(spec)):
+        for il in range(self.spec.nl):
             for ir in range(3):
                 add_from_dZ(dZ_drop[:, il, ir, :, :], grad, slice(p + idx, p + idx + 1), ("log10", rop_lin[il, ir]))
                 idx += 1
@@ -916,7 +928,7 @@ class _AnisoMTContext:
         dZ_udip = out["dZ_dudip_deg"]
         dZ_usla = out["dZ_dusla_deg"]
         idx = 0
-        for il in range(self.spec_nl(spec)):
+        for il in range(self.spec.nl):
             add_from_dZ(dZ_ustr[:, il, :, :], grad, slice(p + idx, p + idx + 1), None)
             idx += 1
             add_from_dZ(dZ_udip[:, il, :, :], grad, slice(p + idx, p + idx + 1), None)
@@ -929,7 +941,7 @@ class _AnisoMTContext:
 
 class AnisoMTLogLikeOp(Op):
     """
-    Aesara Op computing the Gaussian log-likelihood for anisotropic 1-D MT.
+    PyTensor Op computing the Gaussian log-likelihood for anisotropic 1-D MT.
 
     The Op takes a single input:
         theta : vector (ndim,)
@@ -951,8 +963,8 @@ class AnisoMTLogLikeOp(Op):
     - In ``perform`` we evaluate the forward model without sensitivities to keep
       likelihood evaluation fast. The gradient Op evaluates with sensitivities.
     """
-    itypes = [at.dvector]
-    otypes = [at.dscalar]
+    itypes = [pt.dvector]
+    otypes = [pt.dscalar]
 
     def __init__(
         self,
@@ -981,17 +993,17 @@ class AnisoMTLogLikeOp(Op):
         Parameters
         ----------
         theta
-            Aesara vector variable.
+            PyTensor vector variable.
 
         Returns
         -------
         Apply
-            Aesara apply node.
+            PyTensor apply node.
         """
-        theta = at.as_tensor_variable(theta)
+        theta = pt.as_tensor_variable(theta)
         if theta.type.ndim != 1:
             raise TypeError("theta must be a 1-D vector.")
-        return Apply(self, [theta], [at.dscalar()])
+        return Apply(self, [theta], [pt.dscalar()])
 
     def perform(self, node, inputs, outputs):
         """
@@ -1000,7 +1012,7 @@ class AnisoMTLogLikeOp(Op):
         Parameters
         ----------
         node
-            Aesara node (unused).
+            PyTensor node (unused).
         inputs
             List containing theta ndarray.
         outputs
@@ -1043,7 +1055,7 @@ class AnisoMTLogLikeOp(Op):
         This uses a separate numeric gradient Op to keep the logic clean.
         """
         if not self.enable_grad:
-            return [at.zeros_like(inputs[0])]
+            return [pt.zeros_like(inputs[0])]
 
         if self._grad_op is None:
             self._grad_op = AnisoMTLogLikeGradOp(
@@ -1061,7 +1073,7 @@ class AnisoMTLogLikeOp(Op):
 
 class AnisoMTLogLikeGradOp(Op):
     """
-    Aesara Op computing gradient of log-likelihood w.r.t. theta.
+    PyTensor Op computing gradient of log-likelihood w.r.t. theta.
 
     Parameters
     ----------
@@ -1070,8 +1082,8 @@ class AnisoMTLogLikeGradOp(Op):
     h_m_fixed, rop_fixed, ustr_fixed, udip_fixed, usla_fixed
         Fixed reference arrays.
     """
-    itypes = [at.dvector]
-    otypes = [at.dvector]
+    itypes = [pt.dvector]
+    otypes = [pt.dvector]
 
     def __init__(
         self,
@@ -1104,10 +1116,10 @@ class AnisoMTLogLikeGradOp(Op):
         Apply
             Node producing gradient vector.
         """
-        theta = at.as_tensor_variable(theta)
+        theta = pt.as_tensor_variable(theta)
         if theta.type.ndim != 1:
             raise TypeError("theta must be a 1-D vector.")
-        return Apply(self, [theta], [at.dvector()])
+        return Apply(self, [theta], [pt.dvector()])
 
     def perform(self, node, inputs, outputs):
         """
@@ -1116,7 +1128,7 @@ class AnisoMTLogLikeGradOp(Op):
         Parameters
         ----------
         node
-            Aesara node (unused).
+            PyTensor node (unused).
         inputs
             [theta ndarray]
         outputs
@@ -1189,7 +1201,7 @@ def build_pymc_model(
         PyMC model and an info dict containing:
         - "param_names": list of theta parameter names in order
         - "theta_init": initial theta vector (float64)
-        - "loglike_op": the Aesara Op used for likelihood
+        - "loglike_op": the PyTensor Op used for likelihood
         - "context": internal context (for debugging)
 
     Notes
@@ -1218,7 +1230,7 @@ def build_pymc_model(
     )
 
     # Prepare initial theta from reference arrays
-    nl = spec_nl(spec)
+    nl = spec.nl
     if h_m0 is None:
         h_m0 = np.ones(nl, dtype=np.float64)
         h_m0[-1] = 0.0
@@ -1241,13 +1253,13 @@ def build_pymc_model(
     parts = []
     names = []
 
-    if not bool(spec.get('fix_h', False)):
-        nh = spec_nh(spec)
-        h_init = np.clip(h_m0[:nh], 10.0 ** spec.get('log10_h_bounds')[0], 10.0 ** spec.get('log10_h_bounds')[1])
+    if not spec.fix_h:
+        nh = spec.nh()
+        h_init = np.clip(h_m0[:nh], 10.0 ** spec.log10_h_bounds[0], 10.0 ** spec.log10_h_bounds[1])
         parts.append(np.log10(h_init))
         names += [f"log10_h[{i}]" for i in range(nh)]
 
-    rop_init = np.clip(rop0, 10.0 ** spec.get('log10_rho_bounds')[0], 10.0 ** spec.get('log10_rho_bounds')[1])
+    rop_init = np.clip(rop0, 10.0 ** spec.log10_rho_bounds[0], 10.0 ** spec.log10_rho_bounds[1])
     parts.append(np.log10(rop_init).reshape(-1))
     names += [f"log10_rop[{i},{j}]" for i in range(nl) for j in range(3)]
 
@@ -1274,9 +1286,9 @@ def build_pymc_model(
         rv_parts = []
 
         # Thickness priors in log10
-        if not bool(spec.get('fix_h', False)):
-            nh = spec_nh(spec)
-            lo, hi = spec.get('log10_h_bounds')
+        if not spec.fix_h:
+            nh = spec.nh()
+            lo, hi = spec.log10_h_bounds
             if prior_kind == "normal":
                 mu = theta_init[:nh]
                 sd = np.ones(nh) * 1.0
@@ -1286,10 +1298,10 @@ def build_pymc_model(
             rv_parts.append(x)
 
         # Resistivity priors in log10
-        lo, hi = spec.get('log10_rho_bounds')
-        nrho = spec_nrho(spec)
+        lo, hi = spec.log10_rho_bounds
+        nrho = spec.nrho()
         if prior_kind == "normal":
-            mu = theta_init[spec_nh(spec): spec_nh(spec) + nrho]
+            mu = theta_init[spec.nh(): spec.nh() + nrho]
             sd = np.ones(nrho) * 1.5
             x = pm.TruncatedNormal("log10_rop", mu=mu, sigma=sd, lower=lo, upper=hi, shape=nrho)
         else:
@@ -1298,7 +1310,7 @@ def build_pymc_model(
 
         # Angle priors (degrees)
         # Strike
-        lo, hi = spec.get('ustr_bounds_deg')
+        lo, hi = spec.ustr_bounds_deg
         mu = ustr_deg0
         if prior_kind == "normal":
             x = pm.TruncatedNormal("ustr_deg", mu=mu, sigma=np.ones(nl) * 60.0, lower=lo, upper=hi, shape=nl)
@@ -1307,7 +1319,7 @@ def build_pymc_model(
         rv_parts.append(x)
 
         # Dip
-        lo, hi = spec.get('udip_bounds_deg')
+        lo, hi = spec.udip_bounds_deg
         mu = udip_deg0
         if prior_kind == "normal":
             x = pm.TruncatedNormal("udip_deg", mu=mu, sigma=np.ones(nl) * 30.0, lower=lo, upper=hi, shape=nl)
@@ -1316,7 +1328,7 @@ def build_pymc_model(
         rv_parts.append(x)
 
         # Slant
-        lo, hi = spec.get('usla_bounds_deg')
+        lo, hi = spec.usla_bounds_deg
         mu = usla_deg0
         if prior_kind == "normal":
             x = pm.TruncatedNormal("usla_deg", mu=mu, sigma=np.ones(nl) * 60.0, lower=lo, upper=hi, shape=nl)
@@ -1325,7 +1337,7 @@ def build_pymc_model(
         rv_parts.append(x)
 
         # Concatenate into theta tensor in the same order as theta_init/names
-        theta_rv = at.concatenate([at.flatten(v) for v in rv_parts], axis=0)
+        theta_rv = pt.concatenate([pt.flatten(v) for v in rv_parts], axis=0)
         pm.Deterministic("theta", theta_rv)
 
         # Add log-likelihood as Potential
@@ -1423,3 +1435,251 @@ def sample_pymc(
         )
 
     return idata
+
+
+# =============================================================================
+# Helpers for the script driver (mt_aniso1d_sampler.py)
+# =============================================================================
+
+def ensure_dir(path: Union[str, "Path"]) -> str:
+    """
+    Ensure a directory exists and return its string path.
+
+    Parameters
+    ----------
+    path : str or Path
+        Directory path.
+
+    Returns
+    -------
+    str
+        Directory path as string.
+    """
+    p = Path(path).expanduser()
+    p.mkdir(parents=True, exist_ok=True)
+    return p.as_posix()
+
+
+def glob_inputs(pattern: str) -> List[str]:
+    """
+    Expand a glob pattern into a sorted list of file paths.
+
+    Parameters
+    ----------
+    pattern : str
+        Glob pattern for EDI or NPZ files.
+
+    Returns
+    -------
+    list of str
+        Sorted matching files.
+    """
+    import glob
+    files = glob.glob(os.path.expanduser(pattern))
+    files.sort()
+    return files
+
+
+def load_model_npz(path: Union[str, "Path"]) -> Dict[str, np.ndarray]:
+    """
+    Load a model template stored as an NPZ.
+
+    The NPZ is expected to contain at least:
+    - rop : (nl,3)
+    and optionally:
+    - h_m, ustr_deg, udip_deg, usla_deg, is_iso
+    """
+    p = Path(path).expanduser()
+    d = dict(np.load(p, allow_pickle=True))
+    for k, v in list(d.items()):
+        if isinstance(v, np.ndarray) and v.shape == () and v.dtype == object:
+            d[k] = v.item()
+    return d  # type: ignore[return-value]
+
+
+def save_model_npz(model: Mapping[str, object], path: Union[str, "Path"]) -> None:
+    """Save a model dict to NPZ."""
+    p = Path(path).expanduser()
+    np.savez_compressed(p, **dict(model))
+
+
+def model_from_direct(model_direct: object) -> Dict[str, np.ndarray]:
+    """
+    Convert an in-code model specification to a model dict.
+
+    Accepted forms:
+    - dict with keys 'h_m','rop','ustr_deg','udip_deg','usla_deg' (+ optional 'is_iso')
+    - array-like (nl,7) or (nl,8): [h, rop1, rop2, rop3, ustr, udip, usla, (is_iso)]
+    """
+    if isinstance(model_direct, Mapping):
+        md = dict(model_direct)
+        out = {
+            "h_m": np.asarray(md.get("h_m", md.get("h", None)), dtype=float),
+            "rop": np.asarray(md["rop"], dtype=float),
+            "ustr_deg": np.asarray(md.get("ustr_deg", md.get("ustr", 0.0)), dtype=float),
+            "udip_deg": np.asarray(md.get("udip_deg", md.get("udip", 0.0)), dtype=float),
+            "usla_deg": np.asarray(md.get("usla_deg", md.get("usla", 0.0)), dtype=float),
+        }
+        is_iso = md.get("is_iso", None)
+        if is_iso is not None:
+            out["is_iso"] = np.asarray(is_iso, dtype=bool)
+        return out
+
+    arr = np.asarray(model_direct)
+    if arr.ndim != 2 or arr.shape[1] not in (7, 8):
+        raise ValueError("MODEL_DIRECT must be dict or array-like (nl,7/8).")
+    out = {
+        "h_m": np.asarray(arr[:, 0], dtype=float),
+        "rop": np.asarray(arr[:, 1:4], dtype=float),
+        "ustr_deg": np.asarray(arr[:, 4], dtype=float),
+        "udip_deg": np.asarray(arr[:, 5], dtype=float),
+        "usla_deg": np.asarray(arr[:, 6], dtype=float),
+    }
+    if arr.shape[1] == 8:
+        out["is_iso"] = np.asarray(arr[:, 7], dtype=bool)
+    return out
+
+
+def load_site(path: Union[str, "Path"]) -> Dict[str, object]:
+    """
+    Load a site dict from EDI or NPZ using data_proc.py (no duplicated parsing).
+    """
+    from data_proc import load_edi, load_npz
+    p = Path(path).expanduser()
+    if p.suffix.lower() == ".edi":
+        site = load_edi(p.as_posix())
+    elif p.suffix.lower() == ".npz":
+        site = load_npz(p.as_posix())
+    else:
+        raise ValueError(f"Unsupported input type: {p}")
+    if "station" not in site:
+        site["station"] = p.stem
+    return site
+
+
+def ensure_phase_tensor(site: Mapping[str, object], *, nsim: int = 200) -> Dict[str, object]:
+    """
+    Ensure phase tensor P/P_err is present, using data_proc.compute_pt(...).
+    """
+    from data_proc import compute_pt
+    out = dict(site)
+    if out.get("P", None) is not None:
+        return out
+    Z = np.asarray(out["Z"])
+    Z_err = out.get("Z_err", None)
+    err_kind = str(out.get("err_kind", "var"))
+    P, P_err = compute_pt(Z, Z_err, err_kind=err_kind, err_method="bootstrap", nsim=int(nsim))
+    out["P"] = P
+    out["P_err"] = P_err
+    return out
+
+
+def save_idata(idata: "arviz.InferenceData", path: Union[str, "Path"]) -> None:
+    """Save ArviZ InferenceData to NetCDF."""
+    p = Path(path).expanduser()
+    idata.to_netcdf(p.as_posix())
+
+
+def posterior_theta_stats(
+    idata: "arviz.InferenceData",
+    *,
+    qpairs: Sequence[Tuple[float, float]] = ((0.1, 0.9),),
+) -> Dict[str, np.ndarray]:
+    """Compute theta median and quantile bands."""
+    arr = np.asarray(idata.posterior["theta"])
+    theta = arr.reshape(-1, arr.shape[-1])
+    med = np.quantile(theta, 0.5, axis=0)
+    qlos, qhis = [], []
+    for qlo, qhi in qpairs:
+        qlos.append(np.quantile(theta, qlo, axis=0))
+        qhis.append(np.quantile(theta, qhi, axis=0))
+    return dict(
+        theta_med=med,
+        theta_qpairs=np.array(list(qpairs), dtype=float),
+        theta_qlo=np.array(qlos, dtype=float),
+        theta_qhi=np.array(qhis, dtype=float),
+    )
+
+
+def build_summary_npz(
+    *,
+    station: str,
+    site: Mapping[str, object],
+    idata: "arviz.InferenceData",
+    spec: ParamSpec,
+    model0: Mapping[str, np.ndarray],
+    info: Mapping[str, object],
+    qpairs: Sequence[Tuple[float, float]] = ((0.1, 0.9),),
+) -> Dict[str, object]:
+    """
+    Build a compact summary dict (NPZ-ready).
+
+    Stores Z_obs and Z_pred at the median model. Derived quantities (rho/phase/PT)
+    should be computed in plotting via data_proc to avoid duplication.
+    """
+    from aniso import aniso1d_impedance_sens
+
+    s: Dict[str, object] = {}
+    s["station"] = station
+    s["freq"] = np.asarray(site["freq"], dtype=float)
+    s["Z_obs"] = np.asarray(site["Z"])
+    s["Z_err"] = site.get("Z_err", None)
+    s["err_kind"] = site.get("err_kind", "var")
+    if "P" in site:
+        s["P_obs"] = site.get("P")
+        s["P_err"] = site.get("P_err", None)
+
+    ts = posterior_theta_stats(idata, qpairs=qpairs)
+    s.update(ts)
+
+    pn = info.get("param_names", None)
+    if pn is not None:
+        s["param_names"] = np.array(pn, dtype=object)
+
+    # Convert theta median -> model
+    theta_med = ts["theta_med"]
+    h_m, rop, ustr, udip, usla = theta_to_model(
+        theta_med,
+        spec=spec,
+        h_m_fixed=model0.get("h_m", None),
+        rop_fixed=model0.get("rop", None),
+        ustr_fixed=model0.get("ustr_deg", None),
+        udip_fixed=model0.get("udip_deg", None),
+        usla_fixed=model0.get("usla_deg", None),
+    )
+    s["h_m_med"] = h_m
+    s["rop_med"] = rop
+    s["ustr_deg_med"] = ustr
+    s["udip_deg_med"] = udip
+    s["usla_deg_med"] = usla
+    if "is_iso" in model0:
+        s["is_iso"] = np.asarray(model0["is_iso"], dtype=bool)
+
+    if h_m is not None and len(h_m) > 1:
+        s["z_bot_med"] = np.cumsum(h_m[:-1])
+
+    periods_s = 1.0 / np.asarray(s["freq"], dtype=float)
+    fwd = aniso1d_impedance_sens(
+        periods_s=periods_s,
+        h_m=h_m,
+        rop=rop,
+        ustr_deg=ustr,
+        udip_deg=udip,
+        usla_deg=usla,
+        is_iso=model0.get("is_iso", None),
+        out=True,
+        comp="full",
+        want_sens=False,
+    )
+    if isinstance(fwd, Mapping):
+        s["Z_pred"] = fwd.get("Z", None)
+    else:
+        s["Z_pred"] = getattr(fwd, "Z", None)
+
+    return s
+
+
+def save_summary_npz(summary: Mapping[str, object], path: Union[str, "Path"]) -> None:
+    """Save summary dict as compressed NPZ."""
+    p = Path(path).expanduser()
+    np.savez_compressed(p, **dict(summary))
