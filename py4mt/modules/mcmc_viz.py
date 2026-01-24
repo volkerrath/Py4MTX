@@ -291,6 +291,69 @@ def step_arrays(z_bot: np.ndarray, v_layer: np.ndarray) -> Tuple[np.ndarray, np.
     return z_step, v_step
 
 
+def compute_z_bot_from_thickness(h_m: np.ndarray) -> np.ndarray:
+    """Compute layer-bottom depths for plotting.
+
+    Parameters
+    ----------
+    h_m : ndarray, shape (nl,)
+        Layer thicknesses in meters. The last entry is often 0 for a half-space.
+
+    Returns
+    -------
+    ndarray
+        Depth-to-layer-bottom array of shape (nl,). For a half-space (h_m[-1] <= 0),
+        the last bottom depth is extended by a heuristic amount for plotting.
+    """
+    h = np.asarray(h_m, dtype=np.float64).ravel()
+    if h.size == 0:
+        return np.zeros(0, dtype=np.float64)
+    if h.size == 1:
+        return np.array([max(1.0, float(h[0]))], dtype=np.float64)
+    if float(h[-1]) > 0.0:
+        return np.cumsum(h)
+    z_int = np.cumsum(h[:-1])
+    z_last = float(z_int[-1]) if z_int.size else 0.0
+    ext = max(1.0, 0.25 * max(z_last, 1.0))
+    return np.r_[z_int, z_last + ext]
+
+
+def shade_fixed_layers(
+    ax: plt.Axes,
+    z_bot: np.ndarray,
+    is_fix: np.ndarray,
+    *,
+    alpha: float = 0.06,
+) -> plt.Axes:
+    """Shade fixed layers in depth plots.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axis to draw on.
+    z_bot : ndarray, shape (nl,)
+        Depth-to-layer-bottom array.
+    is_fix : ndarray, shape (nl,)
+        Boolean per-layer flag; True layers will be shaded.
+    alpha : float
+        Transparency for the shading.
+
+    Returns
+    -------
+    ax : matplotlib.axes.Axes
+        The same axis.
+    """
+    z_bot = np.asarray(z_bot, dtype=np.float64).ravel()
+    mask = np.asarray(is_fix, dtype=bool).ravel()
+    if mask.shape != (z_bot.size,):
+        raise ValueError("is_fix must have the same length as z_bot")
+    z_top = np.r_[0.0, z_bot[:-1]]
+    for i in range(z_bot.size):
+        if bool(mask[i]):
+            ax.axhspan(z_top[i], z_bot[i], color="0.85", alpha=float(alpha), zorder=0)
+    return ax
+
+
 def plot_layer_steps(
     ax: plt.Axes,
     z_bot: np.ndarray,
@@ -302,6 +365,9 @@ def plot_layer_steps(
     label_intervals: bool = False,
     label_median: str = "median",
     invert_y: bool = True,
+    is_fix: Optional[np.ndarray] = None,
+    shade_fixed: bool = True,
+    fixed_alpha: float = 0.06,
 ) -> plt.Axes:
     """
     Plot a layered step function (median) and optional credible envelopes.
@@ -328,6 +394,13 @@ def plot_layer_steps(
         Label for the median line.
     invert_y : bool
         If True, invert y-axis (depth increases downward).
+    is_fix : ndarray or None
+        Optional per-layer fixed mask. If provided and ``shade_fixed`` is True, fixed layers
+        are shaded in the background.
+    shade_fixed : bool
+        Enable background shading for fixed layers.
+    fixed_alpha : float
+        Alpha value for fixed-layer shading.
 
     Returns
     -------
@@ -335,6 +408,9 @@ def plot_layer_steps(
         The same axis, for chaining.
     """
     z_bot = np.asarray(z_bot, dtype=np.float64).ravel()
+
+    if shade_fixed and is_fix is not None:
+        shade_fixed_layers(ax, z_bot, np.asarray(is_fix, dtype=bool), alpha=float(fixed_alpha))
     v_med = np.asarray(v_med, dtype=np.float64).ravel()
 
     if v_qlo is not None and v_qhi is not None:
@@ -521,7 +597,10 @@ def plot_depth_resistivity(
     if quantity_n not in {"resistivity", "conductivity"}:
         raise ValueError("quantity must be 'resistivity' or 'conductivity'.")
 
-    z_bot = np.asarray(summary["z_bot_med"], dtype=np.float64).ravel()
+    z_bot = np.asarray(summary.get("z_bot_med", np.array([])), dtype=np.float64).ravel()
+    # Robust fallback: derive from h_m_med if needed
+    if z_bot.size == 0 and "h_m_med" in summary:
+        z_bot = compute_z_bot_from_thickness(np.asarray(summary["h_m_med"], dtype=np.float64))
     q = qpairs if qpairs is not None else summary.get("model_qpairs", None)
 
     # Base arrays in resistivity space (Ohm·m)
@@ -588,6 +667,9 @@ def plot_depth_resistivity(
     if qlo_all.size and qhi_all.size:
         v_qlo = np.asarray(qlo_all, dtype=np.float64)[:, :, comp]
         v_qhi = np.asarray(qhi_all, dtype=np.float64)[:, :, comp]
+    if z_bot.size != np.asarray(med, dtype=np.float64).ravel().size and "h_m_med" in summary:
+        z_bot = compute_z_bot_from_thickness(np.asarray(summary["h_m_med"], dtype=np.float64))
+
 
     plot_layer_steps(
         ax,
@@ -598,6 +680,7 @@ def plot_depth_resistivity(
         qpairs=q,
         label_intervals=label_intervals,
         invert_y=invert_y,
+        is_fix=summary.get("is_fix", None),
     )
     ax.set_xlabel(xlabel)
     ax.set_ylabel("depth [m]")
@@ -664,12 +747,18 @@ def plot_depth_angle(
     ax : matplotlib.axes.Axes
         The same axis, for chaining.
     """
-    z_bot = np.asarray(summary["z_bot_med"], dtype=np.float64).ravel()
+    z_bot = np.asarray(summary.get("z_bot_med", np.array([])), dtype=np.float64).ravel()
+    # Robust fallback: derive from h_m_med if needed
+    if z_bot.size == 0 and "h_m_med" in summary:
+        z_bot = compute_z_bot_from_thickness(np.asarray(summary["h_m_med"], dtype=np.float64))
     q = qpairs if qpairs is not None else summary.get("model_qpairs", None)
 
     med = np.asarray(summary[f"{key}_med"], dtype=np.float64).ravel()
     qlo = get_array(summary, f"{key}_qlo", dtype=np.float64)
     qhi = get_array(summary, f"{key}_qhi", dtype=np.float64)
+    if z_bot.size != np.asarray(med, dtype=np.float64).ravel().size and "h_m_med" in summary:
+        z_bot = compute_z_bot_from_thickness(np.asarray(summary["h_m_med"], dtype=np.float64))
+
 
     plot_layer_steps(
         ax,
@@ -680,6 +769,7 @@ def plot_depth_angle(
         qpairs=q,
         label_intervals=label_intervals,
         invert_y=invert_y,
+        is_fix=summary.get("is_fix", None),
     )
     ax.set_xlabel("angle [deg]")
     ax.set_ylabel("depth [m]")
@@ -744,7 +834,10 @@ def plot_depth_thickness(
     ax : matplotlib.axes.Axes
         The same axis, for chaining.
     """
-    z_bot = np.asarray(summary["z_bot_med"], dtype=np.float64).ravel()
+    z_bot = np.asarray(summary.get("z_bot_med", np.array([])), dtype=np.float64).ravel()
+    # Robust fallback: derive from h_m_med if needed
+    if z_bot.size == 0 and "h_m_med" in summary:
+        z_bot = compute_z_bot_from_thickness(np.asarray(summary["h_m_med"], dtype=np.float64))
     q = qpairs if qpairs is not None else summary.get("model_qpairs", None)
 
     if "h_m_med" not in summary:
@@ -753,6 +846,9 @@ def plot_depth_thickness(
     med = np.asarray(summary["h_m_med"], dtype=np.float64).ravel()
     qlo = get_array(summary, "h_m_qlo", dtype=np.float64)
     qhi = get_array(summary, "h_m_qhi", dtype=np.float64)
+    if z_bot.size != np.asarray(med, dtype=np.float64).ravel().size and "h_m_med" in summary:
+        z_bot = compute_z_bot_from_thickness(np.asarray(summary["h_m_med"], dtype=np.float64))
+
 
     plot_layer_steps(
         ax,
@@ -763,6 +859,7 @@ def plot_depth_thickness(
         qpairs=q,
         label_intervals=label_intervals,
         invert_y=invert_y,
+        is_fix=summary.get("is_fix", None),
     )
     ax.set_xlabel("thickness [m]")
     ax.set_ylabel("depth [m]")
