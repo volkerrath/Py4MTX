@@ -49,6 +49,7 @@ The forward model uses per-layer principal resistivities and Euler angles:
 - ``rop`` (nl, 3) principal resistivities [Ohm·m]
 - ``ustr_deg, udip_deg, usla_deg`` (nl,) angles in degrees
 - ``is_iso`` (nl,) optional flag: if True, layer treated as isotropic
+- ``is_fix`` (nl,) optional flag: if True, keep all parameters of that layer fixed in sampling
 
 In PyMC we typically sample on transformed variables:
 
@@ -432,6 +433,30 @@ class ParamSpec:
             Total number of scalar parameters in theta.
         """
         return self.nh() + self.nrho() + self.nang()
+
+def normalize_is_fix(is_fix: Optional[np.ndarray], *, nl: int) -> np.ndarray:
+    """Normalize a per-layer fixed flag array.
+
+    Parameters
+    ----------
+    is_fix : ndarray or None
+        If provided, must be array-like with shape (nl,) and boolean-convertible.
+        True means the entire layer is fixed (thickness, resistivities, angles).
+    nl : int
+        Number of layers.
+
+    Returns
+    -------
+    ndarray
+        Boolean array of shape (nl,). If ``is_fix`` is None, returns all-False.
+    """
+    if is_fix is None:
+        return np.zeros(int(nl), dtype=bool)
+    arr = np.asarray(is_fix, dtype=bool).ravel()
+    if arr.shape != (int(nl),):
+        raise ValueError(f"is_fix must have shape ({int(nl)},), got {arr.shape}")
+    return arr
+
 
 
 def theta_to_model(
@@ -1156,6 +1181,7 @@ def build_pymc_model(
     udip_deg0: Optional[np.ndarray] = None,
     usla_deg0: Optional[np.ndarray] = None,
     is_iso: Optional[np.ndarray] = None,
+    is_fix: Optional[np.ndarray] = None,
     use_pt: bool = False,
     z_comps: Sequence[str] = ("xy", "yx"),
     pt_comps: Sequence[str] = ("xx", "xy", "yx", "yy"),
@@ -1180,6 +1206,9 @@ def build_pymc_model(
         choosing ``prior_kind="normal"``.
     is_iso
         Optional (nl,) isotropy flag passed to forward model.
+    is_fix
+        Optional (nl,) per-layer flag. If True, all parameters of that layer are held fixed
+        at their initial values and are not sampled.
     use_pt
         If True, include phase tensor likelihood.
     z_comps, pt_comps
@@ -1228,6 +1257,9 @@ def build_pymc_model(
         sigma_floor_P=sigma_floor_P,
         is_iso=is_iso,
     )
+
+    # Per-layer fixed flags (freeze entire layer during sampling)
+    is_fix_arr = normalize_is_fix(is_fix, nl=spec.nl)
 
     # Prepare initial theta from reference arrays
     nl = spec.nl
@@ -1283,61 +1315,120 @@ def build_pymc_model(
 
     # Build PyMC model
     with pm.Model() as model:
-        rv_parts = []
+        parts_full = []
 
-        # Thickness priors in log10
+        def _merge_fixed(
+            *,
+            name: str,
+            full_mu: np.ndarray,
+            free_idx: np.ndarray,
+            bounds: Tuple[float, float],
+            prior_kind: str,
+            sigma: float,
+        ) -> pt.TensorVariable:
+            """Create a vector with free entries sampled and fixed entries held constant.
+
+            The returned tensor has the same length as ``full_mu``.
+            """
+            lo, hi = float(bounds[0]), float(bounds[1])
+            mu = np.asarray(full_mu, dtype=np.float64).ravel()
+            mu = np.clip(mu, lo, hi)
+            n = int(mu.size)
+            idx = np.asarray(free_idx, dtype=np.int64).ravel()
+            if idx.size == n:
+                # nothing fixed
+                if prior_kind == "normal":
+                    sd = np.ones(n, dtype=np.float64) * float(sigma)
+                    x = pm.TruncatedNormal(name, mu=mu, sigma=sd, lower=lo, upper=hi, shape=n)
+                else:
+                    x = pm.Uniform(name, lower=lo, upper=hi, shape=n)
+                return x
+            if idx.size == 0:
+                x_full = pt.as_tensor_variable(mu)
+                pm.Deterministic(name, x_full)
+                return x_full
+
+            # Sample only free subset
+            mu_free = mu[idx]
+            if prior_kind == "normal":
+                sd_free = np.ones(idx.size, dtype=np.float64) * float(sigma)
+                x_free = pm.TruncatedNormal(
+                    f"{name}_free", mu=mu_free, sigma=sd_free, lower=lo, upper=hi, shape=int(idx.size)
+                )
+            else:
+                x_free = pm.Uniform(f"{name}_free", lower=lo, upper=hi, shape=int(idx.size))
+
+            x_full = pt.as_tensor_variable(mu)
+            x_full = pt.set_subtensor(x_full[idx], x_free)
+            pm.Deterministic(name, x_full)
+            return x_full
+
+        # Thickness priors in log10 (per-layer fixing supported)
         if not spec.fix_h:
             nh = spec.nh()
-            lo, hi = spec.log10_h_bounds
-            if prior_kind == "normal":
-                mu = theta_init[:nh]
-                sd = np.ones(nh) * 1.0
-                x = pm.TruncatedNormal("log10_h", mu=mu, sigma=sd, lower=lo, upper=hi, shape=nh)
-            else:
-                x = pm.Uniform("log10_h", lower=lo, upper=hi, shape=nh)
-            rv_parts.append(x)
+            free_idx_h = np.where(~is_fix_arr[:nh])[0]
+            log10_h_full = _merge_fixed(
+                name="log10_h",
+                full_mu=theta_init[:nh],
+                free_idx=free_idx_h,
+                bounds=spec.log10_h_bounds,
+                prior_kind=prior_kind,
+                sigma=1.0,
+            )
+            parts_full.append(log10_h_full)
 
-        # Resistivity priors in log10
-        lo, hi = spec.log10_rho_bounds
+        # Resistivity priors in log10 (freeze all 3 principal values per fixed layer)
         nrho = spec.nrho()
-        if prior_kind == "normal":
-            mu = theta_init[spec.nh(): spec.nh() + nrho]
-            sd = np.ones(nrho) * 1.5
-            x = pm.TruncatedNormal("log10_rop", mu=mu, sigma=sd, lower=lo, upper=hi, shape=nrho)
+        mu_rop = theta_init[spec.nh() : spec.nh() + nrho]
+        free_layers = np.where(~is_fix_arr)[0]
+        if free_layers.size:
+            free_idx_rop = np.concatenate([np.arange(i * 3, i * 3 + 3, dtype=np.int64) for i in free_layers])
         else:
-            x = pm.Uniform("log10_rop", lower=lo, upper=hi, shape=nrho)
-        rv_parts.append(x)
+            free_idx_rop = np.array([], dtype=np.int64)
+        log10_rop_full = _merge_fixed(
+            name="log10_rop",
+            full_mu=mu_rop,
+            free_idx=free_idx_rop,
+            bounds=spec.log10_rho_bounds,
+            prior_kind=prior_kind,
+            sigma=1.5,
+        )
+        parts_full.append(log10_rop_full)
 
-        # Angle priors (degrees)
-        # Strike
-        lo, hi = spec.ustr_bounds_deg
-        mu = ustr_deg0
-        if prior_kind == "normal":
-            x = pm.TruncatedNormal("ustr_deg", mu=mu, sigma=np.ones(nl) * 60.0, lower=lo, upper=hi, shape=nl)
-        else:
-            x = pm.Uniform("ustr_deg", lower=lo, upper=hi, shape=nl)
-        rv_parts.append(x)
+        # Angle priors (degrees) (freeze per-layer)
+        free_idx_ang = free_layers
+        ustr_full = _merge_fixed(
+            name="ustr_deg",
+            full_mu=ustr_deg0,
+            free_idx=free_idx_ang,
+            bounds=spec.ustr_bounds_deg,
+            prior_kind=prior_kind,
+            sigma=60.0,
+        )
+        parts_full.append(ustr_full)
 
-        # Dip
-        lo, hi = spec.udip_bounds_deg
-        mu = udip_deg0
-        if prior_kind == "normal":
-            x = pm.TruncatedNormal("udip_deg", mu=mu, sigma=np.ones(nl) * 30.0, lower=lo, upper=hi, shape=nl)
-        else:
-            x = pm.Uniform("udip_deg", lower=lo, upper=hi, shape=nl)
-        rv_parts.append(x)
+        udip_full = _merge_fixed(
+            name="udip_deg",
+            full_mu=udip_deg0,
+            free_idx=free_idx_ang,
+            bounds=spec.udip_bounds_deg,
+            prior_kind=prior_kind,
+            sigma=30.0,
+        )
+        parts_full.append(udip_full)
 
-        # Slant
-        lo, hi = spec.usla_bounds_deg
-        mu = usla_deg0
-        if prior_kind == "normal":
-            x = pm.TruncatedNormal("usla_deg", mu=mu, sigma=np.ones(nl) * 60.0, lower=lo, upper=hi, shape=nl)
-        else:
-            x = pm.Uniform("usla_deg", lower=lo, upper=hi, shape=nl)
-        rv_parts.append(x)
+        usla_full = _merge_fixed(
+            name="usla_deg",
+            full_mu=usla_deg0,
+            free_idx=free_idx_ang,
+            bounds=spec.usla_bounds_deg,
+            prior_kind=prior_kind,
+            sigma=60.0,
+        )
+        parts_full.append(usla_full)
 
-        # Concatenate into theta tensor in the same order as theta_init/names
-        theta_rv = pt.concatenate([pt.flatten(v) for v in rv_parts], axis=0)
+        # Concatenate into full theta tensor (same order as theta_init/names)
+        theta_rv = pt.concatenate([pt.flatten(v) for v in parts_full], axis=0)
         pm.Deterministic("theta", theta_rv)
 
         # Add log-likelihood as Potential
@@ -1347,6 +1438,7 @@ def build_pymc_model(
     info = {
         "param_names": names,
         "theta_init": theta_init,
+        "is_fix": is_fix_arr,
         "loglike_op": loglike_op,
         "context": ctx,
         "periods_s": periods_s,
@@ -1487,7 +1579,7 @@ def load_model_npz(path: Union[str, "Path"]) -> Dict[str, np.ndarray]:
     The NPZ is expected to contain at least:
     - rop : (nl,3)
     and optionally:
-    - h_m, ustr_deg, udip_deg, usla_deg, is_iso
+    - h_m, ustr_deg, udip_deg, usla_deg, is_iso, is_fix
     """
     p = Path(path).expanduser()
     d = dict(np.load(p, allow_pickle=True))
@@ -1523,11 +1615,14 @@ def model_from_direct(model_direct: object) -> Dict[str, np.ndarray]:
         is_iso = md.get("is_iso", None)
         if is_iso is not None:
             out["is_iso"] = np.asarray(is_iso, dtype=bool)
+        is_fix = md.get("is_fix", None)
+        if is_fix is not None:
+            out["is_fix"] = np.asarray(is_fix, dtype=bool)
         return out
 
     arr = np.asarray(model_direct)
-    if arr.ndim != 2 or arr.shape[1] not in (7, 8):
-        raise ValueError("MODEL_DIRECT must be dict or array-like (nl,7/8).")
+    if arr.ndim != 2 or arr.shape[1] not in (7, 8, 9):
+        raise ValueError("MODEL_DIRECT must be dict or array-like (nl,7/8/9).")
     out = {
         "h_m": np.asarray(arr[:, 0], dtype=float),
         "rop": np.asarray(arr[:, 1:4], dtype=float),
@@ -1535,8 +1630,10 @@ def model_from_direct(model_direct: object) -> Dict[str, np.ndarray]:
         "udip_deg": np.asarray(arr[:, 5], dtype=float),
         "usla_deg": np.asarray(arr[:, 6], dtype=float),
     }
-    if arr.shape[1] == 8:
+    if arr.shape[1] >= 8:
         out["is_iso"] = np.asarray(arr[:, 7], dtype=bool)
+    if arr.shape[1] == 9:
+        out["is_fix"] = np.asarray(arr[:, 8], dtype=bool)
     return out
 
 
@@ -1654,9 +1751,21 @@ def build_summary_npz(
     s["usla_deg_med"] = usla
     if "is_iso" in model0:
         s["is_iso"] = np.asarray(model0["is_iso"], dtype=bool)
+    if "is_fix" in model0:
+        s["is_fix"] = np.asarray(model0["is_fix"], dtype=bool)
 
-    if h_m is not None and len(h_m) > 1:
-        s["z_bot_med"] = np.cumsum(h_m[:-1])
+    # Layer bottom depths for plotting (ensure length nl including basement)
+    if h_m is not None and len(h_m) >= 1:
+        if float(np.asarray(h_m, dtype=float)[-1]) > 0.0:
+            s["z_bot_med"] = np.cumsum(np.asarray(h_m, dtype=float))
+        else:
+            z_int = np.cumsum(np.asarray(h_m, dtype=float)[:-1])
+            if z_int.size == 0:
+                s["z_bot_med"] = np.array([max(1.0, float(np.asarray(h_m, dtype=float)[0]))], dtype=float)
+            else:
+                z_last = float(z_int[-1])
+                ext = max(1.0, 0.25 * max(z_last, 1.0))
+                s["z_bot_med"] = np.r_[z_int, z_last + ext]
 
     periods_s = 1.0 / np.asarray(s["freq"], dtype=float)
     fwd = aniso1d_impedance_sens(

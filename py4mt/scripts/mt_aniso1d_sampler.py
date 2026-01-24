@@ -40,10 +40,10 @@ import numpy as np
 PY4MTX_DATA = os.environ.get("PY4MTX_DATA", "")
 PY4MTX_ROOT = os.environ.get("PY4MTX_ROOT", "")
 
-# if not PY4MTX_ROOT:
-#     PY4MTX_ROOT = str(Path(__file__).resolve().parent.parent)
-# if not PY4MTX_DATA:
-#     PY4MTX_DATA = str(Path(PY4MTX_ROOT) / "data")
+if not PY4MTX_ROOT:
+    PY4MTX_ROOT = str(Path(__file__).resolve().parent.parent)
+if not PY4MTX_DATA:
+    PY4MTX_DATA = str(Path(PY4MTX_ROOT) / "data")
 
 mypath = [
     str(Path(PY4MTX_ROOT) / "py4mt" / "modules"),
@@ -58,10 +58,6 @@ import data_proc  # noqa: F401
 import mcmc
 import util
 from version import versionstrg
-
-
-rng = np.random.default_rng(seed=None)
-nan = np.nan  # float('NaN')
 
 version, _ = versionstrg()
 fname = inspect.getfile(inspect.currentframe())
@@ -86,24 +82,22 @@ Model0 = dict(
     udip_deg=np.array([0.0, 0.0, 0.0, 0.0], dtype=float),
     usla_deg=np.array([0.0, 0.0, 0.0, 0.0], dtype=float),
     is_iso=np.array([True, True, False, True], dtype=bool),
+    is_fix=np.array([False, False, False, False], dtype=bool),
 )
 
 # =============================================================================
 # USER CONFIG
 # =============================================================================
 
+INPUT_GLOB = str(Path(PY4MTX_DATA) / "*.edi")   # or *.npz
+OUTDIR = str(Path(PY4MTX_DATA) / "pmc_out")
 
-# INPUT_GLOB = str(Path(PY4MTX_DATA)/ "*.edi")   # or *.npz
-# OUTDIR = str(Path(PY4MTX_DATA) / "pmc_out")
-
-INPUT_GLOB = str(Path(PY4MTX_ROOT) / "py4mt" / "data" / "edi" /"*.edi")   # or *.npz
-OUTDIR = str(Path(PY4MTX_ROOT) / "py4mt" / "data" / "edi" / "pmc_out")
 
 
 MODEL_NPZ = str(Path(PY4MTX_DATA) / "model0.npz")
 
 # Set MODEL_DIRECT = Model0 to use the in-file model template
-MODEL_DIRECT = Model0
+MODEL_DIRECT = None
 MODEL_DIRECT_SAVE_PATH = MODEL_NPZ
 MODEL_DIRECT_OVERWRITE = True
 
@@ -116,8 +110,8 @@ COMPUTE_PT_IF_MISSING = True
 FIX_H = True
 SAMPLE_LAST_THICKNESS = False
 
-LOG10_H_BOUNDS = (0.0, 3.0)
-LOG10_RHO_BOUNDS = (-0.0, 5.0)
+LOG10_H_BOUNDS = (0.0, 5.0)
+LOG10_RHO_BOUNDS = (-1.0, 6.0)
 USTR_BOUNDS_DEG = (-180.0, 180.0)
 UDIP_BOUNDS_DEG = (0.0, 90.0)
 USLA_BOUNDS_DEG = (-180.0, 180.0)
@@ -126,12 +120,12 @@ SIGMA_FLOOR_Z = 0.0
 SIGMA_FLOOR_P = 0.0
 
 STEP_METHOD = "demetropolis"
-DRAWS = 8000
+DRAWS = 2000
 TUNE = 1000
 CHAINS = 10
 CORES = CHAINS
 TARGET_ACCEPT = 0.85
-RANDOM_SEED = 110652
+RANDOM_SEED = 123
 PROGRESSBAR = True
 ENABLE_GRAD = False
 PRIOR_KIND = "uniform"
@@ -154,6 +148,8 @@ else:
     model0 = mcmc.load_model_npz(MODEL_NPZ)
 
 nl = int(np.asarray(model0["rop"]).shape[0])
+if "is_fix" not in model0:
+    model0["is_fix"] = np.zeros(nl, dtype=bool)
 spec = mcmc.ParamSpec(
     nl=nl,
     fix_h=bool(FIX_H),
@@ -182,6 +178,7 @@ for f in in_files:
         udip_deg0=np.asarray(model0.get("udip_deg", None)) if "udip_deg" in model0 else None,
         usla_deg0=np.asarray(model0.get("usla_deg", None)) if "usla_deg" in model0 else None,
         is_iso=np.asarray(model0.get("is_iso", None)) if "is_iso" in model0 else None,
+        is_fix=np.asarray(model0.get("is_fix", None)) if "is_fix" in model0 else None,
         use_pt=bool(USE_PT),
         z_comps=Z_COMPS,
         pt_comps=PT_COMPS,
