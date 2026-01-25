@@ -458,6 +458,129 @@ def normalize_is_fix(is_fix: Optional[np.ndarray], *, nl: int) -> np.ndarray:
     return arr
 
 
+def normalize_model(model: Mapping[str, object]) -> Dict[str, np.ndarray]:
+    """Normalize a model dictionary for the anisotropic 1-D MT forward model.
+
+    The inversion stack expects a consistent public parameterization per layer:
+
+    - ``h_m``       : (nl,) float, thicknesses [m]
+    - ``rop``       : (nl, 3) float, principal resistivities [Ohm·m]
+    - ``ustr_deg``  : (nl,) float, strike angles [deg]
+    - ``udip_deg``  : (nl,) float, dip angles [deg]
+    - ``usla_deg``  : (nl,) float, slant angles [deg]
+    - ``is_iso``    : (nl,) bool, isotropic-layer flags
+    - ``is_fix``    : (nl,) bool, fixed-layer flags (freeze that layer in sampling)
+
+    The key requirement (important for downstream code) is:
+
+    ``len(is_iso) == len(is_fix) == len(h_m) == nl``.
+
+    This helper also tolerates a common shape mistake for ``rop``:
+
+    - If ``rop`` is given as (3, nl), it is transposed to (nl, 3).
+
+    Parameters
+    ----------
+    model
+        Mapping containing at least ``rop`` and (ideally) ``h_m``.
+
+    Returns
+    -------
+    dict
+        Normalized model dictionary (numpy arrays). Any extra keys from the
+        input mapping are preserved.
+
+    Raises
+    ------
+    ValueError
+        If the model arrays cannot be made consistent.
+    """
+    md: Dict[str, object] = dict(model)
+
+    # --- thickness -------------------------------------------------------
+    h_key = "h_m" if "h_m" in md else ("h" if "h" in md else None)
+    if h_key is not None and md.get(h_key, None) is not None:
+        h_m = np.asarray(md[h_key], dtype=float).ravel()
+    else:
+        h_m = None
+
+    # --- resistivities (must exist) -------------------------------------
+    if "rop" not in md or md.get("rop", None) is None:
+        raise ValueError("Model must contain 'rop' (principal resistivities).")
+    rop = np.asarray(md["rop"], dtype=float)
+    if rop.ndim != 2:
+        raise ValueError(f"rop must be 2-D, got shape {rop.shape}")
+
+    # Infer nl if thickness missing
+    if h_m is None:
+        if rop.shape[1] == 3:
+            nl = int(rop.shape[0])
+        elif rop.shape[0] == 3:
+            nl = int(rop.shape[1])
+        else:
+            raise ValueError("Cannot infer nl: rop must have one dimension of length 3.")
+        h_m = np.ones(nl, dtype=float)
+        h_m[-1] = 0.0
+    else:
+        nl = int(h_m.size)
+        if nl <= 0:
+            raise ValueError("h_m must have positive length.")
+
+    # Normalize rop to (nl, 3)
+    if rop.shape == (nl, 3):
+        pass
+    elif rop.shape == (3, nl):
+        rop = rop.T
+    elif rop.shape[1] == 3 and rop.shape[0] != nl:
+        raise ValueError(f"rop has {rop.shape[0]} layers but h_m has {nl}.")
+    elif rop.shape[0] == 3 and rop.shape[1] != nl:
+        raise ValueError(f"rop has {rop.shape[1]} layers but h_m has {nl}.")
+    else:
+        raise ValueError(f"rop must have shape ({nl},3) (or (3,{nl}) to be transposed), got {rop.shape}.")
+
+    # --- angles ----------------------------------------------------------
+    def _norm_ang(key: str) -> np.ndarray:
+        val = md.get(key, 0.0)
+        a = np.asarray(val, dtype=float)
+        if a.ndim == 0:
+            return np.full(nl, float(a), dtype=float)
+        a = a.ravel()
+        if a.shape != (nl,):
+            raise ValueError(f"{key} must have shape ({nl},), got {a.shape}")
+        return a
+
+    ustr_deg = _norm_ang("ustr_deg")
+    udip_deg = _norm_ang("udip_deg")
+    usla_deg = _norm_ang("usla_deg")
+
+    # --- flags (must match h_m length) ----------------------------------
+    def _norm_flag(key: str) -> np.ndarray:
+        val = md.get(key, None)
+        if val is None:
+            return np.zeros(nl, dtype=bool)
+        a = np.asarray(val, dtype=bool)
+        if a.ndim == 0:
+            return np.full(nl, bool(a), dtype=bool)
+        a = a.ravel()
+        if a.shape != (nl,):
+            raise ValueError(f"{key} must have shape ({nl},), got {a.shape}")
+        return a
+
+    is_iso = _norm_flag("is_iso")
+    is_fix = _norm_flag("is_fix")
+
+    # Update mapping (preserve extras)
+    md["h_m"] = np.asarray(h_m, dtype=float)
+    md["rop"] = np.asarray(rop, dtype=float)
+    md["ustr_deg"] = np.asarray(ustr_deg, dtype=float)
+    md["udip_deg"] = np.asarray(udip_deg, dtype=float)
+    md["usla_deg"] = np.asarray(usla_deg, dtype=float)
+    md["is_iso"] = np.asarray(is_iso, dtype=bool)
+    md["is_fix"] = np.asarray(is_fix, dtype=bool)
+
+    return md  # type: ignore[return-value]
+
+
 
 def theta_to_model(
     theta: np.ndarray,
@@ -1586,13 +1709,19 @@ def load_model_npz(path: Union[str, "Path"]) -> Dict[str, np.ndarray]:
     for k, v in list(d.items()):
         if isinstance(v, np.ndarray) and v.shape == () and v.dtype == object:
             d[k] = v.item()
-    return d  # type: ignore[return-value]
+    # Normalize to ensure shapes are consistent (notably rop orientation and flag lengths).
+    return normalize_model(d)  # type: ignore[return-value]
 
 
 def save_model_npz(model: Mapping[str, object], path: Union[str, "Path"]) -> None:
-    """Save a model dict to NPZ."""
+    """Save a model dict to NPZ.
+
+    The model is normalized before saving so that the stored NPZ is directly
+    usable by the sampler.
+    """
     p = Path(path).expanduser()
-    np.savez_compressed(p, **dict(model))
+    md = normalize_model(model)
+    np.savez_compressed(p, **dict(md))
 
 
 def model_from_direct(model_direct: object) -> Dict[str, np.ndarray]:
@@ -1605,20 +1734,19 @@ def model_from_direct(model_direct: object) -> Dict[str, np.ndarray]:
     """
     if isinstance(model_direct, Mapping):
         md = dict(model_direct)
-        out = {
-            "h_m": np.asarray(md.get("h_m", md.get("h", None)), dtype=float),
-            "rop": np.asarray(md["rop"], dtype=float),
-            "ustr_deg": np.asarray(md.get("ustr_deg", md.get("ustr", 0.0)), dtype=float),
-            "udip_deg": np.asarray(md.get("udip_deg", md.get("udip", 0.0)), dtype=float),
-            "usla_deg": np.asarray(md.get("usla_deg", md.get("usla", 0.0)), dtype=float),
-        }
-        is_iso = md.get("is_iso", None)
-        if is_iso is not None:
-            out["is_iso"] = np.asarray(is_iso, dtype=bool)
-        is_fix = md.get("is_fix", None)
-        if is_fix is not None:
-            out["is_fix"] = np.asarray(is_fix, dtype=bool)
-        return out
+        # Preserve any extra metadata (e.g. "prior_name") and normalize only the
+        # physical model arrays.
+        out = dict(md)
+        out["h_m"] = np.asarray(md.get("h_m", md.get("h", None)), dtype=float)
+        out["rop"] = np.asarray(md["rop"], dtype=float)
+        out["ustr_deg"] = np.asarray(md.get("ustr_deg", md.get("ustr", 0.0)), dtype=float)
+        out["udip_deg"] = np.asarray(md.get("udip_deg", md.get("udip", 0.0)), dtype=float)
+        out["usla_deg"] = np.asarray(md.get("usla_deg", md.get("usla", 0.0)), dtype=float)
+        if "is_iso" in md:
+            out["is_iso"] = np.asarray(md.get("is_iso"), dtype=bool)
+        if "is_fix" in md:
+            out["is_fix"] = np.asarray(md.get("is_fix"), dtype=bool)
+        return normalize_model(out)
 
     arr = np.asarray(model_direct)
     if arr.ndim != 2 or arr.shape[1] not in (7, 8, 9):
@@ -1634,7 +1762,7 @@ def model_from_direct(model_direct: object) -> Dict[str, np.ndarray]:
         out["is_iso"] = np.asarray(arr[:, 7], dtype=bool)
     if arr.shape[1] == 9:
         out["is_fix"] = np.asarray(arr[:, 8], dtype=bool)
-    return out
+    return normalize_model(out)
 
 
 def load_site(path: Union[str, "Path"]) -> Dict[str, object]:
@@ -1716,6 +1844,9 @@ def build_summary_npz(
     """
     from aniso import aniso1d_impedance_sens
 
+    # Make sure the template model is consistent (notably rop orientation and flag lengths).
+    model0 = normalize_model(model0)
+
     s: Dict[str, object] = {}
     s["station"] = station
     s["freq"] = np.asarray(site["freq"], dtype=float)
@@ -1776,9 +1907,7 @@ def build_summary_npz(
         udip_deg=udip,
         usla_deg=usla,
         is_iso=model0.get("is_iso", None),
-        out=True,
-        comp="full",
-        want_sens=False,
+        compute_sens=False,
     )
     if isinstance(fwd, Mapping):
         s["Z_pred"] = fwd.get("Z", None)

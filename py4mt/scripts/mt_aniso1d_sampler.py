@@ -41,9 +41,9 @@ PY4MTX_DATA = os.environ.get("PY4MTX_DATA", "")
 PY4MTX_ROOT = os.environ.get("PY4MTX_ROOT", "")
 
 if not PY4MTX_ROOT:
-    PY4MTX_ROOT = str(Path(__file__).resolve().parent.parent)
+    sys.exit("PY4MTX_ROOT not set! Exit.")
 if not PY4MTX_DATA:
-    PY4MTX_DATA = str(Path(PY4MTX_ROOT) / "data")
+    sys.exit("PY4MTX_DATA not set! Exit.")
 
 mypath = [
     str(Path(PY4MTX_ROOT) / "py4mt" / "modules"),
@@ -64,46 +64,67 @@ fname = inspect.getfile(inspect.currentframe())
 
 titstrng = util.print_title(version=version, fname=fname, out=False)
 print(titstrng+'\n\n')
+
+
 # -----------------------------------------------------------------------------
 # Example Model0 (keep/edit)
 # -----------------------------------------------------------------------------
-Model0 = dict(
-    h_m=np.array([200.0, 400.0, 800.0, 0.0], dtype=float),
-    rop=np.array(
-        [
-            [100.0, 100.0, 100.0],
-            [300.0, 300.0, 300.0],
-            [30.0, 300.0, 3000.0],
-            [1000.0, 1000.0, 1000.0],
-        ],
-        dtype=float,
-    ),
-    ustr_deg=np.array([0.0, 0.0, 45.0, 0.0], dtype=float),
-    udip_deg=np.array([0.0, 0.0, 0.0, 0.0], dtype=float),
-    usla_deg=np.array([0.0, 0.0, 0.0, 0.0], dtype=float),
-    is_iso=np.array([True, True, False, True], dtype=bool),
-    is_fix=np.array([False, False, False, False], dtype=bool),
-)
+# Model0 = dict(
+#     h_m=np.array([200.0, 400.0, 800.0, 0.0], dtype=float),
+#     rop=np.array(
+#         [
+#             [100.0, 100.0, 100.0],
+#             [100.0, 100.0, 100.0],
+#             [100.0, 100.0, 100.0],
+#             [100.0, 100.0, 100.0],
+#         ],
+#         dtype=float,
+#     ),
+#     ustr_deg=np.array([0.0, 0.0, 45.0, 0.0], dtype=float),
+#     udip_deg=np.array([0.0, 0.0, 0.0, 0.0], dtype=float),
+#     usla_deg=np.array([0.0, 0.0, 0.0, 0.0], dtype=float),
+#     is_iso=np.array([True, True, False, True], dtype=bool),
+#     is_fix=np.array([False, False, False, False], dtype=bool),
+# )
+
+# -----------------------------------------------------------------------------
+# Example Model1 (keep/edit)
+# -----------------------------------------------------------------------------
+nlayer = 17
+# Convention: last entry is the basement "thickness" (ignored by the recursion).
+# Keep it at 0.0 so that cumulative-depth plots remain well-defined.
+h_m = np.r_[np.logspace(np.log10(50.0), np.log10(500.0), nlayer - 1), 0.0]
+
+Model0  = {
+    "prior_name" : "model1_hfix",
+    "h_m" : h_m,
+    "rop" : 100.*np.ones((nlayer, 3), dtype=  float),
+    "ustr_deg" : np.zeros_like(h_m, dtype=  float),
+    "udip_deg" : np.zeros_like(h_m, dtype=  float),
+    "usla_deg" : np.zeros_like(h_m, dtype=  float),
+    "is_iso" : np.zeros_like(h_m, dtype=  bool),
+    "is_fix" : np.zeros_like(h_m, dtype=  bool)
+    }
+
 
 # =============================================================================
 # USER CONFIG
 # =============================================================================
 
-INPUT_GLOB = str(Path(PY4MTX_DATA) / "*.edi")   # or *.npz
-OUTDIR = str(Path(PY4MTX_DATA) / "pmc_out")
+MCMC_Data = "/home/vrath/Py4MTX/py4mt/data/edi/"
 
-
-
-MODEL_NPZ = str(Path(PY4MTX_DATA) / "model0.npz")
+INPUT_GLOB = MCMC_Data + "Ann*.edi"  # or *.npz
+OUTDIR = MCMC_Data + "pmc_met_hfix"
+MODEL_NPZ = MCMC_Data+"model0.npz"
 
 # Set MODEL_DIRECT = Model0 to use the in-file model template
-MODEL_DIRECT = None
+MODEL_DIRECT = Model0
 MODEL_DIRECT_SAVE_PATH = MODEL_NPZ
 MODEL_DIRECT_OVERWRITE = True
 
 USE_PT = True
 PT_ERR_NSIM = 200
-Z_COMPS = ("xy", "yx")
+Z_COMPS = ("xx", "xy", "yx", "yy")
 PT_COMPS = ("xx", "xy", "yx", "yy")
 COMPUTE_PT_IF_MISSING = True
 
@@ -111,7 +132,7 @@ FIX_H = True
 SAMPLE_LAST_THICKNESS = False
 
 LOG10_H_BOUNDS = (0.0, 5.0)
-LOG10_RHO_BOUNDS = (-1.0, 6.0)
+LOG10_RHO_BOUNDS = (-0., 5.0)
 USTR_BOUNDS_DEG = (-180.0, 180.0)
 UDIP_BOUNDS_DEG = (0.0, 90.0)
 USLA_BOUNDS_DEG = (-180.0, 180.0)
@@ -120,9 +141,9 @@ SIGMA_FLOOR_Z = 0.0
 SIGMA_FLOOR_P = 0.0
 
 STEP_METHOD = "demetropolis"
-DRAWS = 2000
+DRAWS = 10000
 TUNE = 1000
-CHAINS = 10
+CHAINS = 8
 CORES = CHAINS
 TARGET_ACCEPT = 0.85
 RANDOM_SEED = 123
@@ -147,9 +168,10 @@ if MODEL_DIRECT is not None:
 else:
     model0 = mcmc.load_model_npz(MODEL_NPZ)
 
-nl = int(np.asarray(model0["rop"]).shape[0])
-if "is_fix" not in model0:
-    model0["is_fix"] = np.zeros(nl, dtype=bool)
+# Ensure all arrays are consistent: rop orientation and flag lengths.
+model0 = mcmc.normalize_model(model0)
+
+nl = int(np.asarray(model0["h_m"]).size)
 spec = mcmc.ParamSpec(
     nl=nl,
     fix_h=bool(FIX_H),
