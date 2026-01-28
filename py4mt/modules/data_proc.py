@@ -255,7 +255,10 @@ def _parse_simple_meta(header_lines: List[str]) -> Dict[str, Any]:
                 rhs = ln.split("=", 1)[1].strip().strip('"')
                 if ":" in rhs:
                     deg, minute, sec = (float(p) for p in rhs.split(":")[:3])
-                    lat_deg = deg + minute / 60.0 + sec / 3600.0
+                    if deg >= 0.:
+                        lat_deg = deg + minute / 60.0 + sec / 3600.0
+                    else:
+                        lat_deg = deg - minute / 60.0 - sec / 3600.0
                 else:
                     lat_deg = float(rhs.split()[0])
             except Exception:
@@ -265,8 +268,13 @@ def _parse_simple_meta(header_lines: List[str]) -> Dict[str, Any]:
             try:
                 rhs = ln.split("=", 1)[1].strip().strip('"')
                 if ":" in rhs:
+                    print(rhs)
                     deg, minute, sec = (float(p) for p in rhs.split(":")[:3])
-                    lon_deg = deg + minute / 60.0 + sec / 3600.0
+                    if deg >= 0.:
+                        lon_deg = deg + minute / 60.0 + sec / 3600.0
+                    else:
+                        lon_deg = deg - minute / 60.0 - sec / 3600.0
+                    print(lon_deg)
                 else:
                     lon_deg = float(rhs.split()[0])
             except Exception:
@@ -1516,7 +1524,7 @@ def save_edi(
     if elev_m is not None:
         lines.append(f"  ELEV={float(elev_m): .6f}")
     lines.append('  STDVERS="SEG 1.0"')
-    lines.append('  PROGVERS="dataproc.py"')
+    lines.append('  PROGVERS="data_proc.py"')
     lines.append(f'  PROGDATE="{2025-12-21}"')
     lines.append("  EMPTY=1.0E32")
     lines.append(f"  NFREQ={int(nfreq)}")
