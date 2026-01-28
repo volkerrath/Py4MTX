@@ -1485,6 +1485,8 @@ def save_edi(
     p = Path(path)
 
     freq = np.asarray(edi["freq"], dtype=float).ravel()
+    nfreq = freq.size
+
     Z = np.asarray(edi["Z"], dtype=np.complex128)
     if Z.shape != (freq.size, 2, 2):
         raise ValueError("edi['Z'] must have shape (n, 2, 2) matching freq.")
@@ -1517,6 +1519,7 @@ def save_edi(
     lines.append('  PROGVERS="dataproc.py"')
     lines.append(f'  PROGDATE="{2025-12-21}"')
     lines.append("  EMPTY=1.0E32")
+    lines.append(f"  NFREQ={int(nfreq)}")
     lines.append("")
 
     # FREQ

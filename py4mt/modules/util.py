@@ -118,6 +118,21 @@ def stop(s: str = ''):
     exit('Execution stopped. '+s)
 
 
+def dd(lat, lon):
+
+    if ":" in lat:
+        deg, minute, sec = (float(p) for p in lat.split(":")[:3])
+        lat_dd = deg + minute / 60.0 + sec / 3600.0
+    else:
+        lat_dd = lat
+
+    if ":" in lon:
+        deg, minute, sec = (float(p) for p in lon.split(":")[:3])
+        lon_dd = deg + minute / 60.0 + sec / 3600.0
+    else:
+        lon_dd = lon
+
+    return lat_dd, lon_dd
 
 """
 nan_like.py
