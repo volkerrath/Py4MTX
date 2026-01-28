@@ -58,3 +58,10 @@ fname = inspect.getfile(inspect.currentframe())
 
 titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng+'\n\n')
+
+
+DATA_DIR = "/home/vrath/Py4MTX/py4mt/data/edi/"
+
+INPUT_GLOB = DATA_DIR + "Ann*.edi"   # or "*.npz"
+OUTDIR = DATA_DIR + "detinv_hfix"
+MODEL_NPZ = DATA_DIR + "model0.npz"

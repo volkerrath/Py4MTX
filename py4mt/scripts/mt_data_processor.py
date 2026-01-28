@@ -44,7 +44,7 @@ import mtproc as mtp
 import femtic as fem
 from scipy.interpolate import make_smoothing_spline
 from data_viz import add_phase, add_rho, add_tipper, add_pt
-from data_proc import (
+from data_proc import (get_edi_list,
     load_edi, save_edi, save_ncd, save_hdf, save_npz,
     save_list_of_dicts_npz, dataframe_from_edi,
     interpolate_data, set_errors, estimate_errors, rotate_data,
@@ -69,7 +69,7 @@ if not os.path.isdir(WorkDir):
 
 
 DataDir = WorkDir  # +'/edi/'
-edi_files = mtp.get_edi_list(DataDir, fullpath=True)
+edi_files = get_edi_list(DataDir, fullpath=True)
 ns = np.size(edi_files)
 
 OutFiles = 'edi, npz'
