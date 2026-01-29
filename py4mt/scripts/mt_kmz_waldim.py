@@ -54,15 +54,15 @@ print(titstrng+'\n\n')
 WorkDir = '/home/vrath/MT_Data/waldim/'
 # EdiDir =  WorkDir + '/edi_jc/'
 # EdiDir =  WorkDir + '/edi_noss/'
-EdiDir =  WorkDir + '/edi_eps/'
+EdiDir =  WorkDir + '/edi_don/'
 
 DimDir = WorkDir
 print(' WALdim results read from: %s' % DimDir)
 
 KmlDir =  EdiDir
-KmlFile = 'Annecy_eps_WALDIM'
+KmlFile = 'Donegal_WALdim'
 
-DimFile = EdiDir+'ANN_DIM_0.15.dat'
+DimFile = EdiDir+'DON_DIM_0.15.dat'
 
 
 

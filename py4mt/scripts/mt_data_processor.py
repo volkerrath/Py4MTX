@@ -37,14 +37,15 @@ for pth in mypath:
 import util as utl
 import modem as mod
 # import jacproc as jac
-import mtproc as mtp
+# import mt_proc as mtp
 # import plotrjmcmc as plmc
 # import viz
 # import inverse as inv
 import femtic as fem
 from scipy.interpolate import make_smoothing_spline
 from data_viz import add_phase, add_rho, add_tipper, add_pt
-from data_proc import (get_edi_list,
+from data_proc import (
+    get_edi_list,
     load_edi, save_edi, save_ncd, save_hdf, save_npz,
     save_list_of_dicts_npz, dataframe_from_edi,
     interpolate_data, set_errors, estimate_errors, rotate_data,
@@ -61,26 +62,29 @@ titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng + '\n\n')
 
 # WorkDir = '/home/vrath/ChatGPT_tests/'
-WorkDir = '/home/vrath/Py4MTX/work/edis_2025/'
+# WorkDir = '/home/vrath/Py4MTX/work/edis_2025/'
+WorkDir = '/home/vrath/MT_Data/waldim/edi_don/'
+
 
 if not os.path.isdir(WorkDir):
     print(' File: %s does not exist, but will be created' % WorkDir)
     os.mkdir(WorkDir)
 
-
-DataDir = WorkDir  # +'/edi/'
-edi_files = get_edi_list(DataDir, fullpath=True)
+DataDir = WorkDir
+EdiDir = WorkDir +'/orig/'
+edi_files = get_edi_list(EdiDir, fullpath=True)
 ns = np.size(edi_files)
+
 
 OutFiles = 'edi, npz'
 
-Plot = True
+Plot = False
 if Plot:
     pltargs = {'show_errors': True}
     PlotFormat = ['.png', '.pdf']
 # %%
-NameStr = '_processed'
-CollName = 'Annecy2025'
+NameStr = '' #'_dd'
+CollName = 'DON_dd'
 
 SetErrors = False
 Errors = {'Zerr': [0.1, 0.1, 0.1, 0.1],
