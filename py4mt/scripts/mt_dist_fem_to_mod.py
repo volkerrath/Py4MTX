@@ -118,7 +118,7 @@ for edi in edi_files:
     Task block
     '''
     sitenum = mapping.get(station)
-    C = distortion[sitenum,:,:]
+    C = distortion[sitenum-1,:,:]
     for f in np.arange(np.shape(Z)[0]):
         Z[f,:,:] = C@Z[f,:,:]
     edi_dict['Z'] = Z
