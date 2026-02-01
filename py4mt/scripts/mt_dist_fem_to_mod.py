@@ -76,8 +76,8 @@ if Plot:
     pltargs = {'show_errors': True}
     PlotFormat = ['.png', '.pdf']
 # %%
-NameStr = '' #'_dd'
-CollName = 'Ann_distcorr'
+NameStr = 'distcorr' #'_dd'
+CollName = 'AnnAll_distcorr'
 
 PhasTens = True
 Invars = True
