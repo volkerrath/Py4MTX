@@ -105,14 +105,26 @@ def read_distortion_file(path=None):
     lines = Path(path).read_text().strip().splitlines()
     # nsites = int(lines[0].strip())
     data = []
+    sites = []
     for line in lines[1:]:
         parts = line.split()
-        site = int(parts[0])
+        sites.append(int(parts[0]))
         c00, c01, c10, c11 = map(float, parts[1:5])
         M = np.array([[c00, c01], [c10, c11]], dtype=float)
-        data.append((site, M))
+        data.append(M)
+    data = np.asarray(data)
 
-    return data
+    c_dash=[]
+    c = []
+    for s in np.arange(np.shape(data)[0]):
+        c_dash.append(data[s,:])
+        c.append(data[s,:] + np.identity(2))
+
+    c = np.asarray(c)
+    c_dash = np.asarray(c_dash)
+    # print(np.shape(c))
+    # print(type(c))
+    return c, c_dash
 
 def get_nrms(directory=None):
     '''

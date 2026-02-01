@@ -85,20 +85,18 @@ Invars = True
 FEMDist_file = 'distortion_iter13.dat'
 NamesNumbers_file = 'names_numbers_femtic.csv'
 
-trans = np.genfromtxt(
-        WorkDir+NamesNumbers_file,
-        delimiter=',' ,
-        dtype=None,        # auto-detect types
-        encoding="utf-8",  # required when dtype=None
-        names=None         # no header line
-    )
-names = trans['f1'][:]
-numbs = trans['f0'][:]
-trans = list(trans)
-# trans = np.column_stack([trans['f0'].astype(object),
-#                              trans['f1'].astype(object)])
+# get translation table
 
-distortion = read_distortion_file(WorkDir+FEMDist_file)
+mapping = {}
+with open(WorkDir+NamesNumbers_file, newline="", encoding="utf-8") as f:
+    reader = csv.reader(f)
+    for num, name in reader:
+        mapping[name] = int(num)
+
+print(mapping)
+
+# get distortion matrix (c, not c')
+distortion, _ = read_distortion_file(WorkDir+FEMDist_file)
 
 
 all_data = []
@@ -108,6 +106,7 @@ for edi in edi_files:
 
     station = edi_dict['station']
     Z = edi_dict['Z']
+    edi_dict['Z_orig'] = Z.copy()
     Zerr = edi_dict['Z_err']
     T = edi_dict['T']
     Terr = edi_dict['T_err']
@@ -115,6 +114,11 @@ for edi in edi_files:
     '''
     Task block
     '''
+    sitenum = mapping.get(station)
+    C = distortion[sitenum,:,:]
+    for f in np.arange(np.shape(Z)[0]):
+        Z[f,:,:] = C@Z[f,:,:]
+    edi_dict['Z'] = Z
 
     if PhasTens:
         P, Perr = compute_pt(Z, Zerr)
@@ -133,8 +137,8 @@ for edi in edi_files:
 
 
 
-    # if EstimateErrors:
-    #     edi_dict = estimate_errors(edi_dict=edi_dict, method=ErrMethod)
+
+    edi_dict['distortion'] = C
 
 
     all_data.append(edi_dict)
