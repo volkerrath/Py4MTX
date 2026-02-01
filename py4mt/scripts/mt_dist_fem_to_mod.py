@@ -94,7 +94,7 @@ mapping = {}
 with open(WorkDir+NamesNumbers_file, newline="", encoding="utf-8") as f:
     reader = csv.reader(f)
     for num, name in reader:
-        mapping[name] = int(num)
+        mapping[name] = int(num)+1
 
 print(mapping)
 
@@ -137,8 +137,6 @@ for edi in edi_files:
         Zssq, Zssqerr = compute_zssq(Z, Zerr)
         edi_dict['Zssq'] = Zssq
         edi_dict['Zssq_err'] = Zssqerr
-
-
 
 
     edi_dict['distortion'] = C
