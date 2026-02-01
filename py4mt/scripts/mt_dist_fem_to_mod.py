@@ -59,24 +59,27 @@ print(titstrng + '\n\n')
 WorkDir = '/home/vrath/Current/Annecy/'
 
 
-if not os.path.isdir(WorkDir):
-    print(' File: %s does not exist, but will be created' % WorkDir)
-    os.mkdir(WorkDir)
-
-DataDir = WorkDir
 EdiDir = WorkDir +'/edi_files/'
 edi_files = get_edi_list(EdiDir, fullpath=True)
 ns = np.size(edi_files)
 
-
+OutDir = WorkDir +'/corrected/'
+if not os.path.isdir(OutDir):
+    print(' File: %s does not exist, but will be created' % OutDir)
+    os.mkdir(OutDir)
 OutFiles = 'edi, npz'
 
-Plot = False
+Plot = True
 if Plot:
+    PlotDir = WorkDir +'/plots/'
+    if not os.path.isdir(PlotDir):
+        print(' File: %s does not exist, but will be created' % PlotDir)
+        os.mkdir(PlotDir)
     pltargs = {'show_errors': True}
-    PlotFormat = ['.png', '.pdf']
+    PlotFormat = ['.pdf']
 # %%
-NameStr = 'distcorr' #'_dd'
+
+NameStr = '_distcorr' #'_dd'
 CollName = 'AnnAll_distcorr'
 
 PhasTens = True
@@ -151,27 +154,27 @@ for edi in edi_files:
 
     if 'edi' in OutFiles.lower():
         _ = save_edi(
-            path=DataDir + station + NameStr + '.edi',
+            path=OutDir + station + NameStr + '.edi',
             edi=edi_dict
         )
 
     if 'ncd' in OutFiles.lower():
         _ = save_ncd(
-            path=DataDir + station + NameStr + '.ncd',
+            path=OutDir + station + NameStr + '.ncd',
             data_dict=edi_dict)
 
     if 'hdf' in OutFiles.lower():
         _ = save_hdf(
-            path=DataDir + station + NameStr + '.hdf',
+            path=OutDir + station + NameStr + '.hdf',
             data_dict=edi_dict)
 
     if 'npz' in OutFiles.lower():
         _ = save_npz(
-            path=DataDir + station + NameStr + '.npz',
+            path=OutDir + station + NameStr + '.npz',
             data_dict=edi_dict)
 
     if Plot:
-        fig, axs = plt.subplots(3, 2, figsize=(8, 14), sharex=True)
+        fig, axs = plt.subplots(3, 2, figsize=(14, 14), sharex=True)
         add_rho(edi_dict, comps="xy,yx", ax=axs[0, 0], **pltargs)
         add_phase(edi_dict, comps="xy,yx", ax=axs[0, 1], **pltargs)
         add_rho(edi_dict, comps="xx,yy", ax=axs[1, 0], **pltargs)
@@ -189,11 +192,11 @@ for edi in edi_files:
         fig.tight_layout(rect=[0, 0, 1, 0.97])
 
         for f in PlotFormat:
-            plt.savefig(WorkDir + station + NameStr + f, dpi=600)
+            plt.savefig(PlotDir + station + NameStr + f, dpi=600)
 
         plt.show()
 
 
 save_list_of_dicts_npz(
     records=all_data,
-    path=DataDir + CollName + NameStr + '_collection.npz')
+    path=OutDir + CollName + NameStr + '_collection.npz')
