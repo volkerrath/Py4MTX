@@ -81,6 +81,39 @@ from scipy.sparse.linalg import LinearOperator, cg, eigsh, bicgstab, spilu
 # Optional but kept for compatibility with earlier versions
 import joblib  # noqa: F401
 
+def read_distortion_file(path=None):
+    """
+
+    Returns site IDs and 2×2 matrices for each site.
+
+    Parameters
+    ----------
+    path : string
+        FEMTIV distortion file
+
+    Returns
+    -------
+    nsites : TYPE
+        DESCRIPTION.
+    data : TYPE
+        DESCRIPTION.
+
+    """
+    """
+    Return site IDs and 2×2 matrices for each site.
+    """
+    lines = Path(path).read_text().strip().splitlines()
+    # nsites = int(lines[0].strip())
+    data = []
+    for line in lines[1:]:
+        parts = line.split()
+        site = int(parts[0])
+        c00, c01, c10, c11 = map(float, parts[1:5])
+        M = np.array([[c00, c01], [c10, c11]], dtype=float)
+        data.append((site, M))
+
+    return data
+
 def get_nrms(directory=None):
     '''
     Get best (smallest) nRMS from FEMTIC run.

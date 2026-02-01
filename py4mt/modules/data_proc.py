@@ -268,13 +268,13 @@ def _parse_simple_meta(header_lines: List[str]) -> Dict[str, Any]:
             try:
                 rhs = ln.split("=", 1)[1].strip().strip('"')
                 if ":" in rhs:
-                    print(rhs)
+                    #print(rhs)
                     deg, minute, sec = (float(p) for p in rhs.split(":")[:3])
                     if deg >= 0.:
                         lon_deg = deg + minute / 60.0 + sec / 3600.0
                     else:
                         lon_deg = deg - minute / 60.0 - sec / 3600.0
-                    print(lon_deg)
+                    #print(lon_deg)
                 else:
                     lon_deg = float(rhs.split()[0])
             except Exception:
