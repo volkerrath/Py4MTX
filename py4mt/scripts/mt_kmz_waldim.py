@@ -49,7 +49,7 @@ print(titstrng+'\n\n')
 
 #
 WorkDir = '/home/vrath/MT_Data/waldim/'
-EdiDir =  WorkDir + '/edi_jc/'
+EdiDir =  WorkDir + '/edi_eps/'
 # EdiDir =  WorkDir + '/edi_noss/'
 # EdiDir =  WorkDir + '/edi_don/'
 
@@ -60,11 +60,11 @@ print(' WALdim results read from: %s' % DimDir)
 
 UseFreqs = False
 if UseFreqs:
-    DimFile = EdiDir+'ANN_DIM_0.15.dat'
+    DimFile = EdiDir+'ANN_DIM_0.30.dat'
     KmlFile = 'ANN_FREQ'
 else:
-    DimFile = EdiDir+'ANN_BANDCLASS_0.15.dat'
-    KmlFile = 'ANN_BAND'
+    DimFile = EdiDir+'ANN_BANDCLASS_0.30.dat'
+    KmlFile = 'ANN_BAND_30'
 #Class3 = True
 Class3 = False
 
