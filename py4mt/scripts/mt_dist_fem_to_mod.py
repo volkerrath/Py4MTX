@@ -94,9 +94,10 @@ mapping = {}
 with open(WorkDir+NamesNumbers_file, newline="", encoding="utf-8") as f:
     reader = csv.reader(f)
     for num, name in reader:
+        name = name.lower()
         mapping[name] = int(num)+1
 
-print(mapping)
+# print(mapping)
 
 # get distortion matrix (c, not c')
 distortion, _ = read_distortion_file(WorkDir+FEMDist_file)
@@ -117,7 +118,8 @@ for edi in edi_files:
     '''
     Task block
     '''
-    sitenum = mapping.get(station)
+    sitenum = mapping.get(station.lower())
+    print (sitenum,' to ', station)
     C = distortion[sitenum-1,:,:]
     for f in np.arange(np.shape(Z)[0]):
         Z[f,:,:] = C@Z[f,:,:]
