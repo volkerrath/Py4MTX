@@ -42,7 +42,7 @@ from data_proc import (
     load_edi, save_edi, save_ncd, save_hdf, save_npz,
     save_list_of_dicts_npz, dataframe_from_edi,
     interpolate_data, set_errors, estimate_errors, rotate_data,
-    compute_pt, compute_zdet, compute_zssq)
+    compute_pt, compute_zdet, compute_zssq, compute_rhophas)
 
 from version import versionstrg
 
@@ -60,7 +60,7 @@ WorkDir = '/home/vrath/Current/Annecy/'
 
 
 EdiDir = WorkDir +'/edi_files/'
-edi_files = get_edi_list(EdiDir, fullpath=True)
+edi_files = get_edi_list(EdiDir, fullpath=True, sort = True)
 ns = np.size(edi_files)
 
 OutDir = WorkDir +'/corrected/'
@@ -84,6 +84,7 @@ CollName = 'AnnAll_distcorr'
 
 PhasTens = True
 Invars = True
+RhoPhas = True
 
 FEMDist_file = 'distortion_iter13.dat'
 NamesNumbers_file = 'names_numbers_femtic.csv'
@@ -109,11 +110,12 @@ for edi in edi_files:
     edi_dict = load_edi(edi, drop_invalid_periods=True)
 
     station = edi_dict['station']
+    freq = edi_dict['freq']
+    errkind = edi_dict['err_kind']
+
     Z = edi_dict['Z']
     edi_dict['Z_orig'] = Z.copy()
     Zerr = edi_dict['Z_err']
-    T = edi_dict['T']
-    Terr = edi_dict['T_err']
 
     '''
     Task block
@@ -124,6 +126,9 @@ for edi in edi_files:
     for f in np.arange(np.shape(Z)[0]):
         Z[f,:,:] = C@Z[f,:,:]
     edi_dict['Z'] = Z
+
+
+
 
     if PhasTens:
         P, Perr = compute_pt(Z, Zerr)
@@ -139,6 +144,28 @@ for edi in edi_files:
         Zssq, Zssqerr = compute_zssq(Z, Zerr)
         edi_dict['Zssq'] = Zssq
         edi_dict['Zssq_err'] = Zssqerr
+
+
+    print(np.shape(Z), np.shape(Zerr))
+    if RhoPhas:
+       rho, phi, rho_err, phi_err = compute_rhophas(
+           freq=freq, Z=Z, Z_err=Zerr)
+       edi_dict['rho'] = rho
+       edi_dict['phi'] = phi
+       if rho_err is not None:
+           edi_dict['rho_err'] = rho_err
+       if phi_err is not None:
+           edi_dict['phi_err'] = phi_err
+
+
+
+
+
+        # rho, phi, rhoerr, phierr = compute_rhophas(Z, Zerr)
+        # edi_dict['rho'] = rho
+        # edi_dict['rhoerr'] = rhoerr
+        # edi_dict['phi'] = phi
+        # edi_dict['phierr'] = phierr
 
 
     edi_dict['distortion'] = C
@@ -175,10 +202,12 @@ for edi in edi_files:
 
     if Plot:
         fig, axs = plt.subplots(3, 2, figsize=(14, 14), sharex=True)
-        add_rho(edi_dict, comps="xy,yx", ax=axs[0, 0], **pltargs)
-        add_phase(edi_dict, comps="xy,yx", ax=axs[0, 1], **pltargs)
-        add_rho(edi_dict, comps="xx,yy", ax=axs[1, 0], **pltargs)
-        add_phase(edi_dict, comps="xx,yy", ax=axs[1, 1], **pltargs)
+        # Use dataframe_from_edi so precomputed rho/phi are honoured (new rhophas treatment)
+        df_rp = dataframe_from_edi(edi_dict, include_tipper=False, include_pt=False)
+        add_rho(df_rp, comps="xy,yx", ax=axs[0, 0], **pltargs)
+        add_phase(df_rp, comps="xy,yx", ax=axs[0, 1], **pltargs)
+        add_rho(df_rp, comps="xx,yy", ax=axs[1, 0], **pltargs)
+        add_phase(df_rp, comps="xx,yy", ax=axs[1, 1], **pltargs)
         add_tipper(edi_dict, ax=axs[2, 0], **pltargs)
         add_pt(edi_dict, ax=axs[2, 1], **pltargs)
         fig.suptitle(station + NameStr.replace('_', ' | '))

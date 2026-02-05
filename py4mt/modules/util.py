@@ -14,6 +14,9 @@ import inspect
 import math
 import pathlib
 import shutil
+import h5py
+import json
+
 
 import numpy as np
 from scipy.ndimage import gaussian_filter, laplace, convolve, gaussian_gradient_magnitude
@@ -28,7 +31,125 @@ from pyproj import CRS, database, Transformer
 from scipy.fftpack import dct, idct
 
 from types import ModuleType
-from typing import List
+from typing import List, Any, Dict
+
+"""
+Utility: workspace_hdf5.py
+
+Author: Volker Rath (DIAS)
+Copilot (version) and date: <insert version/date>
+
+Description:
+    MATLAB-like workspace save/load utilities using HDF5.
+    Stores numeric arrays, scalars, strings, and JSON-serializable objects.
+    Non-serializable objects are skipped with a warning.
+
+
+Example usage:
+
+from workspace_hdf5 import save_workspace_hdf5, load_workspace_hdf5
+import numpy as np
+
+a = np.arange(10)
+b = {"alpha": 1, "beta": 2}
+c = 3.14
+
+save_workspace_hdf5("test.h5")
+
+
+# Later...
+load_workspace_hdf5("test.h5")
+
+"""
+
+
+def _is_hdf5_compatible(value: Any) -> bool:
+    """Return True if the object can be stored directly in HDF5."""
+    return (
+        isinstance(value, (np.ndarray, np.number, str, bytes, float, int))
+    )
+
+
+def _is_json_compatible(value: Any) -> bool:
+    """Return True if the object can be JSON-serialized."""
+    try:
+        json.dumps(value)
+        return True
+    except Exception:
+        return False
+
+
+def _filter_namespace(ns: Dict[str, Any]) -> Dict[str, Any]:
+    """Filter out private names, modules, and callables."""
+    out = {}
+    for k, v in ns.items():
+        if k.startswith("_"):
+            continue
+        if isinstance(v, ModuleType):
+            continue
+        if callable(v):
+            continue
+        out[k] = v
+    return out
+
+
+def save_workspace_hdf5(filename: str = "workspace.h5",
+                        namespace: Dict[str, Any] = None) -> None:
+    """
+    Save a filtered namespace to an HDF5 file.
+
+    Parameters
+    ----------
+    filename : str
+        Output HDF5 file.
+    namespace : dict, optional
+        Namespace to save (defaults to globals()).
+    """
+    if namespace is None:
+        namespace = globals()
+
+    data = _filter_namespace(namespace)
+
+    with h5py.File(filename, "w") as h5:
+        for key, value in data.items():
+            if _is_hdf5_compatible(value):
+                h5.create_dataset(key, data=value)
+            elif _is_json_compatible(value):
+                h5.create_dataset(key, data=json.dumps(value))
+            else:
+                print(f"[workspace_hdf5] Skipping non-serializable: {key}")
+
+
+def load_workspace_hdf5(filename: str = "workspace.h5",
+                        namespace: Dict[str, Any] = None) -> None:
+    """
+    Load variables from an HDF5 file into a namespace.
+
+    Parameters
+    ----------
+    filename : str
+        Input HDF5 file.
+    namespace : dict, optional
+        Namespace to update (defaults to globals()).
+    """
+    if namespace is None:
+        namespace = globals()
+
+    with h5py.File(filename, "r") as h5:
+        for key in h5.keys():
+            raw = h5[key][()]
+            # Try JSON decode
+            if isinstance(raw, (bytes, str)):
+                try:
+                    namespace[key] = json.loads(raw)
+                    continue
+                except Exception:
+                    pass
+            namespace[key] = raw
+
+
+
+
 
 """
 Utility: module_introspection.py
