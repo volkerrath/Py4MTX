@@ -49,7 +49,7 @@ from data_proc import (
     load_edi, save_edi, save_ncd, save_hdf, save_npz,
     save_list_of_dicts_npz, dataframe_from_edi,
     interpolate_data, set_errors, estimate_errors, rotate_data,
-    compute_pt, compute_zdet, compute_zssq)
+    compute_pt, compute_zdet, compute_zssq, compute_rhophas)
 
 from version import versionstrg
 
@@ -154,6 +154,24 @@ for edi in edi_files:
     if Rotate:
         edi_dict = rotate_data(edi_dict=edi_dict, angle=Angle)
 
+    # --- refresh apparent resistivity/phase after any Z modification (new rhophas treatment)
+    if edi_dict.get('freq') is not None and edi_dict.get('Z') is not None:
+        _ek = str(edi_dict.get('err_kind', 'var')).strip().lower()
+        _ek = 'std' if _ek.startswith('std') else 'var'
+        rho, phi, rho_err, phi_err = compute_rhophas(
+            freq=np.asarray(edi_dict['freq']),
+            Z=np.asarray(edi_dict['Z']),
+            Z_err=np.asarray(edi_dict['Z_err']) if edi_dict.get('Z_err') is not None else None,
+            err_kind=_ek,
+            err_method='analytic',
+        )
+        edi_dict['rho'] = rho
+        edi_dict['phi'] = phi
+        if rho_err is not None:
+            edi_dict['rho_err'] = rho_err
+        if phi_err is not None:
+            edi_dict['phi_err'] = phi_err
+
     all_data.append(edi_dict)
 
     # print(np.shape(Z), np.shape(Zerr),
@@ -185,10 +203,12 @@ for edi in edi_files:
 
     if Plot:
         fig, axs = plt.subplots(3, 2, figsize=(8, 14), sharex=True)
-        add_rho(edi_dict, comps="xy,yx", ax=axs[0, 0], **pltargs)
-        add_phase(edi_dict, comps="xy,yx", ax=axs[0, 1], **pltargs)
-        add_rho(edi_dict, comps="xx,yy", ax=axs[1, 0], **pltargs)
-        add_phase(edi_dict, comps="xx,yy", ax=axs[1, 1], **pltargs)
+        # Use dataframe_from_edi so precomputed rho/phi are honoured (new rhophas treatment)
+        df_rp = dataframe_from_edi(edi_dict, include_tipper=False, include_pt=False)
+        add_rho(df_rp, comps="xy,yx", ax=axs[0, 0], **pltargs)
+        add_phase(df_rp, comps="xy,yx", ax=axs[0, 1], **pltargs)
+        add_rho(df_rp, comps="xx,yy", ax=axs[1, 0], **pltargs)
+        add_phase(df_rp, comps="xx,yy", ax=axs[1, 1], **pltargs)
         add_tipper(edi_dict, ax=axs[2, 0], **pltargs)
         add_pt(edi_dict, ax=axs[2, 1], **pltargs)
         fig.suptitle(station + NameStr.replace('_', ' | '))

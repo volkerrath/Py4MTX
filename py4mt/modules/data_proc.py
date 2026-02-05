@@ -1710,13 +1710,116 @@ def dataframe_from_edi(
         omega = 2.0 * np.pi * freq
         comp_map = {"xx": (0, 0), "xy": (0, 1), "yx": (1, 0), "yy": (1, 1)}
 
-        for name, (i, j) in comp_map.items():
-            Zij = Z[:, i, j]
-            mag = np.abs(Zij)
-            df[f"rho_{name}"] = (mag**2) / (mu0 * omega)
-            with np.errstate(divide="ignore", invalid="ignore"):
-                df[f"phi_{name}"] = np.degrees(np.arctan2(Zij.imag, Zij.real))
+        # Prefer precomputed apparent resistivity / phase if present in the EDI dict.
+        # Supported conventions:
+        #   - tensor arrays:  rho, phi   with shape (n,2,2) or (n,4)
+        #   - per-component:  rho_xx, rho_xy, ... and phi_xx, phi_xy, ...
+        used_precomputed = False
 
+        rho_arr = None
+        phi_arr = None
+
+        for k in ("rho", "rhoa", "rho_a"):
+            if k in edi:
+                rho_arr = edi[k]
+                break
+        for k in ("phi", "pha", "phase"):
+            if k in edi:
+                phi_arr = edi[k]
+                break
+
+        if rho_arr is not None and phi_arr is not None:
+            rho_arr = np.asarray(rho_arr, dtype=float)
+            phi_arr = np.asarray(phi_arr, dtype=float)
+
+            if rho_arr.ndim == 2 and rho_arr.shape == (n, 4):
+                rho_arr = rho_arr.reshape(n, 2, 2)
+            if phi_arr.ndim == 2 and phi_arr.shape == (n, 4):
+                phi_arr = phi_arr.reshape(n, 2, 2)
+
+            if rho_arr.shape != (n, 2, 2) or phi_arr.shape != (n, 2, 2):
+                raise ValueError(
+                    "Precomputed rho/phi must have shape (n,2,2) or (n,4) matching freq."
+                )
+
+            for name, (i, j) in comp_map.items():
+                df[f"rho_{name}"] = rho_arr[:, i, j]
+                df[f"phi_{name}"] = phi_arr[:, i, j]
+
+            # Optional precomputed errors (variance or std, controlled by err_kind).
+            rho_err = None
+            phi_err = None
+            for k in ("rho_err", "rhoa_err", "rho_a_err"):
+                if k in edi:
+                    rho_err = edi[k]
+                    break
+            for k in ("phi_err", "pha_err", "phase_err"):
+                if k in edi:
+                    phi_err = edi[k]
+                    break
+
+            if rho_err is not None:
+                rho_err = np.asarray(rho_err, dtype=float)
+                if rho_err.ndim == 2 and rho_err.shape == (n, 4):
+                    rho_err = rho_err.reshape(n, 2, 2)
+                if rho_err.shape != (n, 2, 2):
+                    raise ValueError("Precomputed rho_err must have shape (n,2,2) or (n,4).")
+                sigma_rho = np.sqrt(rho_err) if err_kind == "var" else rho_err
+                for name, (i, j) in comp_map.items():
+                    df[f"rho_{name}_err"] = sigma_rho[:, i, j]
+
+            if phi_err is not None:
+                phi_err = np.asarray(phi_err, dtype=float)
+                if phi_err.ndim == 2 and phi_err.shape == (n, 4):
+                    phi_err = phi_err.reshape(n, 2, 2)
+                if phi_err.shape != (n, 2, 2):
+                    raise ValueError("Precomputed phi_err must have shape (n,2,2) or (n,4).")
+                sigma_phi = np.sqrt(phi_err) if err_kind == "var" else phi_err
+                for name, (i, j) in comp_map.items():
+                    df[f"phi_{name}_err"] = sigma_phi[:, i, j]
+
+            used_precomputed = True
+
+        if not used_precomputed:
+            have_rho_cols = all(f"rho_{name}" in edi for name in comp_map)
+            have_phi_cols = all(f"phi_{name}" in edi for name in comp_map)
+            if have_rho_cols and have_phi_cols:
+                for name in comp_map:
+                    r = np.asarray(edi[f"rho_{name}"], dtype=float).ravel()
+                    p = np.asarray(edi[f"phi_{name}"], dtype=float).ravel()
+                    if r.size != n or p.size != n:
+                        raise ValueError("Precomputed rho_*/phi_* must have length n.")
+                    df[f"rho_{name}"] = r
+                    df[f"phi_{name}"] = p
+
+                # Optional per-component errors (variance or std)
+                have_rho_err_cols = all(f"rho_{name}_err" in edi for name in comp_map)
+                if have_rho_err_cols:
+                    for name in comp_map:
+                        e = np.asarray(edi[f"rho_{name}_err"], dtype=float).ravel()
+                        if e.size != n:
+                            raise ValueError("Precomputed rho_*_err must have length n.")
+                        df[f"rho_{name}_err"] = np.sqrt(e) if err_kind == "var" else e
+
+                have_phi_err_cols = all(f"phi_{name}_err" in edi for name in comp_map)
+                if have_phi_err_cols:
+                    for name in comp_map:
+                        e = np.asarray(edi[f"phi_{name}_err"], dtype=float).ravel()
+                        if e.size != n:
+                            raise ValueError("Precomputed phi_*_err must have length n.")
+                        df[f"phi_{name}_err"] = np.sqrt(e) if err_kind == "var" else e
+
+                used_precomputed = True
+
+        if not used_precomputed:
+            for name, (i, j) in comp_map.items():
+                Zij = Z[:, i, j]
+                mag = np.abs(Zij)
+                df[f"rho_{name}"] = (mag**2) / (mu0 * omega)
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    df[f"phi_{name}"] = np.degrees(np.arctan2(Zij.imag, Zij.real))
+
+        # If rho/phi errors were not provided, optionally propagate from Z_err
         Z_err = edi.get("Z_err")
         if Z_err is not None:
             Z_err = np.asarray(Z_err, dtype=float)
@@ -1729,11 +1832,13 @@ def dataframe_from_edi(
                 mag = np.abs(Z[:, i, j])
                 denom = mu0 * omega
                 std_rho = 2.0 * sigma_Z[:, i, j] * mag / np.where(denom > 0.0, denom, np.nan)
-                df[f"rho_{name}_err"] = std_rho
+                if f"rho_{name}_err" not in df.columns:
+                    df[f"rho_{name}_err"] = std_rho
 
                 with np.errstate(divide="ignore", invalid="ignore"):
                     std_phi_rad = np.where(mag > 0.0, sigma_Z[:, i, j] / mag, np.nan)
-                df[f"phi_{name}_err"] = std_phi_rad * (180.0 / np.pi)
+                if f"phi_{name}_err" not in df.columns:
+                    df[f"phi_{name}_err"] = std_phi_rad * (180.0 / np.pi)
 
     if include_tipper and edi.get("T") is not None:
         T = np.asarray(edi["T"], dtype=np.complex128)
@@ -2387,7 +2492,7 @@ def compute_rhophas(
     Z_err: Optional[np.ndarray] = None,
     *,
     err_kind: str = "var",
-    err_method: str = "analytic",
+    err_method: str = "bootstrap",
     nsim: int = 200,
     mu0: float = _MU0,
     random_state: Optional[np.random.Generator] = None,

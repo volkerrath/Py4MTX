@@ -451,15 +451,7 @@ def add_rho(
     matplotlib.axes.Axes
         The axes instance with the curves added.
     """
-    required = {}
-
-    required = {"freq", "Z", "Z_err"}
-    missing = required - data.keys()
-    if missing:
-        raise KeyError(f"Missing keys: {sorted(missing)}")
     df = _ensure_df(data)
-
-
     fig, ax, _ = _maybe_ax(ax)
     period = _period_from_df(df)
     comps_list = _parse_comps(comps)
@@ -534,14 +526,7 @@ def add_phase(
     matplotlib.axes.Axes
         The axes instance with the curves added.
     """
-    required = {"freq", "Z", "Z_err"}
-    missing = required - data.keys()
-    if missing:
-        raise KeyError(f"Missing keys: {sorted(missing)}")
-
-
     df = _ensure_df(data)
-
     fig, ax, _ = _maybe_ax(ax)
     period = _period_from_df(df)
     comps_list = _parse_comps(comps)
