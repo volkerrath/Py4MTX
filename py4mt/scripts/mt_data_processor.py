@@ -63,15 +63,14 @@ print(titstrng + '\n\n')
 
 # WorkDir = '/home/vrath/ChatGPT_tests/'
 # WorkDir = '/home/vrath/Py4MTX/work/edis_2025/'
-WorkDir = '/home/vrath/MT_Data/waldim/edi_don/'
-
+WorkDir =  "/home/vrath/Py4MTX/py4mt/data/edi/"
 
 if not os.path.isdir(WorkDir):
     print(' File: %s does not exist, but will be created' % WorkDir)
     os.mkdir(WorkDir)
 
 DataDir = WorkDir
-EdiDir = WorkDir +'/orig/'
+EdiDir = WorkDir # +'/orig/'
 edi_files = get_edi_list(EdiDir, fullpath=True)
 ns = np.size(edi_files)
 
@@ -84,7 +83,7 @@ if Plot:
     PlotFormat = ['.png', '.pdf']
 # %%
 NameStr = '' #'_dd'
-CollName = 'DON_dd'
+CollName = 'ANN3_aniso'
 
 SetErrors = False
 Errors = {'Zerr': [0.1, 0.1, 0.1, 0.1],
