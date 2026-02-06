@@ -76,10 +76,10 @@ if not in_files:
 
 for f in in_files:
     site = mcmc.load_site(f)
-    station = str(site.get("station", Path(f).stem))
+    station = site["station"]
     print(f"--- {station} ---")
 
-    RESULT_NC= DATA_DIR / f"{station}_pmc.nc"
-    RESULT_SUM = DATA_DIR / f"{station}_pmc_summary.npz"
+    RESULT_NC= DATA_DIR + f"{station}_pmc.nc"
+    RESULT_SUM = DATA_DIR + f"{station}_pmc_summary.npz"
 
 # MODEL_NPZ = DATA_DIR + "model0.npz"
