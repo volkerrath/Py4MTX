@@ -16,6 +16,8 @@ import warnings
 import csv
 import inspect
 
+from pathlib import Path
+
 # Import numerical or other specialised modules
 import numpy as np
 import pandas as pd
@@ -43,8 +45,7 @@ from data_proc import compute_pt, interpolate_data
 from data_proc import set_errors, estimate_errors, rotate_data
 from data_proc import calc_rhoa_phas
 
-# from mtproc import calc_rhoa_phas
-#from mcmc_funcs import pack_model, unpack_model
+import mcmc
 import viz
 import util as utl
 from version import versionstrg
@@ -61,7 +62,23 @@ print(titstrng+'\n\n')
 
 
 DATA_DIR = "/home/vrath/Py4MTX/py4mt/data/edi/"
+PLOT_DIR = DATA_DIR +'/plots/'
+plotdir = mcmc.ensure_dir(PLOT_DIR)
 
-INPUT_GLOB = DATA_DIR + "Ann*.edi"   # or "*.npz"
-OUTDIR = DATA_DIR + "detinv_hfix"
-MODEL_NPZ = DATA_DIR + "model0.npz"
+
+
+INPUT_GLOB = DATA_DIR + "Ann*.npz"   # or "*.npz"
+in_files = mcmc.glob_inputs(INPUT_GLOB)
+if not in_files:
+    sys.exit(f"No matching file found: {INPUT_GLOB}! Exit.")
+
+
+for f in in_files:
+    site = mcmc.load_site(f)
+    station = str(site.get("station", Path(f).stem))
+    print(f"--- {station} ---")
+
+    RESULT_NC= DATA_DIR / f"{station}_pmc.nc"
+    RESULT_SUM = DATA_DIR / f"{station}_pmc_summary.npz"
+
+# MODEL_NPZ = DATA_DIR + "model0.npz"
