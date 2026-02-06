@@ -45,8 +45,9 @@ from data_proc import compute_pt, interpolate_data
 from data_proc import set_errors, estimate_errors, rotate_data
 from data_proc import calc_rhoa_phas
 
+
 import mcmc
-import viz
+import mcmc_viz as viz
 import util as utl
 from version import versionstrg
 
