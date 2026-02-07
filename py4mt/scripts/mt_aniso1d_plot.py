@@ -47,7 +47,7 @@ from data_proc import calc_rhoa_phas
 
 
 import mcmc
-import mcmc_viz as viz
+import mcmc_viz as mv
 import util as utl
 from version import versionstrg
 
@@ -62,24 +62,72 @@ titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng+'\n\n')
 
 
-DATA_DIR = "/home/vrath/Py4MTX/py4mt/data/edi/"
-PLOT_DIR = DATA_DIR +'/plots/'
-plotdir = mcmc.ensure_dir(PLOT_DIR)
+DataDir = "/home/vrath/Py4MTX/py4mt/data/edi/"
+SummDir = DataDir + '/pmc_demetropolis_hfix/'
+PlotDir = DataDir +'/plots/'
+if not os.path.isdir(PlotDir):
+    print(' File: %s does not exist, but will be created' % PlotDir)
+    os.mkdir(PlotDir)
+
+PlotFormat = ['.pdf']
+NameStrng ="_demetropolis_hfix"
 
 
 
-INPUT_GLOB = DATA_DIR + "Ann*.npz"   # or "*.npz"
-in_files = mcmc.glob_inputs(INPUT_GLOB)
-if not in_files:
-    sys.exit(f"No matching file found: {INPUT_GLOB}! Exit.")
+fig, axs = plt.subplots(3, 1, figsize=(6, 10))
+
+SearchStrng = DataDir + "Ann*.npz"   # or "*.npz"
+file_list = mcmc.glob_inputs(SearchStrng)
+if not file_list:
+    sys.exit(f"No matching file found: {SearchStrng}! Exit.")
 
 
-for f in in_files:
+for f in file_list:
     site = mcmc.load_site(f)
     station = site["station"]
     print(f"--- {station} ---")
 
-    RESULT_NC= DATA_DIR + f"{station}_pmc.nc"
-    RESULT_SUM = DATA_DIR + f"{station}_pmc_summary.npz"
+    '''
+      idata = mcmc.sample_pymc(
+          pm_model,
+          draws=int(DRAWS),
+          tune=int(TUNE),
+          chains=int(CHAINS),
+          cores=int(CORES),
+          step_method=str(STEP_METHOD),
+          target_accept=float(TARGET_ACCEPT),
+          random_seed=int(RANDOM_SEED) if RANDOM_SEED is not None else None,
+          progressbar=bool(PROGRESSBAR),
+      )
 
+      nc_path = Path(outdir) / f"{station}_pmc.nc"
+      sum_path = Path(outdir) / f"{station}_pmc_summary.npz"
+      mcmc.save_idata(idata, nc_path)
+
+      summary = mcmc.build_summary_npz(
+          station=station,
+          site=site,
+          idata=idata,
+          spec=spec,
+          model0=model0,
+          info=info,
+          qpairs=QPAIRS,
+      )
+      mcmc.save_summary_npz(summary, sum_path)
+
+      print(f"Wrote: {nc_path}")
+      print(f"Wrote: {sum_path}")
+
+    '''
+
+    s = mv.load_summary_npz(SummDir+station+"_pmc_summary.npz")
+    idata = mv.open_idata(SummDir+station+"_pmc.nc")
+    mv.plot_theta_trace(axs[0], idata, idx=0, name="theta[0]")
+    mv.plot_theta_density(axs[1], idata, idx=0, qpairs=s.get("theta_qpairs"))
+    mv.plot_vertical_resistivity(axs[2], s, comp=0, use_log10=True)
+    fig.tight_layout()
+    for fmt in PlotFormat:
+        plt.savefig(PlotDir + station + NameStrng + fmt, dpi=600)
+
+    #fig.show()
 # MODEL_NPZ = DATA_DIR + "model0.npz"
