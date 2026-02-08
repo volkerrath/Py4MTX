@@ -1,1018 +1,885 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-mcmc_viz.py
+"""mcmc_viz.py
+================
 
-Axis-based plotting utilities for anisotropic 1-D MT Bayesian inversion results
-produced by ``mt_aniso1d_sampler.py`` (PyMC backend).
+Axes-based plotting helpers for the simplified anisotropic 1-D MT inversion.
 
-Important design choice
------------------------
-This module does **not** create figures or subplot layouts.
+This module is intentionally *axes based*: all functions draw into an existing
+Matplotlib ``Axes`` (or a list/array of axes) and return the modified axes.
+The calling script is responsible for figure layout (``plt.subplots`` etc.).
 
-- The calling script creates figures/axes with ``plt.subplots(...)`` (or any
-  other layout method).
-- The functions here *only* draw onto the axes you pass in and then return
-  those axes.
+The main goal (requested Feb 2026) is to produce **three-panel vertical
+(step) profiles** for the available 3-parameter model sets, with support for:
 
-This keeps plotting code easy to read and easy to reuse (also for students that
-are new to Python/matplotlib).
+- plotting a single profile (one model), and/or
+- plotting posterior uncertainty as shaded quantile envelopes.
 
-Expected per-site outputs from the sampler
-------------------------------------------
-1) ``<station>_pmc.nc``          : ArviZ InferenceData (posterior samples).
-2) ``<station>_pmc_summary.npz`` : NPZ with observed data + posterior summaries
-                                  + predictive quantiles.
+Supported 3-parameter sets
+--------------------------
 
-Typical usage (sketch)
-----------------------
->>> import matplotlib.pyplot as plt
->>> import mcmc_viz as mv
->>> s = mv.load_summary_npz("SITE_pmc_summary.npz")
->>> idata = mv.open_idata("SITE_pmc.nc")
->>> fig, axs = plt.subplots(3, 1, figsize=(6, 10))
->>> mv.plot_theta_trace(axs[0], idata, idx=0, name="theta[0]")
->>> mv.plot_theta_density(axs[1], idata, idx=0, qpairs=s.get("theta_qpairs"))
->>> mv.plot_vertical_resistivity(axs[2], s, comp=0, use_log10=True)
->>> fig.tight_layout()
->>> fig.show()
+The helper :func:`plot_paramset_threepanel` supports these parameter sets
+(``param_set``) and domains (``param_domain``):
+
+**Resistivity domain ("rho")**
+
+- ``"minmax"``: (rho_min, rho_max, strike)
+- ``"max_anifac"``: (rho_max, rho_anifac, strike)
+
+**Conductivity domain ("sigma")**
+
+- ``"minmax"``: (sigma_min, sigma_max, strike)
+- ``"max_anifac"``: (sigma_max, sigma_anifac, strike)
+
+Notes
+-----
+
+*Quantiles:* If you provide an ArviZ ``InferenceData`` (``idata``), quantiles
+are computed directly from the posterior samples of deterministic variables
+when available. If those variables are not present, the code falls back to
+arrays stored in the summary ``*.npz`` (keys like ``rho_min_med``,
+``rho_min_qlo``, ``rho_min_qhi``).
+
+*Depth axis:* Thickness arrays are expected to include a final “basement”
+layer. The forward model ignores the basement thickness; for plotting, we set
+it to 0 m (so the last depth edge equals the total thickness of finite
+layers).
 
 Author: Volker Rath (DIAS)
-Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-23
+Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-08 (UTC)
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
+from typing import Iterable, Mapping, Sequence
 
 import numpy as np
-import matplotlib.pyplot as plt
-import data_proc as dp
-# Magnetic permeability of vacuum [H/m]
-MU0 = 4e-7 * np.pi
 
 
-# -----------------------------------------------------------------------------
-# Loading helpers
-# -----------------------------------------------------------------------------
-
-
-def _unwrap_npz_scalar(value: Any) -> Any:
-    """
-    Unwrap a NumPy "0-d object array" to a Python object.
-
-    NumPy stores some Python objects (e.g., lists, dicts, None) as object arrays
-    when writing NPZ files. When loaded, they often appear as:
-        array(obj, dtype=object) with shape ()
+def open_idata(nc_path: str | Path):
+    """Open an ArviZ ``InferenceData`` from a netCDF file.
 
     Parameters
     ----------
-    value : Any
-        Value returned from ``np.load(..., allow_pickle=True)``.
-
-    Returns
-    -------
-    Any
-        A "plain" Python object if ``value`` was a 0-d object array,
-        otherwise ``value`` unchanged.
-    """
-    if isinstance(value, np.ndarray) and value.dtype == object and value.shape == ():
-        return value.item()
-    return value
-
-
-def load_summary_npz(path: str | Path) -> Dict[str, Any]:
-    """
-    Load a ``*_pmc_summary.npz`` file into a plain Python dictionary.
-
-    This function:
-    - reads the NPZ with ``allow_pickle=True`` (required for Python objects)
-    - unwraps 0-d object arrays back to normal Python values
-
-    Parameters
-    ----------
-    path : str or pathlib.Path
-        Path to the summary NPZ file, typically ``<station>_pmc_summary.npz``.
-
-    Returns
-    -------
-    dict
-        Dictionary mapping NPZ keys to values (arrays or Python objects).
-    """
-    p = Path(path)
-    with np.load(p.as_posix(), allow_pickle=True) as npz:
-        out = {k: _unwrap_npz_scalar(npz[k]) for k in npz.files}
-    return out
-
-
-def open_idata(netcdf_path: str | Path):
-    """
-    Open ArviZ InferenceData from the sampler's ``*_pmc.nc`` output.
-
-    Parameters
-    ----------
-    netcdf_path : str or pathlib.Path
-        Path to the NetCDF file created by ArviZ.
+    nc_path : str or pathlib.Path
+        Path to the ``*.nc`` file produced by the sampler.
 
     Returns
     -------
     arviz.InferenceData
-        Loaded inference data.
-
-    Raises
-    ------
-    ImportError
-        If ArviZ is not installed.
+        InferenceData loaded with :func:`arviz.from_netcdf`.
     """
-    try:
-        import arviz as az  # type: ignore
-    except Exception as e:  # pragma: no cover
-        raise ImportError(
-            "ArviZ is required to open InferenceData (*.nc). "
-            "Install with: pip install arviz"
-        ) from e
-    return az.from_netcdf(Path(netcdf_path).as_posix())
+    import arviz as az
+
+    return az.from_netcdf(Path(nc_path).expanduser().as_posix())
 
 
-def theta_draws(idata, var: str = "theta") -> np.ndarray:
+def load_summary_npz(path: str | Path) -> dict:
+    """Load a ``*_pmc_summary.npz`` into a plain ``dict``.
+
+    Parameters
+    ----------
+    path : str or pathlib.Path
+        Path to the summary file.
+
+    Returns
+    -------
+    dict
+        Dictionary with all NPZ entries. Small object arrays are unwrapped.
     """
-    Extract posterior draws for a vector parameter (default: ``theta``).
+    p = Path(path).expanduser()
+    with np.load(p.as_posix(), allow_pickle=True) as npz:
+        out = {k: npz[k] for k in npz.files}
 
-    The sampler stores theta as a vector variable with dimensions:
-        (chain, draw, n_theta)
+    # allow_pickle=True stores object arrays; unwrap small objects
+    for k, v in list(out.items()):
+        if isinstance(v, np.ndarray) and v.dtype == object and v.size == 1:
+            out[k] = v.item()
+    return out
 
-    This function stacks chain and draw into one dimension so that the result is:
-        (n_samples_total, n_theta)
+
+def _require_matplotlib():
+    """Import Matplotlib lazily.
+
+    Returns
+    -------
+    module
+        ``matplotlib.pyplot``.
+    """
+    import matplotlib.pyplot as plt
+
+    return plt
+
+
+def depth_edges_from_h(h_m: np.ndarray, *, ignore_basement: bool = True) -> np.ndarray:
+    """Compute depth edges from a thickness vector.
+
+    Parameters
+    ----------
+    h_m : array_like, shape (nl,)
+        Layer thicknesses in meters. Conventionally, the last layer is the
+        basement.
+    ignore_basement : bool, default True
+        If True, the last thickness is set to 0 m for plotting.
+
+    Returns
+    -------
+    z_edges_m : ndarray, shape (nl,)
+        Depth edges (m), starting at 0.
+    """
+    h = np.asarray(h_m, dtype=float).ravel().copy()
+    if h.size < 1:
+        raise ValueError("h_m must be non-empty")
+    if ignore_basement and h.size >= 1:
+        h[-1] = 0.0
+    # z_edges has length nl (matching the step vectors)
+    z_edges = np.r_[0.0, np.cumsum(h[:-1])]
+    return z_edges
+
+
+def _stack_chain_draw_samples(da) -> np.ndarray:
+    """Stack a posterior DataArray over chain and draw.
+
+    Parameters
+    ----------
+    da : xarray.DataArray
+        Posterior variable with dimensions like (chain, draw, layer).
+
+    Returns
+    -------
+    samples : ndarray, shape (nsamples, nl)
+        Stacked samples.
+    """
+    import xarray as xr
+
+    if not isinstance(da, xr.DataArray):
+        raise TypeError("Expected an xarray.DataArray")
+    samp = da.stack(sample=("chain", "draw")).transpose("sample", ...).values
+    samp = np.asarray(samp, dtype=float)
+    if samp.ndim != 2:
+        raise ValueError(f"Expected a 2-D stacked array, got shape {samp.shape}")
+    return samp
+
+
+def _posterior_samples_for_var(idata, candidates: Sequence[str]) -> np.ndarray | None:
+    """Try to fetch per-layer posterior samples for the first existing variable.
 
     Parameters
     ----------
     idata : arviz.InferenceData
-        InferenceData containing ``idata.posterior[var]``.
-    var : str
-        Posterior variable name (default: ``"theta"``).
+        InferenceData holding posterior samples.
+    candidates : sequence of str
+        Candidate variable names to try in ``idata.posterior``.
 
     Returns
     -------
-    ndarray
-        Array of shape (n_samples_total, n_theta).
-
-    Raises
-    ------
-    ValueError
-        If the posterior variable cannot be reshaped to a vector.
+    samples : ndarray or None
+        Array with shape (nsamples, nl) or None if none of the candidates exist.
     """
-    post = np.asarray(idata.posterior[var])
-    if post.ndim < 3:
-        raise ValueError(
-            f"Posterior variable '{var}' must be at least 3-D (chain,draw,theta). "
-            f"Got shape {post.shape}."
-        )
-    n_chain = post.shape[0]
-    n_draw = post.shape[1]
-    n_theta = int(np.prod(post.shape[2:]))
-    return post.reshape(n_chain * n_draw, n_theta)
+    if idata is None:
+        return None
+
+    post = getattr(idata, "posterior", None)
+    if post is None:
+        return None
+
+    for name in candidates:
+        if name in post:
+            return _stack_chain_draw_samples(post[name])
+    return None
 
 
-def normalize_qpairs(qpairs: Optional[Sequence[Sequence[float]]]) -> np.ndarray:
-    """
-    Normalize percentile/quantile pairs to a numeric array.
+def _summary_arrays_for_var(summary: Mapping, base: str) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    """Get (qlo, med, qhi) arrays for a variable from a summary dictionary.
 
-    The module uses *percentiles* (0..100), e.g.:
-        [(10, 90), (20, 80)]
+    The summary convention is:
+
+    - ``{base}_qlo``
+    - ``{base}_med``
+    - ``{base}_qhi``
 
     Parameters
     ----------
-    qpairs : sequence of pairs or None
-        Each entry must be a length-2 sequence (lo, hi) in percent.
-
-    Returns
-    -------
-    ndarray
-        Array of shape (npairs, 2). Empty array if qpairs is None/empty.
-
-    Raises
-    ------
-    ValueError
-        If percentiles are outside [0, 100].
-    """
-    if qpairs is None:
-        return np.zeros((0, 2), dtype=np.float64)
-    q = np.asarray(qpairs, dtype=np.float64).reshape(-1, 2)
-    if np.any(q < 0.0) or np.any(q > 100.0):
-        raise ValueError("qpairs must be in percent (0..100).")
-    return np.sort(q, axis=1)
-
-
-def get_array(summary: Mapping[str, Any], key: str, dtype=None) -> np.ndarray:
-    """
-    Convenience getter for arrays from the summary dict.
-
-    Parameters
-    ----------
-    summary : Mapping
-        Summary dict returned by ``load_summary_npz``.
-    key : str
-        Key to fetch.
-    dtype : dtype or None
-        If provided, cast the array to this dtype.
-
-    Returns
-    -------
-    ndarray
-        The value as an ndarray, or an empty array if missing / None.
-    """
-    if key not in summary or summary[key] is None:
-        return np.asarray([], dtype=dtype)
-    return np.asarray(summary[key], dtype=dtype)
-
-
-# -----------------------------------------------------------------------------
-# MT derived quantities
-# -----------------------------------------------------------------------------
-
-
-def period_from_freq(freq_hz: np.ndarray) -> np.ndarray:
-    """
-    Convert frequency (Hz) to period (s).
-
-    Parameters
-    ----------
-    freq_hz : ndarray
-        Frequencies in Hz.
-
-    Returns
-    -------
-    ndarray
-        Periods in seconds.
-    """
-    f = np.asarray(freq_hz, dtype=np.float64)
-    return 1.0 / f
-
-
-
-# -----------------------------------------------------------------------------
-# Layered step plotting helpers
-# -----------------------------------------------------------------------------
-
-
-def step_arrays(z_bot: np.ndarray, v_layer: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Build step-plot arrays for a layered model quantity vs depth.
-
-    Parameters
-    ----------
-    z_bot : ndarray, shape (nl,)
-        Layer bottom depths (m), increasing.
-    v_layer : ndarray, shape (nl,)
-        Layer values.
-
-    Returns
-    -------
-    z_step : ndarray, shape (2*nl,)
-        Depth values for step plotting.
-    v_step : ndarray, shape (2*nl,)
-        Repeated layer values for step plotting.
-    """
-    z_bot = np.asarray(z_bot, dtype=np.float64).ravel()
-    v_layer = np.asarray(v_layer, dtype=np.float64).ravel()
-    if z_bot.size != v_layer.size:
-        raise ValueError("z_bot and v_layer must have the same length.")
-
-    nl = z_bot.size
-    z_top = np.r_[0.0, z_bot[:-1]]
-
-    z_step = np.empty(2 * nl, dtype=np.float64)
-    v_step = np.empty(2 * nl, dtype=np.float64)
-    z_step[0::2] = z_top
-    z_step[1::2] = z_bot
-    v_step[0::2] = v_layer
-    v_step[1::2] = v_layer
-    return z_step, v_step
-
-
-def compute_z_bot_from_thickness(h_m: np.ndarray) -> np.ndarray:
-    """Compute layer-bottom depths for plotting.
-
-    Parameters
-    ----------
-    h_m : ndarray, shape (nl,)
-        Layer thicknesses in meters. The last entry is often 0 for a half-space.
-
-    Returns
-    -------
-    ndarray
-        Depth-to-layer-bottom array of shape (nl,). For a half-space (h_m[-1] <= 0),
-        the last bottom depth is extended by a heuristic amount for plotting.
-    """
-    h = np.asarray(h_m, dtype=np.float64).ravel()
-    if h.size == 0:
-        return np.zeros(0, dtype=np.float64)
-    if h.size == 1:
-        return np.array([max(1.0, float(h[0]))], dtype=np.float64)
-    if float(h[-1]) > 0.0:
-        return np.cumsum(h)
-    z_int = np.cumsum(h[:-1])
-    z_last = float(z_int[-1]) if z_int.size else 0.0
-    ext = max(1.0, 0.25 * max(z_last, 1.0))
-    return np.r_[z_int, z_last + ext]
-
-
-def shade_fixed_layers(
-    ax: plt.Axes,
-    z_bot: np.ndarray,
-    is_fix: np.ndarray,
-    *,
-    alpha: float = 0.06,
-) -> plt.Axes:
-    """Shade fixed layers in depth plots.
-
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Axis to draw on.
-    z_bot : ndarray, shape (nl,)
-        Depth-to-layer-bottom array.
-    is_fix : ndarray, shape (nl,)
-        Boolean per-layer flag; True layers will be shaded.
-    alpha : float
-        Transparency for the shading.
-
-    Returns
-    -------
-    ax : matplotlib.axes.Axes
-        The same axis.
-    """
-    z_bot = np.asarray(z_bot, dtype=np.float64).ravel()
-    mask = np.asarray(is_fix, dtype=bool).ravel()
-    if mask.shape != (z_bot.size,):
-        raise ValueError("is_fix must have the same length as z_bot")
-    z_top = np.r_[0.0, z_bot[:-1]]
-    for i in range(z_bot.size):
-        if bool(mask[i]):
-            ax.axhspan(z_top[i], z_bot[i], color="0.85", alpha=float(alpha), zorder=0)
-    return ax
-
-
-def plot_layer_steps(
-    ax: plt.Axes,
-    z_bot: np.ndarray,
-    v_med: np.ndarray,
-    v_qlo: Optional[np.ndarray] = None,
-    v_qhi: Optional[np.ndarray] = None,
-    qpairs: Optional[Sequence[Sequence[float]]] = None,
-    alpha: float = 0.12,
-    label_intervals: bool = False,
-    label_median: str = "median",
-    invert_y: bool = True,
-    is_fix: Optional[np.ndarray] = None,
-    shade_fixed: bool = True,
-    fixed_alpha: float = 0.06,
-) -> plt.Axes:
-    """
-    Plot a layered step function (median) and optional credible envelopes.
-
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Axis to draw on.
-    z_bot : ndarray, shape (nl,)
-        Layer bottom depths.
-    v_med : ndarray, shape (nl,)
-        Median layer values.
-    v_qlo, v_qhi : ndarray or None
-        If given, arrays of shape (npairs, nl) containing lower and upper
-        credible bounds for each percentile pair.
-    qpairs : sequence of pairs or None
-        Percentile pairs in percent, e.g. [(10,90),(20,80)].
-        Only used for labeling if ``label_intervals=True``.
-    alpha : float
-        Transparency for filled envelopes.
-    label_intervals : bool
-        If True, fill envelopes will be given labels "lo-hi%".
-    label_median : str
-        Label for the median line.
-    invert_y : bool
-        If True, invert y-axis (depth increases downward).
-    is_fix : ndarray or None
-        Optional per-layer fixed mask. If provided and ``shade_fixed`` is True, fixed layers
-        are shaded in the background.
-    shade_fixed : bool
-        Enable background shading for fixed layers.
-    fixed_alpha : float
-        Alpha value for fixed-layer shading.
-
-    Returns
-    -------
-    ax : matplotlib.axes.Axes
-        The same axis, for chaining.
-    """
-    z_bot = np.asarray(z_bot, dtype=np.float64).ravel()
-
-    if shade_fixed and is_fix is not None:
-        shade_fixed_layers(ax, z_bot, np.asarray(is_fix, dtype=bool), alpha=float(fixed_alpha))
-    v_med = np.asarray(v_med, dtype=np.float64).ravel()
-
-    if v_qlo is not None and v_qhi is not None:
-        qlo = np.asarray(v_qlo, dtype=np.float64)
-        qhi = np.asarray(v_qhi, dtype=np.float64)
-        if qlo.ndim != 2 or qhi.ndim != 2:
-            raise ValueError("v_qlo and v_qhi must have shape (npairs, nl).")
-        if qlo.shape != qhi.shape:
-            raise ValueError("v_qlo and v_qhi must have the same shape.")
-        if qlo.shape[1] != z_bot.size:
-            raise ValueError("Second dimension of v_qlo/v_qhi must match len(z_bot).")
-
-        q = normalize_qpairs(qpairs) if qpairs is not None else np.zeros((qlo.shape[0], 2))
-        for k in range(qlo.shape[0]):
-            z_s, lo_s = step_arrays(z_bot, qlo[k, :])
-            _, hi_s = step_arrays(z_bot, qhi[k, :])
-            lab = None
-            if label_intervals and q.size and k < q.shape[0]:
-                lab = f"{q[k,0]:.0f}-{q[k,1]:.0f}%"
-            ax.fill_betweenx(z_s, lo_s, hi_s, alpha=alpha, label=lab)
-
-    z_s, v_s = step_arrays(z_bot, v_med)
-    ax.plot(v_s, z_s, lw=1.6, label=label_median)
-    ax.grid(True, alpha=0.2)
-    if invert_y:
-        ax.invert_yaxis()
-    return ax
-
-
-# -----------------------------------------------------------------------------
-# Component index helpers
-# -----------------------------------------------------------------------------
-
-
-def comp_to_ij(comp: str) -> Tuple[int, int]:
-    """
-    Map component string to impedance/phase-tensor indices.
-
-    Parameters
-    ----------
-    comp : str
-        One of: 'xx', 'xy', 'yx', 'yy' (case-insensitive).
-
-    Returns
-    -------
-    (i, j) : tuple of int
-        Indices into a (2,2) tensor.
-    """
-    c = comp.strip().lower()
-    mapping = {"xx": (0, 0), "xy": (0, 1), "yx": (1, 0), "yy": (1, 1)}
-    if c not in mapping:
-        raise ValueError(f"Unknown component '{comp}'. Use one of {list(mapping)}.")
-    return mapping[c]
-
-
-# -----------------------------------------------------------------------------
-# Theta-space plots (one parameter per axis)
-# -----------------------------------------------------------------------------
-
-
-def plot_theta_trace(
-    ax: plt.Axes,
-    idata,
-    idx: int,
-    name: Optional[str] = None,
-    thin: int = 1,
-) -> plt.Axes:
-    """
-    Plot trace lines (all chains) for one theta component onto an axis.
-    """
-    post = np.asarray(idata.posterior["theta"])
-    if post.ndim != 3:
-        post = post.reshape(post.shape[0], post.shape[1], -1)
-
-    n_chain, n_draw, n_theta = post.shape
-    if idx < 0 or idx >= n_theta:
-        raise IndexError(f"idx={idx} out of range (theta has size {n_theta}).")
-
-    x = np.arange(0, n_draw, thin)
-    for c in range(n_chain):
-        ax.plot(x, post[c, ::thin, idx], lw=0.7, alpha=0.85)
-
-    lab = name or f"theta[{idx}]"
-    ax.set_title(lab, fontsize=9)
-    ax.set_xlabel("draw")
-    ax.set_ylabel(lab)
-    ax.grid(True, alpha=0.2)
-    return ax
-
-
-def plot_theta_density(
-    ax: plt.Axes,
-    idata,
-    idx: int,
-    qpairs: Optional[Sequence[Sequence[float]]] = None,
-    name: Optional[str] = None,
-    bins: int = 60,
-    show_median: bool = True,
-    show_qpairs: bool = True,
-) -> plt.Axes:
-    """
-    Plot a normalized histogram (density) for one theta component.
-    """
-    draws = theta_draws(idata, var="theta")
-    if idx < 0 or idx >= draws.shape[1]:
-        raise IndexError(f"idx={idx} out of range (theta has size {draws.shape[1]}).")
-
-    x = draws[:, idx]
-    ax.hist(x, bins=bins, density=True, alpha=0.9)
-
-    if show_median:
-        ax.axvline(np.percentile(x, 50.0), lw=1.0)
-
-    if show_qpairs and qpairs is not None:
-        q = normalize_qpairs(qpairs)
-        for k in range(q.shape[0]):
-            ax.axvline(np.percentile(x, q[k, 0]), lw=0.9, ls="--", alpha=0.8)
-            ax.axvline(np.percentile(x, q[k, 1]), lw=0.9, ls="--", alpha=0.8)
-
-    lab = name or f"theta[{idx}]"
-    ax.set_title(lab, fontsize=9)
-    ax.grid(True, alpha=0.2)
-    return ax
-
-
-# -----------------------------------------------------------------------------
-# Model-space vertical plots (one quantity per axis)
-# -----------------------------------------------------------------------------
-
-
-def plot_depth_resistivity(
-    ax: plt.Axes,
-    summary: Mapping[str, Any],
-    comp: int = 0,
-    quantity: str = "resistivity",
-    use_log10: bool = True,
-    qpairs: Optional[Sequence[Sequence[float]]] = None,
-    label_intervals: bool = False,
-    legend: bool = False,
-    invert_y: bool = True,
-    sigma_floor: float = 1e-18,
-) -> plt.Axes:
-    """
-    Plot depth profiles (layer steps) and credible envelopes for one principal component.
-
-    This function is intended for *layered* (piecewise constant) model parameters,
-    plotted versus depth-to-layer-bottom.
-
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Axis to draw on.
     summary : mapping
-        Summary dict loaded from ``*_pmc_summary.npz``.
-        Must contain ``z_bot_med`` plus medians for the chosen quantity.
-    comp : int
-        Principal component index (0..2).
-    quantity : str
-        Either ``"resistivity"`` (default) or ``"conductivity"``.
-        Conductivity is plotted as ``sigma = 1/rho`` in S/m.
-    use_log10 : bool
-        If True, plot on a log10 scale in x (i.e., x values are log10 of the quantity).
-        If False, plot the quantity on a linear x-axis (but you may still set log-scale
-        on the axis outside this function if desired).
-    qpairs : sequence of pairs or None
-        Credible-interval pairs (in percent) to label envelopes when present.
-        If None, uses ``summary.get("model_qpairs")``.
-    label_intervals : bool
-        If True, add labels like "10-90%" for each filled interval.
-    legend : bool
-        If True, draw a legend.
-    invert_y : bool
-        If True, invert y-axis so depth increases downward (positive down).
-    sigma_floor : float
-        Floor for conductivity to avoid division-by-zero when converting 1/rho.
-        Only used for ``quantity="conductivity"``.
+        Summary dictionary.
+    base : str
+        Base name.
 
     Returns
     -------
-    ax : matplotlib.axes.Axes
-        The same axis, for chaining.
+    (qlo, med, qhi) : tuple of ndarray or None
+        Arrays with shape (nl,) if present, else None.
     """
-    quantity_n = str(quantity).strip().lower()
-    if quantity_n not in {"resistivity", "conductivity"}:
-        raise ValueError("quantity must be 'resistivity' or 'conductivity'.")
+    kqlo = f"{base}_qlo"
+    kmed = f"{base}_med"
+    kqhi = f"{base}_qhi"
+    if kqlo in summary and kmed in summary and kqhi in summary:
+        return (
+            np.asarray(summary[kqlo], dtype=float).ravel(),
+            np.asarray(summary[kmed], dtype=float).ravel(),
+            np.asarray(summary[kqhi], dtype=float).ravel(),
+        )
+    return None
 
-    z_bot = np.asarray(summary.get("z_bot_med", np.array([])), dtype=np.float64).ravel()
-    # Robust fallback: derive from h_m_med if needed
-    if z_bot.size == 0 and "h_m_med" in summary:
-        z_bot = compute_z_bot_from_thickness(np.asarray(summary["h_m_med"], dtype=np.float64))
-    q = qpairs if qpairs is not None else summary.get("model_qpairs", None)
 
-    # Base arrays in resistivity space (Ohm·m)
-    rop_med = get_array(summary, "rop_med", dtype=np.float64)
-    log10_rop_med = get_array(summary, "log10_rop_med", dtype=np.float64)
-    rop_qlo = get_array(summary, "rop_qlo", dtype=np.float64)
-    rop_qhi = get_array(summary, "rop_qhi", dtype=np.float64)
-    log10_rop_qlo = get_array(summary, "log10_rop_qlo", dtype=np.float64)
-    log10_rop_qhi = get_array(summary, "log10_rop_qhi", dtype=np.float64)
+def _safe_log10(x: np.ndarray) -> np.ndarray:
+    """Compute log10(x) with a tiny floor to avoid ``-inf``.
+
+    Parameters
+    ----------
+    x : ndarray
+        Positive array.
+
+    Returns
+    -------
+    ndarray
+        ``log10(max(x, tiny))``.
+    """
+    x = np.asarray(x, dtype=float)
+    tiny = np.finfo(float).tiny
+    return np.log10(np.maximum(x, tiny))
+
+
+def _fill_betweenx_step(ax, y_edges: np.ndarray, x1: np.ndarray, x2: np.ndarray, *, alpha: float = 0.25):
+    """Fill between two step profiles along the depth axis.
+
+    This tries ``ax.fill_betweenx(..., step='post')`` and falls back to a
+    manual stair expansion for older Matplotlib versions.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Target axes.
+    y_edges : ndarray, shape (nl,)
+        Depth edges.
+    x1, x2 : ndarray, shape (nl,)
+        Lower and upper envelope values.
+    alpha : float, default 0.25
+        Fill transparency.
+
+    Returns
+    -------
+    None
+    """
+    y_edges = np.asarray(y_edges, dtype=float).ravel()
+    x1 = np.asarray(x1, dtype=float).ravel()
+    x2 = np.asarray(x2, dtype=float).ravel()
+
+    if not (y_edges.size == x1.size == x2.size):
+        raise ValueError("y_edges, x1, x2 must have the same length")
+
+    try:
+        ax.fill_betweenx(y_edges, x1, x2, alpha=alpha, step="post", linewidth=0)
+        return
+    except TypeError:
+        pass
+
+    # Manual expansion: repeat values to draw rectangular steps
+    # y: [z0, z0, z1, z1, ..., z_{n-1}, z_{n-1}]
+    y = np.repeat(y_edges, 2)
+    # x: [x0, x0, x1, x1, ..., x_{n-1}, x_{n-1}]
+    x1s = np.repeat(x1, 2)
+    x2s = np.repeat(x2, 2)
+    ax.fill_betweenx(y, x1s, x2s, alpha=alpha, linewidth=0)
+
+
+def plot_vertical_profile(
+    ax,
+    *,
+    h_m: np.ndarray,
+    values: np.ndarray,
+    label: str,
+    use_log10: bool = False,
+    xlabel: str | None = None,
+    linestyle: str = "-",
+):
+    """Plot a single step-style vertical profile.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Target axes.
+    h_m : ndarray, shape (nl,)
+        Thickness array.
+    values : ndarray, shape (nl,)
+        Per-layer values.
+    label : str
+        Legend label.
+    use_log10 : bool, default False
+        If True, plot ``log10(values)``.
+    xlabel : str or None
+        Optional x-axis label.
+    linestyle : str, default "-"
+        Line style.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The modified axes.
+    """
+    z_edges = depth_edges_from_h(h_m)
+    v = np.asarray(values, dtype=float).ravel()
+    if v.size != z_edges.size:
+        raise ValueError(f"values must have length {z_edges.size}, got {v.size}")
+
+    x = _safe_log10(v) if use_log10 else v
+    ax.step(x, z_edges, where="post", label=label, linestyle=linestyle)
+
+    ax.invert_yaxis()
+    ax.set_ylabel("depth [m]")
+    if xlabel:
+        ax.set_xlabel(xlabel)
+    ax.grid(True, which="both", alpha=0.3)
+    ax.legend()
+    return ax
+
+
+def plot_vertical_envelope(
+    ax,
+    *,
+    h_m: np.ndarray,
+    qlo: np.ndarray,
+    med: np.ndarray,
+    qhi: np.ndarray,
+    label: str,
+    use_log10: bool = False,
+    xlabel: str | None = None,
+    shade: bool = True,
+    show_quantile_lines: bool = False,
+):
+    """Plot a median step profile with an optional shaded quantile envelope.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Target axes.
+    h_m : ndarray, shape (nl,)
+        Thickness array.
+    qlo, med, qhi : ndarray, shape (nl,)
+        Lower quantile, median, upper quantile arrays.
+    label : str
+        Base label used in the legend.
+    use_log10 : bool, default False
+        If True, plot in log10 space.
+    xlabel : str or None
+        Optional x-axis label.
+    shade : bool, default True
+        If True, draw a translucent band between qlo and qhi.
+    show_quantile_lines : bool, default False
+        If True, draw dashed qlo/qhi step lines in addition to the band.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The modified axes.
+    """
+    z_edges = depth_edges_from_h(h_m)
+    qlo = np.asarray(qlo, dtype=float).ravel()
+    med = np.asarray(med, dtype=float).ravel()
+    qhi = np.asarray(qhi, dtype=float).ravel()
+
+    if not (qlo.size == med.size == qhi.size == z_edges.size):
+        raise ValueError("qlo/med/qhi must all match the number of layers")
 
     if use_log10:
-        if quantity_n == "resistivity":
-            if log10_rop_med.size:
-                med = np.asarray(log10_rop_med, dtype=np.float64)[:, comp]
-            else:
-                if not rop_med.size:
-                    raise KeyError("summary must contain rop_med or log10_rop_med")
-                med = np.log10(np.asarray(rop_med, dtype=np.float64)[:, comp])
-
-            qlo_all = log10_rop_qlo if log10_rop_qlo.size else (np.log10(rop_qlo) if rop_qlo.size else np.array([]))
-            qhi_all = log10_rop_qhi if log10_rop_qhi.size else (np.log10(rop_qhi) if rop_qhi.size else np.array([]))
-            xlabel = "log10 ρ  [Ohm·m]" if quantity_n == "resistivity" else "log10 σ  [S/m]"
-        else:
-            # conductivity in log10: log10(sigma)= -log10(rho)
-            if log10_rop_med.size:
-                med = -np.asarray(log10_rop_med, dtype=np.float64)[:, comp]
-            else:
-                if not rop_med.size:
-                    raise KeyError("summary must contain rop_med or log10_rop_med")
-                med = np.log10(np.maximum(sigma_floor, 1.0 / np.asarray(rop_med, dtype=np.float64)[:, comp]))
-
-            # Credible bounds: convert in resistivity space, then transform
-            if log10_rop_qlo.size and log10_rop_qhi.size:
-                qlo_all = -np.asarray(log10_rop_qhi, dtype=np.float64)  # note swap
-                qhi_all = -np.asarray(log10_rop_qlo, dtype=np.float64)
-            elif rop_qlo.size and rop_qhi.size:
-                qlo_all = np.log10(np.maximum(sigma_floor, 1.0 / np.asarray(rop_qhi, dtype=np.float64)))  # swap
-                qhi_all = np.log10(np.maximum(sigma_floor, 1.0 / np.asarray(rop_qlo, dtype=np.float64)))
-            else:
-                qlo_all = np.array([])
-                qhi_all = np.array([])
-            xlabel = "log10 σ  [S/m]"
+        qlo_p = _safe_log10(qlo)
+        med_p = _safe_log10(med)
+        qhi_p = _safe_log10(qhi)
     else:
-        if quantity_n == "resistivity":
-            if not rop_med.size:
-                raise KeyError("summary must contain rop_med for use_log10=False")
-            med = np.asarray(rop_med, dtype=np.float64)[:, comp]
-            qlo_all = rop_qlo
-            qhi_all = rop_qhi
-            xlabel = "ρ  [Ohm·m]"
+        qlo_p, med_p, qhi_p = qlo, med, qhi
+
+    line = ax.step(med_p, z_edges, where="post", label=f"{label} median")
+
+    if shade:
+        # Use the median line color for the envelope (explicit color reduces confusion).
+        col = line[0].get_color()
+        _fill_betweenx_step(ax, z_edges, qlo_p, qhi_p, alpha=0.25)
+        for coll in ax.collections[-1:]:
+            coll.set_facecolor(col)
+
+    if show_quantile_lines:
+        ax.step(qlo_p, z_edges, where="post", linestyle="--", label=f"{label} qlo")
+        ax.step(qhi_p, z_edges, where="post", linestyle="--", label=f"{label} qhi")
+
+    ax.invert_yaxis()
+    ax.set_ylabel("depth [m]")
+    if xlabel:
+        ax.set_xlabel(xlabel)
+    ax.grid(True, which="both", alpha=0.3)
+    ax.legend()
+    return ax
+
+
+def plot_vertical_bands_from_samples(
+    ax,
+    *,
+    h_m: np.ndarray,
+    samples: np.ndarray,
+    qpairs: Sequence[Sequence[float]] = ((0.1, 0.9),),
+    label: str,
+    use_log10: bool = False,
+    xlabel: str | None = None,
+    show_quantile_lines: bool = False,
+):
+    """Plot median + one or more shaded quantile bands from posterior samples.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Target axes.
+    h_m : ndarray, shape (nl,)
+        Thickness array.
+    samples : ndarray, shape (nsamples, nl)
+        Posterior samples for a per-layer parameter.
+    qpairs : sequence of (qlo, qhi)
+        Quantile pairs (in [0, 1]) to shade. Outer bands are drawn first.
+    label : str
+        Base label used in the legend.
+    use_log10 : bool, default False
+        If True, compute and plot quantiles in log10 space.
+    xlabel : str or None
+        Optional x-axis label.
+    show_quantile_lines : bool, default False
+        If True, also plot dashed lines for each band edge.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The modified axes.
+    """
+    z_edges = depth_edges_from_h(h_m)
+    samples = np.asarray(samples, dtype=float)
+    if samples.ndim != 2:
+        raise ValueError("samples must have shape (nsamples, nl)")
+    if samples.shape[1] != z_edges.size:
+        raise ValueError("samples second dimension must match number of layers")
+
+    # Work in requested space
+    ss = _safe_log10(samples) if use_log10 else samples
+
+    med = np.quantile(ss, 0.5, axis=0)
+    line = ax.step(med, z_edges, where="post", label=f"{label} median")
+    col = line[0].get_color()
+
+    # Draw outer -> inner so inner remains visible
+    qpairs_sorted = sorted([(float(a), float(b)) for a, b in qpairs], key=lambda t: (t[1] - t[0]), reverse=True)
+    nband = max(len(qpairs_sorted), 1)
+
+    for i, (qlo, qhi) in enumerate(qpairs_sorted):
+        lo = np.quantile(ss, qlo, axis=0)
+        hi = np.quantile(ss, qhi, axis=0)
+        # Alpha increases towards inner bands
+        alpha = 0.15 + 0.25 * (i + 1) / nband
+        _fill_betweenx_step(ax, z_edges, lo, hi, alpha=alpha)
+        # enforce same color
+        for coll in ax.collections[-1:]:
+            coll.set_facecolor(col)
+
+        if show_quantile_lines:
+            ax.step(lo, z_edges, where="post", linestyle="--", color=col, label=f"{label} q={qlo:.2f}")
+            ax.step(hi, z_edges, where="post", linestyle="--", color=col, label=f"{label} q={qhi:.2f}")
+
+    ax.invert_yaxis()
+    ax.set_ylabel("depth [m]")
+    if xlabel:
+        ax.set_xlabel(xlabel)
+    ax.grid(True, which="both", alpha=0.3)
+    ax.legend()
+    return ax
+
+
+def _param_meta(param_domain: str, param_set: str) -> list[dict]:
+    """Return plotting metadata for the requested domain and parameter set.
+
+    Returns a list of 3 dicts with keys:
+
+    - ``name``: canonical internal name (e.g. "rho_min")
+    - ``label``: label string
+    - ``xlabel``: x-axis label
+    - ``use_log10``: whether to plot in log10
+    - ``idata_candidates``: variable name candidates in idata.posterior
+    - ``summary_base``: base key prefix in summary (e.g. "rho_min")
+
+    Parameters
+    ----------
+    param_domain : {"rho", "sigma"}
+        Resistivity or conductivity domain.
+    param_set : {"minmax", "max_anifac"}
+        Parameter set.
+
+    Returns
+    -------
+    list of dict
+        Exactly 3 parameter descriptors.
+    """
+    dom = str(param_domain).lower()
+    pset = str(param_set).lower()
+    if dom not in {"rho", "sigma"}:
+        raise ValueError("param_domain must be 'rho' or 'sigma'")
+    if pset not in {"minmax", "max_anifac"}:
+        raise ValueError("param_set must be 'minmax' or 'max_anifac'")
+
+    if dom == "rho" and pset == "minmax":
+        return [
+            {
+                "name": "rho_min",
+                "label": r"$\rho_{\min}$",
+                "xlabel": r"$\log_{10}(\rho_{\min})$ [$\Omega\,m$]",
+                "use_log10": True,
+                "idata_candidates": ("rho_min_ohmm", "rho_min"),
+                "summary_base": "rho_min",
+            },
+            {
+                "name": "rho_max",
+                "label": r"$\rho_{\max}$",
+                "xlabel": r"$\log_{10}(\rho_{\max})$ [$\Omega\,m$]",
+                "use_log10": True,
+                "idata_candidates": ("rho_max_ohmm", "rho_max"),
+                "summary_base": "rho_max",
+            },
+            {
+                "name": "strike",
+                "label": "strike",
+                "xlabel": "strike [deg]",
+                "use_log10": False,
+                "idata_candidates": ("strike_deg", "strike"),
+                "summary_base": "strike",
+            },
+        ]
+
+    if dom == "rho" and pset == "max_anifac":
+        return [
+            {
+                "name": "rho_max",
+                "label": r"$\rho_{\max}$",
+                "xlabel": r"$\log_{10}(\rho_{\max})$ [$\Omega\,m$]",
+                "use_log10": True,
+                "idata_candidates": ("rho_max_ohmm", "rho_max"),
+                "summary_base": "rho_max",
+            },
+            {
+                "name": "rho_anifac",
+                "label": r"$a_\rho=\sqrt{\rho_{\max}/\rho_{\min}}$",
+                "xlabel": r"$\log_{10}(a_\rho)$",
+                "use_log10": True,
+                "idata_candidates": ("rho_anifac", "anifac_rho", "anifac"),
+                "summary_base": "rho_anifac",
+            },
+            {
+                "name": "strike",
+                "label": "strike",
+                "xlabel": "strike [deg]",
+                "use_log10": False,
+                "idata_candidates": ("strike_deg", "strike"),
+                "summary_base": "strike",
+            },
+        ]
+
+    if dom == "sigma" and pset == "minmax":
+        return [
+            {
+                "name": "sigma_min",
+                "label": r"$\sigma_{\min}$",
+                "xlabel": r"$\log_{10}(\sigma_{\min})$ [S/m]",
+                "use_log10": True,
+                "idata_candidates": ("sigma_min", "sig_min"),
+                "summary_base": "sigma_min",
+            },
+            {
+                "name": "sigma_max",
+                "label": r"$\sigma_{\max}$",
+                "xlabel": r"$\log_{10}(\sigma_{\max})$ [S/m]",
+                "use_log10": True,
+                "idata_candidates": ("sigma_max", "sig_max"),
+                "summary_base": "sigma_max",
+            },
+            {
+                "name": "strike",
+                "label": "strike",
+                "xlabel": "strike [deg]",
+                "use_log10": False,
+                "idata_candidates": ("strike_deg", "strike"),
+                "summary_base": "strike",
+            },
+        ]
+
+    # dom == "sigma" and pset == "max_anifac"
+    return [
+        {
+            "name": "sigma_max",
+            "label": r"$\sigma_{\max}$",
+            "xlabel": r"$\log_{10}(\sigma_{\max})$ [S/m]",
+            "use_log10": True,
+            "idata_candidates": ("sigma_max", "sig_max"),
+            "summary_base": "sigma_max",
+        },
+        {
+            "name": "sigma_anifac",
+            "label": r"$a_\sigma=\sqrt{\sigma_{\max}/\sigma_{\min}}$",
+            "xlabel": r"$\log_{10}(a_\sigma)$",
+            "use_log10": True,
+            "idata_candidates": ("sigma_anifac", "anifac_sigma", "anifac"),
+            "summary_base": "sigma_anifac",
+        },
+        {
+            "name": "strike",
+            "label": "strike",
+            "xlabel": "strike [deg]",
+            "use_log10": False,
+            "idata_candidates": ("strike_deg", "strike"),
+            "summary_base": "strike",
+        },
+    ]
+
+
+def _derive_anifac_from_minmax(values_max: np.ndarray, values_min: np.ndarray) -> np.ndarray:
+    """Derive anisotropy factor samples/arrays from min/max values.
+
+    The convention used in the simplified model is:
+
+    - Resistivity anisotropy factor: ``a_rho = sqrt(rho_max / rho_min)``
+    - Conductivity anisotropy factor: ``a_sigma = sqrt(sigma_max / sigma_min)``
+
+    Parameters
+    ----------
+    values_max, values_min : ndarray
+        Arrays with identical shapes. Can be per-layer vectors (nl,) or
+        stacked samples (nsamples, nl).
+
+    Returns
+    -------
+    ndarray
+        ``sqrt(max/min)`` with a tiny floor on the denominator.
+    """
+    vmax = np.asarray(values_max, dtype=float)
+    vmin = np.asarray(values_min, dtype=float)
+    tiny = np.finfo(float).tiny
+    return np.sqrt(np.maximum(vmax, tiny) / np.maximum(vmin, tiny))
+
+
+def _get_h_m_from_summary_or_idata(summary: Mapping | None, idata) -> np.ndarray:
+    """Get the layer thickness vector from either summary or idata.
+
+    Parameters
+    ----------
+    summary : mapping or None
+        Summary dictionary (preferred).
+    idata : arviz.InferenceData
+        InferenceData (fallback).
+
+    Returns
+    -------
+    h_m : ndarray
+        Thickness vector.
+    """
+    if summary is not None:
+        if "h_m0" in summary:
+            return np.asarray(summary["h_m0"], dtype=float).ravel()
+        if "h_m" in summary:
+            return np.asarray(summary["h_m"], dtype=float).ravel()
+
+    if idata is not None:
+        post = getattr(idata, "posterior", None)
+        if post is not None and "h_m" in post:
+            # take median thickness if stored as posterior var
+            samp = _stack_chain_draw_samples(post["h_m"])
+            return np.quantile(samp, 0.5, axis=0)
+
+    raise KeyError("Could not find thickness vector (expected 'h_m0' in summary).")
+
+
+def plot_paramset_threepanel(
+    axs,
+    *,
+    summary: Mapping | None = None,
+    idata=None,
+    param_domain: str = "rho",
+    param_set: str = "minmax",
+    qpairs: Sequence[Sequence[float]] = ((0.1, 0.9),),
+    prefer_idata: bool = True,
+    show_quantile_lines: bool = False,
+    overlay_single: Mapping[str, np.ndarray] | None = None,
+):
+    """Plot a three-panel vertical profile figure for one of the parameter sets.
+
+    Parameters
+    ----------
+    axs : sequence of matplotlib.axes.Axes
+        Three axes (top-to-bottom) typically created by:
+
+        ``fig, axs = plt.subplots(3, 1, figsize=(8, 8))``
+
+    summary : mapping or None
+        Summary dictionary loaded by :func:`load_summary_npz`. Used as fallback
+        source of (qlo, med, qhi) arrays.
+    idata : arviz.InferenceData or None
+        InferenceData loaded by :func:`open_idata`. If present and
+        ``prefer_idata=True``, posterior samples are used to compute quantile
+        bands for each parameter (supports multiple ``qpairs``).
+    param_domain : {"rho", "sigma"}, default "rho"
+        Resistivity or conductivity domain.
+    param_set : {"minmax", "max_anifac"}, default "minmax"
+        Which 3-parameter set to plot.
+    qpairs : sequence of (qlo, qhi), default ((0.1, 0.9),)
+        Quantile pairs for bands (only used when drawing from samples).
+    prefer_idata : bool, default True
+        Prefer deriving bands from ``idata`` when available.
+    show_quantile_lines : bool, default False
+        If True, also show band edge lines.
+    overlay_single : mapping or None
+        Optional single model to overlay. Expected to contain keys matching the
+        selected parameter set (e.g. ``rho_min``/``rho_max``/``strike`` or
+        ``rho_max``/``rho_anifac``/``strike``) and a thickness vector
+        ``h_m`` or ``h_m0``.
+
+    Returns
+    -------
+    axs
+        The input axes, after plotting.
+    """
+    axs = list(axs)
+    if len(axs) != 3:
+        raise ValueError("axs must be a sequence of 3 axes")
+
+    h_m = _get_h_m_from_summary_or_idata(summary, idata)
+
+    metas = _param_meta(param_domain, param_set)
+
+    for ax, meta in zip(axs, metas):
+        name = meta["name"]
+        label = meta["label"]
+        xlabel = meta["xlabel"]
+        use_log10 = bool(meta["use_log10"])
+
+        # 1) Use posterior samples if possible
+        samples = None
+        if prefer_idata and idata is not None:
+            samples = _posterior_samples_for_var(idata, meta["idata_candidates"])
+
+            # If conductivity variables are not stored, try to derive them from
+            # resistivity variables (sigma = 1/rho). This keeps the
+            # "conductivity plotting" option usable even if only rho was saved.
+            if samples is None and param_domain.lower() == "sigma" and name in {"sigma_min", "sigma_max"}:
+                if name == "sigma_min":
+                    # sigma_min = 1 / rho_max
+                    r = _posterior_samples_for_var(idata, ("rho_max_ohmm", "rho_max"))
+                else:
+                    # sigma_max = 1 / rho_min
+                    r = _posterior_samples_for_var(idata, ("rho_min_ohmm", "rho_min"))
+                if r is not None:
+                    tiny = np.finfo(float).tiny
+                    samples = 1.0 / np.maximum(r, tiny)
+
+            # If an explicit anifac variable is not available, try to derive it
+            # from min/max variables present in the posterior.
+            if samples is None and meta["name"].endswith("anifac"):
+                if param_domain.lower() == "rho":
+                    smax = _posterior_samples_for_var(idata, ("rho_max_ohmm", "rho_max"))
+                    smin = _posterior_samples_for_var(idata, ("rho_min_ohmm", "rho_min"))
+                else:
+                    smax = _posterior_samples_for_var(idata, ("sigma_max", "sig_max"))
+                    smin = _posterior_samples_for_var(idata, ("sigma_min", "sig_min"))
+                if smax is not None and smin is not None:
+                    samples = _derive_anifac_from_minmax(smax, smin)
+
+        if samples is not None:
+            plot_vertical_bands_from_samples(
+                ax,
+                h_m=h_m,
+                samples=samples,
+                qpairs=qpairs,
+                label=label,
+                use_log10=use_log10,
+                xlabel=xlabel,
+                show_quantile_lines=show_quantile_lines,
+            )
         else:
-            if not rop_med.size:
-                raise KeyError("summary must contain rop_med for use_log10=False")
-            med = np.maximum(sigma_floor, 1.0 / np.asarray(rop_med, dtype=np.float64)[:, comp])
-            if rop_qlo.size and rop_qhi.size:
-                qlo_all = np.maximum(sigma_floor, 1.0 / np.asarray(rop_qhi, dtype=np.float64))  # swap
-                qhi_all = np.maximum(sigma_floor, 1.0 / np.asarray(rop_qlo, dtype=np.float64))
+            # 2) Fall back to summary arrays
+            if summary is None:
+                raise KeyError(
+                    f"No posterior samples for '{name}' and no summary provided to fall back on."
+                )
+            trip = _summary_arrays_for_var(summary, meta["summary_base"])
+
+            # Derive conductivity arrays from resistivity arrays if needed
+            if trip is None and param_domain.lower() == "sigma" and meta["name"] in {"sigma_min", "sigma_max"}:
+                if meta["name"] == "sigma_min":
+                    # sigma_min = 1 / rho_max
+                    rr = _summary_arrays_for_var(summary, "rho_max")
+                else:
+                    # sigma_max = 1 / rho_min
+                    rr = _summary_arrays_for_var(summary, "rho_min")
+                if rr is not None:
+                    tiny = np.finfo(float).tiny
+                    qlo = 1.0 / np.maximum(rr[0], tiny)
+                    med = 1.0 / np.maximum(rr[1], tiny)
+                    qhi = 1.0 / np.maximum(rr[2], tiny)
+                    trip = (qlo, med, qhi)
+
+            # Derive anifac from min/max arrays if needed
+            if trip is None and meta["name"].endswith("anifac"):
+                if param_domain.lower() == "rho":
+                    tmax = _summary_arrays_for_var(summary, "rho_max")
+                    tmin = _summary_arrays_for_var(summary, "rho_min")
+                else:
+                    tmax = _summary_arrays_for_var(summary, "sigma_max")
+                    tmin = _summary_arrays_for_var(summary, "sigma_min")
+                if tmax is not None and tmin is not None:
+                    qlo = _derive_anifac_from_minmax(tmax[0], tmin[0])
+                    med = _derive_anifac_from_minmax(tmax[1], tmin[1])
+                    qhi = _derive_anifac_from_minmax(tmax[2], tmin[2])
+                    trip = (qlo, med, qhi)
+
+            if trip is None:
+                raise KeyError(
+                    f"Summary does not contain qlo/med/qhi for '{meta['summary_base']}'."
+                )
+
+            qlo, med, qhi = trip
+            plot_vertical_envelope(
+                ax,
+                h_m=h_m,
+                qlo=qlo,
+                med=med,
+                qhi=qhi,
+                label=label,
+                use_log10=use_log10,
+                xlabel=xlabel,
+                shade=True,
+                show_quantile_lines=show_quantile_lines,
+            )
+
+        # Optional overlay of a single profile
+        if overlay_single is not None:
+            if "h_m" in overlay_single:
+                h_m_ov = np.asarray(overlay_single["h_m"], dtype=float).ravel()
+            elif "h_m0" in overlay_single:
+                h_m_ov = np.asarray(overlay_single["h_m0"], dtype=float).ravel()
             else:
-                qlo_all = np.array([])
-                qhi_all = np.array([])
-            xlabel = "σ  [S/m]"
+                h_m_ov = h_m
 
-    v_qlo = v_qhi = None
-    if qlo_all.size and qhi_all.size:
-        v_qlo = np.asarray(qlo_all, dtype=np.float64)[:, :, comp]
-        v_qhi = np.asarray(qhi_all, dtype=np.float64)[:, :, comp]
-    if z_bot.size != np.asarray(med, dtype=np.float64).ravel().size and "h_m_med" in summary:
-        z_bot = compute_z_bot_from_thickness(np.asarray(summary["h_m_med"], dtype=np.float64))
+            # Accept either canonical key or summary-like key
+            ov_val = None
+            for k in (name, f"{name}_ohmm", f"{name}_deg"):
+                if k in overlay_single:
+                    ov_val = np.asarray(overlay_single[k], dtype=float).ravel()
+                    break
 
+            # Derive overlay anifac from overlay min/max if not present
+            if ov_val is None and name.endswith("anifac"):
+                if param_domain.lower() == "rho":
+                    vmax = overlay_single.get("rho_max") or overlay_single.get("rho_max_ohmm")
+                    vmin = overlay_single.get("rho_min") or overlay_single.get("rho_min_ohmm")
+                else:
+                    vmax = overlay_single.get("sigma_max")
+                    vmin = overlay_single.get("sigma_min")
+                if vmax is not None and vmin is not None:
+                    ov_val = _derive_anifac_from_minmax(vmax, vmin).ravel()
+            if ov_val is not None:
+                z_edges = depth_edges_from_h(h_m_ov)
+                x = _safe_log10(ov_val) if use_log10 else ov_val
+                ax.step(x, z_edges, where="post", linestyle=":", label=f"{label} (single)")
+                ax.legend()
 
-    plot_layer_steps(
-        ax,
-        z_bot,
-        med,
-        v_qlo=v_qlo,
-        v_qhi=v_qhi,
-        qpairs=q,
-        label_intervals=label_intervals,
-        invert_y=invert_y,
-        is_fix=summary.get("is_fix", None),
-    )
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel("depth [m]")
-    ax.set_title(f"component {comp+1}", fontsize=10)
-    if legend:
-        ax.legend(fontsize=8, loc="best")
-    return ax
-
-
-def plot_vertical_resistivity(
-    ax: plt.Axes,
-    summary: Mapping[str, Any],
-    comp: int = 0,
-    use_log10: bool = True,
-    qpairs: Optional[Sequence[Sequence[float]]] = None,
-    label_intervals: bool = False,
-    legend: bool = False,
-) -> plt.Axes:
-    """
-    Deprecated wrapper for backward compatibility.
-
-    Use :func:`plot_depth_resistivity` instead.
-    """
-    return plot_depth_resistivity(
-        ax=ax,
-        summary=summary,
-        comp=comp,
-        quantity="resistivity",
-        use_log10=use_log10,
-        qpairs=qpairs,
-        label_intervals=label_intervals,
-        legend=legend,
-    )
-
-
-def plot_depth_angle(
-    ax: plt.Axes,
-    summary: Mapping[str, Any],
-    key: str = "ustr_deg",
-    qpairs: Optional[Sequence[Sequence[float]]] = None,
-    label_intervals: bool = False,
-    legend: bool = False,
-    invert_y: bool = True,
-) -> plt.Axes:
-    """
-    Plot depth profiles (layer steps) and credible envelopes for one Euler-angle field.
-
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Axis to draw on.
-    summary : mapping
-        Summary dict loaded from ``*_pmc_summary.npz``.
-        Must contain ``z_bot_med`` and the chosen angle key.
-    key : str
-        One of: ``"ustr_deg"``, ``"udip_deg"``, ``"usla_deg"`` (or any other
-        field stored in the summary with suffixes ``_med/_qlo/_qhi``).
-    qpairs, label_intervals, legend : see :func:`plot_depth_resistivity`.
-    invert_y : bool
-        If True, invert y-axis so depth increases downward (positive down).
-
-    Returns
-    -------
-    ax : matplotlib.axes.Axes
-        The same axis, for chaining.
-    """
-    z_bot = np.asarray(summary.get("z_bot_med", np.array([])), dtype=np.float64).ravel()
-    # Robust fallback: derive from h_m_med if needed
-    if z_bot.size == 0 and "h_m_med" in summary:
-        z_bot = compute_z_bot_from_thickness(np.asarray(summary["h_m_med"], dtype=np.float64))
-    q = qpairs if qpairs is not None else summary.get("model_qpairs", None)
-
-    med = np.asarray(summary[f"{key}_med"], dtype=np.float64).ravel()
-    qlo = get_array(summary, f"{key}_qlo", dtype=np.float64)
-    qhi = get_array(summary, f"{key}_qhi", dtype=np.float64)
-    if z_bot.size != np.asarray(med, dtype=np.float64).ravel().size and "h_m_med" in summary:
-        z_bot = compute_z_bot_from_thickness(np.asarray(summary["h_m_med"], dtype=np.float64))
-
-
-    plot_layer_steps(
-        ax,
-        z_bot,
-        med,
-        v_qlo=(qlo if qlo.size else None),
-        v_qhi=(qhi if qhi.size else None),
-        qpairs=q,
-        label_intervals=label_intervals,
-        invert_y=invert_y,
-        is_fix=summary.get("is_fix", None),
-    )
-    ax.set_xlabel("angle [deg]")
-    ax.set_ylabel("depth [m]")
-    ax.set_title(key, fontsize=10)
-    if legend:
-        ax.legend(fontsize=8, loc="best")
-    return ax
-
-
-def plot_vertical_angle(
-    ax: plt.Axes,
-    summary: Mapping[str, Any],
-    key: str = "ustr_deg",
-    qpairs: Optional[Sequence[Sequence[float]]] = None,
-    label_intervals: bool = False,
-    legend: bool = False,
-) -> plt.Axes:
-    """
-    Deprecated wrapper for backward compatibility.
-
-    Use :func:`plot_depth_angle` instead.
-    """
-    return plot_depth_angle(
-        ax=ax,
-        summary=summary,
-        key=key,
-        qpairs=qpairs,
-        label_intervals=label_intervals,
-        legend=legend,
-    )
-
-
-def plot_depth_thickness(
-    ax: plt.Axes,
-    summary: Mapping[str, Any],
-    qpairs: Optional[Sequence[Sequence[float]]] = None,
-    label_intervals: bool = False,
-    legend: bool = False,
-    invert_y: bool = True,
-) -> plt.Axes:
-    """
-    Plot layer thickness as a depth-referenced step plot with optional credible envelopes.
-
-    Note
-    ----
-    Thickness is a per-layer quantity; plotting it against depth can still be useful
-    for comparing thickness credibility to the depth of interfaces.
-
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Axis to draw on.
-    summary : mapping
-        Summary dict loaded from ``*_pmc_summary.npz``.
-        Must contain ``z_bot_med`` and ``h_m_med`` (unless thickness is fixed).
-    qpairs, label_intervals, legend : see :func:`plot_depth_resistivity`.
-    invert_y : bool
-        If True, invert y-axis so depth increases downward (positive down).
-
-    Returns
-    -------
-    ax : matplotlib.axes.Axes
-        The same axis, for chaining.
-    """
-    z_bot = np.asarray(summary.get("z_bot_med", np.array([])), dtype=np.float64).ravel()
-    # Robust fallback: derive from h_m_med if needed
-    if z_bot.size == 0 and "h_m_med" in summary:
-        z_bot = compute_z_bot_from_thickness(np.asarray(summary["h_m_med"], dtype=np.float64))
-    q = qpairs if qpairs is not None else summary.get("model_qpairs", None)
-
-    if "h_m_med" not in summary:
-        raise KeyError("summary does not contain h_m_med (thickness may have been fixed).")
-
-    med = np.asarray(summary["h_m_med"], dtype=np.float64).ravel()
-    qlo = get_array(summary, "h_m_qlo", dtype=np.float64)
-    qhi = get_array(summary, "h_m_qhi", dtype=np.float64)
-    if z_bot.size != np.asarray(med, dtype=np.float64).ravel().size and "h_m_med" in summary:
-        z_bot = compute_z_bot_from_thickness(np.asarray(summary["h_m_med"], dtype=np.float64))
-
-
-    plot_layer_steps(
-        ax,
-        z_bot,
-        med,
-        v_qlo=(qlo if qlo.size else None),
-        v_qhi=(qhi if qhi.size else None),
-        qpairs=q,
-        label_intervals=label_intervals,
-        invert_y=invert_y,
-        is_fix=summary.get("is_fix", None),
-    )
-    ax.set_xlabel("thickness [m]")
-    ax.set_ylabel("depth [m]")
-    ax.set_title("thickness", fontsize=10)
-    if legend:
-        ax.legend(fontsize=8, loc="best")
-    return ax
-
-
-def plot_vertical_thickness(
-    ax: plt.Axes,
-    summary: Mapping[str, Any],
-    qpairs: Optional[Sequence[Sequence[float]]] = None,
-    label_intervals: bool = False,
-    legend: bool = False,
-) -> plt.Axes:
-    """
-    Deprecated wrapper for backward compatibility.
-
-    Use :func:`plot_depth_thickness` instead.
-    """
-    return plot_depth_thickness(
-        ax=ax,
-        summary=summary,
-        qpairs=qpairs,
-        label_intervals=label_intervals,
-        legend=legend,
-    )
-
-
-def plot_rho_phase_fit(
-    ax_rho: plt.Axes,
-    ax_phase: plt.Axes,
-    summary: Mapping[str, Any],
-    comp: str = "xy",
-    rho_quantity: str = "resistivity",
-    use_predictive: bool = True,
-    qpairs: Optional[Sequence[Sequence[float]]] = None,
-    label_intervals: bool = False,
-    legend: bool = False,
-) -> Tuple[plt.Axes, plt.Axes]:
-    """
-    Plot apparent resistivity (or apparent conductivity) and phase vs period for one impedance component.
-    """
-    freq = np.asarray(summary["freq"], dtype=np.float64)
-    per = period_from_freq(freq)
-
-    Z_obs = np.asarray(summary["Z_obs"], dtype=np.complex128)
-    rho_obs, ph_obs, _, _ = dp.compute_rhophas(freq, Z_obs, None, err_method="none", err_kind="var")
-
-    rho_q = str(rho_quantity).strip().lower()
-    if rho_q not in {"resistivity", "conductivity"}:
-        raise ValueError("rho_quantity must be 'resistivity' or 'conductivity'.")
-    if rho_q == "conductivity":
-        rho_obs = np.maximum(1e-18, 1.0 / np.asarray(rho_obs, dtype=np.float64))
-
-    i, j = comp_to_ij(comp)
-
-    # predictive (already computed by sampler)
-    rho_med = get_array(summary, "rho_med", dtype=np.float64)
-    rho_qlo = get_array(summary, "rho_qlo", dtype=np.float64)
-    rho_qhi = get_array(summary, "rho_qhi", dtype=np.float64)
-    ph_med = get_array(summary, "phase_deg_med", dtype=np.float64)
-    ph_qlo = get_array(summary, "phase_deg_qlo", dtype=np.float64)
-    ph_qhi = get_array(summary, "phase_deg_qhi", dtype=np.float64)
-
-    q = qpairs if qpairs is not None else summary.get("pred_qpairs", None)
-    if rho_q == "conductivity" and rho_med.size:
-        rho_med = np.maximum(1e-18, 1.0 / rho_med)
-        if rho_qlo.size and rho_qhi.size:
-            # invert and swap bounds
-            rho_qlo, rho_qhi = np.maximum(1e-18, 1.0 / rho_qhi), np.maximum(1e-18, 1.0 / rho_qlo)
-
-    qn = normalize_qpairs(q) if q is not None else np.zeros((0, 2), dtype=np.float64)
-
-    if use_predictive and rho_med.size and ph_med.size:
-        ax_rho.plot(per, rho_med[:, i, j], lw=1.6, label="pred median")
-        ax_phase.plot(per, ph_med[:, i, j], lw=1.6, label="pred median")
-
-        if rho_qlo.size and rho_qhi.size:
-            for k in range(rho_qlo.shape[0]):
-                lab = None
-                if label_intervals and qn.size and k < qn.shape[0]:
-                    lab = f"{qn[k,0]:.0f}-{qn[k,1]:.0f}%"
-                ax_rho.fill_between(per, rho_qlo[k, :, i, j], rho_qhi[k, :, i, j], alpha=0.12, label=lab)
-                ax_phase.fill_between(per, ph_qlo[k, :, i, j], ph_qhi[k, :, i, j], alpha=0.12)
-
-    # observed points
-    ax_rho.scatter(per, rho_obs[:, i, j], s=12, label="obs", zorder=3)
-    ax_phase.scatter(per, ph_obs[:, i, j], s=12, label="obs", zorder=3)
-
-    ax_rho.set_xscale("log")
-    ax_rho.set_yscale("log")
-    ax_rho.set_ylabel("ρ [Ohm·m]" if rho_q == "resistivity" else "σ_app [S/m]")
-    ax_rho.set_title(f"Z{comp.lower()}", fontsize=10)
-    ax_rho.grid(True, which="both", alpha=0.2)
-
-    ax_phase.set_xscale("log")
-    ax_phase.set_ylabel("phase [deg]")
-    ax_phase.set_xlabel("period [s]")
-    ax_phase.set_title(f"Z{comp.lower()}", fontsize=10)
-    ax_phase.grid(True, which="both", alpha=0.2)
-
-    if legend:
-        ax_rho.legend(fontsize=8, loc="best")
-    return ax_rho, ax_phase
-
-
-def plot_phase_tensor_element(
-    ax: plt.Axes,
-    summary: Mapping[str, Any],
-    comp: str = "xy",
-    use_predictive: bool = True,
-    qpairs: Optional[Sequence[Sequence[float]]] = None,
-    label_intervals: bool = False,
-    legend: bool = False,
-) -> plt.Axes:
-    """
-    Plot one phase-tensor element vs period.
-    """
-    if summary.get("P_obs", None) is None:
-        raise ValueError("No P_obs present in summary; cannot plot phase tensor element.")
-
-    freq = np.asarray(summary["freq"], dtype=np.float64)
-    per = period_from_freq(freq)
-    P_obs = np.asarray(summary["P_obs"], dtype=np.float64)
-
-    i, j = comp_to_ij(comp)
-
-    P_med = get_array(summary, "P_med", dtype=np.float64)
-    P_qlo = get_array(summary, "P_qlo", dtype=np.float64)
-    P_qhi = get_array(summary, "P_qhi", dtype=np.float64)
-
-    q = qpairs if qpairs is not None else summary.get("pred_qpairs", None)
-
-    qn = normalize_qpairs(q) if q is not None else np.zeros((0, 2), dtype=np.float64)
-
-    if use_predictive and P_med.size:
-        ax.plot(per, P_med[:, i, j], lw=1.6, label="pred median")
-        if P_qlo.size and P_qhi.size:
-            for k in range(P_qlo.shape[0]):
-                lab = None
-                if label_intervals and qn.size and k < qn.shape[0]:
-                    lab = f"{qn[k,0]:.0f}-{qn[k,1]:.0f}%"
-                ax.fill_between(per, P_qlo[k, :, i, j], P_qhi[k, :, i, j], alpha=0.12, label=lab)
-
-    ax.scatter(per, P_obs[:, i, j], s=12, label="obs", zorder=3)
-    ax.set_xscale("log")
-    ax.set_xlabel("period [s]")
-    ax.set_ylabel("P element")
-    ax.set_title(f"P{comp.lower()}", fontsize=10)
-    ax.grid(True, which="both", alpha=0.2)
-
-    if legend:
-        ax.legend(fontsize=8, loc="best")
-    return ax
+    return axs

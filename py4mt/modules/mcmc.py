@@ -1,1923 +1,1502 @@
-"""
-mcmc.py
-=======
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""mcmc.py
+================
 
-PyMC interface for anisotropic 1-D MT inversion (single site, impedance only)
-with optional Phase Tensor likelihood.
+PyMC driver utilities for simplified anisotropic 1-D MT inversion.
 
-This module provides a small, self-contained bridge between:
+This module is designed to be imported by script-style drivers such as
+``mt_aniso1d_sampler.py`` and ``mt_aniso1d_plot.py``.
 
-- the anisotropic 1-D forward model / sensitivities in ``aniso.py``:
-  :func:`aniso.aniso1d_impedance_sens`
-- a PyMC probabilistic model for MCMC sampling (``pymc``)
+Compared to older prototypes that inverted full principal resistivities +
+Euler angles, this version uses the *simplified* per-layer parameterization
+implemented in :func:`aniso.aniso1d_impedance_sens_simple`:
 
-Design goals
-------------
-- **No emcee**: sampling is performed with PyMC.
-- **Optional gradients**: if enabled, the likelihood Op also provides a gradient
-  based on the analytic sensitivities returned by :func:`aniso1d_impedance_sens`.
-  This allows using gradient-based samplers (e.g., NUTS) later on, while the
-  default remains gradient-free samplers (e.g., DEMetropolisZ).
-- **Impedance + Phase Tensor**: use complex impedance components (default ``xy,yx``)
-  and optionally add Phase Tensor components (real 2x2).
+- ``h_m``          (nl,) layer thicknesses in meters (last entry is basement; ignored)
+- ``rho_max_ohmm`` (nl,) maximum horizontal resistivity [Ohm·m]
+- ``rho_min_ohmm`` (nl,) minimum horizontal resistivity [Ohm·m]
+- ``strike_deg``   (nl,) anisotropy strike in degrees
 
-Data format assumptions
------------------------
-The likelihood expects a *site dictionary* (as commonly produced by MT parsing
-utilities) with at least:
+Per-layer flags (optional):
 
-- ``freq`` : ndarray (nfreq,)  [Hz]
-- ``Z``    : ndarray (nfreq, 2, 2) complex128
-- ``Z_err`` (optional) : ndarray same shape, either std-dev or variance
-- ``err_kind`` (optional) : "std" or "var" (applies to *_err arrays)
+- ``is_iso`` (nl,) boolean: if True, enforce ``rho_max == rho_min`` (strike is irrelevant)
+- ``is_fix`` (nl,) boolean: if True, keep this layer fixed at the starting model
 
-For phase tensor (optional, when ``use_pt=True``):
+Important modelling note
+------------------------
 
-- ``P`` (optional) : ndarray (nfreq, 2, 2) float64
-- ``P_err`` (optional) : ndarray same shape, std-dev or variance
+Two likelihood implementations are available:
 
-If ``P`` is missing and ``compute_pt_if_missing=True``, it is computed from Z:
-    P = inv(Re(Z)) @ Im(Z)
+- **Robust black-box** (default): wraps the NumPy forward model with
+  PyTensor ``as_op``. This is very stable, but **not differentiable**.
+  Use ``DEMetropolisZ``/``Metropolis``.
 
-If ``P_err`` is missing, a constant floor ``sigma_floor_P`` is used.
+- **Gradient-enabled** (optional): uses a custom PyTensor ``Op`` whose
+  vector–Jacobian products are computed from the analytic impedance
+  sensitivities returned by the forward model. This enables NUTS/HMC for
+  **impedance** likelihoods and optionally **phase tensor** components (``use_pt=True``).
 
-Parameterization
-----------------
-The forward model uses per-layer principal resistivities and Euler angles:
+The deterministic inversion driver (``inv1d.py``) always uses the analytic
+sensitivities from the forward model.
 
-- ``h_m`` (nl,) thicknesses in meters
-- ``rop`` (nl, 3) principal resistivities [Ohm·m]
-- ``ustr_deg, udip_deg, usla_deg`` (nl,) angles in degrees
-- ``is_iso`` (nl,) optional flag: if True, layer treated as isotropic
-- ``is_fix`` (nl,) optional flag: if True, keep all parameters of that layer fixed in sampling
-
-In PyMC we typically sample on transformed variables:
-
-- thicknesses: ``log10(h_m)`` (positivity)
-- resistivities: ``log10(rop)``
-- angles: degrees (bounded)
-
-The mapping is controlled by :class:`ParamSpec` and :func:`build_pymc_model`.
 
 Author: Volker Rath (DIAS)
-Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-20
+Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-08 (UTC)
 """
 
 from __future__ import annotations
-from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 
-import numpy as np
+import inspect
 import os
 from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
+import numpy as np
 
-# -------------------------------------------------------------------------
-# Import guards:
-# PyMC imports ArviZ, which may import numba. In some environments a mismatch
-# between `numba` and `coverage` can raise errors during import (not always as
-# ImportError). We patch missing typing aliases in `coverage.types` that numba's
-# optional coverage integration expects, and we also remove any partially
-# imported `numba`/`arviz` modules from previous attempts.
-# -------------------------------------------------------------------------
+# Optional runtime dependencies (only needed when actually sampling / plotting)
+try:  # pragma: no cover
+    import arviz as az
+except Exception:  # pragma: no cover
+    az = None
 
-def _prepare_optional_deps() -> None:
-    """Prepare environment so importing PyMC does not fail due to numba/coverage issues."""
-    import sys
-    from typing import Any
+try:  # pragma: no cover
+    import pymc as pm
+    import pytensor.tensor as pt
+    from pytensor.compile.ops import as_op
+    from pytensor.graph.op import Op
+except Exception:  # pragma: no cover
+    pm = None
+    pt = None
+    as_op = None
+    Op = None
 
-    # Remove partially imported modules from previous failed imports
-    for k in list(sys.modules.keys()):
-        if k == "numba" or k.startswith("numba.") or k == "arviz" or k.startswith("arviz."):
-            del sys.modules[k]
-
-    # Patch coverage.types typing aliases expected by numba
-    try:
-        import coverage  # type: ignore
-    except Exception:
-        return
-    if not hasattr(coverage, "types"):
-        return
-    ct = coverage.types  # type: ignore[attr-defined]
-    if not hasattr(ct, "Tracer"):
-        class Tracer:
-            pass
-        ct.Tracer = Tracer  # type: ignore[attr-defined]
-    for name in ("TTraceFn", "TWarnFn", "TShouldTraceFn", "TShouldStartContextFn", "TFileDisposition"):
-        if not hasattr(ct, name):
-            setattr(ct, name, Any)  # type: ignore[attr-defined]
-
-
-_prepare_optional_deps()
-
-
-# PyMC / PyTensor
-import pymc as pm
-import pytensor
-import pytensor.tensor as pt
-
-# -------------------------------------------------------------------------
-# PyTensor configuration:
-# Some minimal/container environments lack Python development headers
-# (Python.h), which breaks PyTensor's C compilation. Force pure-Python
-# execution to keep PyMC usable.
-# -------------------------------------------------------------------------
-try:
-    pytensor.config.cxx = ""  # disable C compilation
-    pytensor.config.linker = "py"  # pure-Python linker
-    pytensor.config.mode = "FAST_COMPILE"
-except Exception:
-    pass
-from pytensor.graph.op import Op
-from pytensor.graph.basic import Apply
 
 # Local forward model
-import aniso
+from aniso import aniso1d_impedance_sens_simple
 
 
-ArrayLike = Union[np.ndarray, Sequence[float]]
+# -----------------------------------------------------------------------------
+# Small filesystem helpers
+# -----------------------------------------------------------------------------
+
+def ensure_dir(path: str | os.PathLike) -> str:
+    """Ensure a directory exists and return its string path."""
+    p = Path(path).expanduser().resolve()
+    p.mkdir(parents=True, exist_ok=True)
+    return p.as_posix()
 
 
-def _as_1d_float(x: ArrayLike, name: str) -> np.ndarray:
-    """
-    Convert input to a 1-D float64 numpy array.
+def glob_inputs(pattern: str) -> List[str]:
+    """Expand a glob pattern into a sorted list of matching files."""
+    from glob import glob
 
-    Parameters
-    ----------
-    x
-        Array-like input.
-    name
-        Variable name used in error messages.
-
-    Returns
-    -------
-    ndarray
-        1-D float64 array.
-
-    Raises
-    ------
-    ValueError
-        If the array cannot be converted to 1-D.
-    """
-    a = np.asarray(x, dtype=np.float64)
-    if a.ndim != 1:
-        raise ValueError(f"{name} must be 1-D, got shape {a.shape}")
-    return a
-
-
-def _parse_err_kind(site: Mapping) -> str:
-    """
-    Parse the error kind for uncertainty arrays.
-
-    Parameters
-    ----------
-    site
-        Site dictionary possibly containing ``err_kind``.
-
-    Returns
-    -------
-    str
-        Either "std" (standard deviation) or "var" (variance).
-    """
-    kind = str(site.get("err_kind", "std")).strip().lower()
-    if kind not in ("std", "var"):
-        kind = "std"
-    return kind
-
-
-def _err_to_std(err: np.ndarray, err_kind: str) -> np.ndarray:
-    """
-    Convert error array to standard deviation.
-
-    Parameters
-    ----------
-    err
-        Error array (std or var depending on ``err_kind``).
-    err_kind
-        "std" or "var".
-
-    Returns
-    -------
-    ndarray
-        Standard deviation array (float64, non-negative).
-    """
-    e = np.asarray(err, dtype=np.float64)
-    if err_kind == "var":
-        e = np.sqrt(np.maximum(e, 0.0))
-    return np.maximum(e, 0.0)
-
-
-def _comp_indices(comps: Sequence[str]) -> List[Tuple[int, int]]:
-    """
-    Map component strings to tensor indices.
-
-    Parameters
-    ----------
-    comps
-        Sequence like ("xx","xy","yx","yy").
-
-    Returns
-    -------
-    list
-        List of (i, j) indices for each component.
-    """
-    m = {"xx": (0, 0), "xy": (0, 1), "yx": (1, 0), "yy": (1, 1)}
-    idx = []
-    for c in comps:
-        cc = c.strip().lower()
-        if cc not in m:
-            raise ValueError(f"Unknown component '{c}'. Use xx, xy, yx, yy.")
-        idx.append(m[cc])
-    return idx
-
-
-def phase_tensor_from_Z(Z: np.ndarray) -> np.ndarray:
-    """
-    Compute Phase Tensor P from complex impedance Z.
-
-    P is defined as:
-        P = inv(Re(Z)) @ Im(Z)
-
-    Parameters
-    ----------
-    Z
-        Complex impedance array of shape (nper, 2, 2).
-
-    Returns
-    -------
-    ndarray
-        Phase tensor array of shape (nper, 2, 2), float64.
-
-    Notes
-    -----
-    This function does **not** compute uncertainties for P.
-    """
-    Z = np.asarray(Z)
-    X = np.real(Z)
-    Y = np.imag(Z)
-    nper = Z.shape[0]
-    P = np.empty((nper, 2, 2), dtype=np.float64)
-    for k in range(nper):
-        P[k] = np.linalg.solve(X[k], Y[k])
-    return P
-
-
-def _pack_Z(
-    Z: np.ndarray,
-    comps: Sequence[str],
-) -> np.ndarray:
-    """
-    Pack selected impedance components into a 1-D vector (real+imag).
-
-    Parameters
-    ----------
-    Z
-        Complex impedance (nper, 2, 2).
-    comps
-        Components to include, e.g. ("xy","yx").
-
-    Returns
-    -------
-    ndarray
-        Packed vector of length nper * len(comps) * 2:
-        [Re(Zc1), Im(Zc1), Re(Zc2), Im(Zc2), ...] per period.
-    """
-    Z = np.asarray(Z)
-    idx = _comp_indices(comps)
-    nper = Z.shape[0]
-    out = np.empty(nper * len(idx) * 2, dtype=np.float64)
-    p = 0
-    for k in range(nper):
-        for (i, j) in idx:
-            z = Z[k, i, j]
-            out[p] = np.real(z)
-            out[p + 1] = np.imag(z)
-            p += 2
+    out = sorted(glob(pattern))
     return out
 
 
-def _pack_P(
-    P: np.ndarray,
-    comps: Sequence[str],
-) -> np.ndarray:
-    """
-    Pack selected phase tensor components into a 1-D vector.
+# -----------------------------------------------------------------------------
+# Model I/O and normalization
+# -----------------------------------------------------------------------------
+
+def _as_1d(x: np.ndarray, name: str) -> np.ndarray:
+    """Convert input to 1-D float array."""
+    x = np.asarray(x)
+    if x.ndim != 1:
+        raise ValueError(f"{name} must be 1-D, got shape {x.shape}.")
+    return x.astype(float, copy=False)
+
+
+def model_from_direct(model: Dict) -> Dict[str, np.ndarray]:
+    """Create a model dict from an in-script template.
+
+    This is a shallow normalization step: arrays are copied to NumPy ndarrays.
+    Use :func:`normalize_model` afterwards.
 
     Parameters
     ----------
-    P
-        Phase tensor (nper, 2, 2), real.
-    comps
-        Components to include, e.g. ("xx","xy","yx","yy").
-
-    Returns
-    -------
-    ndarray
-        Packed vector of length nper * len(comps).
-    """
-    P = np.asarray(P, dtype=np.float64)
-    idx = _comp_indices(comps)
-    nper = P.shape[0]
-    out = np.empty(nper * len(idx), dtype=np.float64)
-    p = 0
-    for k in range(nper):
-        for (i, j) in idx:
-            out[p] = P[k, i, j]
-            p += 1
-    return out
-class ParamSpec:
-    """
-    Parameter specification for the PyMC inversion.
-
-    Attributes
-    ----------
-    nl
-        Number of layers (including basement layer).
-    fix_h
-        If True, thicknesses are fixed and not sampled.
-    sample_last_thickness
-        If True, include the last thickness entry in sampling. In many MT
-        parameterizations the basement thickness is unused (often set to 0);
-        in that case set this to False.
-    log10_h_bounds
-        (low, high) bounds for log10 thickness [m] when sampled.
-    log10_rho_bounds
-        (low, high) bounds for log10 resistivity [Ohm·m].
-    ustr_bounds_deg
-        Strike bounds in degrees.
-    udip_bounds_deg
-        Dip bounds in degrees.
-    usla_bounds_deg
-        Slant bounds in degrees.
-    """
-
-    def __init__(
-        self,
-        nl: int,
-        fix_h: bool = False,
-        sample_last_thickness: bool = False,
-        log10_h_bounds: Tuple[float, float] = (0.0, 5.0),          # 1 m .. 100 km
-        log10_rho_bounds: Tuple[float, float] = (-1.0, 6.0),       # 0.1 .. 1e6 Ohm m
-        ustr_bounds_deg: Tuple[float, float] = (-180.0, 180.0),
-        udip_bounds_deg: Tuple[float, float] = (0.0, 90.0),
-        usla_bounds_deg: Tuple[float, float] = (-180.0, 180.0),
-    ) -> None:
-        """Create a parameter specification (no dataclass).
-
-        Parameters
-        ----------
-        nl : int
-            Number of layers (including basement).
-        fix_h : bool, optional
-            If True, thicknesses are fixed and not sampled.
-        sample_last_thickness : bool, optional
-            If True, include the last thickness entry in sampling.
-        log10_h_bounds : tuple of float, optional
-            Bounds for log10 thickness [m] when sampled.
-        log10_rho_bounds : tuple of float, optional
-            Bounds for log10 resistivity [Ohm·m].
-        ustr_bounds_deg, udip_bounds_deg, usla_bounds_deg : tuple of float, optional
-            Bounds for strike/dip/slant angles in degrees.
-        """
-        self.nl = int(nl)
-        self.fix_h = bool(fix_h)
-        self.sample_last_thickness = bool(sample_last_thickness)
-        self.log10_h_bounds = (float(log10_h_bounds[0]), float(log10_h_bounds[1]))
-        self.log10_rho_bounds = (float(log10_rho_bounds[0]), float(log10_rho_bounds[1]))
-        self.ustr_bounds_deg = (float(ustr_bounds_deg[0]), float(ustr_bounds_deg[1]))
-        self.udip_bounds_deg = (float(udip_bounds_deg[0]), float(udip_bounds_deg[1]))
-        self.usla_bounds_deg = (float(usla_bounds_deg[0]), float(usla_bounds_deg[1]))
-
-
-    def nh(self) -> int:
-        """
-        Number of thickness parameters that are sampled.
-
-        Returns
-        -------
-        int
-            Number of sampled thickness entries.
-        """
-        if self.fix_h:
-            return 0
-        return self.nl if self.sample_last_thickness else max(self.nl - 1, 0)
-
-    def nrho(self) -> int:
-        """
-        Number of resistivity parameters (flattened).
-
-        Returns
-        -------
-        int
-            nl * 3.
-        """
-        return self.nl * 3
-
-    def nang(self) -> int:
-        """
-        Number of angle parameters (flattened).
-
-        Returns
-        -------
-        int
-            nl * 3.
-        """
-        return self.nl * 3
-
-    def ndim(self) -> int:
-        """
-        Total parameter dimension.
-
-        Returns
-        -------
-        int
-            Total number of scalar parameters in theta.
-        """
-        return self.nh() + self.nrho() + self.nang()
-
-def normalize_is_fix(is_fix: Optional[np.ndarray], *, nl: int) -> np.ndarray:
-    """Normalize a per-layer fixed flag array.
-
-    Parameters
-    ----------
-    is_fix : ndarray or None
-        If provided, must be array-like with shape (nl,) and boolean-convertible.
-        True means the entire layer is fixed (thickness, resistivities, angles).
-    nl : int
-        Number of layers.
-
-    Returns
-    -------
-    ndarray
-        Boolean array of shape (nl,). If ``is_fix`` is None, returns all-False.
-    """
-    if is_fix is None:
-        return np.zeros(int(nl), dtype=bool)
-    arr = np.asarray(is_fix, dtype=bool).ravel()
-    if arr.shape != (int(nl),):
-        raise ValueError(f"is_fix must have shape ({int(nl)},), got {arr.shape}")
-    return arr
-
-
-def normalize_model(model: Mapping[str, object]) -> Dict[str, np.ndarray]:
-    """Normalize a model dictionary for the anisotropic 1-D MT forward model.
-
-    The inversion stack expects a consistent public parameterization per layer:
-
-    - ``h_m``       : (nl,) float, thicknesses [m]
-    - ``rop``       : (nl, 3) float, principal resistivities [Ohm·m]
-    - ``ustr_deg``  : (nl,) float, strike angles [deg]
-    - ``udip_deg``  : (nl,) float, dip angles [deg]
-    - ``usla_deg``  : (nl,) float, slant angles [deg]
-    - ``is_iso``    : (nl,) bool, isotropic-layer flags
-    - ``is_fix``    : (nl,) bool, fixed-layer flags (freeze that layer in sampling)
-
-    The key requirement (important for downstream code) is:
-
-    ``len(is_iso) == len(is_fix) == len(h_m) == nl``.
-
-    This helper also tolerates a common shape mistake for ``rop``:
-
-    - If ``rop`` is given as (3, nl), it is transposed to (nl, 3).
-
-    Parameters
-    ----------
-    model
-        Mapping containing at least ``rop`` and (ideally) ``h_m``.
+    model : dict
+        Model dict (possibly with Python lists).
 
     Returns
     -------
     dict
-        Normalized model dictionary (numpy arrays). Any extra keys from the
-        input mapping are preserved.
-
-    Raises
-    ------
-    ValueError
-        If the model arrays cannot be made consistent.
+        New dict with NumPy arrays.
     """
-    md: Dict[str, object] = dict(model)
-
-    # --- thickness -------------------------------------------------------
-    h_key = "h_m" if "h_m" in md else ("h" if "h" in md else None)
-    if h_key is not None and md.get(h_key, None) is not None:
-        h_m = np.asarray(md[h_key], dtype=float).ravel()
-    else:
-        h_m = None
-
-    # --- resistivities (must exist) -------------------------------------
-    if "rop" not in md or md.get("rop", None) is None:
-        raise ValueError("Model must contain 'rop' (principal resistivities).")
-    rop = np.asarray(md["rop"], dtype=float)
-    if rop.ndim != 2:
-        raise ValueError(f"rop must be 2-D, got shape {rop.shape}")
-
-    # Infer nl if thickness missing
-    if h_m is None:
-        if rop.shape[1] == 3:
-            nl = int(rop.shape[0])
-        elif rop.shape[0] == 3:
-            nl = int(rop.shape[1])
+    out: Dict[str, np.ndarray] = {}
+    for k, v in model.items():
+        if isinstance(v, (list, tuple)):
+            out[k] = np.asarray(v)
+        elif isinstance(v, np.ndarray):
+            out[k] = v.copy()
         else:
-            raise ValueError("Cannot infer nl: rop must have one dimension of length 3.")
-        h_m = np.ones(nl, dtype=float)
-        h_m[-1] = 0.0
-    else:
-        nl = int(h_m.size)
-        if nl <= 0:
-            raise ValueError("h_m must have positive length.")
-
-    # Normalize rop to (nl, 3)
-    if rop.shape == (nl, 3):
-        pass
-    elif rop.shape == (3, nl):
-        rop = rop.T
-    elif rop.shape[1] == 3 and rop.shape[0] != nl:
-        raise ValueError(f"rop has {rop.shape[0]} layers but h_m has {nl}.")
-    elif rop.shape[0] == 3 and rop.shape[1] != nl:
-        raise ValueError(f"rop has {rop.shape[1]} layers but h_m has {nl}.")
-    else:
-        raise ValueError(f"rop must have shape ({nl},3) (or (3,{nl}) to be transposed), got {rop.shape}.")
-
-    # --- angles ----------------------------------------------------------
-    def _norm_ang(key: str) -> np.ndarray:
-        val = md.get(key, 0.0)
-        a = np.asarray(val, dtype=float)
-        if a.ndim == 0:
-            return np.full(nl, float(a), dtype=float)
-        a = a.ravel()
-        if a.shape != (nl,):
-            raise ValueError(f"{key} must have shape ({nl},), got {a.shape}")
-        return a
-
-    ustr_deg = _norm_ang("ustr_deg")
-    udip_deg = _norm_ang("udip_deg")
-    usla_deg = _norm_ang("usla_deg")
-
-    # --- flags (must match h_m length) ----------------------------------
-    def _norm_flag(key: str) -> np.ndarray:
-        val = md.get(key, None)
-        if val is None:
-            return np.zeros(nl, dtype=bool)
-        a = np.asarray(val, dtype=bool)
-        if a.ndim == 0:
-            return np.full(nl, bool(a), dtype=bool)
-        a = a.ravel()
-        if a.shape != (nl,):
-            raise ValueError(f"{key} must have shape ({nl},), got {a.shape}")
-        return a
-
-    is_iso = _norm_flag("is_iso")
-    is_fix = _norm_flag("is_fix")
-
-    # Update mapping (preserve extras)
-    md["h_m"] = np.asarray(h_m, dtype=float)
-    md["rop"] = np.asarray(rop, dtype=float)
-    md["ustr_deg"] = np.asarray(ustr_deg, dtype=float)
-    md["udip_deg"] = np.asarray(udip_deg, dtype=float)
-    md["usla_deg"] = np.asarray(usla_deg, dtype=float)
-    md["is_iso"] = np.asarray(is_iso, dtype=bool)
-    md["is_fix"] = np.asarray(is_fix, dtype=bool)
-
-    return md  # type: ignore[return-value]
+            # keep scalars/strings
+            out[k] = v
+    return out
 
 
+def normalize_model(model: Dict) -> Dict[str, np.ndarray]:
+    """Normalize a model dict to the simplified parameterization.
 
-def theta_to_model(
-    theta: np.ndarray,
-    spec: ParamSpec,
-    h_m_fixed: Optional[np.ndarray],
-    rop_fixed: Optional[np.ndarray],
-    ustr_fixed: Optional[np.ndarray],
-    udip_fixed: Optional[np.ndarray],
-    usla_fixed: Optional[np.ndarray],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Convert theta vector into physical model arrays for the forward model.
+    This function makes migration easier by accepting both:
+
+    - new keys: ``rho_min_ohmm``, ``rho_max_ohmm``, ``strike_deg``
+    - legacy keys: ``rop`` (nl,3) and ``ustr_deg``
+
+    If the legacy form is used, we map:
+
+    - ``rho_min_ohmm = min(rop[:,0], rop[:,1])``
+    - ``rho_max_ohmm = max(rop[:,0], rop[:,1])``
+    - ``strike_deg   = ustr_deg``
+
+    The function also ensures that ``is_iso`` and ``is_fix`` exist and have
+    length ``nl``.
 
     Parameters
     ----------
-    theta
-        1-D parameter vector (float64).
-    spec
-        Parameter specification (controls sizes and transforms).
-    h_m_fixed, rop_fixed, ustr_fixed, udip_fixed, usla_fixed
-        Fixed reference arrays used for entries not sampled (or as base).
+    model : dict
+        Model dict.
 
     Returns
     -------
-    h_m, rop, ustr_deg, udip_deg, usla_deg
-        Physical arrays with shapes (nl,), (nl,3), (nl,), (nl,), (nl,).
-
-    Notes
-    -----
-    Thicknesses and resistivities are sampled in log10 space and converted
-    back to linear space here.
+    dict
+        Normalized model dict.
     """
-    theta = _as_1d_float(theta, "theta")
-    if theta.size != spec.ndim():
-        raise ValueError(f"theta has size {theta.size}, expected {spec.ndim()}")
+    out = dict(model)
 
-    nl = spec.nl
-    # Initialize from fixed arrays
-    if h_m_fixed is None:
-        h_m = np.ones(nl, dtype=np.float64)
-        h_m[-1] = 0.0
-    else:
-        h_m = np.asarray(h_m_fixed, dtype=np.float64).copy()
-        if h_m.shape != (nl,):
-            raise ValueError(f"h_m_fixed must have shape ({nl},), got {h_m.shape}")
+    if "h_m" not in out:
+        raise KeyError("Model must contain 'h_m'.")
 
-    if rop_fixed is None:
-        rop = np.ones((nl, 3), dtype=np.float64) * 100.0
-    else:
-        rop = np.asarray(rop_fixed, dtype=np.float64).copy()
-        if rop.shape != (nl, 3):
-            raise ValueError(f"rop_fixed must have shape ({nl},3), got {rop.shape}")
+    h_m = _as_1d(np.asarray(out["h_m"], dtype=float), "h_m")
+    nl = h_m.size
 
-    def _ang_init(a_fixed: Optional[np.ndarray], name: str) -> np.ndarray:
-        if a_fixed is None:
-            return np.zeros(nl, dtype=np.float64)
-        a = np.asarray(a_fixed, dtype=np.float64).copy()
-        if a.shape != (nl,):
-            raise ValueError(f"{name} must have shape ({nl},), got {a.shape}")
-        return a
+    # --- Detect / create simplified resistivity parameters -------------------
+    if ("rho_min_ohmm" not in out) or ("rho_max_ohmm" not in out):
+        if "rop" in out:
+            rop = np.asarray(out["rop"], dtype=float)
+            if rop.ndim != 2 or rop.shape[0] != nl or rop.shape[1] < 2:
+                raise ValueError("rop must have shape (nl,3) or (nl,>=2).")
+            rho1 = rop[:, 0]
+            rho2 = rop[:, 1]
+            out["rho_min_ohmm"] = np.minimum(rho1, rho2)
+            out["rho_max_ohmm"] = np.maximum(rho1, rho2)
+        else:
+            raise KeyError("Model must contain either (rho_min_ohmm,rho_max_ohmm) or 'rop'.")
 
-    ustr_deg = _ang_init(ustr_fixed, "ustr_fixed")
-    udip_deg = _ang_init(udip_fixed, "udip_fixed")
-    usla_deg = _ang_init(usla_fixed, "usla_fixed")
+    if "strike_deg" not in out:
+        if "ustr_deg" in out:
+            out["strike_deg"] = np.asarray(out["ustr_deg"], dtype=float)
+        else:
+            out["strike_deg"] = np.zeros(nl, dtype=float)
 
-    p = 0
+    rho_min = _as_1d(np.asarray(out["rho_min_ohmm"], dtype=float), "rho_min_ohmm")
+    rho_max = _as_1d(np.asarray(out["rho_max_ohmm"], dtype=float), "rho_max_ohmm")
+    strike = _as_1d(np.asarray(out["strike_deg"], dtype=float), "strike_deg")
 
-    # Thicknesses (log10)
-    if not spec.fix_h:
-        nh = spec.nh()
-        log10_h = theta[p : p + nh]
-        p += nh
-        h_m[:nh] = 10.0 ** log10_h
-        if not spec.sample_last_thickness and nl > nh:
-            # Keep last thickness as provided (often 0 basement)
+    if not (rho_min.size == rho_max.size == strike.size == nl):
+        raise ValueError("h_m, rho_min_ohmm, rho_max_ohmm, strike_deg must all have length nl.")
+
+    # --- Flags ----------------------------------------------------------------
+    if "is_iso" not in out or out["is_iso"] is None:
+        out["is_iso"] = np.zeros(nl, dtype=bool)
+    if "is_fix" not in out or out["is_fix"] is None:
+        out["is_fix"] = np.zeros(nl, dtype=bool)
+
+    is_iso = np.asarray(out["is_iso"], dtype=bool).ravel()
+    is_fix = np.asarray(out["is_fix"], dtype=bool).ravel()
+    if is_iso.size != nl or is_fix.size != nl:
+        raise ValueError("is_iso and is_fix must both have length nl (same as h_m).")
+
+    # Enforce isotropy in the stored model (best-effort)
+    rho_max2 = rho_max.copy()
+    rho_min2 = rho_min.copy()
+    rho_min2[is_iso] = np.minimum(rho_min2[is_iso], rho_max2[is_iso])
+    rho_max2[is_iso] = rho_min2[is_iso]
+
+    out.update(
+        {
+            "h_m": h_m,
+            "rho_min_ohmm": rho_min2,
+            "rho_max_ohmm": rho_max2,
+            "strike_deg": strike,
+            "is_iso": is_iso,
+            "is_fix": is_fix,
+        }
+    )
+
+    return out
+
+
+def save_model_npz(model: Dict, path: str | os.PathLike) -> None:
+    """Save a model dict to an NPZ file."""
+    p = Path(path).expanduser().resolve()
+    p.parent.mkdir(parents=True, exist_ok=True)
+
+    m = normalize_model(model)
+
+    np.savez(
+        p.as_posix(),
+        h_m=m["h_m"],
+        rho_min_ohmm=m["rho_min_ohmm"],
+        rho_max_ohmm=m["rho_max_ohmm"],
+        strike_deg=m["strike_deg"],
+        is_iso=m["is_iso"],
+        is_fix=m["is_fix"],
+        prior_name=str(m.get("prior_name", "")),
+    )
+
+
+def load_model_npz(path: str | os.PathLike) -> Dict[str, np.ndarray]:
+    """Load a model dict from an NPZ file."""
+    p = Path(path).expanduser().resolve()
+    with np.load(p.as_posix(), allow_pickle=True) as npz:
+        model = {k: npz[k] for k in npz.files}
+    return normalize_model(model)
+
+
+# -----------------------------------------------------------------------------
+# Site I/O
+# -----------------------------------------------------------------------------
+
+def load_site(path: str | os.PathLike) -> Dict:
+    """Load one MT site from an ``.edi`` or ``.npz`` file.
+
+    The exact file format is delegated to the user's `data_proc` module when
+    reading EDI.
+
+    The returned dict is expected to contain at least:
+
+    - ``station`` (str)
+    - ``freq`` (n,) in Hz
+    - ``Z`` (n,2,2) complex
+    - optionally ``Z_err`` (n,2,2)
+    - optionally ``P`` and ``P_err`` for phase tensor
+
+    Parameters
+    ----------
+    path : str or PathLike
+        Input file.
+
+    Returns
+    -------
+    dict
+        Site dictionary.
+    """
+    p = Path(path).expanduser().resolve()
+    ext = p.suffix.lower()
+
+    if ext == ".npz":
+        with np.load(p.as_posix(), allow_pickle=True) as npz:
+            site = {k: npz[k] for k in npz.files}
+        if "station" not in site:
+            site["station"] = p.stem
+        return site
+
+    if ext == ".edi":
+        import data_proc  # provided by the user's code base
+
+        site = data_proc.load_edi(p.as_posix())
+        if "station" not in site:
+            site["station"] = p.stem
+        return site
+
+    raise ValueError(f"Unsupported site format: {p}")
+
+
+def _call_compute_pt(Z: np.ndarray, Z_err: Optional[np.ndarray], nsim: int) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+    """Compute phase tensor via the user's `data_proc.compute_pt` if possible."""
+    import data_proc
+
+    fn = getattr(data_proc, "compute_pt", None)
+    if fn is None:
+        raise ImportError("data_proc.compute_pt not found.")
+
+    # Try a few common calling conventions.
+    try:
+        P, P_err = fn(Z, Z_err, nsim=nsim)
+        return P, P_err
+    except TypeError:
+        pass
+    try:
+        P, P_err = fn(Z, nsim=nsim)
+        return P, P_err
+    except TypeError:
+        pass
+    P, P_err = fn(Z)
+    return P, P_err
+
+
+def ensure_phase_tensor(site: Dict, nsim: int = 200, *, overwrite: bool = True) -> Dict:
+    """Ensure that a site dict contains a phase tensor ``P`` (and optionally ``P_err``).
+
+    **Always** recomputes ``P`` from ``Z`` using the fixed convention::
+
+        P = inv(Re(Z)) @ Im(Z)
+
+    If ``Z_err`` is present and ``P_err`` is missing (or ``overwrite=True``), an
+    approximate ``P_err`` is estimated by simple Monte-Carlo propagation with
+    independent entry errors.
+
+    Parameters
+    ----------
+    site : dict
+        Site dict.
+    nsim : int
+        Monte-Carlo sample count used for the optional ``P_err`` estimate.
+    overwrite : bool
+        If True, overwrite existing ``P`` (and ``P_err`` when estimated).
+
+    Returns
+    -------
+    dict
+        A (possibly copied) site dict containing ``P``.
+    """
+    Z = np.asarray(site.get("Z", None))
+    if Z is None:
+        raise KeyError("site must contain 'Z' to compute 'P'.")
+    Z = np.asarray(Z, dtype=np.complex128)
+
+    out = dict(site)
+    if overwrite or ("P" not in out):
+        out["P"] = phase_tensor_from_Z(Z, reg=0.0)
+
+    # Error propagation for PT (optional)
+    if ("Z_err" in out) and (overwrite or ("P_err" not in out)):
+        try:
+            Z_err = np.asarray(out["Z_err"], dtype=float)
+            if Z_err.shape == Z.shape:
+                rng = np.random.default_rng(12345)
+                ns = int(max(10, nsim))
+                Ps = np.empty((ns,) + out["P"].shape, dtype=float)
+                for i in range(ns):
+                    noise = rng.standard_normal(Z.shape) + 1j * rng.standard_normal(Z.shape)
+                    Zs = Z + noise * Z_err
+                    Ps[i] = phase_tensor_from_Z(Zs, reg=0.0)
+                out["P_err"] = Ps.std(axis=0, ddof=1)
+        except Exception:
             pass
 
-    # Resistivities (log10), always sampled unless user passes fixed by changing spec externally
-    log10_rop = theta[p : p + spec.nrho()]
-    p += spec.nrho()
-    rop[:] = (10.0 ** log10_rop).reshape((nl, 3))
-
-    # Angles (degrees)
-    ang = theta[p : p + spec.nang()]
-    p += spec.nang()
-    ang = ang.reshape((nl, 3))
-    ustr_deg[:] = ang[:, 0]
-    udip_deg[:] = ang[:, 1]
-    usla_deg[:] = ang[:, 2]
-
-    return h_m, rop, ustr_deg, udip_deg, usla_deg
+    return out
 
 
-class _AnisoMTContext:
-    """
-    Internal container for data packing and forward/gradient evaluation.
+# -----------------------------------------------------------------------------
+# Component selection / data vectors
+# -----------------------------------------------------------------------------
+
+_COMP_TO_IJ = {"xx": (0, 0), "xy": (0, 1), "yx": (1, 0), "yy": (1, 1)}
+
+
+def _parse_comps(comps: Sequence[str]) -> List[Tuple[int, int]]:
+    """Parse component labels into (i,j) indices."""
+    out: List[Tuple[int, int]] = []
+    for c in comps:
+        cc = str(c).strip().lower()
+        if cc not in _COMP_TO_IJ:
+            raise ValueError(f"Unknown component label: {c}")
+        out.append(_COMP_TO_IJ[cc])
+    return out
+
+
+def pack_Z_vector(
+    Z: np.ndarray,
+    comps: Sequence[str] = ("xx", "xy", "yx", "yy"),
+) -> np.ndarray:
+    """Pack complex impedance tensor Z into a real-valued data vector.
+
+    The packed vector is ordered by period/frequency, then by component,
+    and stores **Re** and **Im** parts consecutively.
 
     Parameters
     ----------
-    site
-        Site dictionary with Z and optional P.
-    periods_s
-        Period array in seconds.
-    spec
-        Parameter specification.
-    use_pt
-        Whether to include Phase Tensor in the likelihood.
-    z_comps
-        Impedance components to use.
-    pt_comps
-        Phase tensor components to use.
-    compute_pt_if_missing
-        Compute P from Z if missing.
-    sigma_floor_Z
-        Floor added to Z sigmas (real and imag) to avoid zero variance.
-    sigma_floor_P
-        Floor added to P sigmas to avoid zero variance.
-    is_iso
-        Optional per-layer isotropic flags passed to the forward model.
+    Z : ndarray, shape (n,2,2)
+        Complex impedance tensor.
+    comps : sequence of str
+        Component labels among {xx,xy,yx,yy}.
+
+    Returns
+    -------
+    ndarray, shape (n * ncomp * 2,)
+        Real-valued data vector.
+    """
+    Z = np.asarray(Z, dtype=np.complex128)
+    if Z.ndim != 3 or Z.shape[1:] != (2, 2):
+        raise ValueError("Z must have shape (n,2,2).")
+
+    ij = _parse_comps(comps)
+    n = Z.shape[0]
+    ncomp = len(ij)
+
+    out = np.empty(n * ncomp * 2, dtype=float)
+    k = 0
+    for ip in range(n):
+        for (i, j) in ij:
+            out[k] = float(np.real(Z[ip, i, j])); k += 1
+            out[k] = float(np.imag(Z[ip, i, j])); k += 1
+    return out
+
+
+def pack_Z_sigma(
+    Z_err: np.ndarray,
+    comps: Sequence[str] = ("xx", "xy", "yx", "yy"),
+    *,
+    sigma_floor: float = 0.0,
+) -> np.ndarray:
+    """Pack impedance uncertainties into a sigma vector matching :func:`pack_Z_vector`.
+
+    Parameters
+    ----------
+    Z_err : ndarray, shape (n,2,2)
+        Error estimate per Z entry. May be real or complex; magnitudes are used.
+    comps : sequence of str
+        Component labels.
+    sigma_floor : float
+        Minimum sigma added in quadrature.
+
+    Returns
+    -------
+    ndarray
+        Sigma vector.
+    """
+    Z_err = np.asarray(Z_err)
+    if Z_err.ndim != 3 or Z_err.shape[1:] != (2, 2):
+        raise ValueError("Z_err must have shape (n,2,2).")
+
+    ij = _parse_comps(comps)
+    n = Z_err.shape[0]
+    ncomp = len(ij)
+
+    out = np.empty(n * ncomp * 2, dtype=float)
+    k = 0
+    for ip in range(n):
+        for (i, j) in ij:
+            s = float(np.abs(Z_err[ip, i, j]))
+            s = float(np.sqrt(s * s + sigma_floor * sigma_floor))
+            out[k] = s; k += 1
+            out[k] = s; k += 1
+    return out
+
+
+def pack_P_vector(
+    P: np.ndarray,
+    comps: Sequence[str] = ("xx", "xy", "yx", "yy"),
+) -> np.ndarray:
+    """Pack phase tensor components into a real-valued data vector."""
+    P = np.asarray(P, dtype=float)
+    if P.ndim != 3 or P.shape[1:] != (2, 2):
+        raise ValueError("P must have shape (n,2,2).")
+
+    ij = _parse_comps(comps)
+    n = P.shape[0]
+    out = np.empty(n * len(ij), dtype=float)
+    k = 0
+    for ip in range(n):
+        for (i, j) in ij:
+            out[k] = float(P[ip, i, j]); k += 1
+    return out
+
+
+def pack_P_sigma(
+    P_err: np.ndarray,
+    comps: Sequence[str] = ("xx", "xy", "yx", "yy"),
+    *,
+    sigma_floor: float = 0.0,
+) -> np.ndarray:
+    """Pack phase tensor uncertainties into a sigma vector."""
+    P_err = np.asarray(P_err, dtype=float)
+    if P_err.ndim != 3 or P_err.shape[1:] != (2, 2):
+        raise ValueError("P_err must have shape (n,2,2).")
+
+    ij = _parse_comps(comps)
+    n = P_err.shape[0]
+    out = np.empty(n * len(ij), dtype=float)
+    k = 0
+    for ip in range(n):
+        for (i, j) in ij:
+            s = float(abs(P_err[ip, i, j]))
+            out[k] = float(np.sqrt(s * s + sigma_floor * sigma_floor)); k += 1
+    return out
+
+
+
+
+# -----------------------------------------------------------------------------
+# Gradient-enabled forward operator (for NUTS/HMC)
+# -----------------------------------------------------------------------------
+
+def _pack_Z_derivs_by_layer(dZ: np.ndarray, comps: Sequence[str]) -> np.ndarray:
+    """Pack per-layer impedance derivatives into a matrix.
+
+    Parameters
+    ----------
+    dZ : ndarray, shape (nper, nl, 2, 2)
+        Complex impedance derivatives w.r.t. one per-layer parameter.
+    comps : sequence of str
+        Components among {xx,xy,yx,yy}.
+
+    Returns
+    -------
+    ndarray, shape (nl, nper * ncomp * 2)
+        Matrix whose row ``l`` is the packed derivative vector for layer ``l``,
+        in the same ordering as :func:`pack_Z_vector`.
+    """
+    dZ = np.asarray(dZ, dtype=np.complex128)
+    if dZ.ndim != 4 or dZ.shape[2:] != (2, 2):
+        raise ValueError("dZ must have shape (nper,nl,2,2).")
+    ij = _parse_comps(comps)
+    nper, nl = dZ.shape[0], dZ.shape[1]
+    ncomp = len(ij)
+
+    out = np.empty((nl, nper * ncomp * 2), dtype=float)
+    k = 0
+    for ip in range(nper):
+        for (i, j) in ij:
+            out[:, k] = np.real(dZ[ip, :, i, j]); k += 1
+            out[:, k] = np.imag(dZ[ip, :, i, j]); k += 1
+    return out
+
+
+
+
+def _pack_P_derivs_by_layer(dP: np.ndarray, comps: Sequence[str]) -> np.ndarray:
+    """Pack per-layer phase tensor derivatives into a matrix.
+
+    Parameters
+    ----------
+    dP : ndarray, shape (nper, nl, 2, 2)
+        Phase tensor derivatives w.r.t. one per-layer parameter.
+    comps : sequence of str
+        Components among {xx,xy,yx,yy}.
+
+    Returns
+    -------
+    ndarray, shape (nl, nper * ncomp)
+        Matrix whose row ``l`` is the packed derivative vector for layer ``l``,
+        in the same ordering as :func:`pack_P_vector`.
+    """
+    dP = np.asarray(dP, dtype=float)
+    if dP.ndim != 4 or dP.shape[2:] != (2, 2):
+        raise ValueError("dP must have shape (nper,nl,2,2).")
+    ij = _parse_comps(comps)
+    nper, nl = dP.shape[0], dP.shape[1]
+    out = np.empty((nl, nper * len(ij)), dtype=float)
+    k = 0
+    for ip in range(nper):
+        for (i, j) in ij:
+            out[:, k] = dP[ip, :, i, j]; k += 1
+    return out
+
+
+def _pt_solve_reg(A: np.ndarray, B: np.ndarray, reg: float) -> np.ndarray:
+    """Solve A X = B with optional small diagonal regularization.
+
+    The regularization uses a scale based on the infinity-norm of A:
+
+        A_reg = A + (reg * max(1, ||A||_inf)) * I
+
+    Parameters
+    ----------
+    A : ndarray, shape (2,2)
+        System matrix.
+    B : ndarray, shape (2,2)
+        Right-hand side.
+    reg : float
+        Relative regularization level.
+
+    Returns
+    -------
+    ndarray, shape (2,2)
+        Solution X.
+    """
+    A = np.asarray(A, dtype=float)
+    B = np.asarray(B, dtype=float)
+    if reg > 0.0:
+        scale = float(max(1.0, np.linalg.norm(A, ord=np.inf)))
+        A = A + (reg * scale) * np.eye(2, dtype=float)
+    try:
+        return np.linalg.solve(A, B)
+    except np.linalg.LinAlgError:
+        # Fallback: least squares
+        return np.linalg.lstsq(A, B, rcond=None)[0]
+
+
+def phase_tensor_from_Z(
+    Z: np.ndarray,
+    *,
+    reg: float = 0.0,
+) -> np.ndarray:
+    """Compute phase tensor **P = inv(Re(Z)) @ Im(Z)**.
+
+    This project now uses a single, fixed convention:
+
+        X = Re(Z),  Y = Im(Z),   P = X^{-1} Y
+
+    Parameters
+    ----------
+    Z : ndarray, shape (n,2,2)
+        Complex impedance tensor.
+    reg : float
+        Relative diagonal regularization for the inversion (useful for NUTS/HMC
+        stability when Re(Z) becomes ill-conditioned).
+
+    Returns
+    -------
+    ndarray, shape (n,2,2)
+        Real phase tensor.
+    """
+    Z = np.asarray(Z, dtype=np.complex128)
+    if Z.ndim != 3 or Z.shape[1:] != (2, 2):
+        raise ValueError("Z must have shape (n,2,2).")
+
+    n = Z.shape[0]
+    P = np.empty((n, 2, 2), dtype=float)
+    for k in range(n):
+        X = Z[k].real
+        Y = Z[k].imag
+        P[k] = _pt_solve_reg(X, Y, reg)
+    return P
+
+
+def phase_tensor_dP_from_dZ(
+    Z: np.ndarray,
+    dZ: np.ndarray,
+    *,
+    reg: float = 0.0,
+    P: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    """Compute phase tensor derivatives dP from impedance derivatives dZ.
+
+    For the fixed convention **P = X^{-1} Y** with X=Re(Z), Y=Im(Z):
+
+        dP = X^{-1} ( dY - dX P )
+
+    Parameters
+    ----------
+    Z : ndarray, shape (nper,2,2)
+        Impedance tensor.
+    dZ : ndarray, shape (nper,nl,2,2)
+        Impedance derivatives for one per-layer parameter.
+    reg : float
+        Relative diagonal regularization for the inversion.
+    P : ndarray, optional
+        If provided, uses this phase tensor instead of recomputing it.
+
+    Returns
+    -------
+    ndarray, shape (nper,nl,2,2)
+        Phase tensor derivatives.
+    """
+    Z = np.asarray(Z, dtype=np.complex128)
+    dZ = np.asarray(dZ, dtype=np.complex128)
+    if Z.ndim != 3 or Z.shape[1:] != (2, 2):
+        raise ValueError("Z must have shape (nper,2,2).")
+    if dZ.ndim != 4 or dZ.shape[0] != Z.shape[0] or dZ.shape[2:] != (2, 2):
+        raise ValueError("dZ must have shape (nper,nl,2,2) matching Z.")
+
+    nper, nl = dZ.shape[0], dZ.shape[1]
+    if P is None:
+        P = phase_tensor_from_Z(Z, reg=reg)
+    else:
+        P = np.asarray(P, dtype=float)
+
+    dP = np.empty((nper, nl, 2, 2), dtype=float)
+    for ip in range(nper):
+        X = Z[ip].real
+        for l in range(nl):
+            dX = dZ[ip, l].real
+            dY = dZ[ip, l].imag
+            rhs = dY - dX @ P[ip]
+            dP[ip, l] = _pt_solve_reg(X, rhs, reg)
+    return dP
+
+
+class _ForwardPackedOp(Op):  # pragma: no cover (depends on pytensor runtime)
+    """PyTensor Op: forward prediction y_pred = f(h, rho_max, rho_min, strike).
+
+    This Op is differentiable because its :meth:`grad` returns a companion Op
+    that computes vector–Jacobian products using the analytic impedance
+    sensitivities from :func:`aniso.aniso1d_impedance_sens_simple`.
+
+    The Op returns a *real* vector:
+
+    - impedance contributions are stacked as Re/Im pairs (see :func:`pack_Z_vector`)
+    - if ``use_pt=True`` an additional block contains phase tensor components
+      (see :func:`pack_P_vector`)
+
+    Phase tensor convention
+    -----------------------
+    This code always uses **P = inv(Re(Z)) @ Im(Z)**. The phase tensor is
+    recomputed from Z for every likelihood evaluation to keep conventions and
+    gradients consistent.
 
     Notes
     -----
-    This object precomputes the observed data vector and uncertainty vector.
+    PT gradients can become numerically unstable if the inverted matrix
+    (Re(Z) or Im(Z), depending on definition) approaches singularity. A small
+    diagonal regularization ``pt_reg`` can help NUTS/HMC explore the posterior
+    more robustly.
     """
+
+    itypes = None  # set in __init__
+    otypes = None  # set in __init__
+
     def __init__(
         self,
-        site: Mapping,
+        *,
         periods_s: np.ndarray,
-        spec: ParamSpec,
-        *,
-        use_pt: bool,
         z_comps: Sequence[str],
+        use_pt: bool,
         pt_comps: Sequence[str],
-        compute_pt_if_missing: bool,
-        sigma_floor_Z: float,
-        sigma_floor_P: float,
-        is_iso: Optional[np.ndarray],
-    ) -> None:
-        self.spec = spec
-        self.use_pt = bool(use_pt)
+                pt_reg: float,
+        dh_rel: float,
+    ):
+        if pt is None or Op is None:
+            raise ImportError("PyTensor not available.")
+        self.periods_s = np.asarray(periods_s, dtype=float).ravel()
         self.z_comps = tuple(z_comps)
+        self.use_pt = bool(use_pt)
         self.pt_comps = tuple(pt_comps)
-        self.compute_pt_if_missing = bool(compute_pt_if_missing)
-        self.sigma_floor_Z = float(sigma_floor_Z)
-        self.sigma_floor_P = float(sigma_floor_P)
+        self.pt_reg = float(pt_reg)
+        self.dh_rel = float(dh_rel)
 
-        self.periods_s = _as_1d_float(periods_s, "periods_s")
-        self.nper = self.periods_s.size
+        # Types: four dvector inputs, one dvector output
+        self.itypes = [pt.dvector, pt.dvector, pt.dvector, pt.dvector]
+        self.otypes = [pt.dvector]
 
-        # Observations
-        if "Z" not in site:
-            raise KeyError("site must contain key 'Z' with shape (nper,2,2).")
-        self.Z_obs = np.asarray(site["Z"])
-        if self.Z_obs.shape != (self.nper, 2, 2):
-            raise ValueError(f"Z must have shape ({self.nper},2,2), got {self.Z_obs.shape}")
+        # Shared cache for forward + vjp
+        self._cache = {"x": None, "y": None, "sens": None}
 
-        err_kind = _parse_err_kind(site)
-
-        Z_err = site.get("Z_err", None)
-        if Z_err is None:
-            Z_std = np.ones_like(self.Z_obs, dtype=np.float64) * self.sigma_floor_Z
-        else:
-            Z_std = _err_to_std(np.asarray(Z_err), err_kind)
-            if Z_std.shape != self.Z_obs.shape:
-                raise ValueError("Z_err must have same shape as Z.")
-            Z_std = np.maximum(Z_std, self.sigma_floor_Z)
-
-        self.yZ = _pack_Z(self.Z_obs, self.z_comps)
-        self.sZ = _pack_Z(Z_std.astype(np.complex128), self.z_comps)  # pack uses real/imag
-        # _pack_Z expects complex; for std we pack real/imag the same by using complex std in real part
-        # but we constructed complex with std in real part only; fix:
-        # Better: rebuild sZ explicitly:
-        self.sZ = self._pack_Z_std(Z_std, self.z_comps, self.sigma_floor_Z)
-
-        # Optional phase tensor
-        self.P_obs = None
-        self.yP = None
-        self.sP = None
-        if self.use_pt:
-            if "P" in site:
-                P = np.asarray(site["P"], dtype=np.float64)
-                if P.shape != (self.nper, 2, 2):
-                    raise ValueError("P must have shape (nper,2,2).")
-            else:
-                if not self.compute_pt_if_missing:
-                    raise KeyError("use_pt=True but site has no 'P' and compute_pt_if_missing=False.")
-                P = phase_tensor_from_Z(self.Z_obs)
-
-            P_err = site.get("P_err", None)
-            if P_err is None:
-                P_std = np.ones_like(P, dtype=np.float64) * self.sigma_floor_P
-            else:
-                P_std = _err_to_std(np.asarray(P_err), err_kind)
-                if P_std.shape != P.shape:
-                    raise ValueError("P_err must have same shape as P.")
-                P_std = np.maximum(P_std, self.sigma_floor_P)
-
-            self.P_obs = P
-            self.yP = _pack_P(P, self.pt_comps)
-            self.sP = self._pack_P_std(P_std, self.pt_comps, self.sigma_floor_P)
-
-        # concatenate
-        if self.use_pt:
-            self.y = np.concatenate([self.yZ, self.yP], axis=0)
-            self.s = np.concatenate([self.sZ, self.sP], axis=0)
-        else:
-            self.y = self.yZ
-            self.s = self.sZ
-
-        # Forward-model flags
-        if is_iso is None:
-            self.is_iso = None
-        else:
-            is_iso = np.asarray(is_iso).astype(bool)
-            if is_iso.shape != (self.spec.nl,):
-                raise ValueError(f"is_iso must have shape ({self.spec.nl},), got {is_iso.shape}")
-            self.is_iso = is_iso
-
-        # Constants for loglike
-        self._log2pi = np.log(2.0 * np.pi)
-
-    @staticmethod
-    def _pack_Z_std(Z_std: np.ndarray, comps: Sequence[str], floor: float) -> np.ndarray:
-        """
-        Pack standard deviations for Z into the same layout as :func:`_pack_Z`.
-
-        Parameters
-        ----------
-        Z_std
-            Standard deviation array for Z (nper,2,2), real.
-        comps
-            Components list.
-        floor
-            Minimum sigma.
-
-        Returns
-        -------
-        ndarray
-            Packed sigma vector.
-        """
-        idx = _comp_indices(comps)
-        nper = Z_std.shape[0]
-        out = np.empty(nper * len(idx) * 2, dtype=np.float64)
-        p = 0
-        for k in range(nper):
-            for (i, j) in idx:
-                s = max(float(Z_std[k, i, j]), float(floor))
-                out[p] = s
-                out[p + 1] = s
-                p += 2
-        return out
-
-    @staticmethod
-    def _pack_P_std(P_std: np.ndarray, comps: Sequence[str], floor: float) -> np.ndarray:
-        """
-        Pack standard deviations for P into the same layout as :func:`_pack_P`.
-
-        Parameters
-        ----------
-        P_std
-            Standard deviation array for P (nper,2,2), real.
-        comps
-            Components list.
-        floor
-            Minimum sigma.
-
-        Returns
-        -------
-        ndarray
-            Packed sigma vector.
-        """
-        idx = _comp_indices(comps)
-        nper = P_std.shape[0]
-        out = np.empty(nper * len(idx), dtype=np.float64)
-        p = 0
-        for k in range(nper):
-            for (i, j) in idx:
-                out[p] = max(float(P_std[k, i, j]), float(floor))
-                p += 1
-        return out
-
-    def forward(
-        self,
-        h_m: np.ndarray,
-        rop: np.ndarray,
-        ustr_deg: np.ndarray,
-        udip_deg: np.ndarray,
-        usla_deg: np.ndarray,
-        *,
-        compute_sens: bool,
-    ) -> Dict[str, np.ndarray]:
-        """
-        Run the anisotropic 1-D forward model.
-
-        Parameters
-        ----------
-        h_m, rop, ustr_deg, udip_deg, usla_deg
-            Model arrays.
-        compute_sens
-            If True, request sensitivities for gradient evaluation.
-
-        Returns
-        -------
-        dict
-            Output dictionary from :func:`aniso.aniso1d_impedance_sens`.
-        """
-        out = aniso.aniso1d_impedance_sens(
-            self.periods_s,
-            h_m,
-            rop,
-            ustr_deg,
-            udip_deg,
-            usla_deg,
-            is_iso=self.is_iso,
-            compute_sens=compute_sens,
+        self._vjp_op = _ForwardPackedVJPOp(
+            periods_s=self.periods_s,
+            z_comps=self.z_comps,
+            use_pt=self.use_pt,
+            pt_comps=self.pt_comps,
+                        pt_reg=self.pt_reg,
+            dh_rel=self.dh_rel,
+            cache=self._cache,
         )
-        return out
-
-    def pack_prediction(self, Z_pred: np.ndarray) -> np.ndarray:
-        """
-        Pack model prediction into the data vector layout.
-
-        Parameters
-        ----------
-        Z_pred
-            Predicted impedance (nper,2,2).
-
-        Returns
-        -------
-        ndarray
-            Packed prediction vector matching ``self.y``.
-        """
-        yZp = _pack_Z(Z_pred, self.z_comps)
-        if not self.use_pt:
-            return yZp
-
-        Pp = phase_tensor_from_Z(Z_pred)
-        yPp = _pack_P(Pp, self.pt_comps)
-        return np.concatenate([yZp, yPp], axis=0)
-
-    def loglike_from_pred(self, y_pred: np.ndarray) -> float:
-        """
-        Compute Gaussian log-likelihood given packed predictions.
-
-        Parameters
-        ----------
-        y_pred
-            Packed prediction vector (same length as ``self.y``).
-
-        Returns
-        -------
-        float
-            Log-likelihood value.
-        """
-        r = self.y - y_pred
-        s = self.s
-        s2 = s * s
-        return float(-0.5 * np.sum((r * r) / s2 + self._log2pi + np.log(s2)))
-
-    def grad_loglike(
-        self,
-        theta: np.ndarray,
-        h_m_fixed: Optional[np.ndarray],
-        rop_fixed: Optional[np.ndarray],
-        ustr_fixed: Optional[np.ndarray],
-        udip_fixed: Optional[np.ndarray],
-        usla_fixed: Optional[np.ndarray],
-    ) -> np.ndarray:
-        """
-        Compute gradient of the Gaussian log-likelihood w.r.t. theta.
-
-        Parameters
-        ----------
-        theta
-            Current parameter vector.
-        h_m_fixed, rop_fixed, ustr_fixed, udip_fixed, usla_fixed
-            Fixed reference arrays used in theta->model conversion.
-
-        Returns
-        -------
-        ndarray
-            Gradient vector with same shape as theta (float64).
-
-        Notes
-        -----
-        - Uses sensitivities from :func:`aniso.aniso1d_impedance_sens`.
-        - For Z-part, chain rule converts complex derivatives into derivatives
-          of packed real/imag residuals.
-        - For PT-part, uses dP = -A dX P + A dY with A = inv(X), X=Re(Z), Y=Im(Z).
-        """
-        theta = _as_1d_float(theta, "theta")
-        h_m, rop, ustr, udip, usla = theta_to_model(
-            theta, self.spec, h_m_fixed, rop_fixed, ustr_fixed, udip_fixed, usla_fixed
-        )
-
-        out = self.forward(h_m, rop, ustr, udip, usla, compute_sens=True)
-        Zp = out["Z"]
-
-        # Residual weights
-        y_pred = self.pack_prediction(Zp)
-        r = self.y - y_pred
-        w = r / (self.s * self.s)  # weights for derivative of pred
-
-        # Precompute per-period P and inv(Re(Z)) for PT gradients
-        if self.use_pt:
-            X = np.real(Zp)
-            Y = np.imag(Zp)
-            P = phase_tensor_from_Z(Zp)
-            invX = np.empty_like(X)
-            for k in range(self.nper):
-                invX[k] = np.linalg.inv(X[k])
-
-        # Helper to compute contribution for a single complex dZ array (nper,2,2)
-        def add_from_dZ(dZ: np.ndarray, grad_acc: np.ndarray, theta_slice: slice, transform: Optional[Tuple[str, np.ndarray]] = None):
-            """
-            Add gradient contributions for parameters associated with dZ.
-
-            Parameters
-            ----------
-            dZ
-                Complex derivative (nper,2,2) for a single scalar parameter.
-            grad_acc
-                Gradient accumulator array (ndim,).
-            theta_slice
-                Slice in theta corresponding to this parameter (scalar).
-            transform
-                Optional tuple describing additional scaling due to parameter transform:
-                ("log10", x_linear) scales by ln(10)*x_linear.
-            """
-            # Z-part packing
-            idxZ = _comp_indices(self.z_comps)
-            p = 0
-            g = 0.0
-            for k in range(self.nper):
-                for (i, j) in idxZ:
-                    dz = dZ[k, i, j]
-                    # packed order: Re, Im
-                    g += w[p] * np.real(dz) + w[p + 1] * np.imag(dz)
-                    p += 2
-
-            # PT-part packing
-            if self.use_pt:
-                idxP = _comp_indices(self.pt_comps)
-                # PT weights start after Z block
-                pP0 = self.yZ.size
-                pp = 0
-                for k in range(self.nper):
-                    # dX, dY for this parameter
-                    dX = np.real(dZ[k])
-                    dY = np.imag(dZ[k])
-                    A = invX[k]
-                    dP = -A @ dX @ P[k] + A @ dY
-                    for (i, j) in idxP:
-                        g += w[pP0 + pp] * dP[i, j]
-                        pp += 1
-
-            if transform is not None:
-                kind, xlin = transform
-                if kind == "log10":
-                    g *= (np.log(10.0) * float(xlin))
-            grad_acc[theta_slice] += g
-
-        ndim = self.spec.ndim()
-        grad = np.zeros(ndim, dtype=np.float64)
-
-        p = 0
-
-        # Thickness params
-        if not self.spec.fix_h:
-            nh = self.spec.nh()
-            dZ_dh = out["dZ_dh_m"]  # (nper,nl,2,2)
-            for j in range(nh):
-                # d/dlog10(h) = ln(10)*h * d/dh
-                add_from_dZ(dZ_dh[:, j, :, :], grad, slice(p + j, p + j + 1), ("log10", h_m[j]))
-            p += nh
-
-        # Resistivity params
-        dZ_drop = out["dZ_drop"]  # (nper,nl,3,2,2)
-        nrho = self.spec.nrho()
-        log10_rop = theta[p : p + nrho].reshape((self.spec.nl, 3))
-        # rop linear:
-        rop_lin = 10.0 ** log10_rop
-        # For each rop scalar
-        idx = 0
-        for il in range(self.spec.nl):
-            for ir in range(3):
-                add_from_dZ(dZ_drop[:, il, ir, :, :], grad, slice(p + idx, p + idx + 1), ("log10", rop_lin[il, ir]))
-                idx += 1
-        p += nrho
-
-        # Angle params (degrees) - already in degrees
-        dZ_ustr = out["dZ_dustr_deg"]  # (nper,nl,2,2)
-        dZ_udip = out["dZ_dudip_deg"]
-        dZ_usla = out["dZ_dusla_deg"]
-        idx = 0
-        for il in range(self.spec.nl):
-            add_from_dZ(dZ_ustr[:, il, :, :], grad, slice(p + idx, p + idx + 1), None)
-            idx += 1
-            add_from_dZ(dZ_udip[:, il, :, :], grad, slice(p + idx, p + idx + 1), None)
-            idx += 1
-            add_from_dZ(dZ_usla[:, il, :, :], grad, slice(p + idx, p + idx + 1), None)
-            idx += 1
-
-        return grad
-
-
-class AnisoMTLogLikeOp(Op):
-    """
-    PyTensor Op computing the Gaussian log-likelihood for anisotropic 1-D MT.
-
-    The Op takes a single input:
-        theta : vector (ndim,)
-
-    and returns:
-        loglike : scalar
-
-    Parameters
-    ----------
-    ctx
-        Context with packed observations and forward-model settings.
-    h_m_fixed, rop_fixed, ustr_fixed, udip_fixed, usla_fixed
-        Fixed arrays used by theta->model conversion (for non-sampled entries).
-    enable_grad
-        If True, :meth:`grad` is implemented (via :class:`AnisoMTLogLikeGradOp`).
-
-    Notes
-    -----
-    - In ``perform`` we evaluate the forward model without sensitivities to keep
-      likelihood evaluation fast. The gradient Op evaluates with sensitivities.
-    """
-    itypes = [pt.dvector]
-    otypes = [pt.dscalar]
-
-    def __init__(
-        self,
-        ctx: _AnisoMTContext,
-        *,
-        h_m_fixed: Optional[np.ndarray],
-        rop_fixed: Optional[np.ndarray],
-        ustr_fixed: Optional[np.ndarray],
-        udip_fixed: Optional[np.ndarray],
-        usla_fixed: Optional[np.ndarray],
-        enable_grad: bool,
-    ) -> None:
-        self.ctx = ctx
-        self.h_m_fixed = None if h_m_fixed is None else np.asarray(h_m_fixed, dtype=np.float64)
-        self.rop_fixed = None if rop_fixed is None else np.asarray(rop_fixed, dtype=np.float64)
-        self.ustr_fixed = None if ustr_fixed is None else np.asarray(ustr_fixed, dtype=np.float64)
-        self.udip_fixed = None if udip_fixed is None else np.asarray(udip_fixed, dtype=np.float64)
-        self.usla_fixed = None if usla_fixed is None else np.asarray(usla_fixed, dtype=np.float64)
-        self.enable_grad = bool(enable_grad)
-        self._grad_op = None
-
-    def make_node(self, theta):
-        """
-        Create an Apply node for the Op.
-
-        Parameters
-        ----------
-        theta
-            PyTensor vector variable.
-
-        Returns
-        -------
-        Apply
-            PyTensor apply node.
-        """
-        theta = pt.as_tensor_variable(theta)
-        if theta.type.ndim != 1:
-            raise TypeError("theta must be a 1-D vector.")
-        return Apply(self, [theta], [pt.dscalar()])
 
     def perform(self, node, inputs, outputs):
-        """
-        Evaluate log-likelihood at a numeric theta.
-
-        Parameters
-        ----------
-        node
-            PyTensor node (unused).
-        inputs
-            List containing theta ndarray.
-        outputs
-            List containing output storage.
-        """
-        (theta,) = inputs
-        h_m, rop, ustr, udip, usla = theta_to_model(
-            theta,
-            self.ctx.spec,
-            self.h_m_fixed,
-            self.rop_fixed,
-            self.ustr_fixed,
-            self.udip_fixed,
-            self.usla_fixed,
+        h_m_v, rho_max_v, rho_min_v, strike_v = inputs
+        fres = aniso1d_impedance_sens_simple(
+            periods_s=self.periods_s,
+            h_m=np.asarray(h_m_v, dtype=float),
+            rho_max_ohmm=np.asarray(rho_max_v, dtype=float),
+            rho_min_ohmm=np.asarray(rho_min_v, dtype=float),
+            strike_deg=np.asarray(strike_v, dtype=float),
+            compute_sens=False,
+            dh_rel=self.dh_rel,
         )
-        out = self.ctx.forward(h_m, rop, ustr, udip, usla, compute_sens=False)
-        Zp = out["Z"]
-        y_pred = self.ctx.pack_prediction(Zp)
-        ll = self.ctx.loglike_from_pred(y_pred)
-        outputs[0][0] = np.asarray(ll, dtype=np.float64)
+        Zp = np.asarray(fres["Z"], dtype=np.complex128)
+        y_parts = [pack_Z_vector(Zp, comps=self.z_comps).astype(float)]
+
+        if self.use_pt:
+            Pp = phase_tensor_from_Z(Zp, reg=self.pt_reg)
+            y_parts.append(pack_P_vector(Pp, comps=self.pt_comps).astype(float))
+
+        ypred = np.concatenate(y_parts).astype(float)
+        outputs[0][0] = ypred
+
+        # Update cache (no sensitivities here)
+        self._cache["x"] = (
+            np.asarray(h_m_v, dtype=float).copy(),
+            np.asarray(rho_max_v, dtype=float).copy(),
+            np.asarray(rho_min_v, dtype=float).copy(),
+            np.asarray(strike_v, dtype=float).copy(),
+        )
+        self._cache["y"] = ypred
+        self._cache["sens"] = None
 
     def grad(self, inputs, g_outputs):
-        """
-        Gradient of the Op output w.r.t. inputs.
-
-        Parameters
-        ----------
-        inputs
-            List with theta symbolic.
-        g_outputs
-            List with upstream gradient (scalar).
-
-        Returns
-        -------
-        list
-            List containing the symbolic gradient vector.
-
-        Notes
-        -----
-        This uses a separate numeric gradient Op to keep the logic clean.
-        """
-        if not self.enable_grad:
-            return [pt.zeros_like(inputs[0])]
-
-        if self._grad_op is None:
-            self._grad_op = AnisoMTLogLikeGradOp(
-                self.ctx,
-                h_m_fixed=self.h_m_fixed,
-                rop_fixed=self.rop_fixed,
-                ustr_fixed=self.ustr_fixed,
-                udip_fixed=self.udip_fixed,
-                usla_fixed=self.usla_fixed,
-            )
-        (theta,) = inputs
-        (g_out,) = g_outputs
-        return [g_out * self._grad_op(theta)]
+        (g_y,) = g_outputs
+        gh, grmax, grmin, gstrike = self._vjp_op(*inputs, g_y)
+        return [gh, grmax, grmin, gstrike]
 
 
-class AnisoMTLogLikeGradOp(Op):
-    """
-    PyTensor Op computing gradient of log-likelihood w.r.t. theta.
+class _ForwardPackedVJPOp(Op):  # pragma: no cover (depends on pytensor runtime)
+    """Companion Op computing vector–Jacobian products for _ForwardPackedOp."""
 
-    Parameters
-    ----------
-    ctx
-        Shared context.
-    h_m_fixed, rop_fixed, ustr_fixed, udip_fixed, usla_fixed
-        Fixed reference arrays.
-    """
-    itypes = [pt.dvector]
-    otypes = [pt.dvector]
+    itypes = None
+    otypes = None
 
     def __init__(
         self,
-        ctx: _AnisoMTContext,
         *,
-        h_m_fixed: Optional[np.ndarray],
-        rop_fixed: Optional[np.ndarray],
-        ustr_fixed: Optional[np.ndarray],
-        udip_fixed: Optional[np.ndarray],
-        usla_fixed: Optional[np.ndarray],
-    ) -> None:
-        self.ctx = ctx
-        self.h_m_fixed = h_m_fixed
-        self.rop_fixed = rop_fixed
-        self.ustr_fixed = ustr_fixed
-        self.udip_fixed = udip_fixed
-        self.usla_fixed = usla_fixed
+        periods_s: np.ndarray,
+        z_comps: Sequence[str],
+        use_pt: bool,
+        pt_comps: Sequence[str],
+                pt_reg: float,
+        dh_rel: float,
+        cache: Optional[Dict] = None,
+    ):
+        if pt is None or Op is None:
+            raise ImportError("PyTensor not available.")
+        self.periods_s = np.asarray(periods_s, dtype=float).ravel()
+        self.z_comps = tuple(z_comps)
+        self.use_pt = bool(use_pt)
+        self.pt_comps = tuple(pt_comps)
+        self.pt_reg = float(pt_reg)
+        self.dh_rel = float(dh_rel)
+        self.cache = cache
 
-    def make_node(self, theta):
-        """
-        Create apply node.
-
-        Parameters
-        ----------
-        theta
-            1-D vector variable.
-
-        Returns
-        -------
-        Apply
-            Node producing gradient vector.
-        """
-        theta = pt.as_tensor_variable(theta)
-        if theta.type.ndim != 1:
-            raise TypeError("theta must be a 1-D vector.")
-        return Apply(self, [theta], [pt.dvector()])
+        # inputs: h, rho_max, rho_min, strike, g_y
+        self.itypes = [pt.dvector, pt.dvector, pt.dvector, pt.dvector, pt.dvector]
+        # outputs: gradients for each of the 4 vector inputs
+        self.otypes = [pt.dvector, pt.dvector, pt.dvector, pt.dvector]
 
     def perform(self, node, inputs, outputs):
-        """
-        Numeric gradient evaluation.
+        h_m_v, rho_max_v, rho_min_v, strike_v, g_y = inputs
+        g_y = np.asarray(g_y, dtype=float).ravel()
 
-        Parameters
-        ----------
-        node
-            PyTensor node (unused).
-        inputs
-            [theta ndarray]
-        outputs
-            output storage list.
-        """
-        (theta,) = inputs
-        g = self.ctx.grad_loglike(
-            theta,
-            self.h_m_fixed,
-            self.rop_fixed,
-            self.ustr_fixed,
-            self.udip_fixed,
-            self.usla_fixed,
-        )
-        outputs[0][0] = g.astype(np.float64)
+        # Reuse sensitivities if cached and inputs match exactly
+        fres = None
+        if self.cache is not None and self.cache.get("sens", None) is not None and self.cache.get("x", None) is not None:
+            x0 = self.cache["x"]
+            if (
+                np.array_equal(x0[0], h_m_v)
+                and np.array_equal(x0[1], rho_max_v)
+                and np.array_equal(x0[2], rho_min_v)
+                and np.array_equal(x0[3], strike_v)
+            ):
+                fres = self.cache["sens"]
+
+        if fres is None:
+            fres = aniso1d_impedance_sens_simple(
+                periods_s=self.periods_s,
+                h_m=np.asarray(h_m_v, dtype=float),
+                rho_max_ohmm=np.asarray(rho_max_v, dtype=float),
+                rho_min_ohmm=np.asarray(rho_min_v, dtype=float),
+                strike_deg=np.asarray(strike_v, dtype=float),
+                compute_sens=True,
+                dh_rel=self.dh_rel,
+            )
+            if self.cache is not None:
+                self.cache["sens"] = fres
+                self.cache["x"] = (
+                    np.asarray(h_m_v, dtype=float).copy(),
+                    np.asarray(rho_max_v, dtype=float).copy(),
+                    np.asarray(rho_min_v, dtype=float).copy(),
+                    np.asarray(strike_v, dtype=float).copy(),
+                )
+
+        Z = np.asarray(fres["Z"], dtype=np.complex128)
+        dZ_dh = np.asarray(fres["dZ_dh_m"], dtype=np.complex128)           # (nper,nl,2,2)
+        dZ_drmax = np.asarray(fres["dZ_drho_max"], dtype=np.complex128)    # (nper,nl,2,2)
+        dZ_drmin = np.asarray(fres["dZ_drho_min"], dtype=np.complex128)    # (nper,nl,2,2)
+        dZ_dstr = np.asarray(fres["dZ_dstrike_deg"], dtype=np.complex128)  # (nper,nl,2,2)
+
+        A_h = _pack_Z_derivs_by_layer(dZ_dh, comps=self.z_comps)
+        A_rmax = _pack_Z_derivs_by_layer(dZ_drmax, comps=self.z_comps)
+        A_rmin = _pack_Z_derivs_by_layer(dZ_drmin, comps=self.z_comps)
+        A_str = _pack_Z_derivs_by_layer(dZ_dstr, comps=self.z_comps)
+
+        # Split upstream gradient into Z / PT blocks
+        nper = int(self.periods_s.size)
+        nZ = nper * len(_parse_comps(self.z_comps)) * 2
+        gZ = g_y[:nZ]
+
+        gh = A_h @ gZ
+        grmax = A_rmax @ gZ
+        grmin = A_rmin @ gZ
+        gstr = A_str @ gZ
+
+        if self.use_pt:
+            gP = g_y[nZ:]
+            # Compute P and dP/dparam from Z and dZ/dparam
+            P = phase_tensor_from_Z(Z, reg=self.pt_reg)
+
+            dP_dh = phase_tensor_dP_from_dZ(Z, dZ_dh, reg=self.pt_reg, P=P)
+            dP_drmax = phase_tensor_dP_from_dZ(Z, dZ_drmax, reg=self.pt_reg, P=P)
+            dP_drmin = phase_tensor_dP_from_dZ(Z, dZ_drmin, reg=self.pt_reg, P=P)
+            dP_dstr = phase_tensor_dP_from_dZ(Z, dZ_dstr, reg=self.pt_reg, P=P)
+
+            B_h = _pack_P_derivs_by_layer(dP_dh, comps=self.pt_comps)
+            B_rmax = _pack_P_derivs_by_layer(dP_drmax, comps=self.pt_comps)
+            B_rmin = _pack_P_derivs_by_layer(dP_drmin, comps=self.pt_comps)
+            B_str = _pack_P_derivs_by_layer(dP_dstr, comps=self.pt_comps)
+
+            gh = gh + (B_h @ gP)
+            grmax = grmax + (B_rmax @ gP)
+            grmin = grmin + (B_rmin @ gP)
+            gstr = gstr + (B_str @ gP)
+
+        outputs[0][0] = np.asarray(gh, dtype=float)
+        outputs[1][0] = np.asarray(grmax, dtype=float)
+        outputs[2][0] = np.asarray(grmin, dtype=float)
+        outputs[3][0] = np.asarray(gstr, dtype=float)
+
+# -----------------------------------------------------------------------------
+# Parameter specification
+# -----------------------------------------------------------------------------
+
+
+class ParamSpec:
+    """Container describing the inversion parameterization and bounds.
+
+    Notes
+    -----
+    This is intentionally *not* a dataclass (user preference).
+
+    Parameters
+    ----------
+    nl : int
+        Number of layers.
+    fix_h : bool
+        If True, thicknesses are not sampled.
+    sample_last_thickness : bool
+        If True, also sample the last entry of ``h_m`` (usually the basement
+        thickness placeholder). Most workflows keep it fixed at 0.
+    log10_h_bounds : tuple(float,float)
+        Bounds for log10(h_m).
+    log10_rho_bounds : tuple(float,float)
+        Bounds for log10 resistivities.
+    strike_bounds_deg : tuple(float,float)
+        Bounds for strike in degrees.
+    """
+
+    def __init__(
+        self,
+        *,
+        nl: int,
+        fix_h: bool = True,
+        sample_last_thickness: bool = False,
+        log10_h_bounds: Tuple[float, float] = (0.0, 5.0),
+        log10_rho_bounds: Tuple[float, float] = (0.0, 5.0),
+        strike_bounds_deg: Tuple[float, float] = (-180.0, 180.0),
+    ) -> None:
+        self.nl = int(nl)
+        self.fix_h = bool(fix_h)
+        self.sample_last_thickness = bool(sample_last_thickness)
+        self.log10_h_bounds = tuple(float(x) for x in log10_h_bounds)
+        self.log10_rho_bounds = tuple(float(x) for x in log10_rho_bounds)
+        self.strike_bounds_deg = tuple(float(x) for x in strike_bounds_deg)
+
+
+# -----------------------------------------------------------------------------
+# PyMC model build + sampling
+# -----------------------------------------------------------------------------
 
 
 def build_pymc_model(
-    site: Mapping,
+    site: Dict,
     *,
     spec: ParamSpec,
+    model0: Optional[Dict] = None,
     h_m0: Optional[np.ndarray] = None,
-    rop0: Optional[np.ndarray] = None,
-    ustr_deg0: Optional[np.ndarray] = None,
-    udip_deg0: Optional[np.ndarray] = None,
-    usla_deg0: Optional[np.ndarray] = None,
+    rho_min0: Optional[np.ndarray] = None,
+    rho_max0: Optional[np.ndarray] = None,
+    strike_deg0: Optional[np.ndarray] = None,
     is_iso: Optional[np.ndarray] = None,
     is_fix: Optional[np.ndarray] = None,
     use_pt: bool = False,
-    z_comps: Sequence[str] = ("xy", "yx"),
+    z_comps: Sequence[str] = ("xx", "xy", "yx", "yy"),
     pt_comps: Sequence[str] = ("xx", "xy", "yx", "yy"),
-    compute_pt_if_missing: bool = True,
+    pt_reg: float = 1e-12,
     sigma_floor_Z: float = 0.0,
     sigma_floor_P: float = 0.0,
     enable_grad: bool = False,
-    prior_kind: str = "uniform",
-) -> Tuple[pm.Model, Dict[str, object]]:
-    """
-    Build a PyMC model for anisotropic 1-D MT inversion.
+    prior_kind: str = "default",
+    param_domain: str = "rho",
+    dh_rel: float = 1e-6,
+) -> Tuple["pm.Model", Dict]:
+    """Build a PyMC model for one site using the simplified forward model.
 
     Parameters
     ----------
-    site
-        Site dict with keys described in module docstring.
-    spec
-        Parameter specification (sizes, transforms, bounds).
-    h_m0, rop0, ustr_deg0, udip_deg0, usla_deg0
-        Reference arrays used to initialize fixed entries. If a quantity is
-        sampled, the prior mean/center can be set close to these values by
-        choosing ``prior_kind="normal"``.
-    is_iso
-        Optional (nl,) isotropy flag passed to forward model.
-    is_fix
-        Optional (nl,) per-layer flag. If True, all parameters of that layer are held fixed
-        at their initial values and are not sampled.
-    use_pt
-        If True, include phase tensor likelihood.
-    z_comps, pt_comps
-        Components to include.
-    compute_pt_if_missing
-        If True and ``use_pt`` is True, compute P from Z if missing.
-    sigma_floor_Z, sigma_floor_P
-        Minimum sigmas to prevent singular likelihood.
-    enable_grad
-        If True, likelihood Op provides a gradient (enables NUTS later).
-    prior_kind
-        "uniform" or "normal".
-        - uniform: bounded Uniform priors on transformed variables
-        - normal: Normal priors around initial values with wide stds, plus hard bounds
+    site : dict
+        Site dict containing ``freq``, ``Z`` and (optionally) errors.
+    spec : ParamSpec
+        Parameter specification.
+    model0 : dict, optional
+        Starting model. If provided, used as defaults for missing arrays.
+    h_m0, rho_min0, rho_max0, strike_deg0 : ndarray, optional
+        Starting arrays (override `model0`).
+    is_iso, is_fix : ndarray, optional
+        Per-layer flags (override `model0`).
+    use_pt : bool
+        If True, include phase tensor components in the likelihood.
+    sigma_floor_Z, sigma_floor_P : float
+        Error floors added in quadrature.
+    enable_grad : bool
+        If True, build a gradient-enabled likelihood (supports NUTS/HMC) by
+        using a custom PyTensor Op whose gradients are computed from the
+        analytic impedance sensitivities.
+
+        Notes:
+        - Impedance + optional phase tensor likelihoods are supported.
+        - For best stability with NUTS, consider ``spec.fix_h=True`` to avoid
+          finite-difference thickness sensitivities.
+    prior_kind : str
+        One of ``{"default","uniform"}``.
+
+        ``"default"`` uses smooth bounded transforms and an explicit anisotropy
+        ratio parameter to encourage near-isotropy while enforcing
+        ``rho_max >= rho_min``.
+
+        ``"uniform"`` reproduces the older broad uniform sampling behaviour.
+    param_domain : str
+        One of ``{"rho","sigma"}``.
+
+        - ``"rho"`` samples resistivities (Ohm·m).
+        - ``"sigma"`` samples conductivities (S/m) and converts to resistivities
+          for the forward model.
+    dh_rel : float
+        Relative perturbation used for the thickness derivative inside the
+        forward sensitivities (only relevant when sampling/inverting ``h_m``).
 
     Returns
     -------
-    model, info
-        PyMC model and an info dict containing:
-        - "param_names": list of theta parameter names in order
-        - "theta_init": initial theta vector (float64)
-        - "loglike_op": the PyTensor Op used for likelihood
-        - "context": internal context (for debugging)
-
-    Notes
-    -----
-    For gradient-based samplers, you must set ``enable_grad=True`` and then
-    choose an appropriate step method when calling :func:`sample_pymc`.
+    pm.Model
+        The PyMC model.
+    dict
+        Info dict (contains packed observation vectors and component metadata).
     """
-    # periods from freq
-    if "freq" not in site:
-        raise KeyError("site must contain 'freq' [Hz].")
-    freq = _as_1d_float(site["freq"], "freq")
+    if pm is None or pt is None:
+        raise ImportError("PyMC / PyTensor not available in this environment.")
+    if enable_grad:
+        if Op is None:
+            raise ImportError("PyTensor Op not available (needed for enable_grad=True).")
+    else:
+        if as_op is None:
+            raise ImportError("pytensor.as_op not available (needed for enable_grad=False).")
+
+    # Starting model resolution
+    if model0 is not None:
+        m0 = normalize_model(model0)
+    else:
+        m0 = None
+
+    freq = np.asarray(site.get("freq", None), dtype=float).ravel()
+    if freq.size == 0:
+        raise ValueError("site must contain non-empty 'freq'.")
     periods_s = 1.0 / freq
 
-    # Context
-    ctx = _AnisoMTContext(
-        site,
-        periods_s,
-        spec,
-        use_pt=use_pt,
-        z_comps=z_comps,
-        pt_comps=pt_comps,
-        compute_pt_if_missing=compute_pt_if_missing,
-        sigma_floor_Z=sigma_floor_Z,
-        sigma_floor_P=sigma_floor_P,
-        is_iso=is_iso,
-    )
+    Z_obs = np.asarray(site.get("Z", None))
+    if Z_obs is None:
+        raise KeyError("site must contain 'Z'.")
+    Z_obs = np.asarray(Z_obs, dtype=np.complex128)
 
-    # Per-layer fixed flags (freeze entire layer during sampling)
-    is_fix_arr = normalize_is_fix(is_fix, nl=spec.nl)
+    if use_pt:
+        site = ensure_phase_tensor(dict(site), nsim=200, overwrite=True)
 
-    # Prepare initial theta from reference arrays
-    nl = spec.nl
-    if h_m0 is None:
-        h_m0 = np.ones(nl, dtype=np.float64)
-        h_m0[-1] = 0.0
-    if rop0 is None:
-        rop0 = np.ones((nl, 3), dtype=np.float64) * 100.0
-    if ustr_deg0 is None:
-        ustr_deg0 = np.zeros(nl, dtype=np.float64)
-    if udip_deg0 is None:
-        udip_deg0 = np.zeros(nl, dtype=np.float64)
-    if usla_deg0 is None:
-        usla_deg0 = np.zeros(nl, dtype=np.float64)
 
-    h_m0 = np.asarray(h_m0, dtype=np.float64)
-    rop0 = np.asarray(rop0, dtype=np.float64)
-    ustr_deg0 = np.asarray(ustr_deg0, dtype=np.float64)
-    udip_deg0 = np.asarray(udip_deg0, dtype=np.float64)
-    usla_deg0 = np.asarray(usla_deg0, dtype=np.float64)
+    # Observations
+    yZ = pack_Z_vector(Z_obs, comps=z_comps)
+    if "Z_err" in site:
+        sigmaZ = pack_Z_sigma(site["Z_err"], comps=z_comps, sigma_floor=float(sigma_floor_Z))
+    else:
+        sigmaZ = np.ones_like(yZ) * max(float(sigma_floor_Z), 1.0)
 
-    # Build theta_init
-    parts = []
-    names = []
+    y_list = [yZ]
+    s_list = [sigmaZ]
 
-    if not spec.fix_h:
-        nh = spec.nh()
-        h_init = np.clip(h_m0[:nh], 10.0 ** spec.log10_h_bounds[0], 10.0 ** spec.log10_h_bounds[1])
-        parts.append(np.log10(h_init))
-        names += [f"log10_h[{i}]" for i in range(nh)]
-
-    rop_init = np.clip(rop0, 10.0 ** spec.log10_rho_bounds[0], 10.0 ** spec.log10_rho_bounds[1])
-    parts.append(np.log10(rop_init).reshape(-1))
-    names += [f"log10_rop[{i},{j}]" for i in range(nl) for j in range(3)]
-
-    parts.append(np.vstack([ustr_deg0, udip_deg0, usla_deg0]).T.reshape(-1))
-    names += [f"ustr_deg[{i}]" for i in range(nl)]
-    names += [f"udip_deg[{i}]" for i in range(nl)]
-    names += [f"usla_deg[{i}]" for i in range(nl)]
-
-    theta_init = np.concatenate(parts).astype(np.float64)
-
-    # Likelihood Op
-    loglike_op = AnisoMTLogLikeOp(
-        ctx,
-        h_m_fixed=h_m0,
-        rop_fixed=rop0,
-        ustr_fixed=ustr_deg0,
-        udip_fixed=udip_deg0,
-        usla_fixed=usla_deg0,
-        enable_grad=enable_grad,
-    )
-
-    # Build PyMC model
-    with pm.Model() as model:
-        parts_full = []
-
-        def _merge_fixed(
-            *,
-            name: str,
-            full_mu: np.ndarray,
-            free_idx: np.ndarray,
-            bounds: Tuple[float, float],
-            prior_kind: str,
-            sigma: float,
-        ) -> pt.TensorVariable:
-            """Create a vector with free entries sampled and fixed entries held constant.
-
-            The returned tensor has the same length as ``full_mu``.
-            """
-            lo, hi = float(bounds[0]), float(bounds[1])
-            mu = np.asarray(full_mu, dtype=np.float64).ravel()
-            mu = np.clip(mu, lo, hi)
-            n = int(mu.size)
-            idx = np.asarray(free_idx, dtype=np.int64).ravel()
-            if idx.size == n:
-                # nothing fixed
-                if prior_kind == "normal":
-                    sd = np.ones(n, dtype=np.float64) * float(sigma)
-                    x = pm.TruncatedNormal(name, mu=mu, sigma=sd, lower=lo, upper=hi, shape=n)
-                else:
-                    x = pm.Uniform(name, lower=lo, upper=hi, shape=n)
-                return x
-            if idx.size == 0:
-                x_full = pt.as_tensor_variable(mu)
-                pm.Deterministic(name, x_full)
-                return x_full
-
-            # Sample only free subset
-            mu_free = mu[idx]
-            if prior_kind == "normal":
-                sd_free = np.ones(idx.size, dtype=np.float64) * float(sigma)
-                x_free = pm.TruncatedNormal(
-                    f"{name}_free", mu=mu_free, sigma=sd_free, lower=lo, upper=hi, shape=int(idx.size)
-                )
-            else:
-                x_free = pm.Uniform(f"{name}_free", lower=lo, upper=hi, shape=int(idx.size))
-
-            x_full = pt.as_tensor_variable(mu)
-            x_full = pt.set_subtensor(x_full[idx], x_free)
-            pm.Deterministic(name, x_full)
-            return x_full
-
-        # Thickness priors in log10 (per-layer fixing supported)
-        if not spec.fix_h:
-            nh = spec.nh()
-            free_idx_h = np.where(~is_fix_arr[:nh])[0]
-            log10_h_full = _merge_fixed(
-                name="log10_h",
-                full_mu=theta_init[:nh],
-                free_idx=free_idx_h,
-                bounds=spec.log10_h_bounds,
-                prior_kind=prior_kind,
-                sigma=1.0,
-            )
-            parts_full.append(log10_h_full)
-
-        # Resistivity priors in log10 (freeze all 3 principal values per fixed layer)
-        nrho = spec.nrho()
-        mu_rop = theta_init[spec.nh() : spec.nh() + nrho]
-        free_layers = np.where(~is_fix_arr)[0]
-        if free_layers.size:
-            free_idx_rop = np.concatenate([np.arange(i * 3, i * 3 + 3, dtype=np.int64) for i in free_layers])
+    if use_pt:
+        P_obs = np.asarray(site.get("P", None), dtype=float)
+        yP = pack_P_vector(P_obs, comps=pt_comps)
+        if "P_err" in site:
+            sigmaP = pack_P_sigma(site["P_err"], comps=pt_comps, sigma_floor=float(sigma_floor_P))
         else:
-            free_idx_rop = np.array([], dtype=np.int64)
-        log10_rop_full = _merge_fixed(
-            name="log10_rop",
-            full_mu=mu_rop,
-            free_idx=free_idx_rop,
-            bounds=spec.log10_rho_bounds,
-            prior_kind=prior_kind,
-            sigma=1.5,
+            sigmaP = np.ones_like(yP) * max(float(sigma_floor_P), 1.0)
+        y_list.append(yP)
+        s_list.append(sigmaP)
+
+    y_obs = np.concatenate(y_list).astype(float)
+    sigma = np.concatenate(s_list).astype(float)
+
+    nl = int(spec.nl)
+    if m0 is not None:
+        h0 = np.asarray(m0["h_m"], dtype=float)
+        rmin0 = np.asarray(m0["rho_min_ohmm"], dtype=float)
+        rmax0 = np.asarray(m0["rho_max_ohmm"], dtype=float)
+        str0 = np.asarray(m0["strike_deg"], dtype=float)
+        iso0 = np.asarray(m0["is_iso"], dtype=bool)
+        fix0 = np.asarray(m0["is_fix"], dtype=bool)
+    else:
+        # must be provided
+        if h_m0 is None or rho_min0 is None or rho_max0 is None or strike_deg0 is None:
+            raise ValueError("Provide model0 or explicit *_0 arrays.")
+        h0 = np.asarray(h_m0, dtype=float)
+        rmin0 = np.asarray(rho_min0, dtype=float)
+        rmax0 = np.asarray(rho_max0, dtype=float)
+        str0 = np.asarray(strike_deg0, dtype=float)
+        iso0 = np.zeros(nl, dtype=bool) if is_iso is None else np.asarray(is_iso, dtype=bool)
+        fix0 = np.zeros(nl, dtype=bool) if is_fix is None else np.asarray(is_fix, dtype=bool)
+
+    if not (h0.size == rmin0.size == rmax0.size == str0.size == iso0.size == fix0.size == nl):
+        raise ValueError("Starting model arrays must all have length nl.")
+
+    # Bounds
+    lo_r, hi_r = spec.log10_rho_bounds
+    lo_s, hi_s = spec.strike_bounds_deg
+    lo_h, hi_h = spec.log10_h_bounds
+
+    with pm.Model() as model:
+        is_iso_data = pm.MutableData("is_iso", iso0.astype(bool))
+        is_fix_data = pm.MutableData("is_fix", fix0.astype(bool))
+
+        
+        # ------------------------------------------------------------------
+        # Resistivity / conductivity parameterization (ordered pair + soft priors)
+        # ------------------------------------------------------------------
+        prior_kind_ = str(prior_kind).lower().strip()
+        domain_ = str(param_domain).lower().strip()
+        if domain_ not in ("rho", "sigma"):
+            raise ValueError("param_domain must be 'rho' or 'sigma'.")
+
+        # Bounds are specified in terms of log10(rho) in ParamSpec.
+        # For conductivity we use the implied bounds log10(sigma) = -log10(rho).
+        if domain_ == "rho":
+            lo_a, hi_a = float(lo_r), float(hi_r)  # log10(rho)
+        else:
+            lo_a, hi_a = float(-hi_r), float(-lo_r)  # log10(sigma)
+
+        max_delta = float(hi_a - lo_a)
+
+        if prior_kind_ == "uniform":
+            # Sample two unconstrained log10 fields and then take min/max.
+            # This guarantees an ordered pair without hard constraints.
+            log10_a1 = pm.Uniform("log10_a1", lower=lo_a, upper=hi_a, shape=(nl,))
+            log10_a2 = pm.Uniform("log10_a2", lower=lo_a, upper=hi_a, shape=(nl,))
+            log10_low_free = pt.minimum(log10_a1, log10_a2)
+            log10_high_free = pt.maximum(log10_a1, log10_a2)
+
+        elif prior_kind_ in ("default", "soft"):
+            # NUTS-friendly default priors:
+            # - bounded via sigmoid (no hard walls)
+            # - anisotropy ratio biased toward 1 (delta near 0)
+            low_un = pm.Normal("log10_low_un", mu=0.0, sigma=1.0, shape=(nl,))
+            log10_low_free = lo_a + (hi_a - lo_a) * pm.math.sigmoid(low_un)
+
+            # delta in [0, max_delta], with most mass near 0 (prefers isotropy)
+            delta_un = pm.Normal("log10_delta_un", mu=-1.0, sigma=1.0, shape=(nl,))
+            log10_delta_free = max_delta * pm.math.sigmoid(delta_un)
+            log10_high_free = log10_low_free + log10_delta_free
+
+            # Expose delta for diagnostics/plots
+            pm.Deterministic("log10_delta", log10_delta_free)
+
+        else:
+            raise ValueError(f"Unknown prior_kind: {prior_kind!r} (use 'default' or 'uniform').")
+
+        # Apply isotropy: low == high
+        log10_high_free = pt.switch(is_iso_data, log10_low_free, log10_high_free)
+
+        # Apply per-layer fixed flags (in the chosen domain)
+        tiny = np.finfo(float).tiny
+        if domain_ == "rho":
+            log10_low0 = np.log10(np.maximum(rmin0, tiny))
+            log10_high0 = np.log10(np.maximum(rmax0, tiny))
+        else:
+            # sigma_max = 1/rho_min, sigma_min = 1/rho_max
+            log10_low0 = np.log10(np.maximum(1.0 / np.maximum(rmax0, tiny), tiny))   # log10(sigma_min)
+            log10_high0 = np.log10(np.maximum(1.0 / np.maximum(rmin0, tiny), tiny))  # log10(sigma_max)
+
+        log10_low = pt.switch(is_fix_data, log10_low0, log10_low_free)
+        log10_high = pt.switch(is_fix_data, log10_high0, log10_high_free)
+
+        # Map to physical resistivities
+        if domain_ == "rho":
+            log10_rmin = log10_low
+            log10_rmax = log10_high
+            rho_min = pm.Deterministic("rho_min_ohmm", 10.0 ** log10_rmin)
+            rho_max = pm.Deterministic("rho_max_ohmm", 10.0 ** log10_rmax)
+        else:
+            # In sigma-domain, keep ordered (sigma_min <= sigma_max) and convert.
+            sigma_min = pm.Deterministic("sigma_min_Spm", 10.0 ** log10_low)
+            sigma_max = pm.Deterministic("sigma_max_Spm", 10.0 ** log10_high)
+
+            rho_min = pm.Deterministic("rho_min_ohmm", 1.0 / sigma_max)
+            rho_max = pm.Deterministic("rho_max_ohmm", 1.0 / sigma_min)
+
+            log10_rmin = -log10_high  # rho_min = 1/sigma_max
+            log10_rmax = -log10_low   # rho_max = 1/sigma_min
+
+        # Expose the ordered log10 resistivities explicitly for convenience
+        pm.Deterministic("log10_rho_min", log10_rmin)
+        pm.Deterministic("log10_rho_max", log10_rmax)
+
+
+# Strike
+        if prior_kind_ in ("default", "soft"):
+            strike_un = pm.Normal("strike_deg_un", mu=0.0, sigma=1.0, shape=(nl,))
+            strike_free = lo_s + (hi_s - lo_s) * pm.math.sigmoid(strike_un)
+        else:
+            strike_free = pm.Uniform("strike_deg_free", lower=lo_s, upper=hi_s, shape=(nl,))
+        strike = pt.switch(is_fix_data, str0, strike_free)
+        strike = pt.switch(is_iso_data, str0, strike)  # strike irrelevant for isotropic layers
+        strike = pm.Deterministic("strike_deg", strike)
+
+        # Thickness
+        if spec.fix_h:
+            h_m = pm.Deterministic("h_m", h0)
+        else:
+            if prior_kind_ in ("default", "soft"):
+                log10_h_un = pm.Normal("log10_h_un", mu=0.0, sigma=1.0, shape=(nl,))
+                log10_h_free = lo_h + (hi_h - lo_h) * pm.math.sigmoid(log10_h_un)
+            else:
+                log10_h_free = pm.Uniform("log10_h_free", lower=lo_h, upper=hi_h, shape=(nl,))
+            if not spec.sample_last_thickness:
+                # keep the last entry fixed at its starting value
+                log10_h_free = pt.set_subtensor(
+                    log10_h_free[-1],
+                    np.log10(max(h0[-1], np.finfo(float).tiny)),
+                )
+            log10_h0 = np.log10(np.maximum(h0, np.finfo(float).tiny))
+            log10_h = pt.switch(is_fix_data, log10_h0, log10_h_free)
+            h_m = pm.Deterministic("h_m", 10.0 ** log10_h)
+
+        # Forward model: return packed observation vector
+        z_comps_ = tuple(z_comps)
+        pt_comps_ = tuple(pt_comps)
+        use_pt_ = bool(use_pt)
+
+        if enable_grad:
+            # Differentiable forward for NUTS/HMC (impedance + optional PT)
+            if Op is None:
+                raise ImportError("PyTensor Op class not available.")
+            fop = _ForwardPackedOp(
+                periods_s=periods_s,
+                z_comps=z_comps_,
+                use_pt=use_pt_,
+                pt_comps=pt_comps_,
+                                pt_reg=float(pt_reg),
+                dh_rel=dh_rel,
+            )
+            y_pred = fop(h_m, rho_max, rho_min, strike)
+        else:
+            # Robust black-box forward (supports optional PT)
+            if as_op is None:
+                raise ImportError("pytensor.as_op not available")
+
+            @as_op(itypes=[pt.dvector, pt.dvector, pt.dvector, pt.dvector], otypes=[pt.dvector])
+            def forward_packed(h_m_v, rho_max_v, rho_min_v, strike_v):
+                fres = aniso1d_impedance_sens_simple(
+                    periods_s=periods_s,
+                    h_m=np.asarray(h_m_v, dtype=float),
+                    rho_max_ohmm=np.asarray(rho_max_v, dtype=float),
+                    rho_min_ohmm=np.asarray(rho_min_v, dtype=float),
+                    strike_deg=np.asarray(strike_v, dtype=float),
+                    compute_sens=False,
+                    dh_rel=dh_rel,
+                )
+                Zp = fres["Z"]
+                ypZ = pack_Z_vector(Zp, comps=z_comps_)
+                y_parts = [ypZ]
+
+                if use_pt_:
+                    Pp = phase_tensor_from_Z(Zp, reg=float(pt_reg))
+                    ypP = pack_P_vector(Pp, comps=pt_comps_)
+                    y_parts.append(ypP)
+
+                return np.concatenate(y_parts).astype(float)
+
+            y_pred = forward_packed(h_m, rho_max, rho_min, strike)
+
+        # Packed parameter vector (handy for plotting)
+        theta = pm.Deterministic(
+            "theta",
+            pt.concatenate(
+                [
+                    log10_rmin,
+                    log10_rmax,
+                    strike,
+                    pt.log(h_m) / np.log(10.0),
+                ]
+            ),
         )
-        parts_full.append(log10_rop_full)
 
-        # Angle priors (degrees) (freeze per-layer)
-        free_idx_ang = free_layers
-        ustr_full = _merge_fixed(
-            name="ustr_deg",
-            full_mu=ustr_deg0,
-            free_idx=free_idx_ang,
-            bounds=spec.ustr_bounds_deg,
-            prior_kind=prior_kind,
-            sigma=60.0,
-        )
-        parts_full.append(ustr_full)
-
-        udip_full = _merge_fixed(
-            name="udip_deg",
-            full_mu=udip_deg0,
-            free_idx=free_idx_ang,
-            bounds=spec.udip_bounds_deg,
-            prior_kind=prior_kind,
-            sigma=30.0,
-        )
-        parts_full.append(udip_full)
-
-        usla_full = _merge_fixed(
-            name="usla_deg",
-            full_mu=usla_deg0,
-            free_idx=free_idx_ang,
-            bounds=spec.usla_bounds_deg,
-            prior_kind=prior_kind,
-            sigma=60.0,
-        )
-        parts_full.append(usla_full)
-
-        # Concatenate into full theta tensor (same order as theta_init/names)
-        theta_rv = pt.concatenate([pt.flatten(v) for v in parts_full], axis=0)
-        pm.Deterministic("theta", theta_rv)
-
-        # Add log-likelihood as Potential
-        ll = loglike_op(theta_rv)
-        pm.Potential("loglike", ll)
+        pm.Normal("y", mu=y_pred, sigma=sigma, observed=y_obs)
 
     info = {
-        "param_names": names,
-        "theta_init": theta_init,
-        "is_fix": is_fix_arr,
-        "loglike_op": loglike_op,
-        "context": ctx,
         "periods_s": periods_s,
+        "z_comps": tuple(z_comps),
+        "pt_comps": tuple(pt_comps),
+        "use_pt": bool(use_pt),
+        "pt_reg": float(pt_reg),
+        "y_obs": y_obs,
+        "sigma": sigma,
     }
+
     return model, info
 
 
 def sample_pymc(
-    model: pm.Model,
+    model: "pm.Model",
     *,
     draws: int = 2000,
     tune: int = 1000,
-    chains: int = 2,
-    cores: int = 2,
-    step_method: str = "auto",
+    chains: int = 4,
+    cores: int = 4,
+    step_method: str = "demetropolis",
     target_accept: float = 0.85,
     random_seed: Optional[int] = None,
     progressbar: bool = True,
-) -> "arviz.InferenceData":
-    """
-    Run PyMC sampling for a model created by :func:`build_pymc_model`.
+):
+    """Run PyMC sampling.
 
     Parameters
     ----------
-    model
-        PyMC model.
-    draws
-        Number of posterior draws.
-    tune
-        Number of tuning steps.
-    chains
-        Number of MCMC chains.
-    cores
-        Number of CPU cores to use.
-    step_method
-        "auto", "demetropolis", "metropolis", or "nuts".
-        - auto: try NUTS if the model appears differentiable; otherwise DEMetropolisZ.
-        - demetropolis: DEMetropolisZ (good default for black-box likelihood)
-        - metropolis: Metropolis
-        - nuts: NUTS (requires gradients; works if likelihood Op implements grad)
-    target_accept
-        Target acceptance probability (for NUTS).
-    random_seed
-        Random seed.
-    progressbar
-        Show progress bar.
+    model : pm.Model
+        Built model.
+    step_method : str
+        One of {"demetropolis", "metropolis", "nuts", "hmc"}.
 
     Returns
     -------
     arviz.InferenceData
-        Sampling results (requires arviz, which is a PyMC dependency).
-
-    Notes
-    -----
-    If you built the model with ``enable_grad=False``, using ``step_method="nuts"``
-    will likely fail or be very slow because the likelihood has no gradient.
+        Sampling results.
     """
-    step_method = str(step_method).lower().strip()
+    if pm is None:
+        raise ImportError("PyMC not available.")
 
+    step_method = str(step_method).lower().strip()
     with model:
-        step = None
-        if step_method == "demetropolis":
+        if step_method in ("demetropolis", "demetropolisz"):
             step = pm.DEMetropolisZ()
         elif step_method == "metropolis":
             step = pm.Metropolis()
         elif step_method == "nuts":
-            step = pm.NUTS(target_accept=target_accept)
-        elif step_method == "auto":
-            # Try NUTS; if it fails, fall back to DEMetropolisZ.
-            try:
-                step = pm.NUTS(target_accept=target_accept)
-            except Exception:
-                step = pm.DEMetropolisZ()
+            step = pm.NUTS(target_accept=float(target_accept))
+        elif step_method in ("hmc", "hamiltonian"):
+            step = pm.HamiltonianMC()
         else:
-            raise ValueError("step_method must be one of: auto, demetropolis, metropolis, nuts")
+            raise ValueError(f"Unknown step_method: {step_method}")
 
         idata = pm.sample(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            cores=cores,
+            draws=int(draws),
+            tune=int(tune),
+            chains=int(chains),
+            cores=int(cores),
             step=step,
+            target_accept=float(target_accept),
             random_seed=random_seed,
-            progressbar=progressbar,
+            progressbar=bool(progressbar),
             return_inferencedata=True,
         )
 
     return idata
 
 
-# =============================================================================
-# Helpers for the script driver (mt_aniso1d_sampler.py)
-# =============================================================================
-
-def ensure_dir(path: Union[str, "Path"]) -> str:
-    """
-    Ensure a directory exists and return its string path.
-
-    Parameters
-    ----------
-    path : str or Path
-        Directory path.
-
-    Returns
-    -------
-    str
-        Directory path as string.
-    """
-    p = Path(path).expanduser()
-    p.mkdir(parents=True, exist_ok=True)
-    return p.as_posix()
-
-
-def glob_inputs(pattern: str) -> List[str]:
-    """
-    Expand a glob pattern into a sorted list of file paths.
-
-    Parameters
-    ----------
-    pattern : str
-        Glob pattern for EDI or NPZ files.
-
-    Returns
-    -------
-    list of str
-        Sorted matching files.
-    """
-    import glob
-    files = glob.glob(os.path.expanduser(pattern))
-    files.sort()
-    return files
-
-
-def load_model_npz(path: Union[str, "Path"]) -> Dict[str, np.ndarray]:
-    """
-    Load a model template stored as an NPZ.
-
-    The NPZ is expected to contain at least:
-    - rop : (nl,3)
-    and optionally:
-    - h_m, ustr_deg, udip_deg, usla_deg, is_iso, is_fix
-    """
-    p = Path(path).expanduser()
-    d = dict(np.load(p, allow_pickle=True))
-    for k, v in list(d.items()):
-        if isinstance(v, np.ndarray) and v.shape == () and v.dtype == object:
-            d[k] = v.item()
-    # Normalize to ensure shapes are consistent (notably rop orientation and flag lengths).
-    return normalize_model(d)  # type: ignore[return-value]
-
-
-def save_model_npz(model: Mapping[str, object], path: Union[str, "Path"]) -> None:
-    """Save a model dict to NPZ.
-
-    The model is normalized before saving so that the stored NPZ is directly
-    usable by the sampler.
-    """
-    p = Path(path).expanduser()
-    md = normalize_model(model)
-    np.savez_compressed(p, **dict(md))
-
-
-def model_from_direct(model_direct: object) -> Dict[str, np.ndarray]:
-    """
-    Convert an in-code model specification to a model dict.
-
-    Accepted forms:
-    - dict with keys 'h_m','rop','ustr_deg','udip_deg','usla_deg' (+ optional 'is_iso')
-    - array-like (nl,7) or (nl,8): [h, rop1, rop2, rop3, ustr, udip, usla, (is_iso)]
-    """
-    if isinstance(model_direct, Mapping):
-        md = dict(model_direct)
-        # Preserve any extra metadata (e.g. "prior_name") and normalize only the
-        # physical model arrays.
-        out = dict(md)
-        out["h_m"] = np.asarray(md.get("h_m", md.get("h", None)), dtype=float)
-        out["rop"] = np.asarray(md["rop"], dtype=float)
-        out["ustr_deg"] = np.asarray(md.get("ustr_deg", md.get("ustr", 0.0)), dtype=float)
-        out["udip_deg"] = np.asarray(md.get("udip_deg", md.get("udip", 0.0)), dtype=float)
-        out["usla_deg"] = np.asarray(md.get("usla_deg", md.get("usla", 0.0)), dtype=float)
-        if "is_iso" in md:
-            out["is_iso"] = np.asarray(md.get("is_iso"), dtype=bool)
-        if "is_fix" in md:
-            out["is_fix"] = np.asarray(md.get("is_fix"), dtype=bool)
-        return normalize_model(out)
-
-    arr = np.asarray(model_direct)
-    if arr.ndim != 2 or arr.shape[1] not in (7, 8, 9):
-        raise ValueError("MODEL_DIRECT must be dict or array-like (nl,7/8/9).")
-    out = {
-        "h_m": np.asarray(arr[:, 0], dtype=float),
-        "rop": np.asarray(arr[:, 1:4], dtype=float),
-        "ustr_deg": np.asarray(arr[:, 4], dtype=float),
-        "udip_deg": np.asarray(arr[:, 5], dtype=float),
-        "usla_deg": np.asarray(arr[:, 6], dtype=float),
-    }
-    if arr.shape[1] >= 8:
-        out["is_iso"] = np.asarray(arr[:, 7], dtype=bool)
-    if arr.shape[1] == 9:
-        out["is_fix"] = np.asarray(arr[:, 8], dtype=bool)
-    return normalize_model(out)
-
-
-def load_site(path: Union[str, "Path"]) -> Dict[str, object]:
-    """
-    Load a site dict from EDI or NPZ using data_proc.py (no duplicated parsing).
-    """
-    from data_proc import load_edi, load_npz
-    p = Path(path).expanduser()
-    if p.suffix.lower() == ".edi":
-        site = load_edi(p.as_posix())
-    elif p.suffix.lower() == ".npz":
-        site = load_npz(p.as_posix())
-    else:
-        raise ValueError(f"Unsupported input type: {p}")
-    if "station" not in site:
-        site["station"] = p.stem
-    return site
-
-
-def ensure_phase_tensor(site: Mapping[str, object], *, nsim: int = 200) -> Dict[str, object]:
-    """
-    Ensure phase tensor P/P_err is present, using data_proc.compute_pt(...).
-    """
-    from data_proc import compute_pt
-    out = dict(site)
-    if out.get("P", None) is not None:
-        return out
-    Z = np.asarray(out["Z"])
-    Z_err = out.get("Z_err", None)
-    err_kind = str(out.get("err_kind", "var"))
-    P, P_err = compute_pt(Z, Z_err, err_kind=err_kind, err_method="bootstrap", nsim=int(nsim))
-    out["P"] = P
-    out["P_err"] = P_err
-    return out
-
-
-def save_idata(idata: "arviz.InferenceData", path: Union[str, "Path"]) -> None:
-    """Save ArviZ InferenceData to NetCDF."""
-    p = Path(path).expanduser()
+def save_idata(idata, path: str | os.PathLike) -> None:
+    """Save an ArviZ InferenceData to NetCDF."""
+    if az is None:
+        raise ImportError("arviz not available.")
+    p = Path(path).expanduser().resolve()
+    p.parent.mkdir(parents=True, exist_ok=True)
     idata.to_netcdf(p.as_posix())
 
 
-def posterior_theta_stats(
-    idata: "arviz.InferenceData",
-    *,
-    qpairs: Sequence[Tuple[float, float]] = ((0.1, 0.9),),
-) -> Dict[str, np.ndarray]:
-    """Compute theta median and quantile bands."""
-    arr = np.asarray(idata.posterior["theta"])
-    theta = arr.reshape(-1, arr.shape[-1])
-    med = np.quantile(theta, 0.5, axis=0)
-    qlos, qhis = [], []
-    for qlo, qhi in qpairs:
-        qlos.append(np.quantile(theta, qlo, axis=0))
-        qhis.append(np.quantile(theta, qhi, axis=0))
-    return dict(
-        theta_med=med,
-        theta_qpairs=np.array(list(qpairs), dtype=float),
-        theta_qlo=np.array(qlos, dtype=float),
-        theta_qhi=np.array(qhis, dtype=float),
-    )
+# -----------------------------------------------------------------------------
+# Summary NPZ for plotting
+# -----------------------------------------------------------------------------
+
+def _stack_samples(var) -> np.ndarray:
+    """Stack chain/draw dimensions into a single sample axis."""
+    if hasattr(var, "stack"):
+        v = var.stack(sample=("chain", "draw")).values
+        return np.asarray(v)
+    # fall back
+    return np.asarray(var)
+
+
+def _quantiles(x: np.ndarray, qs: Sequence[float]) -> np.ndarray:
+    """Compute quantiles along axis 0."""
+    return np.quantile(x, np.asarray(qs, dtype=float), axis=0)
 
 
 def build_summary_npz(
     *,
     station: str,
-    site: Mapping[str, object],
-    idata: "arviz.InferenceData",
+    site: Dict,
+    idata,
     spec: ParamSpec,
-    model0: Mapping[str, np.ndarray],
-    info: Mapping[str, object],
-    qpairs: Sequence[Tuple[float, float]] = ((0.1, 0.9),),
-) -> Dict[str, object]:
+    model0: Dict,
+    info: Dict,
+    qpairs: Sequence[Tuple[float, float]] = ((0.1, 0.9), (0.25, 0.75)),
+) -> Dict[str, np.ndarray]:
+    """Build a compact NPZ summary for plotting.
+
+    The resulting dict contains per-layer envelopes (quantile pairs) for
+    ``rho_min_ohmm``, ``rho_max_ohmm`` and ``strike_deg``, plus a depth axis.
+
+    Parameters
+    ----------
+    station : str
+        Station name.
+    site : dict
+        Site dict.
+    idata : arviz.InferenceData
+        Sampling output.
+    spec : ParamSpec
+        Parameter spec.
+    model0 : dict
+        Starting model.
+    info : dict
+        Info returned by :func:`build_pymc_model`.
+    qpairs : sequence of (float,float)
+        Quantile pairs.
+
+    Returns
+    -------
+    dict
+        Serializable summary dict.
     """
-    Build a compact summary dict (NPZ-ready).
+    if az is None:
+        raise ImportError("arviz not available.")
 
-    Stores Z_obs and Z_pred at the median model. Derived quantities (rho/phase/PT)
-    should be computed in plotting via data_proc to avoid duplication.
-    """
-    from aniso import aniso1d_impedance_sens
+    m0 = normalize_model(model0)
+    h0 = np.asarray(m0["h_m"], dtype=float)
+    z = np.r_[0.0, np.cumsum(np.maximum(h0[:-1], 0.0))]
 
-    # Make sure the template model is consistent (notably rop orientation and flag lengths).
-    model0 = normalize_model(model0)
+    # Extract posterior samples
+    post = idata.posterior
 
-    s: Dict[str, object] = {}
-    s["station"] = station
-    s["freq"] = np.asarray(site["freq"], dtype=float)
-    s["Z_obs"] = np.asarray(site["Z"])
-    s["Z_err"] = site.get("Z_err", None)
-    s["err_kind"] = site.get("err_kind", "var")
-    if "P" in site:
-        s["P_obs"] = site.get("P")
-        s["P_err"] = site.get("P_err", None)
+    rmin_s = _stack_samples(post["rho_min_ohmm"])  # (ns, nl)
+    rmax_s = _stack_samples(post["rho_max_ohmm"])  # (ns, nl)
+    str_s = _stack_samples(post["strike_deg"])     # (ns, nl)
+    theta_s = _stack_samples(post["theta"])        # (ns, ntheta)
 
-    ts = posterior_theta_stats(idata, qpairs=qpairs)
-    s.update(ts)
+    # Quantile pairs
+    qpairs = tuple((float(a), float(b)) for a, b in qpairs)
+    q_all = sorted(set([q for pair in qpairs for q in pair] + [0.5]))
 
-    pn = info.get("param_names", None)
-    if pn is not None:
-        s["param_names"] = np.array(pn, dtype=object)
+    rmin_q = _quantiles(rmin_s, q_all)  # (nq, nl)
+    rmax_q = _quantiles(rmax_s, q_all)
+    str_q = _quantiles(str_s, q_all)
 
-    # Convert theta median -> model
-    theta_med = ts["theta_med"]
-    h_m, rop, ustr, udip, usla = theta_to_model(
-        theta_med,
-        spec=spec,
-        h_m_fixed=model0.get("h_m", None),
-        rop_fixed=model0.get("rop", None),
-        ustr_fixed=model0.get("ustr_deg", None),
-        udip_fixed=model0.get("udip_deg", None),
-        usla_fixed=model0.get("usla_deg", None),
-    )
-    s["h_m_med"] = h_m
-    s["rop_med"] = rop
-    s["ustr_deg_med"] = ustr
-    s["udip_deg_med"] = udip
-    s["usla_deg_med"] = usla
-    if "is_iso" in model0:
-        s["is_iso"] = np.asarray(model0["is_iso"], dtype=bool)
-    if "is_fix" in model0:
-        s["is_fix"] = np.asarray(model0["is_fix"], dtype=bool)
+    # Theta qpairs for density plots
+    theta_qpairs = np.array([[np.quantile(theta_s[:, i], [a, b]) for (a, b) in qpairs] for i in range(theta_s.shape[1])])
 
-    # Layer bottom depths for plotting (ensure length nl including basement)
-    if h_m is not None and len(h_m) >= 1:
-        if float(np.asarray(h_m, dtype=float)[-1]) > 0.0:
-            s["z_bot_med"] = np.cumsum(np.asarray(h_m, dtype=float))
+    out: Dict[str, np.ndarray] = {
+        "station": np.array(str(station)),
+        "periods_s": np.asarray(info.get("periods_s"), dtype=float),
+        "h_m0": h0,
+        "rho_min0": np.asarray(m0["rho_min_ohmm"], dtype=float),
+        "rho_max0": np.asarray(m0["rho_max_ohmm"], dtype=float),
+        "strike0": np.asarray(m0["strike_deg"], dtype=float),
+        "z_m": z,
+        "q": np.asarray(q_all, dtype=float),
+        "rho_min_q": np.asarray(rmin_q, dtype=float),
+        "rho_max_q": np.asarray(rmax_q, dtype=float),
+        "strike_q": np.asarray(str_q, dtype=float),
+        "qpairs": np.asarray(qpairs, dtype=float),
+        "theta_qpairs": np.asarray(theta_qpairs, dtype=float),
+    }
+
+    return out
+
+
+def save_summary_npz(summary: Dict, path: str | os.PathLike) -> None:
+    """Save summary dict to NPZ."""
+    p = Path(path).expanduser().resolve()
+    p.parent.mkdir(parents=True, exist_ok=True)
+
+    # NPZ does not like plain Python strings unless object dtype.
+    out = {}
+    for k, v in summary.items():
+        if isinstance(v, str):
+            out[k] = np.array(v)
         else:
-            z_int = np.cumsum(np.asarray(h_m, dtype=float)[:-1])
-            if z_int.size == 0:
-                s["z_bot_med"] = np.array([max(1.0, float(np.asarray(h_m, dtype=float)[0]))], dtype=float)
-            else:
-                z_last = float(z_int[-1])
-                ext = max(1.0, 0.25 * max(z_last, 1.0))
-                s["z_bot_med"] = np.r_[z_int, z_last + ext]
+            out[k] = v
 
-    periods_s = 1.0 / np.asarray(s["freq"], dtype=float)
-    fwd = aniso1d_impedance_sens(
-        periods_s=periods_s,
-        h_m=h_m,
-        rop=rop,
-        ustr_deg=ustr,
-        udip_deg=udip,
-        usla_deg=usla,
-        is_iso=model0.get("is_iso", None),
-        compute_sens=False,
-    )
-    if isinstance(fwd, Mapping):
-        s["Z_pred"] = fwd.get("Z", None)
-    else:
-        s["Z_pred"] = getattr(fwd, "Z", None)
+    np.savez(p.as_posix(), **out)
 
-    return s
-
-
-def save_summary_npz(summary: Mapping[str, object], path: Union[str, "Path"]) -> None:
-    """Save summary dict as compressed NPZ."""
-    p = Path(path).expanduser()
-    np.savez_compressed(p, **dict(summary))

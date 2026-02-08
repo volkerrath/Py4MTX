@@ -22,7 +22,7 @@ Implementation note
 Helpers are imported from `mcmc.py`
 
 Author: Volker Rath (DIAS)
-Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-23
+Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-08 (UTC)
 """
 
 from __future__ import annotations
@@ -126,21 +126,21 @@ USE_PT = True
 PT_ERR_NSIM = 200
 Z_COMPS = ("xx", "xy", "yx", "yy")
 PT_COMPS = ("xx", "xy", "yx", "yy")
-COMPUTE_PT_IF_MISSING = True
+# Phase tensor is always recomputed from Z as P = inv(Re(Z)) @ Im(Z)
+
+PT_REG = 1e-12  # small diagonal regularization used inside PT gradients
 
 FIX_H = True
 SAMPLE_LAST_THICKNESS = False
 
 LOG10_H_BOUNDS = (0.0, 5.0)
 LOG10_RHO_BOUNDS = (-0., 5.0)
-USTR_BOUNDS_DEG = (-180.0, 180.0)
-UDIP_BOUNDS_DEG = (0.0, 90.0)
-USLA_BOUNDS_DEG = (-180.0, 180.0)
+STRIKE_BOUNDS_DEG = (-180.0, 180.0)
 
 SIGMA_FLOOR_Z = 0.0
 SIGMA_FLOOR_P = 0.0
 
-STEP_METHOD = "demetropolis"
+STEP_METHOD = "demetropolis"  # or "nuts" when ENABLE_GRAD=True
 DRAWS = 10000
 TUNE = 1000
 CHAINS = 8
@@ -148,8 +148,9 @@ CORES = CHAINS
 TARGET_ACCEPT = 0.85
 RANDOM_SEED = 123
 PROGRESSBAR = True
-ENABLE_GRAD = False
-PRIOR_KIND = "uniform"
+ENABLE_GRAD = False  # set True for NUTS/HMC (Z and optional PT)
+PRIOR_KIND = "default"  # NUTS-friendly soft priors
+PARAM_DOMAIN = "rho"  # "rho" (default) or "sigma"
 
 # One shared quantile setting (requested)
 QPAIRS = ((0.1, 0.9), (0.25, 0.75))
@@ -178,9 +179,7 @@ spec = mcmc.ParamSpec(
     sample_last_thickness=bool(SAMPLE_LAST_THICKNESS),
     log10_h_bounds=LOG10_H_BOUNDS,
     log10_rho_bounds=LOG10_RHO_BOUNDS,
-    ustr_bounds_deg=USTR_BOUNDS_DEG,
-    udip_bounds_deg=UDIP_BOUNDS_DEG,
-    usla_bounds_deg=USLA_BOUNDS_DEG,
+    strike_bounds_deg=STRIKE_BOUNDS_DEG,
 )
 
 for f in in_files:
@@ -194,21 +193,16 @@ for f in in_files:
     pm_model, info = mcmc.build_pymc_model(
         site,
         spec=spec,
-        h_m0=np.asarray(model0.get("h_m", None)) if "h_m" in model0 else None,
-        rop0=np.asarray(model0.get("rop", None)),
-        ustr_deg0=np.asarray(model0.get("ustr_deg", None)) if "ustr_deg" in model0 else None,
-        udip_deg0=np.asarray(model0.get("udip_deg", None)) if "udip_deg" in model0 else None,
-        usla_deg0=np.asarray(model0.get("usla_deg", None)) if "usla_deg" in model0 else None,
-        is_iso=np.asarray(model0.get("is_iso", None)) if "is_iso" in model0 else None,
-        is_fix=np.asarray(model0.get("is_fix", None)) if "is_fix" in model0 else None,
+        model0=model0,
         use_pt=bool(USE_PT),
         z_comps=Z_COMPS,
         pt_comps=PT_COMPS,
-        compute_pt_if_missing=bool(COMPUTE_PT_IF_MISSING),
+        pt_reg=float(PT_REG),
         sigma_floor_Z=float(SIGMA_FLOOR_Z),
         sigma_floor_P=float(SIGMA_FLOOR_P),
         enable_grad=bool(ENABLE_GRAD),
         prior_kind=str(PRIOR_KIND),
+        param_domain=str(PARAM_DOMAIN),
     )
 
     idata = mcmc.sample_pymc(
