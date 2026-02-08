@@ -1,53 +1,55 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-aniso_sens.py
+"""aniso.py
 ================
 
 Sensitivity-enabled 1-D anisotropic MT forward modelling (layered Earth).
 
-This module provides:
+This module computes the 2×2 surface impedance tensor **Z** for a stack of
+horizontally layered, electrically anisotropic media.
 
-- Computation of the 2×2 surface impedance tensor **Z** for a stack of
-  horizontally layered, electrically anisotropic media with a *horizontal*
-  anisotropy axis described by effective conductivities (AL, AT) and an
-  anisotropy strike (BLT).
-- Optional sensitivities (∂Z/∂AL, ∂Z/∂AT, ∂Z/∂BLT, ∂Z/∂h) for each layer and period.
-- A helper to derive (AL, AT, BLT) from **principal resistivities** and
-  Euler angles (strike, dip, slant), following the legacy formulation used in
-  several MT 1-D anisotropy codes.
+Two model parameterizations are supported:
 
-Notes / scope
+A) **Simplified (recommended for inversion):**
+
+   - ``h_m``          (nl,) layer thicknesses in meters (last entry is basement; ignored)
+   - ``rho_max_ohmm`` (nl,) *maximum* horizontal resistivity [Ohm·m]
+   - ``rho_min_ohmm`` (nl,) *minimum* horizontal resistivity [Ohm·m]
+   - ``strike_deg``   (nl,) anisotropy strike in degrees
+
+   This maps to the legacy conductivity parameters
+   ``AL = 1/rho_min`` (maximum conductivity), ``AT = 1/rho_max`` (minimum
+   conductivity), and ``BLT = strike``.
+
+B) **Full (legacy):**
+
+   - ``h_m``        (nl,)
+   - ``rop``        (nl, 3) principal resistivities [Ohm·m]
+   - ``ustr_deg``   (nl,) strike
+   - ``udip_deg``   (nl,) dip
+   - ``usla_deg``   (nl,) slant
+
+   Converted internally via :func:`cpanis`.
+
+Sensitivities
 -------------
 
-- This is a pragmatic Python re-implementation focused on robustness and clear
-  interfaces. It intentionally keeps the impedance recursion close to the
-  legacy Fortran-style formulas used in earlier prototypes.
-- Sensitivities for (AL, AT, BLT) are analytic (based on closed-form layer
-  derivatives). Sensitivity w.r.t. layer thickness **h** is computed by a
-  centered finite difference by default (stable and easy to validate).
-- Derivatives w.r.t. Euler angles (strike/dip/slant) and principal resistivities
-  are NOT provided here (chain-rule support can be added once the exact
-  target parameterization is fixed in the inversion code).
+If ``compute_sens=True`` the forward functions also return sensitivities
+(derivatives) of **Z** with respect to the chosen parameters.
 
-CLI
----
+- Analytic derivatives are used for ``AL, AT, BLT``.
+- Thickness derivatives ``∂Z/∂h`` use a centered finite difference (stable).
+- For the *full* parameterization, the chain rule is applied using finite
+  differences of :func:`cpanis`.
 
-Run from a model stored in ``.npz`` (see ``--help``):
+Return format
+-------------
 
-    python aniso_sens.py run --model model.npz --periods 0.1,1,10 --out out.npz --sens
-
-Expected ``model.npz`` keys are Model parameterization
-----------------------
-Only the following parameterization is supported:
-
-2) Principal resistivities + Euler angles (converted via :func:`cpanis`):
-   - ``h_m`` (nl,)
-   - ``rop``  (nl,3) principal resistivities [Ohm·m]
-   - ``ustr_deg``, ``udip_deg``, ``usla_deg``  (nl,) Euler angles in degrees
+All public forward functions return a **dict** (not a dataclass) to keep the
+API simple for script-style use.
 
 Author: Volker Rath (DIAS)
-Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-23 (UTC)
+Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-08 (UTC)
 """
 
 from __future__ import annotations
@@ -56,7 +58,6 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 import numpy as np
-
 
 # --- Constants ----------------------------------------------------------------
 
@@ -100,8 +101,10 @@ def dfm(x: np.ndarray | complex | float) -> np.ndarray | complex | float:
 def rotz(za: np.ndarray, betrad: float) -> np.ndarray:
     """Rotate a 2×2 impedance-like matrix by an angle (radians).
 
-    This applies the standard MT tensor rotation expressed with ``2*beta`` in
-    the trigonometric factors (as in many legacy MT codes).
+    Notes
+    -----
+    The rotation is expressed with ``2*beta`` inside the trigonometric factors,
+    which is the convention used by many legacy MT tensor rotation formulas.
 
     Parameters
     ----------
@@ -154,6 +157,11 @@ def rotz_stack(dza: np.ndarray, betrad: float) -> np.ndarray:
     -------
     ndarray, shape (..., 2, 2)
         Rotated stack (new array).
+
+    Raises
+    ------
+    ValueError
+        If ``dza`` does not have trailing shape (2, 2).
     """
     dza = np.asarray(dza, dtype=np.complex128)
     if dza.shape[-2:] != (2, 2):
@@ -181,9 +189,6 @@ def cpanis(
         Principal resistivities (Ohm·m). Each row is (rho1, rho2, rho3).
     ustr_deg, udip_deg, usla_deg : ndarray, shape (nl,)
         Euler angles (degrees): strike, dip, slant.
-    is_iso : ndarray of bool, shape (nl,), optional
-        If provided, layers with ``is_iso=True`` are treated as isotropic. In that case
-        the principal resistivities are forced equal and angles are ignored.
 
     Returns
     -------
@@ -195,6 +200,13 @@ def cpanis(
         Minimum effective horizontal conductivity (S/m).
     blt_rad : ndarray, shape (nl,)
         Effective horizontal anisotropy strike (radians).
+
+    Notes
+    -----
+    This is a direct, pragmatic translation of a legacy formulation.
+
+    The simplified parameterization used by :func:`aniso1d_impedance_sens_simple`
+    avoids this conversion entirely.
     """
     rop_ohmm = np.asarray(rop_ohmm, dtype=float)
     ustr_deg = np.asarray(ustr_deg, dtype=float)
@@ -288,10 +300,77 @@ def cpanis(
     return sg, al, at, blt
 
 
+def alat_from_rho_strike(
+    rho_max_ohmm: np.ndarray,
+    rho_min_ohmm: np.ndarray,
+    strike_deg: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Convert (rho_max, rho_min, strike) to (AL, AT, BLT).
+
+    Parameters
+    ----------
+    rho_max_ohmm : ndarray, shape (nl,)
+        Maximum horizontal resistivity (Ohm·m).
+    rho_min_ohmm : ndarray, shape (nl,)
+        Minimum horizontal resistivity (Ohm·m).
+    strike_deg : ndarray, shape (nl,)
+        Strike angle (degrees).
+
+    Returns
+    -------
+    al : ndarray, shape (nl,)
+        Maximum horizontal conductivity (S/m), i.e. ``1/rho_min``.
+    at : ndarray, shape (nl,)
+        Minimum horizontal conductivity (S/m), i.e. ``1/rho_max``.
+    blt_rad : ndarray, shape (nl,)
+        Strike in radians.
+
+    Notes
+    -----
+    - If any resistivity is non-positive, a ValueError is raised.
+    - No ordering is enforced. If you want ``rho_max >= rho_min`` you must
+      ensure that before calling.
+    """
+    rho_max_ohmm = np.asarray(rho_max_ohmm, dtype=float).ravel()
+    rho_min_ohmm = np.asarray(rho_min_ohmm, dtype=float).ravel()
+    strike_deg = np.asarray(strike_deg, dtype=float).ravel()
+
+    if not (rho_max_ohmm.shape == rho_min_ohmm.shape == strike_deg.shape):
+        raise ValueError("rho_max_ohmm, rho_min_ohmm, strike_deg must have the same shape.")
+    if np.any(rho_max_ohmm <= 0.0) or np.any(rho_min_ohmm <= 0.0):
+        raise ValueError("All resistivities must be > 0.")
+
+    al = 1.0 / rho_min_ohmm
+    at = 1.0 / rho_max_ohmm
+    blt_rad = np.deg2rad(strike_deg)
+    return al, at, blt_rad
+
+
 # --- Core recursion (Z and sensitivities) -------------------------------------
 
-def _propagate_impedance(zbot: np.ndarray, dz1: complex, dz2: complex, ag1: complex, ag2: complex) -> np.ndarray:
-    """Compute the top impedance of a layer given the bottom impedance."""
+def _propagate_impedance(
+    zbot: np.ndarray,
+    dz1: complex,
+    dz2: complex,
+    ag1: complex,
+    ag2: complex,
+) -> np.ndarray:
+    """Compute the top impedance of a layer given the bottom impedance.
+
+    Parameters
+    ----------
+    zbot : ndarray, shape (2, 2)
+        Bottom impedance in the *current layer strike-aligned frame*.
+    dz1, dz2 : complex
+        Basement-like impedances of the current layer eigenmodes.
+    ag1, ag2 : complex
+        Propagation terms (k*h) of the current layer eigenmodes.
+
+    Returns
+    -------
+    ndarray, shape (2, 2)
+        Top impedance for the layer, in the same frame as ``zbot``.
+    """
     zbot = np.asarray(zbot, dtype=np.complex128)
     dtzbot = zbot[0, 0] * zbot[1, 1] - zbot[0, 1] * zbot[1, 0]
 
@@ -329,7 +408,24 @@ def _propagate_sens_from_zbot(
     ag1: complex,
     ag2: complex,
 ) -> np.ndarray:
-    """Propagate sensitivity from bottom impedance to top impedance."""
+    """Propagate sensitivity from bottom impedance to top impedance.
+
+    Parameters
+    ----------
+    dzbot : ndarray, shape (2, 2)
+        Sensitivity of the bottom impedance with respect to some parameter.
+    zbot : ndarray, shape (2, 2)
+        Bottom impedance.
+    ztop : ndarray, shape (2, 2)
+        Top impedance.
+    dz1, dz2, ag1, ag2 : complex
+        Layer quantities (see :func:`_propagate_impedance`).
+
+    Returns
+    -------
+    ndarray, shape (2, 2)
+        Sensitivity of the top impedance.
+    """
     dzbot = np.asarray(dzbot, dtype=np.complex128)
     zbot = np.asarray(zbot, dtype=np.complex128)
     ztop = np.asarray(ztop, dtype=np.complex128)
@@ -376,8 +472,31 @@ def _propagate_sens_from_zbot(
     return dztop
 
 
-def _dZ_dal_layer(zbot: np.ndarray, ztop: np.ndarray, a1: float, dz1: complex, dz2: complex, ag1: complex, ag2: complex) -> np.ndarray:
-    """Analytic derivative ∂Z_top/∂AL for the current layer."""
+def _dZ_dal_layer(
+    zbot: np.ndarray,
+    ztop: np.ndarray,
+    a1: float,
+    dz1: complex,
+    dz2: complex,
+    ag1: complex,
+    ag2: complex,
+) -> np.ndarray:
+    """Analytic derivative ``∂Z_top/∂AL`` for the *current* layer.
+
+    Parameters
+    ----------
+    zbot, ztop : ndarray, shape (2, 2)
+        Bottom and top impedances (strike-aligned frame).
+    a1 : float
+        Current layer AL (maximum horizontal conductivity).
+    dz1, dz2, ag1, ag2 : complex
+        Layer quantities.
+
+    Returns
+    -------
+    ndarray, shape (2, 2)
+        Complex derivative of the top impedance with respect to AL.
+    """
     dtzbot = zbot[0, 0] * zbot[1, 1] - zbot[0, 1] * zbot[1, 0]
     zdenom = (
         dtzbot * dfm(ag1) * dfm(ag2) / (dz1 * dz2)
@@ -410,8 +529,31 @@ def _dZ_dal_layer(zbot: np.ndarray, ztop: np.ndarray, a1: float, dz1: complex, d
     return dztop
 
 
-def _dZ_dat_layer(zbot: np.ndarray, ztop: np.ndarray, a2: float, dz1: complex, dz2: complex, ag1: complex, ag2: complex) -> np.ndarray:
-    """Analytic derivative ∂Z_top/∂AT for the current layer."""
+def _dZ_dat_layer(
+    zbot: np.ndarray,
+    ztop: np.ndarray,
+    a2: float,
+    dz1: complex,
+    dz2: complex,
+    ag1: complex,
+    ag2: complex,
+) -> np.ndarray:
+    """Analytic derivative ``∂Z_top/∂AT`` for the *current* layer.
+
+    Parameters
+    ----------
+    zbot, ztop : ndarray, shape (2, 2)
+        Bottom and top impedances.
+    a2 : float
+        Current layer AT (minimum horizontal conductivity).
+    dz1, dz2, ag1, ag2 : complex
+        Layer quantities.
+
+    Returns
+    -------
+    ndarray, shape (2, 2)
+        Complex derivative of the top impedance with respect to AT.
+    """
     dtzbot = zbot[0, 0] * zbot[1, 1] - zbot[0, 1] * zbot[1, 0]
     zdenom = (
         dtzbot * dfm(ag1) * dfm(ag2) / (dz1 * dz2)
@@ -444,8 +586,15 @@ def _dZ_dat_layer(zbot: np.ndarray, ztop: np.ndarray, a2: float, dz1: complex, d
     return dztop
 
 
-def _dZ_dblt_layer(zbot: np.ndarray, ztop: np.ndarray, dz1: complex, dz2: complex, ag1: complex, ag2: complex) -> np.ndarray:
-    """Analytic derivative ∂Z_top/∂BLT for the current layer (radians)."""
+def _dZ_dblt_layer(
+    zbot: np.ndarray,
+    ztop: np.ndarray,
+    dz1: complex,
+    dz2: complex,
+    ag1: complex,
+    ag2: complex,
+) -> np.ndarray:
+    """Analytic derivative ``∂Z_top/∂BLT`` (radians) for the current layer."""
     dztop = np.empty((2, 2), dtype=np.complex128)
     dztop[0, 0] = -ztop[0, 1] - ztop[1, 0]
     dztop[0, 1] = ztop[0, 0] - ztop[1, 1]
@@ -487,7 +636,26 @@ def _dZ_dh_layer_fdiff(
     dh_rel: float = 1e-6,
     dh_abs_m: float = 1e-5,
 ) -> np.ndarray:
-    """Finite-difference derivative ∂Z_top/∂h_m for the current layer."""
+    """Finite-difference derivative ``∂Z_top/∂h_m`` for the current layer.
+
+    Parameters
+    ----------
+    zbot : ndarray, shape (2, 2)
+        Bottom impedance.
+    dz1, dz2 : complex
+        Layer eigen-impedance factors.
+    k1, k2 : complex
+        Layer eigen-wavenumbers.
+    h_m : float
+        Layer thickness in meters.
+    dh_rel, dh_abs_m : float
+        Relative and absolute perturbation sizes.
+
+    Returns
+    -------
+    ndarray, shape (2, 2)
+        Numerical derivative of the top impedance with respect to thickness.
+    """
     h0 = float(h_m)
     dh = max(abs(h0) * dh_rel, dh_abs_m)
     hp = h0 + dh
@@ -505,68 +673,7 @@ def _dZ_dh_layer_fdiff(
     return (zp - zm) / denom
 
 
-class ForwardResult:
-    """Container returned by :func:`aniso1d_impedance_sens`.
-
-    This project avoids ``@dataclass`` in favour of simple, explicit containers.
-    For compatibility with downstream modules (e.g. ``mcmc.py``), this class
-    behaves like a minimal read-only mapping (supports ``obj['Z']`` and
-    ``obj.get('Z')``).
-
-    Attributes are populated depending on ``compute_sens``.
-    """
-
-    _KNOWN_KEYS = (
-        'Z',
-        'dZ_drop', 'dZ_dustr_deg', 'dZ_dudip_deg', 'dZ_dusla_deg', 'dZ_dh_m',
-        'dZ_dal', 'dZ_dat', 'dZ_dblt',
-    )
-
-    def __init__(
-        self,
-        *,
-        Z,
-        dZ_drop=None,
-        dZ_dustr_deg=None,
-        dZ_dudip_deg=None,
-        dZ_dusla_deg=None,
-        dZ_dh_m=None,
-        dZ_dal=None,
-        dZ_dat=None,
-        dZ_dblt=None,
-    ):
-        self.Z = Z
-        self.dZ_drop = dZ_drop
-        self.dZ_dustr_deg = dZ_dustr_deg
-        self.dZ_dudip_deg = dZ_dudip_deg
-        self.dZ_dusla_deg = dZ_dusla_deg
-        self.dZ_dh_m = dZ_dh_m
-        self.dZ_dal = dZ_dal
-        self.dZ_dat = dZ_dat
-        self.dZ_dblt = dZ_dblt
-
-    def __getitem__(self, key):
-        k = str(key)
-        if k not in self._KNOWN_KEYS:
-            raise KeyError(k)
-        # Attribute names match keys
-        val = getattr(self, k)
-        if val is None:
-            raise KeyError(k)
-        return val
-
-    def get(self, key, default=None):
-        try:
-            return self[key]
-        except KeyError:
-            return default
-
-    def keys(self):
-        return [k for k in self._KNOWN_KEYS if getattr(self, k) is not None]
-
-    def to_dict(self):
-        return {k: getattr(self, k) for k in self.keys()}
-
+# --- Public forward models ----------------------------------------------------
 
 def _aniso1d_impedance_sens_alat(
     periods_s: np.ndarray,
@@ -577,14 +684,39 @@ def _aniso1d_impedance_sens_alat(
     *,
     compute_sens: bool = True,
     dh_rel: float = 1e-6,
-) -> ForwardResult:
-    """Compute 1-D anisotropic impedance and (optionally) sensitivities.
+) -> Dict[str, np.ndarray]:
+    """Compute 1-D anisotropic impedance and (optionally) sensitivities in (AL,AT,BLT).
+
+    Parameters
+    ----------
+    periods_s : ndarray, shape (nper,)
+        Periods in seconds.
+    h_m : ndarray, shape (nl,)
+        Layer thicknesses in meters (last entry is basement; ignored).
+    al, at, blt_rad : ndarray, shape (nl,)
+        Effective horizontal parameters per layer.
+    compute_sens : bool
+        If True, compute derivatives w.r.t. AL, AT, BLT and h.
+    dh_rel : float
+        Relative perturbation for the thickness finite difference.
 
     Returns
     -------
-    ForwardResult
-        ``Z`` has shape ``(nper, 2, 2)``.
-        Sensitivities (if requested) have shape ``(nper, nl, 2, 2)``.
+    dict
+        Always contains:
+
+        - ``Z``: complex ndarray, shape (nper, 2, 2)
+
+        If ``compute_sens=True`` also contains (complex arrays):
+
+        - ``dZ_dal``:   (nper, nl, 2, 2)
+        - ``dZ_dat``:   (nper, nl, 2, 2)
+        - ``dZ_dblt``:  (nper, nl, 2, 2)
+        - ``dZ_dh_m``:  (nper, nl, 2, 2)
+
+    Notes
+    -----
+    This is the internal workhorse used by the public wrappers.
     """
     periods_s = np.asarray(periods_s, dtype=float).ravel()
     h_m = np.asarray(h_m, dtype=float).ravel()
@@ -605,10 +737,13 @@ def _aniso1d_impedance_sens_alat(
 
     Z = np.empty((nper, 2, 2), dtype=np.complex128)
 
-    dZ_dal = np.zeros((nper, nl, 2, 2), dtype=np.complex128) if compute_sens else None
-    dZ_dat = np.zeros((nper, nl, 2, 2), dtype=np.complex128) if compute_sens else None
-    dZ_dblt = np.zeros((nper, nl, 2, 2), dtype=np.complex128) if compute_sens else None
-    dZ_dh = np.zeros((nper, nl, 2, 2), dtype=np.complex128) if compute_sens else None
+    if compute_sens:
+        dZ_dal = np.zeros((nper, nl, 2, 2), dtype=np.complex128)
+        dZ_dat = np.zeros((nper, nl, 2, 2), dtype=np.complex128)
+        dZ_dblt = np.zeros((nper, nl, 2, 2), dtype=np.complex128)
+        dZ_dh = np.zeros((nper, nl, 2, 2), dtype=np.complex128)
+    else:
+        dZ_dal = dZ_dat = dZ_dblt = dZ_dh = None
 
     k0_prefactor = (1.0 - 1.0j) * 0.002 * np.pi  # legacy scaling
 
@@ -626,10 +761,15 @@ def _aniso1d_impedance_sens_alat(
         zrot = np.array([[0.0 + 0.0j, dz1], [-dz2, 0.0 + 0.0j]], dtype=np.complex128)
 
         if compute_sens:
-            dZ_dal[ip, -1] = np.array([[0.0 + 0.0j, -0.5 * dz1 / a1],
-                                       [0.0 + 0.0j,  0.0 + 0.0j]], dtype=np.complex128)
-            dZ_dat[ip, -1] = np.array([[0.0 + 0.0j,  0.0 + 0.0j],
-                                       [0.5 * dz2 / a2, 0.0 + 0.0j]], dtype=np.complex128)
+            # Derivatives of the basement impedance w.r.t its AL/AT.
+            dZ_dal[ip, -1] = np.array(
+                [[0.0 + 0.0j, -0.5 * dz1 / a1], [0.0 + 0.0j, 0.0 + 0.0j]],
+                dtype=np.complex128,
+            )
+            dZ_dat[ip, -1] = np.array(
+                [[0.0 + 0.0j, 0.0 + 0.0j], [0.5 * dz2 / a2, 0.0 + 0.0j]],
+                dtype=np.complex128,
+            )
 
         bsref = bs
 
@@ -644,10 +784,10 @@ def _aniso1d_impedance_sens_alat(
                 ang = bs - bsref
                 zbot = rotz(zrot, ang)
                 if compute_sens:
-                    dZ_dal[ip, il + 1:] = rotz_stack(dZ_dal[ip, il + 1:], ang)
-                    dZ_dat[ip, il + 1:] = rotz_stack(dZ_dat[ip, il + 1:], ang)
-                    dZ_dblt[ip, il + 1:] = rotz_stack(dZ_dblt[ip, il + 1:], ang)
-                    dZ_dh[ip, il + 1:] = rotz_stack(dZ_dh[ip, il + 1:], ang)
+                    dZ_dal[ip, il + 1 :] = rotz_stack(dZ_dal[ip, il + 1 :], ang)
+                    dZ_dat[ip, il + 1 :] = rotz_stack(dZ_dat[ip, il + 1 :], ang)
+                    dZ_dblt[ip, il + 1 :] = rotz_stack(dZ_dblt[ip, il + 1 :], ang)
+                    dZ_dh[ip, il + 1 :] = rotz_stack(dZ_dh[ip, il + 1 :], ang)
                 bsref = bs
             else:
                 zbot = zrot.copy()
@@ -662,12 +802,14 @@ def _aniso1d_impedance_sens_alat(
             ztop = _propagate_impedance(zbot, dz1, dz2, ag1, ag2)
 
             if compute_sens:
+                # Propagate existing layer sensitivities from below.
                 for jl in range(il + 1, nl):
                     dZ_dal[ip, jl] = _propagate_sens_from_zbot(dZ_dal[ip, jl], zbot, ztop, dz1, dz2, ag1, ag2)
                     dZ_dat[ip, jl] = _propagate_sens_from_zbot(dZ_dat[ip, jl], zbot, ztop, dz1, dz2, ag1, ag2)
                     dZ_dblt[ip, jl] = _propagate_sens_from_zbot(dZ_dblt[ip, jl], zbot, ztop, dz1, dz2, ag1, ag2)
                     dZ_dh[ip, jl] = _propagate_sens_from_zbot(dZ_dh[ip, jl], zbot, ztop, dz1, dz2, ag1, ag2)
 
+                # Local derivatives for this layer.
                 dZ_dal[ip, il] = _dZ_dal_layer(zbot, ztop, a1, dz1, dz2, ag1, ag2)
                 dZ_dat[ip, il] = _dZ_dat_layer(zbot, ztop, a2, dz1, dz2, ag1, ag2)
                 dZ_dblt[ip, il] = _dZ_dblt_layer(zbot, ztop, dz1, dz2, ag1, ag2)
@@ -686,7 +828,184 @@ def _aniso1d_impedance_sens_alat(
         else:
             Z[ip] = zrot
 
-    return ForwardResult(Z=Z, dZ_dal=dZ_dal, dZ_dat=dZ_dat, dZ_dblt=dZ_dblt, dZ_dh_m=dZ_dh)
+    out: Dict[str, np.ndarray] = {"Z": Z}
+    if compute_sens:
+        out.update({"dZ_dal": dZ_dal, "dZ_dat": dZ_dat, "dZ_dblt": dZ_dblt, "dZ_dh_m": dZ_dh})
+    return out
+
+
+def aniso1d_impedance_sens_simple(
+    periods_s: np.ndarray,
+    h_m: np.ndarray,
+    rho_max_ohmm: np.ndarray,
+    rho_min_ohmm: np.ndarray,
+    strike_deg: np.ndarray,
+    *,
+    compute_sens: bool = True,
+    dh_rel: float = 1e-6,
+) -> Dict[str, np.ndarray]:
+    """Simplified anisotropic 1-D MT forward model (+ sensitivities).
+
+    Parameters
+    ----------
+    periods_s : ndarray, shape (nper,)
+        Periods in seconds.
+    h_m : ndarray, shape (nl,)
+        Layer thicknesses in meters (last entry is basement; ignored).
+    rho_max_ohmm : ndarray, shape (nl,)
+        Maximum horizontal resistivity (Ohm·m).
+    rho_min_ohmm : ndarray, shape (nl,)
+        Minimum horizontal resistivity (Ohm·m).
+    strike_deg : ndarray, shape (nl,)
+        Anisotropy strike in degrees.
+    compute_sens : bool
+        If True, also return derivatives w.r.t. ``rho_max_ohmm``,
+        ``rho_min_ohmm``, ``strike_deg``, and ``h_m``.
+    dh_rel : float
+        Relative perturbation for the thickness finite difference.
+
+    Returns
+    -------
+    dict
+        Always contains:
+
+        - ``Z``: complex ndarray, shape (nper, 2, 2)
+
+        If ``compute_sens=True`` also contains:
+
+        - ``dZ_drho_max``:     (nper, nl, 2, 2)
+        - ``dZ_drho_min``:     (nper, nl, 2, 2)
+        - ``dZ_dstrike_deg``:  (nper, nl, 2, 2)
+        - ``dZ_dh_m``:         (nper, nl, 2, 2)
+
+    Notes
+    -----
+    The mapping used is:
+
+    - ``AL = 1/rho_min``
+    - ``AT = 1/rho_max``
+    - ``BLT = strike``
+
+    Therefore:
+
+    - ``dAL/drho_min = -1/rho_min^2``
+    - ``dAT/drho_max = -1/rho_max^2``
+    - ``dBLT/dstrike_deg = pi/180``
+    """
+    rho_max_ohmm = np.asarray(rho_max_ohmm, dtype=float).ravel()
+    rho_min_ohmm = np.asarray(rho_min_ohmm, dtype=float).ravel()
+    strike_deg = np.asarray(strike_deg, dtype=float).ravel()
+    h_m = np.asarray(h_m, dtype=float).ravel()
+
+    if not (rho_max_ohmm.shape == rho_min_ohmm.shape == strike_deg.shape == h_m.shape):
+        raise ValueError("h_m, rho_max_ohmm, rho_min_ohmm, strike_deg must all have the same shape (nl,).")
+
+    al, at, blt_rad = alat_from_rho_strike(rho_max_ohmm, rho_min_ohmm, strike_deg)
+
+    base = _aniso1d_impedance_sens_alat(
+        periods_s,
+        h_m,
+        al,
+        at,
+        blt_rad,
+        compute_sens=compute_sens,
+        dh_rel=dh_rel,
+    )
+
+    if not compute_sens:
+        return {"Z": base["Z"]}
+
+    # Chain rule from (AL, AT, BLT) to (rho_max, rho_min, strike_deg)
+    dAL_drho_min = (-1.0 / (rho_min_ohmm**2)).reshape(1, -1, 1, 1)
+    dAT_drho_max = (-1.0 / (rho_max_ohmm**2)).reshape(1, -1, 1, 1)
+    dBLT_dstrike = (np.pi / 180.0)
+
+    dZ_drho_min = base["dZ_dal"] * dAL_drho_min
+    dZ_drho_max = base["dZ_dat"] * dAT_drho_max
+    dZ_dstrike = base["dZ_dblt"] * dBLT_dstrike
+
+    out = {
+        "Z": base["Z"],
+        "dZ_drho_max": dZ_drho_max,
+        "dZ_drho_min": dZ_drho_min,
+        "dZ_dstrike_deg": dZ_dstrike,
+        "dZ_dh_m": base["dZ_dh_m"],
+        # Expose the intermediate derivatives for debugging / advanced use.
+        "dZ_dal": base["dZ_dal"],
+        "dZ_dat": base["dZ_dat"],
+        "dZ_dblt": base["dZ_dblt"],
+        "al": al,
+        "at": at,
+        "blt_rad": blt_rad,
+    }
+    return out
+
+
+
+
+def aniso1d_impedance_sens_simple_sigma(
+    periods_s: np.ndarray,
+    h_m: np.ndarray,
+    sigma_max_Spm: np.ndarray,
+    sigma_min_Spm: np.ndarray,
+    strike_deg: np.ndarray,
+    *,
+    compute_sens: bool = True,
+    dh_rel: float = 1e-6,
+) -> Dict[str, np.ndarray]:
+    """Simplified anisotropic 1-D MT forward model (+ sensitivities), conductivity input.
+
+    This is a convenience wrapper around :func:`aniso1d_impedance_sens_simple`
+    for workflows that prefer parameterizing *conductivity* instead of
+    resistivity.
+
+    Parameters
+    ----------
+    periods_s : ndarray, shape (nper,)
+        Periods in seconds.
+    h_m : ndarray, shape (nl,)
+        Layer thicknesses in meters.
+    sigma_max_Spm : ndarray, shape (nl,)
+        Maximum horizontal conductivity (S/m).
+        This corresponds to ``1/rho_min`` in the resistivity parameterization.
+    sigma_min_Spm : ndarray, shape (nl,)
+        Minimum horizontal conductivity (S/m).
+        This corresponds to ``1/rho_max`` in the resistivity parameterization.
+    strike_deg : ndarray, shape (nl,)
+        Strike angle in degrees.
+    compute_sens : bool
+        If True, also compute sensitivities.
+    dh_rel : float
+        Relative thickness perturbation used internally for the thickness
+        sensitivity finite difference.
+
+    Returns
+    -------
+    dict
+        Same as :func:`aniso1d_impedance_sens_simple`, but the sensitivity keys
+        are still expressed w.r.t. resistivities (``dZ_drho_*``). If you need
+        sensitivities w.r.t. conductivities, convert using the chain rule:
+
+        - ``rho = 1/sigma``
+        - ``dZ/dsigma = dZ/drho * d(1/sigma)/dsigma = -dZ/drho / sigma**2``
+    """
+    sigma_max_Spm = np.asarray(sigma_max_Spm, dtype=float)
+    sigma_min_Spm = np.asarray(sigma_min_Spm, dtype=float)
+
+    # Convert to resistivities for the core implementation.
+    tiny = np.finfo(float).tiny
+    rho_min_ohmm = 1.0 / np.maximum(sigma_max_Spm, tiny)  # rho_min <-> sigma_max
+    rho_max_ohmm = 1.0 / np.maximum(sigma_min_Spm, tiny)  # rho_max <-> sigma_min
+
+    return aniso1d_impedance_sens_simple(
+        periods_s=periods_s,
+        h_m=h_m,
+        rho_max_ohmm=rho_max_ohmm,
+        rho_min_ohmm=rho_min_ohmm,
+        strike_deg=strike_deg,
+        compute_sens=compute_sens,
+        dh_rel=dh_rel,
+    )
 
 def aniso1d_impedance_sens(
     periods_s: np.ndarray,
@@ -696,61 +1015,49 @@ def aniso1d_impedance_sens(
     udip_deg: np.ndarray,
     usla_deg: np.ndarray,
     *,
-    is_iso: Optional[np.ndarray] = None,
     compute_sens: bool = True,
     dh_rel: float = 1e-6,
     fd_rel_rop: float = 1e-6,
     fd_abs_angle_deg: float = 1e-4,
-) -> ForwardResult:
-    """Compute 1-D anisotropic impedance with the **public** parameterization.
+) -> Dict[str, np.ndarray]:
+    """Full (legacy) forward model with sensitivities.
 
-    Model parameterization (per layer)
-    ---------------------------------
-    2) Principal resistivities + Euler angles (converted via :func:`cpanis`):
-
-    - ``h_m`` (nl,)
-    - ``rop``  (nl, 3) principal resistivities [Ohm·m]
-    - ``ustr_deg``, ``udip_deg``, ``usla_deg`` (nl,) Euler angles in degrees
+    This wrapper is kept for backward compatibility. For inversion workflows,
+    prefer :func:`aniso1d_impedance_sens_simple`.
 
     Parameters
     ----------
     periods_s : ndarray, shape (nper,)
         Periods in seconds.
     h_m : ndarray, shape (nl,)
-        Layer thicknesses in meters (last entry can be any value; basement thickness
-        is not used by the recursion).
+        Layer thicknesses in meters (last entry is basement).
     rop : ndarray, shape (nl, 3)
-        Principal resistivities [Ohm·m] for each layer.
+        Principal resistivities (Ohm·m).
     ustr_deg, udip_deg, usla_deg : ndarray, shape (nl,)
         Euler angles (degrees): strike, dip, slant.
-    is_iso : ndarray of bool, shape (nl,), optional
-        If provided, layers with ``is_iso=True`` are treated as isotropic. In that case
-        the principal resistivities are forced equal and angles are ignored.
-    compute_sens : bool, default True
-        If True, compute sensitivities.
-    dh_rel : float, default 1e-6
-        Relative perturbation for thickness finite differences.
-    fd_rel_rop : float, default 1e-6
-        Relative step for finite-difference derivatives of :func:`cpanis` w.r.t. ``rop``.
-    fd_abs_angle_deg : float, default 1e-4
-        Absolute step (degrees) for finite-difference derivatives of :func:`cpanis`
-        w.r.t. the Euler angles.
+    compute_sens : bool
+        If True, also return derivatives w.r.t. the public parameters.
+    dh_rel : float
+        Relative step for thickness finite difference.
+    fd_rel_rop : float
+        Relative step for finite difference derivatives of :func:`cpanis` w.r.t. ``rop``.
+    fd_abs_angle_deg : float
+        Absolute step (deg) for finite difference derivatives of :func:`cpanis` w.r.t. angles.
 
     Returns
     -------
-    ForwardResult
-        ``Z`` has shape ``(nper, 2, 2)``.
+    dict
+        Always contains ``Z`` (nper,2,2).
 
-        If ``compute_sens=True``:
-        - ``dZ_drop`` has shape ``(nper, nl, 3, 2, 2)``
-        - ``dZ_dustr_deg``, ``dZ_dudip_deg``, ``dZ_dusla_deg`` have shape ``(nper, nl, 2, 2)``
-        - ``dZ_dh_m`` has shape ``(nper, nl, 2, 2)``
+        If ``compute_sens=True`` also contains:
 
-    Notes
-    -----
-    Sensitivities are computed by combining the analytic derivatives from the recursion
-    (w.r.t. ``al``, ``at``, ``blt_rad``) with finite-difference derivatives of
-    :func:`cpanis` (chain rule).
+        - ``dZ_drop``       (nper, nl, 3, 2, 2)
+        - ``dZ_dustr_deg``  (nper, nl, 2, 2)
+        - ``dZ_dudip_deg``  (nper, nl, 2, 2)
+        - ``dZ_dusla_deg``  (nper, nl, 2, 2)
+        - ``dZ_dh_m``       (nper, nl, 2, 2)
+
+        plus intermediate derivatives (``dZ_dal``, ``dZ_dat``, ``dZ_dblt``).
     """
     periods_s = np.asarray(periods_s, dtype=float).ravel()
     h_m = np.asarray(h_m, dtype=float).ravel()
@@ -767,24 +1074,6 @@ def aniso1d_impedance_sens(
     if not (ustr_deg.shape == udip_deg.shape == usla_deg.shape == (nl,)):
         raise ValueError("ustr_deg, udip_deg, usla_deg must all have shape (nl,).")
 
-    # Optional isotropic-layer mask: enforce rop[:,0]==rop[:,1]==rop[:,2] and
-    # zero angles where requested. This makes AL==AT and renders BLT irrelevant
-    # for these layers, while keeping the same public parameterization.
-    if is_iso is not None:
-        is_iso = np.asarray(is_iso, dtype=bool).ravel()
-        if is_iso.shape != (nl,):
-            raise ValueError(f"is_iso must have shape ({nl},), got {is_iso.shape}")
-        rop = rop.copy()
-        ustr_deg = ustr_deg.copy()
-        udip_deg = udip_deg.copy()
-        usla_deg = usla_deg.copy()
-        if np.any(is_iso):
-            rop[is_iso, 1] = rop[is_iso, 0]
-            rop[is_iso, 2] = rop[is_iso, 0]
-            ustr_deg[is_iso] = 0.0
-            udip_deg[is_iso] = 0.0
-            usla_deg[is_iso] = 0.0
-
     _sg, al, at, blt_rad = cpanis(rop, ustr_deg, udip_deg, usla_deg)
 
     base = _aniso1d_impedance_sens_alat(
@@ -798,13 +1087,11 @@ def aniso1d_impedance_sens(
     )
 
     if not compute_sens:
-        return ForwardResult(Z=base.Z)
+        return {"Z": base["Z"]}
 
-    dZ_dal = base.dZ_dal
-    dZ_dat = base.dZ_dat
-    dZ_dblt = base.dZ_dblt
-    if dZ_dal is None or dZ_dat is None or dZ_dblt is None:
-        raise RuntimeError("Internal sensitivities were not computed as requested.")
+    dZ_dal = base["dZ_dal"]
+    dZ_dat = base["dZ_dat"]
+    dZ_dblt = base["dZ_dblt"]
 
     nper = periods_s.size
 
@@ -847,20 +1134,25 @@ def aniso1d_impedance_sens(
             dblt = (float(blt_p[k]) - float(blt_rad[k])) / step
             out[:, k, :, :] = _apply_chain(k, dal, dat, dblt)
 
-    return ForwardResult(
-        Z=base.Z,
-        dZ_drop=dZ_drop,
-        dZ_dustr_deg=dZ_dustr,
-        dZ_dudip_deg=dZ_dudip,
-        dZ_dusla_deg=dZ_dusla,
-        dZ_dh_m=base.dZ_dh_m,
-        dZ_dal=dZ_dal,
-        dZ_dat=dZ_dat,
-        dZ_dblt=dZ_dblt,
-    )
+    out = {
+        "Z": base["Z"],
+        "dZ_drop": dZ_drop,
+        "dZ_dustr_deg": dZ_dustr,
+        "dZ_dudip_deg": dZ_dudip,
+        "dZ_dusla_deg": dZ_dusla,
+        "dZ_dh_m": base["dZ_dh_m"],
+        # Intermediate derivatives
+        "dZ_dal": dZ_dal,
+        "dZ_dat": dZ_dat,
+        "dZ_dblt": dZ_dblt,
+        "al": al,
+        "at": at,
+        "blt_rad": blt_rad,
+    }
+    return out
 
 
-# --- CLI ----------------------------------------------------------------------
+# --- Optional CLI: kept small and focused ------------------------------------
 
 def _parse_periods_arg(s: str) -> np.ndarray:
     """Parse a comma-separated list of periods into a float array."""
@@ -873,94 +1165,46 @@ def _parse_periods_arg(s: str) -> np.ndarray:
 def _load_model_npz(model_path: Path) -> Dict[str, np.ndarray]:
     """Load a model from an NPZ file.
 
-    Required keys (public parameterization)
-    --------------------------------------
-    - ``h_m`` (nl,)
-    - ``rop`` (nl, 3)
-    - ``ustr_deg`` (nl,)
-    - ``udip_deg`` (nl,)
-    - ``usla_deg`` (nl,)
+    This loader supports BOTH parameterizations:
 
-    Returns a dict with keys: ``h_m, rop, ustr_deg, udip_deg, usla_deg``.
+    - Simplified keys: ``h_m, rho_min_ohmm, rho_max_ohmm, strike_deg``
+    - Full keys: ``h_m, rop, ustr_deg, udip_deg, usla_deg``
+
+    The dict returned contains the keys found.
     """
     with np.load(model_path, allow_pickle=False) as npz:
         keys = set(npz.files)
-        req = {"h_m", "rop", "ustr_deg", "udip_deg", "usla_deg"}
-        if not (req <= keys):
-            raise KeyError(
-                "model.npz must contain: h_m, rop, ustr_deg, udip_deg, usla_deg "
-                f"(found: {sorted(keys)})"
-            )
+        out: Dict[str, np.ndarray] = {k: npz[k] for k in npz.files}
 
-        h_m = np.asarray(npz["h_m"], dtype=float).ravel()
-        rop = np.asarray(npz["rop"], dtype=float)
-        ustr = np.asarray(npz["ustr_deg"], dtype=float).ravel()
-        udip = np.asarray(npz["udip_deg"], dtype=float).ravel()
-        usla = np.asarray(npz["usla_deg"], dtype=float).ravel()
+    # Normalise common names.
+    if "h" in out and "h_m" not in out:
+        out["h_m"] = np.asarray(out["h"], dtype=float).ravel()
 
-    return {"h_m": h_m, "rop": rop, "ustr_deg": ustr, "udip_deg": udip, "usla_deg": usla}
-
-
-def _cli_run(args) -> int:
-    """CLI handler for the ``run`` subcommand."""
-    model_path = Path(args.model).expanduser().resolve()
-    out_path = Path(args.out).expanduser().resolve()
-
-    model = _load_model_npz(model_path)
-
-    periods = _parse_periods_arg(args.periods) if args.periods else np.loadtxt(args.periods_file, ndmin=1)
-    res = aniso1d_impedance_sens(
-        periods_s=periods,
-        h_m=model["h_m"],
-        rop=model["rop"],
-        ustr_deg=model["ustr_deg"],
-        udip_deg=model["udip_deg"],
-        usla_deg=model["usla_deg"],
-        compute_sens=bool(args.sens),
-        dh_rel=float(args.dh_rel),
-    )
-
-    out_dict = {"periods_s": periods, "Z": res.Z}
-    if args.sens:
-        out_dict.update(
-            {
-                "dZ_drop": res.dZ_drop,
-                "dZ_dustr_deg": res.dZ_dustr_deg,
-                "dZ_dudip_deg": res.dZ_dudip_deg,
-                "dZ_dusla_deg": res.dZ_dusla_deg,
-                "dZ_dh_m": res.dZ_dh_m,
-                # Intermediate derivatives (optional / debug)
-                "dZ_dal": res.dZ_dal,
-                "dZ_dat": res.dZ_dat,
-                "dZ_dblt": res.dZ_dblt,
-            }
+    # Provide a clearer error if neither parameterization is present.
+    has_simple = {"h_m", "rho_min_ohmm", "rho_max_ohmm", "strike_deg"} <= set(out.keys())
+    has_full = {"h_m", "rop", "ustr_deg", "udip_deg", "usla_deg"} <= set(out.keys())
+    if not (has_simple or has_full):
+        raise KeyError(
+            "Model NPZ must contain either simplified keys (h_m,rho_min_ohmm,rho_max_ohmm,strike_deg) "
+            "or full keys (h_m,rop,ustr_deg,udip_deg,usla_deg). "
+            f"Found keys: {sorted(keys)}"
         )
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(out_path.as_posix(), **out_dict)
-
-    if not args.quiet:
-        print(f"Wrote: {out_path}")
-        print(f"  periods: {periods.size}, layers: {model['h_m'].size}")
-        print(f"  Z shape: {res.Z.shape}")
-        if args.sens:
-            print(f"  dZ_drop shape: {res.dZ_drop.shape}")
-
-    return 0
+    return {k: np.asarray(v) for k, v in out.items()}
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    """Entry point for the command-line interface."""
+    """Entry point for a small command-line interface."""
     import argparse
 
     p = argparse.ArgumentParser(
-        prog="aniso_sens.py",
+        prog="aniso.py",
         description="1-D anisotropic MT impedance forward model with optional sensitivities.",
     )
     sub = p.add_subparsers(dest="cmd", required=True)
 
     runp = sub.add_parser("run", help="Compute impedance (and optionally sensitivities) from a model NPZ.")
-    runp.add_argument("--model", required=True, help="Path to model NPZ (see module docstring).")
+    runp.add_argument("--model", required=True, help="Path to model NPZ.")
     runp.add_argument("--periods", default=None, help="Comma-separated list of periods in seconds.")
     runp.add_argument("--periods-file", default=None, help="Text file with one period per line (seconds).")
     runp.add_argument("--out", required=True, help="Output NPZ path.")
@@ -970,13 +1214,41 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     args = p.parse_args(argv)
 
-    if args.cmd == "run":
-        if (args.periods is None) == (args.periods_file is None):
-            p.error("Provide exactly one of --periods or --periods-file.")
-        return _cli_run(args)
+    if args.cmd != "run":
+        p.error(f"Unknown command: {args.cmd}")
 
-    p.error(f"Unknown command: {args.cmd}")
-    return 2
+    if (args.periods is None) == (args.periods_file is None):
+        p.error("Provide exactly one of --periods or --periods-file.")
+
+    model_path = Path(args.model).expanduser().resolve()
+    out_path = Path(args.out).expanduser().resolve()
+
+    model = _load_model_npz(model_path)
+
+    periods = _parse_periods_arg(args.periods) if args.periods else np.loadtxt(args.periods_file, ndmin=1)
+    res = aniso1d_impedance_sens_simple(
+         periods_s=periods,
+         h_m=np.asarray(model["h_m"], dtype=float).ravel(),
+         rho_max_ohmm=np.asarray(model["rho_max_ohmm"], dtype=float).ravel(),
+         rho_min_ohmm=np.asarray(model["rho_min_ohmm"], dtype=float).ravel(),
+         strike_deg=np.asarray(model["strike_deg"], dtype=float).ravel(),
+         compute_sens=bool(args.sens),
+         dh_rel=float(args.dh_rel),
+     )
+
+
+    out_dict = {"periods_s": periods}
+    out_dict.update(res)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(out_path.as_posix(), **out_dict)
+
+    if not args.quiet:
+        print(f"Wrote: {out_path}")
+        print(f"  periods: {periods.size}, layers: {np.asarray(model['h_m']).size}")
+        print(f"  Z shape: {res['Z'].shape}")
+
+    return 0
 
 
 if __name__ == "__main__":  # pragma: no cover

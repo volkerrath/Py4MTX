@@ -22,7 +22,7 @@ Implementation note
 Helpers are imported from `inv1d.py` (TSVD/Tikhonov deterministic inversion).
 
 Author: Volker Rath (DIAS)
-Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-25
+Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-08 (UTC)
 """
 
 from __future__ import annotations
@@ -128,7 +128,6 @@ USE_PT = True
 PT_ERR_NSIM = 200
 Z_COMPS = ("xx", "xy", "yx", "yy")
 PT_COMPS = ("xx", "xy", "yx", "yy")
-COMPUTE_PT_IF_MISSING = True
 
 # Parameterization options
 FIX_H = True
@@ -136,9 +135,7 @@ SAMPLE_LAST_THICKNESS = False
 
 LOG10_H_BOUNDS = (0.0, 5.0)
 LOG10_RHO_BOUNDS = (0.0, 5.0)
-USTR_BOUNDS_DEG = (-180.0, 180.0)
-UDIP_BOUNDS_DEG = (0.0, 90.0)
-USLA_BOUNDS_DEG = (-180.0, 180.0)
+STRIKE_BOUNDS_DEG = (-180.0, 180.0)
 
 SIGMA_FLOOR_Z = 0.0
 SIGMA_FLOOR_P = 0.0
@@ -193,9 +190,7 @@ spec = inv1d.ParamSpec(
     sample_last_thickness=bool(SAMPLE_LAST_THICKNESS),
     log10_h_bounds=LOG10_H_BOUNDS,
     log10_rho_bounds=LOG10_RHO_BOUNDS,
-    ustr_bounds_deg=USTR_BOUNDS_DEG,
-    udip_bounds_deg=UDIP_BOUNDS_DEG,
-    usla_bounds_deg=USLA_BOUNDS_DEG,
+    strike_bounds_deg=STRIKE_BOUNDS_DEG,
 )
 
 for f in in_files:
@@ -203,7 +198,7 @@ for f in in_files:
     station = str(site.get("station", Path(f).stem))
     print(f"--- {station} ---")
 
-    if USE_PT and COMPUTE_PT_IF_MISSING:
+    if USE_PT:
         # Add P and (bootstrap) P_err if missing
         site = inv1d.ensure_phase_tensor(site, nsim=int(PT_ERR_NSIM))
 
@@ -231,7 +226,6 @@ for f in in_files:
         use_pt=bool(USE_PT),
         z_comps=Z_COMPS,
         pt_comps=PT_COMPS,
-        compute_pt_if_missing=bool(COMPUTE_PT_IF_MISSING),
         sigma_floor_Z=float(SIGMA_FLOOR_Z),
         sigma_floor_P=float(SIGMA_FLOOR_P),
     )
