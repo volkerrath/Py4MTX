@@ -28,7 +28,7 @@ Important modelling note
 Two likelihood implementations are available:
 
 - **Robust black-box** (default): wraps the NumPy forward model with
-  PyTensor ``as_op``. This is very stable, but **not differentiable**.
+  PyTensor ``wrap_py``. This is very stable, but **not differentiable**.
   Use ``DEMetropolisZ``/``Metropolis``.
 
 - **Gradient-enabled** (optional): uses a custom PyTensor ``Op`` whose
@@ -41,7 +41,7 @@ sensitivities from the forward model.
 
 
 Author: Volker Rath (DIAS)
-Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-08 (UTC)
+Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-10 (UTC)
 """
 
 from __future__ import annotations
@@ -62,12 +62,12 @@ except Exception:  # pragma: no cover
 try:  # pragma: no cover
     import pymc as pm
     import pytensor.tensor as pt
-    from pytensor.compile.ops import as_op
+    from pytensor.compile.ops import wrap_py
     from pytensor.graph.op import Op
 except Exception:  # pragma: no cover
     pm = None
     pt = None
-    as_op = None
+    wrap_py = None
     Op = None
 
 
@@ -140,6 +140,7 @@ def normalize_model(model: Dict) -> Dict[str, np.ndarray]:
     This function makes migration easier by accepting both:
 
     - new keys: ``rho_min_ohmm``, ``rho_max_ohmm``, ``strike_deg``
+    - alternative new keys: ``sigma_min_Spm``, ``sigma_max_Spm``, ``strike_deg``
     - legacy keys: ``rop`` (nl,3) and ``ustr_deg``
 
     If the legacy form is used, we map:
@@ -171,7 +172,36 @@ def normalize_model(model: Dict) -> Dict[str, np.ndarray]:
 
     # --- Detect / create simplified resistivity parameters -------------------
     if ("rho_min_ohmm" not in out) or ("rho_max_ohmm" not in out):
-        if "rop" in out:
+        # Allow conductivity parametrization in the starting model
+        sig_min_key = None
+        sig_max_key = None
+        for k in ("sigma_min_Spm", "sig_min_Spm"):
+            if k in out:
+                sig_min_key = k
+                break
+        for k in ("sigma_max_Spm", "sig_max_Spm"):
+            if k in out:
+                sig_max_key = k
+                break
+
+        if sig_min_key is not None or sig_max_key is not None:
+            if sig_min_key is None or sig_max_key is None:
+                raise KeyError(
+                    "Model must contain both sigma_min_Spm and sigma_max_Spm (or their sig_* aliases)."
+                )
+            sigma_min = _as_1d(np.asarray(out[sig_min_key], dtype=float), sig_min_key)
+            sigma_max = _as_1d(np.asarray(out[sig_max_key], dtype=float), sig_max_key)
+            if sigma_min.size != nl or sigma_max.size != nl:
+                raise ValueError("sigma_min_Spm and sigma_max_Spm must have length nl.")
+            tiny = np.finfo(float).tiny
+            sigma_min = np.maximum(sigma_min, tiny)
+            sigma_max = np.maximum(sigma_max, tiny)
+
+            # sigma_max = 1/rho_min, sigma_min = 1/rho_max
+            out["rho_min_ohmm"] = 1.0 / sigma_max
+            out["rho_max_ohmm"] = 1.0 / sigma_min
+
+        elif "rop" in out:
             rop = np.asarray(out["rop"], dtype=float)
             if rop.ndim != 2 or rop.shape[0] != nl or rop.shape[1] < 2:
                 raise ValueError("rop must have shape (nl,3) or (nl,>=2).")
@@ -180,7 +210,9 @@ def normalize_model(model: Dict) -> Dict[str, np.ndarray]:
             out["rho_min_ohmm"] = np.minimum(rho1, rho2)
             out["rho_max_ohmm"] = np.maximum(rho1, rho2)
         else:
-            raise KeyError("Model must contain either (rho_min_ohmm,rho_max_ohmm) or 'rop'.")
+            raise KeyError(
+                "Model must contain either (rho_min_ohmm,rho_max_ohmm), (sigma_min_Spm,sigma_max_Spm), or 'rop'."
+            )
 
     if "strike_deg" not in out:
         if "ustr_deg" in out:
@@ -238,6 +270,8 @@ def save_model_npz(model: Dict, path: str | os.PathLike) -> None:
         h_m=m["h_m"],
         rho_min_ohmm=m["rho_min_ohmm"],
         rho_max_ohmm=m["rho_max_ohmm"],
+        sigma_min_Spm=(1.0 / np.maximum(m["rho_max_ohmm"], np.finfo(float).tiny)),
+        sigma_max_Spm=(1.0 / np.maximum(m["rho_min_ohmm"], np.finfo(float).tiny)),
         strike_deg=m["strike_deg"],
         is_iso=m["is_iso"],
         is_fix=m["is_fix"],
@@ -941,12 +975,27 @@ class ParamSpec:
     nl : int
         Number of layers.
     fix_h : bool
-        If True, thicknesses are not sampled.
+        If True, per-layer thicknesses ``h_m`` are not sampled.
+    sample_H_m : bool
+        If True, sample a **single global thickness scale** ``H_m`` (total
+        thickness of all layers except the basement placeholder), while keeping
+        the *relative* thickness profile fixed to the starting model.
+
+        This is useful when you trust the relative layering but want to
+        calibrate overall depth to a conductive/resistive transition.
+
+        Constraint: ``sample_H_m`` requires ``fix_h=True`` (you either sample
+        per-layer ``h_m`` or the single scale ``H_m``).
     sample_last_thickness : bool
-        If True, also sample the last entry of ``h_m`` (usually the basement
-        thickness placeholder). Most workflows keep it fixed at 0.
+        If True and ``fix_h=False``, also sample the last entry of ``h_m``
+        (usually the basement thickness placeholder). Most workflows keep it
+        fixed at 0.
     log10_h_bounds : tuple(float,float)
-        Bounds for log10(h_m).
+        Bounds for log10(per-layer thicknesses) in meters (only used when
+        ``fix_h=False``).
+    log10_H_bounds : tuple(float,float)
+        Bounds for log10(global thickness scale) in meters (only used when
+        ``sample_H_m=True``).
     log10_rho_bounds : tuple(float,float)
         Bounds for log10 resistivities.
     strike_bounds_deg : tuple(float,float)
@@ -958,17 +1007,28 @@ class ParamSpec:
         *,
         nl: int,
         fix_h: bool = True,
+        sample_H_m: bool = False,
         sample_last_thickness: bool = False,
         log10_h_bounds: Tuple[float, float] = (0.0, 5.0),
+        log10_H_bounds: Tuple[float, float] = (0.0, 5.0),
         log10_rho_bounds: Tuple[float, float] = (0.0, 5.0),
         strike_bounds_deg: Tuple[float, float] = (-180.0, 180.0),
     ) -> None:
         self.nl = int(nl)
         self.fix_h = bool(fix_h)
+        self.sample_H_m = bool(sample_H_m)
         self.sample_last_thickness = bool(sample_last_thickness)
         self.log10_h_bounds = tuple(float(x) for x in log10_h_bounds)
+        self.log10_H_bounds = tuple(float(x) for x in log10_H_bounds)
         self.log10_rho_bounds = tuple(float(x) for x in log10_rho_bounds)
         self.strike_bounds_deg = tuple(float(x) for x in strike_bounds_deg)
+
+        if self.sample_H_m and (not self.fix_h):
+            raise ValueError("ParamSpec: sample_H_m=True requires fix_h=True.")
+
+        if self.sample_last_thickness and self.fix_h:
+            # harmless, but signal to the user it won't do anything
+            pass
 
 
 # -----------------------------------------------------------------------------
@@ -1025,6 +1085,10 @@ def build_pymc_model(
         - Impedance + optional phase tensor likelihoods are supported.
         - For best stability with NUTS, consider ``spec.fix_h=True`` to avoid
           finite-difference thickness sensitivities.
+
+        - If you want to avoid sampling all per-layer thicknesses but still allow
+          the overall depth scale to adjust, set ``spec.fix_h=True`` and
+          ``spec.sample_H_m=True`` to sample a single scalar ``H_m``.
     prior_kind : str
         One of ``{"default","uniform"}``.
 
@@ -1056,8 +1120,8 @@ def build_pymc_model(
         if Op is None:
             raise ImportError("PyTensor Op not available (needed for enable_grad=True).")
     else:
-        if as_op is None:
-            raise ImportError("pytensor.as_op not available (needed for enable_grad=False).")
+        if wrap_py is None:
+            raise ImportError("pytensor.wrap_py not available (needed for enable_grad=False).")
 
     # Starting model resolution
     if model0 is not None:
@@ -1130,10 +1194,10 @@ def build_pymc_model(
     lo_h, hi_h = spec.log10_h_bounds
 
     with pm.Model() as model:
-        is_iso_data = pm.MutableData("is_iso", iso0.astype(bool))
-        is_fix_data = pm.MutableData("is_fix", fix0.astype(bool))
+        is_iso_data = pm.Data("is_iso", iso0.astype(bool))
+        is_fix_data = pm.Data("is_fix", fix0.astype(bool))
 
-        
+
         # ------------------------------------------------------------------
         # Resistivity / conductivity parameterization (ordered pair + soft priors)
         # ------------------------------------------------------------------
@@ -1199,6 +1263,11 @@ def build_pymc_model(
             log10_rmax = log10_high
             rho_min = pm.Deterministic("rho_min_ohmm", 10.0 ** log10_rmin)
             rho_max = pm.Deterministic("rho_max_ohmm", 10.0 ** log10_rmax)
+
+            # Also expose the equivalent conductivities (useful for plotting even
+            # when sampling in resistivity space)
+            sigma_min = pm.Deterministic("sigma_min_Spm", 1.0 / rho_max)
+            sigma_max = pm.Deterministic("sigma_max_Spm", 1.0 / rho_min)
         else:
             # In sigma-domain, keep ordered (sigma_min <= sigma_max) and convert.
             sigma_min = pm.Deterministic("sigma_min_Spm", 10.0 ** log10_low)
@@ -1225,24 +1294,65 @@ def build_pymc_model(
         strike = pt.switch(is_iso_data, str0, strike)  # strike irrelevant for isotropic layers
         strike = pm.Deterministic("strike_deg", strike)
 
-        # Thickness
-        if spec.fix_h:
-            h_m = pm.Deterministic("h_m", h0)
+        # Thickness / global depth scale
+        #
+        # Supported modes:
+        #   (1) spec.fix_h=True and spec.sample_H_m=False: fully fixed h_m (constant)
+        #   (2) spec.fix_h=True and spec.sample_H_m=True : sample a single H_m and scale
+        #       the *relative* thickness profile from the starting model
+        #   (3) spec.fix_h=False                      : sample per-layer h_m (optionally
+        #       keeping the last placeholder thickness fixed)
+        if spec.fix_h and (not getattr(spec, "sample_H_m", False)):
+            # Fixed thickness profile (convert NumPy array -> PyTensor constant)
+            h_m = pm.Deterministic("h_m", pt.as_tensor_variable(h0.astype(float)))
+            # Convenience: expose total thickness (excluding the basement placeholder)
+            H_m = pm.Deterministic("H_m", pt.sum(h_m[:-1]))
+
+        elif getattr(spec, "sample_H_m", False):
+            # Sample global thickness scale H_m, keep relative thickness profile fixed
+            H0 = float(np.sum(np.maximum(h0[:-1], 0.0)))
+            H0 = float(max(H0, np.finfo(float).tiny))
+
+            # Relative profile (last entry usually 0 and remains 0 under scaling)
+            h_rel = h0.astype(float).copy()
+            h_rel[:-1] = h_rel[:-1] / H0
+
+            lo_H, hi_H = spec.log10_H_bounds
+            if prior_kind_ in ("default", "soft"):
+                log10_H_un = pm.Normal("log10_H_un", mu=0.0, sigma=1.0)
+                log10_H = lo_H + (hi_H - lo_H) * pm.math.sigmoid(log10_H_un)
+            else:
+                log10_H = pm.Uniform("log10_H", lower=lo_H, upper=hi_H)
+
+            H_m = pm.Deterministic("H_m", 10.0 ** log10_H)
+            h_m = pm.Deterministic("h_m", pt.as_tensor_variable(h_rel) * H_m)
+
         else:
+            # Sample per-layer thicknesses
             if prior_kind_ in ("default", "soft"):
                 log10_h_un = pm.Normal("log10_h_un", mu=0.0, sigma=1.0, shape=(nl,))
                 log10_h_free = lo_h + (hi_h - lo_h) * pm.math.sigmoid(log10_h_un)
             else:
                 log10_h_free = pm.Uniform("log10_h_free", lower=lo_h, upper=hi_h, shape=(nl,))
+
             if not spec.sample_last_thickness:
-                # keep the last entry fixed at its starting value
+                # Keep the last entry fixed at its starting value (usually 0.0)
                 log10_h_free = pt.set_subtensor(
                     log10_h_free[-1],
                     np.log10(max(h0[-1], np.finfo(float).tiny)),
                 )
+
             log10_h0 = np.log10(np.maximum(h0, np.finfo(float).tiny))
             log10_h = pt.switch(is_fix_data, log10_h0, log10_h_free)
-            h_m = pm.Deterministic("h_m", 10.0 ** log10_h)
+
+            # Convert back to linear thickness, then (optionally) force the last
+            # placeholder thickness to remain exactly the starting value (often 0.0).
+            h_m_lin = 10.0 ** log10_h
+            if not spec.sample_last_thickness:
+                h_m_lin = pt.set_subtensor(h_m_lin[-1], float(h0[-1]))
+
+            h_m = pm.Deterministic("h_m", h_m_lin)
+            H_m = pm.Deterministic("H_m", pt.sum(h_m[:-1]))
 
         # Forward model: return packed observation vector
         z_comps_ = tuple(z_comps)
@@ -1264,10 +1374,10 @@ def build_pymc_model(
             y_pred = fop(h_m, rho_max, rho_min, strike)
         else:
             # Robust black-box forward (supports optional PT)
-            if as_op is None:
-                raise ImportError("pytensor.as_op not available")
+            if wrap_py is None:
+                raise ImportError("pytensor.wrap_py not available")
 
-            @as_op(itypes=[pt.dvector, pt.dvector, pt.dvector, pt.dvector], otypes=[pt.dvector])
+            @wrap_py(itypes=[pt.dvector, pt.dvector, pt.dvector, pt.dvector], otypes=[pt.dvector])
             def forward_packed(h_m_v, rho_max_v, rho_min_v, strike_v):
                 fres = aniso1d_impedance_sens_simple(
                     periods_s=periods_s,
@@ -1299,7 +1409,7 @@ def build_pymc_model(
                     log10_rmin,
                     log10_rmax,
                     strike,
-                    pt.log(h_m) / np.log(10.0),
+                    pt.log(pt.maximum(h_m, np.finfo(float).tiny)) / np.log(10.0),
                 ]
             ),
         )
@@ -1360,14 +1470,12 @@ def sample_pymc(
             step = pm.HamiltonianMC()
         else:
             raise ValueError(f"Unknown step_method: {step_method}")
-
         idata = pm.sample(
             draws=int(draws),
             tune=int(tune),
             chains=int(chains),
             cores=int(cores),
             step=step,
-            target_accept=float(target_accept),
             random_seed=random_seed,
             progressbar=bool(progressbar),
             return_inferencedata=True,
@@ -1402,6 +1510,32 @@ def _quantiles(x: np.ndarray, qs: Sequence[float]) -> np.ndarray:
     """Compute quantiles along axis 0."""
     return np.quantile(x, np.asarray(qs, dtype=float), axis=0)
 
+def _normalize_qpairs(qpairs: Sequence[Tuple[float, float]]) -> Tuple[Tuple[float, float], ...]:
+    """Normalize quantile/percentile pairs.
+
+    Accepts either quantiles in [0, 1] or percentiles in [0, 100].
+    If any entry is > 1, the whole pair-list is interpreted as percentiles.
+
+    Returns
+    -------
+    tuple
+        Quantile pairs in [0, 1].
+    """
+    pairs = [(float(a), float(b)) for a, b in qpairs]
+    use_percentiles = any((a > 1.0 or b > 1.0) for a, b in pairs)
+    if use_percentiles:
+        pairs = [(a / 100.0, b / 100.0) for a, b in pairs]
+
+    out = []
+    for a, b in pairs:
+        if not (0.0 <= a <= 1.0 and 0.0 <= b <= 1.0):
+            raise ValueError(f"Quantiles must be within [0,1] (got {a},{b}).")
+        if a >= b:
+            raise ValueError(f"Each quantile pair must satisfy a < b (got {a},{b}).")
+        out.append((a, b))
+    return tuple(out)
+
+
 
 def build_summary_npz(
     *,
@@ -1416,7 +1550,7 @@ def build_summary_npz(
     """Build a compact NPZ summary for plotting.
 
     The resulting dict contains per-layer envelopes (quantile pairs) for
-    ``rho_min_ohmm``, ``rho_max_ohmm`` and ``strike_deg``, plus a depth axis.
+    ``rho_min_ohmm``, ``rho_max_ohmm``, ``sigma_min_Spm``, ``sigma_max_Spm`` and ``strike_deg``, plus a depth axis.
 
     Parameters
     ----------
@@ -1455,13 +1589,53 @@ def build_summary_npz(
     str_s = _stack_samples(post["strike_deg"])     # (ns, nl)
     theta_s = _stack_samples(post["theta"])        # (ns, ntheta)
 
+    # Conductivities (available regardless of sampling domain)
+    sigmin_s = _stack_samples(post["sigma_min_Spm"])  # (ns, nl)
+    sigmax_s = _stack_samples(post["sigma_max_Spm"])  # (ns, nl)
+
+    # Optional: global thickness scale H_m (if present)
+    try:
+        H_s = _stack_samples(post["H_m"]).reshape(-1)
+    except Exception:
+        H_s = None
+
     # Quantile pairs
-    qpairs = tuple((float(a), float(b)) for a, b in qpairs)
+    qpairs = _normalize_qpairs(qpairs)
     q_all = sorted(set([q for pair in qpairs for q in pair] + [0.5]))
+    # Depth axis: if thickness is sampled (per-layer or via H_m scaling), use the
+    # posterior median thickness profile as the reference depth axis.
+    z_q = None
+    try:
+        h_s = _stack_samples(post["h_m"])  # (ns, nl)
+        h_ref = np.median(h_s, axis=0)
+        z = np.r_[0.0, np.cumsum(np.maximum(np.asarray(h_ref, dtype=float)[:-1], 0.0))]
+
+        # Optional depth quantiles (uncertainty of interfaces)
+        z_s = np.concatenate(
+            [np.zeros((h_s.shape[0], 1)), np.cumsum(np.maximum(h_s[:, :-1], 0.0), axis=1)],
+            axis=1,
+        )
+        z_q = _quantiles(z_s, q_all)  # (nq, nl)
+    except Exception:
+        pass
+
+
+    
+    # Optional: H_m quantiles on the same q-grid
+    if H_s is not None:
+        try:
+            H_q = np.quantile(H_s, np.asarray(q_all, dtype=float))
+        except Exception:
+            H_q = np.empty((0,), dtype=float)
+    else:
+        H_q = np.empty((0,), dtype=float)
 
     rmin_q = _quantiles(rmin_s, q_all)  # (nq, nl)
     rmax_q = _quantiles(rmax_s, q_all)
     str_q = _quantiles(str_s, q_all)
+
+    sigmin_q = _quantiles(sigmin_s, q_all)
+    sigmax_q = _quantiles(sigmax_s, q_all)
 
     # Theta qpairs for density plots
     theta_qpairs = np.array([[np.quantile(theta_s[:, i], [a, b]) for (a, b) in qpairs] for i in range(theta_s.shape[1])])
@@ -1473,10 +1647,16 @@ def build_summary_npz(
         "rho_min0": np.asarray(m0["rho_min_ohmm"], dtype=float),
         "rho_max0": np.asarray(m0["rho_max_ohmm"], dtype=float),
         "strike0": np.asarray(m0["strike_deg"], dtype=float),
+        "H_m_q": np.asarray(H_q, dtype=float),
         "z_m": z,
+        "z_m_q": (np.asarray(z_q, dtype=float) if z_q is not None else np.empty((0, 0))),
         "q": np.asarray(q_all, dtype=float),
         "rho_min_q": np.asarray(rmin_q, dtype=float),
         "rho_max_q": np.asarray(rmax_q, dtype=float),
+        "sigma_min0": (1.0 / np.maximum(np.asarray(m0["rho_max_ohmm"], dtype=float), np.finfo(float).tiny)),
+        "sigma_max0": (1.0 / np.maximum(np.asarray(m0["rho_min_ohmm"], dtype=float), np.finfo(float).tiny)),
+        "sigma_min_q": np.asarray(sigmin_q, dtype=float),
+        "sigma_max_q": np.asarray(sigmax_q, dtype=float),
         "strike_q": np.asarray(str_q, dtype=float),
         "qpairs": np.asarray(qpairs, dtype=float),
         "theta_qpairs": np.asarray(theta_qpairs, dtype=float),
@@ -1499,4 +1679,3 @@ def save_summary_npz(summary: Dict, path: str | os.PathLike) -> None:
             out[k] = v
 
     np.savez(p.as_posix(), **out)
-

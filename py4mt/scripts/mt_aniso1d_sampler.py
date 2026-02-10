@@ -22,7 +22,7 @@ Implementation note
 Helpers are imported from `mcmc.py`
 
 Author: Volker Rath (DIAS)
-Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-08 (UTC)
+Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-10 (UTC)
 """
 
 from __future__ import annotations
@@ -30,9 +30,16 @@ from __future__ import annotations
 import os
 import sys
 import inspect
+import warnings
 from pathlib import Path
 
 import numpy as np
+
+# Optional: suppress noisy FutureWarnings (e.g., from PyMC/PyTensor)
+SUPPRESS_FUTUREWARNINGS = True
+if SUPPRESS_FUTUREWARNINGS:
+    warnings.filterwarnings("ignore", category=FutureWarning)
+
 
 # -----------------------------------------------------------------------------
 # Environment variables / path settings (keep)
@@ -95,16 +102,29 @@ nlayer = 17
 # Keep it at 0.0 so that cumulative-depth plots remain well-defined.
 h_m = np.r_[np.logspace(np.log10(50.0), np.log10(500.0), nlayer - 1), 0.0]
 
-Model0  = {
-    "prior_name" : "model1_hfix",
-    "h_m" : h_m,
-    "rop" : 100.*np.ones((nlayer, 3), dtype=  float),
-    "ustr_deg" : np.zeros_like(h_m, dtype=  float),
-    "udip_deg" : np.zeros_like(h_m, dtype=  float),
-    "usla_deg" : np.zeros_like(h_m, dtype=  float),
-    "is_iso" : np.zeros_like(h_m, dtype=  bool),
-    "is_fix" : np.zeros_like(h_m, dtype=  bool)
-    }
+# --- Simplified model template (preferred) -----------------------------------
+#
+# You can specify the starting model either in resistivity (rho) or
+# conductivity (sigma) form:
+#   - rho:   rho_min_ohmm, rho_max_ohmm, strike_deg
+#   - sigma: sigma_min_Spm, sigma_max_Spm, strike_deg
+#
+# The sampler will normalize to the internal canonical form (rho_min/rho_max).
+
+# Example: layered halfspace with constant isotropic background
+rho_bg = 100.0  # Ohm·m
+sigma_bg = 1.0 / rho_bg  # S/m
+
+Model0 = {
+    "prior_name": "model1_hfix",
+    "h_m": h_m,
+    # Conductivity parameterization (sigma_min <= sigma_max)
+    "sigma_min_Spm": sigma_bg * np.ones_like(h_m, dtype=float),
+    "sigma_max_Spm": sigma_bg * np.ones_like(h_m, dtype=float),
+    "strike_deg": np.zeros_like(h_m, dtype=float),
+    "is_iso": np.ones_like(h_m, dtype=bool),
+    "is_fix": np.zeros_like(h_m, dtype=bool),
+}
 
 
 # =============================================================================
@@ -133,7 +153,13 @@ PT_REG = 1e-12  # small diagonal regularization used inside PT gradients
 FIX_H = True
 SAMPLE_LAST_THICKNESS = False
 
-LOG10_H_BOUNDS = (0.0, 5.0)
+# If True, sample a single global thickness scale H_m (total thickness except basement),
+# while keeping the relative thickness profile fixed to the starting model.
+# Constraint: requires FIX_H=True.
+SAMPLE_H_M = False
+
+LOG10_H_BOUNDS = (0.0, 5.0)        # per-layer thickness bounds (used only if FIX_H=False)
+LOG10_H_TOTAL_BOUNDS = (0.0, 5.0)  # total thickness H_m bounds (used only if SAMPLE_H_M=True)
 LOG10_RHO_BOUNDS = (-0., 5.0)
 STRIKE_BOUNDS_DEG = (-180.0, 180.0)
 
@@ -153,9 +179,8 @@ PRIOR_KIND = "default"  # NUTS-friendly soft priors
 PARAM_DOMAIN = "rho"  # "rho" (default) or "sigma"
 
 # One shared quantile setting (requested)
-QPAIRS = ((0.1, 0.9), (0.25, 0.75))
-
-
+QPAIRS = ((10, 90), (25, 75))
+# QPAIRS accepts either quantiles in [0,1] or percentiles in [0,100].
 outdir = mcmc.ensure_dir(OUTDIR)
 in_files = mcmc.glob_inputs(INPUT_GLOB)
 if not in_files:
@@ -173,11 +198,17 @@ else:
 model0 = mcmc.normalize_model(model0)
 
 nl = int(np.asarray(model0["h_m"]).size)
+# Sanity: global H_m sampling requires fixed relative thickness profile
+if SAMPLE_H_M and (not FIX_H):
+    raise ValueError("SAMPLE_H_M=True requires FIX_H=True (keep relative layer thicknesses fixed).")
+
 spec = mcmc.ParamSpec(
     nl=nl,
     fix_h=bool(FIX_H),
+    sample_H_m=bool(SAMPLE_H_M),
     sample_last_thickness=bool(SAMPLE_LAST_THICKNESS),
     log10_h_bounds=LOG10_H_BOUNDS,
+    log10_H_bounds=LOG10_H_TOTAL_BOUNDS,
     log10_rho_bounds=LOG10_RHO_BOUNDS,
     strike_bounds_deg=STRIKE_BOUNDS_DEG,
 )
