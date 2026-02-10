@@ -21,7 +21,8 @@ For each station, a **three-panel** figure is produced:
 
 ``fig, axs = plt.subplots(3, 1, figsize=(8, 8))``
 
-Each panel shows a vertical step profile of one of the 3-parameter sets:
+Each panel shows a vertical step profile of one of the 3-parameter sets used
+by the sampler.
 
 - Resistivity domain (``PARAM_DOMAIN='rho'``)
     - ``PARAM_SET='minmax'``: (rho_min, rho_max, strike)
@@ -31,30 +32,13 @@ Each panel shows a vertical step profile of one of the 3-parameter sets:
     - ``PARAM_SET='minmax'``: (sigma_min, sigma_max, strike)
     - ``PARAM_SET='max_anifac'``: (sigma_max, sigma_anifac, strike)
 
-Uncertainty bands
------------------
-
-Set ``BANDS`` to either **quantile** pairs (0..1) or **percentile** pairs (0..100).
-
-Examples::
-
-    # quantiles
-    BANDS = ((0.10, 0.90), (0.25, 0.75))
-
-    # percentiles
-    BANDS = ((10.0, 90.0), (25.0, 75.0))
-
-Internally, percentiles are converted to quantiles before being passed into
-:mod:`mcmc_viz` (which expects quantiles).
-
-ArviZ compatibility
--------------------
-
-This driver assumes **ArviZ >= 0.23.4** and loads the netCDF via
-``arviz.from_netcdf``.
+If the netCDF InferenceData exists, posterior samples are used and one or more
+uncertainty bands can be shaded. Bands can be specified either as quantiles
+(0..1) or percentiles (0..100). If no netCDF exists, the script falls back to
+the arrays stored in the summary NPZ.
 
 Author: Volker Rath (DIAS)
-Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-10 (UTC)
+Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-08 (UTC)
 """
 
 from __future__ import annotations
@@ -63,10 +47,11 @@ import inspect
 import os
 import sys
 from pathlib import Path
-from typing import Iterable, Tuple
 
-import arviz as az
 import matplotlib.pyplot as plt
+
+# ArviZ >= 0.23.4 (project assumption)
+import arviz as az
 
 
 # --- Py4MTX environment -------------------------------------------------------
@@ -90,11 +75,17 @@ from version import versionstrg
 # --- User settings ------------------------------------------------------------
 
 # Domain and parameter set to plot
-PARAM_DOMAIN = "rho"  # "rho" or "sigma"
-PARAM_SET = "minmax"  # "minmax" or "max_anifac"
+#
+# Use "auto" to pick up the parametrization actually used by the sampler.
+# This makes the plotting script robust when you switch between
+#   PARAM_DOMAIN = "rho"  and  PARAM_DOMAIN = "sigma"
+# in the sampler.
+PARAM_DOMAIN = "auto"  # "auto", "rho" or "sigma"
+PARAM_SET = "auto"  # "auto", "minmax" or "max_anifac"
 
-# Uncertainty bands (quantile pairs 0..1 or percentile pairs 0..100)
-BANDS = ((10.0, 90.0),)  # e.g. ((10, 90), (25, 75)) or ((0.1, 0.9),)
+# Uncertainty bands (used when idata exists). Can be given either as quantiles
+# (0..1) or percentiles (0..100).
+BANDS = ((10.0, 90.0), (25.0, 75.0))
 
 # Optional: show dashed band edges in addition to the shaded bands
 SHOW_BAND_EDGES = False
@@ -108,66 +99,86 @@ PLOT_DIR.mkdir(parents=True, exist_ok=True)
 PLOT_FORMATS = (".pdf",)  # (".pdf", ".png")
 NAME_SUFFIX = "_pmc_threepanel"
 
-# Station file selector (site NPZ files used only to enumerate stations)
-SEARCH_GLOB = str(DATA_DIR / "Ann*.npz")
+# Station selector
+#
+# Prefer to enumerate stations from the sampler summary files, because those
+# are the plotting inputs. This also avoids coupling to site-npz creation.
+SEARCH_GLOB = str(SUMM_DIR / "*_pmc_summary.npz")
 
 
-def _normalize_bands(
-    pairs: Iterable[Tuple[float, float]] | None,
-) -> Tuple[Tuple[Tuple[float, float], ...] | None, str]:
-    """Normalize bands to *quantiles*.
+def _bands_to_qpairs(bands):
+    """Convert bands (quantiles or percentiles) to quantile pairs."""
 
-    Parameters
-    ----------
-    pairs
-        Sequence of (lo, hi) pairs. If any value is > 1, pairs are interpreted
-        as percentiles (0..100). Otherwise as quantiles (0..1).
+    qpairs = []
+    if bands is None:
+        return tuple(qpairs)
 
-    Returns
-    -------
-    qpairs
-        Pairs converted to quantiles (0..1), or None.
-    kind
-        Either "percentile" or "quantile" (or "none").
-
-    Notes
-    -----
-    This driver normalizes to quantiles because the plotting backend
-    (:func:`mcmc_viz.plot_paramset_threepanel`) expects quantiles.
-    """
-    if pairs is None:
-        return None, "none"
-
-    pairs = tuple((float(a), float(b)) for (a, b) in pairs)
-    if not pairs:
-        return None, "none"
-
-    maxv = max(max(a, b) for (a, b) in pairs)
-    if maxv > 1.0 + 1.0e-12:
-        qpairs = tuple((a / 100.0, b / 100.0) for (a, b) in pairs)
-        return qpairs, "percentile"
-    return pairs, "quantile"
+    for lo, hi in bands:
+        lo = float(lo)
+        hi = float(hi)
+        if (lo > 1.0) or (hi > 1.0):
+            # interpret as percentiles
+            lo /= 100.0
+            hi /= 100.0
+        qpairs.append((lo, hi))
+    return tuple(qpairs)
 
 
-def _open_idata(nc_path: Path):
-    """Open an ArviZ InferenceData (netCDF).
+def _infer_param_domain(summary, idata):
+    """Infer 'rho'/'sigma' from sampler metadata or variable presence."""
 
-    Uses :func:`arviz.from_netcdf` (ArviZ >= 0.23.x) and returns None on failure.
-    """
+    # 1) explicit metadata
+    info = summary.get("info") if isinstance(summary, dict) else None
+    if isinstance(info, dict):
+        v = info.get("param_domain")
+        if isinstance(v, str) and v.strip().lower() in ("rho", "sigma"):
+            return v.strip().lower()
+
+    v = summary.get("param_domain") if isinstance(summary, dict) else None
+    if isinstance(v, str) and v.strip().lower() in ("rho", "sigma"):
+        return v.strip().lower()
+
+    # 2) summary arrays
+    if isinstance(summary, dict):
+        keys = {str(k) for k in summary.keys()}
+        if any("sigma_" in k for k in keys):
+            return "sigma"
+        if any("rho_" in k for k in keys):
+            return "rho"
+
+    # 3) idata posterior variable names
     try:
-        return az.from_netcdf(nc_path.as_posix())
+        if idata is not None and hasattr(idata, "posterior"):
+            vnames = set(getattr(idata.posterior, "data_vars", {}).keys())
+            if any("sigma" in n for n in vnames):
+                return "sigma"
+            if any("rho" in n for n in vnames):
+                return "rho"
     except Exception:
-        return None
+        pass
+
+    return "rho"  # conservative default
+
+
+def _infer_param_set(summary):
+    """Infer parameter set name from sampler metadata; default to 'minmax'."""
+
+    info = summary.get("info") if isinstance(summary, dict) else None
+    if isinstance(info, dict):
+        v = info.get("param_set")
+        if isinstance(v, str) and v.strip().lower() in ("minmax", "max_anifac"):
+            return v.strip().lower()
+
+    v = summary.get("param_set") if isinstance(summary, dict) else None
+    if isinstance(v, str) and v.strip().lower() in ("minmax", "max_anifac"):
+        return v.strip().lower()
+
+    return "minmax"
 
 
 def main() -> int:
-    """Run the plot driver.
+    """Run the plot driver."""
 
-    Returns
-    -------
-    int
-        Exit code (0 on success).
-    """
     version, _ = versionstrg()
     fname = inspect.getfile(inspect.currentframe())
     titstrng = utl.print_title(version=version, fname=fname, out=False)
@@ -177,41 +188,53 @@ def main() -> int:
     if not file_list:
         raise SystemExit(f"No matching file found: {SEARCH_GLOB} (exit).")
 
-    qpairs, band_kind = _normalize_bands(BANDS)
+    qpairs = _bands_to_qpairs(BANDS)
 
     for f in file_list:
-        site = mcmc.load_site(f)
-        station = site["station"]
+        sum_path = Path(f)
+        stem = sum_path.stem
+        station = stem[:-12] if stem.endswith("_pmc_summary") else stem
         print(f"--- {station} ---")
 
-        sum_path = SUMM_DIR / f"{station}_pmc_summary.npz"
         nc_path = SUMM_DIR / f"{station}_pmc.nc"
-
-        if not sum_path.is_file():
-            print(f"  Missing summary: {sum_path} (skip)")
-            continue
 
         summary = mv.load_summary_npz(sum_path)
 
-        idata = _open_idata(nc_path) if nc_path.is_file() else None
-        if idata is None and nc_path.is_file():
-            print(f"  Could not open idata: {nc_path}. Using summary only.")
+        idata = None
+        if nc_path.is_file():
+            try:
+                # ArviZ >= 0.23.4
+                idata = az.from_netcdf(nc_path.as_posix())
+            except Exception as e:
+                print(f"  Could not open idata: {nc_path} ({e}). Using summary only.")
 
         fig, axs = plt.subplots(3, 1, figsize=(8, 8), sharey=True)
+
+        # Keep the plot parametrization in sync with the sampler.
+        param_domain = (
+            _infer_param_domain(summary, idata)
+            if str(PARAM_DOMAIN).strip().lower() == "auto"
+            else str(PARAM_DOMAIN).strip().lower()
+        )
+        param_set = (
+            _infer_param_set(summary)
+            if str(PARAM_SET).strip().lower() == "auto"
+            else str(PARAM_SET).strip().lower()
+        )
 
         mv.plot_paramset_threepanel(
             axs,
             summary=summary,
             idata=idata,
-            param_domain=PARAM_DOMAIN,
-            param_set=PARAM_SET,
+            param_domain=param_domain,
+            param_set=param_set,
             qpairs=qpairs,
             show_quantile_lines=SHOW_BAND_EDGES,
             prefer_idata=True,
             overlay_single=summary.get("model0") if isinstance(summary.get("model0"), dict) else None,
         )
 
-        fig.suptitle(f"{station} | {PARAM_DOMAIN}:{PARAM_SET} | {band_kind}")
+        fig.suptitle(f"{station} | {param_domain}:{param_set}")
         fig.tight_layout()
 
         for fmt in PLOT_FORMATS:

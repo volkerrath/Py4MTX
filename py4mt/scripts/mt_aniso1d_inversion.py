@@ -90,21 +90,25 @@ print(titstrng+'\n\n')
 # -----------------------------------------------------------------------------
 # Example Model1 (keep/edit)
 # -----------------------------------------------------------------------------
-nlayer = 17
+# This driver uses the *simplified* parameterization consistent with the sampler:
+# either (rho_min_ohmm, rho_max_ohmm, strike_deg) or (sigma_min_Spm, sigma_max_Spm, strike_deg).
+#
 # Convention: last entry is the basement "thickness" (ignored by the recursion).
 # Keep it at 0.0 so that cumulative-depth plots remain well-defined.
+nlayer = 17
 h_m = np.r_[np.logspace(np.log10(50.0), np.log10(500.0), nlayer - 1), 0.0]
 
-Model0  = {
-    "prior_name" : "model1_hfix",
-    "h_m" : h_m,
-    "rop" : 100.*np.ones((nlayer, 3), dtype=  float),
-    "ustr_deg" : np.zeros_like(h_m, dtype=  float),
-    "udip_deg" : np.zeros_like(h_m, dtype=  float),
-    "usla_deg" : np.zeros_like(h_m, dtype=  float),
-    "is_iso" : np.zeros_like(h_m, dtype=  bool),
-    "is_fix" : np.zeros_like(h_m, dtype=  bool)
-    }
+# Start model in conductivity domain (S/m). For 100 Ohm·m isotropic layers:
+# sigma = 1/rho = 0.01 S/m.
+Model0 = {
+    "prior_name": "model1_hfix",
+    "h_m": h_m,
+    "sigma_min_Spm": 0.01 * np.ones(nlayer, dtype=float),
+    "sigma_max_Spm": 0.01 * np.ones(nlayer, dtype=float),
+    "strike_deg": np.zeros(nlayer, dtype=float),
+    "is_iso": np.zeros(nlayer, dtype=bool),
+    "is_fix": np.zeros(nlayer, dtype=bool),
+}
 
 
 # =============================================================================
@@ -129,12 +133,21 @@ PT_ERR_NSIM = 200
 Z_COMPS = ("xx", "xy", "yx", "yy")
 PT_COMPS = ("xx", "xy", "yx", "yy")
 
-# Parameterization options
+# Parameterization options (match sampler)
+PARAM_DOMAIN = "rho"           # "rho" or "sigma"
+PARAM_SET = "minmax"           # "minmax" or "max_anifac"
+
 FIX_H = True
 SAMPLE_LAST_THICKNESS = False
 
+# Bounds apply to log10(rho) if PARAM_DOMAIN="rho", and to log10(sigma) if "sigma".
+LOG10_PARAM_BOUNDS = (0.0, 5.0)
+LOG10_ANIFAC_BOUNDS = (0.0, 2.0)   # only used for PARAM_SET="max_anifac"
+
+# Backward-compatible name (kept)
+LOG10_RHO_BOUNDS = LOG10_PARAM_BOUNDS
+
 LOG10_H_BOUNDS = (0.0, 5.0)
-LOG10_RHO_BOUNDS = (0.0, 5.0)
 STRIKE_BOUNDS_DEG = (-180.0, 180.0)
 
 SIGMA_FLOOR_Z = 0.0
@@ -189,8 +202,11 @@ spec = inv1d.ParamSpec(
     fix_h=bool(FIX_H),
     sample_last_thickness=bool(SAMPLE_LAST_THICKNESS),
     log10_h_bounds=LOG10_H_BOUNDS,
-    log10_rho_bounds=LOG10_RHO_BOUNDS,
+    log10_param_bounds=LOG10_PARAM_BOUNDS,
+    log10_anifac_bounds=LOG10_ANIFAC_BOUNDS,
     strike_bounds_deg=STRIKE_BOUNDS_DEG,
+    param_domain=str(PARAM_DOMAIN),
+    param_set=str(PARAM_SET),
 )
 
 for f in in_files:
