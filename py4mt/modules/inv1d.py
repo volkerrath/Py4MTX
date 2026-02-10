@@ -95,11 +95,22 @@ def model_from_direct(model_direct: Dict) -> Dict[str, np.ndarray]:
 def normalize_model(model: Dict) -> Dict[str, np.ndarray]:
     """Normalize a model dict to the simplified parameterization.
 
-    Accepts either:
+    This project supports two equivalent parameter domains:
 
-    - native simplified keys (rho_min_ohmm, rho_max_ohmm, strike_deg)
-    - legacy keys (rop + ustr_deg), which are converted via:
-      rho_min = min(rop[:,0], rop[:,1]), rho_max = max(...), strike = ustr_deg
+    - Resistivity domain:
+        ``rho_min_ohmm``, ``rho_max_ohmm`` (Ohm·m), ``strike_deg``.
+    - Conductivity domain:
+        ``sigma_min_Spm``, ``sigma_max_Spm`` (S/m), ``strike_deg``.
+
+    For convenience, legacy keys are also accepted:
+
+    - ``rop`` (nl,3) principal resistivities. Only the first two principal values
+      are used to define ``rho_min_ohmm`` and ``rho_max_ohmm``.
+    - ``ustr_deg`` (nl,) is mapped to ``strike_deg``.
+
+    The returned dict always contains **both** rho and sigma fields so that
+    downstream code (deterministic inversion, plotting) can work independent of
+    the chosen parametrization.
 
     Returns
     -------
@@ -122,10 +133,58 @@ def normalize_model(model: Dict) -> Dict[str, np.ndarray]:
     out["is_iso"] = is_iso
     out["is_fix"] = is_fix
 
-    if "rho_min_ohmm" in model and "rho_max_ohmm" in model:
+    # Helper: find first available key in a list
+    def _pick(keys: Sequence[str]) -> Optional[str]:
+        for k in keys:
+            if k in model:
+                return k
+        return None
+
+    # Preferred: explicit rho
+    if ("rho_min_ohmm" in model) and ("rho_max_ohmm" in model):
         rho_min = _as_1d(model["rho_min_ohmm"], name="rho_min_ohmm", nl=nl)
         rho_max = _as_1d(model["rho_max_ohmm"], name="rho_max_ohmm", nl=nl)
         strike = _as_1d(model.get("strike_deg", np.zeros(nl)), name="strike_deg", nl=nl)
+
+        # enforce positivity and ordering
+        rho_min = np.maximum(rho_min, np.finfo(float).tiny)
+        rho_max = np.maximum(rho_max, np.finfo(float).tiny)
+        rlo = np.minimum(rho_min, rho_max)
+        rhi = np.maximum(rho_min, rho_max)
+        rho_min, rho_max = rlo, rhi
+
+        # isotropic layers
+        rho_max = np.where(is_iso, rho_min, rho_max)
+
+        sigma_min = 1.0 / rho_max
+        sigma_max = 1.0 / rho_min
+
+    # Alternative: explicit sigma
+    elif (_pick(("sigma_min_Spm", "sig_min_Spm", "sigma_min", "sig_min")) is not None) and (
+        _pick(("sigma_max_Spm", "sig_max_Spm", "sigma_max", "sig_max")) is not None
+    ):
+        kmin = _pick(("sigma_min_Spm", "sig_min_Spm", "sigma_min", "sig_min"))
+        kmax = _pick(("sigma_max_Spm", "sig_max_Spm", "sigma_max", "sig_max"))
+        assert kmin is not None and kmax is not None
+
+        sigma_min = _as_1d(model[kmin], name=kmin, nl=nl)
+        sigma_max = _as_1d(model[kmax], name=kmax, nl=nl)
+        strike = _as_1d(model.get("strike_deg", np.zeros(nl)), name="strike_deg", nl=nl)
+
+        sigma_min = np.maximum(sigma_min, np.finfo(float).tiny)
+        sigma_max = np.maximum(sigma_max, np.finfo(float).tiny)
+        slo = np.minimum(sigma_min, sigma_max)
+        shi = np.maximum(sigma_min, sigma_max)
+        sigma_min, sigma_max = slo, shi
+
+        sigma_min = np.where(is_iso, sigma_max, sigma_min)
+
+        # Map to resistivities used by the forward model:
+        # rho_min corresponds to max conductivity; rho_max to min conductivity.
+        rho_min = 1.0 / sigma_max
+        rho_max = 1.0 / sigma_min
+
+    # Legacy: rop + ustr_deg
     elif "rop" in model:
         rop = np.asarray(model["rop"], dtype=float)
         if rop.shape != (nl, 3):
@@ -136,17 +195,25 @@ def normalize_model(model: Dict) -> Dict[str, np.ndarray]:
             strike = _as_1d(model["ustr_deg"], name="ustr_deg", nl=nl)
         else:
             strike = np.zeros(nl, dtype=float)
+
+        rho_min = np.maximum(rho_min, np.finfo(float).tiny)
+        rho_max = np.maximum(rho_max, np.finfo(float).tiny)
+        rho_max = np.where(is_iso, rho_min, rho_max)
+
+        sigma_min = 1.0 / rho_max
+        sigma_max = 1.0 / rho_min
+
     else:
-        raise KeyError("Model must have either (rho_min_ohmm,rho_max_ohmm) or legacy 'rop'.")
+        raise KeyError(
+            "Model must provide either (rho_min_ohmm,rho_max_ohmm) or "
+            "(sigma_min_Spm,sigma_max_Spm) or legacy 'rop'."
+        )
 
-    # enforce isotropy and positivity
-    rho_min = np.maximum(rho_min, np.finfo(float).tiny)
-    rho_max = np.maximum(rho_max, np.finfo(float).tiny)
-    rho_max = np.where(is_iso, rho_min, rho_max)
-
-    out["rho_min_ohmm"] = rho_min
-    out["rho_max_ohmm"] = rho_max
-    out["strike_deg"] = strike
+    out["rho_min_ohmm"] = np.asarray(rho_min, dtype=float)
+    out["rho_max_ohmm"] = np.asarray(rho_max, dtype=float)
+    out["sigma_min_Spm"] = np.asarray(sigma_min, dtype=float)
+    out["sigma_max_Spm"] = np.asarray(sigma_max, dtype=float)
+    out["strike_deg"] = np.asarray(strike, dtype=float)
 
     # pass through optional label
     if "prior_name" in model:
@@ -232,7 +299,26 @@ def ensure_phase_tensor(site: Dict, *, nsim: int = 200) -> Dict:
 
 
 class ParamSpec:
-    """Configuration container for inversion parameter bounds and masks."""
+    """Configuration container for inversion parameter bounds and masks.
+
+    Notes
+    -----
+    To match the MCMC sampler, deterministic inversion supports both
+    *domains* (rho vs sigma) and two *parameter sets*:
+
+    - ``param_domain``:
+        - ``"rho"``   : sample/invert in resistivity (Ohm·m)
+        - ``"sigma"`` : sample/invert in conductivity (S/m)
+
+    - ``param_set``:
+        - ``"minmax"``     : (min, max, strike) per layer
+        - ``"max_anifac"`` : (max, anifac, strike) per layer, where
+                             ``anifac = sqrt(max/min) >= 1``
+
+    Bounds are expressed in log10 of the chosen domain variable, i.e.
+    ``log10_param_bounds`` applies to log10(rho) when ``param_domain="rho"``
+    and to log10(sigma) when ``param_domain="sigma"``.
+    """
 
     def __init__(
         self,
@@ -241,15 +327,26 @@ class ParamSpec:
         fix_h: bool = True,
         sample_last_thickness: bool = False,
         log10_h_bounds: Tuple[float, float] = (0.0, 5.0),
-        log10_rho_bounds: Tuple[float, float] = (0.0, 5.0),
+        log10_param_bounds: Tuple[float, float] = (0.0, 5.0),
+        log10_anifac_bounds: Tuple[float, float] = (0.0, 2.0),
         strike_bounds_deg: Tuple[float, float] = (-180.0, 180.0),
+        param_domain: str = "rho",
+        param_set: str = "minmax",
     ) -> None:
         self.nl = int(nl)
         self.fix_h = bool(fix_h)
         self.sample_last_thickness = bool(sample_last_thickness)
         self.log10_h_bounds = tuple(map(float, log10_h_bounds))
-        self.log10_rho_bounds = tuple(map(float, log10_rho_bounds))
+        self.log10_param_bounds = tuple(map(float, log10_param_bounds))
+        self.log10_anifac_bounds = tuple(map(float, log10_anifac_bounds))
         self.strike_bounds_deg = tuple(map(float, strike_bounds_deg))
+        self.param_domain = str(param_domain).lower().strip()
+        self.param_set = str(param_set).lower().strip()
+
+    # Backwards-compatible alias used by older scripts
+    @property
+    def log10_rho_bounds(self) -> Tuple[float, float]:
+        return self.log10_param_bounds
 
 
 # -----------------------------------------------------------------------------
@@ -461,8 +558,12 @@ def invert_site(
 ) -> Dict:
     """Invert one site using a Gauss–Newton loop.
 
-    If ``use_pt=True`` the inversion includes phase tensor components, the inversion
-    augments the data vector by selected phase tensor components. Their
+    This deterministic solver mirrors the sampler's simplified parameter options.
+
+    - ``spec.param_domain`` in {"rho","sigma"}
+    - ``spec.param_set`` in {"minmax","max_anifac"}
+
+    If ``use_pt=True`` the inversion includes phase tensor components. Their
     sensitivities are approximated efficiently using a directional derivative
     through the Z sensitivities (no extra forward runs per parameter).
 
@@ -476,6 +577,14 @@ def invert_site(
     nl = int(model["h_m"].size)
     if nl != spec.nl:
         raise ValueError("spec.nl must match model0 layer count.")
+
+    domain = str(getattr(spec, "param_domain", "rho")).lower().strip()
+    pset = str(getattr(spec, "param_set", "minmax")).lower().strip()
+    if domain not in ("rho", "sigma"):
+        raise ValueError("spec.param_domain must be 'rho' or 'sigma'.")
+    if pset not in ("minmax", "max_anifac"):
+        raise ValueError("spec.param_set must be 'minmax' or 'max_anifac'.")
+
     # data
     if use_pt:
         site = ensure_phase_tensor(site, nsim=200)
@@ -506,24 +615,81 @@ def invert_site(
         if sigma_floor_P > 0:
             sigma_P = np.maximum(sigma_P, float(sigma_floor_P))
 
-    # working variables (log10 parameters are stable)
-    log10_rho_min = np.log10(np.maximum(model["rho_min_ohmm"], np.finfo(float).tiny))
-    log10_rho_max = np.log10(np.maximum(model["rho_max_ohmm"], np.finfo(float).tiny))
-    strike_deg = model["strike_deg"].astype(float, copy=True)
-
     # masks
     is_fix = np.asarray(model.get("is_fix", np.zeros(nl, dtype=bool)), dtype=bool)
     is_iso = np.asarray(model.get("is_iso", np.zeros(nl, dtype=bool)), dtype=bool)
 
-    # do not invert last thickness unless requested
+    # thickness is fixed in this simplified deterministic solver
     h_m = model["h_m"].astype(float, copy=True)
+
+    # --- initialize working parameters ---
+    ln10 = float(np.log(10.0))
+
+    if domain == "rho":
+        rho_min0 = np.asarray(model["rho_min_ohmm"], dtype=float)
+        rho_max0 = np.asarray(model["rho_max_ohmm"], dtype=float)
+        if pset == "minmax":
+            p1 = np.log10(np.maximum(rho_min0, np.finfo(float).tiny))
+            p2 = np.log10(np.maximum(rho_max0, np.finfo(float).tiny))
+        else:
+            # p1 = log10(rho_max), p2 = log10(anifac), anifac = sqrt(rho_max/rho_min) >= 1
+            p1 = np.log10(np.maximum(rho_max0, np.finfo(float).tiny))
+            anifac0 = np.sqrt(np.maximum(rho_max0 / np.maximum(rho_min0, np.finfo(float).tiny), 1.0))
+            p2 = np.log10(np.maximum(anifac0, 1.0))
+    else:
+        sigma_min0 = np.asarray(model["sigma_min_Spm"], dtype=float)
+        sigma_max0 = np.asarray(model["sigma_max_Spm"], dtype=float)
+        if pset == "minmax":
+            p1 = np.log10(np.maximum(sigma_min0, np.finfo(float).tiny))
+            p2 = np.log10(np.maximum(sigma_max0, np.finfo(float).tiny))
+        else:
+            # p1 = log10(sigma_max), p2 = log10(anifac), anifac = sqrt(sigma_max/sigma_min) >= 1
+            p1 = np.log10(np.maximum(sigma_max0, np.finfo(float).tiny))
+            anifac0 = np.sqrt(np.maximum(sigma_max0 / np.maximum(sigma_min0, np.finfo(float).tiny), 1.0))
+            p2 = np.log10(np.maximum(anifac0, 1.0))
+
+    strike_deg = np.asarray(model["strike_deg"], dtype=float).copy()
 
     history: List[Dict[str, float]] = []
 
+    # bounds
+    plo, phi = spec.log10_param_bounds
+    alo, ahi = spec.log10_anifac_bounds
+    slo, shi = spec.strike_bounds_deg
+
     for it in range(int(max_iter)):
-        rho_min = 10 ** log10_rho_min
-        rho_max = 10 ** log10_rho_max
-        rho_max = np.where(is_iso, rho_min, rho_max)
+        # --- decode parameters to rho_min/rho_max used by forward ---
+        if domain == "rho":
+            if pset == "minmax":
+                rho_min = 10 ** p1
+                rho_max = 10 ** p2
+                # enforce ordering and isotropy
+                rlo = np.minimum(rho_min, rho_max)
+                rhi = np.maximum(rho_min, rho_max)
+                rho_min, rho_max = rlo, np.where(is_iso, rlo, rhi)
+            else:
+                rho_max = 10 ** p1
+                anifac = 10 ** np.clip(p2, alo, ahi)
+                rho_min = rho_max / (anifac ** 2)
+                rho_max = np.where(is_iso, rho_min, rho_max)
+            sigma_min = 1.0 / rho_max
+            sigma_max = 1.0 / rho_min
+        else:
+            if pset == "minmax":
+                sigma_min = 10 ** p1
+                sigma_max = 10 ** p2
+                slo2 = np.minimum(sigma_min, sigma_max)
+                shi2 = np.maximum(sigma_min, sigma_max)
+                sigma_min, sigma_max = np.where(is_iso, shi2, slo2), shi2
+            else:
+                sigma_max = 10 ** p1
+                anifac = 10 ** np.clip(p2, alo, ahi)
+                sigma_min = sigma_max / (anifac ** 2)
+                sigma_min = np.where(is_iso, sigma_max, sigma_min)
+            rho_min = 1.0 / sigma_max
+            rho_max = 1.0 / sigma_min
+
+        strike_deg = np.clip(strike_deg, slo, shi)
 
         fwd = aniso.aniso1d_impedance_sens_simple(
             periods_s=periods_s,
@@ -558,61 +724,93 @@ def invert_site(
         if use_pt and (y_obs_P is not None) and (sigma_P is not None):
             P0 = _phase_tensor_from_Z(Zcal)
 
-        # Build Jacobian for Z (+ optional PT), with parameters per layer:
-        # [log10_rho_min(k), log10_rho_max(k), strike_deg(k)] for free layers.
-
-        # [log10_rho_min(k), log10_rho_max(k), strike_deg(k)] for free layers.
+        # Build Jacobian for Z (+ optional PT)
         cols: List[np.ndarray] = []
         names: List[Tuple[str, int]] = []
+
+        dZ_drmin_all = np.asarray(fwd["dZ_drho_min_ohmm"])
+        dZ_drmax_all = np.asarray(fwd["dZ_drho_max_ohmm"])
+        dZ_dstr_all = np.asarray(fwd["dZ_dstrike_deg"])
+
+        comp_map = {"xx": (0, 0), "xy": (0, 1), "yx": (1, 0), "yy": (1, 1)}
+        idx_pt = [comp_map[c] for c in pt_comps]
 
         for k in range(nl):
             if bool(is_fix[k]):
                 continue
 
-            # dZ/dlog10(rho) = dZ/drho * drho/dlog10(rho) = dZ/drho * rho * ln(10)
-            ln10 = np.log(10.0)
+            dZ_drmin = dZ_drmin_all[:, k]
+            dZ_drmax = dZ_drmax_all[:, k]
+            dZ_dstr = dZ_dstr_all[:, k]
 
-            dZ_drmin = fwd["dZ_drho_min_ohmm"][:, k]
-            dZ_drmax = fwd["dZ_drho_max_ohmm"][:, k]
-            dZ_dstr = fwd["dZ_dstrike_deg"][:, k]
+            # ----- p1 column -----
+            if domain == "rho":
+                if pset == "minmax":
+                    dZ_dp1 = dZ_drmin * (rho_min[k] * ln10)
+                else:
+                    # log10(rho_max): affects both rho_max and rho_min
+                    dZ_dp1 = dZ_drmax * (rho_max[k] * ln10) + dZ_drmin * (rho_min[k] * ln10)
+                pname1 = "log10_rho_min" if pset == "minmax" else "log10_rho_max"
+            else:
+                if pset == "minmax":
+                    # log10(sigma_min): affects rho_max only (rho_max = 1/sigma_min)
+                    dZ_dp1 = dZ_drmax * (-rho_max[k] * ln10)
+                else:
+                    # log10(sigma_max): affects rho_min and rho_max (both ~ 1/sigma_max)
+                    dZ_dp1 = dZ_drmin * (-rho_min[k] * ln10) + dZ_drmax * (-rho_max[k] * ln10)
+                pname1 = "log10_sigma_min" if pset == "minmax" else "log10_sigma_max"
 
-            colZ = _pack_Z_jac(dZ_drmin * (rho_min[k] * ln10), comps=z_comps) / sigma_Z
+            colZ = _pack_Z_jac(dZ_dp1, comps=z_comps) / sigma_Z
             if use_pt and (y_obs_P is not None) and (sigma_P is not None):
                 eps = 1e-6
-                P1 = _phase_tensor_from_Z(Zcal + eps * dZ_drmin * (rho_min[k] * ln10))
+                P1 = _phase_tensor_from_Z(Zcal + eps * dZ_dp1)
                 dP = (P1 - P0) / eps
-                comp_map = {"xx": (0, 0), "xy": (0, 1), "yx": (1, 0), "yy": (1, 1)}
-                idx = [comp_map[c] for c in pt_comps]
-                colP = np.stack([dP[:, i, j] for i, j in idx], axis=1).reshape(-1) / sigma_P
+                colP = np.stack([dP[:, i, j] for i, j in idx_pt], axis=1).reshape(-1) / sigma_P
                 col = np.concatenate([colZ, colP])
             else:
                 col = colZ
             cols.append(col)
-            names.append(("log10_rho_min", k))
+            names.append((pname1, k))
 
+            # ----- p2 column (only if anisotropic) -----
             if not bool(is_iso[k]):
-                colZ = _pack_Z_jac(dZ_drmax * (rho_max[k] * ln10), comps=z_comps) / sigma_Z
+                if domain == "rho":
+                    if pset == "minmax":
+                        dZ_dp2 = dZ_drmax * (rho_max[k] * ln10)
+                        pname2 = "log10_rho_max"
+                    else:
+                        # log10(anifac): affects rho_min only, rho_min ~ anifac^{-2}
+                        dZ_dp2 = dZ_drmin * (rho_min[k] * (-2.0 * ln10))
+                        pname2 = "log10_anifac"
+                else:
+                    if pset == "minmax":
+                        # log10(sigma_max): affects rho_min only
+                        dZ_dp2 = dZ_drmin * (-rho_min[k] * ln10)
+                        pname2 = "log10_sigma_max"
+                    else:
+                        # log10(anifac): affects rho_max only, rho_max ~ anifac^{2}
+                        dZ_dp2 = dZ_drmax * (rho_max[k] * (2.0 * ln10))
+                        pname2 = "log10_anifac"
+
+                colZ = _pack_Z_jac(dZ_dp2, comps=z_comps) / sigma_Z
                 if use_pt and (y_obs_P is not None) and (sigma_P is not None):
                     eps = 1e-6
-                    P1 = _phase_tensor_from_Z(Zcal + eps * dZ_drmax * (rho_max[k] * ln10))
+                    P1 = _phase_tensor_from_Z(Zcal + eps * dZ_dp2)
                     dP = (P1 - P0) / eps
-                    comp_map = {"xx": (0, 0), "xy": (0, 1), "yx": (1, 0), "yy": (1, 1)}
-                    idx = [comp_map[c] for c in pt_comps]
-                    colP = np.stack([dP[:, i, j] for i, j in idx], axis=1).reshape(-1) / sigma_P
+                    colP = np.stack([dP[:, i, j] for i, j in idx_pt], axis=1).reshape(-1) / sigma_P
                     col = np.concatenate([colZ, colP])
                 else:
                     col = colZ
                 cols.append(col)
-                names.append(("log10_rho_max", k))
+                names.append((pname2, k))
 
+                # ----- strike column -----
                 colZ = _pack_Z_jac(dZ_dstr, comps=z_comps) / sigma_Z
                 if use_pt and (y_obs_P is not None) and (sigma_P is not None):
                     eps = 1e-6
                     P1 = _phase_tensor_from_Z(Zcal + eps * dZ_dstr)
                     dP = (P1 - P0) / eps
-                    comp_map = {"xx": (0, 0), "xy": (0, 1), "yx": (1, 0), "yy": (1, 1)}
-                    idx = [comp_map[c] for c in pt_comps]
-                    colP = np.stack([dP[:, i, j] for i, j in idx], axis=1).reshape(-1) / sigma_P
+                    colP = np.stack([dP[:, i, j] for i, j in idx_pt], axis=1).reshape(-1) / sigma_P
                     col = np.concatenate([colZ, colP])
                 else:
                     col = colZ
@@ -632,10 +830,8 @@ def invert_site(
         if method_l == "tikhonov":
             dm = _ridge_solve(J, r, lam=float(lam))
         else:
-            # TSVD
             U, s, Vt = np.linalg.svd(J, full_matrices=False)
             if tsvd_k is None:
-                # basic rcond truncation
                 rcond = float(tsvd_rcond) if tsvd_rcond is not None else 1e-3
                 k = int(np.sum(s / s[0] >= rcond))
             else:
@@ -647,19 +843,39 @@ def invert_site(
 
         # apply update
         for val, (pname, k) in zip(dm, names):
-            if pname == "log10_rho_min":
-                log10_rho_min[k] += val
-            elif pname == "log10_rho_max":
-                log10_rho_max[k] += val
+            if pname in ("log10_rho_min", "log10_rho_max", "log10_sigma_min", "log10_sigma_max"):
+                # map to p1/p2 depending on configuration
+                if domain == "rho":
+                    if pset == "minmax":
+                        if pname == "log10_rho_min":
+                            p1[k] += val
+                        elif pname == "log10_rho_max":
+                            p2[k] += val
+                    else:
+                        if pname == "log10_rho_max":
+                            p1[k] += val
+                else:
+                    if pset == "minmax":
+                        if pname == "log10_sigma_min":
+                            p1[k] += val
+                        elif pname == "log10_sigma_max":
+                            p2[k] += val
+                    else:
+                        if pname == "log10_sigma_max":
+                            p1[k] += val
+            elif pname == "log10_anifac":
+                p2[k] += val
             elif pname == "strike_deg":
                 strike_deg[k] += val
 
-        # enforce bounds crudely
-        lo, hi = spec.log10_rho_bounds
-        log10_rho_min = np.clip(log10_rho_min, lo, hi)
-        log10_rho_max = np.clip(log10_rho_max, lo, hi)
+        # enforce bounds
+        if pset == "minmax":
+            p1 = np.clip(p1, plo, phi)
+            p2 = np.clip(p2, plo, phi)
+        else:
+            p1 = np.clip(p1, plo, phi)
+            p2 = np.clip(p2, alo, ahi)
 
-        slo, shi = spec.strike_bounds_deg
         strike_deg = np.clip(strike_deg, slo, shi)
 
         # convergence metric
@@ -669,15 +885,42 @@ def invert_site(
         if misfit < float(tol):
             break
 
-    # final model
-    rho_min = 10 ** log10_rho_min
-    rho_max = 10 ** log10_rho_max
-    rho_max = np.where(is_iso, rho_min, rho_max)
+    # final decoded model (reuse decoding logic)
+    if domain == "rho":
+        if pset == "minmax":
+            rho_min = 10 ** p1
+            rho_max = 10 ** p2
+            rlo = np.minimum(rho_min, rho_max)
+            rhi = np.maximum(rho_min, rho_max)
+            rho_min, rho_max = rlo, np.where(is_iso, rlo, rhi)
+        else:
+            rho_max = 10 ** p1
+            anifac = 10 ** np.clip(p2, alo, ahi)
+            rho_min = rho_max / (anifac ** 2)
+            rho_max = np.where(is_iso, rho_min, rho_max)
+        sigma_min = 1.0 / rho_max
+        sigma_max = 1.0 / rho_min
+    else:
+        if pset == "minmax":
+            sigma_min = 10 ** p1
+            sigma_max = 10 ** p2
+            slo2 = np.minimum(sigma_min, sigma_max)
+            shi2 = np.maximum(sigma_min, sigma_max)
+            sigma_min, sigma_max = np.where(is_iso, shi2, slo2), shi2
+        else:
+            sigma_max = 10 ** p1
+            anifac = 10 ** np.clip(p2, alo, ahi)
+            sigma_min = sigma_max / (anifac ** 2)
+            sigma_min = np.where(is_iso, sigma_max, sigma_min)
+        rho_min = 1.0 / sigma_max
+        rho_max = 1.0 / sigma_min
 
     out_model = dict(model)
-    out_model["rho_min_ohmm"] = rho_min
-    out_model["rho_max_ohmm"] = rho_max
-    out_model["strike_deg"] = strike_deg
+    out_model["rho_min_ohmm"] = np.asarray(rho_min, dtype=float)
+    out_model["rho_max_ohmm"] = np.asarray(rho_max, dtype=float)
+    out_model["sigma_min_Spm"] = np.asarray(sigma_min, dtype=float)
+    out_model["sigma_max_Spm"] = np.asarray(sigma_max, dtype=float)
+    out_model["strike_deg"] = np.asarray(strike_deg, dtype=float)
 
     out = {
         "station": str(site.get("station", "")),
@@ -688,6 +931,8 @@ def invert_site(
         "model0": model,
         "model": out_model,
         "history": np.array([(h["iter"], h["rms"]) for h in history], dtype=float),
+        "param_domain": np.asarray(domain),
+        "param_set": np.asarray(pset),
     }
     if use_pt and y_obs_P is not None:
         out["P_obs"] = np.asarray(site["P"], dtype=float)
