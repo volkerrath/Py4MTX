@@ -306,17 +306,24 @@ if ImpPlt:
 if RhoOut:
     freqs = (1./Periods).reshape(-1, 1)
     rhoa, phas = calc_rhoa_phas(freq=freqs, Z=Z)
+    rhoa2 = np.asarray(rhoa)
+    phas2 = np.asarray(phas)
+
+    # (nper,2,2) -> (nper,4) in order: xx, xy, yx, yy
+    rhoa_flat = rhoa2.reshape((rhoa2.shape[0], -1))
+    phas_flat = phas2.reshape((phas2.shape[0], -1))
+
+    rhoa_phas = ''.join(
+        [f'{rhoa_flat[iper, ii]:14.5e} {phas_flat[iper, ii]:12.2f}' for ii in range(4)]
+    )
     with open(RhoFile, 'w') as f:
         line = '#   PERIOD,  Rhoa xx,  Phs xx,  Rhoa xy,  Phs xy,  Rhoa yx,  Phs yx,  Rhoa yy,  Phs yy'
         f.write(line + '\n')
         for iper in np.arange(len(Periods)):
             per = periods[iper]
-            # rhoa = np.ravel([[fac*np.abs(tmp)**2 for tmp in Z[iper,0::2]]])
-            # phas = np.ravel([[deg*dphase(tmp) for tmp in Z[iper,1::2]]])
-            # print('rhoa:', rhoa[iper, :])
-            # print('phas:', phas[iper, :])
             rhoa_phas = ''.join(
-                [f'{float(rhoa[iper,ii]):14.5e} {float(phas[iper,ii]):12.2f}' for ii in range(4)])
+                [f'{rhoa_flat[iper, ii]:14.5e} {phas_flat[iper, ii]:12.2f}' for ii in range(4)]
+            )
             line = f'{per:14.5f} ' + rhoa_phas
             f.write(''.join(line) + '\n')
 
@@ -324,6 +331,12 @@ if RhoPlt:
 
     freqs = (1./periods).reshape(-1, 1)
     rhoa, phas = calc_rhoa_phas(freq=freqs, Z=Z)
+    rhoa = np.asarray(rhoa)
+    phas = np.asarray(phas)
+
+    # (nper,2,2) -> (nper,4) in order: xx, xy, yx, yy
+    rhoa = rhoa.reshape((rhoa2.shape[0], -1))
+    phas = phas.reshape((phas2.shape[0], -1))
 
     pltargs['pltsize'] = [16., 16.]
     fig, ax = plt.subplots(2, 2, figsize=pltargs['pltsize'])
