@@ -17,8 +17,8 @@ Key design points
 - Parameterization per layer:
 
   - ``h_m``          thickness (optional inversion)
-  - ``rho_min_ohmm`` minimum horizontal resistivity
-  - ``rho_max_ohmm`` maximum horizontal resistivity
+  - ``rho_min`` minimum horizontal resistivity
+  - ``rho_max`` maximum horizontal resistivity
   - ``strike_deg``   anisotropy strike
 
 - Two boolean masks may be supplied:
@@ -76,6 +76,50 @@ def glob_inputs(pattern: str) -> List[str]:
     return sorted(glob.glob(pattern))
 
 
+def _coerce_object_dict(obj, *, name: str = "data_dict") -> Dict:
+    """Coerce *obj* to a plain Python dict.
+
+    When loading NPZ files with ``allow_pickle=True``, nested dictionaries are
+    often stored as 0-d object arrays / scalars. This helper unwraps those.
+    """
+    if isinstance(obj, dict):
+        return obj
+    if hasattr(obj, "item"):
+        try:
+            v = obj.item()
+            if isinstance(v, dict):
+                return v
+        except Exception:
+            pass
+    raise TypeError(f"{name} must be a dict (or a 0-d object container holding a dict). Got {type(obj)!r}.")
+
+
+def _extract_site_data(site: Dict) -> Tuple[Dict, bool]:
+    """Return (data, wrapped) from a site container.
+
+    Supported site container styles
+    -------------------------------
+    1) **Flat**: the site dict directly contains keys like ``freq``, ``Z``, ...
+    2) **Wrapped**: the site dict contains a nested dict under ``site['data_dict']``
+       that holds those keys, alongside metadata keys like ``station``.
+
+    The boolean return value indicates whether the data were wrapped.
+    """
+    if "data_dict" in site:
+        dd = _coerce_object_dict(site["data_dict"], name="site['data_dict']")
+        return dd, True
+    return site, False
+
+
+def _store_site_data(site: Dict, data: Dict, wrapped: bool) -> Dict:
+    """Store *data* back into *site* respecting wrapper style and return a copy."""
+    if wrapped:
+        s = dict(site)
+        s["data_dict"] = data
+        return s
+    return data
+
+
 def _as_1d(a: np.ndarray, *, name: str, nl: int) -> np.ndarray:
     """Convert *a* to shape (nl,) float array and validate length."""
     a = np.asarray(a)
@@ -98,14 +142,14 @@ def normalize_model(model: Dict) -> Dict[str, np.ndarray]:
     This project supports two equivalent parameter domains:
 
     - Resistivity domain:
-        ``rho_min_ohmm``, ``rho_max_ohmm`` (Ohm·m), ``strike_deg``.
+        ``rho_min``, ``rho_max`` (Ohm·m), ``strike_deg``.
     - Conductivity domain:
-        ``sigma_min_Spm``, ``sigma_max_Spm`` (S/m), ``strike_deg``.
+        ``sigma_min``, ``sigma_max`` (S/m), ``strike_deg``.
 
     For convenience, legacy keys are also accepted:
 
     - ``rop`` (nl,3) principal resistivities. Only the first two principal values
-      are used to define ``rho_min_ohmm`` and ``rho_max_ohmm``.
+      are used to define ``rho_min`` and ``rho_max``.
     - ``ustr_deg`` (nl,) is mapped to ``strike_deg``.
 
     The returned dict always contains **both** rho and sigma fields so that
@@ -122,6 +166,21 @@ def normalize_model(model: Dict) -> Dict[str, np.ndarray]:
 
     h_m = np.asarray(model["h_m"], dtype=float).ravel()
     nl = h_m.size
+
+    # Strictly reject legacy parameterizations and unit-suffixed keys.
+    for k in ("rop", "ustr_deg", "udip_deg", "usla_deg"):
+        if k in model:
+            raise KeyError(
+                f"Legacy parameterization key '{k}' is not supported. "
+                "Use (rho_min,rho_max,strike_deg) or (sigma_min,sigma_max,strike_deg)."
+            )
+    for k in model.keys():
+        kl = str(k).lower()
+        if ("_ohmm" in kl) or ("_spm" in kl):
+            raise KeyError(
+                f"Unit-suffixed key '{k}' is not supported. "
+                "Drop units from keys (e.g., use 'rho_min' not 'rho_min_ohmm')."
+            )
 
     out: Dict[str, np.ndarray] = {"h_m": h_m}
 
@@ -141,9 +200,9 @@ def normalize_model(model: Dict) -> Dict[str, np.ndarray]:
         return None
 
     # Preferred: explicit rho
-    if ("rho_min_ohmm" in model) and ("rho_max_ohmm" in model):
-        rho_min = _as_1d(model["rho_min_ohmm"], name="rho_min_ohmm", nl=nl)
-        rho_max = _as_1d(model["rho_max_ohmm"], name="rho_max_ohmm", nl=nl)
+    if ("rho_min" in model) and ("rho_max" in model):
+        rho_min = _as_1d(model["rho_min"], name="rho_min", nl=nl)
+        rho_max = _as_1d(model["rho_max"], name="rho_max", nl=nl)
         strike = _as_1d(model.get("strike_deg", np.zeros(nl)), name="strike_deg", nl=nl)
 
         # enforce positivity and ordering
@@ -160,11 +219,11 @@ def normalize_model(model: Dict) -> Dict[str, np.ndarray]:
         sigma_max = 1.0 / rho_min
 
     # Alternative: explicit sigma
-    elif (_pick(("sigma_min_Spm", "sig_min_Spm", "sigma_min", "sig_min")) is not None) and (
-        _pick(("sigma_max_Spm", "sig_max_Spm", "sigma_max", "sig_max")) is not None
+    elif (_pick(("sigma_min", "sig_min")) is not None) and (
+        _pick(("sigma_max", "sig_max")) is not None
     ):
-        kmin = _pick(("sigma_min_Spm", "sig_min_Spm", "sigma_min", "sig_min"))
-        kmax = _pick(("sigma_max_Spm", "sig_max_Spm", "sigma_max", "sig_max"))
+        kmin = _pick(("sigma_min", "sig_min"))
+        kmax = _pick(("sigma_max", "sig_max"))
         assert kmin is not None and kmax is not None
 
         sigma_min = _as_1d(model[kmin], name=kmin, nl=nl)
@@ -205,14 +264,14 @@ def normalize_model(model: Dict) -> Dict[str, np.ndarray]:
 
     else:
         raise KeyError(
-            "Model must provide either (rho_min_ohmm,rho_max_ohmm) or "
-            "(sigma_min_Spm,sigma_max_Spm) or legacy 'rop'."
+            "Model must provide either (rho_min,rho_max) or "
+            "(sigma_min,sigma_max) or legacy 'rop'."
         )
 
-    out["rho_min_ohmm"] = np.asarray(rho_min, dtype=float)
-    out["rho_max_ohmm"] = np.asarray(rho_max, dtype=float)
-    out["sigma_min_Spm"] = np.asarray(sigma_min, dtype=float)
-    out["sigma_max_Spm"] = np.asarray(sigma_max, dtype=float)
+    out["rho_min"] = np.asarray(rho_min, dtype=float)
+    out["rho_max"] = np.asarray(rho_max, dtype=float)
+    out["sigma_min"] = np.asarray(sigma_min, dtype=float)
+    out["sigma_max"] = np.asarray(sigma_max, dtype=float)
     out["strike_deg"] = np.asarray(strike, dtype=float)
 
     # pass through optional label
@@ -269,6 +328,8 @@ def load_site(path: str) -> Dict:
 def ensure_phase_tensor(site: Dict, *, nsim: int = 200) -> Dict:
     """Ensure that *site* contains phase tensor ``P`` (and optionally ``P_err``).
 
+    Accepts both flat site dicts and wrapped dicts with a nested ``data_dict``.
+
     This function **always recomputes** ``P`` from the observed impedance using
 
         P = inv(Re(Z)) @ Im(Z)
@@ -276,21 +337,24 @@ def ensure_phase_tensor(site: Dict, *, nsim: int = 200) -> Dict:
     If ``P_err`` is missing and ``Z_err`` is present, an approximate ``P_err``
     is computed by Monte-Carlo propagation.
     """
-    if "Z" not in site:
-        raise KeyError("site must contain 'Z' to compute 'P'.")
+    data, wrapped = _extract_site_data(site)
+    if "Z" not in data:
+        raise KeyError("site must contain 'Z' (in the flat dict or in site['data_dict']) to compute 'P'.")
 
-    Z = np.asarray(site["Z"], dtype=np.complex128)
-    site = dict(site)
-    site["P"] = _phase_tensor_from_Z(Z, reg=0.0)
+    data2 = dict(data)
+    Z = np.asarray(data2["Z"], dtype=np.complex128)
+    data2["P"] = _phase_tensor_from_Z(Z, reg=0.0)
 
-    if ("P_err" not in site) and ("Z_err" in site):
+    if ("P_err" not in data2) and ("Z_err" in data2):
         try:
-            site["P_err"] = _bootstrap_P_err_from_Z_err(Z, np.asarray(site["Z_err"]), nsim=int(nsim))
+            data2["P_err"] = _bootstrap_P_err_from_Z_err(
+                Z, np.asarray(data2["Z_err"]), nsim=int(nsim)
+            )
         except Exception:
             # best-effort; keep going without P_err
             pass
 
-    return site
+    return _store_site_data(site, data2, wrapped)
 
 
 # -----------------------------------------------------------------------------
@@ -355,10 +419,14 @@ class ParamSpec:
 
 
 def _periods_from_site(site: Dict) -> np.ndarray:
-    """Return periods (s) from a site dict that contains ``freq``."""
-    if "freq" not in site:
-        raise KeyError("site must contain 'freq'.")
-    freq = np.asarray(site["freq"], dtype=float).ravel()
+    """Return periods (s) from a site container.
+
+    Accepts both flat site dicts and wrapped dicts with a nested ``data_dict``.
+    """
+    data, _wrapped = _extract_site_data(site)
+    if "freq" not in data:
+        raise KeyError("site must contain 'freq' to compute periods.")
+    freq = np.asarray(data["freq"], dtype=float).ravel()
     if np.any(freq <= 0.0):
         raise ValueError("All frequencies must be positive.")
     return 1.0 / freq
@@ -586,21 +654,21 @@ def invert_site(
         raise ValueError("spec.param_set must be 'minmax' or 'max_anifac'.")
 
     # data
-    if use_pt:
-        site = ensure_phase_tensor(site, nsim=200)
+    site_full = ensure_phase_tensor(site, nsim=200) if use_pt else site
+    data, _wrapped = _extract_site_data(site_full)
 
-    periods_s = _periods_from_site(site)
-    Zobs = np.asarray(site["Z"], dtype=np.complex128)
-    Zerr = site.get("Z_err", None)
+    periods_s = _periods_from_site(site_full)
+    Zobs = np.asarray(data["Z"], dtype=np.complex128)
+    Zerr = data.get("Z_err", None)
 
     y_obs_Z, sigma_Z = _pack_Z_obs(Zobs, Zerr, comps=z_comps, sigma_floor=sigma_floor_Z)
 
     # optional PT data (phase tensor)
     y_obs_P = None
     sigma_P = None
-    if use_pt and ("P" in site):
-        Pobs = np.asarray(site["P"], dtype=float)
-        Perr = site.get("P_err", None)
+    if use_pt and ("P" in data):
+        Pobs = np.asarray(data["P"], dtype=float)
+        Perr = data.get("P_err", None)
         comp_map = {"xx": (0, 0), "xy": (0, 1), "yx": (1, 0), "yy": (1, 1)}
         idx = [comp_map[c] for c in pt_comps]
         y_obs_P = np.stack([Pobs[:, i, j] for i, j in idx], axis=1).reshape(-1)
@@ -626,8 +694,8 @@ def invert_site(
     ln10 = float(np.log(10.0))
 
     if domain == "rho":
-        rho_min0 = np.asarray(model["rho_min_ohmm"], dtype=float)
-        rho_max0 = np.asarray(model["rho_max_ohmm"], dtype=float)
+        rho_min0 = np.asarray(model["rho_min"], dtype=float)
+        rho_max0 = np.asarray(model["rho_max"], dtype=float)
         if pset == "minmax":
             p1 = np.log10(np.maximum(rho_min0, np.finfo(float).tiny))
             p2 = np.log10(np.maximum(rho_max0, np.finfo(float).tiny))
@@ -637,8 +705,8 @@ def invert_site(
             anifac0 = np.sqrt(np.maximum(rho_max0 / np.maximum(rho_min0, np.finfo(float).tiny), 1.0))
             p2 = np.log10(np.maximum(anifac0, 1.0))
     else:
-        sigma_min0 = np.asarray(model["sigma_min_Spm"], dtype=float)
-        sigma_max0 = np.asarray(model["sigma_max_Spm"], dtype=float)
+        sigma_min0 = np.asarray(model["sigma_min"], dtype=float)
+        sigma_max0 = np.asarray(model["sigma_max"], dtype=float)
         if pset == "minmax":
             p1 = np.log10(np.maximum(sigma_min0, np.finfo(float).tiny))
             p2 = np.log10(np.maximum(sigma_max0, np.finfo(float).tiny))
@@ -692,11 +760,11 @@ def invert_site(
         strike_deg = np.clip(strike_deg, slo, shi)
 
         fwd = aniso.aniso1d_impedance_sens_simple(
-            periods_s=periods_s,
-            h_m=h_m,
-            rho_max_ohmm=rho_max,
-            rho_min_ohmm=rho_min,
-            strike_deg=strike_deg,
+            periods_s,
+            h_m,
+            rho_max,
+            rho_min,
+            strike_deg,
             compute_sens=True,
         )
         Zcal = fwd["Z"]
@@ -728,8 +796,8 @@ def invert_site(
         cols: List[np.ndarray] = []
         names: List[Tuple[str, int]] = []
 
-        dZ_drmin_all = np.asarray(fwd["dZ_drho_min_ohmm"])
-        dZ_drmax_all = np.asarray(fwd["dZ_drho_max_ohmm"])
+        dZ_drmin_all = np.asarray(fwd["dZ_drho_min"])
+        dZ_drmax_all = np.asarray(fwd["dZ_drho_max"])
         dZ_dstr_all = np.asarray(fwd["dZ_dstrike_deg"])
 
         comp_map = {"xx": (0, 0), "xy": (0, 1), "yx": (1, 0), "yy": (1, 1)}
@@ -916,14 +984,14 @@ def invert_site(
         rho_max = 1.0 / sigma_min
 
     out_model = dict(model)
-    out_model["rho_min_ohmm"] = np.asarray(rho_min, dtype=float)
-    out_model["rho_max_ohmm"] = np.asarray(rho_max, dtype=float)
-    out_model["sigma_min_Spm"] = np.asarray(sigma_min, dtype=float)
-    out_model["sigma_max_Spm"] = np.asarray(sigma_max, dtype=float)
+    out_model["rho_min"] = np.asarray(rho_min, dtype=float)
+    out_model["rho_max"] = np.asarray(rho_max, dtype=float)
+    out_model["sigma_min"] = np.asarray(sigma_min, dtype=float)
+    out_model["sigma_max"] = np.asarray(sigma_max, dtype=float)
     out_model["strike_deg"] = np.asarray(strike_deg, dtype=float)
 
     out = {
-        "station": str(site.get("station", "")),
+        "station": str(site_full.get("station", data.get("station", ""))),
         "periods_s": periods_s,
         "Z_obs": Zobs,
         "Z_err": Zerr if Zerr is not None else np.array([]),
@@ -935,9 +1003,9 @@ def invert_site(
         "param_set": np.asarray(pset),
     }
     if use_pt and y_obs_P is not None:
-        out["P_obs"] = np.asarray(site["P"], dtype=float)
-        if "P_err" in site:
-            out["P_err"] = np.asarray(site["P_err"], dtype=float)
+        out["P_obs"] = np.asarray(data["P"], dtype=float)
+        if "P_err" in data:
+            out["P_err"] = np.asarray(data["P_err"], dtype=float)
 
     return out
 

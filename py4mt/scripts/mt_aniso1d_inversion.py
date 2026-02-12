@@ -103,14 +103,14 @@ h_m = np.r_[np.logspace(np.log10(50.0), np.log10(500.0), nlayer - 1), 0.0]
 Model0 = {
     "prior_name": "model1_hfix",
     "h_m": h_m,
-    "sigma_min_Spm": 0.01 * np.ones(nlayer, dtype=float),
-    "sigma_max_Spm": 0.01 * np.ones(nlayer, dtype=float),
+    "sigma_min": 0.01 * np.ones(nlayer, dtype=float),
+    "sigma_max": 0.01 * np.ones(nlayer, dtype=float),
     "strike_deg": np.zeros(nlayer, dtype=float),
     "is_iso": np.zeros(nlayer, dtype=bool),
     "is_fix": np.zeros(nlayer, dtype=bool),
 }
 
-
+PlotResults = True
 # =============================================================================
 
 # USER CONFIG
@@ -118,7 +118,7 @@ Model0 = {
 
 DATA_DIR = "/home/vrath/Py4MTX/py4mt/data/edi/"
 
-INPUT_GLOB = DATA_DIR + "Ann*.edi"   # or "*.npz"
+INPUT_GLOB = DATA_DIR + "Ann18*.npz"   # or "*.npz"
 OUTDIR = DATA_DIR + "detinv_hfix"
 MODEL_NPZ = DATA_DIR + "model0.npz"
 
@@ -158,7 +158,7 @@ INV_METHOD = "tikhonov"   # "tikhonov" or "tsvd"
 
 # Tikhonov settings
 LAMBDA = 1.0
-ALPHA_SELECT = "fixed"    # "fixed", "lcurve", "gcv", "abic"
+ALPHA_SELECT = "gcv"    # "fixed", "lcurve", "gcv", "abic"
 ALPHA_GRID = None         # optional 1D array/list of lambda values
 ALPHA_NGRID = 40          # used if ALPHA_GRID is None
 ALPHA_MIN = None          # optional lower bound for auto grid
@@ -246,8 +246,10 @@ for f in in_files:
         sigma_floor_P=float(SIGMA_FLOOR_P),
     )
 
-    out_path = Path(outdir) / f"{station}_inv1d_{INV_METHOD}.npz"
+    out_path = Path(outdir) / f"{station}_inv1d_{INV_METHOD}_{ALPHA_SELECT}.npz"
     inv1d.save_inversion_npz(res, out_path.as_posix())
     print(f"Wrote: {out_path}")
+    if PlotResults:
+        print("Not yet implemented")
 
 print("\nDone.\n")
