@@ -62,7 +62,7 @@ for pth in mypath:
 
 # local modules
 import data_proc  # noqa: F401
-import mcmc_strict2 as mcmc
+import mcmc
 import util
 from version import versionstrg
 
@@ -137,7 +137,7 @@ Model0 = {
 
 MCMC_Data = "/home/vrath/Py4MTX/py4mt/data/edi/"
 
-INPUT_GLOB = MCMC_Data + "Ann*.edi"  # or *.npz
+INPUT_GLOB = MCMC_Data + "Ann18*.npz"  # or *.npz
 OUTDIR = MCMC_Data + "pmc_met_hfix"
 MODEL_NPZ = MCMC_Data+"model0.npz"
 
@@ -152,7 +152,7 @@ Z_COMPS = ("xx", "xy", "yx", "yy")
 PT_COMPS = ("xx", "xy", "yx", "yy")
 # Phase tensor is always recomputed from Z as P = inv(Re(Z)) @ Im(Z)
 
-PT_REG = 1e-12  # small diagonal regularization used inside PT gradients
+PT_REG = 1e-8  # small diagonal regularization used inside PT gradients
 
 FIX_H = True
 SAMPLE_LAST_THICKNESS = False
@@ -171,9 +171,9 @@ SIGMA_FLOOR_Z = 0.0
 SIGMA_FLOOR_P = 0.0
 
 STEP_METHOD = "demetropolis"  # or "nuts" when ENABLE_GRAD=True
-DRAWS = 10000
-TUNE = 1000
-CHAINS = 8
+DRAWS = 100000
+TUNE = 10000
+CHAINS = 10
 CORES = CHAINS
 TARGET_ACCEPT = 0.85
 RANDOM_SEED = 123

@@ -54,6 +54,29 @@ import numpy as np
 
 
 # -----------------------------------------------------------------------------
+# Component label mapping
+# -----------------------------------------------------------------------------
+# Z and phase-tensor components are addressed by short labels (xx, xy, yx, yy).
+# Keep this mapping at module scope so helpers like `_parse_comps` can be used
+# throughout the module (packers, gradients, plotting utilities, ...).
+_COMP_TO_IJ: Dict[str, Tuple[int, int]] = {
+    "xx": (0, 0),
+    "xy": (0, 1),
+    "yx": (1, 0),
+    "yy": (1, 1),
+    # Common aliases (optional but handy)
+    "zxx": (0, 0),
+    "zxy": (0, 1),
+    "zyx": (1, 0),
+    "zyy": (1, 1),
+    "pxx": (0, 0),
+    "pxy": (0, 1),
+    "pyx": (1, 0),
+    "pyy": (1, 1),
+}
+
+
+# -----------------------------------------------------------------------------
 # Site container helpers (flat vs. wrapped 'data_dict')
 # -----------------------------------------------------------------------------
 
@@ -490,6 +513,8 @@ def ensure_phase_tensor(site: Dict, nsim: int = 200, *, overwrite: bool = True) 
             pass
 
     return _store_site_data(site, data2, wrapped)
+
+
 def _parse_comps(comps: Sequence[str]) -> List[Tuple[int, int]]:
     """Parse component labels into (i,j) indices."""
     out: List[Tuple[int, int]] = []

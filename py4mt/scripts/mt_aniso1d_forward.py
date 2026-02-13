@@ -26,8 +26,7 @@ for pth in mypath:
         sys.path.insert(0, pth)
 
 from aniso import aniso1d_impedance_sens
-from data_proc import calc_rhoa_phas
-
+from data_proc import calc_rhoa_phas, compute_pt
 # from mtproc import calc_rhoa_phas
 #from mcmc_funcs import pack_model, unpack_model
 import viz
