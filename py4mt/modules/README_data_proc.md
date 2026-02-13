@@ -1,65 +1,171 @@
 # data_proc.py — EDI / MT data processing utilities
 
-This module contains utilities to read/write EDI-style MT data, compute derived quantities
-(e.g., phase tensor and invariants), and convert an EDI dictionary into a tidy `pandas.DataFrame`.
+`data_proc.py` provides light-weight I/O + processing helpers for MT transfer
+functions:
 
-## New / updated in this version
+- read/write EDI (`load_edi`, `save_edi`)
+- compute derived quantities (`compute_rhophas`, `compute_pt`, `compute_zdet`, `compute_zssq`)
+- convert an EDI dict to a tidy `pandas.DataFrame` (`dataframe_from_edi`)
+- persist data as **project-style NPZ** with a single `data_dict` key (`save_npz`, `load_npz`)
 
-### Apparent resistivity + phase with optional uncertainties
+This README describes the **dict conventions actually used by tonight’s modules**
+(in particular `mcmc.py` / `inv1d.py` / `mt_aniso1d_sampler.py`).
 
-#### `compute_rhophas(freq, Z, Z_err=None, *, err_kind="var", err_method="analytic", nsim=200, ...)`
+---
 
-Computes apparent resistivity and phase from the complex impedance tensor:
+## EDI dictionary (“data_dict”) layout
+
+`load_edi()` returns a *flat* dict. Key set depends on what the EDI contains.
+
+Common keys:
+
+- `freq` : `(n,)` frequency array [Hz]
+- `Z` : `(n,2,2)` complex impedance tensor
+- `Z_err` : `(n,2,2)` float (variance or std; see `err_kind`)
+- `T` : `(n,1,2)` complex tipper (if present)
+- `T_err` : `(n,1,2)` float
+- `P` : `(n,2,2)` float phase tensor (only after calling `compute_pt`)
+- `P_err` : `(n,2,2)` float
+- `rot` : `(n,)` float rotation angle (deg), if present in the EDI
+- `err_kind` : `"var"` or `"std"` (how `*_err` arrays are interpreted)
+- metadata (if present): `station`, `lat_deg`, `lon_deg`, `elev_m`, …
+
+All downstream modules treat this dict as the **site container**.
+
+---
+
+## Reading / writing EDI
+
+### `load_edi(path, prefer_spectra=True, ...)`
+
+Supports:
+
+- Phoenix / SPECTRA EDIs (`>SPECTRA` blocks; reconstructed Z/T)
+- classical table EDIs (`>ZXXR`, `>ZXYI`, …)
+
+### `save_edi(edi, path, ...)`
+
+Writes a **classical table-style** EDI from an in-memory dict.
+
+---
+
+## Project-style NPZ (flat, single key)
+
+In this project, an “NPZ site file” is a compressed `*.npz` that contains
+**one key only**:
+
+- `data_dict` → the Python dict described above (stored as a NumPy object array)
+
+Use:
+
+```python
+import data_proc
+
+site = data_proc.load_edi("SITE.edi")
+data_proc.save_npz(site, "SITE.npz")     # writes key="data_dict"
+
+site2 = data_proc.load_npz("SITE.npz")   # returns the dict
+```
+
+For collections (e.g., lists of sites or records):
+
+- `save_list_of_dicts_npz(records, path, key="records")`
+- `load_list_of_dicts_npz(path, key="records")`
+
+Notes:
+
+- NPZ loading requires `allow_pickle=True` internally (handled in `load_npz`).
+
+---
+
+## Apparent resistivity + phase
+
+### `compute_rhophas(freq, Z, Z_err=None, *, err_kind="var", err_method="analytic"|"bootstrap"|..., nsim=200, ...)`
+
+Computes apparent resistivity and phase for each impedance component:
 
 - `rho_a = |Z|^2 / (mu0 * omega)` with `omega = 2π f`
-- `phi = angle(Z)` in degrees
+- `phi = angle(Z)` (degrees)
 
 Optional uncertainty propagation:
 
 - `err_method="none"`: no errors returned
-- `err_method="analytic"`: fast first-order (delta-method) propagation
-- `err_method="bootstrap"`: parametric bootstrap / Monte-Carlo perturbation of `Z`
+- `err_method="analytic"`: fast first-order propagation
+- `err_method="bootstrap"`: parametric Monte‑Carlo perturbation of `Z`
 - `err_method="both"`: returns both analytic and bootstrap error estimates
-
-`err_kind` controls how `Z_err` is interpreted (`"var"` or `"std"`) and how returned errors are reported.
 
 Example:
 
 ```python
-rho, phi, rho_err, phi_err = compute_rhophas(
-    edi["freq"], edi["Z"], edi.get("Z_err"),
-    err_kind=edi.get("err_kind", "var"),
+rho, phi, rho_err, phi_err = data_proc.compute_rhophas(
+    site["freq"], site["Z"], site.get("Z_err"),
+    err_kind=site.get("err_kind", "var"),
     err_method="bootstrap",
     nsim=500,
 )
 ```
 
-### Error-method switch for compute procedures
+---
 
-The following compute procedures now support a consistent error-method switch:
+## Phase tensor and invariants
 
-- `compute_pt(...)`
-- `compute_zdet(...)`
-- `compute_zssq(...)`
-- `compute_rhophas(...)`
+### `compute_pt(Z, Z_err=None, *, err_kind="var", err_method="bootstrap"|..., nsim=200, ...)`
 
-Common keyword pattern:
+Computes the phase tensor as:
 
-- `err_method={"none","analytic","bootstrap","both"}`
-- `err_kind={"var","std"}`
-- `nsim` for bootstrap
-- `fd_eps` for analytic finite-difference Jacobians (where applicable)
+- `P = inv(Re(Z)) @ Im(Z)`   (per period)
 
-## Notes
+If `Z_err` is provided and `err_method != "none"`, `P_err` is estimated either
+analytically (finite-difference delta method), via bootstrap, or both.
 
-- Bootstrap here is implemented as **parametric Monte-Carlo**: `Z` is perturbed using the provided `Z_err`
-  (interpreted as variance or standard deviation), assuming independent Gaussian perturbations of the complex entries.
-- Analytic propagation is a first-order approximation and is substantially faster; bootstrap is more robust but
-  can be slower depending on `nsim`.
+### `compute_zdet(Z, ...)` and `compute_zssq(Z, ...)`
 
-## Bootstrap / Monte-Carlo uncertainty references (BibTeX)
+Convenience helpers to compute two common impedance invariants, with the same
+`err_method` / `err_kind` pattern as `compute_pt`.
 
-Copy/paste as needed:
+---
+
+## Converting to a DataFrame (for plotting)
+
+### `dataframe_from_edi(edi, include_rho_phi=True, include_tipper=True, include_pt=True, ...)`
+
+Produces a tidy DataFrame with columns compatible with `data_viz.py`:
+
+- frequency/period: `freq`, `period`
+- resistivity: `rho_xx`, `rho_xy`, `rho_yx`, `rho_yy`
+- phase: `phi_xx`, `phi_xy`, `phi_yx`, `phi_yy`
+- tipper: `Tx_re`, `Tx_im`, `Ty_re`, `Ty_im`
+- phase tensor: `ptxx_re`, `ptxy_re`, `ptyx_re`, `ptyy_re`
+- plus optional `*_err` columns when error arrays exist in the dict
+
+Example:
+
+```python
+import data_proc
+import data_viz
+import matplotlib.pyplot as plt
+
+site = data_proc.load_edi("SITE.edi")
+site["P"], site["P_err"] = data_proc.compute_pt(site["Z"], site.get("Z_err"))
+
+df = data_proc.dataframe_from_edi(site)
+
+fig, ax = plt.subplots()
+data_viz.add_rho(df, ax=ax, show_errors=True)
+plt.show()
+```
+
+---
+
+## Notes on “bootstrap” here
+
+Bootstrap is implemented as **parametric Monte‑Carlo**: `Z` is perturbed using
+the provided `Z_err`, assuming independent Gaussian perturbations of the complex
+entries.
+
+---
+
+## Bootstrap / Monte‑Carlo uncertainty references (BibTeX)
 
 ```bibtex
 @article{Efron1979Bootstrap,
@@ -137,3 +243,8 @@ Copy/paste as needed:
   doi     = {10.1007/s10260-007-0048-6}
 }
 ```
+
+---
+
+Author: Volker Rath (DIAS)  
+Updated with the help of ChatGPT (GPT-5.2 Thinking) on 2026-02-13 (UTC)
