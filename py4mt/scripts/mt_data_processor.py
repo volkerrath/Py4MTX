@@ -4,23 +4,19 @@
 Created on Thu May 29 10:09:45 2025
 
 @author: vrath
+
+Author: Volker Rath (DIAS)
+Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-13 (UTC)
 '''
 
 # Import python modules
 # edit according to your needs
 import os
 import sys
-
-import time
-from datetime import datetime
-import warnings
-import csv
 import inspect
 
 # Import numerical or other specialised modules
 import numpy as np
-import scipy as sci
-import pandas as pd
 import matplotlib.pyplot as plt
 
 PY4MTX_DATA = os.environ['PY4MTX_DATA']
@@ -35,14 +31,11 @@ for pth in mypath:
 
 # Import required py4mt modules for your script
 import util as utl
-import modem as mod
 # import jacproc as jac
 # import mt_proc as mtp
 # import plotrjmcmc as plmc
 # import viz
 # import inverse as inv
-import femtic as fem
-from scipy.interpolate import make_smoothing_spline
 from data_viz import add_phase, add_rho, add_tipper, add_pt
 from data_proc import (
     get_edi_list,

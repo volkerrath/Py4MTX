@@ -38,7 +38,7 @@ uncertainty bands can be shaded. Bands can be specified either as quantiles
 the arrays stored in the summary NPZ.
 
 Author: Volker Rath (DIAS)
-Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-08 (UTC)
+Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-13 (UTC)
 """
 
 from __future__ import annotations

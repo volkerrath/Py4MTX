@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""mt_aniso1d_sampler.py
+"""mt_aniso1d_sampler_strict.py
 
 Script-style PyMC driver for anisotropic 1-D MT inversion.
 
 This is intentionally NOT a CLI. Edit the USER CONFIG and run:
 
-    python mt_aniso1d_sampler.py
+    python mt_aniso1d_sampler_strict.py
 
 Preserved conventions
 ---------------------
@@ -19,10 +19,10 @@ Preserved conventions
 
 Implementation note
 -------------------
-Helpers are imported from `mcmc.py`
+Helpers are imported from `mcmc_strict2.py`
 
 Author: Volker Rath (DIAS)
-Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-10 (UTC)
+Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-12 (UTC)
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ for pth in mypath:
 
 # local modules
 import data_proc  # noqa: F401
-import mcmc
+import mcmc_strict2 as mcmc
 import util
 from version import versionstrg
 
@@ -74,8 +74,12 @@ print(titstrng+'\n\n')
 
 
 # -----------------------------------------------------------------------------
-# Example Model0 (keep/edit)
+# Example legacy Model0 (NOT SUPPORTED anymore)
 # -----------------------------------------------------------------------------
+# NOTE: The legacy rop/Euler-angle parameterization is no longer accepted.
+# The block below is kept only as a historical reference and will raise in
+# normalize_model().
+#
 # Model0 = dict(
 #     h_m=np.array([200.0, 400.0, 800.0, 0.0], dtype=float),
 #     rop=np.array(
@@ -106,10 +110,10 @@ h_m = np.r_[np.logspace(np.log10(50.0), np.log10(500.0), nlayer - 1), 0.0]
 #
 # You can specify the starting model either in resistivity (rho) or
 # conductivity (sigma) form:
-#   - rho:   rho_min_ohmm, rho_max_ohmm, strike_deg
-#   - sigma: sigma_min_Spm, sigma_max_Spm, strike_deg
+#   - rho:   rho_min, rho_max, strike_deg
+#   - sigma: sigma_min, sigma_max, strike_deg
 #
-# The sampler will normalize to the internal canonical form (rho_min/rho_max).
+# The sampler normalizes to a canonical representation containing both rho and sigma fields.
 
 # Example: layered halfspace with constant isotropic background
 rho_bg = 100.0  # Ohm·m
@@ -119,8 +123,8 @@ Model0 = {
     "prior_name": "model1_hfix",
     "h_m": h_m,
     # Conductivity parameterization (sigma_min <= sigma_max)
-    "sigma_min_Spm": sigma_bg * np.ones_like(h_m, dtype=float),
-    "sigma_max_Spm": sigma_bg * np.ones_like(h_m, dtype=float),
+    "sigma_min": sigma_bg * np.ones_like(h_m, dtype=float),
+    "sigma_max": sigma_bg * np.ones_like(h_m, dtype=float),
     "strike_deg": np.zeros_like(h_m, dtype=float),
     "is_iso": np.ones_like(h_m, dtype=bool),
     "is_fix": np.zeros_like(h_m, dtype=bool),

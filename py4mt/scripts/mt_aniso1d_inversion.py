@@ -22,7 +22,7 @@ Implementation note
 Helpers are imported from `inv1d.py` (TSVD/Tikhonov deterministic inversion).
 
 Author: Volker Rath (DIAS)
-Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-08 (UTC)
+Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-13 (UTC)
 """
 
 from __future__ import annotations
@@ -54,7 +54,6 @@ for pth in mypath:
         sys.path.insert(0, pth)
 
 # local modules
-import data_proc  # noqa: F401
 import inv1d
 import util
 from version import versionstrg
@@ -91,7 +90,7 @@ print(titstrng+'\n\n')
 # Example Model1 (keep/edit)
 # -----------------------------------------------------------------------------
 # This driver uses the *simplified* parameterization consistent with the sampler:
-# either (rho_min_ohmm, rho_max_ohmm, strike_deg) or (sigma_min_Spm, sigma_max_Spm, strike_deg).
+# either (rho_min, rho_max, strike_deg) or (sigma_min, sigma_max, strike_deg).
 #
 # Convention: last entry is the basement "thickness" (ignored by the recursion).
 # Keep it at 0.0 so that cumulative-depth plots remain well-defined.

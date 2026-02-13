@@ -13,8 +13,8 @@ Two model parameterizations are supported:
 A) **Simplified (recommended for inversion):**
 
    - ``h_m``          (nl,) layer thicknesses in meters (last entry is basement; ignored)
-   - ``rho_max_ohmm`` (nl,) *maximum* horizontal resistivity [Ohm·m]
-   - ``rho_min_ohmm`` (nl,) *minimum* horizontal resistivity [Ohm·m]
+   - ``rho_max`` (nl,) *maximum* horizontal resistivity [Ohm·m]
+   - ``rho_min`` (nl,) *minimum* horizontal resistivity [Ohm·m]
    - ``strike_deg``   (nl,) anisotropy strike in degrees
 
    This maps to the legacy conductivity parameters
@@ -49,7 +49,7 @@ All public forward functions return a **dict** (not a dataclass) to keep the
 API simple for script-style use.
 
 Author: Volker Rath (DIAS)
-Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-08 (UTC)
+Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-13 (UTC)
 """
 
 from __future__ import annotations
@@ -176,7 +176,7 @@ def rotz_stack(dza: np.ndarray, betrad: float) -> np.ndarray:
 # --- Effective-parameter conversion -------------------------------------------
 
 def cpanis(
-    rop_ohmm: np.ndarray,
+    rop: np.ndarray,
     ustr_deg: np.ndarray,
     udip_deg: np.ndarray,
     usla_deg: np.ndarray,
@@ -185,7 +185,7 @@ def cpanis(
 
     Parameters
     ----------
-    rop_ohmm : ndarray, shape (nl, 3)
+    rop : ndarray, shape (nl, 3)
         Principal resistivities (Ohm·m). Each row is (rho1, rho2, rho3).
     ustr_deg, udip_deg, usla_deg : ndarray, shape (nl,)
         Euler angles (degrees): strike, dip, slant.
@@ -208,14 +208,14 @@ def cpanis(
     The simplified parameterization used by :func:`aniso1d_impedance_sens_simple`
     avoids this conversion entirely.
     """
-    rop_ohmm = np.asarray(rop_ohmm, dtype=float)
+    rop = np.asarray(rop, dtype=float)
     ustr_deg = np.asarray(ustr_deg, dtype=float)
     udip_deg = np.asarray(udip_deg, dtype=float)
     usla_deg = np.asarray(usla_deg, dtype=float)
 
-    if rop_ohmm.ndim != 2 or rop_ohmm.shape[1] != 3:
-        raise ValueError("rop_ohmm must have shape (nl, 3).")
-    nl = rop_ohmm.shape[0]
+    if rop.ndim != 2 or rop.shape[1] != 3:
+        raise ValueError("rop must have shape (nl, 3).")
+    nl = rop.shape[0]
     if not (ustr_deg.shape == udip_deg.shape == usla_deg.shape == (nl,)):
         raise ValueError("ustr_deg, udip_deg, usla_deg must all have shape (nl,).")
 
@@ -227,9 +227,9 @@ def cpanis(
     tiny = np.finfo(float).tiny
 
     for k in range(nl):
-        sgp1 = 1.0 / float(rop_ohmm[k, 0])
-        sgp2 = 1.0 / float(rop_ohmm[k, 1])
-        sgp3 = 1.0 / float(rop_ohmm[k, 2])
+        sgp1 = 1.0 / float(rop[k, 0])
+        sgp2 = 1.0 / float(rop[k, 1])
+        sgp3 = 1.0 / float(rop[k, 2])
 
         rstr = np.deg2rad(float(ustr_deg[k]))
         rdip = np.deg2rad(float(udip_deg[k]))
@@ -301,17 +301,17 @@ def cpanis(
 
 
 def alat_from_rho_strike(
-    rho_max_ohmm: np.ndarray,
-    rho_min_ohmm: np.ndarray,
+    rho_max: np.ndarray,
+    rho_min: np.ndarray,
     strike_deg: np.ndarray,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Convert (rho_max, rho_min, strike) to (AL, AT, BLT).
 
     Parameters
     ----------
-    rho_max_ohmm : ndarray, shape (nl,)
+    rho_max : ndarray, shape (nl,)
         Maximum horizontal resistivity (Ohm·m).
-    rho_min_ohmm : ndarray, shape (nl,)
+    rho_min : ndarray, shape (nl,)
         Minimum horizontal resistivity (Ohm·m).
     strike_deg : ndarray, shape (nl,)
         Strike angle (degrees).
@@ -331,17 +331,17 @@ def alat_from_rho_strike(
     - No ordering is enforced. If you want ``rho_max >= rho_min`` you must
       ensure that before calling.
     """
-    rho_max_ohmm = np.asarray(rho_max_ohmm, dtype=float).ravel()
-    rho_min_ohmm = np.asarray(rho_min_ohmm, dtype=float).ravel()
+    rho_max = np.asarray(rho_max, dtype=float).ravel()
+    rho_min = np.asarray(rho_min, dtype=float).ravel()
     strike_deg = np.asarray(strike_deg, dtype=float).ravel()
 
-    if not (rho_max_ohmm.shape == rho_min_ohmm.shape == strike_deg.shape):
-        raise ValueError("rho_max_ohmm, rho_min_ohmm, strike_deg must have the same shape.")
-    if np.any(rho_max_ohmm <= 0.0) or np.any(rho_min_ohmm <= 0.0):
+    if not (rho_max.shape == rho_min.shape == strike_deg.shape):
+        raise ValueError("rho_max, rho_min, strike_deg must have the same shape.")
+    if np.any(rho_max <= 0.0) or np.any(rho_min <= 0.0):
         raise ValueError("All resistivities must be > 0.")
 
-    al = 1.0 / rho_min_ohmm
-    at = 1.0 / rho_max_ohmm
+    al = 1.0 / rho_min
+    at = 1.0 / rho_max
     blt_rad = np.deg2rad(strike_deg)
     return al, at, blt_rad
 
@@ -837,8 +837,8 @@ def _aniso1d_impedance_sens_alat(
 def aniso1d_impedance_sens_simple(
     periods_s: np.ndarray,
     h_m: np.ndarray,
-    rho_max_ohmm: np.ndarray,
-    rho_min_ohmm: np.ndarray,
+    rho_max: np.ndarray,
+    rho_min: np.ndarray,
     strike_deg: np.ndarray,
     *,
     compute_sens: bool = True,
@@ -852,15 +852,15 @@ def aniso1d_impedance_sens_simple(
         Periods in seconds.
     h_m : ndarray, shape (nl,)
         Layer thicknesses in meters (last entry is basement; ignored).
-    rho_max_ohmm : ndarray, shape (nl,)
+    rho_max : ndarray, shape (nl,)
         Maximum horizontal resistivity (Ohm·m).
-    rho_min_ohmm : ndarray, shape (nl,)
+    rho_min : ndarray, shape (nl,)
         Minimum horizontal resistivity (Ohm·m).
     strike_deg : ndarray, shape (nl,)
         Anisotropy strike in degrees.
     compute_sens : bool
-        If True, also return derivatives w.r.t. ``rho_max_ohmm``,
-        ``rho_min_ohmm``, ``strike_deg``, and ``h_m``.
+        If True, also return derivatives w.r.t. ``rho_max``,
+        ``rho_min``, ``strike_deg``, and ``h_m``.
     dh_rel : float
         Relative perturbation for the thickness finite difference.
 
@@ -892,15 +892,15 @@ def aniso1d_impedance_sens_simple(
     - ``dAT/drho_max = -1/rho_max^2``
     - ``dBLT/dstrike_deg = pi/180``
     """
-    rho_max_ohmm = np.asarray(rho_max_ohmm, dtype=float).ravel()
-    rho_min_ohmm = np.asarray(rho_min_ohmm, dtype=float).ravel()
+    rho_max = np.asarray(rho_max, dtype=float).ravel()
+    rho_min = np.asarray(rho_min, dtype=float).ravel()
     strike_deg = np.asarray(strike_deg, dtype=float).ravel()
     h_m = np.asarray(h_m, dtype=float).ravel()
 
-    if not (rho_max_ohmm.shape == rho_min_ohmm.shape == strike_deg.shape == h_m.shape):
-        raise ValueError("h_m, rho_max_ohmm, rho_min_ohmm, strike_deg must all have the same shape (nl,).")
+    if not (rho_max.shape == rho_min.shape == strike_deg.shape == h_m.shape):
+        raise ValueError("h_m, rho_max, rho_min, strike_deg must all have the same shape (nl,).")
 
-    al, at, blt_rad = alat_from_rho_strike(rho_max_ohmm, rho_min_ohmm, strike_deg)
+    al, at, blt_rad = alat_from_rho_strike(rho_max, rho_min, strike_deg)
 
     base = _aniso1d_impedance_sens_alat(
         periods_s,
@@ -916,8 +916,8 @@ def aniso1d_impedance_sens_simple(
         return {"Z": base["Z"]}
 
     # Chain rule from (AL, AT, BLT) to (rho_max, rho_min, strike_deg)
-    dAL_drho_min = (-1.0 / (rho_min_ohmm**2)).reshape(1, -1, 1, 1)
-    dAT_drho_max = (-1.0 / (rho_max_ohmm**2)).reshape(1, -1, 1, 1)
+    dAL_drho_min = (-1.0 / (rho_min**2)).reshape(1, -1, 1, 1)
+    dAT_drho_max = (-1.0 / (rho_max**2)).reshape(1, -1, 1, 1)
     dBLT_dstrike = (np.pi / 180.0)
 
     dZ_drho_min = base["dZ_dal"] * dAL_drho_min
@@ -946,8 +946,8 @@ def aniso1d_impedance_sens_simple(
 def aniso1d_impedance_sens_simple_sigma(
     periods_s: np.ndarray,
     h_m: np.ndarray,
-    sigma_max_Spm: np.ndarray,
-    sigma_min_Spm: np.ndarray,
+    sigma_max: np.ndarray,
+    sigma_min: np.ndarray,
     strike_deg: np.ndarray,
     *,
     compute_sens: bool = True,
@@ -965,10 +965,10 @@ def aniso1d_impedance_sens_simple_sigma(
         Periods in seconds.
     h_m : ndarray, shape (nl,)
         Layer thicknesses in meters.
-    sigma_max_Spm : ndarray, shape (nl,)
+    sigma_max : ndarray, shape (nl,)
         Maximum horizontal conductivity (S/m).
         This corresponds to ``1/rho_min`` in the resistivity parameterization.
-    sigma_min_Spm : ndarray, shape (nl,)
+    sigma_min : ndarray, shape (nl,)
         Minimum horizontal conductivity (S/m).
         This corresponds to ``1/rho_max`` in the resistivity parameterization.
     strike_deg : ndarray, shape (nl,)
@@ -989,19 +989,19 @@ def aniso1d_impedance_sens_simple_sigma(
         - ``rho = 1/sigma``
         - ``dZ/dsigma = dZ/drho * d(1/sigma)/dsigma = -dZ/drho / sigma**2``
     """
-    sigma_max_Spm = np.asarray(sigma_max_Spm, dtype=float)
-    sigma_min_Spm = np.asarray(sigma_min_Spm, dtype=float)
+    sigma_max = np.asarray(sigma_max, dtype=float)
+    sigma_min = np.asarray(sigma_min, dtype=float)
 
     # Convert to resistivities for the core implementation.
     tiny = np.finfo(float).tiny
-    rho_min_ohmm = 1.0 / np.maximum(sigma_max_Spm, tiny)  # rho_min <-> sigma_max
-    rho_max_ohmm = 1.0 / np.maximum(sigma_min_Spm, tiny)  # rho_max <-> sigma_min
+    rho_min = 1.0 / np.maximum(sigma_max, tiny)  # rho_min <-> sigma_max
+    rho_max = 1.0 / np.maximum(sigma_min, tiny)  # rho_max <-> sigma_min
 
     return aniso1d_impedance_sens_simple(
         periods_s=periods_s,
         h_m=h_m,
-        rho_max_ohmm=rho_max_ohmm,
-        rho_min_ohmm=rho_min_ohmm,
+        rho_max=rho_max,
+        rho_min=rho_min,
         strike_deg=strike_deg,
         compute_sens=compute_sens,
         dh_rel=dh_rel,
@@ -1167,7 +1167,7 @@ def _load_model_npz(model_path: Path) -> Dict[str, np.ndarray]:
 
     This loader supports BOTH parameterizations:
 
-    - Simplified keys: ``h_m, rho_min_ohmm, rho_max_ohmm, strike_deg``
+    - Simplified keys: ``h_m, rho_min, rho_max, strike_deg``
     - Full keys: ``h_m, rop, ustr_deg, udip_deg, usla_deg``
 
     The dict returned contains the keys found.
@@ -1181,11 +1181,11 @@ def _load_model_npz(model_path: Path) -> Dict[str, np.ndarray]:
         out["h_m"] = np.asarray(out["h"], dtype=float).ravel()
 
     # Provide a clearer error if neither parameterization is present.
-    has_simple = {"h_m", "rho_min_ohmm", "rho_max_ohmm", "strike_deg"} <= set(out.keys())
+    has_simple = {"h_m", "rho_min", "rho_max", "strike_deg"} <= set(out.keys())
     has_full = {"h_m", "rop", "ustr_deg", "udip_deg", "usla_deg"} <= set(out.keys())
     if not (has_simple or has_full):
         raise KeyError(
-            "Model NPZ must contain either simplified keys (h_m,rho_min_ohmm,rho_max_ohmm,strike_deg) "
+            "Model NPZ must contain either simplified keys (h_m,rho_min,rho_max,strike_deg) "
             "or full keys (h_m,rop,ustr_deg,udip_deg,usla_deg). "
             f"Found keys: {sorted(keys)}"
         )
@@ -1226,16 +1226,31 @@ def main(argv: Optional[list[str]] = None) -> int:
     model = _load_model_npz(model_path)
 
     periods = _parse_periods_arg(args.periods) if args.periods else np.loadtxt(args.periods_file, ndmin=1)
-    res = aniso1d_impedance_sens_simple(
-         periods_s=periods,
-         h_m=np.asarray(model["h_m"], dtype=float).ravel(),
-         rho_max_ohmm=np.asarray(model["rho_max_ohmm"], dtype=float).ravel(),
-         rho_min_ohmm=np.asarray(model["rho_min_ohmm"], dtype=float).ravel(),
-         strike_deg=np.asarray(model["strike_deg"], dtype=float).ravel(),
-         compute_sens=bool(args.sens),
-         dh_rel=float(args.dh_rel),
-     )
 
+    # Choose parameterization based on model contents.
+    if {"h_m", "rho_min", "rho_max", "strike_deg"} <= set(model.keys()):
+        res = aniso1d_impedance_sens_simple(
+            periods_s=periods,
+            h_m=np.asarray(model["h_m"], dtype=float).ravel(),
+            rho_max=np.asarray(model["rho_max"], dtype=float).ravel(),
+            rho_min=np.asarray(model["rho_min"], dtype=float).ravel(),
+            strike_deg=np.asarray(model["strike_deg"], dtype=float).ravel(),
+            compute_sens=bool(args.sens),
+            dh_rel=float(args.dh_rel),
+        )
+    elif {"h_m", "rop", "ustr_deg", "udip_deg", "usla_deg"} <= set(model.keys()):
+        res = aniso1d_impedance_sens(
+            periods_s=periods,
+            h_m=np.asarray(model["h_m"], dtype=float).ravel(),
+            rop=np.asarray(model["rop"], dtype=float),
+            ustr_deg=np.asarray(model["ustr_deg"], dtype=float).ravel(),
+            udip_deg=np.asarray(model["udip_deg"], dtype=float).ravel(),
+            usla_deg=np.asarray(model["usla_deg"], dtype=float).ravel(),
+            compute_sens=bool(args.sens),
+            dh_rel=float(args.dh_rel),
+        )
+    else:
+        raise KeyError("Model must contain either simplified (rho_min,rho_max,strike_deg) or full (rop, angles) keys.")
 
     out_dict = {"periods_s": periods}
     out_dict.update(res)
