@@ -1,148 +1,93 @@
-# data_viz.py
+# data_viz.py — Matplotlib helpers for MT transfer-function plots
 
-Matplotlib helpers for magnetotelluric (MT) transfer-function plots.
+`data_viz.py` contains small, composable Matplotlib plotters designed to work
+with a **tidy `pandas.DataFrame`** produced from EDI dictionaries (typically via
+`data_proc.dataframe_from_edi`).
 
-This module provides small, composable plotters for:
+Main MT plotters:
 
-- apparent resistivity (`add_rho`)
-- impedance phase (`add_phase`)
-- tipper components (`add_tipper`)
-- phase tensor components (`add_pt`)
+- `add_rho` — apparent resistivity curves (log–log)
+- `add_phase` — impedance phase (semilog-x)
+- `add_tipper` — tipper real/imag (semilog-x)
+- `add_pt` — phase tensor components (semilog-x)
 
-All plotters accept an optional Matplotlib `Axes`. If `ax` is `None`, a new
-figure/axes is created.
+All plotters accept an optional Matplotlib `Axes` and return the axes.
 
-## Inputs: DataFrame *or* EDI dict
+> Note: This module **does not** take an EDI dict directly. Convert to a DataFrame first.
 
-The plotters accept either:
+---
 
-1) a `pandas.DataFrame` with *flat* columns (traditional workflow), or  
-2) an **EDI dict** (`Mapping[str, Any]`) as produced by your EDI parsers.
-
-When an EDI dict is passed, it is converted internally to a plotting
-DataFrame via `edidict_to_plot_df()`.
-
-### Supported EDI dict keys
+## Expected DataFrame columns
 
 Required:
 
-- `freq` : `(nf,)` frequency array [Hz]
+- `freq` [Hz] (frequency array)
 
-Optional MT transfer functions and errors:
+Optional but strongly recommended:
 
-- `Z` : `(nf, 2, 2)` complex impedance tensor
-- `Z_err` : `(nf, 2, 2)` complex or real 1-sigma errors
-- `T` : `(nf, 2)` complex tipper `(Tx, Ty)`
-- `T_err` : `(nf, 2)` complex or real 1-sigma errors
-- `P` : `(nf, 2, 2)` real phase tensor
-- `P_err` : `(nf, 2, 2)` real 1-sigma errors
+- `period` [s] (if missing, `period = 1/freq` is computed internally)
 
-Convenience: `Z`, `Z_err`, `P`, `P_err` are also accepted as `(nf, 4)` and will
-be reshaped to `(nf, 2, 2)`.
+### Apparent resistivity / phase
 
-Metadata commonly found in EDI dicts (e.g., `station`, `lat_deg`, `lon_deg`,
-`rot`, …) is copied into `df.attrs`.
+- `rho_xx`, `rho_xy`, `rho_yx`, `rho_yy` [Ω·m]
+- `phi_xx`, `phi_xy`, `phi_yx`, `phi_yy` [deg]
 
-## Flat DataFrame column naming
+Optional 1‑sigma envelopes:
 
-If you pass a DataFrame directly, the plotters expect:
+- `rho_xy_err`, `phi_xy_err`, … (suffix is configurable via `error_suffix`)
 
-- frequency / period:
-  - `freq` [Hz] (required unless `period` exists)
-  - `period` [s] (optional; used if present)
-
-- apparent resistivity / phase:
-  - `rho_xx`, `rho_xy`, `rho_yx`, `rho_yy` [Ω·m]
-  - `phi_xx`, `phi_xy`, `phi_yx`, `phi_yy` [deg]
-  - optional 1-sigma envelopes (same unit as the base column):
-    - `rho_xy_err`, `phi_xy_err`, …
-
-- tipper:
-  - `Tx_re`, `Tx_im`, `Ty_re`, `Ty_im`
-  - optional: `Tx_re_err`, `Tx_im_err`, `Ty_re_err`, `Ty_im_err`
-
-- phase tensor:
-  - `ptxx_re`, `ptxy_re`, `ptyx_re`, `ptyy_re`
-  - optional: `ptxx_re_err`, `ptxy_re_err`, `ptyx_re_err`, `ptyy_re_err`
-
-## What the EDI-dict conversion produces
-
-`edidict_to_plot_df()` creates at least:
-
-- `freq`, `period`
-
-If `Z` is present:
-
-- `rho_<comp>` and `phi_<comp>` for `comp in {xx,xy,yx,yy}`
-
-If `Z_err` is present with a compatible shape:
-
-- `rho_<comp>_err` and `phi_<comp>_err`
-
-Error propagation used (approximate, first-order):
-
-- `rho = |Z|^2 / (μ0 ω)`
-- `σ_rho ≈ 2|Z| σ_|Z| / (μ0 ω)`
-- `φ = atan2(Im(Z), Re(Z))` (degrees)
-- `σ_φ(deg) ≈ (σ_|Z| / |Z|) * 180/π`
-
-If `T` is present:
+### Tipper
 
 - `Tx_re`, `Tx_im`, `Ty_re`, `Ty_im`
+- optional: `Tx_re_err`, `Tx_im_err`, `Ty_re_err`, `Ty_im_err`
 
-If `T_err` is present:
+### Phase tensor
 
-- `Tx_re_err`, `Tx_im_err`, `Ty_re_err`, `Ty_im_err`
-
-If `P` is present:
+Phase tensor components are real, but column names keep the historical “`_re`”:
 
 - `ptxx_re`, `ptxy_re`, `ptyx_re`, `ptyy_re`
+- optional: `ptxx_re_err`, `ptxy_re_err`, `ptyx_re_err`, `ptyy_re_err`
 
-If `P_err` is present:
+---
 
-- `ptxx_re_err`, `ptxy_re_err`, `ptyx_re_err`, `ptyy_re_err`
-
-## Examples
-
-### Plot from an EDI dict (recommended)
+## Recommended workflow (EDI dict → DataFrame → plot)
 
 ```python
 import matplotlib.pyplot as plt
-from data_viz_patched import add_rho, add_phase, add_tipper, add_pt
+import data_proc
+import data_viz
 
-# edi_dict contains keys: freq, Z, T, P, ... (see above)
-fig, ax = plt.subplots()
-add_rho(edi_dict, ax=ax, show_errors=True)
+site = data_proc.load_edi("SITE.edi")
 
-fig, ax = plt.subplots()
-add_phase(edi_dict, ax=ax, show_errors=True)
+# Optional: compute PT from Z (or do this elsewhere)
+site["P"], site["P_err"] = data_proc.compute_pt(site["Z"], site.get("Z_err"))
 
-fig, ax = plt.subplots()
-add_tipper(edi_dict, ax=ax, show_errors=True)
+df = data_proc.dataframe_from_edi(site)
 
-fig, ax = plt.subplots()
-add_pt(edi_dict, ax=ax, show_errors=True)
+fig, axs = plt.subplots(2, 2, figsize=(10, 8))
+
+data_viz.add_rho(df, ax=axs[0, 0], comps="xy,yx", show_errors=True)
+data_viz.add_phase(df, ax=axs[0, 1], comps="xy,yx", show_errors=True)
+data_viz.add_tipper(df, ax=axs[1, 0], show_errors=True)
+data_viz.add_pt(df, ax=axs[1, 1], show_errors=True)
+
+fig.tight_layout()
 plt.show()
 ```
 
-### Convert explicitly and reuse the DataFrame
+---
 
-```python
-from data_viz_patched import edidict_to_plot_df, add_rho
+## Convenience: quick subplot grids (`plot_gridx`, `plot_grid`)
 
-df = edidict_to_plot_df(edi_dict)
-ax = add_rho(df, comps="xy,yx", show_errors=True)
-```
+The module also contains two generic helpers that render lists of small
+datasets into an `(nrows, ncols)` subplot grid and remove empty axes.
 
-## Notes
+- `plot_gridx` supports `type ∈ {"line","scatter","image","hist"}`
+- `plot_grid` supports simple `{"x","y","style"}` line datasets
 
-- If a requested component column is missing, the plotters simply skip it.
-- `period` is taken from the DataFrame if present; otherwise it is computed as
-  `1/freq`.
-- The converter assumes SI units for the impedance-derived quantities.
-  (μ0 is taken as `4π×10⁻⁷` H/m.)
+These are optional utilities and unrelated to MT-specific plotting.
 
 ---
 
 Author: Volker Rath (DIAS)  
-Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-11
+Updated with the help of ChatGPT (GPT-5.2 Thinking) on 2026-02-13 (UTC)
