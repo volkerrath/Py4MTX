@@ -38,16 +38,15 @@ Key design points
   fall back to the user-provided fixed values.
 
 Author: Volker Rath (DIAS)
-Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-08 (UTC)
+Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-13 (UTC)
 """
 
 from __future__ import annotations
 
 import glob
-import inspect
 import os
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -97,7 +96,7 @@ def _coerce_object_dict(obj, *, name: str = "data_dict") -> Dict:
 def _extract_site_data(site: Dict) -> Tuple[Dict, bool]:
     """Return (data, wrapped) from a site container.
 
-    Supported site container styles
+    Site container styles (normalized to flat dict)
     -------------------------------
     1) **Flat**: the site dict directly contains keys like ``freq``, ``Z``, ...
     2) **Wrapped**: the site dict contains a nested dict under ``site['data_dict']``
@@ -107,16 +106,17 @@ def _extract_site_data(site: Dict) -> Tuple[Dict, bool]:
     """
     if "data_dict" in site:
         dd = _coerce_object_dict(site["data_dict"], name="site['data_dict']")
-        return dd, True
+        # Legacy wrapper style: drop wrapper and treat nested dict as the site.
+        return dd, False
     return site, False
 
 
 def _store_site_data(site: Dict, data: Dict, wrapped: bool) -> Dict:
-    """Store *data* back into *site* respecting wrapper style and return a copy."""
-    if wrapped:
-        s = dict(site)
-        s["data_dict"] = data
-        return s
+    """Return the updated site dict.
+
+    Wrapper-style containers are no longer used. This helper always returns the
+    plain site data dict.
+    """
     return data
 
 
@@ -179,7 +179,7 @@ def normalize_model(model: Dict) -> Dict[str, np.ndarray]:
         if ("_ohmm" in kl) or ("_spm" in kl):
             raise KeyError(
                 f"Unit-suffixed key '{k}' is not supported. "
-                "Drop units from keys (e.g., use 'rho_min' not 'rho_min_ohmm')."
+                "Drop units from keys (e.g., use 'rho_min' not 'rho_min_<unit>')."
             )
 
     out: Dict[str, np.ndarray] = {"h_m": h_m}
@@ -310,8 +310,11 @@ def load_site(path: str) -> Dict:
     if p.suffix.lower() == ".npz":
         with np.load(p, allow_pickle=True) as npz:
             d = {k: npz[k] for k in npz.files}
-        if "station" not in d:
-            d["station"] = p.stem
+        # Prefer the nested data_dict if present; drop outer wrapper keys like 'station'.
+        if 'data_dict' in d:
+            d = _coerce_object_dict(d['data_dict'], name="npz['data_dict']")
+        if 'station' not in d:
+            d['station'] = p.stem
         return d
 
     if p.suffix.lower() == ".edi":
@@ -1029,5 +1032,4 @@ def save_inversion_npz(res: Dict, path: str) -> None:
     _put("", res)
 
     np.savez(p.as_posix(), **flat)
-
 

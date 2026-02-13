@@ -46,7 +46,7 @@ it to 0 m (so the last depth edge equals the total thickness of finite
 layers).
 
 Author: Volker Rath (DIAS)
-Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-08 (UTC)
+Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-13 (UTC)
 """
 
 from __future__ import annotations
@@ -527,7 +527,7 @@ def _param_meta(param_domain: str, param_set: str) -> list[dict]:
                 "label": r"$\rho_{\min}$",
                 "xlabel": r"$\log_{10}(\rho_{\min})$ [$\Omega\,m$]",
                 "use_log10": True,
-                "idata_candidates": ("rho_min_ohmm", "rho_min"),
+                "idata_candidates": ("rho_min",),
                 "summary_base": "rho_min",
             },
             {
@@ -535,7 +535,7 @@ def _param_meta(param_domain: str, param_set: str) -> list[dict]:
                 "label": r"$\rho_{\max}$",
                 "xlabel": r"$\log_{10}(\rho_{\max})$ [$\Omega\,m$]",
                 "use_log10": True,
-                "idata_candidates": ("rho_max_ohmm", "rho_max"),
+                "idata_candidates": ("rho_max",),
                 "summary_base": "rho_max",
             },
             {
@@ -555,7 +555,7 @@ def _param_meta(param_domain: str, param_set: str) -> list[dict]:
                 "label": r"$\rho_{\max}$",
                 "xlabel": r"$\log_{10}(\rho_{\max})$ [$\Omega\,m$]",
                 "use_log10": True,
-                "idata_candidates": ("rho_max_ohmm", "rho_max"),
+                "idata_candidates": ("rho_max",),
                 "summary_base": "rho_max",
             },
             {
@@ -763,10 +763,10 @@ def plot_paramset_threepanel(
             if samples is None and param_domain.lower() == "sigma" and name in {"sigma_min", "sigma_max"}:
                 if name == "sigma_min":
                     # sigma_min = 1 / rho_max
-                    r = _posterior_samples_for_var(idata, ("rho_max_ohmm", "rho_max"))
+                    r = _posterior_samples_for_var(idata, ("rho_max",))
                 else:
                     # sigma_max = 1 / rho_min
-                    r = _posterior_samples_for_var(idata, ("rho_min_ohmm", "rho_min"))
+                    r = _posterior_samples_for_var(idata, ("rho_min",))
                 if r is not None:
                     tiny = np.finfo(float).tiny
                     samples = 1.0 / np.maximum(r, tiny)
@@ -775,8 +775,8 @@ def plot_paramset_threepanel(
             # from min/max variables present in the posterior.
             if samples is None and meta["name"].endswith("anifac"):
                 if param_domain.lower() == "rho":
-                    smax = _posterior_samples_for_var(idata, ("rho_max_ohmm", "rho_max"))
-                    smin = _posterior_samples_for_var(idata, ("rho_min_ohmm", "rho_min"))
+                    smax = _posterior_samples_for_var(idata, ("rho_max",))
+                    smin = _posterior_samples_for_var(idata, ("rho_min",))
                 else:
                     smax = _posterior_samples_for_var(idata, ("sigma_max", "sig_max"))
                     smin = _posterior_samples_for_var(idata, ("sigma_min", "sig_min"))
@@ -861,7 +861,7 @@ def plot_paramset_threepanel(
 
             # Accept either canonical key or summary-like key
             ov_val = None
-            for k in (name, f"{name}_ohmm", f"{name}_deg"):
+            for k in (name, f"{name}_deg"):
                 if k in overlay_single:
                     ov_val = np.asarray(overlay_single[k], dtype=float).ravel()
                     break
@@ -869,8 +869,8 @@ def plot_paramset_threepanel(
             # Derive overlay anifac from overlay min/max if not present
             if ov_val is None and name.endswith("anifac"):
                 if param_domain.lower() == "rho":
-                    vmax = overlay_single.get("rho_max") or overlay_single.get("rho_max_ohmm")
-                    vmin = overlay_single.get("rho_min") or overlay_single.get("rho_min_ohmm")
+                    vmax = overlay_single.get("rho_max")
+                    vmin = overlay_single.get("rho_min")
                 else:
                     vmax = overlay_single.get("sigma_max")
                     vmin = overlay_single.get("sigma_min")

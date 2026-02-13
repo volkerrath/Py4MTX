@@ -92,7 +92,7 @@ Notes
   are read. By default these are interpreted as **variances** (``err_kind="var"``).
 
 Author: Volker Rath (DIAS)
-Created with the help of ChatGPT (GPT-5 Thinking) on 2025-12-21 (UTC)
+Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-13 (UTC)
 """
 
 from __future__ import annotations

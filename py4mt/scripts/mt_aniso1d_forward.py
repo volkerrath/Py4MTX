@@ -4,30 +4,19 @@
 Created on Thu Oct 23 15:19:01 2025
 
 @author: vrath
-'''
 
+Author: Volker Rath (DIAS)
+Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-13 (UTC)
+'''
 
 
 import os
 import sys
-import time
-from datetime import datetime
-import warnings
-import csv
 import inspect
 
 # Import numerical or other specialised modules
 import numpy as np
-import pandas as pd
-
-import matplotlib as mpl
 import matplotlib.pyplot as plt
-import matplotlib.colors as col
-import matplotlib.cm as cm
-import mpl_toolkits.axes_grid1
-import matplotlib.ticker
-
-
 PY4MTX_DATA = os.environ['PY4MTX_DATA']
 PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
 
@@ -37,10 +26,6 @@ for pth in mypath:
         sys.path.insert(0, pth)
 
 from aniso import aniso1d_impedance_sens
-from data_viz import add_phase, add_rho, add_tipper, add_pt
-from data_proc import load_edi, save_edi, save_ncd, save_hdf, save_npz
-from data_proc import compute_pt, interpolate_data
-from data_proc import set_errors, estimate_errors, rotate_data
 from data_proc import calc_rhoa_phas
 
 # from mtproc import calc_rhoa_phas
@@ -259,8 +244,6 @@ if ImpOut:
                 [f'{tmp.real:.5e} {tmp.imag:.5e}' for tmp in Imp[iper, :]])
             line = f'{periods[iper]:14.5f} ' + real_imag
             f.write(line + '\n')
-
-
 
 
 if ImpPlt:
