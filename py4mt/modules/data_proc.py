@@ -2191,6 +2191,65 @@ def _sanitize_meta_for_hdf(meta: Mapping[str, Any]) -> dict[str, Any]:
     return out
 
 
+
+def _sanitize_meta_for_mat(meta: Mapping[str, Any]) -> dict[str, Any]:
+    """
+    Sanitize metadata for storage in a MATLAB .mat file.
+
+    SciPy's ``savemat`` is fairly permissive, but some Python objects (e.g. dicts,
+    sets, custom classes, or ``None``) can lead to confusing MATLAB objects.
+    This helper aims to keep MATLAB consumption straightforward:
+
+    - Scalars are kept.
+    - ``None`` becomes an empty array ``[]``.
+    - numpy arrays are kept (including complex arrays).
+    - lists/tuples become numpy arrays where possible; mixed lists become object arrays.
+    - dicts become JSON strings (fallback: ``repr``).
+    - everything else becomes ``repr``.
+    """
+    import json
+
+    out: dict[str, Any] = {}
+    for k, v in meta.items():
+        if v is None:
+            out[k] = np.asarray([])
+            continue
+
+        if _is_scalar(v):
+            out[k] = v
+            continue
+
+        if isinstance(v, np.generic):
+            out[k] = v.item()
+            continue
+
+        if isinstance(v, np.ndarray):
+            out[k] = v
+            continue
+
+        if isinstance(v, (list, tuple)):
+            try:
+                arr = np.asarray(v)
+                if arr.dtype == object:
+                    out[k] = np.asarray(list(v), dtype=object)
+                else:
+                    out[k] = arr
+            except Exception:
+                out[k] = np.asarray([repr(v)], dtype=object)
+            continue
+
+        if isinstance(v, dict):
+            try:
+                out[k] = json.dumps(v, ensure_ascii=False, default=str)
+            except Exception:
+                out[k] = repr(v)
+            continue
+
+        out[k] = repr(v)
+
+    return out
+
+
 def _edidict_to_dataframe(
     data_dict: Mapping[str, Any],
     *,
@@ -2403,6 +2462,91 @@ def save_ncd(
     ds.attrs["dataset_name"] = dataset_name
 
     ds.to_netcdf(path.as_posix(), engine=engine)
+
+
+def save_mat(
+    data_dict: Mapping[str, Any] | pd.DataFrame,
+    path: str | Path,
+    *,
+    key: str = "mt",
+    do_compression: bool = True,
+) -> None:
+    """
+    Save an edidict (preferred) or DataFrame to a MATLAB ``.mat`` file.
+
+    The MATLAB file mimics the content of :func:`save_hdf` / :func:`save_ncd`:
+
+    - ``<key>_table``: a MATLAB struct with one field per DataFrame column
+      (e.g. ``freq``, ``Z_re_0``, ...), each holding a 1D numeric array.
+    - ``<key>_table_cols``: cell array (object array) of column names (order).
+    - ``<key>_table_data``: numeric 2D array with shape (N, ncol) matching
+      ``<key>_table_cols``.
+    - ``<key>_meta``: a MATLAB struct with metadata (sanitized for MATLAB).
+
+    Notes
+    -----
+    - Uses :func:`scipy.io.savemat`. MATLAB v7.3 (HDF5-based) is not written by
+      ``savemat``; for very large files consider HDF5/HDFStore instead.
+    - Complex arrays are supported by ``savemat``; however, the tabular DataFrame
+      representation used here stores complex quantities as separate real/imag
+      columns (``*_re_*`` / ``*_im_*``), matching :func:`save_hdf`.
+    """
+    from scipy.io import savemat
+
+    path = Path(path)
+
+    # sanitize key for MATLAB variable names
+    key_safe = re.sub(r"\W+", "_", str(key).strip())
+    if not key_safe:
+        key_safe = "mt"
+    if key_safe[0].isdigit():
+        key_safe = "x" + key_safe
+
+    if isinstance(data_dict, pd.DataFrame):
+        df = data_dict
+        meta = dict(df.attrs)
+    else:
+        df, meta, _ = _edidict_to_dataframe(data_dict)
+
+    cols = list(df.columns)
+
+    # numeric table (object columns should not occur, but handle defensively)
+    try:
+        table_data = df.to_numpy()
+    except Exception:
+        table_data = np.asarray(df.values)
+
+    # struct-like dict (fields = columns). Keep a name mapping if sanitization changes it.
+    table_struct: dict[str, Any] = {}
+    colmap: dict[str, str] = {}
+    for c in cols:
+        c_safe = re.sub(r"\W+", "_", str(c).strip())
+        if not c_safe:
+            c_safe = "col"
+        if c_safe[0].isdigit():
+            c_safe = "x" + c_safe
+        if c_safe in table_struct:
+            # ensure uniqueness
+            base = c_safe
+            k = 2
+            while f"{base}_{k}" in table_struct:
+                k += 1
+            c_safe = f"{base}_{k}"
+        colmap[c_safe] = str(c)
+        table_struct[c_safe] = np.asarray(df[c].to_numpy())
+
+    meta_safe = _sanitize_meta_for_mat(meta)
+
+    out = {
+        f"{key_safe}_table": table_struct,
+        f"{key_safe}_table_cols": np.asarray(cols, dtype=object),
+        f"{key_safe}_table_data": table_data,
+        f"{key_safe}_meta": meta_safe,
+        f"{key_safe}_colmap": colmap,
+    }
+
+    savemat(path.as_posix(), out, do_compression=bool(do_compression))
+
 
 def read_emtf_xml(path: str | Path) -> Dict[str, Any]:
     """Read MT data from a (simplified) EMTF-XML file (experimental)."""
