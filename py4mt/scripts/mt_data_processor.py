@@ -39,7 +39,7 @@ import util as utl
 from data_viz import add_phase, add_rho, add_tipper, add_pt
 from data_proc import (
     get_edi_list,
-    load_edi, save_edi, save_ncd, save_hdf, save_npz,
+    load_edi, save_edi, save_ncd, save_hdf, save_npz, save_mat,
     save_list_of_dicts_npz, dataframe_from_edi,
     interpolate_data, set_errors, estimate_errors, rotate_data,
     compute_pt, compute_zdet, compute_zssq, compute_rhophas)
@@ -195,6 +195,12 @@ for edi in edi_files:
             path=DataDir + station + NameStr + '.hdf',
             data_dict=edi_dict)
         print('Wrote file: ',DataDir + station + NameStr + '.hdf')
+
+    if 'mat' in OutFiles.lower():
+        _ = save_mat(
+            path=DataDir + station + NameStr + '.mat',
+            data_dict=edi_dict)
+        print('Wrote file: ',DataDir + station + NameStr + '.mat')
 
     if 'npz' in OutFiles.lower():
         _ = save_npz(
