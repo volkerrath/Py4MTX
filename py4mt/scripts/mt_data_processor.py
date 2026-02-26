@@ -56,7 +56,7 @@ print(titstrng + '\n\n')
 
 # WorkDir = '/home/vrath/ChatGPT_tests/'
 # WorkDir = '/home/vrath/Py4MTX/work/edis_2025/'
-WorkDir =  "/home/vrath/Py4MTX/py4mt/data/edi/ann/edi_all/"
+WorkDir =  "/home/vrath/Py4MTX/py4mt/data/edi/ann/edi_jc/"
 
 if not os.path.isdir(WorkDir):
     print(' File: %s does not exist, but will be created' % WorkDir)
@@ -72,7 +72,7 @@ edi_files = get_edi_list(EdiDir, fullpath=True)
 ns = np.size(edi_files)
 
 
-OutFiles = 'edi, npz'
+OutFiles = 'edi, npz, hdf'
 
 Plot = False
 if Plot:
@@ -182,25 +182,25 @@ for edi in edi_files:
             path=DataDir + station + NameStr + '.edi',
             edi=edi_dict
         )
-        print('\n\nWrote file: ',path)
+        print('Wrote file: ',DataDir + station + NameStr + '.edi')
 
     if 'ncd' in OutFiles.lower():
         _ = save_ncd(
             path=DataDir + station + NameStr + '.ncd',
             data_dict=edi_dict)
-        print('\n\nWrote file: ',path)
+        print('Wrote file: ',DataDir + station + NameStr + '.ncd')
 
     if 'hdf' in OutFiles.lower():
         _ = save_hdf(
             path=DataDir + station + NameStr + '.hdf',
             data_dict=edi_dict)
-        print('\n\nWrote file: ',path)
+        print('Wrote file: ',DataDir + station + NameStr + '.hdf')
 
     if 'npz' in OutFiles.lower():
         _ = save_npz(
             path=DataDir + station + NameStr + '.npz',
             data_dict=edi_dict)
-        print('\n\nWrote file: ',path)
+        print('Wrote file: ',DataDir + station + NameStr + '.npz')
 
 
     if Plot:
