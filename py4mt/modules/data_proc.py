@@ -2037,11 +2037,54 @@ def _as_1d_array(x: Any) -> Optional[np.ndarray]:
     if isinstance(x, np.ndarray):
         if x.ndim == 1:
             return x
+        # accept column/row vectors (N,1) or (1,N)
+        if x.ndim == 2 and 1 in x.shape:
+            return x.ravel()
         return None
     if isinstance(x, (list, tuple)):
         arr = np.asarray(x)
-        return arr if arr.ndim == 1 else None
+        if arr.ndim == 1:
+            return arr
+        if arr.ndim == 2 and 1 in arr.shape:
+            return arr.ravel()
+        return None
     return None
+
+
+def _unwrap_edidict(data_dict: Mapping[str, Any]) -> Mapping[str, Any]:
+    """
+    Unwrap a site-style container to a flat EDI-style data dictionary.
+
+    In parts of Py4MTX, "sites" are represented as wrapper dictionaries
+    (e.g. ``{"data_dict": <edidict>, ...}``). I/O helpers such as
+    :func:`_edidict_to_dataframe` expect a *flat* dictionary where keys like
+    ``"freq"`` or ``"period"`` live at the top level. This helper makes the
+    conversion robust by returning the inner mapping when it looks like an
+    EDI-style data dictionary.
+
+    Parameters
+    ----------
+    data_dict : mapping
+        Either a flat EDI-style dictionary or a wrapper mapping with a
+        ``"data_dict"`` entry.
+
+    Returns
+    -------
+    mapping
+        The unwrapped EDI-style dictionary if present; otherwise the input.
+    """
+    try:
+        inner = data_dict.get("data_dict")  # type: ignore[call-arg]
+    except Exception:
+        inner = None
+
+    if isinstance(inner, Mapping):
+        # unwrap if the inner dict looks like an edidict
+        if ("freq" in inner) or ("period" in inner) or ("Z" in inner) or ("Z_err" in inner):
+            return inner
+
+    return data_dict
+
 
 
 def _flatten_meta_for_attrs(meta: Mapping[str, Any], *, sep: str = ".") -> dict[str, Any]:
@@ -2154,6 +2197,7 @@ def _edidict_to_dataframe(
     - Complex arrays become *_re / *_im columns.
     - Everything else goes into meta.
     """
+    data_dict = _unwrap_edidict(data_dict)
     # 1) choose dimension / coordinate
     dim_name = None
     coord = None
