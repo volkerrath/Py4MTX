@@ -684,10 +684,19 @@ def load_edi(
         bad_Z |= (np.abs(Z.real) > invalid_sentinel) | (np.abs(Z.imag) > invalid_sentinel)
         mask_valid &= ~_collapse_any(bad_Z)
 
+
         if T is not None:
             bad_T = ~np.isfinite(T.real) | ~np.isfinite(T.imag)
             bad_T |= (np.abs(T.real) > invalid_sentinel) | (np.abs(T.imag) > invalid_sentinel)
-            mask_valid &= ~_collapse_any(bad_T)
+            t_valid = ~_collapse_any(bad_T)
+            if np.any(t_valid):
+                # Only constrain by tipper if it contains at least some valid rows.
+                mask_valid &= t_valid
+            else:
+                # Common case: EDI contains no tipper, but an EMPTY sentinel was parsed into T.
+                # Treat tipper as absent so we do not drop otherwise valid impedance periods.
+                T = None
+                T_var = None
 
         if Z_var is not None:
             bad_Zvar = ~np.isfinite(Z_var) | (np.abs(Z_var) > invalid_sentinel)
