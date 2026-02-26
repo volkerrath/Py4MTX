@@ -123,6 +123,103 @@ containing both rho and sigma fields and guarantees consistent array lengths.
 
 ---
 
+## Thickness sampling strategies (`h_m` and `H_m`)
+
+In the 1‑D layered forward model, `h_m` is the array of layer thicknesses in meters.
+The **last entry** (`h_m[-1]`) is typically a *basement / half‑space placeholder* and
+is **ignored by the impedance recursion** (it can be set to 0). As a consequence,
+the data usually do **not** constrain `h_m[-1]`, so sampling it is often not meaningful.
+
+The sampler supports **three** thickness strategies (plus an optional switch for
+the basement placeholder):
+
+### 1) Keep all layer thicknesses fixed
+
+Use this if you want to invert only resistivities / anisotropy angles at fixed interfaces.
+
+```python
+spec = mcmc.ParamSpec(
+    nl=nl,
+    fix_h=True,
+    sample_H_m=False,
+)
+```
+
+In `mt_aniso1d_sampler.py` this corresponds to:
+
+```python
+FIX_H = True
+SAMPLE_H_M = False
+```
+
+### 2) Sample a single global thickness scale `H_m` (recommended when relative layering is trusted)
+
+This keeps the *relative* thickness profile of `model0["h_m"]` but allows the whole
+section to be stretched/compressed by sampling a single value:
+
+- `H_m = sum(h_m[:-1])` (total thickness excluding basement placeholder)
+- `h_m[:-1] = h_rel * H_m`, where `h_rel = h_m0[:-1] / sum(h_m0[:-1])`
+
+```python
+spec = mcmc.ParamSpec(
+    nl=nl,
+    fix_h=True,
+    sample_H_m=True,
+    log10_H_bounds=(0.0, 5.0),  # bounds for log10(H_m [m])
+)
+```
+
+In `mt_aniso1d_sampler.py`:
+
+```python
+FIX_H = True
+SAMPLE_H_M = True
+LOG10_H_TOTAL_BOUNDS = (0.0, 5.0)  # bounds for log10(H_m [m])
+```
+
+**Constraint:** `sample_H_m=True` requires `fix_h=True` (you either sample per‑layer
+`h_m` *or* the single global scale `H_m`).
+
+### 3) Sample per‑layer thicknesses (log10‑space, bounded)
+
+This samples `log10(h_m[k])` for each layer thickness (meters), within `log10_h_bounds`.
+
+```python
+spec = mcmc.ParamSpec(
+    nl=nl,
+    fix_h=False,
+    sample_last_thickness=False,  # recommended default
+    log10_h_bounds=(0.0, 5.0),    # bounds for log10(h_m[k] [m])
+)
+```
+
+In `mt_aniso1d_sampler.py`:
+
+```python
+FIX_H = False
+LOG10_H_BOUNDS = (0.0, 5.0)  # bounds for log10(h_m[k] [m])
+```
+
+### Optional: also sample the basement thickness placeholder `h_m[-1]`
+
+If you really want to sample `h_m[-1]` as well (again: usually **OFF**), enable:
+
+```python
+spec = mcmc.ParamSpec(
+    nl=nl,
+    fix_h=False,
+    sample_last_thickness=True,
+)
+```
+
+In `mt_aniso1d_sampler.py`:
+
+```python
+SAMPLE_LAST_THICKNESS = True
+```
+
+---
+
 ## Building and sampling a PyMC model
 
 ```python
@@ -233,4 +330,4 @@ plt.show()
 ---
 
 Author: Volker Rath (DIAS)  
-Updated with the help of ChatGPT (GPT-5.2 Thinking) on 2026-02-13 (UTC)
+Updated with the help of ChatGPT (GPT-5.2 Thinking) on 2026-02-14 (UTC)

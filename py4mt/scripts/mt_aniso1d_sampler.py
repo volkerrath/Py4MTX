@@ -19,7 +19,7 @@ Preserved conventions
 
 Implementation note
 -------------------
-Helpers are imported from `mcmc_strict2.py`
+Helpers are imported from `mcmc.py`
 
 Author: Volker Rath (DIAS)
 Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-12 (UTC)
@@ -32,6 +32,7 @@ import sys
 import inspect
 import warnings
 from pathlib import Path
+import time
 
 import numpy as np
 
@@ -74,31 +75,6 @@ print(titstrng+'\n\n')
 
 
 # -----------------------------------------------------------------------------
-# Example legacy Model0 (NOT SUPPORTED anymore)
-# -----------------------------------------------------------------------------
-# NOTE: The legacy rop/Euler-angle parameterization is no longer accepted.
-# The block below is kept only as a historical reference and will raise in
-# normalize_model().
-#
-# Model0 = dict(
-#     h_m=np.array([200.0, 400.0, 800.0, 0.0], dtype=float),
-#     rop=np.array(
-#         [
-#             [100.0, 100.0, 100.0],
-#             [100.0, 100.0, 100.0],
-#             [100.0, 100.0, 100.0],
-#             [100.0, 100.0, 100.0],
-#         ],
-#         dtype=float,
-#     ),
-#     ustr_deg=np.array([0.0, 0.0, 45.0, 0.0], dtype=float),
-#     udip_deg=np.array([0.0, 0.0, 0.0, 0.0], dtype=float),
-#     usla_deg=np.array([0.0, 0.0, 0.0, 0.0], dtype=float),
-#     is_iso=np.array([True, True, False, True], dtype=bool),
-#     is_fix=np.array([False, False, False, False], dtype=bool),
-# )
-
-# -----------------------------------------------------------------------------
 # Example Model1 (keep/edit)
 # -----------------------------------------------------------------------------
 nlayer = 17
@@ -126,7 +102,7 @@ Model0 = {
     "sigma_min": sigma_bg * np.ones_like(h_m, dtype=float),
     "sigma_max": sigma_bg * np.ones_like(h_m, dtype=float),
     "strike_deg": np.zeros_like(h_m, dtype=float),
-    "is_iso": np.ones_like(h_m, dtype=bool),
+    "is_iso": np.zeros_like(h_m, dtype=bool),
     "is_fix": np.zeros_like(h_m, dtype=bool),
 }
 
@@ -137,8 +113,8 @@ Model0 = {
 
 MCMC_Data = "/home/vrath/Py4MTX/py4mt/data/edi/"
 
-INPUT_GLOB = MCMC_Data + "Ann18*.npz"  # or *.npz
-OUTDIR = MCMC_Data + "pmc_met_hfix"
+INPUT_GLOB = MCMC_Data + "Ann*.npz"  # or *.npz
+OUTDIR = MCMC_Data + "pmc_met_hfix_pt-only"
 MODEL_NPZ = MCMC_Data+"model0.npz"
 
 # Set MODEL_DIRECT = Model0 to use the in-file model template
@@ -146,9 +122,10 @@ MODEL_DIRECT = Model0
 MODEL_DIRECT_SAVE_PATH = MODEL_NPZ
 MODEL_DIRECT_OVERWRITE = True
 
-USE_PT = True
+USE_PT = False #True
 PT_ERR_NSIM = 200
-Z_COMPS = ("xx", "xy", "yx", "yy")
+# Z_COMPS = ("xx", "xy", "yx", "yy")
+Z_COMPS = ()
 PT_COMPS = ("xx", "xy", "yx", "yy")
 # Phase tensor is always recomputed from Z as P = inv(Re(Z)) @ Im(Z)
 
@@ -170,17 +147,24 @@ STRIKE_BOUNDS_DEG = (-180.0, 180.0)
 SIGMA_FLOOR_Z = 0.0
 SIGMA_FLOOR_P = 0.0
 
+# STEP_METHOD = "nuts"  # or "nuts" when ENABLE_GRAD=True
+# ENABLE_GRAD = True  # set True for NUTS/HMC (Z and optional PT)
 STEP_METHOD = "demetropolis"  # or "nuts" when ENABLE_GRAD=True
-DRAWS = 100000
-TUNE = 10000
-CHAINS = 10
-CORES = CHAINS
-TARGET_ACCEPT = 0.85
-RANDOM_SEED = 123
-PROGRESSBAR = True
 ENABLE_GRAD = False  # set True for NUTS/HMC (Z and optional PT)
 PRIOR_KIND = "default"  # NUTS-friendly soft priors
 PARAM_DOMAIN = "rho"  # "rho" (default) or "sigma"
+
+
+
+DRAWS = 100000
+TUNE = 10000
+CHAINS = 5
+CORES = CHAINS
+TARGET_ACCEPT = 0.85
+RANDOM_SEED = mcmc.generate_mcmc_seed() #int(time.time_ns()) #123
+PROGRESSBAR = True
+
+
 
 # One shared quantile setting (requested)
 QPAIRS = ((10, 90), (25, 75))
@@ -252,8 +236,8 @@ for f in in_files:
         progressbar=bool(PROGRESSBAR),
     )
 
-    nc_path = Path(outdir) / f"{station}_pmc.nc"
-    sum_path = Path(outdir) / f"{station}_pmc_summary.npz"
+    nc_path = Path(outdir) / f"{station}_pmc_{STEP_METHOD}.nc"
+    sum_path = Path(outdir) / f"{station}_pmc_{STEP_METHOD}_summary.npz"
     mcmc.save_idata(idata, nc_path)
 
     summary = mcmc.build_summary_npz(

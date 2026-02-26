@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""mcmc_strict2.py
+"""mcmc.py
 ================
 
 PyMC driver utilities for simplified anisotropic 1-D MT inversion.
@@ -74,6 +74,35 @@ _COMP_TO_IJ: Dict[str, Tuple[int, int]] = {
     "pyx": (1, 0),
     "pyy": (1, 1),
 }
+
+"""
+Author: Volker Rath (DIAS)
+Copilot (version) and date
+"""
+
+import secrets
+
+def generate_mcmc_seed(n_bits: int = 64) -> int:
+    """
+    Generate a high‑entropy random seed suitable for MCMC initialisation.
+
+    Parameters
+    ----------
+    n_bits : int
+        Number of random bits. 64 is a good balance for reproducibility
+        and entropy.
+
+    Returns
+    -------
+    int
+        A random integer seed.
+
+
+    seed = generate_mcmc_seed()
+    print(seed)
+    """
+    return secrets.randbits(n_bits)
+
 
 
 # -----------------------------------------------------------------------------
@@ -1718,7 +1747,7 @@ def build_summary_npz(
         pass
 
 
-    
+
     # Optional: H_m quantiles on the same q-grid
     if H_s is not None:
         try:
