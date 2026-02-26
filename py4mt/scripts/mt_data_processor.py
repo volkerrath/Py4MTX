@@ -72,7 +72,9 @@ edi_files = get_edi_list(EdiDir, fullpath=True)
 ns = np.size(edi_files)
 
 
-OutFiles = 'edi, npz, hdf'
+OutFiles = 'edi, npz, hdf, mat'
+
+StatFile =  True
 
 Plot = False
 if Plot:
@@ -176,38 +178,43 @@ for edi in edi_files:
     #       np.shape(P), np.shape(Perr))
     # print(list(edi_dict.keys()))
 
+    statname = station
+    if StatFile:
+        nam, ext = os.path.splitext(os.path.basename(edi))
+        statname = nam
 
     if 'edi' in OutFiles.lower():
         _ = save_edi(
-            path=DataDir + station + NameStr + '.edi',
+            path=DataDir + statname + NameStr + '.edi',
             edi=edi_dict
         )
-        print('Wrote file: ',DataDir + station + NameStr + '.edi')
+        print('Wrote file: ',DataDir + statname + NameStr + '.edi')
 
     if 'ncd' in OutFiles.lower():
         _ = save_ncd(
-            path=DataDir + station + NameStr + '.ncd',
+            path=DataDir + statname + NameStr + '.ncd',
             data_dict=edi_dict)
-        print('Wrote file: ',DataDir + station + NameStr + '.ncd')
+        print('Wrote file: ',DataDir + statname + NameStr + '.ncd')
 
     if 'hdf' in OutFiles.lower():
         _ = save_hdf(
-            path=DataDir + station + NameStr + '.hdf',
+            path=DataDir + statname + NameStr + '.hdf',
             data_dict=edi_dict)
-        print('Wrote file: ',DataDir + station + NameStr + '.hdf')
+        print('Wrote file: ',DataDir + statname + NameStr + '.hdf')
 
     if 'mat' in OutFiles.lower():
         _ = save_mat(
-            path=DataDir + station + NameStr + '.mat',
+            path=DataDir + statname + NameStr + '.mat',
             data_dict=edi_dict,
             include_raw=True)
-        print('Wrote file: ',DataDir + station + NameStr + '.mat')
+        print('Wrote file: ',DataDir + statname + NameStr + '.mat')
+
 
     if 'npz' in OutFiles.lower():
         _ = save_npz(
-            path=DataDir + station + NameStr + '.npz',
+            path=DataDir + statname + NameStr + '.npz',
             data_dict=edi_dict)
-        print('Wrote file: ',DataDir + station + NameStr + '.npz')
+        print('Wrote file: ',DataDir + statname + NameStr + '.npz')
 
 
     if Plot:
@@ -220,7 +227,7 @@ for edi in edi_files:
         add_phase(df_rp, comps="xx,yy", ax=axs[1, 1], **pltargs)
         add_tipper(edi_dict, ax=axs[2, 0], **pltargs)
         add_pt(edi_dict, ax=axs[2, 1], **pltargs)
-        fig.suptitle(station + NameStr.replace('_', ' | '))
+        fig.suptitle(statname + NameStr.replace('_', ' | '))
 
         # for ax in np.atleast_1d(axs).ravel():
         # Remove empty axes
@@ -231,7 +238,7 @@ for edi in edi_files:
         fig.tight_layout(rect=[0, 0, 1, 0.97])
 
         for f in PlotFormat:
-            plt.savefig(WorkDir + station + NameStr + f, dpi=600)
+            plt.savefig(WorkDir + statname + NameStr + f, dpi=600)
 
         plt.show()
 
