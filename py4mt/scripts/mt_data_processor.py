@@ -199,7 +199,8 @@ for edi in edi_files:
     if 'mat' in OutFiles.lower():
         _ = save_mat(
             path=DataDir + station + NameStr + '.mat',
-            data_dict=edi_dict)
+            data_dict=edi_dict,
+            include_raw=True)
         print('Wrote file: ',DataDir + station + NameStr + '.mat')
 
     if 'npz' in OutFiles.lower():

@@ -2250,6 +2250,69 @@ def _sanitize_meta_for_mat(meta: Mapping[str, Any]) -> dict[str, Any]:
     return out
 
 
+
+def _sanitize_mapping_for_mat_struct(d: Mapping[str, Any]) -> dict[str, Any]:
+    """
+    Sanitize an arbitrary mapping for MATLAB struct storage.
+
+    Similar to :func:`_sanitize_meta_for_mat`, but intended for storing a full
+    EDI-style data dict (including arrays) into a MATLAB struct. Keys are kept
+    as-is; values are coerced to MATLAB-friendly representations.
+
+    - ndarrays (including complex) are kept
+    - scalars/strings are kept
+    - None -> empty array
+    - lists/tuples -> arrays
+    - dicts -> JSON strings (fallback: repr)
+    - everything else -> repr
+    """
+    import json
+
+    out: dict[str, Any] = {}
+    for k, v in d.items():
+        if v is None:
+            out[str(k)] = np.asarray([])
+            continue
+
+        if isinstance(v, str):
+            out[str(k)] = v
+            continue
+
+        if _is_scalar(v):
+            out[str(k)] = v
+            continue
+
+        if isinstance(v, np.generic):
+            out[str(k)] = v.item()
+            continue
+
+        if isinstance(v, np.ndarray):
+            out[str(k)] = v
+            continue
+
+        if isinstance(v, (list, tuple)):
+            try:
+                arr = np.asarray(v)
+                if arr.dtype == object:
+                    out[str(k)] = np.asarray(list(v), dtype=object)
+                else:
+                    out[str(k)] = arr
+            except Exception:
+                out[str(k)] = np.asarray([repr(v)], dtype=object)
+            continue
+
+        if isinstance(v, dict):
+            try:
+                out[str(k)] = json.dumps(v, ensure_ascii=False, default=str)
+            except Exception:
+                out[str(k)] = repr(v)
+            continue
+
+        out[str(k)] = repr(v)
+
+    return out
+
+
 def _edidict_to_dataframe(
     data_dict: Mapping[str, Any],
     *,
@@ -2469,6 +2532,7 @@ def save_mat(
     path: str | Path,
     *,
     key: str = "mt",
+    include_raw: bool = True,
     do_compression: bool = True,
 ) -> None:
     """
@@ -2537,11 +2601,17 @@ def save_mat(
 
     meta_safe = _sanitize_meta_for_mat(meta)
 
+    raw_struct: dict[str, Any] | None = None
+    if bool(include_raw) and not isinstance(data_dict, pd.DataFrame):
+        dd = _unwrap_edidict(data_dict)  # type: ignore[arg-type]
+        raw_struct = _sanitize_mapping_for_mat_struct(dd)
+
     out = {
         f"{key_safe}_table": table_struct,
         f"{key_safe}_table_cols": np.asarray(cols, dtype=object),
         f"{key_safe}_table_data": table_data,
         f"{key_safe}_meta": meta_safe,
+        f"{key_safe}_raw": raw_struct if raw_struct is not None else {},
         f"{key_safe}_colmap": colmap,
     }
 

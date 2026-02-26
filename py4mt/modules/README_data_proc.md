@@ -49,6 +49,47 @@ Writes a **classical table-style** EDI from an in-memory dict.
 
 ---
 
+
+---
+
+## MATLAB .mat export
+
+### `save_mat(data_dict, path, *, key="mt", include_raw=True, do_compression=True)`
+
+Writes a MATLAB ``.mat`` file containing:
+
+- ``<key>_table``: struct with one field per DataFrame column (e.g. ``freq``, ``Z_re_0``, ...)
+- ``<key>_table_cols``: ordered column-name list
+- ``<key>_table_data``: numeric matrix ``(n, ncol)`` (same order as ``*_table_cols``)
+- ``<key>_meta``: metadata (sanitized)
+- ``<key>_raw``: **raw EDI-style dict** (arrays/scalars/strings), for MATLAB users who prefer
+  to work with complex tensors like ``Z`` directly. Controlled by ``include_raw``.
+
+Example:
+
+```python
+import data_proc
+
+site = data_proc.load_edi("SITE.edi")
+data_proc.save_mat(site, "SITE.mat", include_raw=True)
+```
+
+MATLAB usage:
+
+```matlab
+S = load('SITE.mat');
+mt = S.mt_raw;        % raw dict-like struct
+f  = mt.freq;         % (n,1) or (1,n)
+Z  = mt.Z;            % (n,2,2) complex
+meta = S.mt_meta;     % metadata struct
+```
+
+Notes:
+
+- This uses ``scipy.io.savemat`` (MATLAB v7.3 / HDF5 MAT files are **not** written by SciPy).
+- For very large collections consider HDF5 (``save_hdf``) or NetCDF (``save_ncd``).
+
+
 ## Project-style NPZ (flat, single key)
 
 In this project, an “NPZ site file” is a compressed `*.npz` that contains
