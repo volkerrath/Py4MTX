@@ -56,14 +56,18 @@ print(titstrng + '\n\n')
 
 # WorkDir = '/home/vrath/ChatGPT_tests/'
 # WorkDir = '/home/vrath/Py4MTX/work/edis_2025/'
-WorkDir =  "/home/vrath/Py4MTX/py4mt/data/edi/"
+WorkDir =  "/home/vrath/Py4MTX/py4mt/data/edi/ann/edi_all/"
 
 if not os.path.isdir(WorkDir):
     print(' File: %s does not exist, but will be created' % WorkDir)
     os.mkdir(WorkDir)
 
-DataDir = WorkDir
-EdiDir = WorkDir # +'/orig/'
+DataDir = WorkDir+'/proc/'
+if not os.path.isdir(DataDir):
+    print(' File: %s does not exist, but will be created' % DataDir)
+    os.mkdir(DataDir)
+
+EdiDir = WorkDir +'/orig/'
 edi_files = get_edi_list(EdiDir, fullpath=True)
 ns = np.size(edi_files)
 
@@ -75,8 +79,8 @@ if Plot:
     pltargs = {'show_errors': True}
     PlotFormat = ['.png', '.pdf']
 # %%
-NameStr = '' #'_dd'
-CollName = 'ANN3_aniso'
+NameStr = '_proc' #'_dd'
+CollName = 'ANN_DJ_aniso'
 
 SetErrors = False
 Errors = {'Zerr': [0.1, 0.1, 0.1, 0.1],
@@ -106,6 +110,7 @@ if Rotate:
 
 all_data = []
 for edi in edi_files:
+    print('\n\nFound edi file: ',edi)
 
     edi_dict = load_edi(edi, drop_invalid_periods=True)
 
@@ -177,21 +182,26 @@ for edi in edi_files:
             path=DataDir + station + NameStr + '.edi',
             edi=edi_dict
         )
+        print('\n\nWrote file: ',path)
 
     if 'ncd' in OutFiles.lower():
         _ = save_ncd(
             path=DataDir + station + NameStr + '.ncd',
             data_dict=edi_dict)
+        print('\n\nWrote file: ',path)
 
     if 'hdf' in OutFiles.lower():
         _ = save_hdf(
             path=DataDir + station + NameStr + '.hdf',
             data_dict=edi_dict)
+        print('\n\nWrote file: ',path)
 
     if 'npz' in OutFiles.lower():
         _ = save_npz(
             path=DataDir + station + NameStr + '.npz',
             data_dict=edi_dict)
+        print('\n\nWrote file: ',path)
+
 
     if Plot:
         fig, axs = plt.subplots(3, 2, figsize=(8, 14), sharex=True)
