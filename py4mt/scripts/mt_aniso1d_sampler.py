@@ -77,10 +77,10 @@ print(titstrng+'\n\n')
 # -----------------------------------------------------------------------------
 # Example Model1 (keep/edit)
 # -----------------------------------------------------------------------------
-nlayer = 17
+nlayer = 8
 # Convention: last entry is the basement "thickness" (ignored by the recursion).
 # Keep it at 0.0 so that cumulative-depth plots remain well-defined.
-h_m = np.r_[np.logspace(np.log10(50.0), np.log10(500.0), nlayer - 1), 0.0]
+h_m = np.r_[np.logspace(np.log10(500.0), np.log10(3000.0), nlayer - 1), 0.0]
 
 # --- Simplified model template (preferred) -----------------------------------
 #
@@ -92,11 +92,11 @@ h_m = np.r_[np.logspace(np.log10(50.0), np.log10(500.0), nlayer - 1), 0.0]
 # The sampler normalizes to a canonical representation containing both rho and sigma fields.
 
 # Example: layered halfspace with constant isotropic background
-rho_bg = 100.0  # Ohm·m
+rho_bg = 300.0  # Ohm·m
 sigma_bg = 1.0 / rho_bg  # S/m
 
 Model0 = {
-    "prior_name": "model1_hfix",
+    "prior_name": "model1",
     "h_m": h_m,
     # Conductivity parameterization (sigma_min <= sigma_max)
     "sigma_min": sigma_bg * np.ones_like(h_m, dtype=float),
@@ -111,10 +111,11 @@ Model0 = {
 # USER CONFIG
 # =============================================================================
 
-MCMC_Data = "/home/vrath/Py4MTX/py4mt/data/edi/"
+# MCMC_Data = "/home/vrath/Py4MTX/py4mt/data/edi/"
+MCMC_Data =  "/home/vrath/Py4MTX/py4mt/data/edi/ann/mcmc/"
 
-INPUT_GLOB = MCMC_Data + "Ann*.npz"  # or *.npz
-OUTDIR = MCMC_Data + "pmc_met_hfix_pt-only"
+INPUT_GLOB = MCMC_Data + "*.npz"  # or *.npz
+
 MODEL_NPZ = MCMC_Data+"model0.npz"
 
 # Set MODEL_DIRECT = Model0 to use the in-file model template
@@ -122,16 +123,16 @@ MODEL_DIRECT = Model0
 MODEL_DIRECT_SAVE_PATH = MODEL_NPZ
 MODEL_DIRECT_OVERWRITE = True
 
-USE_PT = False #True
+USE_PT = True
 PT_ERR_NSIM = 200
-# Z_COMPS = ("xx", "xy", "yx", "yy")
-Z_COMPS = ()
+Z_COMPS = ("xx", "xy", "yx", "yy")
+# Z_COMPS = ("xy", "yx")
 PT_COMPS = ("xx", "xy", "yx", "yy")
 # Phase tensor is always recomputed from Z as P = inv(Re(Z)) @ Im(Z)
 
 PT_REG = 1e-8  # small diagonal regularization used inside PT gradients
 
-FIX_H = True
+FIX_H = False
 SAMPLE_LAST_THICKNESS = False
 
 # If True, sample a single global thickness scale H_m (total thickness except basement),
@@ -139,7 +140,7 @@ SAMPLE_LAST_THICKNESS = False
 # Constraint: requires FIX_H=True.
 SAMPLE_H_M = False
 
-LOG10_H_BOUNDS = (0.0, 5.0)        # per-layer thickness bounds (used only if FIX_H=False)
+LOG10_H_BOUNDS = (0.0, 3.0)        # per-layer thickness bounds (used only if FIX_H=False)
 LOG10_H_TOTAL_BOUNDS = (0.0, 5.0)  # total thickness H_m bounds (used only if SAMPLE_H_M=True)
 LOG10_RHO_BOUNDS = (-0., 5.0)
 STRIKE_BOUNDS_DEG = (-180.0, 180.0)
@@ -154,11 +155,11 @@ ENABLE_GRAD = False  # set True for NUTS/HMC (Z and optional PT)
 PRIOR_KIND = "default"  # NUTS-friendly soft priors
 PARAM_DOMAIN = "rho"  # "rho" (default) or "sigma"
 
-
+OUTDIR = MCMC_Data + "pmc_"+STEP_METHOD+"_h_zp"
 
 DRAWS = 100000
 TUNE = 10000
-CHAINS = 5
+CHAINS = 10
 CORES = CHAINS
 TARGET_ACCEPT = 0.85
 RANDOM_SEED = mcmc.generate_mcmc_seed() #int(time.time_ns()) #123
