@@ -165,7 +165,104 @@ TARGET_ACCEPT = 0.85
 RANDOM_SEED = mcmc.generate_mcmc_seed() #int(time.time_ns()) #123
 PROGRESSBAR = True
 
+# -----------------------------------------------------------------------------
+# Example pmc_dict presets (copy/paste into `pmc_dict` as needed)
+# -----------------------------------------------------------------------------
+# These presets are consistent with mcmc.sample_pymc() in this patched zip.
+# They use only keys that are either consumed by the wrapper
+#   - step_method, target_accept
+# or forwarded to pm.sample(**kwargs)
+#   - draws, tune, chains, cores, init, random_seed, progressbar, ...
+#
+# (a) 10-layer case, hfixed (FIX_H=True)
+pmc_dict_nuts_10layer_hfixed = {
+    "step_method": "nuts",
+    "draws": 4000,
+    "tune": 4000,
+    "chains": 4,
+    "cores": 4,
+    "target_accept": 0.90,
+    "init": "auto",  # (PyMC) initialization + mass-matrix adaptation strategy
+    "random_seed": None,
+    "progressbar": True,
+    "discard_tuned_samples": True,
+    "compute_convergence_checks": True,
+}
 
+pmc_dict_metropolis_10layer_hfixed = {
+    "step_method": "metropolis",
+    "draws": 120_000,
+    "tune": 30_000,
+    "chains": 4,
+    "cores": 4,
+    "random_seed": None,
+    "progressbar": True,
+    "discard_tuned_samples": True,
+    "compute_convergence_checks": True,
+}
+
+pmc_dict_demetropolisz_10layer_hfixed = {
+    "step_method": "demetropolisz",
+    "draws": 60_000,
+    "tune": 20_000,
+    "chains": 8,   # DE-style methods typically benefit from more chains
+    "cores": 8,
+    "random_seed": None,
+    "progressbar": True,
+    "discard_tuned_samples": True,
+    "compute_convergence_checks": True,
+}
+
+# (b) 6-layer case, sampling log(h_m) (FIX_H=False)
+pmc_dict_nuts_6layer_loghm = {
+    "step_method": "nuts",
+    "draws": 6000,
+    "tune": 6000,
+    "chains": 4,
+    "cores": 4,
+    "target_accept": 0.93,
+    "init": "auto",
+    "random_seed": None,
+    "progressbar": True,
+    "discard_tuned_samples": True,
+    "compute_convergence_checks": True,
+}
+
+pmc_dict_metropolis_6layer_loghm = {
+    "step_method": "metropolis",
+    "draws": 200_000,
+    "tune": 80_000,
+    "chains": 4,
+    "cores": 4,
+    "random_seed": None,
+    "progressbar": True,
+    "discard_tuned_samples": True,
+    "compute_convergence_checks": True,
+}
+
+pmc_dict_demetropolisz_6layer_loghm = {
+    "step_method": "demetropolisz",
+    "draws": 100_000,
+    "tune": 30_000,
+    "chains": 10,
+    "cores": 10,
+    "random_seed": None,
+    "progressbar": True,
+    "discard_tuned_samples": True,
+    "compute_convergence_checks": True,
+}
+
+# Collect all PyMC sampling controls in one dict (forwarded via **pmc_dict)
+pmc_dict = {
+    "draws": int(DRAWS),
+    "tune": int(TUNE),
+    "chains": int(CHAINS),
+    "cores": int(CORES),
+    "step_method": str(STEP_METHOD),
+    "target_accept": float(TARGET_ACCEPT),
+    "random_seed": int(RANDOM_SEED) if RANDOM_SEED is not None else None,
+    "progressbar": bool(PROGRESSBAR),
+}
 
 # One shared quantile setting (requested)
 QPAIRS = ((10, 90), (25, 75))
@@ -225,18 +322,7 @@ for f in in_files:
         param_domain=str(PARAM_DOMAIN),
     )
 
-    idata = mcmc.sample_pymc(
-        pm_model,
-        draws=int(DRAWS),
-        tune=int(TUNE),
-        chains=int(CHAINS),
-        cores=int(CORES),
-        step_method=str(STEP_METHOD),
-        target_accept=float(TARGET_ACCEPT),
-        random_seed=int(RANDOM_SEED) if RANDOM_SEED is not None else None,
-        progressbar=bool(PROGRESSBAR),
-    )
-
+    idata = mcmc.sample_pymc(pm_model, pmc_dict=pmc_dict)
     nc_path = Path(outdir) / f"{station}_pmc_{STEP_METHOD}.nc"
     sum_path = Path(outdir) / f"{station}_pmc_{STEP_METHOD}_summary.npz"
     mcmc.save_idata(idata, nc_path)
