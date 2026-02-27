@@ -48,7 +48,7 @@ from __future__ import annotations
 import inspect
 import os
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Any, Mapping
 
 import numpy as np
 
@@ -1559,6 +1559,7 @@ def build_pymc_model(
 def sample_pymc(
     model: "pm.Model",
     *,
+    pmc_dict: Optional[Mapping[str, Any]] = None,
     draws: int = 2000,
     tune: int = 1000,
     chains: int = 4,
@@ -1567,15 +1568,52 @@ def sample_pymc(
     target_accept: float = 0.85,
     random_seed: Optional[int] = None,
     progressbar: bool = True,
+    **pm_sample_kwargs: Any,
 ):
     """Run PyMC sampling.
+
+    This wrapper supports two ways to specify PyMC sampling settings:
+
+    1) Explicit keyword arguments (``draws``, ``tune``, ...)
+    2) A dict-like container (``pmc_dict``) that is merged into the sampling
+       keyword arguments and forwarded to :func:`pymc.sample` via ``**pmc_dict``.
+
+    Any keys present in ``pmc_dict`` override the explicit keyword arguments.
+
+    Notes
+    -----
+    The keys ``step_method`` and ``target_accept`` may be provided inside
+    ``pmc_dict``. They are consumed by this wrapper to configure the step
+    method (e.g. NUTS target acceptance) and are not forwarded to
+    :func:`pymc.sample`.
 
     Parameters
     ----------
     model : pm.Model
         Built model.
+    pmc_dict : Mapping[str, Any], optional
+        Dictionary of sampling parameters, to be forwarded to
+        :func:`pymc.sample`. Typical entries include ``draws``, ``tune``,
+        ``chains``, ``cores``, ``random_seed`` and ``progressbar`` and may
+        include any additional keyword arguments supported by
+        :func:`pymc.sample`.
+
+        The special keys ``step_method`` and ``target_accept`` are interpreted
+        by this wrapper.
+    draws, tune, chains, cores : int
+        Standard PyMC sampling controls (used if not overridden by
+        ``pmc_dict``).
     step_method : str
         One of {"demetropolis", "metropolis", "nuts", "hmc"}.
+    target_accept : float
+        Target acceptance probability for NUTS (used when
+        ``step_method='nuts'``).
+    random_seed : int, optional
+        Seed for deterministic sampling.
+    progressbar : bool
+        Show sampling progress.
+    **pm_sample_kwargs : Any
+        Additional keyword arguments forwarded to :func:`pymc.sample`.
 
     Returns
     -------
@@ -1585,7 +1623,33 @@ def sample_pymc(
     if pm is None:
         raise ImportError("PyMC not available.")
 
+    # Start with explicit defaults, then merge additional kwargs, then pmc_dict.
+    pmc_kwargs: Dict[str, Any] = dict(
+        draws=int(draws),
+        tune=int(tune),
+        chains=int(chains),
+        cores=int(cores),
+        random_seed=random_seed,
+        progressbar=bool(progressbar),
+        return_inferencedata=True,
+    )
+    pmc_kwargs.update(pm_sample_kwargs)
+
+    if pmc_dict is not None:
+        # Copy to avoid side effects on caller dict.
+        pmc_kwargs.update(dict(pmc_dict))
+
+    # Pull wrapper-specific keys if present
+    if "step_method" in pmc_kwargs:
+        step_method = str(pmc_kwargs.pop("step_method"))
+    if "target_accept" in pmc_kwargs:
+        target_accept = float(pmc_kwargs.pop("target_accept"))
+
+    # Ensure InferenceData unless explicitly disabled by caller.
+    pmc_kwargs.setdefault("return_inferencedata", True)
+
     step_method = str(step_method).lower().strip()
+
     with model:
         if step_method in ("demetropolis", "demetropolisz"):
             step = pm.DEMetropolisZ()
@@ -1597,16 +1661,11 @@ def sample_pymc(
             step = pm.HamiltonianMC()
         else:
             raise ValueError(f"Unknown step_method: {step_method}")
-        idata = pm.sample(
-            draws=int(draws),
-            tune=int(tune),
-            chains=int(chains),
-            cores=int(cores),
-            step=step,
-            random_seed=random_seed,
-            progressbar=bool(progressbar),
-            return_inferencedata=True,
-        )
+
+        # Do not allow overriding the step via pmc_kwargs.
+        pmc_kwargs.pop("step", None)
+
+        idata = pm.sample(step=step, **pmc_kwargs)
 
     return idata
 
