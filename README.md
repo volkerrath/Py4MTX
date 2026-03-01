@@ -31,7 +31,7 @@ The repository contains the following subdirectories:
  	Test data for various parts of Py4MTX.
 
 -  **py4mt/info** 
- 	Doumentation for the toolbox, and some useful documentation for python, 
+ 	Documentation for the toolbox, and some useful documentation for python, 
  	including the most important extensions, numpy, scipy, and matplotlib 
 
 Get your working copy via git from the command line:
