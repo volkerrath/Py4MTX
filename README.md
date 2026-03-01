@@ -179,7 +179,7 @@ investigation) it may be convenient to do a final normalization by the maximum v
 
 # Note: AI generated scripts
 
-Since this summer we have experimented with AI tools such as ChatGPT, CoPilot and Claude when implementing further scripts/modules, which turned out to be very useful. A note concerning AI (co)authorship has been added to the docstrings. Parts of these scripts have found their way into the modules later, keeping the docstrings.
+Since this summer we have experimented with AI tools such as ChatGPT, CoPilot and Claude when implementing further scripts/modules. This approach turned out to be very useful, though requiring thorough checks and test. A note concerning AI (co)authorship has been added to the docstrings. Parts of these scripts have found their way into the modules later, keeping the docstrings.
  
 
 # References
