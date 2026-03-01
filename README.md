@@ -26,8 +26,7 @@ The repository contains the following subdirectories:
 
 - 	**environment**
 	Contains conda environment description files, and some useful helper files for working 
-	within the conda environment. The current Py4MTX environments contain a lot of packages
-	which are not strictly necessary for running aempy, but useful for related geoscientific work.
+	within the conda environment.
 
 -  **py4mt/data**
  	Test data for various parts of Py4MTX.
