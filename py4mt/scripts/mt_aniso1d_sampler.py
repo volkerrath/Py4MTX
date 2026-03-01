@@ -24,6 +24,7 @@ Helpers are imported from `mcmc.py`
 Author: Volker Rath (DIAS)
 Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-12 (UTC)
 Gaussian prior option added with the help of Claude (Opus 4.6, Anthropic) on 2026-03-01 (UTC)
+Matérn covariance kernels added with the help of Claude (Opus 4.6, Anthropic) on 2026-03-01 (UTC)
 """
 
 from __future__ import annotations
@@ -178,8 +179,11 @@ PRIOR_STD = {
 # mcmc.build_gaussian_cov(nl, std_log10_rho_min=..., corr=...).
 #
 # Three correlation models are available (layer-index distance |i-j|):
-#   "exponential"  R_ij = exp( -|i-j| / L )         (Matérn-½)
-#   "gaussian"     R_ij = exp( -|i-j|^2 / (2 L^2) ) (squared-exponential)
+#   "exponential"  R_ij = exp( -|i-j| / L )         (Matérn ν=½)
+#   "matern"       General Matérn family              (ν selectable)
+#   "matern32"     R_ij = (1+√3 d/L) exp(-√3 d/L)   (Matérn ν=3/2)
+#   "matern52"     R_ij = (1+√5 d/L+5d²/3L²)exp(…)  (Matérn ν=5/2)
+#   "gaussian"     R_ij = exp( -|i-j|^2 / (2 L^2) ) (Matérn ν→∞)
 #   None / "identity"  R = I                          (independent layers)
 #
 # corr_length is given in layer-index units:
@@ -217,7 +221,38 @@ PRIOR_COV = None
 #     cross_corr=0.2,
 # )
 #
-# Example 4 — build your own correlation matrix and pass it directly:
+# Example 4 — Matérn ν=3/2 (once differentiable, good general-purpose choice):
+# PRIOR_COV = mcmc.build_gaussian_cov(
+#     nlayer,
+#     std_log10_rho_min=0.5,
+#     std_log10_rho_max=0.5,
+#     std_strike_deg=30.0,
+#     corr_model="matern32",
+#     corr_length=2.0,
+# )
+#
+# Example 5 — Matérn ν=5/2 (twice differentiable, very smooth):
+# PRIOR_COV = mcmc.build_gaussian_cov(
+#     nlayer,
+#     std_log10_rho_min=0.5,
+#     std_log10_rho_max=0.5,
+#     std_strike_deg=30.0,
+#     corr_model="matern52",
+#     corr_length=2.0,
+# )
+#
+# Example 6 — General Matérn with arbitrary ν (requires scipy):
+# PRIOR_COV = mcmc.build_gaussian_cov(
+#     nlayer,
+#     std_log10_rho_min=0.5,
+#     std_log10_rho_max=0.5,
+#     std_strike_deg=30.0,
+#     corr_model="matern",
+#     corr_length=2.0,
+#     nu=2.0,
+# )
+#
+# Example 7 — build your own correlation matrix and pass it directly:
 # R_block = mcmc.exponential_corr(nlayer, corr_length=2.0)
 # R_full  = mcmc.block_corr_matrix(nlayer, corr_within=R_block, cross_corr=0.1)
 # PRIOR_COV = mcmc.build_gaussian_cov(

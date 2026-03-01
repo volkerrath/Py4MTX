@@ -121,8 +121,9 @@ C = mcmc.build_gaussian_cov(
     std_log10_rho_max=1.0,
     std_strike_deg=45.0,
     corr=None,            # explicit (3*nl, 3*nl) correlation matrix
-    corr_model=None,      # or "exponential" / "gaussian"
+    corr_model=None,      # or "exponential" / "matern32" / "matern52" / "matern" / "gaussian"
     corr_length=1.0,      # in layer-index units (for corr_model)
+    nu=1.5,               # Matérn smoothness (only for corr_model="matern")
     cross_corr=0.0,       # inter-block cross-correlation (for corr_model)
 )
 ```
@@ -140,13 +141,26 @@ The correlation matrix R is determined by (in order of priority):
 
 ## Inter-layer correlation models
 
-Two geostatistically motivated correlation kernels are provided, based on the
-layer-index distance d = |i − j|:
+Five correlation kernels are provided, all based on the layer-index distance
+d = |i − j|. They form the Matérn family, parameterised by a smoothness
+parameter ν that controls the differentiability of the resulting random field:
 
-| Model | Function | Formula | Adj. layer corr (L=1) |
-|-------|----------|---------|----------------------|
-| Exponential (Matérn-½) | `exponential_corr(nl, L)` | exp(−d / L) | 0.37 |
-| Gaussian (squared-exp.) | `gaussian_corr(nl, L)` | exp(−d² / 2L²) | 0.61 |
+| Model | Function | ν | Formula | Adj. corr (L=1) |
+|-------|----------|---|---------|-----------------|
+| Exponential | `exponential_corr(nl, L)` | ½ | exp(−d / L) | 0.37 |
+| Matérn-3/2 | `matern_corr(nl, L, 1.5)` | 3⁄2 | (1 + √3 d/L) exp(−√3 d/L) | 0.56 |
+| Matérn-5/2 | `matern_corr(nl, L, 2.5)` | 5⁄2 | (1 + √5 d/L + 5d²/3L²) exp(−√5 d/L) | 0.60 |
+| General Matérn | `matern_corr(nl, L, ν)` | any | Bessel-based (see below) | — |
+| Gaussian (sq-exp) | `gaussian_corr(nl, L)` | ∞ | exp(−d² / 2L²) | 0.61 |
+
+**Smoothness interpretation:**
+
+- **ν = ½** — continuous but not differentiable (roughest; same as exponential)
+- **ν = 3⁄2** — once differentiable (good general-purpose default)
+- **ν = 5⁄2** — twice differentiable (very smooth)
+- **ν → ∞** — infinitely differentiable (same as squared-exponential / Gaussian)
+
+Higher ν produces smoother models with stronger correlation at short distances.
 
 The correlation length `L` is given in **layer-index units**:
 
@@ -154,8 +168,10 @@ The correlation length `L` is given in **layer-index units**:
 - `L = 3` — correlation extends across roughly 3 layers.
 - `L → ∞` — all layers perfectly correlated (approaches a 1-parameter model).
 
-Both functions return an `(nl, nl)` symmetric positive-definite matrix with
-unit diagonal.
+All functions return an `(nl, nl)` symmetric positive-definite matrix with
+unit diagonal. The closed-form expressions for ν = ½, 3⁄2, 5⁄2 avoid
+numerical issues; the general case uses `scipy.special.kv` and
+`scipy.special.gamma`.
 
 
 ## Block correlation assembly: `block_corr_matrix`
@@ -163,8 +179,10 @@ unit diagonal.
 ```python
 R = mcmc.block_corr_matrix(
     nl,
-    corr_within="exponential",   # or "gaussian", "identity", or an (nl,nl) array
+    corr_within="matern32",      # or "exponential", "gaussian", "matern",
+                                 #    "matern52", "identity", or an (nl,nl) array
     corr_length=2.0,
+    nu=1.5,                      # only for corr_within="matern"
     cross_corr=0.1,              # optional coupling between parameter blocks
 )
 ```
@@ -181,8 +199,9 @@ The result can be passed directly as the `corr` argument to
 
 | Function | Returns | Description |
 |----------|---------|-------------|
-| `exponential_corr(nl, L)` | (nl, nl) | Exponential kernel on index distance |
-| `gaussian_corr(nl, L)` | (nl, nl) | Squared-exponential kernel on index distance |
+| `exponential_corr(nl, L)` | (nl, nl) | Exponential kernel (Matérn ν=½) on index distance |
+| `gaussian_corr(nl, L)` | (nl, nl) | Squared-exponential kernel (Matérn ν→∞) on index distance |
+| `matern_corr(nl, L, nu)` | (nl, nl) | General Matérn kernel on index distance |
 | `block_corr_matrix(nl, ...)` | (3·nl, 3·nl) | Block-diagonal assembly with optional cross-correlation |
 | `_index_distance_matrix(nl)` | (nl, nl) | Raw \|i−j\| distance matrix (internal) |
 
@@ -256,3 +275,5 @@ load_site  →  ensure_phase_tensor  →  build_pymc_model  →  sample_pymc
 - **Author:** Volker Rath (DIAS)
 - **Created:** 2026-02-13 with the help of ChatGPT (GPT-5 Thinking)
 - **Gaussian prior option:** added 2026-03-01 with the help of Claude (Opus 4.6, Anthropic)
+- **Matérn covariance kernels:** added 2026-03-01 with the help of Claude (Opus 4.6, Anthropic)
+- **This README:** generated 2026-03-01 with the help of Claude (Opus 4.6, Anthropic)
