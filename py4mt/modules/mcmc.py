@@ -42,6 +42,7 @@ sensitivities from the forward model.
 Author: Volker Rath (DIAS)
 Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-13 (UTC)
 Gaussian prior option added with the help of Claude (Opus 4.6, Anthropic) on 2026-03-01 (UTC)
+Matérn covariance kernels added with the help of Claude (Opus 4.6, Anthropic) on 2026-03-01 (UTC)
 """
 
 from __future__ import annotations
@@ -80,6 +81,7 @@ _COMP_TO_IJ: Dict[str, Tuple[int, int]] = {
 Author: Volker Rath (DIAS)
 Copilot (version) and date
 Gaussian prior option added with the help of Claude (Opus 4.6, Anthropic) on 2026-03-01 (UTC)
+Matérn covariance kernels added with the help of Claude (Opus 4.6, Anthropic) on 2026-03-01 (UTC)
 """
 
 import secrets
@@ -1150,6 +1152,8 @@ def gaussian_corr(nl: int, corr_length: float) -> np.ndarray:
 
         R_{ij} = \\exp\\!\\bigl(-|i-j|^2 \\,/\\, (2\\,L^2)\\bigr)
 
+    This is the infinitely smooth limit (ν → ∞) of the Matérn family.
+
     Parameters
     ----------
     nl : int
@@ -1175,11 +1179,109 @@ def gaussian_corr(nl: int, corr_length: float) -> np.ndarray:
     return np.exp(-D**2 / (2.0 * float(corr_length)**2))
 
 
+def matern_corr(
+    nl: int,
+    corr_length: float,
+    nu: float = 1.5,
+) -> np.ndarray:
+    """Matérn correlation matrix based on layer-index distance.
+
+    .. math::
+
+        R_{ij} = \\frac{2^{1-\\nu}}{\\Gamma(\\nu)}
+                 \\Bigl(\\sqrt{2\\nu}\\,\\frac{|i-j|}{L}\\Bigr)^{\\nu}
+                 K_{\\nu}\\!\\Bigl(\\sqrt{2\\nu}\\,\\frac{|i-j|}{L}\\Bigr)
+
+    where *K*\\ :sub:`ν` is the modified Bessel function of the second kind.
+
+    Closed-form expressions are used for the three most common half-integer
+    orders, avoiding potential numerical issues with the general Bessel
+    evaluation:
+
+    - **ν = ½** (exponential):
+      ``R = exp(−d/L)``
+    - **ν = 3⁄2**:
+      ``R = (1 + √3 d/L) exp(−√3 d/L)``
+    - **ν = 5⁄2**:
+      ``R = (1 + √5 d/L + 5 d²/(3 L²)) exp(−√5 d/L)``
+
+    For arbitrary ν the general formula is evaluated via
+    :func:`scipy.special.kv` and :func:`scipy.special.gamma`.
+
+    Parameters
+    ----------
+    nl : int
+        Number of layers.
+    corr_length : float
+        Correlation length *in layer-index units*.
+    nu : float
+        Smoothness parameter (ν > 0).  Controls the differentiability of
+        the resulting random field:
+
+        - ν = 0.5 – continuous but not differentiable (exponential)
+        - ν = 1.5 – once differentiable (default; good general-purpose choice)
+        - ν = 2.5 – twice differentiable (very smooth)
+        - ν → ∞ – infinitely differentiable (squared-exponential / Gaussian)
+
+    Returns
+    -------
+    ndarray, shape (nl, nl)
+        Symmetric positive-definite correlation matrix with unit diagonal.
+
+    Raises
+    ------
+    ValueError
+        If ``corr_length <= 0`` or ``nu <= 0``.
+    """
+    if corr_length <= 0.0:
+        raise ValueError(f"corr_length must be > 0, got {corr_length}.")
+    if nu <= 0.0:
+        raise ValueError(f"nu must be > 0, got {nu}.")
+
+    L = float(corr_length)
+    D = _index_distance_matrix(nl)
+
+    # ---- Closed-form half-integer orders ------------------------------------
+    if np.isclose(nu, 0.5):
+        return np.exp(-D / L)
+
+    if np.isclose(nu, 1.5):
+        s3 = np.sqrt(3.0) * D / L
+        return (1.0 + s3) * np.exp(-s3)
+
+    if np.isclose(nu, 2.5):
+        s5 = np.sqrt(5.0) * D / L
+        return (1.0 + s5 + s5**2 / 3.0) * np.exp(-s5)
+
+    # ---- General case (requires scipy) --------------------------------------
+    try:
+        from scipy.special import kv as bessel_kv, gamma as gamma_fn
+    except ImportError as exc:
+        raise ImportError(
+            "scipy is required for Matérn kernels with arbitrary ν. "
+            "Use nu=0.5, 1.5, or 2.5 for closed-form evaluation without scipy."
+        ) from exc
+
+    arg = np.sqrt(2.0 * nu) * D / L
+    # Handle d = 0 separately (correlation = 1 by definition)
+    R = np.ones_like(D, dtype=float)
+    mask = D > 0.0
+    a = arg[mask]
+    prefactor = 2.0 ** (1.0 - nu) / gamma_fn(nu)
+    R[mask] = prefactor * (a ** nu) * bessel_kv(nu, a)
+
+    # Enforce exact unit diagonal and symmetry (may drift due to float ops)
+    np.fill_diagonal(R, 1.0)
+    R = 0.5 * (R + R.T)
+    return R
+
+
 def block_corr_matrix(
     nl: int,
     corr_within: np.ndarray | str = "identity",
     *,
     corr_length: float = 1.0,
+    nu: float = 1.5,
     cross_corr: float = 0.0,
 ) -> np.ndarray:
     """Assemble a (3*nl, 3*nl) block-structured correlation matrix.
@@ -1199,13 +1301,21 @@ def block_corr_matrix(
         Intra-block correlation structure.  Accepted strings:
 
         - ``"identity"`` – no inter-layer correlation (default).
-        - ``"exponential"`` – :func:`exponential_corr` with ``corr_length``.
-        - ``"gaussian"`` – :func:`gaussian_corr` with ``corr_length``.
+        - ``"exponential"`` – :func:`exponential_corr` with ``corr_length``
+          (equivalent to Matérn ν = ½).
+        - ``"gaussian"`` – :func:`gaussian_corr` with ``corr_length``
+          (equivalent to Matérn ν → ∞).
+        - ``"matern"`` – :func:`matern_corr` with ``corr_length`` and ``nu``.
+        - ``"matern32"`` – Matérn ν = 3⁄2 shorthand.
+        - ``"matern52"`` – Matérn ν = 5⁄2 shorthand.
 
         Alternatively, pass a pre-computed (nl, nl) correlation matrix.
     corr_length : float
         Correlation length in layer-index units (only used when
         ``corr_within`` is a string other than ``"identity"``).
+    nu : float
+        Matérn smoothness parameter (only used when ``corr_within="matern"``).
+        Default 1.5.
     cross_corr : float
         Uniform inter-block cross-correlation coefficient applied between
         every pair of parameter blocks.  Must satisfy ``|cross_corr| < 1``.
@@ -1234,10 +1344,17 @@ def block_corr_matrix(
             Rw = exponential_corr(nl, corr_length)
         elif name == "gaussian":
             Rw = gaussian_corr(nl, corr_length)
+        elif name == "matern":
+            Rw = matern_corr(nl, corr_length, nu=float(nu))
+        elif name == "matern32":
+            Rw = matern_corr(nl, corr_length, nu=1.5)
+        elif name == "matern52":
+            Rw = matern_corr(nl, corr_length, nu=2.5)
         else:
             raise ValueError(
                 f"Unknown corr_within model: {corr_within!r}. "
-                "Use 'identity', 'exponential', 'gaussian', or pass an (nl, nl) array."
+                "Use 'identity', 'exponential', 'gaussian', 'matern', "
+                "'matern32', 'matern52', or pass an (nl, nl) array."
             )
     else:
         Rw = np.asarray(corr_within, dtype=float)
@@ -1277,6 +1394,7 @@ def build_gaussian_cov(
     corr: Optional[np.ndarray] = None,
     corr_model: Optional[str] = None,
     corr_length: float = 1.0,
+    nu: float = 1.5,
     cross_corr: float = 0.0,
 ) -> np.ndarray:
     """Build a (3*nl, 3*nl) covariance matrix for the Gaussian prior.
@@ -1305,14 +1423,20 @@ def build_gaussian_cov(
         Shorthand for building a block-diagonal correlation matrix via
         :func:`block_corr_matrix`.  Accepted values:
 
-        - ``"exponential"`` – exponential (Matérn-½) kernel
-        - ``"gaussian"`` – squared-exponential kernel
+        - ``"exponential"`` – exponential (Matérn ν = ½) kernel
+        - ``"gaussian"`` – squared-exponential (Matérn ν → ∞) kernel
+        - ``"matern"`` – general Matérn kernel with smoothness ``nu``
+        - ``"matern32"`` – Matérn ν = 3⁄2
+        - ``"matern52"`` – Matérn ν = 5⁄2
 
-        Uses ``corr_length`` and ``cross_corr`` (see below).
+        Uses ``corr_length``, ``nu`` and ``cross_corr`` (see below).
         Ignored when ``corr`` is provided explicitly.
     corr_length : float
         Correlation length in layer-index units (only used with
         ``corr_model``).  Default 1.0.
+    nu : float
+        Matérn smoothness parameter (only used when
+        ``corr_model="matern"``).  Default 1.5.
     cross_corr : float
         Uniform cross-correlation between parameter blocks (only used with
         ``corr_model``).  Default 0.0 (blocks independent).
@@ -1331,6 +1455,14 @@ def build_gaussian_cov(
     Exponential inter-layer correlation with length 2:
 
     >>> C = build_gaussian_cov(8, corr_model="exponential", corr_length=2.0)
+
+    Matérn-3/2 inter-layer correlation:
+
+    >>> C = build_gaussian_cov(8, corr_model="matern32", corr_length=2.0)
+
+    General Matérn with ν = 2.0:
+
+    >>> C = build_gaussian_cov(8, corr_model="matern", corr_length=2.0, nu=2.0)
 
     Gaussian inter-layer correlation, with mild cross-parameter coupling:
 
@@ -1352,6 +1484,7 @@ def build_gaussian_cov(
             nl,
             corr_within=str(corr_model),
             corr_length=float(corr_length),
+            nu=float(nu),
             cross_corr=float(cross_corr),
         )
     else:

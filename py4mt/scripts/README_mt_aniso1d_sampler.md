@@ -145,8 +145,14 @@ selected via the `corr_model` keyword:
 | `corr_model` | Kernel | Formula (d = \|i−j\|) |
 |---------------|--------|----------------------|
 | `None` / `"identity"` | Independent layers | R = I |
-| `"exponential"` | Matérn-½ | exp(−d / L) |
-| `"gaussian"` | Squared-exponential | exp(−d² / 2L²) |
+| `"exponential"` | Matérn ν=½ | exp(−d / L) |
+| `"matern32"` | Matérn ν=3⁄2 | (1 + √3 d/L) exp(−√3 d/L) |
+| `"matern52"` | Matérn ν=5⁄2 | (1 + √5 d/L + 5d²/3L²) exp(−√5 d/L) |
+| `"matern"` | General Matérn | Bessel-based (ν via `nu` kwarg) |
+| `"gaussian"` | Matérn ν→∞ | exp(−d² / 2L²) |
+
+The smoothness parameter ν controls differentiability: ν = ½ is roughest,
+ν = 3⁄2 is a good general-purpose default, and ν → ∞ (Gaussian) is smoothest.
 
 The correlation length `L` (`corr_length`) is in layer-index units (L = 2 means
 correlation extends over ~2 layers).  An optional `cross_corr` parameter
@@ -161,6 +167,27 @@ PRIOR_COV = mcmc.build_gaussian_cov(
     std_strike_deg=30.0,
     corr_model="exponential",
     corr_length=2.0,
+)
+
+# Matérn ν=3/2 (once differentiable, good default)
+PRIOR_COV = mcmc.build_gaussian_cov(
+    nlayer,
+    std_log10_rho_min=0.5,
+    std_log10_rho_max=0.5,
+    std_strike_deg=30.0,
+    corr_model="matern32",
+    corr_length=2.0,
+)
+
+# General Matérn with arbitrary ν (requires scipy)
+PRIOR_COV = mcmc.build_gaussian_cov(
+    nlayer,
+    std_log10_rho_min=0.5,
+    std_log10_rho_max=0.5,
+    std_strike_deg=30.0,
+    corr_model="matern",
+    corr_length=2.0,
+    nu=2.0,
 )
 
 # Gaussian (squared-exp) correlation, length 3, with cross-parameter coupling
@@ -278,12 +305,14 @@ PRIOR_COV  = None
 
 ```python
 PRIOR_KIND = "gaussian"
+
+# Matérn ν=3/2 inter-layer correlation, length 2 layers
 PRIOR_COV  = mcmc.build_gaussian_cov(
     nlayer,
     std_log10_rho_min=0.5,
     std_log10_rho_max=0.5,
     std_strike_deg=30.0,
-    corr_model="exponential",     # or "gaussian"
+    corr_model="matern32",        # or "exponential", "matern52", "matern", "gaussian"
     corr_length=2.0,              # in layer-index units
     cross_corr=0.0,               # no cross-parameter coupling
 )
@@ -295,3 +324,5 @@ PRIOR_COV  = mcmc.build_gaussian_cov(
 - **Author:** Volker Rath (DIAS)
 - **Created:** 2026-02-12 with the help of ChatGPT (GPT-5 Thinking)
 - **Gaussian prior option:** added 2026-03-01 with the help of Claude (Opus 4.6, Anthropic)
+- **Matérn covariance kernels:** added 2026-03-01 with the help of Claude (Opus 4.6, Anthropic)
+- **This README:** generated 2026-03-01 with the help of Claude (Opus 4.6, Anthropic)
