@@ -175,7 +175,8 @@ investigation) it may be convenient to do a final normalization by the maximum v
 
 # Coming soon:
  -	**Probabilistic MT inversion for anisotropic 1-D layers [7]**
- -	**Randomize-Then-Optimize Uncertainty for 3-D MT [8, 9] with FEMTIC [10]**  
+ -	**Randomize-Then-Optimize Uncertainty for 3-D MT [8, 9] with FEMTIC [10]**
+ -	**Jacobian/Sensitivity-related functionality for 3-D anisotropic inversion [11]** 
 
 
 # Note: AI generated scripts
@@ -185,22 +186,25 @@ Since this summer we have experimented with AI tools such as ChatGPT, CoPilot an
 
 # References
 
-_[1] M. Deal and G. Nolet (1996) “Nullspace shuttles", Geophysical Journal International, 124, 372–380_
+_[1] M. Deal, G. Nolet (1996) “Nullspace shuttles", Geophysical Journal International, 124, 372–380_
 
-_[2] G. Muñoz and V. Rath (2006) “Beyond smooth inversion: the use of nullspace projection for the exploration of non-uniqueness in MT", Geophysical Journal International, 164, 301–311, 2006, doi:10.1111/j.1365-246X.2005.02825.x_
+_[2] G. Muñoz, V. Rath (2006) “Beyond smooth inversion: the use of nullspace projection for the exploration of non-uniqueness in MT", Geophysical Journal International, 164, 301–311, 2006, doi:10.1111/j.1365-246X.2005.02825.x_
 
-_[3] G. D. Egbert and A. Kelbert (2012) “Computational recipes for electromagnetic inverse problems”, Geophysical Journal International, 189, 251–267, doi:10.1111/j.1365-246X.2011.05347.x_
+_[3] G. D. Egbert, A. Kelbert (2012) “Computational recipes for electromagnetic inverse problems”, Geophysical Journal International, 189, 251–267, doi:10.1111/j.1365-246X.2011.05347.x_
 
-_[4] A. Kelbert, N. Meqbel, G. D. Egbert, and K. Tandon (2014) “ModEM: A Modular System for Inversion of Electromagnetic Geophysical Data”, Computers & Geosciences, 66, 440–53, doi:10.1016/j.cageo.2014.01.010_
+_[4] A. Kelbert, N. Meqbel, G. D. Egbert, K. Tandon (2014) “ModEM: A Modular System for Inversion of Electromagnetic Geophysical Data”, Computers & Geosciences, 66, 440–53, doi:10.1016/j.cageo.2014.01.010_
 
 _[5] A. Tarantola (2005) "Inverse Problem Theory and Methods for Model Parameter Estimation", SIAM, Philadelphia PA, USA_
      
-_[6] K. Schwalenberg, V. Rath, and V. Haak (2002) “Sensitivity studies applied to a two-dimensional resistivity model from the Central Andes”, Geophysical Journal International, 150, doi:10.1046/j.1365-246X.2002.01734.x_
+_[6] K. Schwalenberg, V. Rath, V. Haak (2002) “Sensitivity studies applied to a two-dimensional resistivity model from the Central Andes”, Geophysical Journal International, 150, doi:10.1046/j.1365-246X.2002.01734.x_
   
-_[7] J. Pek and F.A.M Santos (2002) "Magnetotelluric impedances and parametric sensitivities for 1-D anisotropic layered media", Comput Geosci, 28, doi:10.1016/S0098-3004(02)00014-6_
+_[7] J. Pek, F.A.M Santos (2002) "Magnetotelluric impedances and parametric sensitivities for 1-D anisotropic layered media", Comput Geosci, 28, doi:10.1016/S0098-3004(02)00014-6_
   
-_[8] D. Blatter, M. Morzfeld, K. Key, K. and S. Constable (2022) "Uncertainty quantification for regularized inversion of electromagnetic geophysical data—Part I: motivation and theory", Geophysical Journal International, 231, 1057–1074. doi:10.1093/gji/ggac241_
+_[8] D. Blatter, M. Morzfeld, K. Key, S. Constable (2022) "Uncertainty quantification for regularized inversion of electromagnetic geophysical data—Part I: motivation and theory", Geophysical Journal International, 231, 1057–1074. doi:10.1093/gji/ggac241_
 
-_[9] D. Blatter, M. Morzfeld, K. Key, and S. Constable (2022) "Uncertainty quantification for regularized inversion of electromagnetic geophysical data – Part II: application in 1-D and 2-D problems", Geophysical Journal International, 231, 1075–1095. doi:10.1093/gji/ggac242_
+_[9] D. Blatter, M. Morzfeld, K. Key, S. Constable (2022) "Uncertainty quantification for regularized inversion of electromagnetic geophysical data – Part II: application in 1-D and 2-D problems", Geophysical Journal International, 231, 1075–1095. doi:10.1093/gji/ggac242_
 
-_[10] H. Song, P. Yu, Y. Usui, M. Uyeshima, D. Diba, and L. Zhang, (2025) "Three-dimensional Magnetotelluric Inversion based on a Data Space variant of Akaike’s Bayesian Information Criterion", Geophysics, doi:10.1190/geo-2025-0233_
+_[10] H. Song, P. Yu, Y. Usui, M. Uyeshima, D. Diba, L. Zhang, (2025) "Three-dimensional Magnetotelluric Inversion based on a Data Space variant of Akaike’s Bayesian Information Criterion", Geophysics, doi:10.1190/geo-2025-0233_
+
+_[11] W. Kong, H. Tan, C. Lin, M. Unsworth, B. Lee, M. Peng, M. Wang, M., T. Tong (2021) "Three-dimensional inversion of magnetotelluric data for a resistivity model with arbitrary anisotropy", Journal of Geophysical Research: Solid Earth, doi:https://doi.org/10.1029/2020JB020562_
+ 
