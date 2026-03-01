@@ -183,6 +183,8 @@ investigation) it may be convenient to do a final normalization by the maximum v
 Since this summer we have experimented with AI tools such as ChatGPT, CoPilot and Claude when implementing further scripts/modules, which turned out to be very useful. A note concerning AI (co)authorship has been added to the docstrings. Parts of these scripts have found their way into the modules later, keeping the docstrings.
  
 
+# References
+
 _[1] M. Deal and G. Nolet (1996) “Nullspace shuttles", Geophysical Journal International, 124, 372–380_
 
 _[2] G. Muñoz and V. Rath (2006) “Beyond smooth inversion: the use of nullspace projection for the exploration of non-uniqueness in MT", Geophysical Journal International, 164, 301–311, 2006, doi:10.1111/j.1365-246X.2005.02825.x_
