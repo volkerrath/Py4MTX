@@ -23,6 +23,7 @@ Helpers are imported from `mcmc.py`
 
 Author: Volker Rath (DIAS)
 Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-12 (UTC)
+Gaussian prior option added with the help of Claude (Opus 4.6, Anthropic) on 2026-03-01 (UTC)
 """
 
 from __future__ import annotations
@@ -155,15 +156,84 @@ ENABLE_GRAD = False  # set True for NUTS/HMC (Z and optional PT)
 PRIOR_KIND = "default"  # NUTS-friendly soft priors
 PARAM_DOMAIN = "rho"  # "rho" (default) or "sigma"
 
+# ---- Gaussian prior (used only when PRIOR_KIND = "gaussian") ----------------
+#
+# Option A: per-parameter standard deviations (diagonal covariance).
+# Keys are: "log10_rho" (shared), "log10_rho_min", "log10_rho_max",
+#           "strike_deg", "log10_h", "log10_H".
+# Scalars are broadcast to all layers.  Missing keys get a default.
+#
+PRIOR_STD = {
+    "log10_rho": 1.0,       # std on log10(rho) for both rho_min and rho_max
+    "strike_deg": 45.0,     # std on strike (degrees)
+    "log10_h": 0.5,         # std on log10(thickness) (only when FIX_H=False)
+    "log10_H": 0.5,         # std on log10(H_m) (only when SAMPLE_H_M=True)
+}
+
+# Option B: full covariance matrix.  Uncomment and set to a (3*nlayer, 3*nlayer)
+# array to enable correlated Gaussian priors.  Parameter ordering:
+#   [log10_rho_min(0..nl-1), log10_rho_max(0..nl-1), strike_deg(0..nl-1)]
+# When set, PRIOR_COV overrides the rho/strike entries in PRIOR_STD.
+# You can build it from per-parameter stds + a correlation matrix with
+# mcmc.build_gaussian_cov(nl, std_log10_rho_min=..., corr=...).
+#
+# Three correlation models are available (layer-index distance |i-j|):
+#   "exponential"  R_ij = exp( -|i-j| / L )         (Matérn-½)
+#   "gaussian"     R_ij = exp( -|i-j|^2 / (2 L^2) ) (squared-exponential)
+#   None / "identity"  R = I                          (independent layers)
+#
+# corr_length is given in layer-index units:
+#   L = 1  → adjacent-layer correlation ≈ 0.37 (exponential) or 0.61 (Gaussian)
+#   L = 3  → correlation extends over ~3 layers
+#
+PRIOR_COV = None
+# Example 1 — independent layers (equivalent to PRIOR_STD alone):
+# PRIOR_COV = mcmc.build_gaussian_cov(
+#     nlayer,
+#     std_log10_rho_min=1.0,
+#     std_log10_rho_max=1.0,
+#     std_strike_deg=45.0,
+# )
+#
+# Example 2 — exponential inter-layer correlation, length 2 layers:
+# PRIOR_COV = mcmc.build_gaussian_cov(
+#     nlayer,
+#     std_log10_rho_min=0.5,
+#     std_log10_rho_max=0.5,
+#     std_strike_deg=30.0,
+#     corr_model="exponential",
+#     corr_length=2.0,
+# )
+#
+# Example 3 — Gaussian (squared-exponential) correlation, length 3, with
+#             mild cross-parameter coupling:
+# PRIOR_COV = mcmc.build_gaussian_cov(
+#     nlayer,
+#     std_log10_rho_min=0.5,
+#     std_log10_rho_max=0.5,
+#     std_strike_deg=30.0,
+#     corr_model="gaussian",
+#     corr_length=3.0,
+#     cross_corr=0.2,
+# )
+#
+# Example 4 — build your own correlation matrix and pass it directly:
+# R_block = mcmc.exponential_corr(nlayer, corr_length=2.0)
+# R_full  = mcmc.block_corr_matrix(nlayer, corr_within=R_block, cross_corr=0.1)
+# PRIOR_COV = mcmc.build_gaussian_cov(
+#     nlayer,
+#     std_log10_rho_min=0.5,
+#     std_log10_rho_max=0.5,
+#     std_strike_deg=30.0,
+#     corr=R_full,
+# )
+# One shared quantile setting (requested)
+QPAIRS = ((10, 90), (25, 75))
+# QPAIRS accepts either quantiles in [0,1] or percentiles in [0,100].
 OUTDIR = MCMC_Data + "pmc_"+STEP_METHOD+"_h_zp"
 
-DRAWS = 100000
-TUNE = 10000
-CHAINS = 10
-CORES = CHAINS
-TARGET_ACCEPT = 0.85
-RANDOM_SEED = mcmc.generate_mcmc_seed() #int(time.time_ns()) #123
-PROGRESSBAR = True
+
+PROGRESSBAR = False
 
 # -----------------------------------------------------------------------------
 # Example pmc_dict presets (copy/paste into `pmc_dict` as needed)
@@ -253,20 +323,8 @@ pmc_dict_demetropolisz_6layer_loghm = {
 }
 
 # Collect all PyMC sampling controls in one dict (forwarded via **pmc_dict)
-pmc_dict = {
-    "draws": int(DRAWS),
-    "tune": int(TUNE),
-    "chains": int(CHAINS),
-    "cores": int(CORES),
-    "step_method": str(STEP_METHOD),
-    "target_accept": float(TARGET_ACCEPT),
-    "random_seed": int(RANDOM_SEED) if RANDOM_SEED is not None else None,
-    "progressbar": bool(PROGRESSBAR),
-}
+pmc_dict =pmc_dict_demetropolisz_10layer_hfixed
 
-# One shared quantile setting (requested)
-QPAIRS = ((10, 90), (25, 75))
-# QPAIRS accepts either quantiles in [0,1] or percentiles in [0,100].
 outdir = mcmc.ensure_dir(OUTDIR)
 in_files = mcmc.glob_inputs(INPUT_GLOB)
 if not in_files:
@@ -288,6 +346,17 @@ nl = int(np.asarray(model0["h_m"]).size)
 if SAMPLE_H_M and (not FIX_H):
     raise ValueError("SAMPLE_H_M=True requires FIX_H=True (keep relative layer thicknesses fixed).")
 
+dict_demetropolisz_6layer_loghm = {
+    "step_method": "demetropolisz",
+    "draws": 100_000,
+    "tune": 30_000,
+    "chains": 10,
+    "cores": 10,
+    "random_seed": mcmc.generate_mcmc_seed(), #int(time.time_ns()) #123None,
+    "progressbar": True,
+    "discard_tuned_samples": True,
+    "compute_convergence_checks": True,
+}
 spec = mcmc.ParamSpec(
     nl=nl,
     fix_h=bool(FIX_H),
@@ -320,6 +389,8 @@ for f in in_files:
         enable_grad=bool(ENABLE_GRAD),
         prior_kind=str(PRIOR_KIND),
         param_domain=str(PARAM_DOMAIN),
+        prior_std=PRIOR_STD if PRIOR_KIND.lower() == "gaussian" else None,
+        prior_cov=PRIOR_COV if PRIOR_KIND.lower() == "gaussian" else None,
     )
 
     idata = mcmc.sample_pymc(pm_model, pmc_dict=pmc_dict)

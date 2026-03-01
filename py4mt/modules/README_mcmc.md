@@ -1,333 +1,258 @@
-# mcmc.py — Bayesian inversion (PyMC) for simplified anisotropic 1‑D MT
+# `mcmc.py` — PyMC utilities for anisotropic 1-D MT inversion
 
-This mini-package contains a **script-style** PyMC workflow for layered 1‑D MT
-impedance inversion with optional phase-tensor likelihood:
+## Purpose
 
-- **`mcmc.py`** — PyMC model builder + sampling + compact summaries
-- **`mcmc_viz.py`** — axes-based plotting helpers for the summaries / posteriors
-- **`mt_aniso1d_sampler.py`** — non-CLI driver script (edit USER CONFIG and run)
-- **`aniso.py`** — forward model (see `README_aniso.md`)
-- **`data_proc.py`** — EDI/NPZ I/O and MT derived quantities (see `README_data_proc.md`)
+`mcmc.py` is the core library module for Bayesian inversion of magnetotelluric
+(MT) data using a simplified anisotropic 1-D earth model. It is designed to be
+imported by script-style drivers such as `mt_aniso1d_sampler.py` (sampling) and
+`mt_aniso1d_plot.py` (plotting).
 
-The current inversion code uses a **simplified per-layer parameterization**:
+The module provides everything between reading observed data and writing
+posterior summaries: model I/O and normalisation, data packing, forward-model
+wrappers (black-box and gradient-enabled), prior specification, PyMC model
+construction, sampling, and post-processing.
 
-- `h_m` (m) — thicknesses (last entry is a basement placeholder)
-- `rho_min` (Ω·m) — minimum horizontal resistivity
-- `rho_max` (Ω·m) — maximum horizontal resistivity (enforced `rho_max >= rho_min`)
-- `strike_deg` (deg) — anisotropy strike angle
-
-Two boolean masks are supported:
-
-- `is_iso` — isotropic layer (forces `rho_min == rho_max`, strike ignored)
-- `is_fix` — fixed layer (parameters not sampled)
-
----
 
 ## Dependencies
 
-Sampling:
+| Package | Role |
+|---------|------|
+| **numpy** | Array operations (always required) |
+| **pymc** | Probabilistic model and sampling (required at sampling time) |
+| **pytensor** | Tensor graph, `wrap_py`, custom `Op` (required at sampling time) |
+| **arviz** | InferenceData I/O (required for saving / summary) |
+| **aniso** | Local forward model (`aniso1d_impedance_sens_simple`) |
+| **data_proc** | Site I/O helpers provided by the Py4MTX codebase |
 
-- `numpy`
-- `pymc` (v5+)
-- `pytensor` (backend)
-- `arviz` (InferenceData I/O, diagnostics)
+PyMC, PyTensor, and ArviZ are imported lazily so that lightweight tasks (model
+normalisation, packing) can run without them.
 
-Plotting:
 
-- `matplotlib` (via `mcmc_viz.py`)
+## Per-layer parameterisation
 
----
+Each layer is described by four physical quantities plus two boolean flags:
 
-## Input site format (flat dict)
+| Symbol | Array key | Unit | Description |
+|--------|-----------|------|-------------|
+| h | `h_m` | m | Layer thickness (last entry = basement placeholder, usually 0) |
+| ρ_min | `rho_min` | Ω·m | Minimum horizontal resistivity |
+| ρ_max | `rho_max` | Ω·m | Maximum horizontal resistivity |
+| α | `strike_deg` | ° | Anisotropy strike angle |
+| — | `is_iso` | bool | If `True`, enforce ρ_max = ρ_min (isotropic layer) |
+| — | `is_fix` | bool | If `True`, freeze this layer at the starting model |
 
-All functions in `mcmc.py` operate on a **flat** Python dict (this is the
-`data_dict` used throughout the project):
+The module always stores **both** resistivity (`rho_min`, `rho_max`) and
+conductivity (`sigma_min`, `sigma_max`) representations internally, regardless
+of which domain is used for sampling.
 
-Required keys:
 
-- `freq` — `(n,)` frequency array in **Hz**
-- `Z` — `(n,2,2)` complex impedance tensor
+## Likelihood implementations
 
-Optional uncertainty keys:
+Two forward-model wrappers are available, selected by the `enable_grad` flag
+in `build_pymc_model`:
 
-- `Z_err` — `(n,2,2)` float (std or var; interpreted by `err_kind` if present)
-- `err_kind` — `"std"` or `"var"` (optional; if missing, code assumes std-like use)
+1. **Black-box** (`enable_grad=False`, default) — wraps the NumPy forward
+   model with `pytensor.wrap_py`.  Very robust; no derivatives.  Use with
+   `DEMetropolisZ` or `Metropolis`.
 
-Optional phase tensor keys (only needed if you already have them):
+2. **Gradient-enabled** (`enable_grad=True`) — custom PyTensor `Op`
+   (`_ForwardPackedOp`) whose `grad()` method returns vector–Jacobian products
+   computed from analytic impedance sensitivities.  Supports NUTS / HMC for
+   impedance likelihoods and, optionally, phase-tensor components.
 
-- `P` — `(n,2,2)` float
-- `P_err` — `(n,2,2)` float
+The likelihood is always a multivariate Normal on the packed observation vector
+(impedance Re/Im pairs, optionally followed by phase-tensor components).
 
-### Loading sites (`.edi` or `.npz`)
 
-Use:
+## Prior kinds
+
+The `prior_kind` argument of `build_pymc_model` selects the prior family:
+
+### `"default"` (alias `"soft"`)
+
+NUTS-friendly bounded transforms via sigmoid mappings, with an explicit
+anisotropy-ratio parameter biased toward isotropy (δ near 0).  No hard walls
+on log10(ρ); bounds are expressed as soft sigmoid saturation.
+
+### `"uniform"`
+
+Broad `pm.Uniform` priors on two independent log10 fields; the ordered pair
+(ρ_min ≤ ρ_max) is enforced by taking element-wise min/max.
+
+### `"gaussian"`
+
+**Added 2026-03-01.** Multivariate or independent Normal prior centred on the
+starting model with a user-prescribed covariance.  Two sub-modes:
+
+| Mode | Trigger | Prior variables |
+|------|---------|-----------------|
+| **Diagonal** | `prior_std` dict, `prior_cov=None` | Independent `pm.Normal` per parameter |
+| **Full covariance** | `prior_cov` array (shape 3·nl × 3·nl) | Single `pm.MvNormal` over `[log10_ρ_min, log10_ρ_max, strike]` |
+
+In both cases the ordering ρ_min ≤ ρ_max is enforced after sampling via
+`pt.minimum` / `pt.maximum`.
+
+**`prior_std` keys** (all optional; missing keys receive defaults):
+
+| Key | Applies to | Default |
+|-----|-----------|---------|
+| `"log10_rho"` | Both log10(ρ_min) and log10(ρ_max) | 1.0 |
+| `"log10_rho_min"` | log10(ρ_min) only (overrides shared key) | — |
+| `"log10_rho_max"` | log10(ρ_max) only (overrides shared key) | — |
+| `"strike_deg"` | Strike (degrees) | 45.0 |
+| `"log10_h"` | log10(h) per layer (when `fix_h=False`) | 0.5 |
+| `"log10_H"` | log10(H_m) global scale (when `sample_H_m=True`) | 0.5 |
+
+Every value can be a scalar (broadcast to all layers) or a per-layer array.
+
+**`prior_cov`** is the full covariance matrix on the stacked vector
+`[log10_ρ_min(0..nl-1), log10_ρ_max(0..nl-1), strike(0..nl-1)]`.
+When provided, it takes precedence over the resistivity/strike entries in
+`prior_std`; thickness priors (`log10_h`, `log10_H`) are still controlled
+independently via `prior_std`.
+
+
+## Convenience helper: `build_gaussian_cov`
 
 ```python
-import mcmc
-
-site = mcmc.load_site("SITE.edi")    # via data_proc.load_edi(...)
-site = mcmc.load_site("SITE.npz")    # NPZ with a single key "data_dict"
-```
-
-For project-style NPZ storage (single key only):
-
-```python
-import data_proc
-
-data_proc.save_npz(site, "SITE.npz")     # stores under key="data_dict"
-site = data_proc.load_npz("SITE.npz")    # returns the dict
-```
-
----
-
-## Phase tensor handling
-
-If you set `use_pt=True` in `build_pymc_model`, the sampler expects `P` (and
-optionally `P_err`) in the site dict.
-
-Recommended: always call
-
-```python
-site = mcmc.ensure_phase_tensor(site, nsim=200)
-```
-
-Notes:
-
-- `ensure_phase_tensor` **always recomputes** the phase tensor from the observed `Z` using  
-  `P = inv(Re(Z)) @ Im(Z)`.
-- If `P_err` is missing and `Z_err` exists, a **Monte‑Carlo** estimate of `P_err` is attempted.
-
----
-
-## Starting model dictionary (`model0`)
-
-A valid starting model is a plain dict with (at minimum):
-
-```python
-model0 = dict(
-    h_m=...,          # (nl,) meters, last entry is basement placeholder
-    rho_min=...,      # (nl,) Ω·m
-    rho_max=...,      # (nl,) Ω·m
-    strike_deg=...,   # (nl,) deg
-    is_iso=...,       # (nl,) bool  (optional; defaults False)
-    is_fix=...,       # (nl,) bool  (optional; defaults False)
+C = mcmc.build_gaussian_cov(
+    nl,
+    std_log10_rho_min=1.0,
+    std_log10_rho_max=1.0,
+    std_strike_deg=45.0,
+    corr=None,            # explicit (3*nl, 3*nl) correlation matrix
+    corr_model=None,      # or "exponential" / "gaussian"
+    corr_length=1.0,      # in layer-index units (for corr_model)
+    cross_corr=0.0,       # inter-block cross-correlation (for corr_model)
 )
 ```
 
-You may also provide conductivities instead of resistivities:
+Constructs the covariance as `C = diag(σ) @ R @ diag(σ)` where σ is the
+stacked standard-deviation vector and R is the correlation matrix.
 
-- `sigma_min`, `sigma_max` (S/m) + `strike_deg`
+The correlation matrix R is determined by (in order of priority):
 
-`mcmc.normalize_model(model0)` converts everything into a canonical form
-containing both rho and sigma fields and guarantees consistent array lengths.
+1. `corr` — an explicit `(3*nl, 3*nl)` matrix.
+2. `corr_model` — one of `"exponential"` or `"gaussian"`, built automatically
+   via `block_corr_matrix` using `corr_length` and `cross_corr`.
+3. If neither is given, R = I (fully independent parameters).
 
----
 
-## Thickness sampling strategies (`h_m` and `H_m`)
+## Inter-layer correlation models
 
-In the 1‑D layered forward model, `h_m` is the array of layer thicknesses in meters.
-The **last entry** (`h_m[-1]`) is typically a *basement / half‑space placeholder* and
-is **ignored by the impedance recursion** (it can be set to 0). As a consequence,
-the data usually do **not** constrain `h_m[-1]`, so sampling it is often not meaningful.
+Two geostatistically motivated correlation kernels are provided, based on the
+layer-index distance d = |i − j|:
 
-The sampler supports **three** thickness strategies (plus an optional switch for
-the basement placeholder):
+| Model | Function | Formula | Adj. layer corr (L=1) |
+|-------|----------|---------|----------------------|
+| Exponential (Matérn-½) | `exponential_corr(nl, L)` | exp(−d / L) | 0.37 |
+| Gaussian (squared-exp.) | `gaussian_corr(nl, L)` | exp(−d² / 2L²) | 0.61 |
 
-### 1) Keep all layer thicknesses fixed
+The correlation length `L` is given in **layer-index units**:
 
-Use this if you want to invert only resistivities / anisotropy angles at fixed interfaces.
+- `L = 1` — significant correlation only between immediate neighbours.
+- `L = 3` — correlation extends across roughly 3 layers.
+- `L → ∞` — all layers perfectly correlated (approaches a 1-parameter model).
+
+Both functions return an `(nl, nl)` symmetric positive-definite matrix with
+unit diagonal.
+
+
+## Block correlation assembly: `block_corr_matrix`
 
 ```python
-spec = mcmc.ParamSpec(
-    nl=nl,
-    fix_h=True,
-    sample_H_m=False,
+R = mcmc.block_corr_matrix(
+    nl,
+    corr_within="exponential",   # or "gaussian", "identity", or an (nl,nl) array
+    corr_length=2.0,
+    cross_corr=0.1,              # optional coupling between parameter blocks
 )
 ```
 
-In `mt_aniso1d_sampler.py` this corresponds to:
+Assembles a `(3*nl, 3*nl)` correlation matrix with three diagonal blocks (one
+per parameter family: ρ_min, ρ_max, strike) sharing the same `corr_within`
+kernel and uniform off-diagonal cross-correlation `cross_corr` between blocks.
 
-```python
-FIX_H = True
-SAMPLE_H_M = False
+The result can be passed directly as the `corr` argument to
+`build_gaussian_cov`, or to `build_pymc_model` via `prior_cov`.
+
+
+## Low-level helpers
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `exponential_corr(nl, L)` | (nl, nl) | Exponential kernel on index distance |
+| `gaussian_corr(nl, L)` | (nl, nl) | Squared-exponential kernel on index distance |
+| `block_corr_matrix(nl, ...)` | (3·nl, 3·nl) | Block-diagonal assembly with optional cross-correlation |
+| `_index_distance_matrix(nl)` | (nl, nl) | Raw \|i−j\| distance matrix (internal) |
+
+
+## Thickness sampling modes
+
+Controlled by `ParamSpec.fix_h` and `ParamSpec.sample_H_m`:
+
+| `fix_h` | `sample_H_m` | Behaviour |
+|---------|-------------|-----------|
+| `True` | `False` | Thicknesses frozen at starting model |
+| `True` | `True` | Single global scale H_m sampled; relative profile fixed |
+| `False` | `False` | Per-layer log10(h) sampled (last layer optionally fixed) |
+
+
+## Key public functions
+
+| Function | Description |
+|----------|-------------|
+| `normalize_model(model)` | Validate and normalise a model dict (ensures both ρ and σ fields) |
+| `model_from_direct(model)` | Convert an in-script template to a model dict |
+| `save_model_npz` / `load_model_npz` | Persist / load model dicts as NPZ |
+| `load_site(path)` | Load an MT site from `.edi` or `.npz` |
+| `ensure_phase_tensor(site)` | Compute P = inv(Re(Z)) @ Im(Z) and optionally bootstrap P_err |
+| `build_gaussian_cov(nl, ...)` | Build a covariance matrix for the Gaussian prior |
+| `ParamSpec(...)` | Container for inversion bounds and flags |
+| `build_pymc_model(site, spec, ...)` | Construct the PyMC model for one site |
+| `sample_pymc(model, pmc_dict=...)` | Run PyMC sampling with a flexible dict-based interface |
+| `save_idata(idata, path)` | Write ArviZ InferenceData to NetCDF |
+| `build_summary_npz(...)` | Extract quantile envelopes from the posterior |
+| `save_summary_npz(summary, path)` | Write summary dict to NPZ |
+
+### Data-packing utilities
+
+| Function | Description |
+|----------|-------------|
+| `pack_Z_vector(Z, comps)` | Pack complex Z into a real Re/Im vector |
+| `pack_Z_sigma(Z_err, comps)` | Pack Z uncertainties to match `pack_Z_vector` |
+| `pack_P_vector(P, comps)` | Pack real phase-tensor components |
+| `pack_P_sigma(P_err, comps)` | Pack P uncertainties |
+| `phase_tensor_from_Z(Z)` | Compute P = inv(Re(Z)) @ Im(Z) |
+| `phase_tensor_dP_from_dZ(Z, dZ)` | Phase-tensor derivatives from impedance derivatives |
+
+
+## Component labels
+
+Impedance and phase-tensor components are addressed by short string labels
+mapped to (i,j) matrix indices:
+
+| Label | Aliases | Index |
+|-------|---------|-------|
+| `"xx"` | `"zxx"`, `"pxx"` | (0, 0) |
+| `"xy"` | `"zxy"`, `"pxy"` | (0, 1) |
+| `"yx"` | `"zyx"`, `"pyx"` | (1, 0) |
+| `"yy"` | `"zyy"`, `"pyy"` | (1, 1) |
+
+
+## Sampling workflow (high level)
+
+```
+load_site  →  ensure_phase_tensor  →  build_pymc_model  →  sample_pymc
+                                                               ↓
+                                                          save_idata
+                                                               ↓
+                                                       build_summary_npz  →  save_summary_npz
 ```
 
-### 2) Sample a single global thickness scale `H_m` (recommended when relative layering is trusted)
 
-This keeps the *relative* thickness profile of `model0["h_m"]` but allows the whole
-section to be stretched/compressed by sampling a single value:
+## Provenance
 
-- `H_m = sum(h_m[:-1])` (total thickness excluding basement placeholder)
-- `h_m[:-1] = h_rel * H_m`, where `h_rel = h_m0[:-1] / sum(h_m0[:-1])`
-
-```python
-spec = mcmc.ParamSpec(
-    nl=nl,
-    fix_h=True,
-    sample_H_m=True,
-    log10_H_bounds=(0.0, 5.0),  # bounds for log10(H_m [m])
-)
-```
-
-In `mt_aniso1d_sampler.py`:
-
-```python
-FIX_H = True
-SAMPLE_H_M = True
-LOG10_H_TOTAL_BOUNDS = (0.0, 5.0)  # bounds for log10(H_m [m])
-```
-
-**Constraint:** `sample_H_m=True` requires `fix_h=True` (you either sample per‑layer
-`h_m` *or* the single global scale `H_m`).
-
-### 3) Sample per‑layer thicknesses (log10‑space, bounded)
-
-This samples `log10(h_m[k])` for each layer thickness (meters), within `log10_h_bounds`.
-
-```python
-spec = mcmc.ParamSpec(
-    nl=nl,
-    fix_h=False,
-    sample_last_thickness=False,  # recommended default
-    log10_h_bounds=(0.0, 5.0),    # bounds for log10(h_m[k] [m])
-)
-```
-
-In `mt_aniso1d_sampler.py`:
-
-```python
-FIX_H = False
-LOG10_H_BOUNDS = (0.0, 5.0)  # bounds for log10(h_m[k] [m])
-```
-
-### Optional: also sample the basement thickness placeholder `h_m[-1]`
-
-If you really want to sample `h_m[-1]` as well (again: usually **OFF**), enable:
-
-```python
-spec = mcmc.ParamSpec(
-    nl=nl,
-    fix_h=False,
-    sample_last_thickness=True,
-)
-```
-
-In `mt_aniso1d_sampler.py`:
-
-```python
-SAMPLE_LAST_THICKNESS = True
-```
-
----
-
-## Building and sampling a PyMC model
-
-```python
-import mcmc
-
-spec = mcmc.ParamSpec(
-    nl=nl,
-    fix_h=True,                 # keep per-layer thicknesses fixed
-    sample_H_m=False,           # optional global thickness scale
-    log10_rho_bounds=(0.0, 5.0),
-    strike_bounds_deg=(-180, 180),
-)
-
-pm_model, info = mcmc.build_pymc_model(
-    site,
-    spec=spec,
-    model0=model0,
-    use_pt=True,
-    z_comps=("xx","xy","yx","yy"),
-    pt_comps=("xx","xy","yx","yy"),
-    prior_kind="default",
-    param_domain="rho",         # or "sigma"
-    enable_grad=False,          # set True only if you want NUTS/HMC
-)
-
-idata = mcmc.sample_pymc(
-    pm_model,
-    draws=10_000,
-    tune=1_000,
-    chains=8,
-    cores=8,
-    step_method="demetropolis", # "nuts" only when enable_grad=True
-)
-```
-
-### Step methods
-
-`sample_pymc(..., step_method=...)` accepts:
-
-- `"demetropolis"` (default, robust for black-box likelihood)
-- `"metropolis"`
-- `"nuts"` (requires `enable_grad=True`)
-- `"hmc"` (requires `enable_grad=True`)
-
----
-
-## Outputs
-
-### 1) InferenceData (`*.nc`)
-
-```python
-mcmc.save_idata(idata, "SITE_pmc.nc")
-```
-
-### 2) Compact summary (`*_pmc_summary.npz`)
-
-```python
-summary = mcmc.build_summary_npz(
-    station="SITE",
-    site=site,
-    idata=idata,
-    spec=spec,
-    model0=model0,
-    info=info,
-    qpairs=((10,90),(25,75)),   # percentiles or quantiles
-)
-mcmc.save_summary_npz(summary, "SITE_pmc_summary.npz")
-```
-
-The summary NPZ is designed for plotting vertical profiles. Typical keys:
-
-- `periods_s` — `(n,)`
-- `h_m0`, `rho_min0`, `rho_max0`, `strike0` — starting model arrays
-- `z_m` — `(nl,)` depth-to-interface array (m), derived from the reference thickness
-- `q` — quantile grid used for envelopes (includes 0.5)
-- `rho_min_q`, `rho_max_q`, `strike_q` — `(nq,nl)` quantiles
-- `sigma_min_q`, `sigma_max_q` — `(nq,nl)` quantiles
-- optional: `z_m_q` (interface depth quantiles) and `H_m_q` (global thickness scale)
-
----
-
-## Plotting (three-panel profiles)
-
-`mcmc_viz.py` is **axes-based**; the calling script creates the figure.
-
-```python
-import matplotlib.pyplot as plt
-import mcmc_viz as mv
-
-s = mv.load_summary_npz("SITE_pmc_summary.npz")
-idata = mv.open_idata("SITE_pmc.nc")
-
-fig, axs = plt.subplots(3, 1, figsize=(8, 8))
-
-mv.plot_paramset_threepanel(
-    axs,
-    summary=s,
-    idata=idata,
-    param_domain="rho",
-    param_set="minmax",         # or "max_anifac"
-    qpairs=((0.1,0.9),(0.25,0.75)),
-)
-
-fig.tight_layout()
-plt.show()
-```
-
----
-
-Author: Volker Rath (DIAS)  
-Updated with the help of ChatGPT (GPT-5.2 Thinking) on 2026-02-14 (UTC)
+- **Author:** Volker Rath (DIAS)
+- **Created:** 2026-02-13 with the help of ChatGPT (GPT-5 Thinking)
+- **Gaussian prior option:** added 2026-03-01 with the help of Claude (Opus 4.6, Anthropic)

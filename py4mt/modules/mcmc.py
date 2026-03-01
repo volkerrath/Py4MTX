@@ -41,6 +41,7 @@ sensitivities from the forward model.
 
 Author: Volker Rath (DIAS)
 Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-13 (UTC)
+Gaussian prior option added with the help of Claude (Opus 4.6, Anthropic) on 2026-03-01 (UTC)
 """
 
 from __future__ import annotations
@@ -78,6 +79,7 @@ _COMP_TO_IJ: Dict[str, Tuple[int, int]] = {
 """
 Author: Volker Rath (DIAS)
 Copilot (version) and date
+Gaussian prior option added with the help of Claude (Opus 4.6, Anthropic) on 2026-03-01 (UTC)
 """
 
 import secrets
@@ -1084,6 +1086,282 @@ class _ForwardPackedVJPOp(Op):  # pragma: no cover (depends on pytensor runtime)
         outputs[3][0] = np.asarray(gstr, dtype=float)
 
 # -----------------------------------------------------------------------------
+# Gaussian prior helpers
+# -----------------------------------------------------------------------------
+
+def _index_distance_matrix(nl: int) -> np.ndarray:
+    """Return the (nl, nl) matrix of absolute index differences |i - j|.
+
+    This is used as the "distance" between layers when building
+    geostatistically motivated correlation structures for the Gaussian
+    prior.  Layer indices run 0 … nl-1, so the maximum distance is nl-1.
+
+    Parameters
+    ----------
+    nl : int
+        Number of layers.
+
+    Returns
+    -------
+    ndarray, shape (nl, nl)
+        ``D[i, j] = |i - j|``.
+    """
+    idx = np.arange(nl, dtype=float)
+    return np.abs(idx[:, None] - idx[None, :])
+
+
+def exponential_corr(nl: int, corr_length: float) -> np.ndarray:
+    """Exponential (Matérn-½) correlation matrix based on layer-index distance.
+
+    .. math::
+
+        R_{ij} = \\exp\\!\\bigl(-|i-j| \\,/\\, L\\bigr)
+
+    Parameters
+    ----------
+    nl : int
+        Number of layers.
+    corr_length : float
+        Correlation length *in layer-index units*.  A value of 1.0 means that
+        adjacent layers have correlation exp(-1) ≈ 0.37.  Larger values yield
+        smoother (more correlated) models; in the limit L → ∞ the matrix
+        approaches the all-ones matrix (perfect correlation).
+
+    Returns
+    -------
+    ndarray, shape (nl, nl)
+        Symmetric positive-definite correlation matrix with unit diagonal.
+
+    Raises
+    ------
+    ValueError
+        If ``corr_length <= 0``.
+    """
+    if corr_length <= 0.0:
+        raise ValueError(f"corr_length must be > 0, got {corr_length}.")
+    D = _index_distance_matrix(nl)
+    return np.exp(-D / float(corr_length))
+
+
+def gaussian_corr(nl: int, corr_length: float) -> np.ndarray:
+    """Gaussian (squared-exponential) correlation matrix based on layer-index distance.
+
+    .. math::
+
+        R_{ij} = \\exp\\!\\bigl(-|i-j|^2 \\,/\\, (2\\,L^2)\\bigr)
+
+    Parameters
+    ----------
+    nl : int
+        Number of layers.
+    corr_length : float
+        Correlation length *in layer-index units*.  A value of 1.0 means that
+        adjacent layers have correlation exp(-0.5) ≈ 0.61.  Larger values
+        yield smoother models.
+
+    Returns
+    -------
+    ndarray, shape (nl, nl)
+        Symmetric positive-definite correlation matrix with unit diagonal.
+
+    Raises
+    ------
+    ValueError
+        If ``corr_length <= 0``.
+    """
+    if corr_length <= 0.0:
+        raise ValueError(f"corr_length must be > 0, got {corr_length}.")
+    D = _index_distance_matrix(nl)
+    return np.exp(-D**2 / (2.0 * float(corr_length)**2))
+
+
+def block_corr_matrix(
+    nl: int,
+    corr_within: np.ndarray | str = "identity",
+    *,
+    corr_length: float = 1.0,
+    cross_corr: float = 0.0,
+) -> np.ndarray:
+    """Assemble a (3*nl, 3*nl) block-structured correlation matrix.
+
+    The three parameter blocks are
+    ``[log10_rho_min, log10_rho_max, strike_deg]``, each of size ``nl``.
+
+    Within each block the layers are correlated according to
+    ``corr_within``; between blocks an optional uniform cross-correlation
+    ``cross_corr`` is applied.
+
+    Parameters
+    ----------
+    nl : int
+        Number of layers.
+    corr_within : ndarray (nl, nl) or str
+        Intra-block correlation structure.  Accepted strings:
+
+        - ``"identity"`` – no inter-layer correlation (default).
+        - ``"exponential"`` – :func:`exponential_corr` with ``corr_length``.
+        - ``"gaussian"`` – :func:`gaussian_corr` with ``corr_length``.
+
+        Alternatively, pass a pre-computed (nl, nl) correlation matrix.
+    corr_length : float
+        Correlation length in layer-index units (only used when
+        ``corr_within`` is a string other than ``"identity"``).
+    cross_corr : float
+        Uniform inter-block cross-correlation coefficient applied between
+        every pair of parameter blocks.  Must satisfy ``|cross_corr| < 1``.
+        Default 0 (blocks are independent).
+
+    Returns
+    -------
+    ndarray, shape (3*nl, 3*nl)
+        Full correlation matrix suitable for passing as the ``corr``
+        argument of :func:`build_gaussian_cov`.
+
+    Notes
+    -----
+    When ``cross_corr != 0`` the off-diagonal blocks are
+
+        ``R_off = cross_corr * sqrt(R_block_a) @ sqrt(R_block_b)``
+
+    using the matrix square root, but since all three blocks share the same
+    ``corr_within`` matrix this simplifies to ``cross_corr * R_within``.
+    """
+    if isinstance(corr_within, str):
+        name = corr_within.lower().strip()
+        if name == "identity":
+            Rw = np.eye(nl, dtype=float)
+        elif name == "exponential":
+            Rw = exponential_corr(nl, corr_length)
+        elif name == "gaussian":
+            Rw = gaussian_corr(nl, corr_length)
+        else:
+            raise ValueError(
+                f"Unknown corr_within model: {corr_within!r}. "
+                "Use 'identity', 'exponential', 'gaussian', or pass an (nl, nl) array."
+            )
+    else:
+        Rw = np.asarray(corr_within, dtype=float)
+        if Rw.shape != (nl, nl):
+            raise ValueError(f"corr_within must have shape ({nl},{nl}), got {Rw.shape}.")
+
+    cc = float(cross_corr)
+    if abs(cc) >= 1.0:
+        raise ValueError(f"|cross_corr| must be < 1, got {cc}.")
+
+    n = 3 * nl
+    R = np.zeros((n, n), dtype=float)
+
+    # Diagonal blocks
+    for b in range(3):
+        s = b * nl
+        R[s:s+nl, s:s+nl] = Rw
+
+    # Off-diagonal blocks
+    if cc != 0.0:
+        Roff = cc * Rw
+        for b1 in range(3):
+            for b2 in range(3):
+                if b1 != b2:
+                    s1, s2 = b1 * nl, b2 * nl
+                    R[s1:s1+nl, s2:s2+nl] = Roff
+
+    return R
+
+
+def build_gaussian_cov(
+    nl: int,
+    *,
+    std_log10_rho_min: float | np.ndarray = 1.0,
+    std_log10_rho_max: float | np.ndarray = 1.0,
+    std_strike_deg: float | np.ndarray = 45.0,
+    corr: Optional[np.ndarray] = None,
+    corr_model: Optional[str] = None,
+    corr_length: float = 1.0,
+    cross_corr: float = 0.0,
+) -> np.ndarray:
+    """Build a (3*nl, 3*nl) covariance matrix for the Gaussian prior.
+
+    This is a convenience function for the common case where you prescribe
+    per-parameter standard deviations and an optional correlation matrix.
+
+    The stacked parameter vector follows the convention
+    ``[log10_rho_min(0..nl-1), log10_rho_max(0..nl-1), strike_deg(0..nl-1)]``.
+
+    Parameters
+    ----------
+    nl : int
+        Number of layers.
+    std_log10_rho_min : float or (nl,)
+        Standard deviation(s) for log10(rho_min).
+    std_log10_rho_max : float or (nl,)
+        Standard deviation(s) for log10(rho_max).
+    std_strike_deg : float or (nl,)
+        Standard deviation(s) for strike (degrees).
+    corr : ndarray, shape (3*nl, 3*nl), optional
+        Explicit correlation matrix.  If provided, ``corr_model`` is ignored.
+        If ``None`` *and* ``corr_model`` is ``None``, the identity is used
+        (fully independent parameters).
+    corr_model : str, optional
+        Shorthand for building a block-diagonal correlation matrix via
+        :func:`block_corr_matrix`.  Accepted values:
+
+        - ``"exponential"`` – exponential (Matérn-½) kernel
+        - ``"gaussian"`` – squared-exponential kernel
+
+        Uses ``corr_length`` and ``cross_corr`` (see below).
+        Ignored when ``corr`` is provided explicitly.
+    corr_length : float
+        Correlation length in layer-index units (only used with
+        ``corr_model``).  Default 1.0.
+    cross_corr : float
+        Uniform cross-correlation between parameter blocks (only used with
+        ``corr_model``).  Default 0.0 (blocks independent).
+
+    Returns
+    -------
+    ndarray, shape (3*nl, 3*nl)
+        Covariance matrix ``C = diag(std) @ R @ diag(std)``.
+
+    Examples
+    --------
+    Diagonal (independent) covariance:
+
+    >>> C = build_gaussian_cov(8, std_log10_rho_min=0.5)
+
+    Exponential inter-layer correlation with length 2:
+
+    >>> C = build_gaussian_cov(8, corr_model="exponential", corr_length=2.0)
+
+    Gaussian inter-layer correlation, with mild cross-parameter coupling:
+
+    >>> C = build_gaussian_cov(8, corr_model="gaussian", corr_length=3.0,
+    ...                        cross_corr=0.2)
+    """
+    n = 3 * nl
+    s_rmin = np.broadcast_to(np.asarray(std_log10_rho_min, dtype=float), (nl,)).copy()
+    s_rmax = np.broadcast_to(np.asarray(std_log10_rho_max, dtype=float), (nl,)).copy()
+    s_str = np.broadcast_to(np.asarray(std_strike_deg, dtype=float), (nl,)).copy()
+    std_vec = np.concatenate([s_rmin, s_rmax, s_str])
+
+    if corr is not None:
+        R = np.asarray(corr, dtype=float)
+        if R.shape != (n, n):
+            raise ValueError(f"corr must have shape ({n},{n}), got {R.shape}.")
+    elif corr_model is not None:
+        R = block_corr_matrix(
+            nl,
+            corr_within=str(corr_model),
+            corr_length=float(corr_length),
+            cross_corr=float(cross_corr),
+        )
+    else:
+        R = np.eye(n, dtype=float)
+
+    D = np.diag(std_vec)
+    return D @ R @ D
+
+
+# -----------------------------------------------------------------------------
 # Parameter specification
 # -----------------------------------------------------------------------------
 
@@ -1181,6 +1459,8 @@ def build_pymc_model(
     enable_grad: bool = False,
     prior_kind: str = "default",
     param_domain: str = "rho",
+    prior_std: Optional[Dict[str, np.ndarray]] = None,
+    prior_cov: Optional[np.ndarray] = None,
     dh_rel: float = 1e-6,
 ) -> Tuple["pm.Model", Dict]:
     """Build a PyMC model for one site using the simplified forward model.
@@ -1215,19 +1495,56 @@ def build_pymc_model(
           the overall depth scale to adjust, set ``spec.fix_h=True`` and
           ``spec.sample_H_m=True`` to sample a single scalar ``H_m``.
     prior_kind : str
-        One of ``{"default","uniform"}``.
+        One of ``{"default","uniform","gaussian"}``.
 
         ``"default"`` uses smooth bounded transforms and an explicit anisotropy
         ratio parameter to encourage near-isotropy while enforcing
         ``rho_max >= rho_min``.
 
         ``"uniform"`` reproduces the older broad uniform sampling behaviour.
+
+        ``"gaussian"`` uses a multivariate or independent Normal prior centred
+        on the starting model. The covariance is specified via ``prior_std``
+        (per-parameter standard deviations → diagonal covariance) or
+        ``prior_cov`` (full covariance matrix on the stacked parameter vector
+        ``[log10_rho_min, log10_rho_max, strike_deg]``, length 3*nl, or
+        ``[log10_rho_min, log10_rho_max, strike_deg, log10_h]``, length 4*nl
+        when sampling thicknesses).
+        The ordering convention (rho_min, rho_max) is always given in
+        resistivity units regardless of ``param_domain`` (the conversion is
+        handled internally).
     param_domain : str
         One of ``{"rho","sigma"}``.
 
         - ``"rho"`` samples resistivities (Ohm·m).
         - ``"sigma"`` samples conductivities (S/m) and converts to resistivities
           for the forward model.
+    prior_std : dict, optional
+        Per-parameter standard deviations for the ``"gaussian"`` prior.
+        Recognised keys (all optional; missing keys get a sensible default):
+
+        - ``"log10_rho"``  : float or (nl,) – std for log10(rho_min) **and**
+          log10(rho_max). Scalar is broadcast.
+        - ``"log10_rho_min"`` : float or (nl,) – std for log10(rho_min) only.
+        - ``"log10_rho_max"`` : float or (nl,) – std for log10(rho_max) only.
+        - ``"strike_deg"`` : float or (nl,) – std for strike [degrees].
+        - ``"log10_h"``    : float or (nl,) – std for log10(h_m) (only when
+          thicknesses are sampled).
+        - ``"log10_H"``    : float – std for log10(H_m) (only when
+          ``sample_H_m=True``).
+
+        If both ``prior_std`` and ``prior_cov`` are given, ``prior_cov`` takes
+        precedence for the joint block; ``prior_std`` entries for parameters
+        outside the covariance block still apply (e.g. ``log10_H``).
+
+    prior_cov : ndarray, optional
+        Full covariance matrix for the ``"gaussian"`` prior on the stacked
+        parameter vector.  Shape must be ``(3*nl, 3*nl)`` when thicknesses are
+        fixed or ``(4*nl, 4*nl)`` when thicknesses are sampled.  Parameter
+        ordering is
+        ``[log10_rho_min(0..nl-1), log10_rho_max(0..nl-1),
+          strike_deg(0..nl-1), log10_h(0..nl-1)]``
+        (the last block is present only when ``fix_h=False``).
     dh_rel : float
         Relative perturbation used for the thickness derivative inside the
         forward sensitivities (only relevant when sampling/inverting ``h_m``).
@@ -1365,8 +1682,72 @@ def build_pymc_model(
             # Expose delta for diagnostics/plots
             pm.Deterministic("log10_delta", log10_delta_free)
 
+        elif prior_kind_ == "gaussian":
+            # ---------------------------------------------------------------
+            # Gaussian prior: N(mu=starting_model, Sigma=prescribed_cov)
+            # ---------------------------------------------------------------
+            # Compute means from the starting model in the chosen domain
+            if domain_ == "rho":
+                mu_low = np.log10(np.maximum(rmin0, tiny))   # log10(rho_min)
+                mu_high = np.log10(np.maximum(rmax0, tiny))  # log10(rho_max)
+            else:
+                mu_low = np.log10(np.maximum(1.0 / np.maximum(rmax0, tiny), tiny))   # log10(sigma_min)
+                mu_high = np.log10(np.maximum(1.0 / np.maximum(rmin0, tiny), tiny))  # log10(sigma_max)
+
+            # Resolve per-parameter standard deviations
+            _pstd = dict(prior_std) if prior_std is not None else {}
+
+            def _broadcast_std(key, alt_key=None, default=1.0):
+                """Look up a std value from prior_std, broadcast to (nl,)."""
+                val = _pstd.get(key, None)
+                if val is None and alt_key is not None:
+                    val = _pstd.get(alt_key, None)
+                if val is None:
+                    val = default
+                arr = np.broadcast_to(np.asarray(val, dtype=float), (nl,)).copy()
+                return arr
+
+            if prior_cov is not None:
+                # Full covariance on stacked vector [log10_low, log10_high, strike]
+                # The caller provides the covariance in *resistivity* convention.
+                # If domain is sigma, the means are already converted; the
+                # covariance structure is the caller's responsibility.
+                Cov = np.asarray(prior_cov, dtype=float)
+                expected_dim = 3 * nl
+                if Cov.shape != (expected_dim, expected_dim):
+                    raise ValueError(
+                        f"prior_cov must have shape ({expected_dim},{expected_dim}) "
+                        f"for 3*nl resistivity-block parameters (got {Cov.shape})."
+                    )
+                mu_vec = np.concatenate([mu_low, mu_high, str0])
+                theta_gauss = pm.MvNormal(
+                    "theta_gauss", mu=mu_vec, cov=Cov, shape=(expected_dim,)
+                )
+                log10_low_free = theta_gauss[:nl]
+                log10_high_free = theta_gauss[nl:2*nl]
+                # Strike is handled below (extracted from theta_gauss)
+                _gauss_strike_from_cov = theta_gauss[2*nl:3*nl]
+            else:
+                # Independent Normal priors (diagonal covariance)
+                std_low = _broadcast_std("log10_rho_min", alt_key="log10_rho", default=1.0)
+                std_high = _broadcast_std("log10_rho_max", alt_key="log10_rho", default=1.0)
+
+                log10_low_free = pm.Normal(
+                    "log10_low_gauss", mu=mu_low, sigma=std_low, shape=(nl,)
+                )
+                log10_high_free = pm.Normal(
+                    "log10_high_gauss", mu=mu_high, sigma=std_high, shape=(nl,)
+                )
+                _gauss_strike_from_cov = None  # strike handled below independently
+
+            # Enforce ordering: log10_low <= log10_high
+            log10_low_sorted = pt.minimum(log10_low_free, log10_high_free)
+            log10_high_sorted = pt.maximum(log10_low_free, log10_high_free)
+            log10_low_free = log10_low_sorted
+            log10_high_free = log10_high_sorted
+
         else:
-            raise ValueError(f"Unknown prior_kind: {prior_kind!r} (use 'default' or 'uniform').")
+            raise ValueError(f"Unknown prior_kind: {prior_kind!r} (use 'default', 'uniform', or 'gaussian').")
 
         # Apply isotropy: low == high
         log10_high_free = pt.switch(is_iso_data, log10_low_free, log10_high_free)
@@ -1412,7 +1793,16 @@ def build_pymc_model(
 
 
 # Strike
-        if prior_kind_ in ("default", "soft"):
+        if prior_kind_ == "gaussian" and prior_cov is not None:
+            # Strike was already sampled jointly with rho via MvNormal
+            strike_free = _gauss_strike_from_cov
+        elif prior_kind_ == "gaussian":
+            # Independent Gaussian strike prior
+            std_strike = _broadcast_std("strike_deg", default=45.0)
+            strike_free = pm.Normal(
+                "strike_deg_gauss", mu=str0, sigma=std_strike, shape=(nl,)
+            )
+        elif prior_kind_ in ("default", "soft"):
             strike_un = pm.Normal("strike_deg_un", mu=0.0, sigma=1.0, shape=(nl,))
             strike_free = lo_s + (hi_s - lo_s) * pm.math.sigmoid(strike_un)
         else:
@@ -1445,7 +1835,12 @@ def build_pymc_model(
             h_rel[:-1] = h_rel[:-1] / H0
 
             lo_H, hi_H = spec.log10_H_bounds
-            if prior_kind_ in ("default", "soft"):
+            if prior_kind_ == "gaussian":
+                log10_H0 = float(np.log10(max(H0, np.finfo(float).tiny)))
+                _pstd_H = dict(prior_std) if prior_std is not None else {}
+                std_H = float(_pstd_H.get("log10_H", 0.5))
+                log10_H = pm.Normal("log10_H_gauss", mu=log10_H0, sigma=std_H)
+            elif prior_kind_ in ("default", "soft"):
                 log10_H_un = pm.Normal("log10_H_un", mu=0.0, sigma=1.0)
                 log10_H = lo_H + (hi_H - lo_H) * pm.math.sigmoid(log10_H_un)
             else:
@@ -1456,7 +1851,16 @@ def build_pymc_model(
 
         else:
             # Sample per-layer thicknesses
-            if prior_kind_ in ("default", "soft"):
+            if prior_kind_ == "gaussian":
+                # Gaussian prior on log10(h), centred on starting model
+                log10_h0 = np.log10(np.maximum(h0, np.finfo(float).tiny))
+                _pstd_h = dict(prior_std) if prior_std is not None else {}
+                std_h_val = _pstd_h.get("log10_h", 0.5)
+                std_h = np.broadcast_to(np.asarray(std_h_val, dtype=float), (nl,)).copy()
+                log10_h_free = pm.Normal(
+                    "log10_h_gauss", mu=log10_h0, sigma=std_h, shape=(nl,)
+                )
+            elif prior_kind_ in ("default", "soft"):
                 log10_h_un = pm.Normal("log10_h_un", mu=0.0, sigma=1.0, shape=(nl,))
                 log10_h_free = lo_h + (hi_h - lo_h) * pm.math.sigmoid(log10_h_un)
             else:
