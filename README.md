@@ -201,4 +201,4 @@ _[8] D. Blatter, M. Morzfeld, K. Key, K. and S. Constable (2022) "Uncertainty qu
 
 _[9] D. Blatter, M. Morzfeld, K. Key, and S. Constable (2022) "Uncertainty quantification for regularized inversion of electromagnetic geophysical data – Part II: application in 1-D and 2-D problems", Geophysical Journal International, 231, 1075–1095. doi:10.1093/gji/ggac242_
 
--[10] H. Song, P. Yu, Y. Usui, M. Uyeshima, D. Diba, and L. Zhang, (2025) "Three-dimensional Magnetotelluric Inversion based on a Data Space variant of Akaike’s Bayesian Information Criterion", Geophysics, doi:10.1190/geo-2025-0233_
+_[10] H. Song, P. Yu, Y. Usui, M. Uyeshima, D. Diba, and L. Zhang, (2025) "Three-dimensional Magnetotelluric Inversion based on a Data Space variant of Akaike’s Bayesian Information Criterion", Geophysics, doi:10.1190/geo-2025-0233_
