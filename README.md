@@ -8,14 +8,14 @@ This repository currently contains scripts useful for EM imaging, modelling, and
 
 The repository contains the following subdirectories:
 
+
+ - 	**py4mt/scripts**  
+ 	Contains scripts  for preprocessing, visualization, and preparing the inversion of 
+ 	MT data.
  	
  -	**py4mt/modules**
- 	Contains the modules mtproc.py, jacproc.py, inversion.py, femtic.py, modem.py, aniso.py, mcmc_funcs.py, edi_funcs.py, viz.py, plotrjmcmc.py, and util.py, called from the Python scripts run for different tasks of MT 	interpretation.
- 	
- - 	**py4mt/scripts**  
- 	Contains the scripts  for preprocessing, visualization, and preparing the inversion of 
- 	MT data.   	 
- 
+ 	Contains the modules called from the above scripts run for different tasks of MT interpretation.
+ 	 
 - 	**modem**
 	Modified and original ModEM source code including corresponding Makefiles, useful for 
 	Jacobian related output. We used compiler directives for the changes.
