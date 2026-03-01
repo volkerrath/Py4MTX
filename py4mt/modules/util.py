@@ -19,13 +19,7 @@ import json
 
 
 import numpy as np
-from scipy.ndimage import gaussian_filter, laplace, convolve, gaussian_gradient_magnitude
-from scipy.linalg import norm
 
-
-# from numba import jit
-# from shapely.geometry import Point
-# from shapely.geometry.polygon import Polygon
 import pyproj
 from pyproj import CRS, database, Transformer
 from scipy.fftpack import dct, idct

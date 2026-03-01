@@ -33,19 +33,17 @@ import itertools
 import math
 from dataclasses import dataclass
 
-from pathlib import Path
 from typing import (
     Callable,
     Optional,
     Sequence,
     Tuple,
-    Dict,
     Literal,
     List,
-    TYPE_CHECKING,
 )
 from numpy.typing import ArrayLike
 
+import warnings
 import numpy as np
 from numpy.polynomial.hermite import hermval
 from numpy.polynomial.legendre import legval
@@ -754,7 +752,7 @@ def generate_model_ensemble(
             data_name=f"sample{iens}",
         )
         mod_list.append(file)
-        print('smaple:',file)
+        print('sample:',file)
 
     if out:
         print("\nlist of perturbed model files:")
@@ -2194,8 +2192,6 @@ def fit_kl_pce_model(
 # ============================================================================
 # SECTION 3: Gaussian sampling with Q = R.T @ R (+ λI)
 # ============================================================================
-
-import warnings
 
 
 def build_rtr_operator(
