@@ -13,25 +13,25 @@ The repository contains the following subdirectories:
  	Contains scripts  for preprocessing, visualization, and preparing the inversion of 
  	MT data.
  	
- -	**py4mt/modules**
+ -	**py4mt/modules** 
  	Contains the modules called from the above scripts run for different tasks of MT interpretation.
  	 
-- 	**modem**
+- 	**modem** 
 	Modified and original ModEM source code including corresponding Makefiles, useful for 
 	Jacobian related output. We used compiler directives for the changes.
 
-- 	**femtic**
+- 	**femtic** 
 	Modified and original FEMTIC source code, including corresponding Makefiles, useful for 
 	Jacobian related output. We used compiler directives for the changes.
 
-- 	**environment**
+- 	**environment** 
 	Contains conda environment description files, and some useful helper files for working 
 	within the conda environment.
 
--  **py4mt/data**
+-  **py4mt/data** 
  	Test data for various parts of Py4MTX.
 
--  **py4mt/info**
+-  **py4mt/info** 
  	Doumentation for the toolbox, and some useful documentation for python, 
  	including the most important extensions, numpy, scipy, and matplotlib 
 
