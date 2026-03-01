@@ -175,7 +175,7 @@ investigation) it may be convenient to do a final normalization by the maximum v
 
 # Coming soon:
  -	**Probabilistic MT inversion for anisotropic 1-D layers (based on [7])**
- -	**Randomize-Then-Optimize for 3-D MT (based on [8, 9, 10])**  
+ -	**Randomize-Then-Optimize Uncertainty for 3-D MT (based on [8, 9]) with FEMTIC**  
 
 
 # Note: AI generated scripts
