@@ -30,11 +30,8 @@ Created on Thu Jul 24 10:25:11 2025
 '''
 import os
 import sys
-import shutil
 import numpy as np
-import functools
 import inspect
-import time
 
 import scipy.sparse as scs
 
@@ -49,7 +46,6 @@ for pth in mypath:
 
 #import modules
 import femtic as fem
-import ensembles as ens
 import util as utl
 from version import versionstrg
 
@@ -58,8 +54,6 @@ N_THREADS = '32'
 os.environ['OMP_NUM_THREADS'] = N_THREADS
 os.environ['OPENBLAS_NUM_THREADS'] = N_THREADS
 os.environ['MKL_NUM_THREADS'] = N_THREADS
-#os.environ['VECLIB_MAXIMUM_THREADS'] = N_THREADS
-#os.environ['NUMEXPR_NUM_THREADS'] = N_THREADS
 
 rng = np.random.default_rng()
 nan = np.nan  # float('NaN')

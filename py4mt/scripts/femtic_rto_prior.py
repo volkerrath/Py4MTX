@@ -30,13 +30,9 @@ Created on Thu Jul 24 10:25:11 2025
 '''
 import os
 import sys
-import shutil
 import numpy as np
-import functools
 import inspect
-import time
 
-# import sklearn as skl
 import scipy.sparse as scs
 
 
@@ -50,9 +46,7 @@ for pth in mypath:
 
 #import modules
 import femtic as fem
-import ensembles as ens
 import util as utl
-#import inverse as inv
 from version import versionstrg
 
 
@@ -61,8 +55,6 @@ os.environ['OMP_NUM_THREADS'] = N_THREADS
 os.environ['OPENBLAS_NUM_THREADS'] = N_THREADS
 os.environ['MKL_NUM_THREADS'] = N_THREADS
 os.environ['MKL_PARDISO_OOC_MAX_CORE_SIZE'] = '10000'
-#os.environ['VECLIB_MAXIMUM_THREADS'] = N_THREADS
-#os.environ['NUMEXPR_NUM_THREADS'] = N_THREADS
 
 n_threads = int(N_THREADS)
 

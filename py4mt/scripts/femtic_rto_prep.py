@@ -35,17 +35,12 @@ Created on Wed Apr 30 16:33:13 2025
 
 import os
 import sys
-import shutil
 import numpy as np
-import functools
 import inspect
 
 '''
-specialized toolboxes settings and imports.
+Specialized toolboxes settings and imports.
 '''
-# import sklearn as skl
-# from sklearn.covariance import empirical_covariance
-
 import scipy.sparse as scs
 
 '''
@@ -63,7 +58,6 @@ for pth in mypath:
 from version import versionstrg
 import util as utl
 import femtic as fem
-import femtic_viz as viz
 import ensembles as ens
 
 from util import stop
@@ -137,8 +131,6 @@ if ResetErrors:
     ]
 else:
     Errors = []
-
-PlotData = True
 
 
 '''

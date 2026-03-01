@@ -50,7 +50,6 @@ from __future__ import annotations
 
 import os
 import sys
-import shutil
 import time
 import json
 import datetime
@@ -62,7 +61,6 @@ from typing import (
     Tuple,
     Dict,
     Literal,
-    List,
     Any,
     TYPE_CHECKING,
 )
