@@ -9,11 +9,10 @@ This repository currently contains scripts useful for EM imaging, modelling, and
 The repository contains the following subdirectories:
 
 
- - 	**py4mt/scripts**  
- 	Contains scripts  for preprocessing, visualization, and preparing the inversion of 
+ - 	**py4mt/scripts** Contains scripts  for preprocessing, visualization, and preparing the inversion of 
  	MT data.
  	
- -	**py4mt/modules** 
+ -	**py4mt/modules**
  	Contains the modules called from the above scripts run for different tasks of MT interpretation.
  	 
 - 	**modem** 
