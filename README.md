@@ -173,7 +173,7 @@ different data types may vary 1-2 orders of magnitude), for some purposes (e.g.,
 investigation) it may be convenient to do a final normalization by the maximum value in the model. All these options are implemented in the $\texttt{Py4MTX}$ toolbox. 
 
 
-# Coming soon:#
+# Coming soon:
  -	**Probabilistic MT inversion for anisotropic 1-D layers (based on [7])**
  -	**Randomize-Then-Optimize for 3-D MT (based on [8, 9, 10])**  
 
