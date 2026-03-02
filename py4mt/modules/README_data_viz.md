@@ -1,56 +1,75 @@
 # data_viz.py — Matplotlib helpers for MT transfer-function plots
 
-`data_viz.py` contains small, composable Matplotlib plotters designed to work
-with a **tidy `pandas.DataFrame`** produced from EDI dictionaries (typically via
-`data_proc.dataframe_from_edi`).
+`data_viz.py` contains small, composable Matplotlib plotters for
+magnetotelluric transfer-function data. All plotters work with a **tidy
+`pandas.DataFrame`** produced by `data_proc.dataframe_from_edi()`, and can
+also accept an EDI-style data dict directly (auto-converted internally via
+`datadict_to_plot_df()`).
 
-Main MT plotters:
+## MT plotters
 
-- `add_rho` — apparent resistivity curves (log–log)
-- `add_phase` — impedance phase (semilog-x)
-- `add_tipper` — tipper real/imag (semilog-x)
-- `add_pt` — phase tensor components (semilog-x)
+| Function | Plot type | Axes scale |
+|----------|-----------|------------|
+| `add_rho` | Apparent resistivity curves | log–log |
+| `add_phase` | Impedance phase | semilog-x |
+| `add_tipper` | Tipper real/imaginary | semilog-x |
+| `add_pt` | Phase tensor components | semilog-x |
 
-All plotters accept an optional Matplotlib `Axes` and return the axes.
-
-> Note: This module **does not** take an EDI dict directly. Convert to a DataFrame first.
+All plotters accept an optional Matplotlib `Axes` and return the axes. If
+`ax=None`, a new figure/axes pair is created automatically.
 
 ---
 
 ## Expected DataFrame columns
 
-Required:
+**Required:** `freq` [Hz]
 
-- `freq` [Hz] (frequency array)
-
-Optional but strongly recommended:
-
-- `period` [s] (if missing, `period = 1/freq` is computed internally)
+**Optional but recommended:** `period` [s] (computed from `freq` if missing)
 
 ### Apparent resistivity / phase
 
 - `rho_xx`, `rho_xy`, `rho_yx`, `rho_yy` [Ω·m]
 - `phi_xx`, `phi_xy`, `phi_yx`, `phi_yy` [deg]
-
-Optional 1‑sigma envelopes:
-
-- `rho_xy_err`, `phi_xy_err`, … (suffix is configurable via `error_suffix`)
+- Optional error columns: `rho_xy_err`, `phi_xy_err`, … (suffix configurable
+  via `error_suffix`)
 
 ### Tipper
 
 - `Tx_re`, `Tx_im`, `Ty_re`, `Ty_im`
-- optional: `Tx_re_err`, `Tx_im_err`, `Ty_re_err`, `Ty_im_err`
+- Optional: `Tx_re_err`, `Tx_im_err`, `Ty_re_err`, `Ty_im_err`
 
 ### Phase tensor
 
-Phase tensor components are real, but column names keep the historical “`_re`”:
+Phase tensor components are real; column names keep the historical `_re` suffix:
 
 - `ptxx_re`, `ptxy_re`, `ptyx_re`, `ptyy_re`
-- optional: `ptxx_re_err`, `ptxy_re_err`, `ptyx_re_err`, `ptyy_re_err`
+- Optional: `ptxx_re_err`, `ptxy_re_err`, `ptyx_re_err`, `ptyy_re_err`
 
 ---
 
-## Recommended workflow (EDI dict → DataFrame → plot)
+## Common plotter arguments
+
+All MT plotters share these keyword arguments:
+
+- `show_errors` (bool) — show ±1σ fill-between envelopes (default `False`)
+- `error_suffix` (str) — suffix for error columns (default `"_err"`)
+- `error_alpha` (float) — transparency for error envelopes (default `0.25`)
+- `comps` (str) — comma-separated component list, e.g. `"xy,yx"` (default
+  varies by plotter)
+- `legend` (bool) — show legend (default `True`)
+
+---
+
+## Data dict support
+
+In addition to DataFrames, the main plotters accept a data dict (the dict
+returned by `data_proc.load_edi()`) with keys `freq`, `Z`, `Z_err`, `T`,
+`T_err`, `P`, `P_err`. Conversion to the plotting DataFrame happens
+automatically via `datadict_to_plot_df()`.
+
+---
+
+## Recommended workflow
 
 ```python
 import matplotlib.pyplot as plt
@@ -58,10 +77,7 @@ import data_proc
 import data_viz
 
 site = data_proc.load_edi("SITE.edi")
-
-# Optional: compute PT from Z (or do this elsewhere)
 site["P"], site["P_err"] = data_proc.compute_pt(site["Z"], site.get("Z_err"))
-
 df = data_proc.dataframe_from_edi(site)
 
 fig, axs = plt.subplots(2, 2, figsize=(10, 8))
@@ -77,17 +93,17 @@ plt.show()
 
 ---
 
-## Convenience: quick subplot grids (`plot_gridx`, `plot_grid`)
+## Generic subplot helpers
 
-The module also contains two generic helpers that render lists of small
-datasets into an `(nrows, ncols)` subplot grid and remove empty axes.
+Two utility functions for rendering lists of small datasets into subplot grids:
 
-- `plot_gridx` supports `type ∈ {"line","scatter","image","hist"}`
-- `plot_grid` supports simple `{"x","y","style"}` line datasets
+- `plot_gridx(data_list, nrows, ncols, figsize)` — supports
+  `type ∈ {"line", "scatter", "image", "hist"}`
+- `plot_grid(data_list, nrows, ncols, figsize)` — simple `{"x", "y", "style"}`
+  line datasets
 
-These are optional utilities and unrelated to MT-specific plotting.
+Both remove empty axes automatically.
 
 ---
 
-Author: Volker Rath (DIAS)  
-Updated with the help of ChatGPT (GPT-5.2 Thinking) on 2026-02-13 (UTC)
+Author: Volker Rath (DIAS)

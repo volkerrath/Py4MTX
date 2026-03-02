@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-'''
-Created on Thu May 29 10:09:45 2025
+"""
+mt_data_processor.py
+====================
+Batch-process MT station EDI files: read, compute derived quantities,
+optionally interpolate / set errors / rotate, then export in multiple formats.
 
-@author: vrath
+Reads EDI files from ``EdiDir``, applies the configured processing chain,
+and writes outputs to ``DataDir`` in one or more formats (EDI, NPZ, HDF, MAT).
+A collection NPZ file with all stations is saved at the end.
 
 Author: Volker Rath (DIAS)
 Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-13 (UTC)
-'''
+"""
 
 # Import python modules
 # edit according to your needs

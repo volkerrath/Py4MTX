@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-dataproc.py
+data_proc.py
 =================
 Magnetotelluric (MT) data processing and I/O utilities.
 
@@ -100,14 +100,11 @@ from __future__ import annotations
 import re
 import sys
 import os
+import json
 import inspect
 
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Mapping
-
-import numpy as np
-import pandas as pd
-
 
 import numpy as np
 import pandas as pd
@@ -161,7 +158,7 @@ def get_edi_list(edirname=None, sort=False, fullpath=True):
         sys.exit('No edi files found in '+edirname+'! Exit.')
 
     if sort:
-        edi_files
+        edi_files = sorted(edi_files)
 
     return edi_files
 
@@ -2155,7 +2152,6 @@ def _sanitize_meta_for_hdf(meta: Mapping[str, Any]) -> dict[str, Any]:
     dict
         Sanitized metadata dict safe to write as a single-row HDF table.
     """
-    import json
 
     out: dict[str, Any] = {}
     for k, v in meta.items():
@@ -2207,7 +2203,6 @@ def _sanitize_meta_for_mat(meta: Mapping[str, Any]) -> dict[str, Any]:
     - dicts become JSON strings (fallback: ``repr``).
     - everything else becomes ``repr``.
     """
-    import json
 
     out: dict[str, Any] = {}
     for k, v in meta.items():
@@ -2266,7 +2261,6 @@ def _sanitize_mapping_for_mat_struct(d: Mapping[str, Any]) -> dict[str, Any]:
     - dicts -> JSON strings (fallback: repr)
     - everything else -> repr
     """
-    import json
 
     out: dict[str, Any] = {}
     for k, v in d.items():
