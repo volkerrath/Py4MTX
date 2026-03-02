@@ -2,7 +2,7 @@
 
 This document describes the **Jacobian/sensitivity post-processing module**:
 
-- `jac_proc_updated.py` (rename to `jac_proc.py` in your project if desired)
+- `jac_proc.py`
 
 The module focuses on:
 - **Sensitivity measures** derived from an (error-scaled) Jacobian.
@@ -45,7 +45,7 @@ The module focuses on:
 
 ```python
 import scipy.sparse as sp
-from jac_proc_updated import calc_sensitivity
+from jac_proc import calc_sensitivity
 
 # Jac is assumed to be *error-scaled* already
 Jac = sp.random(1000, 20000, density=1e-4, format="csr")
@@ -66,7 +66,7 @@ Js, scale = sparsify_jac(Jac, sparse_thresh=1e-6, normalized=True, scalval=-1.0)
 
 ```python
 import numpy as np
-from jac_proc_updated import rsvd
+from jac_proc import rsvd
 
 A = np.random.randn(2000, 5000)
 U, S, Vt = rsvd(A, rank=50, n_subspace_iters=1)
