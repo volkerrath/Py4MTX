@@ -4,7 +4,7 @@
 Plot impedance strike directions from MT station data.
 
 Generates station maps, aggregate strike rose diagrams, per-decade
-strike plots, and per-station strike diagrams using mtpy. Optionally
+strike plots, and per-station strike diagrams using dtpy. Optionally
 assembles a PDF catalogue.
 
 @author: sb & vr dec 2019
@@ -19,7 +19,7 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-from mtpy import MT, MTCollection, MTData
+from dtpy import MT, MTCollection, MTData
 
 PY4MTX_DATA = os.environ["PY4MTX_DATA"]
 PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
@@ -29,7 +29,7 @@ for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0, pth)
 
-import mtproc as mtp
+import data_proc as dtp
 import util as utl
 from version import versionstrg
 
@@ -47,7 +47,7 @@ WorkDir = PY4MTX_DATA + "/France/annecy_2025_dist/edi_files/"
 EdiDir = WorkDir
 surveyname = "Annecy"
 
-file_list = mtp.get_edi_list(EdiDir)
+file_list = dtp.get_edi_list(EdiDir)
 ns = len(file_list)
 
 Collection = WorkDir + "/ubaye_collection.h5"
@@ -55,7 +55,7 @@ Collection = WorkDir + "/ubaye_collection.h5"
 FromEdis = True
 if FromEdis:
     print(" Edifiles read from: %s" % EdiDir)
-    dataset = mtp.make_data(
+    dataset = dtp.make_data(
         edirname=EdiDir,
         collection=Collection,
         metaid="ubaye",

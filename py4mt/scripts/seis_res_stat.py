@@ -32,7 +32,7 @@ for pth in mypath:
 #import modules
 import modem as mod
 import util as utl
-import jacproc as jac
+import jac_proc as jac
 from version import versionstrg
 import matplotlib.pyplot as plt
 

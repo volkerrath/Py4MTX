@@ -34,8 +34,8 @@ for pth in mypath:
 # Import required py4mt modules for your script
 import util as utl
 import modem as mod
-import jacproc as jp
-import mtproc as mp
+import jac_proc as jp
+import data_proc as mp
 import dataproc as dp
 import plotrjmcmc as plmc
 import viz

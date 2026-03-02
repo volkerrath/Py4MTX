@@ -24,7 +24,7 @@ parameter selection (GCV, L-curve, ABIC).
 2. Build a `ParamSpec` describing the inversion parameterisation.
 3. Loop over station `.npz` files:
    - Optionally compute phase tensor and bootstrap errors.
-   - Run `inv1d.invert_site()` with the chosen method.
+   - Run `inverse.invert_site()` with the chosen method.
    - Save results as `.npz`.
 
 ## Configuration
@@ -43,7 +43,7 @@ Edit the **USER CONFIG** section. Key variables:
 
 ## Outputs
 
-Per station: `<station>_inv1d_<method>_<select>.npz` containing the
+Per station: `<station>_inverse_<method>_<select>.npz` containing the
 inversion result (model, residuals, diagnostics).
 
 ## Status
@@ -52,4 +52,4 @@ Result plotting (`PlotResults`) is declared but not yet implemented.
 
 ## Dependencies
 
-`numpy`, py4mt: `inv1d`, `util`, `version`.
+`numpy`, py4mt: `inverse`, `util`, `version`.

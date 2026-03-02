@@ -10,12 +10,12 @@ This project currently uses two “front ends”:
    - `rop` (principal resistivities) + Euler angles  
    - function: `aniso1d_impedance_sens(...)`
 
-2. **Simplified inversion parameterization** (expected by `mcmc.py` and `inv1d.py`):
+2. **Simplified inversion parameterization** (expected by `mcmc.py` and `inverse.py`):
    - `(rho_min, rho_max, strike_deg)` per layer  
    - function: `aniso1d_impedance_sens_simple(...)` (thin wrapper)
 
 > If your local `aniso.py` snapshot does not yet contain
-> `aniso1d_impedance_sens_simple`, `mcmc.py` / `inv1d.py` will fail at import
+> `aniso1d_impedance_sens_simple`, `mcmc.py` / `inverse.py` will fail at import
 > time. Add the wrapper (or adjust the import) so that all modules agree.
 
 ---
@@ -56,7 +56,7 @@ If `compute_sens=True`, the returned dict also contains (see `aniso.py` docstrin
 
 ## 2) Simplified wrapper: `aniso1d_impedance_sens_simple` (rho_min/max + strike)
 
-The Bayesian sampler (`mcmc.py`) and the deterministic inverter (`inv1d.py`)
+The Bayesian sampler (`mcmc.py`) and the deterministic inverter (`inverse.py`)
 operate in a reduced parameter space:
 
 - `rho_min` : `(nl,)` minimum horizontal resistivity
@@ -79,13 +79,13 @@ fwd = aniso.aniso1d_impedance_sens_simple(
 Z = fwd["Z"]   # (nper,2,2)
 ```
 
-Expected sensitivity keys (used by `inv1d.py`):
+Expected sensitivity keys (used by `inverse.py`):
 
 - `dZ_drho_min` : `(nper, nl, 2, 2)`
 - `dZ_drho_max` : `(nper, nl, 2, 2)`
 - `dZ_dstrike_deg` : `(nper, nl, 2, 2)`
 
-(Thickness sensitivities are currently not required by `inv1d.py`, but are
+(Thickness sensitivities are currently not required by `inverse.py`, but are
 useful when sampling/inverting `h_m`.)
 
 ---

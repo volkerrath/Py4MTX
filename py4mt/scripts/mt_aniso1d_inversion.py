@@ -8,7 +8,7 @@ Script-style workflow: edit the USER CONFIG section and run:
     python mt_aniso1d_inversion.py
 
 Supports Tikhonov and TSVD regularisation with automatic parameter
-selection (GCV, L-curve, ABIC). Helpers are imported from inv1d.py.
+selection (GCV, L-curve, ABIC). Helpers are imported from inverse.py.
 
 Author: Volker Rath (DIAS)
 Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-13 (UTC)
@@ -42,7 +42,7 @@ for pth in mypath:
     if pth and pth not in sys.path and Path(pth).exists():
         sys.path.insert(0, pth)
 
-import inv1d
+import inverse
 import util
 from version import versionstrg
 
@@ -135,25 +135,25 @@ STEP_SCALE = 1.0
 # =============================================================================
 #  Run inversion
 # =============================================================================
-outdir = inv1d.ensure_dir(OUTDIR)
-in_files = inv1d.glob_inputs(INPUT_GLOB)
+outdir = inverse.ensure_dir(OUTDIR)
+in_files = inverse.glob_inputs(INPUT_GLOB)
 if not in_files:
     raise FileNotFoundError(f"No inputs matched: {INPUT_GLOB}")
 
 # Starting model
 if MODEL_DIRECT is not None:
-    model0 = inv1d.model_from_direct(MODEL_DIRECT)
+    model0 = inverse.model_from_direct(MODEL_DIRECT)
 
     if MODEL_DIRECT_SAVE_PATH:
         p = Path(MODEL_DIRECT_SAVE_PATH).expanduser()
         if p.exists() and (not MODEL_DIRECT_OVERWRITE):
             raise FileExistsError(f"Refusing to overwrite existing model file: {p}")
-        inv1d.save_model_npz(model0, p.as_posix())
+        inverse.save_model_npz(model0, p.as_posix())
 else:
-    model0 = inv1d.load_model_npz(MODEL_NPZ)
+    model0 = inverse.load_model_npz(MODEL_NPZ)
 
 nl = int(np.asarray(model0["h_m"]).size)
-spec = inv1d.ParamSpec(
+spec = inverse.ParamSpec(
     nl=nl,
     fix_h=bool(FIX_H),
     sample_last_thickness=bool(SAMPLE_LAST_THICKNESS),
@@ -166,14 +166,14 @@ spec = inv1d.ParamSpec(
 )
 
 for f in in_files:
-    site = inv1d.load_site(f)
+    site = inverse.load_site(f)
     station = str(site.get("station", Path(f).stem))
     print(f"--- {station} ---")
 
     if USE_PT:
-        site = inv1d.ensure_phase_tensor(site, nsim=int(PT_ERR_NSIM))
+        site = inverse.ensure_phase_tensor(site, nsim=int(PT_ERR_NSIM))
 
-    res = inv1d.invert_site(
+    res = inverse.invert_site(
         site,
         spec=spec,
         model0=model0,
@@ -201,8 +201,8 @@ for f in in_files:
         sigma_floor_P=float(SIGMA_FLOOR_P),
     )
 
-    out_path = Path(outdir) / f"{station}_inv1d_{INV_METHOD}_{ALPHA_SELECT}.npz"
-    inv1d.save_inversion_npz(res, out_path.as_posix())
+    out_path = Path(outdir) / f"{station}_inverse_{INV_METHOD}_{ALPHA_SELECT}.npz"
+    inverse.save_inversion_npz(res, out_path.as_posix())
     print(f"Wrote: {out_path}")
     if PlotResults:
         print("  (result plotting not yet implemented)")

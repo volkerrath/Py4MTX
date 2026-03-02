@@ -56,4 +56,4 @@ Per Jacobian file:
 
 ## Dependencies
 
-`numpy`, `scipy.sparse`, py4mt: `modem`, `jacproc`, `util`, `version`.
+`numpy`, `scipy.sparse`, py4mt: `modem`, `jac_proc`, `util`, `version`.

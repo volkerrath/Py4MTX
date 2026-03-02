@@ -72,4 +72,4 @@ Optionally also writes cell-size files (`.siz`) and topography (`.top`).
 
 ## Dependencies
 
-`numpy`, `scipy.sparse`, py4mt: `modem`, `jacproc`, `util`, `version`.
+`numpy`, `scipy.sparse`, py4mt: `modem`, `jac_proc`, `util`, `version`.
