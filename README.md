@@ -9,31 +9,30 @@ This repository currently contains scripts useful for EM imaging, modelling, and
 The repository contains the following subdirectories:
 
 
- -	**py4mt/info**
- 	Doumentation for the toolbox, and some useful documentation for python, 
- 	including the most important extensions, numpy, scipy, and matplotlib 
+ - 	**py4mt/scripts** Contains scripts  for preprocessing, visualization, and preparing the inversion of 
+ 	MT data.
  	
  -	**py4mt/modules**
- 	Contains the modules mtproc.py, jacproc.py, inversion.py, femtic.py, modem.py, aniso.py, mcmc_funcs.py, edi_funcs.py, viz.py, plotrjmcmc.py, and util.py, called from the Python scripts run for different tasks of MT 	interpretation.
- 	
- - 	**py4mt/scripts**  918795 
- 	Contains the scripts  for preprocessing, visualization, and preparing the inversion of 
- 	MT data.   	 
- 
-- 	**modem**
+ 	Contains the modules called from the above scripts run for different tasks of MT interpretation.
+ 	 
+- 	**modem** 
 	Modified and original ModEM source code including corresponding Makefiles, useful for 
 	Jacobian related output. We used compiler directives for the changes.
 
-- 	**femtic**
+- 	**femtic** 
 	Modified and original FEMTIC source code, including corresponding Makefiles, useful for 
 	Jacobian related output. We used compiler directives for the changes.
 
-- 	**environment**
+- 	**environment** 
 	Contains conda environment description files, and some useful helper files for working 
-	within the conda environment. The current Py4MT environments contain a lot of packages
-	which are not strictly necessary for running aempy, but useful for related geoscientific work.
-	
+	within the conda environment.
 
+-  **py4mt/data** 
+ 	Test data for various parts of Py4MTX.
+
+-  **py4mt/info** 
+ 	Documentation for the toolbox, and some useful documentation for python, 
+ 	including the most important extensions, numpy, scipy, and matplotlib 
 
 Get your working copy via git from the command line:
 
@@ -77,11 +76,6 @@ _export PY4MT_DATA='${HOME}/Py4MT/data/'_
 Keeping to this scheme makes life much easier when different persons work on the tools. Never change the sources within the repository, as this may produce conflicts when updating! 
 Please keep in mind that this is experimental software, and will contain errors. Use at your own risk! However, we will frequently update the repository correcting bugs, and (re)adding additional functionality.  
 
-
-# Note: AI generated scripts
-
-Since this summer we have been experimenting with AI tools such as ChatGPT or CoPilot to implement further scripts/modules, which turned out to be very useful. A note concerning AI (co)authorship has been added to the docstrings. Parts of these scripts have found their way into the modules later, keeping the docstrings.
- 
 # $\texttt{ModEM}$: Jacobian-related functionalities including sensitivities
 
 This repository now also contains $\texttt{python}$ tools for manipulating, processing, analysing Jacobians from 3-D magnetotelluric inversion, including 
@@ -176,20 +170,39 @@ the volume and its geometry is important when investigating the true role of thi
 different data types may vary 1-2 orders of magnitude), for some purposes (e.g., comparison of different data (sub)sets or definition of depths of 
 investigation) it may be convenient to do a final normalization by the maximum value in the model. All these options are implemented in the $\texttt{Py4MTX}$ toolbox. 
 
-_[1] M. Deal and G. Nolet (1996) “Nullspace shuttles", Geophysical Journal International, 124, 372–380_
 
-_[2] G. Muñoz and V. Rath (2006) “Beyond smooth inversion: the use of nullspace projection for the exploration of non-uniqueness in MT", Geophysical Journal International, 164, 301–311, 2006, doi:10.1111/j.1365-246X.2005.02825.x_
+# Coming soon:
+ -	**Probabilistic MT inversion for anisotropic 1-D layers [7]**
+ -	**Randomize-Then-Optimize Uncertainty for 3-D MT [8, 9] with FEMTIC [10]**
+ -	**Jacobian/Sensitivity-related functionality for 3-D anisotropic inversion [11]** 
 
-_[3] G. D. Egbert and A. Kelbert (2012) “Computational recipes for electromagnetic inverse problems”, Geophysical Journal International, 189, 251–267, doi:10.1111/j.1365-246X.2011.05347.x_
 
-_[4] A. Kelbert, N. Meqbel, G. D. Egbert, and K. Tandon (2014) “ModEM: A Modular System for Inversion of Electromagnetic Geophysical Data”, Computers & Geosciences, 66, 440–53, doi:10.1016/j.cageo.2014.01.010_
+# Note: AI generated scripts
+
+Since this summer we have experimented with AI tools such as ChatGPT, CoPilot and Claude when implementing further scripts/modules. This approach turned out to be very useful, though requiring thorough checks and test. A note concerning AI (co)authorship has been added to the docstrings. Parts of these scripts have found their way into the modules later, keeping the docstrings.
+ 
+
+# References
+
+_[1] M. Deal, G. Nolet (1996) “Nullspace shuttles", Geophysical Journal International, 124, 372–380_
+
+_[2] G. Muñoz, V. Rath (2006) “Beyond smooth inversion: the use of nullspace projection for the exploration of non-uniqueness in MT", Geophysical Journal International, 164, 301–311, 2006, doi:10.1111/j.1365-246X.2005.02825.x_
+
+_[3] G. D. Egbert, A. Kelbert (2012) “Computational recipes for electromagnetic inverse problems”, Geophysical Journal International, 189, 251–267, doi:10.1111/j.1365-246X.2011.05347.x_
+
+_[4] A. Kelbert, N. Meqbel, G. D. Egbert, K. Tandon (2014) “ModEM: A Modular System for Inversion of Electromagnetic Geophysical Data”, Computers & Geosciences, 66, 440–53, doi:10.1016/j.cageo.2014.01.010_
 
 _[5] A. Tarantola (2005) "Inverse Problem Theory and Methods for Model Parameter Estimation", SIAM, Philadelphia PA, USA_
      
-_[6] K. Schwalenberg, V. Rath, and V. Haak (2002) “Sensitivity studies applied to a two-dimensional resistivity model from the Central Andes”, Geophysical Journal International, 150, doi:10.1046/j.1365-246X.2002.01734.x_
+_[6] K. Schwalenberg, V. Rath, V. Haak (2002) “Sensitivity studies applied to a two-dimensional resistivity model from the Central Andes”, Geophysical Journal International, 150, doi:10.1046/j.1365-246X.2002.01734.x_
   
- 
+_[7] J. Pek, F.A.M Santos (2002) "Magnetotelluric impedances and parametric sensitivities for 1-D anisotropic layered media", Comput Geosci, 28, doi:10.1016/S0098-3004(02)00014-6_
   
+_[8] D. Blatter, M. Morzfeld, K. Key, S. Constable (2022) "Uncertainty quantification for regularized inversion of electromagnetic geophysical data—Part I: motivation and theory", Geophysical Journal International, 231, 1057–1074. doi:10.1093/gji/ggac241_
+
+_[9] D. Blatter, M. Morzfeld, K. Key, S. Constable (2022) "Uncertainty quantification for regularized inversion of electromagnetic geophysical data – Part II: application in 1-D and 2-D problems", Geophysical Journal International, 231, 1075–1095. doi:10.1093/gji/ggac242_
+
+_[10] H. Song, P. Yu, Y. Usui, M. Uyeshima, D. Diba, L. Zhang, (2025) "Three-dimensional Magnetotelluric Inversion based on a Data Space variant of Akaike’s Bayesian Information Criterion", Geophysics, doi:10.1190/geo-2025-0233_
+
+_[11] W. Kong, H. Tan, C. Lin, M. Unsworth, B. Lee, M. Peng, M. Wang, M., T. Tong (2021) "Three-dimensional inversion of magnetotelluric data for a resistivity model with arbitrary anisotropy", Journal of Geophysical Research: Solid Earth, doi:https://doi.org/10.1029/2020JB020562_
  
-
-
