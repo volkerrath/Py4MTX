@@ -1,25 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""mt_aniso1d_inversion.py
+"""
+Deterministic driver for anisotropic 1-D MT inversion.
 
-Script-style deterministic driver for anisotropic 1-D MT inversion.
-
-This is intentionally NOT a CLI. Edit the USER CONFIG and run:
+Script-style workflow: edit the USER CONFIG section and run:
 
     python mt_aniso1d_inversion.py
 
-Preserved conventions
----------------------
-- Environment variables:
-    - PY4MTX_ROOT
-    - PY4MTX_DATA
-- Explicit sys.path setup
-- Startup title print
-- Example in-file model (Model0)
-
-Implementation note
--------------------
-Helpers are imported from `inv1d.py` (TSVD/Tikhonov deterministic inversion).
+Supports Tikhonov and TSVD regularisation with automatic parameter
+selection (GCV, L-curve, ABIC). Helpers are imported from inv1d.py.
 
 Author: Volker Rath (DIAS)
 Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-13 (UTC)
@@ -34,9 +23,9 @@ from pathlib import Path
 
 import numpy as np
 
-# -----------------------------------------------------------------------------
-# Environment variables / path settings (keep)
-# -----------------------------------------------------------------------------
+# =============================================================================
+#  Environment / path setup
+# =============================================================================
 PY4MTX_DATA = os.environ.get("PY4MTX_DATA", "")
 PY4MTX_ROOT = os.environ.get("PY4MTX_ROOT", "")
 
@@ -53,7 +42,6 @@ for pth in mypath:
     if pth and pth not in sys.path and Path(pth).exists():
         sys.path.insert(0, pth)
 
-# local modules
 import inv1d
 import util
 from version import versionstrg
@@ -62,43 +50,15 @@ version, _ = versionstrg()
 fname = inspect.getfile(inspect.currentframe())
 
 titstrng = util.print_title(version=version, fname=fname, out=False)
-print(titstrng+'\n\n')
+print(titstrng + "\n\n")
 
-
-# -----------------------------------------------------------------------------
-# Example Model0 (keep/edit)
-# -----------------------------------------------------------------------------
-# Model0 = dict(
-#     h_m=np.array([200.0, 400.0, 800.0, 0.0], dtype=float),
-#     rop=np.array(
-#         [
-#             [100.0, 100.0, 100.0],
-#             [100.0, 100.0, 100.0],
-#             [100.0, 100.0, 100.0],
-#             [100.0, 100.0, 100.0],
-#         ],
-#         dtype=float,
-#     ),
-#     ustr_deg=np.array([0.0, 0.0, 45.0, 0.0], dtype=float),
-#     udip_deg=np.array([0.0, 0.0, 0.0, 0.0], dtype=float),
-#     usla_deg=np.array([0.0, 0.0, 0.0, 0.0], dtype=float),
-#     is_iso=np.array([True, True, False, True], dtype=bool),
-#     is_fix=np.array([False, False, False, False], dtype=bool),
-# )
-
-# -----------------------------------------------------------------------------
-# Example Model1 (keep/edit)
-# -----------------------------------------------------------------------------
-# This driver uses the *simplified* parameterization consistent with the sampler:
-# either (rho_min, rho_max, strike_deg) or (sigma_min, sigma_max, strike_deg).
-#
-# Convention: last entry is the basement "thickness" (ignored by the recursion).
-# Keep it at 0.0 so that cumulative-depth plots remain well-defined.
+# =============================================================================
+#  Starting model
+# =============================================================================
 nlayer = 17
 h_m = np.r_[np.logspace(np.log10(50.0), np.log10(500.0), nlayer - 1), 0.0]
 
-# Start model in conductivity domain (S/m). For 100 Ohm·m isotropic layers:
-# sigma = 1/rho = 0.01 S/m.
+# Conductivity domain (S/m). 100 Ohm·m isotropic => sigma = 0.01 S/m.
 Model0 = {
     "prior_name": "model1_hfix",
     "h_m": h_m,
@@ -110,18 +70,17 @@ Model0 = {
 }
 
 PlotResults = True
-# =============================================================================
 
-# USER CONFIG
+# =============================================================================
+#  USER CONFIG
 # =============================================================================
 
 DATA_DIR = "/home/vrath/Py4MTX/py4mt/data/edi/"
 
-INPUT_GLOB = DATA_DIR + "Ann18*.npz"   # or "*.npz"
+INPUT_GLOB = DATA_DIR + "Ann18*.npz"
 OUTDIR = DATA_DIR + "detinv_hfix"
 MODEL_NPZ = DATA_DIR + "model0.npz"
 
-# Set MODEL_DIRECT = Model0 to use the in-file model template
 MODEL_DIRECT = Model0
 MODEL_DIRECT_SAVE_PATH = MODEL_NPZ
 MODEL_DIRECT_OVERWRITE = True
@@ -132,58 +91,56 @@ PT_ERR_NSIM = 200
 Z_COMPS = ("xx", "xy", "yx", "yy")
 PT_COMPS = ("xx", "xy", "yx", "yy")
 
-# Parameterization options (match sampler)
-PARAM_DOMAIN = "rho"           # "rho" or "sigma"
-PARAM_SET = "minmax"           # "minmax" or "max_anifac"
+# Parameterisation options (match sampler)
+PARAM_DOMAIN = "rho"            # "rho" or "sigma"
+PARAM_SET = "minmax"            # "minmax" or "max_anifac"
 
 FIX_H = True
 SAMPLE_LAST_THICKNESS = False
 
-# Bounds apply to log10(rho) if PARAM_DOMAIN="rho", and to log10(sigma) if "sigma".
+# Bounds: log10(rho) if PARAM_DOMAIN="rho", log10(sigma) if "sigma"
 LOG10_PARAM_BOUNDS = (0.0, 5.0)
-LOG10_ANIFAC_BOUNDS = (0.0, 2.0)   # only used for PARAM_SET="max_anifac"
-
-# Backward-compatible name (kept)
-LOG10_RHO_BOUNDS = LOG10_PARAM_BOUNDS
-
+LOG10_ANIFAC_BOUNDS = (0.0, 2.0)
 LOG10_H_BOUNDS = (0.0, 5.0)
 STRIKE_BOUNDS_DEG = (-180.0, 180.0)
 
 SIGMA_FLOOR_Z = 0.0
 SIGMA_FLOOR_P = 0.0
 
-# Deterministic inversion options
-INV_METHOD = "tikhonov"   # "tikhonov" or "tsvd"
+# Inversion method
+INV_METHOD = "tikhonov"         # "tikhonov" or "tsvd"
 
 # Tikhonov settings
 LAMBDA = 1.0
-ALPHA_SELECT = "gcv"    # "fixed", "lcurve", "gcv", "abic"
-ALPHA_GRID = None         # optional 1D array/list of lambda values
-ALPHA_NGRID = 40          # used if ALPHA_GRID is None
-ALPHA_MIN = None          # optional lower bound for auto grid
-ALPHA_MAX = None          # optional upper bound for auto grid
-L_ORDER = 1               # 1 (first-order) or 2 (second-order)
+ALPHA_SELECT = "gcv"            # "fixed", "lcurve", "gcv", "abic"
+ALPHA_GRID = None
+ALPHA_NGRID = 40
+ALPHA_MIN = None
+ALPHA_MAX = None
+L_ORDER = 1
 L_INCLUDE_THICKNESS = False
 
 # TSVD settings
-TSVD_K = None             # fixed truncation rank (int) or None
-TSVD_SELECT = "fixed"     # "fixed", "gcv", "lcurve" (used if TSVD_K is None or TSVD_SELECT != "fixed")
+TSVD_K = None
+TSVD_SELECT = "fixed"           # "fixed", "gcv", "lcurve"
 TSVD_K_MIN = 1
 TSVD_K_MAX = None
-TSVD_RCOND = 1e-3         # used only for the "fixed" TSVD path when TSVD_K is provided
+TSVD_RCOND = 1e-3
 
 # Gauss-Newton settings
 MAX_ITER = 15
 TOL = 1e-3
 STEP_SCALE = 1.0
 
-
+# =============================================================================
+#  Run inversion
+# =============================================================================
 outdir = inv1d.ensure_dir(OUTDIR)
 in_files = inv1d.glob_inputs(INPUT_GLOB)
 if not in_files:
     raise FileNotFoundError(f"No inputs matched: {INPUT_GLOB}")
 
-# starting model
+# Starting model
 if MODEL_DIRECT is not None:
     model0 = inv1d.model_from_direct(MODEL_DIRECT)
 
@@ -214,7 +171,6 @@ for f in in_files:
     print(f"--- {station} ---")
 
     if USE_PT:
-        # Add P and (bootstrap) P_err if missing
         site = inv1d.ensure_phase_tensor(site, nsim=int(PT_ERR_NSIM))
 
     res = inv1d.invert_site(
@@ -249,6 +205,6 @@ for f in in_files:
     inv1d.save_inversion_npz(res, out_path.as_posix())
     print(f"Wrote: {out_path}")
     if PlotResults:
-        print("Not yet implemented")
+        print("  (result plotting not yet implemented)")
 
 print("\nDone.\n")
