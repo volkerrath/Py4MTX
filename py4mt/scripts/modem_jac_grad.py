@@ -37,7 +37,7 @@ for pth in mypath:
         sys.path.insert(0,pth)
 
 
-import jacproc as jac
+import jac_proc as jac
 import modem as mod
 from version import versionstrg
 import util as utl

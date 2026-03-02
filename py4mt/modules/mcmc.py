@@ -36,7 +36,7 @@ Two likelihood implementations are available:
   sensitivities returned by the forward model. This enables NUTS/HMC for
   **impedance** likelihoods and optionally **phase tensor** components (``use_pt=True``).
 
-The deterministic inversion driver (``inv1d.py``) always uses the analytic
+The deterministic inversion driver (``inverse.py``) always uses the analytic
 sensitivities from the forward model.
 
 Author: Volker Rath (DIAS)

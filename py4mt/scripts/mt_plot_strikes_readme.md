@@ -48,4 +48,4 @@ a PDF catalogue.
 
 ## Dependencies
 
-`numpy`, `matplotlib`, `mtpy`, py4mt: `mtproc`, `util`, `version`.
+`numpy`, `matplotlib`, `mtpy`, py4mt: `data_proc`, `util`, `version`.

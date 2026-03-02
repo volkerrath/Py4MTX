@@ -52,4 +52,4 @@ Edit the **Configuration** section: `ModFile_in`, `ModFile_out`, `bodies`,
 
 ## Dependencies
 
-`numpy`, py4mt: `modem`, `util`, `jacproc`, `version`.
+`numpy`, py4mt: `modem`, `util`, `jac_proc`, `version`.

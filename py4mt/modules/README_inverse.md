@@ -2,7 +2,7 @@
 
 `inverse.py` collects numerical routines useful in inverse problems and ensemble-based workflows.
 
-This README documents the updated drop-in module `inverse_updated.py`.
+This README documents the updated drop-in module `inverse.py`.
 
 ---
 
@@ -34,7 +34,7 @@ This README documents the updated drop-in module `inverse_updated.py`.
 ```python
 import numpy as np
 import scipy.sparse as sp
-from inverse_updated import splitbreg
+from inverse import splitbreg
 
 nd, nm = 200, 100
 J = np.random.randn(nd, nm)
@@ -47,7 +47,7 @@ x = splitbreg(J, y, lam=1.0, D=D, maxiter=50)
 ### NICE covariance
 ```python
 import numpy as np
-from inverse_updated import calc_covar_nice
+from inverse import calc_covar_nice
 
 Ne, Nx, Ny = 50, 500, 200
 X = np.random.randn(Ne, Nx)

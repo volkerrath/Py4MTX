@@ -49,4 +49,4 @@ One `.rho` file per perturbation in `ModDir_out`.
 
 ## Dependencies
 
-`numpy`, `scipy.sparse`, py4mt: `modem`, `jacproc`, `util`, `version`.
+`numpy`, `scipy.sparse`, py4mt: `modem`, `jac_proc`, `util`, `version`.

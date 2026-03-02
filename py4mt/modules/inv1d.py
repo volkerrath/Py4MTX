@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""inv1d.py
+"""inverse.py
 ================
 
 Deterministic 1-D inversion helpers for the *simplified* anisotropic MT model.

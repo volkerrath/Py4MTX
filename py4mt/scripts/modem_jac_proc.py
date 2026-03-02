@@ -28,7 +28,7 @@ for pth in mypath:
 import util as utl
 from version import versionstrg
 import modem as mod
-import jacproc as jac
+import jac_proc as jac
 
 version, _ = versionstrg()
 titstrng = utl.print_title(

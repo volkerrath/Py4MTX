@@ -26,7 +26,7 @@ for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0, pth)
 
-import jacproc as jac
+import jac_proc as jac
 import modem as mod
 import util as utl
 from version import versionstrg

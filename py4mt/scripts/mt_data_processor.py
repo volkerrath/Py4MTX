@@ -36,7 +36,7 @@ for pth in mypath:
 
 # Import required py4mt modules for your script
 import util as utl
-# import jacproc as jac
+# import jac_proc as jac
 # import mt_proc as mtp
 # import plotrjmcmc as plmc
 # import viz

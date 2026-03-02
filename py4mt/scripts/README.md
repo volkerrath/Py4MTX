@@ -66,7 +66,7 @@ All scripts require two environment variables:
 |--------|---------|
 | `modem` | Read/write ModEM model, data, and Jacobian files |
 | `femtic` | Read/write FEMTIC model and mesh files |
-| `jacproc` | Jacobian processing (normalisation, sensitivity, SVD) |
+| `jac_proc` | Jacobian processing (normalisation, sensitivity, SVD) |
 | `util` | General utilities (file listing, coordinate transforms) |
 | `ensembles` | EOF computation and sampling |
 | `version` | Version string generation |

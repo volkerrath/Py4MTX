@@ -52,7 +52,7 @@ for pth in mypath:
 
 
 import util as utl
-import mtproc as mtp
+import data_proc as mtp
 from version import versionstrg
 
 
