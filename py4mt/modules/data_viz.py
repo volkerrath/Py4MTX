@@ -7,7 +7,7 @@ data_viz.py
 Matplotlib helpers for magnetotelluric (MT) transfer-function plots.
 
 This module is designed to work with :class:`pandas.DataFrame` objects
-created from EDI data (for example using :mod:`ediproc` + :mod:`edidat`).
+created from EDI data (for example using :func:`data_proc.dataframe_from_edi`).
 All plotting functions accept an optional Matplotlib ``Axes``; if ``ax`` is
 None, a new figure/axes pair is created.
 
@@ -754,7 +754,7 @@ def plot_gridx(data_list: List[Optional[dict]], nrows: int, ncols: int, figsize=
     Usage:
 
         import numpy as np
-        from plot_grid import plot_grid
+        from data_viz import plot_gridx, plot_grid
 
         x = np.linspace(0, 2*np.pi, 100)
         img = np.random.rand(10, 10)
@@ -835,7 +835,7 @@ def plot_grid(data_list: List[Optional[dict]], nrows: int, ncols: int, figsize=(
     Usage:
 
         import numpy as np
-        from plot_grid import plot_grid
+        from data_viz import plot_gridx, plot_grid
 
         x = np.linspace(0, 2*np.pi, 100)
         datasets = [
