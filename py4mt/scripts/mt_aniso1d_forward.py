@@ -7,8 +7,9 @@ Computes impedance, apparent resistivity/phase, and phase tensor
 for a layered anisotropic conductivity model, writes results to
 text files, and generates diagnostic plots.
 
-Author: Volker Rath (DIAS)
-Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-13 (UTC)
+@author:    Volker Rath (DIAS)
+@project:   py4mt — Python for Magnetotellurics
+@created:   2026-02-13 with the help of ChatGPT (GPT-5 Thinking)
 """
 
 import os
@@ -43,30 +44,30 @@ print(titstrng + "\n\n")
 # =============================================================================
 #  Configuration
 # =============================================================================
-WorkDir = "/home/vrath/Py4MTX/work/aniso/"
-if not os.path.isdir(WorkDir):
-    print(" File: %s does not exist, but will be created" % WorkDir)
-    os.mkdir(WorkDir)
+WORK_DIR = "/home/vrath/Py4MTX/work/aniso/"
+if not os.path.isdir(WORK_DIR):
+    print(" File: %s does not exist, but will be created" % WORK_DIR)
+    os.mkdir(WORK_DIR)
 
-SumOut = True
-ResFile = WorkDir + "summary.dat"
+SUM_OUT = True
+RES_FILE = WORK_DIR + "summary.dat"
 
-ImpOut = True
-ImpFile = WorkDir + "impedance.dat"
-ImpPlt = True
+IMP_OUT = True
+IMP_FILE = WORK_DIR + "impedance.dat"
+IMP_PLT = True
 
-RhoOut = True
-RhoFile = WorkDir + "rhophas.dat"
-RhoPlt = True
+RHO_OUT = True
+RHO_FILE = WORK_DIR + "rhophas.dat"
+RHO_PLT = True
 
-PhTOut = True
-PhTFile = WorkDir + "phstens.dat"
-PhTPlt = True
+PHT_OUT = True
+PHT_FILE = WORK_DIR + "phstens.dat"
+PHT_PLT = True
 
-if RhoPlt or ImpPlt or PhTPlt:
-    PlotFormat = [".png"]
-    PlotFile = WorkDir + "AnisoTest"
-    pltargs = {
+if RHO_PLT or IMP_PLT or PHT_PLT:
+    PLOT_FORMAT = [".png"]
+    PLOT_FILE = WORK_DIR + "AnisoTest"
+    PLTARGS = {
         "pltsize": [16., 16.],
         "fontsizes": [18, 20, 24, 18],
         "m_size": 10,
@@ -89,10 +90,10 @@ if RhoPlt or ImpPlt or PhTPlt:
 # =============================================================================
 
 # --- Model from Rong et al. (2022), Fig 1 ---
-Periods = np.logspace(-2, 4., 41)
-Freqs = 1. / Periods
-NLayer = 4
-Model = [
+PERIODS = np.logspace(-2, 4., 41)
+FREQS = 1. / PERIODS
+N_LAYER = 4
+MODEL = [
     [10000.,   1000.,   1000.,   1000.,    0.,  0.,  0., 0],
     [18000.,    200.,   2000.,    200.,   15.,  0.,  0., 0],
     [100000.,  1000.,  10000.,   1000.,  -75.,  0.,  0., 0],
@@ -100,18 +101,18 @@ Model = [
 ]
 
 # --- Alternative: Model A from Pek & Santos (2002) ---
-# Periods = np.logspace(-3, 5., 41)
-# Freqs = 1./Periods
-# NLayer = 4
-# Model = [
+# PERIODS = np.logspace(-3, 5., 41)
+# FREQS = 1. / PERIODS
+# N_LAYER = 4
+# MODEL = [
 #     [10000.,  10000.,  10000.,  10000.,   0.,  0.,  0., 0],
 #     [18000.,    200.,  20000.,    200.,  15.,  0.,  0., 0],
 #     [100000., 1000.,   2000.,   1000., -75.,  0.,  0., 0],
 #     [0.,       100.,    100.,    100.,   0.,  0.,  0., 0],
 # ]
 
-model = np.array(Model)
-periods = Periods.copy()
+model = np.array(MODEL)
+periods = PERIODS.copy()
 
 h = model[:, 0]
 rop = model[:, 1:4]
@@ -123,11 +124,11 @@ is_iso = model[:, 7] == 1
 # =============================================================================
 #  Write model summary
 # =============================================================================
-if SumOut:
-    with open(ResFile, "w") as f:
+if SUM_OUT:
+    with open(RES_FILE, "w") as f:
         f.write("# Model parameters\n")
         f.write("# layer, thick (m)  res_x, res_y, res_z, strike, dip, slant\n")
-        for layer in range(NLayer):
+        for layer in range(N_LAYER):
             pars = f"{layer:5d} {h[layer]:12.4f}"
             rops = f"   {rop[layer, 0]:12.4f} {rop[layer, 1]:12.4f} {rop[layer, 2]:12.4f} "
             angs = f"   {ustr[layer]:12.4f} {udip[layer]:12.4f} {usla[layer]:12.0f} "
@@ -137,7 +138,7 @@ if SumOut:
 #  Compute impedances
 # =============================================================================
 res = aniso1d_impedance_sens(
-    periods_s=Periods,
+    periods_s=PERIODS,
     h_m=h,
     rop=rop,
     ustr_deg=ustr,
@@ -161,142 +162,142 @@ interlaced[:, 1::2] = Z.imag
 # =============================================================================
 #  Impedance output
 # =============================================================================
-if ImpOut:
+if IMP_OUT:
     Imp = interlaced
-    with open(ImpFile, "w") as f:
+    with open(IMP_FILE, "w") as f:
         f.write("#   PERIOD,  Re Zxx,  Im Zxx,  Re Zxy,  Im Zxy,"
                 "  Re Zyx,  Im Zyx,  Re Zyy,  Im Zyy\n")
-        for iper in range(len(Periods)):
+        for iper in range(len(PERIODS)):
             vals = "  ".join([f"{Imp[iper, k]:14.5e}" for k in range(Imp.shape[1])])
             f.write(f"{periods[iper]:14.5f}  {vals}\n")
 
-if ImpPlt:
+if IMP_PLT:
     Imp = interlaced
-    pltargs["pltsize"] = [16., 16.]
-    fig, ax = plt.subplots(2, 2, figsize=pltargs["pltsize"])
-    fig.suptitle(pltargs["suptitle"], fontsize=pltargs["fontsizes"][2])
+    PLTARGS["pltsize"] = [16., 16.]
+    fig, ax = plt.subplots(2, 2, figsize=PLTARGS["pltsize"])
+    fig.suptitle(PLTARGS["suptitle"], fontsize=PLTARGS["fontsizes"][2])
 
-    pltargs["yscale"] = "linear"
-    pltargs["ylabel"] = r"impedance [$\Omega$]"
-    pltargs["legend"] = ["real", "imag"]
+    PLTARGS["yscale"] = "linear"
+    PLTARGS["ylabel"] = r"impedance [$\Omega$]"
+    PLTARGS["legend"] = ["real", "imag"]
 
-    data = np.zeros((len(Periods), 3))
-    data[:, 0] = Periods[:]
+    data = np.zeros((len(PERIODS), 3))
+    data[:, 0] = PERIODS[:]
 
     for idx, (col_re, col_im, title) in enumerate([
         (0, 1, "Zxx"), (2, 3, "Zxy"), (4, 5, "Zyx"), (6, 7, "Zyy"),
     ]):
         data[:, 1] = Imp[:, col_re]
         data[:, 2] = Imp[:, col_im]
-        pltargs["title"] = title
-        viz.plot_impedance(thisaxis=ax[idx // 2, idx % 2], data=data, **pltargs)
+        PLTARGS["title"] = title
+        viz.plot_impedance(thisaxis=ax[idx // 2, idx % 2], data=data, **PLTARGS)
 
-    for fmt in PlotFormat:
-        plt.savefig(PlotFile + "_imped" + fmt)
+    for fmt in PLOT_FORMAT:
+        plt.savefig(PLOT_FILE + "_imped" + fmt)
 
 # =============================================================================
 #  Apparent resistivity / phase output
 # =============================================================================
-if RhoOut or RhoPlt:
-    freqs = (1. / Periods).reshape(-1, 1)
+if RHO_OUT or RHO_PLT:
+    freqs = (1. / PERIODS).reshape(-1, 1)
     rhoa, phas = calc_rhoa_phas(freq=freqs, Z=Z)
     rhoa = np.asarray(rhoa).reshape((nper, -1))
     phas = np.asarray(phas).reshape((nper, -1))
 
-if RhoOut:
-    with open(RhoFile, "w") as f:
+if RHO_OUT:
+    with open(RHO_FILE, "w") as f:
         f.write("#   PERIOD,  Rhoa xx,  Phs xx,  Rhoa xy,  Phs xy,"
                 "  Rhoa yx,  Phs yx,  Rhoa yy,  Phs yy\n")
-        for iper in range(len(Periods)):
+        for iper in range(len(PERIODS)):
             rhoa_phas = "".join(
                 [f"{rhoa[iper, ii]:14.5e} {phas[iper, ii]:12.2f}" for ii in range(4)]
             )
             f.write(f"{periods[iper]:14.5f} {rhoa_phas}\n")
 
-if RhoPlt:
-    pltargs["pltsize"] = [16., 16.]
-    fig, ax = plt.subplots(2, 2, figsize=pltargs["pltsize"])
-    fig.suptitle(pltargs["suptitle"], fontsize=pltargs["fontsizes"][2])
+if RHO_PLT:
+    PLTARGS["pltsize"] = [16., 16.]
+    fig, ax = plt.subplots(2, 2, figsize=PLTARGS["pltsize"])
+    fig.suptitle(PLTARGS["suptitle"], fontsize=PLTARGS["fontsizes"][2])
 
-    data = np.zeros((len(Periods), 3))
-    data[:, 0] = Periods[:]
+    data = np.zeros((len(PERIODS), 3))
+    data[:, 0] = PERIODS[:]
 
     data[:, 1] = rhoa[:, 1]
     data[:, 2] = rhoa[:, 2]
-    pltargs["title"] = "Rho xy/yx"
-    pltargs["legend"] = [r"$\rho_{a, xy}$", r"$\rho_{a, yx}$"]
-    pltargs["yscale"] = "log"
-    pltargs["ylimits"] = []
-    pltargs["ylabel"] = r"$\rho_a$  [$\Omega$ m]"
-    viz.plot_rhophas(thisaxis=ax[0, 0], data=data, **pltargs)
+    PLTARGS["title"] = "Rho xy/yx"
+    PLTARGS["legend"] = [r"$\rho_{a, xy}$", r"$\rho_{a, yx}$"]
+    PLTARGS["yscale"] = "log"
+    PLTARGS["ylimits"] = []
+    PLTARGS["ylabel"] = r"$\rho_a$  [$\Omega$ m]"
+    viz.plot_rhophas(thisaxis=ax[0, 0], data=data, **PLTARGS)
 
     data[:, 1] = phas[:, 1] + 90.
     data[:, 2] = phas[:, 2] - 90.
-    pltargs["title"] = "Phas xy/yx"
-    pltargs["legend"] = [r"$\phi_{xy}$", r"$\phi_{yx}$"]
-    pltargs["yscale"] = "linear"
-    pltargs["ylimits"] = [-180., 180.]
-    pltargs["ylabel"] = r"$\phi$ [$^\circ$]"
-    viz.plot_rhophas(thisaxis=ax[1, 0], data=data, **pltargs)
+    PLTARGS["title"] = "Phas xy/yx"
+    PLTARGS["legend"] = [r"$\phi_{xy}$", r"$\phi_{yx}$"]
+    PLTARGS["yscale"] = "linear"
+    PLTARGS["ylimits"] = [-180., 180.]
+    PLTARGS["ylabel"] = r"$\phi$ [$^\circ$]"
+    viz.plot_rhophas(thisaxis=ax[1, 0], data=data, **PLTARGS)
 
     data[:, 1] = rhoa[:, 0]
     data[:, 2] = rhoa[:, 3]
-    pltargs["title"] = "Rho xx/yy"
-    pltargs["legend"] = [r"$\rho_{a, xx}$", r"$\rho_{a, yy}$"]
-    pltargs["yscale"] = "log"
-    pltargs["ylimits"] = []
-    pltargs["ylabel"] = r"$\rho_a$  [$\Omega$ m]"
-    viz.plot_rhophas(thisaxis=ax[0, 1], data=data, **pltargs)
+    PLTARGS["title"] = "Rho xx/yy"
+    PLTARGS["legend"] = [r"$\rho_{a, xx}$", r"$\rho_{a, yy}$"]
+    PLTARGS["yscale"] = "log"
+    PLTARGS["ylimits"] = []
+    PLTARGS["ylabel"] = r"$\rho_a$  [$\Omega$ m]"
+    viz.plot_rhophas(thisaxis=ax[0, 1], data=data, **PLTARGS)
 
     data[:, 1] = phas[:, 0] - 90.
     data[:, 2] = phas[:, 3] + 90.
-    pltargs["title"] = "Phas xx/yy"
-    pltargs["legend"] = [r"$\phi_{xx}$", r"$\phi_{yy}$"]
-    pltargs["yscale"] = "linear"
-    pltargs["ylimits"] = [-180., 180.]
-    pltargs["ylabel"] = r"$\phi$ [$^\circ$]"
-    viz.plot_rhophas(thisaxis=ax[1, 1], data=data, **pltargs)
+    PLTARGS["title"] = "Phas xx/yy"
+    PLTARGS["legend"] = [r"$\phi_{xx}$", r"$\phi_{yy}$"]
+    PLTARGS["yscale"] = "linear"
+    PLTARGS["ylimits"] = [-180., 180.]
+    PLTARGS["ylabel"] = r"$\phi$ [$^\circ$]"
+    viz.plot_rhophas(thisaxis=ax[1, 1], data=data, **PLTARGS)
 
-    for fmt in PlotFormat:
-        plt.savefig(PlotFile + "_rhophas" + fmt)
+    for fmt in PLOT_FORMAT:
+        plt.savefig(PLOT_FILE + "_rhophas" + fmt)
 
 # =============================================================================
 #  Phase tensor output
 # =============================================================================
-if PhTOut:
-    with open(PhTFile, "w") as f:
+if PHT_OUT:
+    with open(PHT_FILE, "w") as f:
         f.write("#   PERIOD,  PT_xx,  PT_xy,  PT_yx,  PT_yy\n")
-        for iper in range(len(Periods)):
+        for iper in range(len(PERIODS)):
             phstens = "".join(
                 [f"{float(P[iper, ii]):14.5e} " for ii in range(4)]
             )
             f.write(f"{periods[iper]:14.5f} {phstens}\n")
 
-if PhTPlt:
-    pltargs["pltsize"] = [16., 8.]
-    fig, ax = plt.subplots(1, 2, figsize=pltargs["pltsize"])
-    fig.suptitle(pltargs["suptitle"], fontsize=pltargs["fontsizes"][2])
+if PHT_PLT:
+    PLTARGS["pltsize"] = [16., 8.]
+    fig, ax = plt.subplots(1, 2, figsize=PLTARGS["pltsize"])
+    fig.suptitle(PLTARGS["suptitle"], fontsize=PLTARGS["fontsizes"][2])
 
-    data = np.zeros((len(Periods), 3))
-    data[:, 0] = Periods[:]
+    data = np.zeros((len(PERIODS), 3))
+    data[:, 0] = PERIODS[:]
 
     data[:, 1] = P[:, 1]
     data[:, 2] = P[:, 2]
-    pltargs["title"] = r"Phase Tensor xy/yx"
-    pltargs["legend"] = [r"$\Phi_{xy}$", r"$\Phi_{yx}$"]
-    pltargs["yscale"] = "linear"
-    pltargs["ylimits"] = []
-    pltargs["ylabel"] = r"$\Phi$  [-]"
-    viz.plot_phastens(thisaxis=ax[0], data=data, **pltargs)
+    PLTARGS["title"] = r"Phase Tensor xy/yx"
+    PLTARGS["legend"] = [r"$\Phi_{xy}$", r"$\Phi_{yx}$"]
+    PLTARGS["yscale"] = "linear"
+    PLTARGS["ylimits"] = []
+    PLTARGS["ylabel"] = r"$\Phi$  [-]"
+    viz.plot_phastens(thisaxis=ax[0], data=data, **PLTARGS)
 
     data[:, 1] = P[:, 0]
     data[:, 2] = P[:, 3]
-    pltargs["title"] = r"Phase Tensor xx/yy"
-    pltargs["legend"] = [r"$\Phi_{xx}$", r"$\Phi_{yy}$"]
-    pltargs["yscale"] = "linear"
-    pltargs["ylimits"] = []
-    pltargs["ylabel"] = r"$\Phi$ [-]"
-    viz.plot_phastens(thisaxis=ax[1], data=data, **pltargs)
+    PLTARGS["title"] = r"Phase Tensor xx/yy"
+    PLTARGS["legend"] = [r"$\Phi_{xx}$", r"$\Phi_{yy}$"]
+    PLTARGS["yscale"] = "linear"
+    PLTARGS["ylimits"] = []
+    PLTARGS["ylabel"] = r"$\Phi$ [-]"
+    viz.plot_phastens(thisaxis=ax[1], data=data, **PLTARGS)
 
-    for fmt in PlotFormat:
-        plt.savefig(PlotFile + "_phstens" + fmt)
+    for fmt in PLOT_FORMAT:
+        plt.savefig(PLOT_FILE + "_phstens" + fmt)

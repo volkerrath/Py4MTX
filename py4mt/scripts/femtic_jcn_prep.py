@@ -6,7 +6,9 @@ Prepare directories and data subsets for a jackknife-inspired uncertainty analys
 Creates sub-directories with template files and generates reduced data sets
 (e.g., leave-one-site-out) for FEMTIC inversion runs.
 
-@author: vrath
+@author:   vrath
+@project:  py4mt — Python for Magnetotellurics
+@inversion: FEMTIC
 """
 
 import os
@@ -37,9 +39,9 @@ print(titstrng + "\n\n")
 # =============================================================================
 #  Configuration
 # =============================================================================
-EnsembleDir = r"/home/vrath/work/Ensemble/Ubinas_ens/"
-Templates = EnsembleDir + "templates/"
-Files = [
+ENSEMBLE_DIR = r"/home/vrath/work/Ensemble/Ubinas_ens/"
+TEMPLATES = ENSEMBLE_DIR + "templates/"
+FILES = [
     "control.dat",
     "observe.dat",
     "mesh.dat",
@@ -49,29 +51,29 @@ Files = [
     "run_femtic_oar.sh",
 ]
 
-ChoiceMode = ["site"]
+CHOICE_MODE = ["site"]
 
 # Read site count from control.dat when using site-based jackknife
-if "site" in ChoiceMode:
-    with open(Templates + "control.dat", "r") as file:
+if "site" in CHOICE_MODE:
+    with open(TEMPLATES + "control.dat", "r") as file:
         content = file.readlines()
     tmp = content[0].split()
-    N_samples = int(tmp[0])  # number of sites determines jackknife sample count
+    N_SAMPLES = int(tmp[0])  # number of sites determines jackknife sample count
 
 # Alternative: random subset mode
-# N_samples = 32
-# ChoiceMode = ['subset', N_samples]
+# N_SAMPLES = 32
+# CHOICE_MODE = ["subset", N_SAMPLES]
 
 # =============================================================================
 #  Generate directories
 # =============================================================================
-os.chdir(EnsembleDir)
+os.chdir(ENSEMBLE_DIR)
 
 dir_list = fem.generate_directories(
-    dir_base=EnsembleDir + "jcn_",
-    templates=Templates,
-    file_list=Files,
-    N_samples=N_samples,
+    dir_base=ENSEMBLE_DIR + "jcn_",
+    templates=TEMPLATES,
+    file_list=FILES,
+    N_samples=N_SAMPLES,
     out=True,
 )
 
@@ -79,9 +81,9 @@ dir_list = fem.generate_directories(
 #  Draw reduced data sets based on sites
 # =============================================================================
 data_ensemble = fem.generate_data_fcn(
-    dir_base=EnsembleDir + "ens_",
-    N_samples=N_samples,
+    dir_base=ENSEMBLE_DIR + "ens_",
+    N_samples=N_SAMPLES,
     file_in="observe.dat",
-    choice_mode=ChoiceMode,
+    choice_mode=CHOICE_MODE,
     out=True,
 )

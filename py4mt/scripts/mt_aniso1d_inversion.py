@@ -10,8 +10,9 @@ Script-style workflow: edit the USER CONFIG section and run:
 Supports Tikhonov and TSVD regularisation with automatic parameter
 selection (GCV, L-curve, ABIC). Helpers are imported from inverse.py.
 
-Author: Volker Rath (DIAS)
-Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-13 (UTC)
+@author:    Volker Rath (DIAS)
+@project:   py4mt — Python for Magnetotellurics
+@created:   2026-02-13 with the help of ChatGPT (GPT-5 Thinking)
 """
 
 from __future__ import annotations
@@ -55,21 +56,21 @@ print(titstrng + "\n\n")
 # =============================================================================
 #  Starting model
 # =============================================================================
-nlayer = 17
-h_m = np.r_[np.logspace(np.log10(50.0), np.log10(500.0), nlayer - 1), 0.0]
+N_LAYER = 17
+H_M = np.r_[np.logspace(np.log10(50.0), np.log10(500.0), N_LAYER - 1), 0.0]
 
 # Conductivity domain (S/m). 100 Ohm·m isotropic => sigma = 0.01 S/m.
-Model0 = {
+MODEL0 = {
     "prior_name": "model1_hfix",
-    "h_m": h_m,
-    "sigma_min": 0.01 * np.ones(nlayer, dtype=float),
-    "sigma_max": 0.01 * np.ones(nlayer, dtype=float),
-    "strike_deg": np.zeros(nlayer, dtype=float),
-    "is_iso": np.zeros(nlayer, dtype=bool),
-    "is_fix": np.zeros(nlayer, dtype=bool),
+    "h_m": H_M,
+    "sigma_min": 0.01 * np.ones(N_LAYER, dtype=float),
+    "sigma_max": 0.01 * np.ones(N_LAYER, dtype=float),
+    "strike_deg": np.zeros(N_LAYER, dtype=float),
+    "is_iso": np.zeros(N_LAYER, dtype=bool),
+    "is_fix": np.zeros(N_LAYER, dtype=bool),
 }
 
-PlotResults = True
+PLOT_RESULTS = True
 
 # =============================================================================
 #  USER CONFIG
@@ -81,7 +82,7 @@ INPUT_GLOB = DATA_DIR + "Ann18*.npz"
 OUTDIR = DATA_DIR + "detinv_hfix"
 MODEL_NPZ = DATA_DIR + "model0.npz"
 
-MODEL_DIRECT = Model0
+MODEL_DIRECT = MODEL0
 MODEL_DIRECT_SAVE_PATH = MODEL_NPZ
 MODEL_DIRECT_OVERWRITE = True
 
@@ -204,7 +205,7 @@ for f in in_files:
     out_path = Path(outdir) / f"{station}_inverse_{INV_METHOD}_{ALPHA_SELECT}.npz"
     inverse.save_inversion_npz(res, out_path.as_posix())
     print(f"Wrote: {out_path}")
-    if PlotResults:
+    if PLOT_RESULTS:
         print("  (result plotting not yet implemented)")
 
 print("\nDone.\n")

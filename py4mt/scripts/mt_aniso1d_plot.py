@@ -1,44 +1,25 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""mt_aniso1d_plot.py
-=====================
+"""
+Plotting driver for anisotropic 1-D MT inversion results.
 
-Plotting driver for the simplified anisotropic 1-D MT inversion results.
+Produces a three-panel figure per station showing vertical step profiles
+of the sampled parameter sets. Supports posterior uncertainty bands from
+ArviZ InferenceData (NetCDF) or falls back to summary NPZ arrays.
 
-This script is a *calling script* in the style used throughout your Py4MTX
-workflow:
+Panel contents depend on the parameterisation used by the sampler:
 
-- it keeps the PY4MTX environment variable conventions
-- it sets up the module search path
-- it controls figure layout and file saving
+- Resistivity domain (PARAM_DOMAIN="rho")
+    - PARAM_SET="minmax":     (rho_min, rho_max, strike)
+    - PARAM_SET="max_anifac": (rho_max, rho_anifac, strike)
 
-The actual plotting logic lives in :mod:`mcmc_viz`.
+- Conductivity domain (PARAM_DOMAIN="sigma")
+    - PARAM_SET="minmax":     (sigma_min, sigma_max, strike)
+    - PARAM_SET="max_anifac": (sigma_max, sigma_anifac, strike)
 
-Main output
------------
-
-For each station, a **three-panel** figure is produced:
-
-``fig, axs = plt.subplots(3, 1, figsize=(8, 8))``
-
-Each panel shows a vertical step profile of one of the 3-parameter sets used
-by the sampler.
-
-- Resistivity domain (``PARAM_DOMAIN='rho'``)
-    - ``PARAM_SET='minmax'``: (rho_min, rho_max, strike)
-    - ``PARAM_SET='max_anifac'``: (rho_max, rho_anifac, strike)
-
-- Conductivity domain (``PARAM_DOMAIN='sigma'``)
-    - ``PARAM_SET='minmax'``: (sigma_min, sigma_max, strike)
-    - ``PARAM_SET='max_anifac'``: (sigma_max, sigma_anifac, strike)
-
-If the netCDF InferenceData exists, posterior samples are used and one or more
-uncertainty bands can be shaded. Bands can be specified either as quantiles
-(0..1) or percentiles (0..100). If no netCDF exists, the script falls back to
-the arrays stored in the summary NPZ.
-
-Author: Volker Rath (DIAS)
-Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-13 (UTC)
+@author:    Volker Rath (DIAS)
+@project:   py4mt — Python for Magnetotellurics
+@created:   2026-02-13 with the help of ChatGPT (GPT-5 Thinking)
 """
 
 from __future__ import annotations
@@ -49,10 +30,7 @@ import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-
-# ArviZ >= 0.23.4 (project assumption)
 import arviz as az
-
 
 # --- Py4MTX environment -------------------------------------------------------
 
@@ -64,27 +42,22 @@ for pth in mypath:
     if pth not in sys.path:
         sys.path.insert(0, pth)
 
-
-# Local imports (Py4MTX)
 import mcmc
 import mcmc_viz as mv
 import util as utl
 from version import versionstrg
 
+# =============================================================================
+#  Configuration
+# =============================================================================
 
-# --- User settings ------------------------------------------------------------
-
-# Domain and parameter set to plot
-#
-# Use "auto" to pick up the parametrization actually used by the sampler.
-# This makes the plotting script robust when you switch between
-#   PARAM_DOMAIN = "rho"  and  PARAM_DOMAIN = "sigma"
-# in the sampler.
+# Domain and parameter set to plot.
+# Use "auto" to pick up the parametrisation actually used by the sampler.
 PARAM_DOMAIN = "auto"  # "auto", "rho" or "sigma"
-PARAM_SET = "auto"  # "auto", "minmax" or "max_anifac"
+PARAM_SET = "auto"     # "auto", "minmax" or "max_anifac"
 
-# Uncertainty bands (used when idata exists). Can be given either as quantiles
-# (0..1) or percentiles (0..100).
+# Uncertainty bands (used when idata exists). Can be given either as
+# quantiles (0..1) or percentiles (0..100).
 BANDS = ((10.0, 90.0), (25.0, 75.0))
 
 # Optional: show dashed band edges in addition to the shaded bands
@@ -92,23 +65,22 @@ SHOW_BAND_EDGES = False
 
 # Files / folders
 DATA_DIR = Path(PY4MTX_DATA) / "edi"
-SUMM_DIR = DATA_DIR / "pmc_demetropolis_hfix"  # adjust to your sampler output folder
+SUMM_DIR = DATA_DIR / "pmc_demetropolis_hfix"
 PLOT_DIR = DATA_DIR / "plots"
 PLOT_DIR.mkdir(parents=True, exist_ok=True)
 
 PLOT_FORMATS = (".pdf",)  # (".pdf", ".png")
 NAME_SUFFIX = "_pmc_threepanel"
 
-# Station selector
-#
-# Prefer to enumerate stations from the sampler summary files, because those
-# are the plotting inputs. This also avoids coupling to site-npz creation.
+# Station selector — enumerate from sampler summary files
 SEARCH_GLOB = str(SUMM_DIR / "*_pmc_summary.npz")
 
 
+# =============================================================================
+#  Helper functions
+# =============================================================================
 def _bands_to_qpairs(bands):
     """Convert bands (quantiles or percentiles) to quantile pairs."""
-
     qpairs = []
     if bands is None:
         return tuple(qpairs)
@@ -117,7 +89,6 @@ def _bands_to_qpairs(bands):
         lo = float(lo)
         hi = float(hi)
         if (lo > 1.0) or (hi > 1.0):
-            # interpret as percentiles
             lo /= 100.0
             hi /= 100.0
         qpairs.append((lo, hi))
@@ -126,7 +97,6 @@ def _bands_to_qpairs(bands):
 
 def _infer_param_domain(summary, idata):
     """Infer 'rho'/'sigma' from sampler metadata or variable presence."""
-
     # 1) explicit metadata
     info = summary.get("info") if isinstance(summary, dict) else None
     if isinstance(info, dict):
@@ -162,7 +132,6 @@ def _infer_param_domain(summary, idata):
 
 def _infer_param_set(summary):
     """Infer parameter set name from sampler metadata; default to 'minmax'."""
-
     info = summary.get("info") if isinstance(summary, dict) else None
     if isinstance(info, dict):
         v = info.get("param_set")
@@ -176,6 +145,9 @@ def _infer_param_set(summary):
     return "minmax"
 
 
+# =============================================================================
+#  Main
+# =============================================================================
 def main() -> int:
     """Run the plot driver."""
 
@@ -203,14 +175,12 @@ def main() -> int:
         idata = None
         if nc_path.is_file():
             try:
-                # ArviZ >= 0.23.4
                 idata = az.from_netcdf(nc_path.as_posix())
             except Exception as e:
                 print(f"  Could not open idata: {nc_path} ({e}). Using summary only.")
 
         fig, axs = plt.subplots(3, 1, figsize=(8, 8), sharey=True)
 
-        # Keep the plot parametrization in sync with the sampler.
         param_domain = (
             _infer_param_domain(summary, idata)
             if str(PARAM_DOMAIN).strip().lower() == "auto"
@@ -231,7 +201,11 @@ def main() -> int:
             qpairs=qpairs,
             show_quantile_lines=SHOW_BAND_EDGES,
             prefer_idata=True,
-            overlay_single=summary.get("model0") if isinstance(summary.get("model0"), dict) else None,
+            overlay_single=(
+                summary.get("model0")
+                if isinstance(summary.get("model0"), dict)
+                else None
+            ),
         )
 
         fig.suptitle(f"{station} | {param_domain}:{param_set}")

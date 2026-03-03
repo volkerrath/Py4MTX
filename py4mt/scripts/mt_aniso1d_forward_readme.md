@@ -9,7 +9,7 @@ Anisotropic 1-D MT forward modelling and plotting.
 | Script | `mt_aniso1d_forward.py` |
 | Author | Volker Rath (DIAS), with ChatGPT (GPT-5 Thinking), 2026-02-13 |
 | Part of | **py4mt** — Python for Magnetotellurics |
-| README generated | 2 March 2026 by Claude (Anthropic), from cleaned source |
+| README generated | 3 March 2026 by Claude (Anthropic), from cleaned source |
 
 ## Purpose
 
@@ -24,6 +24,19 @@ are written to text files and optionally plotted.
 3. Derive phase tensor P from Z.
 4. Export impedance (Re/Im interlaced), ρ_a / φ, and phase tensor to `.dat` files.
 5. Generate 2×2 subplot figures for impedance, ρ_a/φ, and phase tensor.
+
+## Configuration constants
+
+| Constant | Description |
+|----------|-------------|
+| `WORK_DIR` | Working / output directory. |
+| `SUM_OUT`, `RES_FILE` | Write model summary to file. |
+| `IMP_OUT`, `IMP_FILE`, `IMP_PLT` | Impedance output and plot switches. |
+| `RHO_OUT`, `RHO_FILE`, `RHO_PLT` | Apparent resistivity / phase output and plot switches. |
+| `PHT_OUT`, `PHT_FILE`, `PHT_PLT` | Phase tensor output and plot switches. |
+| `PLOT_FORMAT`, `PLOT_FILE` | Plot file format(s) and base name. |
+| `PLTARGS` | Dict of plotting parameters (sizes, fonts, colours, markers). |
+| `PERIODS`, `N_LAYER`, `MODEL` | Model definition (period array, layer count, parameter matrix). |
 
 ## Outputs
 
@@ -48,12 +61,6 @@ are written to text files and optionally plotted.
 | **Dead code** | ~100 lines of commented-out alternative models and old loop removed. |
 | **Unused import** | `mu0` defined but never used; removed. |
 
-## Configuration
-
-Edit the **Configuration** section and **Model definition** block. Predefined
-models from Rong et al. (2022) and Pek & Santos (2002) are available as
-commented alternatives.
-
 ## Dependencies
 
-`numpy`, `matplotlib`, py4mt: `aniso`, `data_proc`, `viz`, `util`, `version`.
+`numpy`, `matplotlib`; py4mt: `aniso`, `data_proc`, `viz`, `util`, `version`.

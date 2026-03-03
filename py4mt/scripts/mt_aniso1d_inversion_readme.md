@@ -9,7 +9,7 @@ Deterministic anisotropic 1-D MT inversion driver.
 | Script | `mt_aniso1d_inversion.py` |
 | Author | Volker Rath (DIAS), with ChatGPT (GPT-5 Thinking), 2026-02-13 |
 | Part of | **py4mt** — Python for Magnetotellurics |
-| README generated | 2 March 2026 by Claude (Anthropic), from cleaned source |
+| README generated | 3 March 2026 by Claude (Anthropic), from cleaned source |
 
 ## Purpose
 
@@ -27,19 +27,22 @@ parameter selection (GCV, L-curve, ABIC).
    - Run `inverse.invert_site()` with the chosen method.
    - Save results as `.npz`.
 
-## Configuration
+## Configuration constants
 
-Edit the **USER CONFIG** section. Key variables:
-
-| Variable | Description |
+| Constant | Description |
 |----------|-------------|
+| `N_LAYER`, `H_M` | Number of layers and thickness vector for the starting model. |
+| `MODEL0` | In-file starting model dict. |
+| `DATA_DIR` | Base data directory. |
 | `INPUT_GLOB` | Glob pattern for input `.npz` station files. |
 | `OUTDIR` | Output directory. |
-| `MODEL_DIRECT` | In-file starting model dict (or `None` to load from file). |
+| `MODEL_DIRECT` | Set to `MODEL0` to use in-file model, or `None` to load from `MODEL_NPZ`. |
 | `INV_METHOD` | `"tikhonov"` or `"tsvd"`. |
 | `ALPHA_SELECT` | `"fixed"`, `"lcurve"`, `"gcv"`, `"abic"`. |
 | `PARAM_DOMAIN` | `"rho"` or `"sigma"`. |
+| `PARAM_SET` | `"minmax"` or `"max_anifac"`. |
 | `USE_PT` | Include phase tensor data in inversion. |
+| `PLOT_RESULTS` | Enable result plotting (not yet implemented). |
 
 ## Outputs
 
@@ -48,8 +51,8 @@ inversion result (model, residuals, diagnostics).
 
 ## Status
 
-Result plotting (`PlotResults`) is declared but not yet implemented.
+Result plotting (`PLOT_RESULTS`) is declared but not yet implemented.
 
 ## Dependencies
 
-`numpy`, py4mt: `inverse`, `util`, `version`.
+`numpy`; py4mt: `inverse`, `util`, `version`.
