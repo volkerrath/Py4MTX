@@ -24,6 +24,11 @@ References:
 
 
 @author: vrath
+
+Provenance:
+    2025-04-30  vrath   Created.
+    2026-03-03  Claude  Renamed user-set parameters to UPPERCASE;
+                        generated README.
 '''
 import os
 import sys
@@ -61,20 +66,20 @@ version, _ = versionstrg()
 titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng+'\n\n')
 
-EnsembleDir = r'/home/vrath/work/Ensembles/RTO/'
-EnsembleName = 'rto_*'
+ENSEMBLE_DIR = r'/home/vrath/work/Ensembles/RTO/'
+ENSEMBLE_NAME = 'rto_*'
 
-NRMSmax = 1.4
-# Percentiles = numpy.array([10., 20., 30., 40., 50., 60., 70., 80., 90.]) # linear
-Percentiles = [2.3, 15.9, 50., 84.1,97.7]                   # 95/68
-EnsembleResults = EnsembleDir+'RTO_results.npz'
+NRMS_MAX = 1.4
+# PERCENTILES = numpy.array([10., 20., 30., 40., 50., 60., 70., 80., 90.]) # linear
+PERCENTILES = [2.3, 15.9, 50., 84.1,97.7]                   # 95/68
+ENSEMBLE_RESULTS = ENSEMBLE_DIR+'RTO_results.npz'
 
-Sparsify = True
-SparseThresh = 1.e-8
+SPARSIFY = True
+SPARSE_THRESH = 1.e-8
 
 dir_list = utl.get_filelist(
-    searchstr=[EnsembleName],
-    searchpath=EnsembleDir,
+    searchstr=[ENSEMBLE_NAME],
+    searchpath=ENSEMBLE_DIR,
     fullpath=True)
 
 
@@ -94,7 +99,7 @@ for dir in dir_list:
     nrms = float(info[8])
 
 
-    if nrms > NRMSmax:
+    if nrms > NRMS_MAX:
         print(dir,'nRMS =',nrms)
         print(dir,'not converged, run skipped.')
         continue
@@ -113,10 +118,10 @@ for dir in dir_list:
 
 rto_cov = sklearn.covariance.empirical_covariance(rto_ens)
 
-if Sparsify:
+if SPARSIFY:
     tmp = rto_cov.copy()
     maxval = np.amax(tmp)
-    tmp[np.abs(tmp)/np.amax(tmp) <= SparseThresh] = 0.
+    tmp[np.abs(tmp)/np.amax(tmp) <= SPARSE_THRESH] = 0.
     rto_covs = scs.csr_matrix(tmp)
 
 
@@ -130,7 +135,7 @@ rto_med = np.median(rto_ens, axis=1)
 # print(ne)
 rto_mad = np.median(
     np.abs(rto_ens.T - np.tile(rto_med, (ne[1], 1))))
-rto_prc = np.percentile(rto_ens, Percentiles)
+rto_prc = np.percentile(rto_ens, PERCENTILES)
 
 rto_dict ={'model_list' : model_list,
     'rto_ens' : rto_ens,
@@ -141,4 +146,4 @@ rto_dict ={'model_list' : model_list,
     'rto_mad' : rto_mad,
     'rto_prc' : rto_prc}
 
-np.savez_compressed(EnsembleResults, **rto_dict)
+np.savez_compressed(ENSEMBLE_RESULTS, **rto_dict)

@@ -27,6 +27,9 @@ Created on Thu Jul 24 10:25:11 2025
 
 @author: vrath
 
+Provenance:
+    2025-07-24  vrath   Created.
+    2026-03-03  Claude  Renamed user-set parameters to UPPERCASE.
 '''
 import os
 import sys
@@ -66,35 +69,35 @@ fname = inspect.getfile(inspect.currentframe())
 titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng+'\n\n')
 
-WorkDir = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
+WORK_DIR = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
 
-MatrixIn = 'R'
-FormatIn =  'coo'
-RoughFile = WorkDir +MatrixIn+'_'+FormatIn+'.npz'
+MATRIX_IN = 'R'
+FORMAT_IN =  'coo'
+ROUGH_FILE = WORK_DIR +MATRIX_IN+'_'+FORMAT_IN+'.npz'
 
-Alpha = 1.
-Factor = 1./Alpha**2
-RegEps = 1.e-4
-Sparsify = [1.e-4, 10]
-MatrixOut = 'invRTR_'+str(int(np.abs(np.log10(Sparsify[0]))))+'-'+str(Sparsify[1])
-FormatOut = 'csr'
+ALPHA = 1.
+FACTOR = 1./ALPHA**2
+REG_EPS = 1.e-4
+SPARSIFY = [1.e-4, 10]
+MATRIX_OUT = 'invRTR_'+str(int(np.abs(np.log10(SPARSIFY[0]))))+'-'+str(SPARSIFY[1])
+FORMAT_OUT = 'csr'
 
 
-RoughNew = RoughFile.replace(MatrixIn, MatrixOut)
-RoughNew = RoughNew.replace(FormatIn, FormatOut)
-print('Output M will be written to ', RoughNew)
+ROUGH_NEW = ROUGH_FILE.replace(MATRIX_IN, MATRIX_OUT)
+ROUGH_NEW = ROUGH_NEW.replace(FORMAT_IN, FORMAT_OUT)
+print('Output M will be written to ', ROUGH_NEW)
 
-R = scs.load_npz(RoughFile)
+R = scs.load_npz(ROUGH_FILE)
 print(type(R))
 print('Sparse format is', R.format)
 
 
 M = fem.make_prior_cov(rough=R,
-                          outmatrix = MatrixOut,
-                          regeps = RegEps,
-                          spformat = FormatOut,
-                          spthresh = Sparsify[0],
-                          spfill = Sparsify[1],
+                          outmatrix = MATRIX_OUT,
+                          regeps = REG_EPS,
+                          spformat = FORMAT_OUT,
+                          spthresh = SPARSIFY[0],
+                          spfill = SPARSIFY[1],
                           spsolver = 'ilu',
                           spmeth = 'basic,area',
                           nthreads = n_threads,
@@ -103,14 +106,14 @@ M = fem.make_prior_cov(rough=R,
 # fem.check_sparse_matrix(M)
 print('matrix done')
 
-M = Factor*M
+M = FACTOR*M
 
 
 if scs.issparse(M):
     print('M is sparse.')
-    scs.save_npz(RoughNew, matrix=M)
+    scs.save_npz(ROUGH_NEW, matrix=M)
 else:
     print('M is dense.')
-    np.savez_compressed(RoughNew, matrix=M)
+    np.savez_compressed(ROUGH_NEW, matrix=M)
 
 print('all done')

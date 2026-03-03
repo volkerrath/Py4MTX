@@ -8,6 +8,11 @@ filters by convergence (nRMS threshold), and performs dimensionality
 reduction using PCA or ICA (via scikit-learn).
 
 @author: vrath
+
+Provenance:
+    2025       vrath   Created (as femtic_decomp_ens.py).
+    2026-03-03 Claude  Renamed file to femtic_ens_decomp.py;
+                       renamed user-set parameters to UPPERCASE.
 """
 
 import os
@@ -39,19 +44,19 @@ print(titstrng + "\n\n")
 # =============================================================================
 #  Configuration
 # =============================================================================
-EnsembleDir = r"/home/vrath/work/Ensembles/RTO/"
-EnsembleName = "rto_*"
-NRMSmax = 1.4
+ENSEMBLE_DIR = r"/home/vrath/work/Ensembles/RTO/"
+ENSEMBLE_NAME = "rto_*"
+NRMS_MAX = 1.4
 
-Proc = "pca"  # Options: 'pca', 'increment', 'ica'
-Percentiles = [2.3, 15.9, 50.0, 84.1, 97.7]  # 2-sigma / 1-sigma bounds
-EnsembleResults = EnsembleDir + "PCA.npz"
+PROC = "pca"  # Options: 'pca', 'increment', 'ica'
+PERCENTILES = [2.3, 15.9, 50.0, 84.1, 97.7]  # 2-sigma / 1-sigma bounds
+ENSEMBLE_RESULTS = ENSEMBLE_DIR + "PCA.npz"
 
 # =============================================================================
 #  Collect ensemble members
 # =============================================================================
 dir_list = utl.get_filelist(
-    searchstr=[EnsembleName], searchpath=EnsembleDir, fullpath=True
+    searchstr=[ENSEMBLE_NAME], searchpath=ENSEMBLE_DIR, fullpath=True
 )
 
 model_list = []
@@ -71,7 +76,7 @@ for directory in dir_list:
     numit = int(info[0])
     nrms = float(info[8])
 
-    if nrms > NRMSmax:
+    if nrms > NRMS_MAX:
         print(directory, "nRMS =", nrms, "- not converged, run skipped.")
         continue
 
@@ -93,7 +98,7 @@ results_dict = {"model_list": model_list, "ensemble": ensemble}
 # =============================================================================
 #  Decomposition
 # =============================================================================
-proc_lower = Proc.lower()
+proc_lower = PROC.lower()
 
 if "pca" in proc_lower or "increment" in proc_lower:
     for ipca in np.arange(1, model_count):
@@ -112,5 +117,5 @@ elif "ica" in proc_lower:
         ica = sklearn.decomposition.FastICA(n_components=n_comp)
         ica.fit(ensemble)
 
-np.savez_compressed(EnsembleResults, **results_dict)
-print(f"\nResults saved to {EnsembleResults}")
+np.savez_compressed(ENSEMBLE_RESULTS, **results_dict)
+print(f"\nResults saved to {ENSEMBLE_RESULTS}")

@@ -31,6 +31,10 @@ Blatter, D.; Morzfeld, M.; Key, K. & Constable, S.
 Created on Wed Apr 30 16:33:13 2025
 
 @author: vrath
+
+Provenance:
+    2025-04-30  vrath   Created.
+    2025-06-03  Claude  Renamed user-set parameters to UPPERCASE.
 '''
 
 import os
@@ -78,10 +82,10 @@ print(titstrng + '\n\n')
 '''
 Base setup.
 '''
-N_samples = 32
-EnsembleDir = r'/home/vrath/FEMTIC_work/ens_misti/'
-Templates = EnsembleDir + 'templates/'
-Files = ['control.dat',
+N_SAMPLES = 32
+ENSEMBLE_DIR = r'/home/vrath/FEMTIC_work/ens_misti/'
+TEMPLATES = ENSEMBLE_DIR + 'templates/'
+FILES = ['control.dat',
          'observe.dat',
          'mesh.dat',
          'resistivity_block_iter0.dat',
@@ -89,48 +93,48 @@ Files = ['control.dat',
          'run_femtic_dias.sh',]
 # 'run_femtic_kraken.sh']
 
-EnsembleName = 'misti_rto_'
+ENSEMBLE_NAME = 'misti_rto_'
 
 '''
 Control number of ensemble members for increase of smple number or restart
 of badly converged samples (see femtic_rto_post.py)
 '''
-FromTo = None
+FROM_TO = None
 
 
 '''
 Set up mode of model perturbations.
 '''
-PerturbMod = True
-if PerturbMod:
-    Mod_ref = 'resistivity_block_iter30.dat'
-    Mod_method = 'add'
+PERTURB_MOD = True
+if PERTURB_MOD:
+    MOD_REF = 'resistivity_block_iter30.dat'
+    MOD_METHOD = 'add'
     # if ModCov is not None, this needs to be normal
-    Mod_pdf = ['normal', 0., 0.3]
+    MOD_PDF = ['normal', 0., 0.3]
     # ['exp', L], ['gauss', L], ['matern], L, MatPars], ['femtic'], None
-    Mod_R = 'femtic R'
-    R_file = 'R_coo'
+    MOD_R = 'femtic R'
+    R_FILE = 'R_coo'
 else:
-    Mod_R = None
+    MOD_R = None
 
 '''
 Set up mode of data perturbations.
 '''
 
-PerturbDat = True
-if PerturbDat:
-    Dat_method = 'add',
-    Dat_pdf = ['normal', 0., 1.0]
+PERTURB_DAT = True
+if PERTURB_DAT:
+    DAT_METHOD = 'add',
+    DAT_PDF = ['normal', 0., 1.0]
 
-ResetErrors = True
-if ResetErrors:
-    Errors = [
+RESET_ERRORS = True
+if RESET_ERRORS:
+    ERRORS = [
         [0.15, .05, .05, 0.15]*2,        # Impedance
         [0.03, 0.03]*2,               # VTF
         [.5, .2, .2, .5],          # PT
     ]
 else:
-    Errors = []
+    ERRORS = []
 
 
 '''
@@ -138,11 +142,11 @@ Generate ensemble directories and copy template files.
 '''
 
 dir_list = ens.generate_directories(alg='rto',
-                                    dir_base=EnsembleDir + EnsembleName,
-                                    templates=Templates,
-                                    file_list=Files,
-                                    n_samples=N_samples,
-                                    fromto=FromTo,
+                                    dir_base=ENSEMBLE_DIR + ENSEMBLE_NAME,
+                                    templates=TEMPLATES,
+                                    file_list=FILES,
+                                    n_samples=N_SAMPLES,
+                                    fromto=FROM_TO,
                                     out=True)
 
 print('\n')
@@ -152,13 +156,13 @@ Draw perturbed data sets: d  ̃ ∼ N (d, Cd)
 '''
 
 data_ensemble = ens.generate_data_ensemble(alg='rto',
-                                           dir_base=EnsembleDir + EnsembleName,
-                                           n_samples=N_samples,
-                                           fromto=FromTo,
+                                           dir_base=ENSEMBLE_DIR + ENSEMBLE_NAME,
+                                           n_samples=N_SAMPLES,
+                                           fromto=FROM_TO,
                                            file_in='observe.dat',
-                                           draw_from=Dat_pdf,
-                                           method=Dat_method,
-                                           errors=Errors,
+                                           draw_from=DAT_PDF,
+                                           method=DAT_METHOD,
+                                           errors=ERRORS,
                                            out=True)
 
 print('data ensemble ready!')
@@ -171,10 +175,10 @@ Read prior parameter precision Q = R^T@R for perturbations
 if needed. If the femtic mode is chosen, the martix needs to be
 read from external file.
 '''
-if 'Q' in Mod_R:
-    Q = scs.load_npz(EnsembleDir + EnsembleName + R_file + '.npz')
+if 'Q' in MOD_R:
+    Q = scs.load_npz(ENSEMBLE_DIR + ENSEMBLE_NAME + R_FILE + '.npz')
 else:
-    R = scs.load_npz(EnsembleDir + EnsembleName + R_file + '.npz')
+    R = scs.load_npz(ENSEMBLE_DIR + ENSEMBLE_NAME + R_FILE + '.npz')
     Q = R.T @ R
 
 # stop(' data done')
@@ -182,11 +186,11 @@ print('roughness loaded with shape:', np.shape(Q))
 
 
 model_ensemble = ens.generate_model_ensemble(alg='rto',
-                                             dir_base=EnsembleDir + EnsembleName,
-                                             n_samples=N_samples,
-                                             fromto=FromTo,
-                                             refmod=Mod_ref,
-                                             method=Mod_method,
+                                             dir_base=ENSEMBLE_DIR + ENSEMBLE_NAME,
+                                             n_samples=N_SAMPLES,
+                                             fromto=FROM_TO,
+                                             refmod=MOD_REF,
+                                             method=MOD_METHOD,
                                              q=Q,
                                              out=True)
 print('\n')

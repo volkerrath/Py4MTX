@@ -1,4 +1,4 @@
-# femtic_decomp_ens.py
+# femtic_ens_decomp.py
 
 Dimensionality reduction (PCA / ICA) on a FEMTIC model ensemble.
 
@@ -6,11 +6,18 @@ Dimensionality reduction (PCA / ICA) on a FEMTIC model ensemble.
 
 | Field | Value |
 |-------|-------|
-| Script | `femtic_decomp_ens.py` |
+| Script | `femtic_ens_decomp.py` |
 | Author | vrath |
 | Part of | **py4mt** — Python for Magnetotellurics |
 | Inversion code | FEMTIC |
 | README generated | 2 March 2026 by Claude (Anthropic), from cleaned source |
+
+## Provenance
+
+| Date       | Author | Change                                                          |
+|------------|--------|-----------------------------------------------------------------|
+| 2025       | vrath  | Created (as femtic_decomp_ens).                                 |
+| 2026-03-03 | Claude | Renamed file to femtic_ens_decomp; params to UPPERCASE.         |
 
 ## Purpose
 
@@ -23,10 +30,10 @@ variance ratios and singular values for an increasing number of components.
 
 | Item | Description |
 |------|-------------|
-| `EnsembleDir` | Directory containing one sub-directory per inversion run. |
-| `EnsembleName` | Glob pattern to match run directories (e.g. `rto_*`). |
-| `NRMSmax` | Maximum normalised RMS; runs above this threshold are skipped. |
-| `Proc` | Decomposition method: `'pca'`, `'increment'`, or `'ica'`. |
+| `ENSEMBLE_DIR` | Directory containing one sub-directory per inversion run. |
+| `ENSEMBLE_NAME` | Glob pattern to match run directories (e.g. `rto_*`). |
+| `NRMS_MAX` | Maximum normalised RMS; runs above this threshold are skipped. |
+| `PROC` | Decomposition method: `'pca'`, `'increment'`, or `'ica'`. |
 
 Each run directory must contain `femtic.cnv` (convergence log) and
 `resistivity_block_iter<N>.dat` (final model).
@@ -35,7 +42,7 @@ Each run directory must contain `femtic.cnv` (convergence log) and
 
 | File | Contents |
 |------|----------|
-| `<EnsembleResults>.npz` | `model_list` (file paths, iteration, nRMS) and `ensemble` (stacked model matrix). |
+| `<ENSEMBLE_RESULTS>.npz` | `model_list` (file paths, iteration, nRMS) and `ensemble` (stacked model matrix). |
 
 Console output: per-component explained variance, cumulative variance, and singular values.
 
@@ -43,10 +50,10 @@ Console output: per-component explained variance, cumulative variance, and singu
 
 Edit the **Configuration** section at the top of the script:
 
-- `EnsembleDir`, `EnsembleName` — where to find runs.
-- `NRMSmax` — convergence filter.
-- `Proc` — `'pca'` (default), `'increment'` (same loop), or `'ica'`.
-- `EnsembleResults` — output `.npz` path.
+- `ENSEMBLE_DIR`, `ENSEMBLE_NAME` — where to find runs.
+- `NRMS_MAX` — convergence filter.
+- `PROC` — `'pca'` (default), `'increment'` (same loop), or `'ica'`.
+- `ENSEMBLE_RESULTS` — output `.npz` path.
 
 ## Dependencies
 

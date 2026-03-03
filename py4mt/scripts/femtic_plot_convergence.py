@@ -8,6 +8,10 @@ Reads femtic.cnv files from a set of inversion directories and
 generates convergence plots as PDF.
 
 @author: vrath
+
+Provenance:
+    2025       vrath   Created.
+    2026-03-03 Claude  Renamed user-set parameters to UPPERCASE.
 """
 
 import os
@@ -39,13 +43,13 @@ print(titstrng + "\n\n")
 # =============================================================================
 #  Configuration
 # =============================================================================
-WorkDir = r"/home/vrath/FEMTIC_work/krafla6big_L2_L_curve/"
-PlotName = r"Krafla_L2_Convergence"
-PlotWhat = "rough"  # Options: 'misfit', 'rms', 'rough'
+WORK_DIR = r"/home/vrath/FEMTIC_work/krafla6big_L2_L_curve/"
+PLOT_NAME = r"Krafla_L2_Convergence"
+PLOT_WHAT = "rough"  # Options: 'misfit', 'rms', 'rough'
 
-SearchStrng = "kra*"
+SEARCH_STRNG = "kra*"
 dir_list = utl.get_filelist(
-    searchstr=[SearchStrng], searchpath=WorkDir,
+    searchstr=[SEARCH_STRNG], searchpath=WORK_DIR,
     sortedlist=True, fullpath=True,
 )
 
@@ -97,7 +101,7 @@ for directory in dir_list:
     )
 
     fig, ax = plt.subplots()
-    plot_what = PlotWhat.lower()
+    plot_what = PLOT_WHAT.lower()
 
     if "mis" in plot_what:
         print("plotting misfit")
@@ -123,7 +127,7 @@ for directory in dir_list:
         )
 
     plt.title(
-        PlotName.replace("_", " ") + r" |   $\alpha$ = "
+        PLOT_NAME.replace("_", " ") + r" |   $\alpha$ = "
         + str(round(alpha[0], 2))
     )
     plt.xlabel(r"iteration", fontsize=14)
@@ -131,7 +135,7 @@ for directory in dir_list:
     plt.tight_layout()
 
     outfile = (
-        WorkDir + PlotName + "_" + plot_what
+        WORK_DIR + PLOT_NAME + "_" + plot_what
         + "_alpha" + str(round(alpha[0], 2)) + ".pdf"
     )
     plt.savefig(outfile)

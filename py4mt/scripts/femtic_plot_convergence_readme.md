@@ -12,6 +12,13 @@ Plot iteration-by-iteration convergence curves from FEMTIC inversions.
 | Inversion code | FEMTIC |
 | README generated | 2 March 2026 by Claude (Anthropic), from cleaned source |
 
+## Provenance
+
+| Date       | Author | Change                                       |
+|------------|--------|----------------------------------------------|
+| 2025       | vrath  | Created.                                     |
+| 2026-03-03 | Claude | Renamed user-set parameters to UPPERCASE.    |
+
 ## Purpose
 
 Reads `femtic.cnv` convergence files from one or more inversion
@@ -20,7 +27,7 @@ chosen quantity evolves with iteration number.
 
 ## Plot options
 
-| `PlotWhat` | Y-axis | Scale |
+| `PLOT_WHAT` | Y-axis | Scale |
 |------------|--------|-------|
 | `'misfit'` | Weighted data misfit ‖C_d^{-1/2}(d_obs − d_calc)‖₂ | log |
 | `'rms'` | Normalised RMS | linear |
@@ -30,8 +37,8 @@ chosen quantity evolves with iteration number.
 
 | Item | Description |
 |------|-------------|
-| `WorkDir` | Directory containing inversion sub-directories. |
-| `SearchStrng` | Glob pattern to find sub-directories (e.g. `kra*`). |
+| `WORK_DIR` | Directory containing inversion sub-directories. |
+| `SEARCH_STRNG` | Glob pattern to find sub-directories (e.g. `kra*`). |
 
 Each sub-directory must contain `femtic.cnv` with columns:
 iteration, retry, alpha, …, roughness, …, misfit, nRMS.
@@ -39,14 +46,14 @@ iteration, retry, alpha, …, roughness, …, misfit, nRMS.
 ## Outputs
 
 One PDF per inversion directory:
-`<WorkDir>/<PlotName>_<PlotWhat>_alpha<value>.pdf`
+`<WORK_DIR>/<PLOT_NAME>_<PLOT_WHAT>_alpha<value>.pdf`
 
 ## Configuration
 
-- `WorkDir` — root directory.
-- `PlotName` — base name for the plot title and filename.
-- `PlotWhat` — `'misfit'`, `'rms'`, or `'rough'`.
-- `SearchStrng` — glob pattern.
+- `WORK_DIR` — root directory.
+- `PLOT_NAME` — base name for the plot title and filename.
+- `PLOT_WHAT` — `'misfit'`, `'rms'`, or `'rough'`.
+- `SEARCH_STRNG` — glob pattern.
 
 ## Dependencies
 

@@ -27,14 +27,14 @@ femtic_rto_prep.py    →   ensemble generation (if using R directly)
 
 | Variable       | Description                                                        |
 |----------------|--------------------------------------------------------------------|
-| `WorkDir`      | Directory containing `roughening_matrix.out`.                      |
-| `RoughFile`    | Full path to the FEMTIC roughening matrix text file.               |
-| `OutRough`     | Output matrix name: `'R'` saves the roughness, `'Q'` saves `R^T R`. |
-| `SparseFormat` | Sparse storage format for the output (`'coo'`, `'csr'`, `'csc'`). |
+| `WORK_DIR`      | Directory containing `roughening_matrix.out`.                      |
+| `ROUGH_FILE`    | Full path to the FEMTIC roughening matrix text file.               |
+| `OUT_ROUGH`     | Output matrix name: `'R'` saves the roughness, `'Q'` saves `R^T R`. |
+| `SPARSE_FORMAT` | Sparse storage format for the output (`'coo'`, `'csr'`, `'csc'`). |
 
 ## Behaviour
 
-- If `OutRough` contains `'q'` (case-insensitive), the script computes
+- If `OUT_ROUGH` contains `'q'` (case-insensitive), the script computes
   `Q = R^T R` and saves the precision matrix.
 - Otherwise it saves the roughness matrix `R` directly.
 - A sparse-matrix diagnostic is printed via `fem.check_sparse_matrix()`.
@@ -43,8 +43,8 @@ femtic_rto_prep.py    →   ensemble generation (if using R directly)
 
 ```python
 R = fem.get_roughness(
-    filerough=RoughFile,
-    spformat=SparseFormat,
+    filerough=ROUGH_FILE,
+    spformat=SPARSE_FORMAT,
     out=True,
 )
 ```
@@ -64,6 +64,13 @@ format, builds COO triplets, and converts to the requested sparse format.
 ## References
 
 See `README_femtic_rto_prep.md` for the full list of RTO references.
+
+## Provenance
+
+| Date       | Author | Change                                       |
+|------------|--------|----------------------------------------------|
+| 2025-07-24 | vrath  | Created.                                     |
+| 2026-03-03 | Claude | Renamed user-set parameters to UPPERCASE.    |
 
 ## Author
 
