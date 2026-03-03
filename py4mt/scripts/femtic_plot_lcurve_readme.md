@@ -12,6 +12,13 @@ Plot the L-curve for FEMTIC regularisation parameter selection.
 | Inversion code | FEMTIC |
 | README generated | 2 March 2026 by Claude (Anthropic), from cleaned source |
 
+## Provenance
+
+| Date       | Author | Change                                       |
+|------------|--------|----------------------------------------------|
+| 2025       | vrath  | Created.                                     |
+| 2026-03-03 | Claude | Renamed user-set parameters to UPPERCASE.    |
+
 ## Purpose
 
 Collects the final-iteration roughness and misfit (or nRMS) from
@@ -24,8 +31,8 @@ optimal trade-off.
 
 | Item | Description |
 |------|-------------|
-| `WorkDir` | Directory containing one sub-directory per alpha value. |
-| `SearchStrng` | Glob pattern to find sub-directories. |
+| `WORK_DIR` | Directory containing one sub-directory per alpha value. |
+| `SEARCH_STRNG` | Glob pattern to find sub-directories. |
 
 Each sub-directory must contain `femtic.cnv`. The last line of
 the file provides the final-iteration alpha, roughness, misfit, and nRMS.
@@ -34,14 +41,14 @@ the file provides the final-iteration alpha, roughness, misfit, and nRMS.
 
 | File | Contents |
 |------|----------|
-| `<PlotName>.pdf` | L-curve plot (PDF). |
-| `<PlotName>.png` | L-curve plot (PNG). |
+| `<PLOT_NAME>.pdf` | L-curve plot (PDF). |
+| `<PLOT_NAME>.png` | L-curve plot (PNG). |
 
 ## Configuration
 
-- `WorkDir` — root directory.
-- `PlotName` — base filename for the output plots.
-- `PlotWhat` — `'nrms'` (plot nRMS on x-axis) or `'misfit'` (plot raw misfit).
+- `WORK_DIR` — root directory.
+- `PLOT_NAME` — base filename for the output plots.
+- `PLOT_WHAT` — `'nrms'` (plot nRMS on x-axis) or `'misfit'` (plot raw misfit).
 
 ## Dependencies
 

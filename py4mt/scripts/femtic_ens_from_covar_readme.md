@@ -12,6 +12,13 @@ Generate a synthetic model ensemble from a posterior covariance matrix.
 | Inversion code | FEMTIC |
 | README generated | 2 March 2026 by Claude (Anthropic), from cleaned source |
 
+## Provenance
+
+| Date       | Author | Change                                       |
+|------------|--------|----------------------------------------------|
+| 2025       | vrath  | Created.                                     |
+| 2026-03-03 | Claude | Renamed user-set parameters to UPPERCASE.    |
+
 ## Purpose
 
 Given a posterior model covariance (e.g. from a randomise-then-optimise
@@ -32,19 +39,19 @@ tomography: method and applications. *Geophysical Prospecting*, 61,
 
 | Item | Description |
 |------|-------------|
-| `CovarResults` | `.npz` file containing `rto_cov` (covariance), `rto_avg` (reference model), `rto_var` (variance). |
+| `COVAR_RESULTS` | `.npz` file containing `rto_cov` (covariance), `rto_avg` (reference model), `rto_var` (variance). |
 
 ## Outputs
 
 | File | Contents |
 |------|----------|
-| `<NewEnsembleFile>.npz` | `new_ens` (ensemble matrix, N×M), `sqrtcov` (Cholesky factor), `ref` (reference model). |
+| `<NEW_ENSEMBLE_FILE>.npz` | `new_ens` (ensemble matrix, N×M), `sqrtcov` (Cholesky factor), `ref` (reference model). |
 
 ## Configuration
 
-- `CovarResults` — path to the input covariance `.npz`.
-- `NewEnsembleSize` — number of samples to draw (default 100).
-- `NewEnsembleFile` — output path.
+- `COVAR_RESULTS` — path to the input covariance `.npz`.
+- `NEW_ENSEMBLE_SIZE` — number of samples to draw (default 100).
+- `NEW_ENSEMBLE_FILE` — output path.
 
 ## Dependencies
 

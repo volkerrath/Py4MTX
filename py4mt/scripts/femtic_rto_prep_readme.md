@@ -41,32 +41,32 @@ All settings are at the top of the script:
 
 | Variable        | Description                                                         |
 |-----------------|---------------------------------------------------------------------|
-| `N_samples`     | Number of ensemble members to generate.                             |
-| `EnsembleDir`   | Root directory for the ensemble.                                    |
-| `Templates`     | Directory containing template FEMTIC input files.                   |
-| `Files`         | List of template files copied into each member directory.           |
-| `EnsembleName`  | Prefix for member directories (e.g. `misti_rto_`).                  |
-| `FromTo`        | `None` for 0…N−1, or `(start, stop)` to continue / patch members.  |
+| `N_SAMPLES`     | Number of ensemble members to generate.                             |
+| `ENSEMBLE_DIR`   | Root directory for the ensemble.                                    |
+| `TEMPLATES`     | Directory containing template FEMTIC input files.                   |
+| `FILES`         | List of template files copied into each member directory.           |
+| `ENSEMBLE_NAME`  | Prefix for member directories (e.g. `misti_rto_`).                  |
+| `FROM_TO`        | `None` for 0…N−1, or `(start, stop)` to continue / patch members.  |
 
 ### Model perturbation
 
 | Variable     | Description                                                          |
 |--------------|----------------------------------------------------------------------|
-| `PerturbMod` | Enable / disable model perturbation.                                 |
-| `Mod_ref`    | Reference model file (e.g. converged iterate).                       |
-| `Mod_method` | `'add'` — add perturbation to log₁₀(ρ).                             |
-| `Mod_pdf`    | Distribution parameters `['normal', mean, std]`.                     |
-| `Mod_R`      | Source of roughness / precision: `'femtic R'` or `'Q'`.              |
-| `R_file`     | Base name of the sparse-matrix `.npz` file (without extension).      |
+| `PERTURB_MOD` | Enable / disable model perturbation.                                 |
+| `MOD_REF`    | Reference model file (e.g. converged iterate).                       |
+| `MOD_METHOD` | `'add'` — add perturbation to log₁₀(ρ).                             |
+| `MOD_PDF`    | Distribution parameters `['normal', mean, std]`.                     |
+| `MOD_R`      | Source of roughness / precision: `'femtic R'` or `'Q'`.              |
+| `R_FILE`     | Base name of the sparse-matrix `.npz` file (without extension).      |
 
 ### Data perturbation
 
 | Variable      | Description                                                        |
 |---------------|--------------------------------------------------------------------|
-| `PerturbDat`  | Enable / disable data perturbation.                                |
-| `Dat_pdf`     | Distribution parameters for noise `['normal', 0., 1.0]`.          |
-| `ResetErrors` | If `True`, overwrite error floors before perturbation.             |
-| `Errors`      | Per-component error floors for impedance, VTF, and phase tensor.   |
+| `PERTURB_DAT`  | Enable / disable data perturbation.                                |
+| `DAT_PDF`     | Distribution parameters for noise `['normal', 0., 1.0]`.          |
+| `RESET_ERRORS` | If `True`, overwrite error floors before perturbation.             |
+| `ERRORS`      | Per-component error floors for impedance, VTF, and phase tensor.   |
 
 ## Dependencies
 
@@ -94,6 +94,13 @@ All settings are at the top of the script:
   *Uncertainty quantification for regularized inversion of electromagnetic
   geophysical data — Part II: application in 1-D and 2-D problems.*
   Geophysical Journal International, 2022, doi:10.1093/gji/ggac242.
+
+## Provenance
+
+| Date       | Author | Change                                       |
+|------------|--------|----------------------------------------------|
+| 2025-04-30 | vrath  | Created.                                     |
+| 2026-03-03 | Claude | Renamed user-set parameters to UPPERCASE.    |
 
 ## Author
 

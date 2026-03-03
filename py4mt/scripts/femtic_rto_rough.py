@@ -27,6 +27,9 @@ Created on Thu Jul 24 10:25:11 2025
 
 @author: vrath
 
+Provenance:
+    2025-07-24  vrath   Created.
+    2026-03-03  Claude  Renamed user-set parameters to UPPERCASE.
 '''
 import os
 import sys
@@ -63,31 +66,31 @@ fname = inspect.getfile(inspect.currentframe())
 titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng+'\n\n')
 
-WorkDir = '/home/vrath/Ensembles/misti_rto/work/' #PY4MTX_DATA+'Misti/MISTI_test/'
-RoughFile = WorkDir + 'roughening_matrix.out'
+WORK_DIR = '/home/vrath/Ensembles/misti_rto/work/' #PY4MTX_DATA+'Misti/MISTI_test/'
+ROUGH_FILE = WORK_DIR + 'roughening_matrix.out'
 
 
 
-OutRough = 'Q'
-SparseFormat = 'coo'
-RoughNew = WorkDir+OutRough+'_'+SparseFormat+'.npz'
+OUT_ROUGH = 'Q'
+SPARSE_FORMAT = 'coo'
+ROUGH_NEW = WORK_DIR+OUT_ROUGH+'_'+SPARSE_FORMAT+'.npz'
 
 
-R   = fem.get_roughness(filerough=RoughFile,
-                   spformat = SparseFormat,
+R   = fem.get_roughness(filerough=ROUGH_FILE,
+                   spformat = SPARSE_FORMAT,
                    out=True)
 
 
-if 'q' in OutRough.lower():
+if 'q' in OUT_ROUGH.lower():
     Q = R.T@R
     fem.check_sparse_matrix(Q)
-    RoughNew = WorkDir+'Q_'+SparseFormat+'.npz'
-    print('saved to', RoughNew)
+    ROUGH_NEW = WORK_DIR+'Q_'+SPARSE_FORMAT+'.npz'
+    print('saved to', ROUGH_NEW)
     print('Sparse format is', Q.format)
-    scs.save_npz(RoughNew, Q)
+    scs.save_npz(ROUGH_NEW, Q)
 else:
     fem.check_sparse_matrix(R)
-    RoughNew = WorkDir+'R_'+SparseFormat+'.npz'
-    print('saved to', RoughNew)
+    ROUGH_NEW = WORK_DIR+'R_'+SPARSE_FORMAT+'.npz'
+    print('saved to', ROUGH_NEW)
     print('Sparse format is', R.format)
-    scs.save_npz(RoughNew, R)
+    scs.save_npz(ROUGH_NEW, R)

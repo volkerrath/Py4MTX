@@ -12,6 +12,10 @@ References:
     1114-1134, doi: 10.1111/1365-2478.12058
 
 @author: vrath
+
+Provenance:
+    2025       vrath   Created.
+    2026-03-03 Claude  Renamed user-set parameters to UPPERCASE.
 """
 
 import os
@@ -41,17 +45,17 @@ print(titstrng + "\n\n")
 # =============================================================================
 #  Configuration
 # =============================================================================
-CovarDir = r"/home/vrath/work/Ensembles/RTO/"
-CovarResults = CovarDir + "RTO_results.npz"
+COVAR_DIR = r"/home/vrath/work/Ensembles/RTO/"
+COVAR_RESULTS = COVAR_DIR + "RTO_results.npz"
 
-NewEnsembleSize = 100
-NewEnsembleDir = r"/home/vrath/work/Ensembles/OSY/"
-NewEnsembleFile = NewEnsembleDir + "OSY_ensemble.npz"
+NEW_ENSEMBLE_SIZE = 100
+NEW_ENSEMBLE_DIR = r"/home/vrath/work/Ensembles/OSY/"
+NEW_ENSEMBLE_FILE = NEW_ENSEMBLE_DIR + "OSY_ensemble.npz"
 
 # =============================================================================
 #  Load covariance and compute Cholesky factor
 # =============================================================================
-tmp = np.load(CovarResults)
+tmp = np.load(COVAR_RESULTS)
 cov = tmp["rto_cov"]
 ref = tmp["rto_avg"]
 
@@ -61,7 +65,7 @@ sqrtcov = cholesky(cov)
 #  Generate new ensemble after Osypov (2013)
 # =============================================================================
 model_size = np.shape(ref)[0]
-for imod in np.arange(NewEnsembleSize):
+for imod in np.arange(NEW_ENSEMBLE_SIZE):
     sample = ref + sqrtcov * rng.normal(loc=0.0, scale=1.0, size=model_size)
     if imod == 0:
         new_ens = sample
@@ -69,5 +73,5 @@ for imod in np.arange(NewEnsembleSize):
         new_ens = np.vstack((new_ens, sample))
 
 ensemble_dict = {"new_ens": new_ens, "sqrtcov": sqrtcov, "ref": ref}
-np.savez_compressed(NewEnsembleFile, **ensemble_dict)
-print(f"Ensemble ({NewEnsembleSize} members) saved to {NewEnsembleFile}")
+np.savez_compressed(NEW_ENSEMBLE_FILE, **ensemble_dict)
+print(f"Ensemble ({NEW_ENSEMBLE_SIZE} members) saved to {NEW_ENSEMBLE_FILE}")

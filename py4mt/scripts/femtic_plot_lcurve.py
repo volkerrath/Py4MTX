@@ -5,6 +5,10 @@ Plot the L-curve (roughness vs. misfit/nRMS) from FEMTIC inversion runs
 at different regularisation parameters (alpha).
 
 @author: vrath
+
+Provenance:
+    2025       vrath   Created.
+    2026-03-03 Claude  Renamed user-set parameters to UPPERCASE.
 """
 
 import os
@@ -36,13 +40,13 @@ print(titstrng + "\n\n")
 # =============================================================================
 #  Configuration
 # =============================================================================
-WorkDir = r"/home/vrath/FEMTIC_work/krafla6big_L2_L_curve/"
-PlotName = WorkDir + "Krafla_L2_L-Curve"
-PlotWhat = "nrms"  # 'nrms' or 'misfit'
+WORK_DIR = r"/home/vrath/FEMTIC_work/krafla6big_L2_L_curve/"
+PLOT_NAME = WORK_DIR + "Krafla_L2_L-Curve"
+PLOT_WHAT = "nrms"  # 'nrms' or 'misfit'
 
-SearchStrng = "kra*"
+SEARCH_STRNG = "kra*"
 dir_list = utl.get_filelist(
-    searchstr=[SearchStrng], searchpath=WorkDir,
+    searchstr=[SEARCH_STRNG], searchpath=WORK_DIR,
     sortedlist=True, fullpath=True,
 )
 
@@ -90,7 +94,7 @@ yformula = r"$\Vert\mathbf{C}_m^{-1/2} \mathbf{m}\Vert_2$"
 
 fig, ax = plt.subplots()
 
-if "nrms" in PlotWhat.lower():
+if "nrms" in PLOT_WHAT.lower():
     xdata = n
 else:
     xdata = m
@@ -101,12 +105,12 @@ for k in np.arange(len(lc_sorted)):
     alph = round(a[k], -int(np.floor(np.log10(abs(a[k])))))
     plt.annotate(str(alph), [xdata[k], r[k]])
 
-plt.title(PlotName.replace("_", " "))
+plt.title(PLOT_NAME.replace("_", " "))
 plt.xlabel(r"misfit " + xformula, fontsize=14)
 plt.ylabel(r"roughness " + yformula, fontsize=14)
 plt.grid("on")
 plt.tight_layout()
 
-plt.savefig(PlotName + ".pdf")
-plt.savefig(PlotName + ".png")
-print(f"Saved {PlotName}.pdf and {PlotName}.png")
+plt.savefig(PLOT_NAME + ".pdf")
+plt.savefig(PLOT_NAME + ".png")
+print(f"Saved {PLOT_NAME}.pdf and {PLOT_NAME}.png")

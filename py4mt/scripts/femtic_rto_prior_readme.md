@@ -31,14 +31,14 @@ femtic_rto_prep.py    →   ensemble directories
 
 | Variable     | Description                                                           |
 |--------------|-----------------------------------------------------------------------|
-| `WorkDir`    | Working directory containing the roughness matrix file.               |
-| `MatrixIn`   | Base name of the input matrix (`'R'`).                                |
-| `FormatIn`   | Sparse format of the input file (`'coo'`).                           |
-| `Alpha`      | Regularisation weight; the output is scaled by `1/α²`.               |
-| `RegEps`     | Small diagonal shift `ε` added to `R` before inversion.              |
-| `Sparsify`   | `[drop_tol, fill_factor]` — controls ILU sparsification.             |
-| `MatrixOut`  | Base name for the output matrix (auto-generated from `Sparsify`).    |
-| `FormatOut`  | Sparse format for the output (`'csr'`).                              |
+| `WORK_DIR`    | Working directory containing the roughness matrix file.               |
+| `MATRIX_IN`   | Base name of the input matrix (`'R'`).                                |
+| `FORMAT_IN`   | Sparse format of the input file (`'coo'`).                           |
+| `ALPHA`      | Regularisation weight; the output is scaled by `1/α²`.               |
+| `REG_EPS`     | Small diagonal shift `ε` added to `R` before inversion.              |
+| `SPARSIFY`   | `[drop_tol, fill_factor]` — controls ILU sparsification.             |
+| `MATRIX_OUT`  | Base name for the output matrix (auto-generated from `SPARSIFY`).    |
+| `FORMAT_OUT`  | Sparse format for the output (`'csr'`).                              |
 
 ## Key function
 
@@ -47,11 +47,11 @@ The heavy lifting is performed by:
 ```python
 fem.make_prior_cov(
     rough=R,
-    outmatrix=MatrixOut,
-    regeps=RegEps,
-    spformat=FormatOut,
-    spthresh=Sparsify[0],
-    spfill=Sparsify[1],
+    outmatrix=MATRIX_OUT,
+    regeps=REG_EPS,
+    spformat=FORMAT_OUT,
+    spthresh=SPARSIFY[0],
+    spfill=SPARSIFY[1],
     spsolver='ilu',
     spmeth='basic,area',
     nthreads=n_threads,
@@ -78,6 +78,13 @@ This function (defined in `ensembles.py` / `femtic.py`):
 ## References
 
 See `README_femtic_rto_prep.md` for the full list of RTO references.
+
+## Provenance
+
+| Date       | Author | Change                                       |
+|------------|--------|----------------------------------------------|
+| 2025-07-24 | vrath  | Created.                                     |
+| 2026-03-03 | Claude | Renamed user-set parameters to UPPERCASE.    |
 
 ## Author
 
