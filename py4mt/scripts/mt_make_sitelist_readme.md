@@ -10,6 +10,7 @@ Generate a site list (names, coordinates, elevations) from EDI files.
 | Authors | sb & vr (Dec 2019) |
 | Part of | **py4mt** — Python for Magnetotellurics |
 | README generated | 2 March 2026 by Claude (Anthropic), from cleaned source |
+| Last cleanup | 4 March 2026 by Claude (Anthropic) |
 
 ## Purpose
 
@@ -19,27 +20,36 @@ site number. Output format is tailored for the target application.
 
 ## Output formats
 
-| `whatfor` | Delimiter | Columns | Header |
-|-----------|-----------|---------|--------|
+| `WHAT_FOR` | Delimiter | Columns | Header |
+|------------|-----------|---------|--------|
 | `"wal"` | space | name, lat, lon | WALDIM-style (with site count row) |
 | `"femtic"` | comma | name, lat, lon, elev, sitenum | FEMTIC input |
 | other | comma | name, lat, lon, elev | General purpose |
 
-## Issues fixed during cleanup
+## Issues fixed during earlier cleanup (2 Mar 2026)
 
 | Issue | Description |
 |-------|-------------|
-| **Redundant env read** | `PY4MTX_DATA` was read from environment twice (lines 37 and 49). Removed duplicate. |
-| **Unused imports** | `save_edi`, `save_npz` imported but never used. Removed. |
-| **Dead UTM branch** | When EPSG is `None`, code computed UTM zone then immediately called `sys.exit`. Simplified to exit directly. |
-| **Unused variable** | `dialect = 'unix'` defined but never passed to csv.writer. Removed. |
+| **Redundant env read** | `PY4MTX_DATA` read twice. Removed duplicate. |
+| **Unused imports** | `save_edi`, `save_npz` removed. |
+| **Dead UTM branch** | Simplified to exit directly when EPSG is `None`. |
+| **Unused variable** | `dialect = 'unix'` removed. |
+
+## Changes in this cleanup (4 Mar 2026)
+
+| Change | Description |
+|--------|-------------|
+| **UPPERCASE config** | All configuration constants renamed to `UPPER_SNAKE_CASE` (`COORDS`, `EPSG`, `DELIM`, `WHAT_FOR`, `WORK_DIR`, `EDI_DIR`, `CSV_FILE`). |
+| **Provenance line** | Added cleanup date to docstring. |
 
 ## Configuration
 
-- `whatfor` — `"wal"`, `"femtic"`, or `"kml"`.
-- `Coords` — `"latlon"` (default for WALDIM) or `"utm"`.
-- `EPSG` — UTM zone EPSG code (required if `Coords = "utm"`).
-- `EdiDir` — directory containing `.edi` files.
+| Constant | Description |
+|----------|-------------|
+| `WHAT_FOR` | `"wal"`, `"femtic"`, or `"kml"` |
+| `COORDS` | `"latlon"` (default for WALDIM) or `"utm"` |
+| `EPSG` | UTM zone EPSG code (required if `COORDS = "utm"`) |
+| `EDI_DIR` | Directory containing `.edi` files |
 
 ## Dependencies
 

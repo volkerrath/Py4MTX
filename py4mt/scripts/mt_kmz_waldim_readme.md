@@ -10,6 +10,7 @@ Export WALDIM dimensionality analysis results as a KMZ file for Google Earth.
 | Authors | sb & vr (May 2023) |
 | Part of | **py4mt** — Python for Magnetotellurics |
 | README generated | 2 March 2026 by Claude (Anthropic), from cleaned source |
+| Last cleanup | 4 March 2026 by Claude (Anthropic) |
 
 ## Purpose
 
@@ -34,19 +35,29 @@ colour scheme.
 | 8 | Anisotropy hint: homogeneous anisotropic medium |
 | 9 | Anisotropy hint: anisotropic body within 2-D medium |
 
-## Bugs fixed during cleanup
+## Bugs fixed during earlier cleanup (2 Mar 2026)
 
 | Bug | Description |
 |-----|-------------|
-| **`kml` variable shadow** | `kml = False` (boolean flag) was overwritten by `kml = simplekml.Kml(...)` (object). Renamed: `SaveKml`/`SaveKmz` for flags, `kml_obj` for the object. |
-| **Duplicated styling code** | Per-frequency and per-band branches had identical placemark styling. Extracted into `_style_site()` helper. |
+| **`kml` variable shadow** | Boolean flag overwritten by KML object. Renamed: `SAVE_KML`/`SAVE_KMZ` for flags, `kml_obj` for the object. |
+| **Duplicated styling code** | Extracted into `_style_site()` helper. |
 | **Unused variable** | `bnd_name` defined but never used. Removed. |
+
+## Changes in this cleanup (4 Mar 2026)
+
+| Change | Description |
+|--------|-------------|
+| **UPPERCASE config** | All configuration constants renamed to `UPPER_SNAKE_CASE` (`WORK_DIR`, `EDI_DIR`, `USE_FREQS`, `CLASS3`, `SAVE_KML`, `SAVE_KMZ`, `SITE_ICON`, `SITE_TCOLOR`, `SITE_TSCALE`, `SITE_ISCALE`, `KML_DIR`, `KML_FILE`, `DIM_FILE`, `DIM_DIR`, `ICON_DIR`, `DESC`). |
+| **Provenance line** | Added cleanup date to docstring. |
 
 ## Configuration
 
-- `UseFreqs` — `True` for per-frequency mode, `False` for per-band mode.
-- `Class3` — `True` for 3-class scheme (1-D/2-D/3-D), `False` for full 10-class.
-- `DimFile` — path to the WALDIM output `.dat` file.
+| Constant | Description |
+|----------|-------------|
+| `USE_FREQS` | `True` for per-frequency mode, `False` for per-band mode |
+| `CLASS3` | `True` for 3-class scheme (1-D/2-D/3-D), `False` for full 10-class |
+| `DIM_FILE` | Path to the WALDIM output `.dat` file |
+| `SAVE_KML` / `SAVE_KMZ` | Enable KML and/or KMZ output |
 
 ## References
 

@@ -10,6 +10,7 @@ Visualise transdimensional (rjmcmc-MT) 1-D inversion results.
 | Authors | R. Hassan (GA, 2017), V. Rath (2019–2024) |
 | Part of | **py4mt** — Python for Magnetotellurics |
 | README generated | 2 March 2026 by Claude (Anthropic), from cleaned source |
+| Last cleanup | 4 March 2026 by Claude (Anthropic) |
 
 ## Purpose
 
@@ -22,7 +23,7 @@ a PDF catalogue can also be produced.
 
 ## Workflow
 
-1. Scan `ResDir` for result files and `EdiDir` for matching EDI files.
+1. Scan `RES_DIR` for result files and `EDI_DIR` for matching EDI files.
 2. For each result file:
    a. Plot the posterior distribution (resistivity vs. depth).
    b. Read station coordinates from the corresponding EDI.
@@ -30,25 +31,33 @@ a PDF catalogue can also be produced.
 3. Assemble a combined data file with all stations.
 4. Optionally create a PDF catalogue.
 
-## Issues fixed during cleanup
+## Issues fixed during earlier cleanup (2 Mar 2026)
 
 | Issue | Description |
 |-------|-------------|
 | **Unused imports** | `datetime`, `mt_metadata.TF_XML` removed. |
-| **Variable name** | `myfilename` renamed to `mypath` (consistent with other scripts). |
-| **Hard-coded PY4MTX_DATA** | Overwrote env-var value; removed override. |
-| **Fragile count==1 check** | Replaced with `data_all is None` initialisation. |
-| **Commented-out docstring** | `load_edi` signature in comments removed. |
+| **Variable name** | `myfilename` renamed to `mypath`. |
+| **Hard-coded `PY4MTX_DATA`** | Removed override. |
+| **Fragile `count==1` check** | Replaced with `data_all is None`. |
+
+## Changes in this cleanup (4 Mar 2026)
+
+| Change | Description |
+|--------|-------------|
+| **UPPERCASE config** | All configuration constants renamed to `UPPER_SNAKE_CASE` (`WORK_DIR`, `EDI_DIR`, `RES_DIR`, `PLT_DIR`, `PLOT_FMT`, `RHO_PLOT_LIM`, `DEPTH_PLOT_LIM`, `LOG_DEPTH`, `COLOR_MAP`, `PDF_CATALOG`, `PDF_CATALOG_NAME`, `OUT_STRNG`, `DATA_OUT`, `DATA_NAME`, `W_REF`). |
+| **Provenance line** | Added cleanup date to docstring. |
 
 ## Configuration
 
-- `WorkDir`, `EdiDir`, `ResDir`, `PltDir` — directory paths.
-- `PlotFmt` — output format (`.pdf`, `.png`).
-- `RhoPlotLim` — resistivity axis limits.
-- `DepthPlotLim` — maximum depth (m).
-- `DataOut` — write augmented `.dat` files and combined file.
-- `WRef` — if `True`, convert depth to elevation (elev − depth).
-- `PDFCatalog` — assemble a PDF catalogue.
+| Constant | Description |
+|----------|-------------|
+| `WORK_DIR`, `EDI_DIR`, `RES_DIR`, `PLT_DIR` | Directory paths |
+| `PLOT_FMT` | Output format (`.pdf`, `.png`) |
+| `RHO_PLOT_LIM` | Resistivity axis limits |
+| `DEPTH_PLOT_LIM` | Maximum depth (m) |
+| `DATA_OUT` | Write augmented `.dat` files and combined file |
+| `W_REF` | If `True`, convert depth to elevation (elev − depth) |
+| `PDF_CATALOG` | Assemble a PDF catalogue |
 
 ## Dependencies
 

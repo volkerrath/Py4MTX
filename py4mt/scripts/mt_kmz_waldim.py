@@ -15,6 +15,7 @@ References:
     Marti, Queralt, Ledo & Farquharson (2010), PEPI, 182, 139-151.
 
 @author: sb & vr may 2023
+Cleanup: 4 Mar 2026 by Claude (Anthropic)
 """
 
 import os
@@ -45,38 +46,38 @@ print(titstrng + "\n\n")
 # =============================================================================
 #  Configuration
 # =============================================================================
-WorkDir = "/home/vrath/MT_Data/waldim/"
-EdiDir = WorkDir + "/edi_eps/"
+WORK_DIR = "/home/vrath/MT_Data/waldim/"
+EDI_DIR = WORK_DIR + "/edi_eps/"
 
-DimDir = WorkDir
-print(" WALdim results read from: %s" % DimDir)
+DIM_DIR = WORK_DIR
+print(" WALdim results read from: %s" % DIM_DIR)
 
-UseFreqs = False
-if UseFreqs:
-    DimFile = EdiDir + "ANN_DIM_0.30.dat"
-    KmlFile = "ANN_FREQ"
+USE_FREQS = False
+if USE_FREQS:
+    DIM_FILE = EDI_DIR + "ANN_DIM_0.30.dat"
+    KML_FILE = "ANN_FREQ"
 else:
-    DimFile = EdiDir + "ANN_BANDCLASS_0.30.dat"
-    KmlFile = "ANN_BAND_30"
+    DIM_FILE = EDI_DIR + "ANN_BANDCLASS_0.30.dat"
+    KML_FILE = "ANN_BAND_30"
 
-Class3 = False
+CLASS3 = False
 
-KmlDir = EdiDir
-SaveKml = False
-SaveKmz = True
+KML_DIR = EDI_DIR
+SAVE_KML = False
+SAVE_KMZ = True
 
-icon_dir = PY4MTX_ROOT + "/py4mt/share/icons/"
-site_icon = icon_dir + "placemark_circle.png"
+ICON_DIR = PY4MTX_ROOT + "/py4mt/share/icons/"
+SITE_ICON = ICON_DIR + "placemark_circle.png"
 
-site_tcolor = simplekml.Color.white
-site_tscale = 1.
-site_iscale = 1.5
+SITE_TCOLOR = simplekml.Color.white
+SITE_TSCALE = 1.0
+SITE_ISCALE = 1.5
 
-if Class3:
-    site_icolor_none = simplekml.Color.white
-    site_icolor_1d = simplekml.Color.blue
-    site_icolor_2d = simplekml.Color.green
-    site_icolor_3d = simplekml.Color.red
+if CLASS3:
+    SITE_ICOLOR_NONE = simplekml.Color.white
+    SITE_ICOLOR_1D = simplekml.Color.blue
+    SITE_ICOLOR_2D = simplekml.Color.green
+    SITE_ICOLOR_3D = simplekml.Color.red
 else:
     from matplotlib import colormaps, colors
 
@@ -87,7 +88,7 @@ else:
         hexo = colors.rgb2hex(rgba)[1:]
         dimcolors.append(hexo)
 
-    desc = [
+    DESC = [
         "0: UNDETERMINED",
         "1: 1D",
         "2: 2D",
@@ -106,39 +107,39 @@ else:
 # =============================================================================
 def _style_site(site_pt, dim_val):
     """Apply dimensionality colour to a KML placemark."""
-    site_pt.style.labelstyle.color = site_tcolor
-    site_pt.style.labelstyle.scale = site_tscale
-    site_pt.style.iconstyle.icon.href = site_icon
-    site_pt.style.iconstyle.scale = site_iscale
+    site_pt.style.labelstyle.color = SITE_TCOLOR
+    site_pt.style.labelstyle.scale = SITE_TSCALE
+    site_pt.style.iconstyle.icon.href = SITE_ICON
+    site_pt.style.iconstyle.scale = SITE_ISCALE
 
-    if Class3:
+    if CLASS3:
         if dim_val == 0:
-            site_pt.style.iconstyle.color = site_icolor_none
+            site_pt.style.iconstyle.color = SITE_ICOLOR_NONE
             site_pt.description = "undetermined"
         elif dim_val == 1:
-            site_pt.style.iconstyle.color = site_icolor_1d
+            site_pt.style.iconstyle.color = SITE_ICOLOR_1D
             site_pt.description = "1-D"
         elif dim_val == 2:
-            site_pt.style.iconstyle.color = site_icolor_2d
+            site_pt.style.iconstyle.color = SITE_ICOLOR_2D
             site_pt.description = "2-D"
         else:
-            site_pt.style.iconstyle.color = site_icolor_3d
+            site_pt.style.iconstyle.color = SITE_ICOLOR_3D
             site_pt.description = "3-D"
     else:
         site_pt.style.iconstyle.color = simplekml.Color.hex(dimcolors[dim_val])
-        site_pt.description = desc[dim_val]
+        site_pt.description = DESC[dim_val]
 
 
 # =============================================================================
 #  Build KML
 # =============================================================================
 kml_obj = simplekml.Kml(open=1)
-kml_obj.addfile(site_icon)
+kml_obj.addfile(SITE_ICON)
 
-if UseFreqs:
+if USE_FREQS:
     # --- Per-frequency mode ---
     read = []
-    with open(DimFile, "r") as f:
+    with open(DIM_FILE, "r") as f:
         place_list = csv.reader(f)
         for row in place_list:
             tmp = row[0].split()[:6]
@@ -170,9 +171,9 @@ if UseFreqs:
 
         for idx in np.arange(ndt[0]):
             fs = np.log10(data[idx, 3])
-            if np.isclose(ff, fs, rtol=1e-2, atol=0.):
+            if np.isclose(ff, fs, rtol=1e-2, atol=0.0):
                 pt = freqfolder.newpoint(name=data[idx, 0])
-                pt.coords = [(data[idx, 1], data[idx, 2], 0.)]
+                pt.coords = [(data[idx, 1], data[idx, 2], 0.0)]
                 _style_site(pt, data[idx, 5])
 
     Lons = data[:, 1]
@@ -182,7 +183,7 @@ else:
     # --- Per-band mode ---
     # Columns: Site, Longitude, Latitude, BAND, Tmin, Tmax, nper, DIM
     read = []
-    with open(DimFile, "r") as f:
+    with open(DIM_FILE, "r") as f:
         place_list = csv.reader(f)
         for row in place_list:
             tmp = row[0].split()[:8]
@@ -224,33 +225,33 @@ else:
 
         for ii in range(len(Nams)):
             pt = bndfolder.newpoint(name=Nams[ii])
-            pt.coords = [(Lons[ii], Lats[ii], 0.)]
+            pt.coords = [(Lons[ii], Lats[ii], 0.0)]
             _style_site(pt, Dims[ii])
 
 # =============================================================================
 #  Legend and save
 # =============================================================================
-if Class3:
-    kml_outfile = KmlDir + KmlFile + "_CLASS3"
+if CLASS3:
+    kml_outfile = KML_DIR + KML_FILE + "_CLASS3"
 else:
     loncenter = np.mean(Lons)
     latcenter = np.mean(Lats)
     legend = kml_obj.newpoint(name="Legend")
-    leg_icon = icon_dir + "star.png"
-    legend.coords = [(loncenter, latcenter, 0.)]
+    leg_icon = ICON_DIR + "star.png"
+    legend.coords = [(loncenter, latcenter, 0.0)]
     legend.style.iconstyle.icon.href = leg_icon
     legend.style.iconstyle.color = simplekml.Color.yellow
-    legend.style.iconstyle.scale = site_iscale * 1.5
+    legend.style.iconstyle.scale = SITE_ISCALE * 1.5
     legend.style.labelstyle.color = simplekml.Color.yellow
-    legend.style.labelstyle.scale = site_tscale * 1.2
+    legend.style.labelstyle.scale = SITE_TSCALE * 1.2
     srcfile = kml_obj.addfile(PY4MTX_ROOT + "/py4mt/share/DimColorScheme.png")
     legend.description = f"<img width='300' align='left' src='{srcfile}'/>"
-    kml_outfile = KmlDir + KmlFile + "_CLASS9"
+    kml_outfile = KML_DIR + KML_FILE + "_CLASS9"
 
-if SaveKml:
+if SAVE_KML:
     kml_obj.save(kml_outfile + ".kml")
 
-if SaveKmz:
+if SAVE_KMZ:
     kml_obj.savekmz(kml_outfile + ".kmz")
 
 print("Done. kml/z written to " + kml_outfile)

@@ -6,6 +6,7 @@ Produce a site list (name, coordinates, elevation) from EDI files.
 Output formats are tailored for WALDIM, FEMTIC, or general use.
 
 @author: sb & vr dec 2019
+Cleanup: 4 Mar 2026 by Claude (Anthropic)
 """
 
 import os
@@ -36,56 +37,56 @@ print(titstrng + "\n\n")
 # =============================================================================
 #  Configuration
 # =============================================================================
-Coords = "utm"
+COORDS = "utm"
 EPSG = None
 
-delim = ","
-whatfor = "wal"     # Options: "wal", "femtic", "kml"
+DELIM = ","
+WHAT_FOR = "wal"     # Options: "wal", "femtic", "kml"
 
-if "wal" in whatfor:
-    delim = " "
-    Coords = "latlon"
+if "wal" in WHAT_FOR:
+    DELIM = " "
+    COORDS = "latlon"
 
-WorkDir = "/home/vrath/MT_Data/waldim/"
-EdiDir = WorkDir + "/edi_jc/"
+WORK_DIR = "/home/vrath/MT_Data/waldim/"
+EDI_DIR = WORK_DIR + "/edi_jc/"
 
-print(" Edifiles read from: %s" % EdiDir)
+print(" Edifiles read from: %s" % EDI_DIR)
 
-if "wal" in whatfor.lower():
-    CSVFile = EdiDir + "Sitelist_waldim.txt"
-elif "fem" in whatfor.lower():
-    CSVFile = EdiDir + "Sitelist_femtic.txt"
+if "wal" in WHAT_FOR.lower():
+    CSV_FILE = EDI_DIR + "Sitelist_waldim.txt"
+elif "fem" in WHAT_FOR.lower():
+    CSV_FILE = EDI_DIR + "Sitelist_femtic.txt"
 else:
-    CSVFile = EdiDir + "Sitelist.txt"
-print("Writing data to file: " + CSVFile)
+    CSV_FILE = EDI_DIR + "Sitelist.txt"
+print("Writing data to file: " + CSV_FILE)
 
 # =============================================================================
 #  Build file list and write site list
 # =============================================================================
 edi_files = sorted([
-    entry for entry in os.listdir(EdiDir)
+    entry for entry in os.listdir(EDI_DIR)
     if entry.endswith(".edi") and not entry.startswith(".")
 ])
 ns = len(edi_files)
 
-with open(CSVFile, "w") as f:
-    sitelist = csv.writer(f, delimiter=delim)
+with open(CSV_FILE, "w") as f:
+    sitelist = csv.writer(f, delimiter=DELIM)
 
-    if "wal" in whatfor.lower():
+    if "wal" in WHAT_FOR.lower():
         sitelist.writerow(["Sitename", "Latitude", "Longitude"])
         sitelist.writerow([ns, " ", " "])
 
     for sitenum, filename in enumerate(edi_files):
         print("reading data from: " + filename)
         name, _ = os.path.splitext(filename)
-        file_i = EdiDir + filename
+        file_i = EDI_DIR + filename
         edi_dict = load_edi(file_i, drop_invalid_periods=True)
 
         lat = edi_dict["lat"]
         lon = edi_dict["lon"]
         elev = edi_dict["elev"]
 
-        if "utm" in Coords.lower():
+        if "utm" in COORDS.lower():
             if EPSG is not None:
                 easting, northing = utl.proj_latlon_to_utm(
                     latitude=lat, longitude=lon, utm_zone=EPSG
@@ -93,9 +94,9 @@ with open(CSVFile, "w") as f:
             else:
                 sys.exit("make sitelist: utm required, but no EPSG given! Exit.")
 
-        if "wal" in whatfor:
+        if "wal" in WHAT_FOR:
             sitelist.writerow([name, lat, lon])
-        elif "fem" in whatfor:
+        elif "fem" in WHAT_FOR:
             sitelist.writerow([name, lat, lon, elev, sitenum])
         else:
             sitelist.writerow([name, lat, lon, elev])

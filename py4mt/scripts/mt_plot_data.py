@@ -7,6 +7,7 @@ Reads .npz, .edi, or .dat station files and generates per-station
 diagnostic subplots. Optionally assembles a PDF catalogue.
 
 @author: vrath
+Cleanup: 4 Mar 2026 by Claude (Anthropic)
 """
 
 import os
@@ -32,8 +33,6 @@ from version import versionstrg
 import util as utl
 from data_viz import add_phase, add_rho, add_tipper, add_pt
 
-rng = np.random.default_rng()
-nan = np.nan
 version, _ = versionstrg()
 fname = inspect.getfile(inspect.currentframe())
 
@@ -43,45 +42,44 @@ print(titstrng + "\n\n")
 # =============================================================================
 #  Configuration
 # =============================================================================
-DatDir = r"/home/vrath/FEMTIC_work/ens_misti/misti_rto_01/"
-PltDir = DatDir + "/plots/"
+DAT_DIR = r"/home/vrath/FEMTIC_work/ens_misti/misti_rto_01/"
+PLT_DIR = DAT_DIR + "/plots/"
 
-UseEDI = False
-UseNPZ = True
-UseDAT = False
+USE_EDI = False
+USE_NPZ = True
+USE_DAT = False
 
-if UseDAT:
-    DatList = [DatDir + "/observation.dat"]
-elif UseEDI:
-    edi_files = utl.get_filelist(
-        searchstr=[".edi"], searchpath=DatDir, sortedlist=True, fullpath=True
+if USE_DAT:
+    DAT_LIST = [DAT_DIR + "/observation.dat"]
+elif USE_EDI:
+    DAT_LIST = utl.get_filelist(
+        searchstr=[".edi"], searchpath=DAT_DIR, sortedlist=True, fullpath=True
     )
-    DatList = edi_files
-elif UseNPZ:
-    DatList = [DatDir + "observation.npz"]
+elif USE_NPZ:
+    DAT_LIST = [DAT_DIR + "observation.npz"]
 
-StrngOut = ""
+STRNG_OUT = ""
 
-FilesOnly = False
-PltFmt = [".png", ".pdf"]
+FILES_ONLY = False
+PLT_FMT = [".png", ".pdf"]
 
-CatName = PltDir + "Annecy_processed.pdf"
-Catalog = True
-if ".pdf" not in PltFmt:
+CAT_NAME = PLT_DIR + "Annecy_processed.pdf"
+CATALOG = True
+if ".pdf" not in PLT_FMT:
     print(" No pdf files generated. No catalog possible!")
-    Catalog = False
+    CATALOG = False
 
 # =============================================================================
 #  Matplotlib settings
 # =============================================================================
 plt.style.use("seaborn-v0_8-paper")
 
-if FilesOnly:
+if FILES_ONLY:
     mpl.use("cairo")
 
-if Catalog:
+if CATALOG:
     pdf_list = []
-    catalog = mpl.backends.backend_pdf.PdfPages(CatName)
+    catalog = mpl.backends.backend_pdf.PdfPages(CAT_NAME)
 
 mpl.rcParams["figure.dpi"] = 400
 mpl.rcParams["axes.linewidth"] = 0.5
@@ -89,9 +87,9 @@ mpl.rcParams["savefig.facecolor"] = "none"
 mpl.rcParams["savefig.transparent"] = True
 mpl.rcParams["savefig.bbox"] = "tight"
 
-ncols = 11
-colors = plt.cm.jet(np.linspace(0, 1, ncols))
-pltargs = {
+NCOLS = 11
+colors = plt.cm.jet(np.linspace(0, 1, NCOLS))
+PLTARGS = {
     "Fontsize": 8,
     "Labelsize": 10,
     "Titlesize": 10,
@@ -102,19 +100,26 @@ pltargs = {
 }
 
 # =============================================================================
+#  Ensure output directory exists
+# =============================================================================
+if not os.path.isdir(PLT_DIR):
+    print(" Directory %s does not exist, creating." % PLT_DIR)
+    os.makedirs(PLT_DIR)
+
+# =============================================================================
 #  Plot data sets
 # =============================================================================
-for site in DatList:
+for site in DAT_LIST:
     data = np.load(site)
     station = data["station"]
     df = pd.DataFrame(data)
 
     fig, axs = plt.subplots(3, 2, figsize=(8, 14), sharex=True)
 
-    add_rho(df, comps="xy,yx", ax=axs[0, 0], **pltargs)
-    add_phase(df, comps="xy,yx", ax=axs[0, 1], **pltargs)
-    add_rho(df, comps="xx,yy", ax=axs[1, 0], **pltargs)
-    add_phase(df, comps="xx,yy", ax=axs[1, 1], **pltargs)
+    add_rho(df, comps="xy,yx", ax=axs[0, 0], **PLTARGS)
+    add_phase(df, comps="xy,yx", ax=axs[0, 1], **PLTARGS)
+    add_rho(df, comps="xx,yy", ax=axs[1, 0], **PLTARGS)
+    add_phase(df, comps="xx,yy", ax=axs[1, 1], **PLTARGS)
     add_tipper(df, ax=axs[2, 0])
     add_pt(df, ax=axs[2, 1])
     fig.suptitle(station)
@@ -124,22 +129,22 @@ for site in DatList:
         if not ax.lines and not ax.images and not ax.collections:
             fig.delaxes(ax)
 
-    for fmt in PltFmt:
-        pltfilename = PltDir + station + StrngOut + fmt
+    for fmt in PLT_FMT:
+        pltfilename = PLT_DIR + station + STRNG_OUT + fmt
         plt.savefig(pltfilename, dpi=600)
 
-    if Catalog:
+    if CATALOG:
         pdf_list.append(pltfilename)
         catalog.savefig(fig)
 
     plt.show()
 
-if Catalog:
+if CATALOG:
     print(pdf_list)
     d = catalog.infodict()
-    d["Title"] = CatName
+    d["Title"] = CAT_NAME
     d["Author"] = getpass.getuser()
     d["CreationDate"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     catalog.close()
 
-print("data plots ready!")
+print("Data plots ready!")
