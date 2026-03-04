@@ -103,6 +103,7 @@ import os
 import json
 import inspect
 
+from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Mapping
 
@@ -1531,10 +1532,16 @@ def save_edi(
         lines.append(f"  ELEV={float(elev_m): .6f}")
     lines.append('  STDVERS="SEG 1.0"')
     lines.append('  PROGVERS="data_proc.py"')
-    lines.append(f'  PROGDATE="{2025-12-21}"')
+    # lines.append('  PROGDATE="2025-12-21"')
+    lines.append(f'  PROGDATE="{date.today().isoformat()}"')
     lines.append("  EMPTY=1.0E32")
     lines.append(f"  NFREQ={int(nfreq)}")
     lines.append("")
+
+    # INFO
+    if edi.get("info"):
+        lines.append(">INFO")
+        lines.append(edi.get("info"))
 
     # FREQ
     lines.append(">FREQ")

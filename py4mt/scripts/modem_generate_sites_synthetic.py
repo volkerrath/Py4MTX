@@ -41,7 +41,8 @@ for pth in mypath:
 
 import util as utl
 import modem as mod
-from mtpy.core.mt import MT
+
+from data_proc import read_edi, save_edi, save_npz
 from version import versionstrg
 
 rng = np.random.default_rng()
@@ -60,16 +61,34 @@ EDI_TEMPLATE = r"/home/vrath/work/MT_Data/Krafla/Templates/template8.edi"
 print(" Edifile template read from: %s" % EDI_TEMPLATE)
 
 # Define the path and appended string for saved EDI-files:
-EDI_OUT_DIR = r"/home/vrath/work/MT_Data/Krafla/EDI/"
-print(" Edifiles written to: %s" % EDI_OUT_DIR)
-if not os.path.isdir(EDI_OUT_DIR):
-    print(" File: %s does not exist, but will be created" % EDI_OUT_DIR)
-    os.mkdir(EDI_OUT_DIR)
+OUT_DIR = r"/home/vrath/work/MT_Data/Krafla/EDI/"
+print(" Edifiles written to: %s" % OUT_DIR)
+if not os.path.isdir(OUT_DIR):
+    print(" File: %s does not exist, but will be created" % OUT_DIR)
+    os.mkdir(OUT_DIR)
 
 OUT_NAME = "Krafla_"
+OUT_FILES = "edi, npz"
 
 EDI_GEN = "rect regular"
 # EDI_GEN = "rect random"
+
+NAME_STR = EDI_GEN.replace(" ", "_")
+
+SET_ERRORS = False
+ERRORS = {
+    "Zerr": [0.1, 0.1, 0.1, 0.1],
+    "Terr": [0.03, 0.03, 0.03, 0.03],
+    "PTerr": [0.1, 0.1, 0.1, 0.1],
+}
+
+PHAS_TENS = True
+INVARS = True
+
+INTERPOLATE = False
+if INTERPOLATE:
+    FREQ_PER_DEC = 6
+    INT_METHOD = [None, FREQ_PER_DEC]
 
 # =============================================================================
 #  Site grid definition
@@ -137,26 +156,79 @@ if "rect" in EDI_GEN.lower():
 
         # Create an MT object
         file_in = EDI_TEMPLATE
-        mt_tmp = MT(file_in)
+        edi_dict = edi_read  edi_dict = load_edi(edi, drop_invalid_periods=True)
 
-        mt_tmp.lat = Lat[nn]
-        mt_tmp.lon = Lon[nn]
-        mt_tmp.station = OUT_NAME + nnstr
+        station = edi_dict["station"]
 
-        file_out = OUT_NAME + nnstr + ".edi"
+        Z = edi_dict["Z"]
+        Zerr = edi_dict["Z_err"]
+        T = edi_dict["T"]
+        Terr = edi_dict["T_err"]
 
-        print("\n Generating " + EDI_OUT_DIR + file_out)
-        print(
-            " site %s at :  % 10.6f % 10.6f"
-            % (mt_tmp.station, mt_tmp.lat, mt_tmp.lon)
+        # --- Task block ---
+
+        if PHAS_TENS:
+            P, Perr = compute_pt(Z, Zerr)
+            edi_dict["P"] = P
+            edi_dict["P_err"] = Perr
+
+        if INVARS:
+            Zdet, Zdeterr = compute_zdet(Z, Zerr)
+            edi_dict["Zdet"] = Zdet
+            edi_dict["Zdet_err"] = Zdeterr
+            Zssq, Zssqerr = compute_zssq(Z, Zerr)
+            edi_dict["Zssq"] = Zssq
+            edi_dict["Zssq_err"] = Zssqerr
+
+        if SET_ERRORS:
+            edi_dict = set_errors(edi_dict=edi_dict, errors=ERRORS)
+
+        if INTERPOLATE:
+            edi_dict = interpolate_data(edi_dict=edi_dict, method=INT_METHOD)
+
+        # --- Refresh apparent resistivity/phase after any Z modification ---
+        if edi_dict.get("freq") is not None and edi_dict.get("Z") is not None:
+            _ek = str(edi_dict.get("err_kind", "var")).strip().lower()
+            _ek = "std" if _ek.startswith("std") else "var"
+            rho, phi, rho_err, phi_err = compute_rhophas(
+                freq=np.asarray(edi_dict["freq"]),
+                Z=np.asarray(edi_dict["Z"]),
+                Z_err=(
+                    np.asarray(edi_dict["Z_err"])
+                    if edi_dict.get("Z_err") is not None
+                    else None
+                ),
+                err_kind=_ek,
+                err_method="analytic",
+            )
+            edi_dict["rho"] = rho
+            edi_dict["phi"] = phi
+            if rho_err is not None:
+                edi_dict["rho_err"] = rho_err
+            if phi_err is not None:
+                edi_dict["phi_err"] = phi_err
+
+        statname = OUT_NAME+f"{nn:03d}"
+        edi_dict["station"] = statname
+
+        edi_dict["lat_deg"] = Lat[nn]
+        edi_dict["lon_deg"] = Lon[nn]
+
+        edi_dict["info"] =  EDI_GEN +"|"+str(LAT_LIMITS)+str(LON_LIMITS)+"|"+ str{DX}+", "+str(DY)
+
+
+        if "edi" in OUT_FILES.lower():
+            _ = save_edi(
+                path=OUT_DIR + statname + NAME_STR + ".edi",
+                edi=edi_dict,
+            )
+            print("Wrote file: ", OUT_DIR + statname + NAME_STR + ".edi")
+
+        if "npz" in OUT_FILES.lower():
+        _ = save_npz(
+            path=OUT_DIR + statname + NAME_STR + ".npz",
+            data_dict=edi_dict,
         )
+        print("Wrote file: ", OUT_DIR + statname + NAME_STR + ".npz")
 
-        # Write a new edi file:
-        print("Writing data to " + EDI_OUT_DIR + file_out)
-        mt_tmp.write_mt_file(
-            save_dir=EDI_OUT_DIR,
-            fn_basename=file_out,
-            file_type="edi",
-            longitude_format="LONG",
-            latlon_format="dd",
-        )
+
