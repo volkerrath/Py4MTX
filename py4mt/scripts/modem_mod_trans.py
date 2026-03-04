@@ -4,6 +4,7 @@
 Convert a ModEM model file to other formats (UBC, RLM/CGG).
 
 @author: vrath
+Cleanup: 4 Mar 2026 by Claude (Anthropic)
 """
 
 import os
@@ -34,57 +35,57 @@ print(titstrng + "\n\n")
 # =============================================================================
 #  Configuration
 # =============================================================================
-rhoair = 1.0e17
-blank = rhoair
+RHOAIR = 1.0e17
+BLANK = RHOAIR
 
-InFmt = "mod"
-OutFmt = ["rlm", "ubc"]
+IN_FMT = "mod"
+OUT_FMT = ["rlm", "ubc"]
 
-InMod = "/home/vrath/JacoPyAn/work/UBC_format_example/UBI8_Z_Alpha02_NLCG_014"
-lat, lon = -16.346, -70.908
+IN_MOD = "/home/vrath/JacoPyAn/work/UBC_format_example/UBI8_Z_Alpha02_NLCG_014"
+LAT, LON = -16.346, -70.908
 
 # =============================================================================
 #  Read and convert
 # =============================================================================
-if "mod" in InFmt.lower():
+if "mod" in IN_FMT.lower():
     print("\n\nTransforming ModEM model file:")
-    print(InMod)
-    OutMod = InMod
+    print(IN_MOD)
+    OUT_MOD = IN_MOD
 
     start = time.perf_counter()
     dx, dy, dz, rho, refmod, _ = mod.read_mod(
-        InMod, ".rho", trans="linear", volumes=True
+        IN_MOD, ".rho", trans="linear", volumes=True
     )
     dims = np.shape(rho)
     elapsed = time.perf_counter() - start
-    print(" Used %7.4f s for reading MOD model from %s " % (elapsed, InMod))
+    print(" Used %7.4f s for reading MOD model from %s " % (elapsed, IN_MOD))
 
-    aircells = np.where(rho > rhoair / 10)
+    aircells = np.where(rho > RHOAIR / 10)
 
-    for fmt in OutFmt:
+    for fmt in OUT_FMT:
         if "ubc" in fmt.lower():
             print("\n\nTransforming to UBC model & mesh format")
             start = time.perf_counter()
             elev = -refmod[2]
-            refcenter = [lat, lon, elev]
+            refcenter = [LAT, LON, elev]
             mod.write_model_ubc(
-                OutMod, ".mesh", ".mod",
+                OUT_MOD, ".mesh", ".mod",
                 dx, dy, dz, rho, refcenter,
-                mvalair=blank, aircells=aircells,
+                mvalair=BLANK, aircells=aircells,
             )
             elapsed = time.perf_counter() - start
-            print(" Used %7.4f s for Writing UBC model to %s " % (elapsed, OutMod))
+            print(" Used %7.4f s for Writing UBC model to %s " % (elapsed, OUT_MOD))
 
         if "rlm" in fmt.lower() or "cgg" in fmt.lower():
             print("\n\nTransforming to RLM/CGG format")
             start = time.perf_counter()
             mod.write_rlm(
-                OutMod, modext=".rlm",
+                OUT_MOD, modext=".rlm",
                 dx=dx, dy=dy, dz=dz, mval=rho,
-                reference=refmod, mvalair=blank, aircells=aircells,
+                reference=refmod, mvalair=BLANK, aircells=aircells,
                 comment="RLM format model",
             )
             elapsed = time.perf_counter() - start
-            print(" Used %7.4f s for Writing RLM/CGG model to %s " % (elapsed, OutMod))
+            print(" Used %7.4f s for Writing RLM/CGG model to %s " % (elapsed, OUT_MOD))
 else:
-    sys.exit(InFmt + " input format not yet implemented! Exit.")
+    sys.exit(IN_FMT + " input format not yet implemented! Exit.")

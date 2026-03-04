@@ -11,6 +11,7 @@ Compute sensitivity (coverage) maps from a ModEM Jacobian.
 | Part of | **py4mt** — Python for Magnetotellurics |
 | Inversion code | ModEM |
 | README generated | 2 March 2026 by Claude (Anthropic), from cleaned source |
+| Last cleanup | 4 March 2026 by Claude (Anthropic) |
 
 ## Purpose
 
@@ -22,7 +23,7 @@ files in one or more formats.
 
 ## Sensitivity types
 
-| `Type` | Formula | Description |
+| `TYPE` | Formula | Description |
 |--------|---------|-------------|
 | `'raw'` | Σ_i J_ij | Sum of raw sensitivities. |
 | `'abs'` / `'cov'` | Σ_i \|J_ij\| | Absolute-value sum (coverage). |
@@ -39,36 +40,31 @@ files in one or more formats.
 
 ## Splits
 
-| `Splits` keyword | Produces one sensitivity file per… |
+| `SPLITS` keyword | Produces one sensitivity file per… |
 |-------------------|------------------------------------|
 | `'total'` | Entire data set (single file). |
 | `'dtyp'` | Data type (Full_Z, Off_Diag_Z, Tipper, PT). |
 | `'comp'` | Component (ZXY, ZYX, TXR, PTXX, …). |
 | `'site'` | Measurement site. |
-| `'freq'` | Frequency band (defined by `PerIntervals`). |
+| `'freq'` | Frequency band (defined by `PER_INTERVALS`). |
 
-## Inputs
+## Changes in this cleanup (4 Mar 2026)
 
-| Item | Description |
-|------|-------------|
-| `MFile` | ModEM model file (for mesh and air mask). |
-| `JFile` | Jacobian base name (`_jac.npz` + `_info.npz`). |
-
-## Outputs
-
-Sensitivity files are written to `SensDir` in the configured formats
-(ModEM `.rho`, UBC `.sns` + `.msh`, RLM `.rlm`).
-
-Optionally also writes cell-size files (`.siz`) and topography (`.top`).
+| Change | Description |
+|--------|-------------|
+| **UPPERCASE config** | All configuration constants renamed to `UPPER_SNAKE_CASE` (`BLANK`, `RHOAIR`, `INP_FORMAT`, `OUT_FORMAT`, `MOD_EXT`, `WORK_DIR`, `J_NAME`, `J_FILE`, `M_FILE`, `M_ORIG`, `SIZ_EXTRACT`, `TOPO_EXTRACT`, `SPLITS`, `NO_REIM`, `NORM_LOCAL`, `PER_INTERVALS`, `TYPE`, `TRANSFORM`, `SENS_DIR`). |
+| **Unused variables** | Removed `rng` (never used). |
+| **Provenance line** | Added cleanup date to docstring. |
 
 ## Configuration
 
-- `Type` — sensitivity type.
-- `Transform` — space-separated transform chain (e.g. `'siz vol max'`).
-- `Splits` — space-separated split list.
-- `NormLocal` — if `True`, each subset is normalised independently;
-  if `False`, all subsets share the total-sensitivity maximum.
-- `OutFormat` — `'mod'`, `'ubc'`, `'rlm'`, or combinations.
+| Constant | Description |
+|----------|-------------|
+| `TYPE` | Sensitivity type (`'raw'`, `'cov'`, `'euc'`) |
+| `TRANSFORM` | Space-separated transform chain (e.g. `'siz vol max'`) |
+| `SPLITS` | Space-separated split list |
+| `NORM_LOCAL` | If `True`, each subset normalised independently |
+| `OUT_FORMAT` | `'mod'`, `'ubc'`, `'rlm'`, or combinations |
 
 ## Dependencies
 

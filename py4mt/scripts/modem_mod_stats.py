@@ -11,12 +11,12 @@ Percentile reference (normal distribution):
     +1 sigma -> 84.13th, +2 sigma -> 97.72nd
 
 @author: vrath, sbyrd
+Cleanup: 4 Mar 2026 by Claude (Anthropic)
 """
 
 import os
 import sys
 import inspect
-import time
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -33,10 +33,6 @@ from version import versionstrg
 import util as utl
 import modem as mod
 
-rng = np.random.default_rng()
-blank = np.nan
-rhoair = 17.0  # log10(rhoair)
-
 version, _ = versionstrg()
 titstrng = utl.print_title(
     version=version, fname=inspect.getfile(inspect.currentframe()), out=False
@@ -46,54 +42,56 @@ print(titstrng + "\n\n")
 # =============================================================================
 #  Configuration
 # =============================================================================
-hpads = 10
-vpads = 50
-OutFormat = "modem"
+HPADS = 10
+VPADS = 50
+OUT_FORMAT = "modem"
+BLANK = np.nan
+RHOAIR = 17.0  # log10(rhoair)
 
-ModHist = True
-PlotFormat = [".png", ".pdf"]
+MOD_HIST = True
+PLOT_FORMAT = [".png", ".pdf"]
 
-WorkDir = "/home/vrath/work/MT_Data/Sabancaya/Saba_best/SABA13a/"
-if not WorkDir.endswith("/"):
-    WorkDir = WorkDir + "/"
+WORK_DIR = "/home/vrath/work/MT_Data/Sabancaya/Saba_best/SABA13a/"
+if not WORK_DIR.endswith("/"):
+    WORK_DIR = WORK_DIR + "/"
 
-MFile = WorkDir + "SABA13a"
-Models = [MFile]
+M_FILE = WORK_DIR + "SABA13a"
+MODELS = [M_FILE]
 
-PDFCatalog = False
-if len(Models) > 1:
-    ModFileEns = "ModEns"
-    if ".pdf" in PlotFormat:
-        PDFCatalog = True
-        PDFCatalogName = "ModEnsCatalog.pdf"
-        catalog = PdfPages(PDFCatalogName)
+PDF_CATALOG = False
+if len(MODELS) > 1:
+    MOD_FILE_ENS = "ModEns"
+    if ".pdf" in PLOT_FORMAT:
+        PDF_CATALOG = True
+        PDF_CATALOG_NAME = "ModEnsCatalog.pdf"
+        catalog = PdfPages(PDF_CATALOG_NAME)
 
 # =============================================================================
 #  Read models and compute statistics
 # =============================================================================
-imod = -1
-for f in Models:
-    imod += 1
+ModEns = None
+
+for imod, f in enumerate(MODELS):
     dx, dy, dz, rho, ref, trans = mod.read_mod(
         file=f, modext=".rho", trans="LOG10", blank=1.0e-30, out=True,
     )
     dims = np.shape(rho)
-    aircells = np.where(rho > rhoair)
+    aircells = np.where(rho > RHOAIR)
     print(f + ".rho, shape is", dims)
 
     rtmp = rho.ravel()
-    if imod == 0:
+    if ModEns is None:
         ModEns = rtmp
     else:
         ModEns = np.vstack((ModEns, rtmp))
 
     # Blank out padding and air cells
-    rho[aircells] = blank
-    rho[:hpads, :, :] = blank
-    rho[dims[0] - hpads : dims[0], :, :] = blank
-    rho[:, :hpads, :] = blank
-    rho[:, dims[1] - hpads : dims[1], :] = blank
-    rho[:, :, dims[2] - vpads : dims[2]] = blank
+    rho[aircells] = BLANK
+    rho[:HPADS, :, :] = BLANK
+    rho[dims[0] - HPADS : dims[0], :, :] = BLANK
+    rho[:, :HPADS, :] = BLANK
+    rho[:, dims[1] - HPADS : dims[1], :] = BLANK
+    rho[:, :, dims[2] - VPADS : dims[2]] = BLANK
 
     # Print statistics
     rhoavg = np.nanmean(rho)
@@ -108,7 +106,7 @@ for f in Models:
     print("1-sigma quantiles:", np.nanquantile(rho, [0.16, 0.84]))
     print("2-sigma quantiles:", np.nanquantile(rho, [0.023, 0.977]))
 
-    if ModHist:
+    if MOD_HIST:
         rtmp = rho.ravel()
         rtmp = rtmp[np.isfinite(rtmp)]
         fig, ax = plt.subplots()
@@ -121,46 +119,48 @@ for f in Models:
         plt.tight_layout()
 
         pname = os.path.splitext(f)[0]
-        for fmt in PlotFormat:
+        for fmt in PLOT_FORMAT:
             plt.savefig(pname + fmt)
 
-        if PDFCatalog:
+        if PDF_CATALOG:
             catalog.savefig(fig)
 
-# Ensemble statistics (multi-model case)
-if len(Models) > 1:
+# =============================================================================
+#  Ensemble statistics (multi-model case)
+# =============================================================================
+if len(MODELS) > 1:
     ModAvg = np.mean(ModEns, axis=1).reshape(dims)
     ModVar = np.var(ModEns, axis=1).reshape(dims)
 
-    if "mod" in OutFormat.lower():
+    if "mod" in OUT_FORMAT.lower():
         mod.write_mod(
-            ModFileEns, modext="_avg.rho",
+            MOD_FILE_ENS, modext="_avg.rho",
             dx=dx, dy=dy, dz=dz, mval=ModAvg,
-            reference=ref, mvalair=blank, aircells=aircells,
+            reference=ref, mvalair=BLANK, aircells=aircells,
             header="Model log-average",
         )
-        print("Averages written to " + ModFileEns + "_avg.rho")
+        print("Averages written to " + MOD_FILE_ENS + "_avg.rho")
         mod.write_mod(
-            ModFileEns, modext="_var.rho",
+            MOD_FILE_ENS, modext="_var.rho",
             dx=dx, dy=dy, dz=dz, mval=np.sqrt(ModVar),
-            reference=ref, mvalair=blank, aircells=aircells,
+            reference=ref, mvalair=BLANK, aircells=aircells,
             header="Model log-std",
         )
-        print("Std dev written to " + ModFileEns + "_var.rho")
+        print("Std dev written to " + MOD_FILE_ENS + "_var.rho")
 
-    if "rlm" in OutFormat.lower():
+    if "rlm" in OUT_FORMAT.lower():
         mod.write_rlm(
-            ModFileEns, modext="_avg.rlm",
+            MOD_FILE_ENS, modext="_avg.rlm",
             dx=dx, dy=dy, dz=dz, mval=ModAvg,
-            reference=ref, mvalair=blank, aircells=aircells,
+            reference=ref, mvalair=BLANK, aircells=aircells,
             comment="Model log-average",
         )
         mod.write_rlm(
-            ModFileEns, modext="_var.rlm",
+            MOD_FILE_ENS, modext="_var.rlm",
             dx=dx, dy=dy, dz=dz, mval=np.sqrt(ModVar),
-            reference=ref, mvalair=blank, aircells=aircells,
+            reference=ref, mvalair=BLANK, aircells=aircells,
             comment="Model log-std",
         )
 
-if PDFCatalog:
+if PDF_CATALOG:
     catalog.close()

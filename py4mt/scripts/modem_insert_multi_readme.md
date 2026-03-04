@@ -11,6 +11,7 @@ Generate multiple perturbed models for null-space analysis.
 | Part of | **py4mt** — Python for Magnetotellurics |
 | Inversion code | ModEM |
 | README generated | 2 March 2026 by Claude (Anthropic), from cleaned source |
+| Last cleanup | 4 March 2026 by Claude (Anthropic) |
 
 ## Purpose
 
@@ -28,24 +29,25 @@ can actually resolve.
    with `jac.project_model`.
 4. Write the projected model.
 
-## Inputs
+## Changes in this cleanup (4 Mar 2026)
 
-| Item | Description |
-|------|-------------|
-| `ModFile_in` | Path to the base ModEM model. |
-| `SVDFile` | `.npz` file containing the Jacobian SVD (`U`, `S`). |
+| Change | Description |
+|--------|-------------|
+| **UPPERCASE config** | All configuration constants renamed to `UPPER_SNAKE_CASE` (`BLANK`, `RHOAIR`, `MOD_DIR_IN`, `MOD_DIR_OUT`, `MOD_FILE_IN`, `MOD_FILE_OUT`, `MOD_ORIG`, `SVD_FILE`, `MOD_OUT_SINGLE`, `PADDING`, `BODY_MASK`, `BODY_VAL`, `FLIP`, `MODEL_SET`, `METHOD`). |
+| **Unused imports** | Removed `numpy.linalg` (not used). |
+| **Unused variables** | Removed `rng`, `nan` (never used). |
+| **Provenance line** | Added cleanup date to docstring. |
 
 ## Configuration
 
-- `model_set` — number of perturbed models to generate.
-- `method` — perturbation strategy: `['random', N, padding, distribution, bodymask, seed]` or `['regular', ...]`.
-- `bodyval` — perturbation amplitude (log10 resistivity).
-- `bodymask` — body dimensions in grid cells `[nx, ny, nz]`.
-- `ModDir_out` — output directory for perturbed models.
-
-## Outputs
-
-One `.rho` file per perturbation in `ModDir_out`.
+| Constant | Description |
+|----------|-------------|
+| `MODEL_SET` | Number of perturbed models to generate |
+| `METHOD` | Perturbation strategy list |
+| `BODY_VAL` | Perturbation amplitude (log10 resistivity) |
+| `BODY_MASK` | Body dimensions in grid cells `[nx, ny, nz]` |
+| `SVD_FILE` | `.npz` file containing the Jacobian SVD (`U`, `S`) |
+| `MOD_DIR_OUT` | Output directory for perturbed models |
 
 ## Dependencies
 

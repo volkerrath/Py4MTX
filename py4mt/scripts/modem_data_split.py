@@ -6,17 +6,13 @@ Split ModEM data files into period-band subsets.
 Reads ModEM data files and writes separate files for each specified
 period interval, suitable for band-by-band inversion or analysis.
 
-@author:    vrath  Feb 2021 / May 2024
-@project:   py4mt — Python for Magnetotellurics
-@inversion: ModEM
+@author: vrath (Feb 2021 / May 2024)
+Cleanup: 4 Mar 2026 by Claude (Anthropic)
 """
 
 import os
 import sys
 import inspect
-import time
-from datetime import datetime
-import warnings
 
 import numpy as np
 
@@ -37,9 +33,6 @@ titstrng = utl.print_title(
 )
 print(titstrng + "\n\n")
 
-rng = np.random.default_rng()
-nan = np.nan
-
 # =============================================================================
 #  Configuration
 # =============================================================================
@@ -47,7 +40,7 @@ DAT_DIR_IN = PY4MTX_DATA + "/Fogo/"
 DAT_DIR_OUT = DAT_DIR_IN
 
 if not os.path.isdir(DAT_DIR_OUT):
-    print("File: %s does not exist, but will be created" % DAT_DIR_OUT)
+    print("Directory: %s does not exist, but will be created" % DAT_DIR_OUT)
     os.mkdir(DAT_DIR_OUT)
 
 DAT_FILES_IN = ["FOG_Z_in.dat", "FOG_P_in.dat", "FOG_T_in.dat"]

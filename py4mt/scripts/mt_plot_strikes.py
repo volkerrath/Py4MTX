@@ -51,7 +51,7 @@ SURVEY_NAME = "Annecy"
 file_list = dtp.get_edi_list(EDI_DIR)
 ns = len(file_list)
 
-COLLECTION = WORK_DIR + "/ubaye_collection.h5"
+COLLECTION = WORK_DIR + "/ANNECY_collection.h5"
 
 FROM_EDIS = True
 if FROM_EDIS:

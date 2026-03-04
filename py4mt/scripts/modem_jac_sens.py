@@ -11,6 +11,7 @@ Sensitivity types: 'raw', 'abs'/'cov' (coverage), 'euc' (Euclidean).
 Transforms: 'vol'/'siz' (volume normalisation), 'max', 'sur', 'log'.
 
 @author: vrath
+Cleanup: 4 Mar 2026 by Claude (Anthropic)
 """
 
 import os
@@ -40,52 +41,51 @@ titstrng = utl.print_title(
 )
 print(titstrng + "\n\n")
 
-rng = np.random.default_rng()
-Blank = 1.0e-30
-Rhoair = 1.0e17
-
 # =============================================================================
 #  Configuration
 # =============================================================================
-InpFormat = "sparse"
-OutFormat = "mod rlm"
-ModExt = "_sns.rho"
+BLANK = 1.0e-30
+RHOAIR = 1.0e17
 
-WorkDir = "./"
-JName = "Ub25_ZPT_nerr_sp-8"
-JFile = WorkDir + JName
-MFile = WorkDir + "Ub_600ZT4_PT_NLCG_009"
-MOrig = [0.0, 0.0]
+INP_FORMAT = "sparse"
+OUT_FORMAT = "mod rlm"
+MOD_EXT = "_sns.rho"
 
-SizExtract = True
-TopoExtract = True
+WORK_DIR = "./"
+J_NAME = "Ub25_ZPT_nerr_sp-8"
+J_FILE = WORK_DIR + J_NAME
+M_FILE = WORK_DIR + "Ub_600ZT4_PT_NLCG_009"
+M_ORIG = [0.0, 0.0]
 
-Splits = "total dtyp site freq comp"
-NoReIm = True
+SIZ_EXTRACT = True
+TOPO_EXTRACT = True
 
-NormLocal = True
-if (not NormLocal) and ("tot" not in Splits.lower()):
-    Splits = "total " + Splits
+SPLITS = "total dtyp site freq comp"
+NO_REIM = True
 
-PerIntervals = [
+NORM_LOCAL = True
+if (not NORM_LOCAL) and ("tot" not in SPLITS.lower()):
+    SPLITS = "total " + SPLITS
+
+PER_INTERVALS = [
     [0.0001, 0.001], [0.001, 0.01], [0.01, 0.1], [0.1, 1.0],
     [1.0, 10.0], [10.0, 100.0], [100.0, 1000.0], [1000.0, 10000.0],
 ]
 
-Type = "cov"
-Transform = "siz vol max"
+TYPE = "cov"
+TRANSFORM = "siz vol max"
 
-if Transform is None:
-    snsstring = Type.lower()
+if TRANSFORM is None:
+    snsstring = TYPE.lower()
 else:
-    snsstring = Type.lower() + "_" + Transform.replace(" ", "-").lower()
+    snsstring = TYPE.lower() + "_" + TRANSFORM.replace(" ", "-").lower()
 
-SensDir = WorkDir + JName + "_sens_" + snsstring + "/"
-if not SensDir.endswith("/"):
-    SensDir = SensDir + "/"
-if not os.path.isdir(SensDir):
-    print("Directory: %s does not exist, but will be created" % SensDir)
-    os.mkdir(SensDir)
+SENS_DIR = WORK_DIR + J_NAME + "_sens_" + snsstring + "/"
+if not SENS_DIR.endswith("/"):
+    SENS_DIR = SENS_DIR + "/"
+if not os.path.isdir(SENS_DIR):
+    print("Directory: %s does not exist, but will be created" % SENS_DIR)
+    os.mkdir(SENS_DIR)
 
 
 # =============================================================================
@@ -126,15 +126,15 @@ def write_sensitivity(filename, S, dx, dy, dz, refmod, aircells,
 # =============================================================================
 total = 0.0
 start = time.perf_counter()
-dx, dy, dz, rho, refmod, _ = mod.read_mod(MFile, trans="linear")
+dx, dy, dz, rho, refmod, _ = mod.read_mod(M_FILE, trans="linear")
 elapsed = time.perf_counter() - start
 total += elapsed
-print(" Used %7.4f s for reading model from %s " % (elapsed, MFile))
+print(" Used %7.4f s for reading model from %s " % (elapsed, M_FILE))
 
-aircells = np.where(rho > Rhoair / 10)
+aircells = np.where(rho > RHOAIR / 10)
 
-if TopoExtract:
-    TopoFile = MFile + ".top"
+if TOPO_EXTRACT:
+    TopoFile = M_FILE + ".top"
     xcnt, ycnt, topo = mod.get_topo(
         dx=dx, dy=dy, dz=dz, mval=rho, ref=refmod, mvalair=1.0e17, out=True,
     )
@@ -145,9 +145,9 @@ if TopoExtract:
             for jj in np.arange(len(dy)):
                 f.write(f"{xcnt[ii]}, {ycnt[jj]}, {topo[ii, jj]}\n")
 
-if "siz" in Transform.lower():
+if "siz" in TRANSFORM.lower():
     for key, val in [("vol", "vol"), ("area", "area"), ("hsiz", "hsiz"), ("vsiz", "vsiz")]:
-        if key in Transform.lower():
+        if key in TRANSFORM.lower():
             siztyp = val
             break
     else:
@@ -157,41 +157,41 @@ else:
     siztyp = "vol"
     siz = np.array([])
 
-if SizExtract:
-    SizFile = MFile + ".siz"
+if SIZ_EXTRACT:
+    SizFile = M_FILE + ".siz"
     siz = mod.get_size(dx=dx, dy=dy, dz=dz, mval=rho, how=siztyp, out=True)
-    Header = "# " + MFile
+    Header = "# " + M_FILE
     write_sensitivity(SizFile, siz, dx, dy, dz, refmod, aircells,
-                      OutFormat, "_siz.rho", MOrig, Blank, "Cell volumes")
+                      OUT_FORMAT, "_siz.rho", M_ORIG, BLANK, "Cell volumes")
 
 mdims = np.shape(rho)
-aircells = np.where(rho > Rhoair / 10)
-jacmask = jac.set_airmask(rho=rho, aircells=aircells, blank=Blank, flat=False, out=True)
+aircells = np.where(rho > RHOAIR / 10)
+jacmask = jac.set_airmask(rho=rho, aircells=aircells, blank=BLANK, flat=False, out=True)
 jacflat = jacmask.flatten(order="F")
 
 # =============================================================================
 #  Read Jacobian
 # =============================================================================
 start = time.perf_counter()
-print("Reading Jacobian from " + JFile)
+print("Reading Jacobian from " + J_FILE)
 
-if "spa" in InpFormat:
-    Jac = scs.load_npz(JFile + "_jac.npz")
-    tmp = np.load(JFile + "_info.npz", allow_pickle=True)
+if "spa" in INP_FORMAT:
+    Jac = scs.load_npz(J_FILE + "_jac.npz")
+    tmp = np.load(J_FILE + "_info.npz", allow_pickle=True)
     Freqs = tmp["Freq"]
     Comps = tmp["Comp"]
     Sites = tmp["Site"]
     Dtype = tmp["DTyp"]
 else:
-    Jac, tmp = mod.read_jac(JFile + ".jac")
-    Data, Sites, Freqs, Comps, Dtype, Head = mod.read_data_jac(JFile + "_jac.dat")
+    Jac, tmp = mod.read_jac(J_FILE + ".jac")
+    Data, Sites, Freqs, Comps, Dtype, Head = mod.read_data_jac(J_FILE + "_jac.dat")
     dsh = np.shape(Data)
     err = np.reshape(Data[:, 5], (dsh[0], 1))
     Jac = jac.normalize_jac(Jac, err)
 
 elapsed = time.perf_counter() - start
 total += elapsed
-print(" Used %7.4f s for reading Jacobian/data from %s" % (elapsed, JFile))
+print(" Used %7.4f s for reading Jacobian/data from %s" % (elapsed, J_FILE))
 
 print("Full Jacobian")
 jac.print_stats(jac=Jac, jacmask=jacflat)
@@ -199,118 +199,117 @@ jac.print_stats(jac=Jac, jacmask=jacflat)
 MaxTotal = None
 
 # ---- Total ----
-if "tot" in Splits.lower():
+if "tot" in SPLITS.lower():
     start = time.perf_counter()
-    SensTmp = jac.calc_sensitivity(Jac, Type=Type, OutInfo=False)
-    if Transform is None:
+    SensTmp = jac.calc_sensitivity(Jac, Type=TYPE, OutInfo=False)
+    if TRANSFORM is None:
         SensTot = SensTmp
         MaxTotal = np.amax(SensTot)
     else:
         SensTot, MaxTotal = jac.transform_sensitivity(
-            S=SensTmp, Siz=siz, Transform=Transform, OutInfo=False,
+            S=SensTmp, Siz=siz, Transform=TRANSFORM, OutInfo=False,
         )
     S = SensTot.reshape(mdims, order="F")
-    SensFile = SensDir + JName + "_total_" + snsstring
+    SensFile = SENS_DIR + J_NAME + "_total_" + snsstring
     write_sensitivity(SensFile, S, dx, dy, dz, refmod, aircells,
-                      OutFormat, ModExt, MOrig, Blank, "Total")
+                      OUT_FORMAT, MOD_EXT, M_ORIG, BLANK, "Total")
     elapsed = time.perf_counter() - start
     print(" Used %7.4f s for total sensitivities " % elapsed)
 
 # ---- By data type ----
-if "dtyp" in Splits.lower():
+if "dtyp" in SPLITS.lower():
     start = time.perf_counter()
     typestr = ["zfull", "zoff", "tp", "mf", "rpoff", "pt"]
     for ityp in np.unique(Dtype):
         JacTmp = Jac[np.where(Dtype == ityp)]
         print("Data type:", ityp)
         jac.print_stats(jac=JacTmp, jacmask=jacflat)
-        maxval = None if NormLocal else MaxTotal
-        SensTmp = jac.calc_sensitivity(JacTmp, Type=Type, OutInfo=False)
-        if Transform is not None:
+        maxval = None if NORM_LOCAL else MaxTotal
+        SensTmp = jac.calc_sensitivity(JacTmp, Type=TYPE, OutInfo=False)
+        if TRANSFORM is not None:
             SensTmp, _ = jac.transform_sensitivity(
-                S=SensTmp, Siz=siz, Transform=Transform, Maxval=maxval, OutInfo=False,
+                S=SensTmp, Siz=siz, Transform=TRANSFORM, Maxval=maxval, OutInfo=False,
             )
         S = np.reshape(SensTmp, mdims, order="F")
-        SensFile = SensDir + JName + "_Dtype_" + typestr[ityp - 1] + "_" + snsstring
+        SensFile = SENS_DIR + J_NAME + "_Dtype_" + typestr[ityp - 1] + "_" + snsstring
         write_sensitivity(SensFile, S, dx, dy, dz, refmod, aircells,
-                          OutFormat, ModExt, MOrig, Blank, "Data type")
+                          OUT_FORMAT, MOD_EXT, M_ORIG, BLANK, "Data type")
     elapsed = time.perf_counter() - start
     print(" Used %7.4f s for data type sensitivities " % elapsed)
 
 # ---- By component ----
-if "comp" in Splits.lower():
+if "comp" in SPLITS.lower():
     start = time.perf_counter()
     ExistComp = np.unique(Comps)
-    if NoReIm:
+    if NO_REIM:
         ExistComp = np.unique([c.replace("R", "").replace("I", "") for c in ExistComp])
         Comps_nori = np.array([c.replace("R", "").replace("I", "") for c in Comps])
     else:
         Comps_nori = Comps
 
     for icmp in ExistComp:
-        # BUG FIX: original used `Jac[icmp in Comps]` (boolean scalar), now proper indexing
         JacTmp = Jac[np.where(Comps_nori == icmp)]
         print("Component:", icmp)
         jac.print_stats(jac=JacTmp, jacmask=jacflat)
-        maxval = None if NormLocal else MaxTotal
-        SensTmp = jac.calc_sensitivity(JacTmp, Type=Type, OutInfo=False)
-        if Transform is not None:
+        maxval = None if NORM_LOCAL else MaxTotal
+        SensTmp = jac.calc_sensitivity(JacTmp, Type=TYPE, OutInfo=False)
+        if TRANSFORM is not None:
             SensTmp, _ = jac.transform_sensitivity(
-                S=SensTmp, Siz=siz, Transform=Transform, Maxval=maxval, OutInfo=False,
+                S=SensTmp, Siz=siz, Transform=TRANSFORM, Maxval=maxval, OutInfo=False,
             )
         S = np.reshape(SensTmp, mdims, order="F")
-        SensFile = SensDir + JName + "_" + icmp + "_" + snsstring
+        SensFile = SENS_DIR + J_NAME + "_" + icmp + "_" + snsstring
         write_sensitivity(SensFile, S, dx, dy, dz, refmod, aircells,
-                          OutFormat, ModExt, MOrig, Blank, "Component")
+                          OUT_FORMAT, MOD_EXT, M_ORIG, BLANK, "Component")
     elapsed = time.perf_counter() - start
     print(" Used %7.4f s for comp sensitivities " % elapsed)
 
 # ---- By site ----
-if "site" in Splits.lower():
+if "site" in SPLITS.lower():
     start = time.perf_counter()
     SiteNames = Sites[np.sort(np.unique(Sites, return_index=True)[1])]
     for sit in SiteNames:
         JacTmp = Jac[np.where(sit == Sites)]
         print("Site:", sit)
         jac.print_stats(jac=JacTmp, jacmask=jacflat)
-        maxval = None if NormLocal else MaxTotal
-        SensTmp = jac.calc_sensitivity(JacTmp, Type=Type, OutInfo=False)
-        if Transform is not None:
+        maxval = None if NORM_LOCAL else MaxTotal
+        SensTmp = jac.calc_sensitivity(JacTmp, Type=TYPE, OutInfo=False)
+        if TRANSFORM is not None:
             SensTmp, _ = jac.transform_sensitivity(
-                S=SensTmp, Siz=siz, Transform=Transform, Maxval=maxval, OutInfo=False,
+                S=SensTmp, Siz=siz, Transform=TRANSFORM, Maxval=maxval, OutInfo=False,
             )
         S = np.reshape(SensTmp, mdims, order="F")
-        SensFile = SensDir + JName + "_" + sit.lower() + "_" + snsstring
+        SensFile = SENS_DIR + J_NAME + "_" + sit.lower() + "_" + snsstring
         write_sensitivity(SensFile, S, dx, dy, dz, refmod, aircells,
-                          OutFormat, ModExt, MOrig, Blank, "Site")
+                          OUT_FORMAT, MOD_EXT, M_ORIG, BLANK, "Site")
     elapsed = time.perf_counter() - start
     print(" Used %7.4f s for site sensitivities " % elapsed)
 
 # ---- By frequency band ----
-if "freq" in Splits.lower():
+if "freq" in SPLITS.lower():
     start = time.perf_counter()
-    for ibnd in np.arange(len(PerIntervals)):
-        lowstr = str(1.0 / PerIntervals[ibnd][0]) + "Hz"
-        uppstr = str(1.0 / PerIntervals[ibnd][1]) + "Hz"
+    for ibnd in np.arange(len(PER_INTERVALS)):
+        lowstr = str(1.0 / PER_INTERVALS[ibnd][0]) + "Hz"
+        uppstr = str(1.0 / PER_INTERVALS[ibnd][1]) + "Hz"
         indices = np.where(
-            (Freqs >= PerIntervals[ibnd][0]) & (Freqs < PerIntervals[ibnd][1])
+            (Freqs >= PER_INTERVALS[ibnd][0]) & (Freqs < PER_INTERVALS[ibnd][1])
         )
         JacTmp = Jac[indices]
         if np.shape(JacTmp)[0] > 0:
             print("Freqband:", lowstr, "to", uppstr)
             jac.print_stats(jac=JacTmp, jacmask=jacflat)
-            maxval = None if NormLocal else MaxTotal
-            SensTmp = jac.calc_sensitivity(JacTmp, Type=Type, OutInfo=False)
-            if Transform is not None:
+            maxval = None if NORM_LOCAL else MaxTotal
+            SensTmp = jac.calc_sensitivity(JacTmp, Type=TYPE, OutInfo=False)
+            if TRANSFORM is not None:
                 SensTmp, _ = jac.transform_sensitivity(
-                    S=SensTmp, Siz=siz, Transform=Transform,
+                    S=SensTmp, Siz=siz, Transform=TRANSFORM,
                     Maxval=maxval, OutInfo=False,
                 )
             S = np.reshape(SensTmp, mdims, order="F")
-            SensFile = (SensDir + JName + "_freqband" + lowstr
+            SensFile = (SENS_DIR + J_NAME + "_freqband" + lowstr
                         + "_to_" + uppstr + "_" + snsstring)
             write_sensitivity(SensFile, S, dx, dy, dz, refmod, aircells,
-                              OutFormat, ModExt, MOrig, Blank, "Frequency band")
+                              OUT_FORMAT, MOD_EXT, M_ORIG, BLANK, "Frequency band")
         else:
             print("Frequency band is empty! Continue.")
     elapsed = time.perf_counter() - start
