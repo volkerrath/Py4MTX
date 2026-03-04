@@ -11,6 +11,7 @@ Convert a ModEM model file to UBC and/or RLM (CGG) format.
 | Part of | **py4mt** — Python for Magnetotellurics |
 | Inversion code | ModEM |
 | README generated | 2 March 2026 by Claude (Anthropic), from cleaned source |
+| Last cleanup | 4 March 2026 by Claude (Anthropic) |
 
 ## Purpose
 
@@ -24,22 +25,22 @@ formats used by other modelling/visualisation packages.
 | UBC | `.mod` + `.mesh` | UBC-GIF software suite |
 | RLM / CGG | `.rlm` | CGG proprietary tools |
 
-## Inputs
+## Changes in this cleanup (4 Mar 2026)
 
-| Item | Description |
-|------|-------------|
-| `InMod` | Path to the ModEM model (without `.rho`). |
-| `lat`, `lon` | Geographic coordinates of the model origin (needed for UBC). |
-
-## Outputs
-
-Files are written alongside the input with format-specific extensions.
+| Change | Description |
+|--------|-------------|
+| **UPPERCASE config** | All configuration constants renamed to `UPPER_SNAKE_CASE` (`RHOAIR`, `BLANK`, `IN_FMT`, `OUT_FMT`, `IN_MOD`, `LAT`, `LON`). |
+| **Runtime variable** | `OutMod` renamed to `OUT_MOD` for consistency. |
+| **Provenance line** | Added cleanup date to docstring. |
 
 ## Configuration
 
-- `InFmt` — input format (currently only `'mod'` is implemented).
-- `OutFmt` — list of output formats, e.g. `['rlm', 'ubc']`.
-- `lat`, `lon` — origin coordinates for UBC output.
+| Constant | Description |
+|----------|-------------|
+| `IN_FMT` | Input format (currently only `'mod'` is implemented) |
+| `OUT_FMT` | List of output formats, e.g. `['rlm', 'ubc']` |
+| `IN_MOD` | Path to the ModEM model (without `.rho`) |
+| `LAT`, `LON` | Origin coordinates for UBC output |
 
 ## Dependencies
 

@@ -11,6 +11,7 @@ Read, normalise, mask, and sparsify a ModEM Jacobian matrix.
 | Part of | **py4mt** — Python for Magnetotellurics |
 | Inversion code | ModEM |
 | README generated | 2 March 2026 by Claude (Anthropic), from cleaned source |
+| Last cleanup | 4 March 2026 by Claude (Anthropic) |
 
 ## Purpose
 
@@ -24,35 +25,27 @@ format for downstream analysis.
 
 1. **Read model** — load the `.rho` file; identify air and sea cells.
 2. **Read Jacobian** — load the `.jac` binary and its companion `_jac.dat` data file.
-3. **Error normalisation** (`ErrorScale=True`) — divide each row by its
+3. **Error normalisation** (`ERROR_SCALE=True`) — divide each row by its
    data error, producing J̃ = C_d^{-1/2} J.
 4. **Air masking** — zero out Jacobian columns corresponding to air cells.
 5. **Sparsification** — entries with |J̃_ij|/max < threshold are set to
    zero; the matrix is stored as a scipy sparse matrix.
 
-## Inputs
+## Changes in this cleanup (4 Mar 2026)
 
-| Item | Description |
-|------|-------------|
-| `MFile` | ModEM model file (without `.rho`). |
-| `JFiles` | List of `.jac` Jacobian files to process. |
-
-Each `.jac` file must have a companion `_jac.dat` data file.
-
-## Outputs
-
-Per Jacobian file:
-
-| File | Contents |
-|------|----------|
-| `<name>_nerr_sp<N>_jac.npz` | Sparse Jacobian matrix. |
-| `<name>_nerr_sp<N>_info.npz` | Freq, Data, Site, Comp, DTyp, Info, Scale arrays. |
+| Change | Description |
+|--------|-------------|
+| **UPPERCASE config** | All configuration constants renamed to `UPPER_SNAKE_CASE` (`SPARSE_THRESH`, `SPARSE`, `ERROR_SCALE`, `SCALE`, `RHOAIR`, `RHOSEA`, `WORK_DIR`, `J_FILES`, `M_FILE`). |
+| **Unused variables** | Removed `rng`, `nan` (never used). |
+| **Provenance line** | Added cleanup date to docstring. |
 
 ## Configuration
 
-- `ErrorScale` — `True` to normalise by data errors; `False` for raw Jacobian (e.g. from ModEM3DJE.x).
-- `SparseThresh` — sparsification threshold (e.g. `1e-6`); set to 0 to keep full matrix.
-- `WorkDir`, `JFiles`, `MFile` — paths.
+| Constant | Description |
+|----------|-------------|
+| `ERROR_SCALE` | `True` to normalise by data errors; `False` for raw Jacobian |
+| `SPARSE_THRESH` | Sparsification threshold (e.g. `1e-6`); set to 0 for full matrix |
+| `WORK_DIR`, `J_FILES`, `M_FILE` | Paths |
 
 ## Dependencies
 

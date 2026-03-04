@@ -8,6 +8,7 @@ bodies (regular or random), and projects them through the Jacobian
 null space.
 
 @author: vrath
+Cleanup: 4 Mar 2026 by Claude (Anthropic)
 """
 
 import os
@@ -16,7 +17,6 @@ import inspect
 import time
 
 import numpy as np
-import numpy.linalg as npl
 import scipy.sparse as scs
 
 PY4MTX_DATA = os.environ["PY4MTX_DATA"]
@@ -32,11 +32,6 @@ import modem as mod
 import util as utl
 from version import versionstrg
 
-rng = np.random.default_rng()
-nan = np.nan
-blank = 1.0e-30
-rhoair = 1.0e17
-
 version, _ = versionstrg()
 titstrng = utl.print_title(
     version=version, fname=inspect.getfile(inspect.currentframe()), out=False
@@ -46,29 +41,32 @@ print(titstrng + "\n\n")
 # =============================================================================
 #  Configuration
 # =============================================================================
-ModDir_in = PY4MTX_DATA + "/Peru/Misti/"
-ModDir_out = ModDir_in + "/results_shuttle/"
+BLANK = 1.0e-30
+RHOAIR = 1.0e17
 
-ModFile_in = ModDir_in + "Misti10_best"
-ModFile_out = "Misti10_best"
-ModOrig = [-16.277300, -71.444397]  # Misti
+MOD_DIR_IN = PY4MTX_DATA + "/Peru/Misti/"
+MOD_DIR_OUT = MOD_DIR_IN + "/results_shuttle/"
 
-SVDFile = ModDir_in + "Misti_best_Z5_nerr_sp-8"
+MOD_FILE_IN = MOD_DIR_IN + "Misti10_best"
+MOD_FILE_OUT = "Misti10_best"
+MOD_ORIG = [-16.277300, -71.444397]  # Misti
 
-ModOutSingle = True
+SVD_FILE = MOD_DIR_IN + "Misti_best_Z5_nerr_sp-8"
 
-if not os.path.isdir(ModDir_out):
-    print("File: %s does not exist, but will be created" % ModDir_out)
-    os.mkdir(ModDir_out)
+MOD_OUT_SINGLE = True
 
-padding = [10, 10, 10, 10, 0, 20]
-bodymask = [3, 3, 5]
-bodyval = 0.2
-flip = "alt"
+if not os.path.isdir(MOD_DIR_OUT):
+    print("Directory: %s does not exist, but will be created" % MOD_DIR_OUT)
+    os.mkdir(MOD_DIR_OUT)
+
+PADDING = [10, 10, 10, 10, 0, 20]
+BODY_MASK = [3, 3, 5]
+BODY_VAL = 0.2
+FLIP = "alt"
 
 # Random perturbed grid
-model_set = 10
-method = [
+MODEL_SET = 10
+METHOD = [
     ["random", 25, [1, 1, 1, 1, 1, 1], "uniform", [3, 3, 5], 6],
 ]
 
@@ -78,40 +76,40 @@ method = [
 total = 0.0
 start = time.perf_counter()
 dx, dy, dz, base_model, refmod, _ = mod.read_mod(
-    ModFile_in, ".rho", trans="log10"
+    MOD_FILE_IN, ".rho", trans="log10"
 )
 mdims = np.shape(base_model)
-aircells = np.where(base_model > np.log10(rhoair / 10.0))
+aircells = np.where(base_model > np.log10(RHOAIR / 10.0))
 jacmask = jac.set_airmask(
-    rho=base_model, aircells=aircells, blank=np.log10(blank), flat=False, out=True
+    rho=base_model, aircells=aircells, blank=np.log10(BLANK), flat=False, out=True
 )
 jacflat = jacmask.flatten(order="F")
 elapsed = time.perf_counter() - start
 total += elapsed
-print(" Used %7.4f s for reading model from %s " % (elapsed, ModFile_in + ".rho"))
+print(" Used %7.4f s for reading model from %s " % (elapsed, MOD_FILE_IN + ".rho"))
 
 start = time.perf_counter()
-print("Reading Jacobian SVD from " + SVDFile)
-SVD = np.load(SVDFile)
+print("Reading Jacobian SVD from " + SVD_FILE)
+SVD = np.load(SVD_FILE)
 U = SVD["U"]
 S = SVD["S"]
 print(np.shape(U), np.shape(S))
 elapsed = time.perf_counter() - start
-print(" Used %7.4f s for reading Jacobian/data from %s" % (elapsed, SVDFile))
+print(" Used %7.4f s for reading Jacobian/data from %s" % (elapsed, SVD_FILE))
 total += elapsed
 
 # =============================================================================
 #  Generate perturbed models
 # =============================================================================
-for ibody in range(model_set):
+for ibody in range(MODEL_SET):
     model = base_model.copy()
-    templ = mod.distribute_bodies_ijk(model=model, method=method)
+    templ = mod.distribute_bodies_ijk(model=model, method=METHOD)
     new_model = mod.insert_body_ijk(
-        rho_in=model, template=templ, perturb=bodyval, bodymask=bodymask
+        rho_in=model, template=templ, perturb=BODY_VAL, bodymask=BODY_MASK
     )
-    new_model[aircells] = rhoair
+    new_model[aircells] = RHOAIR
 
-    ModFile = ModDir_out + ModFile_out + "_" + str(ibody) + "+perturbed.rho"
+    ModFile = MOD_DIR_OUT + MOD_FILE_OUT + "_" + str(ibody) + "+perturbed.rho"
     Header = "# " + ModFile
 
     rho_proj = jac.project_model(

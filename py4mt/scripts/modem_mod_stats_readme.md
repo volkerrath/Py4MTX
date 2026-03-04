@@ -11,6 +11,7 @@ Cell-wise statistics and histograms for ModEM model ensembles.
 | Part of | **py4mt** — Python for Magnetotellurics |
 | Inversion code | ModEM |
 | README generated | 2 March 2026 by Claude (Anthropic), from cleaned source |
+| Last cleanup | 4 March 2026 by Claude (Anthropic) |
 
 ## Purpose
 
@@ -35,26 +36,26 @@ Computes across the ensemble (cell-by-cell):
 | `_avg.rho` | Mean log-resistivity. |
 | `_var.rho` | Standard deviation of log-resistivity. |
 
-Percentile models (15.9th, 50th, 84.1th) are also computed internally.
+## Changes in this cleanup (4 Mar 2026)
 
-## Inputs
-
-| Item | Description |
-|------|-------------|
-| `Models` | List of ModEM model file paths. |
-
-## Outputs
-
-- Histogram plots (`.png`, `.pdf`).
-- Optional PDF catalog of all histograms.
-- Ensemble average and variance models (`.rho` and/or `.rlm`).
+| Change | Description |
+|--------|-------------|
+| **UPPERCASE config** | All configuration constants renamed to `UPPER_SNAKE_CASE` (`HPADS`, `VPADS`, `OUT_FORMAT`, `BLANK`, `RHOAIR`, `MOD_HIST`, `PLOT_FORMAT`, `WORK_DIR`, `M_FILE`, `MODELS`, `PDF_CATALOG`, `PDF_CATALOG_NAME`, `MOD_FILE_ENS`). |
+| **Unused imports** | Removed `time` (not used). |
+| **Unused variables** | Removed `rng`, `blank` (shadowed), `rhoair` (shadowed by constant). |
+| **Fragile counter** | Replaced `imod = -1` + increment with `enumerate()`. |
+| **Fragile ensemble init** | Replaced `imod == 0` check with `ModEns is None` guard. |
+| **Provenance line** | Added cleanup date to docstring. |
 
 ## Configuration
 
-- `hpads`, `vpads` — number of horizontal / vertical padding cells to mask.
-- `OutFormat` — `'modem'` and/or `'rlm'`.
-- `ModHist` — `True` to generate histograms.
-- `PlotFormat` — list of plot formats (e.g. `['.png', '.pdf']`).
+| Constant | Description |
+|----------|-------------|
+| `HPADS`, `VPADS` | Number of horizontal / vertical padding cells to mask |
+| `OUT_FORMAT` | `'modem'` and/or `'rlm'` |
+| `MOD_HIST` | `True` to generate histograms |
+| `PLOT_FORMAT` | List of plot formats (e.g. `['.png', '.pdf']`) |
+| `MODELS` | List of ModEM model file paths |
 
 ## Dependencies
 

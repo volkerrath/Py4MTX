@@ -11,11 +11,12 @@ Split ModEM data files into period-band subsets.
 | Part of | **py4mt** — Python for Magnetotellurics |
 | Inversion code | ModEM |
 | README generated | 3 March 2026 by Claude (Anthropic), from cleaned source |
+| Last cleanup | 4 March 2026 by Claude (Anthropic) |
 
 ## Purpose
 
 Reads ModEM-format data files and splits each into separate files by
-period band.  This is useful for band-by-band inversions, data quality
+period band. This is useful for band-by-band inversions, data quality
 inspection, or frequency-dependent sensitivity studies.
 
 ## Workflow
@@ -27,38 +28,27 @@ inspection, or frequency-dependent sensitivity studies.
 2. If data exist for the band, rewrite the header with updated counts and
    write the subset to a new file named `*_perband<N>.dat`.
 
-## Configuration constants
+## Changes in this cleanup (4 Mar 2026)
+
+| Change | Description |
+|--------|-------------|
+| **Unused imports** | Removed `time`, `datetime`, `warnings` (none used). |
+| **Unused variables** | Removed `rng`, `nan` (never used). |
+| **Provenance line** | Added cleanup date to docstring. |
+
+Note: Configuration constants were already `UPPER_SNAKE_CASE` in the
+previous cleanup pass.
+
+## Configuration
 
 | Constant | Description |
 |----------|-------------|
-| `DAT_DIR_IN` | Input directory containing ModEM data files. |
-| `DAT_DIR_OUT` | Output directory (defaults to same as input). |
-| `DAT_FILES_IN` | List of input data file names (impedance, phase tensor, tipper, …). |
-| `PER_INTERVALS` | List of `[low, high]` period bounds (seconds) defining each band. |
-| `PER_NUM_MIN` | Minimum number of periods required (reserved for future filtering). |
-| `NUM_BANDS` | Number of period bands (derived from `PER_INTERVALS`). |
-
-## Inputs
-
-| Item | Description |
-|------|-------------|
-| `FOG_Z_in.dat` | Full-band impedance data (ModEM format). |
-| `FOG_P_in.dat` | Full-band phase-tensor data. |
-| `FOG_T_in.dat` | Full-band tipper data. |
-
-## Outputs
-
-| Item | Description |
-|------|-------------|
-| `*_perband<N>.dat` | One file per input × period band, containing only the data within that band. |
-
-## Notes
-
-- The last entry in the original `PerIntervals` list was not nested as a
-  two-element list.  The cleaned version fixes this to
-  `[10000.0, 1000000.0]` for consistency.
-- The unused `jax` import from the original script has been removed.
+| `DAT_DIR_IN` | Input directory containing ModEM data files |
+| `DAT_DIR_OUT` | Output directory (defaults to same as input) |
+| `DAT_FILES_IN` | List of input data file names |
+| `PER_INTERVALS` | List of `[low, high]` period bounds (seconds) |
+| `PER_NUM_MIN` | Minimum number of periods required (reserved for future filtering) |
 
 ## Dependencies
 
-`numpy`; py4mt modules: `util`, `version`.
+`numpy`, py4mt: `util`, `version`.

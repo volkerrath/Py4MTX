@@ -7,6 +7,7 @@ Reads a ModEM model file, adds perturbation bodies with optional
 smoothing, and writes the modified model.
 
 @author: vrath
+Cleanup: 4 Mar 2026 by Claude (Anthropic)
 """
 
 import os
@@ -26,11 +27,8 @@ for pth in mypath:
 
 import modem as mod
 import util as utl
-import jac_proc as jac
 from version import versionstrg
 
-rng = np.random.default_rng()
-nan = np.nan
 version, _ = versionstrg()
 titstrng = utl.print_title(
     version=version, fname=inspect.getfile(inspect.currentframe()), out=False
@@ -40,27 +38,25 @@ print(titstrng + "\n\n")
 # =============================================================================
 #  Configuration
 # =============================================================================
-rhoair = 1.0e17
+RHOAIR = 1.0e17
 
-ModFile_in = PY4MTX_DATA + "/Peru/1_feb_ell/TAC_100"
-ModFile_out = ModFile_in
+MOD_FILE_IN = PY4MTX_DATA + "/Peru/1_feb_ell/TAC_100"
+MOD_FILE_OUT = MOD_FILE_IN
 
 # Body definitions:
 #   ['type', action, condition, cx, cy, cz, ax, ay, az, ang1, ang2, ang3]
-action = ["rep", 1.0]
-condition = "val <= np.log(1.)"
-ell = [
-    "ell", action, condition,
+ACTION = ["rep", 1.0]
+CONDITION = "val <= np.log(1.)"
+ELL = [
+    "ell", ACTION, CONDITION,
     0.0, 0.0, 10000.0,          # center (x, y, z)
     30000.0, 30000.0, 5000.0,   # semi-axes
     0.0, 0.0, 0.0,              # rotation angles
 ]
 
-bodies = [ell]
-additive = False
-nb = len(bodies)
-
-smoother = ["uniform", 1]
+BODIES = [ELL]
+ADDITIVE = False
+SMOOTHER = ["uniform", 1]
 
 # =============================================================================
 #  Read model
@@ -68,26 +64,27 @@ smoother = ["uniform", 1]
 total = 0.0
 start = time.perf_counter()
 
-dx, dy, dz, rho, refmod, _ = mod.read_mod(ModFile_in, ".rho", trans="linear")
-aircells = np.where(rho > rhoair / 10)
+dx, dy, dz, rho, refmod, _ = mod.read_mod(MOD_FILE_IN, ".rho", trans="linear")
+aircells = np.where(rho > RHOAIR / 10)
 
 elapsed = time.perf_counter() - start
 total += elapsed
-print(" Used %7.4f s for reading model from %s " % (elapsed, ModFile_in + ".rho"))
+print(" Used %7.4f s for reading model from %s " % (elapsed, MOD_FILE_IN + ".rho"))
 
 # =============================================================================
 #  Insert bodies
 # =============================================================================
-rho_in = mod.prepare_model(rho, rhoair=rhoair)
+nb = len(BODIES)
+rho_in = mod.prepare_model(rho, rhoair=RHOAIR)
 
 for ibody in range(nb):
-    body = bodies[ibody]
+    body = BODIES[ibody]
 
-    if "add" not in action:
+    if "add" not in ACTION:
         rho_out = mod.insert_body_condition(
-            dx, dy, dz, rho_in, body, smooth=smoother, reference=refmod
+            dx, dy, dz, rho_in, body, smooth=SMOOTHER, reference=refmod
         )
-        Modout = ModFile_out + "_" + body[0] + str(ibody) + "_" + smoother[0]
+        Modout = MOD_FILE_OUT + "_" + body[0] + str(ibody) + "_" + SMOOTHER[0]
         mod.write_mod(
             Modout, modext="_new.rho", trans="LOGE",
             dx=dx, dy=dy, dz=dz, mval=rho_out,
@@ -96,14 +93,14 @@ for ibody in range(nb):
     elif ibody > 0:
         rho_in = rho_out.copy()
         rho_out = mod.insert_body(
-            dx, dy, dz, rho_in, body, smooth=smoother, reference=refmod
+            dx, dy, dz, rho_in, body, smooth=SMOOTHER, reference=refmod
         )
 
     elapsed = time.perf_counter() - start
     print(" Used %7.4f s for processing/writing model to %s" % (elapsed, Modout))
 
-if "add" in action:
-    Modout = ModFile_out + "_final"
+if "add" in ACTION:
+    Modout = MOD_FILE_OUT + "_final"
     mod.write_mod(
         Modout, modext="_new.rho", trans="LOGE",
         dx=dx, dy=dy, dz=dz, mval=rho_out,

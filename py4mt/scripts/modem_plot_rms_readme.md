@@ -11,6 +11,7 @@ Plot nRMS convergence curves from ModEM NLCG log files.
 | Part of | **py4mt** — Python for Magnetotellurics |
 | Inversion code | ModEM |
 | README generated | 2 March 2026 by Claude (Anthropic), from cleaned source |
+| Last cleanup | 4 March 2026 by Claude (Anthropic) |
 
 ## Purpose
 
@@ -24,13 +25,6 @@ The script scans each log file for lines containing `START:` or
 `STARTLS:` together with `rms=`, extracts the nRMS value (field 6),
 and appends it to a list.
 
-## Inputs
-
-| Item | Description |
-|------|-------------|
-| `filename_in` | List of ModEM `.log` file paths. |
-| `legend_labels` | Corresponding legend entries for each run. |
-
 ## Outputs
 
 | File | Contents |
@@ -38,11 +32,22 @@ and appends it to a list.
 | `<logfile>.csv` | Two-column CSV: iteration number, nRMS. |
 | `rms.pdf` | Convergence plot with one curve per log file. |
 
+## Changes in this cleanup (4 Mar 2026)
+
+| Change | Description |
+|--------|-------------|
+| **UPPERCASE config** | All configuration constants renamed to `UPPER_SNAKE_CASE` (`DIRECTORY`, `FILENAME_IN`, `LEGEND_LABELS`, `PLOT_FILE`). |
+| **Output path** | Extracted hard-coded `directory + "rms.pdf"` into `PLOT_FILE` constant. |
+| **Provenance line** | Added cleanup date to docstring. |
+
 ## Configuration
 
-- `directory` — working directory.
-- `filename_in` — list of `.log` file paths.
-- `legend_labels` — list of legend strings (must match `filename_in` length).
+| Constant | Description |
+|----------|-------------|
+| `DIRECTORY` | Working directory |
+| `FILENAME_IN` | List of `.log` file paths |
+| `LEGEND_LABELS` | Legend strings (must match `FILENAME_IN` length) |
+| `PLOT_FILE` | Output plot path |
 
 ## Dependencies
 

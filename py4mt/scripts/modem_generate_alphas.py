@@ -1,63 +1,63 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-'''
-Created on Sat Nov 30 12:36:43 2024
+"""
+Generate depth-dependent smoothing alpha parameters for ModEM inversion.
 
-@author: vrath
-'''
+Reads a ModEM model to obtain the mesh, then computes alpha_x and alpha_y
+smoothing parameters that vary linearly with depth between user-specified
+bounds.
 
+@author: vrath (Nov 2024)
+Cleanup: 4 Mar 2026 by Claude (Anthropic)
+"""
 
 import os
 import sys
+import inspect
+
 import numpy as np
 
-PY4MTX_DATA = os.environ['PY4MTX_DATA']
-PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
+PY4MTX_DATA = os.environ["PY4MTX_DATA"]
+PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
 
-mypath = [PY4MTX_ROOT+'/py4mt/modules/', PY4MTX_ROOT+'/py4mt/scripts/']
+mypath = [PY4MTX_ROOT + "/py4mt/modules/", PY4MTX_ROOT + "/py4mt/scripts/"]
 for pth in mypath:
     if pth not in sys.path:
-        sys.path.insert(0,pth)
-
+        sys.path.insert(0, pth)
 
 import modem as mod
 import util as utl
-
 from version import versionstrg
 
-# rng = np.random.default_rng()
-# nan = np.nan  # float('NaN')
-# blank = 1.e-30 # np.nan
-# rhoair = 1.e17
-
 version, _ = versionstrg()
-titstrng = utl.print_title(version=version, fname=inspect.getfile(inspect.currentframe()), out=False)
-print(titstrng+'\n\n')
+titstrng = utl.print_title(
+    version=version, fname=inspect.getfile(inspect.currentframe()), out=False
+)
+print(titstrng + "\n\n")
 
+# =============================================================================
+#  Configuration
+# =============================================================================
+MOD_DIR_IN = PY4MTX_DATA + "/Peru/Misti/"
+MOD_DIR_OUT = MOD_DIR_IN
 
+MOD_FILE_IN = MOD_DIR_IN + "Mis_50"
+MOD_FILE_OUT = MOD_FILE_IN
 
-total = 0
-ModDir_in = PY4MTX_DATA + '/Peru/Misti/'
-ModDir_in = '/home/vrath/Py4MTX/work/Misti_alphas/'
-# /home/vrath/MT_Data/Peru/Misti/
-ModDir_out = ModDir_in
+if not os.path.isdir(MOD_DIR_OUT):
+    print("Directory: %s does not exist, but will be created" % MOD_DIR_OUT)
+    os.mkdir(MOD_DIR_OUT)
 
-ModFile_in = ModDir_in + 'Mis_50'
-ModFile_out = ModFile_in
+BEG_LIN = np.array([100.0, 0.1, 0.1])
+END_LIN = np.array([25000.0, 0.6, 0.6])
 
-
-
-if not os.path.isdir(ModDir_out):
-    print('File: %s does not exist, but will be created' % ModDir_out)
-    os.mkdir(ModDir_out)
-
-dx, dy, dz, base_model, refmod, _ = mod.read_mod(ModFile_in, '.rho',trans='log10')
+# =============================================================================
+#  Read model and generate alphas
+# =============================================================================
+dx, dy, dz, base_model, refmod, _ = mod.read_mod(MOD_FILE_IN, ".rho", trans="log10")
 
 _, depth = mod.set_mesh(d=dz)
 
-beg_lin = np.array([100., 0.1,0.1])
-end_lin = np.array([25000., 0.6,0.6])
-
-ax, ay = mod.generate_alphas(dz, beg_lin=beg_lin, end_lin=end_lin)
+ax, ay = mod.generate_alphas(dz, beg_lin=BEG_LIN, end_lin=END_LIN)
 
 print(ax)

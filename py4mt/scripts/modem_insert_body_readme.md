@@ -11,6 +11,7 @@ Insert geometric anomaly bodies into a ModEM resistivity model.
 | Part of | **py4mt** — Python for Magnetotellurics |
 | Inversion code | ModEM |
 | README generated | 2 March 2026 by Claude (Anthropic), from cleaned source |
+| Last cleanup | 4 March 2026 by Claude (Anthropic) |
 
 ## Purpose
 
@@ -25,31 +26,33 @@ the perturbed model. Useful for resolution testing and synthetic studies.
 
 ## Insertion modes
 
-| `action[0]` | Behaviour |
+| `ACTION[0]` | Behaviour |
 |--------------|-----------|
 | `'rep'` | Replace cell values with the body resistivity (conditional or unconditional). |
 | `'add'` | Add the body resistivity to existing values; bodies are applied sequentially. |
 
-A `condition` string (e.g. `'val <= np.log(1.)'`) can restrict replacement
+A `CONDITION` string (e.g. `'val <= np.log(1.)'`) can restrict replacement
 to cells meeting the criterion.
 
-## Inputs
+## Changes in this cleanup (4 Mar 2026)
 
-| Item | Description |
-|------|-------------|
-| `ModFile_in` | Path to the input ModEM model (without `.rho` extension). |
-| `bodies` | List of body definitions. |
-| `smoother` | Smoothing type and parameter: `['gaussian', sigma]` or `['uniform', width]`. |
-
-## Outputs
-
-One `.rho` file per body (non-additive mode) or a single `_final.rho` (additive mode).
+| Change | Description |
+|--------|-------------|
+| **UPPERCASE config** | All configuration constants renamed to `UPPER_SNAKE_CASE` (`RHOAIR`, `MOD_FILE_IN`, `MOD_FILE_OUT`, `ACTION`, `CONDITION`, `ELL`, `BODIES`, `ADDITIVE`, `SMOOTHER`). |
+| **Unused imports** | Removed `jac_proc` (not used in this script). |
+| **Unused variables** | Removed `rng`, `nan` (never used). |
+| **Provenance line** | Added cleanup date to docstring. |
 
 ## Configuration
 
-Edit the **Configuration** section: `ModFile_in`, `ModFile_out`, `bodies`,
-`action`, `condition`, `smoother`, `additive`.
+| Constant | Description |
+|----------|-------------|
+| `MOD_FILE_IN` / `MOD_FILE_OUT` | Input/output model paths (without `.rho`) |
+| `BODIES` | List of body definitions |
+| `ACTION` | Insertion mode (`'rep'` or `'add'`) and value |
+| `CONDITION` | Optional condition string for conditional replacement |
+| `SMOOTHER` | Smoothing type and parameter |
 
 ## Dependencies
 
-`numpy`, py4mt: `modem`, `util`, `jac_proc`, `version`.
+`numpy`, py4mt: `modem`, `util`, `version`.
