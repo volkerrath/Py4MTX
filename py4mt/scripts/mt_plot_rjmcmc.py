@@ -17,6 +17,7 @@ Revision History:
     2024/04  V. Rath — python 3.11 / mtpy-v2
 
 @author: vrath
+Cleanup: 4 Mar 2026 by Claude (Anthropic)
 """
 
 import os
@@ -48,53 +49,53 @@ print(titstrng + "\n\n")
 # =============================================================================
 #  Configuration
 # =============================================================================
-WorkDir = PY4MTX_DATA + "/Ubaye_best/"
-EdiDir = WorkDir + "/edis/"
-print("Edifiles read from: %s" % EdiDir)
+WORK_DIR = PY4MTX_DATA + "/Ubaye_best/"
+EDI_DIR = WORK_DIR + "/edis/"
+print("Edifiles read from: %s" % EDI_DIR)
 
-ResDir = WorkDir + "/transdim/results_impedance/"
-PltDir = WorkDir + "/plots/"
+RES_DIR = WORK_DIR + "/transdim/results_impedance/"
+PLT_DIR = WORK_DIR + "/plots/"
 
-PlotFmt = ".pdf"
-RhoPlotLim = [0.1, 10000]
-DepthPlotLim = 15000.
-LogDepth = False
-ColorMap = "rainbow"
+PLOT_FMT = ".pdf"
+RHO_PLOT_LIM = [0.1, 10000]
+DEPTH_PLOT_LIM = 15000.0
+LOG_DEPTH = False
+COLOR_MAP = "rainbow"
 
-PDFCatalog = True
-PDFCatalogName = WorkDir + "Ubaye_results.pdf"
-if ".pdf" not in PlotFmt:
-    PDFCatalog = False
+PDF_CATALOG = True
+PDF_CATALOG_NAME = WORK_DIR + "Ubaye_results.pdf"
+if ".pdf" not in PLOT_FMT:
+    PDF_CATALOG = False
     print("No PDF catalog because no pdf output!")
-OutStrng = "_model"
+OUT_STRNG = "_model"
 
-DataOut = True
-DataName = WorkDir + "Ubaye_1dresults.dat"
-WRef = False
+DATA_OUT = True
+DATA_NAME = WORK_DIR + "Ubaye_1dresults.dat"
+W_REF = False
 
 # =============================================================================
 #  Collect file lists
 # =============================================================================
 edi_files = sorted([
-    entry for entry in os.listdir(EdiDir)
+    entry for entry in os.listdir(EDI_DIR)
     if entry.endswith(".edi") and not entry.startswith(".")
 ])
 
 result_files = sorted([
-    entry for entry in os.listdir(ResDir)
+    entry for entry in os.listdir(RES_DIR)
     if not entry.startswith(".")
 ])
 nfiles = len(result_files)
 
-if PDFCatalog:
+if PDF_CATALOG:
     pdf_list = []
     for filename in result_files:
         name, _ = os.path.splitext(filename)
-        pdf_list.append(PltDir + name + OutStrng + ".pdf")
+        pdf_list.append(PLT_DIR + name + OUT_STRNG + ".pdf")
 
-if not os.path.isdir(PltDir):
-    print(" File: %s does not exist, but will be created" % PltDir)
-    os.mkdir(PltDir)
+if not os.path.isdir(PLT_DIR):
+    print(" Directory %s does not exist, creating." % PLT_DIR)
+    os.mkdir(PLT_DIR)
 
 # =============================================================================
 #  Process each result file
@@ -104,9 +105,9 @@ data_all = None
 for count, filename in enumerate(result_files, start=1):
     print(f"\n{count} of {nfiles}")
 
-    infile = ResDir + filename
+    infile = RES_DIR + filename
     name, _ = os.path.splitext(filename)
-    outfile = PltDir + name + OutStrng + PlotFmt
+    outfile = PLT_DIR + name + OUT_STRNG + PLOT_FMT
     print(infile)
     print(outfile)
 
@@ -114,15 +115,15 @@ for count, filename in enumerate(result_files, start=1):
         infile,
         outfile,
         plotSizeInches="11x8",
-        maxDepth=DepthPlotLim,
-        resLims=RhoPlotLim,
-        zLog=LogDepth,
-        colormap=ColorMap,
+        maxDepth=DEPTH_PLOT_LIM,
+        resLims=RHO_PLOT_LIM,
+        zLog=LOG_DEPTH,
+        colormap=COLOR_MAP,
     )
     r.plot()
 
-    if DataOut:
-        file_i = EdiDir + name + ".edi"
+    if DATA_OUT:
+        file_i = EDI_DIR + name + ".edi"
         mt_dict = load_edi(file_i)
 
         lat = mt_dict["lat"]
@@ -136,13 +137,16 @@ for count, filename in enumerate(result_files, start=1):
         lon_col = np.ones((sd[0], 1)) * lon
         lat_col = np.ones((sd[0], 1)) * lat
 
-        if WRef:
+        if W_REF:
             elev_col = np.ones_like(data_in[:, 0]) * elev
             data_in[:, 0] = elev_col - data_in[:, 0]
 
         data_out = np.append(lat_col, lon_col, axis=1)
         data_out = np.append(data_out, data_in, axis=1)
-        header = name.split("_")[0] + "  lat, lon, depth, median, q10, q90, mean, mode"
+        header = (
+            name.split("_")[0]
+            + "  lat, lon, depth, median, q10, q90, mean, mode"
+        )
         np.savetxt(name_result + ".dat", data_out, delimiter="  ", header=header)
 
         sit = np.full_like(lat_col, name.split("_")[0], dtype=object)
@@ -156,10 +160,10 @@ for count, filename in enumerate(result_files, start=1):
 # =============================================================================
 #  Final outputs
 # =============================================================================
-if DataOut and data_all is not None:
+if DATA_OUT and data_all is not None:
     header = "All data:  site, lat, lon, depth, median, q10, q90, mean, mode"
     fmt = "%s  %14.7f  %14.7f  %15.5f  %18.5e  %18.5e %18.5e  %18.5e  %18.5e"
-    np.savetxt(DataName, data_all, delimiter="  ", header=header, fmt=fmt)
+    np.savetxt(DATA_NAME, data_all, delimiter="  ", header=header, fmt=fmt)
 
-if PDFCatalog:
-    utl.make_pdf_catalog(PltDir, pdflist=pdf_list, filename=PDFCatalogName)
+if PDF_CATALOG:
+    utl.make_pdf_catalog(PLT_DIR, pdflist=pdf_list, filename=PDF_CATALOG_NAME)

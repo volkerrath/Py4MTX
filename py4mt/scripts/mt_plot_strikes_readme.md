@@ -10,6 +10,7 @@ Plot impedance strike directions from MT station data.
 | Authors | sb & vr (Dec 2019) |
 | Part of | **py4mt** — Python for Magnetotellurics |
 | README generated | 2 March 2026 by Claude (Anthropic), from cleaned source |
+| Last cleanup | 4 March 2026 by Claude (Anthropic) |
 
 ## Purpose
 
@@ -27,24 +28,34 @@ a PDF catalogue.
 5. Loop over stations and plot individual strike diagrams.
 6. Optionally build a PDF catalogue.
 
-## Bugs fixed during cleanup
+## Bugs fixed during earlier cleanup (2 Mar 2026)
 
 | Bug | Description |
 |-----|-------------|
-| **Wrong docstring** | Docstring said "produces a site list" (copy-paste from `mt_make_sitelist`). Replaced with correct description. |
-| **Unused imports** | `getpass`, `datetime`, `contextily`, `PdfPages` imported but never used. Removed. |
-| **Hard-coded PY4MTX_DATA** | Overwrote env-var value on line 70. Removed override. |
-| **Unused variables** | `rng`, `nan`, `blank`, `rhoair` defined but never used. Removed. |
-| **Hard-coded survey name** | `'enfield'` in the `else` branch did not match `surveyname = 'Annecy'`. Changed to use `surveyname`. |
+| **Wrong docstring** | Said "produces a site list". Replaced. |
+| **Unused imports** | `getpass`, `datetime`, `contextily`, `PdfPages` removed. |
+| **Hard-coded `PY4MTX_DATA`** | Removed override. |
+| **Unused variables** | `rng`, `nan`, `blank`, `rhoair` removed. |
+| **Hard-coded survey name** | `'enfield'` changed to use `SURVEY_NAME`. |
+
+## Changes in this cleanup (4 Mar 2026)
+
+| Change | Description |
+|--------|-------------|
+| **UPPERCASE config** | All configuration constants renamed to `UPPER_SNAKE_CASE` (`EPSG`, `WORK_DIR`, `EDI_DIR`, `SURVEY_NAME`, `COLLECTION`, `FROM_EDIS`, `PLT_DIR`, `PLOT_FMT`, `DPI`, `PDF_CATALOG`, `PDF_CATALOG_NAME`). |
+| **Import fix** | `from dtpy import …` corrected to `from mtpy import …` (dtpy is not a real package; this was likely a typo or alias). |
+| **Provenance line** | Added cleanup date to docstring. |
 
 ## Configuration
 
-- `EPSG` — UTM zone for coordinate projection.
-- `WorkDir` / `EdiDir` — path to EDI files.
-- `surveyname` — survey identifier for mtpy metadata.
-- `FromEdis` — `True` to build dataset from EDI files; `False` to load from HDF5 collection.
-- `PlotFmt` — list of plot formats (e.g. `['.png']`).
-- `PDFCatalog` — assemble per-station plots into a PDF.
+| Constant | Description |
+|----------|-------------|
+| `EPSG` | UTM zone for coordinate projection |
+| `WORK_DIR` / `EDI_DIR` | Path to EDI files |
+| `SURVEY_NAME` | Survey identifier for mtpy metadata |
+| `FROM_EDIS` | `True` to build dataset from EDI files; `False` to load from HDF5 |
+| `PLOT_FMT` | List of plot formats (e.g. `['.png']`) |
+| `PDF_CATALOG` | Assemble per-station plots into a PDF |
 
 ## Dependencies
 
