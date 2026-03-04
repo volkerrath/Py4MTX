@@ -198,7 +198,7 @@ _[6] K. Schwalenberg, V. Rath, V. Haak (2002) “Sensitivity studies applied to 
   
 _[7] J. Pek, F.A.M Santos (2002) "Magnetotelluric impedances and parametric sensitivities for 1-D anisotropic layered media", Comput Geosci, 28, doi:10.1016/S0098-3004(02)00014-6_
   
-_[8] D. Blatter, M. Morzfeld, K. Key, S. Constable (2022) "Uncertainty quantification for regularized inversion of electromagnetic geophysical data—Part I: motivation and theory", Geophysical Journal International, 231, 1057–1074. doi:10.1093/gji/ggac241_
+_[8] D. Blatter, M. Morzfeld, K. Key, S. Constable (2022) "Uncertainty quantification for regularized inversion of electromagnetic geophysical data – Part I: motivation and theory", Geophysical Journal International, 231, 1057–1074. doi:10.1093/gji/ggac241_
 
 _[9] D. Blatter, M. Morzfeld, K. Key, S. Constable (2022) "Uncertainty quantification for regularized inversion of electromagnetic geophysical data – Part II: application in 1-D and 2-D problems", Geophysical Journal International, 231, 1075–1095. doi:10.1093/gji/ggac242_
 
