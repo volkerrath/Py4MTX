@@ -56,7 +56,7 @@ or:
 
 _conda create --name Py4MTX --file Py4MTX.txt_
 
-This will set up a Python 3.11 environment with all dependencies for aempy. Don't forget to update also Py4MTX regularly, using _conda update --name Py4MTX--all_! 
+This will set up a Python 3.11 environment with all dependencies for aempy. Don't forget to update also Py4MTX regularly, using _conda update --name Py4MTX --all_! 
 
 
 (3) Activate this environment by:
