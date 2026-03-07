@@ -348,6 +348,18 @@ def _load_site_data(path: str | Path) -> dict:
         elif "rho_a_yx" in keys:
             result["sigma_yx"] = np.full(len(frequencies), NOISE_LEVEL)
 
+        # Full impedance tensor (optional, for impedance-level QC plots)
+        if "Z" in keys:
+            result["Z"] = np.asarray(npz["Z"], dtype=complex)
+        if "Z_err" in keys:
+            result["Z_err"] = np.asarray(npz["Z_err"], dtype=float)
+
+        # Phase tensor (optional, for PT QC plots)
+        if "PT" in keys:
+            result["PT"] = np.asarray(npz["PT"], dtype=float)
+        if "PT_err" in keys:
+            result["PT_err"] = np.asarray(npz["PT_err"], dtype=float)
+
     return result
 
 
@@ -520,6 +532,13 @@ for f in in_files:
         sigma=site["sigma"],
         station=station,
         use_aniso=USE_ANISO,
+        observed_Z=site.get("Z", None),
+        observed_Z_err=site.get("Z_err", None),
+        z_comps=("xy", "yx") if not USE_ANISO else ("xx", "xy", "yx", "yy"),
+        show_pt=site.get("PT", None) is not None or (
+            USE_ANISO and site.get("Z", None) is not None),
+        observed_PT=site.get("PT", None),
+        observed_PT_err=site.get("PT_err", None),
         save_path=str(qc_path),
     )
 
@@ -530,6 +549,7 @@ for f in in_files:
         depth_max=DEPTH_GRID_MAX,
         true_model=None,            # set to a LayeredModel for synthetic tests
         station=station,
+        use_aniso=USE_ANISO,
         save_path=str(model_path),
     )
 

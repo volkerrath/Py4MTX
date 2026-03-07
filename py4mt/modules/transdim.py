@@ -163,6 +163,115 @@ def mt_forward_1d_anisotropic(
     }
 
 
+# -- impedance-level forward models -----------------------------------------
+
+def mt_forward_1d_isotropic_impedance(
+    thicknesses: np.ndarray,
+    resistivities: np.ndarray,
+    frequencies: np.ndarray,
+) -> Dict[str, np.ndarray]:
+    """Isotropic forward model returning the full 2×2 impedance tensor.
+
+    For isotropic media:  Zxx=Zyy=0, Zxy=Z, Zyx=−Z.
+
+    Returns
+    -------
+    dict with ``Z`` (n_freq, 2, 2) complex, ``rho_a`` (n_freq,),
+    ``phase_deg`` (n_freq,).
+    """
+    mu0 = 4.0 * np.pi * 1e-7
+    omega = 2.0 * np.pi * frequencies
+    n_layers = len(resistivities)
+    nf = len(frequencies)
+
+    Z_tensor = np.zeros((nf, 2, 2), dtype=np.complex128)
+    rho_a = np.zeros(nf)
+    phase_deg = np.zeros(nf)
+
+    for fi, w in enumerate(omega):
+        k = np.sqrt(1j * w * mu0 / resistivities)
+        Z_scalar = w * mu0 / k[-1]
+        for j in range(n_layers - 2, -1, -1):
+            Z_j = w * mu0 / k[j]
+            r = (Z_j - Z_scalar) / (Z_j + Z_scalar)
+            e2 = np.exp(-2 * k[j] * thicknesses[j])
+            Z_scalar = Z_j * (1 - r * e2) / (1 + r * e2)
+
+        Z_tensor[fi, 0, 1] = Z_scalar       # Zxy
+        Z_tensor[fi, 1, 0] = -Z_scalar      # Zyx
+        rho_a[fi] = np.abs(Z_scalar) ** 2 / (w * mu0)
+        phase_deg[fi] = np.abs(np.degrees(np.arctan2(Z_scalar.imag, Z_scalar.real)))
+
+    return {"Z": Z_tensor, "rho_a": rho_a, "phase_deg": phase_deg}
+
+
+def mt_forward_1d_anisotropic_impedance(
+    thicknesses: np.ndarray,
+    resistivities: np.ndarray,
+    frequencies: np.ndarray,
+    aniso_ratios: np.ndarray,
+    strikes: np.ndarray,
+) -> Dict[str, np.ndarray]:
+    """Anisotropic forward model returning the full 2×2 impedance tensor.
+
+    Returns
+    -------
+    dict with ``Z`` (n_freq, 2, 2) complex, ``rho_a_xy`` (n_freq,),
+    ``rho_a_yx`` (n_freq,).
+    """
+    if not _HAS_ANISO:
+        raise ImportError("aniso.py not found.")
+
+    periods = 1.0 / frequencies
+    rho_max = resistivities.copy()
+    rho_min = resistivities / aniso_ratios
+    h_m = np.append(thicknesses, 1e6)
+
+    result = aniso1d_impedance_sens_simple(
+        periods_s=periods, h_m=h_m, rho_max=rho_max,
+        rho_min=rho_min, strike_deg=strikes, compute_sens=False,
+    )
+
+    Z = result["Z"]
+    mu0 = 4.0 * np.pi * 1e-7
+    omega = 2.0 * np.pi * frequencies
+
+    return {
+        "Z": Z,
+        "rho_a_xy": np.abs(Z[:, 0, 1]) ** 2 / (omega * mu0),
+        "rho_a_yx": np.abs(Z[:, 1, 0]) ** 2 / (omega * mu0),
+    }
+
+
+# -- phase tensor ------------------------------------------------------------
+
+def compute_phase_tensor(Z: np.ndarray) -> np.ndarray:
+    """Compute the phase tensor from a stack of 2×2 impedance tensors.
+
+    PT = Re(Z)^{-1} @ Im(Z),  computed per frequency.
+
+    Parameters
+    ----------
+    Z : (n_freq, 2, 2) complex
+
+    Returns
+    -------
+    PT : (n_freq, 2, 2) real
+    """
+    nf = Z.shape[0]
+    PT = np.zeros((nf, 2, 2), dtype=float)
+    for fi in range(nf):
+        re = Z[fi].real
+        im = Z[fi].imag
+        det = re[0, 0] * re[1, 1] - re[0, 1] * re[1, 0]
+        if abs(det) < 1e-30:
+            continue
+        re_inv = np.array([[re[1, 1], -re[0, 1]],
+                           [-re[1, 0], re[0, 0]]]) / det
+        PT[fi] = re_inv @ im
+    return PT
+
+
 def has_aniso() -> bool:
     """Return True if the anisotropic forward model is available."""
     return _HAS_ANISO
@@ -686,6 +795,35 @@ def compute_posterior_profile(
     }
 
 
+def compute_posterior_rhomin_profile(
+    models: List[LayeredModel], depth_grid: np.ndarray,
+) -> Dict[str, np.ndarray]:
+    """ρ_min statistics on a regular depth grid (aniso models only).
+
+    ρ_min = ρ_max / aniso_ratio.  For isotropic models, ρ_min = ρ_max.
+    """
+    nd, nm = len(depth_grid), len(models)
+    rho_ens = np.zeros((nm, nd))
+    for i, m in enumerate(models):
+        depths = np.concatenate(([0.0], m.interfaces, [depth_grid[-1] * 2]))
+        rhos = m.get_resistivities()
+        for j, z in enumerate(depth_grid):
+            idx = min(np.searchsorted(depths[1:], z), len(rhos) - 1)
+            if m.is_anisotropic:
+                rho_ens[i, j] = rhos[idx] / m.aniso_ratios[idx]
+            else:
+                rho_ens[i, j] = rhos[idx]
+    log_ens = np.log10(rho_ens)
+    return {
+        "depth": depth_grid,
+        "mean": 10 ** np.mean(log_ens, axis=0),
+        "median": 10 ** np.median(log_ens, axis=0),
+        "p05": 10 ** np.percentile(log_ens, 5, axis=0),
+        "p95": 10 ** np.percentile(log_ens, 95, axis=0),
+        "ensemble": rho_ens,
+    }
+
+
 def compute_posterior_aniso_profile(
     models: List[LayeredModel], depth_grid: np.ndarray,
 ) -> Dict[str, np.ndarray]:
@@ -715,46 +853,70 @@ def compute_posterior_aniso_profile(
 def compute_posterior_histogram(
     models: List[LayeredModel],
     depth_grid: np.ndarray,
-    log_rho_bins: np.ndarray,
+    value_bins: np.ndarray,
+    prop: str = "rho",
 ) -> Dict[str, np.ndarray]:
-    """2-D histogram of log10(resistivity) vs depth across the posterior.
+    """2-D histogram of a layer property vs depth across the posterior.
 
     Parameters
     ----------
     models : list of LayeredModel
     depth_grid : (n_depth,) depth values [m]
-    log_rho_bins : (n_bins+1,) bin edges in log10(Ω·m) space
+    value_bins : (n_bins+1,) bin edges (in the native domain of *prop*)
+    prop : which property to histogram:
+        ``"rho"`` — log10(ρ_max) [default; bins in log10 Ω·m]
+        ``"rho_min"`` — log10(ρ_min) = log10(ρ_max / aniso_ratio) [bins in log10 Ω·m]
+        ``"strike"`` — strike angle [bins in degrees]
 
     Returns
     -------
-    dict with ``hist2d`` (n_depth, n_bins), ``depth``, ``log_rho_bins``,
-    ``log_rho_centres``, ``mode`` (n_depth,) — mode profile in linear Ω·m.
+    dict with ``hist2d`` (n_depth, n_bins), ``depth``, ``value_bins``,
+    ``value_centres``, ``mode`` (n_depth,) — mode profile.
+    For rho/rho_min the mode is in linear Ω·m; for strike in degrees.
     """
     nd = len(depth_grid)
-    nb = len(log_rho_bins) - 1
-    centres = 0.5 * (log_rho_bins[:-1] + log_rho_bins[1:])
+    nb = len(value_bins) - 1
+    centres = 0.5 * (value_bins[:-1] + value_bins[1:])
     hist = np.zeros((nd, nb), dtype=np.float64)
 
     for m in models:
         depths = np.concatenate(([0.0], m.interfaces, [depth_grid[-1] * 2]))
         rhos = m.get_resistivities()
+        nl = len(rhos)
+
         for j, z in enumerate(depth_grid):
-            idx = min(np.searchsorted(depths[1:], z), len(rhos) - 1)
-            lr = np.log10(rhos[idx])
-            b = np.searchsorted(log_rho_bins[1:], lr)
+            layer_idx = min(np.searchsorted(depths[1:], z), nl - 1)
+
+            if prop == "rho":
+                val = np.log10(rhos[layer_idx])
+            elif prop == "rho_min":
+                if m.is_anisotropic:
+                    val = np.log10(rhos[layer_idx] / m.aniso_ratios[layer_idx])
+                else:
+                    val = np.log10(rhos[layer_idx])
+            elif prop == "strike":
+                if m.is_anisotropic:
+                    val = m.strikes[layer_idx]
+                else:
+                    val = 0.0
+            else:
+                raise ValueError(f"Unknown property: {prop!r}")
+
+            b = np.searchsorted(value_bins[1:], val)
             if 0 <= b < nb:
                 hist[j, b] += 1.0
 
-    # Mode profile: bin with highest count at each depth
     mode_idx = np.argmax(hist, axis=1)
-    mode_profile = 10 ** centres[mode_idx]
+    mode_vals = centres[mode_idx]
+    if prop in ("rho", "rho_min"):
+        mode_vals = 10 ** mode_vals
 
     return {
         "hist2d": hist,
         "depth": depth_grid,
-        "log_rho_bins": log_rho_bins,
-        "log_rho_centres": centres,
-        "mode": mode_profile,
+        "value_bins": value_bins,
+        "value_centres": centres,
+        "mode": mode_vals,
     }
 
 
