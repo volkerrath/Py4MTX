@@ -172,7 +172,7 @@ investigation) it may be convenient to do a final normalization by the maximum v
 
 
 # Coming soon:
- -	**Probabilistic MT inversion for anisotropic 1-D layers [7]**
+ -	**Probabilistic MT inversion for anisotropic 1-D layers [7] including transdimensional rj-mcmc [12]**
  -	**Randomize-Then-Optimize Uncertainty for 3-D MT [8, 9] with FEMTIC [10]**
  -	**Jacobian/Sensitivity-related functionality for 3-D anisotropic inversion [11]** 
 
@@ -206,3 +206,4 @@ _[10] H. Song, P. Yu, Y. Usui, M. Uyeshima, D. Diba, L. Zhang, (2025) "Three-dim
 
 _[11] W. Kong, H. Tan, C. Lin, M. Unsworth, B. Lee, M. Peng, M. Wang, M., T. Tong (2021) "Three-dimensional inversion of magnetotelluric data for a resistivity model with arbitrary anisotropy", Journal of Geophysical Research: Solid Earth, doi:https://doi.org/10.1029/2020JB020562_
  
+-[12] P. J. Green (1995) "Reversible Jump MCMC Computation and Bayesian Model determination", Biometrika, 82(4), 711–732, doi:10.1093/biomet/82.4.711_
