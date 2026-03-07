@@ -258,6 +258,16 @@ def plot_strike_profile(
 #  QC summary figure  (cf. plot_qc.png)
 # =============================================================================
 
+# Z-component index map
+_ZCOMP_IDX = {"xx": (0, 0), "xy": (0, 1), "yx": (1, 0), "yy": (1, 1)}
+_ZCOMP_LABELS = {"xx": r"$Z_{xx}$", "xy": r"$Z_{xy}$",
+                 "yx": r"$Z_{yx}$", "yy": r"$Z_{yy}$"}
+_PTCOMP_LABELS = {"xx": r"$\Phi_{xx}$", "xy": r"$\Phi_{xy}$",
+                  "yx": r"$\Phi_{yx}$", "yy": r"$\Phi_{yy}$"}
+
+_COMP_COLORS = {"xx": "purple", "xy": "blue", "yx": "red", "yy": "green"}
+
+
 def plot_qc(
     results: Dict,
     frequencies: np.ndarray,
@@ -265,29 +275,65 @@ def plot_qc(
     sigma: np.ndarray,
     station: str = "",
     use_aniso: bool = False,
+    observed_Z: Optional[np.ndarray] = None,
+    observed_Z_err: Optional[np.ndarray] = None,
+    z_comps: tuple = ("xy", "yx"),
+    show_pt: bool = False,
+    observed_PT: Optional[np.ndarray] = None,
+    observed_PT_err: Optional[np.ndarray] = None,
+    pt_comps: tuple = ("xx", "xy", "yx", "yy"),
     save_path: Optional[str] = None,
 ) -> plt.Figure:
-    """Four-panel QC figure: ρ_a, phase, misfit trace, k histogram.
+    """QC figure with flexible data-fit panels.
 
-    Panels
-    ------
-    A — Apparent resistivity vs period: observations (red) + best-fit per chain (blue)
-    B — Phase vs period: same layout
-    C — Data misfit (χ²) vs sampling step (log–log), one curve per chain,
-        dashed vertical line at burn-in
-    D — Histogram of number of layers (post burn-in)
+    Modes (selected automatically):
+
+    1. **ρ_a + phase** (default) — when ``observed_Z`` is None.
+       Panels A (apparent resistivity vs period) and B (phase vs period).
+
+    2. **Impedance** — when ``observed_Z`` is provided.
+       Panels A (Re Z components vs period) and B (Im Z components vs period).
+
+    3. **Phase tensor** — when ``show_pt=True`` an additional row of panels
+       shows the selected PT components vs period.
+
+    The bottom row always contains:
+       Panel C (data misfit vs sampling step) and Panel D (k histogram).
+
+    Parameters
+    ----------
+    observed_Z : (n_freq, 2, 2) complex, optional
+        Observed impedance tensor.  When provided, panels A/B show Z.
+    observed_Z_err : (n_freq, 2, 2) float, optional
+        Impedance uncertainties (absolute).
+    z_comps : tuple of str
+        Z components to plot (subset of ``'xx', 'xy', 'yx', 'yy'``).
+    show_pt : bool
+        If True, add a row for phase-tensor components.
+    observed_PT : (n_freq, 2, 2) float, optional
+        Observed phase tensor.  Computed from ``observed_Z`` if not given.
+    observed_PT_err : (n_freq, 2, 2) float, optional
+        PT uncertainties.
+    pt_comps : tuple of str
+        PT components to plot.
     """
-    has_chains = "chains" in results
     periods = 1.0 / frequencies
+    has_chains = "chains" in results
+    impedance_mode = observed_Z is not None
 
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    # ---- determine layout --------------------------------------------------
+    n_rows = 2
+    if show_pt:
+        n_rows = 3
+
+    fig, axes = plt.subplots(n_rows, 2, figsize=(14, 5 * n_rows))
     fig.suptitle(
         f"MT Station {station} — 1D rj-McMC Inversion" if station
         else "1D rj-McMC Inversion QC",
         fontsize=14, fontweight="bold",
     )
 
-    # ---- find best-fit model per chain (or overall) ------------------------
+    # ---- best-fit models per chain -----------------------------------------
     if has_chains:
         best_models = []
         for cr in results["chains"]:
@@ -297,48 +343,174 @@ def plot_qc(
         best_idx = int(np.argmax(results["log_likes"]))
         best_models = [results["models"][best_idx]]
 
-    # ---- compute best-fit predictions --------------------------------------
-    best_preds = []
+    # ---- compute best-fit impedances ---------------------------------------
+    best_Z = []
     for m in best_models:
-        pred = transdim.mt_forward_1d_isotropic_full(
-            m.get_thicknesses(), m.get_resistivities(), frequencies)
-        best_preds.append(pred)
+        if use_aniso and m.is_anisotropic:
+            pred = transdim.mt_forward_1d_anisotropic_impedance(
+                m.get_thicknesses(), m.get_resistivities(), frequencies,
+                m.aniso_ratios, m.strikes)
+        else:
+            pred = transdim.mt_forward_1d_isotropic_impedance(
+                m.get_thicknesses(), m.get_resistivities(), frequencies)
+        best_Z.append(pred["Z"])
 
-    # ---- Panel A: Apparent Resistivity vs Period ---------------------------
-    ax = axes[0, 0]
-    ax.errorbar(periods, observed, yerr=observed * sigma * np.log(10),
-                fmt="rs", ms=5, capsize=2, zorder=5, label="Observations")
-    for pred in best_preds:
-        ax.plot(periods, pred["rho_a"], "b-", lw=1.5, alpha=0.8)
-    # single legend entry for chains
-    ax.plot([], [], "b-", lw=1.5, label="Best fit for each chain")
-    ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.set_xlabel("Period [s]")
-    ax.set_ylabel("Apparent Resistivity [Ω·m]")
-    ax.legend(fontsize=9)
-    ax.grid(True, alpha=0.3, which="both")
-    ax.text(0.02, 0.02, "A", transform=ax.transAxes,
-            fontsize=16, fontweight="bold", va="bottom")
+    if impedance_mode:
+        # ---- Panel A: Re(Z) vs Period --------------------------------------
+        ax = axes[0, 0]
+        for comp in z_comps:
+            i, j = _ZCOMP_IDX[comp]
+            color = _COMP_COLORS[comp]
+            obs_re = observed_Z[:, i, j].real
+            if observed_Z_err is not None:
+                ax.errorbar(periods, obs_re, yerr=observed_Z_err[:, i, j],
+                            fmt="s", ms=4, capsize=2, color=color, alpha=0.7,
+                            label=f"Obs Re({_ZCOMP_LABELS[comp]})")
+            else:
+                ax.plot(periods, obs_re, "s", ms=4, color=color, alpha=0.7,
+                        label=f"Obs Re({_ZCOMP_LABELS[comp]})")
+            for Zp in best_Z:
+                ax.plot(periods, Zp[:, i, j].real, "-", color=color,
+                        lw=1.2, alpha=0.6)
 
-    # ---- Panel B: Phase vs Period ------------------------------------------
-    ax = axes[0, 1]
-    # Observed phase: approximate from observed rho_a is not available,
-    # so we show best-fit phase curves only vs any "observed" phase if provided.
-    # Plot best-fit phase curves:
-    for pred in best_preds:
-        ax.plot(periods, pred["phase_deg"], "b-", lw=1.5, alpha=0.8)
-    ax.plot([], [], "b-", lw=1.5, label="Best fit for each chain")
-    ax.set_xscale("log")
-    ax.set_xlabel("Period [s]")
-    ax.set_ylabel("Apparent Phase [Deg]")
-    ax.legend(fontsize=9)
-    ax.grid(True, alpha=0.3, which="both")
-    ax.text(0.02, 0.02, "B", transform=ax.transAxes,
-            fontsize=16, fontweight="bold", va="bottom")
+        ax.set_xscale("log")
+        ax.set_xlabel("Period [s]")
+        ax.set_ylabel("Re(Z)")
+        ax.legend(fontsize=7, ncol=2)
+        ax.grid(True, alpha=0.3, which="both")
+        ax.text(0.02, 0.02, "A", transform=ax.transAxes,
+                fontsize=16, fontweight="bold", va="bottom")
+
+        # ---- Panel B: Im(Z) vs Period --------------------------------------
+        ax = axes[0, 1]
+        for comp in z_comps:
+            i, j = _ZCOMP_IDX[comp]
+            color = _COMP_COLORS[comp]
+            obs_im = observed_Z[:, i, j].imag
+            if observed_Z_err is not None:
+                ax.errorbar(periods, obs_im, yerr=observed_Z_err[:, i, j],
+                            fmt="s", ms=4, capsize=2, color=color, alpha=0.7,
+                            label=f"Obs Im({_ZCOMP_LABELS[comp]})")
+            else:
+                ax.plot(periods, obs_im, "s", ms=4, color=color, alpha=0.7,
+                        label=f"Obs Im({_ZCOMP_LABELS[comp]})")
+            for Zp in best_Z:
+                ax.plot(periods, Zp[:, i, j].imag, "-", color=color,
+                        lw=1.2, alpha=0.6)
+
+        ax.set_xscale("log")
+        ax.set_xlabel("Period [s]")
+        ax.set_ylabel("Im(Z)")
+        ax.legend(fontsize=7, ncol=2)
+        ax.grid(True, alpha=0.3, which="both")
+        ax.text(0.02, 0.02, "B", transform=ax.transAxes,
+                fontsize=16, fontweight="bold", va="bottom")
+
+    else:
+        # ---- Panel A: Apparent Resistivity vs Period -----------------------
+        ax = axes[0, 0]
+        ax.errorbar(periods, observed, yerr=observed * sigma * np.log(10),
+                    fmt="rs", ms=5, capsize=2, zorder=5, label="Observations")
+        for Zp in best_Z:
+            mu0 = 4.0 * np.pi * 1e-7
+            omega = 2.0 * np.pi * frequencies
+            rho_a = np.abs(Zp[:, 0, 1]) ** 2 / (omega * mu0)
+            ax.plot(periods, rho_a, "b-", lw=1.5, alpha=0.8)
+        ax.plot([], [], "b-", lw=1.5, label="Best fit per chain")
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_xlabel("Period [s]")
+        ax.set_ylabel("Apparent Resistivity [Ω·m]")
+        ax.legend(fontsize=9)
+        ax.grid(True, alpha=0.3, which="both")
+        ax.text(0.02, 0.02, "A", transform=ax.transAxes,
+                fontsize=16, fontweight="bold", va="bottom")
+
+        # ---- Panel B: Phase vs Period --------------------------------------
+        ax = axes[0, 1]
+        for Zp in best_Z:
+            phase = np.abs(np.degrees(np.arctan2(Zp[:, 0, 1].imag,
+                                                  Zp[:, 0, 1].real)))
+            ax.plot(periods, phase, "b-", lw=1.5, alpha=0.8)
+        ax.plot([], [], "b-", lw=1.5, label="Best fit per chain")
+        ax.set_xscale("log")
+        ax.set_xlabel("Period [s]")
+        ax.set_ylabel("Apparent Phase [Deg]")
+        ax.legend(fontsize=9)
+        ax.grid(True, alpha=0.3, which="both")
+        ax.text(0.02, 0.02, "B", transform=ax.transAxes,
+                fontsize=16, fontweight="bold", va="bottom")
+
+    # ---- Phase-tensor row (optional) ---------------------------------------
+    if show_pt:
+        # Compute observed PT if not provided
+        if observed_PT is None and observed_Z is not None:
+            observed_PT = transdim.compute_phase_tensor(observed_Z)
+
+        # PT predictions from best-fit models
+        best_PT = [transdim.compute_phase_tensor(Zp) for Zp in best_Z]
+
+        # Left: PT_xx, PT_xy
+        ax = axes[1, 0]
+        for comp in pt_comps[:2] if len(pt_comps) >= 2 else pt_comps:
+            i, j = _ZCOMP_IDX[comp]
+            color = _COMP_COLORS[comp]
+            if observed_PT is not None:
+                if observed_PT_err is not None:
+                    ax.errorbar(periods, observed_PT[:, i, j],
+                                yerr=observed_PT_err[:, i, j],
+                                fmt="s", ms=4, capsize=2, color=color,
+                                alpha=0.7,
+                                label=f"Obs {_PTCOMP_LABELS[comp]}")
+                else:
+                    ax.plot(periods, observed_PT[:, i, j], "s", ms=4,
+                            color=color, alpha=0.7,
+                            label=f"Obs {_PTCOMP_LABELS[comp]}")
+            for PTp in best_PT:
+                ax.plot(periods, PTp[:, i, j], "-", color=color,
+                        lw=1.2, alpha=0.6)
+
+        ax.set_xscale("log")
+        ax.set_xlabel("Period [s]")
+        ax.set_ylabel("Phase Tensor")
+        ax.legend(fontsize=7, ncol=2)
+        ax.grid(True, alpha=0.3, which="both")
+        ax.text(0.02, 0.02, "PT-1", transform=ax.transAxes,
+                fontsize=14, fontweight="bold", va="bottom")
+
+        # Right: PT_yx, PT_yy
+        ax = axes[1, 1]
+        for comp in pt_comps[2:] if len(pt_comps) > 2 else pt_comps[-1:]:
+            i, j = _ZCOMP_IDX[comp]
+            color = _COMP_COLORS[comp]
+            if observed_PT is not None:
+                if observed_PT_err is not None:
+                    ax.errorbar(periods, observed_PT[:, i, j],
+                                yerr=observed_PT_err[:, i, j],
+                                fmt="s", ms=4, capsize=2, color=color,
+                                alpha=0.7,
+                                label=f"Obs {_PTCOMP_LABELS[comp]}")
+                else:
+                    ax.plot(periods, observed_PT[:, i, j], "s", ms=4,
+                            color=color, alpha=0.7,
+                            label=f"Obs {_PTCOMP_LABELS[comp]}")
+            for PTp in best_PT:
+                ax.plot(periods, PTp[:, i, j], "-", color=color,
+                        lw=1.2, alpha=0.6)
+
+        ax.set_xscale("log")
+        ax.set_xlabel("Period [s]")
+        ax.set_ylabel("Phase Tensor")
+        ax.legend(fontsize=7, ncol=2)
+        ax.grid(True, alpha=0.3, which="both")
+        ax.text(0.02, 0.02, "PT-2", transform=ax.transAxes,
+                fontsize=14, fontweight="bold", va="bottom")
+
+    # ---- Misfit and k-histogram (always last row) --------------------------
+    row_cd = n_rows - 1
 
     # ---- Panel C: Misfit trace ---------------------------------------------
-    ax = axes[1, 0]
+    ax = axes[row_cd, 0]
     burn_in = results.get("burn_in", 0)
     if has_chains:
         for i, cr in enumerate(results["chains"]):
@@ -347,11 +519,10 @@ def plot_qc(
                 steps = np.arange(1, len(misfit) + 1)
                 ax.plot(steps, misfit, "-", lw=0.6, alpha=0.7,
                         label=f"Chain {i}" if i < 6 else None)
-    else:
-        if "full_ll_trace" in results:
-            misfit = -2.0 * results["full_ll_trace"]
-            steps = np.arange(1, len(misfit) + 1)
-            ax.plot(steps, misfit, "b-", lw=0.5, alpha=0.5)
+    elif "full_ll_trace" in results:
+        misfit = -2.0 * results["full_ll_trace"]
+        steps = np.arange(1, len(misfit) + 1)
+        ax.plot(steps, misfit, "b-", lw=0.5, alpha=0.5)
 
     if burn_in > 0:
         ax.axvline(burn_in, color="k", ls=":", lw=1, alpha=0.7)
@@ -368,12 +539,11 @@ def plot_qc(
     ax.text(0.02, 0.02, "C", transform=ax.transAxes,
             fontsize=16, fontweight="bold", va="bottom")
 
-    # ---- Panel D: Number-of-layers histogram -------------------------------
-    ax = axes[1, 1]
+    # ---- Panel D: k histogram ----------------------------------------------
+    ax = axes[row_cd, 1]
     k_vals = results["n_layers"]
     bins = np.arange(k_vals.min() - 0.5, k_vals.max() + 1.5, 1)
-    ax.hist(k_vals, bins=bins, color="steelblue", edgecolor="white",
-            alpha=0.8)
+    ax.hist(k_vals, bins=bins, color="steelblue", edgecolor="white", alpha=0.8)
     ax.set_xlabel("Number of Layers")
     ax.set_ylabel("Count")
     ax.grid(True, alpha=0.3)
@@ -399,86 +569,194 @@ def plot_posterior_model(
     n_rho_bins: int = 200,
     true_model: Optional[transdim.LayeredModel] = None,
     station: str = "",
+    use_aniso: bool = False,
+    depth_scale: str = "linear",
+    strike_range: tuple = (-90.0, 90.0),
+    n_strike_bins: int = 120,
     save_path: Optional[str] = None,
 ) -> plt.Figure:
-    """Two-panel posterior-model figure: 2-D histogram + change-point frequency.
+    """Posterior-model figure: 2-D histograms + change-point frequency.
 
-    Panels
-    ------
-    E — Colour-coded 2-D histogram of log10(ρ) vs depth (log frequency scale),
-        overlaid with median, mean, mode, and 10th/90th percentile profiles.
-    F — Change-point frequency vs depth (where the posterior places interfaces).
+    Isotropic mode (default):
+        E  — 2-D histogram of ρ vs depth + overlaid statistics
+        F  — change-point frequency vs depth
+
+    Anisotropic mode (``use_aniso=True``):
+        E1 — 2-D histogram of ρ_max vs depth
+        E2 — 2-D histogram of ρ_min vs depth
+        E3 — 2-D histogram of strike vs depth
+        F  — change-point frequency vs depth
+
+    Parameters
+    ----------
+    depth_scale : ``"linear"`` (default) or ``"log"``
+        Controls the depth axis spacing.
+    strike_range : (float, float)
+        Bin range for the strike histogram [degrees].
+    n_strike_bins : int
+        Number of bins for the strike histogram.
     """
     from matplotlib.colors import LogNorm
     import matplotlib.gridspec as gridspec
 
-    depth_grid = np.linspace(1, depth_max, 600)
+    # ---- depth grid --------------------------------------------------------
+    if depth_scale == "log":
+        depth_grid = np.logspace(0, np.log10(depth_max), 600)
+    else:
+        depth_grid = np.linspace(1, depth_max, 600)
 
-    # Compute posterior histogram
     log_rho_bins = np.linspace(log_rho_range[0], log_rho_range[1], n_rho_bins + 1)
-    phist = transdim.compute_posterior_histogram(
-        results["models"], depth_grid, log_rho_bins)
+    strike_bins = np.linspace(strike_range[0], strike_range[1], n_strike_bins + 1)
 
-    # Compute standard profile statistics
-    prof = transdim.compute_posterior_profile(results["models"], depth_grid)
-
-    # Compute change-point frequency
+    # ---- compute shared data -----------------------------------------------
     cpf = transdim.compute_changepoint_frequency(results["models"], depth_grid)
 
-    # ---- Figure layout: E gets ~75% width, F gets ~25% --------------------
-    fig = plt.figure(figsize=(12, 10))
-    gs = gridspec.GridSpec(1, 2, width_ratios=[3, 1], wspace=0.05)
+    if use_aniso:
+        # Three histograms: rho_max, rho_min, strike
+        h_rmax = transdim.compute_posterior_histogram(
+            results["models"], depth_grid, log_rho_bins, prop="rho")
+        h_rmin = transdim.compute_posterior_histogram(
+            results["models"], depth_grid, log_rho_bins, prop="rho_min")
+        h_str = transdim.compute_posterior_histogram(
+            results["models"], depth_grid, strike_bins, prop="strike")
 
-    # ---- Panel E: 2-D histogram -------------------------------------------
-    ax_e = fig.add_subplot(gs[0])
+        prof_rmax = transdim.compute_posterior_profile(
+            results["models"], depth_grid)
+        prof_rmin = transdim.compute_posterior_rhomin_profile(
+            results["models"], depth_grid)
+        aprof = transdim.compute_posterior_aniso_profile(
+            results["models"], depth_grid)
 
-    hist2d = phist["hist2d"]
-    hist2d_masked = np.ma.masked_where(hist2d < 1, hist2d)
+        n_hist_panels = 3
+    else:
+        h_rmax = transdim.compute_posterior_histogram(
+            results["models"], depth_grid, log_rho_bins, prop="rho")
+        prof_rmax = transdim.compute_posterior_profile(
+            results["models"], depth_grid)
+        n_hist_panels = 1
 
-    rho_edges = 10 ** phist["log_rho_bins"]
-    depth_edges = np.concatenate(([depth_grid[0]],
-                                  0.5 * (depth_grid[:-1] + depth_grid[1:]),
-                                  [depth_grid[-1]]))
+    # ---- figure layout -----------------------------------------------------
+    fig = plt.figure(figsize=(4.5 * n_hist_panels + 3, 10))
+    ratios = [3] * n_hist_panels + [1]
+    gs = gridspec.GridSpec(1, n_hist_panels + 1, width_ratios=ratios, wspace=0.08)
 
-    pcm = ax_e.pcolormesh(
-        rho_edges, depth_edges, hist2d_masked,
-        norm=LogNorm(vmin=1, vmax=hist2d.max()),
-        cmap="RdYlGn_r", shading="flat", rasterized=True)
-    fig.colorbar(pcm, ax=ax_e, label="Log frequency", shrink=0.6, pad=0.02)
+    # ---- helper: draw one rho histogram panel ------------------------------
+    def _draw_rho_panel(ax, phist, prof, label, panel_tag, show_true_rho=None):
+        h2d = np.ma.masked_where(phist["hist2d"] < 1, phist["hist2d"])
+        rho_edges = 10 ** phist["value_bins"]
+        depth_edges = np.concatenate(
+            ([depth_grid[0]], 0.5 * (depth_grid[:-1] + depth_grid[1:]),
+             [depth_grid[-1]]))
 
-    # Overlay statistics
-    ax_e.plot(prof["median"], depth_grid, "k-", lw=2.0, label="Median")
-    ax_e.plot(prof["p05"], depth_grid, "k--", lw=1.5, alpha=0.8)
-    ax_e.plot(prof["p95"], depth_grid, "k--", lw=1.5, alpha=0.8,
-              label="10th & 90th percentile")
-    ax_e.plot(prof["mean"], depth_grid, "b-", lw=1.5, label="Mean")
-    ax_e.plot(phist["mode"], depth_grid, "g-", lw=1.5, label="Mode")
+        pcm = ax.pcolormesh(
+            rho_edges, depth_edges, h2d,
+            norm=LogNorm(vmin=1, vmax=max(phist["hist2d"].max(), 2)),
+            cmap="RdYlGn_r", shading="flat", rasterized=True)
+        fig.colorbar(pcm, ax=ax, label="Log freq.", shrink=0.5, pad=0.02)
 
-    if true_model is not None:
-        _overlay_true_model(ax_e, true_model, depth_max)
+        ax.plot(prof["median"], depth_grid, "k-", lw=2.0, label="Median")
+        ax.plot(prof["p05"], depth_grid, "k--", lw=1.5, alpha=0.8)
+        ax.plot(prof["p95"], depth_grid, "k--", lw=1.5, alpha=0.8,
+                label="10th & 90th %")
+        ax.plot(prof["mean"], depth_grid, "b-", lw=1.5, label="Mean")
+        ax.plot(phist["mode"], depth_grid, "g-", lw=1.5, label="Mode")
 
-    ax_e.set_xscale("log")
-    ax_e.set_xlabel("Resistivity [Ω·m]")
-    ax_e.set_ylabel("Depth [m]")
-    ax_e.invert_yaxis()
-    ax_e.legend(fontsize=9, loc="lower left")
-    ax_e.grid(True, alpha=0.2, which="both")
-    ax_e.text(0.02, 0.02, "E", transform=ax_e.transAxes,
-              fontsize=16, fontweight="bold", va="bottom")
-    if station:
-        ax_e.set_title(f"Station {station}", fontsize=12, fontweight="bold")
+        if show_true_rho is not None:
+            _overlay_true_staircase(ax, show_true_rho, true_model, depth_max)
 
-    # ---- Panel F: Change-point frequency -----------------------------------
-    ax_f = fig.add_subplot(gs[1], sharey=ax_e)
+        ax.set_xscale("log")
+        if depth_scale == "log":
+            ax.set_yscale("log")
+        ax.invert_yaxis()
+        ax.set_xlabel(f"{label} [Ω·m]")
+        ax.legend(fontsize=7, loc="lower left")
+        ax.grid(True, alpha=0.2, which="both")
+        ax.text(0.02, 0.02, panel_tag, transform=ax.transAxes,
+                fontsize=16, fontweight="bold", va="bottom")
 
-    ax_f.plot(cpf, depth_grid, "b-", lw=1.2)
-    ax_f.fill_betweenx(depth_grid, 0, cpf, alpha=0.15, color="steelblue")
-    ax_f.set_xlabel("Change point\nfrequency")
-    ax_f.invert_yaxis()
-    ax_f.grid(True, alpha=0.2)
-    plt.setp(ax_f.get_yticklabels(), visible=False)
-    ax_f.text(0.05, 0.02, "F", transform=ax_f.transAxes,
-              fontsize=16, fontweight="bold", va="bottom")
+    # ---- helper: draw strike histogram panel -------------------------------
+    def _draw_strike_panel(ax, phist, aprof, panel_tag):
+        h2d = np.ma.masked_where(phist["hist2d"] < 1, phist["hist2d"])
+        str_edges = phist["value_bins"]
+        depth_edges = np.concatenate(
+            ([depth_grid[0]], 0.5 * (depth_grid[:-1] + depth_grid[1:]),
+             [depth_grid[-1]]))
+
+        pcm = ax.pcolormesh(
+            str_edges, depth_edges, h2d,
+            norm=LogNorm(vmin=1, vmax=max(phist["hist2d"].max(), 2)),
+            cmap="RdYlGn_r", shading="flat", rasterized=True)
+        fig.colorbar(pcm, ax=ax, label="Log freq.", shrink=0.5, pad=0.02)
+
+        ax.plot(aprof["strike_median"], depth_grid, "k-", lw=2.0,
+                label="Median")
+        ax.plot(aprof["strike_p05"], depth_grid, "k--", lw=1.5, alpha=0.8)
+        ax.plot(aprof["strike_p95"], depth_grid, "k--", lw=1.5, alpha=0.8,
+                label="10th & 90th %")
+
+        if true_model is not None and true_model.is_anisotropic:
+            td = np.concatenate(([0], true_model.interfaces, [depth_max]))
+            for ii in range(len(true_model.strikes)):
+                ax.plot([true_model.strikes[ii], true_model.strikes[ii]],
+                        [td[ii], td[ii + 1]],
+                        "r-", lw=2, label="True" if ii == 0 else None)
+
+        if depth_scale == "log":
+            ax.set_yscale("log")
+        ax.invert_yaxis()
+        ax.set_xlabel("Strike [°]")
+        ax.legend(fontsize=7, loc="lower left")
+        ax.grid(True, alpha=0.2, which="both")
+        ax.text(0.02, 0.02, panel_tag, transform=ax.transAxes,
+                fontsize=16, fontweight="bold", va="bottom")
+
+    # ---- draw histogram panels ---------------------------------------------
+    if use_aniso:
+        ax1 = fig.add_subplot(gs[0])
+        true_rmax = (true_model.get_resistivities()
+                     if true_model is not None else None)
+        _draw_rho_panel(ax1, h_rmax, prof_rmax, "ρ_max", "E1",
+                        show_true_rho=true_rmax)
+        ax1.set_ylabel("Depth [m]")
+        if station:
+            ax1.set_title(f"Station {station}", fontsize=12, fontweight="bold")
+
+        ax2 = fig.add_subplot(gs[1], sharey=ax1)
+        true_rmin = None
+        if true_model is not None and true_model.is_anisotropic:
+            true_rmin = (true_model.get_resistivities()
+                         / true_model.aniso_ratios)
+        _draw_rho_panel(ax2, h_rmin, prof_rmin, "ρ_min", "E2",
+                        show_true_rho=true_rmin)
+        plt.setp(ax2.get_yticklabels(), visible=False)
+
+        ax3 = fig.add_subplot(gs[2], sharey=ax1)
+        _draw_strike_panel(ax3, h_str, aprof, "E3")
+        plt.setp(ax3.get_yticklabels(), visible=False)
+
+        ax_cpf = fig.add_subplot(gs[3], sharey=ax1)
+    else:
+        ax1 = fig.add_subplot(gs[0])
+        _draw_rho_panel(ax1, h_rmax, prof_rmax, "Resistivity", "E",
+                        show_true_rho=(true_model.get_resistivities()
+                                       if true_model is not None else None))
+        ax1.set_ylabel("Depth [m]")
+        if station:
+            ax1.set_title(f"Station {station}", fontsize=12, fontweight="bold")
+
+        ax_cpf = fig.add_subplot(gs[1], sharey=ax1)
+
+    # ---- change-point frequency panel --------------------------------------
+    ax_cpf.plot(cpf, depth_grid, "b-", lw=1.2)
+    ax_cpf.fill_betweenx(depth_grid, 0, cpf, alpha=0.15, color="steelblue")
+    ax_cpf.set_xlabel("Change point\nfrequency")
+    if depth_scale == "log":
+        ax_cpf.set_yscale("log")
+    ax_cpf.invert_yaxis()
+    ax_cpf.grid(True, alpha=0.2)
+    plt.setp(ax_cpf.get_yticklabels(), visible=False)
+    ax_cpf.text(0.05, 0.02, "F", transform=ax_cpf.transAxes,
+                fontsize=16, fontweight="bold", va="bottom")
 
     plt.tight_layout()
     if save_path:
@@ -508,5 +786,27 @@ def _overlay_true_model(
         if i < len(true_rho) - 1:
             ax.plot(
                 [true_rho[i], true_rho[i + 1]],
+                [true_depths[i + 1], true_depths[i + 1]],
+                "r-", lw=2)
+
+
+def _overlay_true_staircase(
+    ax: plt.Axes,
+    values: np.ndarray,
+    true_model: transdim.LayeredModel,
+    depth_max: float,
+) -> None:
+    """Draw a generic staircase overlay for arbitrary per-layer values."""
+    if values is None or true_model is None:
+        return
+    true_depths = np.concatenate(([0], true_model.interfaces, [depth_max]))
+    for i in range(len(values)):
+        ax.plot(
+            [values[i], values[i]],
+            [true_depths[i], true_depths[i + 1]],
+            "r-", lw=2, label="True" if i == 0 else None)
+        if i < len(values) - 1:
+            ax.plot(
+                [values[i], values[i + 1]],
                 [true_depths[i + 1], true_depths[i + 1]],
                 "r-", lw=2)
