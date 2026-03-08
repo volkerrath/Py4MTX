@@ -49,17 +49,17 @@ print(titstrng + "\n\n")
 # =============================================================================
 #  Configuration
 # =============================================================================
-WORK_DIR = "/home/vrath/Py4MTX/py4mt/data/edi/ann/edi_jc/"
+WORK_DIR = PY4MTX_ROOT + "py4mt/data/edi/mcmc/"
 if not os.path.isdir(WORK_DIR):
     print(" File: %s does not exist, but will be created" % WORK_DIR)
     os.mkdir(WORK_DIR)
 
-DATA_DIR = WORK_DIR + "/proc/"
+DATA_DIR = WORK_DIR # + "/proc/"
 if not os.path.isdir(DATA_DIR):
     print(" File: %s does not exist, but will be created" % DATA_DIR)
     os.mkdir(DATA_DIR)
 
-EDI_DIR = WORK_DIR + "/orig/"
+EDI_DIR = WORK_DIR # + "/orig/"
 edi_files = get_edi_list(EDI_DIR, fullpath=True)
 ns = np.size(edi_files)
 
@@ -73,7 +73,7 @@ if PLOT:
     PLOT_FORMAT = [".png", ".pdf"]
 
 NAME_STR = "_proc"
-COLL_NAME = "ANN_DJ_aniso"
+COLL_NAME = "Ann_MCMC"
 
 SET_ERRORS = False
 ERRORS = {
@@ -108,64 +108,64 @@ all_data = []
 for edi in edi_files:
     print("\n\nFound edi file: ", edi)
 
-    edi_dict = load_edi(edi, drop_invalid_periods=True)
+    data_dict = load_edi(edi, drop_invalid_periods=True)
 
-    station = edi_dict["station"]
-    Z = edi_dict["Z"]
-    Zerr = edi_dict["Z_err"]
-    T = edi_dict["T"]
-    Terr = edi_dict["T_err"]
+    station = data_dict["station"]
+    Z = data_dict["Z"]
+    Zerr = data_dict["Z_err"]
+    T = data_dict["T"]
+    Terr = data_dict["T_err"]
 
     # --- Task block ---
 
     if PHAS_TENS:
         P, Perr = compute_pt(Z, Zerr)
-        edi_dict["P"] = P
-        edi_dict["P_err"] = Perr
+        data_dict["P"] = P
+        data_dict["P_err"] = Perr
 
     if INVARS:
         Zdet, Zdeterr = compute_zdet(Z, Zerr)
-        edi_dict["Zdet"] = Zdet
-        edi_dict["Zdet_err"] = Zdeterr
+        data_dict["Zdet"] = Zdet
+        data_dict["Zdet_err"] = Zdeterr
         Zssq, Zssqerr = compute_zssq(Z, Zerr)
-        edi_dict["Zssq"] = Zssq
-        edi_dict["Zssq_err"] = Zssqerr
+        data_dict["Zssq"] = Zssq
+        data_dict["Zssq_err"] = Zssqerr
 
     if ESTIMATE_ERRORS:
-        edi_dict = estimate_errors(edi_dict=edi_dict, method=ERR_METHOD)
+        data_dict = estimate_errors(data_dict=data_dict, method=ERR_METHOD)
 
     if SET_ERRORS:
-        edi_dict = set_errors(edi_dict=edi_dict, errors=ERRORS)
+        data_dict = set_errors(data_dict=data_dict, errors=ERRORS)
 
     if INTERPOLATE:
-        edi_dict = interpolate_data(edi_dict=edi_dict, method=INT_METHOD)
+        data_dict = interpolate_data(data_dict=data_dict, method=INT_METHOD)
 
     if ROTATE:
-        edi_dict = rotate_data(edi_dict=edi_dict, angle=ANGLE)
+        data_dict = rotate_data(data_dict=data_dict, angle=ANGLE)
 
     # --- Refresh apparent resistivity/phase after any Z modification ---
-    if edi_dict.get("freq") is not None and edi_dict.get("Z") is not None:
-        _ek = str(edi_dict.get("err_kind", "var")).strip().lower()
+    if data_dict.get("freq") is not None and data_dict.get("Z") is not None:
+        _ek = str(data_dict.get("err_kind", "var")).strip().lower()
         _ek = "std" if _ek.startswith("std") else "var"
         rho, phi, rho_err, phi_err = compute_rhophas(
-            freq=np.asarray(edi_dict["freq"]),
-            Z=np.asarray(edi_dict["Z"]),
+            freq=np.asarray(data_dict["freq"]),
+            Z=np.asarray(data_dict["Z"]),
             Z_err=(
-                np.asarray(edi_dict["Z_err"])
-                if edi_dict.get("Z_err") is not None
+                np.asarray(data_dict["Z_err"])
+                if data_dict.get("Z_err") is not None
                 else None
             ),
             err_kind=_ek,
             err_method="analytic",
         )
-        edi_dict["rho"] = rho
-        edi_dict["phi"] = phi
+        data_dict["rho"] = rho
+        data_dict["phi"] = phi
         if rho_err is not None:
-            edi_dict["rho_err"] = rho_err
+            data_dict["rho_err"] = rho_err
         if phi_err is not None:
-            edi_dict["phi_err"] = phi_err
+            data_dict["phi_err"] = phi_err
 
-    all_data.append(edi_dict)
+    all_data.append(data_dict)
 
     statname = station
     if STAT_FILE:
@@ -173,52 +173,51 @@ for edi in edi_files:
         statname = nam
 
     if "edi" in OUT_FILES.lower():
-        _ = save_edi(
+        save_edi(
+            **data_dict,
             path=DATA_DIR + statname + NAME_STR + ".edi",
-            edi=edi_dict,
         )
         print("Wrote file: ", DATA_DIR + statname + NAME_STR + ".edi")
 
     if "ncd" in OUT_FILES.lower():
-        _ = save_ncd(
+        save_ncd(
+            **data_dict,
             path=DATA_DIR + statname + NAME_STR + ".ncd",
-            data_dict=edi_dict,
         )
         print("Wrote file: ", DATA_DIR + statname + NAME_STR + ".ncd")
 
     if "hdf" in OUT_FILES.lower():
-        _ = save_hdf(
+        save_hdf(
+            **data_dict,
             path=DATA_DIR + statname + NAME_STR + ".hdf",
-            data_dict=edi_dict,
         )
         print("Wrote file: ", DATA_DIR + statname + NAME_STR + ".hdf")
 
     if "mat" in OUT_FILES.lower():
-        _ = save_mat(
+        save_mat(
+            **data_dict,
             path=DATA_DIR + statname + NAME_STR + ".mat",
-            data_dict=edi_dict,
-            include_raw=True,
         )
         print("Wrote file: ", DATA_DIR + statname + NAME_STR + ".mat")
 
     if "npz" in OUT_FILES.lower():
-        _ = save_npz(
+        save_npz(
+            **data_dict,
             path=DATA_DIR + statname + NAME_STR + ".npz",
-            data_dict=edi_dict,
         )
         print("Wrote file: ", DATA_DIR + statname + NAME_STR + ".npz")
 
     if PLOT:
         fig, axs = plt.subplots(3, 2, figsize=(8, 14), sharex=True)
         df_rp = dataframe_from_edi(
-            edi_dict, include_tipper=False, include_pt=False
+            data_dict, include_tipper=False, include_pt=False
         )
         add_rho(df_rp, comps="xy,yx", ax=axs[0, 0], **PLTARGS)
         add_phase(df_rp, comps="xy,yx", ax=axs[0, 1], **PLTARGS)
         add_rho(df_rp, comps="xx,yy", ax=axs[1, 0], **PLTARGS)
         add_phase(df_rp, comps="xx,yy", ax=axs[1, 1], **PLTARGS)
-        add_tipper(edi_dict, ax=axs[2, 0], **PLTARGS)
-        add_pt(edi_dict, ax=axs[2, 1], **PLTARGS)
+        add_tipper(data_dict, ax=axs[2, 0], **PLTARGS)
+        add_pt(data_dict, ax=axs[2, 1], **PLTARGS)
         fig.suptitle(statname + NAME_STR.replace("_", " | "))
 
         for ax in axs.flat:

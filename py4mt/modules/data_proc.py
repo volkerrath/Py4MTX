@@ -1488,15 +1488,24 @@ def _format_block(values: np.ndarray, n_per_line: int = 6) -> str:
 
 
 def save_edi(
-    path: str | Path,
-    edi: Dict[str, Any],
+    edi: Optional[Dict[str, Any]] = None,
     *,
+    path: str | Path,
     numbers_per_line: int = 6,
     add_pt_blocks: bool = True,
     pt_err_kind: Optional[str] = None,
     lon_keyword: str = "LON",
+    **kwargs: Any,
 ) -> None:
-    """Write an EDI dictionary to a classical table-style EDI file."""
+    """Write an EDI dictionary to a classical table-style EDI file.
+
+    Can be called as either::
+
+        save_edi(data_dict, path="out.edi")
+        save_edi(**data_dict, path="out.edi")
+    """
+    if edi is None:
+        edi = kwargs
     p = Path(path)
 
     freq = np.asarray(edi["freq"], dtype=float).ravel()
@@ -1975,38 +1984,76 @@ def choose_lambda_gcv(x: np.ndarray, y: np.ndarray, lam_grid: Optional[np.ndarra
 
 
 def save_npz(
-    data_dict: Any,
-    path: str | Path,
+    data_dict: Any = None,
     *,
-    key: str = "data_dict",
+    path: str | Path,
+    **kwargs: Any,
 ) -> None:
     """
-    Save an arbitrary Python object to a NumPy ``.npz`` archive.
+    Save a site dictionary to a compressed ``.npz`` archive.
 
-    Stores any picklable Python object (including nested dicts, lists, arrays)
-    as a single object array inside the NPZ file.
+    Each dict entry is stored as a separate array so that individual
+    fields can be accessed directly::
 
-    Notes
-    -----
-    Loading requires ``np.load(..., allow_pickle=True)``.
+        np.load("SITE.npz", allow_pickle=True)["Z"]   # → (n,2,2) complex
+
+    Can be called as either::
+
+        save_npz(data_dict, path="out.npz")
+        save_npz(**data_dict, path="out.npz")
+
+    Non-array values (strings, None, scalars) are stored as 0-d object
+    arrays and require ``allow_pickle=True`` on load.
     """
+    if data_dict is None:
+        data_dict = kwargs
     path = Path(path)
-    obj_arr = np.array(data_dict, dtype=object)
-    np.savez_compressed(path.as_posix(), **{key: obj_arr})
+
+    # Convert every value to something np.savez can handle
+    save_dict = {}
+    for k, v in data_dict.items():
+        if v is None:
+            save_dict[k] = np.array(None, dtype=object)
+        elif isinstance(v, np.ndarray):
+            save_dict[k] = v
+        elif isinstance(v, (str, bytes)):
+            save_dict[k] = np.array(v, dtype=object)
+        elif isinstance(v, (int, float, complex, bool, np.number)):
+            save_dict[k] = np.array(v)
+        else:
+            # lists, nested structures → object array (pickle)
+            save_dict[k] = np.array(v, dtype=object)
+
+    np.savez_compressed(path.as_posix(), **save_dict)
 
 
 def load_npz(
     path: str | Path,
-    *,
-    key: str = "data_dict",
-) -> Any:
+) -> dict:
     """
-    Load an arbitrary Python object from a NumPy ``.npz`` archive.
+    Load a site dictionary from a ``.npz`` archive written by :func:`save_npz`.
+
+    Returns a plain dict whose values are numpy arrays (or scalars/strings
+    extracted from 0-d object arrays).
+
+    Example::
+
+        site = load_npz("SITE.npz")
+        Z = site["Z"]          # (n, 2, 2) complex
+        station = site["station"]  # str
     """
     path = Path(path)
+    out = {}
     with np.load(path.as_posix(), allow_pickle=True) as z:
-        obj = z[key]
-    return obj.tolist()
+        for k in z.files:
+            arr = z[k]
+            # Unwrap 0-d object arrays back to Python scalars/strings
+            if arr.ndim == 0:
+                val = arr.item()
+                out[k] = val
+            else:
+                out[k] = arr
+    return out
 
 
 def save_list_of_dicts_npz(
@@ -2398,223 +2445,241 @@ def _edidict_to_dataframe(
 
 
 def save_hdf(
-    data_dict: Mapping[str, Any] | pd.DataFrame,
-    path: str | Path,
+    data_dict: Optional[Mapping[str, Any] | pd.DataFrame] = None,
     *,
+    path: str | Path,
     key: str = "mt",
     mode: str = "w",
     complevel: int = 4,
-    complib: str = "zlib",
     **kwargs: Any,
 ) -> None:
     """
-    Save an edidict (preferred) or DataFrame to HDF5 via pandas (requires pytables/tables).
+    Save a site dictionary to HDF5 with each entry as a dataset.
 
-    What gets written:
-    - f"{key}/table": the tabular DataFrame (period/freq + expanded columns)
-    - f"{key}/meta" : 1-row DataFrame of metadata (from df.attrs / non-tabular items)
+    Can be called as either::
+
+        save_hdf(data_dict, path="out.hdf")
+        save_hdf(**data_dict, path="out.hdf")
+
+    Arrays (including complex) are stored as HDF5 datasets::
+
+        h5py.File("SITE.hdf")["Z"]   # → (n,2,2) complex128
+
+    Scalars and strings are stored as HDF5 attributes on the group.
+
+    If *data_dict* is a ``pandas.DataFrame``, it is converted to a dict
+    of arrays internally (one dataset per column).
+
+    Requires the ``h5py`` package.
     """
+    if data_dict is None:
+        data_dict = kwargs
     path = Path(path)
 
-    if isinstance(data_dict, pd.DataFrame):
-        df = data_dict
-        meta = dict(df.attrs)
-    else:
-        df, meta, _ = _edidict_to_dataframe(data_dict)
-
-    # store meta as a single-row frame (object dtype allowed)
-    meta_safe = _sanitize_meta_for_hdf(meta)
-    meta_df = pd.DataFrame([meta_safe])
-    # Ensure HDF5 compatibility for metadata: avoid pandas' nullable StringDtype
-    # (PyTables expects a dtype.itemsize attribute for table columns).
-    for c in meta_df.columns:
-        if pd.api.types.is_string_dtype(meta_df[c].dtype):
-            meta_df[c] = meta_df[c].astype("object")
-
     try:
-        df.to_hdf(
-            path.as_posix(),
-            key=f"{key}/table",
-            mode=mode,
-            complevel=complevel,
-            complib=complib,
-            **kwargs,
-        )
+        import h5py
+    except ImportError as exc:
+        raise ImportError("save_hdf requires the 'h5py' package.") from exc
 
-        # append meta in same file
-        #
-        # IMPORTANT:
-        # We intentionally store metadata with `format="fixed"` to avoid a PyTables
-        # limitation with pandas' nullable StringDtype when using `format="table"`
-        # (PyTables expects a dtype.itemsize attribute).
-        meta_kwargs = dict(kwargs)
-        for kk in ("format", "data_columns", "min_itemsize", "append", "complevel", "complib"):
-            meta_kwargs.pop(kk, None)
+    # Convert DataFrame to dict
+    if isinstance(data_dict, pd.DataFrame):
+        dd: dict[str, Any] = {}
+        for c in data_dict.columns:
+            dd[c] = data_dict[c].to_numpy()
+        dd.update(data_dict.attrs)
+        data_dict = dd
 
-        # Ensure meta columns are plain object dtype (avoid pandas StringDtype)
-        for c in meta_df.columns:
-            if pd.api.types.is_string_dtype(meta_df[c].dtype):
-                meta_df[c] = meta_df[c].astype("object")
+    with h5py.File(path.as_posix(), mode) as f:
+        grp = f.require_group(key)
 
-        meta_df.to_hdf(
-            path.as_posix(),
-            key=f"{key}/meta",
-            mode="a",
-            format="fixed",
-            **meta_kwargs,
-        )
-    except ImportError as exc:  # pragma: no cover
-        raise ImportError("pandas HDF5 support requires the 'tables' package.") from exc
+        for k, v in data_dict.items():
+            if v is None:
+                grp.attrs[k] = "__NONE__"
+            elif isinstance(v, np.ndarray):
+                if v.dtype.kind == "U":
+                    # HDF5 can't store numpy unicode directly; convert
+                    grp.attrs[k] = str(v.item()) if v.ndim == 0 else str(v)
+                else:
+                    opts = {"compression": "gzip", "compression_opts": complevel} if v.size > 1 else {}
+                    if k in grp:
+                        del grp[k]
+                    grp.create_dataset(k, data=v, **opts)
+            elif isinstance(v, (str, bytes)):
+                grp.attrs[k] = v
+            elif isinstance(v, (int, float, complex, bool, np.number)):
+                grp.attrs[k] = v
+            elif isinstance(v, (list, tuple)):
+                arr = np.asarray(v)
+                if arr.dtype.kind in ("U", "O"):
+                    grp.attrs[k] = str(v)
+                else:
+                    if k in grp:
+                        del grp[k]
+                    grp.create_dataset(k, data=arr)
+            else:
+                grp.attrs[k] = str(v)
 
 
 def save_ncd(
-    data_dict: Mapping[str, Any] | pd.DataFrame,
-    path: str | Path,
+    data_dict: Optional[Mapping[str, Any] | pd.DataFrame] = None,
     *,
+    path: str | Path,
     engine: Optional[str] = None,
-    dim: str = "period",
     dataset_name: str = "mt",
+    **kwargs: Any,
 ) -> None:
     """
-    Save an edidict (preferred) or DataFrame to NetCDF via xarray.
+    Save a site dictionary to NetCDF with each entry as a variable.
 
-    Notes:
-    - Complex arrays are stored as two variables: <name>_re and <name>_im
-    - Arrays with first dimension N (freq/period) become data variables.
-    - Scalars / non-tabular entries go to ds.attrs (flattened).
+    Can be called as either::
+
+        save_ncd(data_dict, path="out.ncd")
+        save_ncd(**data_dict, path="out.ncd")
+
+    Arrays are stored as NetCDF variables with auto-generated dimension
+    names.  Complex arrays are split into ``<key>_re`` and ``<key>_im``.
+    Scalars and strings are stored as global attributes.
+
+    Example::
+
+        import xarray as xr
+        ds = xr.open_dataset("SITE.ncd")
+        Z_re = ds["Z_re"].values   # (n, 2, 2)
+        Z_im = ds["Z_im"].values   # (n, 2, 2)
+        freq = ds["freq"].values   # (n,)
+
+    Requires the ``xarray`` package.
     """
+    if data_dict is None:
+        data_dict = kwargs
     try:
-        import xarray as xr  # type: ignore[import]
-    except ImportError as exc:  # pragma: no cover
+        import xarray as xr
+    except ImportError as exc:
         raise ImportError("save_ncd requires the 'xarray' package.") from exc
 
     path = Path(path)
 
+    # Convert DataFrame to dict
     if isinstance(data_dict, pd.DataFrame):
-        df = data_dict
-        # infer dim_name + coord from df
-        if dim in df.columns:
-            dim_name = dim
-            coord = df[dim].to_numpy()
-        elif "freq" in df.columns:
-            dim_name = "freq"
-            coord = df["freq"].to_numpy()
+        dd: dict[str, Any] = {}
+        for c in data_dict.columns:
+            dd[c] = data_dict[c].to_numpy()
+        dd.update(data_dict.attrs)
+        data_dict = dd
+
+    data_vars: dict[str, Any] = {}
+    attrs: dict[str, Any] = {"dataset_name": dataset_name}
+
+    for k, v in data_dict.items():
+        if v is None:
+            attrs[k] = "__NONE__"
+            continue
+
+        if isinstance(v, (str, bytes)):
+            attrs[k] = v if isinstance(v, str) else v.decode()
+            continue
+
+        if isinstance(v, (int, float, bool, np.number)):
+            # store real scalars as attrs; complex scalar as 0-d var
+            if isinstance(v, (complex, np.complexfloating)):
+                data_vars[f"{k}_re"] = ((), np.real(v))
+                data_vars[f"{k}_im"] = ((), np.imag(v))
+            else:
+                attrs[k] = float(v) if isinstance(v, (float, np.floating)) else v
+            continue
+
+        arr = np.asarray(v)
+        if arr.dtype.kind == "U" or arr.dtype.kind == "O":
+            attrs[k] = str(v)
+            continue
+
+        # Auto-generate dimension names based on shape
+        dim_names = tuple(f"{k}_d{i}" for i in range(arr.ndim))
+
+        # Use "freq" or "period" as a shared first dimension when possible
+        if arr.ndim >= 1:
+            for shared_dim in ("freq", "period"):
+                if shared_dim in data_dict:
+                    ref = np.asarray(data_dict[shared_dim])
+                    if ref.ndim == 1 and arr.shape[0] == ref.size:
+                        dim_names = (shared_dim,) + dim_names[1:]
+                        break
+
+        if np.iscomplexobj(arr):
+            data_vars[f"{k}_re"] = (dim_names, arr.real)
+            data_vars[f"{k}_im"] = (dim_names, arr.imag)
         else:
-            raise ValueError("DataFrame must contain either the dimension column or 'freq'.")
-        meta = dict(df.attrs)
-        data_vars = {c: (dim_name, df[c].to_numpy()) for c in df.columns if c != dim_name}
-        ds = xr.Dataset(data_vars=data_vars, coords={dim_name: coord})
-    else:
-        # build from data_dict directly
-        # choose dim using requested name first, then fallback
-        dim_preference = (dim, "freq") if dim != "freq" else ("freq", "period")
-        df, meta, dim_name = _edidict_to_dataframe(data_dict, dim_preference=dim_preference)
-        coord = df[dim_name].to_numpy()
+            data_vars[k] = (dim_names, arr)
 
-        data_vars = {}
-        for col in df.columns:
-            if col == dim_name:
-                continue
-            arr = df[col].to_numpy()
-            # ensure numeric if possible; leave object as-is (xarray will try)
-            data_vars[col] = (dim_name, arr)
-
-        ds = xr.Dataset(data_vars=data_vars, coords={dim_name: coord})
-
-    # attrs
-    ds.attrs.update(_flatten_meta_for_attrs(meta))
-    ds.attrs["dataset_name"] = dataset_name
-
+    ds = xr.Dataset(data_vars=data_vars, attrs=attrs)
     ds.to_netcdf(path.as_posix(), engine=engine)
 
 
 def save_mat(
-    data_dict: Mapping[str, Any] | pd.DataFrame,
-    path: str | Path,
+    data_dict: Optional[Mapping[str, Any] | pd.DataFrame] = None,
     *,
-    key: str = "mt",
-    include_raw: bool = True,
+    path: str | Path,
     do_compression: bool = True,
+    **kwargs: Any,
 ) -> None:
     """
-    Save an edidict (preferred) or DataFrame to a MATLAB ``.mat`` file.
+    Save a site dictionary to a MATLAB ``.mat`` file with each entry as a variable.
 
-    The MATLAB file mimics the content of :func:`save_hdf` / :func:`save_ncd`:
+    Can be called as either::
 
-    - ``<key>_table``: a MATLAB struct with one field per DataFrame column
-      (e.g. ``freq``, ``Z_re_0``, ...), each holding a 1D numeric array.
-    - ``<key>_table_cols``: cell array (object array) of column names (order).
-    - ``<key>_table_data``: numeric 2D array with shape (N, ncol) matching
-      ``<key>_table_cols``.
-    - ``<key>_meta``: a MATLAB struct with metadata (sanitized for MATLAB).
+        save_mat(data_dict, path="out.mat")
+        save_mat(**data_dict, path="out.mat")
 
-    Notes
-    -----
-    - Uses :func:`scipy.io.savemat`. MATLAB v7.3 (HDF5-based) is not written by
-      ``savemat``; for very large files consider HDF5/HDFStore instead.
-    - Complex arrays are supported by ``savemat``; however, the tabular DataFrame
-      representation used here stores complex quantities as separate real/imag
-      columns (``*_re_*`` / ``*_im_*``), matching :func:`save_hdf`.
+    Arrays (including complex) are stored as MATLAB variables::
+
+        S = load('SITE.mat');
+        Z    = S.Z;        % (n,2,2) complex
+        freq = S.freq;     % (n,1) double
+
+    Scalars and strings become scalar MATLAB variables.
+    Keys are sanitized for MATLAB compatibility (no dots, leading digits, etc.).
+
+    Requires ``scipy.io.savemat``.
     """
+    if data_dict is None:
+        data_dict = kwargs
     from scipy.io import savemat
 
     path = Path(path)
 
-    # sanitize key for MATLAB variable names
-    key_safe = re.sub(r"\W+", "_", str(key).strip())
-    if not key_safe:
-        key_safe = "mt"
-    if key_safe[0].isdigit():
-        key_safe = "x" + key_safe
-
+    # Convert DataFrame to dict
     if isinstance(data_dict, pd.DataFrame):
-        df = data_dict
-        meta = dict(df.attrs)
-    else:
-        df, meta, _ = _edidict_to_dataframe(data_dict)
+        dd: dict[str, Any] = {}
+        for c in data_dict.columns:
+            dd[c] = data_dict[c].to_numpy()
+        dd.update(data_dict.attrs)
+        data_dict = dd
 
-    cols = list(df.columns)
+    out: dict[str, Any] = {}
+    for k, v in data_dict.items():
+        # Sanitize key for MATLAB variable names
+        k_safe = re.sub(r"\W+", "_", str(k).strip())
+        if not k_safe:
+            k_safe = "x_unnamed"
+        if k_safe[0].isdigit():
+            k_safe = "x" + k_safe
 
-    # numeric table (object columns should not occur, but handle defensively)
-    try:
-        table_data = df.to_numpy()
-    except Exception:
-        table_data = np.asarray(df.values)
-
-    # struct-like dict (fields = columns). Keep a name mapping if sanitization changes it.
-    table_struct: dict[str, Any] = {}
-    colmap: dict[str, str] = {}
-    for c in cols:
-        c_safe = re.sub(r"\W+", "_", str(c).strip())
-        if not c_safe:
-            c_safe = "col"
-        if c_safe[0].isdigit():
-            c_safe = "x" + c_safe
-        if c_safe in table_struct:
-            # ensure uniqueness
-            base = c_safe
-            k = 2
-            while f"{base}_{k}" in table_struct:
-                k += 1
-            c_safe = f"{base}_{k}"
-        colmap[c_safe] = str(c)
-        table_struct[c_safe] = np.asarray(df[c].to_numpy())
-
-    meta_safe = _sanitize_meta_for_mat(meta)
-
-    raw_struct: dict[str, Any] | None = None
-    if bool(include_raw) and not isinstance(data_dict, pd.DataFrame):
-        dd = _unwrap_edidict(data_dict)  # type: ignore[arg-type]
-        raw_struct = _sanitize_mapping_for_mat_struct(dd)
-
-    out = {
-        f"{key_safe}_table": table_struct,
-        f"{key_safe}_table_cols": np.asarray(cols, dtype=object),
-        f"{key_safe}_table_data": table_data,
-        f"{key_safe}_meta": meta_safe,
-        f"{key_safe}_raw": raw_struct if raw_struct is not None else {},
-        f"{key_safe}_colmap": colmap,
-    }
+        if v is None:
+            out[k_safe] = np.array([])  # empty → MATLAB []
+        elif isinstance(v, np.ndarray):
+            out[k_safe] = v
+        elif isinstance(v, (str, bytes)):
+            out[k_safe] = v
+        elif isinstance(v, (int, float, complex, bool, np.number)):
+            out[k_safe] = v
+        elif isinstance(v, (list, tuple)):
+            arr = np.asarray(v)
+            if arr.dtype.kind in ("U", "O"):
+                out[k_safe] = np.asarray(v, dtype=object)
+            else:
+                out[k_safe] = arr
+        else:
+            out[k_safe] = str(v)
 
     savemat(path.as_posix(), out, do_compression=bool(do_compression))
 

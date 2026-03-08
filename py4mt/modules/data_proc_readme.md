@@ -62,8 +62,6 @@ ascending order.
 
 Writes a classical table-style EDI from an in-memory dict.
 
----
-
 ## Apparent resistivity + phase
 
 ### `compute_rhophas(freq, Z, Z_err=None, *, err_kind="var", err_method=..., nsim=200, ...)`
@@ -123,35 +121,89 @@ plt.show()
 
 ## Export formats
 
-### Project-style NPZ
-
-Stores the site dict under a single `data_dict` key in a compressed `.npz`.
+All save functions accept the site dictionary in two ways:
 
 ```python
-data_proc.save_npz(site, "SITE.npz")
+# Positional dict:
+save_xxx(data_dict, path="out.xxx")
+
+# Splatted dict (preferred in scripts):
+save_xxx(**data_dict, path="out.xxx")
+```
+
+In both cases, `path` and all format-specific options are **keyword-only**.
+When using the `**data_dict` form, the function reconstructs the dictionary
+internally from the keyword arguments.  Functions that also accept a
+`pandas.DataFrame` (save_hdf, save_ncd, save_mat) must receive it as the
+positional first argument.
+
+### Project-style NPZ
+
+Each dict entry is stored as a separate array so that individual fields can
+be accessed directly:
+
+```python
+data_proc.save_npz(site, path="SITE.npz")
+# or equivalently:
+data_proc.save_npz(**site, path="SITE.npz")
+
+# Direct access to individual arrays:
+data = np.load("SITE.npz", allow_pickle=True)
+Z    = data["Z"]          # (n, 2, 2) complex
+freq = data["freq"]       # (n,) float
+station = data["station"].item()  # str
+
+# Or reload as a dict:
 site2 = data_proc.load_npz("SITE.npz")
 ```
+
+Non-array values (strings, `None`, scalars) are stored as 0-d object arrays
+and require `allow_pickle=True` on load; use `.item()` to unwrap them.
+`load_npz` does the unwrapping automatically.
 
 For collections: `save_list_of_dicts_npz(records, path)` /
 `load_list_of_dicts_npz(path)`.
 
 ### MATLAB `.mat`
 
-`save_mat(data_dict, path, *, key="mt", include_raw=True, do_compression=True)`
-writes a `.mat` containing a struct table, metadata, and (optionally) the raw
-EDI-style arrays for direct MATLAB use.
+`save_mat(data_dict, *, path, do_compression=True)`
+stores each dict entry as a MATLAB variable (complex arrays supported
+natively).
 
 ```matlab
 S = load('SITE.mat');
-mt = S.mt_raw;
-f  = mt.freq;
-Z  = mt.Z;       % (n,2,2) complex
+Z    = S.Z;        % (n,2,2) complex
+freq = S.freq;     % (n,1) double
+station = S.station;
 ```
 
-### HDF5 and NetCDF
+### HDF5
 
-`save_hdf(data_dict, path)` and `save_ncd(data_dict, path)` write
-HDF5/NetCDF representations of the site dict.
+`save_hdf(data_dict, *, path)` stores each dict entry as an HDF5 dataset
+(arrays) or attribute (scalars/strings).  Complex arrays are supported
+natively by HDF5.  Requires `h5py`.
+
+```python
+import h5py
+with h5py.File("SITE.hdf") as f:
+    Z    = f["mt"]["Z"][:]        # (n, 2, 2) complex
+    freq = f["mt"]["freq"][:]     # (n,) float
+    station = f["mt"].attrs["station"]  # str
+```
+
+### NetCDF
+
+`save_ncd(data_dict, *, path)` stores arrays as NetCDF variables.  Complex
+arrays are split into `<key>_re` and `<key>_im` (NetCDF limitation).
+Scalars and strings go to global attributes.  Requires `xarray`.
+
+```python
+import xarray as xr
+ds = xr.open_dataset("SITE.ncd")
+Z_re = ds["Z_re"].values    # (n, 2, 2)
+Z_im = ds["Z_im"].values
+freq = ds["freq"].values     # (n,)
+```
 
 ---
 
@@ -189,3 +241,4 @@ the complex entries.
 ---
 
 Author: Volker Rath (DIAS)
+Modified: 2026-03-07 — unified save_xxx(**data_dict, path=...) calling convention, Claude (Opus 4.6, Anthropic)

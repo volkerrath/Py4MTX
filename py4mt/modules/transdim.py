@@ -82,7 +82,8 @@ def mt_forward_1d_isotropic(
     thicknesses: np.ndarray,
     resistivities: np.ndarray,
     frequencies: np.ndarray,
-) -> np.ndarray:
+    full_output: bool = False,
+) -> np.ndarray | Dict[str, np.ndarray]:
     """Recursive-impedance 1-D isotropic MT forward model.
 
     Parameters
@@ -90,15 +91,30 @@ def mt_forward_1d_isotropic(
     thicknesses : (n_layers - 1,)   Layer thicknesses [m].
     resistivities : (n_layers,)     Resistivities [Ω·m].
     frequencies : (n_freq,)         Frequencies [Hz].
+    full_output : bool
+        If False (default), return only apparent resistivity (backward
+        compatible).  If True, return a dict with ``rho_a``, ``phase_deg``,
+        ``Z_re``, ``Z_im``.
 
     Returns
     -------
-    rho_a : (n_freq,)  Apparent resistivity [Ω·m].
+    rho_a : (n_freq,)  when ``full_output=False``
+    dict : when ``full_output=True``
+        ``rho_a``     — apparent resistivity [Ω·m]
+        ``phase_deg`` — impedance phase [degrees, 0–90]
+        ``Z_re``      — Re(Z_xy) [V/A·m]
+        ``Z_im``      — Im(Z_xy) [V/A·m]
     """
     mu0 = 4.0 * np.pi * 1e-7
     omega = 2.0 * np.pi * frequencies
     n_layers = len(resistivities)
-    rho_a = np.zeros(len(frequencies))
+    nf = len(frequencies)
+    rho_a = np.zeros(nf)
+
+    if full_output:
+        phase_deg = np.zeros(nf)
+        Z_re = np.zeros(nf)
+        Z_im = np.zeros(nf)
 
     for fi, w in enumerate(omega):
         k = np.sqrt(1j * w * mu0 / resistivities)
@@ -109,7 +125,14 @@ def mt_forward_1d_isotropic(
             e2 = np.exp(-2 * k[j] * thicknesses[j])
             Z = Z_j * (1 - r * e2) / (1 + r * e2)
         rho_a[fi] = np.abs(Z) ** 2 / (w * mu0)
+        if full_output:
+            Z_re[fi] = Z.real
+            Z_im[fi] = Z.imag
+            phase_deg[fi] = np.abs(np.degrees(np.arctan2(Z.imag, Z.real)))
 
+    if full_output:
+        return {"rho_a": rho_a, "phase_deg": phase_deg,
+                "Z_re": Z_re, "Z_im": Z_im}
     return rho_a
 
 
@@ -282,30 +305,12 @@ def mt_forward_1d_isotropic_full(
     resistivities: np.ndarray,
     frequencies: np.ndarray,
 ) -> Dict[str, np.ndarray]:
-    """Recursive-impedance 1-D isotropic MT forward model — full output.
+    """Convenience wrapper: equivalent to ``mt_forward_1d_isotropic(..., full_output=True)``.
 
-    Returns
-    -------
-    dict with ``rho_a`` (apparent resistivity) and ``phase_deg`` (phase in degrees).
+    .. deprecated:: Use ``mt_forward_1d_isotropic(..., full_output=True)`` instead.
     """
-    mu0 = 4.0 * np.pi * 1e-7
-    omega = 2.0 * np.pi * frequencies
-    n_layers = len(resistivities)
-    rho_a = np.zeros(len(frequencies))
-    phase_deg = np.zeros(len(frequencies))
-
-    for fi, w in enumerate(omega):
-        k = np.sqrt(1j * w * mu0 / resistivities)
-        Z = w * mu0 / k[-1]
-        for j in range(n_layers - 2, -1, -1):
-            Z_j = w * mu0 / k[j]
-            r = (Z_j - Z) / (Z_j + Z)
-            e2 = np.exp(-2 * k[j] * thicknesses[j])
-            Z = Z_j * (1 - r * e2) / (1 + r * e2)
-        rho_a[fi] = np.abs(Z) ** 2 / (w * mu0)
-        phase_deg[fi] = np.abs(np.degrees(np.arctan2(Z.imag, Z.real)))
-
-    return {"rho_a": rho_a, "phase_deg": phase_deg}
+    return mt_forward_1d_isotropic(thicknesses, resistivities, frequencies,
+                                   full_output=True)
 
 
 # =============================================================================

@@ -10,6 +10,7 @@ This is intentionally NOT a CLI.  Edit the USER CONFIG and run:
 Preserved conventions: PY4MTX environment variables, explicit sys.path
 setup, startup title print, example in-file model (MODEL0 / MODEL0_ANISO).
 Helpers are imported from transdim.py; plotting from transdim_viz.py.
+Data I/O uses data_proc.py (load_edi, load_npz, compute_rhophas, compute_pt).
 
 The sampler uses reversible-jump MCMC (Green 1995) so that the number of
 layers *k* is itself a free parameter.  Multiple independent chains are
@@ -20,6 +21,7 @@ forward model from aniso.py (set USE_ANISO = True).
 @project:   py4mt — Python for Magnetotellurics
 @created:   2026-03-07 — Claude (Opus 4.6, Anthropic)
 @modified:  2026-03-07 — anisotropic example block, viz split
+@modified:  2026-03-08 — data I/O via data_proc (load_edi, load_npz, compute_rhophas, compute_pt)
 """
 
 from __future__ import annotations
@@ -59,6 +61,12 @@ for pth in mypath:
 
 import util
 from version import versionstrg
+
+import data_proc
+from data_proc import (
+    get_edi_list, load_edi, load_npz,
+    compute_rhophas, compute_pt,
+)
 
 import transdim
 import transdim_viz
@@ -147,9 +155,20 @@ USE_ANISO = False                # True → anisotropic forward model (aniso.py)
 #  USER CONFIG — data
 # =============================================================================
 
-MCMC_DATA = "/home/vrath/Py4MTX/py4mt/data/edi/ann/mcmc/"
+MCMC_DATA = PY4MTX_ROOT + "/py4mt/data/edi/mcmc/"
 
-INPUT_GLOB = MCMC_DATA + "*.npz"
+# Input format: "edi" or "npz".
+#   "edi" — read .edi files via data_proc.load_edi(); rho/phase computed
+#           automatically from Z via data_proc.compute_rhophas().
+#   "npz" — read .npz files via data_proc.load_npz(); expects arrays
+#           written by data_proc.save_npz() (freq, Z, Z_err, rho, …).
+INPUT_FORMAT = "npz"
+
+# For INPUT_FORMAT = "edi":  directory scanned by data_proc.get_edi_list()
+EDI_DIR = MCMC_DATA
+
+# For INPUT_FORMAT = "npz":  glob pattern
+INPUT_GLOB = MCMC_DATA + "*proc.npz"
 
 MODEL_NPZ = MCMC_DATA + "model0.npz"
 
@@ -161,9 +180,16 @@ MODEL_DIRECT = MODEL0
 MODEL_DIRECT_SAVE_PATH = MODEL_NPZ
 MODEL_DIRECT_OVERWRITE = True
 
-# Data uncertainties
+# Data uncertainties (used as fallback when Z_err is absent or as floor)
 NOISE_LEVEL = 0.02               # relative noise in log10(rho_a) space
 SIGMA_FLOOR = 0.0
+
+# Error estimation for rho/phase (passed to data_proc.compute_rhophas)
+ERR_METHOD = "analytic"          # "none", "analytic", "bootstrap", "both"
+ERR_NSIM = 200                   # Monte-Carlo samples (bootstrap only)
+
+# Compute phase tensor from Z (for QC plots)
+COMPUTE_PT = True
 
 # =============================================================================
 #  USER CONFIG — prior bounds
@@ -293,72 +319,171 @@ def _model0_to_layered(m0: dict, use_aniso: bool) -> transdim.LayeredModel:
 
 
 # =============================================================================
-#  Helper: load site data (simplified — adapt to your data format)
+#  Helper: load site data via data_proc
 # =============================================================================
 
-def _load_site_data(path: str | Path) -> dict:
-    """Load an NPZ data file and return frequencies + apparent resistivities.
+def _load_site(path: str | Path) -> dict:
+    """Load a site from an EDI or NPZ file using ``data_proc`` routines.
 
-    Expected keys (at minimum):
-        ``frequencies`` or ``periods`` — observation frequencies [Hz] or [s]
-        ``rho_a`` or ``rho_a_xy``     — observed apparent resistivity [Ω·m]
-        ``sigma`` (optional)          — data uncertainties in log10 space
+    Returns a dict with the keys expected by the transdim sampler and
+    QC plots:
 
-    For the anisotropic case, also looks for ``rho_a_yx`` and ``sigma_yx``.
+        frequencies, rho_a, sigma, station,
+        rho_a_yx, sigma_yx   (if anisotropic data present)
+        Z, Z_err             (if impedance tensor available)
+        PT, PT_err           (if phase tensor available)
     """
-    with np.load(str(path), allow_pickle=True) as npz:
-        keys = set(npz.files)
+    path = Path(path)
+    ext = path.suffix.lower()
 
-        # Frequencies
-        if "frequencies" in keys:
-            frequencies = np.asarray(npz["frequencies"], dtype=float).ravel()
-        elif "periods" in keys:
-            frequencies = 1.0 / np.asarray(npz["periods"], dtype=float).ravel()
+    # ---- Load raw data via data_proc --------------------------------------
+    if ext == ".edi":
+        dd = load_edi(str(path))
+    elif ext == ".npz":
+        dd = load_npz(str(path))
+    else:
+        raise ValueError(f"Unsupported input format: {ext!r} ({path})")
+
+    # ---- Frequencies (data_proc uses "freq") ------------------------------
+    if "freq" in dd:
+        frequencies = np.asarray(dd["freq"], dtype=float).ravel()
+    elif "frequencies" in dd:
+        frequencies = np.asarray(dd["frequencies"], dtype=float).ravel()
+    elif "period" in dd:
+        frequencies = 1.0 / np.asarray(dd["period"], dtype=float).ravel()
+    else:
+        raise KeyError(f"No 'freq', 'frequencies', or 'period' in {path}")
+
+    # ---- Station name -----------------------------------------------------
+    station = dd.get("station", path.stem)
+    if isinstance(station, np.ndarray):
+        station = str(station.item()) if station.ndim == 0 else str(station)
+
+    # ---- Impedance tensor Z -----------------------------------------------
+    Z = dd.get("Z")
+    Z_err = dd.get("Z_err")
+    err_kind = str(dd.get("err_kind", "var")).strip().lower()
+    if err_kind.startswith("std"):
+        err_kind = "std"
+    else:
+        err_kind = "var"
+
+    # ---- Compute apparent resistivity / phase from Z if not present -------
+    rho = dd.get("rho")
+    rho_err = dd.get("rho_err")
+
+    if rho is None and Z is not None:
+        Z = np.asarray(Z, dtype=complex)
+        _Ze = np.asarray(Z_err) if Z_err is not None else None
+        rho, phi, rho_err, phi_err = compute_rhophas(
+            freq=frequencies, Z=Z, Z_err=_Ze,
+            err_kind=err_kind,
+            err_method=ERR_METHOD,
+            nsim=ERR_NSIM,
+        )
+
+    # ---- Extract xy (and optionally yx) apparent resistivity ---------------
+    if rho is not None:
+        rho = np.asarray(rho)
+        if rho.ndim == 3 and rho.shape[1:] == (2, 2):
+            # rho has shape (n, 2, 2) — extract components
+            rho_a_xy = rho[:, 0, 1]
+            rho_a_yx = rho[:, 1, 0]
+        elif rho.ndim == 1:
+            rho_a_xy = rho
+            rho_a_yx = None
         else:
-            raise KeyError(f"No 'frequencies' or 'periods' key in {path}")
+            rho_a_xy = rho.ravel()
+            rho_a_yx = None
+    elif "rho_a" in dd:
+        rho_a_xy = np.asarray(dd["rho_a"], dtype=float).ravel()
+        rho_a_yx = dd.get("rho_a_yx")
+        if rho_a_yx is not None:
+            rho_a_yx = np.asarray(rho_a_yx, dtype=float).ravel()
+    elif "rho_a_xy" in dd:
+        rho_a_xy = np.asarray(dd["rho_a_xy"], dtype=float).ravel()
+        rho_a_yx = dd.get("rho_a_yx")
+        if rho_a_yx is not None:
+            rho_a_yx = np.asarray(rho_a_yx, dtype=float).ravel()
+    else:
+        raise KeyError(
+            f"Cannot determine apparent resistivity from {path}.  "
+            "Need 'Z', 'rho', 'rho_a', or 'rho_a_xy'."
+        )
 
-        # Apparent resistivity
-        if "rho_a" in keys:
-            rho_a = np.asarray(npz["rho_a"], dtype=float).ravel()
-        elif "rho_a_xy" in keys:
-            rho_a = np.asarray(npz["rho_a_xy"], dtype=float).ravel()
+    # ---- Uncertainties in log10(rho_a) space ------------------------------
+    if rho_err is not None:
+        rho_err = np.asarray(rho_err)
+        if rho_err.ndim == 3 and rho_err.shape[1:] == (2, 2):
+            rho_err_xy = rho_err[:, 0, 1]
+            rho_err_yx = rho_err[:, 1, 0]
+        elif rho_err.ndim == 1:
+            rho_err_xy = rho_err
+            rho_err_yx = None
         else:
-            raise KeyError(f"No 'rho_a' or 'rho_a_xy' key in {path}")
+            rho_err_xy = rho_err.ravel()
+            rho_err_yx = None
 
-        # Uncertainties
-        if "sigma" in keys:
-            sigma = np.asarray(npz["sigma"], dtype=float).ravel()
-        else:
-            sigma = np.full(len(frequencies), NOISE_LEVEL)
+        # Convert from linear rho_err to log10(rho) uncertainty:
+        #   σ_log10 ≈ rho_err / (rho * ln(10))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            sigma_xy = np.where(
+                rho_a_xy > 0,
+                rho_err_xy / (rho_a_xy * np.log(10)),
+                NOISE_LEVEL,
+            )
+        sigma_xy = np.maximum(sigma_xy, SIGMA_FLOOR)
+        sigma_xy = np.where(np.isfinite(sigma_xy), sigma_xy, NOISE_LEVEL)
 
-        sigma = np.maximum(sigma, SIGMA_FLOOR)
+        sigma_yx = None
+        if rho_err_yx is not None and rho_a_yx is not None:
+            with np.errstate(divide="ignore", invalid="ignore"):
+                sigma_yx = np.where(
+                    rho_a_yx > 0,
+                    rho_err_yx / (rho_a_yx * np.log(10)),
+                    NOISE_LEVEL,
+                )
+            sigma_yx = np.maximum(sigma_yx, SIGMA_FLOOR)
+            sigma_yx = np.where(np.isfinite(sigma_yx), sigma_yx, NOISE_LEVEL)
+    elif "sigma" in dd:
+        sigma_xy = np.maximum(
+            np.asarray(dd["sigma"], dtype=float).ravel(), SIGMA_FLOOR)
+        sigma_yx = dd.get("sigma_yx")
+        if sigma_yx is not None:
+            sigma_yx = np.maximum(
+                np.asarray(sigma_yx, dtype=float).ravel(), SIGMA_FLOOR)
+    else:
+        sigma_xy = np.full(len(frequencies), NOISE_LEVEL)
+        sigma_yx = None
 
-        result = {
-            "station": npz.get("station", Path(path).stem),
-            "frequencies": frequencies,
-            "rho_a": rho_a,
-            "sigma": sigma,
-        }
+    # ---- Phase tensor (for QC plots) --------------------------------------
+    PT = dd.get("P", dd.get("PT"))
+    PT_err = dd.get("P_err", dd.get("PT_err"))
+    if PT is None and COMPUTE_PT and Z is not None:
+        Z_arr = np.asarray(Z, dtype=complex)
+        _Ze = np.asarray(Z_err) if Z_err is not None else None
+        PT, PT_err = compute_pt(Z_arr, _Ze, err_kind=err_kind)
 
-        # yx-mode data (optional, for anisotropic case)
-        if "rho_a_yx" in keys:
-            result["rho_a_yx"] = np.asarray(npz["rho_a_yx"], dtype=float).ravel()
-        if "sigma_yx" in keys:
-            result["sigma_yx"] = np.asarray(npz["sigma_yx"], dtype=float).ravel()
-        elif "rho_a_yx" in keys:
-            result["sigma_yx"] = np.full(len(frequencies), NOISE_LEVEL)
+    # ---- Build output dict ------------------------------------------------
+    result = {
+        "station": station,
+        "frequencies": frequencies,
+        "rho_a": rho_a_xy,
+        "sigma": sigma_xy,
+    }
 
-        # Full impedance tensor (optional, for impedance-level QC plots)
-        if "Z" in keys:
-            result["Z"] = np.asarray(npz["Z"], dtype=complex)
-        if "Z_err" in keys:
-            result["Z_err"] = np.asarray(npz["Z_err"], dtype=float)
-
-        # Phase tensor (optional, for PT QC plots)
-        if "PT" in keys:
-            result["PT"] = np.asarray(npz["PT"], dtype=float)
-        if "PT_err" in keys:
-            result["PT_err"] = np.asarray(npz["PT_err"], dtype=float)
+    if rho_a_yx is not None:
+        result["rho_a_yx"] = rho_a_yx
+    if sigma_yx is not None:
+        result["sigma_yx"] = sigma_yx
+    if Z is not None:
+        result["Z"] = np.asarray(Z, dtype=complex)
+    if Z_err is not None:
+        result["Z_err"] = np.asarray(Z_err, dtype=float)
+    if PT is not None:
+        result["PT"] = np.asarray(PT, dtype=float)
+    if PT_err is not None:
+        result["PT_err"] = np.asarray(PT_err, dtype=float)
 
     return result
 
@@ -454,16 +579,21 @@ if initial_model.is_anisotropic:
 print()
 
 # ---- Discover input data files ---------------------------------------------
-import glob
-in_files = sorted(glob.glob(INPUT_GLOB))
-if not in_files:
-    raise FileNotFoundError(f"No inputs matched: {INPUT_GLOB}")
+if INPUT_FORMAT.lower() == "edi":
+    in_files = get_edi_list(EDI_DIR, fullpath=True, sort=True)
+else:
+    import glob
+    in_files = sorted(glob.glob(INPUT_GLOB))
 
-print(f"Found {len(in_files)} input file(s).\n")
+if not in_files:
+    pat = EDI_DIR if INPUT_FORMAT.lower() == "edi" else INPUT_GLOB
+    raise FileNotFoundError(f"No inputs matched: {pat}")
+
+print(f"Found {len(in_files)} input file(s) ({INPUT_FORMAT}).\n")
 
 # ---- Loop over sites -------------------------------------------------------
 for f in in_files:
-    site = _load_site_data(f)
+    site = _load_site(f)
     station = str(site.get("station", Path(f).stem))
     print(f"{'='*70}")
     print(f"  Station: {station}")
