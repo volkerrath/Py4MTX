@@ -343,17 +343,28 @@ def plot_qc(
         best_idx = int(np.argmax(results["log_likes"]))
         best_models = [results["models"][best_idx]]
 
-    # ---- compute best-fit impedances ---------------------------------------
-    best_Z = []
+    # ---- compute best-fit predictions ---------------------------------------
+    best_preds = []     # list of dicts with rho_a, phase_deg, Z_re, Z_im
+    best_Z = []         # list of (nf, 2, 2) complex tensors (for impedance/PT panels)
     for m in best_models:
         if use_aniso and m.is_anisotropic:
             pred = transdim.mt_forward_1d_anisotropic_impedance(
                 m.get_thicknesses(), m.get_resistivities(), frequencies,
                 m.aniso_ratios, m.strikes)
+            best_preds.append(pred)
+            best_Z.append(pred["Z"])
         else:
-            pred = transdim.mt_forward_1d_isotropic_impedance(
-                m.get_thicknesses(), m.get_resistivities(), frequencies)
-        best_Z.append(pred["Z"])
+            pred = transdim.mt_forward_1d_isotropic(
+                m.get_thicknesses(), m.get_resistivities(), frequencies,
+                full_output=True)
+            best_preds.append(pred)
+            # Reconstruct (nf, 2, 2) tensor for impedance/PT panels
+            nf = len(frequencies)
+            Z_scalar = pred["Z_re"] + 1j * pred["Z_im"]
+            Z_tensor = np.zeros((nf, 2, 2), dtype=np.complex128)
+            Z_tensor[:, 0, 1] = Z_scalar     # Zxy
+            Z_tensor[:, 1, 0] = -Z_scalar    # Zyx = -Zxy
+            best_Z.append(Z_tensor)
 
     if impedance_mode:
         # ---- Panel A: Re(Z) vs Period --------------------------------------
@@ -411,10 +422,8 @@ def plot_qc(
         ax = axes[0, 0]
         ax.errorbar(periods, observed, yerr=observed * sigma * np.log(10),
                     fmt="rs", ms=5, capsize=2, zorder=5, label="Observations")
-        for Zp in best_Z:
-            mu0 = 4.0 * np.pi * 1e-7
-            omega = 2.0 * np.pi * frequencies
-            rho_a = np.abs(Zp[:, 0, 1]) ** 2 / (omega * mu0)
+        for pred in best_preds:
+            rho_a = pred.get("rho_a", pred.get("rho_a_xy"))
             ax.plot(periods, rho_a, "b-", lw=1.5, alpha=0.8)
         ax.plot([], [], "b-", lw=1.5, label="Best fit per chain")
         ax.set_xscale("log")
@@ -428,10 +437,15 @@ def plot_qc(
 
         # ---- Panel B: Phase vs Period --------------------------------------
         ax = axes[0, 1]
-        for Zp in best_Z:
-            phase = np.abs(np.degrees(np.arctan2(Zp[:, 0, 1].imag,
-                                                  Zp[:, 0, 1].real)))
-            ax.plot(periods, phase, "b-", lw=1.5, alpha=0.8)
+        for pred in best_preds:
+            if "phase_deg" in pred:
+                ax.plot(periods, pred["phase_deg"], "b-", lw=1.5, alpha=0.8)
+            else:
+                # aniso: derive from Zxy
+                Zp = pred["Z"]
+                phase = np.abs(np.degrees(np.arctan2(
+                    Zp[:, 0, 1].imag, Zp[:, 0, 1].real)))
+                ax.plot(periods, phase, "b-", lw=1.5, alpha=0.8)
         ax.plot([], [], "b-", lw=1.5, label="Best fit per chain")
         ax.set_xscale("log")
         ax.set_xlabel("Period [s]")

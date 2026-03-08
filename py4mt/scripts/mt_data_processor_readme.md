@@ -10,6 +10,7 @@ Batch MT station processing script.
 | Author | Volker Rath (DIAS), with ChatGPT (GPT-5 Thinking), 2026-02-13 |
 | Part of | **py4mt** — Python for Magnetotellurics |
 | README generated | 3 March 2026 by Claude (Anthropic), from cleaned source |
+| Modified | 2026-03-07 — unified save_xxx(**data_dict, path=...) calling convention |
 
 ## Purpose
 
@@ -81,6 +82,9 @@ DEC_DEG = True
 For each station, the script can write: EDI (classical table-style),
 NPZ (NumPy compressed archive), HDF (HDF5), MAT (MATLAB `.mat`), and
 NCD (NetCDF, if added to `OUT_FILES`).
+
+All save functions are called with the `**data_dict` splatting convention
+(`save_xxx(**data_dict, path="...")`), where `path` is keyword-only.
 
 After all stations are processed, a single collection NPZ is written via
 `save_list_of_dicts_npz()`.
