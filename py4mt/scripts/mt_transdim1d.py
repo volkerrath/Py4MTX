@@ -48,7 +48,6 @@ import sys
 import inspect
 import warnings
 from pathlib import Path
-import glob
 
 import numpy as np
 
@@ -69,13 +68,16 @@ if not PY4MTX_DATA:
 
 mypath = [
     str(Path(PY4MTX_ROOT) / "py4mt" / "modules"),
+    str(Path(PY4MTX_ROOT) / "py4mt" / "scripts"),
 ]
 for pth in mypath:
     if pth and pth not in sys.path and Path(pth).exists():
-        sys.path.append(pth)
+        sys.path.insert(0, pth)
 
 import util
 from version import versionstrg
+
+from data_proc import get_edi_list
 
 import transdim
 import transdim_viz
@@ -90,10 +92,17 @@ print(titstrng + "\n\n")
 # =============================================================================
 #  Example starting model — ISOTROPIC
 # =============================================================================
-N_LAYER = 4
-H_M = np.r_[100.0, 400.0, 1000.0, 0.0]
+#
+#  For the transdimensional sampler the starting model only defines the
+#  *initial* number of layers and their properties; k is free to change.
+#  The MODEL0 dict uses the same schema as mt_aniso1d_sampler.py so that
+#  existing model NPZ files can be re-used.
+#
+N_LAYER = 10
+H_M = np.r_[np.logspace(np.log10(500.0), np.log10(3000.0), N_LAYER - 1), 0.0]
+# np.r_[300.0, 300.0, 1000.0, 0.0]     # last entry = half-space (ignored)
 
-RHO_BG = 100.0
+RHO_BG = 300.0         # Ohm·m
 
 MODEL0 = {
     "prior_name":  "transdim_start_iso",
@@ -164,6 +173,8 @@ PT_COMPS = ("xx", "xy", "yx", "yy")
 MCMC_DATA = PY4MTX_ROOT + "/py4mt/data/edi/mcmc/"
 
 INPUT_FORMAT = "npz"
+
+EDI_DIR = MCMC_DATA
 INPUT_GLOB = MCMC_DATA + "*proc.npz"
 
 MODEL_NPZ = MCMC_DATA + "model0.npz"
@@ -186,8 +197,8 @@ COMPUTE_PT = True
 
 K_MIN = 1
 K_MAX = 20
-DEPTH_MIN = 5.0
-DEPTH_MAX = 5000.0
+DEPTH_MIN = 50.0
+DEPTH_MAX = 3000.0
 LOG10_RHO_BOUNDS = (-1.0, 4.0)
 
 LOG10_ANISO_BOUNDS = (0.0, 1.5)
@@ -197,15 +208,15 @@ STRIKE_BOUNDS_DEG = (-90.0, 90.0)
 #  USER CONFIG — sampler
 # =============================================================================
 
-N_ITERATIONS = 200_000
+N_ITERATIONS = 250_000
 BURN_IN = 50_000
 THIN = 10
 
 PROPOSAL_WEIGHTS = (0.20, 0.20, 0.25, 0.35)
 
-SIGMA_BIRTH_RHO = 0.10
-SIGMA_MOVE_Z = 100.0
-SIGMA_CHANGE_RHO = 0.15
+SIGMA_BIRTH_RHO = 0.03
+SIGMA_MOVE_Z = 50.0
+SIGMA_CHANGE_RHO = 0.05
 
 SIGMA_BIRTH_ANISO = 0.10
 SIGMA_BIRTH_STRIKE = 10.0
@@ -216,9 +227,9 @@ SIGMA_CHANGE_STRIKE = 5.0
 #  USER CONFIG — parallel chains
 # =============================================================================
 
-N_CHAINS = 4
-N_JOBS = -1
-BASE_SEED = 42
+N_CHAINS = 12
+N_JOBS = 12
+BASE_SEED = transdim.generate_seed()                    # chain i gets seed = BASE_SEED + i
 
 # =============================================================================
 #  USER CONFIG — output
@@ -325,6 +336,7 @@ if initial_model.is_anisotropic:
 print()
 
 # ---- Discover input data files ---------------------------------------------
+
 in_files = sorted(glob.glob(INPUT_GLOB))
 
 if not in_files:
