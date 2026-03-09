@@ -338,6 +338,14 @@ def get_filelist(searchstr=['*'], searchpath='./', sortedlist =True, fullpath=Fa
     return filelist
 
 
+def get_percentile(nsig=1):
+    import scipy.stats as st
+    lower = st.norm.cdf(-nsig)
+    upper = st.norm.cdf( nsig)
+    coverage = upper - lower
+    print ('Coverage',round(coverage),'percentiles=', lower, upper)
+    return lower, upper, coverage
+
 def get_utm_zone(lat=None, lon=None):
     '''
     Get utm-zone from lat and lon
