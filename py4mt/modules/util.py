@@ -38,7 +38,13 @@ from scipy.fftpack import dct, idct
 
 from types import ModuleType, SimpleNamespace
 from typing import List, Any, Dict
+from pathlib import Path
 
+def add_tree(path: str):
+    base = Path(path)
+    for p in base.rglob("*"):
+        if p.is_dir():
+            sys.path.append(str(p))
 
 def _is_hdf5_compatible(value: Any) -> bool:
     """Return True if the object can be stored directly in HDF5."""
@@ -127,9 +133,6 @@ def load_workspace_hdf5(filename: str = "workspace.h5",
 
 
 
-
-
-
 def list_module_callables(module: ModuleType, public_only: bool = False) -> List[str]:
     """
     Return a list of callable objects defined in a module.
@@ -155,6 +158,7 @@ def list_module_callables(module: ModuleType, public_only: bool = False) -> List
         callables = [name for name in callables if not name.startswith("_")]
 
     return sorted(callables)
+
 
 def running_in_notebook() -> bool:
     """

@@ -117,18 +117,19 @@ _MU0: float = 4.0 * np.pi * 1.0e-7
 # Basic text helpers
 # ---------------------------------------------------------------------------
 
-
-def get_edi_list(edirname=None, sort=False, fullpath=True):
+def get_data_list(dirname=None, ext= '.esi', sort=False, fullpath=True):
 
 
 
     """
-    List EDI files in a directory.
+    List files with given extension in a directory.
 
     Parameters
     ----------
-    edirname : str
-        Directory containing EDI files.
+    datarname : str
+        Directory containing data files.
+    ext : str
+
     sort : bool
         If True, return files in sorted order.
     fullpath : bool
@@ -136,32 +137,35 @@ def get_edi_list(edirname=None, sort=False, fullpath=True):
 
     Returns
     -------
-    edi_files : list[str]
-        List of EDI file paths or names.
+    data_files : list[str]
+        List of data file paths or names.
 
     Notes
     -----
-    Hidden files (starting with '.') are ignored. Raises SystemExit if no EDI files
+    Hidden files (starting with '.') are ignored. Raises SystemExit if no data files
     are found.
     """
-    edi_files = []
-    files = os.listdir(edirname)
+    data_files = []
+    files = os.listdir(dirname)
     for entry in files:
         # print(entry)
-        if entry.endswith('.edi') and not entry.startswith('.'):
+        if entry.endswith(ext) and not entry.startswith('.'):
             if fullpath:
-                edi_files.append(edirname+entry)
+                data_files.append(dirname+entry)
             else:
-                edi_files.append(entry)
+                data_files.append(entry)
 
-    ns = np.size(edi_files)
+    ns = np.size(data_files)
     if ns ==0:
-        sys.exit('No edi files found in '+edirname+'! Exit.')
+        sys.exit('No data files ('+ext +') found in '+dirname+'! Exit.')
 
     if sort:
-        edi_files = sorted(edi_files)
+        data_files = sorted(data_files)
 
-    return edi_files
+    return data_files
+
+# Alias
+get_edi_list = get_data_list
 
 def read_edi_text(path: str | Path, encoding: str = "latin-1") -> str:
     """Read an EDI file as raw text.
