@@ -48,6 +48,7 @@ import sys
 import inspect
 import warnings
 from pathlib import Path
+import glob
 
 import numpy as np
 
@@ -68,16 +69,13 @@ if not PY4MTX_DATA:
 
 mypath = [
     str(Path(PY4MTX_ROOT) / "py4mt" / "modules"),
-    str(Path(PY4MTX_ROOT) / "py4mt" / "scripts"),
 ]
 for pth in mypath:
     if pth and pth not in sys.path and Path(pth).exists():
-        sys.path.insert(0, pth)
+        sys.path.append(pth)
 
 import util
 from version import versionstrg
-
-from data_proc import get_edi_list
 
 import transdim
 import transdim_viz
@@ -166,8 +164,6 @@ PT_COMPS = ("xx", "xy", "yx", "yy")
 MCMC_DATA = PY4MTX_ROOT + "/py4mt/data/edi/mcmc/"
 
 INPUT_FORMAT = "npz"
-
-EDI_DIR = MCMC_DATA
 INPUT_GLOB = MCMC_DATA + "*proc.npz"
 
 MODEL_NPZ = MCMC_DATA + "model0.npz"
@@ -327,14 +323,10 @@ if initial_model.is_anisotropic:
 print()
 
 # ---- Discover input data files ---------------------------------------------
-if INPUT_FORMAT.lower() == "edi":
-    in_files = get_edi_list(EDI_DIR, fullpath=True, sort=True)
-else:
-    import glob
-    in_files = sorted(glob.glob(INPUT_GLOB))
+in_files = sorted(glob.glob(INPUT_GLOB))
 
 if not in_files:
-    pat = EDI_DIR if INPUT_FORMAT.lower() == "edi" else INPUT_GLOB
+    pat = INPUT_GLOB
     raise FileNotFoundError(f"No inputs matched: {pat}")
 
 print(f"Found {len(in_files)} input file(s) ({INPUT_FORMAT}).\n")
