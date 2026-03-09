@@ -228,7 +228,9 @@ OUTDIR = MCMC_DATA + "rjmcmc_" + ("aniso" if USE_ANISO else "iso")
 
 DEPTH_GRID_MAX = 3000.0
 
-QPAIRS = ((5, 95), (10, 90), (25, 75))
+lower68, upper68, _ = util.get_percentile(nsig=1)
+lower95, upper95, _ = util.get_percentile(nsig=2)
+QPAIRS = ((lower95, upper95), (lower68, upper68))
 
 PROGRESSBAR = True
 
