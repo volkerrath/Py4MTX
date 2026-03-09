@@ -84,8 +84,6 @@ Gaussian prior option added with the help of Claude (Opus 4.6, Anthropic) on 202
 Matérn covariance kernels added with the help of Claude (Opus 4.6, Anthropic) on 2026-03-01 (UTC)
 """
 
-import secrets
-
 def generate_mcmc_seed(n_bits: int = 64) -> int:
     """
     Generate a high‑entropy random seed suitable for MCMC initialisation.
@@ -105,6 +103,7 @@ def generate_mcmc_seed(n_bits: int = 64) -> int:
     seed = generate_mcmc_seed()
     print(seed)
     """
+    import secrets
     return secrets.randbits(n_bits)
 
 
