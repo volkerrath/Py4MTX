@@ -117,7 +117,7 @@ _MU0: float = 4.0 * np.pi * 1.0e-7
 # Basic text helpers
 # ---------------------------------------------------------------------------
 
-def get_data_list(dirname=None, ext= '.esi', sort=False, fullpath=True):
+def get_data_list(dirname=None, ext= '.edi', sort=False, fullpath=True):
 
 
 
