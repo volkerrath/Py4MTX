@@ -1702,8 +1702,8 @@ def build_rjmcmc_summary(
 
     log_ens = np.log10(prof["ensemble"])
     for qlo, qhi in qpairs:
-        summary[f"rho_p{qlo:02d}"] = 10 ** np.percentile(log_ens, qlo, axis=0)
-        summary[f"rho_p{qhi:02d}"] = 10 ** np.percentile(log_ens, qhi, axis=0)
+        summary[f"rho_p{round(qlo):02d}"] = 10 ** np.percentile(log_ens, qlo, axis=0)
+        summary[f"rho_p{round(qhi):02d}"] = 10 ** np.percentile(log_ens, qhi, axis=0)
 
     if use_aniso:
         aprof = compute_posterior_aniso_profile(results["models"], depth_grid)
