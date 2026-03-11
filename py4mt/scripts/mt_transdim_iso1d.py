@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Script-style driver for transdimensional (rjMCMC) 1-D MT inversion.
+Script-style driver for transdimensional (rjMCMC) isotropic 1-D MT inversion.
 
-This is intentionally NOT a CLI.  Edit the USER CONFIG and run:
+This is intentionally NOT a CLI. Edit the USER CONFIG and run:
 
-    python mt_transdim1d.py
+    python mt_transdim_iso1d.py
 
 Preserved conventions: PY4MTX environment variables, explicit sys.path
 setup, startup title print, example in-file model (MODEL0 / MODEL0_ANISO).
@@ -14,23 +14,15 @@ Data I/O uses data_proc.py (load_edi, load_npz, compute_rhophas, compute_pt)
 via transdim.load_site().
 
 The sampler uses reversible-jump MCMC (Green 1995) so that the number of
-layers *k* is itself a free parameter.  Multiple independent chains are
+layers *k* is itself a free parameter. Multiple independent chains are
 run in parallel via joblib.
 
 Likelihood modes
 ----------------
-- **Isotropic** (``USE_ANISO = False``):
-  The observed data are the determinant impedance Z_det = sqrt(det(Z)),
-  or equivalently the apparent resistivity / phase derived from Z_det.
-  The likelihood operates on Re/Im of Z_det (``likelihood_mode="Zdet"``)
-  or on log10(ρ_a) from Z_det (``likelihood_mode="rhoa"``).
+This isotropic driver is restricted to the isotropic likelihoods:
 
-- **Anisotropic** (``USE_ANISO = True``):
-  The observed data are a user-selected subset of Z components
-  (default: all four), optionally supplemented by the phase tensor.
-  This mirrors the mcmc.py / mt_aniso1d_sampler.py approach.
-  The likelihood operates on Re/Im of the selected Z components and
-  (optionally) phase tensor entries (``likelihood_mode="Z_comps"``).
+- ``"Zdet"`` — Re/Im of determinant impedance ``Z_det``
+- ``"rhoa"`` — log10 apparent resistivity derived from ``Z_det``
 
 @author:    Volker Rath (DIAS)
 @project:   py4mt — Python for Magnetotellurics
@@ -39,15 +31,20 @@ Likelihood modes
 @modified:  2026-03-08 — data I/O via data_proc
 @modified:  2026-03-09 — Z_det likelihood for isotropic; Z-component + PT
                           likelihood for anisotropic; helpers moved to transdim.py
+
+Author: Volker Rath (DIAS)
+Created with the help of ChatGPT (GPT-5 Thinking) on 2026-03-11 UTC
 """
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import inspect
 import warnings
 from pathlib import Path
+import glob
 
 import numpy as np
 
@@ -77,8 +74,6 @@ for pth in mypath:
 import util
 from version import versionstrg
 
-from data_proc import get_edi_list
-
 import transdim
 import transdim_viz
 
@@ -88,97 +83,68 @@ fname = inspect.getfile(inspect.currentframe())
 titstrng = util.print_title(version=version, fname=fname, out=False)
 print(titstrng + "\n\n")
 
+PLOT_OBSERVED = True
 
 # =============================================================================
 #  Example starting model — ISOTROPIC
 # =============================================================================
-#
-#  For the transdimensional sampler the starting model only defines the
-#  *initial* number of layers and their properties; k is free to change.
-#  The MODEL0 dict uses the same schema as mt_aniso1d_sampler.py so that
-#  existing model NPZ files can be re-used.
-#
-N_LAYER = 10
-H_M = np.r_[np.logspace(np.log10(500.0), np.log10(3000.0), N_LAYER - 1), 0.0]
-# np.r_[300.0, 300.0, 1000.0, 0.0]     # last entry = half-space (ignored)
-
-RHO_BG = 300.0         # Ohm·m
+N_LAYER = 5
+H_M = np.r_[np.logspace(np.log10(500.0), np.log10(1000.0), N_LAYER - 1), 0.0]
+RHO_BG = 300.0
 
 MODEL0 = {
-    "prior_name":  "transdim_start_iso",
-    "h_m":         H_M,
-    "sigma_min":   (1.0 / RHO_BG) * np.ones(N_LAYER, dtype=float),
-    "sigma_max":   (1.0 / RHO_BG) * np.ones(N_LAYER, dtype=float),
-    "strike_deg":  np.zeros(N_LAYER, dtype=float),
-    "is_iso":      np.ones(N_LAYER, dtype=bool),
-    "is_fix":      np.zeros(N_LAYER, dtype=bool),
+    "prior_name": "transdim_start_iso",
+    "h_m": H_M,
+    "sigma_min": (1.0 / RHO_BG) * np.ones(N_LAYER, dtype=float),
+    "sigma_max": (1.0 / RHO_BG) * np.ones(N_LAYER, dtype=float),
+    "strike_deg": np.zeros(N_LAYER, dtype=float),
+    "is_iso": np.ones(N_LAYER, dtype=bool),
+    "is_fix": np.zeros(N_LAYER, dtype=bool),
 }
-
 
 # =============================================================================
 #  Example starting model — ANISOTROPIC
 # =============================================================================
 N_LAYER_ANISO = 6
-H_M_ANISO = np.r_[50.0, 150.0, 500.0, 800.0, 1500.0, 0.0]
+H_M_ANISO = np.r_[np.logspace(np.log10(500.0), np.log10(1000.0), N_LAYER - 1), 0.0]
 
 RHO_MAX_ANISO = np.array([200.0, 300.0, 500.0, 800.0, 300.0, 100.0])
 RHO_MIN_ANISO = np.array([200.0, 100.0, 100.0, 200.0, 300.0, 100.0])
 STRIKE_ANISO = np.array([0.0, 30.0, 45.0, 45.0, 0.0, 0.0])
 
 MODEL0_ANISO = {
-    "prior_name":  "transdim_start_aniso",
-    "h_m":         H_M_ANISO,
-    "sigma_min":   1.0 / RHO_MAX_ANISO,
-    "sigma_max":   1.0 / RHO_MIN_ANISO,
-    "strike_deg":  STRIKE_ANISO,
-    "is_iso":      (RHO_MAX_ANISO == RHO_MIN_ANISO),
-    "is_fix":      np.zeros(N_LAYER_ANISO, dtype=bool),
+    "prior_name": "transdim_start_aniso",
+    "h_m": H_M_ANISO,
+    "sigma_min": 1.0 / RHO_MAX_ANISO,
+    "sigma_max": 1.0 / RHO_MIN_ANISO,
+    "strike_deg": STRIKE_ANISO,
+    "is_iso": (RHO_MAX_ANISO == RHO_MIN_ANISO),
+    "is_fix": np.zeros(N_LAYER_ANISO, dtype=bool),
 }
-
 
 # =============================================================================
 #  USER CONFIG — forward model
 # =============================================================================
-
 USE_ANISO = False
 
 # =============================================================================
 #  USER CONFIG — likelihood
 # =============================================================================
-#
-#  LIKELIHOOD_MODE controls which data and misfit function are used:
-#
-#    "Zdet"     — Re/Im of determinant impedance Z_det (isotropic default)
-#    "rhoa"     — log10(ρ_a) from Z_det (isotropic alternative)
-#    "Z_comps"  — Re/Im of selected Z components + optional PT (anisotropic)
-#
-#  None → auto-select: "Zdet" for isotropic, "Z_comps" for anisotropic.
-#
-LIKELIHOOD_MODE = None
-
-# Z components for the "Z_comps" likelihood (anisotropic case)
+LIKELIHOOD_MODE = "Zdet"
 Z_COMPS = ("xx", "xy", "yx", "yy")
-
-# Include phase tensor in the "Z_comps" likelihood?
 USE_PT = True
-
-# Phase tensor components
 PT_COMPS = ("xx", "xy", "yx", "yy")
-
 
 # =============================================================================
 #  USER CONFIG — data
 # =============================================================================
-
 MCMC_DATA = PY4MTX_ROOT + "/py4mt/data/edi/mcmc/"
 
 INPUT_FORMAT = "npz"
-
 EDI_DIR = MCMC_DATA
 INPUT_GLOB = MCMC_DATA + "*proc.npz"
 
 MODEL_NPZ = MCMC_DATA + "model0.npz"
-
 MODEL_DIRECT = MODEL0
 MODEL_DIRECT_SAVE_PATH = MODEL_NPZ
 MODEL_DIRECT_OVERWRITE = True
@@ -188,13 +154,11 @@ SIGMA_FLOOR = 0.0
 
 ERR_METHOD = "bootstrap"
 ERR_NSIM = 200
-
 COMPUTE_PT = True
 
 # =============================================================================
 #  USER CONFIG — prior bounds
 # =============================================================================
-
 K_MIN = 1
 K_MAX = 20
 DEPTH_MIN = 50.0
@@ -207,7 +171,6 @@ STRIKE_BOUNDS_DEG = (-90.0, 90.0)
 # =============================================================================
 #  USER CONFIG — sampler
 # =============================================================================
-
 N_ITERATIONS = 250_000
 BURN_IN = 50_000
 THIN = 10
@@ -226,16 +189,14 @@ SIGMA_CHANGE_STRIKE = 5.0
 # =============================================================================
 #  USER CONFIG — parallel chains
 # =============================================================================
-
 N_CHAINS = 12
 N_JOBS = 12
-BASE_SEED = transdim.generate_seed()                    # chain i gets seed = BASE_SEED + i
+BASE_SEED = transdim.generate_seed()
 
 # =============================================================================
 #  USER CONFIG — output
 # =============================================================================
-
-OUTDIR = MCMC_DATA + "rjmcmc_" + ("aniso" if USE_ANISO else "iso")
+OUTDIR = MCMC_DATA + "rjmcmc_iso"
 
 DEPTH_GRID_MAX = 3000.0
 
@@ -245,11 +206,160 @@ QPAIRS = ((lower95, upper95), (lower68, upper68))
 
 PROGRESSBAR = True
 
+# =============================================================================
+#  Metadata helpers
+# =============================================================================
+def _json_safe(obj):
+    """Convert common NumPy / pathlib objects to JSON-safe Python objects."""
+    if isinstance(obj, Path):
+        return str(obj)
+    if isinstance(obj, np.floating):
+        return float(obj)
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, dict):
+        return {str(k): _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, complex):
+        return {"real": float(obj.real), "imag": float(obj.imag)}
+    return obj
+
+
+def export_metadata(
+    station: str,
+    site: dict,
+    results: dict,
+    outdir: Path,
+    input_path: str | Path,
+    fig_paths: dict,
+    initial_model,
+    likelihood_mode: str,
+    use_aniso: bool,
+    prior,
+    config,
+    base_seed: int,
+    n_chains: int,
+    n_jobs: int,
+    z_comps=None,
+    use_pt=None,
+    pt_comps=None,
+) -> tuple[Path, Path]:
+    """Write per-station RJMCMC metadata to JSON and NPZ files."""
+    n_layers = np.asarray(results.get("n_layers", []), dtype=int)
+    layer_hist = {}
+    if n_layers.size:
+        binc = np.bincount(n_layers)
+        layer_hist = {int(i): int(v) for i, v in enumerate(binc) if v > 0}
+
+    meta = {
+        "station": station,
+        "created_utc": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+        "input_path": str(input_path),
+        "outdir": str(outdir),
+        "use_aniso": bool(use_aniso),
+        "likelihood_mode": str(likelihood_mode),
+        "z_comps": None if z_comps is None else list(z_comps),
+        "use_pt": None if use_pt is None else bool(use_pt),
+        "pt_comps": None if pt_comps is None else list(pt_comps),
+        "n_frequencies": int(len(site["frequencies"])),
+        "frequency_min_hz": float(np.nanmin(site["frequencies"])),
+        "frequency_max_hz": float(np.nanmax(site["frequencies"])),
+        "has_Z": bool("Z" in site),
+        "has_Zdet": bool("Zdet" in site),
+        "has_PT": bool("PT" in site),
+        "prior": {
+            "k_min": int(prior.k_min),
+            "k_max": int(prior.k_max),
+            "depth_min": float(prior.depth_min),
+            "depth_max": float(prior.depth_max),
+            "log_rho_min": float(prior.log_rho_min),
+            "log_rho_max": float(prior.log_rho_max),
+            "log_aniso_min": float(prior.log_aniso_min),
+            "log_aniso_max": float(prior.log_aniso_max),
+            "strike_min": float(prior.strike_min),
+            "strike_max": float(prior.strike_max),
+        },
+        "config": {
+            "n_iterations": int(config.n_iterations),
+            "burn_in": int(config.burn_in),
+            "thin": int(config.thin),
+            "proposal_weights": [float(v) for v in config.proposal_weights],
+            "sigma_birth_rho": float(config.sigma_birth_rho),
+            "sigma_move_z": float(config.sigma_move_z),
+            "sigma_change_rho": float(config.sigma_change_rho),
+            "sigma_birth_aniso": float(config.sigma_birth_aniso),
+            "sigma_birth_strike": float(config.sigma_birth_strike),
+            "sigma_change_aniso": float(config.sigma_change_aniso),
+            "sigma_change_strike": float(config.sigma_change_strike),
+            "verbose": bool(config.verbose),
+        },
+        "parallel": {
+            "n_chains": int(n_chains),
+            "n_jobs": int(n_jobs),
+            "base_seed": int(base_seed),
+        },
+        "initial_model": {
+            "k": int(initial_model.k),
+            "n_layers": int(initial_model.n_layers),
+            "depths_m": np.asarray(initial_model.depths, dtype=float),
+            "log10_rho": np.asarray(initial_model.log_resistivities, dtype=float),
+            "resistivity_ohm_m": np.asarray(initial_model.get_resistivities(), dtype=float),
+            "is_anisotropic": bool(initial_model.is_anisotropic),
+            "aniso_ratios": None if initial_model.aniso_ratios is None else np.asarray(initial_model.aniso_ratios, dtype=float),
+            "strikes_deg": None if initial_model.strikes is None else np.asarray(initial_model.strikes, dtype=float),
+        },
+        "posterior": {
+            "n_samples": int(len(results.get("models", []))),
+            "median_n_layers": float(np.median(n_layers)) if n_layers.size else None,
+            "mode_n_layers": int(np.bincount(n_layers).argmax()) if n_layers.size else None,
+            "gelman_rubin": float(results.get("gelman_rubin", np.nan)),
+            "layer_histogram": layer_hist,
+        },
+        "figures": {k: str(v) for k, v in fig_paths.items()},
+    }
+
+    json_path = outdir / f"{station}_rjmcmc_metadata.json"
+    npz_path = outdir / f"{station}_rjmcmc_metadata.npz"
+
+    with open(json_path, "w", encoding="utf-8") as fobj:
+        json.dump(_json_safe(meta), fobj, indent=2, sort_keys=True)
+
+    np.savez_compressed(
+        str(npz_path),
+        metadata_json=np.array(json.dumps(_json_safe(meta), sort_keys=True), dtype=object),
+        station=np.array(station, dtype=object),
+        input_path=np.array(str(input_path), dtype=object),
+        outdir=np.array(str(outdir), dtype=object),
+        likelihood_mode=np.array(str(likelihood_mode), dtype=object),
+        use_aniso=np.array(bool(use_aniso)),
+        n_frequencies=np.array(int(len(site["frequencies"]))),
+        frequency_hz=np.asarray(site["frequencies"], dtype=float),
+        n_layers=np.asarray(results.get("n_layers", [])),
+        gelman_rubin=np.array(float(results.get("gelman_rubin", np.nan))),
+        initial_depths_m=np.asarray(initial_model.depths, dtype=float),
+        initial_log10_rho=np.asarray(initial_model.log_resistivities, dtype=float),
+        initial_resistivity_ohm_m=np.asarray(initial_model.get_resistivities(), dtype=float),
+        initial_aniso_ratios=np.asarray(
+            [] if initial_model.aniso_ratios is None else initial_model.aniso_ratios,
+            dtype=float,
+        ),
+        initial_strikes_deg=np.asarray(
+            [] if initial_model.strikes is None else initial_model.strikes,
+            dtype=float,
+        ),
+    )
+
+    return json_path, npz_path
+
 
 # =============================================================================
 #  Build objects from USER CONFIG
 # =============================================================================
-
 prior = transdim.Prior(
     k_min=K_MIN,
     k_max=K_MAX,
@@ -278,42 +388,23 @@ config = transdim.RjMCMCConfig(
     verbose=PROGRESSBAR,
 )
 
-# Resolve likelihood mode
-if LIKELIHOOD_MODE is not None:
-    likelihood_mode = LIKELIHOOD_MODE
-elif USE_ANISO:
-    likelihood_mode = "Z_comps"
-else:
-    likelihood_mode = "Zdet"
+likelihood_mode = LIKELIHOOD_MODE
+if likelihood_mode.lower() not in {"zdet", "rhoa"}:
+    raise ValueError("Isotropic driver supports only likelihood_mode='Zdet' or 'rhoa'.")
 
 print(f"Likelihood mode: {likelihood_mode}")
-if likelihood_mode.lower() == "z_comps":
-    print(f"  Z components:  {Z_COMPS}")
-    print(f"  Use PT:        {USE_PT}")
-    if USE_PT:
-        print(f"  PT components: {PT_COMPS}")
-print()
-
 
 # =============================================================================
 #  Run
 # =============================================================================
-
 outdir = transdim.ensure_dir(OUTDIR)
 
-# ---- Sanity checks ---------------------------------------------------------
 if USE_ANISO and not transdim.has_aniso():
     sys.exit(
-        "USE_ANISO=True but aniso.py not found on PYTHONPATH.  "
-        "Place aniso.py in the working directory or set PYTHONPATH.  Exit."
+        "USE_ANISO=True but aniso.py not found on PYTHONPATH. "
+        "Place aniso.py in the working directory or set PYTHONPATH. Exit."
     )
 
-if likelihood_mode.lower() == "z_comps" and not USE_ANISO:
-    print("WARNING: likelihood_mode='Z_comps' is designed for anisotropic "
-          "inversion but USE_ANISO=False.  The isotropic forward model "
-          "will be used (Zxx=Zyy=0, Zxy=Z, Zyx=-Z).\n")
-
-# ---- Starting model --------------------------------------------------------
 if MODEL_DIRECT is not None:
     initial_model = transdim.model0_to_layered(MODEL_DIRECT, USE_ANISO)
     if MODEL_DIRECT_OVERWRITE or not Path(MODEL_DIRECT_SAVE_PATH).exists():
@@ -329,23 +420,14 @@ else:
 print(f"Starting model: k={initial_model.k} interfaces, "
       f"{initial_model.n_layers} layers, "
       f"anisotropic={initial_model.is_anisotropic}")
-if initial_model.is_anisotropic:
-    print(f"  rho_max       = {initial_model.get_resistivities()}")
-    print(f"  aniso_ratio   = {initial_model.aniso_ratios}")
-    print(f"  strike [deg]  = {initial_model.strikes}")
 print()
 
-# ---- Discover input data files ---------------------------------------------
-
 in_files = sorted(glob.glob(INPUT_GLOB))
-
 if not in_files:
-    pat = INPUT_GLOB
-    raise FileNotFoundError(f"No inputs matched: {pat}")
+    raise FileNotFoundError(f"No inputs matched: {INPUT_GLOB}")
 
 print(f"Found {len(in_files)} input file(s) ({INPUT_FORMAT}).\n")
 
-# ---- Loop over sites -------------------------------------------------------
 for f in in_files:
     site = transdim.load_site(
         f,
@@ -370,9 +452,10 @@ for f in in_files:
     print(f"  Phase tensor: {'yes' if has_PT else 'no'}")
     print()
 
-    # ---- Prepare likelihood-specific arguments -----------------------------
-    lmode = likelihood_mode.lower().strip()
+    if PLOT_OBSERVED:
+        print("yet to come!")
 
+    lmode = likelihood_mode.lower().strip()
     kw_sampler = dict(
         frequencies=site["frequencies"],
         observed=site["rho_a"],
@@ -384,10 +467,10 @@ for f in in_files:
         base_seed=BASE_SEED,
         use_aniso=USE_ANISO,
         likelihood_mode=lmode,
+        initial_model=initial_model,
     )
 
     if lmode == "zdet":
-        # ---- Isotropic: Z_det likelihood -----------------------------------
         if not has_Zdet:
             print("  WARNING: Z_det not available; falling back to rhoa likelihood.")
             kw_sampler["likelihood_mode"] = "rhoa"
@@ -398,7 +481,6 @@ for f in in_files:
             else:
                 kw_sampler["Zdet_sigma"] = 0.05 * np.abs(site["Zdet"])
                 print("  NOTE: No Zdet_err; using 5% of |Zdet| as uncertainty.")
-            # Use Z_det-derived rho_a for the QC/rhoa fallback fields
             if "rho_a_det" in site:
                 kw_sampler["observed"] = site["rho_a_det"]
                 Zabs = np.abs(site["Zdet"])
@@ -410,51 +492,14 @@ for f in in_files:
                     )
                 kw_sampler["sigma"] = np.maximum(sig_log, SIGMA_FLOOR)
 
-    elif lmode == "z_comps":
-        # ---- Anisotropic: Z-component + optional PT likelihood -------------
-        if not has_Z:
-            print("  WARNING: Z tensor not available; falling back to rhoa likelihood.")
-            kw_sampler["likelihood_mode"] = "rhoa"
-            if USE_ANISO and "rho_a_yx" in site:
-                kw_sampler["observed_yx"] = site["rho_a_yx"]
-                kw_sampler["sigma_yx"] = site.get("sigma_yx", site["sigma"])
-        else:
-            kw_sampler["observed_Z"] = site["Z"]
-            if "Z_err" in site:
-                kw_sampler["observed_Z_err"] = np.asarray(site["Z_err"], dtype=float)
-            else:
-                kw_sampler["observed_Z_err"] = 0.05 * np.abs(site["Z"]).astype(float)
-                print("  NOTE: No Z_err; using 5% of |Z| as uncertainty.")
-            kw_sampler["z_comps"] = Z_COMPS
-            kw_sampler["use_pt"] = USE_PT and has_PT
-            if kw_sampler["use_pt"]:
-                kw_sampler["observed_PT"] = site["PT"]
-                if "PT_err" in site:
-                    kw_sampler["observed_PT_err"] = np.asarray(site["PT_err"], dtype=float)
-                else:
-                    kw_sampler["observed_PT_err"] = 0.05 * np.maximum(
-                        np.abs(site["PT"]), 1e-6).astype(float)
-                    print("  NOTE: No PT_err; using 5% of |PT| as uncertainty.")
-                kw_sampler["pt_comps"] = PT_COMPS
-
-    else:
-        # ---- rhoa likelihood (legacy / fallback) ---------------------------
-        if USE_ANISO and "rho_a_yx" in site:
-            kw_sampler["observed_yx"] = site["rho_a_yx"]
-            kw_sampler["sigma_yx"] = site.get("sigma_yx", site["sigma"])
-
-    # ---- Run parallel rjMCMC -----------------------------------------------
     results = transdim.run_parallel_rjmcmc(**kw_sampler)
 
-    # ---- Summary -----------------------------------------------------------
     print(f"\nPosterior summary for {station}:")
     print(f"  Median number of layers: {np.median(results['n_layers']):.0f}")
-    print(f"  Mode number of layers:   "
-          f"{np.bincount(results['n_layers']).argmax()}")
+    print(f"  Mode number of layers:   {np.bincount(results['n_layers']).argmax()}")
     print(f"  R-hat: {results.get('gelman_rubin', np.nan):.4f}")
     print()
 
-    # ---- Save results ------------------------------------------------------
     npz_path = outdir / f"{station}_rjmcmc.npz"
     transdim.save_results_npz(results, npz_path)
 
@@ -467,7 +512,6 @@ for f in in_files:
     })
     print(f"Wrote: {sum_path}")
 
-    # ---- Plot (via transdim_viz) -------------------------------------------
     fig_path = outdir / f"{station}_rjmcmc.png"
     transdim_viz.plot_results(
         results,
@@ -479,10 +523,7 @@ for f in in_files:
         save_path=str(fig_path),
     )
 
-    # ---- QC plot -----------------------------------------------------------
     qc_path = outdir / f"{station}_rjmcmc_qc.png"
-    qc_z_comps = Z_COMPS if USE_ANISO else ("xy", "yx")
-
     transdim_viz.plot_qc(
         results,
         frequencies=site["frequencies"],
@@ -492,14 +533,13 @@ for f in in_files:
         use_aniso=USE_ANISO,
         observed_Z=site.get("Z", None),
         observed_Z_err=site.get("Z_err", None),
-        z_comps=qc_z_comps,
+        z_comps=("xy", "yx"),
         show_pt=has_PT or (USE_ANISO and has_Z),
         observed_PT=site.get("PT", None),
         observed_PT_err=site.get("PT_err", None),
         save_path=str(qc_path),
     )
 
-    # ---- Posterior model plot ----------------------------------------------
     model_path = outdir / f"{station}_rjmcmc_model.png"
     transdim_viz.plot_posterior_model(
         results,
@@ -510,6 +550,32 @@ for f in in_files:
         save_path=str(model_path),
     )
 
+    fig_paths = {
+        "results": fig_path,
+        "qc": qc_path,
+        "model": model_path,
+    }
+    meta_json, meta_npz = export_metadata(
+        station=station,
+        site=site,
+        results=results,
+        outdir=outdir,
+        input_path=f,
+        fig_paths=fig_paths,
+        initial_model=initial_model,
+        likelihood_mode=kw_sampler["likelihood_mode"],
+        use_aniso=USE_ANISO,
+        prior=prior,
+        config=config,
+        base_seed=BASE_SEED,
+        n_chains=N_CHAINS,
+        n_jobs=N_JOBS,
+        z_comps=kw_sampler.get("z_comps", None),
+        use_pt=kw_sampler.get("use_pt", None),
+        pt_comps=kw_sampler.get("pt_comps", None),
+    )
+    print(f"Wrote: {meta_json}")
+    print(f"Wrote: {meta_npz}")
     print()
 
 print("\nDone.\n")

@@ -74,6 +74,9 @@ References
 @modified:  2026-03-07 — viz split into transdim_viz.py
 @modified:  2026-03-09 — helpers moved from mt_transdim1d.py; Z_det and
                           Z-component likelihood support added
+
+Author: Volker Rath (DIAS)
+Created with the help of ChatGPT (GPT-5 Thinking) on 2026-03-11 UTC
 """
 
 from __future__ import annotations
@@ -105,7 +108,18 @@ except ImportError:
 # =============================================================================
 
 def ensure_dir(path: str | Path) -> Path:
-    """Create a directory if needed and return its Path."""
+    """Create a directory if needed and return its Path.
+
+    Parameters
+    ----------
+    path : str or Path
+        Directory path to create if it does not already exist.
+
+    Returns
+    -------
+    Path
+        Normalized ``Path`` object corresponding to ``path``.
+    """
     p = Path(path)
     p.mkdir(parents=True, exist_ok=True)
     return p
@@ -125,18 +139,23 @@ def mt_forward_1d_isotropic(
 
     Parameters
     ----------
-    thicknesses : (n_layers - 1,)   Layer thicknesses [m].
-    resistivities : (n_layers,)     Resistivities [Ω·m].
-    frequencies : (n_freq,)         Frequencies [Hz].
-    full_output : bool
-        If False (default), return only apparent resistivity.
-        If True, return a dict with ``rho_a``, ``phase_deg``,
-        ``Z_re``, ``Z_im``.
+    thicknesses : ndarray
+        Array of shape ``(n_layers - 1,)`` containing layer thicknesses [m].
+        The half-space is implicit and therefore has no thickness entry.
+    resistivities : ndarray
+        Array of shape ``(n_layers,)`` containing isotropic resistivities [Ω·m].
+    frequencies : ndarray
+        Array of frequencies [Hz].
+    full_output : bool, optional
+        If ``False`` return only apparent resistivity. If ``True`` return a
+        dictionary with apparent resistivity, phase, and impedance parts.
 
     Returns
     -------
-    rho_a : (n_freq,)  when ``full_output=False``
-    dict : when ``full_output=True``
+    ndarray or dict
+        If ``full_output`` is ``False``, returns apparent resistivity ``rho_a``.
+        Otherwise returns a dictionary with keys ``rho_a``, ``phase_deg``,
+        ``Z_re``, and ``Z_im``.
     """
     mu0 = 4.0 * np.pi * 1e-7
     omega = 2.0 * np.pi * frequencies
@@ -180,15 +199,27 @@ def mt_forward_1d_anisotropic(
 
     Parameters
     ----------
-    thicknesses : (n_layers - 1,)  Layer thicknesses [m].
-    resistivities : (n_layers,)    Maximum horizontal resistivity [Ω·m].
-    frequencies : (n_freq,)        Frequencies [Hz].
-    aniso_ratios : (n_layers,)     ρ_max / ρ_min  (≥ 1; 1 = isotropic).
-    strikes : (n_layers,)          Anisotropy strike [deg].
+    thicknesses : ndarray
+        Layer thicknesses [m] with shape ``(n_layers - 1,)``.
+    resistivities : ndarray
+        Maximum horizontal resistivities [Ω·m] with shape ``(n_layers,)``.
+    frequencies : ndarray
+        Frequency array [Hz].
+    aniso_ratios : ndarray
+        Resistivity anisotropy ratios ``rho_max / rho_min`` with shape
+        ``(n_layers,)``.
+    strikes : ndarray
+        Layer strike angles [deg] with shape ``(n_layers,)``.
 
     Returns
     -------
-    dict  ``{'rho_a_xy': ..., 'rho_a_yx': ...}``  each (n_freq,).
+    dict
+        Dictionary with keys ``rho_a_xy`` and ``rho_a_yx``.
+
+    Raises
+    ------
+    ImportError
+        Raised if ``aniso.py`` is not available.
     """
     if not _HAS_ANISO:
         raise ImportError(
@@ -219,450 +250,582 @@ def mt_forward_1d_anisotropic(
     }
 
 
-# -- impedance-level forward models -----------------------------------------
-
-def mt_forward_1d_isotropic_impedance(
-    thicknesses: np.ndarray,
-    resistivities: np.ndarray,
-    frequencies: np.ndarray,
-) -> Dict[str, np.ndarray]:
-    """Isotropic forward model returning the full 2×2 impedance tensor.
-
-    For isotropic media:  Zxx=Zyy=0, Zxy=Z, Zyx=−Z.
-
-    Returns
-    -------
-    dict with ``Z`` (n_freq, 2, 2) complex, ``rho_a`` (n_freq,),
-    ``phase_deg`` (n_freq,).
-    """
-    mu0 = 4.0 * np.pi * 1e-7
-    omega = 2.0 * np.pi * frequencies
-    n_layers = len(resistivities)
-    nf = len(frequencies)
-
-    Z_tensor = np.zeros((nf, 2, 2), dtype=np.complex128)
-    rho_a = np.zeros(nf)
-    phase_deg = np.zeros(nf)
-
-    for fi, w in enumerate(omega):
-        k = np.sqrt(1j * w * mu0 / resistivities)
-        Z_scalar = w * mu0 / k[-1]
-        for j in range(n_layers - 2, -1, -1):
-            Z_j = w * mu0 / k[j]
-            r = (Z_j - Z_scalar) / (Z_j + Z_scalar)
-            e2 = np.exp(-2 * k[j] * thicknesses[j])
-            Z_scalar = Z_j * (1 - r * e2) / (1 + r * e2)
-
-        Z_tensor[fi, 0, 1] = Z_scalar       # Zxy
-        Z_tensor[fi, 1, 0] = -Z_scalar      # Zyx
-        rho_a[fi] = np.abs(Z_scalar) ** 2 / (w * mu0)
-        phase_deg[fi] = np.abs(np.degrees(np.arctan2(Z_scalar.imag, Z_scalar.real)))
-
-    return {"Z": Z_tensor, "rho_a": rho_a, "phase_deg": phase_deg}
-
-
-def mt_forward_1d_anisotropic_impedance(
-    thicknesses: np.ndarray,
-    resistivities: np.ndarray,
-    frequencies: np.ndarray,
-    aniso_ratios: np.ndarray,
-    strikes: np.ndarray,
-) -> Dict[str, np.ndarray]:
-    """Anisotropic forward model returning the full 2×2 impedance tensor.
-
-    Returns
-    -------
-    dict with ``Z`` (n_freq, 2, 2) complex, ``rho_a_xy`` (n_freq,),
-    ``rho_a_yx`` (n_freq,).
-    """
-    if not _HAS_ANISO:
-        raise ImportError("aniso.py not found.")
-
-    periods = 1.0 / frequencies
-    rho_max = resistivities.copy()
-    rho_min = resistivities / aniso_ratios
-    h_m = np.append(thicknesses, 1e6)
-
-    result = aniso1d_impedance_sens_simple(
-        periods_s=periods, h_m=h_m, rho_max=rho_max,
-        rho_min=rho_min, strike_deg=strikes, compute_sens=False,
-    )
-
-    Z = result["Z"]
-    mu0 = 4.0 * np.pi * 1e-7
-    omega = 2.0 * np.pi * frequencies
-
-    return {
-        "Z": Z,
-        "rho_a_xy": np.abs(Z[:, 0, 1]) ** 2 / (omega * mu0),
-        "rho_a_yx": np.abs(Z[:, 1, 0]) ** 2 / (omega * mu0),
-    }
-
-
-def mt_forward_1d_isotropic_full(
-    thicknesses: np.ndarray,
-    resistivities: np.ndarray,
-    frequencies: np.ndarray,
-) -> Dict[str, np.ndarray]:
-    """Convenience wrapper: equivalent to ``mt_forward_1d_isotropic(..., full_output=True)``."""
-    return mt_forward_1d_isotropic(thicknesses, resistivities, frequencies,
-                                   full_output=True)
-
-
-# =============================================================================
-#  Determinant impedance utilities
-# =============================================================================
-
-def compute_Zdet(Z: np.ndarray) -> np.ndarray:
-    """Compute the determinant impedance from a stack of 2×2 tensors.
-
-    Z_det = sqrt(Zxx*Zyy - Zxy*Zyx)
-
-    The branch of the square root is chosen so that Im(Z_det) > 0
-    (consistent with the MT sign convention for a positive phase).
+def _complex_normal_sample(
+    z: np.ndarray,
+    sigma: np.ndarray,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Draw complex Gaussian perturbations for Monte-Carlo propagation.
 
     Parameters
     ----------
-    Z : (n_freq, 2, 2) complex
+    z : ndarray
+        Complex input array.
+    sigma : ndarray
+        Real-valued 1σ absolute standard deviation for complex entries.
+    rng : numpy.random.Generator
+        Random number generator.
 
     Returns
     -------
-    Z_det : (n_freq,) complex
+    ndarray
+        Complex perturbed samples with the same shape as ``z``.
     """
-    Z = np.asarray(Z, dtype=np.complex128)
-    if Z.ndim != 3 or Z.shape[1:] != (2, 2):
-        raise ValueError("Z must have shape (n_freq, 2, 2).")
+    sig = np.asarray(sigma, dtype=float)
+    re = rng.normal(loc=np.real(z), scale=sig)
+    im = rng.normal(loc=np.imag(z), scale=sig)
+    return re + 1j * im
+
+
+def compute_Zdet(Z: np.ndarray) -> np.ndarray:
+    """Compute determinant impedance from a 2×2 impedance tensor.
+
+    Parameters
+    ----------
+    Z : ndarray
+        Complex impedance tensor array with shape ``(nf, 2, 2)``.
+
+    Returns
+    -------
+    ndarray
+        Complex determinant impedance ``sqrt(det(Z))`` for each frequency.
+    """
+    Z = np.asarray(Z)
     det = Z[:, 0, 0] * Z[:, 1, 1] - Z[:, 0, 1] * Z[:, 1, 0]
-    Zd = np.sqrt(det)
-    # Enforce Im(Z_det) > 0  (MT sign convention)
-    flip = Zd.imag < 0
-    Zd[flip] = -Zd[flip]
-    return Zd
+    return np.sqrt(det)
 
 
 def compute_Zdet_err(
     Z: np.ndarray,
     Z_err: np.ndarray,
-    *,
     nsim: int = 200,
-    random_state: int | None = 0,
+    seed: int = 12345,
 ) -> np.ndarray:
-    """Estimate Z_det uncertainty by Monte-Carlo propagation from Z_err.
+    """Estimate Zdet uncertainty by Monte-Carlo propagation.
 
     Parameters
     ----------
-    Z : (n_freq, 2, 2) complex
-    Z_err : (n_freq, 2, 2) float — per-element absolute error.
-    nsim : int — number of Monte-Carlo samples.
-    random_state : int or None
+    Z : ndarray
+        Complex impedance tensor array with shape ``(nf, 2, 2)``.
+    Z_err : ndarray
+        Absolute 1σ uncertainty array broadcastable to ``Z``.
+    nsim : int, optional
+        Number of Monte-Carlo simulations.
+    seed : int, optional
+        Random seed.
 
     Returns
     -------
-    Zdet_err : (n_freq,) float — standard deviation of |Z_det|.
+    ndarray
+        Estimated absolute 1σ uncertainty of determinant impedance.
     """
-    Z = np.asarray(Z, dtype=np.complex128)
+    Z = np.asarray(Z)
     Z_err = np.asarray(Z_err, dtype=float)
-    rng = np.random.default_rng(None if random_state is None else int(random_state))
-
-    Zdet_samples = np.empty((nsim, Z.shape[0]), dtype=float)
-    for k in range(nsim):
-        nre = rng.standard_normal(Z.shape)
-        nim = rng.standard_normal(Z.shape)
-        Zs = Z + (nre + 1j * nim) * Z_err
-        Zdet_samples[k] = np.abs(compute_Zdet(Zs))
-
-    return Zdet_samples.std(axis=0, ddof=1)
+    rng = np.random.default_rng(seed)
+    sims = np.empty((nsim, Z.shape[0]), dtype=complex)
+    for i in range(nsim):
+        Zp = _complex_normal_sample(Z, Z_err, rng)
+        sims[i, :] = compute_Zdet(Zp)
+    sr = np.std(sims.real, axis=0, ddof=1)
+    si = np.std(sims.imag, axis=0, ddof=1)
+    return np.sqrt(sr**2 + si**2)
 
 
 def compute_rhophas_from_Zdet(
-    Z_det: np.ndarray,
+    Zdet: np.ndarray,
     frequencies: np.ndarray,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Compute apparent resistivity and phase from determinant impedance.
+    """Convert determinant impedance to apparent resistivity and phase.
 
     Parameters
     ----------
-    Z_det : (n_freq,) complex
-    frequencies : (n_freq,) Hz
+    Zdet : ndarray
+        Complex determinant impedance.
+    frequencies : ndarray
+        Frequencies [Hz].
 
     Returns
     -------
-    rho_a : (n_freq,) Ω·m
-    phase_deg : (n_freq,) degrees (0–90 range)
+    tuple of ndarray
+        Apparent resistivity [Ω·m] and phase [deg].
     """
     mu0 = 4.0 * np.pi * 1e-7
     omega = 2.0 * np.pi * np.asarray(frequencies, dtype=float)
-    Z_det = np.asarray(Z_det, dtype=np.complex128)
-    rho_a = np.abs(Z_det) ** 2 / (omega * mu0)
-    phase_deg = np.abs(np.degrees(np.arctan2(Z_det.imag, Z_det.real)))
-    return rho_a, phase_deg
+    rho_a = np.abs(Zdet) ** 2 / (omega * mu0)
+    phase = np.degrees(np.arctan2(np.imag(Zdet), np.real(Zdet)))
+    return rho_a, phase
 
 
-def pack_Zdet_vector(Z_det: np.ndarray) -> np.ndarray:
-    """Pack complex Z_det into a real [Re, Im, Re, Im, ...] vector.
-
-    Parameters
-    ----------
-    Z_det : (n_freq,) complex
-
-    Returns
-    -------
-    (2 * n_freq,) float — interleaved Re/Im.
-    """
-    Z_det = np.asarray(Z_det, dtype=np.complex128).ravel()
-    n = Z_det.size
-    out = np.empty(2 * n, dtype=float)
-    out[0::2] = Z_det.real
-    out[1::2] = Z_det.imag
-    return out
-
-
-def pack_Zdet_sigma(
-    Z_det_err: np.ndarray,
-    *,
-    sigma_floor: float = 0.0,
-) -> np.ndarray:
-    """Pack Z_det error into a sigma vector matching :func:`pack_Zdet_vector`.
+def _comp_to_idx(comp: str) -> Tuple[int, int]:
+    """Map component labels like ``'xy'`` to tensor indices.
 
     Parameters
     ----------
-    Z_det_err : (n_freq,) float — absolute error on |Z_det|.
-        Applied identically to both Re and Im parts.
-    sigma_floor : float
+    comp : str
+        Component label among ``xx``, ``xy``, ``yx``, ``yy``.
 
     Returns
     -------
-    (2 * n_freq,) float
+    tuple[int, int]
+        Tensor indices corresponding to the requested component.
+
+    Raises
+    ------
+    ValueError
+        Raised for unsupported component labels.
     """
-    Z_det_err = np.asarray(Z_det_err, dtype=float).ravel()
-    n = Z_det_err.size
-    out = np.empty(2 * n, dtype=float)
-    for i in range(n):
-        s = float(np.sqrt(Z_det_err[i] ** 2 + sigma_floor ** 2))
-        out[2 * i] = s
-        out[2 * i + 1] = s
-    return out
+    cmap = {"xx": (0, 0), "xy": (0, 1), "yx": (1, 0), "yy": (1, 1)}
+    c = comp.lower().strip()
+    if c not in cmap:
+        raise ValueError(f"Unknown tensor component: {comp}")
+    return cmap[c]
 
 
-# =============================================================================
-#  Z-component and phase-tensor packing
-# =============================================================================
-
-_COMP_TO_IJ: Dict[str, Tuple[int, int]] = {
-    "xx": (0, 0), "xy": (0, 1), "yx": (1, 0), "yy": (1, 1),
-}
-
-
-def pack_Z_vector(
-    Z: np.ndarray,
-    comps: Sequence[str] = ("xx", "xy", "yx", "yy"),
-) -> np.ndarray:
-    """Pack selected Z components into a real Re/Im vector.
-
-    Ordering: for each frequency, for each component, [Re, Im].
+def pack_Zdet_vector(Zdet: np.ndarray) -> np.ndarray:
+    """Pack complex determinant impedance into a real-valued data vector.
 
     Parameters
     ----------
-    Z : (n_freq, 2, 2) complex
-    comps : component labels
+    Zdet : ndarray
+        Complex determinant impedance of shape ``(nf,)``.
 
     Returns
     -------
-    (n_freq * n_comp * 2,) float
+    ndarray
+        Real-valued vector of length ``2*nf`` with interleaved real and
+        imaginary parts.
     """
-    Z = np.asarray(Z, dtype=np.complex128)
-    ij = [_COMP_TO_IJ[c.lower().strip()] for c in comps]
-    n = Z.shape[0]
-    out = np.empty(n * len(ij) * 2, dtype=float)
-    k = 0
-    for ip in range(n):
-        for (i, j) in ij:
-            out[k] = Z[ip, i, j].real; k += 1
-            out[k] = Z[ip, i, j].imag; k += 1
+    Zdet = np.asarray(Zdet)
+    out = np.empty(2 * len(Zdet), dtype=float)
+    out[0::2] = Zdet.real
+    out[1::2] = Zdet.imag
     return out
+
+
+def pack_Zdet_sigma(Zdet_sigma: np.ndarray) -> np.ndarray:
+    """Pack determinant-impedance uncertainties to match ``pack_Zdet_vector``.
+
+    Parameters
+    ----------
+    Zdet_sigma : ndarray
+        Absolute 1σ uncertainties of determinant impedance.
+
+    Returns
+    -------
+    ndarray
+        Real-valued uncertainty vector with duplicated entries for real and
+        imaginary parts.
+    """
+    sig = np.asarray(Zdet_sigma, dtype=float)
+    out = np.empty(2 * len(sig), dtype=float)
+    out[0::2] = sig
+    out[1::2] = sig
+    return out
+
+
+def pack_Z_vector(Z: np.ndarray, comps: Sequence[str]) -> np.ndarray:
+    """Pack selected impedance-tensor components into a real-valued vector.
+
+    Parameters
+    ----------
+    Z : ndarray
+        Complex impedance tensor array of shape ``(nf, 2, 2)``.
+    comps : sequence of str
+        Selected components, e.g. ``('xy', 'yx')``.
+
+    Returns
+    -------
+    ndarray
+        Real-valued vector containing interleaved real/imaginary values for
+        each requested component.
+    """
+    Z = np.asarray(Z)
+    nf = Z.shape[0]
+    parts = []
+    for comp in comps:
+        i, j = _comp_to_idx(comp)
+        zc = Z[:, i, j]
+        vec = np.empty(2 * nf, dtype=float)
+        vec[0::2] = zc.real
+        vec[1::2] = zc.imag
+        parts.append(vec)
+    return np.concatenate(parts) if parts else np.empty(0, dtype=float)
 
 
 def pack_Z_sigma(
     Z_err: np.ndarray,
-    comps: Sequence[str] = ("xx", "xy", "yx", "yy"),
-    *,
-    sigma_floor: float = 0.0,
+    comps: Sequence[str],
 ) -> np.ndarray:
-    """Pack Z_err for selected components into a sigma vector."""
-    Z_err = np.asarray(Z_err)
-    ij = [_COMP_TO_IJ[c.lower().strip()] for c in comps]
-    n = Z_err.shape[0]
-    out = np.empty(n * len(ij) * 2, dtype=float)
-    k = 0
-    for ip in range(n):
-        for (i, j) in ij:
-            s = float(np.abs(Z_err[ip, i, j]))
-            s = float(np.sqrt(s * s + sigma_floor * sigma_floor))
-            out[k] = s; k += 1
-            out[k] = s; k += 1
-    return out
-
-
-def compute_phase_tensor(Z: np.ndarray) -> np.ndarray:
-    """Compute the phase tensor from a stack of 2×2 impedance tensors.
-
-    PT = Re(Z)^{-1} @ Im(Z),  computed per frequency.
+    """Pack component-wise impedance uncertainties to match ``pack_Z_vector``.
 
     Parameters
     ----------
-    Z : (n_freq, 2, 2) complex
+    Z_err : ndarray
+        Impedance uncertainty array broadcastable to ``(nf, 2, 2)``.
+    comps : sequence of str
+        Selected impedance components.
 
     Returns
     -------
-    PT : (n_freq, 2, 2) real
+    ndarray
+        Real-valued uncertainty vector.
     """
-    nf = Z.shape[0]
-    PT = np.zeros((nf, 2, 2), dtype=float)
-    for fi in range(nf):
-        re = Z[fi].real
-        im = Z[fi].imag
-        det = re[0, 0] * re[1, 1] - re[0, 1] * re[1, 0]
-        if abs(det) < 1e-30:
-            continue
-        re_inv = np.array([[re[1, 1], -re[0, 1]],
-                           [-re[1, 0], re[0, 0]]]) / det
-        PT[fi] = re_inv @ im
-    return PT
+    Z_err = np.asarray(Z_err, dtype=float)
+    nf = Z_err.shape[0]
+    parts = []
+    for comp in comps:
+        i, j = _comp_to_idx(comp)
+        sig = Z_err[:, i, j]
+        vec = np.empty(2 * nf, dtype=float)
+        vec[0::2] = sig
+        vec[1::2] = sig
+        parts.append(vec)
+    return np.concatenate(parts) if parts else np.empty(0, dtype=float)
 
 
-def pack_P_vector(
-    P: np.ndarray,
-    comps: Sequence[str] = ("xx", "xy", "yx", "yy"),
-) -> np.ndarray:
-    """Pack phase tensor components into a real data vector."""
+def pack_P_vector(P: np.ndarray, comps: Sequence[str]) -> np.ndarray:
+    """Pack selected phase-tensor components into a real-valued vector.
+
+    Parameters
+    ----------
+    P : ndarray
+        Phase tensor array of shape ``(nf, 2, 2)``.
+    comps : sequence of str
+        Selected components.
+
+    Returns
+    -------
+    ndarray
+        Real-valued vector containing the selected phase-tensor entries.
+    """
     P = np.asarray(P, dtype=float)
-    ij = [_COMP_TO_IJ[c.lower().strip()] for c in comps]
-    n = P.shape[0]
-    out = np.empty(n * len(ij), dtype=float)
-    k = 0
-    for ip in range(n):
-        for (i, j) in ij:
-            out[k] = float(P[ip, i, j]); k += 1
-    return out
+    parts = []
+    for comp in comps:
+        i, j = _comp_to_idx(comp)
+        parts.append(P[:, i, j].astype(float))
+    return np.concatenate(parts) if parts else np.empty(0, dtype=float)
 
 
-def pack_P_sigma(
-    P_err: np.ndarray,
-    comps: Sequence[str] = ("xx", "xy", "yx", "yy"),
-    *,
-    sigma_floor: float = 0.0,
-) -> np.ndarray:
-    """Pack phase tensor uncertainties into a sigma vector."""
+def pack_P_sigma(P_err: np.ndarray, comps: Sequence[str]) -> np.ndarray:
+    """Pack selected phase-tensor uncertainties into a real-valued vector.
+
+    Parameters
+    ----------
+    P_err : ndarray
+        Phase-tensor uncertainty array of shape ``(nf, 2, 2)``.
+    comps : sequence of str
+        Selected components.
+
+    Returns
+    -------
+    ndarray
+        Real-valued vector of selected phase-tensor uncertainties.
+    """
     P_err = np.asarray(P_err, dtype=float)
-    ij = [_COMP_TO_IJ[c.lower().strip()] for c in comps]
-    n = P_err.shape[0]
-    out = np.empty(n * len(ij), dtype=float)
-    k = 0
-    for ip in range(n):
-        for (i, j) in ij:
-            s = float(abs(P_err[ip, i, j]))
-            out[k] = float(np.sqrt(s * s + sigma_floor * sigma_floor)); k += 1
-    return out
-
-
-def has_aniso() -> bool:
-    """Return True if the anisotropic forward model is available."""
-    return _HAS_ANISO
+    parts = []
+    for comp in comps:
+        i, j = _comp_to_idx(comp)
+        parts.append(P_err[:, i, j].astype(float))
+    return np.concatenate(parts) if parts else np.empty(0, dtype=float)
 
 
 # =============================================================================
-#  Model representation
+#  Model and configuration dataclasses
 # =============================================================================
 
 @dataclass
 class LayeredModel:
-    """A 1-D layered earth model (isotropic or anisotropic).
+    """Layered-earth parameterization for isotropic or anisotropic 1-D MT.
 
     Attributes
     ----------
-    interfaces : (k,)        Sorted depths of internal interfaces [m].
-    resistivities : (k+1,)   log10(ρ_max) per layer.
-    aniso_ratios : (k+1,) or None   ρ_max/ρ_min per layer (≥ 1).
-    strikes : (k+1,) or None        Anisotropy strike [deg].
+    depths : ndarray
+        Interface depths [m] excluding the surface; length ``k``.
+    log_resistivities : ndarray
+        Base-10 logarithm of maximum horizontal resistivities [Ω·m] for each
+        layer, length ``k + 1``.
+    aniso_ratios : ndarray or None
+        Resistivity anisotropy ratios ``rho_max / rho_min`` per layer.
+        ``None`` indicates isotropic treatment.
+    strikes : ndarray or None
+        Strike angles [deg] per layer for anisotropic models.
     """
-    interfaces: np.ndarray
-    resistivities: np.ndarray
+    depths: np.ndarray
+    log_resistivities: np.ndarray
     aniso_ratios: Optional[np.ndarray] = None
     strikes: Optional[np.ndarray] = None
 
+    def copy(self) -> "LayeredModel":
+        """Return a deep copy of the model.
+
+        Returns
+        -------
+        LayeredModel
+            Independent copy of the current model.
+        """
+        return LayeredModel(
+            depths=self.depths.copy(),
+            log_resistivities=self.log_resistivities.copy(),
+            aniso_ratios=None if self.aniso_ratios is None else self.aniso_ratios.copy(),
+            strikes=None if self.strikes is None else self.strikes.copy(),
+        )
+
     @property
     def k(self) -> int:
-        """Number of internal interfaces."""
-        return len(self.interfaces)
+        """Return the number of interfaces.
+
+        Returns
+        -------
+        int
+            Number of interfaces.
+        """
+        return int(len(self.depths))
 
     @property
     def n_layers(self) -> int:
-        return self.k + 1
+        """Return the number of layers.
+
+        Returns
+        -------
+        int
+            Number of layers, equal to ``k + 1``.
+        """
+        return int(len(self.log_resistivities))
 
     @property
     def is_anisotropic(self) -> bool:
-        return self.aniso_ratios is not None
+        """Return whether anisotropy parameters are present.
+
+        Returns
+        -------
+        bool
+            ``True`` when both anisotropy ratios and strikes are available.
+        """
+        return self.aniso_ratios is not None and self.strikes is not None
 
     def get_thicknesses(self) -> np.ndarray:
-        """Layer thicknesses (all but half-space)."""
-        return np.diff(np.concatenate(([0.0], self.interfaces)))
+        """Convert interface depths to layer thicknesses.
+
+        Returns
+        -------
+        ndarray
+            Thickness array of length ``k``.
+        """
+        if self.k == 0:
+            return np.empty(0, dtype=float)
+        return np.diff(np.r_[0.0, self.depths])
 
     def get_resistivities(self) -> np.ndarray:
-        """Resistivities in linear scale [Ω·m]."""
-        return 10.0 ** self.resistivities
+        """Return resistivities in linear units.
 
-    def copy(self) -> "LayeredModel":
-        return LayeredModel(
-            interfaces=self.interfaces.copy(),
-            resistivities=self.resistivities.copy(),
-            aniso_ratios=(
-                self.aniso_ratios.copy() if self.aniso_ratios is not None else None
-            ),
-            strikes=self.strikes.copy() if self.strikes is not None else None,
-        )
+        Returns
+        -------
+        ndarray
+            Resistivity array [Ω·m].
+        """
+        return 10.0 ** self.log_resistivities
 
-
-# =============================================================================
-#  Prior specification
-# =============================================================================
 
 @dataclass
 class Prior:
-    """Uniform prior bounds for the transdimensional sampler."""
-    k_min: int = 1
-    k_max: int = 30
-    depth_min: float = 1.0
-    depth_max: float = 5000.0
-    log_rho_min: float = -1.0
-    log_rho_max: float = 5.0
+    """Uniform prior bounds for the reversible-jump inversion.
+
+    Attributes
+    ----------
+    k_min, k_max : int
+        Minimum and maximum number of interfaces.
+    depth_min, depth_max : float
+        Bounds on interface depths [m].
+    log_rho_min, log_rho_max : float
+        Bounds on base-10 resistivity.
+    log_aniso_min, log_aniso_max : float
+        Bounds on base-10 anisotropy ratio.
+    strike_min, strike_max : float
+        Bounds on strike angle [deg].
+    """
+    k_min: int
+    k_max: int
+    depth_min: float
+    depth_max: float
+    log_rho_min: float
+    log_rho_max: float
     log_aniso_min: float = 0.0
-    log_aniso_max: float = 2.0
+    log_aniso_max: float = 0.0
     strike_min: float = -90.0
     strike_max: float = 90.0
 
-    def log_prior(self, model: LayeredModel) -> float:
-        """Evaluate log-prior (0 inside bounds, -inf outside)."""
-        if model.k < self.k_min or model.k > self.k_max:
-            return -np.inf
-        if np.any(model.interfaces < self.depth_min) or \
-           np.any(model.interfaces > self.depth_max):
-            return -np.inf
-        if np.any(model.resistivities < self.log_rho_min) or \
-           np.any(model.resistivities > self.log_rho_max):
-            return -np.inf
-        if model.is_anisotropic:
-            log_ar = np.log10(model.aniso_ratios)
-            if np.any(log_ar < self.log_aniso_min) or \
-               np.any(log_ar > self.log_aniso_max):
-                return -np.inf
-            if np.any(model.strikes < self.strike_min) or \
-               np.any(model.strikes > self.strike_max):
-                return -np.inf
-        return 0.0
+
+@dataclass
+class RjMCMCConfig:
+    """Sampler control parameters for RJMCMC.
+
+    Attributes
+    ----------
+    n_iterations : int
+        Total number of MCMC iterations.
+    burn_in : int
+        Number of discarded burn-in iterations.
+    thin : int
+        Retain every ``thin``-th post-burn-in sample.
+    proposal_weights : tuple
+        Relative weights for birth, death, move, and change proposals.
+    sigma_birth_rho, sigma_move_z, sigma_change_rho : float
+        Proposal scales for isotropic model updates.
+    sigma_birth_aniso, sigma_birth_strike : float
+        Proposal scales for anisotropy parameters during births.
+    sigma_change_aniso, sigma_change_strike : float
+        Proposal scales for anisotropy parameter perturbations.
+    verbose : bool
+        Whether to print progress.
+    """
+    n_iterations: int = 200_000
+    burn_in: int = 50_000
+    thin: int = 10
+    proposal_weights: Tuple[float, float, float, float] = (0.2, 0.2, 0.25, 0.35)
+    sigma_birth_rho: float = 0.03
+    sigma_move_z: float = 50.0
+    sigma_change_rho: float = 0.05
+    sigma_birth_aniso: float = 0.10
+    sigma_birth_strike: float = 10.0
+    sigma_change_aniso: float = 0.05
+    sigma_change_strike: float = 5.0
+    verbose: bool = True
 
 
 # =============================================================================
-#  Likelihood functions
+#  Prior helpers
+# =============================================================================
+
+def _uniform_logpdf(x: float, xmin: float, xmax: float) -> float:
+    """Compute log-density of a scalar uniform distribution.
+
+    Parameters
+    ----------
+    x : float
+        Scalar value to test.
+    xmin, xmax : float
+        Inclusive interval bounds.
+
+    Returns
+    -------
+    float
+        Zero if inside the interval, ``-np.inf`` otherwise.
+    """
+    return 0.0 if xmin <= x <= xmax else -np.inf
+
+
+def log_prior(model: LayeredModel, prior: Prior, use_aniso: bool = False) -> float:
+    """Evaluate the uniform prior density for a layered model.
+
+    Parameters
+    ----------
+    model : LayeredModel
+        Candidate model.
+    prior : Prior
+        Prior bounds.
+    use_aniso : bool, optional
+        If ``True`` include anisotropy and strike prior terms.
+
+    Returns
+    -------
+    float
+        Log-prior value, or ``-np.inf`` if the model violates the bounds.
+    """
+    if model.k < prior.k_min or model.k > prior.k_max:
+        return -np.inf
+
+    if np.any(np.diff(model.depths) <= 0):
+        return -np.inf
+    if model.k > 0:
+        if model.depths[0] < prior.depth_min or model.depths[-1] > prior.depth_max:
+            return -np.inf
+
+    if np.any(model.log_resistivities < prior.log_rho_min):
+        return -np.inf
+    if np.any(model.log_resistivities > prior.log_rho_max):
+        return -np.inf
+
+    if use_aniso:
+        if model.aniso_ratios is None or model.strikes is None:
+            return -np.inf
+        loga = np.log10(model.aniso_ratios)
+        if np.any(loga < prior.log_aniso_min) or np.any(loga > prior.log_aniso_max):
+            return -np.inf
+        if np.any(model.strikes < prior.strike_min) or np.any(model.strikes > prior.strike_max):
+            return -np.inf
+
+    return 0.0
+
+
+# =============================================================================
+#  Forward wrapper helpers for likelihoods
+# =============================================================================
+
+def _forward_Z_for_model(model: LayeredModel, frequencies: np.ndarray) -> np.ndarray:
+    """Build a 2×2 impedance tensor for isotropic or anisotropic models.
+
+    Parameters
+    ----------
+    model : LayeredModel
+        Model to forward model.
+    frequencies : ndarray
+        Frequencies [Hz].
+
+    Returns
+    -------
+    ndarray
+        Complex impedance tensor of shape ``(nf, 2, 2)``.
+    """
+    nf = len(frequencies)
+    Z = np.zeros((nf, 2, 2), dtype=complex)
+
+    if model.is_anisotropic:
+        th = model.get_thicknesses()
+        rho = model.get_resistivities()
+        out = mt_forward_1d_anisotropic(th, rho, frequencies, model.aniso_ratios, model.strikes)
+        mu0 = 4.0 * np.pi * 1e-7
+        omega = 2.0 * np.pi * frequencies
+        zxy = np.sqrt(out["rho_a_xy"] * omega * mu0) * (1.0 + 1.0j) / np.sqrt(2.0)
+        zyx = -np.sqrt(out["rho_a_yx"] * omega * mu0) * (1.0 + 1.0j) / np.sqrt(2.0)
+        Z[:, 0, 1] = zxy
+        Z[:, 1, 0] = zyx
+    else:
+        th = model.get_thicknesses()
+        rho = model.get_resistivities()
+        out = mt_forward_1d_isotropic(th, rho, frequencies, full_output=True)
+        z = out["Z_re"] + 1j * out["Z_im"]
+        Z[:, 0, 1] = z
+        Z[:, 1, 0] = -z
+
+    return Z
+
+
+def _phase_tensor_from_Z(Z: np.ndarray) -> np.ndarray:
+    """Compute phase tensor from a complex impedance tensor.
+
+    Parameters
+    ----------
+    Z : ndarray
+        Complex impedance tensor with shape ``(nf, 2, 2)``.
+
+    Returns
+    -------
+    ndarray
+        Phase tensor array with shape ``(nf, 2, 2)``.
+    """
+    X = np.real(Z)
+    Y = np.imag(Z)
+    P = np.zeros_like(X, dtype=float)
+    for i in range(Z.shape[0]):
+        try:
+            P[i] = np.linalg.solve(X[i], Y[i])
+        except np.linalg.LinAlgError:
+            P[i] = np.nan
+    return P
+
+
+# =============================================================================
+#  Likelihoods
 # =============================================================================
 
 def log_likelihood(
@@ -670,254 +833,431 @@ def log_likelihood(
     frequencies: np.ndarray,
     observed: np.ndarray,
     sigma: np.ndarray,
-    use_aniso: bool = False,
     observed_yx: Optional[np.ndarray] = None,
     sigma_yx: Optional[np.ndarray] = None,
 ) -> float:
-    """Gaussian log-likelihood in log10(ρ_a) space."""
-    thicknesses = model.get_thicknesses()
-    resistivities = model.get_resistivities()
+    """Gaussian log-likelihood on apparent resistivity.
 
-    if use_aniso and model.is_anisotropic:
-        result = mt_forward_1d_anisotropic(
-            thicknesses, resistivities, frequencies,
-            model.aniso_ratios, model.strikes,
+    Parameters
+    ----------
+    model : LayeredModel
+        Proposed earth model.
+    frequencies : ndarray
+        Frequencies [Hz].
+    observed : ndarray
+        Observed apparent resistivity for the xy component or isotropic case.
+    sigma : ndarray
+        Standard deviation in log10 apparent resistivity for ``observed``.
+    observed_yx : ndarray, optional
+        Optional yx apparent resistivity for anisotropic runs.
+    sigma_yx : ndarray, optional
+        Standard deviation for ``observed_yx``.
+
+    Returns
+    -------
+    float
+        Gaussian log-likelihood value.
+    """
+    if model.is_anisotropic:
+        out = mt_forward_1d_anisotropic(
+            model.get_thicknesses(),
+            model.get_resistivities(),
+            frequencies,
+            model.aniso_ratios,
+            model.strikes,
         )
-        res_xy = (np.log10(result["rho_a_xy"]) - np.log10(observed)) / sigma
-        ll = -0.5 * np.sum(res_xy ** 2)
+        pred_xy = np.asarray(out["rho_a_xy"], dtype=float)
+        pred_yx = np.asarray(out["rho_a_yx"], dtype=float)
+        r = (np.log10(pred_xy) - np.log10(observed)) / sigma
+        ll = -0.5 * np.sum(r**2 + np.log(2.0 * np.pi * sigma**2))
         if observed_yx is not None and sigma_yx is not None:
-            res_yx = (np.log10(result["rho_a_yx"]) - np.log10(observed_yx)) / sigma_yx
-            ll += -0.5 * np.sum(res_yx ** 2)
-        return ll
-    else:
-        predicted = mt_forward_1d_isotropic(thicknesses, resistivities, frequencies)
-        residuals = (np.log10(predicted) - np.log10(observed)) / sigma
-        return -0.5 * np.sum(residuals ** 2)
+            r2 = (np.log10(pred_yx) - np.log10(observed_yx)) / sigma_yx
+            ll += -0.5 * np.sum(r2**2 + np.log(2.0 * np.pi * sigma_yx**2))
+        return float(ll)
+
+    pred = mt_forward_1d_isotropic(model.get_thicknesses(), model.get_resistivities(), frequencies)
+    r = (np.log10(pred) - np.log10(observed)) / sigma
+    ll = -0.5 * np.sum(r**2 + np.log(2.0 * np.pi * sigma**2))
+    return float(ll)
 
 
 def log_likelihood_Zdet(
     model: LayeredModel,
     frequencies: np.ndarray,
-    Zdet_obs: np.ndarray,
+    observed_Zdet: np.ndarray,
     Zdet_sigma: np.ndarray,
 ) -> float:
-    """Gaussian log-likelihood on Re/Im of the determinant impedance Z_det.
-
-    For isotropic 1-D models, Z_det = Z_xy (since Zxx=Zyy=0 and Zyx=-Zxy,
-    so det = Zxy² and sqrt(det) = Zxy choosing the right branch).
+    """Gaussian log-likelihood on determinant impedance in Re/Im space.
 
     Parameters
     ----------
     model : LayeredModel
-    frequencies : (nf,) Hz
-    Zdet_obs : (nf,) complex — observed Z_det
-    Zdet_sigma : (nf,) float — absolute error on |Z_det| (applied to Re & Im)
+        Proposed earth model.
+    frequencies : ndarray
+        Frequencies [Hz].
+    observed_Zdet : ndarray
+        Observed determinant impedance.
+    Zdet_sigma : ndarray
+        Absolute 1σ uncertainty of determinant impedance.
 
     Returns
     -------
-    float — log-likelihood value
+    float
+        Gaussian log-likelihood value.
     """
-    thicknesses = model.get_thicknesses()
-    resistivities = model.get_resistivities()
-
-    pred = mt_forward_1d_isotropic_impedance(thicknesses, resistivities, frequencies)
-    Z_pred = pred["Z"]
-    Zdet_pred = compute_Zdet(Z_pred)
-
-    res_re = (Zdet_pred.real - Zdet_obs.real) / Zdet_sigma
-    res_im = (Zdet_pred.imag - Zdet_obs.imag) / Zdet_sigma
-    return -0.5 * (np.sum(res_re ** 2) + np.sum(res_im ** 2))
+    pred_Z = _forward_Z_for_model(model, frequencies)
+    pred_Zdet = compute_Zdet(pred_Z)
+    d_pred = pack_Zdet_vector(pred_Zdet)
+    d_obs = pack_Zdet_vector(observed_Zdet)
+    sig = pack_Zdet_sigma(Zdet_sigma)
+    r = (d_pred - d_obs) / sig
+    ll = -0.5 * np.sum(r**2 + np.log(2.0 * np.pi * sig**2))
+    return float(ll)
 
 
 def log_likelihood_Z_comps(
     model: LayeredModel,
     frequencies: np.ndarray,
-    Z_obs: np.ndarray,
-    Z_sigma: np.ndarray,
-    comps: Sequence[str] = ("xx", "xy", "yx", "yy"),
-    *,
+    observed_Z: np.ndarray,
+    observed_Z_err: np.ndarray,
+    z_comps: Sequence[str] = ("xy", "yx"),
     use_pt: bool = False,
-    PT_obs: Optional[np.ndarray] = None,
-    PT_sigma: Optional[np.ndarray] = None,
+    observed_PT: Optional[np.ndarray] = None,
+    observed_PT_err: Optional[np.ndarray] = None,
     pt_comps: Sequence[str] = ("xx", "xy", "yx", "yy"),
 ) -> float:
-    """Gaussian log-likelihood on selected Z components (Re/Im) + optional PT.
-
-    Designed for the anisotropic case where the full tensor matters.
+    """Gaussian log-likelihood on selected Z components and optional PT.
 
     Parameters
     ----------
     model : LayeredModel
-    frequencies : (nf,) Hz
-    Z_obs : (nf, 2, 2) complex
-    Z_sigma : (nf, 2, 2) float — per-element absolute error
-    comps : Z components to include in the misfit
-    use_pt : bool — also include phase tensor residuals
-    PT_obs : (nf, 2, 2) float — observed phase tensor
-    PT_sigma : (nf, 2, 2) float — PT uncertainties
-    pt_comps : PT components to include
+        Proposed earth model.
+    frequencies : ndarray
+        Frequencies [Hz].
+    observed_Z : ndarray
+        Observed complex impedance tensor.
+    observed_Z_err : ndarray
+        Absolute impedance uncertainties.
+    z_comps : sequence of str, optional
+        Selected impedance components.
+    use_pt : bool, optional
+        Whether to include phase tensor in the likelihood.
+    observed_PT : ndarray, optional
+        Observed phase tensor.
+    observed_PT_err : ndarray, optional
+        Phase-tensor uncertainties.
+    pt_comps : sequence of str, optional
+        Selected phase-tensor components.
 
     Returns
     -------
     float
+        Gaussian log-likelihood value.
     """
-    thicknesses = model.get_thicknesses()
-    resistivities = model.get_resistivities()
+    pred_Z = _forward_Z_for_model(model, frequencies)
+    d_pred = pack_Z_vector(pred_Z, z_comps)
+    d_obs = pack_Z_vector(observed_Z, z_comps)
+    sig = pack_Z_sigma(observed_Z_err, z_comps)
+    r = (d_pred - d_obs) / sig
+    ll = -0.5 * np.sum(r**2 + np.log(2.0 * np.pi * sig**2))
 
-    if model.is_anisotropic:
-        pred = mt_forward_1d_anisotropic_impedance(
-            thicknesses, resistivities, frequencies,
-            model.aniso_ratios, model.strikes)
-    else:
-        pred = mt_forward_1d_isotropic_impedance(
-            thicknesses, resistivities, frequencies)
+    if use_pt:
+        pred_PT = _phase_tensor_from_Z(pred_Z)
+        d_pred_pt = pack_P_vector(pred_PT, pt_comps)
+        d_obs_pt = pack_P_vector(observed_PT, pt_comps)
+        sig_pt = pack_P_sigma(observed_PT_err, pt_comps)
+        r_pt = (d_pred_pt - d_obs_pt) / sig_pt
+        ll += -0.5 * np.sum(r_pt**2 + np.log(2.0 * np.pi * sig_pt**2))
 
-    Z_pred = pred["Z"]
-
-    y_obs = pack_Z_vector(Z_obs, comps)
-    y_pred = pack_Z_vector(Z_pred, comps)
-    sig = pack_Z_sigma(Z_sigma, comps)
-    res = (y_pred - y_obs) / sig
-    ll = -0.5 * np.sum(res ** 2)
-
-    if use_pt and PT_obs is not None and PT_sigma is not None:
-        PT_pred = compute_phase_tensor(Z_pred)
-        p_obs = pack_P_vector(PT_obs, pt_comps)
-        p_pred = pack_P_vector(PT_pred, pt_comps)
-        p_sig = pack_P_sigma(PT_sigma, pt_comps)
-        res_p = (p_pred - p_obs) / p_sig
-        ll += -0.5 * np.sum(res_p ** 2)
-
-    return ll
+    return float(ll)
 
 
 # =============================================================================
-#  Proposal functions
+#  Proposal mechanisms
 # =============================================================================
+
+def _insert_sorted_depth(depths: np.ndarray, z_new: float) -> Tuple[np.ndarray, int]:
+    """Insert a new interface depth while preserving sorting.
+
+    Parameters
+    ----------
+    depths : ndarray
+        Existing sorted interface depths.
+    z_new : float
+        New depth to insert.
+
+    Returns
+    -------
+    tuple
+        Updated sorted depths and insertion index.
+    """
+    idx = int(np.searchsorted(depths, z_new))
+    return np.insert(depths, idx, z_new), idx
+
 
 def propose_birth(
-    model: LayeredModel, prior: Prior,
-    sigma_rho: float = 0.5, use_aniso: bool = False,
-    sigma_aniso: float = 0.1, sigma_strike: float = 10.0,
+    current: LayeredModel,
+    prior: Prior,
+    config: RjMCMCConfig,
+    rng: np.random.Generator,
+    use_aniso: bool = False,
 ) -> Tuple[LayeredModel, float]:
-    """Birth proposal — add a new interface at a random depth."""
-    new = model.copy()
-    z_new = np.random.uniform(prior.depth_min, prior.depth_max)
-    idx = np.searchsorted(new.interfaces, z_new)
-    rho_old = new.resistivities[idx]
+    """Propose a birth move by inserting one interface and one layer.
 
-    delta = np.random.normal(0, sigma_rho)
-    new.interfaces = np.insert(new.interfaces, idx, z_new)
-    new.resistivities = np.delete(new.resistivities, idx)
-    new.resistivities = np.insert(
-        new.resistivities, idx, [rho_old - delta * 0.5, rho_old + delta * 0.5]
-    )
+    Parameters
+    ----------
+    current : LayeredModel
+        Current model.
+    prior : Prior
+        Prior bounds.
+    config : RjMCMCConfig
+        Sampler configuration.
+    rng : numpy.random.Generator
+        Random generator.
+    use_aniso : bool, optional
+        Whether to include anisotropy parameters.
 
-    if use_aniso and new.is_anisotropic:
-        ar_old, st_old = new.aniso_ratios[idx], new.strikes[idx]
-        d_ar = np.random.normal(0, sigma_aniso)
-        d_st = np.random.normal(0, sigma_strike)
-        new.aniso_ratios = np.delete(new.aniso_ratios, idx)
-        new.aniso_ratios = np.insert(new.aniso_ratios, idx, [
-            max(1.0, ar_old * 10 ** (-d_ar * 0.5)),
-            max(1.0, ar_old * 10 ** ( d_ar * 0.5)),
-        ])
-        new.strikes = np.delete(new.strikes, idx)
-        new.strikes = np.insert(new.strikes, idx,
-                                [st_old - d_st * 0.5, st_old + d_st * 0.5])
+    Returns
+    -------
+    tuple
+        Proposed model and log proposal ratio. The ratio is set to zero here
+        because symmetric proposal simplifications are used in this driver.
+    """
+    if current.k >= prior.k_max:
+        return current.copy(), -np.inf
 
-    return new, np.log(new.k) - np.log(prior.depth_max - prior.depth_min)
+    z_new = rng.uniform(prior.depth_min, prior.depth_max)
+    new_depths, idx = _insert_sorted_depth(current.depths, z_new)
+
+    parent_idx = min(idx, current.n_layers - 1)
+    new_log_rho = current.log_resistivities[parent_idx] + rng.normal(0.0, config.sigma_birth_rho)
+    new_rhos = np.insert(current.log_resistivities, idx + 1, new_log_rho)
+
+    if use_aniso:
+        ratios = current.aniso_ratios.copy()
+        strikes = current.strikes.copy()
+        new_ratio = ratios[parent_idx] * 10.0 ** rng.normal(0.0, config.sigma_birth_aniso)
+        new_strike = strikes[parent_idx] + rng.normal(0.0, config.sigma_birth_strike)
+        new_ratios = np.insert(ratios, idx + 1, new_ratio)
+        new_strikes = np.insert(strikes, idx + 1, new_strike)
+    else:
+        new_ratios = None
+        new_strikes = None
+
+    prop = LayeredModel(new_depths, new_rhos, new_ratios, new_strikes)
+    return prop, 0.0
 
 
 def propose_death(
-    model: LayeredModel, prior: Prior, use_aniso: bool = False,
+    current: LayeredModel,
+    prior: Prior,
+    config: RjMCMCConfig,
+    rng: np.random.Generator,
+    use_aniso: bool = False,
 ) -> Tuple[LayeredModel, float]:
-    """Death proposal — remove a random interface."""
-    if model.k < prior.k_min + 1:
-        return model.copy(), -np.inf
+    """Propose a death move by deleting one interface and merging layers.
 
-    new = model.copy()
-    idx = np.random.randint(0, new.k)
+    Parameters
+    ----------
+    current : LayeredModel
+        Current model.
+    prior : Prior
+        Prior bounds.
+    config : RjMCMCConfig
+        Sampler configuration.
+    rng : numpy.random.Generator
+        Random generator.
+    use_aniso : bool, optional
+        Whether anisotropy parameters are active.
 
-    rho_merged = 0.5 * (new.resistivities[idx] + new.resistivities[idx + 1])
-    new.interfaces = np.delete(new.interfaces, idx)
-    new.resistivities = np.delete(new.resistivities, idx)
-    new.resistivities = np.delete(new.resistivities, idx)
-    new.resistivities = np.insert(new.resistivities, idx, rho_merged)
+    Returns
+    -------
+    tuple
+        Proposed model and log proposal ratio.
+    """
+    if current.k <= prior.k_min:
+        return current.copy(), -np.inf
 
-    if use_aniso and new.is_anisotropic:
-        ar_merged = np.sqrt(new.aniso_ratios[idx] * new.aniso_ratios[idx + 1])
-        st_merged = 0.5 * (new.strikes[idx] + new.strikes[idx + 1])
-        new.aniso_ratios = np.delete(new.aniso_ratios, idx)
-        new.aniso_ratios = np.delete(new.aniso_ratios, idx)
-        new.aniso_ratios = np.insert(new.aniso_ratios, idx, ar_merged)
-        new.strikes = np.delete(new.strikes, idx)
-        new.strikes = np.delete(new.strikes, idx)
-        new.strikes = np.insert(new.strikes, idx, st_merged)
+    idx = int(rng.integers(0, current.k))
+    new_depths = np.delete(current.depths, idx)
+    avg_log_rho = 0.5 * (current.log_resistivities[idx] + current.log_resistivities[idx + 1])
+    new_rhos = current.log_resistivities.copy()
+    new_rhos[idx] = avg_log_rho
+    new_rhos = np.delete(new_rhos, idx + 1)
 
-    return new, np.log(prior.depth_max - prior.depth_min) - np.log(model.k)
+    if use_aniso:
+        avg_ratio = 0.5 * (current.aniso_ratios[idx] + current.aniso_ratios[idx + 1])
+        avg_strike = 0.5 * (current.strikes[idx] + current.strikes[idx + 1])
+        new_ratios = current.aniso_ratios.copy()
+        new_strikes = current.strikes.copy()
+        new_ratios[idx] = avg_ratio
+        new_strikes[idx] = avg_strike
+        new_ratios = np.delete(new_ratios, idx + 1)
+        new_strikes = np.delete(new_strikes, idx + 1)
+    else:
+        new_ratios = None
+        new_strikes = None
+
+    prop = LayeredModel(new_depths, new_rhos, new_ratios, new_strikes)
+    return prop, 0.0
 
 
 def propose_move(
-    model: LayeredModel, prior: Prior, sigma_z: float = 50.0,
+    current: LayeredModel,
+    prior: Prior,
+    config: RjMCMCConfig,
+    rng: np.random.Generator,
 ) -> Tuple[LayeredModel, float]:
-    """Move proposal — perturb a random interface depth."""
-    if model.k == 0:
-        return model.copy(), 0.0
-    new = model.copy()
-    idx = np.random.randint(0, new.k)
-    new.interfaces[idx] += np.random.normal(0, sigma_z)
-    new.interfaces.sort()
-    return new, 0.0
+    """Propose to perturb one interface depth.
+
+    Parameters
+    ----------
+    current : LayeredModel
+        Current model.
+    prior : Prior
+        Prior bounds.
+    config : RjMCMCConfig
+        Sampler configuration.
+    rng : numpy.random.Generator
+        Random generator.
+
+    Returns
+    -------
+    tuple
+        Proposed model and log proposal ratio.
+    """
+    if current.k == 0:
+        return current.copy(), -np.inf
+
+    prop = current.copy()
+    idx = int(rng.integers(0, prop.k))
+    prop.depths[idx] += rng.normal(0.0, config.sigma_move_z)
+    prop.depths = np.sort(prop.depths)
+    return prop, 0.0
 
 
 def propose_change(
-    model: LayeredModel, prior: Prior,
-    sigma_rho: float = 0.3, use_aniso: bool = False,
-    sigma_aniso: float = 0.05, sigma_strike: float = 5.0,
+    current: LayeredModel,
+    prior: Prior,
+    config: RjMCMCConfig,
+    rng: np.random.Generator,
+    use_aniso: bool = False,
 ) -> Tuple[LayeredModel, float]:
-    """Change proposal — perturb a random layer's properties."""
-    new = model.copy()
-    if use_aniso and new.is_anisotropic:
-        choice = np.random.choice(3)
-        idx = np.random.randint(0, new.n_layers)
-        if choice == 0:
-            new.resistivities[idx] += np.random.normal(0, sigma_rho)
-        elif choice == 1:
-            log_ar = np.log10(new.aniso_ratios[idx])
-            log_ar += np.random.normal(0, sigma_aniso)
-            new.aniso_ratios[idx] = max(1.0, 10 ** log_ar)
-        else:
-            new.strikes[idx] += np.random.normal(0, sigma_strike)
+    """Propose to perturb one or more within-model parameters.
+
+    Parameters
+    ----------
+    current : LayeredModel
+        Current model.
+    prior : Prior
+        Prior bounds.
+    config : RjMCMCConfig
+        Sampler configuration.
+    rng : numpy.random.Generator
+        Random generator.
+    use_aniso : bool, optional
+        Whether anisotropy parameters are active.
+
+    Returns
+    -------
+    tuple
+        Proposed model and log proposal ratio.
+    """
+    prop = current.copy()
+    idx = int(rng.integers(0, prop.n_layers))
+    prop.log_resistivities[idx] += rng.normal(0.0, config.sigma_change_rho)
+
+    if use_aniso:
+        prop.aniso_ratios[idx] *= 10.0 ** rng.normal(0.0, config.sigma_change_aniso)
+        prop.strikes[idx] += rng.normal(0.0, config.sigma_change_strike)
+
+    return prop, 0.0
+
+
+# =============================================================================
+#  Random model generation / conversions
+# =============================================================================
+
+def random_model(
+    prior: Prior,
+    rng: np.random.Generator,
+    use_aniso: bool = False,
+) -> LayeredModel:
+    """Draw a random model from the prior.
+
+    Parameters
+    ----------
+    prior : Prior
+        Prior bounds.
+    rng : numpy.random.Generator
+        Random generator.
+    use_aniso : bool, optional
+        Whether to draw anisotropy parameters.
+
+    Returns
+    -------
+    LayeredModel
+        Randomly generated model satisfying the prior bounds.
+    """
+    k = int(rng.integers(prior.k_min, prior.k_max + 1))
+    depths = np.sort(rng.uniform(prior.depth_min, prior.depth_max, size=k)) if k > 0 else np.empty(0)
+    log_rho = rng.uniform(prior.log_rho_min, prior.log_rho_max, size=k + 1)
+
+    if use_aniso:
+        loga = rng.uniform(prior.log_aniso_min, prior.log_aniso_max, size=k + 1)
+        ratios = 10.0 ** loga
+        strikes = rng.uniform(prior.strike_min, prior.strike_max, size=k + 1)
     else:
-        idx = np.random.randint(0, new.n_layers)
-        new.resistivities[idx] += np.random.normal(0, sigma_rho)
-    return new, 0.0
+        ratios = None
+        strikes = None
+
+    return LayeredModel(depths=depths, log_resistivities=log_rho, aniso_ratios=ratios, strikes=strikes)
+
+
+def model0_to_layered(model0: Dict, use_aniso: bool = False) -> LayeredModel:
+    """Convert a py4mt-style starting model dictionary to ``LayeredModel``.
+
+    Parameters
+    ----------
+    model0 : dict
+        Dictionary with keys like ``h_m``, ``sigma_min``, ``sigma_max``,
+        and ``strike_deg``.
+    use_aniso : bool, optional
+        Whether to interpret ``sigma_min``/``sigma_max`` as anisotropic limits.
+
+    Returns
+    -------
+    LayeredModel
+        Converted layered model.
+    """
+    h_m = np.asarray(model0["h_m"], dtype=float)
+    if len(h_m) == 0:
+        depths = np.empty(0, dtype=float)
+    else:
+        if h_m[-1] == 0.0:
+            h_use = h_m[:-1]
+        else:
+            h_use = h_m
+        depths = np.cumsum(h_use)
+
+    sigma_min = np.asarray(model0["sigma_min"], dtype=float)
+    sigma_max = np.asarray(model0["sigma_max"], dtype=float)
+    rho_max = 1.0 / sigma_min
+    rho_min = 1.0 / sigma_max
+    log_rho = np.log10(rho_max)
+
+    if use_aniso:
+        ratios = rho_max / rho_min
+        strikes = np.asarray(model0["strike_deg"], dtype=float)
+    else:
+        ratios = None
+        strikes = None
+
+    return LayeredModel(depths=depths, log_resistivities=log_rho, aniso_ratios=ratios, strikes=strikes)
 
 
 # =============================================================================
-#  Sampler configuration
-# =============================================================================
-
-@dataclass
-class RjMCMCConfig:
-    """Tuning knobs for the rjMCMC sampler."""
-    n_iterations: int = 200_000
-    burn_in: int = 50_000
-    proposal_weights: tuple = (0.20, 0.20, 0.25, 0.35)
-    sigma_birth_rho: float = 0.1
-    sigma_move_z: float = 100.0
-    sigma_change_rho: float = 0.15
-    thin: int = 10
-    verbose: bool = True
-    sigma_birth_aniso: float = 0.1
-    sigma_birth_strike: float = 10.0
-    sigma_change_aniso: float = 0.05
-    sigma_change_strike: float = 5.0
-
-
-# =============================================================================
-#  Single-chain rjMCMC
+#  RJMCMC drivers
 # =============================================================================
 
 def run_rjmcmc(
@@ -926,161 +1266,213 @@ def run_rjmcmc(
     sigma: np.ndarray,
     prior: Prior,
     config: RjMCMCConfig,
+    seed: int = 12345,
     initial_model: Optional[LayeredModel] = None,
     use_aniso: bool = False,
     observed_yx: Optional[np.ndarray] = None,
     sigma_yx: Optional[np.ndarray] = None,
-    seed: Optional[int] = None,
-    chain_id: int = 0,
     likelihood_mode: str = "rhoa",
+    observed_Zdet: Optional[np.ndarray] = None,
+    Zdet_sigma: Optional[np.ndarray] = None,
     observed_Z: Optional[np.ndarray] = None,
     observed_Z_err: Optional[np.ndarray] = None,
     z_comps: Sequence[str] = ("xy", "yx"),
-    observed_Zdet: Optional[np.ndarray] = None,
-    Zdet_sigma: Optional[np.ndarray] = None,
     use_pt: bool = False,
     observed_PT: Optional[np.ndarray] = None,
     observed_PT_err: Optional[np.ndarray] = None,
     pt_comps: Sequence[str] = ("xx", "xy", "yx", "yy"),
-) -> Dict:
-    """Run a single transdimensional MCMC chain.
+) -> Dict[str, object]:
+    """Run one reversible-jump MCMC chain.
 
     Parameters
     ----------
-    likelihood_mode : str
-        Controls which likelihood function is used:
-
-        ``"rhoa"`` (default)
-            Gaussian on log10(ρ_a).  Uses ``observed`` and ``sigma``.
-
-        ``"Zdet"``
-            Gaussian on Re/Im of the determinant impedance.
-            Requires ``observed_Zdet`` and ``Zdet_sigma``.
-
-        ``"Z_comps"``
-            Gaussian on Re/Im of selected Z components, optionally
-            including phase tensor.  Requires ``observed_Z`` and
-            ``observed_Z_err``.
+    frequencies, observed, sigma : ndarray
+        Primary data arrays for the apparent-resistivity likelihood.
+    prior : Prior
+        Prior object.
+    config : RjMCMCConfig
+        Sampler configuration.
+    seed : int, optional
+        Random seed.
+    initial_model : LayeredModel, optional
+        Starting model for the chain. If omitted, a random prior draw is used.
+    use_aniso : bool, optional
+        Whether anisotropic models are sampled.
+    observed_yx, sigma_yx : ndarray, optional
+        Optional yx data for the ``rhoa`` likelihood.
+    likelihood_mode : str, optional
+        One of ``"rhoa"``, ``"zdet"``, or ``"z_comps"``.
+    observed_Zdet, Zdet_sigma : ndarray, optional
+        Determinant impedance data and uncertainties.
+    observed_Z, observed_Z_err : ndarray, optional
+        Full impedance tensor and uncertainties.
+    z_comps : sequence of str, optional
+        Selected Z components for ``"z_comps"``.
+    use_pt : bool, optional
+        Whether to include phase tensor in ``"z_comps"``.
+    observed_PT, observed_PT_err : ndarray, optional
+        Phase tensor and uncertainties.
+    pt_comps : sequence of str, optional
+        Selected PT components.
 
     Returns
     -------
-    dict with ``models``, ``log_likes``, ``n_layers``,
-    ``full_ll_trace``, ``acceptance``, ``chain_id``.
+    dict
+        Dictionary containing accepted samples, diagnostics, and traces.
     """
-    if seed is not None:
-        np.random.seed(seed)
-
-    lmode = str(likelihood_mode).lower().strip()
+    rng = np.random.default_rng(seed)
 
     if initial_model is None:
-        k0 = 3
-        interfaces = np.sort(
-            np.random.uniform(prior.depth_min, prior.depth_max * 0.5, k0))
-        resistivities = np.random.uniform(
-            prior.log_rho_min + 1, prior.log_rho_max - 1, k0 + 1)
-        if use_aniso:
-            aniso_ratios = 10 ** np.random.uniform(
-                prior.log_aniso_min, min(prior.log_aniso_max, 0.5), k0 + 1)
-            strikes = np.random.uniform(prior.strike_min, prior.strike_max, k0 + 1)
-            current = LayeredModel(interfaces, resistivities, aniso_ratios, strikes)
-        else:
-            current = LayeredModel(interfaces, resistivities)
+        current = random_model(prior, rng, use_aniso=use_aniso)
     else:
         current = initial_model.copy()
 
-    # ---- Select likelihood function ----------------------------------------
-    def _eval_ll(m):
-        if lmode == "zdet":
-            return log_likelihood_Zdet(m, frequencies, observed_Zdet, Zdet_sigma)
-        elif lmode == "z_comps":
-            return log_likelihood_Z_comps(
-                m, frequencies, observed_Z, observed_Z_err, comps=z_comps,
-                use_pt=use_pt, PT_obs=observed_PT, PT_sigma=observed_PT_err,
-                pt_comps=pt_comps)
-        else:  # "rhoa"
-            return log_likelihood(
-                m, frequencies, observed, sigma, use_aniso,
-                observed_yx, sigma_yx)
+    lmode = likelihood_mode.lower().strip()
+    if lmode == "zdet":
+        current_ll = log_likelihood_Zdet(current, frequencies, observed_Zdet, Zdet_sigma)
+    elif lmode == "z_comps":
+        current_ll = log_likelihood_Z_comps(
+            current, frequencies, observed_Z, observed_Z_err,
+            z_comps=z_comps, use_pt=use_pt,
+            observed_PT=observed_PT, observed_PT_err=observed_PT_err,
+            pt_comps=pt_comps,
+        )
+    else:
+        current_ll = log_likelihood(
+            current, frequencies, observed, sigma,
+            observed_yx=observed_yx, sigma_yx=sigma_yx,
+        )
+    current_lp = log_prior(current, prior, use_aniso=use_aniso)
 
-    current_ll = _eval_ll(current)
-    current_lp = prior.log_prior(current)
-
-    models: List[LayeredModel] = []
-    log_likes: List[float] = []
-    n_layers_trace: List[int] = []
-    full_ll_trace: List[float] = []
+    models = []
+    n_layers = []
+    loglikes = []
+    accepts = 0
     proposal_names = ["birth", "death", "move", "change"]
-    counts = {n: 0 for n in proposal_names}
-    accepts = {n: 0 for n in proposal_names}
+    pweights = np.asarray(config.proposal_weights, dtype=float)
+    pweights = pweights / pweights.sum()
 
-    weights = np.array(config.proposal_weights, dtype=float)
-    weights /= weights.sum()
-
-    if config.verbose:
-        print(f"  [Chain {chain_id}] Starting rjMCMC — "
-              f"{config.n_iterations:,} iter, burn-in {config.burn_in:,}, "
-              f"likelihood={lmode}")
-
+    t0 = time.time()
     for it in range(config.n_iterations):
-        ptype = np.random.choice(4, p=weights)
-        pname = proposal_names[ptype]
-        counts[pname] += 1
-
-        if ptype == 0:
-            proposed, log_qr = propose_birth(
-                current, prior, config.sigma_birth_rho,
-                use_aniso, config.sigma_birth_aniso, config.sigma_birth_strike)
-        elif ptype == 1:
-            proposed, log_qr = propose_death(current, prior, use_aniso)
-        elif ptype == 2:
-            proposed, log_qr = propose_move(current, prior, config.sigma_move_z)
+        move = str(rng.choice(proposal_names, p=pweights))
+        if move == "birth":
+            prop, log_qratio = propose_birth(current, prior, config, rng, use_aniso=use_aniso)
+        elif move == "death":
+            prop, log_qratio = propose_death(current, prior, config, rng, use_aniso=use_aniso)
+        elif move == "move":
+            prop, log_qratio = propose_move(current, prior, config, rng)
         else:
-            proposed, log_qr = propose_change(
-                current, prior, config.sigma_change_rho,
-                use_aniso, config.sigma_change_aniso, config.sigma_change_strike)
+            prop, log_qratio = propose_change(current, prior, config, rng, use_aniso=use_aniso)
 
-        proposed_lp = prior.log_prior(proposed)
-        if proposed_lp > -np.inf:
-            proposed_ll = _eval_ll(proposed)
-            log_alpha = ((proposed_ll - current_ll)
-                         + (proposed_lp - current_lp) + log_qr)
-            if np.log(np.random.uniform()) < log_alpha:
-                current = proposed
-                current_ll = proposed_ll
-                current_lp = proposed_lp
-                accepts[pname] += 1
+        prop_lp = log_prior(prop, prior, use_aniso=use_aniso)
+        accept = False
+        if np.isfinite(prop_lp):
+            if lmode == "zdet":
+                prop_ll = log_likelihood_Zdet(prop, frequencies, observed_Zdet, Zdet_sigma)
+            elif lmode == "z_comps":
+                prop_ll = log_likelihood_Z_comps(
+                    prop, frequencies, observed_Z, observed_Z_err,
+                    z_comps=z_comps, use_pt=use_pt,
+                    observed_PT=observed_PT, observed_PT_err=observed_PT_err,
+                    pt_comps=pt_comps,
+                )
+            else:
+                prop_ll = log_likelihood(
+                    prop, frequencies, observed, sigma,
+                    observed_yx=observed_yx, sigma_yx=sigma_yx,
+                )
+            log_alpha = (prop_lp + prop_ll) - (current_lp + current_ll) + log_qratio
+            if np.log(rng.uniform()) < log_alpha:
+                accept = True
+        if accept:
+            current = prop
+            current_lp = prop_lp
+            current_ll = prop_ll
+            accepts += 1
 
-        full_ll_trace.append(current_ll)
-
-        if it >= config.burn_in and (it - config.burn_in) % config.thin == 0:
+        if it >= config.burn_in and ((it - config.burn_in) % config.thin == 0):
             models.append(current.copy())
-            log_likes.append(current_ll)
-            n_layers_trace.append(current.n_layers)
+            n_layers.append(current.n_layers)
+            loglikes.append(current_ll)
 
-        if config.verbose and (it + 1) % 50_000 == 0:
-            rates = {n: (accepts[n] / counts[n] * 100 if counts[n] > 0 else 0)
-                     for n in proposal_names}
-            print(f"  [Chain {chain_id}] Iter {it+1:>7,} | k={current.n_layers:>2} | "
-                  f"LL={current_ll:>10.2f} | "
-                  f"Accept: B={rates['birth']:.0f}% D={rates['death']:.0f}% "
-                  f"M={rates['move']:.0f}% C={rates['change']:.0f}%")
-
-    acceptance = {n: (accepts[n] / counts[n] if counts[n] > 0 else 0)
-                  for n in proposal_names}
-    if config.verbose:
-        print(f"  [Chain {chain_id}] Done — {len(models):,} posterior samples.")
+        if config.verbose and (it + 1) % max(1, config.n_iterations // 10) == 0:
+            frac = 100.0 * (it + 1) / config.n_iterations
+            rate = accepts / (it + 1)
+            dt = time.time() - t0
+            print(f"  iter={it+1:8d}  {frac:5.1f}%  accept={rate:6.3f}  elapsed={dt:8.1f}s")
 
     return {
-        "models": models, "log_likes": np.array(log_likes),
-        "n_layers": np.array(n_layers_trace),
-        "full_ll_trace": np.array(full_ll_trace),
-        "acceptance": acceptance, "chain_id": chain_id,
+        "models": models,
+        "n_layers": np.asarray(n_layers, dtype=int),
+        "log_likelihood": np.asarray(loglikes, dtype=float),
+        "acceptance_rate": accepts / max(1, config.n_iterations),
+        "seed": int(seed),
+        "likelihood_mode": lmode,
     }
 
 
-# =============================================================================
-#  Parallel runner
-# =============================================================================
+def gelman_rubin(chains: Sequence[np.ndarray]) -> float:
+    """Compute the Gelman-Rubin R-hat statistic for scalar chain summaries.
+
+    Parameters
+    ----------
+    chains : sequence of ndarray
+        Sequence of 1-D chains of equal length.
+
+    Returns
+    -------
+    float
+        R-hat convergence diagnostic.
+    """
+    m = len(chains)
+    if m < 2:
+        return np.nan
+    n = min(len(c) for c in chains)
+    if n < 2:
+        return np.nan
+    arr = np.asarray([np.asarray(c[:n], dtype=float) for c in chains])
+    chain_means = np.mean(arr, axis=1)
+    grand_mean = np.mean(chain_means)
+    B = n * np.var(chain_means, ddof=1)
+    W = np.mean(np.var(arr, axis=1, ddof=1))
+    var_hat = ((n - 1) / n) * W + B / n
+    return float(np.sqrt(var_hat / W)) if W > 0 else np.nan
+
+
+def _merge_parallel_results(results_list: Sequence[Dict[str, object]]) -> Dict[str, object]:
+    """Merge per-chain RJMCMC outputs into one dictionary.
+
+    Parameters
+    ----------
+    results_list : sequence of dict
+        Per-chain output dictionaries from ``run_rjmcmc``.
+
+    Returns
+    -------
+    dict
+        Concatenated result dictionary with merged traces and diagnostics.
+    """
+    models = []
+    n_layers = []
+    loglikes = []
+    layer_chains = []
+    acc_rates = []
+    for res in results_list:
+        models.extend(res.get("models", []))
+        n_layers.append(np.asarray(res.get("n_layers", []), dtype=int))
+        loglikes.append(np.asarray(res.get("log_likelihood", []), dtype=float))
+        layer_chains.append(np.asarray(res.get("n_layers", []), dtype=float))
+        acc_rates.append(float(res.get("acceptance_rate", np.nan)))
+    merged = {
+        "models": models,
+        "n_layers": np.concatenate(n_layers) if n_layers else np.empty(0, dtype=int),
+        "log_likelihood": np.concatenate(loglikes) if loglikes else np.empty(0, dtype=float),
+        "acceptance_rates": np.asarray(acc_rates, dtype=float),
+        "gelman_rubin": gelman_rubin(layer_chains),
+        "chains": list(results_list),
+    }
+    return merged
+
 
 def run_parallel_rjmcmc(
     frequencies: np.ndarray,
@@ -1089,624 +1481,426 @@ def run_parallel_rjmcmc(
     prior: Prior,
     config: RjMCMCConfig,
     n_chains: int = 4,
-    n_jobs: int = -1,
-    base_seed: int = 42,
+    n_jobs: int = 4,
+    base_seed: int = 12345,
+    initial_model: Optional[LayeredModel] = None,
     use_aniso: bool = False,
     observed_yx: Optional[np.ndarray] = None,
     sigma_yx: Optional[np.ndarray] = None,
     likelihood_mode: str = "rhoa",
+    observed_Zdet: Optional[np.ndarray] = None,
+    Zdet_sigma: Optional[np.ndarray] = None,
     observed_Z: Optional[np.ndarray] = None,
     observed_Z_err: Optional[np.ndarray] = None,
     z_comps: Sequence[str] = ("xy", "yx"),
-    observed_Zdet: Optional[np.ndarray] = None,
-    Zdet_sigma: Optional[np.ndarray] = None,
     use_pt: bool = False,
     observed_PT: Optional[np.ndarray] = None,
     observed_PT_err: Optional[np.ndarray] = None,
     pt_comps: Sequence[str] = ("xx", "xy", "yx", "yy"),
-) -> Dict:
-    """Run *n_chains* independent rjMCMC chains via ``joblib`` and merge."""
-    from joblib import Parallel, delayed
-
-    lmode = str(likelihood_mode).lower().strip()
-
-    print("=" * 70)
-    print(f"  Parallel rjMCMC — {n_chains} chains, "
-          f"{'anisotropic' if use_aniso else 'isotropic'} forward model, "
-          f"likelihood={lmode}")
-    print("=" * 70)
-
-    t0 = time.time()
-
-    chain_config = RjMCMCConfig(
-        **{f.name: getattr(config, f.name)
-           for f in config.__dataclass_fields__.values()})
-    if n_jobs != 1:
-        chain_config.verbose = False
-
-    seeds = [base_seed + i for i in range(n_chains)]
-
-    chain_results = Parallel(n_jobs=n_jobs, verbose=10 if n_jobs != 1 else 0)(
-        delayed(run_rjmcmc)(
-            frequencies, observed, sigma, prior, chain_config,
-            initial_model=None, use_aniso=use_aniso,
-            observed_yx=observed_yx, sigma_yx=sigma_yx,
-            seed=seeds[i], chain_id=i,
-            likelihood_mode=lmode,
-            observed_Z=observed_Z, observed_Z_err=observed_Z_err,
-            z_comps=z_comps,
-            observed_Zdet=observed_Zdet, Zdet_sigma=Zdet_sigma,
-            use_pt=use_pt, observed_PT=observed_PT,
-            observed_PT_err=observed_PT_err, pt_comps=pt_comps,
-        ) for i in range(n_chains)
-    )
-
-    elapsed = time.time() - t0
-    print(f"\nAll {n_chains} chains completed in {elapsed:.1f}s")
-
-    all_models: List[LayeredModel] = []
-    all_log_likes, all_n_layers = [], []
-    for cr in chain_results:
-        all_models.extend(cr["models"])
-        all_log_likes.append(cr["log_likes"])
-        all_n_layers.append(cr["n_layers"])
-
-    rhat = gelman_rubin([cr["log_likes"] for cr in chain_results])
-    avg_acceptance = {
-        name: float(np.mean([cr["acceptance"][name] for cr in chain_results]))
-        for name in ["birth", "death", "move", "change"]
-    }
-
-    tag = "✓ converged" if rhat < 1.1 else "⚠ may not have converged"
-    print(f"\nMerged posterior: {len(all_models):,} samples from {n_chains} chains")
-    print(f"Gelman-Rubin R-hat (log-likelihood): {rhat:.4f}  {tag}")
-    print("Average acceptance rates:")
-    for name, rate in avg_acceptance.items():
-        print(f"  {name:>8s}: {rate*100:.1f}%")
-
-    return {
-        "models": all_models,
-        "log_likes": np.concatenate(all_log_likes),
-        "n_layers": np.concatenate(all_n_layers),
-        "acceptance": avg_acceptance,
-        "chains": chain_results,
-        "gelman_rubin": rhat,
-        "elapsed_s": elapsed,
-        "burn_in": config.burn_in,
-    }
-
-
-# =============================================================================
-#  Diagnostics
-# =============================================================================
-
-def gelman_rubin(chain_traces: List[np.ndarray]) -> float:
-    """Gelman–Rubin R-hat for a scalar trace (values near 1.0 = converged)."""
-    m = len(chain_traces)
-    if m < 2:
-        return float("nan")
-    n = min(len(c) for c in chain_traces)
-    chains = np.array([c[:n] for c in chain_traces])
-    B = n * np.var(chains.mean(axis=1), ddof=1)
-    W = np.mean(chains.var(axis=1, ddof=1))
-    if W == 0:
-        return float("nan")
-    return float(np.sqrt(((n - 1) / n) * W + B / n) / np.sqrt(W))
-
-
-# =============================================================================
-#  Posterior profile computation
-# =============================================================================
-
-def compute_posterior_profile(
-    models: List[LayeredModel], depth_grid: np.ndarray,
-) -> Dict[str, np.ndarray]:
-    """Resistivity statistics on a regular depth grid."""
-    nd, nm = len(depth_grid), len(models)
-    rho_ens = np.zeros((nm, nd))
-    for i, m in enumerate(models):
-        depths = np.concatenate(([0.0], m.interfaces, [depth_grid[-1] * 2]))
-        rhos = m.get_resistivities()
-        for j, z in enumerate(depth_grid):
-            rho_ens[i, j] = rhos[min(np.searchsorted(depths[1:], z), len(rhos) - 1)]
-    log_ens = np.log10(rho_ens)
-    return {
-        "depth": depth_grid,
-        "mean": 10 ** np.mean(log_ens, axis=0),
-        "median": 10 ** np.median(log_ens, axis=0),
-        "p05": 10 ** np.percentile(log_ens, 5, axis=0),
-        "p95": 10 ** np.percentile(log_ens, 95, axis=0),
-        "ensemble": rho_ens,
-    }
-
-
-def compute_posterior_rhomin_profile(
-    models: List[LayeredModel], depth_grid: np.ndarray,
-) -> Dict[str, np.ndarray]:
-    """ρ_min statistics on a regular depth grid (aniso models only)."""
-    nd, nm = len(depth_grid), len(models)
-    rho_ens = np.zeros((nm, nd))
-    for i, m in enumerate(models):
-        depths = np.concatenate(([0.0], m.interfaces, [depth_grid[-1] * 2]))
-        rhos = m.get_resistivities()
-        for j, z in enumerate(depth_grid):
-            idx = min(np.searchsorted(depths[1:], z), len(rhos) - 1)
-            if m.is_anisotropic:
-                rho_ens[i, j] = rhos[idx] / m.aniso_ratios[idx]
-            else:
-                rho_ens[i, j] = rhos[idx]
-    log_ens = np.log10(rho_ens)
-    return {
-        "depth": depth_grid,
-        "mean": 10 ** np.mean(log_ens, axis=0),
-        "median": 10 ** np.median(log_ens, axis=0),
-        "p05": 10 ** np.percentile(log_ens, 5, axis=0),
-        "p95": 10 ** np.percentile(log_ens, 95, axis=0),
-        "ensemble": rho_ens,
-    }
-
-
-def compute_posterior_aniso_profile(
-    models: List[LayeredModel], depth_grid: np.ndarray,
-) -> Dict[str, np.ndarray]:
-    """Anisotropy-ratio and strike statistics on a regular depth grid."""
-    nd, nm = len(depth_grid), len(models)
-    ar_ens = np.ones((nm, nd))
-    st_ens = np.zeros((nm, nd))
-    for i, m in enumerate(models):
-        if not m.is_anisotropic:
-            continue
-        depths = np.concatenate(([0.0], m.interfaces, [depth_grid[-1] * 2]))
-        for j, z in enumerate(depth_grid):
-            idx = min(np.searchsorted(depths[1:], z), len(m.aniso_ratios) - 1)
-            ar_ens[i, j] = m.aniso_ratios[idx]
-            st_ens[i, j] = m.strikes[idx]
-    return {
-        "depth": depth_grid,
-        "aniso_median": np.median(ar_ens, axis=0),
-        "aniso_p05": np.percentile(ar_ens, 5, axis=0),
-        "aniso_p95": np.percentile(ar_ens, 95, axis=0),
-        "strike_median": np.median(st_ens, axis=0),
-        "strike_p05": np.percentile(st_ens, 5, axis=0),
-        "strike_p95": np.percentile(st_ens, 95, axis=0),
-    }
-
-
-def compute_posterior_histogram(
-    models: List[LayeredModel],
-    depth_grid: np.ndarray,
-    value_bins: np.ndarray,
-    prop: str = "rho",
-) -> Dict[str, np.ndarray]:
-    """2-D histogram of a layer property vs depth across the posterior."""
-    nd = len(depth_grid)
-    nb = len(value_bins) - 1
-    centres = 0.5 * (value_bins[:-1] + value_bins[1:])
-    hist = np.zeros((nd, nb), dtype=np.float64)
-
-    for m in models:
-        depths = np.concatenate(([0.0], m.interfaces, [depth_grid[-1] * 2]))
-        rhos = m.get_resistivities()
-        nl = len(rhos)
-
-        for j, z in enumerate(depth_grid):
-            layer_idx = min(np.searchsorted(depths[1:], z), nl - 1)
-
-            if prop == "rho":
-                val = np.log10(rhos[layer_idx])
-            elif prop == "rho_min":
-                if m.is_anisotropic:
-                    val = np.log10(rhos[layer_idx] / m.aniso_ratios[layer_idx])
-                else:
-                    val = np.log10(rhos[layer_idx])
-            elif prop == "strike":
-                if m.is_anisotropic:
-                    val = m.strikes[layer_idx]
-                else:
-                    val = 0.0
-            else:
-                raise ValueError(f"Unknown property: {prop!r}")
-
-            b = np.searchsorted(value_bins[1:], val)
-            if 0 <= b < nb:
-                hist[j, b] += 1.0
-
-    mode_idx = np.argmax(hist, axis=1)
-    mode_vals = centres[mode_idx]
-    if prop in ("rho", "rho_min"):
-        mode_vals = 10 ** mode_vals
-
-    return {
-        "hist2d": hist,
-        "depth": depth_grid,
-        "value_bins": value_bins,
-        "value_centres": centres,
-        "mode": mode_vals,
-    }
-
-
-def compute_changepoint_frequency(
-    models: List[LayeredModel],
-    depth_grid: np.ndarray,
-) -> np.ndarray:
-    """Count how often an interface falls near each depth grid point."""
-    freq = np.zeros(len(depth_grid), dtype=np.float64)
-    for m in models:
-        for zi in m.interfaces:
-            idx = np.argmin(np.abs(depth_grid - zi))
-            freq[idx] += 1.0
-    return freq
-
-
-# =============================================================================
-#  I/O helpers
-# =============================================================================
-
-def save_results_npz(results: Dict, path: str | Path) -> None:
-    """Persist sampler results to a compressed ``.npz`` archive."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    n = len(results["models"])
-    ifaces = np.empty(n, dtype=object)
-    rhos = np.empty(n, dtype=object)
-    anisos = np.empty(n, dtype=object)
-    strikes_a = np.empty(n, dtype=object)
-    for i, m in enumerate(results["models"]):
-        ifaces[i] = m.interfaces
-        rhos[i] = m.resistivities
-        anisos[i] = m.aniso_ratios if m.aniso_ratios is not None else np.array([])
-        strikes_a[i] = m.strikes if m.strikes is not None else np.array([])
-
-    sd = {
-        "log_likes": results["log_likes"], "n_layers": results["n_layers"],
-        "gelman_rubin": np.float64(results.get("gelman_rubin", np.nan)),
-        "elapsed_s": np.float64(results.get("elapsed_s", 0.0)),
-        "accept_birth": np.float64(results["acceptance"]["birth"]),
-        "accept_death": np.float64(results["acceptance"]["death"]),
-        "accept_move": np.float64(results["acceptance"]["move"]),
-        "accept_change": np.float64(results["acceptance"]["change"]),
-        "interfaces": ifaces, "resistivities": rhos,
-        "aniso_ratios": anisos, "strikes": strikes_a,
-    }
-    if "chains" in results:
-        for i, cr in enumerate(results["chains"]):
-            sd[f"chain_{i}_log_likes"] = cr["log_likes"]
-            sd[f"chain_{i}_n_layers"] = cr["n_layers"]
-    np.savez_compressed(str(path), **sd)
-    print(f"Results saved to {path}")
-
-
-def load_results_npz(path: str | Path) -> Dict:
-    """Load results previously saved by :func:`save_results_npz`."""
-    path = Path(path)
-    with np.load(str(path), allow_pickle=True) as npz:
-        models = []
-        for i in range(len(npz["interfaces"])):
-            ar = npz["aniso_ratios"][i] if len(npz["aniso_ratios"][i]) > 0 else None
-            st = npz["strikes"][i] if len(npz["strikes"][i]) > 0 else None
-            models.append(LayeredModel(npz["interfaces"][i],
-                                       npz["resistivities"][i], ar, st))
-        result = {
-            "models": models,
-            "log_likes": npz["log_likes"], "n_layers": npz["n_layers"],
-            "acceptance": {k: float(npz[f"accept_{k}"])
-                           for k in ["birth", "death", "move", "change"]},
-            "gelman_rubin": float(npz["gelman_rubin"]),
-            "elapsed_s": float(npz["elapsed_s"]),
-        }
-        chains, i = [], 0
-        while f"chain_{i}_log_likes" in npz:
-            chains.append({"log_likes": npz[f"chain_{i}_log_likes"],
-                           "n_layers": npz[f"chain_{i}_n_layers"], "chain_id": i})
-            i += 1
-        if chains:
-            result["chains"] = chains
-    return result
-
-
-def generate_seed() -> int:
-    """Return a random integer seed."""
-    return int(np.random.default_rng().integers(0, 2**31))
-
-
-# =============================================================================
-#  Driver helpers (moved from mt_transdim1d.py)
-# =============================================================================
-
-def model0_to_layered(m0: dict, use_aniso: bool) -> LayeredModel:
-    """Convert a py4mt model dict to a transdim LayeredModel.
-
-    The dict is expected to have ``h_m``, ``sigma_min``, ``sigma_max``,
-    ``strike_deg`` (same schema as mt_aniso1d_sampler.py MODEL0).
+) -> Dict[str, object]:
+    """Run multiple independent RJMCMC chains in parallel.
 
     Parameters
     ----------
-    m0 : dict
-        Model dict with keys ``h_m``, ``sigma_min``, ``sigma_max``,
-        ``strike_deg``.
-    use_aniso : bool
-        If True, populate ``aniso_ratios`` and ``strikes``.
+    frequencies, observed, sigma : ndarray
+        Primary data arrays for the apparent-resistivity likelihood.
+    prior : Prior
+        Prior object.
+    config : RjMCMCConfig
+        Sampler configuration.
+    n_chains : int, optional
+        Number of independent chains.
+    n_jobs : int, optional
+        Number of parallel jobs passed to ``joblib``.
+    base_seed : int, optional
+        Base seed. Chain ``i`` uses ``base_seed + i``.
+    initial_model : LayeredModel, optional
+        Starting model shared by all chains. If omitted, each chain starts from
+        an independent prior draw.
+    use_aniso : bool, optional
+        Whether anisotropic models are sampled.
+    observed_yx, sigma_yx : ndarray, optional
+        Optional yx data for the ``rhoa`` likelihood.
+    likelihood_mode : str, optional
+        One of ``"rhoa"``, ``"zdet"``, or ``"z_comps"``.
+    observed_Zdet, Zdet_sigma : ndarray, optional
+        Determinant impedance data and uncertainties.
+    observed_Z, observed_Z_err : ndarray, optional
+        Full impedance tensor and uncertainties.
+    z_comps : sequence of str, optional
+        Selected Z components for ``"z_comps"``.
+    use_pt : bool, optional
+        Whether to include phase tensor in the likelihood.
+    observed_PT, observed_PT_err : ndarray, optional
+        Phase-tensor inputs.
+    pt_comps : sequence of str, optional
+        Selected PT components.
 
     Returns
     -------
-    LayeredModel
+    dict
+        Merged result dictionary across chains.
     """
-    h_m = np.asarray(m0["h_m"], dtype=float)
-    sigma_max = np.asarray(m0["sigma_max"], dtype=float)
-    sigma_min = np.asarray(m0["sigma_min"], dtype=float)
+    from joblib import Parallel, delayed
 
-    tiny = np.finfo(float).tiny
-    rho_max = 1.0 / np.maximum(sigma_min, tiny)
+    print(f"Running {n_chains} RJMCMC chains with n_jobs={n_jobs}.")
+    if initial_model is not None:
+        print(
+            f"  Shared initial model: k={initial_model.k} interfaces, "
+            f"{initial_model.n_layers} layers"
+        )
 
-    mask = h_m > 0
-    thicknesses = h_m[mask]
-    interfaces = np.cumsum(thicknesses)
+    tasks = [
+        delayed(run_rjmcmc)(
+            frequencies=frequencies,
+            observed=observed,
+            sigma=sigma,
+            prior=prior,
+            config=config,
+            seed=base_seed + i,
+            initial_model=initial_model,
+            use_aniso=use_aniso,
+            observed_yx=observed_yx,
+            sigma_yx=sigma_yx,
+            likelihood_mode=likelihood_mode,
+            observed_Zdet=observed_Zdet,
+            Zdet_sigma=Zdet_sigma,
+            observed_Z=observed_Z,
+            observed_Z_err=observed_Z_err,
+            z_comps=z_comps,
+            use_pt=use_pt,
+            observed_PT=observed_PT,
+            observed_PT_err=observed_PT_err,
+            pt_comps=pt_comps,
+        )
+        for i in range(n_chains)
+    ]
+    results_list = Parallel(n_jobs=n_jobs)(tasks)
+    return _merge_parallel_results(results_list)
 
-    log_rho = np.log10(rho_max)
 
-    if use_aniso:
-        rho_min = 1.0 / np.maximum(sigma_max, tiny)
-        aniso_ratios = np.maximum(rho_max / rho_min, 1.0)
-        strikes = np.asarray(m0["strike_deg"], dtype=float)
-        return LayeredModel(interfaces, log_rho, aniso_ratios, strikes)
+# =============================================================================
+#  Posterior summaries
+# =============================================================================
 
-    return LayeredModel(interfaces, log_rho)
-
-
-def load_site(
-    path: str | Path,
-    *,
-    noise_level: float = 0.02,
-    sigma_floor: float = 0.0,
-    err_method: str = "analytic",
-    err_nsim: int = 200,
-    do_compute_pt: bool = True,
-) -> dict:
-    """Load a site from an EDI or NPZ file using ``data_proc`` routines.
-
-    Returns a dict with the keys expected by the transdim sampler and
-    QC plots:
-
-        frequencies, rho_a, sigma, station,
-        rho_a_yx, sigma_yx   (if anisotropic data present)
-        Z, Z_err             (if impedance tensor available)
-        Zdet, Zdet_err       (determinant impedance, always when Z present)
-        rho_a_det, phase_det (ρ_a and phase from Z_det)
-        PT, PT_err           (if phase tensor available)
+def compute_posterior_profile(
+    models: Sequence[LayeredModel],
+    depth_grid: np.ndarray,
+    qpairs: Sequence[Tuple[float, float]] = ((2.5, 97.5), (16.0, 84.0)),
+) -> Dict[str, np.ndarray]:
+    """Compute depth-dependent posterior resistivity summaries.
 
     Parameters
     ----------
-    path : str or Path
-    noise_level : float
-        Default data uncertainty in log10(ρ_a) space.
-    sigma_floor : float
-        Minimum uncertainty (added as floor).
-    err_method : str
-        Error method for ``data_proc.compute_rhophas``.
-    err_nsim : int
-        Monte-Carlo samples for bootstrap errors.
-    do_compute_pt : bool
-        Compute phase tensor from Z for QC plots.
+    models : sequence of LayeredModel
+        Posterior model samples.
+    depth_grid : ndarray
+        Target depth grid [m].
+    qpairs : sequence of tuple, optional
+        Quantile pairs to compute.
+
+    Returns
+    -------
+    dict
+        Posterior summary arrays keyed by statistic name.
     """
-    path = Path(path)
-    ext = path.suffix.lower()
+    depth_grid = np.asarray(depth_grid, dtype=float)
+    if len(models) == 0:
+        out = {"depth_m": depth_grid, "median": np.full_like(depth_grid, np.nan)}
+        for lo, hi in qpairs:
+            out[f"q{lo:g}"] = np.full_like(depth_grid, np.nan)
+            out[f"q{hi:g}"] = np.full_like(depth_grid, np.nan)
+        return out
 
-    if ext == ".edi":
-        dd = data_proc.load_edi(str(path))
-    elif ext == ".npz":
-        dd = data_proc.load_npz(str(path))
-    else:
-        raise ValueError(f"Unsupported input format: {ext!r} ({path})")
+    profs = np.empty((len(models), len(depth_grid)), dtype=float)
+    for im, mod in enumerate(models):
+        bounds = np.r_[0.0, mod.depths, np.inf]
+        rho = mod.get_resistivities()
+        for iz, z in enumerate(depth_grid):
+            ilay = np.searchsorted(bounds, z, side="right") - 1
+            ilay = min(max(ilay, 0), len(rho) - 1)
+            profs[im, iz] = rho[ilay]
 
-    # ---- Frequencies ------------------------------------------------------
-    if "freq" in dd:
-        frequencies = np.asarray(dd["freq"], dtype=float).ravel()
-    elif "frequencies" in dd:
-        frequencies = np.asarray(dd["frequencies"], dtype=float).ravel()
-    elif "period" in dd:
-        frequencies = 1.0 / np.asarray(dd["period"], dtype=float).ravel()
-    else:
-        raise KeyError(f"No 'freq', 'frequencies', or 'period' in {path}")
+    out = {"depth_m": depth_grid, "median": np.nanmedian(profs, axis=0)}
+    for lo, hi in qpairs:
+        out[f"q{lo:g}"] = np.nanpercentile(profs, lo, axis=0)
+        out[f"q{hi:g}"] = np.nanpercentile(profs, hi, axis=0)
+    return out
 
-    # ---- Station name -----------------------------------------------------
-    station = dd.get("station", path.stem)
-    if isinstance(station, np.ndarray):
-        station = str(station.item()) if station.ndim == 0 else str(station)
 
-    # ---- Impedance tensor Z -----------------------------------------------
-    Z = dd.get("Z")
-    Z_err = dd.get("Z_err")
-    err_kind = str(dd.get("err_kind", "var")).strip().lower()
-    if err_kind.startswith("std"):
-        err_kind = "std"
-    else:
-        err_kind = "var"
+def compute_posterior_aniso_profile(
+    models: Sequence[LayeredModel],
+    depth_grid: np.ndarray,
+    qpairs: Sequence[Tuple[float, float]] = ((2.5, 97.5), (16.0, 84.0)),
+) -> Dict[str, np.ndarray]:
+    """Compute depth-dependent posterior anisotropy summaries.
 
-    # ---- Compute apparent resistivity / phase from Z if not present -------
-    rho = dd.get("rho")
-    rho_err = dd.get("rho_err")
+    Parameters
+    ----------
+    models : sequence of LayeredModel
+        Posterior anisotropic model samples.
+    depth_grid : ndarray
+        Target depth grid [m].
+    qpairs : sequence of tuple, optional
+        Quantile pairs to compute.
 
-    if rho is None and Z is not None:
-        Z_arr = np.asarray(Z, dtype=complex)
-        _Ze = np.asarray(Z_err) if Z_err is not None else None
-        rho, phi, rho_err, phi_err = data_proc.compute_rhophas(
-            freq=frequencies, Z=Z_arr, Z_err=_Ze,
-            err_kind=err_kind,
-            err_method=err_method,
-            nsim=err_nsim,
-        )
+    Returns
+    -------
+    dict
+        Posterior anisotropy-ratio and strike summaries.
+    """
+    depth_grid = np.asarray(depth_grid, dtype=float)
+    if len(models) == 0:
+        out = {
+            "depth_m": depth_grid,
+            "median_aniso": np.full_like(depth_grid, np.nan),
+            "median_strike": np.full_like(depth_grid, np.nan),
+        }
+        for lo, hi in qpairs:
+            out[f"q{lo:g}_aniso"] = np.full_like(depth_grid, np.nan)
+            out[f"q{hi:g}_aniso"] = np.full_like(depth_grid, np.nan)
+            out[f"q{lo:g}_strike"] = np.full_like(depth_grid, np.nan)
+            out[f"q{hi:g}_strike"] = np.full_like(depth_grid, np.nan)
+        return out
 
-    # ---- Determinant impedance (always from Z when available) -------------
-    Zdet = None
-    Zdet_err = None
-    rho_a_det = None
-    phase_det = None
-    if Z is not None:
-        Z_arr = np.asarray(Z, dtype=np.complex128)
-        Zdet = compute_Zdet(Z_arr)
-        rho_a_det, phase_det = compute_rhophas_from_Zdet(Zdet, frequencies)
-        if Z_err is not None:
-            Zdet_err = compute_Zdet_err(Z_arr, np.asarray(Z_err, dtype=float),
-                                        nsim=err_nsim)
+    aa = np.empty((len(models), len(depth_grid)), dtype=float)
+    ss = np.empty((len(models), len(depth_grid)), dtype=float)
+    for im, mod in enumerate(models):
+        bounds = np.r_[0.0, mod.depths, np.inf]
+        rat = mod.aniso_ratios
+        stk = mod.strikes
+        for iz, z in enumerate(depth_grid):
+            ilay = np.searchsorted(bounds, z, side="right") - 1
+            ilay = min(max(ilay, 0), len(rat) - 1)
+            aa[im, iz] = rat[ilay]
+            ss[im, iz] = stk[ilay]
 
-    # ---- Extract xy (and optionally yx) apparent resistivity ---------------
-    rho_a_yx = None
-    if rho is not None:
-        rho = np.asarray(rho)
-        if rho.ndim == 3 and rho.shape[1:] == (2, 2):
-            rho_a_xy = rho[:, 0, 1]
-            rho_a_yx = rho[:, 1, 0]
-        elif rho.ndim == 1:
-            rho_a_xy = rho
-        else:
-            rho_a_xy = rho.ravel()
-    elif "rho_a" in dd:
-        rho_a_xy = np.asarray(dd["rho_a"], dtype=float).ravel()
-        rho_a_yx = dd.get("rho_a_yx")
-        if rho_a_yx is not None:
-            rho_a_yx = np.asarray(rho_a_yx, dtype=float).ravel()
-    elif "rho_a_xy" in dd:
-        rho_a_xy = np.asarray(dd["rho_a_xy"], dtype=float).ravel()
-        rho_a_yx = dd.get("rho_a_yx")
-        if rho_a_yx is not None:
-            rho_a_yx = np.asarray(rho_a_yx, dtype=float).ravel()
-    elif rho_a_det is not None:
-        rho_a_xy = rho_a_det
-    else:
-        raise KeyError(
-            f"Cannot determine apparent resistivity from {path}.  "
-            "Need 'Z', 'rho', 'rho_a', or 'rho_a_xy'."
-        )
-
-    # ---- Uncertainties in log10(rho_a) space ------------------------------
-    sigma_yx = None
-    if rho_err is not None:
-        rho_err = np.asarray(rho_err)
-        if rho_err.ndim == 3 and rho_err.shape[1:] == (2, 2):
-            rho_err_xy = rho_err[:, 0, 1]
-            rho_err_yx = rho_err[:, 1, 0]
-        elif rho_err.ndim == 1:
-            rho_err_xy = rho_err
-            rho_err_yx = None
-        else:
-            rho_err_xy = rho_err.ravel()
-            rho_err_yx = None
-
-        with np.errstate(divide="ignore", invalid="ignore"):
-            sigma_xy = np.where(
-                rho_a_xy > 0,
-                rho_err_xy / (rho_a_xy * np.log(10)),
-                noise_level,
-            )
-        sigma_xy = np.maximum(sigma_xy, sigma_floor)
-        sigma_xy = np.where(np.isfinite(sigma_xy), sigma_xy, noise_level)
-
-        if rho_err_yx is not None and rho_a_yx is not None:
-            with np.errstate(divide="ignore", invalid="ignore"):
-                sigma_yx = np.where(
-                    rho_a_yx > 0,
-                    rho_err_yx / (rho_a_yx * np.log(10)),
-                    noise_level,
-                )
-            sigma_yx = np.maximum(sigma_yx, sigma_floor)
-            sigma_yx = np.where(np.isfinite(sigma_yx), sigma_yx, noise_level)
-    elif "sigma" in dd:
-        sigma_xy = np.maximum(
-            np.asarray(dd["sigma"], dtype=float).ravel(), sigma_floor)
-        sigma_yx = dd.get("sigma_yx")
-        if sigma_yx is not None:
-            sigma_yx = np.maximum(
-                np.asarray(sigma_yx, dtype=float).ravel(), sigma_floor)
-    else:
-        sigma_xy = np.full(len(frequencies), noise_level)
-
-    # ---- Phase tensor (for QC plots) --------------------------------------
-    PT = dd.get("P", dd.get("PT"))
-    PT_err = dd.get("P_err", dd.get("PT_err"))
-    if PT is None and do_compute_pt and Z is not None:
-        Z_arr = np.asarray(Z, dtype=complex)
-        _Ze = np.asarray(Z_err) if Z_err is not None else None
-        PT, PT_err = data_proc.compute_pt(Z_arr, _Ze, err_kind=err_kind)
-
-    # ---- Build output dict ------------------------------------------------
-    result: Dict = {
-        "station": station,
-        "frequencies": frequencies,
-        "rho_a": rho_a_xy,
-        "sigma": sigma_xy,
+    out = {
+        "depth_m": depth_grid,
+        "median_aniso": np.nanmedian(aa, axis=0),
+        "median_strike": np.nanmedian(ss, axis=0),
     }
-
-    if rho_a_yx is not None:
-        result["rho_a_yx"] = rho_a_yx
-    if sigma_yx is not None:
-        result["sigma_yx"] = sigma_yx
-    if Z is not None:
-        result["Z"] = np.asarray(Z, dtype=complex)
-    if Z_err is not None:
-        result["Z_err"] = np.asarray(Z_err, dtype=float)
-    if Zdet is not None:
-        result["Zdet"] = Zdet
-    if Zdet_err is not None:
-        result["Zdet_err"] = Zdet_err
-    if rho_a_det is not None:
-        result["rho_a_det"] = rho_a_det
-    if phase_det is not None:
-        result["phase_det"] = phase_det
-    if PT is not None:
-        result["PT"] = np.asarray(PT, dtype=float)
-    if PT_err is not None:
-        result["PT_err"] = np.asarray(PT_err, dtype=float)
-
-    return result
+    for lo, hi in qpairs:
+        out[f"q{lo:g}_aniso"] = np.nanpercentile(aa, lo, axis=0)
+        out[f"q{hi:g}_aniso"] = np.nanpercentile(aa, hi, axis=0)
+        out[f"q{lo:g}_strike"] = np.nanpercentile(ss, lo, axis=0)
+        out[f"q{hi:g}_strike"] = np.nanpercentile(ss, hi, axis=0)
+    return out
 
 
 def build_rjmcmc_summary(
     station: str,
-    results: dict,
-    depth_max: float,
-    qpairs: tuple,
-    use_aniso: bool,
-) -> dict:
-    """Build a summary dict with posterior statistics and quantiles.
+    results: Dict[str, object],
+    depth_grid_max: float,
+    qpairs: Sequence[Tuple[float, float]],
+    use_aniso: bool = False,
+) -> Dict[str, object]:
+    """Build a compact posterior summary dictionary for a station.
 
     Parameters
     ----------
     station : str
-    results : dict — output of ``run_rjmcmc`` or ``run_parallel_rjmcmc``
-    depth_max : float — maximum depth for the profile grid [m]
-    qpairs : tuple of (float, float) — quantile pairs (percentiles)
-    use_aniso : bool
+        Station identifier.
+    results : dict
+        RJMCMC results dictionary.
+    depth_grid_max : float
+        Maximum depth of the summary grid [m].
+    qpairs : sequence of tuple
+        Quantile pairs to compute.
+    use_aniso : bool, optional
+        Whether to compute anisotropy summaries.
 
     Returns
     -------
-    dict — serializable summary.
+    dict
+        Summary dictionary suitable for NPZ export.
     """
-    depth_grid = np.linspace(1, depth_max, 500)
-    prof = compute_posterior_profile(results["models"], depth_grid)
-
-    summary: Dict = {
+    depth = np.linspace(0.0, float(depth_grid_max), 200)
+    out = {
         "station": station,
-        "depth_grid": depth_grid,
-        "rho_mean": prof["mean"],
-        "rho_median": prof["median"],
-        "rho_p05": prof["p05"],
-        "rho_p95": prof["p95"],
-        "n_layers_trace": results["n_layers"],
-        "n_layers_median": float(np.median(results["n_layers"])),
-        "n_layers_mode": int(np.bincount(results["n_layers"]).argmax()),
-        "gelman_rubin": results.get("gelman_rubin", np.nan),
-        "elapsed_s": results.get("elapsed_s", 0.0),
-        "acceptance": results["acceptance"],
+        "gelman_rubin": float(results.get("gelman_rubin", np.nan)),
+        "n_layers": np.asarray(results.get("n_layers", []), dtype=int),
     }
-
-    log_ens = np.log10(prof["ensemble"])
-    for qlo, qhi in qpairs:
-        summary[f"rho_p{round(qlo):02d}"] = 10 ** np.percentile(log_ens, qlo, axis=0)
-        summary[f"rho_p{round(qhi):02d}"] = 10 ** np.percentile(log_ens, qhi, axis=0)
-
+    out.update(compute_posterior_profile(results.get("models", []), depth, qpairs=qpairs))
     if use_aniso:
-        aprof = compute_posterior_aniso_profile(results["models"], depth_grid)
-        summary.update(aprof)
+        out.update(compute_posterior_aniso_profile(results.get("models", []), depth, qpairs=qpairs))
+    return out
 
-    return summary
+
+# =============================================================================
+#  Site loading and I/O helpers
+# =============================================================================
+
+def has_aniso() -> bool:
+    """Return whether the optional anisotropic forward code is available.
+
+    Returns
+    -------
+    bool
+        ``True`` if ``aniso.py`` was successfully imported.
+    """
+    return bool(_HAS_ANISO)
+
+
+def generate_seed() -> int:
+    """Generate a random positive integer seed.
+
+    Returns
+    -------
+    int
+        Seed suitable for initializing a pseudo-random generator.
+    """
+    return int(np.random.SeedSequence().generate_state(1)[0])
+
+
+def _load_npz_as_dict(path: str | Path) -> Dict:
+    """Load an NPZ file into a plain Python dictionary.
+
+    Parameters
+    ----------
+    path : str or Path
+        Path to the NPZ file.
+
+    Returns
+    -------
+    dict
+        Dictionary containing the NPZ arrays.
+    """
+    with np.load(str(path), allow_pickle=True) as npz:
+        return {k: npz[k] for k in npz.files}
+
+
+def load_site(
+    path: str | Path,
+    noise_level: float = 0.02,
+    sigma_floor: float = 0.0,
+    err_method: str = "bootstrap",
+    err_nsim: int = 200,
+    do_compute_pt: bool = True,
+) -> Dict[str, object]:
+    """Load one MT site from EDI or NPZ and standardize required keys.
+
+    Parameters
+    ----------
+    path : str or Path
+        Input file path.
+    noise_level : float, optional
+        Relative noise level used when explicit errors are unavailable.
+    sigma_floor : float, optional
+        Minimum uncertainty floor applied to log10 apparent resistivity.
+    err_method : str, optional
+        Placeholder kept for compatibility with the driver.
+    err_nsim : int, optional
+        Number of Monte-Carlo simulations for derived uncertainties.
+    do_compute_pt : bool, optional
+        Whether to compute phase tensor if possible.
+
+    Returns
+    -------
+    dict
+        Standardized site dictionary.
+    """
+    path = Path(path)
+    if path.suffix.lower() == ".edi":
+        site = data_proc.load_edi(str(path))
+    elif path.suffix.lower() == ".npz":
+        site = _load_npz_as_dict(path)
+        if "data_dict" in site and isinstance(site["data_dict"], np.ndarray):
+            try:
+                site = site["data_dict"].item()
+            except Exception:
+                pass
+    else:
+        raise ValueError(f"Unsupported input format: {path}")
+
+    site = dict(site)
+    site.setdefault("station", path.stem)
+
+    freqs = np.asarray(site.get("freq", site.get("frequencies")), dtype=float)
+    site["frequencies"] = freqs
+
+    if "Z" in site:
+        site["Z"] = np.asarray(site["Z"])
+        if "Z_err" in site:
+            site["Z_err"] = np.asarray(site["Z_err"], dtype=float)
+        elif "Zvar" in site:
+            site["Z_err"] = np.sqrt(np.asarray(site["Zvar"], dtype=float))
+        else:
+            site["Z_err"] = noise_level * np.abs(site["Z"]).astype(float)
+
+        if "Zdet" not in site:
+            site["Zdet"] = compute_Zdet(site["Z"])
+        if "Zdet_err" not in site:
+            site["Zdet_err"] = compute_Zdet_err(site["Z"], site["Z_err"], nsim=err_nsim)
+
+        rho_det, pha_det = compute_rhophas_from_Zdet(site["Zdet"], freqs)
+        site["rho_a_det"] = rho_det
+        site["phase_det"] = pha_det
+
+    if "rho_a" not in site:
+        if "rho_a_det" in site:
+            site["rho_a"] = np.asarray(site["rho_a_det"], dtype=float)
+        elif "Z" in site:
+            mu0 = 4.0 * np.pi * 1e-7
+            omega = 2.0 * np.pi * freqs
+            site["rho_a"] = np.abs(site["Z"][:, 0, 1]) ** 2 / (omega * mu0)
+
+    if "sigma" not in site:
+        if "Zdet_err" in site and "Zdet" in site:
+            zabs = np.maximum(np.abs(site["Zdet"]), 1e-30)
+            sig_log = 2.0 * np.asarray(site["Zdet_err"], dtype=float) / (zabs * np.log(10.0))
+            site["sigma"] = np.maximum(sig_log, sigma_floor)
+        else:
+            site["sigma"] = np.full_like(site["rho_a"], max(noise_level, sigma_floor), dtype=float)
+
+    if "rho_a_yx" not in site and "Z" in site:
+        mu0 = 4.0 * np.pi * 1e-7
+        omega = 2.0 * np.pi * freqs
+        site["rho_a_yx"] = np.abs(site["Z"][:, 1, 0]) ** 2 / (omega * mu0)
+        site["sigma_yx"] = np.asarray(site.get("sigma", np.full_like(site["rho_a_yx"], noise_level)), dtype=float)
+
+    if do_compute_pt and "PT" not in site and "Z" in site:
+        site["PT"] = _phase_tensor_from_Z(site["Z"])
+    if do_compute_pt and "PT" in site and "PT_err" not in site:
+        site["PT_err"] = 0.05 * np.maximum(np.abs(site["PT"]), 1e-6)
+
+    return site
+
+
+def save_results_npz(results: Dict[str, object], path: str | Path) -> None:
+    """Save RJMCMC results to a compressed NPZ file.
+
+    Parameters
+    ----------
+    results : dict
+        RJMCMC results dictionary.
+    path : str or Path
+        Output NPZ file path.
+    """
+    payload = dict(results)
+    models = payload.pop("models", [])
+    payload["models_obj"] = np.array(models, dtype=object)
+    payload["chains_obj"] = np.array(payload.get("chains", []), dtype=object)
+    np.savez_compressed(str(path), **payload)
+
+
+def load_results_npz(path: str | Path) -> Dict[str, object]:
+    """Load RJMCMC results from a compressed NPZ file.
+
+    Parameters
+    ----------
+    path : str or Path
+        Input NPZ file path.
+
+    Returns
+    -------
+    dict
+        Reconstructed results dictionary.
+    """
+    with np.load(str(path), allow_pickle=True) as npz:
+        out = {k: npz[k] for k in npz.files}
+    if "models_obj" in out:
+        out["models"] = list(out.pop("models_obj"))
+    if "chains_obj" in out:
+        out["chains"] = list(out.pop("chains_obj"))
+    return out
