@@ -42,6 +42,7 @@ Common keys:
 | `P_err` | `(n,2,2)` | Phase tensor error |
 | `rot` | `(n,)` | Rotation angle [deg], if present |
 | `err_kind` | `str` | `"var"` or `"std"` |
+| `freq_order` | `str` | `"inc"`, `"dec"`, or `"keep"` — order used when loading |
 
 Metadata (if present): `station`, `lat_deg`, `lon_deg`, `elev_m`, and
 convenience aliases `lat`, `lon`, `elev`.
@@ -52,15 +53,44 @@ All downstream modules treat this dict as the **site container**.
 
 ## Reading / writing EDI
 
-### `load_edi(path, prefer_spectra=True, ...)`
+### `load_edi(path, prefer_spectra=True, freq_order='inc', ...)`
 
 Supports Phoenix/SPECTRA EDIs (reconstructed Z/T from `>SPECTRA` blocks) and
-classical table EDIs (`>ZXXR`, `>ZXYI`, …). Frequencies are returned in
-ascending order.
+classical table EDIs (`>ZXXR`, `>ZXYI`, …).
+
+The `freq_order` parameter controls the order of frequencies in the returned
+dictionary:
+
+| Value | Effect |
+|-------|--------|
+| `'inc'` | Ascending frequency — *default*, equivalent to the previous behaviour |
+| `'dec'` | Descending frequency (i.e. ascending period) |
+| `'keep'` | Preserve the order as found in the EDI file |
+
+```python
+# Default — ascending frequency
+site = data_proc.load_edi("SITE.edi")
+
+# Descending frequency (ascending period)
+site = data_proc.load_edi("SITE.edi", freq_order="dec")
+
+# Preserve EDI file order without any sorting
+site = data_proc.load_edi("SITE.edi", freq_order="keep")
+```
 
 ### `save_edi(edi, path, ...)`
 
-Writes a classical table-style EDI from an in-memory dict.
+Writes a classical table-style EDI from an in-memory dict.  The `>FREQ` line
+includes `NFREQ=`, `ORDER=`, and a count comment matching the format of the
+input EDI, e.g.:
+
+```
+>FREQ NFREQ=23 ORDER=DEC //23
+```
+
+The `ORDER` tag is `freq_order` uppercased directly (`"inc"` → `INC`,
+`"dec"` → `DEC`, `"keep"` → `KEEP`).  When `freq_order`
+is absent, the order is inferred automatically from the frequency array.
 
 ## Apparent resistivity + phase
 
@@ -204,6 +234,43 @@ Z_re = ds["Z_re"].values    # (n, 2, 2)
 Z_im = ds["Z_im"].values
 freq = ds["freq"].values     # (n,)
 ```
+
+---
+
+## D⁺ / rho-plus test
+
+### `compute_rhoplus(freq, Z_scalar, Z_scalar_err=None, *, n_lambda_per_freq=4, mu0=_MU0)`
+
+Computes the D⁺ upper bound ρ⁺ on apparent resistivity (Parker 1980;
+Parker & Whaler 1981).  Also known as **dplus** in Cordell's mtcode.
+
+For a 1-D earth the measured ρ_a must satisfy ρ_a(ω) ≤ ρ⁺(ω) at every
+frequency.  Any single violation proves the data cannot be explained by any
+1-D model.
+
+The D⁺ model has the form c(ω) = Σ Δaₖ/(λₖ + iω), Δaₖ ≥ 0, where
+c = Z/(iωμ₀) is the Schmucker c-response.  For a fixed log-spaced λ grid the
+Δaₖ are found by non-negative least-squares (NNLS); ρ⁺ = μ₀ω|c⁺|² follows
+directly.
+
+```python
+# Test Zxy for 1-D consistency
+rho_plus, rho_a, ok = data_proc.compute_rhoplus(
+    site['freq'], site['Z'][:, 0, 1],
+    Z_scalar_err=site['Z_err'][:, 0, 1] if site['Z_err'] is not None else None,
+)
+print(f"D+ violations: {(~ok).sum()} of {len(ok)}")
+
+# Also test Zyx, Z_det, etc.
+z_det, _ = data_proc.compute_zdet(site['Z'])
+rho_plus_det, rho_a_det, ok_det = data_proc.compute_rhoplus(site['freq'], z_det)
+```
+
+Returns `(rho_plus, rho_a, pass_test)` where `pass_test` is a boolean array
+(`True` = passes, `False` = violation).
+
+**References:** Parker (1980) *JGR* 85; Parker & Whaler (1981) *JGR* 86;
+Parker & Booker (1996) *PEPI* 98; Cordell et al. (2022) mtcode.
 
 ---
 
