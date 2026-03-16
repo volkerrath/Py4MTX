@@ -30,4 +30,4 @@ rlabel = [str(np.log10(r)) for r in rho]
 plt.legend(rlabel, title='log10(rho) in $\Omega$m' )
 plt.xlabel('period in sec')
 plt.ylabel('induction scale/skin depth in km')
-plt.savefig('skindepth_logrho.png')
+plt.savefig('skindepth_logrho.pdf')

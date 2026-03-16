@@ -49,7 +49,8 @@ print(titstrng + "\n\n")
 # =============================================================================
 #  Configuration
 # =============================================================================
-WORK_DIR = PY4MTX_ROOT + "py4mt/data/edi/mcmc/"
+# WORK_DIR = PY4MTX_ROOT + "py4mt/data/edi/mcmc/"
+WORK_DIR = '/home/vrath/MT_Data/waldim/edi_synt/proc/'
 if not os.path.isdir(WORK_DIR):
     print(" File: %s does not exist, but will be created" % WORK_DIR)
     os.mkdir(WORK_DIR)
@@ -63,7 +64,7 @@ EDI_DIR = WORK_DIR # + "/orig/"
 edi_files = get_edi_list(EDI_DIR, fullpath=True)
 ns = np.size(edi_files)
 
-OUT_FILES = "edi, npz, hdf, mat"
+OUT_FILES = "edi, npz"
 
 STAT_FILE = True
 
@@ -72,8 +73,10 @@ if PLOT:
     PLTARGS = {"show_errors": True}
     PLOT_FORMAT = [".png", ".pdf"]
 
-NAME_STR = "_proc"
-COLL_NAME = "Ann_MCMC"
+NAME_STR = "_synth_proc"
+COLL_NAME = "Ann_SYNTH"
+
+DROP_INVALID = True
 
 SET_ERRORS = False
 ERRORS = {
@@ -99,7 +102,8 @@ if ESTIMATE_ERRORS:
 ROTATE = False
 if ROTATE:
     ANGLE = 0.0
-    DEC_DEG = True
+
+DEC_DEG = True
 
 # =============================================================================
 #  Processing loop
@@ -108,7 +112,7 @@ all_data = []
 for edi in edi_files:
     print("\n\nFound edi file: ", edi)
 
-    data_dict = load_edi(edi, drop_invalid_periods=True)
+    data_dict = load_edi(edi, drop_invalid_periods=DROP_INVALID)
 
     station = data_dict["station"]
     Z = data_dict["Z"]

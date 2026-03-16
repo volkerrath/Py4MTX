@@ -87,7 +87,9 @@ A typical dictionary returned by :func:`load_edi` looks like::
 Notes
 -----
 
-- Frequencies are returned in **ascending** order.
+- Frequencies are returned in **ascending** order by default (``freq_order="inc"``).
+  Pass ``freq_order="dec"`` for descending order or ``freq_order="keep"`` to
+  preserve the original EDI file order.
 - For table-style EDIs, variance blocks such as ``ZXX.VAR`` and ``TXVAR.EXP``
   are read. By default these are interpreted as **variances** (``err_kind="var"``).
 
@@ -586,13 +588,48 @@ def load_edi(
     err_kind: str = "var",
     drop_invalid_periods: bool = True,
     invalid_sentinel: float = 1.0e30,
+    freq_order: str = "inc",
 ) -> Dict[str, Any]:
     """Load an EDI file into a dictionary.
 
-    See the module docstring for the returned dictionary layout.
+    Parameters
+    ----------
+    path : str or pathlib.Path
+        Path to the EDI file.
+    prefer_spectra : bool, optional
+        If ``True`` (default) and Phoenix ``>SPECTRA`` blocks are present,
+        reconstruct Z/T from the spectra.  Set to ``False`` to force
+        classical table parsing.
+    ref : str, optional
+        Reference channel used when recovering Z/T from Phoenix spectra.
+        Default is ``"RH"``.
+    err_kind : {"var", "std"}, optional
+        Interpretation of variance blocks — ``"var"`` (default) keeps them as
+        variances; ``"std"`` converts to standard deviations.
+    drop_invalid_periods : bool, optional
+        If ``True`` (default), rows whose Z or T values exceed
+        ``invalid_sentinel`` or are non-finite are removed.
+    invalid_sentinel : float, optional
+        Absolute threshold above which a value is considered invalid.
+        Default is ``1e30``.
+    freq_order : {"inc", "dec", "keep"}, optional
+        Controls the order of frequencies in the returned dictionary:
+
+        - ``"inc"``  — ascending frequency (default, equivalent to the
+          previous hard-wired behaviour).
+        - ``"dec"``  — descending frequency (i.e. ascending period).
+        - ``"keep"`` — preserve the order as found in the EDI file.
+
+    Returns
+    -------
+    dict
+        Site dictionary; see the module docstring for the full layout.
     """
     if err_kind not in {"var", "std"}:
         raise ValueError(f"Unknown err_kind {err_kind!r}; expected 'var' or 'std'.")
+    freq_order = freq_order.lower()
+    if freq_order not in {"inc", "dec", "keep"}:
+        raise ValueError(f"Unknown freq_order {freq_order!r}; expected 'inc', 'dec', or 'keep'.")
 
     text = read_edi_text(path)
     lines = _split_lines(text)
@@ -659,8 +696,13 @@ def load_edi(
 
         source_kind = "tables"
 
-    # Sort frequencies ascending
-    order = np.argsort(freq)
+    # Sort / reorder frequencies according to freq_order
+    if freq_order == "inc":
+        order = np.argsort(freq)
+    elif freq_order == "dec":
+        order = np.argsort(freq)[::-1]
+    else:  # "keep" — preserve EDI file order
+        order = np.arange(freq.size, dtype=int)
     freq = freq[order]
     Z = Z[order]
     if T is not None:
@@ -733,6 +775,7 @@ def load_edi(
         "P_err": None,
         "rot": rot,
         "err_kind": err_kind,
+        "freq_order": freq_order,
         "header_raw": header_lines,
         "source_kind": source_kind,
         # metadata
@@ -1480,6 +1523,169 @@ def compute_zssq(
     return zssq, {"analytic": zssq_err_analytic, "bootstrap": zssq_err_boot}
 
 
+def compute_rhoplus(
+    freq: np.ndarray,
+    Z_scalar: np.ndarray,
+    Z_scalar_err: Optional[np.ndarray] = None,
+    *,
+    n_lambda_per_freq: int = 4,
+    mu0: float = _MU0,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Compute the D⁺ (rho-plus) upper bound on apparent resistivity.
+
+    The D⁺ test (Parker 1980; Parker & Whaler 1981) checks whether a scalar
+    impedance dataset is consistent with *any* 1-D conductivity profile.  For
+    a valid 1-D response the measured apparent resistivity ρ_a must satisfy
+
+        ρ_a(ω) ≤ ρ⁺(ω)   for all ω,
+
+    where ρ⁺ is the apparent resistivity of the optimum D⁺ model — the
+    physically admissible response that best fits the observed data.
+
+    The D⁺ model has the form
+
+        c(ω) = Σ_k  Δa_k / (λ_k + iω),   Δa_k ≥ 0, λ_k > 0,
+
+    where c = Z / (iωμ₀) is the Schmucker c-response.  Given a fixed grid of
+    λ values, the coefficients Δa_k are found by non-negative least squares
+    (NNLS).  The resulting ρ⁺(ω) = μ₀ω |c⁺(ω)|² is then an upper bound: any
+    single ρ_a(ω_j) > ρ⁺(ω_j) signals an inconsistency with a 1-D model.
+
+    Also known as **dplus** in Cordell's mtcode (Cordell et al., 2022).
+
+    Parameters
+    ----------
+    freq : array_like, shape (n,)
+        Frequencies in Hz.  Must be positive and in any order; they are
+        sorted internally.
+    Z_scalar : array_like, shape (n,)
+        Complex scalar impedance at each frequency [V/m per A/m = Ω].
+        Typically one of: Zxy, Zyx, Z_det, or Z_ssq.
+    Z_scalar_err : array_like, shape (n,) or None, optional
+        Standard deviation (or square-root of variance) of each complex
+        impedance value.  When provided, each row of the NNLS system is
+        divided by the corresponding σ so that noisier data contributes less.
+        Pass ``None`` (default) for unweighted fitting.
+    n_lambda_per_freq : int, optional
+        Number of λ grid points per data frequency.  The λ grid spans
+        [ω_min / 100, ω_max × 100] on a log scale with
+        ``n_lambda_per_freq * n`` points total.  Default is 4.
+    mu0 : float, optional
+        Magnetic permeability.  Default is ``_MU0`` (vacuum).
+
+    Returns
+    -------
+    rho_plus : numpy.ndarray, shape (n,)
+        D⁺ upper bound on apparent resistivity [Ω·m] at each frequency.
+    rho_a : numpy.ndarray, shape (n,)
+        Observed apparent resistivity ρ_a = |Z|² / (μ₀ω) [Ω·m].
+    pass_test : numpy.ndarray of bool, shape (n,)
+        ``True`` where ρ_a ≤ ρ⁺ (consistent with 1-D); ``False`` where
+        ρ_a > ρ⁺ (violation).
+
+    Notes
+    -----
+    The λ grid covers many decades beyond the data bandwidth.  The NNLS
+    solve is typically very fast (O(n²) for n ≲ 100 frequencies).
+
+    The test is a *necessary* condition: a pass does not prove 1-D
+    consistency; a failure proves that no 1-D model can explain the data.
+
+    For tensor data, apply this function to each desired component
+    independently, e.g. Zxy, Zyx, Z_det, or Z_ssq.
+
+    References
+    ----------
+    Parker, R. L. (1980). The inverse problem of electromagnetic induction:
+    existence and construction of solutions based on incomplete data.
+    *J. Geophys. Res.*, 85, 4421–4428.
+
+    Parker, R. L., & Whaler, K. A. (1981). Numerical methods for establishing
+    solutions to the inverse problem of electromagnetic induction.
+    *J. Geophys. Res.*, 86, 9574–9584.
+
+    Parker, R. L., & Booker, J. R. (1996). Optimal one-dimensional inversion
+    and bounding of magnetotelluric apparent resistivity and phase
+    measurements. *Phys. Earth Planet. Inter.*, 98, 269–282.
+
+    Cordell, D., Lee, B., & Unsworth, M. J. (2022). mtcode: A repository of
+    MATLAB scripts for magnetotelluric data analysis, data editing, model
+    building, and model viewing. doi:10.5281/zenodo.6784201
+    https://github.com/darcycordell/mtcode
+
+    Examples
+    --------
+    >>> rho_plus, rho_a, ok = compute_rhoplus(site['freq'], site['Z'][:, 0, 1])
+    >>> print('D+ violations:', (~ok).sum(), 'of', len(ok))
+    """
+    from scipy.optimize import nnls as _nnls
+
+    freq = np.asarray(freq, dtype=float).ravel()
+    Z_scalar = np.asarray(Z_scalar, dtype=np.complex128).ravel()
+    if Z_scalar.shape != freq.shape:
+        raise ValueError("freq and Z_scalar must have the same length.")
+
+    # Sort by frequency
+    order = np.argsort(freq)
+    freq = freq[order]
+    Z_scalar = Z_scalar[order]
+
+    omega = 2.0 * np.pi * freq
+    n = freq.size
+
+    # c-response: c = Z / (i * omega * mu0)
+    c = Z_scalar / (1j * omega * mu0)
+
+    # Lambda grid
+    n_lam = n_lambda_per_freq * n
+    lam = np.logspace(
+        np.log10(omega.min() / 100.0),
+        np.log10(omega.max() * 100.0),
+        n_lam,
+    )
+
+    # Build real-valued system matrix A (2n x n_lam)
+    #   Re[1/(lam+iw)] =  lam / (lam^2 + w^2)
+    #   Im[1/(lam+iw)] = -w   / (lam^2 + w^2)
+    lam2 = lam[np.newaxis, :] ** 2          # (1, n_lam)
+    w2 = (omega ** 2)[:, np.newaxis]        # (n, 1)
+    denom = lam2 + w2                       # (n, n_lam)
+
+    A_re = lam[np.newaxis, :] / denom       # (n, n_lam)
+    A_im = -omega[:, np.newaxis] / denom    # (n, n_lam)
+    A = np.vstack([A_re, A_im])             # (2n, n_lam)
+
+    b = np.concatenate([c.real, c.imag])    # (2n,)
+
+    # Optional error weighting
+    if Z_scalar_err is not None:
+        Z_scalar_err = np.asarray(Z_scalar_err, dtype=float).ravel()[order]
+        # sigma of c = sigma_Z / (omega * mu0)
+        sigma_c = Z_scalar_err / (omega * mu0)
+        sigma_c = np.where(sigma_c > 0, sigma_c, sigma_c[sigma_c > 0].min())
+        weights = np.concatenate([1.0 / sigma_c, 1.0 / sigma_c])
+        A = A * weights[:, np.newaxis]
+        b = b * weights
+
+    # Non-negative least squares: da_k >= 0
+    da, _ = _nnls(A, b)
+
+    # Reconstruct c+ from the D+ model (using the *unweighted* A columns)
+    if Z_scalar_err is not None:
+        # Rebuild unweighted matrix for reconstruction
+        A_re_uw = lam[np.newaxis, :] / (lam2 + w2)
+        A_im_uw = -omega[:, np.newaxis] / (lam2 + w2)
+        c_plus = A_re_uw @ da + 1j * (A_im_uw @ da)
+    else:
+        c_plus = A_re @ da + 1j * (A_im @ da)
+
+    rho_plus = mu0 * omega * np.abs(c_plus) ** 2
+    rho_a = np.abs(Z_scalar) ** 2 / (mu0 * omega)
+    pass_test = rho_a <= rho_plus
+
+    return rho_plus, rho_a, pass_test
+
+
 def _format_block(values: np.ndarray, n_per_line: int = 6) -> str:
     """Format a 1D array into an EDI numeric block string."""
     vals = np.asarray(values, dtype=float).ravel()
@@ -1532,6 +1738,20 @@ def save_edi(
     elev_m = edi.get("elev_m", edi.get("elev"))
     err_kind = edi.get("err_kind", "var")
 
+    # Determine frequency order for the >FREQ header tag.
+    # Use stored freq_order if available; otherwise infer from the data.
+    freq_order = edi.get("freq_order")
+    if freq_order is None:
+        if nfreq < 2:
+            freq_order = "inc"
+        elif freq[-1] > freq[0]:
+            freq_order = "inc"
+        elif freq[-1] < freq[0]:
+            freq_order = "dec"
+        else:
+            freq_order = "keep"
+    _order_tag = str(freq_order).upper()
+
     lines: List[str] = []
 
     # HEAD
@@ -1557,7 +1777,7 @@ def save_edi(
         lines.append(edi.get("info"))
 
     # FREQ
-    lines.append(">FREQ")
+    lines.append(f">FREQ NFREQ={int(nfreq)} ORDER={_order_tag} //{int(nfreq)}")
     lines.append(_format_block(freq, n_per_line=numbers_per_line))
     lines.append("")
 

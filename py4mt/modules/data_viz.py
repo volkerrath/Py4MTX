@@ -484,6 +484,241 @@ def add_rho(
     return ax
 
 
+def add_rhoplus(
+    data: pd.DataFrame | Mapping[str, Any],
+    comps: Optional[str] = None,
+    ax: Optional[plt.Axes] = None,
+    legend: bool = True,
+    *,
+    n_lambda_per_freq: int = 4,
+    violation_marker: str = "x",
+    violation_color: str = "red",
+    violation_size: float = 120.0,
+    show_errors: bool = False,
+    error_suffix: str = "_err",
+    error_alpha: float = 0.25,
+    **line_kw,
+) -> plt.Axes:
+    """Add D⁺ / rho-plus curves and violation markers to a log–log axes.
+
+    For each requested impedance component the function plots:
+
+    * the measured apparent resistivity ρ_a (solid line with markers), and
+    * the D⁺ upper bound ρ⁺ (dashed line, same colour), computed via
+      :func:`data_proc.compute_rhoplus`.
+
+    Periods where ρ_a > ρ⁺ (i.e. the 1-D consistency test fails) are
+    highlighted with a scatter overlay of crosses in ``violation_color``.
+
+    The D⁺ test is the necessary and sufficient condition for a scalar
+    impedance dataset to be compatible with *any* 1-D conductivity profile
+    (Parker 1980; Parker & Whaler 1981). A violation at one or more periods
+    proves that a 1-D model cannot explain the data.  The test is also known
+    as **dplus** in Cordell's mtcode
+    (https://github.com/darcycordell/mtcode).
+
+    Parameters
+    ----------
+    data : pandas.DataFrame or Mapping[str, Any]
+        Either a tidy plotting DataFrame (from
+        :func:`data_proc.dataframe_from_edi`) or a raw EDI dict with at
+        least keys ``"freq"`` and ``"Z"``.  When a raw dict is passed the
+        conversion is done internally.
+    comps : str, optional
+        Comma-separated impedance components to test, e.g. ``"xy,yx"``.
+        Defaults to ``"xy,yx"``.
+    ax : matplotlib.axes.Axes, optional
+        Target axes.  If None a new figure/axes pair is created.
+    legend : bool, optional
+        Whether to show a legend (default ``True``).
+    n_lambda_per_freq : int, optional
+        Density of the D⁺ λ grid; passed to
+        :func:`data_proc.compute_rhoplus`. Default is 4.
+    violation_marker : str, optional
+        Matplotlib marker style for violation points. Default ``"x"``.
+    violation_color : str, optional
+        Colour for violation markers. Default ``"red"``.
+    violation_size : float, optional
+        Size of violation markers. Default 120.
+    show_errors : bool, optional
+        If True and an ``"Z_err"`` / ``rho_<comp>_err`` column is present,
+        draw a ±1σ envelope around ρ_a.
+    error_suffix : str, optional
+        Column-name suffix for error columns. Default ``"_err"``.
+    error_alpha : float, optional
+        Opacity of the error envelopes (0–1). Default 0.25.
+    **line_kw :
+        Extra keyword arguments forwarded to ``ax.loglog`` for the ρ_a
+        line; the ρ⁺ line uses the same keywords with ``linestyle="--"``
+        and no marker.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The axes instance with the curves added.
+
+    Notes
+    -----
+    :func:`data_proc.compute_rhoplus` must be importable. The function
+    lazily imports it so that ``data_viz`` does not hard-depend on
+    ``data_proc`` at module load time.
+
+    References
+    ----------
+    Parker, R. L. (1980). The inverse problem of electromagnetic induction:
+    existence and construction of solutions based on incomplete data.
+    *J. Geophys. Res.*, 85, 4421–4428.
+
+    Parker, R. L., & Whaler, K. A. (1981). Numerical methods for establishing
+    solutions to the inverse problem of electromagnetic induction.
+    *J. Geophys. Res.*, 86, 9574–9584.
+
+    Parker, R. L., & Booker, J. R. (1996). Optimal one-dimensional inversion
+    and bounding of magnetotelluric apparent resistivity and phase
+    measurements. *Phys. Earth Planet. Inter.*, 98, 269–282.
+
+    Cordell, D., Lee, B., & Unsworth, M. J. (2022). mtcode.
+    doi:10.5281/zenodo.6784201 https://github.com/darcycordell/mtcode
+
+    Examples
+    --------
+    >>> import data_proc, data_viz, matplotlib.pyplot as plt
+    >>> site = data_proc.load_edi("SITE.edi")
+    >>> ax = data_viz.add_rhoplus(site, comps="xy,yx")
+    >>> plt.show()
+    """
+    try:
+        from data_proc import compute_rhoplus as _compute_rhoplus
+    except ImportError as exc:
+        raise ImportError(
+            "add_rhoplus requires data_proc.compute_rhoplus. "
+            "Make sure data_proc.py is on the Python path."
+        ) from exc
+
+    # Accept raw EDI dict or DataFrame
+    raw_dict: Optional[Mapping[str, Any]] = None
+    if not isinstance(data, pd.DataFrame):
+        raw_dict = data  # keep the original dict for Z/Z_err access
+    df = _ensure_df(data)
+
+    fig, ax, _ = _maybe_ax(ax)
+    period = _period_from_df(df)
+    comps_list = _parse_comps(comps)
+
+    # Colour cycle — reuse current axes prop_cycle so colours align with
+    # any previously plotted curves on the same axes.
+    prop_cycle = plt.rcParams["axes.prop_cycle"]
+    colours = [p["color"] for p in prop_cycle]
+
+    for idx, c in enumerate(comps_list):
+        colour = colours[idx % len(colours)]
+
+        # --- retrieve Z_scalar and optional Z_scalar_err ---
+        freq_arr = df["freq"].to_numpy()
+
+        # Prefer raw array from the dict when available (avoids rounding in df)
+        if raw_dict is not None and "Z" in raw_dict:
+            Z = np.asarray(raw_dict["Z"], dtype=np.complex128)
+            comp_map = {"xx": (0, 0), "xy": (0, 1), "yx": (1, 0), "yy": (1, 1)}
+            i, j = comp_map[c]
+            z_scalar = Z[:, i, j]
+            z_err = None
+            if raw_dict.get("Z_err") is not None:
+                Ze = np.asarray(raw_dict["Z_err"], dtype=float)
+                if Ze.shape == Z.shape:
+                    z_err = Ze[:, i, j]
+        else:
+            # Reconstruct from DataFrame columns (Re+Im or rho/phi — use rho)
+            # We need the complex Z; fall back to rho_a-only mode (no Z_err)
+            rho_col = f"rho_{c}"
+            phi_col = f"phi_{c}"
+            if rho_col not in df.columns:
+                continue
+            rho = df[rho_col].to_numpy()
+            phi = df[phi_col].to_numpy() if phi_col in df.columns else np.full_like(rho, 45.0)
+            omega = 2.0 * np.pi * freq_arr
+            absZ = np.sqrt(rho * MU0 * omega)
+            z_scalar = absZ * np.exp(1j * np.radians(phi))
+            z_err = None
+            err_col = f"{rho_col}{error_suffix}"
+            if show_errors and err_col in df.columns:
+                # crude sigma_Z from sigma_rho: sigma_Z ~ sigma_rho * mu0*omega / (2*absZ)
+                sig_rho = df[err_col].to_numpy()
+                with np.errstate(invalid="ignore"):
+                    z_err = sig_rho * MU0 * omega / (2.0 * np.where(absZ > 0, absZ, np.nan))
+
+        # --- run D+ ---
+        rho_plus, rho_a, pass_test = _compute_rhoplus(
+            freq_arr,
+            z_scalar,
+            z_err if show_errors else None,
+            n_lambda_per_freq=n_lambda_per_freq,
+        )
+
+        # compute_rhoplus sorts by freq internally; period here is already
+        # in the same order as df, so sort rho_a/rho_plus back to df order
+        sort_idx = np.argsort(freq_arr)
+        unsort = np.argsort(sort_idx)
+        rho_plus = rho_plus[unsort]
+        rho_a_plot = rho_a[unsort]
+        pass_plot = pass_test[unsort]
+
+        label_a = f"$\\rho_a^{{\\,{c.upper()}}}$"
+        label_p = f"$\\rho^+_{{{c.upper()}}}$"
+
+        # ρ_a — solid line
+        ax.loglog(
+            period,
+            rho_a_plot,
+            marker="o",
+            linestyle="-",
+            color=colour,
+            label=label_a,
+            **line_kw,
+        )
+
+        # ρ⁺ — dashed, same colour, no marker
+        lkw = {k: v for k, v in line_kw.items() if k not in ("marker", "linestyle")}
+        ax.loglog(
+            period,
+            rho_plus,
+            marker="",
+            linestyle="--",
+            color=colour,
+            label=label_p,
+            **lkw,
+        )
+
+        # violation markers
+        viol_mask = ~pass_plot
+        if viol_mask.any():
+            ax.scatter(
+                period[viol_mask],
+                rho_a_plot[viol_mask],
+                marker=violation_marker,
+                color=violation_color,
+                s=violation_size,
+                zorder=5,
+                label=f"violation ({c.upper()})" if idx == 0 else "_nolegend_",
+            )
+
+        # optional ρ_a error envelope
+        if show_errors:
+            err_col = f"rho_{c}{error_suffix}"
+            if err_col in df.columns:
+                err = df[err_col].to_numpy()
+                _maybe_fill_between(ax, period, rho_a_plot, err, alpha=error_alpha)
+
+    ax.invert_xaxis()
+    ax.set_xlabel("Period (s)")
+    ax.set_ylabel("Apparent resistivity ($\\Omega\\,\\mathrm{m}$)")
+    ax.grid(True, linestyle=":")
+    if legend:
+        ax.legend()
+    return ax
+
+
+
 def add_phase(
     data: pd.DataFrame | Mapping[str, Any],
     comps: Optional[str] = None,
