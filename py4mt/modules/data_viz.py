@@ -67,6 +67,7 @@ is preserved in ``df.attrs``.
 
 Author: Volker Rath (DIAS)
 Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-11
+Modified: 2026-03-16 — add_rhoplus (D+/rho+ test plot), MT unit fix (mV/km/nT) for rho_a; Claude Sonnet 4.6 (Anthropic)
 """
 
 from __future__ import annotations
@@ -181,7 +182,7 @@ def datadict_to_plot_df(datadict: Mapping[str, Any]) -> pd.DataFrame:
                 z = Z[:, i, j]
                 # Derived rho/phi (do not force if already present in cols)
                 zabs = np.abs(z)
-                rho = (zabs ** 2) / (MU0 * omega)
+                rho = (zabs ** 2) * MU0 * 1.0e6 / omega
                 phi = np.degrees(np.arctan2(z.imag, z.real))
                 cols.setdefault(f"rho_{comp}", rho)
                 cols.setdefault(f"phi_{comp}", phi)
@@ -203,7 +204,7 @@ def datadict_to_plot_df(datadict: Mapping[str, Any]) -> pd.DataFrame:
 
                             cols.setdefault(
                                 f"rho_{comp}_err",
-                                (2.0 * zabs * sig_abs) / (MU0 * omega),
+                                (2.0 * zabs * sig_abs) * MU0 * 1.0e6 / omega,
                             )
 
                             with np.errstate(divide="ignore", invalid="ignore"):
@@ -637,7 +638,7 @@ def add_rhoplus(
             rho = df[rho_col].to_numpy()
             phi = df[phi_col].to_numpy() if phi_col in df.columns else np.full_like(rho, 45.0)
             omega = 2.0 * np.pi * freq_arr
-            absZ = np.sqrt(rho * MU0 * omega)
+            absZ = np.sqrt(rho * omega / (MU0 * 1.0e6))
             z_scalar = absZ * np.exp(1j * np.radians(phi))
             z_err = None
             err_col = f"{rho_col}{error_suffix}"
@@ -645,7 +646,7 @@ def add_rhoplus(
                 # crude sigma_Z from sigma_rho: sigma_Z ~ sigma_rho * mu0*omega / (2*absZ)
                 sig_rho = df[err_col].to_numpy()
                 with np.errstate(invalid="ignore"):
-                    z_err = sig_rho * MU0 * omega / (2.0 * np.where(absZ > 0, absZ, np.nan))
+                    z_err = sig_rho * omega / (2.0 * np.where(absZ > 0, absZ, np.nan) * MU0 * 1.0e6)
 
         # --- run D+ ---
         rho_plus, rho_a, pass_test = _compute_rhoplus(

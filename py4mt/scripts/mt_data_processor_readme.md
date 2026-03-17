@@ -11,6 +11,7 @@ Batch MT station processing script.
 | Part of | **py4mt** — Python for Magnetotellurics |
 | README generated | 3 March 2026 by Claude (Anthropic), from cleaned source |
 | Modified | 2026-03-07 — unified save_xxx(**data_dict, path=...) calling convention |
+| Modified | 2026-03-16 — freq_order, D+/rho+ test (DPLUS), add_rhoplus plot; Claude Sonnet 4.6 (Anthropic) |
 
 ## Purpose
 
@@ -39,6 +40,7 @@ saved at the end.
 | `OUT_FILES` | `"edi, npz, hdf, mat"` | Comma-separated output formats |
 | `NAME_STR` | `"_proc"` | Suffix appended to output filenames |
 | `COLL_NAME` | `"ANN_DJ_aniso"` | Name for the collection NPZ |
+| `FREQ_ORDER` | `"inc"` | Frequency order passed to `load_edi()`: `"inc"`, `"dec"`, or `"keep"` |
 
 ### Processing switches
 
@@ -46,6 +48,7 @@ saved at the end.
 |----------|---------|-------------|
 | `PHAS_TENS` | `True` | Compute phase tensor via `compute_pt()` |
 | `INVARS` | `True` | Compute Zdet and Zssq invariants |
+| `DPLUS` | `True` | D+/rho+ test via `compute_rhoplus()` on Zxy, Zyx, Zdet; prints violation counts; stores results in `data_dict["dplus"]` |
 | `SET_ERRORS` | `False` | Override errors with fixed relative values |
 | `ESTIMATE_ERRORS` | `False` | Estimate errors from data (work in progress) |
 | `INTERPOLATE` | `False` | Interpolate to uniform frequency sampling |
@@ -91,17 +94,18 @@ After all stations are processed, a single collection NPZ is written via
 
 ## Diagnostic plots (when `PLOT = True`)
 
-A 3×2 subplot figure is generated per station showing:
+A 3×2 subplot figure is generated per station (4×2 when `DPLUS = True`) showing:
 
 | Row | Left | Right |
 |-----|------|-------|
 | 1 | ρ_a (xy, yx) | Phase (xy, yx) |
 | 2 | ρ_a (xx, yy) | Phase (xx, yy) |
-| 3 | Tipper | Phase tensor |
+| 3 *(DPLUS only)* | D+/rho+ test (xy, yx) | *(hidden)* |
+| 3 (or 4) | Tipper | Phase tensor |
 
 Empty axes are removed. Plots are saved in all formats listed in `PLOT_FORMAT`
 (default: PNG and PDF at 600 DPI).
 
 ## Dependencies
 
-`numpy`, `matplotlib`; py4mt: `data_proc`, `data_viz`, `util`, `version`.
+`numpy`, `matplotlib`; py4mt: `data_proc` (`load_edi`, `compute_rhoplus`, …), `data_viz` (`add_rhoplus`, …), `util`, `version`.
