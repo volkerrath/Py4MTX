@@ -10,6 +10,7 @@ A collection NPZ file with all stations is saved at the end.
 @author:    Volker Rath (DIAS)
 @project:   py4mt — Python for Magnetotellurics
 @created:   2026-02-13 with the help of ChatGPT (GPT-5 Thinking)
+@modified:  2026-03-16 — freq_order, D+/rho+ test (DPLUS), add_rhoplus plot; Claude Sonnet 4.6 (Anthropic)
 """
 
 import os
@@ -29,13 +30,13 @@ for pth in mypath:
         sys.path.insert(0, pth)
 
 import util as utl
-from data_viz import add_phase, add_rho, add_tipper, add_pt
+from data_viz import add_phase, add_rho, add_rhoplus, add_tipper, add_pt
 from data_proc import (
     get_edi_list,
     load_edi, save_edi, save_ncd, save_hdf, save_npz, save_mat,
     save_list_of_dicts_npz, dataframe_from_edi,
     interpolate_data, set_errors, estimate_errors, rotate_data,
-    compute_pt, compute_zdet, compute_zssq, compute_rhophas,
+    compute_pt, compute_zdet, compute_zssq, compute_rhophas, compute_rhoplus,
 )
 from version import versionstrg
 
@@ -50,43 +51,65 @@ print(titstrng + "\n\n")
 #  Configuration
 # =============================================================================
 # WORK_DIR = PY4MTX_ROOT + "py4mt/data/edi/mcmc/"
-WORK_DIR = '/home/vrath/MT_Data/waldim/edi_synt/proc/'
+WORK_DIR = "/home/vrath/MT_Data/waldim/edi_synth_iso/"
 if not os.path.isdir(WORK_DIR):
     print(" File: %s does not exist, but will be created" % WORK_DIR)
     os.mkdir(WORK_DIR)
 
-DATA_DIR = WORK_DIR # + "/proc/"
-if not os.path.isdir(DATA_DIR):
-    print(" File: %s does not exist, but will be created" % DATA_DIR)
-    os.mkdir(DATA_DIR)
+DATA_DIR_IN = WORK_DIR + "/orig/"
+DATA_DIR_OUT = WORK_DIR + "/proc/"
 
-EDI_DIR = WORK_DIR # + "/orig/"
-edi_files = get_edi_list(EDI_DIR, fullpath=True)
+if not os.path.isdir(DATA_DIR_OUT):
+    print(" File: %s does not exist, but will be created" % DATA_DIR_OUT)
+    os.mkdir(DATA_DIR_OUT)
+
+
+edi_files = get_edi_list(DATA_DIR_IN, fullpath=True)
 ns = np.size(edi_files)
 
 OUT_FILES = "edi, npz"
 
 STAT_FILE = True
-
-PLOT = False
+STAT_UPPER = True
+PLOT = True
 if PLOT:
+    PLOT_DIR = WORK_DIR +"/plots/"
+    if not os.path.isdir(PLOT_DIR):
+        print(" File: %s does not exist, but will be created" % PLOT_DIR)
+        os.mkdir(PLOT_DIR)
     PLTARGS = {"show_errors": True}
-    PLOT_FORMAT = [".png", ".pdf"]
+    PLOT_FORMAT = [".pdf"]
 
 NAME_STR = "_synth_proc"
 COLL_NAME = "Ann_SYNTH"
 
 DROP_INVALID = True
 
-SET_ERRORS = False
-ERRORS = {
-    "Zerr": [0.1, 0.1, 0.1, 0.1],
-    "Terr": [0.03, 0.03, 0.03, 0.03],
-    "PTerr": [0.1, 0.1, 0.1, 0.1],
-}
+FREQ_ORDER = "dec"   # "inc", "dec", or "keep"
+
+
 
 PHAS_TENS = True
+RHOPHAS = True
 INVARS = True
+DPLUS = True   # D+/rho+ test (Parker 1980; also known as dplus in Cordell mtcode)
+
+ROTATE = False
+if ROTATE:
+    ANGLE = 0.0
+
+DEC_DEG = True
+
+SET_ERRORS = False
+if SET_ERRORS:
+    ERRORS = {
+        "Zerr": [0.1, 0.1, 0.1, 0.1],
+        "Terr": [0.03, 0.03, 0.03, 0.03],
+        "PTerr": [0.1, 0.1, 0.1, 0.1],
+    }
+REF_ERROT = "ij"  # "ij*ii"
+TYPE_ERROR = "fixed"  # "floor"
+PERTURB = True
 
 INTERPOLATE = False
 if INTERPOLATE:
@@ -99,11 +122,6 @@ if ESTIMATE_ERRORS:
     SPREAD = 2.0  # *std-dev
     ERR_METHOD = ["gcvspline", SPREAD]
 
-ROTATE = False
-if ROTATE:
-    ANGLE = 0.0
-
-DEC_DEG = True
 
 # =============================================================================
 #  Processing loop
@@ -112,7 +130,7 @@ all_data = []
 for edi in edi_files:
     print("\n\nFound edi file: ", edi)
 
-    data_dict = load_edi(edi, drop_invalid_periods=DROP_INVALID)
+    data_dict = load_edi(edi, drop_invalid_periods=DROP_INVALID, freq_order=FREQ_ORDER)
 
     station = data_dict["station"]
     Z = data_dict["Z"]
@@ -135,6 +153,7 @@ for edi in edi_files:
         data_dict["Zssq"] = Zssq
         data_dict["Zssq_err"] = Zssqerr
 
+
     if ESTIMATE_ERRORS:
         data_dict = estimate_errors(data_dict=data_dict, method=ERR_METHOD)
 
@@ -148,27 +167,51 @@ for edi in edi_files:
         data_dict = rotate_data(data_dict=data_dict, angle=ANGLE)
 
     # --- Refresh apparent resistivity/phase after any Z modification ---
-    if data_dict.get("freq") is not None and data_dict.get("Z") is not None:
-        _ek = str(data_dict.get("err_kind", "var")).strip().lower()
-        _ek = "std" if _ek.startswith("std") else "var"
-        rho, phi, rho_err, phi_err = compute_rhophas(
-            freq=np.asarray(data_dict["freq"]),
-            Z=np.asarray(data_dict["Z"]),
-            Z_err=(
-                np.asarray(data_dict["Z_err"])
-                if data_dict.get("Z_err") is not None
-                else None
-            ),
-            err_kind=_ek,
-            err_method="analytic",
-        )
-        data_dict["rho"] = rho
-        data_dict["phi"] = phi
-        if rho_err is not None:
-            data_dict["rho_err"] = rho_err
-        if phi_err is not None:
-            data_dict["phi_err"] = phi_err
+    if RHOPHAS:
+        if data_dict.get("freq") is not None and data_dict.get("Z") is not None:
+            _ek = str(data_dict.get("err_kind", "var")).strip().lower()
+            _ek = "std" if _ek.startswith("std") else "var"
+            rho, phi, rho_err, phi_err = compute_rhophas(
+                freq=np.asarray(data_dict["freq"]),
+                Z=np.asarray(data_dict["Z"]),
+                Z_err=(
+                    np.asarray(data_dict["Z_err"])
+                    if data_dict.get("Z_err") is not None
+                    else None
+                ),
+                err_kind=_ek,
+                err_method="analytic",
+            )
+            data_dict["rho"] = rho
+            data_dict["phi"] = phi
+            if rho_err is not None:
+                data_dict["rho_err"] = rho_err
+            if phi_err is not None:
+                data_dict["phi_err"] = phi_err
 
+    if DPLUS:
+        # D+/rho+ test on Zxy, Zyx, and Zdet (if available)
+        _freq = np.asarray(data_dict["freq"])
+        _dplus_results = {}
+        for _comp, _zi, _zj in [("xy", 0, 1), ("yx", 1, 0)]:
+            _ze = Zerr[:, _zi, _zj] if Zerr is not None else None
+            _rho_plus, _rho_a, _ok = compute_rhoplus(_freq, Z[:, _zi, _zj], _ze)
+            _dplus_results[_comp] = {
+                "rho_plus": _rho_plus, "rho_a": _rho_a, "pass": _ok
+            }
+            _nviol = int((~_ok).sum())
+            print(f"  D+ {_comp.upper()}: {_nviol}/{len(_ok)} violations")
+        if data_dict.get("Zdet") is not None:
+            _ze = data_dict.get("Zdet_err")
+            _rho_plus, _rho_a, _ok = compute_rhoplus(_freq, data_dict["Zdet"], _ze)
+            _dplus_results["det"] = {
+                "rho_plus": _rho_plus, "rho_a": _rho_a, "pass": _ok
+            }
+            print(f"  D+ DET: {int((~_ok).sum())}/{len(_ok)} violations")
+        data_dict["dplus"] = _dplus_results
+
+    print(' RHO\n',  data_dict["rho_err"] )
+    print(' PHI\n',  data_dict["phi_err"] )
     all_data.append(data_dict)
 
     statname = station
@@ -176,43 +219,52 @@ for edi in edi_files:
         nam, ext = os.path.splitext(os.path.basename(edi))
         statname = nam
 
+    if STAT_UPPER:
+        statname =  statname.upper()
+        data_dict["station"] = statname
+
     if "edi" in OUT_FILES.lower():
         save_edi(
             **data_dict,
-            path=DATA_DIR + statname + NAME_STR + ".edi",
+            path=DATA_DIR_OUT + statname + NAME_STR + ".edi",
         )
-        print("Wrote file: ", DATA_DIR + statname + NAME_STR + ".edi")
+        print("Wrote file: ", DATA_DIR_OUT + statname + NAME_STR + ".edi")
 
     if "ncd" in OUT_FILES.lower():
         save_ncd(
             **data_dict,
-            path=DATA_DIR + statname + NAME_STR + ".ncd",
+            path=DATA_DIR_OUT + statname + NAME_STR + ".ncd",
         )
-        print("Wrote file: ", DATA_DIR + statname + NAME_STR + ".ncd")
+        print("Wrote file: ", DATA_DIR_OUT + statname + NAME_STR + ".ncd")
 
     if "hdf" in OUT_FILES.lower():
         save_hdf(
             **data_dict,
-            path=DATA_DIR + statname + NAME_STR + ".hdf",
+            path=DATA_DIR_OUT + statname + NAME_STR + ".hdf",
         )
-        print("Wrote file: ", DATA_DIR + statname + NAME_STR + ".hdf")
+        print("Wrote file: ", DATA_DIR_OUT + statname + NAME_STR + ".hdf")
 
     if "mat" in OUT_FILES.lower():
         save_mat(
             **data_dict,
-            path=DATA_DIR + statname + NAME_STR + ".mat",
+            path=DATA_DIR_OUT + statname + NAME_STR + ".mat",
         )
-        print("Wrote file: ", DATA_DIR + statname + NAME_STR + ".mat")
+        print("Wrote file: ", DATA_DIR_OUT + statname + NAME_STR + ".mat")
 
     if "npz" in OUT_FILES.lower():
         save_npz(
             **data_dict,
-            path=DATA_DIR + statname + NAME_STR + ".npz",
+            path=DATA_DIR_OUT + statname + NAME_STR + ".npz",
         )
-        print("Wrote file: ", DATA_DIR + statname + NAME_STR + ".npz")
+        print("Wrote file: ", DATA_DIR_OUT + statname + NAME_STR + ".npz")
 
     if PLOT:
-        fig, axs = plt.subplots(3, 2, figsize=(8, 14), sharex=True)
+        nrows = 4 if DPLUS else 3
+        fig, axs = plt.subplots(nrows, 2, figsize=(
+            8, 14 + 4 * (nrows - 3)), sharex=True)
+
+        fig.suptitle(statname + NAME_STR.replace("_", " | "))
+
         df_rp = dataframe_from_edi(
             data_dict, include_tipper=False, include_pt=False
         )
@@ -220,9 +272,14 @@ for edi in edi_files:
         add_phase(df_rp, comps="xy,yx", ax=axs[0, 1], **PLTARGS)
         add_rho(df_rp, comps="xx,yy", ax=axs[1, 0], **PLTARGS)
         add_phase(df_rp, comps="xx,yy", ax=axs[1, 1], **PLTARGS)
-        add_tipper(data_dict, ax=axs[2, 0], **PLTARGS)
-        add_pt(data_dict, ax=axs[2, 1], **PLTARGS)
-        fig.suptitle(statname + NAME_STR.replace("_", " | "))
+        if DPLUS:
+            add_rhoplus(data_dict, comps="xy,yx", ax=axs[2, 0], **PLTARGS)
+            axs[2, 1].set_visible(False)
+            add_tipper(data_dict, ax=axs[3, 0], **PLTARGS)
+            add_pt(data_dict, ax=axs[3, 1], **PLTARGS)
+        else:
+            add_tipper(data_dict, ax=axs[2, 0], **PLTARGS)
+            add_pt(data_dict, ax=axs[2, 1], **PLTARGS)
 
         for ax in axs.flat:
             if not ax.lines and not ax.images and not ax.collections:
@@ -231,11 +288,11 @@ for edi in edi_files:
         fig.tight_layout(rect=[0, 0, 1, 0.97])
 
         for f in PLOT_FORMAT:
-            plt.savefig(WORK_DIR + statname + NAME_STR + f, dpi=600)
+            plt.savefig(PLOT_DIR + statname + NAME_STR + f, dpi=600)
 
         plt.show()
 
 save_list_of_dicts_npz(
     records=all_data,
-    path=DATA_DIR + COLL_NAME + NAME_STR + "_collection.npz",
+    path=DATA_DIR_OUT + COLL_NAME + NAME_STR + "_collection.npz",
 )

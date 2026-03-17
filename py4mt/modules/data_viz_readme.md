@@ -150,3 +150,4 @@ Both remove empty axes automatically.
 ---
 
 Author: Volker Rath (DIAS)
+Modified: 2026-03-16 — add_rhoplus (D+/rho+ test plot); Claude Sonnet 4.6 (Anthropic)

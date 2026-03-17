@@ -95,6 +95,7 @@ Notes
 
 Author: Volker Rath (DIAS)
 Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-13 (UTC)
+Modified: 2026-03-16 — freq_order parameter (load_edi, save_edi), compute_rhoplus (D+/rho+ test), PTXX/PTXY phase tensor blocks, RHOXY/PHASEXY rho-phase blocks in save_edi, MT unit fix (mV/km/nT) for rho_a; Claude Sonnet 4.6 (Anthropic)
 """
 
 from __future__ import annotations
@@ -114,6 +115,13 @@ import pandas as pd
 from scipy.interpolate import make_smoothing_spline
 
 _MU0: float = 4.0 * np.pi * 1.0e-7
+
+# Z is stored in MT field units: mV/km per nT.
+# SI conversion: Z_SI [Ohm] = Z_mtunit * mu0 * 1e3
+# => |Z_SI|^2 = |Z_mtunit|^2 * mu0^2 * 1e6
+# => rho_a [Ohm·m] = |Z_mtunit|^2 * mu0^2 * 1e6 / (mu0 * omega)
+#                  = |Z_mtunit|^2 * _Z_MT_TO_SI_SQ / (mu0 * omega)
+_Z_MT_TO_SI_SQ: float = _MU0 ** 2 * 1.0e6   # = (mu0*1e3)^2 / 1e6... see above
 
 # ---------------------------------------------------------------------------
 # Basic text helpers
@@ -724,10 +732,19 @@ def load_edi(
             axes = tuple(range(1, bad.ndim))
             return np.any(bad, axis=axes)
 
-        bad_Z = ~np.isfinite(Z.real) | ~np.isfinite(Z.imag)
-        bad_Z |= (np.abs(Z.real) > invalid_sentinel) | (np.abs(Z.imag) > invalid_sentinel)
-        mask_valid &= ~_collapse_any(bad_Z)
-
+        # Z: check each (i,j) component independently.  If every frequency of a
+        # component is invalid (all-sentinel block), skip that component rather
+        # than vetoing all periods.
+        comp_indices = [(i, j) for i in range(2) for j in range(2)]
+        for ci, cj in comp_indices:
+            bad_comp = (~np.isfinite(Z.real[:, ci, cj]) | ~np.isfinite(Z.imag[:, ci, cj]) |
+                        (np.abs(Z.real[:, ci, cj]) > invalid_sentinel) |
+                        (np.abs(Z.imag[:, ci, cj]) > invalid_sentinel))
+            if bad_comp.all():
+                # Entire component is filled with sentinels — zero it out and skip.
+                Z[:, ci, cj] = 0.0
+            else:
+                mask_valid &= ~bad_comp
 
         if T is not None:
             bad_T = ~np.isfinite(T.real) | ~np.isfinite(T.imag)
@@ -737,18 +754,26 @@ def load_edi(
                 # Only constrain by tipper if it contains at least some valid rows.
                 mask_valid &= t_valid
             else:
-                # Common case: EDI contains no tipper, but an EMPTY sentinel was parsed into T.
-                # Treat tipper as absent so we do not drop otherwise valid impedance periods.
+                # All tipper values are invalid — treat tipper as absent.
                 T = None
                 T_var = None
 
         if Z_var is not None:
-            bad_Zvar = ~np.isfinite(Z_var) | (np.abs(Z_var) > invalid_sentinel)
-            mask_valid &= ~_collapse_any(bad_Zvar)
+            for ci, cj in comp_indices:
+                bad_comp_var = (~np.isfinite(Z_var[:, ci, cj]) |
+                                (np.abs(Z_var[:, ci, cj]) > invalid_sentinel))
+                if bad_comp_var.all():
+                    # Entire variance component is sentinel — zero it out and skip.
+                    Z_var[:, ci, cj] = 0.0
+                else:
+                    mask_valid &= ~bad_comp_var
 
         if T_var is not None:
             bad_Tvar = ~np.isfinite(T_var) | (np.abs(T_var) > invalid_sentinel)
-            mask_valid &= ~_collapse_any(bad_Tvar)
+            if bad_Tvar.all():
+                T_var = None
+            else:
+                mask_valid &= ~_collapse_any(bad_Tvar)
 
     freq = freq[mask_valid]
     Z = Z[mask_valid]
@@ -1191,6 +1216,28 @@ def _analytic_var_complex_scalar_from_Z(
     return var_ri[:, 0] + var_ri[:, 1]
 
 
+def _valid_Z_rows(Z: np.ndarray, invalid_sentinel: float = 1.0e30) -> np.ndarray:
+    """Return a boolean mask of rows in Z that contain no invalid elements.
+
+    A row is invalid if any element is non-finite or has absolute value
+    exceeding ``invalid_sentinel``.
+
+    Parameters
+    ----------
+    Z : numpy.ndarray, shape (n, 2, 2), complex
+    invalid_sentinel : float
+
+    Returns
+    -------
+    valid : numpy.ndarray of bool, shape (n,)
+        ``True`` where the row is fully valid.
+    """
+    bad = (~np.isfinite(Z.real) | ~np.isfinite(Z.imag) |
+           (np.abs(Z.real) > invalid_sentinel) |
+           (np.abs(Z.imag) > invalid_sentinel))
+    return ~np.any(bad.reshape(Z.shape[0], -1), axis=1)
+
+
 def compute_pt(
     Z: np.ndarray,
     Z_err: Optional[np.ndarray] = None,
@@ -1199,6 +1246,7 @@ def compute_pt(
     err_method: str = "bootstrap",
     nsim: int = 200,
     fd_eps: float = 1.0e-6,
+    invalid_sentinel: float = 1.0e30,
     random_state: Optional[np.random.Generator] = None,
 ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
     """Compute phase tensor and optionally propagate impedance errors.
@@ -1237,11 +1285,12 @@ def compute_pt(
     -------
     PT : numpy.ndarray
         Phase tensor array of shape ``(n, 2, 2)`` (real-valued).
+        Rows whose Z contains any invalid element are set to ``np.nan``.
     PT_err : numpy.ndarray or None
         Error estimate with shape ``(n, 2, 2)`` in the same convention as
         ``err_kind`` (variance if ``"var"``, standard deviation if ``"std"``),
         or a dict ``{"analytic": ..., "bootstrap": ...}`` if
-        ``err_method="both"``.
+        ``err_method="both"``.  Invalid rows are ``np.nan``.
     """
     Z = np.asarray(Z, dtype=np.complex128)
     if Z.shape[-2:] != (2, 2):
@@ -1250,8 +1299,12 @@ def compute_pt(
     n = Z.shape[0]
     PT = np.full((n, 2, 2), np.nan, dtype=float)
 
-    # Deterministic phase tensor
+    valid = _valid_Z_rows(Z, invalid_sentinel=invalid_sentinel)
+
+    # Deterministic phase tensor — skip invalid rows
     for k in range(n):
+        if not valid[k]:
+            continue
         X = Z[k].real
         Y = Z[k].imag
         try:
@@ -1288,6 +1341,7 @@ def compute_pt(
 
         var_flat = _analytic_var_from_Z(Z, sigma, fun_real, fd_eps=fd_eps)
         var_PT = var_flat.reshape(n, 2, 2)
+        var_PT[~valid] = np.nan
         PT_err_analytic = var_PT if err_kind == "var" else np.sqrt(var_PT)
 
     # ---------------------- bootstrap (parametric)
@@ -1302,6 +1356,8 @@ def compute_pt(
             Zs = (Z.real + d_re) + 1j * (Z.imag + d_im)
 
             for k in range(n):
+                if not valid[k]:
+                    continue
                 X = Zs[k].real
                 Y = Zs[k].imag
                 try:
@@ -1329,6 +1385,7 @@ def compute_zdet(
     err_method: str = "bootstrap",
     nsim: int = 200,
     fd_eps: float = 1.0e-6,
+    invalid_sentinel: float = 1.0e30,
     random_state: Optional[np.random.Generator] = None,
 ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
     """Compute Berdichevsky's determinant rotational invariant of impedance.
@@ -1369,8 +1426,11 @@ def compute_zdet(
     if Z.shape[-2:] != (2, 2):
         raise ValueError("Z must have shape (n, 2, 2).")
 
+    valid = _valid_Z_rows(Z, invalid_sentinel=invalid_sentinel)
+
     detZ = Z[:, 0, 0] * Z[:, 1, 1] - Z[:, 0, 1] * Z[:, 1, 0]
     zdet = np.sqrt(detZ)
+    zdet[~valid] = np.nan
 
     if Z_err is None or err_method.lower() in ("none", "off", "false", "0"):
         return zdet, None
@@ -1394,6 +1454,7 @@ def compute_zdet(
             return np.sqrt(detk)
 
         var_c = _analytic_var_complex_scalar_from_Z(Z, sigma, fun_complex, fd_eps=fd_eps)
+        var_c[~valid] = np.nan
         zdet_err_analytic = var_c if err_kind == "var" else np.sqrt(var_c)
 
     # bootstrap
@@ -1407,12 +1468,13 @@ def compute_zdet(
             d_im = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
             Zs = (Z.real + d_re) + 1j * (Z.imag + d_im)
             dets = Zs[:, 0, 0] * Zs[:, 1, 1] - Zs[:, 0, 1] * Zs[:, 1, 0]
-            sims[sidx] = np.sqrt(dets)
+            sims[sidx] = np.where(valid, np.sqrt(dets), np.nan)
 
         with np.errstate(invalid="ignore"):
             var_re = np.nanvar(sims.real, axis=0)
             var_im = np.nanvar(sims.imag, axis=0)
         var_c = var_re + var_im
+        var_c[~valid] = np.nan
         zdet_err_boot = var_c if err_kind == "var" else np.sqrt(var_c)
 
     if method == "analytic":
@@ -1430,6 +1492,7 @@ def compute_zssq(
     err_method: str = "bootstrap",
     nsim: int = 200,
     fd_eps: float = 1.0e-6,
+    invalid_sentinel: float = 1.0e30,
     random_state: Optional[np.random.Generator] = None,
 ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
     """Compute the ssq rotational invariant (Rung–Arunwan / Szarka–Menvielle).
@@ -1470,8 +1533,11 @@ def compute_zssq(
     if Z.shape[-2:] != (2, 2):
         raise ValueError("Z must have shape (n, 2, 2).")
 
+    valid = _valid_Z_rows(Z, invalid_sentinel=invalid_sentinel)
+
     ssqZ = (Z[:, 0, 0] ** 2 + Z[:, 0, 1] ** 2 + Z[:, 1, 0] ** 2 + Z[:, 1, 1] ** 2) / 2.0
     zssq = np.sqrt(ssqZ)
+    zssq[~valid] = np.nan
 
     if Z_err is None or err_method.lower() in ("none", "off", "false", "0"):
         return zssq, None
@@ -1495,6 +1561,7 @@ def compute_zssq(
             return np.sqrt(ssqk)
 
         var_c = _analytic_var_complex_scalar_from_Z(Z, sigma, fun_complex, fd_eps=fd_eps)
+        var_c[~valid] = np.nan
         zssq_err_analytic = var_c if err_kind == "var" else np.sqrt(var_c)
 
     # bootstrap
@@ -1508,12 +1575,13 @@ def compute_zssq(
             d_im = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
             Zs = (Z.real + d_re) + 1j * (Z.imag + d_im)
             ssq = (Zs[:, 0, 0] ** 2 + Zs[:, 0, 1] ** 2 + Zs[:, 1, 0] ** 2 + Zs[:, 1, 1] ** 2) / 2.0
-            sims[sidx] = np.sqrt(ssq)
+            sims[sidx] = np.where(valid, np.sqrt(ssq), np.nan)
 
         with np.errstate(invalid="ignore"):
             var_re = np.nanvar(sims.real, axis=0)
             var_im = np.nanvar(sims.imag, axis=0)
         var_c = var_re + var_im
+        var_c[~valid] = np.nan
         zssq_err_boot = var_c if err_kind == "var" else np.sqrt(var_c)
 
     if method == "analytic":
@@ -1633,8 +1701,11 @@ def compute_rhoplus(
     omega = 2.0 * np.pi * freq
     n = freq.size
 
-    # c-response: c = Z / (i * omega * mu0)
-    c = Z_scalar / (1j * omega * mu0)
+    # Convert Z from MT field units (mV/km/nT) to SI Ohm before forming c.
+    # Z_SI [Ohm] = Z_mtunit * mu0 * 1e3
+    # c = Z_SI / (i * omega * mu0) = Z_mtunit * 1e3 / (i * omega)
+    Z_SI = Z_scalar * mu0 * 1.0e3
+    c = Z_SI / (1j * omega * mu0)
 
     # Lambda grid
     n_lam = n_lambda_per_freq * n
@@ -1660,8 +1731,8 @@ def compute_rhoplus(
     # Optional error weighting
     if Z_scalar_err is not None:
         Z_scalar_err = np.asarray(Z_scalar_err, dtype=float).ravel()[order]
-        # sigma of c = sigma_Z / (omega * mu0)
-        sigma_c = Z_scalar_err / (omega * mu0)
+        # sigma of c = sigma_Z_SI / (omega * mu0) = sigma_Z_mtunit * 1e3 / omega
+        sigma_c = Z_scalar_err * 1.0e3 / omega
         sigma_c = np.where(sigma_c > 0, sigma_c, sigma_c[sigma_c > 0].min())
         weights = np.concatenate([1.0 / sigma_c, 1.0 / sigma_c])
         A = A * weights[:, np.newaxis]
@@ -1680,15 +1751,23 @@ def compute_rhoplus(
         c_plus = A_re @ da + 1j * (A_im @ da)
 
     rho_plus = mu0 * omega * np.abs(c_plus) ** 2
-    rho_a = np.abs(Z_scalar) ** 2 / (mu0 * omega)
+    rho_a = np.abs(Z_SI) ** 2 / (mu0 * omega)
     pass_test = rho_a <= rho_plus
 
     return rho_plus, rho_a, pass_test
 
 
-def _format_block(values: np.ndarray, n_per_line: int = 6) -> str:
-    """Format a 1D array into an EDI numeric block string."""
+def _format_block(values: np.ndarray, n_per_line: int = 6,
+                  nan_fill: float = 1.0e32) -> str:
+    """Format a 1D array into an EDI numeric block string.
+
+    Non-finite values (``nan``, ``±inf``) and values whose absolute value
+    exceeds ``nan_fill`` are all replaced by ``nan_fill`` so that downstream
+    codes receive a recognisable sentinel rather than garbage text.
+    """
     vals = np.asarray(values, dtype=float).ravel()
+    invalid = ~np.isfinite(vals) | (np.abs(vals) >= nan_fill)
+    vals = np.where(invalid, nan_fill, vals)
     chunks: List[str] = []
     for i in range(0, vals.size, n_per_line):
         line_vals = vals[i : i + n_per_line]
@@ -1865,16 +1944,16 @@ def save_edi(
         if P.shape != (n, 2, 2):
             raise ValueError("edi['P'] must have shape (n, 2, 2).")
 
-        lines.append(">PXX")
+        lines.append(">PTXX")
         lines.append(_format_block(P[:, 0, 0], n_per_line=numbers_per_line))
         lines.append("")
-        lines.append(">PXY")
+        lines.append(">PTXY")
         lines.append(_format_block(P[:, 0, 1], n_per_line=numbers_per_line))
         lines.append("")
-        lines.append(">PYX")
+        lines.append(">PTYX")
         lines.append(_format_block(P[:, 1, 0], n_per_line=numbers_per_line))
         lines.append("")
-        lines.append(">PYY")
+        lines.append(">PTYY")
         lines.append(_format_block(P[:, 1, 1], n_per_line=numbers_per_line))
         lines.append("")
 
@@ -1899,18 +1978,86 @@ def save_edi(
             else:
                 raise ValueError("pt_err_kind must be 'std', 'var', or None.")
 
-            lines.append(">PXX.VAR")
+            lines.append(">PTXX.VAR")
             lines.append(_format_block(var_xx, n_per_line=numbers_per_line))
             lines.append("")
-            lines.append(">PXY.VAR")
+            lines.append(">PTXY.VAR")
             lines.append(_format_block(var_xy, n_per_line=numbers_per_line))
             lines.append("")
-            lines.append(">PYX.VAR")
+            lines.append(">PTYX.VAR")
             lines.append(_format_block(var_yx, n_per_line=numbers_per_line))
             lines.append("")
-            lines.append(">PYY.VAR")
+            lines.append(">PTYY.VAR")
             lines.append(_format_block(var_yy, n_per_line=numbers_per_line))
             lines.append("")
+
+    # Apparent resistivity and phase blocks
+    # Use precomputed arrays when present; otherwise derive from Z.
+    _rho = edi.get("rho")
+    _phi = edi.get("phi")
+    if _rho is None:
+        for _k in ("rhoa", "rho_a"):
+            if _k in edi:
+                _rho = edi[_k]
+                break
+    if _phi is None:
+        for _k in ("pha", "phase"):
+            if _k in edi:
+                _phi = edi[_k]
+                break
+
+    if _rho is not None and _phi is not None:
+        _rho = np.asarray(_rho, dtype=float)
+        _phi = np.asarray(_phi, dtype=float)
+        if _rho.ndim == 2 and _rho.shape == (n, 4):
+            _rho = _rho.reshape(n, 2, 2)
+        if _phi.ndim == 2 and _phi.shape == (n, 4):
+            _phi = _phi.reshape(n, 2, 2)
+    else:
+        _omega = 2.0 * np.pi * freq
+        _rho = np.zeros((n, 2, 2), dtype=float)
+        _phi = np.zeros((n, 2, 2), dtype=float)
+        for _i in range(2):
+            for _j in range(2):
+                _zij = Z[:, _i, _j]
+                _rho[:, _i, _j] = np.abs(_zij) ** 2 * _Z_MT_TO_SI_SQ / (_MU0 * _omega)
+                _phi[:, _i, _j] = np.degrees(np.angle(_zij))
+
+    _rho_err = edi.get("rho_err")
+    _phi_err = edi.get("phi_err")
+
+    _rho_comp_map = {
+        "XX": (0, 0), "XY": (0, 1), "YX": (1, 0), "YY": (1, 1)
+    }
+    for _name, (_i, _j) in _rho_comp_map.items():
+        lines.append(f">RHO{_name}")
+        lines.append(_format_block(_rho[:, _i, _j], n_per_line=numbers_per_line))
+        lines.append("")
+        lines.append(f">PHASE{_name}")
+        lines.append(_format_block(_phi[:, _i, _j], n_per_line=numbers_per_line))
+        lines.append("")
+
+    if _rho_err is not None:
+        _rho_err = np.asarray(_rho_err, dtype=float)
+        if _rho_err.ndim == 2 and _rho_err.shape == (n, 4):
+            _rho_err = _rho_err.reshape(n, 2, 2)
+        if _rho_err.shape == (n, 2, 2):
+            _sigma_rho = np.sqrt(_rho_err) if err_kind == "var" else _rho_err
+            for _name, (_i, _j) in _rho_comp_map.items():
+                lines.append(f">RHO{_name}.VAR")
+                lines.append(_format_block(_sigma_rho[:, _i, _j] ** 2, n_per_line=numbers_per_line))
+                lines.append("")
+
+    if _phi_err is not None:
+        _phi_err = np.asarray(_phi_err, dtype=float)
+        if _phi_err.ndim == 2 and _phi_err.shape == (n, 4):
+            _phi_err = _phi_err.reshape(n, 2, 2)
+        if _phi_err.shape == (n, 2, 2):
+            _sigma_phi = np.sqrt(_phi_err) if err_kind == "var" else _phi_err
+            for _name, (_i, _j) in _rho_comp_map.items():
+                lines.append(f">PHASE{_name}.VAR")
+                lines.append(_format_block(_sigma_phi[:, _i, _j] ** 2, n_per_line=numbers_per_line))
+                lines.append("")
 
     p.write_text("\n".join(lines) + "\n", encoding="latin-1")
 
@@ -2061,7 +2208,7 @@ def dataframe_from_edi(
             for name, (i, j) in comp_map.items():
                 Zij = Z[:, i, j]
                 mag = np.abs(Zij)
-                df[f"rho_{name}"] = (mag**2) / (mu0 * omega)
+                df[f"rho_{name}"] = (mag**2) * _Z_MT_TO_SI_SQ / (mu0 * omega)
                 with np.errstate(divide="ignore", invalid="ignore"):
                     df[f"phi_{name}"] = np.degrees(np.arctan2(Zij.imag, Zij.real))
 
@@ -2077,7 +2224,7 @@ def dataframe_from_edi(
             for name, (i, j) in comp_map.items():
                 mag = np.abs(Z[:, i, j])
                 denom = mu0 * omega
-                std_rho = 2.0 * sigma_Z[:, i, j] * mag / np.where(denom > 0.0, denom, np.nan)
+                std_rho = 2.0 * sigma_Z[:, i, j] * mag * _Z_MT_TO_SI_SQ / np.where(denom > 0.0, denom, np.nan)
                 if f"rho_{name}_err" not in df.columns:
                     df[f"rho_{name}_err"] = std_rho
 
@@ -3052,6 +3199,7 @@ def compute_rhophas(
     err_method: str = "bootstrap",
     nsim: int = 200,
     mu0: float = _MU0,
+    invalid_sentinel: float = 1.0e30,
     random_state: Optional[np.random.Generator] = None,
 ) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray], Optional[np.ndarray]]:
     """Compute apparent resistivity and phase from impedance, optionally with errors.
@@ -3104,9 +3252,14 @@ def compute_rhophas(
 
     Notes
     -----
-    This function uses the standard MT definition:
+    Z is assumed to be in **MT field units** (mV/km per nT), the convention
+    used throughout py4mt.  The apparent resistivity formula is:
 
-        ``rho_a = |Z|^2 / (mu0 * omega)``, with ``omega = 2π f``.
+        ``rho_a = |Z|^2 * mu0 * 1e6 / omega``
+
+    which is equivalent to converting Z to SI Ohm first
+    (``Z_SI = Z * mu0 * 1e3``) and applying the standard formula
+    ``rho_a = |Z_SI|^2 / (mu0 * omega)``.
 
     Analytic error propagation uses commonly applied approximations:
 
@@ -3124,8 +3277,12 @@ def compute_rhophas(
     omega = 2.0 * np.pi * freq
     denom = mu0 * omega[:, None, None]
 
-    rho = (np.abs(Z) ** 2) / denom
+    valid = _valid_Z_rows(Z, invalid_sentinel=invalid_sentinel)
+
+    rho = (np.abs(Z) ** 2) * _Z_MT_TO_SI_SQ / denom
     phi = np.degrees(np.angle(Z))
+    rho[~valid] = np.nan
+    phi[~valid] = np.nan
 
     method = err_method.lower()
     if Z_err is None or method in ("none", "off", "false", "0"):
@@ -3145,7 +3302,7 @@ def compute_rhophas(
     phi_err_analytic = None
     if method in ("analytic", "both"):
         with np.errstate(divide="ignore", invalid="ignore"):
-            std_rho = 2.0 * sigma * absZ / denom
+            std_rho = 2.0 * sigma * absZ * _Z_MT_TO_SI_SQ / denom
             std_phi_deg = (sigma / absZ) * (180.0 / np.pi)
         if err_kind == "var":
             rho_err_analytic = std_rho ** 2
@@ -3166,7 +3323,7 @@ def compute_rhophas(
             d_re = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
             d_im = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
             Zs = (Z.real + d_re) + 1j * (Z.imag + d_im)
-            rho_sims[sidx] = (np.abs(Zs) ** 2) / denom
+            rho_sims[sidx] = (np.abs(Zs) ** 2) * _Z_MT_TO_SI_SQ / denom
             phi_sims[sidx] = np.degrees(np.angle(Zs))
 
         with np.errstate(invalid="ignore"):
@@ -3253,22 +3410,23 @@ def wait1d(periods: np.ndarray, thick: np.ndarray, res: np.ndarray):
     omega = 2.0 * np.pi / periods
 
     cond = 1.0 / np.asarray(res, dtype=float)
+    nlay = cond.size
 
     spn = np.size(periods)
     Z = np.zeros(spn, dtype=complex)
 
     for idx, w in enumerate(omega):
         prop_const = np.sqrt(1j * mu * cond[-1] * w)
-        C = np.zeros(spn, dtype=complex)
+        C = np.zeros(nlay, dtype=complex)
         C[-1] = 1.0 / prop_const
         if len(thick) > 0:
-            for k in reversed(range(len(res) - 1)):
+            for k in reversed(range(nlay - 1)):
                 prop_layer = np.sqrt(1j * w * mu * cond[k])
                 k1 = (C[k + 1] * prop_layer + np.tanh(prop_layer * thick[k]))
                 k2 = ((C[k + 1] * prop_layer * np.tanh(prop_layer * thick[k])) + 1.0)
                 C[k] = (1.0 / prop_layer) * (k1 / k2)
         Z[idx] = 1j * w * mu * C[0]
 
-    rhoa = (np.abs(Z) ** 2) / omega
+    rhoa = (np.abs(Z) ** 2) / (mu * omega)
     phi = np.angle(Z, deg=True)
     return rhoa, phi, np.real(Z), np.imag(Z)

@@ -92,12 +92,29 @@ The `ORDER` tag is `freq_order` uppercased directly (`"inc"` → `INC`,
 `"dec"` → `DEC`, `"keep"` → `KEEP`).  When `freq_order`
 is absent, the order is inferred automatically from the frequency array.
 
+**Phase tensor blocks** — written with the `PT` prefix:
+`>PTXX`, `>PTXY`, `>PTYX`, `>PTYY` (and `>PTXX.VAR` etc. when errors are present).
+
+**Apparent resistivity and phase blocks** — always written, derived from
+`edi["rho"]` / `edi["phi"]` when present, otherwise computed from `edi["Z"]`:
+`>RHOXX`, `>RHOXY`, `>RHOYX`, `>RHOYY` and `>PHASEXX`, `>PHASEXY`,
+`>PHASEYX`, `>PHASEYY` (plus `>.VAR` variants when `rho_err` / `phi_err` are present).
+
 ## Apparent resistivity + phase
 
 ### `compute_rhophas(freq, Z, Z_err=None, *, err_kind="var", err_method=..., nsim=200, ...)`
 
-Computes apparent resistivity (`rho_a = |Z|² / (μ₀ω)`) and phase
-(`φ = angle(Z)` in degrees) for each impedance component.
+Computes apparent resistivity (`rho_a`) and phase (`φ = angle(Z)` in degrees)
+for each impedance component.
+
+**Unit convention:** Z is in MT field units (mV/km per nT), the py4mt
+convention.  The correct formula is:
+
+    rho_a = |Z|² × 10⁶ / (μ₀ω)
+
+which is equivalent to converting Z to SI Ohm first (Z_SI = Z × μ₀ × 10³)
+and applying `|Z_SI|² / (μ₀ω)`.  The factor 10⁶ is defined as the
+module-level constant `_Z_MT_TO_SI_SQ`.
 
 Supported `err_method` values: `"none"`, `"analytic"`, `"bootstrap"`, `"both"`.
 
@@ -309,3 +326,4 @@ the complex entries.
 
 Author: Volker Rath (DIAS)
 Modified: 2026-03-07 — unified save_xxx(**data_dict, path=...) calling convention, Claude (Opus 4.6, Anthropic)
+Modified: 2026-03-16 — freq_order parameter (load_edi, save_edi), compute_rhoplus (D+/rho+ test), PTXX/PTXY phase tensor blocks, RHOXY/PHASEXY rho-phase blocks in save_edi, MT unit fix (rho_a = |Z|²×1e6/(μ₀ω) for Z in mV/km/nT); Claude Sonnet 4.6 (Anthropic)
