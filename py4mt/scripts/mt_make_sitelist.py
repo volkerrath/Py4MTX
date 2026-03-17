@@ -48,7 +48,7 @@ if "wal" in WHAT_FOR:
     COORDS = "latlon"
 
 WORK_DIR = "/home/vrath/MT_Data/waldim/"
-EDI_DIR = WORK_DIR + "/edi_jc/"
+EDI_DIR = WORK_DIR + "/edi_synth_iso/orig/"
 
 print(" Edifiles read from: %s" % EDI_DIR)
 

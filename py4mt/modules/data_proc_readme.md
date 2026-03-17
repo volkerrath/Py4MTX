@@ -34,7 +34,7 @@ Common keys:
 | Key | Shape | Description |
 |-----|-------|-------------|
 | `freq` | `(n,)` | Frequency array [Hz] |
-| `Z` | `(n,2,2)` | Complex impedance tensor |
+| `Z` | `(n,2,2)` | Complex impedance tensor [mV km⁻¹ nT⁻¹] |
 | `Z_err` | `(n,2,2)` | Error (variance or std; see `err_kind`) |
 | `T` | `(n,1,2)` | Complex tipper (if present) |
 | `T_err` | `(n,1,2)` | Tipper error |
@@ -43,6 +43,7 @@ Common keys:
 | `rot` | `(n,)` | Rotation angle [deg], if present |
 | `err_kind` | `str` | `"var"` or `"std"` |
 | `freq_order` | `str` | `"inc"`, `"dec"`, or `"keep"` — order used when loading |
+| `Z_units` | `str` | Always `"mV/km/nT"` (MT field units); `ρ_a = \|Z\|²×10⁶/(μ₀ω)` |
 
 Metadata (if present): `station`, `lat_deg`, `lon_deg`, `elev_m`, and
 convenience aliases `lat`, `lon`, `elev`.
@@ -250,6 +251,65 @@ ds = xr.open_dataset("SITE.ncd")
 Z_re = ds["Z_re"].values    # (n, 2, 2)
 Z_im = ds["Z_im"].values
 freq = ds["freq"].values     # (n,)
+```
+
+---
+
+## Setting / flooring errors
+
+### `set_errors(edi_dict, *, mode, Z_rel, Z_rel_mode, T_abs, PT_abs, err_kind)`
+
+Sets or floors error arrays for Z, tipper, and phase tensor.
+All parameters except `edi_dict` and `mode` are keyword-only and optional.
+
+| `mode` | Behaviour |
+|--------|-----------|
+| `"set"` | Replace existing errors unconditionally |
+| `"floor"` | Only raise existing errors; values already larger are kept |
+
+**Z errors — relative to the data** (`Z_rel`: length-4 `[xx, xy, yx, yy]`)
+
+| `Z_rel_mode` | Formula |
+|-------------|---------|
+| `"ij"` | σ_ij(ω) = Z_rel_ij × \|Z_ij(ω)\| |
+| `"ij*ii"` | σ_ij(ω) = Z_rel_ij × √(\|Z_ii(ω)\| × \|Z_ij(ω)\|) off-diagonal; diagonal as `"ij"` |
+
+**Tipper / PT errors — absolute constant** (`T_abs`: `[Tx, Ty]`; `PT_abs`: `[xx, xy, yx, yy]`)
+
+```python
+# In script — passed as **err_pars
+err_pars = {
+    "Z_rel":      [0.05, 0.05, 0.05, 0.05],
+    "Z_rel_mode": "ij",
+    "T_abs":      [0.03, 0.03],
+    "PT_abs":     [0.05, 0.05, 0.05, 0.05],
+}
+data_dict = data_proc.set_errors(data_dict, mode="set", **err_pars)
+data_dict = data_proc.set_errors(data_dict, mode="floor", **err_pars)
+```
+
+---
+
+## Interpolation
+
+### `interpolate_data(edi_dict, *, newfreqs, freq_per_dec, interp_method)`
+
+Resamples all arrays (Z, T, P, errors, rot) onto a new frequency grid using
+spline interpolation in log-frequency space.
+
+| Parameter | Description |
+|-----------|-------------|
+| `newfreqs` | Explicit target frequency array [Hz]; takes priority |
+| `freq_per_dec` | Frequencies per decade for a log-spaced grid over the data range |
+| `interp_method` | `"gcvspline"` or `"linear"` (default); passed to `make_spline` |
+
+```python
+# In script — passed as **interp_pars
+interp_pars = {
+    "freq_per_dec":  6,
+    "interp_method": "gcvspline",
+}
+data_dict = data_proc.interpolate_data(data_dict, **interp_pars)
 ```
 
 ---

@@ -11,6 +11,7 @@ A collection NPZ file with all stations is saved at the end.
 @project:   py4mt — Python for Magnetotellurics
 @created:   2026-02-13 with the help of ChatGPT (GPT-5 Thinking)
 @modified:  2026-03-16 — freq_order, D+/rho+ test (DPLUS), add_rhoplus plot; Claude Sonnet 4.6 (Anthropic)
+@modified:  2026-03-17 — remove debug prints; validity-aware plot layout; SET_ERRORS/SET_ERROR_FLOORS with err_pars; interpolate_data via interp_pars; xlim/ylim in PLTARGS; Claude Sonnet 4.6 (Anthropic)
 """
 
 import os
@@ -49,50 +50,31 @@ print(titstrng + "\n\n")
 
 # =============================================================================
 #  Configuration
-# =============================================================================
-# WORK_DIR = PY4MTX_ROOT + "py4mt/data/edi/mcmc/"
-WORK_DIR = "/home/vrath/MT_Data/waldim/edi_synth_iso/"
+WORK_DIR = PY4MTX_ROOT + "py4mt/data/edi/"
+# WORK_DIR = "/home/vrath/MT_Data/waldim/edi_synth_iso/"
 if not os.path.isdir(WORK_DIR):
-    print(" File: %s does not exist, but will be created" % WORK_DIR)
-    os.mkdir(WORK_DIR)
+   sys.exit(" File: %s does not exist, but will be created" % WORK_DIR)
+
 
 DATA_DIR_IN = WORK_DIR + "/orig/"
 DATA_DIR_OUT = WORK_DIR + "/proc/"
 
-if not os.path.isdir(DATA_DIR_OUT):
-    print(" File: %s does not exist, but will be created" % DATA_DIR_OUT)
-    os.mkdir(DATA_DIR_OUT)
-
-
-edi_files = get_edi_list(DATA_DIR_IN, fullpath=True)
-ns = np.size(edi_files)
+NAME_STR = "_test_proc"
+COLL_NAME = "TEST"
 
 OUT_FILES = "edi, npz"
-
 STAT_FILE = True
 STAT_UPPER = True
-PLOT = True
-if PLOT:
-    PLOT_DIR = WORK_DIR +"/plots/"
-    if not os.path.isdir(PLOT_DIR):
-        print(" File: %s does not exist, but will be created" % PLOT_DIR)
-        os.mkdir(PLOT_DIR)
-    PLTARGS = {"show_errors": True}
-    PLOT_FORMAT = [".pdf"]
 
-NAME_STR = "_synth_proc"
-COLL_NAME = "Ann_SYNTH"
 
 DROP_INVALID = True
-
 FREQ_ORDER = "dec"   # "inc", "dec", or "keep"
-
 
 
 PHAS_TENS = True
 RHOPHAS = True
 INVARS = True
-DPLUS = True   # D+/rho+ test (Parker 1980; also known as dplus in Cordell mtcode)
+DPLUS = False   # D+/rho+ test (Parker 1980; also known as dplus in Cordell mtcode)
 
 ROTATE = False
 if ROTATE:
@@ -100,21 +82,30 @@ if ROTATE:
 
 DEC_DEG = True
 
-SET_ERRORS = False
+SET_ERRORS = True
 if SET_ERRORS:
-    ERRORS = {
-        "Zerr": [0.1, 0.1, 0.1, 0.1],
-        "Terr": [0.03, 0.03, 0.03, 0.03],
-        "PTerr": [0.1, 0.1, 0.1, 0.1],
+    # Passed as **err_pars to set_errors(data_dict, mode=..., **err_pars)
+    # Z_rel    : [xx, xy, yx, yy] relative levels
+    # Z_rel_mode: "ij"  → σ_ij = Z_rel_ij * |Z_ij(ω)|
+    #             "ij*ii" → σ_ij = Z_rel_ij * sqrt(|Z_ii|*|Z_ij|) off-diag
+    # T_abs    : [Tx, Ty] absolute (constant) tipper error
+    # PT_abs   : [xx, xy, yx, yy] absolute (constant) phase-tensor error
+    err_pars = {
+        "Z_rel":      [0.1, 0.1, 0.1, 0.1],
+        "Z_rel_mode": "ij",          # "ij" or "ij*ii"
+        "T_abs":      [0.03, 0.03],
+        "PT_abs":     [0.1, 0.1, 0.1, 0.1],
+        "mode":       "set" # "floor"
     }
-REF_ERROT = "ij"  # "ij*ii"
-TYPE_ERROR = "fixed"  # "floor"
-PERTURB = True
+
 
 INTERPOLATE = False
 if INTERPOLATE:
-    FREQ_PER_DEC = 6
-    INT_METHOD = [None, FREQ_PER_DEC]
+    # Passed as **interp_pars to interpolate_data(data_dict, **interp_pars)
+    interp_pars = {
+        "freq_per_dec":   6,
+        "interp_method":  "gcvspline",
+    }
 
 ESTIMATE_ERRORS = False
 if ESTIMATE_ERRORS:
@@ -122,7 +113,26 @@ if ESTIMATE_ERRORS:
     SPREAD = 2.0  # *std-dev
     ERR_METHOD = ["gcvspline", SPREAD]
 
+PLOT = True
+if PLOT:
+    PLOT_DIR = WORK_DIR +"/plots/"
+    PLTARGS = {
+        "show_errors": True,
+        "xlim": None,       # period limits (s), e.g. (1e-3, 1e3); None = auto
+        "ylim": None,       # y-axis limits; None = auto
+    }
+    PLOT_FORMAT = [".pdf"]
 
+if not os.path.isdir(PLOT_DIR):
+    print(" File: %s does not exist, but will be created" % PLOT_DIR)
+    os.mkdir(PLOT_DIR)
+if not os.path.isdir(DATA_DIR_OUT):
+    print(" File: %s does not exist, but will be created" % DATA_DIR_OUT)
+    os.mkdir(DATA_DIR_OUT)
+
+
+edi_files = get_edi_list(DATA_DIR_IN, fullpath=True)
+ns = np.size(edi_files)
 # =============================================================================
 #  Processing loop
 # =============================================================================
@@ -158,13 +168,14 @@ for edi in edi_files:
         data_dict = estimate_errors(data_dict=data_dict, method=ERR_METHOD)
 
     if SET_ERRORS:
-        data_dict = set_errors(data_dict=data_dict, errors=ERRORS)
+        data_dict = set_errors(data_dict, **err_pars)
+
 
     if INTERPOLATE:
-        data_dict = interpolate_data(data_dict=data_dict, method=INT_METHOD)
+        data_dict = interpolate_data(data_dict, **interp_pars)
 
     if ROTATE:
-        data_dict = rotate_data(data_dict=data_dict, angle=ANGLE)
+        data_dict = rotate_data(data_dict, angle=ANGLE)
 
     # --- Refresh apparent resistivity/phase after any Z modification ---
     if RHOPHAS:
@@ -210,8 +221,7 @@ for edi in edi_files:
             print(f"  D+ DET: {int((~_ok).sum())}/{len(_ok)} violations")
         data_dict["dplus"] = _dplus_results
 
-    print(' RHO\n',  data_dict["rho_err"] )
-    print(' PHI\n',  data_dict["phi_err"] )
+
     all_data.append(data_dict)
 
     statname = station
@@ -259,7 +269,7 @@ for edi in edi_files:
         print("Wrote file: ", DATA_DIR_OUT + statname + NAME_STR + ".npz")
 
     if PLOT:
-        nrows = 4 if DPLUS else 3
+        nrows =  3
         fig, axs = plt.subplots(nrows, 2, figsize=(
             8, 14 + 4 * (nrows - 3)), sharex=True)
 
@@ -268,18 +278,19 @@ for edi in edi_files:
         df_rp = dataframe_from_edi(
             data_dict, include_tipper=False, include_pt=False
         )
+        PLTARGS["xlim"] = (1.e-4, 1.e+3)
+        PLTARGS["ylim"] = (1.e-4, 1.e+4)
         add_rho(df_rp, comps="xy,yx", ax=axs[0, 0], **PLTARGS)
+        PLTARGS["ylim"] = (-180., +180.)
         add_phase(df_rp, comps="xy,yx", ax=axs[0, 1], **PLTARGS)
+        PLTARGS["ylim"] = (1.e-4, 1.e+4)
         add_rho(df_rp, comps="xx,yy", ax=axs[1, 0], **PLTARGS)
+        PLTARGS["ylim"] = (-180., +180.)
         add_phase(df_rp, comps="xx,yy", ax=axs[1, 1], **PLTARGS)
-        if DPLUS:
-            add_rhoplus(data_dict, comps="xy,yx", ax=axs[2, 0], **PLTARGS)
-            axs[2, 1].set_visible(False)
-            add_tipper(data_dict, ax=axs[3, 0], **PLTARGS)
-            add_pt(data_dict, ax=axs[3, 1], **PLTARGS)
-        else:
-            add_tipper(data_dict, ax=axs[2, 0], **PLTARGS)
-            add_pt(data_dict, ax=axs[2, 1], **PLTARGS)
+        PLTARGS["ylim"] = (1., +1.)
+        add_tipper(data_dict, ax=axs[2, 0], **PLTARGS)
+        PLTARGS["ylim"] = (1., +1.)
+        add_pt(data_dict, ax=axs[2, 1], **PLTARGS)
 
         for ax in axs.flat:
             if not ax.lines and not ax.images and not ax.collections:

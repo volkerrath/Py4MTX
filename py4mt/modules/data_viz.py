@@ -68,6 +68,7 @@ is preserved in ``df.attrs``.
 Author: Volker Rath (DIAS)
 Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-11
 Modified: 2026-03-16 — add_rhoplus (D+/rho+ test plot), MT unit fix (mV/km/nT) for rho_a; Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-03-17 — xlim/ylim parameters for all plotters (add_rho, add_rhoplus, add_phase, add_tipper, add_pt); Claude Sonnet 4.6 (Anthropic)
 """
 
 from __future__ import annotations
@@ -410,6 +411,35 @@ def _maybe_fill_between(
     ax.fill_between(x, lower, upper, alpha=alpha, linewidth=0)
 
 
+def _apply_limits(
+    ax: plt.Axes,
+    xlim: Optional[tuple] = None,
+    ylim: Optional[tuple] = None,
+) -> None:
+    """Apply optional x/y axis limits to *ax*.
+
+    Both arguments accept a 2-tuple ``(lo, hi)``.  Either element may be
+    ``None`` to leave that bound at the Matplotlib-computed default.
+    No-op when the argument itself is ``None``.
+    """
+    if xlim is not None:
+        lo, hi = xlim
+        cur = list(ax.get_xlim())
+        if lo is not None:
+            cur[0] = lo
+        if hi is not None:
+            cur[1] = hi
+        ax.set_xlim(cur)
+    if ylim is not None:
+        lo, hi = ylim
+        cur = list(ax.get_ylim())
+        if lo is not None:
+            cur[0] = lo
+        if hi is not None:
+            cur[1] = hi
+        ax.set_ylim(cur)
+
+
 def add_rho(
     data: pd.DataFrame | Mapping[str, Any],
     comps: Optional[str] = None,
@@ -419,6 +449,8 @@ def add_rho(
     show_errors: bool = False,
     error_suffix: str = "_err",
     error_alpha: float = 0.25,
+    xlim: Optional[tuple] = None,
+    ylim: Optional[tuple] = None,
     **line_kw,
 ) -> plt.Axes:
     """Add apparent resistivity curves to an axes.
@@ -482,6 +514,7 @@ def add_rho(
     ax.grid(True, linestyle=":")
     if legend:
         ax.legend()
+    _apply_limits(ax, xlim=xlim, ylim=ylim)
     return ax
 
 
@@ -498,6 +531,8 @@ def add_rhoplus(
     show_errors: bool = False,
     error_suffix: str = "_err",
     error_alpha: float = 0.25,
+    xlim: Optional[tuple] = None,
+    ylim: Optional[tuple] = None,
     **line_kw,
 ) -> plt.Axes:
     """Add D⁺ / rho-plus curves and violation markers to a log–log axes.
@@ -716,6 +751,7 @@ def add_rhoplus(
     ax.grid(True, linestyle=":")
     if legend:
         ax.legend()
+    _apply_limits(ax, xlim=xlim, ylim=ylim)
     return ax
 
 
@@ -729,6 +765,8 @@ def add_phase(
     show_errors: bool = False,
     error_suffix: str = "_err",
     error_alpha: float = 0.25,
+    xlim: Optional[tuple] = None,
+    ylim: Optional[tuple] = None,
     **line_kw,
 ) -> plt.Axes:
     """Add impedance phase curves to an axes.
@@ -792,6 +830,7 @@ def add_phase(
     ax.grid(True, linestyle=":")
     if legend:
         ax.legend()
+    _apply_limits(ax, xlim=xlim, ylim=ylim)
     return ax
 
 
@@ -803,6 +842,8 @@ def add_tipper(
     show_errors: bool = False,
     error_suffix: str = "_err",
     error_alpha: float = 0.25,
+    xlim: Optional[tuple] = None,
+    ylim: Optional[tuple] = None,
     **line_kw,
 ) -> plt.Axes:
     """Add tipper components (Tx, Ty) to an axes.
@@ -874,6 +915,7 @@ def add_tipper(
     ax.grid(True, linestyle=":")
     if legend:
         ax.legend()
+    _apply_limits(ax, xlim=xlim, ylim=ylim)
     return ax
 
 
@@ -885,6 +927,8 @@ def add_pt(
     show_errors: bool = False,
     error_suffix: str = "_err",
     error_alpha: float = 0.25,
+    xlim: Optional[tuple] = None,
+    ylim: Optional[tuple] = None,
     **line_kw,
 ) -> plt.Axes:
     """Add phase tensor components to an axes.
@@ -955,6 +999,7 @@ def add_pt(
     ax.grid(True, linestyle=":")
     if legend:
         ax.legend()
+    _apply_limits(ax, xlim=xlim, ylim=ylim)
     return ax
 
 

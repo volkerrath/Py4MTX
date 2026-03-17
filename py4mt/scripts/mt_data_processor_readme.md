@@ -12,6 +12,7 @@ Batch MT station processing script.
 | README generated | 3 March 2026 by Claude (Anthropic), from cleaned source |
 | Modified | 2026-03-07 — unified save_xxx(**data_dict, path=...) calling convention |
 | Modified | 2026-03-16 — freq_order, D+/rho+ test (DPLUS), add_rhoplus plot; Claude Sonnet 4.6 (Anthropic) |
+| Modified | 2026-03-17 — validity-aware plots; err_pars/interp_pars dict pattern; xlim/ylim; Claude Sonnet 4.6 (Anthropic) |
 
 ## Purpose
 
@@ -56,22 +57,32 @@ saved at the end.
 | `PLOT` | `False` | Generate per-station diagnostic plots |
 | `STAT_FILE` | `True` | Use EDI filename (not station header) for output names |
 
-### Error configuration (when `SET_ERRORS = True`)
+### Error configuration (when `SET_ERRORS = True` or `SET_ERROR_FLOORS = True`)
 
 ```python
-ERRORS = {
-    "Zerr":  [0.1, 0.1, 0.1, 0.1],      # relative Z errors (xx, xy, yx, yy)
-    "Terr":  [0.03, 0.03, 0.03, 0.03],   # relative tipper errors
-    "PTerr": [0.1, 0.1, 0.1, 0.1],       # relative phase tensor errors
+err_pars = {
+    "Z_rel":      [0.1, 0.1, 0.1, 0.1],  # relative Z errors [xx, xy, yx, yy]
+    "Z_rel_mode": "ij",                    # "ij" or "ij*ii"
+    "T_abs":      [0.03, 0.03],            # absolute tipper errors [Tx, Ty]
+    "PT_abs":     [0.1, 0.1, 0.1, 0.1],   # absolute PT errors [xx, xy, yx, yy]
 }
 ```
+
+Passed as `set_errors(data_dict, mode="set", **err_pars)` or `mode="floor"`.
+`SET_ERRORS` and `SET_ERROR_FLOORS` are independent and can both be active
+(floor applied after set).
 
 ### Interpolation (when `INTERPOLATE = True`)
 
 ```python
-FREQ_PER_DEC = 6
-INT_METHOD = [None, FREQ_PER_DEC]
+interp_pars = {
+    "freq_per_dec":  6,
+    "interp_method": "gcvspline",   # or "linear"
+}
 ```
+
+Passed as `interpolate_data(data_dict, **interp_pars)`.
+Alternatively, set `"newfreqs"` to an explicit frequency array [Hz].
 
 ### Rotation (when `ROTATE = True`)
 
