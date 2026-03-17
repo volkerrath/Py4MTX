@@ -96,9 +96,12 @@ All MT plotters share these keyword arguments:
 - `show_errors` (bool) — show ±1σ fill-between envelopes (default `False`)
 - `error_suffix` (str) — suffix for error columns (default `"_err"`)
 - `error_alpha` (float) — transparency for error envelopes (default `0.25`)
-- `comps` (str) — comma-separated component list, e.g. `"xy,yx"` (default
-  varies by plotter)
+- `comps` (str) — comma-separated component list, e.g. `"xy,yx"` (default varies by plotter; not available for `add_tipper` / `add_pt`)
 - `legend` (bool) — show legend (default `True`)
+- `xlim` (tuple or None) — period-axis limits `(lo, hi)` in seconds; either element may be `None` to keep the auto-computed bound (default `None`)
+- `ylim` (tuple or None) — y-axis limits `(lo, hi)`; either element may be `None` (default `None`)
+
+All six arguments are consumed by the plotter and are **not** forwarded to the underlying Matplotlib call — they are safe to include in a shared `PLTARGS` dict passed to every plotter regardless of plot type.
 
 ---
 

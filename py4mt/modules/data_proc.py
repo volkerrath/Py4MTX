@@ -65,7 +65,7 @@ A typical dictionary returned by :func:`load_edi` looks like::
 
     edi = {
         "freq": (n,),                      # Hz
-        "Z": (n, 2, 2) complex,            # impedance
+        "Z": (n, 2, 2) complex,            # impedance, mV/km/nT (MT field units)
         "T": (n, 1, 2) complex or None,    # tipper
         "Z_err": (n, 2, 2) float or None,  # variance or std (see "err_kind")
         "T_err": (n, 1, 2) float or None,
@@ -73,6 +73,8 @@ A typical dictionary returned by :func:`load_edi` looks like::
         "P_err": (n, 2, 2) float or None,
         "rot": (n,) float or None,         # degrees; from ROTSPEC or ZROT
         "err_kind": "var" or "std",
+        "freq_order": "inc", "dec", or "keep",
+        "Z_units": "mV/km/nT",            # always; rho_a formula uses 1e6/(mu0*omega)
         "source_kind": "spectra" or "tables",
         "station": str or None,
         "lat_deg": float or None,
@@ -96,6 +98,10 @@ Notes
 Author: Volker Rath (DIAS)
 Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-13 (UTC)
 Modified: 2026-03-16 — freq_order parameter (load_edi, save_edi), compute_rhoplus (D+/rho+ test), PTXX/PTXY phase tensor blocks, RHOXY/PHASEXY rho-phase blocks in save_edi, MT unit fix (mV/km/nT) for rho_a; Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-03-17 — unconditional all-sentinel tipper suppression in load_edi;
+full set_errors implementation (set/floor, Z_rel ij/ij*ii, T/PT absolute); Z_units key;
+interpolate_data keyword-only signature (newfreqs, freq_per_dec, interp_method);
+fix ZT_from_S unit scaling (remove erroneous /1e3; µV/m/nT = mV/km/nT, no conversion needed); Claude Sonnet 4.6 (Anthropic)
 """
 
 from __future__ import annotations
@@ -555,8 +561,10 @@ def ZT_from_S(S: np.ndarray, ref: str = "RH") -> Tuple[np.ndarray, np.ndarray]:
     Z = SEH @ SHH_inv
     T = SBH @ SHH_inv
 
-    # Phoenix scaling (µV/m per nT -> V/m per T)
-    Z /= 1.0e3
+    # Unit note: Phoenix SPECTRA cross-spectra have E in µV/m and H in nT.
+    # Z = S_EH / S_HH therefore has units µV/m / nT = µV m⁻¹ nT⁻¹.
+    # Since 1 µV/m = 1 mV/km, this is already in py4mt's target units
+    # (mV km⁻¹ nT⁻¹).  No scaling factor is needed.
 
     if ref.upper() == "LH":
         Z = -Z
@@ -696,6 +704,19 @@ def load_edi(
 
         T, T_var = _build_tipper(freq, t_blocks_re, t_blocks_im, t_var_blocks)
 
+        # Unconditionally suppress all-sentinel tipper (e.g. all 1E+32),
+        # regardless of drop_invalid_periods.  Must happen before the
+        # row-masking logic so that save_edi never writes sentinel blocks.
+        if T is not None:
+            _t_bad = (
+                ~np.isfinite(T.real) | ~np.isfinite(T.imag)
+                | (np.abs(T.real) > invalid_sentinel)
+                | (np.abs(T.imag) > invalid_sentinel)
+            )
+            if _t_bad.all():
+                T = None
+                T_var = None
+
         zrot_vals = _extract_block_values(lines, "ZROT")
         if zrot_vals is not None:
             if zrot_vals.size < freq.size:
@@ -801,6 +822,7 @@ def load_edi(
         "rot": rot,
         "err_kind": err_kind,
         "freq_order": freq_order,
+        "Z_units": "mV/km/nT",   # MT field units: mV km⁻¹ nT⁻¹
         "header_raw": header_lines,
         "source_kind": source_kind,
         # metadata
@@ -878,29 +900,67 @@ def estimate_errors(edi_dict: Dict[str, Any], method: Dict[str, Any]) -> Dict[st
     return edi_new
 
 
-def interpolate_data(edi_dict: Dict[str, Any], method: Dict[str, Any]) -> Dict[str, Any]:
-    """Interpolate MT transfer functions to a new frequency grid."""
+def interpolate_data(
+    edi_dict: Dict[str, Any],
+    *,
+    newfreqs: Optional[np.ndarray] = None,
+    freq_per_dec: Optional[int] = None,
+    interp_method: str = "linear",
+) -> Dict[str, Any]:
+    """Interpolate MT transfer functions to a new frequency grid.
+
+    Parameters
+    ----------
+    edi_dict : dict
+        Site dictionary as returned by :func:`load_edi`.
+    newfreqs : array-like, optional
+        Explicit target frequency array [Hz] (log or linear spacing).
+        Takes priority over *freq_per_dec*.
+    freq_per_dec : int, optional
+        Number of frequencies per decade for a log-spaced grid spanning
+        the data range.  Used when *newfreqs* is not given.
+    interp_method : str, optional
+        Interpolation method passed to the spline builder.  Currently
+        only ``"gcvspline"`` and ``"linear"`` (default) are recognised;
+        other values are passed through to ``make_spline``.
+
+    Returns
+    -------
+    dict
+        Updated site dictionary with arrays resampled onto the new grid.
+    """
     edi_new = dict(edi_dict)
 
     old_logf = np.log10(np.asarray(edi_new["freq"], dtype=float).ravel())
-    new_logf = np.asarray(method.get("newfreqs"), dtype=float).ravel()
+
+    if newfreqs is not None:
+        new_logf = np.log10(np.asarray(newfreqs, dtype=float).ravel())
+    elif freq_per_dec is not None:
+        f_min, f_max = old_logf.min(), old_logf.max()
+        n_pts = max(2, int(round((f_max - f_min) * freq_per_dec)) + 1)
+        new_logf = np.linspace(f_min, f_max, n_pts)
+    else:
+        raise ValueError(
+            "interpolate_data: provide either 'newfreqs' or 'freq_per_dec'.")
+
     if new_logf.size == 0:
-        raise ValueError("method['newfreqs'] must be a non-empty array.")
+        raise ValueError("interpolate_data: target frequency grid is empty.")
     nf = new_logf.size
+
+    lam = None  # let make_spline decide; gcvspline handles its own lambda
 
     edi_new["freq"] = np.power(10.0, new_logf)
 
     def _interp_any(arr: np.ndarray) -> np.ndarray:
         out = np.zeros((nf,) + arr.shape[1:], dtype=arr.dtype)
-        it = np.ndindex(arr.shape[1:])
-        for idx in it:
+        for idx in np.ndindex(arr.shape[1:]):
             y = arr[(slice(None),) + idx]
             if np.iscomplexobj(y):
-                sr = make_spline(old_logf, y.real, lam=None)
-                si = make_spline(old_logf, y.imag, lam=None)
+                sr = make_spline(old_logf, y.real, lam=lam)
+                si = make_spline(old_logf, y.imag, lam=lam)
                 out[(slice(None),) + idx] = sr(new_logf) + 1j * si(new_logf)
             else:
-                s = make_spline(old_logf, y, lam=None)
+                s = make_spline(old_logf, y, lam=lam)
                 out[(slice(None),) + idx] = s(new_logf)
         return out
 
@@ -911,10 +971,153 @@ def interpolate_data(edi_dict: Dict[str, Any], method: Dict[str, Any]) -> Dict[s
     return edi_new
 
 
-def set_errors(edi_dict: Dict[str, Any], errors: Dict[str, np.ndarray]) -> Dict[str, Any]:
-    """Replace error arrays using provided relative errors (placeholder)."""
-    edi_new = dict(edi_dict)
-    # TODO: implement a clear contract for the `errors` dict and update Z_err/T_err/P_err.
+def set_errors(
+    data_dict: Dict[str, Any],
+    *,
+    mode: str = "set",
+    Z_rel: Optional[np.ndarray] = None,
+    Z_rel_mode: str = "ij",
+    T_abs: Optional[np.ndarray] = None,
+    PT_abs: Optional[np.ndarray] = None,
+    err_kind: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Set or floor impedance, tipper, and phase-tensor error arrays.
+
+    Parameters
+    ----------
+    data_dict : dict
+        Site dictionary as returned by :func:`load_edi`.
+    mode : ``"set"`` | ``"floor"``
+        ``"set"``   — replace existing errors unconditionally.
+        ``"floor"`` — only raise existing errors; values already larger are
+                      left unchanged.
+    Z_rel : array-like of shape (4,) or scalar, optional
+        Relative error levels for Z components ordered
+        ``[xx, xy, yx, yy]``.  Interpretation depends on *Z_rel_mode*.
+    Z_rel_mode : ``"ij"`` | ``"ij*ii"``
+        ``"ij"``    — σ_ij = Z_rel_ij × |Z_ij(ω)|
+        ``"ij*ii"`` — σ_ij = Z_rel_ij × √(|Z_ii(ω)| × |Z_ij(ω)|) for
+                      off-diagonal; diagonal treated as ``"ij"``.
+    T_abs : array-like of shape (2,) or scalar, optional
+        Absolute (constant) error levels for tipper components [Tx, Ty].
+        A scalar is broadcast to both components.
+    PT_abs : array-like of shape (4,) or scalar, optional
+        Absolute (constant) error levels for phase-tensor components ordered
+        ``[xx, xy, yx, yy]``.
+    err_kind : ``"var"`` | ``"std"`` | None
+        Output error convention.  ``None`` inherits from
+        ``data_dict["err_kind"]`` (default ``"var"``).
+
+    Returns
+    -------
+    dict
+        Updated site dictionary with ``Z_err``, ``T_err``, ``P_err``
+        replaced or raised according to *mode*.
+
+    Notes
+    -----
+    Only the arrays explicitly requested are modified — pass only the
+    keyword arguments you need.  Missing ones are silently skipped.
+
+    Errors are stored in the convention given by *err_kind*: variances (σ²)
+    if ``"var"``, standard deviations (σ) if ``"std"``.
+    """
+    edi_new = dict(data_dict)
+
+    _ek = err_kind if err_kind is not None else str(
+        edi_new.get("err_kind", "var")).strip().lower()
+    _ek = "std" if _ek.startswith("std") else "var"
+
+    mode = mode.strip().lower()
+    if mode not in ("set", "floor"):
+        raise ValueError(
+            f"set_errors: mode must be 'set' or 'floor', got '{mode}'.")
+
+    Z_rel_mode = Z_rel_mode.strip().lower()
+    if Z_rel_mode not in ("ij", "ij*ii"):
+        raise ValueError(
+            f"set_errors: Z_rel_mode must be 'ij' or 'ij*ii', "
+            f"got '{Z_rel_mode}'.")
+
+    def _apply(existing: Optional[np.ndarray],
+               target_std: np.ndarray) -> np.ndarray:
+        """Return the new error array in the requested err_kind convention."""
+        target = target_std ** 2 if _ek == "var" else target_std
+        if mode == "set" or existing is None:
+            return target
+        # floor: element-wise max in std space, then convert
+        cur_std = (np.sqrt(np.asarray(existing, dtype=float))
+                   if _ek == "var" else np.asarray(existing, dtype=float))
+        floored = np.maximum(cur_std, target_std)
+        return floored ** 2 if _ek == "var" else floored
+
+    # ------------------------------------------------------------------
+    # Z errors — relative to the data
+    # ------------------------------------------------------------------
+    if Z_rel is not None and edi_new.get("Z") is not None:
+        Z = np.asarray(edi_new["Z"], dtype=np.complex128)   # (n, 2, 2)
+        n = Z.shape[0]
+
+        rel = np.asarray(Z_rel, dtype=float).ravel()
+        if rel.size == 1:
+            rel = np.full(4, rel[0])
+        if rel.size != 4:
+            raise ValueError("Z_rel must have 1 or 4 elements.")
+        rel = rel.reshape(2, 2)   # [[xx, xy], [yx, yy]]
+
+        absZ = np.abs(Z)          # (n, 2, 2)
+        sigma_Z = np.zeros((n, 2, 2), dtype=float)
+
+        for ci in range(2):
+            for cj in range(2):
+                r = rel[ci, cj]
+                if Z_rel_mode == "ij" or ci == cj:
+                    sigma_Z[:, ci, cj] = r * absZ[:, ci, cj]
+                else:
+                    # off-diagonal: geometric mean of diagonal and off-diag
+                    sigma_Z[:, ci, cj] = r * np.sqrt(
+                        absZ[:, ci, ci] * absZ[:, ci, cj])
+
+        edi_new["Z_err"] = _apply(edi_new.get("Z_err"), sigma_Z)
+
+    # ------------------------------------------------------------------
+    # Tipper errors — absolute / constant
+    # ------------------------------------------------------------------
+    if T_abs is not None and edi_new.get("T") is not None:
+        T = np.asarray(edi_new["T"], dtype=np.complex128)   # (n, 1, 2)
+        n = T.shape[0]
+
+        t_abs = np.asarray(T_abs, dtype=float).ravel()
+        if t_abs.size == 1:
+            t_abs = np.array([t_abs[0], t_abs[0]])
+        if t_abs.size != 2:
+            raise ValueError("T_abs must have 1 or 2 elements [Tx, Ty].")
+
+        sigma_T = np.zeros((n, 1, 2), dtype=float)
+        sigma_T[:, 0, 0] = t_abs[0]
+        sigma_T[:, 0, 1] = t_abs[1]
+
+        edi_new["T_err"] = _apply(edi_new.get("T_err"), sigma_T)
+
+    # ------------------------------------------------------------------
+    # Phase-tensor errors — absolute / constant
+    # ------------------------------------------------------------------
+    if PT_abs is not None and edi_new.get("P") is not None:
+        P = np.asarray(edi_new["P"], dtype=float)           # (n, 2, 2)
+        n = P.shape[0]
+
+        pt_abs = np.asarray(PT_abs, dtype=float).ravel()
+        if pt_abs.size == 1:
+            pt_abs = np.full(4, pt_abs[0])
+        if pt_abs.size != 4:
+            raise ValueError("PT_abs must have 1 or 4 elements.")
+        pt_abs = pt_abs.reshape(2, 2)
+
+        sigma_PT = np.broadcast_to(
+            pt_abs[np.newaxis], (n, 2, 2)).copy().astype(float)
+
+        edi_new["P_err"] = _apply(edi_new.get("P_err"), sigma_PT)
+
     return edi_new
 
 
