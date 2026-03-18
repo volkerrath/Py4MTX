@@ -12,7 +12,7 @@ Batch MT station processing script.
 | README generated | 3 March 2026 by Claude (Anthropic), from cleaned source |
 | Modified | 2026-03-07 — unified save_xxx(**data_dict, path=...) calling convention |
 | Modified | 2026-03-16 — freq_order, D+/rho+ test (DPLUS), add_rhoplus plot; Claude Sonnet 4.6 (Anthropic) |
-| Modified | 2026-03-17 — validity-aware plots; err_pars/interp_pars dict pattern; xlim/ylim; Claude Sonnet 4.6 (Anthropic) |
+| Modified | 2026-03-18 — add_noise option in SET_ERRORS (mode='fix' only), random_state passthrough; Claude Sonnet 4.6 (Anthropic) |
 
 ## Purpose
 
@@ -60,17 +60,29 @@ saved at the end.
 ### Error configuration (when `SET_ERRORS = True` or `SET_ERROR_FLOORS = True`)
 
 ```python
+ADD_NOISE = False   # perturb data by N(0, σ); only valid with mode="fix"
 err_pars = {
-    "Z_rel":      [0.1, 0.1, 0.1, 0.1],  # relative Z errors [xx, xy, yx, yy]
-    "Z_rel_mode": "ij",                    # "ij" or "ij*ii"
-    "T_abs":      [0.03, 0.03],            # absolute tipper errors [Tx, Ty]
-    "PT_abs":     [0.1, 0.1, 0.1, 0.1],   # absolute PT errors [xx, xy, yx, yy]
+    "Z_rel":        [0.1, 0.1, 0.1, 0.1],  # relative Z errors [xx, xy, yx, yy]
+    "Z_rel_mode":   "ij",                    # "ij" or "ij*ii"
+    "T_abs":        [0.03, 0.03],            # absolute tipper errors [Tx, Ty]
+    "PT_abs":       [0.1, 0.1, 0.1, 0.1],   # absolute PT errors [xx, xy, yx, yy]
+    "add_noise":    ADD_NOISE,
+    "random_state": rng,                     # module-level Generator; seed for reproducibility
 }
 ```
 
-Passed as `set_errors(data_dict, mode="set", **err_pars)` or `mode="floor"`.
+Passed as `set_errors(data_dict, mode="fix", **err_pars)` or `mode="floor"`.
 `SET_ERRORS` and `SET_ERROR_FLOORS` are independent and can both be active
 (floor applied after set).
+
+When `ADD_NOISE = True`, each data array is perturbed by independent Gaussian
+noise drawn from N(0, σ), where σ is the fixed error level computed for that
+component.  For the complex arrays Z and T the noise is split equally between
+real and imaginary parts (each N(0, σ/√2)); for the real-valued phase tensor P
+a single draw from N(0, σ) is used.  The unperturbed originals are preserved in
+the dict as `Z_orig`, `T_orig`, and `P_orig` (only for components that were
+actually perturbed).  Noise perturbation is only permitted with `mode="fix"` and
+raises a `ValueError` if combined with `mode="floor"`.
 
 ### Interpolation (when `INTERPOLATE = True`)
 

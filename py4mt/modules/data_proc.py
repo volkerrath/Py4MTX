@@ -99,7 +99,7 @@ Author: Volker Rath (DIAS)
 Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-13 (UTC)
 Modified: 2026-03-16 — freq_order parameter (load_edi, save_edi), compute_rhoplus (D+/rho+ test), PTXX/PTXY phase tensor blocks, RHOXY/PHASEXY rho-phase blocks in save_edi, MT unit fix (mV/km/nT) for rho_a; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-03-17 — unconditional all-sentinel tipper suppression in load_edi;
-full set_errors implementation (set/floor, Z_rel ij/ij*ii, T/PT absolute); Z_units key;
+full set_errors implementation (fix/floor, Z_rel ij/ij*ii, T/PT absolute); Z_units key;
 interpolate_data keyword-only signature (newfreqs, freq_per_dec, interp_method);
 fix ZT_from_S unit scaling (remove erroneous /1e3; µV/m/nT = mV/km/nT, no conversion needed); Claude Sonnet 4.6 (Anthropic)
 """
@@ -974,12 +974,14 @@ def interpolate_data(
 def set_errors(
     data_dict: Dict[str, Any],
     *,
-    mode: str = "set",
+    mode: str = "fix",
     Z_rel: Optional[np.ndarray] = None,
     Z_rel_mode: str = "ij",
     T_abs: Optional[np.ndarray] = None,
     PT_abs: Optional[np.ndarray] = None,
     err_kind: Optional[str] = None,
+    add_noise: bool = False,
+    random_state: Optional[np.random.Generator] = None,
 ) -> Dict[str, Any]:
     """Set or floor impedance, tipper, and phase-tensor error arrays.
 
@@ -987,8 +989,8 @@ def set_errors(
     ----------
     data_dict : dict
         Site dictionary as returned by :func:`load_edi`.
-    mode : ``"set"`` | ``"floor"``
-        ``"set"``   — replace existing errors unconditionally.
+    mode : ``"fix"`` | ``"floor"``
+        ``"fix"``   — replace existing errors unconditionally.
         ``"floor"`` — only raise existing errors; values already larger are
                       left unchanged.
     Z_rel : array-like of shape (4,) or scalar, optional
@@ -1007,12 +1009,32 @@ def set_errors(
     err_kind : ``"var"`` | ``"std"`` | None
         Output error convention.  ``None`` inherits from
         ``data_dict["err_kind"]`` (default ``"var"``).
+    add_noise : bool, optional
+        If ``True``, perturb the data arrays in place by drawing independent
+        Gaussian noise N(0, σ) using the fixed error levels σ computed for
+        this call.  Only permitted when ``mode="fix"``; raises
+        ``ValueError`` otherwise.
+
+        - **Z**: real and imaginary parts are perturbed independently, each
+          from N(0, σ/√2), so the total complex perturbation has standard
+          deviation σ per component.
+        - **T**: same complex splitting as Z (real and imaginary parts each
+          from N(0, σ/√2)).
+        - **P**: real-valued; each element perturbed from N(0, σ).
+
+        Default is ``False``.
+    random_state : numpy.random.Generator or None, optional
+        Random generator used when ``add_noise=True``.  Pass a seeded
+        generator for reproducible results.  ``None`` creates a fresh
+        default generator.
 
     Returns
     -------
     dict
         Updated site dictionary with ``Z_err``, ``T_err``, ``P_err``
-        replaced or raised according to *mode*.
+        replaced or raised according to *mode*, and (when ``add_noise=True``)
+        with ``Z``, ``T``, ``P`` replaced by noise-perturbed copies and the
+        unmodified originals preserved as ``Z_orig``, ``T_orig``, ``P_orig``.
 
     Notes
     -----
@@ -1021,6 +1043,11 @@ def set_errors(
 
     Errors are stored in the convention given by *err_kind*: variances (σ²)
     if ``"var"``, standard deviations (σ) if ``"std"``.
+
+    When ``add_noise=True``, the ``*_orig`` keys are only added for the
+    components that were actually perturbed (i.e. only when the corresponding
+    ``Z_rel`` / ``T_abs`` / ``PT_abs`` argument was supplied and the matching
+    data array was present in the dict).
     """
     edi_new = dict(data_dict)
 
@@ -1029,9 +1056,15 @@ def set_errors(
     _ek = "std" if _ek.startswith("std") else "var"
 
     mode = mode.strip().lower()
-    if mode not in ("set", "floor"):
+    if mode not in ("fix", "floor"):
         raise ValueError(
-            f"set_errors: mode must be 'set' or 'floor', got '{mode}'.")
+            f"set_errors: mode must be 'fix' or 'floor', got '{mode}'.")
+
+    if add_noise and mode != "fix":
+        raise ValueError(
+            "set_errors: add_noise=True is only permitted with mode='fix'.")
+
+    _rng = random_state if random_state is not None else np.random.default_rng()
 
     Z_rel_mode = Z_rel_mode.strip().lower()
     if Z_rel_mode not in ("ij", "ij*ii"):
@@ -1043,7 +1076,7 @@ def set_errors(
                target_std: np.ndarray) -> np.ndarray:
         """Return the new error array in the requested err_kind convention."""
         target = target_std ** 2 if _ek == "var" else target_std
-        if mode == "set" or existing is None:
+        if mode == "fix" or existing is None:
             return target
         # floor: element-wise max in std space, then convert
         cur_std = (np.sqrt(np.asarray(existing, dtype=float))
@@ -1080,6 +1113,15 @@ def set_errors(
 
         edi_new["Z_err"] = _apply(edi_new.get("Z_err"), sigma_Z)
 
+        if add_noise:
+            # Perturb real and imaginary parts independently from
+            # N(0, σ/√2) so the total complex noise has std = σ.
+            s = sigma_Z / np.sqrt(2.0)
+            noise = (_rng.standard_normal(Z.shape) * s
+                     + 1j * _rng.standard_normal(Z.shape) * s)
+            edi_new["Z_orig"] = Z.copy()
+            edi_new["Z"] = Z + noise
+
     # ------------------------------------------------------------------
     # Tipper errors — absolute / constant
     # ------------------------------------------------------------------
@@ -1099,6 +1141,13 @@ def set_errors(
 
         edi_new["T_err"] = _apply(edi_new.get("T_err"), sigma_T)
 
+        if add_noise:
+            s = sigma_T / np.sqrt(2.0)
+            noise = (_rng.standard_normal(T.shape) * s
+                     + 1j * _rng.standard_normal(T.shape) * s)
+            edi_new["T_orig"] = T.copy()
+            edi_new["T"] = T + noise
+
     # ------------------------------------------------------------------
     # Phase-tensor errors — absolute / constant
     # ------------------------------------------------------------------
@@ -1117,6 +1166,11 @@ def set_errors(
             pt_abs[np.newaxis], (n, 2, 2)).copy().astype(float)
 
         edi_new["P_err"] = _apply(edi_new.get("P_err"), sigma_PT)
+
+        if add_noise:
+            # P is real-valued: single draw from N(0, σ).
+            edi_new["P_orig"] = P.copy()
+            edi_new["P"] = P + _rng.standard_normal(P.shape) * sigma_PT
 
     return edi_new
 
@@ -3554,82 +3608,4 @@ def calc_rhoa_phas(freq: np.ndarray, Z: np.ndarray) -> Tuple[np.ndarray, np.ndar
     return rho, phi
 
 
-def mt1dfwd(
-    freq: np.ndarray,
-    sig: np.ndarray,
-    d: np.ndarray,
-    inmod: str = "r",
-    out: str = "imp",
-    magfield: str = "b",
-):
-    """Compute 1D MT forward response for a layered Earth."""
-    mu0 = _MU0
-    sig = np.array(sig, dtype=float)
-    freq = np.array(freq, dtype=float)
-    d = np.array(d, dtype=float)
 
-    if inmod.lower().startswith("r"):
-        sig = 1.0 / sig
-
-    if sig.ndim > 1:
-        raise ValueError("sig must be 1D.")
-
-    nlay = sig.size
-    Z = np.zeros_like(freq, dtype=complex)
-    w = 2.0 * np.pi * freq
-
-    for ifr, omega in enumerate(w):
-        imp = np.empty(nlay, dtype=complex)
-        imp[-1] = np.sqrt(1j * omega * mu0 / sig[-1])
-
-        for layer in range(nlay - 2, -1, -1):
-            sl = sig[layer]
-            dl = d[layer]
-            dj = np.sqrt(1j * omega * mu0 * sl)
-            wj = dj / sl
-            ej = np.exp(-2.0 * dl * dj)
-            impb = imp[layer + 1]
-            rj = (wj - impb) / (wj + impb)
-            reff = rj * ej
-            imp[layer] = wj * ((1.0 - reff) / (1.0 + reff))
-
-        Z[ifr] = imp[0]
-
-    if out.lower() == "imp":
-        return Z / mu0 if magfield.lower() == "b" else Z
-
-    absZ = np.abs(Z)
-    rhoa = (absZ**2) / (mu0 * w)
-    phase = np.rad2deg(np.angle(Z))
-
-    if out.lower() == "rho":
-        return rhoa, phase
-    return Z, rhoa, phase
-
-
-def wait1d(periods: np.ndarray, thick: np.ndarray, res: np.ndarray):
-    """Alternative 1D MT forward modelling implementation (legacy)."""
-    mu = _MU0
-    omega = 2.0 * np.pi / periods
-
-    cond = 1.0 / np.asarray(res, dtype=float)
-    nlay = cond.size
-
-    spn = np.size(periods)
-    Z = np.zeros(spn, dtype=complex)
-
-    for idx, w in enumerate(omega):
-        prop_const = np.sqrt(1j * mu * cond[-1] * w)
-        C = np.zeros(nlay, dtype=complex)
-        C[-1] = 1.0 / prop_const
-        if len(thick) > 0:
-            for k in reversed(range(nlay - 1)):
-                prop_layer = np.sqrt(1j * w * mu * cond[k])
-                k1 = (C[k + 1] * prop_layer + np.tanh(prop_layer * thick[k]))
-                k2 = ((C[k + 1] * prop_layer * np.tanh(prop_layer * thick[k])) + 1.0)
-                C[k] = (1.0 / prop_layer) * (k1 / k2)
-        Z[idx] = 1j * w * mu * C[0]
-
-    rhoa = (np.abs(Z) ** 2) / (mu * omega)
-    phi = np.angle(Z, deg=True)
-    return rhoa, phi, np.real(Z), np.imag(Z)

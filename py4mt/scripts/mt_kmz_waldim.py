@@ -47,18 +47,18 @@ print(titstrng + "\n\n")
 #  Configuration
 # =============================================================================
 WORK_DIR = "/home/vrath/MT_Data/waldim/"
-EDI_DIR = WORK_DIR + "/edi_eps/"
+EDI_DIR = WORK_DIR + "/edi_synth_iso/orig/"
 
 DIM_DIR = WORK_DIR
 print(" WALdim results read from: %s" % DIM_DIR)
 
 USE_FREQS = False
 if USE_FREQS:
-    DIM_FILE = EDI_DIR + "ANN_DIM_0.30.dat"
+    DIM_FILE = EDI_DIR + "ANN_ISO_DIM_0.30.dat"
     KML_FILE = "ANN_FREQ"
 else:
-    DIM_FILE = EDI_DIR + "ANN_BANDCLASS_0.30.dat"
-    KML_FILE = "ANN_BAND_30"
+    DIM_FILE = EDI_DIR + "ANN_ISO_BANDCLASS_0.30.dat"
+    KML_FILE = "ANN_ISO_BAND_30"
 
 CLASS3 = False
 
