@@ -11,7 +11,7 @@ A collection NPZ file with all stations is saved at the end.
 @project:   py4mt — Python for Magnetotellurics
 @created:   2026-02-13 with the help of ChatGPT (GPT-5 Thinking)
 @modified:  2026-03-16 — freq_order, D+/rho+ test (DPLUS), add_rhoplus plot; Claude Sonnet 4.6 (Anthropic)
-@modified:  2026-03-17 — remove debug prints; validity-aware plot layout; SET_ERRORS/SET_ERROR_FLOORS with err_pars; interpolate_data via interp_pars; xlim/ylim in PLTARGS; Claude Sonnet 4.6 (Anthropic)
+@modified:  2026-03-18 — add_noise option in SET_ERRORS (mode='fix' only); Claude Sonnet 4.6 (Anthropic)
 """
 
 import os
@@ -90,12 +90,16 @@ if SET_ERRORS:
     #             "ij*ii" → σ_ij = Z_rel_ij * sqrt(|Z_ii|*|Z_ij|) off-diag
     # T_abs    : [Tx, Ty] absolute (constant) tipper error
     # PT_abs   : [xx, xy, yx, yy] absolute (constant) phase-tensor error
+    # add_noise: if True, perturb data by N(0, σ) — only valid with mode='fix'
+    ADD_NOISE = False
     err_pars = {
         "Z_rel":      [0.1, 0.1, 0.1, 0.1],
         "Z_rel_mode": "ij",          # "ij" or "ij*ii"
         "T_abs":      [0.03, 0.03],
         "PT_abs":     [0.1, 0.1, 0.1, 0.1],
-        "mode":       "set" # "floor"
+        "mode":       "fix",         # "floor"
+        "add_noise":  ADD_NOISE,
+        "random_state": rng,         # module-level Generator; set seed for reproducibility
     }
 
 

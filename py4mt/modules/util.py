@@ -1326,3 +1326,85 @@ def dict_to_namespace(d):
         if not key.isidentifier():
             raise ValueError(f"Invalid key for attribute access: {key}")
     return SimpleNamespace(**d)
+
+
+
+def mt1dfwd(
+    freq: np.ndarray,
+    sig: np.ndarray,
+    d: np.ndarray,
+    inmod: str = "r",
+    out: str = "imp",
+    magfield: str = "b",
+):
+    """Compute 1D MT forward response for a layered Earth."""
+    mu0 = _MU0
+    sig = np.array(sig, dtype=float)
+    freq = np.array(freq, dtype=float)
+    d = np.array(d, dtype=float)
+
+    if inmod.lower().startswith("r"):
+        sig = 1.0 / sig
+
+    if sig.ndim > 1:
+        raise ValueError("sig must be 1D.")
+
+    nlay = sig.size
+    Z = np.zeros_like(freq, dtype=complex)
+    w = 2.0 * np.pi * freq
+
+    for ifr, omega in enumerate(w):
+        imp = np.empty(nlay, dtype=complex)
+        imp[-1] = np.sqrt(1j * omega * mu0 / sig[-1])
+
+        for layer in range(nlay - 2, -1, -1):
+            sl = sig[layer]
+            dl = d[layer]
+            dj = np.sqrt(1j * omega * mu0 * sl)
+            wj = dj / sl
+            ej = np.exp(-2.0 * dl * dj)
+            impb = imp[layer + 1]
+            rj = (wj - impb) / (wj + impb)
+            reff = rj * ej
+            imp[layer] = wj * ((1.0 - reff) / (1.0 + reff))
+
+        Z[ifr] = imp[0]
+
+    if out.lower() == "imp":
+        return Z / mu0 if magfield.lower() == "b" else Z
+
+    absZ = np.abs(Z)
+    rhoa = (absZ**2) / (mu0 * w)
+    phase = np.rad2deg(np.angle(Z))
+
+    if out.lower() == "rho":
+        return rhoa, phase
+    return Z, rhoa, phase
+
+
+def wait1d(periods: np.ndarray, thick: np.ndarray, res: np.ndarray):
+    """Alternative 1D MT forward modelling implementation (legacy)."""
+    mu = _MU0
+    omega = 2.0 * np.pi / periods
+
+    cond = 1.0 / np.asarray(res, dtype=float)
+    nlay = cond.size
+
+    spn = np.size(periods)
+    Z = np.zeros(spn, dtype=complex)
+
+    for idx, w in enumerate(omega):
+        prop_const = np.sqrt(1j * mu * cond[-1] * w)
+        C = np.zeros(nlay, dtype=complex)
+        C[-1] = 1.0 / prop_const
+        if len(thick) > 0:
+            for k in reversed(range(nlay - 1)):
+                prop_layer = np.sqrt(1j * w * mu * cond[k])
+                k1 = (C[k + 1] * prop_layer + np.tanh(prop_layer * thick[k]))
+                k2 = ((C[k + 1] * prop_layer * np.tanh(prop_layer * thick[k])) + 1.0)
+                C[k] = (1.0 / prop_layer) * (k1 / k2)
+        Z[idx] = 1j * w * mu * C[0]
+
+    rhoa = (np.abs(Z) ** 2) / (mu * omega)
+    phi = np.angle(Z, deg=True)
+    return rhoa, phi, np.real(Z), np.imag(Z)

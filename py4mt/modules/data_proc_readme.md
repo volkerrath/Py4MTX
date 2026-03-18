@@ -36,10 +36,13 @@ Common keys:
 | `freq` | `(n,)` | Frequency array [Hz] |
 | `Z` | `(n,2,2)` | Complex impedance tensor [mV km⁻¹ nT⁻¹] |
 | `Z_err` | `(n,2,2)` | Error (variance or std; see `err_kind`) |
+| `Z_orig` | `(n,2,2)` | Unperturbed Z (only present after `set_errors` with `add_noise=True`) |
 | `T` | `(n,1,2)` | Complex tipper (if present) |
 | `T_err` | `(n,1,2)` | Tipper error |
+| `T_orig` | `(n,1,2)` | Unperturbed T (only present after `set_errors` with `add_noise=True`) |
 | `P` | `(n,2,2)` | Phase tensor (after `compute_pt`) |
 | `P_err` | `(n,2,2)` | Phase tensor error |
+| `P_orig` | `(n,2,2)` | Unperturbed P (only present after `set_errors` with `add_noise=True`) |
 | `rot` | `(n,)` | Rotation angle [deg], if present |
 | `err_kind` | `str` | `"var"` or `"std"` |
 | `freq_order` | `str` | `"inc"`, `"dec"`, or `"keep"` — order used when loading |
@@ -257,14 +260,14 @@ freq = ds["freq"].values     # (n,)
 
 ## Setting / flooring errors
 
-### `set_errors(edi_dict, *, mode, Z_rel, Z_rel_mode, T_abs, PT_abs, err_kind)`
+### `set_errors(edi_dict, *, mode, Z_rel, Z_rel_mode, T_abs, PT_abs, err_kind, add_noise, random_state)`
 
 Sets or floors error arrays for Z, tipper, and phase tensor.
 All parameters except `edi_dict` and `mode` are keyword-only and optional.
 
 | `mode` | Behaviour |
 |--------|-----------|
-| `"set"` | Replace existing errors unconditionally |
+| `"fix"` | Replace existing errors unconditionally |
 | `"floor"` | Only raise existing errors; values already larger are kept |
 
 **Z errors — relative to the data** (`Z_rel`: length-4 `[xx, xy, yx, yy]`)
@@ -276,6 +279,25 @@ All parameters except `edi_dict` and `mode` are keyword-only and optional.
 
 **Tipper / PT errors — absolute constant** (`T_abs`: `[Tx, Ty]`; `PT_abs`: `[xx, xy, yx, yy]`)
 
+**Noise perturbation** (`add_noise`: bool, only valid with `mode="fix"`)
+
+When `add_noise=True`, the data arrays are perturbed using the fixed σ values
+computed for this call, and both the perturbed and original arrays are stored
+in the returned dict:
+
+| Array | Perturbed key | Original preserved as | Perturbation |
+|-------|---------------|-----------------------|-------------|
+| `Z` | `Z` | `Z_orig` | Real and imaginary parts each drawn from N(0, σ/√2); total complex noise has std = σ |
+| `T` | `T` | `T_orig` | Same complex splitting as Z |
+| `P` | `P` | `P_orig` | Real-valued; single draw from N(0, σ) per element |
+
+`*_orig` keys are only added for components that were actually perturbed (i.e.
+only when the corresponding `Z_rel` / `T_abs` / `PT_abs` argument was supplied
+and the matching data array was present in the dict).
+
+Pass `random_state` (a `numpy.random.Generator`) for reproducible draws.
+Raises `ValueError` if `add_noise=True` and `mode != "fix"`.
+
 ```python
 # In script — passed as **err_pars
 err_pars = {
@@ -283,8 +305,10 @@ err_pars = {
     "Z_rel_mode": "ij",
     "T_abs":      [0.03, 0.03],
     "PT_abs":     [0.05, 0.05, 0.05, 0.05],
+    "add_noise":  True,
+    "random_state": np.random.default_rng(42),  # omit for non-reproducible
 }
-data_dict = data_proc.set_errors(data_dict, mode="set", **err_pars)
+data_dict = data_proc.set_errors(data_dict, mode="fix", **err_pars)
 data_dict = data_proc.set_errors(data_dict, mode="floor", **err_pars)
 ```
 
