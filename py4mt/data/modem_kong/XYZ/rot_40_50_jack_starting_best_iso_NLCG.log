@@ -1,0 +1,202 @@
+ The initial damping parameter lambda is  1.0E+00
+ The initial line search step size (in model units) is     1.000000
+    START: f=1.073330E+01 m2=4.460321E-04 rms=   3.276048 lambda=1.000000E+00 alpha=2.000000E+01
+ The initial norm of the gradient is 7.535182E-02
+ The initial value of alpha updated to 1.327108E+01
+Starting line search...
+  STARTLS: f=1.065827E+01 m2=4.648939E-04 rms=   3.264572 lambda=1.000000E+00 alpha=1.327108E+01
+   QUADLS: f=7.099419E+00 m2=2.792228E-02 rms=   2.656597 lambda=1.000000E+00 alpha=1.564095E+03
+Sufficient decrease condition satisfied, exiting line search
+Completed NLCG iteration     1
+     with: f=7.099419E+00 m2=2.792228E-02 rms=   2.656597 lambda=1.000000E+00 alpha=1.292811E+03
+Starting line search...
+  STARTLS: f=6.166475E+00 m2=3.782136E-02 rms=   2.471693 lambda=1.000000E+00 alpha=1.292811E+03
+   QUADLS: f=5.334687E+00 m2=1.144064E-01 rms=   2.271187 lambda=1.000000E+00 alpha=5.665570E+03
+Sufficient decrease condition satisfied, exiting line search
+Completed NLCG iteration     2
+     with: f=5.334687E+00 m2=1.144064E-01 rms=   2.271187 lambda=1.000000E+00 alpha=4.376205E+03
+Starting line search...
+  STARTLS: f=8.127282E+00 m2=5.892944E-01 rms=   2.688826 lambda=1.000000E+00 alpha=4.376205E+03
+   QUADLS: f=4.533165E+00 m2=2.171139E-01 rms=   2.049925 lambda=1.000000E+00 alpha=1.400545E+03
+Sufficient decrease condition satisfied, exiting line search
+Completed NLCG iteration     3
+     with: f=4.533165E+00 m2=2.171139E-01 rms=   2.049925 lambda=1.000000E+00 alpha=1.426729E+03
+Starting line search...
+  STARTLS: f=3.533977E+00 m2=2.223513E-01 rms=   1.788399 lambda=1.000000E+00 alpha=1.426729E+03
+   QUADLS: f=3.506471E+00 m2=2.240064E-01 rms=   1.780118 lambda=1.000000E+00 alpha=1.643157E+03
+Sufficient decrease condition satisfied, exiting line search
+Completed NLCG iteration     4
+     with: f=3.506471E+00 m2=2.240064E-01 rms=   1.780118 lambda=1.000000E+00 alpha=1.675690E+03
+Starting line search...
+  STARTLS: f=3.420282E+00 m2=2.324908E-01 rms=   1.753559 lambda=1.000000E+00 alpha=1.675690E+03
+   QUADLS: f=3.028772E+00 m2=2.259206E-01 rms=   1.640494 lambda=1.000000E+00 alpha=8.788715E+02
+Sufficient decrease condition satisfied, exiting line search
+Completed NLCG iteration     5
+     with: f=3.028772E+00 m2=2.259206E-01 rms=   1.640494 lambda=1.000000E+00 alpha=8.757656E+02
+Starting line search...
+  STARTLS: f=2.668304E+00 m2=2.313191E-01 rms=   1.524874 lambda=1.000000E+00 alpha=8.757656E+02
+   QUADLS: f=2.529220E+00 m2=2.421692E-01 rms=   1.474037 lambda=1.000000E+00 alpha=1.941189E+03
+Sufficient decrease condition satisfied, exiting line search
+Completed NLCG iteration     6
+     with: f=2.529220E+00 m2=2.421692E-01 rms=   1.474037 lambda=1.000000E+00 alpha=1.898596E+03
+Starting line search...
+  STARTLS: f=2.321988E+00 m2=2.633658E-01 rms=   1.392317 lambda=1.000000E+00 alpha=1.898596E+03
+   QUADLS: f=2.306442E+00 m2=2.583737E-01 rms=   1.389063 lambda=1.000000E+00 alpha=1.499824E+03
+Sufficient decrease condition satisfied, exiting line search
+Completed NLCG iteration     7
+     with: f=2.306442E+00 m2=2.583737E-01 rms=   1.389063 lambda=1.000000E+00 alpha=1.513341E+03
+Starting line search...
+  STARTLS: f=2.157972E+00 m2=2.783272E-01 rms=   1.325331 lambda=1.000000E+00 alpha=1.513341E+03
+   QUADLS: f=2.151344E+00 m2=2.748042E-01 rms=   1.324493 lambda=1.000000E+00 alpha=1.268176E+03
+Sufficient decrease condition satisfied, exiting line search
+Completed NLCG iteration     8
+     with: f=2.151344E+00 m2=2.748042E-01 rms=   1.324493 lambda=1.000000E+00 alpha=1.288031E+03
+Starting line search...
+  STARTLS: f=2.002370E+00 m2=2.948574E-01 rms=   1.257448 lambda=1.000000E+00 alpha=1.288031E+03
+   QUADLS: f=2.000136E+00 m2=2.983658E-01 rms=   1.254845 lambda=1.000000E+00 alpha=1.493098E+03
+Sufficient decrease condition satisfied, exiting line search
+Completed NLCG iteration     9
+     with: f=2.000136E+00 m2=2.983658E-01 rms=   1.254845 lambda=1.000000E+00 alpha=1.501770E+03
+     Restarting NLCG to restore orthogonality
+Starting line search...
+  STARTLS: f=1.993156E+00 m2=2.974149E-01 rms=   1.252920 lambda=1.000000E+00 alpha=1.501770E+03
+   QUADLS: f=1.948393E+00 m2=2.977368E-01 rms=   1.234596 lambda=1.000000E+00 alpha=7.783233E+02
+Sufficient decrease condition satisfied, exiting line search
+Completed NLCG iteration    10
+     with: f=1.948393E+00 m2=2.977368E-01 rms=   1.234596 lambda=1.000000E+00 alpha=7.927598E+02
+Starting line search...
+  STARTLS: f=1.912018E+00 m2=2.984806E-01 rms=   1.219743 lambda=1.000000E+00 alpha=7.927598E+02
+   QUADLS: f=1.896556E+00 m2=2.992778E-01 rms=   1.213249 lambda=1.000000E+00 alpha=1.464452E+03
+Sufficient decrease condition satisfied, exiting line search
+Completed NLCG iteration    11
+     with: f=1.896556E+00 m2=2.992778E-01 rms=   1.213249 lambda=1.000000E+00 alpha=1.664379E+03
+Starting line search...
+  STARTLS: f=1.851476E+00 m2=3.029858E-01 rms=   1.193359 lambda=1.000000E+00 alpha=1.664379E+03
+   QUADLS: f=1.851082E+00 m2=3.035997E-01 rms=   1.192976 lambda=1.000000E+00 alpha=1.909255E+03
+Sufficient decrease condition satisfied, exiting line search
+Completed NLCG iteration    12
+     with: f=1.851082E+00 m2=3.035997E-01 rms=   1.192976 lambda=1.000000E+00 alpha=1.913169E+03
+Starting line search...
+  STARTLS: f=1.764186E+00 m2=3.207274E-01 rms=   1.148386 lambda=1.000000E+00 alpha=1.913169E+03
+   QUADLS: f=1.763280E+00 m2=3.254856E-01 rms=   1.145678 lambda=1.000000E+00 alpha=2.357851E+03
+Sufficient decrease condition satisfied, exiting line search
+Completed NLCG iteration    13
+     with: f=1.763280E+00 m2=3.254856E-01 rms=   1.145678 lambda=1.000000E+00 alpha=2.320649E+03
+Starting line search...
+  STARTLS: f=1.712097E+00 m2=3.511539E-01 rms=   1.109440 lambda=1.000000E+00 alpha=2.320649E+03
+   QUADLS: f=1.691288E+00 m2=3.414759E-01 rms=   1.105365 lambda=1.000000E+00 alpha=1.512753E+03
+Sufficient decrease condition satisfied, exiting line search
+Completed NLCG iteration    14
+     with: f=1.691288E+00 m2=3.414759E-01 rms=   1.105365 lambda=1.000000E+00 alpha=1.536122E+03
+Starting line search...
+  STARTLS: f=1.635591E+00 m2=3.600402E-01 rms=   1.069460 lambda=1.000000E+00 alpha=1.536122E+03
+   QUADLS: f=1.635933E+00 m2=3.592957E-01 rms=   1.070047 lambda=1.000000E+00 alpha=1.478333E+03
+Sufficient decrease condition satisfied, exiting line search
+Completed NLCG iteration    15
+     with: f=1.635591E+00 m2=3.600402E-01 rms=   1.069460 lambda=1.000000E+00 alpha=1.490835E+03
+Starting line search...
+  STARTLS: f=1.595924E+00 m2=3.764918E-01 rms=   1.041267 lambda=1.000000E+00 alpha=1.490835E+03
+   QUADLS: f=1.595949E+00 m2=3.765662E-01 rms=   1.041235 lambda=1.000000E+00 alpha=1.497266E+03
+Sufficient decrease condition satisfied, exiting line search
+Completed NLCG iteration    16
+     with: f=1.595924E+00 m2=3.764918E-01 rms=   1.041267 lambda=1.000000E+00 alpha=1.512210E+03
+Starting line search...
+  STARTLS: f=1.567366E+00 m2=3.894347E-01 rms=   1.019925 lambda=1.000000E+00 alpha=1.512210E+03
+   QUADLS: f=1.567260E+00 m2=3.875635E-01 rms=   1.020979 lambda=1.000000E+00 alpha=1.302343E+03
+Sufficient decrease condition satisfied, exiting line search
+Completed NLCG iteration    17
+     with: f=1.567260E+00 m2=3.875635E-01 rms=   1.020979 lambda=1.000000E+00 alpha=1.285958E+03
+Starting line search...
+  STARTLS: f=1.534431E+00 m2=3.991927E-01 rms=   0.997953 lambda=1.000000E+00 alpha=1.285958E+03
+   QUADLS: f=1.533238E+00 m2=4.039119E-01 rms=   0.994536 lambda=1.000000E+00 alpha=1.778987E+03
+Sufficient decrease condition satisfied, exiting line search
+Completed NLCG iteration    18
+     with: f=1.533238E+00 m2=4.039119E-01 rms=   0.994536 lambda=1.000000E+00 alpha=1.719077E+03
+     Restarting NLCG to restore orthogonality
+Starting line search...
+  STARTLS: f=1.540019E+00 m2=4.039983E-01 rms=   0.998264 lambda=1.000000E+00 alpha=1.719077E+03
+   QUADLS: f=1.520388E+00 m2=4.039011E-01 rms=   0.988243 lambda=1.000000E+00 alpha=7.770705E+02
+Sufficient decrease condition satisfied, exiting line search
+Completed NLCG iteration    19
+     with: f=1.520388E+00 m2=4.039011E-01 rms=   0.988243 lambda=1.000000E+00 alpha=6.983166E+02
+ The norm of the last gradient is 4.207669E-03
+ The value of line search step alpha updated to 2.376613E+02
+     Restarting NLCG with the damping parameter updated
+       to: f=1.031000E+00 m2=4.039011E-01 rms=   0.988243 lambda=1.000000E-01 alpha=2.376613E+02
+Starting line search...
+  STARTLS: f=1.027023E+00 m2=4.050068E-01 rms=   0.986143 lambda=1.000000E-01 alpha=2.376613E+02
+   QUADLS: f=1.030763E+00 m2=4.141297E-01 rms=   0.987329 lambda=1.000000E-01 alpha=2.169203E+03
+Sufficient decrease condition satisfied, exiting line search
+Completed NLCG iteration    20
+     with: f=1.027023E+00 m2=4.050068E-01 rms=   0.986143 lambda=1.000000E-01 alpha=4.537769E+02
+ The norm of the last gradient is 3.650152E-03
+ The value of line search step alpha updated to 2.739612E+02
+     Restarting NLCG with the damping parameter updated
+       to: f=9.779317E-01 m2=4.050068E-01 rms=   0.986143 lambda=1.000000E-02 alpha=2.739612E+02
+Starting line search...
+  STARTLS: f=9.746290E-01 m2=4.062759E-01 rms=   0.984456 lambda=1.000000E-02 alpha=2.739612E+02
+   QUADLS: f=9.623170E-01 m2=4.117149E-01 rms=   0.978140 lambda=1.000000E-02 alpha=1.439302E+03
+Sufficient decrease condition satisfied, exiting line search
+Completed NLCG iteration    21
+     with: f=9.623170E-01 m2=4.117149E-01 rms=   0.978140 lambda=1.000000E-02 alpha=2.367365E+03
+ The norm of the last gradient is 4.193303E-03
+ The value of line search step alpha updated to 2.384755E+02
+     Restarting NLCG with the damping parameter updated
+       to: f=9.573130E-01 m2=4.117149E-01 rms=   0.978140 lambda=1.000000E-03 alpha=2.384755E+02
+Starting line search...
+  STARTLS: f=9.542722E-01 m2=4.124622E-01 rms=   0.976583 lambda=1.000000E-03 alpha=2.384755E+02
+   QUADLS: f=9.532762E-01 m2=4.130770E-01 rms=   0.976073 lambda=1.000000E-03 alpha=4.338127E+02
+Sufficient decrease condition satisfied, exiting line search
+Completed NLCG iteration    22
+     with: f=9.532762E-01 m2=4.130770E-01 rms=   0.976073 lambda=1.000000E-03 alpha=4.637399E+02
+ The norm of the last gradient is 2.995728E-03
+ The value of line search step alpha updated to 3.338087E+02
+     Restarting NLCG with the damping parameter updated
+       to: f=9.527737E-01 m2=4.130770E-01 rms=   0.976073 lambda=1.000000E-04 alpha=3.338087E+02
+Starting line search...
+  STARTLS: f=9.502349E-01 m2=4.143607E-01 rms=   0.974771 lambda=1.000000E-04 alpha=3.338087E+02
+   QUADLS: f=9.439775E-01 m2=4.172988E-01 rms=   0.971556 lambda=1.000000E-04 alpha=1.094234E+03
+Sufficient decrease condition satisfied, exiting line search
+Completed NLCG iteration    23
+     with: f=9.439775E-01 m2=4.172988E-01 rms=   0.971556 lambda=1.000000E-04 alpha=1.979878E+03
+ The norm of the last gradient is 2.888600E-03
+ The value of line search step alpha updated to 3.461885E+02
+     Restarting NLCG with the damping parameter updated
+       to: f=9.439267E-01 m2=4.172988E-01 rms=   0.971556 lambda=1.000000E-05 alpha=3.461885E+02
+Starting line search...
+  STARTLS: f=9.410457E-01 m2=4.185500E-01 rms=   0.970072 lambda=1.000000E-05 alpha=3.461885E+02
+   QUADLS: f=1.603819E+00 m2=7.210338E-01 rms=   1.266415 lambda=1.000000E-05 alpha=6.580272E+04
+Unable to fit a quadratic due to bad gradient estimate, exiting line search
+Gradient computed, line search finished
+Completed NLCG iteration    24
+     with: f=9.410457E-01 m2=4.185500E-01 rms=   0.970072 lambda=1.000000E-05 alpha=6.974613E+02
+ The norm of the last gradient is 2.844359E-03
+ The value of line search step alpha updated to 3.515731E+02
+     Restarting NLCG with the damping parameter updated
+       to: f=9.410406E-01 m2=4.185500E-01 rms=   0.970072 lambda=1.000000E-06 alpha=3.515731E+02
+Starting line search...
+  STARTLS: f=9.376211E-01 m2=4.198293E-01 rms=   0.968308 lambda=1.000000E-06 alpha=3.515731E+02
+Quadratic has no minimum, exiting line search
+Completed NLCG iteration    25
+     with: f=9.376211E-01 m2=4.198293E-01 rms=   0.968308 lambda=1.000000E-06 alpha=8.537752E+02
+ The norm of the last gradient is 2.814134E-03
+ The value of line search step alpha updated to 3.553492E+02
+     Restarting NLCG with the damping parameter updated
+       to: f=9.376206E-01 m2=4.198293E-01 rms=   0.968308 lambda=1.000000E-07 alpha=3.553492E+02
+Starting line search...
+  STARTLS: f=9.344577E-01 m2=4.211074E-01 rms=   0.966673 lambda=1.000000E-07 alpha=3.553492E+02
+Quadratic has no minimum, exiting line search
+Completed NLCG iteration    26
+     with: f=9.344577E-01 m2=4.211074E-01 rms=   0.966673 lambda=1.000000E-07 alpha=8.067636E+02
+ The norm of the last gradient is 2.790157E-03
+ The value of line search step alpha updated to 3.584027E+02
+     Restarting NLCG with the damping parameter updated
+       to: f=9.344576E-01 m2=4.211074E-01 rms=   0.966673 lambda=1.000000E-08 alpha=3.584027E+02
+Starting line search...
+  STARTLS: f=9.316173E-01 m2=4.223866E-01 rms=   0.965203 lambda=1.000000E-08 alpha=3.584027E+02
+Quadratic has no minimum, exiting line search
+Completed NLCG iteration    27
+     with: f=9.316173E-01 m2=4.223866E-01 rms=   0.965203 lambda=1.000000E-08 alpha=7.369765E+02
+ The norm of the last gradient is 2.763513E-03
+ The value of line search step alpha updated to 3.618583E+02
+       Unable to get out of a local minimum. Exiting...
