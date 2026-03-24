@@ -34,7 +34,11 @@ Created on Wed Apr 30 16:33:13 2025
 
 Provenance:
     2025-04-30  vrath   Created.
-    2025-06-03  Claude  Renamed user-set parameters to UPPERCASE.
+    2026-03-03  Claude  Renamed user-set parameters to UPPERCASE.
+    2026-03-24  Claude  Added visualization config blocks (data + model
+                        ensemble plots); helper functions live in
+                        femtic_viz.plot_data_ensemble and
+                        femtic_viz.plot_model_ensemble.
 '''
 
 import os
@@ -63,6 +67,7 @@ from version import versionstrg
 import util as utl
 import femtic as fem
 import ensembles as ens
+import femtic_viz as fviz
 
 from util import stop
 
@@ -96,7 +101,7 @@ FILES = ['control.dat',
 ENSEMBLE_NAME = 'misti_rto_'
 
 '''
-Control number of ensemble members for increase of smple number or restart
+Control number of ensemble members for increase of sample number or restart
 of badly converged samples (see femtic_rto_post.py)
 '''
 FROM_TO = None
@@ -120,7 +125,6 @@ else:
 '''
 Set up mode of data perturbations.
 '''
-
 PERTURB_DAT = True
 if PERTURB_DAT:
     DAT_METHOD = 'add',
@@ -130,8 +134,8 @@ RESET_ERRORS = True
 if RESET_ERRORS:
     ERRORS = [
         [0.15, .05, .05, 0.15]*2,        # Impedance
-        [0.03, 0.03]*2,               # VTF
-        [.5, .2, .2, .5],          # PT
+        [0.03, 0.03]*2,                   # VTF
+        [.5, .2, .2, .5],                 # PT
     ]
 else:
     ERRORS = []
@@ -140,7 +144,6 @@ else:
 '''
 Generate ensemble directories and copy template files.
 '''
-
 dir_list = ens.generate_directories(alg='rto',
                                     dir_base=ENSEMBLE_DIR + ENSEMBLE_NAME,
                                     templates=TEMPLATES,
@@ -148,13 +151,11 @@ dir_list = ens.generate_directories(alg='rto',
                                     n_samples=N_SAMPLES,
                                     fromto=FROM_TO,
                                     out=True)
-
 print('\n')
 
 '''
-Draw perturbed data sets: d  ̃ ∼ N (d, Cd)
+Draw perturbed data sets: d̃ ∼ N(d, Cd)
 '''
-
 data_ensemble = ens.generate_data_ensemble(alg='rto',
                                            dir_base=ENSEMBLE_DIR + ENSEMBLE_NAME,
                                            n_samples=N_SAMPLES,
@@ -164,15 +165,14 @@ data_ensemble = ens.generate_data_ensemble(alg='rto',
                                            method=DAT_METHOD,
                                            errors=ERRORS,
                                            out=True)
-
 print('data ensemble ready!')
-
 print('\n')
+
 '''
-Draw perturbed model sets: d  ̃ ∼ N (m, Cm)
+Draw perturbed model sets: m̃ ∼ N(m, Cm)
 
 Read prior parameter precision Q = R^T@R for perturbations
-if needed. If the femtic mode is chosen, the martix needs to be
+if needed. If the femtic mode is chosen, the matrix needs to be
 read from external file.
 '''
 if 'Q' in MOD_R:
@@ -181,9 +181,7 @@ else:
     R = scs.load_npz(ENSEMBLE_DIR + ENSEMBLE_NAME + R_FILE + '.npz')
     Q = R.T @ R
 
-# stop(' data done')
 print('roughness loaded with shape:', np.shape(Q))
-
 
 model_ensemble = ens.generate_model_ensemble(alg='rto',
                                              dir_base=ENSEMBLE_DIR + ENSEMBLE_NAME,
@@ -195,3 +193,98 @@ model_ensemble = ens.generate_model_ensemble(alg='rto',
                                              out=True)
 print('\n')
 print('model ensemble ready!')
+
+
+# =============================================================================
+# Visualization configuration
+# =============================================================================
+
+'''
+Select which ensemble members to visualise (fixed list of sample indices).
+Applies to both the data plot and the model plot.
+'''
+VIZ_SAMPLES = [0, 1, 2, 3]   # adjust as needed; must be < N_SAMPLES
+
+'''
+Data visualization
+------------------
+Joint plot of original vs. perturbed observe.dat for the selected samples.
+One subplot row per sample; original (solid) and perturbed (dashed) curves
+are overlaid on the same axes.
+
+Helper: femtic_viz.plot_data_ensemble
+'''
+PLOT_DATA = True
+if PLOT_DATA:
+    import matplotlib.pyplot as plt
+
+    DAT_WHAT = 'rho'       # 'rho' | 'phase' | 'tipper' | 'pt'
+    DAT_COMPS = 'xy,yx'
+    DAT_SHOW_ERRORS = True
+
+    dat_orig_file = TEMPLATES + 'observe.dat'
+    dat_ens_files = [
+        ENSEMBLE_DIR + ENSEMBLE_NAME + f'{i}/observe.dat'
+        for i in range(N_SAMPLES)
+    ]
+
+    fig_dat, axs_dat = fviz.plot_data_ensemble(
+        orig_file=dat_orig_file,
+        ens_files=dat_ens_files,
+        sample_indices=VIZ_SAMPLES,
+        comps=DAT_COMPS,
+        what=DAT_WHAT,
+        show_errors=DAT_SHOW_ERRORS,
+        out=True,
+    )
+    fig_dat.savefig(ENSEMBLE_DIR + 'rto_data_ensemble.pdf', bbox_inches='tight')
+    plt.close(fig_dat)
+    print('data ensemble plot saved.')
+
+'''
+Model visualization
+-------------------
+Joint plot of original vs. perturbed resistivity models for the selected
+samples, shown across 1-5 user-defined slices (map or curtain).
+Original and perturbed sit in adjacent rows; slices in columns.
+
+Helper: femtic_viz.plot_model_ensemble
+'''
+PLOT_MODEL = True
+if PLOT_MODEL:
+    import matplotlib.pyplot as plt
+
+    MOD_MESH = TEMPLATES + 'mesh.dat'
+    MOD_ORIG = TEMPLATES + MOD_REF
+
+    mod_ens_files = [
+        ENSEMBLE_DIR + ENSEMBLE_NAME + f'{i}/{MOD_REF}'
+        for i in range(N_SAMPLES)
+    ]
+
+    # Define 1-5 slices.  Each dict must have 'type': 'map' or 'curtain'
+    # plus the keyword arguments for the corresponding femtic_viz function.
+    # Adjust z0 / dz / polyline / width to match your model geometry.
+    MOD_SLICES = [
+        {'type': 'map',     'z0': -500,  'dz': 50},
+        {'type': 'map',     'z0': -2000, 'dz': 50},
+        {'type': 'curtain',
+         'polyline': np.array([[0., 0.], [10000., 0.]]),
+         'width': 500},
+    ]
+
+    fig_mod, axs_mod = fviz.plot_model_ensemble(
+        orig_mod_file=MOD_ORIG,
+        ens_mod_files=mod_ens_files,
+        mesh_file=MOD_MESH,
+        sample_indices=VIZ_SAMPLES,
+        slices=MOD_SLICES,
+        mode='tri',
+        log10=True,
+        cmap='jet_r',
+        clim=None,      # auto-derive from original model
+        out=True,
+    )
+    fig_mod.savefig(ENSEMBLE_DIR + 'rto_model_ensemble.pdf', bbox_inches='tight')
+    plt.close(fig_mod)
+    print('model ensemble plot saved.')
