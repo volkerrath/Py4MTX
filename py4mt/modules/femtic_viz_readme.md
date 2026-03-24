@@ -1,7 +1,7 @@
 # femtic_viz_new.py
 
 Visualisation utilities for FEMTIC resistivity models, with **direct procedures that operate on FEMTIC files**
-(``mesh.dat`` + ``resistivity_block_iterX.dat``) **without creating an intermediate NPZ**.
+(`mesh.dat` + `resistivity_block_iterX.dat`) **without creating an intermediate NPZ**.
 
 This is a restarted / cleaned version of the previously concatenated `femtic_viz.py`.
 
@@ -87,9 +87,9 @@ ax = curtain_from_cells(mesh, rho, poly, width=500, mode="tri", mask_max_edge=50
 
 Notes:
 
-- `tri` mode gives the “coloured patches” look, but it is still based on centroid samples
+- `tri` mode gives the "coloured patches" look, but it is still based on centroid samples
   (not an exact tetra/plane intersection).
-- If you see triangles “bridging” gaps, increase `--mask-max-edge`.
+- If you see triangles "bridging" gaps, increase `--mask-max-edge`.
 
 
 ### 4) Curtain slice on a regular (s–z) grid (IDW)
@@ -111,7 +111,7 @@ ax = plot_curtain_matplotlib(s, z, V, log10=True)
 
 ## PyVista sampling on explicit surfaces
 
-If you prefer “true” sampling (no IDW), use:
+If you prefer "true" sampling (no IDW), use:
 
 - `build_curtain_surface(polyline_xy, zmin, zmax, nz, ns)`
 - `build_map_surface(x, y, z0)`
@@ -134,6 +134,89 @@ sampled = sample_grid_on_surface(grid, surf, scalar="log10_resistivity")
 
 ---
 
+## RTO ensemble diagnostic plots
+
+Two high-level helpers produce joint plots of original vs. perturbed
+data / models for a fixed list of ensemble members.  Both follow the
+**`data_viz` philosophy**: an optional `ax` (or `axs`) can be passed in;
+if `None`, the function creates its own figure.  `(fig, axs)` is always
+returned so the caller can further annotate or save.
+
+These functions are called from `femtic_rto_prep.py` but can also be used
+independently in notebooks or post-processing scripts.
+
+---
+
+### `plot_data_ensemble`
+
+```python
+fig, axs = plot_data_ensemble(
+    orig_file,           # path to template observe.dat
+    ens_files,           # list of perturbed observe.dat paths (one per member)
+    sample_indices,      # list of int — which members to plot
+    comps="xy,yx",       # impedance components (ignored for tipper / pt)
+    what="rho",          # 'rho' | 'phase' | 'tipper' | 'pt'
+    show_errors=True,    # draw +-1sigma envelopes on the original curve
+    figsize=None,        # (width, height) in inches; auto if None
+    fig=None,            # pre-existing Figure
+    axs=None,            # pre-existing axes, shape (len(sample_indices),)
+    out=True,
+)
+```
+
+**Layout:** one subplot row per selected sample.  Within each row the original
+curve is drawn **solid** and the perturbed curve **dashed** on the same axes,
+so differences are immediately visible.
+
+The `what` argument selects which `data_viz` plotter is dispatched
+(`add_rho`, `add_phase`, `add_tipper`, `add_pt`).
+
+---
+
+### `plot_model_ensemble`
+
+```python
+fig, axs = plot_model_ensemble(
+    orig_mod_file,       # path to template resistivity block
+    ens_mod_files,       # list of perturbed block paths (one per member)
+    mesh_file,           # path to shared mesh.dat
+    sample_indices,      # list of int — which members to plot
+    slices,              # list of 1-5 slice dicts (see below)
+    mode="tri",          # 'tri' | 'scatter' | 'grid'
+    log10=True,
+    cmap="jet_r",
+    clim=None,           # (vmin, vmax) in log10(Ohm.m); auto if None
+    figsize=None,
+    fig=None,
+    axs=None,            # pre-existing axes, shape (2*len(sample_indices), len(slices))
+    out=True,
+)
+```
+
+**Layout:** rows = 2 x number of selected samples (original row + perturbed
+row per block); columns = number of slices.  The original and perturbed models
+sit directly above/below each other for easy visual comparison.
+
+The mesh is read once and shared across all samples and slices.  Colour limits
+are set globally from the original model (or from `clim`) so all panels are
+directly comparable.
+
+Each entry in `slices` is a dict with `'type': 'map'` or `'type': 'curtain'`
+and the keyword arguments forwarded to `map_slice_from_cells` /
+`curtain_from_cells`:
+
+```python
+slices = [
+    {"type": "map",     "z0": -500,  "dz": 50},
+    {"type": "map",     "z0": -2000, "dz": 50},
+    {"type": "curtain",
+     "polyline": np.array([[0., 0.], [10000., 0.]]),
+     "width": 500},
+]
+```
+
+---
+
 ## Air / ocean conventions
 
 Many FEMTIC workflows treat:
@@ -143,13 +226,19 @@ Many FEMTIC workflows treat:
 
 By default, `unstructured_grid_from_femtic()` and CLI plotting apply:
 
-- air → `NaN` (transparent/blank in many plots)
-- ocean → `1e-10` Ohm·m
+- air -> `NaN` (transparent/blank in many plots)
+- ocean -> `1e-10` Ohm.m
 
 You can control this via `prepare_rho_for_plotting()` or by setting
 `apply_plotting_conventions=False`.
 
 ---
 
-Author: Volker Rath (DIAS)  
-Created with the help of ChatGPT (GPT-5 Thinking) on 2025-12-23
+## Provenance
+
+| Date       | Author | Change                                                |
+|------------|--------|-------------------------------------------------------|
+| 2025-12-23 | vrath  | Created (with ChatGPT GPT-5 Thinking).                |
+| 2026-03-24 | Claude | Added `plot_data_ensemble` and `plot_model_ensemble`. |
+
+Author: Volker Rath (DIAS)

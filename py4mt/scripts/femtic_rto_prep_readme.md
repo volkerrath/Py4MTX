@@ -29,6 +29,7 @@ femtic_rto_rough.py   →   R / Q matrix  (.npz)
 femtic_rto_prep.py    →   ensemble directories with
                           perturbed observe.dat &
                           resistivity_block_iter0.dat
+                          + diagnostic plots
                                  ↓
                           (run FEMTIC on each member)
                                  ↓
@@ -68,15 +69,40 @@ All settings are at the top of the script:
 | `RESET_ERRORS` | If `True`, overwrite error floors before perturbation.             |
 | `ERRORS`      | Per-component error floors for impedance, VTF, and phase tensor.   |
 
+### Visualization
+
+Controlled by the configuration block at the bottom of the script.
+The plot helpers are defined in `femtic_viz` (`plot_data_ensemble`,
+`plot_model_ensemble`) and follow the same `ax`-in / `ax`-out philosophy as
+`data_viz`.
+
+| Variable          | Description                                                              |
+|-------------------|--------------------------------------------------------------------------|
+| `VIZ_SAMPLES`     | List of ensemble-member indices to include in diagnostic plots.          |
+| `PLOT_DATA`       | Enable / disable joint data plot (original vs. perturbed `observe.dat`). |
+| `DAT_WHAT`        | MT quantity: `'rho'`, `'phase'`, `'tipper'`, or `'pt'`.                 |
+| `DAT_COMPS`       | Impedance components, comma-separated (e.g. `'xy,yx'`).                 |
+| `DAT_SHOW_ERRORS` | Propagate error envelopes into the original-data curve.                  |
+| `PLOT_MODEL`      | Enable / disable joint model plot (original vs. perturbed resistivity).  |
+| `MOD_MESH`        | Path to the shared `mesh.dat`.                                           |
+| `MOD_ORIG`        | Path to the reference (template) resistivity block.                      |
+| `MOD_SLICES`      | List of 1–5 slice descriptors; each dict has `'type'`: `'map'` or `'curtain'`, plus kwargs forwarded to `femtic_viz`. |
+
+Diagnostic figures are saved to:
+
+- `<ENSEMBLE_DIR>/rto_data_ensemble.pdf`
+- `<ENSEMBLE_DIR>/rto_model_ensemble.pdf`
+
 ## Dependencies
 
-| Package        | Role                                          |
-|----------------|-----------------------------------------------|
-| `numpy`        | Array operations and random draws.            |
-| `scipy.sparse` | Sparse precision / roughness matrices.        |
-| `ensembles`    | Directory generation, data & model ensembles. |
+| Package        | Role                                             |
+|----------------|--------------------------------------------------|
+| `numpy`        | Array operations and random draws.               |
+| `scipy.sparse` | Sparse precision / roughness matrices.           |
+| `ensembles`    | Directory generation, data & model ensembles.    |
 | `femtic`       | FEMTIC I/O (model insertion, data modification). |
-| `util`         | Print / version helpers.                      |
+| `femtic_viz`   | Ensemble visualization helpers.                  |
+| `util`         | Print / version helpers.                         |
 
 ## References
 
@@ -97,10 +123,11 @@ All settings are at the top of the script:
 
 ## Provenance
 
-| Date       | Author | Change                                       |
-|------------|--------|----------------------------------------------|
-| 2025-04-30 | vrath  | Created.                                     |
-| 2026-03-03 | Claude | Renamed user-set parameters to UPPERCASE.    |
+| Date       | Author | Change                                                      |
+|------------|--------|-------------------------------------------------------------|
+| 2025-04-30 | vrath  | Created.                                                    |
+| 2026-03-03 | Claude | Renamed user-set parameters to UPPERCASE.                   |
+| 2026-03-24 | Claude | Added visualization config blocks; helpers in `femtic_viz`. |
 
 ## Author
 

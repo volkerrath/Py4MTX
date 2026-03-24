@@ -17,6 +17,11 @@ writing any temporary model files.
 
 Author: Volker Rath (DIAS)
 Created with the help of ChatGPT (GPT-5 Thinking) on 2025-12-23
+
+Provenance:
+    2025-12-23  vrath   Created (with ChatGPT GPT-5 Thinking).
+    2026-03-24  Claude  Added plot_data_ensemble and plot_model_ensemble
+                        for RTO ensemble diagnostic plots.
 """
 
 from __future__ import annotations
@@ -1538,6 +1543,330 @@ def npz_to_unstructured_grid(
         raise ImportError("Could not import femtic.py for NPZ helpers.") from e
 
     return femtic.npz_to_unstructured_grid(str(npz_path))
+
+
+# =============================================================================
+# RTO ensemble diagnostic plots
+# =============================================================================
+
+def plot_data_ensemble(
+    orig_file: Union[str, Path],
+    ens_files: Sequence[Union[str, Path]],
+    sample_indices: Sequence[int],
+    *,
+    comps: str = "xy,yx",
+    what: str = "rho",
+    show_errors: bool = True,
+    figsize: Optional[Tuple[float, float]] = None,
+    fig: Optional[Any] = None,
+    axs: Optional[Any] = None,
+    out: bool = True,
+) -> Tuple[Any, np.ndarray]:
+    """Joint plot of original and perturbed MT data for a fixed list of samples.
+
+    Produces one subplot row per selected ensemble member.  Within each row
+    the original curve is drawn solid and the perturbed curve dashed on the
+    **same axes**, so differences are immediately visible.
+
+    Follows the ``data_viz`` philosophy: if *fig* / *axs* are provided they
+    are used directly; otherwise a new figure is created.  ``(fig, axs)`` is
+    always returned so the caller can annotate or save.
+
+    Parameters
+    ----------
+    orig_file : str or Path
+        Path to the reference ``observe.dat`` (template / original data).
+    ens_files : sequence of str or Path
+        Paths to the perturbed ``observe.dat`` files, one per ensemble member.
+    sample_indices : sequence of int
+        Indices into ``ens_files`` that should be plotted (e.g. ``[0, 3, 7]``).
+    comps : str, optional
+        Impedance components for ``'rho'`` / ``'phase'`` plots, comma-separated
+        (default ``'xy,yx'``).  Ignored for ``'tipper'`` and ``'pt'``.
+    what : str, optional
+        Which MT quantity to plot.  One of ``'rho'``, ``'phase'``,
+        ``'tipper'``, ``'pt'``.  Default is ``'rho'``.
+    show_errors : bool, optional
+        If ``True``, draw ±1σ error envelopes on the **original** curve.
+        Default is ``True``.
+    figsize : (float, float) or None, optional
+        Figure size in inches.  If ``None``, a sensible default is chosen.
+    fig : matplotlib.figure.Figure or None, optional
+        Pre-existing figure.  If ``None`` a new one is created.
+    axs : array-like of Axes or None, optional
+        Pre-allocated axes of shape ``(len(sample_indices),)``.
+        If ``None``, subplots are created inside *fig* (or a new figure).
+    out : bool, optional
+        If ``True``, print progress messages.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+    axs : numpy.ndarray of matplotlib.axes.Axes
+        Shape ``(len(sample_indices),)``.
+
+    Notes
+    -----
+    Data files are read with :func:`femtic.read_observe` and plotted with the
+    matching ``data_viz.add_*`` helper.  The two curves share the same axes
+    object so they are automatically colour-matched by Matplotlib's cycle.
+    """
+    plt_ = _require_mpl()
+
+    try:
+        import femtic as fem  # type: ignore
+    except Exception as e:  # pragma: no cover
+        raise ImportError("femtic.py is required for plot_data_ensemble.") from e
+
+    try:
+        import data_viz  # type: ignore
+    except Exception as e:  # pragma: no cover
+        raise ImportError("data_viz.py is required for plot_data_ensemble.") from e
+
+    _plotters = {
+        "rho":    data_viz.add_rho,
+        "phase":  data_viz.add_phase,
+        "tipper": data_viz.add_tipper,
+        "pt":     data_viz.add_pt,
+    }
+    plotter = _plotters.get(str(what).lower())
+    if plotter is None:
+        raise ValueError(
+            f"plot_data_ensemble: unknown 'what'={what!r}. "
+            f"Choose from {list(_plotters)}."
+        )
+
+    n_plots = len(sample_indices)
+    if n_plots == 0:
+        raise ValueError("plot_data_ensemble: sample_indices is empty.")
+
+    if figsize is None:
+        figsize = (8, 3 * n_plots)
+
+    if fig is None or axs is None:
+        fig, _axs = plt_.subplots(n_plots, 1, figsize=figsize, squeeze=False)
+        axs_arr = _axs[:, 0]
+    else:
+        axs_arr = np.asarray(axs).ravel()
+        if len(axs_arr) < n_plots:
+            raise ValueError(
+                f"plot_data_ensemble: got {len(axs_arr)} axes but need {n_plots}."
+            )
+        axs_arr = axs_arr[:n_plots]
+
+    # comps kwarg only for impedance plotters
+    _needs_comps = {"rho", "phase"}
+    kw_comps = {"comps": comps} if str(what).lower() in _needs_comps else {}
+
+    # Read original data once
+    orig_data = fem.read_observe(str(orig_file))
+    if out:
+        print(f"plot_data_ensemble: original read from {orig_file}")
+
+    for row, idx in enumerate(sample_indices):
+        ax = axs_arr[row]
+
+        # Original — solid, legend on first row only
+        plotter(orig_data, ax=ax, show_errors=show_errors,
+                legend=(row == 0), **kw_comps)
+
+        # Perturbed — dashed, same colour cycle position, no legend
+        pert_data = fem.read_observe(str(ens_files[idx]))
+        plotter(pert_data, ax=ax, show_errors=False,
+                legend=False, linestyle="--", **kw_comps)
+
+        ax.set_title(f"Sample {idx}", fontsize=9)
+        if out:
+            print(f"  sample {idx} done")
+
+    fig.tight_layout()
+    return fig, axs_arr
+
+
+def plot_model_ensemble(
+    orig_mod_file: Union[str, Path],
+    ens_mod_files: Sequence[Union[str, Path]],
+    mesh_file: Union[str, Path],
+    sample_indices: Sequence[int],
+    slices: Sequence[dict],
+    *,
+    mode: Literal["scatter", "tri", "grid"] = "tri",
+    log10: bool = True,
+    cmap: Optional[str] = "jet_r",
+    clim: Optional[Tuple[float, float]] = None,
+    figsize: Optional[Tuple[float, float]] = None,
+    fig: Optional[Any] = None,
+    axs: Optional[Any] = None,
+    out: bool = True,
+) -> Tuple[Any, np.ndarray]:
+    """Joint plot of original and perturbed resistivity models.
+
+    Produces a grid of Matplotlib axes: **rows** = 2 × number of selected
+    samples (original row then perturbed row per block); **columns** = number
+    of slices.  Original and perturbed models are placed directly above/below
+    each other for easy visual comparison across all requested slices.
+
+    Follows the ``data_viz`` philosophy: if *fig* / *axs* are provided they
+    are used directly; otherwise a new figure is created.  ``(fig, axs)`` is
+    always returned.
+
+    Parameters
+    ----------
+    orig_mod_file : str or Path
+        Path to the reference (template) ``resistivity_block_iterX.dat``.
+    ens_mod_files : sequence of str or Path
+        Paths to the perturbed resistivity block files, one per ensemble member.
+    mesh_file : str or Path
+        Path to the shared ``mesh.dat``.
+    sample_indices : sequence of int
+        Indices into ``ens_mod_files`` to visualise (e.g. ``[0, 2, 5]``).
+    slices : sequence of dict
+        Between 1 and 5 slice descriptors.  Each dict **must** have a
+        ``'type'`` key (``'map'`` or ``'curtain'``), plus the keyword
+        arguments forwarded to :func:`map_slice_from_cells` or
+        :func:`curtain_from_cells`.
+
+        Map-slice example::
+
+            {'type': 'map', 'z0': -1000, 'dz': 50}
+
+        Curtain-slice example::
+
+            {'type': 'curtain',
+             'polyline': np.array([[x0, y0], [x1, y1]]),
+             'width': 500}
+
+    mode : {'scatter', 'tri', 'grid'}, optional
+        Slice rendering mode forwarded to the slicer functions.  Default
+        is ``'tri'``.
+    log10 : bool, optional
+        Plot log₁₀(ρ) if ``True`` (default).
+    cmap : str or None, optional
+        Matplotlib colormap (default ``'jet_r'``).
+    clim : (float, float) or None, optional
+        Colour limits ``(vmin, vmax)`` in log₁₀(Ω·m).
+        If ``None``, limits are derived from the original model.
+    figsize : (float, float) or None, optional
+        Figure size in inches.  If ``None``, a sensible default is chosen.
+    fig : matplotlib.figure.Figure or None, optional
+        Pre-existing figure.
+    axs : array-like of Axes or None, optional
+        Pre-allocated axes of shape
+        ``(2 * len(sample_indices), len(slices))``.
+        If ``None``, subplots are created automatically.
+    out : bool, optional
+        If ``True``, print progress messages.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+    axs : numpy.ndarray of matplotlib.axes.Axes
+        Shape ``(2 * len(sample_indices), len(slices))``.
+
+    Notes
+    -----
+    The mesh is read once and shared across all samples and slices.
+    Colour limits are optionally set globally from the original model so that
+    all panels are directly comparable.
+    """
+    plt_ = _require_mpl()
+
+    n_samples = len(sample_indices)
+    n_slices = len(slices)
+    if n_samples == 0:
+        raise ValueError("plot_model_ensemble: sample_indices is empty.")
+    if not (1 <= n_slices <= 5):
+        raise ValueError("plot_model_ensemble: slices must have 1–5 entries.")
+
+    n_rows = 2 * n_samples
+    if figsize is None:
+        figsize = (4 * n_slices, 3 * n_rows)
+
+    if fig is None or axs is None:
+        fig, _axs = plt_.subplots(n_rows, n_slices, figsize=figsize, squeeze=False)
+        axs_arr = _axs
+    else:
+        axs_arr = np.asarray(axs)
+        if axs_arr.shape != (n_rows, n_slices):
+            raise ValueError(
+                f"plot_model_ensemble: axs shape {axs_arr.shape} != "
+                f"expected ({n_rows}, {n_slices})."
+            )
+
+    # Read mesh once — shared by all runs
+    mesh = read_femtic_mesh(mesh_file)
+    if out:
+        print(f"plot_model_ensemble: mesh read from {mesh_file}")
+
+    # Read original block and build element-wise rho
+    orig_block = read_resistivity_block(orig_mod_file)
+    rho_orig = map_regions_to_element_rho(
+        orig_block.region_of_elem, orig_block.region_rho
+    )
+    rho_orig = prepare_rho_for_plotting(
+        rho_orig, region_of_elem=orig_block.region_of_elem
+    )
+
+    # Derive colour limits from original model if not supplied
+    if clim is None:
+        vals = np.log10(rho_orig[np.isfinite(rho_orig) & (rho_orig > 0)])
+        clim = (float(vals.min()), float(vals.max())) if vals.size > 0 else (0.0, 4.0)
+    vmin, vmax = clim
+
+    def _draw_slice(ax: Any, rho: np.ndarray, slc_spec: dict, title: str = "") -> None:
+        """Dispatch one slice descriptor to the appropriate slicer and draw on ax."""
+        slc = dict(slc_spec)          # copy — we pop 'type'
+        slc_type = slc.pop("type", "map").lower()
+        slc.setdefault("mode", mode)
+        slc.setdefault("log10", log10)
+        slc.setdefault("cmap", cmap)
+
+        if "map" in slc_type:
+            map_slice_from_cells(mesh, rho, ax=ax, **slc)
+        else:
+            poly = slc.pop("polyline")
+            curtain_from_cells(mesh, rho, poly, ax=ax, **slc)
+
+        # Apply shared colour limits after plotting
+        for img in ax.get_images():
+            img.set_clim(vmin, vmax)
+        for coll in ax.collections:
+            coll.set_clim(vmin, vmax)
+
+        if title:
+            ax.set_title(title, fontsize=8)
+
+    for block_row, idx in enumerate(sample_indices):
+        pert_block = read_resistivity_block(ens_mod_files[idx])
+        rho_pert = map_regions_to_element_rho(
+            pert_block.region_of_elem, pert_block.region_rho
+        )
+        rho_pert = prepare_rho_for_plotting(
+            rho_pert, region_of_elem=pert_block.region_of_elem
+        )
+
+        for col, slc_spec in enumerate(slices):
+            row_orig = 2 * block_row
+            row_pert = 2 * block_row + 1
+
+            # Column header (first block only)
+            col_label = f"slice {col}" if block_row == 0 else ""
+
+            ax_orig = axs_arr[row_orig, col]
+            _draw_slice(ax_orig, rho_orig, slc_spec, title=col_label)
+            if col == 0:
+                ax_orig.set_ylabel(f"orig\n(sample {idx})", fontsize=8)
+
+            ax_pert = axs_arr[row_pert, col]
+            _draw_slice(ax_pert, rho_pert, slc_spec)
+            if col == 0:
+                ax_pert.set_ylabel(f"pert {idx}", fontsize=8)
+
+        if out:
+            print(f"  sample {idx} done")
+
+    fig.tight_layout()
+    return fig, axs_arr
 
 
 # =============================================================================
