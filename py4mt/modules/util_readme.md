@@ -112,4 +112,44 @@ All projection functions use the modern `pyproj.Transformer` API.
 
 ---
 
+## FT sign-convention correction (`ft_convention.py`)
+
+A companion module — **not part of `util.py`** — for correcting the
+Fourier-transform sign convention of MT transfer functions loaded from
+instruments with the e⁺ⁱωᵗ convention (Phoenix MTU series).
+
+`data_proc.load_edi` handles this automatically via the `manufacturer`
+parameter.  `ft_convention.py` provides the same logic as standalone
+functions for post-hoc correction of already-loaded dicts.
+
+| Function | Description |
+|----------|-------------|
+| `correct_ft_convention(data_dict, *, from_convention, to_convention)` | In-place convention correction with full bookkeeping |
+| `apply_conjugation(data_dict)` | Low-level conjugation of Z, T, and P |
+| `is_corrected(data_dict)` | Returns `True` if dict is already in standard e⁻ⁱωᵗ convention |
+| `correct_batch(sites, *, from_convention, to_convention)` | Apply correction to a list of site dicts |
+
+Constants `CONV_STANDARD = "e-iwt"`, `CONV_PHOENIX = "e+iwt"`,
+`PHOENIX_MANUFACTURERS`, `STANDARD_MANUFACTURERS` are exported for
+use in scripts.
+
+```python
+import ft_convention
+
+# Correct a Phoenix EDI that was loaded without the manufacturer flag
+site = data_proc.load_edi("SITE_PHX.edi")        # loaded as Metronix → wrong Im
+ft_convention.correct_ft_convention(site, from_convention="e+iwt")
+print(site["ft_convention"])  # "e+iwt_corrected"
+
+# Check before acting
+if not ft_convention.is_corrected(site):
+    ft_convention.correct_ft_convention(site, from_convention="e+iwt")
+
+# Preferred: pass manufacturer at load time — no post-hoc fix needed
+site = data_proc.load_edi("SITE_PHX.edi", manufacturer="phoenix")
+```
+
+---
+
 Author: Volker Rath (DIAS)
+Modified: 2026-03-25 — added ft_convention.py section; Claude Sonnet 4.6 (Anthropic)
