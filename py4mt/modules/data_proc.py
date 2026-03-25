@@ -75,6 +75,8 @@ A typical dictionary returned by :func:`load_edi` looks like::
         "err_kind": "var" or "std",
         "freq_order": "inc", "dec", or "keep",
         "Z_units": "mV/km/nT",            # always; rho_a formula uses 1e6/(mu0*omega)
+        "manufacturer": "metronix",        # or "phoenix" / "delta"
+        "ft_convention": "e-iwt",          # "e+iwt_corrected" after Phoenix fix
         "source_kind": "spectra" or "tables",
         "station": str or None,
         "lat_deg": float or None,
@@ -102,6 +104,9 @@ Modified: 2026-03-17 — unconditional all-sentinel tipper suppression in load_e
 full set_errors implementation (fix/floor, Z_rel ij/ij*ii, T/PT absolute); Z_units key;
 interpolate_data keyword-only signature (newfreqs, freq_per_dec, interp_method);
 fix ZT_from_S unit scaling (remove erroneous /1e3; µV/m/nT = mV/km/nT, no conversion needed); Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-03-25 — manufacturer parameter in load_edi (phoenix/metronix/delta);
+FT-convention correction (e+iwt→e-iwt conjugation of Z and T for Phoenix);
+manufacturer and ft_convention keys in data_dict; Claude Sonnet 4.6 (Anthropic)
 """
 
 from __future__ import annotations
@@ -605,6 +610,7 @@ def load_edi(
     drop_invalid_periods: bool = True,
     invalid_sentinel: float = 1.0e30,
     freq_order: str = "inc",
+    manufacturer: str = "metronix",
 ) -> Dict[str, Any]:
     """Load an EDI file into a dictionary.
 
@@ -636,11 +642,38 @@ def load_edi(
         - ``"dec"``  — descending frequency (i.e. ascending period).
         - ``"keep"`` — preserve the order as found in the EDI file.
 
+    manufacturer : {"metronix", "phoenix", "delta"}, optional
+        Instrument manufacturer.  Default is ``"metronix"``.
+
+        MT processing software uses different Fourier-transform sign
+        conventions (e⁻ⁱωᵗ vs. e⁺ⁱωᵗ), which conjugates all transfer
+        functions:
+
+        - ``"metronix"`` (ADU series) — e⁻ⁱωᵗ, the standard geophysical
+          convention.  No correction applied.
+        - ``"phoenix"`` (MTU/MTU-5C series) — e⁺ⁱωᵗ, conjugates Z and T
+          relative to the Metronix/standard convention.  ``Im(Z)`` and
+          ``Im(T)`` are negated on load so that the returned arrays follow
+          the standard (e⁻ⁱωᵗ) convention.
+        - ``"delta"`` — treated identically to ``"metronix"`` (no
+          correction).
+
+        The applied correction is recorded in ``edi["ft_convention"]``
+        (``"e-iwt"`` or ``"e+iwt_corrected"``).
+
     Returns
     -------
     dict
         Site dictionary; see the module docstring for the full layout.
+        Additional key ``"manufacturer"`` (str) records the value passed in.
     """
+    _valid_manufacturers = {"metronix", "phoenix", "delta"}
+    manufacturer = manufacturer.lower()
+    if manufacturer not in _valid_manufacturers:
+        raise ValueError(
+            f"Unknown manufacturer {manufacturer!r}; "
+            f"expected one of {sorted(_valid_manufacturers)}."
+        )
     if err_kind not in {"var", "std"}:
         raise ValueError(f"Unknown err_kind {err_kind!r}; expected 'var' or 'std'.")
     freq_order = freq_order.lower()
@@ -811,19 +844,34 @@ def load_edi(
     Z_err = None if Z_var is None else (Z_var if err_kind == "var" else np.sqrt(Z_var))
     T_err = None if T_var is None else (T_var if err_kind == "var" else np.sqrt(T_var))
 
+    # ---- FT-convention correction ----------------------------------------
+    # Phoenix instruments use e^{+iωt}, which conjugates all transfer
+    # functions relative to the standard geophysical e^{-iωt} convention.
+    # Negate Im(Z) and Im(T) so that the returned arrays are always in the
+    # standard convention regardless of manufacturer.
+    if manufacturer == "phoenix":
+        Z = Z.conj()
+        if T is not None:
+            T = T.conj()
+        ft_convention = "e+iwt_corrected"
+    else:
+        ft_convention = "e-iwt"
+
     edi: Dict[str, Any] = {
-        "freq": freq,
-        "Z": Z,
-        "T": T,
-        "Z_err": Z_err,
-        "T_err": T_err,
-        "P": None,
-        "P_err": None,
-        "rot": rot,
-        "err_kind": err_kind,
-        "freq_order": freq_order,
-        "Z_units": "mV/km/nT",   # MT field units: mV km⁻¹ nT⁻¹
-        "header_raw": header_lines,
+        "freq":        freq,
+        "Z":           Z,
+        "T":           T,
+        "Z_err":       Z_err,
+        "T_err":       T_err,
+        "P":           None,
+        "P_err":       None,
+        "rot":         rot,
+        "err_kind":    err_kind,
+        "freq_order":  freq_order,
+        "Z_units":     "mV/km/nT",   # MT field units: mV km⁻¹ nT⁻¹
+        "manufacturer": manufacturer,
+        "ft_convention": ft_convention,
+        "header_raw":  header_lines,
         "source_kind": source_kind,
         # metadata
         "station": meta.get("station"),

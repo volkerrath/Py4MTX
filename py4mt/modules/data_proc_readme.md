@@ -47,6 +47,8 @@ Common keys:
 | `err_kind` | `str` | `"var"` or `"std"` |
 | `freq_order` | `str` | `"inc"`, `"dec"`, or `"keep"` — order used when loading |
 | `Z_units` | `str` | Always `"mV/km/nT"` (MT field units); `ρ_a = \|Z\|²×10⁶/(μ₀ω)` |
+| `manufacturer` | `str` | `"metronix"`, `"phoenix"`, or `"delta"` |
+| `ft_convention` | `str` | `"e-iwt"` (standard) or `"e+iwt_corrected"` (Phoenix, after fix) |
 
 Metadata (if present): `station`, `lat_deg`, `lon_deg`, `elev_m`, and
 convenience aliases `lat`, `lon`, `elev`.
@@ -57,7 +59,7 @@ All downstream modules treat this dict as the **site container**.
 
 ## Reading / writing EDI
 
-### `load_edi(path, prefer_spectra=True, freq_order='inc', ...)`
+### `load_edi(path, prefer_spectra=True, freq_order='inc', manufacturer='metronix', ...)`
 
 Supports Phoenix/SPECTRA EDIs (reconstructed Z/T from `>SPECTRA` blocks) and
 classical table EDIs (`>ZXXR`, `>ZXYI`, …).
@@ -71,9 +73,26 @@ dictionary:
 | `'dec'` | Descending frequency (i.e. ascending period) |
 | `'keep'` | Preserve the order as found in the EDI file |
 
+The `manufacturer` parameter declares which instrument produced the EDI and
+controls the FT sign-convention correction applied on load:
+
+| Value | FT convention | Correction applied |
+|-------|---------------|--------------------|
+| `'metronix'` | e⁻ⁱωᵗ (standard) | None |
+| `'delta'` | e⁻ⁱωᵗ (standard) | None |
+| `'phoenix'` | e⁺ⁱωᵗ | `Im(Z)` and `Im(T)` negated (conjugation) |
+
+After loading, **all returned dicts are in the standard e⁻ⁱωᵗ convention**
+regardless of manufacturer.  The keys `"manufacturer"` and `"ft_convention"`
+record what was done.
+
 ```python
-# Default — ascending frequency
+# Metronix / DELTA — no correction needed (default)
 site = data_proc.load_edi("SITE.edi")
+
+# Phoenix — FT convention corrected automatically
+site = data_proc.load_edi("SITE_PHX.edi", manufacturer="phoenix")
+print(site["ft_convention"])   # "e+iwt_corrected"
 
 # Descending frequency (ascending period)
 site = data_proc.load_edi("SITE.edi", freq_order="dec")
@@ -411,3 +430,4 @@ the complex entries.
 Author: Volker Rath (DIAS)
 Modified: 2026-03-07 — unified save_xxx(**data_dict, path=...) calling convention, Claude (Opus 4.6, Anthropic)
 Modified: 2026-03-16 — freq_order parameter (load_edi, save_edi), compute_rhoplus (D+/rho+ test), PTXX/PTXY phase tensor blocks, RHOXY/PHASEXY rho-phase blocks in save_edi, MT unit fix (rho_a = |Z|²×1e6/(μ₀ω) for Z in mV/km/nT); Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-03-25 — manufacturer parameter in load_edi (phoenix/metronix/delta); FT-convention correction (conjugation of Z and T for Phoenix); manufacturer and ft_convention keys in data_dict; Claude Sonnet 4.6 (Anthropic)
