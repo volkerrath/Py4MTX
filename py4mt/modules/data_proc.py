@@ -100,13 +100,8 @@ Notes
 Author: Volker Rath (DIAS)
 Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-13 (UTC)
 Modified: 2026-03-16 — freq_order parameter (load_edi, save_edi), compute_rhoplus (D+/rho+ test), PTXX/PTXY phase tensor blocks, RHOXY/PHASEXY rho-phase blocks in save_edi, MT unit fix (mV/km/nT) for rho_a; Claude Sonnet 4.6 (Anthropic)
-Modified: 2026-03-17 — unconditional all-sentinel tipper suppression in load_edi;
-full set_errors implementation (fix/floor, Z_rel ij/ij*ii, T/PT absolute); Z_units key;
-interpolate_data keyword-only signature (newfreqs, freq_per_dec, interp_method);
-fix ZT_from_S unit scaling (remove erroneous /1e3; µV/m/nT = mV/km/nT, no conversion needed); Claude Sonnet 4.6 (Anthropic)
-Modified: 2026-03-25 — manufacturer parameter in load_edi (phoenix/metronix/delta);
-FT-convention correction (e+iwt→e-iwt conjugation of Z and T for Phoenix);
-manufacturer and ft_convention keys in data_dict; Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-03-17 — unconditional all-sentinel tipper suppression in load_edi; full set_errors implementation (fix/floor, Z_rel ij/ij*ii, T/PT absolute); Z_units key; interpolate_data keyword-only signature (newfreqs, freq_per_dec, interp_method); fix ZT_from_S unit scaling; Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-03-25 — manufacturer parameter in load_edi (phoenix/metronix/delta); FT-convention correction (e+iwt→e-iwt conjugation of Z and T for Phoenix); manufacturer and ft_convention keys in data_dict; cleanup and section headers; Claude Sonnet 4.6 (Anthropic)
 """
 
 from __future__ import annotations
@@ -135,19 +130,16 @@ _MU0: float = 4.0 * np.pi * 1.0e-7
 _Z_MT_TO_SI_SQ: float = _MU0 ** 2 * 1.0e6   # = (mu0*1e3)^2 / 1e6... see above
 
 # ---------------------------------------------------------------------------
-# Basic text helpers
+# File discovery
 # ---------------------------------------------------------------------------
 
-def get_data_list(dirname=None, ext= '.edi', sort=False, fullpath=True):
-
-
-
+def get_data_list(dirname=None, ext='.edi', sort=False, fullpath=True):
     """
     List files with given extension in a directory.
 
     Parameters
     ----------
-    datarname : str
+    dirname : str
         Directory containing data files.
     ext : str
 
@@ -185,8 +177,13 @@ def get_data_list(dirname=None, ext= '.edi', sort=False, fullpath=True):
 
     return data_files
 
-# Alias
+# Alias kept for backward compatibility.
 get_edi_list = get_data_list
+
+
+# ---------------------------------------------------------------------------
+# EDI text I/O helpers
+# ---------------------------------------------------------------------------
 
 def read_edi_text(path: str | Path, encoding: str = "latin-1") -> str:
     """Read an EDI file as raw text.
@@ -890,6 +887,10 @@ def load_edi(
     return edi
 
 
+# ---------------------------------------------------------------------------
+# Processing helpers — errors, interpolation, rotation
+# ---------------------------------------------------------------------------
+
 def estimate_errors(edi_dict: Dict[str, Any], method: Dict[str, Any]) -> Dict[str, Any]:
     """Estimate *new* error levels from the spread of a resampled dataset.
 
@@ -1543,6 +1544,10 @@ def _valid_Z_rows(Z: np.ndarray, invalid_sentinel: float = 1.0e30) -> np.ndarray
     return ~np.any(bad.reshape(Z.shape[0], -1), axis=1)
 
 
+# ---------------------------------------------------------------------------
+# Impedance invariants and D+ test
+# ---------------------------------------------------------------------------
+
 def compute_pt(
     Z: np.ndarray,
     Z_err: Optional[np.ndarray] = None,
@@ -2081,6 +2086,10 @@ def _format_block(values: np.ndarray, n_per_line: int = 6,
     return "\n".join(chunks)
 
 
+# ---------------------------------------------------------------------------
+# EDI writer
+# ---------------------------------------------------------------------------
+
 def save_edi(
     edi: Optional[Dict[str, Any]] = None,
     *,
@@ -2367,6 +2376,10 @@ def save_edi(
     p.write_text("\n".join(lines) + "\n", encoding="latin-1")
 
 
+# ---------------------------------------------------------------------------
+# DataFrame conversion
+# ---------------------------------------------------------------------------
+
 def dataframe_from_edi(
     edi: Dict[str, Any],
     *,
@@ -2587,6 +2600,10 @@ def dataframe_from_edi(
     return df
 
 
+# ---------------------------------------------------------------------------
+# Spline fitting and bootstrap helpers
+# ---------------------------------------------------------------------------
+
 def make_spline(x: np.ndarray, y: np.ndarray, lam: float | None = None):
     """Fit a smoothing spline (SciPy) and return the spline object."""
     sort_idx = np.argsort(x)
@@ -2764,6 +2781,8 @@ def load_list_of_dicts_npz(
     with np.load(path.as_posix(), allow_pickle=True) as z:
         arr = z[key]
     return list(arr.tolist())
+
+
 def _is_scalar(x: Any) -> bool:
     return isinstance(x, (str, bytes, int, float, bool, np.number))
 
@@ -2820,7 +2839,6 @@ def _unwrap_edidict(data_dict: Mapping[str, Any]) -> Mapping[str, Any]:
             return inner
 
     return data_dict
-
 
 
 def _flatten_meta_for_attrs(meta: Mapping[str, Any], *, sep: str = ".") -> dict[str, Any]:
@@ -2917,7 +2935,6 @@ def _sanitize_meta_for_hdf(meta: Mapping[str, Any]) -> dict[str, Any]:
     return out
 
 
-
 def _sanitize_meta_for_mat(meta: Mapping[str, Any]) -> dict[str, Any]:
     """
     Sanitize metadata for storage in a MATLAB .mat file.
@@ -2973,7 +2990,6 @@ def _sanitize_meta_for_mat(meta: Mapping[str, Any]) -> dict[str, Any]:
         out[k] = repr(v)
 
     return out
-
 
 
 def _sanitize_mapping_for_mat_struct(d: Mapping[str, Any]) -> dict[str, Any]:
@@ -3119,6 +3135,10 @@ def _edidict_to_dataframe(
     df.attrs.update(meta)
     return df, meta, dim_name
 
+
+# ---------------------------------------------------------------------------
+# Multi-format export (HDF5, NetCDF, MATLAB)
+# ---------------------------------------------------------------------------
 
 def save_hdf(
     data_dict: Optional[Mapping[str, Any] | pd.DataFrame] = None,
@@ -3360,6 +3380,10 @@ def save_mat(
     savemat(path.as_posix(), out, do_compression=bool(do_compression))
 
 
+# ---------------------------------------------------------------------------
+# EMTF-XML support (experimental)
+# ---------------------------------------------------------------------------
+
 def read_emtf_xml(path: str | Path) -> Dict[str, Any]:
     """Read MT data from a (simplified) EMTF-XML file (experimental)."""
     import xml.etree.ElementTree as ET
@@ -3494,6 +3518,10 @@ def emtf_to_edi(emtf_path: str | Path, edi_path: str | Path) -> str:
     save_edi(edi_path, edi, add_pt_blocks=False)
     return str(edi_path)
 
+
+# ---------------------------------------------------------------------------
+# Apparent resistivity and phase
+# ---------------------------------------------------------------------------
 
 def compute_rhophas(
     freq: np.ndarray,
@@ -3654,6 +3682,3 @@ def calc_rhoa_phas(freq: np.ndarray, Z: np.ndarray) -> Tuple[np.ndarray, np.ndar
     """
     rho, phi, _, _ = compute_rhophas(freq, Z, Z_err=None, err_method="none")
     return rho, phi
-
-
-

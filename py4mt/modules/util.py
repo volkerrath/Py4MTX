@@ -1,4 +1,4 @@
-
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 util.py
@@ -17,6 +17,7 @@ Provides helpers for:
 
 Author: Volker Rath (DIAS)
 Created: 2020-11-01
+Modified: 2026-03-25 — added section headers; docstrings for undocumented functions; get_percentile verbose parameter; cleanup; Claude Sonnet 4.6 (Anthropic)
 """
 
 import os
@@ -40,7 +41,13 @@ from types import ModuleType, SimpleNamespace
 from typing import List, Any, Dict
 from pathlib import Path
 
+
+# ---------------------------------------------------------------------------
+# Path and sys.path helpers
+# ---------------------------------------------------------------------------
+
 def add_tree(path: str):
+    """Recursively add all subdirectories of *path* to ``sys.path``."""
     base = Path(path)
     for p in base.rglob("*"):
         if p.is_dir():
@@ -75,6 +82,11 @@ def _filter_namespace(ns: Dict[str, Any]) -> Dict[str, Any]:
         out[k] = v
     return out
 
+
+
+# ---------------------------------------------------------------------------
+# HDF5 workspace persistence
+# ---------------------------------------------------------------------------
 
 def save_workspace_hdf5(filename: str = "workspace.h5",
                         namespace: Dict[str, Any] = None) -> None:
@@ -132,6 +144,9 @@ def load_workspace_hdf5(filename: str = "workspace.h5",
 
 
 
+# ---------------------------------------------------------------------------
+# Module introspection and runtime environment
+# ---------------------------------------------------------------------------
 
 def list_module_callables(module: ModuleType, public_only: bool = False) -> List[str]:
     """
@@ -205,6 +220,11 @@ def runtime_env() -> str:
         return "python"
 
 
+
+# ---------------------------------------------------------------------------
+# Miscellaneous small helpers
+# ---------------------------------------------------------------------------
+
 def stop(s: str = ''):
     '''
     Simple stopping utility.
@@ -222,7 +242,18 @@ def stop(s: str = ''):
 
 
 def dd(lat, lon):
+    """Convert DMS strings (``"DD:MM:SS"``) or plain floats to decimal degrees.
 
+    Parameters
+    ----------
+    lat, lon : str or float
+        Latitude and longitude in ``"DD:MM:SS"`` format or already as float.
+
+    Returns
+    -------
+    lat_dd, lon_dd : float
+        Decimal degrees.
+    """
     if ":" in lat:
         deg, minute, sec = (float(p) for p in lat.split(":")[:3])
         lat_dd = deg + minute / 60.0 + sec / 3600.0
@@ -268,6 +299,7 @@ def dictget(d, *k):
     return [d[i] for i in k]
 
 def parse_ast(filename):
+    """Parse a Python source file and return its AST."""
     with open(filename, 'rt') as file:
         return ast.parse(file.read(), filename=filename)
 
@@ -296,6 +328,7 @@ def check_env(envar='CONDA_PREFIX', action='error'):
 
 
 def find_functions(body):
+    """Yield ``ast.FunctionDef`` nodes from an AST body."""
     return (f for f in body if isinstance(f, ast.FunctionDef))
 
 
@@ -310,6 +343,11 @@ def list_functions(filename):
     tree = parse_ast(filename)
     for func in find_functions(tree.body):
         print('  %s' % func.name)
+
+
+# ---------------------------------------------------------------------------
+# File and string utilities
+# ---------------------------------------------------------------------------
 
 def get_filelist(searchstr=['*'], searchpath='./', sortedlist =True, fullpath=False):
     '''
@@ -338,13 +376,32 @@ def get_filelist(searchstr=['*'], searchpath='./', sortedlist =True, fullpath=Fa
     return filelist
 
 
-def get_percentile(nsig=1):
+def get_percentile(nsig=1, verbose=True):
+    """Return lower/upper normal-distribution percentiles for ±*nsig* sigma.
+
+    Parameters
+    ----------
+    nsig : float
+        Number of standard deviations (default 1).
+    verbose : bool
+        Print coverage and percentile values when ``True`` (default).
+
+    Returns
+    -------
+    lower, upper, coverage : float
+    """
     import scipy.stats as st
     lower = st.norm.cdf(-nsig)
     upper = st.norm.cdf( nsig)
     coverage = upper - lower
-    print ('Coverage',round(coverage),'percentiles=', lower, upper)
+    if verbose:
+        print('Coverage', round(coverage), 'percentiles=', lower, upper)
     return lower, upper, coverage
+
+
+# ---------------------------------------------------------------------------
+# Coordinate projections (pyproj)
+# ---------------------------------------------------------------------------
 
 def get_utm_zone(lat=None, lon=None):
     '''
@@ -542,6 +599,13 @@ def project_gk_to_latlon(gk_x, gk_y, gk_zone=5684):
     return latitude, longitude
 
 def splitall(path):
+    """Split *path* into all of its components.
+
+    Examples
+    --------
+    >>> splitall("/a/b/c")
+    ['/', 'a', 'b', 'c']
+    """
     allparts = []
     while True:
         parts = os.path.split(path)
@@ -706,6 +770,11 @@ def strreplace(key_in=None, key_out=None, fname_in=None, fname_out=None):
             fou.write(line.replace(key_in, key_out))
 
 
+
+# ---------------------------------------------------------------------------
+# Grid generation
+# ---------------------------------------------------------------------------
+
 def gen_grid_latlon(
         LatLimits=None,
         nLat=None,
@@ -751,6 +820,11 @@ def gen_grid_utm(XLimits=None, nX=None, YLimits=None, nY=None, out=True):
 
     return X, Y
 
+
+
+# ---------------------------------------------------------------------------
+# Geometry
+# ---------------------------------------------------------------------------
 
 def choose_data_poly(Data=None, PolyPoints=None, Out=True):
     '''
@@ -917,6 +991,11 @@ def gen_searchgrid(Points=None,
 
     return p
 
+
+
+# ---------------------------------------------------------------------------
+# Numerical utilities
+# ---------------------------------------------------------------------------
 
 def KLD(P=np.array([]), Q=np.array([]), epsilon= 1.e-8):
     '''
@@ -1128,30 +1207,42 @@ def calc_rms(dcalc=None, dobs=None, Wd=1.0):
 
     return nrms, srms
 
-def nearly_equal(a,b,sig_fig=6):
+def nearly_equal(a, b, sig_fig=6):
+    """Return ``True`` if *a* and *b* agree to *sig_fig* significant figures."""
     return (a==b or int(a*10**sig_fig) == int(b*10**sig_fig))
 
 
+
+# ---------------------------------------------------------------------------
 # Rotation matrices (right-handed, active rotations)
+# ---------------------------------------------------------------------------
+
 def rot_z(angle_deg):
+    """3×3 rotation matrix about the Z axis by *angle_deg* degrees."""
     t = np.radians(angle_deg)
     return np.array([[ np.cos(t), -np.sin(t), 0.0],
                      [ np.sin(t),  np.cos(t), 0.0],
                      [ 0.0,         0.0,      1.0]])
 
 def rot_x(angle_deg):
+    """3×3 rotation matrix about the X axis by *angle_deg* degrees."""
     t = np.radians(angle_deg)
     return np.array([[1.0, 0.0,         0.0       ],
                      [0.0, np.cos(t), -np.sin(t)],
                      [0.0, np.sin(t),  np.cos(t)]])
 
 def rot_y(angle_deg):
+    """3×3 rotation matrix about the Y axis by *angle_deg* degrees."""
     t = np.radians(angle_deg)
     return np.array([[ np.cos(t), 0.0, np.sin(t)],
                      [ 0.0,       1.0, 0.0      ],
                      [-np.sin(t), 0.0, np.cos(t)]])
 
 def rot_full(T, angle_deg_x, angle_deg_y, angle_deg_z):
+    """Apply combined X/Y/Z rotation to tensor *T*.
+
+    Rotation order: R = rot_z @ rot_y @ rot_x; result = R @ T @ R.T.
+    """
     T0 = T.copy()
     # Combined rotation: rot_ = rot_z @ rot_y @ rot_x
     rot = rot_z(angle_deg_z) @ rot_y(angle_deg_y) @ rot_x(angle_deg_x)
@@ -1160,6 +1251,11 @@ def rot_full(T, angle_deg_x, angle_deg_y, angle_deg_z):
     T_rot = rot @ T0 @ rot.T
     return T_rot
 
+
+
+# ---------------------------------------------------------------------------
+# System / OS helpers
+# ---------------------------------------------------------------------------
 
 def make_pdf_catalog(workdir='./', pdflist= None, filename=None):
     '''
@@ -1328,6 +1424,10 @@ def dict_to_namespace(d):
     return SimpleNamespace(**d)
 
 
+
+# ---------------------------------------------------------------------------
+# 1-D MT forward modelling
+# ---------------------------------------------------------------------------
 
 def mt1dfwd(
     freq: np.ndarray,
