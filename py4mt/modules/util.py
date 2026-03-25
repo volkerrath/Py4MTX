@@ -1338,7 +1338,7 @@ def mt1dfwd(
     magfield: str = "b",
 ):
     """Compute 1D MT forward response for a layered Earth."""
-    mu0 = _MU0
+    mu0 = 4.0 * np.pi * 1.0e-7
     sig = np.array(sig, dtype=float)
     freq = np.array(freq, dtype=float)
     d = np.array(d, dtype=float)
@@ -1384,7 +1384,7 @@ def mt1dfwd(
 
 def wait1d(periods: np.ndarray, thick: np.ndarray, res: np.ndarray):
     """Alternative 1D MT forward modelling implementation (legacy)."""
-    mu = _MU0
+    mu = 4.0 * np.pi * 1.0e-7
     omega = 2.0 * np.pi / periods
 
     cond = 1.0 / np.asarray(res, dtype=float)
