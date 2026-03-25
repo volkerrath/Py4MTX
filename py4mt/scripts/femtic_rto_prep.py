@@ -88,11 +88,12 @@ print(titstrng + '\n\n')
 Base setup.
 '''
 N_SAMPLES = 32
-ENSEMBLE_DIR = r'/home/vrath/FEMTIC_work/ens_misti/'
+ENSEMBLE_DIR = r'/home/vrath/FEMTIC_work/ens_test/'
 TEMPLATES = ENSEMBLE_DIR + 'templates/'
 FILES = ['control.dat',
          'observe.dat',
          'mesh.dat',
+         'prior.dat',
          'resistivity_block_iter0.dat',
          'distortion_iter0.dat',
          'run_femtic_dias.sh',]

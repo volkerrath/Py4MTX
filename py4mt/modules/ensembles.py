@@ -69,14 +69,19 @@ def generate_directories(
     alg: str = "rto",
     dir_base: str = "./ens_",
     templates: str = "",
-    file_list: Sequence[str] = (
-        "control.dat",
+    copy_list: Sequence[str] = (
         "observe.dat",
+        "resistivity_block_iter0.dat",
+        "distortion_iter0.dat",
+        "prior.dat",
+        "run_dub.sh",
+        "run_oar_sh",
+    ),
+    link_list:Sequence[str] = (
+        "control.dat",
         "mesh.dat",
         "resistivity_block_iter0.dat",
         "distortion_iter0.dat",
-        "run_dub.sh",
-        "run_oar_sh",
     ),
     n_samples: int = 1,
     fromto: Optional[Tuple[int, int]] = None,
@@ -91,8 +96,10 @@ def generate_directories(
         Base name for ensemble directories (e.g. "./ens_").
     templates : str, optional
         Directory prefix from which the template files are copied.
-    file_list : sequence of str
+    copy_list : sequence of str
         Names of files to copy into each ensemble directory.
+    link_list : sequence of str
+        Names of files to link into each ensemble directory.
     n_samples : int
         Number of ensemble members if ``fromto`` is None.
     fromto : (int, int), optional
@@ -115,7 +122,7 @@ def generate_directories(
     for iens in from_to:
         directory = f"{dir_base}{iens}/"
         os.makedirs(directory, exist_ok=True)
-        copy_files(file_list, directory, templates)
+        copy_files(copy_list, directory, templates)
         dir_list.append(directory)
 
     if out:
@@ -648,22 +655,36 @@ def matrix_reduce(
     return M_sp
 
 
-def copy_files(filelist: Sequence[str], directory: str, templates: str) -> None:
+def copy_files(
+    copies: Sequence[str],
+    links: Sequence[str],
+    directory: str,
+    templates: str,
+) -> None:
     """
-    Copy a list of files from `templates` prefix into `directory`.
+    Copy or symlink a list of files from `templates` prefix into `directory`.
 
     Parameters
     ----------
-    filelist : sequence of str
-        Files to copy.
+    copies : sequence of str
+        Files to copy (full copy via shutil.copy2).
+    links : sequence of str
+        Files to symlink (symbolic link via os.symlink).
     directory : str
         Target directory.
     templates : str
         Template directory (prefix) for input files.
     """
-    for fname in filelist:
+    for fname in copies:
         src = templates + fname
         shutil.copy2(src, directory)
+
+    for fname in links:
+        src = os.path.abspath(templates + fname)
+        dst = os.path.join(directory, fname)
+        if os.path.islink(dst):
+            os.remove(dst)
+        os.symlink(src, dst)
 
 
 def generate_model_ensemble(
