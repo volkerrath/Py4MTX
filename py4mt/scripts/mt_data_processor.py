@@ -12,6 +12,7 @@ A collection NPZ file with all stations is saved at the end.
 @created:   2026-02-13 with the help of ChatGPT (GPT-5 Thinking)
 @modified:  2026-03-16 — freq_order, D+/rho+ test (DPLUS), add_rhoplus plot; Claude Sonnet 4.6 (Anthropic)
 @modified:  2026-03-18 — add_noise option in SET_ERRORS (mode='fix' only); Claude Sonnet 4.6 (Anthropic)
+@modified:  2026-03-25 — FT_CORRECTION block (manufacturer, from/to convention); Claude Sonnet 4.6 (Anthropic)
 """
 
 import os
@@ -39,6 +40,7 @@ from data_proc import (
     interpolate_data, set_errors, estimate_errors, rotate_data,
     compute_pt, compute_zdet, compute_zssq, compute_rhophas, compute_rhoplus,
 )
+import mt_ft_convention as ftc
 from version import versionstrg
 
 rng = np.random.default_rng()
@@ -69,6 +71,24 @@ STAT_UPPER = True
 
 DROP_INVALID = True
 FREQ_ORDER = "dec"   # "inc", "dec", or "keep"
+
+MANUFACTURER = "metronix"   # "metronix", "phoenix", or "delta"
+                             # Controls FT sign-convention correction at load time.
+                             # Phoenix (e+iwt) → Im(Z) and Im(T) are negated so all
+                             # data in the loop are in the standard e-iwt convention.
+
+FT_CORRECTION = True
+if FT_CORRECTION:
+    # from_convention: FT convention of the source EDI files.
+    #   "e-iwt" — standard / Metronix / DELTA (no correction applied)
+    #   "e+iwt" — Phoenix MTU convention (Im(Z) and Im(T) sign-flipped on load)
+    # to_convention: target convention stored in data_dict and written to output EDI.
+    #   Almost always "e-iwt" (standard).  Set "e+iwt" only if the downstream
+    #   inversion code expects Phoenix convention.
+    ftc_pars = {
+        "from_convention": "e-iwt",   # match MANUFACTURER above
+        "to_convention":   "e-iwt",
+    }
 
 
 PHAS_TENS = True
@@ -144,7 +164,15 @@ all_data = []
 for edi in edi_files:
     print("\n\nFound edi file: ", edi)
 
-    data_dict = load_edi(edi, drop_invalid_periods=DROP_INVALID, freq_order=FREQ_ORDER)
+    data_dict = load_edi(
+        edi,
+        drop_invalid_periods=DROP_INVALID,
+        freq_order=FREQ_ORDER,
+        manufacturer=MANUFACTURER,
+    )
+
+    if FT_CORRECTION:
+        ftc.correct_ft_convention(data_dict, **ftc_pars)
 
     station = data_dict["station"]
     Z = data_dict["Z"]
