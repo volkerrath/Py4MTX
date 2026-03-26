@@ -10,6 +10,7 @@ Provides helpers for:
 - Module introspection and runtime environment detection
 - Coordinate projections (pyproj-based: WGS84 ↔ UTM ↔ ITM ↔ Gauss-Kruger)
 - File and string manipulation
+- Archive unpacking (zip, tar, gz, bz2, xz)
 - Grid generation (lat/lon and UTM)
 - Geometry (point-in-polygon, projection onto lines)
 - Numerical utilities (KL divergence, L-curve corner, DCT, curvature)
@@ -18,6 +19,7 @@ Provides helpers for:
 Author: Volker Rath (DIAS)
 Created: 2020-11-01
 Modified: 2026-03-25 — added section headers; docstrings for undocumented functions; get_percentile verbose parameter; cleanup; Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-03-26 — added unpack_compressed(); Claude Sonnet 4.6 (Anthropic)
 """
 
 import os
@@ -28,6 +30,11 @@ import inspect
 import math
 import pathlib
 import shutil
+import bz2
+import gzip
+import lzma
+import tarfile
+import zipfile
 import h5py
 import json
 
@@ -772,6 +779,107 @@ def strreplace(key_in=None, key_out=None, fname_in=None, fname_out=None):
 
 
 # ---------------------------------------------------------------------------
+# Archive unpacking
+# ---------------------------------------------------------------------------
+
+def unpack_compressed(directories, *, recurse=False, remove_archive=False,
+                      verbose=True):
+    """Unpack all compressed files found in one or more directories.
+
+    Supported formats: .zip, .tar, .tar.gz / .tgz, .tar.bz2 / .tbz2,
+    .tar.xz / .txz, and single-file .gz / .bz2 / .xz.
+
+    Parameters
+    ----------
+    directories : str | Path | list[str | Path]
+        One directory or a list of directories to scan.
+    recurse : bool, optional
+        If True, also scan sub-directories recursively. Default False.
+    remove_archive : bool, optional
+        If True, delete each archive after successful extraction. Default False.
+    verbose : bool, optional
+        Print progress messages. Default True.
+
+    Returns
+    -------
+    list[Path]
+        Paths of all successfully unpacked archives.
+
+    VR 2026-03-26, Claude Sonnet 4.6 (Anthropic)
+    """
+    if isinstance(directories, (str, Path)):
+        directories = [directories]
+
+    def _is_compressed(p):
+        try:
+            if zipfile.is_zipfile(p):
+                return True
+            if tarfile.is_tarfile(p):
+                return True
+        except Exception:
+            pass
+        s = "".join(p.suffixes).lower()
+        return s.endswith((".gz", ".bz2", ".xz"))
+
+    def _extract(p):
+        dest = p.parent
+        s = "".join(p.suffixes).lower()
+        try:
+            if zipfile.is_zipfile(p):
+                with zipfile.ZipFile(p) as zf:
+                    zf.extractall(dest)
+            elif tarfile.is_tarfile(p):
+                with tarfile.open(p) as tf:
+                    tf.extractall(dest)
+            elif s.endswith(".gz"):
+                out = dest / p.stem
+                with gzip.open(p, "rb") as fi, open(out, "wb") as fo:
+                    fo.write(fi.read())
+            elif s.endswith(".bz2"):
+                out = dest / p.stem
+                with bz2.open(p, "rb") as fi, open(out, "wb") as fo:
+                    fo.write(fi.read())
+            elif s.endswith(".xz"):
+                out = dest / p.stem
+                with lzma.open(p, "rb") as fi, open(out, "wb") as fo:
+                    fo.write(fi.read())
+            else:
+                return False
+            return True
+        except Exception as exc:
+            print(f"  [WARN] could not unpack {p.name}: {exc}")
+            return False
+
+    unpacked = []
+    for d in directories:
+        d = Path(d)
+        if not d.is_dir():
+            print(f"  [WARN] not a directory, skipping: {d}")
+            continue
+        pattern = "**/*" if recurse else "*"
+        candidates = sorted(f for f in d.glob(pattern) if f.is_file())
+        for f in candidates:
+            try:
+                is_comp = _is_compressed(f)
+            except Exception:
+                continue
+            if not is_comp:
+                continue
+            if verbose:
+                print(f"  Unpacking {f.name} -> {f.parent}/")
+            ok = _extract(f)
+            if ok:
+                unpacked.append(f)
+                if remove_archive:
+                    f.unlink()
+                    if verbose:
+                        print(f"    Removed {f.name}")
+    if verbose:
+        print(f"Unpacked {len(unpacked)} archive(s).")
+    return unpacked
+
+
+# ---------------------------------------------------------------------------
 # Grid generation
 # ---------------------------------------------------------------------------
 
@@ -1397,6 +1505,100 @@ def filecopy(src: str, dst: str) -> None:
 
     except Exception as e:
         raise RuntimeError(f"Failed to copy {src} → {dst}: {e}") from e
+
+
+def extract_archive(
+    src: str,
+    dst: str = ".",
+    *,
+    fmt: str = "auto",
+    out: bool = True,
+) -> list[str]:
+    """
+    Extract a ZIP or gzip-compressed TAR archive (tgz / tar.gz) to a directory.
+
+    Parameters
+    ----------
+    src : str
+        Path to the archive file.  Recognised extensions:
+
+        - ``.zip``              → ZIP (via :mod:`zipfile`)
+        - ``.tgz``, ``.tar.gz`` → gzip-compressed TAR (via :mod:`tarfile`)
+
+    dst : str, optional
+        Destination directory.  Created if it does not exist.
+        Default is the current working directory (``"."``).
+    fmt : {"auto", "zip", "tgz"}, optional
+        Override automatic format detection.
+
+        - ``"auto"`` (default): detect from the file name.
+        - ``"zip"``: force ZIP mode.
+        - ``"tgz"``: force TAR/gzip mode.
+
+    out : bool, optional
+        If True (default), print a summary line after extraction.
+
+    Returns
+    -------
+    members : list of str
+        Sorted list of paths that were extracted (relative to *dst*).
+
+    Raises
+    ------
+    ValueError
+        If the archive format cannot be determined or is unsupported.
+    FileNotFoundError
+        If *src* does not exist.
+    tarfile.TarError / zipfile.BadZipFile
+        On corrupt or invalid archive data.
+
+    Examples
+    --------
+    >>> extract_archive("results.zip", dst="./output")
+    >>> extract_archive("data.tgz",   dst="./output")
+    >>> extract_archive("data.tar.gz", dst="./output", fmt="tgz")
+    """
+    src_path = pathlib.Path(src)
+    dst_path = pathlib.Path(dst)
+
+    if not src_path.exists():
+        raise FileNotFoundError(f"Archive not found: {src}")
+
+    dst_path.mkdir(parents=True, exist_ok=True)
+
+    # ---- format detection ---------------------------------------------------
+    name_lower = src_path.name.lower()
+    if fmt == "auto":
+        if name_lower.endswith(".zip"):
+            fmt = "zip"
+        elif name_lower.endswith(".tgz") or name_lower.endswith(".tar.gz"):
+            fmt = "tgz"
+        else:
+            raise ValueError(
+                f"Cannot determine archive format from '{src_path.name}'. "
+                "Pass fmt='zip' or fmt='tgz' explicitly."
+            )
+
+    # ---- extraction ---------------------------------------------------------
+    members: list[str] = []
+
+    if fmt == "zip":
+        with zipfile.ZipFile(src_path, "r") as zf:
+            zf.extractall(dst_path)
+            members = sorted(zf.namelist())
+
+    elif fmt == "tgz":
+        with tarfile.open(src_path, "r:gz") as tf:
+            tf.extractall(dst_path)
+            members = sorted(m.name for m in tf.getmembers())
+
+    else:
+        raise ValueError(f"Unsupported fmt='{fmt}'. Use 'zip', 'tgz', or 'auto'.")
+
+    if out:
+        print(f"Extracted {len(members)} item(s) from '{src}' → '{dst}'")
+
+    return members
 
 
 def dict_to_namespace(d):

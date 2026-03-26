@@ -93,7 +93,7 @@ TEMPLATES = ENSEMBLE_DIR + 'templates/'
 FILES = ['control.dat',
          'observe.dat',
          'mesh.dat',
-         'prior.dat',
+         'referencemodel.dat',
          'resistivity_block_iter0.dat',
          'distortion_iter0.dat',
          'run_femtic_dias.sh',]
