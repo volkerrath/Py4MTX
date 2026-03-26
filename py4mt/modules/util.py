@@ -10,7 +10,7 @@ Provides helpers for:
 - Module introspection and runtime environment detection
 - Coordinate projections (pyproj-based: WGS84 ↔ UTM ↔ ITM ↔ Gauss-Kruger)
 - File and string manipulation
-- Archive unpacking (zip, tar, gz, bz2, xz)
+- Archive unpacking and packing (zip, tar, gz, bz2, xz)
 - Grid generation (lat/lon and UTM)
 - Geometry (point-in-polygon, projection onto lines)
 - Numerical utilities (KL divergence, L-curve corner, DCT, curvature)
@@ -19,7 +19,7 @@ Provides helpers for:
 Author: Volker Rath (DIAS)
 Created: 2020-11-01
 Modified: 2026-03-25 — added section headers; docstrings for undocumented functions; get_percentile verbose parameter; cleanup; Claude Sonnet 4.6 (Anthropic)
-Modified: 2026-03-26 — added unpack_compressed(); Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-03-26 — added unpack_compressed(), pack_compressed(); Claude Sonnet 4.6 (Anthropic)
 """
 
 import os
@@ -770,7 +770,7 @@ def strreplace(key_in=None, key_out=None, fname_in=None, fname_out=None):
 
     if fname_out is None:
         fname_out = fname_in
-        print('strreplace: warning outpu file overwrites input file!')
+        print('strreplace: warning output file overwrites input file!')
 
     with open(fname_in, 'r') as fin, open(fname_out, 'w') as fou:
         for line in fin:
@@ -877,6 +877,121 @@ def unpack_compressed(directories, *, recurse=False, remove_archive=False,
     if verbose:
         print(f"Unpacked {len(unpacked)} archive(s).")
     return unpacked
+
+
+def pack_compressed(directories, method="zip", *, outdir=None, archive_name=None,
+                    recurse=False, remove_source=False, verbose=True):
+    """Pack one or more directories into a single compressed archive.
+
+    Each directory in *directories* produces one archive named after that
+    directory (unless *archive_name* overrides this for a single-directory
+    call).  Archives are written to *outdir* (default: parent of each source
+    directory).
+
+    Supported methods
+    -----------------
+    ``"zip"``        — ZIP archive (.zip)
+    ``"tar"``        — uncompressed tar (.tar)
+    ``"tgz"``        — gzip-compressed tar (.tar.gz)
+    ``"tbz2"``       — bzip2-compressed tar (.tar.bz2)
+    ``"txz"``        — xz-compressed tar (.tar.xz)
+
+    Parameters
+    ----------
+    directories : str | Path | list[str | Path]
+        One directory or a list of directories to archive.
+    method : str, optional
+        Compression method; one of ``"zip"``, ``"tar"``, ``"tgz"``,
+        ``"tbz2"``, ``"txz"``.  Default ``"zip"``.
+    outdir : str | Path | None, optional
+        Directory where archives are written.  If None, each archive is
+        placed next to its source directory. Default None.
+    archive_name : str | None, optional
+        Override the archive stem for a single-directory call.  Ignored when
+        *directories* contains more than one entry. Default None.
+    recurse : bool, optional
+        If True, include sub-directories recursively.  If False, only files
+        directly inside the directory are packed. Default False.
+    remove_source : bool, optional
+        If True, delete the source directory after successful packing.
+        Default False.
+    verbose : bool, optional
+        Print progress messages. Default True.
+
+    Returns
+    -------
+    list[Path]
+        Paths of all successfully created archives.
+
+    VR 2026-03-26, Claude Sonnet 4.6 (Anthropic)
+    """
+    _METHODS = {
+        "zip":  (".zip",    None),
+        "tar":  (".tar",    ""),
+        "tgz":  (".tar.gz", "gz"),
+        "tbz2": (".tar.bz2","bz2"),
+        "txz":  (".tar.xz", "xz"),
+    }
+    method = method.lower().strip()
+    if method not in _METHODS:
+        raise ValueError(
+            f"pack_compressed: unknown method {method!r}. "
+            f"Choose one of: {list(_METHODS)}")
+
+    suffix, tar_mode = _METHODS[method]
+
+    if isinstance(directories, (str, Path)):
+        directories = [directories]
+
+    if outdir is not None:
+        outdir = Path(outdir)
+        outdir.mkdir(parents=True, exist_ok=True)
+
+    created = []
+    for d in directories:
+        d = Path(d).resolve()
+        if not d.is_dir():
+            print(f"  [WARN] not a directory, skipping: {d}")
+            continue
+
+        stem = archive_name if (archive_name and len(directories) == 1) else d.name
+        dest_dir = outdir if outdir is not None else d.parent
+        archive_path = dest_dir / (stem + suffix)
+
+        # Collect files
+        pattern = "**/*" if recurse else "*"
+        files = sorted(f for f in d.glob(pattern) if f.is_file())
+        if not files:
+            print(f"  [WARN] no files found in {d}, skipping.")
+            continue
+
+        if verbose:
+            print(f"  Packing {d.name}/ -> {archive_path.name} "
+                  f"({len(files)} file(s))")
+        try:
+            if method == "zip":
+                with zipfile.ZipFile(archive_path, "w",
+                                     compression=zipfile.ZIP_DEFLATED) as zf:
+                    for f in files:
+                        zf.write(f, f.relative_to(d.parent))
+            else:
+                mode = "w:" + tar_mode if tar_mode else "w"
+                with tarfile.open(archive_path, mode) as tf:
+                    for f in files:
+                        tf.add(f, arcname=f.relative_to(d.parent))
+
+            created.append(archive_path)
+            if remove_source:
+                shutil.rmtree(d)
+                if verbose:
+                    print(f"    Removed source {d.name}/")
+        except Exception as exc:
+            print(f"  [WARN] could not pack {d.name}: {exc}")
+
+    if verbose:
+        print(f"Packed {len(created)} archive(s).")
+    return created
+
 
 
 # ---------------------------------------------------------------------------
