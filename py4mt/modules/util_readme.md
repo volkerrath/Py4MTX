@@ -60,12 +60,13 @@ All projection functions use the modern `pyproj.Transformer` API.
 
 ---
 
-## Archive unpacking
+## Archive unpacking and packing
 
 - `unpack_compressed(directories, *, recurse=False, remove_archive=False, verbose=True)` — unpack all compressed archives found in one or more directories
+- `pack_compressed(directories, method="zip", *, outdir=None, archive_name=None, recurse=False, remove_source=False, verbose=True)` — pack one or more directories into compressed archives
 
-Supported formats: `.zip`, `.tar`, `.tar.gz` / `.tgz`, `.tar.bz2` / `.tbz2`, `.tar.xz` / `.txz`, and single-file `.gz`, `.bz2`, `.xz`.  
-Multi-file archives (zip/tar) are extracted into the same directory as the archive; single-file compressed files are decompressed in-place (`.gz` → stem, etc.).  
+**`unpack_compressed`** — supported formats: `.zip`, `.tar`, `.tar.gz` / `.tgz`, `.tar.bz2` / `.tbz2`, `.tar.xz` / `.txz`, and single-file `.gz`, `.bz2`, `.xz`.  
+Multi-file archives are extracted into the same directory as the archive; single-file compressed files are decompressed in-place.  
 `recurse=True` walks sub-directories. `remove_archive=True` deletes each archive after successful extraction.  
 Returns a `list[Path]` of successfully processed archives.
 
@@ -75,6 +76,28 @@ unpack_compressed(["/data/raw", "/data/aux"])
 
 # Recursive, clean up afterwards
 unpack_compressed("/data/raw", recurse=True, remove_archive=True)
+```
+
+**`pack_compressed`** — each directory produces one archive named after that directory (or `archive_name` for single-directory calls). Archives land next to their source, or in `outdir` if given.
+
+| `method` | Output suffix |
+|----------|--------------|
+| `"zip"`  | `.zip`       |
+| `"tar"`  | `.tar`       |
+| `"tgz"`  | `.tar.gz`    |
+| `"tbz2"` | `.tar.bz2`   |
+| `"txz"`  | `.tar.xz`    |
+
+`recurse=True` includes sub-directories. `remove_source=True` deletes the source directory after successful packing.  
+Returns a `list[Path]` of created archives.
+
+```python
+# Pack two directories as gzip-compressed tarballs
+pack_compressed(["/data/raw", "/data/aux"], method="tgz")
+
+# Pack into a specific output directory, recursive, named explicitly
+pack_compressed("/data/survey", method="zip", outdir="/backup",
+                archive_name="survey_2026", recurse=True)
 ```
 
 ---
@@ -172,4 +195,4 @@ site = data_proc.load_edi("SITE_PHX.edi", manufacturer="phoenix")
 
 Author: Volker Rath (DIAS)
 Modified: 2026-03-25 — added ft_convention.py section; Claude Sonnet 4.6 (Anthropic)  
-Modified: 2026-03-26 — added unpack_compressed() section; Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-03-26 — added unpack_compressed(), pack_compressed() sections; Claude Sonnet 4.6 (Anthropic)
