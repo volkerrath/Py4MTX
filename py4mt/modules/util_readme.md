@@ -60,6 +60,25 @@ All projection functions use the modern `pyproj.Transformer` API.
 
 ---
 
+## Archive unpacking
+
+- `unpack_compressed(directories, *, recurse=False, remove_archive=False, verbose=True)` — unpack all compressed archives found in one or more directories
+
+Supported formats: `.zip`, `.tar`, `.tar.gz` / `.tgz`, `.tar.bz2` / `.tbz2`, `.tar.xz` / `.txz`, and single-file `.gz`, `.bz2`, `.xz`.  
+Multi-file archives (zip/tar) are extracted into the same directory as the archive; single-file compressed files are decompressed in-place (`.gz` → stem, etc.).  
+`recurse=True` walks sub-directories. `remove_archive=True` deletes each archive after successful extraction.  
+Returns a `list[Path]` of successfully processed archives.
+
+```python
+# Unpack everything in two directories
+unpack_compressed(["/data/raw", "/data/aux"])
+
+# Recursive, clean up afterwards
+unpack_compressed("/data/raw", recurse=True, remove_archive=True)
+```
+
+---
+
 ## Grid generation
 
 - `gen_grid_latlon(LatLimits, nLat, LonLimits, nLon)` — equidistant lat/lon grid
@@ -152,4 +171,5 @@ site = data_proc.load_edi("SITE_PHX.edi", manufacturer="phoenix")
 ---
 
 Author: Volker Rath (DIAS)
-Modified: 2026-03-25 — added ft_convention.py section; Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-03-25 — added ft_convention.py section; Claude Sonnet 4.6 (Anthropic)  
+Modified: 2026-03-26 — added unpack_compressed() section; Claude Sonnet 4.6 (Anthropic)
