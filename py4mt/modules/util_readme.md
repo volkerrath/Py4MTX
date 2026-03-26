@@ -100,6 +100,35 @@ pack_compressed("/data/survey", method="zip", outdir="/backup",
                 archive_name="survey_2026", recurse=True)
 ```
 
+
+---
+
+## Script queue runner
+
+- `run_queue(scripts, *, mode="strict", logfile=None, verbose=True)` — run a sequence of scripts or shell commands sequentially, with glob expansion and timestamped logging
+
+Each entry in *scripts* may be a literal script path, a plain shell command string, or a glob pattern (e.g. `"./stage2_*.sh"`). Globs are expanded and sorted before execution. Output (stdout + stderr combined) is streamed live and written to the log.
+
+| `mode`      | Behaviour on failure |
+|-------------|----------------------|
+| `"strict"`  | raises `RuntimeError` immediately (default) |
+| `"lenient"` | logs the failure, continues with remaining scripts |
+
+`logfile=None` auto-generates a timestamped name (`run_queue_YYYYMMDD_HHMMSS.log`). Pass `logfile=False` to disable file logging entirely.
+
+Returns a dict with `"resolved"` (expanded script list), `"ok"`, `"failed"` (list of `(script, exit_code)` tuples), and `"logfile"`.
+
+```python
+# Run three scripts strictly; log to default timestamped file
+run_queue(["./setup.sh", "./stage1_*.sh", "./finalize.sh"])
+
+# Lenient mode, explicit log path
+run_queue(["./prep.sh", "./jobs/step?.sh"], mode="lenient",
+          logfile="job_run.log")
+
+# Mix of script paths and plain commands
+run_queue(["./init.sh", "python process.py --site A01", "./cleanup.sh"])
+```
 ---
 
 ## Grid generation
@@ -195,4 +224,4 @@ site = data_proc.load_edi("SITE_PHX.edi", manufacturer="phoenix")
 
 Author: Volker Rath (DIAS)
 Modified: 2026-03-25 — added ft_convention.py section; Claude Sonnet 4.6 (Anthropic)  
-Modified: 2026-03-26 — added unpack_compressed(), pack_compressed() sections; Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-03-26 — added unpack_compressed(), pack_compressed(), run_queue() sections; Claude Sonnet 4.6 (Anthropic)
