@@ -11,6 +11,7 @@ Provides helpers for:
 - Coordinate projections (pyproj-based: WGS84 ↔ UTM ↔ ITM ↔ Gauss-Kruger)
 - File and string manipulation
 - Archive unpacking and packing (zip, tar, gz, bz2, xz)
+- Sequential script/command queue runner with glob expansion and logging
 - Grid generation (lat/lon and UTM)
 - Geometry (point-in-polygon, projection onto lines)
 - Numerical utilities (KL divergence, L-curve corner, DCT, curvature)
@@ -19,7 +20,7 @@ Provides helpers for:
 Author: Volker Rath (DIAS)
 Created: 2020-11-01
 Modified: 2026-03-25 — added section headers; docstrings for undocumented functions; get_percentile verbose parameter; cleanup; Claude Sonnet 4.6 (Anthropic)
-Modified: 2026-03-26 — added unpack_compressed(), pack_compressed(); Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-03-26 — added unpack_compressed(), pack_compressed(), run_queue(); Claude Sonnet 4.6 (Anthropic)
 """
 
 import os
@@ -770,7 +771,7 @@ def strreplace(key_in=None, key_out=None, fname_in=None, fname_out=None):
 
     if fname_out is None:
         fname_out = fname_in
-        print('strreplace: warning output file overwrites input file!')
+        print('strreplace: warning outpu file overwrites input file!')
 
     with open(fname_in, 'r') as fin, open(fname_out, 'w') as fou:
         for line in fin:
@@ -992,6 +993,150 @@ def pack_compressed(directories, method="zip", *, outdir=None, archive_name=None
         print(f"Packed {len(created)} archive(s).")
     return created
 
+
+
+
+def run_queue(scripts, *, mode="strict", logfile=None, verbose=True):
+    """Run a sequence of scripts or shell commands sequentially.
+
+    Entries in *scripts* may be literal paths/commands or glob patterns.
+    Glob patterns are expanded and sorted before execution.  Each entry is
+    executed via ``subprocess`` (bash) and its stdout/stderr are streamed
+    live and optionally written to a timestamped log file.
+
+    Parameters
+    ----------
+    scripts : str | list[str]
+        One item or a list of items; each item is either:
+
+        - a literal path to a shell script (``"./run_step1.sh"``)
+        - a shell command string (``"python process.py --site A01"``)
+        - a glob pattern (``"./stage2_*.sh"``, ``"/jobs/step?.sh"``)
+
+        Glob patterns are expanded relative to the current working directory
+        and sorted lexicographically before any other entries are appended.
+    mode : {"strict", "lenient"}, optional
+        ``"strict"``  — stop immediately if any script returns a non-zero
+        exit code (default).
+        ``"lenient"`` — log failures and continue with remaining scripts.
+    logfile : str | Path | None, optional
+        Path to the log file.  If None, a timestamped name is generated
+        automatically (``run_queue_YYYYMMDD_HHMMSS.log``).  Pass ``False``
+        to disable logging entirely. Default None.
+    verbose : bool, optional
+        If True, print log lines to stdout in addition to the log file.
+        Default True.
+
+    Returns
+    -------
+    dict
+        Summary with keys:
+
+        ``"resolved"``  — list[str] of scripts after glob expansion
+        ``"ok"``        — list[str] of scripts that exited with code 0
+        ``"failed"``    — list[tuple[str, int]] of (script, exit_code) pairs
+        ``"logfile"``   — Path | None — path to the log file
+
+    Raises
+    ------
+    RuntimeError
+        In ``"strict"`` mode, raised after the first failing script.
+
+    VR 2026-03-26, Claude Sonnet 4.6 (Anthropic)
+    """
+    import subprocess
+    import glob as _glob
+    from datetime import datetime
+
+    if isinstance(scripts, str):
+        scripts = [scripts]
+
+    # ---- glob expansion ------------------------------------------------
+    resolved = []
+    for entry in scripts:
+        if any(c in entry for c in ("*", "?", "[")):
+            matches = sorted(_glob.glob(entry))
+            if not matches:
+                _rq_log(f"[WARN] glob matched nothing: {entry}",
+                        fh=None, verbose=verbose)
+            else:
+                resolved.extend(matches)
+        else:
+            resolved.append(entry)
+
+    # ---- log file setup ------------------------------------------------
+    fh = None
+    logpath = None
+    if logfile is not False:
+        if logfile is None:
+            logpath = Path(f"run_queue_{datetime.now():%Y%m%d_%H%M%S}.log")
+        else:
+            logpath = Path(logfile)
+        fh = open(logpath, "w", buffering=1)
+
+    def _log(msg):
+        _rq_log(msg, fh=fh, verbose=verbose)
+
+    _log(f"run_queue started. mode={mode}, scripts={len(resolved)}")
+    for s in resolved:
+        _log(f"  {s}")
+
+    # ---- execution loop ------------------------------------------------
+    ok, failed = [], []
+    for script in resolved:
+        _log(f">>> Starting: {script}")
+        try:
+            proc = subprocess.Popen(
+                ["bash", script] if Path(script).exists() else script,
+                shell=not Path(script).exists(),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+            for line in proc.stdout:
+                _log(line.rstrip())
+            proc.wait()
+            rc = proc.returncode
+        except Exception as exc:
+            _log(f"[WARN] could not launch {script!r}: {exc}")
+            failed.append((script, -1))
+            if mode == "strict":
+                if fh:
+                    fh.close()
+                raise RuntimeError(
+                    f"run_queue: launch failed for {script!r}") from exc
+            continue
+
+        if rc == 0:
+            _log(f">>> Finished OK: {script}")
+            ok.append(script)
+        else:
+            _log(f"!!! {script} exited with code {rc}")
+            failed.append((script, rc))
+            if mode == "strict":
+                _log("Stopping execution due to error.")
+                if fh:
+                    fh.close()
+                raise RuntimeError(
+                    f"run_queue: {script!r} exited with code {rc}")
+
+    _log(f"run_queue finished. ok={len(ok)}, failed={len(failed)}")
+    if fh:
+        fh.close()
+
+    return {"resolved": resolved, "ok": ok, "failed": failed,
+            "logfile": logpath}
+
+
+def _rq_log(msg, *, fh=None, verbose=True):
+    """Internal timestamped logger for :func:`run_queue`."""
+    from datetime import datetime
+    line = f"{datetime.now():%Y-%m-%d %H:%M:%S} - {msg}"
+    if verbose:
+        print(line)
+    if fh is not None:
+        fh.write(line + "\n")
 
 
 # ---------------------------------------------------------------------------

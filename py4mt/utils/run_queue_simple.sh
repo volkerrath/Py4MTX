@@ -1,39 +1,11 @@
-# #!/bin/bash
-# # run_all.sh
-# # General launcher to run multiple scripts sequentially
-#
-# # List of scripts to run (absolute or relative paths)
-# SCRIPTS=(
-#     "./scriptA.sh"
-#     "./scriptB.sh"
-#     "./scriptC.sh"
-# )
-#
-# # Mode: "strict" = stop if any script fails
-# #       "lenient" = continue regardless of exit status
-# MODE="strict"
-#
-# for script in "${SCRIPTS[@]}"; do
-#     echo ">>> Running $script"
-#     bash "$script"
-#     status=$?
-#
-#     if [ "$status" -ne 0 ]; then
-#         echo "!!! $script exited with status $status"
-#         if [ "$MODE" = "strict" ]; then
-#             echo "Stopping execution due to error."
-#             exit $status
-#         fi
-#     fi
-# done
-#
-# echo ">>> All scripts finished."
-
 #!/bin/bash
 # run_all.sh
 # General launcher to run multiple scripts sequentially with timestamped logging
 
-# List of scripts to run
+# List of scripts to run — literal paths and/or glob patterns, e.g.:
+#   "./scriptA.sh"          literal path
+#   "./stage2_*.sh"         glob: all matching files, sorted
+#   "/opt/jobs/step?.sh"    glob with single-char wildcard
 SCRIPTS=(
     "./scriptA.sh"
     "./scriptB.sh"
@@ -53,7 +25,41 @@ log() {
 
 log "Launcher started. Mode=$MODE"
 
-for script in "${SCRIPTS[@]}"; do
+# Expand SCRIPTS entries: globs are sorted, literals kept as-is.
+# Entries that match nothing are skipped with a warning.
+RESOLVED=()
+for entry in "${SCRIPTS[@]}"; do
+    # Check whether the entry contains a glob character
+    if [[ "$entry" == *[\*\?\[]* ]]; then
+        # Use nullglob so unmatched globs produce nothing
+        shopt -s nullglob
+        matches=( $entry )
+        shopt -u nullglob
+        if [ ${#matches[@]} -eq 0 ]; then
+            log "[WARN] glob matched nothing: $entry"
+        else
+            # Sort matches and append
+            IFS=$'\n' sorted=($(sort <<<"${matches[*]}")); unset IFS
+            RESOLVED+=("${sorted[@]}")
+        fi
+    else
+        RESOLVED+=("$entry")
+    fi
+done
+
+if [ ${#RESOLVED[@]} -eq 0 ]; then
+    log "No scripts to run. Exiting."
+    exit 0
+fi
+
+log "Scripts to run (${#RESOLVED[@]}):"
+for s in "${RESOLVED[@]}"; do log "  $s"; done
+
+for script in "${RESOLVED[@]}"; do
+    if [ ! -f "$script" ]; then
+        log "[WARN] script not found, skipping: $script"
+        continue
+    fi
     log ">>> Starting $script"
     bash "$script"
     status=$?
