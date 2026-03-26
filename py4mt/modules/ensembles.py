@@ -77,7 +77,7 @@ def generate_directories(
         "run_dub.sh",
         "run_oar_sh",
     ),
-    link_list:Sequence[str] = (
+    link_list: Sequence[str] = (
         "control.dat",
         "mesh.dat",
         "resistivity_block_iter0.dat",
@@ -122,8 +122,9 @@ def generate_directories(
     for iens in from_to:
         directory = f"{dir_base}{iens}/"
         os.makedirs(directory, exist_ok=True)
-        copy_files(copy_list, directory, templates)
+        put_files(copy_list, link_list, directory, templates)
         dir_list.append(directory)
+
 
     if out:
         print("list of directories:")
@@ -655,7 +656,7 @@ def matrix_reduce(
     return M_sp
 
 
-def copy_files(
+def put_files(
     copies: Sequence[str],
     links: Sequence[str],
     directory: str,
