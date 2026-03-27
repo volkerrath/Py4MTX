@@ -594,6 +594,7 @@ def modify_model_npz(
     set_free: np.ndarray | Sequence[float] | None = None,
     add_sigma: float | np.ndarray | Sequence[float] | None = None,
     rng: Generator | None = None,
+    seed: int | None = None,
     # --- precision sampling options
     roughness: str | Path | None = None,
     R: np.ndarray | scipy.sparse.spmatrix | None = None,
@@ -671,7 +672,11 @@ def modify_model_npz(
     add_sigma
         Noise level for ``method='add_noise'`` (scalar or length n_free).
     rng
-        Random number generator. If None, uses ``default_rng()``.
+        Random number generator. If None, uses ``default_rng(seed)`` (or an
+        unseeded generator when ``seed`` is also None).
+    seed
+        Convenience integer seed.  Ignored when ``rng`` is provided.  Pass an
+        integer for reproducible draws.
     roughness, R
         Roughness matrix source for ``method='precision_sample'``.
     n_samples
@@ -708,7 +713,7 @@ def modify_model_npz(
     Author: Volker Rath (DIAS)
     Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-02 (UTC)
     """
-    rng = default_rng() if rng is None else rng
+    rng = default_rng(seed) if rng is None else rng
 
     struct = _load_resistivity_block_npz(npz_in)
     meta = struct["meta"]
@@ -1123,6 +1128,9 @@ def modify_data_fcn(
     draw_from: Sequence[float | str] = ("normal", 0.0, 1.0),
     scalfac: float = 1.0,
     out: bool = True,
+    *,
+    rng: Generator | None = None,
+    seed: int | None = None,
 ) -> None:
     """
     Simpler variant of :func:`modify_data` using existing error columns scaled
@@ -1133,17 +1141,52 @@ def modify_data_fcn(
     template_file : str
         FEMTIC observe.dat path.
     draw_from : sequence
-        Noise distribution spec (currently normal only).
+        Noise distribution spec.  The first element names the distribution;
+        subsequent elements are parameters.  Supported distributions:
+
+        - ``("normal", loc, scale)`` — Gaussian N(loc, scale²); ``loc`` and
+          ``scale`` are *additive* offsets/factors applied on top of the
+          per-datum error-scaled value.  In the typical case ``("normal", 0.0,
+          1.0)`` the draw is simply ``Normal(val, err * scalfac)``.
+        - ``("uniform", a, b)`` — Uniform[a, b] multiplied element-wise with
+          the scaled error (centred draw: a=−1, b=1 gives the full ±err band).
+
+        The ``loc`` / ``a`` / ``b`` parameters are provided for future
+        extensibility; the usual setting is ``("normal", 0.0, 1.0)``.
     scalfac : float
         Scale factor applied to existing error columns before sampling.
+        The effective standard deviation for datum *i* is
+        ``err_i * scalfac``.
     out : bool
         If True, print status messages.
+    rng : numpy.random.Generator, optional
+        Random number generator.  Preferred over ``seed`` when the caller
+        manages the generator directly.  If both ``rng`` and ``seed`` are
+        None a fresh generator is created (non-reproducible).
+    seed : int, optional
+        Convenience seed.  Ignored when ``rng`` is provided.  Pass an integer
+        for reproducible output.
 
     Notes
     -----
-    This function preserves existing relative error structure, only scales it
-    and draws noise accordingly.
+    This function preserves the existing relative error structure, only scales
+    it and draws noise accordingly.  It is a simpler alternative to
+    :func:`modify_data` that does not require re-parsing the file into an
+    internal representation.
     """
+    # ---- RNG setup -------------------------------------------------------
+    if rng is None:
+        rng = default_rng(seed)
+
+    # ---- parse draw_from -------------------------------------------------
+    draw_seq = list(draw_from)
+    dist_name = str(draw_seq[0]).lower() if draw_seq else "normal"
+    if dist_name not in ("normal", "uniform"):
+        raise ValueError(
+            f"modify_data_fcn: unsupported draw_from distribution {draw_seq[0]!r}. "
+            "Use 'normal' or 'uniform'."
+        )
+
     if template_file is None:
         template_file = "observe.dat"
 
@@ -1164,6 +1207,17 @@ def modify_data_fcn(
             start_lines_datablock.append(number - 1)
             if out:
                 print(" no further data block in file")
+
+    def _draw_one(val: float, err_scaled: float) -> float:
+        """Draw a single perturbed datum using the configured distribution."""
+        if not np.isfinite(err_scaled) or err_scaled <= 0.0:
+            return val
+        if dist_name == "normal":
+            return float(rng.normal(loc=val, scale=err_scaled))
+        else:  # uniform
+            a = float(draw_seq[1]) if len(draw_seq) > 1 else -1.0
+            b = float(draw_seq[2]) if len(draw_seq) > 2 else 1.0
+            return float(val + rng.uniform(a, b) * err_scaled)
 
     num_datablock = len(start_lines_datablock) - 1
     for block in np.arange(num_datablock):
@@ -1211,8 +1265,8 @@ def modify_data_fcn(
                 for line in obs:
                     for ii in range(1, dat_length + 1):
                         val = line[ii]
-                        err = line[ii + dat_length] * scalfac
-                        line[ii] = np.random.normal(loc=val, scale=err)
+                        err_scaled = line[ii + dat_length] * scalfac
+                        line[ii] = _draw_one(val, err_scaled)
 
                 for f in range(num_freq - 1):
                     site_block[f + 2] = "    ".join(
@@ -1233,8 +1287,8 @@ def modify_data_fcn(
                 for line in obs:
                     for ii in range(1, dat_length + 1):
                         val = line[ii]
-                        err = line[ii + dat_length] * scalfac
-                        line[ii] = np.random.normal(loc=val, scale=err)
+                        err_scaled = line[ii + dat_length] * scalfac
+                        line[ii] = _draw_one(val, err_scaled)
 
                 for f in range(num_freq - 1):
                     site_block[f + 2] = "    ".join(
@@ -3677,6 +3731,7 @@ def read_observe_dat(
     compute_mt_derived: bool = True,
     bootstrap_n: int = 200,
     bootstrap_rng: Generator | None = None,
+    bootstrap_seed: int | None = None,
 ) -> dict[str, Any]:
     """Parse a FEMTIC-style ``observe.dat`` into a structured nested dictionary.
 
@@ -3691,8 +3746,12 @@ def read_observe_dat(
         Number of bootstrap draws for MT derived-error estimates. If <= 0, errors are
         not computed (point estimates only).
     bootstrap_rng : numpy.random.Generator, optional
-        RNG used for bootstrap resampling. If None, ``default_rng(0)`` is used for
+        RNG used for bootstrap resampling.  Preferred over ``bootstrap_seed`` when the
+        caller manages the generator.  If both are None, ``default_rng(0)`` is used for
         reproducible error estimates.
+    bootstrap_seed : int, optional
+        Convenience integer seed for the bootstrap RNG.  Ignored when ``bootstrap_rng``
+        is provided.  Pass an integer to override the default seed of 0.
 
     Returns
     -------
@@ -3746,7 +3805,10 @@ def read_observe_dat(
     if not p.exists():
         raise FileNotFoundError(str(p))
 
-    boot_rng = default_rng(0) if bootstrap_rng is None else bootstrap_rng
+    if bootstrap_rng is None:
+        boot_rng = default_rng(0 if bootstrap_seed is None else int(bootstrap_seed))
+    else:
+        boot_rng = bootstrap_rng
 
     lines = p.read_text(encoding="utf-8").splitlines(keepends=True)
     if not lines:
@@ -4069,7 +4131,7 @@ def _mt_rhoa_phase_from_Z(
 
 
 def observe_to_site_viz_list(
-    observe_path: str,
+    observe_path: str | Path,
     *,
     obs_type: Literal["MT", "VTF", "PT"] = "MT",
     compute_mt_derived: bool = True,
@@ -4077,52 +4139,163 @@ def observe_to_site_viz_list(
     bootstrap_seed: int = 0,
     add_rhoa_phase: bool = True,
     mc_n: int = 200,
+    mc_seed: int = 0,
 ) -> list[dict[str, Any]]:
-    """
-    Read observe.dat and return a per-site list of plot-ready dictionaries.
+    """Read observe.dat and return a per-site list of plot-ready dictionaries.
 
-    This is the most convenient form for data_viz routines that loop over sites
-    and plot curves vs period/frequency.
+    This is the most convenient entry point for visualisation routines that loop
+    over sites and plot curves vs period / frequency.
 
     Parameters
     ----------
-    observe_path : str
-        Path to observe.dat.
-    obs_type : {"MT","VTF","PT"}
-        Which block type to return (filters if multiple blocks exist).
+    observe_path : str or pathlib.Path
+        Path to ``observe.dat``.
+    obs_type : {"MT", "VTF", "PT"}
+        Which block type to return.  Sites belonging to other block types in the
+        same file are silently skipped.
     compute_mt_derived : bool
-        If True, keep parser's MT-derived fields (phase tensor, Zdet, Zssq).
+        If True, the parser computes and attaches MT-derived fields (phase
+        tensor, Zdet, Zssq) — including bootstrap error estimates when
+        ``bootstrap_n > 0``.
     bootstrap_n : int
-        Bootstrap draws for those MT-derived errors in the parser.
+        Number of bootstrap draws for MT-derived error estimates (passed to
+        :func:`read_observe_dat`).  Set to 0 to skip error computation.
     bootstrap_seed : int
-        Seed for parser bootstrap RNG.
+        Integer seed for the parser's bootstrap RNG.
     add_rhoa_phase : bool
-        If True and obs_type=="MT", also compute rhoa/phase (+ optional MC errors).
+        If True **and** ``obs_type == "MT"``, compute apparent resistivity
+        (``rhoa``) and impedance phase (``phase_deg``) for each site via
+        :func:`_mt_rhoa_phase_from_Z`, including Monte Carlo uncertainty
+        estimates when ``mc_n > 0``.
     mc_n : int
-        Monte Carlo draws for rhoa/phase errors (uses per-component Re/Im std).
+        Number of Monte Carlo draws for rhoa / phase error propagation.
+        Set to 0 to skip error computation.
+    mc_seed : int
+        Integer seed for the Monte Carlo RNG used in rhoa / phase error
+        propagation.
 
     Returns
     -------
-    sites_viz : list[dict]
-        Each entry contains at least:
-        - name, xyz, freq, per
-        - raw data/error arrays
-        For MT additionally:
-        - Z, Zerr (complex 2x2 tensors)
-        - rhoa, phase_deg (and *_err if possible)
-        - plus any parser-derived keys if enabled (phase_tensor, Zdet, Zssq, ...)
+    sites_viz : list of dict
+        One dict per site of type ``obs_type``.  Every dict contains:
+
+        Common fields (all obs types)
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        - ``obs_type`` : str — ``"MT"``, ``"VTF"``, or ``"PT"``
+        - ``name`` : str — site name from the header
+        - ``xyz``  : ndarray shape (3,) or None — site coordinates
+        - ``nfreq`` : int — number of frequencies
+        - ``freq``  : ndarray (nfreq,) — frequencies in Hz
+        - ``per``   : ndarray (nfreq,) — periods in s (= 1 / freq)
+        - ``data``  : ndarray (nfreq, dat_length) — raw observed values
+        - ``error`` : ndarray (nfreq, dat_length) — raw per-component std devs
+        - ``component_labels`` : list[str]
+
+        MT-specific fields (when ``obs_type == "MT"``)
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        - ``Z``    : ndarray (nfreq, 2, 2), complex — impedance tensors
+        - ``Zerr`` : ndarray (nfreq, 2, 2), complex — std(Re)+i*std(Im) per component
+
+        MT fields added when ``add_rhoa_phase=True``
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        - ``rhoa``          : ndarray (nfreq, 2, 2) — apparent resistivity (Ω m)
+        - ``phase_deg``     : ndarray (nfreq, 2, 2) — impedance phase (°)
+        - ``rhoa_err``      : ndarray (nfreq, 2, 2) or None — MC std of rhoa
+        - ``phase_err_deg`` : ndarray (nfreq, 2, 2) or None — MC std of phase
+
+        MT-derived fields added by the parser when ``compute_mt_derived=True``
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        - ``phase_tensor``     : ndarray (nfreq, 2, 2)
+        - ``phase_tensor_err`` : ndarray (nfreq, 2, 2) — bootstrap std (if bootstrap_n > 0)
+        - ``Zdet``             : complex ndarray (nfreq,)
+        - ``Zdet_err``         : complex ndarray (nfreq,) — std(Re)+i*std(Im) (if bootstrap_n > 0)
+        - ``Zssq``             : complex ndarray (nfreq,)
+        - ``Zssq_err``         : complex ndarray (nfreq,) — std(Re)+i*std(Im) (if bootstrap_n > 0)
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``observe_path`` does not exist.
+    ValueError
+        If the file cannot be parsed or contains no block of the requested type.
     """
+    obs_type = str(obs_type).upper()
+    if obs_type not in _OBS_DATALEN:
+        raise ValueError(
+            f"observe_to_site_viz_list: obs_type={obs_type!r} not supported. "
+            f"Choose from {list(_OBS_DATALEN)}."
+        )
+
     parsed = read_observe_dat(
         observe_path,
         compute_mt_derived=bool(compute_mt_derived),
         bootstrap_n=int(bootstrap_n),
-        bootstrap_rng=default_rng(int(bootstrap_seed)),
+        bootstrap_seed=int(bootstrap_seed),
     )
 
-    out: list[dict[str, Any]] = []
+    sites_viz: list[dict[str, Any]] = []
+
     for site in sites_as_dict_list(parsed):
-        if str(site.get("obs_type")) != obs_type:
-            c
+        # Filter to the requested block type.
+        if str(site.get("obs_type", "")).upper() != obs_type:
+            continue
+
+        # ---- meta --------------------------------------------------------
+        meta = _site_header_to_meta(site["site_header_tokens"])
+
+        freq = np.asarray(site["freq"], dtype=float)
+        # Guard against zero or negative frequencies (should not occur in
+        # well-formed files, but avoids division-by-zero in period).
+        with np.errstate(divide="ignore", invalid="ignore"):
+            per = np.where(freq > 0.0, 1.0 / freq, np.nan)
+
+        entry: dict[str, Any] = {
+            "obs_type": obs_type,
+            "name": meta["name"],
+            "xyz": meta["xyz"],
+            "nfreq": int(site["nfreq"]),
+            "freq": freq,
+            "per": per,
+            "data": np.asarray(site["data"], dtype=float),
+            "error": np.asarray(site["error"], dtype=float),
+            "component_labels": list(site.get("component_labels", [])),
+        }
+
+        # ---- MT-specific processing --------------------------------------
+        if obs_type == "MT":
+            data = np.asarray(site["data"], dtype=float)
+            err = np.asarray(site["error"], dtype=float)
+
+            Z, Zerr = _mt_arrays_to_complex_tensors(data, err)
+            entry["Z"] = Z
+            entry["Zerr"] = Zerr
+
+            # Propagate parser-attached MT-derived fields verbatim.
+            for _key in (
+                "phase_tensor", "phase_tensor_err",
+                "Zdet", "Zdet_err",
+                "Zssq", "Zssq_err",
+            ):
+                if _key in site:
+                    entry[_key] = site[_key]
+
+            # rhoa / phase (+ MC errors)
+            if add_rhoa_phase:
+                _rp = _mt_rhoa_phase_from_Z(
+                    freq,
+                    Z,
+                    Zerr if mc_n > 0 else None,
+                    n_mc=int(mc_n),
+                    seed=int(mc_seed),
+                )
+                entry["rhoa"] = _rp["rhoa"]
+                entry["phase_deg"] = _rp["phase_deg"]
+                entry["rhoa_err"] = _rp["rhoa_err"]          # None if mc_n == 0
+                entry["phase_err_deg"] = _rp["phase_err_deg"]  # None if mc_n == 0
+
+        sites_viz.append(entry)
+
+    return sites_viz
 
 
 def write_observe_dat(parsed: dict[str, Any], path: str | Path) -> None:
@@ -4211,12 +4384,17 @@ def modify_data(
     template_file: str | Path = "observe.dat",
     *,
     errors: Sequence[Sequence[float] | np.ndarray] = ([], [], []),
+    draw_from: Sequence[float | str] = ("normal", 0.0, 1.0),
+    scalfac: float = 1.0,
+    method: str | None = None,
     rng: Generator | None = None,
+    seed: int | None = None,
     out: bool = True,
     return_sites: bool = False,
     compute_mt_derived: bool = True,
     bootstrap_n: int = 200,
     bootstrap_rng: Generator | None = None,
+    bootstrap_seed: int | None = None,
 ) -> list[dict[str, Any]] | None:
     """Perturb a FEMTIC-style observation file (``observe.dat``) and rewrite it in-place.
 
@@ -4229,6 +4407,13 @@ def modify_data(
 
         ``σ := abs(d) * rel_error``
 
+    If ``scalfac`` is provided (> 1.0), the effective error is scaled **before** drawing:
+
+        ``σ_eff := σ * scalfac``
+
+    This mirrors the behaviour of :func:`modify_data_fcn` and is useful for inflating
+    uncertainties prior to ensemble generation.
+
     Parameters
     ----------
     template_file : str or pathlib.Path
@@ -4239,8 +4424,32 @@ def modify_data(
         - [] (empty): keep existing per-datum error columns
         - [scalar]: broadcast to all components
         - [vector]: component-wise relative errors (length MT=8, VTF/PT=4)
+    draw_from : sequence
+        Noise distribution spec.  The first element names the distribution;
+        subsequent elements are parameters.  Supported distributions:
+
+        - ``("normal", loc, scale)`` — Gaussian; ``loc`` is an additive offset
+          applied to the datum value (normally 0.0) and ``scale`` multiplies the
+          per-datum sigma (normally 1.0).  The effective draw is:
+          ``Normal(val + loc, σ_eff * scale)``.
+        - ``("uniform", a, b)`` — Uniform perturbation scaled by ``σ_eff``:
+          ``val + Uniform(a, b) * σ_eff``.
+
+        The default ``("normal", 0.0, 1.0)`` reproduces the original behaviour.
+    scalfac : float
+        Multiplicative scale factor applied to each per-datum sigma **before**
+        drawing.  The effective standard deviation is ``σ_eff = σ * scalfac``.
+        Defaults to 1.0 (no scaling).
+    method : str, optional
+        Deprecated.  Accepted for backward compatibility with older callers (e.g.
+        ``ensembles.generate_data_ensemble``) but has no effect.  Use ``draw_from``
+        to select the perturbation distribution.
     rng : numpy.random.Generator, optional
-        Random number generator used for perturbations. If None, ``default_rng()`` is used.
+        Random number generator used for perturbations.  Preferred over
+        ``seed`` when the caller manages the generator.  If both are None a
+        fresh (non-reproducible) generator is created.
+    seed : int, optional
+        Convenience integer seed.  Ignored when ``rng`` is provided.
     out : bool
         If True, print basic status messages about detected blocks and sites.
     return_sites : bool
@@ -4253,8 +4462,11 @@ def modify_data(
         Number of bootstrap draws for MT derived-error estimates. If <= 0, errors are
         not computed (point estimates only).
     bootstrap_rng : numpy.random.Generator, optional
-        RNG used for bootstrap resampling. If None, ``default_rng(0)`` is used for
-        reproducible error estimates.
+        RNG used for bootstrap resampling.  If None, ``default_rng(bootstrap_seed)``
+        is used (or a seeded-0 generator when ``bootstrap_seed`` is also None).
+    bootstrap_seed : int, optional
+        Convenience seed for the bootstrap RNG.  Ignored when ``bootstrap_rng``
+        is provided.
 
     Returns
     -------
@@ -4262,8 +4474,37 @@ def modify_data(
         If ``return_sites`` is True, returns a flattened list of per-site dictionaries
         after perturbation. Otherwise returns None.
     """
-    rng = default_rng() if rng is None else rng
-    boot_rng = default_rng(0) if bootstrap_rng is None else bootstrap_rng
+    # ---- RNG setup -------------------------------------------------------
+    rng = default_rng(seed) if rng is None else rng
+    if bootstrap_rng is None:
+        boot_rng = default_rng(0 if bootstrap_seed is None else int(bootstrap_seed))
+    else:
+        boot_rng = bootstrap_rng
+
+    # ---- backward-compat: 'method' param (accepted but unused) -----------
+    if method is not None:
+        import warnings
+        warnings.warn(
+            "modify_data: the 'method' parameter is deprecated and has no effect. "
+            "Use 'draw_from' to select the perturbation distribution.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
+    # ---- parse draw_from -------------------------------------------------
+    draw_seq = list(draw_from)
+    dist_name = str(draw_seq[0]).lower() if draw_seq else "normal"
+    if dist_name not in ("normal", "uniform"):
+        raise ValueError(
+            f"modify_data: unsupported draw_from distribution {draw_seq[0]!r}. "
+            "Use 'normal' or 'uniform'."
+        )
+    # For normal: optional (loc_offset, scale_factor) after distribution name.
+    _loc_offset = float(draw_seq[1]) if len(draw_seq) > 1 else 0.0
+    _scale_factor = float(draw_seq[2]) if len(draw_seq) > 2 else 1.0
+    # For uniform: (a, b) multipliers of σ_eff.
+    _unif_a = float(draw_seq[1]) if len(draw_seq) > 1 else -1.0
+    _unif_b = float(draw_seq[2]) if len(draw_seq) > 2 else 1.0
 
     parsed = read_observe_dat(
         template_file,
@@ -4321,10 +4562,17 @@ def modify_data(
                     else:
                         sigma = float(err[i, k])
 
-                    if not np.isfinite(sigma) or sigma <= 0.0:
+                    sigma_eff = sigma * float(scalfac)
+
+                    if not np.isfinite(sigma_eff) or sigma_eff <= 0.0:
                         continue
 
-                    data[i, k] = float(rng.normal(loc=val, scale=sigma))
+                    if dist_name == "normal":
+                        data[i, k] = float(
+                            rng.normal(loc=val + _loc_offset, scale=sigma_eff * _scale_factor)
+                        )
+                    else:  # uniform
+                        data[i, k] = float(val + rng.uniform(_unif_a, _unif_b) * sigma_eff)
 
             site["data"] = data
             site["error"] = err
