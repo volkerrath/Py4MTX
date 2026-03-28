@@ -71,10 +71,10 @@ All settings are at the top of the script:
 
 ### Visualization
 
-Controlled by the configuration block at the bottom of the script.
-The plot helpers are defined in `femtic_viz` (`plot_data_ensemble`,
-`plot_model_ensemble`) and follow the same `ax`-in / `ax`-out philosophy as
-`data_viz`.
+Visualization is performed immediately after each perturbation step, using
+helpers from `femtic_viz` (`plot_data_ensemble`, `plot_model_ensemble`).
+`matplotlib.pyplot` is imported at the top level.  `VIZ_SAMPLES` is set in
+the **Base setup** block and applies to both plots.
 
 | Variable          | Description                                                              |
 |-------------------|--------------------------------------------------------------------------|
@@ -128,6 +128,8 @@ Diagnostic figures are saved to:
 | 2025-04-30 | vrath  | Created.                                                    |
 | 2026-03-03 | Claude | Renamed user-set parameters to UPPERCASE.                   |
 | 2026-03-24 | Claude | Added visualization config blocks; helpers in `femtic_viz`. |
+| 2026-03-28 | Claude | Moved viz blocks into perturbation sections; `matplotlib`   |
+|            |        | imported at top level; `VIZ_SAMPLES` moved to base setup.   |
 
 ## Author
 
