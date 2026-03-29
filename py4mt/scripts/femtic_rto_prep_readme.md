@@ -71,22 +71,31 @@ All settings are at the top of the script:
 
 ### Visualization
 
-Visualization is performed immediately after each perturbation step, using
-helpers from `femtic_viz` (`plot_data_ensemble`, `plot_model_ensemble`).
-`matplotlib.pyplot` is imported at the top level.  `VIZ_SAMPLES` is set in
-the **Base setup** block and applies to both plots.
+All visualization parameters live in a single **Visualization config** section
+near the top of the script, immediately after the perturbation config blocks.
+`matplotlib.pyplot` is imported at the top level.
+
+Ensemble members shown in the plots are drawn *randomly* without replacement
+from 0 … `N_SAMPLES − 1` each run.  The drawn list is printed at runtime.
 
 | Variable          | Description                                                              |
 |-------------------|--------------------------------------------------------------------------|
-| `VIZ_SAMPLES`     | List of ensemble-member indices to include in diagnostic plots.          |
 | `PLOT_DATA`       | Enable / disable joint data plot (original vs. perturbed `observe.dat`). |
+| `PLOT_MODEL`      | Enable / disable joint model plot (original vs. perturbed resistivity).  |
+| `VIZ_N_SAMPLES`   | Number of ensemble members to draw for both plots (≤ `N_SAMPLES`).      |
+| `VIZ_N_SITES`     | Number of MT sites drawn per data-plot row; `None` shows all sites.      |
 | `DAT_WHAT`        | MT quantity: `'rho'`, `'phase'`, `'tipper'`, or `'pt'`.                 |
 | `DAT_COMPS`       | Impedance components, comma-separated (e.g. `'xy,yx'`).                 |
 | `DAT_SHOW_ERRORS` | Propagate error envelopes into the original-data curve.                  |
-| `PLOT_MODEL`      | Enable / disable joint model plot (original vs. perturbed resistivity).  |
 | `MOD_MESH`        | Path to the shared `mesh.dat`.                                           |
-| `MOD_ORIG`        | Path to the reference (template) resistivity block.                      |
+| `MOD_MODE`        | Slice rendering mode: `'tri'` \| `'scatter'` \| `'grid'`.               |
+| `MOD_LOG10`       | Plot log₁₀(ρ) if `True`.                                                |
+| `MOD_CMAP`        | Matplotlib colormap (default `'jet_r'`).                                 |
+| `MOD_CLIM`        | `(vmin, vmax)` in log₁₀(Ω·m); `None` = auto-derived from original model.|
 | `MOD_SLICES`      | List of 1–5 slice descriptors; each dict has `'type'`: `'map'` or `'curtain'`, plus kwargs forwarded to `femtic_viz`. |
+
+`MOD_ORIG` is derived automatically from `MOD_REF` (defined in the model
+perturbation block) and does not need to be set separately.
 
 Diagnostic figures are saved to:
 
@@ -130,6 +139,10 @@ Diagnostic figures are saved to:
 | 2026-03-24 | Claude | Added visualization config blocks; helpers in `femtic_viz`. |
 | 2026-03-28 | Claude | Moved viz blocks into perturbation sections; `matplotlib`   |
 |            |        | imported at top level; `VIZ_SAMPLES` moved to base setup.   |
+| 2026-03-29 | Claude | Consolidated all viz parameters into a single Visualization |
+|            |        | config section; replaced fixed `VIZ_SAMPLES` list with      |
+|            |        | `VIZ_N_SAMPLES` (random draw); added `VIZ_N_SITES` for      |
+|            |        | random site sub-sampling in `plot_data_ensemble`.           |
 
 ## Author
 

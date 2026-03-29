@@ -157,6 +157,7 @@ fig, axs = plot_data_ensemble(
     comps="xy,yx",       # impedance components (ignored for tipper / pt)
     what="rho",          # 'rho' | 'phase' | 'tipper' | 'pt'
     show_errors=True,    # draw +-1sigma envelopes on the original curve
+    n_sites=None,        # int or None — sites drawn per row; None = all sites
     figsize=None,        # (width, height) in inches; auto if None
     fig=None,            # pre-existing Figure
     axs=None,            # pre-existing axes, shape (len(sample_indices),)
@@ -166,7 +167,9 @@ fig, axs = plot_data_ensemble(
 
 **Layout:** one subplot row per selected sample.  Within each row the original
 curve is drawn **solid** and the perturbed curve **dashed** on the same axes,
-so differences are immediately visible.
+so differences are immediately visible.  If `n_sites` is given, that many MT
+sites are drawn randomly without replacement from the full site list and the
+same subset is used for both the original and perturbed curves in each row.
 
 The `what` argument selects which `data_viz` plotter is dispatched
 (`add_rho`, `add_phase`, `add_tipper`, `add_pt`).
@@ -240,5 +243,7 @@ You can control this via `prepare_rho_for_plotting()` or by setting
 |------------|--------|-------------------------------------------------------|
 | 2025-12-23 | vrath  | Created (with ChatGPT GPT-5 Thinking).                |
 | 2026-03-24 | Claude | Added `plot_data_ensemble` and `plot_model_ensemble`. |
+| 2026-03-29 | Claude | Added `n_sites` parameter to `plot_data_ensemble`     |
+|            |        | for random MT-site sub-sampling per row.              |
 
 Author: Volker Rath (DIAS)

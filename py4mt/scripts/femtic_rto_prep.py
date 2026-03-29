@@ -42,6 +42,11 @@ Provenance:
     2026-03-28  Claude  Moved visualization blocks into their respective
                         perturbation sections; matplotlib imported at top
                         level; VIZ_SAMPLES moved to base setup.
+    2026-03-29  Claude  Consolidated all visualization parameters into a
+                        single Visualization config section; replaced fixed
+                        VIZ_SAMPLES list with VIZ_N_SAMPLES (random draw);
+                        added VIZ_N_SITES for random site sub-sampling in
+                        plot_data_ensemble.
 """
 
 import os
@@ -107,12 +112,6 @@ LINK_LIST = ["control.dat",
 ENSEMBLE_NAME = "ubinas_rto_"
 
 """
-Select which ensemble members to visualise (fixed list of sample indices).
-Applies to both the data plot and the model plot.
-"""
-VIZ_SAMPLES = [0, 1, 2, 3]   # adjust as needed; must be < N_SAMPLES
-
-"""
 Control number of ensemble members for increase of sample number or restart
 of badly converged samples (see femtic_rto_post.py)
 """
@@ -154,6 +153,50 @@ else:
 
 
 """
+Visualization config.
+---------------------
+All diagnostic-plot settings in one place.  Both plot_data_ensemble and
+plot_model_ensemble use the same randomly drawn set of ensemble members
+(VIZ_N_SAMPLES).  plot_data_ensemble additionally sub-samples a fixed number
+of MT sites per row (VIZ_N_SITES); set to None to show all sites.
+"""
+PLOT_DATA = True
+PLOT_MODEL = True
+
+# Number of ensemble members to include in both diagnostic plots.
+# Members are drawn without replacement from 0 … N_SAMPLES-1.
+VIZ_N_SAMPLES = 4
+
+# Number of MT sites to include in each data-plot row.
+# Sites are drawn without replacement from the full site list.
+# Set to None to show all available sites.
+VIZ_N_SITES = 10
+
+# --- data plot ---
+DAT_WHAT = "rho"        # "rho" | "phase" | "tipper" | "pt"
+DAT_COMPS = "xy,yx"
+DAT_SHOW_ERRORS = True
+
+# --- model plot ---
+MOD_MESH = TEMPLATES + "mesh.dat"
+# MOD_ORIG is derived from MOD_REF below (after the PERTURB_MOD block)
+
+# Define 1-5 slices.  Each dict must have "type": "map" or "curtain"
+# plus the keyword arguments forwarded to the femtic_viz slicer.
+MOD_MODE = "tri"        # "tri" | "scatter" | "grid"
+MOD_LOG10 = True
+MOD_CMAP = "jet_r"
+MOD_CLIM = None         # (vmin, vmax) in log10(Ohm.m); None = auto from original
+MOD_SLICES = [
+    {"type": "map",     "z0": -500,  "dz": 50},
+    {"type": "map",     "z0": -2000, "dz": 50},
+    {"type": "curtain",
+     "polyline": np.array([[0., 0.], [10000., 0.]]),
+     "width": 500},
+]
+
+
+"""
 Generate ensemble directories and copy template files.
 """
 dir_list = ens.generate_directories(alg="rto",
@@ -165,6 +208,14 @@ dir_list = ens.generate_directories(alg="rto",
                                     fromto=FROM_TO,
                                     out=True)
 print("\n")
+
+"""
+Draw a random subset of ensemble members for visualization.
+Used by both the data plot and the model plot.
+"""
+_n_viz = min(VIZ_N_SAMPLES, N_SAMPLES)
+VIZ_SAMPLES = sorted(rng.choice(N_SAMPLES, size=_n_viz, replace=False).tolist())
+print(f"Visualization members: {VIZ_SAMPLES}\n")
 
 """
 Draw perturbed data sets: d̃ ∼ N(d, Cd)
@@ -186,16 +237,12 @@ Data visualization
 ------------------
 Joint plot of original vs. perturbed observe.dat for the selected samples.
 One subplot row per sample; original (solid) and perturbed (dashed) curves
-are overlaid on the same axes.
+are overlaid on the same axes.  VIZ_N_SITES randomly chosen sites are shown
+per row (all sites if VIZ_N_SITES is None).
 
 Helper: femtic_viz.plot_data_ensemble
 """
-PLOT_DATA = True
 if PLOT_DATA:
-    DAT_WHAT = "rho"       # "rho" | "phase" | "tipper" | "pt"
-    DAT_COMPS = "xy,yx"
-    DAT_SHOW_ERRORS = True
-
     dat_orig_file = TEMPLATES + "observe.dat"
     dat_ens_files = [
         ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/observe.dat"
@@ -209,6 +256,7 @@ if PLOT_DATA:
         comps=DAT_COMPS,
         what=DAT_WHAT,
         show_errors=DAT_SHOW_ERRORS,
+        n_sites=VIZ_N_SITES,
         out=True,
     )
     fig_dat.savefig(ENSEMBLE_DIR + "rto_data_ensemble.pdf", bbox_inches="tight")
@@ -250,25 +298,12 @@ Original and perturbed sit in adjacent rows; slices in columns.
 
 Helper: femtic_viz.plot_model_ensemble
 """
-PLOT_MODEL = True
 if PLOT_MODEL:
-    MOD_MESH = TEMPLATES + "mesh.dat"
     MOD_ORIG = TEMPLATES + MOD_REF
 
     mod_ens_files = [
         ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/{MOD_REF}"
         for i in range(N_SAMPLES)
-    ]
-
-    # Define 1-5 slices.  Each dict must have "type": "map" or "curtain"
-    # plus the keyword arguments for the corresponding femtic_viz function.
-    # Adjust z0 / dz / polyline / width to match your model geometry.
-    MOD_SLICES = [
-        {"type": "map",     "z0": -500,  "dz": 50},
-        {"type": "map",     "z0": -2000, "dz": 50},
-        {"type": "curtain",
-         "polyline": np.array([[0., 0.], [10000., 0.]]),
-         "width": 500},
     ]
 
     fig_mod, axs_mod = fviz.plot_model_ensemble(
@@ -277,10 +312,10 @@ if PLOT_MODEL:
         mesh_file=MOD_MESH,
         sample_indices=VIZ_SAMPLES,
         slices=MOD_SLICES,
-        mode="tri",
-        log10=True,
-        cmap="jet_r",
-        clim=None,      # auto-derive from original model
+        mode=MOD_MODE,
+        log10=MOD_LOG10,
+        cmap=MOD_CMAP,
+        clim=MOD_CLIM,
         out=True,
     )
     fig_mod.savefig(ENSEMBLE_DIR + "rto_model_ensemble.pdf", bbox_inches="tight")
