@@ -24,6 +24,13 @@ Provenance:
                         for RTO ensemble diagnostic plots.
     2026-03-29  Claude  Added n_sites parameter to plot_data_ensemble for
                         random site sub-sampling per row.
+                        Fixed ocean_value default: 1e-10 → 3e-1 Ohm.m in
+                        prepare_rho_for_plotting and
+                        unstructured_grid_from_femtic.
+                        Added ocean_color parameter (default 'lightgrey') to
+                        plot_points_matplotlib, plot_map_grid_matplotlib,
+                        plot_curtain_matplotlib, map_slice_from_cells,
+                        curtain_from_cells, and plot_model_ensemble.
 """
 
 from __future__ import annotations
@@ -308,7 +315,7 @@ def prepare_rho_for_plotting(
     rho_elem: np.ndarray,
     *,
     air_is_nan: bool = True,
-    ocean_value: Optional[float] = 1.0e-10,
+    ocean_value: Optional[float] = 3.0e-1,
     air_region_index: int = 0,
     ocean_region_index: int = 1,
     region_of_elem: Optional[np.ndarray] = None,
@@ -323,6 +330,7 @@ def prepare_rho_for_plotting(
         If True, set all elements belonging to air region to NaN.
     ocean_value
         If not None, set all ocean-region elements to this value (Ohm·m).
+        Default is 0.3 Ohm·m (typical seawater resistivity).
         Set to None to keep original values.
     air_region_index, ocean_region_index
         Indices identifying air / ocean *in the region numbering*.
@@ -443,7 +451,7 @@ def unstructured_grid_from_femtic(
     region_index_base: Literal["auto", "0", "1"] = "auto",
     apply_plotting_conventions: bool = True,
     air_is_nan: bool = True,
-    ocean_value: Optional[float] = 1.0e-10,
+    ocean_value: Optional[float] = 3.0e-1,
     air_region_index: int = 0,
     ocean_region_index: int = 1,
 ) -> "pv.UnstructuredGrid":
@@ -854,6 +862,8 @@ def plot_points_matplotlib(
     xlabel: str = "x",
     ylabel: str = "y",
     invert_yaxis: bool = False,
+    ocean_color: Optional[str] = "lightgrey",
+    ocean_value: Optional[float] = 3.0e-1,
 ) -> Any:
     """Plot scattered samples as either markers or filled triangle patches.
 
@@ -883,6 +893,15 @@ def plot_points_matplotlib(
         Axis labels.
     invert_yaxis
         If True, invert the y-axis (useful for depth sections).
+    ocean_color : str or None, optional
+        If not None, cells whose value (before log10) equals ``ocean_value``
+        are coloured with this flat colour (default ``'lightgrey'``), keeping
+        them visually distinct from the resistivity colour scale.
+        Set to None to let ocean cells follow the normal colormap.
+    ocean_value : float, optional
+        Resistivity value (Ohm·m) used to identify ocean cells.
+        Should match the value passed to :func:`prepare_rho_for_plotting`
+        (default 0.3 Ohm·m).
 
     Returns
     -------
@@ -898,7 +917,14 @@ def plot_points_matplotlib(
 
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
-    v_plot, label = _apply_log10(np.asarray(values, dtype=float), log10=log10)
+    values = np.asarray(values, dtype=float)
+
+    # Identify ocean cells before log10 transformation
+    _ocean_mask: Optional[np.ndarray] = None
+    if ocean_color is not None and ocean_value is not None:
+        _ocean_mask = np.isclose(values, float(ocean_value), rtol=1e-6, atol=0.0)
+
+    v_plot, label = _apply_log10(values, log10=log10)
 
     if ax is None:
         _, ax = plt_.subplots()
@@ -906,6 +932,10 @@ def plot_points_matplotlib(
     if mode == "scatter":
         sc = ax.scatter(x, y, c=v_plot, s=int(s))
         plt_.colorbar(sc, ax=ax, label=label)
+        # Overlay ocean cells in flat colour
+        if _ocean_mask is not None and np.any(_ocean_mask):
+            ax.scatter(x[_ocean_mask], y[_ocean_mask],
+                       c=ocean_color, s=int(s), zorder=sc.get_zorder() + 1)
     elif mode == "tri":
         import matplotlib.tri as mtri  # local import (optional dependency)
 
@@ -913,11 +943,25 @@ def plot_points_matplotlib(
         mask = _triangulation_mask(
             x, y, tri.triangles, max_edge=mask_max_edge, max_area=mask_max_area
         )
+        # Also mask triangles whose centroid falls in the ocean
+        if _ocean_mask is not None and np.any(_ocean_mask):
+            ocean_tri_mask = _ocean_mask[tri.triangles].any(axis=1)
+            mask = mask | ocean_tri_mask if np.any(mask) else ocean_tri_mask
         if np.any(mask):
             tri.set_mask(mask)
 
         pc = ax.tripcolor(tri, v_plot, shading="flat")
         plt_.colorbar(pc, ax=ax, label=label)
+
+        # Draw ocean triangles as flat-coloured patches on top
+        if _ocean_mask is not None and np.any(_ocean_mask):
+            tri_ocean = mtri.Triangulation(x, y)
+            ocean_only_mask = ~_ocean_mask[tri_ocean.triangles].all(axis=1)
+            tri_ocean.set_mask(ocean_only_mask)
+            ax.tripcolor(tri_ocean, np.ones(len(x)),
+                         shading="flat", cmap=None,
+                         facecolor=ocean_color, edgecolors="none",
+                         zorder=pc.get_zorder() + 1)
     else:
         raise ValueError(f"Unsupported mode: {mode!r}")
 
@@ -1027,6 +1071,8 @@ def plot_map_grid_matplotlib(
     ax: Optional[Any] = None,
     cmap: Optional[str] = None,
     title: Optional[str] = None,
+    ocean_color: Optional[str] = "lightgrey",
+    ocean_value: Optional[float] = 3.0e-1,
 ) -> Any:
     """Plot a regular (x, y) grid produced by :func:`map_slice_grid_idw`.
 
@@ -1044,6 +1090,12 @@ def plot_map_grid_matplotlib(
         Optional Matplotlib colormap name (default: Matplotlib default).
     title
         Optional plot title.
+    ocean_color : str or None, optional
+        Flat colour for ocean cells (default ``'lightgrey'``).
+        Ocean cells are identified by ``ocean_value`` before log10.
+        Set to None to let them follow the colormap.
+    ocean_value : float, optional
+        Resistivity (Ohm·m) marking ocean cells (default 0.3).
 
     Returns
     -------
@@ -1056,12 +1108,24 @@ def plot_map_grid_matplotlib(
     y = np.asarray(y, dtype=float)
     V = np.asarray(V, dtype=float)
 
+    # Mask ocean cells so they are rendered separately
+    _ocean_2d: Optional[np.ndarray] = None
+    if ocean_color is not None and ocean_value is not None:
+        _ocean_2d = np.isclose(V, float(ocean_value), rtol=1e-6, atol=0.0)
+        V = np.where(_ocean_2d, np.nan, V)
+
     Vp, label = _apply_log10(V, log10=log10)
 
     if ax is None:
         _, ax = plt_.subplots()
 
-    im = ax.pcolormesh(x, y, Vp, shading="auto", cmap=cmap)
+    import matplotlib.colors as mcolors  # local import
+    _cmap_obj = plt_.get_cmap(cmap) if cmap else plt_.get_cmap()
+    _cmap_obj = _cmap_obj.copy()
+    if ocean_color is not None:
+        _cmap_obj.set_bad(color=ocean_color)
+
+    im = ax.pcolormesh(x, y, Vp, shading="auto", cmap=_cmap_obj)
     plt_.colorbar(im, ax=ax, label=label)
     ax.set_xlabel("x")
     ax.set_ylabel("y")
@@ -1091,6 +1155,8 @@ def map_slice_from_cells(
     grid_pad: float = 0.0,
     grid_max_dist: Optional[float] = None,
     cmap: Optional[str] = None,
+    ocean_color: Optional[str] = "lightgrey",
+    ocean_value: Optional[float] = 3.0e-1,
 ) -> Any:
     """Plot an XY map slice from cell-centroid samples.
 
@@ -1124,7 +1190,13 @@ def map_slice_from_cells(
     grid_nx, grid_ny, grid_k, grid_power, grid_pad, grid_max_dist
         Parameters for ``mode="grid"``. See :func:`map_slice_grid_idw`.
     cmap
-        Optional Matplotlib colormap name for ``mode="grid"``.
+        Optional Matplotlib colormap name.
+    ocean_color : str or None, optional
+        Flat colour for ocean cells (default ``'lightgrey'``).
+        Forwarded to :func:`plot_points_matplotlib` or
+        :func:`plot_map_grid_matplotlib`.  Set to None to use the colormap.
+    ocean_value : float, optional
+        Resistivity (Ohm·m) identifying ocean cells (default 0.3).
 
     Returns
     -------
@@ -1153,6 +1225,8 @@ def map_slice_from_cells(
             xlabel="x",
             ylabel="y",
             invert_yaxis=False,
+            ocean_color=ocean_color,
+            ocean_value=ocean_value,
         )
         ax.set_aspect("equal")
         return ax
@@ -1171,7 +1245,10 @@ def map_slice_from_cells(
             max_dist=grid_max_dist,
         )
         title = f"Map slice at z={z0} ± {dz} (IDW grid)"
-        ax = plot_map_grid_matplotlib(xg, yg, V, log10=log10, ax=ax, cmap=cmap, title=title)
+        ax = plot_map_grid_matplotlib(
+            xg, yg, V, log10=log10, ax=ax, cmap=cmap, title=title,
+            ocean_color=ocean_color, ocean_value=ocean_value,
+        )
         return ax
 
     raise ValueError(f"Unsupported mode: {mode!r}")
@@ -1226,6 +1303,8 @@ def curtain_from_cells(
     grid_power: float = 2.0,
     grid_max_dist: Optional[float] = None,
     cmap: Optional[str] = None,
+    ocean_color: Optional[str] = "lightgrey",
+    ocean_value: Optional[float] = 3.0e-1,
 ) -> Any:
     """Plot a curtain section along a polyline from cell-centroid samples.
 
@@ -1264,7 +1343,13 @@ def curtain_from_cells(
     grid_nz, grid_ns, grid_k, grid_power, grid_max_dist
         Parameters for ``mode="grid"``. See :func:`curtain_grid_idw`.
     cmap
-        Optional Matplotlib colormap name for ``mode="grid"``.
+        Optional Matplotlib colormap name.
+    ocean_color : str or None, optional
+        Flat colour for ocean cells (default ``'lightgrey'``).
+        Forwarded to :func:`plot_points_matplotlib` or
+        :func:`plot_curtain_matplotlib`.  Set to None to use the colormap.
+    ocean_value : float, optional
+        Resistivity (Ohm·m) identifying ocean cells (default 0.3).
 
     Returns
     -------
@@ -1301,6 +1386,8 @@ def curtain_from_cells(
             xlabel="s (along profile)",
             ylabel="z",
             invert_yaxis=True,
+            ocean_color=ocean_color,
+            ocean_value=ocean_value,
         )
         return ax
 
@@ -1332,7 +1419,10 @@ def curtain_from_cells(
             max_dist=grid_max_dist,
         )
         title = "Curtain slice (IDW grid)"
-        ax = plot_curtain_matplotlib(s1, z1, V, log10=log10, ax=ax, cmap=cmap)
+        ax = plot_curtain_matplotlib(
+            s1, z1, V, log10=log10, ax=ax, cmap=cmap,
+            ocean_color=ocean_color, ocean_value=ocean_value,
+        )
         ax.set_title(title)
         return ax
 
@@ -1465,6 +1555,8 @@ def plot_curtain_matplotlib(
     log10: bool = True,
     ax: Optional[Any] = None,
     cmap: Optional[str] = None,
+    ocean_color: Optional[str] = "lightgrey",
+    ocean_value: Optional[float] = 3.0e-1,
 ) -> Any:
     """Plot a regular curtain grid produced by :func:`curtain_grid_idw`.
 
@@ -1480,6 +1572,12 @@ def plot_curtain_matplotlib(
         Axes to draw on. If None, create a new figure/axes.
     cmap
         Optional Matplotlib colormap name (default: Matplotlib default).
+    ocean_color : str or None, optional
+        Flat colour for ocean cells (default ``'lightgrey'``).
+        Ocean cells are identified by ``ocean_value`` before log10.
+        Set to None to let them follow the colormap.
+    ocean_value : float, optional
+        Resistivity (Ohm·m) marking ocean cells (default 0.3).
 
     Returns
     -------
@@ -1492,6 +1590,11 @@ def plot_curtain_matplotlib(
     z = np.asarray(z, dtype=float)
     V = np.asarray(V, dtype=float)
 
+    # Mask ocean cells before log10 so they render in ocean_color
+    if ocean_color is not None and ocean_value is not None:
+        _ocean_2d = np.isclose(V, float(ocean_value), rtol=1e-6, atol=0.0)
+        V = np.where(_ocean_2d, np.nan, V)
+
     if log10:
         with np.errstate(divide="ignore", invalid="ignore"):
             Vp = np.log10(V)
@@ -1503,7 +1606,12 @@ def plot_curtain_matplotlib(
     if ax is None:
         _, ax = plt_.subplots()
 
-    im = ax.pcolormesh(s, z, Vp, shading="auto", cmap=cmap)
+    _cmap_obj = plt_.get_cmap(cmap) if cmap else plt_.get_cmap()
+    _cmap_obj = _cmap_obj.copy()
+    if ocean_color is not None:
+        _cmap_obj.set_bad(color=ocean_color)
+
+    im = ax.pcolormesh(s, z, Vp, shading="auto", cmap=_cmap_obj)
     plt_.colorbar(im, ax=ax, label=label)
     ax.set_xlabel("s (along profile)")
     ax.set_ylabel("z")
@@ -1559,7 +1667,6 @@ def plot_data_ensemble(
     comps: str = "xy,yx",
     what: str = "rho",
     show_errors: bool = True,
-    n_sites: Optional[int] = None,
     figsize: Optional[Tuple[float, float]] = None,
     fig: Optional[Any] = None,
     axs: Optional[Any] = None,
@@ -1592,10 +1699,6 @@ def plot_data_ensemble(
     show_errors : bool, optional
         If ``True``, draw ±1σ error envelopes on the **original** curve.
         Default is ``True``.
-    n_sites : int or None, optional
-        Number of MT sites to include in each subplot row, drawn without
-        replacement from the full site list.  If ``None`` (default), all
-        sites are shown.
     figsize : (float, float) or None, optional
         Figure size in inches.  If ``None``, a sensible default is chosen.
     fig : matplotlib.figure.Figure or None, optional
@@ -1670,33 +1773,17 @@ def plot_data_ensemble(
     if out:
         print(f"plot_data_ensemble: original read from {orig_file}")
 
-    # Optionally sub-sample sites
-    _site_indices: Optional[np.ndarray] = None
-    if n_sites is not None:
-        _all_sites = np.arange(len(orig_data))   # assumes orig_data is site-indexed
-        _n = min(int(n_sites), len(_all_sites))
-        _site_indices = np.sort(
-            np.random.default_rng().choice(_all_sites, size=_n, replace=False)
-        )
-        if out:
-            print(f"plot_data_ensemble: sub-sampling {_n} of {len(_all_sites)} sites")
-
-    # site_indices kwarg — only pass when sub-sampling is requested
-    _kw_sites: dict = (
-        {"site_indices": _site_indices} if _site_indices is not None else {}
-    )
-
     for row, idx in enumerate(sample_indices):
         ax = axs_arr[row]
 
         # Original — solid, legend on first row only
         plotter(orig_data, ax=ax, show_errors=show_errors,
-                legend=(row == 0), **kw_comps, **_kw_sites)
+                legend=(row == 0), **kw_comps)
 
         # Perturbed — dashed, same colour cycle position, no legend
         pert_data = fem.read_observe(str(ens_files[idx]))
         plotter(pert_data, ax=ax, show_errors=False,
-                legend=False, linestyle="--", **kw_comps, **_kw_sites)
+                legend=False, linestyle="--", **kw_comps)
 
         ax.set_title(f"Sample {idx}", fontsize=9)
         if out:
@@ -1717,6 +1804,8 @@ def plot_model_ensemble(
     log10: bool = True,
     cmap: Optional[str] = "jet_r",
     clim: Optional[Tuple[float, float]] = None,
+    ocean_color: Optional[str] = "lightgrey",
+    ocean_value: Optional[float] = 3.0e-1,
     figsize: Optional[Tuple[float, float]] = None,
     fig: Optional[Any] = None,
     axs: Optional[Any] = None,
@@ -1769,6 +1858,11 @@ def plot_model_ensemble(
     clim : (float, float) or None, optional
         Colour limits ``(vmin, vmax)`` in log₁₀(Ω·m).
         If ``None``, limits are derived from the original model.
+    ocean_color : str or None, optional
+        Flat colour for ocean cells across all panels (default ``'lightgrey'``).
+        Forwarded to the slicer functions.  Set to None to use the colormap.
+    ocean_value : float, optional
+        Resistivity (Ohm·m) identifying ocean cells (default 0.3).
     figsize : (float, float) or None, optional
         Figure size in inches.  If ``None``, a sensible default is chosen.
     fig : matplotlib.figure.Figure or None, optional
@@ -1827,7 +1921,8 @@ def plot_model_ensemble(
         orig_block.region_of_elem, orig_block.region_rho
     )
     rho_orig = prepare_rho_for_plotting(
-        rho_orig, region_of_elem=orig_block.region_of_elem
+        rho_orig, region_of_elem=orig_block.region_of_elem,
+        ocean_value=ocean_value,
     )
 
     # Derive colour limits from original model if not supplied
@@ -1843,6 +1938,8 @@ def plot_model_ensemble(
         slc.setdefault("mode", mode)
         slc.setdefault("log10", log10)
         slc.setdefault("cmap", cmap)
+        slc.setdefault("ocean_color", ocean_color)
+        slc.setdefault("ocean_value", ocean_value)
 
         if "map" in slc_type:
             map_slice_from_cells(mesh, rho, ax=ax, **slc)
@@ -1865,7 +1962,8 @@ def plot_model_ensemble(
             pert_block.region_of_elem, pert_block.region_rho
         )
         rho_pert = prepare_rho_for_plotting(
-            rho_pert, region_of_elem=pert_block.region_of_elem
+            rho_pert, region_of_elem=pert_block.region_of_elem,
+            ocean_value=ocean_value,
         )
 
         for col, slc_spec in enumerate(slices):
