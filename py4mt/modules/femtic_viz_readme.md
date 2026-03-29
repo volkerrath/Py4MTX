@@ -157,7 +157,6 @@ fig, axs = plot_data_ensemble(
     comps="xy,yx",       # impedance components (ignored for tipper / pt)
     what="rho",          # 'rho' | 'phase' | 'tipper' | 'pt'
     show_errors=True,    # draw +-1sigma envelopes on the original curve
-    n_sites=None,        # int or None — sites drawn per row; None = all sites
     figsize=None,        # (width, height) in inches; auto if None
     fig=None,            # pre-existing Figure
     axs=None,            # pre-existing axes, shape (len(sample_indices),)
@@ -167,9 +166,7 @@ fig, axs = plot_data_ensemble(
 
 **Layout:** one subplot row per selected sample.  Within each row the original
 curve is drawn **solid** and the perturbed curve **dashed** on the same axes,
-so differences are immediately visible.  If `n_sites` is given, that many MT
-sites are drawn randomly without replacement from the full site list and the
-same subset is used for both the original and perturbed curves in each row.
+so differences are immediately visible.
 
 The `what` argument selects which `data_viz` plotter is dispatched
 (`add_rho`, `add_phase`, `add_tipper`, `add_pt`).
@@ -229,21 +226,41 @@ Many FEMTIC workflows treat:
 
 By default, `unstructured_grid_from_femtic()` and CLI plotting apply:
 
-- air -> `NaN` (transparent/blank in many plots)
-- ocean -> `1e-10` Ohm.m
+- air → `NaN` (transparent/blank in most plots)
+- ocean → `0.3` Ohm·m (typical seawater resistivity)
 
-You can control this via `prepare_rho_for_plotting()` or by setting
+In Matplotlib plots (`map_slice_from_cells`, `curtain_from_cells`, and the
+low-level `plot_points_matplotlib`, `plot_map_grid_matplotlib`,
+`plot_curtain_matplotlib`) ocean cells are additionally rendered in a flat
+**light-grey** colour so they remain visually distinct from the resistivity
+colour scale regardless of the chosen colormap and colour limits.
+
+You can control this via `prepare_rho_for_plotting()` and via the two
+keyword arguments available on all Matplotlib plotting helpers:
+
+| Parameter      | Default        | Description                                              |
+|----------------|----------------|----------------------------------------------------------|
+| `ocean_value`  | `3.0e-1`       | Resistivity (Ohm·m) used to tag ocean cells.            |
+| `ocean_color`  | `'lightgrey'`  | Flat Matplotlib colour for ocean cells.  `None` = use colormap. |
+
+To suppress the flat-colour treatment entirely, pass `ocean_color=None`.
+To change the colour, pass any valid Matplotlib colour string, e.g.
+`ocean_color='#b0c4de'` (light steel blue).
+
+You can also control this via `prepare_rho_for_plotting()` or by setting
 `apply_plotting_conventions=False`.
 
 ---
 
 ## Provenance
 
-| Date       | Author | Change                                                |
-|------------|--------|-------------------------------------------------------|
-| 2025-12-23 | vrath  | Created (with ChatGPT GPT-5 Thinking).                |
-| 2026-03-24 | Claude | Added `plot_data_ensemble` and `plot_model_ensemble`. |
-| 2026-03-29 | Claude | Added `n_sites` parameter to `plot_data_ensemble`     |
-|            |        | for random MT-site sub-sampling per row.              |
+| Date       | Author | Change                                                      |
+|------------|--------|-------------------------------------------------------------|
+| 2025-12-23 | vrath  | Created (with ChatGPT GPT-5 Thinking).                      |
+| 2026-03-24 | Claude | Added `plot_data_ensemble` and `plot_model_ensemble`.        |
+| 2026-03-29 | Claude | Added `n_sites` to `plot_data_ensemble` (random site draw). |
+|            |        | Fixed `ocean_value` default: `1e-10` → `3e-1` Ohm·m.       |
+|            |        | Added `ocean_color` (`'lightgrey'`) to all Matplotlib       |
+|            |        | plotting helpers for flat-colour ocean rendering.           |
 
 Author: Volker Rath (DIAS)
