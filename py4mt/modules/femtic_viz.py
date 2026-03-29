@@ -22,6 +22,8 @@ Provenance:
     2025-12-23  vrath   Created (with ChatGPT GPT-5 Thinking).
     2026-03-24  Claude  Added plot_data_ensemble and plot_model_ensemble
                         for RTO ensemble diagnostic plots.
+    2026-03-29  Claude  Added n_sites parameter to plot_data_ensemble for
+                        random site sub-sampling per row.
 """
 
 from __future__ import annotations
@@ -1557,6 +1559,7 @@ def plot_data_ensemble(
     comps: str = "xy,yx",
     what: str = "rho",
     show_errors: bool = True,
+    n_sites: Optional[int] = None,
     figsize: Optional[Tuple[float, float]] = None,
     fig: Optional[Any] = None,
     axs: Optional[Any] = None,
@@ -1589,6 +1592,10 @@ def plot_data_ensemble(
     show_errors : bool, optional
         If ``True``, draw ±1σ error envelopes on the **original** curve.
         Default is ``True``.
+    n_sites : int or None, optional
+        Number of MT sites to include in each subplot row, drawn without
+        replacement from the full site list.  If ``None`` (default), all
+        sites are shown.
     figsize : (float, float) or None, optional
         Figure size in inches.  If ``None``, a sensible default is chosen.
     fig : matplotlib.figure.Figure or None, optional
@@ -1663,17 +1670,33 @@ def plot_data_ensemble(
     if out:
         print(f"plot_data_ensemble: original read from {orig_file}")
 
+    # Optionally sub-sample sites
+    _site_indices: Optional[np.ndarray] = None
+    if n_sites is not None:
+        _all_sites = np.arange(len(orig_data))   # assumes orig_data is site-indexed
+        _n = min(int(n_sites), len(_all_sites))
+        _site_indices = np.sort(
+            np.random.default_rng().choice(_all_sites, size=_n, replace=False)
+        )
+        if out:
+            print(f"plot_data_ensemble: sub-sampling {_n} of {len(_all_sites)} sites")
+
+    # site_indices kwarg — only pass when sub-sampling is requested
+    _kw_sites: dict = (
+        {"site_indices": _site_indices} if _site_indices is not None else {}
+    )
+
     for row, idx in enumerate(sample_indices):
         ax = axs_arr[row]
 
         # Original — solid, legend on first row only
         plotter(orig_data, ax=ax, show_errors=show_errors,
-                legend=(row == 0), **kw_comps)
+                legend=(row == 0), **kw_comps, **_kw_sites)
 
         # Perturbed — dashed, same colour cycle position, no legend
         pert_data = fem.read_observe(str(ens_files[idx]))
         plotter(pert_data, ax=ax, show_errors=False,
-                legend=False, linestyle="--", **kw_comps)
+                legend=False, linestyle="--", **kw_comps, **_kw_sites)
 
         ax.set_title(f"Sample {idx}", fontsize=9)
         if out:
