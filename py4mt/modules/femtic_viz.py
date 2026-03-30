@@ -39,6 +39,19 @@ Provenance:
                         plotter now iterates per-site rather than passing the
                         whole file dict; n_sites sub-sampling now operates on
                         site index list rather than dict keys.
+    2026-03-30  Claude  Fixed rho_a unit mismatch in _observe_to_site_list:
+                        FEMTIC observe.dat Z is in SI Ohm; data_viz assumes
+                        mV/km/nT (field units). Rewrote helper to use
+                        fem.observe_to_site_viz_list() as authoritative reader,
+                        then scales Z by 1/(mu0*1e3) to field units before
+                        passing to datadict_to_plot_df. Also simplified
+                        plot_data_ensemble: removed redundant read_observe_dat
+                        pre-call; _observe_to_site_list now takes file path
+                        directly.
+    2026-03-30  Claude  Split show_errors into show_errors_orig and
+                        show_errors_pert in plot_data_ensemble (default both
+                        False); raw template errors are misleading at long
+                        periods, perturbed files carry reset relative errors.
 """
 
 from __future__ import annotations
@@ -1667,58 +1680,91 @@ def npz_to_unstructured_grid(
 # RTO ensemble diagnostic plots
 # =============================================================================
 
+_MU0 = 4.0e-7 * np.pi          # H/m
+_Z_SI_TO_MT = 1.0 / (_MU0 * 1.0e3)   # SI Ohm → mV/km/nT
+
+
 def _observe_to_site_list(
-    parsed: Any,
+    observe_path: Union[str, Path],
     fem_mod: Any,
 ) -> list:
-    """Flatten a ``read_observe_dat`` result into a list of plottable site dicts.
+    """Return a list of per-site dicts from a FEMTIC ``observe.dat`` file,
+    ready for passing to ``data_viz.add_*`` plotters.
 
-    For MT sites the raw packed real/imag ``data`` / ``error`` arrays are
-    converted to complex ``Z`` / ``Z_err`` tensors (shape ``(nfreq, 2, 2)``)
-    so that :func:`data_viz.datadict_to_plot_df` can derive ``rho`` / ``phi``
-    columns directly.  Non-MT sites (VTF, PT) are passed through unchanged
-    because ``datadict_to_plot_df`` handles their ``T`` / ``P`` keys.
+    Uses :func:`femtic.observe_to_site_viz_list` as the single authoritative
+    reader so that apparent-resistivity computation uses the correct FEMTIC
+    unit convention (Z in SI Ω; ``rho_a = |Z|² / (μ₀ω)``).
+
+    The returned dicts contain ``Z`` scaled to MT field units (mV/km/nT) so
+    that :func:`data_viz.datadict_to_plot_df` — which assumes field-unit Z
+    and applies ``rho = |Z|² × μ₀ × 10⁶ / ω`` — produces the right answer.
+    For VTF sites ``T`` is built from the raw data columns; for PT sites ``P``
+    is built similarly.
 
     Parameters
     ----------
-    parsed : dict
-        Output of ``femtic.read_observe_dat``.
+    observe_path : str or Path
+        Path to ``observe.dat``.
     fem_mod : module
-        The already-imported ``femtic`` module (avoids a second import).
+        The already-imported ``femtic`` module.
 
     Returns
     -------
     list of dict
-        One dict per site, each suitable for passing directly to a
-        ``data_viz.add_*`` plotter.
+        One dict per site.
     """
-    sites = fem_mod.sites_as_dict_list(parsed)
+    # observe_to_site_viz_list returns Z in SI Ohm and pre-computed rhoa/phase_deg.
+    raw_sites = fem_mod.observe_to_site_viz_list(
+        observe_path,
+        obs_type="MT",
+        add_rhoa_phase=True,
+        mc_n=0,            # skip MC errors for speed in diagnostic plots
+    )
+
     result = []
-    for s in sites:
-        d = dict(s)  # shallow copy so we don't mutate the parsed structure
-        obs = d.get("obs_type", "")
-        if obs == "MT":
-            data = np.asarray(d["data"], dtype=float)
-            err  = np.asarray(d["error"], dtype=float)
-            if data.shape[1] == 8:
-                Z, Zerr = fem_mod._mt_arrays_to_complex_tensors(data, err)
-                d["Z"]     = Z
-                d["Z_err"] = Zerr
-        elif obs == "VTF":
-            # T: (nfreq, 4) -> complex (nfreq, 2)
-            raw = np.asarray(d["data"], dtype=float)
-            if raw.shape[1] >= 4:
-                T = np.empty((raw.shape[0], 2), dtype=np.complex128)
-                T[:, 0] = raw[:, 0] + 1j * raw[:, 1]
-                T[:, 1] = raw[:, 2] + 1j * raw[:, 3]
-                d["T"] = T
-        elif obs == "PT":
-            # P: (nfreq, 4) -> (nfreq, 2, 2) real
-            raw = np.asarray(d["data"], dtype=float)
-            if raw.shape[1] >= 4:
-                P = raw[:, :4].reshape(-1, 2, 2)
-                d["P"] = P
+    for s in raw_sites:
+        d: dict = {
+            "freq":    s["freq"],
+            "obs_type": s["obs_type"],
+            "name":    s.get("name", ""),
+        }
+
+        # Convert Z from SI Ohm to mV/km/nT so datadict_to_plot_df gives
+        # correct rho_a values (it assumes field-unit Z).
+        Z_si = np.asarray(s["Z"], dtype=np.complex128)   # (nfreq, 2, 2)
+        d["Z"] = Z_si * _Z_SI_TO_MT
+
+        Zerr = s.get("Zerr")
+        if Zerr is not None:
+            d["Z_err"] = np.asarray(Zerr, dtype=np.complex128) * _Z_SI_TO_MT
+
         result.append(d)
+
+    # Also read VTF and PT sites via the raw parser (observe_to_site_viz_list
+    # only returns MT sites in the current call above).
+    parsed = fem_mod.read_observe_dat(str(observe_path))
+    for s in fem_mod.sites_as_dict_list(parsed):
+        obs = str(s.get("obs_type", "")).upper()
+        if obs == "MT":
+            continue   # already handled above
+        d = {"freq": np.asarray(s["freq"], dtype=float), "obs_type": obs,
+             "name": s.get("site_header_tokens", [""])[0]}
+        raw = np.asarray(s["data"], dtype=float)
+        err = np.asarray(s["error"], dtype=float)
+        if obs == "VTF" and raw.shape[1] >= 4:
+            T = np.empty((raw.shape[0], 2), dtype=np.complex128)
+            T[:, 0] = raw[:, 0] + 1j * raw[:, 1]
+            T[:, 1] = raw[:, 2] + 1j * raw[:, 3]
+            Terr = np.empty_like(T)
+            Terr[:, 0] = err[:, 0] + 1j * err[:, 1]
+            Terr[:, 1] = err[:, 2] + 1j * err[:, 3]
+            d["T"] = T
+            d["T_err"] = Terr
+        elif obs == "PT" and raw.shape[1] >= 4:
+            d["P"] = raw[:, :4].reshape(-1, 2, 2)
+            d["P_err"] = err[:, :4].reshape(-1, 2, 2)
+        result.append(d)
+
     return result
 
 
@@ -1729,7 +1775,9 @@ def plot_data_ensemble(
     *,
     comps: str = "xy,yx",
     what: str = "rho",
-    show_errors: bool = True,
+    show_errors: bool = False,
+    show_errors_orig: Optional[bool] = None,
+    show_errors_pert: Optional[bool] = None,
     n_sites: Optional[int] = None,
     figsize: Optional[Tuple[float, float]] = None,
     fig: Optional[Any] = None,
@@ -1762,8 +1810,20 @@ def plot_data_ensemble(
         Which MT quantity to plot.  One of ``'rho'``, ``'phase'``,
         ``'tipper'``, ``'pt'``.  Default is ``'rho'``.
     show_errors : bool, optional
-        If ``True``, draw ±1σ error envelopes on the **original** curve.
-        Default is ``True``.
+        Shorthand to set both ``show_errors_orig`` and ``show_errors_pert``
+        simultaneously when neither is supplied explicitly.  Default is
+        ``False``.  Note: the template ``observe.dat`` typically contains raw
+        measured uncertainties (often large at long periods); the perturbed
+        files contain reset relative errors.  Use the per-curve flags for
+        independent control.
+    show_errors_orig : bool or None, optional
+        If ``True``, draw ±1σ envelopes on the **original** curves.
+        Overrides ``show_errors``.  Default is ``None`` (falls back to
+        ``show_errors``).
+    show_errors_pert : bool or None, optional
+        If ``True``, draw ±1σ envelopes on the **perturbed** curves.
+        Overrides ``show_errors``.  Default is ``None`` (falls back to
+        ``show_errors``).
     n_sites : int or None, optional
         Number of MT sites to draw (without replacement) from the full site
         list for each subplot row.  The **same** random subset is used for
@@ -1787,10 +1847,10 @@ def plot_data_ensemble(
 
     Notes
     -----
-    Data files are read with :func:`femtic.read_observe_dat` and flattened to
-    per-site dicts via :func:`femtic.sites_as_dict_list`.  Each site dict is
-    passed individually to the matching ``data_viz.add_*`` plotter so that
-    sites are overlaid on the same axes within every row.
+    Data files are read via :func:`femtic.observe_to_site_viz_list` (through
+    the internal ``_observe_to_site_list`` helper), which is the authoritative
+    FEMTIC reader.  FEMTIC stores Z in SI Ω; the helper converts to mV/km/nT
+    before passing to ``data_viz.datadict_to_plot_df``.
     """
     plt_ = _require_mpl()
 
@@ -1835,15 +1895,20 @@ def plot_data_ensemble(
             )
         axs_arr = axs_arr[:n_plots]
 
+    # Resolve per-curve error-display flags.
+    # show_errors_orig / show_errors_pert override the shared show_errors shorthand.
+    _show_orig = show_errors if show_errors_orig is None else show_errors_orig
+    _show_pert = show_errors if show_errors_pert is None else show_errors_pert
+
     # comps kwarg only for impedance plotters
     _needs_comps = {"rho", "phase"}
     kw_comps = {"comps": comps} if str(what).lower() in _needs_comps else {}
 
     # Read and flatten the original observe.dat once.
-    # read_observe_dat returns a nested structure; _observe_to_site_list adds
-    # the Z / T / P complex keys that data_viz.datadict_to_plot_df expects.
-    orig_parsed = fem.read_observe_dat(str(orig_file))
-    orig_sites = _observe_to_site_list(orig_parsed, fem)
+    # _observe_to_site_list uses femtic.observe_to_site_viz_list internally,
+    # which handles the FEMTIC unit convention (Z in SI Ohm) correctly and
+    # converts to mV/km/nT before handing off to data_viz.datadict_to_plot_df.
+    orig_sites = _observe_to_site_list(orig_file, fem)
     if out:
         print(f"plot_data_ensemble: original read from {orig_file} "
               f"({len(orig_sites)} sites)")
@@ -1863,16 +1928,15 @@ def plot_data_ensemble(
         # --- original: one call per selected site, solid ---
         for si in _site_idx:
             site = orig_sites[si]
-            plotter(site, ax=ax, show_errors=show_errors,
+            plotter(site, ax=ax, show_errors=_show_orig,
                     legend=(row == 0 and si == _site_idx[0]), **kw_comps)
 
         # --- perturbed: same site subset, dashed ---
-        pert_parsed = fem.read_observe_dat(str(ens_files[idx]))
-        pert_sites = _observe_to_site_list(pert_parsed, fem)
+        pert_sites = _observe_to_site_list(ens_files[idx], fem)
         for si in _site_idx:
             if si < len(pert_sites):
                 site = pert_sites[si]
-                plotter(site, ax=ax, show_errors=False,
+                plotter(site, ax=ax, show_errors=_show_pert,
                         legend=False, linestyle="--", **kw_comps)
 
         ax.set_title(f"Sample {idx}", fontsize=9)
