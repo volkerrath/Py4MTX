@@ -129,7 +129,7 @@ if PERTURB_MOD:
     MOD_PDF = ["normal", 0., 0.3]
     # ["exp", L], ["gauss", L], ["matern"], L, MatPars], ["femtic"], None
     MOD_R = "femtic R"
-    R_FILE = "r/home/vrath/Py4MTX/py4mt/data/rto/ubinas/templates/R_coo"
+    R_FILE = "r/home/vrath/Py4MTX/py4mt/data/rto/ubinas/R_coo"
 else:
     MOD_R = None
 
