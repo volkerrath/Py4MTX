@@ -156,7 +156,9 @@ fig, axs = plot_data_ensemble(
     sample_indices,      # list of int — which members to plot
     comps="xy,yx",       # impedance components (ignored for tipper / pt)
     what="rho",          # 'rho' | 'phase' | 'tipper' | 'pt'
-    show_errors=True,    # draw +-1sigma envelopes on the original curve
+    show_errors=False,   # shorthand for both curves; default False
+    show_errors_orig=None,  # override for original curves only (None → show_errors)
+    show_errors_pert=None,  # override for perturbed curves only (None → show_errors)
     figsize=None,        # (width, height) in inches; auto if None
     fig=None,            # pre-existing Figure
     axs=None,            # pre-existing axes, shape (len(sample_indices),)
@@ -168,14 +170,21 @@ fig, axs = plot_data_ensemble(
 curve is drawn **solid** and the perturbed curve **dashed** on the same axes,
 so differences are immediately visible.
 
-The `what` argument selects which `data_viz` plotter is dispatched
-(`add_rho`, `add_phase`, `add_tipper`, `add_pt`).
+`show_errors` is a shared shorthand (default `False`).  Use `show_errors_orig`
+and `show_errors_pert` for independent control — the template `observe.dat`
+typically carries raw measured uncertainties that can be very large at long
+periods (dead-band noise), while the perturbed files contain reset relative
+errors (compact ±σ bands).  The recommended setting for RTO diagnostics is
+therefore `show_errors_orig=False, show_errors_pert=True`.
 
-Data files are read with `femtic.read_observe_dat()` and flattened to
-per-site dicts via the internal `_observe_to_site_list()` helper, which
-also builds the `Z` / `Z_err` (MT), `T` (VTF), and `P` (PT) complex
-arrays expected by `data_viz.datadict_to_plot_df`.  The plotter is called
-once per site so all sites are overlaid on the same axes within each row.
+Data files are read via the internal `_observe_to_site_list()` helper,
+which calls `femtic.observe_to_site_viz_list()` — the authoritative FEMTIC
+reader. FEMTIC's `observe.dat` stores impedance in **SI Ω**; because
+`data_viz.datadict_to_plot_df` assumes **mV/km/nT** (MT field units),
+`_observe_to_site_list` scales Z by `1/(μ₀ × 10³)` before passing to the
+plotter.  VTF and PT sites are handled via the raw parser path.  The plotter
+is called once per site so all sites are overlaid on the same axes within
+each row.
 
 ---
 
@@ -273,5 +282,12 @@ You can also control this via `prepare_rho_for_plotting()` or by setting
 |            |        | `_observe_to_site_list()` to convert the nested             |
 |            |        | blocks→sites structure and build `Z`/`Z_err`/`T`/`P`       |
 |            |        | complex arrays; plotter now iterates per-site.              |
+|            |        | Fixed ρ_a unit mismatch: FEMTIC Z is in SI Ω but            |
+|            |        | `data_viz` expects mV/km/nT; `_observe_to_site_list` now   |
+|            |        | uses `fem.observe_to_site_viz_list()` and scales Z by       |
+|            |        | `1/(μ₀×10³)` before passing to `datadict_to_plot_df`.      |
+|            |        | Split `show_errors` into `show_errors_orig` / `show_errors_pert` |
+|            |        | (both default `False`); raw template errors are noisy at    |
+|            |        | long periods; perturbed files carry reset relative errors.  |
 
 Author: Volker Rath (DIAS)

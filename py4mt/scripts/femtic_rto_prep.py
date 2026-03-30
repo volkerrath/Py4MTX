@@ -47,6 +47,11 @@ Provenance:
                         VIZ_SAMPLES list with VIZ_N_SAMPLES (random draw);
                         added VIZ_N_SITES for random site sub-sampling in
                         plot_data_ensemble.
+    2026-03-30  Claude  Fixed rho_a unit mismatch (Z in SI Ohm vs mV/km/nT);
+                        changed DAT_SHOW_ERRORS to False (raw template errors
+                        are noisy at long periods); switched to per-curve
+                        show_errors_orig/show_errors_pert flags so perturbed
+                        curves show reset relative-error envelopes only.
 """
 
 import os
@@ -129,7 +134,7 @@ if PERTURB_MOD:
     MOD_PDF = ["normal", 0., 0.3]
     # ["exp", L], ["gauss", L], ["matern"], L, MatPars], ["femtic"], None
     MOD_R = "femtic R"
-    R_FILE = r"/home/vrath/Py4MTX/py4mt/data/rto/ubinas/R_coo"
+    R_FILE = "R_coo"
 else:
     MOD_R = None
 
@@ -175,7 +180,9 @@ VIZ_N_SITES = 10
 # --- data plot ---
 DAT_WHAT = "rho"        # "rho" | "phase" | "tipper" | "pt"
 DAT_COMPS = "xy,yx"
-DAT_SHOW_ERRORS = True
+DAT_SHOW_ERRORS = False     # raw template errors are noisy at long periods;
+                            # use show_errors_orig / show_errors_pert for
+                            # independent control in plot_data_ensemble
 
 # --- model plot ---
 MOD_MESH = TEMPLATES + "mesh.dat"
@@ -255,7 +262,9 @@ if PLOT_DATA:
         sample_indices=VIZ_SAMPLES,
         comps=DAT_COMPS,
         what=DAT_WHAT,
-        show_errors=DAT_SHOW_ERRORS,
+        show_errors=False,          # shorthand off; use per-curve flags below
+        show_errors_orig=False,     # template errors are raw; skip envelopes
+        show_errors_pert=True,      # show reset relative-error bands on perturbed
         n_sites=VIZ_N_SITES,
         out=True,
     )
@@ -271,9 +280,9 @@ if needed. If the femtic mode is chosen, the matrix needs to be
 read from external file.
 """
 if "Q" in MOD_R:
-    Q = scs.load_npz(R_FILE + ".npz")
+    Q = scs.load_npz(ENSEMBLE_DIR + ENSEMBLE_NAME + R_FILE + ".npz")
 else:
-    R = scs.load_npz(R_FILE + ".npz")
+    R = scs.load_npz(ENSEMBLE_DIR + ENSEMBLE_NAME + R_FILE + ".npz")
     Q = R.T @ R
 
 print("roughness loaded with shape:", np.shape(Q))
