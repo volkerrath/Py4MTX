@@ -134,7 +134,7 @@ if PERTURB_MOD:
     MOD_PDF = ["normal", 0., 0.3]
     # ["exp", L], ["gauss", L], ["matern"], L, MatPars], ["femtic"], None
     MOD_R = "femtic R"
-    R_FILE = "R_coo"
+    R_FILE = r"/home/vrath/Py4MTX/py4mt/data/rto/ubinas/R_coo"
 else:
     MOD_R = None
 
@@ -280,9 +280,9 @@ if needed. If the femtic mode is chosen, the matrix needs to be
 read from external file.
 """
 if "Q" in MOD_R:
-    Q = scs.load_npz(ENSEMBLE_DIR + ENSEMBLE_NAME + R_FILE + ".npz")
+    Q = scs.load_npz(R_FILE + ".npz")
 else:
-    R = scs.load_npz(ENSEMBLE_DIR + ENSEMBLE_NAME + R_FILE + ".npz")
+    R = scs.load_npz(R_FILE + ".npz")
     Q = R.T @ R
 
 print("roughness loaded with shape:", np.shape(Q))
