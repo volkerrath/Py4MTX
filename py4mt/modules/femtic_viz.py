@@ -31,6 +31,14 @@ Provenance:
                         plot_points_matplotlib, plot_map_grid_matplotlib,
                         plot_curtain_matplotlib, map_slice_from_cells,
                         curtain_from_cells, and plot_model_ensemble.
+    2026-03-30  Claude  Fixed plot_data_ensemble: replaced non-existent
+                        fem.read_observe() with fem.read_observe_dat();
+                        added _observe_to_site_list() helper to flatten the
+                        nested blocks→sites structure and build Z/Z_err/T/P
+                        complex arrays for data_viz.datadict_to_plot_df;
+                        plotter now iterates per-site rather than passing the
+                        whole file dict; n_sites sub-sampling now operates on
+                        site index list rather than dict keys.
 """
 
 from __future__ import annotations
@@ -1659,6 +1667,61 @@ def npz_to_unstructured_grid(
 # RTO ensemble diagnostic plots
 # =============================================================================
 
+def _observe_to_site_list(
+    parsed: Any,
+    fem_mod: Any,
+) -> list:
+    """Flatten a ``read_observe_dat`` result into a list of plottable site dicts.
+
+    For MT sites the raw packed real/imag ``data`` / ``error`` arrays are
+    converted to complex ``Z`` / ``Z_err`` tensors (shape ``(nfreq, 2, 2)``)
+    so that :func:`data_viz.datadict_to_plot_df` can derive ``rho`` / ``phi``
+    columns directly.  Non-MT sites (VTF, PT) are passed through unchanged
+    because ``datadict_to_plot_df`` handles their ``T`` / ``P`` keys.
+
+    Parameters
+    ----------
+    parsed : dict
+        Output of ``femtic.read_observe_dat``.
+    fem_mod : module
+        The already-imported ``femtic`` module (avoids a second import).
+
+    Returns
+    -------
+    list of dict
+        One dict per site, each suitable for passing directly to a
+        ``data_viz.add_*`` plotter.
+    """
+    sites = fem_mod.sites_as_dict_list(parsed)
+    result = []
+    for s in sites:
+        d = dict(s)  # shallow copy so we don't mutate the parsed structure
+        obs = d.get("obs_type", "")
+        if obs == "MT":
+            data = np.asarray(d["data"], dtype=float)
+            err  = np.asarray(d["error"], dtype=float)
+            if data.shape[1] == 8:
+                Z, Zerr = fem_mod._mt_arrays_to_complex_tensors(data, err)
+                d["Z"]     = Z
+                d["Z_err"] = Zerr
+        elif obs == "VTF":
+            # T: (nfreq, 4) -> complex (nfreq, 2)
+            raw = np.asarray(d["data"], dtype=float)
+            if raw.shape[1] >= 4:
+                T = np.empty((raw.shape[0], 2), dtype=np.complex128)
+                T[:, 0] = raw[:, 0] + 1j * raw[:, 1]
+                T[:, 1] = raw[:, 2] + 1j * raw[:, 3]
+                d["T"] = T
+        elif obs == "PT":
+            # P: (nfreq, 4) -> (nfreq, 2, 2) real
+            raw = np.asarray(d["data"], dtype=float)
+            if raw.shape[1] >= 4:
+                P = raw[:, :4].reshape(-1, 2, 2)
+                d["P"] = P
+        result.append(d)
+    return result
+
+
 def plot_data_ensemble(
     orig_file: Union[str, Path],
     ens_files: Sequence[Union[str, Path]],
@@ -1667,6 +1730,7 @@ def plot_data_ensemble(
     comps: str = "xy,yx",
     what: str = "rho",
     show_errors: bool = True,
+    n_sites: Optional[int] = None,
     figsize: Optional[Tuple[float, float]] = None,
     fig: Optional[Any] = None,
     axs: Optional[Any] = None,
@@ -1675,8 +1739,9 @@ def plot_data_ensemble(
     """Joint plot of original and perturbed MT data for a fixed list of samples.
 
     Produces one subplot row per selected ensemble member.  Within each row
-    the original curve is drawn solid and the perturbed curve dashed on the
-    **same axes**, so differences are immediately visible.
+    the original curves (all selected sites, solid) and the perturbed curves
+    (dashed) are overlaid on the same axes, so differences are immediately
+    visible.
 
     Follows the ``data_viz`` philosophy: if *fig* / *axs* are provided they
     are used directly; otherwise a new figure is created.  ``(fig, axs)`` is
@@ -1699,6 +1764,11 @@ def plot_data_ensemble(
     show_errors : bool, optional
         If ``True``, draw ±1σ error envelopes on the **original** curve.
         Default is ``True``.
+    n_sites : int or None, optional
+        Number of MT sites to draw (without replacement) from the full site
+        list for each subplot row.  The **same** random subset is used for
+        both the original and the perturbed curve within a row so they remain
+        directly comparable.  Set to ``None`` (default) to show all sites.
     figsize : (float, float) or None, optional
         Figure size in inches.  If ``None``, a sensible default is chosen.
     fig : matplotlib.figure.Figure or None, optional
@@ -1717,9 +1787,10 @@ def plot_data_ensemble(
 
     Notes
     -----
-    Data files are read with :func:`femtic.read_observe` and plotted with the
-    matching ``data_viz.add_*`` helper.  The two curves share the same axes
-    object so they are automatically colour-matched by Matplotlib's cycle.
+    Data files are read with :func:`femtic.read_observe_dat` and flattened to
+    per-site dicts via :func:`femtic.sites_as_dict_list`.  Each site dict is
+    passed individually to the matching ``data_viz.add_*`` plotter so that
+    sites are overlaid on the same axes within every row.
     """
     plt_ = _require_mpl()
 
@@ -1768,26 +1839,45 @@ def plot_data_ensemble(
     _needs_comps = {"rho", "phase"}
     kw_comps = {"comps": comps} if str(what).lower() in _needs_comps else {}
 
-    # Read original data once
-    orig_data = fem.read_observe(str(orig_file))
+    # Read and flatten the original observe.dat once.
+    # read_observe_dat returns a nested structure; _observe_to_site_list adds
+    # the Z / T / P complex keys that data_viz.datadict_to_plot_df expects.
+    orig_parsed = fem.read_observe_dat(str(orig_file))
+    orig_sites = _observe_to_site_list(orig_parsed, fem)
     if out:
-        print(f"plot_data_ensemble: original read from {orig_file}")
+        print(f"plot_data_ensemble: original read from {orig_file} "
+              f"({len(orig_sites)} sites)")
+
+    # Build the sub-sampling index once so both curves use the same sites.
+    _rng = np.random.default_rng()
+    n_total = len(orig_sites)
+    if n_sites is not None and n_total > 0:
+        _n = min(n_sites, n_total)
+        _site_idx = sorted(_rng.choice(n_total, size=_n, replace=False).tolist())
+    else:
+        _site_idx = list(range(n_total))
 
     for row, idx in enumerate(sample_indices):
         ax = axs_arr[row]
 
-        # Original — solid, legend on first row only
-        plotter(orig_data, ax=ax, show_errors=show_errors,
-                legend=(row == 0), **kw_comps)
+        # --- original: one call per selected site, solid ---
+        for si in _site_idx:
+            site = orig_sites[si]
+            plotter(site, ax=ax, show_errors=show_errors,
+                    legend=(row == 0 and si == _site_idx[0]), **kw_comps)
 
-        # Perturbed — dashed, same colour cycle position, no legend
-        pert_data = fem.read_observe(str(ens_files[idx]))
-        plotter(pert_data, ax=ax, show_errors=False,
-                legend=False, linestyle="--", **kw_comps)
+        # --- perturbed: same site subset, dashed ---
+        pert_parsed = fem.read_observe_dat(str(ens_files[idx]))
+        pert_sites = _observe_to_site_list(pert_parsed, fem)
+        for si in _site_idx:
+            if si < len(pert_sites):
+                site = pert_sites[si]
+                plotter(site, ax=ax, show_errors=False,
+                        legend=False, linestyle="--", **kw_comps)
 
         ax.set_title(f"Sample {idx}", fontsize=9)
         if out:
-            print(f"  sample {idx} done")
+            print(f"  sample {idx} done ({len(_site_idx)} sites plotted)")
 
     fig.tight_layout()
     return fig, axs_arr

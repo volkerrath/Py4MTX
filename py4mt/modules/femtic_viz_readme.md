@@ -171,6 +171,12 @@ so differences are immediately visible.
 The `what` argument selects which `data_viz` plotter is dispatched
 (`add_rho`, `add_phase`, `add_tipper`, `add_pt`).
 
+Data files are read with `femtic.read_observe_dat()` and flattened to
+per-site dicts via the internal `_observe_to_site_list()` helper, which
+also builds the `Z` / `Z_err` (MT), `T` (VTF), and `P` (PT) complex
+arrays expected by `data_viz.datadict_to_plot_df`.  The plotter is called
+once per site so all sites are overlaid on the same axes within each row.
+
 ---
 
 ### `plot_model_ensemble`
@@ -262,5 +268,10 @@ You can also control this via `prepare_rho_for_plotting()` or by setting
 |            |        | Fixed `ocean_value` default: `1e-10` → `3e-1` Ohm·m.       |
 |            |        | Added `ocean_color` (`'lightgrey'`) to all Matplotlib       |
 |            |        | plotting helpers for flat-colour ocean rendering.           |
+| 2026-03-30 | Claude | Fixed `plot_data_ensemble`: replaced non-existent           |
+|            |        | `fem.read_observe()` with `fem.read_observe_dat()`; added   |
+|            |        | `_observe_to_site_list()` to convert the nested             |
+|            |        | blocks→sites structure and build `Z`/`Z_err`/`T`/`P`       |
+|            |        | complex arrays; plotter now iterates per-site.              |
 
 Author: Volker Rath (DIAS)

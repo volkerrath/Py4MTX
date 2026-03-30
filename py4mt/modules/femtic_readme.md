@@ -143,8 +143,9 @@ python femtic.py npz-to-femtic \
 
 | Function              | Purpose                                                  |
 |-----------------------|----------------------------------------------------------|
-| `read_observe()`      | Parse FEMTIC `observe.dat` into component arrays.        |
-| `modify_data()`       | Add Gaussian perturbations to observation data.          |
+| `read_observe_dat()`  | Parse FEMTIC `observe.dat` into a nested dict (blocks → sites). |
+| `sites_as_dict_list()` | Flatten parsed observe.dat into a list of per-site dicts.      |
+| `modify_data()`       | Add Gaussian perturbations to observation data.                  |
 | `insert_model()`      | Write sampled log₁₀ρ into a resistivity block file.     |
 | `read_distortion_file()` | Read FEMTIC galvanic distortion file.                |
 | `read_resistivity_block()` | Parse resistivity block file → dict of arrays.     |
@@ -184,6 +185,6 @@ Optional for visualisation and export:
 
 ## Version / provenance
 
-Updated: 2026-03-01
+Updated: 2026-03-30
 
 Author: Volker Rath (DIAS)
