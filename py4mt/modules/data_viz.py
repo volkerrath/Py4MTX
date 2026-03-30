@@ -69,6 +69,7 @@ Author: Volker Rath (DIAS)
 Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-11
 Modified: 2026-03-16 — add_rhoplus (D+/rho+ test plot), MT unit fix (mV/km/nT) for rho_a; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-03-17 — xlim/ylim parameters for all plotters (add_rho, add_rhoplus, add_phase, add_tipper, add_pt); Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-03-30 — pop linestyle from **line_kw in add_rho/add_phase/add_tipper/add_pt (TypeError fix); add linestyle override to add_tipper/add_pt; remove bogus required-key guard from add_tipper/add_pt (checked "Z" key but tipper needs "T"; also broke DataFrame input); Claude Sonnet 4.6 (Anthropic)
 """
 
 from __future__ import annotations
@@ -489,6 +490,10 @@ def add_rho(
     period = _period_from_df(df)
     comps_list = _parse_comps(comps)
 
+    # Allow callers to override linestyle via **line_kw (e.g. linestyle="--"
+    # for perturbed ensemble curves) without a duplicate-keyword error.
+    _ls = line_kw.pop("linestyle", "-")
+
     for c in comps_list:
         col = f"rho_{c}"
         if col not in df.columns:
@@ -498,7 +503,7 @@ def add_rho(
             period,
             y,
             marker="o",
-            linestyle="-",
+            linestyle=_ls,
             label=f"$\\rho_a,{c.upper()}$",
             **line_kw,
         )
@@ -805,6 +810,9 @@ def add_phase(
     period = _period_from_df(df)
     comps_list = _parse_comps(comps)
 
+    # Allow callers to override linestyle via **line_kw without collision.
+    _ls = line_kw.pop("linestyle", "-")
+
     for c in comps_list:
         col = f"phi_{c}"
         if col not in df.columns:
@@ -814,7 +822,7 @@ def add_phase(
             period,
             y,
             marker="o",
-            linestyle="-",
+            linestyle=_ls,
             label=f"$\\phi,{c.upper()}$",
             **line_kw,
         )
@@ -874,20 +882,20 @@ def add_tipper(
         The axes instance with the curves added.
     """
 
-    required = {"freq", "Z", "Z_err"}
-    missing = required - data.keys()
-    if missing:
-        raise KeyError(f"Missing keys: {sorted(missing)}")
-
     df = _ensure_df(data)
 
     fig, ax, _ = _maybe_ax(ax)
     period = _period_from_df(df)
 
+    # If the caller supplies linestyle= (e.g. "--" for perturbed ensemble
+    # curves), apply it uniformly to all components instead of per-component
+    # defaults.  Pop it here to avoid a duplicate-keyword error.
+    _ls_override = line_kw.pop("linestyle", None)
+
     specs = [
-        ("Tx_re", "o", "-", "Re(Tx)"),
+        ("Tx_re", "o", "-",  "Re(Tx)"),
         ("Tx_im", "^", "--", "Im(Tx)"),
-        ("Ty_re", "s", "-", "Re(Ty)"),
+        ("Ty_re", "s", "-",  "Re(Ty)"),
         ("Ty_im", "d", "--", "Im(Ty)"),
     ]
 
@@ -899,7 +907,7 @@ def add_tipper(
             period,
             y,
             marker=marker,
-            linestyle=linestyle,
+            linestyle=_ls_override if _ls_override is not None else linestyle,
             label=label,
             **line_kw,
         )
@@ -958,15 +966,14 @@ def add_pt(
     matplotlib.axes.Axes
         The axes instance with the curves added.
     """
-    required = {"freq", "Z", "Z_err"}
-    missing = required - data.keys()
-    if missing:
-        raise KeyError(f"Missing keys: {sorted(missing)}")
-
     df = _ensure_df(data)
 
     fig, ax, _ = _maybe_ax(ax)
     period = _period_from_df(df)
+
+    # Allow a uniform linestyle override via **line_kw (e.g. "--" for
+    # perturbed ensemble curves) without colliding with per-component defaults.
+    _ls_override = line_kw.pop("linestyle", None)
 
     comps = [
         ("ptxx_re", "o", "-", "PTxx"),
@@ -983,7 +990,7 @@ def add_pt(
             period,
             y,
             marker=marker,
-            linestyle=linestyle,
+            linestyle=_ls_override if _ls_override is not None else linestyle,
             label=label,
             **line_kw,
         )

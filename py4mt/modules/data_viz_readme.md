@@ -103,6 +103,12 @@ All MT plotters share these keyword arguments:
 
 All six arguments are consumed by the plotter and are **not** forwarded to the underlying Matplotlib call — they are safe to include in a shared `PLTARGS` dict passed to every plotter regardless of plot type.
 
+Additional `**line_kw` are forwarded to the underlying `ax.loglog` / `ax.semilogx` call. One commonly useful override is:
+
+- `linestyle` (str) — override the default line style. All four plotters pop this from `**line_kw` before the plot call, so passing `linestyle="--"` (e.g. for perturbed ensemble curves overlaid on the same axes) no longer raises a `TypeError`. For `add_tipper` and `add_pt`, the override is applied uniformly to all components; when omitted, each component keeps its own default (`"-"` for real parts, `"--"` for imaginary parts in `add_tipper`).
+
+> **Note for callers using a shared `PLTARGS` dict:** because `ylim` varies per panel, pass per-call overrides as `**{**PLTARGS, "ylim": (...)}` rather than mutating `PLTARGS["ylim"]` before each call.
+
 ---
 
 ## Data dict support
@@ -154,3 +160,4 @@ Both remove empty axes automatically.
 
 Author: Volker Rath (DIAS)
 Modified: 2026-03-16 — add_rhoplus (D+/rho+ test plot); Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-03-30 — linestyle override via **line_kw (all plotters); removed bogus required-key guard from add_tipper/add_pt; per-call PLTARGS pattern documented; Claude Sonnet 4.6 (Anthropic)

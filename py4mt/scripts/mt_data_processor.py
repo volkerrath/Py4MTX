@@ -13,6 +13,7 @@ A collection NPZ file with all stations is saved at the end.
 @modified:  2026-03-16 — freq_order, D+/rho+ test (DPLUS), add_rhoplus plot; Claude Sonnet 4.6 (Anthropic)
 @modified:  2026-03-18 — add_noise option in SET_ERRORS (mode='fix' only); Claude Sonnet 4.6 (Anthropic)
 @modified:  2026-03-25 — FT_CORRECTION block (manufacturer, from/to convention); Claude Sonnet 4.6 (Anthropic)
+@modified:  2026-03-30 — adapt plot block to updated data_viz: per-call ylim overrides (no PLTARGS mutation), DPLUS subplot row, remove bogus required-key guard from add_tipper/add_pt; Claude Sonnet 4.6 (Anthropic)
 """
 
 import os
@@ -301,7 +302,7 @@ for edi in edi_files:
         print("Wrote file: ", DATA_DIR_OUT + statname + NAME_STR + ".npz")
 
     if PLOT:
-        nrows =  3
+        nrows = 3 + (1 if DPLUS else 0)
         fig, axs = plt.subplots(nrows, 2, figsize=(
             8, 14 + 4 * (nrows - 3)), sharex=True)
 
@@ -310,21 +311,30 @@ for edi in edi_files:
         df_rp = dataframe_from_edi(
             data_dict, include_tipper=False, include_pt=False
         )
-        PLTARGS["xlim"] = (1.e-4, 1.e+3)
-        PLTARGS["ylim"] = (1.e-4, 1.e+4)
-        add_rho(df_rp, comps="xy,yx", ax=axs[0, 0], **PLTARGS)
-        PLTARGS["ylim"] = (-180., +180.)
-        add_phase(df_rp, comps="xy,yx", ax=axs[0, 1], **PLTARGS)
-        PLTARGS["ylim"] = (1.e-4, 1.e+4)
-        add_rho(df_rp, comps="xx,yy", ax=axs[1, 0], **PLTARGS)
-        PLTARGS["ylim"] = (-180., +180.)
-        add_phase(df_rp, comps="xx,yy", ax=axs[1, 1], **PLTARGS)
-        PLTARGS["ylim"] = (1., +1.)
-        add_tipper(data_dict, ax=axs[2, 0], **PLTARGS)
-        PLTARGS["ylim"] = (1., +1.)
-        add_pt(data_dict, ax=axs[2, 1], **PLTARGS)
+
+        # Use per-call ylim overrides rather than mutating the shared PLTARGS dict.
+        add_rho(df_rp,   comps="xy,yx", ax=axs[0, 0], **{**PLTARGS, "xlim": (1.e-4, 1.e+3), "ylim": (1.e-4, 1.e+4)})
+        add_phase(df_rp, comps="xy,yx", ax=axs[0, 1], **{**PLTARGS, "xlim": (1.e-4, 1.e+3), "ylim": (-180., +180.)})
+        add_rho(df_rp,   comps="xx,yy", ax=axs[1, 0], **{**PLTARGS, "xlim": (1.e-4, 1.e+3), "ylim": (1.e-4, 1.e+4)})
+        add_phase(df_rp, comps="xx,yy", ax=axs[1, 1], **{**PLTARGS, "xlim": (1.e-4, 1.e+3), "ylim": (-180., +180.)})
+
+        if DPLUS and data_dict.get("dplus"):
+            add_rhoplus(data_dict, comps="xy,yx", ax=axs[2, 0],
+                        **{**PLTARGS, "xlim": (1.e-4, 1.e+3), "ylim": (1.e-4, 1.e+4)})
+            axs[2, 1].set_visible(False)   # no second D+ panel
+            _tipper_row = 3
+        else:
+            _tipper_row = 2
+
+        # add_tipper and add_pt accept the raw data_dict (auto-converted internally).
+        add_tipper(data_dict, ax=axs[_tipper_row, 0],
+                   **{**PLTARGS, "xlim": (1.e-4, 1.e+3), "ylim": (-1., +1.)})
+        add_pt(data_dict,     ax=axs[_tipper_row, 1],
+               **{**PLTARGS, "xlim": (1.e-4, 1.e+3), "ylim": (-1., +1.)})
 
         for ax in axs.flat:
+            if not ax.get_visible():
+                continue
             if not ax.lines and not ax.images and not ax.collections:
                 fig.delaxes(ax)
 
