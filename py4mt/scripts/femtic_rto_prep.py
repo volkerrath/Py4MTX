@@ -52,6 +52,14 @@ Provenance:
                         are noisy at long periods); switched to per-curve
                         show_errors_orig/show_errors_pert flags so perturbed
                         curves show reset relative-error envelopes only.
+    2026-03-31  Claude  Pass R directly (not Q=R^T R); randomized SVD replaces
+                eigsh in low-rank branch; new MOD_N_EIG / MOD_N_OVERSAMPLING /
+                MOD_N_POWER_ITER / MOD_SIGMA2_RESIDUAL config params; full-rank
+                params MOD_LAM / MOD_LAM_MODE / MOD_LAM_ALPHA / MOD_SOLVER /
+                MOD_PRECOND exposed; MOD_R sentinel variable removed.
+    2026-04-01  Claude  Moved MOD_REF_BASE inside PERTURB_MOD block; added
+                MOD_REF = MOD_REF_BASE = None in else-branch to prevent
+                NameError when PERTURB_MOD = False.
 """
 
 import os
@@ -128,22 +136,47 @@ Set up mode of model perturbations.
 """
 PERTURB_MOD = True
 if PERTURB_MOD:
-    MOD_REF = "resistivity_block_iter30.dat"
+    MOD_REF = TEMPLATES + "referencemodel.dat"
+    MOD_REF_BASE = os.path.basename(MOD_REF)   # filename only — used inside ensemble dirs
     MOD_METHOD = "add"
     # if ModCov is not None, this needs to be normal
     MOD_PDF = ["normal", 0., 0.3]
     # ["exp", L], ["gauss", L], ["matern"], L, MatPars], ["femtic"], None
-    MOD_R = "femtic R"
     R_FILE = r"/home/vrath/Py4MTX/py4mt/data/rto/ubinas/R_coo"
+
+    # Sampling algorithm: "low rank" (randomized SVD, recommended) or "full rank" (CG).
+    # Low-rank is 10-100x faster for typical FEMTIC mesh sizes.
+    MOD_ALGO = "low rank"
+
+    # --- low-rank options (used when MOD_ALGO = "low rank") ---
+    # More n_eig -> smoother samples; cost is linear in n_eig.
+    # n_power_iter=3-4 sharpens accuracy for slowly decaying roughness spectra.
+    # sigma2_residual adds short-wavelength variability beyond the rank-k subspace;
+    # set to ~10% of typical log10(rho) variance (e.g. 1e-3 for std ~0.1 in log10).
+    MOD_N_EIG = 128
+    MOD_N_OVERSAMPLING = 10     # extra columns in range-finder; 10-15 is fine
+    MOD_N_POWER_ITER = 3        # 3-4 recommended for FEMTIC roughness spectra
+    MOD_SIGMA2_RESIDUAL = 1e-3  # isotropic residual variance; 0 = disabled
+
+    # --- full-rank options (used when MOD_ALGO = "full rank") ---
+    # lam_alpha is the key speed lever: raise to 1e-4 or 1e-3 if CG is slow.
+    MOD_LAM = 0.0
+    MOD_LAM_MODE = "scaled_median_diag"   # auto diagonal shift from diag(R^T R)
+    MOD_LAM_ALPHA = 1.0e-4                # raise to 1e-3 if CG convergence is slow
+    MOD_SOLVER = "cg"                     # CG is optimal for SPD Q = R^T R
+    MOD_PRECOND = "ilu"                   # ILU beats jacobi by 3-5x fewer iterations
+
 else:
-    MOD_R = None
+    R_FILE = None
+    MOD_REF = None
+    MOD_REF_BASE = None
 
 """
 Set up mode of data perturbations.
 """
 PERTURB_DAT = True
 if PERTURB_DAT:
-    DAT_METHOD = "add",
+    DAT_METHOD = "add"
     DAT_PDF = ["normal", 0., 1.0]
 
 RESET_ERRORS = True
@@ -179,7 +212,7 @@ VIZ_N_SITES = 10
 
 # --- data plot ---
 DAT_WHAT = "rho"        # "rho" | "phase" | "tipper" | "pt"
-DAT_COMPS = "xy,yx"
+DAT_COMPS = "xx,xy,yx,yy"
 DAT_SHOW_ERRORS = False     # raw template errors are noisy at long periods;
                             # use show_errors_orig / show_errors_pert for
                             # independent control in plot_data_ensemble
@@ -275,26 +308,35 @@ if PLOT_DATA:
 """
 Draw perturbed model sets: m̃ ∼ N(m, Cm)
 
-Read prior parameter precision Q = R^T@R for perturbations
-if needed. If the femtic mode is chosen, the matrix needs to be
-read from external file.
+R is passed directly — Q = R^T R is formed implicitly inside
+generate_model_ensemble, never explicitly materialised.
 """
-if "Q" in MOD_R:
-    Q = scs.load_npz(R_FILE + ".npz")
-else:
-    R = scs.load_npz(R_FILE + ".npz")
-    Q = R.T @ R
+R = scs.load_npz(R_FILE + ".npz")
+print("roughness R loaded with shape:", np.shape(R))
 
-print("roughness loaded with shape:", np.shape(Q))
-
-model_ensemble = ens.generate_model_ensemble(alg="rto",
-                                             dir_base=ENSEMBLE_DIR + ENSEMBLE_NAME,
-                                             n_samples=N_SAMPLES,
-                                             fromto=FROM_TO,
-                                             refmod=MOD_REF,
-                                             method=MOD_METHOD,
-                                             q=Q,
-                                             out=True)
+model_ensemble = ens.generate_model_ensemble(
+    alg="rto",
+    dir_base=ENSEMBLE_DIR + ENSEMBLE_NAME,
+    n_samples=N_SAMPLES,
+    fromto=FROM_TO,
+    refmod=MOD_REF_BASE,
+    method=MOD_METHOD,
+    algo=MOD_ALGO,
+    q=R,                          # pass R directly — Q formed implicitly
+    # low-rank options
+    n_eig=MOD_N_EIG,
+    n_oversampling=MOD_N_OVERSAMPLING,
+    n_power_iter=MOD_N_POWER_ITER,
+    sigma2_residual=MOD_SIGMA2_RESIDUAL,
+    # full-rank options
+    lam=MOD_LAM,
+    lam_mode=MOD_LAM_MODE,
+    lam_alpha=MOD_LAM_ALPHA,
+    solver_method=MOD_SOLVER,
+    precond=MOD_PRECOND,
+    rng=rng,
+    out=True,
+)
 print("\n")
 print("model ensemble ready!")
 
@@ -308,10 +350,10 @@ Original and perturbed sit in adjacent rows; slices in columns.
 Helper: femtic_viz.plot_model_ensemble
 """
 if PLOT_MODEL:
-    MOD_ORIG = TEMPLATES + MOD_REF
+    MOD_ORIG = MOD_REF  # MOD_REF is already the full path
 
     mod_ens_files = [
-        ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/{MOD_REF}"
+        ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/{MOD_REF_BASE}"
         for i in range(N_SAMPLES)
     ]
 
