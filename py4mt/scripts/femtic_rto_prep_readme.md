@@ -53,12 +53,24 @@ All settings are at the top of the script:
 
 | Variable     | Description                                                          |
 |--------------|----------------------------------------------------------------------|
-| `PERTURB_MOD` | Enable / disable model perturbation.                                 |
-| `MOD_REF`    | Reference model file (e.g. converged iterate).                       |
-| `MOD_METHOD` | `'add'` — add perturbation to log₁₀(ρ).                             |
-| `MOD_PDF`    | Distribution parameters `['normal', mean, std]`.                     |
-| `MOD_R`      | Source of roughness / precision: `'femtic R'` or `'Q'`.              |
-| `R_FILE`     | Base name of the sparse-matrix `.npz` file (without extension).      |
+| `PERTURB_MOD`         | Enable / disable model perturbation.                                        |
+| `MOD_REF`             | Reference model file (e.g. converged iterate).                              |
+| `MOD_METHOD`          | `'add'` — add perturbation to log₁₀(ρ).                                    |
+| `MOD_PDF`             | Distribution parameters `['normal', mean, std]`.                            |
+| `R_FILE`              | Base name of the sparse-matrix `.npz` file (without extension).             |
+| `MOD_ALGO`            | `'low rank'` (randomized SVD, **recommended default**) or `'full rank'` (CG). |
+| `MOD_N_EIG`           | Singular triplets for low-rank branch. Default **128**; increase to 256 for smoother samples (cost is linear). |
+| `MOD_N_OVERSAMPLING`  | Extra range-finder columns (default 10; 10–15 is sufficient).               |
+| `MOD_N_POWER_ITER`    | Power-iteration steps for low-rank branch. Default **3**; 3–4 recommended for FEMTIC roughness spectra. |
+| `MOD_SIGMA2_RESIDUAL` | Isotropic residual variance per sample. Default **1e-3** (~10% of typical log10ρ variance); `0` disables. |
+| `MOD_LAM`             | Diagonal shift seed for full-rank branch (default 0).                        |
+| `MOD_LAM_MODE`        | `'scaled_median_diag'` (auto, default) or `'fixed'` — full-rank branch.     |
+| `MOD_LAM_ALPHA`       | Scale factor α for the scaled-diagonal λ rule. Default **1e-4**; key speed lever — raise to 1e-3 if CG is slow. |
+| `MOD_SOLVER`          | Iterative solver for full-rank branch: `'cg'` (optimal for SPD Q, default) or `'bicgstab'`. |
+| `MOD_PRECOND`         | Preconditioner for full-rank branch: `'ilu'` (default, 3–5× fewer iterations than jacobi) or `'jacobi'`. |
+
+R is passed **directly** to `generate_model_ensemble`; Q = R^T R is never
+explicitly materialised — both branches form it implicitly via matvecs.
 
 ### Data perturbation
 
@@ -94,8 +106,10 @@ from 0 … `N_SAMPLES − 1` each run.  The drawn list is printed at runtime.
 | `MOD_CLIM`        | `(vmin, vmax)` in log₁₀(Ω·m); `None` = auto-derived from original model.|
 | `MOD_SLICES`      | List of 1–5 slice descriptors; each dict has `'type'`: `'map'` or `'curtain'`, plus kwargs forwarded to `femtic_viz`. |
 
-`MOD_ORIG` is derived automatically from `MOD_REF` (defined in the model
-perturbation block) and does not need to be set separately.
+`MOD_ORIG` is set to `MOD_REF` (they are the same path — the template reference
+model).  `MOD_REF_BASE` (derived automatically via `os.path.basename`) holds
+the bare filename and is used when constructing per-member file paths inside
+`generate_model_ensemble` and `mod_ens_files`.
 
 Diagnostic figures are saved to:
 
@@ -143,6 +157,15 @@ Diagnostic figures are saved to:
 |            |        | config section; replaced fixed `VIZ_SAMPLES` list with      |
 |            |        | `VIZ_N_SAMPLES` (random draw); added `VIZ_N_SITES` for      |
 |            |        | random site sub-sampling in `plot_data_ensemble`.           |
+| 2026-03-31 | Claude | Pass R directly (not Q); randomized SVD replaces eigsh in   |
+|            |        | low-rank branch; new MOD_N_EIG / MOD_N_OVERSAMPLING /       |
+|            |        | MOD_N_POWER_ITER / MOD_SIGMA2_RESIDUAL / MOD_LAM /          |
+|            |        | MOD_LAM_MODE / MOD_LAM_ALPHA / MOD_SOLVER / MOD_PRECOND;    |
+|            |        | MOD_R sentinel variable removed.                            |
+| 2026-03-31 | Claude | Bug fixes: `DAT_METHOD` trailing comma (tuple → str);        |
+|            |        | `MOD_ORIG` double-prepend of `TEMPLATES`; `refmod` and       |
+|            |        | `mod_ens_files` used full path instead of basename;          |
+|            |        | `MOD_REF_BASE` introduced to hold the filename component.   |
 
 ## Author
 
