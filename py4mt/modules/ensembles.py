@@ -29,6 +29,10 @@ enriched docstrings with tuning recommendations.
 Updated 2026-04-02 by Claude (Anthropic): fixed FileNotFoundError in
 generate_model_ensemble — template argument to fem.insert_model now uses
 the full per-member path (_orig.dat backup) instead of the bare basename.
+Updated 2026-04-02 by Claude (Anthropic): fixed generate_model_ensemble
+write-back loop — now reads reference log10-resistivity from the backup
+template and adds the perturbation before calling insert_model (method='add'),
+so perturbed models are reference + delta_log10 rather than bare perturbations.
 """
 
 from __future__ import annotations
@@ -853,9 +857,20 @@ def generate_model_ensemble(
         file = f"{dir_base}{iens}/{refmod}"
         orig_file = file.replace(".dat", "_orig.dat")
         shutil.copy(file, orig_file)
+
+        # Read reference log10-resistivity from the unmodified backup.
+        # sample is a zero-mean perturbation in log10 space.
+        # method="add": perturbed model = reference + perturbation (correct RTO usage).
+        # method="replace": sample IS the full log10 model (absolute values).
+        ref_log10 = fem.read_model(orig_file, model_trans="log10", out=False)
+        if method.lower() == "add":
+            model_log10 = ref_log10 + sample
+        else:  # "replace"
+            model_log10 = sample
+
         fem.insert_model(
             template=orig_file,
-            model=sample,
+            model=model_log10,
             model_file=file,
             model_name=f"sample{iens}")
 
