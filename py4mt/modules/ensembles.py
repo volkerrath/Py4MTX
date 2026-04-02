@@ -26,6 +26,9 @@ generate_model_ensemble; removed redundant per-sample print.
 Updated 2026-03-31 by Claude (Anthropic): consolidated _diag_rtr
 into _rtr_diag (single helper); removed dead estimate_low_rank_eigpairs;
 enriched docstrings with tuning recommendations.
+Updated 2026-04-02 by Claude (Anthropic): fixed FileNotFoundError in
+generate_model_ensemble — template argument to fem.insert_model now uses
+the full per-member path (_orig.dat backup) instead of the bare basename.
 """
 
 from __future__ import annotations
@@ -848,10 +851,11 @@ def generate_model_ensemble(
     mod_list: list[str] = []
     for iens, sample in zip(fromto_arr, samples):
         file = f"{dir_base}{iens}/{refmod}"
-        shutil.copy(file, file.replace(".dat", "_orig.dat"))
+        orig_file = file.replace(".dat", "_orig.dat")
+        shutil.copy(file, orig_file)
         fem.insert_model(
-            template=refmod,
-            model =sample,
+            template=orig_file,
+            model=sample,
             model_file=file,
             model_name=f"sample{iens}")
 
