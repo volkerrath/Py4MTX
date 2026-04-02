@@ -232,7 +232,15 @@ If you see `RuntimeError: Iterative solver did not converge` (full-rank mode):
 
 ## Version / provenance
 
-Updated: 2026-03-31 (code); 2026-03-31 (cleanup)
+Updated: 2026-04-02 (code); 2026-04-02 (cleanup)
+
+### Changelog (2026-04-02)
+- Fixed `FileNotFoundError` in `generate_model_ensemble`: `fem.insert_model`
+  was called with `template=refmod` (bare basename), which failed when the
+  current working directory was not the ensemble member directory. The template
+  is now the full per-member path `<dir_base><iens>/<refmod>_orig.dat` (the
+  backup just created by `shutil.copy`), matching the intent of the original
+  code.
 
 ### Changelog (2026-03-31 cleanup)
 - Removed debug `print("Sample #", ix, "solver is", solver)` from
