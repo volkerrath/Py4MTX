@@ -52,6 +52,17 @@ Provenance:
                         show_errors_pert in plot_data_ensemble (default both
                         False); raw template errors are misleading at long
                         periods, perturbed files carry reset relative errors.
+    2026-04-02  Claude  Added xlim/ylim/zlim parameters to plot_model_ensemble.
+                        Map slices: xlim/ylim clip easting/northing axes.
+                        Curtain slices: ylim clips profile-distance axis,
+                        zlim clips the depth axis. Per-slice dict keys
+                        override the function-level defaults.
+    2026-04-03  Claude  Added alpha_orig/alpha_pert to plot_data_ensemble
+                        (opacity per curve type; defaults 1.0/0.6).
+                        Added mesh_lines/mesh_lw/mesh_color to
+                        plot_model_ensemble, map_slice_from_cells,
+                        curtain_from_cells, and plot_points_matplotlib;
+                        triplot overlay drawn after tripcolor when enabled.
 """
 
 from __future__ import annotations
@@ -885,6 +896,9 @@ def plot_points_matplotlib(
     invert_yaxis: bool = False,
     ocean_color: Optional[str] = "lightgrey",
     ocean_value: Optional[float] = 3.0e-1,
+    mesh_lines: bool = False,
+    mesh_lw: float = 0.3,
+    mesh_color: str = "k",
 ) -> Any:
     """Plot scattered samples as either markers or filled triangle patches.
 
@@ -923,6 +937,13 @@ def plot_points_matplotlib(
         Resistivity value (Ohm·m) used to identify ocean cells.
         Should match the value passed to :func:`prepare_rho_for_plotting`
         (default 0.3 Ohm·m).
+    mesh_lines : bool, optional
+        If ``True`` and ``mode="tri"``, overlay the triangulation edges
+        (``ax.triplot``) on top of the filled patches.  Default ``False``.
+    mesh_lw : float, optional
+        Line width for mesh edge overlay (default 0.3).
+    mesh_color : str, optional
+        Colour for mesh edge overlay (default ``'k'``).
 
     Returns
     -------
@@ -973,6 +994,10 @@ def plot_points_matplotlib(
 
         pc = ax.tripcolor(tri, v_plot, shading="flat")
         plt_.colorbar(pc, ax=ax, label=label)
+
+        # Optional mesh edge overlay
+        if mesh_lines:
+            ax.triplot(tri, color=mesh_color, lw=mesh_lw, zorder=pc.get_zorder() + 0.5)
 
         # Draw ocean triangles as flat-coloured patches on top
         if _ocean_mask is not None and np.any(_ocean_mask):
@@ -1178,6 +1203,9 @@ def map_slice_from_cells(
     cmap: Optional[str] = None,
     ocean_color: Optional[str] = "lightgrey",
     ocean_value: Optional[float] = 3.0e-1,
+    mesh_lines: bool = False,
+    mesh_lw: float = 0.3,
+    mesh_color: str = "k",
 ) -> Any:
     """Plot an XY map slice from cell-centroid samples.
 
@@ -1248,6 +1276,9 @@ def map_slice_from_cells(
             invert_yaxis=False,
             ocean_color=ocean_color,
             ocean_value=ocean_value,
+            mesh_lines=mesh_lines,
+            mesh_lw=mesh_lw,
+            mesh_color=mesh_color,
         )
         ax.set_aspect("equal")
         return ax
@@ -1326,6 +1357,9 @@ def curtain_from_cells(
     cmap: Optional[str] = None,
     ocean_color: Optional[str] = "lightgrey",
     ocean_value: Optional[float] = 3.0e-1,
+    mesh_lines: bool = False,
+    mesh_lw: float = 0.3,
+    mesh_color: str = "k",
 ) -> Any:
     """Plot a curtain section along a polyline from cell-centroid samples.
 
@@ -1409,6 +1443,9 @@ def curtain_from_cells(
             invert_yaxis=True,
             ocean_color=ocean_color,
             ocean_value=ocean_value,
+            mesh_lines=mesh_lines,
+            mesh_lw=mesh_lw,
+            mesh_color=mesh_color,
         )
         return ax
 
@@ -1779,6 +1816,8 @@ def plot_data_ensemble(
     show_errors_orig: Optional[bool] = None,
     show_errors_pert: Optional[bool] = None,
     n_sites: Optional[int] = None,
+    alpha_orig: float = 1.0,
+    alpha_pert: float = 0.6,
     figsize: Optional[Tuple[float, float]] = None,
     fig: Optional[Any] = None,
     axs: Optional[Any] = None,
@@ -1829,6 +1868,12 @@ def plot_data_ensemble(
         list for each subplot row.  The **same** random subset is used for
         both the original and the perturbed curve within a row so they remain
         directly comparable.  Set to ``None`` (default) to show all sites.
+    alpha_orig : float, optional
+        Opacity for the **original** curves (0 = transparent, 1 = opaque).
+        Default ``1.0``.
+    alpha_pert : float, optional
+        Opacity for the **perturbed** curves.  Default ``0.6``, so the
+        original curve shows through and differences are immediately visible.
     figsize : (float, float) or None, optional
         Figure size in inches.  If ``None``, a sensible default is chosen.
     fig : matplotlib.figure.Figure or None, optional
@@ -1929,7 +1974,8 @@ def plot_data_ensemble(
         for si in _site_idx:
             site = orig_sites[si]
             plotter(site, ax=ax, show_errors=_show_orig,
-                    legend=(row == 0 and si == _site_idx[0]), **kw_comps)
+                    legend=(row == 0 and si == _site_idx[0]),
+                    alpha=alpha_orig, **kw_comps)
 
         # --- perturbed: same site subset, dashed ---
         pert_sites = _observe_to_site_list(ens_files[idx], fem)
@@ -1937,7 +1983,8 @@ def plot_data_ensemble(
             if si < len(pert_sites):
                 site = pert_sites[si]
                 plotter(site, ax=ax, show_errors=_show_pert,
-                        legend=False, linestyle="--", **kw_comps)
+                        legend=False, linestyle="--",
+                        alpha=alpha_pert, **kw_comps)
 
         ax.set_title(f"Sample {idx}", fontsize=9)
         if out:
@@ -1960,6 +2007,12 @@ def plot_model_ensemble(
     clim: Optional[Tuple[float, float]] = None,
     ocean_color: Optional[str] = "lightgrey",
     ocean_value: Optional[float] = 3.0e-1,
+    xlim: Optional[Tuple[float, float]] = None,
+    ylim: Optional[Tuple[float, float]] = None,
+    zlim: Optional[Tuple[float, float]] = None,
+    mesh_lines: bool = False,
+    mesh_lw: float = 0.3,
+    mesh_color: str = "k",
     figsize: Optional[Tuple[float, float]] = None,
     fig: Optional[Any] = None,
     axs: Optional[Any] = None,
@@ -2012,6 +2065,27 @@ def plot_model_ensemble(
     clim : (float, float) or None, optional
         Colour limits ``(vmin, vmax)`` in log₁₀(Ω·m).
         If ``None``, limits are derived from the original model.
+    xlim : (float, float) or None, optional
+        x-axis limits applied to **map** slices (easting range, metres).
+        If ``None``, Matplotlib auto-scales.  Individual slice dicts may
+        also carry an ``'xlim'`` key to override per-slice.
+    ylim : (float, float) or None, optional
+        y-axis limits applied to **map** slices (northing range, metres).
+        For **curtain** slices this sets the along-profile distance axis
+        (horizontal axis).  Individual slice dicts may carry a ``'ylim'`` key.
+    zlim : (float, float) or None, optional
+        Depth-axis limits applied to **curtain** slices (vertical axis, metres,
+        negative-down convention).  Individual slice dicts may carry a
+        ``'zlim'`` key.
+    mesh_lines : bool, optional
+        If ``True``, overlay the Delaunay triangulation edges (``ax.triplot``)
+        on top of the filled patches in ``mode='tri'`` panels.  Useful for
+        inspecting mesh resolution in ensemble diagnostics.  Default ``False``.
+        Per-slice dicts may carry a ``'mesh_lines'`` key to override per-slice.
+    mesh_lw : float, optional
+        Line width for the mesh edge overlay (default ``0.3``).
+    mesh_color : str, optional
+        Colour for the mesh edge overlay (default ``'k'``).
     ocean_color : str or None, optional
         Flat colour for ocean cells across all panels (default ``'lightgrey'``).
         Forwarded to the slicer functions.  Set to None to use the colormap.
@@ -2087,19 +2161,36 @@ def plot_model_ensemble(
 
     def _draw_slice(ax: Any, rho: np.ndarray, slc_spec: dict, title: str = "") -> None:
         """Dispatch one slice descriptor to the appropriate slicer and draw on ax."""
-        slc = dict(slc_spec)          # copy — we pop 'type'
+        slc = dict(slc_spec)          # copy — we pop 'type' and axis-limit overrides
         slc_type = slc.pop("type", "map").lower()
+        # Per-slice axis-limit overrides take priority over function-level defaults
+        slc_xlim = slc.pop("xlim", xlim)
+        slc_ylim = slc.pop("ylim", ylim)
+        slc_zlim = slc.pop("zlim", zlim)
         slc.setdefault("mode", mode)
         slc.setdefault("log10", log10)
         slc.setdefault("cmap", cmap)
         slc.setdefault("ocean_color", ocean_color)
         slc.setdefault("ocean_value", ocean_value)
+        slc.setdefault("mesh_lines", mesh_lines)
+        slc.setdefault("mesh_lw", mesh_lw)
+        slc.setdefault("mesh_color", mesh_color)
 
         if "map" in slc_type:
             map_slice_from_cells(mesh, rho, ax=ax, **slc)
+            # map slices: x = easting, y = northing
+            if slc_xlim is not None:
+                ax.set_xlim(slc_xlim)
+            if slc_ylim is not None:
+                ax.set_ylim(slc_ylim)
         else:
             poly = slc.pop("polyline")
             curtain_from_cells(mesh, rho, poly, ax=ax, **slc)
+            # curtain slices: horizontal = along-profile distance, vertical = depth
+            if slc_ylim is not None:
+                ax.set_xlim(slc_ylim)   # ylim controls the profile-distance axis
+            if slc_zlim is not None:
+                ax.set_ylim(slc_zlim)   # zlim controls the depth axis
 
         # Apply shared colour limits after plotting
         for img in ax.get_images():

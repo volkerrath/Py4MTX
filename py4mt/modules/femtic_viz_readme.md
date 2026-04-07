@@ -159,6 +159,9 @@ fig, axs = plot_data_ensemble(
     show_errors=False,   # shorthand for both curves; default False
     show_errors_orig=None,  # override for original curves only (None → show_errors)
     show_errors_pert=None,  # override for perturbed curves only (None → show_errors)
+    n_sites=None,           # MT sites drawn per row; None = all sites
+    alpha_orig=1.0,         # opacity for original curves (0–1)
+    alpha_pert=0.6,         # opacity for perturbed curves (< 1 lets original show through)
     figsize=None,        # (width, height) in inches; auto if None
     fig=None,            # pre-existing Figure
     axs=None,            # pre-existing axes, shape (len(sample_indices),)
@@ -201,6 +204,12 @@ fig, axs = plot_model_ensemble(
     log10=True,
     cmap="jet_r",
     clim=None,           # (vmin, vmax) in log10(Ohm.m); auto if None
+    xlim=None,           # easting limits for map slices (m); None = auto
+    ylim=None,           # northing / profile-distance limits (m); None = auto
+    zlim=None,           # depth limits for curtain slices (m); None = auto
+    mesh_lines=False,    # overlay triangulation edges on filled patches
+    mesh_lw=0.3,         # mesh edge line width (pt)
+    mesh_color="k",      # mesh edge colour
     figsize=None,
     fig=None,
     axs=None,            # pre-existing axes, shape (2*len(sample_indices), len(slices))
@@ -289,5 +298,15 @@ You can also control this via `prepare_rho_for_plotting()` or by setting
 |            |        | Split `show_errors` into `show_errors_orig` / `show_errors_pert` |
 |            |        | (both default `False`); raw template errors are noisy at    |
 |            |        | long periods; perturbed files carry reset relative errors.  |
+| 2026-04-02 | Claude | Added `xlim`, `ylim`, `zlim` to `plot_model_ensemble`.      |
+|            |        | Map slices: `xlim`/`ylim` clip easting/northing axes.       |
+|            |        | Curtain slices: `ylim` clips profile-distance axis,         |
+|            |        | `zlim` clips depth axis. Per-slice dict keys override       |
+|            |        | function-level defaults.                                    |
+| 2026-04-03 | Claude | Added `alpha_orig`/`alpha_pert` to `plot_data_ensemble`.    |
+|            |        | Added `mesh_lines`/`mesh_lw`/`mesh_color` to                |
+|            |        | `plot_model_ensemble`, `map_slice_from_cells`,              |
+|            |        | `curtain_from_cells`, and `plot_points_matplotlib`.         |
+|            |        | `triplot` overlay drawn after `tripcolor` when enabled.     |
 
 Author: Volker Rath (DIAS)

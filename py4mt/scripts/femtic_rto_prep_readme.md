@@ -99,11 +99,19 @@ from 0 … `N_SAMPLES − 1` each run.  The drawn list is printed at runtime.
 | `DAT_WHAT`        | MT quantity: `'rho'`, `'phase'`, `'tipper'`, or `'pt'`.                 |
 | `DAT_COMPS`       | Impedance components, comma-separated (e.g. `'xy,yx'`).                 |
 | `DAT_SHOW_ERRORS` | Propagate error envelopes into the original-data curve.                  |
+| `DAT_ALPHA_ORIG`  | Opacity of the **original** data curves (0–1; default 1.0).              |
+| `DAT_ALPHA_PERT`  | Opacity of the **perturbed** data curves (0–1; default 0.6).             |
 | `MOD_MESH`        | Path to the shared `mesh.dat`.                                           |
 | `MOD_MODE`        | Slice rendering mode: `'tri'` \| `'scatter'` \| `'grid'`.               |
 | `MOD_LOG10`       | Plot log₁₀(ρ) if `True`.                                                |
 | `MOD_CMAP`        | Matplotlib colormap (default `'jet_r'`).                                 |
 | `MOD_CLIM`        | `(vmin, vmax)` in log₁₀(Ω·m); `None` = auto-derived from original model.|
+| `MOD_XLIM`        | `(xmin, xmax)` in metres for **map** slices (easting axis); `None` = auto.  |
+| `MOD_YLIM`        | `(ymin, ymax)` in metres — northing axis for **map** slices; along-profile distance axis for **curtain** slices; `None` = auto. |
+| `MOD_ZLIM`        | `(zmin, zmax)` in metres for **curtain** slices (depth axis, negative-down); `None` = auto. |
+| `MOD_MESH_LINES`  | If `True`, overlay triangulation edges on filled patches (default `False`).  |
+| `MOD_MESH_LW`     | Line width for mesh edge overlay (default `0.3` pt).                         |
+| `MOD_MESH_COLOR`  | Colour for mesh edge overlay (default `'k'`).                                |
 | `MOD_SLICES`      | List of 1–5 slice descriptors; each dict has `'type'`: `'map'` or `'curtain'`, plus kwargs forwarded to `femtic_viz`. |
 
 `MOD_ORIG` is set to `MOD_REF` (they are the same path — the template reference
@@ -162,6 +170,11 @@ Diagnostic figures are saved to:
 |            |        | MOD_N_POWER_ITER / MOD_SIGMA2_RESIDUAL / MOD_LAM /          |
 |            |        | MOD_LAM_MODE / MOD_LAM_ALPHA / MOD_SOLVER / MOD_PRECOND;    |
 |            |        | MOD_R sentinel variable removed.                            |
+| 2026-04-02 | Claude | Added `MOD_XLIM`, `MOD_YLIM`, `MOD_ZLIM` to visualization   |
+|            |        | config; wired into `plot_model_ensemble` call.              |
+| 2026-04-03 | Claude | Added `DAT_ALPHA_ORIG`, `DAT_ALPHA_PERT` to data-plot config; |
+|            |        | added `MOD_MESH_LINES`, `MOD_MESH_LW`, `MOD_MESH_COLOR` to  |
+|            |        | model-plot config; wired into respective function calls.     |
 | 2026-03-31 | Claude | Bug fixes: `DAT_METHOD` trailing comma (tuple → str);        |
 |            |        | `MOD_ORIG` double-prepend of `TEMPLATES`; `refmod` and       |
 |            |        | `mod_ens_files` used full path instead of basename;          |

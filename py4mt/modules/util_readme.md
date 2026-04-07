@@ -222,6 +222,91 @@ site = data_proc.load_edi("SITE_PHX.edi", manufacturer="phoenix")
 
 ---
 
+## Petrophysical resistivity & permeability models
+
+Standard models for relating fluid, rock, and electrical properties.
+All resistivities in Ω·m; permeability internally in m², reported in mD;
+grain diameter input in µm.
+
+### Brine conductivity / resistivity
+
+| Function | Description |
+|----------|-------------|
+| `brine_conductivity_sen_goode(salinity_ppm, temp_c)` | NaCl conductivity σ_w [S/m] via Sen & Goode (1992); valid 0–300 °C, 0–300 g/L |
+| `brine_conductivity_sen_goode_mol(C, temp_c)` | Same model accepting molarity [mol/L] directly |
+| `brine_resistivity_sen_goode(salinity_ppm, temp_c)` | Convenience wrapper returning Rw = 1/σ_w [Ω·m] |
+| `brine_resistivity(salinity_ppm, temp_c)` | Legacy Arps/Hilchie empirical approximation (kept for back-compat) |
+
+### Archie model (clean formation)
+
+`archie(phi, Sw, Rw, *, m=2.0, n=2.0, a=1.0) → ArchieResult`
+
+Implements Archie's first and second laws: F = a/φᵐ, Ro = F·Rw, Rt = Ro/Swⁿ.
+Returns `ArchieResult` with fields `F`, `Ro`, `Rt`, `RI`, `Sw`, `Rw`.
+
+`solve_Sw_archie(Rt, phi, Rw, *, m, n, a) → float` — closed-form inversion for Sw.
+
+### Simandoux model (shaly sand)
+
+`simandoux(phi, Sw, Rw, Vsh, Rsh, *, m=2.0, n=2.0, a=1.0) → SimandouxResult`
+
+Adds a parallel clay conduction path to Archie.  Reliable for Vsh < 0.5.
+Returns `SimandouxResult` with fields `F`, `Ro`, `Rt`, `RI`, `Sw`, `Vsh`, `Rw`.
+
+`solve_Sw_simandoux(Rt, phi, Rw, Vsh, Rsh, *, m, n, a, tol, maxiter) → float` — Newton-Raphson inversion.
+
+### Dual-porosity / fractured model
+
+`dual_porosity(phi_matrix, Sw_matrix, Rw, phi_frac, *, Sw_frac=1.0, m_matrix=2.0, n_matrix=2.0, m_frac=1.3, n_frac=1.5, a_matrix=1.0, a_frac=1.0) → DualPorosityResult`
+
+Warren-Root parallel resistivity network: matrix and fracture networks each
+follow Archie's law with independent exponents; combined in electrical parallel.
+Returns `DualPorosityResult` with per-system and combined Rt, Ro, RI, F fields.
+
+### RGPZ permeability model
+
+`rgpz(phi, d_geom_um, *, m=2.0, a_pack=8/3) → RGPZResult`
+
+Derives permeability from porosity, cementation exponent, and geometric-mean
+grain diameter following Glover et al. (2006): k = d̄²·φ^(3m) / (4·a·m²).
+Returns `RGPZResult` with `k_m2`, `k_mD`, `F`, `S`, `tortuosity`.
+
+`rgpz_from_formation_factor(F, phi, d_geom_um, *, a_pack) → RGPZResult` — derives m from a measured F then calls `rgpz`.
+
+`kozeny_carman(phi, d_geom_um, *, tau=2.5) → float` — Kozeny-Carman permeability [mD] for comparison.
+
+### Hashin-Shtrikman bounds
+
+`hashin_shtrikman_two_phase(sigma_1, sigma_2, f1) → HSTwoPhaseResult`
+
+Exact HS± conductivity bounds, HS geometric-mean mixing, Voigt, and Reuss for
+a two-component composite. Returns both σ and R (= 1/σ) for all bounds.
+
+`hashin_shtrikman_n_phase(sigmas, fractions) → HSNPhaseResult`
+
+General N-phase HS bounds.  `sigmas` and `fractions` are equal-length sequences;
+fractions must sum to 1.
+
+```python
+from util import (
+    brine_resistivity_sen_goode, archie, simandoux,
+    dual_porosity, rgpz, hashin_shtrikman_two_phase,
+)
+
+Rw = brine_resistivity_sen_goode(30_000, 60)   # 30 000 ppm NaCl, 60 °C
+r  = archie(phi=0.20, Sw=0.70, Rw=Rw)
+print(f"Rt = {r.Rt:.2f} Ω·m")
+
+k  = rgpz(phi=0.20, d_geom_um=150.0, m=2.0)
+print(f"k  = {k.k_mD:.3f} mD")
+```
+
+**References** — Archie (1942); Simandoux (1963); Warren & Root (1963);
+Glover et al. (2006); Sen & Goode (1992); Hashin & Shtrikman (1962).
+
+---
+
 Author: Volker Rath (DIAS)
 Modified: 2026-03-25 — added ft_convention.py section; Claude Sonnet 4.6 (Anthropic)  
 Modified: 2026-03-26 — added unpack_compressed(), pack_compressed(), run_queue() sections; Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-04-02 — added petrophysical models section (merged from resistivity_models.py); Claude Sonnet 4.6 (Anthropic)
