@@ -60,6 +60,12 @@ Provenance:
     2026-04-01  Claude  Moved MOD_REF_BASE inside PERTURB_MOD block; added
                 MOD_REF = MOD_REF_BASE = None in else-branch to prevent
                 NameError when PERTURB_MOD = False.
+    2026-04-02  Claude  Added MOD_XLIM / MOD_YLIM / MOD_ZLIM to visualization
+                config; wired into plot_model_ensemble call.
+    2026-04-03  Claude  Added DAT_ALPHA_ORIG / DAT_ALPHA_PERT to data-plot
+                config; added MOD_MESH_LINES / MOD_MESH_LW / MOD_MESH_COLOR
+                to model-plot config; wired all into their respective
+                plot_data_ensemble / plot_model_ensemble calls.
 """
 
 import os
@@ -140,8 +146,8 @@ if PERTURB_MOD:
     MOD_REF_BASE = os.path.basename(MOD_REF)   # filename only — used inside ensemble dirs
     MOD_METHOD = "add"
     # if ModCov is not None, this needs to be normal
-    MOD_PDF = ["normal", 0., 0.3]
-    # ["exp", L], ["gauss", L], ["matern"], L, MatPars], ["femtic"], None
+    MOD_PDF = ["normal", 0., 0.5]
+    # ["exp", L], ["gauss", L], ["matern", L, MatPars], ["femtic"], None
     R_FILE = r"/home/vrath/Py4MTX/py4mt/data/rto/ubinas/R_coo"
 
     # Sampling algorithm: "low rank" (randomized SVD, recommended) or "full rank" (CG).
@@ -177,12 +183,12 @@ Set up mode of data perturbations.
 PERTURB_DAT = True
 if PERTURB_DAT:
     DAT_METHOD = "add"
-    DAT_PDF = ["normal", 0., 1.0]
+    DAT_PDF = ["normal", 0., 1.]
 
 RESET_ERRORS = True
 if RESET_ERRORS:
     ERRORS = [
-        [0.15, .05, .05, 0.15]*2,        # Impedance
+        [0.15, .05, .05, 0.15]*2,         # Impedance
         [0.03, 0.03]*2,                   # VTF
         [.5, .2, .2, .5],                 # PT
     ]
@@ -216,6 +222,8 @@ DAT_COMPS = "xx,xy,yx,yy"
 DAT_SHOW_ERRORS = False     # raw template errors are noisy at long periods;
                             # use show_errors_orig / show_errors_pert for
                             # independent control in plot_data_ensemble
+DAT_ALPHA_ORIG = 1.0        # opacity for original curves (1 = fully opaque)
+DAT_ALPHA_PERT = 0.6        # opacity for perturbed curves (< 1 lets original show through)
 
 # --- model plot ---
 MOD_MESH = TEMPLATES + "mesh.dat"
@@ -227,8 +235,20 @@ MOD_MODE = "tri"        # "tri" | "scatter" | "grid"
 MOD_LOG10 = True
 MOD_CMAP = "jet_r"
 MOD_CLIM = None         # (vmin, vmax) in log10(Ohm.m); None = auto from original
+# Axis limits for map and curtain slices.
+# Map slices:    MOD_XLIM = easting range (m),  MOD_YLIM = northing range (m).
+# Curtain slices: MOD_YLIM = along-profile distance range (m),
+#                 MOD_ZLIM = depth range (m, negative-down, e.g. (-5000, 0)).
+# Set any to None for Matplotlib auto-scaling.
+# Individual slice dicts may carry 'xlim'/'ylim'/'zlim' keys to override per-slice.
+MOD_XLIM = None         # (xmin, xmax) in metres; None = auto
+MOD_YLIM = None         # (ymin, ymax) in metres; None = auto
+MOD_ZLIM = None         # (zmin, zmax) in metres; None = auto
+MOD_MESH_LINES = False  # overlay triangulation edges on filled patches
+MOD_MESH_LW = 0.3       # mesh edge line width (points)
+MOD_MESH_COLOR = "k"    # mesh edge colour
 MOD_SLICES = [
-    {"type": "map",     "z0": -500,  "dz": 50},
+    {"type": "map",     "z0":  5000,  "dz": 50},
     {"type": "map",     "z0": -2000, "dz": 50},
     {"type": "curtain",
      "polyline": np.array([[0., 0.], [10000., 0.]]),
@@ -299,6 +319,8 @@ if PLOT_DATA:
         show_errors_orig=False,     # template errors are raw; skip envelopes
         show_errors_pert=True,      # show reset relative-error bands on perturbed
         n_sites=VIZ_N_SITES,
+        alpha_orig=DAT_ALPHA_ORIG,
+        alpha_pert=DAT_ALPHA_PERT,
         out=True,
     )
     fig_dat.savefig(ENSEMBLE_DIR + "rto_data_ensemble.pdf", bbox_inches="tight")
@@ -367,6 +389,12 @@ if PLOT_MODEL:
         log10=MOD_LOG10,
         cmap=MOD_CMAP,
         clim=MOD_CLIM,
+        xlim=MOD_XLIM,
+        ylim=MOD_YLIM,
+        zlim=MOD_ZLIM,
+        mesh_lines=MOD_MESH_LINES,
+        mesh_lw=MOD_MESH_LW,
+        mesh_color=MOD_MESH_COLOR,
         out=True,
     )
     fig_mod.savefig(ENSEMBLE_DIR + "rto_model_ensemble.pdf", bbox_inches="tight")

@@ -26,8 +26,6 @@ Modified: 2026-03-26 — added unpack_compressed(), pack_compressed(), run_queue
 Modified: 2026-04-02 — merged resistivity_models.py (petrophysical models); Claude Sonnet 4.6 (Anthropic)
 """
 
-from __future__ import annotations
-
 import os
 import sys
 import ast
@@ -43,7 +41,6 @@ import tarfile
 import zipfile
 import h5py
 import json
-import re
 
 import numpy as np
 
@@ -53,7 +50,7 @@ from scipy.fftpack import dct, idct
 
 from dataclasses import dataclass
 from types import ModuleType, SimpleNamespace
-from typing import List, Any, Dict, Optional, Iterable
+from typing import List, Any, Dict, Optional
 from pathlib import Path
 
 
@@ -413,110 +410,6 @@ def get_percentile(nsig=1, verbose=True):
         print('Coverage', round(coverage), 'percentiles=', lower, upper)
     return lower, upper, coverage
 
-
-def delete_all_but_selected_iters(
-    directory: str | Path,
-    pattern: str = r"_iter(\d+)",
-    protected_tokens: Iterable[str] = ("obs", "ref", "mesh", "iter0", "control"),
-    protected_suffixes: Iterable[str] = (".log", ".sh"),
-    keep_n: int = 1,
-    keep_lowest: bool = False,
-    recursive: bool = False,
-    dry_run: bool = True,
-) -> None:
-    """
-    Delete files whose iteration number is not among selected iteration values.
-
-    Matching is case-insensitive for:
-    - iteration pattern
-    - protected tokens
-    - file suffixes
-
-    Parameters
-    ----------
-    protected_suffixes : iterable of str
-        File extensions (e.g. ".log", ".txt") that should never be deleted.
-
-    Author: Volker Rath (DIAS)
-    Created with the help of ChatGPT (GPT-5.3) on 2026-04-07
-    """
-
-    if keep_n < 1:
-        raise ValueError("keep_n must be >= 1")
-
-    directory = Path(directory)
-    regex = re.compile(pattern, re.IGNORECASE)
-
-    protected_tokens = tuple(t.lower() for t in protected_tokens)
-    protected_suffixes = tuple(s.lower() for s in protected_suffixes)
-
-    files = list(directory.rglob("*")) if recursive else list(directory.glob("*"))
-    files = [f for f in files if f.is_file()]
-
-    matched: list[tuple[Path, int]] = []
-    protected: list[Path] = []
-
-    for f in files:
-        name_l = f.name.lower()
-        suffix_l = f.suffix.lower()
-
-        # protect by suffix
-        if suffix_l in protected_suffixes:
-            protected.append(f)
-            continue
-
-        # protect by token
-        if any(token in name_l for token in protected_tokens):
-            protected.append(f)
-            continue
-
-        m = regex.search(f.name)
-        if m:
-            matched.append((f, int(m.group(1))))
-
-    if not matched:
-        print("No matching files found.")
-        return
-
-    unique_iters = sorted({it for _, it in matched})
-    kept_iters = set(sorted(unique_iters, reverse=True)[:keep_n])
-
-    if keep_lowest:
-        kept_iters.add(unique_iters[0])
-
-    to_keep = [f for f, it in matched if it in kept_iters]
-    to_delete = [f for f, it in matched if it not in kept_iters]
-
-    print(f"Directory         : {directory}")
-    print(f"Pattern           : {pattern} (ignore case)")
-    print(f"Keep_n            : {keep_n}")
-    print(f"Keep lowest       : {keep_lowest}")
-    print(f"Protected suffixes: {protected_suffixes}")
-    print(f"Kept iterations   : {sorted(kept_iters)}")
-
-    print("\nProtected files:")
-    for f in protected:
-        print(f"  KEEP    {f}")
-
-    print("\nFiles kept:")
-    for f in to_keep:
-        print(f"  KEEP    {f}")
-
-    print("\nFiles to delete:")
-    for f in to_delete:
-        print(f"  DELETE  {f}")
-
-    if not dry_run:
-        ndeleted = 0
-        for f in to_delete:
-            try:
-                f.unlink()
-                ndeleted += 1
-            except Exception as e:
-                print(f"  FAILED  {f} : {e}")
-        print(f"\nDeleted {ndeleted} files.")
-    else:
-        print("\nDry run only. No files were deleted.")
 
 # ---------------------------------------------------------------------------
 # Coordinate projections (pyproj)

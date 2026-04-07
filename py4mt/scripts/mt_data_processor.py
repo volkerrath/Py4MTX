@@ -56,7 +56,7 @@ print(titstrng + "\n\n")
 WORK_DIR = PY4MTX_ROOT + "py4mt/data/edi/"
 # WORK_DIR = "/home/vrath/MT_Data/waldim/edi_synth_iso/"
 if not os.path.isdir(WORK_DIR):
-   sys.exit(" File: %s does not exist, but will be created" % WORK_DIR)
+   sys.exit(" File: %s does not exist! EXit." % WORK_DIR)
 
 
 DATA_DIR_IN = WORK_DIR + "/orig/"
