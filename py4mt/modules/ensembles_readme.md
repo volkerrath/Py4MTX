@@ -1,24 +1,26 @@
 # README\_ensembles.md
 
-Module `ensembles.py` — high-level ensemble utilities for FEMTIC workflows.
+Module `ensembles.py` — roughness/precision matrix tools and ensemble generation for FEMTIC workflows.
 
 ---
 
 ## Overview
 
+`ensembles.py` is the **single source of truth** for all matrix, roughness, and sampling utilities shared across the FEMTIC Python ecosystem. `femtic.py` imports these functions from here rather than duplicating them.
+
 This module provides:
 
-- **File-system helpers** for creating per-member ensemble directories and
-  copying template FEMTIC input files.
-- **Data and model ensemble generators** that perturb `observe.dat` and
-  `resistivity_block_iterX.dat` files for RTO and related algorithms.
-- **Roughness / precision matrix I/O** — read FEMTIC `roughening_matrix.out`
-  and build sparse `R` or `Q = R^T R`.
-- **Prior covariance proxy** (`make_prior_cov`) via approximate sparse
-  inversion of the roughness matrix.
-- **Gaussian sampling** from `N(0, Q^{-1})` where `Q = R^T R + λ I`, using
-  iterative (CG, BiCGSTAB) or direct (Cholesky / LU) solvers with optional
-  preconditioning.
+- **Matrix / roughness tools** — read `roughening_matrix.out`, build sparse `R`,
+  construct and diagnose prior covariance proxies, sparsify dense matrices.
+- **Prior covariance** (`make_prior_cov`) via approximate sparse inversion.
+- **Precision solvers** — build callable `solve_Q(b)` for `Q = R^T R + λI`
+  via CG, BiCGSTAB, Cholesky, or ILU.
+- **Gaussian sampling** from `N(0, Q^{-1})` — full-rank iterative and
+  low-rank randomized SVD paths.
+- **File-system helpers** — create per-member ensemble directories, copy
+  template FEMTIC input files.
+- **Data and model ensemble generators** — perturb `observe.dat` and
+  `resistivity_block_iterX.dat` for RTO and related algorithms.
 - **EOF / PCA analysis** (`compute_eofs`, `eof_reconstruct`, `eof_sample`,
   `fit_eof_model`, `sample_physical_ensemble`) for ensemble dimension reduction.
 - **Weighted Karhunen–Loève decomposition** on unstructured FEMTIC meshes
@@ -72,6 +74,8 @@ Convenience helper: `pick_lam_from_rtr_diag(R, alpha=..., statistic="median", mi
 | `get_roughness()`     | Parse `roughening_matrix.out` → sparse `R`.                |
 | `make_prior_cov()`    | Approximate `M ≈ (R + εI)^{-1} (R + εI)^{-T}` proxy.     |
 | `matrix_reduce()`     | Sparsify a dense or sparse matrix by dropping small entries. |
+| `check_sparse_matrix()` | Print shape, nnz, symmetry and value-range diagnostics.  |
+| `save_spilu()` / `load_spilu()` | Persist / restore ILU decomposition to/from NPZ. |
 
 ### Precision solvers and sampling
 
@@ -232,7 +236,13 @@ If you see `RuntimeError: Iterative solver did not converge` (full-rank mode):
 
 ## Version / provenance
 
-Updated: 2026-04-02 (code); 2026-04-02 (cleanup)
+Updated: 2026-04-11 (consolidation); 2026-04-02 (cleanup)
+
+### Changelog (2026-04-11)
+- `check_sparse_matrix` moved here from `femtic.py` — all matrix/roughness
+  diagnostics are now in a single place.
+- `femtic.py` Section 2 now imports these functions from `ensembles` rather
+  than maintaining duplicate definitions.
 
 ### Changelog (2026-04-02)
 - Fixed `FileNotFoundError` in `generate_model_ensemble`: `fem.insert_model`

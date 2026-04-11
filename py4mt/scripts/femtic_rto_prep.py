@@ -219,7 +219,7 @@ VIZ_N_SITES = 10
 # --- data plot ---
 DAT_WHAT = "rho"        # "rho" | "phase" | "tipper" | "pt"
 DAT_COMPS = "xx,xy,yx,yy"
-DAT_SHOW_ERRORS = False     # raw template errors are noisy at long periods;
+DAT_SHOW_ERRORS = True     # raw template errors are noisy at long periods;
                             # use show_errors_orig / show_errors_pert for
                             # independent control in plot_data_ensemble
 DAT_ALPHA_ORIG = 1.0        # opacity for original curves (1 = fully opaque)
@@ -316,7 +316,7 @@ if PLOT_DATA:
         comps=DAT_COMPS,
         what=DAT_WHAT,
         show_errors=False,          # shorthand off; use per-curve flags below
-        show_errors_orig=False,     # template errors are raw; skip envelopes
+        show_errors_orig=True,      # template errors are raw; skip envelopes
         show_errors_pert=True,      # show reset relative-error bands on perturbed
         n_sites=VIZ_N_SITES,
         alpha_orig=DAT_ALPHA_ORIG,
