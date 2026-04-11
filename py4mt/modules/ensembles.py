@@ -33,6 +33,10 @@ Updated 2026-04-02 by Claude (Anthropic): fixed generate_model_ensemble
 write-back loop — now reads reference log10-resistivity from the backup
 template and adds the perturbation before calling insert_model (method='add'),
 so perturbed models are reference + delta_log10 rather than bare perturbations.
+Updated 2026-04-11 by Claude Sonnet 4.6 (Anthropic): moved check_sparse_matrix
+here from femtic.py (consolidation of all matrix/roughness tools into ensembles);
+femtic.py Section 2 now imports these functions from ensembles rather than
+duplicating them.
 """
 
 from __future__ import annotations
@@ -667,6 +671,61 @@ def matrix_reduce(
         )
         print("matrix_reduce: Done!\n\n")
     return M_sp
+
+
+def check_sparse_matrix(M: scipy.sparse.spmatrix, condition: bool = True) -> None:
+    """
+    Print diagnostic information about a sparse matrix.
+
+    Parameters
+    ----------
+    M : sparse matrix
+        Matrix to be tested.
+    condition : bool
+        Placeholder (not used).
+
+    Returns
+    -------
+    None
+    """
+    from scipy.sparse import issparse
+
+    if M is None:
+        sys.exit("check_sparse_matrix: No matrix given! Exit.")
+
+    if not issparse(M):
+        sys.exit("check_sparse_matrix: Matrix is not sparse! Exit.")
+
+    print("check_sparse_matrix: Type:", type(M))
+    print("check_sparse_matrix: Format:", M.format)
+    print("check_sparse_matrix: Shape:", M.shape)
+    print(
+        "check_sparse_matrix:",
+        M.nnz,
+        "nonzeros, ",
+        100 * M.nnz / M.shape[0] ** 2,
+        "%",
+    )
+
+    if M.shape[0] == M.shape[1]:
+        print("check_sparse_matrix: Matrix is square!")
+        test = M - M.T
+        print("   R-R^T max/min:", test.max(), test.min())
+        if test.max() + test.min() == 0.0:
+            print("check_sparse_matrix: Matrix is symmetric!")
+        else:
+            print("check_sparse_matrix: Matrix is not symmetric!")
+
+    maxaM = np.amax(np.abs(M))
+    minaM = np.amin(np.abs(M))
+    print("check_sparse_matrix: M max/min:", M.max(), M.min())
+    print("check_sparse_matrix: M abs max/min:", maxaM, minaM)
+
+    if np.any(np.abs(M.diagonal()) == 0):
+        print("check_sparse_matrix: M diagonal element is 0!")
+        print(np.where(np.abs(M.diagonal()) == 0))
+
+    print("check_sparse_matrix: Done!\n\n")
 
 
 def put_files(

@@ -1,12 +1,28 @@
 # README\_femtic.md
 
-Module `femtic.py` — unified FEMTIC I/O, model conversion, and ensemble utilities.
+Module `femtic.py` — FEMTIC-specific I/O, model conversion, and format utilities.
+
+---
+
+## Module boundaries
+
+| Module | Responsibility |
+|---|---|
+| **`femtic.py`** (this file) | FEMTIC file I/O, model read/write, mesh parsing, NPZ/VTK/NetCDF conversion |
+| **`ensembles.py`** | Roughness/precision matrix tools, Gaussian sampling, ensemble generation, EOF/PCE |
+
+`femtic.py` imports the shared matrix/roughness tools (`get_roughness`,
+`make_prior_cov`, `matrix_reduce`, `check_sparse_matrix`, `save_spilu`,
+`load_spilu`, and sparse pruning helpers) directly from `ensembles.py` so
+they remain available as `femtic.<name>()` for backward compatibility.
+Ensemble generation (`generate_directories`, `generate_model_ensemble`, etc.)
+and all sampling helpers live exclusively in `ensembles.py`.
 
 ---
 
 ## Overview
 
-`femtic.py` collects all FEMTIC-specific routines into a single importable module:
+`femtic.py` provides:
 
 - **Data I/O** — read and modify `observe.dat` files (impedance, VTF, phase
   tensor), including Gaussian perturbation of data for RTO ensembles.
@@ -15,9 +31,8 @@ Module `femtic.py` — unified FEMTIC I/O, model conversion, and ensemble utilit
 - **Resistivity-block model workflow** — a clean 3-step read → NPZ → modify →
   write pipeline for `resistivity_block_iterX.dat`.
 - **Mesh I/O** — parse FEMTIC `mesh.dat` tetrahedral meshes.
-- **NPZ ↔ VTK export** — convert NPZ model files to VTK / VTU for
-  visualisation in ParaView or PyVista.
-- **NPZ ↔ NetCDF export** — write NPZ models to CF-compliant NetCDF files.
+- **NPZ ↔ VTK / VTU** — convert NPZ model files for ParaView / PyVista.
+- **NPZ ↔ NetCDF / HDF5** — CF-compliant and HDF5 export/import.
 - **CLI interface** — subcommand-style command-line usage for batch conversion.
 
 ---
@@ -172,19 +187,25 @@ Optional for visualisation and export:
 
 ## Related modules and scripts
 
-| File                  | Purpose                                    |
-|-----------------------|--------------------------------------------|
-| `ensembles.py`        | Ensemble generation, sampling, EOF / PCE.  |
-| `femtic_viz.py`       | Matplotlib and PyVista visualisation.       |
-| `util.py`             | General-purpose helpers.                   |
-| `femtic_rto_rough.py` | Extract roughness matrix from FEMTIC.      |
-| `femtic_rto_prior.py` | Build prior covariance proxy.              |
-| `femtic_rto_prep.py`  | Generate RTO ensemble.                     |
+| File                  | Purpose                                                              |
+|-----------------------|----------------------------------------------------------------------|
+| **`ensembles.py`**    | Roughness/precision tools, sampling, ensemble generation, EOF / PCE. |
+| `femtic_viz.py`       | Matplotlib and PyVista visualisation.                                |
+| `util.py`             | General-purpose helpers.                                             |
+| `femtic_rto_rough.py` | Extract roughness matrix from FEMTIC.                               |
+| `femtic_rto_prior.py` | Build prior covariance proxy.                                       |
+| `femtic_rto_prep.py`  | Generate RTO ensemble.                                              |
 
 ---
 
 ## Version / provenance
 
-Updated: 2026-03-30
+Updated: 2026-04-11
+
+### Changelog (2026-04-11)
+- Section 2 (matrix/roughness tools) replaced by `from ensembles import ...`.
+  All implementations now live in `ensembles.py`; `femtic.py` re-exports them
+  for backward compatibility. `check_sparse_matrix` moved to `ensembles.py`.
+- Module docstring updated to reflect FEMTIC-specific I/O focus.
 
 Author: Volker Rath (DIAS)

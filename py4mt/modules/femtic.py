@@ -1,31 +1,33 @@
 #!/usr/bin/env python3
 """femtic.py
 
-Unified FEMTIC utilities for:
+FEMTIC-specific I/O utilities: reading and writing FEMTIC data files, model
+resistivity blocks, mesh files, and conversion to/from NPZ / VTK / NetCDF.
 
-- Generating data and model ensembles (perturbed observe.dat and resistivity
-  blocks) driven by Gaussian covariance / precision constructions.
-- Building and analysing roughness matrices and prior covariance proxies based
-  on FEMTIC's user-defined roughening_matrix files.
-- Gaussian sampling with precision matrix Q = R.T @ R (+ λI) using iterative
-  solvers and low-rank eigendecompositions.
-- Converting between FEMTIC mesh/dat formats and compact NPZ model files:
-    * mesh.dat + resistivity_block_iterX.dat → NPZ
-    * NPZ → mesh.dat + resistivity_block_iterX.dat
-    * NPZ → VTK / VTU unstructured grids (PyVista).
+This module covers:
 
-The goal is to have a single importable (and CLI-callable) module that
-collects:
+- **Data I/O** — read and modify ``observe.dat`` (MT, VTF, phase tensor),
+  including Gaussian perturbation for RTO ensembles (``modify_data``,
+  ``modify_data_fcn``).
+- **Distortion I/O** — ``read_distortion_file`` decomposes distortion files
+  into C and C′ matrices.
+- **Resistivity-block model workflow** — 3-step read → NPZ → modify → write
+  pipeline (``read_model``, ``insert_model``, ``read_model_to_npz``,
+  ``modify_model_npz``, ``write_model_from_npz``).
+- **Mesh I/O** — parse FEMTIC ``mesh.dat`` tetrahedral meshes.
+- **NPZ ↔ VTK / VTU** — convert NPZ model files for ParaView / PyVista.
+- **NPZ ↔ NetCDF / HDF5** — CF-compliant and HDF5 export/import.
+- **CLI interface** — subcommand-style command-line usage for batch conversion.
 
-- The ensemble / precision tools from femtic.py.
-- The mesh/NPZ conversion tools from femtic_femtic_to_npz.py.
-- The NPZ → VTK exporter from femtic_npz_to_vtk.py.
-- The NPZ → FEMTIC reconstructor from femtic_npz_to_mesh.py.
+Roughness / prior-covariance / matrix tools (``get_roughness``,
+``make_prior_cov``, ``matrix_reduce``, ``check_sparse_matrix``, etc.) are
+canonical in **ensembles.py** and re-exported from here for backward
+compatibility (Section 2).  Ensemble generation (``generate_directories``,
+``generate_model_ensemble``, sampling helpers) lives exclusively in
+``ensembles.py``.
 
 Command-line interface
 ----------------------
-The module provides a simple subcommand-style CLI:
-
     python femtic.py femtic-to-npz \\
         --mesh mesh.dat \\
         --rho-block resistivity_block_iter0.dat \\
@@ -45,6 +47,9 @@ All functionality is also available as regular Python functions.
 
 Author: Volker Rath (DIAS)
 Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-02 (UTC)
+Modified: 2026-04-11 by Claude Sonnet 4.6 (Anthropic) — Section 2
+    (matrix/roughness tools) now imported from ensembles.py rather than
+    duplicated; femtic.py restricted to FEMTIC-specific I/O and conversion.
 """
 from __future__ import annotations
 
@@ -1545,585 +1550,28 @@ def centroid_tetrahedron(nodes: np.ndarray) -> np.ndarray:
 
 
 # ============================================================================
-# SECTION 2: roughness / prior covariance / matrix tools (from femtic.py)
+# SECTION 2: roughness / prior covariance / matrix tools
+# Canonical implementations live in ensembles.py; imported here for
+# backward-compatible access via femtic.<name>().
 # ============================================================================
 
-
-def get_roughness(
-    filerough: str = "roughening_matrix.out",
-    regeps: Optional[float] = None,
-    spformat: str = "csc",
-    out: bool = True,
-) -> scipy.sparse.spmatrix:
-    """
-    Read FEMTIC roughening_matrix.dat and build sparse roughness matrix R.
-
-    Parameters
-    ----------
-    filerough : str
-        Path to roughening_matrix.dat file.
-    regeps : float or None
-        If not None, add regeps * I to R.
-    spformat : {"csr", "csc", "coo"}
-        Sparse format of the returned matrix.
-    out : bool
-        If True, print timings and matrix statistics.
-
-    Returns
-    -------
-    R : sparse matrix
-        Roughness matrix in chosen sparse format.
-
-    Notes
-    -----
-    The function implements the logic implied by FEMTIC's C++ code for
-    user-defined roughening matrices. It first counts blocks with zero
-    non-zeros, then builds the triplet arrays (row, col, val).
-    """
-    from scipy.sparse import csr_array, csc_array, coo_array, eye as eye_array
-
-    start = time.perf_counter()
-    if out:
-        print("get_roughness: Reading from", filerough)
-    irow: list[int] = []
-    icol: list[int] = []
-    vals: list[float] = []
-
-    with open(filerough, "r") as file:
-        content = file.readlines()
-
-    num_elem = int(content[0].split()[0])
-    if out:
-        print("get_roughness: File read:", time.perf_counter() - start, "s")
-        print("get_roughness: Number of elements:", num_elem)
-
-    iline = 0
-    zeros = 0
-    # first pass: count zero blocks
-    while iline < len(content) - 1:
-        iline += 1
-        ele = int(content[iline].split()[0])
-        nel = int(content[iline + 1].split()[0])
-        if nel == 0:
-            iline += 1
-            zeros += 1
-            if out:
-                print("passed", ele, nel, iline)
-        else:
-            iline += 2
-    if out:
-        print("Zero elements:", zeros)
-
-    # second pass: collect non-zero triplets
-    start = time.perf_counter()
-    iline = 0
-    while iline < len(content) - 1:
-        iline += 1
-        ele = int(content[iline].split()[0])
-        nel = int(content[iline + 1].split()[0])
-        if nel == 0:
-            iline += 1
-            continue
-        else:
-            irow += [ele - zeros] * nel
-            col = [int(x) - zeros for x in content[iline + 1].split()[1:]]
-            icol += col
-            val = [float(x) for x in content[iline + 2].split()]
-            vals += val
-            iline += 2
-
-    irow_arr = np.asarray(irow, dtype=int)
-    icol_arr = np.asarray(icol, dtype=int)
-    vals_arr = np.asarray(vals, dtype=float)
-
-    R = coo_array((vals_arr, (irow_arr, icol_arr)))
-    if out:
-        print(R.shape)
-        print("get_roughness: R sparse format is", R.format)
-
-    if regeps is not None:
-        R = R + regeps * eye_array(R.shape[0], format=R.format)
-        if out:
-            print(regeps, "added to diag(R)")
-
-    if out:
-        print("get_roughness: R generated:", time.perf_counter() - start, "s")
-        print("get_roughness: R sparse format is", R.format)
-        print(R.shape, R.nnz)
-
-    if "csc" in spformat.lower():
-        R = csc_array((vals_arr, (irow_arr, icol_arr)))
-    elif "csr" in spformat.lower():
-        R = csr_array((vals_arr, (irow_arr, icol_arr)))
-    else:
-        R = coo_array((vals_arr, (irow_arr, icol_arr)))
-
-    if out:
-        print("get_roughness: Output sparse format:", spformat)
-        print("get_roughness: R sparse format is", R.format)
-        print(R.shape, R.nnz)
-        print(R.nnz, "nonzeros, ", 100 * R.nnz / R.shape[0] ** 2, "%")
-        print("get_roughness: Done!\n\n")
-
-    return R
-
-
-def make_prior_cov(
-    rough: scipy.sparse.spmatrix,
-    regeps: float = 1.0e-5,
-    spformat: str = "csr",
-    spthresh: float = 1.0e-4,
-    spfill: float = 10.0,
-    spsolver: Optional[str] = "ilu",
-    spmeth: str = "basic,area",
-    outmatrix: str = "invRTR",
-    nthreads: int = 16,
-    out: bool = True,
-) -> scipy.sparse.spmatrix | np.ndarray:
-    """
-    Generate a prior covariance proxy M from a roughness matrix R.
-
-    Strategy
-    --------
-    1. Stabilise by adding a small diagonal (regeps).
-    2. Invert R (approximately) using either:
-       - sparse LU ("slu"), or
-       - incomplete LU ("ilu").
-    3. Optionally sparsify the inverse via :func:`matrix_reduce`.
-    4. Build
-
-           M = invR @ invR.T        if outmatrix contains "rtr"
-           M = invR                 otherwise
-
-    Parameters
-    ----------
-    rough : sparse matrix
-        Roughness matrix R.
-    regeps : float
-        Small diagonal added to R for stability.
-    spformat : {"csr", "csc", "coo"}
-        Sparse format used in some steps.
-    spthresh : float
-        Drop tolerance for ILU and for matrix_reduce.
-    spfill : float
-        Fill-factor for ILU.
-    spsolver : {"slu", "ilu"}
-        Choice of sparse direct solve / factorization.
-    spmeth : str
-        Drop-rule string for ILU; currently not used explicitly.
-    outmatrix : {"invR", "invRTR", "invRTR_deco"}
-        Output matrix type.
-    nthreads : int
-        Thread limit for underlying BLAS/LAPACK where supported.
-    out : bool
-        If True, print info.
-
-    Returns
-    -------
-    M : sparse or dense array
-        Prior covariance proxy.
-    """
-    from scipy.sparse import (
-        csr_array,
-        csc_array,
-        coo_array,
-        eye as eye_array,
-        issparse,
+try:
+    from ensembles import (  # type: ignore
+        get_roughness,
+        make_prior_cov,
+        prune_inplace,
+        prune_rebuild,
+        dense_to_csr,
+        save_spilu,
+        load_spilu,
+        matrix_reduce,
+        check_sparse_matrix,
     )
-    from threadpoolctl import threadpool_limits
-
-    if rough is None:
-        sys.exit("make_prior_cov: No roughness matrix given! Exit.")
-
-    if not issparse(rough):
-        sys.exit("make_prior_cov: Roughness matrix is not sparse! Exit.")
-
-    start = time.perf_counter()
-
-    if out:
-        print("make_prior_cov: Shape of input roughness is", rough.shape)
-        print("make_prior_cov: Format of input roughness is", rough.format)
-
-    if regeps is not None:
-        rough = rough + regeps * eye_array(rough.shape[0], format=spformat.lower())
-        if out:
-            print(regeps, "added to diag(R)")
-
-    if spsolver is None:
-        sys.exit("make_prior_cov: spsolver must be 'slu' or 'ilu'.")
-
-    if "slu" in spsolver.lower():
-        from scipy.sparse.linalg import spsolve
-
-        R = csc_array(rough)
-        RHS = eye_array(R.shape[0], format=R.format)
-        with threadpool_limits(limits=nthreads):
-            invR = spsolve(R, RHS)
-
-    elif "ilu" in spsolver.lower():
-        R = csc_array(rough)
-        RHS = eye_array(R.shape[0], format=R.format)
-        beg = time.perf_counter()
-        with threadpool_limits(limits=nthreads):
-            iluR = spilu(R, drop_tol=spthresh, fill_factor=spfill)
-            if out:
-                print("spilu decomposed:", time.perf_counter() - beg, "s")
-            beg = time.perf_counter()
-            invR = iluR.solve(RHS.toarray())
-            if out:
-                print("spilu solved:", time.perf_counter() - beg, "s")
-    else:
-        sys.exit(f"make_prior_cov: solver {spsolver} not available! Exit")
-
-    if out:
-        print("make_prior_cov: invR generated:", time.perf_counter() - start, "s")
-        print("make_prior_cov: invR type", type(invR))
-
-    if spthresh is not None:
-        invR = matrix_reduce(
-            M=invR,
-            howto="relative",
-            spthresh=spthresh,
-            spformat=spformat,
-            out=out,
-        )
-
-    M = invR
-    if "rtr" in outmatrix.lower():
-        M = invR @ invR.T
-
-    if out:
-        print("make_prior_cov: M generated:", time.perf_counter() - start, "s")
-        print("make_prior_cov: M is", outmatrix)
-        print("make_prior_cov: M type", type(M))
-        print("make_prior_cov:  Done!\n\n")
-    return M
-
-
-def prune_inplace(M: scipy.sparse.spmatrix, threshold: float) -> scipy.sparse.spmatrix:
-    """
-    In-place pruning of small entries in a CSR sparse matrix.
-
-    Parameters
-    ----------
-    M : sparse matrix
-        Sparse matrix to prune.
-    threshold : float
-        Entries with |M_ij| < threshold are set to zero.
-
-    Returns
-    -------
-    M : sparse matrix
-        The pruned matrix (same object, modified in-place).
-    """
-    from scipy.sparse import csr_array, issparse
-
-    if issparse(M):
-        if M.format != "csr":
-            M = M.tocsr()
-    else:
-        M = csr_array(M)
-
-    mask = np.abs(M.data) < threshold
-    if mask.any():
-        M.data[mask] = 0.0
-        M.eliminate_zeros()
-    return M
-
-
-def prune_rebuild(M: scipy.sparse.spmatrix, threshold: float) -> scipy.sparse.spmatrix:
-    """
-    Rebuild a CSR sparse matrix from COO representation after pruning.
-
-    Parameters
-    ----------
-    M : sparse matrix
-        Matrix to prune.
-    threshold : float
-        Entries with |M_ij| < threshold are dropped.
-
-    Returns
-    -------
-    M_csr : sparse matrix
-        New CSR matrix with pruned entries.
-    """
-    from scipy.sparse import csr_array
-
-    coo = M.tocoo()
-    absdata = np.abs(coo.data)
-    keep = absdata >= threshold
-    if not keep.all():
-        return csr_array(
-            (coo.data[keep], (coo.row[keep], coo.col[keep])),
-            shape=M.shape,
-        )
-    else:
-        return M.tocsr()
-
-
-def dense_to_csr(
-    M: np.ndarray,
-    threshold: float = 0.0,
-    chunk_rows: int = 1000,
-    dtype: Optional[np.dtype] = None,
-) -> scipy.sparse.spmatrix:
-    """
-    Convert a dense matrix to CSR, dropping entries below a threshold.
-
-    Parameters
-    ----------
-    M : ndarray
-        Dense matrix.
-    threshold : float
-        Entries with |M_ij| <= threshold are dropped.
-    chunk_rows : int
-        Process rows in chunks of this size to reduce memory peaks.
-    dtype : numpy dtype, optional
-        Output dtype; if None, use M.dtype.
-
-    Returns
-    -------
-    M_csr : sparse matrix
-        CSR matrix.
-    """
-    from scipy.sparse import csr_array
-
-    rows_list: list[np.ndarray] = []
-    cols_list: list[np.ndarray] = []
-    data_list: list[np.ndarray] = []
-    nrows = M.shape[0]
-    for r0 in range(0, nrows, chunk_rows):
-        r1 = min(nrows, r0 + chunk_rows)
-        block = M[r0:r1]
-        mask = np.abs(block) > threshold
-        rr, cc = np.nonzero(mask)
-        rows_list.append((rr + r0).astype(np.int64))
-        cols_list.append(cc.astype(np.int64))
-        data_list.append(
-            block[rr, cc].astype(dtype if dtype is not None else M.dtype)
-        )
-
-    if not rows_list:
-        return csr_array(M.shape, dtype=dtype if dtype is not None else M.dtype)
-
-    rows = np.concatenate(rows_list)
-    cols = np.concatenate(cols_list)
-    data = np.concatenate(data_list)
-    return csr_array((data, (rows, cols)), shape=M.shape)
-
-
-def save_spilu(filename: str = "ILU.npz", ILU=None) -> None:
-    """
-    Save a SciPy ILU decomposition object to a single .npz file.
-
-    Parameters
-    ----------
-    filename : str
-        Output npz file.
-    ILU : object
-        ILU object returned by scipy.sparse.linalg.spilu.
-
-    Notes
-    -----
-    To restore, use :func:`load_spilu`.
-    """
-    if ILU is None:
-        sys.exit("save_spilu: No ILU object given! Exit.")
-
-    np.savez(
-        filename,
-        L_data=ILU.L.data,
-        L_indices=ILU.L.indices,
-        L_indptr=ILU.L.indptr,
-        L_shape=ILU.L.shape,
-        U_data=ILU.U.data,
-        U_indices=ILU.U.indices,
-        U_indptr=ILU.U.indptr,
-        U_shape=ILU.U.shape,
-        perm_r=ILU.perm_r,
-        perm_c=ILU.perm_c,
+except ImportError:  # pragma: no cover
+    raise ImportError(
+        "femtic.py requires ensembles.py to be importable for matrix/roughness tools. "
+        "Ensure ensembles.py is on sys.path."
     )
-
-
-def load_spilu(filename: str = "ILU.npz"):
-    """
-    Load ILU decomposition components from npz file.
-
-    Parameters
-    ----------
-    filename : str
-        npz file created by :func:`save_spilu`.
-
-    Returns
-    -------
-    L, U, perm_r, perm_c
-        Components of the ILU decomposition.
-    """
-    from scipy.sparse import csc_array
-
-    data = np.load(filename)
-    L = csc_array(
-        (data["L_data"], data["L_indices"], data["L_indptr"]),
-        shape=tuple(data["L_shape"]),
-    )
-    U = csc_array(
-        (data["U_data"], data["U_indices"], data["U_indptr"]),
-        shape=tuple(data["U_shape"]),
-    )
-    perm_r = data["perm_r"]
-    perm_c = data["perm_c"]
-    return L, U, perm_r, perm_c
-
-
-def matrix_reduce(
-    M: np.ndarray | scipy.sparse.spmatrix,
-    howto: str = "relative",
-    spformat: str = "csr",
-    spthresh: float = 1.0e-6,
-    prune: str = "rebuild",
-    out: bool = True,
-) -> scipy.sparse.spmatrix:
-    """
-    Reduce a (possibly dense) matrix to sparse form by dropping small entries.
-
-    Parameters
-    ----------
-    M : array_like or sparse matrix
-        Matrix to sparsify.
-    howto : {"relative", "absolute"}
-        If "relative", use spthresh * max(|M|) as threshold;
-        if "absolute", use spthresh directly.
-    spformat : {"csr", "csc", "coo"}
-        Output sparse format.
-    spthresh : float
-        Threshold parameter.
-    prune : {"inplace", "rebuild"}
-        Strategy for pruning; currently "rebuild" is more robust.
-    out : bool
-        If True, print info.
-
-    Returns
-    -------
-    M_sp : sparse matrix
-        Sparsified matrix.
-    """
-    from scipy.sparse import csr_array, csc_array, coo_array, issparse
-
-    if M is None:
-        sys.exit("matrix_reduce: no matrix given! Exit.")
-
-    if issparse(M):
-        M_sp = M.tocsr()
-        if out:
-            print("matrix_reduce: Matrix is sparse.")
-            print("matrix_reduce: Type:", type(M_sp))
-            print("matrix_reduce: Format:", M_sp.format)
-            print("matrix_reduce: Shape:", M_sp.shape)
-    else:
-        M_sp = csr_array(M)
-        if out:
-            print("matrix_reduce: Matrix is dense.")
-            print("matrix_reduce: Type:", type(M_sp))
-            print("matrix_reduce: Shape:", M_sp.shape)
-
-    n = M_sp.shape[0]
-    if out:
-        print(
-            "matrix_reduce:",
-            M_sp.nnz,
-            "nonzeros, ",
-            100 * M_sp.nnz / n ** 2,
-            "%",
-        )
-
-    if "abs" in howto.lower():
-        threshold = spthresh
-    else:
-        maxM = np.max(np.abs(M_sp.data))
-        threshold = spthresh * maxM
-
-    if issparse(M_sp):
-        if "in" in prune:
-            M_sp = prune_inplace(M_sp, threshold)
-        else:
-            M_sp = prune_rebuild(M_sp, threshold)
-    else:
-        M_sp = dense_to_csr(M_sp, threshold=threshold, chunk_rows=10000)
-
-    if "csr" in spformat.lower():
-        M_sp = M_sp.tocsr()
-    elif "csc" in spformat.lower():
-        M_sp = M_sp.tocsc()
-    else:
-        M_sp = M_sp.tocoo()
-
-    if out:
-        print("matrix_reduce: New Format:", M_sp.format)
-        print("matrix_reduce: Shape:", M_sp.shape)
-        print(
-            "matrix_reduce:",
-            M_sp.nnz,
-            "nonzeros, ",
-            100 * M_sp.nnz / n ** 2,
-            "%",
-        )
-        print("matrix_reduce: Done!\n\n")
-    return M_sp
-
-
-def check_sparse_matrix(M: scipy.sparse.spmatrix, condition: bool = True) -> None:
-    """
-    Print diagnostic information about a sparse matrix.
-
-    Parameters
-    ----------
-    M : sparse matrix
-        Matrix to be tested.
-    condition : bool
-        Placeholder (not used).
-
-    Returns
-    -------
-    None
-    """
-    from scipy.sparse import issparse
-
-    if M is None:
-        sys.exit("check_sparse_matrix: No matrix given! Exit.")
-
-    if not issparse(M):
-        sys.exit("check_sparse_matrix: Matrix is not sparse! Exit.")
-
-    print("check_sparse_matrix: Type:", type(M))
-    print("check_sparse_matrix: Format:", M.format)
-    print("check_sparse_matrix: Shape:", M.shape)
-    print(
-        "check_sparse_matrix:",
-        M.nnz,
-        "nonzeros, ",
-        100 * M.nnz / M.shape[0] ** 2,
-        "%",
-    )
-
-    if M.shape[0] == M.shape[1]:
-        print("check_sparse_matrix: Matrix is square!")
-        test = M - M.T
-        print("   R-R^T max/min:", test.max(), test.min())
-        if test.max() + test.min() == 0.0:
-            print("check_sparse_matrix: Matrix is symmetric!")
-        else:
-            print("check_sparse_matrix: Matrix is not symmetric!")
-
-    maxaM = np.amax(np.abs(M))
-    minaM = np.amin(np.abs(M))
-    print("check_sparse_matrix: M max/min:", M.max(), M.min())
-    print("check_sparse_matrix: M abs max/min:", maxaM, minaM)
-
-    if np.any(np.abs(M.diagonal()) == 0):
-        print("check_sparse_matrix: M diagonal element is 0!")
-        print(np.where(np.abs(M.diagonal()) == 0))
-
-    print("check_sparse_matrix: Done!\n\n")
 
 
 # ============================================================================
