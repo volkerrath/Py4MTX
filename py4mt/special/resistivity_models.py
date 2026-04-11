@@ -11,8 +11,9 @@ Implements the following model families:
                                       N-phase composites; HS± and HS mixing formula
   6. Glover et al. (2000)           — modified Archie law for two conducting phases
   7. Glover (2010)                  — generalized Archie law for n conducting phases
-  8. Sinmyo & Keppler (2017)        — NaCl-H2O fluid conductivity to 600 °C / 1 GPa
-  9. Guo & Keppler (2019)           — NaCl-H2O fluid conductivity to 900 °C / 5 GPa
+  8. Sakuma & Ichiki (2016)        — NaCl-H2O fluid conductivity in crustal P-T range
+  9. Sinmyo & Keppler (2017)        — NaCl-H2O fluid conductivity to 600 °C / 1 GPa
+ 10. Guo & Keppler (2019)           — NaCl-H2O fluid conductivity to 900 °C / 5 GPa
 
 All inputs/outputs use SI-consistent units unless noted.
 Resistivity in Ω·m; permeability in m² internally, converted to mD on output;
@@ -31,6 +32,7 @@ Hilchie, D.W. (1982) Applied Open-Hole Log Interpretation, Golden, CO.
 Hashin, Z. & Shtrikman, S. (1962) J. Appl. Phys., 33(10), 3125-3131.
 Berryman, J.G. (1995) in: Rock Physics & Phase Relations (AGU Ref. Shelf 3).
 Glover, P.W.J., Hole, M.J. & Pous, J. (2000) Geophys. J. Int., 142, 516-526.
+Sakuma, H. & Ichiki, M. (2016) J. Geophys. Res. Solid Earth, 121, 577-594.
 Sinmyo, R. & Keppler, H. (2017) Contrib. Mineral. Petrol., 172, 4.
 Guo, H. & Keppler, H. (2019) J. Geophys. Res. Solid Earth, 124, 1760-1771.
 
@@ -41,8 +43,12 @@ Created with the help of ChatGPT (GPT-5 Thinking) on 2026-04-03
 from __future__ import annotations
 
 import math
+import numpy as np
 from dataclasses import dataclass
 from typing import Optional
+
+
+ArrayLike = float | int | np.ndarray
 
 
 # ---------------------------------------------------------------------------
@@ -260,6 +266,214 @@ def brine_resistivity(salinity_ppm: float, temp_c: float) -> float:
     rw_25 = 0.0123 + 3647.5 / (salinity_ppm ** 0.955)
     rw_t  = rw_25 * (25.0 + 21.5) / (temp_c + 21.5)
     return rw_t
+
+
+
+def _as_float_array(x: ArrayLike) -> np.ndarray:
+    """Convert scalar or array-like input to a NumPy float array.
+
+    Parameters
+    ----------
+    x : float, int, or numpy.ndarray
+        Scalar or array-like input value.
+
+    Returns
+    -------
+    numpy.ndarray
+        Input converted to a NumPy array with dtype float.
+    """
+    return np.asarray(x, dtype=float)
+
+
+def _scalarize_if_needed(x: np.ndarray | float) -> float | np.ndarray:
+    """Return a Python float for scalar arrays, else return the array unchanged."""
+    arr = np.asarray(x)
+    if arr.ndim == 0:
+        return float(arr)
+    return arr
+
+
+def brine_conductivity_sakuma_high(
+    temp_c: ArrayLike,
+    salinity_wt_pct: ArrayLike,
+    pressure_mpa: ArrayLike,
+) -> float | np.ndarray:
+    """NaCl-H2O brine conductivity from the high-temperature Sakuma model.
+
+    This is a direct translation of the supplied MATLAB ``sigbrine_high.m``
+    polynomial parameterization attributed there to Sakuma & Ichiki (2016).
+
+    Parameters
+    ----------
+    temp_c : float, int, or numpy.ndarray
+        Temperature in °C.
+    salinity_wt_pct : float, int, or numpy.ndarray
+        NaCl concentration in wt%.
+    pressure_mpa : float, int, or numpy.ndarray
+        Pressure in MPa.
+
+    Returns
+    -------
+    float or numpy.ndarray
+        Electrical conductivity in S/m. A float is returned for scalar input;
+        otherwise a NumPy array is returned.
+    """
+    T_c = _as_float_array(temp_c)
+    C_wt = _as_float_array(salinity_wt_pct)
+    P_mpa = _as_float_array(pressure_mpa)
+
+    g111 = -2.76823e-12
+    g112 = 2.86668e-11
+    g113 = -1.01120e-11
+
+    g121 = 6.32515e-9
+    g122 = -6.35950e-8
+    g123 = 2.14326e-8
+
+    g131 = -2.92588e-6
+    g132 = 2.69121e-5
+    g133 = -9.20740e-6
+
+    g211 = 6.52051e-9
+    g212 = -7.43514e-8
+    g213 = 2.23618e-8
+
+    g221 = -1.47966e-5
+    g222 = 1.67038e-4
+    g223 = -4.54299e-5
+
+    g231 = 6.88977e-3
+    g232 = -7.25629e-3
+    g233 = 1.89836e-2
+
+    g311 = -2.60077e-6
+    g312 = 3.64027e-5
+    g313 = -7.50611e-6
+
+    g321 = 6.12874e-3
+    g322 = -9.01143e-2
+    g323 = 1.51621e-2
+
+    g331 = -3.17282e0
+    g332 = 5.2186e1
+    g333 = -6.22277e0
+
+    C2 = C_wt * C_wt
+
+    b11 = g111 * C2 + g112 * C_wt + g113
+    b12 = g121 * C2 + g122 * C_wt + g123
+    b13 = g131 * C2 + g132 * C_wt + g133
+    b21 = g211 * C2 + g212 * C_wt + g213
+    b22 = g221 * C2 + g222 * C_wt + g223
+    b23 = g231 * C2 + g232 * C_wt + g233
+    b31 = g311 * C2 + g312 * C_wt + g313
+    b32 = g321 * C2 + g322 * C_wt + g323
+    b33 = g331 * C2 + g332 * C_wt + g333
+
+    T = 273.16 + T_c
+    T2 = T * T
+
+    a1 = b11 * T2 + b12 * T + b13
+    a2 = b21 * T2 + b22 * T + b23
+    a3 = b31 * T2 + b32 * T + b33
+
+    P2 = P_mpa * P_mpa
+
+    sigma = a1 * P2 + a2 * P_mpa + a3
+    return _scalarize_if_needed(sigma)
+
+
+def brine_conductivity_sakuma_low(
+    temp_c: ArrayLike,
+    salinity_wt_pct: ArrayLike,
+) -> float | np.ndarray:
+    """NaCl-H2O brine conductivity from the low-temperature Sakuma model.
+
+    This is a direct translation of the supplied MATLAB ``sigbrine_low.m``
+    polynomial parameterization attributed there to Sakuma & Ichiki (2016).
+
+    Parameters
+    ----------
+    temp_c : float, int, or numpy.ndarray
+        Temperature in °C.
+    salinity_wt_pct : float, int, or numpy.ndarray
+        NaCl concentration in wt%.
+
+    Returns
+    -------
+    float or numpy.ndarray
+        Electrical conductivity in S/m. A float is returned for scalar input;
+        otherwise a NumPy array is returned.
+
+    Notes
+    -----
+    The polynomial is inserted exactly as in the supplied MATLAB source.
+    For some input combinations it can return negative values; this function
+    preserves that behaviour rather than clipping or modifying the result.
+    """
+    T_c = _as_float_array(temp_c)
+    C_wt = _as_float_array(salinity_wt_pct)
+
+    f11 = -1.61994e-12
+    f12 = 4.32808e-11
+    f13 = 1.15235e-11
+    f14 = 2.52257e-10
+    f21 = 1.88235e-9
+    f22 = -5.82409e-8
+    f23 = -3.37538e-7
+    f24 = -4.53779e-7
+    f31 = -5.65158e-7
+    f32 = 2.70538e-5
+    f33 = 2.40270e-4
+    f34 = 2.97574e-5
+    f41 = 4.64690e-5
+    f42 = -6.70560e-3
+    f43 = -2.69091e-2
+    f44 = -8.37212e-2
+    f51 = 2.58834e-3
+    f52 = 6.92510e-1
+    f53 = -3.22923e0
+    f54 = 8.48091e0
+
+    C2 = C_wt * C_wt
+    C3 = C2 * C_wt
+
+    d1 = f11 * C3 + f12 * C2 + f13 * C_wt + f14
+    d2 = f21 * C3 + f22 * C2 + f23 * C_wt + f24
+    d3 = f31 * C3 + f32 * C2 + f33 * C_wt + f34
+    d4 = f41 * C3 + f42 * C2 + f43 * C_wt + f44
+    d5 = f51 * C3 + f52 * C2 + f53 * C_wt + f54
+
+    T = 273.16 + T_c
+    T2 = T * T
+    T3 = T2 * T
+    T4 = T3 * T
+
+    sigma = d1 * T4 + d2 * T3 + d3 * T2 + d4 * T + d5
+    return _scalarize_if_needed(sigma)
+
+
+def brine_resistivity_sakuma_high(
+    temp_c: ArrayLike,
+    salinity_wt_pct: ArrayLike,
+    pressure_mpa: ArrayLike,
+) -> float | np.ndarray:
+    """Return resistivity from :func:`brine_conductivity_sakuma_high`."""
+    sigma = _as_float_array(
+        brine_conductivity_sakuma_high(temp_c, salinity_wt_pct, pressure_mpa)
+    )
+    rho = 1.0 / sigma
+    return _scalarize_if_needed(rho)
+
+
+def brine_resistivity_sakuma_low(
+    temp_c: ArrayLike,
+    salinity_wt_pct: ArrayLike,
+) -> float | np.ndarray:
+    """Return resistivity from :func:`brine_conductivity_sakuma_low`."""
+    sigma = _as_float_array(brine_conductivity_sakuma_low(temp_c, salinity_wt_pct))
+    rho = 1.0 / sigma
+    return _scalarize_if_needed(rho)
 
 # ---------------------------------------------------------------------------
 # High-P/T NaCl-H2O fluid conductivity models from the geophysical literature
@@ -948,6 +1162,7 @@ def rgpz(
 
     >>> # Derive m from a resistivity + porosity measurement:
     >>> import math
+import numpy as np
     >>> F_measured = 28.5          # from Rt / Rw at Sw = 1
     >>> phi_core   = 0.18
     >>> m_fit      = -math.log(F_measured) / math.log(phi_core)
@@ -1499,9 +1714,17 @@ if __name__ == "__main__":
     print(f"  Arps/Hilchie:                            Rw = {rw_arps:.4f} Ω·m")
     print(f"  Difference: {abs(rw_sg - rw_arps)/rw_sg*100:.1f} %")
 
+    sak_hi = brine_conductivity_sakuma_high(400.0, 3.5, 1000.0)
+    sak_lo = brine_conductivity_sakuma_low(250.0, 3.5)
     rho_demo = 0.90
     sk = brine_conductivity_sinmyo_keppler(5.0, 400.0, rho_demo, pressure_gpa=0.8)
     gk = brine_conductivity_guo_keppler(5.0, 700.0, 1.15, pressure_gpa=3.0)
+
+    print("\n  -- Explicit high-P/T fluid models --")
+    print(f"  Sakuma high: sigma = {sak_hi:.6g} S/m, rho = {1.0/sak_hi:.6g} Ω·m")
+    print(f"  Sakuma low : sigma = {sak_lo:.6g} S/m, rho = {1.0/sak_lo:.6g} Ω·m")
+    print(f"  Sinmyo     : sigma = {sk.sigma:.6g} S/m, rho = {sk.resistivity:.6g} Ω·m")
+    print(f"  Guo        : sigma = {gk.sigma:.6g} S/m, rho = {gk.resistivity:.6g} Ω·m")
 
     print("\n  -- σ_w vs T  (30,000 ppm NaCl) --")
     print(f"  {'T (°C)':>8}  {'σ_w S&G (S/m)':>14}  {'Rw S&G (Ω·m)':>14}  {'Rw Arps (Ω·m)':>14}")
