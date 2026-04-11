@@ -53,6 +53,27 @@ def water_density_iapws(T_c, P_MPa):
 
 ## Main functions
 
+### Unit transform helpers
+
+- conductivity_to_resistivity(sigma_s_m)
+- resistivity_to_conductivity(rho_ohm_m)
+- s_m_to_ms_m(sigma_s_m)
+- ms_m_to_s_m(sigma_ms_m)
+- celsius_to_kelvin(temp_c)
+- kelvin_to_celsius(temp_k)
+- mpa_to_gpa(pressure_mpa)
+- gpa_to_mpa(pressure_gpa)
+- kg_m3_to_g_cm3(density_kg_m3)
+- g_cm3_to_kg_m3(density_g_cm3)
+- um_to_m(length_um)
+- m_to_um(length_m)
+- ppm_to_mass_fraction(salinity_ppm)
+- mass_fraction_to_ppm(mass_fraction)
+- wt_pct_to_mass_fraction(salinity_wt_pct)
+- mass_fraction_to_wt_pct(mass_fraction)
+- ppm_to_wt_pct(salinity_ppm)
+- wt_pct_to_ppm(salinity_wt_pct)
+
 ### Brine / fluid functions
 
 - brine_conductivity_sen_goode(salinity_ppm, temp_c)
@@ -89,17 +110,20 @@ def water_density_iapws(T_c, P_MPa):
 
 ## Units and conventions
 
-- Conductivity: S/m
+- Conductivity: S/m, with S/m ↔ mS/m helpers included
 - Resistivity: Ω·m
-- Temperature: °C
+- Temperature: °C, with °C ↔ K helpers included
 - Salinity:
-  - ppm → Sen-Goode
-  - wt% → Sakuma, Sinmyo, Guo
-- Density: g/cm³ (Sinmyo, Guo)
+  - ppm ↔ wt% ↔ mass fraction helpers included
+  - ppm used by Sen-Goode
+  - wt% used by Sakuma, Sinmyo, and Guo
+- Density:
+  - kg/m³ ↔ g/cm³ helpers included
+  - g/cm³ used by Sinmyo and Guo
 - Pressure:
   - MPa → Sakuma
   - GPa → Sinmyo, Guo
-- Grain size: µm
+- Grain size: µm, with µm ↔ m helpers included
 - Permeability: m² (internally), optionally mD
 
 ---

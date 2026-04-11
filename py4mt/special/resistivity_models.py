@@ -51,6 +51,356 @@ from typing import Optional
 ArrayLike = float | int | np.ndarray
 
 
+def _as_array(x):
+    """
+    Convert scalar or array-like input to a NumPy float array.
+
+    Parameters
+    ----------
+    x : float, int, or array-like
+        Input value(s).
+
+    Returns
+    -------
+    numpy.ndarray
+        NumPy array with dtype float.
+    """
+    return np.asarray(x, dtype=float)
+
+
+# ---------------------------------------------------------------------------
+# Unit transform helpers
+# ---------------------------------------------------------------------------
+
+def conductivity_to_resistivity(sigma_s_m):
+    """
+    Convert electrical conductivity to resistivity.
+
+    Parameters
+    ----------
+    sigma_s_m : float, int, or array-like
+        Electrical conductivity in S/m.
+
+    Returns
+    -------
+    float or numpy.ndarray
+        Electrical resistivity in Ω·m. Zero conductivity maps to infinity.
+    """
+    sigma_s_m = _as_array(sigma_s_m)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        rho_ohm_m = 1.0 / sigma_s_m
+    return float(rho_ohm_m) if rho_ohm_m.ndim == 0 else rho_ohm_m
+
+
+def resistivity_to_conductivity(rho_ohm_m):
+    """
+    Convert electrical resistivity to conductivity.
+
+    Parameters
+    ----------
+    rho_ohm_m : float, int, or array-like
+        Electrical resistivity in Ω·m.
+
+    Returns
+    -------
+    float or numpy.ndarray
+        Electrical conductivity in S/m. Infinite resistivity maps to zero.
+    """
+    rho_ohm_m = _as_array(rho_ohm_m)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        sigma_s_m = 1.0 / rho_ohm_m
+    return float(sigma_s_m) if sigma_s_m.ndim == 0 else sigma_s_m
+
+
+def s_m_to_ms_m(sigma_s_m):
+    """
+    Convert conductivity from S/m to mS/m.
+
+    Parameters
+    ----------
+    sigma_s_m : float, int, or array-like
+        Conductivity in S/m.
+
+    Returns
+    -------
+    float or numpy.ndarray
+        Conductivity in mS/m.
+    """
+    out = 1.0e3 * _as_array(sigma_s_m)
+    return float(out) if out.ndim == 0 else out
+
+
+def ms_m_to_s_m(sigma_ms_m):
+    """
+    Convert conductivity from mS/m to S/m.
+
+    Parameters
+    ----------
+    sigma_ms_m : float, int, or array-like
+        Conductivity in mS/m.
+
+    Returns
+    -------
+    float or numpy.ndarray
+        Conductivity in S/m.
+    """
+    out = 1.0e-3 * _as_array(sigma_ms_m)
+    return float(out) if out.ndim == 0 else out
+
+
+def celsius_to_kelvin(temp_c):
+    """
+    Convert temperature from °C to K.
+
+    Parameters
+    ----------
+    temp_c : float, int, or array-like
+        Temperature in °C.
+
+    Returns
+    -------
+    float or numpy.ndarray
+        Temperature in K.
+    """
+    out = _as_array(temp_c) + 273.15
+    return float(out) if out.ndim == 0 else out
+
+
+def kelvin_to_celsius(temp_k):
+    """
+    Convert temperature from K to °C.
+
+    Parameters
+    ----------
+    temp_k : float, int, or array-like
+        Temperature in K.
+
+    Returns
+    -------
+    float or numpy.ndarray
+        Temperature in °C.
+    """
+    out = _as_array(temp_k) - 273.15
+    return float(out) if out.ndim == 0 else out
+
+
+def mpa_to_gpa(pressure_mpa):
+    """
+    Convert pressure from MPa to GPa.
+
+    Parameters
+    ----------
+    pressure_mpa : float, int, or array-like
+        Pressure in MPa.
+
+    Returns
+    -------
+    float or numpy.ndarray
+        Pressure in GPa.
+    """
+    out = 1.0e-3 * _as_array(pressure_mpa)
+    return float(out) if out.ndim == 0 else out
+
+
+def gpa_to_mpa(pressure_gpa):
+    """
+    Convert pressure from GPa to MPa.
+
+    Parameters
+    ----------
+    pressure_gpa : float, int, or array-like
+        Pressure in GPa.
+
+    Returns
+    -------
+    float or numpy.ndarray
+        Pressure in MPa.
+    """
+    out = 1.0e3 * _as_array(pressure_gpa)
+    return float(out) if out.ndim == 0 else out
+
+
+def kg_m3_to_g_cm3(density_kg_m3):
+    """
+    Convert density from kg/m^3 to g/cm^3.
+
+    Parameters
+    ----------
+    density_kg_m3 : float, int, or array-like
+        Density in kg/m^3.
+
+    Returns
+    -------
+    float or numpy.ndarray
+        Density in g/cm^3.
+    """
+    out = 1.0e-3 * _as_array(density_kg_m3)
+    return float(out) if out.ndim == 0 else out
+
+
+def g_cm3_to_kg_m3(density_g_cm3):
+    """
+    Convert density from g/cm^3 to kg/m^3.
+
+    Parameters
+    ----------
+    density_g_cm3 : float, int, or array-like
+        Density in g/cm^3.
+
+    Returns
+    -------
+    float or numpy.ndarray
+        Density in kg/m^3.
+    """
+    out = 1.0e3 * _as_array(density_g_cm3)
+    return float(out) if out.ndim == 0 else out
+
+
+def um_to_m(length_um):
+    """
+    Convert length from micrometres to metres.
+
+    Parameters
+    ----------
+    length_um : float, int, or array-like
+        Length in µm.
+
+    Returns
+    -------
+    float or numpy.ndarray
+        Length in m.
+    """
+    out = 1.0e-6 * _as_array(length_um)
+    return float(out) if out.ndim == 0 else out
+
+
+def m_to_um(length_m):
+    """
+    Convert length from metres to micrometres.
+
+    Parameters
+    ----------
+    length_m : float, int, or array-like
+        Length in m.
+
+    Returns
+    -------
+    float or numpy.ndarray
+        Length in µm.
+    """
+    out = 1.0e6 * _as_array(length_m)
+    return float(out) if out.ndim == 0 else out
+
+
+def ppm_to_mass_fraction(salinity_ppm):
+    """
+    Convert salinity from ppm by mass to mass fraction.
+
+    Parameters
+    ----------
+    salinity_ppm : float, int, or array-like
+        Salinity in ppm by mass.
+
+    Returns
+    -------
+    float or numpy.ndarray
+        Dimensionless mass fraction.
+    """
+    out = 1.0e-6 * _as_array(salinity_ppm)
+    return float(out) if out.ndim == 0 else out
+
+
+def mass_fraction_to_ppm(mass_fraction):
+    """
+    Convert salinity from mass fraction to ppm by mass.
+
+    Parameters
+    ----------
+    mass_fraction : float, int, or array-like
+        Dimensionless mass fraction.
+
+    Returns
+    -------
+    float or numpy.ndarray
+        Salinity in ppm by mass.
+    """
+    out = 1.0e6 * _as_array(mass_fraction)
+    return float(out) if out.ndim == 0 else out
+
+
+def wt_pct_to_mass_fraction(salinity_wt_pct):
+    """
+    Convert salinity from wt% to mass fraction.
+
+    Parameters
+    ----------
+    salinity_wt_pct : float, int, or array-like
+        Salinity in wt%.
+
+    Returns
+    -------
+    float or numpy.ndarray
+        Dimensionless mass fraction.
+    """
+    out = 1.0e-2 * _as_array(salinity_wt_pct)
+    return float(out) if out.ndim == 0 else out
+
+
+def mass_fraction_to_wt_pct(mass_fraction):
+    """
+    Convert salinity from mass fraction to wt%.
+
+    Parameters
+    ----------
+    mass_fraction : float, int, or array-like
+        Dimensionless mass fraction.
+
+    Returns
+    -------
+    float or numpy.ndarray
+        Salinity in wt%.
+    """
+    out = 1.0e2 * _as_array(mass_fraction)
+    return float(out) if out.ndim == 0 else out
+
+
+def ppm_to_wt_pct(salinity_ppm):
+    """
+    Convert salinity from ppm by mass to wt%.
+
+    Parameters
+    ----------
+    salinity_ppm : float, int, or array-like
+        Salinity in ppm by mass.
+
+    Returns
+    -------
+    float or numpy.ndarray
+        Salinity in wt%.
+    """
+    out = 1.0e-4 * _as_array(salinity_ppm)
+    return float(out) if out.ndim == 0 else out
+
+
+def wt_pct_to_ppm(salinity_wt_pct):
+    """
+    Convert salinity from wt% to ppm by mass.
+
+    Parameters
+    ----------
+    salinity_wt_pct : float, int, or array-like
+        Salinity in wt%.
+
+    Returns
+    -------
+    float or numpy.ndarray
+        Salinity in ppm by mass.
+    """
+    out = 1.0e4 * _as_array(salinity_wt_pct)
+    return float(out) if out.ndim == 0 else out
+
+
+
 # ---------------------------------------------------------------------------
 # Brine conductivity / resistivity (salinity + temperature → σw, Rw)
 # ---------------------------------------------------------------------------
