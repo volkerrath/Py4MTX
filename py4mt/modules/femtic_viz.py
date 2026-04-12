@@ -63,6 +63,21 @@ Provenance:
                         plot_model_ensemble, map_slice_from_cells,
                         curtain_from_cells, and plot_points_matplotlib;
                         triplot overlay drawn after tripcolor when enabled.
+    2026-04-12  Claude  Added comp_markers to plot_data_ensemble: different
+                        marker symbols for diagonal (ii), off-diagonal (ij),
+                        and invariant components.  Default dict maps 'ii'->'o',
+                        'ij'->'s', 'inv'->'^'; pass None to disable markers.
+                        Added error_style_orig / error_style_pert parameters
+                        ('shade' / 'bar' / 'both') for independent control of
+                        error rendering on original vs. perturbed curves; no
+                        shared fallback variable.
+                        Markers are applied post-hoc (snapshot ax.lines before
+                        plotter call, patch new Line2D objects after) to avoid
+                        TypeError from data_viz hardcoded marker= argument.
+                        Fixed legend: each component now gets legend=True on
+                        its first occurrence across all sites (not only for the
+                        first component of the first site); final ax.legend()
+                        deduplicates by label so all comps appear exactly once.
 """
 
 from __future__ import annotations
@@ -1720,6 +1735,42 @@ def npz_to_unstructured_grid(
 _MU0 = 4.0e-7 * np.pi          # H/m
 _Z_SI_TO_MT = 1.0 / (_MU0 * 1.0e3)   # SI Ohm → mV/km/nT
 
+# ---------------------------------------------------------------------------
+# Component classification for marker differentiation
+# ---------------------------------------------------------------------------
+
+#: Default marker symbols per component class.
+#: Keys: ``'ii'`` (diagonal: xx, yy), ``'ij'`` (off-diagonal: xy, yx),
+#: ``'inv'`` (invariants: det, bahr, ssq, …).
+#: Pass ``comp_markers=None`` to :func:`plot_data_ensemble` to disable markers.
+DEFAULT_COMP_MARKERS: dict = {
+    "ii":  "o",   # diagonal — circles
+    "ij":  "s",   # off-diagonal — squares
+    "inv": "^",   # invariants — triangles-up
+}
+
+# Set of recognised diagonal component labels (lowercase).
+_DIAG_COMPS = {"xx", "yy"}
+# Set of recognised off-diagonal component labels (lowercase).
+_OFFDIAG_COMPS = {"xy", "yx"}
+
+
+def _comp_class(comp: str) -> str:
+    """Return the class label (``'ii'``, ``'ij'``, or ``'inv'``) for *comp*.
+
+    Parameters
+    ----------
+    comp : str
+        Component name, e.g. ``'xx'``, ``'xy'``, ``'zx'``, ``'det'``.
+        Comparison is case-insensitive.
+    """
+    c = comp.strip().lower()
+    if c in _DIAG_COMPS:
+        return "ii"
+    if c in _OFFDIAG_COMPS:
+        return "ij"
+    return "inv"
+
 
 def _observe_to_site_list(
     observe_path: Union[str, Path],
@@ -1815,9 +1866,14 @@ def plot_data_ensemble(
     show_errors: bool = False,
     show_errors_orig: Optional[bool] = None,
     show_errors_pert: Optional[bool] = None,
+    error_style_orig: str = "shade",
+    error_style_pert: str = "shade",
     n_sites: Optional[int] = None,
     alpha_orig: float = 1.0,
     alpha_pert: float = 0.6,
+    comp_markers: Optional[dict] = None,
+    markersize: float = 4.0,
+    markevery: Optional[int] = None,
     figsize: Optional[Tuple[float, float]] = None,
     fig: Optional[Any] = None,
     axs: Optional[Any] = None,
@@ -1856,13 +1912,21 @@ def plot_data_ensemble(
         files contain reset relative errors.  Use the per-curve flags for
         independent control.
     show_errors_orig : bool or None, optional
-        If ``True``, draw ±1σ envelopes on the **original** curves.
+        If ``True``, draw error envelopes on the **original** curves.
         Overrides ``show_errors``.  Default is ``None`` (falls back to
         ``show_errors``).
     show_errors_pert : bool or None, optional
-        If ``True``, draw ±1σ envelopes on the **perturbed** curves.
+        If ``True``, draw error envelopes on the **perturbed** curves.
         Overrides ``show_errors``.  Default is ``None`` (falls back to
         ``show_errors``).
+    error_style_orig : str, optional
+        Error rendering style for the **original** curves.
+        ``'shade'`` (default) — semi-transparent ``fill_between`` band.
+        ``'bar'`` — discrete ``errorbar`` caps at each period.
+        ``'both'`` — shade *and* bar simultaneously.
+    error_style_pert : str, optional
+        Error rendering style for the **perturbed** curves.
+        Same accepted values as ``error_style_orig``.  Default ``'shade'``.
     n_sites : int or None, optional
         Number of MT sites to draw (without replacement) from the full site
         list for each subplot row.  The **same** random subset is used for
@@ -1874,6 +1938,24 @@ def plot_data_ensemble(
     alpha_pert : float, optional
         Opacity for the **perturbed** curves.  Default ``0.6``, so the
         original curve shows through and differences are immediately visible.
+    comp_markers : dict or None, optional
+        Marker symbols keyed by component class.  Recognised keys:
+
+        - ``'ii'``  — diagonal components (``xx``, ``yy``).  Default ``'o'``.
+        - ``'ij'``  — off-diagonal components (``xy``, ``yx``). Default ``'s'``.
+        - ``'inv'`` — invariants (``det``, ``bahr``, ``ssq``, …). Default ``'^'``.
+
+        Partial dicts are merged with :data:`DEFAULT_COMP_MARKERS` so only the
+        keys you want to change need to be specified.  Pass ``None`` (default)
+        to use ``DEFAULT_COMP_MARKERS``; pass ``{}`` to disable markers
+        entirely (``marker='none'`` forwarded to all plotters).
+    markersize : float, optional
+        Marker size in points forwarded to the plotter (default ``4.0``).
+        Ignored when markers are disabled.
+    markevery : int or None, optional
+        Plot a marker only every *markevery*-th period.  ``None`` (default)
+        places a marker at every point.  Useful to reduce clutter when many
+        decades of data are shown.
     figsize : (float, float) or None, optional
         Figure size in inches.  If ``None``, a sensible default is chosen.
     fig : matplotlib.figure.Figure or None, optional
@@ -1892,6 +1974,22 @@ def plot_data_ensemble(
 
     Notes
     -----
+    **Component markers** are resolved per component name by
+    :func:`_comp_class`, then looked up in *comp_markers*.  Because the
+    ``data_viz`` plotters hardcode a ``marker`` argument inside their
+    ``ax.loglog`` / ``ax.semilogy`` calls, forwarding ``marker`` as a
+    ``**line_kw`` would raise a ``TypeError`` (duplicate keyword).  Instead,
+    ``plot_data_ensemble`` snapshots ``ax.lines`` *before* each plotter call
+    and patches the marker properties on every new ``Line2D`` that appears
+    *after* the call.  This approach is fully non-invasive and works with any
+    version of ``data_viz``.
+
+    **Error styles** ``'bar'`` and ``'both'`` require that the underlying
+    ``data_viz`` plotter accepts an ``error_style`` kwarg (or equivalent).
+    If the installed ``data_viz`` version does not recognise ``error_style``,
+    ``plot_data_ensemble`` falls back to ``'shade'`` silently and prints a
+    one-time warning.
+
     Data files are read via :func:`femtic.observe_to_site_viz_list` (through
     the internal ``_observe_to_site_list`` helper), which is the authoritative
     FEMTIC reader.  FEMTIC stores Z in SI Ω; the helper converts to mV/km/nT
@@ -1940,19 +2038,102 @@ def plot_data_ensemble(
             )
         axs_arr = axs_arr[:n_plots]
 
+    # ------------------------------------------------------------------
     # Resolve per-curve error-display flags.
-    # show_errors_orig / show_errors_pert override the shared show_errors shorthand.
+    # ------------------------------------------------------------------
     _show_orig = show_errors if show_errors_orig is None else show_errors_orig
     _show_pert = show_errors if show_errors_pert is None else show_errors_pert
 
+    # ------------------------------------------------------------------
+    # Validate error_style per curve.
+    # 'shade' | 'bar' | 'both'  (any unrecognised value falls back to 'shade')
+    # ------------------------------------------------------------------
+    _valid_styles = {"shade", "bar", "both"}
+    _style_orig = error_style_orig if error_style_orig in _valid_styles else "shade"
+    _style_pert = error_style_pert if error_style_pert in _valid_styles else "shade"
+
+    # ------------------------------------------------------------------
+    # Resolve marker dict.
+    # comp_markers=None  → use DEFAULT_COMP_MARKERS
+    # comp_markers={}    → disable markers (marker='none' for all comps)
+    # comp_markers={...} → merge with DEFAULT_COMP_MARKERS
+    # ------------------------------------------------------------------
+    _use_markers = True
+    if comp_markers is None:
+        _markers = dict(DEFAULT_COMP_MARKERS)
+    elif len(comp_markers) == 0:
+        _use_markers = False
+        _markers = {}
+    else:
+        _markers = {**DEFAULT_COMP_MARKERS, **comp_markers}
+
     # comps kwarg only for impedance plotters
     _needs_comps = {"rho", "phase"}
-    kw_comps = {"comps": comps} if str(what).lower() in _needs_comps else {}
+    _comp_list = (
+        [c.strip() for c in comps.split(",")]
+        if str(what).lower() in _needs_comps
+        else []
+    )
 
-    # Read and flatten the original observe.dat once.
-    # _observe_to_site_list uses femtic.observe_to_site_viz_list internally,
-    # which handles the FEMTIC unit convention (Z in SI Ohm) correctly and
-    # converts to mV/km/nT before handing off to data_viz.datadict_to_plot_df.
+    # ------------------------------------------------------------------
+    # error_style: probe once whether data_viz plotter accepts the kwarg.
+    # We forward it only when supported; otherwise fall back to 'shade'.
+    # ------------------------------------------------------------------
+    _error_style_warned = [False]
+
+    def _error_style_kw(style: str) -> dict:
+        """Return {'error_style': style} if the plotter accepts it, else {}."""
+        if style == "shade":
+            return {}
+        try:
+            import inspect as _insp
+            if "error_style" in _insp.signature(plotter).parameters:
+                return {"error_style": style}
+            if not _error_style_warned[0]:
+                import warnings
+                warnings.warn(
+                    f"data_viz.{plotter.__name__} does not accept "
+                    f"'error_style'; falling back to 'shade'.",
+                    stacklevel=5,
+                )
+                _error_style_warned[0] = True
+        except Exception:
+            pass
+        return {}
+
+    # ------------------------------------------------------------------
+    # Post-hoc marker helper.
+    #
+    # data_viz plotters (add_rho, add_phase, …) hardcode their own marker
+    # inside ax.loglog / ax.semilogy, so we cannot forward 'marker' via
+    # **line_kw without a duplicate-keyword TypeError.  Instead we:
+    #   1. snapshot ax.lines before the plotter call,
+    #   2. call the plotter,
+    #   3. patch the marker properties on every new Line2D that appeared.
+    # ------------------------------------------------------------------
+
+    def _apply_markers_to_new_lines(
+        ax: Any,
+        lines_before: list,
+        marker: str,
+    ) -> None:
+        """Patch marker properties on lines added to *ax* since *lines_before*."""
+        for line in ax.lines:
+            if line not in lines_before:
+                line.set_marker(marker)
+                line.set_markersize(markersize)
+                if markevery is not None:
+                    line.set_markevery(markevery)
+
+    def _marker_for(comp: str) -> str:
+        """Return the marker symbol for a component name."""
+        if not _use_markers:
+            return "none"
+        return _markers.get(_comp_class(comp), "none")
+
+    # ------------------------------------------------------------------
+    # Read original sites once.
+    # ------------------------------------------------------------------
     orig_sites = _observe_to_site_list(orig_file, fem)
     if out:
         print(f"plot_data_ensemble: original read from {orig_file} "
@@ -1967,24 +2148,90 @@ def plot_data_ensemble(
     else:
         _site_idx = list(range(n_total))
 
+    # ------------------------------------------------------------------
+    # Main loop: one subplot row per selected sample.
+    # ------------------------------------------------------------------
     for row, idx in enumerate(sample_indices):
         ax = axs_arr[row]
 
-        # --- original: one call per selected site, solid ---
-        for si in _site_idx:
-            site = orig_sites[si]
-            plotter(site, ax=ax, show_errors=_show_orig,
-                    legend=(row == 0 and si == _site_idx[0]),
-                    alpha=alpha_orig, **kw_comps)
+        # Track which component labels have been legend-registered in this row.
+        # legend=True on the *first* plotter call for each comp (first site);
+        # legend=False for all subsequent sites so labels aren't duplicated.
+        # Perturbed curves never add to the legend (they share the same labels).
+        _legend_done: set = set()
+
+        def _need_legend(comp_key: str) -> bool:
+            """Return True for the first call with this comp_key; False after."""
+            if comp_key in _legend_done:
+                return False
+            _legend_done.add(comp_key)
+            return True
+
+        # --- original: one call per (selected site × component) ---
+        if _comp_list:
+            for si in _site_idx:
+                site = orig_sites[si]
+                for comp in _comp_list:
+                    _lines_before = list(ax.lines)
+                    plotter(site, ax=ax, show_errors=_show_orig,
+                            legend=_need_legend(comp),
+                            alpha=alpha_orig,
+                            comps=comp,
+                            **_error_style_kw(_style_orig))
+                    _apply_markers_to_new_lines(ax, _lines_before,
+                                                _marker_for(comp))
+        else:
+            # Tipper / PT: single plotter call per site, 'inv' class marker.
+            for si in _site_idx:
+                site = orig_sites[si]
+                _lines_before = list(ax.lines)
+                plotter(site, ax=ax, show_errors=_show_orig,
+                        legend=_need_legend("_tipper_pt_"),
+                        alpha=alpha_orig,
+                        **_error_style_kw(_style_orig))
+                _apply_markers_to_new_lines(ax, _lines_before,
+                                            _marker_for("inv"))
 
         # --- perturbed: same site subset, dashed ---
+        # Perturbed curves never add legend entries (legend=False always).
         pert_sites = _observe_to_site_list(ens_files[idx], fem)
-        for si in _site_idx:
-            if si < len(pert_sites):
-                site = pert_sites[si]
-                plotter(site, ax=ax, show_errors=_show_pert,
-                        legend=False, linestyle="--",
-                        alpha=alpha_pert, **kw_comps)
+
+        if _comp_list:
+            for si in _site_idx:
+                if si < len(pert_sites):
+                    site = pert_sites[si]
+                    for comp in _comp_list:
+                        _lines_before = list(ax.lines)
+                        plotter(site, ax=ax, show_errors=_show_pert,
+                                legend=False, linestyle="--",
+                                alpha=alpha_pert,
+                                comps=comp,
+                                **_error_style_kw(_style_pert))
+                        _apply_markers_to_new_lines(ax, _lines_before,
+                                                    _marker_for(comp))
+        else:
+            for si in _site_idx:
+                if si < len(pert_sites):
+                    site = pert_sites[si]
+                    _lines_before = list(ax.lines)
+                    plotter(site, ax=ax, show_errors=_show_pert,
+                            legend=False, linestyle="--",
+                            alpha=alpha_pert,
+                            **_error_style_kw(_style_pert))
+                    _apply_markers_to_new_lines(ax, _lines_before,
+                                                _marker_for("inv"))
+
+        # Rebuild legend after all sites are plotted so every component that
+        # was registered above appears exactly once.  Deduplicate by label so
+        # that if the plotter internally calls ax.legend() per component the
+        # final legend is clean.
+        handles, labels = ax.get_legend_handles_labels()
+        seen: dict = {}
+        for h, l in zip(handles, labels):
+            if l not in seen:
+                seen[l] = h
+        if seen:
+            ax.legend(seen.values(), seen.keys(), fontsize=8)
 
         ax.set_title(f"Sample {idx}", fontsize=9)
         if out:

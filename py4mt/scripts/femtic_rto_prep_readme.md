@@ -101,6 +101,11 @@ from 0 … `N_SAMPLES − 1` each run.  The drawn list is printed at runtime.
 | `DAT_SHOW_ERRORS` | Propagate error envelopes into the original-data curve.                  |
 | `DAT_ALPHA_ORIG`  | Opacity of the **original** data curves (0–1; default 1.0).              |
 | `DAT_ALPHA_PERT`  | Opacity of the **perturbed** data curves (0–1; default 0.6).             |
+| `DAT_COMP_MARKERS` | Dict of marker symbol per component class (`'ii'`, `'ij'`, `'inv'`); `None` = use `DEFAULT_COMP_MARKERS` from `femtic_viz`; `{}` = disable markers. |
+| `DAT_MARKERSIZE`  | Marker size in points (default `4.0`).                                   |
+| `DAT_MARKEVERY`   | Plot a marker every N-th period; `None` = every period.                  |
+| `DAT_ERROR_STYLE_ORIG` | Error rendering for **original** curves: `'shade'` (default), `'bar'`, or `'both'`. |
+| `DAT_ERROR_STYLE_PERT` | Error rendering for **perturbed** curves: `'shade'` (default), `'bar'`, or `'both'`. |
 | `MOD_MESH`        | Path to the shared `mesh.dat`.                                           |
 | `MOD_MODE`        | Slice rendering mode: `'tri'` \| `'scatter'` \| `'grid'`.               |
 | `MOD_LOG10`       | Plot log₁₀(ρ) if `True`.                                                |
@@ -175,6 +180,11 @@ Diagnostic figures are saved to:
 | 2026-04-03 | Claude | Added `DAT_ALPHA_ORIG`, `DAT_ALPHA_PERT` to data-plot config; |
 |            |        | added `MOD_MESH_LINES`, `MOD_MESH_LW`, `MOD_MESH_COLOR` to  |
 |            |        | model-plot config; wired into respective function calls.     |
+| 2026-04-12 | Claude | Added `DAT_COMP_MARKERS`, `DAT_MARKERSIZE`, `DAT_MARKEVERY`  |
+|            |        | to data-plot config for per-class marker differentiation.   |
+|            |        | Added `DAT_ERROR_STYLE_ORIG` / `DAT_ERROR_STYLE_PERT` for   |
+|            |        | `'shade'` / `'bar'` / `'both'` error rendering per curve;  |
+|            |        | no shared fallback variable.                                |
 | 2026-03-31 | Claude | Bug fixes: `DAT_METHOD` trailing comma (tuple → str);        |
 |            |        | `MOD_ORIG` double-prepend of `TEMPLATES`; `refmod` and       |
 |            |        | `mod_ens_files` used full path instead of basename;          |

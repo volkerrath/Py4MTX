@@ -70,6 +70,7 @@ Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-11
 Modified: 2026-03-16 — add_rhoplus (D+/rho+ test plot), MT unit fix (mV/km/nT) for rho_a; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-03-17 — xlim/ylim parameters for all plotters (add_rho, add_rhoplus, add_phase, add_tipper, add_pt); Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-03-30 — pop linestyle from **line_kw in add_rho/add_phase/add_tipper/add_pt (TypeError fix); add linestyle override to add_tipper/add_pt; remove bogus required-key guard from add_tipper/add_pt (checked "Z" key but tipper needs "T"; also broke DataFrame input); Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-04-12 — remove hardcoded marker="o" from add_rho, add_phase, add_rhoplus; pop marker from **line_kw (default None = no marker) so callers control markers without TypeError; add marker override to add_tipper and add_pt (uniform override, same pattern as existing linestyle override); Claude Sonnet 4.6 (Anthropic)
 """
 
 from __future__ import annotations
@@ -490,23 +491,22 @@ def add_rho(
     period = _period_from_df(df)
     comps_list = _parse_comps(comps)
 
-    # Allow callers to override linestyle via **line_kw (e.g. linestyle="--"
-    # for perturbed ensemble curves) without a duplicate-keyword error.
+    # Allow callers to override linestyle and marker via **line_kw without
+    # collision.  Default linestyle is "-"; default marker is None (no marker)
+    # so that upstream callers (e.g. femtic_viz.plot_data_ensemble) can apply
+    # per-component markers via post-hoc Line2D patching.
     _ls = line_kw.pop("linestyle", "-")
+    _mk = line_kw.pop("marker", None)
 
     for c in comps_list:
         col = f"rho_{c}"
         if col not in df.columns:
             continue
         y = df[col].to_numpy()
-        ax.loglog(
-            period,
-            y,
-            marker="o",
-            linestyle=_ls,
-            label=f"$\\rho_a,{c.upper()}$",
-            **line_kw,
-        )
+        _plot_kw = dict(linestyle=_ls, label=f"$\\rho_a,{c.upper()}$", **line_kw)
+        if _mk is not None:
+            _plot_kw["marker"] = _mk
+        ax.loglog(period, y, **_plot_kw)
         if show_errors:
             err_col = f"{col}{error_suffix}"
             if err_col in df.columns:
@@ -646,6 +646,10 @@ def add_rhoplus(
     period = _period_from_df(df)
     comps_list = _parse_comps(comps)
 
+    # Pop marker from line_kw so callers can supply it (or leave it absent for
+    # no marker).  The ρ⁺ line always uses no marker regardless.
+    _mk = line_kw.pop("marker", None)
+
     # Colour cycle — reuse current axes prop_cycle so colours align with
     # any previously plotted curves on the same axes.
     prop_cycle = plt.rcParams["axes.prop_cycle"]
@@ -708,15 +712,10 @@ def add_rhoplus(
         label_p = f"$\\rho^+_{{{c.upper()}}}$"
 
         # ρ_a — solid line
-        ax.loglog(
-            period,
-            rho_a_plot,
-            marker="o",
-            linestyle="-",
-            color=colour,
-            label=label_a,
-            **line_kw,
-        )
+        _rha_kw = dict(linestyle="-", color=colour, label=label_a, **line_kw)
+        if _mk is not None:
+            _rha_kw["marker"] = _mk
+        ax.loglog(period, rho_a_plot, **_rha_kw)
 
         # ρ⁺ — dashed, same colour, no marker
         lkw = {k: v for k, v in line_kw.items() if k not in ("marker", "linestyle")}
@@ -810,22 +809,20 @@ def add_phase(
     period = _period_from_df(df)
     comps_list = _parse_comps(comps)
 
-    # Allow callers to override linestyle via **line_kw without collision.
+    # Allow callers to override linestyle and marker via **line_kw without
+    # collision.  Default linestyle is "-"; default marker is None (no marker).
     _ls = line_kw.pop("linestyle", "-")
+    _mk = line_kw.pop("marker", None)
 
     for c in comps_list:
         col = f"phi_{c}"
         if col not in df.columns:
             continue
         y = df[col].to_numpy()
-        ax.semilogx(
-            period,
-            y,
-            marker="o",
-            linestyle=_ls,
-            label=f"$\\phi,{c.upper()}$",
-            **line_kw,
-        )
+        _plot_kw = dict(linestyle=_ls, label=f"$\\phi,{c.upper()}$", **line_kw)
+        if _mk is not None:
+            _plot_kw["marker"] = _mk
+        ax.semilogx(period, y, **_plot_kw)
         if show_errors:
             err_col = f"{col}{error_suffix}"
             if err_col in df.columns:
@@ -887,10 +884,11 @@ def add_tipper(
     fig, ax, _ = _maybe_ax(ax)
     period = _period_from_df(df)
 
-    # If the caller supplies linestyle= (e.g. "--" for perturbed ensemble
-    # curves), apply it uniformly to all components instead of per-component
-    # defaults.  Pop it here to avoid a duplicate-keyword error.
+    # If the caller supplies linestyle= or marker= (e.g. for perturbed ensemble
+    # curves), apply them uniformly to all components instead of per-component
+    # defaults.  Pop here to avoid a duplicate-keyword error.
     _ls_override = line_kw.pop("linestyle", None)
+    _mk_override = line_kw.pop("marker", None)
 
     specs = [
         ("Tx_re", "o", "-",  "Re(Tx)"),
@@ -906,7 +904,7 @@ def add_tipper(
         ax.semilogx(
             period,
             y,
-            marker=marker,
+            marker=_mk_override if _mk_override is not None else marker,
             linestyle=_ls_override if _ls_override is not None else linestyle,
             label=label,
             **line_kw,
@@ -971,9 +969,11 @@ def add_pt(
     fig, ax, _ = _maybe_ax(ax)
     period = _period_from_df(df)
 
-    # Allow a uniform linestyle override via **line_kw (e.g. "--" for
-    # perturbed ensemble curves) without colliding with per-component defaults.
+    # Allow a uniform linestyle or marker override via **line_kw (e.g. "--"
+    # or a single marker symbol for perturbed ensemble curves) without
+    # colliding with per-component defaults.
     _ls_override = line_kw.pop("linestyle", None)
+    _mk_override = line_kw.pop("marker", None)
 
     comps = [
         ("ptxx_re", "o", "-", "PTxx"),
@@ -989,7 +989,7 @@ def add_pt(
         ax.semilogx(
             period,
             y,
-            marker=marker,
+            marker=_mk_override if _mk_override is not None else marker,
             linestyle=_ls_override if _ls_override is not None else linestyle,
             label=label,
             **line_kw,
