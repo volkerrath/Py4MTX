@@ -103,11 +103,14 @@ All MT plotters share these keyword arguments:
 
 All six arguments are consumed by the plotter and are **not** forwarded to the underlying Matplotlib call — they are safe to include in a shared `PLTARGS` dict passed to every plotter regardless of plot type.
 
-Additional `**line_kw` are forwarded to the underlying `ax.loglog` / `ax.semilogx` call. One commonly useful override is:
+Additional `**line_kw` are forwarded to the underlying `ax.loglog` / `ax.semilogx` call. Two commonly useful overrides are:
 
-- `linestyle` (str) — override the default line style. All four plotters pop this from `**line_kw` before the plot call, so passing `linestyle="--"` (e.g. for perturbed ensemble curves overlaid on the same axes) no longer raises a `TypeError`. For `add_tipper` and `add_pt`, the override is applied uniformly to all components; when omitted, each component keeps its own default (`"-"` for real parts, `"--"` for imaginary parts in `add_tipper`).
+- `linestyle` (str) — override the default line style. All plotters pop this from `**line_kw` before the plot call. For `add_tipper` and `add_pt`, the override is applied uniformly to all components; when omitted, each component keeps its own default (`"-"` for real parts, `"--"` for imaginary parts in `add_tipper`).
+- `marker` (str or None) — override the marker symbol. `add_rho` and `add_phase` have **no default marker** (marker-free lines by default); pass `marker="o"` to restore the old behaviour. `add_tipper` and `add_pt` keep their meaningful per-component defaults (`o`, `^`, `s`, `d`) but accept a uniform override via `marker=`. `add_rhoplus` applies the marker only to the ρ_a line; the ρ⁺ line always has no marker.
 
 > **Note for callers using a shared `PLTARGS` dict:** because `ylim` varies per panel, pass per-call overrides as `**{**PLTARGS, "ylim": (...)}` rather than mutating `PLTARGS["ylim"]` before each call.
+
+> **Note on `femtic_viz.plot_data_ensemble`:** that function applies per-component markers *post-hoc* (by patching `Line2D` objects after each plotter call) rather than forwarding `marker=` through `**line_kw`. This avoids any duplicate-keyword collision and works with all `data_viz` versions.
 
 ---
 
@@ -161,3 +164,4 @@ Both remove empty axes automatically.
 Author: Volker Rath (DIAS)
 Modified: 2026-03-16 — add_rhoplus (D+/rho+ test plot); Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-03-30 — linestyle override via **line_kw (all plotters); removed bogus required-key guard from add_tipper/add_pt; per-call PLTARGS pattern documented; Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-04-12 — removed hardcoded marker="o" from add_rho, add_phase, add_rhoplus (default now no marker); pop marker from **line_kw so callers can supply it without TypeError; add uniform marker override to add_tipper and add_pt (same pattern as existing linestyle override); Claude Sonnet 4.6 (Anthropic)

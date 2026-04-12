@@ -66,6 +66,11 @@ Provenance:
                 config; added MOD_MESH_LINES / MOD_MESH_LW / MOD_MESH_COLOR
                 to model-plot config; wired all into their respective
                 plot_data_ensemble / plot_model_ensemble calls.
+    2026-04-12  Claude  Added DAT_COMP_MARKERS / DAT_MARKERSIZE / DAT_MARKEVERY
+                to data-plot config (different symbols for ii, ij and invariant
+                components); added DAT_ERROR_STYLE_ORIG / DAT_ERROR_STYLE_PERT
+                for independent control of error rendering (shade / bar / both)
+                on original vs. perturbed curves (no shared fallback variable).
 """
 
 import os
@@ -115,7 +120,7 @@ print(titstrng + "\n\n")
 """
 Base setup.
 """
-N_SAMPLES = 3
+N_SAMPLES = 1
 ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/ubinas/ensemble/"
 # TEMPLATES = ENSEMBLE_DIR + "templates/"
 TEMPLATES = r"/home/vrath/Py4MTX/py4mt/data/rto/ubinas/templates/"
@@ -188,8 +193,8 @@ if PERTURB_DAT:
 RESET_ERRORS = True
 if RESET_ERRORS:
     ERRORS = [
-        [0.15, .05, .05, 0.15]*2,         # Impedance
-        [0.03, 0.03]*2,                   # VTF
+        [0.15, .25, .25, 0.15]*2,         # Impedance
+        [0.05, 0.05]*2,                   # VTF
         [.5, .2, .2, .5],                 # PT
     ]
 else:
@@ -205,11 +210,14 @@ plot_model_ensemble use the same randomly drawn set of ensemble members
 of MT sites per row (VIZ_N_SITES); set to None to show all sites.
 """
 PLOT_DATA = True
-PLOT_MODEL = True
+PLOT_MODEL = False
+
+PLOT_STR = "_observed"
+PLOT_DIR = ENSEMBLE_DIR+"/plots/"
 
 # Number of ensemble members to include in both diagnostic plots.
 # Members are drawn without replacement from 0 … N_SAMPLES-1.
-VIZ_N_SAMPLES = 4
+VIZ_N_SAMPLES = 1
 
 # Number of MT sites to include in each data-plot row.
 # Sites are drawn without replacement from the full site list.
@@ -222,8 +230,27 @@ DAT_COMPS = "xx,xy,yx,yy"
 DAT_SHOW_ERRORS = True     # raw template errors are noisy at long periods;
                             # use show_errors_orig / show_errors_pert for
                             # independent control in plot_data_ensemble
-DAT_ALPHA_ORIG = 1.0        # opacity for original curves (1 = fully opaque)
-DAT_ALPHA_PERT = 0.6        # opacity for perturbed curves (< 1 lets original show through)
+DAT_ALPHA_ORIG = 1. #0.6        # opacity for original curves (1 = fully opaque)
+DAT_ALPHA_PERT = 0.5 #1.        # opacity for perturbed curves (< 1 lets original show through)
+
+# Marker symbols per component class.
+# 'ii'  → diagonal components (xx, yy)   — circles
+# 'ij'  → off-diagonal components (xy, yx) — squares
+# 'inv' → invariants (det, bahr, …)      — triangles up
+# Set to None to use the DEFAULT_COMP_MARKERS from femtic_viz.
+# Set to {} to disable markers entirely (lines only).
+DAT_COMP_MARKERS = None
+DAT_MARKERSIZE = 4.0        # marker size in points
+DAT_MARKEVERY = None        # plot marker every N-th period; None = every period
+
+# Error rendering style — applies when show_errors_orig / show_errors_pert is True.
+# 'shade' : semi-transparent fill_between band (default, existing behaviour)
+# 'bar'   : discrete errorbar caps at each period
+# 'both'  : shade AND bar simultaneously
+DAT_ERROR_STYLE_ORIG = "shade"
+DAT_ERROR_STYLE_PERT = "shade"
+
+
 
 # --- model plot ---
 MOD_MESH = TEMPLATES + "mesh.dat"
@@ -315,15 +342,20 @@ if PLOT_DATA:
         sample_indices=VIZ_SAMPLES,
         comps=DAT_COMPS,
         what=DAT_WHAT,
-        show_errors=False,          # shorthand off; use per-curve flags below
-        show_errors_orig=True,      # template errors are raw; skip envelopes
-        show_errors_pert=True,      # show reset relative-error bands on perturbed
+        show_errors=False,              # shorthand off; use per-curve flags below
+        show_errors_orig=True,          # template errors are raw; skip envelopes
+        show_errors_pert=False,         # show reset relative-error bands on perturbed
+        error_style_orig=DAT_ERROR_STYLE_ORIG,
+        error_style_pert=DAT_ERROR_STYLE_PERT,
         n_sites=VIZ_N_SITES,
         alpha_orig=DAT_ALPHA_ORIG,
         alpha_pert=DAT_ALPHA_PERT,
+        comp_markers=DAT_COMP_MARKERS,
+        markersize=DAT_MARKERSIZE,
+        markevery=DAT_MARKEVERY,
         out=True,
     )
-    fig_dat.savefig(ENSEMBLE_DIR + "rto_data_ensemble.pdf", bbox_inches="tight")
+    fig_dat.savefig(ENSEMBLE_DIR + "rto_data_ensemble"+PLOT_STR+".pdf", bbox_inches="tight")
     plt.close(fig_dat)
     print("data ensemble plot saved.")
 
@@ -397,6 +429,6 @@ if PLOT_MODEL:
         mesh_color=MOD_MESH_COLOR,
         out=True,
     )
-    fig_mod.savefig(ENSEMBLE_DIR + "rto_model_ensemble.pdf", bbox_inches="tight")
+    fig_mod.savefig(ENSEMBLE_DIR + "rto_model_"+PLOT_STR+".pdf", bbox_inches="tight")
     plt.close(fig_mod)
     print("model ensemble plot saved.")

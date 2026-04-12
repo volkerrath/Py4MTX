@@ -157,11 +157,16 @@ fig, axs = plot_data_ensemble(
     comps="xy,yx",       # impedance components (ignored for tipper / pt)
     what="rho",          # 'rho' | 'phase' | 'tipper' | 'pt'
     show_errors=False,   # shorthand for both curves; default False
-    show_errors_orig=None,  # override for original curves only (None → show_errors)
-    show_errors_pert=None,  # override for perturbed curves only (None → show_errors)
-    n_sites=None,           # MT sites drawn per row; None = all sites
-    alpha_orig=1.0,         # opacity for original curves (0–1)
-    alpha_pert=0.6,         # opacity for perturbed curves (< 1 lets original show through)
+    show_errors_orig=None,   # override for original curves only (None → show_errors)
+    show_errors_pert=None,   # override for perturbed curves only (None → show_errors)
+    error_style_orig="shade",  # 'shade' | 'bar' | 'both' for original curves
+    error_style_pert="shade",  # 'shade' | 'bar' | 'both' for perturbed curves
+    n_sites=None,            # MT sites drawn per row; None = all sites
+    alpha_orig=1.0,          # opacity for original curves (0–1)
+    alpha_pert=0.6,          # opacity for perturbed curves (< 1 lets original show through)
+    comp_markers=None,       # dict of marker per class; None = DEFAULT_COMP_MARKERS
+    markersize=4.0,          # marker size in points
+    markevery=None,          # mark every N-th period; None = every period
     figsize=None,        # (width, height) in inches; auto if None
     fig=None,            # pre-existing Figure
     axs=None,            # pre-existing axes, shape (len(sample_indices),)
@@ -179,6 +184,39 @@ typically carries raw measured uncertainties that can be very large at long
 periods (dead-band noise), while the perturbed files contain reset relative
 errors (compact ±σ bands).  The recommended setting for RTO diagnostics is
 therefore `show_errors_orig=False, show_errors_pert=True`.
+
+**Error rendering style** is set independently per curve with `error_style_orig`
+and `error_style_pert` (both default to `'shade'`).  Three modes are available:
+
+| `error_style_orig` / `error_style_pert` | Rendering |
+|---|---|
+| `'shade'` | Semi-transparent `fill_between` band (default). |
+| `'bar'` | Discrete `errorbar` caps at each period. |
+| `'both'` | Shade *and* bar simultaneously. |
+
+`'bar'` and `'both'` require that the underlying `data_viz` plotter accepts an
+`error_style` kwarg; if not, `plot_data_ensemble` falls back to `'shade'`
+with a one-time `warnings.warn`.
+
+**Component markers** assign distinct Matplotlib marker symbols to three
+component classes, making diagonal, off-diagonal, and invariant components
+visually distinguishable at a glance even when many sites are overlaid.
+
+| Class | Components | Default marker |
+|---|---|---|
+| `'ii'` | `xx`, `yy` (diagonal) | `'o'` (circles) |
+| `'ij'` | `xy`, `yx` (off-diagonal) | `'s'` (squares) |
+| `'inv'` | invariants (`det`, `bahr`, …), tipper, PT | `'^'` (triangles up) |
+
+The mapping is controlled by `comp_markers` (a partial or full dict merged with
+`DEFAULT_COMP_MARKERS`).  Pass `comp_markers=None` to use the defaults; pass
+`comp_markers={}` to disable markers entirely (lines only).  `markersize`
+(default `4.0` pt) and `markevery` (default `None` = every period) are
+applied post-hoc: because `data_viz` plotters hardcode their own `marker=`
+argument inside `ax.loglog`, forwarding `marker` via `**line_kw` would raise
+a `TypeError`.  Instead, `plot_data_ensemble` snapshots `ax.lines` before each
+plotter call and patches the marker properties on the new `Line2D` objects
+after the call — fully non-invasive across all `data_viz` versions.
 
 Data files are read via the internal `_observe_to_site_list()` helper,
 which calls `femtic.observe_to_site_viz_list()` — the authoritative FEMTIC
@@ -308,5 +346,14 @@ You can also control this via `prepare_rho_for_plotting()` or by setting
 |            |        | `plot_model_ensemble`, `map_slice_from_cells`,              |
 |            |        | `curtain_from_cells`, and `plot_points_matplotlib`.         |
 |            |        | `triplot` overlay drawn after `tripcolor` when enabled.     |
+| 2026-04-12 | Claude | Added `comp_markers` / `markersize` / `markevery` to        |
+|            |        | `plot_data_ensemble`: distinct marker symbols per component  |
+|            |        | class (`'ii'` circles, `'ij'` squares, `'inv'` triangles). |
+|            |        | Added `error_style_orig` / `error_style_pert`               |
+|            |        | (`'shade'` / `'bar'` / `'both'`); no shared fallback param. |
+|            |        | Added module-level `DEFAULT_COMP_MARKERS` dict and          |
+|            |        | `_comp_class()` helper for component classification.        |
+|            |        | Fixed legend: all components appear once per row (was only  |
+|            |        | the first component of the first site).                     |
 
 Author: Volker Rath (DIAS)
