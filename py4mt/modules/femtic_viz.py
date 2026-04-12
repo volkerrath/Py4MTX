@@ -71,13 +71,22 @@ Provenance:
                         ('shade' / 'bar' / 'both') for independent control of
                         error rendering on original vs. perturbed curves; no
                         shared fallback variable.
-                        Markers are applied post-hoc (snapshot ax.lines before
-                        plotter call, patch new Line2D objects after) to avoid
-                        TypeError from data_viz hardcoded marker= argument.
-                        Fixed legend: each component now gets legend=True on
-                        its first occurrence across all sites (not only for the
-                        first component of the first site); final ax.legend()
-                        deduplicates by label so all comps appear exactly once.
+                        Markers applied post-hoc (snapshot ax.lines before
+                        plotter call, patch new Line2D objects after).
+                        Fixed legend: each component gets legend=True on its
+                        first occurrence; final ax.legend() deduplicates.
+                        plot_data_ensemble redesigned for multi-panel layouts:
+                        'what' now accepts a list of panel types (e.g.
+                        ['rho', 'phase', 'tipper']); 'comps' may be a single
+                        string (shared) or a per-panel list; returned axs
+                        shape is (n_samples, n_panels).
+    2026-04-12  Claude  Added perlims / rholims / phslims / vtflims / ptlims
+                        parameters to plot_data_ensemble for optional axis-
+                        limit control.  perlims sets ax.set_xlim on every
+                        panel; the remaining four set ax.set_ylim on their
+                        respective panel type only.  Applied post-hoc after
+                        each cell is filled so underlying plotters cannot
+                        override them.
 """
 
 from __future__ import annotations
@@ -1861,8 +1870,8 @@ def plot_data_ensemble(
     ens_files: Sequence[Union[str, Path]],
     sample_indices: Sequence[int],
     *,
-    comps: str = "xy,yx",
-    what: str = "rho",
+    what: Union[str, Sequence[str]] = "rho",
+    comps: Union[str, Sequence[str]] = "xy,yx",
     show_errors: bool = False,
     show_errors_orig: Optional[bool] = None,
     show_errors_pert: Optional[bool] = None,
@@ -1874,6 +1883,11 @@ def plot_data_ensemble(
     comp_markers: Optional[dict] = None,
     markersize: float = 4.0,
     markevery: Optional[int] = None,
+    perlims: Optional[Tuple[float, float]] = None,
+    rholims: Optional[Tuple[float, float]] = None,
+    phslims: Optional[Tuple[float, float]] = None,
+    vtflims: Optional[Tuple[float, float]] = None,
+    ptlims: Optional[Tuple[float, float]] = None,
     figsize: Optional[Tuple[float, float]] = None,
     fig: Optional[Any] = None,
     axs: Optional[Any] = None,
@@ -1881,10 +1895,11 @@ def plot_data_ensemble(
 ) -> Tuple[Any, np.ndarray]:
     """Joint plot of original and perturbed MT data for a fixed list of samples.
 
-    Produces one subplot row per selected ensemble member.  Within each row
-    the original curves (all selected sites, solid) and the perturbed curves
-    (dashed) are overlaid on the same axes, so differences are immediately
-    visible.
+    Produces a 2-D grid of axes: **rows** = ensemble members (one per entry in
+    *sample_indices*); **columns** = plot panels (one per entry in *what*).
+    Within each cell the original curves (solid) and the perturbed curves
+    (dashed) for a randomly drawn subset of MT sites are overlaid on the same
+    axes.
 
     Follows the ``data_viz`` philosophy: if *fig* / *axs* are provided they
     are used directly; otherwise a new figure is created.  ``(fig, axs)`` is
@@ -1898,102 +1913,96 @@ def plot_data_ensemble(
         Paths to the perturbed ``observe.dat`` files, one per ensemble member.
     sample_indices : sequence of int
         Indices into ``ens_files`` that should be plotted (e.g. ``[0, 3, 7]``).
-    comps : str, optional
-        Impedance components for ``'rho'`` / ``'phase'`` plots, comma-separated
-        (default ``'xy,yx'``).  Ignored for ``'tipper'`` and ``'pt'``.
-    what : str, optional
-        Which MT quantity to plot.  One of ``'rho'``, ``'phase'``,
-        ``'tipper'``, ``'pt'``.  Default is ``'rho'``.
+    what : str or sequence of str, optional
+        Which MT quantity (or quantities) to plot.  Each entry must be one of
+        ``'rho'``, ``'phase'``, ``'tipper'``, ``'pt'``.  A plain string is
+        treated as a single-panel request.  A list produces one column per
+        entry, e.g. ``['rho', 'phase']`` gives a two-column layout with
+        apparent resistivity on the left and phase on the right.
+        Default is ``'rho'``.
+    comps : str or sequence of str, optional
+        Impedance components for ``'rho'`` / ``'phase'`` columns.
+        A single string (e.g. ``'xy,yx'``) is used for every ``'rho'`` /
+        ``'phase'`` column.  A sequence of the same length as *what* provides
+        per-column control; use ``None`` or ``''`` for ``'tipper'`` /
+        ``'pt'`` columns (the value is ignored for those plotters anyway).
+        Default is ``'xy,yx'``.
     show_errors : bool, optional
-        Shorthand to set both ``show_errors_orig`` and ``show_errors_pert``
-        simultaneously when neither is supplied explicitly.  Default is
-        ``False``.  Note: the template ``observe.dat`` typically contains raw
-        measured uncertainties (often large at long periods); the perturbed
-        files contain reset relative errors.  Use the per-curve flags for
-        independent control.
+        Shorthand for both ``show_errors_orig`` and ``show_errors_pert``.
+        Default ``False``.
     show_errors_orig : bool or None, optional
         If ``True``, draw error envelopes on the **original** curves.
-        Overrides ``show_errors``.  Default is ``None`` (falls back to
+        Overrides ``show_errors``.  Default ``None`` (falls back to
         ``show_errors``).
     show_errors_pert : bool or None, optional
         If ``True``, draw error envelopes on the **perturbed** curves.
-        Overrides ``show_errors``.  Default is ``None`` (falls back to
-        ``show_errors``).
+        Overrides ``show_errors``.  Default ``None``.
     error_style_orig : str, optional
-        Error rendering style for the **original** curves.
-        ``'shade'`` (default) — semi-transparent ``fill_between`` band.
-        ``'bar'`` — discrete ``errorbar`` caps at each period.
-        ``'both'`` — shade *and* bar simultaneously.
+        Error rendering for the **original** curves: ``'shade'`` (default),
+        ``'bar'``, or ``'both'``.
     error_style_pert : str, optional
-        Error rendering style for the **perturbed** curves.
-        Same accepted values as ``error_style_orig``.  Default ``'shade'``.
+        Error rendering for the **perturbed** curves: ``'shade'`` (default),
+        ``'bar'``, or ``'both'``.
     n_sites : int or None, optional
-        Number of MT sites to draw (without replacement) from the full site
-        list for each subplot row.  The **same** random subset is used for
-        both the original and the perturbed curve within a row so they remain
-        directly comparable.  Set to ``None`` (default) to show all sites.
+        Number of MT sites drawn (without replacement) per row.  The same
+        random subset is used across all columns in a row.  ``None`` = all
+        sites.
     alpha_orig : float, optional
-        Opacity for the **original** curves (0 = transparent, 1 = opaque).
-        Default ``1.0``.
+        Opacity for the **original** curves (default ``1.0``).
     alpha_pert : float, optional
-        Opacity for the **perturbed** curves.  Default ``0.6``, so the
-        original curve shows through and differences are immediately visible.
+        Opacity for the **perturbed** curves (default ``0.6``).
     comp_markers : dict or None, optional
-        Marker symbols keyed by component class.  Recognised keys:
-
-        - ``'ii'``  — diagonal components (``xx``, ``yy``).  Default ``'o'``.
-        - ``'ij'``  — off-diagonal components (``xy``, ``yx``). Default ``'s'``.
-        - ``'inv'`` — invariants (``det``, ``bahr``, ``ssq``, …). Default ``'^'``.
-
-        Partial dicts are merged with :data:`DEFAULT_COMP_MARKERS` so only the
-        keys you want to change need to be specified.  Pass ``None`` (default)
-        to use ``DEFAULT_COMP_MARKERS``; pass ``{}`` to disable markers
-        entirely (``marker='none'`` forwarded to all plotters).
+        Marker symbols keyed by component class (``'ii'``, ``'ij'``,
+        ``'inv'``).  ``None`` uses :data:`DEFAULT_COMP_MARKERS`; ``{}``
+        disables markers.  Partial dicts are merged with the defaults.
     markersize : float, optional
-        Marker size in points forwarded to the plotter (default ``4.0``).
-        Ignored when markers are disabled.
+        Marker size in points (default ``4.0``).
     markevery : int or None, optional
-        Plot a marker only every *markevery*-th period.  ``None`` (default)
-        places a marker at every point.  Useful to reduce clutter when many
-        decades of data are shown.
+        Mark every *N*-th period; ``None`` = every period.
+    perlims : (float, float) or None, optional
+        Period-axis limits ``(T_min, T_max)`` in seconds applied to every
+        panel via ``ax.set_xlim``.  ``None`` = Matplotlib auto-scaling.
+    rholims : (float, float) or None, optional
+        y-axis limits for ``'rho'`` panels (apparent resistivity, Ω·m or
+        log₁₀(Ω·m) depending on the plotter).  ``None`` = auto.
+    phslims : (float, float) or None, optional
+        y-axis limits for ``'phase'`` panels (degrees).  ``None`` = auto.
+    vtflims : (float, float) or None, optional
+        y-axis limits for ``'tipper'`` panels.  ``None`` = auto.
+    ptlims : (float, float) or None, optional
+        y-axis limits for ``'pt'`` panels.  ``None`` = auto.
     figsize : (float, float) or None, optional
-        Figure size in inches.  If ``None``, a sensible default is chosen.
+        Figure size.  Auto-sized if ``None``:
+        width ≈ 5 × n_panels, height ≈ 3 × n_samples.
     fig : matplotlib.figure.Figure or None, optional
         Pre-existing figure.  If ``None`` a new one is created.
     axs : array-like of Axes or None, optional
-        Pre-allocated axes of shape ``(len(sample_indices),)``.
-        If ``None``, subplots are created inside *fig* (or a new figure).
+        Pre-allocated axes of shape ``(n_samples, n_panels)`` (or ravelled
+        equivalent).  If ``None``, subplots are created automatically.
     out : bool, optional
-        If ``True``, print progress messages.
+        Print progress messages.
 
     Returns
     -------
     fig : matplotlib.figure.Figure
     axs : numpy.ndarray of matplotlib.axes.Axes
-        Shape ``(len(sample_indices),)``.
+        Shape ``(n_samples, n_panels)``.  When *what* is a single string the
+        shape is ``(n_samples, 1)`` — index with ``axs[:, 0]`` if you need the
+        1-D array of rows.
 
     Notes
     -----
-    **Component markers** are resolved per component name by
-    :func:`_comp_class`, then looked up in *comp_markers*.  Because the
-    ``data_viz`` plotters hardcode a ``marker`` argument inside their
-    ``ax.loglog`` / ``ax.semilogy`` calls, forwarding ``marker`` as a
-    ``**line_kw`` would raise a ``TypeError`` (duplicate keyword).  Instead,
-    ``plot_data_ensemble`` snapshots ``ax.lines`` *before* each plotter call
-    and patches the marker properties on every new ``Line2D`` that appears
-    *after* the call.  This approach is fully non-invasive and works with any
-    version of ``data_viz``.
+    **Component markers** are applied post-hoc (snapshot ``ax.lines`` before
+    each plotter call, patch the new ``Line2D`` objects after) to avoid a
+    ``TypeError`` from any hardcoded ``marker=`` argument inside ``data_viz``.
 
-    **Error styles** ``'bar'`` and ``'both'`` require that the underlying
-    ``data_viz`` plotter accepts an ``error_style`` kwarg (or equivalent).
-    If the installed ``data_viz`` version does not recognise ``error_style``,
-    ``plot_data_ensemble`` falls back to ``'shade'`` silently and prints a
-    one-time warning.
+    **Error styles** ``'bar'`` / ``'both'`` require the ``data_viz`` plotter
+    to accept an ``error_style`` kwarg; otherwise falls back to ``'shade'``
+    with a one-time ``warnings.warn``.
 
     Data files are read via :func:`femtic.observe_to_site_viz_list` (through
-    the internal ``_observe_to_site_list`` helper), which is the authoritative
-    FEMTIC reader.  FEMTIC stores Z in SI Ω; the helper converts to mV/km/nT
-    before passing to ``data_viz.datadict_to_plot_df``.
+    ``_observe_to_site_list``).  FEMTIC stores Z in SI Ω; the helper converts
+    to mV/km/nT before passing to ``data_viz.datadict_to_plot_df``.
     """
     plt_ = _require_mpl()
 
@@ -2007,56 +2016,76 @@ def plot_data_ensemble(
     except Exception as e:  # pragma: no cover
         raise ImportError("data_viz.py is required for plot_data_ensemble.") from e
 
-    _plotters = {
+    _plotter_map = {
         "rho":    data_viz.add_rho,
         "phase":  data_viz.add_phase,
         "tipper": data_viz.add_tipper,
         "pt":     data_viz.add_pt,
     }
-    plotter = _plotters.get(str(what).lower())
-    if plotter is None:
-        raise ValueError(
-            f"plot_data_ensemble: unknown 'what'={what!r}. "
-            f"Choose from {list(_plotters)}."
-        )
-
-    n_plots = len(sample_indices)
-    if n_plots == 0:
-        raise ValueError("plot_data_ensemble: sample_indices is empty.")
-
-    if figsize is None:
-        figsize = (8, 3 * n_plots)
-
-    if fig is None or axs is None:
-        fig, _axs = plt_.subplots(n_plots, 1, figsize=figsize, squeeze=False)
-        axs_arr = _axs[:, 0]
-    else:
-        axs_arr = np.asarray(axs).ravel()
-        if len(axs_arr) < n_plots:
-            raise ValueError(
-                f"plot_data_ensemble: got {len(axs_arr)} axes but need {n_plots}."
-            )
-        axs_arr = axs_arr[:n_plots]
 
     # ------------------------------------------------------------------
-    # Resolve per-curve error-display flags.
+    # Normalise 'what' → list of panel names; validate each entry.
+    # ------------------------------------------------------------------
+    if isinstance(what, str):
+        what_list = [what]
+    else:
+        what_list = list(what)
+    for w in what_list:
+        if str(w).lower() not in _plotter_map:
+            raise ValueError(
+                f"plot_data_ensemble: unknown panel type {w!r}. "
+                f"Choose from {list(_plotter_map)}."
+            )
+    n_panels = len(what_list)
+
+    # ------------------------------------------------------------------
+    # Normalise 'comps' → list of length n_panels.
+    # For tipper/pt entries the value is ignored but must be present.
+    # ------------------------------------------------------------------
+    _needs_comps = {"rho", "phase"}
+    if isinstance(comps, str):
+        comps_list = [comps] * n_panels
+    else:
+        comps_list = list(comps)
+        if len(comps_list) != n_panels:
+            raise ValueError(
+                f"plot_data_ensemble: 'comps' has {len(comps_list)} entries "
+                f"but 'what' has {n_panels}."
+            )
+
+    n_samples = len(sample_indices)
+    if n_samples == 0:
+        raise ValueError("plot_data_ensemble: sample_indices is empty.")
+
+    # ------------------------------------------------------------------
+    # Figure / axes setup.
+    # axs_arr shape: (n_samples, n_panels)
+    # ------------------------------------------------------------------
+    if figsize is None:
+        figsize = (5 * n_panels, 3 * n_samples)
+
+    if fig is None or axs is None:
+        fig, _axs = plt_.subplots(
+            n_samples, n_panels,
+            figsize=figsize,
+            squeeze=False,
+        )
+        axs_arr = _axs                       # shape (n_samples, n_panels)
+    else:
+        axs_arr = np.asarray(axs).reshape(n_samples, n_panels)
+
+    # ------------------------------------------------------------------
+    # Shared flags.
     # ------------------------------------------------------------------
     _show_orig = show_errors if show_errors_orig is None else show_errors_orig
     _show_pert = show_errors if show_errors_pert is None else show_errors_pert
 
-    # ------------------------------------------------------------------
-    # Validate error_style per curve.
-    # 'shade' | 'bar' | 'both'  (any unrecognised value falls back to 'shade')
-    # ------------------------------------------------------------------
     _valid_styles = {"shade", "bar", "both"}
     _style_orig = error_style_orig if error_style_orig in _valid_styles else "shade"
     _style_pert = error_style_pert if error_style_pert in _valid_styles else "shade"
 
     # ------------------------------------------------------------------
-    # Resolve marker dict.
-    # comp_markers=None  → use DEFAULT_COMP_MARKERS
-    # comp_markers={}    → disable markers (marker='none' for all comps)
-    # comp_markers={...} → merge with DEFAULT_COMP_MARKERS
+    # Marker dict resolution.
     # ------------------------------------------------------------------
     _use_markers = True
     if comp_markers is None:
@@ -2067,57 +2096,56 @@ def plot_data_ensemble(
     else:
         _markers = {**DEFAULT_COMP_MARKERS, **comp_markers}
 
-    # comps kwarg only for impedance plotters
-    _needs_comps = {"rho", "phase"}
-    _comp_list = (
-        [c.strip() for c in comps.split(",")]
-        if str(what).lower() in _needs_comps
-        else []
-    )
+    # ------------------------------------------------------------------
+    # Per-panel component lists (empty list → tipper/pt, no per-comp loop).
+    # ------------------------------------------------------------------
+    _panel_comp_lists = []
+    for w, c in zip(what_list, comps_list):
+        if str(w).lower() in _needs_comps and c:
+            _panel_comp_lists.append([s.strip() for s in c.split(",")])
+        else:
+            _panel_comp_lists.append([])
 
     # ------------------------------------------------------------------
-    # error_style: probe once whether data_viz plotter accepts the kwarg.
-    # We forward it only when supported; otherwise fall back to 'shade'.
+    # Per-panel y-axis limit lookup.
+    # Maps panel type → the caller-supplied limit (or None = auto).
     # ------------------------------------------------------------------
-    _error_style_warned = [False]
+    _ylim_map = {
+        "rho":    rholims,
+        "phase":  phslims,
+        "tipper": vtflims,
+        "pt":     ptlims,
+    }
 
-    def _error_style_kw(style: str) -> dict:
-        """Return {'error_style': style} if the plotter accepts it, else {}."""
+    # ------------------------------------------------------------------
+    # error_style probe (once per panel plotter, shared warning state).
+    # ------------------------------------------------------------------
+    _es_warned: dict = {}   # plotter_name → bool
+
+    def _error_style_kw(plotter: Any, style: str) -> dict:
         if style == "shade":
             return {}
+        pname = getattr(plotter, "__name__", str(plotter))
         try:
             import inspect as _insp
             if "error_style" in _insp.signature(plotter).parameters:
                 return {"error_style": style}
-            if not _error_style_warned[0]:
+            if not _es_warned.get(pname, False):
                 import warnings
                 warnings.warn(
-                    f"data_viz.{plotter.__name__} does not accept "
-                    f"'error_style'; falling back to 'shade'.",
+                    f"data_viz.{pname} does not accept 'error_style'; "
+                    f"falling back to 'shade'.",
                     stacklevel=5,
                 )
-                _error_style_warned[0] = True
+                _es_warned[pname] = True
         except Exception:
             pass
         return {}
 
     # ------------------------------------------------------------------
-    # Post-hoc marker helper.
-    #
-    # data_viz plotters (add_rho, add_phase, …) hardcode their own marker
-    # inside ax.loglog / ax.semilogy, so we cannot forward 'marker' via
-    # **line_kw without a duplicate-keyword TypeError.  Instead we:
-    #   1. snapshot ax.lines before the plotter call,
-    #   2. call the plotter,
-    #   3. patch the marker properties on every new Line2D that appeared.
+    # Post-hoc marker helpers.
     # ------------------------------------------------------------------
-
-    def _apply_markers_to_new_lines(
-        ax: Any,
-        lines_before: list,
-        marker: str,
-    ) -> None:
-        """Patch marker properties on lines added to *ax* since *lines_before*."""
+    def _apply_markers(ax: Any, lines_before: list, marker: str) -> None:
         for line in ax.lines:
             if line not in lines_before:
                 line.set_marker(marker)
@@ -2126,20 +2154,68 @@ def plot_data_ensemble(
                     line.set_markevery(markevery)
 
     def _marker_for(comp: str) -> str:
-        """Return the marker symbol for a component name."""
         if not _use_markers:
             return "none"
         return _markers.get(_comp_class(comp), "none")
 
     # ------------------------------------------------------------------
-    # Read original sites once.
+    # Helper: plot one panel (one (sample_row, panel_col) cell).
+    # ------------------------------------------------------------------
+    def _plot_panel(
+        ax: Any,
+        plotter: Any,
+        comp_list: list,
+        sites: list,
+        site_idx: list,
+        show_err: bool,
+        style: str,
+        alpha: float,
+        linestyle: str,
+        add_to_legend: bool,        # True only for the original curves
+        legend_done: set,
+    ) -> None:
+        """Draw all sites onto *ax* for one panel."""
+
+        def _need_legend(key: str) -> bool:
+            if not add_to_legend or key in legend_done:
+                return False
+            legend_done.add(key)
+            return True
+
+        es_kw = _error_style_kw(plotter, style)
+
+        if comp_list:
+            for si in site_idx:
+                if si >= len(sites):
+                    continue
+                site = sites[si]
+                for comp in comp_list:
+                    lb = list(ax.lines)
+                    plotter(site, ax=ax, show_errors=show_err,
+                            legend=_need_legend(comp),
+                            alpha=alpha, linestyle=linestyle,
+                            comps=comp, **es_kw)
+                    _apply_markers(ax, lb, _marker_for(comp))
+        else:
+            # tipper / pt: one call per site
+            for si in site_idx:
+                if si >= len(sites):
+                    continue
+                site = sites[si]
+                lb = list(ax.lines)
+                plotter(site, ax=ax, show_errors=show_err,
+                        legend=_need_legend("_panel_"),
+                        alpha=alpha, linestyle=linestyle, **es_kw)
+                _apply_markers(ax, lb, _marker_for("inv"))
+
+    # ------------------------------------------------------------------
+    # Read original sites once (shared across all rows and columns).
     # ------------------------------------------------------------------
     orig_sites = _observe_to_site_list(orig_file, fem)
     if out:
         print(f"plot_data_ensemble: original read from {orig_file} "
               f"({len(orig_sites)} sites)")
 
-    # Build the sub-sampling index once so both curves use the same sites.
     _rng = np.random.default_rng()
     n_total = len(orig_sites)
     if n_sites is not None and n_total > 0:
@@ -2149,93 +2225,61 @@ def plot_data_ensemble(
         _site_idx = list(range(n_total))
 
     # ------------------------------------------------------------------
-    # Main loop: one subplot row per selected sample.
+    # Main loop: rows = samples, columns = panels.
     # ------------------------------------------------------------------
     for row, idx in enumerate(sample_indices):
-        ax = axs_arr[row]
 
-        # Track which component labels have been legend-registered in this row.
-        # legend=True on the *first* plotter call for each comp (first site);
-        # legend=False for all subsequent sites so labels aren't duplicated.
-        # Perturbed curves never add to the legend (they share the same labels).
-        _legend_done: set = set()
-
-        def _need_legend(comp_key: str) -> bool:
-            """Return True for the first call with this comp_key; False after."""
-            if comp_key in _legend_done:
-                return False
-            _legend_done.add(comp_key)
-            return True
-
-        # --- original: one call per (selected site × component) ---
-        if _comp_list:
-            for si in _site_idx:
-                site = orig_sites[si]
-                for comp in _comp_list:
-                    _lines_before = list(ax.lines)
-                    plotter(site, ax=ax, show_errors=_show_orig,
-                            legend=_need_legend(comp),
-                            alpha=alpha_orig,
-                            comps=comp,
-                            **_error_style_kw(_style_orig))
-                    _apply_markers_to_new_lines(ax, _lines_before,
-                                                _marker_for(comp))
-        else:
-            # Tipper / PT: single plotter call per site, 'inv' class marker.
-            for si in _site_idx:
-                site = orig_sites[si]
-                _lines_before = list(ax.lines)
-                plotter(site, ax=ax, show_errors=_show_orig,
-                        legend=_need_legend("_tipper_pt_"),
-                        alpha=alpha_orig,
-                        **_error_style_kw(_style_orig))
-                _apply_markers_to_new_lines(ax, _lines_before,
-                                            _marker_for("inv"))
-
-        # --- perturbed: same site subset, dashed ---
-        # Perturbed curves never add legend entries (legend=False always).
+        # Read perturbed sites once per row (shared across columns).
         pert_sites = _observe_to_site_list(ens_files[idx], fem)
 
-        if _comp_list:
-            for si in _site_idx:
-                if si < len(pert_sites):
-                    site = pert_sites[si]
-                    for comp in _comp_list:
-                        _lines_before = list(ax.lines)
-                        plotter(site, ax=ax, show_errors=_show_pert,
-                                legend=False, linestyle="--",
-                                alpha=alpha_pert,
-                                comps=comp,
-                                **_error_style_kw(_style_pert))
-                        _apply_markers_to_new_lines(ax, _lines_before,
-                                                    _marker_for(comp))
-        else:
-            for si in _site_idx:
-                if si < len(pert_sites):
-                    site = pert_sites[si]
-                    _lines_before = list(ax.lines)
-                    plotter(site, ax=ax, show_errors=_show_pert,
-                            legend=False, linestyle="--",
-                            alpha=alpha_pert,
-                            **_error_style_kw(_style_pert))
-                    _apply_markers_to_new_lines(ax, _lines_before,
-                                                _marker_for("inv"))
+        for col, (w, plotter) in enumerate(
+            zip(what_list, [_plotter_map[str(w).lower()] for w in what_list])
+        ):
+            ax = axs_arr[row, col]
+            comp_list = _panel_comp_lists[col]
+            _legend_done: set = set()
 
-        # Rebuild legend after all sites are plotted so every component that
-        # was registered above appears exactly once.  Deduplicate by label so
-        # that if the plotter internally calls ax.legend() per component the
-        # final legend is clean.
-        handles, labels = ax.get_legend_handles_labels()
-        seen: dict = {}
-        for h, l in zip(handles, labels):
-            if l not in seen:
-                seen[l] = h
-        if seen:
-            ax.legend(seen.values(), seen.keys(), fontsize=8)
+            # original curves (solid, alpha_orig)
+            _plot_panel(ax, plotter, comp_list,
+                        orig_sites, _site_idx,
+                        _show_orig, _style_orig, alpha_orig,
+                        linestyle="-",
+                        add_to_legend=True,
+                        legend_done=_legend_done)
 
-        ax.set_title(f"Sample {idx}", fontsize=9)
+            # perturbed curves (dashed, alpha_pert, no legend entries)
+            _plot_panel(ax, plotter, comp_list,
+                        pert_sites, _site_idx,
+                        _show_pert, _style_pert, alpha_pert,
+                        linestyle="--",
+                        add_to_legend=False,
+                        legend_done=_legend_done)
+
+            # Deduplicated legend (removes duplicates from internal calls).
+            handles, labels = ax.get_legend_handles_labels()
+            seen: dict = {}
+            for h, l in zip(handles, labels):
+                if l not in seen:
+                    seen[l] = h
+            if seen:
+                ax.legend(seen.values(), seen.keys(), fontsize=8)
+
+            # Axis limits — applied post-hoc so plotters can't override them.
+            if perlims is not None:
+                ax.set_xlim(perlims)
+            _yl = _ylim_map.get(str(w).lower())
+            if _yl is not None:
+                ax.set_ylim(_yl)
+
+            # Column header on first row only.
+            if row == 0:
+                ax.set_title(f"{w.capitalize()} — sample {idx}", fontsize=9)
+            else:
+                ax.set_title(f"Sample {idx}", fontsize=9)
+
         if out:
-            print(f"  sample {idx} done ({len(_site_idx)} sites plotted)")
+            print(f"  sample {idx} done ({len(_site_idx)} sites, "
+                  f"{n_panels} panel(s))")
 
     fig.tight_layout()
     return fig, axs_arr

@@ -151,32 +151,56 @@ independently in notebooks or post-processing scripts.
 
 ```python
 fig, axs = plot_data_ensemble(
-    orig_file,           # path to template observe.dat
-    ens_files,           # list of perturbed observe.dat paths (one per member)
-    sample_indices,      # list of int — which members to plot
-    comps="xy,yx",       # impedance components (ignored for tipper / pt)
-    what="rho",          # 'rho' | 'phase' | 'tipper' | 'pt'
-    show_errors=False,   # shorthand for both curves; default False
-    show_errors_orig=None,   # override for original curves only (None → show_errors)
-    show_errors_pert=None,   # override for perturbed curves only (None → show_errors)
-    error_style_orig="shade",  # 'shade' | 'bar' | 'both' for original curves
-    error_style_pert="shade",  # 'shade' | 'bar' | 'both' for perturbed curves
-    n_sites=None,            # MT sites drawn per row; None = all sites
-    alpha_orig=1.0,          # opacity for original curves (0–1)
-    alpha_pert=0.6,          # opacity for perturbed curves (< 1 lets original show through)
-    comp_markers=None,       # dict of marker per class; None = DEFAULT_COMP_MARKERS
-    markersize=4.0,          # marker size in points
-    markevery=None,          # mark every N-th period; None = every period
-    figsize=None,        # (width, height) in inches; auto if None
-    fig=None,            # pre-existing Figure
-    axs=None,            # pre-existing axes, shape (len(sample_indices),)
+    orig_file,                   # path to template observe.dat
+    ens_files,                   # list of perturbed observe.dat paths (one per member)
+    sample_indices,              # list of int — which members to plot
+    what="rho",                  # str or list: 'rho', 'phase', 'tipper', 'pt'
+                                 # e.g. ['rho', 'phase'] → two-column layout
+    comps="xy,yx",               # str (shared) or list of same length as what
+    show_errors=False,
+    show_errors_orig=None,       # override for original curves (None → show_errors)
+    show_errors_pert=None,       # override for perturbed curves
+    error_style_orig="shade",    # 'shade' | 'bar' | 'both' for original curves
+    error_style_pert="shade",    # 'shade' | 'bar' | 'both' for perturbed curves
+    n_sites=None,                # MT sites drawn per row; None = all sites
+    alpha_orig=1.0,
+    alpha_pert=0.6,
+    comp_markers=None,           # dict of marker per class; None = DEFAULT_COMP_MARKERS
+    markersize=4.0,
+    markevery=None,
+    figsize=None,                # auto: (5 × n_panels, 3 × n_samples)
+    fig=None,
+    axs=None,                    # pre-existing axes, shape (n_samples, n_panels)
     out=True,
 )
+# Returns: fig, axs  — axs.shape = (n_samples, n_panels)
 ```
 
-**Layout:** one subplot row per selected sample.  Within each row the original
-curve is drawn **solid** and the perturbed curve **dashed** on the same axes,
-so differences are immediately visible.
+**Layout:** rows = number of selected samples; columns = number of entries in
+*what*.  Each cell shows the original (solid) and perturbed (dashed) curves for
+the randomly drawn site subset, overlaid on the same axes.
+
+Typical multi-panel usage:
+
+```python
+fig, axs = fviz.plot_data_ensemble(
+    orig_file, ens_files, VIZ_SAMPLES,
+    what=["rho", "phase", "tipper"],
+    comps="xy,yx",          # shared for rho and phase; ignored for tipper
+)
+# axs.shape == (len(VIZ_SAMPLES), 3)
+```
+
+For per-column component control (e.g. off-diagonal columns only for ρ_a,
+all four for phase):
+
+```python
+fig, axs = fviz.plot_data_ensemble(
+    orig_file, ens_files, VIZ_SAMPLES,
+    what=["rho", "phase"],
+    comps=["xy,yx", "xx,xy,yx,yy"],
+)
+```
 
 `show_errors` is a shared shorthand (default `False`).  Use `show_errors_orig`
 and `show_errors_pert` for independent control — the template `observe.dat`
@@ -353,7 +377,10 @@ You can also control this via `prepare_rho_for_plotting()` or by setting
 |            |        | (`'shade'` / `'bar'` / `'both'`); no shared fallback param. |
 |            |        | Added module-level `DEFAULT_COMP_MARKERS` dict and          |
 |            |        | `_comp_class()` helper for component classification.        |
-|            |        | Fixed legend: all components appear once per row (was only  |
-|            |        | the first component of the first site).                     |
+|            |        | Fixed legend: all components appear once per row.           |
+|            |        | Multi-panel redesign: `what` accepts a list of panel types  |
+|            |        | (e.g. `['rho', 'phase', 'tipper']`); `comps` may be a      |
+|            |        | single string or per-panel list; returned `axs` shape is   |
+|            |        | `(n_samples, n_panels)`.                                    |
 
 Author: Volker Rath (DIAS)
