@@ -71,6 +71,26 @@ Provenance:
                 components); added DAT_ERROR_STYLE_ORIG / DAT_ERROR_STYLE_PERT
                 for independent control of error rendering (shade / bar / both)
                 on original vs. perturbed curves (no shared fallback variable).
+                DAT_WHAT changed to a list to support multi-panel layouts
+                (e.g. ["rho", "phase", "tipper"]); DAT_COMPS changed to a
+                parallel list (one entry per panel; single string still
+                accepted and broadcast to all rho/phase panels).
+    2026-04-12  Claude  Per-sample plot loop: both PLOT_DATA and PLOT_MODEL
+                now iterate over VIZ_SAMPLES, calling plot_data_ensemble /
+                plot_model_ensemble with sample_indices=[i] and saving
+                rto_data<PLOT_STR>.pdf / rto_model<PLOT_STR>.pdf into each
+                member's own subdirectory (not the shared plots/ dir).
+                Removed shared PLOT_DIR save paths for these figures.
+                Fixed PLOT_DIR path (os.makedirs replacing os.mkdir).
+    2026-04-12  Claude  Added DAT_PERLIMS / DAT_RHOLIMS / DAT_PHSLIMS /
+                DAT_VTFLIMS / DAT_PTLIMS to data-plot config; wired into
+                plot_data_ensemble call (perlims / rholims / phslims /
+                vtflims / ptlims kwargs).
+    2026-04-12  Claude  Replaced DAT_SHOW_ERRORS with DAT_SHOW_ERRORS_ORIG /
+                DAT_SHOW_ERRORS_PERT for independent per-curve error-envelope
+                control; removed hardcoded show_errors_orig=True from the
+                plot_data_ensemble call; fixed PLOT_DIR path (was erroneously
+                prepended with ENSEMBLE_DIR).
 """
 
 import os
@@ -120,7 +140,7 @@ print(titstrng + "\n\n")
 """
 Base setup.
 """
-N_SAMPLES = 1
+N_SAMPLES = 32
 ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/ubinas/ensemble/"
 # TEMPLATES = ENSEMBLE_DIR + "templates/"
 TEMPLATES = r"/home/vrath/Py4MTX/py4mt/data/rto/ubinas/templates/"
@@ -148,7 +168,8 @@ Set up mode of model perturbations.
 PERTURB_MOD = True
 if PERTURB_MOD:
     MOD_REF = TEMPLATES + "referencemodel.dat"
-    MOD_REF_BASE = os.path.basename(MOD_REF)   # filename only — used inside ensemble dirs
+    # filename only — used inside ensemble dirs
+    MOD_REF_BASE = os.path.basename(MOD_REF)
     MOD_METHOD = "add"
     # if ModCov is not None, this needs to be normal
     MOD_PDF = ["normal", 0., 0.5]
@@ -164,7 +185,7 @@ if PERTURB_MOD:
     # n_power_iter=3-4 sharpens accuracy for slowly decaying roughness spectra.
     # sigma2_residual adds short-wavelength variability beyond the rank-k subspace;
     # set to ~10% of typical log10(rho) variance (e.g. 1e-3 for std ~0.1 in log10).
-    MOD_N_EIG = 128
+    MOD_N_EIG = 128 
     MOD_N_OVERSAMPLING = 10     # extra columns in range-finder; 10-15 is fine
     MOD_N_POWER_ITER = 3        # 3-4 recommended for FEMTIC roughness spectra
     MOD_SIGMA2_RESIDUAL = 1e-3  # isotropic residual variance; 0 = disabled
@@ -172,7 +193,8 @@ if PERTURB_MOD:
     # --- full-rank options (used when MOD_ALGO = "full rank") ---
     # lam_alpha is the key speed lever: raise to 1e-4 or 1e-3 if CG is slow.
     MOD_LAM = 0.0
-    MOD_LAM_MODE = "scaled_median_diag"   # auto diagonal shift from diag(R^T R)
+    # auto diagonal shift from diag(R^T R)
+    MOD_LAM_MODE = "scaled_median_diag"
     MOD_LAM_ALPHA = 1.0e-4                # raise to 1e-3 if CG convergence is slow
     MOD_SOLVER = "cg"                     # CG is optimal for SPD Q = R^T R
     MOD_PRECOND = "ilu"                   # ILU beats jacobi by 3-5x fewer iterations
@@ -193,8 +215,8 @@ if PERTURB_DAT:
 RESET_ERRORS = True
 if RESET_ERRORS:
     ERRORS = [
-        [0.15, .25, .25, 0.15]*2,         # Impedance
-        [0.05, 0.05]*2,                   # VTF
+        [0.25, .1, .1, 0.25] * 2,         # Impedance
+        [0.05, 0.05] * 2,                   # VTF
         [.5, .2, .2, .5],                 # PT
     ]
 else:
@@ -212,8 +234,13 @@ of MT sites per row (VIZ_N_SITES); set to None to show all sites.
 PLOT_DATA = True
 PLOT_MODEL = False
 
-PLOT_STR = "_observed"
-PLOT_DIR = ENSEMBLE_DIR+"/plots/"
+PLOT_STR = ""
+PLOT_DIR = ENSEMBLE_DIR + "plots/"
+print(" Plots written to: %s" % PLOT_DIR)
+if not os.path.isdir(PLOT_DIR):
+    print(" Directory: %s does not exist, but will be created" % PLOT_DIR)
+    os.makedirs(PLOT_DIR, exist_ok=True)
+
 
 # Number of ensemble members to include in both diagnostic plots.
 # Members are drawn without replacement from 0 … N_SAMPLES-1.
@@ -225,13 +252,29 @@ VIZ_N_SAMPLES = 1
 VIZ_N_SITES = 10
 
 # --- data plot ---
-DAT_WHAT = "rho"        # "rho" | "phase" | "tipper" | "pt"
-DAT_COMPS = "xx,xy,yx,yy"
-DAT_SHOW_ERRORS = True     # raw template errors are noisy at long periods;
-                            # use show_errors_orig / show_errors_pert for
-                            # independent control in plot_data_ensemble
-DAT_ALPHA_ORIG = 1. #0.6        # opacity for original curves (1 = fully opaque)
-DAT_ALPHA_PERT = 0.5 #1.        # opacity for perturbed curves (< 1 lets original show through)
+# what:  list of panel types — one subplot column per entry.
+#        Allowed values: 'rho', 'phase', 'tipper', 'pt'.
+# comps: list of component strings, one per entry in what.
+#        Ignored for 'tipper' and 'pt' panels (use None or '' there).
+#        A single string is also accepted and is broadcast to all panels.
+DAT_WHAT = ["rho", "phase"]            # e.g. ["rho", "phase", "tipper"]
+DAT_COMPS = ["xx,xy,yx,yy",            # rho   — all four components
+             "xx,xy,yx,yy"]            # phase — all four components
+DAT_COMPS = ["xy,yx",            # rho   — all four components
+             "xy,yx"]
+
+# Shorter alternative (single string broadcast to every rho/phase column):
+# DAT_COMPS = "xy,yx"
+DAT_SHOW_ERRORS_ORIG = False     # show error envelopes on original curves
+# (raw template errors can be noisy at long
+# periods — set False to hide them)
+DAT_SHOW_ERRORS_PERT = True    # show error envelopes on perturbed curves
+# (reset relative errors are compact; set True
+# to display ±σ bands on perturbed curves)
+# 0.6        # opacity for original curves (1 = fully opaque)
+DAT_ALPHA_ORIG = 0.5
+# 1.        # opacity for perturbed curves (< 1 lets original show through)
+DAT_ALPHA_PERT = 1.
 
 # Marker symbols per component class.
 # 'ii'  → diagonal components (xx, yy)   — circles
@@ -240,19 +283,25 @@ DAT_ALPHA_PERT = 0.5 #1.        # opacity for perturbed curves (< 1 lets origina
 # Set to None to use the DEFAULT_COMP_MARKERS from femtic_viz.
 # Set to {} to disable markers entirely (lines only).
 DAT_COMP_MARKERS = None
-DAT_MARKERSIZE = 4.0        # marker size in points
-DAT_MARKEVERY = None        # plot marker every N-th period; None = every period
+DAT_MARKERSIZE = 3.0        # marker size in points
+DAT_MARKEVERY = 2        # plot marker every N-th period; None = every period
 
 # Error rendering style — applies when show_errors_orig / show_errors_pert is True.
 # 'shade' : semi-transparent fill_between band (default, existing behaviour)
 # 'bar'   : discrete errorbar caps at each period
 # 'both'  : shade AND bar simultaneously
-DAT_ERROR_STYLE_ORIG = "shade"
+DAT_ERROR_STYLE_ORIG = "bar"
 DAT_ERROR_STYLE_PERT = "shade"
 
-
-
-# --- model plot ---
+# Axis limits for data plots.
+# DAT_PERLIMS applies to the period (x) axis of every panel type.
+# The remaining limits apply to the y-axis of the indicated panel type only.
+# Set any to None for Matplotlib auto-scaling.
+DAT_PERLIMS = (1.e-4, 1.e4)     # (T_min, T_max) in seconds; None = auto
+DAT_RHOLIMS = None              # (rho_min, rho_max) Ω·m (or log₁₀); None = auto
+DAT_PHSLIMS = (-180., 180.)     # (phs_min, phs_max) degrees; None = auto
+DAT_VTFLIMS = (-1.,    +1.)     # (vtf_min, vtf_max); None = auto
+DAT_PTLIMS = None               # (pt_min,  pt_max);  None = auto
 MOD_MESH = TEMPLATES + "mesh.dat"
 # MOD_ORIG is derived from MOD_REF below (after the PERTURB_MOD block)
 
@@ -261,7 +310,8 @@ MOD_MESH = TEMPLATES + "mesh.dat"
 MOD_MODE = "tri"        # "tri" | "scatter" | "grid"
 MOD_LOG10 = True
 MOD_CMAP = "jet_r"
-MOD_CLIM = None         # (vmin, vmax) in log10(Ohm.m); None = auto from original
+# (vmin, vmax) in log10(Ohm.m); None = auto from original
+MOD_CLIM = None
 # Axis limits for map and curtain slices.
 # Map slices:    MOD_XLIM = easting range (m),  MOD_YLIM = northing range (m).
 # Curtain slices: MOD_YLIM = along-profile distance range (m),
@@ -275,8 +325,8 @@ MOD_MESH_LINES = False  # overlay triangulation edges on filled patches
 MOD_MESH_LW = 0.3       # mesh edge line width (points)
 MOD_MESH_COLOR = "k"    # mesh edge colour
 MOD_SLICES = [
-    {"type": "map",     "z0":  5000,  "dz": 50},
-    {"type": "map",     "z0": -2000, "dz": 50},
+    {"type": "map", "z0": 5000, "dz": 50},
+    {"type": "map", "z0": -5000, "dz": 50},
     {"type": "curtain",
      "polyline": np.array([[0., 0.], [10000., 0.]]),
      "width": 500},
@@ -301,7 +351,8 @@ Draw a random subset of ensemble members for visualization.
 Used by both the data plot and the model plot.
 """
 _n_viz = min(VIZ_N_SAMPLES, N_SAMPLES)
-VIZ_SAMPLES = sorted(rng.choice(N_SAMPLES, size=_n_viz, replace=False).tolist())
+VIZ_SAMPLES = sorted(rng.choice(
+    N_SAMPLES, size=_n_viz, replace=False).tolist())
 print(f"Visualization members: {VIZ_SAMPLES}\n")
 
 """
@@ -336,28 +387,36 @@ if PLOT_DATA:
         for i in range(N_SAMPLES)
     ]
 
-    fig_dat, axs_dat = fviz.plot_data_ensemble(
-        orig_file=dat_orig_file,
-        ens_files=dat_ens_files,
-        sample_indices=VIZ_SAMPLES,
-        comps=DAT_COMPS,
-        what=DAT_WHAT,
-        show_errors=False,              # shorthand off; use per-curve flags below
-        show_errors_orig=True,          # template errors are raw; skip envelopes
-        show_errors_pert=False,         # show reset relative-error bands on perturbed
-        error_style_orig=DAT_ERROR_STYLE_ORIG,
-        error_style_pert=DAT_ERROR_STYLE_PERT,
-        n_sites=VIZ_N_SITES,
-        alpha_orig=DAT_ALPHA_ORIG,
-        alpha_pert=DAT_ALPHA_PERT,
-        comp_markers=DAT_COMP_MARKERS,
-        markersize=DAT_MARKERSIZE,
-        markevery=DAT_MARKEVERY,
-        out=True,
-    )
-    fig_dat.savefig(ENSEMBLE_DIR + "rto_data_ensemble"+PLOT_STR+".pdf", bbox_inches="tight")
-    plt.close(fig_dat)
-    print("data ensemble plot saved.")
+    for i_samp in VIZ_SAMPLES:
+        fig_dat, axs_dat = fviz.plot_data_ensemble(
+            orig_file=dat_orig_file,
+            ens_files=dat_ens_files,
+            sample_indices=[i_samp],
+            what=DAT_WHAT,
+            comps=DAT_COMPS,
+            show_errors_orig=DAT_SHOW_ERRORS_ORIG,
+            show_errors_pert=DAT_SHOW_ERRORS_PERT,
+            error_style_orig=DAT_ERROR_STYLE_ORIG,
+            error_style_pert=DAT_ERROR_STYLE_PERT,
+            n_sites=VIZ_N_SITES,
+            alpha_orig=DAT_ALPHA_ORIG,
+            alpha_pert=DAT_ALPHA_PERT,
+            comp_markers=DAT_COMP_MARKERS,
+            markersize=DAT_MARKERSIZE,
+            markevery=DAT_MARKEVERY,
+            perlims=DAT_PERLIMS,
+            rholims=DAT_RHOLIMS,
+            phslims=DAT_PHSLIMS,
+            vtflims=DAT_VTFLIMS,
+            ptlims=DAT_PTLIMS,
+            out=True,
+        )
+        member_dir = ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i_samp}/"
+        plot_path = member_dir + "rto_data" + PLOT_STR + ".pdf"
+        fig_dat.savefig(plot_path, bbox_inches="tight")
+        plt.close(fig_dat)
+        print(f"  data plot saved: {plot_path}")
+    print("data ensemble plots saved.")
 
 """
 Draw perturbed model sets: m̃ ∼ N(m, Cm)
@@ -397,9 +456,10 @@ print("model ensemble ready!")
 """
 Model visualization
 -------------------
-Joint plot of original vs. perturbed resistivity models for the selected
-samples, shown across 1-5 user-defined slices (map or curtain).
-Original and perturbed sit in adjacent rows; slices in columns.
+Per-sample plot of original vs. perturbed resistivity models, shown across
+1-5 user-defined slices (map or curtain).  One figure per selected ensemble
+member; each figure is saved into that member's own subdirectory as
+``rto_model<PLOT_STR>.pdf``.
 
 Helper: femtic_viz.plot_model_ensemble
 """
@@ -411,24 +471,28 @@ if PLOT_MODEL:
         for i in range(N_SAMPLES)
     ]
 
-    fig_mod, axs_mod = fviz.plot_model_ensemble(
-        orig_mod_file=MOD_ORIG,
-        ens_mod_files=mod_ens_files,
-        mesh_file=MOD_MESH,
-        sample_indices=VIZ_SAMPLES,
-        slices=MOD_SLICES,
-        mode=MOD_MODE,
-        log10=MOD_LOG10,
-        cmap=MOD_CMAP,
-        clim=MOD_CLIM,
-        xlim=MOD_XLIM,
-        ylim=MOD_YLIM,
-        zlim=MOD_ZLIM,
-        mesh_lines=MOD_MESH_LINES,
-        mesh_lw=MOD_MESH_LW,
-        mesh_color=MOD_MESH_COLOR,
-        out=True,
-    )
-    fig_mod.savefig(ENSEMBLE_DIR + "rto_model_"+PLOT_STR+".pdf", bbox_inches="tight")
-    plt.close(fig_mod)
-    print("model ensemble plot saved.")
+    for i_samp in VIZ_SAMPLES:
+        fig_mod, axs_mod = fviz.plot_model_ensemble(
+            orig_mod_file=MOD_ORIG,
+            ens_mod_files=mod_ens_files,
+            mesh_file=MOD_MESH,
+            sample_indices=[i_samp],
+            slices=MOD_SLICES,
+            mode=MOD_MODE,
+            log10=MOD_LOG10,
+            cmap=MOD_CMAP,
+            clim=MOD_CLIM,
+            xlim=MOD_XLIM,
+            ylim=MOD_YLIM,
+            zlim=MOD_ZLIM,
+            mesh_lines=MOD_MESH_LINES,
+            mesh_lw=MOD_MESH_LW,
+            mesh_color=MOD_MESH_COLOR,
+            out=True,
+        )
+        member_dir = ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i_samp}/"
+        plot_path = member_dir + "rto_model" + PLOT_STR + ".pdf"
+        fig_mod.savefig(plot_path, bbox_inches="tight")
+        plt.close(fig_mod)
+        print(f"  model plot saved: {plot_path}")
+    print("model ensemble plots saved.")

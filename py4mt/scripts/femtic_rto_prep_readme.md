@@ -96,9 +96,10 @@ from 0 … `N_SAMPLES − 1` each run.  The drawn list is printed at runtime.
 | `PLOT_MODEL`      | Enable / disable joint model plot (original vs. perturbed resistivity).  |
 | `VIZ_N_SAMPLES`   | Number of ensemble members to draw for both plots (≤ `N_SAMPLES`).      |
 | `VIZ_N_SITES`     | Number of MT sites drawn per data-plot row; `None` shows all sites.      |
-| `DAT_WHAT`        | MT quantity: `'rho'`, `'phase'`, `'tipper'`, or `'pt'`.                 |
-| `DAT_COMPS`       | Impedance components, comma-separated (e.g. `'xy,yx'`).                 |
-| `DAT_SHOW_ERRORS` | Propagate error envelopes into the original-data curve.                  |
+| `DAT_WHAT`        | List of panel types, one column per entry: `'rho'`, `'phase'`, `'tipper'`, `'pt'`. E.g. `["rho", "phase", "tipper"]`. |
+| `DAT_COMPS`       | List of component strings, one per entry in `DAT_WHAT` (ignored for `'tipper'`/`'pt'`). A single string is broadcast to all panels. E.g. `["xx,xy,yx,yy", "xy,yx"]`. |
+| `DAT_SHOW_ERRORS_ORIG` | Show ±1σ error envelopes on the **original** curves (`True` / `False`). Raw template errors can be large at long periods — set `False` to hide them. |
+| `DAT_SHOW_ERRORS_PERT` | Show ±1σ error envelopes on the **perturbed** curves (`True` / `False`). Perturbed files carry reset relative errors (compact ±σ bands). |
 | `DAT_ALPHA_ORIG`  | Opacity of the **original** data curves (0–1; default 1.0).              |
 | `DAT_ALPHA_PERT`  | Opacity of the **perturbed** data curves (0–1; default 0.6).             |
 | `DAT_COMP_MARKERS` | Dict of marker symbol per component class (`'ii'`, `'ij'`, `'inv'`); `None` = use `DEFAULT_COMP_MARKERS` from `femtic_viz`; `{}` = disable markers. |
@@ -106,6 +107,11 @@ from 0 … `N_SAMPLES − 1` each run.  The drawn list is printed at runtime.
 | `DAT_MARKEVERY`   | Plot a marker every N-th period; `None` = every period.                  |
 | `DAT_ERROR_STYLE_ORIG` | Error rendering for **original** curves: `'shade'` (default), `'bar'`, or `'both'`. |
 | `DAT_ERROR_STYLE_PERT` | Error rendering for **perturbed** curves: `'shade'` (default), `'bar'`, or `'both'`. |
+| `DAT_PERLIMS`      | Period-axis limits `(T_min, T_max)` in seconds applied to every panel. `None` = auto.      |
+| `DAT_RHOLIMS`      | y-axis limits for `'rho'` panels (Ω·m). `None` = auto.                                   |
+| `DAT_PHSLIMS`      | y-axis limits for `'phase'` panels (degrees). `None` = auto.                              |
+| `DAT_VTFLIMS`      | y-axis limits for `'tipper'` panels. `None` = auto.                                       |
+| `DAT_PTLIMS`       | y-axis limits for `'pt'` panels. `None` = auto.                                           |
 | `MOD_MESH`        | Path to the shared `mesh.dat`.                                           |
 | `MOD_MODE`        | Slice rendering mode: `'tri'` \| `'scatter'` \| `'grid'`.               |
 | `MOD_LOG10`       | Plot log₁₀(ρ) if `True`.                                                |
@@ -185,10 +191,32 @@ Diagnostic figures are saved to:
 |            |        | Added `DAT_ERROR_STYLE_ORIG` / `DAT_ERROR_STYLE_PERT` for   |
 |            |        | `'shade'` / `'bar'` / `'both'` error rendering per curve;  |
 |            |        | no shared fallback variable.                                |
+|            |        | `DAT_WHAT` changed to a list for multi-panel layouts        |
+|            |        | (e.g. `["rho", "phase", "tipper"]`); `DAT_COMPS` changed   |
+|            |        | to a parallel list (one entry per panel; single string      |
+|            |        | still accepted and broadcast to all rho/phase panels).      |
+| 2026-04-12 | Claude | Replaced `DAT_SHOW_ERRORS` with `DAT_SHOW_ERRORS_ORIG` /    |
+|            |        | `DAT_SHOW_ERRORS_PERT` for independent per-curve control.   |
+|            |        | Removed hardcoded `show_errors_orig=True` from the call.   |
+|            |        | Fixed `PLOT_DIR` path (was erroneously prepended with       |
+|            |        | `ENSEMBLE_DIR`).                                            |
 | 2026-03-31 | Claude | Bug fixes: `DAT_METHOD` trailing comma (tuple → str);        |
 |            |        | `MOD_ORIG` double-prepend of `TEMPLATES`; `refmod` and       |
 |            |        | `mod_ens_files` used full path instead of basename;          |
 |            |        | `MOD_REF_BASE` introduced to hold the filename component.   |
+| 2026-04-12 | Claude | Per-sample plot loop: both `PLOT_DATA` and `PLOT_MODEL`      |
+|            |        | blocks now iterate over `VIZ_SAMPLES`, calling               |
+|            |        | `plot_data_ensemble` / `plot_model_ensemble` with            |
+|            |        | `sample_indices=[i]` and saving `rto_data<PLOT_STR>.pdf` /  |
+|            |        | `rto_model<PLOT_STR>.pdf` into each member's own subdir.     |
+|            |        | `PLOT_DIR` no longer used for per-sample figures.            |
+|            |        | `os.makedirs` replaces `os.mkdir` for safer dir creation.   |
+| 2026-04-12 | Claude | Added `DAT_PERLIMS` / `DAT_RHOLIMS` / `DAT_PHSLIMS` /        |
+|            |        | `DAT_VTFLIMS` / `DAT_PTLIMS` to data-plot config; wired      |
+|            |        | into `plot_data_ensemble` as `perlims` / `rholims` /          |
+|            |        | `phslims` / `vtflims` / `ptlims`. Applied post-hoc in        |
+|            |        | `femtic_viz` after each cell is filled. `femtic_viz`          |
+|            |        | provenance and docstring updated accordingly.                |
 
 ## Author
 
