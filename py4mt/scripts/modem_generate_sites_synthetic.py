@@ -156,7 +156,7 @@ if "rect" in EDI_GEN.lower():
 
         # Create an MT object
         file_in = EDI_TEMPLATE
-        edi_dict = edi_read  edi_dict = load_edi(edi, drop_invalid_periods=True)
+        edi_dict = load_edi(edi, drop_invalid_periods=True)
 
         station = edi_dict["station"]
 
@@ -214,7 +214,8 @@ if "rect" in EDI_GEN.lower():
         edi_dict["lat_deg"] = Lat[nn]
         edi_dict["lon_deg"] = Lon[nn]
 
-        edi_dict["info"] =  EDI_GEN +"|"+str(LAT_LIMITS)+str(LON_LIMITS)+"|"+ str{DX}+", "+str(DY)
+        edi_dict["info"] =  \
+            EDI_GEN +"|"+str(LAT_LIMITS)+str(LON_LIMITS)+"|"+ str{DX}+", "+str(DY)
 
 
         if "edi" in OUT_FILES.lower():

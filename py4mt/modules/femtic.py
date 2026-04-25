@@ -43,6 +43,11 @@ Command-line interface
         --mesh-out mesh_reconstructed.dat \\
         --rho-block-out resistivity_block_iter0_reconstructed.dat
 
+    python femtic.py edi-to-observe \\
+        SITE01.edi SITE02.edi \\
+        --xy-csv positions.csv \\
+        --out observe.dat
+
 All functionality is also available as regular Python functions.
 
 Author: Volker Rath (DIAS)
@@ -50,6 +55,9 @@ Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-02 (UTC)
 Modified: 2026-04-11 by Claude Sonnet 4.6 (Anthropic) — Section 2
     (matrix/roughness tools) now imported from ensembles.py rather than
     duplicated; femtic.py restricted to FEMTIC-specific I/O and conversion.
+Modified: 2026-04-13 by Claude Sonnet 4.6 (Anthropic) — z-convention
+    documentation and consistency fixes across observe.dat interfaces;
+    added edi_list_to_observe_dat() and edi-to-observe CLI subcommand.
 """
 from __future__ import annotations
 
@@ -3423,23 +3431,49 @@ def _site_header_to_meta(site_header_tokens: list[str]) -> dict[str, Any]:
     Parameters
     ----------
     site_header_tokens : list of str
-        Exactly 4 tokens as read from observe.dat.
+        Exactly 4 tokens as read from observe.dat: ``[name, x, y, z]``.
 
     Returns
     -------
     meta : dict
         Contains:
-        - name : str
-        - xyz  : ndarray shape (3,) if tokens[1:4] parse as float, else None
-        - raw_tokens : list[str]
+
+        - ``name``       : str — station name
+        - ``xyz``        : ndarray shape (3,) or None — Cartesian coordinates
+          in the **FEMTIC model frame** (metres).  The z-axis points
+          **downward**, so ``xyz[2]`` is positive for points below the datum
+          and **negative** for surface/near-surface stations.
+          Relation to geodetic elevation: ``xyz[2] == -elev_m``.
+        - ``elev_m``     : float or None — geodetic elevation in metres above
+          datum (z-up convention), derived as ``-xyz[2]``.  Provided as a
+          convenience so callers need not remember the sign flip.
+        - ``raw_tokens`` : list[str] — verbatim token list
+
+    Notes
+    -----
+    FEMTIC uses a right-handed coordinate system with **z positive downward**
+    (depth), consistent with the FEM mesh stored in ``mesh.dat``.  EDI files
+    store elevation with the opposite sign (positive upward).  When building
+    an ``observe.dat`` site header from EDI metadata the correct mapping is::
+
+        z_femtic = -elev_m          # e.g. elev_m=500 m → z=-500 m
+
+    Any code that writes the site header must apply this negation; omitting it
+    silently places the station at an incorrect (sub-surface) position.
     """
     name = str(site_header_tokens[0])
     xyz = None
     try:
-        xyz = np.asarray([float(site_header_tokens[1]), float(site_header_tokens[2]), float(site_header_tokens[3])], dtype=float)
+        xyz = np.asarray(
+            [float(site_header_tokens[1]),
+             float(site_header_tokens[2]),
+             float(site_header_tokens[3])],
+            dtype=float,
+        )
     except Exception:
         xyz = None
-    return {"name": name, "xyz": xyz, "raw_tokens": site_header_tokens[:]}
+    elev_m = float(-xyz[2]) if xyz is not None else None
+    return {"name": name, "xyz": xyz, "elev_m": elev_m, "raw_tokens": site_header_tokens[:]}
 
 
 def _mt_arrays_to_complex_tensors(
@@ -3630,13 +3664,21 @@ def observe_to_site_viz_list(
         Common fields (all obs types)
         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         - ``obs_type`` : str — ``"MT"``, ``"VTF"``, or ``"PT"``
-        - ``name`` : str — site name from the header
-        - ``xyz``  : ndarray shape (3,) or None — site coordinates
-        - ``nfreq`` : int — number of frequencies
-        - ``freq``  : ndarray (nfreq,) — frequencies in Hz
-        - ``per``   : ndarray (nfreq,) — periods in s (= 1 / freq)
-        - ``data``  : ndarray (nfreq, dat_length) — raw observed values
-        - ``error`` : ndarray (nfreq, dat_length) — raw per-component std devs
+        - ``name``   : str — site name from the header
+        - ``xyz``    : ndarray shape (3,) or None — site Cartesian coordinates
+          in the **FEMTIC model frame** (metres).  ``xyz[2]`` follows the
+          **z-positive-downward** convention used internally by FEMTIC:
+          surface stations have ``xyz[2] < 0``.  Relation to geodetic
+          elevation: ``xyz[2] == -elev_m``.
+        - ``elev_m`` : float or None — geodetic elevation above datum in
+          metres (z-up), i.e. ``-xyz[2]``.  Provided as a convenience alias
+          so callers working with EDI-style metadata do not need to negate
+          ``xyz[2]`` manually.
+        - ``nfreq``  : int — number of frequencies
+        - ``freq``   : ndarray (nfreq,) — frequencies in Hz
+        - ``per``    : ndarray (nfreq,) — periods in s (= 1 / freq)
+        - ``data``   : ndarray (nfreq, dat_length) — raw observed values
+        - ``error``  : ndarray (nfreq, dat_length) — raw per-component std devs
         - ``component_labels`` : list[str]
 
         MT-specific fields (when ``obs_type == "MT"``)
@@ -3701,6 +3743,10 @@ def observe_to_site_viz_list(
             "obs_type": obs_type,
             "name": meta["name"],
             "xyz": meta["xyz"],
+            # elev_m: geodetic elevation (z-up, metres).  FEMTIC stores z with
+            # the opposite sign (z positive downward), so elev_m == -xyz[2].
+            # Provided as a convenience alias for EDI-style workflows.
+            "elev_m": meta["elev_m"],
             "nfreq": int(site["nfreq"]),
             "freq": freq,
             "per": per,
@@ -3763,7 +3809,23 @@ def write_observe_dat(parsed: dict[str, Any], path: str | Path) -> None:
     - Data rows are rewritten in a clear numeric layout: frequency first, then values,
       then errors, and finally any extra numeric columns if present.
     - Floats are formatted in scientific notation with 8 digits after the decimal.
+
+    **z-convention (z positive downward)**
+        FEMTIC uses a coordinate system in which the z-axis points
+        **downward**.  Surface and near-surface stations therefore have a
+        *negative* z coordinate in the site header.  Geodetic elevation
+        (z-up, as stored in EDI ``ELEV=`` fields) must be **negated** before
+        writing::
+
+            z_femtic = -elev_m
+
+        This function does not rewrite site header lines (they are preserved
+        verbatim), so it cannot correct a wrong sign introduced upstream.  A
+        warning is issued if any site header is detected to have a positive z
+        value, which is almost certainly a sign error for MT survey stations.
     """
+    import warnings
+
     out = Path(path)
 
     out_lines: list[str] = []
@@ -3787,6 +3849,23 @@ def write_observe_dat(parsed: dict[str, Any], path: str | Path) -> None:
 
         for site in block.get("sites", []):
             shl = site.get("site_header_line", "")
+            # Defensive check: warn if z coordinate appears to be positive
+            # (z-up / geodetic sign), which indicates a likely negation error.
+            _toks = shl.split()
+            if len(_toks) >= 4:
+                try:
+                    _z_val = float(_toks[3])
+                    if _z_val > 0.0:
+                        import warnings
+                        warnings.warn(
+                            f"write_observe_dat: site '{_toks[0]}' has z={_z_val:g} m "
+                            f"(positive z in FEMTIC = below datum).  If this value "
+                            f"came from geodetic elevation, it must be negated: "
+                            f"z_femtic = -elev_m.",
+                            stacklevel=2,
+                        )
+                except (ValueError, IndexError):
+                    pass
             if not shl.endswith("\n"):
                 shl = shl + "\n"
             out_lines.append(shl)
@@ -3826,6 +3905,298 @@ def write_observe_dat(parsed: dict[str, Any], path: str | Path) -> None:
     out_lines.extend(parsed.get("tail_lines", []))
 
     out.write_text("".join(out_lines), encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# EDI → observe.dat conversion
+# ---------------------------------------------------------------------------
+
+#: Conversion factor: mV km⁻¹ nT⁻¹  →  SI Ω  (multiply EDI Z by this)
+#: FEMTIC observe.dat stores Z in SI units (Ω); EDI files use MT field units.
+#: Z_SI = Z_MT * mu0 * 1e3
+_Z_MT_TO_SI: float = 4.0e-7 * np.pi * 1.0e3   # ≈ 1.2566e-3
+
+
+def _edi_Z_to_observe_row(
+    Z: np.ndarray,
+    Z_err: np.ndarray | None,
+    err_kind: str,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Convert one frequency's complex 2×2 Z tensor to an 8-element flat row.
+
+    Parameters
+    ----------
+    Z : ndarray, shape (2, 2), complex
+        Impedance tensor in **SI Ω** (after unit conversion from EDI field units).
+    Z_err : ndarray, shape (2, 2), complex or real, or None
+        Error tensor.  If complex, real/imag parts are std(Re)/std(Im).
+        If real-valued, treated as the same std for both real and imaginary.
+        If ``None``, a zeros row is returned.
+    err_kind : {"var", "std"}
+        How errors are stored in the EDI dict.  ``"var"`` → take sqrt first;
+        ``"std"`` → use directly.
+
+    Returns
+    -------
+    data_row : ndarray, shape (8,)
+        [Zxx_re, Zxx_im, Zxy_re, Zxy_im, Zyx_re, Zyx_im, Zyy_re, Zyy_im]
+    err_row : ndarray, shape (8,)
+        Same layout, standard deviations.
+    """
+    order = [(0, 0), (0, 1), (1, 0), (1, 1)]
+    data_row = np.empty(8, dtype=float)
+    err_row = np.zeros(8, dtype=float)
+
+    for k, (i, j) in enumerate(order):
+        data_row[2 * k]     = Z[i, j].real
+        data_row[2 * k + 1] = Z[i, j].imag
+
+    if Z_err is not None:
+        Ze = np.asarray(Z_err, dtype=complex if np.iscomplexobj(Z_err) else float)
+        for k, (i, j) in enumerate(order):
+            if Ze.dtype == complex or np.iscomplexobj(Ze):
+                re_std = Ze[i, j].real
+                im_std = Ze[i, j].imag
+            else:
+                re_std = Ze[i, j].real
+                im_std = re_std
+            if err_kind == "var":
+                re_std = float(np.sqrt(np.maximum(re_std, 0.0)))
+                im_std = float(np.sqrt(np.maximum(im_std, 0.0)))
+            err_row[2 * k]     = float(re_std)
+            err_row[2 * k + 1] = float(im_std)
+
+    return data_row, err_row
+
+
+def edi_list_to_observe_dat(
+    edi_list: list[dict[str, Any]],
+    path: str | Path,
+    *,
+    x_key: str = "x_m",
+    y_key: str = "y_m",
+    fallback_x: float = 0.0,
+    fallback_y: float = 0.0,
+    obs_type: str = "MT",
+    preamble: str | list[str] | None = None,
+) -> None:
+    """Write a list of EDI site dicts to a FEMTIC-style ``observe.dat`` file.
+
+    Each EDI dict is the structure returned by :func:`data_proc.load_edi`.
+    Only MT impedance data (``Z`` / ``Z_err``) is currently supported;
+    tipper and phase-tensor blocks are silently ignored.
+
+    Parameters
+    ----------
+    edi_list : list of dict
+        One dict per site, each as returned by ``data_proc.load_edi``.
+        Required keys per dict:
+
+        - ``freq``    : ndarray (nfreq,) — frequencies in Hz
+        - ``Z``       : ndarray (nfreq, 2, 2), complex — impedance in
+          **MT field units** (mV km⁻¹ nT⁻¹) as stored by ``load_edi``.
+        - ``Z_err``   : ndarray (nfreq, 2, 2) or None — errors (variance or
+          std depending on ``err_kind``).
+        - ``err_kind``: ``"var"`` (default from ``load_edi``) or ``"std"``.
+        - ``station`` : str — site name written to the header token.
+        - ``elev_m``  : float or None — geodetic elevation (m above datum,
+          **z-up**).  Negated automatically: ``z_femtic = -elev_m``.
+
+        Optional position keys (see ``x_key`` / ``y_key``):
+
+        - Model-frame x and y coordinates in metres.  If absent, ``fallback_x``
+          / ``fallback_y`` are used and a warning is issued.
+
+    path : str or pathlib.Path
+        Output file path.  Overwrites any existing file.
+    x_key : str
+        Key in each EDI dict holding the model-frame x coordinate (metres).
+        Default is ``"x_m"``.  Common alternatives: ``"x"``, ``"east_m"``.
+    y_key : str
+        Key in each EDI dict holding the model-frame y coordinate (metres).
+        Default is ``"y_m"``.  Common alternatives: ``"y"``, ``"north_m"``.
+    fallback_x, fallback_y : float
+        Values used when ``x_key`` / ``y_key`` are absent from an EDI dict.
+        A :class:`UserWarning` is issued per affected site.
+    obs_type : str
+        Block type to write.  Currently only ``"MT"`` is supported.
+    preamble : str or list of str or None
+        Optional text lines written verbatim before the data block(s).
+        Useful for adding comments or FEMTIC control-file references.
+        If a single string, it is split on ``\\n``.  Each line will have a
+        trailing newline appended if absent.
+
+    Returns
+    -------
+    None
+        The file is written to ``path``; nothing is returned.
+
+    Raises
+    ------
+    ValueError
+        If ``obs_type`` is not ``"MT"`` or if any site has no valid
+        frequencies after dropping NaN/sentinel values.
+    NotImplementedError
+        If ``obs_type`` other than ``"MT"`` is requested (VTF/PT not yet
+        implemented).
+
+    Notes
+    -----
+    **Unit conversion**
+        ``load_edi`` returns ``Z`` in MT field units (mV km⁻¹ nT⁻¹).
+        FEMTIC ``observe.dat`` stores Z in SI units (Ω).  The conversion
+        applied here is::
+
+            Z_SI = Z_MT × μ₀ × 10³       (μ₀ = 4π × 10⁻⁷ H m⁻¹)
+
+        i.e. ``Z_SI ≈ Z_MT × 1.2566 × 10⁻³``.
+
+    **z-convention**
+        EDI elevation ``elev_m`` is geodetic (positive upward).  FEMTIC uses
+        z positive downward, so the site header z is written as ``-elev_m``.
+        Sites with ``elev_m = None`` are placed at ``z = 0.0`` with a warning.
+
+    **Frequency ordering**
+        Frequencies are written in the order they appear in ``edi["freq"]``.
+        Pass ``freq_order="inc"`` to :func:`data_proc.load_edi` for ascending
+        frequency (FEMTIC convention).
+
+    **FT convention**
+        The function assumes all EDI dicts are already in the standard
+        e⁻ⁱωᵗ convention (as guaranteed by ``load_edi`` after Phoenix
+        correction).  No additional sign correction is applied.
+
+    Examples
+    --------
+    >>> import data_proc as dp
+    >>> import femtic as fem
+    >>>
+    >>> edi_files = ["SITE01.edi", "SITE02.edi"]
+    >>> edis = [dp.load_edi(f, manufacturer="metronix") for f in edi_files]
+    >>>
+    >>> # Attach model-frame XY (e.g. from a projection step)
+    >>> for edi, (x, y) in zip(edis, [(1000.0, 2000.0), (3000.0, 4000.0)]):
+    ...     edi["x_m"] = x
+    ...     edi["y_m"] = y
+    >>>
+    >>> fem.edi_list_to_observe_dat(edis, "observe.dat")
+    """
+    import warnings
+
+    obs_type = str(obs_type).upper()
+    if obs_type != "MT":
+        raise NotImplementedError(
+            f"edi_list_to_observe_dat: obs_type={obs_type!r} is not yet supported. "
+            f"Only 'MT' is currently implemented."
+        )
+
+    out = Path(path)
+    lines: list[str] = []
+
+    # ---- preamble -----------------------------------------------------------
+    if preamble is not None:
+        if isinstance(preamble, str):
+            preamble_lines: list[str] = preamble.split("\n")
+        else:
+            preamble_lines = list(preamble)
+        for pl in preamble_lines:
+            lines.append(pl if pl.endswith("\n") else pl + "\n")
+
+    # ---- block header -------------------------------------------------------
+    n_sites = len(edi_list)
+    lines.append(f"{obs_type}    {n_sites}\n")
+
+    # ---- sites --------------------------------------------------------------
+    for edi in edi_list:
+        # -- station name
+        name = str(edi.get("station") or "UNKNOWN")
+
+        # -- model-frame XY
+        if x_key in edi:
+            x_m = float(edi[x_key])
+        else:
+            warnings.warn(
+                f"edi_list_to_observe_dat: site '{name}' has no key '{x_key}'; "
+                f"using fallback_x={fallback_x}.",
+                UserWarning,
+                stacklevel=2,
+            )
+            x_m = float(fallback_x)
+
+        if y_key in edi:
+            y_m = float(edi[y_key])
+        else:
+            warnings.warn(
+                f"edi_list_to_observe_dat: site '{name}' has no key '{y_key}'; "
+                f"using fallback_y={fallback_y}.",
+                UserWarning,
+                stacklevel=2,
+            )
+            y_m = float(fallback_y)
+
+        # -- elevation → FEMTIC z (z positive downward → negate)
+        # Use explicit None checks: elev_m=0.0 (sea-level station) is valid
+        # and must not be treated as absent by a falsy "or" chain.
+        elev_m = edi.get("elev_m")
+        if elev_m is None:
+            elev_m = edi.get("elev")
+        if elev_m is None:
+            warnings.warn(
+                f"edi_list_to_observe_dat: site '{name}' has no elevation; "
+                f"using z=0.0 (surface at datum).",
+                UserWarning,
+                stacklevel=2,
+            )
+            z_femtic = 0.0
+        else:
+            z_femtic = -float(elev_m)   # EDI z-up → FEMTIC z-down
+
+        # -- frequencies and impedance
+        freq = np.asarray(edi["freq"], dtype=float).ravel()
+        Z_mt = np.asarray(edi["Z"], dtype=np.complex128)   # (nfreq, 2, 2), mV/km/nT
+        Z_err_raw = edi.get("Z_err")
+        err_kind = str(edi.get("err_kind", "var"))
+
+        # Convert Z from MT field units to SI Ω
+        Z_si = Z_mt * _Z_MT_TO_SI
+        Z_err_si = (np.asarray(Z_err_raw, dtype=complex) * _Z_MT_TO_SI
+                    if Z_err_raw is not None else None)
+
+        # Guard: drop any frequency rows where Z is non-finite
+        finite_mask = np.all(
+            np.isfinite(Z_si.real) & np.isfinite(Z_si.imag),
+            axis=(1, 2),
+        )
+        if not np.any(finite_mask):
+            warnings.warn(
+                f"edi_list_to_observe_dat: site '{name}' has no finite Z values; "
+                f"skipping.",
+                UserWarning,
+                stacklevel=2,
+            )
+            continue
+        freq = freq[finite_mask]
+        Z_si = Z_si[finite_mask]
+        if Z_err_si is not None:
+            Z_err_si = Z_err_si[finite_mask]
+
+        nfreq = len(freq)
+
+        # -- site header line: name  x  y  z
+        lines.append(f"{name}    {x_m:.4f}    {y_m:.4f}    {z_femtic:.4f}\n")
+        lines.append(f"{nfreq}\n")
+
+        # -- data rows
+        for fi in range(nfreq):
+            Z_err_f = Z_err_si[fi] if Z_err_si is not None else None
+            data_row, err_row = _edi_Z_to_observe_row(Z_si[fi], Z_err_f, err_kind)
+            row_vals: list[float] = [float(freq[fi])] + data_row.tolist() + err_row.tolist()
+            lines.append(_format_row(row_vals))
+
+    # ---- END ----------------------------------------------------------------
+    lines.append("END\n")
+
+    out.write_text("".join(lines), encoding="utf-8")
 
 
 def modify_data(
@@ -4132,6 +4503,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     - femtic-to-npz
     - npz-to-vtk
     - npz-to-femtic
+    - edi-to-observe
     """
     import argparse
 
@@ -4288,6 +4660,80 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         help="If set, also modify elements in fixed regions (NOT recommended).",
     )
 
+    # edi-to-observe
+    p_e2o = sub.add_parser(
+        "edi-to-observe",
+        help="Convert a set of EDI files to a FEMTIC observe.dat (MT only).",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Read one or more EDI files and write a FEMTIC-style observe.dat.\n\n"
+            "Site positions must be supplied as model-frame (x, y) via the\n"
+            "--xy-csv option (a CSV file with columns: station,x_m,y_m) or by\n"
+            "embedding x_m / y_m keys in the EDI HEADER (not standard).\n\n"
+            "Elevation is taken from the EDI ELEV field and negated:\n"
+            "  z_femtic = -elev_m   (FEMTIC z positive downward)\n\n"
+            "Z is converted from MT field units (mV/km/nT) to SI Ohm:\n"
+            "  Z_SI = Z_MT * mu0 * 1e3"
+        ),
+    )
+    p_e2o.add_argument(
+        "edi_files",
+        nargs="+",
+        metavar="EDI",
+        help="One or more EDI files to convert (glob patterns must be pre-expanded).",
+    )
+    p_e2o.add_argument(
+        "--out",
+        required=True,
+        metavar="OBSERVE_DAT",
+        help="Output observe.dat path.",
+    )
+    p_e2o.add_argument(
+        "--xy-csv",
+        default=None,
+        metavar="CSV",
+        help=(
+            "CSV file with columns 'station,x_m,y_m' (no header assumed unless "
+            "first row is non-numeric).  Matched against the EDI station name."
+        ),
+    )
+    p_e2o.add_argument(
+        "--x-key",
+        default="x_m",
+        metavar="KEY",
+        help="Dict key for model-frame x (default: 'x_m').",
+    )
+    p_e2o.add_argument(
+        "--y-key",
+        default="y_m",
+        metavar="KEY",
+        help="Dict key for model-frame y (default: 'y_m').",
+    )
+    p_e2o.add_argument(
+        "--manufacturer",
+        default="metronix",
+        choices=["metronix", "phoenix", "delta"],
+        help="EDI FT convention (default: metronix).",
+    )
+    p_e2o.add_argument(
+        "--err-kind",
+        default="var",
+        choices=["var", "std"],
+        help="Error interpretation in EDI files (default: var).",
+    )
+    p_e2o.add_argument(
+        "--freq-order",
+        default="inc",
+        choices=["inc", "dec", "keep"],
+        help="Frequency ordering when loading EDI (default: inc).",
+    )
+    p_e2o.add_argument(
+        "--preamble",
+        default=None,
+        metavar="TEXT",
+        help="Optional comment text prepended to observe.dat (use \\n for newlines).",
+    )
+
     args = ap.parse_args(list(argv) if argv is not None else None)
 
     if args.cmd == "femtic-to-npz":
@@ -4349,6 +4795,66 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             out=True,
         )
         print("Wrote NPZ:", args.npz_out)
+        return 0
+
+    if args.cmd == "edi-to-observe":
+        import importlib
+        try:
+            dp = importlib.import_module("data_proc")
+        except ImportError as exc:
+            print(f"ERROR: could not import data_proc: {exc}", file=sys.stderr)
+            return 1
+
+        # Load XY table if provided
+        xy_table: dict[str, tuple[float, float]] = {}
+        if args.xy_csv is not None:
+            import csv
+            with open(args.xy_csv, newline="") as fh:
+                reader = csv.reader(fh)
+                for row in reader:
+                    if len(row) < 3:
+                        continue
+                    try:
+                        xy_table[row[0].strip()] = (float(row[1]), float(row[2]))
+                    except ValueError:
+                        pass  # skip header or malformed rows
+
+        edi_list: list[dict[str, Any]] = []
+        for edi_path in args.edi_files:
+            try:
+                edi = dp.load_edi(
+                    edi_path,
+                    manufacturer=args.manufacturer,
+                    err_kind=args.err_kind,
+                    freq_order=args.freq_order,
+                )
+            except Exception as exc:
+                print(f"WARNING: could not load {edi_path}: {exc}", file=sys.stderr)
+                continue
+
+            name = str(edi.get("station") or Path(edi_path).stem)
+            edi["station"] = name
+
+            if name in xy_table:
+                edi[args.x_key] = xy_table[name][0]
+                edi[args.y_key] = xy_table[name][1]
+
+            edi_list.append(edi)
+
+        if not edi_list:
+            print("ERROR: no EDI files loaded successfully.", file=sys.stderr)
+            return 1
+
+        preamble = args.preamble.replace("\\n", "\n") if args.preamble else None
+
+        edi_list_to_observe_dat(
+            edi_list,
+            args.out,
+            x_key=args.x_key,
+            y_key=args.y_key,
+            preamble=preamble,
+        )
+        print(f"Wrote {len(edi_list)} site(s) to: {args.out}")
         return 0
 
     ap.error(f"Unknown command {args.cmd!r}")

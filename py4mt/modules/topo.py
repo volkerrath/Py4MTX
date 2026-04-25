@@ -75,8 +75,7 @@ def download_srtm_tile(tile, continent="Eurasia", out_dir="srtm"):
         Path to extracted .hgt file.
     """
     os.makedirs(out_dir, exist_ok=True)
-    url = f"https://dds.cr.usgs.gov/srtm/version2_1/SRTM3/{
-        continent}/{tile}.hgt.zip"
+    url = f"https://dds.cr.usgs.gov/srtm/version2_1/SRTM3/{continent}/{tile}.hgt.zip"
     zpath = os.path.join(out_dir, f"{tile}.hgt.zip")
     hgt_path = os.path.join(out_dir, f"{tile}.hgt")
 
