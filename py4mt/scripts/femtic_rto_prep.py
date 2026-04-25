@@ -142,16 +142,20 @@ Base setup.
 """
 N_SAMPLES = 32
 ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/ubinas/ensemble/"
+
+
 # TEMPLATES = ENSEMBLE_DIR + "templates/"
-TEMPLATES = r"/home/vrath/Py4MTX/py4mt/data/rto/ubinas/templates/"
+TEMPLATES = ENSEMBLE_DIR + "/templates/"
+if not os.path.isdir(TEMPLATES):
+     sys.exit(" Directory: %s does not exist, needs to be copied !" % TEMPLATES)
+     
 COPY_LIST = ["observe.dat",
              "referencemodel.dat",]
 LINK_LIST = ["control.dat",
              "mesh.dat",
              "resistivity_block_iter0.dat",
              "distortion_iter0.dat",
-             "run_femtic_dias.sh",]
-# "run_femtic_kraken.sh"]
+             "run_femtic_dias.sh","run_femtic_kraken.sh"]
 
 ENSEMBLE_NAME = "ubinas_rto_"
 
@@ -174,7 +178,7 @@ if PERTURB_MOD:
     # if ModCov is not None, this needs to be normal
     MOD_PDF = ["normal", 0., 0.5]
     # ["exp", L], ["gauss", L], ["matern", L, MatPars], ["femtic"], None
-    R_FILE = r"/home/vrath/Py4MTX/py4mt/data/rto/ubinas/R_coo"
+    R_FILE = ENSEMBLE_DIR + r"/R_coo"
 
     # Sampling algorithm: "low rank" (randomized SVD, recommended) or "full rank" (CG).
     # Low-rank is 10-100x faster for typical FEMTIC mesh sizes.
@@ -234,104 +238,105 @@ of MT sites per row (VIZ_N_SITES); set to None to show all sites.
 PLOT_DATA = False #True
 PLOT_MODEL = False #True
 
-PLOT_STR = ""
-PLOT_DIR = ENSEMBLE_DIR + "/plots/"
-if PLOT_DIR is not None:
-    print(" Plots written to: %s" % PLOT_DIR)
-    if not os.path.isdir(PLOT_DIR):
-        print(" Directory: %s does not exist, but will be created" % PLOT_DIR)
-        os.makedirs(PLOT_DIR, exist_ok=True)
-
-
-# Number of ensemble members to include in both diagnostic plots.
-# Members are drawn without replacement from 0 … N_SAMPLES-1.
-VIZ_N_SAMPLES = N_SAMPLES
-
-# Number of MT sites to include in each data-plot row.
-# Sites are drawn without replacement from the full site list.
-# Set to None to show all available sites.
-VIZ_N_SITES = 10
-
-# --- data plot ---
-# what:  list of panel types — one subplot column per entry.
-#        Allowed values: 'rho', 'phase', 'tipper', 'pt'.
-# comps: list of component strings, one per entry in what.
-#        Ignored for 'tipper' and 'pt' panels (use None or '' there).
-#        A single string is also accepted and is broadcast to all panels.
-DAT_WHAT = ["rho", "phase"]            # e.g. ["rho", "phase", "tipper"]
-DAT_COMPS = ["xx,xy,yx,yy",            # rho   — all four components
-             "xx,xy,yx,yy"]            # phase — all four components
-DAT_COMPS = ["xy,yx",            # rho   — all four components
-             "xy,yx"]
-
-# Shorter alternative (single string broadcast to every rho/phase column):
-# DAT_COMPS = "xy,yx"
-DAT_SHOW_ERRORS_ORIG = False     # show error envelopes on original curves
-# (raw template errors can be noisy at long
-# periods — set False to hide them)
-DAT_SHOW_ERRORS_PERT = True    # show error envelopes on perturbed curves
-# (reset relative errors are compact; set True
-# to display ±σ bands on perturbed curves)
-# 0.6        # opacity for original curves (1 = fully opaque)
-DAT_ALPHA_ORIG = 0.5
-# 1.        # opacity for perturbed curves (< 1 lets original show through)
-DAT_ALPHA_PERT = 1.
-
-# Marker symbols per component class.
-# 'ii'  → diagonal components (xx, yy)   — circles
-# 'ij'  → off-diagonal components (xy, yx) — squares
-# 'inv' → invariants (det, bahr, …)      — triangles up
-# Set to None to use the DEFAULT_COMP_MARKERS from femtic_viz.
-# Set to {} to disable markers entirely (lines only).
-DAT_COMP_MARKERS = None
-DAT_MARKERSIZE = 3.0        # marker size in points
-DAT_MARKEVERY = 2        # plot marker every N-th period; None = every period
-
-# Error rendering style — applies when show_errors_orig / show_errors_pert is True.
-# 'shade' : semi-transparent fill_between band (default, existing behaviour)
-# 'bar'   : discrete errorbar caps at each period
-# 'both'  : shade AND bar simultaneously
-DAT_ERROR_STYLE_ORIG = "bar"
-DAT_ERROR_STYLE_PERT = "shade"
-
-# Axis limits for data plots.
-# DAT_PERLIMS applies to the period (x) axis of every panel type.
-# The remaining limits apply to the y-axis of the indicated panel type only.
-# Set any to None for Matplotlib auto-scaling.
-DAT_PERLIMS = (1.e-4, 1.e4)     # (T_min, T_max) in seconds; None = auto
-DAT_RHOLIMS = None              # (rho_min, rho_max) Ω·m (or log₁₀); None = auto
-DAT_PHSLIMS = (-180., 180.)     # (phs_min, phs_max) degrees; None = auto
-DAT_VTFLIMS = (-1.,    +1.)     # (vtf_min, vtf_max); None = auto
-DAT_PTLIMS = None               # (pt_min,  pt_max);  None = auto
-MOD_MESH = TEMPLATES + "mesh.dat"
-# MOD_ORIG is derived from MOD_REF below (after the PERTURB_MOD block)
-
-# Define 1-5 slices.  Each dict must have "type": "map" or "curtain"
-# plus the keyword arguments forwarded to the femtic_viz slicer.
-MOD_MODE = "tri"        # "tri" | "scatter" | "grid"
-MOD_LOG10 = True
-MOD_CMAP = "jet_r"
-# (vmin, vmax) in log10(Ohm.m); None = auto from original
-MOD_CLIM = None
-# Axis limits for map and curtain slices.
-# Map slices:    MOD_XLIM = easting range (m),  MOD_YLIM = northing range (m).
-# Curtain slices: MOD_YLIM = along-profile distance range (m),
-#                 MOD_ZLIM = depth range (m, negative-down, e.g. (-5000, 0)).
-# Set any to None for Matplotlib auto-scaling.
-# Individual slice dicts may carry 'xlim'/'ylim'/'zlim' keys to override per-slice.
-MOD_XLIM = None         # (xmin, xmax) in metres; None = auto
-MOD_YLIM = None         # (ymin, ymax) in metres; None = auto
-MOD_ZLIM = None         # (zmin, zmax) in metres; None = auto
-MOD_MESH_LINES = False  # overlay triangulation edges on filled patches
-MOD_MESH_LW = 0.3       # mesh edge line width (points)
-MOD_MESH_COLOR = "k"    # mesh edge colour
-MOD_SLICES = [
-    {"type": "map", "z0": 5000, "dz": 50},
-    {"type": "map", "z0": -5000, "dz": 50},
-    {"type": "curtain",
-     "polyline": np.array([[0., 0.], [10000., 0.]]),
-     "width": 500},
-]
+if PLOT_DATA or PLOT_MODEL:
+    PLOT_STR = ""
+    PLOT_DIR = ENSEMBLE_DIR + "/plots/"
+    if PLOT_DIR is not None:
+        print(" Plots written to: %s" % PLOT_DIR)
+        if not os.path.isdir(PLOT_DIR):
+            print(" Directory: %s does not exist, but will be created" % PLOT_DIR)
+            os.makedirs(PLOT_DIR, exist_ok=True)
+    
+    
+    # Number of ensemble members to include in both diagnostic plots.
+    # Members are drawn without replacement from 0 … N_SAMPLES-1.
+    VIZ_N_SAMPLES = N_SAMPLES
+    
+    # Number of MT sites to include in each data-plot row.
+    # Sites are drawn without replacement from the full site list.
+    # Set to None to show all available sites.
+    VIZ_N_SITES = 10
+    
+    # --- data plot ---
+    # what:  list of panel types — one subplot column per entry.
+    #        Allowed values: 'rho', 'phase', 'tipper', 'pt'.
+    # comps: list of component strings, one per entry in what.
+    #        Ignored for 'tipper' and 'pt' panels (use None or '' there).
+    #        A single string is also accepted and is broadcast to all panels.
+    DAT_WHAT = ["rho", "phase"]            # e.g. ["rho", "phase", "tipper"]
+    DAT_COMPS = ["xx,xy,yx,yy",            # rho   — all four components
+                 "xx,xy,yx,yy"]            # phase — all four components
+    DAT_COMPS = ["xy,yx",            # rho   — all four components
+                 "xy,yx"]
+    
+    # Shorter alternative (single string broadcast to every rho/phase column):
+    # DAT_COMPS = "xy,yx"
+    DAT_SHOW_ERRORS_ORIG = False     # show error envelopes on original curves
+    # (raw template errors can be noisy at long
+    # periods — set False to hide them)
+    DAT_SHOW_ERRORS_PERT = True    # show error envelopes on perturbed curves
+    # (reset relative errors are compact; set True
+    # to display ±σ bands on perturbed curves)
+    # 0.6        # opacity for original curves (1 = fully opaque)
+    DAT_ALPHA_ORIG = 0.5
+    # 1.        # opacity for perturbed curves (< 1 lets original show through)
+    DAT_ALPHA_PERT = 1.
+    
+    # Marker symbols per component class.
+    # 'ii'  → diagonal components (xx, yy)   — circles
+    # 'ij'  → off-diagonal components (xy, yx) — squares
+    # 'inv' → invariants (det, bahr, …)      — triangles up
+    # Set to None to use the DEFAULT_COMP_MARKERS from femtic_viz.
+    # Set to {} to disable markers entirely (lines only).
+    DAT_COMP_MARKERS = None
+    DAT_MARKERSIZE = 3.0        # marker size in points
+    DAT_MARKEVERY = 2        # plot marker every N-th period; None = every period
+    
+    # Error rendering style — applies when show_errors_orig / show_errors_pert is True.
+    # 'shade' : semi-transparent fill_between band (default, existing behaviour)
+    # 'bar'   : discrete errorbar caps at each period
+    # 'both'  : shade AND bar simultaneously
+    DAT_ERROR_STYLE_ORIG = "bar"
+    DAT_ERROR_STYLE_PERT = "shade"
+    
+    # Axis limits for data plots.
+    # DAT_PERLIMS applies to the period (x) axis of every panel type.
+    # The remaining limits apply to the y-axis of the indicated panel type only.
+    # Set any to None for Matplotlib auto-scaling.
+    DAT_PERLIMS = (1.e-4, 1.e4)     # (T_min, T_max) in seconds; None = auto
+    DAT_RHOLIMS = None              # (rho_min, rho_max) Ω·m (or log₁₀); None = auto
+    DAT_PHSLIMS = (-180., 180.)     # (phs_min, phs_max) degrees; None = auto
+    DAT_VTFLIMS = (-1.,    +1.)     # (vtf_min, vtf_max); None = auto
+    DAT_PTLIMS = None               # (pt_min,  pt_max);  None = auto
+    MOD_MESH = TEMPLATES + "mesh.dat"
+    # MOD_ORIG is derived from MOD_REF below (after the PERTURB_MOD block)
+    
+    # Define 1-5 slices.  Each dict must have "type": "map" or "curtain"
+    # plus the keyword arguments forwarded to the femtic_viz slicer.
+    MOD_MODE = "tri"        # "tri" | "scatter" | "grid"
+    MOD_LOG10 = True
+    MOD_CMAP = "jet_r"
+    # (vmin, vmax) in log10(Ohm.m); None = auto from original
+    MOD_CLIM = None
+    # Axis limits for map and curtain slices.
+    # Map slices:    MOD_XLIM = easting range (m),  MOD_YLIM = northing range (m).
+    # Curtain slices: MOD_YLIM = along-profile distance range (m),
+    #                 MOD_ZLIM = depth range (m, negative-down, e.g. (-5000, 0)).
+    # Set any to None for Matplotlib auto-scaling.
+    # Individual slice dicts may carry 'xlim'/'ylim'/'zlim' keys to override per-slice.
+    MOD_XLIM = None         # (xmin, xmax) in metres; None = auto
+    MOD_YLIM = None         # (ymin, ymax) in metres; None = auto
+    MOD_ZLIM = None         # (zmin, zmax) in metres; None = auto
+    MOD_MESH_LINES = False  # overlay triangulation edges on filled patches
+    MOD_MESH_LW = 0.3       # mesh edge line width (points)
+    MOD_MESH_COLOR = "k"    # mesh edge colour
+    MOD_SLICES = [
+        {"type": "map", "z0": 5000, "dz": 50},
+        {"type": "map", "z0": -5000, "dz": 50},
+        {"type": "curtain",
+         "polyline": np.array([[0., 0.], [10000., 0.]]),
+         "width": 500},
+    ]
 
 
 """
