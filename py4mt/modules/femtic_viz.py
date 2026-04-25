@@ -776,7 +776,10 @@ def map_slice_points_from_cells(
     rho_elem
         Element-wise resistivity, shape ``(nelem,)``.
     z0
-        Target slice depth (same z convention as in the mesh).
+        Target slice depth in the **FEMTIC model frame** (z positive
+        downward).  A surface slice at 500 m elevation above datum would be
+        requested as ``z0 = -500``.  To convert from geodetic elevation:
+        ``z0 = -elev_m``.
     dz
         Half-thickness of the depth window. Cells with centroid z in
         ``[z0 - dz, z0 + dz]`` are selected.
@@ -827,7 +830,11 @@ def curtain_points_from_cells(
     -------
     s, z, rho
         Arrays of equal length, where ``s`` is distance along the profile and
-        ``z`` is the centroid z-coordinate.
+        ``z`` is the centroid z-coordinate in the **FEMTIC model frame**
+        (z positive downward).  To display depth on a conventional plot
+        (positive depth axis pointing down), use ``z`` directly as the
+        vertical axis with an inverted y-axis.  To display elevation (positive
+        up), plot ``-z`` instead.
 
     Raises
     ------

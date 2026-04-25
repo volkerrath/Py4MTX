@@ -232,19 +232,20 @@ plot_model_ensemble use the same randomly drawn set of ensemble members
 of MT sites per row (VIZ_N_SITES); set to None to show all sites.
 """
 PLOT_DATA = True
-PLOT_MODEL = False
+PLOT_MODEL = True
 
 PLOT_STR = ""
-PLOT_DIR = ENSEMBLE_DIR + "plots/"
-print(" Plots written to: %s" % PLOT_DIR)
-if not os.path.isdir(PLOT_DIR):
-    print(" Directory: %s does not exist, but will be created" % PLOT_DIR)
-    os.makedirs(PLOT_DIR, exist_ok=True)
+PLOT_DIR = ENSEMBLE_DIR + "/plots/"
+if PLOT_DIR is not None:
+    print(" Plots written to: %s" % PLOT_DIR)
+    if not os.path.isdir(PLOT_DIR):
+        print(" Directory: %s does not exist, but will be created" % PLOT_DIR)
+        os.makedirs(PLOT_DIR, exist_ok=True)
 
 
 # Number of ensemble members to include in both diagnostic plots.
 # Members are drawn without replacement from 0 … N_SAMPLES-1.
-VIZ_N_SAMPLES = 1
+VIZ_N_SAMPLES = N_SAMPLES
 
 # Number of MT sites to include in each data-plot row.
 # Sites are drawn without replacement from the full site list.

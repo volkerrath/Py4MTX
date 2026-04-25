@@ -83,7 +83,7 @@ def get_randomTX_simple(TXx=None,TXy=None,
     if TXx==[] or TXy==[]:
         sys.exit('no data given! Exit.')
 
-    if Ranstate is None::
+    if Ranstate is None:
         rng = np.random.default_rng()
     else:
         rng = Ranstate
