@@ -231,8 +231,8 @@ plot_model_ensemble use the same randomly drawn set of ensemble members
 (VIZ_N_SAMPLES).  plot_data_ensemble additionally sub-samples a fixed number
 of MT sites per row (VIZ_N_SITES); set to None to show all sites.
 """
-PLOT_DATA = True
-PLOT_MODEL = True
+PLOT_DATA = False #True
+PLOT_MODEL = False #True
 
 PLOT_STR = ""
 PLOT_DIR = ENSEMBLE_DIR + "/plots/"
