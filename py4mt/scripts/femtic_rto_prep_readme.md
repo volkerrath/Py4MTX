@@ -69,7 +69,7 @@ All settings are at the top of the script:
 | `MOD_SOLVER`          | Iterative solver for full-rank branch: `'cg'` (optimal for SPD Q, default) or `'bicgstab'`. |
 | `MOD_PRECOND`         | Preconditioner for full-rank branch: `'ilu'` (default, 3–5× fewer iterations than jacobi) or `'jacobi'`. |
 
-R is passed **directly** to `generate_model_ensemble`; Q = R^T R is never
+R is passed **directly** to `generate_rto_model_ensemble`; Q = R^T R is never
 explicitly materialised — both branches form it implicitly via matvecs.
 
 ### Data perturbation
@@ -128,7 +128,7 @@ from 0 … `N_SAMPLES − 1` each run.  The drawn list is printed at runtime.
 `MOD_ORIG` is set to `MOD_REF` (they are the same path — the template reference
 model).  `MOD_REF_BASE` (derived automatically via `os.path.basename`) holds
 the bare filename and is used when constructing per-member file paths inside
-`generate_model_ensemble` and `mod_ens_files`.
+`generate_rto_model_ensemble` and `mod_ens_files`.
 
 Diagnostic figures are saved to:
 
@@ -217,6 +217,8 @@ Diagnostic figures are saved to:
 |            |        | `phslims` / `vtflims` / `ptlims`. Applied post-hoc in        |
 |            |        | `femtic_viz` after each cell is filled. `femtic_viz`          |
 |            |        | provenance and docstring updated accordingly.                |
+
+| 2026-04-27 | Claude | Renamed `ens.generate_model_ensemble` call to `ens.generate_rto_model_ensemble` for consistency with the new `ens.generate_gst_model_ensemble`. |
 
 ## Author
 

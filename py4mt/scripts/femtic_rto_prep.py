@@ -91,6 +91,9 @@ Provenance:
                 control; removed hardcoded show_errors_orig=True from the
                 plot_data_ensemble call; fixed PLOT_DIR path (was erroneously
                 prepended with ENSEMBLE_DIR).
+    2026-04-27  Claude  Renamed ens.generate_model_ensemble call to
+                ens.generate_rto_model_ensemble for consistency with the
+                new ens.generate_gst_model_ensemble.
 """
 
 import os
@@ -428,12 +431,12 @@ if PLOT_DATA:
 Draw perturbed model sets: m̃ ∼ N(m, Cm)
 
 R is passed directly — Q = R^T R is formed implicitly inside
-generate_model_ensemble, never explicitly materialised.
+generate_rto_model_ensemble, never explicitly materialised.
 """
 R = scs.load_npz(R_FILE + ".npz")
 print("roughness R loaded with shape:", np.shape(R))
 
-model_ensemble = ens.generate_model_ensemble(
+model_ensemble = ens.generate_rto_model_ensemble(
     alg="rto",
     dir_base=ENSEMBLE_DIR + ENSEMBLE_NAME,
     n_samples=N_SAMPLES,
