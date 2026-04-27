@@ -22,14 +22,14 @@ Author: Volker Rath (DIAS)
 Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-02 (UTC)
 Updated 2026-03-31 by Claude (Anthropic): removed debug print in
 sample_rtr_full_rank; removed dead commented-out code in
-generate_model_ensemble; removed redundant per-sample print.
+generate_rto_model_ensemble; removed redundant per-sample print.
 Updated 2026-03-31 by Claude (Anthropic): consolidated _diag_rtr
 into _rtr_diag (single helper); removed dead estimate_low_rank_eigpairs;
 enriched docstrings with tuning recommendations.
 Updated 2026-04-02 by Claude (Anthropic): fixed FileNotFoundError in
-generate_model_ensemble — template argument to fem.insert_model now uses
+generate_rto_model_ensemble — template argument to fem.insert_model now uses
 the full per-member path (_orig.dat backup) instead of the bare basename.
-Updated 2026-04-02 by Claude (Anthropic): fixed generate_model_ensemble
+Updated 2026-04-02 by Claude (Anthropic): fixed generate_rto_model_ensemble
 write-back loop — now reads reference log10-resistivity from the backup
 template and adds the perturbation before calling insert_model (method='add'),
 so perturbed models are reference + delta_log10 rather than bare perturbations.
@@ -37,6 +37,12 @@ Updated 2026-04-11 by Claude Sonnet 4.6 (Anthropic): moved check_sparse_matrix
 here from femtic.py (consolidation of all matrix/roughness tools into ensembles);
 femtic.py Section 2 now imports these functions from ensembles rather than
 duplicating them.
+Updated 2026-04-27 by Claude Sonnet 4.6 (Anthropic): added
+generate_gst_model_ensemble — geostatistical initial-model ensemble via
+pilot-point Ordinary Kriging (gstools).  No roughness matrix required.
+Updated 2026-04-27 by Claude Sonnet 4.6 (Anthropic): renamed
+generate_model_ensemble to generate_rto_model_ensemble for consistency
+with generate_gst_model_ensemble.
 """
 
 from __future__ import annotations
@@ -760,7 +766,7 @@ def put_files(
         os.symlink(src, dst)
 
 
-def generate_model_ensemble(
+def generate_rto_model_ensemble(
     alg: str = 'rto',
     dir_base: str = "./ens_",
     n_samples: int = 1,
@@ -872,7 +878,7 @@ def generate_model_ensemble(
         Paths to the perturbed resistivity block files.
     """
     if q is None:
-        raise ValueError("generate_model_ensemble: roughness matrix R (q) must be provided.")
+        raise ValueError("generate_rto_model_ensemble: roughness matrix R (q) must be provided.")
 
     rng = default_rng() if rng is None else rng
 
@@ -940,6 +946,299 @@ def generate_model_ensemble(
         print(mod_list)
 
     return mod_list
+
+
+def generate_gst_model_ensemble(
+    alg: str = "gst",
+    dir_base: str = "./ens_",
+    n_samples: int = 1,
+    fromto: Optional[Tuple[int, int]] = None,
+    # --- mesh ---
+    ref_mod_file: str = "",
+    # --- pilot points ---
+    pp_mode: str = "random",
+    n_pp: int = 100,
+    pp_bbox: Sequence[float] = (-50000., 50000., -50000., 50000., 0., 80000.),
+    pp_coords: Optional[np.ndarray] = None,
+    # --- resistivity range ---
+    log_rho_min: float = 0.0,
+    log_rho_max: float = 4.0,
+    # --- variogram ---
+    vario_model: str = "Spherical",
+    vario_range: float | Sequence[float] = 20000.,
+    vario_sill: float = 0.5,
+    vario_nugget: float = 0.01,
+    vario_angles: Optional[Sequence[float]] = None,
+    # --- output ---
+    output_target: str = "both",
+    resistivity_file: str = "resistivity_block_iter0.dat",
+    reference_file: str = "referencemodel.dat",
+    rng: Optional[Generator] = None,
+    out: bool = True,
+) -> list[str]:
+    """Generate a geostatistical initial-model ensemble via pilot-point Kriging.
+
+    For each ensemble member *i*:
+
+    1. Place pilot points inside the survey volume (random, fixed, or mixed).
+    2. Draw log₁₀(ρ) values at the pilot points from
+       Uniform(log_rho_min, log_rho_max).
+    3. Ordinary-Krig the values to all FEMTIC mesh cell centres (gstools).
+    4. Clamp the field to [log_rho_min, log_rho_max].
+    5. Write the result into the member directory as
+       ``resistivity_block_iter0.dat`` and/or ``referencemodel.dat``
+       (controlled by ``output_target``).
+
+    No roughness matrix is required.  The ensemble spread comes entirely from
+    the spatially random pilot-point values; its spatial character is governed
+    by the variogram model.
+
+    Parameters
+    ----------
+    alg : str
+        Algorithm tag (informational only, default ``"gst"``).
+    dir_base : str
+        Ensemble base directory, e.g. ``"./ubinas_gst_"``.
+    n_samples : int
+        Number of ensemble members if ``fromto`` is None.
+    fromto : (int, int), optional
+        Explicit ``[start, stop)`` index range.  If None, use 0 … n_samples-1.
+    ref_mod_file : str
+        Full path to the template reference model file.  Read once to obtain
+        mesh cell-centre coordinates via ``fem.read_model``.
+
+    Pilot-point parameters
+    ----------------------
+    pp_mode : {"random", "fixed", "mixed"}
+        Pilot-point placement strategy:
+
+        - ``"random"`` — ``n_pp`` points drawn uniformly inside ``pp_bbox``
+          (fresh locations **and** fresh values every member).
+        - ``"fixed"``  — locations taken from ``pp_coords`` (same geometry
+          every member, only values change).
+        - ``"mixed"``  — ``pp_coords`` plus ``n_pp`` additional random points.
+    n_pp : int
+        Number of randomly drawn pilot points per member.  Used when
+        ``pp_mode`` is ``"random"`` or ``"mixed"``.
+        Recommended: 50–200 for typical 3-D MT survey volumes.
+    pp_bbox : sequence of 6 floats
+        Bounding box ``[x_min, x_max, y_min, y_max, z_min, z_max]`` (metres,
+        z positive-down) for random pilot-point placement.
+    pp_coords : ndarray, shape (N, 3), optional
+        Explicit pilot-point coordinates (easting, northing, depth).
+        Required when ``pp_mode`` is ``"fixed"`` or ``"mixed"``.
+
+    Resistivity range
+    -----------------
+    log_rho_min : float
+        Minimum resistivity in log₁₀(Ω·m).  Used as both the lower draw
+        bound and a post-Kriging clamp.
+    log_rho_max : float
+        Maximum resistivity in log₁₀(Ω·m).  Used as both the upper draw
+        bound and a post-Kriging clamp.
+
+    Variogram parameters
+    --------------------
+    vario_model : str
+        gstools covariance model class name.  Common choices:
+        ``"Spherical"`` (default), ``"Gaussian"``, ``"Exponential"``,
+        ``"Matern"``, ``"Linear"``, ``"PowerLaw"``.
+    vario_range : float or (float, float)
+        Correlation length in metres.  A scalar applies isotropically.
+        A 2-tuple ``(h_range, v_range)`` sets horizontal and vertical ranges
+        separately (geometric anisotropy); horizontal usually >> vertical for MT.
+        Recommended: h_range ≈ half the survey aperture;
+        v_range ≈ half the target depth.
+    vario_sill : float
+        Sill (variance) in (log₁₀ Ω·m)².  Typical range 0.1–1.0.
+        Recommended: 0.25–0.5 (±0.5–0.7 log₁₀ units 1-sigma).
+    vario_nugget : float
+        Nugget in (log₁₀ Ω·m)².  Keep ≤ 10 % of sill for coherence.
+    vario_angles : sequence of float, optional
+        Rotation angles ``[α, β, γ]`` in **degrees** orienting the anisotropy
+        axes (converted to radians internally).  ``None`` = axis-aligned.
+
+    Output parameters
+    -----------------
+    output_target : {"resistivity_block", "referencemodel", "both"}
+        Which FEMTIC file(s) receive the Kriged model per member.
+        ``"both"`` is recommended for a fully geostatistical prior.
+    resistivity_file : str
+        Filename for the initial model (default ``resistivity_block_iter0.dat``).
+    reference_file : str
+        Filename for the prior / reference model (default ``referencemodel.dat``).
+    rng : numpy.random.Generator, optional
+        Shared random generator.  If None, uses ``np.random.default_rng()``.
+    out : bool
+        If True, print progress messages.
+
+    Returns
+    -------
+    mod_list : list of str
+        Paths to all files written (one or two per member, depending on
+        ``output_target``).
+
+    Notes
+    -----
+    Requires ``gstools`` (pip install gstools).
+
+    Author: Volker Rath (DIAS)
+    Created with the help of Claude Sonnet 4.6 (Anthropic), 2026-04-27.
+    """
+    try:
+        import gstools as gs
+    except ImportError:
+        raise ImportError(
+            "generate_gst_model_ensemble requires gstools.  "
+            "Install with: pip install gstools"
+        )
+
+    rng = default_rng() if rng is None else rng
+
+    # ------------------------------------------------------------------
+    # Read mesh cell centres once from the template reference model.
+    # fem.read_model returns (coords, values, ...) with coords shape (N, 3).
+    # ------------------------------------------------------------------
+    if not ref_mod_file:
+        raise ValueError(
+            "generate_gst_model_ensemble: ref_mod_file must be supplied."
+        )
+    if out:
+        print(f"Reading mesh cell centres from: {ref_mod_file}")
+    mod_coords, *_ = fem.read_model(ref_mod_file, model_trans="log10", out=False)
+    cx = mod_coords[:, 0]
+    cy = mod_coords[:, 1]
+    cz = mod_coords[:, 2]
+    n_cells = len(cx)
+    if out:
+        print(f"  {n_cells} mesh cells.")
+
+    # ------------------------------------------------------------------
+    # Build gstools variogram model.
+    # ------------------------------------------------------------------
+    vario_cls = getattr(gs, vario_model)
+
+    if np.isscalar(vario_range):
+        len_scale = float(vario_range)
+        anis = [1.0, 1.0]
+    else:
+        h_range, v_range = vario_range
+        len_scale = float(h_range)
+        anis = [1.0, float(v_range) / float(h_range)]
+
+    vario_kwargs: dict = dict(
+        dim=3,
+        var=vario_sill,
+        len_scale=len_scale,
+        nugget=vario_nugget,
+        anis=anis,
+    )
+    if vario_angles is not None:
+        vario_kwargs["angles"] = np.deg2rad(vario_angles)
+
+    variogram = vario_cls(**vario_kwargs)
+
+    if out:
+        print(
+            f"Variogram: {vario_model}, range={vario_range} m, "
+            f"sill={vario_sill}, nugget={vario_nugget}"
+        )
+
+    # ------------------------------------------------------------------
+    # Validate fixed pilot-point coordinates if needed.
+    # ------------------------------------------------------------------
+    if pp_mode in ("fixed", "mixed"):
+        if pp_coords is None:
+            raise ValueError(
+                f"pp_coords must be supplied when pp_mode='{pp_mode}'."
+            )
+        pp_fixed = np.asarray(pp_coords, dtype=float)
+        if pp_fixed.ndim != 2 or pp_fixed.shape[1] != 3:
+            raise ValueError("pp_coords must have shape (N, 3).")
+    else:
+        pp_fixed = np.empty((0, 3), dtype=float)
+
+    pp_bbox = list(pp_bbox)
+
+    # ------------------------------------------------------------------
+    # Member loop.
+    # ------------------------------------------------------------------
+    if fromto is None:
+        fromto_arr = np.arange(n_samples)
+    else:
+        fromto_arr = np.arange(fromto[0], fromto[1])
+
+    if out:
+        print(f"\nGenerating {len(fromto_arr)} geostatistical initial models ...")
+
+    mod_list: list[str] = []
+
+    for iens in fromto_arr:
+        member_dir = f"{dir_base}{iens}/"
+
+        # --- pilot-point locations ---
+        if pp_mode == "random":
+            pp_x = rng.uniform(pp_bbox[0], pp_bbox[1], n_pp)
+            pp_y = rng.uniform(pp_bbox[2], pp_bbox[3], n_pp)
+            pp_z = rng.uniform(pp_bbox[4], pp_bbox[5], n_pp)
+        elif pp_mode == "fixed":
+            pp_x = pp_fixed[:, 0]
+            pp_y = pp_fixed[:, 1]
+            pp_z = pp_fixed[:, 2]
+        else:  # "mixed"
+            rnd_x = rng.uniform(pp_bbox[0], pp_bbox[1], n_pp)
+            rnd_y = rng.uniform(pp_bbox[2], pp_bbox[3], n_pp)
+            rnd_z = rng.uniform(pp_bbox[4], pp_bbox[5], n_pp)
+            pp_x = np.concatenate([pp_fixed[:, 0], rnd_x])
+            pp_y = np.concatenate([pp_fixed[:, 1], rnd_y])
+            pp_z = np.concatenate([pp_fixed[:, 2], rnd_z])
+
+        # --- random log10(rho) values at pilot points ---
+        pp_vals = rng.uniform(log_rho_min, log_rho_max, len(pp_x))
+
+        # --- Ordinary Kriging ---
+        krig = gs.krige.Ordinary(
+            model=variogram,
+            cond_pos=(pp_x, pp_y, pp_z),
+            cond_val=pp_vals,
+        )
+        krig_field, _ = krig((cx, cy, cz))
+
+        # --- clamp ---
+        krig_field = np.clip(krig_field, log_rho_min, log_rho_max)
+
+        # --- write output file(s) ---
+        if output_target in ("resistivity_block", "both"):
+            out_path = member_dir + resistivity_file
+            fem.insert_model(
+                template=member_dir + reference_file,
+                model=krig_field,
+                model_file=out_path,
+                model_name=f"gst_sample{iens}",
+            )
+            mod_list.append(out_path)
+
+        if output_target in ("referencemodel", "both"):
+            out_path = member_dir + reference_file
+            fem.insert_model(
+                template=member_dir + reference_file,
+                model=krig_field,
+                model_file=out_path,
+                model_name=f"gst_sample{iens}",
+            )
+            if out_path not in mod_list:
+                mod_list.append(out_path)
+
+        if out and ((iens - fromto_arr[0] + 1) % 10 == 0
+                    or iens == fromto_arr[-1]):
+            print(f"  member {iens + 1:>4d}/{fromto_arr[-1] + 1} done.")
+
+    if out:
+        print("\nlist of written model files:")
+        print(mod_list)
+
+    return mod_list
+
 
 def generate_data_ensemble(alg: str = 'rto',
     dir_base: str = "./ens_",
