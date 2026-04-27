@@ -102,6 +102,7 @@ Created with the help of ChatGPT (GPT-5 Thinking) on 2026-02-13 (UTC)
 Modified: 2026-03-16 — freq_order parameter (load_edi, save_edi), compute_rhoplus (D+/rho+ test), PTXX/PTXY phase tensor blocks, RHOXY/PHASEXY rho-phase blocks in save_edi, MT unit fix (mV/km/nT) for rho_a; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-03-17 — unconditional all-sentinel tipper suppression in load_edi; full set_errors implementation (fix/floor, Z_rel ij/ij*ii, T/PT absolute); Z_units key; interpolate_data keyword-only signature (newfreqs, freq_per_dec, interp_method); fix ZT_from_S unit scaling; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-03-25 — manufacturer parameter in load_edi (phoenix/metronix/delta); FT-convention correction (e+iwt→e-iwt conjugation of Z and T for Phoenix); manufacturer and ft_convention keys in data_dict; cleanup and section headers; Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-04-27 — estimate_errors rewritten: spline-residual and MAD methods replacing incorrect std-over-axis approach; freq/Z unchanged, only error arrays updated; Claude Sonnet 4.6 (Anthropic)
 """
 
 from __future__ import annotations
@@ -892,59 +893,187 @@ def load_edi(
 # ---------------------------------------------------------------------------
 
 def estimate_errors(edi_dict: Dict[str, Any], method: Dict[str, Any]) -> Dict[str, Any]:
-    """Estimate *new* error levels from the spread of a resampled dataset.
+    """Estimate error levels from the local scatter of Z (and T) relative to a
+    smooth curve fitted to the data on the original frequency grid.
 
-    This is a pragmatic helper to replace error estimates by comparing an
-    interpolated representation against the original data. It is intended for
-    exploratory work and should be used with caution.
+    Frequency and data arrays are **not** modified; only ``Z_err``, ``T_err``,
+    ``P_err``, and ``err_kind`` are updated in the returned dict.
+
+    Parameters
+    ----------
+    edi_dict : dict
+        Site dictionary as returned by :func:`load_edi`.
+    method : dict
+        Configuration dict controlling the estimation strategy.  Recognised
+        keys:
+
+        ``"kind"`` : ``"spline_residual"`` | ``"spline_residual_smoothed"`` | ``"mad"``
+            Estimation method (default: ``"spline_residual"``).
+
+            ``"spline_residual"``
+                Fit a GCV smoothing spline to Re and Im of each component on
+                log-frequency; the pointwise absolute complex residual
+                ``sqrt(r_re² + r_im²)`` becomes the per-point σ.
+
+            ``"spline_residual_smoothed"``
+                Same as above, but additionally smooth the resulting σ
+                envelope with a second wide spline (controlled by
+                ``"lam_smooth"``) to suppress single-point spikes.
+
+            ``"mad"``
+                Sliding-window median absolute deviation in log-frequency
+                space applied independently to Re and Im; combined as
+                ``sqrt(mad_re² + mad_im²)``.  Window width is set by
+                ``"window_dec"`` (decades, default 1.0).
+
+        ``"lam"`` : float or None
+            Smoothing parameter for the primary spline.  ``None`` (default)
+            lets :func:`make_spline` use GCV selection.
+
+        ``"lam_smooth"`` : float or None
+            Smoothing parameter for the secondary envelope spline used in
+            ``"spline_residual_smoothed"``.  Default: ``None`` (GCV).
+
+        ``"window_dec"`` : float
+            Half-width of the sliding MAD window in decades.  Default 1.0.
+
+        ``"floor_frac"`` : float or None
+            If given, apply a fractional floor: σ_ij ≥ floor_frac × |Z_ij|.
+            Prevents near-zero errors on extremely smooth sections.
+            Default: ``None`` (no floor).
+
+        ``"components"`` : ``"Z"`` | ``"ZT"`` | ``"ZTP"``
+            Which arrays to process.  Default ``"ZT"`` (Z and tipper if
+            present; phase tensor is skipped because it is derived).
+
+    Returns
+    -------
+    dict
+        Shallow copy of *edi_dict* with updated ``Z_err``, ``T_err``,
+        ``P_err`` (if applicable) and ``err_kind = "std"``.
+
+    Notes
+    -----
+    The spline-residual methods measure how much each measured data point
+    deviates from the smooth curve that best represents the whole sounding.
+    Points in noisy frequency bands (cultural noise, mode transitions) yield
+    large residuals and therefore large σ; clean decades yield small σ.
+    This is physically more meaningful than the original implementation
+    (``np.std`` across axes of the interpolated array, which collapsed to
+    near-zero).
+
+    The ``"mad"`` method is more robust to clustered outliers but requires
+    enough points per window to be stable.
+
+    VR 2026-04-27, Claude Sonnet 4.6 (Anthropic)
     """
-    edi_new = dict(edi_dict)  # shallow copy
+    edi_new = dict(edi_dict)  # shallow copy — freq and Z are not changed
 
     if "freq" not in edi_new:
         raise KeyError("edi_dict must contain 'freq'.")
 
-    old_logf = np.log10(np.asarray(edi_new["freq"], dtype=float).ravel())
-    new_logf = np.asarray(method.get("newfreqs"), dtype=float).ravel()
-    if new_logf.size == 0:
-        raise ValueError("method['newfreqs'] must be a non-empty array.")
-    nf = new_logf.size
+    kind        = method.get("kind", "spline_residual")
+    lam         = method.get("lam", None)
+    lam_smooth  = method.get("lam_smooth", None)
+    window_dec  = float(method.get("window_dec", 1.0))
+    floor_frac  = method.get("floor_frac", None)
+    components  = method.get("components", "ZT")
 
-    edi_new["freq"] = np.power(10.0, new_logf)
+    logf = np.log10(np.asarray(edi_new["freq"], dtype=float).ravel())
+    n    = logf.size
 
-    def _interp_complex(arr: np.ndarray) -> np.ndarray:
-        out = np.zeros((nf,) + arr.shape[1:], dtype=arr.dtype)
-        it = np.ndindex(arr.shape[1:])
-        for idx in it:
-            y = arr[(slice(None),) + idx]
-            if np.iscomplexobj(y):
-                sr = make_spline(old_logf, y.real, lam=None)
-                si = make_spline(old_logf, y.imag, lam=None)
-                out[(slice(None),) + idx] = sr(new_logf) + 1j * si(new_logf)
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _spline_residual(logf: np.ndarray, y: np.ndarray) -> np.ndarray:
+        """Pointwise |residual| of a GCV spline fit to a real 1-D array."""
+        spl = make_spline(logf, y, lam=lam)
+        return np.abs(y - spl(logf))
+
+    def _spline_residual_smoothed(logf: np.ndarray, y: np.ndarray) -> np.ndarray:
+        """Spline residual with secondary smoothing of the σ envelope."""
+        sigma = _spline_residual(logf, y)
+        # Smooth the envelope; sort is already handled inside make_spline
+        spl2 = make_spline(logf, sigma, lam=lam_smooth)
+        smoothed = spl2(logf)
+        return np.maximum(smoothed, 0.0)  # variance envelope must be non-negative
+
+    def _mad_sliding(logf: np.ndarray, y: np.ndarray) -> np.ndarray:
+        """Sliding-window MAD in log-frequency space."""
+        sigma = np.empty(n, dtype=float)
+        for i in range(n):
+            mask = np.abs(logf - logf[i]) <= window_dec
+            if mask.sum() < 2:
+                # Isolated point — fall back to absolute deviation from
+                # nearest-neighbour linear interpolation
+                neighbours = np.argsort(np.abs(logf - logf[i]))[:3]
+                yref = np.interp(logf[i], logf[neighbours], y[neighbours])
+                sigma[i] = np.abs(y[i] - yref)
             else:
-                s = make_spline(old_logf, y, lam=None)
-                out[(slice(None),) + idx] = s(new_logf)
+                med = np.median(y[mask])
+                sigma[i] = np.median(np.abs(y[mask] - med))
+        return sigma
+
+    def _err_1d(logf: np.ndarray, y: np.ndarray) -> np.ndarray:
+        """Dispatch to the selected method for a single real component."""
+        if kind == "spline_residual":
+            return _spline_residual(logf, y)
+        elif kind == "spline_residual_smoothed":
+            return _spline_residual_smoothed(logf, y)
+        elif kind == "mad":
+            return _mad_sliding(logf, y)
+        else:
+            raise ValueError(
+                f"estimate_errors: unknown kind={kind!r}. "
+                "Choose 'spline_residual', 'spline_residual_smoothed', or 'mad'."
+            )
+
+    def _err_complex(arr: np.ndarray) -> np.ndarray:
+        """Per-element σ for a complex array of shape (n, ...).
+
+        Returns a real array of the same shape with σ = sqrt(σ_re² + σ_im²).
+        """
+        out = np.zeros((n,) + arr.shape[1:], dtype=float)
+        for idx in np.ndindex(arr.shape[1:]):
+            sl = (slice(None),) + idx
+            y = arr[sl]
+            if np.iscomplexobj(y):
+                r_re = _err_1d(logf, y.real)
+                r_im = _err_1d(logf, y.imag)
+                out[sl] = np.sqrt(r_re ** 2 + r_im ** 2)
+            else:
+                out[sl] = _err_1d(logf, np.asarray(y, dtype=float))
         return out
 
-    # Estimate errors as std of interpolation mismatch (very rough)
+    def _apply_floor(sigma: np.ndarray, data: np.ndarray) -> np.ndarray:
+        """Optionally apply a fractional floor relative to |data|."""
+        if floor_frac is None:
+            return sigma
+        return np.maximum(sigma, floor_frac * np.abs(data))
+
+    # ------------------------------------------------------------------
+    # Process requested components
+    # ------------------------------------------------------------------
+
     if edi_new.get("Z") is not None:
-        Z_old = np.asarray(edi_new["Z"])
-        Z_new = _interp_complex(Z_old)
-        edi_new["Z"] = Z_new
-        edi_new["Z_err"] = np.std(Z_new, axis=0, ddof=1)
+        Z = np.asarray(edi_new["Z"], dtype=np.complex128)
+        Z_err = _err_complex(Z)
+        Z_err = _apply_floor(Z_err, Z)
+        edi_new["Z_err"] = Z_err
 
-    if edi_new.get("T") is not None:
-        T_old = np.asarray(edi_new["T"])
-        T_new = _interp_complex(T_old)
-        edi_new["T"] = T_new
-        edi_new["T_err"] = np.std(T_new, axis=0, ddof=1)
+    if "T" in components and edi_new.get("T") is not None:
+        T = np.asarray(edi_new["T"], dtype=np.complex128)
+        T_err = _err_complex(T)
+        T_err = _apply_floor(T_err, T)
+        edi_new["T_err"] = T_err
 
-    if edi_new.get("P") is not None:
-        P_old = np.asarray(edi_new["P"])
-        P_new = _interp_complex(P_old.astype(float)).astype(float)
-        edi_new["P"] = P_new
-        edi_new["P_err"] = np.std(P_new, axis=0, ddof=1)
+    if "P" in components and edi_new.get("P") is not None:
+        P = np.asarray(edi_new["P"], dtype=float)
+        P_err = _err_complex(P.astype(complex)).astype(float)
+        P_err = _apply_floor(P_err, P)
+        edi_new["P_err"] = P_err
 
-    # mark errors as std
     edi_new["err_kind"] = "std"
     return edi_new
 

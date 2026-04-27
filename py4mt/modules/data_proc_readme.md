@@ -333,6 +333,64 @@ data_dict = data_proc.set_errors(data_dict, mode="floor", **err_pars)
 
 ---
 
+## Error estimation from curve scatter
+
+### `estimate_errors(edi_dict, method)`
+
+Replaces `Z_err` (and `T_err`, `P_err`) with data-driven estimates derived
+from the scatter of each component relative to a smooth curve fitted on the
+original frequency grid.  **`freq` and `Z` are not modified.**
+
+The `method` dict controls the strategy:
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `"kind"` | str | `"spline_residual"` | Estimation method (see below) |
+| `"lam"` | float\|None | `None` | Primary spline λ; `None` → GCV selection |
+| `"lam_smooth"` | float\|None | `None` | Envelope smoothing λ (smoothed variant only) |
+| `"window_dec"` | float | `1.0` | MAD window half-width in decades |
+| `"floor_frac"` | float\|None | `None` | Fractional floor: σ_ij ≥ floor_frac × \|Z_ij\| |
+| `"components"` | str | `"ZT"` | Which arrays to process: `"Z"`, `"ZT"`, or `"ZTP"` |
+
+**Methods (`"kind"`):**
+
+| Value | Description |
+|-------|-------------|
+| `"spline_residual"` | GCV smoothing spline fitted to Re and Im separately; σ = √(r_re² + r_im²) pointwise. Fast, locally adaptive. |
+| `"spline_residual_smoothed"` | Same as above, then smooth the σ envelope with a second spline (`lam_smooth`). Suppresses single-point spikes driving adjacent errors. |
+| `"mad"` | Sliding-window median absolute deviation in log-frequency space, combined as √(mad_re² + mad_im²). Most robust to clustered outliers; requires sufficient point density per window. |
+
+All methods set `err_kind = "std"` in the returned dict.
+
+The `floor_frac` option prevents near-zero errors on extremely clean sections
+of the curve where the spline fits almost perfectly.  A value of `0.02`
+(2 % of \|Z\|) is a reasonable starting point.
+
+```python
+# Basic spline-residual estimate
+method = {"kind": "spline_residual", "floor_frac": 0.02}
+site = data_proc.estimate_errors(site, method)
+
+# Smoothed envelope — less sensitive to isolated noisy periods
+method = {
+    "kind":       "spline_residual_smoothed",
+    "lam_smooth": 1e-2,
+    "floor_frac": 0.02,
+}
+site = data_proc.estimate_errors(site, method)
+
+# MAD — robust alternative, wide window
+method = {"kind": "mad", "window_dec": 1.5, "floor_frac": 0.03}
+site = data_proc.estimate_errors(site, method)
+
+# Combine with set_errors to floor against a minimum level
+site = data_proc.estimate_errors(site, {"kind": "spline_residual"})
+site = data_proc.set_errors(site, mode="floor",
+                             Z_rel=[0.02]*4, Z_rel_mode="ij")
+```
+
+---
+
 ## Interpolation
 
 ### `interpolate_data(edi_dict, *, newfreqs, freq_per_dec, interp_method)`
@@ -431,3 +489,4 @@ Author: Volker Rath (DIAS)
 Modified: 2026-03-07 — unified save_xxx(**data_dict, path=...) calling convention, Claude (Opus 4.6, Anthropic)
 Modified: 2026-03-16 — freq_order parameter (load_edi, save_edi), compute_rhoplus (D+/rho+ test), PTXX/PTXY phase tensor blocks, RHOXY/PHASEXY rho-phase blocks in save_edi, MT unit fix (rho_a = |Z|²×1e6/(μ₀ω) for Z in mV/km/nT); Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-03-25 — manufacturer parameter in load_edi (phoenix/metronix/delta); FT-convention correction (conjugation of Z and T for Phoenix); manufacturer and ft_convention keys in data_dict; Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-04-27 — estimate_errors section rewritten: spline_residual, spline_residual_smoothed, and mad methods; Claude Sonnet 4.6 (Anthropic)

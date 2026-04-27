@@ -30,7 +30,14 @@ from scipy.io import FortranFile
 from scipy.ndimage import laplace, convolve
 from scipy.ndimage import uniform_filter, gaussian_filter, median_filter
 from scipy.fft import dctn, idctn
+from scipy.special import eval_legendre
+from scipy.interpolate import BSpline
 from numba import jit
+
+try:
+    import pywt
+except ImportError:
+    pywt = None
 
 try:
     import util as utl  # Project-local helpers (coordinate conversion, etc.).
@@ -4281,3 +4288,1395 @@ def dct_separable_to_model(coeff_block=None, shape_full=None,
               % str(shape_full))
 
     return mval_rec
+
+
+# =============================================================================
+#  Wavelet model compression
+# =============================================================================
+
+def _check_pywt():
+    """Raise ImportError with an install hint if pywt is not available."""
+    if pywt is None:
+        raise ImportError(
+            'PyWavelets is required for wavelet compression. '
+            'Install with:  pip install PyWavelets'
+        )
+
+
+def model_to_wavelet(mval=None, wavelet='db4', level=None,
+                     n_keep=None, frac_keep=None, thresh=None,
+                     out=True):
+    """
+    model_to_wavelet.
+
+    Parameters
+    ----------
+    mval : ndarray, float, shape (nx, ny, nz)
+        Log-resistivity model (or any real-valued 3-D field on the ModEM mesh).
+    wavelet : str, optional
+        PyWavelets wavelet name.  Good defaults for smooth geophysical models:
+        'db4' (Daubechies-4), 'sym4' (Symlet-4), 'coif2' (Coiflet-2).
+        Default 'db4'.
+    level : int or None, optional
+        Decomposition depth.  None lets PyWavelets choose the maximum level
+        for the array size and wavelet filter length.
+    n_keep : int, optional
+        Retain the n_keep largest-magnitude wavelet coefficients (hard
+        threshold by count).
+    frac_keep : float, optional
+        Fraction of total coefficients to retain (0 < frac_keep <= 1).
+        Converted to n_keep = round(frac_keep * n_total).
+    thresh : float, optional
+        Hard amplitude threshold: zero all coefficients whose absolute value
+        is below thresh.
+    out : bool, optional
+        Print compression summary. Default True.
+
+    Returns
+    -------
+    coeffs : list
+        PyWavelets coefficient list as returned by pywt.dwtn (one dict per
+        level plus the approximation array).  Thresholded in-place when
+        truncation is requested.
+    shapes : list of dict
+        Original subband shapes before thresholding, needed for reconstruction.
+    n_kept : int
+        Number of nonzero coefficients after thresholding.
+    n_total : int
+        Total number of coefficients (= nx * ny * nz).
+
+    Notes
+    -----
+    The 3-D stationary discrete wavelet transform (DWT) via pywt.dwtn /
+    pywt.idwtn is used.  Boundary extension mode is 'periodization' (fewest
+    extra coefficients) — change mode= if edge artefacts are visible.
+
+    Spatial localisation is the key advantage over DCT: a wavelet coefficient
+    encodes a frequency *at a specific location*, so conductive anomalies in
+    one corner of the model are represented efficiently regardless of what
+    the rest of the model looks like.
+
+    Requires PyWavelets (pip install PyWavelets).
+
+    VR Apr 2026
+    """
+    _check_pywt()
+    mval = np.asarray(mval, dtype=float)
+    n_total = mval.size
+
+    coeffs = pywt.dwtn(mval, wavelet=wavelet, mode='periodization')
+
+    # Flatten all subbands into a single vector for thresholding
+    keys = list(coeffs.keys())
+    shapes = {k: coeffs[k].shape for k in keys}
+    flat = np.concatenate([coeffs[k].ravel() for k in keys])
+
+    if frac_keep is not None and n_keep is None and thresh is None:
+        n_keep = max(1, int(round(frac_keep * flat.size)))
+
+    if n_keep is not None:
+        n_keep = min(n_keep, flat.size)
+        cutoff = np.sort(np.abs(flat))[-n_keep]
+        flat[np.abs(flat) < cutoff] = 0.0
+    elif thresh is not None:
+        flat[np.abs(flat) < thresh] = 0.0
+
+    # Write thresholded values back into coefficient dict
+    pos = 0
+    for k in keys:
+        size = coeffs[k].size
+        coeffs[k] = flat[pos:pos + size].reshape(shapes[k])
+        pos += size
+
+    n_kept = int(np.count_nonzero(flat))
+
+    if out:
+        ratio = flat.size / max(n_kept, 1)
+        print(
+            'model_to_wavelet: wavelet=%s  level=%s  '
+            '%d / %d coefficients nonzero  (ratio %.1f:1)'
+            % (wavelet, str(level), n_kept, flat.size, ratio)
+        )
+
+    return coeffs, shapes, n_kept, n_total
+
+
+def wavelet_to_model(coeffs=None, wavelet='db4', shape=None, out=True):
+    """
+    wavelet_to_model.
+
+    Parameters
+    ----------
+    coeffs : list or dict
+        PyWavelets coefficient structure as returned by model_to_wavelet.
+    wavelet : str, optional
+        Must match the wavelet used in model_to_wavelet. Default 'db4'.
+    shape : tuple of int, optional
+        Expected output shape (nx, ny, nz).  Used only for a consistency
+        check; the shape is determined by the coefficient arrays.
+    out : bool, optional
+        Print reconstruction summary. Default True.
+
+    Returns
+    -------
+    mval_rec : ndarray, float, shape (nx, ny, nz)
+        Reconstructed model, cropped to match the original shape if the
+        wavelet boundary extension added padding.
+
+    Notes
+    -----
+    Inverse of model_to_wavelet.  Applies pywt.idwtn and trims any
+    boundary-extension padding introduced during the forward transform.
+
+    VR Apr 2026
+    """
+    _check_pywt()
+    mval_rec = pywt.idwtn(coeffs, wavelet=wavelet, mode='periodization')
+
+    if shape is not None:
+        mval_rec = mval_rec[tuple(slice(0, s) for s in shape)]
+
+    if out:
+        print('wavelet_to_model: model reconstructed, shape %s'
+              % str(mval_rec.shape))
+
+    return mval_rec
+
+
+def wavelet_compress(mval=None, wavelet='db4', level=None,
+                     n_keep=None, frac_keep=None, thresh=None, out=True):
+    """
+    wavelet_compress.
+
+    Parameters
+    ----------
+    mval : ndarray, float, shape (nx, ny, nz)
+        Log-resistivity model.
+    wavelet : str, optional
+        Wavelet name. Default 'db4'.
+    level : int or None, optional
+        Decomposition depth. Default None (maximum).
+    n_keep : int, optional
+        Number of largest-magnitude coefficients to keep.
+    frac_keep : float, optional
+        Fraction of coefficients to keep.
+    thresh : float, optional
+        Hard amplitude threshold.
+    out : bool, optional
+        Print compression statistics. Default True.
+
+    Returns
+    -------
+    mval_rec : ndarray, float, shape (nx, ny, nz)
+        Reconstructed model.
+    coeffs : dict
+        Thresholded wavelet coefficient dict.
+    n_kept : int
+        Number of nonzero coefficients retained.
+
+    Notes
+    -----
+    Convenience one-call wrapper: forward wavelet transform + thresholding +
+    inverse transform + printed statistics.
+
+    VR Apr 2026
+    """
+    coeffs, shapes, n_kept, n_total = model_to_wavelet(
+        mval, wavelet=wavelet, level=level,
+        n_keep=n_keep, frac_keep=frac_keep, thresh=thresh, out=False
+    )
+    mval_rec = wavelet_to_model(coeffs, wavelet=wavelet,
+                                shape=mval.shape, out=False)
+
+    if out:
+        rms_err = dct_reconstruction_error(mval, mval_rec, norm='rms')
+        rel_err = dct_reconstruction_error(mval, mval_rec, norm='rel_rms')
+        ratio = n_total / max(n_kept, 1)
+        print(
+            'wavelet_compress: wavelet=%s  %d / %d coefficients  '
+            '(ratio %.1f:1)  RMS err = %.4g  rel. RMS = %.4g'
+            % (wavelet, n_kept, n_total, ratio, rms_err, rel_err)
+        )
+
+    return mval_rec, coeffs, n_kept
+
+
+def wavelet_truncation_analysis(mval=None, wavelet='db4', n_levels=20,
+                                out=True):
+    """
+    wavelet_truncation_analysis.
+
+    Parameters
+    ----------
+    mval : ndarray, float, shape (nx, ny, nz)
+        Log-resistivity model.
+    wavelet : str, optional
+        Wavelet name. Default 'db4'.
+    n_levels : int, optional
+        Number of compression levels to test. Default 20.
+    out : bool, optional
+        Print summary table. Default True.
+
+    Returns
+    -------
+    fracs : ndarray, float, shape (n_levels,)
+        Fraction of coefficients retained at each level.
+    rms_errors : ndarray, float, shape (n_levels,)
+        RMS reconstruction error.
+    rel_errors : ndarray, float, shape (n_levels,)
+        Relative RMS reconstruction error.
+
+    Notes
+    -----
+    Mirrors dct_truncation_analysis for the wavelet basis.
+    Sweeps frac_keep logarithmically from 0.001 to 1.0.
+
+    VR Apr 2026
+    """
+    _check_pywt()
+    fracs = np.clip(np.logspace(-3, 0, n_levels), 1e-6, 1.0)
+    rms_errors = np.zeros(n_levels)
+    rel_errors = np.zeros(n_levels)
+
+    if out:
+        print('\n  Wavelet truncation analysis  (wavelet=%s)' % wavelet)
+        print('  %12s  %10s  %14s  %14s'
+              % ('frac_keep', 'n_kept', 'rms_error', 'rel_rms_error'))
+
+    for i, frac in enumerate(fracs):
+        coeffs, _, n_kept, _ = model_to_wavelet(
+            mval, wavelet=wavelet, frac_keep=float(frac), out=False
+        )
+        mval_rec = wavelet_to_model(coeffs, wavelet=wavelet,
+                                    shape=mval.shape, out=False)
+        rms_errors[i] = dct_reconstruction_error(mval, mval_rec, norm='rms')
+        rel_errors[i] = dct_reconstruction_error(mval, mval_rec, norm='rel_rms')
+        if out:
+            print('  %12.4g  %10d  %14.6g  %14.6g'
+                  % (frac, n_kept, rms_errors[i], rel_errors[i]))
+
+    return fracs, rms_errors, rel_errors
+
+
+# =============================================================================
+#  Legendre-z x DCT-xy separable compression
+# =============================================================================
+
+def _legendre_basis_1d(nz, n_leg):
+    """
+    _legendre_basis_1d.
+
+    Parameters
+    ----------
+    nz : int
+        Number of depth cells.
+    n_leg : int
+        Number of Legendre basis functions to evaluate (orders 0 .. n_leg-1).
+
+    Returns
+    -------
+    P : ndarray, float, shape (nz, n_leg)
+        Orthonormal Legendre basis matrix evaluated at the nz cell-centre
+        positions mapped to [-1, 1].  Columns are L2-normalised.
+
+    Notes
+    -----
+    The nz cell centres are mapped linearly to the interval [-1, 1].
+    Each column P[:, l] contains the l-th Legendre polynomial P_l(z)
+    evaluated at those points and divided by its L2 norm, giving an
+    orthonormal column basis.
+
+    VR Apr 2026
+    """
+    z = np.linspace(-1.0, 1.0, nz)
+    P = np.zeros((nz, n_leg))
+    for l in range(n_leg):
+        col = eval_legendre(l, z)
+        col_norm = np.sqrt(np.sum(col**2))
+        P[:, l] = col / (col_norm if col_norm > 0.0 else 1.0)
+    return P
+
+
+def model_to_legdct(mval=None, n_leg=None, frac_leg=0.5,
+                    nx_dct=None, ny_dct=None, frac_dct=0.5,
+                    out=True):
+    """
+    model_to_legdct.
+
+    Parameters
+    ----------
+    mval : ndarray, float, shape (nx, ny, nz)
+        Log-resistivity model.
+    n_leg : int, optional
+        Number of Legendre basis functions along z (depth).
+        Defaults to round(frac_leg * nz).
+    frac_leg : float, optional
+        Fraction of depth cells to use as Legendre orders when n_leg is None.
+        Default 0.5.
+    nx_dct : int, optional
+        Number of DCT-II coefficients to retain along x.
+        Defaults to round(frac_dct * nx).
+    ny_dct : int, optional
+        Number of DCT-II coefficients to retain along y.
+        Defaults to round(frac_dct * ny).
+    frac_dct : float, optional
+        Fraction of horizontal cells to use as DCT coefficients when nx_dct
+        or ny_dct are None. Default 0.5.
+    out : bool, optional
+        Print compression summary. Default True.
+
+    Returns
+    -------
+    C : ndarray, float, shape (nx_dct, ny_dct, n_leg)
+        Compressed coefficient array: DCT along x and y, Legendre along z.
+    shape_full : tuple of int
+        Original model shape (nx, ny, nz).
+    params : dict
+        Dictionary containing n_leg, nx_dct, ny_dct (needed for reconstruction).
+
+    Notes
+    -----
+    Applies a separable mixed basis:
+        - 1-D Legendre polynomial expansion along z (depth axis).
+        - 2-D DCT-II along x and y (horizontal axes).
+
+    This respects the physical anisotropy of MT models: the depth dimension
+    has strong gradients (resistivity varies by orders of magnitude with
+    depth) that Legendre polynomials represent compactly, while horizontal
+    structure is quasi-periodic and well suited to the DCT.
+
+    The transform is:
+        1. Project mval onto the Legendre basis along z:
+               A[ix, iy, l] = sum_k mval[ix, iy, k] * P[k, l]
+        2. Apply 2-D DCT-II to A along axes 0 and 1:
+               C = dctn(A, axes=(0, 1), norm='ortho')[:nx_dct, :ny_dct, :]
+
+    VR Apr 2026
+    """
+    mval = np.asarray(mval, dtype=float)
+    nx, ny, nz = mval.shape
+
+    if n_leg is None:
+        n_leg = max(1, int(round(frac_leg * nz)))
+    n_leg = min(n_leg, nz)
+
+    if nx_dct is None:
+        nx_dct = max(1, int(round(frac_dct * nx)))
+    if ny_dct is None:
+        ny_dct = max(1, int(round(frac_dct * ny)))
+    nx_dct = min(nx_dct, nx)
+    ny_dct = min(ny_dct, ny)
+
+    # Step 1: project onto Legendre basis along z
+    P = _legendre_basis_1d(nz, n_leg)           # (nz, n_leg)
+    A = np.tensordot(mval, P, axes=([2], [0]))  # (nx, ny, n_leg)
+
+    # Step 2: 2-D DCT along horizontal axes, then truncate
+    C_full = dctn(A, axes=(0, 1), norm='ortho')
+    C = C_full[:nx_dct, :ny_dct, :].copy()
+
+    params = dict(n_leg=n_leg, nx_dct=nx_dct, ny_dct=ny_dct)
+
+    if out:
+        n_total = nx * ny * nz
+        n_kept = nx_dct * ny_dct * n_leg
+        ratio = n_total / max(n_kept, 1)
+        print(
+            'model_to_legdct: Legendre orders=%d  DCT x=%d y=%d  '
+            '%d / %d coefficients  (ratio %.1f:1)'
+            % (n_leg, nx_dct, ny_dct, n_kept, n_total, ratio)
+        )
+
+    return C, (nx, ny, nz), params
+
+
+def legdct_to_model(C=None, shape_full=None, params=None, out=True):
+    """
+    legdct_to_model.
+
+    Parameters
+    ----------
+    C : ndarray, float, shape (nx_dct, ny_dct, n_leg)
+        Compressed coefficient array as returned by model_to_legdct.
+    shape_full : tuple of int
+        Original model shape (nx, ny, nz).
+    params : dict
+        Must contain keys 'n_leg', 'nx_dct', 'ny_dct' (as returned by
+        model_to_legdct).
+    out : bool, optional
+        Print reconstruction summary. Default True.
+
+    Returns
+    -------
+    mval_rec : ndarray, float, shape (nx, ny, nz)
+        Reconstructed model.
+
+    Notes
+    -----
+    Inverse of model_to_legdct:
+        1. Pad C with zeros to (nx, ny, n_leg) and apply inverse 2-D DCT
+           along axes 0 and 1 to recover A[ix, iy, l].
+        2. Reconstruct depth profiles:
+               mval_rec[ix, iy, k] = sum_l A[ix, iy, l] * P[k, l]
+
+    VR Apr 2026
+    """
+    nx, ny, nz = shape_full
+    n_leg = params['n_leg']
+    nx_dct = params['nx_dct']
+    ny_dct = params['ny_dct']
+
+    # Step 1: inverse 2-D DCT with zero-padding
+    C_pad = np.zeros((nx, ny, n_leg), dtype=float)
+    C_pad[:nx_dct, :ny_dct, :] = C
+    A = idctn(C_pad, axes=(0, 1), norm='ortho')  # (nx, ny, n_leg)
+
+    # Step 2: inverse Legendre projection along z
+    P = _legendre_basis_1d(nz, n_leg)                  # (nz, n_leg)
+    mval_rec = np.tensordot(A, P.T, axes=([2], [0]))   # (nx, ny, nz)
+
+    if out:
+        print('legdct_to_model: model reconstructed, shape %s'
+              % str(shape_full))
+
+    return mval_rec
+
+
+def legdct_compress(mval=None, n_leg=None, frac_leg=0.5,
+                    nx_dct=None, ny_dct=None, frac_dct=0.5, out=True):
+    """
+    legdct_compress.
+
+    Parameters
+    ----------
+    mval : ndarray, float, shape (nx, ny, nz)
+        Log-resistivity model.
+    n_leg : int, optional
+        Legendre orders along z. Default round(frac_leg * nz).
+    frac_leg : float, optional
+        Fraction of depth cells as Legendre orders. Default 0.5.
+    nx_dct : int, optional
+        DCT coefficients along x. Default round(frac_dct * nx).
+    ny_dct : int, optional
+        DCT coefficients along y. Default round(frac_dct * ny).
+    frac_dct : float, optional
+        Fraction of horizontal cells as DCT coefficients. Default 0.5.
+    out : bool, optional
+        Print statistics. Default True.
+
+    Returns
+    -------
+    mval_rec : ndarray, float, shape (nx, ny, nz)
+        Reconstructed model.
+    C : ndarray, float
+        Compressed coefficient array.
+    params : dict
+        Compression parameters (n_leg, nx_dct, ny_dct).
+
+    Notes
+    -----
+    One-call wrapper: forward Legendre-z × DCT-xy + inverse + statistics.
+
+    VR Apr 2026
+    """
+    C, shape_full, params = model_to_legdct(
+        mval, n_leg=n_leg, frac_leg=frac_leg,
+        nx_dct=nx_dct, ny_dct=ny_dct, frac_dct=frac_dct, out=False
+    )
+    mval_rec = legdct_to_model(C, shape_full, params, out=False)
+
+    if out:
+        nx, ny, nz = shape_full
+        n_total = nx * ny * nz
+        n_kept = params['nx_dct'] * params['ny_dct'] * params['n_leg']
+        rms_err = dct_reconstruction_error(mval, mval_rec, norm='rms')
+        rel_err = dct_reconstruction_error(mval, mval_rec, norm='rel_rms')
+        ratio = n_total / max(n_kept, 1)
+        print(
+            'legdct_compress: Legendre orders=%d  DCT x=%d y=%d  '
+            '%d / %d coefficients  (ratio %.1f:1)  '
+            'RMS err = %.4g  rel. RMS = %.4g'
+            % (params['n_leg'], params['nx_dct'], params['ny_dct'],
+               n_kept, n_total, ratio, rms_err, rel_err)
+        )
+
+    return mval_rec, C, params
+
+
+def legdct_truncation_analysis(mval=None, n_levels=20, out=True):
+    """
+    legdct_truncation_analysis.
+
+    Parameters
+    ----------
+    mval : ndarray, float, shape (nx, ny, nz)
+        Log-resistivity model.
+    n_levels : int, optional
+        Number of compression levels to test. Default 20.
+    out : bool, optional
+        Print summary table. Default True.
+
+    Returns
+    -------
+    fracs : ndarray, float, shape (n_levels,)
+        Fraction of coefficients retained at each level.
+        Both frac_leg and frac_dct are set to sqrt(frac) so that the
+        overall compression ratio scales uniformly.
+    rms_errors : ndarray, float, shape (n_levels,)
+        RMS reconstruction error.
+    rel_errors : ndarray, float, shape (n_levels,)
+        Relative RMS reconstruction error.
+
+    Notes
+    -----
+    Mirrors dct_truncation_analysis for the Legendre-z x DCT-xy basis.
+    The two fractions (frac_leg and frac_dct) are coupled via
+    frac_leg = frac_dct = sqrt(frac_keep) so that varying a single
+    parameter sweeps the overall compression ratio.
+
+    VR Apr 2026
+    """
+    fracs = np.clip(np.logspace(-3, 0, n_levels), 1e-6, 1.0)
+    rms_errors = np.zeros(n_levels)
+    rel_errors = np.zeros(n_levels)
+
+    if out:
+        print('\n  Legendre-z x DCT-xy truncation analysis')
+        print('  %12s  %10s  %14s  %14s'
+              % ('frac_keep', 'n_kept', 'rms_error', 'rel_rms_error'))
+
+    nx, ny, nz = mval.shape
+    for i, frac in enumerate(fracs):
+        f = float(np.sqrt(frac))
+        C, shape_full, params = model_to_legdct(
+            mval, frac_leg=f, frac_dct=f, out=False
+        )
+        mval_rec = legdct_to_model(C, shape_full, params, out=False)
+        rms_errors[i] = dct_reconstruction_error(mval, mval_rec, norm='rms')
+        rel_errors[i] = dct_reconstruction_error(mval, mval_rec, norm='rel_rms')
+        n_kept = params['nx_dct'] * params['ny_dct'] * params['n_leg']
+        if out:
+            print('  %12.4g  %10d  %14.6g  %14.6g'
+                  % (frac, n_kept, rms_errors[i], rel_errors[i]))
+
+    return fracs, rms_errors, rel_errors
+
+
+# =============================================================================
+#  B-spline-z x DCT-xy separable compression
+# =============================================================================
+
+def _bspline_basis_1d(dz, n_basis, k=3, knot_style='quantile'):
+    """
+    _bspline_basis_1d.
+
+    Parameters
+    ----------
+    dz : ndarray, float, shape (nz,)
+        Cell thicknesses along the depth axis (metres).  Used to compute
+        cell-centre positions and, for knot_style='quantile', to place knots
+        at depth quantiles of the actual cell centres.
+    n_basis : int
+        Number of B-spline basis functions.  Must satisfy n_basis >= k + 1.
+        The number of free interior knots is n_basis - k - 1; setting
+        n_basis = k + 1 gives a single polynomial spanning the whole depth
+        range (no interior knots).
+    k : int, optional
+        Spline degree.  Default 3 (cubic).
+    knot_style : str, optional
+        How to place interior knots:
+
+        'uniform'   Equally spaced in normalised depth [0, 1].  Best for
+                    models with uniform cell sizes.
+        'quantile'  Knots at depth quantiles of the cell-centre positions.
+                    Concentrates knots where the grid is fine (near surface),
+                    matching ModEM's typical cell-size progression.  Recommended
+                    default for real models.
+        'log'       Logarithmically spaced in normalised depth.  Alternative
+                    to 'quantile' when the depth axis spans many decades.
+
+    Returns
+    -------
+    B : ndarray, float, shape (nz, n_basis)
+        B-spline collocation (design) matrix.  Column l contains the l-th
+        basis function evaluated at each cell-centre.  Not orthonormal;
+        the pseudo-inverse is used for the inverse transform.
+    Bpinv : ndarray, float, shape (n_basis, nz)
+        Moore-Penrose pseudo-inverse of B.  Pre-computed once and stored in
+        the params dict so it is not recomputed on every reconstruction call.
+    t : ndarray, float
+        Full knot vector (clamped, length n_basis + k + 1).
+    z_norm : ndarray, float, shape (nz,)
+        Normalised cell-centre depths in [0, 1].
+
+    Notes
+    -----
+    Cell centres are computed from dz as zc = cumsum([0, dz]) midpoints,
+    then mapped linearly to [0, 1].  The clamped knot vector has k+1
+    coincident knots at 0 and 1 (zero-slope boundary conditions at top and
+    bottom of the model), which is the standard choice for geophysical depth
+    profiles.
+
+    The B-spline collocation matrix is obtained via
+    scipy.interpolate.BSpline.design_matrix, available in scipy >= 1.8.
+
+    VR Apr 2026
+    """
+    dz = np.asarray(dz, dtype=float)
+    nz = len(dz)
+
+    if n_basis < k + 1:
+        raise ValueError(
+            '_bspline_basis_1d: n_basis=%d must be >= k+1=%d'
+            % (n_basis, k + 1)
+        )
+
+    # Cell-centre depths, normalised to [0, 1]
+    zn = np.r_[0.0, np.cumsum(dz)]
+    zc = 0.5 * (zn[:-1] + zn[1:])
+    z_norm = zc / zc[-1]
+
+    n_interior = n_basis - k - 1
+
+    if n_interior == 0:
+        interior = np.array([])
+    elif knot_style == 'uniform':
+        interior = np.linspace(0.0, 1.0, n_interior + 2)[1:-1]
+    elif knot_style == 'quantile':
+        interior = np.quantile(z_norm, np.linspace(0.0, 1.0, n_interior + 2)[1:-1])
+    elif knot_style == 'log':
+        eps = z_norm[z_norm > 0.0].min() * 0.5
+        interior = np.exp(
+            np.linspace(np.log(eps), 0.0, n_interior + 2)[1:-1]
+        )
+        interior = np.clip(interior, 0.0, 1.0)
+    else:
+        raise ValueError(
+            "_bspline_basis_1d: knot_style must be 'uniform', 'quantile', "
+            "or 'log', got: " + str(knot_style)
+        )
+
+    # Clamped knot vector
+    t = np.r_[np.repeat(0.0, k + 1), interior, np.repeat(1.0, k + 1)]
+
+    B = BSpline.design_matrix(z_norm, t, k=k).toarray()  # (nz, n_basis)
+    Bpinv = np.linalg.pinv(B)                            # (n_basis, nz)
+
+    return B, Bpinv, t, z_norm
+
+
+def model_to_bspdct(mval=None, dz=None, n_basis=None, frac_basis=0.5,
+                    k=3, knot_style='quantile',
+                    nx_dct=None, ny_dct=None, frac_dct=0.5,
+                    out=True):
+    """
+    model_to_bspdct.
+
+    Parameters
+    ----------
+    mval : ndarray, float, shape (nx, ny, nz)
+        Log-resistivity model.
+    dz : ndarray, float, shape (nz,)
+        Cell thicknesses along depth (metres).  Required for knot placement.
+    n_basis : int, optional
+        Number of B-spline basis functions along z.
+        Defaults to round(frac_basis * nz).
+    frac_basis : float, optional
+        Fraction of depth cells to use as B-spline basis functions when
+        n_basis is None.  Default 0.5.
+    k : int, optional
+        Spline degree.  Default 3 (cubic).
+    knot_style : str, optional
+        Knot placement strategy: 'uniform', 'quantile' (default), or 'log'.
+        See _bspline_basis_1d for details.
+    nx_dct : int, optional
+        Number of DCT-II coefficients to retain along x.
+        Defaults to round(frac_dct * nx).
+    ny_dct : int, optional
+        Number of DCT-II coefficients to retain along y.
+        Defaults to round(frac_dct * ny).
+    frac_dct : float, optional
+        Fraction of horizontal cells to use as DCT coefficients when
+        nx_dct or ny_dct are None.  Default 0.5.
+    out : bool, optional
+        Print compression summary.  Default True.
+
+    Returns
+    -------
+    C : ndarray, float, shape (nx_dct, ny_dct, n_basis)
+        Compressed coefficient array: DCT along x and y, B-spline along z.
+    shape_full : tuple of int
+        Original model shape (nx, ny, nz).
+    params : dict
+        All parameters needed for reconstruction:
+        n_basis, k, nx_dct, ny_dct, Bpinv, B, knot_style.
+
+    Notes
+    -----
+    Separable mixed-basis transform:
+
+        1. Project mval onto B-spline basis along z (depth axis):
+               A[ix, iy, l] = sum_k mval[ix, iy, k] * B[k, l]
+           where B is the (nz, n_basis) collocation matrix.
+
+        2. Apply 2-D DCT-II to A along axes 0 and 1, then truncate:
+               C = dctn(A, axes=(0,1), norm='ortho')[:nx_dct, :ny_dct, :]
+
+    Advantages over Legendre-z x DCT-xy:
+    - B-splines are locally supported: a control point at 10 km depth
+      has zero influence below ~30 km (depending on knot spacing).
+      Legendre polynomials are global.
+    - The knot vector can follow the actual cell-size distribution via
+      knot_style='quantile', placing more basis functions near the surface
+      where resolution is highest and fewer at depth where cells are coarse.
+    - Zero-slope (clamped) boundary conditions at top and bottom are
+      physically reasonable for the depth axis.
+
+    VR Apr 2026
+    """
+    mval = np.asarray(mval, dtype=float)
+    nx, ny, nz = mval.shape
+
+    if dz is None:
+        raise ValueError('model_to_bspdct: dz (cell thicknesses) is required.')
+    dz = np.asarray(dz, dtype=float)
+
+    if n_basis is None:
+        n_basis = max(k + 1, int(round(frac_basis * nz)))
+    n_basis = min(n_basis, nz)
+
+    if nx_dct is None:
+        nx_dct = max(1, int(round(frac_dct * nx)))
+    if ny_dct is None:
+        ny_dct = max(1, int(round(frac_dct * ny)))
+    nx_dct = min(nx_dct, nx)
+    ny_dct = min(ny_dct, ny)
+
+    B, Bpinv, t, z_norm = _bspline_basis_1d(dz, n_basis, k=k,
+                                              knot_style=knot_style)
+
+    # Step 1: project onto B-spline basis along z
+    A = np.tensordot(mval, B, axes=([2], [0]))          # (nx, ny, n_basis)
+
+    # Step 2: 2-D DCT along horizontal axes, then truncate
+    C_full = dctn(A, axes=(0, 1), norm='ortho')
+    C = C_full[:nx_dct, :ny_dct, :].copy()
+
+    params = dict(n_basis=n_basis, k=k, nx_dct=nx_dct, ny_dct=ny_dct,
+                  Bpinv=Bpinv, B=B, knot_style=knot_style)
+
+    if out:
+        n_total = nx * ny * nz
+        n_kept = nx_dct * ny_dct * n_basis
+        ratio = n_total / max(n_kept, 1)
+        print(
+            'model_to_bspdct: B-spline degree=%d  knots=%s  n_basis=%d  '
+            'DCT x=%d y=%d  %d / %d coefficients  (ratio %.1f:1)'
+            % (k, knot_style, n_basis, nx_dct, ny_dct, n_kept, n_total, ratio)
+        )
+
+    return C, (nx, ny, nz), params
+
+
+def bspdct_to_model(C=None, shape_full=None, params=None, out=True):
+    """
+    bspdct_to_model.
+
+    Parameters
+    ----------
+    C : ndarray, float, shape (nx_dct, ny_dct, n_basis)
+        Compressed coefficient array as returned by model_to_bspdct.
+    shape_full : tuple of int
+        Original model shape (nx, ny, nz).
+    params : dict
+        Must contain keys 'n_basis', 'nx_dct', 'ny_dct', 'Bpinv' (as
+        returned by model_to_bspdct).
+    out : bool, optional
+        Print reconstruction summary.  Default True.
+
+    Returns
+    -------
+    mval_rec : ndarray, float, shape (nx, ny, nz)
+        Reconstructed model.
+
+    Notes
+    -----
+    Inverse of model_to_bspdct:
+
+        1. Pad C with zeros to (nx, ny, n_basis) and apply inverse 2-D DCT
+           along axes 0 and 1 to recover A[ix, iy, l].
+        2. Reconstruct depth profiles using the stored pseudo-inverse:
+               mval_rec[ix, iy, k] = sum_l A[ix, iy, l] * Bpinv[l, k]
+
+    The pseudo-inverse Bpinv is pre-computed in model_to_bspdct and stored
+    in params to avoid recomputing it on every reconstruction call.
+
+    VR Apr 2026
+    """
+    nx, ny, nz = shape_full
+    n_basis = params['n_basis']
+    nx_dct = params['nx_dct']
+    ny_dct = params['ny_dct']
+    Bpinv = params['Bpinv']            # (n_basis, nz)
+
+    # Step 1: inverse 2-D DCT with zero-padding
+    C_pad = np.zeros((nx, ny, n_basis), dtype=float)
+    C_pad[:nx_dct, :ny_dct, :] = C
+    A = idctn(C_pad, axes=(0, 1), norm='ortho')    # (nx, ny, n_basis)
+
+    # Step 2: inverse B-spline projection
+    mval_rec = np.tensordot(A, Bpinv, axes=([2], [0]))  # (nx, ny, nz)
+
+    if out:
+        print('bspdct_to_model: model reconstructed, shape %s'
+              % str(shape_full))
+
+    return mval_rec
+
+
+def bspdct_compress(mval=None, dz=None, n_basis=None, frac_basis=0.5,
+                    k=3, knot_style='quantile',
+                    nx_dct=None, ny_dct=None, frac_dct=0.5, out=True):
+    """
+    bspdct_compress.
+
+    Parameters
+    ----------
+    mval : ndarray, float, shape (nx, ny, nz)
+        Log-resistivity model.
+    dz : ndarray, float, shape (nz,)
+        Cell thicknesses along depth (metres).
+    n_basis : int, optional
+        B-spline basis functions along z.  Default round(frac_basis * nz).
+    frac_basis : float, optional
+        Fraction of depth cells as B-spline basis functions.  Default 0.5.
+    k : int, optional
+        Spline degree.  Default 3 (cubic).
+    knot_style : str, optional
+        Knot placement: 'uniform', 'quantile' (default), or 'log'.
+    nx_dct : int, optional
+        DCT coefficients along x.  Default round(frac_dct * nx).
+    ny_dct : int, optional
+        DCT coefficients along y.  Default round(frac_dct * ny).
+    frac_dct : float, optional
+        Fraction of horizontal cells as DCT coefficients.  Default 0.5.
+    out : bool, optional
+        Print statistics.  Default True.
+
+    Returns
+    -------
+    mval_rec : ndarray, float, shape (nx, ny, nz)
+        Reconstructed model.
+    C : ndarray, float
+        Compressed coefficient array.
+    params : dict
+        Compression parameters.
+
+    Notes
+    -----
+    One-call wrapper: forward B-spline-z × DCT-xy + inverse + statistics.
+
+    VR Apr 2026
+    """
+    C, shape_full, params = model_to_bspdct(
+        mval, dz=dz, n_basis=n_basis, frac_basis=frac_basis,
+        k=k, knot_style=knot_style,
+        nx_dct=nx_dct, ny_dct=ny_dct, frac_dct=frac_dct, out=False
+    )
+    mval_rec = bspdct_to_model(C, shape_full, params, out=False)
+
+    if out:
+        nx, ny, nz = shape_full
+        n_total = nx * ny * nz
+        n_kept = params['nx_dct'] * params['ny_dct'] * params['n_basis']
+        rms_err = dct_reconstruction_error(mval, mval_rec, norm='rms')
+        rel_err = dct_reconstruction_error(mval, mval_rec, norm='rel_rms')
+        ratio = n_total / max(n_kept, 1)
+        print(
+            'bspdct_compress: degree=%d  knots=%s  n_basis=%d  DCT x=%d y=%d  '
+            '%d / %d coefficients  (ratio %.1f:1)  '
+            'RMS err = %.4g  rel. RMS = %.4g'
+            % (params['k'], params['knot_style'], params['n_basis'],
+               params['nx_dct'], params['ny_dct'],
+               n_kept, n_total, ratio, rms_err, rel_err)
+        )
+
+    return mval_rec, C, params
+
+
+def bspdct_truncation_analysis(mval=None, dz=None, k=3, knot_style='quantile',
+                               n_levels=20, out=True):
+    """
+    bspdct_truncation_analysis.
+
+    Parameters
+    ----------
+    mval : ndarray, float, shape (nx, ny, nz)
+        Log-resistivity model.
+    dz : ndarray, float, shape (nz,)
+        Cell thicknesses along depth (metres).
+    k : int, optional
+        Spline degree.  Default 3.
+    knot_style : str, optional
+        Knot placement strategy.  Default 'quantile'.
+    n_levels : int, optional
+        Number of compression levels to test.  Default 20.
+    out : bool, optional
+        Print summary table.  Default True.
+
+    Returns
+    -------
+    fracs : ndarray, float, shape (n_levels,)
+        Overall fraction of coefficients retained at each level.
+        frac_basis and frac_dct are both set to sqrt(frac) so that the
+        compression ratio scales uniformly with a single parameter.
+    rms_errors : ndarray, float, shape (n_levels,)
+        RMS reconstruction error.
+    rel_errors : ndarray, float, shape (n_levels,)
+        Relative RMS reconstruction error.
+
+    Notes
+    -----
+    Mirrors legdct_truncation_analysis for the B-spline-z × DCT-xy basis.
+    The minimum n_basis is clamped to k+1 so the basis is always valid.
+
+    VR Apr 2026
+    """
+    fracs = np.clip(np.logspace(-3, 0, n_levels), 1e-6, 1.0)
+    rms_errors = np.zeros(n_levels)
+    rel_errors = np.zeros(n_levels)
+
+    if out:
+        print('\n  B-spline-z x DCT-xy truncation analysis'
+              '  (degree=%d  knots=%s)' % (k, knot_style))
+        print('  %12s  %10s  %14s  %14s'
+              % ('frac_keep', 'n_kept', 'rms_error', 'rel_rms_error'))
+
+    nx, ny, nz = mval.shape
+    for i, frac in enumerate(fracs):
+        f = float(np.sqrt(frac))
+        C, shape_full, params = model_to_bspdct(
+            mval, dz=dz, frac_basis=f, k=k, knot_style=knot_style,
+            frac_dct=f, out=False
+        )
+        mval_rec = bspdct_to_model(C, shape_full, params, out=False)
+        rms_errors[i] = dct_reconstruction_error(mval, mval_rec, norm='rms')
+        rel_errors[i] = dct_reconstruction_error(mval, mval_rec, norm='rel_rms')
+        n_kept = params['nx_dct'] * params['ny_dct'] * params['n_basis']
+        if out:
+            print('  %12.4g  %10d  %14.6g  %14.6g'
+                  % (frac, n_kept, rms_errors[i], rel_errors[i]))
+
+    return fracs, rms_errors, rel_errors
+
+
+
+
+def ensemble_to_kl(ensemble=None, n_modes=None, frac_modes=None,
+                   centre=True, svd_method='auto',
+                   n_oversamples=10, n_power_iter=4, random_state=None,
+                   out=True):
+    """
+    ensemble_to_kl.
+
+    Parameters
+    ----------
+    ensemble : ndarray, float, shape (n_models, nx, ny, nz) or (n_models, n_cells)
+        Collection of log-resistivity models forming the prior or posterior
+        ensemble.  Each row is one model (flattened or 3-D).
+    n_modes : int, optional
+        Number of KL eigenmodes to retain.  Defaults to round(frac_modes *
+        min(n_models, n_cells)).
+    frac_modes : float, optional
+        Fraction of available modes to retain when n_modes is None.
+        Default 1.0 (all modes).
+    centre : bool, optional
+        Subtract the ensemble mean before computing the SVD (standard PCA).
+        Set False to work with un-centred covariance. Default True.
+    svd_method : str, optional
+        Which SVD algorithm to use.  Choices:
+
+        'auto'       Select automatically: 'randomized' when n_modes is set
+                     and n_modes < 0.5 * min(n_models, n_cells), otherwise
+                     'exact'. (default)
+        'exact'      Full economy SVD via numpy.linalg.svd.  Exact singular
+                     values and vectors.  Cost O(n_models^2 * n_cells).
+                     Required when all modes are needed or n_modes is close
+                     to min(n_models, n_cells).
+        'randomized' Randomized SVD (Halko et al. 2011).  Only computes the
+                     leading n_modes modes.  Cost O(n_models * n_cells *
+                     n_modes).  Strongly preferred when n_modes << n_models.
+                     Uses sklearn if available, falls back to scipy.sparse.linalg.svds.
+        'truncated'  Truncated SVD via scipy.sparse.linalg.svds (ARPACK).
+                     Useful when the ensemble matrix is sparse or when
+                     sklearn is unavailable.  Cost similar to 'randomized'
+                     but with deterministic ARPACK iterations.
+
+    n_oversamples : int, optional
+        Extra random projections used by 'randomized' SVD to improve
+        accuracy.  Larger values give more accurate singular vectors at
+        slightly higher cost.  Ignored for 'exact' and 'truncated'.
+        Default 10.
+    n_power_iter : int, optional
+        Number of power iterations used by 'randomized' SVD to improve
+        accuracy on matrices with slowly decaying singular values.  Set to
+        0 for speed, 4–7 for accuracy.  Ignored for 'exact' and 'truncated'.
+        Default 4.
+    random_state : int or None, optional
+        Random seed for reproducibility of 'randomized' SVD.  Default None.
+    out : bool, optional
+        Print summary including SVD method and variance explained. Default True.
+
+    Returns
+    -------
+    modes : ndarray, float, shape (n_modes, n_cells)
+        KL eigenmodes (right singular vectors of the centred ensemble matrix),
+        each of unit L2 norm, sorted by descending explained variance.
+    singular_values : ndarray, float, shape (n_modes,)
+        Singular values (square root of variance explained by each mode).
+        For 'randomized' and 'truncated' the total variance estimate is
+        approximate; see Notes.
+    mean_model : ndarray, float, shape (n_cells,)
+        Ensemble mean (zeros if centre=False).
+    shape : tuple of int
+        Original spatial shape (nx, ny, nz) or (n_cells,) if input was 2-D.
+
+    Notes
+    -----
+    The KL (Karhunen-Loève) basis is the theoretically optimal linear basis
+    for a given ensemble: it minimises the mean-square reconstruction error
+    for any fixed number of retained modes.
+
+    SVD method comparison
+    ~~~~~~~~~~~~~~~~~~~~~
+    Method          Cost                    Exact?  When to use
+    'exact'         O(n_m^2 * n_c)          Yes     n_modes ~ n_models, or
+                                                    full variance spectrum needed
+    'randomized'    O(n_m * n_c * n_modes)  ~Yes*   n_modes << n_models (default
+                    + power iterations              for large ensembles)
+    'truncated'     O(n_m * n_c * n_modes)  ~Yes*   no sklearn; sparse matrices
+    n_m = n_models, n_c = n_cells.
+    *Accuracy improves with n_oversamples and n_power_iter.
+
+    For 'randomized' and 'truncated', only the retained singular values are
+    computed, so the variance-explained fraction printed by out=True uses
+    the Frobenius norm of the full (centred) ensemble matrix as the total
+    variance denominator, which is exact regardless of SVD method.
+
+    References
+    ----------
+    Halko N, Martinsson PG, Tropp JA (2011) Finding structure with randomness:
+    Probabilistic algorithms for constructing approximate matrix decompositions.
+    SIAM Review 53(2):217–288.  https://doi.org/10.1137/090771806
+
+    VR Apr 2026
+    """
+    ensemble = np.asarray(ensemble, dtype=float)
+
+    if ensemble.ndim == 4:
+        shape = ensemble.shape[1:]
+        n_models = ensemble.shape[0]
+        E = ensemble.reshape(n_models, -1)
+    elif ensemble.ndim == 2:
+        shape = (ensemble.shape[1],)
+        n_models = ensemble.shape[0]
+        E = ensemble.copy()
+    else:
+        raise ValueError(
+            'ensemble_to_kl: ensemble must be 2-D (n_models, n_cells) or '
+            '4-D (n_models, nx, ny, nz), got shape %s' % str(ensemble.shape)
+        )
+
+    n_cells = E.shape[1]
+
+    if centre:
+        mean_model = E.mean(axis=0)
+        E = E - mean_model
+    else:
+        mean_model = np.zeros(n_cells)
+
+    max_modes = min(n_models, n_cells)
+    if frac_modes is not None and n_modes is None:
+        n_modes = max(1, int(round(frac_modes * max_modes)))
+    if n_modes is None:
+        n_modes = max_modes
+    n_modes = min(n_modes, max_modes)
+
+    # --- resolve 'auto' ---
+    if svd_method == 'auto':
+        if n_modes < 0.5 * max_modes:
+            svd_method = 'randomized'
+        else:
+            svd_method = 'exact'
+
+    # --- compute SVD ---
+    if svd_method == 'exact':
+        U, S_all, Vt = np.linalg.svd(E, full_matrices=False)
+        modes = Vt[:n_modes, :]
+        singular_values = S_all[:n_modes]
+        var_total = np.sum(S_all**2)
+
+    elif svd_method == 'randomized':
+        try:
+            from sklearn.utils.extmath import randomized_svd as _rsvd
+            U, singular_values, Vt = _rsvd(
+                E, n_components=n_modes,
+                n_oversamples=n_oversamples,
+                n_iter=n_power_iter,
+                random_state=random_state,
+            )
+            modes = Vt
+        except ImportError:
+            # Fall back to truncated ARPACK if sklearn is absent
+            svd_method = 'truncated'
+            if out:
+                print('ensemble_to_kl: sklearn not found, '
+                      'falling back to svd_method="truncated"')
+
+        if svd_method == 'randomized':
+            var_total = np.linalg.norm(E, 'fro')**2
+
+    if svd_method == 'truncated':
+        from scipy.sparse.linalg import svds as _svds
+        # svds returns singular values in ascending order
+        U, singular_values, Vt = _svds(E, k=n_modes)
+        idx = np.argsort(singular_values)[::-1]
+        singular_values = singular_values[idx]
+        modes = Vt[idx, :]
+        var_total = np.linalg.norm(E, 'fro')**2
+
+    var_kept = np.sum(singular_values**2)
+    frac_var = var_kept / var_total if var_total > 0.0 else 1.0
+
+    if out:
+        exact_flag = '' if svd_method == 'exact' else ' (approx)'
+        print(
+            'ensemble_to_kl: %d models  method=%s  '
+            '%d modes retained / %d available  '
+            'variance explained = %.2f%%%s'
+            % (n_models, svd_method, n_modes, max_modes,
+               100.0 * frac_var, exact_flag)
+        )
+
+    return modes, singular_values, mean_model, shape
+
+
+def model_to_kl(mval=None, modes=None, mean_model=None, out=True):
+    """
+    model_to_kl.
+
+    Parameters
+    ----------
+    mval : ndarray, float, shape (nx, ny, nz) or (n_cells,)
+        Log-resistivity model to project onto the KL basis.
+    modes : ndarray, float, shape (n_modes, n_cells)
+        KL eigenmodes as returned by ensemble_to_kl.
+    mean_model : ndarray, float, shape (n_cells,), optional
+        Ensemble mean.  Subtracted before projection.  Pass None or zeros
+        if ensemble_to_kl was called with centre=False.
+    out : bool, optional
+        Print summary. Default True.
+
+    Returns
+    -------
+    alpha : ndarray, float, shape (n_modes,)
+        KL expansion coefficients (scores): the model projected onto each
+        eigenmode.
+
+    Notes
+    -----
+    Projects the centred model onto each eigenmode by dot product:
+        alpha[l] = dot(mval_flat - mean, modes[l])
+
+    Because the modes are orthonormal this is equivalent to a change of
+    basis.  The coefficients alpha are the coordinates of the model in
+    KL space and are the quantities to be optimised in a KL-parameterised
+    inversion.
+
+    VR Apr 2026
+    """
+    mval = np.asarray(mval, dtype=float).ravel()
+    n_cells = mval.size
+
+    if mean_model is None:
+        mean_model = np.zeros(n_cells)
+    mean_model = np.asarray(mean_model, dtype=float).ravel()
+
+    centred = mval - mean_model
+    alpha = modes @ centred      # (n_modes,)
+
+    if out:
+        print('model_to_kl: projected onto %d KL modes' % modes.shape[0])
+
+    return alpha
+
+
+def kl_to_model(alpha=None, modes=None, mean_model=None,
+                shape=None, out=True):
+    """
+    kl_to_model.
+
+    Parameters
+    ----------
+    alpha : ndarray, float, shape (n_modes,) or (n_modes_used,)
+        KL expansion coefficients.
+    modes : ndarray, float, shape (n_modes, n_cells)
+        KL eigenmodes as returned by ensemble_to_kl.
+    mean_model : ndarray, float, shape (n_cells,), optional
+        Ensemble mean.  Added back after reconstruction.
+    shape : tuple of int, optional
+        Spatial shape (nx, ny, nz) for reshaping output.  If None the output
+        is returned as a 1-D array of length n_cells.
+    out : bool, optional
+        Print summary. Default True.
+
+    Returns
+    -------
+    mval_rec : ndarray, float, shape (nx, ny, nz) or (n_cells,)
+        Reconstructed log-resistivity model.
+
+    Notes
+    -----
+    Inverse of model_to_kl:
+        mval_rec = mean + sum_l alpha[l] * modes[l]
+
+    Only the first len(alpha) modes are used, allowing reconstruction with
+    a truncated coefficient vector.
+
+    VR Apr 2026
+    """
+    alpha = np.asarray(alpha, dtype=float)
+    n_used = alpha.size
+    modes_used = modes[:n_used, :]          # allow truncated alpha
+
+    n_cells = modes.shape[1]
+    if mean_model is None:
+        mean_model = np.zeros(n_cells)
+    mean_model = np.asarray(mean_model, dtype=float).ravel()
+
+    mval_flat = mean_model + alpha @ modes_used   # (n_cells,)
+
+    if shape is not None:
+        mval_rec = mval_flat.reshape(shape)
+    else:
+        mval_rec = mval_flat
+
+    if out:
+        print('kl_to_model: reconstructed from %d KL modes, shape %s'
+              % (n_used, str(mval_rec.shape)))
+
+    return mval_rec
+
+
+def kl_variance_spectrum(singular_values=None, out=True):
+    """
+    kl_variance_spectrum.
+
+    Parameters
+    ----------
+    singular_values : ndarray, float, shape (n_modes,)
+        Singular values as returned by ensemble_to_kl.
+    out : bool, optional
+        Print the variance table. Default True.
+
+    Returns
+    -------
+    variance : ndarray, float, shape (n_modes,)
+        Variance explained by each mode (singular_value^2 / total).
+    cum_variance : ndarray, float, shape (n_modes,)
+        Cumulative variance explained.
+
+    Notes
+    -----
+    Analogue of dct_spectrum for the KL basis.  Use to decide how many
+    modes to retain: typically the first few modes capture > 90% of the
+    ensemble variance.
+
+    VR Apr 2026
+    """
+    S2 = singular_values**2
+    total = S2.sum()
+    variance = S2 / (total if total > 0.0 else 1.0)
+    cum_variance = np.cumsum(variance)
+
+    if out:
+        print('\n  KL variance spectrum')
+        print('  %6s  %14s  %16s' % ('mode', 'variance_frac', 'cum_variance'))
+        for i, (v, cv) in enumerate(zip(variance, cum_variance)):
+            print('  %6d  %14.6g  %16.4f' % (i, v, cv))
+
+    return variance, cum_variance
+
+
+def kl_truncation_analysis(mval=None, modes=None, mean_model=None,
+                           shape=None, singular_values=None, out=True):
+    """
+    kl_truncation_analysis.
+
+    Parameters
+    ----------
+    mval : ndarray, float, shape (nx, ny, nz)
+        Log-resistivity model.
+    modes : ndarray, float, shape (n_modes, n_cells)
+        KL eigenmodes from ensemble_to_kl.
+    mean_model : ndarray, float, shape (n_cells,)
+        Ensemble mean from ensemble_to_kl.
+    shape : tuple of int
+        Spatial shape (nx, ny, nz).
+    singular_values : ndarray, float, shape (n_modes,), optional
+        Used only for printing cumulative variance alongside error.
+    out : bool, optional
+        Print summary table. Default True.
+
+    Returns
+    -------
+    n_modes_list : ndarray, int
+        Number of modes used at each test level.
+    rms_errors : ndarray, float
+        RMS reconstruction error.
+    rel_errors : ndarray, float
+        Relative RMS reconstruction error.
+
+    Notes
+    -----
+    Projects mval onto the KL basis and reconstructs using an increasing
+    number of modes (1 to n_modes_available), reporting reconstruction
+    accuracy at each level.
+
+    VR Apr 2026
+    """
+    alpha_full = model_to_kl(mval, modes, mean_model, out=False)
+    n_max = alpha_full.size
+    n_modes_list = np.unique(
+        np.round(np.logspace(0, np.log10(n_max), 20)).astype(int)
+    )
+    n_modes_list = np.clip(n_modes_list, 1, n_max)
+    rms_errors = np.zeros(len(n_modes_list))
+    rel_errors = np.zeros(len(n_modes_list))
+
+    if singular_values is not None:
+        S2 = singular_values**2
+        total_var = S2.sum()
+        cum_var = np.cumsum(S2) / (total_var if total_var > 0.0 else 1.0)
+    else:
+        cum_var = None
+
+    if out:
+        hdr = ('  %8s  %14s  %14s' % ('n_modes', 'rms_error', 'rel_rms'))
+        if cum_var is not None:
+            hdr += '  %14s' % 'cum_var_frac'
+        print('\n  KL truncation analysis')
+        print(hdr)
+
+    for i, nm in enumerate(n_modes_list):
+        mval_rec = kl_to_model(alpha_full[:nm], modes, mean_model,
+                               shape=shape, out=False)
+        rms_errors[i] = dct_reconstruction_error(mval, mval_rec, norm='rms')
+        rel_errors[i] = dct_reconstruction_error(mval, mval_rec, norm='rel_rms')
+        if out:
+            row = '  %8d  %14.6g  %14.6g' % (nm, rms_errors[i], rel_errors[i])
+            if cum_var is not None:
+                row += '  %14.4f' % cum_var[nm - 1]
+            print(row)
+
+    return n_modes_list, rms_errors, rel_errors
