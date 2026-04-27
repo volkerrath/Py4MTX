@@ -29,6 +29,7 @@ from numpy.linalg import norm
 from scipy.io import FortranFile
 from scipy.ndimage import laplace, convolve
 from scipy.ndimage import uniform_filter, gaussian_filter, median_filter
+from scipy.fft import dctn, idctn
 from numba import jit
 
 try:
@@ -3787,3 +3788,496 @@ def generate_alphas(dz, beg_lin=[0., 0.1, 0.1], end_lin=[999., 0.9, 0.9]):
     a_y[i1:] = end_lin[2]
 
     return a_x, a_y
+
+
+# =============================================================================
+#  DCT model compression
+# =============================================================================
+
+def _dct_sort_by_wavenumber(shape):
+    """
+    _dct_sort_by_wavenumber.
+
+    Parameters
+    ----------
+    shape : tuple of int
+        (nx, ny, nz) shape of the DCT coefficient array.
+
+    Returns
+    -------
+    sorted_flat : ndarray, int
+        Flat (ravelled) indices sorted from lowest to highest L2 wavenumber
+        k = sqrt(kx^2 + ky^2 + kz^2).
+    wavenumbers : ndarray, float
+        Corresponding wavenumber values (same order as sorted_flat).
+
+    Notes
+    -----
+    Internal helper used by model_to_dct and dct_spectrum.
+    Builds a meshgrid of DCT mode indices and sorts by the radial wavenumber.
+    The DC component (index [0,0,0]) is always first.
+
+    VR Apr 2026
+    """
+    nx, ny, nz = shape
+    kx = np.arange(nx, dtype=float)
+    ky = np.arange(ny, dtype=float)
+    kz = np.arange(nz, dtype=float)
+    KX, KY, KZ = np.meshgrid(kx, ky, kz, indexing='ij')
+    K = np.sqrt(KX**2 + KY**2 + KZ**2)
+    sorted_flat = np.argsort(K.ravel(), kind='stable')
+    wavenumbers = K.ravel()[sorted_flat]
+    return sorted_flat, wavenumbers
+
+
+def model_to_dct(mval=None, n_keep=None, frac_keep=None, kmax=None, out=True):
+    """
+    model_to_dct.
+
+    Parameters
+    ----------
+    mval : ndarray, float, shape (nx, ny, nz)
+        Log-resistivity model (or any real-valued 3-D field on the ModEM mesh).
+    n_keep : int, optional
+        Number of lowest-wavenumber DCT coefficients to retain.
+    frac_keep : float, optional
+        Fraction of total coefficients to retain (0 < frac_keep <= 1).
+        Converted to n_keep = round(frac_keep * nx*ny*nz).
+    kmax : float, optional
+        Maximum L2 wavenumber to retain.  All coefficients with
+        sqrt(kx^2 + ky^2 + kz^2) <= kmax are kept.
+    out : bool, optional
+        Print compression summary. Default True.
+
+    Returns
+    -------
+    coeff : ndarray, float
+        Retained DCT coefficients, 1-D, length n_keep (or nx*ny*nz if
+        no truncation is requested).
+    shape : tuple of int
+        (nx, ny, nz) — required for reconstruction.
+    keep_mask : ndarray, bool, shape (nx, ny, nz), or None
+        True where a coefficient is retained.  None when no truncation is
+        applied (all coefficients kept).
+
+    Notes
+    -----
+    Uses the 3-D DCT-II with orthonormal normalisation (norm='ortho'),
+    which is unitary and assumes zero-flux boundary conditions at cell edges.
+    This matches the natural behaviour of ModEM models, which taper to a
+    background resistivity at the mesh boundary.
+
+    Exactly one of n_keep, frac_keep, or kmax should be supplied to activate
+    truncation.  Omitting all three returns the full untruncated coefficient
+    vector.
+
+    The DC coefficient (index [0,0,0]) is always retained regardless of kmax.
+
+    VR Apr 2026
+    """
+    mval = np.asarray(mval, dtype=float)
+    shape = mval.shape
+    n_total = int(np.prod(shape))
+
+    C = dctn(mval, norm='ortho')
+
+    if frac_keep is not None and n_keep is None and kmax is None:
+        n_keep = max(1, int(round(frac_keep * n_total)))
+
+    if n_keep is not None:
+        n_keep = min(n_keep, n_total)
+        sorted_flat, _ = _dct_sort_by_wavenumber(shape)
+        keep_flat = sorted_flat[:n_keep]
+        keep_mask = np.zeros(n_total, dtype=bool)
+        keep_mask[keep_flat] = True
+        keep_mask = keep_mask.reshape(shape)
+
+    elif kmax is not None:
+        sorted_flat, wn_sorted = _dct_sort_by_wavenumber(shape)
+        keep_flat = sorted_flat[wn_sorted <= kmax]
+        keep_flat = np.union1d(keep_flat, [0])   # always keep DC
+        keep_mask = np.zeros(n_total, dtype=bool)
+        keep_mask[keep_flat] = True
+        keep_mask = keep_mask.reshape(shape)
+
+    else:
+        keep_mask = None
+
+    coeff = C[keep_mask] if keep_mask is not None else C.ravel()
+
+    if out:
+        n_kept = coeff.size
+        ratio = n_total / max(n_kept, 1)
+        print(
+            'model_to_dct: %d / %d coefficients retained  (ratio %.1f:1)'
+            % (n_kept, n_total, ratio)
+        )
+
+    return coeff, shape, keep_mask
+
+
+def dct_to_model(coeff=None, shape=None, keep_mask=None, out=True):
+    """
+    dct_to_model.
+
+    Parameters
+    ----------
+    coeff : ndarray, float
+        1-D array of DCT coefficients as returned by model_to_dct.
+    shape : tuple of int
+        (nx, ny, nz) of the original model.
+    keep_mask : ndarray, bool, shape (nx, ny, nz), or None
+        Boolean mask identifying retained coefficients.  Pass None when
+        coeff spans all cells (no truncation).
+    out : bool, optional
+        Print reconstruction summary. Default True.
+
+    Returns
+    -------
+    mval_rec : ndarray, float, shape (nx, ny, nz)
+        Reconstructed model in the same units as the input to model_to_dct.
+
+    Notes
+    -----
+    Inverse of model_to_dct.  Places coeff back into the full coefficient
+    array (zeroing missing coefficients) and applies the 3-D inverse DCT-II.
+
+    VR Apr 2026
+    """
+    C_full = np.zeros(shape, dtype=float)
+    if keep_mask is not None:
+        C_full[keep_mask] = coeff
+    else:
+        C_full = coeff.reshape(shape)
+
+    mval_rec = idctn(C_full, norm='ortho')
+
+    if out:
+        print('dct_to_model: model reconstructed, shape %s' % str(shape))
+
+    return mval_rec
+
+
+def dct_reconstruction_error(mval=None, mval_rec=None, norm='rms'):
+    """
+    dct_reconstruction_error.
+
+    Parameters
+    ----------
+    mval : ndarray, float
+        Original model, shape (nx, ny, nz).
+    mval_rec : ndarray, float
+        Reconstructed model, same shape.
+    norm : str, optional
+        Error metric.
+        'rms'     — root-mean-square of the difference (default).
+        'max'     — L-inf (maximum absolute difference).
+        'rel_rms' — RMS normalised by the RMS of the original.
+
+    Returns
+    -------
+    error : float
+        Scalar error measure.
+
+    Notes
+    -----
+    Convenience wrapper around standard error norms.  Typically called after
+    dct_to_model to assess how much information was lost by truncation.
+
+    VR Apr 2026
+    """
+    mval = np.asarray(mval, dtype=float)
+    mval_rec = np.asarray(mval_rec, dtype=float)
+    diff = mval_rec - mval
+
+    if norm == 'rms':
+        return float(np.sqrt(np.mean(diff**2)))
+    elif norm == 'max':
+        return float(np.max(np.abs(diff)))
+    elif norm == 'rel_rms':
+        rms_orig = np.sqrt(np.mean(mval**2))
+        if rms_orig == 0.0:
+            return 0.0
+        return float(np.sqrt(np.mean(diff**2)) / rms_orig)
+    else:
+        raise ValueError(
+            "dct_reconstruction_error: norm must be 'rms', 'max', or 'rel_rms', "
+            "got: " + str(norm)
+        )
+
+
+def dct_compress(mval=None, n_keep=None, frac_keep=None, kmax=None, out=True):
+    """
+    dct_compress.
+
+    Parameters
+    ----------
+    mval : ndarray, float, shape (nx, ny, nz)
+        Log-resistivity model.
+    n_keep : int, optional
+        Number of coefficients to keep (see model_to_dct).
+    frac_keep : float, optional
+        Fraction of coefficients to keep (see model_to_dct).
+    kmax : float, optional
+        Maximum wavenumber to keep (see model_to_dct).
+    out : bool, optional
+        Print compression statistics. Default True.
+
+    Returns
+    -------
+    mval_rec : ndarray, float, shape (nx, ny, nz)
+        Reconstructed model.
+    coeff : ndarray, float
+        Retained DCT coefficients.
+    keep_mask : ndarray, bool or None
+        Mask of retained coefficients.
+
+    Notes
+    -----
+    Convenience wrapper: forward DCT + truncation + inverse DCT in one call.
+    Useful for quick quality checks at a given compression ratio before
+    committing to a parameterisation.
+
+    VR Apr 2026
+    """
+    coeff, shape, keep_mask = model_to_dct(
+        mval, n_keep=n_keep, frac_keep=frac_keep, kmax=kmax, out=False
+    )
+    mval_rec = dct_to_model(coeff, shape, keep_mask, out=False)
+
+    if out:
+        n_total = int(np.prod(shape))
+        n_kept = coeff.size
+        rms_err = dct_reconstruction_error(mval, mval_rec, norm='rms')
+        rel_err = dct_reconstruction_error(mval, mval_rec, norm='rel_rms')
+        ratio = n_total / max(n_kept, 1)
+        print(
+            'dct_compress: %d / %d coefficients  (ratio %.1f:1)'
+            '  RMS err = %.4g,  rel. RMS = %.4g'
+            % (n_kept, n_total, ratio, rms_err, rel_err)
+        )
+
+    return mval_rec, coeff, keep_mask
+
+
+def dct_spectrum(mval=None, n_bins=50, out=True):
+    """
+    dct_spectrum.
+
+    Parameters
+    ----------
+    mval : ndarray, float, shape (nx, ny, nz)
+        Log-resistivity model.
+    n_bins : int, optional
+        Number of wavenumber bins. Default 50.
+    out : bool, optional
+        Print the spectrum table. Default True.
+
+    Returns
+    -------
+    bin_centers : ndarray, float, shape (n_bins,)
+        Centre wavenumber of each bin.
+    power : ndarray, float, shape (n_bins,)
+        Mean squared DCT coefficient within each bin.
+    cum_power_frac : ndarray, float, shape (n_bins,)
+        Cumulative fraction of total power up to and including each bin.
+
+    Notes
+    -----
+    Bins the squared DCT-II coefficients by L2 wavenumber
+    k = sqrt(kx^2 + ky^2 + kz^2) into n_bins equally spaced annuli.
+    Useful for diagnosing spatial frequency content and for choosing a
+    sensible truncation wavenumber kmax for model_to_dct.
+
+    VR Apr 2026
+    """
+    mval = np.asarray(mval, dtype=float)
+    shape = mval.shape
+    C = dctn(mval, norm='ortho')
+
+    nx, ny, nz = shape
+    kx = np.arange(nx, dtype=float)
+    ky = np.arange(ny, dtype=float)
+    kz = np.arange(nz, dtype=float)
+    KX, KY, KZ = np.meshgrid(kx, ky, kz, indexing='ij')
+    K = np.sqrt(KX**2 + KY**2 + KZ**2).ravel()
+    power_flat = C.ravel()**2
+
+    k_max_all = K.max()
+    edges = np.linspace(0.0, k_max_all, n_bins + 1)
+    bin_centers = 0.5 * (edges[:-1] + edges[1:])
+    power = np.zeros(n_bins)
+    for i in range(n_bins):
+        mask = (K >= edges[i]) & (K < edges[i + 1])
+        if mask.any():
+            power[i] = np.mean(power_flat[mask])
+
+    total = power.sum()
+    cum_power_frac = np.cumsum(power) / (total if total > 0.0 else 1.0)
+
+    if out:
+        print('\n  DCT power spectrum  (n_bins=%d)' % n_bins)
+        print('  %10s  %14s  %16s' % ('k_center', 'mean_power', 'cum_power_frac'))
+        for i in range(n_bins):
+            print('  %10.2f  %14.6g  %16.4f'
+                  % (bin_centers[i], power[i], cum_power_frac[i]))
+
+    return bin_centers, power, cum_power_frac
+
+
+def dct_truncation_analysis(mval=None, n_levels=20, out=True):
+    """
+    dct_truncation_analysis.
+
+    Parameters
+    ----------
+    mval : ndarray, float, shape (nx, ny, nz)
+        Log-resistivity model.
+    n_levels : int, optional
+        Number of compression levels to test. Default 20.
+    out : bool, optional
+        Print summary table. Default True.
+
+    Returns
+    -------
+    fracs : ndarray, float, shape (n_levels,)
+        Fraction of coefficients retained at each level.
+    rms_errors : ndarray, float, shape (n_levels,)
+        RMS reconstruction error at each level.
+    rel_errors : ndarray, float, shape (n_levels,)
+        Relative RMS reconstruction error at each level.
+
+    Notes
+    -----
+    Sweeps over n_levels values of frac_keep (logarithmically spaced
+    from 0.001 to 1.0) and reports reconstruction accuracy at each level.
+    Use this to select a truncation that gives acceptable accuracy at the
+    desired compression ratio before passing the parameters to dct_compress
+    or model_to_dct.
+
+    VR Apr 2026
+    """
+    fracs = np.clip(np.logspace(-3, 0, n_levels), 1e-6, 1.0)
+    rms_errors = np.zeros(n_levels)
+    rel_errors = np.zeros(n_levels)
+    n_total = int(np.prod(mval.shape))
+
+    if out:
+        print('\n  DCT truncation analysis')
+        print('  %12s  %10s  %14s  %14s'
+              % ('frac_keep', 'n_kept', 'rms_error', 'rel_rms_error'))
+
+    for i, frac in enumerate(fracs):
+        coeff, shape, keep_mask = model_to_dct(mval, frac_keep=float(frac), out=False)
+        mval_rec = dct_to_model(coeff, shape, keep_mask, out=False)
+        rms_errors[i] = dct_reconstruction_error(mval, mval_rec, norm='rms')
+        rel_errors[i] = dct_reconstruction_error(mval, mval_rec, norm='rel_rms')
+        if out:
+            print('  %12.4g  %10d  %14.6g  %14.6g'
+                  % (frac, coeff.size, rms_errors[i], rel_errors[i]))
+
+    return fracs, rms_errors, rel_errors
+
+
+def model_to_dct_separable(mval=None,
+                           nx_keep=None, ny_keep=None, nz_keep=None,
+                           out=True):
+    """
+    model_to_dct_separable.
+
+    Parameters
+    ----------
+    mval : ndarray, float, shape (nx, ny, nz)
+        Log-resistivity model.
+    nx_keep : int, optional
+        Number of coefficients to retain along x. Default: all (nx).
+    ny_keep : int, optional
+        Number of coefficients to retain along y. Default: all (ny).
+    nz_keep : int, optional
+        Number of coefficients to retain along z. Default: all (nz).
+    out : bool, optional
+        Print compression summary. Default True.
+
+    Returns
+    -------
+    coeff_block : ndarray, float, shape (nx_keep, ny_keep, nz_keep)
+        Truncated coefficient sub-volume (low-wavenumber corner).
+    shape_full : tuple of int
+        Full model shape (nx, ny, nz).
+    shape_keep : tuple of int
+        (nx_keep, ny_keep, nz_keep).
+
+    Notes
+    -----
+    Separable (per-axis) alternative to model_to_dct.  Retains a rectangular
+    box in wavenumber space rather than a radial sphere, which allows
+    anisotropic truncation — e.g. keeping more horizontal resolution than
+    vertical in a layered model.  Use dct_separable_to_model to reconstruct.
+
+    VR Apr 2026
+    """
+    mval = np.asarray(mval, dtype=float)
+    nx, ny, nz = mval.shape
+    nx_keep = nx if nx_keep is None else min(nx_keep, nx)
+    ny_keep = ny if ny_keep is None else min(ny_keep, ny)
+    nz_keep = nz if nz_keep is None else min(nz_keep, nz)
+
+    C = dctn(mval, norm='ortho')
+    coeff_block = C[:nx_keep, :ny_keep, :nz_keep].copy()
+
+    if out:
+        n_total = nx * ny * nz
+        n_kept = nx_keep * ny_keep * nz_keep
+        print(
+            'model_to_dct_separable: %d / %d coefficients retained  '
+            '(ratio %.1f:1)  keep shape %s'
+            % (n_kept, n_total, n_total / max(n_kept, 1),
+               str((nx_keep, ny_keep, nz_keep)))
+        )
+
+    return coeff_block, (nx, ny, nz), (nx_keep, ny_keep, nz_keep)
+
+
+def dct_separable_to_model(coeff_block=None, shape_full=None,
+                           shape_keep=None, out=True):
+    """
+    dct_separable_to_model.
+
+    Parameters
+    ----------
+    coeff_block : ndarray, float
+        Truncated DCT coefficients, shape (nx_keep, ny_keep, nz_keep),
+        as returned by model_to_dct_separable.
+    shape_full : tuple of int
+        Target shape (nx, ny, nz) of the reconstructed model.
+    shape_keep : tuple of int, optional
+        Shape of coeff_block.  Inferred from coeff_block.shape if None.
+    out : bool, optional
+        Print reconstruction summary. Default True.
+
+    Returns
+    -------
+    mval_rec : ndarray, float, shape (nx, ny, nz)
+        Reconstructed model.
+
+    Notes
+    -----
+    Inverse of model_to_dct_separable.  Pads the coefficient block with
+    zeros to shape_full and applies the 3-D inverse DCT-II.
+
+    VR Apr 2026
+    """
+    if shape_keep is None:
+        shape_keep = coeff_block.shape
+    nx_k, ny_k, nz_k = shape_keep
+
+    C_full = np.zeros(shape_full, dtype=float)
+    C_full[:nx_k, :ny_k, :nz_k] = coeff_block
+
+    mval_rec = idctn(C_full, norm='ortho')
+
+    if out:
+        print('dct_separable_to_model: model reconstructed, shape %s'
+              % str(shape_full))
+
+    return mval_rec
