@@ -21,6 +21,8 @@ This module provides:
   template FEMTIC input files.
 - **Data and model ensemble generators** — perturb `observe.dat` and
   `resistivity_block_iterX.dat` for RTO and related algorithms.
+- **Geostatistical initial-model ensemble** (`generate_gst_model_ensemble`) —
+  pilot-point Ordinary Kriging (gstools) for the GST uncertainty method.
 - **EOF / PCA analysis** (`compute_eofs`, `eof_reconstruct`, `eof_sample`,
   `fit_eof_model`, `sample_physical_ensemble`) for ensemble dimension reduction.
 - **Weighted Karhunen–Loève decomposition** on unstructured FEMTIC meshes
@@ -61,11 +63,12 @@ Convenience helper: `pick_lam_from_rtr_diag(R, alpha=..., statistic="median", mi
 
 ### Directory and ensemble generation
 
-| Function                    | Purpose                                               |
-|-----------------------------|-------------------------------------------------------|
-| `generate_directories()`    | Create numbered member directories, copy templates.   |
-| `generate_data_ensemble()`  | Perturb `observe.dat` in each member directory.       |
-| `generate_model_ensemble()` | Sample from precision and write perturbed models.     |
+| Function                         | Purpose                                               |
+|----------------------------------|-------------------------------------------------------|
+| `generate_directories()`         | Create numbered member directories, copy templates.   |
+| `generate_data_ensemble()`       | Perturb `observe.dat` in each member directory.       |
+| `generate_rto_model_ensemble()`  | Sample from roughness precision and write perturbed models (RTO). |
+| `generate_gst_model_ensemble()`  | Pilot-point Ordinary Kriging → geostatistical initial models (GST). |
 
 ### Roughness / precision matrix
 
@@ -128,6 +131,78 @@ x = solve_Q(b)
 
 ---
 
+## Geostatistical initial-model ensemble (GST)
+
+`generate_gst_model_ensemble` builds a distinct FEMTIC initial model for each
+ensemble member by Ordinary Kriging from a sparse pilot-point cloud.  No
+roughness matrix is required.
+
+### Algorithm per member
+
+1. Place pilot points (random / fixed / mixed — see `pp_mode`).
+2. Draw log₁₀(ρ) values at pilot points from Uniform(log_rho_min, log_rho_max).
+3. Ordinary-Krig the values to all mesh cell centres (gstools).
+4. Clamp the field to [log_rho_min, log_rho_max].
+5. Write as `resistivity_block_iter0.dat` and/or `referencemodel.dat`.
+
+### Key parameters
+
+| Parameter        | Description                                                                              |
+|------------------|------------------------------------------------------------------------------------------|
+| `ref_mod_file`   | Full path to the template reference model (read once for cell-centre coordinates).       |
+| `pp_mode`        | `"random"` — fresh random locations every member; `"fixed"` — fixed geometry, fresh values; `"mixed"` — fixed skeleton + random fill. |
+| `n_pp`           | Number of randomly drawn pilot points per member (used when `pp_mode` ≠ `"fixed"`). Recommended: 50–200. |
+| `pp_bbox`        | Bounding box `[x_min, x_max, y_min, y_max, z_min, z_max]` (m, z positive-down) for random placement. |
+| `pp_coords`      | Explicit pilot-point array, shape `(N, 3)`.  Required for `"fixed"` / `"mixed"`.        |
+| `log_rho_min`    | Lower bound in log₁₀(Ω·m) — draw floor and post-Kriging clamp.                          |
+| `log_rho_max`    | Upper bound in log₁₀(Ω·m) — draw ceiling and post-Kriging clamp.                        |
+| `vario_model`    | gstools covariance class: `"Spherical"` (default), `"Gaussian"`, `"Exponential"`, etc.  |
+| `vario_range`    | Correlation length (m).  Scalar = isotropic; 2-tuple `(h, v)` = geometric anisotropy.   |
+| `vario_sill`     | Sill (variance) in (log₁₀ Ω·m)².  Recommended: 0.25–0.5.                               |
+| `vario_nugget`   | Nugget in (log₁₀ Ω·m)².  Keep ≤ 10 % of sill.                                          |
+| `vario_angles`   | Rotation `[α, β, γ]` in degrees; `None` = axis-aligned.                                 |
+| `output_target`  | `"resistivity_block"` / `"referencemodel"` / `"both"` (recommended).                   |
+
+### Tuning guidance
+
+**Pilot-point density:** 50–150 points for a volume of order 100 km × 100 km × 50 km.
+The variogram range should be at least 1.5× the typical inter-pilot-point spacing.
+
+**Variogram range vs. survey geometry:** horizontal range ≈ 20–50 % of survey aperture;
+vertical range ≈ 30–50 % of target depth.  MT sensitivity decays with depth, so
+vertical ranges shorter than horizontal ranges are physically appropriate.
+
+**Sill:** 0.25 (log₁₀ Ω·m)² gives ≈ ±0.5 log₁₀ units 1-sigma.  Increase for
+larger expected resistivity contrasts.
+
+**`output_target = "both"`** is recommended: the inversion then explores the misfit
+surface starting from — and regularised toward — a structurally distinct spatial
+pattern for every member.
+
+### Example
+
+```python
+from ensembles import generate_gst_model_ensemble
+
+mod_list = generate_gst_model_ensemble(
+    dir_base   = "./ubinas_gst_",
+    n_samples  = 32,
+    ref_mod_file = "./templates/referencemodel.dat",
+    pp_mode    = "random",
+    n_pp       = 100,
+    pp_bbox    = [-50000, 50000, -50000, 50000, 0, 80000],
+    log_rho_min = 0.0,
+    log_rho_max = 4.0,
+    vario_model = "Spherical",
+    vario_range = (20000., 5000.),
+    vario_sill  = 0.5,
+    vario_nugget = 0.01,
+    output_target = "both",
+)
+```
+
+---
+
 ## Low-rank sampling (randomized SVD)
 
 `sample_rtr_low_rank` now uses **randomized SVD** of R directly
@@ -148,14 +223,14 @@ Key advantages over the old `eigsh` approach:
 - Does not require forming Q = R^T R explicitly.
 - Suitable for 4–100+ samples at typical FEMTIC mesh sizes.
 
-`generate_model_ensemble` now accepts **R directly** (not Q).
+`generate_rto_model_ensemble` now accepts **R directly** (not Q).
 Q = R^T R is formed implicitly inside the sampling routines.
 
 ## Quick-reference: recommended parameter values (FEMTIC)
 
 | Parameter | Recommended | Location |
 |-----------|-------------|----------|
-| `algo` | `"low rank"` | `generate_model_ensemble` |
+| `algo` | `"low rank"` | `generate_rto_model_ensemble` |
 | `n_eig` | 128–256 | low-rank branch |
 | `n_power_iter` | 3–4 | low-rank branch |
 | `sigma2_residual` | 1e-3 | low-rank branch |
@@ -218,6 +293,7 @@ If you see `RuntimeError: Iterative solver did not converge` (full-rank mode):
 |---------------------|---------------------------------------------|
 | `numpy`             | Core array operations.                      |
 | `scipy`             | Sparse matrices, iterative solvers, SVD.    |
+| `gstools`           | Variogram models and Ordinary Kriging (GST).|
 | `joblib` (optional) | Kept for backward compatibility.            |
 | `pyamg` (optional)  | AMG preconditioner.                         |
 | `sksparse` (optional) | CHOLMOD direct solver.                    |
@@ -231,12 +307,24 @@ If you see `RuntimeError: Iterative solver did not converge` (full-rank mode):
 | `femtic_rto_rough.py`   | `README_femtic_rto_rough.md`    | Extract roughness matrix from FEMTIC.  |
 | `femtic_rto_prior.py`   | `README_femtic_rto_prior.md`    | Build prior covariance proxy.          |
 | `femtic_rto_prep.py`    | `README_femtic_rto_prep.md`     | Generate RTO ensemble.                 |
+| `femtic_gst_prep.py`    | `README_femtic_gst_prep.md`     | Generate GST ensemble (pilot-point Kriging). |
 
 ---
 
 ## Version / provenance
 
-Updated: 2026-04-11 (consolidation); 2026-04-02 (cleanup)
+Updated: 2026-04-27 (GST); 2026-04-11 (consolidation); 2026-04-02 (cleanup)
+
+### Changelog (2026-04-27)
+- Added `generate_gst_model_ensemble` — geostatistical initial-model ensemble
+  via pilot-point Ordinary Kriging (gstools).  No roughness matrix required.
+  Supports `pp_mode = "random" | "fixed" | "mixed"`, fully configurable
+  variogram, and `output_target = "resistivity_block" | "referencemodel" | "both"`.
+- Renamed `generate_model_ensemble` → `generate_rto_model_ensemble` for
+  consistency with `generate_gst_model_ensemble`.
+- Added `gstools` to the dependency table.
+- Added `femtic_gst_prep.py` to the related-scripts table.
+- Module docstring updated.
 
 ### Changelog (2026-04-11)
 - `check_sparse_matrix` moved here from `femtic.py` — all matrix/roughness
