@@ -441,52 +441,127 @@ def isspd(A: sp.spmatrix | np.ndarray, *, atol: float = 1e-12) -> bool:
 # A4. Randomised SVD utilities (Halko et al., 2011)
 # -----------------------------------------------------------------------------
 
+def rsvd(A, rank=300, n_oversamples=None, n_subspace_iters=None, return_range=False):
+    """
+    Randomized SVD (truncated) for large matrices.
 
-def rsvd(
-    A: sp.spmatrix | np.ndarray,
-    rank: int = 300,
-    n_oversamples: int = 20,
-    n_subspace_iters: Optional[int] = None,
-    return_range: bool = False,
-):
-    """Randomised SVD (Halko, Martinsson & Tropp, 2011)."""
-    n_samples = int(rank) + int(n_oversamples)
+    Parameters
+    ----------
+    A : array_like
+        Input matrix (m x n).
+    rank : int
+        Target rank for the approximation.
+    n_oversamples : int | None
+        Oversampling parameter; defaults to 2*rank if None.
+    n_subspace_iters : int | None
+        Number of power iterations (subspace iterations).
+    return_range : bool
+        If True, also return the approximate range basis Q.
 
+    Returns
+    -------
+    U : ndarray
+        Left singular vectors (m x rank).
+    S : ndarray
+        Singular values (rank,).
+    Vt : ndarray
+        Right singular vectors transposed (rank x n).
+
+    Notes
+    -----
+    Implements Halko, Martinsson & Tropp (2011) algorithms. Useful for low-rank
+    Jacobian approximations.
+    """
+    if n_oversamples is None:
+        # This is the default used in the paper.
+        n_samples = 2 * rank
+    else:
+        n_samples = rank + n_oversamples
+
+    # Stage A.
+    # print(' stage A')
     Q = find_range(A, n_samples, n_subspace_iters)
+
+    # Stage B.
+    # print(' stage B')
     B = Q.T @ A
-    U_tilde, S, Vt = np.linalg.svd(np.asarray(B), full_matrices=False)
+    # print(np.shape(B))
+    # print(' stage B before linalg')
+    U_tilde, S, Vt = np.linalg.svd(B)
+    # print(' stage B after linalg')
     U = Q @ U_tilde
 
-    U = U[:, :rank]
-    S = S[:rank]
-    Vt = Vt[:rank, :]
+    # Truncate.
+    U, S, Vt = U[:, :rank], S[:rank], Vt[:rank, :]
 
+    # This is useful for computing the actual error of our approximation.
     if return_range:
         return U, S, Vt, Q
     return U, S, Vt
 
 
-def find_range(
-    A: sp.spmatrix | np.ndarray,
-    n_samples: int,
-    n_subspace_iters: Optional[int] = None,
-) -> np.ndarray:
-    """Randomised range finder (Algorithm 4.1 in Halko et al.)."""
-    rng = np.random.default_rng()
-    _, n = A.shape
-    O = rng.normal(size=(n, n_samples))
+# ------------------------------------------------------------------------------
+
+
+def find_range(A, n_samples, n_subspace_iters=None):
+    """
+    Compute an approximate orthonormal basis for the range of A.
+
+    Parameters
+    ----------
+    A : array_like
+        Input matrix.
+    n_samples : int
+        Number of random samples.
+    n_subspace_iters : int | None
+        Optional number of subspace iterations.
+
+    Returns
+    -------
+    Q : ndarray
+        Orthonormal basis for the approximate range.
+
+    Notes
+    -----
+    Algorithm 4.1 from Halko et al. (2011).
+    """
+    # print('here we are in range-finder')
+    m, n = A.shape
+    O = np.random.default_rng().normal(0., 1., (n, n_samples))
     Y = A @ O
-    if n_subspace_iters and n_subspace_iters > 0:
-        return subspace_iter(A, Y, int(n_subspace_iters))
-    return ortho_basis(Y)
+
+    if n_subspace_iters:
+        return subspace_iter(A, Y, n_subspace_iters)
+    else:
+        return ortho_basis(Y)
 
 
-def subspace_iter(
-    A: sp.spmatrix | np.ndarray,
-    Y0: np.ndarray,
-    n_iters: int,
-) -> np.ndarray:
-    """Randomised subspace iteration (Algorithm 4.4 in Halko et al.)."""
+# ------------------------------------------------------------------------------
+
+
+def subspace_iter(A, Y0, n_iters):
+    """
+    Perform randomized subspace iteration to improve range approximation.
+
+    Parameters
+    ----------
+    A : array_like
+        Input matrix.
+    Y0 : array_like
+        Initial range sample matrix.
+    n_iters : int
+        Number of power iterations.
+
+    Returns
+    -------
+    Q : ndarray
+        Improved orthonormal basis.
+
+    Notes
+    -----
+    Algorithm 4.4 from Halko et al. (2011).
+    """
+    # print('herere we are in subspace-iter')
     Q = ortho_basis(Y0)
     for _ in range(n_iters):
         Z = ortho_basis(A.T @ Q)
@@ -494,9 +569,29 @@ def subspace_iter(
     return Q
 
 
-def ortho_basis(M: np.ndarray) -> np.ndarray:
-    """Compute an orthonormal basis for the range of M using QR."""
-    Q, _ = np.linalg.qr(np.asarray(M), mode="reduced")
+# ------------------------------------------------------------------------------
+
+
+def ortho_basis(M):
+    """
+    Compute an orthonormal basis for the columns of a matrix via QR.
+
+    Parameters
+    ----------
+    M : array_like
+        Input matrix.
+
+    Returns
+    -------
+    Q : ndarray
+        Orthonormal basis matrix.
+
+    Notes
+    -----
+    Thin wrapper around numpy.linalg.qr.
+    """
+    # print('herere we are in ortho')
+    Q, _ = np.linalg.qr(M)
     return Q
 
 

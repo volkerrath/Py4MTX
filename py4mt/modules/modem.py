@@ -5306,11 +5306,11 @@ def ensemble_to_kl(ensemble=None, n_modes=None, frac_modes=None,
         'randomized' Randomized SVD (Halko et al. 2011).  Only computes the
                      leading n_modes modes.  Cost O(n_models * n_cells *
                      n_modes).  Strongly preferred when n_modes << n_models.
-                     Uses sklearn if available, falls back to scipy.sparse.linalg.svds.
+                     Uses sklearn if available; falls back to inverse.rsvd
+                     (py4mt Algorithms 4.1 + 4.4) when sklearn is absent.
         'truncated'  Truncated SVD via scipy.sparse.linalg.svds (ARPACK).
-                     Useful when the ensemble matrix is sparse or when
-                     sklearn is unavailable.  Cost similar to 'randomized'
-                     but with deterministic ARPACK iterations.
+                     Deterministic iterations; useful for sparse matrices.
+                     Cost similar to 'randomized'.
 
     n_oversamples : int, optional
         Extra random projections used by 'randomized' SVD to improve
@@ -5353,8 +5353,11 @@ def ensemble_to_kl(ensemble=None, n_modes=None, frac_modes=None,
     'exact'         O(n_m^2 * n_c)          Yes     n_modes ~ n_models, or
                                                     full variance spectrum needed
     'randomized'    O(n_m * n_c * n_modes)  ~Yes*   n_modes << n_models (default
-                    + power iterations              for large ensembles)
-    'truncated'     O(n_m * n_c * n_modes)  ~Yes*   no sklearn; sparse matrices
+                    + power iterations              for large ensembles).
+                                                    sklearn preferred; falls back
+                                                    to inverse.rsvd (py4mt).
+    'truncated'     O(n_m * n_c * n_modes)  ~Yes*   Sparse matrices; deterministic
+                                                    ARPACK iterations.
     n_m = n_models, n_c = n_cells.
     *Accuracy improves with n_oversamples and n_power_iter.
 
@@ -5427,14 +5430,32 @@ def ensemble_to_kl(ensemble=None, n_modes=None, frac_modes=None,
             )
             modes = Vt
         except ImportError:
-            # Fall back to truncated ARPACK if sklearn is absent
-            svd_method = 'truncated'
+            # sklearn absent: fall back to inverse.rsvd (Halko et al. 2011,
+            # Algorithms 4.1 + 4.4), which is already part of py4mt.
+            # find_range uses np.random.default_rng() internally, so we seed
+            # the global RNG for reproducibility when random_state is set.
+            if random_state is not None:
+                np.random.seed(int(random_state))
+            try:
+                import inverse as inv
+                U, singular_values, Vt = inv.rsvd(
+                    E,
+                    rank=n_modes,
+                    n_oversamples=n_oversamples,
+                    n_subspace_iters=n_power_iter,
+                )
+                modes = Vt
+            except ImportError:
+                raise ImportError(
+                    'ensemble_to_kl: randomized SVD requires either sklearn '
+                    '(pip install scikit-learn) or the py4mt inverse module '
+                    'on sys.path.'
+                )
             if out:
                 print('ensemble_to_kl: sklearn not found, '
-                      'falling back to svd_method="truncated"')
+                      'using inverse.rsvd (py4mt)')
 
-        if svd_method == 'randomized':
-            var_total = np.linalg.norm(E, 'fro')**2
+        var_total = np.linalg.norm(E, 'fro')**2
 
     if svd_method == 'truncated':
         from scipy.sparse.linalg import svds as _svds
