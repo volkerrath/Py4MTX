@@ -55,7 +55,7 @@ the script.  No command-line arguments are used; edit the script directly.
 |---|---|---|
 | `WORK_DIR` | `/home/vrath/Py4MTX/py4mt/data/example/` | Working directory |
 | `MODEL_IN` | `resistivity_block_iter10.dat` | Source block file (also used as format template) |
-| `MESH_FILE` | `mesh.dat` | Mesh file — required for `"smooth"` and `"ellipsoid"`, ignored otherwise |
+| `MESH_FILE` | `mesh.dat` | Mesh file — required for `"wmean"`, `"smooth"` and `"ellipsoid"`, ignored otherwise |
 | `MODEL_OUT` | `resistivity_block_edited.dat` | Output block file; set equal to `MODEL_IN` to overwrite in-place |
 
 ### Ocean / fixed-region handling
@@ -102,7 +102,8 @@ flag-fixed regions are excluded before the operation and restored afterwards.
 | Key | Effect | Typical use |
 |---|---|---|
 | `"fill"` | m ← OP_FILL_VALUE | Constant half-space starting model |
-| `"mean"` | m ← mean(m) | Homogeneous model at geometric-mean resistivity |
+| `"mean"` | m ← mean(m) | Homogeneous model at arithmetic-mean resistivity |
+| `"wmean"` | m ← Σ(wₖ mₖ)/Σwₖ, wₖ=1/Vₖ | Same, but small cells outweigh large cells |
 | `"median"` | m ← median(m) | Same, robust to outlier regions |
 | `"clip"` | m ← clamp(m, min, max) | Enforce physical bounds |
 | `"shift"` | m ← m + δ | Global resistivity offset (e.g. +0.5 → ×3.2 in Ohm·m) |
@@ -153,6 +154,24 @@ OP_ELLIPSOID_ANGLES = [45., 0., 0.]   # 45° yaw → NE-SW alignment
 
 A runtime warning is printed if no free-region centroids fall inside the
 ellipsoid (geometry mismatch or ellipsoid too small for the mesh resolution).
+
+### Inverse-volume-weighted mean (`"wmean"`)
+
+Computes a single scalar value to replace all free-region values, weighted by
+the inverse of each region's total volume:
+
+```
+w_k = 1 / V_k
+m_tilde = ( sum_k  w_k * m_k ) / ( sum_k  w_k )
+```
+
+In a typical FEMTIC mesh the volume ratio between the largest background
+region and the smallest near-surface region can exceed 10⁶.  The arithmetic
+`"mean"` is dominated by those large deep cells; `"wmean"` gives proportionally
+more influence to the fine cells in the target depth range — which is usually
+what is wanted when resetting a model to a representative starting value.
+
+Requires `MESH_FILE`.  No additional parameters.
 
 ### Spatial smoothing (`"smooth"`)
 
@@ -215,7 +234,7 @@ def _op_my_transform(m: np.ndarray) -> np.ndarray:
 _OPERATIONS["my_transform"] = _op_my_transform
 ```
 
-Operations needing geometry (mesh / centroids) should add their key to
+Operations needing geometry (mesh / centroids / volumes) should add their key to
 `_NEEDS_MESH` and populate a dedicated context dict in the `if OPERATION in
 _NEEDS_MESH:` block, following the `_ellipsoid_ctx` / `_smooth_ctx` pattern.
 
@@ -243,3 +262,4 @@ SciPy is **not** required.
 | 2026-04-30 | vrath / Claude Sonnet 4.6 | Added `"smooth"` (Gaussian region-centroid weighting) |
 | 2026-04-30 | vrath / Claude Sonnet 4.6 | Added `"fill"`; clarified air/ocean safety guarantee |
 | 2026-04-30 | vrath / Claude Sonnet 4.6 | Added `"ellipsoid"` (replace/add, rotated ZYX geometry); refactored mesh loading into shared `_NEEDS_MESH` block |
+| 2026-04-30 | vrath / Claude Sonnet 4.6 | Added `"wmean"` (inverse-volume-weighted mean); refactored `_build_region_centroids` → `_build_region_geometry` (centroids + volumes in one pass) |

@@ -15,6 +15,10 @@ Available operations (OPERATION key)
     "fill"          Set every free region to a single constant log10(ρ) value
                     (OP_FILL_VALUE).  Simplest possible initialisation.
     "mean"          Replace every free region with the mean   of log10(ρ).
+    "wmean"         Replace every free region with the inverse-volume-weighted
+                    mean of log10(ρ).  Requires MESH_FILE.  Large coarse cells
+                    (deep background) contribute less than small fine cells
+                    (near-surface target zone).
     "median"        Replace every free region with the median of log10(ρ).
     "clip"          Clamp log10(ρ) to [OP_CLIP_MIN, OP_CLIP_MAX].
     "shift"         Add a scalar offset: log10(ρ) += OP_SHIFT_VALUE.
@@ -52,6 +56,10 @@ Provenance
     2026-04-30  vrath / Claude Sonnet 4.6   Added "ellipsoid" operation:
                 local replace/add inside a rotated ellipsoid defined by
                 centroid, semi-axes, and ZYX rotation angles.
+    2026-04-30  vrath / Claude Sonnet 4.6   Added "wmean" operation:
+                inverse-volume-weighted mean in log10 space.
+                Refactored _build_region_centroids into _build_region_geometry
+                (returns centroids + volumes in one element loop).
 
 @author: vrath
 """
@@ -85,6 +93,7 @@ print(titstrng + "\n\n")
 # Configuration
 # ===========================================================================
 
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -98,7 +107,7 @@ MODEL_IN  = WORK_DIR + "resistivity_block_iter0.dat"
 MESH_FILE = WORK_DIR + "mesh.dat"
 
 #: Output file.  Set to MODEL_IN to overwrite in-place (be careful!).
-MODEL_OUT = WORK_DIR + "resistivity_block_smooth.dat"
+MODEL_OUT = WORK_DIR + "resistivity_block_median.dat"
 
 # ---------------------------------------------------------------------------
 # Ocean / fixed-region handling
@@ -113,9 +122,10 @@ OCEAN_RHO = 0.25    # Ω·m written for region 1 when treated as ocean
 # ---------------------------------------------------------------------------
 # Operation to apply
 # ---------------------------------------------------------------------------
-#: One of: "fill" | "mean" | "median" | "clip" | "shift" | "standardise"
-#:         | "smooth" | "ellipsoid"
+#: One of: "fill" | "mean" | "wmean" | "median" | "clip" | "shift"
+#:         | "standardise" | "smooth" | "ellipsoid"
 # OPERATION = "mean"
+OPERATION = "median"
 OPERATION = "smooth"
 
 
@@ -219,43 +229,95 @@ def _op_standardise(m: np.ndarray) -> np.ndarray:
     return (m - mu) / sig
 
 
-def _build_region_centroids(
+def _tet_volumes(nodes: np.ndarray, conn: np.ndarray) -> np.ndarray:
+    """Compute the signed volume of each tetrahedron (vectorised).
+
+    V = |det([b-a, c-a, d-a])| / 6  for vertices a, b, c, d.
+
+    Returns
+    -------
+    vol : (nelem,)  absolute volumes in the same units as the node coordinates³.
+    """
+    v = nodes[conn]           # (nelem, 4, 3)
+    a, b, c, d = v[:, 0], v[:, 1], v[:, 2], v[:, 3]
+    bma = b - a;  cma = c - a;  dma = d - a
+    # Scalar triple product row-wise
+    cross = np.cross(bma, cma)            # (nelem, 3)
+    det   = (cross * dma).sum(axis=1)     # (nelem,)
+    return np.abs(det) / 6.0
+
+
+def _build_region_geometry(
     nodes: np.ndarray,
     conn: np.ndarray,
     elem_region: np.ndarray,
     free_idx: np.ndarray,
-) -> np.ndarray:
-    """Compute the volume-weighted centroid for each *free* region.
-
-    Each free region may contain many elements.  The region centroid is the
-    mean of all element centroids belonging to that region (unweighted by
-    element volume — acceptable for smoothly varying meshes; volume-weighting
-    can be added if needed).
+) -> tuple:
+    """Compute centroid and total volume for each *free* region in one pass.
 
     Parameters
     ----------
-    nodes : (nn, 3)
-    conn  : (nelem, 4)  0-based node indices
-    elem_region : (nelem,)  region index for each element
-    free_idx : (n_free,)  region indices of free regions (in order)
+    nodes       : (nn, 3)
+    conn        : (nelem, 4)  0-based node indices
+    elem_region : (nelem,)    region index for each element
+    free_idx    : (n_free,)   region indices of free regions (in order)
 
     Returns
     -------
-    region_ctr : (n_free, 3)  centroid [x, y, z] for each free region
+    region_ctr : (n_free, 3)   centroid [x, y, z] for each free region
+    region_vol : (n_free,)     total volume (m³) for each free region
     """
-    # Element centroids — vectorised, shape (nelem, 3)
-    elem_ctr = nodes[conn].mean(axis=1)
+    elem_ctr = nodes[conn].mean(axis=1)        # (nelem, 3)
+    elem_vol = _tet_volumes(nodes, conn)        # (nelem,)
 
-    region_ctr = np.empty((len(free_idx), 3), dtype=float)
+    n_free = len(free_idx)
+    region_ctr = np.empty((n_free, 3), dtype=float)
+    region_vol = np.empty(n_free,      dtype=float)
+
     for k, ireg in enumerate(free_idx):
         sel = elem_region == ireg
         if not np.any(sel):
-            # Region present in block but no elements assigned — use origin as
-            # a safe fallback; its weight will be small or zero in practice.
             region_ctr[k] = 0.0
+            region_vol[k] = 0.0
         else:
-            region_ctr[k] = elem_ctr[sel].mean(axis=0)
-    return region_ctr
+            vols = elem_vol[sel]
+            region_vol[k] = vols.sum()
+            # volume-weighted centroid within each region
+            region_ctr[k] = (vols[:, np.newaxis] * elem_ctr[sel]).sum(axis=0) / region_vol[k]
+
+    return region_ctr, region_vol
+
+
+_wmean_ctx: dict = {}
+
+
+def _op_wmean(m: np.ndarray) -> np.ndarray:
+    """Replace every free region with the inverse-volume-weighted mean log10(ρ).
+
+    Regions are weighted by 1/V so that large coarse cells (deep background)
+    contribute less than small fine cells (near-surface target zone).  This
+    is usually a better homogeneous starting point than the arithmetic mean
+    when the mesh has strongly varying cell sizes.
+
+    Weight for region k:  w_k = 1 / V_k   (V_k = total volume of region k).
+
+    Regions with V = 0 (no elements assigned) receive zero weight and do not
+    contribute to the average; their output value is set to the weighted mean
+    of the rest.  A warning is printed if any such region exists.
+    """
+    vol = _wmean_ctx["volumes"]    # (n_free,)  m³
+
+    zero_vol = vol == 0.0
+    if np.any(zero_vol):
+        print(f"  wmean: WARNING — {int(zero_vol.sum())} free region(s) have V=0; excluded.")
+
+    w = np.where(zero_vol, 0.0, 1.0 / np.where(zero_vol, 1.0, vol))
+    w_sum = w.sum()
+    if w_sum == 0.0:
+        raise RuntimeError("wmean: all region volumes are zero — cannot compute weighted mean.")
+
+    mean_val = float((w @ m) / w_sum)
+    return np.full_like(m, mean_val)
 
 
 def _op_smooth(m: np.ndarray) -> np.ndarray:
@@ -427,6 +489,7 @@ def _op_ellipsoid(m: np.ndarray) -> np.ndarray:
 _OPERATIONS: dict = {
     "fill":        _op_fill,
     "mean":        _op_mean,
+    "wmean":       _op_wmean,
     "median":      _op_median,
     "clip":        _op_clip,
     "shift":       _op_shift,
@@ -458,11 +521,12 @@ print(f"  log10(ρ) range before: [{log_m.min():.3f}, {log_m.max():.3f}]")
 print()
 
 # --- (1b) Build mesh-dependent contexts if needed -------------------------
-#: Module-level dicts populated here; consumed by _op_smooth / _op_ellipsoid.
+#: Module-level dicts populated here; consumed by mesh-dependent operations.
 _smooth_ctx:    dict = {}
 _ellipsoid_ctx: dict = {}
+_wmean_ctx:     dict = {}
 
-_NEEDS_MESH = {"smooth", "ellipsoid"}
+_NEEDS_MESH = {"smooth", "ellipsoid", "wmean"}
 
 if OPERATION in _NEEDS_MESH:
     if not os.path.isfile(MESH_FILE):
@@ -472,16 +536,24 @@ if OPERATION in _NEEDS_MESH:
     nodes, conn = fem.read_femtic_mesh(MESH_FILE)
     print(f"  nodes={nodes.shape[0]}, elements={conn.shape[0]}")
 
-    # Element→region mapping and free_idx — shared by both operations.
+    # Element→region mapping and free_idx — shared by all mesh operations.
     _struct = fem._read_resistivity_block_struct(
         MODEL_IN, model_trans="log10", ocean=OCEAN, out=False
     )
     elem_region = _struct["elem_region"]   # (nelem,)
     free_idx    = _struct["free_idx"]      # (n_free,) region indices of free regions
 
-    region_ctr = _build_region_centroids(nodes, conn, elem_region, free_idx)
-    print(f"  region centroids: {region_ctr.shape[0]} free regions")
+    # Single pass: centroids + volumes for all free regions.
+    region_ctr, region_vol = _build_region_geometry(nodes, conn, elem_region, free_idx)
+    print(f"  region geometry: {len(free_idx)} free regions, "
+          f"total volume={region_vol.sum():.3e} m³")
     print()
+
+    if OPERATION == "wmean":
+        _wmean_ctx["volumes"] = region_vol
+        print(f"  wmean context ready: "
+              f"V range [{region_vol.min():.3e}, {region_vol.max():.3e}] m³, "
+              f"ratio={region_vol.max()/max(region_vol.min(),1e-30):.1e}")
 
     if OPERATION == "smooth":
         _smooth_ctx["centroids"] = region_ctr
