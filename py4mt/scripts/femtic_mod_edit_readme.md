@@ -78,7 +78,9 @@ rho ≤ 1 Ohm·m.  Override with `OCEAN = True / False` when unreliable.
 | `OP_CLIP_MIN` | `0.0` | Lower bound in log10(Ohm·m) — `"clip"` |
 | `OP_CLIP_MAX` | `4.0` | Upper bound in log10(Ohm·m) — `"clip"` |
 | `OP_SHIFT_VALUE` | `0.5` | Additive offset in log10(Ohm·m) — `"shift"` |
-| `OP_SMOOTH_SIGMA` | `5000.0` | Gaussian smoothing length σ in metres — `"smooth"` |
+| `OP_SMOOTH_SIGMA` | `5000.0` | Gaussian length scale σ in metres — `"smooth"` |
+| `OP_SMOOTH_CUTOFF` | `4.0` | Cutoff radius in multiples of σ; beyond this weight = 0 — `"smooth"` |
+| `OP_SMOOTH_MAX_GB` | `4.0` | RAM cap (GiB) for fallback dense path when SciPy absent — `"smooth"` |
 
 ### Ellipsoid parameters
 
@@ -161,9 +163,29 @@ w_ij = exp( -||c_i - c_j||^2 / (2 sigma^2) )
 m_tilde_i = ( sum_j  w_ij * m_j ) / ( sum_j  w_ij )
 ```
 
-The self-weight (i = j) is always included.  Good starting σ: 1–2× typical
-element edge length at the target depth.  Memory: dense W of shape
-(n_free × n_free); for > ~10 000 free regions reduce σ or apply iteratively.
+The self-weight (i = j) is always included.
+
+**Memory-efficient implementation** — the naive dense approach allocates an
+(n, n, 3) difference array (~350 GiB for n = 125 k), which is infeasible.
+Two strategies are combined:
+
+1. **Distance cutoff** (`OP_SMOOTH_CUTOFF`, default 4σ): neighbours beyond
+   `cutoff × sigma` get zero weight (Gaussian < exp(-8) ≈ 0.03 %).
+   Only the non-zero neighbourhood is ever computed per region.
+
+2. **SciPy cKDTree** (preferred): `query_ball_point` returns the neighbour
+   index list per region; weighted accumulation is row-by-row in O(n_nbrs)
+   memory.  If SciPy is unavailable the code falls back to a chunked
+   dense path capped at `OP_SMOOTH_MAX_GB` gigabytes.
+
+| Parameter | Default | Effect |
+|---|---|---|
+| `OP_SMOOTH_SIGMA` | `5000.0` m | Gaussian length scale |
+| `OP_SMOOTH_CUTOFF` | `4.0` (× σ) | Beyond this radius weight is zero |
+| `OP_SMOOTH_MAX_GB` | `4.0` GiB | RAM cap for fallback chunked path |
+
+**Choosing σ** — 1–2× the typical element edge length at the target depth.
+**Choosing cutoff** — 4σ is accurate; 3σ is faster (weight < 1.1 % at boundary).
 
 ### Note on multiplicative scaling
 

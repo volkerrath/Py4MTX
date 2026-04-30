@@ -88,17 +88,17 @@ print(titstrng + "\n\n")
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-WORK_DIR = r"/home/vrath/Py4MTX/py4mt/data/example/"
+WORK_DIR = r"/home/vrath/Py4MTX/work/"
 
 #: Template / source resistivity block (also used as format template by
 #: insert_model to preserve header, bounds and flag columns).
-MODEL_IN  = WORK_DIR + "resistivity_block_iter10.dat"
+MODEL_IN  = WORK_DIR + "resistivity_block_iter0.dat"
 
 #: Mesh file — required for "smooth" and "ellipsoid"; ignored otherwise.
 MESH_FILE = WORK_DIR + "mesh.dat"
 
 #: Output file.  Set to MODEL_IN to overwrite in-place (be careful!).
-MODEL_OUT = WORK_DIR + "resistivity_block_edited.dat"
+MODEL_OUT = WORK_DIR + "resistivity_block_smooth.dat"
 
 # ---------------------------------------------------------------------------
 # Ocean / fixed-region handling
@@ -115,7 +115,9 @@ OCEAN_RHO = 0.25    # Ω·m written for region 1 when treated as ocean
 # ---------------------------------------------------------------------------
 #: One of: "fill" | "mean" | "median" | "clip" | "shift" | "standardise"
 #:         | "smooth" | "ellipsoid"
-OPERATION = "mean"
+# OPERATION = "mean"
+OPERATION = "smooth"
+
 
 # Parameters used by specific operations (ignored when not applicable):
 OP_FILL_VALUE   = 2.0    # log10(100 Ω·m) — used by "fill"
@@ -127,7 +129,17 @@ OP_SHIFT_VALUE  = 0.5    # added to every log10(ρ) — used by "shift"
 #: Controls the spatial correlation length: neighbours within ~2σ contribute
 #: most of the weight.  A good first guess is 1–2× the typical element size
 #: in the target depth range.
-OP_SMOOTH_SIGMA = 5000.0  # metres
+OP_SMOOTH_SIGMA   = 5000.0  # metres
+
+#: Distance cutoff as a multiple of σ — used by "smooth".
+#: Neighbours beyond this radius get zero weight (Gaussian < exp(-cutoff²/2)).
+#: 4σ → weight < 0.03 %; 5σ → < 0.0004 %.  Larger values = more accurate but
+#: more neighbours per region and slower.
+OP_SMOOTH_CUTOFF  = 4.0     # multiples of σ
+
+#: Maximum RAM (GiB) for the fallback chunked-dense path — used by "smooth"
+#: when SciPy is unavailable.  Each chunk is (chunk_size × n_free) float64.
+OP_SMOOTH_MAX_GB  = 4.0     # GiB
 
 # ---------------------------------------------------------------------------
 # Ellipsoid parameters — used by "ellipsoid" only
@@ -249,29 +261,81 @@ def _build_region_centroids(
 def _op_smooth(m: np.ndarray) -> np.ndarray:
     """Gaussian-weighted spatial smoothing of log10(ρ) across free regions.
 
-    Uses precomputed region centroids stored in ``_smooth_ctx`` (populated
-    before the operation is called).  Each region's new value is the
-    normalised Gaussian-weighted sum over all free regions:
+    Uses precomputed region centroids stored in ``_smooth_ctx``.  Each
+    region's new value is the normalised Gaussian-weighted sum:
 
         m̃_i = Σ_j  w_ij · m_j  /  Σ_j w_ij
         w_ij = exp(−‖c_i − c_j‖² / (2 σ²))
 
-    σ is set by ``OP_SMOOTH_SIGMA`` (metres).
+    Memory-efficient implementation
+    --------------------------------
+    The naive dense approach allocates an (n, n, 3) array of differences
+    (~350 GiB for n = 125 k).  Instead:
 
-    The self-weight (i == j, d = 0 → w = 1) is included automatically, so
-    the result always interpolates between the original value and its
-    neighbourhood average.
+    1.  A distance cutoff of ``OP_SMOOTH_CUTOFF * σ`` is applied.
+        At 4σ the Gaussian weight is exp(-8) ≈ 0.03 %, negligible.
+        Neighbours within the cutoff radius are found with a cKDTree
+        query_ball_point call — O(n · n_neighbours) memory.
+
+    2.  Weighted accumulation is done row-by-row in a plain Python loop
+        so peak memory at any instant is O(n_neighbours_max), not O(n²).
+
+    If SciPy is unavailable the code falls back to a chunked dense path
+    that stays within ``OP_SMOOTH_MAX_GB`` gigabytes.
     """
-    ctr = _smooth_ctx["centroids"]   # (n_free, 3)
+    ctr   = _smooth_ctx["centroids"]     # (n_free, 3)
     sigma = _smooth_ctx["sigma"]
+    cutoff_factor = float(OP_SMOOTH_CUTOFF)
+    radius = cutoff_factor * sigma
 
-    # Pairwise squared distances — shape (n_free, n_free)
-    diff = ctr[:, np.newaxis, :] - ctr[np.newaxis, :, :]   # (n, n, 3)
-    d2   = (diff ** 2).sum(axis=-1)                          # (n, n)
+    n = len(m)
+    m_out   = np.empty(n, dtype=float)
+    two_s2  = 2.0 * sigma * sigma
 
-    W = np.exp(-d2 / (2.0 * sigma ** 2))   # (n, n)
-    m_smooth = (W @ m) / W.sum(axis=1)
-    return m_smooth
+    # ------------------------------------------------------------------
+    # Fast path: SciPy cKDTree
+    # ------------------------------------------------------------------
+    try:
+        from scipy.spatial import cKDTree as _cKDTree
+        tree = _cKDTree(ctr)
+        # Returns list of lists — variable-length neighbour sets
+        idx_lists = tree.query_ball_point(ctr, r=radius)
+        for i, nbrs in enumerate(idx_lists):
+            nbrs = np.asarray(nbrs, dtype=int)
+            d2   = np.sum((ctr[nbrs] - ctr[i]) ** 2, axis=1)
+            w    = np.exp(-d2 / two_s2)
+            m_out[i] = (w @ m[nbrs]) / w.sum()
+        return m_out
+
+    except ImportError:
+        pass   # fall through to chunked dense path
+
+    # ------------------------------------------------------------------
+    # Fallback: chunked dense path capped at OP_SMOOTH_MAX_GB
+    # ------------------------------------------------------------------
+    max_bytes  = int(OP_SMOOTH_MAX_GB * 1024 ** 3)
+    chunk_size = max(1, max_bytes // (n * 8))   # rows per chunk
+    chunk_size = min(chunk_size, n)
+
+    w_sum  = np.zeros(n, dtype=float)
+    wm_sum = np.zeros(n, dtype=float)
+
+    for start in range(0, n, chunk_size):
+        end  = min(start + chunk_size, n)
+        blk  = ctr[start:end]           # (chunk, 3)
+        # d2[i, j] = ||blk[i] - ctr[j]||^2 — shape (chunk, n)
+        d2   = (
+            np.sum(blk ** 2, axis=1, keepdims=True)
+            + np.sum(ctr ** 2, axis=1)[np.newaxis, :]
+            - 2.0 * (blk @ ctr.T)
+        )
+        d2   = np.maximum(d2, 0.0)      # numerical safety
+        mask = d2 <= radius ** 2
+        W    = np.where(mask, np.exp(-d2 / two_s2), 0.0)
+        wm_sum[start:end] = W @ m
+        w_sum [start:end] = W.sum(axis=1)
+
+    return wm_sum / w_sum
 
 
 def _rotation_matrix_zyx(angles_deg: list) -> np.ndarray:
@@ -422,7 +486,8 @@ if OPERATION in _NEEDS_MESH:
     if OPERATION == "smooth":
         _smooth_ctx["centroids"] = region_ctr
         _smooth_ctx["sigma"]     = float(OP_SMOOTH_SIGMA)
-        print(f"  smooth context ready: σ={OP_SMOOTH_SIGMA:.0f} m")
+        print(f"  smooth context ready: σ={OP_SMOOTH_SIGMA:.0f} m, "
+              f"cutoff={OP_SMOOTH_CUTOFF}σ={OP_SMOOTH_CUTOFF*OP_SMOOTH_SIGMA:.0f} m")
 
     if OPERATION == "ellipsoid":
         _mode = str(OP_ELLIPSOID_MODE).strip().lower()
