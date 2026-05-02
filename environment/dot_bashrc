@@ -118,18 +118,37 @@ fi
 
 
 alias zipl='zip --symlinks'
+alias tifon='ssh -X volker@tifon.fis.ucm.es'
+alias aria='ssh -X vrath@ariadne.dias.ie'
+alias dahu='ssh -Y dahu.ciment'
+alias big='ssh -Y bigfoot.ciment'
+alias kraken='ssh -Y kraken.ciment'
+
+alias scan_it='sudo ufw disable; scangearmp2; sudo ufw enable'
 
 alias conda_init='. /home/vrath/bin/conda_init'
 alias condi='. /home/vrath/bin/conda_init'
 alias cu='/home/vrath/bin/conda_update'
 alias ci='. /home/vrath/bin/conda_init'
+# alias cinit='~/.Miniconda24/bin/conda init bash'
 
-
-
+#
+# alias mt='. /home/vrath/bin/conda_init; conda update --all --yes; conda activate Py4MTX; conda update --all --yes; cd ~/Py4MTX; spyder --new-instance --project ~/Py4MTX/&'
+# alias aem='. /home/vrath/bin/conda_init; conda update --all --yes ; conda activate AEM_public; conda update --all --yes; cd ~/AEMpyX_public; spyder --new-instance --project ~/AEMpyX_public/aempy/ &'
+alias em='. /home/vrath/bin/conda_init; conda update --all --yes ; conda activate EM; conda update --all --yes; cd ~/Py4MTX; spyder --new-instance --project ~/Py4MTX/&'
+# alias okular='flatpak run org.kde.okular'
 
 alias la='ls -lah'
 alias md='mkdir'
 alias gnome-control-center='env XDG_CURRENT_DESKTOP=GNOME gnome-control-center'
+
+alias modclean='rm OAR*; rm Nod*; rm BAK*'
+alias tor='/usr/local/tor-browser/Browser/start-tor-browser'
+# alias jabref='/opt/jabref/bin/JabRef'
+
+alias nv='nordvpn'
+alias nvc='nordvpn connect'
+alias nvd='nordvpn disconnect'
 
 alias inkscape='inkscape --pdf-poppler'
 
@@ -145,12 +164,59 @@ if ! shopt -oq posix; then
 fi
 
 # export GCM_CREDENTIAL_STORE=gpg
-export OMP_NUM_THREADS=8
+export OMP_NUM_THREADS=10
+export NUMPY_MADVISE_HUGEPAGE=1
 
 export PATH="/home/vrath/bin:$PATH"
 
 export QT_XKB_CONFIG_ROOT=/usr/share/X11/xkb
 
+PFDIR=/opt/plusfort_x64Linux_804
+PATH=$PFDIR:$PATH
+
+export PATH="/usr/local/paraview/bin:$PATH"
+
+
+
+alias upintel='sudo /opt/intel/oneapi/installer/installer'
+echo "   "
+echo " For activating intel oneapi enter:"
+alias init_intel='. /opt/intel/oneapi/setvars.sh intel64 ilp64'
+#echo ". /opt/intel/oneapi/setvars.sh intel64 ilp64"
+echo "init_intel"
+
+echo "   "
+alias init_nvid='NVHPCSDK=/opt/nvidia/hpc_sdk; export NVHPCSDK;MANPATH=$MANPATH:$NVHPCSDK/Linux_x86_64/23.9/compilers/man;export MANPATH;PATH=$NVHPCSDK/Linux_x86_64/23.9/compilers/bin:$PATH; export PATH;'
+echo " For activating pgi/nvidia enter:"
+echo "init_nvid"
+
+export MKL_PARDISO_OOC_FILE_NAME=/tmp/.pardiso_ooc
+export MKL_PARDISO_OOC_PATH=/tmp/.pardiso_ooc
+
+# export GCM_PLAINTEXT_STORE_PATH=
+# export GCM_CREDENTIAL_STORE=plaintext
+
+nordvpn set technology openvpn
+nordvpn set protocol tcp  #udp
+
+# export MY_ROOT=$HOME
+# export CONDA_ROOT=${HOME}/.Miniconda2024/
+# export PY4MTX_ENVI=Py4MTX
+# export PY4MTX_ROOT=$MY_ROOT/Py4MTX/
+# export PY4MTX_DATA=$MY_ROOT/MT_Data/
+
+export CONDA_ROOT='/home/vrath/.Miniconda24/'
+
+
+export AEMPYX_ROOT='/home/vrath/AEMpyX_public/'
+export AEMPYX_DATA='/home/vrath/work/AEM_Data/'
+alias aem='. /home/vrath/bin/conda_init; conda update --all --yes ; conda activate AEM_public; conda update --all --yes; cd ~/AEMpyX_public; spyder --new-instance --project ~/AEMpyX_public/aempy/ &'
+
+
+
+export PY4MTX_ROOT='/home/vrath/Py4MTX/'
+export PY4MTX_DATA='/home/vrath/work/MT_Data/'
+alias mt='. /home/vrath/bin/conda_init; conda update --all --yes; conda activate MT; conda update --all --yes; cd ~/Py4MTX; spyder --new-instance --project ~/Py4MTX/&'
 
 ## >>> conda initialize >>>
 ## !! Contents within this block are managed by 'conda init' !!
@@ -173,3 +239,26 @@ export QT_XKB_CONFIG_ROOT=/usr/share/X11/xkb
 #   eval $(ssh-agent)
 #   ssh-add
 # fi
+
+
+# >>> juliaup initialize >>>
+
+# !! Contents within this block are managed by juliaup !!
+
+case ":$PATH:" in
+    *:/home/vrath/.juliaup/bin:*)
+        ;;
+
+    *)
+        export PATH=/home/vrath/.juliaup/bin${PATH:+:${PATH}}
+        ;;
+esac
+
+# <<< juliaup initialize <<<
+. /usr/GNUstep/System/Library/Makefiles/GNUstep.sh
+export RUNTIME_VERSION=gnustep-2.1
+export CXXFLAGS="-std=c++11"
+
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
