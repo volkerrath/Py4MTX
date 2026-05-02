@@ -25,8 +25,9 @@ Available operations (OPERATION key)
     "standardise"   Map to zero-mean / unit-variance in log10 space.
     "smooth"        Gaussian-weighted spatial smoothing in log10 space.
                     Requires MESH_FILE.  Each free region is replaced by the
-                    distance-weighted average of all free-region values,
-                    where weights = exp(-d² / (2 σ²)) and σ = OP_SMOOTH_SIGMA.
+                    Gaussian-weighted average over its K nearest neighbours
+                    (K = OP_SMOOTH_K), with weights = exp(-d²/(2σ²)).
+                    Memory is O(n_free × K) — fixed and predictable.
     "ellipsoid"     Modify free regions whose centroid falls inside a
                     rotated ellipsoid.  Requires MESH_FILE.
                     OP_ELLIPSOID_MODE controls the modification:
@@ -93,7 +94,6 @@ print(titstrng + "\n\n")
 # Configuration
 # ===========================================================================
 
-
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -107,7 +107,7 @@ MODEL_IN  = WORK_DIR + "resistivity_block_iter0.dat"
 MESH_FILE = WORK_DIR + "mesh.dat"
 
 #: Output file.  Set to MODEL_IN to overwrite in-place (be careful!).
-MODEL_OUT = WORK_DIR + "resistivity_block_median.dat"
+MODEL_OUT = WORK_DIR + "resistivity_block_smooth.dat"
 
 # ---------------------------------------------------------------------------
 # Ocean / fixed-region handling
@@ -125,9 +125,9 @@ OCEAN_RHO = 0.25    # Ω·m written for region 1 when treated as ocean
 #: One of: "fill" | "mean" | "wmean" | "median" | "clip" | "shift"
 #:         | "standardise" | "smooth" | "ellipsoid"
 # OPERATION = "mean"
-OPERATION = "median"
+# OPERATION = "wmean"
+# OPERATION = "median"
 OPERATION = "smooth"
-
 
 # Parameters used by specific operations (ignored when not applicable):
 OP_FILL_VALUE   = 2.0    # log10(100 Ω·m) — used by "fill"
@@ -136,19 +136,19 @@ OP_CLIP_MAX     = 4.0    # log10(10 kΩ·m) — used by "clip"
 OP_SHIFT_VALUE  = 0.5    # added to every log10(ρ) — used by "shift"
 
 #: Gaussian smoothing length σ in metres — used by "smooth".
-#: Controls the spatial correlation length: neighbours within ~2σ contribute
-#: most of the weight.  A good first guess is 1–2× the typical element size
-#: in the target depth range.
+#: Controls the decay of the Gaussian weight with distance.  A good first
+#: guess is 1–2× the typical element edge length in the target depth range.
 OP_SMOOTH_SIGMA   = 5000.0  # metres
 
-#: Distance cutoff as a multiple of σ — used by "smooth".
-#: Neighbours beyond this radius get zero weight (Gaussian < exp(-cutoff²/2)).
-#: 4σ → weight < 0.03 %; 5σ → < 0.0004 %.  Larger values = more accurate but
-#: more neighbours per region and slower.
-OP_SMOOTH_CUTOFF  = 4.0     # multiples of σ
+#: Number of nearest neighbours considered per region — used by "smooth".
+#: Memory scales as n_free × K × 8 bytes (predictable, no variable-length
+#: lists).  Regions beyond the K-th neighbour get effectively zero weight
+#: if their distance >> σ.  Start with K = 50–200; increase if σ is large
+#: relative to the typical inter-region spacing.
+OP_SMOOTH_K       = 100     # nearest neighbours
 
-#: Maximum RAM (GiB) for the fallback chunked-dense path — used by "smooth"
-#: when SciPy is unavailable.  Each chunk is (chunk_size × n_free) float64.
+#: Maximum RAM (GiB) for the chunked dense fallback — used by "smooth"
+#: when SciPy is unavailable.
 OP_SMOOTH_MAX_GB  = 4.0     # GiB
 
 # ---------------------------------------------------------------------------
@@ -323,51 +323,49 @@ def _op_wmean(m: np.ndarray) -> np.ndarray:
 def _op_smooth(m: np.ndarray) -> np.ndarray:
     """Gaussian-weighted spatial smoothing of log10(ρ) across free regions.
 
-    Uses precomputed region centroids stored in ``_smooth_ctx``.  Each
-    region's new value is the normalised Gaussian-weighted sum:
+    Each region's new value is the normalised Gaussian-weighted sum over
+    its K nearest neighbours (by region centroid distance):
 
-        m̃_i = Σ_j  w_ij · m_j  /  Σ_j w_ij
+        m̃_i = Σ_{j ∈ KNN(i)}  w_ij · m_j  /  Σ w_ij
         w_ij = exp(−‖c_i − c_j‖² / (2 σ²))
 
-    Memory-efficient implementation
-    --------------------------------
-    The naive dense approach allocates an (n, n, 3) array of differences
-    (~350 GiB for n = 125 k).  Instead:
+    Implementation strategy
+    -----------------------
+    *   ``query_ball_point`` (variable-length lists) segfaults at ~125 k
+        regions because the combined neighbour lists exhaust RAM during the
+        Python loop before any computation completes.
 
-    1.  A distance cutoff of ``OP_SMOOTH_CUTOFF * σ`` is applied.
-        At 4σ the Gaussian weight is exp(-8) ≈ 0.03 %, negligible.
-        Neighbours within the cutoff radius are found with a cKDTree
-        query_ball_point call — O(n · n_neighbours) memory.
+    *   ``cKDTree.query(k=K)`` returns a **fixed-shape** (n, K) array of
+        distances and indices.  Memory is exactly n × K × 8 bytes — fully
+        predictable and safe.  For K = 100 and n = 125 k that is ~100 MB.
 
-    2.  Weighted accumulation is done row-by-row in a plain Python loop
-        so peak memory at any instant is O(n_neighbours_max), not O(n²).
+    *   Vectorised computation: weights W (n, K), dot products via einsum —
+        no Python loop over regions.
 
     If SciPy is unavailable the code falls back to a chunked dense path
     that stays within ``OP_SMOOTH_MAX_GB`` gigabytes.
     """
-    ctr   = _smooth_ctx["centroids"]     # (n_free, 3)
-    sigma = _smooth_ctx["sigma"]
-    cutoff_factor = float(OP_SMOOTH_CUTOFF)
-    radius = cutoff_factor * sigma
+    ctr    = _smooth_ctx["centroids"]   # (n_free, 3)
+    sigma  = _smooth_ctx["sigma"]
+    K      = int(OP_SMOOTH_K)
+    two_s2 = 2.0 * sigma * sigma
+    n      = len(m)
 
-    n = len(m)
-    m_out   = np.empty(n, dtype=float)
-    two_s2  = 2.0 * sigma * sigma
+    K = min(K, n)   # cannot request more neighbours than points
 
     # ------------------------------------------------------------------
-    # Fast path: SciPy cKDTree
+    # Fast path: SciPy cKDTree with fixed-k query  (no variable lists)
     # ------------------------------------------------------------------
     try:
         from scipy.spatial import cKDTree as _cKDTree
         tree = _cKDTree(ctr)
-        # Returns list of lists — variable-length neighbour sets
-        idx_lists = tree.query_ball_point(ctr, r=radius)
-        for i, nbrs in enumerate(idx_lists):
-            nbrs = np.asarray(nbrs, dtype=int)
-            d2   = np.sum((ctr[nbrs] - ctr[i]) ** 2, axis=1)
-            w    = np.exp(-d2 / two_s2)
-            m_out[i] = (w @ m[nbrs]) / w.sum()
-        return m_out
+        # dist: (n, K)  idx: (n, K) — both dense, fixed shape, safe
+        dist, idx = tree.query(ctr, k=K, workers=-1)
+        d2 = dist ** 2                           # (n, K)
+        W  = np.exp(-d2 / two_s2)               # (n, K)
+        # Gather m values for each neighbour: m_nbr[i, j] = m[idx[i, j]]
+        m_nbr = m[idx]                           # (n, K)
+        return np.einsum("ij,ij->i", W, m_nbr) / W.sum(axis=1)
 
     except ImportError:
         pass   # fall through to chunked dense path
@@ -376,24 +374,22 @@ def _op_smooth(m: np.ndarray) -> np.ndarray:
     # Fallback: chunked dense path capped at OP_SMOOTH_MAX_GB
     # ------------------------------------------------------------------
     max_bytes  = int(OP_SMOOTH_MAX_GB * 1024 ** 3)
-    chunk_size = max(1, max_bytes // (n * 8))   # rows per chunk
+    chunk_size = max(1, max_bytes // (n * 8))
     chunk_size = min(chunk_size, n)
 
     w_sum  = np.zeros(n, dtype=float)
     wm_sum = np.zeros(n, dtype=float)
 
     for start in range(0, n, chunk_size):
-        end  = min(start + chunk_size, n)
-        blk  = ctr[start:end]           # (chunk, 3)
-        # d2[i, j] = ||blk[i] - ctr[j]||^2 — shape (chunk, n)
-        d2   = (
+        end = min(start + chunk_size, n)
+        blk = ctr[start:end]                     # (chunk, 3)
+        d2  = (
             np.sum(blk ** 2, axis=1, keepdims=True)
             + np.sum(ctr ** 2, axis=1)[np.newaxis, :]
             - 2.0 * (blk @ ctr.T)
         )
-        d2   = np.maximum(d2, 0.0)      # numerical safety
-        mask = d2 <= radius ** 2
-        W    = np.where(mask, np.exp(-d2 / two_s2), 0.0)
+        d2 = np.maximum(d2, 0.0)
+        W  = np.exp(-d2 / two_s2)               # (chunk, n) — all neighbours
         wm_sum[start:end] = W @ m
         w_sum [start:end] = W.sum(axis=1)
 
@@ -558,8 +554,9 @@ if OPERATION in _NEEDS_MESH:
     if OPERATION == "smooth":
         _smooth_ctx["centroids"] = region_ctr
         _smooth_ctx["sigma"]     = float(OP_SMOOTH_SIGMA)
-        print(f"  smooth context ready: σ={OP_SMOOTH_SIGMA:.0f} m, "
-              f"cutoff={OP_SMOOTH_CUTOFF}σ={OP_SMOOTH_CUTOFF*OP_SMOOTH_SIGMA:.0f} m")
+        _n_mem_mb = int(len(free_idx) * min(int(OP_SMOOTH_K), len(free_idx)) * 8 / 1024**2)
+        print(f"  smooth context ready: σ={OP_SMOOTH_SIGMA:.0f} m, K={OP_SMOOTH_K}, "
+              f"estimated peak memory ~{_n_mem_mb} MB")
 
     if OPERATION == "ellipsoid":
         _mode = str(OP_ELLIPSOID_MODE).strip().lower()

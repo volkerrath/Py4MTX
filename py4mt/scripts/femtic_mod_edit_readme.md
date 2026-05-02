@@ -79,7 +79,7 @@ rho ≤ 1 Ohm·m.  Override with `OCEAN = True / False` when unreliable.
 | `OP_CLIP_MAX` | `4.0` | Upper bound in log10(Ohm·m) — `"clip"` |
 | `OP_SHIFT_VALUE` | `0.5` | Additive offset in log10(Ohm·m) — `"shift"` |
 | `OP_SMOOTH_SIGMA` | `5000.0` | Gaussian length scale σ in metres — `"smooth"` |
-| `OP_SMOOTH_CUTOFF` | `4.0` | Cutoff radius in multiples of σ; beyond this weight = 0 — `"smooth"` |
+| `OP_SMOOTH_K` | `100` | K nearest neighbours per region — `"smooth"` |
 | `OP_SMOOTH_MAX_GB` | `4.0` | RAM cap (GiB) for fallback dense path when SciPy absent — `"smooth"` |
 
 ### Ellipsoid parameters
@@ -107,7 +107,7 @@ flag-fixed regions are excluded before the operation and restored afterwards.
 | `"median"` | m ← median(m) | Same, robust to outlier regions |
 | `"clip"` | m ← clamp(m, min, max) | Enforce physical bounds |
 | `"shift"` | m ← m + δ | Global resistivity offset (e.g. +0.5 → ×3.2 in Ohm·m) |
-| `"smooth"` | m̃ᵢ = Σⱼ wᵢⱼ mⱼ / Σⱼ wᵢⱼ | Spatial low-pass; reduce artefacts before re-inversion |
+| `"smooth"` | m̃ᵢ = Σⱼ∈KNN wᵢⱼ mⱼ / Σ wᵢⱼ | Spatial low-pass; reduce artefacts before re-inversion |
 | `"ellipsoid"` | m[inside] replace/+= value | Insert or adjust a local anomalous body |
 | `"standardise"` | m ← (m − μ) / σ | Zero-mean / unit-variance; combine with `"clip"` |
 
@@ -175,36 +175,39 @@ Requires `MESH_FILE`.  No additional parameters.
 
 ### Spatial smoothing (`"smooth"`)
 
-Isotropic Gaussian kernel evaluated between free-region centroids:
+Isotropic Gaussian kernel evaluated between free-region centroids, restricted
+to each region's K nearest neighbours:
 
 ```
 w_ij = exp( -||c_i - c_j||^2 / (2 sigma^2) )
-m_tilde_i = ( sum_j  w_ij * m_j ) / ( sum_j  w_ij )
+
+m_tilde_i = ( sum_{j in KNN(i)}  w_ij * m_j ) / ( sum_{j in KNN(i)} w_ij )
 ```
 
-The self-weight (i = j) is always included.
+**Why K-NN and not `query_ball_point`** — variable-length neighbour lists from
+`query_ball_point` cause a segfault at ~125 k regions because the combined
+lists exhaust RAM before any computation begins.  `cKDTree.query(k=K)` returns
+a **fixed-shape** `(n, K)` array; memory is exactly `n × K × 8` bytes —
+predictable and bounded.  For K = 100 and n = 125 k that is ~100 MB.
+Computation is fully vectorised (no Python loop over regions).
 
-**Memory-efficient implementation** — the naive dense approach allocates an
-(n, n, 3) difference array (~350 GiB for n = 125 k), which is infeasible.
-Two strategies are combined:
-
-1. **Distance cutoff** (`OP_SMOOTH_CUTOFF`, default 4σ): neighbours beyond
-   `cutoff × sigma` get zero weight (Gaussian < exp(-8) ≈ 0.03 %).
-   Only the non-zero neighbourhood is ever computed per region.
-
-2. **SciPy cKDTree** (preferred): `query_ball_point` returns the neighbour
-   index list per region; weighted accumulation is row-by-row in O(n_nbrs)
-   memory.  If SciPy is unavailable the code falls back to a chunked
-   dense path capped at `OP_SMOOTH_MAX_GB` gigabytes.
+If SciPy is unavailable the code falls back to a chunked dense path capped at
+`OP_SMOOTH_MAX_GB` gigabytes (no K restriction in that path).
 
 | Parameter | Default | Effect |
 |---|---|---|
-| `OP_SMOOTH_SIGMA` | `5000.0` m | Gaussian length scale |
-| `OP_SMOOTH_CUTOFF` | `4.0` (× σ) | Beyond this radius weight is zero |
+| `OP_SMOOTH_SIGMA` | `5000.0` m | Gaussian length scale σ |
+| `OP_SMOOTH_K` | `100` | Number of nearest neighbours per region |
 | `OP_SMOOTH_MAX_GB` | `4.0` GiB | RAM cap for fallback chunked path |
 
 **Choosing σ** — 1–2× the typical element edge length at the target depth.
-**Choosing cutoff** — 4σ is accurate; 3σ is faster (weight < 1.1 % at boundary).
+
+**Choosing K** — K should cover the neighbourhood within roughly 2–3σ.
+A rough guide: if the average inter-region spacing is `d` metres,
+set `K ≈ (2σ/d)³ × π/6` (volume of sphere / average region volume).
+Start with K = 50–200 and check that `dist[:, -1].max() < 3σ` (the
+K-th neighbour is within 3σ for all regions).  If not, increase K.
+Regions beyond K get zero weight regardless of distance.
 
 ### Note on multiplicative scaling
 
