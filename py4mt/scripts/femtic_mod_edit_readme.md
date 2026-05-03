@@ -29,7 +29,7 @@ reconstructing the block file.
 ## Workflow
 
 ```
-resistivity_block_iterX.dat   [+ mesh.dat for "smooth" / "ellipsoid"]
+resistivity_block_iterX.dat   [+ mesh.dat for "smooth" / "ellipsoid" / "brick" / "wmean"]
         |
         v  fem.read_model(model_trans="log10")
   log10(rho)  [free regions only — air/ocean/fixed excluded]
@@ -55,7 +55,7 @@ the script.  No command-line arguments are used; edit the script directly.
 |---|---|---|
 | `WORK_DIR` | `/home/vrath/Py4MTX/py4mt/data/example/` | Working directory |
 | `MODEL_IN` | `resistivity_block_iter10.dat` | Source block file (also used as format template) |
-| `MESH_FILE` | `mesh.dat` | Mesh file — required for `"wmean"`, `"smooth"` and `"ellipsoid"`, ignored otherwise |
+| `MESH_FILE` | `mesh.dat` | Mesh file — required for `"wmean"`, `"smooth"`, `"ellipsoid"` and `"brick"`; ignored otherwise |
 | `MODEL_OUT` | `resistivity_block_edited.dat` | Output block file; set equal to `MODEL_IN` to overwrite in-place |
 
 ### Ocean / fixed-region handling
@@ -82,15 +82,44 @@ rho ≤ 1 Ohm·m.  Override with `OCEAN = True / False` when unreliable.
 | `OP_SMOOTH_K` | `100` | K nearest neighbours per region — `"smooth"` |
 | `OP_SMOOTH_MAX_GB` | `4.0` | RAM cap (GiB) for fallback dense path when SciPy absent — `"smooth"` |
 
-### Ellipsoid parameters
+### Body lists (ellipsoid and brick)
 
-| Variable | Default | Description |
+Both `"ellipsoid"` and `"brick"` read from a Python list of body dicts.
+Each body is applied in order; later bodies overwrite earlier ones where
+masks overlap, allowing layered construction.
+
+**Ellipsoid** — `OP_ELLIPSOID_BODIES`  
+**Brick** — `OP_BRICK_BODIES`
+
+Every body dict shares the same five keys:
+
+| Key | Type | Description |
 |---|---|---|
-| `OP_ELLIPSOID_MODE` | `"replace"` | `"replace"` or `"add"` — see below |
-| `OP_ELLIPSOID_VALUE` | `0.0` | Value applied in log10(Ohm·m) |
-| `OP_ELLIPSOID_CENTER` | `[0., 0., 5000.]` | Centre [x, y, z] in metres (z positive-down) |
-| `OP_ELLIPSOID_AXES` | `[10000., 10000., 5000.]` | Semi-axes [a, b, c] in metres, must be > 0 |
-| `OP_ELLIPSOID_ANGLES` | `[0., 0., 0.]` | ZYX rotation angles [α, β, γ] in degrees |
+| `mode` | str | `"replace"` — set to absolute value; `"add"` — add signed offset |
+| `value` | float | log10(Ohm·m) — absolute resistivity or signed offset |
+| `center` | [x, y, z] | Body centre in metres; z positive-down |
+| `axes` | [a, b, c] | Ellipsoid: semi-axes in metres. Brick: half-extents in metres. All > 0 |
+| `angles` | [α, β, γ] | ZYX rotation angles in degrees (yaw, pitch, roll). `[0,0,0]` = no rotation |
+
+Example — two ellipsoids:
+
+```python
+OP_ELLIPSOID_BODIES = [
+    dict(mode="replace", value=0.0,
+         center=[0., 0., 5000.], axes=[10000., 10000., 5000.], angles=[0., 0., 0.]),
+    dict(mode="add", value=-1.0,
+         center=[5000., 0., 8000.], axes=[3000., 3000., 3000.], angles=[30., 0., 0.]),
+]
+```
+
+Example — one rotated brick:
+
+```python
+OP_BRICK_BODIES = [
+    dict(mode="replace", value=3.0,
+         center=[0., 0., 10000.], axes=[8000., 4000., 3000.], angles=[45., 0., 0.]),
+]
+```
 
 ---
 
@@ -108,52 +137,44 @@ flag-fixed regions are excluded before the operation and restored afterwards.
 | `"clip"` | m ← clamp(m, min, max) | Enforce physical bounds |
 | `"shift"` | m ← m + δ | Global resistivity offset (e.g. +0.5 → ×3.2 in Ohm·m) |
 | `"smooth"` | m̃ᵢ = Σⱼ∈KNN wᵢⱼ mⱼ / Σ wᵢⱼ | Spatial low-pass; reduce artefacts before re-inversion |
-| `"ellipsoid"` | m[inside] replace/+= value | Insert or adjust a local anomalous body |
+| `"ellipsoid"` | m[inside] replace/+= value | Insert rotated ellipsoidal body/bodies |
+| `"brick"` | m[inside] replace/+= value | Insert rotated rectangular prism body/bodies |
 | `"standardise"` | m ← (m − μ) / σ | Zero-mean / unit-variance; combine with `"clip"` |
 
-### Ellipsoid (`"ellipsoid"`)
+### Ellipsoid (`"ellipsoid"`) and Brick (`"brick"`)
 
-Regions whose **centroid** (mean of all element centroids for that region)
-falls inside the rotated ellipsoid are modified; all others are unchanged.
+Both operations share the same multi-body engine (`_apply_bodies`).  Regions
+whose centroid falls inside at least one body are modified; all others are
+unchanged.  Bodies are applied in order — later entries win on overlap.
 
-**Geometry** — the ellipsoid is defined in the FEMTIC model frame (z positive
-downward, same as the mesh coordinate system):
+**Shared ZYX rotation convention:**
 
 ```
-Quadratic form (in ellipsoid-local frame after ZYX rotation):
-  (x'/a)^2 + (y'/b)^2 + (z'/c)^2 <= 1
-
-Local frame: p' = R^T (p - center)
+Local frame:  p' = R^T (p - center)
 R = Rz(alpha) @ Ry(beta) @ Rx(gamma)   [intrinsic ZYX / yaw-pitch-roll]
 ```
 
-**Modes:**
+**Ellipsoid mask** (quadratic form in local frame):
 
-| Mode | Formula | Use case |
-|---|---|---|
-| `"replace"` | m[inside] = OP_ELLIPSOID_VALUE | Insert a body at a fixed absolute resistivity |
-| `"add"` | m[inside] += OP_ELLIPSOID_VALUE | Nudge an existing anomaly up or down |
-
-Examples:
-
-```python
-# Spherical conductor of 1 Ohm·m, radius 8 km, centred at 5 km depth
-OP_ELLIPSOID_MODE   = "replace"
-OP_ELLIPSOID_VALUE  = 0.0          # log10(1 Ohm·m)
-OP_ELLIPSOID_CENTER = [0., 0., 5000.]
-OP_ELLIPSOID_AXES   = [8000., 8000., 8000.]
-OP_ELLIPSOID_ANGLES = [0., 0., 0.]
-
-# Make an elongated NE-SW body one decade more resistive (add mode)
-OP_ELLIPSOID_MODE   = "add"
-OP_ELLIPSOID_VALUE  = 1.0          # +1 log10 unit
-OP_ELLIPSOID_CENTER = [0., 0., 10000.]
-OP_ELLIPSOID_AXES   = [20000., 5000., 4000.]
-OP_ELLIPSOID_ANGLES = [45., 0., 0.]   # 45° yaw → NE-SW alignment
+```
+(x'/a)^2 + (y'/b)^2 + (z'/c)^2 <= 1
 ```
 
-A runtime warning is printed if no free-region centroids fall inside the
-ellipsoid (geometry mismatch or ellipsoid too small for the mesh resolution).
+**Brick mask** (box test in local frame, half-extents a, b, c):
+
+```
+|x'| <= a  AND  |y'| <= b  AND  |z'| <= c
+```
+
+**Modes** (per body):
+
+| Mode | Effect |
+|---|---|
+| `"replace"` | m[inside] = value (absolute log10(Ohm·m)) |
+| `"add"` | m[inside] += value (signed offset in log10 space) |
+
+A runtime warning is printed for any body whose mask is empty (geometry
+mismatch or body too small for the mesh resolution).
 
 ### Inverse-volume-weighted mean (`"wmean"`)
 
@@ -209,18 +230,12 @@ Start with K = 50–200 and check that `dist[:, -1].max() < 3σ` (the
 K-th neighbour is within 3σ for all regions).  If not, increase K.
 Regions beyond K get zero weight regardless of distance.
 
-### Note on multiplicative scaling
-
-Multiplying log10(rho) by a constant has no clean physical interpretation and
-is not provided.  Use `"shift"` for global rescaling (e.g. `OP_SHIFT_VALUE =
-1.0` → ×10 in Ohm·m), or `"ellipsoid"` in `"add"` mode for local rescaling.
-
 ---
 
-## Mesh requirement for `"smooth"` and `"ellipsoid"`
+## Mesh requirement for `"smooth"`, `"ellipsoid"`, `"brick"`, and `"wmean"`
 
-Both operations read `MESH_FILE` (same `mesh.dat` used during inversion) to
-compute free-region centroids via `_build_region_centroids`.  The
+These operations read `MESH_FILE` (same `mesh.dat` used during inversion) to
+compute free-region centroids (and volumes for `"wmean"`) via `_build_region_geometry`.  The
 element→region mapping is obtained from `MODEL_IN` via
 `fem._read_resistivity_block_struct`.  Mesh loading is shared: if a future
 operation also needs geometry, add its key to `_NEEDS_MESH` in the main block.
@@ -266,3 +281,4 @@ SciPy is **not** required.
 | 2026-04-30 | vrath / Claude Sonnet 4.6 | Added `"fill"`; clarified air/ocean safety guarantee |
 | 2026-04-30 | vrath / Claude Sonnet 4.6 | Added `"ellipsoid"` (replace/add, rotated ZYX geometry); refactored mesh loading into shared `_NEEDS_MESH` block |
 | 2026-04-30 | vrath / Claude Sonnet 4.6 | Added `"wmean"` (inverse-volume-weighted mean); refactored `_build_region_centroids` → `_build_region_geometry` (centroids + volumes in one pass) |
+| 2026-05-03 | vrath / Claude Sonnet 4.6 | Added `"brick"` (rotated rectangular prism); refactored `_op_ellipsoid` into shared `_apply_bodies` engine supporting lists of bodies for both `"ellipsoid"` and `"brick"` |
