@@ -28,15 +28,17 @@ Available operations (OPERATION key)
                     Gaussian-weighted average over its K nearest neighbours
                     (K = OP_SMOOTH_K), with weights = exp(-d²/(2σ²)).
                     Memory is O(n_free × K) — fixed and predictable.
-    "ellipsoid"     Modify free regions whose centroid falls inside a
-                    rotated ellipsoid.  Requires MESH_FILE.
-                    OP_ELLIPSOID_MODE controls the modification:
-                      "replace" — set inside regions to OP_ELLIPSOID_VALUE.
-                      "add"     — add OP_ELLIPSOID_VALUE to inside regions.
-                    Geometry is defined by OP_ELLIPSOID_CENTER (x,y,z in m),
-                    OP_ELLIPSOID_AXES (a,b,c semi-axes in m), and
-                    OP_ELLIPSOID_ANGLES (rotation angles in degrees, ZYX
-                    convention).
+    "ellipsoid"     Modify free regions whose centroid falls inside one or
+                    more rotated ellipsoids.  Requires MESH_FILE.
+                    Bodies are defined by the list OP_ELLIPSOID_BODIES; each
+                    entry is a dict with keys: mode, value, center, axes,
+                    angles (ZYX degrees).  Bodies are applied in order; later
+                    bodies overwrite earlier ones where masks overlap.
+    "brick"         Same as "ellipsoid" but with a rotated rectangular prism
+                    (box) geometry.  Bodies are defined by OP_BRICK_BODIES;
+                    each entry has the same keys as an ellipsoid body but
+                    axes = [a, b, c] are half-extents (metres), not semi-axes.
+                    The rotation uses the same ZYX convention.
 
 Note: multiplicative scaling (×factor) is not offered because multiplying
 log10(ρ) by a constant has no clean physical interpretation.
@@ -57,6 +59,12 @@ Provenance
     2026-04-30  vrath / Claude Sonnet 4.6   Added "ellipsoid" operation:
                 local replace/add inside a rotated ellipsoid defined by
                 centroid, semi-axes, and ZYX rotation angles.
+    2026-05-03  vrath / Claude Sonnet 4.6   Added "brick" operation:
+                rotated rectangular prism (box) with ZYX rotation, same
+                mode/value/center/angles convention as ellipsoid.
+                Both operations now accept a list of bodies (OP_ELLIPSOID_BODIES,
+                OP_BRICK_BODIES); bodies are applied sequentially, later ones
+                overwrite earlier where masks overlap.
     2026-04-30  vrath / Claude Sonnet 4.6   Added "wmean" operation:
                 inverse-volume-weighted mean in log10 space.
                 Refactored _build_region_centroids into _build_region_geometry
@@ -123,7 +131,7 @@ OCEAN_RHO = 0.25    # Ω·m written for region 1 when treated as ocean
 # Operation to apply
 # ---------------------------------------------------------------------------
 #: One of: "fill" | "mean" | "wmean" | "median" | "clip" | "shift"
-#:         | "standardise" | "smooth" | "ellipsoid"
+#:         | "standardise" | "smooth" | "ellipsoid" | "brick"
 # OPERATION = "mean"
 # OPERATION = "wmean"
 # OPERATION = "median"
@@ -152,29 +160,43 @@ OP_SMOOTH_K       = 100     # nearest neighbours
 OP_SMOOTH_MAX_GB  = 4.0     # GiB
 
 # ---------------------------------------------------------------------------
-# Ellipsoid parameters — used by "ellipsoid" only
+# Ellipsoid bodies — used by "ellipsoid" only
 # ---------------------------------------------------------------------------
-#: Modification mode inside the ellipsoid:
-#:   "replace" — overwrite inside-region values with OP_ELLIPSOID_VALUE.
-#:   "add"     — add OP_ELLIPSOID_VALUE to existing inside-region values
-#:               (positive → more resistive; negative → more conductive).
-OP_ELLIPSOID_MODE   = "replace"
+#: List of ellipsoid body dicts, applied in order (later bodies win on overlap).
+#: Each dict must contain:
+#:   mode   : "replace" | "add"
+#:   value  : float  log10(Ω·m) — absolute if replace, signed offset if add
+#:   center : [x, y, z]  metres, z positive-down
+#:   axes   : [a, b, c]  semi-axes in metres, all > 0
+#:   angles : [α, β, γ]  ZYX rotation in degrees (yaw, pitch, roll)
+OP_ELLIPSOID_BODIES = [
+    dict(mode="replace", value=0.0,
+         center=[0.0, 0.0, 5000.0],
+         axes=[10000.0, 10000.0, 5000.0],
+         angles=[0.0, 0.0, 0.0]),
+    # add more bodies here if needed, e.g.:
+    # dict(mode="add", value=-1.0,
+    #      center=[5000.0, 0.0, 8000.0],
+    #      axes=[3000.0, 3000.0, 3000.0],
+    #      angles=[30.0, 0.0, 0.0]),
+]
 
-#: Value applied inside the ellipsoid (log10 Ω·m).
-#:   "replace" mode: absolute resistivity, e.g. 0.0 = 1 Ω·m (conductor).
-#:   "add"     mode: signed offset,        e.g. 1.0 = one decade more resistive.
-OP_ELLIPSOID_VALUE  = 0.0    # log10(Ω·m)
-
-#: Ellipsoid centre [x, y, z] in model coordinates (metres, z positive-down).
-OP_ELLIPSOID_CENTER = [0.0, 0.0, 5000.0]
-
-#: Ellipsoid semi-axes [a, b, c] in metres (must be > 0).
-#: a = half-extent along rotated X, b = Y, c = Z (before rotation).
-OP_ELLIPSOID_AXES   = [10000.0, 10000.0, 5000.0]
-
-#: Rotation angles [α, β, γ] in degrees — intrinsic ZYX (yaw, pitch, roll).
-#: [0, 0, 0] = axis-aligned ellipsoid.
-OP_ELLIPSOID_ANGLES = [0.0, 0.0, 0.0]
+# ---------------------------------------------------------------------------
+# Brick bodies — used by "brick" only
+# ---------------------------------------------------------------------------
+#: List of brick (rotated rectangular prism) body dicts, applied in order.
+#: Same keys as ellipsoid bodies; axes = [a, b, c] are half-extents (metres).
+#: The box test in the rotated local frame is |x'| ≤ a, |y'| ≤ b, |z'| ≤ c.
+OP_BRICK_BODIES = [
+    dict(mode="replace", value=0.0,
+         center=[0.0, 0.0, 5000.0],
+         axes=[10000.0, 8000.0, 4000.0],
+         angles=[0.0, 0.0, 0.0]),
+    # dict(mode="add", value=1.0,
+    #      center=[0.0, 0.0, 15000.0],
+    #      axes=[5000.0, 5000.0, 5000.0],
+    #      angles=[45.0, 0.0, 0.0]),
+]
 
 # ---------------------------------------------------------------------------
 # Verbose output
@@ -418,68 +440,126 @@ def _rotation_matrix_zyx(angles_deg: list) -> np.ndarray:
     return Rz @ Ry @ Rx   # shape (3, 3)
 
 
-def _ellipsoid_mask(centroids: np.ndarray, center: list, axes: list,
-                    angles_deg: list) -> np.ndarray:
-    """Return boolean mask: True for centroids inside the rotated ellipsoid.
-
-    Parameters
-    ----------
-    centroids : (n, 3)
-    center    : [cx, cy, cz] in metres
-    axes      : [a, b, c] semi-axes in metres (> 0)
-    angles_deg: [α, β, γ] ZYX rotation angles in degrees
+def _local_coords(centroids: np.ndarray, center: list, angles_deg: list) -> np.ndarray:
+    """Map centroids into body-local frame via ZYX rotation about center.
 
     Returns
     -------
-    inside : (n,) bool
+    local : (n, 3)  coordinates in rotated frame
     """
-    c  = np.asarray(center, dtype=float)
-    ax = np.asarray(axes,   dtype=float)
-    if np.any(ax <= 0.):
-        raise ValueError("ellipsoid axes must all be > 0.")
+    c = np.asarray(center, dtype=float)
     R = _rotation_matrix_zyx(angles_deg)
-    # Transform points to ellipsoid-local frame: local_i = R^T (p_i - c)
-    local = (centroids - c[np.newaxis, :]) @ R   # (n, 3)
+    return (centroids - c[np.newaxis, :]) @ R   # (n, 3)
+
+
+def _ellipsoid_mask(centroids: np.ndarray, center: list, axes: list,
+                    angles_deg: list) -> np.ndarray:
+    """True for centroids inside the rotated ellipsoid.
+
+    Quadratic form in local frame: (x'/a)²+(y'/b)²+(z'/c)² ≤ 1
+    """
+    ax = np.asarray(axes, dtype=float)
+    if np.any(ax <= 0.):
+        raise ValueError(f"ellipsoid axes must all be > 0, got {axes}.")
+    local = _local_coords(centroids, center, angles_deg)
     q = (local[:, 0] / ax[0])**2 + (local[:, 1] / ax[1])**2 + (local[:, 2] / ax[2])**2
     return q <= 1.0
 
 
-def _op_ellipsoid(m: np.ndarray) -> np.ndarray:
-    """Modify free-region log10(ρ) values inside a rotated ellipsoid.
+def _brick_mask(centroids: np.ndarray, center: list, axes: list,
+                angles_deg: list) -> np.ndarray:
+    """True for centroids inside the rotated rectangular prism (brick).
 
-    Uses geometry and mode stored in ``_ellipsoid_ctx`` (populated before
-    dispatch).  Only regions whose centroid falls inside the ellipsoid are
-    affected; all others are returned unchanged.
-
-    Modes
-    -----
-    "replace"  m[inside] = OP_ELLIPSOID_VALUE
-    "add"      m[inside] += OP_ELLIPSOID_VALUE
+    Box test in local frame: |x'| ≤ a  AND  |y'| ≤ b  AND  |z'| ≤ c
+    axes = [a, b, c] are half-extents in metres (all > 0).
     """
-    ctr    = _ellipsoid_ctx["centroids"]   # (n_free, 3)
-    center = _ellipsoid_ctx["center"]
-    axes   = _ellipsoid_ctx["axes"]
-    angles = _ellipsoid_ctx["angles"]
-    mode   = _ellipsoid_ctx["mode"]
-    value  = _ellipsoid_ctx["value"]
+    ax = np.asarray(axes, dtype=float)
+    if np.any(ax <= 0.):
+        raise ValueError(f"brick axes must all be > 0, got {axes}.")
+    local = _local_coords(centroids, center, angles_deg)
+    return (np.abs(local[:, 0]) <= ax[0]) &            (np.abs(local[:, 1]) <= ax[1]) &            (np.abs(local[:, 2]) <= ax[2])
 
-    inside = _ellipsoid_mask(ctr, center, axes, angles)
-    n_inside = int(inside.sum())
-    if n_inside == 0:
-        print("  ellipsoid: WARNING — no free regions found inside ellipsoid.")
 
+def _apply_bodies(m: np.ndarray, centroids: np.ndarray,
+                  bodies: list, mask_fn, op_name: str) -> np.ndarray:
+    """Apply a list of bodies to the free log10(ρ) vector.
+
+    Each body dict must contain: mode, value, center, axes, angles.
+    Bodies are applied in order; later entries overwrite earlier ones where
+    masks overlap — allowing layered construction of complex structures.
+
+    Parameters
+    ----------
+    m          : (n_free,) free log10(ρ) vector
+    centroids  : (n_free, 3) region centroids
+    bodies     : list of body dicts
+    mask_fn    : callable(centroids, center, axes, angles) → bool (n,)
+    op_name    : string used in diagnostic output ("ellipsoid" or "brick")
+    """
+    _valid_modes = {"replace", "add"}
     m_new = m.copy()
-    if mode == "replace":
-        m_new[inside] = float(value)
-    elif mode == "add":
-        m_new[inside] += float(value)
-    else:
-        raise ValueError(f"OP_ELLIPSOID_MODE must be 'replace' or 'add', got {mode!r}.")
+    total_modified = np.zeros(len(m), dtype=bool)
+
+    for k, body in enumerate(bodies):
+        mode   = str(body.get("mode",   "replace")).strip().lower()
+        value  = float(body.get("value",  0.0))
+        center = list(body.get("center", [0., 0., 0.]))
+        axes   = list(body.get("axes",   [1., 1., 1.]))
+        angles = list(body.get("angles", [0., 0., 0.]))
+
+        if mode not in _valid_modes:
+            raise ValueError(
+                f"{op_name} body {k}: mode must be 'replace' or 'add', got {mode!r}.")
+
+        inside = mask_fn(centroids, center, axes, angles)
+        n_in   = int(inside.sum())
+        if n_in == 0:
+            print(f"  {op_name} body {k}: WARNING — no free regions inside body "
+                  f"(center={center}, axes={axes}).")
+
+        if mode == "replace":
+            m_new[inside] = value
+        else:  # "add"
+            m_new[inside] += value
+
+        total_modified |= inside
+        if OUT:
+            print(f"  {op_name} body {k}: {n_in} regions modified "
+                  f"(mode='{mode}', value={value:+.3f}, "
+                  f"center={center}, axes={axes}, angles={angles}).")
 
     if OUT:
-        print(f"  ellipsoid: {n_inside} of {len(m)} free regions modified "
-              f"(mode='{mode}', value={value:+.3f}).")
+        print(f"  {op_name}: {int(total_modified.sum())} of {len(m)} free regions "
+              f"modified in total across {len(bodies)} body/bodies.")
     return m_new
+
+
+def _op_ellipsoid(m: np.ndarray) -> np.ndarray:
+    """Modify free-region log10(ρ) inside one or more rotated ellipsoids.
+
+    Body definitions are read from ``_ellipsoid_ctx["bodies"]``.
+    """
+    return _apply_bodies(
+        m, _ellipsoid_ctx["centroids"],
+        _ellipsoid_ctx["bodies"],
+        _ellipsoid_mask, "ellipsoid",
+    )
+
+
+def _op_brick(m: np.ndarray) -> np.ndarray:
+    """Modify free-region log10(ρ) inside one or more rotated rectangular prisms.
+
+    Brick geometry: a box of half-extents [a, b, c] centred at `center` and
+    rotated by ZYX angles (yaw, pitch, roll).  The mask test in the local
+    frame is: |x'| ≤ a AND |y'| ≤ b AND |z'| ≤ c.
+
+    Body definitions are read from ``_brick_ctx["bodies"]``.
+    """
+    return _apply_bodies(
+        m, _brick_ctx["centroids"],
+        _brick_ctx["bodies"],
+        _brick_mask, "brick",
+    )
 
 
 _OPERATIONS: dict = {
@@ -492,6 +572,7 @@ _OPERATIONS: dict = {
     "standardise": _op_standardise,
     "smooth":      _op_smooth,
     "ellipsoid":   _op_ellipsoid,
+    "brick":       _op_brick,
 }
 
 # ===========================================================================
@@ -520,9 +601,10 @@ print()
 #: Module-level dicts populated here; consumed by mesh-dependent operations.
 _smooth_ctx:    dict = {}
 _ellipsoid_ctx: dict = {}
+_brick_ctx:     dict = {}
 _wmean_ctx:     dict = {}
 
-_NEEDS_MESH = {"smooth", "ellipsoid", "wmean"}
+_NEEDS_MESH = {"smooth", "ellipsoid", "brick", "wmean"}
 
 if OPERATION in _NEEDS_MESH:
     if not os.path.isfile(MESH_FILE):
@@ -559,18 +641,14 @@ if OPERATION in _NEEDS_MESH:
               f"estimated peak memory ~{_n_mem_mb} MB")
 
     if OPERATION == "ellipsoid":
-        _mode = str(OP_ELLIPSOID_MODE).strip().lower()
-        if _mode not in {"replace", "add"}:
-            sys.exit(f"OP_ELLIPSOID_MODE must be 'replace' or 'add', got {_mode!r}.")
         _ellipsoid_ctx["centroids"] = region_ctr
-        _ellipsoid_ctx["center"]    = list(OP_ELLIPSOID_CENTER)
-        _ellipsoid_ctx["axes"]      = list(OP_ELLIPSOID_AXES)
-        _ellipsoid_ctx["angles"]    = list(OP_ELLIPSOID_ANGLES)
-        _ellipsoid_ctx["mode"]      = _mode
-        _ellipsoid_ctx["value"]     = float(OP_ELLIPSOID_VALUE)
-        print(f"  ellipsoid context ready: mode='{_mode}', value={OP_ELLIPSOID_VALUE:+.3f}")
-        print(f"    center={OP_ELLIPSOID_CENTER}, axes={OP_ELLIPSOID_AXES}, "
-              f"angles={OP_ELLIPSOID_ANGLES}")
+        _ellipsoid_ctx["bodies"]    = list(OP_ELLIPSOID_BODIES)
+        print(f"  ellipsoid context ready: {len(OP_ELLIPSOID_BODIES)} body/bodies.")
+
+    if OPERATION == "brick":
+        _brick_ctx["centroids"] = region_ctr
+        _brick_ctx["bodies"]    = list(OP_BRICK_BODIES)
+        print(f"  brick context ready: {len(OP_BRICK_BODIES)} body/bodies.")
     print()
 
 # --- (2) Apply operation ---------------------------------------------------
