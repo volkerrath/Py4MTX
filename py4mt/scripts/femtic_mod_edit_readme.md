@@ -16,7 +16,8 @@ the **free** log10(rho) parameter vector, and writes the result back to a
 - shifting the global resistivity level by a known offset (shift),
 - spatially smoothing a rough inversion result before re-inversion (smooth),
 - inserting a local anomaly — conductor or resistor — as an ellipsoidal body (ellipsoid),
-- normalising the model vector for statistical post-processing (standardise).
+- normalising the model vector for statistical post-processing (standardise),
+- inspecting the result as a multi-panel slice figure (plotting section).
 
 **Air, ocean, and any other fixed region are never modified**, regardless of
 the chosen operation.  `fem.read_model` excludes them from the free vector
@@ -40,6 +41,9 @@ resistivity_block_iterX.dat   [+ mesh.dat for "smooth" / "ellipsoid" / "brick" /
         v  fem.insert_model(template=MODEL_IN, ...)
                  writes air_rho / ocean_rho unconditionally
 resistivity_block_edited.dat
+        |
+        v  plot_model_slices(...)   [optional, PLOT = True]
+figure file / interactive window
 ```
 
 ---
@@ -91,33 +95,36 @@ masks overlap, allowing layered construction.
 **Ellipsoid** — `OP_ELLIPSOID_BODIES`  
 **Brick** — `OP_BRICK_BODIES`
 
-Every body dict shares the same five keys:
+Every body dict shares the same five required keys plus one optional key:
 
-| Key | Type | Description |
-|---|---|---|
-| `mode` | str | `"replace"` — set to absolute value; `"add"` — add signed offset |
-| `value` | float | log10(Ohm·m) — absolute resistivity or signed offset |
-| `center` | [x, y, z] | Body centre in metres; z positive-down |
-| `axes` | [a, b, c] | Ellipsoid: semi-axes in metres. Brick: half-extents in metres. All > 0 |
-| `angles` | [α, β, γ] | ZYX rotation angles in degrees (yaw, pitch, roll). `[0,0,0]` = no rotation |
+| Key | Type | Required | Description |
+|---|---|---|---|
+| `mode` | str | yes | `"replace"` — set to absolute value; `"add"` — add signed offset |
+| `value` | float | yes | log10(Ohm·m) — absolute resistivity or signed offset |
+| `center` | [x, y, z] | yes | Body centre in metres; z positive-down |
+| `axes` | [a, b, c] | yes | Ellipsoid: semi-axes in metres. Brick: half-extents in metres. All > 0 |
+| `angles` | [α, β, γ] | yes | ZYX rotation angles in degrees (yaw, pitch, roll). `[0,0,0]` = no rotation |
+| `boundary_smooth` | dict | no | Smooth the body boundary after insertion — see below |
 
-Example — two ellipsoids:
+Example — two ellipsoids, second with boundary smoothing:
 
 ```python
 OP_ELLIPSOID_BODIES = [
     dict(mode="replace", value=0.0,
          center=[0., 0., 5000.], axes=[10000., 10000., 5000.], angles=[0., 0., 0.]),
     dict(mode="add", value=-1.0,
-         center=[5000., 0., 8000.], axes=[3000., 3000., 3000.], angles=[30., 0., 0.]),
+         center=[5000., 0., 8000.], axes=[3000., 3000., 3000.], angles=[30., 0., 0.],
+         boundary_smooth=dict(sigma=3000., passes=3)),
 ]
 ```
 
-Example — one rotated brick:
+Example — one rotated brick with boundary smoothing:
 
 ```python
 OP_BRICK_BODIES = [
     dict(mode="replace", value=3.0,
-         center=[0., 0., 10000.], axes=[8000., 4000., 3000.], angles=[45., 0., 0.]),
+         center=[0., 0., 10000.], axes=[8000., 4000., 3000.], angles=[45., 0., 0.],
+         boundary_smooth=dict(sigma=2000., passes=2)),
 ]
 ```
 
@@ -176,6 +183,44 @@ R = Rz(alpha) @ Ry(beta) @ Rx(gamma)   [intrinsic ZYX / yaw-pitch-roll]
 A runtime warning is printed for any body whose mask is empty (geometry
 mismatch or body too small for the mesh resolution).
 
+### Boundary smoothing (`boundary_smooth`)
+
+The optional `boundary_smooth` key softens the sharp resistivity step at the
+body edge by iterative Gaussian blending in a transition band straddling the
+boundary.  It is applied per body, immediately after insertion and before any
+subsequent body in the list is processed.
+
+```python
+boundary_smooth = dict(
+    sigma  = 3000.,   # Gaussian length scale in metres
+    passes = 3,       # number of smoothing passes
+)
+```
+
+**How it works** — on each pass:
+
+1. Find all interior regions within `4σ` of the body surface → exterior
+   transition shell.
+2. Find all interior regions adjacent to that shell → interior transition
+   shell.
+3. For every region in the combined transition band, replace its value with
+   the Gaussian-weighted average (`exp(−d²/2σ²)`) of all neighbours within
+   `4σ`.
+
+The band widens by roughly one shell per pass, creating a gradient zone
+approximately `passes × σ` deep on each side of the boundary.  Regions deep
+inside the body and far outside are never touched.
+
+**Why not a single boundary-cell mean?** A one-pass mean of boundary cells
+with their immediate neighbours gives a transition exactly one cell-width
+wide — which varies enormously in an unstructured mesh (sub-km near the
+surface, several km at depth).  The `sigma` / `passes` parameters give
+independent, physically meaningful control over blend width and zone depth
+that is independent of local cell size.
+
+**Requires SciPy** (`cKDTree`); a warning is printed and smoothing is skipped
+if SciPy is absent.
+
 ### Inverse-volume-weighted mean (`"wmean"`)
 
 Computes a single scalar value to replace all free-region values, weighted by
@@ -230,6 +275,12 @@ Start with K = 50–200 and check that `dist[:, -1].max() < 3σ` (the
 K-th neighbour is within 3σ for all regions).  If not, increase K.
 Regions beyond K get zero weight regardless of distance.
 
+### Note on multiplicative scaling
+
+Multiplying log10(rho) by a constant has no clean physical interpretation and
+is not provided.  Use `"shift"` for global rescaling (e.g. `OP_SHIFT_VALUE =
+1.0` → ×10 in Ohm·m), or `"ellipsoid"` in `"add"` mode for local rescaling.
+
 ---
 
 ## Mesh requirement for `"smooth"`, `"ellipsoid"`, `"brick"`, and `"wmean"`
@@ -258,17 +309,87 @@ _NEEDS_MESH:` block, following the `_ellipsoid_ctx` / `_smooth_ctx` pattern.
 
 ---
 
+## Plotting configuration
+
+When `PLOT = True` the script visualises the **output** model immediately
+after writing, using `femtic_viz` and Matplotlib.
+
+### Global plotting parameters
+
+| Variable | Default | Description |
+|---|---|---|
+| `PLOT` | `True` | Enable / disable plotting |
+| `PLOT_FILE` | `*_edited.png` | Output path; `None` = interactive `show()` |
+| `PLOT_DPI` | `200` | Figure DPI for saved file |
+| `PLOT_CMAP` | `"turbo_r"` | Matplotlib colormap name |
+| `PLOT_CLIM` | `[0.0, 4.0]` | Shared colour limits in log10(Ohm·m); `None` = auto from finite data |
+| `PLOT_OCEAN_COLOR` | `"lightgrey"` | Flat colour for ocean/lake cells rendered on top of colormap; `None` = use colormap |
+| `PLOT_AIR_BGCOLOR` | `"white"` | Axes facecolor shown through transparent (NaN) air pixels |
+| `PLOT_XLIM` | `None` | Global easting limits [xmin, xmax] metres |
+| `PLOT_YLIM` | `None` | Global northing limits [ymin, ymax] metres |
+| `PLOT_ZLIM` | `None` | Global depth limits [zmin, zmax] metres (z positive-down) |
+
+### Slice specification (`PLOT_SLICES`)
+
+`PLOT_SLICES` is a list of dicts, one per panel (left → right in the figure).
+Each panel is one of three kinds:
+
+| `kind` | Geometry | Axes (h, v) | Required keys | Optional keys |
+|---|---|---|---|---|
+| `"map"` | Horizontal slice at z = const | x (easting), y (northing) | `z0` | `xlim`, `ylim`, `title` |
+| `"ns"` | N-S vertical section at x = const | y (northing), z (depth ↓) | `x0` | `ylim`, `zlim`, `title` |
+| `"ew"` | E-W vertical section at y = const | x (easting), z (depth ↓) | `y0` | `xlim`, `zlim`, `title` |
+
+Per-panel `xlim` / `ylim` / `zlim` override the global `PLOT_XLIM` / `PLOT_YLIM` / `PLOT_ZLIM`.
+
+Curtain panels (`"ns"`, `"ew"`) are rendered by intersecting each tetrahedron
+exactly with the slice plane — no selection slab, no Delaunay triangulation,
+no `dw` parameter.  Each tetrahedron that straddles the plane contributes an
+exact triangle or quadrilateral polygon.  Air polygons are omitted; the axes
+facecolor (`PLOT_AIR_BGCOLOR`) shows through.
+
+Example — two map slices + one N-S + one E-W curtain:
+
+```python
+PLOT_SLICES = [
+    dict(kind="map", z0=5000.),
+    dict(kind="map", z0=20000., title="20 km depth"),
+    dict(kind="ns",  x0=0.,     zlim=[0., 50000.]),
+    dict(kind="ew",  y0=0.,     zlim=[0., 50000.]),
+]
+```
+
+### Air and ocean rendering
+
+- **Air**: elements in region 0 are set to `NaN` by `prepare_rho_for_plotting`.
+  Their intersection polygons are computed but simply **not added** to the
+  `PolyCollection` — they are absent from the plot entirely.  The axes
+  facecolor (`PLOT_AIR_BGCOLOR`, default `"white"`) shows through the empty
+  space, giving the appearance of transparent or white air above the
+  topographic surface.  Correct topography is guaranteed because the plane
+  intersection is geometrically exact.
+
+- **Ocean / lake**: elements in region 1 are set to the `OCEAN_RHO` sentinel
+  value.  Their polygons are rendered in `PLOT_OCEAN_COLOR` as a separate
+  flat-colour `PolyCollection` on top of the earth layer, keeping them visually
+  distinct and outside the colormap range.  Set `PLOT_OCEAN_COLOR = None` to
+  let them follow the colormap instead.
+
+---
+
 ## Dependencies
 
 | Package | Role |
 |---|---|
 | NumPy | Array operations, rotation matrices, Gaussian kernel |
+| SciPy | `cKDTree` for `"smooth"` and `boundary_smooth` (graceful fallback if absent) |
+| Matplotlib | Figure rendering for plotting section (optional) |
 | `femtic` (Py4MTX) | `read_model`, `insert_model`, `read_femtic_mesh`, `_read_resistivity_block_struct` |
+| `femtic_viz` (Py4MTX) | `read_femtic_mesh`, `read_resistivity_block`, `map_regions_to_element_rho`, `prepare_rho_for_plotting` — plotting only (graceful skip if absent) |
 | `util` (Py4MTX) | `print_title` |
 | `version` (Py4MTX) | `versionstrg` |
 
 Environment variables `PY4MTX_ROOT` and `PY4MTX_DATA` must be set.
-SciPy is **not** required.
 
 ---
 
@@ -282,3 +403,9 @@ SciPy is **not** required.
 | 2026-04-30 | vrath / Claude Sonnet 4.6 | Added `"ellipsoid"` (replace/add, rotated ZYX geometry); refactored mesh loading into shared `_NEEDS_MESH` block |
 | 2026-04-30 | vrath / Claude Sonnet 4.6 | Added `"wmean"` (inverse-volume-weighted mean); refactored `_build_region_centroids` → `_build_region_geometry` (centroids + volumes in one pass) |
 | 2026-05-03 | vrath / Claude Sonnet 4.6 | Added `"brick"` (rotated rectangular prism); refactored `_op_ellipsoid` into shared `_apply_bodies` engine supporting lists of bodies for both `"ellipsoid"` and `"brick"` |
+| 2026-05-03 | vrath / Claude Sonnet 4.6 | Added plotting section: `plot_model_slices` with map/NS-curtain/EW-curtain panels; `PLOT_SLICES` list config; shared colormap/clim; air transparent, ocean flat colour |
+| 2026-05-03 | vrath / Claude Sonnet 4.6 | Fixed plotting: curtain panels now use model coordinates (y vs z / x vs z) via `_slice_points`; air NaN made transparent via `cmap.set_bad(alpha=0)`; ocean rendered as flat-colour scatter overlay; removed `"grid"` mode (no longer applicable); added `PLOT_MASK_MAX_EDGE` |
+| 2026-05-03 | vrath / Claude Sonnet 4.6 | Fixed topographic air fill: air excluded from `mtri.Triangulation` via `good` mask; added `_auto_mask_edge` (3× median NN spacing) to auto-suppress free-surface bridging triangles; clarified `dw` semantics (perpendicular selection slab, not depth range) |
+| 2026-05-03 | vrath / Claude Sonnet 4.6 | Replaced centroid/Delaunay plotting with exact tetrahedron-plane intersection (`_intersect_tet_plane`, `_slice_geometry`): correct topography, no bridging, no `dw` slab needed; `PolyCollection` rendering for exact polygons |
+| 2026-05-03 | vrath / Claude Sonnet 4.6 | Fixed missing main block (`read_model`, `_NEEDS_MESH` population, `insert_model`) lost in prior rewrite; all four context dicts now declared at module level |
+| 2026-05-03 | vrath / Claude Sonnet 4.6 | Added `boundary_smooth` per-body option to `_apply_bodies`: iterative Gaussian blending in a transition band straddling the body surface (`_smooth_body_boundary`, `sigma`, `passes`) |
