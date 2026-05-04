@@ -32,6 +32,23 @@ femtic_ens_from_covar.py  →  resample from covariance
 
 ---
 
+### Uncertainty quantification — Geostatistical (GST)
+
+| Script | Purpose |
+|--------|---------|
+| `femtic_gst_prep.py` | Generate a geostatistical ensemble: perturb `observe.dat` with Gaussian noise and draw initial resistivity models via Ordinary Kriging from a sparse pilot-point cloud (gstools). Each member is written ready for FEMTIC submission. Replaces the roughness-matrix prior draw of the RTO approach with a structurally distinct Kriged field per member. Supports `"random"`, `"fixed"`, and `"mixed"` pilot-point strategies and can target the starting iterate, the reference model, or both. |
+
+**GST workflow:**
+```
+femtic_gst_prep.py   →   ensemble directories with
+                          perturbed observe.dat  &
+                          resistivity_block_iter0.dat
+                          (run FEMTIC on each member)
+femtic_gst_post.py   →   collect results & statistics
+```
+
+---
+
 ### Uncertainty quantification — Ensemble analysis
 
 | Script | Purpose |
@@ -47,6 +64,14 @@ femtic_ens_from_covar.py  →  resample from covariance
 | Script | Purpose |
 |--------|---------|
 | `femtic_jcn_prep.py` | Set up a jackknife uncertainty analysis: create N member directories from template files and generate reduced `observe.dat` files (leave-one-site-out or random subsets). |
+
+---
+
+### Model manipulation
+
+| Script | Purpose |
+|--------|---------|
+| `femtic_mod_edit.py` | Apply arithmetic operations to a FEMTIC resistivity model in log₁₀ space and rewrite the block file. Operations include: fill (constant), clip (bounds enforcement), shift (global offset), smooth (Gaussian / median / anisotropic diffusion), ellipsoid or brick insertion, mean, median, standardise. Air, ocean, and fixed cells are never modified. Optional multi-panel slice figure output. |
 
 ---
 
@@ -74,6 +99,7 @@ ModEM is a 3-D MT inversion code based on non-linear conjugate gradients.
 | `modem_insert_body.py` | Insert synthetic geometric bodies (ellipsoids or boxes) into a ModEM model with optional smoothing. Supports replace and additive modes with optional conditions. |
 | `modem_insert_multi.py` | Generate multiple perturbed models (checkerboard or random anomalies) and project each through the Jacobian null-space via pre-computed SVD for resolution testing. |
 | `modem_compare.py` | Compare two ModEM 3-D models by computing log₁₀(ρ) difference and cross-gradient. |
+| `modem_compress.py` | Apply spectral or basis-function compression to a ModEM resistivity model. Six methods: 3-D DCT (radial or separable), 3-D DWT (wavelet), Legendre-z × DCT-xy, B-spline-z × DCT-xy, and Karhunen–Loève / PCA. Reports RMS, relative RMS, and max reconstruction error; optionally writes the reconstructed model. An optional truncation sweep (`RUN_ANALYSIS`) prints accuracy vs. compression-ratio tables. |
 
 ---
 
@@ -81,6 +107,7 @@ ModEM is a 3-D MT inversion code based on non-linear conjugate gradients.
 
 | Script | Purpose |
 |--------|---------|
+| `modem_jac_grad.py` | Read a processed ModEM Jacobian and compute sensitivity-weighted gradient quantities for model update analysis. Uses numba-accelerated routines. |
 | `modem_jac_proc.py` | Read a raw ModEM Jacobian, optionally normalise rows by data errors, mask air cells, and sparsify. Primary Jacobian preprocessing step. |
 | `modem_jac_stats.py` | Compute and print summary statistics on a processed Jacobian for the full matrix and for subsets split by component, site, or frequency band. |
 | `modem_jac_sens.py` | Compute sensitivity / coverage maps from a Jacobian for the full dataset and subsets (by data type, component, site, frequency band). Supports raw, absolute, and Euclidean sensitivity types with volume normalisation. |
@@ -141,7 +168,8 @@ Scripts applicable across inversion codes or for data pre/post-processing.
 
 | Script | Purpose |
 |--------|---------|
-| `mt_transdim1d.py` | Reversible-jump MCMC inversion of MT apparent-resistivity data for a 1-D layered earth with free number of layers. Supports isotropic and anisotropic forward models. Delegates sampling to `transdim.py` and plotting to `transdim_viz.py`. |
+| `mt_transdim_iso1d.py` | rjMCMC driver for isotropic 1-D MT inversion. Likelihood modes: `"Zdet"` (Re/Im of determinant impedance) and `"rhoa"` (log₁₀ apparent resistivity from Z_det). Number of layers is a free parameter. Delegates sampling to `transdim.py` and plotting to `transdim_viz.py`. |
+| `mt_transdim_aniso1d.py` | rjMCMC driver for anisotropic 1-D MT inversion. Likelihood modes: `"Z_comps"` (Re/Im of selected Z components, optionally plus phase tensor) and `"rhoa"`. Multiple independent chains via joblib. Delegates to `transdim.py` and `transdim_viz.py`. |
 | `mt_plot_rjmcmc.py` | Visualise posterior resistivity-depth distributions from the rjmcmc-MT transdimensional sampler. Optionally adds site coordinates from EDI files and assembles a PDF catalogue. |
 
 ---
@@ -151,18 +179,20 @@ Scripts applicable across inversion codes or for data pre/post-processing.
 | Group | Scripts |
 |-------|---------|
 | FEMTIC — RTO uncertainty | 4 |
+| FEMTIC — GST uncertainty | 1 |
 | FEMTIC — ensemble analysis | 3 |
 | FEMTIC — jackknife | 1 |
+| FEMTIC — model manipulation | 1 |
 | FEMTIC — diagnostics | 2 |
-| ModEM — model manipulation | 7 |
-| ModEM — Jacobian analysis | 5 |
+| ModEM — model manipulation | 8 |
+| ModEM — Jacobian analysis | 6 |
 | ModEM — data / inversion utilities | 5 |
 | General MT — data processing | 5 |
 | General MT — plotting | 2 |
 | General MT — anisotropic 1-D | 4 |
 | General MT — transdimensional 1-D | 2 |
-| **Total** | **40** |
+| **Total** | **47** |
 
 ---
 
-*Generated 2026-04-27 from README files in `scripts.zip`.*
+*Generated 2026-05-04 from README files in `scripts.zip`.*
