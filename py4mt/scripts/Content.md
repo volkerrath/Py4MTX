@@ -71,7 +71,7 @@ femtic_gst_post.py   →   collect results & statistics
 
 | Script | Purpose |
 |--------|---------|
-| `femtic_mod_edit.py` | Apply arithmetic operations to a FEMTIC resistivity model in log₁₀ space and rewrite the block file. Operations include: fill (constant), clip (bounds enforcement), shift (global offset), smooth (Gaussian / median / anisotropic diffusion), ellipsoid or brick insertion, mean, median, standardise. Air, ocean, and fixed cells are never modified. Optional multi-panel slice figure output. |
+| `femtic_mod_edit.py` | Apply arithmetic operations to a FEMTIC resistivity model in log₁₀ space and rewrite the block file. Operations include: null (plot input as-is, no write), fill (constant), clip (bounds enforcement), shift (global offset), smooth (Gaussian / median / anisotropic diffusion), ellipsoid or brick insertion, mean, median, standardise. Air, ocean, and fixed cells are never modified. Optional multi-panel slice figure output. |
 
 ---
 

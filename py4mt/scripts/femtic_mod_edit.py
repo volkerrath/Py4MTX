@@ -39,6 +39,10 @@ Available operations (OPERATION key)
                     each entry has the same keys as an ellipsoid body but
                     axes = [a, b, c] are half-extents (metres), not semi-axes.
                     The rotation uses the same ZYX convention.
+    "null"          No-op: the input model is passed through unchanged and
+                    no output file is written.  Use this to inspect the
+                    input model with the slice plotter without modifying
+                    anything.
 
 Note: multiplicative scaling (×factor) is not offered because multiplying
 log10(ρ) by a constant has no clean physical interpretation.
@@ -84,6 +88,9 @@ Provenance
                 inverse-volume-weighted mean in log10 space.
                 Refactored _build_region_centroids into _build_region_geometry
                 (returns centroids + volumes in one element loop).
+    2026-05-04  vrath / Claude Sonnet 4.6   Added "null" operation: no-op
+                pass-through; skips write step and plots MODEL_IN directly —
+                use to inspect the input model without any modification.
 
 @author: vrath
 """
@@ -151,14 +158,15 @@ OCEAN_RHO = 0.25    # Ω·m written for region 1 when treated as ocean
 # Operation to apply
 # ---------------------------------------------------------------------------
 #: One of: "fill" | "mean" | "wmean" | "median" | "clip" | "shift"
-#:         | "standardise" | "smooth" | "ellipsoid" | "brick"
+#:         | "standardise" | "smooth" | "ellipsoid" | "brick" | "null"
 # OPERATION = "mean"
 # OPERATION = "wmean"
 # OPERATION = "median"
 # OPERATION = "mean"
 OPERATION = "ellipsoid"
 
-MODEL_OUT = MODEL_OUT.replace("edited", OPERATION)
+if OPERATION != "null":
+    MODEL_OUT = MODEL_OUT.replace("edited", OPERATION)
 print(MODEL_OUT)
 
 # Parameters used by specific operations (ignored when not applicable):
@@ -840,6 +848,17 @@ def _op_brick(m: np.ndarray) -> np.ndarray:
     )
 
 
+def _op_null(m: np.ndarray) -> np.ndarray:
+    """No-op: return the input model unchanged.
+
+    No output file is written when OPERATION == "null"; the main block
+    skips the write step and goes directly to plotting.  Use this to
+    visualise the input model with the slice plotter without modifying
+    the block file.
+    """
+    return m.copy()
+
+
 _OPERATIONS: dict = {
     "fill":        _op_fill,
     "mean":        _op_mean,
@@ -851,6 +870,7 @@ _OPERATIONS: dict = {
     "smooth":      _op_smooth,
     "ellipsoid":   _op_ellipsoid,
     "brick":       _op_brick,
+    "null":        _op_null,
 }
 
 
@@ -1167,7 +1187,7 @@ def plot_model_slices(
         print(f"  plot: {len(slices)} panels, exact plane-intersection method")
 
     # ── colormap: NaN (air) → transparent ──────────────────────────────────
-    cmap_obj = mcm.get_cmap(cmap).copy()
+    cmap_obj = mcm.colormaps[cmap].copy() if hasattr(mcm, "colormaps") else mcm.get_cmap(cmap).copy()
     cmap_obj.set_bad(alpha=0.0)
 
     # ── colour normalisation ────────────────────────────────────────────────
@@ -1364,22 +1384,25 @@ print(f"  log10(ρ) range after:  [{log_m_new.min():.3f}, {log_m_new.max():.3f}]
 print()
 
 # --- (3) Write modified model ---------------------------------------------
-print(f"Writing model: {MODEL_OUT}")
-fem.insert_model(
-    template=MODEL_IN,
-    model=log_m_new,
-    model_file=MODEL_OUT,
-    ocean=OCEAN,
-    air_rho=AIR_RHO,
-    ocean_rho=OCEAN_RHO,
-    out=OUT,
-)
-print("Done.")
+if OPERATION == "null":
+    print("Operation 'null': no output file written (input model displayed as-is).")
+else:
+    print(f"Writing model: {MODEL_OUT}")
+    fem.insert_model(
+        template=MODEL_IN,
+        model=log_m_new,
+        model_file=MODEL_OUT,
+        ocean=OCEAN,
+        air_rho=AIR_RHO,
+        ocean_rho=OCEAN_RHO,
+        out=OUT,
+    )
+    print("Done.")
 
 # --- (4) Plot slices of output model ---------------------------------------
 if PLOT:
     plot_model_slices(
-        model_file  = MODEL_OUT,
+        model_file  = MODEL_IN if OPERATION == "null" else MODEL_OUT,
         mesh_file   = MESH_FILE,
         slices      = PLOT_SLICES,
         cmap        = PLOT_CMAP,
