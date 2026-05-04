@@ -591,28 +591,30 @@ def _smooth_body_boundary(m: np.ndarray, centroids: np.ndarray,
     """Smooth the boundary of a body by iterative Gaussian blending.
 
     On each pass, every region in the transition band (one shell of exterior
-    neighbours + one shell of interior regions adjacent to them) is replaced
-    by the Gaussian-weighted average of its neighbours within 4σ.
-    The transition zone widens by roughly one shell per pass.
+    neighbours + the adjacent interior shell) is replaced by the Gaussian-
+    weighted average of its neighbours within 4σ.  The zone widens by one
+    shell per pass.
 
     Memory strategy
     ---------------
-    Three changes from the naive approach keep memory bounded:
+    The key constraint: with 125 k regions, ANY query_ball_point call that
+    touches a large fraction of centroids (e.g. all interior regions) will
+    materialise enormous Python lists and segfault.  The solution is to work
+    exclusively from the **exterior side**:
 
-    1.  The KD-tree is built **only on the active zone** (band + adjacent
-        interior shell), not on all n_free centroids.  For a body occupying
-        a small fraction of the model this saves orders of magnitude.
-
-    2.  The exterior boundary shell is found by querying **only the outermost
-        interior shell** against the exterior, not the entire interior.  This
-        avoids materialising variable-length neighbour lists for the full body.
-
-    3.  The weighted averaging uses ``query_ball_point`` row-by-row with scalar
-        accumulation — no (n_band × n_neighbours) matrix is ever allocated.
+    1.  Build a small KD-tree on interior centroids only (tree_int).
+    2.  Find exterior regions near the body by a **radius query on the
+        exterior tree** bounded by the body's bounding sphere — a tiny set.
+    3.  For each near-exterior region, ask tree_int for the nearest interior
+        neighbour; if it is within radius, that exterior region is in the band.
+        This is an O(n_near_exterior × log n_interior) fixed-k query — no
+        variable-length lists, no large allocations.
+    4.  The active zone (near-exterior + adjacent interior shell) is built
+        entirely from small sets.  All subsequent queries are local.
 
     Parameters
     ----------
-    m         : (n_free,) current log10(ρ) vector (already has body applied)
+    m         : (n_free,) log10(ρ) vector (body already applied)
     centroids : (n_free, 3) region centroids
     inside    : (n_free,) bool — body interior mask
     sigma     : Gaussian length scale in metres
@@ -632,66 +634,101 @@ def _smooth_body_boundary(m: np.ndarray, centroids: np.ndarray,
     two_s2 = 2.0 * sigma ** 2
     radius = 4.0 * sigma
 
-    interior_idx = np.where(inside)[0]
+    interior_idx = np.where( inside)[0]   # global indices into centroids
     exterior_idx = np.where(~inside)[0]
 
-    # Full-model tree used only for the initial exterior-shell query (cheap:
-    # we query only the outermost interior shell, not the whole interior).
-    tree_all = _cKDTree(centroids)
+    if len(interior_idx) == 0:
+        return m_out
 
-    # Identify the outermost interior shell: interior regions that have at
-    # least one exterior neighbour within radius.  We use query_ball_point
-    # on the (potentially large) interior but only collect a boolean flag,
-    # not the full neighbour lists — memory is O(n_interior), not O(n_interior × n_nbrs).
-    outer_shell_flags = np.zeros(len(interior_idx), dtype=bool)
-    # Chunk interior to avoid large intermediate allocations
-    chunk = 2000
-    for start in range(0, len(interior_idx), chunk):
-        end  = min(start + chunk, len(interior_idx))
-        nbrs = tree_all.query_ball_point(centroids[interior_idx[start:end]],
-                                         r=radius, workers=1)
-        for k, nb_list in enumerate(nbrs):
-            if any(not inside[nb] for nb in nb_list):
-                outer_shell_flags[start + k] = True
-    outer_shell_idx = interior_idx[outer_shell_flags]   # small set
+    int_ctr = centroids[interior_idx]     # (n_int, 3)
+    ext_ctr = centroids[exterior_idx]     # (n_ext, 3)
+
+    # ── Build trees on each partition — both are safe-sized ────────────────
+    tree_int = _cKDTree(int_ctr)          # queried by near-exterior points
+    tree_ext = _cKDTree(ext_ctr)          # queried by bounding-sphere filter
+
+    # ── Bounding sphere of interior centroids ───────────────────────────────
+    body_centre = int_ctr.mean(axis=0)
+    body_radius = float(np.max(np.linalg.norm(int_ctr - body_centre, axis=1)))
+
+    # ── Find exterior regions within body_radius + radius of body centre ────
+    # This is the only query on ext_ctr; its result is a small index list.
+    near_ext_local = tree_ext.query_ball_point(
+        body_centre, r=body_radius + radius, workers=1
+    )                                     # list of local indices into ext_ctr
+    near_ext_local = np.asarray(near_ext_local, dtype=int)
+
+    if len(near_ext_local) == 0:
+        return m_out
+
+    near_ext_ctr = ext_ctr[near_ext_local]   # (n_near_ext, 3) — small
+
+    # ── Identify exterior band: near-exterior regions within radius of any
+    #    interior region.  Use fixed-k=1 query (nearest interior neighbour). ──
+    dist_to_int, _ = tree_int.query(near_ext_ctr, k=1, workers=-1)
+    in_band_local  = near_ext_local[dist_to_int <= radius]   # local ext indices
+    ext_band_global = exterior_idx[in_band_local]            # global indices
+
+    # ── Identify interior boundary shell: interior regions within radius of
+    #    any exterior band region.  Query tree_int with ext_band centroids. ──
+    if len(ext_band_global) == 0:
+        return m_out
+
+    ext_band_ctr = centroids[ext_band_global]
+    dist_int_to_band, int_shell_local = tree_int.query(
+        ext_band_ctr, k=min(64, len(interior_idx)), workers=-1
+    )
+    int_shell_set = set()
+    for row, drow in zip(int_shell_local, dist_int_to_band):
+        for j, d in zip(row, drow):
+            if d <= radius:
+                int_shell_set.add(int(interior_idx[j]))
+    int_shell_global = np.array(sorted(int_shell_set), dtype=int)
+
+    # ── Initial active zone and outer shell for iteration ──────────────────
+    active_global  = np.concatenate([int_shell_global, ext_band_global])
+    outer_shell_global = ext_band_global   # exterior band becomes outer shell
 
     for p in range(passes):
-        # ── Find exterior band: exterior regions within radius of outer shell ──
-        if len(outer_shell_idx) == 0:
+        if len(active_global) == 0:
             break
-        ext_nbrs = tree_all.query_ball_point(centroids[outer_shell_idx],
-                                             r=radius, workers=1)
-        ext_band = set()
-        for nb_list in ext_nbrs:
-            for nb in nb_list:
-                if not inside[nb]:
-                    ext_band.add(nb)
-        if not ext_band:
-            break
-        ext_band_idx = np.array(sorted(ext_band), dtype=int)
 
-        # ── Active zone: exterior band + outer interior shell ──────────────
-        active_idx = np.concatenate([outer_shell_idx, ext_band_idx])
-        active_ctr = centroids[active_idx]
-
-        # Build a small local tree on the active zone only
+        active_ctr = centroids[active_global]   # small — safe for local tree
         tree_local = _cKDTree(active_ctr)
 
-        # ── Weighted averaging row by row — no dense matrix ────────────────
-        # query_ball_point on active zone is safe: n_active << n_free
-        nbr_lists = tree_local.query_ball_point(active_ctr, r=radius, workers=1)
-        m_active_old = m_out[active_idx].copy()
+        # query_ball_point on the small active zone — safe
+        nbr_lists    = tree_local.query_ball_point(active_ctr, r=radius, workers=1)
+        m_active_old = m_out[active_global].copy()
 
         for i, nb_local in enumerate(nbr_lists):
             nb_local = np.asarray(nb_local, dtype=int)
             d2 = np.sum((active_ctr[nb_local] - active_ctr[i]) ** 2, axis=1)
             w  = np.exp(-d2 / two_s2)
-            m_out[active_idx[i]] = float((w @ m_active_old[nb_local]) / w.sum())
+            m_out[active_global[i]] = float(
+                (w @ m_active_old[nb_local]) / max(w.sum(), 1e-30)
+            )
 
-        # ── Expand outer shell by one pass ─────────────────────────────────
-        # New outer shell = previous exterior band now pulled inside the
-        # smoothed transition zone.
-        outer_shell_idx = ext_band_idx
+        # ── Expand: find next exterior shell beyond current outer shell ────
+        if p < passes - 1:
+            # Query tree_ext for exterior neighbours of current outer shell
+            outer_ctr = centroids[outer_shell_global]
+            new_ext_local_lists = tree_ext.query_ball_point(
+                outer_ctr, r=radius, workers=1
+            )
+            new_ext_set = set()
+            for nb_list in new_ext_local_lists:
+                new_ext_set.update(nb_list)
+            # Remove already-active exterior regions
+            active_set = set(active_global.tolist())
+            new_ext_global = np.array(
+                [exterior_idx[j] for j in sorted(new_ext_set)
+                 if exterior_idx[j] not in active_set],
+                dtype=int
+            )
+            if len(new_ext_global) == 0:
+                break
+            active_global      = np.concatenate([active_global, new_ext_global])
+            outer_shell_global = new_ext_global
 
     return m_out
 
