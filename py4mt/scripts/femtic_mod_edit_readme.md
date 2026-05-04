@@ -17,7 +17,8 @@ the **free** log10(rho) parameter vector, and writes the result back to a
 - spatially smoothing a rough inversion result before re-inversion (smooth),
 - inserting a local anomaly — conductor or resistor — as an ellipsoidal body (ellipsoid),
 - normalising the model vector for statistical post-processing (standardise),
-- inspecting the result as a multi-panel slice figure (plotting section).
+- inspecting the result as a multi-panel slice figure (plotting section),
+- visualising the input model without any modification (null).
 
 **Air, ocean, and any other fixed region are never modified**, regardless of
 the chosen operation.  `fem.read_model` excludes them from the free vector
@@ -77,7 +78,7 @@ rho ≤ 1 Ohm·m.  Override with `OCEAN = True / False` when unreliable.
 
 | Variable | Default | Description |
 |---|---|---|
-| `OPERATION` | `"mean"` | Key selecting the operation (see table below) |
+| `OPERATION` | `"mean"` | Key selecting the operation (see table below); `"null"` = plot input model without writing |
 | `OP_FILL_VALUE` | `2.0` | Constant fill value in log10(Ohm·m) — `"fill"` |
 | `OP_CLIP_MIN` | `0.0` | Lower bound in log10(Ohm·m) — `"clip"` |
 | `OP_CLIP_MAX` | `4.0` | Upper bound in log10(Ohm·m) — `"clip"` |
@@ -147,6 +148,7 @@ flag-fixed regions are excluded before the operation and restored afterwards.
 | `"ellipsoid"` | m[inside] replace/+= value | Insert rotated ellipsoidal body/bodies |
 | `"brick"` | m[inside] replace/+= value | Insert rotated rectangular prism body/bodies |
 | `"standardise"` | m ← (m − μ) / σ | Zero-mean / unit-variance; combine with `"clip"` |
+| `"null"` | m ← m (no-op) | Plot the input model as-is; no output file written |
 
 ### Ellipsoid (`"ellipsoid"`) and Brick (`"brick"`)
 
@@ -409,3 +411,4 @@ Environment variables `PY4MTX_ROOT` and `PY4MTX_DATA` must be set.
 | 2026-05-03 | vrath / Claude Sonnet 4.6 | Replaced centroid/Delaunay plotting with exact tetrahedron-plane intersection (`_intersect_tet_plane`, `_slice_geometry`): correct topography, no bridging, no `dw` slab needed; `PolyCollection` rendering for exact polygons |
 | 2026-05-03 | vrath / Claude Sonnet 4.6 | Fixed missing main block (`read_model`, `_NEEDS_MESH` population, `insert_model`) lost in prior rewrite; all four context dicts now declared at module level |
 | 2026-05-03 | vrath / Claude Sonnet 4.6 | Added `boundary_smooth` per-body option to `_apply_bodies`: iterative Gaussian blending in a transition band straddling the body surface (`_smooth_body_boundary`, `sigma`, `passes`) |
+| 2026-05-04 | vrath / Claude Sonnet 4.6 | Added `"null"` operation: no-op pass-through; skips write step and plots `MODEL_IN` directly — use to inspect the input model without any modification |
