@@ -237,6 +237,32 @@ PLOT_XLIM = [-20000., 20000.]
 PLOT_YLIM = [-20000., 20000.]
 PLOT_ZLIM = [  -6000., 15000.]
 
+# ---------------------------------------------------------------------------
+# Mesh-centre estimation from known site coordinates  (optional)
+# ---------------------------------------------------------------------------
+#: Set ESTIMATE_ORIGIN = True to compute UTM_ORIGIN_E / UTM_ORIGIN_N from
+#: a set of calibration sites whose model-local positions (from observe.dat)
+#: and geographic coordinates are both known.  The result overwrites the
+#: hard-coded UTM_ORIGIN_E / UTM_ORIGIN_N above for this run and is printed
+#: so you can copy the values back into the script.
+#:
+#: Each entry in CALIBRATION_SITES is a dict with:
+#:   "site"    : int    site number (matched against observe.dat)
+#:   "crs"     : str    "latlon" or "utm"
+#:   "coords"  : for "latlon" → [lon_deg, lat_deg]
+#:               for "utm"    → [E_m, N_m]
+#:
+#: At least 1 site is required; 3+ is recommended to detect gross errors.
+#: The fit is a pure translation (no rotation/scale) in UTM space, solved
+#: by least squares.  Residuals per site are printed when OUT = True.
+ESTIMATE_ORIGIN = False
+
+CALIBRATION_SITES = [
+    # dict(site=1,  crs="latlon", coords=[-71.500, -16.380]),
+    # dict(site=10, crs="latlon", coords=[-71.620, -16.450]),
+    # dict(site=25, crs="utm",    coords=[224500., 8179300.]),
+]
+
 
 # ===========================================================================
 # Coordinate conversion helpers
@@ -877,10 +903,134 @@ def plot_model_slices(
 
 
 # ===========================================================================
+# Mesh-centre estimation helper
+# ===========================================================================
+
+def estimate_utm_origin(calibration_sites: list,
+                        observe_file: str,
+                        zone: int,
+                        northern: bool,
+                        *,
+                        out: bool = True) -> tuple[float, float]:
+    """Estimate UTM coordinates of the mesh centre from calibration sites.
+
+    Each calibration site provides a pair of observations:
+
+    - its model-local position (x_m, y_m), read from *observe_file*,
+    - its known geographic position in lat/lon or UTM.
+
+    The mesh centre satisfies:
+
+        E_site = UTM_ORIGIN_E + x_m_site
+        N_site = UTM_ORIGIN_N + y_m_site
+
+    Rearranging:
+
+        UTM_ORIGIN_E = E_site − x_m_site
+        UTM_ORIGIN_N = N_site − y_m_site
+
+    This is a pure translation — no rotation or scale is assumed (model-local
+    axes are aligned with UTM east/north by FEMTIC convention).  With N ≥ 1
+    sites the system is solved as a least-squares mean; residuals per site
+    expose gross coordinate errors.
+
+    Parameters
+    ----------
+    calibration_sites : list of dicts with keys
+                        "site"   : int   site number (matched in observe.dat)
+                        "crs"    : str   "latlon" or "utm"
+                        "coords" : list  [lon_deg, lat_deg] or [E_m, N_m]
+    observe_file      : path to observe.dat
+    zone              : UTM zone number (used for lat/lon → UTM conversion)
+    northern          : hemisphere flag
+    out               : print per-site residuals and result when True
+
+    Returns
+    -------
+    origin_E, origin_N : estimated UTM coordinates of the mesh centre [m]
+
+    Raises
+    ------
+    ValueError  if calibration_sites is empty or any site is not found.
+    """
+    if not calibration_sites:
+        raise ValueError("CALIBRATION_SITES is empty — nothing to estimate.")
+
+    offsets_E = []
+    offsets_N = []
+
+    if out:
+        print("Estimating mesh-centre UTM origin from calibration sites:")
+        print(f"  {'site':>5}  {'x_model':>10}  {'y_model':>10}  "
+              f"{'E_utm':>12}  {'N_utm':>14}  {'dE':>8}  {'dN':>8}")
+        print("  " + "-" * 77)
+
+    for entry in calibration_sites:
+        site_num = int(entry["site"])
+        crs      = str(entry["crs"])
+        coords   = list(entry["coords"])
+
+        # model-local position [m] from observe.dat
+        x_m, y_m = read_site_position(observe_file, site_num)
+
+        # geographic → UTM [m]
+        if crs == "latlon":
+            lon_deg, lat_deg = coords
+            E_site, N_site = _latlon_to_utm(lat_deg, lon_deg, zone, northern)
+        elif crs == "utm":
+            E_site, N_site = float(coords[0]), float(coords[1])
+        else:
+            raise ValueError(
+                f"Calibration site {site_num}: unknown crs={crs!r}. "
+                f"Use 'latlon' or 'utm'."
+            )
+
+        # implied origin from this site
+        oE = E_site - x_m
+        oN = N_site - y_m
+        offsets_E.append(oE)
+        offsets_N.append(oN)
+
+        if out:
+            print(f"  {site_num:>5}  {x_m/1000:>10.3f}  {y_m/1000:>10.3f}  "
+                  f"{E_site:>12.1f}  {N_site:>14.1f}  "
+                  f"{oE:>8.1f}  {oN:>8.1f}")
+
+    # least-squares estimate = mean of implied origins
+    origin_E = float(np.mean(offsets_E))
+    origin_N = float(np.mean(offsets_N))
+
+    if out and len(calibration_sites) > 1:
+        # per-site residuals relative to the LS mean
+        print()
+        print(f"  {'site':>5}  {'res_E (m)':>10}  {'res_N (m)':>10}")
+        print("  " + "-" * 30)
+        for entry, oE, oN in zip(calibration_sites, offsets_E, offsets_N):
+            print(f"  {int(entry['site']):>5}  "
+                  f"{oE - origin_E:>10.2f}  {oN - origin_N:>10.2f}")
+        rms_E = float(np.sqrt(np.mean((np.array(offsets_E) - origin_E) ** 2)))
+        rms_N = float(np.sqrt(np.mean((np.array(offsets_N) - origin_N) ** 2)))
+        print(f"  {'RMS':>5}  {rms_E:>10.2f}  {rms_N:>10.2f}")
+
+    print()
+    print(f"  Estimated mesh-centre UTM origin:")
+    print(f"    UTM_ORIGIN_E = {origin_E:.1f}")
+    print(f"    UTM_ORIGIN_N = {origin_N:.1f}")
+    print(f"  Copy these values into the Configuration block.")
+    print()
+
+    return origin_E, origin_N
+
+
+# ===========================================================================
 # Main
 # ===========================================================================
 
 # --- (1) Derive UTM zone from mesh-origin coordinates ---------------------
+# Zone is derived from UTM_ORIGIN_LAT/LON (approximate geographic centre).
+# These do not need to be exact for zone derivation; any representative point
+# in the survey area suffices.  UTM_ORIGIN_E/N are refined in step (1b)
+# when ESTIMATE_ORIGIN = True.
 UTM_ZONE, UTM_NORTHERN = _utm_zone_from_origin()
 hemi = "N" if UTM_NORTHERN else "S"
 _proj_backend = "pyproj" if _HAVE_PYPROJ else "built-in Helmert series"
@@ -888,6 +1038,12 @@ print(f"UTM zone: {UTM_ZONE}{hemi}  "
       f"(origin lat={UTM_ORIGIN_LAT:.4f}°, lon={UTM_ORIGIN_LON:.4f}°)  "
       f"[projection: {_proj_backend}]")
 print()
+
+# --- (1b) Optionally estimate UTM_ORIGIN_E / UTM_ORIGIN_N from sites ------
+if ESTIMATE_ORIGIN:
+    UTM_ORIGIN_E, UTM_ORIGIN_N = estimate_utm_origin(
+        CALIBRATION_SITES, OBSERVE_FILE, UTM_ZONE, UTM_NORTHERN, out=OUT
+    )
 
 # --- (2) Resolve slice positions to model-local metres ---------------------
 slices_resolved = resolve_slices(PLOT_SLICES, UTM_ZONE, UTM_NORTHERN)
