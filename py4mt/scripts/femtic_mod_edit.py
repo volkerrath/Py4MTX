@@ -130,12 +130,12 @@ WORK_DIR = r"/home/vrath/Py4MTX/work/"
 #: Template / source resistivity block (also used as format template by
 #: insert_model to preserve header, bounds and flag columns).
 # MODEL_IN  = WORK_DIR + "resistivity_block_iter0.dat"
-MODEL_IN  =WORK_DIR + "resistivity_block_edited.dat"
+MODEL_IN  =WORK_DIR + "resistivity_block_ellipsoid.dat"
 #: Mesh file — required for "smooth" and "ellipsoid"; ignored otherwise.
 MESH_FILE = WORK_DIR + "mesh.dat"
 
 #: Output file.  Set to MODEL_IN to overwrite in-place (be careful!).
-MODEL_OUT = WORK_DIR + "resistivity_block_edited.dat"
+MODEL_OUT = WORK_DIR + "resistivity_block_edit.dat"
 
 # ---------------------------------------------------------------------------
 # Ocean / fixed-region handling
@@ -156,9 +156,9 @@ OCEAN_RHO = 0.25    # Ω·m written for region 1 when treated as ocean
 # OPERATION = "wmean"
 # OPERATION = "median"
 # OPERATION = "mean"
-OPERATION = "ellipsoid"
-
-MODEL_OUT = MODEL_OUT.replace("edited", OPERATION)
+# OPERATION = "ellipsoid"
+OPERATION = "smooth"
+MODEL_OUT = MODEL_OUT.replace("edit", OPERATION)
 print(MODEL_OUT)
 
 # Parameters used by specific operations (ignored when not applicable):
@@ -192,21 +192,21 @@ OP_SMOOTH_MAX_GB  = 4.0     # GiB
 #:   value           : float  log10(Ω·m) — absolute if replace, signed offset if add
 #:   center          : [x, y, z]  metres, z positive-down
 #:   axes            : [a, b, c]  semi-axes in metres, all > 0
-#:   angles          : [α, β, γ]  ZYX rotation in degrees (yaw, pitch, roll)
+#:   angles          : [α, β, γ]  ZYX rotation in degrees (yaw/strike, pitch/dip, roll)
 #:   boundary_smooth : optional dict — smooth the body boundary after insertion
 #:     sigma  : Gaussian length scale in metres (blend width per pass)
 #:     passes : number of smoothing passes (transition zone depth ≈ passes × σ)
 OP_ELLIPSOID_BODIES = [
-    # dict(mode="replace", value=0.0,
-    #      center=[0.0, 0.0, 5000.0],
-    #      axes=[10000.0, 10000.0, 5000.0],
-    #      angles=[0.0, 0.0, 0.0]),
-    # With boundary smoothing:
-    dict(mode="replace", value=0.0,
+    dict(mode="replace", value=0.5,
          center=[0.0, 0.0, 5000.0],
-         axes=[10000.0, 10000.0, 5000.0],
-         angles=[0.0, 0.0, 0.0],
-         boundary_smooth=dict(sigma=1000., passes=3)),
+         axes=[10000.0, 5000.0, 2500.0],
+         angles=[20.0, 30.0, 0.0]),
+    # With boundary smoothing:
+    #dict(mode="replace", value=0.0,
+         #center=[0.0, 0.0, 5000.0],
+         #axes=[10000.0, 10000.0, 5000.0],
+         #angles=[0.0, 0.0, 0.0],
+         #boundary_smooth=dict(sigma=1000., passes=3)),
 ]
 
 # ---------------------------------------------------------------------------
