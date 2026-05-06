@@ -25,6 +25,11 @@ Typical use cases:
 ## Workflow
 
 ```
+UTM_ORIGIN_LAT / LON  →  UTM zone (auto)
+                                          [optional: ESTIMATE_ORIGIN = True]
+        CALIBRATION_SITES  +  observe.dat  →  estimate_utm_origin()
+                                               UTM_ORIGIN_E / N  (printed)
+
 resistivity_block_iterX.dat  +  mesh.dat
         |
         v  fviz.read_femtic_mesh / read_resistivity_block
@@ -87,6 +92,48 @@ standard 6° band rule (Norway/Svalbard special zones not handled; use
 `UTM_ZONE_OVERRIDE` if needed).  The hemisphere is inferred from the sign
 of `UTM_ORIGIN_LAT`.  The zone and active projection backend are printed at
 startup.
+
+### Mesh-centre estimation from calibration sites
+
+If `UTM_ORIGIN_E` / `UTM_ORIGIN_N` are not known in advance, they can be
+estimated from a small set of MT sites whose model-local positions (from
+`observe.dat`) and geographic coordinates are both known.  Set
+`ESTIMATE_ORIGIN = True` and populate `CALIBRATION_SITES`:
+
+```python
+ESTIMATE_ORIGIN = True
+
+CALIBRATION_SITES = [
+    dict(site=1,  crs="latlon", coords=[-71.500, -16.380]),  # [lon, lat]
+    dict(site=10, crs="latlon", coords=[-71.620, -16.450]),
+    dict(site=25, crs="utm",    coords=[224500., 8179300.]),  # [E, N]
+]
+```
+
+| Key | Type | Description |
+|---|---|---|
+| `site` | int | Site number — matched against `observe.dat` |
+| `crs` | str | `"latlon"` for decimal degrees; `"utm"` for UTM metres |
+| `coords` | list | `[lon_deg, lat_deg]` for `"latlon"`; `[E_m, N_m]` for `"utm"` |
+
+**Method** — the mesh is a pure translation of UTM space (FEMTIC aligns
+model-local axes with UTM east/north), so each site yields one estimate of
+the origin:
+
+```
+UTM_ORIGIN_E = E_site − x_m_site
+UTM_ORIGIN_N = N_site − y_m_site
+```
+
+With N ≥ 1 sites the least-squares solution is the mean of the N implied
+origins.  The estimated values and per-site residuals are printed; a large
+residual on one site flags a coordinate error.  The result overwrites
+`UTM_ORIGIN_E` / `UTM_ORIGIN_N` for the current run — copy the printed
+values back into the Configuration block once satisfied.
+
+Note: `UTM_ORIGIN_LAT` / `UTM_ORIGIN_LON` are still needed to derive the
+UTM zone number; they only need to be approximately correct (any point in
+the survey area within the correct 6° longitude band suffices).
 
 ### Display coordinate system
 
@@ -286,3 +333,4 @@ Environment variables `PY4MTX_ROOT` and `PY4MTX_DATA` must be set.
 |---|---|---|
 | 2026-05-06 | vrath / Claude Sonnet 4.6 | Created, modelled on `femtic_mod_edit.py` plotting section; site overlay from `observe.dat` |
 | 2026-05-06 | vrath / Claude Sonnet 4.6 | Added lat/lon and UTM slice-position input; `pyproj` primary path with pure-Python Helmert fallback; auto-derived UTM zone from mesh origin |
+| 2026-05-06 | vrath / Claude Sonnet 4.6 | Added `estimate_utm_origin`: least-squares mesh-centre estimation from N calibration sites with known model-local and geographic coordinates |
