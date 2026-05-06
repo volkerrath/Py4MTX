@@ -72,6 +72,7 @@ femtic_gst_post.py   →   collect results & statistics
 | Script | Purpose |
 |--------|---------|
 | `femtic_mod_edit.py` | Apply arithmetic operations to a FEMTIC resistivity model in log₁₀ space and rewrite the block file. Operations include: null (plot input as-is, no write), fill (constant), clip (bounds enforcement), shift (global offset), smooth (Gaussian / median / anisotropic diffusion), ellipsoid or brick insertion, mean, median, standardise. Air, ocean, and fixed cells are never modified. Optional multi-panel slice figure output. |
+| `femtic_mod_plot.py` | Read and plot axis-parallel slice panels of a FEMTIC resistivity model without modifying it. Supports map (z = const), N-S curtain (x = const), E-W curtain (y = const), and arbitrary strike/dip plane slices. Slice positions can be given in model-local metres, UTM metres, or geographic lat/lon (converted via pyproj, with a built-in Helmert fallback). UTM zone is auto-derived from the mesh-centre coordinates. Optionally reads one site position from `observe.dat` and overplots it on every panel. Display axes can be in model-local or absolute UTM metres. |
 
 ---
 
@@ -182,7 +183,7 @@ Scripts applicable across inversion codes or for data pre/post-processing.
 | FEMTIC — GST uncertainty | 1 |
 | FEMTIC — ensemble analysis | 3 |
 | FEMTIC — jackknife | 1 |
-| FEMTIC — model manipulation | 1 |
+| FEMTIC — model manipulation | 2 |
 | FEMTIC — diagnostics | 2 |
 | ModEM — model manipulation | 8 |
 | ModEM — Jacobian analysis | 6 |
@@ -191,8 +192,8 @@ Scripts applicable across inversion codes or for data pre/post-processing.
 | General MT — plotting | 2 |
 | General MT — anisotropic 1-D | 4 |
 | General MT — transdimensional 1-D | 2 |
-| **Total** | **47** |
+| **Total** | **48** |
 
 ---
 
-*Generated 2026-05-04 from README files in `scripts.zip`.*
+*Generated 2026-05-06 from README files in `scripts.zip`.*
