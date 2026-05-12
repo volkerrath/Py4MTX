@@ -11,6 +11,7 @@ Created on Thu May 29 10:09:45 2025
 
 import os
 import sys
+from pathlib import Path
 
 import time
 from datetime import datetime
@@ -28,11 +29,10 @@ PY4MTX_DATA = os.environ['PY4MTX_DATA']
 PY4MTX_ROOT = os.environ['PY4MTX_ROOT']
 
 # add py4mt modules to pythonpath
-mypath = [PY4MTX_ROOT+'/py4mt/modules/',
-          PY4MTX_ROOT+'/py4mt/scripts/']
-for pth in mypath:
-    if pth not in sys.path:
-        sys.path.insert(0,pth)
+for _base in [PY4MTX_ROOT + "/py4mt/modules/"]:
+    for _p in [Path(_base), *Path(_base).rglob("*")]:
+        if _p.is_dir() and str(_p) not in sys.path:
+            sys.path.insert(0, str(_p))
 
 # Import required py4mt modules for your script
 import util as utl
