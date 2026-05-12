@@ -12,8 +12,8 @@ Self-contained module. Provides:
   - cross_gradient_proximal_term — ADMM proximal shrinkage toward CG null-space
 
 Inlined from:
-  crossgrad/cross_gradient.py, crossgrad/mesh_operators.py,
-  crossgrad/interpolation.py
+  crossgrad/cross_gradient.py, crossgrad/mesh_operators.py
+  Interpolation imported from coupling_interp.py
 
 @author:   Volker Rath (DIAS)
 @project:  py4mt — Python for Magnetotellurics
@@ -26,6 +26,8 @@ from abc import ABC, abstractmethod
 from typing import Literal
 
 import numpy as np
+
+from coupling_interp import interpolate_mesh_to_mesh
 
 
 # =============================================================================
@@ -125,80 +127,6 @@ class UnstructuredMesh(GradientMesh):
                 f"Gradient operator must return (N, {self.dim}), got {g.shape}"
             )
         return g
-
-
-# =============================================================================
-# Mesh-to-mesh interpolation
-# =============================================================================
-
-def _get_cell_centers(mesh):
-    if hasattr(mesh, "cell_centers"):
-        centers = mesh.cell_centers
-    elif hasattr(mesh, "get_cell_centers"):
-        centers = mesh.get_cell_centers()
-    else:
-        raise AttributeError("mesh must provide cell_centers or get_cell_centers()")
-    centers = np.asarray(centers)
-    if centers.ndim != 2:
-        raise ValueError("cell_centers must have shape (N, dim)")
-    return centers
-
-
-def _interp_nearest(src_c, vals, dst_c):
-    diff = dst_c[:, None, :] - src_c[None, :, :]
-    idx  = np.argmin(np.sum(diff ** 2, axis=2), axis=1)
-    return vals[idx]
-
-
-def _interp_idw(src_c, vals, dst_c, p=2.0):
-    diff = dst_c[:, None, :] - src_c[None, :, :]
-    d    = np.sqrt(np.sum(diff ** 2, axis=2) + 1e-15)
-    w    = 1.0 / (d ** p)
-    return (w @ vals) / (w.sum(axis=1) + 1e-15)
-
-
-def _interp_rbf(src_c, vals, dst_c, sigma=1.0):
-    diff = dst_c[:, None, :] - src_c[None, :, :]
-    d2   = np.sum(diff ** 2, axis=2)
-    w    = np.exp(-d2 / (2.0 * sigma ** 2))
-    return (w @ vals) / (w.sum(axis=1) + 1e-15)
-
-
-def interpolate_mesh_to_mesh(
-    src_mesh,
-    dst_mesh,
-    values: np.ndarray,
-    method: Literal["nearest", "idw", "rbf"] = "nearest",
-    p: float = 2.0,
-    rbf_sigma: float = 1.0,
-) -> np.ndarray:
-    """
-    Interpolate cell-centred values from one mesh to another.
-
-    Parameters
-    ----------
-    src_mesh, dst_mesh : mesh objects with ``cell_centers`` or
-                         ``get_cell_centers()``
-    values     : ndarray (N_src,)
-    method     : {"nearest", "idw", "rbf"}
-    p          : float  IDW power exponent.
-    rbf_sigma  : float  Gaussian RBF width [same units as cell_centers].
-
-    Returns
-    -------
-    ndarray (N_dst,)
-    """
-    src_c = _get_cell_centers(src_mesh)
-    dst_c = _get_cell_centers(dst_mesh)
-
-    if method == "nearest":
-        return _interp_nearest(src_c, values, dst_c)
-    elif method == "idw":
-        return _interp_idw(src_c, values, dst_c, p=p)
-    elif method == "rbf":
-        return _interp_rbf(src_c, values, dst_c, sigma=rbf_sigma)
-    else:
-        raise ValueError(f"Unknown interpolation method '{method}'")
 
 
 # =============================================================================

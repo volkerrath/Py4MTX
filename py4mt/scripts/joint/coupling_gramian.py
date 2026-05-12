@@ -13,8 +13,9 @@ Self-contained module. Provides:
   - StructuralGramian     — full coupling class (value / gradient / report)
 
 Inlined from:
-  gramian/modules/model_interp.py, gramian/modules/joint_gramian.py
-  (entropy/ copies are identical)
+  gramian/modules/joint_gramian.py
+  ModelGrid, MultiscaleResampler, build_common_grid imported from
+  coupling_interp.py
 
 References
 ----------
@@ -28,161 +29,11 @@ Zhdanov, M. S., Gribenko, A. V., & Wilson, G. (2012). GRL 39, L09301.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Literal, Optional
+from typing import Literal
 
 import numpy as np
 
-
-# =============================================================================
-# ModelGrid
-# =============================================================================
-
-@dataclass
-class ModelGrid:
-    """Container for a geophysical model parameterisation.
-
-    Parameters
-    ----------
-    coords : (N, 3) array  — cell centroids [m], z positive-down
-    values : (N,) array    — model parameter (log10(Ohm·m) or Vp [km/s])
-    name   : str
-    """
-    coords: np.ndarray
-    values: np.ndarray
-    name:   str = "model"
-
-    def __post_init__(self):
-        self.coords = np.asarray(self.coords, dtype=float)
-        self.values = np.asarray(self.values, dtype=float)
-        assert self.coords.ndim == 2 and self.coords.shape[1] == 3
-        assert self.values.shape == (len(self.coords),)
-
-    @property
-    def n(self):
-        return len(self.coords)
-
-
-# =============================================================================
-# Common grid builder
-# =============================================================================
-
-def build_common_grid(
-    coords_a: np.ndarray,
-    coords_b: np.ndarray,
-    *,
-    dx: float,
-    extent: Optional[list] = None,
-    out: bool = True,
-) -> np.ndarray:
-    """
-    Build a regular voxel common grid covering both model extents.
-
-    Parameters
-    ----------
-    coords_a, coords_b : (N, 3) arrays  — centroids of the two model grids
-    dx     : float  — voxel edge length [m]
-    extent : [xmin, xmax, ymin, ymax, zmin, zmax] or None (auto)
-    out    : bool   — print progress
-
-    Returns
-    -------
-    common_coords : (M, 3) array
-    """
-    all_coords = np.vstack([coords_a, coords_b])
-    if extent is None:
-        lo = all_coords.min(axis=0)
-        hi = all_coords.max(axis=0)
-    else:
-        lo = np.array(extent[0::2], dtype=float)
-        hi = np.array(extent[1::2], dtype=float)
-
-    axes = [np.arange(lo[i] + dx / 2, hi[i], dx) for i in range(3)]
-    xx, yy, zz = np.meshgrid(*axes, indexing="ij")
-    common_coords = np.column_stack([xx.ravel(), yy.ravel(), zz.ravel()])
-
-    if out:
-        print(
-            f"  build_common_grid: {len(common_coords)} nodes  "
-            f"({len(axes[0])}×{len(axes[1])}×{len(axes[2])})  dx={dx/1e3:.1f} km"
-        )
-    return common_coords
-
-
-# =============================================================================
-# MultiscaleResampler
-# =============================================================================
-
-class MultiscaleResampler:
-    """
-    IDW interpolation from a source grid to a target grid with optional
-    Gaussian pre-smoothing (resolution balancing).
-
-    Parameters
-    ----------
-    source_coords : (N_src, 3)
-    target_coords : (N_tgt, 3)
-    k        : int    — IDW nearest neighbours
-    p        : float  — IDW distance exponent
-    sigma    : float  — Gaussian pre-smoothing length scale [m]; 0 = off
-    K_smooth : int    — neighbours for smoothing kernel
-    """
-
-    def __init__(
-        self,
-        source_coords: np.ndarray,
-        target_coords: np.ndarray,
-        *,
-        k: int = 8,
-        p: float = 2.0,
-        sigma: float = 0.0,
-        K_smooth: int = 50,
-    ):
-        from scipy.spatial import cKDTree
-
-        self._n_src = len(source_coords)
-        self._n_tgt = len(target_coords)
-        self._sigma = float(sigma)
-
-        tree_src  = cKDTree(source_coords)
-        dist, idx = tree_src.query(target_coords, k=k, workers=-1)
-        dist      = np.maximum(dist, 1e-6)
-        w         = dist ** (-p)
-        self._w_idw = w / w.sum(axis=1, keepdims=True)
-        self._idx   = idx
-
-        if self._sigma > 0.0:
-            K_smooth      = min(K_smooth, self._n_src)
-            dist_s, idx_s = tree_src.query(source_coords, k=K_smooth, workers=-1)
-            two_s2        = 2.0 * self._sigma ** 2
-            W_s           = np.exp(-(dist_s ** 2) / two_s2)
-            self._w_smooth = W_s / W_s.sum(axis=1, keepdims=True)
-            self._idx_s    = idx_s
-        else:
-            self._w_smooth = None
-            self._idx_s    = None
-
-    def _smooth(self, values: np.ndarray) -> np.ndarray:
-        if self._w_smooth is None:
-            return values
-        return np.einsum("ij,ij->i", self._w_smooth, values[self._idx_s])
-
-    def __call__(self, values: np.ndarray) -> np.ndarray:
-        """Interpolate (N_src,) → (N_tgt,)."""
-        return np.einsum("ij,ij->i", self._w_idw, self._smooth(values)[self._idx])
-
-    def _smooth_adjoint(self, g: np.ndarray) -> np.ndarray:
-        if self._w_smooth is None:
-            return g
-        out = np.zeros(self._n_src)
-        np.add.at(out, self._idx_s, self._w_smooth * g[:, np.newaxis])
-        return out
-
-    def adjoint(self, g_tgt: np.ndarray) -> np.ndarray:
-        """Adjoint interpolation (N_tgt,) → (N_src,)."""
-        g_smooth = np.zeros(self._n_src)
-        np.add.at(g_smooth, self._idx, self._w_idw * g_tgt[:, np.newaxis])
-        return self._smooth_adjoint(g_smooth)
+from coupling_interp import ModelGrid, MultiscaleResampler, build_common_grid
 
 
 # =============================================================================
