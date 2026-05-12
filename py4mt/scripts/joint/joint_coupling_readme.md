@@ -8,6 +8,45 @@ Imports from the four self-contained `coupling_*.py` sibling modules.
 
 ## Classes
 
+### `FCMCouplingMesh`
+
+FCM coupling with a dedicated coupling mesh. `z` is defined on `mesh_z`,
+which may differ from the MT and seismic meshes. Each `update_z` call
+interpolates the models to `mesh_z`, runs FCM there, updates coupling-mesh
+duals as instance state, and returns `z` on `mesh_z`. The driver then
+interpolates `z` back to the physics meshes when building the model-update
+RHS.
+
+```python
+FCMCouplingMesh(K, N_c, mesh_mt, mesh_sv, mesh_z, *,
+                beta=1.0, q=2.0, w_mt=0.5, w_sv=0.5, n_inner=2,
+                interp_method="nearest", interp_power=2.0)
+```
+
+| Parameter | Description |
+|---|---|
+| `K` | Number of FCM clusters |
+| `N_c` | Number of cells on `mesh_z` |
+| `mesh_mt`, `mesh_sv`, `mesh_z` | Mesh objects (must expose `cell_centers`) |
+| `beta` | FCM coupling weight |
+| `q` | Fuzziness exponent |
+| `w_mt`, `w_sv` | Relative ADMM weights |
+| `n_inner` | FCM sweeps per iteration |
+| `interp_method` | `"nearest"`, `"idw"`, or `"rbf"` |
+| `interp_power` | IDW exponent |
+
+**Instance state:** `U` (memberships), `c` (centroids), `y_mt_c`,
+`y_sv_c` (coupling-mesh duals) are maintained across iterations.
+
+`report` keys: `r_mt_c`, `r_sv_c` (residual norms on coupling mesh),
+`fcm_var`.
+
+**Use this when** the MT and seismic meshes differ significantly in
+resolution or geometry. Use `FCMCoupling` when all three meshes are the
+same (or close enough that the distinction doesn't matter).
+
+---
+
 ### `FCMCoupling`
 
 Fuzzy C-Means latent petrophysical field. `z` is updated in closed form

@@ -89,6 +89,20 @@ Returns `ndarray (N,)`.
 
 ---
 
+### `update_z_fcm_on_mesh(m_mt_c, m_sv_c, y_mt_c, y_sv_c, U, c, beta, rho_mt, rho_sv, q, w_mt=0.5, w_sv=0.5)`
+
+Identical in form to `update_z_fcm` but makes explicit that all inputs
+have already been interpolated to a dedicated coupling mesh before the
+call. Used by `FCMCouplingMesh` in `joint_coupling.py`.
+
+The distinction matters for heterogeneous-mesh configurations: `m_mt`
+and `m_sv` live on their native physics meshes, whereas `z`, `U`, `c`,
+and the duals all live on `mesh_z`.
+
+Returns `ndarray (N_c,)`.
+
+---
+
 ## Usage
 
 These primitives are called by `FCMCoupling` in `joint_coupling.py`.

@@ -158,3 +158,66 @@ def update_z_fcm(
     den = 2.0 * beta * sum_uq    + den_pen + 1e-15
 
     return num / den
+
+
+# =============================================================================
+# Mesh-aware FCM latent field  (z on a dedicated coupling mesh)
+# =============================================================================
+
+def update_z_fcm_on_mesh(
+    m_mt_c,
+    m_sv_c,
+    y_mt_c,
+    y_sv_c,
+    U,
+    c,
+    beta,
+    rho_mt,
+    rho_sv,
+    q,
+    w_mt=0.5,
+    w_sv=0.5,
+):
+    """
+    Update the latent field z on a dedicated coupling mesh.
+
+    Identical in form to ``update_z_fcm`` but makes explicit that all
+    inputs (``m_mt_c``, ``m_sv_c``, ``y_mt_c``, ``y_sv_c``) have already
+    been interpolated to the coupling mesh before the call.
+
+    Solves cell-wise:
+
+        min_z  β Σ_k u_ik^q (z_i − c_k)²
+             + (ρ_mt/2) (m_mt_c_i − z_i + y_mt_c_i/ρ_mt)²
+             + (ρ_sv/2) (m_sv_c_i − z_i + y_sv_c_i/ρ_sv)²
+
+    Parameters
+    ----------
+    m_mt_c, m_sv_c : ndarray (N_c,)   Models interpolated to coupling mesh.
+    y_mt_c, y_sv_c : ndarray (N_c,)   Duals on coupling mesh.
+    U              : ndarray (N_c, K)  Membership matrix on coupling mesh.
+    c              : ndarray (K,)      Centroids.
+    beta           : float             FCM coupling weight.
+    rho_mt, rho_sv : float             ADMM penalty parameters.
+    q              : float             Fuzziness exponent.
+    w_mt, w_sv     : float             Relative ADMM weights (sum to 1).
+
+    Returns
+    -------
+    z : ndarray (N_c,)
+    """
+    Um = U ** q
+
+    sum_uq    = Um.sum(axis=1)
+    sum_uq_ck = (Um * c[None, :]).sum(axis=1)
+
+    v_mt = m_mt_c + y_mt_c / rho_mt
+    v_sv = m_sv_c + y_sv_c / rho_sv
+
+    num_pen = w_mt * rho_mt * v_mt + w_sv * rho_sv * v_sv
+    den_pen = w_mt * rho_mt + w_sv * rho_sv
+
+    num = 2.0 * beta * sum_uq_ck + num_pen
+    den = 2.0 * beta * sum_uq    + den_pen + 1e-15
+
+    return num / den

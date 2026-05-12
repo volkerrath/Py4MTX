@@ -10,7 +10,7 @@ Self-contained module. Provides:
 
 Inlined from:
   entropy/modules/cross_entropy_coupling.py
-  (MultiscaleResampler shared with gramian is imported from coupling_gramian)
+  MultiscaleResampler, ModelGrid imported from coupling_interp.py
 
 References
 ----------
@@ -32,8 +32,8 @@ from typing import Literal
 
 import numpy as np
 
-# MultiscaleResampler and ModelGrid are shared with the Gramian module
-from coupling_gramian import MultiscaleResampler, ModelGrid, _fd_gradient_magnitude
+from coupling_interp import MultiscaleResampler, ModelGrid
+from coupling_gramian import _fd_gradient_magnitude
 
 
 # =============================================================================

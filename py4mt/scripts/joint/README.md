@@ -13,15 +13,16 @@ coupling strategies for joint MT + seismic tomography inversion.
 |---|---|
 | `joint_admm_driver.py` | ADMM outer loop; coupling-agnostic |
 | `joint_coupling.py` | ADMM-compatible wrappers for each strategy |
+| `coupling_interp.py` | All mesh interpolation — shared by crossgrad, gramian, entropy |
 | `coupling_fcm.py` | Fuzzy C-Means latent field — primitives |
-| `coupling_crossgrad.py` | Cross-gradient + mesh operators + interpolation |
-| `coupling_gramian.py` | Structural Gramian + multiscale resampler |
+| `coupling_crossgrad.py` | Cross-gradient + mesh operators |
+| `coupling_gramian.py` | Structural Gramian |
 | `coupling_entropy.py` | Mutual-information (entropy) coupling |
 
-Each `coupling_*.py` module is self-contained: no subpackage imports, no
-`jointinv.*` namespace. `coupling_entropy.py` imports `MultiscaleResampler`
-and `_fd_gradient_magnitude` from `coupling_gramian` (the only cross-module
-dependency).
+No subpackage imports, no `jointinv.*` namespace. The only cross-module
+dependencies are: `coupling_crossgrad`, `coupling_gramian`, and
+`coupling_entropy` all import from `coupling_interp`; `coupling_entropy`
+also imports `_fd_gradient_magnitude` from `coupling_gramian`.
 
 ---
 
@@ -42,7 +43,8 @@ instantiated.
 
 | Strategy | How `z` is updated | Gradient coupling |
 |---|---|---|
-| FCM | Closed-form FCM + ADMM objective | Via `z` |
+| FCMCoupling | Closed-form FCM + ADMM objective (same mesh) | Via `z` |
+| FCMCouplingMesh | Same, but `z` on dedicated `mesh_z`; interp each iter | Via `z` |
 | CrossGradient | ADMM mean + proximal shrinkage | Via `z` |
 | Gramian | ADMM mean | `.gradient()` → injected into solvers |
 | MutualInfo | ADMM mean | `.gradient()` → injected into solvers |
@@ -52,7 +54,7 @@ instantiated.
 
 ## Quick-start examples
 
-### FCM coupling
+### FCM coupling (same mesh)
 
 ```python
 from joint_admm_driver import admm_joint_mt_seis
@@ -68,6 +70,19 @@ result = admm_joint_mt_seis(
     solve_m_mt=my_mt_solver, solve_m_sv=my_seis_solver,
     apply_Gt_mt=my_mt_adjoint, apply_Gt_sv=my_seis_adjoint,
 )
+```
+
+### FCM coupling (dedicated coupling mesh)
+
+```python
+from joint_coupling import FCMCouplingMesh
+
+coupling = FCMCouplingMesh(
+    K=4, N_c=len(mesh_z_cells),
+    mesh_mt=mesh_mt, mesh_sv=mesh_sv, mesh_z=mesh_z,
+    beta=1.0, interp_method="idw",
+)
+# z is returned on mesh_z; the driver interpolates it back to physics meshes
 ```
 
 ### Cross-gradient coupling
