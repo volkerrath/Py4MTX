@@ -87,6 +87,10 @@ Provenance:
                         respective panel type only.  Applied post-hoc after
                         each cell is filled so underlying plotters cannot
                         override them.
+    2026-05-13  Claude  Added plot_model_3d: PyVista 3-D renderer with
+                        axis-aligned x/y/z plane slices, arbitrary oblique
+                        plane slices, and iso-surfaces of any cell-data
+                        scalar.  Outputs interactive HTML or static screenshot.
 """
 
 from __future__ import annotations
@@ -2531,6 +2535,706 @@ def plot_model_ensemble(
 
     fig.tight_layout()
     return fig, axs_arr
+
+
+# =============================================================================
+# 3-D interactive / static model plot  (PyVista)
+# =============================================================================
+
+def plot_model_3d(
+    mesh_file: Union[str, Path],
+    block_file: Union[str, Path],
+    *,
+    # --- scalar field ---
+    scalar: str = "log10_resistivity",
+    clim: Optional[Tuple[float, float]] = None,
+    cmap: str = "turbo_r",
+    # --- orthogonal axis-aligned slices ---
+    slice_x: Optional[Sequence[float]] = None,
+    slice_y: Optional[Sequence[float]] = None,
+    slice_z: Optional[Sequence[float]] = None,
+    # --- arbitrary plane slices ---
+    slice_planes: Optional[Sequence[dict]] = None,
+    # --- iso-surfaces ---
+    isovalues: Optional[Sequence[float]] = None,
+    iso_opacity: float = 0.4,
+    iso_cmap: str = "turbo_r",
+    # --- display options ---
+    show_edges: bool = False,
+    edge_color: str = "k",
+    edge_lw: float = 0.3,
+    background: str = "white",
+    window_size: Tuple[int, int] = (1600, 900),
+    # --- ocean / air ---
+    ocean_value: Optional[float] = 3.0e-1,
+    air_region_index: int = 0,
+    ocean_region_index: int = 1,
+    # --- output ---
+    plot_file: Optional[Union[str, Path]] = None,
+    screenshot_scale: int = 2,
+    out: bool = True,
+) -> Optional["pv.Plotter"]:
+    """Render a FEMTIC resistivity model in 3-D using PyVista.
+
+    Produces axis-aligned slices (any combination of x, y, z planes),
+    arbitrary oblique planes, and iso-surfaces of ``log10_resistivity``
+    (or any other cell-data scalar).
+
+    Parameters
+    ----------
+    mesh_file, block_file
+        Paths to ``mesh.dat`` and ``resistivity_block_iterX.dat``.
+    scalar
+        Cell-data scalar to display.  ``"log10_resistivity"`` (default) or
+        ``"resistivity"``.  Must be present on the PyVista grid — both are
+        attached by :func:`unstructured_grid_from_femtic`.
+    clim
+        Colour limits ``(vmin, vmax)`` for the scalar.
+        ``None`` → PyVista auto.
+    cmap
+        Matplotlib / PyVista colormap name for slices (default ``"turbo_r"``).
+    slice_x
+        List of x-positions (model-local metres) at which to cut YZ planes.
+        ``None`` or empty → no x-slices.
+    slice_y
+        List of y-positions (model-local metres) at which to cut XZ planes.
+        ``None`` or empty → no y-slices.
+    slice_z
+        List of z-positions (model-local metres, z positive-down) at which
+        to cut XY planes.  ``None`` or empty → no z-slices.
+    slice_planes
+        List of dicts for arbitrary oblique planes.  Each dict may contain:
+
+        - ``"origin"`` : ``[x, y, z]`` — point on the plane (model-local m).
+          Defaults to mesh centre.
+        - ``"normal"`` : ``[nx, ny, nz]`` — plane normal vector.
+          Defaults to ``[0, 1, 0]`` (YZ plane).
+
+        Example::
+
+            slice_planes = [
+                dict(origin=[0., 0., 10000.], normal=[1., 1., 0.]),
+            ]
+
+    isovalues
+        Scalar values at which to draw iso-surfaces.  For
+        ``scalar="log10_resistivity"`` these are in log10(Ω·m) — e.g.
+        ``[1.0, 2.0, 3.0]`` for 10 / 100 / 1000 Ω·m boundaries.
+        ``None`` or empty → no iso-surfaces.
+    iso_opacity
+        Opacity for iso-surfaces (0 = transparent, 1 = opaque).
+    iso_cmap
+        Colormap for iso-surface colouring (defaults to same as ``cmap``).
+    show_edges
+        Overlay mesh edges on slices (slow for large meshes).
+    edge_color, edge_lw
+        Colour and line-width for mesh edges when ``show_edges=True``.
+    background
+        Background colour string (default ``"white"``).
+    window_size
+        Plotter window resolution ``(width, height)`` in pixels.
+    ocean_value
+        Resistivity (Ω·m) used to sentinel-mark ocean cells in
+        :func:`prepare_rho_for_plotting`.
+    air_region_index, ocean_region_index
+        Region indices for air and ocean masking.
+    plot_file
+        Output path.  Recognised extensions:
+
+        - ``.html``  → interactive WebGL scene (VTK.js; no PyVista viewer needed).
+        - ``.png`` / ``.jpg`` / ``.svg`` → static screenshot.
+        - ``None``  → open an interactive PyVista window.
+
+    screenshot_scale
+        Anti-aliasing scale factor for screenshot modes (default 2 = 2× resolution).
+    out
+        Print progress messages when ``True``.
+
+    Returns
+    -------
+    pl : pv.Plotter or None
+        The PyVista Plotter object (already closed / exported when ``plot_file``
+        is set).  Returns ``None`` when PyVista is unavailable.
+
+    Raises
+    ------
+    ImportError
+        If PyVista is not importable and ``plot_file`` is not ``None`` (i.e. when
+        an output file was requested; interactive use silently returns ``None``).
+    """
+    if pv is None:
+        if plot_file is not None:
+            raise ImportError(
+                "pyvista is required for plot_model_3d.  "
+                "Install with:  conda install -c conda-forge pyvista"
+            )
+        if out:
+            print("  plot_model_3d: pyvista not available — skipped.")
+        return None
+
+    plot_file = Path(plot_file) if plot_file is not None else None
+
+    # ── Build grid ────────────────────────────────────────────────────────────
+    if out:
+        print(f"  3-D: building PyVista grid from {Path(block_file).name} ...")
+    grid = unstructured_grid_from_femtic(
+        mesh_file,
+        block_file,
+        air_is_nan=True,
+        ocean_value=ocean_value,
+        air_region_index=air_region_index,
+        ocean_region_index=ocean_region_index,
+    )
+    if scalar not in grid.cell_data:
+        raise KeyError(
+            f"Scalar {scalar!r} not found in grid.  "
+            f"Available: {list(grid.cell_data.keys())}"
+        )
+
+    # Convert cell-data to point-data so slicing interpolates correctly.
+    grid = grid.cell_data_to_point_data()
+
+    # ── Plotter ───────────────────────────────────────────────────────────────
+    off_screen = plot_file is not None
+    pl = pv.Plotter(
+        off_screen=off_screen,
+        window_size=list(window_size),
+    )
+    pl.background_color = background
+
+    scalar_bar_args = dict(
+        title=scalar.replace("_", " "),
+        n_labels=5,
+        fmt="%.1f",
+        vertical=True,
+    )
+
+    _slice_kwargs = dict(
+        scalars=scalar,
+        cmap=cmap,
+        clim=list(clim) if clim is not None else None,
+        show_edges=show_edges,
+        edge_color=edge_color,
+        line_width=float(edge_lw),
+        scalar_bar_args=scalar_bar_args,
+    )
+
+    # ── Axis-aligned slices ───────────────────────────────────────────────────
+    n_slices = 0
+
+    def _add_slice(origin, normal):
+        """Add one plane slice to the plotter."""
+        nonlocal n_slices
+        try:
+            slc = grid.slice(normal=normal, origin=origin)
+            if slc.n_points > 0:
+                pl.add_mesh(slc, **_slice_kwargs)
+                n_slices += 1
+        except Exception as exc:
+            if out:
+                print(f"    3-D: slice at origin={origin} normal={normal} failed: {exc}")
+
+    bounds = grid.bounds   # (xmin, xmax, ymin, ymax, zmin, zmax)
+    cx = 0.5 * (bounds[0] + bounds[1])
+    cy = 0.5 * (bounds[2] + bounds[3])
+    cz = 0.5 * (bounds[4] + bounds[5])
+
+    for xpos in (slice_x or []):
+        if out:
+            print(f"    3-D: YZ slice at x = {xpos:.0f} m ...")
+        _add_slice([float(xpos), cy, cz], [1, 0, 0])
+
+    for ypos in (slice_y or []):
+        if out:
+            print(f"    3-D: XZ slice at y = {ypos:.0f} m ...")
+        _add_slice([cx, float(ypos), cz], [0, 1, 0])
+
+    for zpos in (slice_z or []):
+        if out:
+            print(f"    3-D: XY slice at z = {zpos:.0f} m ...")
+        _add_slice([cx, cy, float(zpos)], [0, 0, 1])
+
+    # ── Arbitrary planes ──────────────────────────────────────────────────────
+    for spec in (slice_planes or []):
+        origin = spec.get("origin", [cx, cy, cz])
+        normal = spec.get("normal", [0, 1, 0])
+        if out:
+            print(f"    3-D: oblique slice origin={origin} normal={normal} ...")
+        _add_slice(origin, normal)
+
+    # ── Iso-surfaces ──────────────────────────────────────────────────────────
+    for ival in (isovalues or []):
+        if out:
+            print(f"    3-D: iso-surface {scalar} = {ival:.2f} ...")
+        try:
+            iso = grid.contour([float(ival)], scalars=scalar)
+            if iso.n_points > 0:
+                pl.add_mesh(
+                    iso,
+                    scalars=scalar,
+                    cmap=iso_cmap,
+                    clim=list(clim) if clim is not None else None,
+                    opacity=float(iso_opacity),
+                    show_scalar_bar=False,
+                )
+        except Exception as exc:
+            if out:
+                print(f"    3-D: iso-surface {ival} failed: {exc}")
+
+    if n_slices == 0 and not isovalues:
+        if out:
+            print("  3-D: no slices or iso-surfaces defined — adding orthogonal default.")
+        slc = grid.slice_orthogonal()
+        for s in slc:
+            pl.add_mesh(s, **_slice_kwargs)
+
+    pl.add_axes()
+
+    # ── Output ────────────────────────────────────────────────────────────────
+    if plot_file is None:
+        pl.show()
+        return pl
+
+    suffix = plot_file.suffix.lower()
+    if suffix == ".html":
+        pl.export_html(str(plot_file))
+        if out:
+            print(f"  3-D: interactive HTML saved → {plot_file}")
+    else:
+        pl.screenshot(str(plot_file), scale=screenshot_scale)
+        if out:
+            print(f"  3-D: screenshot saved → {plot_file}")
+
+    pl.close()
+    return pl
+
+
+# =============================================================================
+# Ensemble slice plot  (exact tet-plane intersection, same as femtic_mod_plot)
+# =============================================================================
+
+def plot_ensemble_slices(
+    member_files: list,
+    mesh_file: Union[str, Path],
+    slices: list,
+    *,
+    labels: Optional[list] = None,
+    stat_rows: Sequence[str] = ("mean", "std"),
+    cmap: str = "turbo_r",
+    clim: Optional[Tuple[float, float]] = None,
+    xlim: Optional[Tuple[float, float]] = None,
+    ylim: Optional[Tuple[float, float]] = None,
+    zlim: Optional[Tuple[float, float]] = None,
+    ocean_color: Optional[str] = "lightgrey",
+    ocean_value: float = 0.25,
+    air_bgcolor: Optional[str] = None,
+    plot_file: Optional[Union[str, Path]] = None,
+    per_member_file: bool = False,
+    dpi: int = 200,
+    out: bool = True,
+) -> None:
+    """Produce a joint ensemble figure using exact tetrahedron-plane intersection.
+
+    Layout: one row per ensemble member, followed by optional statistical
+    summary rows (mean, std, median of log₁₀(ρ) across all members).
+    Columns correspond to the entries of *slices* — the same slice-spec list
+    used by ``femtic_mod_plot.plot_model_slices``.
+
+    The mesh is parsed **once** and slice polygon geometry is precomputed
+    **once** per slice position; only the per-element resistivity vector is
+    swapped for each member, making the function efficient for large meshes.
+
+    Parameters
+    ----------
+    member_files
+        List of paths to ``resistivity_block_iterX.dat`` files, one per member.
+    mesh_file
+        Path to the shared ``mesh.dat``.
+    slices
+        List of slice-spec dicts with all positions already in model-local metres
+        (pre-process with ``femtic_mod_plot.resolve_slices`` when using CRS-tagged
+        positions).  Each dict must contain at least ``"kind"`` and the
+        corresponding position key (``z0`` / ``x0`` / ``y0`` / ``point``).
+        Optional per-panel ``xlim`` / ``ylim`` / ``zlim`` / ``title`` keys are
+        honoured.
+    labels
+        Row label strings, one per member.  ``None`` → "Member 0", "Member 1", …
+    stat_rows
+        Stat-summary rows appended after all member rows.  Any subset of
+        ``"mean"``, ``"std"``, ``"median"`` in any order.  Pass ``()`` for no
+        stat rows.
+    cmap
+        Matplotlib colormap name for member and mean/median rows.
+    clim
+        ``[vmin, vmax]`` in log₁₀(Ω·m).  ``None`` → auto from ensemble range.
+    xlim, ylim, zlim
+        Global axis limits in model-local metres; per-panel keys override.
+    ocean_color
+        Flat colour for ocean/lake cells.  ``None`` → use colormap.
+    ocean_value
+        Resistivity sentinel (Ω·m) identifying ocean cells (default 0.25 Ω·m).
+    air_bgcolor
+        Axes facecolor shown through transparent air cells.  ``None`` = figure default.
+    plot_file
+        Joint figure output path.  ``None`` → interactive ``plt.show()``.
+    per_member_file
+        If ``True`` and *plot_file* is set, also save one single-row figure per
+        member.  File names are derived from *plot_file* by inserting
+        ``_memberN`` before the extension.
+    dpi
+        Saved-figure DPI.
+    out
+        Print progress messages.
+
+    Notes
+    -----
+    The ``"std"`` row is rendered on a separate sequential colormap (``cividis``)
+    anchored at zero — because standard deviation is always non-negative and
+    has a different physical meaning from resistivity.  Mean and median rows
+    share the main colormap / clim.
+    """
+    import math
+    import os
+
+    try:
+        import matplotlib.pyplot as plt
+        import matplotlib.colors as mcolors
+        import matplotlib.cm as mcm
+        from matplotlib.collections import PolyCollection
+    except ImportError:  # pragma: no cover
+        raise ImportError(
+            "matplotlib is required for plot_ensemble_slices."
+        )
+
+    member_files = list(member_files)
+    if not member_files:
+        if out:
+            print("  plot_ensemble_slices: member_files is empty — skipping.")
+        return
+
+    n_members = len(member_files)
+    n_slices  = len(slices)
+    stat_rows = list(stat_rows or [])
+    n_rows    = n_members + len(stat_rows)
+
+    if labels is None:
+        labels = [f"Member {i}" for i in range(n_members)]
+    else:
+        labels = list(labels)
+        if len(labels) < n_members:
+            labels += [f"Member {i}" for i in range(len(labels), n_members)]
+
+    # ── geometry helpers ─────────────────────────────────────────────────────
+
+    def _tet_plane_intersection(verts, normal, d):
+        dots = verts @ normal - d
+        pos  = dots >= 0
+        if pos.all() or (~pos).all():
+            return []
+        pts = []
+        for i in range(4):
+            for j in range(i + 1, 4):
+                if pos[i] != pos[j]:
+                    t = dots[i] / (dots[i] - dots[j])
+                    pts.append(verts[i] + t * (verts[j] - verts[i]))
+        c   = np.mean(pts, axis=0)
+        u2d = np.cross(normal,
+                       np.array([0., 0., 1.]) if abs(normal[2]) < 0.9
+                       else np.array([1., 0., 0.]))
+        if np.linalg.norm(u2d) < 1e-12:
+            return pts
+        u2d /= np.linalg.norm(u2d)
+        v2d  = np.cross(normal, u2d)
+        angles = [np.arctan2((p - c) @ v2d, (p - c) @ u2d) for p in pts]
+        return [pts[k] for k in np.argsort(angles)]
+
+    def _axis_slice_params(axis, val):
+        normals = [np.array([1., 0., 0.]),
+                   np.array([0., 1., 0.]),
+                   np.array([0., 0., 1.])]
+        inv = [True, True, False]
+        pt  = np.zeros(3); pt[axis] = val
+        n   = normals[axis]
+        ref = np.array([0., 0., 1.]) if axis != 2 else np.array([1., 0., 0.])
+        u   = np.cross(n, ref); u /= np.linalg.norm(u)
+        v   = np.cross(n, u);   v /= np.linalg.norm(v)
+        return n, pt, u, v, inv[axis]
+
+    def _slice_geometry_indices(nodes, conn, normal, point, u_ax, v_ax):
+        d         = float(normal @ point)
+        verts_all = nodes[conn]
+        polys, elem_idx = [], []
+        for k, verts in enumerate(verts_all):
+            pts3d = _tet_plane_intersection(verts, normal, d)
+            if not pts3d:
+                continue
+            polys.append([(float(p @ u_ax), float(p @ v_ax)) for p in pts3d])
+            elem_idx.append(k)
+        return polys, np.asarray(elem_idx, dtype=int)
+
+    def _strike_dip_to_normal(strike_deg, dip_deg):
+        s = math.radians(strike_deg)
+        d = math.radians(dip_deg)
+        return np.array([-math.sin(d) * math.sin(s),
+                          math.sin(d) * math.cos(s),
+                         -math.cos(d)])
+
+    def _plane_basis(normal):
+        ref = np.array([0., 1., 0.]) if abs(normal[1]) < 0.9 \
+              else np.array([1., 0., 0.])
+        u = np.cross(normal, ref); u /= np.linalg.norm(u)
+        v = np.cross(u, normal);   v /= np.linalg.norm(v)
+        return u, v
+
+    def _plot_panel(fig_ref, ax, polys, vals, *, cmap_obj, norm,
+                    oc_color, oc_value, invert_v, row_label, col,
+                    cb_label, show_ylabel):
+        if not polys:
+            return
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ov_log = math.log10(oc_value) if oc_value > 0 else float("nan")
+        is_ocean = np.isclose(vals, ov_log, atol=0.05)
+        is_air   = ~np.isfinite(vals)
+        is_data  = ~is_ocean & ~is_air
+        mappable = None
+        if is_data.any():
+            pc = PolyCollection(
+                [polys[k] for k in np.where(is_data)[0]],
+                array=vals[is_data], cmap=cmap_obj, norm=norm,
+                linewidths=0, zorder=2, rasterized=True)
+            ax.add_collection(pc)
+            mappable = pc
+        if is_ocean.any() and oc_color is not None:
+            oc = PolyCollection(
+                [polys[k] for k in np.where(is_ocean)[0]],
+                facecolor=oc_color, linewidths=0, zorder=3, rasterized=True)
+            ax.add_collection(oc)
+        ax.autoscale_view()
+        if invert_v:
+            ax.invert_yaxis()
+        if show_ylabel:
+            ax.set_ylabel(row_label, fontsize=8, labelpad=4)
+        if mappable is not None:
+            cb = fig_ref.colorbar(mappable, ax=ax, fraction=0.046, pad=0.04)
+            cb.set_label(cb_label, fontsize=7)
+            cb.ax.tick_params(labelsize=6)
+
+    # ── load mesh ─────────────────────────────────────────────────────────────
+    if out:
+        print(f"  ensemble: reading mesh {Path(mesh_file).name}")
+    mesh  = read_femtic_mesh(mesh_file)
+    nodes = mesh.nodes
+    conn  = mesh.conn
+
+    # ── precompute slice geometry once ────────────────────────────────────────
+    if out:
+        print(f"  ensemble: precomputing geometry for {n_slices} slice(s) …")
+    slice_geom = []
+    for spec in slices:
+        kind       = spec.get("kind", "map")
+        _xlim      = spec.get("xlim", xlim)
+        _ylim      = spec.get("ylim", ylim)
+        _zlim      = spec.get("zlim", zlim)
+        title_tmpl = spec.get("title", None)
+
+        if kind == "map":
+            z0     = float(spec.get("z0", 0.0))
+            normal = np.array([0., 0., 1.])
+            point  = np.array([0., 0., z0])
+            u_ax   = np.array([1., 0., 0.])
+            v_ax   = np.array([0., 1., 0.])
+            polys, eidx = _slice_geometry_indices(nodes, conn, normal, point, u_ax, v_ax)
+            title_tmpl  = title_tmpl or f"Map  z = {z0/1000:.1f} km"
+            slice_geom.append(dict(polys=polys, eidx=eidx, invert_v=False,
+                                   xlabel="x (easting) [m]", ylabel="y (northing) [m]",
+                                   xlim=_xlim, ylim=_ylim, zlim=None, title=title_tmpl))
+
+        elif kind == "ns":
+            x0 = float(spec.get("x0", 0.0))
+            normal, point, u_ax, v_ax, inv = _axis_slice_params(0, x0)
+            polys, eidx = _slice_geometry_indices(nodes, conn, normal, point, u_ax, v_ax)
+            title_tmpl  = title_tmpl or f"N-S  x = {x0/1000:.1f} km"
+            slice_geom.append(dict(polys=polys, eidx=eidx, invert_v=inv,
+                                   xlabel="y (northing) [m]", ylabel="depth [m]",
+                                   xlim=_ylim, ylim=None, zlim=_zlim, title=title_tmpl))
+
+        elif kind == "ew":
+            y0 = float(spec.get("y0", 0.0))
+            normal, point, u_ax, v_ax, inv = _axis_slice_params(1, y0)
+            polys, eidx = _slice_geometry_indices(nodes, conn, normal, point, u_ax, v_ax)
+            title_tmpl  = title_tmpl or f"E-W  y = {y0/1000:.1f} km"
+            slice_geom.append(dict(polys=polys, eidx=eidx, invert_v=inv,
+                                   xlabel="x (easting) [m]", ylabel="depth [m]",
+                                   xlim=_xlim, ylim=None, zlim=_zlim, title=title_tmpl))
+
+        elif kind == "plane":
+            _pt     = np.asarray(spec.get("point",  [0., 0., 0.]), dtype=float)
+            _strike = float(spec.get("strike", 0.0))
+            _dip    = float(spec.get("dip",    90.0))
+            normal  = _strike_dip_to_normal(_strike, _dip)
+            u_ax, v_ax = _plane_basis(normal)
+            polys, eidx = _slice_geometry_indices(nodes, conn, normal, _pt, u_ax, v_ax)
+            title_tmpl  = title_tmpl or f"Plane  str={_strike:.0f}°  dip={_dip:.0f}°"
+            slice_geom.append(dict(polys=polys, eidx=eidx, invert_v=True,
+                                   xlabel="along-strike [m]", ylabel="down-dip [m]",
+                                   xlim=_xlim, ylim=_ylim, zlim=None, title=title_tmpl))
+        else:
+            if out:
+                print(f"  ensemble: unknown slice kind {kind!r} — skipped.")
+            slice_geom.append(None)
+
+    # ── load all member resistivities ─────────────────────────────────────────
+    if out:
+        print(f"  ensemble: loading {n_members} member(s) …")
+    n_elem    = conn.shape[0]
+    log_stack = np.full((n_members, n_elem), np.nan, dtype=float)
+    rho_plots: list = []
+
+    for i, mf in enumerate(member_files):
+        if out:
+            print(f"    [{i + 1}/{n_members}] {Path(mf).name}")
+        block    = read_resistivity_block(mf)
+        rho_elem = map_regions_to_element_rho(block.region_of_elem, block.region_rho)
+        rho_plot = prepare_rho_for_plotting(
+            rho_elem, air_is_nan=True,
+            ocean_value=float(ocean_value),
+            region_of_elem=block.region_of_elem,
+        )
+        rho_plots.append(rho_plot)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            log_stack[i] = np.where(rho_plot > 0, np.log10(rho_plot), np.nan)
+
+    # ── stat arrays (log10 space) ─────────────────────────────────────────────
+    stat_arrays: dict = {}
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        if "mean"   in stat_rows:
+            stat_arrays["mean"]   = np.nanmean(log_stack,   axis=0)
+        if "std"    in stat_rows:
+            stat_arrays["std"]    = np.nanstd(log_stack,    axis=0, ddof=1)
+        if "median" in stat_rows:
+            stat_arrays["median"] = np.nanmedian(log_stack, axis=0)
+
+    # ── colormap / normalisation ──────────────────────────────────────────────
+    def _get_cmap(name):
+        obj = (mcm.colormaps[name].copy() if hasattr(mcm, "colormaps")
+               else mcm.get_cmap(name).copy())
+        obj.set_bad(alpha=0.0)
+        return obj
+
+    cmap_obj = _get_cmap(cmap)
+
+    if clim is not None:
+        norm = mcolors.Normalize(vmin=float(clim[0]), vmax=float(clim[1]))
+    else:
+        _all = log_stack[np.isfinite(log_stack)]
+        norm = mcolors.Normalize(vmin=float(np.nanmin(_all)),
+                                 vmax=float(np.nanmax(_all)))
+
+    std_norm = None
+    std_cmap = _get_cmap("cividis") if "std" in stat_arrays else cmap_obj
+    if "std" in stat_arrays:
+        _sv = stat_arrays["std"]
+        _sv = _sv[np.isfinite(_sv)]
+        if _sv.size > 0:
+            std_norm = mcolors.Normalize(vmin=0.0, vmax=float(np.nanmax(_sv)))
+
+    # ── helper: render one full row ───────────────────────────────────────────
+    def _render_row(fig_ref, axes_row, log_elem, row_label, *, use_std=False):
+        _norm     = std_norm if use_std else norm
+        _cmap_obj = std_cmap if use_std else cmap_obj
+        _cb_label = "std  log₁₀(ρ)" if use_std else "log₁₀(ρ / Ω·m)"
+
+        for col, sg in enumerate(slice_geom):
+            ax = axes_row[col]
+            if air_bgcolor is not None:
+                ax.set_facecolor(air_bgcolor)
+            if sg is None:
+                ax.set_visible(False)
+                continue
+
+            panel_vals = log_elem[sg["eidx"]]
+            _plot_panel(
+                fig_ref, ax, sg["polys"], panel_vals,
+                cmap_obj=_cmap_obj, norm=_norm,
+                oc_color=ocean_color, oc_value=ocean_value,
+                invert_v=sg["invert_v"],
+                row_label=row_label, col=col,
+                cb_label=_cb_label, show_ylabel=(col == 0),
+            )
+            ax.set_xlabel(sg["xlabel"], fontsize=7)
+            ax.tick_params(labelsize=6)
+
+            _xl = sg["xlim"]; _yl = sg["ylim"]; _zl = sg["zlim"]
+            if _xl is not None: ax.set_xlim(_xl)
+            if _yl is not None: ax.set_ylim(_yl)
+            if _zl is not None: ax.set_ylim([_zl[1], _zl[0]])
+
+    # ── build joint figure ────────────────────────────────────────────────────
+    if out:
+        print(f"  ensemble: building joint figure "
+              f"({n_rows} rows × {n_slices} cols) …")
+    fig, axes = plt.subplots(
+        n_rows, n_slices,
+        figsize=(4.5 * n_slices, 3.5 * n_rows),
+        squeeze=False,
+    )
+    for col, sg in enumerate(slice_geom):
+        if sg is not None:
+            axes[0, col].set_title(sg["title"], fontsize=9)
+
+    for row, (mf, lbl, rho_plot) in enumerate(zip(member_files, labels, rho_plots)):
+        with np.errstate(divide="ignore", invalid="ignore"):
+            log_elem = np.where(rho_plot > 0, np.log10(rho_plot), np.nan)
+        _render_row(fig, axes[row], log_elem, lbl)
+
+    for s_row, stat_name in enumerate(stat_rows):
+        row = n_members + s_row
+        arr = stat_arrays.get(stat_name)
+        if arr is None:
+            for col in range(n_slices):
+                axes[row, col].set_visible(False)
+            continue
+        _render_row(fig, axes[row], arr,
+                    stat_name.capitalize(), use_std=(stat_name == "std"))
+
+    fig.suptitle(f"Ensemble  ({n_members} members)", fontsize=11)
+    fig.tight_layout()
+
+    if plot_file is not None:
+        fig.savefig(str(plot_file), dpi=dpi, bbox_inches="tight")
+        if out:
+            print(f"  ensemble: joint figure saved → {plot_file}")
+    else:
+        plt.show()
+
+    # ── per-member figures ────────────────────────────────────────────────────
+    if per_member_file and plot_file is not None:
+        _stem, _ext = os.path.splitext(str(plot_file))
+        for i, (mf, lbl, rho_plot) in enumerate(zip(member_files, labels, rho_plots)):
+            fig_m, axes_m = plt.subplots(
+                1, n_slices,
+                figsize=(4.5 * n_slices, 3.5),
+                squeeze=False,
+            )
+            for col, sg in enumerate(slice_geom):
+                if sg is not None:
+                    axes_m[0, col].set_title(sg["title"], fontsize=9)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                log_elem = np.where(rho_plot > 0, np.log10(rho_plot), np.nan)
+            _render_row(fig_m, axes_m[0], log_elem, lbl)
+            fig_m.suptitle(
+                f"Ensemble member {i}  —  {Path(mf).name}", fontsize=10
+            )
+            fig_m.tight_layout()
+            per_path = f"{_stem}_member{i}{_ext}"
+            fig_m.savefig(per_path, dpi=dpi, bbox_inches="tight")
+            plt.close(fig_m)
+            if out:
+                print(f"  ensemble: member {i} saved → {per_path}")
+
+    plt.close(fig)
+    if out:
+        print("  ensemble: done.")
 
 
 # =============================================================================

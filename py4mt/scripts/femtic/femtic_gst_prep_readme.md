@@ -125,6 +125,33 @@ three spatial dimensions (easting, northing, depth) are handled natively.
 | `MOD_REFERENCE_FILE`  | Filename for the reference / prior model (default: `referencemodel.dat`).|
 | `MOD_REF`             | Full path to the template reference model — read once to obtain mesh cell-centre coordinates. |
 
+### Ensemble slice plot (`PLOT_SLICES_ENS`)
+
+When `PLOT_SLICES_ENS = True` (inside the viz block, i.e. requires `PLOT_DATA` or
+`PLOT_MODEL` to be `True`), a joint multi-row figure is produced using
+`fviz.plot_ensemble_slices`.  Unlike `PLOT_MODEL`, this uses **exact
+tetrahedron-plane intersection** (same method as `femtic_mod_plot.py`) rather
+than centroid sampling, and shows all members in a single figure with optional
+statistical summary rows.
+
+| Variable | Default | Description |
+|---|---|---|
+| `PLOT_SLICES_ENS` | `False` | Enable / disable the ensemble slice plot |
+| `ENS_SLICES` | 4 slices | Slice-spec list in model-local metres — same format as `femtic_mod_plot.PLOT_SLICES`; kinds: `"map"`, `"ns"`, `"ew"`, `"plane"` |
+| `ENS_CMAP` | `"turbo_r"` | Matplotlib colormap for member and mean/median rows |
+| `ENS_CLIM` | `[0., 4.]` | log₁₀(Ω·m) colour limits; `None` = auto from ensemble range |
+| `ENS_XLIM`, `ENS_YLIM`, `ENS_ZLIM` | `None` | Global axis limits in model-local metres; `None` = auto |
+| `ENS_OCEAN_COLOR` | `"lightgrey"` | Flat colour for ocean cells |
+| `ENS_STAT_ROWS` | `["mean", "std"]` | Stat rows appended after member rows; any subset of `"mean"`, `"std"`, `"median"` |
+| `ENS_PER_MEMBER` | `False` | Also save one single-row figure per member |
+| `ENS_PLOT_DPI` | `300` | Figure DPI |
+| `ENS_PLOT_FILE` | `plots/gst_ensemble_slices.pdf` | Joint figure output path |
+
+The member file list is built automatically using `MOD_RESISTIVITY_FILE` (the filename
+written by `generate_gst_model_ensemble`).  To visualise converged inversion results
+rather than initial models, change the filename to the desired iterate
+(e.g. `"resistivity_block_iter10.dat"`).
+
 **`MOD_OUTPUT_TARGET` guidance:**
 
 | Value                  | Effect                                                                 |
@@ -268,6 +295,7 @@ No sparse-matrix file (`.npz`) is required.
 |            |               | block unchanged from RTO. `MOD_PP_MODE` supports `"random"`,  |
 |            |               | `"fixed"`, and `"mixed"` pilot-point strategies.              |
 |            |               | `MOD_OUTPUT_TARGET` controls which FEMTIC files are written.  |
+| 2026-05-13 | Claude | Added `PLOT_SLICES_ENS` block: `ENS_SLICES` / `ENS_CMAP` / `ENS_CLIM` / `ENS_STAT_ROWS` config; calls `fviz.plot_ensemble_slices` for exact tet-plane intersection ensemble figure. Member file list uses `MOD_RESISTIVITY_FILE`. |
 
 ## Author
 

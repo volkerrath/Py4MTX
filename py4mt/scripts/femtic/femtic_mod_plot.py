@@ -71,6 +71,22 @@ Provenance
     2026-05-06  vrath / Claude Sonnet 4.6   Added lat/lon and UTM slice-
                 position input; pure-Python UTM forward projection;
                 auto-derived UTM zone from mesh origin coordinates.
+    2026-05-06  vrath / Claude Sonnet 4.6   Added estimate_utm_origin:
+                least-squares mesh-centre estimation from N calibration
+                sites with known model-local and geographic coordinates.
+    2026-05-13  vrath / Claude Sonnet 4.6   Harmonised plotting config block
+                with femtic_mod_edit.py: unified variable names, comments,
+                and section header.
+    2026-05-13  vrath / Claude Sonnet 4.6   Added 3-D PyVista plot step (5):
+                PLOT3D config block with axis-aligned x/y/z slices, oblique
+                planes, and iso-surfaces via fviz.plot_model_3d.  Output:
+                interactive HTML or static screenshot.
+    2026-05-13  vrath / Claude Sonnet 4.6   Added ensemble slice plot step (6):
+                plot_ensemble_slices function and ENS_* config block.  Reuses
+                identical PLOT_* parameters and slice geometry; mesh parsed
+                once, member resistivities swapped per row.  Optional stat
+                rows (mean, std, median) in log10 space; per-member file
+                output; std rendered on a separate sequential colormap.
 
 @author: vrath
 """
@@ -182,7 +198,7 @@ SITE_MARKER = dict(marker="v", color="black", ms=8, zorder=10,
 OUT = True
 
 # ---------------------------------------------------------------------------
-# Plotting
+# Plotting — requires femtic_viz and Matplotlib
 # ---------------------------------------------------------------------------
 #: Output file path — None → interactive show().
 PLOT_FILE = WORK_DIR + "resistivity_block_iter0.pdf"
@@ -194,7 +210,7 @@ PLOT_DPI = 600
 PLOT_CMAP = "turbo_r"
 
 #: Colour limits [log10(ρ_min), log10(ρ_max)] — None = auto.
-PLOT_CLIM = [0.0, 4.0]
+PLOT_CLIM = [0.0, 4.0]      # log10(Ω·m)
 
 #: Flat colour for ocean / lake cells.  None → use colormap.
 PLOT_OCEAN_COLOR = "lightgrey"
@@ -202,27 +218,32 @@ PLOT_OCEAN_COLOR = "lightgrey"
 #: Axes facecolor for air / background.  None = figure default.
 PLOT_AIR_BGCOLOR = None
 
-#: Slice specification.
+#: Slice specification — a list of dicts, one per panel (left to right).
+#:
+#: Slices use exact tetrahedron-plane intersection — no selection slab,
+#: no dw, no dz.  The plane is infinitely thin; every tetrahedron that
+#: straddles it contributes an exact triangle or quadrilateral polygon.
 #:
 #: Each dict must contain:
 #:   kind   : "map"   — horizontal slice at z = z0
 #:            "ns"    — N-S vertical section at x = x0   (y vs depth)
 #:            "ew"    — E-W vertical section at y = y0   (x vs depth)
 #:            "plane" — arbitrary plane by strike / dip / point
+#:   z0     : (map   only)  depth in metres
+#:   x0     : (ns    only)  easting — plain float = model-local metres;
+#:            or (value, "utm") / (value, "latlon") for CRS tagging
+#:   y0     : (ew    only)  northing — plain float = model-local metres;
+#:            or (value, "utm") / (value, "latlon") for CRS tagging
+#:   point  : (plane only)  [x, y, z] any point on the plane (metres)
+#:            or ([lon, lat, z], "latlon") / ([E, N, z], "utm")
+#:   strike : (plane only)  clockwise from North, degrees (0=N, 90=E)
+#:   dip    : (plane only)  downward inclination from horizontal, degrees
+#:   xlim   : [xmin, xmax] — easting or along-strike axis limit
+#:   ylim   : [ymin, ymax] — northing or down-dip axis limit
+#:   zlim   : [zmin, zmax] — depth axis limit (ns/ew panels)
+#:   title  : optional string override
 #:
-#: Horizontal position keys (x0, y0, point[:2]) accept:
-#:   plain float          → model-local metres ("model" crs)
-#:   (value, "model")     → model-local metres
-#:   (value, "utm")       → UTM metres  (auto zone from UTM_ORIGIN_LAT/LON)
-#:   (value, "latlon")    → decimal degrees  (lon for x0, lat for y0)
-#:
-#: For "plane":
-#:   point = [x, y, z]            → all model-local metres
-#:   point = ([lon, lat, z], "latlon")  → lon/lat in degrees, z in model-local m
-#:   point = ([E,   N,   z], "utm")     → E/N in UTM m, z in model-local m
-#:
-#: z0 is always model-local metres.
-#: Per-panel xlim/ylim/zlim (model-local m) override the globals below.
+#: Per-panel xlim/ylim/zlim override the global PLOT_XLIM/PLOT_YLIM/PLOT_ZLIM.
 PLOT_SLICES = [
     # Plain float — model-local metres (backward-compatible):
     dict(kind="map",  z0=5000.0),
@@ -233,10 +254,91 @@ PLOT_SLICES = [
     dict(kind="ew",   y0=(-16.409, "latlon")),
 ]
 
-#: Global axis limits in model-local metres; None = auto.
-PLOT_XLIM = [-20000., 20000.]
-PLOT_YLIM = [-20000., 20000.]
-PLOT_ZLIM = [  -6000., 15000.]
+#: Global axis limits in model-local metres — used for panels that do not
+#: specify their own.  None → auto (inferred from data extent).
+PLOT_XLIM = [-20000., 20000.]   # [xmin, xmax] metres — easting
+PLOT_YLIM = [-20000., 20000.]   # [ymin, ymax] metres — northing
+PLOT_ZLIM = [  -6000., 15000.]  # [zmin, zmax] metres — depth (z positive-down)
+
+# ---------------------------------------------------------------------------
+# 3-D plotting — requires PyVista  (conda install -c conda-forge pyvista)
+# ---------------------------------------------------------------------------
+#: Set True to produce a 3-D PyVista scene after the 2-D slice figure.
+PLOT3D = False
+
+#: Output file for the 3-D scene.
+#:   .html  → interactive WebGL in a browser (recommended).
+#:   .png / .jpg → static screenshot.
+#:   None   → open an interactive PyVista window (requires a display).
+PLOT3D_FILE = WORK_DIR + "resistivity_block_iter0_3d.html"
+
+#: Scalar field to display.  "log10_resistivity" or "resistivity".
+PLOT3D_SCALAR = "log10_resistivity"
+
+#: Colour limits [vmin, vmax] for the scalar.  None → PyVista auto.
+PLOT3D_CLIM = [0.0, 4.0]       # log10(Ω·m)
+
+#: Matplotlib / PyVista colormap for slices.
+PLOT3D_CMAP = "turbo_r"
+
+#: Axis-aligned slice positions in model-local metres (z positive-down).
+#: Each list entry places one cutting plane perpendicular to that axis.
+#: Empty list or None → no slices along that axis.
+PLOT3D_SLICE_X = [0.0]                    # YZ planes — N-S sections
+PLOT3D_SLICE_Y = [0.0]                    # XZ planes — E-W sections
+PLOT3D_SLICE_Z = [5000.0, 15000.0]        # XY planes — horizontal maps
+
+#: Arbitrary oblique plane slices.  Each entry is a dict with:
+#:   "origin" : [x, y, z]  — any point on the plane (model-local m).
+#:   "normal" : [nx, ny, nz] — plane normal vector (need not be unit).
+#: Empty list or None → no oblique slices.
+PLOT3D_SLICE_PLANES = [
+    # dict(origin=[0., 0., 8000.], normal=[1., 1., 0.]),   # NE-trending vertical
+]
+
+#: Iso-surface levels in the same units as PLOT3D_SCALAR.
+#: For log10_resistivity: 1.0 = 10 Ω·m, 2.0 = 100 Ω·m, 3.0 = 1000 Ω·m.
+#: Empty list or None → no iso-surfaces.
+PLOT3D_ISOVALUES = [1.0, 2.0, 3.0]
+
+#: Opacity for iso-surfaces (0 = transparent, 1 = solid).
+PLOT3D_ISO_OPACITY = 0.35
+
+#: Window size in pixels [width, height] — used for screenshot modes.
+PLOT3D_WINDOW_SIZE = [1600, 900]
+
+# ---------------------------------------------------------------------------
+# Ensemble slice plot
+# ---------------------------------------------------------------------------
+#: Set True to produce an ensemble figure (one row per member + stat rows).
+PLOT_ENS = False
+
+#: List of resistivity block files — one entry per ensemble member.
+#: Paths can be absolute or relative to WORK_DIR.
+#: Example: sorted(glob.glob(WORK_DIR + "ensemble/*/resistivity_block_iter10.dat"))
+ENS_FILES = [
+    # WORK_DIR + "ensemble/ubinas_rto_0/resistivity_block_iter10.dat",
+    # WORK_DIR + "ensemble/ubinas_rto_1/resistivity_block_iter10.dat",
+]
+
+#: Labels for the member rows (one string per member).
+#: None → auto-label "Member 0", "Member 1", …
+ENS_LABELS = None
+
+#: Statistical summary rows appended after the member rows.
+#: Any subset of: "mean", "std", "median".
+#: "mean"   → cell-wise mean   of log10(ρ) across all members
+#: "std"    → cell-wise std    of log10(ρ) across all members
+#: "median" → cell-wise median of log10(ρ) across all members
+ENS_STAT_ROWS = ["mean", "std"]
+
+#: Output file for the joint ensemble figure.
+#:   None → interactive show().
+PLOT_ENS_FILE = WORK_DIR + "resistivity_block_ensemble.pdf"
+
+#: If True, also save one figure per member alongside the joint figure.
+#: Per-member files are named by replacing ".pdf" with "_memberN.pdf".
+ENS_PER_MEMBER = False
 
 # ---------------------------------------------------------------------------
 # Mesh-centre estimation from known site coordinates  (optional)
@@ -903,9 +1005,12 @@ def plot_model_slices(
         plt.show()
 
 
+
+
 # ===========================================================================
 # Mesh-centre estimation helper
 # ===========================================================================
+
 
 def estimate_utm_origin(calibration_sites: list,
                         observe_file: str,
@@ -1086,3 +1191,60 @@ plot_model_slices(
     out         = OUT,
 )
 print("Done.")
+
+# --- (5) 3-D PyVista plot --------------------------------------------------
+if PLOT3D:
+    if fviz is None:
+        print("  3-D plot skipped: femtic_viz not available.")
+    else:
+        print(f"Rendering 3-D model: {MODEL_FILE}")
+        fviz.plot_model_3d(
+            mesh_file      = MESH_FILE,
+            block_file     = MODEL_FILE,
+            scalar         = PLOT3D_SCALAR,
+            clim           = PLOT3D_CLIM,
+            cmap           = PLOT3D_CMAP,
+            slice_x        = PLOT3D_SLICE_X,
+            slice_y        = PLOT3D_SLICE_Y,
+            slice_z        = PLOT3D_SLICE_Z,
+            slice_planes   = PLOT3D_SLICE_PLANES,
+            isovalues      = PLOT3D_ISOVALUES,
+            iso_opacity    = PLOT3D_ISO_OPACITY,
+            iso_cmap       = PLOT3D_CMAP,
+            ocean_value    = OCEAN_RHO,
+            air_region_index   = 0,
+            ocean_region_index = 1,
+            window_size    = PLOT3D_WINDOW_SIZE,
+            plot_file      = PLOT3D_FILE,
+            out            = OUT,
+        )
+        print("3-D plot done.")
+
+# --- (6) Ensemble slice plot -----------------------------------------------
+if PLOT_ENS:
+    if fviz is None:
+        print("  Ensemble plot skipped: femtic_viz not available.")
+    elif not ENS_FILES:
+        print("  Ensemble plot skipped: ENS_FILES is empty.")
+    else:
+        print(f"Plotting ensemble: {len(ENS_FILES)} member(s) …")
+        fviz.plot_ensemble_slices(
+            member_files   = ENS_FILES,
+            mesh_file      = MESH_FILE,
+            slices         = slices_resolved,
+            labels         = ENS_LABELS,
+            stat_rows      = ENS_STAT_ROWS,
+            cmap           = PLOT_CMAP,
+            clim           = PLOT_CLIM,
+            xlim           = PLOT_XLIM,
+            ylim           = PLOT_YLIM,
+            zlim           = PLOT_ZLIM,
+            ocean_color    = PLOT_OCEAN_COLOR,
+            ocean_value    = OCEAN_RHO,
+            air_bgcolor    = PLOT_AIR_BGCOLOR,
+            plot_file      = PLOT_ENS_FILE,
+            per_member_file = ENS_PER_MEMBER,
+            dpi            = PLOT_DPI,
+            out            = OUT,
+        )
+        print("Ensemble plot done.")
