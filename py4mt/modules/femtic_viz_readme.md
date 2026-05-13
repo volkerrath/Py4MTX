@@ -338,6 +338,128 @@ You can also control this via `prepare_rho_for_plotting()` or by setting
 
 ---
 
+---
+
+## 3-D model plot (`plot_model_3d`)
+
+High-level function for interactive or static 3-D rendering of a FEMTIC
+resistivity model directly from `mesh.dat` + `resistivity_block_iterX.dat`.
+Requires PyVista (`conda install -c conda-forge pyvista`).
+
+```python
+fviz.plot_model_3d(
+    mesh_file   = "mesh.dat",
+    block_file  = "resistivity_block_iter10.dat",
+
+    # scalar & colouring
+    scalar      = "log10_resistivity",  # or "resistivity"
+    clim        = [0., 4.],             # log10(Ω·m)
+    cmap        = "turbo_r",
+
+    # axis-aligned slices (model-local metres, z positive-down)
+    slice_x     = [0.],                 # one YZ plane
+    slice_y     = [0.],                 # one XZ plane
+    slice_z     = [5000., 15000.],      # two horizontal maps
+
+    # oblique planes
+    slice_planes = [
+        dict(origin=[0., 0., 8000.], normal=[1., 1., 0.]),
+    ],
+
+    # iso-surfaces
+    isovalues   = [1., 2., 3.],        # 10 / 100 / 1000 Ω·m boundaries
+    iso_opacity = 0.35,
+
+    # output — .html = interactive WebGL, .png = screenshot, None = live window
+    plot_file   = "model_3d.html",
+)
+```
+
+### Parameters summary
+
+| Parameter | Default | Description |
+|---|---|---|
+| `scalar` | `"log10_resistivity"` | Cell-data scalar to display |
+| `clim` | `None` | Colour limits; `None` = PyVista auto |
+| `cmap` | `"turbo_r"` | Colormap for slices and iso-surfaces |
+| `slice_x` | `None` | x-positions of YZ cutting planes (m) |
+| `slice_y` | `None` | y-positions of XZ cutting planes (m) |
+| `slice_z` | `None` | z-positions of XY cutting planes (m) |
+| `slice_planes` | `None` | List of `dict(origin, normal)` for oblique planes |
+| `isovalues` | `None` | Iso-surface levels in scalar units |
+| `iso_opacity` | `0.4` | Iso-surface opacity (0–1) |
+| `iso_cmap` | same as `cmap` | Colormap for iso-surfaces |
+| `show_edges` | `False` | Overlay mesh edges on slices (slow for large grids) |
+| `background` | `"white"` | Scene background colour |
+| `window_size` | `[1600, 900]` | Window / screenshot resolution in pixels |
+| `ocean_value` | `0.3` | Ω·m sentinel for ocean cells |
+| `plot_file` | `None` | `.html` / `.png` / `.jpg` / `None` (live) |
+| `screenshot_scale` | `2` | Anti-aliasing scale for screenshot output |
+
+If no slices or iso-surfaces are defined, a default orthogonal triple (one
+XY, YZ, and XZ plane through the mesh centre) is added automatically.
+
+---
+
+## Ensemble slice plot (`plot_ensemble_slices`)
+
+Joint figure of all ensemble members using the same exact tetrahedron-plane
+intersection as `femtic_mod_plot.plot_model_slices`.  One row per member,
+columns = slices.  Optional statistical summary rows appended at the bottom.
+
+```python
+fviz.plot_ensemble_slices(
+    member_files = [
+        "ensemble/rto_0/resistivity_block_iter10.dat",
+        "ensemble/rto_1/resistivity_block_iter10.dat",
+        # …
+    ],
+    mesh_file  = "mesh.dat",
+    slices     = [                        # model-local metres
+        dict(kind="map", z0=5000.),
+        dict(kind="map", z0=15000.),
+        dict(kind="ns",  x0=0.),
+        dict(kind="ew",  y0=0.),
+    ],
+    labels     = ["RTO-0", "RTO-1"],     # None → "Member 0", …
+    stat_rows  = ["mean", "std"],        # rows appended after members
+    cmap       = "turbo_r",
+    clim       = [0., 4.],              # log10(Ω·m); None = auto
+    xlim       = [-20000., 20000.],
+    ylim       = [-20000., 20000.],
+    zlim       = [-6000., 15000.],
+    ocean_value    = 0.25,
+    per_member_file = True,             # also save _member0.pdf, _member1.pdf …
+    plot_file  = "ensemble_slices.pdf",
+    dpi        = 300,
+)
+```
+
+### Parameters summary
+
+| Parameter | Default | Description |
+|---|---|---|
+| `member_files` | — | List of resistivity block paths, one per member |
+| `mesh_file` | — | Shared `mesh.dat` |
+| `slices` | — | Slice-spec list in model-local metres (kinds: `"map"`, `"ns"`, `"ew"`, `"plane"`) |
+| `labels` | `None` | Row label per member; `None` → "Member 0", … |
+| `stat_rows` | `("mean", "std")` | Stat rows after member rows; subset of `"mean"`, `"std"`, `"median"` |
+| `cmap` | `"turbo_r"` | Colormap for member / mean / median rows |
+| `clim` | `None` | `[vmin, vmax]` log₁₀(Ω·m); `None` = auto from ensemble |
+| `xlim`, `ylim`, `zlim` | `None` | Global axis limits in model-local metres |
+| `ocean_color` | `"lightgrey"` | Flat colour for ocean cells |
+| `ocean_value` | `0.25` | Ω·m sentinel for ocean cells |
+| `air_bgcolor` | `None` | Axes facecolor for air / background |
+| `plot_file` | `None` | Joint figure path; `None` → interactive window |
+| `per_member_file` | `False` | Save `_memberN` figures alongside the joint figure |
+| `dpi` | `200` | Saved-figure DPI |
+
+The `"std"` row is rendered on a separate `cividis` colormap anchored at zero;
+mean and median share the main colormap / clim.  NaN (air, missing) cells are
+excluded from all statistics.
+
+---
+
 ## Provenance
 
 | Date       | Author | Change                                                      |
@@ -382,5 +504,16 @@ You can also control this via `prepare_rho_for_plotting()` or by setting
 |            |        | (e.g. `['rho', 'phase', 'tipper']`); `comps` may be a      |
 |            |        | single string or per-panel list; returned `axs` shape is   |
 |            |        | `(n_samples, n_panels)`.                                    |
+| 2026-05-13 | Claude | Added `plot_model_3d`: PyVista 3-D renderer with axis-aligned |
+|            |        | x/y/z plane slices, arbitrary oblique planes, and iso-      |
+|            |        | surfaces of any cell-data scalar. Outputs interactive HTML  |
+|            |        | (WebGL) or static screenshot. Graceful skip when PyVista    |
+|            |        | is absent. Called from `femtic_mod_plot.py` step 5.         |
+| 2026-05-13 | Claude | Added `plot_ensemble_slices`: joint member × slice figure   |
+|            |        | using exact tet-plane intersection. Mesh and geometry       |
+|            |        | precomputed once; member resistivities swapped per row.     |
+|            |        | Optional mean/std/median stat rows; std on separate         |
+|            |        | sequential colormap. Called from `femtic_mod_plot.py`       |
+|            |        | step 6 and from `femtic_rto_prep.py` / `femtic_gst_prep.py`.|
 
 Author: Volker Rath (DIAS)

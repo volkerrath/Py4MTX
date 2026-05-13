@@ -46,6 +46,11 @@ Provenance:
                                  (gstools).  Low-level Kriging lives in
                                  ens.generate_gst_model_ensemble().
                                  Data perturbation block unchanged from RTO.
+    2026-05-13  Claude           Added PLOT_SLICES_ENS block: ENS_SLICES /
+                                 ENS_CMAP / ENS_CLIM / ENS_STAT_ROWS config;
+                                 calls fviz.plot_ensemble_slices for exact
+                                 tet-plane intersection ensemble figure.
+                                 Member file list uses MOD_RESISTIVITY_FILE.
 """
 
 import os
@@ -305,6 +310,31 @@ if PLOT_DATA or PLOT_MODEL:
          "width": 500},
     ]
 
+    # --- ensemble slice plot (femtic_viz.plot_ensemble_slices) ---
+    # Uses the same exact tet-plane intersection as femtic_mod_plot.
+    # Set PLOT_SLICES_ENS = True to produce a joint member × slice figure.
+    PLOT_SLICES_ENS = False
+
+    #: Slice specs in model-local metres — same format as femtic_mod_plot PLOT_SLICES.
+    #: Supported kinds: "map" (z0), "ns" (x0), "ew" (y0), "plane" (point/strike/dip).
+    #: Plain floats only — no CRS tagging here.
+    ENS_SLICES = [
+        dict(kind="map", z0=5000.0),
+        dict(kind="map", z0=15000.0),
+        dict(kind="ns",  x0=0.0),
+        dict(kind="ew",  y0=0.0),
+    ]
+    ENS_CMAP         = "turbo_r"
+    ENS_CLIM         = [0.0, 4.0]    # log10(Ω·m); None = auto
+    ENS_XLIM         = None           # [xmin, xmax] model-local metres; None = auto
+    ENS_YLIM         = None
+    ENS_ZLIM         = None
+    ENS_OCEAN_COLOR  = "lightgrey"
+    ENS_STAT_ROWS    = ["mean", "std"]   # any subset of "mean", "std", "median"
+    ENS_PER_MEMBER   = False             # also save one figure per member
+    ENS_PLOT_DPI     = 300
+    ENS_PLOT_FILE    = PLOT_DIR + "gst_ensemble_slices" + PLOT_STR + ".pdf"
+
 
 """
 Generate ensemble directories and copy template files.
@@ -477,3 +507,44 @@ if PLOT_MODEL and PERTURB_MOD:
         plt.close(fig_mod)
         print(f"  model plot saved: {plot_path}")
     print("model ensemble plots saved.")
+
+"""
+Ensemble slice plot
+-------------------
+Joint figure of all ensemble members using exact tetrahedron-plane intersection.
+One row per member, columns = slices defined by ENS_SLICES.
+Optional stat rows (mean, std, median of log10(ρ)) are appended at the bottom.
+
+Helper: femtic_viz.plot_ensemble_slices
+"""
+if PLOT_DATA or PLOT_MODEL:
+    if PLOT_SLICES_ENS:
+        # Build the list of initial-model files for all members.
+        # Uses MOD_RESISTIVITY_FILE so the filename matches the one written by
+        # generate_gst_model_ensemble.  Change to a converged-iterate filename
+        # (e.g. "resistivity_block_iter10.dat") after inversion has run.
+        _ens_block_files = [
+            ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/{MOD_RESISTIVITY_FILE}"
+            for i in range(N_SAMPLES)
+        ]
+        _ens_labels = [f"{ENSEMBLE_NAME}{i}" for i in range(N_SAMPLES)]
+
+        fviz.plot_ensemble_slices(
+            member_files    = _ens_block_files,
+            mesh_file       = MOD_MESH,
+            slices          = ENS_SLICES,
+            labels          = _ens_labels,
+            stat_rows       = ENS_STAT_ROWS,
+            cmap            = ENS_CMAP,
+            clim            = ENS_CLIM,
+            xlim            = ENS_XLIM,
+            ylim            = ENS_YLIM,
+            zlim            = ENS_ZLIM,
+            ocean_color     = ENS_OCEAN_COLOR,
+            ocean_value     = 0.25,   # Ω·m sentinel for ocean cells
+            per_member_file = ENS_PER_MEMBER,
+            plot_file       = ENS_PLOT_FILE,
+            dpi             = ENS_PLOT_DPI,
+            out             = True,
+        )
+        print("ensemble slice plot saved.")

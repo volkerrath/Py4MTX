@@ -43,6 +43,12 @@ resistivity_block_iterX.dat  +  mesh.dat
         |
         v  plot_model_slices(...)            [exact tet-plane intersection]
 figure file / interactive window
+        |                                    [optional, PLOT3D = True]
+        v  fviz.plot_model_3d(...)           [PyVista — requires pyvista]
+interactive HTML / static screenshot
+        |                                    [optional, PLOT_ENS = True]
+        v  plot_ensemble_slices(...)         [n_members × n_slices figure]
+ensemble PDF / per-member PDFs
 ```
 
 ---
@@ -294,6 +300,138 @@ dependency.  The active backend is printed at startup when `OUT = True`.
 
 ---
 
+## 3-D plotting (`PLOT3D`)
+
+When `PLOT3D = True` the script renders a 3-D PyVista scene of the same
+model after the 2-D slice figure.  PyVista must be installed
+(`conda install -c conda-forge pyvista`); the step is silently skipped
+when it is absent.
+
+### Output format
+
+| `PLOT3D_FILE` extension | Result |
+|---|---|
+| `.html` | Interactive WebGL scene — open in any browser, no PyVista needed at runtime |
+| `.png` / `.jpg` | Static screenshot (anti-aliased at `screenshot_scale`× resolution) |
+| `None` | Opens a live PyVista window (requires a display / VTK renderer) |
+
+`.html` is the recommended format for sharing or archiving.
+
+### 3-D configuration parameters
+
+| Variable | Default | Description |
+|---|---|---|
+| `PLOT3D` | `False` | Enable / disable the 3-D step |
+| `PLOT3D_FILE` | `*_3d.html` | Output path (see table above) |
+| `PLOT3D_SCALAR` | `"log10_resistivity"` | Cell-data scalar to display (`"log10_resistivity"` or `"resistivity"`) |
+| `PLOT3D_CLIM` | `[0.0, 4.0]` | Colour limits in the scalar's units; `None` = PyVista auto |
+| `PLOT3D_CMAP` | `"turbo_r"` | Colormap for slices and iso-surfaces |
+| `PLOT3D_SLICE_X` | `[0.0]` | x-positions of YZ (N-S) cutting planes (model-local m); `[]` = none |
+| `PLOT3D_SLICE_Y` | `[0.0]` | y-positions of XZ (E-W) cutting planes; `[]` = none |
+| `PLOT3D_SLICE_Z` | `[5000., 15000.]` | z-positions of XY (horizontal) cutting planes; `[]` = none |
+| `PLOT3D_SLICE_PLANES` | `[]` | Oblique planes — list of `dict(origin=[x,y,z], normal=[nx,ny,nz])` |
+| `PLOT3D_ISOVALUES` | `[1.0, 2.0, 3.0]` | Iso-surface levels (log10 Ω·m for default scalar); `[]` = none |
+| `PLOT3D_ISO_OPACITY` | `0.35` | Iso-surface opacity (0 = transparent, 1 = opaque) |
+| `PLOT3D_WINDOW_SIZE` | `[1600, 900]` | Window resolution in pixels |
+
+### Axis-aligned slices
+
+Each position in `PLOT3D_SLICE_X/Y/Z` places one infinite cutting plane
+perpendicular to the named axis:
+
+```python
+PLOT3D_SLICE_X = [0.0]             # one YZ plane through the model centre
+PLOT3D_SLICE_Y = [0.0]             # one XZ plane through the model centre
+PLOT3D_SLICE_Z = [5000., 15000.]   # two horizontal maps at 5 km and 15 km depth
+```
+
+If all three lists are empty and no oblique planes or iso-surfaces are
+defined, a default orthogonal triple (one slice per axis through the model
+centre) is added automatically.
+
+### Oblique plane slices
+
+```python
+PLOT3D_SLICE_PLANES = [
+    dict(origin=[0., 0., 8000.], normal=[1., 1., 0.]),   # NE-striking vertical
+    dict(origin=[0., 0., 5000.], normal=[0., 0., 1.]),   # horizontal at 5 km
+]
+```
+
+`origin` is any point on the plane; `normal` need not be a unit vector.
+
+### Iso-surfaces
+
+```python
+PLOT3D_ISOVALUES  = [1.0, 2.0, 3.0]   # conductor boundary / background / resistor
+PLOT3D_ISO_OPACITY = 0.35              # semi-transparent
+```
+
+Iso-surfaces are coloured by the same scalar (and same clim/cmap) as the
+slices, making conductor/resistor boundaries directly visible in 3-D.
+
+---
+
+## Ensemble slice plot (`PLOT_ENS`)
+
+When `PLOT_ENS = True` the script produces a joint multi-row figure in which
+each row shows one ensemble member across the same slice columns defined by
+`PLOT_SLICES`.  Optional statistical summary rows (mean, std, median of
+log₁₀(ρ) across all members) are appended below the member rows.
+
+The mesh is parsed **once**; slice polygon geometry is precomputed **once**
+per slice position; only the per-element resistivity vector is swapped for
+each member.  This makes the function efficient even for large meshes.
+
+All `PLOT_*` parameters (colormap, colour limits, axis limits, ocean colour,
+etc.) are reused identically — no separate ensemble-specific colour config
+is needed.
+
+### Configuration parameters
+
+| Variable | Default | Description |
+|---|---|---|
+| `PLOT_ENS` | `False` | Enable / disable the ensemble step |
+| `ENS_FILES` | `[]` | List of resistivity block paths, one per member |
+| `ENS_LABELS` | `None` | Row label strings; `None` → "Member 0", "Member 1", … |
+| `ENS_STAT_ROWS` | `["mean", "std"]` | Stat rows appended after member rows: any subset of `"mean"`, `"std"`, `"median"` |
+| `PLOT_ENS_FILE` | `*_ensemble.pdf` | Joint figure path; `None` → interactive show |
+| `ENS_PER_MEMBER` | `False` | Also save one figure per member (named `*_memberN.pdf`) |
+
+### Statistical summary rows
+
+| `ENS_STAT_ROWS` entry | What is shown |
+|---|---|
+| `"mean"` | Cell-wise arithmetic mean of log₁₀(ρ) across all members; same colormap / clim as member rows |
+| `"std"` | Cell-wise standard deviation of log₁₀(ρ); rendered on a separate sequential colormap (`cividis`) with its own colour scale |
+| `"median"` | Cell-wise median of log₁₀(ρ); same colormap / clim as member rows |
+
+NaN elements (air, missing) are excluded from all statistics.
+
+### Populating `ENS_FILES`
+
+```python
+import glob, os
+ENS_FILES = sorted(glob.glob(
+    WORK_DIR + "ensemble/ubinas_rto_*/resistivity_block_iter10.dat"
+))
+ENS_LABELS = [os.path.basename(os.path.dirname(f)) for f in ENS_FILES]
+```
+
+### Per-member output
+
+When `ENS_PER_MEMBER = True` and `PLOT_ENS_FILE` is set, one additional
+single-row figure is saved per member alongside the joint figure:
+
+```
+resistivity_block_ensemble.pdf       ← joint (all members + stat rows)
+resistivity_block_ensemble_member0.pdf
+resistivity_block_ensemble_member1.pdf
+…
+```
+
+---
+
 ## Air and ocean rendering
 
 - **Air** (region 0): `prepare_rho_for_plotting` sets air to `NaN`.
@@ -317,9 +455,10 @@ dependency.  The active backend is printed at startup when `OUT = True`.
 |---|---|
 | NumPy | Array operations |
 | Matplotlib | Figure rendering |
+| PyVista | 3-D rendering, slices, iso-surfaces (`PLOT3D`; graceful skip when absent) |
 | pyproj | `Transformer` for lat/lon → UTM (primary path; graceful built-in fallback when absent) |
 | `femtic` (Py4MTX) | Environment bootstrap |
-| `femtic_viz` (Py4MTX) | `read_femtic_mesh`, `read_resistivity_block`, `map_regions_to_element_rho`, `prepare_rho_for_plotting` |
+| `femtic_viz` (Py4MTX) | `read_femtic_mesh`, `read_resistivity_block`, `map_regions_to_element_rho`, `prepare_rho_for_plotting`, `plot_model_3d` |
 | `util` (Py4MTX) | `print_title` |
 | `version` (Py4MTX) | `versionstrg` |
 
@@ -334,3 +473,6 @@ Environment variables `PY4MTX_ROOT` and `PY4MTX_DATA` must be set.
 | 2026-05-06 | vrath / Claude Sonnet 4.6 | Created, modelled on `femtic_mod_edit.py` plotting section; site overlay from `observe.dat` |
 | 2026-05-06 | vrath / Claude Sonnet 4.6 | Added lat/lon and UTM slice-position input; `pyproj` primary path with pure-Python Helmert fallback; auto-derived UTM zone from mesh origin |
 | 2026-05-06 | vrath / Claude Sonnet 4.6 | Added `estimate_utm_origin`: least-squares mesh-centre estimation from N calibration sites with known model-local and geographic coordinates |
+| 2026-05-13 | vrath / Claude Sonnet 4.6 | Harmonised plotting config block with `femtic_mod_edit.py`: unified variable names, comments, section header |
+| 2026-05-13 | vrath / Claude Sonnet 4.6 | Added `PLOT3D` step (5): axis-aligned x/y/z slices, oblique planes, and iso-surfaces via `fviz.plot_model_3d`; HTML or screenshot output |
+| 2026-05-13 | vrath / Claude Sonnet 4.6 | Added `PLOT_ENS` step (6): `plot_ensemble_slices` with `ENS_*` config block; mesh and geometry parsed once; per-member rows + optional mean/std/median stat rows; per-member file output |

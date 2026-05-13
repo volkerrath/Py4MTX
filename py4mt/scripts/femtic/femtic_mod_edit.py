@@ -91,13 +91,15 @@ Provenance
     2026-05-04  vrath / Claude Sonnet 4.6   Added "null" operation: no-op
                 pass-through; skips write step and plots MODEL_IN directly —
                 use to inspect the input model without any modification.
+    2026-05-13  vrath / Claude Sonnet 4.6   Harmonised plotting config block
+                with femtic_mod_plot.py: unified variable names, comments,
+                and PLOT_FILE rename guard.
 
 @author: vrath
 """
 
 import os
 import sys
-from pathlib import Path
 import inspect
 import numpy as np
 
@@ -107,10 +109,10 @@ import numpy as np
 PY4MTX_DATA = os.environ["PY4MTX_DATA"]
 PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
 
-for _base in [PY4MTX_ROOT + "/py4mt/modules/"]:
-    for _p in [Path(_base), *Path(_base).rglob("*")]:
-        if _p.is_dir() and str(_p) not in sys.path:
-            sys.path.insert(0, str(_p))
+mypath = [PY4MTX_ROOT + "/py4mt/modules/", PY4MTX_ROOT + "/py4mt/scripts/"]
+for pth in mypath:
+    if pth not in sys.path:
+        sys.path.insert(0, pth)
 
 from version import versionstrg
 import util as utl
@@ -249,27 +251,25 @@ OUT = True
 #: Set True to plot slices of the *output* model after writing.
 PLOT = True
 
-#: File to save the figure (None → interactive show).
+#: Output file path — None → interactive show().
 PLOT_FILE = WORK_DIR + "resistivity_block_edited.pdf"
-PLOT_FILE = PLOT_FILE.replace("edited", OPERATION)
+if OPERATION != "null":
+    PLOT_FILE = PLOT_FILE.replace("edited", OPERATION)
 print(PLOT_FILE)
 
-#: Figure DPI.
+#: Figure DPI for saved file.
 PLOT_DPI = 600
 
 #: Matplotlib colormap name.
 PLOT_CMAP = "turbo_r"
 
-#: Colour limits [log10(rho_min), log10(rho_max)] — None = auto per panel.
-PLOT_CLIM = [0.0, 4.0]      # log10(Ohm·m)
+#: Colour limits [log10(ρ_min), log10(ρ_max)] — None = auto.
+PLOT_CLIM = [0.0, 4.0]      # log10(Ω·m)
 
-#: Colour for ocean / lake cells (flat, not mapped through colormap).
-#: Must match OCEAN_RHO set above.  None → use colormap.
+#: Flat colour for ocean / lake cells.  None → use colormap.
 PLOT_OCEAN_COLOR = "lightgrey"
 
-#: Colour for "no-data" / air cells (NaN → transparent by default).
-#: Setting this to a string (e.g. "whitesmoke") fills the axes background;
-#: None leaves the axes background as the figure facecolor.
+#: Axes facecolor for air / background.  None = figure default.
 PLOT_AIR_BGCOLOR = None
 
 #: Slice specification — a list of dicts, one per panel (left to right).
@@ -280,12 +280,12 @@ PLOT_AIR_BGCOLOR = None
 #:
 #: Each dict must contain:
 #:   kind   : "map"   — horizontal slice at z = z0
-#:            "ns"    — N-S vertical section at x = x0
-#:            "ew"    — E-W vertical section at y = y0
+#:            "ns"    — N-S vertical section at x = x0   (y vs depth)
+#:            "ew"    — E-W vertical section at y = y0   (x vs depth)
 #:            "plane" — arbitrary plane by strike / dip / point
 #:   z0     : (map   only)  depth in metres
-#:   x0     : (ns    only)  easting in metres
-#:   y0     : (ew    only)  northing in metres
+#:   x0     : (ns    only)  easting — plain float = model-local metres
+#:   y0     : (ew    only)  northing — plain float = model-local metres
 #:   point  : (plane only)  [x, y, z] any point on the plane (metres)
 #:   strike : (plane only)  clockwise from North, degrees (0=N, 90=E)
 #:   dip    : (plane only)  downward inclination from horizontal, degrees
@@ -303,11 +303,11 @@ PLOT_SLICES = [
     # dict(kind="plane", point=[0., 0., 5000.], strike=45., dip=60.),
 ]
 
-#: Global axis limits — used for panels that do not specify their own.
-#: None → auto (inferred from data extent).
-PLOT_XLIM = [-20000., 20000.] #  None   # [xmin, xmax] metres — easting
-PLOT_YLIM = [-20000., 20000.] #  None   # [ymin, ymax] metres — northing
-PLOT_ZLIM = [ -6000., 15000.] #  None    # [zmin, zmax] metres — depth (z positive-down)
+#: Global axis limits in model-local metres — used for panels that do not
+#: specify their own.  None → auto (inferred from data extent).
+PLOT_XLIM = [-20000., 20000.]   # [xmin, xmax] metres — easting
+PLOT_YLIM = [-20000., 20000.]   # [ymin, ymax] metres — northing
+PLOT_ZLIM = [  -6000., 15000.]  # [zmin, zmax] metres — depth (z positive-down)
 
 
 

@@ -125,6 +125,32 @@ from 0 … `N_SAMPLES − 1` each run.  The drawn list is printed at runtime.
 | `MOD_MESH_COLOR`  | Colour for mesh edge overlay (default `'k'`).                                |
 | `MOD_SLICES`      | List of 1–5 slice descriptors; each dict has `'type'`: `'map'` or `'curtain'`, plus kwargs forwarded to `femtic_viz`. |
 
+### Ensemble slice plot (`PLOT_SLICES_ENS`)
+
+When `PLOT_SLICES_ENS = True` (inside the viz block, i.e. requires `PLOT_DATA` or
+`PLOT_MODEL` to be `True`), a joint multi-row figure is produced using
+`fviz.plot_ensemble_slices`.  Unlike `PLOT_MODEL`, this uses **exact
+tetrahedron-plane intersection** (same method as `femtic_mod_plot.py`) rather
+than centroid sampling, and includes all members in a single figure with optional
+statistical summary rows.
+
+| Variable | Default | Description |
+|---|---|---|
+| `PLOT_SLICES_ENS` | `False` | Enable / disable the ensemble slice plot |
+| `ENS_SLICES` | 4 slices | Slice-spec list in model-local metres — same format as `femtic_mod_plot.PLOT_SLICES`; kinds: `"map"`, `"ns"`, `"ew"`, `"plane"` |
+| `ENS_CMAP` | `"turbo_r"` | Matplotlib colormap for member and mean/median rows |
+| `ENS_CLIM` | `[0., 4.]` | log₁₀(Ω·m) colour limits; `None` = auto from ensemble range |
+| `ENS_XLIM`, `ENS_YLIM`, `ENS_ZLIM` | `None` | Global axis limits in model-local metres; `None` = auto |
+| `ENS_OCEAN_COLOR` | `"lightgrey"` | Flat colour for ocean cells |
+| `ENS_STAT_ROWS` | `["mean", "std"]` | Stat rows appended after member rows; any subset of `"mean"`, `"std"`, `"median"` |
+| `ENS_PER_MEMBER` | `False` | Also save one single-row figure per member |
+| `ENS_PLOT_DPI` | `300` | Figure DPI |
+| `ENS_PLOT_FILE` | `plots/rto_ensemble_slices.pdf` | Joint figure output path |
+
+The member file list is built automatically as
+`<ENSEMBLE_DIR><ENSEMBLE_NAME><i>/resistivity_block_iter0.dat`.  Edit the
+filename pattern to target a different iteration (e.g. `iter10.dat`).
+
 `MOD_ORIG` is set to `MOD_REF` (they are the same path — the template reference
 model).  `MOD_REF_BASE` (derived automatically via `os.path.basename`) holds
 the bare filename and is used when constructing per-member file paths inside
@@ -219,6 +245,7 @@ Diagnostic figures are saved to:
 |            |        | provenance and docstring updated accordingly.                |
 
 | 2026-04-27 | Claude | Renamed `ens.generate_model_ensemble` call to `ens.generate_rto_model_ensemble` for consistency with the new `ens.generate_gst_model_ensemble`. |
+| 2026-05-13 | Claude | Added `PLOT_SLICES_ENS` block: `ENS_SLICES` / `ENS_CMAP` / `ENS_CLIM` / `ENS_STAT_ROWS` config; calls `fviz.plot_ensemble_slices` for exact tet-plane intersection ensemble figure. |
 
 ## Author
 
