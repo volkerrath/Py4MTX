@@ -67,8 +67,8 @@ fname = inspect.getfile(inspect.currentframe())
 titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng+"\n\n")
 
-WORK_DIR = "/home/vrath/Ensembles/misti_rto/work/" #PY4MTX_DATA+"Misti/MISTI_test/"
-WORK_DIR = "/home/vrath/Py4MTX/py4mt/data/rto/ubinas/work/"
+# WORK_DIR = "/home/vrath/Ensembles/misti_rto/work/" #PY4MTX_DATA+"Misti/MISTI_test/"
+WORK_DIR = "/home/vrath/Py4MTX/py4mt/data/rto/ubinas/"
 ROUGH_FILE = WORK_DIR + "roughening_matrix.out"
 
 
