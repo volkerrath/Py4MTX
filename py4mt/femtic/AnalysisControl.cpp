@@ -105,6 +105,9 @@ AnalysisControl::AnalysisControl() :
 									 m_objPre(0.0),
 									 m_objPreiter(0.0),
 									 m_leavingABIC(false),
+#ifdef _WRITE_INVERSION_DATA_HDF5
+									 m_isLastInversion(false),
+#endif
 
 									 //--------------------
 									 //--- femtic V4.2 ---
@@ -612,7 +615,13 @@ void AnalysisControl::run()
 						}
 					}
 					// m_tradeOffParameterForResistivityValue = m_tradeOffParameterForResistivityValue;
+#ifdef _WRITE_INVERSION_DATA_HDF5
+					m_isLastInversion = true;
+#endif
 					m_ptrInversion->inversionCalculation();
+#ifdef _WRITE_INVERSION_DATA_HDF5
+					m_isLastInversion = false;
+#endif
 				}
 				else if (m_typeOfTradeOffParam == AnalysisControl::TO_ABIC_LS)
 				{
@@ -814,7 +823,13 @@ void AnalysisControl::run()
 			if (m_typeOfTradeOffParam == AnalysisControl::TO_Fixed)
 			{
 				// m_tradeOffParameterForResistivityValue = m_tradeOffParameterForResistivityValue;
+#ifdef _WRITE_INVERSION_DATA_HDF5
+				m_isLastInversion = true;
+#endif
 				m_ptrInversion->inversionCalculation();
+#ifdef _WRITE_INVERSION_DATA_HDF5
+				m_isLastInversion = false;
+#endif
 			}
 			else if (m_typeOfTradeOffParam == AnalysisControl::TO_ABIC_LS)
 			{
@@ -1253,14 +1268,29 @@ void AnalysisControl::inputControlData()
 			m_isOutput2DResult = true;
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("PARAM_DISTORTION", 16))
+		if (seekKeyword("DISTORTION", 10))
 		{
-
-			if (!hasAlreadyRead[AnalysisControl::DISTORTION])
+			const int paramID = AnalysisControl::DISTORTION;
+			if (hasAlreadyRead[paramID] == true)
 			{
-				OutputFiles::m_logFile << "Error : You must write DISTORTION data above PARAM_DISTORTION" << std::endl;
+				OutputFiles::m_logFile << "Error : Already read the data from control.dat !! : DISTORTION" << std::endl;
 				exit(1);
 			}
+			inFile >> ibuf;
+
+			if (ibuf != AnalysisControl::NO_DISTORTION &&
+				ibuf != AnalysisControl::ESTIMATE_DISTORTION_MATRIX_DIFFERENCE &&
+				ibuf != AnalysisControl::ESTIMATE_GAINS_AND_ROTATIONS &&
+				ibuf != AnalysisControl::ESTIMATE_GAINS_ONLY)
+			{
+				OutputFiles::m_logFile << "Error : Wrong type ID is specified below DISTORTION : " << ibuf << std::endl;
+				exit(1);
+			}
+			m_typeOfDistortion = ibuf;
+			hasAlreadyRead[paramID] = true;
+		}
+		if (seekKeyword("PARAM_DISTORTION", 16))
+		{
 
 			const int paramID = AnalysisControl::PARAM_DISTORTION;
 			if (hasAlreadyRead[paramID] == true)
@@ -1353,27 +1383,6 @@ void AnalysisControl::inputControlData()
 			inFile >> m_stepLengthDampingFactorCur >> m_stepLengthDampingFactorMin >> m_stepLengthDampingFactorMax >> m_numOfIterIncreaseStepLength >> m_factorDecreasingStepLength >> m_factorIncreasingStepLength;
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("DISTORTION", 10))
-		{
-			const int paramID = AnalysisControl::DISTORTION;
-			if (hasAlreadyRead[paramID] == true)
-			{
-				OutputFiles::m_logFile << "Error : Already read the data from control.dat !! : DISTORTION" << std::endl;
-				exit(1);
-			}
-			inFile >> ibuf;
-
-			if (ibuf != AnalysisControl::NO_DISTORTION &&
-				ibuf != AnalysisControl::ESTIMATE_DISTORTION_MATRIX_DIFFERENCE &&
-				ibuf != AnalysisControl::ESTIMATE_GAINS_AND_ROTATIONS &&
-				ibuf != AnalysisControl::ESTIMATE_GAINS_ONLY)
-			{
-				OutputFiles::m_logFile << "Error : Wrong type ID is specified below DISTORTION : " << ibuf << std::endl;
-				exit(1);
-			}
-			m_typeOfDistortion = ibuf;
-			hasAlreadyRead[paramID] = true;
-		}
 		if (seekKeyword("TYPEOF_TO", 9))
 		{
 			const int paramID = AnalysisControl::TYPEOF_TO;
@@ -1395,12 +1404,6 @@ void AnalysisControl::inputControlData()
 		}
 		if (seekKeyword("TRADE_OFF_PARAM", 15))
 		{
-
-			if (!hasAlreadyRead[AnalysisControl::TYPEOF_TO])
-			{
-				OutputFiles::m_logFile << "Error : You must write TYPEOF_TO data above TRADE_OFF_PARAM" << std::endl;
-				exit(1);
-			}
 			const int paramID = AnalysisControl::TRADE_OFF_PARAM;
 			if (hasAlreadyRead[paramID] == true)
 			{
@@ -1444,11 +1447,6 @@ void AnalysisControl::inputControlData()
 		}
 		if (seekKeyword("TRADE_OFF_CG", 12))
 		{
-			if (!hasAlreadyRead[AnalysisControl::TYPE_OF_CG])
-			{
-				OutputFiles::m_logFile << "Error : You must write TYPE_OF_CG data above TRADE_OFF_CG" << std::endl;
-				exit(1);
-			}
 			const int paramID = AnalysisControl::TRADE_OFF_CG;
 			if (hasAlreadyRead[paramID] == true)
 			{
@@ -1496,11 +1494,6 @@ void AnalysisControl::inputControlData()
 		}
 		if (seekKeyword("WEIGHT_OF_REFERENCE", 19))
 		{
-			if (!hasAlreadyRead[AnalysisControl::TYPE_OF_REFERENCE])
-			{
-				OutputFiles::m_logFile << "Error : You must write TYPE_OF_CG data above TRADE_OFF_CG" << std::endl;
-				exit(1);
-			}
 			const int paramID = AnalysisControl::WEIGHT_OF_REFERENCE;
 			if (hasAlreadyRead[paramID] == true)
 			{
@@ -2508,6 +2501,13 @@ int AnalysisControl::getIterationNumMax() const
 {
 	return m_iterationNumMax;
 }
+
+#ifdef _WRITE_INVERSION_DATA_HDF5
+bool AnalysisControl::isLastInversion() const
+{
+	return m_isLastInversion;
+}
+#endif
 
 // Get member variable specifing which backward or forward element is used for calculating EM field
 const AnalysisControl::UseBackwardOrForwardElement AnalysisControl::getUseBackwardOrForwardElement() const
