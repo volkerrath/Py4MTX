@@ -296,6 +296,7 @@ void AnalysisControl::run()
 	default:
 		OutputFiles::m_logFile << "Error : Type of inversion method is wrong  !! : " << getInversionMethod() << std::endl;
 		exit(1);
+		break;
 	}
 
 	//------------------------------------
@@ -1026,38 +1027,13 @@ void AnalysisControl::run()
 void AnalysisControl::inputControlData()
 {
 
-	// Read control.dat, stripping comment lines (lines whose first non-whitespace
-	// token begins with "//").  All surviving content is loaded into an
-	// istringstream so that the stream can be rewound to the beginning before
-	// each keyword search without re-opening the file.
-	std::string controlBuffer;
+	std::ifstream inFile("control.dat", std::ios::in);
+	if (inFile.fail())
 	{
-		std::ifstream rawFile("control.dat", std::ios::in);
-		if (rawFile.fail())
-		{
-			OutputFiles::m_logFile << "File open error : control.dat !!" << std::endl;
-			exit(1);
-		}
-		std::string rawLine;
-		while (std::getline(rawFile, rawLine))
-		{
-			// Find first non-whitespace character
-			const std::size_t firstNonSpace = rawLine.find_first_not_of(" \t\r");
-			// Skip lines that begin with "//"
-			if (firstNonSpace != std::string::npos &&
-			    rawLine.substr(firstNonSpace, 2) == "//")
-			{
-				continue;
-			}
-			controlBuffer += rawLine + '\n';
-		}
-		rawFile.close();
+		// std::cerr << "File open error : control.dat !!" << std::endl;
+		OutputFiles::m_logFile << "File open error : control.dat !!" << std::endl;
+		exit(1);
 	}
-
-	// Wrap the comment-free content in a stream; use seekg(0) to rewind before
-	// each keyword search so that keywords may appear in any order.
-	std::istringstream inFile(controlBuffer);
-	auto resetStream = [&]() { inFile.clear(); inFile.seekg(0); };
 
 	// Flag specifing whether each parameter has already read from control.dat
 	bool hasAlreadyRead[numParamWrittenInControlFile];
@@ -1068,29 +1044,18 @@ void AnalysisControl::inputControlData()
 
 	ResistivityBlock *const ptrResistivityBlock = ResistivityBlock::getInstance();
 
-	// seekKeyword: rewinds to the beginning, scans token by token until the
-	// keyword is found (exact prefix match of length 'len'), then returns true
-	// with the stream positioned right after the keyword token so subsequent
-	// inFile >> reads return the keyword's values.  Returns false if absent.
-	auto seekKeyword = [&](const char* keyword, std::size_t len) -> bool
+	while (!inFile.eof())
 	{
-		resetStream();
-		std::string tok;
-		while (inFile >> tok)
-		{
-			if (tok.substr(0, len).compare(keyword) == 0)
-				return true;
-		}
-		return false;
-	};
+		std::string line;
+		inFile >> line;
 
-	double dbuf(0.0);
-	int ibuf(0);
+#ifdef _DEBUG_WRITE
+		std::cout << "line : " << line << std::endl;
+#endif
 
-	// Each keyword block independently rewinds and searches the stream.
-	// Keyword order in control.dat is therefore arbitrary.
-
-	if (seekKeyword("BOUNDARY_CONDITION_BOTTOM", 25))
+		double dbuf(0.0);
+		int ibuf(0);
+		if (line.substr(0, 25).compare("BOUNDARY_CONDITION_BOTTOM") == 0)
 		{ // Read the type of boundary condition at the bottom of the model
 			const int paramID = AnalysisControl::BOUNDARY_CONDITION_BOTTOM;
 			if (hasAlreadyRead[paramID] == true)
@@ -1108,7 +1073,7 @@ void AnalysisControl::inputControlData()
 			m_boundaryConditionBottom = ibuf;
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("MESH_TYPE", 9))
+		else if (line.substr(0, 9).compare("MESH_TYPE") == 0)
 		{ // Type of mesh
 			const int paramID = AnalysisControl::MESH_TYPE;
 			if (hasAlreadyRead[paramID] == true)
@@ -1125,7 +1090,7 @@ void AnalysisControl::inputControlData()
 			m_typeOfMesh = ibuf;
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("NUM_THREADS", 11))
+		else if (line.substr(0, 11).compare("NUM_THREADS") == 0)
 		{ // Read total number of threads
 			const int paramID = AnalysisControl::NUM_THREADS;
 			if (hasAlreadyRead[paramID] == true)
@@ -1142,7 +1107,7 @@ void AnalysisControl::inputControlData()
 			m_numThreads = ibuf;
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("FWD_SOLVER", 10))
+		else if (line.substr(0, 10).compare("FWD_SOLVER") == 0)
 		{
 			const int paramID = AnalysisControl::FWD_SOLVER;
 			if (hasAlreadyRead[paramID] == true)
@@ -1159,7 +1124,7 @@ void AnalysisControl::inputControlData()
 			m_modeOfPARDISO = ibuf;
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("MEM_LIMIT", 9))
+		else if (line.substr(0, 9).compare("MEM_LIMIT") == 0)
 		{
 			const int paramID = AnalysisControl::MEM_LIMIT;
 			if (hasAlreadyRead[paramID] == true)
@@ -1171,7 +1136,7 @@ void AnalysisControl::inputControlData()
 			m_maxMemoryPARDISO = static_cast<int>(dbuf);
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("NUMBERING_METHOD", 16))
+		else if (line.substr(0, 16).compare("NUMBERING_METHOD") == 0)
 		{
 			const int paramID = AnalysisControl::NUMBERING_METHOD;
 			if (hasAlreadyRead[paramID] == true)
@@ -1188,7 +1153,7 @@ void AnalysisControl::inputControlData()
 			m_numberingMethod = ibuf;
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("OUTPUT_PARAM", 12))
+		else if (line.substr(0, 12).compare("OUTPUT_PARAM") == 0)
 		{
 			const int paramID = AnalysisControl::OUTPUT_PARAM;
 			if (hasAlreadyRead[paramID] == true)
@@ -1213,7 +1178,7 @@ void AnalysisControl::inputControlData()
 			}
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("OUTPUT_OPTION", 16))
+		else if (line.substr(0, 16).compare("OUTPUT_OPTION") == 0)
 		{
 			const int paramID = AnalysisControl::OUTPUT_OPTION;
 			if (hasAlreadyRead[paramID] == true)
@@ -1242,7 +1207,7 @@ void AnalysisControl::inputControlData()
 			}
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("OUTPUT_2D_RESULTS", 17))
+		else if (line.substr(0, 17).compare("OUTPUT_2D_RESULTS") == 0)
 		{
 			const int paramID = AnalysisControl::OUTPUT_2D_RESULTS;
 			if (hasAlreadyRead[paramID] == true)
@@ -1253,29 +1218,14 @@ void AnalysisControl::inputControlData()
 			m_isOutput2DResult = true;
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("DISTORTION", 10))
+		else if (line.substr(0, 16).compare("PARAM_DISTORTION") == 0)
 		{
-			const int paramID = AnalysisControl::DISTORTION;
-			if (hasAlreadyRead[paramID] == true)
-			{
-				OutputFiles::m_logFile << "Error : Already read the data from control.dat !! : DISTORTION" << std::endl;
-				exit(1);
-			}
-			inFile >> ibuf;
 
-			if (ibuf != AnalysisControl::NO_DISTORTION &&
-				ibuf != AnalysisControl::ESTIMATE_DISTORTION_MATRIX_DIFFERENCE &&
-				ibuf != AnalysisControl::ESTIMATE_GAINS_AND_ROTATIONS &&
-				ibuf != AnalysisControl::ESTIMATE_GAINS_ONLY)
+			if (!hasAlreadyRead[AnalysisControl::DISTORTION])
 			{
-				OutputFiles::m_logFile << "Error : Wrong type ID is specified below DISTORTION : " << ibuf << std::endl;
+				OutputFiles::m_logFile << "Error : You must write DISTORTION data above PARAM_DISTORTION" << std::endl;
 				exit(1);
 			}
-			m_typeOfDistortion = ibuf;
-			hasAlreadyRead[paramID] = true;
-		}
-		if (seekKeyword("PARAM_DISTORTION", 16))
-		{
 
 			const int paramID = AnalysisControl::PARAM_DISTORTION;
 			if (hasAlreadyRead[paramID] == true)
@@ -1300,10 +1250,11 @@ void AnalysisControl::inputControlData()
 			default:
 				OutputFiles::m_logFile << "Error : Wrong type of distortion : " << ibuf << std::endl;
 				exit(1);
+				break;
 			}
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("ITERATION", 9))
+		else if (line.substr(0, 9).compare("ITERATION") == 0)
 		{
 			const int paramID = AnalysisControl::ITERATION;
 			if (hasAlreadyRead[paramID] == true)
@@ -1314,7 +1265,7 @@ void AnalysisControl::inputControlData()
 			inFile >> m_iterationNumInit >> m_iterationNumMax;
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("DECREASE_THRESHOLD", 18))
+		else if (line.substr(0, 18).compare("DECREASE_THRESHOLD") == 0)
 		{
 			const int paramID = AnalysisControl::DECREASE_THRESHOLD;
 			if (hasAlreadyRead[paramID] == true)
@@ -1330,7 +1281,7 @@ void AnalysisControl::inputControlData()
 			}
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("CONVERGE", 8))
+		else if (line.substr(0, 8).compare("CONVERGE") == 0)
 		{
 			const int paramID = AnalysisControl::CONVERGE;
 			if (hasAlreadyRead[paramID] == true)
@@ -1346,7 +1297,7 @@ void AnalysisControl::inputControlData()
 			}
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("RETRIAL", 7))
+		else if (line.substr(0, 7).compare("RETRIAL") == 0)
 		{
 			const int paramID = AnalysisControl::RETRIAL;
 			if (hasAlreadyRead[paramID] == true)
@@ -1357,7 +1308,7 @@ void AnalysisControl::inputControlData()
 			inFile >> m_numCutbackMax;
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("STEP_LENGTH", 11))
+		else if (line.substr(0, 11).compare("STEP_LENGTH") == 0)
 		{
 			const int paramID = AnalysisControl::STEP_LENGTH;
 			if (hasAlreadyRead[paramID] == true)
@@ -1368,7 +1319,29 @@ void AnalysisControl::inputControlData()
 			inFile >> m_stepLengthDampingFactorCur >> m_stepLengthDampingFactorMin >> m_stepLengthDampingFactorMax >> m_numOfIterIncreaseStepLength >> m_factorDecreasingStepLength >> m_factorIncreasingStepLength;
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("TYPEOF_TO", 9))
+		else if (line.substr(0, 10).compare("DISTORTION") == 0)
+		{
+			const int paramID = AnalysisControl::DISTORTION;
+			if (hasAlreadyRead[paramID] == true)
+			{
+				OutputFiles::m_logFile << "Error : Already read the data from control.dat !! : DISTORTION" << std::endl;
+				exit(1);
+			}
+			inFile >> ibuf;
+
+			if (ibuf != AnalysisControl::NO_DISTORTION &&
+				ibuf != AnalysisControl::ESTIMATE_DISTORTION_MATRIX_DIFFERENCE &&
+				ibuf != AnalysisControl::ESTIMATE_GAINS_AND_ROTATIONS &&
+				ibuf != AnalysisControl::ESTIMATE_GAINS_ONLY)
+			{
+				OutputFiles::m_logFile << "Error : Wrong type ID is specified below DISTORTION : " << ibuf << std::endl;
+				exit(1);
+				break;
+			}
+			m_typeOfDistortion = ibuf;
+			hasAlreadyRead[paramID] = true;
+		}
+		else if (line.substr(0, 9).compare("TYPEOF_TO") == 0)
 		{
 			const int paramID = AnalysisControl::TYPEOF_TO;
 			if (hasAlreadyRead[paramID] == true)
@@ -1383,12 +1356,19 @@ void AnalysisControl::inputControlData()
 			{
 				OutputFiles::m_logFile << "Error : Wrong type ID is specified below TYPEOF_TO : " << ibuf << std::endl;
 				exit(1);
+				break;
 			}
 			m_typeOfTradeOffParam = ibuf;
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("TRADE_OFF_PARAM", 15))
+		else if (line.substr(0, 15).compare("TRADE_OFF_PARAM") == 0)
 		{
+
+			if (!hasAlreadyRead[AnalysisControl::TYPEOF_TO])
+			{
+				OutputFiles::m_logFile << "Error : You must write TYPEOF_TO data above TRADE_OFF_PARAM" << std::endl;
+				exit(1);
+			}
 			const int paramID = AnalysisControl::TRADE_OFF_PARAM;
 			if (hasAlreadyRead[paramID] == true)
 			{
@@ -1407,10 +1387,11 @@ void AnalysisControl::inputControlData()
 			default:
 				OutputFiles::m_logFile << "Error : Wrong type of parameter selection scheme : " << ibuf << std::endl;
 				exit(1);
+				break;
 			}
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("TYPE_OF_CG", 10))
+		else if (line.substr(0, 10).compare("TYPE_OF_CG") == 0)
 		{
 			const int paramID = AnalysisControl::TYPE_OF_CG;
 			if (hasAlreadyRead[paramID] == true)
@@ -1426,12 +1407,18 @@ void AnalysisControl::inputControlData()
 			{
 				OutputFiles::m_logFile << "Error : Wrong type ID is specified below TYPE_OF_CG : " << ibuf << std::endl;
 				exit(1);
+				break;
 			}
 			m_typeOfCG = ibuf;
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("TRADE_OFF_CG", 12))
+		else if (line.substr(0, 12).compare("TRADE_OFF_CG") == 0)
 		{
+			if (!hasAlreadyRead[AnalysisControl::TYPE_OF_CG])
+			{
+				OutputFiles::m_logFile << "Error : You must write TYPE_OF_CG data above TRADE_OFF_CG" << std::endl;
+				exit(1);
+			}
 			const int paramID = AnalysisControl::TRADE_OFF_CG;
 			if (hasAlreadyRead[paramID] == true)
 			{
@@ -1453,11 +1440,12 @@ void AnalysisControl::inputControlData()
 			default:
 				OutputFiles::m_logFile << "Error : Wrong type of Cross-Gradient operator : " << ibuf << std::endl;
 				exit(1);
+				break;
 			}
 			m_CrossGradientInv = true;
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("TYPE_OF_REFERENCE", 17))
+		else if (line.substr(0, 17).compare("TYPE_OF_REFERENCE") == 0)
 		{
 			const int paramID = AnalysisControl::TYPE_OF_REFERENCE;
 			if (hasAlreadyRead[paramID] == true)
@@ -1471,14 +1459,20 @@ void AnalysisControl::inputControlData()
 			{
 				OutputFiles::m_logFile << "Error : 	m_typeOfReferenceModel must be an integer >=0 " << std::endl;
 				exit(1);
+				break;
 			}
 			else
 			{
 				hasAlreadyRead[paramID] = true;
 			}
 		}
-		if (seekKeyword("WEIGHT_OF_REFERENCE", 19))
+		else if (line.substr(0, 19).compare("WEIGHT_OF_REFERENCE") == 0)
 		{
+			if (!hasAlreadyRead[AnalysisControl::TYPE_OF_REFERENCE])
+			{
+				OutputFiles::m_logFile << "Error : You must write TYPE_OF_CG data above TRADE_OFF_CG" << std::endl;
+				exit(1);
+			}
 			const int paramID = AnalysisControl::WEIGHT_OF_REFERENCE;
 			if (hasAlreadyRead[paramID] == true)
 			{
@@ -1491,6 +1485,7 @@ void AnalysisControl::inputControlData()
 			{
 				OutputFiles::m_logFile << "Error : 	m_tradeOffParameterForMinNorm must >= 0.0 : " << std::endl;
 				exit(1);
+				break;
 			}
 			else
 			{
@@ -1498,7 +1493,7 @@ void AnalysisControl::inputControlData()
 				hasAlreadyRead[paramID] = true;
 			}
 		}
-		if (seekKeyword("ROUGH_MATRIX", 12))
+		else if (line.substr(0, 12).compare("ROUGH_MATRIX") == 0)
 		{
 			const int paramID = AnalysisControl::ROUGH_MATRIX;
 			if (hasAlreadyRead[paramID] == true)
@@ -1519,7 +1514,7 @@ void AnalysisControl::inputControlData()
 
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("ELEC_FIELD", 10))
+		else if (line.substr(0, 10).compare("ELEC_FIELD") == 0)
 		{
 			const int paramID = AnalysisControl::ELEC_FIELD;
 			if (hasAlreadyRead[paramID] == true)
@@ -1541,7 +1536,7 @@ void AnalysisControl::inputControlData()
 			m_typeOfElectricField = ibuf;
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("DIV_NUM_RHS_FWD", 15))
+		else if (line.substr(0, 15).compare("DIV_NUM_RHS_FWD") == 0)
 		{
 			const int paramID = AnalysisControl::DIV_NUM_RHS_FWD;
 			if (hasAlreadyRead[paramID] == true)
@@ -1557,7 +1552,7 @@ void AnalysisControl::inputControlData()
 			}
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("DIV_NUM_RHS_INV", 15))
+		else if (line.substr(0, 15).compare("DIV_NUM_RHS_INV") == 0)
 		{
 			const int paramID = AnalysisControl::DIV_NUM_RHS_INV;
 			if (hasAlreadyRead[paramID] == true)
@@ -1573,7 +1568,7 @@ void AnalysisControl::inputControlData()
 			}
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("RESISTIVITY_BOUNDS", 18))
+		else if (line.substr(0, 18).compare("RESISTIVITY_BOUNDS") == 0)
 		{
 			const int paramID = AnalysisControl::RESISTIVITY_BOUNDS;
 			if (hasAlreadyRead[paramID] == true)
@@ -1585,7 +1580,7 @@ void AnalysisControl::inputControlData()
 			ptrResistivityBlock->setTypeBoundConstraints(ibuf);
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("OFILE_TYPE", 10))
+		else if (line.substr(0, 10).compare("OFILE_TYPE") == 0)
 		{
 			const int paramID = AnalysisControl::OFILE_TYPE;
 			if (hasAlreadyRead[paramID] == true)
@@ -1604,7 +1599,7 @@ void AnalysisControl::inputControlData()
 			}
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("HOLD_FWD_MEM", 12))
+		else if (line.substr(0, 12).compare("HOLD_FWD_MEM") == 0)
 		{
 			const int paramID = AnalysisControl::HOLD_FWD_MEM;
 			if (hasAlreadyRead[paramID] == true)
@@ -1615,7 +1610,7 @@ void AnalysisControl::inputControlData()
 			m_holdMemoryForwardSolver = true;
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("ALPHA_WEIGHT", 12))
+		else if (line.substr(0, 12).compare("ALPHA_WEIGHT") == 0)
 		{
 			const int paramID = AnalysisControl::ALPHA_WEIGHT;
 			if (hasAlreadyRead[paramID] == true)
@@ -1636,7 +1631,7 @@ void AnalysisControl::inputControlData()
 			}
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("INV_MAT_POSITIVE_DEFINITE", 25))
+		else if (line.substr(0, 25).compare("INV_MAT_POSITIVE_DEFINITE") == 0)
 		{
 			const int paramID = AnalysisControl::INV_MAT_POSITIVE_DEFINITE;
 			if (hasAlreadyRead[paramID] == true)
@@ -1647,7 +1642,7 @@ void AnalysisControl::inputControlData()
 			m_positiveDefiniteNormalEqMatrix = true;
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("BOTTOM_RESISTIVITY", 18))
+		else if (line.substr(0, 18).compare("BOTTOM_RESISTIVITY") == 0)
 		{
 			const int paramID = AnalysisControl::BOTTOM_RESISTIVITY;
 			if (hasAlreadyRead[paramID] == true)
@@ -1666,7 +1661,7 @@ void AnalysisControl::inputControlData()
 			ptrResistivityBlock->setBottomResistivity(dbuf);
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("BOTTOM_ROUGHNING_FACTOR", 23))
+		else if (line.substr(0, 23).compare("BOTTOM_ROUGHNING_FACTOR") == 0)
 		{
 			const int paramID = AnalysisControl::BOTTOM_ROUGHNING_FACTOR;
 			if (hasAlreadyRead[paramID] == true)
@@ -1683,7 +1678,7 @@ void AnalysisControl::inputControlData()
 			ptrResistivityBlock->setRoughningFactorAtBottom(dbuf);
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("INV_METHOD", 10))
+		else if (line.substr(0, 10).compare("INV_METHOD") == 0)
 		{
 			const int paramID = AnalysisControl::INV_METHOD;
 			if (hasAlreadyRead[paramID] == true)
@@ -1706,7 +1701,7 @@ void AnalysisControl::inputControlData()
 			}
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("BOUNDS_DIST_THLD", 16))
+		else if (line.substr(0, 16).compare("BOUNDS_DIST_THLD") == 0)
 		{
 			const int paramID = AnalysisControl::BOUNDS_DIST_THLD;
 			if (hasAlreadyRead[paramID] == true)
@@ -1723,7 +1718,7 @@ void AnalysisControl::inputControlData()
 			ptrResistivityBlock->setMinDistanceToBounds(dbuf);
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("IDW", 3))
+		else if (line.substr(0, 3).compare("IDW") == 0)
 		{
 			const int paramID = AnalysisControl::IDW;
 			if (hasAlreadyRead[paramID] == true)
@@ -1740,7 +1735,7 @@ void AnalysisControl::inputControlData()
 			ptrResistivityBlock->setInverseDistanceWeightingFactor(dbuf);
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("SMALL_VALUE", 11))
+		else if (line.substr(0, 11).compare("SMALL_VALUE") == 0)
 		{
 			const int paramID = AnalysisControl::SMALL_VALUE;
 			if (hasAlreadyRead[paramID] == true)
@@ -1758,7 +1753,7 @@ void AnalysisControl::inputControlData()
 			ptrResistivityBlock->setSmallValueAddedToDiagonals(dbuf);
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("MOVE_OBS_LOC", 12))
+		else if (line.substr(0, 12).compare("MOVE_OBS_LOC") == 0)
 		{
 			const int paramID = AnalysisControl::MOVE_OBS_LOC;
 			if (hasAlreadyRead[paramID] == true)
@@ -1769,7 +1764,7 @@ void AnalysisControl::inputControlData()
 			m_isObsLocMovedToCenter = true;
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("OWNER_ELEMENT", 13))
+		else if (line.substr(0, 13).compare("OWNER_ELEMENT") == 0)
 		{
 			const int paramID = AnalysisControl::OWNER_ELEMENT;
 			if (hasAlreadyRead[paramID] == true)
@@ -1790,7 +1785,7 @@ void AnalysisControl::inputControlData()
 			m_typeOfOwnerElement = ibuf;
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("APP_PHS_OPTION", 14))
+		else if (line.substr(0, 14).compare("APP_PHS_OPTION") == 0)
 		{
 			const int paramID = AnalysisControl::APP_PHS_OPTION;
 			if (hasAlreadyRead[paramID] == true)
@@ -1807,7 +1802,7 @@ void AnalysisControl::inputControlData()
 			m_apparentResistivityAndPhaseTreatmentOption = ibuf;
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("OUTPUT_ROUGH_MATRIX", 19))
+		else if (line.substr(0, 19).compare("OUTPUT_ROUGH_MATRIX") == 0)
 		{
 			const int paramID = AnalysisControl::OUTPUT_ROUGH_MATRIX;
 			if (hasAlreadyRead[paramID] == true)
@@ -1818,7 +1813,7 @@ void AnalysisControl::inputControlData()
 			m_isRougheningMatrixOutputted = true;
 			hasAlreadyRead[paramID] = true;
 		}
-		if (seekKeyword("DATA_SPACE_METHOD", 17))
+		else if (line.substr(0, 17).compare("DATA_SPACE_METHOD") == 0)
 		{
 			const int paramID = AnalysisControl::DATA_SPACE_METHOD;
 			if (hasAlreadyRead[paramID] == true)
@@ -1831,7 +1826,7 @@ void AnalysisControl::inputControlData()
 			hasAlreadyRead[paramID] = true;
 #ifdef _ANISOTOROPY
 		}
-		if (seekKeyword("ANISOTROPY", 10))
+		else if (line.substr(0, 10).compare("ANISOTROPY") == 0)
 		{
 			const int paramID = AnalysisControl::ANISOTROPY;
 			if (hasAlreadyRead[paramID] == true)
@@ -1844,7 +1839,7 @@ void AnalysisControl::inputControlData()
 			hasAlreadyRead[paramID] = true;
 #endif
 		}
-		if (seekKeyword("DIFF_FILTER", 11))
+		else if (line.substr(0, 11).compare("DIFF_FILTER") == 0)
 		{
 			m_useDifferenceFilter = true;
 			inFile >> ibuf;
@@ -1858,7 +1853,17 @@ void AnalysisControl::inputControlData()
 			inFile >> dbuf;
 			m_thresholdIRWLSForLpOptimization = dbuf;
 		}
-	// (istringstream — no close() needed)
+		else if (line.substr(0, 3).compare("END") == 0)
+		{
+			break;
+		}
+		else
+		{
+			OutputFiles::m_logFile << "Error : Improper data !! " << line << std::endl;
+			exit(1);
+		}
+	}
+	inFile.close();
 
 	if (!hasAlreadyRead[AnalysisControl::DISTORTION])
 	{
@@ -1928,6 +1933,7 @@ void AnalysisControl::inputControlData()
 	default:
 		OutputFiles::m_logFile << "Error : Wrong value m_modeOfPARDISO !! m_modeOfPARDISO = " << m_modeOfPARDISO << std::endl;
 		exit(1);
+		break;
 	}
 	OutputFiles::m_logFile << "# Division number of right-hand sides at solve phase in forward calculation : " << m_divisionNumberOfMultipleRHSInForward << std::endl;
 	OutputFiles::m_logFile << "# Division number of right-hand sides at solve phase in inversion : " << m_divisionNumberOfMultipleRHSInInversion << std::endl;
@@ -1985,6 +1991,7 @@ void AnalysisControl::inputControlData()
 	default:
 		OutputFiles::m_logFile << "Error : Wrong value m_numberingMethod !! m_numberingMethod = " << m_modeOfPARDISO << std::endl;
 		exit(1);
+		break;
 	}
 
 	if (m_typeOfMesh == MeshData::HEXA)
@@ -2012,6 +2019,7 @@ void AnalysisControl::inputControlData()
 		default:
 			OutputFiles::m_logFile << "Error : Unknown type of the electric field : " << m_typeOfElectricField << std::endl;
 			exit(1);
+			break;
 		}
 	}
 
@@ -2032,6 +2040,7 @@ void AnalysisControl::inputControlData()
 		default:
 			OutputFiles::m_logFile << "Error : Unknown type of owner element : " << m_typeOfOwnerElement << std::endl;
 			exit(1);
+			break;
 		}
 	}
 
@@ -2045,6 +2054,7 @@ void AnalysisControl::inputControlData()
 	default:
 		OutputFiles::m_logFile << "Error : Unknown type of owner element : " << m_typeOfOwnerElement << std::endl;
 		exit(1);
+		break;
 	}
 
 	if (m_typeOfMesh == MeshData::HEXA)
@@ -2155,6 +2165,7 @@ void AnalysisControl::inputControlData()
 	default:
 		OutputFiles::m_logFile << "Error : Wrong type of anisotropy : " << getTypeOfAnisotropy() << std::endl;
 		exit(1);
+		break;
 	}
 #endif
 
@@ -2221,6 +2232,7 @@ void AnalysisControl::inputControlData()
 		default:
 			OutputFiles::m_logFile << "Error : Type of data space inversion algorithm is wrong  !! : " << getTypeOfDataSpaceAlgorithm() << std::endl;
 			exit(1);
+			break;
 		}
 		break;
 	case Inversion::ABIC_DATA_SPECE:
@@ -2229,6 +2241,7 @@ void AnalysisControl::inputControlData()
 	default:
 		OutputFiles::m_logFile << "Error : Type of inversion method is wrong  !! : " << getInversionMethod() << std::endl;
 		exit(1);
+		break;
 	}
 
 	if (estimateDistortionMatrix())
@@ -2486,7 +2499,6 @@ int AnalysisControl::getIterationNumMax() const
 {
 	return m_iterationNumMax;
 }
-
 
 // Get member variable specifing which backward or forward element is used for calculating EM field
 const AnalysisControl::UseBackwardOrForwardElement AnalysisControl::getUseBackwardOrForwardElement() const

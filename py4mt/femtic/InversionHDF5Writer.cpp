@@ -99,17 +99,10 @@ bool InversionHDF5Writer::write( const std::string& fileName,
                                  const double*      resistivityVector,
                                  int                nDataTotal,
                                  int                nModel,
-                                 int                iterationNumber,
-                                 bool               writeSensitivity )
+                                 int                iterationNumber )
 {
     OutputFiles::m_logFile << "# Writing inversion data to HDF5 : "
-                           << fileName
-                           << ( writeSensitivity
-                                ? " (incl. raw sensitivity matrix,"
-                                  " sensitivity vector diag(JT Cd-1 J),"
-                                  " and resistivity vector)"
-                                : "" )
-                           << std::endl;
+                           << fileName << std::endl;
 
     hid_t fileID = H5Fcreate( fileName.c_str(), H5F_ACC_TRUNC,
                                H5P_DEFAULT, H5P_DEFAULT );
@@ -123,33 +116,18 @@ bool InversionHDF5Writer::write( const std::string& fileName,
     const hsize_t nm = static_cast<hsize_t>(nModel);
 
     bool ok = true;
+    ok &= writeDoubleDataset( fileID, "residual_vector",    residualVector,   nd, 0  );
+    ok &= writeDoubleDataset( fileID, "error_vector",       errorVector,      nd, 0  );
+    ok &= writeDoubleDataset( fileID, "sensitivity_vector", sensitivityVector, nm, 0  );
+    ok &= writeDoubleDataset( fileID, "resistivity_vector", resistivityVector, nm, 0  );
+    ok &= writeDoubleDataset( fileID, "sensitivity_matrix", sensitivityMatrix, nd, nm );
 
-    // Residual and error vectors – written every iteration.
-    ok &= writeDoubleDataset( fileID, "residual_vector", residualVector, nd, 0 );
-    ok &= writeDoubleDataset( fileID, "error_vector",    errorVector,    nd, 0 );
-
-    // Final-iteration datasets: sensitivity vector, resistivity vector,
-    // and full sensitivity matrix.
-    if( writeSensitivity ){
-        // diag( (Cd^{-1/2}*J)^T * (Cd^{-1/2}*J) ) — one scalar per free parameter.
-        ok &= writeDoubleDataset( fileID, "sensitivity_vector",
-                                  sensitivityVector, nm, 0 );
-        // log10(resistivity) of free blocks in inversion order.
-        ok &= writeDoubleDataset( fileID, "resistivity_vector",
-                                  resistivityVector, nm, 0 );
-        // Full error-weighted Jacobian [nDataTotal x nModel].
-        ok &= writeDoubleDataset( fileID, "sensitivity_matrix",
-                                  sensitivityMatrix, nd, nm );
-    }
-
-    // Metadata group.
     hid_t grp = H5Gcreate2( fileID, "attributes",
                              H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT );
     if( grp >= 0 ){
-        writeIntAttribute( grp, "num_data",             nDataTotal );
-        writeIntAttribute( grp, "num_model",            nModel );
-        writeIntAttribute( grp, "iteration",            iterationNumber );
-        writeIntAttribute( grp, "sensitivity_written",  writeSensitivity ? 1 : 0 );
+        writeIntAttribute( grp, "num_data",  nDataTotal );
+        writeIntAttribute( grp, "num_model", nModel );
+        writeIntAttribute( grp, "iteration", iterationNumber );
         H5Gclose( grp );
     } else {
         OutputFiles::m_logFile << "HDF5 Warning : Could not create /attributes group."

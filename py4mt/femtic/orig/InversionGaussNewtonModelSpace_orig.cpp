@@ -26,10 +26,6 @@
 #include "OutputFiles.h"
 #include "ResistivityBlock.h"
 #include "InversionGaussNewtonModelSpace.h"
-#ifdef _WRITE_INVERSION_DATA_HDF5
-#include "InversionHDF5Writer.h"
-#endif
-
 #include <sstream>
 #include <stdio.h>
 #include <stdlib.h>
@@ -132,12 +128,6 @@ void InversionGaussNewtonModelSpace::inversionCalculation(){
 	}
 #endif
 
-
-#ifdef _WRITE_INVERSION_DATA_HDF5
-    // dataVectorTotal already holds (d_obs - d_cal)/sigma on all PEs.
-    // No gather needed — used directly in the PE-0 write block below.
-    // The entire HDF5 block is skipped on non-final calls (e.g. ABIC loop).
-#endif // _WRITE_INVERSION_DATA_HDF5
 	delete [] numDataLocal;
 	delete [] displacements;
 	delete [] dataVectorThisPE;
@@ -215,68 +205,6 @@ void InversionGaussNewtonModelSpace::inversionCalculation(){
 			numDataAccumulated_64 += numDataThisFreq_64;// Add data number
 		}
 
-
-#ifdef _WRITE_INVERSION_DATA_HDF5
-        {
-            const int hdf5IterCur = ptrAnalysisControl->getIterationNumCurrent();
-            const int hdf5IterMax = ptrAnalysisControl->getIterationNumMax();
-            OutputFiles::m_logFile
-                << "# [HDF5 debug] inversionCalculation called:"
-                << "  iterCur=" << hdf5IterCur
-                << "  iterMax=" << hdf5IterMax
-                << "  isFinal=" << ( hdf5IterCur >= hdf5IterMax - 1 )
-                << std::endl;
-        }
-        // inversionCalculation() is called only when iter < iterMax (the break
-        // happens before the call when iter >= iterMax). So the last call occurs
-        // at iterNumCurrent == iterMax - 1.
-        if( ptrAnalysisControl->getIterationNumCurrent()
-            >= ptrAnalysisControl->getIterationNumMax() - 1 ){
-            const int iterNo = ptrAnalysisControl->getIterationNumCurrent();
-            // sensitivityMatrixBuf is row-major [nDataTotal x nModel] here,
-            // before the in-place column-major transpose below.
-            // dataVectorTotal holds (d_obs - d_cal)/sigma — used as both
-            // residual_vector and error_vector (1/sigma not separately accessible).
-            double* hdf5SensMatrix_ms   = NULL;
-            double* hdf5SensVector_ms   = NULL;
-            double* hdf5ResistVector_ms = NULL;
-            {
-                const long long nd64_ms = static_cast<long long>(numDataTotal);
-                const long long nm64_ms = static_cast<long long>(numModel);
-                hdf5SensMatrix_ms = new double[ nd64_ms * nm64_ms ];
-                hdf5SensVector_ms = new double[ nm64_ms ]();  // zero-initialised
-                // Copy raw J and accumulate diag(J^T J) — column squared norms.
-                // Note: 1/sigma is not separately accessible in ModelSpace;
-                // diag(J^T J) is used as the sensitivity measure instead of
-                // the error-weighted diag(J^T Cd^{-1} J).
-                for( long long r = 0; r < nd64_ms; ++r ){
-                    for( long long c = 0; c < nm64_ms; ++c ){
-                        const double rawJ = sensitivityMatrixBuf[ r * nm64_ms + c ];
-                        hdf5SensMatrix_ms[ r * nm64_ms + c ] = rawJ;
-                        hdf5SensVector_ms[ c ] += rawJ * rawJ;
-                    }
-                }
-                // Resistivity of free blocks in log10(Ohm.m).
-                hdf5ResistVector_ms = new double[ nm64_ms ];
-                ptrResistivityBlock->copyResistivityValuesNotFixedToVectorLog10(
-                    hdf5ResistVector_ms );
-            }  // end sensitivity assembly block
-            InversionHDF5Writer::write(
-                InversionHDF5Writer::makeFileName( iterNo ),
-                hdf5SensMatrix_ms,
-                dataVectorTotal,
-                dataVectorTotal,
-                hdf5SensVector_ms,
-                hdf5ResistVector_ms,
-                static_cast<int>(numDataTotal),
-                numModel,
-                iterNo );
-            if( hdf5SensMatrix_ms   != NULL ){ delete [] hdf5SensMatrix_ms;   hdf5SensMatrix_ms   = NULL; }
-            if( hdf5SensVector_ms   != NULL ){ delete [] hdf5SensVector_ms;   hdf5SensVector_ms   = NULL; }
-            if( hdf5ResistVector_ms != NULL ){ delete [] hdf5ResistVector_ms; hdf5ResistVector_ms = NULL; }
-            // sensitivityMatrixBuf and dataVectorTotal still needed below.
-        }
-#endif // _WRITE_INVERSION_DATA_HDF5
 		double* sensitivityMatrix = new double[ numDataTotal_64 * numModel_64 ];
 
 		OutputFiles::m_logFile << "# Convert to column-major. " << ptrAnalysisControl->outputElapsedTime() << std::endl;
