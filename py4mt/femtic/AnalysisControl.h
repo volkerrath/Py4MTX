@@ -211,12 +211,6 @@ class AnalysisControl{
 		// Get maximum iteration number
 		int getIterationNumMax() const;
 
-#ifdef _WRITE_INVERSION_DATA_HDF5
-		// True only during the final inversionCalculation() call of the main
-		// iteration loop (converged or maximum iteration reached).
-		// Set by AnalysisControl::run() immediately before that call.
-		bool isLastInversion() const;
-#endif
 
 		// Get residual updated or not
 		int getresidualupdate() const;
@@ -462,10 +456,6 @@ private:
 		// Trade-off parameter for resistivity value
 		int m_NumOF_TO;
 		bool m_leavingABIC;
-#ifdef _WRITE_INVERSION_DATA_HDF5
-		// Set true immediately before the final inversionCalculation() call.
-		bool m_isLastInversion;
-#endif
 		double m_tradeOffParameterForResistivityValue;
 		double m_tradeOffParameterForMinNorm;
 		double m_tradeOffParameterForCrossGradient;

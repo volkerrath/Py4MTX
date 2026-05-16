@@ -28,10 +28,6 @@
 #include "OutputFiles.h"
 #include "ResistivityBlock.h"
 #include "InversionGaussNewtonDataSpace_ABIC.h"
-#ifdef _WRITE_INVERSION_DATA_HDF5
-#include "InversionHDF5Writer.h"
-#endif
-
 #include <sstream>
 #include <stdio.h>
 #include <stdlib.h>
@@ -190,61 +186,6 @@ void InversionGaussNewtonDataSpace_ABIC::inversionCalculation()
 	double *residualVectorThisPE = new double[numDataThisPE];
 	ptrAnalysisControl->getResidualVectorOfDataThisPE(residualVectorThisPE);
 	OutputFiles::m_logFile << "# Get Residual Vector Of Data this PE : " << numDataThisPE << std::endl;
-#ifdef _WRITE_INVERSION_DATA_HDF5
-    {
-        const int hdf5IterCur = ptrAnalysisControl->getIterationNumCurrent();
-        const int hdf5IterMax = ptrAnalysisControl->getIterationNumMax();
-        OutputFiles::m_logFile
-            << "# [HDF5 debug] inversionCalculation called:"
-            << "  iterCur=" << hdf5IterCur
-            << "  iterMax=" << hdf5IterMax
-            << "  isFinal=" << ( hdf5IterCur >= hdf5IterMax - 1 )
-            << std::endl;
-    }
-    // inversionCalculation() is called only when iter < iterMax (the break
-    // happens before the call when iter >= iterMax). So the last call occurs
-    // at iterNumCurrent == iterMax - 1.
-    const bool hdf5IsFinal =
-        ( ptrAnalysisControl->getIterationNumCurrent()
-          >= ptrAnalysisControl->getIterationNumMax() - 1 );
-    int*    hdf5NumDataLocal(NULL);
-    int*    hdf5NumDataAccumulated(NULL);
-    int     hdf5NumDataTotal(-1);
-    double* hdf5ResidualGlobal(NULL);
-    if( hdf5IsFinal ){
-        if( myProcessID == 0 ){
-            hdf5NumDataLocal = new int[numProcessTotal];
-        }
-        MPI_Gather( &numDataThisPE, 1, MPI_INT,
-                    hdf5NumDataLocal, 1, MPI_INT,
-                    0, MPI_COMM_WORLD );
-        if( myProcessID == 0 ){
-            hdf5NumDataAccumulated = new int[numProcessTotal + 1];
-            hdf5NumDataAccumulated[0] = 0;
-            for( int i = 0; i < numProcessTotal; ++i ){
-                hdf5NumDataAccumulated[i+1] = hdf5NumDataAccumulated[i]
-                                            + hdf5NumDataLocal[i];
-            }
-            hdf5NumDataTotal = hdf5NumDataAccumulated[numProcessTotal];
-        }
-        if( myProcessID == 0 ){
-            hdf5ResidualGlobal = new double[hdf5NumDataTotal];
-        }
-        MPI_Gatherv( residualVectorThisPE, numDataThisPE, MPI_DOUBLE,
-                     hdf5ResidualGlobal,
-                     hdf5NumDataLocal, hdf5NumDataAccumulated, MPI_DOUBLE,
-                     0, MPI_COMM_WORLD );
-        if( hdf5NumDataLocal != NULL ){
-            delete [] hdf5NumDataLocal;
-            hdf5NumDataLocal = NULL;
-        }
-        if( hdf5NumDataAccumulated != NULL ){
-            delete [] hdf5NumDataAccumulated;
-            hdf5NumDataAccumulated = NULL;
-        }
-    }
-#endif // _WRITE_INVERSION_DATA_HDF5
-
 
 #ifdef _DEBUG_WRITE
 	for (int i = 0; i < numDataThisPE; ++i)
@@ -883,62 +824,6 @@ void InversionGaussNewtonDataSpace_ABIC::inversionCalculation()
 		}
 #endif
 
-
-#ifdef _WRITE_INVERSION_DATA_HDF5
-    if( hdf5IsFinal ){
-        const int iterNo = ptrAnalysisControl->getIterationNumCurrent();
-
-        double* hdf5SensMatrix   = NULL;
-        double* hdf5SensVector   = NULL;
-        double* hdf5ResistVector = NULL;
-        {
-            const int nFreqHDF5 =
-                ptrObservedData->getTotalNumberOfDifferenetFrequencies();
-            const long long nd64 = static_cast<long long>(hdf5NumDataTotal);
-            const long long nm64 = static_cast<long long>(numModel);
-            hdf5SensMatrix = new double[ nd64 * nm64 ];
-            hdf5SensVector = new double[ nm64 ]();  // zero-initialised
-            int hdf5RowOffset = 0;
-            for( int iFreq = 0; iFreq < nFreqHDF5; ++iFreq ){
-                std::ostringstream fn;
-                fn << "sensMatFreq" << iFreq << "Mod";
-                int ndf(0), nmf(0);
-                double* smFreq(NULL);
-                readSensitivityMatrix( fn.str(), ndf, nmf, smFreq );
-                const long long nRows = static_cast<long long>(ndf);
-                for( long long r = 0; r < nRows; ++r ){
-                    for( long long c = 0; c < nm64; ++c ){
-                        const double rawJ = smFreq[ r * nm64 + c ];
-                        hdf5SensMatrix[
-                            (static_cast<long long>(hdf5RowOffset) + r)
-                            * nm64 + c ] = rawJ;
-                        hdf5SensVector[ c ] += rawJ * rawJ;
-                    }
-                }
-                delete [] smFreq;
-                hdf5RowOffset += ndf;
-            }
-            // Resistivity of free blocks in log10(Ohm.m)
-            hdf5ResistVector = new double[ nm64 ];
-            ptrResistivityBlock->copyResistivityValuesNotFixedToVectorLog10(
-                hdf5ResistVector );
-        }  // end sensitivity assembly block
-        InversionHDF5Writer::write(
-            InversionHDF5Writer::makeFileName( iterNo ),
-            hdf5SensMatrix,
-            hdf5ResidualGlobal,
-            hdf5ResidualGlobal,
-            hdf5SensVector,
-            hdf5ResistVector,
-            hdf5NumDataTotal,
-            numModel,
-            iterNo );
-        if( hdf5SensMatrix   != NULL ){ delete [] hdf5SensMatrix;   hdf5SensMatrix   = NULL; }
-        if( hdf5SensVector   != NULL ){ delete [] hdf5SensVector;   hdf5SensVector   = NULL; }
-        if( hdf5ResistVector != NULL ){ delete [] hdf5ResistVector; hdf5ResistVector = NULL; }
-        delete [] hdf5ResidualGlobal;  hdf5ResidualGlobal = NULL;
-    }
-#endif // _WRITE_INVERSION_DATA_HDF5
 	} //----- Treadted by only PE 0 ------------------<<<<<<<<<<<<<<<<<<<<<<<<
 
 	//-----------------------------------------------------------------
