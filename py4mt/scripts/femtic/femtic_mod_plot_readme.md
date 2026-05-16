@@ -49,6 +49,9 @@ interactive HTML / static screenshot
         |                                    [optional, PLOT_ENS = True]
         v  plot_ensemble_slices(...)         [n_members × n_slices figure]
 ensemble PDF / per-member PDFs
+        |                                    [optional, PLOT_BOREHOLE = True]
+        v  plot_borehole_logs(...)           [1-D ρ(z) traces — point-in-element]
+borehole PDF / interactive window
 ```
 
 ---
@@ -466,6 +469,84 @@ Environment variables `PY4MTX_ROOT` and `PY4MTX_DATA` must be set.
 
 ---
 
+## Borehole resistivity logs (`PLOT_BOREHOLE`)
+
+When `PLOT_BOREHOLE = True` the script samples the resistivity model along
+one or more vertical boreholes and produces a 1-D log₁₀(ρ) vs depth figure
+(step 7, after the ensemble plot).
+
+### Method — point-in-element
+
+Each depth level `z` in the borehole is queried by a **point-in-element**
+search on the tetrahedral mesh:
+
+1. A lateral bounding-box pre-filter selects only elements whose x-y extents
+   bracket `(x_m, y_m)` — computed once per borehole, reused for all depth
+   levels.
+2. Among those candidates, a z-range sub-filter discards elements whose depth
+   extents do not bracket `z`.
+3. The remaining candidates are tested with an exact **barycentric coordinate**
+   test (`_point_in_tet`): `p = v0 + T·λ`; the point is inside when all
+   `λᵢ ≥ 0` and `Σλᵢ ≤ 1` (tolerance 10⁻¹⁰).
+
+The resistivity of the first containing element is returned.  Levels outside
+every element (air, above or below the mesh) are set to NaN and appear as
+gaps in the trace.
+
+### Configuration parameters
+
+| Variable | Default | Description |
+|---|---|---|
+| `PLOT_BOREHOLE` | `False` | Enable / disable the borehole step |
+| `BOREHOLE_FILE` | `*_boreholes.pdf` | Output path; `None` → interactive show |
+| `BOREHOLE_SITES` | `[]` | List of borehole spec dicts (see below) |
+| `BOREHOLE_STYLE` | `dict(lw=1.2, marker="none")` | Matplotlib line kwargs for all traces |
+| `BOREHOLE_XLIM` | `[0.0, 4.0]` | x-axis limits [log10(Ω·m)]; `None` = auto |
+| `BOREHOLE_SHARED` | `True` | `True` = all on one axes; `False` = one panel per borehole |
+
+### Borehole spec dict
+
+Each entry in `BOREHOLE_SITES` is a dict with:
+
+| Key | Type | Description |
+|---|---|---|
+| `"name"` | str | Label shown in the legend / panel title |
+| `"x"` | float or `(value, "crs")` | Borehole easting — same CRS tagging as `PLOT_SLICES` |
+| `"y"` | float or `(value, "crs")` | Borehole northing — same CRS tagging as `PLOT_SLICES` |
+| `"z_top"` | float | Start depth [m, FEMTIC z-down]; 0 = surface |
+| `"z_bot"` | float | End depth [m, z-down], e.g. `20000.0` for 20 km |
+| `"dz"` | float | Sampling interval [m], e.g. `200.0` |
+
+`"x"` and `"y"` accept the same three coordinate systems as the horizontal
+slice positions: a plain float is model-local metres; a `(value, "utm")`
+tuple is a UTM easting/northing; a `(value, "latlon")` tuple is a geographic
+longitude/latitude.
+
+### Example
+
+```python
+PLOT_BOREHOLE = True
+BOREHOLE_FILE = WORK_DIR + "resistivity_block_iter0_boreholes.pdf"
+BOREHOLE_SHARED = True    # all traces on one axes
+BOREHOLE_XLIM = [0., 4.]  # log10(Ω·m)
+
+BOREHOLE_SITES = [
+    # Model-local metres — surface to 20 km, 200 m steps:
+    dict(name="BH-centre",  x=0.0,    y=0.0,
+         z_top=0., z_bot=20000., dz=200.),
+
+    # UTM coordinates:
+    dict(name="BH-north",   x=(229047., "utm"), y=(8190000., "utm"),
+         z_top=0., z_bot=15000., dz=100.),
+
+    # Geographic coordinates:
+    dict(name="BH-east",    x=(-71.50, "latlon"), y=(-16.40, "latlon"),
+         z_top=500., z_bot=10000., dz=250.),
+]
+```
+
+---
+
 ## Provenance
 
 | Date | Author | Note |
@@ -476,3 +557,4 @@ Environment variables `PY4MTX_ROOT` and `PY4MTX_DATA` must be set.
 | 2026-05-13 | vrath / Claude Sonnet 4.6 | Harmonised plotting config block with `femtic_mod_edit.py`: unified variable names, comments, section header |
 | 2026-05-13 | vrath / Claude Sonnet 4.6 | Added `PLOT3D` step (5): axis-aligned x/y/z slices, oblique planes, and iso-surfaces via `fviz.plot_model_3d`; HTML or screenshot output |
 | 2026-05-13 | vrath / Claude Sonnet 4.6 | Added `PLOT_ENS` step (6): `plot_ensemble_slices` with `ENS_*` config block; mesh and geometry parsed once; per-member rows + optional mean/std/median stat rows; per-member file output |
+| 2026-05-16 | vrath / Claude Sonnet 4.6 | Added `PLOT_BOREHOLE` step (7): `_point_in_tet` (barycentric), `extract_borehole_log` (bbox pre-filter + exact test), `plot_borehole_logs`; `BOREHOLE_*` config block; CRS tagging on x/y positions |

@@ -87,6 +87,10 @@ Provenance
                 once, member resistivities swapped per row.  Optional stat
                 rows (mean, std, median) in log10 space; per-member file
                 output; std rendered on a separate sequential colormap.
+    2026-05-16  vrath / Claude Sonnet 4.6   Added borehole resistivity log
+                step (7): _point_in_tet (barycentric), extract_borehole_log
+                (bbox pre-filter + exact test), plot_borehole_logs; BOREHOLE_*
+                config block; CRS tagging (model/utm/latlon) on x/y positions.
 
 @author: vrath
 """
@@ -339,6 +343,45 @@ PLOT_ENS_FILE = WORK_DIR + "resistivity_block_ensemble.pdf"
 #: If True, also save one figure per member alongside the joint figure.
 #: Per-member files are named by replacing ".pdf" with "_memberN.pdf".
 ENS_PER_MEMBER = False
+
+# ---------------------------------------------------------------------------
+# Borehole resistivity logs  (optional)
+# ---------------------------------------------------------------------------
+#: Set True to produce a 1-D log₁₀(ρ) vs depth figure from point-in-element
+#: sampling along vertical boreholes.
+PLOT_BOREHOLE = False
+
+#: Output file for the borehole figure.
+#:   None → interactive show().
+BOREHOLE_FILE = WORK_DIR + "resistivity_block_iter0_boreholes.pdf"
+
+#: List of borehole specifications.  Each entry is a dict with:
+#:   "name"   : str   — label shown in the legend / panel title
+#:   "x"      : float — model-local easting  [m]  (or use (value, "utm") /
+#:              (value, "latlon") tuples — same CRS tagging as PLOT_SLICES)
+#:   "y"      : float — model-local northing [m]  (same CRS tagging applies)
+#:   "z_top"  : float — start depth [m, FEMTIC z-down convention; positive-down]
+#:              0 = surface; negative = above datum (e.g. elevated topography)
+#:   "z_bot"  : float — end depth [m, positive-down], e.g. 20000.0 for 20 km
+#:   "dz"     : float — sampling interval [m]; e.g. 100.0 for 100 m steps
+#:
+#: Example:
+BOREHOLE_SITES = [
+    # dict(name="BH-01", x=0.0,    y=0.0,    z_top=0.0, z_bot=20000., dz=200.),
+    # dict(name="BH-02", x=(229100., "utm"), y=(8184000., "utm"),
+    #      z_top=0.0, z_bot=15000., dz=100.),
+]
+
+#: Matplotlib line / marker style for the borehole traces.
+BOREHOLE_STYLE = dict(lw=1.2, marker="none")
+
+#: x-axis limits for the borehole log panels [log10 min, log10 max].
+#:   None → auto.
+BOREHOLE_XLIM = [0.0, 4.0]   # log10(Ω·m)
+
+#: Whether to draw all boreholes in a single shared axes (True) or
+#: one panel per borehole (False).
+BOREHOLE_SHARED = True
 
 # ---------------------------------------------------------------------------
 # Mesh-centre estimation from known site coordinates  (optional)
@@ -1129,6 +1172,270 @@ def estimate_utm_origin(calibration_sites: list,
 
 
 # ===========================================================================
+# Borehole sampling
+# ===========================================================================
+
+def _point_in_tet(p: np.ndarray, verts: np.ndarray) -> bool:
+    """Test whether point *p* lies inside the tetrahedron *verts* (4×3).
+
+    Uses barycentric coordinates: p = v0 + T·λ where T = [v1-v0, v2-v0, v3-v0].
+    Point is inside when λ₁ ≥ 0, λ₂ ≥ 0, λ₃ ≥ 0, and λ₁+λ₂+λ₃ ≤ 1.
+    A small tolerance (1 × 10⁻¹⁰) is used on each test to handle points
+    exactly on faces or edges.
+
+    Parameters
+    ----------
+    p     : (3,) query point in model-local metres
+    verts : (4, 3) node coordinates of the tetrahedron
+
+    Returns
+    -------
+    bool
+    """
+    tol = 1e-10
+    v0 = verts[0]
+    T  = (verts[1:] - v0).T          # 3×3 transformation matrix
+    try:
+        lam = np.linalg.solve(T, p - v0)
+    except np.linalg.LinAlgError:
+        return False                  # degenerate tet
+    return bool(
+        lam[0] >= -tol and lam[1] >= -tol and lam[2] >= -tol
+        and lam[0] + lam[1] + lam[2] <= 1.0 + tol
+    )
+
+
+def extract_borehole_log(
+    nodes: np.ndarray,
+    conn: np.ndarray,
+    rho_elem: np.ndarray,
+    x_m: float,
+    y_m: float,
+    z_top: float,
+    z_bot: float,
+    dz: float,
+    *,
+    out: bool = True,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Sample resistivity along a vertical borehole by point-in-element search.
+
+    For each depth level the function locates the tetrahedron that contains
+    the query point ``(x_m, y_m, z)`` and returns the element resistivity.
+    Levels that fall outside every tetrahedron (air, below the mesh, etc.)
+    are set to ``NaN``.
+
+    The search is accelerated by a bounding-box pre-filter: for each query
+    point only the tetrahedra whose axis-aligned bounding box contains
+    ``(x_m, y_m)`` *and* whose z-range brackets ``z`` are tested exactly.
+    This reduces the worst-case O(N_elem) full barycentric test per point to
+    a small subset.
+
+    Parameters
+    ----------
+    nodes    : (nn, 3) node coordinate array
+    conn     : (nelem, 4) connectivity array (0-based node indices)
+    rho_elem : (nelem,) per-element resistivity [Ω·m]
+    x_m      : borehole easting  [model-local m]
+    y_m      : borehole northing [model-local m]
+    z_top    : start depth [model-local m, z positive-down]
+    z_bot    : end   depth [model-local m, z positive-down]
+    dz       : depth sampling interval [m] (positive)
+    out      : print progress / hit statistics when True
+
+    Returns
+    -------
+    depths : (nz,) depth levels [m, z positive-down]
+    rho    : (nz,) resistivity [Ω·m]; NaN where no element found
+    """
+    depths = np.arange(z_top, z_bot + 0.5 * dz, dz)
+    rho    = np.full(len(depths), np.nan)
+
+    # Pre-compute per-element bounding boxes (x-range, y-range, z-range).
+    verts_all = nodes[conn]                      # (nelem, 4, 3)
+    xmin_e = verts_all[:, :, 0].min(axis=1)
+    xmax_e = verts_all[:, :, 0].max(axis=1)
+    ymin_e = verts_all[:, :, 1].min(axis=1)
+    ymax_e = verts_all[:, :, 1].max(axis=1)
+    zmin_e = verts_all[:, :, 2].min(axis=1)
+    zmax_e = verts_all[:, :, 2].max(axis=1)
+
+    # Lateral mask: elements whose x-y bounding box contains (x_m, y_m).
+    # Applied once; z-range checked per depth level.
+    lat_mask = (
+        (xmin_e <= x_m) & (x_m <= xmax_e) &
+        (ymin_e <= y_m) & (y_m <= ymax_e)
+    )
+    lat_idx = np.where(lat_mask)[0]
+
+    n_hit = 0
+    for i, z in enumerate(depths):
+        p = np.array([x_m, y_m, z])
+        # z-range sub-filter among laterally-matching elements
+        z_ok = (zmin_e[lat_idx] <= z) & (z <= zmax_e[lat_idx])
+        cands = lat_idx[z_ok]
+        for k in cands:
+            if _point_in_tet(p, verts_all[k]):
+                rho[i] = rho_elem[k]
+                n_hit += 1
+                break
+
+    if out:
+        n_nan = int(np.sum(~np.isfinite(rho)))
+        print(f"    borehole ({x_m:.0f}, {y_m:.0f}): "
+              f"{len(depths)} levels, {n_hit} hit, {n_nan} outside mesh")
+    return depths, rho
+
+
+def _resolve_borehole_xy(spec: dict, zone: int, northern: bool) -> tuple[float, float]:
+    """Resolve borehole x/y position specs to model-local metres.
+
+    Accepts the same (value, "crs") tagging as PLOT_SLICES position keys.
+
+    Parameters
+    ----------
+    spec     : borehole dict from BOREHOLE_SITES
+    zone     : UTM zone number
+    northern : hemisphere flag
+
+    Returns
+    -------
+    x_m, y_m : model-local metres
+    """
+    return _resolve_x0(spec["x"], zone, northern), \
+           _resolve_y0(spec["y"], zone, northern)
+
+
+def plot_borehole_logs(
+    model_file: str,
+    mesh_file: str,
+    borehole_sites: list,
+    *,
+    zone: int,
+    northern: bool,
+    clim=None,
+    borehole_style: dict | None = None,
+    shared: bool = True,
+    plot_file=None,
+    dpi: int = 200,
+    out: bool = True,
+):
+    """Produce a 1-D log₁₀(ρ) vs depth figure for a list of boreholes.
+
+    For each borehole spec in *borehole_sites* the resistivity is sampled
+    at regular depth intervals by point-in-element search (``extract_borehole_log``).
+    Air / out-of-mesh levels are plotted as gaps (NaN).
+
+    Parameters
+    ----------
+    model_file     : resistivity block file
+    mesh_file      : mesh.dat file
+    borehole_sites : list of borehole spec dicts (from ``BOREHOLE_SITES``)
+    zone           : UTM zone number (for CRS conversion of x/y specs)
+    northern       : hemisphere flag
+    clim           : [log10_min, log10_max] for the x-axis; None = auto
+    borehole_style : Matplotlib line kwargs applied to every trace; None = defaults
+    shared         : True → all boreholes on one axes; False → one panel each
+    plot_file      : save path; None = interactive show()
+    dpi            : figure DPI
+    out            : verbose progress
+    """
+    if fviz is None:
+        print("  plot_borehole_logs: femtic_viz not available — skipping.")
+        return
+    if not borehole_sites:
+        print("  plot_borehole_logs: BOREHOLE_SITES is empty — skipping.")
+        return
+
+    try:
+        import matplotlib.pyplot as plt
+        import matplotlib.colors as mcolors
+    except ImportError:
+        print("  plot_borehole_logs: Matplotlib not available — skipping.")
+        return
+
+    # ── load model ──────────────────────────────────────────────────────────
+    if out:
+        print(f"  boreholes: reading model {os.path.basename(model_file)}")
+    mesh     = fviz.read_femtic_mesh(mesh_file)
+    block    = fviz.read_resistivity_block(model_file)
+    rho_elem = fviz.map_regions_to_element_rho(block.region_of_elem, block.region_rho)
+    rho_plot = fviz.prepare_rho_for_plotting(
+        rho_elem,
+        air_is_nan=True,
+        ocean_value=float(OCEAN_RHO),
+        region_of_elem=block.region_of_elem,
+    )
+    nodes = mesh.nodes
+    conn  = mesh.conn
+
+    style = dict(lw=1.2, marker="none")
+    if borehole_style:
+        style.update(borehole_style)
+
+    # ── sample each borehole ────────────────────────────────────────────────
+    n = len(borehole_sites)
+    logs = []
+    for spec in borehole_sites:
+        name  = spec.get("name", "?")
+        x_m, y_m = _resolve_borehole_xy(spec, zone, northern)
+        z_top = float(spec.get("z_top", 0.0))
+        z_bot = float(spec.get("z_bot", 20000.0))
+        dz    = float(spec.get("dz",    200.0))
+        if out:
+            print(f"  borehole {name!r}  x={x_m:.0f} m  y={y_m:.0f} m "
+                  f"  z=[{z_top:.0f}..{z_bot:.0f}]  dz={dz:.0f} m")
+        depths, rho = extract_borehole_log(
+            nodes, conn, rho_plot, x_m, y_m, z_top, z_bot, dz, out=out
+        )
+        with np.errstate(divide="ignore", invalid="ignore"):
+            log_rho = np.where(rho > 0, np.log10(rho), np.nan)
+        logs.append(dict(name=name, depths=depths, log_rho=log_rho))
+
+    # ── figure layout ───────────────────────────────────────────────────────
+    if shared:
+        fig, ax_arr = plt.subplots(1, 1, figsize=(4, 6))
+        ax_arr = [ax_arr] * n
+    else:
+        fig, axes = plt.subplots(1, n, figsize=(3.5 * n, 6), sharey=True,
+                                 squeeze=False)
+        ax_arr = list(axes[0])
+
+    prop_cycle = plt.rcParams["axes.prop_cycle"]
+    colors = [c["color"] for c in prop_cycle]
+
+    for idx, (spec, log) in enumerate(zip(borehole_sites, logs)):
+        ax  = ax_arr[idx]
+        col = colors[idx % len(colors)]
+        ax.plot(log["log_rho"], log["depths"],
+                color=col, label=log["name"], **style)
+        ax.invert_yaxis()
+        ax.set_ylabel("depth (m)")
+        ax.set_xlabel("log₁₀(ρ / Ω·m)")
+        if clim is not None:
+            ax.set_xlim(clim)
+        if not shared:
+            ax.set_title(log["name"], fontsize=9)
+
+    if shared:
+        ax_arr[0].legend(fontsize=8)
+        ax_arr[0].set_title("Borehole resistivity logs", fontsize=9)
+
+    # x-grid on every axes (set comprehension avoids duplicates for shared)
+    for ax in set(ax_arr):
+        ax.grid(axis="x", lw=0.4, alpha=0.5)
+
+    fig.suptitle(f"Model: {os.path.basename(model_file)}", fontsize=10)
+    fig.tight_layout()
+
+    if plot_file is not None:
+        fig.savefig(plot_file, dpi=dpi, bbox_inches="tight")
+        if out:
+            print(f"  boreholes: saved → {plot_file}")
+    else:
+        plt.show()
+
+
+# ===========================================================================
 # Main
 # ===========================================================================
 
@@ -1248,3 +1555,26 @@ if PLOT_ENS:
             out            = OUT,
         )
         print("Ensemble plot done.")
+
+# --- (7) Borehole resistivity logs ----------------------------------------
+if PLOT_BOREHOLE:
+    if fviz is None:
+        print("  Borehole plot skipped: femtic_viz not available.")
+    elif not BOREHOLE_SITES:
+        print("  Borehole plot skipped: BOREHOLE_SITES is empty.")
+    else:
+        print(f"Sampling {len(BOREHOLE_SITES)} borehole(s) …")
+        plot_borehole_logs(
+            model_file     = MODEL_FILE,
+            mesh_file      = MESH_FILE,
+            borehole_sites = BOREHOLE_SITES,
+            zone           = UTM_ZONE,
+            northern       = UTM_NORTHERN,
+            clim           = BOREHOLE_XLIM,
+            borehole_style = BOREHOLE_STYLE,
+            shared         = BOREHOLE_SHARED,
+            plot_file      = BOREHOLE_FILE,
+            dpi            = PLOT_DPI,
+            out            = OUT,
+        )
+        print("Borehole plot done.")
