@@ -1,5 +1,5 @@
 #!/bin/bash
-myenv="Py4MT"
+myenv="Py4MTX"
 
 if [ -z "$CONDA_DEFAULT_ENV" ]
 then
