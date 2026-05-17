@@ -96,7 +96,8 @@ print(titstrng + "\n\n")
 Base setup.
 """
 N_SAMPLES = 32
-ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/gst/ubinas/ensemble/"
+ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/ubinas/ensemble/"
+ENSEMBLE_NAME = "ubinas_gst_"
 
 TEMPLATES = ENSEMBLE_DIR + "/templates/"
 if not os.path.isdir(TEMPLATES):
@@ -109,7 +110,6 @@ LINK_LIST = ["control.dat",
              "distortion_iter0.dat",
              "run_femtic_dias.sh", "run_femtic_kraken.sh"]
 
-ENSEMBLE_NAME = "ubinas_gst_"
 
 """
 Control number of ensemble members for increase of sample number or restart

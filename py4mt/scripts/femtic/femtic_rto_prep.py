@@ -150,7 +150,7 @@ Base setup.
 """
 N_SAMPLES = 32
 ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/ubinas/ensemble/"
-
+ENSEMBLE_NAME = "ubinas_rto_"
 
 # TEMPLATES = ENSEMBLE_DIR + "templates/"
 TEMPLATES = ENSEMBLE_DIR + "/templates/"
@@ -158,14 +158,13 @@ if not os.path.isdir(TEMPLATES):
      sys.exit(" Directory: %s does not exist, needs to be copied !" % TEMPLATES)
      
 COPY_LIST = ["observe.dat",
-             "referencemodel.dat",]
+             "Referencemodel.dat",]
 LINK_LIST = ["control.dat",
              "mesh.dat",
              "resistivity_block_iter0.dat",
              "distortion_iter0.dat",
              "run_femtic_dias.sh","run_femtic_kraken.sh"]
 
-ENSEMBLE_NAME = "ubinas_rto_"
 
 """
 Control number of ensemble members for increase of sample number or restart
@@ -243,8 +242,8 @@ plot_model_ensemble use the same randomly drawn set of ensemble members
 (VIZ_N_SAMPLES).  plot_data_ensemble additionally sub-samples a fixed number
 of MT sites per row (VIZ_N_SITES); set to None to show all sites.
 """
-PLOT_DATA = False #True
-PLOT_MODEL = False #True
+PLOT_DATA = True #True
+PLOT_MODEL = True #True
 
 if PLOT_DATA or PLOT_MODEL:
     PLOT_STR = ""
