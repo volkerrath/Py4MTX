@@ -23,6 +23,7 @@ Created: 2020-11-01
 Modified: 2026-03-25 — added section headers; docstrings for undocumented functions; get_percentile verbose parameter; cleanup; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-03-26 — added unpack_compressed(), pack_compressed(), run_queue(); Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-04-02 — merged resistivity_models.py (petrophysical models); Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-05-23 — added utm_zone_from_latlon(), latlon_to_utm_zn(), utm_to_latlon_zn() (zone+hemisphere API with pyproj-primary / Helmert fallback); Claude Sonnet 4.6 (Anthropic)
 """
 
 from __future__ import annotations
@@ -520,6 +521,180 @@ def proj_utm_to_latlon(utm_x, utm_y, utm_zone=32629):
     transformer = Transformer.from_crs(f'epsg:{utm_zone}', 'epsg:4326', always_xy=True)
     longitude, latitude = transformer.transform(utm_x, utm_y)
     return latitude, longitude
+
+
+# ---------------------------------------------------------------------------
+# UTM zone derivation and zone+hemisphere projection helpers
+# ---------------------------------------------------------------------------
+
+def utm_zone_from_latlon(lat: float, lon: float, *, override: int | None = None
+                         ) -> tuple[int, bool]:
+    """Return (zone, northern) for WGS-84 geographic coordinates.
+
+    Standard 6° band rule; Norway/Svalbard special zones are *not* handled.
+    Use ``override`` to force a zone number when needed (e.g. near zone
+    boundaries or for non-standard survey conventions).
+
+    Parameters
+    ----------
+    lat, lon : decimal degrees (positive = N / E)
+    override : int or None
+        If given, use this zone number instead of the computed one.
+        Must be in 1–60.
+
+    Returns
+    -------
+    zone     : int   UTM zone number (1–60)
+    northern : bool  True if lat ≥ 0
+
+    VR 2026-05-23, Claude Sonnet 4.6 (Anthropic)
+    """
+    if override is not None:
+        zone = int(override)
+        if not 1 <= zone <= 60:
+            raise ValueError(f"utm_zone_from_latlon: override={zone} out of range 1–60.")
+        return zone, float(lat) >= 0.0
+    lon = float(lon)
+    lat = float(lat)
+    if abs(lat) > 84.0:
+        raise ValueError("utm_zone_from_latlon: UTM undefined for |lat| > 84°.")
+    zone = min(int((lon + 180.0) / 6.0) + 1, 60)
+    return zone, lat >= 0.0
+
+
+def latlon_to_utm_zn(lat: float, lon: float,
+                     zone: int, northern: bool) -> tuple[float, float]:
+    """Convert WGS-84 geographic coordinates to UTM easting/northing [m].
+
+    Accepts an explicit zone number and hemisphere flag rather than an EPSG
+    code (cf. ``proj_latlon_to_utm`` which takes ``utm_zone`` as EPSG integer).
+    Uses pyproj when available; falls back to the Helmert / Bowring series
+    (accurate to < 1 mm within a single UTM zone) when pyproj is absent.
+
+    Parameters
+    ----------
+    lat, lon : decimal degrees (positive = N / E)
+    zone     : UTM zone number 1–60
+    northern : True → Northern hemisphere (false northing = 0)
+
+    Returns
+    -------
+    E_m, N_m : UTM easting and northing in metres
+
+    VR 2026-05-23, Claude Sonnet 4.6 (Anthropic)
+    """
+    try:
+        hemi  = "north" if northern else "south"
+        crs   = f"+proj=utm +zone={zone} +{hemi} +datum=WGS84 +units=m"
+        tr    = Transformer.from_crs("EPSG:4326", crs, always_xy=True)
+        E_m, N_m = tr.transform(float(lon), float(lat))
+        return float(E_m), float(N_m)
+    except Exception:
+        pass
+
+    # Helmert / Bowring series fallback (no external dependency)
+    a   = 6_378_137.0
+    f   = 1.0 / 298.257_223_563
+    k0  = 0.9996
+    E0  = 500_000.0
+    N0  = 0.0 if northern else 10_000_000.0
+    e2  = 2.0 * f - f * f
+    lon0_deg = (zone - 1) * 6 - 180 + 3
+    lat_r = np.radians(float(lat))
+    lon_r = np.radians(float(lon))
+    lon0  = math.radians(lon0_deg)       # constant: depends only on zone integer
+    N_r = a / np.sqrt(1.0 - e2 * np.sin(lat_r) ** 2)
+    T   = np.tan(lat_r) ** 2
+    C   = e2 / (1.0 - e2) * np.cos(lat_r) ** 2
+    A2  = np.cos(lat_r) * (lon_r - lon0)
+    e4, e6 = e2 ** 2, e2 ** 3
+    M = a * (
+        (1.0 - e2 / 4.0 - 3.0 * e4 / 64.0 - 5.0 * e6 / 256.0) * lat_r
+        - (3.0 * e2 / 8.0 + 3.0 * e4 / 32.0 + 45.0 * e6 / 1024.0) * np.sin(2.0 * lat_r)
+        + (15.0 * e4 / 256.0 + 45.0 * e6 / 1024.0) * np.sin(4.0 * lat_r)
+        - (35.0 * e6 / 3072.0) * np.sin(6.0 * lat_r)
+    )
+    E_m = E0 + k0 * N_r * (
+        A2
+        + (1.0 - T + C) * A2 ** 3 / 6.0
+        + (5.0 - 18.0 * T + T ** 2 + 72.0 * C - 58.0 * e2 / (1.0 - e2)) * A2 ** 5 / 120.0
+    )
+    N_m = N0 + k0 * (
+        M + N_r * np.tan(lat_r) * (
+            A2 ** 2 / 2.0
+            + (5.0 - T + 9.0 * C + 4.0 * C ** 2) * A2 ** 4 / 24.0
+            + (61.0 - 58.0 * T + T ** 2 + 600.0 * C
+               - 330.0 * e2 / (1.0 - e2)) * A2 ** 6 / 720.0
+        )
+    )
+    return float(E_m), float(N_m)
+
+
+def utm_to_latlon_zn(E_m: float, N_m: float,
+                     zone: int, northern: bool) -> tuple[float, float]:
+    """Convert UTM easting/northing [m] to WGS-84 (lat, lon) decimal degrees.
+
+    Accepts an explicit zone number and hemisphere flag rather than an EPSG
+    code (cf. ``proj_utm_to_latlon`` which takes ``utm_zone`` as EPSG integer).
+    Uses pyproj when available; falls back to the iterative inverse Helmert
+    series (accurate to < 1 mm within a single UTM zone) when pyproj is absent.
+
+    Parameters
+    ----------
+    E_m, N_m : UTM easting and northing in metres
+    zone     : UTM zone number 1–60
+    northern : True → Northern hemisphere (false northing = 0)
+
+    Returns
+    -------
+    lat, lon : decimal degrees (positive = N / E)
+
+    VR 2026-05-23, Claude Sonnet 4.6 (Anthropic)
+    """
+    try:
+        hemi = "north" if northern else "south"
+        crs  = f"+proj=utm +zone={zone} +{hemi} +datum=WGS84 +units=m"
+        tr   = Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
+        lon, lat = tr.transform(float(E_m), float(N_m))
+        return float(lat), float(lon)
+    except Exception:
+        pass
+
+    # Helmert inverse series fallback (Bowring / Snyder)
+    a   = 6_378_137.0
+    f   = 1.0 / 298.257_223_563
+    k0  = 0.9996
+    E0  = 500_000.0
+    N0  = 0.0 if northern else 10_000_000.0
+    e2  = 2 * f - f * f
+    e1  = (1 - math.sqrt(1 - e2)) / (1 + math.sqrt(1 - e2))   # constant: f only
+    lon0 = math.radians((zone - 1) * 6 - 180 + 3)              # constant: zone only
+    x = float(E_m) - E0
+    y = float(N_m) - N0
+    M  = y / k0
+    mu = M / (a * (1 - e2 / 4 - 3 * e2**2 / 64 - 5 * e2**3 / 256))
+    lat1 = (mu
+            + (3 * e1 / 2 - 27 * e1**3 / 32) * np.sin(2 * mu)
+            + (21 * e1**2 / 16 - 55 * e1**4 / 32) * np.sin(4 * mu)
+            + (151 * e1**3 / 96) * np.sin(6 * mu)
+            + (1097 * e1**4 / 512) * np.sin(8 * mu))
+    N1  = a / np.sqrt(1 - e2 * np.sin(lat1)**2)
+    T1  = np.tan(lat1)**2
+    C1  = e2 / (1 - e2) * np.cos(lat1)**2
+    R1  = a * (1 - e2) / (1 - e2 * np.sin(lat1)**2)**1.5
+    D   = x / (N1 * k0)
+    lat = lat1 - (N1 * np.tan(lat1) / R1) * (
+        D**2 / 2
+        - (5 + 3 * T1 + 10 * C1 - 4 * C1**2 - 9 * e2 / (1 - e2)) * D**4 / 24
+        + (61 + 90 * T1 + 298 * C1 + 45 * T1**2
+           - 252 * e2 / (1 - e2) - 3 * C1**2) * D**6 / 720)
+    lon = lon0 + (
+        D
+        - (1 + 2 * T1 + C1) * D**3 / 6
+        + (5 - 2 * C1 + 28 * T1 - 3 * C1**2
+           + 8 * e2 / (1 - e2) + 24 * T1**2) * D**5 / 120
+    ) / np.cos(lat1)
+    return float(np.degrees(lat)), float(np.degrees(lon))
 
 
 def proj_latlon_to_itm(longitude, latitude):

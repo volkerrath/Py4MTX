@@ -21,6 +21,8 @@ magnetotelluric (MT) transfer functions.
   `set_errors`)
 - **1-D forward modelling** — `mt1dfwd` and `wait1d` for layered-Earth
   impedance calculations
+- **Site-list I/O** — parse FEMTIC sitelist CSV produced by
+  `mt_make_sitelist.py` (`read_sitelist`)
 
 ---
 
@@ -473,6 +475,55 @@ the complex entries.
 
 ---
 
+## Site-list I/O
+
+### `read_sitelist(path, site_names=None)`
+
+Parses a comma-separated FEMTIC sitelist produced by `mt_make_sitelist.py`
+with `WHAT_FOR="femtic"`.
+
+**Column order** (no header line; `#` = comment):
+
+```
+name, lat, lon, elev, sitenum, easting, northing
+```
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `name` | str | Station name |
+| `lat` | float | WGS-84 latitude [°] |
+| `lon` | float | WGS-84 longitude [°] |
+| `elev` | float | Elevation [m] |
+| `sitenum` | int | 0-based site index |
+| `easting` | float | UTM easting [m] |
+| `northing` | float | UTM northing [m] |
+
+Returns a list of dicts, one per (matching) site.  The `site_names` argument
+accepts a single name string or a list of strings; matching is
+case-insensitive.  `None` (default) returns all sites.
+
+**No coordinate-system conversion is applied.**  Callers that need
+model-local metres should follow up with `fem.utm_to_model` (femtic.py).
+
+```python
+import data_proc as dp
+
+# All sites
+sites = dp.read_sitelist("Sitelist_femtic.txt")
+
+# Filtered subset
+sites = dp.read_sitelist("Sitelist_femtic.txt",
+                          site_names=["MT01", "MT05", "MT12"])
+
+# Convert to model-local metres (requires mesh-centre origin)
+import femtic as fem
+for s in sites:
+    x_m, y_m = fem.utm_to_model(s["easting"], s["northing"],
+                                  UTM_ORIGIN_E, UTM_ORIGIN_N)
+```
+
+---
+
 ## References
 
 - Efron, B. (1979). Bootstrap Methods: Another Look at the Jackknife. *Annals of Statistics*, 7(1), 1–26.
@@ -490,3 +541,4 @@ Modified: 2026-03-07 — unified save_xxx(**data_dict, path=...) calling convent
 Modified: 2026-03-16 — freq_order parameter (load_edi, save_edi), compute_rhoplus (D+/rho+ test), PTXX/PTXY phase tensor blocks, RHOXY/PHASEXY rho-phase blocks in save_edi, MT unit fix (rho_a = |Z|²×1e6/(μ₀ω) for Z in mV/km/nT); Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-03-25 — manufacturer parameter in load_edi (phoenix/metronix/delta); FT-convention correction (conjugation of Z and T for Phoenix); manufacturer and ft_convention keys in data_dict; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-04-27 — estimate_errors section rewritten: spline_residual, spline_residual_smoothed, and mad methods; Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-05-23 — added read_sitelist(): parse FEMTIC sitelist CSV (name,lat,lon,elev,sitenum,easting,northing) with optional name filter; raw values only, no CRS conversion; Claude Sonnet 4.6 (Anthropic)

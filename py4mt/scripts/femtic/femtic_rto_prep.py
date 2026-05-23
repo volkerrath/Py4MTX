@@ -158,7 +158,7 @@ if not os.path.isdir(TEMPLATES):
      sys.exit(" Directory: %s does not exist, needs to be copied !" % TEMPLATES)
      
 COPY_LIST = ["observe.dat",
-             "Referencemodel.dat",]
+             "referencemodel.dat",]
 LINK_LIST = ["control.dat",
              "mesh.dat",
              "resistivity_block_iter0.dat",

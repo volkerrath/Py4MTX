@@ -58,6 +58,10 @@ Modified: 2026-04-11 by Claude Sonnet 4.6 (Anthropic) — Section 2
 Modified: 2026-04-13 by Claude Sonnet 4.6 (Anthropic) — z-convention
     documentation and consistency fixes across observe.dat interfaces;
     added edi_list_to_observe_dat() and edi-to-observe CLI subcommand.
+Modified: 2026-05-23 by Claude Sonnet 4.6 (Anthropic) — added model-local
+    coordinate helpers: utm_to_model(), latlon_to_model(), parse_pos_crs(),
+    resolve_pos_x(), resolve_pos_y(), resolve_pos_point(),
+    resolve_slice_positions(); delegates geographic conversions to util.py.
 """
 from __future__ import annotations
 
@@ -79,6 +83,7 @@ from typing import (
 )
 from numpy.typing import ArrayLike
 
+import math
 import numpy as np
 import scipy
 import scipy.linalg
@@ -4490,6 +4495,277 @@ def _save_sites(sites: list[dict[str, Any]], sites_out: str | Path) -> None:
             pickle.dump(sites, f, protocol=pickle.HIGHEST_PROTOCOL)
         return
     raise ValueError(f"Unsupported sites_out format {out.suffix!r}; use .npz or .pkl")
+
+# ============================================================================
+# SECTION: Model-local coordinate helpers
+# ============================================================================
+# These functions bridge the pure geographic conversions in util.py (which
+# know nothing about FEMTIC) and the script-level configuration in
+# femtic_mod_plot.py (which holds the mesh-origin UTM coordinates).
+#
+# Callers pass origin_E / origin_N explicitly so the functions remain
+# stateless and testable independent of any script globals.
+# ============================================================================
+
+def _utl():
+    """Lazy import of util to avoid circular dependencies."""
+    import util as _u
+    return _u
+
+
+def utm_to_model(E_m: float, N_m: float,
+                 origin_E: float, origin_N: float) -> tuple[float, float]:
+    """Translate UTM metres to model-local metres.
+
+    The FEMTIC mesh origin is assumed to coincide with (origin_E, origin_N)
+    in the UTM frame of the survey zone.  Model-local axes are aligned with
+    UTM east/north.
+
+    Parameters
+    ----------
+    E_m, N_m         : UTM easting and northing [m]
+    origin_E, origin_N : UTM coordinates of the mesh centre [m]
+
+    Returns
+    -------
+    x_m, y_m : model-local metres
+
+    VR 2026-05-23, Claude Sonnet 4.6 (Anthropic)
+    """
+    return float(E_m) - float(origin_E), float(N_m) - float(origin_N)
+
+
+def latlon_to_model(lat: float, lon: float,
+                    zone: int, northern: bool,
+                    origin_E: float, origin_N: float) -> tuple[float, float]:
+    """Convert WGS-84 geographic coordinates to model-local metres.
+
+    Chains ``util.latlon_to_utm_zn`` → ``fem.utm_to_model``.
+
+    Parameters
+    ----------
+    lat, lon           : decimal degrees (positive = N / E)
+    zone, northern     : UTM zone and hemisphere (from ``util.utm_zone_from_latlon``)
+    origin_E, origin_N : UTM coordinates of the mesh centre [m]
+
+    Returns
+    -------
+    x_m, y_m : model-local metres
+
+    VR 2026-05-23, Claude Sonnet 4.6 (Anthropic)
+    """
+    E_m, N_m = _utl().latlon_to_utm_zn(lat, lon, zone, northern)
+    return utm_to_model(E_m, N_m, origin_E, origin_N)
+
+
+def parse_pos_crs(raw) -> tuple:
+    """Parse a position spec into ``(value, crs_str)``.
+
+    Accepts:
+      scalar (int / float)   → ``(float, "model")``
+      ``(value, "crs")``     → ``(value, crs)``
+
+    Used by ``resolve_pos_x``, ``resolve_pos_y``, ``resolve_pos_point``.
+
+    VR 2026-05-23, Claude Sonnet 4.6 (Anthropic)
+    """
+    if isinstance(raw, (int, float)):
+        return float(raw), "model"
+    try:
+        val, crs = raw
+        return val, str(crs)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"parse_pos_crs: {raw!r} must be a scalar or (value, 'crs') tuple."
+        )
+
+
+def resolve_pos_x(raw,
+                  zone: int, northern: bool,
+                  origin_E: float, origin_N: float,
+                  origin_lat: float, origin_lon: float) -> float:
+    """Resolve an x0 position spec (easting / NS curtain) to model-local metres.
+
+    Parameters
+    ----------
+    raw        : scalar (model-local m) or ``(value, "crs")`` tuple where
+                 ``crs`` is ``"model"``, ``"utm"``, or ``"latlon"``.
+                 For ``"latlon"`` *value* is a **longitude** in decimal degrees;
+                 ``origin_lat`` is used for the northing component.
+    zone, northern     : UTM zone and hemisphere
+    origin_E, origin_N : UTM coordinates of the mesh centre [m]
+    origin_lat, origin_lon : geographic coordinates of the mesh centre [°]
+
+    Returns
+    -------
+    x_m : model-local easting [m]
+
+    VR 2026-05-23, Claude Sonnet 4.6 (Anthropic)
+    """
+    val, crs = parse_pos_crs(raw)
+    if crs == "model":
+        return float(val)
+    if crs == "utm":
+        x_m, _ = utm_to_model(float(val), origin_N, origin_E, origin_N)
+        return x_m
+    if crs == "latlon":
+        # val = longitude; hold northing at origin latitude
+        x_m, _ = latlon_to_model(origin_lat, float(val),
+                                  zone, northern, origin_E, origin_N)
+        return x_m
+    raise ValueError(
+        f"resolve_pos_x: unknown crs={crs!r}. Choose 'model', 'utm', or 'latlon'."
+    )
+
+
+def resolve_pos_y(raw,
+                  zone: int, northern: bool,
+                  origin_E: float, origin_N: float,
+                  origin_lat: float, origin_lon: float) -> float:
+    """Resolve a y0 position spec (northing / EW curtain) to model-local metres.
+
+    Parameters
+    ----------
+    raw        : scalar (model-local m) or ``(value, "crs")`` tuple where
+                 ``crs`` is ``"model"``, ``"utm"``, or ``"latlon"``.
+                 For ``"latlon"`` *value* is a **latitude** in decimal degrees;
+                 ``origin_lon`` is used for the easting component.
+    zone, northern     : UTM zone and hemisphere
+    origin_E, origin_N : UTM coordinates of the mesh centre [m]
+    origin_lat, origin_lon : geographic coordinates of the mesh centre [°]
+
+    Returns
+    -------
+    y_m : model-local northing [m]
+
+    VR 2026-05-23, Claude Sonnet 4.6 (Anthropic)
+    """
+    val, crs = parse_pos_crs(raw)
+    if crs == "model":
+        return float(val)
+    if crs == "utm":
+        _, y_m = utm_to_model(origin_E, float(val), origin_E, origin_N)
+        return y_m
+    if crs == "latlon":
+        # val = latitude; hold easting at origin longitude
+        _, y_m = latlon_to_model(float(val), origin_lon,
+                                  zone, northern, origin_E, origin_N)
+        return y_m
+    raise ValueError(
+        f"resolve_pos_y: unknown crs={crs!r}. Choose 'model', 'utm', or 'latlon'."
+    )
+
+
+def resolve_pos_point(raw,
+                      zone: int, northern: bool,
+                      origin_E: float, origin_N: float) -> list[float]:
+    """Resolve a plane-slice point [x, y, z] to model-local metres.
+
+    Accepts:
+      ``[x, y, z]``               plain list → model-local metres
+      ``([x, y, z], "model")``    explicit model-local
+      ``([E, N, z], "utm")``      UTM metres for E/N; z model-local
+      ``([lon, lat, z], "latlon")``  decimal degrees for lon/lat; z model-local
+
+    Parameters
+    ----------
+    raw                : point spec (see above)
+    zone, northern     : UTM zone and hemisphere
+    origin_E, origin_N : UTM coordinates of the mesh centre [m]
+
+    Returns
+    -------
+    [x_m, y_m, z_m] : model-local metres (z positive-down, unchanged)
+
+    VR 2026-05-23, Claude Sonnet 4.6 (Anthropic)
+    """
+    crs = "model"
+    pt  = raw
+    if (isinstance(raw, (list, tuple)) and len(raw) == 2
+            and isinstance(raw[-1], str)):
+        pt, crs = raw[0], raw[1]
+    pt = list(pt)
+    if len(pt) != 3:
+        raise ValueError(
+            f"resolve_pos_point: 'point' must have 3 elements, got {len(pt)}."
+        )
+    z_m = float(pt[2])
+    if crs == "model":
+        return [float(pt[0]), float(pt[1]), z_m]
+    if crs == "utm":
+        x_m, y_m = utm_to_model(float(pt[0]), float(pt[1]), origin_E, origin_N)
+        return [x_m, y_m, z_m]
+    if crs == "latlon":
+        # pt = [lon_deg, lat_deg, z_m]
+        x_m, y_m = latlon_to_model(float(pt[1]), float(pt[0]),
+                                    zone, northern, origin_E, origin_N)
+        return [x_m, y_m, z_m]
+    raise ValueError(
+        f"resolve_pos_point: unknown crs={crs!r}. Choose 'model', 'utm', or 'latlon'."
+    )
+
+
+def resolve_slice_positions(slices: list,
+                            zone: int, northern: bool,
+                            origin_E: float, origin_N: float,
+                            origin_lat: float, origin_lon: float,
+                            *,
+                            verbose: bool = False) -> list:
+    """Return a new list of slice specs with all positions in model-local metres.
+
+    Only horizontal position keys (``x0``, ``y0``, ``point``) are converted;
+    ``z0`` and all other keys (``xlim``, ``ylim``, ``zlim``, ``title``,
+    ``strike``, ``dip``, ``kind``) pass through unchanged.
+    The original *slices* list is not mutated.
+
+    Parameters
+    ----------
+    slices                 : list of slice-spec dicts (from ``PLOT_SLICES``)
+    zone, northern         : UTM zone and hemisphere
+    origin_E, origin_N     : UTM coordinates of the mesh centre [m]
+    origin_lat, origin_lon : geographic coordinates of the mesh centre [°]
+    verbose                : print conversion details when True
+
+    Returns
+    -------
+    list of slice-spec dicts with model-local float values for x0, y0, point
+
+    VR 2026-05-23, Claude Sonnet 4.6 (Anthropic)
+    """
+    resolved = []
+    for i, spec in enumerate(slices):
+        s    = dict(spec)
+        kind = s.get("kind", "map")
+
+        if kind == "ns" and "x0" in s:
+            raw     = s["x0"]
+            s["x0"] = resolve_pos_x(raw, zone, northern,
+                                     origin_E, origin_N, origin_lat, origin_lon)
+            _, crs  = parse_pos_crs(raw)
+            if verbose and crs != "model":
+                print(f"  slice[{i}] ns  x0: {raw!r}  →  {s['x0']:.1f} m (model-local)")
+
+        if kind == "ew" and "y0" in s:
+            raw     = s["y0"]
+            s["y0"] = resolve_pos_y(raw, zone, northern,
+                                     origin_E, origin_N, origin_lat, origin_lon)
+            _, crs  = parse_pos_crs(raw)
+            if verbose and crs != "model":
+                print(f"  slice[{i}] ew  y0: {raw!r}  →  {s['y0']:.1f} m (model-local)")
+
+        if kind == "plane" and "point" in s:
+            raw        = s["point"]
+            s["point"] = resolve_pos_point(raw, zone, northern, origin_E, origin_N)
+            crs = (raw[1] if (isinstance(raw, (list, tuple))
+                               and len(raw) == 2
+                               and isinstance(raw[-1], str))
+                   else "model")
+            if verbose and crs != "model":
+                print(f"  slice[{i}] plane point: {raw!r}  →  {s['point']} (model-local)")
+
+        resolved.append(s)
+    return resolved
+
 
 # ============================================================================
 # SECTION 7: CLI wrapper for unified module

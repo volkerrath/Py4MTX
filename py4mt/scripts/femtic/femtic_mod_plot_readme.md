@@ -1,7 +1,7 @@
 # femtic_mod_plot.py
 
 Read and plot axis-parallel slice panels of a FEMTIC resistivity model,
-with optional site-position overlay from `observe.dat`.
+with optional site-position overlay from a FEMTIC sitelist or `observe.dat`.
 
 ---
 
@@ -38,8 +38,9 @@ resistivity_block_iterX.dat  +  mesh.dat
         v  resolve_slices(PLOT_SLICES)       [optional CRS conversion]
    slice positions in model-local metres
         |                                    [optional]
-        v  read_site_position(OBSERVE_FILE)
-   (x_m, y_m) site overlay
+        v  read_sitelist(SITELIST_FILE)        [primary: FEMTIC sitelist]
+   (name, x_m, y_m) per site
+        OR  read_site_position(OBSERVE_FILE)   [fallback: observe.dat]
         |
         v  plot_model_slices(...)            [exact tet-plane intersection]
 figure file / interactive window
@@ -68,7 +69,8 @@ of the script.  No command-line arguments are used; edit the script directly.
 | `WORK_DIR` | `/home/vrath/Py4MTX/work/` | Working directory |
 | `MODEL_FILE` | `resistivity_block_iter0.dat` | Resistivity block to display (any iteration) |
 | `MESH_FILE` | `mesh.dat` | Mesh file — always required |
-| `OBSERVE_FILE` | `observe.dat` | Site data file — required only when `SITE_NUMBER` is set |
+| `OBSERVE_FILE` | `observe.dat` | Used by `ESTIMATE_ORIGIN`; fallback site-overlay source when `SITELIST_FILE` is None |
+| `SITELIST_FILE` | `Sitelist_femtic.txt` | FEMTIC sitelist from `mt_make_sitelist.py` — primary site-overlay source; `None` = use observe.dat fallback |
 
 ### Ocean / air handling
 
@@ -153,15 +155,22 @@ the survey area within the correct 6° longitude band suffices).
 
 ### Site overlay
 
+Two sources are supported; `SITELIST_FILE` takes priority:
+
 | Variable | Default | Description |
 |---|---|---|
-| `SITE_NUMBER` | `5` | 1-based site index from `observe.dat`; `None` = no overlay |
+| `SITELIST_FILE` | `Sitelist_femtic.txt` | FEMTIC sitelist CSV (`data_proc.read_sitelist`); `None` = use observe.dat |
+| `SITE_NAMES` | `None` | Site name(s) to select from the sitelist; `None` = all sites |
+| `SITE_NUMBER` | `[5, 6, 7]` | Fallback: 1-based site index(es) from `observe.dat` (int or list of int); used when `SITELIST_FILE` is None; `None` = no overlay |
 | `SITE_MARKER` | `dict(marker="v", color="black", ms=8, …)` | Matplotlib marker kwargs for map panels |
 
-On **map panels** the site is plotted as a point marker at its (x, y)
+On **map panels** each site is plotted as a point marker at its (x, y)
 model-local position.  On **NS / EW curtain panels** it is plotted as a
 dashed vertical line at the projected horizontal coordinate (y or x
-respectively).  Arbitrary-plane panels carry no automatic site projection.
+respectively).  All matching sites are drawn in the same `SITE_MARKER`
+style; labels in the legend are the site names (sitelist path) or site
+numbers (observe.dat fallback).  Arbitrary-plane panels carry no automatic
+site projection.
 
 ### Output / figure
 
@@ -255,9 +264,27 @@ PLOT_SLICES = [
 
 ---
 
-## `observe.dat` site positions
+## Site position sources
 
-Each site in `observe.dat` occupies a block whose first line has the form:
+### FEMTIC sitelist (primary)
+
+`read_sitelist` delegates to `data_proc.read_sitelist` which parses the
+comma-separated file written by `mt_make_sitelist.py` with
+`WHAT_FOR="femtic"`.  Column order (no header; `#` = comment):
+
+```
+name, lat, lon, elev, sitenum, easting, northing
+```
+
+Easting/northing are UTM metres produced by `util.latlon_to_utm_zn` at
+list-generation time.  The script converts them to model-local metres via
+`fem.utm_to_model(easting, northing, UTM_ORIGIN_E, UTM_ORIGIN_N)`.
+
+Filter by name with `SITE_NAMES`; `None` overlays all sites in the file.
+
+### `observe.dat` fallback
+
+Used when `SITELIST_FILE = None`.  Each site in `observe.dat` occupies a block whose first line has the form:
 
 ```
 <n>  <n>  <x_km>  <y_km>
@@ -285,21 +312,27 @@ Override with `UTM_ZONE_OVERRIDE` for non-standard zones (Norway north of
 ### lat/lon → UTM → model-local
 
 ```
-lat/lon ──[_latlon_to_utm]──► (E_m, N_m)
-                                    │
-                        [_utm_to_model]
-                                    │
-                                    ▼
-                 (E_m − UTM_ORIGIN_E,  N_m − UTM_ORIGIN_N)
-                 = model-local (x_m, y_m)
+lat/lon ──[util.latlon_to_utm_zn]──► (E_m, N_m)
+                                          │
+                              [fem.utm_to_model]
+                                          │
+                                          ▼
+                   (E_m − UTM_ORIGIN_E,  N_m − UTM_ORIGIN_N)
+                   = model-local (x_m, y_m)
 ```
 
-`_latlon_to_utm` uses **`pyproj.Transformer`** when available (primary
-path; handles all edge cases, special projections, and datum shifts).
-When `pyproj` is not importable the function falls back silently to a
-built-in **Helmert/Bowring Transverse Mercator series**, which is accurate
-to < 1 mm anywhere within a single UTM zone and requires no external
-dependency.  The active backend is printed at startup when `OUT = True`.
+Pure geographic conversions (`latlon_to_utm_zn`, `utm_to_latlon_zn`,
+`utm_zone_from_latlon`) live in `util.py`.  Model-local conversions
+(`utm_to_model`, `latlon_to_model`, `parse_pos_crs`,
+`resolve_pos_x/y/point`, `resolve_slice_positions`) live in `femtic.py`.
+Script-level helpers (`_latlon_to_utm`, `_utm_to_model`, `resolve_slices`,
+etc.) are thin wrappers that supply the module globals.
+
+`util.latlon_to_utm_zn` uses **`pyproj.Transformer`** when available
+(primary path).  When `pyproj` is not importable the function falls back
+silently to a built-in **Helmert/Bowring Transverse Mercator series**,
+accurate to < 1 mm within a single UTM zone.  The active backend is printed
+at startup when `OUT = True`.
 
 ---
 
@@ -460,9 +493,10 @@ resistivity_block_ensemble_member1.pdf
 | Matplotlib | Figure rendering |
 | PyVista | 3-D rendering, slices, iso-surfaces (`PLOT3D`; graceful skip when absent) |
 | pyproj | `Transformer` for lat/lon → UTM (primary path; graceful built-in fallback when absent) |
-| `femtic` (Py4MTX) | Environment bootstrap |
+| `femtic` (Py4MTX) | `utm_to_model`, `latlon_to_model`, `resolve_slice_positions`, and other model-local helpers |
 | `femtic_viz` (Py4MTX) | `read_femtic_mesh`, `read_resistivity_block`, `map_regions_to_element_rho`, `prepare_rho_for_plotting`, `plot_model_3d` |
-| `util` (Py4MTX) | `print_title` |
+| `data_proc` (Py4MTX) | `read_sitelist` — FEMTIC sitelist parser |
+| `util` (Py4MTX) | `print_title`, `utm_zone_from_latlon`, `latlon_to_utm_zn`, `utm_to_latlon_zn` |
 | `version` (Py4MTX) | `versionstrg` |
 
 Environment variables `PY4MTX_ROOT` and `PY4MTX_DATA` must be set.
@@ -558,3 +592,4 @@ BOREHOLE_SITES = [
 | 2026-05-13 | vrath / Claude Sonnet 4.6 | Added `PLOT3D` step (5): axis-aligned x/y/z slices, oblique planes, and iso-surfaces via `fviz.plot_model_3d`; HTML or screenshot output |
 | 2026-05-13 | vrath / Claude Sonnet 4.6 | Added `PLOT_ENS` step (6): `plot_ensemble_slices` with `ENS_*` config block; mesh and geometry parsed once; per-member rows + optional mean/std/median stat rows; per-member file output |
 | 2026-05-16 | vrath / Claude Sonnet 4.6 | Added `PLOT_BOREHOLE` step (7): `_point_in_tet` (barycentric), `extract_borehole_log` (bbox pre-filter + exact test), `plot_borehole_logs`; `BOREHOLE_*` config block; CRS tagging on x/y positions |
+| 2026-05-23 | vrath / Claude Sonnet 4.6 | Moved pure geographic helpers to `util.py`; model-local helpers to `femtic.py`; script wrappers delegate to both. `SITE_NUMBER` accepts list; `plot_model_slices` loops over all sites (`site_xys`). Added `SITELIST_FILE` / `SITE_NAMES`; `read_sitelist` wraps `data_proc.read_sitelist`. Added `import data_proc as dp`. |

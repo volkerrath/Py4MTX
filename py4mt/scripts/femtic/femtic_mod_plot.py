@@ -91,6 +91,25 @@ Provenance
                 step (7): _point_in_tet (barycentric), extract_borehole_log
                 (bbox pre-filter + exact test), plot_borehole_logs; BOREHOLE_*
                 config block; CRS tagging (model/utm/latlon) on x/y positions.
+    2026-05-23  vrath / Claude Sonnet 4.6   Moved pure geographic helpers
+                (_latlon_to_utm, _utm_to_latlon, _utm_zone_from_origin) to
+                util.py (utm_zone_from_latlon, latlon_to_utm_zn,
+                utm_to_latlon_zn).  Moved model-local helpers (_utm_to_model,
+                _latlon_to_model, _parse_pos, _resolve_x0/y0/point,
+                resolve_slices) to femtic.py (utm_to_model, latlon_to_model,
+                parse_pos_crs, resolve_pos_x/y/point, resolve_slice_positions).
+                Script-level functions are now thin wrappers that supply the
+                module globals.  Imported femtic as fem.
+                SITE_NUMBER now accepts a list; plot_model_slices takes
+                site_xys [(sn, x_m, y_m), …] and loops over all sites.
+    2026-05-23  vrath / Claude Sonnet 4.6   Added SITELIST_FILE / SITE_NAMES
+                config: step (3) now reads site positions from the FEMTIC
+                sitelist produced by mt_make_sitelist.py (easting/northing
+                columns converted via fem.utm_to_model); observe.dat path
+                retained as fallback.  Added read_sitelist() helper.
+    2026-05-23  vrath / Claude Sonnet 4.6   Moved read_sitelist() parsing
+                to data_proc.read_sitelist(); script wrapper delegates parse
+                then applies fem.utm_to_model.  Added import data_proc as dp.
 
 @author: vrath
 """
@@ -116,6 +135,7 @@ for _base in [PY4MTX_ROOT + "/py4mt/modules/"]:
 from version import versionstrg
 import util as utl
 import femtic as fem
+import data_proc as dp
 
 try:
     import femtic_viz as fviz
@@ -140,16 +160,34 @@ print(titstrng + "\n\n")
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-WORK_DIR = r"/home/vrath/Py4MTX/work/"
+WORK_DIR = r"/home/vrath/Py4MTX/work/rto/ubinas_data/"
 
 #: Resistivity block to display (any iteration).
-MODEL_FILE = WORK_DIR + "resistivity_block_iter0.dat"
+MODEL_FILE = WORK_DIR + "resistivity_block_iter17.dat"
 
 #: Mesh file — always required for plotting.
 MESH_FILE  = WORK_DIR + "mesh.dat"
 
-#: observe.dat — required only when SITE_NUMBER is not None.
+#: observe.dat — used by ESTIMATE_ORIGIN to look up model-local site positions.
+#: Also used as fallback site-overlay source when SITELIST_FILE is None and
+#: SITE_NUMBER is not None.
 OBSERVE_FILE = WORK_DIR + "observe.dat"
+
+#: Optional sidecar file with geographic site coordinates.
+#: Format (whitespace-separated, one site per line, # = comment):
+#:   site#   lat   lon   X_km   Y_km
+#: lat/lon in decimal degrees (negative = S/W); X/Y in model-local km.
+#: Set to None to disable.  When set and ESTIMATE_ORIGIN = True the file is
+#: used instead of (or merged with) CALIBRATION_SITES.
+SITE_DAT = WORK_DIR + "site.dat"   # set to None to disable
+
+#: FEMTIC sitelist produced by mt_make_sitelist.py (WHAT_FOR="femtic").
+#: Format (comma-separated, no header):
+#:   name, lat, lon, elev, sitenum, easting, northing
+#: Easting/northing are UTM metres; model-local x/y is derived via
+#: fem.utm_to_model using the mesh-centre origin.
+#: Set to None to fall back to the observe.dat / SITE_NUMBER path.
+SITELIST_FILE = WORK_DIR + "Sitelist_femtic.txt"   # set to None to disable
 
 # ---------------------------------------------------------------------------
 # Ocean / air handling (must match the inversion setup)
@@ -183,16 +221,23 @@ UTM_ZONE_OVERRIDE = None
 # ---------------------------------------------------------------------------
 #: "model"  — axis ticks in model-local metres (origin = 0, default)
 #: "utm"    — axis ticks in absolute UTM metres
+#: "latlon" — axis ticks in decimal degrees (lon for easting, lat for northing)
 DISPLAY_COORDS = "model"
 
 # ---------------------------------------------------------------------------
-# Site overlay from observe.dat
+# Site overlay
 # ---------------------------------------------------------------------------
-#: Site number to extract from observe.dat (integer, 1-based).
-#: Set to None to skip site overlay.
-SITE_NUMBER = 5
+#: Primary source: site names to overlay from SITELIST_FILE.
+#: May be a single string or a list of strings matching the "name" column of
+#: the FEMTIC sitelist.  Set to None to overlay all sites in the file.
+SITE_NAMES = None   # e.g. ["MT01", "MT05", "MT12"]  or None = all sites
 
-#: Marker style for the site on map panels; dashed line on curtain panels.
+#: Fallback source (used when SITELIST_FILE is None): site number(s) to
+#: extract from observe.dat (integer, 1-based).
+#: May be a single int or a list of ints.  Set to None to skip site overlay.
+SITE_NUMBER = [5, 6, 7]
+
+#: Marker style for map panels; dashed vertical line for curtain panels.
 SITE_MARKER = dict(marker="v", color="black", ms=8, zorder=10,
                    label=None)   # label filled in automatically
 
@@ -205,7 +250,7 @@ OUT = True
 # Plotting — requires femtic_viz and Matplotlib
 # ---------------------------------------------------------------------------
 #: Output file path — None → interactive show().
-PLOT_FILE = WORK_DIR + "resistivity_block_iter0.pdf"
+PLOT_FILE = WORK_DIR + "resistivity_block_iter17.pdf"
 
 #: Figure DPI for saved file.
 PLOT_DPI = 600
@@ -248,14 +293,17 @@ PLOT_AIR_BGCOLOR = None
 #:   title  : optional string override
 #:
 #: Per-panel xlim/ylim/zlim override the global PLOT_XLIM/PLOT_YLIM/PLOT_ZLIM.
+#: Ubinas summit: -16.3500, -70.8700
+
 PLOT_SLICES = [
     # Plain float — model-local metres (backward-compatible):
     dict(kind="map",  z0=5000.0),
     dict(kind="map",  z0=15000.0),
     # UTM easting for the NS curtain:
-    dict(kind="ns",   x0=(229047.0, "utm")),
+    # dict(kind="ns",   x0=(229047.0, "utm")),
+    dict(kind="ns",   x0=(-70.8700, "latlon")),
     # Geographic latitude for the EW curtain:
-    dict(kind="ew",   y0=(-16.409, "latlon")),
+    dict(kind="ew",   y0=(-16.3500, "latlon")),
 ]
 
 #: Global axis limits in model-local metres — used for panels that do not
@@ -413,251 +461,73 @@ CALIBRATION_SITES = [
 # ===========================================================================
 # Coordinate conversion helpers
 # ===========================================================================
+# Pure geographic conversions (latlon ↔ UTM, zone derivation) live in
+# util.py.  Model-local conversions (utm/latlon → model-local metres,
+# CRS-tagged position resolution, slice resolution) live in femtic.py.
+# The script-level wrappers below bind the module globals so callers
+# throughout this script need not repeat the origin/zone arguments.
+# ===========================================================================
 
 def _utm_zone_from_origin() -> tuple[int, bool]:
-    """Derive UTM zone number and hemisphere flag from mesh-origin lat/lon.
-
-    Standard 6° band rule; ignores Norway/Svalbard special zones.
-    Override with UTM_ZONE_OVERRIDE when non-standard zones are needed.
-
-    Returns
-    -------
-    zone     : int   UTM zone number (1–60)
-    northern : bool  True if origin is in the Northern hemisphere
-    """
-    if UTM_ZONE_OVERRIDE is not None:
-        zone = int(UTM_ZONE_OVERRIDE)
-        if not 1 <= zone <= 60:
-            raise ValueError(f"UTM_ZONE_OVERRIDE={zone} out of range 1–60.")
-        return zone, UTM_ORIGIN_LAT >= 0.0
-    zone = min(int((UTM_ORIGIN_LON + 180.0) / 6.0) + 1, 60)
-    return zone, UTM_ORIGIN_LAT >= 0.0
+    """Derive UTM zone and hemisphere from module-level mesh-origin lat/lon."""
+    return utl.utm_zone_from_latlon(UTM_ORIGIN_LAT, UTM_ORIGIN_LON,
+                                    override=UTM_ZONE_OVERRIDE)
 
 
 def _latlon_to_utm(lat_deg: float, lon_deg: float,
                    zone: int, northern: bool) -> tuple[float, float]:
-    """Convert WGS-84 geographic coordinates to UTM easting/northing (m).
-
-    Uses pyproj when available (primary path); falls back to the standard
-    Transverse Mercator / Helmert series (accurate to < 1 mm within a zone)
-    when pyproj is not installed.
-
-    Parameters
-    ----------
-    lat_deg, lon_deg : decimal degrees (positive = N / E)
-    zone             : UTM zone number 1–60
-    northern         : True → Northern hemisphere (false northing = 0)
-
-    Returns
-    -------
-    E_m, N_m : UTM easting and northing in metres
-    """
-    # ------------------------------------------------------------------
-    # Primary path: pyproj  (accurate, handles all edge cases)
-    # ------------------------------------------------------------------
-    if _HAVE_PYPROJ:
-        hemi = "north" if northern else "south"
-        crs  = f"+proj=utm +zone={zone} +{hemi} +datum=WGS84 +units=m"
-        tr   = _Transformer.from_crs("EPSG:4326", crs, always_xy=True)
-        E_m, N_m = tr.transform(lon_deg, lat_deg)
-        return float(E_m), float(N_m)
-
-    # ------------------------------------------------------------------
-    # Fallback: Helmert / Bowring series (no external dependency)
-    # Accurate to < 1 mm anywhere within a single UTM zone.
-    # ------------------------------------------------------------------
-    a   = 6_378_137.0             # WGS-84 semi-major axis [m]
-    f   = 1.0 / 298.257_223_563
-    k0  = 0.9996                  # central-meridian scale factor
-    E0  = 500_000.0               # false easting [m]
-    N0  = 0.0 if northern else 10_000_000.0
-
-    e2       = 2.0 * f - f * f
-    lon0_deg = (zone - 1) * 6 - 180 + 3   # central meridian [°]
-
-    lat  = math.radians(lat_deg)
-    lon  = math.radians(lon_deg)
-    lon0 = math.radians(lon0_deg)
-
-    N_r = a / math.sqrt(1.0 - e2 * math.sin(lat) ** 2)
-    T   = math.tan(lat) ** 2
-    C   = e2 / (1.0 - e2) * math.cos(lat) ** 2
-    A2  = math.cos(lat) * (lon - lon0)
-
-    e4, e6 = e2 ** 2, e2 ** 3
-    M = a * (
-        (1.0 - e2 / 4.0 - 3.0 * e4 / 64.0 - 5.0 * e6 / 256.0) * lat
-        - (3.0 * e2 / 8.0 + 3.0 * e4 / 32.0 + 45.0 * e6 / 1024.0) * math.sin(2.0 * lat)
-        + (15.0 * e4 / 256.0 + 45.0 * e6 / 1024.0) * math.sin(4.0 * lat)
-        - (35.0 * e6 / 3072.0) * math.sin(6.0 * lat)
-    )
-
-    E_m = E0 + k0 * N_r * (
-        A2
-        + (1.0 - T + C) * A2 ** 3 / 6.0
-        + (5.0 - 18.0 * T + T ** 2 + 72.0 * C - 58.0 * e2 / (1.0 - e2)) * A2 ** 5 / 120.0
-    )
-    N_m = N0 + k0 * (
-        M
-        + N_r * math.tan(lat) * (
-            A2 ** 2 / 2.0
-            + (5.0 - T + 9.0 * C + 4.0 * C ** 2) * A2 ** 4 / 24.0
-            + (61.0 - 58.0 * T + T ** 2 + 600.0 * C - 330.0 * e2 / (1.0 - e2)) * A2 ** 6 / 720.0
-        )
-    )
-    return E_m, N_m
+    """WGS-84 → UTM [m].  Delegates to util.latlon_to_utm_zn."""
+    return utl.latlon_to_utm_zn(lat_deg, lon_deg, zone, northern)
 
 
 def _utm_to_model(E_m: float, N_m: float) -> tuple[float, float]:
-    """UTM metres → model-local metres (subtract mesh-centre UTM origin)."""
-    return E_m - UTM_ORIGIN_E, N_m - UTM_ORIGIN_N
+    """UTM [m] → model-local [m] using module-level mesh-centre origin."""
+    return fem.utm_to_model(E_m, N_m, UTM_ORIGIN_E, UTM_ORIGIN_N)
 
 
 def _latlon_to_model(lat_deg: float, lon_deg: float,
                      zone: int, northern: bool) -> tuple[float, float]:
-    """Geographic degrees → model-local metres via UTM."""
-    E_m, N_m = _latlon_to_utm(lat_deg, lon_deg, zone, northern)
-    return _utm_to_model(E_m, N_m)
+    """Geographic [°] → model-local [m] using module-level origin."""
+    return fem.latlon_to_model(lat_deg, lon_deg, zone, northern,
+                               UTM_ORIGIN_E, UTM_ORIGIN_N)
 
 
 def _parse_pos(raw) -> tuple:
-    """Parse a position spec into (value, crs_str).
-
-    Accepts:
-      scalar (int / float)   → (float, "model")
-      (value, "crs")         → (value, crs)
-    """
-    if isinstance(raw, (int, float)):
-        return float(raw), "model"
-    try:
-        val, crs = raw
-        return val, str(crs)
-    except (TypeError, ValueError):
-        raise ValueError(
-            f"Position spec {raw!r} must be a scalar or (value, 'crs') tuple."
-        )
+    """Parse ``(value, crs)`` position spec.  Delegates to fem.parse_pos_crs."""
+    return fem.parse_pos_crs(raw)
 
 
 def _resolve_x0(raw, zone: int, northern: bool) -> float:
-    """Resolve x0 (NS curtain, easting direction) to model-local metres.
-
-    crs "latlon": *raw* is a longitude in decimal degrees.
-    crs "utm":    *raw* is a UTM easting in metres.
-    crs "model":  *raw* is already in model-local metres.
-    """
-    val, crs = _parse_pos(raw)
-    if crs == "model":
-        return float(val)
-    if crs == "utm":
-        x_m, _ = _utm_to_model(float(val), UTM_ORIGIN_N)
-        return x_m
-    if crs == "latlon":
-        # val = longitude; use origin latitude for the northing
-        x_m, _ = _latlon_to_model(UTM_ORIGIN_LAT, float(val), zone, northern)
-        return x_m
-    raise ValueError(f"Unknown crs={crs!r} for x0.  Choose 'model', 'utm', or 'latlon'.")
+    """Resolve x0 to model-local metres.  Delegates to fem.resolve_pos_x."""
+    return fem.resolve_pos_x(raw, zone, northern,
+                             UTM_ORIGIN_E, UTM_ORIGIN_N,
+                             UTM_ORIGIN_LAT, UTM_ORIGIN_LON)
 
 
 def _resolve_y0(raw, zone: int, northern: bool) -> float:
-    """Resolve y0 (EW curtain, northing direction) to model-local metres.
-
-    crs "latlon": *raw* is a latitude in decimal degrees.
-    crs "utm":    *raw* is a UTM northing in metres.
-    crs "model":  *raw* is already in model-local metres.
-    """
-    val, crs = _parse_pos(raw)
-    if crs == "model":
-        return float(val)
-    if crs == "utm":
-        _, y_m = _utm_to_model(UTM_ORIGIN_E, float(val))
-        return y_m
-    if crs == "latlon":
-        # val = latitude; use origin longitude for the easting
-        _, y_m = _latlon_to_model(float(val), UTM_ORIGIN_LON, zone, northern)
-        return y_m
-    raise ValueError(f"Unknown crs={crs!r} for y0.  Choose 'model', 'utm', or 'latlon'.")
+    """Resolve y0 to model-local metres.  Delegates to fem.resolve_pos_y."""
+    return fem.resolve_pos_y(raw, zone, northern,
+                             UTM_ORIGIN_E, UTM_ORIGIN_N,
+                             UTM_ORIGIN_LAT, UTM_ORIGIN_LON)
 
 
 def _resolve_point(raw, zone: int, northern: bool) -> list[float]:
-    """Resolve a plane-slice point [x, y, z] to model-local metres.
-
-    Accepts:
-      [x, y, z]                   plain list → model-local metres
-      ([x, y, z], "model")        model-local metres
-      ([E, N, z], "utm")          UTM metres for E/N; z model-local
-      ([lon, lat, z], "latlon")   degrees for lon/lat; z model-local
-    """
-    crs = "model"
-    pt  = raw
-    if (isinstance(raw, (list, tuple)) and len(raw) == 2
-            and isinstance(raw[-1], str)):
-        pt, crs = raw[0], raw[1]
-
-    pt = list(pt)
-    if len(pt) != 3:
-        raise ValueError(f"plane 'point' must have 3 elements, got {len(pt)}.")
-    z_m = float(pt[2])   # depth always model-local
-
-    if crs == "model":
-        return [float(pt[0]), float(pt[1]), z_m]
-    if crs == "utm":
-        x_m, y_m = _utm_to_model(float(pt[0]), float(pt[1]))
-        return [x_m, y_m, z_m]
-    if crs == "latlon":
-        # pt = [lon_deg, lat_deg, z_m]
-        x_m, y_m = _latlon_to_model(float(pt[1]), float(pt[0]), zone, northern)
-        return [x_m, y_m, z_m]
-    raise ValueError(f"Unknown crs={crs!r} for point.  Choose 'model', 'utm', or 'latlon'.")
+    """Resolve plane point to model-local metres.  Delegates to fem.resolve_pos_point."""
+    return fem.resolve_pos_point(raw, zone, northern, UTM_ORIGIN_E, UTM_ORIGIN_N)
 
 
 def resolve_slices(slices: list, zone: int, northern: bool) -> list:
-    """Return a new list of slice specs with all positions in model-local metres.
+    """Resolve all CRS-tagged positions in *slices* to model-local metres.
 
-    Only horizontal position keys (x0, y0, point) are converted; z0 and all
-    other keys (xlim, ylim, zlim, title, strike, dip, kind) pass through
-    unchanged.  The original *slices* list is not mutated.
-
-    Parameters
-    ----------
-    slices   : list of slice-spec dicts (from PLOT_SLICES)
-    zone     : UTM zone number
-    northern : hemisphere flag
-
-    Returns
-    -------
-    list of slice-spec dicts with model-local float values for x0, y0, point
+    Thin wrapper around ``fem.resolve_slice_positions`` that supplies the
+    module-level mesh-origin globals automatically.
     """
-    resolved = []
-    for i, spec in enumerate(slices):
-        s    = dict(spec)
-        kind = s.get("kind", "map")
-
-        if kind == "ns" and "x0" in s:
-            raw      = s["x0"]
-            s["x0"]  = _resolve_x0(raw, zone, northern)
-            _, crs   = _parse_pos(raw)
-            if OUT and crs != "model":
-                print(f"  slice[{i}] ns  x0: {raw!r}  →  {s['x0']:.1f} m (model-local)")
-
-        if kind == "ew" and "y0" in s:
-            raw      = s["y0"]
-            s["y0"]  = _resolve_y0(raw, zone, northern)
-            _, crs   = _parse_pos(raw)
-            if OUT and crs != "model":
-                print(f"  slice[{i}] ew  y0: {raw!r}  →  {s['y0']:.1f} m (model-local)")
-
-        if kind == "plane" and "point" in s:
-            raw         = s["point"]
-            s["point"]  = _resolve_point(raw, zone, northern)
-            crs = (raw[1] if (isinstance(raw, (list, tuple))
-                              and len(raw) == 2
-                              and isinstance(raw[-1], str))
-                   else "model")
-            if OUT and crs != "model":
-                print(f"  slice[{i}] plane point: {raw!r}  →  {s['point']} (model-local)")
-
-        resolved.append(s)
-    return resolved
+    return fem.resolve_slice_positions(
+        slices, zone, northern,
+        UTM_ORIGIN_E, UTM_ORIGIN_N,
+        UTM_ORIGIN_LAT, UTM_ORIGIN_LON,
+        verbose=OUT,
+    )
 
 
 # ===========================================================================
@@ -720,15 +590,53 @@ def read_site_position(observe_file: str, site_number: int) -> tuple[float, floa
 # ===========================================================================
 
 def _display_offset() -> tuple[float, float]:
-    """Return (dE, dN) to add to model-local metres for display axis ticks."""
-    if DISPLAY_COORDS == "utm":
+    """Return (dE, dN) to add to model-local metres for display axis ticks.
+
+    For 'latlon' the polygons are still drawn in UTM metres (offset by the
+    UTM origin) and tick labels are reformatted by ``_display_formatters``.
+    """
+    if DISPLAY_COORDS in ("utm", "latlon"):
         return UTM_ORIGIN_E, UTM_ORIGIN_N
     return 0.0, 0.0
 
 
 def _display_suffix() -> str:
     """Return axis label suffix reflecting the display coordinate system."""
-    return " [UTM m]" if DISPLAY_COORDS == "utm" else " [m]"
+    if DISPLAY_COORDS == "utm":
+        return " [UTM m]"
+    if DISPLAY_COORDS == "latlon":
+        return " [°]"
+    return " [m]"
+
+
+def _utm_to_latlon(E_m: float, N_m: float,
+                   zone: int, northern: bool) -> tuple[float, float]:
+    """UTM [m] → (lat, lon) [°].  Delegates to util.utm_to_latlon_zn."""
+    return utl.utm_to_latlon_zn(E_m, N_m, zone, northern)
+
+
+def _display_formatters(zone: int, northern: bool):
+    """Return (x_formatter, y_formatter) for the chosen DISPLAY_COORDS.
+
+    For 'latlon' returns FuncFormatter objects that convert UTM tick values
+    (in metres, already offset by UTM_ORIGIN) to lon / lat degree strings.
+    For other modes returns (None, None) — default Matplotlib formatting.
+    """
+    if DISPLAY_COORDS != "latlon":
+        return None, None
+
+    import matplotlib.ticker as mticker
+
+    def _lon_fmt(val, _pos):
+        _, lon = _utm_to_latlon(val, UTM_ORIGIN_N, zone, northern)
+        return f"{lon:.3f}"
+
+    def _lat_fmt(val, _pos):
+        lat, _ = _utm_to_latlon(UTM_ORIGIN_E, val, zone, northern)
+        return f"{lat:.3f}"
+
+    return (mticker.FuncFormatter(_lon_fmt),
+            mticker.FuncFormatter(_lat_fmt))
 
 
 # ===========================================================================
@@ -748,7 +656,7 @@ def plot_model_slices(
     ocean_color="lightgrey",
     ocean_value: float = OCEAN_RHO,
     air_bgcolor=None,
-    site_xy: tuple | None = None,
+    site_xys: list | None = None,
     plot_file=None,
     dpi: int = 200,
     out: bool = True,
@@ -769,8 +677,9 @@ def plot_model_slices(
     ocean_color : flat colour for ocean polygons; None → colormap
     ocean_value : Ω·m sentinel for ocean (must match OCEAN_RHO)
     air_bgcolor : axes facecolor for air / background; None = figure default
-    site_xy     : (x_m, y_m) model-local position of the selected site;
-                  None = no marker
+    site_xys    : list of (site_number, x_m, y_m) tuples in model-local metres;
+                  each site is overplotted on every map/ns/ew panel.
+                  None or empty list → no markers.
     plot_file   : save path; None = interactive show()
     dpi         : saved-figure DPI
     out         : verbose progress
@@ -792,11 +701,11 @@ def plot_model_slices(
 
     def _axis_slice_params(axis: int, val: float):
         """Return (normal, point, u_ax, v_ax, invert_v) for an axis-aligned cut."""
-        normals = [np.array([1, 0, 0]), np.array([0, 1, 0]), np.array([0, 0, 1])]
-        inv     = [True, True, False]
+        normals = [np.array([1., 0., 0.]), np.array([0., 1., 0.]), np.array([0., 0., 1.])]
+        inv     = [False, False, False]
         pt      = np.zeros(3); pt[axis] = val
         n       = normals[axis]
-        ref     = np.array([0, 0, 1]) if axis != 2 else np.array([1, 0, 0])
+        ref     = np.array([0., 0., 1.]) if axis != 2 else np.array([1., 0., 0.])
         u       = np.cross(n, ref); u /= np.linalg.norm(u)
         v       = np.cross(n, u);   v /= np.linalg.norm(v)
         return n, pt, u, v, inv[axis]
@@ -814,8 +723,8 @@ def plot_model_slices(
                     pts.append(verts[i] + t * (verts[j] - verts[i]))
         c   = np.mean(pts, axis=0)
         u2d = np.cross(normal,
-                       np.array([0, 0, 1]) if abs(normal[2]) < 0.9
-                       else np.array([1, 0, 0]))
+                       np.array([0., 0., 1.]) if abs(normal[2]) < 0.9
+                       else np.array([1., 0., 0.]))
         if np.linalg.norm(u2d) < 1e-12:
             return pts
         u2d /= np.linalg.norm(u2d)
@@ -870,14 +779,15 @@ def plot_model_slices(
                          -math.cos(d)])
 
     def _plane_basis(normal):
-        ref = np.array([0, 1, 0]) if abs(normal[1]) < 0.9 else np.array([1, 0, 0])
+        ref = np.array([0., 1., 0.]) if abs(normal[1]) < 0.9 else np.array([1., 0., 0.])
         u   = np.cross(normal, ref); u /= np.linalg.norm(u)
         v   = np.cross(u, normal);   v /= np.linalg.norm(v)
         return u, v
 
     # ── display offset ───────────────────────────────────────────────────────
-    dE, dN = _display_offset()
-    sfx    = _display_suffix()
+    dE, dN   = _display_offset()
+    sfx      = _display_suffix()
+    _fmt_x, _fmt_y = _display_formatters(UTM_ZONE, UTM_NORTHERN)
 
     # ── load model ───────────────────────────────────────────────────────────
     if out:
@@ -897,9 +807,8 @@ def plot_model_slices(
         print(f"  plot: {len(slices)} panel(s), exact plane-intersection method")
 
     # ── colormap ─────────────────────────────────────────────────────────────
-    cmap_obj = (mcm.colormaps[cmap].copy()
-                if hasattr(mcm, "colormaps")
-                else mcm.get_cmap(cmap).copy())
+    cmap_obj = (mcm.colormaps[cmap] if hasattr(mcm, "colormaps")
+                else mcm.get_cmap(cmap)).copy()
     cmap_obj.set_bad(alpha=0.0)
 
     # ── colour normalisation ─────────────────────────────────────────────────
@@ -922,7 +831,7 @@ def plot_model_slices(
         for ax in axes:
             ax.set_facecolor(air_bgcolor)
 
-    sx_m, sy_m = (site_xy if site_xy is not None else (None, None))
+    _site_xys = site_xys or []   # list of (sn, x_m, y_m); empty → no markers
 
     # ── render each panel ────────────────────────────────────────────────────
     for ax, spec in zip(axes, slices):
@@ -937,10 +846,10 @@ def plot_model_slices(
         if kind == "map":
             z0     = float(spec.get("z0", 0.0))
             if out: print(f"    map slice z={z0:.0f} m …")
-            normal = np.array([0, 0, 1])
-            point  = np.array([0, 0, z0])
-            u_ax   = np.array([1, 0, 0])
-            v_ax   = np.array([0, 1, 0])
+            normal = np.array([0., 0., 1.])
+            point  = np.array([0., 0., z0])
+            u_ax   = np.array([1., 0., 0.])
+            v_ax   = np.array([0., 1., 0.])
             polys, vals = _slice_geometry(nodes, conn, rho_plot,
                                           normal, point, u_ax, v_ax)
             polys_d = [[(px + dE, py + dN) for px, py in poly] for poly in polys]
@@ -951,10 +860,12 @@ def plot_model_slices(
             ax.set_ylabel(f"y (northing){sfx}")
             if _xlim is not None: ax.set_xlim([v + dE for v in _xlim])
             if _ylim is not None: ax.set_ylim([v + dN for v in _ylim])
+            if _fmt_x is not None: ax.xaxis.set_major_formatter(_fmt_x)
+            if _fmt_y is not None: ax.yaxis.set_major_formatter(_fmt_y)
             if title is None: title = f"Map  z = {z0/1000:.1f} km"
-            if sx_m is not None:
+            for sn, sx_m, sy_m in _site_xys:
                 mk = dict(SITE_MARKER)
-                mk.setdefault("label", f"Site {SITE_NUMBER}")
+                mk.setdefault("label", f"Site {sn}")
                 ax.plot(sx_m + dE, sy_m + dN, linestyle="none", **mk)
 
         # ── NS curtain (x = const) ────────────────────────────────────────
@@ -965,7 +876,7 @@ def plot_model_slices(
             polys, vals = _slice_geometry(nodes, conn, rho_plot,
                                           normal, point, u_ax, v_ax)
             # u_ax points in y (northing) direction
-            polys_d = [[(py + dN, pz) for py, pz in poly] for poly in polys]
+            polys_d = [[(py + dN, -pz) for py, pz in poly] for poly in polys]
             mappable = _plot_slice_panel(ax, polys_d, vals,
                 cmap_obj=cmap_obj, norm=norm,
                 ocean_color=ocean_color, ocean_value=ocean_value, invert_v=inv)
@@ -973,11 +884,12 @@ def plot_model_slices(
             ax.set_ylabel("depth (m)")
             if _ylim is not None: ax.set_xlim([v + dN for v in _ylim])
             if _zlim is not None: ax.set_ylim([_zlim[1], _zlim[0]])
+            if _fmt_y is not None: ax.xaxis.set_major_formatter(_fmt_y)
             if title is None: title = f"N-S  x = {x0/1000:.1f} km"
-            if sx_m is not None:
+            for sn, sx_m, sy_m in _site_xys:
                 ax.axvline(sy_m + dN, color=SITE_MARKER["color"],
                            lw=1.2, ls="--", zorder=9,
-                           label=f"Site {SITE_NUMBER} (y)")
+                           label=f"Site {sn} (y)")
 
         # ── EW curtain (y = const) ────────────────────────────────────────
         elif kind == "ew":
@@ -987,7 +899,7 @@ def plot_model_slices(
             polys, vals = _slice_geometry(nodes, conn, rho_plot,
                                           normal, point, u_ax, v_ax)
             # u_ax points in x (easting) direction
-            polys_d = [[(px + dE, pz) for px, pz in poly] for poly in polys]
+            polys_d = [[(px + dE, -pz) for px, pz in poly] for poly in polys]
             mappable = _plot_slice_panel(ax, polys_d, vals,
                 cmap_obj=cmap_obj, norm=norm,
                 ocean_color=ocean_color, ocean_value=ocean_value, invert_v=inv)
@@ -995,11 +907,12 @@ def plot_model_slices(
             ax.set_ylabel("depth (m)")
             if _xlim is not None: ax.set_xlim([v + dE for v in _xlim])
             if _zlim is not None: ax.set_ylim([_zlim[1], _zlim[0]])
+            if _fmt_x is not None: ax.xaxis.set_major_formatter(_fmt_x)
             if title is None: title = f"E-W  y = {y0/1000:.1f} km"
-            if sx_m is not None:
+            for sn, sx_m, sy_m in _site_xys:
                 ax.axvline(sx_m + dE, color=SITE_MARKER["color"],
                            lw=1.2, ls="--", zorder=9,
-                           label=f"Site {SITE_NUMBER} (x)")
+                           label=f"Site {sn} (x)")
 
         # ── arbitrary plane ────────────────────────────────────────────────
         elif kind == "plane":
@@ -1034,7 +947,7 @@ def plot_model_slices(
 
         ax.set_title(title, fontsize=9)
         ax.tick_params(labelsize=7)
-        if sx_m is not None and kind in ("map", "ns", "ew"):
+        if _site_xys and kind in ("map", "ns", "ew"):
             ax.legend(fontsize=7, loc="lower right")
 
     fig.suptitle(f"Model: {os.path.basename(model_file)}", fontsize=10)
@@ -1051,8 +964,106 @@ def plot_model_slices(
 
 
 # ===========================================================================
+# Site-list reader
+# ===========================================================================
+
+
+def read_sitelist(path: str,
+                  site_names=None) -> list[tuple[str, float, float]]:
+    """Read site overlay positions from a FEMTIC sitelist CSV.
+
+    Delegates parsing to ``data_proc.read_sitelist``, then converts the
+    UTM easting/northing of each site to model-local metres using
+    ``fem.utm_to_model`` with the module-level mesh-centre origin
+    (``UTM_ORIGIN_E``, ``UTM_ORIGIN_N``).
+
+    Parameters
+    ----------
+    path       : path to the FEMTIC sitelist file
+    site_names : str, list of str, or None
+                 Passed through to ``data_proc.read_sitelist``.
+                 None = all sites in the file.
+
+    Returns
+    -------
+    list of (name, x_m, y_m) tuples in model-local metres
+    """
+    rows = dp.read_sitelist(path, site_names=site_names)
+    result = []
+    for row in rows:
+        x_m, y_m = fem.utm_to_model(row["easting"], row["northing"],
+                                     UTM_ORIGIN_E, UTM_ORIGIN_N)
+        result.append((row["name"], x_m, y_m))
+    return result
+
+
+# ===========================================================================
 # Mesh-centre estimation helper
 # ===========================================================================
+
+
+def read_site_dat(site_dat: str) -> list:
+    """Read geographic site coordinates from a sidecar ``site.dat`` file.
+
+    Format (whitespace-separated; lines starting with ``#`` are ignored)::
+
+        site#   lat   lon   X_km   Y_km
+
+    where *lat* / *lon* are decimal degrees (negative = S / W) and *X_km* /
+    *Y_km* are the model-local coordinates in kilometres (as in observe.dat).
+
+    Parameters
+    ----------
+    site_dat : str
+        Path to the site file.
+
+    Returns
+    -------
+    list of dict
+        Each dict has keys ``"site"`` (int), ``"crs"`` (``"latlon"``),
+        ``"coords"`` (``[lon, lat]``), ``"x_km"`` (float), ``"y_km"``
+        (float).  Compatible with ``estimate_utm_origin`` *calibration_sites*.
+
+    Raises
+    ------
+    FileNotFoundError
+        If *site_dat* does not exist.
+    ValueError
+        If any data line cannot be parsed.
+    """
+    if not os.path.isfile(site_dat):
+        raise FileNotFoundError(f"site.dat not found: {site_dat}")
+
+    sites = []
+    with open(site_dat) as fh:
+        for lineno, raw in enumerate(fh, 1):
+            line = raw.split("#")[0].strip()
+            if not line:
+                continue
+            parts = line.split()
+            if len(parts) < 5:
+                raise ValueError(
+                    f"{site_dat}:{lineno}: expected 5 columns "
+                    f"(site# lat lon X_km Y_km), got {len(parts)}: {raw.rstrip()}"
+                )
+            try:
+                site_num = int(parts[0])
+                lat      = float(parts[1])
+                lon      = float(parts[2])
+                x_km     = float(parts[3])
+                y_km     = float(parts[4])
+            except ValueError as exc:
+                raise ValueError(
+                    f"{site_dat}:{lineno}: cannot parse values: {exc}"
+                ) from exc
+            sites.append(dict(
+                site   = site_num,
+                crs    = "latlon",
+                coords = [lon, lat],
+                x_km   = x_km,
+                y_km   = y_km,
+            ))
+    return sites
 
 
 def estimate_utm_origin(calibration_sites: list,
@@ -1119,13 +1130,17 @@ def estimate_utm_origin(calibration_sites: list,
         crs      = str(entry["crs"])
         coords   = list(entry["coords"])
 
-        # model-local position [m] from observe.dat
-        x_m, y_m = read_site_position(observe_file, site_num)
+        # model-local position [m]: from site.dat entry or observe.dat
+        if "x_km" in entry and "y_km" in entry:
+            x_m = float(entry["x_km"]) * 1e3
+            y_m = float(entry["y_km"]) * 1e3
+        else:
+            x_m, y_m = read_site_position(observe_file, site_num)
 
         # geographic → UTM [m]
         if crs == "latlon":
             lon_deg, lat_deg = coords
-            E_site, N_site = _latlon_to_utm(lat_deg, lon_deg, zone, northern)
+            E_site, N_site = utl.latlon_to_utm_zn(lat_deg, lon_deg, zone, northern)
         elif crs == "utm":
             E_site, N_site = float(coords[0]), float(coords[1])
         else:
@@ -1454,8 +1469,17 @@ print()
 
 # --- (1b) Optionally estimate UTM_ORIGIN_E / UTM_ORIGIN_N from sites ------
 if ESTIMATE_ORIGIN:
+    _cal_sites = list(CALIBRATION_SITES)
+    if SITE_DAT is not None and os.path.isfile(SITE_DAT):
+        _sdat = read_site_dat(SITE_DAT)
+        # merge: site.dat entries take priority; CALIBRATION_SITES fills gaps
+        _sdat_ids = {d["site"] for d in _sdat}
+        _extra    = [d for d in _cal_sites if d["site"] not in _sdat_ids]
+        _cal_sites = _sdat + _extra
+        if OUT:
+            print(f"  site.dat: loaded {len(_sdat)} site(s) from {SITE_DAT}")
     UTM_ORIGIN_E, UTM_ORIGIN_N = estimate_utm_origin(
-        CALIBRATION_SITES, OBSERVE_FILE, UTM_ZONE, UTM_NORTHERN, out=OUT
+        _cal_sites, OBSERVE_FILE, UTM_ZONE, UTM_NORTHERN, out=OUT
     )
 
 # --- (2) Resolve slice positions to model-local metres ---------------------
@@ -1463,16 +1487,31 @@ slices_resolved = resolve_slices(PLOT_SLICES, UTM_ZONE, UTM_NORTHERN)
 if OUT:
     print()
 
-# --- (3) Optionally read site position from observe.dat -------------------
-site_xy = None
-if SITE_NUMBER is not None:
-    print(f"Reading site {SITE_NUMBER} position from: {OBSERVE_FILE}")
-    sx_m, sy_m = read_site_position(OBSERVE_FILE, SITE_NUMBER)
-    site_xy = (sx_m, sy_m)
-    print(f"  model-local : x = {sx_m/1000:.3f} km,  y = {sy_m/1000:.3f} km")
-    if DISPLAY_COORDS == "utm":
-        print(f"  UTM         : E = {sx_m + UTM_ORIGIN_E:.1f} m,  "
-              f"N = {sy_m + UTM_ORIGIN_N:.1f} m")
+# --- (3) Optionally read site position(s) ----------------------------
+# Primary: FEMTIC sitelist (SITELIST_FILE).  Fallback: observe.dat.
+site_xys = []   # list of (label, x_m, y_m)
+if SITELIST_FILE is not None:
+    print(f"Reading site position(s) from sitelist: {SITELIST_FILE}")
+    site_xys = read_sitelist(SITELIST_FILE, site_names=SITE_NAMES)
+    for _name, sx_m, sy_m in site_xys:
+        print(f"  {_name}: model-local x = {sx_m/1000:.3f} km,  y = {sy_m/1000:.3f} km")
+        if DISPLAY_COORDS == "utm":
+            print(f"           UTM         E = {sx_m + UTM_ORIGIN_E:.1f} m,  "
+                  f"N = {sy_m + UTM_ORIGIN_N:.1f} m")
+    if not site_xys:
+        print("  (no matching sites found in sitelist)")
+    print()
+elif SITE_NUMBER is not None:
+    _site_nums = (SITE_NUMBER if isinstance(SITE_NUMBER, (list, tuple))
+                  else [SITE_NUMBER])
+    print(f"Reading site position(s) from: {OBSERVE_FILE}")
+    for _sn in _site_nums:
+        sx_m, sy_m = read_site_position(OBSERVE_FILE, _sn)
+        site_xys.append((_sn, sx_m, sy_m))
+        print(f"  site {_sn}: model-local x = {sx_m/1000:.3f} km,  y = {sy_m/1000:.3f} km")
+        if DISPLAY_COORDS == "utm":
+            print(f"           UTM         E = {sx_m + UTM_ORIGIN_E:.1f} m,  "
+                  f"N = {sy_m + UTM_ORIGIN_N:.1f} m")
     print()
 
 # --- (4) Plot slices -------------------------------------------------------
@@ -1492,7 +1531,7 @@ plot_model_slices(
     ocean_color = PLOT_OCEAN_COLOR,
     ocean_value = OCEAN_RHO,
     air_bgcolor = PLOT_AIR_BGCOLOR,
-    site_xy     = site_xy,
+    site_xys    = site_xys,
     plot_file   = PLOT_FILE,
     dpi         = PLOT_DPI,
     out         = OUT,
