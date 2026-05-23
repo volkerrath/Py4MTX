@@ -7,7 +7,7 @@ set -euo pipefail
 
 # ── defaults (edit here) ─────────────────────────────────────────────────────
 DEFAULT_PREFIX="XXX"
-DEFAULT_RUNS=(1 2 3)   # fallback list of integers when none are given on the CLI
+DEFAULT_RUNS=(0 1 2 3)   # fallback list of integers when none are given on the CLI
 # ────────────────────────────────────────────────────────────────────────────
 
 usage() {
@@ -56,7 +56,7 @@ for I in "${RUNS[@]}"; do
 
     # ── job to be defined ────────────────────────────────────────────────────
     # Replace the line(s) below with the actual command(s) to run.
-    echo "    (placeholder) running job for I=${I} in $(pwd)"
+    ./run_femtic_dias.sh
     # ────────────────────────────────────────────────────────────────────────
 
     cd "${TOPDIR}"

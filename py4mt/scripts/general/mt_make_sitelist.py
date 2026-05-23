@@ -7,6 +7,9 @@ Output formats are tailored for WALDIM, FEMTIC, or general use.
 
 @author: sb & vr dec 2019
 Cleanup: 4 Mar 2026 by Claude (Anthropic)
+Modified: 2026-05-23 — use utm_zone_from_latlon / latlon_to_utm_zn after
+    reading each EDI; FEMTIC output now includes easting and northing after
+    sitenum; Claude Sonnet 4.6 (Anthropic)
 """
 
 import os
@@ -38,15 +41,15 @@ print(titstrng + "\n\n")
 # =============================================================================
 #  Configuration
 # =============================================================================
-COORDS = "utm"
-EPSG = None
-
 DELIM = ","
 WHAT_FOR = "wal"     # Options: "wal", "femtic", "kml"
 
-if "wal" in WHAT_FOR:
+if "wal" in WHAT_FOR.lower():
     DELIM = " "
-    COORDS = "latlon"
+
+#: UTM zone override — None = auto-derived from each site's lat/lon.
+#: Set to an integer (e.g. 19) to force a fixed zone for all sites.
+UTM_ZONE_OVERRIDE = None
 
 WORK_DIR = "/home/vrath/MT_Data/waldim/"
 EDI_DIR = WORK_DIR + "/edi_synth_iso/proc/"
@@ -83,21 +86,18 @@ with open(CSV_FILE, "w") as f:
         file_i = EDI_DIR + filename
         edi_dict = load_edi(file_i, drop_invalid_periods=True)
 
-        lat = edi_dict["lat"]
-        lon = edi_dict["lon"]
+        lat  = edi_dict["lat"]
+        lon  = edi_dict["lon"]
         elev = edi_dict["elev"]
 
-        if "utm" in COORDS.lower():
-            if EPSG is not None:
-                easting, northing = utl.proj_latlon_to_utm(
-                    latitude=lat, longitude=lon, utm_zone=EPSG
-                )
-            else:
-                sys.exit("make sitelist: utm required, but no EPSG given! Exit.")
+        zone, northern = utl.utm_zone_from_latlon(lat, lon, override=UTM_ZONE_OVERRIDE)
+        easting, northing = utl.latlon_to_utm_zn(lat, lon, zone, northern)
+        print(f"  zone {zone}{'N' if northern else 'S'}  "
+              f"E={easting:.1f}  N={northing:.1f}")
 
-        if "wal" in WHAT_FOR:
+        if "wal" in WHAT_FOR.lower():
             sitelist.writerow([name, lat, lon])
-        elif "fem" in WHAT_FOR:
-            sitelist.writerow([name, lat, lon, elev, sitenum])
+        elif "fem" in WHAT_FOR.lower():
+            sitelist.writerow([name, lat, lon, elev, sitenum, easting, northing])
         else:
             sitelist.writerow([name, lat, lon, elev])

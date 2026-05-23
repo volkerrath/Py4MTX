@@ -11,6 +11,7 @@ Generate a site list (names, coordinates, elevations) from EDI files.
 | Part of | **py4mt** — Python for Magnetotellurics |
 | README generated | 2 March 2026 by Claude (Anthropic), from cleaned source |
 | Last cleanup | 4 March 2026 by Claude (Anthropic) |
+| Modified | 2026-05-23 — UTM zone auto-derived per site via `util.utm_zone_from_latlon` / `util.latlon_to_utm_zn`; FEMTIC output now includes easting & northing; removed COORDS/EPSG; Claude Sonnet 4.6 (Anthropic) |
 
 ## Purpose
 
@@ -23,8 +24,37 @@ site number. Output format is tailored for the target application.
 | `WHAT_FOR` | Delimiter | Columns | Header |
 |------------|-----------|---------|--------|
 | `"wal"` | space | name, lat, lon | WALDIM-style (with site count row) |
-| `"femtic"` | comma | name, lat, lon, elev, sitenum | FEMTIC input |
+| `"femtic"` | comma | name, lat, lon, elev, sitenum, easting, northing | FEMTIC input + UTM coords |
 | other | comma | name, lat, lon, elev | General purpose |
+
+The FEMTIC sitelist format is consumed by `data_proc.read_sitelist()` and
+by `femtic_mod_plot.py` (via `read_sitelist`) to overlay site positions on
+model slice figures.
+
+## Configuration
+
+| Constant | Description |
+|----------|-------------|
+| `WHAT_FOR` | `"wal"`, `"femtic"`, or `"kml"` |
+| `UTM_ZONE_OVERRIDE` | Integer zone number to force for all sites, or `None` = auto-derive per site from its own lat/lon |
+| `EDI_DIR` | Directory containing `.edi` files |
+
+## UTM zone derivation
+
+The UTM zone is derived **per site** by calling `util.utm_zone_from_latlon(lat, lon)`
+after reading each EDI file.  `UTM_ZONE_OVERRIDE` forces a fixed zone when
+sites span a zone boundary or when the survey convention differs from the
+standard 6° rule.
+
+## Changes (2026-05-23)
+
+| Change | Description |
+|--------|-------------|
+| **Zone auto-derive** | `utm_zone_from_latlon(lat, lon, override=UTM_ZONE_OVERRIDE)` replaces old EPSG-integer path |
+| **UTM conversion** | `latlon_to_utm_zn(lat, lon, zone, northern)` replaces `proj_latlon_to_utm(EPSG=...)` |
+| **FEMTIC columns** | Row is now `[name, lat, lon, elev, sitenum, easting, northing]` |
+| **Removed** | `COORDS`, `EPSG` config variables; `sys.exit` on missing EPSG |
+| **Added** | `UTM_ZONE_OVERRIDE = None` config; per-site diagnostic print of zone and UTM coords |
 
 ## Issues fixed during earlier cleanup (2 Mar 2026)
 
@@ -35,22 +65,7 @@ site number. Output format is tailored for the target application.
 | **Dead UTM branch** | Simplified to exit directly when EPSG is `None`. |
 | **Unused variable** | `dialect = 'unix'` removed. |
 
-## Changes in this cleanup (4 Mar 2026)
-
-| Change | Description |
-|--------|-------------|
-| **UPPERCASE config** | All configuration constants renamed to `UPPER_SNAKE_CASE` (`COORDS`, `EPSG`, `DELIM`, `WHAT_FOR`, `WORK_DIR`, `EDI_DIR`, `CSV_FILE`). |
-| **Provenance line** | Added cleanup date to docstring. |
-
-## Configuration
-
-| Constant | Description |
-|----------|-------------|
-| `WHAT_FOR` | `"wal"`, `"femtic"`, or `"kml"` |
-| `COORDS` | `"latlon"` (default for WALDIM) or `"utm"` |
-| `EPSG` | UTM zone EPSG code (required if `COORDS = "utm"`) |
-| `EDI_DIR` | Directory containing `.edi` files |
-
 ## Dependencies
 
-`numpy`, `csv`, py4mt: `data_proc` (`load_edi`), `util`, `version`.
+`numpy`, `csv`, py4mt: `data_proc` (`load_edi`), `util` (`utm_zone_from_latlon`,
+`latlon_to_utm_zn`), `version`.

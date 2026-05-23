@@ -103,6 +103,7 @@ Modified: 2026-03-16 — freq_order parameter (load_edi, save_edi), compute_rhop
 Modified: 2026-03-17 — unconditional all-sentinel tipper suppression in load_edi; full set_errors implementation (fix/floor, Z_rel ij/ij*ii, T/PT absolute); Z_units key; interpolate_data keyword-only signature (newfreqs, freq_per_dec, interp_method); fix ZT_from_S unit scaling; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-03-25 — manufacturer parameter in load_edi (phoenix/metronix/delta); FT-convention correction (e+iwt→e-iwt conjugation of Z and T for Phoenix); manufacturer and ft_convention keys in data_dict; cleanup and section headers; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-04-27 — estimate_errors rewritten: spline-residual and MAD methods replacing incorrect std-over-axis approach; freq/Z unchanged, only error arrays updated; Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-05-23 — added read_sitelist(): parse FEMTIC sitelist CSV (name,lat,lon,elev,sitenum,easting,northing) with optional name filter; raw values only, no CRS conversion; Claude Sonnet 4.6 (Anthropic)
 """
 
 from __future__ import annotations
@@ -180,6 +181,92 @@ def get_data_list(dirname=None, ext='.edi', sort=False, fullpath=True):
 
 # Alias kept for backward compatibility.
 get_edi_list = get_data_list
+
+
+def read_sitelist(path: str | Path,
+                  site_names=None) -> list[dict]:
+    """Read a FEMTIC sitelist CSV produced by ``mt_make_sitelist.py``.
+
+    Expected column order (comma-separated, no header line, ``#`` = comment)::
+
+        name, lat, lon, elev, sitenum, easting, northing
+
+    where *lat*/*lon* are WGS-84 decimal degrees, *elev* is elevation [m],
+    *sitenum* is the 0-based site index written by the script, and
+    *easting*/*northing* are UTM metres in the zone derived at list-generation
+    time (auto or ``UTM_ZONE_OVERRIDE``).
+
+    Parameters
+    ----------
+    path       : path to the FEMTIC sitelist file
+    site_names : str, list of str, or None
+                 If None, all sites are returned.  Otherwise only rows whose
+                 ``name`` matches (case-insensitive) are included.
+
+    Returns
+    -------
+    list of dict, one per site, with keys:
+
+        ``name`` (str), ``lat`` (float), ``lon`` (float), ``elev`` (float),
+        ``sitenum`` (int), ``easting`` (float), ``northing`` (float)
+
+    Raises
+    ------
+    FileNotFoundError
+        If *path* does not exist.
+    ValueError
+        If any data line has fewer than 7 columns or non-numeric fields.
+
+    Notes
+    -----
+    This function returns raw parsed values only — no coordinate-system
+    conversion is applied.  Callers that need model-local metres should
+    convert ``easting``/``northing`` via ``fem.utm_to_model`` (femtic.py)
+    or ``utl.utm_to_model`` after this call.
+
+    VR 2026-05-23, Claude Sonnet 4.6 (Anthropic)
+    """
+    path = Path(path)
+    if not path.is_file():
+        raise FileNotFoundError(f"read_sitelist: file not found: {path}")
+
+    # Normalise name filter to a set of lower-case strings (or None = all)
+    _filter: set | None = None
+    if site_names is not None:
+        _names = [site_names] if isinstance(site_names, str) else list(site_names)
+        _filter = {s.lower() for s in _names}
+
+    result: list[dict] = []
+    with path.open(newline="", encoding="utf-8") as fh:
+        for lineno, row in enumerate(fh, 1):
+            line = row.split("#")[0].strip()
+            if not line:
+                continue
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) < 7:
+                raise ValueError(
+                    f"read_sitelist {path}:{lineno}: expected 7 columns "
+                    f"(name,lat,lon,elev,sitenum,easting,northing), "
+                    f"got {len(parts)}: {row.rstrip()}"
+                )
+            name = parts[0]
+            if _filter is not None and name.lower() not in _filter:
+                continue
+            try:
+                result.append(dict(
+                    name     = name,
+                    lat      = float(parts[1]),
+                    lon      = float(parts[2]),
+                    elev     = float(parts[3]),
+                    sitenum  = int(parts[4]),
+                    easting  = float(parts[5]),
+                    northing = float(parts[6]),
+                ))
+            except ValueError as exc:
+                raise ValueError(
+                    f"read_sitelist {path}:{lineno}: cannot parse values: {exc}"
+                ) from exc
+    return result
 
 
 # ---------------------------------------------------------------------------
