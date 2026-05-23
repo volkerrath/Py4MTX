@@ -110,6 +110,14 @@ Provenance
     2026-05-23  vrath / Claude Sonnet 4.6   Moved read_sitelist() parsing
                 to data_proc.read_sitelist(); script wrapper delegates parse
                 then applies fem.utm_to_model.  Added import data_proc as dp.
+    2026-05-23  vrath / Claude Sonnet 4.6   estimate_utm_origin: added
+                bounding-box centre as default method (femticPY-compatible);
+                new sitelist_file kwarg; bounding-box used when
+                CALIBRATION_SITES is empty, calibration-pair method retained.
+    2026-05-23  vrath / Claude Sonnet 4.6   PLOT_EQUAL_ASPECT config flag;
+                equal_aspect kwarg in plot_model_slices; set_aspect("equal",
+                adjustable="box") on map/ns/ew panels when DISPLAY_COORDS is
+                model or utm; figsize auto-computed from xlim/ylim/zlim ratios.
 
 @author: vrath
 """
@@ -312,6 +320,14 @@ PLOT_XLIM = [-20000., 20000.]   # [xmin, xmax] metres — easting
 PLOT_YLIM = [-20000., 20000.]   # [ymin, ymax] metres — northing
 PLOT_ZLIM = [  -6000., 15000.]  # [zmin, zmax] metres — depth (z positive-down)
 
+#: Equal aspect ratio for map and curtain panels.
+#: True  → ax.set_aspect("equal") on map (x/y), ns (y/z), and ew (x/z) panels
+#:         so that 1 m horizontal = 1 m vertical on screen.  Applies only when
+#:         DISPLAY_COORDS is "model" or "utm" (both axes in metres).  Ignored
+#:         for plane slices and when DISPLAY_COORDS is "latlon".
+#: False → Matplotlib default (axes fill the available space).
+PLOT_EQUAL_ASPECT = True
+
 # ---------------------------------------------------------------------------
 # 3-D plotting — requires PyVista  (conda install -c conda-forge pyvista)
 # ---------------------------------------------------------------------------
@@ -434,11 +450,20 @@ BOREHOLE_SHARED = True
 # ---------------------------------------------------------------------------
 # Mesh-centre estimation from known site coordinates  (optional)
 # ---------------------------------------------------------------------------
-#: Set ESTIMATE_ORIGIN = True to compute UTM_ORIGIN_E / UTM_ORIGIN_N from
-#: a set of calibration sites whose model-local positions (from observe.dat)
-#: and geographic coordinates are both known.  The result overwrites the
-#: hard-coded UTM_ORIGIN_E / UTM_ORIGIN_N above for this run and is printed
-#: so you can copy the values back into the script.
+#: Set ESTIMATE_ORIGIN = True to compute UTM_ORIGIN_E / UTM_ORIGIN_N.
+#:
+#: Two methods are available (selected automatically):
+#:
+#:   Bounding-box centre (femticPY-compatible, DEFAULT when
+#:   CALIBRATION_SITES is empty and SITELIST_FILE is set):
+#:     origin = midpoint of the bounding box of all site UTM coordinates
+#:     read from SITELIST_FILE.  No observe.dat is needed.
+#:
+#:   Calibration-site pairs (classic):
+#:     Each entry in CALIBRATION_SITES provides a site whose model-local
+#:     position (from observe.dat or site.dat) and geographic position are
+#:     both known.  UTM_ORIGIN_E/N = mean(E_site − x_m, N_site − y_m).
+#:     At least 1 site is required; 3+ is recommended.
 #:
 #: Each entry in CALIBRATION_SITES is a dict with:
 #:   "site"    : int    site number (matched against observe.dat)
@@ -446,10 +471,14 @@ BOREHOLE_SHARED = True
 #:   "coords"  : for "latlon" → [lon_deg, lat_deg]
 #:               for "utm"    → [E_m, N_m]
 #:
-#: At least 1 site is required; 3+ is recommended to detect gross errors.
-#: The fit is a pure translation (no rotation/scale) in UTM space, solved
-#: by least squares.  Residuals per site are printed when OUT = True.
+#: The result always overwrites UTM_ORIGIN_E / UTM_ORIGIN_N for this run.
+#: Set UPDATE_CONFIG = True to also feed UTM_ORIGIN_LAT / UTM_ORIGIN_LON back
+#: into the module globals and re-derive the UTM zone — so all subsequent
+#: coordinate conversions in this run use the estimated centre rather than
+#: the hard-coded values above.  The printed values can then be copied back
+#: into the Configuration block for future runs.
 ESTIMATE_ORIGIN = False
+UPDATE_CONFIG   = True    # feed estimated lat/lon back into globals (requires ESTIMATE_ORIGIN)
 
 CALIBRATION_SITES = [
     # dict(site=1,  crs="latlon", coords=[-71.500, -16.380]),
@@ -659,6 +688,7 @@ def plot_model_slices(
     site_xys: list | None = None,
     plot_file=None,
     dpi: int = 200,
+    equal_aspect: bool = True,
     out: bool = True,
 ):
     """Produce a multi-panel figure of axis-parallel model slices.
@@ -682,6 +712,11 @@ def plot_model_slices(
                   None or empty list → no markers.
     plot_file   : save path; None = interactive show()
     dpi         : saved-figure DPI
+    equal_aspect : if True, call ``ax.set_aspect("equal", adjustable="box")``
+                  on map (x/y), ns (y/z), and ew (x/z) panels so that
+                  1 m horizontal = 1 m vertical.  Applied only when
+                  DISPLAY_COORDS is "model" or "utm"; ignored for plane panels
+                  and when axes carry different units (e.g. latlon).
     out         : verbose progress
     """
     if fviz is None:
@@ -789,6 +824,10 @@ def plot_model_slices(
     sfx      = _display_suffix()
     _fmt_x, _fmt_y = _display_formatters(UTM_ZONE, UTM_NORTHERN)
 
+    # Equal aspect applies only when both axes are in metres (model or utm).
+    # latlon display has different scales on x/y so aspect="equal" is wrong.
+    _do_equal = equal_aspect and DISPLAY_COORDS.lower() in ("model", "utm")
+
     # ── load model ───────────────────────────────────────────────────────────
     if out:
         print(f"  plot: reading model {os.path.basename(model_file)}")
@@ -823,8 +862,38 @@ def plot_model_slices(
 
     # ── figure layout ────────────────────────────────────────────────────────
     n_panels = len(slices)
+    _panel_h = 5.0   # inches — height of each panel
+
+    if _do_equal:
+        # Compute each panel's width from the aspect ratio of its limits so
+        # that set_aspect("equal") does not waste whitespace.
+        _panel_widths = []
+        for spec in slices:
+            kind  = spec.get("kind", "map")
+            _xl   = spec.get("xlim", xlim)
+            _yl   = spec.get("ylim", ylim)
+            _zl   = spec.get("zlim", zlim)
+            if kind == "map":
+                hspan = (_xl[1] - _xl[0]) if _xl is not None else _panel_h * 200
+                vspan = (_yl[1] - _yl[0]) if _yl is not None else _panel_h * 200
+            elif kind == "ns":
+                hspan = (_yl[1] - _yl[0]) if _yl is not None else _panel_h * 200
+                vspan = (_zl[1] - _zl[0]) if _zl is not None else _panel_h * 200
+            elif kind == "ew":
+                hspan = (_xl[1] - _xl[0]) if _xl is not None else _panel_h * 200
+                vspan = (_zl[1] - _zl[0]) if _zl is not None else _panel_h * 200
+            else:
+                # plane or unknown — use square panel
+                hspan = vspan = 1.0
+            ratio = hspan / vspan if vspan > 0 else 1.0
+            _panel_widths.append(_panel_h * ratio)
+        _fig_w = sum(_panel_widths)
+    else:
+        _panel_widths = [5.0] * n_panels
+        _fig_w = 5.0 * n_panels
+
     fig, axes = plt.subplots(1, n_panels,
-                             figsize=(5 * n_panels, 5),
+                             figsize=(_fig_w, _panel_h),
                              squeeze=False)
     axes = axes[0]
     if air_bgcolor is not None:
@@ -862,6 +931,7 @@ def plot_model_slices(
             if _ylim is not None: ax.set_ylim([v + dN for v in _ylim])
             if _fmt_x is not None: ax.xaxis.set_major_formatter(_fmt_x)
             if _fmt_y is not None: ax.yaxis.set_major_formatter(_fmt_y)
+            if _do_equal: ax.set_aspect("equal", adjustable="box")
             if title is None: title = f"Map  z = {z0/1000:.1f} km"
             for sn, sx_m, sy_m in _site_xys:
                 mk = dict(SITE_MARKER)
@@ -885,6 +955,7 @@ def plot_model_slices(
             if _ylim is not None: ax.set_xlim([v + dN for v in _ylim])
             if _zlim is not None: ax.set_ylim([_zlim[1], _zlim[0]])
             if _fmt_y is not None: ax.xaxis.set_major_formatter(_fmt_y)
+            if _do_equal: ax.set_aspect("equal", adjustable="box")
             if title is None: title = f"N-S  x = {x0/1000:.1f} km"
             for sn, sx_m, sy_m in _site_xys:
                 ax.axvline(sy_m + dN, color=SITE_MARKER["color"],
@@ -908,6 +979,7 @@ def plot_model_slices(
             if _xlim is not None: ax.set_xlim([v + dE for v in _xlim])
             if _zlim is not None: ax.set_ylim([_zlim[1], _zlim[0]])
             if _fmt_x is not None: ax.xaxis.set_major_formatter(_fmt_x)
+            if _do_equal: ax.set_aspect("equal", adjustable="box")
             if title is None: title = f"E-W  y = {y0/1000:.1f} km"
             for sn, sx_m, sy_m in _site_xys:
                 ax.axvline(sx_m + dE, color=SITE_MARKER["color"],
@@ -1071,28 +1143,34 @@ def estimate_utm_origin(calibration_sites: list,
                         zone: int,
                         northern: bool,
                         *,
+                        sitelist_file: str | None = None,
                         out: bool = True) -> tuple[float, float]:
-    """Estimate UTM coordinates of the mesh centre from calibration sites.
+    """Estimate UTM coordinates of the mesh centre.
 
-    Each calibration site provides a pair of observations:
+    Two methods are tried in order:
 
-    - its model-local position (x_m, y_m), read from *observe_file*,
-    - its known geographic position in lat/lon or UTM.
+    **Bounding-box centre** (femticPY-compatible, default when
+    *calibration_sites* is empty):
+        Reads all site UTM coordinates from *sitelist_file* (the FEMTIC
+        sitelist produced by ``mt_make_sitelist.py``) and sets the origin
+        to the midpoint of the bounding box::
 
-    The mesh centre satisfies:
+            origin_E = (E_min + E_max) / 2
+            origin_N = (N_min + N_max) / 2
 
-        E_site = UTM_ORIGIN_E + x_m_site
-        N_site = UTM_ORIGIN_N + y_m_site
+        No model-local positions or ``observe.dat`` are needed.
 
-    Rearranging:
+    **Calibration-site pairs** (classic, used when *calibration_sites* is
+    non-empty):
+        Each entry provides a site whose model-local position (from
+        *observe_file* or inline ``x_km``/``y_km``) and geographic
+        position are both known.  The mesh centre satisfies::
 
-        UTM_ORIGIN_E = E_site − x_m_site
-        UTM_ORIGIN_N = N_site − y_m_site
+            E_site = origin_E + x_m_site
+            N_site = origin_N + y_m_site
 
-    This is a pure translation — no rotation or scale is assumed (model-local
-    axes are aligned with UTM east/north by FEMTIC convention).  With N ≥ 1
-    sites the system is solved as a least-squares mean; residuals per site
-    expose gross coordinate errors.
+        With N ≥ 1 sites the least-squares solution is the mean of the N
+        implied origins; residuals expose gross coordinate errors.
 
     Parameters
     ----------
@@ -1100,10 +1178,14 @@ def estimate_utm_origin(calibration_sites: list,
                         "site"   : int   site number (matched in observe.dat)
                         "crs"    : str   "latlon" or "utm"
                         "coords" : list  [lon_deg, lat_deg] or [E_m, N_m]
-    observe_file      : path to observe.dat
+                        May be empty — triggers bounding-box fallback.
+    observe_file      : path to observe.dat (used for calibration-site method)
     zone              : UTM zone number (used for lat/lon → UTM conversion)
     northern          : hemisphere flag
-    out               : print per-site residuals and result when True
+    sitelist_file     : path to FEMTIC sitelist CSV (used for bounding-box
+                        method); if None and calibration_sites is empty,
+                        raises ValueError.
+    out               : print per-site details and result when True
 
     Returns
     -------
@@ -1111,10 +1193,42 @@ def estimate_utm_origin(calibration_sites: list,
 
     Raises
     ------
-    ValueError  if calibration_sites is empty or any site is not found.
+    ValueError  if both *calibration_sites* is empty and *sitelist_file* is
+                None or contains no sites.
     """
+    # ------------------------------------------------------------------
+    # Bounding-box centre (femticPY-compatible default)
+    # ------------------------------------------------------------------
     if not calibration_sites:
-        raise ValueError("CALIBRATION_SITES is empty — nothing to estimate.")
+        if sitelist_file is None:
+            raise ValueError(
+                "estimate_utm_origin: CALIBRATION_SITES is empty and "
+                "sitelist_file is None — cannot estimate origin."
+            )
+        rows = dp.read_sitelist(sitelist_file)
+        if not rows:
+            raise ValueError(
+                f"estimate_utm_origin: sitelist {sitelist_file!r} is empty."
+            )
+        eastings  = np.array([r["easting"]  for r in rows])
+        northings = np.array([r["northing"] for r in rows])
+        origin_E  = float((eastings.min()  + eastings.max())  / 2.0)
+        origin_N  = float((northings.min() + northings.max()) / 2.0)
+        if out:
+            center_lat, center_lon = utl.utm_to_latlon_zn(
+                origin_E, origin_N, zone, northern
+            )
+            print("Estimating mesh-centre UTM origin from sitelist bounding box:")
+            print(f"  sites          : {len(rows)}")
+            print(f"  E range        : {eastings.min():.1f} \u2013 {eastings.max():.1f} m")
+            print(f"  N range        : {northings.min():.1f} \u2013 {northings.max():.1f} m")
+            print(f"  UTM_ORIGIN_E   = {origin_E:.1f}")
+            print(f"  UTM_ORIGIN_N   = {origin_N:.1f}")
+            print(f"  UTM_ORIGIN_LAT = {center_lat:.6f}")
+            print(f"  UTM_ORIGIN_LON = {center_lon:.6f}")
+            print(f"  Copy these values into the Configuration block.")
+            print()
+        return origin_E, origin_N
 
     offsets_E = []
     offsets_N = []
@@ -1479,8 +1593,20 @@ if ESTIMATE_ORIGIN:
         if OUT:
             print(f"  site.dat: loaded {len(_sdat)} site(s) from {SITE_DAT}")
     UTM_ORIGIN_E, UTM_ORIGIN_N = estimate_utm_origin(
-        _cal_sites, OBSERVE_FILE, UTM_ZONE, UTM_NORTHERN, out=OUT
+        _cal_sites, OBSERVE_FILE, UTM_ZONE, UTM_NORTHERN,
+        sitelist_file=SITELIST_FILE, out=OUT
     )
+    if UPDATE_CONFIG:
+        UTM_ORIGIN_LAT, UTM_ORIGIN_LON = utl.utm_to_latlon_zn(
+            UTM_ORIGIN_E, UTM_ORIGIN_N, UTM_ZONE, UTM_NORTHERN
+        )
+        UTM_ZONE, UTM_NORTHERN = _utm_zone_from_origin()
+        if OUT:
+            print(f"Config updated:  UTM_ORIGIN_LAT = {UTM_ORIGIN_LAT:.6f}")
+            print(f"                 UTM_ORIGIN_LON = {UTM_ORIGIN_LON:.6f}")
+            print(f"                 UTM_ZONE       = {UTM_ZONE}"
+                  f"{'N' if UTM_NORTHERN else 'S'}")
+            print()
 
 # --- (2) Resolve slice positions to model-local metres ---------------------
 slices_resolved = resolve_slices(PLOT_SLICES, UTM_ZONE, UTM_NORTHERN)
@@ -1534,6 +1660,7 @@ plot_model_slices(
     site_xys    = site_xys,
     plot_file   = PLOT_FILE,
     dpi         = PLOT_DPI,
+    equal_aspect = PLOT_EQUAL_ASPECT,
     out         = OUT,
 )
 print("Done.")
