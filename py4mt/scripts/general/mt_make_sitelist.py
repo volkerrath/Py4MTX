@@ -14,6 +14,7 @@ Modified: 2026-05-23 — use utm_zone_from_latlon / latlon_to_utm_zn after
 
 import os
 import sys
+
 from pathlib import Path
 import csv
 import inspect
@@ -42,26 +43,19 @@ print(titstrng + "\n\n")
 #  Configuration
 # =============================================================================
 DELIM = ","
-WHAT_FOR = "wal"     # Options: "wal", "femtic", "kml"
+WHAT_FOR = "fem"     # Options: "wal", "femtic", "kml"
 
-if "wal" in WHAT_FOR.lower():
-    DELIM = " "
 
 #: UTM zone override — None = auto-derived from each site's lat/lon.
 #: Set to an integer (e.g. 19) to force a fixed zone for all sites.
 UTM_ZONE_OVERRIDE = None
 
-WORK_DIR = "/home/vrath/MT_Data/waldim/"
-EDI_DIR = WORK_DIR + "/edi_synth_iso/proc/"
+WORK_DIR = "/home/vrath/Py4MTX/py4mt/data/rto/ubinas//"
+EDI_DIR = WORK_DIR + "/edi/"
 
 print(" Edifiles read from: %s" % EDI_DIR)
 
-if "wal" in WHAT_FOR.lower():
-    CSV_FILE = EDI_DIR + "Sitelist_waldim.txt"
-elif "fem" in WHAT_FOR.lower():
-    CSV_FILE = EDI_DIR + "Sitelist_femtic.txt"
-else:
-    CSV_FILE = EDI_DIR + "Sitelist.txt"
+CSV_FILE = EDI_DIR + "sites.dat"
 print("Writing data to file: " + CSV_FILE)
 
 # =============================================================================
@@ -74,30 +68,44 @@ edi_files = sorted([
 ns = len(edi_files)
 
 with open(CSV_FILE, "w") as f:
-    sitelist = csv.writer(f, delimiter=DELIM)
 
     if "wal" in WHAT_FOR.lower():
+        sitelist = csv.writer(f, delimiter=" ")
         sitelist.writerow(["Sitename", "Latitude", "Longitude"])
         sitelist.writerow([ns, " ", " "])
+    else:
+        sitelist = csv.writer(f, delimiter=DELIM)
+        sitelist.writerow(
+            ["Sitename", "Latitude", "Longitude", "Site#", "Easting", "Northing"])
+        # sitelist.writerow([ns, " ", " "])
 
     for sitenum, filename in enumerate(edi_files):
         print("reading data from: " + filename)
+
         name, _ = os.path.splitext(filename)
         file_i = EDI_DIR + filename
         edi_dict = load_edi(file_i, drop_invalid_periods=True)
 
-        lat  = edi_dict["lat"]
-        lon  = edi_dict["lon"]
+        lat = edi_dict["lat"]
+        lon = edi_dict["lon"]
         elev = edi_dict["elev"]
 
-        zone, northern = utl.utm_zone_from_latlon(lat, lon, override=UTM_ZONE_OVERRIDE)
+        zone, northern = utl.utm_zone_from_latlon(
+            lat, lon, override=UTM_ZONE_OVERRIDE)
         easting, northing = utl.latlon_to_utm_zn(lat, lon, zone, northern)
+        easting = np.around(easting,1)
+        northing = np.around(northing,1)
         print(f"  zone {zone}{'N' if northern else 'S'}  "
               f"E={easting:.1f}  N={northing:.1f}")
 
         if "wal" in WHAT_FOR.lower():
             sitelist.writerow([name, lat, lon])
         elif "fem" in WHAT_FOR.lower():
-            sitelist.writerow([name, lat, lon, elev, sitenum, easting, northing])
+            sitelist.writerow(
+                [name, lat, lon, elev, sitenum, easting, northing])
+        elif "kml" in WHAT_FOR.lower():
+            sitelist.writerow(
+                [name, lat, lon, elev, sitenum, easting, northing])
         else:
-            sitelist.writerow([name, lat, lon, elev])
+            sitelist.writerow(
+                [name, lat, lon, elev, sitenum, easting, northing])
