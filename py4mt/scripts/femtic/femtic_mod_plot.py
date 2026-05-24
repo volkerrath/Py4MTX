@@ -81,12 +81,7 @@ Provenance
                 PLOT3D config block with axis-aligned x/y/z slices, oblique
                 planes, and iso-surfaces via fviz.plot_model_3d.  Output:
                 interactive HTML or static screenshot.
-    2026-05-13  vrath / Claude Sonnet 4.6   Added ensemble slice plot step (6):
-                plot_ensemble_slices function and ENS_* config block.  Reuses
-                identical PLOT_* parameters and slice geometry; mesh parsed
-                once, member resistivities swapped per row.  Optional stat
-                rows (mean, std, median) in log10 space; per-member file
-                output; std rendered on a separate sequential colormap.
+
     2026-05-16  vrath / Claude Sonnet 4.6   Added borehole resistivity log
                 step (7): _point_in_tet (barycentric), extract_borehole_log
                 (bbox pre-filter + exact test), plot_borehole_logs; BOREHOLE_*
@@ -102,22 +97,23 @@ Provenance
                 module globals.  Imported femtic as fem.
                 SITE_NUMBER now accepts a list; plot_model_slices takes
                 site_xys [(sn, x_m, y_m), …] and loops over all sites.
-    2026-05-23  vrath / Claude Sonnet 4.6   Added SITELIST_FILE / SITE_NAMES
-                config: step (3) now reads site positions from the FEMTIC
-                sitelist produced by mt_make_sitelist.py (easting/northing
-                columns converted via fem.utm_to_model); observe.dat path
-                retained as fallback.  Added read_sitelist() helper.
-    2026-05-23  vrath / Claude Sonnet 4.6   Moved read_sitelist() parsing
-                to data_proc.read_sitelist(); script wrapper delegates parse
-                then applies fem.utm_to_model.  Added import data_proc as dp.
-    2026-05-23  vrath / Claude Sonnet 4.6   estimate_utm_origin: added
-                bounding-box centre as default method (femticPY-compatible);
-                new sitelist_file kwarg; bounding-box used when
-                CALIBRATION_SITES is empty, calibration-pair method retained.
+    2026-05-23  vrath / Claude Sonnet 4.6   SITE_DAT now uses the
+                mt_make_sitelist.py CSV format (name, lat, lon, elev,
+                sitenum, easting, northing); replaces SITELIST_FILE.
+                read_site_dat() rewritten accordingly; read_sitelist()
+                removed.  estimate_utm_origin kwarg renamed site_dat;
+                bounding-box origin method wired to read_site_dat().
     2026-05-23  vrath / Claude Sonnet 4.6   PLOT_EQUAL_ASPECT config flag;
                 equal_aspect kwarg in plot_model_slices; set_aspect("equal",
                 adjustable="box") on map/ns/ew panels when DISPLAY_COORDS is
                 model or utm; figsize auto-computed from xlim/ylim/zlim ratios.
+    2026-05-24  vrath / Claude Sonnet 4.6   Removed ENS_* config block and
+                step (6) ensemble plot; moved to snippets.py.  Step (7)
+                borehole log renumbered to step (6).
+    2026-05-24  vrath / Claude Sonnet 4.6   Moved read_site_position(),
+                read_site_dat(), estimate_utm_origin(), _point_in_tet(),
+                extract_borehole_log() to femtic.py; script calls fem.*
+                directly.  import data_proc as dp removed.
 
 @author: vrath
 """
@@ -143,18 +139,17 @@ for _base in [PY4MTX_ROOT + "/py4mt/modules/"]:
 from version import versionstrg
 import util as utl
 import femtic as fem
-import data_proc as dp
 
 try:
     import femtic_viz as fviz
 except ImportError:
     fviz = None
 
-try:
-    from pyproj import Transformer as _Transformer
-    _HAVE_PYPROJ = True
-except ImportError:
-    _HAVE_PYPROJ = False
+# try:
+#     from pyproj import Transformer as _Transformer
+#     _HAVE_PYPROJ = True
+# except ImportError:
+#     _HAVE_PYPROJ = False
 
 version, _ = versionstrg()
 fname = inspect.getfile(inspect.currentframe())
@@ -177,25 +172,19 @@ MODEL_FILE = WORK_DIR + "resistivity_block_iter17.dat"
 MESH_FILE  = WORK_DIR + "mesh.dat"
 
 #: observe.dat — used by ESTIMATE_ORIGIN to look up model-local site positions.
-#: Also used as fallback site-overlay source when SITELIST_FILE is None and
+#: Also used as fallback site-overlay source when SITE_DAT is None and
 #: SITE_NUMBER is not None.
 OBSERVE_FILE = WORK_DIR + "observe.dat"
 
-#: Optional sidecar file with geographic site coordinates.
-#: Format (whitespace-separated, one site per line, # = comment):
-#:   site#   lat   lon   X_km   Y_km
-#: lat/lon in decimal degrees (negative = S/W); X/Y in model-local km.
-#: Set to None to disable.  When set and ESTIMATE_ORIGIN = True the file is
-#: used instead of (or merged with) CALIBRATION_SITES.
-SITE_DAT = WORK_DIR + "site.dat"   # set to None to disable
-
-#: FEMTIC sitelist produced by mt_make_sitelist.py (WHAT_FOR="femtic").
+#: Site list produced by mt_make_sitelist.py (WHAT_FOR="femtic").
 #: Format (comma-separated, no header):
 #:   name, lat, lon, elev, sitenum, easting, northing
 #: Easting/northing are UTM metres; model-local x/y is derived via
 #: fem.utm_to_model using the mesh-centre origin.
+#: When ESTIMATE_ORIGIN is True and CALIBRATION_SITES is empty, the
+#: bounding-box centre of all sites is used to estimate the mesh origin.
 #: Set to None to fall back to the observe.dat / SITE_NUMBER path.
-SITELIST_FILE = WORK_DIR + "Sitelist_femtic.txt"   # set to None to disable
+SITE_DAT = WORK_DIR + "site.dat"   # set to None to disable
 
 # ---------------------------------------------------------------------------
 # Ocean / air handling (must match the inversion setup)
@@ -235,12 +224,12 @@ DISPLAY_COORDS = "model"
 # ---------------------------------------------------------------------------
 # Site overlay
 # ---------------------------------------------------------------------------
-#: Primary source: site names to overlay from SITELIST_FILE.
-#: May be a single string or a list of strings matching the "name" column of
-#: the FEMTIC sitelist.  Set to None to overlay all sites in the file.
+#: Primary source: site names to overlay from SITE_DAT.
+#: May be a single string or a list of strings matching the "name" column.
+#: Set to None to overlay all sites in the file.
 SITE_NAMES = None   # e.g. ["MT01", "MT05", "MT12"]  or None = all sites
 
-#: Fallback source (used when SITELIST_FILE is None): site number(s) to
+#: Fallback source (used when SITE_DAT is None): site number(s) to
 #: extract from observe.dat (integer, 1-based).
 #: May be a single int or a list of ints.  Set to None to skip site overlay.
 SITE_NUMBER = [5, 6, 7]
@@ -376,39 +365,6 @@ PLOT3D_ISO_OPACITY = 0.35
 PLOT3D_WINDOW_SIZE = [1600, 900]
 
 # ---------------------------------------------------------------------------
-# Ensemble slice plot
-# ---------------------------------------------------------------------------
-#: Set True to produce an ensemble figure (one row per member + stat rows).
-PLOT_ENS = False
-
-#: List of resistivity block files — one entry per ensemble member.
-#: Paths can be absolute or relative to WORK_DIR.
-#: Example: sorted(glob.glob(WORK_DIR + "ensemble/*/resistivity_block_iter10.dat"))
-ENS_FILES = [
-    # WORK_DIR + "ensemble/ubinas_rto_0/resistivity_block_iter10.dat",
-    # WORK_DIR + "ensemble/ubinas_rto_1/resistivity_block_iter10.dat",
-]
-
-#: Labels for the member rows (one string per member).
-#: None → auto-label "Member 0", "Member 1", …
-ENS_LABELS = None
-
-#: Statistical summary rows appended after the member rows.
-#: Any subset of: "mean", "std", "median".
-#: "mean"   → cell-wise mean   of log10(ρ) across all members
-#: "std"    → cell-wise std    of log10(ρ) across all members
-#: "median" → cell-wise median of log10(ρ) across all members
-ENS_STAT_ROWS = ["mean", "std"]
-
-#: Output file for the joint ensemble figure.
-#:   None → interactive show().
-PLOT_ENS_FILE = WORK_DIR + "resistivity_block_ensemble.pdf"
-
-#: If True, also save one figure per member alongside the joint figure.
-#: Per-member files are named by replacing ".pdf" with "_memberN.pdf".
-ENS_PER_MEMBER = False
-
-# ---------------------------------------------------------------------------
 # Borehole resistivity logs  (optional)
 # ---------------------------------------------------------------------------
 #: Set True to produce a 1-D log₁₀(ρ) vs depth figure from point-in-element
@@ -455,9 +411,9 @@ BOREHOLE_SHARED = True
 #: Two methods are available (selected automatically):
 #:
 #:   Bounding-box centre (femticPY-compatible, DEFAULT when
-#:   CALIBRATION_SITES is empty and SITELIST_FILE is set):
+#:   CALIBRATION_SITES is empty and SITE_DAT is set):
 #:     origin = midpoint of the bounding box of all site UTM coordinates
-#:     read from SITELIST_FILE.  No observe.dat is needed.
+#:     read from SITE_DAT.  No observe.dat is needed.
 #:
 #:   Calibration-site pairs (classic):
 #:     Each entry in CALIBRATION_SITES provides a site whose model-local
@@ -556,61 +512,6 @@ def resolve_slices(slices: list, zone: int, northern: bool) -> list:
         UTM_ORIGIN_E, UTM_ORIGIN_N,
         UTM_ORIGIN_LAT, UTM_ORIGIN_LON,
         verbose=OUT,
-    )
-
-
-# ===========================================================================
-# Helper: read one site's model-local position from observe.dat
-# ===========================================================================
-
-def read_site_position(observe_file: str, site_number: int) -> tuple[float, float]:
-    """Return (x_m, y_m) model-local position for *site_number* from observe.dat.
-
-    The file format alternates between site-header lines::
-
-        <n>  <n>  <x_km>  <y_km>
-
-    (where the first two tokens are the site number repeated) and data blocks.
-    This function scans the file linearly, identifies site-header lines by the
-    pattern ``int int float float``, and returns the (x, y) pair that matches
-    *site_number*.
-
-    Parameters
-    ----------
-    observe_file : path to observe.dat
-    site_number  : 1-based site index to find
-
-    Returns
-    -------
-    x_m, y_m : model-local coordinates in **metres** (converted from km)
-
-    Raises
-    ------
-    FileNotFoundError
-        If *observe_file* does not exist.
-    ValueError
-        If *site_number* is not found in the file.
-    """
-    if not os.path.isfile(observe_file):
-        raise FileNotFoundError(f"observe.dat not found: {observe_file}")
-
-    with open(observe_file) as fh:
-        for line in fh:
-            parts = line.split()
-            if len(parts) < 4:
-                continue
-            try:
-                n1   = int(parts[0])
-                int(parts[1])
-                x_km = float(parts[2])
-                y_km = float(parts[3])
-            except ValueError:
-                continue
-            if n1 == site_number:
-                return x_km * 1000.0, y_km * 1000.0
-
-    raise ValueError(
-        f"Site {site_number} not found in {observe_file}.  Check SITE_NUMBER."
     )
 
 
@@ -1035,386 +936,6 @@ def plot_model_slices(
 
 
 
-# ===========================================================================
-# Site-list reader
-# ===========================================================================
-
-
-def read_sitelist(path: str,
-                  site_names=None) -> list[tuple[str, float, float]]:
-    """Read site overlay positions from a FEMTIC sitelist CSV.
-
-    Delegates parsing to ``data_proc.read_sitelist``, then converts the
-    UTM easting/northing of each site to model-local metres using
-    ``fem.utm_to_model`` with the module-level mesh-centre origin
-    (``UTM_ORIGIN_E``, ``UTM_ORIGIN_N``).
-
-    Parameters
-    ----------
-    path       : path to the FEMTIC sitelist file
-    site_names : str, list of str, or None
-                 Passed through to ``data_proc.read_sitelist``.
-                 None = all sites in the file.
-
-    Returns
-    -------
-    list of (name, x_m, y_m) tuples in model-local metres
-    """
-    rows = dp.read_sitelist(path, site_names=site_names)
-    result = []
-    for row in rows:
-        x_m, y_m = fem.utm_to_model(row["easting"], row["northing"],
-                                     UTM_ORIGIN_E, UTM_ORIGIN_N)
-        result.append((row["name"], x_m, y_m))
-    return result
-
-
-# ===========================================================================
-# Mesh-centre estimation helper
-# ===========================================================================
-
-
-def read_site_dat(site_dat: str) -> list:
-    """Read geographic site coordinates from a sidecar ``site.dat`` file.
-
-    Format (whitespace-separated; lines starting with ``#`` are ignored)::
-
-        site#   lat   lon   X_km   Y_km
-
-    where *lat* / *lon* are decimal degrees (negative = S / W) and *X_km* /
-    *Y_km* are the model-local coordinates in kilometres (as in observe.dat).
-
-    Parameters
-    ----------
-    site_dat : str
-        Path to the site file.
-
-    Returns
-    -------
-    list of dict
-        Each dict has keys ``"site"`` (int), ``"crs"`` (``"latlon"``),
-        ``"coords"`` (``[lon, lat]``), ``"x_km"`` (float), ``"y_km"``
-        (float).  Compatible with ``estimate_utm_origin`` *calibration_sites*.
-
-    Raises
-    ------
-    FileNotFoundError
-        If *site_dat* does not exist.
-    ValueError
-        If any data line cannot be parsed.
-    """
-    if not os.path.isfile(site_dat):
-        raise FileNotFoundError(f"site.dat not found: {site_dat}")
-
-    sites = []
-    with open(site_dat) as fh:
-        for lineno, raw in enumerate(fh, 1):
-            line = raw.split("#")[0].strip()
-            if not line:
-                continue
-            parts = line.split()
-            if len(parts) < 5:
-                raise ValueError(
-                    f"{site_dat}:{lineno}: expected 5 columns "
-                    f"(site# lat lon X_km Y_km), got {len(parts)}: {raw.rstrip()}"
-                )
-            try:
-                site_num = int(parts[0])
-                lat      = float(parts[1])
-                lon      = float(parts[2])
-                x_km     = float(parts[3])
-                y_km     = float(parts[4])
-            except ValueError as exc:
-                raise ValueError(
-                    f"{site_dat}:{lineno}: cannot parse values: {exc}"
-                ) from exc
-            sites.append(dict(
-                site   = site_num,
-                crs    = "latlon",
-                coords = [lon, lat],
-                x_km   = x_km,
-                y_km   = y_km,
-            ))
-    return sites
-
-
-def estimate_utm_origin(calibration_sites: list,
-                        observe_file: str,
-                        zone: int,
-                        northern: bool,
-                        *,
-                        sitelist_file: str | None = None,
-                        out: bool = True) -> tuple[float, float]:
-    """Estimate UTM coordinates of the mesh centre.
-
-    Two methods are tried in order:
-
-    **Bounding-box centre** (femticPY-compatible, default when
-    *calibration_sites* is empty):
-        Reads all site UTM coordinates from *sitelist_file* (the FEMTIC
-        sitelist produced by ``mt_make_sitelist.py``) and sets the origin
-        to the midpoint of the bounding box::
-
-            origin_E = (E_min + E_max) / 2
-            origin_N = (N_min + N_max) / 2
-
-        No model-local positions or ``observe.dat`` are needed.
-
-    **Calibration-site pairs** (classic, used when *calibration_sites* is
-    non-empty):
-        Each entry provides a site whose model-local position (from
-        *observe_file* or inline ``x_km``/``y_km``) and geographic
-        position are both known.  The mesh centre satisfies::
-
-            E_site = origin_E + x_m_site
-            N_site = origin_N + y_m_site
-
-        With N ≥ 1 sites the least-squares solution is the mean of the N
-        implied origins; residuals expose gross coordinate errors.
-
-    Parameters
-    ----------
-    calibration_sites : list of dicts with keys
-                        "site"   : int   site number (matched in observe.dat)
-                        "crs"    : str   "latlon" or "utm"
-                        "coords" : list  [lon_deg, lat_deg] or [E_m, N_m]
-                        May be empty — triggers bounding-box fallback.
-    observe_file      : path to observe.dat (used for calibration-site method)
-    zone              : UTM zone number (used for lat/lon → UTM conversion)
-    northern          : hemisphere flag
-    sitelist_file     : path to FEMTIC sitelist CSV (used for bounding-box
-                        method); if None and calibration_sites is empty,
-                        raises ValueError.
-    out               : print per-site details and result when True
-
-    Returns
-    -------
-    origin_E, origin_N : estimated UTM coordinates of the mesh centre [m]
-
-    Raises
-    ------
-    ValueError  if both *calibration_sites* is empty and *sitelist_file* is
-                None or contains no sites.
-    """
-    # ------------------------------------------------------------------
-    # Bounding-box centre (femticPY-compatible default)
-    # ------------------------------------------------------------------
-    if not calibration_sites:
-        if sitelist_file is None:
-            raise ValueError(
-                "estimate_utm_origin: CALIBRATION_SITES is empty and "
-                "sitelist_file is None — cannot estimate origin."
-            )
-        rows = dp.read_sitelist(sitelist_file)
-        if not rows:
-            raise ValueError(
-                f"estimate_utm_origin: sitelist {sitelist_file!r} is empty."
-            )
-        eastings  = np.array([r["easting"]  for r in rows])
-        northings = np.array([r["northing"] for r in rows])
-        origin_E  = float((eastings.min()  + eastings.max())  / 2.0)
-        origin_N  = float((northings.min() + northings.max()) / 2.0)
-        if out:
-            center_lat, center_lon = utl.utm_to_latlon_zn(
-                origin_E, origin_N, zone, northern
-            )
-            print("Estimating mesh-centre UTM origin from sitelist bounding box:")
-            print(f"  sites          : {len(rows)}")
-            print(f"  E range        : {eastings.min():.1f} \u2013 {eastings.max():.1f} m")
-            print(f"  N range        : {northings.min():.1f} \u2013 {northings.max():.1f} m")
-            print(f"  UTM_ORIGIN_E   = {origin_E:.1f}")
-            print(f"  UTM_ORIGIN_N   = {origin_N:.1f}")
-            print(f"  UTM_ORIGIN_LAT = {center_lat:.6f}")
-            print(f"  UTM_ORIGIN_LON = {center_lon:.6f}")
-            print(f"  Copy these values into the Configuration block.")
-            print()
-        return origin_E, origin_N
-
-    offsets_E = []
-    offsets_N = []
-
-    if out:
-        print("Estimating mesh-centre UTM origin from calibration sites:")
-        print(f"  {'site':>5}  {'x_model':>10}  {'y_model':>10}  "
-              f"{'E_utm':>12}  {'N_utm':>14}  {'dE':>8}  {'dN':>8}")
-        print("  " + "-" * 77)
-
-    for entry in calibration_sites:
-        site_num = int(entry["site"])
-        crs      = str(entry["crs"])
-        coords   = list(entry["coords"])
-
-        # model-local position [m]: from site.dat entry or observe.dat
-        if "x_km" in entry and "y_km" in entry:
-            x_m = float(entry["x_km"]) * 1e3
-            y_m = float(entry["y_km"]) * 1e3
-        else:
-            x_m, y_m = read_site_position(observe_file, site_num)
-
-        # geographic → UTM [m]
-        if crs == "latlon":
-            lon_deg, lat_deg = coords
-            E_site, N_site = utl.latlon_to_utm_zn(lat_deg, lon_deg, zone, northern)
-        elif crs == "utm":
-            E_site, N_site = float(coords[0]), float(coords[1])
-        else:
-            raise ValueError(
-                f"Calibration site {site_num}: unknown crs={crs!r}. "
-                f"Use 'latlon' or 'utm'."
-            )
-
-        # implied origin from this site
-        oE = E_site - x_m
-        oN = N_site - y_m
-        offsets_E.append(oE)
-        offsets_N.append(oN)
-
-        if out:
-            print(f"  {site_num:>5}  {x_m/1000:>10.3f}  {y_m/1000:>10.3f}  "
-                  f"{E_site:>12.1f}  {N_site:>14.1f}  "
-                  f"{oE:>8.1f}  {oN:>8.1f}")
-
-    # least-squares estimate = mean of implied origins
-    origin_E = float(np.mean(offsets_E))
-    origin_N = float(np.mean(offsets_N))
-
-    if out and len(calibration_sites) > 1:
-        # per-site residuals relative to the LS mean
-        print()
-        print(f"  {'site':>5}  {'res_E (m)':>10}  {'res_N (m)':>10}")
-        print("  " + "-" * 30)
-        for entry, oE, oN in zip(calibration_sites, offsets_E, offsets_N):
-            print(f"  {int(entry['site']):>5}  "
-                  f"{oE - origin_E:>10.2f}  {oN - origin_N:>10.2f}")
-        rms_E = float(np.sqrt(np.mean((np.array(offsets_E) - origin_E) ** 2)))
-        rms_N = float(np.sqrt(np.mean((np.array(offsets_N) - origin_N) ** 2)))
-        print(f"  {'RMS':>5}  {rms_E:>10.2f}  {rms_N:>10.2f}")
-
-    print()
-    print(f"  Estimated mesh-centre UTM origin:")
-    print(f"    UTM_ORIGIN_E = {origin_E:.1f}")
-    print(f"    UTM_ORIGIN_N = {origin_N:.1f}")
-    print(f"  Copy these values into the Configuration block.")
-    print()
-
-    return origin_E, origin_N
-
-
-# ===========================================================================
-# Borehole sampling
-# ===========================================================================
-
-def _point_in_tet(p: np.ndarray, verts: np.ndarray) -> bool:
-    """Test whether point *p* lies inside the tetrahedron *verts* (4×3).
-
-    Uses barycentric coordinates: p = v0 + T·λ where T = [v1-v0, v2-v0, v3-v0].
-    Point is inside when λ₁ ≥ 0, λ₂ ≥ 0, λ₃ ≥ 0, and λ₁+λ₂+λ₃ ≤ 1.
-    A small tolerance (1 × 10⁻¹⁰) is used on each test to handle points
-    exactly on faces or edges.
-
-    Parameters
-    ----------
-    p     : (3,) query point in model-local metres
-    verts : (4, 3) node coordinates of the tetrahedron
-
-    Returns
-    -------
-    bool
-    """
-    tol = 1e-10
-    v0 = verts[0]
-    T  = (verts[1:] - v0).T          # 3×3 transformation matrix
-    try:
-        lam = np.linalg.solve(T, p - v0)
-    except np.linalg.LinAlgError:
-        return False                  # degenerate tet
-    return bool(
-        lam[0] >= -tol and lam[1] >= -tol and lam[2] >= -tol
-        and lam[0] + lam[1] + lam[2] <= 1.0 + tol
-    )
-
-
-def extract_borehole_log(
-    nodes: np.ndarray,
-    conn: np.ndarray,
-    rho_elem: np.ndarray,
-    x_m: float,
-    y_m: float,
-    z_top: float,
-    z_bot: float,
-    dz: float,
-    *,
-    out: bool = True,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Sample resistivity along a vertical borehole by point-in-element search.
-
-    For each depth level the function locates the tetrahedron that contains
-    the query point ``(x_m, y_m, z)`` and returns the element resistivity.
-    Levels that fall outside every tetrahedron (air, below the mesh, etc.)
-    are set to ``NaN``.
-
-    The search is accelerated by a bounding-box pre-filter: for each query
-    point only the tetrahedra whose axis-aligned bounding box contains
-    ``(x_m, y_m)`` *and* whose z-range brackets ``z`` are tested exactly.
-    This reduces the worst-case O(N_elem) full barycentric test per point to
-    a small subset.
-
-    Parameters
-    ----------
-    nodes    : (nn, 3) node coordinate array
-    conn     : (nelem, 4) connectivity array (0-based node indices)
-    rho_elem : (nelem,) per-element resistivity [Ω·m]
-    x_m      : borehole easting  [model-local m]
-    y_m      : borehole northing [model-local m]
-    z_top    : start depth [model-local m, z positive-down]
-    z_bot    : end   depth [model-local m, z positive-down]
-    dz       : depth sampling interval [m] (positive)
-    out      : print progress / hit statistics when True
-
-    Returns
-    -------
-    depths : (nz,) depth levels [m, z positive-down]
-    rho    : (nz,) resistivity [Ω·m]; NaN where no element found
-    """
-    depths = np.arange(z_top, z_bot + 0.5 * dz, dz)
-    rho    = np.full(len(depths), np.nan)
-
-    # Pre-compute per-element bounding boxes (x-range, y-range, z-range).
-    verts_all = nodes[conn]                      # (nelem, 4, 3)
-    xmin_e = verts_all[:, :, 0].min(axis=1)
-    xmax_e = verts_all[:, :, 0].max(axis=1)
-    ymin_e = verts_all[:, :, 1].min(axis=1)
-    ymax_e = verts_all[:, :, 1].max(axis=1)
-    zmin_e = verts_all[:, :, 2].min(axis=1)
-    zmax_e = verts_all[:, :, 2].max(axis=1)
-
-    # Lateral mask: elements whose x-y bounding box contains (x_m, y_m).
-    # Applied once; z-range checked per depth level.
-    lat_mask = (
-        (xmin_e <= x_m) & (x_m <= xmax_e) &
-        (ymin_e <= y_m) & (y_m <= ymax_e)
-    )
-    lat_idx = np.where(lat_mask)[0]
-
-    n_hit = 0
-    for i, z in enumerate(depths):
-        p = np.array([x_m, y_m, z])
-        # z-range sub-filter among laterally-matching elements
-        z_ok = (zmin_e[lat_idx] <= z) & (z <= zmax_e[lat_idx])
-        cands = lat_idx[z_ok]
-        for k in cands:
-            if _point_in_tet(p, verts_all[k]):
-                rho[i] = rho_elem[k]
-                n_hit += 1
-                break
-
-    if out:
-        n_nan = int(np.sum(~np.isfinite(rho)))
-        print(f"    borehole ({x_m:.0f}, {y_m:.0f}): "
-              f"{len(depths)} levels, {n_hit} hit, {n_nan} outside mesh")
-    return depths, rho
-
-
 def _resolve_borehole_xy(spec: dict, zone: int, northern: bool) -> tuple[float, float]:
     """Resolve borehole x/y position specs to model-local metres.
 
@@ -1513,7 +1034,7 @@ def plot_borehole_logs(
         if out:
             print(f"  borehole {name!r}  x={x_m:.0f} m  y={y_m:.0f} m "
                   f"  z=[{z_top:.0f}..{z_bot:.0f}]  dz={dz:.0f} m")
-        depths, rho = extract_borehole_log(
+        depths, rho = fem.extract_borehole_log(
             nodes, conn, rho_plot, x_m, y_m, z_top, z_bot, dz, out=out
         )
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -1585,16 +1106,16 @@ print()
 if ESTIMATE_ORIGIN:
     _cal_sites = list(CALIBRATION_SITES)
     if SITE_DAT is not None and os.path.isfile(SITE_DAT):
-        _sdat = read_site_dat(SITE_DAT)
+        _sdat = fem.read_site_dat(SITE_DAT)
         # merge: site.dat entries take priority; CALIBRATION_SITES fills gaps
-        _sdat_ids = {d["site"] for d in _sdat}
-        _extra    = [d for d in _cal_sites if d["site"] not in _sdat_ids]
+        _sdat_ids = {d["sitenum"] for d in _sdat}
+        _extra    = [d for d in _cal_sites if d.get("site") not in _sdat_ids]
         _cal_sites = _sdat + _extra
         if OUT:
             print(f"  site.dat: loaded {len(_sdat)} site(s) from {SITE_DAT}")
-    UTM_ORIGIN_E, UTM_ORIGIN_N = estimate_utm_origin(
+    UTM_ORIGIN_E, UTM_ORIGIN_N = fem.estimate_utm_origin(
         _cal_sites, OBSERVE_FILE, UTM_ZONE, UTM_NORTHERN,
-        sitelist_file=SITELIST_FILE, out=OUT
+        site_dat=SITE_DAT, out=OUT
     )
     if UPDATE_CONFIG:
         UTM_ORIGIN_LAT, UTM_ORIGIN_LON = utl.utm_to_latlon_zn(
@@ -1614,25 +1135,28 @@ if OUT:
     print()
 
 # --- (3) Optionally read site position(s) ----------------------------
-# Primary: FEMTIC sitelist (SITELIST_FILE).  Fallback: observe.dat.
+# Primary: SITE_DAT (mt_make_sitelist.py format).  Fallback: observe.dat.
 site_xys = []   # list of (label, x_m, y_m)
-if SITELIST_FILE is not None:
-    print(f"Reading site position(s) from sitelist: {SITELIST_FILE}")
-    site_xys = read_sitelist(SITELIST_FILE, site_names=SITE_NAMES)
-    for _name, sx_m, sy_m in site_xys:
-        print(f"  {_name}: model-local x = {sx_m/1000:.3f} km,  y = {sy_m/1000:.3f} km")
+if SITE_DAT is not None:
+    print(f"Reading site position(s) from site.dat: {SITE_DAT}")
+    _rows = fem.read_site_dat(SITE_DAT, site_names=SITE_NAMES)
+    for row in _rows:
+        sx_m, sy_m = fem.utm_to_model(row["easting"], row["northing"],
+                                       UTM_ORIGIN_E, UTM_ORIGIN_N)
+        site_xys.append((row["name"], sx_m, sy_m))
+        print(f"  {row['name']}: model-local x = {sx_m/1000:.3f} km,  y = {sy_m/1000:.3f} km")
         if DISPLAY_COORDS == "utm":
             print(f"           UTM         E = {sx_m + UTM_ORIGIN_E:.1f} m,  "
                   f"N = {sy_m + UTM_ORIGIN_N:.1f} m")
     if not site_xys:
-        print("  (no matching sites found in sitelist)")
+        print("  (no matching sites found in site.dat)")
     print()
 elif SITE_NUMBER is not None:
     _site_nums = (SITE_NUMBER if isinstance(SITE_NUMBER, (list, tuple))
                   else [SITE_NUMBER])
     print(f"Reading site position(s) from: {OBSERVE_FILE}")
     for _sn in _site_nums:
-        sx_m, sy_m = read_site_position(OBSERVE_FILE, _sn)
+        sx_m, sy_m = fem.read_site_position(OBSERVE_FILE, _sn)
         site_xys.append((_sn, sx_m, sy_m))
         print(f"  site {_sn}: model-local x = {sx_m/1000:.3f} km,  y = {sy_m/1000:.3f} km")
         if DISPLAY_COORDS == "utm":
@@ -1693,36 +1217,7 @@ if PLOT3D:
         )
         print("3-D plot done.")
 
-# --- (6) Ensemble slice plot -----------------------------------------------
-if PLOT_ENS:
-    if fviz is None:
-        print("  Ensemble plot skipped: femtic_viz not available.")
-    elif not ENS_FILES:
-        print("  Ensemble plot skipped: ENS_FILES is empty.")
-    else:
-        print(f"Plotting ensemble: {len(ENS_FILES)} member(s) …")
-        fviz.plot_ensemble_slices(
-            member_files   = ENS_FILES,
-            mesh_file      = MESH_FILE,
-            slices         = slices_resolved,
-            labels         = ENS_LABELS,
-            stat_rows      = ENS_STAT_ROWS,
-            cmap           = PLOT_CMAP,
-            clim           = PLOT_CLIM,
-            xlim           = PLOT_XLIM,
-            ylim           = PLOT_YLIM,
-            zlim           = PLOT_ZLIM,
-            ocean_color    = PLOT_OCEAN_COLOR,
-            ocean_value    = OCEAN_RHO,
-            air_bgcolor    = PLOT_AIR_BGCOLOR,
-            plot_file      = PLOT_ENS_FILE,
-            per_member_file = ENS_PER_MEMBER,
-            dpi            = PLOT_DPI,
-            out            = OUT,
-        )
-        print("Ensemble plot done.")
-
-# --- (7) Borehole resistivity logs ----------------------------------------
+# --- (6) Borehole resistivity logs ----------------------------------------
 if PLOT_BOREHOLE:
     if fviz is None:
         print("  Borehole plot skipped: femtic_viz not available.")

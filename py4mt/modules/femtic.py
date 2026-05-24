@@ -62,6 +62,9 @@ Modified: 2026-05-23 by Claude Sonnet 4.6 (Anthropic) — added model-local
     coordinate helpers: utm_to_model(), latlon_to_model(), parse_pos_crs(),
     resolve_pos_x(), resolve_pos_y(), resolve_pos_point(),
     resolve_slice_positions(); delegates geographic conversions to util.py.
+Modified: 2026-05-24 by Claude Sonnet 4.6 (Anthropic) — added Section 6b:
+    read_site_position(), read_site_dat(), estimate_utm_origin(),
+    _point_in_tet(), extract_borehole_log(); moved from femtic_mod_plot.py.
 """
 from __future__ import annotations
 
@@ -4765,6 +4768,427 @@ def resolve_slice_positions(slices: list,
 
         resolved.append(s)
     return resolved
+
+
+
+# ============================================================================
+# SECTION 6b: Site-list, observe.dat, and mesh-centre helpers
+# ============================================================================
+
+
+def read_site_position(observe_file: str, site_number: int) -> tuple[float, float]:
+    """Return (x_m, y_m) model-local position for *site_number* from observe.dat.
+
+    The file format alternates between site-header lines::
+
+        <n>  <n>  <x_km>  <y_km>
+
+    (where the first two tokens are the site number repeated) and data blocks.
+    This function scans the file linearly, identifies site-header lines by the
+    pattern ``int int float float``, and returns the (x, y) pair that matches
+    *site_number*.
+
+    Parameters
+    ----------
+    observe_file : str
+        Path to observe.dat.
+    site_number : int
+        1-based site index to find.
+
+    Returns
+    -------
+    x_m, y_m : float
+        Model-local coordinates in metres (converted from km).
+
+    Raises
+    ------
+    FileNotFoundError
+        If *observe_file* does not exist.
+    ValueError
+        If *site_number* is not found in the file.
+    """
+    if not os.path.isfile(observe_file):
+        raise FileNotFoundError(f"observe.dat not found: {observe_file}")
+
+    with open(observe_file) as fh:
+        for line in fh:
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            try:
+                n1   = int(parts[0])
+                int(parts[1])
+                x_km = float(parts[2])
+                y_km = float(parts[3])
+            except ValueError:
+                continue
+            if n1 == site_number:
+                return x_km * 1000.0, y_km * 1000.0
+
+    raise ValueError(
+        f"Site {site_number} not found in {observe_file}.  Check SITE_NUMBER."
+    )
+
+
+def read_site_dat(path: str,
+                  site_names=None) -> list:
+    """Read site positions from a FEMTIC sitelist CSV (mt_make_sitelist.py).
+
+    Format (comma-separated, no header; lines starting with ``#`` ignored)::
+
+        name, lat, lon, elev, sitenum, easting, northing
+
+    where *easting* / *northing* are UTM metres and *lat* / *lon* are
+    decimal degrees.
+
+    Parameters
+    ----------
+    path : str
+        Path to the sitelist CSV file.
+    site_names : str, list of str, or None
+        If given, only rows whose ``name`` field matches are returned.
+        None = all rows.
+
+    Returns
+    -------
+    list of dict
+        Each dict has keys ``"name"`` (str), ``"lat"`` (float),
+        ``"lon"`` (float), ``"elev"`` (float), ``"sitenum"`` (int),
+        ``"easting"`` (float), ``"northing"`` (float).
+
+    Raises
+    ------
+    FileNotFoundError
+        If *path* does not exist.
+    ValueError
+        If any data line cannot be parsed.
+    """
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"site.dat not found: {path}")
+
+    if site_names is not None:
+        if isinstance(site_names, str):
+            site_names = [site_names]
+        site_names = set(site_names)
+
+    sites = []
+    with open(path) as fh:
+        for lineno, raw in enumerate(fh, 1):
+            line = raw.split("#")[0].strip()
+            if not line:
+                continue
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) < 7:
+                raise ValueError(
+                    f"{path}:{lineno}: expected 7 columns "
+                    f"(name,lat,lon,elev,sitenum,easting,northing), "
+                    f"got {len(parts)}: {raw.rstrip()}"
+                )
+            try:
+                name     = parts[0]
+                lat      = float(parts[1])
+                lon      = float(parts[2])
+                elev     = float(parts[3])
+                sitenum  = int(parts[4])
+                easting  = float(parts[5])
+                northing = float(parts[6])
+            except ValueError as exc:
+                raise ValueError(
+                    f"{path}:{lineno}: cannot parse values: {exc}"
+                ) from exc
+            if site_names is not None and name not in site_names:
+                continue
+            sites.append(dict(
+                name=name, lat=lat, lon=lon, elev=elev,
+                sitenum=sitenum, easting=easting, northing=northing,
+            ))
+    return sites
+
+
+def estimate_utm_origin(calibration_sites: list,
+                        observe_file: str,
+                        zone: int,
+                        northern: bool,
+                        *,
+                        site_dat: str | None = None,
+                        out: bool = True) -> tuple[float, float]:
+    """Estimate UTM coordinates of the FEMTIC mesh centre.
+
+    Two methods are available, selected automatically:
+
+    **Bounding-box centre** (femticPY-compatible, default when
+    *calibration_sites* is empty):
+        Reads all site UTM coordinates from *site_dat* (the sitelist
+        produced by ``mt_make_sitelist.py``) and sets the origin to the
+        midpoint of the bounding box::
+
+            origin_E = (E_min + E_max) / 2
+            origin_N = (N_min + N_max) / 2
+
+        No model-local positions or ``observe.dat`` are needed.
+
+    **Calibration-site pairs** (classic, used when *calibration_sites* is
+    non-empty):
+        Each entry provides a site whose model-local position (from
+        *observe_file* or inline ``x_km``/``y_km``) and geographic position
+        are both known.  The mesh centre satisfies::
+
+            E_site = origin_E + x_m_site
+            N_site = origin_N + y_m_site
+
+        With N ≥ 1 sites the least-squares solution is the mean of the N
+        implied origins; residuals expose gross coordinate errors.
+
+    Parameters
+    ----------
+    calibration_sites : list of dict
+        Each dict has keys ``"site"`` (int), ``"crs"`` (``"latlon"`` or
+        ``"utm"``), ``"coords"`` ([lon, lat] or [E_m, N_m]).  May be empty
+        — triggers bounding-box fallback.
+    observe_file : str
+        Path to observe.dat (used for calibration-site method).
+    zone : int
+        UTM zone number (used for lat/lon → UTM conversion).
+    northern : bool
+        Hemisphere flag.
+    site_dat : str or None
+        Path to FEMTIC sitelist CSV (mt_make_sitelist.py format; used for
+        bounding-box method).  If None and *calibration_sites* is empty,
+        raises ValueError.
+    out : bool
+        Print per-site details and result when True.
+
+    Returns
+    -------
+    origin_E, origin_N : float
+        Estimated UTM coordinates of the mesh centre [m].
+
+    Raises
+    ------
+    ValueError
+        If both *calibration_sites* is empty and *site_dat* is None or
+        the file contains no sites.
+    """
+    utl = _utl()
+
+    # ------------------------------------------------------------------
+    # Bounding-box centre (femticPY-compatible default)
+    # ------------------------------------------------------------------
+    if not calibration_sites:
+        if site_dat is None:
+            raise ValueError(
+                "estimate_utm_origin: CALIBRATION_SITES is empty and "
+                "site_dat is None — cannot estimate origin."
+            )
+        rows = read_site_dat(site_dat)
+        if not rows:
+            raise ValueError(
+                f"estimate_utm_origin: site_dat {site_dat!r} is empty."
+            )
+        eastings  = np.array([r["easting"]  for r in rows])
+        northings = np.array([r["northing"] for r in rows])
+        origin_E  = float((eastings.min()  + eastings.max())  / 2.0)
+        origin_N  = float((northings.min() + northings.max()) / 2.0)
+        if out:
+            center_lat, center_lon = utl.utm_to_latlon_zn(
+                origin_E, origin_N, zone, northern
+            )
+            print("Estimating mesh-centre UTM origin from sitelist bounding box:")
+            print(f"  sites          : {len(rows)}")
+            print(f"  E range        : {eastings.min():.1f} \u2013 {eastings.max():.1f} m")
+            print(f"  N range        : {northings.min():.1f} \u2013 {northings.max():.1f} m")
+            print(f"  UTM_ORIGIN_E   = {origin_E:.1f}")
+            print(f"  UTM_ORIGIN_N   = {origin_N:.1f}")
+            print(f"  UTM_ORIGIN_LAT = {center_lat:.6f}")
+            print(f"  UTM_ORIGIN_LON = {center_lon:.6f}")
+            print(f"  Copy these values into the Configuration block.")
+            print()
+        return origin_E, origin_N
+
+    # ------------------------------------------------------------------
+    # Calibration-site pairs
+    # ------------------------------------------------------------------
+    offsets_E = []
+    offsets_N = []
+
+    if out:
+        print("Estimating mesh-centre UTM origin from calibration sites:")
+        print(f"  {'site':>5}  {'x_model':>10}  {'y_model':>10}  "
+              f"{'E_utm':>12}  {'N_utm':>14}  {'dE':>8}  {'dN':>8}")
+        print("  " + "-" * 77)
+
+    for entry in calibration_sites:
+        site_num = int(entry["site"])
+        crs      = str(entry["crs"])
+        coords   = list(entry["coords"])
+
+        if "x_km" in entry and "y_km" in entry:
+            x_m = float(entry["x_km"]) * 1e3
+            y_m = float(entry["y_km"]) * 1e3
+        else:
+            x_m, y_m = read_site_position(observe_file, site_num)
+
+        if crs == "latlon":
+            lon_deg, lat_deg = coords
+            E_site, N_site = utl.latlon_to_utm_zn(lat_deg, lon_deg, zone, northern)
+        elif crs == "utm":
+            E_site, N_site = float(coords[0]), float(coords[1])
+        else:
+            raise ValueError(
+                f"Calibration site {site_num}: unknown crs={crs!r}. "
+                f"Use 'latlon' or 'utm'."
+            )
+
+        oE = E_site - x_m
+        oN = N_site - y_m
+        offsets_E.append(oE)
+        offsets_N.append(oN)
+
+        if out:
+            print(f"  {site_num:>5}  {x_m/1000:>10.3f}  {y_m/1000:>10.3f}  "
+                  f"{E_site:>12.1f}  {N_site:>14.1f}  "
+                  f"{oE:>8.1f}  {oN:>8.1f}")
+
+    origin_E = float(np.mean(offsets_E))
+    origin_N = float(np.mean(offsets_N))
+
+    if out and len(calibration_sites) > 1:
+        print()
+        print(f"  {'site':>5}  {'res_E (m)':>10}  {'res_N (m)':>10}")
+        print("  " + "-" * 30)
+        for entry, oE, oN in zip(calibration_sites, offsets_E, offsets_N):
+            print(f"  {int(entry['site']):>5}  "
+                  f"{oE - origin_E:>10.2f}  {oN - origin_N:>10.2f}")
+        rms_E = float(np.sqrt(np.mean((np.array(offsets_E) - origin_E) ** 2)))
+        rms_N = float(np.sqrt(np.mean((np.array(offsets_N) - origin_N) ** 2)))
+        print(f"  {'RMS':>5}  {rms_E:>10.2f}  {rms_N:>10.2f}")
+
+    print()
+    print(f"  Estimated mesh-centre UTM origin:")
+    print(f"    UTM_ORIGIN_E = {origin_E:.1f}")
+    print(f"    UTM_ORIGIN_N = {origin_N:.1f}")
+    print(f"  Copy these values into the Configuration block.")
+    print()
+
+    return origin_E, origin_N
+
+
+def _point_in_tet(p: np.ndarray, verts: np.ndarray) -> bool:
+    """Test whether point *p* lies inside the tetrahedron *verts* (4×3).
+
+    Uses barycentric coordinates: p = v0 + T·λ where T = [v1-v0, v2-v0, v3-v0].
+    Point is inside when λ₁ ≥ 0, λ₂ ≥ 0, λ₃ ≥ 0, and λ₁+λ₂+λ₃ ≤ 1.
+    A small tolerance (1 × 10⁻¹⁰) is used on each test to handle points
+    exactly on faces or edges.
+
+    Parameters
+    ----------
+    p : np.ndarray, shape (3,)
+        Query point in model-local metres.
+    verts : np.ndarray, shape (4, 3)
+        Node coordinates of the tetrahedron.
+
+    Returns
+    -------
+    bool
+    """
+    tol = 1e-10
+    v0 = verts[0]
+    T  = (verts[1:] - v0).T
+    try:
+        lam = np.linalg.solve(T, p - v0)
+    except np.linalg.LinAlgError:
+        return False
+    return bool(
+        lam[0] >= -tol and lam[1] >= -tol and lam[2] >= -tol
+        and lam[0] + lam[1] + lam[2] <= 1.0 + tol
+    )
+
+
+def extract_borehole_log(
+    nodes: np.ndarray,
+    conn: np.ndarray,
+    rho_elem: np.ndarray,
+    x_m: float,
+    y_m: float,
+    z_top: float,
+    z_bot: float,
+    dz: float,
+    *,
+    out: bool = True,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Sample resistivity along a vertical borehole by point-in-element search.
+
+    For each depth level the function locates the tetrahedron that contains
+    the query point ``(x_m, y_m, z)`` and returns the element resistivity.
+    Levels that fall outside every tetrahedron (air, below the mesh, etc.)
+    are set to ``NaN``.
+
+    The search is accelerated by a bounding-box pre-filter: for each query
+    point only the tetrahedra whose axis-aligned bounding box contains
+    ``(x_m, y_m)`` *and* whose z-range brackets ``z`` are tested exactly.
+
+    Parameters
+    ----------
+    nodes : np.ndarray, shape (nn, 3)
+        Node coordinate array.
+    conn : np.ndarray, shape (nelem, 4)
+        Connectivity array (0-based node indices).
+    rho_elem : np.ndarray, shape (nelem,)
+        Per-element resistivity [Ω·m].
+    x_m : float
+        Borehole easting [model-local m].
+    y_m : float
+        Borehole northing [model-local m].
+    z_top : float
+        Start depth [model-local m, z positive-down].
+    z_bot : float
+        End depth [model-local m, z positive-down].
+    dz : float
+        Depth sampling interval [m] (positive).
+    out : bool
+        Print progress / hit statistics when True.
+
+    Returns
+    -------
+    depths : np.ndarray, shape (nz,)
+        Depth levels [m, z positive-down].
+    rho : np.ndarray, shape (nz,)
+        Resistivity [Ω·m]; NaN where no element found.
+    """
+    depths = np.arange(z_top, z_bot + 0.5 * dz, dz)
+    rho    = np.full(len(depths), np.nan)
+
+    verts_all = nodes[conn]
+    xmin_e = verts_all[:, :, 0].min(axis=1)
+    xmax_e = verts_all[:, :, 0].max(axis=1)
+    ymin_e = verts_all[:, :, 1].min(axis=1)
+    ymax_e = verts_all[:, :, 1].max(axis=1)
+    zmin_e = verts_all[:, :, 2].min(axis=1)
+    zmax_e = verts_all[:, :, 2].max(axis=1)
+
+    lat_mask = (
+        (xmin_e <= x_m) & (x_m <= xmax_e) &
+        (ymin_e <= y_m) & (y_m <= ymax_e)
+    )
+    lat_idx = np.where(lat_mask)[0]
+
+    n_hit = 0
+    for i, z in enumerate(depths):
+        p = np.array([x_m, y_m, z])
+        z_ok  = (zmin_e[lat_idx] <= z) & (z <= zmax_e[lat_idx])
+        cands = lat_idx[z_ok]
+        for k in cands:
+            if _point_in_tet(p, verts_all[k]):
+                rho[i] = rho_elem[k]
+                n_hit += 1
+                break
+
+    if out:
+        n_nan = int(np.sum(~np.isfinite(rho)))
+        print(f"    borehole ({x_m:.0f}, {y_m:.0f}): "
+              f"{len(depths)} levels, {n_hit} hit, {n_nan} outside mesh")
+    return depths, rho
 
 
 # ============================================================================
