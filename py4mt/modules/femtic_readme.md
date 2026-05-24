@@ -33,6 +33,13 @@ and all sampling helpers live exclusively in `ensembles.py`.
 - **Mesh I/O** — parse FEMTIC `mesh.dat` tetrahedral meshes.
 - **NPZ ↔ VTK / VTU** — convert NPZ model files for ParaView / PyVista.
 - **NPZ ↔ NetCDF / HDF5** — CF-compliant and HDF5 export/import.
+- **Model-local coordinate helpers** — UTM ↔ model-local conversions,
+  CRS-tagged position resolution for slice specifications.
+- **Site-list and mesh-centre helpers** — read `mt_make_sitelist.py` CSV and
+  `observe.dat` site positions; estimate the mesh-centre UTM origin from
+  calibration sites or a bounding-box midpoint.
+- **Borehole sampling** — point-in-tetrahedron search for 1-D ρ(z) extraction
+  along vertical boreholes (`_point_in_tet`, `extract_borehole_log`).
 - **CLI interface** — subcommand-style command-line usage for batch conversion.
 
 ---
@@ -171,6 +178,10 @@ python femtic.py edi-to-observe SITE01.edi SITE02.edi \
 | `insert_model()`      | Write sampled log₁₀ρ into a resistivity block file.     |
 | `read_distortion_file()` | Read FEMTIC galvanic distortion file.                |
 | `read_resistivity_block()` | Parse resistivity block file → dict of arrays.     |
+| `read_site_position()` | Return (x_m, y_m) model-local position for a site from observe.dat. |
+| `read_site_dat()`     | Parse a `mt_make_sitelist.py` CSV (name, lat, lon, elev, sitenum, easting, northing). |
+| `estimate_utm_origin()` | Estimate mesh-centre UTM coordinates from calibration sites or bounding-box midpoint. |
+| `extract_borehole_log()` | Sample ρ along a vertical borehole by point-in-element search. |
 
 ---
 
@@ -246,6 +257,83 @@ SITE03,5000.0,6000.0
 
 ---
 
+## Site-list, observe.dat, and mesh-centre helpers
+
+These functions (Section 6b) were moved from `femtic_mod_plot.py` to make
+them reusable across scripts without copying code.
+
+### `read_site_position(observe_file, site_number)`
+
+Scans `observe.dat` for a site-header line matching *site_number* and returns
+`(x_m, y_m)` in model-local metres (converted from the km stored in the file).
+
+### `read_site_dat(path, site_names=None)`
+
+Parses the comma-separated sitelist produced by `mt_make_sitelist.py`
+(`WHAT_FOR="femtic"`).  Column order (no header, `#` = comment):
+
+```
+name, lat, lon, elev, sitenum, easting, northing
+```
+
+Returns a list of dicts with keys `name`, `lat`, `lon`, `elev`, `sitenum`,
+`easting`, `northing`.  Pass `site_names` (str or list of str) to filter by
+name; `None` = return all rows.
+
+### `estimate_utm_origin(calibration_sites, observe_file, zone, northern, *, site_dat=None, out=True)`
+
+Two methods, selected automatically:
+
+**Bounding-box centre** (default when `calibration_sites` is empty): reads
+all UTM coordinates from `site_dat` and returns the midpoint of the bounding
+box — identical to the femticPY convention.  No `observe.dat` required.
+
+**Calibration-site pairs** (when `calibration_sites` is non-empty): each
+entry supplies a site number, its CRS (`"latlon"` or `"utm"`), and its
+geographic coordinates.  Model-local positions are read from `observe.dat`
+(or from inline `x_km`/`y_km` keys).  Returns the least-squares mean of the
+implied origins; per-site residuals are printed when `out=True`.
+
+```python
+import femtic as fem
+
+# Bounding-box from sitelist
+origin_E, origin_N = fem.estimate_utm_origin(
+    [], "observe.dat", zone=19, northern=False,
+    site_dat="site.dat",
+)
+
+# Calibration-site pairs
+origin_E, origin_N = fem.estimate_utm_origin(
+    [
+        dict(site=1,  crs="latlon", coords=[-71.500, -16.380]),
+        dict(site=10, crs="utm",    coords=[224500., 8179300.]),
+    ],
+    "observe.dat", zone=19, northern=False,
+)
+```
+
+### `_point_in_tet(p, verts)` / `extract_borehole_log(...)`
+
+`_point_in_tet` tests point containment in a tetrahedron via barycentric
+coordinates (tolerance 10⁻¹⁰ on each test).
+
+`extract_borehole_log` samples element resistivity along a vertical borehole:
+
+```python
+depths, rho = fem.extract_borehole_log(
+    nodes, conn, rho_elem,
+    x_m=0.0, y_m=0.0,
+    z_top=0.0, z_bot=20000.0, dz=200.0,
+)
+```
+
+A lateral bounding-box pre-filter reduces the per-depth element test to a
+small candidate set; exact barycentric containment is checked only for those
+candidates.  Levels outside the mesh are returned as NaN.
+
+---
+
 ## z-convention (z positive downward)
 
 FEMTIC uses a right-handed coordinate system with **z increasing downward** (depth),
@@ -291,6 +379,8 @@ Optional for visualisation and export:
 |-----------------------|----------------------------------------------------------------------|
 | **`ensembles.py`**    | Roughness/precision tools, sampling, ensemble generation, EOF / PCE. |
 | `femtic_viz.py`       | Matplotlib and PyVista visualisation.                                |
+| `femtic_mod_plot.py`  | Read and plot slice panels of a FEMTIC model; calls `fem.*` helpers. |
+| `snippets.py`         | Optional code blocks for `femtic_mod_plot.py` (e.g. ensemble plot).  |
 | `util.py`             | General-purpose helpers.                                             |
 | `femtic_rto_rough.py` | Extract roughness matrix from FEMTIC.                               |
 | `femtic_rto_prior.py` | Build prior covariance proxy.                                       |
@@ -300,7 +390,18 @@ Optional for visualisation and export:
 
 ## Version / provenance
 
-Updated: 2026-04-13
+Updated: 2026-05-24
+
+### Changelog (2026-05-24)
+- Added Section 6b: site-list, observe.dat, and mesh-centre helpers moved
+  from `femtic_mod_plot.py`: `read_site_position()`, `read_site_dat()`,
+  `estimate_utm_origin()`, `_point_in_tet()`, `extract_borehole_log()`.
+- `read_site_dat()` parses the `mt_make_sitelist.py` CSV format
+  (name, lat, lon, elev, sitenum, easting, northing); replaces the old
+  whitespace-format `site.dat` reader.
+- `estimate_utm_origin()` kwarg renamed `sitelist_file` → `site_dat`;
+  bounding-box path now calls `read_site_dat()` directly.
+- Updated: Overview, Key data-handling functions table, Related modules table.
 
 ### Changelog (2026-04-13)
 - z-convention documented and enforced consistently across all observe.dat

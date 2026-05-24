@@ -47,9 +47,6 @@ figure file / interactive window
         |                                    [optional, PLOT3D = True]
         v  fviz.plot_model_3d(...)           [PyVista — requires pyvista]
 interactive HTML / static screenshot
-        |                                    [optional, PLOT_ENS = True]
-        v  plot_ensemble_slices(...)         [n_members × n_slices figure]
-ensemble PDF / per-member PDFs
         |                                    [optional, PLOT_BOREHOLE = True]
         v  plot_borehole_logs(...)           [1-D ρ(z) traces — point-in-element]
 borehole PDF / interactive window
@@ -408,43 +405,44 @@ slices, making conductor/resistor boundaries directly visible in 3-D.
 
 ---
 
-## Ensemble slice plot (`PLOT_ENS`)
+## snippets.py — optional code blocks
 
-When `PLOT_ENS = True` the script produces a joint multi-row figure in which
-each row shows one ensemble member across the same slice columns defined by
-`PLOT_SLICES`.  Optional statistical summary rows (mean, std, median of
-log₁₀(ρ) across all members) are appended below the member rows.
+`snippets.py` holds self-contained steps that were previously embedded in
+`femtic_mod_plot.py` but are not needed in every run.  To use a snippet,
+copy its configuration block and step block into `femtic_mod_plot.py` at
+the appropriate position (after step (5) 3-D plot, before step (6) borehole
+logs) and renumber subsequent steps.
 
-The mesh is parsed **once**; slice polygon geometry is precomputed **once**
-per slice position; only the per-element resistivity vector is swapped for
-each member.  This makes the function efficient even for large meshes.
+### Snippet 1 — Ensemble slice plot
 
-All `PLOT_*` parameters (colormap, colour limits, axis limits, ocean colour,
-etc.) are reused identically — no separate ensemble-specific colour config
-is needed.
+Produces a multi-row Matplotlib figure — one row per ensemble member —
+reusing the slice geometry and `PLOT_*` parameters already set up by the
+main script.  The mesh is parsed **once**; only the per-element resistivity
+vector is swapped per member.  Optional statistical summary rows (mean, std,
+median of log₁₀(ρ)) are appended below the member rows.
 
-### Configuration parameters
+#### Configuration variables
 
 | Variable | Default | Description |
 |---|---|---|
 | `PLOT_ENS` | `False` | Enable / disable the ensemble step |
 | `ENS_FILES` | `[]` | List of resistivity block paths, one per member |
 | `ENS_LABELS` | `None` | Row label strings; `None` → "Member 0", "Member 1", … |
-| `ENS_STAT_ROWS` | `["mean", "std"]` | Stat rows appended after member rows: any subset of `"mean"`, `"std"`, `"median"` |
+| `ENS_STAT_ROWS` | `["mean", "std"]` | Stat rows after member rows: any subset of `"mean"`, `"std"`, `"median"` |
 | `PLOT_ENS_FILE` | `*_ensemble.pdf` | Joint figure path; `None` → interactive show |
-| `ENS_PER_MEMBER` | `False` | Also save one figure per member (named `*_memberN.pdf`) |
+| `ENS_PER_MEMBER` | `False` | Also save one figure per member (`*_memberN.pdf`) |
 
-### Statistical summary rows
+Statistical summary rows:
 
 | `ENS_STAT_ROWS` entry | What is shown |
 |---|---|
-| `"mean"` | Cell-wise arithmetic mean of log₁₀(ρ) across all members; same colormap / clim as member rows |
-| `"std"` | Cell-wise standard deviation of log₁₀(ρ); rendered on a separate sequential colormap (`cividis`) with its own colour scale |
+| `"mean"` | Cell-wise mean of log₁₀(ρ); same colormap / clim as member rows |
+| `"std"` | Cell-wise std of log₁₀(ρ); separate sequential colormap (`cividis`) |
 | `"median"` | Cell-wise median of log₁₀(ρ); same colormap / clim as member rows |
 
 NaN elements (air, missing) are excluded from all statistics.
 
-### Populating `ENS_FILES`
+#### Populating `ENS_FILES`
 
 ```python
 import glob, os
@@ -454,7 +452,7 @@ ENS_FILES = sorted(glob.glob(
 ENS_LABELS = [os.path.basename(os.path.dirname(f)) for f in ENS_FILES]
 ```
 
-### Per-member output
+#### Per-member output
 
 When `ENS_PER_MEMBER = True` and `PLOT_ENS_FILE` is set, one additional
 single-row figure is saved per member alongside the joint figure:
@@ -507,7 +505,7 @@ Environment variables `PY4MTX_ROOT` and `PY4MTX_DATA` must be set.
 
 When `PLOT_BOREHOLE = True` the script samples the resistivity model along
 one or more vertical boreholes and produces a 1-D log₁₀(ρ) vs depth figure
-(step 7, after the ensemble plot).
+(step 6).
 
 ### Method — point-in-element
 
@@ -593,3 +591,5 @@ BOREHOLE_SITES = [
 | 2026-05-13 | vrath / Claude Sonnet 4.6 | Added `PLOT_ENS` step (6): `plot_ensemble_slices` with `ENS_*` config block; mesh and geometry parsed once; per-member rows + optional mean/std/median stat rows; per-member file output |
 | 2026-05-16 | vrath / Claude Sonnet 4.6 | Added `PLOT_BOREHOLE` step (7): `_point_in_tet` (barycentric), `extract_borehole_log` (bbox pre-filter + exact test), `plot_borehole_logs`; `BOREHOLE_*` config block; CRS tagging on x/y positions |
 | 2026-05-23 | vrath / Claude Sonnet 4.6 | Moved pure geographic helpers to `util.py`; model-local helpers to `femtic.py`; script wrappers delegate to both. `SITE_NUMBER` accepts list; `plot_model_slices` loops over all sites (`site_xys`). Added `SITELIST_FILE` / `SITE_NAMES`; `read_sitelist` wraps `data_proc.read_sitelist`. Added `import data_proc as dp`. |
+| 2026-05-24 | vrath / Claude Sonnet 4.6 | `SITELIST_FILE` removed; `SITE_DAT` is now the single site file variable, using the `mt_make_sitelist.py` CSV format (`name, lat, lon, elev, sitenum, easting, northing`). `read_site_dat()` rewritten for new format; `read_sitelist()` removed. `estimate_utm_origin` kwarg renamed `site_dat`; bounding-box path wired to `read_site_dat()`. |
+| 2026-05-24 | vrath / Claude Sonnet 4.6 | Removed `ENS_*` config block and step (6) ensemble plot from `femtic_mod_plot.py`; moved to `snippets.py`. Step (7) borehole log renumbered to step (6). |
