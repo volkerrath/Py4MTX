@@ -15,6 +15,10 @@ This module consolidates two earlier files into a single coherent package:
 - Matrix square-roots for SPD matrices (dense and sparse)
 - Randomised SVD utilities (Halko et al., 2011)
 - Simple spline fitting and bootstrap confidence bands
+- L-curve corner estimation (``calc_lc_corner``, ``curvature``, ``circumradius``, ``circumcenter``)
+- Kullback-Leibler divergence (``KLD``)
+- N-D discrete cosine transform wrappers (``dctn``, ``idctn``) and fractional derivatives (``fractrans``)
+- Residual norms (``calc_resnorm``, ``calc_rms``)
 
 **Part B — Deterministic 1-D MT inversion:**
 
@@ -58,6 +62,13 @@ Original numerical utilities created with GPT-5 Thinking on 2025-12-21 (UTC).
 
 Changelog
 ---------
+2026-05-25  Migrated from util.py by Claude Sonnet 4.6 (Anthropic):
+    Moved KL divergence, L-curve corner estimation, N-D DCT wrappers,
+    fractional derivatives, and residual-norm helpers here from util.py,
+    where they were misplaced among general-purpose utilities.
+    Added scipy.fftpack import (dct, idct) required by dctn/idctn.
+    Deprecation shims left in util.py for backwards compatibility.
+
 2026-03-02  Cleanup and merge by Claude (Anthropic, Opus 4.6):
     Numerical utilities (formerly standalone inverse.py):
     - Fixed calc_covar_simple "naive" method: loop body was accumulating the
@@ -109,6 +120,7 @@ import numpy as np
 import scipy.linalg as la
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
+from scipy.fftpack import dct, idct
 from scipy.interpolate import make_smoothing_spline
 
 import aniso
@@ -1641,3 +1653,299 @@ def save_inversion_npz(res: Dict, path: str) -> None:
     _put("", res)
 
     np.savez(p.as_posix(), **flat)
+
+
+# =============================================================================
+# Part C — Routines migrated from util.py (2026-05-25)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# C1. Kullback-Leibler divergence
+# -----------------------------------------------------------------------------
+
+def KLD(P=np.array([]), Q=np.array([]), epsilon=1.e-8):
+    '''
+    Calculates Kullback-Leibler distance.
+
+    Parameters
+    ----------
+    P, Q : np.array
+        Probability density functions.
+    epsilon : float
+        Small value added to avoid log(0) without conditional branching.
+
+    Returns
+    -------
+    distance : float
+        KL distance sum(P * log(P/Q)).
+    '''
+    if P.size * Q.size == 0:
+        sys.exit('KLD: P or Q not defined! Exit.')
+
+    PP = P.copy() + epsilon
+    QQ = Q.copy() + epsilon
+
+    distance = np.sum(PP * np.log(PP / QQ))
+
+    return distance
+
+
+# -----------------------------------------------------------------------------
+# C2. N-D discrete cosine transform wrappers and fractional derivative
+# -----------------------------------------------------------------------------
+
+def dctn(x, normused='ortho'):
+    '''
+    N-D forward discrete cosine transform (type II).
+
+    Applies scipy.fftpack.dct along every axis in sequence.
+
+    Reference
+    ---------
+    https://stackoverflow.com/questions/13904851/use-pythons-scipy-dct-ii-to-do-2d-or-nd-dct
+    '''
+    for i in range(x.ndim):
+        x = dct(x, axis=i, norm=normused)
+    return x
+
+
+def idctn(x, normused='ortho'):
+    '''
+    N-D inverse discrete cosine transform (type II).
+
+    Applies scipy.fftpack.idct along every axis in sequence.
+
+    Reference
+    ---------
+    https://stackoverflow.com/questions/13904851/use-pythons-scipy-dct-ii-to-do-2d-or-nd-dct
+    '''
+    for i in range(x.ndim):
+        x = idct(x, axis=i, norm=normused)
+    return x
+
+
+def fractrans(m=None, x=None, a=0.5):
+    '''
+    Calculate fractional derivative of order *a* of vector *m* over grid *x*.
+
+    Requires the ``differint`` package.
+
+    Parameters
+    ----------
+    m : array-like
+        Function values.
+    x : array-like
+        Coordinate grid (same length as *m*).
+    a : float
+        Fractional order (default 0.5).
+
+    Returns
+    -------
+    mm : np.ndarray
+        Fractional derivative of *m*.
+
+    VR Apr 2021
+    '''
+    import differint as df
+    import sys as _sys
+
+    if m is None or x is None:
+        _sys.exit('fractrans: No vector for diff given! Exit.')
+
+    if np.size(m) != np.size(x):
+        _sys.exit('fractrans: Vectors m and x have different length! Exit.')
+
+    x0 = x[0]
+    x1 = x[-1]
+    npnts = np.size(x)
+    mm = df.differint(a, m, x0, x1, npnts)
+
+    return mm
+
+
+# -----------------------------------------------------------------------------
+# C3. L-curve corner estimation
+# -----------------------------------------------------------------------------
+
+def circumradius(xvals, yvals):
+    '''
+    Circumradius of the triangle defined by three 2-D points.
+
+    Originally written by Hunter Ratliff, 2019-02-03.
+    '''
+    x1, x2, x3 = xvals[0], xvals[1], xvals[2]
+    y1, y2, y3 = yvals[0], yvals[1], yvals[2]
+
+    den = 2. * ((x2 - x1) * (y3 - y2) - (y2 - y1) * (x3 - x2))
+    num = (((x2 - x1) ** 2 + (y2 - y1) ** 2)
+           * ((x3 - x2) ** 2 + (y3 - y2) ** 2)
+           * ((x1 - x3) ** 2 + (y1 - y3) ** 2)) ** 0.5
+
+    if den == 0.:
+        print('circumradius: points are either collinear or not distinct')
+        return 0.
+
+    return abs(num / den)
+
+
+def circumcenter(xvals, yvals):
+    '''
+    Circumcenter of the triangle defined by three 2-D points.
+
+    Originally written by Hunter Ratliff, 2019-02-03.
+    '''
+    x1, x2, x3 = xvals[0], xvals[1], xvals[2]
+    y1, y2, y3 = yvals[0], yvals[1], yvals[2]
+
+    A = 0.5 * ((x2 - x1) * (y3 - y2) - (y2 - y1) * (x3 - x2))
+    if A == 0:
+        print('circumcenter: points are either collinear or not distinct')
+        return 0
+
+    xnum = ((y3 - y1) * (y2 - y1) * (y3 - y2)
+            - (x2 ** 2 - x1 ** 2) * (y3 - y2)
+            + (x3 ** 2 - x2 ** 2) * (y2 - y1))
+    xc = xnum / (-4 * A)
+    yc = (-(x2 - x1) / (y2 - y1)) * (xc - 0.5 * (x1 + x2)) + 0.5 * (y1 + y2)
+
+    return xc, yc
+
+
+def curvature(x_data, y_data):
+    '''
+    Curvature at every interior point of a curve given by (x_data, y_data).
+
+    Uses the circumradius of consecutive triples of points.
+    Required by ``calc_lc_corner``.
+
+    Parameters
+    ----------
+    x_data, y_data : array-like
+        Coordinate sequences of length *n*.
+
+    Returns
+    -------
+    curvature : list of float
+        Length *n* − 2; curvature κ = 1/R at each interior point.
+
+    Originally written by Hunter Ratliff, 2019-02-03.
+    '''
+    result = []
+    for i in range(1, len(x_data) - 1):
+        R = circumradius(x_data[i - 1:i + 2], y_data[i - 1:i + 2])
+        if R == 0:
+            print('curvature: failed — points are either collinear or not distinct')
+            return 0
+        result.append(1.0 / R)
+    return result
+
+
+def calc_lc_corner(dnorm=np.array([]), mnorm=np.array([])):
+    '''
+    Estimate the corner of the L-curve by maximum curvature.
+
+    Parameters
+    ----------
+    dnorm : np.ndarray
+        Data-norm vector (e.g. ||J m - d||).
+    mnorm : np.ndarray
+        Model-norm vector (e.g. ||m||).
+
+    Returns
+    -------
+    indexmax : int
+        Index of the L-curve corner (maximum curvature in log-log space).
+
+    References
+    ----------
+    Hansen, P. C. (2010). *Discrete Inverse Problems: Insight and Algorithms*.
+        SIAM, Philadelphia.
+    Hansen, P. C. (2001). The L-Curve and its Use in the Numerical Treatment
+        of Inverse Problems. In P. Johnston (Ed.), *Computational Inverse
+        Problems in Electrocardiology* (pp. 119–142). WIT Press.
+    Hansen, P. C. (1998). *Rank Deficient and Discrete Ill-Posed Problems*.
+        SIAM, Philadelphia.
+
+    VR June 2022
+    '''
+    import sys as _sys
+    if np.size(dnorm) == 0 or np.size(mnorm) == 0:
+        _sys.exit('calc_lc_corner: parameters missing! Exit.')
+
+    lcurvature = curvature(np.log(dnorm), np.log(mnorm))
+    indexmax = np.argmax(lcurvature)
+
+    return indexmax
+
+
+# -----------------------------------------------------------------------------
+# C4. Residual norm helpers
+# -----------------------------------------------------------------------------
+
+def calc_resnorm(data_obs=None, data_calc=None, data_std=None, p=2):
+    '''
+    Calculate the *p*-norm of the weighted residuals.
+
+    Parameters
+    ----------
+    data_obs : np.ndarray
+        Observed data.
+    data_calc : np.ndarray
+        Calculated (predicted) data.
+    data_std : np.ndarray or None
+        Data uncertainties (standard deviations); ones if ``None``.
+    p : int
+        Norm order (default 2).
+
+    Returns
+    -------
+    rnorm : float
+        Sum of |residual|^p.
+    resid : np.ndarray
+        Normalised residuals (data_obs - data_calc) / data_std.
+
+    VR Jan 2021
+    '''
+    if data_std is None:
+        data_std = np.ones(np.shape(data_obs))
+
+    resid = (data_obs - data_calc) / data_std
+    rnorm = np.sum(np.power(resid, p))
+
+    return rnorm, resid
+
+
+def calc_rms(dcalc=None, dobs=None, Wd=1.0):
+    '''
+    Calculate NRMS and SRMS misfit metrics.
+
+    Parameters
+    ----------
+    dcalc : np.ndarray
+        Calculated data.
+    dobs : np.ndarray
+        Observed data.
+    Wd : float or np.ndarray
+        Data weighting (default 1.0).
+
+    Returns
+    -------
+    nrms : float
+        Normalised root-mean-square error.
+    srms : float
+        Scaled RMS (symmetric error, in percent).
+
+    VR Jan 2021
+    '''
+    sizedat = np.shape(dcalc)
+    nd = sizedat[0]
+    rscal = Wd * (dobs - dcalc).T
+    print(sizedat, nd)
+
+    nrms = np.sqrt(np.sum(np.power(np.abs(rscal), 2)) / (nd - 1))
+
+    serr = 2.0 * nd * np.abs(rscal) / (np.abs(dobs.T) + np.abs(dcalc.T))
+    ssq = np.sum(np.power(serr, 2))
+    srms = 100.0 * np.sqrt(ssq / nd)
+
+    return nrms, srms
