@@ -108,13 +108,44 @@ result = invert_site(site, spec=spec, model0=model0, method="tikhonov", lam=1.0)
 
 ---
 
+## Part C — Routines migrated from util.py
+
+These functions lived in `util.py` but belong here conceptually.
+
+
+### KL divergence
+- `KLD(P, Q, epsilon=1e-8)` — Kullback-Leibler distance between two PDFs
+
+### N-D discrete cosine transform
+- `dctn(x, normused='ortho')` — N-D forward DCT (type II, all axes)
+- `idctn(x, normused='ortho')` — N-D inverse DCT (type II, all axes)
+- `fractrans(m, x, a=0.5)` — fractional derivative of order *a* (requires `differint`)
+
+### L-curve corner estimation
+- `calc_lc_corner(dnorm, mnorm)` — corner by maximum curvature in log-log space
+- `curvature(x_data, y_data)` — κ at every interior point
+- `circumradius(xvals, yvals)` — circumradius of three 2-D points
+- `circumcenter(xvals, yvals)` — circumcenter of three 2-D points
+
+### Residual norms
+- `calc_resnorm(data_obs, data_calc, data_std, p=2)` — *p*-norm of weighted residuals
+- `calc_rms(dcalc, dobs, Wd=1.0)` — NRMS and SRMS misfit metrics
+
+
+---
+
 ## References
 
 - Halko, N., Martinsson, P.-G., & Tropp, J. A. (2011). SIAM Review.
 - Vishny, D., Morzfeld, M., Gwirtz, K., Bach, E., Dunbar, O. R. A., & Hodyss, D. (2024).
   JAMES. doi:10.1029/2024MS004417
+- Hansen, P. C. (2010). *Discrete Inverse Problems: Insight and Algorithms*. SIAM, Philadelphia.
+- Hansen, P. C. (2001). The L-Curve and its Use in the Numerical Treatment of Inverse Problems.
+  In P. Johnston (Ed.), *Computational Inverse Problems in Electrocardiology* (pp. 119–142). WIT Press.
+- Hansen, P. C. (1998). *Rank Deficient and Discrete Ill-Posed Problems*. SIAM, Philadelphia.
 
 Author: Volker Rath (DIAS)
 Original numerical utilities created with GPT-5 Thinking on 2025-12-21 (UTC).
 1-D inversion helpers created with GPT-5 Thinking on 2026-02-13 (UTC).
 Cleaned up and merged by Claude (Anthropic, Opus 4.6) on 2026-03-02.
+Part C migrated from util.py by Claude Sonnet 4.6 (Anthropic) on 2026-05-25.

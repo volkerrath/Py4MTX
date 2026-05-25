@@ -150,14 +150,12 @@ run_queue(["./init.sh", "python process.py --site A01", "./cleanup.sh"])
 
 ## Numerical utilities
 
-- `KLD(P, Q)` — Kullback-Leibler divergence
-- `calc_lc_corner(dnorm, mnorm)` — L-curve corner estimation
-- `curvature(x_data, y_data)` / `circumradius` / `circumcenter` — curvature helpers
-- `calc_resnorm(data_obs, data_calc, data_std, p)` — residual p-norm
-- `calc_rms(dcalc, dobs, Wd)` — NRMS and SRMS
-- `dctn(x)` / `idctn(x)` — N-D discrete cosine transform
-- `fractrans(m, x, a)` — fractional derivative (requires `differint`)
 - `nan_like(a)` — NaN-filled array matching shape of `a`
+
+> **Moved to `inverse.py` (2026-05-25):** `KLD`, `dctn`, `idctn`,
+> `fractrans`, `calc_lc_corner`, `curvature`, `circumradius`,
+> `circumcenter`, `calc_resnorm`, `calc_rms`.
+> Use `from inverse import <name>` directly.
 
 ---
 
@@ -310,3 +308,4 @@ Author: Volker Rath (DIAS)
 Modified: 2026-03-25 — added ft_convention.py section; Claude Sonnet 4.6 (Anthropic)  
 Modified: 2026-03-26 — added unpack_compressed(), pack_compressed(), run_queue() sections; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-04-02 — added petrophysical models section (merged from resistivity_models.py); Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-05-25 — moved numerical utilities (KL divergence, L-curve, DCT, residual norms) to `inverse.py`; removed shims; Claude Sonnet 4.6 (Anthropic)
