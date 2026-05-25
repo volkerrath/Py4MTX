@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-femtic_ens_plot.py — Ensemble slice plot for a set of FEMTIC inversion runs.
+femtic_plot_ensemble.py — Ensemble slice plot for a set of FEMTIC inversion runs.
 
 Loops over a list of ensemble directories, collects the resistivity block
 file from each, and produces:
