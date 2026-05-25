@@ -114,6 +114,35 @@ Provenance
                 read_site_dat(), estimate_utm_origin(), _point_in_tet(),
                 extract_borehole_log() to femtic.py; script calls fem.*
                 directly.  import data_proc as dp removed.
+    2026-05-25  vrath / Claude Sonnet 4.6   Added PLOT_SITES master switch.
+                Site markers (inverted triangle, depth=0) now on all panel
+                kinds incl. plane (along-strike projection via u-axis dot
+                product).  Legend guard extended to "plane".
+    2026-05-25  vrath / Claude Sonnet 4.6   Replaced ESTIMATE_ORIGIN /
+                CALIBRATION_SITES / UPDATE_CONFIG with ORIGIN_METHOD
+                (None | "box" | "average").  Origin estimated from SITE_DAT
+                UTM coords only; observe.dat fallback is model-local only.
+    2026-05-25  vrath / Claude Sonnet 4.6   UTM display mode now in km
+                (_display_scale 1e-3).  Curtain/plane site markers at true
+                mesh surface (z_surf = nodes[:,2].min()) not depth=0.
+                PROJECTION_DIST filters sites per curtain/plane panel.
+                DISPLAY_COORDS utm/latlon suppressed when sites from
+                observe.dat (obs_coords_only flag).
+    2026-05-25  vrath / Claude Sonnet 4.6   DEPTH_KM flag for km depth axis
+                on curtain/plane panels.  PLOT_PANEL_HEIGHT, PLOT_PANEL_WIDTH,
+                PLOT_FIGSIZE config vars; passed to plot_model_slices as
+                panel_height, panel_width, figsize.  Aspect-ratio auto-width
+                accounts for depth_km and horizontal sc scales.
+    2026-05-25  vrath / Claude Sonnet 4.6   HORIZ_KM flag: km on horizontal
+                axes in "model" mode.  PLOT_NROWS / PLOT_NCOLS grid layout;
+                subplots flattened to 1-D, surplus cells hidden.  _do_equal
+                checks horiz/vert km consistency.
+    2026-05-25  vrath / Claude Sonnet 4.6   Sites removed from curtain/plane
+                panels (map panels only).  PLOT_PANEL_HEIGHT/WIDTH/FIGSIZE now
+                in cm (converted to inches at call site).  Cmap deprecation
+                fixed: matplotlib.colormaps[cmap] replaces get_cmap().
+    2026-05-25  vrath / Claude Sonnet 4.6   PLOT_SITES replaced by
+                PLOT_SITES_MAPS / PLOT_SITES_SLICES for independent control.
 
 @author: vrath
 """
@@ -145,11 +174,11 @@ try:
 except ImportError:
     fviz = None
 
-# try:
-#     from pyproj import Transformer as _Transformer
-#     _HAVE_PYPROJ = True
-# except ImportError:
-#     _HAVE_PYPROJ = False
+try:
+    from pyproj import Transformer as _Transformer
+    _HAVE_PYPROJ = True
+except ImportError:
+    _HAVE_PYPROJ = False
 
 version, _ = versionstrg()
 fname = inspect.getfile(inspect.currentframe())
@@ -169,7 +198,7 @@ WORK_DIR = r"/home/vrath/Py4MTX/work/rto/ubinas_data/"
 MODEL_FILE = WORK_DIR + "resistivity_block_iter17.dat"
 
 #: Mesh file — always required for plotting.
-MESH_FILE  = WORK_DIR + "mesh.dat"
+MESH_FILE = WORK_DIR + "mesh.dat"
 
 #: observe.dat — used by ESTIMATE_ORIGIN to look up model-local site positions.
 #: Also used as fallback site-overlay source when SITE_DAT is None and
@@ -193,7 +222,7 @@ SITE_DAT = WORK_DIR + "site.dat"   # set to None to disable
 #: True / False → force ocean-present / ocean-absent.
 OCEAN = None
 
-AIR_RHO   = 1.0e9   # Ω·m  (region 0)
+AIR_RHO = 1.0e9   # Ω·m  (region 0)
 OCEAN_RHO = 0.25    # Ω·m  (region 1 when treated as ocean)
 
 # ---------------------------------------------------------------------------
@@ -219,7 +248,7 @@ UTM_ZONE_OVERRIDE = None
 #: "model"  — axis ticks in model-local metres (origin = 0, default)
 #: "utm"    — axis ticks in absolute UTM metres
 #: "latlon" — axis ticks in decimal degrees (lon for easting, lat for northing)
-DISPLAY_COORDS = "model"
+DISPLAY_COORDS = "utm"
 
 # ---------------------------------------------------------------------------
 # Site overlay
@@ -234,9 +263,41 @@ SITE_NAMES = None   # e.g. ["MT01", "MT05", "MT12"]  or None = all sites
 #: May be a single int or a list of ints.  Set to None to skip site overlay.
 SITE_NUMBER = [5, 6, 7]
 
-#: Marker style for map panels; dashed vertical line for curtain panels.
-SITE_MARKER = dict(marker="v", color="black", ms=8, zorder=10,
+#: Show site markers on horizontal map panels.
+PLOT_SITES_MAPS = True
+#: Show site markers on vertical curtain (ns/ew) and plane panels.
+PLOT_SITES_SLICES = True
+
+#: Maximum distance [m] from a vertical slice plane for a site to be plotted
+#: on that panel.  Sites further than this are omitted.
+#: For NS panels: distance in x (easting); for EW panels: distance in y (northing).
+#: For plane panels: perpendicular distance from the slice plane.
+#: None = plot all sites on every panel regardless of distance.
+PROJECTION_DIST = 3000.  # e.g. 5000.0  (5 km)
+
+#: Marker style for map panels (inverted triangle = MT convention).
+SITE_MARKER = dict(marker="v", color="black", ms=4, zorder=10,
                    label=None)   # label filled in automatically
+
+#: Marker style for curtain and plane panels (centered symbol at site elevation).
+SITE_MARKER_SLICES = dict(marker="o", color="black", ms=4, zorder=10,
+                           label=None)
+
+# ---------------------------------------------------------------------------
+# Additional map markers
+# ---------------------------------------------------------------------------
+#: Arbitrary point markers overlaid on map panels only.
+#: Each entry is a dict with:
+#:   "latlon"  : [lat_deg, lon_deg]  — position in geographic coordinates
+#:   "marker"  : Matplotlib marker string  (e.g. "P", "+", "x", "*", "^")
+#:   "color"   : colour string
+#:   "ms"      : marker size in points
+#:   "name"    : label string (shown in legend); None = no legend entry
+#: Any additional Matplotlib plot kwargs (mew, mfc, zorder, …) are accepted.
+MAP_MARKERS = [
+    dict(latlon=[-16.34861, -70.90222], marker="*", color="red", ms=10,
+         name="Ubinas summit"),
+]
 
 # ---------------------------------------------------------------------------
 # Verbose output
@@ -290,24 +351,26 @@ PLOT_AIR_BGCOLOR = None
 #:   title  : optional string override
 #:
 #: Per-panel xlim/ylim/zlim override the global PLOT_XLIM/PLOT_YLIM/PLOT_ZLIM.
-#: Ubinas summit: -16.3500, -70.8700
+#: Ubinas summit: 16.34861° S, 70.90222° W (16°20′55″S 70°54′08″W), elevation 5672 m.
 
 PLOT_SLICES = [
     # Plain float — model-local metres (backward-compatible):
-    dict(kind="map",  z0=5000.0),
-    dict(kind="map",  z0=15000.0),
+    dict(kind="map", z0=-4000.0),
+    dict(kind="map", z0=15000.0),
     # UTM easting for the NS curtain:
-    # dict(kind="ns",   x0=(229047.0, "utm")),
-    dict(kind="ns",   x0=(-70.8700, "latlon")),
+    dict(kind="ns",   x0=(-70.85576, "latlon")),
+    # dict(kind="ns", x0=(-70.90222, "latlon")),
     # Geographic latitude for the EW curtain:
-    dict(kind="ew",   y0=(-16.3500, "latlon")),
+    # dict(kind="ew", y0=(-16.34861, "latlon")),    
+    dict(kind="ew", y0=(-16.39606, "latlon")),
 ]
+
 
 #: Global axis limits in model-local metres — used for panels that do not
 #: specify their own.  None → auto (inferred from data extent).
 PLOT_XLIM = [-20000., 20000.]   # [xmin, xmax] metres — easting
 PLOT_YLIM = [-20000., 20000.]   # [ymin, ymax] metres — northing
-PLOT_ZLIM = [  -6000., 15000.]  # [zmin, zmax] metres — depth (z positive-down)
+PLOT_ZLIM = [-6000., 15000.]  # [zmin, zmax] metres — depth (z positive-down)
 
 #: Equal aspect ratio for map and curtain panels.
 #: True  → ax.set_aspect("equal") on map (x/y), ns (y/z), and ew (x/z) panels
@@ -316,6 +379,38 @@ PLOT_ZLIM = [  -6000., 15000.]  # [zmin, zmax] metres — depth (z positive-down
 #:         for plane slices and when DISPLAY_COORDS is "latlon".
 #: False → Matplotlib default (axes fill the available space).
 PLOT_EQUAL_ASPECT = True
+
+#: Display depth axis in km instead of metres on curtain and plane panels.
+#: Does not affect the horizontal axes (use HORIZ_KM for those).
+DEPTH_KM = True
+
+#: Display horizontal axes in km instead of metres when DISPLAY_COORDS is
+#: "model".  Has no effect for "utm" (already in km) or "latlon" (degrees).
+#: When both HORIZ_KM and DEPTH_KM are True, equal aspect is restored in
+#: "model" mode because both axes carry the same km scale.
+HORIZ_KM = True
+
+# ---------------------------------------------------------------------------
+# Figure layout
+# ---------------------------------------------------------------------------
+#: Number of subplot rows and columns.  None → auto:
+#:   PLOT_NROWS = None  →  1 row (all panels in a single row)
+#:   PLOT_NCOLS = None  →  len(PLOT_SLICES) columns
+#: Set both explicitly for a grid, e.g. PLOT_NROWS=2, PLOT_NCOLS=4 for 8 maps.
+#: Total cells must be >= len(PLOT_SLICES); surplus cells are hidden.
+PLOT_NROWS = 2   # e.g. 2
+PLOT_NCOLS = 2  # e.g. 4
+
+#: Panel height in cm (height of one row of panels).
+PLOT_PANEL_HEIGHT = 8.0   # cm
+
+#: Fixed panel width in cm.  None → auto-computed from aspect ratio when
+#: PLOT_EQUAL_ASPECT = True, or equal to PLOT_PANEL_HEIGHT otherwise.
+PLOT_PANEL_WIDTH = None   # e.g. 10.0 to force a fixed width per panel
+
+#: Full figure size [width, height] in cm.  Overrides all auto-computed
+#: sizing when set.  None → computed from panel sizes and grid shape.
+PLOT_FIGSIZE = None   # e.g. [40., 25.]
 
 # ---------------------------------------------------------------------------
 # 3-D plotting — requires PyVista  (conda install -c conda-forge pyvista)
@@ -404,43 +499,20 @@ BOREHOLE_XLIM = [0.0, 4.0]   # log10(Ω·m)
 BOREHOLE_SHARED = True
 
 # ---------------------------------------------------------------------------
-# Mesh-centre estimation from known site coordinates  (optional)
+# Mesh-centre estimation from site.dat UTM coordinates  (optional)
 # ---------------------------------------------------------------------------
-#: Set ESTIMATE_ORIGIN = True to compute UTM_ORIGIN_E / UTM_ORIGIN_N.
+#: Method used to estimate UTM_ORIGIN_E / UTM_ORIGIN_N from SITE_DAT:
 #:
-#: Two methods are available (selected automatically):
+#:   None      — use the hard-coded UTM_ORIGIN_E / UTM_ORIGIN_N above (default)
+#:   "box"     — midpoint of the UTM bounding box of all sites in SITE_DAT
+#:               (femticPY-compatible)
+#:   "average" — arithmetic mean of all site UTM coordinates in SITE_DAT
 #:
-#:   Bounding-box centre (femticPY-compatible, DEFAULT when
-#:   CALIBRATION_SITES is empty and SITE_DAT is set):
-#:     origin = midpoint of the bounding box of all site UTM coordinates
-#:     read from SITE_DAT.  No observe.dat is needed.
-#:
-#:   Calibration-site pairs (classic):
-#:     Each entry in CALIBRATION_SITES provides a site whose model-local
-#:     position (from observe.dat or site.dat) and geographic position are
-#:     both known.  UTM_ORIGIN_E/N = mean(E_site − x_m, N_site − y_m).
-#:     At least 1 site is required; 3+ is recommended.
-#:
-#: Each entry in CALIBRATION_SITES is a dict with:
-#:   "site"    : int    site number (matched against observe.dat)
-#:   "crs"     : str    "latlon" or "utm"
-#:   "coords"  : for "latlon" → [lon_deg, lat_deg]
-#:               for "utm"    → [E_m, N_m]
-#:
-#: The result always overwrites UTM_ORIGIN_E / UTM_ORIGIN_N for this run.
-#: Set UPDATE_CONFIG = True to also feed UTM_ORIGIN_LAT / UTM_ORIGIN_LON back
-#: into the module globals and re-derive the UTM zone — so all subsequent
-#: coordinate conversions in this run use the estimated centre rather than
-#: the hard-coded values above.  The printed values can then be copied back
-#: into the Configuration block for future runs.
-ESTIMATE_ORIGIN = False
-UPDATE_CONFIG   = True    # feed estimated lat/lon back into globals (requires ESTIMATE_ORIGIN)
-
-CALIBRATION_SITES = [
-    # dict(site=1,  crs="latlon", coords=[-71.500, -16.380]),
-    # dict(site=10, crs="latlon", coords=[-71.620, -16.450]),
-    # dict(site=25, crs="utm",    coords=[224500., 8179300.]),
-]
+#: Requires SITE_DAT to be set and readable.  The result overwrites
+#: UTM_ORIGIN_E / UTM_ORIGIN_N (and UTM_ORIGIN_LAT / UTM_ORIGIN_LON) for
+#: this run; the printed values can be copied back into the config above.
+#: Falls back to hard-coded values if SITE_DAT is None or unreadable.
+ORIGIN_METHOD =  "box"   # None | "box" | "average"
 
 
 # ===========================================================================
@@ -520,7 +592,7 @@ def resolve_slices(slices: list, zone: int, northern: bool) -> list:
 # ===========================================================================
 
 def _display_offset() -> tuple[float, float]:
-    """Return (dE, dN) to add to model-local metres for display axis ticks.
+    """Return (dE, dN) to add to model-local metres before applying scale.
 
     For 'latlon' the polygons are still drawn in UTM metres (offset by the
     UTM origin) and tick labels are reformatted by ``_display_formatters``.
@@ -530,10 +602,19 @@ def _display_offset() -> tuple[float, float]:
     return 0.0, 0.0
 
 
+def _display_scale() -> float:
+    """Return multiplicative scale applied after offset.
+
+    'utm'  → 1e-3  (display in km)
+    others → 1.0   (metres or degrees via formatter)
+    """
+    return 1e-3 if DISPLAY_COORDS == "utm" else 1.0
+
+
 def _display_suffix() -> str:
     """Return axis label suffix reflecting the display coordinate system."""
     if DISPLAY_COORDS == "utm":
-        return " [UTM m]"
+        return " [UTM km]"
     if DISPLAY_COORDS == "latlon":
         return " [°]"
     return " [m]"
@@ -587,9 +668,21 @@ def plot_model_slices(
     ocean_value: float = OCEAN_RHO,
     air_bgcolor=None,
     site_xys: list | None = None,
+    obs_coords_only: bool = False,
+    projection_dist: float | None = None,
+    sites_in_maps: bool = True,
+    sites_in_slices: bool = False,
+    map_markers: list | None = None,
     plot_file=None,
     dpi: int = 200,
     equal_aspect: bool = True,
+    depth_km: bool = False,
+    horiz_km: bool = False,
+    nrows: int | None = None,
+    ncols: int | None = None,
+    panel_height: float = 5.0,
+    panel_width: float | None = None,
+    figsize: list | tuple | None = None,
     out: bool = True,
 ):
     """Produce a multi-panel figure of axis-parallel model slices.
@@ -608,16 +701,34 @@ def plot_model_slices(
     ocean_color : flat colour for ocean polygons; None → colormap
     ocean_value : Ω·m sentinel for ocean (must match OCEAN_RHO)
     air_bgcolor : axes facecolor for air / background; None = figure default
-    site_xys    : list of (site_number, x_m, y_m) tuples in model-local metres;
-                  each site is overplotted on every map/ns/ew panel.
+    site_xys    : list of (label, x_m, y_m, elev_m) tuples in model-local
+                  metres; elev_m is the site elevation above datum [m].
                   None or empty list → no markers.
+    obs_coords_only : True when site_xys came from observe.dat (model-local
+                  only); suppresses DISPLAY_COORDS "utm"/"latlon" display.
+    projection_dist : maximum distance [m] from a curtain/plane for a site to
+                  appear on that panel.  None = all sites on all panels.
+    sites_in_maps   : plot site markers on horizontal map panels
+    sites_in_slices : plot site markers on curtain (ns/ew) and plane panels
+                  at the mesh surface elevation
+    map_markers : list of dicts (latlon, marker, color, ms, name, …);
+                  plotted on map panels only; lat/lon converted to
+                  model-local at render time
     plot_file   : save path; None = interactive show()
     dpi         : saved-figure DPI
     equal_aspect : if True, call ``ax.set_aspect("equal", adjustable="box")``
-                  on map (x/y), ns (y/z), and ew (x/z) panels so that
-                  1 m horizontal = 1 m vertical.  Applied only when
-                  DISPLAY_COORDS is "model" or "utm"; ignored for plane panels
-                  and when axes carry different units (e.g. latlon).
+                  on map/ns/ew panels.  Requires both axes to carry the same
+                  physical scale (both metres, or both km).
+    depth_km    : show depth axis in km on curtain and plane panels
+    horiz_km    : show horizontal (easting/northing) axes in km when
+                  DISPLAY_COORDS is "model"; no effect for "utm" (already km)
+                  or "latlon" (degrees)
+    nrows, ncols : subplot grid shape; None = 1 × n_panels.  Surplus cells
+                  are hidden.  Total cells must be >= len(slices).
+    panel_height : row height in inches (pass PLOT_PANEL_HEIGHT / 2.54 from cm)
+    panel_width  : fixed column width in inches; None = auto from aspect ratio
+                  when equal_aspect is True, else equal to panel_height
+    figsize     : explicit [width, height] in inches; overrides all auto sizing
     out         : verbose progress
     """
     if fviz is None:
@@ -625,9 +736,9 @@ def plot_model_slices(
         return
 
     try:
+        import matplotlib
         import matplotlib.pyplot as plt
         import matplotlib.colors as mcolors
-        import matplotlib.cm as mcm
         from matplotlib.collections import PolyCollection
     except ImportError:
         print("  plot_model_slices: Matplotlib not available — skipping.")
@@ -637,18 +748,22 @@ def plot_model_slices(
 
     def _axis_slice_params(axis: int, val: float):
         """Return (normal, point, u_ax, v_ax, invert_v) for an axis-aligned cut."""
-        normals = [np.array([1., 0., 0.]), np.array([0., 1., 0.]), np.array([0., 0., 1.])]
-        inv     = [False, False, False]
-        pt      = np.zeros(3); pt[axis] = val
-        n       = normals[axis]
-        ref     = np.array([0., 0., 1.]) if axis != 2 else np.array([1., 0., 0.])
-        u       = np.cross(n, ref); u /= np.linalg.norm(u)
-        v       = np.cross(n, u);   v /= np.linalg.norm(v)
+        normals = [np.array([1., 0., 0.]), np.array(
+            [0., 1., 0.]), np.array([0., 0., 1.])]
+        inv = [False, False, False]
+        pt = np.zeros(3)
+        pt[axis] = val
+        n = normals[axis]
+        ref = np.array([0., 0., 1.]) if axis != 2 else np.array([1., 0., 0.])
+        u = np.cross(n, ref)
+        u /= np.linalg.norm(u)
+        v = np.cross(n, u)
+        v /= np.linalg.norm(v)
         return n, pt, u, v, inv[axis]
 
     def _tet_plane_intersection(verts, normal, d):
         dots = verts @ normal - d
-        pos  = dots >= 0
+        pos = dots >= 0
         if pos.all() or (~pos).all():
             return []
         pts = []
@@ -657,19 +772,19 @@ def plot_model_slices(
                 if pos[i] != pos[j]:
                     t = dots[i] / (dots[i] - dots[j])
                     pts.append(verts[i] + t * (verts[j] - verts[i]))
-        c   = np.mean(pts, axis=0)
+        c = np.mean(pts, axis=0)
         u2d = np.cross(normal,
                        np.array([0., 0., 1.]) if abs(normal[2]) < 0.9
                        else np.array([1., 0., 0.]))
         if np.linalg.norm(u2d) < 1e-12:
             return pts
         u2d /= np.linalg.norm(u2d)
-        v2d  = np.cross(normal, u2d)
+        v2d = np.cross(normal, u2d)
         angles = [np.arctan2((p - c) @ v2d, (p - c) @ u2d) for p in pts]
         return [pts[k] for k in np.argsort(angles)]
 
     def _slice_geometry(nodes, conn, rho_arr, normal, point, u_ax, v_ax):
-        d         = float(normal @ point)
+        d = float(normal @ point)
         verts_all = nodes[conn]
         polys, vals = [], []
         for k, verts in enumerate(verts_all):
@@ -678,7 +793,8 @@ def plot_model_slices(
                 continue
             polys.append([(float(p @ u_ax), float(p @ v_ax)) for p in pts3d])
             with np.errstate(divide="ignore", invalid="ignore"):
-                vals.append(math.log10(rho_arr[k]) if rho_arr[k] > 0 else float("nan"))
+                vals.append(math.log10(
+                    rho_arr[k]) if rho_arr[k] > 0 else float("nan"))
         return polys, np.asarray(vals, dtype=float)
 
     def _plot_slice_panel(ax, polys, vals, *, cmap_obj, norm,
@@ -686,10 +802,11 @@ def plot_model_slices(
         if not polys:
             return None
         with np.errstate(divide="ignore", invalid="ignore"):
-            ov_log = math.log10(ocean_value) if ocean_value > 0 else float("nan")
+            ov_log = math.log10(
+                ocean_value) if ocean_value > 0 else float("nan")
         is_ocean = np.isclose(vals, ov_log, atol=0.05)
-        is_air   = ~np.isfinite(vals)
-        is_data  = ~is_ocean & ~is_air
+        is_air = ~np.isfinite(vals)
+        is_data = ~is_ocean & ~is_air
         mappable = None
         if is_data.any():
             pc = PolyCollection(
@@ -711,30 +828,66 @@ def plot_model_slices(
     def _strike_dip_to_normal(strike_deg, dip_deg):
         s, d = math.radians(strike_deg), math.radians(dip_deg)
         return np.array([-math.sin(d) * math.sin(s),
-                          math.sin(d) * math.cos(s),
+                         math.sin(d) * math.cos(s),
                          -math.cos(d)])
 
     def _plane_basis(normal):
-        ref = np.array([0., 1., 0.]) if abs(normal[1]) < 0.9 else np.array([1., 0., 0.])
-        u   = np.cross(normal, ref); u /= np.linalg.norm(u)
-        v   = np.cross(u, normal);   v /= np.linalg.norm(v)
+        ref = np.array([0., 1., 0.]) if abs(
+            normal[1]) < 0.9 else np.array([1., 0., 0.])
+        u = np.cross(normal, ref)
+        u /= np.linalg.norm(u)
+        v = np.cross(u, normal)
+        v /= np.linalg.norm(v)
         return u, v
 
-    # ── display offset ───────────────────────────────────────────────────────
-    dE, dN   = _display_offset()
-    sfx      = _display_suffix()
+    # ── display offset / scale ───────────────────────────────────────────────
+    # When sites come from observe.dat (model-local only), UTM and lat/lon
+    # display modes cannot be applied to site markers — fall back to "model".
+    _disp = "model" if (obs_coords_only and DISPLAY_COORDS in ("utm", "latlon")) \
+            else DISPLAY_COORDS
+    if obs_coords_only and DISPLAY_COORDS in ("utm", "latlon") and out:
+        print(f"  Note: site positions from observe.dat; "
+              f"DISPLAY_COORDS={DISPLAY_COORDS!r} ignored for site markers "
+              f"(model-local only).")
+    dE = (UTM_ORIGIN_E if _disp in ("utm", "latlon") else 0.0)
+    dN = (UTM_ORIGIN_N if _disp in ("utm", "latlon") else 0.0)
+    # Horizontal scale factor: utm always km; model→km when HORIZ_KM; else 1.
+    if _disp == "utm":
+        sc = 1e-3
+    elif _disp == "model" and horiz_km:
+        sc = 1e-3
+    else:
+        sc = 1.0
+    # Axis label suffix for horizontal axes.
+    if _disp == "utm":
+        sfx = " [UTM km]"
+    elif _disp == "model" and horiz_km:
+        sfx = " [km]"
+    elif _disp == "latlon":
+        sfx = " [°]"
+    else:
+        sfx = " [m]"
     _fmt_x, _fmt_y = _display_formatters(UTM_ZONE, UTM_NORTHERN)
 
-    # Equal aspect applies only when both axes are in metres (model or utm).
-    # latlon display has different scales on x/y so aspect="equal" is wrong.
-    _do_equal = equal_aspect and DISPLAY_COORDS.lower() in ("model", "utm")
+    # Equal aspect is valid when both horizontal and vertical axes carry the
+    # same physical scale.  Mismatches that break it:
+    #   depth_km=True  + horiz_km=False + _disp="model"  → m horiz, km vert
+    #   depth_km=False + horiz_km=True  + _disp="model"  → km horiz, m vert
+    # Compatible combinations: both False (m/m), both True (km/km),
+    # _disp="utm" (km/km regardless of depth_km), _disp="latlon" (never equal).
+    _horiz_km_eff = (sc == 1e-3)   # True whenever horizontal axis is in km
+    _vert_km_eff  = depth_km
+    _do_equal = (equal_aspect
+                 and _disp in ("model", "utm")
+                 and _horiz_km_eff == _vert_km_eff)
 
     # ── load model ───────────────────────────────────────────────────────────
     if out:
         print(f"  plot: reading model {os.path.basename(model_file)}")
-    mesh     = fviz.read_femtic_mesh(mesh_file)
-    block    = fviz.read_resistivity_block(model_file)
-    rho_elem = fviz.map_regions_to_element_rho(block.region_of_elem, block.region_rho)
+    mesh = fviz.read_femtic_mesh(mesh_file)
+    block = fviz.read_resistivity_block(model_file)
+    rho_elem = fviz.map_regions_to_element_rho(
+        block.region_of_elem, block.region_rho)
     rho_plot = fviz.prepare_rho_for_plotting(
         rho_elem,
         air_is_nan=True,
@@ -742,13 +895,29 @@ def plot_model_slices(
         region_of_elem=block.region_of_elem,
     )
     nodes = mesh.nodes   # (nn, 3)
-    conn  = mesh.conn    # (nelem, 4)
+    conn = mesh.conn    # (nelem, 4)
+    # Surface elevation: minimum z among nodes of non-air elements only.
+    # Air padding elements (region 0) extend far above the topography and
+    # would give a spuriously large (negative) z_min if included.
+    _non_air_mask = block.region_of_elem != 0
+    _non_air_node_idx = np.unique(conn[_non_air_mask])
+    _non_air_nodes = nodes[_non_air_node_idx]
+    z_surf = float(_non_air_nodes[:, 2].min())
     if out:
+        _hp_idx = int(np.argmin(_non_air_nodes[:, 2]))
+        _hp_x, _hp_y, _hp_z = _non_air_nodes[_hp_idx]
+        _hp_E = _hp_x + UTM_ORIGIN_E
+        _hp_N = _hp_y + UTM_ORIGIN_N
+        _hp_lat, _hp_lon = utl.utm_to_latlon_zn(_hp_E, _hp_N,
+                                                  UTM_ZONE, UTM_NORTHERN)
+        print(f"  plot: mesh highest point (non-air):  "
+              f"elev = {-_hp_z:.1f} m  "
+              f"lat = {_hp_lat:.5f}°  lon = {_hp_lon:.5f}°  "
+              f"(model-local x={_hp_x:.1f} m  y={_hp_y:.1f} m)")
         print(f"  plot: {len(slices)} panel(s), exact plane-intersection method")
 
     # ── colormap ─────────────────────────────────────────────────────────────
-    cmap_obj = (mcm.colormaps[cmap] if hasattr(mcm, "colormaps")
-                else mcm.get_cmap(cmap)).copy()
+    cmap_obj = matplotlib.colormaps[cmap].copy()
     cmap_obj.set_bad(alpha=0.0)
 
     # ── colour normalisation ─────────────────────────────────────────────────
@@ -758,45 +927,68 @@ def plot_model_slices(
         with np.errstate(divide="ignore", invalid="ignore"):
             _lall = np.log10(rho_plot[np.isfinite(rho_plot)])
         _lall = _lall[np.isfinite(_lall)]
-        norm  = mcolors.Normalize(vmin=float(np.nanmin(_lall)),
-                                  vmax=float(np.nanmax(_lall)))
+        norm = mcolors.Normalize(vmin=float(np.nanmin(_lall)),
+                                 vmax=float(np.nanmax(_lall)))
 
     # ── figure layout ────────────────────────────────────────────────────────
     n_panels = len(slices)
-    _panel_h = 5.0   # inches — height of each panel
+    _dz_sc = 1e-3 if depth_km else 1.0   # scale for depth span in aspect calc
 
-    if _do_equal:
-        # Compute each panel's width from the aspect ratio of its limits so
-        # that set_aspect("equal") does not waste whitespace.
-        _panel_widths = []
-        for spec in slices:
-            kind  = spec.get("kind", "map")
-            _xl   = spec.get("xlim", xlim)
-            _yl   = spec.get("ylim", ylim)
-            _zl   = spec.get("zlim", zlim)
-            if kind == "map":
-                hspan = (_xl[1] - _xl[0]) if _xl is not None else _panel_h * 200
-                vspan = (_yl[1] - _yl[0]) if _yl is not None else _panel_h * 200
-            elif kind == "ns":
-                hspan = (_yl[1] - _yl[0]) if _yl is not None else _panel_h * 200
-                vspan = (_zl[1] - _zl[0]) if _zl is not None else _panel_h * 200
-            elif kind == "ew":
-                hspan = (_xl[1] - _xl[0]) if _xl is not None else _panel_h * 200
-                vspan = (_zl[1] - _zl[0]) if _zl is not None else _panel_h * 200
-            else:
-                # plane or unknown — use square panel
-                hspan = vspan = 1.0
-            ratio = hspan / vspan if vspan > 0 else 1.0
-            _panel_widths.append(_panel_h * ratio)
-        _fig_w = sum(_panel_widths)
+    # Grid shape — default to one row.
+    _nrows = int(nrows) if nrows is not None else 1
+    _ncols = int(ncols) if ncols is not None else n_panels
+    if _nrows * _ncols < n_panels:
+        raise ValueError(
+            f"plot_model_slices: grid {_nrows}×{_ncols} = {_nrows*_ncols} cells "
+            f"< {n_panels} slices — increase PLOT_NROWS/PLOT_NCOLS."
+        )
+
+    if figsize is not None:
+        _fig_w, _fig_h = float(figsize[0]), float(figsize[1])
     else:
-        _panel_widths = [5.0] * n_panels
-        _fig_w = 5.0 * n_panels
+        _panel_h = float(panel_height)
+        if panel_width is not None:
+            _col_w = float(panel_width)
+            _col_widths = [_col_w] * _ncols
+        elif _do_equal:
+            # Per-panel width from aspect ratio; use max width per column.
+            _pw = []
+            for spec in slices:
+                kind = spec.get("kind", "map")
+                _xl = spec.get("xlim", xlim)
+                _yl = spec.get("ylim", ylim)
+                _zl = spec.get("zlim", zlim)
+                if kind == "map":
+                    hspan = (_xl[1] - _xl[0]) * sc if _xl is not None else _panel_h * 200
+                    vspan = (_yl[1] - _yl[0]) * sc if _yl is not None else _panel_h * 200
+                elif kind == "ns":
+                    hspan = (_yl[1] - _yl[0]) * sc    if _yl is not None else _panel_h * 200
+                    vspan = (_zl[1] - _zl[0]) * _dz_sc if _zl is not None else _panel_h * 200
+                elif kind == "ew":
+                    hspan = (_xl[1] - _xl[0]) * sc    if _xl is not None else _panel_h * 200
+                    vspan = (_zl[1] - _zl[0]) * _dz_sc if _zl is not None else _panel_h * 200
+                else:
+                    hspan = vspan = 1.0
+                ratio = hspan / vspan if vspan > 0 else 1.0
+                _pw.append(_panel_h * ratio)
+            # Pad to full grid, assign panels column-by-column.
+            _pw += [_panel_h] * (_nrows * _ncols - len(_pw))
+            _col_widths = [
+                max(_pw[c::_ncols]) for c in range(_ncols)
+            ]
+        else:
+            _col_widths = [_panel_h] * _ncols
+        _fig_w = sum(_col_widths)
+        _fig_h = _panel_h * _nrows
 
-    fig, axes = plt.subplots(1, n_panels,
-                             figsize=(_fig_w, _panel_h),
+    fig, axes = plt.subplots(_nrows, _ncols,
+                             figsize=(_fig_w, _fig_h),
                              squeeze=False)
-    axes = axes[0]
+    # Flatten to 1-D list; hide surplus cells beyond n_panels.
+    _ax_flat = [axes[r][c] for r in range(_nrows) for c in range(_ncols)]
+    for ax in _ax_flat[n_panels:]:
+        ax.set_visible(False)
+    axes = _ax_flat[:n_panels]
     if air_bgcolor is not None:
         for ax in axes:
             ax.set_facecolor(air_bgcolor)
@@ -805,7 +997,7 @@ def plot_model_slices(
 
     # ── render each panel ────────────────────────────────────────────────────
     for ax, spec in zip(axes, slices):
-        kind  = spec.get("kind", "map")
+        kind = spec.get("kind", "map")
         title = spec.get("title", None)
         _xlim = spec.get("xlim", xlim)
         _ylim = spec.get("ylim", ylim)
@@ -814,99 +1006,158 @@ def plot_model_slices(
 
         # ── map (z = const) ───────────────────────────────────────────────
         if kind == "map":
-            z0     = float(spec.get("z0", 0.0))
-            if out: print(f"    map slice z={z0:.0f} m …")
+            z0 = float(spec.get("z0", 0.0))
+            if out:
+                print(f"    map slice z={z0:.0f} m …")
             normal = np.array([0., 0., 1.])
-            point  = np.array([0., 0., z0])
-            u_ax   = np.array([1., 0., 0.])
-            v_ax   = np.array([0., 1., 0.])
+            point = np.array([0., 0., z0])
+            u_ax = np.array([1., 0., 0.])
+            v_ax = np.array([0., 1., 0.])
             polys, vals = _slice_geometry(nodes, conn, rho_plot,
                                           normal, point, u_ax, v_ax)
-            polys_d = [[(px + dE, py + dN) for px, py in poly] for poly in polys]
+            polys_d = [[((px + dE) * sc, (py + dN) * sc) for px, py in poly]
+                       for poly in polys]
             mappable = _plot_slice_panel(ax, polys_d, vals,
-                cmap_obj=cmap_obj, norm=norm,
-                ocean_color=ocean_color, ocean_value=ocean_value, invert_v=False)
+                                         cmap_obj=cmap_obj, norm=norm,
+                                         ocean_color=ocean_color, ocean_value=ocean_value, invert_v=False)
             ax.set_xlabel(f"x (easting){sfx}")
             ax.set_ylabel(f"y (northing){sfx}")
-            if _xlim is not None: ax.set_xlim([v + dE for v in _xlim])
-            if _ylim is not None: ax.set_ylim([v + dN for v in _ylim])
-            if _fmt_x is not None: ax.xaxis.set_major_formatter(_fmt_x)
-            if _fmt_y is not None: ax.yaxis.set_major_formatter(_fmt_y)
-            if _do_equal: ax.set_aspect("equal", adjustable="box")
-            if title is None: title = f"Map  z = {z0/1000:.1f} km"
-            for sn, sx_m, sy_m in _site_xys:
+            if _xlim is not None:
+                ax.set_xlim([(v + dE) * sc for v in _xlim])
+            if _ylim is not None:
+                ax.set_ylim([(v + dN) * sc for v in _ylim])
+            if _fmt_x is not None:
+                ax.xaxis.set_major_formatter(_fmt_x)
+            if _fmt_y is not None:
+                ax.yaxis.set_major_formatter(_fmt_y)
+            if _do_equal:
+                ax.set_aspect("equal", adjustable="box")
+            if title is None:
+                title = f"Map  z = {z0 / 1000:.1f} km"
+            for sn, sx_m, sy_m, _elev in (_site_xys if sites_in_maps else []):
                 mk = dict(SITE_MARKER)
                 mk.setdefault("label", f"Site {sn}")
-                ax.plot(sx_m + dE, sy_m + dN, linestyle="none", **mk)
+                ax.plot((sx_m + dE) * sc, (sy_m + dN) * sc,
+                        linestyle="none", **mk)
+            for _mm in (map_markers or []):
+                _lat, _lon = _mm["latlon"]
+                _mx_m, _my_m = fem.latlon_to_model(
+                    _lat, _lon, UTM_ZONE, UTM_NORTHERN,
+                    UTM_ORIGIN_E, UTM_ORIGIN_N)
+                _mk = dict(
+                    marker=_mm.get("marker", "+"),
+                    color=_mm.get("color", "black"),
+                    ms=_mm.get("ms", 8),
+                    zorder=_mm.get("zorder", 11),
+                    label=_mm.get("name", None),
+                )
+                _mk.update({k: v for k, v in _mm.items()
+                             if k not in ("latlon", "marker", "color",
+                                          "ms", "zorder", "name")})
+                ax.plot((_mx_m + dE) * sc, (_my_m + dN) * sc,
+                        linestyle="none", **_mk)
 
         # ── NS curtain (x = const) ────────────────────────────────────────
         elif kind == "ns":
             x0 = float(spec.get("x0", 0.0))
-            if out: print(f"    NS slice x={x0:.0f} m …")
+            if out:
+                print(f"    NS slice x={x0:.0f} m …")
             normal, point, u_ax, v_ax, inv = _axis_slice_params(0, x0)
             polys, vals = _slice_geometry(nodes, conn, rho_plot,
                                           normal, point, u_ax, v_ax)
-            # u_ax points in y (northing) direction
-            polys_d = [[(py + dN, -pz) for py, pz in poly] for poly in polys]
+            # u_ax points in y (northing) direction; vertical axis: -pz (depth positive-down)
+            polys_d = [[((py + dN) * sc, -pz * _dz_sc) for py, pz in poly] for poly in polys]
             mappable = _plot_slice_panel(ax, polys_d, vals,
-                cmap_obj=cmap_obj, norm=norm,
-                ocean_color=ocean_color, ocean_value=ocean_value, invert_v=inv)
+                                         cmap_obj=cmap_obj, norm=norm,
+                                         ocean_color=ocean_color, ocean_value=ocean_value, invert_v=inv)
             ax.set_xlabel(f"y (northing){sfx}")
-            ax.set_ylabel("depth (m)")
-            if _ylim is not None: ax.set_xlim([v + dN for v in _ylim])
-            if _zlim is not None: ax.set_ylim([_zlim[1], _zlim[0]])
-            if _fmt_y is not None: ax.xaxis.set_major_formatter(_fmt_y)
-            if _do_equal: ax.set_aspect("equal", adjustable="box")
-            if title is None: title = f"N-S  x = {x0/1000:.1f} km"
-            for sn, sx_m, sy_m in _site_xys:
-                ax.axvline(sy_m + dN, color=SITE_MARKER["color"],
-                           lw=1.2, ls="--", zorder=9,
-                           label=f"Site {sn} (y)")
+            ax.set_ylabel("depth (km)" if depth_km else "depth (m)")
+            if _ylim is not None:
+                ax.set_xlim([(v + dN) * sc for v in _ylim])
+            if _zlim is not None:
+                ax.set_ylim([_zlim[1] * _dz_sc, _zlim[0] * _dz_sc])
+            if _fmt_y is not None:
+                ax.xaxis.set_major_formatter(_fmt_y)
+            if _do_equal:
+                ax.set_aspect("equal", adjustable="box")
+            if title is None:
+                title = f"N-S  easting = {(x0 + UTM_ORIGIN_E) / 1000:.1f} km"
+            if sites_in_slices:
+                _pd = projection_dist
+                for sn, sx_m, sy_m, _elev in _site_xys:
+                    if _pd is not None and abs(sx_m - x0) > _pd:
+                        continue
+                    mk = dict(SITE_MARKER_SLICES)
+                    mk.setdefault("label", f"Site {sn}")
+                    ax.plot((sy_m + dN) * sc, -_elev * _dz_sc, linestyle="none", **mk)
 
         # ── EW curtain (y = const) ────────────────────────────────────────
         elif kind == "ew":
             y0 = float(spec.get("y0", 0.0))
-            if out: print(f"    EW slice y={y0:.0f} m …")
+            if out:
+                print(f"    EW slice y={y0:.0f} m …")
             normal, point, u_ax, v_ax, inv = _axis_slice_params(1, y0)
             polys, vals = _slice_geometry(nodes, conn, rho_plot,
                                           normal, point, u_ax, v_ax)
-            # u_ax points in x (easting) direction
-            polys_d = [[(px + dE, -pz) for px, pz in poly] for poly in polys]
+            # u_ax points in x (easting) direction; vertical axis: -pz
+            polys_d = [[((px + dE) * sc, -pz * _dz_sc) for px, pz in poly] for poly in polys]
             mappable = _plot_slice_panel(ax, polys_d, vals,
-                cmap_obj=cmap_obj, norm=norm,
-                ocean_color=ocean_color, ocean_value=ocean_value, invert_v=inv)
+                                         cmap_obj=cmap_obj, norm=norm,
+                                         ocean_color=ocean_color, ocean_value=ocean_value, invert_v=inv)
             ax.set_xlabel(f"x (easting){sfx}")
-            ax.set_ylabel("depth (m)")
-            if _xlim is not None: ax.set_xlim([v + dE for v in _xlim])
-            if _zlim is not None: ax.set_ylim([_zlim[1], _zlim[0]])
-            if _fmt_x is not None: ax.xaxis.set_major_formatter(_fmt_x)
-            if _do_equal: ax.set_aspect("equal", adjustable="box")
-            if title is None: title = f"E-W  y = {y0/1000:.1f} km"
-            for sn, sx_m, sy_m in _site_xys:
-                ax.axvline(sx_m + dE, color=SITE_MARKER["color"],
-                           lw=1.2, ls="--", zorder=9,
-                           label=f"Site {sn} (x)")
+            ax.set_ylabel("depth (km)" if depth_km else "depth (m)")
+            if _xlim is not None:
+                ax.set_xlim([(v + dE) * sc for v in _xlim])
+            if _zlim is not None:
+                ax.set_ylim([_zlim[1] * _dz_sc, _zlim[0] * _dz_sc])
+            if _fmt_x is not None:
+                ax.xaxis.set_major_formatter(_fmt_x)
+            if _do_equal:
+                ax.set_aspect("equal", adjustable="box")
+            if title is None:
+                title = f"E-W  northing = {(y0 + UTM_ORIGIN_N) / 1000:.1f} km"
+            if sites_in_slices:
+                _pd = projection_dist
+                for sn, sx_m, sy_m, _elev in _site_xys:
+                    if _pd is not None and abs(sy_m - y0) > _pd:
+                        continue
+                    mk = dict(SITE_MARKER_SLICES)
+                    mk.setdefault("label", f"Site {sn}")
+                    ax.plot((sx_m + dE) * sc, -_elev * _dz_sc, linestyle="none", **mk)
 
         # ── arbitrary plane ────────────────────────────────────────────────
         elif kind == "plane":
-            _pt     = np.asarray(spec.get("point", [0., 0., 0.]), dtype=float)
+            _pt = np.asarray(spec.get("point", [0., 0., 0.]), dtype=float)
             _strike = float(spec.get("strike", 0.0))
-            _dip    = float(spec.get("dip", 90.0))
+            _dip = float(spec.get("dip", 90.0))
             if out:
                 print(f"    plane slice strike={_strike:.0f}° dip={_dip:.0f}° …")
-            normal      = _strike_dip_to_normal(_strike, _dip)
-            u_ax, v_ax  = _plane_basis(normal)
+            normal = _strike_dip_to_normal(_strike, _dip)
+            u_ax, v_ax = _plane_basis(normal)
             polys, vals = _slice_geometry(nodes, conn, rho_plot,
                                           normal, _pt, u_ax, v_ax)
             mappable = _plot_slice_panel(ax, polys, vals,
-                cmap_obj=cmap_obj, norm=norm,
-                ocean_color=ocean_color, ocean_value=ocean_value, invert_v=True)
+                                         cmap_obj=cmap_obj, norm=norm,
+                                         ocean_color=ocean_color, ocean_value=ocean_value, invert_v=True)
             ax.set_xlabel("along-strike (m)")
-            ax.set_ylabel("down-dip (m)")
-            if _xlim is not None: ax.set_xlim(_xlim)
-            if _ylim is not None: ax.set_ylim(_ylim)
+            ax.set_ylabel("down-dip (km)" if depth_km else "down-dip (m)")
+            if _xlim is not None:
+                ax.set_xlim(_xlim)
+            if _ylim is not None:
+                ax.set_ylim(_ylim)
             if title is None:
                 title = f"Plane  str={_strike:.0f}°  dip={_dip:.0f}°"
+            if sites_in_slices:
+                _pd = projection_dist
+                for sn, sx_m, sy_m, _elev in _site_xys:
+                    site_xyz = np.array([sx_m, sy_m, -_elev]) - _pt
+                    perp_dist = abs(float(np.dot(site_xyz, normal)))
+                    if _pd is not None and perp_dist > _pd:
+                        continue
+                    u_coord = float(np.dot(site_xyz, u_ax))
+                    mk = dict(SITE_MARKER_SLICES)
+                    mk.setdefault("label", f"Site {sn}")
+                    ax.plot(u_coord, -_elev * _dz_sc, linestyle="none", **mk)
 
         else:
             ax.set_visible(False)
@@ -920,7 +1171,15 @@ def plot_model_slices(
 
         ax.set_title(title, fontsize=9)
         ax.tick_params(labelsize=7)
-        if _site_xys and kind in ("map", "ns", "ew"):
+        _show_legend = (
+            (_site_xys and (
+                (sites_in_maps and kind == "map") or
+                (sites_in_slices and kind in ("ns", "ew", "plane"))
+            )) or
+            (map_markers and kind == "map" and
+             any(m.get("name") for m in map_markers))
+        )
+        if _show_legend:
             ax.legend(fontsize=7, loc="lower right")
 
     fig.suptitle(f"Model: {os.path.basename(model_file)}", fontsize=10)
@@ -932,8 +1191,6 @@ def plot_model_slices(
             print(f"  plot: saved → {plot_file}")
     else:
         plt.show()
-
-
 
 
 def _resolve_borehole_xy(spec: dict, zone: int, northern: bool) -> tuple[float, float]:
@@ -952,7 +1209,7 @@ def _resolve_borehole_xy(spec: dict, zone: int, northern: bool) -> tuple[float, 
     x_m, y_m : model-local metres
     """
     return _resolve_x0(spec["x"], zone, northern), \
-           _resolve_y0(spec["y"], zone, northern)
+        _resolve_y0(spec["y"], zone, northern)
 
 
 def plot_borehole_logs(
@@ -1006,9 +1263,10 @@ def plot_borehole_logs(
     # ── load model ──────────────────────────────────────────────────────────
     if out:
         print(f"  boreholes: reading model {os.path.basename(model_file)}")
-    mesh     = fviz.read_femtic_mesh(mesh_file)
-    block    = fviz.read_resistivity_block(model_file)
-    rho_elem = fviz.map_regions_to_element_rho(block.region_of_elem, block.region_rho)
+    mesh = fviz.read_femtic_mesh(mesh_file)
+    block = fviz.read_resistivity_block(model_file)
+    rho_elem = fviz.map_regions_to_element_rho(
+        block.region_of_elem, block.region_rho)
     rho_plot = fviz.prepare_rho_for_plotting(
         rho_elem,
         air_is_nan=True,
@@ -1016,7 +1274,7 @@ def plot_borehole_logs(
         region_of_elem=block.region_of_elem,
     )
     nodes = mesh.nodes
-    conn  = mesh.conn
+    conn = mesh.conn
 
     style = dict(lw=1.2, marker="none")
     if borehole_style:
@@ -1026,11 +1284,11 @@ def plot_borehole_logs(
     n = len(borehole_sites)
     logs = []
     for spec in borehole_sites:
-        name  = spec.get("name", "?")
+        name = spec.get("name", "?")
         x_m, y_m = _resolve_borehole_xy(spec, zone, northern)
         z_top = float(spec.get("z_top", 0.0))
         z_bot = float(spec.get("z_bot", 20000.0))
-        dz    = float(spec.get("dz",    200.0))
+        dz = float(spec.get("dz", 200.0))
         if out:
             print(f"  borehole {name!r}  x={x_m:.0f} m  y={y_m:.0f} m "
                   f"  z=[{z_top:.0f}..{z_bot:.0f}]  dz={dz:.0f} m")
@@ -1054,7 +1312,7 @@ def plot_borehole_logs(
     colors = [c["color"] for c in prop_cycle]
 
     for idx, (spec, log) in enumerate(zip(borehole_sites, logs)):
-        ax  = ax_arr[idx]
+        ax = ax_arr[idx]
         col = colors[idx % len(colors)]
         ax.plot(log["log_rho"], log["depths"],
                 color=col, label=log["name"], **style)
@@ -1102,32 +1360,39 @@ print(f"UTM zone: {UTM_ZONE}{hemi}  "
       f"[projection: {_proj_backend}]")
 print()
 
-# --- (1b) Optionally estimate UTM_ORIGIN_E / UTM_ORIGIN_N from sites ------
-if ESTIMATE_ORIGIN:
-    _cal_sites = list(CALIBRATION_SITES)
-    if SITE_DAT is not None and os.path.isfile(SITE_DAT):
+# --- (1b) Optionally estimate UTM_ORIGIN_E / UTM_ORIGIN_N from site.dat ---
+if ORIGIN_METHOD is not None:
+    if SITE_DAT is None or not os.path.isfile(SITE_DAT):
+        print(f"  WARNING: ORIGIN_METHOD={ORIGIN_METHOD!r} requested but "
+              f"SITE_DAT is not available — using hard-coded origin.")
+    else:
         _sdat = fem.read_site_dat(SITE_DAT)
-        # merge: site.dat entries take priority; CALIBRATION_SITES fills gaps
-        _sdat_ids = {d["sitenum"] for d in _sdat}
-        _extra    = [d for d in _cal_sites if d.get("site") not in _sdat_ids]
-        _cal_sites = _sdat + _extra
-        if OUT:
-            print(f"  site.dat: loaded {len(_sdat)} site(s) from {SITE_DAT}")
-    UTM_ORIGIN_E, UTM_ORIGIN_N = fem.estimate_utm_origin(
-        _cal_sites, OBSERVE_FILE, UTM_ZONE, UTM_NORTHERN,
-        site_dat=SITE_DAT, out=OUT
-    )
-    if UPDATE_CONFIG:
-        UTM_ORIGIN_LAT, UTM_ORIGIN_LON = utl.utm_to_latlon_zn(
-            UTM_ORIGIN_E, UTM_ORIGIN_N, UTM_ZONE, UTM_NORTHERN
-        )
-        UTM_ZONE, UTM_NORTHERN = _utm_zone_from_origin()
-        if OUT:
-            print(f"Config updated:  UTM_ORIGIN_LAT = {UTM_ORIGIN_LAT:.6f}")
-            print(f"                 UTM_ORIGIN_LON = {UTM_ORIGIN_LON:.6f}")
-            print(f"                 UTM_ZONE       = {UTM_ZONE}"
-                  f"{'N' if UTM_NORTHERN else 'S'}")
-            print()
+        if not _sdat:
+            print(f"  WARNING: SITE_DAT is empty — using hard-coded origin.")
+        else:
+            _Es = np.array([d["easting"]  for d in _sdat])
+            _Ns = np.array([d["northing"] for d in _sdat])
+            if ORIGIN_METHOD == "box":
+                UTM_ORIGIN_E = 0.5 * (_Es.min() + _Es.max())
+                UTM_ORIGIN_N = 0.5 * (_Ns.min() + _Ns.max())
+            elif ORIGIN_METHOD == "average":
+                UTM_ORIGIN_E = float(_Es.mean())
+                UTM_ORIGIN_N = float(_Ns.mean())
+            else:
+                sys.exit(f"Unknown ORIGIN_METHOD {ORIGIN_METHOD!r}; "
+                         f"use None, 'box', or 'average'.")
+            UTM_ORIGIN_LAT, UTM_ORIGIN_LON = utl.utm_to_latlon_zn(
+                UTM_ORIGIN_E, UTM_ORIGIN_N, UTM_ZONE, UTM_NORTHERN
+            )
+            UTM_ZONE, UTM_NORTHERN = _utm_zone_from_origin()
+            if OUT:
+                print(f"Origin estimated ({ORIGIN_METHOD}, {len(_sdat)} sites):")
+                print(f"  UTM_ORIGIN_E   = {UTM_ORIGIN_E:.1f} m")
+                print(f"  UTM_ORIGIN_N   = {UTM_ORIGIN_N:.1f} m")
+                print(f"  UTM_ORIGIN_LAT = {UTM_ORIGIN_LAT:.6f}°")
+                print(f"  UTM_ORIGIN_LON = {UTM_ORIGIN_LON:.6f}°")
+                print(f"  UTM_ZONE       = {UTM_ZONE}{'N' if UTM_NORTHERN else 'S'}")
+                print()
 
 # --- (2) Resolve slice positions to model-local metres ---------------------
 slices_resolved = resolve_slices(PLOT_SLICES, UTM_ZONE, UTM_NORTHERN)
@@ -1135,33 +1400,40 @@ if OUT:
     print()
 
 # --- (3) Optionally read site position(s) ----------------------------
-# Primary: SITE_DAT (mt_make_sitelist.py format).  Fallback: observe.dat.
-site_xys = []   # list of (label, x_m, y_m)
-if SITE_DAT is not None:
-    print(f"Reading site position(s) from site.dat: {SITE_DAT}")
+# Strategy:
+#   (a) site.dat present → UTM easting/northing converted to model-local via
+#       current UTM_ORIGIN_E/N.  Full coordinate display available.
+#   (b) observe.dat fallback → model-local coordinates read directly.
+#       No UTM or lat/lon display possible.
+site_xys = []       # list of (label, x_m, y_m)
+_sites_from_obs = False   # flag: observe.dat path used (model-local only)
+_need_sites = PLOT_SITES_MAPS or PLOT_SITES_SLICES
+if _need_sites and SITE_DAT is not None:
+    print(f"Reading site positions from site.dat: {SITE_DAT}")
     _rows = fem.read_site_dat(SITE_DAT, site_names=SITE_NAMES)
     for row in _rows:
         sx_m, sy_m = fem.utm_to_model(row["easting"], row["northing"],
-                                       UTM_ORIGIN_E, UTM_ORIGIN_N)
-        site_xys.append((row["name"], sx_m, sy_m))
-        print(f"  {row['name']}: model-local x = {sx_m/1000:.3f} km,  y = {sy_m/1000:.3f} km")
-        if DISPLAY_COORDS == "utm":
-            print(f"           UTM         E = {sx_m + UTM_ORIGIN_E:.1f} m,  "
-                  f"N = {sy_m + UTM_ORIGIN_N:.1f} m")
+                                      UTM_ORIGIN_E, UTM_ORIGIN_N)
+        site_xys.append((row["name"], sx_m, sy_m, float(row.get("elev", 0.0))))
+        print(f"  {row['name']}: model-local x = {sx_m / 1000:.3f} km,"
+              f"  y = {sy_m / 1000:.3f} km")
+        if DISPLAY_COORDS in ("utm", "latlon"):
+            print(f"           UTM         E = {sx_m + UTM_ORIGIN_E:.1f} m,"
+                  f"  N = {sy_m + UTM_ORIGIN_N:.1f} m")
     if not site_xys:
         print("  (no matching sites found in site.dat)")
     print()
-elif SITE_NUMBER is not None:
+elif _need_sites and SITE_NUMBER is not None:
     _site_nums = (SITE_NUMBER if isinstance(SITE_NUMBER, (list, tuple))
                   else [SITE_NUMBER])
-    print(f"Reading site position(s) from: {OBSERVE_FILE}")
+    print(f"Reading site positions from observe.dat: {OBSERVE_FILE}")
+    print(f"  Note: observe.dat provides model-local coordinates only.")
     for _sn in _site_nums:
         sx_m, sy_m = fem.read_site_position(OBSERVE_FILE, _sn)
-        site_xys.append((_sn, sx_m, sy_m))
-        print(f"  site {_sn}: model-local x = {sx_m/1000:.3f} km,  y = {sy_m/1000:.3f} km")
-        if DISPLAY_COORDS == "utm":
-            print(f"           UTM         E = {sx_m + UTM_ORIGIN_E:.1f} m,  "
-                  f"N = {sy_m + UTM_ORIGIN_N:.1f} m")
+        site_xys.append((_sn, sx_m, sy_m, 0.0))
+        print(f"  site {_sn}: model-local x = {sx_m / 1000:.3f} km,"
+              f"  y = {sy_m / 1000:.3f} km")
+    _sites_from_obs = True
     print()
 
 # --- (4) Plot slices -------------------------------------------------------
@@ -1170,22 +1442,34 @@ if fviz is None:
 
 print(f"Plotting model: {MODEL_FILE}")
 plot_model_slices(
-    model_file  = MODEL_FILE,
-    mesh_file   = MESH_FILE,
-    slices      = slices_resolved,
-    cmap        = PLOT_CMAP,
-    clim        = PLOT_CLIM,
-    xlim        = PLOT_XLIM,
-    ylim        = PLOT_YLIM,
-    zlim        = PLOT_ZLIM,
-    ocean_color = PLOT_OCEAN_COLOR,
-    ocean_value = OCEAN_RHO,
-    air_bgcolor = PLOT_AIR_BGCOLOR,
-    site_xys    = site_xys,
-    plot_file   = PLOT_FILE,
-    dpi         = PLOT_DPI,
-    equal_aspect = PLOT_EQUAL_ASPECT,
-    out         = OUT,
+    model_file=MODEL_FILE,
+    mesh_file=MESH_FILE,
+    slices=slices_resolved,
+    cmap=PLOT_CMAP,
+    clim=PLOT_CLIM,
+    xlim=PLOT_XLIM,
+    ylim=PLOT_YLIM,
+    zlim=PLOT_ZLIM,
+    ocean_color=PLOT_OCEAN_COLOR,
+    ocean_value=OCEAN_RHO,
+    air_bgcolor=PLOT_AIR_BGCOLOR,
+    site_xys=site_xys,
+    obs_coords_only=_sites_from_obs,
+    projection_dist=PROJECTION_DIST,
+    sites_in_maps=PLOT_SITES_MAPS,
+    sites_in_slices=PLOT_SITES_SLICES,
+    map_markers=MAP_MARKERS,
+    plot_file=PLOT_FILE,
+    dpi=PLOT_DPI,
+    equal_aspect=PLOT_EQUAL_ASPECT,
+    depth_km=DEPTH_KM,
+    horiz_km=HORIZ_KM,
+    nrows=PLOT_NROWS,
+    ncols=PLOT_NCOLS,
+    panel_height=PLOT_PANEL_HEIGHT / 2.54,
+    panel_width=PLOT_PANEL_WIDTH / 2.54 if PLOT_PANEL_WIDTH is not None else None,
+    figsize=[v / 2.54 for v in PLOT_FIGSIZE] if PLOT_FIGSIZE is not None else None,
+    out=OUT,
 )
 print("Done.")
 
@@ -1196,24 +1480,24 @@ if PLOT3D:
     else:
         print(f"Rendering 3-D model: {MODEL_FILE}")
         fviz.plot_model_3d(
-            mesh_file      = MESH_FILE,
-            block_file     = MODEL_FILE,
-            scalar         = PLOT3D_SCALAR,
-            clim           = PLOT3D_CLIM,
-            cmap           = PLOT3D_CMAP,
-            slice_x        = PLOT3D_SLICE_X,
-            slice_y        = PLOT3D_SLICE_Y,
-            slice_z        = PLOT3D_SLICE_Z,
-            slice_planes   = PLOT3D_SLICE_PLANES,
-            isovalues      = PLOT3D_ISOVALUES,
-            iso_opacity    = PLOT3D_ISO_OPACITY,
-            iso_cmap       = PLOT3D_CMAP,
-            ocean_value    = OCEAN_RHO,
-            air_region_index   = 0,
-            ocean_region_index = 1,
-            window_size    = PLOT3D_WINDOW_SIZE,
-            plot_file      = PLOT3D_FILE,
-            out            = OUT,
+            mesh_file=MESH_FILE,
+            block_file=MODEL_FILE,
+            scalar=PLOT3D_SCALAR,
+            clim=PLOT3D_CLIM,
+            cmap=PLOT3D_CMAP,
+            slice_x=PLOT3D_SLICE_X,
+            slice_y=PLOT3D_SLICE_Y,
+            slice_z=PLOT3D_SLICE_Z,
+            slice_planes=PLOT3D_SLICE_PLANES,
+            isovalues=PLOT3D_ISOVALUES,
+            iso_opacity=PLOT3D_ISO_OPACITY,
+            iso_cmap=PLOT3D_CMAP,
+            ocean_value=OCEAN_RHO,
+            air_region_index=0,
+            ocean_region_index=1,
+            window_size=PLOT3D_WINDOW_SIZE,
+            plot_file=PLOT3D_FILE,
+            out=OUT,
         )
         print("3-D plot done.")
 
@@ -1226,16 +1510,16 @@ if PLOT_BOREHOLE:
     else:
         print(f"Sampling {len(BOREHOLE_SITES)} borehole(s) …")
         plot_borehole_logs(
-            model_file     = MODEL_FILE,
-            mesh_file      = MESH_FILE,
-            borehole_sites = BOREHOLE_SITES,
-            zone           = UTM_ZONE,
-            northern       = UTM_NORTHERN,
-            clim           = BOREHOLE_XLIM,
-            borehole_style = BOREHOLE_STYLE,
-            shared         = BOREHOLE_SHARED,
-            plot_file      = BOREHOLE_FILE,
-            dpi            = PLOT_DPI,
-            out            = OUT,
+            model_file=MODEL_FILE,
+            mesh_file=MESH_FILE,
+            borehole_sites=BOREHOLE_SITES,
+            zone=UTM_ZONE,
+            northern=UTM_NORTHERN,
+            clim=BOREHOLE_XLIM,
+            borehole_style=BOREHOLE_STYLE,
+            shared=BOREHOLE_SHARED,
+            plot_file=BOREHOLE_FILE,
+            dpi=PLOT_DPI,
+            out=OUT,
         )
         print("Borehole plot done.")

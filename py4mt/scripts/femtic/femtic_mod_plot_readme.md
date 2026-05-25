@@ -26,9 +26,8 @@ Typical use cases:
 
 ```
 UTM_ORIGIN_LAT / LON  →  UTM zone (auto)
-                                          [optional: ESTIMATE_ORIGIN = True]
-        CALIBRATION_SITES  +  observe.dat  →  estimate_utm_origin()
-                                               UTM_ORIGIN_E / N  (printed)
+                                          [optional: ORIGIN_METHOD = "box" | "average"]
+        site.dat (UTM easting/northing)  →  UTM_ORIGIN_E / N  (printed)
 
 resistivity_block_iterX.dat  +  mesh.dat
         |
@@ -37,10 +36,10 @@ resistivity_block_iterX.dat  +  mesh.dat
         |
         v  resolve_slices(PLOT_SLICES)       [optional CRS conversion]
    slice positions in model-local metres
-        |                                    [optional]
-        v  read_sitelist(SITELIST_FILE)        [primary: FEMTIC sitelist]
+        |                                    [optional, PLOT_SITES_MAPS / PLOT_SITES_SLICES]
+        v  read_site_dat(SITE_DAT)           [primary: site.dat UTM coords]
    (name, x_m, y_m) per site
-        OR  read_site_position(OBSERVE_FILE)   [fallback: observe.dat]
+        OR  read_site_position(OBSERVE_FILE) [fallback: observe.dat, model-local only]
         |
         v  plot_model_slices(...)            [exact tet-plane intersection]
 figure file / interactive window
@@ -66,8 +65,8 @@ of the script.  No command-line arguments are used; edit the script directly.
 | `WORK_DIR` | `/home/vrath/Py4MTX/work/` | Working directory |
 | `MODEL_FILE` | `resistivity_block_iter0.dat` | Resistivity block to display (any iteration) |
 | `MESH_FILE` | `mesh.dat` | Mesh file — always required |
-| `OBSERVE_FILE` | `observe.dat` | Used by `ESTIMATE_ORIGIN`; fallback site-overlay source when `SITELIST_FILE` is None |
-| `SITELIST_FILE` | `Sitelist_femtic.txt` | FEMTIC sitelist from `mt_make_sitelist.py` — primary site-overlay source; `None` = use observe.dat fallback |
+| `OBSERVE_FILE` | `observe.dat` | Fallback site-overlay source when `SITE_DAT` is None; provides model-local coordinates only |
+| `SITE_DAT` | `site.dat` | `mt_make_sitelist.py` CSV — primary site source and origin estimation input; `None` = use observe.dat fallback |
 
 ### Ocean / air handling
 
@@ -101,43 +100,23 @@ standard 6° band rule (Norway/Svalbard special zones not handled; use
 of `UTM_ORIGIN_LAT`.  The zone and active projection backend are printed at
 startup.
 
-### Mesh-centre estimation from calibration sites
+### Mesh-centre estimation from site.dat
 
-If `UTM_ORIGIN_E` / `UTM_ORIGIN_N` are not known in advance, they can be
-estimated from a small set of MT sites whose model-local positions (from
-`observe.dat`) and geographic coordinates are both known.  Set
-`ESTIMATE_ORIGIN = True` and populate `CALIBRATION_SITES`:
+If `UTM_ORIGIN_E` / `UTM_ORIGIN_N` are not known in advance they can be
+estimated from the UTM coordinates stored in `SITE_DAT`.  Set `ORIGIN_METHOD`
+to one of:
 
-```python
-ESTIMATE_ORIGIN = True
+| `ORIGIN_METHOD` | Description |
+|---|---|
+| `None` (default) | Use the hard-coded `UTM_ORIGIN_E` / `UTM_ORIGIN_N` above |
+| `"box"` | Midpoint of the UTM bounding box of all sites — femticPY-compatible |
+| `"average"` | Arithmetic mean of all site UTM easting/northing values |
 
-CALIBRATION_SITES = [
-    dict(site=1,  crs="latlon", coords=[-71.500, -16.380]),  # [lon, lat]
-    dict(site=10, crs="latlon", coords=[-71.620, -16.450]),
-    dict(site=25, crs="utm",    coords=[224500., 8179300.]),  # [E, N]
-]
-```
-
-| Key | Type | Description |
-|---|---|---|
-| `site` | int | Site number — matched against `observe.dat` |
-| `crs` | str | `"latlon"` for decimal degrees; `"utm"` for UTM metres |
-| `coords` | list | `[lon_deg, lat_deg]` for `"latlon"`; `[E_m, N_m]` for `"utm"` |
-
-**Method** — the mesh is a pure translation of UTM space (FEMTIC aligns
-model-local axes with UTM east/north), so each site yields one estimate of
-the origin:
-
-```
-UTM_ORIGIN_E = E_site − x_m_site
-UTM_ORIGIN_N = N_site − y_m_site
-```
-
-With N ≥ 1 sites the least-squares solution is the mean of the N implied
-origins.  The estimated values and per-site residuals are printed; a large
-residual on one site flags a coordinate error.  The result overwrites
-`UTM_ORIGIN_E` / `UTM_ORIGIN_N` for the current run — copy the printed
-values back into the Configuration block once satisfied.
+Both methods read all rows from `SITE_DAT` (no site-name filtering).  The
+result overwrites `UTM_ORIGIN_E` / `UTM_ORIGIN_N` (and derives
+`UTM_ORIGIN_LAT` / `UTM_ORIGIN_LON`) for the current run; the printed values
+can be copied back into the Configuration block for future runs.  Falls back
+silently to the hard-coded values if `SITE_DAT` is None or unreadable.
 
 Note: `UTM_ORIGIN_LAT` / `UTM_ORIGIN_LON` are still needed to derive the
 UTM zone number; they only need to be approximately correct (any point in
@@ -148,26 +127,67 @@ the survey area within the correct 6° longitude band suffices).
 | `DISPLAY_COORDS` | Axis ticks |
 |---|---|
 | `"model"` (default) | model-local metres, origin at mesh centre |
-| `"utm"` | absolute UTM metres |
+| `"utm"` | absolute UTM kilometres (km) |
+| `"latlon"` | decimal degrees (longitude for x, latitude for y) |
+
+Note: `"utm"` and `"latlon"` are suppressed automatically when sites come
+from the observe.dat fallback (model-local coordinates only); the script
+prints a warning and falls back to `"model"` for site marker placement.
 
 ### Site overlay
 
-Two sources are supported; `SITELIST_FILE` takes priority:
+Two sources are supported; `SITE_DAT` takes priority:
 
 | Variable | Default | Description |
 |---|---|---|
-| `SITELIST_FILE` | `Sitelist_femtic.txt` | FEMTIC sitelist CSV (`data_proc.read_sitelist`); `None` = use observe.dat |
-| `SITE_NAMES` | `None` | Site name(s) to select from the sitelist; `None` = all sites |
-| `SITE_NUMBER` | `[5, 6, 7]` | Fallback: 1-based site index(es) from `observe.dat` (int or list of int); used when `SITELIST_FILE` is None; `None` = no overlay |
-| `SITE_MARKER` | `dict(marker="v", color="black", ms=8, …)` | Matplotlib marker kwargs for map panels |
+| `PLOT_SITES_MAPS` | `True` | Show site markers on horizontal map panels |
+| `PLOT_SITES_SLICES` | `False` | Show site markers on curtain (ns/ew) and plane panels |
+| `SITE_DAT` | `WORK_DIR + "site.dat"` | `mt_make_sitelist.py` CSV (`name, lat, lon, elev, sitenum, easting, northing`); `None` = fall back to observe.dat / `SITE_NUMBER` |
+| `SITE_NAMES` | `None` | Site name(s) to select from `SITE_DAT`; `None` = all sites |
+| `SITE_NUMBER` | `[5, 6, 7]` | Fallback: 1-based site index(es) from `observe.dat` (int or list of int); used when `SITE_DAT` is `None`; `None` = no overlay |
+| `PROJECTION_DIST` | `None` | Maximum distance [m] from a curtain/plane for a site to appear on that panel; `None` = no filtering |
+| `SITE_MARKER` | `dict(marker="v", color="black", ms=6, …)` | Matplotlib marker kwargs for map panels |
+| `SITE_MARKER_SLICES` | `dict(marker="o", color="black", ms=6, …)` | Matplotlib marker kwargs for curtain and plane panels |
 
-On **map panels** each site is plotted as a point marker at its (x, y)
-model-local position.  On **NS / EW curtain panels** it is plotted as a
-dashed vertical line at the projected horizontal coordinate (y or x
-respectively).  All matching sites are drawn in the same `SITE_MARKER`
-style; labels in the legend are the site names (sitelist path) or site
-numbers (observe.dat fallback).  Arbitrary-plane panels carry no automatic
-site projection.
+On **map panels** (`PLOT_SITES_MAPS = True`) each site is plotted as an
+inverted-triangle marker at its (x, y) position.  On **NS / EW curtain panels**
+and **arbitrary-plane panels** (`PLOT_SITES_SLICES = True`) a circle is placed
+at the site's actual elevation from the `elev` column of `SITE_DAT` (converted
+to the depth-axis scale via `_dz_sc`).  For NS panels the horizontal position is
+the site's y coordinate; for EW panels, x; for plane panels, the along-strike
+projection onto the plane's u-axis.
+
+`PROJECTION_DIST` applies to curtain and plane panels only: NS panels skip sites
+with `|x_site − x0| > PROJECTION_DIST`; EW panels skip `|y_site − y0|`; plane
+panels skip sites whose perpendicular distance from the plane exceeds it.
+
+When sites come from the observe.dat fallback (model-local coordinates only),
+`DISPLAY_COORDS = "utm"` or `"latlon"` is silently ignored for site marker
+placement and a note is printed.
+
+### Additional map markers
+
+`MAP_MARKERS` is a list of dicts overlaid on **map panels only**.  Each dict may contain:
+
+| Key | Type | Description |
+|---|---|---|
+| `latlon` | `[lat, lon]` | Position in decimal degrees (required) |
+| `marker` | str | Matplotlib marker string, e.g. `"P"`, `"*"`, `"+"` |
+| `color` | str | Marker colour |
+| `ms` | float | Marker size in points |
+| `name` | str \| `None` | Legend label; `None` = no legend entry |
+| `zorder` | int | Draw order (default 11, above site markers) |
+
+Any additional Matplotlib `plot` kwargs (`mew`, `mfc`, etc.) are also accepted.
+Positions are converted from lat/lon to model-local at render time, so the
+estimated origin (`ORIGIN_METHOD`) is automatically applied.
+
+```python
+MAP_MARKERS = [
+    dict(latlon=[-16.34861, -70.90222], marker="P", color="black", ms=8,
+         name="Ubinas summit"),
+]
+```
 
 ### Output / figure
 
@@ -182,6 +202,16 @@ site projection.
 | `PLOT_XLIM` | `[-20000., 20000.]` | Global easting limits (model-local m); `None` = auto |
 | `PLOT_YLIM` | `[-20000., 20000.]` | Global northing limits (model-local m); `None` = auto |
 | `PLOT_ZLIM` | `[-6000., 15000.]` | Global depth limits (model-local m); `None` = auto |
+| `PLOT_EQUAL_ASPECT` | `True` | Equal aspect ratio on map/ns/ew panels; requires matching km scales on both axes |
+| `DEPTH_KM` | `False` | Show depth axis in km on curtain and plane panels |
+| `HORIZ_KM` | `False` | Show horizontal (easting/northing) axes in km in `"model"` mode; no effect for `"utm"` (already km) or `"latlon"` |
+| `PLOT_NROWS` | `None` | Subplot grid rows; `None` = 1 row |
+| `PLOT_NCOLS` | `None` | Subplot grid columns; `None` = one column per slice |
+| `PLOT_PANEL_HEIGHT` | `12.0` | Row height in cm |
+| `PLOT_PANEL_WIDTH` | `None` | Fixed column width in cm; `None` = auto from aspect ratio |
+| `PLOT_FIGSIZE` | `None` | Explicit `[width, height]` in cm; overrides all auto sizing |
+
+**Figure layout** — panels fill the grid left-to-right, top-to-bottom; surplus cells are hidden.  Sizes are in cm and converted to inches internally.  When `PLOT_EQUAL_ASPECT = True` and `PLOT_PANEL_WIDTH` is `None`, each column's width is the maximum auto-computed width of the panels in that column.  Equal aspect requires both axes to carry the same scale: `DEPTH_KM` and `HORIZ_KM` must both be `False` (m/m), both `True` (km/km), or `DISPLAY_COORDS = "utm"` (always km/km).  Mismatched combinations silently disable equal aspect.
 
 ---
 
@@ -405,67 +435,6 @@ slices, making conductor/resistor boundaries directly visible in 3-D.
 
 ---
 
-## snippets.py — optional code blocks
-
-`snippets.py` holds self-contained steps that were previously embedded in
-`femtic_mod_plot.py` but are not needed in every run.  To use a snippet,
-copy its configuration block and step block into `femtic_mod_plot.py` at
-the appropriate position (after step (5) 3-D plot, before step (6) borehole
-logs) and renumber subsequent steps.
-
-### Snippet 1 — Ensemble slice plot
-
-Produces a multi-row Matplotlib figure — one row per ensemble member —
-reusing the slice geometry and `PLOT_*` parameters already set up by the
-main script.  The mesh is parsed **once**; only the per-element resistivity
-vector is swapped per member.  Optional statistical summary rows (mean, std,
-median of log₁₀(ρ)) are appended below the member rows.
-
-#### Configuration variables
-
-| Variable | Default | Description |
-|---|---|---|
-| `PLOT_ENS` | `False` | Enable / disable the ensemble step |
-| `ENS_FILES` | `[]` | List of resistivity block paths, one per member |
-| `ENS_LABELS` | `None` | Row label strings; `None` → "Member 0", "Member 1", … |
-| `ENS_STAT_ROWS` | `["mean", "std"]` | Stat rows after member rows: any subset of `"mean"`, `"std"`, `"median"` |
-| `PLOT_ENS_FILE` | `*_ensemble.pdf` | Joint figure path; `None` → interactive show |
-| `ENS_PER_MEMBER` | `False` | Also save one figure per member (`*_memberN.pdf`) |
-
-Statistical summary rows:
-
-| `ENS_STAT_ROWS` entry | What is shown |
-|---|---|
-| `"mean"` | Cell-wise mean of log₁₀(ρ); same colormap / clim as member rows |
-| `"std"` | Cell-wise std of log₁₀(ρ); separate sequential colormap (`cividis`) |
-| `"median"` | Cell-wise median of log₁₀(ρ); same colormap / clim as member rows |
-
-NaN elements (air, missing) are excluded from all statistics.
-
-#### Populating `ENS_FILES`
-
-```python
-import glob, os
-ENS_FILES = sorted(glob.glob(
-    WORK_DIR + "ensemble/ubinas_rto_*/resistivity_block_iter10.dat"
-))
-ENS_LABELS = [os.path.basename(os.path.dirname(f)) for f in ENS_FILES]
-```
-
-#### Per-member output
-
-When `ENS_PER_MEMBER = True` and `PLOT_ENS_FILE` is set, one additional
-single-row figure is saved per member alongside the joint figure:
-
-```
-resistivity_block_ensemble.pdf       ← joint (all members + stat rows)
-resistivity_block_ensemble_member0.pdf
-resistivity_block_ensemble_member1.pdf
-…
-```
-
----
-
 ## Air and ocean rendering
 
 - **Air** (region 0): `prepare_rho_for_plotting` sets air to `NaN`.
@@ -593,3 +562,13 @@ BOREHOLE_SITES = [
 | 2026-05-23 | vrath / Claude Sonnet 4.6 | Moved pure geographic helpers to `util.py`; model-local helpers to `femtic.py`; script wrappers delegate to both. `SITE_NUMBER` accepts list; `plot_model_slices` loops over all sites (`site_xys`). Added `SITELIST_FILE` / `SITE_NAMES`; `read_sitelist` wraps `data_proc.read_sitelist`. Added `import data_proc as dp`. |
 | 2026-05-24 | vrath / Claude Sonnet 4.6 | `SITELIST_FILE` removed; `SITE_DAT` is now the single site file variable, using the `mt_make_sitelist.py` CSV format (`name, lat, lon, elev, sitenum, easting, northing`). `read_site_dat()` rewritten for new format; `read_sitelist()` removed. `estimate_utm_origin` kwarg renamed `site_dat`; bounding-box path wired to `read_site_dat()`. |
 | 2026-05-24 | vrath / Claude Sonnet 4.6 | Removed `ENS_*` config block and step (6) ensemble plot from `femtic_mod_plot.py`; moved to `snippets.py`. Step (7) borehole log renumbered to step (6). |
+| 2026-05-25 | vrath / Claude Sonnet 4.6 | Added `PLOT_SITES` master switch. Site markers (inverted triangle) now appear on all panel types (map, ns, ew, plane) at depth=0 for curtain/plane panels. Plane-panel projection uses dot product onto u-axis. Legend guard extended to include `"plane"`. |
+| 2026-05-25 | vrath / Claude Sonnet 4.6 | Replaced `ESTIMATE_ORIGIN` / `CALIBRATION_SITES` / `UPDATE_CONFIG` with `ORIGIN_METHOD = None \| "box" \| "average"`. Origin estimated from `SITE_DAT` UTM coords only; observe.dat fallback provides model-local coordinates only. |
+| 2026-05-25 | vrath / Claude Sonnet 4.6 | UTM display mode now in km (`_display_scale` 1e-3). Site markers on curtain/plane panels placed at true mesh surface (`nodes[:,2].min()`). `PROJECTION_DIST` added to filter sites by distance from slice plane. `DISPLAY_COORDS` utm/latlon suppressed when sites come from observe.dat (`obs_coords_only`). |
+| 2026-05-25 | vrath / Claude Sonnet 4.6 | `DEPTH_KM` flag for km depth axis on curtain/plane panels. `PLOT_PANEL_HEIGHT`, `PLOT_PANEL_WIDTH`, `PLOT_FIGSIZE` config vars passed to `plot_model_slices`. Auto-width aspect calculation accounts for `depth_km` and horizontal `sc`. `DEPTH_KM=True` disables equal-aspect in "model" mode. |
+| 2026-05-25 | vrath / Claude Sonnet 4.6 | `HORIZ_KM` flag for km on horizontal axes in "model" mode. `PLOT_NROWS`/`PLOT_NCOLS` grid layout; surplus cells hidden. `_do_equal` checks that horiz and vert km scales match. |
+| 2026-05-25 | vrath / Claude Sonnet 4.6 | Site markers removed from curtain/plane panels (map only). Sizing vars (`PLOT_PANEL_HEIGHT`, `PLOT_PANEL_WIDTH`, `PLOT_FIGSIZE`) now in cm. Cmap deprecation fixed: `matplotlib.colormaps[cmap]` replaces `get_cmap()`. |
+| 2026-05-25 | vrath / Claude Sonnet 4.6 | Replaced `PLOT_SITES` with `PLOT_SITES_MAPS` and `PLOT_SITES_SLICES` for independent control of map vs curtain/plane site markers. |
+| 2026-05-25 | vrath / Claude Sonnet 4.6 | `PLOT_SITES_SLICES` restored: site circles at actual site elevation (`elev` column, sign corrected: `-elev * _dz_sc`). `SITE_MARKER_SLICES` added for separate curtain/plane marker style. |
+| 2026-05-25 | vrath / Claude Sonnet 4.6 | `MAP_MARKERS` added: list of dicts (`latlon`, `marker`, `color`, `ms`, `name`, …) overlaid on map panels; positions converted from lat/lon at render time. |
+| 2026-05-25 | vrath / Claude Sonnet 4.6 | Diagnostic print of mesh highest-point elevation, lat/lon, and model-local coordinates added after mesh load. |
