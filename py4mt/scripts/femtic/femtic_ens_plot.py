@@ -71,7 +71,7 @@ print(titstrng + "\n\n")
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-WORK_DIR = r"/home/vrath/FEMTIC_work/ubinas_rto/"
+WORK_DIR = r"/home/vrath/Py4MTX/work/rto/ubinas_data/"
 
 #: Mesh file — always required for plotting.
 MESH_FILE = WORK_DIR + "mesh.dat"

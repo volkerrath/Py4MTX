@@ -55,7 +55,7 @@ EDI_DIR = WORK_DIR + "/edi/"
 
 print(" Edifiles read from: %s" % EDI_DIR)
 
-CSV_FILE = EDI_DIR + "sites.dat"
+CSV_FILE = EDI_DIR + "site.dat"
 print("Writing data to file: " + CSV_FILE)
 
 # =============================================================================
@@ -75,8 +75,8 @@ with open(CSV_FILE, "w") as f:
         sitelist.writerow([ns, " ", " "])
     else:
         sitelist = csv.writer(f, delimiter=DELIM)
-        sitelist.writerow(
-            ["Sitename", "Latitude", "Longitude", "Site#", "Easting", "Northing"])
+        # sitelist.writerow(
+            # ["Sitename", "Latitude", "Longitude", "Site#", "Easting", "Northing"])
         # sitelist.writerow([ns, " ", " "])
 
     for sitenum, filename in enumerate(edi_files):
