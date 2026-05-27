@@ -188,3 +188,6 @@ def tomo_save(file="data.h5",
 
          
 tomo_save("vs.h5", ds_vs)
+tomo_save("vp.h5", ds_vp)
+
+tomo_save("rho.h5", ds_rho)
