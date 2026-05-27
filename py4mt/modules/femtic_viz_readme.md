@@ -16,95 +16,58 @@ This is a restarted / cleaned version of the previously concatenated `femtic_viz
 
 ---
 
-## Quick start: direct from FEMTIC files (no NPZ)
+## Quick start
 
-> Deprecated CLI aliases kept for compatibility: `map-scatter`, `curtain-scatter`.
+All functionality is accessed programmatically — `femtic_viz` is a module,
+not a script.  Import it and call the relevant function directly.
 
-
-### 1) Create a PyVista grid and export VTU
-
-```bash
-python femtic_viz_new.py export-vtu --mesh mesh.dat --block resistivity_block_iter0.dat --out model.vtu
-```
-
-Programmatically:
+### Export a VTK grid for ParaView
 
 ```python
-from femtic_viz_new import unstructured_grid_from_femtic
+import femtic_viz as fviz
 
-grid = unstructured_grid_from_femtic("mesh.dat", "resistivity_block_iter0.dat")
+grid = fviz.unstructured_grid_from_femtic("mesh.dat", "resistivity_block_iter0.dat")
 grid.save("model.vtu")
 ```
 
-### 2) Map slice (Matplotlib): **patches** (`tri`), scatter, or regular grid
-
-Default is **patch-like** plotting via Delaunay triangulation in the slice plane:
-
-```bash
-python femtic_viz_new.py map --mesh mesh.dat --block resistivity_block_iter0.dat --z0 -1000 --dz 50 --mode tri
-```
-
-Useful options:
-
-- `--mode scatter` : markers (no connectivity)
-- `--mode tri` : coloured patches from triangulated points (**default**)
-- `--mode grid` : IDW to regular grid + `pcolormesh` (requires `scipy`)
-- `--mask-max-edge` : suppress long/bridging triangles in `tri` mode
-
-Programmatically:
+### Matplotlib map slice (centroid-sampled)
 
 ```python
-from femtic_viz_new import map_slice_from_cells
+mesh = fviz.read_femtic_mesh("mesh.dat")
+block = fviz.read_resistivity_block("resistivity_block_iter0.dat")
+rho = fviz.map_regions_to_element_rho(block.region_of_elem, block.region_rho)
 
-ax = map_slice_from_cells(mesh, rho, z0=-1000, dz=50, mode="tri", mask_max_edge=500)
+ax = fviz.map_slice_from_cells(mesh, rho, z0=-1000, dz=50, mode="tri", mask_max_edge=500)
 ```
 
-### 3) Curtain slice (Matplotlib): **patches** (`tri`), scatter, or regular grid
+`mode` options: `"tri"` (patch-like, default), `"scatter"` (markers), `"grid"` (IDW; requires `scipy`).
 
-Prepare a CSV polyline `profile.csv` with two columns `x,y` (no header).
-
-Patch-like plotting in `(s, z)` from triangulated points:
-
-```bash
-python femtic_viz_new.py curtain --mesh mesh.dat --block resistivity_block_iter0.dat --polyline profile.csv --width 500 --mode tri --mask-max-edge 500
-```
-
-Other modes:
-
-- `--mode scatter` : markers (no connectivity)
-- `--mode grid` : IDW to regular `(s, z)` grid + `pcolormesh` (requires `scipy`)
-  - optional: `--zmin ... --zmax ...` (otherwise inferred from points)
-
-Programmatically:
+### Exact-intersection slice figure (from `femtic_mod_plot.py`)
 
 ```python
-import numpy as np
-from femtic_viz_new import curtain_from_cells
-
-poly = np.loadtxt("profile.csv", delimiter=",")
-ax = curtain_from_cells(mesh, rho, poly, width=500, mode="tri", mask_max_edge=500)
+fviz.plot_model_slices(
+    model_file="resistivity_block_iter10.dat",
+    mesh_file="mesh.dat",
+    slices=slices_resolved,          # output of fem.resolve_slice_positions
+    cmap="turbo_r", clim=[0., 4.],
+    display_coords="utm",
+    utm_origin_e=229047., utm_origin_n=8184127.,
+    utm_zone=19, utm_northern=False,
+    plot_file="model_slices.pdf", dpi=300,
+)
 ```
 
-Notes:
-
-- `tri` mode gives the "coloured patches" look, but it is still based on centroid samples
-  (not an exact tetra/plane intersection).
-- If you see triangles "bridging" gaps, increase `--mask-max-edge`.
-
-
-### 4) Curtain slice on a regular (s–z) grid (IDW)
-
-```bash
-python femtic_viz_new.py curtain-idw --mesh mesh.dat --block resistivity_block_iter0.dat --polyline profile.csv --zmin 0 --zmax -5000
-```
-
-Programmatically:
+### 3-D PyVista render + VTK export
 
 ```python
-from femtic_viz_new import curtain_grid_idw, plot_curtain_matplotlib
-
-s, z, V = curtain_grid_idw(mesh, rho, poly, zmin=0, zmax=-5000, nz=201, ns=501, k=8, power=2.0)
-ax = plot_curtain_matplotlib(s, z, V, log10=True)
+fviz.plot_model_3d(
+    mesh_file="mesh.dat",
+    block_file="resistivity_block_iter10.dat",
+    slice_x=[0.], slice_y=[0.], slice_z=[5000., 15000.],
+    isovalues=[1., 2., 3.],
+    plot_file="model_3d.png",
+    vtu_file="model.vtu",            # ParaView / Zenodo export
+)
 ```
 
 ---
@@ -336,7 +299,145 @@ To change the colour, pass any valid Matplotlib colour string, e.g.
 You can also control this via `prepare_rho_for_plotting()` or by setting
 `apply_plotting_conventions=False`.
 
+
 ---
+
+## 2-D slice figure (`plot_model_slices`)
+
+Produces a multi-panel Matplotlib figure of axis-parallel model slices using
+**exact tetrahedron-plane intersection** — no selection slab, no `dw` parameter.
+Every tetrahedron straddling the cutting plane contributes an exact triangle or
+quadrilateral polygon.  Moved here from `femtic_mod_plot.py`.
+
+```python
+fviz.plot_model_slices(
+    model_file = "resistivity_block_iter10.dat",
+    mesh_file  = "mesh.dat",
+    slices     = slices_resolved,   # pre-resolved by fem.resolve_slice_positions
+
+    # colouring
+    cmap  = "turbo_r",
+    clim  = [0., 4.],               # log10(Ω·m); None = auto
+
+    # axis limits (model-local m); per-panel keys override these
+    xlim  = [-20000., 20000.],
+    ylim  = [-20000., 20000.],
+    zlim  = [     0.,  20000.],
+
+    # display coordinate system
+    display_coords   = "utm",        # "model" | "utm" | "latlon"
+    utm_origin_e     = 229047.0,     # mesh-centre UTM easting [m]
+    utm_origin_n     = 8184127.0,    # mesh-centre UTM northing [m]
+    utm_zone         = 19,
+    utm_northern     = False,
+    utm_to_latlon_fn = utl.utm_to_latlon_zn,    # for latlon tick formatting
+    latlon_to_model_fn = fem.latlon_to_model,   # for map_markers placement
+
+    # site overlay
+    site_xys          = site_xys,   # [(label, x_m, y_m, elev_m), ...]
+    sites_in_maps     = True,
+    sites_in_slices   = True,
+    site_marker       = dict(marker="v", color="black", ms=4, zorder=10),
+    site_marker_slices= dict(marker="o", color="black", ms=4, zorder=10),
+    projection_dist   = 3000.,      # m; None = all sites on all panels
+
+    # extra map markers (lat/lon)
+    map_markers = [
+        dict(latlon=[-16.35, -70.90], marker="*", color="red",
+             ms=10, name="Summit"),
+    ],
+
+    # figure layout
+    depth_km     = True,
+    horiz_km     = True,
+    equal_aspect = True,
+    nrows        = 2,
+    ncols        = 2,
+    panel_height = 8.0 / 2.54,   # pass in inches (divide cm by 2.54)
+
+    plot_file = "model_slices.pdf",
+    dpi       = 300,
+)
+```
+
+### Parameters summary
+
+| Parameter | Default | Description |
+|---|---|---|
+| `model_file`, `mesh_file` | — | Resistivity block and `mesh.dat` |
+| `slices` | — | Pre-resolved slice-spec list (output of `fem.resolve_slice_positions`) |
+| `cmap` | `"turbo_r"` | Matplotlib colormap |
+| `clim` | `None` | `[vmin, vmax]` log₁₀(Ω·m); `None` = auto |
+| `xlim`, `ylim`, `zlim` | `None` | Global axis limits (model-local m) |
+| `ocean_color` | `"lightgrey"` | Flat colour for ocean polygons; `None` = colormap |
+| `ocean_value` | `0.25` | Ω·m sentinel for ocean cells |
+| `air_bgcolor` | `None` | Axes facecolor for air region |
+| `site_xys` | `None` | `[(label, x_m, y_m, elev_m), …]` in model-local m |
+| `obs_coords_only` | `False` | Sites from observe.dat only (suppresses UTM/latlon display) |
+| `projection_dist` | `None` | Max distance [m] from curtain for site to appear |
+| `sites_in_maps` | `True` | Site markers on map panels |
+| `sites_in_slices` | `False` | Site markers on curtain/plane panels |
+| `site_marker` | `dict(marker="v", …)` | Matplotlib kwargs for map markers |
+| `site_marker_slices` | `dict(marker="o", …)` | Matplotlib kwargs for curtain markers |
+| `map_markers` | `None` | Extra markers (lat/lon dicts) on map panels |
+| `display_coords` | `"model"` | `"model"` / `"utm"` / `"latlon"` |
+| `utm_origin_e`, `utm_origin_n` | `0.0` | Mesh-centre UTM [m] |
+| `utm_zone`, `utm_northern` | `1`, `True` | UTM zone and hemisphere |
+| `utm_to_latlon_fn` | `None` | Callable for lat/lon tick formatting |
+| `latlon_to_model_fn` | `None` | Callable for `map_markers` placement |
+| `plot_file` | `None` | Save path; `None` = `plt.show()` |
+| `dpi` | `200` | Saved-figure DPI |
+| `equal_aspect` | `True` | Equal aspect on map/ns/ew panels (when scales match) |
+| `depth_km` | `False` | Depth axis in km on curtain/plane panels |
+| `horiz_km` | `False` | Horizontal axis in km in `"model"` mode |
+| `nrows`, `ncols` | `None` | Grid shape; surplus cells hidden |
+| `panel_height` | `5.0` | Row height **in inches** |
+| `panel_width` | `None` | Column width in inches; `None` = auto from aspect |
+| `figsize` | `None` | `[width, height]` in inches; overrides auto sizing |
+
+---
+
+## 1-D borehole log (`plot_borehole_logs`)
+
+Samples the resistivity model along vertical boreholes using point-in-element
+search (`fem.extract_borehole_log`, exact barycentric test) and plots
+log₁₀(ρ) vs depth.  Moved here from `femtic_mod_plot.py`.
+
+```python
+fviz.plot_borehole_logs(
+    model_file = "resistivity_block_iter10.dat",
+    mesh_file  = "mesh.dat",
+    borehole_sites = [
+        dict(name="BH-centre", x=0.0,  y=0.0,
+             z_top=0., z_bot=20000., dz=200.),
+    ],
+    resolve_xy_fn = _resolve_borehole_xy,  # converts CRS-tagged x/y to model-local m
+    ocean_value   = 0.25,
+    clim          = [0., 4.],
+    shared        = True,
+    plot_file     = "boreholes.pdf",
+    dpi           = 300,
+)
+```
+
+`resolve_xy_fn` is a script-level closure (defined in `femtic_mod_plot.py`)
+that calls `fem.resolve_pos_x` / `fem.resolve_pos_y` with the current mesh
+origin and UTM zone.  When `x` / `y` are already plain floats in model-local
+metres, pass `resolve_xy_fn=None`.
+
+### Parameters summary
+
+| Parameter | Default | Description |
+|---|---|---|
+| `model_file`, `mesh_file` | — | Resistivity block and `mesh.dat` |
+| `borehole_sites` | — | List of spec dicts (`name`, `x`, `y`, `z_top`, `z_bot`, `dz`) |
+| `resolve_xy_fn` | `None` | `(spec) → (x_m, y_m)` CRS converter; `None` = `x`/`y` are model-local floats |
+| `ocean_value` | `0.25` | Ω·m sentinel for ocean cells |
+| `clim` | `None` | x-axis limits `[log10_min, log10_max]`; `None` = auto |
+| `borehole_style` | `None` | Matplotlib line kwargs (default `lw=1.2, marker="none"`) |
+| `shared` | `True` | `True` = all traces on one axes; `False` = one panel each |
+| `plot_file` | `None` | Save path; `None` = `plt.show()` |
+| `dpi` | `200` | Saved-figure DPI |
 
 ---
 
@@ -393,7 +494,8 @@ fviz.plot_model_3d(
 | `background` | `"white"` | Scene background colour |
 | `window_size` | `[1600, 900]` | Window / screenshot resolution in pixels |
 | `ocean_value` | `0.3` | Ω·m sentinel for ocean cells |
-| `plot_file` | `None` | `.html` / `.png` / `.jpg` / `None` (live) |
+| `plot_file` | `None` | `.vtu`/`.vtk` → VTK grid (no render); `.html` → interactive WebGL (requires `pyvista[jupyter]`; falls back to `.png`); `.png`/`.jpg` → screenshot; `None` → live window |
+| `vtu_file` | `None` | Separate VTK grid export (`.vtu` recommended) written before rendering; cell-centred. Suitable for ParaView / Zenodo. |
 | `screenshot_scale` | `2` | Anti-aliasing scale for screenshot output |
 
 If no slices or iso-surfaces are defined, a default orthogonal triple (one
@@ -515,5 +617,8 @@ excluded from all statistics.
 |            |        | Optional mean/std/median stat rows; std on separate         |
 |            |        | sequential colormap. Called from `femtic_mod_plot.py`       |
 |            |        | step 6 and from `femtic_rto_prep.py` / `femtic_gst_prep.py`.|
+| 2026-05-26 | Claude Sonnet 4.6 | Moved `plot_model_slices` (exact tet-plane intersection, all |
+|            |        | inner geometry helpers: `_tet_plane_intersection`, `_slice_geometry`, `_plot_slice_panel`, `_strike_dip_to_normal`, `_plane_basis`) and `plot_borehole_logs` from `femtic_mod_plot.py` into this module. All formerly-implicit config globals (`DISPLAY_COORDS`, `UTM_ORIGIN_*`, `UTM_ZONE`, `SITE_MARKER`, etc.) are now explicit keyword parameters. Added `import math`, `import os`. |
+|            |        | `plot_model_3d`: added `vtu_file` parameter (cell-centred `.vtu`/`.vtk` export for ParaView / Zenodo); `plot_file=*.vtu/.vtk` accepted directly. Added `ImportError` fallback for HTML export when `trame_vtk` absent. |
 
 Author: Volker Rath (DIAS)
