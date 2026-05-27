@@ -25,29 +25,26 @@ Typical use cases:
 ## Workflow
 
 ```
-UTM_ORIGIN_LAT / LON  →  UTM zone (auto)
+UTM_ORIGIN_LAT / LON  →  UTM zone (utl.utm_zone_from_latlon)
                                           [optional: ORIGIN_METHOD = "box" | "average"]
         site.dat (UTM easting/northing)  →  UTM_ORIGIN_E / N  (printed)
 
 resistivity_block_iterX.dat  +  mesh.dat
         |
-        v  fviz.read_femtic_mesh / read_resistivity_block
-   nodes, conn, rho (per element)
-        |
-        v  resolve_slices(PLOT_SLICES)       [optional CRS conversion]
+        v  fem.resolve_slice_positions(PLOT_SLICES)   [optional CRS conversion]
    slice positions in model-local metres
         |                                    [optional, PLOT_SITES_MAPS / PLOT_SITES_SLICES]
-        v  read_site_dat(SITE_DAT)           [primary: site.dat UTM coords]
-   (name, x_m, y_m) per site
-        OR  read_site_position(OBSERVE_FILE) [fallback: observe.dat, model-local only]
+        v  fem.read_site_dat(SITE_DAT)       [primary: site.dat UTM coords]
+   (name, x_m, y_m, elev_m) per site
+        OR  fem.read_site_position(OBSERVE_FILE) [fallback: observe.dat, model-local only]
         |
-        v  plot_model_slices(...)            [exact tet-plane intersection]
+        v  fviz.plot_model_slices(...)       [exact tet-plane intersection]
 figure file / interactive window
         |                                    [optional, PLOT3D = True]
         v  fviz.plot_model_3d(...)           [PyVista — requires pyvista]
-interactive HTML / static screenshot
+.vtu/.vtk grid for ParaView / Zenodo  AND/OR  screenshot
         |                                    [optional, PLOT_BOREHOLE = True]
-        v  plot_borehole_logs(...)           [1-D ρ(z) traces — point-in-element]
+        v  fviz.plot_borehole_logs(...)      [1-D ρ(z) traces — point-in-element]
 borehole PDF / interactive window
 ```
 
@@ -457,12 +454,11 @@ slices, making conductor/resistor boundaries directly visible in 3-D.
 | Package | Role |
 |---|---|
 | NumPy | Array operations |
-| Matplotlib | Figure rendering |
-| PyVista | 3-D rendering, slices, iso-surfaces (`PLOT3D`; graceful skip when absent) |
-| pyproj | `Transformer` for lat/lon → UTM (primary path; graceful built-in fallback when absent) |
-| `femtic` (Py4MTX) | `utm_to_model`, `latlon_to_model`, `resolve_slice_positions`, and other model-local helpers |
-| `femtic_viz` (Py4MTX) | `read_femtic_mesh`, `read_resistivity_block`, `map_regions_to_element_rho`, `prepare_rho_for_plotting`, `plot_model_3d` |
-| `data_proc` (Py4MTX) | `read_sitelist` — FEMTIC sitelist parser |
+| Matplotlib | Figure rendering (inside `femtic_viz`) |
+| PyVista | 3-D rendering, slices, iso-surfaces (`PLOT3D`; graceful skip when absent; inside `femtic_viz`) |
+| pyproj | `Transformer` for lat/lon → UTM (used inside `femtic_viz`; graceful built-in fallback when absent) |
+| `femtic` (Py4MTX) | `utm_to_model`, `latlon_to_model`, `resolve_slice_positions`, `read_site_dat`, `read_site_position`, `extract_borehole_log`, `resolve_pos_x/y` |
+| `femtic_viz` (Py4MTX) | All plotting: `plot_model_slices`, `plot_borehole_logs`, `plot_model_3d`, `read_femtic_mesh`, `read_resistivity_block`, `prepare_rho_for_plotting` |
 | `util` (Py4MTX) | `print_title`, `utm_zone_from_latlon`, `latlon_to_utm_zn`, `utm_to_latlon_zn` |
 | `version` (Py4MTX) | `versionstrg` |
 
@@ -569,6 +565,7 @@ BOREHOLE_SITES = [
 | 2026-05-25 | vrath / Claude Sonnet 4.6 | `HORIZ_KM` flag for km on horizontal axes in "model" mode. `PLOT_NROWS`/`PLOT_NCOLS` grid layout; surplus cells hidden. `_do_equal` checks that horiz and vert km scales match. |
 | 2026-05-25 | vrath / Claude Sonnet 4.6 | Site markers removed from curtain/plane panels (map only). Sizing vars (`PLOT_PANEL_HEIGHT`, `PLOT_PANEL_WIDTH`, `PLOT_FIGSIZE`) now in cm. Cmap deprecation fixed: `matplotlib.colormaps[cmap]` replaces `get_cmap()`. |
 | 2026-05-25 | vrath / Claude Sonnet 4.6 | Replaced `PLOT_SITES` with `PLOT_SITES_MAPS` and `PLOT_SITES_SLICES` for independent control of map vs curtain/plane site markers. |
-| 2026-05-25 | vrath / Claude Sonnet 4.6 | `PLOT_SITES_SLICES` restored: site circles at actual site elevation (`elev` column, sign corrected: `-elev * _dz_sc`). `SITE_MARKER_SLICES` added for separate curtain/plane marker style. |
-| 2026-05-25 | vrath / Claude Sonnet 4.6 | `MAP_MARKERS` added: list of dicts (`latlon`, `marker`, `color`, `ms`, `name`, …) overlaid on map panels; positions converted from lat/lon at render time. |
-| 2026-05-25 | vrath / Claude Sonnet 4.6 | Diagnostic print of mesh highest-point elevation, lat/lon, and model-local coordinates added after mesh load. |
+| 2026-05-25 | vrath / Claude Sonnet 4.6 | `PLOT_SITES_SLICES` restored: site circles at actual site elevation. `SITE_MARKER_SLICES` added. |
+| 2026-05-25 | vrath / Claude Sonnet 4.6 | `MAP_MARKERS` added: list of lat/lon point dicts overlaid on map panels. |
+| 2026-05-25 | vrath / Claude Sonnet 4.6 | Diagnostic print of mesh highest-point elevation, lat/lon, model-local coordinates. |
+| 2026-05-26 | Claude Sonnet 4.6 | **Major refactor**: moved `plot_model_slices` (all inner geometry helpers) and `plot_borehole_logs` into `femtic_viz.py`; script calls `fviz.plot_model_slices` / `fviz.plot_borehole_logs` directly. Removed script-level coordinate-conversion helpers (`_utm_zone_from_origin`, `resolve_slices`, `_display_*`) and `plot_*` functions; main section calls `utl`/`fem`/`fviz` directly. Removed `math` and `pyproj` imports. Added `PLOT3D_VTU_FILE`; changed `PLOT3D_FILE` default to `.png`. Script reduced from ≈1520 to ≈700 lines. |
