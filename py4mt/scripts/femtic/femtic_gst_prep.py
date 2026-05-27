@@ -51,6 +51,11 @@ Provenance:
                                  calls fviz.plot_ensemble_slices for exact
                                  tet-plane intersection ensemble figure.
                                  Member file list uses MOD_RESISTIVITY_FILE.
+    2026-05-27  vrath / Claude Sonnet 4.6 (Anthropic)
+                                 Added QC slice plot step after model ensemble
+                                 generation: PLOT_SLICES_QC / QC_* config;
+                                 calls fviz.plot_model_slices per member,
+                                 saves gst_qc*.pdf in each member's subdir.
 """
 
 import os
@@ -335,6 +340,26 @@ if PLOT_DATA or PLOT_MODEL:
     ENS_PLOT_DPI     = 300
     ENS_PLOT_FILE    = PLOT_DIR + "gst_ensemble_slices" + PLOT_STR + ".pdf"
 
+    # --- QC slice plot of Kriged initial models ---
+    # Uses fviz.plot_model_slices (exact tet-plane intersection, model-local
+    # metres only).  One figure per selected member saved into that member's
+    # subdirectory.  Set PLOT_SLICES_QC = True to enable.
+    PLOT_SLICES_QC   = False
+
+    QC_SLICES = [
+        dict(kind="map", z0=5000.0),
+        dict(kind="map", z0=15000.0),
+        dict(kind="ns",  x0=0.0),
+        dict(kind="ew",  y0=0.0),
+    ]
+    QC_CMAP        = "turbo_r"
+    QC_CLIM        = [0.0, 4.0]
+    QC_XLIM        = None
+    QC_YLIM        = None
+    QC_ZLIM        = None
+    QC_OCEAN_COLOR = "lightgrey"
+    QC_DPI         = 200
+
 
 """
 Generate ensemble directories and copy template files.
@@ -462,6 +487,43 @@ if PERTURB_MOD:
     )
     print("\nmodel ensemble (geostatistical initial models) ready!")
     print("\n")
+
+"""
+QC slice plots of Kriged initial models
+----------------------------------------
+One figure per selected ensemble member saved as gst_qc<PLOT_STR>.pdf in
+that member's subdirectory.  Uses fviz.plot_model_slices (exact
+tetrahedron-plane intersection, model-local metres, no geographic conversion).
+Controlled by PLOT_SLICES_QC / QC_* config vars in the Visualization block.
+"""
+if (PLOT_DATA or PLOT_MODEL) and PLOT_SLICES_QC:
+    _qc_files = [
+        ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/{MOD_RESISTIVITY_FILE}"
+        for i in range(N_SAMPLES)
+    ]
+    for i_samp in VIZ_SAMPLES:
+        _qc_path = ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i_samp}/"
+        _qc_file = _qc_path + "gst_qc" + PLOT_STR + ".pdf"
+        if not os.path.isfile(_qc_files[i_samp]):
+            print(f"  QC: {_qc_files[i_samp]} not found — skipped.")
+            continue
+        fviz.plot_model_slices(
+            model_file  = _qc_files[i_samp],
+            mesh_file   = MOD_MESH,
+            slices      = QC_SLICES,
+            cmap        = QC_CMAP,
+            clim        = QC_CLIM,
+            xlim        = QC_XLIM,
+            ylim        = QC_YLIM,
+            zlim        = QC_ZLIM,
+            ocean_color = QC_OCEAN_COLOR,
+            ocean_value = 0.25,
+            plot_file   = _qc_file,
+            dpi         = QC_DPI,
+            out         = OUT,
+        )
+        print(f"  QC slice plot saved: {_qc_file}")
+    print("QC slice plots done.")
 
 
 """
