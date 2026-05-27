@@ -98,6 +98,12 @@ Provenance:
                 ENS_SLICES / ENS_CMAP / ENS_CLIM / ENS_STAT_ROWS config;
                 calls fviz.plot_ensemble_slices for exact tet-plane
                 intersection figure.  Requires PLOT_DATA or PLOT_MODEL True.
+    2026-05-27  vrath / Claude Sonnet 4.6 (Anthropic)
+                Added QC slice plot step after model ensemble generation:
+                PLOT_SLICES_QC / QC_SLICES / QC_CMAP / QC_CLIM / QC_XLIM /
+                QC_YLIM / QC_ZLIM / QC_OCEAN_COLOR / QC_DPI config vars;
+                calls fviz.plot_model_slices per member, saves rto_qc*.pdf
+                in each member's subdirectory.
 """
 
 import os
@@ -370,6 +376,28 @@ if PLOT_DATA or PLOT_MODEL:
     ENS_PLOT_DPI     = 300
     ENS_PLOT_FILE    = PLOT_DIR + "rto_ensemble_slices" + PLOT_STR + ".pdf"
 
+    # --- QC slice plot of perturbed initial models ---
+    # Uses fviz.plot_model_slices (exact tet-plane intersection, model-local
+    # metres only).  One figure per selected ensemble member saved into that
+    # member's subdirectory.  Set PLOT_SLICES_QC = True to enable.
+    PLOT_SLICES_QC   = False
+
+    #: Slice specs — plain model-local metres; same format as femtic_mod_plot
+    #: PLOT_SLICES but without geographic CRS tagging.
+    QC_SLICES = [
+        dict(kind="map", z0=5000.0),
+        dict(kind="map", z0=15000.0),
+        dict(kind="ns",  x0=0.0),
+        dict(kind="ew",  y0=0.0),
+    ]
+    QC_CMAP        = "turbo_r"
+    QC_CLIM        = [0.0, 4.0]      # log10(Ω·m); None = auto
+    QC_XLIM        = None            # [xmin, xmax] model-local metres; None = auto
+    QC_YLIM        = None
+    QC_ZLIM        = None
+    QC_OCEAN_COLOR = "lightgrey"
+    QC_DPI         = 200
+
 
 """
 Generate ensemble directories and copy template files.
@@ -490,6 +518,43 @@ model_ensemble = ens.generate_rto_model_ensemble(
 )
 print("\n")
 print("model ensemble ready!")
+
+"""
+QC slice plots of perturbed initial models
+------------------------------------------
+One figure per selected ensemble member saved as rto_qc<PLOT_STR>.pdf in
+that member's subdirectory.  Uses fviz.plot_model_slices (exact
+tetrahedron-plane intersection, model-local metres, no geographic conversion).
+Controlled by PLOT_SLICES_QC / QC_* config vars in the Visualization block.
+"""
+if (PLOT_DATA or PLOT_MODEL) and PLOT_SLICES_QC:
+    _qc_files = [
+        ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/resistivity_block_iter0.dat"
+        for i in range(N_SAMPLES)
+    ]
+    for i_samp in VIZ_SAMPLES:
+        _qc_path = ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i_samp}/"
+        _qc_file = _qc_path + "rto_qc" + PLOT_STR + ".pdf"
+        if not os.path.isfile(_qc_files[i_samp]):
+            print(f"  QC: {_qc_files[i_samp]} not found — skipped.")
+            continue
+        fviz.plot_model_slices(
+            model_file  = _qc_files[i_samp],
+            mesh_file   = MOD_MESH,
+            slices      = QC_SLICES,
+            cmap        = QC_CMAP,
+            clim        = QC_CLIM,
+            xlim        = QC_XLIM,
+            ylim        = QC_YLIM,
+            zlim        = QC_ZLIM,
+            ocean_color = QC_OCEAN_COLOR,
+            ocean_value = 0.25,
+            plot_file   = _qc_file,
+            dpi         = QC_DPI,
+            out         = OUT,
+        )
+        print(f"  QC slice plot saved: {_qc_file}")
+    print("QC slice plots done.")
 
 """
 Model visualization

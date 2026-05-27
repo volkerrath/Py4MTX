@@ -17,8 +17,8 @@ Postprocessing of a Randomize-Then-Optimize (RTO) ensemble for FEMTIC.
 | Date       | Author | Change                                       |
 |------------|--------|----------------------------------------------|
 | 2025-04-30 | vrath  | Created.                                     |
-| 2026-03-03 | Claude | Renamed user-set parameters to UPPERCASE;    |
-|            |        | generated README.                            |
+| 2026-03-03 | Claude | Renamed user-set parameters to UPPERCASE; generated README. |
+| 2026-05-27 | vrath / Claude Sonnet 4.6 (Anthropic) | Added `femtic_viz` import; `MESH_FILE` / `PLOT_QC` / `PLOT_QC_FILE` / `PLOT_QC_SLICES` / `PLOT_QC_*` config; QC slice plot of best-nRMS member at end of main block (calls `fviz.plot_model_slices`). |
 
 ## Purpose
 
@@ -39,6 +39,23 @@ femtic_rto_post.py    →   RTO_results.npz
                                  ↓
 femtic_ens_from_covar.py  →   resample from covariance
 ```
+
+## QC slice plot (`PLOT_QC`)
+
+When `PLOT_QC = True`, a slice figure is produced for the **best-converged** ensemble member (lowest nRMS among those that passed `NRMS_MAX`) using `fviz.plot_model_slices` (exact tetrahedron-plane intersection, model-local metres).
+
+| Variable | Default | Description |
+|---|---|---|
+| `MESH_FILE` | `templates/mesh.dat` | Mesh file required for slicing |
+| `PLOT_QC` | `False` | Enable / disable the QC slice plot |
+| `PLOT_QC_FILE` | `rto_qc.pdf` | Output path; `None` → interactive show |
+| `PLOT_QC_DPI` | `200` | Figure DPI |
+| `PLOT_QC_SLICES` | 4 slices | Slice-spec list in model-local metres — same format as `femtic_mod_plot.PLOT_SLICES`; kinds: `"map"`, `"ns"`, `"ew"`, `"plane"` |
+| `PLOT_QC_CMAP` | `"turbo_r"` | Matplotlib colormap |
+| `PLOT_QC_CLIM` | `[0., 4.]` | log₁₀(Ω·m) colour limits; `None` = auto |
+| `PLOT_QC_XLIM`, `PLOT_QC_YLIM`, `PLOT_QC_ZLIM` | `None` | Global axis limits in model-local metres; `None` = auto |
+| `PLOT_QC_OCEAN_COLOR` | `"lightgrey"` | Flat colour for ocean cells |
+| `PLOT_QC_OCEAN_RHO` | `0.25` Ω·m | Ocean cell sentinel value |
 
 ## Configuration
 
@@ -68,7 +85,7 @@ femtic_ens_from_covar.py  →   resample from covariance
 ## Dependencies
 
 `numpy`, `scipy.sparse`, `scikit-learn` (empirical covariance),
-py4mt modules: `femtic`, `ensembles`, `util`, `version`.
+py4mt modules: `femtic`, `ensembles`, `util`, `version`, `femtic_viz` (optional, for QC slice plot).
 
 ## References
 

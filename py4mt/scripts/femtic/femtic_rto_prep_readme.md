@@ -125,6 +125,22 @@ from 0 … `N_SAMPLES − 1` each run.  The drawn list is printed at runtime.
 | `MOD_MESH_COLOR`  | Colour for mesh edge overlay (default `'k'`).                                |
 | `MOD_SLICES`      | List of 1–5 slice descriptors; each dict has `'type'`: `'map'` or `'curtain'`, plus kwargs forwarded to `femtic_viz`. |
 
+### QC slice plot (`PLOT_SLICES_QC`)
+
+When `PLOT_SLICES_QC = True` (inside the viz block, requires `PLOT_DATA` or `PLOT_MODEL` to be `True`), a slice figure of the perturbed initial model is saved for each selected ensemble member using `fviz.plot_model_slices` (exact tetrahedron-plane intersection, model-local metres, no geographic conversion).
+
+| Variable | Default | Description |
+|---|---|---|
+| `PLOT_SLICES_QC` | `False` | Enable / disable the QC slice plot |
+| `QC_SLICES` | 4 slices | Slice-spec list in model-local metres — same format as `femtic_mod_plot.PLOT_SLICES`; kinds: `"map"`, `"ns"`, `"ew"`, `"plane"` |
+| `QC_CMAP` | `"turbo_r"` | Matplotlib colormap |
+| `QC_CLIM` | `[0., 4.]` | log₁₀(Ω·m) colour limits; `None` = auto |
+| `QC_XLIM`, `QC_YLIM`, `QC_ZLIM` | `None` | Global axis limits in model-local metres |
+| `QC_OCEAN_COLOR` | `"lightgrey"` | Flat colour for ocean cells |
+| `QC_DPI` | `200` | Figure DPI |
+
+Figures are saved as `rto_qc<PLOT_STR>.pdf` in each member's subdirectory alongside the existing `rto_data` and `rto_model` figures.
+
 ### Ensemble slice plot (`PLOT_SLICES_ENS`)
 
 When `PLOT_SLICES_ENS = True` (inside the viz block, i.e. requires `PLOT_DATA` or
@@ -246,6 +262,7 @@ Diagnostic figures are saved to:
 
 | 2026-04-27 | Claude | Renamed `ens.generate_model_ensemble` call to `ens.generate_rto_model_ensemble` for consistency with the new `ens.generate_gst_model_ensemble`. |
 | 2026-05-13 | Claude | Added `PLOT_SLICES_ENS` block: `ENS_SLICES` / `ENS_CMAP` / `ENS_CLIM` / `ENS_STAT_ROWS` config; calls `fviz.plot_ensemble_slices` for exact tet-plane intersection ensemble figure. |
+| 2026-05-27 | vrath / Claude Sonnet 4.6 (Anthropic) | Added `PLOT_SLICES_QC` block: `QC_SLICES` / `QC_CMAP` / `QC_CLIM` / `QC_*` config; calls `fviz.plot_model_slices` per selected member after model ensemble generation, saves `rto_qc*.pdf` in each member's subdirectory. |
 
 ## Author
 

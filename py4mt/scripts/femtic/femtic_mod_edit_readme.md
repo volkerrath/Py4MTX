@@ -387,7 +387,7 @@ PLOT_SLICES = [
 | SciPy | `cKDTree` for `"smooth"` and `boundary_smooth` (graceful fallback if absent) |
 | Matplotlib | Figure rendering for plotting section (optional) |
 | `femtic` (Py4MTX) | `read_model`, `insert_model`, `read_femtic_mesh`, `_read_resistivity_block_struct` |
-| `femtic_viz` (Py4MTX) | `read_femtic_mesh`, `read_resistivity_block`, `map_regions_to_element_rho`, `prepare_rho_for_plotting` — plotting only (graceful skip if absent) |
+| `femtic_viz` (Py4MTX) | `read_femtic_mesh`, `read_resistivity_block`, `map_regions_to_element_rho`, `prepare_rho_for_plotting`, `plot_model_slices` — plotting step (4) delegates here; graceful skip if absent |
 | `util` (Py4MTX) | `print_title` |
 | `version` (Py4MTX) | `versionstrg` |
 
@@ -411,4 +411,4 @@ Environment variables `PY4MTX_ROOT` and `PY4MTX_DATA` must be set.
 | 2026-05-03 | vrath / Claude Sonnet 4.6 | Replaced centroid/Delaunay plotting with exact tetrahedron-plane intersection (`_intersect_tet_plane`, `_slice_geometry`): correct topography, no bridging, no `dw` slab needed; `PolyCollection` rendering for exact polygons |
 | 2026-05-03 | vrath / Claude Sonnet 4.6 | Fixed missing main block (`read_model`, `_NEEDS_MESH` population, `insert_model`) lost in prior rewrite; all four context dicts now declared at module level |
 | 2026-05-03 | vrath / Claude Sonnet 4.6 | Added `boundary_smooth` per-body option to `_apply_bodies`: iterative Gaussian blending in a transition band straddling the body surface (`_smooth_body_boundary`, `sigma`, `passes`) |
-| 2026-05-04 | vrath / Claude Sonnet 4.6 | Added `"null"` operation: no-op pass-through; skips write step and plots `MODEL_IN` directly — use to inspect the input model without any modification |
+| 2026-05-04 | vrath / Claude Sonnet 4.6 | Added `"null"` operation: no-op pass-through; skips write step and plots `MODEL_IN` directly — use to inspect the input model without any modification |\n| 2026-05-27 | vrath / Claude Sonnet 4.6 (Anthropic) | Removed local `plot_model_slices` / geometry helpers (~430 lines); step (4) now delegates to `fviz.plot_model_slices` for consistency with all other scripts. `PLOT_*` config block and call signature unchanged. |

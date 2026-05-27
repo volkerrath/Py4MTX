@@ -125,6 +125,22 @@ three spatial dimensions (easting, northing, depth) are handled natively.
 | `MOD_REFERENCE_FILE`  | Filename for the reference / prior model (default: `referencemodel.dat`).|
 | `MOD_REF`             | Full path to the template reference model — read once to obtain mesh cell-centre coordinates. |
 
+### QC slice plot (`PLOT_SLICES_QC`)
+
+When `PLOT_SLICES_QC = True` (inside the viz block, requires `PLOT_DATA` or `PLOT_MODEL` to be `True`), a slice figure of each Kriged initial model is saved for each selected ensemble member using `fviz.plot_model_slices` (exact tetrahedron-plane intersection, model-local metres only).
+
+| Variable | Default | Description |
+|---|---|---|
+| `PLOT_SLICES_QC` | `False` | Enable / disable the QC slice plot |
+| `QC_SLICES` | 4 slices | Slice-spec list in model-local metres — same format as `femtic_mod_plot.PLOT_SLICES` |
+| `QC_CMAP` | `"turbo_r"` | Matplotlib colormap |
+| `QC_CLIM` | `[0., 4.]` | log₁₀(Ω·m) colour limits; `None` = auto |
+| `QC_XLIM`, `QC_YLIM`, `QC_ZLIM` | `None` | Global axis limits in model-local metres |
+| `QC_OCEAN_COLOR` | `"lightgrey"` | Flat colour for ocean cells |
+| `QC_DPI` | `200` | Figure DPI |
+
+Figures are saved as `gst_qc<PLOT_STR>.pdf` in each member's subdirectory alongside the existing `gst_data` and `gst_model` figures.  The member file list uses `MOD_RESISTIVITY_FILE` so it always targets the Kriged initial model.
+
 ### Ensemble slice plot (`PLOT_SLICES_ENS`)
 
 When `PLOT_SLICES_ENS = True` (inside the viz block, i.e. requires `PLOT_DATA` or
@@ -296,6 +312,7 @@ No sparse-matrix file (`.npz`) is required.
 |            |               | `"fixed"`, and `"mixed"` pilot-point strategies.              |
 |            |               | `MOD_OUTPUT_TARGET` controls which FEMTIC files are written.  |
 | 2026-05-13 | Claude | Added `PLOT_SLICES_ENS` block: `ENS_SLICES` / `ENS_CMAP` / `ENS_CLIM` / `ENS_STAT_ROWS` config; calls `fviz.plot_ensemble_slices` for exact tet-plane intersection ensemble figure. Member file list uses `MOD_RESISTIVITY_FILE`. |
+| 2026-05-27 | vrath / Claude Sonnet 4.6 (Anthropic) | Added `PLOT_SLICES_QC` block: `QC_SLICES` / `QC_CMAP` / `QC_CLIM` / `QC_*` config; calls `fviz.plot_model_slices` per selected member after model ensemble generation, saves `gst_qc*.pdf` in each member's subdirectory. |
 
 ## Author
 

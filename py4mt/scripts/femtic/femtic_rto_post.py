@@ -29,6 +29,11 @@ Provenance:
     2025-04-30  vrath   Created.
     2026-03-03  Claude  Renamed user-set parameters to UPPERCASE;
                         generated README.
+    2026-05-27  vrath / Claude Sonnet 4.6 (Anthropic)
+                        Added femtic_viz import; MESH_FILE / PLOT_QC /
+                        PLOT_QC_FILE / PLOT_QC_SLICES / PLOT_QC_* config
+                        vars; QC slice plot of best-nRMS member at end of
+                        main block (calls fviz.plot_model_slices).
 '''
 import os
 import sys
@@ -59,6 +64,11 @@ import ensembles as ens
 import util as utl
 from version import versionstrg
 
+try:
+    import femtic_viz as fviz
+except ImportError:
+    fviz = None
+
 
 
 rng = np.random.default_rng()
@@ -77,6 +87,35 @@ ENSEMBLE_RESULTS = ENSEMBLE_DIR+'RTO_results.npz'
 
 SPARSIFY = True
 SPARSE_THRESH = 1.e-8
+
+# ---------------------------------------------------------------------------
+# QC slice plot — best-nRMS member (optional)
+# ---------------------------------------------------------------------------
+#: Mesh file required for slicing.
+MESH_FILE = ENSEMBLE_DIR + "templates/mesh.dat"
+
+#: Set True to produce a QC slice figure of the best-converged member.
+PLOT_QC = False
+
+#: Output path for the QC figure.  None → interactive show().
+PLOT_QC_FILE = ENSEMBLE_DIR + "rto_qc.pdf"
+
+#: Figure DPI.
+PLOT_QC_DPI = 200
+
+PLOT_QC_SLICES = [
+    dict(kind="map", z0=5000.0),
+    dict(kind="map", z0=15000.0),
+    dict(kind="ns",  x0=0.0),
+    dict(kind="ew",  y0=0.0),
+]
+PLOT_QC_CMAP        = "turbo_r"
+PLOT_QC_CLIM        = [0.0, 4.0]   # log10(Ω·m); None = auto
+PLOT_QC_XLIM        = None          # [xmin, xmax] model-local metres; None = auto
+PLOT_QC_YLIM        = None
+PLOT_QC_ZLIM        = None
+PLOT_QC_OCEAN_COLOR = "lightgrey"
+PLOT_QC_OCEAN_RHO   = 0.25
 
 dir_list = utl.get_filelist(
     searchstr=[ENSEMBLE_NAME],
@@ -148,3 +187,34 @@ rto_dict ={'model_list' : model_list,
     'rto_prc' : rto_prc}
 
 np.savez_compressed(ENSEMBLE_RESULTS, **rto_dict)
+
+# ---------------------------------------------------------------------------
+# QC slice plot — best-nRMS converged member
+# ---------------------------------------------------------------------------
+if PLOT_QC:
+    if fviz is None:
+        print("  PLOT_QC: femtic_viz not available — skipping.")
+    elif not model_list:
+        print("  PLOT_QC: no converged members — skipping.")
+    else:
+        # Pick member with lowest nRMS
+        _best = min(model_list, key=lambda x: x[2])
+        _best_file, _best_iter, _best_nrms = _best
+        print(f"  QC: plotting best member  nRMS={_best_nrms:.3f}  "
+              f"iter={_best_iter}  {_best_file}")
+        fviz.plot_model_slices(
+            model_file  = _best_file,
+            mesh_file   = MESH_FILE,
+            slices      = PLOT_QC_SLICES,
+            cmap        = PLOT_QC_CMAP,
+            clim        = PLOT_QC_CLIM,
+            xlim        = PLOT_QC_XLIM,
+            ylim        = PLOT_QC_YLIM,
+            zlim        = PLOT_QC_ZLIM,
+            ocean_color = PLOT_QC_OCEAN_COLOR,
+            ocean_value = PLOT_QC_OCEAN_RHO,
+            plot_file   = PLOT_QC_FILE,
+            dpi         = PLOT_QC_DPI,
+            out         = True,
+        )
+        print(f"  QC: saved → {PLOT_QC_FILE}")
