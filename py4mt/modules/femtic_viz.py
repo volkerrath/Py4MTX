@@ -3257,6 +3257,17 @@ def plot_model_slices(
         print(f"  plot: mesh highest point (non-air): "
               f"elev = {-_hp_z:.1f} m  "
               f"model-local x={_hp_x:.1f} m  y={_hp_y:.1f} m")
+        # Print mesh-centre coordinates in all available systems
+        print(f"  plot: mesh centre  UTM E={utm_origin_e:.1f} m  "
+              f"N={utm_origin_n:.1f} m  zone {utm_zone}"
+              f"{'N' if utm_northern else 'S'}")
+        if utm_to_latlon_fn is not None:
+            try:
+                _clat, _clon = utm_to_latlon_fn(
+                    utm_origin_e, utm_origin_n, utm_zone, utm_northern)
+                print(f"  plot: mesh centre  lat={_clat:.6f}°  lon={_clon:.6f}°")
+            except Exception:
+                pass
         print(f"  plot: {len(slices)} panel(s), exact plane-intersection method")
 
     # ── optional alpha / blanking file ────────────────────────────────────────

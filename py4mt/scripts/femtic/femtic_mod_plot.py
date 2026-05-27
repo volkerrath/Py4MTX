@@ -291,7 +291,7 @@ SITE_MARKER = dict(marker="v", color="black", ms=4, zorder=10,
                    label=None)   # label filled in automatically
 
 #: Marker style for curtain and plane panels (centered symbol at site elevation).
-SITE_MARKER_SLICES = dict(marker="o", color="black", ms=4, zorder=10,
+SITE_MARKER_SLICES = dict(marker="v", color="black", ms=4, zorder=10,
                            label=None)
 
 # ---------------------------------------------------------------------------
@@ -308,6 +308,8 @@ SITE_MARKER_SLICES = dict(marker="o", color="black", ms=4, zorder=10,
 MAP_MARKERS = [
     dict(latlon=[-16.34861, -70.90222], marker="*", color="red", ms=10,
          name="Ubinas summit"),
+    dict(latlon=[-16.363436,-70.868025], marker="+", color="blue", ms=10,
+         name="mesh origin"),    
 ]
 
 # ---------------------------------------------------------------------------
