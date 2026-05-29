@@ -10,9 +10,15 @@ The repository contains the following subdirectories:
 
 
  - 	**py4mt/scripts** Contains scripts  for pre-processing, visualization, and preparing the inversion of
- 	MT data. It has the following subdirs: **femtic** for working with FEMTIC, modification and visualization of FEMITC tetrahedral models.
-	setup and postprocessing and visualization of MT ensembles [8, 9, 13, 14]. **modem** for working with ModEM, modification and visualization of models; working with Jacobians and sensitivities; setup of MT various MT methods [1, 2].
-	**joint**: prototypes for ADMM joint inversion [15]. This is currently early work in progress.**general** for processing and visualization of MT data on the EDI level; 1-D inversions incl. anisotropy.
+ 	MT data. It has the following subdirs:
+
+		- **femtic** for working with FEMTIC, modification and visualization of FEMITC tetrahedral models; setup and postprocessing and visualization of MT ensembles [8, 9, 13, 14].
+
+   		- **modem** for working with ModEM, modification and visualization of models; working with Jacobians and sensitivities; setup of MT various MT methods [1, 2].
+
+		- **joint**: prototypes for ADMM joint inversion [15]. This is currently early work in progress.
+
+   		- **general** for processing and visualization of MT data on the EDI level; 1-D inversions incl. anisotropy [7].
 
  -	**py4mt/modules**
  	Contains the modules called from the above scripts run for different tasks of MT interpretation.
