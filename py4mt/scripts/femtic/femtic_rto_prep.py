@@ -104,6 +104,11 @@ Provenance:
                 QC_YLIM / QC_ZLIM / QC_OCEAN_COLOR / QC_DPI config vars;
                 calls fviz.plot_model_slices per member, saves rto_qc*.pdf
                 in each member's subdirectory.
+    2026-05-28  Claude Sonnet 4.6 (Anthropic)
+                Added RELATIVE_LINKS config variable (default True); passed as
+                relative_links to ens.generate_directories.  Relative symlinks
+                survive tgz/copy to another machine; set False for legacy
+                absolute-path behaviour.
 """
 
 import os
@@ -151,6 +156,8 @@ fname = inspect.getfile(inspect.currentframe())
 titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng + "\n\n")
 
+OUT = True
+
 """
 Base setup.
 """
@@ -170,6 +177,8 @@ LINK_LIST = ["control.dat",
              "resistivity_block_iter0.dat",
              "distortion_iter0.dat",
              "run_femtic_dias.sh","run_femtic_kraken.sh"]
+RELATIVE_LINKS = True   # True: portable relative symlinks (default, survives tgz);
+                        # False: absolute symlinks (legacy behaviour)
 
 
 """
@@ -321,6 +330,8 @@ if PLOT_DATA or PLOT_MODEL:
     DAT_PHSLIMS = (-180., 180.)     # (phs_min, phs_max) degrees; None = auto
     DAT_VTFLIMS = (-1.,    +1.)     # (vtf_min, vtf_max); None = auto
     DAT_PTLIMS = None               # (pt_min,  pt_max);  None = auto
+    
+    
     MOD_MESH = TEMPLATES + "mesh.dat"
     # MOD_ORIG is derived from MOD_REF below (after the PERTURB_MOD block)
     
@@ -409,6 +420,7 @@ dir_list = ens.generate_directories(alg="rto",
                                     link_list=LINK_LIST,
                                     n_samples=N_SAMPLES,
                                     fromto=FROM_TO,
+                                    relative_links=RELATIVE_LINKS,
                                     out=True)
 print("\n")
 

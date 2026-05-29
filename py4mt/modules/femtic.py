@@ -65,6 +65,10 @@ Modified: 2026-05-23 by Claude Sonnet 4.6 (Anthropic) — added model-local
 Modified: 2026-05-24 by Claude Sonnet 4.6 (Anthropic) — added Section 6b:
     read_site_position(), read_site_dat(), estimate_utm_origin(),
     _point_in_tet(), extract_borehole_log(); moved from femtic_mod_plot.py.
+Modified: 2026-05-28 by Claude Sonnet 4.6 (Anthropic) — fixed insert_model:
+    template is now read fully into memory before the output file is opened,
+    so in-place rewrites (template == model_file, e.g. referencemodel.dat)
+    no longer truncate the template before it can be parsed.
 """
 from __future__ import annotations
 
@@ -448,38 +452,49 @@ def insert_model(
             model_file = f"{stem}.new"
     out_path = Path(model_file)
 
-    with template_path.open("r", encoding="utf-8", errors="replace") as fin, out_path.open(
-        "w", encoding="utf-8"
-    ) as fout:
-        header = fin.readline()
-        hdr_parts = header.split()
-        if len(hdr_parts) < 2:
-            raise ValueError(f"Invalid resistivity block header: {hdr_parts!r}")
-        nelem = int(hdr_parts[0])
-        nreg = int(hdr_parts[1])
+    # Read the entire template into memory first so that opening the output
+    # file for writing (which truncates it) cannot corrupt the template even
+    # when template == model_file (in-place rewrite of referencemodel.dat).
+    with template_path.open("r", encoding="utf-8", errors="replace") as fin:
+        template_lines = fin.readlines()
 
+    if not template_lines:
+        raise ValueError(f"insert_model: template file is empty: {template_path}")
+
+    header = template_lines[0]
+    hdr_parts = header.split()
+    if len(hdr_parts) < 2:
+        raise ValueError(f"Invalid resistivity block header: {hdr_parts!r}")
+    nelem = int(hdr_parts[0])
+    nreg = int(hdr_parts[1])
+
+    if nreg <= 0:
+        raise ValueError("No regions in resistivity block (nreg<=0).")
+
+    # Parse element->region mapping and region lines from the in-memory list.
+    elem_lines = template_lines[1 : 1 + nelem]
+    region_start = 1 + nelem
+
+    reg_meta: list[tuple[int, float, float, float, float, int]] = []
+    reg_lines: list[str] = []
+    for i in range(nreg):
+        idx = region_start + i
+        if idx >= len(template_lines):
+            raise ValueError(
+                f"Unexpected EOF while reading region lines: expected {nreg}, got {i}."
+            )
+        line = template_lines[idx]
+        ireg, rho, lo, hi, nn, flag = _parse_region_line(line)
+        if ireg != i:
+            raise ValueError(f"Expected region index {i} at line {i}, got {ireg}.")
+        reg_lines.append(line)
+        reg_meta.append((ireg, rho, lo, hi, nn, flag))
+
+    with out_path.open("w", encoding="utf-8") as fout:
         # Write header and element->region mapping unchanged
         fout.write(header)
-        for _ in range(nelem):
-            fout.write(fin.readline())
-
-        if nreg <= 0:
-            raise ValueError("No regions in resistivity block (nreg<=0).")
-
-        # Read all region lines first (we need flags to identify fixed blocks)
-        reg_meta: list[tuple[int, float, float, float, float, int]] = []
-        reg_lines: list[str] = []
-        for i in range(nreg):
-            line = fin.readline()
-            if not line:
-                raise ValueError(
-                    f"Unexpected EOF while reading region lines: expected {nreg}, got {i}."
-                )
-            ireg, rho, lo, hi, nn, flag = _parse_region_line(line)
-            if ireg != i:
-                raise ValueError(f"Expected region index {i} at line {i}, got {ireg}.")
-            reg_lines.append(line)
-            reg_meta.append((ireg, rho, lo, hi, nn, flag))
+        for line in elem_lines:
+            fout.write(line)
 
         # Determine whether region 1 is treated as ocean (optional)
         ocean_present = False

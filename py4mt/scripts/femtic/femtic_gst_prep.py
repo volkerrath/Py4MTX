@@ -56,6 +56,11 @@ Provenance:
                                  generation: PLOT_SLICES_QC / QC_* config;
                                  calls fviz.plot_model_slices per member,
                                  saves gst_qc*.pdf in each member's subdir.
+    2026-05-28  Claude Sonnet 4.6 (Anthropic)
+                Added RELATIVE_LINKS config variable (default True); passed as
+                relative_links to ens.generate_directories.  Relative symlinks
+                survive tgz/copy to another machine; set False for legacy
+                absolute-path behaviour.
 """
 
 import os
@@ -97,12 +102,15 @@ fname = inspect.getfile(inspect.currentframe())
 titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng + "\n\n")
 
+OUT = True
+
+
 """
 Base setup.
 """
 N_SAMPLES = 32
 ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/ubinas/ensemble/"
-ENSEMBLE_NAME = "ubinas_gst_"
+ENSEMBLE_NAME = "ubinas_gst_suzuki_"
 
 TEMPLATES = ENSEMBLE_DIR + "/templates/"
 if not os.path.isdir(TEMPLATES):
@@ -112,8 +120,11 @@ COPY_LIST = ["observe.dat",
              "referencemodel.dat",]
 LINK_LIST = ["control.dat",
              "mesh.dat",
+             "resistivity_block_iter0.dat",
              "distortion_iter0.dat",
-             "run_femtic_dias.sh", "run_femtic_kraken.sh"]
+             "run_femtic_dias.sh","run_femtic_kraken.sh"]
+RELATIVE_LINKS = True   # True: portable relative symlinks (default, survives tgz);
+                        # False: absolute symlinks (legacy behaviour)
 
 
 """
@@ -143,7 +154,7 @@ PERTURB_MOD = True
 if PERTURB_MOD:
     MOD_REF = TEMPLATES + "referencemodel.dat"
     MOD_REF_BASE = os.path.basename(MOD_REF)
-
+    MOD_MESH = TEMPLATES + "mesh.dat"
     # ------------------------------------------------------------------
     # Pilot-point configuration
     # ------------------------------------------------------------------
@@ -199,7 +210,7 @@ if PERTURB_MOD:
     # MOD_VARIO_ANGLES: rotation [α, β, γ] in degrees (optional).
     #   None = axis-aligned anisotropy.
     MOD_VARIO_MODEL   = "Spherical"     # gstools covariance model class
-    MOD_VARIO_RANGE   = (20000., 5000.) # (horizontal, vertical) ranges in m
+    MOD_VARIO_RANGE   = (8000., 4000.) # (horizontal, vertical) ranges in m
     MOD_VARIO_SILL    = 0.5             # sill in (log10 Ohm.m)^2
     MOD_VARIO_NUGGET  = 0.01            # nugget in (log10 Ohm.m)^2
     MOD_VARIO_ANGLES  = None            # [alpha, beta, gamma] deg; None = axis-aligned
@@ -223,7 +234,7 @@ else:
 Set up mode of data perturbations.
 (Identical to the RTO data-perturbation block.)
 """
-PERTURB_DAT = True
+PERTURB_DAT = False
 if PERTURB_DAT:
     DAT_METHOD = "add"
     DAT_PDF = ["normal", 0., 1.]
@@ -371,6 +382,7 @@ dir_list = ens.generate_directories(alg="gst",
                                     link_list=LINK_LIST,
                                     n_samples=N_SAMPLES,
                                     fromto=FROM_TO,
+                                    relative_links=RELATIVE_LINKS,
                                     out=True)
 print("\n")
 
@@ -386,67 +398,69 @@ if _n_viz > 0:
 else:
     VIZ_SAMPLES = []
 
-"""
-Draw perturbed data sets: d̃ ∼ N(d, Cd)
-(Same as RTO — the GST method changes only the model perturbation.)
-"""
-data_ensemble = ens.generate_data_ensemble(alg="gst",
-                                           dir_base=ENSEMBLE_DIR + ENSEMBLE_NAME,
-                                           n_samples=N_SAMPLES,
-                                           fromto=FROM_TO,
-                                           file_in="observe.dat",
-                                           draw_from=DAT_PDF,
-                                           method=DAT_METHOD,
-                                           errors=ERRORS,
-                                           out=True)
-print("data ensemble ready!")
-print("\n")
 
-
-"""
-Data visualization
-------------------
-Joint plot of original vs. perturbed observe.dat for the selected samples.
-Helper: femtic_viz.plot_data_ensemble
-"""
-if PLOT_DATA:
-    dat_orig_file = TEMPLATES + "observe.dat"
-    dat_ens_files = [
-        ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/observe.dat"
-        for i in range(N_SAMPLES)
-    ]
-
-    for i_samp in VIZ_SAMPLES:
-        fig_dat, axs_dat = fviz.plot_data_ensemble(
-            orig_file=dat_orig_file,
-            ens_files=dat_ens_files,
-            sample_indices=[i_samp],
-            what=DAT_WHAT,
-            comps=DAT_COMPS,
-            show_errors_orig=DAT_SHOW_ERRORS_ORIG,
-            show_errors_pert=DAT_SHOW_ERRORS_PERT,
-            error_style_orig=DAT_ERROR_STYLE_ORIG,
-            error_style_pert=DAT_ERROR_STYLE_PERT,
-            n_sites=VIZ_N_SITES,
-            alpha_orig=DAT_ALPHA_ORIG,
-            alpha_pert=DAT_ALPHA_PERT,
-            comp_markers=DAT_COMP_MARKERS,
-            markersize=DAT_MARKERSIZE,
-            markevery=DAT_MARKEVERY,
-            perlims=DAT_PERLIMS,
-            rholims=DAT_RHOLIMS,
-            phslims=DAT_PHSLIMS,
-            vtflims=DAT_VTFLIMS,
-            ptlims=DAT_PTLIMS,
-            out=True,
-        )
-        member_dir = ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i_samp}/"
-        plot_path = member_dir + "gst_data" + PLOT_STR + ".pdf"
-        fig_dat.savefig(plot_path, bbox_inches="tight")
-        plt.close(fig_dat)
-        print(f"  data plot saved: {plot_path}")
-    print("data ensemble plots saved.")
-
+if PERTURB_DAT:
+    """
+    Draw perturbed data sets: d̃ ∼ N(d, Cd)
+    (Same as RTO — the GST method changes only the model perturbation.)
+    """
+    data_ensemble = ens.generate_data_ensemble(alg="gst",
+                                               dir_base=ENSEMBLE_DIR + ENSEMBLE_NAME,
+                                               n_samples=N_SAMPLES,
+                                               fromto=FROM_TO,
+                                               file_in="observe.dat",
+                                               draw_from=DAT_PDF,
+                                               method=DAT_METHOD,
+                                               errors=ERRORS,
+                                               out=True)
+    print("data ensemble ready!")
+    print("\n")
+    
+    
+    """
+    Data visualization
+    ------------------
+    Joint plot of original vs. perturbed observe.dat for the selected samples.
+    Helper: femtic_viz.plot_data_ensemble
+    """
+    if PLOT_DATA:
+        dat_orig_file = TEMPLATES + "observe.dat"
+        dat_ens_files = [
+            ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/observe.dat"
+            for i in range(N_SAMPLES)
+        ]
+    
+        for i_samp in VIZ_SAMPLES:
+            fig_dat, axs_dat = fviz.plot_data_ensemble(
+                orig_file=dat_orig_file,
+                ens_files=dat_ens_files,
+                sample_indices=[i_samp],
+                what=DAT_WHAT,
+                comps=DAT_COMPS,
+                show_errors_orig=DAT_SHOW_ERRORS_ORIG,
+                show_errors_pert=DAT_SHOW_ERRORS_PERT,
+                error_style_orig=DAT_ERROR_STYLE_ORIG,
+                error_style_pert=DAT_ERROR_STYLE_PERT,
+                n_sites=VIZ_N_SITES,
+                alpha_orig=DAT_ALPHA_ORIG,
+                alpha_pert=DAT_ALPHA_PERT,
+                comp_markers=DAT_COMP_MARKERS,
+                markersize=DAT_MARKERSIZE,
+                markevery=DAT_MARKEVERY,
+                perlims=DAT_PERLIMS,
+                rholims=DAT_RHOLIMS,
+                phslims=DAT_PHSLIMS,
+                vtflims=DAT_VTFLIMS,
+                ptlims=DAT_PTLIMS,
+                out=True,
+            )
+            member_dir = ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i_samp}/"
+            plot_path = member_dir + "gst_data" + PLOT_STR + ".pdf"
+            fig_dat.savefig(plot_path, bbox_inches="tight")
+            plt.close(fig_dat)
+            print(f"  data plot saved: {plot_path}")
+        print("data ensemble plots saved.")
+    
 
 """
 Generate geostatistical initial models: m0_i via pilot-point Kriging
@@ -468,6 +482,7 @@ if PERTURB_MOD:
         n_samples=N_SAMPLES,
         fromto=FROM_TO,
         ref_mod_file=MOD_REF,
+        mesh_file=MOD_MESH,
         pp_mode=MOD_PP_MODE,
         n_pp=MOD_N_PP,
         pp_bbox=MOD_PP_BBOX,

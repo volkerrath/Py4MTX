@@ -313,6 +313,7 @@ No sparse-matrix file (`.npz`) is required.
 |            |               | `MOD_OUTPUT_TARGET` controls which FEMTIC files are written.  |
 | 2026-05-13 | Claude | Added `PLOT_SLICES_ENS` block: `ENS_SLICES` / `ENS_CMAP` / `ENS_CLIM` / `ENS_STAT_ROWS` config; calls `fviz.plot_ensemble_slices` for exact tet-plane intersection ensemble figure. Member file list uses `MOD_RESISTIVITY_FILE`. |
 | 2026-05-27 | vrath / Claude Sonnet 4.6 (Anthropic) | Added `PLOT_SLICES_QC` block: `QC_SLICES` / `QC_CMAP` / `QC_CLIM` / `QC_*` config; calls `fviz.plot_model_slices` per selected member after model ensemble generation, saves `gst_qc*.pdf` in each member's subdirectory. |
+| 2026-05-28 | Claude Sonnet 4.6 (Anthropic) | Added `RELATIVE_LINKS` config variable (default `True`); passed as `relative_links` to `ens.generate_directories`. Relative symlinks survive `tgz`/copy to another machine; set `False` for legacy absolute-path behaviour. |
 
 ## Author
 

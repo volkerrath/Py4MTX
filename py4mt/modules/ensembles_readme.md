@@ -356,3 +356,35 @@ Updated: 2026-04-27 (GST); 2026-04-11 (consolidation); 2026-04-02 (cleanup)
   **Recommended** parameter values for FEMTIC workflows (see below).
 
 Author: Volker Rath (DIAS)
+
+### Changelog (2026-05-28)
+- `put_files` and `generate_directories`: new `relative_links` parameter
+  (default `True`).  When `True`, symlink targets are stored as
+  `os.path.relpath` paths relative to each member directory, so the ensemble
+  tree is portable after tgz/copy to another machine.  Set to `False` to
+  restore the previous absolute-path behaviour.  The prep scripts expose this
+  as the `RELATIVE_LINKS` config variable.
+
+### Changelog (2026-05-28) — bug fix
+
+- `generate_gst_model_ensemble`: fixed template-clobbering bug when
+  `output_target="both"`.  The `resistivity_block` write used
+  `member_dir + reference_file` as both template and (indirectly) output;
+  if `resistivity_file == reference_file` or `insert_model` writes in-place,
+  the template was corrupted before the `referencemodel` write could read it,
+  raising `ValueError: Invalid resistivity block header: []`.  The template
+  path is now resolved once into `template_path` before either write, so both
+  branches always read the original un-modified file.
+
+### Changelog (2026-05-28) — GST parameter estimation
+
+Added four functions for choosing variogram parameters before committing to a
+full GST ensemble run.  All require `gstools`; all are purely diagnostic (no
+FEMTIC runs needed unless noted).
+
+| Function | Strategy | What it does |
+|---|---|---|
+| `gst_variogram_from_rto_samples` | 1 | Fits a gstools variogram to existing RTO (or GST) samples via `vario_estimate` + `fit_variogram`. Makes GST statistically consistent with RTO. |
+| `gst_pilot_point_cv` | 2 | Leave-one-out Ordinary Kriging CV at the pilot points using the reference model as truth. Returns RMSE, MAE, and skill score without running FEMTIC. |
+| `gst_sill_from_jacobian` | 3 | Linearised propagation of model covariance to data space via the Jacobian J. Calibrates the sill so that ensemble forward-response spread matches data noise at a target coverage level. Falls back to a diagonal C_m approximation for large meshes (n_cells > 5000). |
+| `gst_parameter_diagnostics` | 4 | Integrating diagnostic: ensemble std maps, empirical variogram vs. target, optional LOO-CV (calls Strategy 2), optional data-space spread ratio (via J). Prints structured summary; optionally saves a multi-panel figure. |
