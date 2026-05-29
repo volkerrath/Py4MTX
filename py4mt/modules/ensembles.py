@@ -15,6 +15,9 @@ This module contains:
 - Ensemble analysis tools (EOFs / PCA).
 - Weighted KL decomposition and a KL+PCE surrogate builder for log-resistivity
   fields on unstructured FEMTIC meshes.
+- GST parameter estimation: four strategies for choosing variogram parameters
+  and pilot-point layouts (gst_variogram_from_rto_samples,
+  gst_pilot_point_cv, gst_sill_from_jacobian, gst_parameter_diagnostics).
 
 All functions are importable; no code is executed on import.
 
@@ -43,6 +46,22 @@ pilot-point Ordinary Kriging (gstools).  No roughness matrix required.
 Updated 2026-04-27 by Claude Sonnet 4.6 (Anthropic): renamed
 generate_model_ensemble to generate_rto_model_ensemble for consistency
 with generate_gst_model_ensemble.
+Updated 2026-05-28 by Claude Sonnet 4.6 (Anthropic): put_files and
+generate_directories gained a relative_links parameter (default True):
+relative symlinks survive tgz/copy to another machine; False restores the
+previous absolute-path behaviour.
+Updated 2026-05-28 by Claude Sonnet 4.6 (Anthropic): fixed template-clobbering
+bug in generate_gst_model_ensemble — when output_target='both', the first
+insert_model call (resistivity_block) could overwrite reference_file before
+the second call read it as template; template_path is now resolved once before
+either write.
+Updated 2026-05-28 by Claude Sonnet 4.6 (Anthropic): added GST parameter
+estimation section — four functions for choosing variogram parameters before
+committing to a full ensemble run: gst_variogram_from_rto_samples (Strategy 1:
+fit variogram to RTO samples), gst_pilot_point_cv (Strategy 2: LOO-CV on
+reference model), gst_sill_from_jacobian (Strategy 3: linearised Jacobian
+sill calibration), gst_parameter_diagnostics (Strategy 4: integrating
+diagnostic with optional plot).
 """
 
 from __future__ import annotations
@@ -108,6 +127,7 @@ def generate_directories(
     ),
     n_samples: int = 1,
     fromto: Optional[Tuple[int, int]] = None,
+    relative_links: bool = True,
     out: bool = True,
 ) -> list[str]:
     """
@@ -128,6 +148,10 @@ def generate_directories(
     fromto : (int, int), optional
         Explicit start/stop indices (Python-style: start, stop) for ensemble
         member numbering. If None, indices range from 0..n_samples-1.
+    relative_links : bool, optional
+        If True (default), symlink targets are relative to each member
+        directory, making the ensemble tree portable after tgz/copy to
+        another machine.  If False, absolute paths are used instead.
     out : bool, optional
         If True, print status messages.
 
@@ -145,7 +169,8 @@ def generate_directories(
     for iens in from_to:
         directory = f"{dir_base}{iens}/"
         os.makedirs(directory, exist_ok=True)
-        put_files(copy_list, link_list, directory, templates)
+        put_files(copy_list, link_list, directory, templates,
+                  relative_links=relative_links)
         dir_list.append(directory)
 
 
@@ -739,6 +764,7 @@ def put_files(
     links: Sequence[str],
     directory: str,
     templates: str,
+    relative_links: bool = True,
 ) -> None:
     """
     Copy or symlink a list of files from `templates` prefix into `directory`.
@@ -753,17 +779,25 @@ def put_files(
         Target directory.
     templates : str
         Template directory (prefix) for input files.
+    relative_links : bool, optional
+        If True (default), symlink targets are stored as paths relative to
+        ``directory``, so the ensemble tree remains portable after tgz/copy
+        to another machine.  If False, absolute paths are used instead.
     """
     for fname in copies:
         src = templates + fname
         shutil.copy2(src, directory)
 
     for fname in links:
-        src = os.path.abspath(templates + fname)
+        src_abs = os.path.abspath(templates + fname)
         dst = os.path.join(directory, fname)
+        if relative_links:
+            src_lnk = os.path.relpath(src_abs, start=os.path.abspath(directory))
+        else:
+            src_lnk = src_abs
         if os.path.islink(dst):
             os.remove(dst)
-        os.symlink(src, dst)
+        os.symlink(src_lnk, dst)
 
 
 def generate_rto_model_ensemble(
@@ -955,6 +989,7 @@ def generate_gst_model_ensemble(
     fromto: Optional[Tuple[int, int]] = None,
     # --- mesh ---
     ref_mod_file: str = "",
+    mesh_file: str = "",
     # --- pilot points ---
     pp_mode: str = "random",
     n_pp: int = 100,
@@ -1004,8 +1039,11 @@ def generate_gst_model_ensemble(
     fromto : (int, int), optional
         Explicit ``[start, stop)`` index range.  If None, use 0 … n_samples-1.
     ref_mod_file : str
-        Full path to the template reference model file.  Read once to obtain
-        mesh cell-centre coordinates via ``fem.read_model``.
+        Full path to the template reference model file.  Used to identify
+        free regions and their element membership.
+    mesh_file : str
+        Full path to the FEMTIC mesh file (``mesh.dat``).  Used together with
+        ``ref_mod_file`` to compute per-free-region barycentres for Kriging.
 
     Pilot-point parameters
     ----------------------
@@ -1096,22 +1134,57 @@ def generate_gst_model_ensemble(
     rng = default_rng() if rng is None else rng
 
     # ------------------------------------------------------------------
-    # Read mesh cell centres once from the template reference model.
-    # fem.read_model returns (coords, values, ...) with coords shape (N, 3).
+    # Read mesh cell centres once from the reference model + mesh file.
+    # Per-region barycentres: mean of element barycentres for each
+    # free region, computed from mesh node coordinates and connectivity.
     # ------------------------------------------------------------------
     if not ref_mod_file:
         raise ValueError(
             "generate_gst_model_ensemble: ref_mod_file must be supplied."
         )
+    if not mesh_file:
+        raise ValueError(
+            "generate_gst_model_ensemble: mesh_file must be supplied."
+        )
     if out:
-        print(f"Reading mesh cell centres from: {ref_mod_file}")
-    mod_coords, *_ = fem.read_model(ref_mod_file, model_trans="log10", out=False)
-    cx = mod_coords[:, 0]
-    cy = mod_coords[:, 1]
-    cz = mod_coords[:, 2]
-    n_cells = len(cx)
+        print(f"Reading reference model from: {ref_mod_file}")
+        print(f"Reading mesh from:            {mesh_file}")
+
+    # resistivity block: elem→region map, rho, flag
+    rblock    = fem.read_resistivity_block(ref_mod_file)
+    elem2reg  = rblock["region_of_elem"]   # shape (nelem,), 0-based
+    nreg      = int(rblock["nreg"])
+    rho_reg   = rblock["region_rho"]       # shape (nreg,)
+    flag_reg  = rblock["region_flag"]      # shape (nreg,)
+
+    # mirror read_model fixed-region logic
+    fixed_mask = np.zeros(nreg, dtype=bool)
+    fixed_mask[0] = True                   # air always fixed
+    fixed_mask |= (flag_reg == 1)
+    if nreg > 1 and (flag_reg[1] == 1) and (rho_reg[1] <= 1.0):
+        fixed_mask[1] = True               # ocean heuristic
+    free_idx = np.where(~fixed_mask)[0]    # free region global indices
+
+    # mesh: node coordinates and tetrahedral connectivity
+    nodes, conn = fem.read_femtic_mesh(mesh_file)   # (nn,3), (nelem,4)
+
+    # element barycentres: (nelem, 3)
+    elem_bary = nodes[conn].mean(axis=1)
+
+    # per-region barycentre = mean over elements belonging to that region
+    region_bary = np.zeros((nreg, 3), dtype=float)
+    for ireg in free_idx:
+        mask_e = (elem2reg == ireg)
+        if mask_e.any():
+            region_bary[ireg] = elem_bary[mask_e].mean(axis=0)
+
+    cx = region_bary[free_idx, 0]
+    cy = region_bary[free_idx, 1]
+    cz = region_bary[free_idx, 2]
+    n_cells = len(free_idx)
+
     if out:
-        print(f"  {n_cells} mesh cells.")
+        print(f"  {n_cells} free regions.")
 
     # ------------------------------------------------------------------
     # Build gstools variogram model.
@@ -1208,10 +1281,15 @@ def generate_gst_model_ensemble(
         krig_field = np.clip(krig_field, log_rho_min, log_rho_max)
 
         # --- write output file(s) ---
+        # Resolve the template path once so that writing resistivity_block
+        # first (in the "both" branch) cannot clobber the template before
+        # the referencemodel write reads it.
+        template_path = member_dir + reference_file
+
         if output_target in ("resistivity_block", "both"):
             out_path = member_dir + resistivity_file
             fem.insert_model(
-                template=member_dir + reference_file,
+                template=template_path,
                 model=krig_field,
                 model_file=out_path,
                 model_name=f"gst_sample{iens}",
@@ -1221,7 +1299,7 @@ def generate_gst_model_ensemble(
         if output_target in ("referencemodel", "both"):
             out_path = member_dir + reference_file
             fem.insert_model(
-                template=member_dir + reference_file,
+                template=template_path,
                 model=krig_field,
                 model_file=out_path,
                 model_name=f"gst_sample{iens}",
@@ -1238,6 +1316,756 @@ def generate_gst_model_ensemble(
         print(mod_list)
 
     return mod_list
+
+
+# =============================================================================
+# Section: GST parameter estimation
+# =============================================================================
+#
+# Four complementary strategies for choosing variogram parameters and
+# pilot-point layouts before committing to a full GST ensemble run.
+#
+# Strategy 1  gst_variogram_from_rto_samples
+#   Fit a gstools variogram to the spatial covariance already encoded in
+#   existing RTO samples.  Makes GST statistically consistent with RTO.
+#
+# Strategy 2  gst_pilot_point_cv
+#   Leave-one-out cross-validation of Ordinary Kriging at the pilot points
+#   using the reference model as the "truth".  Scores variogram parameter
+#   sets without running FEMTIC.
+#
+# Strategy 3  gst_sill_from_jacobian
+#   Linearised propagation of model variance to data space via the Jacobian
+#   J.  Calibrates the sill so that the ensemble forward-response spread
+#   matches the observed data error level.
+#
+# Strategy 4  gst_parameter_diagnostics
+#   Integrating diagnostic: given an already-generated GST sample array,
+#   computes ensemble std maps, back-fits an empirical variogram, evaluates
+#   CV scores at pilot points, and optionally propagates spread to data
+#   space (if J is provided).  Use to score and compare parameter sets.
+# =============================================================================
+
+
+def gst_variogram_from_rto_samples(
+    samples: np.ndarray,
+    coords: np.ndarray,
+    vario_model: str = "Spherical",
+    n_bins: int = 30,
+    max_lag: Optional[float] = None,
+    fit_kwargs: Optional[dict] = None,
+    out: bool = True,
+) -> tuple:
+    """Fit a gstools variogram model to an array of RTO (or GST) samples.
+
+    Strategy 1: use the spatial covariance structure already present in RTO
+    samples to derive variogram parameters for a geostatistically consistent
+    GST ensemble.
+
+    The empirical variogram is estimated from the sample ensemble using
+    ``gstools.vario_estimate``, then fitted via ``model.fit_variogram``.
+
+    Parameters
+    ----------
+    samples : ndarray, shape (n_samples, n_cells)
+        Log10-resistivity perturbations (zero-mean) or absolute values.
+        Rows are ensemble members; columns correspond to ``coords``.
+    coords : ndarray, shape (n_cells, 3)
+        Spatial coordinates (easting, northing, depth) of the free mesh
+        cells, in metres.  Must match the column order of ``samples``.
+    vario_model : str
+        gstools covariance model class name to fit, e.g. ``"Spherical"``,
+        ``"Gaussian"``, ``"Exponential"``.  Default ``"Spherical"``.
+    n_bins : int
+        Number of lag bins for the empirical variogram.  Default 30.
+    max_lag : float, optional
+        Maximum lag distance in metres.  If None, defaults to half the
+        maximum pairwise distance estimated from the coordinate range.
+    fit_kwargs : dict, optional
+        Extra keyword arguments forwarded to ``model.fit_variogram``
+        (e.g. ``{"nugget": False}`` to fix the nugget at zero).
+    out : bool
+        If True, print fitted model parameters.
+
+    Returns
+    -------
+    model : gstools covariance model
+        Fitted gstools model instance.  Access fitted parameters via
+        ``model.var``, ``model.len_scale``, ``model.nugget``,
+        ``model.anis``.
+    bin_centers : ndarray, shape (n_bins,)
+        Lag bin centres used for the empirical estimate (metres).
+    gamma : ndarray, shape (n_bins,)
+        Empirical semi-variogram values at each bin centre.
+
+    Notes
+    -----
+    Requires ``gstools`` (``pip install gstools``).
+
+    The empirical variogram is computed from pair-wise differences over all
+    ensemble members simultaneously.  For large meshes (> 50 k cells) the
+    pairwise distance computation can be expensive; set ``max_lag`` to limit
+    the contributing pairs.
+
+    Author: Volker Rath (DIAS)
+    Created with the help of Claude Sonnet 4.6 (Anthropic), 2026-05-28.
+    """
+    try:
+        import gstools as gs
+    except ImportError:
+        raise ImportError(
+            "gst_variogram_from_rto_samples requires gstools.  "
+            "Install with: pip install gstools"
+        )
+
+    samples = np.asarray(samples, dtype=float)
+    coords  = np.asarray(coords,  dtype=float)
+
+    if samples.ndim != 2:
+        raise ValueError("samples must be 2-D (n_samples, n_cells).")
+    if coords.ndim != 2 or coords.shape[1] != 3:
+        raise ValueError("coords must have shape (n_cells, 3).")
+    if samples.shape[1] != coords.shape[0]:
+        raise ValueError(
+            f"samples.shape[1]={samples.shape[1]} does not match "
+            f"coords.shape[0]={coords.shape[0]}."
+        )
+
+    cx, cy, cz = coords[:, 0], coords[:, 1], coords[:, 2]
+
+    if max_lag is None:
+        span = np.array([cx.ptp(), cy.ptp(), cz.ptp()])
+        max_lag = 0.5 * float(np.linalg.norm(span))
+
+    bin_edges = np.linspace(0.0, max_lag, n_bins + 1)
+
+    # Remove ensemble mean per cell before computing variogram so that
+    # the result reflects spatial correlation, not a DC offset.
+    samples_dm = samples - samples.mean(axis=0, keepdims=True)
+
+    # Concatenate all members as independent spatial realisations.
+    pos = (cx, cy, cz)
+    bin_centers, gamma = gs.vario_estimate(
+        pos,
+        samples_dm,          # gstools accepts (n_samples, n_cells) fields
+        bin_edges=bin_edges,
+    )
+
+    vario_cls = getattr(gs, vario_model)
+    model = vario_cls(dim=3)
+
+    fit_kw = {} if fit_kwargs is None else dict(fit_kwargs)
+    model.fit_variogram(bin_centers, gamma, **fit_kw)
+
+    if out:
+        print(
+            f"gst_variogram_from_rto_samples: fitted {vario_model}\n"
+            f"  var (sill)   = {model.var:.4f} (log10 Ohm.m)^2\n"
+            f"  len_scale    = {model.len_scale:.1f} m\n"
+            f"  nugget       = {model.nugget:.4f}\n"
+            f"  anis         = {model.anis}"
+        )
+
+    return model, bin_centers, gamma
+
+
+def gst_pilot_point_cv(
+    ref_log_rho: np.ndarray,
+    coords: np.ndarray,
+    pp_coords: np.ndarray,
+    vario_model: str = "Spherical",
+    vario_range: float | Sequence[float] = 20000.0,
+    vario_sill: float = 0.5,
+    vario_nugget: float = 0.01,
+    vario_angles: Optional[Sequence[float]] = None,
+    out: bool = True,
+) -> dict:
+    """Leave-one-out cross-validation of Ordinary Kriging at pilot points.
+
+    Strategy 2: score a variogram parameter set without running FEMTIC.
+    The reference model is treated as one realisation of the spatial field;
+    its log10(rho) values at the pilot-point locations are predicted by
+    Kriging from all *other* pilot points, and the prediction error is
+    measured.
+
+    Parameters
+    ----------
+    ref_log_rho : ndarray, shape (n_cells,)
+        Log10(rho) values of the reference model at the free mesh cell centres.
+    coords : ndarray, shape (n_cells, 3)
+        Spatial coordinates of the free mesh cells (metres), matching
+        ``ref_log_rho``.
+    pp_coords : ndarray, shape (n_pp, 3)
+        Pilot-point coordinates (metres).  Each will be held out in turn.
+        Their reference-model values are obtained by nearest-cell look-up.
+    vario_model : str
+        gstools covariance model class name.
+    vario_range : float or (float, float)
+        Horizontal range, or (h_range, v_range) for anisotropy (metres).
+    vario_sill : float
+        Sill (variance) in (log10 Ohm.m)^2.
+    vario_nugget : float
+        Nugget in (log10 Ohm.m)^2.
+    vario_angles : sequence of float, optional
+        Rotation angles [alpha, beta, gamma] in degrees.  None = axis-aligned.
+    out : bool
+        If True, print a summary of CV scores.
+
+    Returns
+    -------
+    result : dict with keys
+        ``"pp_coords"``   -- pilot-point coordinates, shape (n_pp, 3)
+        ``"pp_true"``     -- reference log10(rho) at each pilot point
+        ``"pp_pred"``     -- leave-one-out Kriging prediction at each point
+        ``"pp_var"``      -- Kriging variance at each point
+        ``"residuals"``   -- pp_pred - pp_true
+        ``"rmse"``        -- root-mean-square prediction error
+        ``"mae"``         -- mean absolute error
+        ``"skill"``       -- 1 - RMSE / std(pp_true): fraction of variance explained
+
+    Notes
+    -----
+    Requires ``gstools`` (``pip install gstools``).
+
+    Author: Volker Rath (DIAS)
+    Created with the help of Claude Sonnet 4.6 (Anthropic), 2026-05-28.
+    """
+    try:
+        import gstools as gs
+    except ImportError:
+        raise ImportError(
+            "gst_pilot_point_cv requires gstools.  "
+            "Install with: pip install gstools"
+        )
+
+    ref_log_rho = np.asarray(ref_log_rho, dtype=float)
+    coords      = np.asarray(coords,      dtype=float)
+    pp_coords   = np.asarray(pp_coords,   dtype=float)
+
+    if ref_log_rho.ndim != 1 or coords.ndim != 2 or coords.shape[1] != 3:
+        raise ValueError(
+            "ref_log_rho must be 1-D; coords must be (n_cells, 3)."
+        )
+    if pp_coords.ndim != 2 or pp_coords.shape[1] != 3:
+        raise ValueError("pp_coords must have shape (n_pp, 3).")
+
+    # --- build variogram ---
+    vario_cls = getattr(gs, vario_model)
+    if np.isscalar(vario_range):
+        len_scale = float(vario_range)
+        anis = [1.0, 1.0]
+    else:
+        h_range, v_range = vario_range
+        len_scale = float(h_range)
+        anis = [1.0, float(v_range) / float(h_range)]
+
+    vario_kwargs: dict = dict(
+        dim=3, var=vario_sill, len_scale=len_scale,
+        nugget=vario_nugget, anis=anis,
+    )
+    if vario_angles is not None:
+        vario_kwargs["angles"] = np.deg2rad(vario_angles)
+    variogram = vario_cls(**vario_kwargs)
+
+    # --- nearest-cell look-up to assign reference values to pilot points ---
+    from scipy.spatial import cKDTree
+    tree = cKDTree(coords)
+    _, nn_idx = tree.query(pp_coords)
+    pp_true = ref_log_rho[nn_idx]          # shape (n_pp,)
+
+    n_pp = len(pp_true)
+    pp_pred = np.empty(n_pp, dtype=float)
+    pp_var  = np.empty(n_pp, dtype=float)
+
+    pp_x = pp_coords[:, 0]
+    pp_y = pp_coords[:, 1]
+    pp_z = pp_coords[:, 2]
+
+    for i in range(n_pp):
+        mask = np.ones(n_pp, dtype=bool)
+        mask[i] = False
+        krig = gs.krige.Ordinary(
+            model=variogram,
+            cond_pos=(pp_x[mask], pp_y[mask], pp_z[mask]),
+            cond_val=pp_true[mask],
+        )
+        pred, var = krig(
+            (pp_x[[i]], pp_y[[i]], pp_z[[i]]),
+            return_var=True,
+        )
+        pp_pred[i] = float(pred[0])
+        pp_var[i]  = float(var[0])
+
+    residuals = pp_pred - pp_true
+    rmse  = float(np.sqrt(np.mean(residuals ** 2)))
+    mae   = float(np.mean(np.abs(residuals)))
+    std_t = float(np.std(pp_true))
+    skill = float(1.0 - rmse / std_t) if std_t > 0.0 else np.nan
+
+    if out:
+        print(
+            f"gst_pilot_point_cv ({vario_model}, range={vario_range}, "
+            f"sill={vario_sill}, nugget={vario_nugget})\n"
+            f"  n_pp  = {n_pp}\n"
+            f"  RMSE  = {rmse:.4f}  log10 Ohm.m\n"
+            f"  MAE   = {mae:.4f}  log10 Ohm.m\n"
+            f"  skill = {skill:.3f}  (1 - RMSE/std; 1=perfect)"
+        )
+
+    return {
+        "pp_coords":  pp_coords,
+        "pp_true":    pp_true,
+        "pp_pred":    pp_pred,
+        "pp_var":     pp_var,
+        "residuals":  residuals,
+        "rmse":       rmse,
+        "mae":        mae,
+        "skill":      skill,
+    }
+
+
+def gst_sill_from_jacobian(
+    J: np.ndarray,
+    data_var: np.ndarray,
+    coords: np.ndarray,
+    vario_model: str = "Spherical",
+    vario_range: float | Sequence[float] = 20000.0,
+    vario_nugget: float = 0.01,
+    vario_angles: Optional[Sequence[float]] = None,
+    coverage: float = 0.95,
+    out: bool = True,
+) -> float:
+    """Calibrate the GST variogram sill using a linearised Jacobian.
+
+    Strategy 3: propagate the model covariance (implied by the variogram) to
+    data space and match it to the observed data noise level.  This calibrates
+    the *amplitude* of the perturbations so that the ensemble forward-response
+    spread brackets the data at the requested coverage level.
+
+    The data-space covariance is::
+
+        C_d_ens = J @ C_m @ J.T                (linearised)
+
+    A scalar sill ``s`` scales the unit model covariance C_m_unit
+    (computed with sill=1), so::
+
+        diag(C_d_ens) = s * diag(J @ C_m_unit @ J.T)
+
+    The sill is solved such that the median ensemble data spread (in
+    standard-deviation units) matches the ``coverage`` quantile of the
+    data error distribution.
+
+    Parameters
+    ----------
+    J : ndarray, shape (n_data, n_cells)
+        Jacobian (sensitivity) matrix in the same units as the data.
+    data_var : ndarray, shape (n_data,)
+        Per-datum noise variance (squared standard deviation).
+    coords : ndarray, shape (n_cells, 3)
+        Free-cell coordinates (metres), matching columns of J.
+    vario_model : str
+        gstools covariance model class name.
+    vario_range : float or (float, float)
+        Horizontal range, or (h_range, v_range) (metres).
+    vario_nugget : float
+        Nugget in (log10 Ohm.m)^2.
+    vario_angles : sequence of float, optional
+        Rotation angles [alpha, beta, gamma] in degrees.
+    coverage : float
+        Target coverage fraction (default 0.95).
+    out : bool
+        If True, print the calibrated sill.
+
+    Returns
+    -------
+    sill : float
+        Calibrated variogram sill in (log10 Ohm.m)^2.
+
+    Notes
+    -----
+    Requires ``gstools`` (``pip install gstools``).
+
+    For large problems (n_data x n_cells >> 1e6) the full J @ C_m @ J.T
+    product is expensive.  This function assembles C_m explicitly only
+    when n_cells <= 5000; for larger problems it falls back to a diagonal
+    approximation (C_m ~ sill * I) which gives a lower-bound sill estimate.
+
+    Author: Volker Rath (DIAS)
+    Created with the help of Claude Sonnet 4.6 (Anthropic), 2026-05-28.
+    """
+    try:
+        import gstools as gs
+    except ImportError:
+        raise ImportError(
+            "gst_sill_from_jacobian requires gstools.  "
+            "Install with: pip install gstools"
+        )
+
+    J        = np.asarray(J,        dtype=float)
+    data_var = np.asarray(data_var, dtype=float)
+    coords   = np.asarray(coords,   dtype=float)
+
+    if J.ndim != 2:
+        raise ValueError("J must be 2-D (n_data, n_cells).")
+    n_data, n_cells = J.shape
+    if data_var.shape != (n_data,):
+        raise ValueError("data_var must have shape (n_data,).")
+    if coords.shape != (n_cells, 3):
+        raise ValueError("coords must have shape (n_cells, 3).")
+
+    # Build unit variogram (sill = 1).
+    vario_cls = getattr(gs, vario_model)
+    if np.isscalar(vario_range):
+        len_scale = float(vario_range)
+        anis = [1.0, 1.0]
+    else:
+        h_range, v_range = vario_range
+        len_scale = float(h_range)
+        anis = [1.0, float(v_range) / float(h_range)]
+    vario_kwargs: dict = dict(
+        dim=3, var=1.0, len_scale=len_scale,
+        nugget=vario_nugget, anis=anis,
+    )
+    if vario_angles is not None:
+        vario_kwargs["angles"] = np.deg2rad(vario_angles)
+    variogram_unit = vario_cls(**vario_kwargs)
+
+    # Model covariance: full or diagonal approximation.
+    MAX_EXPLICIT = 5000
+    approx = False
+    if n_cells <= MAX_EXPLICIT:
+        cx, cy, cz = coords[:, 0], coords[:, 1], coords[:, 2]
+        dx = cx[:, None] - cx[None, :]
+        dy = cy[:, None] - cy[None, :]
+        dz = cz[:, None] - cz[None, :]
+        dist = np.sqrt(dx**2 + dy**2 + dz**2)
+        C_m_unit = variogram_unit.covariance(dist)   # (n_cells, n_cells)
+        JCm = J @ C_m_unit                           # (n_data, n_cells)
+        d_var_unit = np.einsum("ij,ij->i", JCm, J)  # diag(J C_m J^T)
+    else:
+        # Diagonal approximation: C_m ~ I.
+        d_var_unit = np.einsum("ij,ij->i", J, J)    # (n_data,)
+        approx = True
+        if out:
+            print(
+                f"gst_sill_from_jacobian: n_cells={n_cells} > {MAX_EXPLICIT}; "
+                "using diagonal C_m approximation (lower-bound sill estimate)."
+            )
+
+    # Solve for sill.
+    # For coverage fraction p, the Normal quantile q satisfies
+    # P(|x| < q*sigma) = p, i.e. q = norm.ppf((1+p)/2).
+    from scipy.stats import norm as _norm
+    q = _norm.ppf(0.5 * (1.0 + coverage))
+
+    valid = d_var_unit > 0.0
+    if not valid.any():
+        raise ValueError(
+            "gst_sill_from_jacobian: all diagonal entries of J C_m J^T are zero."
+        )
+    sill = float(np.median((q**2 * data_var[valid]) / d_var_unit[valid]))
+    sill = max(sill, 0.0)
+
+    if out:
+        tag = " (diagonal approx)" if approx else ""
+        print(
+            f"gst_sill_from_jacobian{tag}: calibrated sill = {sill:.4f} "
+            f"(log10 Ohm.m)^2  [coverage={coverage:.0%}]"
+        )
+
+    return sill
+
+
+def gst_parameter_diagnostics(
+    samples: np.ndarray,
+    coords: np.ndarray,
+    variogram,
+    pp_coords: Optional[np.ndarray] = None,
+    ref_log_rho: Optional[np.ndarray] = None,
+    J: Optional[np.ndarray] = None,
+    data_var: Optional[np.ndarray] = None,
+    n_bins: int = 30,
+    max_lag: Optional[float] = None,
+    log_rho_min: float = 0.0,
+    log_rho_max: float = 4.0,
+    out: bool = True,
+    plot: bool = False,
+    plot_file: Optional[str] = None,
+) -> dict:
+    """Diagnostic summary for a GST sample array.
+
+    Strategy 4: score an already-generated GST ensemble against the target
+    variogram, compute spatial spread statistics, optionally evaluate
+    leave-one-out CV at pilot points, and optionally propagate the spread
+    to data space via a Jacobian.
+
+    Call this function after running ``generate_gst_model_ensemble`` (or
+    loading saved samples) to decide whether the variogram parameters are
+    appropriate before committing to a full FEMTIC run.
+
+    Parameters
+    ----------
+    samples : ndarray, shape (n_samples, n_cells)
+        Log10(rho) values for each ensemble member and free mesh cell.
+    coords : ndarray, shape (n_cells, 3)
+        Spatial coordinates of the free cells (metres).
+    variogram : gstools covariance model instance
+        The *target* variogram used to generate ``samples``.  Its curve is
+        overlaid on the empirical variogram in the diagnostic plot.
+    pp_coords : ndarray, shape (n_pp, 3), optional
+        Pilot-point coordinates.  If supplied together with ``ref_log_rho``,
+        LOO-CV scores are computed via :func:`gst_pilot_point_cv`.
+    ref_log_rho : ndarray, shape (n_cells,), optional
+        Reference-model log10(rho) at the free cells.  Required for CV
+        scoring (``pp_coords`` must also be supplied).
+    J : ndarray, shape (n_data, n_cells), optional
+        Jacobian matrix.  If supplied together with ``data_var``, the
+        linearised data-space spread ratio is computed.
+    data_var : ndarray, shape (n_data,), optional
+        Per-datum noise variance.  Required when ``J`` is supplied.
+    n_bins : int
+        Number of lag bins for the empirical variogram.  Default 30.
+    max_lag : float, optional
+        Maximum lag distance (metres).  None = half the coordinate span.
+    log_rho_min : float
+        Expected lower bound for ensemble values (used to flag violations).
+    log_rho_max : float
+        Expected upper bound for ensemble values.
+    out : bool
+        If True, print a structured summary to stdout.
+    plot : bool
+        If True, produce a diagnostic figure (requires matplotlib).
+    plot_file : str, optional
+        If given, save the figure to this path; otherwise show interactively.
+
+    Returns
+    -------
+    diag : dict with keys
+        ``"ensemble_mean"``     -- per-cell mean, shape (n_cells,)
+        ``"ensemble_std"``      -- per-cell std,  shape (n_cells,)
+        ``"global_std_mean"``   -- mean   of per-cell std (scalar)
+        ``"global_std_median"`` -- median of per-cell std (scalar)
+        ``"frac_clipped"``      -- fraction of values outside [min, max]
+        ``"bin_centers"``       -- variogram lag bins (metres)
+        ``"gamma_empirical"``   -- empirical semi-variogram
+        ``"gamma_target"``      -- target model evaluated at same lags
+        ``"variogram_rmse"``    -- RMSE between empirical and target
+        ``"cv"``                -- dict from gst_pilot_point_cv, or None
+        ``"data_spread_ratio"`` -- median(ens_std_data / noise_std), or None
+
+    Notes
+    -----
+    Requires ``gstools`` (``pip install gstools``).
+
+    Author: Volker Rath (DIAS)
+    Created with the help of Claude Sonnet 4.6 (Anthropic), 2026-05-28.
+    """
+    try:
+        import gstools as gs
+    except ImportError:
+        raise ImportError(
+            "gst_parameter_diagnostics requires gstools.  "
+            "Install with: pip install gstools"
+        )
+
+    samples = np.asarray(samples, dtype=float)
+    coords  = np.asarray(coords,  dtype=float)
+
+    if samples.ndim != 2 or coords.ndim != 2 or coords.shape[1] != 3:
+        raise ValueError(
+            "samples must be (n_samples, n_cells); coords must be (n_cells, 3)."
+        )
+    if samples.shape[1] != coords.shape[0]:
+        raise ValueError("samples.shape[1] must match coords.shape[0].")
+
+    n_samples, n_cells = samples.shape
+    cx, cy, cz = coords[:, 0], coords[:, 1], coords[:, 2]
+
+    # ------------------------------------------------------------------
+    # 1. Ensemble spread statistics.
+    # ------------------------------------------------------------------
+    ens_mean = samples.mean(axis=0)
+    ens_std  = samples.std(axis=0, ddof=1)
+    global_std_mean   = float(ens_std.mean())
+    global_std_median = float(np.median(ens_std))
+    frac_clipped = float(
+        np.mean((samples < log_rho_min) | (samples > log_rho_max))
+    )
+
+    # ------------------------------------------------------------------
+    # 2. Empirical variogram vs. target.
+    # ------------------------------------------------------------------
+    if max_lag is None:
+        span = np.array([cx.ptp(), cy.ptp(), cz.ptp()])
+        max_lag = 0.5 * float(np.linalg.norm(span))
+
+    bin_edges = np.linspace(0.0, max_lag, n_bins + 1)
+    samples_dm = samples - samples.mean(axis=0, keepdims=True)
+
+    bin_centers, gamma_emp = gs.vario_estimate(
+        (cx, cy, cz),
+        samples_dm,
+        bin_edges=bin_edges,
+    )
+    gamma_target = variogram.variogram(bin_centers)
+    valid_bins = np.isfinite(gamma_emp) & np.isfinite(gamma_target)
+    vario_rmse = float(
+        np.sqrt(np.mean((gamma_emp[valid_bins] - gamma_target[valid_bins]) ** 2))
+    )
+
+    # ------------------------------------------------------------------
+    # 3. LOO cross-validation (optional).
+    # ------------------------------------------------------------------
+    cv_result = None
+    if pp_coords is not None and ref_log_rho is not None:
+        cv_result = gst_pilot_point_cv(
+            ref_log_rho=ref_log_rho,
+            coords=coords,
+            pp_coords=pp_coords,
+            vario_model=type(variogram).__name__,
+            vario_range=float(variogram.len_scale),
+            vario_sill=float(variogram.var),
+            vario_nugget=float(variogram.nugget),
+            out=False,
+        )
+
+    # ------------------------------------------------------------------
+    # 4. Data-space spread ratio (optional).
+    # ------------------------------------------------------------------
+    data_spread_ratio = None
+    if J is not None and data_var is not None:
+        J_arr    = np.asarray(J,        dtype=float)
+        dv_arr   = np.asarray(data_var, dtype=float)
+        ens_data = samples_dm @ J_arr.T             # (n_samples, n_data)
+        std_data = ens_data.std(axis=0, ddof=1)     # (n_data,)
+        noise_std = np.sqrt(np.maximum(dv_arr, 0.0))
+        valid_d = noise_std > 0.0
+        if valid_d.any():
+            data_spread_ratio = float(
+                np.median(std_data[valid_d] / noise_std[valid_d])
+            )
+
+    # ------------------------------------------------------------------
+    # 5. Print summary.
+    # ------------------------------------------------------------------
+    if out:
+        print("=" * 60)
+        print("gst_parameter_diagnostics")
+        print("=" * 60)
+        print(f"  n_samples             = {n_samples}")
+        print(f"  n_cells               = {n_cells}")
+        print(f"  ensemble std (mean)   = {global_std_mean:.4f}  log10 Ohm.m")
+        print(f"  ensemble std (median) = {global_std_median:.4f}  log10 Ohm.m")
+        print(f"  fraction clipped      = {100*frac_clipped:.2f} %  "
+              f"(outside [{log_rho_min}, {log_rho_max}])")
+        print(f"  variogram RMSE        = {vario_rmse:.4f}  "
+              "(empirical vs. target)")
+        if cv_result is not None:
+            print(f"  LOO-CV RMSE           = {cv_result['rmse']:.4f}  log10 Ohm.m")
+            print(f"  LOO-CV skill          = {cv_result['skill']:.3f}")
+        if data_spread_ratio is not None:
+            print(f"  data spread ratio     = {data_spread_ratio:.3f}  "
+                  "(median ens_std / noise_std; ~1 = well-calibrated)")
+        print("=" * 60)
+
+    # ------------------------------------------------------------------
+    # 6. Optional plot.
+    # ------------------------------------------------------------------
+    if plot:
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            warnings.warn("matplotlib not available; skipping plot.")
+        else:
+            n_panels = 2 + (cv_result is not None) + (data_spread_ratio is not None)
+            fig, axs = plt.subplots(1, n_panels,
+                                    figsize=(4.5 * n_panels, 4.0))
+            axs = np.atleast_1d(axs)
+            panel = 0
+
+            # Panel 0: empirical vs. target variogram.
+            ax = axs[panel]; panel += 1
+            ax.plot(bin_centers / 1e3, gamma_emp,
+                    "o", ms=4, label="empirical")
+            ax.plot(bin_centers / 1e3, gamma_target,
+                    "-", lw=2, label=f"target ({type(variogram).__name__})")
+            ax.set_xlabel("Lag (km)")
+            ax.set_ylabel("Semi-variance  (log10 Ohm.m)^2")
+            ax.set_title(f"Variogram  RMSE={vario_rmse:.4f}")
+            ax.legend(fontsize=8)
+
+            # Panel 1: ensemble std histogram.
+            ax = axs[panel]; panel += 1
+            ax.hist(ens_std, bins=40, edgecolor="none")
+            ax.axvline(global_std_median, color="r", lw=1.5,
+                       label=f"median={global_std_median:.3f}")
+            ax.set_xlabel("Per-cell std  (log10 Ohm.m)")
+            ax.set_ylabel("Count")
+            ax.set_title("Ensemble spread")
+            ax.legend(fontsize=8)
+
+            # Panel 2 (optional): CV residuals.
+            if cv_result is not None:
+                ax = axs[panel]; panel += 1
+                ax.scatter(cv_result["pp_true"], cv_result["pp_pred"],
+                           s=20, alpha=0.7)
+                lims = [
+                    min(cv_result["pp_true"].min(), cv_result["pp_pred"].min()),
+                    max(cv_result["pp_true"].max(), cv_result["pp_pred"].max()),
+                ]
+                ax.plot(lims, lims, "k--", lw=1)
+                ax.set_xlabel("True (ref model)  log10 Ohm.m")
+                ax.set_ylabel("LOO-CV prediction")
+                ax.set_title(
+                    f"Pilot-point CV  skill={cv_result['skill']:.3f}"
+                )
+
+            # Panel 3 (optional): data spread ratio histogram.
+            if data_spread_ratio is not None:
+                J_arr2    = np.asarray(J,        dtype=float)
+                dv_arr2   = np.asarray(data_var, dtype=float)
+                ens_data2 = samples_dm @ J_arr2.T
+                std_data2 = ens_data2.std(axis=0, ddof=1)
+                noise_std2 = np.sqrt(np.maximum(dv_arr2, 0.0))
+                valid_d2   = noise_std2 > 0.0
+                ratio      = std_data2[valid_d2] / noise_std2[valid_d2]
+                ax = axs[panel]; panel += 1
+                ax.hist(ratio, bins=40, edgecolor="none")
+                ax.axvline(1.0, color="k", lw=1, ls="--", label="ratio=1")
+                ax.axvline(float(np.median(ratio)), color="r", lw=1.5,
+                           label=f"median={np.median(ratio):.3f}")
+                ax.set_xlabel("ens_std / noise_std")
+                ax.set_ylabel("Count")
+                ax.set_title("Data-space spread ratio")
+                ax.legend(fontsize=8)
+
+            fig.tight_layout()
+            if plot_file:
+                fig.savefig(plot_file, dpi=150, bbox_inches="tight")
+                if out:
+                    print(f"  Diagnostic figure saved to: {plot_file}")
+            else:
+                plt.show()
+            plt.close(fig)
+
+    return {
+        "ensemble_mean":     ens_mean,
+        "ensemble_std":      ens_std,
+        "global_std_mean":   global_std_mean,
+        "global_std_median": global_std_median,
+        "frac_clipped":      frac_clipped,
+        "bin_centers":       bin_centers,
+        "gamma_empirical":   gamma_emp,
+        "gamma_target":      gamma_target,
+        "variogram_rmse":    vario_rmse,
+        "cv":                cv_result,
+        "data_spread_ratio": data_spread_ratio,
+    }
+
+
+# =============================================================================
+# End section: GST parameter estimation
+# =============================================================================
 
 
 def generate_data_ensemble(alg: str = 'rto',

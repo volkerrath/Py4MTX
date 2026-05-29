@@ -9,9 +9,15 @@ This repository currently contains scripts useful for EM imaging, modelling, and
 The repository contains the following subdirectories:
 
 
- - 	**py4mt/scripts** Contains scripts  for preprocessing, visualization, and preparing the inversion of 
+ - 	**py4mt/scripts** Contains scripts  for pre-processing, visualization, and preparing the inversion of
  	MT data.
- 	
+		- **scripts/femtic**: for working with FEMTIC. modification and visualization of FEMITC tetrahedral models.
+			setup and postprocessing and visualization of MT ensembles [8, 9, 13, 14].
+		- **scripts/modem**: for working with ModEM. modification and visualization of models. Working with Jacobians and sensitivities.
+			setup of MT various MT methods.
+		- **scripts/joint**: prototypes for ADMM joint inversion. This is early work in progress currently.
+		- **scripts/general**: processing and visualization of MT data on the EDI level; 1-D inversions incl. anisotropy.
+
  -	**py4mt/modules**
  	Contains the modules called from the above scripts run for different tasks of MT interpretation.
  	 
@@ -170,12 +176,12 @@ the volume and its geometry is important when investigating the true role of thi
 different data types may vary 1-2 orders of magnitude), for some purposes (e.g., comparison of different data (sub)sets or definition of depths of 
 investigation) it may be convenient to do a final normalization by the maximum value in the model. All these options are implemented in the $\texttt{Py4MTX}$ toolbox. 
 
-
+<!--
 # Coming soon:
  -	**Probabilistic MT inversion for anisotropic 1-D layers [7] including transdimensional rj-mcmc [12]**
  -	**Randomize-Then-Optimize Uncertainty for 3-D MT [8, 9] with FEMTIC [10]**
  -	**Jacobian/Sensitivity-related functionality for 3-D anisotropic inversion [11]** 
-
+-->
 
 # Note: AI generated scripts
 
@@ -204,6 +210,11 @@ _[9] D. Blatter, M. Morzfeld, K. Key, S. Constable (2022) "Uncertainty quantific
 
 _[10] H. Song, P. Yu, Y. Usui, M. Uyeshima, D. Diba, L. Zhang, (2025) "Three-dimensional Magnetotelluric Inversion based on a Data Space variant of Akaike’s Bayesian Information Criterion", Geophysics, doi:10.1190/geo-2025-0233_
 
-_[11] W. Kong, H. Tan, C. Lin, M. Unsworth, B. Lee, M. Peng, M. Wang, M., T. Tong (2021) "Three-dimensional inversion of magnetotelluric data for a resistivity model with arbitrary anisotropy", Journal of Geophysical Research: Solid Earth, doi:https://doi.org/10.1029/2020JB020562_
+_[11] W. Kong, H. Tan, C. Lin, M. Unsworth, B. Lee, M. Peng, M. Wang, M., T. Tong (2021) "Three-dimensional inversion of magnetotelluric data for a resistivity model with arbitrary anisotropy", Journal of Geophysical Research: Solid Earth, doi:10.1029/2020JB020562_
  
 _[12] P. J. Green (1995) "Reversible Jump MCMC Computation and Bayesian Model determination", Biometrika, 82(4), 711–732, doi:10.1093/biomet/82.4.711_
+
+_[13] E. Causse (2023) "Ensemble Scenario-Based Inversion: A New Approach for Estimating the Uncertainty of Resistivity Models Derived from 3D Controlled-Source Electromagnetic Data", Geophysical Prospecting, 71, 847–875, doi:10.1111/1365-2478.13351_
+
+_[14] A. Suzuki (2026) "Assessing inversion uncertainty from initial-model variability in 3-D magnetotelluric inversion: Application to a geothermal field", Journal of Applied Geophysics, 251, 106320, doi:10.1016/j.jappgeo.2026.106320_
+
