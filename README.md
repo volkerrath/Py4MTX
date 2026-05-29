@@ -10,13 +10,9 @@ The repository contains the following subdirectories:
 
 
  - 	**py4mt/scripts** Contains scripts  for pre-processing, visualization, and preparing the inversion of
- 	MT data.
-		- **scripts/femtic**: for working with FEMTIC. modification and visualization of FEMITC tetrahedral models.
-			setup and postprocessing and visualization of MT ensembles [8, 9, 13, 14].
-		- **scripts/modem**: for working with ModEM. modification and visualization of models. Working with Jacobians and sensitivities.
-			setup of MT various MT methods.
-		- **scripts/joint**: prototypes for ADMM joint inversion. This is early work in progress currently.
-		- **scripts/general**: processing and visualization of MT data on the EDI level; 1-D inversions incl. anisotropy.
+ 	MT data. It has the following subdirs: **femtic** for working with FEMTIC, modification and visualization of FEMITC tetrahedral models.
+	setup and postprocessing and visualization of MT ensembles [8, 9, 13, 14]. **modem** for working with ModEM, modification and visualization of models; working with Jacobians and sensitivities; setup of MT various MT methods [1, 2].
+	**joint**: prototypes for ADMM joint inversion [15]. This is currently early work in progress.**general** for processing and visualization of MT data on the EDI level; 1-D inversions incl. anisotropy.
 
  -	**py4mt/modules**
  	Contains the modules called from the above scripts run for different tasks of MT interpretation.
@@ -217,4 +213,6 @@ _[12] P. J. Green (1995) "Reversible Jump MCMC Computation and Bayesian Model de
 _[13] E. Causse (2023) "Ensemble Scenario-Based Inversion: A New Approach for Estimating the Uncertainty of Resistivity Models Derived from 3D Controlled-Source Electromagnetic Data", Geophysical Prospecting, 71, 847–875, doi:10.1111/1365-2478.13351_
 
 _[14] A. Suzuki (2026) "Assessing inversion uncertainty from initial-model variability in 3-D magnetotelluric inversion: Application to a geothermal field", Journal of Applied Geophysics, 251, 106320, doi:10.1016/j.jappgeo.2026.106320_
+
+_[15] S. Boyd, L. Vandenberghe (2004) "Convex Optimization", Cambridge University Press._ 
 
