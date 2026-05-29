@@ -22,7 +22,13 @@ The repository contains the following subdirectories:
 
  -	**py4mt/modules**
  	Contains the modules called from the above scripts run for different tasks of MT interpretation.
- 	 
+
+-  **py4mt/data** 
+ 	Test data for various parts of Py4MTX.
+
+-  **py4mt/share** 
+ 	icons etc used by some scripts 
+ 
 - 	**modem** 
 	Modified and original ModEM source code including corresponding Makefiles, useful for 
 	Jacobian related output. We used compiler directives for the changes.
@@ -34,13 +40,6 @@ The repository contains the following subdirectories:
 - 	**environment** 
 	Contains conda environment description files, and some useful helper files for working 
 	within the conda environment.
-
--  **py4mt/data** 
- 	Test data for various parts of Py4MTX.
-
--  **py4mt/share** 
- 	icons etc used by some scripts 
-
 Get your working copy via git from the command line:
 
 _git clone https://github.com/volkerrath/Py4MTX/_
