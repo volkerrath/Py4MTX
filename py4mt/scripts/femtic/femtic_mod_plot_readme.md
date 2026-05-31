@@ -217,16 +217,19 @@ MAP_MARKERS = [
 `PLOT_SLICES` is a list of dicts, one per panel (left → right in the
 figure).  Four slice kinds are supported:
 
-| `kind` | Geometry | Horizontal axis | Vertical axis | Required key |
-|---|---|---|---|---|
-| `"map"` | Horizontal at z = const | x (easting) | y (northing) | `z0` |
-| `"ns"` | N-S curtain at x = const | y (northing) | depth ↓ | `x0` |
-| `"ew"` | E-W curtain at y = const | x (easting) | depth ↓ | `y0` |
-| `"plane"` | Arbitrary strike/dip plane | along-strike | down-dip | `point`, `strike`, `dip` |
+| `kind` | Geometry | Horizontal axis | Vertical axis | Required key | `invert_x` effect |
+|---|---|---|---|---|---|
+| `"map"` | Horizontal at z = const | x (easting) | y (northing) | `z0` | — (not applicable) |
+| `"ns"` | N-S curtain at x = const | y (northing) | depth ↓ | `x0` | S→N reads left-to-right |
+| `"ew"` | E-W curtain at y = const | x (easting) | depth ↓ | `y0` | E→W reads left-to-right |
+| `"plane"` | Arbitrary strike/dip plane | along-strike | down-dip | `point`, `strike`, `dip` | reverses along-strike direction |
 
 All panels accept the optional keys `xlim`, `ylim`, `zlim` (model-local m,
-override the globals) and `title` (string, overrides the auto-generated
-panel title).
+override the globals), `title` (string, overrides the auto-generated
+panel title), and `invert_x` (bool, flips the horizontal axis
+left-to-right on `ns`, `ew`, and `plane` panels for comparison with
+sections from other software that use the opposite orientation
+convention; default `False`).
 
 ### Position input coordinate systems
 
@@ -276,8 +279,9 @@ PLOT_SLICES = [
     # NS curtain positioned by UTM easting:
     dict(kind="ns",   x0=(229047., "utm"),   zlim=[-2000., 30000.]),
 
-    # EW curtain positioned by geographic latitude:
-    dict(kind="ew",   y0=(-16.409, "latlon"), zlim=[-2000., 30000.]),
+    # EW curtain positioned by geographic latitude, axis flipped for comparison:
+    dict(kind="ew",   y0=(-16.409, "latlon"), zlim=[-2000., 30000.],
+         invert_x=True),
 
     # Arbitrary plane through a geographic point:
     dict(kind="plane",
@@ -569,3 +573,4 @@ BOREHOLE_SITES = [
 | 2026-05-25 | vrath / Claude Sonnet 4.6 | `MAP_MARKERS` added: list of lat/lon point dicts overlaid on map panels. |
 | 2026-05-25 | vrath / Claude Sonnet 4.6 | Diagnostic print of mesh highest-point elevation, lat/lon, model-local coordinates. |
 | 2026-05-26 | Claude Sonnet 4.6 | **Major refactor**: moved `plot_model_slices` (all inner geometry helpers) and `plot_borehole_logs` into `femtic_viz.py`; script calls `fviz.plot_model_slices` / `fviz.plot_borehole_logs` directly. Removed script-level coordinate-conversion helpers (`_utm_zone_from_origin`, `resolve_slices`, `_display_*`) and `plot_*` functions; main section calls `utl`/`fem`/`fviz` directly. Removed `math` and `pyproj` imports. Added `PLOT3D_VTU_FILE`; changed `PLOT3D_FILE` default to `.png`. Script reduced from ≈1520 to ≈700 lines. |
+| 2026-05-31 | vrath / Claude Sonnet 4.6 (Anthropic) | `PLOT_SLICES`: added optional `invert_x` key for `ns`, `ew`, and `plane` panels. When `True`, calls `ax.invert_xaxis()` after rendering so the horizontal axis reads right-to-left — useful for comparing sections with other software that uses the opposite orientation convention. Default `False`; no effect on `map` panels. |

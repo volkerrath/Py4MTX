@@ -207,6 +207,8 @@ PLOT_AIR_BGCOLOR = None
 #:                        or (value, "utm") / (value, "latlon"))
 #:   kind="ew"    → y0   (northing; same CRS tagging)
 #:   kind="plane" → point, strike, dip
+#:   invert_x     → True to flip horizontal axis on ns/ew/plane panels
+#:                  (for comparison with sections using opposite convention)
 PLOT_SLICES = [
     dict(kind="map",  z0=5000.0),
     dict(kind="map",  z0=15000.0),

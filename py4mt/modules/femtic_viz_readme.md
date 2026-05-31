@@ -395,6 +395,12 @@ fviz.plot_model_slices(
 | `panel_width` | `None` | Column width in inches; `None` = auto from aspect |
 | `figsize` | `None` | `[width, height]` in inches; overrides auto sizing |
 
+Per-panel `invert_x` key in each slice dict (applies to `ns`, `ew`, `plane`
+kinds only): when `True`, calls `ax.invert_xaxis()` after rendering so the
+horizontal axis reads right-to-left.  Use for comparison with sections from
+other software that uses the opposite orientation convention.  Default `False`;
+has no effect on `map` panels.
+
 ---
 
 ## 1-D borehole log (`plot_borehole_logs`)
@@ -543,7 +549,7 @@ fviz.plot_ensemble_slices(
 |---|---|---|
 | `member_files` | — | List of resistivity block paths, one per member |
 | `mesh_file` | — | Shared `mesh.dat` |
-| `slices` | — | Slice-spec list in model-local metres (kinds: `"map"`, `"ns"`, `"ew"`, `"plane"`) |
+| `slices` | — | Slice-spec list in model-local metres (kinds: `"map"`, `"ns"`, `"ew"`, `"plane"`); per-panel `invert_x=True` flips horizontal axis on curtain/plane panels |
 | `labels` | `None` | Row label per member; `None` → "Member 0", … |
 | `stat_rows` | `("mean", "std")` | Stat rows after member rows; subset of `"mean"`, `"std"`, `"median"` |
 | `cmap` | `"turbo_r"` | Colormap for member / mean / median rows |
@@ -620,5 +626,6 @@ excluded from all statistics.
 | 2026-05-26 | Claude Sonnet 4.6 | Moved `plot_model_slices` (exact tet-plane intersection, all |
 |            |        | inner geometry helpers: `_tet_plane_intersection`, `_slice_geometry`, `_plot_slice_panel`, `_strike_dip_to_normal`, `_plane_basis`) and `plot_borehole_logs` from `femtic_mod_plot.py` into this module. All formerly-implicit config globals (`DISPLAY_COORDS`, `UTM_ORIGIN_*`, `UTM_ZONE`, `SITE_MARKER`, etc.) are now explicit keyword parameters. Added `import math`, `import os`. |
 |            |        | `plot_model_3d`: added `vtu_file` parameter (cell-centred `.vtu`/`.vtk` export for ParaView / Zenodo); `plot_file=*.vtu/.vtk` accepted directly. Added `ImportError` fallback for HTML export when `trame_vtk` absent. |
+| 2026-05-31 | vrath / Claude Sonnet 4.6 (Anthropic) | `plot_model_slices`, `plot_ensemble_slices`: added per-panel `invert_x` key in slice-spec dicts. When `True` on an `ns`, `ew`, or `plane` panel, calls `ax.invert_xaxis()` after rendering (after axis limits are applied) to flip the horizontal axis left-to-right. Enables direct comparison with sections from other software that uses the opposite orientation convention. Default `False`; no effect on `map` panels. In `plot_ensemble_slices`, stored in `slice_geom` dicts so the geometry precomputation step is unaffected. |
 
 Author: Volker Rath (DIAS)

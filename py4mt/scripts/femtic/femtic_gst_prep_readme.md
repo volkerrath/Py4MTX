@@ -132,7 +132,7 @@ When `PLOT_SLICES_QC = True` (inside the viz block, requires `PLOT_DATA` or `PLO
 | Variable | Default | Description |
 |---|---|---|
 | `PLOT_SLICES_QC` | `False` | Enable / disable the QC slice plot |
-| `QC_SLICES` | 4 slices | Slice-spec list in model-local metres — same format as `femtic_mod_plot.PLOT_SLICES` |
+| `QC_SLICES` | 4 slices | Slice-spec list in model-local metres — same format as `femtic_mod_plot.PLOT_SLICES`; optional `invert_x=True` per panel flips horizontal axis on curtain/plane panels |
 | `QC_CMAP` | `"turbo_r"` | Matplotlib colormap |
 | `QC_CLIM` | `[0., 4.]` | log₁₀(Ω·m) colour limits; `None` = auto |
 | `QC_XLIM`, `QC_YLIM`, `QC_ZLIM` | `None` | Global axis limits in model-local metres |
@@ -153,7 +153,7 @@ statistical summary rows.
 | Variable | Default | Description |
 |---|---|---|
 | `PLOT_SLICES_ENS` | `False` | Enable / disable the ensemble slice plot |
-| `ENS_SLICES` | 4 slices | Slice-spec list in model-local metres — same format as `femtic_mod_plot.PLOT_SLICES`; kinds: `"map"`, `"ns"`, `"ew"`, `"plane"` |
+| `ENS_SLICES` | 4 slices | Slice-spec list in model-local metres — same format as `femtic_mod_plot.PLOT_SLICES`; kinds: `"map"`, `"ns"`, `"ew"`, `"plane"`; optional `invert_x=True` per panel flips horizontal axis on curtain/plane panels |
 | `ENS_CMAP` | `"turbo_r"` | Matplotlib colormap for member and mean/median rows |
 | `ENS_CLIM` | `[0., 4.]` | log₁₀(Ω·m) colour limits; `None` = auto from ensemble range |
 | `ENS_XLIM`, `ENS_YLIM`, `ENS_ZLIM` | `None` | Global axis limits in model-local metres; `None` = auto |
@@ -314,6 +314,7 @@ No sparse-matrix file (`.npz`) is required.
 | 2026-05-13 | Claude | Added `PLOT_SLICES_ENS` block: `ENS_SLICES` / `ENS_CMAP` / `ENS_CLIM` / `ENS_STAT_ROWS` config; calls `fviz.plot_ensemble_slices` for exact tet-plane intersection ensemble figure. Member file list uses `MOD_RESISTIVITY_FILE`. |
 | 2026-05-27 | vrath / Claude Sonnet 4.6 (Anthropic) | Added `PLOT_SLICES_QC` block: `QC_SLICES` / `QC_CMAP` / `QC_CLIM` / `QC_*` config; calls `fviz.plot_model_slices` per selected member after model ensemble generation, saves `gst_qc*.pdf` in each member's subdirectory. |
 | 2026-05-28 | Claude Sonnet 4.6 (Anthropic) | Added `RELATIVE_LINKS` config variable (default `True`); passed as `relative_links` to `ens.generate_directories`. Relative symlinks survive `tgz`/copy to another machine; set `False` for legacy absolute-path behaviour. |
+| 2026-05-31 | vrath / Claude Sonnet 4.6 (Anthropic) | `QC_SLICES` / `ENS_SLICES`: documented optional `invert_x` key (bool, default `False`) for `ns`, `ew`, and `plane` slice panels — flips horizontal axis left-to-right for comparison with other software. |
 
 ## Author
 
