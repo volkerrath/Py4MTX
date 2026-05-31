@@ -271,7 +271,7 @@ UTM_ZONE_OVERRIDE = None
 #: "model"  — axis ticks in model-local metres (origin = 0, default)
 #: "utm"    — axis ticks in absolute UTM metres
 #: "latlon" — axis ticks in decimal degrees (lon for easting, lat for northing)
-DISPLAY_COORDS = "latlon"
+DISPLAY_COORDS = "model"
 
 # ---------------------------------------------------------------------------
 # Site overlay
@@ -318,13 +318,13 @@ SITE_MARKER_SLICES = dict(marker="v", color="black", ms=4, zorder=10,
 #:   "name"    : label string (shown in legend); None = no legend entry
 #: Any additional Matplotlib plot kwargs (mew, mfc, zorder, …) are accepted.
 MAP_MARKERS = [
-    # dict(latlon=[-16.3169,-70.9673], marker="x", color="red", ms=8,
-    #      name="test point, 4457m"),
-    dict(latlon=[-16.3450, -70.8972], marker="*", color="red", ms=8,
+    dict(latlon=[-16.3169,-70.9673], marker="x", color="red", ms=8,
+         name="test point, 4457m"),
+    dict(latlon=[-16.34861, -70.90222], marker="*", color="red", ms=8,
          name="ubinas crater"),
     dict(latlon=[-16.363436,-70.868025], marker="+", color="blue", ms=8,
          name="mesh origin"),    
-    dict(latlon=[-16.351,-70.90159], marker="^", color="magenta", ms=6,
+    dict(latlon=[-16.382547,-70.889634], marker="^", color="magenta", ms=6,
          name="max elev"),    
 ]
  #  Ubinas:
@@ -416,12 +416,12 @@ PLOT_SLICES = [
     dict(kind="map", z0=-4000.0),
     # dict(kind="map", z0=15000.0),
     # UTM easting for the NS curtain:
-    dict(kind="ns",   x0=(-70.8972, "latlon")),
+    # dict(kind="ns",   x0=(-70.85576, "latlon")),
     # dict(kind="ns", x0=(-70.90222, "latlon")),
     # dict(kind="ns",   x0=(296741, "utm"), invert_x=True),
     # dict(kind="ns",   x0=0.),
     # Geographic latitude for the EW curtain:
-    dict(kind="ew", y0=(-16.345, "latlon")),    
+    # dict(kind="ew", y0=(-16.34861, "latlon")),    
     # dict(kind="ew", y0=(-16.39606, "latlon")),
     # dict(kind="ew", y0=(8192000, "utm"),invert_x=False),
     # dict(kind="ew", y0=-3598.84)

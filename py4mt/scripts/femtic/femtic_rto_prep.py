@@ -104,6 +104,10 @@ Provenance:
                 QC_YLIM / QC_ZLIM / QC_OCEAN_COLOR / QC_DPI config vars;
                 calls fviz.plot_model_slices per member, saves rto_qc*.pdf
                 in each member's subdirectory.
+    2026-05-31  vrath / Claude Sonnet 4.6   MOD_SLICES updated to use
+                "kind" key ("map"/"ns"/"ew") instead of "type".
+                depth_km=True, horiz_km=True added to plot_model_slices
+                and plot_ensemble_slices QC/ENS calls.
     2026-05-28  Claude Sonnet 4.6 (Anthropic)
                 Added RELATIVE_LINKS config variable (default True); passed as
                 relative_links to ens.generate_directories.  Relative symlinks
@@ -355,11 +359,10 @@ if PLOT_DATA or PLOT_MODEL:
     MOD_MESH_LW = 0.3       # mesh edge line width (points)
     MOD_MESH_COLOR = "k"    # mesh edge colour
     MOD_SLICES = [
-        {"type": "map", "z0": 5000, "dz": 50},
-        {"type": "map", "z0": -5000, "dz": 50},
-        {"type": "curtain",
-         "polyline": np.array([[0., 0.], [10000., 0.]]),
-         "width": 500},
+        dict(kind="map", z0=5000.0),
+        dict(kind="map", z0=-5000.0),
+        dict(kind="ew",  y0=0.0),
+        dict(kind="ns",  x0=0.0),
     ]
 
     # --- ensemble slice plot (femtic_viz.plot_ensemble_slices) ---
@@ -561,6 +564,8 @@ if (PLOT_DATA or PLOT_MODEL) and PLOT_SLICES_QC:
             zlim        = QC_ZLIM,
             ocean_color = QC_OCEAN_COLOR,
             ocean_value = 0.25,
+            depth_km    = True,
+            horiz_km    = True,
             plot_file   = _qc_file,
             dpi         = QC_DPI,
             out         = OUT,
@@ -643,7 +648,9 @@ if PLOT_DATA or PLOT_MODEL:   # only runs when the viz block was entered
             ylim            = ENS_YLIM,
             zlim            = ENS_ZLIM,
             ocean_color     = ENS_OCEAN_COLOR,
-            ocean_value     = 0.25,   # Ω·m sentinel for ocean cells
+            ocean_value     = 0.25,
+            depth_km        = True,
+            horiz_km        = True,
             per_member_file = ENS_PER_MEMBER,
             plot_file       = ENS_PLOT_FILE,
             dpi             = ENS_PLOT_DPI,
