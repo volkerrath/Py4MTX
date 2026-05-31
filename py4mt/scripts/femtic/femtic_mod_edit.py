@@ -315,6 +315,57 @@ PLOT_XLIM = [-20000., 20000.]   # [xmin, xmax] metres — easting
 PLOT_YLIM = [-20000., 20000.]   # [ymin, ymax] metres — northing
 PLOT_ZLIM = [  -6000., 15000.]  # [zmin, zmax] metres — depth (z positive-down)
 
+#: True → depth axis in km; False → metres.
+DEPTH_KM = True
+
+#: True → horizontal axes in km (model/utm modes); False → metres.
+HORIZ_KM = True
+
+#: Equal aspect ratio on map and curtain panels (model/utm coords only).
+PLOT_EQUAL_ASPECT = True
+
+#: Panel height in cm.  Width auto-computed from axis limits when PLOT_EQUAL_ASPECT.
+PLOT_PANEL_HEIGHT = 16.0   # cm
+
+#: Grid layout.  None → 1 row / len(PLOT_SLICES) columns.
+PLOT_NROWS = None
+PLOT_NCOLS = None
+
+# ---------------------------------------------------------------------------
+# Geographic / UTM origin of the mesh centre
+# ---------------------------------------------------------------------------
+#: Fallback values.  When ORIGIN_METHOD is "box" or "average" these are
+#: overwritten at runtime from site.dat and may be left as None.
+UTM_ORIGIN_LAT = None
+UTM_ORIGIN_LON = None
+UTM_ORIGIN_E   = None
+UTM_ORIGIN_N   = None
+UTM_ZONE_OVERRIDE = None
+
+#: Method to estimate origin from site.dat: None | "box" | "average".
+ORIGIN_METHOD = "box"
+
+# ---------------------------------------------------------------------------
+# Display coordinate system
+# ---------------------------------------------------------------------------
+DISPLAY_COORDS = "model"   # "model" | "utm" | "latlon"
+
+# ---------------------------------------------------------------------------
+# Site overlay
+# ---------------------------------------------------------------------------
+SITE_DAT    = WORK_DIR + "site.dat"   # set to None to disable
+SITE_NAMES  = None                    # None = all sites
+SITE_NUMBER = None                    # fallback: 1-based site numbers from observe.dat
+
+PLOT_SITES_MAPS   = True
+PLOT_SITES_SLICES = False
+PROJECTION_DIST   = 5000.   # m
+
+SITE_MARKER        = dict(marker="v", color="black", ms=8, zorder=10, label=None)
+SITE_MARKER_SLICES = None
+
+MAP_MARKERS = []
+
 
 
 # ===========================================================================
@@ -973,24 +1024,90 @@ else:
     )
     print("Done.")
 
+# --- (3b) Derive UTM zone and site positions (needed for plot) -------------
+if PLOT:
+    # Origin estimation
+    if ORIGIN_METHOD is not None and SITE_DAT is not None and os.path.isfile(SITE_DAT):
+        import numpy as _np
+        _sdat = fem.read_site_dat(SITE_DAT)
+        if _sdat:
+            _Es = _np.array([d["easting"]  for d in _sdat])
+            _Ns = _np.array([d["northing"] for d in _sdat])
+            if ORIGIN_METHOD == "box":
+                UTM_ORIGIN_E = 0.5 * (_Es.min() + _Es.max())
+                UTM_ORIGIN_N = 0.5 * (_Ns.min() + _Ns.max())
+            else:
+                UTM_ORIGIN_E = float(_Es.mean())
+                UTM_ORIGIN_N = float(_Ns.mean())
+            _lats = _np.array([d["lat"] for d in _sdat])
+            _lons = _np.array([d["lon"] for d in _sdat])
+            _z0, _n0 = utl.utm_zone_from_latlon(
+                float(_lats.mean()), float(_lons.mean()), override=UTM_ZONE_OVERRIDE)
+            UTM_ORIGIN_LAT, UTM_ORIGIN_LON = utl.utm_to_latlon_zn(
+                UTM_ORIGIN_E, UTM_ORIGIN_N, _z0, _n0)
+    UTM_ZONE, UTM_NORTHERN = utl.utm_zone_from_latlon(
+        UTM_ORIGIN_LAT, UTM_ORIGIN_LON, override=UTM_ZONE_OVERRIDE)
+
+    site_xys = []
+    _sites_from_obs = False
+    if SITE_DAT is not None and os.path.isfile(SITE_DAT):
+        for row in fem.read_site_dat(SITE_DAT, site_names=SITE_NAMES):
+            sx_m, sy_m = fem.utm_to_model(row["easting"], row["northing"],
+                                          UTM_ORIGIN_E, UTM_ORIGIN_N)
+            site_xys.append((row["name"], sx_m, sy_m, float(row.get("elev", 0.0))))
+    elif SITE_NUMBER is not None:
+        _site_nums = (SITE_NUMBER if isinstance(SITE_NUMBER, (list, tuple))
+                      else [SITE_NUMBER])
+        for _sn in _site_nums:
+            sx_m, sy_m = fem.read_site_position(OBSERVE_FILE, _sn)
+            site_xys.append((_sn, sx_m, sy_m, 0.0))
+        _sites_from_obs = True
+
 # --- (4) Plot slices of output model ---------------------------------------
 if PLOT:
     if fviz is None:
         print("  PLOT: femtic_viz not available — skipping slice plot.")
     else:
+        _slices_resolved = fem.resolve_slice_positions(
+            PLOT_SLICES, UTM_ZONE, UTM_NORTHERN,
+            UTM_ORIGIN_E, UTM_ORIGIN_N,
+            UTM_ORIGIN_LAT, UTM_ORIGIN_LON,
+            verbose=OUT,
+        )
         fviz.plot_model_slices(
-            model_file  = MODEL_IN if OPERATION == "null" else MODEL_OUT,
-            mesh_file   = MESH_FILE,
-            slices      = PLOT_SLICES,
-            cmap        = PLOT_CMAP,
-            clim        = PLOT_CLIM,
-            xlim        = PLOT_XLIM,
-            ylim        = PLOT_YLIM,
-            zlim        = PLOT_ZLIM,
-            ocean_color = PLOT_OCEAN_COLOR,
-            ocean_value = OCEAN_RHO,
-            air_bgcolor = PLOT_AIR_BGCOLOR,
-            plot_file   = PLOT_FILE,
-            dpi         = PLOT_DPI,
-            out         = OUT,
+            model_file         = MODEL_IN if OPERATION == "null" else MODEL_OUT,
+            mesh_file          = MESH_FILE,
+            slices             = _slices_resolved,
+            cmap               = PLOT_CMAP,
+            clim               = PLOT_CLIM,
+            xlim               = PLOT_XLIM,
+            ylim               = PLOT_YLIM,
+            zlim               = PLOT_ZLIM,
+            ocean_color        = PLOT_OCEAN_COLOR,
+            ocean_value        = OCEAN_RHO,
+            air_bgcolor        = PLOT_AIR_BGCOLOR,
+            site_xys           = site_xys,
+            obs_coords_only    = _sites_from_obs,
+            sites_in_maps      = PLOT_SITES_MAPS,
+            sites_in_slices    = PLOT_SITES_SLICES,
+            site_marker        = SITE_MARKER,
+            site_marker_slices = SITE_MARKER_SLICES,
+            map_markers        = MAP_MARKERS,
+            projection_dist    = PROJECTION_DIST,
+            display_coords     = DISPLAY_COORDS,
+            utm_origin_e       = UTM_ORIGIN_E,
+            utm_origin_n       = UTM_ORIGIN_N,
+            utm_zone           = UTM_ZONE,
+            utm_northern       = UTM_NORTHERN,
+            utm_to_latlon_fn   = utl.utm_to_latlon_zn,
+            latlon_to_model_fn = fem.latlon_to_model,
+            depth_km           = DEPTH_KM,
+            horiz_km           = HORIZ_KM,
+            equal_aspect       = PLOT_EQUAL_ASPECT,
+            panel_height       = PLOT_PANEL_HEIGHT / 2.54,
+            nrows              = PLOT_NROWS,
+            ncols              = PLOT_NCOLS,
+            plot_file          = PLOT_FILE,
+            dpi                = PLOT_DPI,
+            out                = OUT,
         )

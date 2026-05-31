@@ -26,6 +26,19 @@ Provenance
                 femtic_mod_plot.py and snippets.py (Snippet 1).
                 ENS_DIRS replaces ENS_FILES: the script loops over
                 directories and builds the file list automatically.
+    2026-05-31  vrath / Claude Sonnet 4.6   Aligned with femtic_mod_plot.py:
+                replaced ESTIMATE_ORIGIN/CALIBRATION_SITES/UPDATE_CONFIG
+                with ORIGIN_METHOD (None|"box"|"average"); origin estimation
+                now runs before UTM zone derivation.  Removed local
+                coordinate helpers (delegated to fem/utl).  site_xys tuples
+                now carry elev.  plot_ensemble_slices call extended with
+                site_xys, utm_origin_e/n, utm_zone, utm_northern,
+                utm_to_latlon_fn, latlon_to_model_fn, display_coords,
+                depth_km, horiz_km, equal_aspect, panel_height, nrows,
+                ncols kwargs.  Added DEPTH_KM, HORIZ_KM, PLOT_EQUAL_ASPECT,
+                PLOT_PANEL_HEIGHT, PLOT_NROWS, PLOT_NCOLS, PLOT_SITES_MAPS,
+                PLOT_SITES_SLICES, SITE_MARKER_SLICES, MAP_MARKERS,
+                DISPLAY_COORDS config vars.
 
 @author: vrath
 """
@@ -144,13 +157,14 @@ OCEAN_RHO = 0.25    # Ω·m  (region 1 when treated as ocean)
 # ---------------------------------------------------------------------------
 # Geographic / UTM origin of the mesh centre
 # ---------------------------------------------------------------------------
-#: Geographic coordinates (WGS-84) of the FEMTIC mesh origin.
-UTM_ORIGIN_LAT = -16.409   # decimal degrees, positive = North
-UTM_ORIGIN_LON = -71.537   # decimal degrees, positive = East
+#: Fallback values used only when ORIGIN_METHOD is None or SITE_DAT is
+#: unavailable.  When ORIGIN_METHOD is "box" or "average" these are
+#: overwritten at runtime from site.dat and may be left as None.
+UTM_ORIGIN_LAT = None      # decimal degrees, positive = North  (None → derived)
+UTM_ORIGIN_LON = None      # decimal degrees, positive = East   (None → derived)
 
-#: UTM coordinates of the mesh origin in metres (same zone as above).
-UTM_ORIGIN_E = 229047.0   # easting  [m]
-UTM_ORIGIN_N = 8184127.0  # northing [m]
+UTM_ORIGIN_E   = None      # easting  [m]  (None → derived from site.dat)
+UTM_ORIGIN_N   = None      # northing [m]  (None → derived from site.dat)
 
 #: Override the auto-derived UTM zone number.  None = auto from origin lat/lon.
 UTM_ZONE_OVERRIDE = None
@@ -164,6 +178,25 @@ UTM_ZONE_OVERRIDE = None
 DISPLAY_COORDS = "model"
 
 # ---------------------------------------------------------------------------
+# Axis scaling and layout
+# ---------------------------------------------------------------------------
+#: True → depth axis in km; False → metres.
+DEPTH_KM = True
+
+#: True → horizontal axes in km (model/utm modes); False → metres.
+HORIZ_KM = True
+
+#: Equal aspect ratio on map and curtain panels (model/utm coords only).
+PLOT_EQUAL_ASPECT = True
+
+#: Panel height in cm.  Width auto-computed from axis limits when PLOT_EQUAL_ASPECT.
+PLOT_PANEL_HEIGHT = 16.0   # cm
+
+#: Grid layout.  None → 1 row / len(PLOT_SLICES) columns.
+PLOT_NROWS = None
+PLOT_NCOLS = None
+
+# ---------------------------------------------------------------------------
 # Site overlay
 # ---------------------------------------------------------------------------
 #: Site names to overlay from SITE_DAT.  None = all sites in the file.
@@ -173,9 +206,24 @@ SITE_NAMES = None   # e.g. ["MT01", "MT05", "MT12"]  or None = all sites
 #: Int or list of int.  None = no overlay.
 SITE_NUMBER = None
 
-#: Marker style for map panels; dashed vertical line for curtain panels.
-SITE_MARKER = dict(marker="v", color="black", ms=8, zorder=10,
-                   label=None)
+#: Show site markers on map panels.
+PLOT_SITES_MAPS   = True
+#: Show site markers on curtain (ns/ew) panels.
+PLOT_SITES_SLICES = False
+
+#: Maximum distance (m) from slice plane for site projection onto curtains.
+PROJECTION_DIST = 5000.
+
+#: Marker style for map panels.
+SITE_MARKER = dict(marker="v", color="black", ms=8, zorder=10, label=None)
+
+#: Marker style for curtain panels (None → same as SITE_MARKER).
+SITE_MARKER_SLICES = None
+
+#: Additional map markers (e.g. known features).  List of dicts:
+#:   dict(pos=(x, y), marker="*", color="red", ms=10, label="label")
+#: pos accepts model-local metres or (value, "utm"/"latlon") tuples.
+MAP_MARKERS = []
 
 # ---------------------------------------------------------------------------
 # Verbose output
@@ -250,132 +298,30 @@ BOREHOLE_XLIM = [0.0, 4.0]
 BOREHOLE_SHARED = True
 
 # ---------------------------------------------------------------------------
-# Mesh-centre estimation  (optional — same as femtic_mod_plot.py)
+# Mesh-centre estimation from site.dat  (optional)
 # ---------------------------------------------------------------------------
-ESTIMATE_ORIGIN = False
-UPDATE_CONFIG   = True
-
-CALIBRATION_SITES = [
-    # dict(site=1,  crs="latlon", coords=[-71.500, -16.380]),
-    # dict(site=10, crs="utm",    coords=[224500., 8179300.]),
-]
-
-
-# ===========================================================================
-# Coordinate conversion helpers  (identical to femtic_mod_plot.py)
-# ===========================================================================
-
-def _utm_zone_from_origin() -> tuple[int, bool]:
-    """Derive UTM zone and hemisphere from module-level mesh-origin lat/lon."""
-    return utl.utm_zone_from_latlon(UTM_ORIGIN_LAT, UTM_ORIGIN_LON,
-                                    override=UTM_ZONE_OVERRIDE)
-
-
-def _latlon_to_utm(lat_deg: float, lon_deg: float,
-                   zone: int, northern: bool) -> tuple[float, float]:
-    """WGS-84 → UTM [m].  Delegates to util.latlon_to_utm_zn."""
-    return utl.latlon_to_utm_zn(lat_deg, lon_deg, zone, northern)
-
-
-def _utm_to_model(E_m: float, N_m: float) -> tuple[float, float]:
-    """UTM [m] → model-local [m] using module-level mesh-centre origin."""
-    return fem.utm_to_model(E_m, N_m, UTM_ORIGIN_E, UTM_ORIGIN_N)
-
-
-def _latlon_to_model(lat_deg: float, lon_deg: float,
-                     zone: int, northern: bool) -> tuple[float, float]:
-    """Geographic [°] → model-local [m] using module-level origin."""
-    return fem.latlon_to_model(lat_deg, lon_deg, zone, northern,
-                               UTM_ORIGIN_E, UTM_ORIGIN_N)
-
-
-def _parse_pos(raw) -> tuple:
-    """Parse ``(value, crs)`` position spec.  Delegates to fem.parse_pos_crs."""
-    return fem.parse_pos_crs(raw)
-
-
-def _resolve_x0(raw, zone: int, northern: bool) -> float:
-    """Resolve x0 to model-local metres.  Delegates to fem.resolve_pos_x."""
-    return fem.resolve_pos_x(raw, zone, northern,
-                             UTM_ORIGIN_E, UTM_ORIGIN_N,
-                             UTM_ORIGIN_LAT, UTM_ORIGIN_LON)
-
-
-def _resolve_y0(raw, zone: int, northern: bool) -> float:
-    """Resolve y0 to model-local metres.  Delegates to fem.resolve_pos_y."""
-    return fem.resolve_pos_y(raw, zone, northern,
-                             UTM_ORIGIN_E, UTM_ORIGIN_N,
-                             UTM_ORIGIN_LAT, UTM_ORIGIN_LON)
-
-
-def _resolve_point(raw, zone: int, northern: bool) -> list[float]:
-    """Resolve plane point to model-local metres."""
-    return fem.resolve_pos_point(raw, zone, northern, UTM_ORIGIN_E, UTM_ORIGIN_N)
-
-
-def resolve_slices(slices: list, zone: int, northern: bool) -> list:
-    """Resolve all CRS-tagged positions in *slices* to model-local metres."""
-    return fem.resolve_slice_positions(
-        slices, zone, northern,
-        UTM_ORIGIN_E, UTM_ORIGIN_N,
-        UTM_ORIGIN_LAT, UTM_ORIGIN_LON,
-        verbose=OUT,
-    )
+#: Method used to estimate UTM_ORIGIN_E / UTM_ORIGIN_N from SITE_DAT:
+#:   None      — use the hard-coded UTM_ORIGIN_E / UTM_ORIGIN_N above
+#:   "box"     — midpoint of the UTM bounding box of all sites (femticPY-compatible)
+#:   "average" — arithmetic mean of all site UTM coordinates
+#: Requires SITE_DAT to be set and readable.
+ORIGIN_METHOD = "box"   # None | "box" | "average"
 
 
 # ===========================================================================
-# Display helpers  (identical to femtic_mod_plot.py)
-# ===========================================================================
-
-def _display_offset() -> tuple[float, float]:
-    """Return (dE, dN) to add to model-local metres for display axis ticks."""
-    if DISPLAY_COORDS in ("utm", "latlon"):
-        return UTM_ORIGIN_E, UTM_ORIGIN_N
-    return 0.0, 0.0
-
-
-def _display_suffix() -> str:
-    """Return axis label suffix reflecting the display coordinate system."""
-    if DISPLAY_COORDS == "utm":
-        return " [UTM m]"
-    if DISPLAY_COORDS == "latlon":
-        return " [°]"
-    return " [m]"
-
-
-def _utm_to_latlon(E_m: float, N_m: float,
-                   zone: int, northern: bool) -> tuple[float, float]:
-    """UTM [m] → (lat, lon) [°]."""
-    return utl.utm_to_latlon_zn(E_m, N_m, zone, northern)
-
-
-def _display_formatters(zone: int, northern: bool):
-    """Return (x_formatter, y_formatter) for the chosen DISPLAY_COORDS."""
-    if DISPLAY_COORDS != "latlon":
-        return None, None
-
-    import matplotlib.ticker as mticker
-
-    def _lon_fmt(val, _pos):
-        _, lon = _utm_to_latlon(val, UTM_ORIGIN_N, zone, northern)
-        return f"{lon:.3f}"
-
-    def _lat_fmt(val, _pos):
-        lat, _ = _utm_to_latlon(UTM_ORIGIN_E, val, zone, northern)
-        return f"{lat:.3f}"
-
-    return (mticker.FuncFormatter(_lon_fmt),
-            mticker.FuncFormatter(_lat_fmt))
-
-
-# ===========================================================================
-# Borehole helper  (identical to femtic_mod_plot.py)
+# Borehole helper
 # ===========================================================================
 
 def _resolve_borehole_xy(spec: dict, zone: int, northern: bool) -> tuple[float, float]:
     """Resolve borehole x/y position specs to model-local metres."""
-    return (_resolve_x0(spec["x"], zone, northern),
-            _resolve_y0(spec["y"], zone, northern))
+    return (
+        fem.resolve_pos_x(spec["x"], zone, northern,
+                          UTM_ORIGIN_E, UTM_ORIGIN_N,
+                          UTM_ORIGIN_LAT, UTM_ORIGIN_LON),
+        fem.resolve_pos_y(spec["y"], zone, northern,
+                          UTM_ORIGIN_E, UTM_ORIGIN_N,
+                          UTM_ORIGIN_LAT, UTM_ORIGIN_LON),
+    )
 
 
 def plot_borehole_logs(
@@ -492,70 +438,89 @@ def plot_borehole_logs(
 # Main
 # ===========================================================================
 
-# --- (1) Derive UTM zone from mesh-origin coordinates ---------------------
-UTM_ZONE, UTM_NORTHERN = _utm_zone_from_origin()
+# --- (1) Estimate origin from site.dat (before zone derivation) -----------
+if ORIGIN_METHOD is not None:
+    if SITE_DAT is None or not os.path.isfile(SITE_DAT):
+        print(f"  WARNING: ORIGIN_METHOD={ORIGIN_METHOD!r} requested but "
+              f"SITE_DAT is not available — using hard-coded origin.")
+    else:
+        _sdat = fem.read_site_dat(SITE_DAT)
+        if not _sdat:
+            print(f"  WARNING: SITE_DAT is empty — using hard-coded origin.")
+        else:
+            _Es = np.array([d["easting"]  for d in _sdat])
+            _Ns = np.array([d["northing"] for d in _sdat])
+            if ORIGIN_METHOD == "box":
+                UTM_ORIGIN_E = 0.5 * (_Es.min() + _Es.max())
+                UTM_ORIGIN_N = 0.5 * (_Ns.min() + _Ns.max())
+            elif ORIGIN_METHOD == "average":
+                UTM_ORIGIN_E = float(_Es.mean())
+                UTM_ORIGIN_N = float(_Ns.mean())
+            else:
+                sys.exit(f"Unknown ORIGIN_METHOD {ORIGIN_METHOD!r}; "
+                         f"use None, 'box', or 'average'.")
+            _lats = np.array([d["lat"] for d in _sdat])
+            _lons = np.array([d["lon"] for d in _sdat])
+            _zone_boot, _north_boot = utl.utm_zone_from_latlon(
+                float(_lats.mean()), float(_lons.mean()), override=UTM_ZONE_OVERRIDE)
+            UTM_ORIGIN_LAT, UTM_ORIGIN_LON = utl.utm_to_latlon_zn(
+                UTM_ORIGIN_E, UTM_ORIGIN_N, _zone_boot, _north_boot)
+            if OUT:
+                print(f"Origin estimated ({ORIGIN_METHOD}, {len(_sdat)} sites):")
+                print(f"  UTM_ORIGIN_E   = {UTM_ORIGIN_E:.1f} m")
+                print(f"  UTM_ORIGIN_N   = {UTM_ORIGIN_N:.1f} m")
+                print(f"  UTM_ORIGIN_LAT = {UTM_ORIGIN_LAT:.6f}°")
+                print(f"  UTM_ORIGIN_LON = {UTM_ORIGIN_LON:.6f}°")
+                print()
+
+# --- (2) Derive UTM zone from finalised origin -----------------------------
+UTM_ZONE, UTM_NORTHERN = utl.utm_zone_from_latlon(
+    UTM_ORIGIN_LAT, UTM_ORIGIN_LON, override=UTM_ZONE_OVERRIDE)
 hemi = "N" if UTM_NORTHERN else "S"
 print(f"UTM zone: {UTM_ZONE}{hemi}  "
       f"(origin lat={UTM_ORIGIN_LAT:.4f}°, lon={UTM_ORIGIN_LON:.4f}°)")
 print()
 
-# --- (1b) Optionally estimate UTM_ORIGIN_E / UTM_ORIGIN_N from sites ------
-if ESTIMATE_ORIGIN:
-    _cal_sites = list(CALIBRATION_SITES)
-    if SITE_DAT is not None and os.path.isfile(SITE_DAT):
-        _sdat = fem.read_site_dat(SITE_DAT)
-        _sdat_ids = {d["sitenum"] for d in _sdat}
-        _extra    = [d for d in _cal_sites if d.get("site") not in _sdat_ids]
-        _cal_sites = _sdat + _extra
-        if OUT:
-            print(f"  site.dat: loaded {len(_sdat)} site(s) from {SITE_DAT}")
-    UTM_ORIGIN_E, UTM_ORIGIN_N = fem.estimate_utm_origin(
-        _cal_sites, OBSERVE_FILE, UTM_ZONE, UTM_NORTHERN,
-        site_dat=SITE_DAT, out=OUT,
-    )
-    if UPDATE_CONFIG:
-        UTM_ORIGIN_LAT, UTM_ORIGIN_LON = utl.utm_to_latlon_zn(
-            UTM_ORIGIN_E, UTM_ORIGIN_N, UTM_ZONE, UTM_NORTHERN
-        )
-        UTM_ZONE, UTM_NORTHERN = _utm_zone_from_origin()
-        if OUT:
-            print(f"Config updated:  UTM_ORIGIN_LAT = {UTM_ORIGIN_LAT:.6f}")
-            print(f"                 UTM_ORIGIN_LON = {UTM_ORIGIN_LON:.6f}")
-            print(f"                 UTM_ZONE       = {UTM_ZONE}"
-                  f"{'N' if UTM_NORTHERN else 'S'}")
-            print()
-
-# --- (2) Resolve slice positions to model-local metres ---------------------
-slices_resolved = resolve_slices(PLOT_SLICES, UTM_ZONE, UTM_NORTHERN)
+# --- (3) Resolve slice positions to model-local metres --------------------
+slices_resolved = fem.resolve_slice_positions(
+    PLOT_SLICES, UTM_ZONE, UTM_NORTHERN,
+    UTM_ORIGIN_E, UTM_ORIGIN_N,
+    UTM_ORIGIN_LAT, UTM_ORIGIN_LON,
+    verbose=OUT,
+)
 if OUT:
     print()
 
-# --- (3) Optionally read site position(s) ----------------------------------
+# --- (4) Read site positions ----------------------------------------------
 site_xys = []
-if SITE_DAT is not None:
-    print(f"Reading site position(s) from site.dat: {SITE_DAT}")
+_sites_from_obs = False
+if SITE_DAT is not None and os.path.isfile(SITE_DAT):
+    print(f"Reading site positions from site.dat: {SITE_DAT}")
     _rows = fem.read_site_dat(SITE_DAT, site_names=SITE_NAMES)
     for row in _rows:
         sx_m, sy_m = fem.utm_to_model(row["easting"], row["northing"],
-                                       UTM_ORIGIN_E, UTM_ORIGIN_N)
-        site_xys.append((row["name"], sx_m, sy_m))
-        print(f"  {row['name']}: model-local x = {sx_m/1000:.3f} km,"
-              f"  y = {sy_m/1000:.3f} km")
+                                      UTM_ORIGIN_E, UTM_ORIGIN_N)
+        site_xys.append((row["name"], sx_m, sy_m, float(row.get("elev", 0.0))))
+        if OUT:
+            print(f"  {row['name']}: model-local x = {sx_m/1000:.3f} km,"
+                  f"  y = {sy_m/1000:.3f} km")
     if not site_xys:
         print("  (no matching sites found in site.dat)")
     print()
 elif SITE_NUMBER is not None:
     _site_nums = (SITE_NUMBER if isinstance(SITE_NUMBER, (list, tuple))
                   else [SITE_NUMBER])
-    print(f"Reading site position(s) from: {OBSERVE_FILE}")
+    print(f"Reading site positions from observe.dat: {OBSERVE_FILE}")
     for _sn in _site_nums:
         sx_m, sy_m = fem.read_site_position(OBSERVE_FILE, _sn)
-        site_xys.append((_sn, sx_m, sy_m))
-        print(f"  site {_sn}: model-local x = {sx_m/1000:.3f} km,"
-              f"  y = {sy_m/1000:.3f} km")
+        site_xys.append((_sn, sx_m, sy_m, 0.0))
+        if OUT:
+            print(f"  site {_sn}: model-local x = {sx_m/1000:.3f} km,"
+                  f"  y = {sy_m/1000:.3f} km")
+    _sites_from_obs = True
     print()
 
-# --- (4) Build ensemble file list from ENS_DIRS ---------------------------
+# --- (5) Build ensemble file list from ENS_DIRS ---------------------------
 # Expand any glob patterns, sort, then locate the block file in each dir.
 _expanded_dirs = []
 for _d in ENS_DIRS:
@@ -599,33 +564,54 @@ if OUT:
         print(f"  {_lbl:30s}  {_f}")
     print()
 
-# --- (5) Ensemble slice plot  [from snippets.py Snippet 1] ----------------
+# --- (6) Ensemble slice plot  [from snippets.py Snippet 1] ----------------
 if fviz is None:
     sys.exit("femtic_viz not available — cannot plot.  Check your installation.")
 
 print(f"Plotting ensemble: {len(ENS_FILES)} member(s) …")
 fviz.plot_ensemble_slices(
-    member_files    = ENS_FILES,
-    mesh_file       = MESH_FILE,
-    slices          = slices_resolved,
-    labels          = ENS_LABELS_resolved,
-    stat_rows       = ENS_STAT_ROWS,
-    cmap            = PLOT_CMAP,
-    clim            = PLOT_CLIM,
-    xlim            = PLOT_XLIM,
-    ylim            = PLOT_YLIM,
-    zlim            = PLOT_ZLIM,
-    ocean_color     = PLOT_OCEAN_COLOR,
-    ocean_value     = OCEAN_RHO,
-    air_bgcolor     = PLOT_AIR_BGCOLOR,
-    plot_file       = PLOT_ENS_FILE,
-    per_member_file = ENS_PER_MEMBER,
-    dpi             = PLOT_DPI,
-    out             = OUT,
+    member_files       = ENS_FILES,
+    mesh_file          = MESH_FILE,
+    slices             = slices_resolved,
+    labels             = ENS_LABELS_resolved,
+    stat_rows          = ENS_STAT_ROWS,
+    cmap               = PLOT_CMAP,
+    clim               = PLOT_CLIM,
+    xlim               = PLOT_XLIM,
+    ylim               = PLOT_YLIM,
+    zlim               = PLOT_ZLIM,
+    ocean_color        = PLOT_OCEAN_COLOR,
+    ocean_value        = OCEAN_RHO,
+    air_bgcolor        = PLOT_AIR_BGCOLOR,
+    site_xys           = site_xys,
+    obs_coords_only    = _sites_from_obs,
+    sites_in_maps      = PLOT_SITES_MAPS,
+    sites_in_slices    = PLOT_SITES_SLICES,
+    site_marker        = SITE_MARKER,
+    site_marker_slices = SITE_MARKER_SLICES,
+    map_markers        = MAP_MARKERS,
+    projection_dist    = PROJECTION_DIST,
+    display_coords     = DISPLAY_COORDS,
+    utm_origin_e       = UTM_ORIGIN_E,
+    utm_origin_n       = UTM_ORIGIN_N,
+    utm_zone           = UTM_ZONE,
+    utm_northern       = UTM_NORTHERN,
+    utm_to_latlon_fn   = utl.utm_to_latlon_zn,
+    latlon_to_model_fn = fem.latlon_to_model,
+    depth_km           = DEPTH_KM,
+    horiz_km           = HORIZ_KM,
+    equal_aspect       = PLOT_EQUAL_ASPECT,
+    panel_height       = PLOT_PANEL_HEIGHT / 2.54,
+    nrows              = PLOT_NROWS,
+    ncols              = PLOT_NCOLS,
+    plot_file          = PLOT_ENS_FILE,
+    per_member_file    = ENS_PER_MEMBER,
+    dpi                = PLOT_DPI,
+    out                = OUT,
 )
 print("Ensemble plot done.")
 
-# --- (6) Borehole resistivity logs ----------------------------------------
+# --- (7) Borehole resistivity logs ----------------------------------------
 if PLOT_BOREHOLE:
     if not BOREHOLE_SITES:
         print("  Borehole plot skipped: BOREHOLE_SITES is empty.")

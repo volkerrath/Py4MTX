@@ -56,6 +56,10 @@ Provenance:
                                  generation: PLOT_SLICES_QC / QC_* config;
                                  calls fviz.plot_model_slices per member,
                                  saves gst_qc*.pdf in each member's subdir.
+    2026-05-31  vrath / Claude Sonnet 4.6   MOD_SLICES updated to use
+                "kind" key ("map"/"ns"/"ew") instead of "type".
+                depth_km=True, horiz_km=True added to plot_model_slices
+                and plot_ensemble_slices QC/ENS calls.
     2026-05-28  Claude Sonnet 4.6 (Anthropic)
                 Added RELATIVE_LINKS config variable (default True); passed as
                 relative_links to ens.generate_directories.  Relative symlinks
@@ -533,6 +537,8 @@ if (PLOT_DATA or PLOT_MODEL) and PLOT_SLICES_QC:
             zlim        = QC_ZLIM,
             ocean_color = QC_OCEAN_COLOR,
             ocean_value = 0.25,
+            depth_km    = True,
+            horiz_km    = True,
             plot_file   = _qc_file,
             dpi         = QC_DPI,
             out         = OUT,
@@ -618,7 +624,9 @@ if PLOT_DATA or PLOT_MODEL:
             ylim            = ENS_YLIM,
             zlim            = ENS_ZLIM,
             ocean_color     = ENS_OCEAN_COLOR,
-            ocean_value     = 0.25,   # Ω·m sentinel for ocean cells
+            ocean_value     = 0.25,
+            depth_km        = True,
+            horiz_km        = True,
             per_member_file = ENS_PER_MEMBER,
             plot_file       = ENS_PLOT_FILE,
             dpi             = ENS_PLOT_DPI,

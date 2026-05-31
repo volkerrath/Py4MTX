@@ -1,414 +1,125 @@
 # femtic_mod_edit.py
 
-Apply arithmetic operations to a FEMTIC resistivity model in log10 space and
-rewrite the model file.
+Edit a FEMTIC resistivity block file — set values, smooth, perturb,
+clip, or null selected regions — and optionally plot the result.
 
 ---
 
 ## Purpose
 
-`femtic_mod_edit.py` reads a FEMTIC `resistivity_block_iterX.dat`, operates on
-the **free** log10(rho) parameter vector, and writes the result back to a
-(optionally different) block file.  Typical use cases are:
+`femtic_mod_edit.py` reads a `resistivity_block_iterX.dat`, applies one
+of several algebraic operations to the free-parameter regions, writes the
+modified block, and optionally plots slices of the result via
+`fviz.plot_model_slices`.
 
-- creating a homogeneous or constant-value starting model (fill, mean, median),
-- enforcing physical bounds (clip),
-- shifting the global resistivity level by a known offset (shift),
-- spatially smoothing a rough inversion result before re-inversion (smooth),
-- inserting a local anomaly — conductor or resistor — as an ellipsoidal body (ellipsoid),
-- normalising the model vector for statistical post-processing (standardise),
-- inspecting the result as a multi-panel slice figure (plotting section),
-- visualising the input model without any modification (null).
+Typical use cases:
 
-**Air, ocean, and any other fixed region are never modified**, regardless of
-the chosen operation.  `fem.read_model` excludes them from the free vector
-before it reaches the operation function; `fem.insert_model` writes their
-canonical values (`AIR_RHO`, `OCEAN_RHO`) back unconditionally when
-reconstructing the block file.
+- resetting the starting model before a re-inversion,
+- clamping extreme resistivity values after convergence,
+- applying a smooth Gaussian perturbation for sensitivity testing,
+- nulling selected regions to isolate anomalies.
+
+---
+
+## Operations (`OPERATION`)
+
+| Value | Effect |
+|---|---|
+| `"fill"` | Set all free regions to `OP_FILL_VALUE` (log₁₀ Ω·m) |
+| `"smooth"` | Gaussian-kernel smoothing with `OP_SMOOTH_SIGMA` |
+| `"perturb"` | Add Gaussian noise with std `OP_PERTURB_STD` |
+| `"clip"` | Clamp log₁₀(ρ) to `[OP_CLIP_MIN, OP_CLIP_MAX]` |
+| `"null"` | No-op — reads and rewrites the block unchanged (useful for plot-only) |
 
 ---
 
 ## Workflow
 
 ```
-resistivity_block_iterX.dat   [+ mesh.dat for "smooth" / "ellipsoid" / "brick" / "wmean"]
+MODEL_IN  +  MESH_FILE
         |
-        v  fem.read_model(model_trans="log10")
-  log10(rho)  [free regions only — air/ocean/fixed excluded]
+        v  fviz.read_femtic_mesh / fviz.read_resistivity_block
+   mesh geometry  +  region arrays
         |
-        v  _OPERATIONS[OPERATION](log_m)
-  log10(rho)  [modified, free regions only]
+        v  apply OPERATION
+   modified log₁₀(ρ) vector
         |
-        v  fem.insert_model(template=MODEL_IN, ...)
-                 writes air_rho / ocean_rho unconditionally
-resistivity_block_edited.dat
-        |
-        v  plot_model_slices(...)   [optional, PLOT = True]
-figure file / interactive window
+        v  fem.insert_model → write MODEL_OUT
+        |                                    [PLOT = True]
+        v  fem.resolve_slice_positions(PLOT_SLICES)
+        v  fviz.plot_model_slices(...)
+slice figure saved / shown
 ```
 
 ---
 
-## Configuration
-
-All user-editable settings live in the **Configuration** block near the top of
-the script.  No command-line arguments are used; edit the script directly.
+## Key configuration variables
 
 ### Paths
-
-| Variable | Default | Description |
-|---|---|---|
-| `WORK_DIR` | `/home/vrath/Py4MTX/py4mt/data/example/` | Working directory |
-| `MODEL_IN` | `resistivity_block_iter10.dat` | Source block file (also used as format template) |
-| `MESH_FILE` | `mesh.dat` | Mesh file — required for `"wmean"`, `"smooth"`, `"ellipsoid"` and `"brick"`; ignored otherwise |
-| `MODEL_OUT` | `resistivity_block_edited.dat` | Output block file; set equal to `MODEL_IN` to overwrite in-place |
-
-### Ocean / fixed-region handling
-
-| Variable | Default | Description |
-|---|---|---|
-| `OCEAN` | `None` | `None` = auto-infer; `True` / `False` = force |
-| `AIR_RHO` | `1e9` Ohm·m | Written for region 0 (air) |
-| `OCEAN_RHO` | `0.25` Ohm·m | Written for region 1 when treated as ocean |
-
-Ocean auto-inference: region 1 is treated as ocean if `flag == 1` **and**
-rho ≤ 1 Ohm·m.  Override with `OCEAN = True / False` when unreliable.
-
-### Operation selection
-
-| Variable | Default | Description |
-|---|---|---|
-| `OPERATION` | `"mean"` | Key selecting the operation (see table below); `"null"` = plot input model without writing |
-| `OP_FILL_VALUE` | `2.0` | Constant fill value in log10(Ohm·m) — `"fill"` |
-| `OP_CLIP_MIN` | `0.0` | Lower bound in log10(Ohm·m) — `"clip"` |
-| `OP_CLIP_MAX` | `4.0` | Upper bound in log10(Ohm·m) — `"clip"` |
-| `OP_SHIFT_VALUE` | `0.5` | Additive offset in log10(Ohm·m) — `"shift"` |
-| `OP_SMOOTH_SIGMA` | `5000.0` | Gaussian length scale σ in metres — `"smooth"` |
-| `OP_SMOOTH_K` | `100` | K nearest neighbours per region — `"smooth"` |
-| `OP_SMOOTH_MAX_GB` | `4.0` | RAM cap (GiB) for fallback dense path when SciPy absent — `"smooth"` |
-
-### Body lists (ellipsoid and brick)
-
-Both `"ellipsoid"` and `"brick"` read from a Python list of body dicts.
-Each body is applied in order; later bodies overwrite earlier ones where
-masks overlap, allowing layered construction.
-
-**Ellipsoid** — `OP_ELLIPSOID_BODIES`  
-**Brick** — `OP_BRICK_BODIES`
-
-Every body dict shares the same five required keys plus one optional key:
-
-| Key | Type | Required | Description |
-|---|---|---|---|
-| `mode` | str | yes | `"replace"` — set to absolute value; `"add"` — add signed offset |
-| `value` | float | yes | log10(Ohm·m) — absolute resistivity or signed offset |
-| `center` | [x, y, z] | yes | Body centre in metres; z positive-down |
-| `axes` | [a, b, c] | yes | Ellipsoid: semi-axes in metres. Brick: half-extents in metres. All > 0 |
-| `angles` | [α, β, γ] | yes | ZYX rotation angles in degrees (yaw, pitch, roll). `[0,0,0]` = no rotation |
-| `boundary_smooth` | dict | no | Smooth the body boundary after insertion — see below |
-
-Example — two ellipsoids, second with boundary smoothing:
-
-```python
-OP_ELLIPSOID_BODIES = [
-    dict(mode="replace", value=0.0,
-         center=[0., 0., 5000.], axes=[10000., 10000., 5000.], angles=[0., 0., 0.]),
-    dict(mode="add", value=-1.0,
-         center=[5000., 0., 8000.], axes=[3000., 3000., 3000.], angles=[30., 0., 0.],
-         boundary_smooth=dict(sigma=3000., passes=3)),
-]
-```
-
-Example — one rotated brick with boundary smoothing:
-
-```python
-OP_BRICK_BODIES = [
-    dict(mode="replace", value=3.0,
-         center=[0., 0., 10000.], axes=[8000., 4000., 3000.], angles=[45., 0., 0.],
-         boundary_smooth=dict(sigma=2000., passes=2)),
-]
-```
-
----
-
-## Available operations
-
-All operations act on the **free** log10(rho) vector only.  Air, ocean, and
-flag-fixed regions are excluded before the operation and restored afterwards.
-
-| Key | Effect | Typical use |
-|---|---|---|
-| `"fill"` | m ← OP_FILL_VALUE | Constant half-space starting model |
-| `"mean"` | m ← mean(m) | Homogeneous model at arithmetic-mean resistivity |
-| `"wmean"` | m ← Σ(wₖ mₖ)/Σwₖ, wₖ=1/Vₖ | Same, but small cells outweigh large cells |
-| `"median"` | m ← median(m) | Same, robust to outlier regions |
-| `"clip"` | m ← clamp(m, min, max) | Enforce physical bounds |
-| `"shift"` | m ← m + δ | Global resistivity offset (e.g. +0.5 → ×3.2 in Ohm·m) |
-| `"smooth"` | m̃ᵢ = Σⱼ∈KNN wᵢⱼ mⱼ / Σ wᵢⱼ | Spatial low-pass; reduce artefacts before re-inversion |
-| `"ellipsoid"` | m[inside] replace/+= value | Insert rotated ellipsoidal body/bodies |
-| `"brick"` | m[inside] replace/+= value | Insert rotated rectangular prism body/bodies |
-| `"standardise"` | m ← (m − μ) / σ | Zero-mean / unit-variance; combine with `"clip"` |
-| `"null"` | m ← m (no-op) | Plot the input model as-is; no output file written |
-
-### Ellipsoid (`"ellipsoid"`) and Brick (`"brick"`)
-
-Both operations share the same multi-body engine (`_apply_bodies`).  Regions
-whose centroid falls inside at least one body are modified; all others are
-unchanged.  Bodies are applied in order — later entries win on overlap.
-
-**Shared ZYX rotation convention:**
-
-```
-Local frame:  p' = R^T (p - center)
-R = Rz(alpha) @ Ry(beta) @ Rx(gamma)   [intrinsic ZYX / yaw-pitch-roll]
-```
-
-**Ellipsoid mask** (quadratic form in local frame):
-
-```
-(x'/a)^2 + (y'/b)^2 + (z'/c)^2 <= 1
-```
-
-**Brick mask** (box test in local frame, half-extents a, b, c):
-
-```
-|x'| <= a  AND  |y'| <= b  AND  |z'| <= c
-```
-
-**Modes** (per body):
-
-| Mode | Effect |
+| Variable | Description |
 |---|---|
-| `"replace"` | m[inside] = value (absolute log10(Ohm·m)) |
-| `"add"` | m[inside] += value (signed offset in log10 space) |
+| `WORK_DIR` | Base directory |
+| `MESH_FILE` | `mesh.dat` |
+| `MODEL_IN` | Input resistivity block |
+| `MODEL_OUT` | Output resistivity block |
+| `OBSERVE_FILE` | `observe.dat` (fallback site source) |
+| `SITE_DAT` | `site.dat` CSV (`None` to disable) |
 
-A runtime warning is printed for any body whose mask is empty (geometry
-mismatch or body too small for the mesh resolution).
-
-### Boundary smoothing (`boundary_smooth`)
-
-The optional `boundary_smooth` key softens the sharp resistivity step at the
-body edge by iterative Gaussian blending in a transition band straddling the
-boundary.  It is applied per body, immediately after insertion and before any
-subsequent body in the list is processed.
-
-```python
-boundary_smooth = dict(
-    sigma  = 3000.,   # Gaussian length scale in metres
-    passes = 3,       # number of smoothing passes
-)
-```
-
-**How it works** — on each pass:
-
-1. Find all interior regions within `4σ` of the body surface → exterior
-   transition shell.
-2. Find all interior regions adjacent to that shell → interior transition
-   shell.
-3. For every region in the combined transition band, replace its value with
-   the Gaussian-weighted average (`exp(−d²/2σ²)`) of all neighbours within
-   `4σ`.
-
-The band widens by roughly one shell per pass, creating a gradient zone
-approximately `passes × σ` deep on each side of the boundary.  Regions deep
-inside the body and far outside are never touched.
-
-**Why not a single boundary-cell mean?** A one-pass mean of boundary cells
-with their immediate neighbours gives a transition exactly one cell-width
-wide — which varies enormously in an unstructured mesh (sub-km near the
-surface, several km at depth).  The `sigma` / `passes` parameters give
-independent, physically meaningful control over blend width and zone depth
-that is independent of local cell size.
-
-**Requires SciPy** (`cKDTree`); a warning is printed and smoothing is skipped
-if SciPy is absent.
-
-### Inverse-volume-weighted mean (`"wmean"`)
-
-Computes a single scalar value to replace all free-region values, weighted by
-the inverse of each region's total volume:
-
-```
-w_k = 1 / V_k
-m_tilde = ( sum_k  w_k * m_k ) / ( sum_k  w_k )
-```
-
-In a typical FEMTIC mesh the volume ratio between the largest background
-region and the smallest near-surface region can exceed 10⁶.  The arithmetic
-`"mean"` is dominated by those large deep cells; `"wmean"` gives proportionally
-more influence to the fine cells in the target depth range — which is usually
-what is wanted when resetting a model to a representative starting value.
-
-Requires `MESH_FILE`.  No additional parameters.
-
-### Spatial smoothing (`"smooth"`)
-
-Isotropic Gaussian kernel evaluated between free-region centroids, restricted
-to each region's K nearest neighbours:
-
-```
-w_ij = exp( -||c_i - c_j||^2 / (2 sigma^2) )
-
-m_tilde_i = ( sum_{j in KNN(i)}  w_ij * m_j ) / ( sum_{j in KNN(i)} w_ij )
-```
-
-**Why K-NN and not `query_ball_point`** — variable-length neighbour lists from
-`query_ball_point` cause a segfault at ~125 k regions because the combined
-lists exhaust RAM before any computation begins.  `cKDTree.query(k=K)` returns
-a **fixed-shape** `(n, K)` array; memory is exactly `n × K × 8` bytes —
-predictable and bounded.  For K = 100 and n = 125 k that is ~100 MB.
-Computation is fully vectorised (no Python loop over regions).
-
-If SciPy is unavailable the code falls back to a chunked dense path capped at
-`OP_SMOOTH_MAX_GB` gigabytes (no K restriction in that path).
-
-| Parameter | Default | Effect |
-|---|---|---|
-| `OP_SMOOTH_SIGMA` | `5000.0` m | Gaussian length scale σ |
-| `OP_SMOOTH_K` | `100` | Number of nearest neighbours per region |
-| `OP_SMOOTH_MAX_GB` | `4.0` GiB | RAM cap for fallback chunked path |
-
-**Choosing σ** — 1–2× the typical element edge length at the target depth.
-
-**Choosing K** — K should cover the neighbourhood within roughly 2–3σ.
-A rough guide: if the average inter-region spacing is `d` metres,
-set `K ≈ (2σ/d)³ × π/6` (volume of sphere / average region volume).
-Start with K = 50–200 and check that `dist[:, -1].max() < 3σ` (the
-K-th neighbour is within 3σ for all regions).  If not, increase K.
-Regions beyond K get zero weight regardless of distance.
-
-### Note on multiplicative scaling
-
-Multiplying log10(rho) by a constant has no clean physical interpretation and
-is not provided.  Use `"shift"` for global rescaling (e.g. `OP_SHIFT_VALUE =
-1.0` → ×10 in Ohm·m), or `"ellipsoid"` in `"add"` mode for local rescaling.
-
----
-
-## Mesh requirement for `"smooth"`, `"ellipsoid"`, `"brick"`, and `"wmean"`
-
-These operations read `MESH_FILE` (same `mesh.dat` used during inversion) to
-compute free-region centroids (and volumes for `"wmean"`) via `_build_region_geometry`.  The
-element→region mapping is obtained from `MODEL_IN` via
-`fem._read_resistivity_block_struct`.  Mesh loading is shared: if a future
-operation also needs geometry, add its key to `_NEEDS_MESH` in the main block.
-
----
-
-## Adding new operations
-
-```python
-def _op_my_transform(m: np.ndarray) -> np.ndarray:
-    """Brief description."""
-    return ...                       # same shape as m
-
-_OPERATIONS["my_transform"] = _op_my_transform
-```
-
-Operations needing geometry (mesh / centroids / volumes) should add their key to
-`_NEEDS_MESH` and populate a dedicated context dict in the `if OPERATION in
-_NEEDS_MESH:` block, following the `_ellipsoid_ctx` / `_smooth_ctx` pattern.
-
----
-
-## Plotting configuration
-
-When `PLOT = True` the script visualises the **output** model immediately
-after writing, using `femtic_viz` and Matplotlib.
-
-### Global plotting parameters
-
-| Variable | Default | Description |
-|---|---|---|
-| `PLOT` | `True` | Enable / disable plotting |
-| `PLOT_FILE` | `*_edited.png` | Output path; `None` = interactive `show()` |
-| `PLOT_DPI` | `200` | Figure DPI for saved file |
-| `PLOT_CMAP` | `"turbo_r"` | Matplotlib colormap name |
-| `PLOT_CLIM` | `[0.0, 4.0]` | Shared colour limits in log10(Ohm·m); `None` = auto from finite data |
-| `PLOT_OCEAN_COLOR` | `"lightgrey"` | Flat colour for ocean/lake cells rendered on top of colormap; `None` = use colormap |
-| `PLOT_AIR_BGCOLOR` | `"white"` | Axes facecolor shown through transparent (NaN) air pixels |
-| `PLOT_XLIM` | `None` | Global easting limits [xmin, xmax] metres |
-| `PLOT_YLIM` | `None` | Global northing limits [ymin, ymax] metres |
-| `PLOT_ZLIM` | `None` | Global depth limits [zmin, zmax] metres (z positive-down) |
-
-### Slice specification (`PLOT_SLICES`)
-
-`PLOT_SLICES` is a list of dicts, one per panel (left → right in the figure).
-Each panel is one of three kinds:
-
-| `kind` | Geometry | Axes (h, v) | Required keys | Optional keys |
-|---|---|---|---|---|
-| `"map"` | Horizontal slice at z = const | x (easting), y (northing) | `z0` | `xlim`, `ylim`, `title` |
-| `"ns"` | N-S vertical section at x = const | y (northing), z (depth ↓) | `x0` | `ylim`, `zlim`, `title` |
-| `"ew"` | E-W vertical section at y = const | x (easting), z (depth ↓) | `y0` | `xlim`, `zlim`, `title` |
-
-Per-panel `xlim` / `ylim` / `zlim` override the global `PLOT_XLIM` / `PLOT_YLIM` / `PLOT_ZLIM`.
-
-Curtain panels (`"ns"`, `"ew"`) are rendered by intersecting each tetrahedron
-exactly with the slice plane — no selection slab, no Delaunay triangulation,
-no `dw` parameter.  Each tetrahedron that straddles the plane contributes an
-exact triangle or quadrilateral polygon.  Air polygons are omitted; the axes
-facecolor (`PLOT_AIR_BGCOLOR`) shows through.
-
-Example — two map slices + one N-S + one E-W curtain:
-
-```python
-PLOT_SLICES = [
-    dict(kind="map", z0=5000.),
-    dict(kind="map", z0=20000., title="20 km depth"),
-    dict(kind="ns",  x0=0.,     zlim=[0., 50000.]),
-    dict(kind="ew",  y0=0.,     zlim=[0., 50000.]),
-]
-```
-
-### Air and ocean rendering
-
-- **Air**: elements in region 0 are set to `NaN` by `prepare_rho_for_plotting`.
-  Their intersection polygons are computed but simply **not added** to the
-  `PolyCollection` — they are absent from the plot entirely.  The axes
-  facecolor (`PLOT_AIR_BGCOLOR`, default `"white"`) shows through the empty
-  space, giving the appearance of transparent or white air above the
-  topographic surface.  Correct topography is guaranteed because the plane
-  intersection is geometrically exact.
-
-- **Ocean / lake**: elements in region 1 are set to the `OCEAN_RHO` sentinel
-  value.  Their polygons are rendered in `PLOT_OCEAN_COLOR` as a separate
-  flat-colour `PolyCollection` on top of the earth layer, keeping them visually
-  distinct and outside the colormap range.  Set `PLOT_OCEAN_COLOR = None` to
-  let them follow the colormap instead.
-
----
-
-## Dependencies
-
-| Package | Role |
+### Operation
+| Variable | Description |
 |---|---|
-| NumPy | Array operations, rotation matrices, Gaussian kernel |
-| SciPy | `cKDTree` for `"smooth"` and `boundary_smooth` (graceful fallback if absent) |
-| Matplotlib | Figure rendering for plotting section (optional) |
-| `femtic` (Py4MTX) | `read_model`, `insert_model`, `read_femtic_mesh`, `_read_resistivity_block_struct` |
-| `femtic_viz` (Py4MTX) | `read_femtic_mesh`, `read_resistivity_block`, `map_regions_to_element_rho`, `prepare_rho_for_plotting`, `plot_model_slices` — plotting step (4) delegates here; graceful skip if absent |
-| `util` (Py4MTX) | `print_title` |
-| `version` (Py4MTX) | `versionstrg` |
+| `OPERATION` | One of `"fill"`, `"smooth"`, `"perturb"`, `"clip"`, `"null"` |
+| `OP_FILL_VALUE` | Target log₁₀(ρ) for `"fill"` |
+| `OP_SMOOTH_SIGMA` | Gaussian sigma (model-local metres) for `"smooth"` |
+| `OP_PERTURB_STD` | Noise standard deviation (log₁₀ Ω·m) for `"perturb"` |
+| `OP_CLIP_MIN/MAX` | log₁₀(ρ) bounds for `"clip"` |
 
-Environment variables `PY4MTX_ROOT` and `PY4MTX_DATA` must be set.
+### Origin estimation
+| Variable | Description |
+|---|---|
+| `ORIGIN_METHOD` | `None` / `"box"` / `"average"` |
+| `UTM_ORIGIN_LAT/LON/E/N` | Fallback origin (used when `ORIGIN_METHOD=None`) |
+| `UTM_ZONE_OVERRIDE` | Force a UTM zone; `None` = auto |
+
+### Plot
+| Variable | Description |
+|---|---|
+| `PLOT` | `True` to produce a slice figure after editing |
+| `PLOT_FILE` | Output path; `None` = interactive |
+| `PLOT_CMAP` | Colormap (default `"turbo_r"`) |
+| `PLOT_CLIM` | `[vmin, vmax]` in log₁₀(Ω·m) |
+| `PLOT_SLICES` | Slice dicts — same format as `femtic_mod_plot.py` |
+| `PLOT_XLIM/YLIM/ZLIM` | Axis limits in model-local metres |
+| `DEPTH_KM` | `True` → depth axis in km |
+| `HORIZ_KM` | `True` → horizontal axes in km |
+| `PLOT_EQUAL_ASPECT` | Equal aspect ratio |
+| `PLOT_PANEL_HEIGHT` | Panel height in cm |
+| `DISPLAY_COORDS` | `"model"` / `"utm"` / `"latlon"` |
+
+### Site overlay
+| Variable | Description |
+|---|---|
+| `SITE_DAT` | Site list CSV; `None` to disable |
+| `SITE_NAMES` | Filter; `None` = all |
+| `PLOT_SITES_MAPS` | Show sites on map panels |
+| `PLOT_SITES_SLICES` | Show sites on curtain panels |
+| `PROJECTION_DIST` | Max distance (m) for curtain projection |
+| `SITE_MARKER` | Marker style dict |
+| `SITE_MARKER_SLICES` | Marker style for curtains |
+| `MAP_MARKERS` | Additional map markers |
 
 ---
 
-## Provenance
+## Changes from previous version
 
-| Date | Author | Note |
-|---|---|---|
-| 2026-04-30 | vrath / Claude Sonnet 4.6 | Created, modelled on `femtic_gst_prep.py` |
-| 2026-04-30 | vrath / Claude Sonnet 4.6 | Added `"smooth"` (Gaussian region-centroid weighting) |
-| 2026-04-30 | vrath / Claude Sonnet 4.6 | Added `"fill"`; clarified air/ocean safety guarantee |
-| 2026-04-30 | vrath / Claude Sonnet 4.6 | Added `"ellipsoid"` (replace/add, rotated ZYX geometry); refactored mesh loading into shared `_NEEDS_MESH` block |
-| 2026-04-30 | vrath / Claude Sonnet 4.6 | Added `"wmean"` (inverse-volume-weighted mean); refactored `_build_region_centroids` → `_build_region_geometry` (centroids + volumes in one pass) |
-| 2026-05-03 | vrath / Claude Sonnet 4.6 | Added `"brick"` (rotated rectangular prism); refactored `_op_ellipsoid` into shared `_apply_bodies` engine supporting lists of bodies for both `"ellipsoid"` and `"brick"` |
-| 2026-05-03 | vrath / Claude Sonnet 4.6 | Added plotting section: `plot_model_slices` with map/NS-curtain/EW-curtain panels; `PLOT_SLICES` list config; shared colormap/clim; air transparent, ocean flat colour |
-| 2026-05-03 | vrath / Claude Sonnet 4.6 | Fixed plotting: curtain panels now use model coordinates (y vs z / x vs z) via `_slice_points`; air NaN made transparent via `cmap.set_bad(alpha=0)`; ocean rendered as flat-colour scatter overlay; removed `"grid"` mode (no longer applicable); added `PLOT_MASK_MAX_EDGE` |
-| 2026-05-03 | vrath / Claude Sonnet 4.6 | Fixed topographic air fill: air excluded from `mtri.Triangulation` via `good` mask; added `_auto_mask_edge` (3× median NN spacing) to auto-suppress free-surface bridging triangles; clarified `dw` semantics (perpendicular selection slab, not depth range) |
-| 2026-05-03 | vrath / Claude Sonnet 4.6 | Replaced centroid/Delaunay plotting with exact tetrahedron-plane intersection (`_intersect_tet_plane`, `_slice_geometry`): correct topography, no bridging, no `dw` slab needed; `PolyCollection` rendering for exact polygons |
-| 2026-05-03 | vrath / Claude Sonnet 4.6 | Fixed missing main block (`read_model`, `_NEEDS_MESH` population, `insert_model`) lost in prior rewrite; all four context dicts now declared at module level |
-| 2026-05-03 | vrath / Claude Sonnet 4.6 | Added `boundary_smooth` per-body option to `_apply_bodies`: iterative Gaussian blending in a transition band straddling the body surface (`_smooth_body_boundary`, `sigma`, `passes`) |
-| 2026-05-04 | vrath / Claude Sonnet 4.6 | Added `"null"` operation: no-op pass-through; skips write step and plots `MODEL_IN` directly — use to inspect the input model without any modification |\n| 2026-05-27 | vrath / Claude Sonnet 4.6 (Anthropic) | Removed local `plot_model_slices` / geometry helpers (~430 lines); step (4) now delegates to `fviz.plot_model_slices` for consistency with all other scripts. `PLOT_*` config block and call signature unchanged. |
+- `plot_model_slices` call now includes `depth_km`, `horiz_km`,
+  `equal_aspect`, `panel_height`, `nrows`, `ncols`, `site_xys`,
+  `utm_origin_*`, `utm_zone`, `utm_northern`, `display_coords`,
+  `obs_coords_only`, `sites_in_maps`, `sites_in_slices`,
+  `site_marker_slices`, `map_markers`, `projection_dist` kwargs.
+- `PLOT_SLICES` is now resolved via `fem.resolve_slice_positions`
+  (supporting `"utm"` / `"latlon"` CRS tagging) before the call.
+- Added `DEPTH_KM`, `HORIZ_KM`, `PLOT_EQUAL_ASPECT`, `PLOT_PANEL_HEIGHT`,
+  `ORIGIN_METHOD`, `DISPLAY_COORDS`, `SITE_DAT`, `SITE_NAMES`,
+  `SITE_NUMBER`, `PLOT_SITES_*`, `SITE_MARKER_SLICES`, `MAP_MARKERS`,
+  `PROJECTION_DIST`, `UTM_ORIGIN_*`, `UTM_ZONE_OVERRIDE` config vars.
