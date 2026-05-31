@@ -161,6 +161,16 @@ Provenance
                 Added ALPHA_FILE / ALPHA_MODE / ALPHA_BLANK_THRESH config
                 vars; passed to fviz.plot_model_slices for per-element
                 polygon fading/blanking driven by a second block file.
+    2026-05-31  vrath / Claude Sonnet 4.6 (Anthropic)
+                PLOT_SLICES: documented ``invert_x`` per-panel key for
+                ns/ew/plane panels (horizontal axis flip for comparison).
+    2026-05-31  vrath / Claude Sonnet 4.6 (Anthropic)
+                Origin estimation from site.dat now runs before UTM zone
+                derivation (fixes TypeError when UTM_ORIGIN_LAT/LON are None).
+                Hard-coded UTM_ORIGIN_* constants set to None (derived at
+                runtime from site.dat when ORIGIN_METHOD is set).  Bootstrap
+                zone now derived from site lat/lon mean (exact) rather than
+                from easting approximation.
 
 @author: vrath
 """
@@ -236,22 +246,24 @@ OCEAN = None
 AIR_RHO = 1.0e9   # Ω·m  (region 0)
 OCEAN_RHO = 0.25    # Ω·m  (region 1 when treated as ocean)
 
+
 # ---------------------------------------------------------------------------
 # Geographic / UTM origin of the mesh centre
 # ---------------------------------------------------------------------------
 #: Geographic coordinates (WGS-84) of the FEMTIC mesh origin.
 #: Used to derive the UTM zone number and to convert lat/lon slice positions.
-UTM_ORIGIN_LAT = -16.409   # decimal degrees, positive = North
-UTM_ORIGIN_LON = -71.537   # decimal degrees, positive = East
+UTM_ORIGIN_LAT = None # -16.409   # decimal degrees, positive = North
+UTM_ORIGIN_LON = None # -71.537   # decimal degrees, positive = East
 
 #: UTM coordinates of the mesh origin in metres (same zone as above).
 #: Used for model-local ↔ UTM conversions and for display tick offsets.
-UTM_ORIGIN_E = 229047.0   # easting  [m]
-UTM_ORIGIN_N = 8184127.0  # northing [m]
+UTM_ORIGIN_E = None # 229047.0   # easting  [m]
+UTM_ORIGIN_N = None # 8184127.0  # northing [m]
 
 #: Override the auto-derived UTM zone number.  None = auto from origin lat/lon.
 #: Example: UTM_ZONE_OVERRIDE = 19  →  force zone 19 (ignoring special zones).
 UTM_ZONE_OVERRIDE = None
+
 
 # ---------------------------------------------------------------------------
 # Display coordinate system
@@ -259,7 +271,7 @@ UTM_ZONE_OVERRIDE = None
 #: "model"  — axis ticks in model-local metres (origin = 0, default)
 #: "utm"    — axis ticks in absolute UTM metres
 #: "latlon" — axis ticks in decimal degrees (lon for easting, lat for northing)
-DISPLAY_COORDS = "utm"
+DISPLAY_COORDS = "latlon"
 
 # ---------------------------------------------------------------------------
 # Site overlay
@@ -284,7 +296,7 @@ PLOT_SITES_SLICES = True
 #: For NS panels: distance in x (easting); for EW panels: distance in y (northing).
 #: For plane panels: perpendicular distance from the slice plane.
 #: None = plot all sites on every panel regardless of distance.
-PROJECTION_DIST = 3000.  # e.g. 5000.0  (5 km)
+PROJECTION_DIST = 1000.  # e.g. 5000.0  (5 km)
 
 #: Marker style for map panels (inverted triangle = MT convention).
 SITE_MARKER = dict(marker="v", color="black", ms=4, zorder=10,
@@ -306,12 +318,20 @@ SITE_MARKER_SLICES = dict(marker="v", color="black", ms=4, zorder=10,
 #:   "name"    : label string (shown in legend); None = no legend entry
 #: Any additional Matplotlib plot kwargs (mew, mfc, zorder, …) are accepted.
 MAP_MARKERS = [
-    dict(latlon=[-16.34861, -70.90222], marker="*", color="red", ms=10,
-         name="Ubinas summit"),
-    dict(latlon=[-16.363436,-70.868025], marker="+", color="blue", ms=10,
+    # dict(latlon=[-16.3169,-70.9673], marker="x", color="red", ms=8,
+    #      name="test point, 4457m"),
+    dict(latlon=[-16.3450, -70.8972], marker="*", color="red", ms=8,
+         name="ubinas crater"),
+    dict(latlon=[-16.363436,-70.868025], marker="+", color="blue", ms=8,
          name="mesh origin"),    
+    dict(latlon=[-16.351,-70.90159], marker="^", color="magenta", ms=6,
+         name="max elev"),    
 ]
-
+ #  Ubinas:
+ #  plot: mesh highest point (non-air): elev = 5573.0 m  model-local x=1342.9 m  y=-3598.8 m
+ #  plot: mesh highest point (non-air): lat=-16.382547°  lon=-70.889634°
+ #  plot: mesh centre  UTM E=229047.0 m  N=8184127.0 m  zone 19S
+ #  plot: mesh centre  lat=-16.409000°  lon=-71.537000°
 # ---------------------------------------------------------------------------
 # Verbose output
 # ---------------------------------------------------------------------------
@@ -327,9 +347,15 @@ PLOT_DPI = 600
 #: Matplotlib colormap name.
 PLOT_CMAP = "turbo_r"
 #: Colour limits [log10(ρ_min), log10(ρ_max)] — None = auto.
-PLOT_CLIM = [0.0, 4.0]      # log10(Ω·m)
+PLOT_CLIM = [0.0, 3.0]      # log10(Ω·m)
 #: Flat colour for ocean / lake cells.  None → use colormap.
 PLOT_OCEAN_COLOR = "lightgrey"
+#: Flat colour for air (above-ground) polygon cut on slice panels.
+#: Every element whose resistivity exceeds 1e8 Ω·m is treated as air
+#: and rendered in this colour.  "white" matches a white figure background;
+#: set to a light grey (e.g. "whitesmoke") to make above-terrain areas
+#: visually distinct.  None → air polygons not drawn (blank gaps).
+PLOT_AIR_COLOR = "whitesmoke"
 #: Axes facecolor for air / background.  None = figure default.
 PLOT_AIR_BGCOLOR = None
 
@@ -375,30 +401,39 @@ ALPHA_BLANK_THRESH = 0.0
 #:   xlim   : [xmin, xmax] — easting or along-strike axis limit
 #:   ylim   : [ymin, ymax] — northing or down-dip axis limit
 #:   zlim   : [zmin, zmax] — depth axis limit (ns/ew panels)
+#:   invert_x : True → flip the horizontal axis left-to-right on ns/ew/plane
+#:            panels after rendering (for comparison with other sections that
+#:            use opposite orientation convention). Default False.
 #:   title  : optional string override
 #:
 #: Per-panel xlim/ylim/zlim override the global PLOT_XLIM/PLOT_YLIM/PLOT_ZLIM.
-#: Ubinas summit: 16.34861° S, 70.90222° W (16°20′55″S 70°54′08″W), elevation 5672 m.
+#: Ubinas summit: 16.34861° S, 70.90222° W (16°20′55″S 70°54′08″W), 
+#: east 296741  lon 8190965
+#: elevation 5672 m.
 
 PLOT_SLICES = [
     # Plain float — model-local metres (backward-compatible):
     dict(kind="map", z0=-4000.0),
-    dict(kind="map", z0=15000.0),
+    # dict(kind="map", z0=15000.0),
     # UTM easting for the NS curtain:
-    dict(kind="ns",   x0=(-70.85576, "latlon")),
+    dict(kind="ns",   x0=(-70.8972, "latlon")),
     # dict(kind="ns", x0=(-70.90222, "latlon")),
+    # dict(kind="ns",   x0=(296741, "utm"), invert_x=True),
+    # dict(kind="ns",   x0=0.),
     # Geographic latitude for the EW curtain:
-    # dict(kind="ew", y0=(-16.34861, "latlon")),    
-    dict(kind="ew", y0=(-16.39606, "latlon")),
+    dict(kind="ew", y0=(-16.345, "latlon")),    
+    # dict(kind="ew", y0=(-16.39606, "latlon")),
+    # dict(kind="ew", y0=(8192000, "utm"),invert_x=False),
+    # dict(kind="ew", y0=-3598.84)
 ]
 
 
 #: Global axis limits in model-local metres — used for panels that do not
 #: specify their own.  None → auto (inferred from data extent).
-PLOT_XLIM = [-20000., 20000.]   # [xmin, xmax] metres — easting
-PLOT_YLIM = [-20000., 20000.]   # [ymin, ymax] metres — northing
-PLOT_ZLIM = [-6000., 15000.]  # [zmin, zmax] metres — depth (z positive-down)
-
+PLOT_XLIM = [-15000., 15000.]   # [xmin, xmax] metres — easting
+PLOT_YLIM = [-15000., 15000.]   # [ymin, ymax] metres — northing
+PLOT_ZLIM = [-6000., 35000.]    # [zmin, zmax] metres — depth (z positive-down)
+# PLOT_ZLIM = [-6000., 15000.]  
 #: Equal aspect ratio for map and curtain panels.
 #: True  → ax.set_aspect("equal") on map (x/y), ns (y/z), and ew (x/z) panels
 #:         so that 1 m horizontal = 1 m vertical on screen.  Applies only when
@@ -425,11 +460,11 @@ HORIZ_KM = True
 #:   PLOT_NCOLS = None  →  len(PLOT_SLICES) columns
 #: Set both explicitly for a grid, e.g. PLOT_NROWS=2, PLOT_NCOLS=4 for 8 maps.
 #: Total cells must be >= len(PLOT_SLICES); surplus cells are hidden.
-PLOT_NROWS = 2   # e.g. 2
-PLOT_NCOLS = 2   # e.g. 4
+PLOT_NROWS = None #1   # e.g. 2
+PLOT_NCOLS = None #2   # e.g. 4
 
 #: Panel height in cm (height of one row of panels).
-PLOT_PANEL_HEIGHT = 8.0   # cm
+PLOT_PANEL_HEIGHT = 16.0   # cm
 
 #: Fixed panel width in cm.  None → auto-computed from aspect ratio when
 #: PLOT_EQUAL_ASPECT = True, or equal to PLOT_PANEL_HEIGHT otherwise.
@@ -443,7 +478,7 @@ PLOT_FIGSIZE = None   # e.g. [40., 25.]
 # 3-D plotting — requires PyVista  (conda install -c conda-forge pyvista)
 # ---------------------------------------------------------------------------
 #: Set True to produce a 3-D PyVista scene after the 2-D slice figure.
-PLOT3D = True
+PLOT3D = False
 
 #: Output file for the 3-D rendered view.
 #:   .vtu / .vtk → VTK unstructured-grid for ParaView (no rendering needed).
@@ -463,7 +498,7 @@ PLOT3D_VTU_FILE = WORK_DIR + "resistivity_block_iter0.vtu"
 PLOT3D_SCALAR = "log10_resistivity"
 
 #: Colour limits [vmin, vmax] for the scalar.  None → PyVista auto.
-PLOT3D_CLIM = [0.0, 4.0]       # log10(Ω·m)
+PLOT3D_CLIM = [0.0, 3.0]       # log10(Ω·m)
 
 #: Matplotlib / PyVista colormap for slices.
 PLOT3D_CMAP = "turbo_r"
@@ -555,15 +590,8 @@ ORIGIN_METHOD =  "box"   # None | "box" | "average"
 # Main
 # ===========================================================================
 
-# --- (1) Derive UTM zone from mesh-origin coordinates ---------------------
-UTM_ZONE, UTM_NORTHERN = utl.utm_zone_from_latlon(
-    UTM_ORIGIN_LAT, UTM_ORIGIN_LON, override=UTM_ZONE_OVERRIDE)
-hemi = "N" if UTM_NORTHERN else "S"
-print(f"UTM zone: {UTM_ZONE}{hemi}  "
-      f"(origin lat={UTM_ORIGIN_LAT:.4f}°, lon={UTM_ORIGIN_LON:.4f}°)")
-print()
-
-# --- (1b) Optionally estimate UTM_ORIGIN_E / UTM_ORIGIN_N from site.dat ---
+# --- (1) Optionally estimate UTM_ORIGIN_E / UTM_ORIGIN_N from site.dat ----
+#   Done first so that UTM_ORIGIN_LAT/LON are available for zone derivation.
 if ORIGIN_METHOD is not None:
     if SITE_DAT is None or not os.path.isfile(SITE_DAT):
         print(f"  WARNING: ORIGIN_METHOD={ORIGIN_METHOD!r} requested but "
@@ -584,10 +612,14 @@ if ORIGIN_METHOD is not None:
             else:
                 sys.exit(f"Unknown ORIGIN_METHOD {ORIGIN_METHOD!r}; "
                          f"use None, 'box', or 'average'.")
+            # Derive zone directly from site lat/lon (exact, no approximation).
+            _lats = np.array([d["lat"] for d in _sdat])
+            _lons = np.array([d["lon"] for d in _sdat])
+            UTM_ZONE, UTM_NORTHERN = utl.utm_zone_from_latlon(
+                float(_lats.mean()), float(_lons.mean()),
+                override=UTM_ZONE_OVERRIDE)
             UTM_ORIGIN_LAT, UTM_ORIGIN_LON = utl.utm_to_latlon_zn(
                 UTM_ORIGIN_E, UTM_ORIGIN_N, UTM_ZONE, UTM_NORTHERN)
-            UTM_ZONE, UTM_NORTHERN = utl.utm_zone_from_latlon(
-                UTM_ORIGIN_LAT, UTM_ORIGIN_LON, override=UTM_ZONE_OVERRIDE)
             if OUT:
                 print(f"Origin estimated ({ORIGIN_METHOD}, {len(_sdat)} sites):")
                 print(f"  UTM_ORIGIN_E   = {UTM_ORIGIN_E:.1f} m")
@@ -596,6 +628,14 @@ if ORIGIN_METHOD is not None:
                 print(f"  UTM_ORIGIN_LON = {UTM_ORIGIN_LON:.6f}°")
                 print(f"  UTM_ZONE       = {UTM_ZONE}{'N' if UTM_NORTHERN else 'S'}")
                 print()
+
+# --- (2) Derive UTM zone from finalised mesh-origin coordinates ------------
+UTM_ZONE, UTM_NORTHERN = utl.utm_zone_from_latlon(
+    UTM_ORIGIN_LAT, UTM_ORIGIN_LON, override=UTM_ZONE_OVERRIDE)
+hemi = "N" if UTM_NORTHERN else "S"
+print(f"UTM zone: {UTM_ZONE}{hemi}  "
+      f"(origin lat={UTM_ORIGIN_LAT:.4f}°, lon={UTM_ORIGIN_LON:.4f}°)")
+print()
 
 # --- (2) Resolve slice positions to model-local metres ---------------------
 slices_resolved = fem.resolve_slice_positions(
@@ -655,6 +695,7 @@ fviz.plot_model_slices(
     zlim=PLOT_ZLIM,
     ocean_color=PLOT_OCEAN_COLOR,
     ocean_value=OCEAN_RHO,
+    air_color=PLOT_AIR_COLOR,
     air_bgcolor=PLOT_AIR_BGCOLOR,
     site_xys=site_xys,
     obs_coords_only=_sites_from_obs,

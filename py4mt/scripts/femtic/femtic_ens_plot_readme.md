@@ -239,6 +239,11 @@ Identical format to `femtic_mod_plot.py`.  Four slice kinds:
 Position keys accept plain floats (model-local metres) or `(value, "crs")`
 tuples where `crs` is `"model"`, `"utm"`, or `"latlon"`.
 
+The optional `invert_x` key (bool, default `False`) applies to `ns`, `ew`,
+and `plane` panels: when `True`, the horizontal axis is flipped left-to-right
+after rendering, enabling comparison with sections from other software that
+uses the opposite orientation convention.  Has no effect on `map` panels.
+
 ```python
 PLOT_SLICES = [
     dict(kind="map",  z0=5000.0),
@@ -390,3 +395,4 @@ Environment variables `PY4MTX_ROOT` and `PY4MTX_DATA` must be set.
 | Date | Author | Note |
 |---|---|---|
 | 2026-05-24 | vrath / Claude Sonnet 4.6 | Created, based on `femtic_mod_plot.py` and `snippets.py` Snippet 1. `ENS_DIRS` + `BLOCK_PATTERN` + `ENS_ITER` replace the flat `ENS_FILES` list; glob expansion and label auto-derivation at runtime. Borehole step uses member 0 as reference model. |
+| 2026-05-31 | vrath / Claude Sonnet 4.6 (Anthropic) | `PLOT_SLICES`: documented optional `invert_x` key (bool, default `False`) for `ns`, `ew`, and `plane` panels — flips horizontal axis left-to-right for comparison with other software sections. |

@@ -5,7 +5,7 @@ Visualisation utilities for FEMTIC resistivity models.
 This module focuses on two complementary workflows:
 
 1. **Direct-from-FEMTIC files (no intermediate NPZ)**:
-   - ``mesh.dat`` + ``resistivity_block_iterX.dat`` → NumPy arrays / PyVista grid
+   - ``mesh.dat`` + ``resistivity_block_iterX.dat`` -> NumPy arrays / PyVista grid
    - Matplotlib map slices (XY at depth) and curtain slices (profile vs depth)
    - PyVista sampling on explicit slice surfaces
 
@@ -24,7 +24,7 @@ Provenance:
                         for RTO ensemble diagnostic plots.
     2026-03-29  Claude  Added n_sites parameter to plot_data_ensemble for
                         random site sub-sampling per row.
-                        Fixed ocean_value default: 1e-10 → 3e-1 Ohm.m in
+                        Fixed ocean_value default: 1e-10 -> 3e-1 Ohm.m in
                         prepare_rho_for_plotting and
                         unstructured_grid_from_femtic.
                         Added ocean_color parameter (default 'lightgrey') to
@@ -34,7 +34,7 @@ Provenance:
     2026-03-30  Claude  Fixed plot_data_ensemble: replaced non-existent
                         fem.read_observe() with fem.read_observe_dat();
                         added _observe_to_site_list() helper to flatten the
-                        nested blocks→sites structure and build Z/Z_err/T/P
+                        nested blocks->sites structure and build Z/Z_err/T/P
                         complex arrays for data_viz.datadict_to_plot_df;
                         plotter now iterates per-site rather than passing the
                         whole file dict; n_sites sub-sampling now operates on
@@ -92,7 +92,7 @@ Provenance:
                         plane slices, and iso-surfaces of any cell-data
                         scalar.  Outputs interactive HTML or static screenshot.
     2026-05-26  Claude Sonnet 4.6 (Anthropic)
-                        plot_model_3d: added vtu_file parameter — saves the
+                        plot_model_3d: added vtu_file parameter -- saves the
                         full unstructured grid (cell-centred) as .vtu/.vtk
                         for ParaView / Zenodo before any rendering.
                         plot_file=*.vtu/.vtk accepted directly (skips
@@ -112,7 +112,50 @@ Provenance:
                         rendering).
                         plot_model_slices: added alpha_file / alpha_mode for
                         polygon-level fading or blanking driven by a second
-                        block file (log10 values, <0 = suppress)."""
+                        block file (log10 values, <0 = suppress).
+    2026-05-31  vrath / Claude Sonnet 4.6 (Anthropic)
+                        plot_model_slices, plot_ensemble_slices: added
+                        per-panel ``invert_x`` key in slice-spec dicts for
+                        ns / ew / plane panels.  Calls ``ax.invert_xaxis()``
+                        after rendering, enabling left-right flip for direct
+                        comparison with sections from other software.
+                        Added highest-point lat/lon diagnostic print.
+    2026-05-31  vrath / Claude Sonnet 4.6 (Anthropic)
+                        plot_model_slices: actually removed the broken
+                        _outline_curtain_top calls from the ns and ew
+                        panel branches (the 2026-05-31 changelog entry
+                        above claimed removal but the calls were still
+                        present).  _outline_curtain_top drew one vertex
+                        per polygon connected in x-order, producing dense
+                        zigzag lines that appeared as vertical stripes
+                        across the full depth of curtain panels.
+                        The function definition is retained for reference
+                        but is no longer called.
+    2026-05-31  vrath / Claude Sonnet 4.6 (Anthropic)
+                        read_femtic_mesh: swapped node coordinate columns on
+                        read: FEMTIC stores nodes as (id, x=northing,
+                        y=easting, z-down); femtic_viz.py uses geographic
+                        convention ([:,0]=easting, [:,1]=northing).
+                        Confirmed from femtic_make_cutaway_imp.py which
+                        uses node_xyz[:,0] as horizontal axis of EW
+                        sections (= northing in FEMTIC) and [:,1] for
+                        map horizontal axis (= easting).
+                        read_femtic_mesh: fixed node and element readers to
+                        use the file index (parts[0]) rather than the
+                        sequential loop counter, matching femtic.py's
+                        read_femtic_mesh.  Same root cause as the
+                        resistivity-block bug: if nodes or elements are
+                        not stored in strict sequential order the previous
+                        code silently assigned coordinates / connectivity
+                        to the wrong indices.  _map_node helper removed
+                        (no longer needed).
+                        read_resistivity_block: fixed element->region and
+                        region->rho assignment to use the index from the
+                        file (parts[0]) rather than the sequential loop
+                        counter.  When elements or regions are not stored
+                        in strict order the previous code silently assigned
+                        resistivities to the wrong regions, producing
+                        scrambled / uniformly-conductive model plots."""
 
 from __future__ import annotations
 
@@ -232,18 +275,22 @@ def read_femtic_mesh(mesh_path: Union[str, Path]) -> FemticMesh:
             raise ValueError("Missing node count after 'TETRA' header.")
         nn = int(nn_line[0])
 
-        node_ids = np.empty(nn, dtype=int)
         nodes = np.empty((nn, 3), dtype=float)
-        for i in range(nn):
+        for _ in range(nn):
             parts = f.readline().split()
             if len(parts) < 4:
-                raise ValueError(f"Malformed node line {i+1}: {parts!r}")
-            node_ids[i] = int(parts[0])
-            nodes[i, 0] = float(parts[1])
-            nodes[i, 1] = float(parts[2])
-            nodes[i, 2] = float(parts[3])
+                raise ValueError(f"Malformed node line: {parts!r}")
+            idx = int(parts[0])
+            if not (0 <= idx < nn):
+                raise ValueError(f"Node index {idx} out of range 0..{nn-1}.")
+            # FEMTIC mesh stores nodes as (index, x=northing, y=easting, z=down).
+            # Remap to geographic convention used throughout femtic_viz.py:
+            #   nodes[:,0] = easting, nodes[:,1] = northing, nodes[:,2] = z-down.
+            nodes[idx, 0] = float(parts[2])   # easting  ← FEMTIC column y
+            nodes[idx, 1] = float(parts[1])   # northing ← FEMTIC column x
+            nodes[idx, 2] = float(parts[3])   # z positive-down (unchanged)
 
-        id2row = {int(nid): i for i, nid in enumerate(node_ids.tolist())}
+        id2row = {i: i for i in range(nn)}   # identity: file index == row index
 
         ne_line = f.readline().split()
         if not ne_line:
@@ -252,24 +299,15 @@ def read_femtic_mesh(mesh_path: Union[str, Path]) -> FemticMesh:
 
         conn = np.empty((nelem, 4), dtype=int)
 
-        def _map_node(nid: int) -> int:
-            """Map a FEMTIC node ID to row index."""
-            try:
-                return id2row[nid]
-            except KeyError as e:
-                # Conservative fallbacks for off-by-one variants
-                if (nid - 1) in id2row:
-                    return id2row[nid - 1]
-                if (nid + 1) in id2row:
-                    return id2row[nid + 1]
-                raise e
-
-        for i in range(nelem):
+        for _ in range(nelem):
             parts = f.readline().split()
             if len(parts) < 5:
-                raise ValueError(f"Malformed element line {i+1}: {parts!r}")
+                raise ValueError(f"Malformed element line: {parts!r}")
+            ie   = int(parts[0])
+            if not (0 <= ie < nelem):
+                raise ValueError(f"Element index {ie} out of range 0..{nelem-1}.")
             nids = [int(parts[-4]), int(parts[-3]), int(parts[-2]), int(parts[-1])]
-            conn[i, :] = [_map_node(n) for n in nids]
+            conn[ie, :] = nids   # node IDs == row indices after index-based node read
 
     return FemticMesh(nodes=nodes, conn=conn)
 
@@ -284,7 +322,7 @@ def read_resistivity_block(block_path: Union[str, Path]) -> FemticResistivityBlo
     Returns
     -------
     block
-        Parsed resistivity block (element→region and region properties).
+        Parsed resistivity block (element->region and region properties).
 
     Notes
     -----
@@ -308,31 +346,37 @@ def read_resistivity_block(block_path: Union[str, Path]) -> FemticResistivityBlo
         nreg = int(first[1])
 
         region_of_elem = np.empty(nelem, dtype=int)
-        for i in range(nelem):
+        for _ in range(nelem):
             parts = f.readline().split()
             if len(parts) < 2:
-                raise ValueError(f"Malformed element→region line {i+1}: {parts!r}")
-            region_of_elem[i] = int(parts[1])
+                raise ValueError(f"Malformed element->region line: {parts!r}")
+            ie   = int(parts[0])
+            ireg = int(parts[1])
+            if not (0 <= ie < nelem):
+                raise ValueError(f"Element index {ie} out of range 0..{nelem-1}.")
+            region_of_elem[ie] = ireg
 
-        region_rho = np.empty(nreg, dtype=float)
+        region_rho       = np.empty(nreg, dtype=float)
         region_rho_lower = np.empty(nreg, dtype=float)
         region_rho_upper = np.empty(nreg, dtype=float)
-        region_n = np.empty(nreg, dtype=float)
-        region_flag = np.empty(nreg, dtype=int)
+        region_n         = np.empty(nreg, dtype=float)
+        region_flag      = np.empty(nreg, dtype=int)
 
-        for i in range(nreg):
+        for _ in range(nreg):
             line = f.readline()
             if not line:
                 raise ValueError("Unexpected EOF while reading region lines.")
             parts = line.split()
             if len(parts) < 6:
                 raise ValueError(f"Region line has too few columns: {line!r}")
-            _ireg = int(parts[0])
-            region_rho[i] = float(parts[1])
-            region_rho_lower[i] = float(parts[2])
-            region_rho_upper[i] = float(parts[3])
-            region_n[i] = float(parts[4])
-            region_flag[i] = int(parts[5])
+            ireg = int(parts[0])
+            if not (0 <= ireg < nreg):
+                raise ValueError(f"Region index {ireg} out of range 0..{nreg-1}.")
+            region_rho[ireg]       = float(parts[1])
+            region_rho_lower[ireg] = float(parts[2])
+            region_rho_upper[ireg] = float(parts[3])
+            region_n[ireg]         = float(parts[4])
+            region_flag[ireg]      = int(parts[5])
 
     return FemticResistivityBlock(
         region_of_elem=region_of_elem,
@@ -412,8 +456,8 @@ def prepare_rho_for_plotting(
     air_is_nan
         If True, set all elements belonging to air region to NaN.
     ocean_value
-        If not None, set all ocean-region elements to this value (Ohm·m).
-        Default is 0.3 Ohm·m (typical seawater resistivity).
+        If not None, set all ocean-region elements to this value (Ohm*m).
+        Default is 0.3 Ohm*m (typical seawater resistivity).
         Set to None to keep original values.
     air_region_index, ocean_region_index
         Indices identifying air / ocean *in the region numbering*.
@@ -480,7 +524,7 @@ def unstructured_grid_from_arrays(
     rho_elem
         Optional element-wise resistivity, shape ``(nelem,)``.
     region_of_elem
-        Optional element→region mapping, shape ``(nelem,)`` (0- or 1-based).
+        Optional element->region mapping, shape ``(nelem,)`` (0- or 1-based).
         This will be attached as cell-data under the name ``"region"``.
     add_log10
         If True and ``rho_elem`` is provided, also attach ``"log10_resistivity"``.
@@ -992,9 +1036,9 @@ def plot_points_matplotlib(
         them visually distinct from the resistivity colour scale.
         Set to None to let ocean cells follow the normal colormap.
     ocean_value : float, optional
-        Resistivity value (Ohm·m) used to identify ocean cells.
+        Resistivity value (Ohm*m) used to identify ocean cells.
         Should match the value passed to :func:`prepare_rho_for_plotting`
-        (default 0.3 Ohm·m).
+        (default 0.3 Ohm*m).
     mesh_lines : bool, optional
         If ``True`` and ``mode="tri"``, overlay the triangulation edges
         (``ax.triplot``) on top of the filled patches.  Default ``False``.
@@ -1199,7 +1243,7 @@ def plot_map_grid_matplotlib(
         Ocean cells are identified by ``ocean_value`` before log10.
         Set to None to let them follow the colormap.
     ocean_value : float, optional
-        Resistivity (Ohm·m) marking ocean cells (default 0.3).
+        Resistivity (Ohm*m) marking ocean cells (default 0.3).
 
     Returns
     -------
@@ -1303,7 +1347,7 @@ def map_slice_from_cells(
         Forwarded to :func:`plot_points_matplotlib` or
         :func:`plot_map_grid_matplotlib`.  Set to None to use the colormap.
     ocean_value : float, optional
-        Resistivity (Ohm·m) identifying ocean cells (default 0.3).
+        Resistivity (Ohm*m) identifying ocean cells (default 0.3).
 
     Returns
     -------
@@ -1317,7 +1361,7 @@ def map_slice_from_cells(
     """
     if mode in ("scatter", "tri"):
         x, y, rho = map_slice_points_from_cells(mesh, rho_elem, z0=z0, dz=dz)
-        title = f"Map slice at z={z0} ± {dz} ({mode})"
+        title = f"Map slice at z={z0} +/- {dz} ({mode})"
         ax = plot_points_matplotlib(
             x,
             y,
@@ -1354,7 +1398,7 @@ def map_slice_from_cells(
             pad=grid_pad,
             max_dist=grid_max_dist,
         )
-        title = f"Map slice at z={z0} ± {dz} (IDW grid)"
+        title = f"Map slice at z={z0} +/- {dz} (IDW grid)"
         ax = plot_map_grid_matplotlib(
             xg, yg, V, log10=log10, ax=ax, cmap=cmap, title=title,
             ocean_color=ocean_color, ocean_value=ocean_value,
@@ -1462,7 +1506,7 @@ def curtain_from_cells(
         Forwarded to :func:`plot_points_matplotlib` or
         :func:`plot_curtain_matplotlib`.  Set to None to use the colormap.
     ocean_value : float, optional
-        Resistivity (Ohm·m) identifying ocean cells (default 0.3).
+        Resistivity (Ohm*m) identifying ocean cells (default 0.3).
 
     Returns
     -------
@@ -1484,7 +1528,7 @@ def curtain_from_cells(
             width=width,
             n_profile=n_profile,
         )
-        title = f"Curtain section (width ≤ {width}) ({mode})"
+        title = f"Curtain section (width <= {width}) ({mode})"
         ax = plot_points_matplotlib(
             scoord,
             z,
@@ -1693,7 +1737,7 @@ def plot_curtain_matplotlib(
         Ocean cells are identified by ``ocean_value`` before log10.
         Set to None to let them follow the colormap.
     ocean_value : float, optional
-        Resistivity (Ohm·m) marking ocean cells (default 0.3).
+        Resistivity (Ohm*m) marking ocean cells (default 0.3).
 
     Returns
     -------
@@ -1761,7 +1805,7 @@ def npz_to_unstructured_grid(
         If ``femtic.py`` cannot be imported or PyVista is unavailable.
     """
     if pv is None:  # pragma: no cover
-        raise ImportError("pyvista is required for NPZ→grid conversion.")
+        raise ImportError("pyvista is required for NPZ->grid conversion.")
 
     try:
         import femtic  # type: ignore
@@ -1776,7 +1820,7 @@ def npz_to_unstructured_grid(
 # =============================================================================
 
 _MU0 = 4.0e-7 * np.pi          # H/m
-_Z_SI_TO_MT = 1.0 / (_MU0 * 1.0e3)   # SI Ohm → mV/km/nT
+_Z_SI_TO_MT = 1.0 / (_MU0 * 1.0e3)   # SI Ohm -> mV/km/nT
 
 # ---------------------------------------------------------------------------
 # Component classification for marker differentiation
@@ -1784,12 +1828,12 @@ _Z_SI_TO_MT = 1.0 / (_MU0 * 1.0e3)   # SI Ohm → mV/km/nT
 
 #: Default marker symbols per component class.
 #: Keys: ``'ii'`` (diagonal: xx, yy), ``'ij'`` (off-diagonal: xy, yx),
-#: ``'inv'`` (invariants: det, bahr, ssq, …).
+#: ``'inv'`` (invariants: det, bahr, ssq, ...).
 #: Pass ``comp_markers=None`` to :func:`plot_data_ensemble` to disable markers.
 DEFAULT_COMP_MARKERS: dict = {
-    "ii":  "o",   # diagonal — circles
-    "ij":  "s",   # off-diagonal — squares
-    "inv": "^",   # invariants — triangles-up
+    "ii":  "o",   # diagonal -- circles
+    "ij":  "s",   # off-diagonal -- squares
+    "inv": "^",   # invariants -- triangles-up
 }
 
 # Set of recognised diagonal component labels (lowercase).
@@ -1824,11 +1868,11 @@ def _observe_to_site_list(
 
     Uses :func:`femtic.observe_to_site_viz_list` as the single authoritative
     reader so that apparent-resistivity computation uses the correct FEMTIC
-    unit convention (Z in SI Ω; ``rho_a = |Z|² / (μ₀ω)``).
+    unit convention (Z in SI Ohm; ``rho_a = |Z|^2 / (mu0omega)``).
 
     The returned dicts contain ``Z`` scaled to MT field units (mV/km/nT) so
-    that :func:`data_viz.datadict_to_plot_df` — which assumes field-unit Z
-    and applies ``rho = |Z|² × μ₀ × 10⁶ / ω`` — produces the right answer.
+    that :func:`data_viz.datadict_to_plot_df` -- which assumes field-unit Z
+    and applies ``rho = |Z|^2 x mu0 x 10^6 / omega`` -- produces the right answer.
     For VTF sites ``T`` is built from the raw data columns; for PT sites ``P``
     is built similarly.
 
@@ -1997,8 +2041,8 @@ def plot_data_ensemble(
         Period-axis limits ``(T_min, T_max)`` in seconds applied to every
         panel via ``ax.set_xlim``.  ``None`` = Matplotlib auto-scaling.
     rholims : (float, float) or None, optional
-        y-axis limits for ``'rho'`` panels (apparent resistivity, Ω·m or
-        log₁₀(Ω·m) depending on the plotter).  ``None`` = auto.
+        y-axis limits for ``'rho'`` panels (apparent resistivity, Ohm*m or
+        log10(Ohm*m) depending on the plotter).  ``None`` = auto.
     phslims : (float, float) or None, optional
         y-axis limits for ``'phase'`` panels (degrees).  ``None`` = auto.
     vtflims : (float, float) or None, optional
@@ -2007,7 +2051,7 @@ def plot_data_ensemble(
         y-axis limits for ``'pt'`` panels.  ``None`` = auto.
     figsize : (float, float) or None, optional
         Figure size.  Auto-sized if ``None``:
-        width ≈ 5 × n_panels, height ≈ 3 × n_samples.
+        width ~ 5 x n_panels, height ~ 3 x n_samples.
     fig : matplotlib.figure.Figure or None, optional
         Pre-existing figure.  If ``None`` a new one is created.
     axs : array-like of Axes or None, optional
@@ -2021,7 +2065,7 @@ def plot_data_ensemble(
     fig : matplotlib.figure.Figure
     axs : numpy.ndarray of matplotlib.axes.Axes
         Shape ``(n_samples, n_panels)``.  When *what* is a single string the
-        shape is ``(n_samples, 1)`` — index with ``axs[:, 0]`` if you need the
+        shape is ``(n_samples, 1)`` -- index with ``axs[:, 0]`` if you need the
         1-D array of rows.
 
     Notes
@@ -2035,7 +2079,7 @@ def plot_data_ensemble(
     with a one-time ``warnings.warn``.
 
     Data files are read via :func:`femtic.observe_to_site_viz_list` (through
-    ``_observe_to_site_list``).  FEMTIC stores Z in SI Ω; the helper converts
+    ``_observe_to_site_list``).  FEMTIC stores Z in SI Ohm; the helper converts
     to mV/km/nT before passing to ``data_viz.datadict_to_plot_df``.
     """
     plt_ = _require_mpl()
@@ -2058,7 +2102,7 @@ def plot_data_ensemble(
     }
 
     # ------------------------------------------------------------------
-    # Normalise 'what' → list of panel names; validate each entry.
+    # Normalise 'what' -> list of panel names; validate each entry.
     # ------------------------------------------------------------------
     if isinstance(what, str):
         what_list = [what]
@@ -2073,7 +2117,7 @@ def plot_data_ensemble(
     n_panels = len(what_list)
 
     # ------------------------------------------------------------------
-    # Normalise 'comps' → list of length n_panels.
+    # Normalise 'comps' -> list of length n_panels.
     # For tipper/pt entries the value is ignored but must be present.
     # ------------------------------------------------------------------
     _needs_comps = {"rho", "phase"}
@@ -2131,7 +2175,7 @@ def plot_data_ensemble(
         _markers = {**DEFAULT_COMP_MARKERS, **comp_markers}
 
     # ------------------------------------------------------------------
-    # Per-panel component lists (empty list → tipper/pt, no per-comp loop).
+    # Per-panel component lists (empty list -> tipper/pt, no per-comp loop).
     # ------------------------------------------------------------------
     _panel_comp_lists = []
     for w, c in zip(what_list, comps_list):
@@ -2142,7 +2186,7 @@ def plot_data_ensemble(
 
     # ------------------------------------------------------------------
     # Per-panel y-axis limit lookup.
-    # Maps panel type → the caller-supplied limit (or None = auto).
+    # Maps panel type -> the caller-supplied limit (or None = auto).
     # ------------------------------------------------------------------
     _ylim_map = {
         "rho":    rholims,
@@ -2154,7 +2198,7 @@ def plot_data_ensemble(
     # ------------------------------------------------------------------
     # error_style probe (once per panel plotter, shared warning state).
     # ------------------------------------------------------------------
-    _es_warned: dict = {}   # plotter_name → bool
+    _es_warned: dict = {}   # plotter_name -> bool
 
     def _error_style_kw(plotter: Any, style: str) -> dict:
         if style == "shade":
@@ -2298,7 +2342,7 @@ def plot_data_ensemble(
             if seen:
                 ax.legend(seen.values(), seen.keys(), fontsize=8)
 
-            # Axis limits — applied post-hoc so plotters can't override them.
+            # Axis limits -- applied post-hoc so plotters can't override them.
             if perlims is not None:
                 ax.set_xlim(perlims)
             _yl = _ylim_map.get(str(w).lower())
@@ -2307,7 +2351,7 @@ def plot_data_ensemble(
 
             # Column header on first row only.
             if row == 0:
-                ax.set_title(f"{w.capitalize()} — sample {idx}", fontsize=9)
+                ax.set_title(f"{w.capitalize()} -- sample {idx}", fontsize=9)
             else:
                 ax.set_title(f"Sample {idx}", fontsize=9)
 
@@ -2345,7 +2389,7 @@ def plot_model_ensemble(
 ) -> Tuple[Any, np.ndarray]:
     """Joint plot of original and perturbed resistivity models.
 
-    Produces a grid of Matplotlib axes: **rows** = 2 × number of selected
+    Produces a grid of Matplotlib axes: **rows** = 2 x number of selected
     samples (original row then perturbed row per block); **columns** = number
     of slices.  Original and perturbed models are placed directly above/below
     each other for easy visual comparison across all requested slices.
@@ -2384,11 +2428,11 @@ def plot_model_ensemble(
         Slice rendering mode forwarded to the slicer functions.  Default
         is ``'tri'``.
     log10 : bool, optional
-        Plot log₁₀(ρ) if ``True`` (default).
+        Plot log10(rho) if ``True`` (default).
     cmap : str or None, optional
         Matplotlib colormap (default ``'jet_r'``).
     clim : (float, float) or None, optional
-        Colour limits ``(vmin, vmax)`` in log₁₀(Ω·m).
+        Colour limits ``(vmin, vmax)`` in log10(Ohm*m).
         If ``None``, limits are derived from the original model.
     xlim : (float, float) or None, optional
         x-axis limits applied to **map** slices (easting range, metres).
@@ -2415,7 +2459,7 @@ def plot_model_ensemble(
         Flat colour for ocean cells across all panels (default ``'lightgrey'``).
         Forwarded to the slicer functions.  Set to None to use the colormap.
     ocean_value : float, optional
-        Resistivity (Ohm·m) identifying ocean cells (default 0.3).
+        Resistivity (Ohm*m) identifying ocean cells (default 0.3).
     figsize : (float, float) or None, optional
         Figure size in inches.  If ``None``, a sensible default is chosen.
     fig : matplotlib.figure.Figure or None, optional
@@ -2446,7 +2490,7 @@ def plot_model_ensemble(
     if n_samples == 0:
         raise ValueError("plot_model_ensemble: sample_indices is empty.")
     if not (1 <= n_slices <= 5):
-        raise ValueError("plot_model_ensemble: slices must have 1–5 entries.")
+        raise ValueError("plot_model_ensemble: slices must have 1-5 entries.")
 
     n_rows = 2 * n_samples
     if figsize is None:
@@ -2463,7 +2507,7 @@ def plot_model_ensemble(
                 f"expected ({n_rows}, {n_slices})."
             )
 
-    # Read mesh once — shared by all runs
+    # Read mesh once -- shared by all runs
     mesh = read_femtic_mesh(mesh_file)
     if out:
         print(f"plot_model_ensemble: mesh read from {mesh_file}")
@@ -2486,7 +2530,7 @@ def plot_model_ensemble(
 
     def _draw_slice(ax: Any, rho: np.ndarray, slc_spec: dict, title: str = "") -> None:
         """Dispatch one slice descriptor to the appropriate slicer and draw on ax."""
-        slc = dict(slc_spec)          # copy — we pop 'type' and axis-limit overrides
+        slc = dict(slc_spec)          # copy -- we pop 'type' and axis-limit overrides
         slc_type = slc.pop("type", "map").lower()
         # Per-slice axis-limit overrides take priority over function-level defaults
         slc_xlim = slc.pop("xlim", xlim)
@@ -2614,28 +2658,28 @@ def plot_model_3d(
         Paths to ``mesh.dat`` and ``resistivity_block_iterX.dat``.
     scalar
         Cell-data scalar to display.  ``"log10_resistivity"`` (default) or
-        ``"resistivity"``.  Must be present on the PyVista grid — both are
+        ``"resistivity"``.  Must be present on the PyVista grid -- both are
         attached by :func:`unstructured_grid_from_femtic`.
     clim
         Colour limits ``(vmin, vmax)`` for the scalar.
-        ``None`` → PyVista auto.
+        ``None`` -> PyVista auto.
     cmap
         Matplotlib / PyVista colormap name for slices (default ``"turbo_r"``).
     slice_x
         List of x-positions (model-local metres) at which to cut YZ planes.
-        ``None`` or empty → no x-slices.
+        ``None`` or empty -> no x-slices.
     slice_y
         List of y-positions (model-local metres) at which to cut XZ planes.
-        ``None`` or empty → no y-slices.
+        ``None`` or empty -> no y-slices.
     slice_z
         List of z-positions (model-local metres, z positive-down) at which
-        to cut XY planes.  ``None`` or empty → no z-slices.
+        to cut XY planes.  ``None`` or empty -> no z-slices.
     slice_planes
         List of dicts for arbitrary oblique planes.  Each dict may contain:
 
-        - ``"origin"`` : ``[x, y, z]`` — point on the plane (model-local m).
+        - ``"origin"`` : ``[x, y, z]`` -- point on the plane (model-local m).
           Defaults to mesh centre.
-        - ``"normal"`` : ``[nx, ny, nz]`` — plane normal vector.
+        - ``"normal"`` : ``[nx, ny, nz]`` -- plane normal vector.
           Defaults to ``[0, 1, 0]`` (YZ plane).
 
         Example::
@@ -2646,9 +2690,9 @@ def plot_model_3d(
 
     isovalues
         Scalar values at which to draw iso-surfaces.  For
-        ``scalar="log10_resistivity"`` these are in log10(Ω·m) — e.g.
-        ``[1.0, 2.0, 3.0]`` for 10 / 100 / 1000 Ω·m boundaries.
-        ``None`` or empty → no iso-surfaces.
+        ``scalar="log10_resistivity"`` these are in log10(Ohm*m) -- e.g.
+        ``[1.0, 2.0, 3.0]`` for 10 / 100 / 1000 Ohm*m boundaries.
+        ``None`` or empty -> no iso-surfaces.
     iso_opacity
         Opacity for iso-surfaces (0 = transparent, 1 = opaque).
     iso_cmap
@@ -2662,7 +2706,7 @@ def plot_model_3d(
     window_size
         Plotter window resolution ``(width, height)`` in pixels.
     ocean_value
-        Resistivity (Ω·m) used to sentinel-mark ocean cells in
+        Resistivity (Ohm*m) used to sentinel-mark ocean cells in
         :func:`prepare_rho_for_plotting`.
     air_region_index, ocean_region_index
         Region indices for air and ocean masking.
@@ -2678,12 +2722,12 @@ def plot_model_3d(
     plot_file
         Output path for the rendered view.  Recognised extensions:
 
-        - ``.vtu`` / ``.vtk``  → VTK unstructured-grid file of the full 3-D
+        - ``.vtu`` / ``.vtk``  -> VTK unstructured-grid file of the full 3-D
           volume (no rendering; same as setting ``vtu_file``).
-        - ``.html``  → interactive WebGL scene (requires ``pyvista[jupyter]``
+        - ``.html``  -> interactive WebGL scene (requires ``pyvista[jupyter]``
           / ``trame_vtk``; falls back to ``.png`` if unavailable).
-        - ``.png`` / ``.jpg`` / ``.svg`` → static screenshot.
-        - ``None``  → open an interactive PyVista window.
+        - ``.png`` / ``.jpg`` / ``.svg`` -> static screenshot.
+        - ``None``  -> open an interactive PyVista window.
 
     vtu_file
         If given, the full unstructured grid (all cell-data arrays, including
@@ -2691,10 +2735,10 @@ def plot_model_3d(
         unstructured-grid (``.vtu``) or legacy VTK (``.vtk``) file **in
         addition to** any ``plot_file`` output.  Suitable for ParaView,
         Zenodo data deposits, or publication supplementary material.
-        ``None`` → no grid export.
+        ``None`` -> no grid export.
 
     screenshot_scale
-        Anti-aliasing scale factor for screenshot modes (default 2 = 2× resolution).
+        Anti-aliasing scale factor for screenshot modes (default 2 = 2x resolution).
     out
         Print progress messages when ``True``.
 
@@ -2717,12 +2761,12 @@ def plot_model_3d(
                 "Install with:  conda install -c conda-forge pyvista"
             )
         if out:
-            print("  plot_model_3d: pyvista not available — skipped.")
+            print("  plot_model_3d: pyvista not available -- skipped.")
         return None
 
     plot_file = Path(plot_file) if plot_file is not None else None
 
-    # ── Build grid ────────────────────────────────────────────────────────────
+    # -- Build grid ------------------------------------------------------------
     if out:
         print(f"  3-D: building PyVista grid from {Path(block_file).name} ...")
     grid = unstructured_grid_from_femtic(
@@ -2739,7 +2783,7 @@ def plot_model_3d(
             f"Available: {list(grid.cell_data.keys())}"
         )
 
-    # ── Spatial clipping (cell-data grid, before save and rendering) ──────────
+    # -- Spatial clipping (cell-data grid, before save and rendering) ----------
     if any(lim is not None for lim in (xlim, ylim, zlim)):
         _gb = list(grid.bounds)   # [xmin,xmax, ymin,ymax, zmin,zmax]
         if xlim is not None:
@@ -2755,23 +2799,23 @@ def plot_model_3d(
         if out:
             print(f"  3-D: {grid.n_cells} cells after clipping")
 
-    # ── Optional VTK export (full 3-D volume, cell-centred) ───────────────────
+    # -- Optional VTK export (full 3-D volume, cell-centred) -------------------
     _vtu_suffixes = {".vtu", ".vtk"}
     vtu_file = Path(vtu_file) if vtu_file is not None else None
     if vtu_file is not None:
         grid.save(str(vtu_file))
         if out:
-            print(f"  3-D: VTK grid saved → {vtu_file}")
+            print(f"  3-D: VTK grid saved -> {vtu_file}")
 
     if plot_file is not None and plot_file.suffix.lower() in _vtu_suffixes:
         if vtu_file is None or vtu_file.resolve() != plot_file.resolve():
             grid.save(str(plot_file))
             if out:
-                print(f"  3-D: VTK grid saved → {plot_file}")
+                print(f"  3-D: VTK grid saved -> {plot_file}")
         return None
     grid = grid.cell_data_to_point_data()
 
-    # ── Plotter ───────────────────────────────────────────────────────────────
+    # -- Plotter ---------------------------------------------------------------
     off_screen = plot_file is not None
     pl = pv.Plotter(
         off_screen=off_screen,
@@ -2796,7 +2840,7 @@ def plot_model_3d(
         scalar_bar_args=scalar_bar_args,
     )
 
-    # ── Axis-aligned slices ───────────────────────────────────────────────────
+    # -- Axis-aligned slices ---------------------------------------------------
     n_slices = 0
 
     def _add_slice(origin, normal):
@@ -2831,7 +2875,7 @@ def plot_model_3d(
             print(f"    3-D: XY slice at z = {zpos:.0f} m ...")
         _add_slice([cx, cy, float(zpos)], [0, 0, 1])
 
-    # ── Arbitrary planes ──────────────────────────────────────────────────────
+    # -- Arbitrary planes ------------------------------------------------------
     for spec in (slice_planes or []):
         origin = spec.get("origin", [cx, cy, cz])
         normal = spec.get("normal", [0, 1, 0])
@@ -2839,7 +2883,7 @@ def plot_model_3d(
             print(f"    3-D: oblique slice origin={origin} normal={normal} ...")
         _add_slice(origin, normal)
 
-    # ── Iso-surfaces ──────────────────────────────────────────────────────────
+    # -- Iso-surfaces ----------------------------------------------------------
     for ival in (isovalues or []):
         if out:
             print(f"    3-D: iso-surface {scalar} = {ival:.2f} ...")
@@ -2860,14 +2904,14 @@ def plot_model_3d(
 
     if n_slices == 0 and not isovalues:
         if out:
-            print("  3-D: no slices or iso-surfaces defined — adding orthogonal default.")
+            print("  3-D: no slices or iso-surfaces defined -- adding orthogonal default.")
         slc = grid.slice_orthogonal()
         for s in slc:
             pl.add_mesh(s, **_slice_kwargs)
 
     pl.add_axes()
 
-    # ── Output ────────────────────────────────────────────────────────────────
+    # -- Output ----------------------------------------------------------------
     if plot_file is None:
         pl.show()
         return pl
@@ -2877,23 +2921,23 @@ def plot_model_3d(
         try:
             pl.export_html(str(plot_file))
             if out:
-                print(f"  3-D: interactive HTML saved → {plot_file}")
+                print(f"  3-D: interactive HTML saved -> {plot_file}")
         except ImportError:
             import warnings
             fallback = plot_file.with_suffix(".png")
             warnings.warn(
                 "trame_vtk not available (pyvista[jupyter] not installed); "
-                f"falling back to screenshot → {fallback}",
+                f"falling back to screenshot -> {fallback}",
                 ImportWarning,
                 stacklevel=2,
             )
             pl.screenshot(str(fallback), scale=screenshot_scale)
             if out:
-                print(f"  3-D: screenshot saved → {fallback}")
+                print(f"  3-D: screenshot saved -> {fallback}")
     else:
         pl.screenshot(str(plot_file), scale=screenshot_scale)
         if out:
-            print(f"  3-D: screenshot saved → {plot_file}")
+            print(f"  3-D: screenshot saved -> {plot_file}")
 
     pl.close()
     return pl
@@ -2915,6 +2959,7 @@ def plot_model_slices(
     zlim=None,
     ocean_color: Optional[str] = "lightgrey",
     ocean_value: float = 0.25,
+    air_color: Optional[str] = "white",
     air_bgcolor: Optional[str] = None,
     site_xys: Optional[list] = None,
     obs_coords_only: bool = False,
@@ -2944,11 +2989,13 @@ def plot_model_slices(
     alpha_file=None,
     alpha_mode: str = "fade",
     alpha_blank_thresh: float = 0.0,
+    mesh_outline: bool = True,
+    mesh_outline_color: str = "0.35",
     out: bool = True,
 ):
     """Produce a multi-panel figure of axis-parallel FEMTIC model slices.
 
-    Uses exact tetrahedron-plane intersection — no selection slab, no dw.
+    Uses exact tetrahedron-plane intersection -- no selection slab, no dw.
     Every tetrahedron straddling the plane contributes an exact triangle or
     quadrilateral polygon.
 
@@ -2970,14 +3017,19 @@ def plot_model_slices(
         Global axis limits (model-local m); per-panel ``"xlim"`` etc.
         override these.
     ocean_color
-        Flat colour for ocean polygon overlay; ``None`` → use colormap.
+        Flat colour for ocean polygon overlay; ``None`` -> use colormap.
     ocean_value
-        Ω·m sentinel for ocean cells (must match inversion setup).
+        Ohm*m sentinel for ocean cells (must match inversion setup).
+    air_color
+        Flat colour for air (above-ground) polygon overlay.  Every element
+        whose resistivity exceeds 1e8 Ohm*m is treated as air and rendered
+        in this colour (default ``"white"``).  ``None`` -> air polygons are
+        not drawn (old behaviour -- leaves blank gaps).
     air_bgcolor
         Axes facecolor for the air region; ``None`` = figure default.
     site_xys
         List of ``(label, x_m, y_m, elev_m)`` tuples in model-local
-        metres.  ``None`` / empty → no markers.
+        metres.  ``None`` / empty -> no markers.
     obs_coords_only
         ``True`` when *site_xys* come from ``observe.dat`` (model-local
         only); suppresses ``"utm"`` / ``"latlon"`` display for markers.
@@ -3004,11 +3056,11 @@ def plot_model_slices(
     utm_zone, utm_northern
         UTM zone number and hemisphere flag for coordinate formatting.
     utm_to_latlon_fn
-        Callable ``(E_m, N_m, zone, northern) → (lat, lon)`` used for
-        lat/lon tick formatting.  ``None`` → no lat/lon formatter.
+        Callable ``(E_m, N_m, zone, northern) -> (lat, lon)`` used for
+        lat/lon tick formatting.  ``None`` -> no lat/lon formatter.
     latlon_to_model_fn
         Callable ``(lat, lon, zone, northern, origin_e, origin_n)
-        → (x_m, y_m)`` used to place ``map_markers``.  ``None`` → markers
+        -> (x_m, y_m)`` used to place ``map_markers``.  ``None`` -> markers
         skipped when ``display_coords != "model"``.
     plot_file
         Save path; ``None`` = interactive ``show()``.
@@ -3022,7 +3074,7 @@ def plot_model_slices(
     horiz_km
         Show horizontal axes in km when ``display_coords="model"``.
     nrows, ncols
-        Subplot grid shape; ``None`` = 1 × n_panels.  Surplus cells hidden.
+        Subplot grid shape; ``None`` = 1 x n_panels.  Surplus cells hidden.
     panel_height
         Row height in inches.
     panel_width
@@ -3032,26 +3084,34 @@ def plot_model_slices(
     alpha_file
         Optional path to a second ``resistivity_block_iterX.dat`` file with
         the **same mesh and region structure** as ``model_file``.  Its
-        resistivity values are interpreted as **log₁₀ weights** (the raw
-        region_rho values are treated directly as log₁₀ numbers; values
-        < 0 suppress a polygon, values ≥ 0 keep it fully visible).
+        resistivity values are interpreted as **log10 weights** (the raw
+        region_rho values are treated directly as log10 numbers; values
+        < 0 suppress a polygon, values >= 0 keep it fully visible).
         Typical use: pass a misfit or sensitivity block whose values have
-        been stored in log₁₀ form so that cells with poor data coverage or
-        high misfit are faded or removed.  ``None`` → no alpha modulation.
+        been stored in log10 form so that cells with poor data coverage or
+        high misfit are faded or removed.  ``None`` -> no alpha modulation.
     alpha_mode
         How ``alpha_file`` values drive polygon visibility:
 
-        - ``"fade"``  — polygon alpha = ``clip(log10_val / alpha_blank_thresh, 0, 1)``
-          when ``alpha_blank_thresh < 0``; polygons with ``log10_val ≥ 0`` are
+        - ``"fade"``  -- polygon alpha = ``clip(log10_val / alpha_blank_thresh, 0, 1)``
+          when ``alpha_blank_thresh < 0``; polygons with ``log10_val >= 0`` are
           fully opaque, polygons with ``log10_val < alpha_blank_thresh`` are
           fully transparent.  Intermediate values produce proportional fading.
-        - ``"blank"`` — hard threshold: polygons with ``log10_val < alpha_blank_thresh``
+        - ``"blank"`` -- hard threshold: polygons with ``log10_val < alpha_blank_thresh``
           are omitted entirely; all others are fully opaque.
 
         Default ``"fade"``.
     alpha_blank_thresh
-        Log₁₀ threshold (≤ 0) below which polygons are blanked / fully faded.
-        Default ``0.0`` (any negative log₁₀ value triggers suppression).
+        Log10 threshold (<= 0) below which polygons are blanked / fully faded.
+        Default ``0.0`` (any negative log10 value triggers suppression).
+    mesh_outline
+        If ``True`` (default), draw a thin convex-hull outline around the
+        intersection polygons on **map** panels and a top-edge polyline on
+        **ns** / **ew** curtain panels.  This makes the data footprint visible
+        and distinguishes "above topography / outside mesh" from coloured data.
+        Requires SciPy (``ConvexHull``); silently skipped when absent.
+    mesh_outline_color
+        Matplotlib colour string for the outline (default ``"0.35"``).
     out
         Print progress messages.
     """
@@ -3061,13 +3121,13 @@ def plot_model_slices(
         import matplotlib.colors as mcolors
         from matplotlib.collections import PolyCollection
     except ImportError:
-        print("  plot_model_slices: Matplotlib not available — skipping.")
+        print("  plot_model_slices: Matplotlib not available -- skipping.")
         return
 
     _sm  = site_marker        or dict(marker="v", color="black", ms=4, zorder=10)
     _sms = site_marker_slices or dict(marker="o", color="black", ms=4, zorder=10)
 
-    # ── inner geometry helpers ────────────────────────────────────────────────
+    # -- inner geometry helpers ------------------------------------------------
 
     def _axis_slice_params(axis, val):
         normals = [np.array([1., 0., 0.]),
@@ -3119,7 +3179,7 @@ def plot_model_slices(
         return polys, np.asarray(vals, dtype=float), np.asarray(eidx, dtype=int)
 
     def _compute_poly_alphas(eidx, alpha_vals, mode, thresh):
-        """Return per-polygon alpha array (float, 0–1) or None."""
+        """Return per-polygon alpha array (float, 0-1) or None."""
         if alpha_vals is None or len(eidx) == 0:
             return None
         w = alpha_vals[eidx]          # log10 values at intersecting elements
@@ -3127,22 +3187,79 @@ def plot_model_slices(
             return (w >= thresh).astype(float)
         else:  # "fade"
             if thresh >= 0.0:
-                # thresh=0 → anything <0 fully transparent, >=0 fully opaque
+                # thresh=0 -> anything <0 fully transparent, >=0 fully opaque
                 return np.clip(w / min(thresh, -1e-9), 0.0, 1.0) if thresh < 0 \
                        else (w >= 0.0).astype(float)
             a = np.clip(w / thresh, 0.0, 1.0)   # thresh < 0
             return a
 
+    def _outline_convex_hull(ax, polys_display, color, zorder=5):
+        """Draw a thin convex-hull outline around all polygon vertices.
+
+        Used on map panels to delimit the data footprint so that blank
+        corners (above topography or outside mesh) are visually distinct
+        from coloured data.  Silently skipped when SciPy is absent or
+        fewer than 3 unique points exist.
+        """
+        if not polys_display:
+            return
+        try:
+            from scipy.spatial import ConvexHull  # type: ignore
+        except ImportError:
+            return
+        pts = np.array([pt for poly in polys_display for pt in poly])
+        if len(pts) < 3:
+            return
+        try:
+            hull = ConvexHull(pts)
+            hull_pts = pts[hull.vertices]
+            hull_closed = np.vstack([hull_pts, hull_pts[0]])
+            ax.plot(hull_closed[:, 0], hull_closed[:, 1],
+                    color=color, lw=0.6, zorder=zorder,
+                    linestyle="-", solid_capstyle="round")
+        except Exception:
+            return
+
+    def _outline_curtain_top(ax, polys_display, color, zorder=5):
+        """Draw a line along the shallowest (minimum-y) polygon vertices per
+        x-bin on curtain panels to show the topographic surface cut.
+
+        *polys_display* are 2-D polygons in (horiz, depth) display coords
+        where depth increases downward (positive y).  The top edge is the
+        minimum-y vertex in each polygon.  A sorted scatter of those minima
+        approximates the topographic surface on the curtain.
+        """
+        if not polys_display:
+            return
+        # Collect (x, min_depth) per polygon
+        top_pts = []
+        for poly in polys_display:
+            arr = np.array(poly)
+            # depth axis is y (index 1); min depth = shallowest (smallest y)
+            idx = int(np.argmin(arr[:, 1]))
+            top_pts.append(arr[idx])
+        if not top_pts:
+            return
+        top_pts = np.array(top_pts)
+        order = np.argsort(top_pts[:, 0])
+        tp = top_pts[order]
+        ax.plot(tp[:, 0], tp[:, 1],
+                color=color, lw=0.6, zorder=zorder,
+                linestyle="-", solid_capstyle="round")
+
     def _plot_slice_panel(ax, polys, vals, *, cmap_obj, norm,
-                          ocean_color, ocean_value, invert_v,
+                          ocean_color, ocean_value, air_color, invert_v,
                           poly_alphas=None):
         if not polys:
             return None
         with np.errstate(divide="ignore", invalid="ignore"):
             ov_log = math.log10(ocean_value) if ocean_value > 0 else float("nan")
-        is_ocean = np.isclose(vals, ov_log, atol=0.05)
-        is_air   = ~np.isfinite(vals)
-        is_data  = ~is_ocean & ~is_air
+        # Air: rho ~ 1e9 (flag=1, fixed at AIR_RHO); detect by threshold.
+        # vals are log10(rho); log10(1e8) = 8 is a safe threshold between
+        # any real rock resistivity and air.
+        is_air   = vals > 8.0
+        is_ocean = ~is_air & np.isfinite(vals) & np.isclose(vals, ov_log, atol=0.05)
+        is_data  = ~is_air & ~is_ocean & np.isfinite(vals)
 
         # Apply alpha blanking: treat alpha=0 polygons as air (skip them)
         if poly_alphas is not None:
@@ -3182,6 +3299,13 @@ def plot_model_slices(
                 facecolor=ocean_color, linewidths=0, zorder=3,
                 rasterized=True, alpha=_oc_alpha)
             ax.add_collection(oc)
+        if is_air.any() and air_color is not None:
+            air_idx = np.where(is_air)[0]
+            ac = PolyCollection(
+                [polys[i] for i in air_idx],
+                facecolor=air_color, linewidths=0, zorder=4,
+                rasterized=True)
+            ax.add_collection(ac)
         ax.autoscale_view()
         if invert_v:
             ax.invert_yaxis()
@@ -3200,7 +3324,7 @@ def plot_model_slices(
         v = np.cross(u, normal);   v /= np.linalg.norm(v)
         return u, v
 
-    # ── display offset / scale ────────────────────────────────────────────────
+    # -- display offset / scale ------------------------------------------------
     _disp = ("model" if (obs_coords_only and display_coords in ("utm", "latlon"))
              else display_coords)
     if obs_coords_only and display_coords in ("utm", "latlon") and out:
@@ -3213,7 +3337,7 @@ def plot_model_slices(
     elif _disp == "model" and horiz_km:
         sc, sfx = 1e-3, " [km]"
     elif _disp == "latlon":
-        sc, sfx = 1.0, " [°]"
+        sc, sfx = 1.0, " [ deg]"
     else:
         sc, sfx = 1.0, " [m]"
 
@@ -3235,12 +3359,16 @@ def plot_model_slices(
                  and _disp in ("model", "utm")
                  and _horiz_km_eff == depth_km)
 
-    # ── load model ────────────────────────────────────────────────────────────
+    # -- load model ------------------------------------------------------------
     if out:
         print(f"  plot: reading model {os.path.basename(str(model_file))}")
     mesh    = read_femtic_mesh(mesh_file)
     block   = read_resistivity_block(model_file)
     rho_elem = map_regions_to_element_rho(block.region_of_elem, block.region_rho)
+    # rho_plot: NaN for air, ocean sentinel replaced -- used for colormap norm only.
+    # _slice_geometry receives rho_elem (raw values) so every element is
+    # intersected; air elements (rho ~ 1e9) are then rendered white in
+    # _plot_slice_panel, not skipped.
     rho_plot = prepare_rho_for_plotting(
         rho_elem, air_is_nan=True, ocean_value=float(ocean_value),
         region_of_elem=block.region_of_elem)
@@ -3257,6 +3385,15 @@ def plot_model_slices(
         print(f"  plot: mesh highest point (non-air): "
               f"elev = {-_hp_z:.1f} m  "
               f"model-local x={_hp_x:.1f} m  y={_hp_y:.1f} m")
+        if utm_to_latlon_fn is not None:
+            try:
+                _hp_lat, _hp_lon = utm_to_latlon_fn(
+                    utm_origin_e + _hp_x, utm_origin_n + _hp_y,
+                    utm_zone, utm_northern)
+                print(f"  plot: mesh highest point (non-air): "
+                      f"lat={_hp_lat:.6f} deg  lon={_hp_lon:.6f} deg")
+            except Exception:
+                pass
         # Print mesh-centre coordinates in all available systems
         print(f"  plot: mesh centre  UTM E={utm_origin_e:.1f} m  "
               f"N={utm_origin_n:.1f} m  zone {utm_zone}"
@@ -3265,12 +3402,12 @@ def plot_model_slices(
             try:
                 _clat, _clon = utm_to_latlon_fn(
                     utm_origin_e, utm_origin_n, utm_zone, utm_northern)
-                print(f"  plot: mesh centre  lat={_clat:.6f}°  lon={_clon:.6f}°")
+                print(f"  plot: mesh centre  lat={_clat:.6f} deg  lon={_clon:.6f} deg")
             except Exception:
                 pass
         print(f"  plot: {len(slices)} panel(s), exact plane-intersection method")
 
-    # ── optional alpha / blanking file ────────────────────────────────────────
+    # -- optional alpha / blanking file ----------------------------------------
     _alpha_vals: Optional[np.ndarray] = None   # per-element log10 weights
     if alpha_file is not None:
         if out:
@@ -3285,7 +3422,7 @@ def plot_model_slices(
                 f"!= mesh element count ({conn.shape[0]})"
             )
 
-    # ── colormap / normalisation ──────────────────────────────────────────────
+    # -- colormap / normalisation ----------------------------------------------
     cmap_obj = matplotlib.colormaps[cmap].copy()
     cmap_obj.set_bad(alpha=0.0)
     if clim is not None:
@@ -3297,15 +3434,15 @@ def plot_model_slices(
         norm  = mcolors.Normalize(vmin=float(_lall.min()),
                                   vmax=float(_lall.max()))
 
-    # ── figure layout ─────────────────────────────────────────────────────────
+    # -- figure layout ---------------------------------------------------------
     n_panels = len(slices)
     _dz_sc   = 1e-3 if depth_km else 1.0
     _nrows   = int(nrows) if nrows is not None else 1
     _ncols   = int(ncols) if ncols is not None else n_panels
     if _nrows * _ncols < n_panels:
         raise ValueError(
-            f"plot_model_slices: grid {_nrows}×{_ncols} = {_nrows * _ncols} "
-            f"cells < {n_panels} slices — increase nrows/ncols.")
+            f"plot_model_slices: grid {_nrows}x{_ncols} = {_nrows * _ncols} "
+            f"cells < {n_panels} slices -- increase nrows/ncols.")
 
     if figsize is not None:
         _fig_w, _fig_h = float(figsize[0]), float(figsize[1])
@@ -3352,7 +3489,7 @@ def plot_model_slices(
 
     _site_xys = site_xys or []
 
-    # ── render each panel ─────────────────────────────────────────────────────
+    # -- render each panel -----------------------------------------------------
     for ax, spec in zip(axes, slices):
         kind  = spec.get("kind", "map")
         title = spec.get("title", None)
@@ -3364,12 +3501,12 @@ def plot_model_slices(
         if kind == "map":
             z0 = float(spec.get("z0", 0.0))
             if out:
-                print(f"    map slice z={z0:.0f} m …")
+                print(f"    map slice z={z0:.0f} m ...")
             normal = np.array([0., 0., 1.])
             point  = np.array([0., 0., z0])
             u_ax   = np.array([1., 0., 0.])
             v_ax   = np.array([0., 1., 0.])
-            polys, vals, eidx = _slice_geometry(nodes, conn, rho_plot,
+            polys, vals, eidx = _slice_geometry(nodes, conn, rho_elem,
                                           normal, point, u_ax, v_ax)
             polys_d = [[((px + dE)*sc, (py + dN)*sc) for px, py in poly]
                        for poly in polys]
@@ -3378,8 +3515,10 @@ def plot_model_slices(
             mappable = _plot_slice_panel(ax, polys_d, vals,
                                          cmap_obj=cmap_obj, norm=norm,
                                          ocean_color=ocean_color,
-                                         ocean_value=ocean_value, invert_v=False,
+                                         air_color=air_color, ocean_value=ocean_value, invert_v=False,
                                          poly_alphas=_pa)
+            if mesh_outline and polys_d:
+                _outline_convex_hull(ax, polys_d, mesh_outline_color)
             ax.set_xlabel(f"x (easting){sfx}")
             ax.set_ylabel(f"y (northing){sfx}")
             if _xlim is not None:
@@ -3416,10 +3555,11 @@ def plot_model_slices(
 
         elif kind == "ns":
             x0 = float(spec.get("x0", 0.0))
+            _invert_x = bool(spec.get("invert_x", False))
             if out:
-                print(f"    NS slice x={x0:.0f} m …")
+                print(f"    NS slice x={x0:.0f} m ...")
             normal, point, u_ax, v_ax, inv = _axis_slice_params(0, x0)
-            polys, vals, eidx = _slice_geometry(nodes, conn, rho_plot,
+            polys, vals, eidx = _slice_geometry(nodes, conn, rho_elem,
                                           normal, point, u_ax, v_ax)
             polys_d = [[((py + dN)*sc, -pz*_dz_sc) for py, pz in poly]
                        for poly in polys]
@@ -3428,7 +3568,7 @@ def plot_model_slices(
             mappable = _plot_slice_panel(ax, polys_d, vals,
                                          cmap_obj=cmap_obj, norm=norm,
                                          ocean_color=ocean_color,
-                                         ocean_value=ocean_value, invert_v=inv,
+                                         air_color=air_color, ocean_value=ocean_value, invert_v=inv,
                                          poly_alphas=_pa)
             ax.set_xlabel(f"y (northing){sfx}")
             ax.set_ylabel("depth (km)" if depth_km else "depth (m)")
@@ -3436,6 +3576,8 @@ def plot_model_slices(
                 ax.set_xlim([(v + dN)*sc for v in _ylim])
             if _zlim is not None:
                 ax.set_ylim([_zlim[1]*_dz_sc, _zlim[0]*_dz_sc])
+            if _invert_x:
+                ax.invert_xaxis()
             if _fmt_y is not None:
                 ax.xaxis.set_major_formatter(_fmt_y)
             if _do_equal:
@@ -3451,10 +3593,11 @@ def plot_model_slices(
 
         elif kind == "ew":
             y0 = float(spec.get("y0", 0.0))
+            _invert_x = bool(spec.get("invert_x", False))
             if out:
-                print(f"    EW slice y={y0:.0f} m …")
+                print(f"    EW slice y={y0:.0f} m ...")
             normal, point, u_ax, v_ax, inv = _axis_slice_params(1, y0)
-            polys, vals, eidx = _slice_geometry(nodes, conn, rho_plot,
+            polys, vals, eidx = _slice_geometry(nodes, conn, rho_elem,
                                           normal, point, u_ax, v_ax)
             polys_d = [[((px + dE)*sc, -pz*_dz_sc) for px, pz in poly]
                        for poly in polys]
@@ -3463,7 +3606,7 @@ def plot_model_slices(
             mappable = _plot_slice_panel(ax, polys_d, vals,
                                          cmap_obj=cmap_obj, norm=norm,
                                          ocean_color=ocean_color,
-                                         ocean_value=ocean_value, invert_v=inv,
+                                         air_color=air_color, ocean_value=ocean_value, invert_v=inv,
                                          poly_alphas=_pa)
             ax.set_xlabel(f"x (easting){sfx}")
             ax.set_ylabel("depth (km)" if depth_km else "depth (m)")
@@ -3471,6 +3614,8 @@ def plot_model_slices(
                 ax.set_xlim([(v + dE)*sc for v in _xlim])
             if _zlim is not None:
                 ax.set_ylim([_zlim[1]*_dz_sc, _zlim[0]*_dz_sc])
+            if _invert_x:
+                ax.invert_xaxis()
             if _fmt_x is not None:
                 ax.xaxis.set_major_formatter(_fmt_x)
             if _do_equal:
@@ -3488,18 +3633,19 @@ def plot_model_slices(
             _pt     = np.asarray(spec.get("point", [0., 0., 0.]), dtype=float)
             _strike = float(spec.get("strike", 0.0))
             _dip    = float(spec.get("dip", 90.0))
+            _invert_x = bool(spec.get("invert_x", False))
             if out:
-                print(f"    plane slice strike={_strike:.0f}° dip={_dip:.0f}° …")
+                print(f"    plane slice strike={_strike:.0f} deg dip={_dip:.0f} deg ...")
             normal = _strike_dip_to_normal(_strike, _dip)
             u_ax, v_ax = _plane_basis(normal)
-            polys, vals, eidx = _slice_geometry(nodes, conn, rho_plot,
+            polys, vals, eidx = _slice_geometry(nodes, conn, rho_elem,
                                           normal, _pt, u_ax, v_ax)
             _pa = _compute_poly_alphas(eidx, _alpha_vals, alpha_mode,
                                        alpha_blank_thresh)
             mappable = _plot_slice_panel(ax, polys, vals,
                                          cmap_obj=cmap_obj, norm=norm,
                                          ocean_color=ocean_color,
-                                         ocean_value=ocean_value, invert_v=True,
+                                         air_color=air_color, ocean_value=ocean_value, invert_v=True,
                                          poly_alphas=_pa)
             ax.set_xlabel("along-strike (m)")
             ax.set_ylabel("down-dip (km)" if depth_km else "down-dip (m)")
@@ -3507,8 +3653,10 @@ def plot_model_slices(
                 ax.set_xlim(_xlim)
             if _ylim is not None:
                 ax.set_ylim(_ylim)
+            if _invert_x:
+                ax.invert_xaxis()
             if title is None:
-                title = f"Plane  str={_strike:.0f}°  dip={_dip:.0f}°"
+                title = f"Plane  str={_strike:.0f} deg  dip={_dip:.0f} deg"
             if sites_in_slices:
                 for sn, sx_m, sy_m, _elev in _site_xys:
                     site_xyz  = np.array([sx_m, sy_m, -_elev]) - _pt
@@ -3521,12 +3669,12 @@ def plot_model_slices(
 
         else:
             ax.set_visible(False)
-            print(f"  plot: unknown slice kind {kind!r} — skipped.")
+            print(f"  plot: unknown slice kind {kind!r} -- skipped.")
             continue
 
         if mappable is not None:
             cb = fig.colorbar(mappable, ax=ax, fraction=0.046, pad=0.04)
-            cb.set_label("log₁₀(ρ / Ω·m)", fontsize=8)
+            cb.set_label("log10(rho / Ohm*m)", fontsize=8)
             cb.ax.tick_params(labelsize=7)
 
         ax.set_title(title, fontsize=9)
@@ -3547,7 +3695,7 @@ def plot_model_slices(
     if plot_file is not None:
         fig.savefig(plot_file, dpi=dpi, bbox_inches="tight")
         if out:
-            print(f"  plot: saved → {plot_file}")
+            print(f"  plot: saved -> {plot_file}")
     else:
         plt.show()
 
@@ -3570,7 +3718,7 @@ def plot_borehole_logs(
     dpi: int = 200,
     out: bool = True,
 ):
-    """Produce a 1-D log₁₀(ρ) vs depth figure for a list of boreholes.
+    """Produce a 1-D log10(rho) vs depth figure for a list of boreholes.
 
     Resistivity is sampled at regular depth intervals using
     ``fem.extract_borehole_log`` (point-in-element, exact barycentric test).
@@ -3587,19 +3735,19 @@ def plot_borehole_logs(
         returned by *resolve_xy_fn*), ``"z_top"``, ``"z_bot"``, ``"dz"``
         (all in model-local metres, z positive-down).
     resolve_xy_fn
-        Optional callable ``(spec) → (x_m, y_m)`` that converts the
+        Optional callable ``(spec) -> (x_m, y_m)`` that converts the
         ``"x"`` / ``"y"`` fields of each spec dict from whatever coordinate
         system is used in the config to model-local metres.
-        ``None`` → ``x`` / ``y`` must already be plain floats in
+        ``None`` -> ``x`` / ``y`` must already be plain floats in
         model-local metres.
     ocean_value
-        Ω·m sentinel for ocean cells.
+        Ohm*m sentinel for ocean cells.
     clim
         ``[log10_min, log10_max]`` for the x-axis; ``None`` = auto.
     borehole_style
         Matplotlib line kwargs applied to every trace.
     shared
-        ``True`` → all boreholes on one axes; ``False`` → one panel each.
+        ``True`` -> all boreholes on one axes; ``False`` -> one panel each.
     plot_file
         Save path; ``None`` = interactive ``show()``.
     dpi
@@ -3609,17 +3757,17 @@ def plot_borehole_logs(
     """
     if not borehole_sites:
         if out:
-            print("  plot_borehole_logs: borehole_sites is empty — skipping.")
+            print("  plot_borehole_logs: borehole_sites is empty -- skipping.")
         return
     try:
         import matplotlib.pyplot as plt
     except ImportError:
-        print("  plot_borehole_logs: Matplotlib not available — skipping.")
+        print("  plot_borehole_logs: Matplotlib not available -- skipping.")
         return
     try:
         import femtic as _fem
     except ImportError:
-        print("  plot_borehole_logs: femtic module not available — skipping.")
+        print("  plot_borehole_logs: femtic module not available -- skipping.")
         return
 
     if out:
@@ -3668,7 +3816,7 @@ def plot_borehole_logs(
     for i, (log, ax) in enumerate(zip(logs, ax_arr)):
         depth_km = log["depths"] / 1000.0
         ax.plot(log["log_rho"], depth_km, label=log["name"], **style)
-        ax.set_xlabel("log₁₀(ρ / Ω·m)")
+        ax.set_xlabel("log10(rho / Ohm*m)")
         ax.set_ylabel("depth (km)")
         ax.invert_yaxis()
         if clim is not None:
@@ -3688,7 +3836,7 @@ def plot_borehole_logs(
     if plot_file is not None:
         fig.savefig(plot_file, dpi=dpi, bbox_inches="tight")
         if out:
-            print(f"  boreholes: saved → {plot_file}")
+            print(f"  boreholes: saved -> {plot_file}")
     else:
         plt.show()
 
@@ -3720,8 +3868,8 @@ def plot_ensemble_slices(
     """Produce a joint ensemble figure using exact tetrahedron-plane intersection.
 
     Layout: one row per ensemble member, followed by optional statistical
-    summary rows (mean, std, median of log₁₀(ρ) across all members).
-    Columns correspond to the entries of *slices* — the same slice-spec list
+    summary rows (mean, std, median of log10(rho) across all members).
+    Columns correspond to the entries of *slices* -- the same slice-spec list
     used by ``femtic_mod_plot.plot_model_slices``.
 
     The mesh is parsed **once** and slice polygon geometry is precomputed
@@ -3742,7 +3890,7 @@ def plot_ensemble_slices(
         Optional per-panel ``xlim`` / ``ylim`` / ``zlim`` / ``title`` keys are
         honoured.
     labels
-        Row label strings, one per member.  ``None`` → "Member 0", "Member 1", …
+        Row label strings, one per member.  ``None`` -> "Member 0", "Member 1", ...
     stat_rows
         Stat-summary rows appended after all member rows.  Any subset of
         ``"mean"``, ``"std"``, ``"median"`` in any order.  Pass ``()`` for no
@@ -3750,17 +3898,17 @@ def plot_ensemble_slices(
     cmap
         Matplotlib colormap name for member and mean/median rows.
     clim
-        ``[vmin, vmax]`` in log₁₀(Ω·m).  ``None`` → auto from ensemble range.
+        ``[vmin, vmax]`` in log10(Ohm*m).  ``None`` -> auto from ensemble range.
     xlim, ylim, zlim
         Global axis limits in model-local metres; per-panel keys override.
     ocean_color
-        Flat colour for ocean/lake cells.  ``None`` → use colormap.
+        Flat colour for ocean/lake cells.  ``None`` -> use colormap.
     ocean_value
-        Resistivity sentinel (Ω·m) identifying ocean cells (default 0.25 Ω·m).
+        Resistivity sentinel (Ohm*m) identifying ocean cells (default 0.25 Ohm*m).
     air_bgcolor
         Axes facecolor shown through transparent air cells.  ``None`` = figure default.
     plot_file
-        Joint figure output path.  ``None`` → interactive ``plt.show()``.
+        Joint figure output path.  ``None`` -> interactive ``plt.show()``.
     per_member_file
         If ``True`` and *plot_file* is set, also save one single-row figure per
         member.  File names are derived from *plot_file* by inserting
@@ -3773,7 +3921,7 @@ def plot_ensemble_slices(
     Notes
     -----
     The ``"std"`` row is rendered on a separate sequential colormap (``cividis``)
-    anchored at zero — because standard deviation is always non-negative and
+    anchored at zero -- because standard deviation is always non-negative and
     has a different physical meaning from resistivity.  Mean and median rows
     share the main colormap / clim.
     """
@@ -3793,7 +3941,7 @@ def plot_ensemble_slices(
     member_files = list(member_files)
     if not member_files:
         if out:
-            print("  plot_ensemble_slices: member_files is empty — skipping.")
+            print("  plot_ensemble_slices: member_files is empty -- skipping.")
         return
 
     n_members = len(member_files)
@@ -3808,7 +3956,7 @@ def plot_ensemble_slices(
         if len(labels) < n_members:
             labels += [f"Member {i}" for i in range(len(labels), n_members)]
 
-    # ── geometry helpers ─────────────────────────────────────────────────────
+    # -- geometry helpers -----------------------------------------------------
 
     def _tet_plane_intersection(verts, normal, d):
         dots = verts @ normal - d
@@ -3903,16 +4051,16 @@ def plot_ensemble_slices(
             cb.set_label(cb_label, fontsize=7)
             cb.ax.tick_params(labelsize=6)
 
-    # ── load mesh ─────────────────────────────────────────────────────────────
+    # -- load mesh -------------------------------------------------------------
     if out:
         print(f"  ensemble: reading mesh {Path(mesh_file).name}")
     mesh  = read_femtic_mesh(mesh_file)
     nodes = mesh.nodes
     conn  = mesh.conn
 
-    # ── precompute slice geometry once ────────────────────────────────────────
+    # -- precompute slice geometry once ----------------------------------------
     if out:
-        print(f"  ensemble: precomputing geometry for {n_slices} slice(s) …")
+        print(f"  ensemble: precomputing geometry for {n_slices} slice(s) ...")
     slice_geom = []
     for spec in slices:
         kind       = spec.get("kind", "map")
@@ -3930,6 +4078,7 @@ def plot_ensemble_slices(
             polys, eidx = _slice_geometry_indices(nodes, conn, normal, point, u_ax, v_ax)
             title_tmpl  = title_tmpl or f"Map  z = {z0/1000:.1f} km"
             slice_geom.append(dict(polys=polys, eidx=eidx, invert_v=False,
+                                   invert_x=bool(spec.get("invert_x", False)),
                                    xlabel="x (easting) [m]", ylabel="y (northing) [m]",
                                    xlim=_xlim, ylim=_ylim, zlim=None, title=title_tmpl))
 
@@ -3939,6 +4088,7 @@ def plot_ensemble_slices(
             polys, eidx = _slice_geometry_indices(nodes, conn, normal, point, u_ax, v_ax)
             title_tmpl  = title_tmpl or f"N-S  x = {x0/1000:.1f} km"
             slice_geom.append(dict(polys=polys, eidx=eidx, invert_v=inv,
+                                   invert_x=bool(spec.get("invert_x", False)),
                                    xlabel="y (northing) [m]", ylabel="depth [m]",
                                    xlim=_ylim, ylim=None, zlim=_zlim, title=title_tmpl))
 
@@ -3948,6 +4098,7 @@ def plot_ensemble_slices(
             polys, eidx = _slice_geometry_indices(nodes, conn, normal, point, u_ax, v_ax)
             title_tmpl  = title_tmpl or f"E-W  y = {y0/1000:.1f} km"
             slice_geom.append(dict(polys=polys, eidx=eidx, invert_v=inv,
+                                   invert_x=bool(spec.get("invert_x", False)),
                                    xlabel="x (easting) [m]", ylabel="depth [m]",
                                    xlim=_xlim, ylim=None, zlim=_zlim, title=title_tmpl))
 
@@ -3958,18 +4109,19 @@ def plot_ensemble_slices(
             normal  = _strike_dip_to_normal(_strike, _dip)
             u_ax, v_ax = _plane_basis(normal)
             polys, eidx = _slice_geometry_indices(nodes, conn, normal, _pt, u_ax, v_ax)
-            title_tmpl  = title_tmpl or f"Plane  str={_strike:.0f}°  dip={_dip:.0f}°"
+            title_tmpl  = title_tmpl or f"Plane  str={_strike:.0f} deg  dip={_dip:.0f} deg"
             slice_geom.append(dict(polys=polys, eidx=eidx, invert_v=True,
+                                   invert_x=bool(spec.get("invert_x", False)),
                                    xlabel="along-strike [m]", ylabel="down-dip [m]",
                                    xlim=_xlim, ylim=_ylim, zlim=None, title=title_tmpl))
         else:
             if out:
-                print(f"  ensemble: unknown slice kind {kind!r} — skipped.")
+                print(f"  ensemble: unknown slice kind {kind!r} -- skipped.")
             slice_geom.append(None)
 
-    # ── load all member resistivities ─────────────────────────────────────────
+    # -- load all member resistivities -----------------------------------------
     if out:
-        print(f"  ensemble: loading {n_members} member(s) …")
+        print(f"  ensemble: loading {n_members} member(s) ...")
     n_elem    = conn.shape[0]
     log_stack = np.full((n_members, n_elem), np.nan, dtype=float)
     rho_plots: list = []
@@ -3988,7 +4140,7 @@ def plot_ensemble_slices(
         with np.errstate(divide="ignore", invalid="ignore"):
             log_stack[i] = np.where(rho_plot > 0, np.log10(rho_plot), np.nan)
 
-    # ── stat arrays (log10 space) ─────────────────────────────────────────────
+    # -- stat arrays (log10 space) ---------------------------------------------
     stat_arrays: dict = {}
     with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
         if "mean"   in stat_rows:
@@ -3998,7 +4150,7 @@ def plot_ensemble_slices(
         if "median" in stat_rows:
             stat_arrays["median"] = np.nanmedian(log_stack, axis=0)
 
-    # ── colormap / normalisation ──────────────────────────────────────────────
+    # -- colormap / normalisation ----------------------------------------------
     def _get_cmap(name):
         obj = (mcm.colormaps[name].copy() if hasattr(mcm, "colormaps")
                else mcm.get_cmap(name).copy())
@@ -4022,11 +4174,11 @@ def plot_ensemble_slices(
         if _sv.size > 0:
             std_norm = mcolors.Normalize(vmin=0.0, vmax=float(np.nanmax(_sv)))
 
-    # ── helper: render one full row ───────────────────────────────────────────
+    # -- helper: render one full row -------------------------------------------
     def _render_row(fig_ref, axes_row, log_elem, row_label, *, use_std=False):
         _norm     = std_norm if use_std else norm
         _cmap_obj = std_cmap if use_std else cmap_obj
-        _cb_label = "std  log₁₀(ρ)" if use_std else "log₁₀(ρ / Ω·m)"
+        _cb_label = "std  log10(rho)" if use_std else "log10(rho / Ohm*m)"
 
         for col, sg in enumerate(slice_geom):
             ax = axes_row[col]
@@ -4052,11 +4204,13 @@ def plot_ensemble_slices(
             if _xl is not None: ax.set_xlim(_xl)
             if _yl is not None: ax.set_ylim(_yl)
             if _zl is not None: ax.set_ylim([_zl[1], _zl[0]])
+            if sg.get("invert_x", False):
+                ax.invert_xaxis()
 
-    # ── build joint figure ────────────────────────────────────────────────────
+    # -- build joint figure ----------------------------------------------------
     if out:
         print(f"  ensemble: building joint figure "
-              f"({n_rows} rows × {n_slices} cols) …")
+              f"({n_rows} rows x {n_slices} cols) ...")
     fig, axes = plt.subplots(
         n_rows, n_slices,
         figsize=(4.5 * n_slices, 3.5 * n_rows),
@@ -4087,11 +4241,11 @@ def plot_ensemble_slices(
     if plot_file is not None:
         fig.savefig(str(plot_file), dpi=dpi, bbox_inches="tight")
         if out:
-            print(f"  ensemble: joint figure saved → {plot_file}")
+            print(f"  ensemble: joint figure saved -> {plot_file}")
     else:
         plt.show()
 
-    # ── per-member figures ────────────────────────────────────────────────────
+    # -- per-member figures ----------------------------------------------------
     if per_member_file and plot_file is not None:
         _stem, _ext = os.path.splitext(str(plot_file))
         for i, (mf, lbl, rho_plot) in enumerate(zip(member_files, labels, rho_plots)):
@@ -4107,14 +4261,14 @@ def plot_ensemble_slices(
                 log_elem = np.where(rho_plot > 0, np.log10(rho_plot), np.nan)
             _render_row(fig_m, axes_m[0], log_elem, lbl)
             fig_m.suptitle(
-                f"Ensemble member {i}  —  {Path(mf).name}", fontsize=10
+                f"Ensemble member {i}  --  {Path(mf).name}", fontsize=10
             )
             fig_m.tight_layout()
             per_path = f"{_stem}_member{i}{_ext}"
             fig_m.savefig(per_path, dpi=dpi, bbox_inches="tight")
             plt.close(fig_m)
             if out:
-                print(f"  ensemble: member {i} saved → {per_path}")
+                print(f"  ensemble: member {i} saved -> {per_path}")
 
     plt.close(fig)
     if out:
