@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-femtic_mod_plot.py — Read and plot slice panels of a FEMTIC resistivity model.
+femtic_mod_plot_slice.py — 2-D slice panels and borehole logs for a FEMTIC
+resistivity model.
 
-Optionally reads one site position from observe.dat (given its site number)
-and overplots it on every relevant panel.  The site's model-local coordinates
-(km) are converted to UTM metres using a user-supplied UTM origin for the
-mesh centre.
+Produces:
+  • One figure with horizontal map, N-S curtain, E-W curtain, and/or arbitrary
+    plane slices using exact tetrahedron-plane intersection (``fviz.plot_model_slices``).
+  • Optionally an additional 1-D ρ(z) borehole figure (``fviz.plot_borehole_logs``).
+
+Sister script ``femtic_mod_plot_3d.py`` handles the PyVista 3-D rendering and
+VTK/VTU export from the same mesh and block file.
 
 Slice positions can be given in three equivalent systems
 ---------------------------------------------------------
@@ -50,7 +54,7 @@ Examples (inside PLOT_SLICES)
 
     # Arbitrary plane through a geographic point:
     dict(kind="plane",
-         point=([−71.5, −16.4, 5000.0], "latlon"),
+         point=([-71.5, -16.4, 5000.0], "latlon"),
          strike=45., dip=70.)
 
 UTM zone derivation
@@ -63,6 +67,7 @@ Display coordinate system
 --------------------------
     DISPLAY_COORDS = "model"  — axis ticks in model-local metres (default)
     DISPLAY_COORDS = "utm"    — axis ticks in absolute UTM metres
+    DISPLAY_COORDS = "latlon" — axis ticks in decimal degrees
 
 Provenance
 ----------
@@ -77,108 +82,39 @@ Provenance
     2026-05-13  vrath / Claude Sonnet 4.6   Harmonised plotting config block
                 with femtic_mod_edit.py: unified variable names, comments,
                 and section header.
-    2026-05-13  vrath / Claude Sonnet 4.6   Added 3-D PyVista plot step (5):
-                PLOT3D config block with axis-aligned x/y/z slices, oblique
-                planes, and iso-surfaces via fviz.plot_model_3d.  Output:
-                interactive HTML or static screenshot.
-
     2026-05-16  vrath / Claude Sonnet 4.6   Added borehole resistivity log
-                step (7): _point_in_tet (barycentric), extract_borehole_log
-                (bbox pre-filter + exact test), plot_borehole_logs; BOREHOLE_*
-                config block; CRS tagging (model/utm/latlon) on x/y positions.
-    2026-05-23  vrath / Claude Sonnet 4.6   Moved pure geographic helpers
-                (_latlon_to_utm, _utm_to_latlon, _utm_zone_from_origin) to
-                util.py (utm_zone_from_latlon, latlon_to_utm_zn,
-                utm_to_latlon_zn).  Moved model-local helpers (_utm_to_model,
-                _latlon_to_model, _parse_pos, _resolve_x0/y0/point,
-                resolve_slices) to femtic.py (utm_to_model, latlon_to_model,
-                parse_pos_crs, resolve_pos_x/y/point, resolve_slice_positions).
-                Script-level functions are now thin wrappers that supply the
-                module globals.  Imported femtic as fem.
-                SITE_NUMBER now accepts a list; plot_model_slices takes
-                site_xys [(sn, x_m, y_m), …] and loops over all sites.
-    2026-05-23  vrath / Claude Sonnet 4.6   SITE_DAT now uses the
-                mt_make_sitelist.py CSV format (name, lat, lon, elev,
-                sitenum, easting, northing); replaces SITELIST_FILE.
-                read_site_dat() rewritten accordingly; read_sitelist()
-                removed.  estimate_utm_origin kwarg renamed site_dat;
-                bounding-box origin method wired to read_site_dat().
-    2026-05-23  vrath / Claude Sonnet 4.6   PLOT_EQUAL_ASPECT config flag;
-                equal_aspect kwarg in plot_model_slices; set_aspect("equal",
-                adjustable="box") on map/ns/ew panels when DISPLAY_COORDS is
-                model or utm; figsize auto-computed from xlim/ylim/zlim ratios.
-    2026-05-24  vrath / Claude Sonnet 4.6   Removed ENS_* config block and
-                step (6) ensemble plot; moved to snippets.py.  Step (7)
-                borehole log renumbered to step (6).
+                step: BOREHOLE_* config block; CRS tagging on x/y positions.
+    2026-05-23  vrath / Claude Sonnet 4.6   Moved pure geographic helpers to
+                util.py; model-local helpers to femtic.py.  Script-level
+                wrappers delegate to both.  SITE_NUMBER accepts list.
+    2026-05-23  vrath / Claude Sonnet 4.6   SITE_DAT in mt_make_sitelist.py
+                CSV format; read_site_dat() rewritten.
+    2026-05-23  vrath / Claude Sonnet 4.6   PLOT_EQUAL_ASPECT config flag.
+    2026-05-24  vrath / Claude Sonnet 4.6   Removed ENS_* block (moved to
+                snippets.py).
     2026-05-24  vrath / Claude Sonnet 4.6   Moved read_site_position(),
                 read_site_dat(), estimate_utm_origin(), _point_in_tet(),
-                extract_borehole_log() to femtic.py; script calls fem.*
-                directly.  import data_proc as dp removed.
-    2026-05-25  vrath / Claude Sonnet 4.6   Added PLOT_SITES master switch.
-                Site markers (inverted triangle, depth=0) now on all panel
-                kinds incl. plane (along-strike projection via u-axis dot
-                product).  Legend guard extended to "plane".
-    2026-05-25  vrath / Claude Sonnet 4.6   Replaced ESTIMATE_ORIGIN /
-                CALIBRATION_SITES / UPDATE_CONFIG with ORIGIN_METHOD
-                (None | "box" | "average").  Origin estimated from SITE_DAT
-                UTM coords only; observe.dat fallback is model-local only.
-    2026-05-25  vrath / Claude Sonnet 4.6   UTM display mode now in km
-                (_display_scale 1e-3).  Curtain/plane site markers at true
-                mesh surface (z_surf = nodes[:,2].min()) not depth=0.
-                PROJECTION_DIST filters sites per curtain/plane panel.
-                DISPLAY_COORDS utm/latlon suppressed when sites from
-                observe.dat (obs_coords_only flag).
-    2026-05-25  vrath / Claude Sonnet 4.6   DEPTH_KM flag for km depth axis
-                on curtain/plane panels.  PLOT_PANEL_HEIGHT, PLOT_PANEL_WIDTH,
-                PLOT_FIGSIZE config vars; passed to plot_model_slices as
-                panel_height, panel_width, figsize.  Aspect-ratio auto-width
-                accounts for depth_km and horizontal sc scales.
-    2026-05-25  vrath / Claude Sonnet 4.6   HORIZ_KM flag: km on horizontal
-                axes in "model" mode.  PLOT_NROWS / PLOT_NCOLS grid layout;
-                subplots flattened to 1-D, surplus cells hidden.  _do_equal
-                checks horiz/vert km consistency.
-    2026-05-25  vrath / Claude Sonnet 4.6   Sites removed from curtain/plane
-                panels (map panels only).  PLOT_PANEL_HEIGHT/WIDTH/FIGSIZE now
-                in cm (converted to inches at call site).  Cmap deprecation
-                fixed: matplotlib.colormaps[cmap] replaces get_cmap().
-    2026-05-25  vrath / Claude Sonnet 4.6   PLOT_SITES replaced by
-                PLOT_SITES_MAPS / PLOT_SITES_SLICES for independent control.
+                extract_borehole_log() to femtic.py.
+    2026-05-25  vrath / Claude Sonnet 4.6   Added PLOT_SITES_MAPS /
+                PLOT_SITES_SLICES, PROJECTION_DIST, SITE_MARKER_SLICES,
+                DEPTH_KM, HORIZ_KM, PLOT_NROWS/NCOLS, PLOT_PANEL_HEIGHT/
+                WIDTH/FIGSIZE.  UTM display in km.  Cmap deprecation fix.
     2026-05-26  Claude Sonnet 4.6 (Anthropic)
-                Moved plot_model_slices (all inner geometry helpers) and
-                plot_borehole_logs into femtic_viz.py; script now calls
-                fviz.plot_model_slices / fviz.plot_borehole_logs directly.
-                Removed script-level coordinate-conversion and display
-                helpers (_utm_zone_from_origin, resolve_slices, _display_*,
-                _display_formatters, etc.); main section calls utl/fem
-                directly.  Removed math and pyproj imports. Added
-                PLOT3D_VTU_FILE config var; changed PLOT3D_FILE default
-                from .html to .png.  Script reduced from ~1520 to ~690
-                lines.
+                Moved plot_model_slices / plot_borehole_logs into
+                femtic_viz.py.  Added ALPHA_FILE / ALPHA_MODE /
+                ALPHA_BLANK_THRESH config vars.
     2026-05-27  vrath / Claude Sonnet 4.6 (Anthropic)
-                Passed PLOT_XLIM/YLIM/ZLIM to plot_model_3d (xlim/ylim/zlim)
-                so VTU export and 3-D scene are spatially clipped to the
-                same box as the 2-D slice panels.
-                Added ALPHA_FILE / ALPHA_MODE / ALPHA_BLANK_THRESH config
-                vars; passed to fviz.plot_model_slices for per-element
-                polygon fading/blanking driven by a second block file.
+                Passed PLOT_XLIM/YLIM/ZLIM to slice panels.
     2026-05-31  vrath / Claude Sonnet 4.6 (Anthropic)
-                PLOT_SLICES: documented ``invert_x`` per-panel key for
-                ns/ew/plane panels (horizontal axis flip for comparison).
-    2026-05-31  vrath / Claude Sonnet 4.6 (Anthropic)
-                Origin estimation from site.dat now runs before UTM zone
-                derivation (fixes TypeError when UTM_ORIGIN_LAT/LON are None).
-                Hard-coded UTM_ORIGIN_* constants set to None (derived at
-                runtime from site.dat when ORIGIN_METHOD is set).  Bootstrap
-                zone now derived from site lat/lon mean (exact) rather than
-                from easting approximation.
+                Added invert_x per-panel key in PLOT_SLICES.
+                Origin estimation now runs before UTM zone derivation.
+                Hard-coded UTM_ORIGIN_* set to None (derived at runtime).
     2026-06-03  Claude Sonnet 4.6 (Anthropic)
-                BOREHOLE_SITES: documented "surface" string for z_top.
-                BOREHOLE_XLIM: changed semantics to Ohm*m (log-scale x-axis)
-                to match updated plot_borehole_logs in femtic_viz.py.
-                BOREHOLE_SITES: documented "lat"/"lon" keys for geographic
-                legend annotation and per-spec line-style keys ("color",
-                "ls", "lw", "marker", …) that override BOREHOLE_STYLE for
-                individual traces.
+                Split from femtic_mod_plot.py into femtic_mod_plot_slice.py
+                (2-D slices + boreholes) and femtic_mod_plot_3d.py (PyVista
+                3-D rendering).  Borehole: BOREHOLE_XLIM now in Ohm*m;
+                z_top="surface" supported; lat/lon legend annotation and
+                per-trace line-style keys in BOREHOLE_SITES.
 
 @author: vrath
 """
@@ -229,9 +165,8 @@ MODEL_FILE = WORK_DIR + "resistivity_block_iter17.dat"
 #: Mesh file — always required for plotting.
 MESH_FILE = WORK_DIR + "mesh.dat"
 
-#: observe.dat — used by ESTIMATE_ORIGIN to look up model-local site positions.
-#: Also used as fallback site-overlay source when SITE_DAT is None and
-#: SITE_NUMBER is not None.
+#: observe.dat — used as fallback site-overlay source when SITE_DAT is None
+#: and SITE_NUMBER is not None.
 OBSERVE_FILE = WORK_DIR + "observe.dat"
 
 #: Site list produced by mt_make_sitelist.py (WHAT_FOR="femtic").
@@ -239,10 +174,13 @@ OBSERVE_FILE = WORK_DIR + "observe.dat"
 #:   name, lat, lon, elev, sitenum, easting, northing
 #: Easting/northing are UTM metres; model-local x/y is derived via
 #: fem.utm_to_model using the mesh-centre origin.
-#: When ESTIMATE_ORIGIN is True and CALIBRATION_SITES is empty, the
-#: bounding-box centre of all sites is used to estimate the mesh origin.
 #: Set to None to fall back to the observe.dat / SITE_NUMBER path.
 SITE_DAT = WORK_DIR + "site.dat"   # set to None to disable
+
+# ---------------------------------------------------------------------------
+# Verbose output
+# ---------------------------------------------------------------------------
+OUT = True
 
 # ---------------------------------------------------------------------------
 # Ocean / air handling (must match the inversion setup)
@@ -251,27 +189,22 @@ SITE_DAT = WORK_DIR + "site.dat"   # set to None to disable
 #: True / False → force ocean-present / ocean-absent.
 OCEAN = None
 
-AIR_RHO = 1.0e9   # Ω·m  (region 0)
+AIR_RHO   = 1.0e9   # Ω·m  (region 0)
 OCEAN_RHO = 0.25    # Ω·m  (region 1 when treated as ocean)
-
 
 # ---------------------------------------------------------------------------
 # Geographic / UTM origin of the mesh centre
 # ---------------------------------------------------------------------------
 #: Geographic coordinates (WGS-84) of the FEMTIC mesh origin.
-#: Used to derive the UTM zone number and to convert lat/lon slice positions.
-UTM_ORIGIN_LAT = None # -16.409   # decimal degrees, positive = North
-UTM_ORIGIN_LON = None # -71.537   # decimal degrees, positive = East
+UTM_ORIGIN_LAT = None   # decimal degrees, positive = North
+UTM_ORIGIN_LON = None   # decimal degrees, positive = East
 
-#: UTM coordinates of the mesh origin in metres (same zone as above).
-#: Used for model-local ↔ UTM conversions and for display tick offsets.
-UTM_ORIGIN_E = None # 229047.0   # easting  [m]
-UTM_ORIGIN_N = None # 8184127.0  # northing [m]
+#: UTM coordinates of the mesh origin in metres.
+UTM_ORIGIN_E = None   # easting  [m]
+UTM_ORIGIN_N = None   # northing [m]
 
 #: Override the auto-derived UTM zone number.  None = auto from origin lat/lon.
-#: Example: UTM_ZONE_OVERRIDE = 19  →  force zone 19 (ignoring special zones).
 UTM_ZONE_OVERRIDE = None
-
 
 # ---------------------------------------------------------------------------
 # Display coordinate system
@@ -300,17 +233,14 @@ PLOT_SITES_MAPS = True
 PLOT_SITES_SLICES = True
 
 #: Maximum distance [m] from a vertical slice plane for a site to be plotted
-#: on that panel.  Sites further than this are omitted.
-#: For NS panels: distance in x (easting); for EW panels: distance in y (northing).
-#: For plane panels: perpendicular distance from the slice plane.
-#: None = plot all sites on every panel regardless of distance.
-PROJECTION_DIST = 1000.  # e.g. 5000.0  (5 km)
+#: on that panel.  None = plot all sites on every panel regardless of distance.
+PROJECTION_DIST = 1000.   # e.g. 5000.0  (5 km)
 
 #: Marker style for map panels (inverted triangle = MT convention).
 SITE_MARKER = dict(marker="v", color="black", ms=4, zorder=10,
                    label=None)   # label filled in automatically
 
-#: Marker style for curtain and plane panels (centered symbol at site elevation).
+#: Marker style for curtain and plane panels.
 SITE_MARKER_SLICES = dict(marker="v", color="black", ms=4, zorder=10,
                            label=None)
 
@@ -326,24 +256,15 @@ SITE_MARKER_SLICES = dict(marker="v", color="black", ms=4, zorder=10,
 #:   "name"    : label string (shown in legend); None = no legend entry
 #: Any additional Matplotlib plot kwargs (mew, mfc, zorder, …) are accepted.
 MAP_MARKERS = [
-    dict(latlon=[-16.3169,-70.9673], marker="x", color="red", ms=8,
+    dict(latlon=[-16.3169, -70.9673], marker="x", color="red", ms=8,
          name="test point, 4457m"),
     dict(latlon=[-16.3450, -70.8972], marker="*", color="red", ms=8,
          name="ubinas crater"),
-    dict(latlon=[-16.363436,-70.868025], marker="+", color="blue", ms=8,
-         name="mesh origin, borehole1"),    
-    dict(latlon=[-16.351,-70.9016], marker="^", color="magenta", ms=6,
-         name="max elev"),    
+    dict(latlon=[-16.363436, -70.868025], marker="+", color="blue", ms=8,
+         name="mesh origin, borehole1"),
+    dict(latlon=[-16.351, -70.9016], marker="^", color="magenta", ms=6,
+         name="max elev"),
 ]
- #  Ubinas:
- #  plot: mesh highest point (non-air): elev = 5573.0 m  model-local x=1342.9 m  y=-3598.8 m
- #  plot: mesh highest point (non-air): lat=-16.351001 deg  lon=-70.901586 deg
- #  plot: mesh centre UTM E=300472.5 m  N=8189946.1 m  zone 19S
- #  plot: mesh centre   lat=-16.363436 deg  lon=-70.868025 deg
-# ---------------------------------------------------------------------------
-# Verbose output
-# ---------------------------------------------------------------------------
-OUT = True
 
 # ---------------------------------------------------------------------------
 # Plotting — requires femtic_viz and Matplotlib
@@ -358,11 +279,7 @@ PLOT_CMAP = "turbo_r"
 PLOT_CLIM = [0.0, 3.0]      # log10(Ω·m)
 #: Flat colour for ocean / lake cells.  None → use colormap.
 PLOT_OCEAN_COLOR = "lightgrey"
-#: Flat colour for air (above-ground) polygon cut on slice panels.
-#: Every element whose resistivity exceeds 1e8 Ω·m is treated as air
-#: and rendered in this colour.  "white" matches a white figure background;
-#: set to a light grey (e.g. "whitesmoke") to make above-terrain areas
-#: visually distinct.  None → air polygons not drawn (blank gaps).
+#: Flat colour for air polygons on slice panels.  None → blank gaps.
 PLOT_AIR_COLOR = "whitesmoke"
 #: Axes facecolor for air / background.  None = figure default.
 PLOT_AIR_BGCOLOR = None
@@ -372,8 +289,7 @@ PLOT_AIR_BGCOLOR = None
 # ---------------------------------------------------------------------------
 #: Path to a second resistivity_block_iterX.dat with the SAME mesh and
 #: region structure as MODEL_FILE.  Its region_rho values are interpreted
-#: directly as log10 weights (not as physical resistivities).  Cells with
-#: a weight < ALPHA_BLANK_THRESH are suppressed on all slice panels.
+#: as log10 weights.  Cells with weight < ALPHA_BLANK_THRESH are suppressed.
 #: Set to None to disable.
 ALPHA_FILE = None   # e.g. WORK_DIR + "sensitivity_log10.dat"
 
@@ -383,15 +299,14 @@ ALPHA_FILE = None   # e.g. WORK_DIR + "sensitivity_log10.dat"
 ALPHA_MODE = "fade"
 
 #: Log10 threshold at or below which polygons are blanked / fully faded.
-#: Should be <= 0 (e.g. -1.0).  Default 0.0 removes anything < 0.
 ALPHA_BLANK_THRESH = 0.0
 
-#: Slice specification — a list of dicts, one per panel (left to right).
+# ---------------------------------------------------------------------------
+# Slice specification
+# ---------------------------------------------------------------------------
+#: List of slice dicts — one per panel (left to right).
 #:
-#: Slices use exact tetrahedron-plane intersection — no selection slab,
-#: no dw, no dz.  The plane is infinitely thin; every tetrahedron that
-#: straddles it contributes an exact triangle or quadrilateral polygon.
-#:
+#: Slices use exact tetrahedron-plane intersection (no selection slab).
 #: Each dict must contain:
 #:   kind   : "map"   — horizontal slice at z = z0
 #:            "ns"    — N-S vertical section at x = x0   (y vs depth)
@@ -400,179 +315,79 @@ ALPHA_BLANK_THRESH = 0.0
 #:   z0     : (map   only)  depth in metres
 #:   x0     : (ns    only)  easting — plain float = model-local metres;
 #:            or (value, "utm") / (value, "latlon") for CRS tagging
-#:   y0     : (ew    only)  northing — plain float = model-local metres;
-#:            or (value, "utm") / (value, "latlon") for CRS tagging
-#:   point  : (plane only)  [x, y, z] any point on the plane (metres)
+#:   y0     : (ew    only)  northing — plain float / CRS tuple
+#:   point  : (plane only)  [x, y, z] any point on the plane
 #:            or ([lon, lat, z], "latlon") / ([E, N, z], "utm")
-#:   strike : (plane only)  clockwise from North, degrees (0=N, 90=E)
+#:   strike : (plane only)  clockwise from North, degrees
 #:   dip    : (plane only)  downward inclination from horizontal, degrees
 #:   xlim   : [xmin, xmax] — easting or along-strike axis limit
 #:   ylim   : [ymin, ymax] — northing or down-dip axis limit
 #:   zlim   : [zmin, zmax] — depth axis limit (ns/ew panels)
-#:   invert_x : True → flip the horizontal axis left-to-right on ns/ew/plane
-#:            panels after rendering (for comparison with other sections that
-#:            use opposite orientation convention). Default False.
+#:   invert_x : True → flip the horizontal axis left-to-right after rendering
 #:   title  : optional string override
 #:
-#: Per-panel xlim/ylim/zlim override the global PLOT_XLIM/PLOT_YLIM/PLOT_ZLIM.
-#: Ubinas summit: 16.34861° S, 70.90222° W (16°20′55″S 70°54′08″W), 
-#: east 296741  lon 8190965
-#: elevation 5672 m.
-
+#: Per-panel xlim/ylim/zlim override PLOT_XLIM/PLOT_YLIM/PLOT_ZLIM.
 PLOT_SLICES = [
-    # Plain float — model-local metres (backward-compatible):
     dict(kind="map", z0=-4000.0),
-    # dict(kind="map", z0=15000.0),
-    # UTM easting for the NS curtain:
-    dict(kind="ns",   x0=(-70.8972, "latlon")),
-    # dict(kind="ns", x0=(-70.90222, "latlon")),
-    # dict(kind="ns",   x0=(296741, "utm"), invert_x=True),
-    # dict(kind="ns",   x0=0.),
-    # Geographic latitude for the EW curtain:
-    dict(kind="ew", y0=(-16.3450, "latlon")),    
-    # dict(kind="ew", y0=(-16.39606, "latlon")),
-    # dict(kind="ew", y0=(8192000, "utm"),invert_x=False),
-    # dict(kind="ew", y0=-3598.84)
+    dict(kind="ns",  x0=(-70.8972, "latlon")),
+    dict(kind="ew",  y0=(-16.3450, "latlon")),
 ]
 
-
-#: Global axis limits in model-local metres — used for panels that do not
-#: specify their own.  None → auto (inferred from data extent).
+#: Global axis limits in model-local metres.  None → auto.
 PLOT_XLIM = [-15000., 15000.]   # [xmin, xmax] metres — easting
 PLOT_YLIM = [-15000., 15000.]   # [ymin, ymax] metres — northing
-PLOT_ZLIM = [-6000., 15000.]    # [zmin, zmax] metres — depth (z positive-down)
-# PLOT_ZLIM = [-6000., 15000.]  
+PLOT_ZLIM = [-6000.,  15000.]   # [zmin, zmax] metres — depth (z positive-down)
+
 #: Equal aspect ratio for map and curtain panels.
-#: True  → ax.set_aspect("equal") on map (x/y), ns (y/z), and ew (x/z) panels
-#:         so that 1 m horizontal = 1 m vertical on screen.  Applies only when
-#:         DISPLAY_COORDS is "model" or "utm" (both axes in metres).  Ignored
-#:         for plane slices and when DISPLAY_COORDS is "latlon".
-#: False → Matplotlib default (axes fill the available space).
 PLOT_EQUAL_ASPECT = True
 
-#: Display depth axis in km instead of metres on curtain and plane panels.
-#: Does not affect the horizontal axes (use HORIZ_KM for those).
+#: Display depth axis in km instead of metres on curtain / plane panels.
 DEPTH_KM = True
 
-#: Display horizontal axes in km instead of metres when DISPLAY_COORDS is
-#: "model".  Has no effect for "utm" (already in km) or "latlon" (degrees).
-#: When both HORIZ_KM and DEPTH_KM are True, equal aspect is restored in
-#: "model" mode because both axes carry the same km scale.
+#: Display horizontal axes in km when DISPLAY_COORDS is "model".
 HORIZ_KM = True
 
 # ---------------------------------------------------------------------------
 # Figure layout
 # ---------------------------------------------------------------------------
-#: Number of subplot rows and columns.  None → auto:
-#:   PLOT_NROWS = None  →  1 row (all panels in a single row)
-#:   PLOT_NCOLS = None  →  len(PLOT_SLICES) columns
-#: Set both explicitly for a grid, e.g. PLOT_NROWS=2, PLOT_NCOLS=4 for 8 maps.
-#: Total cells must be >= len(PLOT_SLICES); surplus cells are hidden.
-PLOT_NROWS = None #1   # e.g. 2
-PLOT_NCOLS = None #2   # e.g. 4
+#: Number of subplot rows and columns.  None → auto (1 row, len(PLOT_SLICES) cols).
+PLOT_NROWS = None
+PLOT_NCOLS = None
 
-#: Panel height in cm (height of one row of panels).
+#: Panel height in cm.
 PLOT_PANEL_HEIGHT = 16.0   # cm
 
-#: Fixed panel width in cm.  None → auto-computed from aspect ratio when
-#: PLOT_EQUAL_ASPECT = True, or equal to PLOT_PANEL_HEIGHT otherwise.
-PLOT_PANEL_WIDTH = None   # e.g. 10.0 to force a fixed width per panel
+#: Fixed panel width in cm.  None → auto from aspect ratio.
+PLOT_PANEL_WIDTH = None
 
-#: Full figure size [width, height] in cm.  Overrides all auto-computed
-#: sizing when set.  None → computed from panel sizes and grid shape.
+#: Full figure size [width, height] in cm.  Overrides auto-sizing when set.
 PLOT_FIGSIZE = None   # e.g. [40., 25.]
-
-# ---------------------------------------------------------------------------
-# 3-D plotting — requires PyVista  (conda install -c conda-forge pyvista)
-# ---------------------------------------------------------------------------
-#: Set True to produce a 3-D PyVista scene after the 2-D slice figure.
-PLOT3D = False
-
-#: Output file for the 3-D rendered view.
-#:   .vtu / .vtk → VTK unstructured-grid for ParaView (no rendering needed).
-#:   .html       → interactive WebGL in a browser (requires pyvista[jupyter] /
-#:                 trame_vtk; use ParaView's own File → Export Scene instead).
-#:   .png / .jpg → static screenshot.
-#:   None        → open an interactive PyVista window (requires a display).
-PLOT3D_FILE = WORK_DIR + "resistivity_block_iter0_3d.png"
-
-#: Optional separate VTK export for ParaView / Zenodo deposit.
-#:   .vtu  → VTK XML unstructured grid  (recommended for ParaView).
-#:   .vtk  → legacy VTK binary/ASCII.
-#:   None  → no grid file exported.
-PLOT3D_VTU_FILE = WORK_DIR + "resistivity_block_iter0.vtu"
-
-#: Scalar field to display.  "log10_resistivity" or "resistivity".
-PLOT3D_SCALAR = "log10_resistivity"
-
-#: Colour limits [vmin, vmax] for the scalar.  None → PyVista auto.
-PLOT3D_CLIM = [0.0, 3.0]       # log10(Ω·m)
-
-#: Matplotlib / PyVista colormap for slices.
-PLOT3D_CMAP = "turbo_r"
-
-#: Axis-aligned slice positions in model-local metres (z positive-down).
-#: Each list entry places one cutting plane perpendicular to that axis.
-#: Empty list or None → no slices along that axis.
-PLOT3D_SLICE_X = [0.0]                    # YZ planes — N-S sections
-PLOT3D_SLICE_Y = [0.0]                    # XZ planes — E-W sections
-PLOT3D_SLICE_Z = [5000.0, 15000.0]        # XY planes — horizontal maps
-
-#: Arbitrary oblique plane slices.  Each entry is a dict with:
-#:   "origin" : [x, y, z]  — any point on the plane (model-local m).
-#:   "normal" : [nx, ny, nz] — plane normal vector (need not be unit).
-#: Empty list or None → no oblique slices.
-PLOT3D_SLICE_PLANES = [
-    # dict(origin=[0., 0., 8000.], normal=[1., 1., 0.]),   # NE-trending vertical
-]
-
-#: Iso-surface levels in the same units as PLOT3D_SCALAR.
-#: For log10_resistivity: 1.0 = 10 Ω·m, 2.0 = 100 Ω·m, 3.0 = 1000 Ω·m.
-#: Empty list or None → no iso-surfaces.
-PLOT3D_ISOVALUES = [1.0, 2.0, 3.0]
-
-#: Opacity for iso-surfaces (0 = transparent, 1 = solid).
-PLOT3D_ISO_OPACITY = 0.35
-
-#: Window size in pixels [width, height] — used for screenshot modes.
-PLOT3D_WINDOW_SIZE = [1600, 900]
 
 # ---------------------------------------------------------------------------
 # Borehole resistivity logs  (optional)
 # ---------------------------------------------------------------------------
-#: Set True to produce a 1-D log₁₀(ρ) vs depth figure from point-in-element
-#: sampling along vertical boreholes.
+#: Set True to produce a ρ(z) borehole figure.
 PLOT_BOREHOLE = True
 
-#: Output file for the borehole figure.
-#:   None → interactive show().
+#: Output file for the borehole figure.  None → interactive show().
 BOREHOLE_FILE = WORK_DIR + "resistivity_block_iter17_boreholes.pdf"
 
 #: List of borehole specifications.  Each entry is a dict with:
 #:   "name"   : str   — label shown in the legend / panel title
-#:   "x"      : float — model-local easting  [m]  (or use (value, "utm") /
-#:              (value, "latlon") tuples — same CRS tagging as PLOT_SLICES)
-#:   "y"      : float — model-local northing [m]  (same CRS tagging applies)
+#:   "x"      : float — model-local easting  [m]  (or CRS-tagged tuple)
+#:   "y"      : float — model-local northing [m]  (or CRS-tagged tuple)
 #:   "z_top"  : float | "surface"
-#:              float — start depth [m, FEMTIC z-down convention; positive-down]
-#:                      0 = datum surface; negative = above datum (elevated topo)
-#:              "surface" — auto-detect mesh surface elevation at (x, y) via
-#:                          nearest-node KD-tree; requires scipy.
-#:   "z_bot"  : float — end depth [m, positive-down], e.g. 20000.0 for 20 km
-#:   "dz"     : float — sampling interval [m]; e.g. 100.0 for 100 m steps
+#:              float — start depth [m, z-down]; 0 = datum surface
+#:              "surface" — auto-detect from mesh nodes via KD-tree (scipy req.)
+#:   "z_bot"  : float — end depth [m, z-down], e.g. 20000.0 for 20 km
+#:   "dz"     : float — sampling interval [m], e.g. 100.0
 #:
 #:   Optional keys:
 #:   "lat"    : float — geographic latitude  [°]  shown in legend instead of y_m
 #:   "lon"    : float — geographic longitude [°]  shown in legend instead of x_m
-#:              Both must be provided together; if either is absent the
-#:              model-local x/y annotation is used instead.
-#:
-#:   Any Matplotlib Line2D kwarg ("color", "ls", "linestyle", "lw", "linewidth",
-#:   "marker", "markersize", "alpha", "zorder", …) placed directly in the spec
-#:   dict overrides BOREHOLE_STYLE for that trace only.  This lets each borehole
-#:   have a distinct colour/style without a separate list.
-#:
-#: Example:
+#:              Both must be provided together.
+#:   Any Matplotlib Line2D kwarg ("color", "ls", "lw", "marker", "alpha", …)
+#:   placed in the spec dict overrides BOREHOLE_STYLE for that trace only.
 BOREHOLE_SITES = [
     dict(name="borehole1",
          y=-16.363436, x=-70.868025,
@@ -583,46 +398,33 @@ BOREHOLE_SITES = [
     #      lat=-16.40, lon=-70.90,
     #      z_top="surface", z_bot=20000., dz=200.,
     #      color="firebrick", ls="--"),
-    # dict(name="BH-02", x=(229100., "utm"), y=(8184000., "utm"),
-    #      z_top="surface", z_bot=15000., dz=100.,
-    #      color="seagreen", ls="-.", lw=1.5),
 ]
 
-#: Matplotlib line / marker style for the borehole traces.
+#: Baseline Matplotlib line / marker style for all borehole traces.
+#: Per-spec keys in BOREHOLE_SITES override these for individual traces.
 BOREHOLE_STYLE = dict(lw=1.2, marker="none")
 
-#: x-axis limits for the borehole log panels in Ohm*m (log scale).
-#:   None → auto.  Example: [1.0, 1e4] spans 1 to 10 000 Ohm*m.
-BOREHOLE_XLIM = [1.0, 1e4]   # Ohm*m  (log-scale x-axis)
+#: x-axis limits in Ohm*m (log scale).  None → auto.
+BOREHOLE_XLIM = [1.0, 1e4]   # Ohm*m
 
-#: Whether to draw all boreholes in a single shared axes (True) or
-#: one panel per borehole (False).
+#: True = all boreholes on one shared axes; False = one panel per borehole.
 BOREHOLE_SHARED = True
 
 # ---------------------------------------------------------------------------
 # Mesh-centre estimation from site.dat UTM coordinates  (optional)
 # ---------------------------------------------------------------------------
 #: Method used to estimate UTM_ORIGIN_E / UTM_ORIGIN_N from SITE_DAT:
-#:
-#:   None      — use the hard-coded UTM_ORIGIN_E / UTM_ORIGIN_N above (default)
+#:   None      — use the hard-coded values above
 #:   "box"     — midpoint of the UTM bounding box of all sites in SITE_DAT
-#:               (femticPY-compatible)
 #:   "average" — arithmetic mean of all site UTM coordinates in SITE_DAT
-#:
-#: Requires SITE_DAT to be set and readable.  The result overwrites
-#: UTM_ORIGIN_E / UTM_ORIGIN_N (and UTM_ORIGIN_LAT / UTM_ORIGIN_LON) for
-#: this run; the printed values can be copied back into the config above.
-#: Falls back to hard-coded values if SITE_DAT is None or unreadable.
-ORIGIN_METHOD =  "box"   # None | "box" | "average"
-
+ORIGIN_METHOD = "box"   # None | "box" | "average"
 
 
 # ===========================================================================
 # Main
 # ===========================================================================
 
-# --- (1) Optionally estimate UTM_ORIGIN_E / UTM_ORIGIN_N from site.dat ----
-#   Done first so that UTM_ORIGIN_LAT/LON are available for zone derivation.
+# --- (1) Optionally estimate UTM origin from site.dat ----------------------
 if ORIGIN_METHOD is not None:
     if SITE_DAT is None or not os.path.isfile(SITE_DAT):
         print(f"  WARNING: ORIGIN_METHOD={ORIGIN_METHOD!r} requested but "
@@ -643,7 +445,6 @@ if ORIGIN_METHOD is not None:
             else:
                 sys.exit(f"Unknown ORIGIN_METHOD {ORIGIN_METHOD!r}; "
                          f"use None, 'box', or 'average'.")
-            # Derive zone directly from site lat/lon (exact, no approximation).
             _lats = np.array([d["lat"] for d in _sdat])
             _lons = np.array([d["lon"] for d in _sdat])
             UTM_ZONE, UTM_NORTHERN = utl.utm_zone_from_latlon(
@@ -668,7 +469,7 @@ print(f"UTM zone: {UTM_ZONE}{hemi}  "
       f"(origin lat={UTM_ORIGIN_LAT:.4f}°, lon={UTM_ORIGIN_LON:.4f}°)")
 print()
 
-# --- (2) Resolve slice positions to model-local metres ---------------------
+# --- (3) Resolve slice positions to model-local metres ---------------------
 slices_resolved = fem.resolve_slice_positions(
     PLOT_SLICES, UTM_ZONE, UTM_NORTHERN,
     UTM_ORIGIN_E, UTM_ORIGIN_N,
@@ -678,7 +479,7 @@ slices_resolved = fem.resolve_slice_positions(
 if OUT:
     print()
 
-# --- (3) Optionally read site position(s) ----------------------------------
+# --- (4) Optionally read site position(s) ----------------------------------
 site_xys = []
 _sites_from_obs = False
 _need_sites = PLOT_SITES_MAPS or PLOT_SITES_SLICES
@@ -710,7 +511,7 @@ elif _need_sites and SITE_NUMBER is not None:
     _sites_from_obs = True
     print()
 
-# --- (4) Plot slices -------------------------------------------------------
+# --- (5) Plot 2-D slice panels --------------------------------------------
 if fviz is None:
     sys.exit("femtic_viz not available — cannot plot.  Check your installation.")
 
@@ -758,36 +559,7 @@ fviz.plot_model_slices(
     alpha_blank_thresh=ALPHA_BLANK_THRESH,
     out=OUT,
 )
-print("Done.")
-
-# --- (5) 3-D PyVista plot --------------------------------------------------
-if PLOT3D:
-    print(f"Rendering 3-D model: {MODEL_FILE}")
-    fviz.plot_model_3d(
-        mesh_file=MESH_FILE,
-        block_file=MODEL_FILE,
-        scalar=PLOT3D_SCALAR,
-        clim=PLOT3D_CLIM,
-        cmap=PLOT3D_CMAP,
-        slice_x=PLOT3D_SLICE_X,
-        slice_y=PLOT3D_SLICE_Y,
-        slice_z=PLOT3D_SLICE_Z,
-        slice_planes=PLOT3D_SLICE_PLANES,
-        isovalues=PLOT3D_ISOVALUES,
-        iso_opacity=PLOT3D_ISO_OPACITY,
-        iso_cmap=PLOT3D_CMAP,
-        ocean_value=OCEAN_RHO,
-        air_region_index=0,
-        ocean_region_index=1,
-        xlim=PLOT_XLIM,
-        ylim=PLOT_YLIM,
-        zlim=PLOT_ZLIM,
-        window_size=PLOT3D_WINDOW_SIZE,
-        plot_file=PLOT3D_FILE,
-        vtu_file=PLOT3D_VTU_FILE,
-        out=OUT,
-    )
-    print("3-D plot done.")
+print("Slice plot done.")
 
 # --- (6) Borehole resistivity logs ----------------------------------------
 if PLOT_BOREHOLE:
