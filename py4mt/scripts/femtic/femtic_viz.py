@@ -149,23 +149,6 @@ Provenance:
                         code silently assigned coordinates / connectivity
                         to the wrong indices.  _map_node helper removed
                         (no longer needed).
-    2026-06-03  Claude Sonnet 4.6 (Anthropic)
-                        plot_borehole_logs: (1) z_top="surface" auto-detects
-                        the mesh surface elevation at the borehole (x, y)
-                        location using a KD-tree nearest-node search on the
-                        minimum node-z per x/y column.  (2) Position and
-                        elevation appended to each legend / title label
-                        (x_m, y_m, z_top_m).  (3) X-axis switched to
-                        log-scale (ax.set_xscale("log")); rho is now plotted
-                        in Ohm*m rather than log10(Ohm*m), so clim is in
-                        Ohm*m too (e.g. [1.0, 1e4]).  BOREHOLE_XLIM in
-                        femtic_mod_plot.py updated accordingly.
-                        (4) legend shows lat/lon when spec dict contains
-                        "lat"/"lon" keys (replaces raw x/y model-local metres
-                        in the annotation line).  (5) Per-spec line style:
-                        any Matplotlib Line2D kwargs ("color", "ls", "lw",
-                        "marker", "alpha", …) placed in the spec dict override
-                        the global borehole_style for that trace only.
                         read_resistivity_block: fixed element->region and
                         region->rho assignment to use the index from the
                         file (parts[0]) rather than the sequential loop
@@ -3735,14 +3718,11 @@ def plot_borehole_logs(
     dpi: int = 200,
     out: bool = True,
 ):
-    """Produce a 1-D rho vs depth figure for a list of boreholes (log x-axis).
+    """Produce a 1-D log10(rho) vs depth figure for a list of boreholes.
 
     Resistivity is sampled at regular depth intervals using
     ``fem.extract_borehole_log`` (point-in-element, exact barycentric test).
     Air / out-of-mesh levels appear as gaps (NaN).
-
-    The x-axis is logarithmic and shows rho in Ohm*m.  The y-axis shows depth
-    in km increasing downward from z_top.
 
     Parameters
     ----------
@@ -3751,28 +3731,9 @@ def plot_borehole_logs(
     borehole_sites
         List of borehole spec dicts.  Each dict must contain:
 
-        ``"name"`` (str), ``"x"`` and ``"y"`` (model-local m or as returned
-        by *resolve_xy_fn*), ``"z_top"``, ``"z_bot"``, ``"dz"`` (all in
-        model-local metres, z positive-down).
-
-        **Optional spec keys:**
-
-        ``"z_top"`` may be the string ``"surface"`` (case-insensitive).  In
-        that case z_top is auto-detected as the minimum mesh node z at the
-        borehole (x, y) location using a KD-tree nearest-column search.
-
-        ``"lat"`` and ``"lon"`` (floats, decimal degrees) — when present, the
-        legend / panel title shows geographic coordinates instead of model-local
-        x/y metres.
-
-        Any Matplotlib ``Line2D`` keyword (``"color"``, ``"ls"``,
-        ``"linestyle"``, ``"lw"``, ``"linewidth"``, ``"marker"``, ``"alpha"``,
-        ``"zorder"``, …) placed directly in the spec dict overrides the global
-        *borehole_style* for that trace only.  This allows each borehole to
-        have a distinct colour and line style without a separate config list.
-
-        The legend / panel title is always annotated with position and surface
-        elevation so that the figure is self-documenting.
+        ``"name"`` (str), ``"x"`` and ``"y"`` (model-local m or as
+        returned by *resolve_xy_fn*), ``"z_top"``, ``"z_bot"``, ``"dz"``
+        (all in model-local metres, z positive-down).
     resolve_xy_fn
         Optional callable ``(spec) -> (x_m, y_m)`` that converts the
         ``"x"`` / ``"y"`` fields of each spec dict from whatever coordinate
@@ -3782,12 +3743,9 @@ def plot_borehole_logs(
     ocean_value
         Ohm*m sentinel for ocean cells.
     clim
-        ``[rho_min, rho_max]`` in Ohm*m for the x-axis; ``None`` = auto.
-        Example: ``[1.0, 1e4]``.
+        ``[log10_min, log10_max]`` for the x-axis; ``None`` = auto.
     borehole_style
-        Matplotlib line kwargs applied as the baseline style for every trace.
-        Per-spec keys in ``borehole_sites`` override these for individual
-        traces.  Default baseline: ``lw=1.2, marker="none"``.
+        Matplotlib line kwargs applied to every trace.
     shared
         ``True`` -> all boreholes on one axes; ``False`` -> one panel each.
     plot_file
@@ -3797,15 +3755,6 @@ def plot_borehole_logs(
     out
         Print progress messages.
     """
-    # Keys in a spec dict that are Matplotlib Line2D kwargs (not borehole meta).
-    _LINE2D_KEYS = frozenset({
-        "color", "c", "ls", "linestyle", "lw", "linewidth",
-        "marker", "markersize", "ms", "markeredgecolor", "mec",
-        "markeredgewidth", "mew", "markerfacecolor", "mfc",
-        "alpha", "zorder", "solid_capstyle", "solid_joinstyle",
-        "dash_capstyle", "dash_joinstyle",
-    })
-
     if not borehole_sites:
         if out:
             print("  plot_borehole_logs: borehole_sites is empty -- skipping.")
@@ -3829,80 +3778,32 @@ def plot_borehole_logs(
     rho_plot = prepare_rho_for_plotting(
         rho_elem, air_is_nan=True, ocean_value=float(ocean_value),
         region_of_elem=block.region_of_elem)
-    nodes = mesh.nodes   # shape (nn, 3): [:,0]=easting, [:,1]=northing, [:,2]=z-down
+    nodes = mesh.nodes
     conn  = mesh.conn
 
-    # KD-tree on node XY — built lazily, only when z_top="surface" is needed.
-    _node_xy   = nodes[:, :2]
-    _node_z    = nodes[:, 2]
-    _kdtree_xy = None
-
-    def _surface_z_at(x_m: float, y_m: float, k: int = 8) -> float:
-        """Return mesh surface z (min z among k nearest nodes)."""
-        nonlocal _kdtree_xy
-        if _kdtree_xy is None:
-            if cKDTree is None:
-                raise ImportError(
-                    "scipy.spatial.cKDTree is required for z_top='surface'.")
-            _kdtree_xy = cKDTree(_node_xy)
-        _, idxs = _kdtree_xy.query([x_m, y_m], k=k)
-        return float(_node_z[idxs].min())
-
-    # Baseline style — per-spec keys override below.
-    base_style = dict(lw=1.2, marker="none")
+    style = dict(lw=1.2, marker="none")
     if borehole_style:
-        base_style.update(borehole_style)
+        style.update(borehole_style)
 
     logs = []
     for spec in borehole_sites:
-        name = spec.get("name", "?")
-
-        # --- resolve (x, y) ---
+        name  = spec.get("name", "?")
         if resolve_xy_fn is not None:
             x_m, y_m = resolve_xy_fn(spec)
         else:
             x_m = float(spec["x"])
             y_m = float(spec["y"])
-
-        # --- z_top: numeric or "surface" ---
-        z_top_raw = spec.get("z_top", 0.0)
-        if isinstance(z_top_raw, str) and z_top_raw.strip().lower() == "surface":
-            z_top = _surface_z_at(x_m, y_m)
-            if out:
-                print(f"  borehole {name!r}: z_top='surface' resolved to "
-                      f"{z_top:.1f} m (mesh node minimum near borehole)")
-        else:
-            z_top = float(z_top_raw)
-
+        z_top = float(spec.get("z_top", 0.0))
         z_bot = float(spec.get("z_bot", 20000.0))
         dz    = float(spec.get("dz", 200.0))
         if out:
             print(f"  borehole {name!r}  x={x_m:.0f} m  y={y_m:.0f} m  "
                   f"z=[{z_top:.0f}..{z_bot:.0f}]  dz={dz:.0f} m")
-
         depths, rho = _fem.extract_borehole_log(
             nodes, conn, rho_plot, x_m, y_m, z_top, z_bot, dz, out=out)
-
-        # --- legend / title annotation ---
-        elev_m = -z_top   # z positive-down -> elevation positive-up
-        lat = spec.get("lat")
-        lon = spec.get("lon")
-        if lat is not None and lon is not None:
-            pos_str = f"lat={float(lat):.4f}°, lon={float(lon):.4f}°, elev={elev_m:+.0f} m"
-        else:
-            pos_str = f"x={x_m:.0f} m, y={y_m:.0f} m, elev={elev_m:+.0f} m"
-
-        # --- per-spec line style (overrides base_style) ---
-        trace_style = dict(base_style)
-        trace_style.update({k: v for k, v in spec.items() if k in _LINE2D_KEYS})
-
-        logs.append(dict(
-            name=name,
-            pos_str=pos_str,
-            x_m=x_m, y_m=y_m, z_top=z_top,
-            depths=depths, rho=rho,
-            trace_style=trace_style,
-        ))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            log_rho = np.where(rho > 0, np.log10(rho), np.nan)
+        logs.append(dict(name=name, depths=depths, log_rho=log_rho))
 
     n = len(logs)
     if shared:
@@ -3914,30 +3815,21 @@ def plot_borehole_logs(
 
     for i, (log, ax) in enumerate(zip(logs, ax_arr)):
         depth_km = log["depths"] / 1000.0
-        rho_vals = log["rho"]
-        # Replace non-positive / NaN so log-scale gaps render cleanly.
-        rho_plot_vals = np.where(
-            np.isfinite(rho_vals) & (rho_vals > 0), rho_vals, np.nan)
-
-        legend_label = f"{log['name']}\n{log['pos_str']}"
-        ax.plot(rho_plot_vals, depth_km, label=legend_label,
-                **log["trace_style"])
-        ax.set_xscale("log")
-        ax.set_xlabel("resistivity (Ohm·m)")
+        ax.plot(log["log_rho"], depth_km, label=log["name"], **style)
+        ax.set_xlabel("log10(rho / Ohm*m)")
         ax.set_ylabel("depth (km)")
         ax.invert_yaxis()
         if clim is not None:
             ax.set_xlim(clim)
         if not shared:
-            ax.set_title(f"{log['name']}\n{log['pos_str']}", fontsize=8)
+            ax.set_title(log["name"], fontsize=9)
             ax.tick_params(labelsize=7)
 
     if shared:
-        ax_arr[0].legend(fontsize=7, loc="lower right")
+        ax_arr[0].legend(fontsize=8)
         ax_arr[0].set_title("Borehole resistivity logs", fontsize=9)
     for ax in set(ax_arr):
-        ax.grid(True, which="both", axis="x", lw=0.4, alpha=0.5)
-        ax.grid(True, which="major", axis="y", lw=0.4, alpha=0.5)
+        ax.grid(axis="x", lw=0.4, alpha=0.5)
 
     fig.suptitle(f"Model: {os.path.basename(str(model_file))}", fontsize=10)
     fig.tight_layout()

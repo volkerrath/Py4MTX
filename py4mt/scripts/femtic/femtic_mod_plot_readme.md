@@ -473,8 +473,8 @@ Environment variables `PY4MTX_ROOT` and `PY4MTX_DATA` must be set.
 ## Borehole resistivity logs (`PLOT_BOREHOLE`)
 
 When `PLOT_BOREHOLE = True` the script samples the resistivity model along
-one or more vertical boreholes and produces a 1-D log₁₀(ρ) vs depth figure
-(step 6).
+one or more vertical boreholes and produces a **ρ vs depth** figure with a
+logarithmic x-axis (Ohm·m) — step 6.
 
 ### Method — point-in-element
 
@@ -501,27 +501,33 @@ gaps in the trace.
 | `PLOT_BOREHOLE` | `False` | Enable / disable the borehole step |
 | `BOREHOLE_FILE` | `*_boreholes.pdf` | Output path; `None` → interactive show |
 | `BOREHOLE_SITES` | `[]` | List of borehole spec dicts (see below) |
-| `BOREHOLE_STYLE` | `dict(lw=1.2, marker="none")` | Matplotlib line kwargs for all traces |
-| `BOREHOLE_XLIM` | `[0.0, 4.0]` | x-axis limits [log10(Ω·m)]; `None` = auto |
+| `BOREHOLE_STYLE` | `dict(lw=1.2, marker="none")` | Baseline Matplotlib line kwargs; per-spec keys override |
+| `BOREHOLE_XLIM` | `[1.0, 1e4]` | x-axis limits [Ω·m, log scale]; `None` = auto |
 | `BOREHOLE_SHARED` | `True` | `True` = all on one axes; `False` = one panel per borehole |
 
 ### Borehole spec dict
 
 Each entry in `BOREHOLE_SITES` is a dict with:
 
-| Key | Type | Description |
-|---|---|---|
-| `"name"` | str | Label shown in the legend / panel title |
-| `"x"` | float or `(value, "crs")` | Borehole easting — same CRS tagging as `PLOT_SLICES` |
-| `"y"` | float or `(value, "crs")` | Borehole northing — same CRS tagging as `PLOT_SLICES` |
-| `"z_top"` | float | Start depth [m, FEMTIC z-down]; 0 = surface |
-| `"z_bot"` | float | End depth [m, z-down], e.g. `20000.0` for 20 km |
-| `"dz"` | float | Sampling interval [m], e.g. `200.0` |
+| Key | Type | Required | Description |
+|---|---|---|---|
+| `"name"` | str | yes | Label in legend / panel title |
+| `"x"` | float or `(v, "crs")` | yes | Borehole easting — same CRS tagging as `PLOT_SLICES` |
+| `"y"` | float or `(v, "crs")` | yes | Borehole northing — same CRS tagging |
+| `"z_top"` | float or `"surface"` | no (def. 0) | Start depth [m, z-down].  `"surface"` → auto from mesh nodes (requires scipy) |
+| `"z_bot"` | float | no (def. 20000) | End depth [m, z-down] |
+| `"dz"` | float | no (def. 200) | Sampling interval [m] |
+| `"lat"` | float | no | Geographic latitude [°] — shown in legend **instead of** model-local y |
+| `"lon"` | float | no | Geographic longitude [°] — shown in legend **instead of** model-local x.  Requires `"lat"` too |
+| `"color"`, `"ls"`, `"lw"`, `"marker"`, `"alpha"`, … | any | no | Any Matplotlib `Line2D` kwarg — overrides `BOREHOLE_STYLE` for this trace only |
 
-`"x"` and `"y"` accept the same three coordinate systems as the horizontal
-slice positions: a plain float is model-local metres; a `(value, "utm")`
-tuple is a UTM easting/northing; a `(value, "latlon")` tuple is a geographic
-longitude/latitude.
+`"x"` and `"y"` accept the same three coordinate systems as horizontal slice
+positions: plain float = model-local metres; `(value, "utm")` = UTM
+easting/northing; `(value, "latlon")` = geographic longitude/latitude.
+
+When `"lat"` **and** `"lon"` are both present the legend annotation reads
+`lat=…°, lon=…°, elev=±… m`; otherwise it shows `x=… m, y=… m, elev=±… m`.
+Elevation is derived as `−z_top` (FEMTIC z-down → positive-up).
 
 ### Example
 
@@ -529,20 +535,25 @@ longitude/latitude.
 PLOT_BOREHOLE = True
 BOREHOLE_FILE = WORK_DIR + "resistivity_block_iter0_boreholes.pdf"
 BOREHOLE_SHARED = True    # all traces on one axes
-BOREHOLE_XLIM = [0., 4.]  # log10(Ω·m)
+BOREHOLE_XLIM = [1., 1e4] # Ω·m  (log-scale x-axis)
 
 BOREHOLE_SITES = [
-    # Model-local metres — surface to 20 km, 200 m steps:
+    # Model-local, surface to 20 km, 200 m steps, blue solid:
     dict(name="BH-centre",  x=0.0,    y=0.0,
-         z_top=0., z_bot=20000., dz=200.),
+         lat=-16.363, lon=-70.868,
+         z_top="surface", z_bot=20000., dz=200.,
+         color="steelblue", ls="-"),
 
-    # UTM coordinates:
+    # UTM coordinates, red dashed:
     dict(name="BH-north",   x=(229047., "utm"), y=(8190000., "utm"),
-         z_top=0., z_bot=15000., dz=100.),
+         z_top="surface", z_bot=15000., dz=100.,
+         color="firebrick", ls="--"),
 
-    # Geographic coordinates:
+    # Geographic coordinates, green dash-dot, thicker:
     dict(name="BH-east",    x=(-71.50, "latlon"), y=(-16.40, "latlon"),
-         z_top=500., z_bot=10000., dz=250.),
+         lat=-16.40, lon=-71.50,
+         z_top=500., z_bot=10000., dz=250.,
+         color="seagreen", ls="-.", lw=1.8),
 ]
 ```
 
@@ -574,3 +585,4 @@ BOREHOLE_SITES = [
 | 2026-05-25 | vrath / Claude Sonnet 4.6 | Diagnostic print of mesh highest-point elevation, lat/lon, model-local coordinates. |
 | 2026-05-26 | Claude Sonnet 4.6 | **Major refactor**: moved `plot_model_slices` (all inner geometry helpers) and `plot_borehole_logs` into `femtic_viz.py`; script calls `fviz.plot_model_slices` / `fviz.plot_borehole_logs` directly. Removed script-level coordinate-conversion helpers (`_utm_zone_from_origin`, `resolve_slices`, `_display_*`) and `plot_*` functions; main section calls `utl`/`fem`/`fviz` directly. Removed `math` and `pyproj` imports. Added `PLOT3D_VTU_FILE`; changed `PLOT3D_FILE` default to `.png`. Script reduced from ≈1520 to ≈700 lines. |
 | 2026-05-31 | vrath / Claude Sonnet 4.6 (Anthropic) | `PLOT_SLICES`: added optional `invert_x` key for `ns`, `ew`, and `plane` panels. When `True`, calls `ax.invert_xaxis()` after rendering so the horizontal axis reads right-to-left — useful for comparing sections with other software that uses the opposite orientation convention. Default `False`; no effect on `map` panels. |
+| 2026-06-03 | Claude Sonnet 4.6 (Anthropic) | Borehole updates: x-axis switched to log-scale Ω·m (`BOREHOLE_XLIM` now in Ω·m, e.g. `[1., 1e4]`); `z_top="surface"` auto-detects mesh surface elevation; legend shows `lat/lon` when `"lat"`/`"lon"` spec keys are present; per-trace line style via Matplotlib `Line2D` kwargs in spec dict (`"color"`, `"ls"`, `"lw"`, `"marker"`, …) overriding `BOREHOLE_STYLE`. |
