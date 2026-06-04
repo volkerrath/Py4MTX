@@ -166,13 +166,51 @@ Provenance:
                         any Matplotlib Line2D kwargs ("color", "ls", "lw",
                         "marker", "alpha", …) placed in the spec dict override
                         the global borehole_style for that trace only.
+    2026-06-03  Claude Sonnet 4.6 (Anthropic)
+                        plot_borehole_logs: added npz_file parameter for NPZ
+                        export of all sampled depth/rho arrays.  Arrays stored
+                        as depth_<name> and rho_<name>; JSON header string
+                        (model file, mesh file, timestamp, per-borehole meta)
+                        stored as scalar string array "header".  npz_file
+                        defaults to plot_file with .npz extension when None;
+                        falls back to "borehole_logs.npz" when plot_file is
+                        also None.  Config vars BOREHOLE_NPZ / BOREHOLE_NPZ_FILE
+                        added to femtic_mod_plot_slice.py.
+                        Added _sample_borehole_logs() private helper (shared
+                        by plot_borehole_logs and plot_model_slices).
+                        plot_model_slices: added borehole_sites,
+                        borehole_style, borehole_clim, borehole_shared,
+                        borehole_resolve_xy parameters; when borehole_sites is
+                        non-empty, borehole panels are appended as extra
+                        columns to the right of the slice grid in the same
+                        figure (one column per borehole when
+                        borehole_shared=False, one shared column when True).
+                        Fixed _sample_borehole_logs: CRS-tagged x/y positions
+                        ("utm", "latlon") now correctly converted jointly
+                        via fem.latlon_to_model / fem.utm_to_model rather than
+                        the single-axis resolve_pos_x/y (which held the other
+                        coordinate at the mesh origin).  lat/lon for the legend
+                        now auto-inferred from the CRS tag: latlon → lon from
+                        x, lat from y; utm → back-converted via
+                        utl.utm_to_latlon_zn.  Explicit "lat"/"lon" spec keys
+                        still override the auto-inferred values.
+                        plot_borehole_logs: added utm_zone, utm_northern,
+                        utm_origin_e, utm_origin_n parameters (passed through
+                        to _sample_borehole_logs for CRS conversion without
+                        a resolver function).
                         read_resistivity_block: fixed element->region and
                         region->rho assignment to use the index from the
                         file (parts[0]) rather than the sequential loop
                         counter.  When elements or regions are not stored
                         in strict order the previous code silently assigned
                         resistivities to the wrong regions, producing
-                        scrambled / uniformly-conductive model plots."""
+                        scrambled / uniformly-conductive model plots.
+    2026-06-04  vrath / Claude Sonnet 4.6 (Anthropic)
+                        Script-level split only: ``femtic_mod_plot_slice.py``
+                        drives ``plot_model_slices``; new
+                        ``femtic_mod_plot_bh.py`` drives
+                        ``plot_borehole_logs``.  Both functions and
+                        ``_sample_borehole_logs`` remain in this module."""
 
 from __future__ import annotations
 
@@ -2964,6 +3002,210 @@ def plot_model_3d(
 # 2-D slice figure  (exact tetrahedron-plane intersection)
 # =============================================================================
 
+# =============================================================================
+# Private helper: borehole sampling (shared by plot_model_slices and
+# plot_borehole_logs so the mesh is loaded only once when boreholes are
+# embedded in the slice figure).
+# =============================================================================
+
+def _sample_borehole_logs(
+    nodes: np.ndarray,
+    conn: np.ndarray,
+    rho_plot: np.ndarray,
+    borehole_sites: list,
+    *,
+    resolve_xy_fn=None,
+    utm_zone: int = 1,
+    utm_northern: bool = True,
+    utm_origin_e: float = 0.0,
+    utm_origin_n: float = 0.0,
+    out: bool = True,
+) -> list:
+    """Sample resistivity along vertical boreholes and return log dicts.
+
+    Parameters
+    ----------
+    nodes, conn, rho_plot
+        Mesh arrays as returned by ``read_femtic_mesh`` /
+        ``prepare_rho_for_plotting``.
+    borehole_sites
+        List of spec dicts (see ``plot_borehole_logs`` for full key docs).
+        ``"x"`` and ``"y"`` accept:
+
+        - plain ``float``          → model-local metres
+        - ``(value, "model")``     → model-local metres
+        - ``(E_m, "utm")``         → UTM easting / northing (both must be utm)
+        - ``(lon, "latlon")``      → geographic lon for x, lat for y
+          (both must carry the same "latlon" tag; joint conversion via
+          ``femtic.latlon_to_model``)
+
+        The CRS tags on ``"x"`` and ``"y"`` **must match**; mixing tags
+        across the two keys raises ``ValueError``.
+
+        When ``"lat"`` / ``"lon"`` keys are explicitly in the spec they take
+        priority for the legend.  When the CRS is ``"latlon"`` or ``"utm"``
+        the geographic position is inferred automatically for the legend
+        (lon from ``"x"``, lat from ``"y"`` for latlon; back-converted from
+        UTM for utm).
+    resolve_xy_fn
+        Optional ``(spec) -> (x_m, y_m)`` override.  When provided it takes
+        complete precedence over the built-in CRS logic; ``"lat"``/``"lon"``
+        spec keys are still used for the legend if present.
+    utm_zone, utm_northern
+        UTM zone and hemisphere — required for ``"utm"`` and ``"latlon"``
+        conversions.
+    utm_origin_e, utm_origin_n
+        UTM coordinates of the mesh centre [m] — required for ``"utm"`` and
+        ``"latlon"`` conversions.
+    out
+        Print progress.
+
+    Returns
+    -------
+    list of dicts, one per borehole, with keys:
+        name, pos_str, x_m, y_m, z_top, z_bot, dz, lat, lon,
+        depths (ndarray), rho (ndarray), trace_style (dict).
+    """
+    try:
+        import femtic as _fem
+    except ImportError:
+        raise ImportError("_sample_borehole_logs: femtic module not available.")
+
+    _LINE2D_KEYS = frozenset({
+        "color", "c", "ls", "linestyle", "lw", "linewidth",
+        "marker", "markersize", "ms", "markeredgecolor", "mec",
+        "markeredgewidth", "mew", "markerfacecolor", "mfc",
+        "alpha", "zorder", "solid_capstyle", "solid_joinstyle",
+        "dash_capstyle", "dash_joinstyle",
+    })
+
+    _node_xy   = nodes[:, :2]
+    _node_z    = nodes[:, 2]
+    _kdtree_xy = None
+
+    def _surface_z_at(x_m: float, y_m: float, k: int = 8) -> float:
+        nonlocal _kdtree_xy
+        if _kdtree_xy is None:
+            if cKDTree is None:
+                raise ImportError(
+                    "scipy.spatial.cKDTree is required for z_top='surface'.")
+            _kdtree_xy = cKDTree(_node_xy)
+        _, idxs = _kdtree_xy.query([x_m, y_m], k=k)
+        return float(_node_z[idxs].min())
+
+    def _parse_crs(raw):
+        """Return (value, crs_str)."""
+        if isinstance(raw, (int, float)):
+            return float(raw), "model"
+        try:
+            val, crs = raw
+            return val, str(crs).lower().strip()
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"Borehole position {raw!r} must be a scalar or "
+                f"(value, 'crs') tuple where crs is 'model'/'utm'/'latlon'.")
+
+    logs = []
+    for spec in borehole_sites:
+        name = spec.get("name", "?")
+
+        # ---- resolve (x_m, y_m) and infer legend lat/lon --------------------
+        leg_lat = spec.get("lat")   # explicit override always wins
+        leg_lon = spec.get("lon")
+
+        if resolve_xy_fn is not None:
+            # Caller-supplied converter — use it as-is.
+            x_m, y_m = resolve_xy_fn(spec)
+            # If no explicit lat/lon provided we leave them None
+            # (model-local metres shown in legend).
+        else:
+            x_raw = spec["x"]
+            y_raw = spec["y"]
+            x_val, x_crs = _parse_crs(x_raw)
+            y_val, y_crs = _parse_crs(y_raw)
+
+            if x_crs != y_crs:
+                raise ValueError(
+                    f"Borehole {name!r}: x CRS ({x_crs!r}) and y CRS "
+                    f"({y_crs!r}) must match.")
+
+            crs = x_crs
+
+            if crs == "model":
+                x_m, y_m = float(x_val), float(y_val)
+                # leg_lat/lon stay as explicit spec values (or None)
+
+            elif crs == "utm":
+                # x_val = UTM easting, y_val = UTM northing
+                x_m, y_m = _fem.utm_to_model(
+                    float(x_val), float(y_val),
+                    utm_origin_e, utm_origin_n)
+                if leg_lat is None or leg_lon is None:
+                    # Back-convert to lat/lon for legend
+                    try:
+                        import util as _utl
+                        _lat, _lon = _utl.utm_to_latlon_zn(
+                            float(x_val), float(y_val),
+                            utm_zone, utm_northern)
+                        leg_lat, leg_lon = _lat, _lon
+                    except Exception:
+                        pass   # legend falls back to model-local
+
+            elif crs == "latlon":
+                # x_val = longitude, y_val = latitude
+                lon_v, lat_v = float(x_val), float(y_val)
+                x_m, y_m = _fem.latlon_to_model(
+                    lat_v, lon_v,
+                    utm_zone, utm_northern,
+                    utm_origin_e, utm_origin_n)
+                if leg_lat is None:
+                    leg_lat = lat_v
+                if leg_lon is None:
+                    leg_lon = lon_v
+            else:
+                raise ValueError(
+                    f"Borehole {name!r}: unknown CRS {crs!r}. "
+                    f"Choose 'model', 'utm', or 'latlon'.")
+
+        # ---- z_top ----------------------------------------------------------
+        z_top_raw = spec.get("z_top", 0.0)
+        if isinstance(z_top_raw, str) and z_top_raw.strip().lower() == "surface":
+            z_top = _surface_z_at(x_m, y_m)
+            if out:
+                print(f"  borehole {name!r}: z_top='surface' resolved to "
+                      f"{z_top:.1f} m (mesh node minimum near borehole)")
+        else:
+            z_top = float(z_top_raw)
+
+        z_bot = float(spec.get("z_bot", 20000.0))
+        dz    = float(spec.get("dz", 200.0))
+        if out:
+            print(f"  borehole {name!r}  x={x_m:.0f} m  y={y_m:.0f} m  "
+                  f"z=[{z_top:.0f}..{z_bot:.0f}]  dz={dz:.0f} m")
+
+        depths, rho = _fem.extract_borehole_log(
+            nodes, conn, rho_plot, x_m, y_m, z_top, z_bot, dz, out=out)
+
+        # ---- legend annotation ----------------------------------------------
+        elev_m = -z_top   # z positive-down → elevation positive-up
+        if leg_lat is not None and leg_lon is not None:
+            pos_str = (f"lat={float(leg_lat):.4f}°, lon={float(leg_lon):.4f}°, "
+                       f"elev={elev_m:+.0f} m")
+        else:
+            pos_str = f"x={x_m:.0f} m, y={y_m:.0f} m, elev={elev_m:+.0f} m"
+
+        trace_style = {k: v for k, v in spec.items() if k in _LINE2D_KEYS}
+
+        logs.append(dict(
+            name=name, pos_str=pos_str,
+            x_m=x_m, y_m=y_m, z_top=z_top, z_bot=z_bot, dz=dz,
+            lat=leg_lat, lon=leg_lon,
+            depths=depths, rho=rho,
+            trace_style=trace_style,
+        ))
+    return logs
+
+
 def plot_model_slices(
     model_file: Union[str, Path],
     mesh_file: Union[str, Path],
@@ -3008,6 +3250,11 @@ def plot_model_slices(
     alpha_blank_thresh: float = 0.0,
     mesh_outline: bool = True,
     mesh_outline_color: str = "0.35",
+    borehole_sites: Optional[list] = None,
+    borehole_style: Optional[dict] = None,
+    borehole_clim=None,
+    borehole_shared: bool = True,
+    borehole_resolve_xy=None,
     out: bool = True,
 ):
     """Produce a multi-panel figure of axis-parallel FEMTIC model slices.
@@ -3129,6 +3376,31 @@ def plot_model_slices(
         Requires SciPy (``ConvexHull``); silently skipped when absent.
     mesh_outline_color
         Matplotlib colour string for the outline (default ``"0.35"``).
+    borehole_sites
+        Optional list of borehole spec dicts (same format as accepted by
+        ``plot_borehole_logs``).  When non-empty, borehole panels are
+        appended as extra columns to the **right** of the slice grid inside
+        the same figure.
+
+        ``borehole_shared=True``  → one extra column, all traces overlaid.
+        ``borehole_shared=False`` → one extra column per borehole.
+
+        The borehole column(s) share the depth y-axis scale with the
+        leftmost curtain / plane panel present (if any); when only map
+        panels are present the y-axis is an independent depth axis.
+        ``None`` / empty list → no borehole columns.
+    borehole_style
+        Baseline Matplotlib ``Line2D`` kwargs for all borehole traces.
+        Default: ``lw=1.2, marker="none"``.
+    borehole_clim
+        ``[rho_min, rho_max]`` in Ohm*m for the borehole x-axis (log scale).
+        ``None`` = auto.
+    borehole_shared
+        ``True``  → all borehole traces on one extra column.
+        ``False`` → one extra column per borehole.
+    borehole_resolve_xy
+        Optional ``(spec) -> (x_m, y_m)`` CRS converter.
+        ``None`` = x/y already model-local floats.
     out
         Print progress messages.
     """
@@ -3451,15 +3723,45 @@ def plot_model_slices(
         norm  = mcolors.Normalize(vmin=float(_lall.min()),
                                   vmax=float(_lall.max()))
 
+    # -- sample boreholes (before figure, so depth range is known) ---------------
+    _bh_logs: list = []
+    _bh_sites = borehole_sites or []
+    if _bh_sites:
+        if out:
+            print(f"  plot: sampling {len(_bh_sites)} borehole(s) ...")
+        _bh_base = dict(lw=1.2, marker="none")
+        if borehole_style:
+            _bh_base.update(borehole_style)
+        _bh_logs = _sample_borehole_logs(
+            nodes, conn, rho_plot, _bh_sites,
+            resolve_xy_fn=borehole_resolve_xy,
+            utm_zone=utm_zone,
+            utm_northern=utm_northern,
+            utm_origin_e=utm_origin_e,
+            utm_origin_n=utm_origin_n,
+            out=out)
+        # Apply baseline style (per-spec keys already in trace_style from helper)
+        for _bl in _bh_logs:
+            _ts = dict(_bh_base)
+            _ts.update(_bl["trace_style"])
+            _bl["trace_style"] = _ts
+
     # -- figure layout ---------------------------------------------------------
-    n_panels = len(slices)
-    _dz_sc   = 1e-3 if depth_km else 1.0
-    _nrows   = int(nrows) if nrows is not None else 1
-    _ncols   = int(ncols) if ncols is not None else n_panels
+    # Borehole panels occupy extra columns to the right of the slice grid.
+    # When borehole_shared=True  → 1 extra column (all traces overlaid).
+    # When borehole_shared=False → 1 extra column per borehole.
+    n_panels  = len(slices)
+    _dz_sc    = 1e-3 if depth_km else 1.0
+    _nrows    = int(nrows) if nrows is not None else 1
+    _ncols    = int(ncols) if ncols is not None else n_panels
     if _nrows * _ncols < n_panels:
         raise ValueError(
             f"plot_model_slices: grid {_nrows}x{_ncols} = {_nrows * _ncols} "
             f"cells < {n_panels} slices -- increase nrows/ncols.")
+
+    _n_bh_cols = (1 if (borehole_shared or len(_bh_logs) == 1)
+                  else len(_bh_logs)) if _bh_logs else 0
+    _total_cols = _ncols + _n_bh_cols
 
     if figsize is not None:
         _fig_w, _fig_h = float(figsize[0]), float(figsize[1])
@@ -3491,15 +3793,40 @@ def plot_model_slices(
             _col_widths = [max(_pw[c::_ncols]) for c in range(_ncols)]
         else:
             _col_widths = [_panel_h] * _ncols
-        _fig_w = sum(_col_widths)
+        # Borehole columns: narrower than a square slice panel
+        _bh_col_w = _panel_h * 0.7
+        _fig_w = sum(_col_widths) + _n_bh_cols * _bh_col_w
         _fig_h = _panel_h * _nrows
 
-    fig, axes = plt.subplots(_nrows, _ncols,
-                             figsize=(_fig_w, _fig_h), squeeze=False)
-    _ax_flat = [axes[r][c] for r in range(_nrows) for c in range(_ncols)]
-    for ax in _ax_flat[n_panels:]:
+    # Build figure with gridspec so borehole columns can be narrower
+    import matplotlib.gridspec as gridspec
+    if _n_bh_cols > 0 and figsize is None:
+        _slice_widths = _col_widths + [_bh_col_w] * _n_bh_cols
+        fig = plt.figure(figsize=(_fig_w, _fig_h))
+        gs  = gridspec.GridSpec(_nrows, _total_cols,
+                                width_ratios=_slice_widths,
+                                figure=fig)
+        _slice_axes = [fig.add_subplot(gs[r, c])
+                       for r in range(_nrows) for c in range(_ncols)]
+        _bh_axes    = [fig.add_subplot(gs[0, _ncols + bc])
+                       for bc in range(_n_bh_cols)]
+        # Span all rows for borehole columns
+        if _nrows > 1:
+            for bc in range(_n_bh_cols):
+                _bh_axes[bc].remove()
+                _bh_axes[bc] = fig.add_subplot(gs[:, _ncols + bc])
+    else:
+        fig = plt.figure(figsize=(_fig_w, _fig_h))
+        gs  = gridspec.GridSpec(_nrows, _total_cols, figure=fig)
+        _slice_axes = [fig.add_subplot(gs[r, c])
+                       for r in range(_nrows) for c in range(_ncols)]
+        _bh_axes    = [fig.add_subplot(gs[:, _ncols + bc])
+                       for bc in range(_n_bh_cols)]
+
+    # Hide surplus slice cells
+    for ax in _slice_axes[n_panels:]:
         ax.set_visible(False)
-    axes = _ax_flat[:n_panels]
+    axes = _slice_axes[:n_panels]
     if air_bgcolor is not None:
         for ax in axes:
             ax.set_facecolor(air_bgcolor)
@@ -3707,6 +4034,62 @@ def plot_model_slices(
         if _show_legend:
             ax.legend(fontsize=7, loc="lower right")
 
+    # -- render borehole columns -----------------------------------------------
+    if _bh_logs and _bh_axes:
+        # Find the first curtain/plane axes for y-axis sharing (depth scale).
+        _curtain_ax = None
+        for _ax_s, _sp in zip(axes, slices):
+            if _sp.get("kind", "map") in ("ns", "ew", "plane"):
+                _curtain_ax = _ax_s
+                break
+
+        if borehole_shared:
+            # All boreholes on one axes
+            _bh_ax = _bh_axes[0]
+            for _bl in _bh_logs:
+                _depth_plot = _bl["depths"] / 1000.0 if depth_km else _bl["depths"]
+                _rho_v = np.where(np.isfinite(_bl["rho"]) & (_bl["rho"] > 0),
+                                  _bl["rho"], np.nan)
+                _lbl = f"{_bl['name']}\n{_bl['pos_str']}"
+                _bh_ax.plot(_rho_v, _depth_plot, label=_lbl, **_bl["trace_style"])
+            _bh_ax.set_xscale("log")
+            _bh_ax.set_xlabel("resistivity\n(Ohm·m)", fontsize=7)
+            _bh_ax.set_ylabel(
+                "depth (km)" if depth_km else "depth (m)", fontsize=7)
+            _bh_ax.invert_yaxis()
+            if borehole_clim is not None:
+                _bh_ax.set_xlim(borehole_clim)
+            _bh_ax.tick_params(labelsize=6)
+            _bh_ax.legend(fontsize=6, loc="lower right")
+            _bh_ax.set_title("Boreholes", fontsize=8)
+            _bh_ax.grid(True, which="both", axis="x", lw=0.3, alpha=0.5)
+            _bh_ax.grid(True, which="major", axis="y", lw=0.3, alpha=0.5)
+            if _curtain_ax is not None:
+                _curtain_ax.get_shared_y_axes().join(_curtain_ax, _bh_ax)
+        else:
+            # One column per borehole
+            for _bi, (_bh_ax, _bl) in enumerate(zip(_bh_axes, _bh_logs)):
+                _depth_plot = _bl["depths"] / 1000.0 if depth_km else _bl["depths"]
+                _rho_v = np.where(np.isfinite(_bl["rho"]) & (_bl["rho"] > 0),
+                                  _bl["rho"], np.nan)
+                _bh_ax.plot(_rho_v, _depth_plot, **_bl["trace_style"])
+                _bh_ax.set_xscale("log")
+                _bh_ax.set_xlabel("resistivity\n(Ohm·m)", fontsize=7)
+                if _bi == 0:
+                    _bh_ax.set_ylabel(
+                        "depth (km)" if depth_km else "depth (m)", fontsize=7)
+                _bh_ax.invert_yaxis()
+                if borehole_clim is not None:
+                    _bh_ax.set_xlim(borehole_clim)
+                _bh_ax.tick_params(labelsize=6)
+                _bh_ax.set_title(f"{_bl['name']}\n{_bl['pos_str']}", fontsize=7)
+                _bh_ax.grid(True, which="both", axis="x", lw=0.3, alpha=0.5)
+                _bh_ax.grid(True, which="major", axis="y", lw=0.3, alpha=0.5)
+                if _curtain_ax is not None and _bi == 0:
+                    _curtain_ax.get_shared_y_axes().join(_curtain_ax, _bh_ax)
+                elif _bi > 0:
+                    _bh_axes[0].get_shared_y_axes().join(_bh_axes[0], _bh_ax)
+
     fig.suptitle(f"Model: {os.path.basename(str(model_file))}", fontsize=10)
     fig.tight_layout()
     if plot_file is not None:
@@ -3727,10 +4110,15 @@ def plot_borehole_logs(
     borehole_sites: list,
     *,
     resolve_xy_fn=None,
+    utm_zone: int = 1,
+    utm_northern: bool = True,
+    utm_origin_e: float = 0.0,
+    utm_origin_n: float = 0.0,
     ocean_value: float = 0.25,
     clim=None,
     borehole_style: Optional[dict] = None,
     shared: bool = True,
+    npz_file=None,
     plot_file=None,
     dpi: int = 200,
     out: bool = True,
@@ -3743,6 +4131,11 @@ def plot_borehole_logs(
 
     The x-axis is logarithmic and shows rho in Ohm*m.  The y-axis shows depth
     in km increasing downward from z_top.
+
+    Sampled data are always exported to an NPZ file before any plotting.  The
+    NPZ contains one ``depth_<name>`` and one ``rho_<name>`` array per
+    borehole, plus a scalar string array ``header`` with a JSON metadata
+    block (model file, mesh file, creation timestamp, per-borehole geometry).
 
     Parameters
     ----------
@@ -3768,17 +4161,22 @@ def plot_borehole_logs(
         Any Matplotlib ``Line2D`` keyword (``"color"``, ``"ls"``,
         ``"linestyle"``, ``"lw"``, ``"linewidth"``, ``"marker"``, ``"alpha"``,
         ``"zorder"``, …) placed directly in the spec dict overrides the global
-        *borehole_style* for that trace only.  This allows each borehole to
-        have a distinct colour and line style without a separate config list.
+        *borehole_style* for that trace only.
 
         The legend / panel title is always annotated with position and surface
         elevation so that the figure is self-documenting.
     resolve_xy_fn
-        Optional callable ``(spec) -> (x_m, y_m)`` that converts the
-        ``"x"`` / ``"y"`` fields of each spec dict from whatever coordinate
-        system is used in the config to model-local metres.
-        ``None`` -> ``x`` / ``y`` must already be plain floats in
-        model-local metres.
+        Optional callable ``(spec) -> (x_m, y_m)`` that fully overrides the
+        built-in CRS conversion.  When ``None`` the helper converts CRS-tagged
+        ``"x"``/``"y"`` values directly using *utm_zone* / *utm_origin_e* /
+        *utm_origin_n*.
+    utm_zone, utm_northern
+        UTM zone number and hemisphere flag.  Required when any spec uses
+        ``(value, "utm")`` or ``(value, "latlon")`` CRS tags and
+        *resolve_xy_fn* is ``None``.
+    utm_origin_e, utm_origin_n
+        UTM easting / northing of the mesh centre [m].  Required for the
+        same CRS tag cases.
     ocean_value
         Ohm*m sentinel for ocean cells.
     clim
@@ -3790,22 +4188,26 @@ def plot_borehole_logs(
         traces.  Default baseline: ``lw=1.2, marker="none"``.
     shared
         ``True`` -> all boreholes on one axes; ``False`` -> one panel each.
+    npz_file
+        Path for the NPZ data export.
+
+        * explicit path  → saved there.
+        * ``None``       → derived from *plot_file* by replacing its extension
+          with ``.npz``; if *plot_file* is also ``None`` the file is written
+          as ``"borehole_logs.npz"`` in the current working directory.
+
+        Set to ``False`` to suppress NPZ export entirely.
     plot_file
-        Save path; ``None`` = interactive ``show()``.
+        Save path for the figure; ``None`` = interactive ``show()``.
     dpi
         Figure DPI.
     out
         Print progress messages.
     """
-    # Keys in a spec dict that are Matplotlib Line2D kwargs (not borehole meta).
-    _LINE2D_KEYS = frozenset({
-        "color", "c", "ls", "linestyle", "lw", "linewidth",
-        "marker", "markersize", "ms", "markeredgecolor", "mec",
-        "markeredgewidth", "mew", "markerfacecolor", "mfc",
-        "alpha", "zorder", "solid_capstyle", "solid_joinstyle",
-        "dash_capstyle", "dash_joinstyle",
-    })
+    import json
+    import datetime
 
+    # Keys in a spec dict that are Matplotlib Line2D kwargs (not borehole meta).
     if not borehole_sites:
         if out:
             print("  plot_borehole_logs: borehole_sites is empty -- skipping.")
@@ -3814,11 +4216,6 @@ def plot_borehole_logs(
         import matplotlib.pyplot as plt
     except ImportError:
         print("  plot_borehole_logs: Matplotlib not available -- skipping.")
-        return
-    try:
-        import femtic as _fem
-    except ImportError:
-        print("  plot_borehole_logs: femtic module not available -- skipping.")
         return
 
     if out:
@@ -3829,81 +4226,88 @@ def plot_borehole_logs(
     rho_plot = prepare_rho_for_plotting(
         rho_elem, air_is_nan=True, ocean_value=float(ocean_value),
         region_of_elem=block.region_of_elem)
-    nodes = mesh.nodes   # shape (nn, 3): [:,0]=easting, [:,1]=northing, [:,2]=z-down
+    nodes = mesh.nodes
     conn  = mesh.conn
 
-    # KD-tree on node XY — built lazily, only when z_top="surface" is needed.
-    _node_xy   = nodes[:, :2]
-    _node_z    = nodes[:, 2]
-    _kdtree_xy = None
-
-    def _surface_z_at(x_m: float, y_m: float, k: int = 8) -> float:
-        """Return mesh surface z (min z among k nearest nodes)."""
-        nonlocal _kdtree_xy
-        if _kdtree_xy is None:
-            if cKDTree is None:
-                raise ImportError(
-                    "scipy.spatial.cKDTree is required for z_top='surface'.")
-            _kdtree_xy = cKDTree(_node_xy)
-        _, idxs = _kdtree_xy.query([x_m, y_m], k=k)
-        return float(_node_z[idxs].min())
-
-    # Baseline style — per-spec keys override below.
+    # Baseline style — per-spec keys from _sample_borehole_logs override below.
     base_style = dict(lw=1.2, marker="none")
     if borehole_style:
         base_style.update(borehole_style)
 
-    logs = []
-    for spec in borehole_sites:
-        name = spec.get("name", "?")
+    logs = _sample_borehole_logs(
+        nodes, conn, rho_plot, borehole_sites,
+        resolve_xy_fn=resolve_xy_fn,
+        utm_zone=utm_zone,
+        utm_northern=utm_northern,
+        utm_origin_e=utm_origin_e,
+        utm_origin_n=utm_origin_n,
+        out=out)
 
-        # --- resolve (x, y) ---
-        if resolve_xy_fn is not None:
-            x_m, y_m = resolve_xy_fn(spec)
+    # Apply baseline style (trace_style from helper holds only per-spec overrides)
+    for log in logs:
+        _ts = dict(base_style)
+        _ts.update(log["trace_style"])
+        log["trace_style"] = _ts
+
+    # -------------------------------------------------------------------------
+    # NPZ export
+    # -------------------------------------------------------------------------
+    if npz_file is not False:
+        # Resolve output path
+        if npz_file is None:
+            if plot_file is not None:
+                _stem = os.path.splitext(str(plot_file))[0]
+                _npz_path = _stem + ".npz"
+            else:
+                _npz_path = "borehole_logs.npz"
         else:
-            x_m = float(spec["x"])
-            y_m = float(spec["y"])
+            _npz_path = str(npz_file)
 
-        # --- z_top: numeric or "surface" ---
-        z_top_raw = spec.get("z_top", 0.0)
-        if isinstance(z_top_raw, str) and z_top_raw.strip().lower() == "surface":
-            z_top = _surface_z_at(x_m, y_m)
-            if out:
-                print(f"  borehole {name!r}: z_top='surface' resolved to "
-                      f"{z_top:.1f} m (mesh node minimum near borehole)")
-        else:
-            z_top = float(z_top_raw)
+        # Build JSON header
+        _bh_meta = []
+        for log in logs:
+            _entry = dict(
+                name   = log["name"],
+                x_m    = log["x_m"],
+                y_m    = log["y_m"],
+                z_top  = log["z_top"],
+                z_bot  = log["z_bot"],
+                dz     = log["dz"],
+                n_levels = int(log["depths"].size),
+                depth_key = f"depth_{log['name']}",
+                rho_key   = f"rho_{log['name']}",
+            )
+            if log["lat"] is not None:
+                _entry["lat"] = float(log["lat"])
+            if log["lon"] is not None:
+                _entry["lon"] = float(log["lon"])
+            _bh_meta.append(_entry)
 
-        z_bot = float(spec.get("z_bot", 20000.0))
-        dz    = float(spec.get("dz", 200.0))
+        _header_dict = dict(
+            created      = datetime.datetime.now().isoformat(timespec="seconds"),
+            model_file   = str(model_file),
+            mesh_file    = str(mesh_file),
+            ocean_value  = ocean_value,
+            depth_unit   = "m (z positive-down from datum)",
+            rho_unit     = "Ohm*m (NaN = air / outside mesh)",
+            boreholes    = _bh_meta,
+        )
+        _header_json = json.dumps(_header_dict, indent=2)
+
+        # Pack arrays: depth_<name>, rho_<name> for each borehole + header
+        _arrays: dict = {"header": np.array(_header_json)}
+        for log in logs:
+            _safe = log["name"].replace(" ", "_")
+            _arrays[f"depth_{_safe}"] = log["depths"]
+            _arrays[f"rho_{_safe}"]   = log["rho"]
+
+        np.savez(_npz_path, **_arrays)
         if out:
-            print(f"  borehole {name!r}  x={x_m:.0f} m  y={y_m:.0f} m  "
-                  f"z=[{z_top:.0f}..{z_bot:.0f}]  dz={dz:.0f} m")
+            print(f"  boreholes: NPZ saved -> {_npz_path}")
 
-        depths, rho = _fem.extract_borehole_log(
-            nodes, conn, rho_plot, x_m, y_m, z_top, z_bot, dz, out=out)
-
-        # --- legend / title annotation ---
-        elev_m = -z_top   # z positive-down -> elevation positive-up
-        lat = spec.get("lat")
-        lon = spec.get("lon")
-        if lat is not None and lon is not None:
-            pos_str = f"lat={float(lat):.4f}°, lon={float(lon):.4f}°, elev={elev_m:+.0f} m"
-        else:
-            pos_str = f"x={x_m:.0f} m, y={y_m:.0f} m, elev={elev_m:+.0f} m"
-
-        # --- per-spec line style (overrides base_style) ---
-        trace_style = dict(base_style)
-        trace_style.update({k: v for k, v in spec.items() if k in _LINE2D_KEYS})
-
-        logs.append(dict(
-            name=name,
-            pos_str=pos_str,
-            x_m=x_m, y_m=y_m, z_top=z_top,
-            depths=depths, rho=rho,
-            trace_style=trace_style,
-        ))
-
+    # -------------------------------------------------------------------------
+    # Figure
+    # -------------------------------------------------------------------------
     n = len(logs)
     if shared:
         fig, ax_single = plt.subplots(figsize=(6, 8))
@@ -3944,7 +4348,7 @@ def plot_borehole_logs(
     if plot_file is not None:
         fig.savefig(plot_file, dpi=dpi, bbox_inches="tight")
         if out:
-            print(f"  boreholes: saved -> {plot_file}")
+            print(f"  boreholes: figure saved -> {plot_file}")
     else:
         plt.show()
 

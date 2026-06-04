@@ -1,10 +1,11 @@
 # femtic_mod_plot_slice.py — README
 
-**Purpose:** 2-D slice panels and borehole resistivity logs for a FEMTIC
-tetrahedral resistivity model.
+**Purpose:** 2-D slice panels (map, curtain, plane) for a FEMTIC tetrahedral
+resistivity model, with optional embedded borehole columns.
 
-Sister script: [`femtic_mod_plot_3d.py`](femtic_mod_plot_3d_readme.md) —
-PyVista 3-D rendering and VTK/VTU export from the same files.
+Sister scripts:
+- [`femtic_mod_plot_bh.py`](femtic_mod_plot_bh_readme.md) — standalone 1-D ρ(z) borehole log figures.
+- [`femtic_mod_plot_3d.py`](femtic_mod_plot_3d_readme.md) — PyVista 3-D rendering and VTK/VTU export.
 
 ---
 
@@ -13,14 +14,12 @@ PyVista 3-D rendering and VTK/VTU export from the same files.
 ```
 mesh.dat + resistivity_block_iterX.dat
         │
-        ├─(5)─► fviz.plot_model_slices(...)   [2-D map/curtain/plane panels]
-        │        → PDF / PNG / interactive
-        │
-        └─(6)─► fviz.plot_borehole_logs(...)  [1-D ρ(z) traces, log x-axis]
-                 → PDF / interactive           [optional, PLOT_BOREHOLE = True]
+        └─(5)─► fviz.plot_model_slices(...)   [2-D map/curtain/plane panels]
+                 → PDF / PNG / interactive
+                 (optional embedded borehole columns when BOREHOLE_IN_SLICE=True)
 ```
 
-Both steps call functions from `femtic_viz.py`; no geometry code lives here.
+All geometry lives in `femtic_viz.py`; no geometry code lives here.
 
 ---
 
@@ -33,7 +32,6 @@ Both steps call functions from `femtic_viz.py`; no geometry code lives here.
 | (3) | Resolve `PLOT_SLICES` positions to model-local metres (CRS conversion) |
 | (4) | Read site positions from `SITE_DAT` or `OBSERVE_FILE` for marker overlay |
 | (5) | Plot 2-D slice panels via `fviz.plot_model_slices` |
-| (6) | Plot borehole logs via `fviz.plot_borehole_logs` (if `PLOT_BOREHOLE=True`) |
 
 ---
 
@@ -94,7 +92,43 @@ PLOT_SLICES = [
 
 ---
 
-## Configuration reference — 2-D slices
+## Embedded borehole columns (`BOREHOLE_IN_SLICE`)
+
+When `BOREHOLE_IN_SLICE = True` and `BOREHOLE_SITES` is non-empty, borehole
+ρ(z) panels are appended as extra columns to the right of the slice grid
+inside the **same figure**.  The borehole depth axis is linked to the leftmost
+curtain/plane panel for synchronised zoom/pan.
+
+For a standalone borehole figure (higher DPI, separate PDF), use
+`femtic_mod_plot_bh.py` instead.
+
+### Borehole spec dict keys
+
+| Key | Type | Required | Description |
+|---|---|---|---|
+| `"name"` | str | yes | Label in legend / panel title |
+| `"x"` | float or `(v, "crs")` | yes | Easting: float = model-local m; `(lon, "latlon")` = longitude [°]; `(E_m, "utm")` = UTM easting [m] |
+| `"y"` | float or `(v, "crs")` | yes | Northing: float = model-local m; `(lat, "latlon")` = latitude [°]; `(N_m, "utm")` = UTM northing [m] |
+| `"z_top"` | float or `"surface"` | no (def. 0) | Start depth [m, z-down]. `"surface"` → auto from mesh nodes (requires scipy) |
+| `"z_bot"` | float | no (def. 20000) | End depth [m, z-down] |
+| `"dz"` | float | no (def. 200) | Sampling interval [m] |
+| `"lat"` | float | no | Override legend latitude [°] (auto-inferred for `"latlon"` / `"utm"` CRS) |
+| `"lon"` | float | no | Override legend longitude [°] |
+| `"color"`, `"ls"`, `"lw"`, `"marker"`, `"alpha"`, … | any | no | Matplotlib `Line2D` kwargs — override `BOREHOLE_STYLE` for this trace |
+
+### Borehole configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `BOREHOLE_SITES` | `[]` | List of borehole spec dicts |
+| `BOREHOLE_STYLE` | `dict(lw=1.2, marker="none")` | Baseline line style; per-spec keys override |
+| `BOREHOLE_XLIM` | `[1., 1e4]` | x-axis limits [Ω·m, log scale]; `None` = auto |
+| `BOREHOLE_SHARED` | `True` | `True` = one shared column; `False` = one column per borehole |
+| `BOREHOLE_IN_SLICE` | `True` | Embed borehole columns inside the slice figure |
+
+---
+
+## Configuration reference
 
 ### Paths
 
@@ -182,68 +216,15 @@ PLOT_SLICES = [
 
 ---
 
-## Borehole resistivity logs (`PLOT_BOREHOLE`)
-
-When `PLOT_BOREHOLE = True` the script samples the resistivity model along
-one or more vertical boreholes and produces a **ρ vs depth** figure with a
-**logarithmic x-axis** (Ohm·m).
-
-### Spec dict keys
-
-| Key | Type | Required | Description |
-|---|---|---|---|
-| `"name"` | str | yes | Label in legend / panel title |
-| `"x"` | float or `(v, "crs")` | yes | Borehole easting — same CRS tagging as `PLOT_SLICES` |
-| `"y"` | float or `(v, "crs")` | yes | Borehole northing |
-| `"z_top"` | float or `"surface"` | no (def. 0) | Start depth [m, z-down].  `"surface"` → auto from mesh nodes (requires scipy) |
-| `"z_bot"` | float | no (def. 20000) | End depth [m, z-down] |
-| `"dz"` | float | no (def. 200) | Sampling interval [m] |
-| `"lat"` | float | no | Latitude [°] shown in legend instead of model-local y |
-| `"lon"` | float | no | Longitude [°] shown in legend instead of model-local x |
-| `"color"`, `"ls"`, `"lw"`, `"marker"`, `"alpha"`, … | any | no | Matplotlib `Line2D` kwargs — override `BOREHOLE_STYLE` for this trace |
-
-### Borehole configuration
-
-| Variable | Default | Description |
-|---|---|---|
-| `PLOT_BOREHOLE` | `True` | Enable / disable |
-| `BOREHOLE_FILE` | `*_boreholes.pdf` | Output path; `None` = interactive |
-| `BOREHOLE_SITES` | `[]` | List of spec dicts |
-| `BOREHOLE_STYLE` | `dict(lw=1.2, marker="none")` | Baseline line style; per-spec keys override |
-| `BOREHOLE_XLIM` | `[1., 1e4]` | x-axis limits [Ω·m, log scale]; `None` = auto |
-| `BOREHOLE_SHARED` | `True` | `True` = one shared axes; `False` = one panel per borehole |
-
-### Example
-
-```python
-PLOT_BOREHOLE = True
-BOREHOLE_FILE = WORK_DIR + "resistivity_block_iter17_boreholes.pdf"
-BOREHOLE_SHARED = True
-BOREHOLE_XLIM   = [1., 1e4]   # Ω·m
-
-BOREHOLE_SITES = [
-    dict(name="BH-centre", x=0.0, y=0.0,
-         lat=-16.363, lon=-70.868,
-         z_top="surface", z_bot=20000., dz=200.,
-         color="steelblue", ls="-"),
-    dict(name="BH-north",
-         x=(229047., "utm"), y=(8190000., "utm"),
-         z_top=0., z_bot=15000., dz=100.,
-         color="firebrick", ls="--"),
-]
-```
-
----
-
 ## Dependencies
 
 | Package | Role |
 |---|---|
-| `femtic` (Py4MTX) | `resolve_slice_positions`, `read_site_dat`, `read_site_position`, `utm_to_model`, `resolve_pos_x/y`, `extract_borehole_log` |
-| `femtic_viz` (Py4MTX) | `plot_model_slices`, `plot_borehole_logs` |
+| `femtic` (Py4MTX) | `resolve_slice_positions`, `read_site_dat`, `read_site_position`, `utm_to_model`, `latlon_to_model` |
+| `femtic_viz` (Py4MTX) | `plot_model_slices` |
 | `util` (Py4MTX) | `utm_zone_from_latlon`, `utm_to_latlon_zn`, `print_title` |
 | `matplotlib` | 2-D rendering (via `femtic_viz`) |
-| `scipy` | Only for `z_top="surface"` KD-tree lookup |
+| `scipy` | Only for `z_top="surface"` KD-tree lookup in embedded boreholes |
 | `numpy` | Array operations |
 
 ---
@@ -263,4 +244,5 @@ BOREHOLE_SITES = [
 | 2026-05-26 | Claude Sonnet 4.6 | `plot_model_slices`/`plot_borehole_logs` moved into `femtic_viz.py`; `ALPHA_FILE`/`ALPHA_MODE`/`ALPHA_BLANK_THRESH` added |
 | 2026-05-27 | vrath / Claude Sonnet 4.6 | `PLOT_XLIM/YLIM/ZLIM` passed to slice panels |
 | 2026-05-31 | vrath / Claude Sonnet 4.6 | `invert_x` per-panel key; origin estimation before UTM zone derivation |
-| 2026-06-03 | Claude Sonnet 4.6 | **Split** from `femtic_mod_plot.py` → `femtic_mod_plot_slice.py` + `femtic_mod_plot_3d.py`. Borehole: `BOREHOLE_XLIM` now in Ω·m; `z_top="surface"`; lat/lon legend; per-trace line-style keys |
+| 2026-06-03 | Claude Sonnet 4.6 | **Split** from `femtic_mod_plot.py` → `femtic_mod_plot_slice.py` + `femtic_mod_plot_3d.py`. `BOREHOLE_IN_SLICE`: embedded borehole columns via `plot_model_slices(borehole_sites=...)`; `BOREHOLE_XLIM` now in Ω·m; `z_top="surface"` supported; lat/lon legend; per-trace line-style keys; `BOREHOLE_NPZ` added |
+| 2026-06-04 | vrath / Claude Sonnet 4.6 | **Split** from `femtic_mod_plot_slice.py`: standalone borehole step (step 6) and `PLOT_BOREHOLE` flag moved to new `femtic_mod_plot_bh.py`. `BOREHOLE_IN_SLICE` retained here for embedded columns only |
