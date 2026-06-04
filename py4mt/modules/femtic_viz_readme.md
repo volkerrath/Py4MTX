@@ -394,12 +394,44 @@ fviz.plot_model_slices(
 | `panel_height` | `5.0` | Row height **in inches** |
 | `panel_width` | `None` | Column width in inches; `None` = auto from aspect |
 | `figsize` | `None` | `[width, height]` in inches; overrides auto sizing |
+| `alpha_file` | `None` | Second block file with log10 weights for per-element fading/blanking |
+| `alpha_mode` | `"fade"` | `"fade"` = proportional; `"blank"` = hard cutoff |
+| `alpha_blank_thresh` | `0.0` | log10 threshold for blanking |
+| `borehole_sites` | `None` | List of borehole spec dicts — appended as extra columns to the right of the slice grid |
+| `borehole_style` | `None` | Baseline line kwargs for borehole traces (default `lw=1.2, marker="none"`) |
+| `borehole_clim` | `None` | `[rho_min, rho_max]` in Ω·m for borehole x-axis; `None` = auto |
+| `borehole_shared` | `True` | `True` = one extra column, all traces overlaid; `False` = one column per borehole |
+| `borehole_resolve_xy` | `None` | `(spec) → (x_m, y_m)` CRS converter for borehole positions |
 
 Per-panel `invert_x` key in each slice dict (applies to `ns`, `ew`, `plane`
 kinds only): when `True`, calls `ax.invert_xaxis()` after rendering so the
 horizontal axis reads right-to-left.  Use for comparison with sections from
 other software that uses the opposite orientation convention.  Default `False`;
 has no effect on `map` panels.
+
+### Embedded borehole columns
+
+When `borehole_sites` is provided, borehole panels are appended as extra
+columns to the right of the slice grid inside the **same figure** using a
+`GridSpec` layout with narrower column widths (0.7× the slice panel height).
+The depth y-axis of the borehole column(s) is linked to the leftmost
+curtain / plane panel present, so zooming / panning keeps all depth axes in
+sync.
+
+```python
+fviz.plot_model_slices(
+    ...,   # normal slice args
+    borehole_sites = [
+        dict(name="BH-01", x=0., y=0.,
+             lat=-16.363, lon=-70.868,
+             z_top="surface", z_bot=20000., dz=200.,
+             color="steelblue"),
+    ],
+    borehole_clim    = [1., 1e4],   # Ω·m
+    borehole_shared  = True,        # one column for all boreholes
+    borehole_resolve_xy = _resolve_borehole_xy,
+)
+```
 
 ---
 
@@ -414,46 +446,58 @@ fviz.plot_borehole_logs(
     model_file = "resistivity_block_iter10.dat",
     mesh_file  = "mesh.dat",
     borehole_sites = [
-        dict(name="BH-centre", x=0.0,  y=0.0,
-             lat=-16.363, lon=-70.868,          # → shown in legend
+        # model-local metres — explicit lat/lon for legend
+        dict(name="BH-centre", x=0.0, y=0.0,
+             lat=-16.363, lon=-70.868,
              z_top="surface", z_bot=20000., dz=200.,
-             color="steelblue", ls="-"),         # per-trace style
+             color="steelblue", ls="-"),
+        # geographic coordinates — lat/lon auto-shown in legend
+        dict(name="BH-south",
+             x=(-70.90, "latlon"), y=(-16.40, "latlon"),
+             z_top="surface", z_bot=15000., dz=100.,
+             color="firebrick", ls="--"),
+        # UTM coordinates — lat/lon back-converted for legend
         dict(name="BH-north",
              x=(229047., "utm"), y=(8190000., "utm"),
              z_top=0., z_bot=15000., dz=100.,
-             color="firebrick", ls="--", lw=1.5),
+             color="seagreen", ls="-."),
     ],
-    resolve_xy_fn = _resolve_borehole_xy,  # converts CRS-tagged x/y to model-local m
+    utm_zone      = 19,
+    utm_northern  = False,
+    utm_origin_e  = 300472.5,
+    utm_origin_n  = 8189946.1,
     ocean_value   = 0.25,
-    clim          = [1., 1e4],             # Ohm·m (log scale)
+    clim          = [1., 1e4],   # Ohm·m (log scale)
     shared        = True,
     plot_file     = "boreholes.pdf",
     dpi           = 300,
 )
 ```
 
-`resolve_xy_fn` is a script-level closure (defined in `femtic_mod_plot.py`)
-that calls `fem.resolve_pos_x` / `fem.resolve_pos_y` with the current mesh
-origin and UTM zone.  When `x` / `y` are already plain floats in model-local
-metres, pass `resolve_xy_fn=None`.
+CRS conversion is handled natively: no external `resolve_xy_fn` closure is needed.
+Pass `resolve_xy_fn` only for non-standard position formats that the built-in
+logic cannot handle.
 
 ### Spec dict keys
 
 | Key | Type | Required | Description |
 |---|---|---|---|
 | `"name"` | str | yes | Label in legend / panel title |
-| `"x"` | float or `(v, "crs")` | yes | Borehole easting — same CRS tagging as `PLOT_SLICES` |
-| `"y"` | float or `(v, "crs")` | yes | Borehole northing — same CRS tagging |
+| `"x"` | float or `(v, "crs")` | yes | Borehole easting: plain float = model-local m; `(lon, "latlon")` = longitude [°]; `(E_m, "utm")` = UTM easting [m] |
+| `"y"` | float or `(v, "crs")` | yes | Borehole northing: plain float = model-local m; `(lat, "latlon")` = latitude [°]; `(N_m, "utm")` = UTM northing [m] |
 | `"z_top"` | float or `"surface"` | no (def. 0) | Start depth [m, z-down].  `"surface"` → auto from mesh nodes (requires scipy) |
 | `"z_bot"` | float | no (def. 20000) | End depth [m, z-down] |
 | `"dz"` | float | no (def. 200) | Sampling interval [m] |
-| `"lat"` | float | no | Geographic latitude [°] — shown in legend **instead of** model-local y |
-| `"lon"` | float | no | Geographic longitude [°] — shown in legend **instead of** model-local x.  Requires `"lat"` too |
-| `"color"`, `"ls"`, `"lw"`, `"marker"`, `"alpha"`, … | any | no | Any Matplotlib `Line2D` kwarg — overrides `borehole_style` for this trace only |
+| `"lat"` | float | no | Override legend latitude [°] (auto-inferred for `"latlon"` / `"utm"` CRS) |
+| `"lon"` | float | no | Override legend longitude [°] (auto-inferred for `"latlon"` / `"utm"` CRS) |
+| `"color"`, `"ls"`, `"lw"`, `"marker"`, `"alpha"`, … | any | no | Matplotlib `Line2D` kwargs — override `borehole_style` for this trace |
 
-When `"lat"` and `"lon"` are both present the legend annotation reads
-`lat=…°, lon=…°, elev=±… m`; otherwise it shows `x=… m, y=… m, elev=±… m`.
-Elevation is derived as `−z_top` (FEMTIC z-down → positive-up).
+**CRS tag rules:**
+- `"x"` and `"y"` must carry the **same** CRS tag; mixing raises `ValueError`.
+- `(lon, "latlon")` + `(lat, "latlon")` → jointly converted via `fem.latlon_to_model`; legend shows lat/lon automatically.
+- `(E_m, "utm")` + `(N_m, "utm")` → jointly converted via `fem.utm_to_model`; legend shows back-converted lat/lon automatically (requires `utm_zone` / `utm_origin_*`).
+- Plain floats → model-local metres; legend shows x/y in metres unless `"lat"`/`"lon"` keys are also given.
+- Explicit `"lat"`/`"lon"` spec keys always override auto-inferred legend values.
 
 ### Function parameters
 
@@ -461,13 +505,65 @@ Elevation is derived as `−z_top` (FEMTIC z-down → positive-up).
 |---|---|---|
 | `model_file`, `mesh_file` | — | Resistivity block and `mesh.dat` |
 | `borehole_sites` | — | List of spec dicts (see above) |
-| `resolve_xy_fn` | `None` | `(spec) → (x_m, y_m)` CRS converter; `None` = `x`/`y` are model-local floats |
+| `resolve_xy_fn` | `None` | Optional `(spec) → (x_m, y_m)` override; bypasses built-in CRS logic entirely |
+| `utm_zone` | `1` | UTM zone number — required for `"utm"` / `"latlon"` CRS tags |
+| `utm_northern` | `True` | UTM hemisphere flag |
+| `utm_origin_e` | `0.0` | Mesh-centre UTM easting [m] |
+| `utm_origin_n` | `0.0` | Mesh-centre UTM northing [m] |
 | `ocean_value` | `0.25` | Ω·m sentinel for ocean cells |
 | `clim` | `None` | x-axis limits `[rho_min, rho_max]` in Ω·m; `None` = auto |
 | `borehole_style` | `None` | Baseline Matplotlib line kwargs (default `lw=1.2, marker="none"`); per-spec keys override |
 | `shared` | `True` | `True` = all traces on one axes; `False` = one panel each |
-| `plot_file` | `None` | Save path; `None` = `plt.show()` |
+| `npz_file` | `None` | NPZ export path.  `None` = auto-derive from `plot_file` (same stem, `.npz` ext) or `"borehole_logs.npz"` if `plot_file` is also `None`.  `False` = skip export |
+| `plot_file` | `None` | Save path for figure; `None` = `plt.show()` |
 | `dpi` | `200` | Saved-figure DPI |
+
+### NPZ export
+
+Sampling always runs before plotting.  The NPZ file contains:
+
+| Array key | Shape | Contents |
+|---|---|---|
+| `header` | scalar str | JSON metadata (see below) |
+| `depth_<name>` | `(n_levels,)` | Depth samples [m, z positive-down] for each borehole |
+| `rho_<name>` | `(n_levels,)` | Resistivity [Ω·m]; `NaN` where outside mesh or air |
+
+`<name>` is the borehole `"name"` key with spaces replaced by underscores.
+
+The `header` array holds a JSON string with:
+
+```json
+{
+  "created":     "2026-06-03T14:22:01",
+  "model_file":  "resistivity_block_iter17.dat",
+  "mesh_file":   "mesh.dat",
+  "ocean_value": 0.25,
+  "depth_unit":  "m (z positive-down from datum)",
+  "rho_unit":    "Ohm*m (NaN = air / outside mesh)",
+  "boreholes": [
+    { "name": "BH-centre", "x_m": 0.0, "y_m": 0.0,
+      "z_top": -5573.0, "z_bot": 20000.0, "dz": 200.0,
+      "n_levels": 128, "depth_key": "depth_BH-centre",
+      "rho_key": "rho_BH-centre",
+      "lat": -16.363, "lon": -70.868 }
+  ]
+}
+```
+
+`lat` and `lon` entries appear when the position was given in `"latlon"` or `"utm"` CRS, or when explicit `"lat"`/`"lon"` keys were in the spec dict.
+
+**Reading the NPZ:**
+
+```python
+import numpy as np, json
+
+d = np.load("borehole_logs.npz", allow_pickle=False)
+hdr = json.loads(str(d["header"]))
+for bh in hdr["boreholes"]:
+    depth = d[bh["depth_key"]]   # m, z-down
+    rho   = d[bh["rho_key"]]     # Ohm*m
+    print(bh["name"], depth.shape)
+```
 
 ---
 
@@ -651,6 +747,6 @@ excluded from all statistics.
 |            |        | inner geometry helpers: `_tet_plane_intersection`, `_slice_geometry`, `_plot_slice_panel`, `_strike_dip_to_normal`, `_plane_basis`) and `plot_borehole_logs` from `femtic_mod_plot.py` into this module. All formerly-implicit config globals (`DISPLAY_COORDS`, `UTM_ORIGIN_*`, `UTM_ZONE`, `SITE_MARKER`, etc.) are now explicit keyword parameters. Added `import math`, `import os`. |
 |            |        | `plot_model_3d`: added `vtu_file` parameter (cell-centred `.vtu`/`.vtk` export for ParaView / Zenodo); `plot_file=*.vtu/.vtk` accepted directly. Added `ImportError` fallback for HTML export when `trame_vtk` absent. |
 | 2026-05-31 | vrath / Claude Sonnet 4.6 (Anthropic) | `plot_model_slices`, `plot_ensemble_slices`: added per-panel `invert_x` key in slice-spec dicts. When `True` on an `ns`, `ew`, or `plane` panel, calls `ax.invert_xaxis()` after rendering (after axis limits are applied) to flip the horizontal axis left-to-right. Enables direct comparison with sections from other software that uses the opposite orientation convention. Default `False`; no effect on `map` panels. In `plot_ensemble_slices`, stored in `slice_geom` dicts so the geometry precomputation step is unaffected. |
-| 2026-06-03 | Claude Sonnet 4.6 (Anthropic) | `plot_borehole_logs`: x-axis switched to log-scale Ω·m (`clim` now in Ω·m); `z_top="surface"` auto-detects mesh surface elevation via KD-tree; legend annotation shows `lat/lon` when `"lat"`/`"lon"` keys are present in spec dict (otherwise `x/y` model-local metres); per-trace line style via Matplotlib `Line2D` kwargs in spec dict (`"color"`, `"ls"`, `"lw"`, `"marker"`, `"alpha"`, …) that override the global `borehole_style`. |
+| 2026-06-03 | Claude Sonnet 4.6 (Anthropic) | `plot_borehole_logs`: x-axis log-scale Ω·m; `z_top="surface"`; lat/lon legend; per-trace Line2D style; `npz_file` NPZ export with JSON header. Added `_sample_borehole_logs()` private helper (shared sampling logic). `plot_model_slices`: added `borehole_sites`, `borehole_style`, `borehole_clim`, `borehole_shared`, `borehole_resolve_xy` parameters; when `borehole_sites` is non-empty, borehole panels are appended as extra columns (one shared or one per borehole) to the right of the slice grid inside the same figure using `GridSpec`; borehole depth y-axis linked to the leftmost curtain/plane panel. |
 
 Author: Volker Rath (DIAS)

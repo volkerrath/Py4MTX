@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-femtic_mod_plot_slice.py — 2-D slice panels and borehole logs for a FEMTIC
-resistivity model.
+femtic_mod_plot_slice.py — 2-D slice panels for a FEMTIC resistivity model.
 
-Produces:
-  • One figure with horizontal map, N-S curtain, E-W curtain, and/or arbitrary
-    plane slices using exact tetrahedron-plane intersection (``fviz.plot_model_slices``).
-  • Optionally an additional 1-D ρ(z) borehole figure (``fviz.plot_borehole_logs``).
+Produces one figure with horizontal map, N-S curtain, E-W curtain, and/or
+arbitrary plane slices using exact tetrahedron-plane intersection
+(``fviz.plot_model_slices``).
 
-Sister script ``femtic_mod_plot_3d.py`` handles the PyVista 3-D rendering and
-VTK/VTU export from the same mesh and block file.
+Sister scripts:
+  ``femtic_mod_plot_bh.py``  — 1-D ρ(z) borehole log figures.
+  ``femtic_mod_plot_3d.py``  — PyVista 3-D rendering and VTK/VTU export.
 
 Slice positions can be given in three equivalent systems
 ---------------------------------------------------------
@@ -115,6 +114,19 @@ Provenance
                 3-D rendering).  Borehole: BOREHOLE_XLIM now in Ohm*m;
                 z_top="surface" supported; lat/lon legend annotation and
                 per-trace line-style keys in BOREHOLE_SITES.
+                BOREHOLE_NPZ config var for NPZ data export.
+                BOREHOLE_IN_SLICE config var: when True, borehole panels are
+                embedded inside the slice figure as extra columns to the right
+                via plot_model_slices(borehole_sites=...).
+                _resolve_borehole_xy removed: CRS conversion for boreholes now
+                handled natively in _sample_borehole_logs via utm_zone /
+                utm_origin_e/n parameters (no longer needed in script).
+                Standalone plot_borehole_logs call updated to pass utm_zone /
+                utm_northern / utm_origin_e / utm_origin_n directly.
+    2026-06-04  vrath / Claude Sonnet 4.6 (Anthropic)
+                Borehole config block (BOREHOLE_*, PLOT_BOREHOLE) and step (6)
+                moved to new sister script femtic_mod_plot_bh.py.
+                plot_model_slices call: borehole_* parameters removed.
 
 @author: vrath
 """
@@ -364,53 +376,6 @@ PLOT_PANEL_WIDTH = None
 PLOT_FIGSIZE = None   # e.g. [40., 25.]
 
 # ---------------------------------------------------------------------------
-# Borehole resistivity logs  (optional)
-# ---------------------------------------------------------------------------
-#: Set True to produce a ρ(z) borehole figure.
-PLOT_BOREHOLE = True
-
-#: Output file for the borehole figure.  None → interactive show().
-BOREHOLE_FILE = WORK_DIR + "resistivity_block_iter17_boreholes.pdf"
-
-#: List of borehole specifications.  Each entry is a dict with:
-#:   "name"   : str   — label shown in the legend / panel title
-#:   "x"      : float — model-local easting  [m]  (or CRS-tagged tuple)
-#:   "y"      : float — model-local northing [m]  (or CRS-tagged tuple)
-#:   "z_top"  : float | "surface"
-#:              float — start depth [m, z-down]; 0 = datum surface
-#:              "surface" — auto-detect from mesh nodes via KD-tree (scipy req.)
-#:   "z_bot"  : float — end depth [m, z-down], e.g. 20000.0 for 20 km
-#:   "dz"     : float — sampling interval [m], e.g. 100.0
-#:
-#:   Optional keys:
-#:   "lat"    : float — geographic latitude  [°]  shown in legend instead of y_m
-#:   "lon"    : float — geographic longitude [°]  shown in legend instead of x_m
-#:              Both must be provided together.
-#:   Any Matplotlib Line2D kwarg ("color", "ls", "lw", "marker", "alpha", …)
-#:   placed in the spec dict overrides BOREHOLE_STYLE for that trace only.
-BOREHOLE_SITES = [
-    dict(name="borehole1",
-         y=-16.363436, x=-70.868025,
-         lat=-16.363436, lon=-70.868025,
-         z_top="surface", z_bot=5000., dz=50.,
-         color="steelblue", ls="-"),
-    # dict(name="BH-01", x=0.0, y=0.0,
-    #      lat=-16.40, lon=-70.90,
-    #      z_top="surface", z_bot=20000., dz=200.,
-    #      color="firebrick", ls="--"),
-]
-
-#: Baseline Matplotlib line / marker style for all borehole traces.
-#: Per-spec keys in BOREHOLE_SITES override these for individual traces.
-BOREHOLE_STYLE = dict(lw=1.2, marker="none")
-
-#: x-axis limits in Ohm*m (log scale).  None → auto.
-BOREHOLE_XLIM = [1.0, 1e4]   # Ohm*m
-
-#: True = all boreholes on one shared axes; False = one panel per borehole.
-BOREHOLE_SHARED = True
-
-# ---------------------------------------------------------------------------
 # Mesh-centre estimation from site.dat UTM coordinates  (optional)
 # ---------------------------------------------------------------------------
 #: Method used to estimate UTM_ORIGIN_E / UTM_ORIGIN_N from SITE_DAT:
@@ -561,32 +526,3 @@ fviz.plot_model_slices(
 )
 print("Slice plot done.")
 
-# --- (6) Borehole resistivity logs ----------------------------------------
-if PLOT_BOREHOLE:
-    if not BOREHOLE_SITES:
-        print("  Borehole plot skipped: BOREHOLE_SITES is empty.")
-    else:
-        def _resolve_borehole_xy(spec):
-            return (
-                fem.resolve_pos_x(spec["x"], UTM_ZONE, UTM_NORTHERN,
-                                  UTM_ORIGIN_E, UTM_ORIGIN_N,
-                                  UTM_ORIGIN_LAT, UTM_ORIGIN_LON),
-                fem.resolve_pos_y(spec["y"], UTM_ZONE, UTM_NORTHERN,
-                                  UTM_ORIGIN_E, UTM_ORIGIN_N,
-                                  UTM_ORIGIN_LAT, UTM_ORIGIN_LON),
-            )
-        print(f"Sampling {len(BOREHOLE_SITES)} borehole(s) …")
-        fviz.plot_borehole_logs(
-            model_file=MODEL_FILE,
-            mesh_file=MESH_FILE,
-            borehole_sites=BOREHOLE_SITES,
-            resolve_xy_fn=_resolve_borehole_xy,
-            ocean_value=OCEAN_RHO,
-            clim=BOREHOLE_XLIM,
-            borehole_style=BOREHOLE_STYLE,
-            shared=BOREHOLE_SHARED,
-            plot_file=BOREHOLE_FILE,
-            dpi=PLOT_DPI,
-            out=OUT,
-        )
-        print("Borehole plot done.")
