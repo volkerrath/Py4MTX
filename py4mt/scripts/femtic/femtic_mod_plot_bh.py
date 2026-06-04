@@ -35,6 +35,11 @@ Provenance
                 Split from femtic_mod_plot_slice.py.  Borehole config block
                 (BOREHOLE_*, PLOT_BOREHOLE) and execution step moved here.
                 fviz (femtic_viz) used directly.
+    2026-06-04  vrath / Claude Sonnet 4.6 (Anthropic)
+                Added BOREHOLE_MARKERS config block for free annotations
+                (arrows + text) and LEGEND_FONTSIZE for the legend / panel
+                title font size.  Both forwarded to
+                ``fviz.plot_borehole_logs``.
 
 @author: vrath
 @project: Py4MTX
@@ -153,11 +158,11 @@ BOREHOLE_SITES = [
     dict(name="borehole1",
          x=(-70.868025, "latlon"), y=(-16.363436, "latlon"),
          z_top="surface", z_bot=5000., dz=50.,
-         color="steelblue", ls="-"),
+         color="steelblue", ls="-", lw=3.2),
     dict(name="borehole crater",
          x=(-70.8972, "latlon"), y=(-16.3450, "latlon"),
          z_top="surface", z_bot=4000., dz=50.,
-         color="red", ls=":"),
+         color="red", ls=":", lw=3.2),
     # dict(name="BH-01",
     #      x=(-70.90, "latlon"), y=(-16.40, "latlon"),
     #      z_top="surface", z_bot=20000., dz=200.,
@@ -176,7 +181,38 @@ BOREHOLE_STYLE = dict(lw=1.2, marker="none")
 BOREHOLE_XLIM = [1.0, 1e4]   # Ohm*m
 
 #: True = all boreholes on one shared axes; False = one panel per borehole.
-BOREHOLE_SHARED = True
+BOREHOLE_SHARED = False
+
+
+#: Free annotations (arrows + text) added to the borehole depth panels.
+#: Each entry is a dict with:
+#:   "depth"    : float  — depth in metres (z-down); REQUIRED.
+#:   "rho"      : float  — x-position of the arrow tip in Ohm·m (optional;
+#:                         defaults to the left x-axis edge).
+#:   "text"     : str    — annotation label (optional; default "").
+#:   "borehole" : str or list of str — borehole name(s) to annotate
+#:                (optional; None = all panels).
+#:   "xytext"   : (dx_log_factor, dy_km) — text offset relative to tip
+#:                (optional; default (1.5, -0.3)).
+#:   "arrowprops" : dict — forwarded to ax.annotate (optional; default thin
+#:                         black -> arrow).
+#:   Any additional keys are passed verbatim to ax.annotate
+#:   (e.g. "color", "fontsize", "fontweight", "ha", "va", "zorder").
+#:
+#: Set to [] or None to place no markers.
+BOREHOLE_MARKERS = [
+    # dict(depth=1500., rho=10., text="conductor",
+    #      borehole="borehole1",
+    #      color="red", fontsize=8, fontweight="bold",
+    #      arrowprops=dict(arrowstyle="->", color="red", lw=1.2)),
+    # dict(depth=3200., text="resistive basement",
+    #      color="navy", fontsize=8),
+]
+
+#: Font size for the borehole legend (shared mode) and panel titles
+#: (per-panel mode).  Tick labels are set to legend_fontsize - 2.
+LEGEND_FONTSIZE = 9
+
 
 #: Export sampled depth / rho arrays to an NPZ file.
 #:   True  — save; path is derived from BOREHOLE_FILE (same stem, .npz extension)
@@ -260,6 +296,8 @@ else:
         clim           = BOREHOLE_XLIM,
         borehole_style = BOREHOLE_STYLE,
         shared         = BOREHOLE_SHARED,
+        markers        = BOREHOLE_MARKERS or None,
+        legend_fontsize= LEGEND_FONTSIZE,
         npz_file       = (None   if BOREHOLE_NPZ is True
                           else (False if BOREHOLE_NPZ is False
                                 else BOREHOLE_NPZ)),

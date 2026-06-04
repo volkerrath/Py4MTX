@@ -210,7 +210,20 @@ Provenance:
                         drives ``plot_model_slices``; new
                         ``femtic_mod_plot_bh.py`` drives
                         ``plot_borehole_logs``.  Both functions and
-                        ``_sample_borehole_logs`` remain in this module."""
+                        ``_sample_borehole_logs`` remain in this module.
+    2026-06-04  vrath / Claude Sonnet 4.6 (Anthropic)
+                        plot_borehole_logs: added ``markers`` parameter for
+                        free annotations (arrows + text) on borehole depth
+                        axes.  Each marker dict accepts ``depth`` [m],
+                        optional ``rho`` [Ohm*m] tip x-position, ``text``,
+                        ``borehole`` (name or list of names for targeting),
+                        ``xytext`` offset, ``arrowprops``, and any
+                        ``ax.annotate`` kwargs (``color``, ``fontsize``,
+                        ``fontweight``, ``ha``, ``va``, …).  Default arrow
+                        style ``->`` black.
+                        Added ``legend_fontsize`` parameter (default 9) that
+                        controls the shared-mode legend and per-panel title
+                        font size; tick labels scale with it."""
 
 from __future__ import annotations
 
@@ -4118,6 +4131,8 @@ def plot_borehole_logs(
     clim=None,
     borehole_style: Optional[dict] = None,
     shared: bool = True,
+    markers: Optional[list] = None,
+    legend_fontsize: int = 9,
     npz_file=None,
     plot_file=None,
     dpi: int = 200,
@@ -4188,6 +4203,45 @@ def plot_borehole_logs(
         traces.  Default baseline: ``lw=1.2, marker="none"``.
     shared
         ``True`` -> all boreholes on one axes; ``False`` -> one panel each.
+    markers
+        Optional list of free-annotation dicts placed on the depth axis after
+        all traces are drawn.  Each dict may contain:
+
+        ``"depth"``  (float, **required**) — depth in **metres** (z-down) at
+        which the annotation is placed.  Converted to km internally.
+
+        ``"rho"``  (float, optional) — x-position of the arrow tip in Ohm·m.
+        When omitted the annotation is placed at the left edge of the x-axis.
+
+        ``"text"``  (str, optional, default ``""``) — annotation string.
+
+        ``"borehole"``  (str or list of str, optional) — borehole ``"name"``
+        value(s) this marker applies to.  When omitted (or ``None``) the
+        marker is placed on **all** panels (or on the shared axes when
+        ``shared=True``).
+
+        ``"xytext"``  (tuple ``(dx_log_factor, dy_km)``, optional) — offset of
+        the annotation text relative to the tip in axes-fraction / data units.
+        When omitted a small default offset ``(1.5, 0.5 km)`` is used.
+
+        Any remaining keys are forwarded verbatim to ``ax.annotate`` as
+        keyword arguments (e.g. ``arrowprops``, ``color``, ``fontsize``,
+        ``ha``, ``va``, ``fontweight``, …).  When ``arrowprops`` is absent a
+        default thin black arrow is drawn.
+
+        Example::
+
+            markers = [
+                dict(depth=1500., rho=10., text="conductor",
+                     borehole="borehole1",
+                     color="red", fontsize=8, fontweight="bold",
+                     arrowprops=dict(arrowstyle="->", color="red", lw=1.2)),
+                dict(depth=3000., text="resistor", color="navy"),
+            ]
+
+    legend_fontsize
+        Font size for the borehole legend (shared mode) and panel titles
+        (per-panel mode).  Default ``9``.
     npz_file
         Path for the NPZ data export.
 
@@ -4316,6 +4370,8 @@ def plot_borehole_logs(
         fig, axs = plt.subplots(1, n, figsize=(4 * n, 8), sharey=True)
         ax_arr = list(axs) if n > 1 else [axs]
 
+    # Map borehole name -> axes for marker targeting
+    name_to_ax: dict = {}
     for i, (log, ax) in enumerate(zip(logs, ax_arr)):
         depth_km = log["depths"] / 1000.0
         rho_vals = log["rho"]
@@ -4333,15 +4389,86 @@ def plot_borehole_logs(
         if clim is not None:
             ax.set_xlim(clim)
         if not shared:
-            ax.set_title(f"{log['name']}\n{log['pos_str']}", fontsize=8)
-            ax.tick_params(labelsize=7)
+            ax.set_title(f"{log['name']}\n{log['pos_str']}",
+                         fontsize=legend_fontsize)
+            ax.tick_params(labelsize=max(legend_fontsize - 2, 6))
+        name_to_ax[log["name"]] = ax
 
     if shared:
-        ax_arr[0].legend(fontsize=7, loc="lower right")
-        ax_arr[0].set_title("Borehole resistivity logs", fontsize=9)
+        ax_arr[0].legend(fontsize=legend_fontsize, loc="lower right")
+        ax_arr[0].set_title("Borehole resistivity logs",
+                            fontsize=legend_fontsize + 1)
     for ax in set(ax_arr):
         ax.grid(True, which="both", axis="x", lw=0.4, alpha=0.5)
         ax.grid(True, which="major", axis="y", lw=0.4, alpha=0.5)
+
+    # -------------------------------------------------------------------------
+    # Free markers (arrows + text)
+    # -------------------------------------------------------------------------
+    _LINESTYLE_KEYS = {
+        "color", "ls", "linestyle", "lw", "linewidth", "marker",
+        "alpha", "zorder", "markerfacecolor", "markeredgecolor",
+        "markeredgewidth", "markersize",
+    }
+    _DEFAULT_ARROWPROPS = dict(arrowstyle="->", color="black", lw=0.9)
+
+    if markers:
+        for mk in markers:
+            mk = dict(mk)  # shallow copy — don't mutate caller's dict
+
+            # --- required: depth in metres -> km
+            depth_m  = float(mk.pop("depth"))
+            depth_km_mk = depth_m / 1000.0
+
+            # --- optional: rho tip position; None = place at left x-limit edge
+            rho_tip = mk.pop("rho", None)
+
+            # --- optional: text label
+            text = mk.pop("text", "")
+
+            # --- optional: borehole targeting
+            bh_target = mk.pop("borehole", None)
+            if bh_target is None:
+                target_axes = list(set(ax_arr))
+            elif isinstance(bh_target, str):
+                target_axes = [name_to_ax[bh_target]] if bh_target in name_to_ax else []
+            else:
+                target_axes = [name_to_ax[b] for b in bh_target if b in name_to_ax]
+
+            # --- optional: text offset (log_factor for x, km for y)
+            xytext_spec = mk.pop("xytext", None)
+
+            # --- arrowprops: pop from mk or use default
+            arrowprops = mk.pop("arrowprops", dict(_DEFAULT_ARROWPROPS))
+
+            # Remaining keys are annotate kwargs (color, fontsize, ha, va, …)
+            annotate_kw = mk
+
+            for ax in target_axes:
+                # Determine x tip position
+                xlim_cur = ax.get_xlim()
+                if rho_tip is not None:
+                    x_tip = float(rho_tip)
+                else:
+                    x_tip = xlim_cur[0]  # left edge of current log xlim
+
+                # Determine text offset
+                if xytext_spec is not None:
+                    dx_fac, dy_km = xytext_spec
+                    x_text = x_tip * float(dx_fac)
+                    y_text = depth_km_mk + float(dy_km)
+                else:
+                    # Default: shift text ~1.5× to the right and 0.3 km up
+                    x_text = x_tip * 1.5
+                    y_text = depth_km_mk - 0.3
+
+                ax.annotate(
+                    text,
+                    xy=(x_tip, depth_km_mk),
+                    xytext=(x_text, y_text),
+                    arrowprops=arrowprops,
+                    **annotate_kw,
+                )
 
     fig.suptitle(f"Model: {os.path.basename(str(model_file))}", fontsize=10)
     fig.tight_layout()

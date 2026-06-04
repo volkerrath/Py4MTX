@@ -130,8 +130,40 @@ BOREHOLE_SITES = [
 | `BOREHOLE_STYLE` | `dict(lw=1.2, marker="none")` | Baseline line style; per-spec keys override |
 | `BOREHOLE_XLIM` | `[1., 1e4]` | x-axis limits [Ω·m, log scale]; `None` = auto |
 | `BOREHOLE_SHARED` | `True` | `True` = all boreholes on one shared axes; `False` = one panel per borehole |
+| `BOREHOLE_MARKERS` | `[]` | List of free-annotation dicts (see below) |
+| `LEGEND_FONTSIZE` | `9` | Legend / panel-title font size; tick labels = `LEGEND_FONTSIZE - 2` |
 | `BOREHOLE_NPZ` | `True` | NPZ export: `True` = auto path (same stem as `BOREHOLE_FILE`, `.npz`); `False` = skip; explicit path = save there |
 | `PLOT_DPI` | `600` | Saved-figure DPI |
+
+---
+
+## Free markers (`BOREHOLE_MARKERS`)
+
+`BOREHOLE_MARKERS` is a list of dicts that add annotated arrows to the depth
+panels after all traces are drawn.  Each dict may contain:
+
+| Key | Type | Required | Description |
+|---|---|---|---|
+| `"depth"` | float | **yes** | Depth in **metres** (z-down) at which the arrow tip is placed |
+| `"rho"` | float | no | x-position of the arrow tip in Ohm·m; defaults to left x-axis edge |
+| `"text"` | str | no | Annotation text (default `""`) |
+| `"borehole"` | str or list of str | no | Target borehole name(s); `None` or absent = all panels |
+| `"xytext"` | `(dx_factor, dy_km)` | no | Text offset: x multiplied onto `rho`, y added in km; default `(1.5, -0.3)` |
+| `"arrowprops"` | dict | no | Forwarded to `ax.annotate`; default `dict(arrowstyle="->", color="black", lw=0.9)` |
+| `"color"`, `"fontsize"`, `"fontweight"`, `"ha"`, `"va"`, `"zorder"`, … | any | no | Any remaining keys forwarded verbatim to `ax.annotate` |
+
+### Example
+
+```python
+BOREHOLE_MARKERS = [
+    dict(depth=1500., rho=10., text="conductor",
+         borehole="borehole1",
+         color="red", fontsize=8, fontweight="bold",
+         arrowprops=dict(arrowstyle="->", color="red", lw=1.2)),
+    dict(depth=3200., text="resistive basement",
+         color="navy", fontsize=8),
+]
+```
 
 ---
 
@@ -183,3 +215,4 @@ for bh in hdr["boreholes"]:
 | 2026-05-16 | vrath / Claude Sonnet 4.6 | Borehole step created inside `femtic_mod_plot.py` |
 | 2026-06-03 | Claude Sonnet 4.6 | Carried into `femtic_mod_plot_slice.py` after script split from `femtic_mod_plot.py`. `BOREHOLE_XLIM` in Ω·m; `z_top="surface"`; lat/lon legend; per-trace line-style keys; `BOREHOLE_NPZ` |
 | 2026-06-04 | vrath / Claude Sonnet 4.6 | **Split** from `femtic_mod_plot_slice.py` into this dedicated script. `PLOT_BOREHOLE` flag removed (script is the flag). `BOREHOLE_IN_SLICE` removed (handled in `femtic_mod_plot_slice.py`). UTM origin preamble retained so script runs independently |
+| 2026-06-04 | vrath / Claude Sonnet 4.6 | Added `BOREHOLE_MARKERS` (free arrow + text annotations) and `LEGEND_FONTSIZE`; forwarded to `fviz.plot_borehole_logs` |
