@@ -144,24 +144,31 @@ panels after all traces are drawn.  Each dict may contain:
 
 | Key | Type | Required | Description |
 |---|---|---|---|
-| `"depth"` | float | **yes** | Depth in **metres** (z-down) at which the arrow tip is placed |
-| `"rho"` | float | no | x-position of the arrow tip in Ohm·m; defaults to left x-axis edge |
+| `"depth"` | float | **yes** | Arrow tip depth [m, z-down] |
+| `"rho"` | float | no | Arrow tip x-position [Ohm·m]; defaults to left x-axis edge |
+| `"rho_text"` | float | no | Text x-position [Ohm·m] — same units as x-axis; defaults to `rho * 3` |
+| `"depth_text"` | float | no | Text y-position [m, z-down] — same units as depth; defaults to `depth - 300 m` |
 | `"text"` | str | no | Annotation text (default `""`) |
 | `"borehole"` | str or list of str | no | Target borehole name(s); `None` or absent = all panels |
-| `"xytext"` | `(dx_factor, dy_km)` | no | Text offset: x multiplied onto `rho`, y added in km; default `(1.5, -0.3)` |
 | `"arrowprops"` | dict | no | Forwarded to `ax.annotate`; default `dict(arrowstyle="->", color="black", lw=0.9)` |
 | `"color"`, `"fontsize"`, `"fontweight"`, `"ha"`, `"va"`, `"zorder"`, … | any | no | Any remaining keys forwarded verbatim to `ax.annotate` |
+
+Both `"rho_text"` and `"depth_text"` are in the **natural display units of
+the axes** (Ohm·m and metres respectively), so you can read values directly
+off the plot when deciding where to place the text.
 
 ### Example
 
 ```python
 BOREHOLE_MARKERS = [
-    dict(depth=1500., rho=10., text="conductor",
+    dict(depth=1500., rho=10.,
+         rho_text=30., depth_text=1200.,
+         text="conductor",
          borehole="borehole1",
          color="red", fontsize=8, fontweight="bold",
          arrowprops=dict(arrowstyle="->", color="red", lw=1.2)),
-    dict(depth=3200., text="resistive basement",
-         color="navy", fontsize=8),
+    dict(depth=3200., rho_text=500., depth_text=2900.,
+         text="resistive basement", color="navy", fontsize=8),
 ]
 ```
 

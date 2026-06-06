@@ -73,18 +73,38 @@ All settings are at the top of the script.
 | Variable         | Description                                                                          |
 |------------------|--------------------------------------------------------------------------------------|
 | `PERTURB_MOD`    | Enable / disable model perturbation.                                                 |
-| `MOD_PP_MODE`    | Pilot-point placement strategy: `"random"`, `"fixed"`, or `"mixed"`.                |
-| `MOD_N_PP`       | Number of randomly drawn pilot points per member (used when `MOD_PP_MODE` ≠ `"fixed"`). |
+| `MOD_PP_MODE`    | Pilot-point placement strategy: `"random"`, `"fixed"`, `"mixed"`, or `"extrema"`.   |
+| `MOD_N_PP`       | Number of randomly drawn pilot points per member (used when `MOD_PP_MODE` ≠ `"fixed"`; acts as random *fill* count in `"extrema"` mode). |
 | `MOD_PP_BBOX`    | Bounding box `[x_min, x_max, y_min, y_max, z_min, z_max]` (m) for random placement. |
 | `MOD_PP_COORDS`  | Explicit pilot-point coordinates, shape `(N, 3)` (easting, northing, depth). Required when `MOD_PP_MODE = "fixed"` or `"mixed"`. |
+| `MOD_PP_ROI`     | Bounding box restricting the extremum search (same format as `MOD_PP_BBOX`). `None` = full free-region extent. Only used in `"extrema"` mode. |
+| `MOD_PP_EXTREMA_K` | Neighbourhood size (including self) for the local extremum test. Larger k → smoother field, fewer extrema. Recommended: 7–15. Only used in `"extrema"` mode. |
+| `MOD_PP_EXTREMA_WHICH` | Which extrema to use as seeds: `"both"` (default), `"minima"` (conductive anomalies), or `"maxima"` (resistive anomalies). Only used in `"extrema"` mode. |
 
 **`MOD_PP_MODE` options:**
 
-| Value     | Behaviour                                                                              |
-|-----------|----------------------------------------------------------------------------------------|
-| `"random"` | `MOD_N_PP` points drawn uniformly inside `MOD_PP_BBOX` — different locations each run. |
-| `"fixed"`  | Locations taken from `MOD_PP_COORDS` — same geometry every run, only values change.   |
-| `"mixed"`  | `MOD_PP_COORDS` plus `MOD_N_PP` additional random points — fixed skeleton + random fill. |
+| Value       | Behaviour                                                                                                                            |
+|-------------|--------------------------------------------------------------------------------------------------------------------------------------|
+| `"random"`  | `MOD_N_PP` points drawn uniformly inside `MOD_PP_BBOX` — different locations each member.                                           |
+| `"fixed"`   | Locations taken from `MOD_PP_COORDS` — same geometry every member, only values change.                                              |
+| `"mixed"`   | `MOD_PP_COORDS` plus `MOD_N_PP` additional random points — fixed skeleton + random fill.                                            |
+| `"extrema"` | Structural skeleton at local log₁₀(ρ) minima and/or maxima of the reference model within `MOD_PP_ROI`, plus `MOD_N_PP` random fill points inside `MOD_PP_BBOX`. Skeleton geometry is the same every member; values and fill locations change. Requires `scipy.spatial`. |
+
+#### "extrema" mode — pilot points at resistivity anomaly cores
+
+When `MOD_PP_MODE = "extrema"`, pilot-point locations are derived from the **reference model** rather than being drawn purely at random.  The free-region barycentres inside `MOD_PP_ROI` are tested against their k−1 nearest neighbours (across *all* free regions, to avoid boundary artefacts at the ROI edge); a region becomes a seed if its log₁₀(ρ) is strictly less than all neighbours' values (local minimum — conductive anomaly core) or strictly greater (local maximum — resistive anomaly core).  The structural skeleton is computed once before the member loop and is **identical across all members**; only the log₁₀(ρ) *values* drawn at those locations vary.  An additional `MOD_N_PP` random fill points inside `MOD_PP_BBOX` are drawn fresh each member to maintain broad spatial coverage.
+
+If no extrema are found (e.g. the reference model is spatially flat, or `MOD_PP_ROI` excludes all free regions), a `RuntimeWarning` is issued and the mode falls back silently to `"random"`.
+
+**Typical configuration for Ubinas / Misti:**
+
+```python
+MOD_PP_MODE          = "extrema"
+MOD_N_PP             = 80           # random fill on top of extrema
+MOD_PP_ROI           = [-40000., 40000., -40000., 40000., 0., 60000.]
+MOD_PP_EXTREMA_K     = 11           # ~10 neighbours; increase for coarse mesh
+MOD_PP_EXTREMA_WHICH = "both"       # conductive + resistive anomaly cores
+```
 
 #### Resistivity range
 
@@ -272,6 +292,7 @@ starting point.
 | Package        | Role                                                   |
 |----------------|--------------------------------------------------------|
 | `numpy`        | Array operations and random draws.                     |
+| `scipy`        | KD-tree neighbour search for `"extrema"` pilot-point mode (`scipy.spatial`). |
 | `gstools`      | Variogram models and Ordinary Kriging.                 |
 | `ensembles`    | Directory generation and data ensemble.                |
 | `femtic`       | FEMTIC I/O (`read_model`, `write_model`).              |
@@ -282,10 +303,12 @@ No sparse-matrix file (`.npz`) is required.
 
 ## References
 
-- Suzuki, K. et al.
-  *Geostatistical initial-model ensemble for uncertainty quantification in
-  magnetotelluric inversion.*
-  [full reference to be completed]
+- Suzuki, A.
+  *Assessing inversion uncertainty from initial-model variability in 3-D
+  magnetotelluric inversion: Application to a geothermal field.*
+  Journal of Applied Geophysics, 2026, **251**, 106320,
+  doi:[10.1016/j.jappgeo.2026.106320](https://doi.org/10.1016/j.jappgeo.2026.106320).
+  Preprint: [10.31223/X5NM9X](https://doi.org/10.31223/X5NM9X).
 
 - Isaaks, E. H. & Srivastava, R. M.
   *An Introduction to Applied Geostatistics.*
@@ -315,6 +338,7 @@ No sparse-matrix file (`.npz`) is required.
 | 2026-05-27 | vrath / Claude Sonnet 4.6 (Anthropic) | Added `PLOT_SLICES_QC` block: `QC_SLICES` / `QC_CMAP` / `QC_CLIM` / `QC_*` config; calls `fviz.plot_model_slices` per selected member after model ensemble generation, saves `gst_qc*.pdf` in each member's subdirectory. |
 | 2026-05-28 | Claude Sonnet 4.6 (Anthropic) | Added `RELATIVE_LINKS` config variable (default `True`); passed as `relative_links` to `ens.generate_directories`. Relative symlinks survive `tgz`/copy to another machine; set `False` for legacy absolute-path behaviour. |
 | 2026-05-31 | vrath / Claude Sonnet 4.6 (Anthropic) | `QC_SLICES` / `ENS_SLICES`: documented optional `invert_x` key (bool, default `False`) for `ns`, `ew`, and `plane` slice panels — flips horizontal axis left-to-right for comparison with other software. |
+| 2026-06-06 | Claude Sonnet 4.6 (Anthropic) | Added `"extrema"` pilot-point mode: new config variables `MOD_PP_ROI`, `MOD_PP_EXTREMA_K`, `MOD_PP_EXTREMA_WHICH`; all three passed to `ens.generate_gst_model_ensemble`. Pilot-point skeleton is seeded at local log₁₀(ρ) minima and/or maxima of the reference model within `MOD_PP_ROI`, plus `MOD_N_PP` random fill points. `scipy.spatial` added to dependencies. |
 
 ## Author
 

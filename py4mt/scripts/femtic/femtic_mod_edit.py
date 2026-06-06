@@ -141,17 +141,16 @@ print(titstrng + "\n\n")
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-WORK_DIR = r"/home/vrath/Py4MTX/work/"
-
+WORK_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/misti/ensemble/templates/"
 #: Template / source resistivity block (also used as format template by
 #: insert_model to preserve header, bounds and flag columns).
 # MODEL_IN  = WORK_DIR + "resistivity_block_iter0.dat"
-MODEL_IN  =WORK_DIR + "resistivity_block_edited.dat"
+MODEL_IN  =WORK_DIR + "resistivity_block_iter0.dat"
 #: Mesh file — required for "smooth" and "ellipsoid"; ignored otherwise.
 MESH_FILE = WORK_DIR + "mesh.dat"
 
 #: Output file.  Set to MODEL_IN to overwrite in-place (be careful!).
-MODEL_OUT = WORK_DIR + "resistivity_block_edited.dat"
+MODEL_OUT = WORK_DIR + "reference_100.dat"
 
 # ---------------------------------------------------------------------------
 # Ocean / fixed-region handling
@@ -168,11 +167,11 @@ OCEAN_RHO = 0.25    # Ω·m written for region 1 when treated as ocean
 # ---------------------------------------------------------------------------
 #: One of: "fill" | "mean" | "wmean" | "median" | "clip" | "shift"
 #:         | "standardise" | "smooth" | "ellipsoid" | "brick" | "null"
-# OPERATION = "mean"
+OPERATION = "fill"
 # OPERATION = "wmean"
 # OPERATION = "median"
 # OPERATION = "mean"
-OPERATION = "ellipsoid"
+#OPERATION = "ellipsoid"
 
 if OPERATION != "null":
     MODEL_OUT = MODEL_OUT.replace("edited", OPERATION)

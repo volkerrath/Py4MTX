@@ -186,32 +186,37 @@ BOREHOLE_SHARED = False
 
 #: Free annotations (arrows + text) added to the borehole depth panels.
 #: Each entry is a dict with:
-#:   "depth"    : float  — depth in metres (z-down); REQUIRED.
-#:   "rho"      : float  — x-position of the arrow tip in Ohm·m (optional;
-#:                         defaults to the left x-axis edge).
-#:   "text"     : str    — annotation label (optional; default "").
-#:   "borehole" : str or list of str — borehole name(s) to annotate
-#:                (optional; None = all panels).
-#:   "xytext"   : (dx_log_factor, dy_km) — text offset relative to tip
-#:                (optional; default (1.5, -0.3)).
-#:   "arrowprops" : dict — forwarded to ax.annotate (optional; default thin
-#:                         black -> arrow).
-#:   Any additional keys are passed verbatim to ax.annotate
+#:   "depth"      : float — arrow tip depth [m, z-down]; REQUIRED.
+#:   "rho"        : float — arrow tip x-position [Ohm·m]; optional,
+#:                          defaults to left x-axis edge.
+#:   "rho_text"   : float — text x-position [Ohm·m]; optional,
+#:                          defaults to rho * 3 (≈ half a decade right).
+#:   "depth_text" : float — text y-position [m, z-down]; optional,
+#:                          defaults to depth - 300 m (slightly above tip).
+#:   Both text positions are in natural axis display units (Ohm·m / metres)
+#:   so you can read the values directly off the plot axes when choosing them.
+#:   "text"       : str   — annotation label (optional; default "").
+#:   "borehole"   : str or list of str — borehole name(s) to annotate
+#:                  (optional; None = all panels).
+#:   "arrowprops" : dict  — forwarded to ax.annotate (optional; default
+#:                          thin black -> arrow).
+#:   Any additional keys forwarded verbatim to ax.annotate
 #:   (e.g. "color", "fontsize", "fontweight", "ha", "va", "zorder").
 #:
 #: Set to [] or None to place no markers.
 BOREHOLE_MARKERS = [
-    # dict(depth=1500., rho=10., text="conductor",
-    #      borehole="borehole1",
-    #      color="red", fontsize=8, fontweight="bold",
-    #      arrowprops=dict(arrowstyle="->", color="red", lw=1.2)),
-    # dict(depth=3200., text="resistive basement",
-    #      color="navy", fontsize=8),
+    dict(depth=-4000., rho=40., text="conductor",
+         rho_text=100., depth_text=-4300.,
+         borehole="borehole crater",
+         color="red", fontsize=12, fontweight="bold",
+         arrowprops=dict(arrowstyle="->", color="red", lw=2)),
+    # dict(depth=3200., rho_text=500., depth_text=2900.,
+    #      text="resistive basement", color="navy", fontsize=8),
 ]
 
 #: Font size for the borehole legend (shared mode) and panel titles
 #: (per-panel mode).  Tick labels are set to legend_fontsize - 2.
-LEGEND_FONTSIZE = 9
+LEGEND_FONTSIZE = 12
 
 
 #: Export sampled depth / rho arrays to an NPZ file.

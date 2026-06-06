@@ -214,13 +214,14 @@ Provenance:
     2026-06-04  vrath / Claude Sonnet 4.6 (Anthropic)
                         plot_borehole_logs: added ``markers`` parameter for
                         free annotations (arrows + text) on borehole depth
-                        axes.  Each marker dict accepts ``depth`` [m],
-                        optional ``rho`` [Ohm*m] tip x-position, ``text``,
-                        ``borehole`` (name or list of names for targeting),
-                        ``xytext`` offset, ``arrowprops``, and any
-                        ``ax.annotate`` kwargs (``color``, ``fontsize``,
-                        ``fontweight``, ``ha``, ``va``, …).  Default arrow
-                        style ``->`` black.
+                        axes.  Each marker dict accepts ``depth`` [m] (arrow
+                        tip, required), ``rho`` [Ohm*m] (tip x-position),
+                        ``rho_text`` [Ohm*m] (text x-position, display units),
+                        ``depth_text`` [m] (text y-position, display units),
+                        ``text``, ``borehole`` (name or list for targeting),
+                        ``arrowprops``, and any ``ax.annotate`` kwargs.
+                        Both text positions in natural axis units (Ohm*m / m)
+                        so values can be read directly off the axes.
                         Added ``legend_fontsize`` parameter (default 9) that
                         controls the shared-mode legend and per-panel title
                         font size; tick labels scale with it."""
@@ -4220,9 +4221,19 @@ def plot_borehole_logs(
         marker is placed on **all** panels (or on the shared axes when
         ``shared=True``).
 
-        ``"xytext"``  (tuple ``(dx_log_factor, dy_km)``, optional) — offset of
-        the annotation text relative to the tip in axes-fraction / data units.
-        When omitted a small default offset ``(1.5, 0.5 km)`` is used.
+        ``"rho_text"``  (float, optional) — x-position of the annotation text
+        in Ohm·m (same log-scale units as the x-axis).  When omitted the text
+        is placed at ``rho * 3`` (roughly half a decade to the right on a log
+        axis), or at ``xlim[0] * 3`` when ``"rho"`` is also absent.
+
+        ``"depth_text"``  (float, optional) — y-position of the annotation
+        text in **metres** (z-down), converted to km internally.  When omitted
+        the text is placed 300 m above the tip
+        (i.e. ``depth - 300``).
+
+        Both positions are in the natural display units of the axes — Ohm·m
+        for x and metres (stored as km) for y — so you can read the values
+        directly off the plot axes when choosing them.
 
         Any remaining keys are forwarded verbatim to ``ax.annotate`` as
         keyword arguments (e.g. ``arrowprops``, ``color``, ``fontsize``,
@@ -4233,10 +4244,12 @@ def plot_borehole_logs(
 
             markers = [
                 dict(depth=1500., rho=10., text="conductor",
+                     rho_text=30., depth_text=1200.,
                      borehole="borehole1",
                      color="red", fontsize=8, fontweight="bold",
                      arrowprops=dict(arrowstyle="->", color="red", lw=1.2)),
-                dict(depth=3000., text="resistor", color="navy"),
+                dict(depth=3000., rho_text=500., depth_text=2600.,
+                     text="resistive basement", color="navy"),
             ]
 
     legend_fontsize
@@ -4405,23 +4418,24 @@ def plot_borehole_logs(
     # -------------------------------------------------------------------------
     # Free markers (arrows + text)
     # -------------------------------------------------------------------------
-    _LINESTYLE_KEYS = {
-        "color", "ls", "linestyle", "lw", "linewidth", "marker",
-        "alpha", "zorder", "markerfacecolor", "markeredgecolor",
-        "markeredgewidth", "markersize",
-    }
     _DEFAULT_ARROWPROPS = dict(arrowstyle="->", color="black", lw=0.9)
 
     if markers:
         for mk in markers:
             mk = dict(mk)  # shallow copy — don't mutate caller's dict
 
-            # --- required: depth in metres -> km
-            depth_m  = float(mk.pop("depth"))
+            # --- required: arrow tip depth in metres -> km
+            depth_m     = float(mk.pop("depth"))
             depth_km_mk = depth_m / 1000.0
 
-            # --- optional: rho tip position; None = place at left x-limit edge
+            # --- optional: arrow tip rho [Ohm*m]; None -> left x-limit edge
             rho_tip = mk.pop("rho", None)
+
+            # --- optional: text position — both in display units
+            #     rho_text  : Ohm*m (x-axis)
+            #     depth_text: metres z-down (converted to km)
+            rho_text_spec   = mk.pop("rho_text",   None)
+            depth_text_spec = mk.pop("depth_text", None)
 
             # --- optional: text label
             text = mk.pop("text", "")
@@ -4431,36 +4445,31 @@ def plot_borehole_logs(
             if bh_target is None:
                 target_axes = list(set(ax_arr))
             elif isinstance(bh_target, str):
-                target_axes = [name_to_ax[bh_target]] if bh_target in name_to_ax else []
+                target_axes = ([name_to_ax[bh_target]]
+                               if bh_target in name_to_ax else [])
             else:
-                target_axes = [name_to_ax[b] for b in bh_target if b in name_to_ax]
-
-            # --- optional: text offset (log_factor for x, km for y)
-            xytext_spec = mk.pop("xytext", None)
+                target_axes = [name_to_ax[b] for b in bh_target
+                               if b in name_to_ax]
 
             # --- arrowprops: pop from mk or use default
             arrowprops = mk.pop("arrowprops", dict(_DEFAULT_ARROWPROPS))
 
-            # Remaining keys are annotate kwargs (color, fontsize, ha, va, …)
+            # Remaining keys forwarded to ax.annotate (color, fontsize, …)
             annotate_kw = mk
 
             for ax in target_axes:
-                # Determine x tip position
+                # Arrow tip x
                 xlim_cur = ax.get_xlim()
-                if rho_tip is not None:
-                    x_tip = float(rho_tip)
-                else:
-                    x_tip = xlim_cur[0]  # left edge of current log xlim
+                x_tip = float(rho_tip) if rho_tip is not None else xlim_cur[0]
 
-                # Determine text offset
-                if xytext_spec is not None:
-                    dx_fac, dy_km = xytext_spec
-                    x_text = x_tip * float(dx_fac)
-                    y_text = depth_km_mk + float(dy_km)
-                else:
-                    # Default: shift text ~1.5× to the right and 0.3 km up
-                    x_text = x_tip * 1.5
-                    y_text = depth_km_mk - 0.3
+                # Text position x: explicit Ohm*m, else ~half decade right
+                x_text = (float(rho_text_spec) if rho_text_spec is not None
+                          else x_tip * 3.0)
+
+                # Text position y: explicit metres->km, else 300 m above tip
+                y_text = (float(depth_text_spec) / 1000.0
+                          if depth_text_spec is not None
+                          else depth_km_mk - 0.3)
 
                 ax.annotate(
                     text,

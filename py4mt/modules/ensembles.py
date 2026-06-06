@@ -62,6 +62,12 @@ fit variogram to RTO samples), gst_pilot_point_cv (Strategy 2: LOO-CV on
 reference model), gst_sill_from_jacobian (Strategy 3: linearised Jacobian
 sill calibration), gst_parameter_diagnostics (Strategy 4: integrating
 diagnostic with optional plot).
+Updated 2026-06-06 by Claude Sonnet 4.6 (Anthropic): added "extrema" pilot-
+point mode to generate_gst_model_ensemble.  New helper
+_find_extrema_pilot_points (KDTree-based local extremum detection on free-
+region barycentres, optional ROI mask).  New parameters pp_roi, pp_extrema_k,
+pp_extrema_which; graceful fallback to "random" if no extrema are found.
+Requires scipy.spatial (already a transitive dependency).
 """
 
 from __future__ import annotations
@@ -982,6 +988,102 @@ def generate_rto_model_ensemble(
     return mod_list
 
 
+def _find_extrema_pilot_points(
+    cx: np.ndarray,
+    cy: np.ndarray,
+    cz: np.ndarray,
+    ref_log_rho: np.ndarray,
+    k: int = 9,
+    which: str = "both",
+    roi: Optional[Sequence[float]] = None,
+) -> np.ndarray:
+    """Return pilot-point coordinates at local log₁₀(ρ) extrema of a model.
+
+    For each free region whose barycentre lies inside *roi* (or everywhere
+    if *roi* is None), the region is declared a local minimum (maximum) if
+    its log₁₀(ρ) value is **strictly less (greater) than all k−1 nearest
+    neighbours'** values.  The neighbour search uses all free regions (not
+    just those inside the ROI) so that boundary regions are not spuriously
+    flagged as extrema due to a truncated neighbourhood.
+
+    Parameters
+    ----------
+    cx, cy, cz : ndarray, shape (n_cells,)
+        Barycentre coordinates of free mesh regions (model-local metres,
+        z positive-down, FEMTIC convention).
+    ref_log_rho : ndarray, shape (n_cells,)
+        log₁₀(ρ) of the reference model at each free region.
+    k : int
+        Neighbourhood size including self (k−1 actual neighbours compared).
+        Larger k produces a smoother field with fewer detected extrema.
+        Recommended: 7–15 for typical FEMTIC mesh densities.
+    which : {"both", "minima", "maxima"}
+        Which extrema to return:
+        ``"minima"``  — conductive anomaly cores (low ρ),
+        ``"maxima"``  — resistive anomaly cores (high ρ),
+        ``"both"``    — both (default).
+    roi : sequence of 6 floats, optional
+        ``[x_min, x_max, y_min, y_max, z_min, z_max]`` (metres) restricting
+        the search to a subset of the model volume.  None = full extent.
+
+    Returns
+    -------
+    pp_coords : ndarray, shape (M, 3)
+        Barycentre coordinates of extremum regions, columns [x, y, z].
+        May be empty (shape (0, 3)) if no extrema are found.
+
+    Notes
+    -----
+    Requires ``scipy.spatial`` (KDTree).  This is already a transitive
+    dependency of gstools and numpy, so no additional installation is needed.
+
+    Author: Claude Sonnet 4.6 (Anthropic), 2026-06-06.
+    AI-generated — review before use in production.
+    """
+    from scipy.spatial import KDTree
+
+    coords = np.column_stack([cx, cy, cz])   # (n_cells, 3)
+
+    # --- ROI mask: restricts which regions are *candidates* for extrema ---
+    if roi is not None:
+        roi_list = list(roi)
+        in_roi = (
+            (cx >= roi_list[0]) & (cx <= roi_list[1]) &
+            (cy >= roi_list[2]) & (cy <= roi_list[3]) &
+            (cz >= roi_list[4]) & (cz <= roi_list[5])
+        )
+    else:
+        in_roi = np.ones(len(cx), dtype=bool)
+
+    roi_idx = np.where(in_roi)[0]
+    if roi_idx.size == 0:
+        return np.empty((0, 3), dtype=float)
+
+    roi_coords  = coords[roi_idx]            # (m, 3)
+    roi_log_rho = ref_log_rho[roi_idx]       # (m,)
+
+    # Build KD-tree on ALL free regions so boundary regions compare against
+    # neighbours outside the ROI (prevents edge artefacts).
+    k_eff = min(k, len(coords))
+    tree = KDTree(coords)
+    _, nn_idx = tree.query(roi_coords, k=k_eff)  # (m, k_eff)
+
+    # nn_idx[:, 0] is the query point itself; [:,1:] are its neighbours.
+    neighbor_vals = ref_log_rho[nn_idx[:, 1:]]   # (m, k_eff-1)
+
+    is_min = roi_log_rho < neighbor_vals.min(axis=1)
+    is_max = roi_log_rho > neighbor_vals.max(axis=1)
+
+    if which == "minima":
+        extremum_mask = is_min
+    elif which == "maxima":
+        extremum_mask = is_max
+    else:  # "both"
+        extremum_mask = is_min | is_max
+
+    return roi_coords[extremum_mask]
+
+
 def generate_gst_model_ensemble(
     alg: str = "gst",
     dir_base: str = "./ens_",
@@ -995,6 +1097,9 @@ def generate_gst_model_ensemble(
     n_pp: int = 100,
     pp_bbox: Sequence[float] = (-50000., 50000., -50000., 50000., 0., 80000.),
     pp_coords: Optional[np.ndarray] = None,
+    pp_roi: Optional[Sequence[float]] = None,
+    pp_extrema_k: int = 9,
+    pp_extrema_which: str = "both",
     # --- resistivity range ---
     log_rho_min: float = 0.0,
     log_rho_max: float = 4.0,
@@ -1047,7 +1152,7 @@ def generate_gst_model_ensemble(
 
     Pilot-point parameters
     ----------------------
-    pp_mode : {"random", "fixed", "mixed"}
+    pp_mode : {"random", "fixed", "mixed", "extrema"}
         Pilot-point placement strategy:
 
         - ``"random"`` — ``n_pp`` points drawn uniformly inside ``pp_bbox``
@@ -1055,9 +1160,13 @@ def generate_gst_model_ensemble(
         - ``"fixed"``  — locations taken from ``pp_coords`` (same geometry
           every member, only values change).
         - ``"mixed"``  — ``pp_coords`` plus ``n_pp`` additional random points.
+        - ``"extrema"`` — structural skeleton at local log₁₀(ρ) minima and/or
+          maxima of the reference model within ``pp_roi`` (same geometry every
+          member), plus ``n_pp`` random fill points inside ``pp_bbox``
+          (fresh every member).  Requires ``scipy.spatial``.
     n_pp : int
         Number of randomly drawn pilot points per member.  Used when
-        ``pp_mode`` is ``"random"`` or ``"mixed"``.
+        ``pp_mode`` is ``"random"``, ``"mixed"``, or ``"extrema"`` (fill).
         Recommended: 50–200 for typical 3-D MT survey volumes.
     pp_bbox : sequence of 6 floats
         Bounding box ``[x_min, x_max, y_min, y_max, z_min, z_max]`` (metres,
@@ -1065,6 +1174,18 @@ def generate_gst_model_ensemble(
     pp_coords : ndarray, shape (N, 3), optional
         Explicit pilot-point coordinates (easting, northing, depth).
         Required when ``pp_mode`` is ``"fixed"`` or ``"mixed"``.
+    pp_roi : sequence of 6 floats, optional
+        ``[x_min, x_max, y_min, y_max, z_min, z_max]`` (metres, z positive-
+        down) restricting the extremum search to a sub-volume of the model.
+        Only used when ``pp_mode`` is ``"extrema"``.  None = full free-region
+        extent.  Tip: set tighter than ``pp_bbox`` to exclude padding cells.
+    pp_extrema_k : int
+        Neighbourhood size (including self) for the local extremum test in
+        ``"extrema"`` mode.  Larger k yields fewer, smoother extrema.
+        Recommended: 7–15.  Default: 9.
+    pp_extrema_which : {"both", "minima", "maxima"}
+        Which extrema to use as pilot-point seeds in ``"extrema"`` mode.
+        ``"both"`` (default) seeds both conductive and resistive anomaly cores.
 
     Resistivity range
     -----------------
@@ -1234,6 +1355,36 @@ def generate_gst_model_ensemble(
     pp_bbox = list(pp_bbox)
 
     # ------------------------------------------------------------------
+    # Pre-compute extrema pilot-point skeleton (same geometry each member).
+    # Only used when pp_mode == "extrema".
+    # ------------------------------------------------------------------
+    if pp_mode == "extrema":
+        ref_log_rho_free = np.log10(np.maximum(rho_reg[free_idx], 1e-10))
+        pp_extrema = _find_extrema_pilot_points(
+            cx=cx, cy=cy, cz=cz,
+            ref_log_rho=ref_log_rho_free,
+            k=pp_extrema_k,
+            which=pp_extrema_which,
+            roi=pp_roi,
+        )
+        n_extrema = len(pp_extrema)
+        if out:
+            print(
+                f"  Extrema pilot-point skeleton: {n_extrema} points "
+                f"({pp_extrema_which}, k={pp_extrema_k})"
+            )
+        if n_extrema == 0:
+            warnings.warn(
+                "generate_gst_model_ensemble: no extrema found in ROI — "
+                "falling back to pure random pilot-point placement.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            pp_mode = "random"
+    else:
+        pp_extrema = np.empty((0, 3), dtype=float)
+
+    # ------------------------------------------------------------------
     # Member loop.
     # ------------------------------------------------------------------
     if fromto is None:
@@ -1258,13 +1409,22 @@ def generate_gst_model_ensemble(
             pp_x = pp_fixed[:, 0]
             pp_y = pp_fixed[:, 1]
             pp_z = pp_fixed[:, 2]
-        else:  # "mixed"
+        elif pp_mode == "mixed":
             rnd_x = rng.uniform(pp_bbox[0], pp_bbox[1], n_pp)
             rnd_y = rng.uniform(pp_bbox[2], pp_bbox[3], n_pp)
             rnd_z = rng.uniform(pp_bbox[4], pp_bbox[5], n_pp)
             pp_x = np.concatenate([pp_fixed[:, 0], rnd_x])
             pp_y = np.concatenate([pp_fixed[:, 1], rnd_y])
             pp_z = np.concatenate([pp_fixed[:, 2], rnd_z])
+        else:  # "extrema"
+            # Fixed structural skeleton (same geometry every member) plus
+            # n_pp random fill points drawn fresh for each member.
+            rnd_x = rng.uniform(pp_bbox[0], pp_bbox[1], n_pp)
+            rnd_y = rng.uniform(pp_bbox[2], pp_bbox[3], n_pp)
+            rnd_z = rng.uniform(pp_bbox[4], pp_bbox[5], n_pp)
+            pp_x = np.concatenate([pp_extrema[:, 0], rnd_x])
+            pp_y = np.concatenate([pp_extrema[:, 1], rnd_y])
+            pp_z = np.concatenate([pp_extrema[:, 2], rnd_z])
 
         # --- random log10(rho) values at pilot points ---
         pp_vals = rng.uniform(log_rho_min, log_rho_max, len(pp_x))
