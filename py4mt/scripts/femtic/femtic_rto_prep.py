@@ -166,8 +166,11 @@ OUT = True
 Base setup.
 """
 N_SAMPLES = 32
-ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/ubinas/ensemble/"
-ENSEMBLE_NAME = "ubinas_rto_"
+# ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/ubinas/ensemble/"
+# ENSEMBLE_NAME = "ubinas_rto_"
+
+ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/misti/ensemble/"
+ENSEMBLE_NAME = "misti_rto_"
 
 # TEMPLATES = ENSEMBLE_DIR + "templates/"
 TEMPLATES = ENSEMBLE_DIR + "/templates/"
@@ -179,7 +182,7 @@ COPY_LIST = ["observe.dat",
 LINK_LIST = ["control.dat",
              "mesh.dat",
              "resistivity_block_iter0.dat",
-             "distortion_iter0.dat",
+             "distortion_iter0.dat", "site.dat",
              "run_femtic_dias.sh","run_femtic_kraken.sh"]
 RELATIVE_LINKS = True   # True: portable relative symlinks (default, survives tgz);
                         # False: absolute symlinks (legacy behaviour)

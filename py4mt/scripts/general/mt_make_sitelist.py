@@ -50,7 +50,8 @@ WHAT_FOR = "fem"     # Options: "wal", "femtic", "kml"
 #: Set to an integer (e.g. 19) to force a fixed zone for all sites.
 UTM_ZONE_OVERRIDE = None
 
-WORK_DIR = "/home/vrath/Py4MTX/py4mt/data/rto/ubinas//"
+#WORK_DIR = "/home/vrath/Py4MTX/py4mt/data/rto/ubinas//"
+WORK_DIR = "/home/vrath/Py4MTX/py4mt/data/rto/misti//"
 EDI_DIR = WORK_DIR + "/edi/"
 
 print(" Edifiles read from: %s" % EDI_DIR)

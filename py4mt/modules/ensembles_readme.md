@@ -184,20 +184,41 @@ pattern for every member.
 ```python
 from ensembles import generate_gst_model_ensemble
 
+# --- random pilot points (basic usage) ---
 mod_list = generate_gst_model_ensemble(
-    dir_base   = "./ubinas_gst_",
-    n_samples  = 32,
+    dir_base     = "./ubinas_gst_",
+    n_samples    = 32,
     ref_mod_file = "./templates/referencemodel.dat",
-    pp_mode    = "random",
-    n_pp       = 100,
-    pp_bbox    = [-50000, 50000, -50000, 50000, 0, 80000],
-    log_rho_min = 0.0,
-    log_rho_max = 4.0,
-    vario_model = "Spherical",
-    vario_range = (20000., 5000.),
-    vario_sill  = 0.5,
+    pp_mode      = "random",
+    n_pp         = 100,
+    pp_bbox      = [-50000, 50000, -50000, 50000, 0, 80000],
+    log_rho_min  = 0.0,
+    log_rho_max  = 4.0,
+    vario_model  = "Spherical",
+    vario_range  = (20000., 5000.),
+    vario_sill   = 0.5,
     vario_nugget = 0.01,
     output_target = "both",
+)
+
+# --- extrema pilot points (structure-guided) ---
+mod_list = generate_gst_model_ensemble(
+    dir_base          = "./ubinas_gst_",
+    n_samples         = 32,
+    ref_mod_file      = "./templates/referencemodel.dat",
+    pp_mode           = "extrema",
+    n_pp              = 80,           # random fill on top of extrema
+    pp_bbox           = [-50000, 50000, -50000, 50000, 0, 80000],
+    pp_roi            = [-40000, 40000, -40000, 40000, 0, 60000],
+    pp_extrema_k      = 11,
+    pp_extrema_which  = "both",
+    log_rho_min       = 0.0,
+    log_rho_max       = 4.0,
+    vario_model       = "Spherical",
+    vario_range       = (20000., 5000.),
+    vario_sill        = 0.5,
+    vario_nugget      = 0.01,
+    output_target     = "both",
 )
 ```
 
@@ -292,7 +313,7 @@ If you see `RuntimeError: Iterative solver did not converge` (full-rank mode):
 | Package             | Role                                        |
 |---------------------|---------------------------------------------|
 | `numpy`             | Core array operations.                      |
-| `scipy`             | Sparse matrices, iterative solvers, SVD.    |
+| `scipy`             | Sparse matrices, iterative solvers, SVD, KD-tree neighbour search (`scipy.spatial`, used by `"extrema"` pilot-point mode). |
 | `gstools`           | Variogram models and Ordinary Kriging (GST).|
 | `joblib` (optional) | Kept for backward compatibility.            |
 | `pyamg` (optional)  | AMG preconditioner.                         |
@@ -311,6 +332,28 @@ If you see `RuntimeError: Iterative solver did not converge` (full-rank mode):
 
 ---
 
+## References
+
+- Suzuki, A.
+  *Assessing inversion uncertainty from initial-model variability in 3-D
+  magnetotelluric inversion: Application to a geothermal field.*
+  Journal of Applied Geophysics, 2026, **251**, 106320,
+  doi:[10.1016/j.jappgeo.2026.106320](https://doi.org/10.1016/j.jappgeo.2026.106320).
+  Preprint: [10.31223/X5NM9X](https://doi.org/10.31223/X5NM9X).
+
+- Müller, S.; Schüler, L.; Zech, A. & Heße, F.
+  *GSTools v1.3: a toolbox for geostatistical modelling in Python.*
+  Geoscientific Model Development, 2022, **15**, 3161–3182,
+  doi:[10.5194/gmd-15-3161-2022](https://doi.org/10.5194/gmd-15-3161-2022).
+
+- Bardsley, J. M.; Solonen, A.; Haario, H. & Laine, M.
+  *Randomize-Then-Optimize: a Method for Sampling from Posterior Distributions
+  in Nonlinear Inverse Problems.*
+  SIAM Journal on Scientific Computing, 2014, **36**, A1895–A1910,
+  doi:[10.1137/140964023](https://doi.org/10.1137/140964023).
+
+---
+
 ## Version / provenance
 
 Updated: 2026-04-27 (GST); 2026-04-11 (consolidation); 2026-04-02 (cleanup)
@@ -320,6 +363,7 @@ Updated: 2026-04-27 (GST); 2026-04-11 (consolidation); 2026-04-02 (cleanup)
   via pilot-point Ordinary Kriging (gstools).  No roughness matrix required.
   Supports `pp_mode = "random" | "fixed" | "mixed"`, fully configurable
   variogram, and `output_target = "resistivity_block" | "referencemodel" | "both"`.
+  (`pp_mode = "extrema"` added 2026-06-06; see below.)
 - Renamed `generate_model_ensemble` → `generate_rto_model_ensemble` for
   consistency with `generate_gst_model_ensemble`.
 - Added `gstools` to the dependency table.
@@ -375,6 +419,19 @@ Author: Volker Rath (DIAS)
   raising `ValueError: Invalid resistivity block header: []`.  The template
   path is now resolved once into `template_path` before either write, so both
   branches always read the original un-modified file.
+
+### Changelog (2026-06-06) — extrema pilot-point mode
+
+- Added `_find_extrema_pilot_points()` private helper: KD-tree-based local
+  extremum detection on free-region barycentres with optional ROI mask.
+  Requires `scipy.spatial` (already a transitive dependency of gstools/numpy).
+- `generate_gst_model_ensemble`: new `pp_mode = "extrema"` option.
+  New parameters: `pp_roi`, `pp_extrema_k`, `pp_extrema_which` (all with
+  safe defaults so existing call sites are unchanged).
+  The extremum skeleton is computed once before the member loop (same geometry
+  every member); `n_pp` random fill points are drawn fresh per member.
+  Graceful fallback to `"random"` with `RuntimeWarning` if no extrema are found.
+- `scipy.spatial` added explicitly to the dependency table.
 
 ### Changelog (2026-05-28) — GST parameter estimation
 

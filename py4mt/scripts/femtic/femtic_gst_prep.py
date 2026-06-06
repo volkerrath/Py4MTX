@@ -65,6 +65,13 @@ Provenance:
                 relative_links to ens.generate_directories.  Relative symlinks
                 survive tgz/copy to another machine; set False for legacy
                 absolute-path behaviour.
+    2026-06-06  Claude Sonnet 4.6 (Anthropic)
+                Added "extrema" pilot-point mode: MOD_PP_ROI, MOD_PP_EXTREMA_K,
+                MOD_PP_EXTREMA_WHICH config variables; passed to
+                ens.generate_gst_model_ensemble as pp_roi, pp_extrema_k,
+                pp_extrema_which.  Pilot points are seeded at local log10(rho)
+                minima/maxima of the reference model within the ROI, plus
+                MOD_N_PP random fill points.  Requires scipy.spatial (KDTree).
 """
 
 import os
@@ -113,8 +120,11 @@ OUT = True
 Base setup.
 """
 N_SAMPLES = 32
-ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/ubinas/ensemble/"
-ENSEMBLE_NAME = "ubinas_gst_suzuki_"
+# ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/ubinas/ensemble/"
+# ENSEMBLE_NAME = "ubinas_gst_suzuki_"
+
+ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/misti/ensemble/"
+ENSEMBLE_NAME = "misti_gst_suzuki_"
 
 TEMPLATES = ENSEMBLE_DIR + "/templates/"
 if not os.path.isdir(TEMPLATES):
@@ -125,7 +135,7 @@ COPY_LIST = ["observe.dat",
 LINK_LIST = ["control.dat",
              "mesh.dat",
              "resistivity_block_iter0.dat",
-             "distortion_iter0.dat",
+             "distortion_iter0.dat", "site.dat",
              "run_femtic_dias.sh","run_femtic_kraken.sh"]
 RELATIVE_LINKS = True   # True: portable relative symlinks (default, survives tgz);
                         # False: absolute symlinks (legacy behaviour)
@@ -167,10 +177,15 @@ if PERTURB_MOD:
     #   "fixed"   : use the explicit list in MOD_PP_COORDS (Nx3 array,
     #               columns = easting, northing, depth [m]).
     #   "mixed"   : start with MOD_PP_COORDS and add MOD_N_PP random points.
-    MOD_PP_MODE = "random"     # "random" | "fixed" | "mixed"
+    #   "extrema" : seed pilot points at local log10(rho) minima and/or
+    #               maxima of the reference model within MOD_PP_ROI, then
+    #               add MOD_N_PP random fill points inside MOD_PP_BBOX.
+    #               Structural skeleton is the same every member; values
+    #               and fill locations change.  Requires scipy.spatial.
+    MOD_PP_MODE = "random"     # "random" | "fixed" | "mixed" | "extrema"
 
     # Number of randomly drawn pilot points per member.
-    # Used when MOD_PP_MODE = "random" or "mixed".
+    # Used when MOD_PP_MODE = "random", "mixed", or "extrema" (fill).
     # Recommended: 50–200 for typical 3-D MT survey volumes.
     MOD_N_PP = 100
 
@@ -183,6 +198,27 @@ if PERTURB_MOD:
     # Explicit pilot-point coordinates used when MOD_PP_MODE = "fixed"
     # or "mixed".  Shape: (N, 3) — columns: [easting, northing, depth].
     MOD_PP_COORDS = None  # e.g. np.array([[x, y, z], ...])
+
+    # ------------------------------------------------------------------
+    # "extrema" mode — pilot points seeded at local resistivity extrema
+    # ------------------------------------------------------------------
+    # MOD_PP_ROI: bounding box [x_min, x_max, y_min, y_max, z_min, z_max]
+    #   restricting which free regions are eligible as extremum seeds.
+    #   None = full free-region extent (equivalent to MOD_PP_BBOX).
+    #   z positive-down (FEMTIC convention).
+    #   Tip: tighten to the survey footprint to exclude deep/lateral padding.
+    #
+    # MOD_PP_EXTREMA_K: neighbourhood size (number of nearest neighbours,
+    #   including self) for the local extremum test.  Larger k → smoother
+    #   field, fewer extrema.  Recommended: 7–15 for typical FEMTIC meshes.
+    #
+    # MOD_PP_EXTREMA_WHICH: which extrema to use as seeds.
+    #   "both"   — conductive and resistive anomaly cores (recommended).
+    #   "minima" — conductive anomalies only (low resistivity).
+    #   "maxima" — resistive anomalies only (high resistivity).
+    MOD_PP_ROI           = None   # None = full extent; or [xmn,xmx,ymn,ymx,zmn,zmx]
+    MOD_PP_EXTREMA_K     = 9      # neighbourhood size for extremum detection
+    MOD_PP_EXTREMA_WHICH = "both" # "both" | "minima" | "maxima"
 
     # ------------------------------------------------------------------
     # Resistivity range for pilot-point values
@@ -491,6 +527,9 @@ if PERTURB_MOD:
         n_pp=MOD_N_PP,
         pp_bbox=MOD_PP_BBOX,
         pp_coords=MOD_PP_COORDS,
+        pp_roi=MOD_PP_ROI,
+        pp_extrema_k=MOD_PP_EXTREMA_K,
+        pp_extrema_which=MOD_PP_EXTREMA_WHICH,
         log_rho_min=MOD_LOG_RHO_MIN,
         log_rho_max=MOD_LOG_RHO_MAX,
         vario_model=MOD_VARIO_MODEL,

@@ -340,9 +340,10 @@ ALPHA_BLANK_THRESH = 0.0
 #:
 #: Per-panel xlim/ylim/zlim override PLOT_XLIM/PLOT_YLIM/PLOT_ZLIM.
 PLOT_SLICES = [
-    dict(kind="map", z0=-4000.0),
     dict(kind="ns",  x0=(-70.8972, "latlon")),
     dict(kind="ew",  y0=(-16.3450, "latlon")),
+    dict(kind="map", z0=-4000.0),
+    dict(kind="map", z0= 10000.0),
 ]
 
 #: Global axis limits in model-local metres.  None → auto.
@@ -363,8 +364,8 @@ HORIZ_KM = True
 # Figure layout
 # ---------------------------------------------------------------------------
 #: Number of subplot rows and columns.  None → auto (1 row, len(PLOT_SLICES) cols).
-PLOT_NROWS = None
-PLOT_NCOLS = None
+PLOT_NROWS = 2 #None
+PLOT_NCOLS = 2 #None
 
 #: Panel height in cm.
 PLOT_PANEL_HEIGHT = 16.0   # cm
