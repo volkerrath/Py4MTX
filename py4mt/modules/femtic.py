@@ -69,6 +69,13 @@ Modified: 2026-05-28 by Claude Sonnet 4.6 (Anthropic) — fixed insert_model:
     template is now read fully into memory before the output file is opened,
     so in-place rewrites (template == model_file, e.g. referencemodel.dat)
     no longer truncate the template before it can be parsed.
+Modified: 2026-06-08 by Claude Sonnet 4.6 (Anthropic) — promoted three
+    geometry helpers from femtic_mod_edit.py into the mesh/geometry section:
+    tet_volumes() (vectorised tetrahedral volume via scalar triple product),
+    build_region_geometry() (volume-weighted centroids + volumes per free
+    region), and brick_mask() (rotated rectangular prism containment test,
+    parallel to ellipsoid_mask() with the same convention/keyword-only
+    signature).
 """
 from __future__ import annotations
 
@@ -1818,6 +1825,146 @@ def build_element_arrays(
         "n": n_elem,
     }
 
+
+def tet_volumes(nodes: np.ndarray, conn: np.ndarray) -> np.ndarray:
+    """Compute the volume of each tetrahedron (vectorised).
+
+    Uses the scalar triple product: V = |det([b-a, c-a, d-a])| / 6.
+
+    Parameters
+    ----------
+    nodes : ndarray, shape (nn, 3)
+        Node coordinates.
+    conn : ndarray, shape (nelem, 4)
+        Tetrahedral connectivity (0-based node indices).
+
+    Returns
+    -------
+    vol : ndarray, shape (nelem,)
+        Absolute volumes in the same units as the node coordinates cubed.
+    """
+    v = nodes[conn]                        # (nelem, 4, 3)
+    a, b, c, d = v[:, 0], v[:, 1], v[:, 2], v[:, 3]
+    cross = np.cross(b - a, c - a)         # (nelem, 3)
+    det   = (cross * (d - a)).sum(axis=1)  # (nelem,)
+    return np.abs(det) / 6.0
+
+
+def build_region_geometry(
+    nodes: np.ndarray,
+    conn: np.ndarray,
+    elem_region: np.ndarray,
+    free_idx: np.ndarray,
+) -> tuple:
+    """Compute volume-weighted centroid and total volume for each free region.
+
+    Parameters
+    ----------
+    nodes : ndarray, shape (nn, 3)
+        Node coordinates.
+    conn : ndarray, shape (nelem, 4)
+        Tetrahedral connectivity (0-based node indices).
+    elem_region : ndarray, shape (nelem,)
+        Region index assigned to each element.
+    free_idx : ndarray, shape (n_free,)
+        Ordered sequence of region indices that are free (inversion parameters).
+
+    Returns
+    -------
+    region_ctr : ndarray, shape (n_free, 3)
+        Volume-weighted centroid ``[x, y, z]`` for each free region.
+    region_vol : ndarray, shape (n_free,)
+        Total volume (m³) for each free region.  Regions with no assigned
+        elements receive centroid ``[0, 0, 0]`` and volume ``0``.
+    """
+    elem_ctr = nodes[conn].mean(axis=1)        # (nelem, 3)
+    elem_vol = tet_volumes(nodes, conn)         # (nelem,)
+
+    n_free = len(free_idx)
+    region_ctr = np.zeros((n_free, 3), dtype=float)
+    region_vol = np.zeros(n_free,      dtype=float)
+
+    for k, ireg in enumerate(free_idx):
+        sel = elem_region == ireg
+        if np.any(sel):
+            vols = elem_vol[sel]
+            region_vol[k] = vols.sum()
+            region_ctr[k] = (vols[:, np.newaxis] * elem_ctr[sel]).sum(axis=0) / region_vol[k]
+
+    return region_ctr, region_vol
+
+
+def brick_mask(
+    centroids: np.ndarray,
+    *,
+    center: Sequence[float],
+    axes: Sequence[float],
+    angles_deg: Sequence[float] = (0.0, 0.0, 0.0),
+    convention: Literal["zyx", "sds"] = "zyx",
+) -> np.ndarray:
+    """Compute a boolean mask for points inside a rotated rectangular prism (brick).
+
+    The brick is defined by its centre, half-extents along each local axis, and
+    a rotation that maps local axes to global coordinates.  The containment test
+    in the local frame is:
+
+        |x'| ≤ a  AND  |y'| ≤ b  AND  |z'| ≤ c
+
+    Parameters
+    ----------
+    centroids : ndarray, shape (n, 3)
+        Point coordinates (typically element or region centroids).
+    center : sequence of float
+        Brick centre ``(cx, cy, cz)`` in the same coordinate system as centroids.
+    axes : sequence of float
+        Half-extents ``(a, b, c)`` along the local x, y, z axes.  Must be positive.
+    angles_deg : sequence of float, optional
+        Rotation angles in degrees.  Interpretation depends on ``convention``.
+        Default is no rotation.
+    convention : {"zyx", "sds"}
+        Rotation convention — same options as :func:`ellipsoid_mask`.
+
+        - ``"zyx"``: intrinsic Z-Y-X (yaw, pitch, roll).
+        - ``"sds"``: strike/dip/slant.
+
+    Returns
+    -------
+    ndarray, shape (n,)
+        Boolean mask where True indicates the point lies inside (or on) the brick.
+
+    Raises
+    ------
+    ValueError
+        If input shapes or parameters are invalid.
+    """
+    pts = np.asarray(centroids, dtype=float)
+    if pts.ndim != 2 or pts.shape[1] != 3:
+        raise ValueError(f"brick_mask: centroids must have shape (n,3); got {pts.shape}.")
+
+    c = np.asarray(list(center), dtype=float).ravel()
+    if c.size != 3:
+        raise ValueError(f"brick_mask: center must have length 3; got {c.size}.")
+
+    ax = np.asarray(list(axes), dtype=float).ravel()
+    if ax.size != 3:
+        raise ValueError(f"brick_mask: axes must have length 3; got {ax.size}.")
+    if np.any(ax <= 0.0) or not np.all(np.isfinite(ax)):
+        raise ValueError("brick_mask: axes must be finite and > 0.")
+
+    conv = str(convention).strip().lower()
+    if conv == "zyx":
+        R = _rotation_matrix_zyx(angles_deg)
+    elif conv == "sds":
+        R = _rotation_matrix_sds(angles_deg)
+    else:
+        raise ValueError(f"brick_mask: unsupported convention={convention!r}.")
+
+    local = (pts - c[None, :]) @ R   # (n, 3) in rotated frame
+    return (
+        (np.abs(local[:, 0]) <= ax[0]) &
+        (np.abs(local[:, 1]) <= ax[1]) &
+        (np.abs(local[:, 2]) <= ax[2])
+    )
 
 
 def _rotation_matrix_zyx(angles_deg: Sequence[float]) -> np.ndarray:

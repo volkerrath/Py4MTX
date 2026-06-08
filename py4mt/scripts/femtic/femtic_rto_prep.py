@@ -223,7 +223,8 @@ if PERTURB_MOD:
     MOD_REF_BASE = os.path.basename(MOD_REF)
     MOD_METHOD = "add"
     # if ModCov is not None, this needs to be normal
-    MOD_PDF = ["normal", 0., 0.5]
+    MOD_MU = 1.5
+    MOD_PDF = ["normal", 0., 1.5]
     # ["exp", L], ["gauss", L], ["matern", L, MatPars], ["femtic"], None
     R_FILE = TEMPLATES + r"/R_coo"
 
@@ -419,14 +420,16 @@ if PLOT_DATA or PLOT_MODEL:
     #:   (value, "utm") | (value, "latlon")
     #: Depth z0 is always model-local metres (no CRS tagging).
     MOD_SLICES = [
-        dict(kind="map", z0=5000.0),
-        dict(kind="map", z0=15000.0),
-        dict(kind="ns",  x0=0.0),
-        dict(kind="ew",  y0=0.0),
+        dict(kind="map", z0=1000.0),
+        dict(kind="map", z0=25000.0),
+        # dict(kind="ns",  x0=0.0),
+        # dict(kind="ew",  y0=0.0),
+        dict(kind="ns",  x0=(-71.536322, "latlon")),
+        dict(kind="ew",  y0=(-16.196900, "latlon")),
     ]
-    MOD_XLIM = [-15000., 15000.]   # [xmin, xmax] model-local m; None = auto
-    MOD_YLIM = [-15000., 15000.]   # [ymin, ymax] model-local m; None = auto
-    MOD_ZLIM = [ -5000.,  30000.]   # [zmin, zmax] model-local m; None = auto
+    MOD_XLIM = [-25000., 25000.]   # [xmin, xmax] model-local m; None = auto
+    MOD_YLIM = [-25000., 25000.]   # [ymin, ymax] model-local m; None = auto
+    MOD_ZLIM = [ -10000., 30000.]   # [zmin, zmax] model-local m; None = auto
 
     # --- Figure layout -------------------------------------------------------
     MOD_EQUAL_ASPECT  = True

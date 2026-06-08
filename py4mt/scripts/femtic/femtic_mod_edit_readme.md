@@ -26,7 +26,7 @@ Typical use cases:
 | Value | Effect |
 |---|---|
 | `"fill"` | Set all free regions to `OP_FILL_VALUE` (log₁₀ Ω·m) |
-| `"smooth"` | Gaussian-kernel smoothing with `OP_SMOOTH_SIGMA` |
+| `"smooth"` | Spatial smoothing in log₁₀ space (kernel set by `OP_SMOOTH_MODE`) |
 | `"perturb"` | Add Gaussian noise with std `OP_PERTURB_STD` |
 | `"clip"` | Clamp log₁₀(ρ) to `[OP_CLIP_MIN, OP_CLIP_MAX]` |
 | `"null"` | No-op — reads and rewrites the block unchanged (useful for plot-only) |
@@ -69,7 +69,10 @@ slice figure saved / shown
 |---|---|
 | `OPERATION` | One of `"fill"`, `"smooth"`, `"perturb"`, `"clip"`, `"null"` |
 | `OP_FILL_VALUE` | Target log₁₀(ρ) for `"fill"` |
-| `OP_SMOOTH_SIGMA` | Gaussian sigma (model-local metres) for `"smooth"` |
+| `OP_SMOOTH_MODE` | Smoothing kernel: `"physical"` (global-σ Gaussian, original) \| `"knn_uniform"` (flat K-NN average) \| `"knn_gauss"` (per-region Gaussian) |
+| `OP_SMOOTH_SIGMA` | Global Gaussian σ in metres — `"physical"` mode only |
+| `OP_SMOOTH_K` | Number of nearest neighbours (all modes) |
+| `OP_SMOOTH_KNN_SIGMA_FRAC` | Per-region σ fraction for `"knn_gauss"`: σ_i = frac × d_{i,K} |
 | `OP_PERTURB_STD` | Noise standard deviation (log₁₀ Ω·m) for `"perturb"` |
 | `OP_CLIP_MIN/MAX` | log₁₀(ρ) bounds for `"clip"` |
 
@@ -109,6 +112,23 @@ slice figure saved / shown
 
 ---
 
+## Geometry helpers
+
+The geometry primitives used by `"smooth"`, `"wmean"`, `"ellipsoid"`, and
+`"brick"` all live in `femtic.py` and are called via the `fem.*` namespace:
+
+| femtic.py function | Role in mod_edit |
+|---|---|
+| `fem.tet_volumes()` | Called by `fem.build_region_geometry()` |
+| `fem.build_region_geometry()` | Builds `region_ctr` / `region_vol` for smooth, wmean |
+| `fem.ellipsoid_mask()` | Containment test for `"ellipsoid"` bodies |
+| `fem.brick_mask()` | Containment test for `"brick"` bodies |
+
+`_smooth_body_boundary` and `_apply_bodies` remain local — they reference the
+`OUT` config global and are specific to the body-editing workflow.
+
+---
+
 ## Changes from previous version
 
 - `plot_model_slices` call now includes `depth_km`, `horiz_km`,
@@ -123,8 +143,19 @@ slice figure saved / shown
   `PLOT_SITES_*`, `SITE_MARKER_SLICES`, `MAP_MARKERS`,
   `PROJECTION_DIST`, `UTM_ORIGIN_*`, `UTM_ZONE_OVERRIDE` config vars.
 
-## 2026-06-08
+## 2026-06-08 (smoothing modes)
 
-- Removed `OBSERVE_FILE` and `SITE_NUMBER`: the `observe.dat` fallback
-  branch was broken (`OBSERVE_FILE` was never defined). `SITE_DAT` is
-  now the sole site source.
+- Added `OP_SMOOTH_MODE` (`"physical"` | `"knn_uniform"` | `"knn_gauss"`).
+  `"physical"` preserves the original global-σ Gaussian.  `"knn_uniform"`
+  and `"knn_gauss"` are mesh-adaptive: the smoothing footprint tracks local
+  cell size rather than a fixed physical distance.
+- New config vars: `OP_SMOOTH_MODE` (default `"physical"`),
+  `OP_SMOOTH_KNN_SIGMA_FRAC` (default `0.5`).
+
+## 2026-06-08 (geometry refactor)
+
+- Removed private helpers `_tet_volumes`, `_build_region_geometry`,
+  `_rotation_matrix_zyx`, `_local_coords`, `_ellipsoid_mask`, `_brick_mask`.
+  All geometry primitives now live in `femtic.py` and are called via
+  `fem.build_region_geometry()`, `fem.ellipsoid_mask()`, `fem.brick_mask()`.
+- `_smooth_body_boundary` and `_apply_bodies` remain local.
