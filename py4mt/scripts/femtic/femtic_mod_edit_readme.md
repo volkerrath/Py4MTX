@@ -62,7 +62,6 @@ slice figure saved / shown
 | `MESH_FILE` | `mesh.dat` |
 | `MODEL_IN` | Input resistivity block |
 | `MODEL_OUT` | Output resistivity block |
-| `OBSERVE_FILE` | `observe.dat` (fallback site source) |
 | `SITE_DAT` | `site.dat` CSV (`None` to disable) |
 
 ### Operation
@@ -121,5 +120,11 @@ slice figure saved / shown
   (supporting `"utm"` / `"latlon"` CRS tagging) before the call.
 - Added `DEPTH_KM`, `HORIZ_KM`, `PLOT_EQUAL_ASPECT`, `PLOT_PANEL_HEIGHT`,
   `ORIGIN_METHOD`, `DISPLAY_COORDS`, `SITE_DAT`, `SITE_NAMES`,
-  `SITE_NUMBER`, `PLOT_SITES_*`, `SITE_MARKER_SLICES`, `MAP_MARKERS`,
+  `PLOT_SITES_*`, `SITE_MARKER_SLICES`, `MAP_MARKERS`,
   `PROJECTION_DIST`, `UTM_ORIGIN_*`, `UTM_ZONE_OVERRIDE` config vars.
+
+## 2026-06-08
+
+- Removed `OBSERVE_FILE` and `SITE_NUMBER`: the `observe.dat` fallback
+  branch was broken (`OBSERVE_FILE` was never defined). `SITE_DAT` is
+  now the sole site source.

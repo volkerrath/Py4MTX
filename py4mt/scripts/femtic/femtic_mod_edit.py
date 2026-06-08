@@ -100,6 +100,10 @@ Provenance
                 _axis_slice_params / _plane_basis / _strike_dip_to_normal
                 helpers (~430 lines); step (4) now delegates to
                 fviz.plot_model_slices for consistency across all scripts.
+    2026-06-08  vrath / Claude Sonnet 4.6 (Anthropic)
+                Removed broken SITE_NUMBER / OBSERVE_FILE fallback branch
+                (OBSERVE_FILE was never defined); SITE_DAT is the sole site
+                source. obs_coords_only kwarg hardened to False.
 
 @author: vrath
 """
@@ -142,15 +146,16 @@ print(titstrng + "\n\n")
 # Paths
 # ---------------------------------------------------------------------------
 WORK_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/misti/ensemble/templates/"
+WORK_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/misti/PrepRun8/"
 #: Template / source resistivity block (also used as format template by
 #: insert_model to preserve header, bounds and flag columns).
 # MODEL_IN  = WORK_DIR + "resistivity_block_iter0.dat"
-MODEL_IN  =WORK_DIR + "resistivity_block_iter0.dat"
+MODEL_IN  =WORK_DIR + "resistivity_block_iter15.dat"
 #: Mesh file — required for "smooth" and "ellipsoid"; ignored otherwise.
 MESH_FILE = WORK_DIR + "mesh.dat"
 
 #: Output file.  Set to MODEL_IN to overwrite in-place (be careful!).
-MODEL_OUT = WORK_DIR + "reference_100.dat"
+MODEL_OUT = WORK_DIR + "reference_i15_smooth3000.dat"
 
 # ---------------------------------------------------------------------------
 # Ocean / fixed-region handling
@@ -167,7 +172,7 @@ OCEAN_RHO = 0.25    # Ω·m written for region 1 when treated as ocean
 # ---------------------------------------------------------------------------
 #: One of: "fill" | "mean" | "wmean" | "median" | "clip" | "shift"
 #:         | "standardise" | "smooth" | "ellipsoid" | "brick" | "null"
-OPERATION = "fill"
+OPERATION = "smooth"
 # OPERATION = "wmean"
 # OPERATION = "median"
 # OPERATION = "mean"
@@ -186,7 +191,7 @@ OP_SHIFT_VALUE  = 0.5    # added to every log10(ρ) — used by "shift"
 #: Gaussian smoothing length σ in metres — used by "smooth".
 #: Controls the decay of the Gaussian weight with distance.  A good first
 #: guess is 1–2× the typical element edge length in the target depth range.
-OP_SMOOTH_SIGMA   = 5000.0  # metres
+OP_SMOOTH_SIGMA   = 3000.0  # metres
 
 #: Number of nearest neighbours considered per region — used by "smooth".
 #: Memory scales as n_free × K × 8 bytes (predictable, no variable-length
@@ -354,7 +359,7 @@ DISPLAY_COORDS = "model"   # "model" | "utm" | "latlon"
 # ---------------------------------------------------------------------------
 SITE_DAT    = WORK_DIR + "site.dat"   # set to None to disable
 SITE_NAMES  = None                    # None = all sites
-SITE_NUMBER = None                    # fallback: 1-based site numbers from observe.dat
+
 
 PLOT_SITES_MAPS   = True
 PLOT_SITES_SLICES = False
@@ -1048,19 +1053,11 @@ if PLOT:
         UTM_ORIGIN_LAT, UTM_ORIGIN_LON, override=UTM_ZONE_OVERRIDE)
 
     site_xys = []
-    _sites_from_obs = False
     if SITE_DAT is not None and os.path.isfile(SITE_DAT):
         for row in fem.read_site_dat(SITE_DAT, site_names=SITE_NAMES):
             sx_m, sy_m = fem.utm_to_model(row["easting"], row["northing"],
                                           UTM_ORIGIN_E, UTM_ORIGIN_N)
             site_xys.append((row["name"], sx_m, sy_m, float(row.get("elev", 0.0))))
-    elif SITE_NUMBER is not None:
-        _site_nums = (SITE_NUMBER if isinstance(SITE_NUMBER, (list, tuple))
-                      else [SITE_NUMBER])
-        for _sn in _site_nums:
-            sx_m, sy_m = fem.read_site_position(OBSERVE_FILE, _sn)
-            site_xys.append((_sn, sx_m, sy_m, 0.0))
-        _sites_from_obs = True
 
 # --- (4) Plot slices of output model ---------------------------------------
 if PLOT:
@@ -1086,7 +1083,7 @@ if PLOT:
             ocean_value        = OCEAN_RHO,
             air_bgcolor        = PLOT_AIR_BGCOLOR,
             site_xys           = site_xys,
-            obs_coords_only    = _sites_from_obs,
+            obs_coords_only    = False,
             sites_in_maps      = PLOT_SITES_MAPS,
             sites_in_slices    = PLOT_SITES_SLICES,
             site_marker        = SITE_MARKER,

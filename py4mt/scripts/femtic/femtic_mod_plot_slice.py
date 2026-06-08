@@ -169,10 +169,10 @@ print(titstrng + "\n\n")
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-WORK_DIR = r"/home/vrath/Py4MTX/work/rto/ubinas_data/"
+WORK_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/misti/PrepRun8/"
 
 #: Resistivity block to display (any iteration).
-MODEL_FILE = WORK_DIR + "resistivity_block_iter17.dat"
+MODEL_FILE = WORK_DIR + "resistivity_block_iter15.dat"
 
 #: Mesh file — always required for plotting.
 MESH_FILE = WORK_DIR + "mesh.dat"
@@ -267,22 +267,34 @@ SITE_MARKER_SLICES = dict(marker="v", color="black", ms=4, zorder=10,
 #:   "ms"      : marker size in points
 #:   "name"    : label string (shown in legend); None = no legend entry
 #: Any additional Matplotlib plot kwargs (mew, mfc, zorder, …) are accepted.
+
+## Ubinas
+# MAP_MARKERS = [
+#     dict(latlon=[-16.3169, -70.9673], marker="x", color="red", ms=8,
+#          name="test point, 4457m"),
+#     dict(latlon=[-16.3450, -70.8972], marker="*", color="red", ms=8,
+#          name="ubinas crater"),
+#     dict(latlon=[-16.363436, -70.868025], marker="+", color="blue", ms=8,
+#          name="mesh origin, borehole1"),
+#     dict(latlon=[-16.351, -70.9016], marker="^", color="magenta", ms=6,
+#          name="max elev"),
+# ]
+
+## Misti
 MAP_MARKERS = [
-    dict(latlon=[-16.3169, -70.9673], marker="x", color="red", ms=8,
-         name="test point, 4457m"),
-    dict(latlon=[-16.3450, -70.8972], marker="*", color="red", ms=8,
-         name="ubinas crater"),
-    dict(latlon=[-16.363436, -70.868025], marker="+", color="blue", ms=8,
+    dict(latlon=[-16.2991, -71.4056], marker="*", color="red", ms=12,
+         name="misti crater"),
+    dict(latlon=[-16.248170, -71.506431], marker="+", color="blue", ms=12,
          name="mesh origin, borehole1"),
-    dict(latlon=[-16.351, -70.9016], marker="^", color="magenta", ms=6,
-         name="max elev"),
+    # dict(latlon=[-16.351, -70.9016], marker="^", color="magenta", ms=6,
+    #      name="max elev"),
 ]
 
 # ---------------------------------------------------------------------------
 # Plotting — requires femtic_viz and Matplotlib
 # ---------------------------------------------------------------------------
 #: Output file path — None → interactive show().
-PLOT_FILE = WORK_DIR + "resistivity_block_iter17.pdf"
+PLOT_FILE = WORK_DIR + "resistivity_block_iter15.pdf"
 #: Figure DPI for saved file.
 PLOT_DPI = 600
 #: Matplotlib colormap name.
@@ -340,16 +352,16 @@ ALPHA_BLANK_THRESH = 0.0
 #:
 #: Per-panel xlim/ylim/zlim override PLOT_XLIM/PLOT_YLIM/PLOT_ZLIM.
 PLOT_SLICES = [
-    dict(kind="ns",  x0=(-70.8972, "latlon")),
-    dict(kind="ew",  y0=(-16.3450, "latlon")),
+    dict(kind="ns",  x0=(-71.536322, "latlon")),
+    dict(kind="ew",  y0=(-16.196900, "latlon")),
     dict(kind="map", z0=-4000.0),
     dict(kind="map", z0= 10000.0),
 ]
 
 #: Global axis limits in model-local metres.  None → auto.
-PLOT_XLIM = [-15000., 15000.]   # [xmin, xmax] metres — easting
-PLOT_YLIM = [-15000., 15000.]   # [ymin, ymax] metres — northing
-PLOT_ZLIM = [-6000.,  15000.]   # [zmin, zmax] metres — depth (z positive-down)
+PLOT_XLIM = [-25000., 25000.]   # [xmin, xmax] metres — easting
+PLOT_YLIM = [-25000., 25000.]   # [ymin, ymax] metres — northing
+PLOT_ZLIM = [-10000.,  25000.]   # [zmin, zmax] metres — depth (z positive-down)
 
 #: Equal aspect ratio for map and curtain panels.
 PLOT_EQUAL_ASPECT = True

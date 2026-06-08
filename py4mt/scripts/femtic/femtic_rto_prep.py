@@ -113,6 +113,24 @@ Provenance:
                 relative_links to ens.generate_directories.  Relative symlinks
                 survive tgz/copy to another machine; set False for legacy
                 absolute-path behaviour.
+    2026-06-07  Claude Sonnet 4.6 (Anthropic)
+                Replaced MOD_MODE/MOD_LOG10/MOD_MESH_LINES/MOD_MESH_LW/
+                MOD_MESH_COLOR and QC_SLICES/QC_CMAP/QC_CLIM/QC_XLIM/YLIM/
+                ZLIM/QC_OCEAN_COLOR/QC_DPI with full femtic_mod_plot_slice
+                config block (MOD_UTM_ORIGIN_*, MOD_DISPLAY_COORDS,
+                MOD_SITE_DAT, MOD_SITE_NAMES, MOD_SITE_NUMBER,
+                MOD_PLOT_SITES_MAPS/SLICES, MOD_PROJECTION_DIST,
+                MOD_SITE_MARKER/SLICES, MOD_MAP_MARKERS, MOD_ORIGIN_METHOD,
+                MOD_DPI, MOD_OCEAN_COLOR, MOD_AIR_COLOR/BGCOLOR,
+                MOD_ALPHA_FILE/MODE/BLANK_THRESH, MOD_EQUAL_ASPECT,
+                MOD_DEPTH_KM, MOD_HORIZ_KM, MOD_NROWS/NCOLS,
+                MOD_PANEL_HEIGHT/WIDTH/FIGSIZE).
+                PLOT_MODEL and PLOT_SLICES_QC execution blocks replaced by a
+                shared _plot_member_slices() helper calling
+                fviz.plot_model_slices with UTM-origin resolution, CRS-aware
+                slice positions (fem.resolve_slice_positions), and site
+                overlay — matching the femtic_mod_plot_slice workflow exactly.
+                ENS_* variables now default-assigned from MOD_* counterparts.
 """
 
 import os
@@ -207,7 +225,7 @@ if PERTURB_MOD:
     # if ModCov is not None, this needs to be normal
     MOD_PDF = ["normal", 0., 0.5]
     # ["exp", L], ["gauss", L], ["matern", L, MatPars], ["femtic"], None
-    R_FILE = ENSEMBLE_DIR + r"/R_coo"
+    R_FILE = TEMPLATES + r"/R_coo"
 
     # Sampling algorithm: "low rank" (randomized SVD, recommended) or "full rank" (CG).
     # Low-rank is 10-100x faster for typical FEMTIC mesh sizes.
@@ -340,80 +358,104 @@ if PLOT_DATA or PLOT_MODEL:
     
     
     MOD_MESH = TEMPLATES + "mesh.dat"
-    # MOD_ORIG is derived from MOD_REF below (after the PERTURB_MOD block)
-    
-    # Define 1-5 slices.  Each dict must have "type": "map" or "curtain"
-    # plus the keyword arguments forwarded to the femtic_viz slicer.
-    MOD_MODE = "tri"        # "tri" | "scatter" | "grid"
-    MOD_LOG10 = True
-    MOD_CMAP = "jet_r"
-    # (vmin, vmax) in log10(Ohm.m); None = auto from original
-    MOD_CLIM = None
-    # Axis limits for map and curtain slices.
-    # Map slices:    MOD_XLIM = easting range (m),  MOD_YLIM = northing range (m).
-    # Curtain slices: MOD_YLIM = along-profile distance range (m),
-    #                 MOD_ZLIM = depth range (m, negative-down, e.g. (-5000, 0)).
-    # Set any to None for Matplotlib auto-scaling.
-    # Individual slice dicts may carry 'xlim'/'ylim'/'zlim' keys to override per-slice.
-    MOD_XLIM = None         # (xmin, xmax) in metres; None = auto
-    MOD_YLIM = None         # (ymin, ymax) in metres; None = auto
-    MOD_ZLIM = None         # (zmin, zmax) in metres; None = auto
-    MOD_MESH_LINES = False  # overlay triangulation edges on filled patches
-    MOD_MESH_LW = 0.3       # mesh edge line width (points)
-    MOD_MESH_COLOR = "k"    # mesh edge colour
+
+    # --- Ocean / air handling (must match the inversion setup) ---------------
+    #: None → auto-infer; True / False → force ocean-present / ocean-absent.
+    MOD_OCEAN     = None
+    MOD_AIR_RHO   = 1.0e9   # Ω·m  (region 0)
+    MOD_OCEAN_RHO = 0.25    # Ω·m  (region 1 when treated as ocean)
+
+    # --- Geographic / UTM origin of the mesh centre --------------------------
+    #: Set to None when ORIGIN_METHOD will estimate the origin from SITE_DAT.
+    MOD_UTM_ORIGIN_LAT = None   # decimal degrees, positive = North
+    MOD_UTM_ORIGIN_LON = None   # decimal degrees, positive = East
+    MOD_UTM_ORIGIN_E   = None   # UTM easting  [m]
+    MOD_UTM_ORIGIN_N   = None   # UTM northing [m]
+    MOD_UTM_ZONE_OVERRIDE = None  # override auto-derived zone; None = auto
+
+    # --- Display coordinate system -------------------------------------------
+    #: "model"  — axis ticks in model-local metres (default)
+    #: "utm"    — axis ticks in absolute UTM metres
+    #: "latlon" — axis ticks in decimal degrees
+    MOD_DISPLAY_COORDS = "model"
+
+    # --- Site overlay ---------------------------------------------------------
+    #: Primary source: mt_make_sitelist.py CSV (name,lat,lon,elev,sitenum,E,N).
+    #: Set to None to fall back to observe.dat / MOD_SITE_NUMBER.
+    MOD_SITE_DAT   = TEMPLATES + "site.dat"   # set to None to disable
+    MOD_SITE_NAMES = None   # list of names to plot, or None = all sites
+    #: Fallback: site number(s) from observe.dat (int or list of ints).
+    MOD_SITE_NUMBER = None
+    MOD_PLOT_SITES_MAPS   = True   # show markers on map panels
+    MOD_PLOT_SITES_SLICES = True   # show markers on curtain / plane panels
+    #: Max distance [m] from a curtain plane for a site to appear on it.
+    MOD_PROJECTION_DIST = 1000.   # metres; None = show all sites on every panel
+    MOD_SITE_MARKER = dict(marker="v", color="black", ms=4, zorder=10, label=None)
+    MOD_SITE_MARKER_SLICES = dict(marker="v", color="black", ms=4, zorder=10, label=None)
+    #: Extra point markers on map panels only (each dict: latlon, marker, color, ms, name).
+    MOD_MAP_MARKERS = []
+
+    # --- Mesh-centre estimation from site.dat (optional) ---------------------
+    #: None → use hard-coded values above.
+    #: "box"     → midpoint of UTM bounding box of all sites in MOD_SITE_DAT.
+    #: "average" → arithmetic mean of UTM coordinates in MOD_SITE_DAT.
+    MOD_ORIGIN_METHOD = "box"   # None | "box" | "average"
+
+    # --- Plotting -----------------------------------------------------------
+    MOD_DPI       = 200
+    MOD_CMAP      = "turbo_r"
+    MOD_CLIM      = [0.0, 3.0]     # [log10_min, log10_max] Ω·m; None = auto
+    MOD_OCEAN_COLOR  = "lightgrey" # flat colour for ocean cells; None = colormap
+    MOD_AIR_COLOR    = "whitesmoke"
+    MOD_AIR_BGCOLOR  = None
+
+    # --- Alpha / blanking by second block file (optional) -------------------
+    MOD_ALPHA_FILE        = None   # path to sensitivity block; None = disabled
+    MOD_ALPHA_MODE        = "fade" # "fade" | "blank"
+    MOD_ALPHA_BLANK_THRESH = 0.0
+
+    # --- Slice specification -------------------------------------------------
+    #: Slice positions accept plain floats (model-local m) or CRS-tagged tuples:
+    #:   (value, "utm") | (value, "latlon")
+    #: Depth z0 is always model-local metres (no CRS tagging).
     MOD_SLICES = [
         dict(kind="map", z0=5000.0),
-        dict(kind="map", z0=-5000.0),
-        dict(kind="ew",  y0=0.0),
+        dict(kind="map", z0=15000.0),
         dict(kind="ns",  x0=0.0),
+        dict(kind="ew",  y0=0.0),
     ]
+    MOD_XLIM = [-15000., 15000.]   # [xmin, xmax] model-local m; None = auto
+    MOD_YLIM = [-15000., 15000.]   # [ymin, ymax] model-local m; None = auto
+    MOD_ZLIM = [ -5000.,  30000.]   # [zmin, zmax] model-local m; None = auto
 
-    # --- ensemble slice plot (femtic_viz.plot_ensemble_slices) ---
-    # Uses the same exact tet-plane intersection as femtic_mod_plot.
-    # Set PLOT_SLICES_ENS = True to produce a joint member × slice figure.
+    # --- Figure layout -------------------------------------------------------
+    MOD_EQUAL_ASPECT  = True
+    MOD_DEPTH_KM      = True
+    MOD_HORIZ_KM      = True
+    MOD_NROWS         = None   # None = auto (1 row)
+    MOD_NCOLS         = None   # None = auto (len(MOD_SLICES) cols)
+    MOD_PANEL_HEIGHT  = 16.0   # cm
+    MOD_PANEL_WIDTH   = None   # cm; None = auto from aspect ratio
+    MOD_FIGSIZE       = None   # [w, h] cm; overrides auto when set
+
+    # --- Ensemble slice plot (femtic_viz.plot_ensemble_slices) ---------------
+    #: Set True to produce a joint member × slice figure after generation.
     PLOT_SLICES_ENS = False
+    ENS_SLICES      = MOD_SLICES   # reuse same slice specs; override if needed
+    ENS_CMAP        = MOD_CMAP
+    ENS_CLIM        = MOD_CLIM
+    ENS_XLIM        = MOD_XLIM
+    ENS_YLIM        = MOD_YLIM
+    ENS_ZLIM        = MOD_ZLIM
+    ENS_OCEAN_COLOR = MOD_OCEAN_COLOR
+    ENS_STAT_ROWS   = ["mean", "std"]   # subset of "mean", "std", "median"
+    ENS_PER_MEMBER  = False
+    ENS_PLOT_DPI    = 300
+    ENS_PLOT_FILE   = PLOT_DIR + "rto_ensemble_slices" + PLOT_STR + ".pdf"
 
-    #: Slice specs in model-local metres — same format as femtic_mod_plot PLOT_SLICES.
-    #: Supported kinds: "map" (z0), "ns" (x0), "ew" (y0), "plane" (point/strike/dip).
-    #: Plain floats only — no CRS tagging here.
-    ENS_SLICES = [
-        dict(kind="map", z0=5000.0),
-        dict(kind="map", z0=15000.0),
-        dict(kind="ns",  x0=0.0),
-        dict(kind="ew",  y0=0.0),
-    ]
-    ENS_CMAP         = "turbo_r"
-    ENS_CLIM         = [0.0, 4.0]    # log10(Ω·m); None = auto
-    ENS_XLIM         = None           # [xmin, xmax] model-local metres; None = auto
-    ENS_YLIM         = None
-    ENS_ZLIM         = None
-    ENS_OCEAN_COLOR  = "lightgrey"
-    ENS_STAT_ROWS    = ["mean", "std"]   # any subset of "mean", "std", "median"
-    ENS_PER_MEMBER   = False             # also save one figure per member
-    ENS_PLOT_DPI     = 300
-    ENS_PLOT_FILE    = PLOT_DIR + "rto_ensemble_slices" + PLOT_STR + ".pdf"
-
-    # --- QC slice plot of perturbed initial models ---
-    # Uses fviz.plot_model_slices (exact tet-plane intersection, model-local
-    # metres only).  One figure per selected ensemble member saved into that
-    # member's subdirectory.  Set PLOT_SLICES_QC = True to enable.
-    PLOT_SLICES_QC   = False
-
-    #: Slice specs — plain model-local metres; same format as femtic_mod_plot
-    #: PLOT_SLICES but without geographic CRS tagging.
-    QC_SLICES = [
-        dict(kind="map", z0=5000.0),
-        dict(kind="map", z0=15000.0),
-        dict(kind="ns",  x0=0.0),
-        dict(kind="ew",  y0=0.0),
-    ]
-    QC_CMAP        = "turbo_r"
-    QC_CLIM        = [0.0, 4.0]      # log10(Ω·m); None = auto
-    QC_XLIM        = None            # [xmin, xmax] model-local metres; None = auto
-    QC_YLIM        = None
-    QC_ZLIM        = None
-    QC_OCEAN_COLOR = "lightgrey"
-    QC_DPI         = 200
+    # --- QC slice plot of perturbed initial models ---------------------------
+    #: Set True to produce one slice figure per selected member.
+    PLOT_SLICES_QC = False
 
 
 """
@@ -538,87 +580,164 @@ print("\n")
 print("model ensemble ready!")
 
 """
-QC slice plots of perturbed initial models
-------------------------------------------
-One figure per selected ensemble member saved as rto_qc<PLOT_STR>.pdf in
-that member's subdirectory.  Uses fviz.plot_model_slices (exact
-tetrahedron-plane intersection, model-local metres, no geographic conversion).
-Controlled by PLOT_SLICES_QC / QC_* config vars in the Visualization block.
+QC and model slice plots of perturbed initial models
+----------------------------------------------------
+Uses fviz.plot_model_slices (exact tetrahedron-plane intersection) with the
+full femtic_mod_plot_slice config: geographic CRS support, site overlay,
+display-coordinate system, alpha/blanking.
+
+PLOT_SLICES_QC: one figure per selected member, saved as rto_qc<PLOT_STR>.pdf
+                in each member's subdirectory.
+PLOT_MODEL:     same call but for the ensemble member's final-iterate model
+                (or iter0 before inversion).  Saved as rto_model<PLOT_STR>.pdf.
+Both flags are independent; set either or both to True.
 """
-if (PLOT_DATA or PLOT_MODEL) and PLOT_SLICES_QC:
-    _qc_files = [
-        ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/resistivity_block_iter0.dat"
-        for i in range(N_SAMPLES)
-    ]
-    for i_samp in VIZ_SAMPLES:
-        _qc_path = ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i_samp}/"
-        _qc_file = _qc_path + "rto_qc" + PLOT_STR + ".pdf"
-        if not os.path.isfile(_qc_files[i_samp]):
-            print(f"  QC: {_qc_files[i_samp]} not found — skipped.")
-            continue
+if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC):
+
+    # --- resolve UTM origin --------------------------------------------------
+    _mod_utm_origin_lat = MOD_UTM_ORIGIN_LAT
+    _mod_utm_origin_lon = MOD_UTM_ORIGIN_LON
+    _mod_utm_origin_e   = MOD_UTM_ORIGIN_E
+    _mod_utm_origin_n   = MOD_UTM_ORIGIN_N
+
+    if MOD_ORIGIN_METHOD is not None:
+        _mod_site_dat_path = MOD_SITE_DAT if MOD_SITE_DAT and os.path.isfile(MOD_SITE_DAT) else None
+        if _mod_site_dat_path is None:
+            print("  WARNING: MOD_ORIGIN_METHOD set but MOD_SITE_DAT not available "
+                  "— using hard-coded origin.")
+        else:
+            _sdat = fem.read_site_dat(_mod_site_dat_path)
+            if _sdat:
+                _Es = np.array([d["easting"]  for d in _sdat])
+                _Ns = np.array([d["northing"] for d in _sdat])
+                if MOD_ORIGIN_METHOD == "box":
+                    _mod_utm_origin_e = 0.5 * (_Es.min() + _Es.max())
+                    _mod_utm_origin_n = 0.5 * (_Ns.min() + _Ns.max())
+                elif MOD_ORIGIN_METHOD == "average":
+                    _mod_utm_origin_e = float(_Es.mean())
+                    _mod_utm_origin_n = float(_Ns.mean())
+                _lats = np.array([d["lat"] for d in _sdat])
+                _lons = np.array([d["lon"] for d in _sdat])
+                _mod_utm_zone, _mod_utm_northern = utl.utm_zone_from_latlon(
+                    float(_lats.mean()), float(_lons.mean()),
+                    override=MOD_UTM_ZONE_OVERRIDE)
+                _mod_utm_origin_lat, _mod_utm_origin_lon = utl.utm_to_latlon_zn(
+                    _mod_utm_origin_e, _mod_utm_origin_n,
+                    _mod_utm_zone, _mod_utm_northern)
+                print(f"  Model plot origin ({MOD_ORIGIN_METHOD}): "
+                      f"E={_mod_utm_origin_e:.1f} m, N={_mod_utm_origin_n:.1f} m, "
+                      f"lat={_mod_utm_origin_lat:.5f}°, lon={_mod_utm_origin_lon:.5f}°")
+
+    _mod_utm_zone, _mod_utm_northern = utl.utm_zone_from_latlon(
+        _mod_utm_origin_lat, _mod_utm_origin_lon,
+        override=MOD_UTM_ZONE_OVERRIDE)
+
+    # --- resolve slice positions ---------------------------------------------
+    _mod_slices_resolved = fem.resolve_slice_positions(
+        MOD_SLICES,
+        _mod_utm_zone, _mod_utm_northern,
+        _mod_utm_origin_e, _mod_utm_origin_n,
+        _mod_utm_origin_lat, _mod_utm_origin_lon,
+        verbose=OUT,
+    )
+
+    # --- read site positions for overlay ------------------------------------
+    _mod_site_xys = []
+    _mod_sites_from_obs = False
+    _mod_need_sites = MOD_PLOT_SITES_MAPS or MOD_PLOT_SITES_SLICES
+    if _mod_need_sites and MOD_SITE_DAT is not None and os.path.isfile(MOD_SITE_DAT):
+        _rows = fem.read_site_dat(MOD_SITE_DAT, site_names=MOD_SITE_NAMES)
+        for row in _rows:
+            sx_m, sy_m = fem.utm_to_model(row["easting"], row["northing"],
+                                          _mod_utm_origin_e, _mod_utm_origin_n)
+            _mod_site_xys.append((row["name"], sx_m, sy_m,
+                                  float(row.get("elev", 0.0))))
+    elif _mod_need_sites and MOD_SITE_NUMBER is not None:
+        _obs_file = TEMPLATES + "observe.dat"
+        _site_nums = (MOD_SITE_NUMBER if isinstance(MOD_SITE_NUMBER, (list, tuple))
+                      else [MOD_SITE_NUMBER])
+        for _sn in _site_nums:
+            sx_m, sy_m = fem.read_site_position(_obs_file, _sn)
+            _mod_site_xys.append((_sn, sx_m, sy_m, 0.0))
+        _mod_sites_from_obs = True
+
+    # --- helper: call plot_model_slices for one model file -------------------
+    def _plot_member_slices(mod_file, out_pdf):
         fviz.plot_model_slices(
-            model_file  = _qc_files[i_samp],
-            mesh_file   = MOD_MESH,
-            slices      = QC_SLICES,
-            cmap        = QC_CMAP,
-            clim        = QC_CLIM,
-            xlim        = QC_XLIM,
-            ylim        = QC_YLIM,
-            zlim        = QC_ZLIM,
-            ocean_color = QC_OCEAN_COLOR,
-            ocean_value = 0.25,
-            depth_km    = True,
-            horiz_km    = True,
-            plot_file   = _qc_file,
-            dpi         = QC_DPI,
-            out         = OUT,
+            model_file      = mod_file,
+            mesh_file       = MOD_MESH,
+            slices          = _mod_slices_resolved,
+            cmap            = MOD_CMAP,
+            clim            = MOD_CLIM,
+            xlim            = MOD_XLIM,
+            ylim            = MOD_YLIM,
+            zlim            = MOD_ZLIM,
+            ocean_color     = MOD_OCEAN_COLOR,
+            ocean_value     = MOD_OCEAN_RHO,
+            air_color       = MOD_AIR_COLOR,
+            air_bgcolor     = MOD_AIR_BGCOLOR,
+            site_xys        = _mod_site_xys,
+            obs_coords_only = _mod_sites_from_obs,
+            projection_dist = MOD_PROJECTION_DIST,
+            sites_in_maps   = MOD_PLOT_SITES_MAPS,
+            sites_in_slices = MOD_PLOT_SITES_SLICES,
+            site_marker     = MOD_SITE_MARKER,
+            site_marker_slices = MOD_SITE_MARKER_SLICES,
+            map_markers     = MOD_MAP_MARKERS,
+            display_coords  = MOD_DISPLAY_COORDS,
+            utm_origin_e    = _mod_utm_origin_e,
+            utm_origin_n    = _mod_utm_origin_n,
+            utm_zone        = _mod_utm_zone,
+            utm_northern    = _mod_utm_northern,
+            utm_to_latlon_fn   = utl.utm_to_latlon_zn,
+            latlon_to_model_fn = fem.latlon_to_model,
+            plot_file       = out_pdf,
+            dpi             = MOD_DPI,
+            equal_aspect    = MOD_EQUAL_ASPECT,
+            depth_km        = MOD_DEPTH_KM,
+            horiz_km        = MOD_HORIZ_KM,
+            nrows           = MOD_NROWS,
+            ncols           = MOD_NCOLS,
+            panel_height    = MOD_PANEL_HEIGHT / 2.54,
+            panel_width     = MOD_PANEL_WIDTH / 2.54 if MOD_PANEL_WIDTH is not None else None,
+            figsize         = [v / 2.54 for v in MOD_FIGSIZE] if MOD_FIGSIZE is not None else None,
+            alpha_file      = MOD_ALPHA_FILE,
+            alpha_mode      = MOD_ALPHA_MODE,
+            alpha_blank_thresh = MOD_ALPHA_BLANK_THRESH,
+            out             = OUT,
         )
-        print(f"  QC slice plot saved: {_qc_file}")
-    print("QC slice plots done.")
 
-"""
-Model visualization
--------------------
-Per-sample plot of original vs. perturbed resistivity models, shown across
-1-5 user-defined slices (map or curtain).  One figure per selected ensemble
-member; each figure is saved into that member's own subdirectory as
-``rto_model<PLOT_STR>.pdf``.
+    # --- QC plots of perturbed initial models (iter0) -----------------------
+    if PLOT_SLICES_QC:
+        _qc_files = [
+            ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/resistivity_block_iter0.dat"
+            for i in range(N_SAMPLES)
+        ]
+        for i_samp in VIZ_SAMPLES:
+            if not os.path.isfile(_qc_files[i_samp]):
+                print(f"  QC: {_qc_files[i_samp]} not found — skipped.")
+                continue
+            _qc_pdf = (ENSEMBLE_DIR + ENSEMBLE_NAME
+                       + f"{i_samp}/rto_qc{PLOT_STR}.pdf")
+            _plot_member_slices(_qc_files[i_samp], _qc_pdf)
+            print(f"  QC slice plot saved: {_qc_pdf}")
+        print("QC slice plots done.")
 
-Helper: femtic_viz.plot_model_ensemble
-"""
-if PLOT_MODEL:
-    MOD_ORIG = MOD_REF  # MOD_REF is already the full path
-
-    mod_ens_files = [
-        ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/{MOD_REF_BASE}"
-        for i in range(N_SAMPLES)
-    ]
-
-    for i_samp in VIZ_SAMPLES:
-        fig_mod, axs_mod = fviz.plot_model_ensemble(
-            orig_mod_file=MOD_ORIG,
-            ens_mod_files=mod_ens_files,
-            mesh_file=MOD_MESH,
-            sample_indices=[i_samp],
-            slices=MOD_SLICES,
-            mode=MOD_MODE,
-            log10=MOD_LOG10,
-            cmap=MOD_CMAP,
-            clim=MOD_CLIM,
-            xlim=MOD_XLIM,
-            ylim=MOD_YLIM,
-            zlim=MOD_ZLIM,
-            mesh_lines=MOD_MESH_LINES,
-            mesh_lw=MOD_MESH_LW,
-            mesh_color=MOD_MESH_COLOR,
-            out=True,
-        )
-        member_dir = ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i_samp}/"
-        plot_path = member_dir + "rto_model" + PLOT_STR + ".pdf"
-        fig_mod.savefig(plot_path, bbox_inches="tight")
-        plt.close(fig_mod)
-        print(f"  model plot saved: {plot_path}")
-    print("model ensemble plots saved.")
+    # --- Per-member model slice plots ----------------------------------------
+    if PLOT_MODEL:
+        _mod_files = [
+            ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/{MOD_REF_BASE}"
+            for i in range(N_SAMPLES)
+        ]
+        for i_samp in VIZ_SAMPLES:
+            if not os.path.isfile(_mod_files[i_samp]):
+                print(f"  Model: {_mod_files[i_samp]} not found — skipped.")
+                continue
+            _mod_pdf = (ENSEMBLE_DIR + ENSEMBLE_NAME
+                        + f"{i_samp}/rto_model{PLOT_STR}.pdf")
+            _plot_member_slices(_mod_files[i_samp], _mod_pdf)
+            print(f"  model slice plot saved: {_mod_pdf}")
+        print("model slice plots done.")
 
 """
 Ensemble slice plot

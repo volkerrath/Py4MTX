@@ -224,7 +224,18 @@ Provenance:
                         so values can be read directly off the axes.
                         Added ``legend_fontsize`` parameter (default 9) that
                         controls the shared-mode legend and per-panel title
-                        font size; tick labels scale with it."""
+                        font size; tick labels scale with it.
+    2026-06-07  Claude Sonnet 4.6 (Anthropic)
+                        plot_model_ensemble / _draw_slice: replaced ``'type'``
+                        key dispatch with ``'kind'`` (accepting ``'map'``,
+                        ``'ns'``, ``'ew'``, ``'curtain'``); ``'type'`` still
+                        accepted as legacy fallback.  ``'ns'``/``'ew'`` now
+                        build the curtain polyline from ``x0``/``y0`` and mesh
+                        bounding-box extents, matching the ``plot_model_slices``
+                        slice-spec format.  Routing keys ``kind``, ``type``,
+                        ``x0``, ``y0``, ``invert_x``, ``title`` are stripped
+                        before forwarding to slicer functions.  Docstring
+                        updated accordingly."""
 
 from __future__ import annotations
 
@@ -2478,17 +2489,19 @@ def plot_model_ensemble(
     sample_indices : sequence of int
         Indices into ``ens_mod_files`` to visualise (e.g. ``[0, 2, 5]``).
     slices : sequence of dict
-        Between 1 and 5 slice descriptors.  Each dict **must** have a
-        ``'type'`` key (``'map'`` or ``'curtain'``), plus the keyword
-        arguments forwarded to :func:`map_slice_from_cells` or
-        :func:`curtain_from_cells`.
+        Between 1 and 5 slice descriptors.  Each dict must have a ``'kind'``
+        key (preferred) or legacy ``'type'`` key identifying the panel type:
 
-        Map-slice example::
+        - ``'map'``     – horizontal depth slice; position key: ``z0`` (m, positive-down).
+        - ``'ns'``      – N-S vertical section;   position key: ``x0`` (easting, m).
+        - ``'ew'``      – E-W vertical section;   position key: ``y0`` (northing, m).
+        - ``'curtain'`` – arbitrary profile;       position key: ``'polyline'`` array.
 
-            {'type': 'map', 'z0': -1000, 'dz': 50}
+        Examples::
 
-        Curtain-slice example::
-
+            dict(kind='map', z0=5000.)
+            dict(kind='ns',  x0=0.)
+            dict(kind='ew',  y0=0.)
             {'type': 'curtain',
              'polyline': np.array([[x0, y0], [x1, y1]]),
              'width': 500}
@@ -2598,13 +2611,36 @@ def plot_model_ensemble(
     vmin, vmax = clim
 
     def _draw_slice(ax: Any, rho: np.ndarray, slc_spec: dict, title: str = "") -> None:
-        """Dispatch one slice descriptor to the appropriate slicer and draw on ax."""
-        slc = dict(slc_spec)          # copy -- we pop 'type' and axis-limit overrides
-        slc_type = slc.pop("type", "map").lower()
-        # Per-slice axis-limit overrides take priority over function-level defaults
+        """Dispatch one slice descriptor to the appropriate slicer and draw on ax.
+
+        Accepts both the new ``'kind'`` key (``'map'``, ``'ns'``, ``'ew'``,
+        ``'curtain'``) and the legacy ``'type'`` key for backward compatibility.
+
+        Map slices use ``z0`` (depth, metres, positive-down).
+        NS slices use ``x0`` (easting, metres).
+        EW slices use ``y0`` (northing, metres).
+        Curtain slices use a ``'polyline'`` key (shape (m, 2) array).
+        """
+        slc = dict(slc_spec)  # shallow copy — we pop routing keys before forwarding
+
+        # Accept both 'kind' (new) and 'type' (legacy), with 'kind' taking priority.
+        slc_kind = slc.pop("kind", None)
+        if slc_kind is None:
+            slc_kind = slc.pop("type", "map")
+        else:
+            slc.pop("type", None)   # discard legacy key if both were present
+        slc_kind = slc_kind.lower()
+
+        # Per-slice axis-limit overrides (consumed here, not forwarded to slicer).
         slc_xlim = slc.pop("xlim", xlim)
         slc_ylim = slc.pop("ylim", ylim)
         slc_zlim = slc.pop("zlim", zlim)
+
+        # Strip routing/geometry keys that are not accepted by the slicer functions.
+        slc.pop("invert_x", None)
+        slc.pop("title", None)
+
+        # Inject shared plot defaults (caller may override per-slice via slc_spec).
         slc.setdefault("mode", mode)
         slc.setdefault("log10", log10)
         slc.setdefault("cmap", cmap)
@@ -2614,23 +2650,51 @@ def plot_model_ensemble(
         slc.setdefault("mesh_lw", mesh_lw)
         slc.setdefault("mesh_color", mesh_color)
 
-        if "map" in slc_type:
-            map_slice_from_cells(mesh, rho, ax=ax, **slc)
-            # map slices: x = easting, y = northing
+        if "map" in slc_kind:
+            z0 = slc.pop("z0", 0.0)
+            map_slice_from_cells(mesh, rho, ax=ax, z0=z0, **slc)
             if slc_xlim is not None:
                 ax.set_xlim(slc_xlim)
             if slc_ylim is not None:
                 ax.set_ylim(slc_ylim)
-        else:
-            poly = slc.pop("polyline")
-            curtain_from_cells(mesh, rho, poly, ax=ax, **slc)
-            # curtain slices: horizontal = along-profile distance, vertical = depth
-            if slc_ylim is not None:
-                ax.set_xlim(slc_ylim)   # ylim controls the profile-distance axis
-            if slc_zlim is not None:
-                ax.set_ylim(slc_zlim)   # zlim controls the depth axis
 
-        # Apply shared colour limits after plotting
+        elif slc_kind in ("ns", "ew"):
+            # Build a 2-point polyline spanning the mesh bounding box.
+            # NS section: constant easting x0, profile runs N–S (y varies).
+            # EW section: constant northing y0, profile runs E–W (x varies).
+            node_xyz = mesh.nodes   # shape (nnodes, 3): [easting, northing, depth]
+            x_min, x_max = float(node_xyz[:, 0].min()), float(node_xyz[:, 0].max())
+            y_min, y_max = float(node_xyz[:, 1].min()), float(node_xyz[:, 1].max())
+            # Remove position keys before forwarding to curtain_from_cells.
+            slc.pop("x0", None)
+            slc.pop("y0", None)
+            if slc_kind == "ns":
+                x0 = float(slc_spec.get("x0", 0.0))
+                poly = np.array([[x0, y_min], [x0, y_max]])
+            else:  # "ew"
+                y0 = float(slc_spec.get("y0", 0.0))
+                poly = np.array([[x_min, y0], [x_max, y0]])
+            curtain_from_cells(mesh, rho, poly, ax=ax, **slc)
+            # Curtain: horizontal axis = along-profile distance, vertical = depth.
+            if slc_ylim is not None:
+                ax.set_xlim(slc_ylim)
+            if slc_zlim is not None:
+                ax.set_ylim(slc_zlim)
+
+        else:
+            # Legacy 'curtain' or 'plane' kinds: expect a 'polyline' key in slc_spec.
+            poly = slc.pop("polyline", None)
+            slc.pop("x0", None); slc.pop("y0", None); slc.pop("z0", None)
+            if poly is None:
+                ax.set_visible(False)
+                return
+            curtain_from_cells(mesh, rho, poly, ax=ax, **slc)
+            if slc_ylim is not None:
+                ax.set_xlim(slc_ylim)
+            if slc_zlim is not None:
+                ax.set_ylim(slc_zlim)
+
+        # Apply shared colour limits after plotting.
         for img in ax.get_images():
             img.set_clim(vmin, vmax)
         for coll in ax.collections:
