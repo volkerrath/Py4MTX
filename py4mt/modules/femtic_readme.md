@@ -178,6 +178,10 @@ python femtic.py edi-to-observe SITE01.edi SITE02.edi \
 | `insert_model()`      | Write sampled log₁₀ρ into a resistivity block file.     |
 | `read_distortion_file()` | Read FEMTIC galvanic distortion file.                |
 | `read_resistivity_block()` | Parse resistivity block file → dict of arrays.     |
+| `tet_volumes()` | Vectorised tetrahedral volume via scalar triple product (nelem,). |
+| `build_region_geometry()` | Volume-weighted centroid and total volume for each free region. |
+| `ellipsoid_mask()` | Boolean mask for points inside a rotated ellipsoid (ZYX or SDS convention). |
+| `brick_mask()` | Boolean mask for points inside a rotated rectangular prism. |
 | `read_site_position()` | Return (x_m, y_m) model-local position for a site from observe.dat. |
 | `read_site_dat()`     | Parse a `mt_make_sitelist.py` CSV (name, lat, lon, elev, sitenum, easting, northing). |
 | `estimate_utm_origin()` | Estimate mesh-centre UTM coordinates from calibration sites or bounding-box midpoint. |
@@ -334,6 +338,68 @@ candidates.  Levels outside the mesh are returned as NaN.
 
 ---
 
+## Mesh geometry helpers
+
+These functions operate on the raw `(nodes, conn)` arrays returned by
+`read_femtic_mesh()` and are used internally by `femtic_mod_edit.py` and
+`ensembles.py`.
+
+### `tet_volumes(nodes, conn)`
+
+Vectorised tetrahedral volume computation using the scalar triple product:
+
+```
+V_i = |det([b-a, c-a, d-a])_i| / 6
+```
+
+Returns a `(nelem,)` array of absolute volumes in metres³ (assuming node
+coordinates are in metres).
+
+### `build_region_geometry(nodes, conn, elem_region, free_idx)`
+
+For each free region (identified by `free_idx`), computes:
+
+- the **volume-weighted centroid** `[x, y, z]`
+- the **total volume** (sum of element volumes assigned to that region)
+
+Returns `(region_ctr, region_vol)` arrays of shape `(n_free, 3)` and
+`(n_free,)`.  Regions with no assigned elements receive centroid `[0, 0, 0]`
+and volume `0`.  Used by `femtic_mod_edit.py` to set up the smooth and wmean
+operations.
+
+### `ellipsoid_mask(centroids, *, center, axes, angles_deg, convention)`
+
+Returns a boolean `(n,)` mask for points inside a rotated ellipsoid.
+
+```python
+mask = fem.ellipsoid_mask(
+    centroids,
+    center=[0., 0., 5000.],
+    axes=[10000., 10000., 5000.],
+    angles_deg=[0., 0., 0.],
+    convention="zyx",   # or "sds"
+)
+```
+
+### `brick_mask(centroids, *, center, axes, angles_deg, convention)`
+
+Boolean `(n,)` mask for points inside a rotated rectangular prism.
+`axes = [a, b, c]` are half-extents; the containment test in the local frame
+is `|x'| ≤ a AND |y'| ≤ b AND |z'| ≤ c`.  Same signature and `convention`
+parameter as `ellipsoid_mask()`.
+
+```python
+mask = fem.brick_mask(
+    centroids,
+    center=[0., 0., 5000.],
+    axes=[10000., 8000., 4000.],
+    angles_deg=[30., 0., 0.],
+    convention="zyx",
+)
+```
+
+---
+
 ## z-convention (z positive downward)
 
 FEMTIC uses a right-handed coordinate system with **z increasing downward** (depth),
@@ -390,7 +456,24 @@ Optional for visualisation and export:
 
 ## Version / provenance
 
-Updated: 2026-05-24
+Updated: 2026-06-08
+
+### Changelog (2026-06-08)
+- Promoted three geometry helpers from `femtic_mod_edit.py` into the
+  mesh/geometry section (placed between `build_element_arrays` and
+  `_rotation_matrix_zyx`):
+  - `tet_volumes(nodes, conn)` — vectorised tetrahedral volume via scalar
+    triple product; replaces the private `_tet_volumes` in mod_edit.
+  - `build_region_geometry(nodes, conn, elem_region, free_idx)` — computes
+    volume-weighted centroid and total volume for each free region; replaces
+    the private `_build_region_geometry` in mod_edit.
+  - `brick_mask(centroids, *, center, axes, angles_deg, convention)` —
+    rotated rectangular prism containment test; parallel to `ellipsoid_mask()`
+    with the same keyword-only signature and `convention` parameter.
+- `femtic_mod_edit.py` now delegates to these functions; its private
+  `_tet_volumes`, `_build_region_geometry`, `_rotation_matrix_zyx`,
+  `_local_coords`, `_ellipsoid_mask`, and `_brick_mask` have been removed.
+- Updated: Overview, Key data-handling functions table.
 
 ### Changelog (2026-05-24)
 - Added Section 6b: site-list, observe.dat, and mesh-centre helpers moved

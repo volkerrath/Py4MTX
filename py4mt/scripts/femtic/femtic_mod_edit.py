@@ -23,10 +23,14 @@ Available operations (OPERATION key)
     "clip"          Clamp log10(ρ) to [OP_CLIP_MIN, OP_CLIP_MAX].
     "shift"         Add a scalar offset: log10(ρ) += OP_SHIFT_VALUE.
     "standardise"   Map to zero-mean / unit-variance in log10 space.
-    "smooth"        Gaussian-weighted spatial smoothing in log10 space.
-                    Requires MESH_FILE.  Each free region is replaced by the
-                    Gaussian-weighted average over its K nearest neighbours
-                    (K = OP_SMOOTH_K), with weights = exp(-d²/(2σ²)).
+    "smooth"        Spatial smoothing in log10 space.  Requires MESH_FILE.
+                    The kernel is selected by OP_SMOOTH_MODE:
+                      "physical"    Gaussian with global σ = OP_SMOOTH_SIGMA
+                                    (original behaviour).
+                      "knn_uniform" Flat average over the K nearest neighbours;
+                                    reach adapts to local mesh density.
+                      "knn_gauss"   Per-region Gaussian over K neighbours with
+                                    σ_i = OP_SMOOTH_KNN_SIGMA_FRAC × d_{i,K}.
                     Memory is O(n_free × K) — fixed and predictable.
     "ellipsoid"     Modify free regions whose centroid falls inside one or
                     more rotated ellipsoids.  Requires MESH_FILE.
@@ -34,11 +38,13 @@ Available operations (OPERATION key)
                     entry is a dict with keys: mode, value, center, axes,
                     angles (ZYX degrees).  Bodies are applied in order; later
                     bodies overwrite earlier ones where masks overlap.
+                    Mask computed via fem.ellipsoid_mask().
     "brick"         Same as "ellipsoid" but with a rotated rectangular prism
                     (box) geometry.  Bodies are defined by OP_BRICK_BODIES;
                     each entry has the same keys as an ellipsoid body but
                     axes = [a, b, c] are half-extents (metres), not semi-axes.
                     The rotation uses the same ZYX convention.
+                    Mask computed via fem.brick_mask().
     "null"          No-op: the input model is passed through unchanged and
                     no output file is written.  Use this to inspect the
                     input model with the slice plotter without modifying
@@ -104,6 +110,22 @@ Provenance
                 Removed broken SITE_NUMBER / OBSERVE_FILE fallback branch
                 (OBSERVE_FILE was never defined); SITE_DAT is the sole site
                 source. obs_coords_only kwarg hardened to False.
+    2026-06-08  vrath / Claude Sonnet 4.6 (Anthropic)
+                Added mesh-adaptive smoothing modes to "smooth" operation via
+                new OP_SMOOTH_MODE config variable: "physical" preserves the
+                original global-σ Gaussian; "knn_uniform" averages the K
+                nearest neighbours with flat weights; "knn_gauss" uses a
+                per-region Gaussian with σ_i = OP_SMOOTH_KNN_SIGMA_FRAC ×
+                d_{i,K} (distance to K-th neighbour).  Both knn variants
+                require SciPy.  New config vars: OP_SMOOTH_MODE,
+                OP_SMOOTH_KNN_SIGMA_FRAC.
+    2026-06-08  vrath / Claude Sonnet 4.6 (Anthropic)
+                Refactored geometry helpers into femtic.py: removed
+                _tet_volumes, _build_region_geometry, _rotation_matrix_zyx,
+                _local_coords, _ellipsoid_mask, _brick_mask.  Call sites now
+                delegate to fem.build_region_geometry(), fem.ellipsoid_mask(),
+                fem.brick_mask().  _smooth_body_boundary and _apply_bodies
+                remain local (workflow machinery, reference OUT global).
 
 @author: vrath
 """
@@ -188,20 +210,56 @@ OP_CLIP_MIN     = 0.0    # log10(1 Ω·m)   — used by "clip"
 OP_CLIP_MAX     = 4.0    # log10(10 kΩ·m) — used by "clip"
 OP_SHIFT_VALUE  = 0.5    # added to every log10(ρ) — used by "shift"
 
-#: Gaussian smoothing length σ in metres — used by "smooth".
+#: Smoothing kernel mode — used by "smooth".
+#:
+#:   "physical"    Gaussian with a fixed global length scale σ = OP_SMOOTH_SIGMA.
+#:                 Weight: w_ij = exp(−‖c_i−c_j‖² / 2σ²).
+#:                 Reach is the same everywhere in physical space, so fine-mesh
+#:                 zones receive many neighbours inside the kernel while coarse
+#:                 zones receive few.  This is the original behaviour.
+#:
+#:   "knn_uniform" Flat average over the K nearest neighbours.
+#:                 Weight: w_ij = 1/K for all j in KNN(i).
+#:                 Reach adapts to local mesh density: fine regions are smoothed
+#:                 over a small physical footprint, coarse regions over a large
+#:                 one — the same number of cells is always blended.
+#:
+#:   "knn_gauss"   Gaussian over the K nearest neighbours, but with a per-region
+#:                 σ_i = OP_SMOOTH_KNN_SIGMA_FRAC × d_{i,K} where d_{i,K} is the
+#:                 distance to region i's K-th nearest neighbour.
+#:                 Weight: w_ij = exp(−‖c_i−c_j‖² / 2σ_i²).
+#:                 Like "knn_uniform" the reach is mesh-adaptive, but the kernel
+#:                 decays smoothly within the neighbourhood rather than cutting
+#:                 off abruptly.
+#:
+#: "knn_uniform" and "knn_gauss" require SciPy; they raise RuntimeError if it
+#: is absent.  "physical" falls back to a chunked dense path when SciPy is
+#: unavailable.
+OP_SMOOTH_MODE    = "physical"   # "physical" | "knn_uniform" | "knn_gauss"
+
+#: Gaussian smoothing length σ in metres — used by mode "physical" only.
 #: Controls the decay of the Gaussian weight with distance.  A good first
 #: guess is 1–2× the typical element edge length in the target depth range.
 OP_SMOOTH_SIGMA   = 3000.0  # metres
 
-#: Number of nearest neighbours considered per region — used by "smooth".
+#: Number of nearest neighbours — used by all three modes.
+#:   "physical"    : neighbours beyond K get effectively zero weight if their
+#:                   distance >> σ; K is a memory/speed cap (start: 50–200).
+#:   "knn_uniform" : exactly K neighbours are averaged.
+#:   "knn_gauss"   : exactly K neighbours enter the per-region Gaussian.
 #: Memory scales as n_free × K × 8 bytes (predictable, no variable-length
-#: lists).  Regions beyond the K-th neighbour get effectively zero weight
-#: if their distance >> σ.  Start with K = 50–200; increase if σ is large
-#: relative to the typical inter-region spacing.
+#: lists).
 OP_SMOOTH_K       = 100     # nearest neighbours
 
-#: Maximum RAM (GiB) for the chunked dense fallback — used by "smooth"
-#: when SciPy is unavailable.
+#: Per-region σ fraction — used by mode "knn_gauss" only.
+#: σ_i = OP_SMOOTH_KNN_SIGMA_FRAC × d_{i,K}  (distance to the K-th neighbour).
+#: Fraction = 0.5  → weights ≈ 0.13 at the neighbourhood edge (steeper decay).
+#: Fraction = 1.0  → weights ≈ 0.61 at the edge (gentler, closer to uniform).
+#: Values > 1 approach uniform weighting.
+OP_SMOOTH_KNN_SIGMA_FRAC = 0.5
+
+#: Maximum RAM (GiB) for the chunked dense fallback — used by "smooth" mode
+#: "physical" when SciPy is unavailable.
 OP_SMOOTH_MAX_GB  = 4.0     # GiB
 
 # ---------------------------------------------------------------------------
@@ -420,65 +478,6 @@ def _op_standardise(m: np.ndarray) -> np.ndarray:
     return (m - mu) / sig
 
 
-def _tet_volumes(nodes: np.ndarray, conn: np.ndarray) -> np.ndarray:
-    """Compute the signed volume of each tetrahedron (vectorised).
-
-    V = |det([b-a, c-a, d-a])| / 6  for vertices a, b, c, d.
-
-    Returns
-    -------
-    vol : (nelem,)  absolute volumes in the same units as the node coordinates³.
-    """
-    v = nodes[conn]           # (nelem, 4, 3)
-    a, b, c, d = v[:, 0], v[:, 1], v[:, 2], v[:, 3]
-    bma = b - a;  cma = c - a;  dma = d - a
-    # Scalar triple product row-wise
-    cross = np.cross(bma, cma)            # (nelem, 3)
-    det   = (cross * dma).sum(axis=1)     # (nelem,)
-    return np.abs(det) / 6.0
-
-
-def _build_region_geometry(
-    nodes: np.ndarray,
-    conn: np.ndarray,
-    elem_region: np.ndarray,
-    free_idx: np.ndarray,
-) -> tuple:
-    """Compute centroid and total volume for each *free* region in one pass.
-
-    Parameters
-    ----------
-    nodes       : (nn, 3)
-    conn        : (nelem, 4)  0-based node indices
-    elem_region : (nelem,)    region index for each element
-    free_idx    : (n_free,)   region indices of free regions (in order)
-
-    Returns
-    -------
-    region_ctr : (n_free, 3)   centroid [x, y, z] for each free region
-    region_vol : (n_free,)     total volume (m³) for each free region
-    """
-    elem_ctr = nodes[conn].mean(axis=1)        # (nelem, 3)
-    elem_vol = _tet_volumes(nodes, conn)        # (nelem,)
-
-    n_free = len(free_idx)
-    region_ctr = np.empty((n_free, 3), dtype=float)
-    region_vol = np.empty(n_free,      dtype=float)
-
-    for k, ireg in enumerate(free_idx):
-        sel = elem_region == ireg
-        if not np.any(sel):
-            region_ctr[k] = 0.0
-            region_vol[k] = 0.0
-        else:
-            vols = elem_vol[sel]
-            region_vol[k] = vols.sum()
-            # volume-weighted centroid within each region
-            region_ctr[k] = (vols[:, np.newaxis] * elem_ctr[sel]).sum(axis=0) / region_vol[k]
-
-    return region_ctr, region_vol
-
-
 # Module-level context dicts — populated in the main block before dispatch.
 # Defined here so operation functions can reference them as globals without
 # triggering NameError or linter warnings.
@@ -518,58 +517,110 @@ def _op_wmean(m: np.ndarray) -> np.ndarray:
 
 
 def _op_smooth(m: np.ndarray) -> np.ndarray:
-    """Gaussian-weighted spatial smoothing of log10(ρ) across free regions.
+    """Mesh-adaptive or physical-distance smoothing of log10(ρ) across free regions.
 
-    Each region's new value is the normalised Gaussian-weighted sum over
-    its K nearest neighbours (by region centroid distance):
+    The kernel is selected by ``OP_SMOOTH_MODE``:
 
-        m̃_i = Σ_{j ∈ KNN(i)}  w_ij · m_j  /  Σ w_ij
-        w_ij = exp(−‖c_i − c_j‖² / (2 σ²))
+    "physical"
+        Classic Gaussian with a fixed global length scale σ = OP_SMOOTH_SIGMA:
 
-    Implementation strategy
-    -----------------------
-    *   ``query_ball_point`` (variable-length lists) segfaults at ~125 k
-        regions because the combined neighbour lists exhaust RAM during the
-        Python loop before any computation completes.
+            w_ij = exp(−‖c_i − c_j‖² / 2σ²)
 
-    *   ``cKDTree.query(k=K)`` returns a **fixed-shape** (n, K) array of
-        distances and indices.  Memory is exactly n × K × 8 bytes — fully
-        predictable and safe.  For K = 100 and n = 125 k that is ~100 MB.
+        Reach is the same everywhere in physical space, so fine-mesh zones
+        receive many in-kernel neighbours while coarse zones receive few.
+        Falls back to a chunked dense path when SciPy is unavailable.
 
-    *   Vectorised computation: weights W (n, K), dot products via einsum —
-        no Python loop over regions.
+    "knn_uniform"
+        Flat average over the K nearest neighbours:
 
-    If SciPy is unavailable the code falls back to a chunked dense path
-    that stays within ``OP_SMOOTH_MAX_GB`` gigabytes.
+            w_ij = 1 / K   for all j ∈ KNN(i)
+
+        The physical reach adapts to local mesh density: fine regions are
+        smoothed over a small footprint, coarse regions over a large one —
+        always blending the same number of cells.  Requires SciPy.
+
+    "knn_gauss"
+        Gaussian over the K nearest neighbours with a per-region σ:
+
+            σ_i  = OP_SMOOTH_KNN_SIGMA_FRAC × d_{i,K}
+            w_ij = exp(−‖c_i − c_j‖² / 2σ_i²)
+
+        where d_{i,K} is the distance from region i to its K-th nearest
+        neighbour.  Reach is mesh-adaptive like "knn_uniform" but the
+        kernel decays smoothly within the neighbourhood rather than cutting
+        off sharply.  Degenerate regions where d_{i,K} = 0 fall back to
+        uniform weights (count reported at end).  Requires SciPy.
+
+    All modes use ``cKDTree.query(k=K)`` which returns a fixed-shape
+    (n, K) distance/index array — memory is exactly n × K × 8 bytes,
+    predictable and safe regardless of mode.
     """
-    ctr    = _smooth_ctx["centroids"]   # (n_free, 3)
-    sigma  = _smooth_ctx["sigma"]
-    K      = int(OP_SMOOTH_K)
-    two_s2 = 2.0 * sigma * sigma
-    n      = len(m)
+    ctr  = _smooth_ctx["centroids"]   # (n_free, 3)
+    K    = min(int(OP_SMOOTH_K), len(m))
+    mode = str(OP_SMOOTH_MODE).strip().lower()
 
-    K = min(K, n)   # cannot request more neighbours than points
+    _valid_modes = {"physical", "knn_uniform", "knn_gauss"}
+    if mode not in _valid_modes:
+        raise ValueError(
+            f"smooth: unknown OP_SMOOTH_MODE={mode!r}. "
+            f"Choose one of: {sorted(_valid_modes)}."
+        )
+
+    n = len(m)
 
     # ------------------------------------------------------------------
-    # Fast path: SciPy cKDTree with fixed-k query  (no variable lists)
+    # SciPy fast path — covers all three modes
     # ------------------------------------------------------------------
     try:
         from scipy.spatial import cKDTree as _cKDTree
         tree = _cKDTree(ctr)
-        # dist: (n, K)  idx: (n, K) — both dense, fixed shape, safe
+        # dist: (n, K)  idx: (n, K) — dense, fixed shape, safe
         dist, idx = tree.query(ctr, k=K, workers=-1)
-        d2 = dist ** 2                           # (n, K)
-        W  = np.exp(-d2 / two_s2)               # (n, K)
-        # Gather m values for each neighbour: m_nbr[i, j] = m[idx[i, j]]
-        m_nbr = m[idx]                           # (n, K)
+        m_nbr = m[idx]                           # (n, K)  neighbour values
+
+        if mode == "physical":
+            two_s2 = 2.0 * _smooth_ctx["sigma"] ** 2
+            d2 = dist ** 2                       # (n, K)
+            W  = np.exp(-d2 / two_s2)           # (n, K)
+
+        elif mode == "knn_uniform":
+            W = np.ones((n, K), dtype=float)     # (n, K) — flat
+
+        else:  # "knn_gauss"
+            frac = float(OP_SMOOTH_KNN_SIGMA_FRAC)
+            # d_{i,K} = dist[:, -1] (distance to K-th neighbour, 0-based)
+            d_kmax = dist[:, -1]                 # (n,)
+            sigma_i = frac * d_kmax              # (n,)  per-region σ
+
+            # Degenerate guard: regions where all K neighbours coincide
+            # (d_{i,K} == 0) receive uniform weights instead.
+            degenerate = sigma_i == 0.0
+            n_degen = int(degenerate.sum())
+
+            two_s2_i = 2.0 * np.where(degenerate, 1.0, sigma_i) ** 2  # (n,)
+            d2 = dist ** 2                       # (n, K)
+            W  = np.exp(-d2 / two_s2_i[:, np.newaxis])   # (n, K)
+
+            # Overwrite degenerate rows with uniform weights
+            if n_degen:
+                W[degenerate, :] = 1.0
+                print(f"  smooth (knn_gauss): {n_degen} degenerate region(s) "
+                      f"(d_K=0) fell back to uniform weights.")
+
         return np.einsum("ij,ij->i", W, m_nbr) / W.sum(axis=1)
 
     except ImportError:
-        pass   # fall through to chunked dense path
+        if mode != "physical":
+            raise RuntimeError(
+                f"smooth mode '{mode}' requires SciPy (scipy.spatial.cKDTree). "
+                "Install SciPy or use OP_SMOOTH_MODE='physical'."
+            )
 
     # ------------------------------------------------------------------
-    # Fallback: chunked dense path capped at OP_SMOOTH_MAX_GB
+    # Fallback for mode "physical": chunked dense path, no SciPy needed
     # ------------------------------------------------------------------
+    sigma  = _smooth_ctx["sigma"]
+    two_s2 = 2.0 * sigma * sigma
     max_bytes  = int(OP_SMOOTH_MAX_GB * 1024 ** 3)
     chunk_size = max(1, max_bytes // (n * 8))
     chunk_size = min(chunk_size, n)
@@ -593,66 +644,20 @@ def _op_smooth(m: np.ndarray) -> np.ndarray:
     return wm_sum / w_sum
 
 
-def _rotation_matrix_zyx(angles_deg: list) -> np.ndarray:
-    """Build an intrinsic ZYX rotation matrix from [yaw, pitch, roll] in degrees.
-
-    Applies rotations in order: Z (yaw α), then Y (pitch β), then X (roll γ).
-    The resulting matrix R satisfies:  p_local = R.T @ (p - center).
-    """
-    a, b, g = (np.deg2rad(x) for x in angles_deg)
-    ca, sa = np.cos(a), np.sin(a)
-    cb, sb = np.cos(b), np.sin(b)
-    cg, sg = np.cos(g), np.sin(g)
-    Rz = np.array([[ ca, -sa, 0.],
-                   [ sa,  ca, 0.],
-                   [ 0.,  0., 1.]])
-    Ry = np.array([[ cb,  0., sb],
-                   [ 0.,  1., 0.],
-                   [-sb,  0., cb]])
-    Rx = np.array([[1.,  0.,  0.],
-                   [0.,  cg, -sg],
-                   [0.,  sg,  cg]])
-    return Rz @ Ry @ Rx   # shape (3, 3)
-
-
-def _local_coords(centroids: np.ndarray, center: list, angles_deg: list) -> np.ndarray:
-    """Map centroids into body-local frame via ZYX rotation about center.
-
-    Returns
-    -------
-    local : (n, 3)  coordinates in rotated frame
-    """
-    c = np.asarray(center, dtype=float)
-    R = _rotation_matrix_zyx(angles_deg)
-    return (centroids - c[np.newaxis, :]) @ R   # (n, 3)
-
-
 def _ellipsoid_mask(centroids: np.ndarray, center: list, axes: list,
                     angles_deg: list) -> np.ndarray:
-    """True for centroids inside the rotated ellipsoid.
-
-    Quadratic form in local frame: (x'/a)²+(y'/b)²+(z'/c)² ≤ 1
-    """
-    ax = np.asarray(axes, dtype=float)
-    if np.any(ax <= 0.):
-        raise ValueError(f"ellipsoid axes must all be > 0, got {axes}.")
-    local = _local_coords(centroids, center, angles_deg)
-    q = (local[:, 0] / ax[0])**2 + (local[:, 1] / ax[1])**2 + (local[:, 2] / ax[2])**2
-    return q <= 1.0
+    """True for centroids inside the rotated ellipsoid.  Delegates to fem.ellipsoid_mask."""
+    return fem.ellipsoid_mask(
+        centroids, center=center, axes=axes, angles_deg=angles_deg, convention="zyx"
+    )
 
 
 def _brick_mask(centroids: np.ndarray, center: list, axes: list,
                 angles_deg: list) -> np.ndarray:
-    """True for centroids inside the rotated rectangular prism (brick).
-
-    Box test in local frame: |x'| ≤ a  AND  |y'| ≤ b  AND  |z'| ≤ c
-    axes = [a, b, c] are half-extents in metres (all > 0).
-    """
-    ax = np.asarray(axes, dtype=float)
-    if np.any(ax <= 0.):
-        raise ValueError(f"brick axes must all be > 0, got {axes}.")
-    local = _local_coords(centroids, center, angles_deg)
-    return (np.abs(local[:, 0]) <= ax[0]) &            (np.abs(local[:, 1]) <= ax[1]) &            (np.abs(local[:, 2]) <= ax[2])
+    """True for centroids inside the rotated rectangular prism.  Delegates to fem.brick_mask."""
+    return fem.brick_mask(
+        centroids, center=center, axes=axes, angles_deg=angles_deg, convention="zyx"
+    )
 
 
 def _smooth_body_boundary(m: np.ndarray, centroids: np.ndarray,
@@ -975,7 +980,7 @@ if OPERATION in _NEEDS_MESH:
     elem_region = _struct["elem_region"]
     free_idx    = _struct["free_idx"]
 
-    region_ctr, region_vol = _build_region_geometry(nodes, conn, elem_region, free_idx)
+    region_ctr, region_vol = fem.build_region_geometry(nodes, conn, elem_region, free_idx)
     print(f"  region geometry: {len(free_idx)} free regions, "
           f"total volume={region_vol.sum():.3e} m³")
     print()
@@ -990,8 +995,15 @@ if OPERATION in _NEEDS_MESH:
         _smooth_ctx["centroids"] = region_ctr
         _smooth_ctx["sigma"]     = float(OP_SMOOTH_SIGMA)
         _n_mem_mb = int(len(free_idx) * min(int(OP_SMOOTH_K), len(free_idx)) * 8 / 1024**2)
-        print(f"  smooth context ready: σ={OP_SMOOTH_SIGMA:.0f} m, K={OP_SMOOTH_K}, "
-              f"estimated peak memory ~{_n_mem_mb} MB")
+        _mode_str = str(OP_SMOOTH_MODE).strip().lower()
+        if _mode_str == "physical":
+            _mode_info = f"σ={OP_SMOOTH_SIGMA:.0f} m"
+        elif _mode_str == "knn_uniform":
+            _mode_info = "uniform weights"
+        else:  # knn_gauss
+            _mode_info = f"per-region σ = {OP_SMOOTH_KNN_SIGMA_FRAC} × d_K"
+        print(f"  smooth context ready: mode='{_mode_str}', K={OP_SMOOTH_K}, "
+              f"{_mode_info}, estimated peak memory ~{_n_mem_mb} MB")
 
     if OPERATION == "ellipsoid":
         _ellipsoid_ctx["centroids"] = region_ctr
