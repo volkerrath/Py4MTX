@@ -68,6 +68,14 @@ _find_extrema_pilot_points (KDTree-based local extremum detection on free-
 region barycentres, optional ROI mask).  New parameters pp_roi, pp_extrema_k,
 pp_extrema_which; graceful fallback to "random" if no extrema are found.
 Requires scipy.spatial (already a transitive dependency).
+Updated 2026-06-10 by Claude Sonnet 4.6 (Anthropic): added _resolve_fromto
+helper; all four ensemble functions (generate_directories,
+generate_rto_model_ensemble, generate_gst_model_ensemble,
+generate_data_ensemble) now accept an explicit list of member indices in
+addition to None (all).  Range semantics ([start, stop]) removed — a list
+always means explicit indices.  Type hints updated to Optional[List[int]];
+Union/Tuple removed from fromto signatures.  Matching change in
+femtic_rto_prep.py: FROM_TO renamed to ENS_LIST.
 """
 
 from __future__ import annotations
@@ -88,6 +96,7 @@ from typing import (
     Tuple,
     Literal,
     List,
+    Union,
 )
 from numpy.typing import ArrayLike
 
@@ -113,6 +122,31 @@ except Exception:  # pragma: no cover
     import femtic as fem
 
 
+
+def _resolve_fromto(
+    fromto: "Optional[List[int]]",
+    n_samples: int,
+) -> np.ndarray:
+    """Resolve the *fromto* argument used by ensemble generation functions.
+
+    Parameters
+    ----------
+    fromto : None or list of int
+        * ``None``           — all members ``0 … n_samples-1``
+        * ``[i, j, k, …]``  — explicit list of member indices to process
+    n_samples : int
+        Total ensemble size; used only when *fromto* is ``None``.
+
+    Returns
+    -------
+    np.ndarray of int
+        Ordered array of member indices to process.
+    """
+    if fromto is None:
+        return np.arange(n_samples)
+    return np.asarray(list(fromto), dtype=int)
+
+
 def generate_directories(
     alg: str = "rto",
     dir_base: str = "./ens_",
@@ -132,7 +166,7 @@ def generate_directories(
         "distortion_iter0.dat",
     ),
     n_samples: int = 1,
-    fromto: Optional[Tuple[int, int]] = None,
+    fromto: Optional[List[int]] = None,
     relative_links: bool = True,
     out: bool = True,
 ) -> list[str]:
@@ -151,9 +185,11 @@ def generate_directories(
         Names of files to link into each ensemble directory.
     n_samples : int
         Number of ensemble members if ``fromto`` is None.
-    fromto : (int, int), optional
-        Explicit start/stop indices (Python-style: start, stop) for ensemble
-        member numbering. If None, indices range from 0..n_samples-1.
+    fromto : None or list of int, optional
+        Controls which members are processed:
+
+        * ``None`` (default) — all members ``0 … n_samples-1``.
+        * ``[i, j, k, …]``  — explicit list of member indices to process.
     relative_links : bool, optional
         If True (default), symlink targets are relative to each member
         directory, making the ensemble tree portable after tgz/copy to
@@ -166,10 +202,7 @@ def generate_directories(
     dir_list : list of str
         List of created ensemble directory paths.
     """
-    if fromto is None:
-        from_to = np.arange(n_samples)
-    else:
-        from_to = np.arange(fromto[0], fromto[1])
+    from_to = _resolve_fromto(fromto, n_samples)
 
     dir_list: list[str] = []
     for iens in from_to:
@@ -810,7 +843,7 @@ def generate_rto_model_ensemble(
     alg: str = 'rto',
     dir_base: str = "./ens_",
     n_samples: int = 1,
-    fromto: Optional[Tuple[int, int]] = None,
+    fromto: Optional[List[int]] = None,
     refmod: str = "resistivity_block_iter0.dat",
     q: Optional[scipy.sparse.spmatrix | np.ndarray] = None,
     algo: str = "low rank",
@@ -853,8 +886,8 @@ def generate_rto_model_ensemble(
         Ensemble base directory (e.g. ``"./ens_"``).
     n_samples : int
         Number of samples to generate.
-    fromto : (int, int), optional
-        Ensemble index range ``[start, stop)``. If None, use ``0..n_samples-1``.
+    fromto : None, (int, int), or list of int, optional
+        Controls which members are written.  See :func:`_resolve_fromto`.
     refmod : str
         Name of the reference block file inside each ensemble directory.
     q : sparse matrix or ndarray
@@ -952,10 +985,7 @@ def generate_rto_model_ensemble(
         if out:
             print("Full-rank sampling done.")
 
-    if fromto is None:
-        fromto_arr = np.arange(n_samples)
-    else:
-        fromto_arr = np.arange(fromto[0], fromto[1])
+    fromto_arr = _resolve_fromto(fromto, n_samples)
 
     mod_list: list[str] = []
     for iens, sample in zip(fromto_arr, samples):
@@ -1088,7 +1118,7 @@ def generate_gst_model_ensemble(
     alg: str = "gst",
     dir_base: str = "./ens_",
     n_samples: int = 1,
-    fromto: Optional[Tuple[int, int]] = None,
+    fromto: Optional[List[int]] = None,
     # --- mesh ---
     ref_mod_file: str = "",
     mesh_file: str = "",
@@ -1141,8 +1171,8 @@ def generate_gst_model_ensemble(
         Ensemble base directory, e.g. ``"./ubinas_gst_"``.
     n_samples : int
         Number of ensemble members if ``fromto`` is None.
-    fromto : (int, int), optional
-        Explicit ``[start, stop)`` index range.  If None, use 0 … n_samples-1.
+    fromto : None or list of int, optional
+        Explicit member indices to process.  If None, use 0 … n_samples-1.
     ref_mod_file : str
         Full path to the template reference model file.  Used to identify
         free regions and their element membership.
@@ -1387,10 +1417,7 @@ def generate_gst_model_ensemble(
     # ------------------------------------------------------------------
     # Member loop.
     # ------------------------------------------------------------------
-    if fromto is None:
-        fromto_arr = np.arange(n_samples)
-    else:
-        fromto_arr = np.arange(fromto[0], fromto[1])
+    fromto_arr = _resolve_fromto(fromto, n_samples)
 
     if out:
         print(f"\nGenerating {len(fromto_arr)} geostatistical initial models ...")
@@ -2231,7 +2258,7 @@ def gst_parameter_diagnostics(
 def generate_data_ensemble(alg: str = 'rto',
     dir_base: str = "./ens_",
     n_samples: int = 1,
-    fromto: Optional[Tuple[int, int]] = None,
+    fromto: Optional[List[int]] = None,
     file_in: str = "observe.dat",
     draw_from: Sequence[float | str] = ("normal", 0.0, 1.0),
     method: str = "add",
@@ -2252,8 +2279,8 @@ def generate_data_ensemble(alg: str = 'rto',
         Base directory for ensemble members (e.g. "./ens_").
     n_samples : int
         Number of ensemble members if ``fromto`` is None.
-    fromto : (int, int), optional
-        Explicit start/end indices (Python-style).
+    fromto : None, (int, int), or list of int, optional
+        Controls which members are processed.  See :func:`_resolve_fromto`.
     file_in : str
         Name of the observation file in each ensemble directory.
     draw_from : sequence
@@ -2270,10 +2297,7 @@ def generate_data_ensemble(alg: str = 'rto',
     obs_list : list of str
         Paths to the perturbed observation files.
     """
-    if fromto is None:
-        fromto_arr = np.arange(n_samples)
-    else:
-        fromto_arr = np.arange(fromto[0], fromto[1])
+    fromto_arr = _resolve_fromto(fromto, n_samples)
 
     obs_list: list[str] = []
     for iens in fromto_arr:

@@ -445,3 +445,25 @@ FEMTIC runs needed unless noted).
 | `gst_pilot_point_cv` | 2 | Leave-one-out Ordinary Kriging CV at the pilot points using the reference model as truth. Returns RMSE, MAE, and skill score without running FEMTIC. |
 | `gst_sill_from_jacobian` | 3 | Linearised propagation of model covariance to data space via the Jacobian J. Calibrates the sill so that ensemble forward-response spread matches data noise at a target coverage level. Falls back to a diagonal C_m approximation for large meshes (n_cells > 5000). |
 | `gst_parameter_diagnostics` | 4 | Integrating diagnostic: ensemble std maps, empirical variogram vs. target, optional LOO-CV (calls Strategy 2), optional data-space spread ratio (via J). Prints structured summary; optionally saves a multi-panel figure. |
+
+### Changelog (2026-06-10) — explicit member-index list for `fromto`
+
+- Added `_resolve_fromto(fromto, n_samples)` private helper that centralises
+  the index-resolution logic previously duplicated in four functions.
+- All four public ensemble functions now accept an **explicit list of member
+  indices**; `None` means all members.  Range semantics (`[start, stop]`)
+  are not supported — a list always means exact indices:
+
+  | `fromto` value | Behaviour |
+  |---|---|
+  | `None` | all members `0 … n_samples-1` |
+  | `[i, j, k, …]` | exactly those member indices |
+
+  Affected functions: `generate_directories`, `generate_rto_model_ensemble`,
+  `generate_gst_model_ensemble`, `generate_data_ensemble`.
+- Type hints updated from `Optional[Tuple[int, int]]` to
+  `Optional[List[int]]`; `Union`/`Tuple` removed from `fromto` signatures.
+- Companion change in `femtic_rto_prep.py`: config variable `FROM_TO`
+  renamed to `ENS_LIST`; `VIZ_SAMPLES` and all file lists scoped to the
+  resolved active member set (`ENS_MEMBERS`) to prevent `FileNotFoundError`
+  when `ENS_LIST` restricts the run to a subset of members.

@@ -131,6 +131,22 @@ Provenance:
                 slice positions (fem.resolve_slice_positions), and site
                 overlay — matching the femtic_mod_plot_slice workflow exactly.
                 ENS_* variables now default-assigned from MOD_* counterparts.
+    2026-06-10  Claude Sonnet 4.6 (Anthropic)
+                Renamed FROM_TO → ENS_LIST; semantics: None = all members,
+                list = explicit member indices.  Range semantics ([start, stop])
+                removed.  Matching change in ensembles.py (_resolve_fromto).
+    2026-06-10  Claude Sonnet 4.6 (Anthropic)
+                Fixed bug: VIZ_SAMPLES was drawn from range(N_SAMPLES) instead
+                of the active member index set, causing FileNotFoundError when
+                ENS_LIST restricts the run to a subset of members.
+                ENS_MEMBERS computed via ens._resolve_fromto(ENS_LIST, N_SAMPLES)
+                immediately after generate_directories; VIZ_SAMPLES now drawn
+                from ENS_MEMBERS.  File lists (dat_ens_files, _qc_files,
+                _mod_files, _ens_block_files/_ens_labels) all changed to cover
+                ENS_MEMBERS only: _qc_files/_mod_files are now dicts keyed by
+                member index (direct lookup replaces positional indexing);
+                dat_ens_files is an ordered list over ENS_MEMBERS with a
+                companion _ens_pos dict for sample_indices translation.
 """
 
 import os
@@ -207,10 +223,13 @@ RELATIVE_LINKS = True   # True: portable relative symlinks (default, survives tg
 
 
 """
-Control number of ensemble members for increase of sample number or restart
-of badly converged samples (see femtic_rto_post.py)
+Control which ensemble members are (re-)generated.
+
+ENS_LIST accepts two forms:
+  None              — process all members 0 … N_SAMPLES-1 (default)
+  [i, j, k, …]     — explicit list of member indices to process
 """
-FROM_TO = None
+ENS_LIST = None
 
 
 """
@@ -223,8 +242,8 @@ if PERTURB_MOD:
     MOD_REF_BASE = os.path.basename(MOD_REF)
     MOD_METHOD = "add"
     # if ModCov is not None, this needs to be normal
-    MOD_MU = 1.5
-    MOD_PDF = ["normal", 0., 1.5]
+    MOD_MU = 1.5  # alpha =1/ mu = sqrt(1/alpha)
+    MOD_PDF = ["normal", 0., MOD_MU]
     # ["exp", L], ["gauss", L], ["matern", L, MatPars], ["femtic"], None
     R_FILE = TEMPLATES + r"/R_coo"
 
@@ -470,18 +489,28 @@ dir_list = ens.generate_directories(alg="rto",
                                     copy_list=COPY_LIST,
                                     link_list=LINK_LIST,
                                     n_samples=N_SAMPLES,
-                                    fromto=FROM_TO,
+                                    fromto=ENS_LIST,
                                     relative_links=RELATIVE_LINKS,
                                     out=True)
 print("\n")
 
 """
+Resolve the set of active member indices from ENS_LIST.
+All downstream loops (data perturbation, model perturbation, visualization)
+work exclusively from ENS_MEMBERS so that a restricted ENS_LIST never causes
+plots to reach non-existent member directories.
+"""
+ENS_MEMBERS = ens._resolve_fromto(ENS_LIST, N_SAMPLES)
+print(f"Active members ({len(ENS_MEMBERS)}): {ENS_MEMBERS.tolist()}\n")
+
+"""
 Draw a random subset of ensemble members for visualization.
 Used by both the data plot and the model plot.
+Drawn from ENS_MEMBERS (the active index set), not from range(N_SAMPLES).
 """
-_n_viz = min(VIZ_N_SAMPLES, N_SAMPLES)
+_n_viz = min(VIZ_N_SAMPLES, len(ENS_MEMBERS))
 VIZ_SAMPLES = sorted(rng.choice(
-    N_SAMPLES, size=_n_viz, replace=False).tolist())
+    ENS_MEMBERS, size=_n_viz, replace=False).tolist())
 print(f"Visualization members: {VIZ_SAMPLES}\n")
 
 """
@@ -490,7 +519,7 @@ Draw perturbed data sets: d̃ ∼ N(d, Cd)
 data_ensemble = ens.generate_data_ensemble(alg="rto",
                                            dir_base=ENSEMBLE_DIR + ENSEMBLE_NAME,
                                            n_samples=N_SAMPLES,
-                                           fromto=FROM_TO,
+                                           fromto=ENS_LIST,
                                            file_in="observe.dat",
                                            draw_from=DAT_PDF,
                                            method=DAT_METHOD,
@@ -511,16 +540,21 @@ Helper: femtic_viz.plot_data_ensemble
 """
 if PLOT_DATA:
     dat_orig_file = TEMPLATES + "observe.dat"
+    # Build file list and position map over the *active* members only.
+    # VIZ_SAMPLES contains member indices drawn from ENS_MEMBERS, so we
+    # translate each to a positional offset into dat_ens_files for
+    # plot_data_ensemble (which indexes its ens_files list positionally).
     dat_ens_files = [
         ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/observe.dat"
-        for i in range(N_SAMPLES)
+        for i in ENS_MEMBERS
     ]
+    _ens_pos = {m: p for p, m in enumerate(ENS_MEMBERS)}
 
     for i_samp in VIZ_SAMPLES:
         fig_dat, axs_dat = fviz.plot_data_ensemble(
             orig_file=dat_orig_file,
             ens_files=dat_ens_files,
-            sample_indices=[i_samp],
+            sample_indices=[_ens_pos[i_samp]],
             what=DAT_WHAT,
             comps=DAT_COMPS,
             show_errors_orig=DAT_SHOW_ERRORS_ORIG,
@@ -560,7 +594,7 @@ model_ensemble = ens.generate_rto_model_ensemble(
     alg="rto",
     dir_base=ENSEMBLE_DIR + ENSEMBLE_NAME,
     n_samples=N_SAMPLES,
-    fromto=FROM_TO,
+    fromto=ENS_LIST,
     refmod=MOD_REF_BASE,
     method=MOD_METHOD,
     algo=MOD_ALGO,
@@ -712,10 +746,10 @@ if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC
 
     # --- QC plots of perturbed initial models (iter0) -----------------------
     if PLOT_SLICES_QC:
-        _qc_files = [
-            ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/resistivity_block_iter0.dat"
-            for i in range(N_SAMPLES)
-        ]
+        _qc_files = {
+            i: ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/resistivity_block_iter0.dat"
+            for i in ENS_MEMBERS
+        }
         for i_samp in VIZ_SAMPLES:
             if not os.path.isfile(_qc_files[i_samp]):
                 print(f"  QC: {_qc_files[i_samp]} not found — skipped.")
@@ -728,10 +762,10 @@ if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC
 
     # --- Per-member model slice plots ----------------------------------------
     if PLOT_MODEL:
-        _mod_files = [
-            ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/{MOD_REF_BASE}"
-            for i in range(N_SAMPLES)
-        ]
+        _mod_files = {
+            i: ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/{MOD_REF_BASE}"
+            for i in ENS_MEMBERS
+        }
         for i_samp in VIZ_SAMPLES:
             if not os.path.isfile(_mod_files[i_samp]):
                 print(f"  Model: {_mod_files[i_samp]} not found — skipped.")
@@ -753,13 +787,13 @@ Helper: femtic_viz.plot_ensemble_slices
 """
 if PLOT_DATA or PLOT_MODEL:   # only runs when the viz block was entered
     if PLOT_SLICES_ENS:
-        # Build the list of converged model files for all members.
+        # Build the list of converged model files for all active members.
         # Adjust the filename pattern to match the desired iteration.
         _ens_block_files = [
             ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/resistivity_block_iter0.dat"
-            for i in range(N_SAMPLES)
+            for i in ENS_MEMBERS
         ]
-        _ens_labels = [f"{ENSEMBLE_NAME}{i}" for i in range(N_SAMPLES)]
+        _ens_labels = [f"{ENSEMBLE_NAME}{i}" for i in ENS_MEMBERS]
 
         fviz.plot_ensemble_slices(
             member_files    = _ens_block_files,
