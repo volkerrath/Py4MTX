@@ -40,6 +40,10 @@ and all sampling helpers live exclusively in `ensembles.py`.
   calibration sites or a bounding-box midpoint.
 - **Borehole sampling** — point-in-tetrahedron search for 1-D ρ(z) extraction
   along vertical boreholes (`_point_in_tet`, `extract_borehole_log`).
+- **Model cell summary** — count air / ocean / other-fixed / free-parameter
+  elements in a `resistivity_block_iterXX.dat` (`summarise_model_file`).
+- **Data summary** — report sites, frequencies, data-vector size per
+  observation type from an `observe.dat` (`summarise_observe_dat`).
 - **CLI interface** — subcommand-style command-line usage for batch conversion.
 
 ---
@@ -170,6 +174,8 @@ python femtic.py edi-to-observe SITE01.edi SITE02.edi \
 | Function              | Purpose                                                  |
 |-----------------------|----------------------------------------------------------|
 | `read_observe_dat()`  | Parse FEMTIC `observe.dat` into a nested dict (blocks → sites). |
+| `summarise_observe_dat()` | Report sites / frequencies / data-vector size per obs-type block. |
+| `summarise_model_file()` | Count air / ocean / other-fixed / free-parameter elements in a resistivity block. |
 | `sites_as_dict_list()` | Flatten parsed observe.dat into a list of per-site dicts.      |
 | `write_observe_dat()` | Write a parsed (and possibly modified) structure back to disk.  |
 | `edi_list_to_observe_dat()` | Convert a list of `data_proc.load_edi` dicts to `observe.dat`. |
@@ -451,12 +457,32 @@ Optional for visualisation and export:
 | `femtic_rto_rough.py` | Extract roughness matrix from FEMTIC.                               |
 | `femtic_rto_prior.py` | Build prior covariance proxy.                                       |
 | `femtic_rto_prep.py`  | Generate RTO ensemble.                                              |
+| `femtic_summarize_model_cells.py` | CLI: cell-count summary for `resistivity_block_iterXX.dat`. Delegates to `summarise_model_file()`; self-contained fallback when `femtic.py` is not on the path. |
+| `femtic_summarize_observe_dat.py` | CLI: data-content summary for `observe.dat`. Delegates to `summarise_observe_dat()`; self-contained fallback when `femtic.py` is not on the path. |
 
 ---
 
 ## Version / provenance
 
-Updated: 2026-06-08
+Updated: 2026-06-10
+
+### Changelog (2026-06-10)
+- Added `summarise_model_file(path, *, ocean=None, out=True)` — counts air,
+  ocean, other-fixed, and free-parameter elements in a
+  `resistivity_block_iterXX.dat`.  Reuses the existing `_parse_region_line`
+  and `_infer_ocean_present` infrastructure; prints a formatted table when
+  `out=True`; companion `_print_model_summary()` formats the table from a
+  cached dict.  Inserted between `read_model` and `insert_model`.
+- Added `summarise_observe_dat(path_or_parsed, *, out=True)` — reports sites,
+  frequencies, data values per obs-type block (MT, VTF, PT) and global totals
+  from an `observe.dat`.  Accepts a filesystem path or an already-parsed dict
+  (avoids re-parsing when `read_observe_dat` has already been called); calls
+  `read_observe_dat` with `compute_mt_derived=False, bootstrap_n=0` for speed.
+  Companion `_print_observe_summary()` formats the table.  Inserted before
+  `write_observe_dat`.
+- Both functions are also exposed as standalone CLI scripts:
+  `femtic_summarize_model_cells.py` and `femtic_summarize_observe_dat.py`.
+- Updated: Overview, Key data-handling functions table, Related modules table.
 
 ### Changelog (2026-06-08)
 - Promoted three geometry helpers from `femtic_mod_edit.py` into the
