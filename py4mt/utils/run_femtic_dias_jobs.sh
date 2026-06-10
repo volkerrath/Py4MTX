@@ -16,7 +16,7 @@ export HDF5_ROOT=$HOME/local/intel
 export PATH=$HDF5_ROOT/bin:$PATH
 export LD_LIBRARY_PATH=$HDF5_ROOT/lib:$LD_LIBRARY_PATH
 
-num_mpi_proc=18
+num_mpi_proc=8
 unset OMP_NUM_THREADS
 
 echo "Run on:"
