@@ -76,6 +76,16 @@ Modified: 2026-06-08 by Claude Sonnet 4.6 (Anthropic) — promoted three
     region), and brick_mask() (rotated rectangular prism containment test,
     parallel to ellipsoid_mask() with the same convention/keyword-only
     signature).
+Modified: 2026-06-10 by Claude Sonnet 4.6 (Anthropic) — added two summary
+    helpers: summarise_model_file() counts air / ocean / other-fixed /
+    parameter elements in a resistivity_block_iterXX.dat, reusing the
+    existing _parse_region_line / _infer_ocean_present infrastructure;
+    _print_model_summary() formats the table.  summarise_observe_dat()
+    reports sites / frequencies / data-vector size per obs-type block from
+    an observe.dat (accepts path or pre-parsed dict); _print_observe_summary()
+    formats the table.  Both functions are also exposed as standalone CLI
+    scripts: femtic_summarize_model_cells.py and
+    femtic_summarize_observe_dat.py.
 """
 from __future__ import annotations
 
@@ -390,6 +400,138 @@ def read_model(
         )
 
     return out_vec
+
+
+def summarise_model_file(
+    path: str | Path,
+    *,
+    ocean: bool | None = None,
+    out: bool = True,
+) -> dict:
+    """Summarise the cell counts in a FEMTIC ``resistivity_block_iterXX.dat``.
+
+    Counts how many mesh elements fall into each category:
+
+    - **air**         — region 0 (always fixed)
+    - **ocean**       — region 1 when inferred / forced as ocean
+    - **other fixed** — any other region with ``flag == 1``
+    - **parameters**  — free (unfixed) regions used in the inversion
+
+    Parameters
+    ----------
+    path : str or Path
+        Path to a ``resistivity_block_iterXX.dat`` file.
+    ocean : bool | None
+        If None (default), auto-infer whether region 1 is ocean via
+        :func:`_infer_ocean_present`.  Pass ``True`` / ``False`` to override.
+    out : bool
+        If True, print a formatted summary table to stdout.
+
+    Returns
+    -------
+    dict with keys:
+
+    ``file``, ``nelem``, ``nreg``,
+    ``n_air``, ``n_ocean``, ``n_other_fixed``, ``n_params``,
+    ``ocean_present``, ``ocean_rho``,
+    ``region_rho`` (list[float]), ``region_flag`` (list[int])
+    """
+    import collections
+
+    model_path = Path(path)
+    with model_path.open("r", encoding="utf-8", errors="replace") as f:
+        lines = f.readlines()
+
+    idx = 0
+    hdr = lines[idx].split(); idx += 1
+    if len(hdr) < 2:
+        raise ValueError(f"Invalid resistivity block header: {hdr!r}")
+    nelem = int(hdr[0])
+    nreg  = int(hdr[1])
+
+    elem_region: list[int] = []
+    for _ in range(nelem):
+        parts = lines[idx].split(); idx += 1
+        elem_region.append(int(parts[1]))
+
+    region_rho:   list[float] = []
+    region_flag:  list[int]   = []
+    region_lines: list[str]   = []
+    for i in range(nreg):
+        line = lines[idx]; idx += 1
+        ireg, rho, _, _, _, flag = _parse_region_line(line)
+        region_rho.append(rho)
+        region_flag.append(flag)
+        region_lines.append(line)
+
+    ocean_present = False
+    ocean_rho_val = None
+    if nreg > 1:
+        ocean_present = _infer_ocean_present(region_lines[1]) if ocean is None else bool(ocean)
+        if ocean_present:
+            ocean_rho_val = region_rho[1]
+
+    fixed = [False] * nreg
+    fixed[0] = True
+    for i in range(nreg):
+        if region_flag[i] == 1:
+            fixed[i] = True
+    if ocean_present and nreg > 1:
+        fixed[1] = True
+
+    reg_counts: collections.Counter = collections.Counter(elem_region)
+    n_air         = reg_counts.get(0, 0)
+    n_ocean       = reg_counts.get(1, 0) if ocean_present else 0
+    n_other_fixed = sum(
+        reg_counts.get(i, 0)
+        for i in range(nreg)
+        if fixed[i] and i != 0 and not (i == 1 and ocean_present)
+    )
+    n_params = sum(
+        reg_counts.get(i, 0) for i in range(nreg) if not fixed[i]
+    )
+
+    summary = {
+        "file":          model_path.name,
+        "nelem":         nelem,
+        "nreg":          nreg,
+        "n_air":         n_air,
+        "n_ocean":       n_ocean,
+        "n_other_fixed": n_other_fixed,
+        "n_params":      n_params,
+        "ocean_present": ocean_present,
+        "ocean_rho":     ocean_rho_val,
+        "region_rho":    region_rho,
+        "region_flag":   region_flag,
+    }
+
+    if out:
+        _print_model_summary(summary)
+
+    return summary
+
+
+def _print_model_summary(s: dict) -> None:
+    """Print a formatted model-cell count table (used by summarise_model_file)."""
+    n_check = s["n_air"] + s["n_ocean"] + s["n_other_fixed"] + s["n_params"]
+    ocean_str = (
+        f"yes (rho={s['ocean_rho']:.4g} Ω·m)" if s["ocean_present"] else "no"
+    )
+    print(f"\n{'─' * 60}")
+    print(f"  File          : {s['file']}")
+    print(f"  Total cells   : {s['nelem']:>10,d}   ({s['nreg']} regions)")
+    print(f"  Ocean inferred: {ocean_str}")
+    print(f"  ┌─────────────────────────────────────────┐")
+    print(f"  │  Air cells        : {s['n_air']:>10,d}            │")
+    print(f"  │  Ocean cells      : {s['n_ocean']:>10,d}            │")
+    print(f"  │  Other fixed      : {s['n_other_fixed']:>10,d}            │")
+    print(f"  │  Parameters (free): {s['n_params']:>10,d}            │")
+    print(f"  │─────────────────────────────────────────│")
+    print(f"  │  Check sum        : {n_check:>10,d}            │")
+    print(f"  └─────────────────────────────────────────┘")
+    if n_check != s["nelem"]:
+        print(f"  *** WARNING: check sum {n_check} ≠ nelem {s['nelem']} ***")
+
 
 def insert_model(
     template: str = "resistivity_block_iter0.dat",
@@ -3960,6 +4102,117 @@ def observe_to_site_viz_list(
         sites_viz.append(entry)
 
     return sites_viz
+
+
+def summarise_observe_dat(
+    path_or_parsed: "str | Path | dict[str, Any]",
+    *,
+    out: bool = True,
+) -> dict:
+    """Summarise the data content of a FEMTIC ``observe.dat``.
+
+    Reports the number of sites, frequencies, and data values per observation
+    type (MT, VTF, PT), plus global totals.
+
+    Parameters
+    ----------
+    path_or_parsed : str, Path, or already-parsed dict
+        Either a filesystem path to an ``observe.dat`` (will be parsed with
+        ``compute_mt_derived=False`` for speed) or a dict previously returned
+        by :func:`read_observe_dat`.
+    out : bool
+        If True, print a formatted summary table to stdout.
+
+    Returns
+    -------
+    dict with keys:
+
+    ``path`` (str),
+    ``blocks`` (list[dict]) — one entry per obs-type block, each with:
+
+        ``obs_type`` (str),
+        ``n_sites`` (int),
+        ``dat_length`` (int)  — number of data values per frequency per site,
+        ``n_freq_per_site`` (list[int])  — nfreq for each site,
+        ``n_freq_total`` (int)  — sum of nfreq across all sites,
+        ``n_data_total`` (int)  — n_freq_total × dat_length
+
+    ``n_sites_total`` (int),
+    ``n_freq_total`` (int),
+    ``n_data_total`` (int)   — total length of the data vector
+    """
+    if isinstance(path_or_parsed, dict):
+        parsed = path_or_parsed
+        src_path = parsed.get("path", "<in-memory>")
+    else:
+        parsed = read_observe_dat(
+            path_or_parsed,
+            compute_mt_derived=False,
+            bootstrap_n=0,
+        )
+        src_path = str(path_or_parsed)
+
+    block_summaries: list[dict] = []
+    for blk in parsed["blocks"]:
+        obs_type  = blk["obs_type"]
+        sites     = blk["sites"]
+        dat_len   = _OBS_DATALEN.get(obs_type, 0)
+        nfreqs    = [s["nfreq"] for s in sites]
+        n_freq_total = sum(nfreqs)
+        block_summaries.append({
+            "obs_type":       obs_type,
+            "n_sites":        len(sites),
+            "dat_length":     dat_len,
+            "n_freq_per_site": nfreqs,
+            "n_freq_total":   n_freq_total,
+            "n_data_total":   n_freq_total * dat_len,
+        })
+
+    n_sites_total = sum(b["n_sites"]      for b in block_summaries)
+    n_freq_total  = sum(b["n_freq_total"] for b in block_summaries)
+    n_data_total  = sum(b["n_data_total"] for b in block_summaries)
+
+    summary = {
+        "path":          src_path,
+        "blocks":        block_summaries,
+        "n_sites_total": n_sites_total,
+        "n_freq_total":  n_freq_total,
+        "n_data_total":  n_data_total,
+    }
+
+    if out:
+        _print_observe_summary(summary)
+
+    return summary
+
+
+def _print_observe_summary(s: dict) -> None:
+    """Print a formatted observe.dat statistics table."""
+    fname = Path(s["path"]).name
+    print(f"\n{'─' * 60}")
+    print(f"  File          : {fname}")
+    print(f"  ┌──────────┬────────┬────────┬──────────┬──────────┐")
+    print(f"  │ Obs type │ Sites  │ d/freq │ Freq tot │ Data tot │")
+    print(f"  ├──────────┼────────┼────────┼──────────┼──────────┤")
+    for b in s["blocks"]:
+        nfreqs = b["n_freq_per_site"]
+        freq_range = (
+            f"{min(nfreqs)}–{max(nfreqs)}"
+            if len(set(nfreqs)) > 1
+            else str(nfreqs[0]) if nfreqs else "—"
+        )
+        print(
+            f"  │ {b['obs_type']:<8s} │ {b['n_sites']:>6d} │ "
+            f"{b['dat_length']:>6d} │ {b['n_freq_total']:>8d} │ "
+            f"{b['n_data_total']:>8d} │"
+        )
+        # Per-site freq range on a sub-line if sites differ
+        if len(set(nfreqs)) > 1:
+            print(f"  │          │        │  nfreq range: {freq_range:<28s}│")
+    print(f"  ├──────────┴────────┴────────┼──────────┼──────────┤")
+    print(f"  │ Total                      │ {s['n_freq_total']:>8d} │ {s['n_data_total']:>8d} │")
+    print(f"  └────────────────────────────┴──────────┴──────────┘")
+    print(f"  Sites total   : {s['n_sites_total']:>8d}")
 
 
 def write_observe_dat(parsed: dict[str, Any], path: str | Path) -> None:
