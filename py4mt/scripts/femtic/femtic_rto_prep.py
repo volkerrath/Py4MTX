@@ -229,7 +229,7 @@ ENS_LIST accepts two forms:
   None              — process all members 0 … N_SAMPLES-1 (default)
   [i, j, k, …]     — explicit list of member indices to process
 """
-ENS_LIST = None
+ENS_LIST = [0,3,4,5, 19, 20, 22, 24, 26 ] #None
 
 
 """
