@@ -45,7 +45,7 @@ Optional diagnostic plots:
 | Variable | Description |
 |---|---|
 | `N_SAMPLES` | Number of ensemble members |
-| `ENS_LIST` | `None` = all members; `[i, j, k, …]` = explicit index list |
+| `FROM_TO` | `[start, end]` to restart a subset; `None` = all |
 
 ### Data perturbation (`PERTURB_DAT`)
 | Variable | Description |
@@ -91,14 +91,6 @@ dict(kind="plane", point=[0,0,5000], strike=45, dip=60)
 
 ## Changes from previous version
 
-- `FROM_TO` renamed to `ENS_LIST`; accepts `None` (all members) or an
-  explicit list of member indices `[i, j, k, …]`.  Range semantics
-  (`[start, stop]`) are not supported — a list always means exact indices.
-  Matching change in `ensembles.py` (`_resolve_fromto` helper).
-- `VIZ_SAMPLES` now drawn from `ENS_MEMBERS` (the resolved active index set)
-  instead of `range(N_SAMPLES)`; file lists for data/model/QC/ensemble plots
-  all scoped to `ENS_MEMBERS` — prevents `FileNotFoundError` when `ENS_LIST`
-  restricts the run to a subset of members.
 - `MOD_SLICES` updated from `{"type": "map", ...}` to
   `dict(kind="map", ...)` — the `"type"` key is no longer accepted by
   `fviz.plot_model_slices`.
