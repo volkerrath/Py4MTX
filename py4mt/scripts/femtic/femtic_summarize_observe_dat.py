@@ -20,17 +20,18 @@ Output columns
 --------------
 For each observation-type block:
 
-    Obs type  — MT | VTF | PT
-    Sites     — number of sites in this block
-    d/freq    — data values per frequency per site (MT=8, VTF=4, PT=4)
-    Freq tot  — total frequency rows across all sites in this block
-    Data tot  — Freq tot × d/freq  (contribution to the data vector)
+    Obs type  -- MT | VTF | PT
+    Sites     -- number of sites in this block
+    d/freq    -- data values per frequency per site (MT=8, VTF=4, PT=4)
+    Freq tot  -- total frequency rows across all sites in this block
+    Data tot  -- Freq tot x d/freq  (contribution to the data vector)
 
 Totals across all blocks are shown at the bottom.
 
 Provenance
 ----------
     2026-06-10  Claude Sonnet 4.6 (Anthropic)   Created.
+    2026-06-12  Claude Sonnet 4.6 (Anthropic)   Replaced Unicode box chars with plain ASCII.
 """
 from __future__ import annotations
 
@@ -59,7 +60,7 @@ except ImportError:
     _FEMTIC_AVAILABLE = False
 
     # ------------------------------------------------------------------
-    # Self-contained fallback — minimal observe.dat parser
+    # Self-contained fallback -- minimal observe.dat parser
     # ------------------------------------------------------------------
 
     def _is_block_header(tokens: list[str]) -> bool:
@@ -81,7 +82,7 @@ except ImportError:
         return len(lines)
 
     def _parse_observe_dat(path: Path) -> dict:
-        """Minimal observe.dat parser — returns same structure as femtic.read_observe_dat."""
+        """Minimal observe.dat parser -- returns same structure as femtic.read_observe_dat."""
         lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
         if not lines:
             raise ValueError(f"Empty file: {path}")
@@ -118,7 +119,7 @@ except ImportError:
                 if len(toks) != 4:
                     li += 1
                     continue
-                # site header — next line is nfreq
+                # site header -- next line is nfreq
                 try:
                     nfreq = int(block_lines[li + 1].split()[0])
                 except Exception:
@@ -171,26 +172,30 @@ except ImportError:
         return s
 
     def _print_summ(s: dict) -> None:
+        SEP  = "  " + "-" * 52
+        DSEP = "  " + "=" * 52
         fname = Path(s["path"]).name
-        print(f"\n{'─' * 60}")
+
+        print(f"\n{SEP}")
         print(f"  File          : {fname}")
-        print(f"  ┌──────────┬────────┬────────┬──────────┬──────────┐")
-        print(f"  │ Obs type │ Sites  │ d/freq │ Freq tot │ Data tot │")
-        print(f"  ├──────────┼────────┼────────┼──────────┼──────────┤")
+        print(SEP)
+        print(f"  {'Obs type':<10}  {'Sites':>6}  {'d/freq':>6}  {'Freq tot':>9}  {'Data tot':>9}")
+        print(SEP)
         for b in s["blocks"]:
             nfreqs = b["n_freq_per_site"]
             print(
-                f"  │ {b['obs_type']:<8s} │ {b['n_sites']:>6d} │ "
-                f"{b['dat_length']:>6d} │ {b['n_freq_total']:>8d} │ "
-                f"{b['n_data_total']:>8d} │"
+                f"  {b['obs_type']:<10}  {b['n_sites']:>6d}  "
+                f"{b['dat_length']:>6d}  {b['n_freq_total']:>9d}  "
+                f"{b['n_data_total']:>9d}"
             )
             if nfreqs and len(set(nfreqs)) > 1:
-                freq_range = f"{min(nfreqs)}–{max(nfreqs)}"
-                print(f"  │          │        │  nfreq range: {freq_range:<28s}│")
-        print(f"  ├──────────┴────────┴────────┼──────────┼──────────┤")
-        print(f"  │ Total                      │ {s['n_freq_total']:>8d} │ {s['n_data_total']:>8d} │")
-        print(f"  └────────────────────────────┴──────────┴──────────┘")
-        print(f"  Sites total   : {s['n_sites_total']:>8d}")
+                print(f"  {'':10}  nfreq range: {min(nfreqs)}-{max(nfreqs)}")
+        print(DSEP)
+        print(
+            f"  {'Total':<10}  {s['n_sites_total']:>6d}  {'':>6}  "
+            f"{s['n_freq_total']:>9d}  {s['n_data_total']:>9d}"
+        )
+        print(SEP)
 
 
 # ---------------------------------------------------------------------------
@@ -228,7 +233,7 @@ def main() -> None:
     if _FEMTIC_AVAILABLE:
         print("[info] Using femtic.summarise_observe_dat", file=sys.stderr)
     else:
-        print("[info] femtic.py not found — using built-in fallback parser", file=sys.stderr)
+        print("[info] femtic.py not found -- using built-in fallback parser", file=sys.stderr)
 
     paths = collect_paths(args.paths)
     if not paths:
@@ -246,8 +251,7 @@ def main() -> None:
         except Exception as exc:
             print(f"[error] {p.name}: {exc}", file=sys.stderr)
 
-    print(f"\n{'─' * 60}")
-    print(f"  {n_ok}/{len(paths)} file(s) processed.")
+    print(f"\n  {n_ok}/{len(paths)} file(s) processed.")
 
 
 if __name__ == "__main__":
