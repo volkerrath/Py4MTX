@@ -14,6 +14,7 @@ A collection NPZ file with all stations is saved at the end.
 @modified:  2026-03-18 — add_noise option in SET_ERRORS (mode='fix' only); Claude Sonnet 4.6 (Anthropic)
 @modified:  2026-03-25 — FT_CORRECTION block (manufacturer, from/to convention); Claude Sonnet 4.6 (Anthropic)
 @modified:  2026-03-30 — adapt plot block to updated data_viz: per-call ylim overrides (no PLTARGS mutation), DPLUS subplot row, remove bogus required-key guard from add_tipper/add_pt; Claude Sonnet 4.6 (Anthropic)
+@modified:  2026-06-12 — correct_ft_convention imported from data_proc (absorbed from mt_ft_convention); Claude Sonnet 4.6 (Anthropic)
 """
 
 import os
@@ -40,8 +41,9 @@ from data_proc import (
     save_list_of_dicts_npz, dataframe_from_edi,
     interpolate_data, set_errors, estimate_errors, rotate_data,
     compute_pt, compute_zdet, compute_zssq, compute_rhophas, compute_rhoplus,
+    correct_ft_convention,
 )
-import mt_ft_convention as ftc
+
 from version import versionstrg
 
 rng = np.random.default_rng()
@@ -53,13 +55,14 @@ print(titstrng + "\n\n")
 
 # =============================================================================
 #  Configuration
-WORK_DIR = PY4MTX_ROOT + "py4mt/data/edi/"
+# WORK_DIR = PY4MTX_ROOT + "py4mt/data/edi/"
+WORK_DIR = "/home/vrath/Py4MTX/py4mt/data/rto/ubinas/edi/"
 # WORK_DIR = "/home/vrath/MT_Data/waldim/edi_synth_iso/"
 if not os.path.isdir(WORK_DIR):
    sys.exit(" File: %s does not exist! EXit." % WORK_DIR)
 
 
-DATA_DIR_IN = WORK_DIR + "/orig/"
+DATA_DIR_IN = WORK_DIR 
 DATA_DIR_OUT = WORK_DIR + "/proc/"
 
 NAME_STR = "_test_proc"
@@ -173,7 +176,7 @@ for edi in edi_files:
     )
 
     if FT_CORRECTION:
-        ftc.correct_ft_convention(data_dict, **ftc_pars)
+        correct_ft_convention(data_dict, **ftc_pars)
 
     station = data_dict["station"]
     Z = data_dict["Z"]
