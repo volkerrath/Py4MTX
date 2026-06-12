@@ -104,6 +104,7 @@ Modified: 2026-03-17 — unconditional all-sentinel tipper suppression in load_e
 Modified: 2026-03-25 — manufacturer parameter in load_edi (phoenix/metronix/delta); FT-convention correction (e+iwt→e-iwt conjugation of Z and T for Phoenix); manufacturer and ft_convention keys in data_dict; cleanup and section headers; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-04-27 — estimate_errors rewritten: spline-residual and MAD methods replacing incorrect std-over-axis approach; freq/Z unchanged, only error arrays updated; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-05-23 — added read_sitelist(): parse FEMTIC sitelist CSV (name,lat,lon,elev,sitenum,easting,northing) with optional name filter; raw values only, no CRS conversion; Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-06-12 — absorbed correct_ft_convention() from mt_ft_convention.py into processing helpers; no public API change; Claude Sonnet 4.6 (Anthropic)
 """
 
 from __future__ import annotations
@@ -978,6 +979,80 @@ def load_edi(
 # ---------------------------------------------------------------------------
 # Processing helpers — errors, interpolation, rotation
 # ---------------------------------------------------------------------------
+
+_VALID_FT_CONVENTIONS = frozenset({"e-iwt", "e+iwt"})
+
+
+def correct_ft_convention(
+    data_dict: Dict[str, Any],
+    *,
+    from_convention: str,
+    to_convention: str,
+) -> None:
+    """Apply (or reverse) an FT sign-convention correction in-place.
+
+    MT processing software uses two sign conventions for the Fourier
+    transform — e⁻ⁱωᵗ (standard / Metronix / DELTA) and e⁺ⁱωᵗ (Phoenix).
+    The two are related by complex conjugation of all transfer functions.
+    This function converts between them by negating Im(Z) and Im(T).
+
+    Operates **in-place**; returns ``None``.  Error arrays and the phase
+    tensor are unaffected (magnitudes and PT entries are convention-invariant).
+
+    Parameters
+    ----------
+    data_dict : dict
+        Station dictionary as returned by :func:`load_edi`.
+    from_convention : {"e-iwt", "e+iwt"}
+        FT convention currently stored in *data_dict*.
+        The legacy label ``"e+iwt_corrected"`` (written by :func:`load_edi`
+        after its own Phoenix fix) is normalised to ``"e+iwt"`` automatically.
+    to_convention : {"e-iwt", "e+iwt"}
+        Target FT convention.  For virtually all downstream uses this is
+        ``"e-iwt"`` (the geophysical standard).
+
+    Raises
+    ------
+    ValueError
+        If either convention string is not recognised.
+    KeyError
+        If *data_dict* does not contain key ``"Z"``.
+
+    Notes
+    -----
+    If ``from_convention == to_convention`` the function returns immediately
+    without touching the arrays.  Applying the correction twice is therefore
+    idempotent with respect to the net result.
+    """
+    from_convention = from_convention.strip().lower()
+    to_convention   = to_convention.strip().lower()
+
+    # Normalise the label written by load_edi's built-in Phoenix fix.
+    if from_convention == "e+iwt_corrected":
+        from_convention = "e+iwt"
+
+    for _label, _val in [("from_convention", from_convention),
+                          ("to_convention",   to_convention)]:
+        if _val not in _VALID_FT_CONVENTIONS:
+            raise ValueError(
+                f"Unknown {_label!r} value {_val!r}; "
+                f"expected one of {sorted(_VALID_FT_CONVENTIONS)}."
+            )
+
+    if from_convention == to_convention:
+        return
+
+    if "Z" not in data_dict:
+        raise KeyError("data_dict does not contain key 'Z'.")
+
+    data_dict["Z"] = np.conj(data_dict["Z"])
+
+    T = data_dict.get("T")
+    if T is not None:
+        data_dict["T"] = np.conj(T)
+
+    data_dict["ft_convention"] = to_convention
+
 
 def estimate_errors(edi_dict: Dict[str, Any], method: Dict[str, Any]) -> Dict[str, Any]:
     """Estimate error levels from the local scatter of Z (and T) relative to a
