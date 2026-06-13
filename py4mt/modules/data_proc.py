@@ -105,6 +105,7 @@ Modified: 2026-03-25 — manufacturer parameter in load_edi (phoenix/metronix/de
 Modified: 2026-04-27 — estimate_errors rewritten: spline-residual and MAD methods replacing incorrect std-over-axis approach; freq/Z unchanged, only error arrays updated; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-05-23 — added read_sitelist(): parse FEMTIC sitelist CSV (name,lat,lon,elev,sitenum,easting,northing) with optional name filter; raw values only, no CRS conversion; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-06-12 — absorbed correct_ft_convention() from mt_ft_convention.py into processing helpers; no public API change; Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-06-13 — added compute_zavg(): off-diagonal geometric-mean invariant sqrt(Zxy*Zyx); same signature/error-propagation pattern as compute_zdet/compute_zssq; Claude Sonnet 4.6 (Anthropic)
 """
 
 from __future__ import annotations
@@ -2190,6 +2191,115 @@ def compute_zssq(
     if method == "bootstrap":
         return zssq, zssq_err_boot
     return zssq, {"analytic": zssq_err_analytic, "bootstrap": zssq_err_boot}
+
+
+def compute_zavg(
+    Z: np.ndarray,
+    Z_err: Optional[np.ndarray] = None,
+    *,
+    err_kind: str = "var",
+    err_method: str = "bootstrap",
+    nsim: int = 200,
+    fd_eps: float = 1.0e-6,
+    invalid_sentinel: float = 1.0e30,
+    random_state: Optional[np.random.Generator] = None,
+) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+    """Compute the off-diagonal geometric-mean impedance invariant.
+
+    Definition:
+
+        ``Z_avg = sqrt( Z_xy * Z_yx )``
+
+    where ``Z_xy = Z[:,0,1]`` and ``Z_yx = Z[:,1,0]``.  For a 1-D earth
+    ``|Z_avg|`` equals the arithmetic mean of ``|Z_xy|`` and ``|Z_yx|``, and
+    ``rho_a(Z_avg)`` recovers the standard Berdichevsky average resistivity.
+
+    Parameters
+    ----------
+    Z : numpy.ndarray
+        Complex impedance tensor of shape ``(n, 2, 2)``.
+    Z_err : numpy.ndarray or None, optional
+        Impedance uncertainties with the same shape as ``Z``. Interpretation
+        is controlled by ``err_kind``.
+    err_kind : {"var", "std"}, optional
+        Interpretation of ``Z_err`` (variance or standard deviation of the
+        complex impedance entries). Default is ``"var"``.
+    err_method : {"none", "analytic", "bootstrap", "both"}, optional
+        Error propagation method. Default is ``"bootstrap"``.
+    nsim : int, optional
+        Number of bootstrap realisations (if requested). Default is 200.
+    fd_eps : float, optional
+        Relative step for the analytic delta method. Default is 1e-6.
+    random_state : numpy.random.Generator, optional
+        Random generator for bootstrap.
+
+    Returns
+    -------
+    zavg : numpy.ndarray
+        Complex off-diagonal geometric-mean impedance, shape ``(n,)``.
+    zavg_err : numpy.ndarray or None
+        Error estimate of shape ``(n,)`` (variance or standard deviation,
+        depending on ``err_kind``), or a dict if ``err_method="both"``.
+    """
+    Z = np.asarray(Z, dtype=np.complex128)
+    if Z.shape[-2:] != (2, 2):
+        raise ValueError("Z must have shape (n, 2, 2).")
+
+    valid = _valid_Z_rows(Z, invalid_sentinel=invalid_sentinel)
+
+    with np.errstate(invalid="ignore"):
+        zavg = np.sqrt(Z[:, 0, 1] * Z[:, 1, 0])
+    zavg[~valid] = np.nan
+
+    if Z_err is None or err_method.lower() in ("none", "off", "false", "0"):
+        return zavg, None
+
+    Z_err = np.asarray(Z_err, dtype=float)
+    if Z_err.shape != Z.shape:
+        raise ValueError("Z_err must have the same shape as Z.")
+
+    method = err_method.lower()
+    if method not in ("analytic", "bootstrap", "both"):
+        raise ValueError("err_method must be one of: 'none', 'analytic', 'bootstrap', 'both'.")
+
+    sigma = _sigma_from_err(Z_err, err_kind=err_kind)
+
+    # analytic
+    zavg_err_analytic = None
+    if method in ("analytic", "both"):
+
+        def fun_complex(Zk):
+            return np.sqrt(Zk[0, 1] * Zk[1, 0])
+
+        var_c = _analytic_var_complex_scalar_from_Z(Z, sigma, fun_complex, fd_eps=fd_eps)
+        var_c[~valid] = np.nan
+        zavg_err_analytic = var_c if err_kind == "var" else np.sqrt(var_c)
+
+    # bootstrap
+    zavg_err_boot = None
+    if method in ("bootstrap", "both"):
+        rng = np.random.default_rng() if random_state is None else random_state
+        sims = np.full((nsim, zavg.size), np.nan, dtype=np.complex128)
+
+        for sidx in range(nsim):
+            d_re = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
+            d_im = rng.standard_normal(Z.shape) * sigma / np.sqrt(2.0)
+            Zs = (Z.real + d_re) + 1j * (Z.imag + d_im)
+            with np.errstate(invalid="ignore"):
+                sims[sidx] = np.where(valid, np.sqrt(Zs[:, 0, 1] * Zs[:, 1, 0]), np.nan)
+
+        with np.errstate(invalid="ignore"):
+            var_re = np.nanvar(sims.real, axis=0)
+            var_im = np.nanvar(sims.imag, axis=0)
+        var_c = var_re + var_im
+        var_c[~valid] = np.nan
+        zavg_err_boot = var_c if err_kind == "var" else np.sqrt(var_c)
+
+    if method == "analytic":
+        return zavg, zavg_err_analytic
+    if method == "bootstrap":
+        return zavg, zavg_err_boot
+    return zavg, {"analytic": zavg_err_analytic, "bootstrap": zavg_err_boot}
 
 
 def compute_rhoplus(

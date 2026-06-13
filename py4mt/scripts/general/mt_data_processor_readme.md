@@ -14,6 +14,8 @@ Batch MT station processing script.
 | Modified | 2026-03-16 — freq_order, D+/rho+ test (DPLUS), add_rhoplus plot; Claude Sonnet 4.6 (Anthropic) |
 | Modified | 2026-03-18 — add_noise option in SET_ERRORS (mode='fix' only), random_state passthrough; Claude Sonnet 4.6 (Anthropic) |
 | Modified | 2026-03-30 — adapt plot block to updated data_viz: per-call ylim overrides (no PLTARGS mutation), DPLUS subplot row, removed bogus required-key guard from add_tipper/add_pt; Claude Sonnet 4.6 (Anthropic) |
+| Modified | 2026-06-12 — `correct_ft_convention` imported from `data_proc`; Claude Sonnet 4.6 (Anthropic) |
+| Modified | 2026-06-13 — `compute_zavg` added to `INVARS` block (`Zavg`, `Zavg_err`); Claude Sonnet 4.6 (Anthropic) |
 
 ## Purpose
 
@@ -49,7 +51,7 @@ saved at the end.
 | Constant | Default | Description |
 |----------|---------|-------------|
 | `PHAS_TENS` | `True` | Compute phase tensor via `compute_pt()` |
-| `INVARS` | `True` | Compute Zdet and Zssq invariants |
+| `INVARS` | `True` | Compute Zdet, Zssq, and Zavg invariants |
 | `DPLUS` | `True` | D+/rho+ test via `compute_rhoplus()` on Zxy, Zyx, Zdet; prints violation counts; stores results in `data_dict["dplus"]` |
 | `SET_ERRORS` | `False` | Override errors with fixed relative values |
 | `ESTIMATE_ERRORS` | `False` | Estimate errors from data (work in progress) |
