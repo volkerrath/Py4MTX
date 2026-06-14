@@ -70,7 +70,7 @@ WORK_DIR   = "/home/vrath/Py4MTX/py4mt/data/rto/ubinas/edi/proc/"
 COLL_FILE  = WORK_DIR + "Ubinas_collection.npz"
 PLOT_DIR   = WORK_DIR + "../plots/"
 DATA_DIR   = WORK_DIR                  # NPZ averages written here
-NAME_STR   = "Ubinas_noHF_std"
+NAME_STR   = "Ubinas_clipped2_bootstrap"
 PLOT_FORMAT = [".pdf", ".png"]
 
 # Which quantities to process and plot
@@ -80,7 +80,7 @@ PLOT_AVG = True    # Zavg — off-diagonal geometric mean sqrt(Zxy*Zyx)
 
 # Frequency range mask applied before averaging and plotting.
 # Tuple (f_min, f_max) in Hz; set either bound to None for no limit.
-FREQ_RANGE = (None, 100.)   # e.g. (1.e-3, 1.e+3) to restrict to 1 mHz–1 kHz
+FREQ_RANGE = (0.01, 1000.)   # e.g. (1.e-3, 1.e+3) to restrict to 1 mHz–1 kHz
 
 # Frequency-bin matching tolerance (fraction of a decade).
 BIN_TOL_DEC = 0.1   # ±0.1 decade
@@ -95,7 +95,7 @@ LEGEND_SITES = True    # True: all station names in legend; False: averages only
 FIG_SIZE_CM  = (22., 18.)   # figure size in cm (width, height)
 
 PLOT_ERRORS = True     # shade error band around the freq-wise averages
-ERRORS      = "std" #"bootstrap"  # "std"       — sample std across sites (spatial spread)
+ERRORS      = "bootstrap"  # "std"       — sample std across sites (spatial spread)
                            # "bootstrap" — bootstrap std-of-the-mean (N_SIM resamples)
                            # None / False — no error band
 ERR_NSIM    = 500      # number of bootstrap resamples (only used when ERRORS="bootstrap")

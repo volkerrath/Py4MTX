@@ -167,18 +167,18 @@ print(titstrng + "\n\n")
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-WORK_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/misti/ensemble/templates/"
-WORK_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/misti/PrepRun8/"
+# WORK_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/misti/ensemble/templates/"
+WORK_DIR = r"/home/vrath/000/1_L2/"
 #: Template / source resistivity block (also used as format template by
 #: insert_model to preserve header, bounds and flag columns).
 # MODEL_IN  = WORK_DIR + "resistivity_block_iter0.dat"
-MODEL_IN  =WORK_DIR + "resistivity_block_iter15.dat"
+MODEL_IN  =WORK_DIR + "resistivity_block_iter0.dat"
 #: Mesh file — required for "smooth" and "ellipsoid"; ignored otherwise.
 MESH_FILE = WORK_DIR + "mesh.dat"
 
 #: Output file.  Set to MODEL_IN to overwrite in-place (be careful!).
-MODEL_OUT = WORK_DIR + "reference_i15_smooth3000.dat"
-
+# MODEL_OUT = WORK_DIR + "reference_i15_smooth3000.dat"
+MODEL_OUT = WORK_DIR + "resistivity_block_iter0_35.dat"
 # ---------------------------------------------------------------------------
 # Ocean / fixed-region handling
 # ---------------------------------------------------------------------------
@@ -194,7 +194,8 @@ OCEAN_RHO = 0.25    # Ω·m written for region 1 when treated as ocean
 # ---------------------------------------------------------------------------
 #: One of: "fill" | "mean" | "wmean" | "median" | "clip" | "shift"
 #:         | "standardise" | "smooth" | "ellipsoid" | "brick" | "null"
-OPERATION = "smooth"
+OPERATION = "fill"
+# OPERATION = "smooth"
 # OPERATION = "wmean"
 # OPERATION = "median"
 # OPERATION = "mean"
@@ -205,7 +206,7 @@ if OPERATION != "null":
 print(MODEL_OUT)
 
 # Parameters used by specific operations (ignored when not applicable):
-OP_FILL_VALUE   = 2.0    # log10(100 Ω·m) — used by "fill"
+OP_FILL_VALUE   = 1.5440680443502757   # log10(100 Ω·m) — used by "fill"
 OP_CLIP_MIN     = 0.0    # log10(1 Ω·m)   — used by "clip"
 OP_CLIP_MAX     = 4.0    # log10(10 kΩ·m) — used by "clip"
 OP_SHIFT_VALUE  = 0.5    # added to every log10(ρ) — used by "shift"
@@ -1042,7 +1043,46 @@ else:
 
 # --- (3b) Derive UTM zone and site positions (needed for plot) -------------
 if PLOT:
-    # Origin estimation
+    # --- sanity-check ORIGIN_METHOD vs SITE_DAT ----------------------------
+    # (1) ORIGIN_METHOD requests site.dat estimation but the file is absent.
+    if ORIGIN_METHOD is not None:
+        if SITE_DAT is None:
+            print(
+                "\n[femtic_mod_edit] ERROR: ORIGIN_METHOD is set to "
+                f"'{ORIGIN_METHOD}' but SITE_DAT is None.\n"
+                "  Either provide a valid SITE_DAT path or set "
+                "ORIGIN_METHOD = None and supply UTM_ORIGIN_LAT/LON/E/N "
+                "manually.\n"
+            )
+            sys.exit(1)
+        if not os.path.isfile(SITE_DAT):
+            print(
+                f"\n[femtic_mod_edit] ERROR: ORIGIN_METHOD is '{ORIGIN_METHOD}' "
+                f"but SITE_DAT does not exist:\n  {SITE_DAT}\n"
+                "  Either create / fix the SITE_DAT path or set "
+                "ORIGIN_METHOD = None and supply UTM_ORIGIN_LAT/LON/E/N "
+                "manually.\n"
+            )
+            sys.exit(1)
+
+    # (2) ORIGIN_METHOD = None but manual coords are also None — inconsistent.
+    if ORIGIN_METHOD is None:
+        _missing = [n for n, v in (
+            ("UTM_ORIGIN_LAT", UTM_ORIGIN_LAT),
+            ("UTM_ORIGIN_LON", UTM_ORIGIN_LON),
+            ("UTM_ORIGIN_E",   UTM_ORIGIN_E),
+            ("UTM_ORIGIN_N",   UTM_ORIGIN_N),
+        ) if v is None]
+        if _missing:
+            print(
+                "\n[femtic_mod_edit] WARNING: ORIGIN_METHOD is None (manual "
+                "coords mode) but the following config variables are also "
+                f"None: {', '.join(_missing)}.\n"
+                "  Hint: set ORIGIN_METHOD = 'box' (or 'average') and "
+                "provide SITE_DAT to derive the origin automatically.\n"
+            )
+
+    # --- origin estimation --------------------------------------------------
     if ORIGIN_METHOD is not None and SITE_DAT is not None and os.path.isfile(SITE_DAT):
         import numpy as _np
         _sdat = fem.read_site_dat(SITE_DAT)
@@ -1061,6 +1101,16 @@ if PLOT:
                 float(_lats.mean()), float(_lons.mean()), override=UTM_ZONE_OVERRIDE)
             UTM_ORIGIN_LAT, UTM_ORIGIN_LON = utl.utm_to_latlon_zn(
                 UTM_ORIGIN_E, UTM_ORIGIN_N, _z0, _n0)
+
+    # Final guard: if LAT/LON are still None the plot cannot proceed.
+    if UTM_ORIGIN_LAT is None or UTM_ORIGIN_LON is None:
+        print(
+            "\n[femtic_mod_edit] ERROR: UTM_ORIGIN_LAT / UTM_ORIGIN_LON "
+            "could not be determined.  Set them explicitly in the config "
+            "section or ensure ORIGIN_METHOD and SITE_DAT are both valid.\n"
+        )
+        sys.exit(1)
+
     UTM_ZONE, UTM_NORTHERN = utl.utm_zone_from_latlon(
         UTM_ORIGIN_LAT, UTM_ORIGIN_LON, override=UTM_ZONE_OVERRIDE)
 
