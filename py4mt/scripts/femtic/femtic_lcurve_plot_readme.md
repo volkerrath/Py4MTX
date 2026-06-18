@@ -56,6 +56,8 @@ Only the **last line** (final iteration) is used from each file.
 | `PLOT_WHAT` | `str` | `"nrms"` | x-axis quantity: `"nrms"` for normalised RMS, anything else for raw misfit |
 | `PLOT_LOG_X` | `bool` | `False` | Apply log₁₀ scale to the x-axis (misfit / nRMS) |
 | `PLOT_LOG_Y` | `bool` | `False` | Apply log₁₀ scale to the y-axis (roughness) |
+| `PLOT_XLIM` | `list` or `None` | `None` | x-axis limits `[xmin, xmax]`; `None` = matplotlib auto |
+| `PLOT_YLIM` | `list` or `None` | `None` | y-axis limits `[ymin, ymax]`; `None` = matplotlib auto |
 | `SEARCH_STRNG` | `str` | `"*L2"` | Glob pattern passed to `utl.get_filelist` to identify run directories |
 
 ### `PLOT_WHAT` detail
@@ -85,8 +87,10 @@ figure via:
 round(a[k], -int(np.floor(np.log10(abs(a[k])))))
 ```
 
-Annotations use Matplotlib default placement (data coordinates); manual
-`xytext` offsets can be added if crowding occurs.
+Labels are offset from the marker centre by `(markersize + 2)` points in
+both x and y, using `ax.annotate` with `textcoords="offset points"`.  This
+keeps the text clear of the marker regardless of axis scale.  Adjust the
+offset tuple `ann_offset` in the script if crowding still occurs.
 
 ---
 
@@ -109,3 +113,4 @@ Annotations use Matplotlib default placement (data coordinates); manual
 | 2025 | vrath | Created |
 | 2026-03-03 | vrath / Claude Sonnet 4.6 | Renamed user-set parameters to UPPERCASE |
 | 2026-06-17 | vrath / Claude Sonnet 4.6 | Added `PLOT_LOG_X` / `PLOT_LOG_Y` for independent log₁₀ axes |
+| 2026-06-18 | vrath / Claude Sonnet 4.6 | Added `PLOT_XLIM` / `PLOT_YLIM`; offset annotations from markers via `xytext` |

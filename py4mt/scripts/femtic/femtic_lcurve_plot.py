@@ -10,6 +10,7 @@ Provenance:
     2025       vrath   Created.
     2026-03-03 Claude  Renamed user-set parameters to UPPERCASE.
     2026-06-17 Claude  Added PLOT_LOG_X / PLOT_LOG_Y for independent log10 axes.
+    2026-06-18 Claude  Added PLOT_XLIM / PLOT_YLIM; offset annotations from markers.
 """
 
 import os
@@ -45,8 +46,14 @@ print(titstrng + "\n\n")
 WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_35/corr/"
 PLOT_NAME = WORK_DIR + "Ubinas_Ini35_corr"
 PLOT_WHAT = "nrms"  # 'nrms' or 'misfit'
-PLOT_TITLE = r"Ubinas | initial = 35 $\Omega \cdot m$  distcorr"
+PLOT_TITLE = r"Ubinas | initial = 35 $\Omega \cdot m$ | distcorr"
 DISTORTION = True
+# WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_35/no_corr/"
+# PLOT_NAME = WORK_DIR + "Ubinas_Ini35_nocorr"
+# PLOT_WHAT = "nrms"  # 'nrms' or 'misfit'
+# PLOT_TITLE = r"Ubinas | initial = 35 $\Omega \cdot m$ | no distcorr"
+# DISTORTION = False
+
 # WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_30/no_corr/"
 # PLOT_NAME = WORK_DIR + "Ubinas_Ini30"
 # PLOT_WHAT = "nrms"  # 'nrms' or 'misfit'
@@ -57,6 +64,11 @@ DISTORTION = True
 PLOT_LOG_X = False
 #: Use log10 scale on the y-axis (roughness).
 PLOT_LOG_Y = False
+
+#: x-axis limits [xmin, xmax]; set to None for matplotlib auto-scaling.
+PLOT_XLIM = [0.5, 6.] # None   # e.g. [0.9, 5.0]
+#: y-axis limits [ymin, ymax]; set to None for matplotlib auto-scaling.
+PLOT_YLIM = [0., 80000.] # None   # e.g. [0.0, 1e6]
 
 SEARCH_STRNG = "*L2"
 dir_list = utl.get_filelist(
@@ -137,9 +149,19 @@ if PLOT_LOG_X:
 if PLOT_LOG_Y:
     ax.set_yscale("log")
 
+if PLOT_XLIM is not None:
+    ax.set_xlim(PLOT_XLIM)
+if PLOT_YLIM is not None:
+    ax.set_ylim(PLOT_YLIM)
+
+ann_offset = (plot_kwargs["markersize"] -1, plot_kwargs["markersize"] -1)
 for k in np.arange(len(lc_sorted)):
     alph = round(a[k], -int(np.floor(np.log10(abs(a[k])))))
-    plt.annotate(str(alph), [xdata[k], r[k]])
+    ax.annotate(
+        str(alph), xy=(xdata[k], r[k]),
+        xytext=ann_offset, textcoords="offset points",
+        fontsize=10,
+    )
 
 plt.title(PLOT_TITLE)
 plt.xlabel(xformula, fontsize=10)
