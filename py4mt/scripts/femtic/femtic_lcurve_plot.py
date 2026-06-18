@@ -9,6 +9,7 @@ at different regularisation parameters (alpha).
 Provenance:
     2025       vrath   Created.
     2026-03-03 Claude  Renamed user-set parameters to UPPERCASE.
+    2026-06-17 Claude  Added PLOT_LOG_X / PLOT_LOG_Y for independent log10 axes.
 """
 
 import os
@@ -41,10 +42,21 @@ print(titstrng + "\n\n")
 # =============================================================================
 #  Configuration
 # =============================================================================
-WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_35/no_corr/"
-
-PLOT_NAME = WORK_DIR + "Ubinas_Ini35"
+WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_35/corr/"
+PLOT_NAME = WORK_DIR + "Ubinas_Ini35_corr"
 PLOT_WHAT = "nrms"  # 'nrms' or 'misfit'
+PLOT_TITLE = r"Ubinas | initial = 35 $\Omega \cdot m$  distcorr"
+DISTORTION = True
+# WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_30/no_corr/"
+# PLOT_NAME = WORK_DIR + "Ubinas_Ini30"
+# PLOT_WHAT = "nrms"  # 'nrms' or 'misfit'
+# PLOT_TITLE = r"Ubinas - initial = 30 $\Omega \cdot m$"
+
+
+#: Use log10 scale on the x-axis (misfit / nRMS).
+PLOT_LOG_X = False
+#: Use log10 scale on the y-axis (roughness).
+PLOT_LOG_Y = False
 
 SEARCH_STRNG = "*L2"
 dir_list = utl.get_filelist(
@@ -55,8 +67,9 @@ dir_list = utl.get_filelist(
 # =============================================================================
 #  Read final convergence values
 # =============================================================================
-#  Iter#,  Retrial#, Alpha, Damp, Roughness, Misfit, RMS, ObjFunc
-#  0,      1,        2,     3,    4,         5,      6,   7
+#  Iter#,  Retrial#, Alpha, Damp, Rough, Misfit, RMS, ObjFunc
+#  Iter#,  Retrial#, Alpha, Beta, Damp,  Rough,  Dist,  Misfit, nRMS,  ObjFunc
+#  0,      1,        2,     3,    4,     5,      6,     7,      8      9
 l_curve = []
 for directory in dir_list:
     with open(directory + "/femtic.cnv") as cnv:
@@ -64,11 +77,19 @@ for directory in dir_list:
 
     line = content[-1].split()
     print(line)
-    alpha = float(line[2])
-    rough = float(line[4])
-    misft = float(line[5])
-    nrmse = float(line[6])
-    objfc = float(line[7])
+    if DISTORTION:
+        alpha = float(line[2])
+        rough = float(line[5])
+        misft = float(line[7])
+        nrmse = float(line[8])
+        objfc = float(line[9])
+    else:
+        alpha = float(line[2])
+        rough = float(line[4])
+        misft = float(line[5])
+        nrmse = float(line[6])
+        objfc = float(line[7])
+        
     l_curve.append([alpha, rough, misft, nrmse, objfc])
 
 lc = np.array(l_curve).reshape((-1, 5))
@@ -111,13 +132,18 @@ else:
 
 plt.plot(xdata, r, **plot_kwargs)
 
+if PLOT_LOG_X:
+    ax.set_xscale("log")
+if PLOT_LOG_Y:
+    ax.set_yscale("log")
+
 for k in np.arange(len(lc_sorted)):
     alph = round(a[k], -int(np.floor(np.log10(abs(a[k])))))
     plt.annotate(str(alph), [xdata[k], r[k]])
 
-plt.title(PLOT_NAME.replace("_", " "))
-plt.xlabel(xformula, fontsize=12)
-plt.ylabel(yformula, fontsize=12)
+plt.title(PLOT_TITLE)
+plt.xlabel(xformula, fontsize=10)
+plt.ylabel(yformula, fontsize=10)
 plt.grid("on")
 plt.tight_layout()
 
