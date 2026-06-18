@@ -5,7 +5,7 @@ export PATH=$HDF5_ROOT/bin:$PATH
 export LD_LIBRARY_PATH=$HDF5_ROOT/lib:$LD_LIBRARY_PATH
 
 
-num_mpi_proc=18
+num_mpi_proc=8
 # num_hw_threads=4
 #
 # alpha=8.
@@ -41,7 +41,8 @@ START=$(date "+%s")
 # # dynamical libraries
 #
 #export LD_LIBRARY_PATH=/home/vrath/Miniconda2024/envs/MKL2024/lib:$LD_LIBRARY_PATH
-mpirun -np $num_mpi_proc /home/vrath/bin/$(uname -n)_femtic-dabic_152_nohdf5_release.x > abic.log
+#mpirun -np $num_mpi_proc /home/vrath/bin/$(uname -n)_femtic-dabic_152_nohdf5_release.x > abic.log
+mpirun -np $num_mpi_proc /home/vrath/bin/kayz_femtic-dabic_152_nohdf5_release.x > abic.log
 #
 END=$(date "+%s")
 #

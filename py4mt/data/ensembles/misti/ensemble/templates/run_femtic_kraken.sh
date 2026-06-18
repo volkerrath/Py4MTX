@@ -1,15 +1,14 @@
 #! /bin/bash
-#OAR --name FEMTIC_DABIC_NP4
+#OAR --name FEMTIC_Ubinas_alpha0.3
 #OAR --project mt-geothest
-###OAR -l /nodes=1, walltime=36:0:00
-#OAR -l /core=96, walltime=12:0:00
-###OAR -t fat
-###OAR --notify mail:svetlana.byrdina@univ-smb.fr
+#OAR -l /nodes=1, walltime=16:0:00
+###OAR -l /core=72, walltime=16:0:00
+#OAR -t fat
+#OAR --notify mail:svetlana.byrdina@univ-smb.fr
 #OAR --notify mail:vrath@cp.dias.ie
 
-# module load gcc/12 openmpi/4.1.8/gcc-12.4.0 compiler-rt/2023.1.0 mkl/2023.1.0 ucx/1.18.1  oclfpga/2023.1.0
-
-module load compiler/latest mpi/latest mkl/latest
+# source /softs/intel/2025/oneapi/setvars.sh
+source /softs/intel/2023.1.0/oneapi/setvars.sh
 
 ulimit -s unlimited
 unset OMP_NUM_THREADS
@@ -25,9 +24,9 @@ uname -n
 cat control.dat
 
 START=$(date "+%s")
-# mpirun -np  $num_mpi_proc --prefix $OPENMPI_PATH -x LD_LIBRARY_PATH --mca plm_rsh_agent "oarsh" --mca pml ucx --mca btl ^tcp,openib,uct -x UCX_TLS=shm,self,dc,rc,ud, tcp /home/sbyrd/bin/gfemtic-dabic-mkl23-kraken.x > femtic.log
 
-mpirun -np $num_mpi_proc /home/sbyrd/bin/kraken_femtic-dabic_15_debug.x > femtic.log
+# mpirun -np $num_mpi_proc /home/sbyrd/bin/femtic_43_2025_release.x> femtic.log
+mpirun -np $num_mpi_proc /home/sbyrd/bin/femtic_43_2023_release.x> femtic.log
 
 END=$(date "+%s")
 echo "  "
