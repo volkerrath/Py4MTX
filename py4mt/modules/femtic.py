@@ -76,6 +76,11 @@ Modified: 2026-06-08 by Claude Sonnet 4.6 (Anthropic) — promoted three
     region), and brick_mask() (rotated rectangular prism containment test,
     parallel to ellipsoid_mask() with the same convention/keyword-only
     signature).
+Modified: 2026-06-19 by Claude Sonnet 4.6 (Anthropic) — added
+    resolve_pos_two_point_profile() helper and kind="profile" branch in
+    resolve_slice_positions(): a vertical fence section is defined by two
+    geographic/UTM/model-local endpoint positions; strike is derived
+    automatically and the spec is converted to kind="plane" with dip=90.
 Modified: 2026-06-10 by Claude Sonnet 4.6 (Anthropic) — added two summary
     helpers: summarise_model_file() counts air / ocean / other-fixed /
     parameter elements in a resistivity_block_iterXX.dat, reusing the
@@ -5123,6 +5128,125 @@ def resolve_pos_point(raw,
     )
 
 
+def resolve_pos_two_point_profile(p1_raw, p2_raw,
+                                   zone: int, northern: bool,
+                                   origin_E: float, origin_N: float,
+                                   z_top: float = 0.0,
+                                   z_bot: float = 20000.0) -> dict:
+    """Derive a vertical ``plane`` slice spec from two endpoint positions.
+
+    The two endpoints define a vertical fence (curtain) section.  The
+    horizontal midpoint of the segment becomes the plane anchor ``point``;
+    the azimuth from *p1* to *p2* (clockwise from North) is the ``strike``;
+    ``dip`` is fixed at 90° (strictly vertical plane).
+
+    Each endpoint is a CRS-tagged position spec accepted by
+    ``resolve_pos_point``.  Accepted forms:
+
+    ``[x, y]``                    plain list → model-local metres
+    ``([x, y], "model")``         explicit model-local
+    ``([E, N], "utm")``           UTM metres
+    ``([lon, lat], "latlon")``    decimal degrees (lon first, then lat)
+
+    The *z* component of the anchor is set to ``z_top`` (the midpoint depth),
+    and the panel vertical extent is controlled via ``zlim`` in the returned
+    dict (``[z_top, z_bot]``).
+
+    Parameters
+    ----------
+    p1_raw, p2_raw : position specs (see above)
+    zone, northern : UTM zone and hemisphere
+    origin_E, origin_N : UTM coordinates of the mesh centre [m]
+    z_top : float
+        Shallowest depth for the slice panel [m, z-positive-down].
+        Default 0 (surface).
+    z_bot : float
+        Deepest depth for the slice panel [m, z-positive-down].
+        Default 20 000 m.
+
+    Returns
+    -------
+    dict
+        A ``kind="plane"`` slice spec (resolved to model-local metres) with
+        keys ``kind``, ``point``, ``strike``, ``dip``, ``zlim``,
+        ``p1_model``, ``p2_model`` (the two resolved endpoint model-local
+        [x, y] pairs, for reference / axis-limit computation).
+
+    Raises
+    ------
+    ValueError
+        If the two endpoints are coincident (zero-length segment).
+
+    Notes
+    -----
+    The horizontal axis of the resulting panel runs along-strike from *p1*
+    to *p2*.  Use ``invert_x=True`` in the slice spec to reverse the sense.
+
+    VR 2026-06-19, Claude Sonnet 4.6 (Anthropic)
+    """
+    # ------------------------------------------------------------------
+    # Resolve each endpoint to model-local [x, y] (ignore / discard z)
+    # ------------------------------------------------------------------
+    def _resolve_xy(raw) -> tuple[float, float]:
+        """Accept 2-element (no z) or 3-element (with z) specs."""
+        # normalise: allow ([x, y], "crs") as well as ([x, y, z], "crs")
+        crs = "model"
+        pt  = raw
+        if (isinstance(raw, (list, tuple)) and len(raw) == 2
+                and isinstance(raw[-1], str)):
+            pt, crs = raw[0], raw[1]
+        pt = list(pt)
+        if len(pt) == 2:
+            # inject a dummy z so resolve_pos_point can be reused
+            pt_with_z = pt + [0.0]
+        elif len(pt) == 3:
+            pt_with_z = pt
+        else:
+            raise ValueError(
+                f"resolve_pos_two_point_profile: endpoint must have 2 or 3 "
+                f"elements, got {len(pt)}."
+            )
+        x_m, y_m, _ = resolve_pos_point(
+            (pt_with_z, crs) if crs != "model" else pt_with_z,
+            zone, northern, origin_E, origin_N,
+        )
+        return x_m, y_m
+
+    x1, y1 = _resolve_xy(p1_raw)
+    x2, y2 = _resolve_xy(p2_raw)
+
+    dx = x2 - x1
+    dy = y2 - y1
+    seg_len = math.hypot(dx, dy)
+    if seg_len < 1e-6:
+        raise ValueError(
+            "resolve_pos_two_point_profile: the two endpoints are coincident "
+            f"(distance = {seg_len:.3g} m)."
+        )
+
+    # ------------------------------------------------------------------
+    # Strike: azimuth of the segment, clockwise from North [deg]
+    # FEMTIC / geology convention: strike = atan2(dx_east, dy_north)
+    # model frame: x = East, y = North  →  dx = Δeasting, dy = Δnorthing
+    # ------------------------------------------------------------------
+    strike_deg = math.degrees(math.atan2(dx, dy)) % 360.0
+
+    # Midpoint as plane anchor
+    x_mid = 0.5 * (x1 + x2)
+    y_mid = 0.5 * (y1 + y2)
+
+    return {
+        "kind":     "plane",
+        "point":    [x_mid, y_mid, float(z_top)],
+        "strike":   strike_deg,
+        "dip":      90.0,
+        "zlim":     [float(z_top), float(z_bot)],
+        # stash resolved endpoints for downstream use (e.g. xlim computation)
+        "p1_model": [x1, y1],
+        "p2_model": [x2, y2],
+    }
+
+
 def resolve_slice_positions(slices: list,
                             zone: int, northern: bool,
                             origin_E: float, origin_N: float,
@@ -5135,6 +5259,11 @@ def resolve_slice_positions(slices: list,
     ``z0`` and all other keys (``xlim``, ``ylim``, ``zlim``, ``title``,
     ``strike``, ``dip``, ``kind``) pass through unchanged.
     The original *slices* list is not mutated.
+
+    For ``kind="profile"`` specs (two-point vertical fence definition), the
+    spec is converted into a resolved ``kind="plane"`` dict with ``dip=90``
+    before being appended.  See :func:`resolve_pos_two_point_profile` for
+    the full endpoint CRS syntax.
 
     Parameters
     ----------
@@ -5149,12 +5278,54 @@ def resolve_slice_positions(slices: list,
     list of slice-spec dicts with model-local float values for x0, y0, point
 
     VR 2026-05-23, Claude Sonnet 4.6 (Anthropic)
+    Modified 2026-06-19, Claude Sonnet 4.6 (Anthropic) — added kind="profile"
     """
     resolved = []
     for i, spec in enumerate(slices):
         s    = dict(spec)
         kind = s.get("kind", "map")
 
+        # ----------------------------------------------------------------
+        # kind = "profile" — two-point vertical fence  →  plane, dip=90
+        # ----------------------------------------------------------------
+        if kind == "profile":
+            if "p1" not in s or "p2" not in s:
+                raise ValueError(
+                    f"slice[{i}] kind='profile' requires 'p1' and 'p2' keys."
+                )
+            z_top = float(s.pop("z_top", 0.0))
+            z_bot = float(s.pop("z_bot", 20000.0))
+            plane_spec = resolve_pos_two_point_profile(
+                s.pop("p1"), s.pop("p2"),
+                zone, northern, origin_E, origin_N,
+                z_top=z_top, z_bot=z_bot,
+            )
+            # Merge any remaining per-panel overrides (xlim, invert_x, title …)
+            # but do NOT let them clobber the geometry keys just derived.
+            _geometry_keys = {"kind", "point", "strike", "dip", "zlim",
+                               "p1_model", "p2_model"}
+            for k, v in s.items():
+                if k not in _geometry_keys and k not in ("z_top", "z_bot", "p1", "p2"):
+                    plane_spec[k] = v
+            s = plane_spec
+
+            if verbose:
+                p1m = s["p1_model"]
+                p2m = s["p2_model"]
+                print(
+                    f"  slice[{i}] profile → plane  "
+                    f"p1=({p1m[0]:.0f}, {p1m[1]:.0f}) m  "
+                    f"p2=({p2m[0]:.0f}, {p2m[1]:.0f}) m  "
+                    f"strike={s['strike']:.1f} deg  dip=90  "
+                    f"zlim={s['zlim']} m (model-local)"
+                )
+
+            resolved.append(s)
+            continue
+
+        # ----------------------------------------------------------------
+        # Existing kinds: ns / ew / map / plane
+        # ----------------------------------------------------------------
         if kind == "ns" and "x0" in s:
             raw     = s["x0"]
             s["x0"] = resolve_pos_x(raw, zone, northern,

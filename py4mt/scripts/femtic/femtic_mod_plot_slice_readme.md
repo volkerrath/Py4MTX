@@ -63,6 +63,17 @@ Conversion chain: `lat/lon → UTM → model-local`.
 | `"ns"` | `x0` | N-S vertical section at easting `x0` |
 | `"ew"` | `y0` | E-W vertical section at northing `y0` |
 | `"plane"` | `point`, `strike`, `dip` | Arbitrary oblique plane |
+| `"profile"` | `p1`, `p2`, `z_top`, `z_bot` | Vertical fence section between two endpoints; strike auto-derived |
+
+### `kind="profile"` keys
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `p1`, `p2` | position spec | required | Endpoint positions. Each accepts a bare 2-element list (model-local metres), `([x, y], "model")`, `([E, N], "utm")`, or `([lon, lat], "latlon")`. A 3-element `[x, y, z]` form is also accepted (z ignored). |
+| `z_top` | float | `0.0` | Shallowest depth of the panel [m, z-positive-down] |
+| `z_bot` | float | `20000.0` | Deepest depth of the panel [m, z-positive-down] |
+
+The resolver converts a `"profile"` spec into a `kind="plane"` dict with `dip=90` before passing it to `fviz.plot_model_slices`. The horizontal axis of the panel runs along-strike from *p1* to *p2*; use `invert_x=True` to reverse the sense.
 
 ### Per-panel optional keys
 
@@ -87,6 +98,11 @@ PLOT_SLICES = [
          point=([-71.5, -16.4, 5000.0], "latlon"),
          strike=45., dip=70.,
          invert_x=True),
+    dict(kind="profile",
+         p1=([-71.536, -16.197], "latlon"),
+         p2=([-71.406, -16.299], "latlon"),
+         z_top=0.0, z_bot=25000.0,
+         title="NW-SE profile"),
 ]
 ```
 
@@ -246,3 +262,4 @@ For a standalone borehole figure (higher DPI, separate PDF), use
 | 2026-05-31 | vrath / Claude Sonnet 4.6 | `invert_x` per-panel key; origin estimation before UTM zone derivation |
 | 2026-06-03 | Claude Sonnet 4.6 | **Split** from `femtic_mod_plot.py` → `femtic_mod_plot_slice.py` + `femtic_mod_plot_3d.py`. `BOREHOLE_IN_SLICE`: embedded borehole columns via `plot_model_slices(borehole_sites=...)`; `BOREHOLE_XLIM` now in Ω·m; `z_top="surface"` supported; lat/lon legend; per-trace line-style keys; `BOREHOLE_NPZ` added |
 | 2026-06-04 | vrath / Claude Sonnet 4.6 | **Split** from `femtic_mod_plot_slice.py`: standalone borehole step (step 6) and `PLOT_BOREHOLE` flag moved to new `femtic_mod_plot_bh.py`. `BOREHOLE_IN_SLICE` retained here for embedded columns only |
+| 2026-06-19 | Claude Sonnet 4.6 | `kind="profile"` added to `PLOT_SLICES`: vertical fence section defined by two endpoint positions (`p1`, `p2`) each accepting model-local / UTM / latlon CRS tags; `strike` derived from p1→p2 azimuth; `dip` fixed at 90°. New helper `resolve_pos_two_point_profile()` in `femtic.py`; `resolve_slice_positions()` extended. |

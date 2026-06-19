@@ -56,6 +56,12 @@ Examples (inside PLOT_SLICES)
          point=([-71.5, -16.4, 5000.0], "latlon"),
          strike=45., dip=70.)
 
+    # Two-point vertical profile (fence section) — strike auto-derived:
+    dict(kind="profile",
+         p1=([-71.50, -16.30], "latlon"),  # start endpoint [lon, lat]
+         p2=([-70.90, -16.40], "latlon"),  # end   endpoint [lon, lat]
+         z_top=0.0, z_bot=20000.0)         # depth extent [m, z-down]
+
 UTM zone derivation
 --------------------
     Zone number is computed from ``UTM_ORIGIN_LON`` (standard 6° bands,
@@ -127,6 +133,13 @@ Provenance
                 Borehole config block (BOREHOLE_*, PLOT_BOREHOLE) and step (6)
                 moved to new sister script femtic_mod_plot_bh.py.
                 plot_model_slices call: borehole_* parameters removed.
+    2026-06-19  Claude Sonnet 4.6 (Anthropic)
+                Added kind="profile" to PLOT_SLICES: a vertical fence section
+                defined by two endpoint positions (p1, p2) each accepting
+                model-local / UTM / latlon CRS tags; strike is derived from
+                the p1→p2 azimuth; dip is fixed at 90.  New helper
+                resolve_pos_two_point_profile() added to femtic.py;
+                resolve_slice_positions() extended with the "profile" branch.
 
 @author: vrath
 """
@@ -332,21 +345,33 @@ ALPHA_BLANK_THRESH = 0.0
 #:
 #: Slices use exact tetrahedron-plane intersection (no selection slab).
 #: Each dict must contain:
-#:   kind   : "map"   — horizontal slice at z = z0
-#:            "ns"    — N-S vertical section at x = x0   (y vs depth)
-#:            "ew"    — E-W vertical section at y = y0   (x vs depth)
-#:            "plane" — arbitrary plane by strike / dip / point
-#:   z0     : (map   only)  depth in metres
-#:   x0     : (ns    only)  easting — plain float = model-local metres;
+#:   kind   : "map"     — horizontal slice at z = z0
+#:            "ns"      — N-S vertical section at x = x0   (y vs depth)
+#:            "ew"      — E-W vertical section at y = y0   (x vs depth)
+#:            "plane"   — arbitrary plane by strike / dip / point
+#:            "profile" — vertical fence section defined by two endpoints;
+#:                        strike is computed automatically from p1→p2 azimuth
+#:   z0     : (map     only)  depth in metres
+#:   x0     : (ns      only)  easting — plain float = model-local metres;
 #:            or (value, "utm") / (value, "latlon") for CRS tagging
-#:   y0     : (ew    only)  northing — plain float / CRS tuple
-#:   point  : (plane only)  [x, y, z] any point on the plane
+#:   y0     : (ew      only)  northing — plain float / CRS tuple
+#:   point  : (plane   only)  [x, y, z] any point on the plane
 #:            or ([lon, lat, z], "latlon") / ([E, N, z], "utm")
-#:   strike : (plane only)  clockwise from North, degrees
-#:   dip    : (plane only)  downward inclination from horizontal, degrees
+#:   p1, p2 : (profile only)  endpoint position specs; each accepts:
+#:              [x, y]                  model-local metres (bare list)
+#:              ([x, y], "model")       explicit model-local
+#:              ([E, N], "utm")         UTM easting / northing [m]
+#:              ([lon, lat], "latlon")  decimal degrees
+#:            A 3-element [x, y, z] variant is also accepted (z ignored).
+#:   z_top  : (profile only)  shallowest depth of fence panel [m, z-down]
+#:            default 0.0
+#:   z_bot  : (profile only)  deepest depth of fence panel [m, z-down]
+#:            default 20 000 m
+#:   strike : (plane   only)  clockwise from North, degrees
+#:   dip    : (plane   only)  downward inclination from horizontal, degrees
 #:   xlim   : [xmin, xmax] — easting or along-strike axis limit
 #:   ylim   : [ymin, ymax] — northing or down-dip axis limit
-#:   zlim   : [zmin, zmax] — depth axis limit (ns/ew panels)
+#:   zlim   : [zmin, zmax] — depth axis limit (ns/ew/profile panels)
 #:   invert_x : True → flip the horizontal axis left-to-right after rendering
 #:   title  : optional string override
 #:
@@ -356,6 +381,12 @@ PLOT_SLICES = [
     dict(kind="ew",  y0=(-16.196900, "latlon")),
     dict(kind="map", z0=-4000.0),
     dict(kind="map", z0= 10000.0),
+    # Two-point vertical profile example (uncomment to use):
+    # dict(kind="profile",
+    #      p1=([-71.536, -16.197], "latlon"),
+    #      p2=([-71.406, -16.299], "latlon"),
+    #      z_top=0.0, z_bot=25000.0,
+    #      title="NW-SE profile"),
 ]
 
 #: Global axis limits in model-local metres.  None → auto.
