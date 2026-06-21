@@ -35,6 +35,15 @@ where Vr = Vt[:rank].T contains the top-rank right singular vectors.  Adding
 δm_null to the current model produces a new model with identical predicted
 data (to within the truncation rank).
 
+Literature
+----------
+
+[1] M. Deal, G. Nolet (1996) “Nullspace shuttles", Geophysical Journal International, 124, 372–380,doi:10.1111/j.1365-246X.1996.tb07027.x
+
+[2] G. Muñoz, V. Rath (2006) “Beyond smooth inversion: the use of nullspace projection for the exploration of non-uniqueness in MT", Geophysical Journal International, 164, 301–311, 2006, doi:10.1111/j.1365-246X.2005.02825.x
+
+
+
 Provenance
 ----------
     2026-05-17  vrath / Claude Sonnet 4.6   Created, modelled on
