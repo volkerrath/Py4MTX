@@ -49,6 +49,14 @@ Provenance
     2026-05-17  vrath / Claude Sonnet 4.6   Created, modelled on
                 femtic_mod_edit.py.  Uses ``inverse.rsvd`` for the randomised
                 SVD and a local ``_nullspace_shuttle`` helper for step (5).
+    2026-06-23  vrath / Claude Sonnet 4.6   Merged GST model-generation from
+                femtic_gst_prep.py into step 4.  PERTURB_MODE = "gst" draws
+                a geostatistically perturbed model via pilot-point Ordinary
+                Kriging (ensembles.generate_gst_model_ensemble), computes the
+                delta w.r.t. the reference model, and passes it to the null-
+                space shuttle.  PERTURB_MODE = "random" retains the original
+                uniform-Gaussian placeholder.  GST config block mirrors
+                femtic_gst_prep.py exactly (pp_mode, variogram, etc.).
 
 @author: vrath
 """
@@ -77,6 +85,7 @@ from version import versionstrg
 import util as utl
 import femtic as fem
 import inverse as inv
+import ensembles as ens
 
 version, _ = versionstrg()
 fname = inspect.getfile(inspect.currentframe())
@@ -135,6 +144,78 @@ NSS_AMPLITUDE = 1.0
 # Verbose output
 # ---------------------------------------------------------------------------
 OUT = True
+
+# ===========================================================================
+# Step 4 configuration — model perturbation mode
+# ===========================================================================
+
+#: ``"random"`` — uniform Gaussian placeholder (original behaviour).
+#: ``"gst"``    — geostatistical perturbation via pilot-point Kriging.
+PERTURB_MODE = "gst"
+
+# ---------------------------------------------------------------------------
+# GST model perturbation config  (used only when PERTURB_MODE == "gst")
+# Mirrors the config block in femtic_gst_prep.py exactly.
+# ---------------------------------------------------------------------------
+if PERTURB_MODE == "gst":
+    # Reference model and mesh (same files used for NSS template).
+    GST_REF_MOD  = MODEL_TEMPLATE   # free-region structure source
+    GST_MESH     = WORK_DIR + "mesh.dat"
+
+    # --- Pilot-point placement -----------------------------------------------
+    # MOD_PP_MODE: "random" | "fixed" | "mixed" | "extrema"
+    #   "random"  — n_pp points drawn uniformly inside MOD_PP_BBOX each call.
+    #   "fixed"   — locations from MOD_PP_COORDS (same every call, values vary).
+    #   "mixed"   — MOD_PP_COORDS plus n_pp random fill points.
+    #   "extrema" — seed at local log10(ρ) extrema of reference model (within
+    #               MOD_PP_ROI), plus n_pp random fill points.
+    GST_PP_MODE = "random"      # "random" | "fixed" | "mixed" | "extrema"
+
+    # Number of random pilot points per shuttle realisation.
+    # Recommended: 50–200 for typical 3-D MT survey volumes.
+    GST_N_PP = 100
+
+    # Bounding box for random pilot-point placement:
+    #   [x_min, x_max, y_min, y_max, z_min, z_max]  (metres, z positive-down)
+    GST_PP_BBOX = [-50000., 50000.,   # easting  range (m)
+                   -50000., 50000.,   # northing range (m)
+                        0., 80000.]   # depth     range (m)
+
+    # Explicit pilot-point coordinates for "fixed" or "mixed" mode.
+    # Shape: (N, 3) — columns: [easting, northing, depth].
+    GST_PP_COORDS = None   # e.g. np.array([[x, y, z], ...])
+
+    # --- "extrema" mode ------------------------------------------------------
+    # GST_PP_ROI: sub-volume [x_min,x_max,y_min,y_max,z_min,z_max] restricting
+    #   which free regions are eligible as extremum seeds.  None = full extent.
+    GST_PP_ROI           = None   # None = full extent
+    GST_PP_EXTREMA_K     = 9      # neighbourhood size for extremum detection
+    GST_PP_EXTREMA_WHICH = "both" # "both" | "minima" | "maxima"
+
+    # --- Resistivity range ---------------------------------------------------
+    # Pilot-point values drawn Uniform(GST_LOG_RHO_MIN, GST_LOG_RHO_MAX) in
+    # log10(Ω·m).  Post-Kriging field clamped to the same interval.
+    GST_LOG_RHO_MIN = 0.0    # log10(1 Ω·m)
+    GST_LOG_RHO_MAX = 4.0    # log10(10 000 Ω·m)
+
+    # --- Variogram model -----------------------------------------------------
+    # GST_VARIO_MODEL: gstools covariance model class name (string).
+    #   Common choices: "Spherical", "Gaussian", "Exponential", "Matern".
+    #
+    # GST_VARIO_RANGE: correlation length (m).  A 2-tuple
+    #   (horizontal_range, vertical_range) sets geometric anisotropy.
+    #   Recommended: h_range ≈ half survey aperture; v_range ≈ half target depth.
+    #
+    # GST_VARIO_SILL: sill (variance) in (log10 Ω·m)².  Typical 0.25–0.5.
+    #
+    # GST_VARIO_NUGGET: nugget in (log10 Ω·m)².  Keep ≤ 10 % of sill.
+    #
+    # GST_VARIO_ANGLES: rotation [α, β, γ] in degrees; None = axis-aligned.
+    GST_VARIO_MODEL   = "Spherical"
+    GST_VARIO_RANGE   = (8000., 4000.)  # (horizontal, vertical) in m
+    GST_VARIO_SILL    = 0.5
+    GST_VARIO_NUGGET  = 0.01
+    GST_VARIO_ANGLES  = None   # [alpha, beta, gamma] deg; None = axis-aligned
 
 
 # ===========================================================================
@@ -224,56 +305,43 @@ if OUT:
 
 
 # ===========================================================================
-# Step 4 — Model modification (placeholder)
+# Step 4 — Model perturbation
 # ===========================================================================
+#
+# Two modes controlled by PERTURB_MODE (set in the configuration section):
+#
+#   "random" — uniform Gaussian placeholder (original behaviour).
+#              Replace the body of _make_perturbation_random() with any
+#              prior-based or exploratory modification in log10(ρ) space.
+#              The amplitude is subsequently scaled by NSS_AMPLITUDE in step 5.
+#
+#   "gst"    — geostatistical perturbation via pilot-point Ordinary Kriging
+#              (ens.generate_gst_model_ensemble).  A single Kriged model is
+#              generated in a temporary directory; the perturbation is the
+#              delta between that model and the reference model in log10(ρ)
+#              space.  The null-space shuttle then projects out any data-
+#              sensitive component so the predicted data remain unchanged.
 
-def _modify_model(m: np.ndarray) -> np.ndarray:
-    """Apply a model perturbation before nullspace projection.
-
-    Replace the body of this function with any prior-based, geological, or
-    exploratory modification in log10(ρ) space.  The perturbation returned
-    here is projected onto the null space of Js in step 5, so it will not
-    alter the predicted data.
+def _make_perturbation_random(m: np.ndarray) -> np.ndarray:
+    """Return a random Gaussian perturbation in log10(ρ) space (placeholder).
 
     Parameters
     ----------
     m : numpy.ndarray, shape (nm,)
-        Current final model in log10(ρ) (free regions only).
+        Current final model in log10(ρ) (free regions only).  Not used in the
+        default implementation but available for amplitude scaling.
 
     Returns
     -------
     dm : numpy.ndarray, shape (nm,)
-        Desired model perturbation (same shape as m).  The null-space
-        shuttle will zero out any data-sensitive component before adding
-        this to the model.
-
-    Notes
-    -----
-    Examples of what to put here:
-
-    - Smooth / sharpen a feature::
-
-          dm = np.zeros_like(m)
-          dm[region_indices] = 1.0   # push target region towards +1 log unit
-
-    - Apply a large-scale bias::
-
-          dm = np.full_like(m, 0.5)  # shift everything +0.5 log units
-
-    - Draw from a random perturbation::
-
-          rng = np.random.default_rng(seed=42)
-          dm = rng.standard_normal(m.size) * 0.2
-
-    The amplitude is subsequently scaled by NSS_AMPLITUDE in step 5.
+        Desired model perturbation (same shape as m).
     """
     # -----------------------------------------------------------------------
-    # *** EDIT BELOW THIS LINE ***
+    # *** EDIT BELOW THIS LINE to replace the Gaussian placeholder ***
     # -----------------------------------------------------------------------
 
-    # Default placeholder: uniform random perturbation (unit Gaussian)
-    rng = np.random.default_rng(seed=0)
-    dm = rng.standard_normal(m.size)
+    rng_local = np.random.default_rng(seed=0)
+    dm = rng_local.standard_normal(m.size)
 
     # -----------------------------------------------------------------------
     # *** EDIT ABOVE THIS LINE ***
@@ -281,15 +349,92 @@ def _modify_model(m: np.ndarray) -> np.ndarray:
     return dm
 
 
+def _make_perturbation_gst(m_ref: np.ndarray) -> np.ndarray:
+    """Generate a geostatistical model perturbation via pilot-point Kriging.
+
+    Calls ``ens.generate_gst_model_ensemble`` for a single realisation in a
+    temporary subdirectory inside WORK_DIR.  The perturbation is the difference
+    between the Kriged model and the reference model in log10(ρ) space::
+
+        dm = m_gst - m_ref
+
+    The null-space shuttle in step 5 projects out any data-sensitive component.
+
+    Parameters
+    ----------
+    m_ref : numpy.ndarray, shape (nm,)
+        Reference model in log10(ρ) (free regions only), as read from HDF5.
+
+    Returns
+    -------
+    dm : numpy.ndarray, shape (nm,)
+        Perturbation in log10(ρ) space (same shape as m_ref).
+    """
+    import tempfile, shutil
+
+    tmp_base = os.path.join(WORK_DIR, "_nss_gst_tmp_")
+
+    try:
+        # generate_gst_model_ensemble writes member 0 into ``tmp_base + "0/"``
+        ens.generate_gst_model_ensemble(
+            alg              = "gst",
+            dir_base         = tmp_base,
+            n_samples        = 1,
+            fromto           = None,
+            ref_mod_file     = GST_REF_MOD,
+            mesh_file        = GST_MESH,
+            pp_mode          = GST_PP_MODE,
+            n_pp             = GST_N_PP,
+            pp_bbox          = GST_PP_BBOX,
+            pp_coords        = GST_PP_COORDS,
+            pp_roi           = GST_PP_ROI,
+            pp_extrema_k     = GST_PP_EXTREMA_K,
+            pp_extrema_which = GST_PP_EXTREMA_WHICH,
+            log_rho_min      = GST_LOG_RHO_MIN,
+            log_rho_max      = GST_LOG_RHO_MAX,
+            vario_model      = GST_VARIO_MODEL,
+            vario_range      = GST_VARIO_RANGE,
+            vario_sill       = GST_VARIO_SILL,
+            vario_nugget     = GST_VARIO_NUGGET,
+            vario_angles     = GST_VARIO_ANGLES,
+            output_target    = "resistivity_block",
+            resistivity_file = "resistivity_block_iter0.dat",
+            reference_file   = "referencemodel.dat",
+            rng              = np.random.default_rng(),
+            out              = OUT,
+        )
+
+        # Read back the Kriged initial model from the temporary member directory
+        gst_block_file = tmp_base + "0/resistivity_block_iter0.dat"
+        gst_block = fem.read_model(gst_block_file)
+        # extract_free_values returns the free-region log10(ρ) vector
+        m_gst = fem.extract_model(gst_block)
+
+    finally:
+        # Always clean up the temporary tree
+        if os.path.isdir(tmp_base + "0"):
+            shutil.rmtree(tmp_base + "0", ignore_errors=True)
+
+    return m_gst - m_ref
+
+
 print("\n" + "=" * 72)
-print("Step 4: Model modification")
+print(f"Step 4: Model perturbation  [PERTURB_MODE = '{PERTURB_MODE}']")
 print("=" * 72)
 
 t0 = time.perf_counter()
-dm_raw = _modify_model(model)
+
+if PERTURB_MODE == "gst":
+    dm_raw = _make_perturbation_gst(model)
+elif PERTURB_MODE == "random":
+    dm_raw = _make_perturbation_random(model)
+else:
+    raise ValueError(f"Unknown PERTURB_MODE: '{PERTURB_MODE}'. "
+                     "Choose 'random' or 'gst'.")
 
 if OUT:
     print(f"  ||dm_raw||  = {np.linalg.norm(dm_raw):.4e}")
+    print(f"  dm_raw range: [{dm_raw.min():.3f}, {dm_raw.max():.3f}]")
     print(f"  elapsed     : {time.perf_counter() - t0:.2f} s")
 
 

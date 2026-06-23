@@ -464,7 +464,51 @@ Optional for visualisation and export:
 
 ## Version / provenance
 
-Updated: 2026-06-10
+Updated: 2026-06-22
+
+### Changelog (2026-06-22)
+- **v5 (anisotropic) resistivity-block format support** added throughout.
+  The v4 format (isotropic-only, 6 columns per region line) is fully
+  backward-compatible; format is auto-detected at file-open time with no
+  change to any call sites.
+
+  New helpers:
+  - `_detect_block_format(line)` — sniffs a region line and returns `"v4"` or
+    `"v5"` based on whether the second token is a small integer anisotropy
+    type (0/1/2) followed by a float.
+  - `_parse_region_line_v4(line)` — renamed core of the original
+    `_parse_region_line`; returns the 6-tuple `(ireg, rho, lo, hi, n, flag)`.
+  - `_parse_region_line_v5(line)` — returns a full dict for v5 region lines,
+    covering all three anisotropy sub-types mirroring the C++ reader logic:
+    - type 0 (ISO, 6 cols): `ireg, 0, rho, rho_lo, rho_hi, flag`
+    - type 1 (TI, 12 cols): adds `rhoXX, rhoYY, strike, dip, rho_lo, rho_hi,
+      fix_rhoXX, fix_rhoYY, fix_strike, fix_dip`
+    - type 2 (GA, 16 cols): additionally `rhoZZ, slant, fix_rhoZZ, fix_slant`
+  - `_format_region_line_v5(d)` — inverse formatter for all three sub-types.
+  - Module-level constants `_ANISO_ISO = 0`, `_ANISO_TI = 1`, `_ANISO_GA = 2`.
+
+  Updated functions (all backward-compatible):
+  - `_parse_region_line(line, fmt="v4")` — now dispatches on `fmt`; v5 returns
+    the same 6-tuple with `rho = rhoXX` and `n = 1.0`.
+  - `_infer_ocean_present(line, fmt="v4")` — passes `fmt` through.
+  - `read_model()` — auto-detects format; prints `fmt=` in info line;
+    otherwise identical interface and return type.
+  - `summarise_model_file()` — auto-detects format.
+  - `insert_model()` — for v5 files, preserves all per-block anisotropic
+    fields verbatim for fixed blocks; for free anisotropic (TI/GA) blocks,
+    scales rhoYY and rhoZZ by the same ratio as rhoXX so relative anisotropy
+    is maintained.
+  - `_read_resistivity_block_struct()` — auto-detects; stores `fmt` and
+    `region_lines_raw` in the returned struct to enable lossless v5 round-trips.
+  - `_write_resistivity_block_struct()` — uses `region_lines_raw` to
+    reconstruct v5 lines; falls back to v4 writer when `fmt == "v4"`.
+  - `read_resistivity_block()` — auto-detects; for v5 files returns extra keys
+    `fmt`, `region_aniso_type`, `region_rhoYY`, `region_rhoZZ`,
+    `region_strike`, `region_dip`, `region_slant` (all shape `(nreg,)`).
+  - `write_resistivity_block()` — parameter `fmt` renamed `float_fmt`; new
+    keyword-only parameter `block_fmt="v4"|"v5"` selects the output format,
+    plus optional `region_rhoYY`, `region_rhoZZ`, `region_aniso_type`,
+    `region_strike`, `region_dip`, `region_slant`, `region_fix_flags`.
 
 ### Changelog (2026-06-10)
 - Added `summarise_model_file(path, *, ocean=None, out=True)` — counts air,

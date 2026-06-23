@@ -226,10 +226,54 @@ def get_nrms(directory=None):
 
     return num_best, nrm_best
 
-def _parse_region_line(line: str) -> tuple[int, float, float, float, float, int]:
-    """Parse one region line from a FEMTIC resistivity block.
+def _detect_block_format(region_line: str) -> str:
+    """Detect whether a resistivity-block region line is v4 or v5 format.
 
-    Expected format (whitespace-separated columns):
+    v4 format (isotropic only)::
+
+        ireg  rho  rho_lo  rho_hi  n  flag          (6 columns, col[1] is float rho)
+
+    v5 format (iso / transverse-iso / general anisotropy)::
+
+        ireg  aniso_type  ...                        (col[1] is int 0/1/2)
+
+    Detection heuristic: if the second token is an integer 0, 1, or 2 **and** the
+    third token looks like a float, the line is v5; otherwise v4.
+
+    Returns ``"v4"`` or ``"v5"``.
+    """
+    parts = region_line.split()
+    if len(parts) < 3:
+        return "v4"
+    try:
+        second = int(parts[1])
+    except ValueError:
+        return "v4"
+    if second not in (0, 1, 2):
+        return "v4"
+    # Second column is 0/1/2 — could still be v4 if resistivity happens to be 0,1,2
+    # (extremely unlikely in practice, but disambiguate by checking col[1] for v4's
+    # weighting constant n which is typically 1.0, vs aniso_type which is a small int).
+    # The safest check: in v5 col[2] is a float resistivity (>0), in v4 col[1] IS rho.
+    try:
+        float(parts[2])
+        return "v5"
+    except ValueError:
+        return "v4"
+
+
+# ---------------------------------------------------------------------------
+# Anisotropy-type constants (mirrors ResistivityBlockAnisotropic enums)
+# ---------------------------------------------------------------------------
+_ANISO_ISO = 0      # isotropic
+_ANISO_TI  = 1      # transverse isotropy (rhoXX, rhoYY, strike, dip)
+_ANISO_GA  = 2      # general anisotropy  (rhoXX, rhoYY, rhoZZ, strike, dip, slant)
+
+
+def _parse_region_line_v4(line: str) -> tuple[int, float, float, float, float, int]:
+    """Parse one v4 region line.
+
+    Format::
 
         ireg  rho  rho_lower  rho_upper  n  flag
 
@@ -239,14 +283,164 @@ def _parse_region_line(line: str) -> tuple[int, float, float, float, float, int]
     """
     parts = line.split()
     if len(parts) < 6:
-        raise ValueError(f"Invalid region line (need ≥6 columns): {line!r}")
-    ireg = int(parts[0])
-    rho = float(parts[1])
+        raise ValueError(f"Invalid v4 region line (need ≥6 columns): {line!r}")
+    ireg      = int(parts[0])
+    rho       = float(parts[1])
     rho_lower = float(parts[2])
     rho_upper = float(parts[3])
-    n = float(parts[4])
-    flag = int(parts[5])
+    n         = float(parts[4])
+    flag      = int(parts[5])
     return ireg, rho, rho_lower, rho_upper, n, flag
+
+
+def _parse_region_line_v5(line: str) -> dict:
+    """Parse one v5 region line.
+
+    Returns a dict with keys:
+
+    ``ireg``, ``aniso_type``, ``rho_lo``, ``rho_hi``, ``flag``,
+    ``rhoXX``, ``rhoYY``, ``rhoZZ`` (Ω·m),
+    ``strike``, ``dip``, ``slant`` (degrees),
+    ``fix_rhoXX``, ``fix_rhoYY``, ``fix_rhoZZ``,
+    ``fix_strike``, ``fix_dip``, ``fix_slant`` (int 0/1).
+
+    For isotropic cells (``aniso_type == 0``): rhoYY = rhoZZ = rhoXX,
+    strike = dip = slant = 0.0, all per-parameter fix flags = 0.
+
+    For TI cells (``aniso_type == 1``): rhoZZ = rhoXX, slant = 0.0,
+    fix_rhoZZ = 0, fix_slant = 0.
+    """
+    parts = line.split()
+    if len(parts) < 2:
+        raise ValueError(f"Invalid v5 region line (too short): {line!r}")
+    ireg       = int(parts[0])
+    aniso_type = int(parts[1])
+
+    result = dict(
+        ireg=ireg, aniso_type=aniso_type,
+        rhoXX=0.0, rhoYY=0.0, rhoZZ=0.0,
+        strike=0.0, dip=0.0, slant=0.0,
+        rho_lo=0.0, rho_hi=0.0, flag=0,
+        fix_rhoXX=0, fix_rhoYY=0, fix_rhoZZ=0,
+        fix_strike=0, fix_dip=0, fix_slant=0,
+    )
+
+    if aniso_type == _ANISO_ISO:
+        # ireg  0  rho  rho_lo  rho_hi  flag
+        if len(parts) < 6:
+            raise ValueError(f"v5 ISO region line needs ≥6 columns: {line!r}")
+        rho            = float(parts[2])
+        result["rhoXX"]  = rho
+        result["rhoYY"]  = rho
+        result["rhoZZ"]  = rho
+        result["rho_lo"] = float(parts[3])
+        result["rho_hi"] = float(parts[4])
+        result["flag"]   = int(parts[5])
+
+    elif aniso_type == _ANISO_TI:
+        # ireg  1  rhoXX  rhoYY  strike  dip  rho_lo  rho_hi
+        #        fix_rhoXX  fix_rhoYY  fix_strike  fix_dip
+        if len(parts) < 12:
+            raise ValueError(f"v5 TI region line needs ≥12 columns: {line!r}")
+        result["rhoXX"]     = float(parts[2])
+        result["rhoYY"]     = float(parts[3])
+        result["rhoZZ"]     = float(parts[2])   # TI: rhoZZ = rhoXX
+        result["strike"]    = float(parts[4])
+        result["dip"]       = float(parts[5])
+        result["slant"]     = 0.0
+        result["rho_lo"]    = float(parts[6])
+        result["rho_hi"]    = float(parts[7])
+        result["fix_rhoXX"] = int(parts[8])
+        result["fix_rhoYY"] = int(parts[9])
+        result["fix_strike"]= int(parts[10])
+        result["fix_dip"]   = int(parts[11])
+
+    elif aniso_type == _ANISO_GA:
+        # ireg  2  rhoXX  rhoYY  rhoZZ  strike  dip  slant  rho_lo  rho_hi
+        #        fix_rhoXX  fix_rhoYY  fix_rhoZZ  fix_strike  fix_dip  fix_slant
+        if len(parts) < 16:
+            raise ValueError(f"v5 GA region line needs ≥16 columns: {line!r}")
+        result["rhoXX"]      = float(parts[2])
+        result["rhoYY"]      = float(parts[3])
+        result["rhoZZ"]      = float(parts[4])
+        result["strike"]     = float(parts[5])
+        result["dip"]        = float(parts[6])
+        result["slant"]      = float(parts[7])
+        result["rho_lo"]     = float(parts[8])
+        result["rho_hi"]     = float(parts[9])
+        result["fix_rhoXX"]  = int(parts[10])
+        result["fix_rhoYY"]  = int(parts[11])
+        result["fix_rhoZZ"]  = int(parts[12])
+        result["fix_strike"] = int(parts[13])
+        result["fix_dip"]    = int(parts[14])
+        result["fix_slant"]  = int(parts[15])
+    else:
+        raise ValueError(f"Unknown aniso_type {aniso_type} in v5 region line: {line!r}")
+
+    return result
+
+
+def _parse_region_line(line: str, fmt: str = "v4") -> tuple[int, float, float, float, float, int]:
+    """Parse one region line, returning the v4-compatible 6-tuple.
+
+    For v5 lines, ``rho`` in the returned tuple is ``rhoXX`` (the primary
+    resistivity used for inversion bookkeeping); the full anisotropic
+    parameters are accessible via :func:`_parse_region_line_v5`.
+
+    Parameters
+    ----------
+    line
+        Raw text line from the resistivity block file.
+    fmt
+        ``"v4"`` (default) or ``"v5"``.
+
+    Returns
+    -------
+    (ireg, rho, rho_lower, rho_upper, n, flag)
+        ``n`` is 1.0 for v5 lines (field not present in v5 format).
+    """
+    if fmt == "v5":
+        d = _parse_region_line_v5(line)
+        return d["ireg"], d["rhoXX"], d["rho_lo"], d["rho_hi"], 1.0, d["flag"]
+    return _parse_region_line_v4(line)
+
+
+def _format_region_line_v5(d: dict) -> str:
+    """Format a v5 region line from the dict produced by :func:`_parse_region_line_v5`."""
+    aniso_type = int(d["aniso_type"])
+    ireg       = int(d["ireg"])
+    if aniso_type == _ANISO_ISO:
+        return (
+            f" {ireg:9d}         {aniso_type:1d}"
+            f"   {d['rhoXX']:.6e}   {d['rho_lo']:.6e}   {d['rho_hi']:.6e}"
+            f"         {int(d['flag'])}"
+        )
+    elif aniso_type == _ANISO_TI:
+        return (
+            f" {ireg:9d}         {aniso_type:1d}"
+            f"        {d['rhoXX']:.6e}   {d['rhoYY']:.6e}"
+            f"   {d['strike']:.6e}   {d['dip']:.6e}"
+            f"   {d['rho_lo']:.6e}   {d['rho_hi']:.6e}"
+            f"         {int(d['fix_rhoXX'])}"
+            f"         {int(d['fix_rhoYY'])}"
+            f"         {int(d['fix_strike'])}"
+            f"         {int(d['fix_dip'])}"
+        )
+    elif aniso_type == _ANISO_GA:
+        return (
+            f" {ireg:9d}         {aniso_type:1d}"
+            f"        {d['rhoXX']:.6e}   {d['rhoYY']:.6e}   {d['rhoZZ']:.6e}"
+            f"   {d['strike']:.6e}   {d['dip']:.6e}   {d['slant']:.6e}"
+            f"   {d['rho_lo']:.6e}   {d['rho_hi']:.6e}"
+            f"         {int(d['fix_rhoXX'])}"
+            f"         {int(d['fix_rhoYY'])}"
+            f"         {int(d['fix_rhoZZ'])}"
+            f"         {int(d['fix_strike'])}"
+            f"         {int(d['fix_dip'])}"
+            f"         {int(d['fix_slant'])}"
+        )
+    else:
+        raise ValueError(f"Unknown aniso_type {aniso_type}")
 
 
 def _format_region_line(
@@ -257,14 +451,14 @@ def _format_region_line(
     n: float,
     flag: int,
 ) -> str:
-    """Format a region line in FEMTIC resistivity block style."""
+    """Format a v4 region line in FEMTIC resistivity block style."""
     return (
         f" {ireg:9d}        {rho:.6e}   {rho_lower:.6e}   {rho_upper:.6e}   "
         f"{n:.6e} {flag:9d}"
     )
 
 
-def _infer_ocean_present(region1_line: str) -> bool:
+def _infer_ocean_present(region1_line: str, fmt: str = "v4") -> bool:
     """Infer whether region 1 is an 'ocean' fixed block.
 
     Heuristic (conservative):
@@ -274,7 +468,7 @@ def _infer_ocean_present(region1_line: str) -> bool:
     This can be overridden by passing ``ocean=True`` or ``ocean=False`` to
     :func:`read_model` / :func:`insert_model`.
     """
-    _, rho, _, _, _, flag = _parse_region_line(region1_line)
+    _, rho, _, _, _, flag = _parse_region_line(region1_line, fmt=fmt)
     return (flag == 1) and (rho <= 1.0)
 
 
@@ -351,17 +545,24 @@ def read_model(
         if nreg <= 0:
             raise ValueError("No regions in resistivity block (nreg<=0).")
 
+        # Peek at the first region line to detect v4 / v5 format
+        first_region_line = f.readline()
+        if not first_region_line:
+            raise ValueError("Unexpected EOF before first region line.")
+        fmt = _detect_block_format(first_region_line)
+
         region_lines: list[str] = []
         region_rho = np.zeros(nreg, dtype=float)
         region_flag = np.zeros(nreg, dtype=int)
 
-        for i in range(nreg):
-            line = f.readline()
+        # Re-process the already-read first line, then continue
+        all_region_lines = [first_region_line] + [f.readline() for _ in range(nreg - 1)]
+        for i, line in enumerate(all_region_lines):
             if not line:
                 raise ValueError(
                     f"Unexpected EOF while reading region lines: expected {nreg}, got {i}."
                 )
-            ireg, rho, _, _, _, flag = _parse_region_line(line)
+            ireg, rho, _, _, _, flag = _parse_region_line(line, fmt=fmt)
             if ireg != i:
                 raise ValueError(f"Expected region index {i} at line {i}, got {ireg}.")
             region_lines.append(line)
@@ -372,7 +573,7 @@ def read_model(
     ocean_present = False
     if nreg > 1:
         if ocean is None:
-            ocean_present = _infer_ocean_present(region_lines[1])
+            ocean_present = _infer_ocean_present(region_lines[1], fmt=fmt)
         else:
             ocean_present = bool(ocean)
 
@@ -400,7 +601,7 @@ def read_model(
     if out:
         n_fixed = int(fixed_mask.sum())
         print(
-            f"read_model: file={model_path.name}, nelem={nelem}, nreg={nreg}, "
+            f"read_model: file={model_path.name}, fmt={fmt}, nelem={nelem}, nreg={nreg}, "
             f"ocean_present={ocean_present}, fixed={n_fixed}, returned={out_vec.size}."
         )
 
@@ -462,9 +663,11 @@ def summarise_model_file(
     region_rho:   list[float] = []
     region_flag:  list[int]   = []
     region_lines: list[str]   = []
+    # Detect format from first region line
+    fmt = _detect_block_format(lines[idx]) if nreg > 0 else "v4"
     for i in range(nreg):
         line = lines[idx]; idx += 1
-        ireg, rho, _, _, _, flag = _parse_region_line(line)
+        ireg, rho, _, _, _, flag = _parse_region_line(line, fmt=fmt)
         region_rho.append(rho)
         region_flag.append(flag)
         region_lines.append(line)
@@ -472,7 +675,7 @@ def summarise_model_file(
     ocean_present = False
     ocean_rho_val = None
     if nreg > 1:
-        ocean_present = _infer_ocean_present(region_lines[1]) if ocean is None else bool(ocean)
+        ocean_present = _infer_ocean_present(region_lines[1], fmt=fmt) if ocean is None else bool(ocean)
         if ocean_present:
             ocean_rho_val = region_rho[1]
 
@@ -629,8 +832,17 @@ def insert_model(
     elem_lines = template_lines[1 : 1 + nelem]
     region_start = 1 + nelem
 
-    reg_meta: list[tuple[int, float, float, float, float, int]] = []
+    # Detect v4 / v5 format from the first region line
+    fmt = _detect_block_format(template_lines[region_start]) if nreg > 0 else "v4"
+
+    # reg_meta holds either:
+    #   v4: (ireg, rho, lo, hi, n, flag)   tuples
+    #   v5: the full dict from _parse_region_line_v5 (preserves all aniso fields)
+    reg_meta_v4: list[tuple[int, float, float, float, float, int]] = []
+    reg_meta_v5: list[dict] = []
     reg_lines: list[str] = []
+    region_flag_list: list[int] = []
+
     for i in range(nreg):
         idx = region_start + i
         if idx >= len(template_lines):
@@ -638,11 +850,15 @@ def insert_model(
                 f"Unexpected EOF while reading region lines: expected {nreg}, got {i}."
             )
         line = template_lines[idx]
-        ireg, rho, lo, hi, nn, flag = _parse_region_line(line)
+        ireg, rho, lo, hi, nn, flag = _parse_region_line(line, fmt=fmt)
         if ireg != i:
             raise ValueError(f"Expected region index {i} at line {i}, got {ireg}.")
         reg_lines.append(line)
-        reg_meta.append((ireg, rho, lo, hi, nn, flag))
+        region_flag_list.append(flag)
+        if fmt == "v5":
+            reg_meta_v5.append(_parse_region_line_v5(line))
+        else:
+            reg_meta_v4.append((ireg, rho, lo, hi, nn, flag))
 
     with out_path.open("w", encoding="utf-8") as fout:
         # Write header and element->region mapping unchanged
@@ -654,11 +870,11 @@ def insert_model(
         ocean_present = False
         if nreg > 1:
             if ocean is None:
-                ocean_present = _infer_ocean_present(reg_lines[1])
+                ocean_present = _infer_ocean_present(reg_lines[1], fmt=fmt)
             else:
                 ocean_present = bool(ocean)
 
-        region_flag = np.array([m[5] for m in reg_meta], dtype=int)
+        region_flag = np.array(region_flag_list, dtype=int)
 
         fixed_mask = np.zeros(nreg, dtype=bool)
         fixed_mask[0] = True  # air always fixed here
@@ -673,31 +889,57 @@ def insert_model(
         if model_arr.size != n_free:
             raise ValueError(
                 "insert_model: size mismatch for free-region model."
-                f"  template: nreg={nreg}, fixed={n_fixed}, free={n_free}"
-                f"  provided model size={model_arr.size}"
+                f"  template: nreg={nreg}, fmt={fmt}, fixed={n_fixed}, free={n_free}  "
+                f"provided model size={model_arr.size}  "
                 "Hint: your template may contain additional fixed regions (flag==1). "
                 "Use read_model(...) on the same template to get a consistent free vector."
             )
 
         # Write regions, preserving metadata; replace rho for free regions (and air/ocean)
         model_ptr = 0
-        for ireg, rho0, lo, hi, nn, flag in reg_meta:
-            if ireg == 0:
-                rho = float(air_rho)
-            elif ireg == 1 and ocean_present:
-                rho = float(ocean_rho)
-            elif fixed_mask[ireg]:
-                rho = float(rho0)  # preserve fixed-region rho from template
-            else:
-                rho = float(10.0 ** model_arr[model_ptr])
-                model_ptr += 1
+        for i in range(nreg):
+            ireg = i
+            is_fixed = bool(fixed_mask[ireg])
+            is_air   = (ireg == 0)
+            is_ocean = (ireg == 1 and ocean_present)
 
-            fout.write(_format_region_line(ireg, rho, lo, hi, nn, flag) + "\n")
+            if fmt == "v5":
+                d = dict(reg_meta_v5[i])  # copy so we can mutate
+                if is_air:
+                    d["rhoXX"] = d["rhoYY"] = d["rhoZZ"] = float(air_rho)
+                elif is_ocean:
+                    d["rhoXX"] = d["rhoYY"] = d["rhoZZ"] = float(ocean_rho)
+                elif not is_fixed:
+                    new_rho = float(10.0 ** model_arr[model_ptr])
+                    model_ptr += 1
+                    # For TI/GA cells scale rhoYY and rhoZZ by the same log10 ratio
+                    # as rhoXX (preserve relative anisotropy), unless the cell is
+                    # actually isotropic in the template.
+                    if d["aniso_type"] == _ANISO_ISO:
+                        d["rhoXX"] = d["rhoYY"] = d["rhoZZ"] = new_rho
+                    else:
+                        ratio = new_rho / d["rhoXX"] if d["rhoXX"] > 0 else 1.0
+                        d["rhoYY"] = d["rhoYY"] * ratio
+                        d["rhoZZ"] = d["rhoZZ"] * ratio
+                        d["rhoXX"] = new_rho
+                fout.write(_format_region_line_v5(d) + "\n")
+            else:
+                ireg_, rho0, lo, hi, nn, flag = reg_meta_v4[i]
+                if is_air:
+                    rho = float(air_rho)
+                elif is_ocean:
+                    rho = float(ocean_rho)
+                elif is_fixed:
+                    rho = float(rho0)
+                else:
+                    rho = float(10.0 ** model_arr[model_ptr])
+                    model_ptr += 1
+                fout.write(_format_region_line(ireg, rho, lo, hi, nn, flag) + "\n")
 
     if out:
         print(f"File {out_path} successfully written.")
         print(
-            f"insert_model: nreg={nreg}, ocean_present={ocean_present}, "
+            f"insert_model: fmt={fmt}, nreg={nreg}, ocean_present={ocean_present}, "
             f"fixed={n_fixed}, free={n_free}."
         )
 
@@ -1127,12 +1369,18 @@ def _read_resistivity_block_struct(
         region_n = np.empty(nreg, dtype=np.float64)
         region_flag = np.empty(nreg, dtype=np.int32)
 
+        # Peek at first region line to detect format
+        first_region_line = f.readline()
+        if not first_region_line:
+            raise ValueError("Unexpected EOF before first region line (_read_resistivity_block_struct).")
+        fmt = _detect_block_format(first_region_line)
+
         region_lines: list[str] = []
-        for i in range(nreg):
-            line = f.readline()
+        all_rlines = [first_region_line] + [f.readline() for _ in range(nreg - 1)]
+        for i, line in enumerate(all_rlines):
             if not line:
                 raise ValueError(f"Unexpected EOF while reading region lines at i={i}.")
-            ireg, rho, lo, hi, nn, flag = _parse_region_line(line)
+            ireg, rho, lo, hi, nn, flag = _parse_region_line(line, fmt=fmt)
             if ireg != i:
                 raise ValueError(f"Expected region index {i} but got {ireg}.")
             region_lines.append(line)
@@ -1146,7 +1394,7 @@ def _read_resistivity_block_struct(
     ocean_present = False
     if nreg > 1:
         if ocean is None:
-            ocean_present = _infer_ocean_present(region_lines[1])
+            ocean_present = _infer_ocean_present(region_lines[1], fmt=fmt)
         else:
             ocean_present = bool(ocean)
 
@@ -1183,13 +1431,15 @@ def _read_resistivity_block_struct(
 
     if out:
         print(
-            f"_read_resistivity_block_struct: file={model_path.name}, nelem={nelem}, nreg={nreg}, "
+            f"_read_resistivity_block_struct: file={model_path.name}, fmt={fmt}, nelem={nelem}, nreg={nreg}, "
             f"ocean_present={ocean_present}, fixed={int(fixed_mask.sum())}, free={int(free_idx.size)}."
         )
 
     return {
         "nelem": int(nelem),
         "nreg": int(nreg),
+        "fmt": fmt,                          # "v4" or "v5"
+        "region_lines_raw": region_lines,    # original text lines (needed for v5 round-trip)
         "elem_region": elem_region,
         "region_rho": region_rho,
         "region_lo": region_lo,
@@ -1221,25 +1471,41 @@ def _write_resistivity_block_struct(struct: dict, model_file: str | Path, *, out
     if region_rho.size != nreg:
         raise ValueError(f"_write_resistivity_block_struct: region arrays size mismatch: {region_rho.size} vs {nreg}.")
 
+    fmt = struct.get("fmt", "v4")
+    region_lines_raw: list[str] | None = struct.get("region_lines_raw", None)
+
     with out_path.open("w", encoding="utf-8") as f:
         f.write(f"{nelem:10d} {nreg:10d}\n")
         for i in range(nelem):
             f.write(f"{i:10d} {int(elem_region[i]):10d}\n")
         for i in range(nreg):
-            f.write(
-                _format_region_line(
-                    ireg=int(i),
-                    rho=float(region_rho[i]),
-                    rho_lower=float(region_lo[i]),
-                    rho_upper=float(region_hi[i]),
-                    n=float(region_n[i]),
-                    flag=int(region_flag[i]),
+            if fmt == "v5" and region_lines_raw is not None:
+                # Parse the stored raw line, update rhoXX (and scale YY/ZZ), re-format
+                d = _parse_region_line_v5(region_lines_raw[i])
+                new_rhoXX = float(region_rho[i])
+                if d["aniso_type"] == _ANISO_ISO:
+                    d["rhoXX"] = d["rhoYY"] = d["rhoZZ"] = new_rhoXX
+                else:
+                    ratio = new_rhoXX / d["rhoXX"] if d["rhoXX"] > 0 else 1.0
+                    d["rhoYY"] = d["rhoYY"] * ratio
+                    d["rhoZZ"] = d["rhoZZ"] * ratio
+                    d["rhoXX"] = new_rhoXX
+                f.write(_format_region_line_v5(d) + "\n")
+            else:
+                f.write(
+                    _format_region_line(
+                        ireg=int(i),
+                        rho=float(region_rho[i]),
+                        rho_lower=float(region_lo[i]),
+                        rho_upper=float(region_hi[i]),
+                        n=float(region_n[i]),
+                        flag=int(region_flag[i]),
+                    )
+                    + "\n"
                 )
-                + "\n"
-            )
 
     if out:
-        print(f"_write_resistivity_block_struct: wrote {out_path} (nelem={nelem}, nreg={nreg}).")
+        print(f"_write_resistivity_block_struct: wrote {out_path} (fmt={fmt}, nelem={nelem}, nreg={nreg}).")
 
 
 def _save_resistivity_block_npz(struct: dict, *, npz_file: str | Path, out: bool = True) -> None:
@@ -1870,20 +2136,25 @@ def read_resistivity_block(block_path: str) -> Dict[str, np.ndarray]:
         region_rho_upper = np.empty(nreg, dtype=float)
         region_n = np.empty(nreg, dtype=float)
         region_flag = np.empty(nreg, dtype=int)
+        # v5 per-block anisotropy arrays (filled for all blocks; zero for ISO)
+        region_aniso_type = np.zeros(nreg, dtype=int)
+        region_rhoYY = np.empty(nreg, dtype=float)
+        region_rhoZZ = np.empty(nreg, dtype=float)
+        region_strike = np.zeros(nreg, dtype=float)
+        region_dip    = np.zeros(nreg, dtype=float)
+        region_slant  = np.zeros(nreg, dtype=float)
 
-        for _ in range(nreg):
-            line = f.readline()
+        # Detect format from first region line
+        first_region_line = f.readline()
+        if not first_region_line:
+            raise ValueError("Unexpected EOF before first region line (read_resistivity_block).")
+        fmt = _detect_block_format(first_region_line)
+        all_rlines = [first_region_line] + [f.readline() for _ in range(nreg - 1)]
+
+        for line in all_rlines:
             if not line:
                 raise ValueError("Unexpected EOF while reading region lines.")
-            parts = line.split()
-            if len(parts) < 6:
-                raise ValueError(f"Region line has too few columns: {line!r}")
-            ireg = int(parts[0])
-            rho = float(parts[1])
-            rho_min = float(parts[2])
-            rho_max = float(parts[3])
-            n = float(parts[4])
-            flag = int(parts[5])
+            ireg, rho, rho_min, rho_max, n, flag = _parse_region_line(line, fmt=fmt)
             if not (0 <= ireg < nreg):
                 raise ValueError(f"Region index {ireg} out of range 0..{nreg-1}.")
             region_rho[ireg] = rho
@@ -1891,10 +2162,22 @@ def read_resistivity_block(block_path: str) -> Dict[str, np.ndarray]:
             region_rho_upper[ireg] = rho_max
             region_n[ireg] = n
             region_flag[ireg] = flag
+            if fmt == "v5":
+                d = _parse_region_line_v5(line)
+                region_aniso_type[ireg] = d["aniso_type"]
+                region_rhoYY[ireg]      = d["rhoYY"]
+                region_rhoZZ[ireg]      = d["rhoZZ"]
+                region_strike[ireg]     = d["strike"]
+                region_dip[ireg]        = d["dip"]
+                region_slant[ireg]      = d["slant"]
+            else:
+                region_rhoYY[ireg] = rho
+                region_rhoZZ[ireg] = rho
 
-    return {
+    result = {
         "nelem": np.array(nelem, dtype=int),
         "nreg": np.array(nreg, dtype=int),
+        "fmt": fmt,
         "region_of_elem": region_of_elem,
         "region_rho": region_rho,
         "region_rho_lower": region_rho_lower,
@@ -1902,6 +2185,16 @@ def read_resistivity_block(block_path: str) -> Dict[str, np.ndarray]:
         "region_n": region_n,
         "region_flag": region_flag,
     }
+    if fmt == "v5":
+        result.update({
+            "region_aniso_type": region_aniso_type,
+            "region_rhoYY":      region_rhoYY,
+            "region_rhoZZ":      region_rhoZZ,
+            "region_strike":     region_strike,
+            "region_dip":        region_dip,
+            "region_slant":      region_slant,
+        })
+    return result
 
 
 def build_element_arrays(
@@ -3015,50 +3308,104 @@ def write_resistivity_block(
     region_rho_upper: np.ndarray,
     region_n: np.ndarray,
     region_flag: np.ndarray,
-    fmt: str = "{:.6g}",
+    float_fmt: str = "{:.6g}",
+    *,
+    block_fmt: str = "v4",
+    region_rhoYY: np.ndarray | None = None,
+    region_rhoZZ: np.ndarray | None = None,
+    region_aniso_type: np.ndarray | None = None,
+    region_strike: np.ndarray | None = None,
+    region_dip: np.ndarray | None = None,
+    region_slant: np.ndarray | None = None,
+    region_fix_flags: np.ndarray | None = None,
 ) -> None:
-    """
-    Write a FEMTIC resistivity_block_iterX.dat from region arrays.
+    """Write a FEMTIC resistivity_block_iterX.dat from region arrays.
+
+    Supports both **v4** (isotropic-only) and **v5** (anisotropic) formats.
 
     Parameters
     ----------
     out_path : str
-    nelem : int
-    nreg : int
+    nelem, nreg : int
     region_of_elem : ndarray, shape (nelem,)
     region_rho, region_rho_lower, region_rho_upper : ndarray, shape (nreg,)
+        For v5 these correspond to rhoXX, lo, hi.
     region_n : ndarray, shape (nreg,)
+        v4 only (weighting constant n). Ignored for v5.
     region_flag : ndarray, shape (nreg,)
-    fmt : str
-        Float format.
+        Fixed-block flag (0 = free, 1 = fixed).
+    float_fmt : str
+        Python format string for floats (v4 only).
+    block_fmt : ``"v4"`` or ``"v5"``
+        Output format.  When ``"v5"``, the keyword-only arrays below are used.
+    region_rhoYY, region_rhoZZ : ndarray, shape (nreg,), optional
+        v5 principal resistivities. Defaults to rho (isotropic) if not supplied.
+    region_aniso_type : ndarray of int, shape (nreg,), optional
+        0 = ISO, 1 = TI, 2 = GA. Defaults to 0 (all isotropic).
+    region_strike, region_dip, region_slant : ndarray, shape (nreg,), optional
+        Euler angles in degrees. Defaults to 0.0.
+    region_fix_flags : ndarray of int, shape (nreg, 6), optional
+        Per-parameter fix flags for v5:
+        columns → [fix_rhoXX, fix_rhoYY, fix_rhoZZ, fix_strike, fix_dip, fix_slant].
+        Defaults to all 0 (unfixed).
     """
-    region_of_elem = np.asarray(region_of_elem, dtype=int)
-    region_rho = np.asarray(region_rho, dtype=float)
+    region_of_elem   = np.asarray(region_of_elem, dtype=int)
+    region_rho       = np.asarray(region_rho, dtype=float)
     region_rho_lower = np.asarray(region_rho_lower, dtype=float)
     region_rho_upper = np.asarray(region_rho_upper, dtype=float)
-    region_n = np.asarray(region_n, dtype=float)
-    region_flag = np.asarray(region_flag, dtype=int)
+    region_n         = np.asarray(region_n, dtype=float)
+    region_flag      = np.asarray(region_flag, dtype=int)
 
     if region_of_elem.shape[0] != nelem:
         raise ValueError("region_of_elem length does not match nelem.")
-    if any(
-        arr.shape[0] != nreg
-        for arr in [region_rho, region_rho_lower, region_rho_upper, region_n, region_flag]
-    ):
-        raise ValueError("Region arrays must all have length nreg.")
+    for arr in [region_rho, region_rho_lower, region_rho_upper, region_n, region_flag]:
+        if arr.shape[0] != nreg:
+            raise ValueError("Region arrays must all have length nreg.")
 
     with open(out_path, "w") as f:
         f.write(f"{nelem:d} {nreg:d}\n")
         for ie in range(nelem):
             f.write(f"{ie:d} {int(region_of_elem[ie]):d}\n")
 
-        for ireg in range(nreg):
-            rho = fmt.format(region_rho[ireg])
-            rmin = fmt.format(region_rho_lower[ireg])
-            rmax = fmt.format(region_rho_upper[ireg])
-            nval = int(region_n[ireg])
-            flag = int(region_flag[ireg])
-            f.write(f"{ireg:d} {rho} {rmin} {rmax} {nval:d} {flag:d}\n")
+        if block_fmt == "v5":
+            _rhoYY  = np.asarray(region_rhoYY,  dtype=float) if region_rhoYY  is not None else region_rho.copy()
+            _rhoZZ  = np.asarray(region_rhoZZ,  dtype=float) if region_rhoZZ  is not None else region_rho.copy()
+            _atype  = np.asarray(region_aniso_type, dtype=int) if region_aniso_type is not None else np.zeros(nreg, dtype=int)
+            _strike = np.asarray(region_strike, dtype=float) if region_strike is not None else np.zeros(nreg)
+            _dip    = np.asarray(region_dip,    dtype=float) if region_dip    is not None else np.zeros(nreg)
+            _slant  = np.asarray(region_slant,  dtype=float) if region_slant  is not None else np.zeros(nreg)
+            _fix    = np.asarray(region_fix_flags, dtype=int) if region_fix_flags is not None else np.zeros((nreg, 6), dtype=int)
+            if _fix.ndim == 1:
+                _fix = _fix.reshape(nreg, 6)
+            for ireg in range(nreg):
+                d = dict(
+                    ireg=ireg,
+                    aniso_type=int(_atype[ireg]),
+                    rhoXX=float(region_rho[ireg]),
+                    rhoYY=float(_rhoYY[ireg]),
+                    rhoZZ=float(_rhoZZ[ireg]),
+                    strike=float(_strike[ireg]),
+                    dip=float(_dip[ireg]),
+                    slant=float(_slant[ireg]),
+                    rho_lo=float(region_rho_lower[ireg]),
+                    rho_hi=float(region_rho_upper[ireg]),
+                    flag=int(region_flag[ireg]),
+                    fix_rhoXX=int(_fix[ireg, 0]),
+                    fix_rhoYY=int(_fix[ireg, 1]),
+                    fix_rhoZZ=int(_fix[ireg, 2]),
+                    fix_strike=int(_fix[ireg, 3]),
+                    fix_dip=int(_fix[ireg, 4]),
+                    fix_slant=int(_fix[ireg, 5]),
+                )
+                f.write(_format_region_line_v5(d) + "\n")
+        else:
+            for ireg in range(nreg):
+                rho  = float_fmt.format(region_rho[ireg])
+                rmin = float_fmt.format(region_rho_lower[ireg])
+                rmax = float_fmt.format(region_rho_upper[ireg])
+                nval = int(region_n[ireg])
+                flag = int(region_flag[ireg])
+                f.write(f"{ireg:d} {rho} {rmin} {rmax} {nval:d} {flag:d}\n")
 
 
 def npz_to_femtic(
