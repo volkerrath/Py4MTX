@@ -235,7 +235,17 @@ Provenance:
                         slice-spec format.  Routing keys ``kind``, ``type``,
                         ``x0``, ``y0``, ``invert_x``, ``title`` are stripped
                         before forwarding to slicer functions.  Docstring
-                        updated accordingly."""
+                        updated accordingly.
+    2026-06-26  vrath / Claude Sonnet 4.6 (Anthropic)
+                        plot_model_slices: added ``tick_fontsize`` (default 7)
+                        and ``label_fontsize`` (default 8) parameters;
+                        replaced all hardcoded fontsize literals in tick
+                        labels, axis labels, panel titles, colourbar label,
+                        inline borehole columns, and suptitle.
+                        plot_borehole_logs: added ``tick_fontsize`` and
+                        ``label_fontsize`` parameters (both default ``None``
+                        → derived from ``legend_fontsize``); replaced
+                        hardcoded tick / xlabel / ylabel literals."""
 
 from __future__ import annotations
 
@@ -2049,6 +2059,8 @@ def plot_data_ensemble(
     figsize: Optional[Tuple[float, float]] = None,
     fig: Optional[Any] = None,
     axs: Optional[Any] = None,
+    tick_fontsize: int = 8,
+    label_fontsize: int = 9,
     out: bool = True,
 ) -> Tuple[Any, np.ndarray]:
     """Joint plot of original and perturbed MT data for a fixed list of samples.
@@ -2137,6 +2149,10 @@ def plot_data_ensemble(
     axs : array-like of Axes or None, optional
         Pre-allocated axes of shape ``(n_samples, n_panels)`` (or ravelled
         equivalent).  If ``None``, subplots are created automatically.
+    tick_fontsize : int, optional
+        Font size for axis tick labels.  Default ``8``.
+    label_fontsize : int, optional
+        Font size for panel titles and legends.  Default ``9``.
     out : bool, optional
         Print progress messages.
 
@@ -2420,7 +2436,7 @@ def plot_data_ensemble(
                 if l not in seen:
                     seen[l] = h
             if seen:
-                ax.legend(seen.values(), seen.keys(), fontsize=8)
+                ax.legend(seen.values(), seen.keys(), fontsize=tick_fontsize)
 
             # Axis limits -- applied post-hoc so plotters can't override them.
             if perlims is not None:
@@ -2431,9 +2447,9 @@ def plot_data_ensemble(
 
             # Column header on first row only.
             if row == 0:
-                ax.set_title(f"{w.capitalize()} -- sample {idx}", fontsize=9)
+                ax.set_title(f"{w.capitalize()} -- sample {idx}", fontsize=label_fontsize)
             else:
-                ax.set_title(f"Sample {idx}", fontsize=9)
+                ax.set_title(f"Sample {idx}", fontsize=label_fontsize)
 
         if out:
             print(f"  sample {idx} done ({len(_site_idx)} sites, "
@@ -2465,6 +2481,8 @@ def plot_model_ensemble(
     figsize: Optional[Tuple[float, float]] = None,
     fig: Optional[Any] = None,
     axs: Optional[Any] = None,
+    tick_fontsize: int = 8,
+    label_fontsize: int = 8,
     out: bool = True,
 ) -> Tuple[Any, np.ndarray]:
     """Joint plot of original and perturbed resistivity models.
@@ -2550,6 +2568,10 @@ def plot_model_ensemble(
         Pre-allocated axes of shape
         ``(2 * len(sample_indices), len(slices))``.
         If ``None``, subplots are created automatically.
+    tick_fontsize : int, optional
+        Font size for axis tick labels.  Default ``8``.
+    label_fontsize : int, optional
+        Font size for panel titles and row labels.  Default ``8``.
     out : bool, optional
         If ``True``, print progress messages.
 
@@ -2631,6 +2653,11 @@ def plot_model_ensemble(
             slc.pop("type", None)   # discard legacy key if both were present
         slc_kind = slc_kind.lower()
 
+        # Normalise reversed-direction aliases before dispatch.
+        if slc_kind in ("sn", "we"):
+            slc_kind = "ns" if slc_kind == "sn" else "ew"
+            slc["invert_x"] = not slc.get("invert_x", False)
+
         # Per-slice axis-limit overrides (consumed here, not forwarded to slicer).
         slc_xlim = slc.pop("xlim", xlim)
         slc_ylim = slc.pop("ylim", ylim)
@@ -2701,7 +2728,7 @@ def plot_model_ensemble(
             coll.set_clim(vmin, vmax)
 
         if title:
-            ax.set_title(title, fontsize=8)
+            ax.set_title(title, fontsize=label_fontsize)
 
     for block_row, idx in enumerate(sample_indices):
         pert_block = read_resistivity_block(ens_mod_files[idx])
@@ -2723,12 +2750,12 @@ def plot_model_ensemble(
             ax_orig = axs_arr[row_orig, col]
             _draw_slice(ax_orig, rho_orig, slc_spec, title=col_label)
             if col == 0:
-                ax_orig.set_ylabel(f"orig\n(sample {idx})", fontsize=8)
+                ax_orig.set_ylabel(f"orig\n(sample {idx})", fontsize=label_fontsize)
 
             ax_pert = axs_arr[row_pert, col]
             _draw_slice(ax_pert, rho_pert, slc_spec)
             if col == 0:
-                ax_pert.set_ylabel(f"pert {idx}", fontsize=8)
+                ax_pert.set_ylabel(f"pert {idx}", fontsize=label_fontsize)
 
         if out:
             print(f"  sample {idx} done")
@@ -3333,6 +3360,9 @@ def plot_model_slices(
     borehole_clim=None,
     borehole_shared: bool = True,
     borehole_resolve_xy=None,
+    tick_fontsize: int = 7,
+    label_fontsize: int = 8,
+    nrms_annotation: Optional[dict] = None,
     out: bool = True,
 ):
     """Produce a multi-panel figure of axis-parallel FEMTIC model slices.
@@ -3479,6 +3509,17 @@ def plot_model_slices(
     borehole_resolve_xy
         Optional ``(spec) -> (x_m, y_m)`` CRS converter.
         ``None`` = x/y already model-local floats.
+    tick_fontsize
+        Font size for axis tick labels (main panels and colourbar).
+        Default 7.
+    label_fontsize
+        Font size for axis labels, panel titles, colourbar label, and
+        suptitle.  Default 8.
+    nrms_annotation
+        Optional dict with keys ``nrms`` (float), ``alpha`` (float), and
+        ``panel`` (int or None).  When set, a text box reading
+        ``nRMS = <value>  (α = <alpha>)`` is placed in the lower-left
+        corner of the panel at index ``panel`` (default: 0).
     out
         Print progress messages.
     """
@@ -3851,6 +3892,8 @@ def plot_model_slices(
             _pw = []
             for spec in slices:
                 kind = spec.get("kind", "map")
+                if kind in ("sn", "we"):
+                    kind = "ns" if kind == "sn" else "ew"
                 _xl = spec.get("xlim", xlim)
                 _yl = spec.get("ylim", ylim)
                 _zl = spec.get("zlim", zlim)
@@ -3920,6 +3963,12 @@ def plot_model_slices(
         _zlim = spec.get("zlim", zlim)
         mappable = None
 
+        # Normalise reversed-direction aliases before dispatch.
+        if kind in ("sn", "we"):
+            kind = "ns" if kind == "sn" else "ew"
+            spec = dict(spec, kind=kind,
+                        invert_x=not spec.get("invert_x", False))
+
         if kind == "map":
             z0 = float(spec.get("z0", 0.0))
             if out:
@@ -3941,8 +3990,8 @@ def plot_model_slices(
                                          poly_alphas=_pa)
             if mesh_outline and polys_d:
                 _outline_convex_hull(ax, polys_d, mesh_outline_color)
-            ax.set_xlabel(f"x (easting){sfx}")
-            ax.set_ylabel(f"y (northing){sfx}")
+            ax.set_xlabel(f"x (easting){sfx}", fontsize=label_fontsize)
+            ax.set_ylabel(f"y (northing){sfx}", fontsize=label_fontsize)
             if _xlim is not None:
                 ax.set_xlim([(v + dE)*sc for v in _xlim])
             if _ylim is not None:
@@ -3992,8 +4041,8 @@ def plot_model_slices(
                                          ocean_color=ocean_color,
                                          air_color=air_color, ocean_value=ocean_value, invert_v=inv,
                                          poly_alphas=_pa)
-            ax.set_xlabel(f"y (northing){sfx}")
-            ax.set_ylabel("depth (km)" if depth_km else "depth (m)")
+            ax.set_xlabel(f"y (northing){sfx}", fontsize=label_fontsize)
+            ax.set_ylabel("depth (km)" if depth_km else "depth (m)", fontsize=label_fontsize)
             if _ylim is not None:
                 ax.set_xlim([(v + dN)*sc for v in _ylim])
             if _zlim is not None:
@@ -4006,6 +4055,13 @@ def plot_model_slices(
                 ax.set_aspect("equal", adjustable="box")
             if title is None:
                 title = f"N-S  easting = {(x0 + utm_origin_e)/1000:.1f} km"
+            _lbl_l, _lbl_r = ("N", "S") if _invert_x else ("S", "N")
+            ax.text(0.02, 0.98, _lbl_l, transform=ax.transAxes,
+                    ha="left", va="top", fontsize=label_fontsize, fontweight="bold",
+                    clip_on=False, zorder=10)
+            ax.text(0.98, 0.98, _lbl_r, transform=ax.transAxes,
+                    ha="right", va="top", fontsize=label_fontsize, fontweight="bold",
+                    clip_on=False, zorder=10)
             if sites_in_slices:
                 for sn, sx_m, sy_m, _elev in _site_xys:
                     if projection_dist is not None and abs(sx_m - x0) > projection_dist:
@@ -4030,8 +4086,8 @@ def plot_model_slices(
                                          ocean_color=ocean_color,
                                          air_color=air_color, ocean_value=ocean_value, invert_v=inv,
                                          poly_alphas=_pa)
-            ax.set_xlabel(f"x (easting){sfx}")
-            ax.set_ylabel("depth (km)" if depth_km else "depth (m)")
+            ax.set_xlabel(f"x (easting){sfx}", fontsize=label_fontsize)
+            ax.set_ylabel("depth (km)" if depth_km else "depth (m)", fontsize=label_fontsize)
             if _xlim is not None:
                 ax.set_xlim([(v + dE)*sc for v in _xlim])
             if _zlim is not None:
@@ -4044,6 +4100,13 @@ def plot_model_slices(
                 ax.set_aspect("equal", adjustable="box")
             if title is None:
                 title = f"E-W  northing = {(y0 + utm_origin_n)/1000:.1f} km"
+            _lbl_l, _lbl_r = ("E", "W") if _invert_x else ("W", "E")
+            ax.text(0.02, 0.98, _lbl_l, transform=ax.transAxes,
+                    ha="left", va="top", fontsize=label_fontsize, fontweight="bold",
+                    clip_on=False, zorder=10)
+            ax.text(0.98, 0.98, _lbl_r, transform=ax.transAxes,
+                    ha="right", va="top", fontsize=label_fontsize, fontweight="bold",
+                    clip_on=False, zorder=10)
             if sites_in_slices:
                 for sn, sx_m, sy_m, _elev in _site_xys:
                     if projection_dist is not None and abs(sy_m - y0) > projection_dist:
@@ -4069,8 +4132,8 @@ def plot_model_slices(
                                          ocean_color=ocean_color,
                                          air_color=air_color, ocean_value=ocean_value, invert_v=True,
                                          poly_alphas=_pa)
-            ax.set_xlabel("along-strike (m)")
-            ax.set_ylabel("down-dip (km)" if depth_km else "down-dip (m)")
+            ax.set_xlabel("along-strike (m)", fontsize=label_fontsize)
+            ax.set_ylabel("down-dip (km)" if depth_km else "down-dip (m)", fontsize=label_fontsize)
             if _xlim is not None:
                 ax.set_xlim(_xlim)
             if _ylim is not None:
@@ -4096,11 +4159,11 @@ def plot_model_slices(
 
         if mappable is not None:
             cb = fig.colorbar(mappable, ax=ax, fraction=0.046, pad=0.04)
-            cb.set_label("log10(rho / Ohm*m)", fontsize=8)
-            cb.ax.tick_params(labelsize=7)
+            cb.set_label("log10(rho / Ohm*m)", fontsize=label_fontsize)
+            cb.ax.tick_params(labelsize=tick_fontsize)
 
-        ax.set_title(title, fontsize=9)
-        ax.tick_params(labelsize=7)
+        ax.set_title(title, fontsize=label_fontsize + 1)
+        ax.tick_params(labelsize=tick_fontsize)
         _show_legend = (
             (_site_xys and (
                 (sites_in_maps  and kind == "map") or
@@ -4110,7 +4173,27 @@ def plot_model_slices(
              any(m.get("name") for m in map_markers))
         )
         if _show_legend:
-            ax.legend(fontsize=7, loc="lower right")
+            ax.legend(fontsize=tick_fontsize, loc="lower right")
+
+    # -- nRMS annotation -------------------------------------------------------
+    if nrms_annotation is not None:
+        _ann_panel = nrms_annotation.get("panel") or 0
+        _ann_panel = min(_ann_panel, len(axes) - 1)
+        _ann_ax    = axes[_ann_panel]
+        _ann_nrms  = nrms_annotation["nrms"]
+        _ann_alpha = nrms_annotation.get("alpha")
+        _ann_txt   = (f"nRMS = {_ann_nrms:.4f}\n\u03b1 = {_ann_alpha:.4g}"
+                      if _ann_alpha is not None
+                      else f"nRMS = {_ann_nrms:.4f}")
+        _ann_ax.text(
+            0.02, 0.03, _ann_txt,
+            transform=_ann_ax.transAxes,
+            ha="left", va="bottom",
+            fontsize=label_fontsize,
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="white",
+                      edgecolor="0.6", alpha=0.85),
+            clip_on=False, zorder=10,
+        )
 
     # -- render borehole columns -----------------------------------------------
     if _bh_logs and _bh_axes:
@@ -4131,15 +4214,15 @@ def plot_model_slices(
                 _lbl = f"{_bl['name']}\n{_bl['pos_str']}"
                 _bh_ax.plot(_rho_v, _depth_plot, label=_lbl, **_bl["trace_style"])
             _bh_ax.set_xscale("log")
-            _bh_ax.set_xlabel("resistivity\n(Ohm·m)", fontsize=7)
+            _bh_ax.set_xlabel("resistivity\n(Ohm·m)", fontsize=label_fontsize)
             _bh_ax.set_ylabel(
-                "depth (km)" if depth_km else "depth (m)", fontsize=7)
+                "depth (km)" if depth_km else "depth (m)", fontsize=label_fontsize)
             _bh_ax.invert_yaxis()
             if borehole_clim is not None:
                 _bh_ax.set_xlim(borehole_clim)
-            _bh_ax.tick_params(labelsize=6)
-            _bh_ax.legend(fontsize=6, loc="lower right")
-            _bh_ax.set_title("Boreholes", fontsize=8)
+            _bh_ax.tick_params(labelsize=tick_fontsize)
+            _bh_ax.legend(fontsize=tick_fontsize, loc="lower right")
+            _bh_ax.set_title("Boreholes", fontsize=label_fontsize + 1)
             _bh_ax.grid(True, which="both", axis="x", lw=0.3, alpha=0.5)
             _bh_ax.grid(True, which="major", axis="y", lw=0.3, alpha=0.5)
             if _curtain_ax is not None:
@@ -4152,15 +4235,15 @@ def plot_model_slices(
                                   _bl["rho"], np.nan)
                 _bh_ax.plot(_rho_v, _depth_plot, **_bl["trace_style"])
                 _bh_ax.set_xscale("log")
-                _bh_ax.set_xlabel("resistivity\n(Ohm·m)", fontsize=7)
+                _bh_ax.set_xlabel("resistivity\n(Ohm·m)", fontsize=label_fontsize)
                 if _bi == 0:
                     _bh_ax.set_ylabel(
-                        "depth (km)" if depth_km else "depth (m)", fontsize=7)
+                        "depth (km)" if depth_km else "depth (m)", fontsize=label_fontsize)
                 _bh_ax.invert_yaxis()
                 if borehole_clim is not None:
                     _bh_ax.set_xlim(borehole_clim)
-                _bh_ax.tick_params(labelsize=6)
-                _bh_ax.set_title(f"{_bl['name']}\n{_bl['pos_str']}", fontsize=7)
+                _bh_ax.tick_params(labelsize=tick_fontsize)
+                _bh_ax.set_title(f"{_bl['name']}\n{_bl['pos_str']}", fontsize=label_fontsize)
                 _bh_ax.grid(True, which="both", axis="x", lw=0.3, alpha=0.5)
                 _bh_ax.grid(True, which="major", axis="y", lw=0.3, alpha=0.5)
                 if _curtain_ax is not None and _bi == 0:
@@ -4168,7 +4251,7 @@ def plot_model_slices(
                 elif _bi > 0:
                     _bh_axes[0].get_shared_y_axes().join(_bh_axes[0], _bh_ax)
 
-    fig.suptitle(f"Model: {os.path.basename(str(model_file))}", fontsize=10)
+    fig.suptitle(f"Model: {os.path.basename(str(model_file))}", fontsize=label_fontsize + 2)
     fig.tight_layout()
     if plot_file is not None:
         fig.savefig(plot_file, dpi=dpi, bbox_inches="tight")
@@ -4198,6 +4281,8 @@ def plot_borehole_logs(
     shared: bool = True,
     markers: Optional[list] = None,
     legend_fontsize: int = 9,
+    tick_fontsize: Optional[int] = None,
+    label_fontsize: Optional[int] = None,
     npz_file=None,
     plot_file=None,
     dpi: int = 200,
@@ -4319,6 +4404,12 @@ def plot_borehole_logs(
     legend_fontsize
         Font size for the borehole legend (shared mode) and panel titles
         (per-panel mode).  Default ``9``.
+    tick_fontsize
+        Font size for axis tick labels.  ``None`` → ``legend_fontsize - 2``
+        (clamped to at least 6).
+    label_fontsize
+        Font size for axis labels and standalone titles.  ``None`` →
+        ``legend_fontsize``.
     npz_file
         Path for the NPZ data export.
 
@@ -4348,6 +4439,9 @@ def plot_borehole_logs(
     except ImportError:
         print("  plot_borehole_logs: Matplotlib not available -- skipping.")
         return
+
+    _tick_fs  = tick_fontsize  if tick_fontsize  is not None else max(legend_fontsize - 2, 6)
+    _label_fs = label_fontsize if label_fontsize is not None else legend_fontsize
 
     if out:
         print(f"  boreholes: reading model {os.path.basename(str(model_file))}")
@@ -4460,15 +4554,15 @@ def plot_borehole_logs(
         ax.plot(rho_plot_vals, depth_km, label=legend_label,
                 **log["trace_style"])
         ax.set_xscale("log")
-        ax.set_xlabel("resistivity (Ohm·m)")
-        ax.set_ylabel("depth (km)")
+        ax.set_xlabel("resistivity (Ohm·m)", fontsize=_label_fs)
+        ax.set_ylabel("depth (km)", fontsize=_label_fs)
         ax.invert_yaxis()
         if clim is not None:
             ax.set_xlim(clim)
         if not shared:
             ax.set_title(f"{log['name']}\n{log['pos_str']}",
                          fontsize=legend_fontsize)
-            ax.tick_params(labelsize=max(legend_fontsize - 2, 6))
+            ax.tick_params(labelsize=_tick_fs)
         name_to_ax[log["name"]] = ax
 
     if shared:
@@ -4476,6 +4570,7 @@ def plot_borehole_logs(
         ax_arr[0].set_title("Borehole resistivity logs",
                             fontsize=legend_fontsize + 1)
     for ax in set(ax_arr):
+        ax.tick_params(labelsize=_tick_fs)
         ax.grid(True, which="both", axis="x", lw=0.4, alpha=0.5)
         ax.grid(True, which="major", axis="y", lw=0.4, alpha=0.5)
 
@@ -4543,7 +4638,7 @@ def plot_borehole_logs(
                     **annotate_kw,
                 )
 
-    fig.suptitle(f"Model: {os.path.basename(str(model_file))}", fontsize=10)
+    fig.suptitle(f"Model: {os.path.basename(str(model_file))}", fontsize=legend_fontsize + 1)
     fig.tight_layout()
     if plot_file is not None:
         fig.savefig(plot_file, dpi=dpi, bbox_inches="tight")
@@ -4575,6 +4670,8 @@ def plot_ensemble_slices(
     plot_file: Optional[Union[str, Path]] = None,
     per_member_file: bool = False,
     dpi: int = 200,
+    tick_fontsize: int = 6,
+    label_fontsize: int = 7,
     out: bool = True,
 ) -> None:
     """Produce a joint ensemble figure using exact tetrahedron-plane intersection.
@@ -4627,6 +4724,11 @@ def plot_ensemble_slices(
         ``_memberN`` before the extension.
     dpi
         Saved-figure DPI.
+    tick_fontsize
+        Font size for axis tick labels and colourbar ticks.  Default ``6``.
+    label_fontsize
+        Font size for axis labels, panel titles, row labels, colourbar labels,
+        and suptitle.  Default ``7``.
     out
         Print progress messages.
 
@@ -4757,11 +4859,11 @@ def plot_ensemble_slices(
         if invert_v:
             ax.invert_yaxis()
         if show_ylabel:
-            ax.set_ylabel(row_label, fontsize=8, labelpad=4)
+            ax.set_ylabel(row_label, fontsize=label_fontsize, labelpad=4)
         if mappable is not None:
             cb = fig_ref.colorbar(mappable, ax=ax, fraction=0.046, pad=0.04)
-            cb.set_label(cb_label, fontsize=7)
-            cb.ax.tick_params(labelsize=6)
+            cb.set_label(cb_label, fontsize=label_fontsize)
+            cb.ax.tick_params(labelsize=tick_fontsize)
 
     # -- load mesh -------------------------------------------------------------
     if out:
@@ -4780,6 +4882,12 @@ def plot_ensemble_slices(
         _ylim      = spec.get("ylim", ylim)
         _zlim      = spec.get("zlim", zlim)
         title_tmpl = spec.get("title", None)
+
+        # Normalise reversed-direction aliases before dispatch.
+        if kind in ("sn", "we"):
+            kind = "ns" if kind == "sn" else "ew"
+            spec = dict(spec, kind=kind,
+                        invert_x=not spec.get("invert_x", False))
 
         if kind == "map":
             z0     = float(spec.get("z0", 0.0))
@@ -4909,8 +5017,8 @@ def plot_ensemble_slices(
                 row_label=row_label, col=col,
                 cb_label=_cb_label, show_ylabel=(col == 0),
             )
-            ax.set_xlabel(sg["xlabel"], fontsize=7)
-            ax.tick_params(labelsize=6)
+            ax.set_xlabel(sg["xlabel"], fontsize=label_fontsize)
+            ax.tick_params(labelsize=tick_fontsize)
 
             _xl = sg["xlim"]; _yl = sg["ylim"]; _zl = sg["zlim"]
             if _xl is not None: ax.set_xlim(_xl)
@@ -4930,7 +5038,7 @@ def plot_ensemble_slices(
     )
     for col, sg in enumerate(slice_geom):
         if sg is not None:
-            axes[0, col].set_title(sg["title"], fontsize=9)
+            axes[0, col].set_title(sg["title"], fontsize=label_fontsize + 2)
 
     for row, (mf, lbl, rho_plot) in enumerate(zip(member_files, labels, rho_plots)):
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -4947,7 +5055,7 @@ def plot_ensemble_slices(
         _render_row(fig, axes[row], arr,
                     stat_name.capitalize(), use_std=(stat_name == "std"))
 
-    fig.suptitle(f"Ensemble  ({n_members} members)", fontsize=11)
+    fig.suptitle(f"Ensemble  ({n_members} members)", fontsize=label_fontsize + 4)
     fig.tight_layout()
 
     if plot_file is not None:
@@ -4968,12 +5076,12 @@ def plot_ensemble_slices(
             )
             for col, sg in enumerate(slice_geom):
                 if sg is not None:
-                    axes_m[0, col].set_title(sg["title"], fontsize=9)
+                    axes_m[0, col].set_title(sg["title"], fontsize=label_fontsize + 2)
             with np.errstate(divide="ignore", invalid="ignore"):
                 log_elem = np.where(rho_plot > 0, np.log10(rho_plot), np.nan)
             _render_row(fig_m, axes_m[0], log_elem, lbl)
             fig_m.suptitle(
-                f"Ensemble member {i}  --  {Path(mf).name}", fontsize=10
+                f"Ensemble member {i}  --  {Path(mf).name}", fontsize=label_fontsize + 3
             )
             fig_m.tight_layout()
             per_path = f"{_stem}_member{i}{_ext}"

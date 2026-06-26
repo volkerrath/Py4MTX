@@ -217,6 +217,10 @@ BOREHOLE_MARKERS = [
 #: Font size for the borehole legend (shared mode) and panel titles
 #: (per-panel mode).  Tick labels are set to legend_fontsize - 2.
 LEGEND_FONTSIZE = 12
+#: Font size for axis tick labels.  None → LEGEND_FONTSIZE - 2 (≥ 6).
+TICK_FONTSIZE = None
+#: Font size for axis labels (xlabel / ylabel).  None → LEGEND_FONTSIZE.
+LABEL_FONTSIZE = None
 
 
 #: Export sampled depth / rho arrays to an NPZ file.
@@ -303,6 +307,8 @@ else:
         shared         = BOREHOLE_SHARED,
         markers        = BOREHOLE_MARKERS or None,
         legend_fontsize= LEGEND_FONTSIZE,
+        tick_fontsize  = TICK_FONTSIZE,
+        label_fontsize = LABEL_FONTSIZE,
         npz_file       = (None   if BOREHOLE_NPZ is True
                           else (False if BOREHOLE_NPZ is False
                                 else BOREHOLE_NPZ)),

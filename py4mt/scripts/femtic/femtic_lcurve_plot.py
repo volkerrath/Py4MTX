@@ -11,6 +11,9 @@ Provenance:
     2026-03-03 Claude  Renamed user-set parameters to UPPERCASE.
     2026-06-17 Claude  Added PLOT_LOG_X / PLOT_LOG_Y for independent log10 axes.
     2026-06-18 Claude  Added PLOT_XLIM / PLOT_YLIM; offset annotations from markers.
+    2026-06-26 Claude  DISTORTION defaults to None; auto-detected from cnv column
+                       count (10 cols → distortion, 8 cols → no distortion).
+                       Explicit True/False still overrides.
 """
 
 import os
@@ -43,32 +46,23 @@ print(titstrng + "\n\n")
 # =============================================================================
 #  Configuration
 # =============================================================================
-WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_35/corr/"
-PLOT_NAME = WORK_DIR + "Ubinas_Ini35_corr"
+WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_10_LC/"
+PLOT_NAME = WORK_DIR + "Ubinas_Ini10"
 PLOT_WHAT = "nrms"  # 'nrms' or 'misfit'
-PLOT_TITLE = r"Ubinas | initial = 35 $\Omega \cdot m$ | distcorr"
-DISTORTION = True
-# WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_35/no_corr/"
-# PLOT_NAME = WORK_DIR + "Ubinas_Ini35_nocorr"
-# PLOT_WHAT = "nrms"  # 'nrms' or 'misfit'
-# PLOT_TITLE = r"Ubinas | initial = 35 $\Omega \cdot m$ | no distcorr"
-# DISTORTION = False
+PLOT_TITLE = r"Ubinas | ini = 10 $\Omega \cdot m$ " #"| distcorr"
+DISTORTION = None   # None → auto-detect from cnv column count (10 → distortion, 8 → no distortion)
 
-# WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_30/no_corr/"
-# PLOT_NAME = WORK_DIR + "Ubinas_Ini30"
-# PLOT_WHAT = "nrms"  # 'nrms' or 'misfit'
-# PLOT_TITLE = r"Ubinas - initial = 30 $\Omega \cdot m$"
-
-
+FONTSIZE = 10
 #: Use log10 scale on the x-axis (misfit / nRMS).
 PLOT_LOG_X = False
 #: Use log10 scale on the y-axis (roughness).
 PLOT_LOG_Y = False
 
-#: x-axis limits [xmin, xmax]; set to None for matplotlib auto-scaling.
-PLOT_XLIM = [0.5, 6.] # None   # e.g. [0.9, 5.0]
-#: y-axis limits [ymin, ymax]; set to None for matplotlib auto-scaling.
-PLOT_YLIM = [0., 80000.] # None   # e.g. [0.0, 1e6]
+#: x-axis limits [min, max]; set to None for matplotlib auto-scaling.
+PLOT_XLIM = [0., 80000.] # None   # e.g. [0.0, 1e6]
+#: y-axis limits [min, max]; set to None for matplotlib auto-scaling.
+PLOT_YLIM = [0.5, 6.] # None   # e.g. [0.9, 5.0]
+
 
 SEARCH_STRNG = "*L2"
 dir_list = utl.get_filelist(
@@ -89,7 +83,11 @@ for directory in dir_list:
 
     line = content[-1].split()
     print(line)
-    if DISTORTION:
+    # Auto-detect distortion from column count; override with DISTORTION if set.
+    # 8 cols (no distortion): alpha=2, rough=4, misfit=5, nRMS=6, obj=7
+    # 10 cols (distortion):   alpha=2, rough=5, dist=6,   misfit=7, nRMS=8, obj=9
+    _has_dist = (DISTORTION if DISTORTION is not None else len(line) == 10)
+    if _has_dist:
         alpha = float(line[2])
         rough = float(line[5])
         misft = float(line[7])
@@ -120,29 +118,43 @@ print("misfit", m)
 print("nrmse", n)
 print("objfc", o)
 
+lcurve = dict(alpha=a, rough=r, misfit=m, nrmse=n, objfc=o) 
+np.savez_compressed(WORK_DIR + "LC_dat.npz", **lcurve)
+
 # =============================================================================
 #  Plot L-curve
 # =============================================================================
+
+
+xformula = r"$\mathrm{roughness}$"
+#" \quad \Vert\mathbf{C}_m^{-1/2} \mathbf{m}\Vert_2$"
+
+if "nrms" in PLOT_WHAT.lower():
+    ydata = n
+    yformula = r"$\mathrm{nRMS}$"
+        #"\quad\left(\frac{1}{N}\sum_{i=1,N}\left[\mathbf{C}_d^{-1/2}\left(d_i^{\mathrm{o}}-d_i^{\mathrm{c}}\right)\right]^2\right)^{1/2}$"
+else:
+    ydata = m
+    yformula = r"$\mathrm{misfit}$"
+        #" \quad \Vert\mathbf{C}_d^{-1/2} (\mathbf{d}_{obs}-\mathbf{d}_{calc})\Vert_2$"
+
+
+
+
 plot_kwargs = dict(
     color="green", marker="o", linestyle="dashed",
     linewidth=1, markersize=7,
     markeredgecolor="red", markerfacecolor="white",
 )
 
-yformula = r"$\mathrm{roughness}=\Vert\mathbf{C}_m^{-1/2} \mathbf{m}\Vert_2$"
 
-fig, ax = plt.subplots()
+cm = 1/2.54  # cm -> inch
+fig, ax = plt.subplots(figsize=(8.5*cm, 8.5*cm))
 
-if "nrms" in PLOT_WHAT.lower():
-    xdata = n
-    xformula = \
-        r"$\mathrm{nRMS}=\sqrt{\frac{1}{N}\sum_{i=1}^{N}\left[\mathbf{C}_d^{-1/2}\left(d_i^{\mathrm{obs}}-d_i^{\mathrm{pred}}\right)\right]^2}$"
-else:
-    xdata = m
-    xformula = \
-        r"$\mathrm{nRMS}=\Vert\mathbf{C}_d^{-1/2} (\mathbf{d}_{obs}-\mathbf{d}_{calc})\Vert_2$"
+# fig, ax = plt.subplots()
 
-plt.plot(xdata, r, **plot_kwargs)
+
+plt.plot(r, ydata, **plot_kwargs)
 
 if PLOT_LOG_X:
     ax.set_xscale("log")
@@ -156,19 +168,23 @@ if PLOT_YLIM is not None:
 
 ann_offset = (plot_kwargs["markersize"] -1, plot_kwargs["markersize"] -1)
 for k in np.arange(len(lc_sorted)):
-    alph = round(a[k], -int(np.floor(np.log10(abs(a[k])))))
+    alph = np.round(a[k], 1)
     ax.annotate(
-        str(alph), xy=(xdata[k], r[k]),
+        str(alph), xy=(r[k], ydata[k]),
         xytext=ann_offset, textcoords="offset points",
-        fontsize=10,
+        fontsize=FONTSIZE,
     )
 
-plt.title(PLOT_TITLE)
-plt.xlabel(xformula, fontsize=10)
-plt.ylabel(yformula, fontsize=10)
+plt.title(PLOT_TITLE,fontsize=FONTSIZE+1 )
+plt.xticks(fontsize=FONTSIZE-1)
+plt.yticks(fontsize=FONTSIZE-1)
+plt.xlabel(xformula, fontsize=FONTSIZE)
+plt.ylabel(yformula, fontsize=FONTSIZE)
 plt.grid("on")
 plt.tight_layout()
 
 plt.savefig(PLOT_NAME + ".pdf")
-plt.savefig(PLOT_NAME + ".png")
-print(f"Saved {PLOT_NAME}.pdf and {PLOT_NAME}.png")
+plt.savefig(PLOT_NAME + ".svg")
+plt.savefig(PLOT_NAME + ".jpg", dpi=600., transparent=True)
+
+print(f"Saved {PLOT_NAME}.pdf and {PLOT_NAME}.jpg")

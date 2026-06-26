@@ -132,6 +132,8 @@ BOREHOLE_SITES = [
 | `BOREHOLE_SHARED` | `True` | `True` = all boreholes on one shared axes; `False` = one panel per borehole |
 | `BOREHOLE_MARKERS` | `[]` | List of free-annotation dicts (see below) |
 | `LEGEND_FONTSIZE` | `9` | Legend / panel-title font size; tick labels = `LEGEND_FONTSIZE - 2` |
+| `TICK_FONTSIZE` | `None` | Tick-label font size; `None` → `LEGEND_FONTSIZE - 2` (≥ 6) |
+| `LABEL_FONTSIZE` | `None` | Axis-label font size; `None` → `LEGEND_FONTSIZE` |
 | `BOREHOLE_NPZ` | `True` | NPZ export: `True` = auto path (same stem as `BOREHOLE_FILE`, `.npz`); `False` = skip; explicit path = save there |
 | `PLOT_DPI` | `600` | Saved-figure DPI |
 
@@ -223,3 +225,4 @@ for bh in hdr["boreholes"]:
 | 2026-06-03 | Claude Sonnet 4.6 | Carried into `femtic_mod_plot_slice.py` after script split from `femtic_mod_plot.py`. `BOREHOLE_XLIM` in Ω·m; `z_top="surface"`; lat/lon legend; per-trace line-style keys; `BOREHOLE_NPZ` |
 | 2026-06-04 | vrath / Claude Sonnet 4.6 | **Split** from `femtic_mod_plot_slice.py` into this dedicated script. `PLOT_BOREHOLE` flag removed (script is the flag). `BOREHOLE_IN_SLICE` removed (handled in `femtic_mod_plot_slice.py`). UTM origin preamble retained so script runs independently |
 | 2026-06-04 | vrath / Claude Sonnet 4.6 | Added `BOREHOLE_MARKERS` (free arrow + text annotations) and `LEGEND_FONTSIZE`; forwarded to `fviz.plot_borehole_logs` |
+| 2026-06-26 | vrath / Claude Sonnet 4.6 | Added `TICK_FONTSIZE` and `LABEL_FONTSIZE` (both default `None` → derived from `LEGEND_FONTSIZE`); forwarded to `fviz.plot_borehole_logs` as `tick_fontsize` / `label_fontsize`. |

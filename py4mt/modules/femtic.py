@@ -5632,6 +5632,13 @@ def resolve_slice_positions(slices: list,
         s    = dict(spec)
         kind = s.get("kind", "map")
 
+        # Normalise reversed-direction aliases: "sn" → "ns", "we" → "ew".
+        # Both set invert_x=True (unless the user already set it explicitly).
+        if kind in ("sn", "we"):
+            kind = "ns" if kind == "sn" else "ew"
+            s["kind"]     = kind
+            s["invert_x"] = not s.get("invert_x", False)
+
         # ----------------------------------------------------------------
         # kind = "profile" — two-point vertical fence  →  plane, dip=90
         # ----------------------------------------------------------------

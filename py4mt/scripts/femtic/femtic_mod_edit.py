@@ -168,7 +168,7 @@ print(titstrng + "\n\n")
 # Paths
 # ---------------------------------------------------------------------------
 # WORK_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/misti/ensemble/templates/"
-WORK_DIR = r"/home/vrath/000/1_L2/"
+WORK_DIR = r"/home/vrath/work/MT_Data/Ubinas/ubinas_10_LC/corr/1_L2/"
 #: Template / source resistivity block (also used as format template by
 #: insert_model to preserve header, bounds and flag columns).
 # MODEL_IN  = WORK_DIR + "resistivity_block_iter0.dat"
@@ -178,7 +178,7 @@ MESH_FILE = WORK_DIR + "mesh.dat"
 
 #: Output file.  Set to MODEL_IN to overwrite in-place (be careful!).
 # MODEL_OUT = WORK_DIR + "reference_i15_smooth3000.dat"
-MODEL_OUT = WORK_DIR + "resistivity_block_iter0_35.dat"
+MODEL_OUT = WORK_DIR + "resistivity_block_iter0_10.dat"
 # ---------------------------------------------------------------------------
 # Ocean / fixed-region handling
 # ---------------------------------------------------------------------------
@@ -206,7 +206,7 @@ if OPERATION != "null":
 print(MODEL_OUT)
 
 # Parameters used by specific operations (ignored when not applicable):
-OP_FILL_VALUE   = 1.5440680443502757   # log10(100 Ω·m) — used by "fill"
+OP_FILL_VALUE   = 1.   # log10(100 Ω·m) — used by "fill"
 OP_CLIP_MIN     = 0.0    # log10(1 Ω·m)   — used by "clip"
 OP_CLIP_MAX     = 4.0    # log10(10 kΩ·m) — used by "clip"
 OP_SHIFT_VALUE  = 0.5    # added to every log10(ρ) — used by "shift"

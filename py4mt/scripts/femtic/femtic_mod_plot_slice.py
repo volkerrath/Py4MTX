@@ -182,10 +182,25 @@ print(titstrng + "\n\n")
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-WORK_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/misti/PrepRun8/"
+# WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_10_LC/1_L2/"
+# #: Resistivity block to display (any iteration).
+# MODEL_FILE = WORK_DIR + "resistivity_block_iter21.dat"
 
+# WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_10_LC/07_L2/"
+# #: Resistivity block to display (any iteration).
+# MODEL_FILE = WORK_DIR + "resistivity_block_iter15.dat"
+
+# WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_10_LC/05_L2/"
+# #: Resistivity block to display (any iteration).
+# MODEL_FILE = WORK_DIR + "resistivity_block_iter26.dat"
+
+WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_10_LC/105_L2/"
 #: Resistivity block to display (any iteration).
-MODEL_FILE = WORK_DIR + "resistivity_block_iter15.dat"
+MODEL_FILE = WORK_DIR + "resistivity_block_iter13.dat"
+
+# WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_10_LC/2_L2/"
+# #: Resistivity block to display (any iteration).
+# MODEL_FILE = WORK_DIR + "resistivity_block_iter20.dat"
 
 #: Mesh file — always required for plotting.
 MESH_FILE = WORK_DIR + "mesh.dat"
@@ -253,9 +268,9 @@ SITE_NAMES = None   # e.g. ["MT01", "MT05", "MT12"]  or None = all sites
 SITE_NUMBER = [5, 6, 7]
 
 #: Show site markers on horizontal map panels.
-PLOT_SITES_MAPS = True
+PLOT_SITES_MAPS = False
 #: Show site markers on vertical curtain (ns/ew) and plane panels.
-PLOT_SITES_SLICES = True
+PLOT_SITES_SLICES = False
 
 #: Maximum distance [m] from a vertical slice plane for a site to be plotted
 #: on that panel.  None = plot all sites on every panel regardless of distance.
@@ -281,45 +296,63 @@ SITE_MARKER_SLICES = dict(marker="v", color="black", ms=4, zorder=10,
 #:   "name"    : label string (shown in legend); None = no legend entry
 #: Any additional Matplotlib plot kwargs (mew, mfc, zorder, …) are accepted.
 
-## Ubinas
-# MAP_MARKERS = [
-#     dict(latlon=[-16.3169, -70.9673], marker="x", color="red", ms=8,
-#          name="test point, 4457m"),
-#     dict(latlon=[-16.3450, -70.8972], marker="*", color="red", ms=8,
-#          name="ubinas crater"),
-#     dict(latlon=[-16.363436, -70.868025], marker="+", color="blue", ms=8,
-#          name="mesh origin, borehole1"),
-#     dict(latlon=[-16.351, -70.9016], marker="^", color="magenta", ms=6,
-#          name="max elev"),
-# ]
-
-## Misti
+# Ubinas
 MAP_MARKERS = [
-    dict(latlon=[-16.2991, -71.4056], marker="*", color="red", ms=12,
-         name="misti crater"),
-    dict(latlon=[-16.248170, -71.506431], marker="+", color="blue", ms=12,
-         name="mesh origin, borehole1"),
+    # dict(latlon=[-16.3169, -70.9673], marker="x", color="red", ms=8,
+    #      name="test point, 4457m"),
+    dict(latlon=[-16.3450, -70.8972], marker="*", color="red", ms=8,
+         name="ubinas crater"),
+    # dict(latlon=[-16.363436, -70.868025], marker="+", color="blue", ms=8,
+    #      name="mesh origin, borehole1"),
     # dict(latlon=[-16.351, -70.9016], marker="^", color="magenta", ms=6,
     #      name="max elev"),
 ]
+
+## Misti
+# MAP_MARKERS = [
+#     dict(latlon=[-16.2991, -71.4056], marker="*", color="red", ms=12,
+#          name="misti crater"),
+#     dict(latlon=[-16.248170, -71.506431], marker="+", color="blue", ms=12,
+#          name="mesh origin, borehole1"),
+#     # dict(latlon=[-16.351, -70.9016], marker="^", color="magenta", ms=6,
+#     #      name="max elev"),
+# ]
 
 # ---------------------------------------------------------------------------
 # Plotting — requires femtic_viz and Matplotlib
 # ---------------------------------------------------------------------------
 #: Output file path — None → interactive show().
-PLOT_FILE = WORK_DIR + "resistivity_block_iter15.pdf"
+# PLOT_FILE = WORK_DIR + "resistivity_block_iter15.pdf"
+PLOT_FILE = MODEL_FILE.replace(".dat", ".pdf")
 #: Figure DPI for saved file.
 PLOT_DPI = 600
 #: Matplotlib colormap name.
 PLOT_CMAP = "turbo_r"
 #: Colour limits [log10(ρ_min), log10(ρ_max)] — None = auto.
-PLOT_CLIM = [0.0, 3.0]      # log10(Ω·m)
+PLOT_CLIM = [-0., 3.0]      # log10(Ω·m)
 #: Flat colour for ocean / lake cells.  None → use colormap.
 PLOT_OCEAN_COLOR = "lightgrey"
 #: Flat colour for air polygons on slice panels.  None → blank gaps.
 PLOT_AIR_COLOR = "whitesmoke"
 #: Axes facecolor for air / background.  None = figure default.
 PLOT_AIR_BGCOLOR = None
+#: Font size for axis tick labels (main panels and colourbar ticks).
+TICK_FONTSIZE = 7
+#: Font size for axis labels, panel titles, and colourbar label.
+LABEL_FONTSIZE = 8
+
+# ---------------------------------------------------------------------------
+# Convergence annotation  (reads femtic.cnv)
+# ---------------------------------------------------------------------------
+#: Path to femtic.cnv.  None → WORK_DIR + "femtic.cnv".
+CNV_FILE = None
+#: True if the inversion used distortion correction (adds extra columns).
+#: None → auto-detect from the number of columns in the last cnv line
+#:        (10 cols → distortion, 8 cols → no distortion).
+DISTORTION = None
+#: Panel index (0-based) on which to place the nRMS annotation.
+#: None → first panel.
+CNV_PANEL = None
 
 # ---------------------------------------------------------------------------
 # Alpha / blanking by second block file  (optional)
@@ -376,11 +409,26 @@ ALPHA_BLANK_THRESH = 0.0
 #:   title  : optional string override
 #:
 #: Per-panel xlim/ylim/zlim override PLOT_XLIM/PLOT_YLIM/PLOT_ZLIM.
+##: MISTI
+# PLOT_SLICES = [
+#     dict(kind="ns",  x0=(-71.536322, "latlon")),
+#     dict(kind="ew",  y0=(-16.196900, "latlon")),
+#     dict(kind="map", z0=-4000.0),
+#     dict(kind="map", z0= 10000.0),
+#     # Two-point vertical profile example (uncomment to use):
+#     # dict(kind="profile",
+#     #      p1=([-71.536, -16.197], "latlon"),
+#     #      p2=([-71.406, -16.299], "latlon"),
+#     #      z_top=0.0, z_bot=25000.0,
+#     #      title="NW-SE profile"),
+# ]
+
+##: UBINAS [-16.3450, -70.8972]
 PLOT_SLICES = [
-    dict(kind="ns",  x0=(-71.536322, "latlon")),
-    dict(kind="ew",  y0=(-16.196900, "latlon")),
-    dict(kind="map", z0=-4000.0),
-    dict(kind="map", z0= 10000.0),
+    # dict(kind="ns",  x0=(-70.8972, "latlon")),
+    dict(kind="ew",  y0=(-16.3450, "latlon"), title="alpha=0.7, WE profile"),
+    # dict(kind="map", z0=-4000.0),
+    # dict(kind="map", z0= 5000.0),
     # Two-point vertical profile example (uncomment to use):
     # dict(kind="profile",
     #      p1=([-71.536, -16.197], "latlon"),
@@ -389,10 +437,11 @@ PLOT_SLICES = [
     #      title="NW-SE profile"),
 ]
 
+
 #: Global axis limits in model-local metres.  None → auto.
-PLOT_XLIM = [-25000., 25000.]   # [xmin, xmax] metres — easting
-PLOT_YLIM = [-25000., 25000.]   # [ymin, ymax] metres — northing
-PLOT_ZLIM = [-10000.,  25000.]   # [zmin, zmax] metres — depth (z positive-down)
+PLOT_XLIM = [-15000., 15000.]   # [xmin, xmax] metres — easting
+PLOT_YLIM = [-15000., 15000.]   # [ymin, ymax] metres — northing
+PLOT_ZLIM = [-6000.,  15000.]   # [zmin, zmax] metres — depth (z positive-down)
 
 #: Equal aspect ratio for map and curtain panels.
 PLOT_EQUAL_ASPECT = True
@@ -407,8 +456,8 @@ HORIZ_KM = True
 # Figure layout
 # ---------------------------------------------------------------------------
 #: Number of subplot rows and columns.  None → auto (1 row, len(PLOT_SLICES) cols).
-PLOT_NROWS = 2 #None
-PLOT_NCOLS = 2 #None
+PLOT_NROWS = 1 #None
+PLOT_NCOLS = 1 #None
 
 #: Panel height in cm.
 PLOT_PANEL_HEIGHT = 16.0   # cm
@@ -524,6 +573,33 @@ elif _need_sites and SITE_NUMBER is not None:
 if fviz is None:
     sys.exit("femtic_viz not available — cannot plot.  Check your installation.")
 
+# Read final nRMS from femtic.cnv
+_cnv_path = CNV_FILE if CNV_FILE is not None else os.path.join(WORK_DIR, "femtic.cnv")
+_nrms_annotation = None
+if os.path.isfile(_cnv_path):
+    try:
+        with open(_cnv_path) as _cnv:
+            _last = _cnv.readlines()[-1].split()
+        # Column layout (0-based):
+        #   8 cols  (no distortion): alpha=2, rough=4, misfit=5, nRMS=6, obj=7
+        #   10 cols (distortion):    alpha=2, rough=5, dist=6,   misfit=7, nRMS=8, obj=9
+        _ncols_cnv = len(_last)
+        _has_dist  = (DISTORTION if DISTORTION is not None
+                      else _ncols_cnv == 10)
+        _nrms_col = 8 if _has_dist else 6
+        _alpha_col = 2
+        _nrms_val  = float(_last[_nrms_col])
+        _alpha_val = float(_last[_alpha_col])
+        _nrms_annotation = dict(nrms=_nrms_val, alpha=_alpha_val,
+                                panel=CNV_PANEL)
+        print(f"  cnv: alpha={_alpha_val}, nRMS={_nrms_val:.4f}"
+              f"  ({'distortion' if _has_dist else 'no distortion'}"
+              f"{'' if DISTORTION is not None else ', auto-detected'})")
+    except Exception as _e:
+        print(f"  Warning: could not read {_cnv_path}: {_e}")
+else:
+    print(f"  cnv: {_cnv_path} not found — nRMS annotation skipped.")
+
 print(f"Plotting model: {MODEL_FILE}")
 fviz.plot_model_slices(
     model_file=MODEL_FILE,
@@ -566,6 +642,9 @@ fviz.plot_model_slices(
     alpha_file=ALPHA_FILE,
     alpha_mode=ALPHA_MODE,
     alpha_blank_thresh=ALPHA_BLANK_THRESH,
+    nrms_annotation=_nrms_annotation,
+    tick_fontsize=TICK_FONTSIZE,
+    label_fontsize=LABEL_FONTSIZE,
     out=OUT,
 )
 print("Slice plot done.")

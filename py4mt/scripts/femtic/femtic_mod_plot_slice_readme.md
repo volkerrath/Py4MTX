@@ -200,6 +200,8 @@ For a standalone borehole figure (higher DPI, separate PDF), use
 | `PLOT_OCEAN_COLOR` | `"lightgrey"` | Flat colour for ocean cells; `None` = colormap |
 | `PLOT_AIR_COLOR` | `"whitesmoke"` | Flat colour for air polygons; `None` = blank |
 | `PLOT_AIR_BGCOLOR` | `None` | Axes facecolor for air/background |
+| `TICK_FONTSIZE` | `7` | Font size for axis tick labels and colourbar ticks |
+| `LABEL_FONTSIZE` | `8` | Font size for axis labels, panel titles, and colourbar label |
 
 ### Alpha / blanking
 
@@ -263,3 +265,4 @@ For a standalone borehole figure (higher DPI, separate PDF), use
 | 2026-06-03 | Claude Sonnet 4.6 | **Split** from `femtic_mod_plot.py` → `femtic_mod_plot_slice.py` + `femtic_mod_plot_3d.py`. `BOREHOLE_IN_SLICE`: embedded borehole columns via `plot_model_slices(borehole_sites=...)`; `BOREHOLE_XLIM` now in Ω·m; `z_top="surface"` supported; lat/lon legend; per-trace line-style keys; `BOREHOLE_NPZ` added |
 | 2026-06-04 | vrath / Claude Sonnet 4.6 | **Split** from `femtic_mod_plot_slice.py`: standalone borehole step (step 6) and `PLOT_BOREHOLE` flag moved to new `femtic_mod_plot_bh.py`. `BOREHOLE_IN_SLICE` retained here for embedded columns only |
 | 2026-06-19 | Claude Sonnet 4.6 | `kind="profile"` added to `PLOT_SLICES`: vertical fence section defined by two endpoint positions (`p1`, `p2`) each accepting model-local / UTM / latlon CRS tags; `strike` derived from p1→p2 azimuth; `dip` fixed at 90°. New helper `resolve_pos_two_point_profile()` in `femtic.py`; `resolve_slice_positions()` extended. |
+| 2026-06-26 | vrath / Claude Sonnet 4.6 | Added `TICK_FONTSIZE` (default `7`) and `LABEL_FONTSIZE` (default `8`) config constants; forwarded to `plot_model_slices` as `tick_fontsize` / `label_fontsize`. |
