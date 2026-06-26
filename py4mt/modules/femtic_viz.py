@@ -3363,6 +3363,7 @@ def plot_model_slices(
     tick_fontsize: int = 7,
     label_fontsize: int = 8,
     nrms_annotation: Optional[dict] = None,
+    figure_title: Optional[str] = None,
     out: bool = True,
 ):
     """Produce a multi-panel figure of axis-parallel FEMTIC model slices.
@@ -3520,6 +3521,9 @@ def plot_model_slices(
         ``panel`` (int or None).  When set, a text box reading
         ``nRMS = <value>  (α = <alpha>)`` is placed in the lower-left
         corner of the panel at index ``panel`` (default: 0).
+    figure_title
+        Overall figure title (suptitle).  ``None`` → the basename of
+        *model_file*.
     out
         Print progress messages.
     """
@@ -4251,7 +4255,9 @@ def plot_model_slices(
                 elif _bi > 0:
                     _bh_axes[0].get_shared_y_axes().join(_bh_axes[0], _bh_ax)
 
-    fig.suptitle(f"Model: {os.path.basename(str(model_file))}", fontsize=label_fontsize + 2)
+    fig.suptitle(figure_title if figure_title is not None
+                 else os.path.basename(str(model_file)),
+                 fontsize=label_fontsize + 2)
     fig.tight_layout()
     if plot_file is not None:
         fig.savefig(plot_file, dpi=dpi, bbox_inches="tight")
@@ -4283,6 +4289,7 @@ def plot_borehole_logs(
     legend_fontsize: int = 9,
     tick_fontsize: Optional[int] = None,
     label_fontsize: Optional[int] = None,
+    figure_title: Optional[str] = None,
     npz_file=None,
     plot_file=None,
     dpi: int = 200,
@@ -4410,6 +4417,9 @@ def plot_borehole_logs(
     label_fontsize
         Font size for axis labels and standalone titles.  ``None`` →
         ``legend_fontsize``.
+    figure_title
+        Overall figure title (suptitle).  ``None`` → the basename of
+        *model_file*.
     npz_file
         Path for the NPZ data export.
 
@@ -4638,7 +4648,9 @@ def plot_borehole_logs(
                     **annotate_kw,
                 )
 
-    fig.suptitle(f"Model: {os.path.basename(str(model_file))}", fontsize=legend_fontsize + 1)
+    fig.suptitle(figure_title if figure_title is not None
+                 else os.path.basename(str(model_file)),
+                 fontsize=legend_fontsize + 1)
     fig.tight_layout()
     if plot_file is not None:
         fig.savefig(plot_file, dpi=dpi, bbox_inches="tight")

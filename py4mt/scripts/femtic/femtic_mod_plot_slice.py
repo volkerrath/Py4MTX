@@ -344,8 +344,8 @@ LABEL_FONTSIZE = 8
 # ---------------------------------------------------------------------------
 # Convergence annotation  (reads femtic.cnv)
 # ---------------------------------------------------------------------------
-#: Path to femtic.cnv.  None → WORK_DIR + "femtic.cnv".
-CNV_FILE = None
+#: Overall figure title.  None → model file basename.
+FIGURE_TITLE = None
 #: True if the inversion used distortion correction (adds extra columns).
 #: None → auto-detect from the number of columns in the last cnv line
 #:        (10 cols → distortion, 8 cols → no distortion).
@@ -643,6 +643,7 @@ fviz.plot_model_slices(
     alpha_mode=ALPHA_MODE,
     alpha_blank_thresh=ALPHA_BLANK_THRESH,
     nrms_annotation=_nrms_annotation,
+    figure_title=FIGURE_TITLE,
     tick_fontsize=TICK_FONTSIZE,
     label_fontsize=LABEL_FONTSIZE,
     out=OUT,

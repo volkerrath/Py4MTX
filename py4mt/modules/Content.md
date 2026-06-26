@@ -448,6 +448,28 @@ header output.
 
 ---
 
+### `test_data_proc.py` — Pytest test suite for `data_proc.py`
+
+Self-contained pytest tests for `data_proc`.  Generates small synthetic
+EDI-like files (classical table style and Phoenix `>SPECTRA` style) in a
+temporary folder and validates:
+
+| Test area | What is checked |
+|-----------|-----------------|
+| Block parsing | Fortran `D` exponents, inline comments |
+| Classical EDI round-trip | `load_edi` → `save_edi` → `load_edi` lossless |
+| Phoenix SPECTRA parsing | Z/T reconstruction from `>SPECTRA` blocks |
+| Phase tensor | Computation with / without uncertainty propagation |
+| DataFrame conversion | `dataframe_from_edi` output shape and dtypes |
+| EMTF-XML round-trip | `read_emtf_xml` / `write_emtf_xml` and `edi_to_emtf` / `emtf_to_edi` |
+
+Run from the `modules/` directory:
+```bash
+python -m pytest -q
+```
+
+---
+
 ## Module dependency graph
 
 ```
@@ -482,8 +504,9 @@ util  ◄── (imported by all scripts and most modules)
 | FEMTIC interface | 3 |
 | ModEM interface | 2 |
 | General utilities | 4 |
-| **Total** | **20** |
+| Test suite | 1 |
+| **Total** | **21** |
 
 ---
 
-*Generated 2026-05-04 from README files in `modules.zip`; missing READMEs synthesised from source.*
+*Generated 2026-06-26 from README files in `modules.zip`; missing READMEs synthesised from source.*
