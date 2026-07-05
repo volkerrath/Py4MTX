@@ -14,6 +14,13 @@ Provenance:
     2026-06-26 Claude  DISTORTION defaults to None; auto-detected from cnv column
                        count (10 cols → distortion, 8 cols → no distortion).
                        Explicit True/False still overrides.
+    2026-07-05 Claude  Added SCALE_ROUGH / SCALE_MISFIT optional scaling factors,
+                       shown as "x10^n" next to the roughness / misfit axis label.
+                       Not applied when PLOT_WHAT = "nrms". PLOT_XLIM / PLOT_YLIM
+                       are now auto-rescaled to match, so limits stay valid.
+    2026-07-05 Claude  Flipped exponent sign in scale-factor label: since data
+                       is divided by SCALE_*, a scale of 1e3 now shows "x10^-3"
+                       (previously showed "x10^3").
 """
 
 import os
@@ -47,7 +54,7 @@ print(titstrng + "\n\n")
 #  Configuration
 # =============================================================================
 WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_10_LC/"
-PLOT_NAME = WORK_DIR + "Ubinas_Ini10"
+PLOT_NAME = WORK_DIR + "Fig04_L-curve"
 PLOT_WHAT = "nrms"  # 'nrms' or 'misfit'
 PLOT_TITLE = r"Ubinas | ini = 10 $\Omega \cdot m$ " #"| distcorr"
 DISTORTION = None   # None → auto-detect from cnv column count (10 → distortion, 8 → no distortion)
@@ -62,6 +69,14 @@ PLOT_LOG_Y = False
 PLOT_XLIM = [0., 80000.] # None   # e.g. [0.0, 1e6]
 #: y-axis limits [min, max]; set to None for matplotlib auto-scaling.
 PLOT_YLIM = [0.5, 6.] # None   # e.g. [0.9, 5.0]
+
+#: Optional scaling factor for roughness (x-axis data divided by this value).
+#: Shown as "x10^n" appended to the axis label. Set to None or 1 to disable.
+SCALE_ROUGH = 1.e3   # e.g. 1e3
+#: Optional scaling factor for misfit (y-axis data, only when PLOT_WHAT != "nrms").
+#: Shown as "x10^n" appended to the axis label. Set to None or 1 to disable.
+#: Ignored when PLOT_WHAT = "nrms".
+SCALE_MISFIT = None   # e.g. 1e4
 
 
 SEARCH_STRNG = "*L2"
@@ -126,17 +141,40 @@ np.savez_compressed(WORK_DIR + "LC_dat.npz", **lcurve)
 # =============================================================================
 
 
-xformula = r"$\mathrm{roughness}$"
-#" \quad \Vert\mathbf{C}_m^{-1/2} \mathbf{m}\Vert_2$"
+def _scale_suffix(scale):
+    """Return a LaTeX '$\\times 10^{-n}$' suffix for a given scale factor,
+    or an empty string if scaling is disabled (None or 1). Data is divided
+    by `scale`, so the label shows the equivalent x10^-n multiplier."""
+    if scale is None or scale == 1:
+        return ""
+    exponent = -np.log10(scale)
+    if np.isclose(exponent, np.round(exponent)):
+        return fr" $\times\,10^{{{int(np.round(exponent))}}}$"
+    return fr" $\times\,{1/scale:g}$"
+
+
+xformula = r"model roughness" + _scale_suffix(SCALE_ROUGH)
+#" $\mathrm{model roughness}$ = \quad \Vert\mathbf{C}_m^{-1/2} \mathbf{m}\Vert_2$"
 
 if "nrms" in PLOT_WHAT.lower():
     ydata = n
-    yformula = r"$\mathrm{nRMS}$"
+    yformula = r"nRMS"
         #"\quad\left(\frac{1}{N}\sum_{i=1,N}\left[\mathbf{C}_d^{-1/2}\left(d_i^{\mathrm{o}}-d_i^{\mathrm{c}}\right)\right]^2\right)^{1/2}$"
 else:
     ydata = m
-    yformula = r"$\mathrm{misfit}$"
-        #" \quad \Vert\mathbf{C}_d^{-1/2} (\mathbf{d}_{obs}-\mathbf{d}_{calc})\Vert_2$"
+    if SCALE_MISFIT is not None and SCALE_MISFIT != 1:
+        ydata = ydata / SCALE_MISFIT
+    yformula = r"misfit" + _scale_suffix(SCALE_MISFIT)
+        #"$\mathrm{misfit} = \quad \Vert\mathbf{C}_d^{-1/2} (\mathbf{d}_{obs}-\mathbf{d}_{calc})\Vert_2$"
+
+if SCALE_ROUGH is not None and SCALE_ROUGH != 1:
+    r = r / SCALE_ROUGH
+    if PLOT_XLIM is not None:
+        PLOT_XLIM = [x / SCALE_ROUGH for x in PLOT_XLIM]
+
+if ("nrms" not in PLOT_WHAT.lower() and SCALE_MISFIT is not None
+        and SCALE_MISFIT != 1 and PLOT_YLIM is not None):
+    PLOT_YLIM = [y / SCALE_MISFIT for y in PLOT_YLIM]
 
 
 

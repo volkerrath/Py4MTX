@@ -23,8 +23,12 @@ For each ensemble member *i = 1 … N*:
 
 1. **Perturbed data** — draw `d̃ ~ N(d, C_d)` by adding scaled Gaussian noise
    to the observed data (`observe.dat`).  Identical to the RTO step.
-2. **Pilot-point values** — draw log₁₀(ρ) values at a set of pilot points
-   uniformly from `[log_rho_min, log_rho_max]`.
+2. **Pilot-point values** — draw log₁₀(ρ) values at a set of pilot points,
+   per `MOD_PP_VALUE_MODE`:
+   - `"uniform"` (default) — uniformly from `[log_rho_min, log_rho_max]`,
+     independent of location.
+   - `"reference"` — `referencemodel(nearest free region) ± MOD_PP_VALUE_DELTA`
+     (log₁₀ Ω·m), anchoring each pilot point to the local reference value.
 3. **Kriging** — interpolate and extrapolate the pilot-point values to all
    FEMTIC mesh cell centres via Ordinary Kriging (gstools).
 4. **Clamp** — clip the Kriged field to `[log_rho_min, log_rho_max]`.
@@ -112,6 +116,30 @@ MOD_PP_EXTREMA_WHICH = "both"       # conductive + resistive anomaly cores
 |--------------------|----------------------------------------------------------------------|
 | `MOD_LOG_RHO_MIN`  | Minimum pilot-point value in log₁₀(Ω·m). Also applied as a clamp after Kriging. |
 | `MOD_LOG_RHO_MAX`  | Maximum pilot-point value in log₁₀(Ω·m). Also applied as a clamp after Kriging. |
+
+#### Pilot-point value mode
+
+| Variable             | Description                                                                          |
+|----------------------|----------------------------------------------------------------------------------------|
+| `MOD_PP_VALUE_MODE`  | `"uniform"` (default) — draw `Uniform(MOD_LOG_RHO_MIN, MOD_LOG_RHO_MAX)` at every pilot point, independent of location. `"reference"` — draw `referencemodel(nearest free region) ± MOD_PP_VALUE_DELTA`. |
+| `MOD_PP_VALUE_DELTA` | Half-width (log₁₀ Ω·m) of the symmetric perturbation around the reference value. Only used when `MOD_PP_VALUE_MODE = "reference"`. Typical: 0.3 – 1.0 (factor ~2–10 in resistivity). |
+
+**`"reference"` mode** looks up the reference log₁₀(ρ) at the free region
+whose barycentre is nearest each pilot point (`scipy.spatial.KDTree`
+nearest-neighbour search), then perturbs it by
+`Uniform(-MOD_PP_VALUE_DELTA, +MOD_PP_VALUE_DELTA)`.  The result is still
+clamped to `[MOD_LOG_RHO_MIN, MOD_LOG_RHO_MAX]`.  Use this mode to keep
+every ensemble member anchored to the reference structure — exploring
+Kriging-driven spatial variability without letting pilot points drift to
+arbitrary parts of the resistivity range.  This pairs naturally with
+`MOD_PP_MODE = "extrema"`, where pilot-point locations already track the
+reference model's structure; `"reference"` values keep the amplitude close
+to that structure too.
+
+```python
+MOD_PP_VALUE_MODE  = "reference"
+MOD_PP_VALUE_DELTA = 0.5   # ±0.5 log10 Ohm.m around the reference value
+```
 
 #### Variogram
 
@@ -292,7 +320,7 @@ starting point.
 | Package        | Role                                                   |
 |----------------|--------------------------------------------------------|
 | `numpy`        | Array operations and random draws.                     |
-| `scipy`        | KD-tree neighbour search for `"extrema"` pilot-point mode (`scipy.spatial`). |
+| `scipy`        | KD-tree neighbour search for `"extrema"` pilot-point mode and `"reference"` pilot-point value mode (`scipy.spatial`). |
 | `gstools`      | Variogram models and Ordinary Kriging.                 |
 | `ensembles`    | Directory generation and data ensemble.                |
 | `femtic`       | FEMTIC I/O (`read_model`, `write_model`).              |
@@ -339,6 +367,7 @@ No sparse-matrix file (`.npz`) is required.
 | 2026-05-28 | Claude Sonnet 4.6 (Anthropic) | Added `RELATIVE_LINKS` config variable (default `True`); passed as `relative_links` to `ens.generate_directories`. Relative symlinks survive `tgz`/copy to another machine; set `False` for legacy absolute-path behaviour. |
 | 2026-05-31 | vrath / Claude Sonnet 4.6 (Anthropic) | `QC_SLICES` / `ENS_SLICES`: documented optional `invert_x` key (bool, default `False`) for `ns`, `ew`, and `plane` slice panels — flips horizontal axis left-to-right for comparison with other software. |
 | 2026-06-06 | Claude Sonnet 4.6 (Anthropic) | Added `"extrema"` pilot-point mode: new config variables `MOD_PP_ROI`, `MOD_PP_EXTREMA_K`, `MOD_PP_EXTREMA_WHICH`; all three passed to `ens.generate_gst_model_ensemble`. Pilot-point skeleton is seeded at local log₁₀(ρ) minima and/or maxima of the reference model within `MOD_PP_ROI`, plus `MOD_N_PP` random fill points. `scipy.spatial` added to dependencies. |
+| 2026-07-05 | vrath / Claude Sonnet 5 (Anthropic) | Added `MOD_PP_VALUE_MODE` (`"uniform"` \| `"reference"`) and `MOD_PP_VALUE_DELTA` config variables, passed to `ens.generate_gst_model_ensemble` as `pp_value_mode` / `pp_value_delta`. `"uniform"` (default) preserves the original `Uniform(MOD_LOG_RHO_MIN, MOD_LOG_RHO_MAX)` pilot-point draw. `"reference"` instead draws `referencemodel(nearest free region) ± MOD_PP_VALUE_DELTA`, anchoring pilot-point values to the local reference model. |
 
 ## Author
 

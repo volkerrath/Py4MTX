@@ -76,6 +76,15 @@ addition to None (all).  Range semantics ([start, stop]) removed — a list
 always means explicit indices.  Type hints updated to Optional[List[int]];
 Union/Tuple removed from fromto signatures.  Matching change in
 femtic_rto_prep.py: FROM_TO renamed to ENS_LIST.
+Updated 2026-07-05 by Claude Sonnet 5 (Anthropic): added pp_value_mode /
+pp_value_delta to generate_gst_model_ensemble.  pp_value_mode="uniform"
+(default) preserves the original Uniform(log_rho_min, log_rho_max) draw;
+pp_value_mode="reference" instead draws pilot-point values as
+reference_model(nearest free region) ± pp_value_delta (log10 Ohm.m),
+using a scipy.spatial.KDTree nearest-neighbour lookup against the free-
+region barycentres.  Reference log10(rho) at free regions is now computed
+unconditionally (previously only inside the "extrema" pp_mode branch) so
+it is available to both "extrema" placement and "reference" value mode.
 """
 
 from __future__ import annotations
@@ -1133,6 +1142,9 @@ def generate_gst_model_ensemble(
     # --- resistivity range ---
     log_rho_min: float = 0.0,
     log_rho_max: float = 4.0,
+    # --- pilot-point value mode ---
+    pp_value_mode: str = "uniform",
+    pp_value_delta: float = 0.5,
     # --- variogram ---
     vario_model: str = "Spherical",
     vario_range: float | Sequence[float] = 20000.,
@@ -1151,8 +1163,17 @@ def generate_gst_model_ensemble(
     For each ensemble member *i*:
 
     1. Place pilot points inside the survey volume (random, fixed, or mixed).
-    2. Draw log₁₀(ρ) values at the pilot points from
-       Uniform(log_rho_min, log_rho_max).
+    2. Draw log₁₀(ρ) values at the pilot points, using one of two modes
+       (see ``pp_value_mode``):
+
+       - ``"uniform"``   — Uniform(log_rho_min, log_rho_max), independent of
+         location (original behaviour).
+       - ``"reference"`` — reference_model(pilot point) ± ``pp_value_delta``,
+         i.e. the log₁₀(ρ) of the reference model at the free region nearest
+         each pilot point, perturbed by Uniform(-pp_value_delta,
+         +pp_value_delta).  Keeps every member close to the reference
+         structure while still exploring the pilot-point/Kriging spatial
+         randomness.
     3. Ordinary-Krig the values to all FEMTIC mesh cell centres (gstools).
     4. Clamp the field to [log_rho_min, log_rho_max].
     5. Write the result into the member directory as
@@ -1225,6 +1246,24 @@ def generate_gst_model_ensemble(
     log_rho_max : float
         Maximum resistivity in log₁₀(Ω·m).  Used as both the upper draw
         bound and a post-Kriging clamp.
+    pp_value_mode : {"uniform", "reference"}
+        How pilot-point log₁₀(ρ) values are drawn:
+
+        - ``"uniform"`` (default) — Uniform(log_rho_min, log_rho_max) at
+          every pilot point, independent of location (original behaviour).
+        - ``"reference"`` — reference_model(pilot point) ± ``pp_value_delta``.
+          The reference log₁₀(ρ) is looked up at the free-region barycentre
+          nearest each pilot point (nearest-neighbour, via ``scipy.spatial.
+          KDTree``) and perturbed by Uniform(-pp_value_delta,
+          +pp_value_delta).  The result is still clamped to
+          [log_rho_min, log_rho_max].  Use this mode to keep the ensemble
+          anchored to the reference structure rather than exploring the
+          full resistivity range at each pilot point.
+    pp_value_delta : float
+        Half-width, in log₁₀(Ω·m), of the symmetric perturbation applied
+        around the reference value when ``pp_value_mode="reference"``.
+        Ignored when ``pp_value_mode="uniform"``.  Typical: 0.3–1.0
+        (≈ factor 2–10 in resistivity).
 
     Variogram parameters
     --------------------
@@ -1369,6 +1408,33 @@ def generate_gst_model_ensemble(
         )
 
     # ------------------------------------------------------------------
+    # Reference log10(rho) at free-region barycentres (used by "extrema"
+    # pilot-point placement and/or "reference" pilot-point value mode).
+    # ------------------------------------------------------------------
+    ref_log_rho_free = np.log10(np.maximum(rho_reg[free_idx], 1e-10))
+
+    if pp_value_mode not in ("uniform", "reference"):
+        raise ValueError(
+            f"pp_value_mode must be 'uniform' or 'reference', got "
+            f"'{pp_value_mode}'."
+        )
+
+    ref_tree = None
+    if pp_value_mode == "reference":
+        from scipy.spatial import KDTree
+        ref_tree = KDTree(np.column_stack([cx, cy, cz]))
+        if out:
+            print(
+                f"Pilot-point values: reference model ± {pp_value_delta} "
+                f"(log10 Ohm.m)"
+            )
+    elif out:
+        print(
+            f"Pilot-point values: Uniform({log_rho_min}, {log_rho_max}) "
+            f"(log10 Ohm.m)"
+        )
+
+    # ------------------------------------------------------------------
     # Validate fixed pilot-point coordinates if needed.
     # ------------------------------------------------------------------
     if pp_mode in ("fixed", "mixed"):
@@ -1389,7 +1455,6 @@ def generate_gst_model_ensemble(
     # Only used when pp_mode == "extrema".
     # ------------------------------------------------------------------
     if pp_mode == "extrema":
-        ref_log_rho_free = np.log10(np.maximum(rho_reg[free_idx], 1e-10))
         pp_extrema = _find_extrema_pilot_points(
             cx=cx, cy=cy, cz=cz,
             ref_log_rho=ref_log_rho_free,
@@ -1453,8 +1518,16 @@ def generate_gst_model_ensemble(
             pp_y = np.concatenate([pp_extrema[:, 1], rnd_y])
             pp_z = np.concatenate([pp_extrema[:, 2], rnd_z])
 
-        # --- random log10(rho) values at pilot points ---
-        pp_vals = rng.uniform(log_rho_min, log_rho_max, len(pp_x))
+        # --- log10(rho) values at pilot points ---
+        if pp_value_mode == "reference":
+            _, nn_idx = ref_tree.query(np.column_stack([pp_x, pp_y, pp_z]))
+            pp_ref = ref_log_rho_free[nn_idx]
+            pp_vals = pp_ref + rng.uniform(
+                -pp_value_delta, pp_value_delta, len(pp_x)
+            )
+            pp_vals = np.clip(pp_vals, log_rho_min, log_rho_max)
+        else:  # "uniform"
+            pp_vals = rng.uniform(log_rho_min, log_rho_max, len(pp_x))
 
         # --- Ordinary Kriging ---
         krig = gs.krige.Ordinary(

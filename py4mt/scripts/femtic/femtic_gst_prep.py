@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 
@@ -6,7 +6,9 @@ Run the Geostatistical (GST) ensemble algorithm for MT inversion:
 
     for i = 1 : nsamples do
         Draw perturbed data set: d_pert ~ N(d, Cd)
-        Draw random log10(rho) values at pilot points ~ Uniform(rho_min, rho_max)
+        Draw log10(rho) values at pilot points, either
+            ~ Uniform(rho_min, rho_max)                      [MOD_PP_VALUE_MODE = "uniform"]
+            or referencemodel(pilot point) +- delta (log10)  [MOD_PP_VALUE_MODE = "reference"]
         Kriging-interpolate pilot-point values to all mesh cells -> initial model m0_i
         Solve deterministic inversion starting from m0_i to get model m_i = m(m0_i)
     end
@@ -90,6 +92,15 @@ Provenance:
                 slice positions (fem.resolve_slice_positions), and site
                 overlay — matching the femtic_mod_plot_slice workflow exactly.
                 ENS_* variables now default-assigned from MOD_* counterparts.
+    2026-07-05  vrath / Claude Sonnet 5 (Anthropic)
+                Added MOD_PP_VALUE_MODE / MOD_PP_VALUE_DELTA config
+                variables, passed through to ens.generate_gst_model_ensemble
+                as pp_value_mode / pp_value_delta.  "uniform" (default)
+                preserves the original Uniform(MOD_LOG_RHO_MIN,
+                MOD_LOG_RHO_MAX) pilot-point draw; "reference" instead draws
+                pilot-point values as referencemodel(nearest free region)
+                +- MOD_PP_VALUE_DELTA (log10 Ohm.m), keeping the ensemble
+                anchored to the reference structure.
 """
 
 import os
@@ -141,7 +152,7 @@ N_SAMPLES = 32
 # ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/ubinas/ensemble/"
 # ENSEMBLE_NAME = "ubinas_gst_suzuki_"
 
-ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/misti/ensemble/"
+ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/ensembles/misti/ensemble/"
 ENSEMBLE_NAME = "misti_gst_suzuki_"
 
 TEMPLATES = ENSEMBLE_DIR + "/templates/"
@@ -171,8 +182,10 @@ Set up mode of model perturbations.
 -----------------------------------------------------------------------
 The GST method generates a distinct initial model m0 for each ensemble
 member by:
-    (1) Assigning random log10(rho) values at a set of pilot points
-        covering the survey area and depth range of interest.
+    (1) Assigning log10(rho) values at a set of pilot points covering the
+        survey area and depth range of interest, either drawn uniformly
+        at random or as a perturbation of the reference model
+        (see MOD_PP_VALUE_MODE).
     (2) Kriging-interpolating those values to every mesh cell centre.
     (3) Clamping the result to [MOD_LOG_RHO_MIN, MOD_LOG_RHO_MAX].
     (4) Writing the result as resistivity_block_iter0.dat and/or
@@ -200,7 +213,7 @@ if PERTURB_MOD:
     #               add MOD_N_PP random fill points inside MOD_PP_BBOX.
     #               Structural skeleton is the same every member; values
     #               and fill locations change.  Requires scipy.spatial.
-    MOD_PP_MODE = "random"     # "random" | "fixed" | "mixed" | "extrema"
+    MOD_PP_MODE = "extrema" # "random"     # "random" | "fixed" | "mixed" | "extrema"
 
     # Number of randomly drawn pilot points per member.
     # Used when MOD_PP_MODE = "random", "mixed", or "extrema" (fill).
@@ -209,9 +222,9 @@ if PERTURB_MOD:
 
     # Bounding box for random pilot-point placement:
     #   [x_min, x_max, y_min, y_max, z_min, z_max]  (metres, z positive-down)
-    MOD_PP_BBOX = [-50000., 50000.,   # easting  range (m)
-                   -50000., 50000.,   # northing range (m)
-                        0., 80000.]   # depth     range (m, positive-down)
+    MOD_PP_BBOX = [-25000., 25000.,   # easting  range (m)
+                   -25000., 25000.,   # northing range (m)
+                        0., 60000.]   # depth     range (m, positive-down)
 
     # Explicit pilot-point coordinates used when MOD_PP_MODE = "fixed"
     # or "mixed".  Shape: (N, 3) — columns: [easting, northing, depth].
@@ -246,6 +259,29 @@ if PERTURB_MOD:
     # the same interval.
     MOD_LOG_RHO_MIN = 0.0    # log10(1 Ohm.m)
     MOD_LOG_RHO_MAX = 4.0    # log10(10000 Ohm.m)
+
+    # ------------------------------------------------------------------
+    # Pilot-point value mode
+    # ------------------------------------------------------------------
+    # MOD_PP_VALUE_MODE controls how pilot-point log10(rho) values are drawn:
+    #   "uniform"   : Uniform(MOD_LOG_RHO_MIN, MOD_LOG_RHO_MAX) at every
+    #                 pilot point, independent of location (default,
+    #                 original behaviour).
+    #   "reference" : referencemodel(pilot point) +- MOD_PP_VALUE_DELTA
+    #                 (log10 Ohm.m).  The reference log10(rho) is looked up
+    #                 at the free region nearest each pilot point and
+    #                 perturbed by Uniform(-MOD_PP_VALUE_DELTA,
+    #                 +MOD_PP_VALUE_DELTA).  Result is still clamped to
+    #                 [MOD_LOG_RHO_MIN, MOD_LOG_RHO_MAX].  Use this to keep
+    #                 the ensemble anchored to the reference structure
+    #                 instead of exploring the full resistivity range at
+    #                 each pilot point.
+    MOD_PP_VALUE_MODE = "uniform"  # "uniform" | "reference"
+
+    # Half-width (log10 Ohm.m) of the symmetric perturbation around the
+    # reference value.  Only used when MOD_PP_VALUE_MODE = "reference".
+    # Typical: 0.3-1.0 (factor ~2-10 in resistivity).
+    MOD_PP_VALUE_DELTA = 0.5
 
     # ------------------------------------------------------------------
     # Variogram model
@@ -317,7 +353,7 @@ plot_model_ensemble use the same randomly drawn set of ensemble members
 of MT sites per row (VIZ_N_SITES); set to None to show all sites.
 """
 PLOT_DATA  = False  # True
-PLOT_MODEL = False  # True
+PLOT_MODEL = True  # True
 
 if PLOT_DATA or PLOT_MODEL:
     PLOT_STR = ""
@@ -560,7 +596,9 @@ Generate geostatistical initial models: m0_i via pilot-point Kriging
 --------------------------------------------------------------------
 For each ensemble member i:
     (1) Determine pilot-point locations (random / fixed / mixed).
-    (2) Draw log10(rho) values at pilot points ~ Uniform(min, max).
+    (2) Draw log10(rho) values at pilot points, per MOD_PP_VALUE_MODE:
+        "uniform"   ~ Uniform(MOD_LOG_RHO_MIN, MOD_LOG_RHO_MAX)
+        "reference" = referencemodel(nearest free region) +- MOD_PP_VALUE_DELTA
     (3) Ordinary-Krig values to all mesh cell centres (gstools).
     (4) Clamp to [MOD_LOG_RHO_MIN, MOD_LOG_RHO_MAX].
     (5) Write to member directory (controlled by MOD_OUTPUT_TARGET).
@@ -585,6 +623,8 @@ if PERTURB_MOD:
         pp_extrema_which=MOD_PP_EXTREMA_WHICH,
         log_rho_min=MOD_LOG_RHO_MIN,
         log_rho_max=MOD_LOG_RHO_MAX,
+        pp_value_mode=MOD_PP_VALUE_MODE,
+        pp_value_delta=MOD_PP_VALUE_DELTA,
         vario_model=MOD_VARIO_MODEL,
         vario_range=MOD_VARIO_RANGE,
         vario_sill=MOD_VARIO_SILL,

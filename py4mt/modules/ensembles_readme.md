@@ -140,7 +140,13 @@ roughness matrix is required.
 ### Algorithm per member
 
 1. Place pilot points (random / fixed / mixed — see `pp_mode`).
-2. Draw log₁₀(ρ) values at pilot points from Uniform(log_rho_min, log_rho_max).
+2. Draw log₁₀(ρ) values at pilot points, per `pp_value_mode`:
+   - `"uniform"` (default) — Uniform(log_rho_min, log_rho_max), independent
+     of location.
+   - `"reference"` — reference_model(nearest free region) ± `pp_value_delta`,
+     i.e. the reference log₁₀(ρ) looked up at the free-region barycentre
+     nearest each pilot point, perturbed by Uniform(-pp_value_delta,
+     +pp_value_delta).
 3. Ordinary-Krig the values to all mesh cell centres (gstools).
 4. Clamp the field to [log_rho_min, log_rho_max].
 5. Write as `resistivity_block_iter0.dat` and/or `referencemodel.dat`.
@@ -156,6 +162,8 @@ roughness matrix is required.
 | `pp_coords`      | Explicit pilot-point array, shape `(N, 3)`.  Required for `"fixed"` / `"mixed"`.        |
 | `log_rho_min`    | Lower bound in log₁₀(Ω·m) — draw floor and post-Kriging clamp.                          |
 | `log_rho_max`    | Upper bound in log₁₀(Ω·m) — draw ceiling and post-Kriging clamp.                        |
+| `pp_value_mode`  | `"uniform"` (default) — Uniform(log_rho_min, log_rho_max); `"reference"` — reference_model(nearest free region) ± `pp_value_delta`. |
+| `pp_value_delta` | Half-width (log₁₀ Ω·m) of the perturbation around the reference value. Only used when `pp_value_mode="reference"`. Typical: 0.3–1.0. |
 | `vario_model`    | gstools covariance class: `"Spherical"` (default), `"Gaussian"`, `"Exponential"`, etc.  |
 | `vario_range`    | Correlation length (m).  Scalar = isotropic; 2-tuple `(h, v)` = geometric anisotropy.   |
 | `vario_sill`     | Sill (variance) in (log₁₀ Ω·m)².  Recommended: 0.25–0.5.                               |
@@ -219,6 +227,25 @@ mod_list = generate_gst_model_ensemble(
     vario_sill        = 0.5,
     vario_nugget      = 0.01,
     output_target     = "both",
+)
+
+# --- reference-anchored pilot-point values (stay close to reference model) ---
+mod_list = generate_gst_model_ensemble(
+    dir_base      = "./ubinas_gst_",
+    n_samples     = 32,
+    ref_mod_file  = "./templates/referencemodel.dat",
+    pp_mode       = "random",
+    n_pp          = 100,
+    pp_bbox       = [-50000, 50000, -50000, 50000, 0, 80000],
+    pp_value_mode  = "reference",
+    pp_value_delta = 0.5,      # +-0.5 log10 Ohm.m around the reference value
+    log_rho_min   = 0.0,
+    log_rho_max   = 4.0,
+    vario_model   = "Spherical",
+    vario_range   = (20000., 5000.),
+    vario_sill    = 0.5,
+    vario_nugget  = 0.01,
+    output_target = "both",
 )
 ```
 
@@ -467,3 +494,22 @@ FEMTIC runs needed unless noted).
   renamed to `ENS_LIST`; `VIZ_SAMPLES` and all file lists scoped to the
   resolved active member set (`ENS_MEMBERS`) to prevent `FileNotFoundError`
   when `ENS_LIST` restricts the run to a subset of members.
+
+### Changelog (2026-07-05) — reference-anchored pilot-point values
+
+- `generate_gst_model_ensemble` gained `pp_value_mode` (`"uniform"` |
+  `"reference"`) and `pp_value_delta` parameters controlling how pilot-point
+  log₁₀(ρ) values are drawn:
+  - `"uniform"` (default) preserves the original
+    Uniform(log_rho_min, log_rho_max) draw.
+  - `"reference"` draws reference_model(nearest free region) ±
+    `pp_value_delta`, using a `scipy.spatial.KDTree` nearest-neighbour
+    lookup against the free-region barycentres; result is still clamped to
+    `[log_rho_min, log_rho_max]`.
+- Reference log₁₀(ρ) at free regions is now computed unconditionally
+  (previously only inside the `pp_mode="extrema"` branch), so it is
+  available to both `"extrema"` pilot-point placement and `"reference"`
+  pilot-point value mode.
+- Companion change in `femtic_gst_prep.py`: added `MOD_PP_VALUE_MODE` /
+  `MOD_PP_VALUE_DELTA` config variables, passed through as `pp_value_mode` /
+  `pp_value_delta`.
