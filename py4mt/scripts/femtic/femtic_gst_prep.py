@@ -248,7 +248,7 @@ if PERTURB_MOD:
     #   "minima" — conductive anomalies only (low resistivity).
     #   "maxima" — resistive anomalies only (high resistivity).
     MOD_PP_ROI           = None   # None = full extent; or [xmn,xmx,ymn,ymx,zmn,zmx]
-    MOD_PP_EXTREMA_K     = 9      # neighbourhood size for extremum detection
+    MOD_PP_EXTREMA_K     = 32   # neighbourhood size for extremum detection
     MOD_PP_EXTREMA_WHICH = "both" # "both" | "minima" | "maxima"
 
     # ------------------------------------------------------------------
@@ -276,7 +276,7 @@ if PERTURB_MOD:
     #                 the ensemble anchored to the reference structure
     #                 instead of exploring the full resistivity range at
     #                 each pilot point.
-    MOD_PP_VALUE_MODE = "uniform"  # "uniform" | "reference"
+    MOD_PP_VALUE_MODE = "reference"  # "uniform" | "reference"
 
     # Half-width (log10 Ohm.m) of the symmetric perturbation around the
     # reference value.  Only used when MOD_PP_VALUE_MODE = "reference".
