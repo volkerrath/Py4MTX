@@ -85,6 +85,12 @@ using a scipy.spatial.KDTree nearest-neighbour lookup against the free-
 region barycentres.  Reference log10(rho) at free regions is now computed
 unconditionally (previously only inside the "extrema" pp_mode branch) so
 it is available to both "extrema" placement and "reference" value mode.
+Updated 2026-07-05 by Claude Sonnet 5 (Anthropic): raised the default
+neighbourhood size for extremum detection from k=9 to k=30 in both
+_find_extrema_pilot_points and generate_gst_model_ensemble's pp_extrema_k
+— the strictly-less/greater-than-all-neighbours test was flagging too
+many spurious local minima/maxima at small k on typical FEMTIC meshes;
+recommended range updated from 7-15 to 20-40.
 """
 
 from __future__ import annotations
@@ -1032,7 +1038,7 @@ def _find_extrema_pilot_points(
     cy: np.ndarray,
     cz: np.ndarray,
     ref_log_rho: np.ndarray,
-    k: int = 9,
+    k: int = 30,
     which: str = "both",
     roi: Optional[Sequence[float]] = None,
 ) -> np.ndarray:
@@ -1055,7 +1061,9 @@ def _find_extrema_pilot_points(
     k : int
         Neighbourhood size including self (k−1 actual neighbours compared).
         Larger k produces a smoother field with fewer detected extrema.
-        Recommended: 7–15 for typical FEMTIC mesh densities.
+        Recommended: 20–40 for typical FEMTIC mesh densities; increase
+        further (e.g. 30+) if the test flags an excessive number of
+        spurious local minima/maxima on dense or noisy meshes.
     which : {"both", "minima", "maxima"}
         Which extrema to return:
         ``"minima"``  — conductive anomaly cores (low ρ),
@@ -1137,7 +1145,7 @@ def generate_gst_model_ensemble(
     pp_bbox: Sequence[float] = (-50000., 50000., -50000., 50000., 0., 80000.),
     pp_coords: Optional[np.ndarray] = None,
     pp_roi: Optional[Sequence[float]] = None,
-    pp_extrema_k: int = 9,
+    pp_extrema_k: int = 30,
     pp_extrema_which: str = "both",
     # --- resistivity range ---
     log_rho_min: float = 0.0,
@@ -1233,7 +1241,9 @@ def generate_gst_model_ensemble(
     pp_extrema_k : int
         Neighbourhood size (including self) for the local extremum test in
         ``"extrema"`` mode.  Larger k yields fewer, smoother extrema.
-        Recommended: 7–15.  Default: 9.
+        Recommended: 20–40; increase further (e.g. 30+) if too many
+        spurious minima/maxima are detected on dense or noisy meshes.
+        Default: 30.
     pp_extrema_which : {"both", "minima", "maxima"}
         Which extrema to use as pilot-point seeds in ``"extrema"`` mode.
         ``"both"`` (default) seeds both conductive and resistive anomaly cores.

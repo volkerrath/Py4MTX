@@ -218,7 +218,7 @@ mod_list = generate_gst_model_ensemble(
     n_pp              = 80,           # random fill on top of extrema
     pp_bbox           = [-50000, 50000, -50000, 50000, 0, 80000],
     pp_roi            = [-40000, 40000, -40000, 40000, 0, 60000],
-    pp_extrema_k      = 11,
+    pp_extrema_k      = 30,
     pp_extrema_which  = "both",
     log_rho_min       = 0.0,
     log_rho_max       = 4.0,
@@ -513,3 +513,15 @@ FEMTIC runs needed unless noted).
 - Companion change in `femtic_gst_prep.py`: added `MOD_PP_VALUE_MODE` /
   `MOD_PP_VALUE_DELTA` config variables, passed through as `pp_value_mode` /
   `pp_value_delta`.
+
+### Changelog (2026-07-05) — larger default neighbourhood for extremum detection
+
+- Raised the default neighbourhood size for extremum detection from `k=9`
+  to `k=30` in both `_find_extrema_pilot_points` and
+  `generate_gst_model_ensemble`'s `pp_extrema_k` — the strictly-less/
+  greater-than-all-neighbours test was flagging too many spurious local
+  minima/maxima at small `k` on typical FEMTIC meshes.
+- Recommended range updated from 7–15 to 20–40; increase further (e.g. 30+)
+  if the test still finds too many extrema on dense or noisy meshes.
+- Companion change in `femtic_gst_prep.py`: default `MOD_PP_EXTREMA_K`
+  raised from 9 to 30.

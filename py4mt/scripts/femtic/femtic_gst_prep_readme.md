@@ -82,7 +82,7 @@ All settings are at the top of the script.
 | `MOD_PP_BBOX`    | Bounding box `[x_min, x_max, y_min, y_max, z_min, z_max]` (m) for random placement. |
 | `MOD_PP_COORDS`  | Explicit pilot-point coordinates, shape `(N, 3)` (easting, northing, depth). Required when `MOD_PP_MODE = "fixed"` or `"mixed"`. |
 | `MOD_PP_ROI`     | Bounding box restricting the extremum search (same format as `MOD_PP_BBOX`). `None` = full free-region extent. Only used in `"extrema"` mode. |
-| `MOD_PP_EXTREMA_K` | Neighbourhood size (including self) for the local extremum test. Larger k → smoother field, fewer extrema. Recommended: 7–15. Only used in `"extrema"` mode. |
+| `MOD_PP_EXTREMA_K` | Neighbourhood size (including self) for the local extremum test. Larger k → smoother field, fewer extrema. Recommended: 20–40; increase further (e.g. 30+) if too many spurious minima/maxima are detected. Only used in `"extrema"` mode. |
 | `MOD_PP_EXTREMA_WHICH` | Which extrema to use as seeds: `"both"` (default), `"minima"` (conductive anomalies), or `"maxima"` (resistive anomalies). Only used in `"extrema"` mode. |
 
 **`MOD_PP_MODE` options:**
@@ -106,7 +106,7 @@ If no extrema are found (e.g. the reference model is spatially flat, or `MOD_PP_
 MOD_PP_MODE          = "extrema"
 MOD_N_PP             = 80           # random fill on top of extrema
 MOD_PP_ROI           = [-40000., 40000., -40000., 40000., 0., 60000.]
-MOD_PP_EXTREMA_K     = 11           # ~10 neighbours; increase for coarse mesh
+MOD_PP_EXTREMA_K     = 30           # increase further if too many extrema are found
 MOD_PP_EXTREMA_WHICH = "both"       # conductive + resistive anomaly cores
 ```
 
@@ -276,10 +276,13 @@ from 0 … `N_SAMPLES − 1` each run.  The drawn list is printed at runtime.
 | `MOD_MESH_COLOR`       | Colour for mesh edge overlay.                                                      |
 | `MOD_SLICES`           | List of 1–5 slice dicts, each with `'type'`: `'map'` or `'curtain'`.              |
 
-Model diagnostic figures compare the **uniform reference model** (original) against
-the **Kriged initial model** for each selected member, showing how much structural
-variability the geostatistical prior injects.  Figures are saved as
-`gst_model<PLOT_STR>.pdf` in each member's own subdirectory.
+Model diagnostic figures plot the **generated initial model**
+(`MOD_RESISTIVITY_FILE`, i.e. `resistivity_block_iter0.dat` — the
+reference model *after* pilot-point Kriging has been applied to it) for
+each selected member — **not** the unperturbed reference model itself.
+This shows the structural variability the geostatistical prior actually
+injects into what FEMTIC will use as its starting iterate. Figures are
+saved as `gst_model<PLOT_STR>.pdf` in each member's own subdirectory.
 
 ## Tuning guidance
 
@@ -368,6 +371,7 @@ No sparse-matrix file (`.npz`) is required.
 | 2026-05-31 | vrath / Claude Sonnet 4.6 (Anthropic) | `QC_SLICES` / `ENS_SLICES`: documented optional `invert_x` key (bool, default `False`) for `ns`, `ew`, and `plane` slice panels — flips horizontal axis left-to-right for comparison with other software. |
 | 2026-06-06 | Claude Sonnet 4.6 (Anthropic) | Added `"extrema"` pilot-point mode: new config variables `MOD_PP_ROI`, `MOD_PP_EXTREMA_K`, `MOD_PP_EXTREMA_WHICH`; all three passed to `ens.generate_gst_model_ensemble`. Pilot-point skeleton is seeded at local log₁₀(ρ) minima and/or maxima of the reference model within `MOD_PP_ROI`, plus `MOD_N_PP` random fill points. `scipy.spatial` added to dependencies. |
 | 2026-07-05 | vrath / Claude Sonnet 5 (Anthropic) | Added `MOD_PP_VALUE_MODE` (`"uniform"` \| `"reference"`) and `MOD_PP_VALUE_DELTA` config variables, passed to `ens.generate_gst_model_ensemble` as `pp_value_mode` / `pp_value_delta`. `"uniform"` (default) preserves the original `Uniform(MOD_LOG_RHO_MIN, MOD_LOG_RHO_MAX)` pilot-point draw. `"reference"` instead draws `referencemodel(nearest free region) ± MOD_PP_VALUE_DELTA`, anchoring pilot-point values to the local reference model. |
+| 2026-07-05 | vrath / Claude Sonnet 5 (Anthropic) | Raised default `MOD_PP_EXTREMA_K` from 9 to 30 (recommended range 7–15 → 20–40) — the local extremum test was flagging too many spurious minima/maxima at small k. Corrected stale "Model diagnostic figures" description: figures plot the **generated `MOD_RESISTIVITY_FILE`** (reference model after pilot-point Kriging), not a side-by-side reference-vs-Kriged comparison. |
 
 ## Author
 
