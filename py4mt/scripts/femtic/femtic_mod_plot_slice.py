@@ -182,25 +182,27 @@ print(titstrng + "\n\n")
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-# WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_10_LC/1_L2/"
-# #: Resistivity block to display (any iteration).
-# MODEL_FILE = WORK_DIR + "resistivity_block_iter21.dat"
+WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_10_LC/1_L2/"
+#: Resistivity block to display (any iteration).
+MODEL_FILE = WORK_DIR + "resistivity_block_iter21.dat"
+PLOT_FILE = WORK_DIR + "UbiSlice_alpha_10.pdf"
 
-# WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_10_LC/07_L2/"
-# #: Resistivity block to display (any iteration).
-# MODEL_FILE = WORK_DIR + "resistivity_block_iter15.dat"
 
 # WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_10_LC/05_L2/"
 # #: Resistivity block to display (any iteration).
 # MODEL_FILE = WORK_DIR + "resistivity_block_iter26.dat"
+# PLOT_FILE = WORK_DIR + "UbiSlice_alpha_05.pdf"
 
-WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_10_LC/105_L2/"
-#: Resistivity block to display (any iteration).
-MODEL_FILE = WORK_DIR + "resistivity_block_iter13.dat"
+# WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_10_LC/105_L2/"
+# #: Resistivity block to display (any iteration).
+# MODEL_FILE = WORK_DIR + "resistivity_block_iter13.dat"
+# PLOT_FILE = WORK_DIR + "UbiSlice_alpha_15.pdf"
 
 # WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_10_LC/2_L2/"
 # #: Resistivity block to display (any iteration).
 # MODEL_FILE = WORK_DIR + "resistivity_block_iter20.dat"
+# PLOT_FILE = WORK_DIR + "UbiSlice_alpha_20.pdf"
+
 
 #: Mesh file — always required for plotting.
 MESH_FILE = WORK_DIR + "mesh.dat"
@@ -216,6 +218,7 @@ OBSERVE_FILE = WORK_DIR + "observe.dat"
 #: fem.utm_to_model using the mesh-centre origin.
 #: Set to None to fall back to the observe.dat / SITE_NUMBER path.
 SITE_DAT = WORK_DIR + "site.dat"   # set to None to disable
+CNV_FILE = WORK_DIR + "femtic.cnv"
 
 # ---------------------------------------------------------------------------
 # Verbose output
@@ -321,9 +324,7 @@ MAP_MARKERS = [
 # ---------------------------------------------------------------------------
 # Plotting — requires femtic_viz and Matplotlib
 # ---------------------------------------------------------------------------
-#: Output file path — None → interactive show().
-# PLOT_FILE = WORK_DIR + "resistivity_block_iter15.pdf"
-PLOT_FILE = MODEL_FILE.replace(".dat", ".pdf")
+
 #: Figure DPI for saved file.
 PLOT_DPI = 600
 #: Matplotlib colormap name.
@@ -337,15 +338,15 @@ PLOT_AIR_COLOR = "whitesmoke"
 #: Axes facecolor for air / background.  None = figure default.
 PLOT_AIR_BGCOLOR = None
 #: Font size for axis tick labels (main panels and colourbar ticks).
-TICK_FONTSIZE = 7
+TICK_FONTSIZE = 12
 #: Font size for axis labels, panel titles, and colourbar label.
-LABEL_FONTSIZE = 8
+LABEL_FONTSIZE = 14
 
 # ---------------------------------------------------------------------------
 # Convergence annotation  (reads femtic.cnv)
 # ---------------------------------------------------------------------------
 #: Overall figure title.  None → model file basename.
-FIGURE_TITLE = None
+FIGURE_TITLE = ""
 #: True if the inversion used distortion correction (adds extra columns).
 #: None → auto-detect from the number of columns in the last cnv line
 #:        (10 cols → distortion, 8 cols → no distortion).
@@ -426,7 +427,7 @@ ALPHA_BLANK_THRESH = 0.0
 ##: UBINAS [-16.3450, -70.8972]
 PLOT_SLICES = [
     # dict(kind="ns",  x0=(-70.8972, "latlon")),
-    dict(kind="ew",  y0=(-16.3450, "latlon"), title="alpha=0.7, WE profile"),
+    dict(kind="ew",  y0=(-16.3450, "latlon"), title="Ubinas crater"),
     # dict(kind="map", z0=-4000.0),
     # dict(kind="map", z0= 5000.0),
     # Two-point vertical profile example (uncomment to use):
