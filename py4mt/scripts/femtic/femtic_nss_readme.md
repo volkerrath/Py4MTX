@@ -110,10 +110,43 @@ Only the free-region values are replaced.  Any valid FEMTIC resistivity block
 | File | Description |
 |------|-------------|
 | `resistivity_block_nss.dat` | Null-space-shuttled FEMTIC resistivity block |
+| `nss_qc.pdf` | Optional QC slice figure of the output model (`MOD_QC = True`) |
 
-The file is in standard FEMTIC format and can be used directly as the starting
-model for a further inversion run or passed to `femtic_mod_edit.py` /
+The `.dat` file is in standard FEMTIC format and can be used directly as the
+starting model for a further inversion run or passed to `femtic_mod_edit.py` /
 `femtic_viz.py` for inspection.
+
+---
+
+## Plotting config (shared with `femtic_gst_prep.py` / `femtic_ens_post.py`)
+
+Setting `MOD_QC = True` produces a single slice figure of the nullspace-
+shuttled output model (`MODEL_OUT`), using the same `MOD_*` config surface --
+variable names, defaults, and order -- as `femtic_gst_prep.py` and
+`femtic_ens_post.py`.  A config block can be copied between the three
+scripts with no renaming.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `MOD_MESH` | str | `WORK_DIR + "mesh.dat"` | Tetrahedral mesh -- required for the QC plot. |
+| `MOD_OCEAN` | bool / None | `None` | `None` = auto-infer; `True`/`False` forces ocean-present/absent. |
+| `MOD_AIR_RHO` | float | `1.0e9` | Ohm.m sentinel for air cells (region 0). |
+| `MOD_OCEAN_RHO` | float | `0.25` | Ohm.m sentinel for ocean cells (region 1). |
+| `MOD_QC` | bool | `False` | Enable the QC slice plot of `MODEL_OUT`. |
+| `MOD_QC_FILE` | str | `WORK_DIR + "nss_qc.pdf"` | Output path. |
+| `MOD_QC_DPI` | int | `600` | Figure DPI. |
+
+The shared slice/plot, site-overlay, and geographic/UTM-origin parameters
+(`MOD_SLICES`, `MOD_XLIM/YLIM/ZLIM`, `MOD_CMAP`, `MOD_CLIM`,
+`MOD_OCEAN_COLOR`, `MOD_AIR_COLOR`, `MOD_AIR_BGCOLOR`, `MOD_ALPHA_*`,
+`MOD_EQUAL_ASPECT`, `MOD_DEPTH_KM`/`MOD_HORIZ_KM`, `MOD_PANEL_HEIGHT`/
+`MOD_PANEL_WIDTH`, `MOD_FIGSIZE`, `MOD_NROWS`/`MOD_NCOLS`, `MOD_SITE_DAT`,
+`MOD_SITE_NAMES`, `MOD_SITE_NUMBER`, `MOD_PLOT_SITES_MAPS`/`SLICES`,
+`MOD_PROJECTION_DIST`, `MOD_SITE_MARKER`/`MARKER_SLICES`, `MOD_MAP_MARKERS`,
+`MOD_ORIGIN_METHOD`, `MOD_UTM_ORIGIN_LAT/LON/E/N`, `MOD_UTM_ZONE_OVERRIDE`,
+`MOD_DISPLAY_COORDS`) have identical names, defaults, and semantics to
+`femtic_ens_post.py`'s "Shared slice / plot parameters" -- see that README
+for the full parameter table.
 
 ---
 
@@ -357,6 +390,7 @@ needed.
 |------|--------|--------|
 | 2026-05-17 | vrath / Claude Sonnet 4.6 | Created, modelled on `femtic_mod_edit.py` |
 | 2026-06-23 | vrath / Claude Sonnet 4.6 | Merged GST model generation from `femtic_gst_prep.py`. Added `PERTURB_MODE` switch; `"gst"` path calls `ens.generate_gst_model_ensemble` for a single realisation and returns `m_gst − m_ref` as perturbation delta. Full GST config block (`GST_PP_*`, `GST_VARIO_*`). `"random"` retains original Gaussian placeholder in `_make_perturbation_random`. Added `ensembles` import. |
+| 2026-07-09 | vrath / Claude Sonnet 5 (Anthropic) | Added the shared `MOD_*` plotting config block, `femtic_viz` import, `_resolve_origin_and_sites()` / `_plot_slice()` helpers, and an optional QC slice plot of `MODEL_OUT` (`MOD_QC = True`). Config surface is identical in name and order to `femtic_ens_post.py` and `femtic_gst_prep.py`, so a block can now be copied between all three scripts with no renaming. |
 
 **How to configure the GST variogram?**
 The variogram controls the spatial coherence of the Kriged perturbation.

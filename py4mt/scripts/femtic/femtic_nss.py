@@ -57,6 +57,20 @@ Provenance
                 space shuttle.  PERTURB_MODE = "random" retains the original
                 uniform-Gaussian placeholder.  GST config block mirrors
                 femtic_gst_prep.py exactly (pp_mode, variogram, etc.).
+    2026-07-09  vrath / Claude Sonnet 5 (Anthropic)
+                Added the shared MOD_* plotting config block (MOD_MESH,
+                MOD_OCEAN/AIR_RHO/OCEAN_RHO, MOD_UTM_ORIGIN_*, MOD_ORIGIN_
+                METHOD, MOD_DISPLAY_COORDS, MOD_SITE_*, MOD_SLICES,
+                MOD_XLIM/YLIM/ZLIM, MOD_CMAP/CLIM, MOD_OCEAN_COLOR/
+                AIR_COLOR/AIR_BGCOLOR, MOD_ALPHA_*, MOD_EQUAL_ASPECT/
+                DEPTH_KM/HORIZ_KM/NROWS/NCOLS/PANEL_HEIGHT/PANEL_WIDTH/
+                FIGSIZE) plus MOD_QC/MOD_QC_FILE/MOD_QC_DPI, identical in
+                name and order to femtic_ens_post.py and femtic_gst_prep.py.
+                Added femtic_viz import, _resolve_origin_and_sites() and
+                _plot_slice() helpers (mirroring femtic_ens_post.py), and an
+                optional QC slice plot of MODEL_OUT at the end of the run.
+                A plotting config block can now be copied between all three
+                scripts with no renaming.
 
 @author: vrath
 """
@@ -86,6 +100,11 @@ import util as utl
 import femtic as fem
 import inverse as inv
 import ensembles as ens
+
+try:
+    import femtic_viz as fviz
+except ImportError:
+    fviz = None
 
 version, _ = versionstrg()
 fname = inspect.getfile(inspect.currentframe())
@@ -144,6 +163,102 @@ NSS_AMPLITUDE = 1.0
 # Verbose output
 # ---------------------------------------------------------------------------
 OUT = True
+
+# ---------------------------------------------------------------------------
+# Mesh (required for the QC slice plot)
+# ---------------------------------------------------------------------------
+MOD_MESH = WORK_DIR + "mesh.dat"
+
+# --- Ocean / air handling (must match the inversion setup) ----------------
+MOD_OCEAN     = None
+MOD_AIR_RHO   = 1.0e9   # Ω·m  (region 0)
+MOD_OCEAN_RHO = 0.25    # Ω·m  (region 1 when treated as ocean)
+
+# ---------------------------------------------------------------------------
+# QC slice plot — the nullspace-shuttled output model
+# ---------------------------------------------------------------------------
+#: Set True to plot MODEL_OUT after it is written.
+MOD_QC      = False
+MOD_QC_FILE = WORK_DIR + "nss_qc.pdf"
+MOD_QC_DPI  = 600
+
+# ---------------------------------------------------------------------------
+# Shared slice / plot parameters
+# (identical config surface to femtic_gst_prep.py / femtic_rto_prep.py /
+#  femtic_ens_post.py — used by MOD_QC below)
+# ---------------------------------------------------------------------------
+
+# --- Geographic / UTM origin of the mesh centre ----------------------------
+#: Set to None when MOD_ORIGIN_METHOD will estimate the origin from MOD_SITE_DAT.
+MOD_UTM_ORIGIN_LAT    = None   # decimal degrees, positive = North
+MOD_UTM_ORIGIN_LON    = None   # decimal degrees, positive = East
+MOD_UTM_ORIGIN_E      = None   # UTM easting  [m]
+MOD_UTM_ORIGIN_N      = None   # UTM northing [m]
+MOD_UTM_ZONE_OVERRIDE = None   # override auto-derived zone; None = auto
+
+#: "box"     → midpoint of UTM bounding box of all sites in MOD_SITE_DAT.
+#: "average" → arithmetic mean of UTM coordinates in MOD_SITE_DAT.
+#: None      → use the hard-coded literals above.
+MOD_ORIGIN_METHOD = "box"
+
+# --- Display coordinate system ---------------------------------------------
+#: "model"  — axis ticks in model-local metres (default)
+#: "utm"    — axis ticks in absolute UTM metres
+#: "latlon" — axis ticks in decimal degrees
+MOD_DISPLAY_COORDS = "model"
+
+# --- Site overlay ------------------------------------------------------------
+#: Primary source: mt_make_sitelist.py CSV (name,lat,lon,elev,sitenum,E,N).
+#: Set to None to fall back to observe.dat / MOD_SITE_NUMBER.
+MOD_SITE_DAT    = WORK_DIR + "site.dat"
+MOD_SITE_NAMES  = None   # list of names to plot, or None = all sites
+#: Fallback: site number(s) from observe.dat (int or list of ints).
+MOD_SITE_NUMBER = None
+
+MOD_PLOT_SITES_MAPS   = True    # show markers on map panels
+MOD_PLOT_SITES_SLICES = False   # show markers on curtain / plane panels
+#: Max distance [m] from a curtain plane for a site to appear on it.
+MOD_PROJECTION_DIST = 5000.0    # metres; None = show all sites on every panel
+
+MOD_SITE_MARKER        = dict(marker="v", color="black", ms=8, zorder=10, label=None)
+MOD_SITE_MARKER_SLICES = None
+#: Extra point markers on map panels only (each dict: latlon, marker, color, ms, name).
+MOD_MAP_MARKERS = []
+
+# --- Slice specification ----------------------------------------------------
+#: Slice positions accept plain floats (model-local m) or CRS-tagged tuples:
+#:   (value, "utm") | (value, "latlon")
+#: Depth z0 is always model-local metres (no CRS tagging).
+MOD_SLICES = [
+    dict(kind="map", z0=5000.0),
+    dict(kind="map", z0=15000.0),
+    dict(kind="ns",  x0=0.0),
+    dict(kind="ew",  y0=0.0),
+]
+MOD_XLIM = None    # [xmin, xmax] model-local metres; None = auto
+MOD_YLIM = None    # [ymin, ymax] model-local metres; None = auto
+MOD_ZLIM = None    # [zmin, zmax] model-local metres; None = auto
+
+MOD_CMAP        = "turbo_r"
+MOD_CLIM        = [0.0, 4.0]     # [log10_min, log10_max] Ω·m; None = auto
+MOD_OCEAN_COLOR = "lightgrey"    # flat colour for ocean cells; None = colormap
+MOD_AIR_COLOR   = "whitesmoke"
+MOD_AIR_BGCOLOR = None           # axes facecolor for air; None = figure default
+
+# --- Alpha / blanking by second block file (optional) -----------------------
+MOD_ALPHA_FILE         = None    # path to sensitivity block; None = disabled
+MOD_ALPHA_MODE         = "fade"  # "fade" | "blank"
+MOD_ALPHA_BLANK_THRESH = 0.0
+
+# --- Figure layout -----------------------------------------------------------
+MOD_EQUAL_ASPECT = True
+MOD_DEPTH_KM     = True
+MOD_HORIZ_KM     = True
+MOD_NROWS        = None   # None = auto (1 row)
+MOD_NCOLS        = None   # None = auto (len(MOD_SLICES) cols)
+MOD_PANEL_HEIGHT = 16.0   # cm
+MOD_PANEL_WIDTH  = None   # cm; None = auto from aspect ratio
+MOD_FIGSIZE      = None   # [w, h] cm; overrides auto when set
 
 # ===========================================================================
 # Step 4 configuration — model perturbation mode
@@ -216,6 +331,137 @@ if PERTURB_MODE == "gst":
     GST_VARIO_SILL    = 0.5
     GST_VARIO_NUGGET  = 0.01
     GST_VARIO_ANGLES  = None   # [alpha, beta, gamma] deg; None = axis-aligned
+
+
+# ===========================================================================
+# Plotting helpers
+# ===========================================================================
+
+def _resolve_origin_and_sites():
+    """Estimate UTM origin from MOD_SITE_DAT; collect site model-local coords.
+
+    Mirrors the origin-resolution block in femtic_gst_prep.py /
+    femtic_ens_post.py so all scripts behave identically, including the
+    observe.dat / MOD_SITE_NUMBER fallback when MOD_SITE_DAT is absent.
+    """
+    _e   = MOD_UTM_ORIGIN_E
+    _n   = MOD_UTM_ORIGIN_N
+    _lat = MOD_UTM_ORIGIN_LAT
+    _lon = MOD_UTM_ORIGIN_LON
+    _zone, _north = None, None
+
+    if MOD_ORIGIN_METHOD is not None and MOD_SITE_DAT and os.path.isfile(MOD_SITE_DAT):
+        _sdat = fem.read_site_dat(MOD_SITE_DAT)
+        if _sdat:
+            _Es  = np.array([d["easting"]  for d in _sdat])
+            _Ns  = np.array([d["northing"] for d in _sdat])
+            if MOD_ORIGIN_METHOD == "box":
+                _e = 0.5 * (_Es.min() + _Es.max())
+                _n = 0.5 * (_Ns.min() + _Ns.max())
+            elif MOD_ORIGIN_METHOD == "average":
+                _e = float(_Es.mean())
+                _n = float(_Ns.mean())
+            _lats = np.array([d["lat"] for d in _sdat])
+            _lons = np.array([d["lon"] for d in _sdat])
+            _zone, _north = utl.utm_zone_from_latlon(
+                float(_lats.mean()), float(_lons.mean()),
+                override=MOD_UTM_ZONE_OVERRIDE,
+            )
+            _lat, _lon = utl.utm_to_latlon_zn(_e, _n, _zone, _north)
+
+    if _lat is not None and _lon is not None:
+        _zone, _north = utl.utm_zone_from_latlon(
+            _lat, _lon, override=MOD_UTM_ZONE_OVERRIDE
+        )
+
+    site_xys = []
+    obs_coords_only = False
+    _need_sites = MOD_PLOT_SITES_MAPS or MOD_PLOT_SITES_SLICES
+    if _need_sites and MOD_SITE_DAT and os.path.isfile(MOD_SITE_DAT):
+        for row in fem.read_site_dat(MOD_SITE_DAT, site_names=MOD_SITE_NAMES):
+            sx, sy = fem.utm_to_model(
+                row["easting"], row["northing"], _e, _n
+            )
+            site_xys.append(
+                (row["name"], sx, sy, float(row.get("elev", 0.0)))
+            )
+    elif _need_sites and MOD_SITE_NUMBER is not None:
+        _obs_file = WORK_DIR + "observe.dat"
+        _site_nums = (MOD_SITE_NUMBER if isinstance(MOD_SITE_NUMBER, (list, tuple))
+                      else [MOD_SITE_NUMBER])
+        for _sn in _site_nums:
+            sx, sy = fem.read_site_position(_obs_file, _sn)
+            site_xys.append((_sn, sx, sy, 0.0))
+        obs_coords_only = True
+
+    return _e, _n, _lat, _lon, _zone, _north, site_xys, obs_coords_only
+
+
+def _plot_slice(block_file: str, pdf_file: str,
+                utm_e, utm_n, utm_lat, utm_lon,
+                utm_zone, utm_north, site_xys: list,
+                obs_coords_only: bool = False,
+                dpi: int = 200) -> None:
+    """Call fviz.plot_model_slices with the shared MOD_* config.
+
+    Mirrors the plotting call in femtic_gst_prep.py / femtic_ens_post.py
+    exactly, so the NSS QC figure uses the same options (CRS handling,
+    site overlay, alpha/blanking, figure layout) as the other scripts.
+    """
+    if fviz is None:
+        print("  plot_slice: femtic_viz not available -- skipping.")
+        return
+
+    _slices_resolved = fem.resolve_slice_positions(
+        MOD_SLICES, utm_zone, utm_north,
+        utm_e, utm_n, utm_lat, utm_lon,
+        verbose=OUT,
+    )
+    fviz.plot_model_slices(
+        model_file          = block_file,
+        mesh_file           = MOD_MESH,
+        slices              = _slices_resolved,
+        cmap                = MOD_CMAP,
+        clim                = MOD_CLIM,
+        xlim                = MOD_XLIM,
+        ylim                = MOD_YLIM,
+        zlim                = MOD_ZLIM,
+        ocean_color         = MOD_OCEAN_COLOR,
+        ocean_value         = MOD_OCEAN_RHO,
+        air_color           = MOD_AIR_COLOR,
+        air_bgcolor         = MOD_AIR_BGCOLOR,
+        site_xys            = site_xys,
+        obs_coords_only     = obs_coords_only,
+        sites_in_maps       = MOD_PLOT_SITES_MAPS,
+        sites_in_slices     = MOD_PLOT_SITES_SLICES,
+        site_marker         = MOD_SITE_MARKER,
+        site_marker_slices  = MOD_SITE_MARKER_SLICES,
+        map_markers         = MOD_MAP_MARKERS,
+        projection_dist     = MOD_PROJECTION_DIST,
+        display_coords      = MOD_DISPLAY_COORDS,
+        utm_origin_e        = utm_e,
+        utm_origin_n        = utm_n,
+        utm_zone            = utm_zone,
+        utm_northern        = utm_north,
+        utm_to_latlon_fn    = utl.utm_to_latlon_zn,
+        latlon_to_model_fn  = fem.latlon_to_model,
+        depth_km            = MOD_DEPTH_KM,
+        horiz_km            = MOD_HORIZ_KM,
+        equal_aspect        = MOD_EQUAL_ASPECT,
+        panel_height        = MOD_PANEL_HEIGHT / 2.54,
+        panel_width         = MOD_PANEL_WIDTH / 2.54 if MOD_PANEL_WIDTH is not None else None,
+        figsize             = [v / 2.54 for v in MOD_FIGSIZE] if MOD_FIGSIZE is not None else None,
+        nrows               = MOD_NROWS,
+        ncols               = MOD_NCOLS,
+        alpha_file          = MOD_ALPHA_FILE,
+        alpha_mode          = MOD_ALPHA_MODE,
+        alpha_blank_thresh  = MOD_ALPHA_BLANK_THRESH,
+        plot_file           = pdf_file,
+        dpi                 = dpi,
+        out                 = OUT,
+    )
+    if OUT:
+        print(f"  saved -> {pdf_file}")
 
 
 # ===========================================================================
@@ -539,4 +785,32 @@ fem.write_model(MODEL_OUT, model_block_nss)
 
 print(f"  Written : {MODEL_OUT}")
 print(f"  elapsed : {time.perf_counter() - t0:.2f} s")
+
+# ===========================================================================
+# QC slice plot of the nullspace-shuttled model
+# ===========================================================================
+
+if MOD_QC:
+    if fviz is None:
+        print("\n  MOD_QC: femtic_viz not available -- skipping.")
+    else:
+        print("\n" + "=" * 72)
+        print("QC slice plot of nullspace-shuttled model")
+        print("=" * 72)
+        (utm_e, utm_n, utm_lat, utm_lon,
+         utm_zone, utm_north, site_xys, obs_coords_only) = _resolve_origin_and_sites()
+        _plot_slice(
+            block_file      = MODEL_OUT,
+            pdf_file        = MOD_QC_FILE,
+            utm_e           = utm_e,
+            utm_n           = utm_n,
+            utm_lat         = utm_lat,
+            utm_lon         = utm_lon,
+            utm_zone        = utm_zone,
+            utm_north       = utm_north,
+            site_xys        = site_xys,
+            obs_coords_only = obs_coords_only,
+            dpi             = MOD_QC_DPI,
+        )
+
 print(f"\n  Total elapsed : {time.perf_counter() - t0_total:.2f} s")

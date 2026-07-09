@@ -102,11 +102,19 @@ Provenance:
                 +- MOD_PP_VALUE_DELTA (log10 Ohm.m), keeping the ensemble
                 anchored to the reference structure.
     2026-07-05  vrath / Claude Sonnet 5 (Anthropic)
-                Raised default MOD_PP_EXTREMA_K from 9 to 30 — the local
+                Raised default MOD_PP_EXTREMA_K from 9 to 30 - the local
                 extremum test (strictly less/greater than all k-1
                 neighbours) was flagging too many spurious minima/maxima at
                 small k on typical FEMTIC meshes.  Recommended range in
                 comments updated from 7-15 to 20-40.
+    2026-07-09  vrath / Claude Sonnet 5 (Anthropic)
+                Moved MOD_ORIGIN_METHOD next to the MOD_UTM_ORIGIN_*/
+                MOD_UTM_ZONE_OVERRIDE block (was previously declared a
+                second time, later, next to the site-overlay settings -
+                removed that duplicate).  The shared plotting config block
+                now has identical variable order to femtic_ens_post.py and
+                femtic_nss.py, so a config block can be copied between all
+                three scripts with no renaming or reordering.
 """
 
 import os
@@ -413,18 +421,23 @@ if PLOT_DATA or PLOT_MODEL:
     MOD_MESH = TEMPLATES + "mesh.dat"
 
     # --- Ocean / air handling (must match the inversion setup) ---------------
-    #: None → auto-infer; True / False → force ocean-present / ocean-absent.
+    #: None = auto-infer; True / False = force ocean-present / ocean-absent.
     MOD_OCEAN     = None
-    MOD_AIR_RHO   = 1.0e9   # Ω·m  (region 0)
-    MOD_OCEAN_RHO = 0.25    # Ω·m  (region 1 when treated as ocean)
+    MOD_AIR_RHO   = 1.0e9   # Ohm.m  (region 0)
+    MOD_OCEAN_RHO = 0.25    # Ohm.m  (region 1 when treated as ocean)
 
     # --- Geographic / UTM origin of the mesh centre --------------------------
-    #: Set to None when ORIGIN_METHOD will estimate the origin from SITE_DAT.
+    #: Set to None when MOD_ORIGIN_METHOD will estimate the origin from MOD_SITE_DAT.
     MOD_UTM_ORIGIN_LAT = None   # decimal degrees, positive = North
     MOD_UTM_ORIGIN_LON = None   # decimal degrees, positive = East
     MOD_UTM_ORIGIN_E   = None   # UTM easting  [m]
     MOD_UTM_ORIGIN_N   = None   # UTM northing [m]
     MOD_UTM_ZONE_OVERRIDE = None  # override auto-derived zone; None = auto
+
+    #: "box"     = midpoint of UTM bounding box of all sites in MOD_SITE_DAT.
+    #: "average" = arithmetic mean of UTM coordinates in MOD_SITE_DAT.
+    #: None      = use the hard-coded literals above.
+    MOD_ORIGIN_METHOD = "box"   # None | "box" | "average"
 
     # --- Display coordinate system -------------------------------------------
     #: "model"  — axis ticks in model-local metres (default)
@@ -447,12 +460,6 @@ if PLOT_DATA or PLOT_MODEL:
     MOD_SITE_MARKER_SLICES = dict(marker="v", color="black", ms=4, zorder=10, label=None)
     #: Extra point markers on map panels only (each dict: latlon, marker, color, ms, name).
     MOD_MAP_MARKERS = []
-
-    # --- Mesh-centre estimation from site.dat (optional) ---------------------
-    #: None → use hard-coded values above.
-    #: "box"     → midpoint of UTM bounding box of all sites in MOD_SITE_DAT.
-    #: "average" → arithmetic mean of UTM coordinates in MOD_SITE_DAT.
-    MOD_ORIGIN_METHOD = "box"   # None | "box" | "average"
 
     # --- Plotting -----------------------------------------------------------
     MOD_DPI       = 200
