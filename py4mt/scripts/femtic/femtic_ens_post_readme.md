@@ -93,7 +93,6 @@ Produces a single slice figure of the **lowest-nRMS** converged member.
 |---|---|---|---|
 | `MOD_QC` | bool | `False` | Enable QC slice plot. |
 | `MOD_QC_FILE` | str | `<prefix>_qc.pdf` | Output path; `None` → interactive `show()`. |
-| `MOD_QC_DPI` | int | `600` | Figure DPI. |
 
 ### Statistics slice plots
 
@@ -104,7 +103,6 @@ Writes each selected statistic as a FEMTIC block file, then plots it.
 | `MOD_STATS` | bool | `False` | Enable statistics slice plots. |
 | `MOD_STATS_WHAT` | list of str | `["avg","var","med","mad"]` | Which statistics to plot. Subset of `"avg"`, `"var"`, `"med"`, `"mad"`. |
 | `MOD_STATS_DIR` | str | `stats_plots/` | Destination for block files and figures. |
-| `MOD_STATS_DPI` | int | `600` | Figure DPI. |
 
 Block files are written using the lowest-nRMS member as format template
 (preserves header, bounds, and flag columns).  Output filenames follow the
@@ -121,6 +119,7 @@ and `femtic_rto_prep.py`.
 | `MOD_SLICES` | List of slice-spec dicts (`kind`, `z0`/`x0`/`y0`). Kinds: `"map"`, `"ns"`, `"ew"`, `"plane"`. |
 | `MOD_XLIM / YLIM / ZLIM` | Global axis limits (model-local metres); `None` = auto. |
 | `MOD_CMAP` | Matplotlib colormap name. |
+| `MOD_DPI` | Figure DPI, used by both `MOD_QC` and `MOD_STATS` plots. |
 | `MOD_CLIM` | `[log10(ρ_min), log10(ρ_max)]`; `None` = auto. |
 | `MOD_OCEAN_COLOR` | Flat colour for ocean/lake cells; `None` = colormap. |
 | `MOD_AIR_COLOR` | Flat colour for air cells. |
@@ -238,3 +237,4 @@ correct.
 | 2026-05-27 | vrath / Claude Sonnet 4.6 (Anthropic) | Added `femtic_viz` import; `PLOT_QC` block with minimal `plot_model_slices` call. |
 | 2026-06-11 | vrath / Claude Sonnet 4.6 (Anthropic) | Renamed → `femtic_ens_post.py`; fixed `axis` bug in mean/var/median/MAD; replaced thin `PLOT_QC` block with full CRS-aware `_plot_slice()` helper; added `PLOT_STATS` block (writes block files + figures for avg/var/med/MAD); added `ENSEMBLE_PREFIX` config var for generic naming. |
 | 2026-07-07 | vrath / Claude Sonnet 5 (Anthropic) | Renamed the entire plotting config surface to match `femtic_gst_prep.py` / `femtic_rto_prep.py` exactly (`MOD_*` prefix throughout: mesh, ocean/air, UTM origin, display coords, site overlay, slice specs, colormap/limits, figure layout). Added `MOD_OCEAN`/`MOD_AIR_RHO`, `MOD_SITE_NUMBER` (observe.dat fallback), `MOD_AIR_COLOR`, `MOD_ALPHA_FILE/MODE/BLANK_THRESH`, `MOD_PANEL_WIDTH`, `MOD_FIGSIZE`. Removed a latent duplicate `MOD_XLIM/YLIM/ZLIM` assignment that silently discarded the first (non-`None`) values. A config block can now be copied between `femtic_ens_post.py` and the ensemble-generation scripts with no renaming. |
+| 2026-07-09 | vrath / Claude Sonnet 5 (Anthropic) | Merged `MOD_QC_DPI` / `MOD_STATS_DPI` into a single `MOD_DPI` knob, matching `femtic_gst_prep.py` and `femtic_nss.py` (one figure-DPI setting per script, not one per plot type). `_plot_slice()` no longer takes a `dpi` argument; it reads `MOD_DPI` directly. |

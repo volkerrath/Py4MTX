@@ -64,13 +64,15 @@ Provenance
                 MOD_XLIM/YLIM/ZLIM, MOD_CMAP/CLIM, MOD_OCEAN_COLOR/
                 AIR_COLOR/AIR_BGCOLOR, MOD_ALPHA_*, MOD_EQUAL_ASPECT/
                 DEPTH_KM/HORIZ_KM/NROWS/NCOLS/PANEL_HEIGHT/PANEL_WIDTH/
-                FIGSIZE) plus MOD_QC/MOD_QC_FILE/MOD_QC_DPI, identical in
+                FIGSIZE) plus MOD_QC/MOD_QC_FILE/MOD_DPI, identical in
                 name and order to femtic_ens_post.py and femtic_gst_prep.py.
                 Added femtic_viz import, _resolve_origin_and_sites() and
                 _plot_slice() helpers (mirroring femtic_ens_post.py), and an
                 optional QC slice plot of MODEL_OUT at the end of the run.
                 A plotting config block can now be copied between all three
-                scripts with no renaming.
+                scripts with no renaming. Uses a single MOD_DPI knob (no
+                per-plot-type split), matching femtic_gst_prep.py and the
+                now-simplified femtic_ens_post.py.
 
 @author: vrath
 """
@@ -180,7 +182,6 @@ MOD_OCEAN_RHO = 0.25    # Ω·m  (region 1 when treated as ocean)
 #: Set True to plot MODEL_OUT after it is written.
 MOD_QC      = False
 MOD_QC_FILE = WORK_DIR + "nss_qc.pdf"
-MOD_QC_DPI  = 600
 
 # ---------------------------------------------------------------------------
 # Shared slice / plot parameters
@@ -239,6 +240,7 @@ MOD_XLIM = None    # [xmin, xmax] model-local metres; None = auto
 MOD_YLIM = None    # [ymin, ymax] model-local metres; None = auto
 MOD_ZLIM = None    # [zmin, zmax] model-local metres; None = auto
 
+MOD_DPI         = 600            # figure DPI
 MOD_CMAP        = "turbo_r"
 MOD_CLIM        = [0.0, 4.0]     # [log10_min, log10_max] Ω·m; None = auto
 MOD_OCEAN_COLOR = "lightgrey"    # flat colour for ocean cells; None = colormap
@@ -400,8 +402,7 @@ def _resolve_origin_and_sites():
 def _plot_slice(block_file: str, pdf_file: str,
                 utm_e, utm_n, utm_lat, utm_lon,
                 utm_zone, utm_north, site_xys: list,
-                obs_coords_only: bool = False,
-                dpi: int = 200) -> None:
+                obs_coords_only: bool = False) -> None:
     """Call fviz.plot_model_slices with the shared MOD_* config.
 
     Mirrors the plotting call in femtic_gst_prep.py / femtic_ens_post.py
@@ -457,7 +458,7 @@ def _plot_slice(block_file: str, pdf_file: str,
         alpha_mode          = MOD_ALPHA_MODE,
         alpha_blank_thresh  = MOD_ALPHA_BLANK_THRESH,
         plot_file           = pdf_file,
-        dpi                 = dpi,
+        dpi                 = MOD_DPI,
         out                 = OUT,
     )
     if OUT:
@@ -810,7 +811,6 @@ if MOD_QC:
             utm_north       = utm_north,
             site_xys        = site_xys,
             obs_coords_only = obs_coords_only,
-            dpi             = MOD_QC_DPI,
         )
 
 print(f"\n  Total elapsed : {time.perf_counter() - t0_total:.2f} s")

@@ -185,7 +185,7 @@ When `PLOT_SLICES_QC = True` (inside the viz block, requires `PLOT_DATA` or `PLO
 | `QC_CLIM` | `[0., 4.]` | log₁₀(Ω·m) colour limits; `None` = auto |
 | `QC_XLIM`, `QC_YLIM`, `QC_ZLIM` | `None` | Global axis limits in model-local metres |
 | `QC_OCEAN_COLOR` | `"lightgrey"` | Flat colour for ocean cells |
-| `QC_DPI` | `200` | Figure DPI |
+| `MOD_DPI` | `200` | Figure DPI |
 
 Figures are saved as `gst_qc<PLOT_STR>.pdf` in each member's subdirectory alongside the existing `gst_data` and `gst_model` figures.  The member file list uses `MOD_RESISTIVITY_FILE` so it always targets the Kriged initial model.
 
@@ -372,7 +372,7 @@ No sparse-matrix file (`.npz`) is required.
 | 2026-06-06 | Claude Sonnet 4.6 (Anthropic) | Added `"extrema"` pilot-point mode: new config variables `MOD_PP_ROI`, `MOD_PP_EXTREMA_K`, `MOD_PP_EXTREMA_WHICH`; all three passed to `ens.generate_gst_model_ensemble`. Pilot-point skeleton is seeded at local log₁₀(ρ) minima and/or maxima of the reference model within `MOD_PP_ROI`, plus `MOD_N_PP` random fill points. `scipy.spatial` added to dependencies. |
 | 2026-07-05 | vrath / Claude Sonnet 5 (Anthropic) | Added `MOD_PP_VALUE_MODE` (`"uniform"` \| `"reference"`) and `MOD_PP_VALUE_DELTA` config variables, passed to `ens.generate_gst_model_ensemble` as `pp_value_mode` / `pp_value_delta`. `"uniform"` (default) preserves the original `Uniform(MOD_LOG_RHO_MIN, MOD_LOG_RHO_MAX)` pilot-point draw. `"reference"` instead draws `referencemodel(nearest free region) ± MOD_PP_VALUE_DELTA`, anchoring pilot-point values to the local reference model. |
 | 2026-07-05 | vrath / Claude Sonnet 5 (Anthropic) | Raised default `MOD_PP_EXTREMA_K` from 9 to 30 (recommended range 7–15 → 20–40) — the local extremum test was flagging too many spurious minima/maxima at small k. Corrected stale "Model diagnostic figures" description: figures plot the **generated `MOD_RESISTIVITY_FILE`** (reference model after pilot-point Kriging), not a side-by-side reference-vs-Kriged comparison. |
-| 2026-07-09 | vrath / Claude Sonnet 5 (Anthropic) | Moved `MOD_ORIGIN_METHOD` next to the `MOD_UTM_ORIGIN_*`/`MOD_UTM_ZONE_OVERRIDE` block; removed the duplicate later declaration next to the site-overlay settings. The shared plotting config block now has identical variable order to `femtic_ens_post.py` and `femtic_nss.py`, so a config block can be copied between all three scripts with no renaming or reordering. |
+| 2026-07-09 | vrath / Claude Sonnet 5 (Anthropic) | Moved `MOD_ORIGIN_METHOD` next to the `MOD_UTM_ORIGIN_*`/`MOD_UTM_ZONE_OVERRIDE` block; removed the duplicate later declaration next to the site-overlay settings. The shared plotting config block now has identical variable order and naming to `femtic_ens_post.py` and `femtic_nss.py` (single `MOD_DPI` knob in all three — `femtic_ens_post.py`'s earlier `MOD_QC_DPI`/`MOD_STATS_DPI` split was also removed). The `fviz.plot_model_slices()` call is byte-for-byte identical in every visual-affecting argument across all three scripts — only the models plotted differ. |
 
 ## Author
 

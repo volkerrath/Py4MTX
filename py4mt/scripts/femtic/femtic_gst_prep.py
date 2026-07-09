@@ -112,9 +112,14 @@ Provenance:
                 MOD_UTM_ZONE_OVERRIDE block (was previously declared a
                 second time, later, next to the site-overlay settings -
                 removed that duplicate).  The shared plotting config block
-                now has identical variable order to femtic_ens_post.py and
-                femtic_nss.py, so a config block can be copied between all
-                three scripts with no renaming or reordering.
+                now has identical variable order and naming to
+                femtic_ens_post.py and femtic_nss.py (single MOD_DPI knob
+                in all three - femtic_ens_post.py's earlier MOD_QC_DPI/
+                MOD_STATS_DPI split was also removed), so a config block
+                can be copied between all three scripts with no renaming
+                or reordering, and the fviz.plot_model_slices() call is
+                byte-for-byte identical in every visual-affecting argument
+                across all three - only the models plotted differ.
 """
 
 import os
