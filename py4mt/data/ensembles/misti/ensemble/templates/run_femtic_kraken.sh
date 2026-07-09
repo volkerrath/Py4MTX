@@ -1,5 +1,5 @@
 #! /bin/bash
-#OAR --name FEMTIC_Ubinas_alpha0.3
+#OAR --name FEMTIC_Misti-Ensemble
 #OAR --project mt-geothest
 #OAR -l /nodes=1, walltime=16:0:00
 ###OAR -l /core=72, walltime=16:0:00

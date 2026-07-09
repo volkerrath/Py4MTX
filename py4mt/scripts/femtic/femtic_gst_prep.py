@@ -165,13 +165,16 @@ TEMPLATES = ENSEMBLE_DIR + "/templates/"
 if not os.path.isdir(TEMPLATES):
     sys.exit(" Directory: %s does not exist, needs to be copied !" % TEMPLATES)
 
+# Forr GST
 COPY_LIST = ["observe.dat",
-             "referencemodel.dat",]
+             "resistivity_block_iter0.dat",]
 LINK_LIST = ["control.dat",
              "mesh.dat",
-             "resistivity_block_iter0.dat",
+             "referencemodel.dat",
              "distortion_iter0.dat", "site.dat",
              "run_femtic_dias.sh","run_femtic_kraken.sh"]
+
+
 RELATIVE_LINKS = True   # True: portable relative symlinks (default, survives tgz);
                         # False: absolute symlinks (legacy behaviour)
 
@@ -180,8 +183,7 @@ RELATIVE_LINKS = True   # True: portable relative symlinks (default, survives tg
 Control number of ensemble members for increase of sample number or restart
 of badly converged samples (see femtic_gst_post.py).
 """
-FROM_TO = None
-
+FROM_TO = np.arange(32,64)
 
 """
 Set up mode of model perturbations.
@@ -256,7 +258,7 @@ if PERTURB_MOD:
     #   "minima" — conductive anomalies only (low resistivity).
     #   "maxima" — resistive anomalies only (high resistivity).
     MOD_PP_ROI           = None   # None = full extent; or [xmn,xmx,ymn,ymx,zmn,zmx]
-    MOD_PP_EXTREMA_K     = 30     # neighbourhood size for extremum detection
+    MOD_PP_EXTREMA_K     = 33     # neighbourhood size for extremum detection
     MOD_PP_EXTREMA_WHICH = "both" # "both" | "minima" | "maxima"
 
     # ------------------------------------------------------------------
@@ -289,7 +291,7 @@ if PERTURB_MOD:
     # Half-width (log10 Ohm.m) of the symmetric perturbation around the
     # reference value.  Only used when MOD_PP_VALUE_MODE = "reference".
     # Typical: 0.3-1.0 (factor ~2-10 in resistivity).
-    MOD_PP_VALUE_DELTA = 0.5
+    MOD_PP_VALUE_DELTA = 0.3
 
     # ------------------------------------------------------------------
     # Variogram model
@@ -477,7 +479,7 @@ if PLOT_DATA or PLOT_MODEL:
     ]
     MOD_XLIM = [-15000., 15000.]   # [xmin, xmax] model-local m; None = auto
     MOD_YLIM = [-15000., 15000.]   # [ymin, ymax] model-local m; None = auto
-    MOD_ZLIM = [    0.,  30000.]   # [zmin, zmax] model-local m; None = auto
+    MOD_ZLIM = [ -6000.,  30000.]   # [zmin, zmax] model-local m; None = auto
 
     # --- Figure layout -------------------------------------------------------
     MOD_EQUAL_ASPECT  = True

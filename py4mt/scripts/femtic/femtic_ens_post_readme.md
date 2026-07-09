@@ -30,10 +30,16 @@ Ensemble sub-directories  (rto_*, gst_*, member_*, …)
           ▼
   <PREFIX>_results.npz
           │
-          ├──▶  PLOT_QC = True   →  slice figure of best-nRMS member
+          ├──▶  MOD_QC = True   →  slice figure of best-nRMS member
           │
-          └──▶  PLOT_STATS = True  →  block files + slice figures for each stat
+          └──▶  MOD_STATS = True  →  block files + slice figures for each stat
 ```
+
+**Plotting config is shared with `femtic_gst_prep.py` / `femtic_rto_prep.py`.**
+All `MOD_*` variables below (mesh, ocean/air, UTM origin, display coordinates,
+site overlay, slice specs, colormap/limits, alpha/blanking, figure layout)
+use the same names and semantics as the ensemble-generation scripts, so a
+config block can be copied between scripts with no renaming.
 
 ---
 
@@ -66,8 +72,18 @@ Ensemble sub-directories  (rto_*, gst_*, member_*, …)
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `ENSEMBLE_RESULTS` | str | `<PREFIX>_results.npz` | Path for the output `.npz` file. |
-| `MESH_FILE` | str | `templates/mesh.dat` | Tetrahedral mesh — required for all slice plots. |
+| `MOD_MESH` | str | `templates/mesh.dat` | Tetrahedral mesh — required for all slice plots. |
 | `OUT` | bool | `True` | Verbose console output. |
+
+### Ocean / air handling
+
+Must match the values used by the FEMTIC inversion that produced the ensemble.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `MOD_OCEAN` | bool / None | `None` | `None` = auto-infer; `True`/`False` forces ocean-present/absent. |
+| `MOD_AIR_RHO` | float | `1.0e9` | Ω·m sentinel for air cells (region 0), used when writing stat block files. |
+| `MOD_OCEAN_RHO` | float | `0.25` | Ω·m sentinel for ocean cells (region 1), used for both block-file writing and plotting. |
 
 ### QC slice plot
 
@@ -75,9 +91,9 @@ Produces a single slice figure of the **lowest-nRMS** converged member.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `PLOT_QC` | bool | `False` | Enable QC slice plot. |
-| `PLOT_QC_FILE` | str | `<prefix>_qc.pdf` | Output path; `None` → interactive `show()`. |
-| `PLOT_QC_DPI` | int | `200` | Figure DPI. |
+| `MOD_QC` | bool | `False` | Enable QC slice plot. |
+| `MOD_QC_FILE` | str | `<prefix>_qc.pdf` | Output path; `None` → interactive `show()`. |
+| `MOD_QC_DPI` | int | `600` | Figure DPI. |
 
 ### Statistics slice plots
 
@@ -85,51 +101,60 @@ Writes each selected statistic as a FEMTIC block file, then plots it.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `PLOT_STATS` | bool | `False` | Enable statistics slice plots. |
-| `PLOT_STATS_WHAT` | list of str | `["avg","var","med","mad"]` | Which statistics to plot. Subset of `"avg"`, `"var"`, `"med"`, `"mad"`. |
-| `PLOT_STATS_DIR` | str | `stats_plots/` | Destination for block files and figures. |
-| `PLOT_STATS_DPI` | int | `200` | Figure DPI. |
+| `MOD_STATS` | bool | `False` | Enable statistics slice plots. |
+| `MOD_STATS_WHAT` | list of str | `["avg","var","med","mad"]` | Which statistics to plot. Subset of `"avg"`, `"var"`, `"med"`, `"mad"`. |
+| `MOD_STATS_DIR` | str | `stats_plots/` | Destination for block files and figures. |
+| `MOD_STATS_DPI` | int | `600` | Figure DPI. |
 
 Block files are written using the lowest-nRMS member as format template
 (preserves header, bounds, and flag columns).  Output filenames follow the
 pattern `resistivity_block_<prefix>_<stat>.dat`.
 
-### Shared slice parameters
+### Shared slice / plot parameters
 
-Both `PLOT_QC` and `PLOT_STATS` use the same slice/plot config block.
+Both `MOD_QC` and `MOD_STATS` use the same slice/plot config block — this
+block is identical (variable names and defaults) to `femtic_gst_prep.py`
+and `femtic_rto_prep.py`.
 
 | Parameter | Description |
 |---|---|
-| `PLOT_SLICES` | List of slice-spec dicts (`kind`, `z0`/`x0`/`y0`). Kinds: `"map"`, `"ns"`, `"ew"`, `"plane"`. |
-| `PLOT_CMAP` | Matplotlib colormap name. |
-| `PLOT_CLIM` | `[log10(ρ_min), log10(ρ_max)]`; `None` = auto. |
-| `PLOT_XLIM / YLIM / ZLIM` | Global axis limits (model-local metres); `None` = auto. |
-| `PLOT_OCEAN_COLOR` | Flat colour for ocean/lake cells. |
-| `PLOT_OCEAN_RHO` | Ocean cell sentinel value (Ω·m). |
-| `PLOT_AIR_BGCOLOR` | Axes facecolor for air; `None` = figure default. |
-| `DEPTH_KM / HORIZ_KM` | Axis units. |
-| `PLOT_EQUAL_ASPECT` | Equal aspect ratio on map/curtain panels. |
-| `PLOT_PANEL_HEIGHT` | Panel height in cm. |
-| `PLOT_NROWS / NCOLS` | Grid layout; `None` = 1 row × N columns. |
+| `MOD_SLICES` | List of slice-spec dicts (`kind`, `z0`/`x0`/`y0`). Kinds: `"map"`, `"ns"`, `"ew"`, `"plane"`. |
+| `MOD_XLIM / YLIM / ZLIM` | Global axis limits (model-local metres); `None` = auto. |
+| `MOD_CMAP` | Matplotlib colormap name. |
+| `MOD_CLIM` | `[log10(ρ_min), log10(ρ_max)]`; `None` = auto. |
+| `MOD_OCEAN_COLOR` | Flat colour for ocean/lake cells; `None` = colormap. |
+| `MOD_AIR_COLOR` | Flat colour for air cells. |
+| `MOD_AIR_BGCOLOR` | Axes facecolor for air; `None` = figure default. |
+| `MOD_ALPHA_FILE` | Path to a second (e.g. sensitivity) block file used to fade/blank low-sensitivity cells; `None` = disabled. |
+| `MOD_ALPHA_MODE` | `"fade"` or `"blank"`. |
+| `MOD_ALPHA_BLANK_THRESH` | Threshold below which cells are faded/blanked. |
+| `MOD_EQUAL_ASPECT` | Equal aspect ratio on map/curtain panels. |
+| `MOD_DEPTH_KM / HORIZ_KM` | Axis units. |
+| `MOD_PANEL_HEIGHT` | Panel height in cm. |
+| `MOD_PANEL_WIDTH` | Panel width in cm; `None` = auto from aspect ratio. |
+| `MOD_FIGSIZE` | `[w, h]` cm; overrides auto layout when set. |
+| `MOD_NROWS / NCOLS` | Grid layout; `None` = 1 row × N columns. |
 
 ### Site overlay
 
 | Parameter | Description |
 |---|---|
-| `SITE_DAT` | Path to `site.dat` CSV; `None` to disable. |
-| `SITE_NAMES` | `None` = all sites; list of strings = subset. |
-| `PLOT_SITES_MAPS / SLICES` | Toggle site markers on map / curtain panels. |
-| `PROJECTION_DIST` | Maximum projection distance (m) for curtain panels. |
-| `SITE_MARKER` | Marker style dict for map overlays. |
+| `MOD_SITE_DAT` | Path to `site.dat` CSV; `None` to fall back to `MOD_SITE_NUMBER`. |
+| `MOD_SITE_NAMES` | `None` = all sites; list of strings = subset. |
+| `MOD_SITE_NUMBER` | Fallback site number(s) from `observe.dat` (int or list of ints), used only when `MOD_SITE_DAT` is unavailable. |
+| `MOD_PLOT_SITES_MAPS / SLICES` | Toggle site markers on map / curtain panels. |
+| `MOD_PROJECTION_DIST` | Maximum projection distance (m) for curtain panels; `None` = show all sites on every panel. |
+| `MOD_SITE_MARKER / MARKER_SLICES` | Marker style dicts for map / curtain overlays. |
+| `MOD_MAP_MARKERS` | Extra point markers on map panels only. |
 
 ### Geographic / UTM origin
 
 | Parameter | Description |
 |---|---|
-| `ORIGIN_METHOD` | `"box"` (bounding-box midpoint) / `"average"` / `None` (use literal values). |
-| `UTM_ORIGIN_LAT/LON/E/N` | Manual override; ignored when `ORIGIN_METHOD` estimates from `SITE_DAT`. |
-| `UTM_ZONE_OVERRIDE` | Force a specific UTM zone string; `None` = auto-detect. |
-| `DISPLAY_COORDS` | `"model"` / `"utm"` / `"latlon"`. |
+| `MOD_ORIGIN_METHOD` | `"box"` (bounding-box midpoint) / `"average"` / `None` (use literal values). |
+| `MOD_UTM_ORIGIN_LAT/LON/E/N` | Manual override; ignored when `MOD_ORIGIN_METHOD` estimates from `MOD_SITE_DAT`. |
+| `MOD_UTM_ZONE_OVERRIDE` | Force a specific UTM zone string; `None` = auto-detect. |
+| `MOD_DISPLAY_COORDS` | `"model"` / `"utm"` / `"latlon"`. |
 
 ---
 
@@ -150,7 +175,7 @@ Keys follow the pattern `<PREFIX>_<stat>`:
 | `<P>_mad` | `(N_free,)` | Median absolute deviation. |
 | `<P>_prc` | `(N_prc, N_free)` | Percentile values at `PERCENTILES` levels. |
 
-### Statistics block files (PLOT_STATS = True)
+### Statistics block files (MOD_STATS = True)
 
 ```
 <PLOT_STATS_DIR>/
@@ -175,7 +200,7 @@ pipeline.
 ```bash
 conda activate EM
 # Edit ENSEMBLE_DIR, ENSEMBLE_NAME, ENSEMBLE_PREFIX, NRMS_MAX,
-#      MESH_FILE, PLOT_QC, PLOT_STATS at the top of the script.
+#      MOD_MESH, MOD_QC, MOD_STATS at the top of the script.
 python femtic_ens_post.py
 ```
 
@@ -212,3 +237,4 @@ correct.
 | 2026-03-03 | Claude (Anthropic) | Renamed user-set parameters to UPPERCASE; generated README. |
 | 2026-05-27 | vrath / Claude Sonnet 4.6 (Anthropic) | Added `femtic_viz` import; `PLOT_QC` block with minimal `plot_model_slices` call. |
 | 2026-06-11 | vrath / Claude Sonnet 4.6 (Anthropic) | Renamed → `femtic_ens_post.py`; fixed `axis` bug in mean/var/median/MAD; replaced thin `PLOT_QC` block with full CRS-aware `_plot_slice()` helper; added `PLOT_STATS` block (writes block files + figures for avg/var/med/MAD); added `ENSEMBLE_PREFIX` config var for generic naming. |
+| 2026-07-07 | vrath / Claude Sonnet 5 (Anthropic) | Renamed the entire plotting config surface to match `femtic_gst_prep.py` / `femtic_rto_prep.py` exactly (`MOD_*` prefix throughout: mesh, ocean/air, UTM origin, display coords, site overlay, slice specs, colormap/limits, figure layout). Added `MOD_OCEAN`/`MOD_AIR_RHO`, `MOD_SITE_NUMBER` (observe.dat fallback), `MOD_AIR_COLOR`, `MOD_ALPHA_FILE/MODE/BLANK_THRESH`, `MOD_PANEL_WIDTH`, `MOD_FIGSIZE`. Removed a latent duplicate `MOD_XLIM/YLIM/ZLIM` assignment that silently discarded the first (non-`None`) values. A config block can now be copied between `femtic_ens_post.py` and the ensemble-generation scripts with no renaming. |
