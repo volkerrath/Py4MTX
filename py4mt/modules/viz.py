@@ -18,6 +18,11 @@ style customization (colors, markers, font sizes, axis limits, etc.).
 
 Author: Volker Rath (DIAS)
 Created: 2020-12-27
+Modified: 2026-07-17 by Claude Sonnet 5 (Anthropic) — migrated from legacy
+    scipy.sparse matrix classes to the array-equivalent API in
+    plot_sparsity_pattern: coo_matrix -> coo_array; removed a redundant,
+    now-unused duplicate import line that still referenced the legacy
+    csr_matrix/csc_matrix/coo_matrix names.
 """
 
 import os
@@ -424,12 +429,11 @@ def plot_sparsity_pattern(
         aspect='auto'):
 
     from scipy.sparse import csr_array, csc_array, coo_array, eye_array, issparse
-    from scipy.sparse import csr_matrix, csc_matrix, coo_matrix
     from matspy import spy_to_mpl, spy
 
     import femtic as fem
 
-    m = coo_matrix(matrix)
+    m = coo_array(matrix)
     fem.check_sparse_matrix(m)
 
     # plotting

@@ -91,6 +91,19 @@ _find_extrema_pilot_points and generate_gst_model_ensemble's pp_extrema_k
 — the strictly-less/greater-than-all-neighbours test was flagging too
 many spurious local minima/maxima at small k on typical FEMTIC meshes;
 recommended range updated from 7-15 to 20-40.
+Modified: 2026-07-17 by Claude Sonnet 5 (Anthropic) — migrated from legacy
+    scipy.sparse matrix classes to the array-equivalent API throughout:
+    removed unused isspmatrix import; updated scipy.sparse.spmatrix type
+    hints to scipy.sparse.sparray (get_roughness, make_prior_cov,
+    prune_inplace, prune_rebuild, dense_to_csr, matrix_reduce,
+    check_sparse_matrix, build_rtr_operator, make_rtr_preconditioner,
+    make_sparse_cholesky_precision_solver, _rtr_diag, pick_lam_from_rtr_diag);
+    replaced scipy.sparse.identity() (returns a legacy matrix) with
+    scipy.sparse.eye_array() in make_rtr_preconditioner and
+    make_sparse_cholesky_precision_solver. Also fixed a latent bug in
+    get_roughness/make_prior_cov where `eye` was imported aliased as
+    `eye_array` (silently returning a legacy sparse matrix instead of an
+    array); now imports the genuine eye_array constructor.
 """
 
 from __future__ import annotations
@@ -125,7 +138,7 @@ import scipy.sparse
 import scipy.sparse.linalg
 
 from numpy.random import Generator, default_rng
-from scipy.sparse import isspmatrix, issparse
+from scipy.sparse import issparse
 from scipy.sparse.linalg import LinearOperator, cg, eigsh, bicgstab, spilu
 
 # Optional but kept for compatibility with earlier versions
@@ -241,7 +254,7 @@ def get_roughness(
     regeps: Optional[float] = None,
     spformat: str = "csc",
     out: bool = True,
-) -> scipy.sparse.spmatrix:
+) -> scipy.sparse.sparray:
     """
     Read FEMTIC roughening_matrix.dat and build sparse roughness matrix R.
 
@@ -267,7 +280,7 @@ def get_roughness(
     user-defined roughening matrices. It first counts blocks with zero
     non-zeros, then builds the triplet arrays (row, col, val).
     """
-    from scipy.sparse import csr_array, csc_array, coo_array, eye as eye_array
+    from scipy.sparse import csr_array, csc_array, coo_array, eye_array
 
     start = time.perf_counter()
     if out:
@@ -356,7 +369,7 @@ def get_roughness(
 
 
 def make_prior_cov(
-    rough: scipy.sparse.spmatrix,
+    rough: scipy.sparse.sparray,
     regeps: float = 1.0e-5,
     spformat: str = "csr",
     spthresh: float = 1.0e-4,
@@ -366,7 +379,7 @@ def make_prior_cov(
     outmatrix: str = "invRTR",
     nthreads: int = 16,
     out: bool = True,
-) -> scipy.sparse.spmatrix | np.ndarray:
+) -> scipy.sparse.sparray | np.ndarray:
     """
     Generate a prior covariance proxy M from a roughness matrix R.
 
@@ -414,7 +427,7 @@ def make_prior_cov(
         csr_array,
         csc_array,
         coo_array,
-        eye as eye_array,
+        eye_array,
         issparse,
     )
     from threadpoolctl import threadpool_limits
@@ -487,7 +500,7 @@ def make_prior_cov(
     return M
 
 
-def prune_inplace(M: scipy.sparse.spmatrix, threshold: float) -> scipy.sparse.spmatrix:
+def prune_inplace(M: scipy.sparse.sparray, threshold: float) -> scipy.sparse.sparray:
     """
     In-place pruning of small entries in a CSR sparse matrix.
 
@@ -518,7 +531,7 @@ def prune_inplace(M: scipy.sparse.spmatrix, threshold: float) -> scipy.sparse.sp
     return M
 
 
-def prune_rebuild(M: scipy.sparse.spmatrix, threshold: float) -> scipy.sparse.spmatrix:
+def prune_rebuild(M: scipy.sparse.sparray, threshold: float) -> scipy.sparse.sparray:
     """
     Rebuild a CSR sparse matrix from COO representation after pruning.
 
@@ -553,7 +566,7 @@ def dense_to_csr(
     threshold: float = 0.0,
     chunk_rows: int = 1000,
     dtype: Optional[np.dtype] = None,
-) -> scipy.sparse.spmatrix:
+) -> scipy.sparse.sparray:
     """
     Convert a dense matrix to CSR, dropping entries below a threshold.
 
@@ -663,13 +676,13 @@ def load_spilu(filename: str = "ILU.npz"):
 
 
 def matrix_reduce(
-    M: np.ndarray | scipy.sparse.spmatrix,
+    M: np.ndarray | scipy.sparse.sparray,
     howto: str = "relative",
     spformat: str = "csr",
     spthresh: float = 1.0e-6,
     prune: str = "rebuild",
     out: bool = True,
-) -> scipy.sparse.spmatrix:
+) -> scipy.sparse.sparray:
     """
     Reduce a (possibly dense) matrix to sparse form by dropping small entries.
 
@@ -758,7 +771,7 @@ def matrix_reduce(
     return M_sp
 
 
-def check_sparse_matrix(M: scipy.sparse.spmatrix, condition: bool = True) -> None:
+def check_sparse_matrix(M: scipy.sparse.sparray, condition: bool = True) -> None:
     """
     Print diagnostic information about a sparse matrix.
 
@@ -860,7 +873,7 @@ def generate_rto_model_ensemble(
     n_samples: int = 1,
     fromto: Optional[List[int]] = None,
     refmod: str = "resistivity_block_iter0.dat",
-    q: Optional[scipy.sparse.spmatrix | np.ndarray] = None,
+    q: Optional[scipy.sparse.sparray | np.ndarray] = None,
     algo: str = "low rank",
     method: str = "add",
     # --- low-rank options (randomized SVD) ---
@@ -3770,7 +3783,7 @@ def fit_kl_pce_model(
 
 
 def build_rtr_operator(
-    R: np.ndarray | scipy.sparse.spmatrix,
+    R: np.ndarray | scipy.sparse.sparray,
     lam: float = 0.0,
 ) -> LinearOperator:
     """Create a LinearOperator representing Q = R.T @ R + lam * I.
@@ -3779,7 +3792,7 @@ def build_rtr_operator(
 
     Parameters
     ----------
-    R : array_like or scipy.sparse.spmatrix, shape (m, n)
+    R : array_like or scipy.sparse.sparray, shape (m, n)
         Matrix defining the precision via Q = R.T @ R. In FEMTIC workflows,
         this is typically a roughness / regularisation operator.
     lam : float, optional
@@ -3818,7 +3831,7 @@ def build_rtr_operator(
 
 
 def make_rtr_preconditioner(
-    R: np.ndarray | scipy.sparse.spmatrix,
+    R: np.ndarray | scipy.sparse.sparray,
     lam: float = 0.0,
     *,
     precond: Optional[str] = None,
@@ -3903,7 +3916,7 @@ def make_rtr_preconditioner(
 
     Q = (R.T @ R).tocsc()
     if lam != 0.0:
-        Q = Q + float(lam) * scipy.sparse.identity(Q.shape[0], format="csc")
+        Q = Q + float(lam) * scipy.sparse.eye_array(Q.shape[0], format="csc")
 
     if key in {"ilu"}:
         ilu = scipy.sparse.linalg.spilu(
@@ -3943,7 +3956,7 @@ def make_rtr_preconditioner(
 
 
 def make_sparse_cholesky_precision_solver(
-    R: np.ndarray | scipy.sparse.spmatrix,
+    R: np.ndarray | scipy.sparse.sparray,
     lam: float = 0.0,
     *,
     use_cholmod: bool = True,
@@ -3977,7 +3990,7 @@ def make_sparse_cholesky_precision_solver(
     if scipy.sparse.issparse(R):
         Q = (R.T @ R).tocsc()
         if lam != 0.0:
-            Q = Q + float(lam) * scipy.sparse.identity(Q.shape[0], format="csc")
+            Q = Q + float(lam) * scipy.sparse.eye_array(Q.shape[0], format="csc")
 
         if use_cholmod:
             try:
@@ -4027,7 +4040,7 @@ def make_sparse_cholesky_precision_solver(
 
 
 def _rtr_diag(
-    R: np.ndarray | scipy.sparse.spmatrix,
+    R: np.ndarray | scipy.sparse.sparray,
 ) -> np.ndarray:
     """Compute the diagonal of ``R.T @ R`` without forming the product.
 
@@ -4066,7 +4079,7 @@ def _rtr_diag(
 
 
 def pick_lam_from_rtr_diag(
-    R: np.ndarray | scipy.sparse.spmatrix,
+    R: np.ndarray | scipy.sparse.sparray,
     *,
     alpha: float = 1.0e-5,
     statistic: str = "median",
@@ -4137,7 +4150,7 @@ def pick_lam_from_rtr_diag(
 
 
 def make_precision_solver(
-    R: np.ndarray | scipy.sparse.spmatrix,
+    R: np.ndarray | scipy.sparse.sparray,
     lam: float = 0.0,
     atol: float = 1.0e-4,
     rtol: float = 1.e-3,
@@ -4299,7 +4312,7 @@ def make_precision_solver(
 
 
 def sample_rtr_full_rank(
-    R: np.ndarray | scipy.sparse.spmatrix,
+    R: np.ndarray | scipy.sparse.sparray,
     n_samples: int = 1,
     lam: float = 1.0e-4,
     solver: Optional[Callable[[np.ndarray], np.ndarray]] = None,
@@ -4379,7 +4392,7 @@ def sample_rtr_full_rank(
 
 
 def sample_rtr_low_rank(
-    R: np.ndarray | scipy.sparse.spmatrix,
+    R: np.ndarray | scipy.sparse.sparray,
     n_samples: int = 1,
     n_eig: int = 32,
     sigma2_residual: float = 0.0,
@@ -4491,7 +4504,7 @@ def sample_rtr_low_rank(
 
 
 def sample_prior_from_roughness(
-    R: np.ndarray | scipy.sparse.spmatrix,
+    R: np.ndarray | scipy.sparse.sparray,
     n_samples: int = 1,
     lam: float = 1.0e-4,
     mode: Literal["full", "low-rank"] = "full",

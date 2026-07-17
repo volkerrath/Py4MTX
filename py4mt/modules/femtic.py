@@ -91,6 +91,12 @@ Modified: 2026-06-10 by Claude Sonnet 4.6 (Anthropic) — added two summary
     formats the table.  Both functions are also exposed as standalone CLI
     scripts: femtic_summarize_model_cells.py and
     femtic_summarize_observe_dat.py.
+Modified: 2026-07-17 by Claude Sonnet 5 (Anthropic) — migrated from legacy
+    scipy.sparse matrix classes to the array-equivalent API: removed unused
+    isspmatrix import (issparse covers both matrix and array sparse types),
+    and updated the scipy.sparse.spmatrix type hint to scipy.sparse.sparray
+    in sample_precision_gaussian_gmrf(). No functional change; module
+    already used csr_array/csc_array/coo_array internally.
 """
 from __future__ import annotations
 
@@ -120,7 +126,7 @@ import scipy.sparse
 import scipy.sparse.linalg
 
 from numpy.random import Generator, default_rng
-from scipy.sparse import isspmatrix, issparse
+from scipy.sparse import issparse
 from scipy.sparse.linalg import LinearOperator, cg, eigsh, bicgstab, spilu
 
 # Optional but kept for compatibility with earlier versions
@@ -1029,7 +1035,7 @@ def modify_model_npz(
     seed: int | None = None,
     # --- precision sampling options
     roughness: str | Path | None = None,
-    R: np.ndarray | scipy.sparse.spmatrix | None = None,
+    R: np.ndarray | scipy.sparse.sparray | None = None,
     n_samples: int = 1,
     add_to_current: bool = True,
     lam: float = 1.0e-5,

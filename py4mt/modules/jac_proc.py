@@ -14,6 +14,16 @@ Dependencies
 
 Author: Volker Rath (DIAS)
 Created by ChatGPT (GPT-5 Thinking) on 2025-12-21
+Modified: 2026-07-17 by Claude Sonnet 5 (Anthropic) — migrated from legacy
+    scipy.sparse matrix classes to the array-equivalent API: scs.csr_matrix
+    -> scs.csr_array in calc_sensitivity; scs.diags() (legacy dia_matrix)
+    -> scs.diags_array() in normalize_jac and print_stats. In print_stats,
+    the diagonal-masking step ``mjac = jac*scs.diags(jacmask,0)`` relied on
+    legacy sparse-matrix semantics where ndarray * spmatrix silently
+    performs matrix multiplication; since sparse arrays use elementwise
+    semantics for *, this is now written explicitly as
+    ``jac @ scs.diags_array(jacmask, offsets=0)`` to preserve the original
+    column-masking behaviour.
 """
 import sys
 import os
@@ -441,7 +451,7 @@ def sparsify_jac(Jac=None,
     
     Returns
     -------
-    Js : scipy.sparse.csr_matrix
+    Js : scipy.sparse.csr_array
         Sparsified Jacobian in CSR format.
     Scaleval : float
         Scale value used for normalisation.
@@ -479,7 +489,7 @@ def sparsify_jac(Jac=None,
 
     # print(np.shape(Jf))
 
-    Js = scs.csr_matrix(Jf)
+    Js = scs.csr_array(Jf)
 
 
     if out:
@@ -541,7 +551,7 @@ def normalize_jac(Jac=None, fn=None, out=True):
         fd = 1./fn[:]
         fd = fd.flatten()
         print(fd.shape)
-        erri = scs.diags([fd], [0], format='csr')
+        erri = scs.diags_array([fd], offsets=[0], format='csr')
         Jac = erri @ Jac
         #erri = np.reshape(1.0 / fn, (shj[0], 1))
         #Jac = erri[:] * Jac
@@ -967,7 +977,7 @@ def print_stats(jac=np.array([]), jacmask=np.array([]), outfile=None):
     if outfile is not None:
         outfile.write('Minimum/maximum abs Jacobian value is '+str(mn)+'/'+str(mx))
 
-    mjac = jac*scs.diags(jacmask,0)
+    mjac = jac @ scs.diags_array(jacmask, offsets=0)
     mx = np.amax(mjac)
     mn = np.amin(mjac)
     print('stats: minimum/maximum masked Jacobian value is '+str(mn)+'/'+str(mx))

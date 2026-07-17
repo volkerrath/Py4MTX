@@ -525,3 +525,22 @@ FEMTIC runs needed unless noted).
   if the test still finds too many extrema on dense or noisy meshes.
 - Companion change in `femtic_gst_prep.py`: default `MOD_PP_EXTREMA_K`
   raised from 9 to 30.
+
+### Changelog (2026-07-17) — scipy.sparse: matrix → array API
+
+- Migrated from legacy `scipy.sparse` matrix classes to the array-equivalent
+  API throughout: removed unused `isspmatrix` import; `scipy.sparse.spmatrix`
+  type hints replaced with `scipy.sparse.sparray` (`get_roughness`,
+  `make_prior_cov`, `prune_inplace`, `prune_rebuild`, `dense_to_csr`,
+  `matrix_reduce`, `check_sparse_matrix`, `build_rtr_operator`,
+  `make_rtr_preconditioner`, `make_sparse_cholesky_precision_solver`,
+  `_rtr_diag`, `pick_lam_from_rtr_diag`).
+- Replaced `scipy.sparse.identity()` (returns a legacy matrix) with
+  `scipy.sparse.eye_array()` in `make_rtr_preconditioner` and
+  `make_sparse_cholesky_precision_solver`.
+- Fixed a latent bug in `get_roughness` and `make_prior_cov` where `eye` was
+  imported aliased as `eye_array`, silently returning a legacy sparse matrix
+  instead of an array; now imports the genuine `eye_array` constructor.
+- No functional/numerical change; the module already built matrices via
+  `csr_array`/`csc_array`/`coo_array` internally, so this is purely a type
+  and import cleanup plus the `eye_array` fix.

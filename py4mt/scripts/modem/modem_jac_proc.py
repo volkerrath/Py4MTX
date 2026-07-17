@@ -41,7 +41,7 @@ print(titstrng + "\n\n")
 # =============================================================================
 #  Configuration
 # =============================================================================
-SPARSE_THRESH = 1.0e-6
+SPARSE_THRESH = 1.0e-8
 SPARSE = SPARSE_THRESH > 0
 
 # Set to False if Jacobian originates from ModEM3DJE.x version
@@ -51,9 +51,12 @@ SCALE = 1.0
 RHOAIR = 1.0e17
 RHOSEA = 0.3
 
-WORK_DIR = "/home/vrath/ModEM_work/Ub25_ZT_600_PT_jac/"
-J_FILES = [WORK_DIR + "Ub25_Z.jac"]
-M_FILE = WORK_DIR + "Ub_600ZT4_PT_NLCG_009"
+WORK_DIR = "/home/vrath/work/MT_Data/Tacna/TAC_30_JAC/"
+J_FILES = [WORK_DIR + "TAC30.jac"]
+M_FILE  = WORK_DIR + "TACG26b_30ZT_Alpha05_NLCG_044"
+# WORK_DIR = "/home/vrath/ModEM_work/Ub25_ZT_600_PT_jac/"
+# J_FILES = [WORK_DIR + "Ub25_Z.jac"]
+# M_FILE = WORK_DIR + "Ub_600ZT4_PT_NLCG_009"
 
 if not WORK_DIR.endswith("/"):
     WORK_DIR = WORK_DIR + "/"

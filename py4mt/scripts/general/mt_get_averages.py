@@ -66,12 +66,16 @@ import matplotlib.ticker as mticker
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-WORK_DIR   = "/home/vrath/Py4MTX/py4mt/data/rto/ubinas/edi/proc/"
-COLL_FILE  = WORK_DIR + "Ubinas_collection.npz"
+# WORK_DIR   = "/home/vrath/Py4MTX/py4mt/data/rto/ubinas/edi/proc/"
+# COLL_FILE  = WORK_DIR + "Ubinas_collection.npz"
+
+WORK_DIR   = "/home/vrath/work/MT_Data/Tacna/NEW/edis_26b/proc/"
+COLL_FILE  = WORK_DIR + "TacnaProf_collection.npz"
+
 PLOT_DIR   = WORK_DIR + "../plots/"
 DATA_DIR   = WORK_DIR                  # NPZ averages written here
-NAME_STR   = "Ubinas_clipped2_bootstrap"
-PLOT_FORMAT = [".pdf", ".png"]
+NAME_STR   = "Ubinas_clipped_bootstrap"
+PLOT_FORMAT = [".pdf", ".jpg"]
 
 # Which quantities to process and plot
 PLOT_SSQ = True    # Zssq — sum-of-squares invariant
@@ -80,13 +84,16 @@ PLOT_AVG = True    # Zavg — off-diagonal geometric mean sqrt(Zxy*Zyx)
 
 # Frequency range mask applied before averaging and plotting.
 # Tuple (f_min, f_max) in Hz; set either bound to None for no limit.
-FREQ_RANGE = (0.01, 1000.)   # e.g. (1.e-3, 1.e+3) to restrict to 1 mHz–1 kHz
+periods = (1.e-3, 2.e+3) 
+periods = periods[::-1]
+FREQ_RANGE = (1./periods[0], 1./ periods[1])
+# FREQ_RANGE = (0.001, 1000.)   # e.g. (1.e-3, 1.e+3) to restrict to 1 mHz–1 kHz
 
 # Frequency-bin matching tolerance (fraction of a decade).
 BIN_TOL_DEC = 0.1   # ±0.1 decade
 
 # Plot appearance
-XLIM       = (1.e-4, 1.e+4)   # period axis limits [s]  (None = auto)
+XLIM       = (1.e-3, 2.e+3)   # period axis limits [s]  (None = auto)
 YLIM_RHO   = (1.e+0, 1.e+4)   # rho axis limits [Ω·m]   (None = auto)
 YLIM_PHASE = (0., 90.)         # phase axis limits [°]    (None = auto)
 

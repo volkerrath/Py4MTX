@@ -82,3 +82,20 @@ J_\mathrm{scaled} = C^{-1/2} J
 
 where \(C\) is the data covariance (or diagonal variance) matrix. That is consistent with the sensitivity
 definitions implemented here.
+
+## Changelog
+
+### Changelog (2026-07-17) — scipy.sparse: matrix → array API
+- Migrated from legacy `scipy.sparse` matrix classes to the array-equivalent
+  API: `scs.csr_matrix` → `scs.csr_array` in `calc_sensitivity`; `scs.diags()`
+  (legacy `dia_matrix`) → `scs.diags_array()` in `normalize_jac` and
+  `print_stats`.
+- In `print_stats`, the diagonal-masking step
+  `mjac = jac*scs.diags(jacmask,0)` relied on legacy sparse-matrix semantics
+  where `ndarray * spmatrix` silently performs matrix multiplication; since
+  sparse arrays use elementwise semantics for `*`, this is now written
+  explicitly as `jac @ scs.diags_array(jacmask, offsets=0)` to preserve the
+  original column-masking behaviour.
+
+Author: Volker Rath (DIAS)
+scipy.sparse matrix → array migration by Claude Sonnet 5 (Anthropic) on 2026-07-17.

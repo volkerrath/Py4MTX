@@ -576,4 +576,11 @@ Updated: 2026-06-22
   for backward compatibility. `check_sparse_matrix` moved to `ensembles.py`.
 - Module docstring updated to reflect FEMTIC-specific I/O focus.
 
+### Changelog (2026-07-17) — scipy.sparse: matrix → array API
+- Migrated from legacy `scipy.sparse` matrix classes to the array-equivalent
+  API: removed unused `isspmatrix` import (`issparse` covers both matrix and
+  array sparse types); updated the `scipy.sparse.spmatrix` type hint to
+  `scipy.sparse.sparray` in `sample_precision_gaussian_gmrf`. No functional
+  change.
+
 Author: Volker Rath (DIAS)

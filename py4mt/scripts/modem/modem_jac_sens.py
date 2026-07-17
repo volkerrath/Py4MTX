@@ -52,10 +52,10 @@ INP_FORMAT = "sparse"
 OUT_FORMAT = "mod rlm"
 MOD_EXT = "_sns.rho"
 
-WORK_DIR = "./"
-J_NAME = "Ub25_ZPT_nerr_sp-8"
+WORK_DIR = "/home/vrath/work/MT_Data/Tacna/TAC_30_JAC/"
+J_NAME = "TAC30_nerr_sp-6"
 J_FILE = WORK_DIR + J_NAME
-M_FILE = WORK_DIR + "Ub_600ZT4_PT_NLCG_009"
+M_FILE  = WORK_DIR + "TACG26b_30ZT_Alpha05_NLCG_044"
 M_ORIG = [0.0, 0.0]
 
 SIZ_EXTRACT = True
@@ -74,7 +74,7 @@ PER_INTERVALS = [
 ]
 
 TYPE = "cov"
-TRANSFORM = "siz vol max"
+TRANSFORM = "max"
 
 if TRANSFORM is None:
     snsstring = TYPE.lower()

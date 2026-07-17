@@ -51,8 +51,9 @@ WHAT_FOR = "fem"     # Options: "wal", "femtic", "kml"
 UTM_ZONE_OVERRIDE = None
 
 #WORK_DIR = "/home/vrath/Py4MTX/py4mt/data/rto/ubinas//"
-WORK_DIR = "/home/vrath/Py4MTX/py4mt/data/rto/misti//"
-EDI_DIR = WORK_DIR + "/edi/"
+# WORK_DIR = "/home/vrath/Py4MTX/py4mt/data/rto/misti//"
+WORK_DIR = "/home/vrath/MT_Data/Peru/Tacna/NEW/"
+EDI_DIR = WORK_DIR + "/edis_26b/"
 
 print(" Edifiles read from: %s" % EDI_DIR)
 

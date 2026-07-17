@@ -106,6 +106,14 @@ Changelog
     Merge:
     - Consolidated imports; organized into thematic sections.
     - Fixed PEP 8 spacing throughout.
+
+Modified: 2026-07-17 by Claude Sonnet 5 (Anthropic) — migrated from legacy
+    scipy.sparse matrix classes to the array-equivalent API: updated
+    sp.spmatrix type hints to sp.sparray (splitbreg, msqrt_sparse, isspd);
+    replaced sp.identity() with sp.eye_array() and sp.csc_matrix() with
+    sp.csc_array() in msqrt_sparse; replaced sp.diags() (legacy dia_matrix)
+    with sp.diags_array() in msqrt_sparse. No functional change — all
+    sparse operations already used @ for matrix products.
 """
 
 from __future__ import annotations
@@ -167,10 +175,10 @@ def soft_thresh(x: np.ndarray, lam: float) -> np.ndarray:
 
 
 def splitbreg(
-    J: sp.spmatrix | np.ndarray,
+    J: sp.sparray | np.ndarray,
     y: np.ndarray,
     lam: float,
-    D: sp.spmatrix | np.ndarray,
+    D: sp.sparray | np.ndarray,
     c: float | np.ndarray = 0.0,
     tol: float = 1e-5,
     maxiter: int = 50,
@@ -183,13 +191,13 @@ def splitbreg(
 
     Parameters
     ----------
-    J : numpy.ndarray or scipy.sparse.spmatrix
+    J : numpy.ndarray or scipy.sparse.sparray
         Forward operator / Jacobian of shape (nd, nm).
     y : numpy.ndarray
         Data vector of shape (nd,) or (nd, 1).
     lam : float
         Regularisation weight.
-    D : numpy.ndarray or scipy.sparse.spmatrix
+    D : numpy.ndarray or scipy.sparse.sparray
         Difference operator of shape (m, nm).
     c : float or numpy.ndarray, optional
         Offset for Dx (defaults to 0).
@@ -380,7 +388,7 @@ def calc_covar_nice(
 
 
 def msqrt_sparse(
-    M: sp.spmatrix | np.ndarray,
+    M: sp.sparray | np.ndarray,
     method: str = "chol",
     smallval: Optional[float] = None,
     nthreads: int = 16,
@@ -395,7 +403,7 @@ def msqrt_sparse(
 
     if smallval is not None and smallval != 0.0:
         if sp.issparse(M):
-            M = M + smallval * sp.identity(n, format="csc")
+            M = M + smallval * sp.eye_array(n, format="csc")
         else:
             M = np.asarray(M, dtype=float) + smallval * np.eye(n)
 
@@ -420,18 +428,18 @@ def msqrt_sparse(
             return la.cholesky(A, lower=True)
 
     if "splu" in mth:
-        A = M.tocsc() if sp.issparse(M) else sp.csc_matrix(np.asarray(M, dtype=float))
+        A = M.tocsc() if sp.issparse(M) else sp.csc_array(np.asarray(M, dtype=float))
         with threadpool_limits(limits=nthreads):
             LU = spla.splu(A, diag_pivot_thresh=0.0)
 
         if not (np.all(LU.perm_r == np.arange(n)) and np.all(LU.U.diagonal() > 0)):
             raise ValueError("Matrix does not appear SPD under LU decomposition.")
-        return (LU.L @ sp.diags(np.sqrt(LU.U.diagonal()))).toarray()
+        return (LU.L @ sp.diags_array(np.sqrt(LU.U.diagonal()))).toarray()
 
     raise ValueError("Unknown method. Use 'chol', 'eigs', or 'splu'.")
 
 
-def isspd(A: sp.spmatrix | np.ndarray, *, atol: float = 1e-12) -> bool:
+def isspd(A: sp.sparray | np.ndarray, *, atol: float = 1e-12) -> bool:
     """Heuristic check for symmetric positive definiteness."""
     if sp.issparse(A):
         if (A - A.T).nnz != 0:

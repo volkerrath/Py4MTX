@@ -72,4 +72,13 @@ All plotters read their configuration from `**pltargs`. Common keys:
 
 ---
 
+## Changelog
+
+### Changelog (2026-07-17) — scipy.sparse: matrix → array API
+- Migrated from legacy `scipy.sparse` matrix classes to the array-equivalent
+  API in `plot_sparsity_pattern`: `coo_matrix` → `coo_array`; removed a
+  redundant, now-unused duplicate import line that still referenced the
+  legacy `csr_matrix`/`csc_matrix`/`coo_matrix` names.
+
 Author: Volker Rath (DIAS)
+scipy.sparse matrix → array migration by Claude Sonnet 5 (Anthropic) on 2026-07-17.

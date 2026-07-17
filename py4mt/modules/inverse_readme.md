@@ -144,8 +144,20 @@ These functions lived in `util.py` but belong here conceptually.
   In P. Johnston (Ed.), *Computational Inverse Problems in Electrocardiology* (pp. 119–142). WIT Press.
 - Hansen, P. C. (1998). *Rank Deficient and Discrete Ill-Posed Problems*. SIAM, Philadelphia.
 
+## Changelog
+
+### Changelog (2026-07-17) — scipy.sparse: matrix → array API
+- Migrated from legacy `scipy.sparse` matrix classes to the array-equivalent
+  API: `sp.spmatrix` type hints replaced with `sp.sparray` (`splitbreg`,
+  `msqrt_sparse`, `isspd`); `sp.identity()` → `sp.eye_array()` and
+  `sp.csc_matrix()` → `sp.csc_array()` in `msqrt_sparse`; `sp.diags()`
+  (legacy `dia_matrix`) → `sp.diags_array()` in `msqrt_sparse`. No
+  functional change — all sparse operations already used `@` for matrix
+  products.
+
 Author: Volker Rath (DIAS)
 Original numerical utilities created with GPT-5 Thinking on 2025-12-21 (UTC).
 1-D inversion helpers created with GPT-5 Thinking on 2026-02-13 (UTC).
 Cleaned up and merged by Claude (Anthropic, Opus 4.6) on 2026-03-02.
 Part C migrated from util.py by Claude Sonnet 4.6 (Anthropic) on 2026-05-25.
+scipy.sparse matrix → array migration by Claude Sonnet 5 (Anthropic) on 2026-07-17.
