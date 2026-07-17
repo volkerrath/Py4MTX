@@ -59,8 +59,8 @@ print(titstrng + "\n\n")
 # WORK_DIR = PY4MTX_ROOT + "py4mt/data/edi/"
 # WORK_DIR = "/home/vrath/Py4MTX/py4mt/data/rto/ubinas/edi/"
 # WORK_DIR = "/home/vrath/MT_Data/waldim/edi_synth_iso/"
-WORK_DIR = "/home/vrath/MT_Data/Peru/Tacna/NEW/edis_26b/"
-
+###WORK_DIR = "/home/vrath/MT_Data/Peru/Tacna/NEW/edis_26b/"
+WORK_DIR = "/home/vrath/MT_Data/TEST/edis_exp_interp/"
 if not os.path.isdir(WORK_DIR):
    sys.exit(" File: %s does not exist! EXit." % WORK_DIR)
 
@@ -69,7 +69,7 @@ DATA_DIR_IN = WORK_DIR
 DATA_DIR_OUT = WORK_DIR + "/proc/"
 
 NAME_STR = ""
-COLL_NAME = "TacnaProf"
+COLL_NAME = "Review"
 
 OUT_FILES = "edi, npz"
 STAT_FILE = True

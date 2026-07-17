@@ -34,6 +34,12 @@ Provenance:
                         PLOT_QC_FILE / PLOT_QC_SLICES / PLOT_QC_* config
                         vars; QC slice plot of best-nRMS member at end of
                         main block (calls fviz.plot_model_slices).
+    2026-07-17  Claude Sonnet 5 (Anthropic)
+                        scipy.sparse: migrated from legacy matrix to
+                        array-equivalent API — scs.csr_matrix(tmp) →
+                        scs.csr_array(tmp) when building the sparsified
+                        empirical covariance (rto_covs). No functional
+                        change.
 '''
 import os
 import sys
@@ -162,7 +168,7 @@ if SPARSIFY:
     tmp = rto_cov.copy()
     maxval = np.amax(tmp)
     tmp[np.abs(tmp)/np.amax(tmp) <= SPARSE_THRESH] = 0.
-    rto_covs = scs.csr_matrix(tmp)
+    rto_covs = scs.csr_array(tmp)
 
 
 

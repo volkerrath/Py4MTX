@@ -77,6 +77,11 @@ Provenance
             (matching femtic_gst_prep.py / femtic_nss.py — one figure-DPI
             setting per script, not one per plot type).  _plot_slice() no
             longer takes a dpi argument; it reads MOD_DPI directly.
+2026-07-17  Claude Sonnet 5 (Anthropic)
+            scipy.sparse: migrated from legacy matrix to array-equivalent
+            API — scs.csr_matrix(tmp) → scs.csr_array(tmp) when building
+            the sparsified empirical covariance (ens_covs). No functional
+            change; ens_covs is only used for its .nnz count.
 """
 from __future__ import annotations
 
@@ -493,7 +498,7 @@ ens_covs = None
 if SPARSIFY:
     tmp    = ens_cov.copy()
     tmp[np.abs(tmp) / np.amax(np.abs(tmp)) <= SPARSE_THRESH] = 0.0
-    ens_covs = scs.csr_matrix(tmp)
+    ens_covs = scs.csr_array(tmp)
     nnz      = ens_covs.nnz
     total    = ens_cov.size
     print(f"  Sparse covariance: {nnz}/{total} non-zeros "

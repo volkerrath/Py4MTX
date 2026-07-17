@@ -55,3 +55,9 @@ For each parameter combination (k, o, s):
 ## Dependencies
 
 `numpy`, `scipy.sparse`, py4mt: `modem`, `jac_proc`, `util`, `version`.
+
+## Changelog
+
+| Date | Author | Change |
+|---|---|---|
+| 2026-07-17 | Claude Sonnet 5 (Anthropic) | `scipy.sparse`: migrated from legacy matrix to array-equivalent API — `scs.diags(S[:])` → `scs.diags_array(S[:])` when reconstructing `D = U @ S @ Vt`. No functional change; already combined via `@`. |

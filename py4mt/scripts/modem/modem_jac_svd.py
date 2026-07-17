@@ -8,6 +8,14 @@ various ranks, oversampling factors, and subspace iterations. Reports
 the operator-norm accuracy as a percentage of the full Jacobian.
 
 @author: vrath
+
+Provenance:
+    2026-07-17  Claude Sonnet 5 (Anthropic)
+                        scipy.sparse: migrated from legacy matrix to
+                        array-equivalent API — scs.diags(S[:]) →
+                        scs.diags_array(S[:]) when reconstructing D = U @ S
+                        @ Vt. No functional change; already combined via
+                        the @ operator.
 """
 
 import os
@@ -100,7 +108,7 @@ for noversmp in OverSample:
             print("Oversampling factor = ", str(noversmp))
             print("Subspace iterations = ", str(nsubspit))
 
-            D = U @ scs.diags(S[:]) @ Vt - Jac.T
+            D = U @ scs.diags_array(S[:]) @ Vt - Jac.T
             x_op = rng.normal(size=np.shape(D)[1])
             n_op = npl.norm(D @ x_op) / npl.norm(x_op)
             j_op = npl.norm(Jac.T @ x_op) / npl.norm(x_op)

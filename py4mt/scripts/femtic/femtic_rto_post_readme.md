@@ -91,6 +91,12 @@ py4mt modules: `femtic`, `ensembles`, `util`, `version`, `femtic_viz` (optional,
 
 See `femtic_rto_prep_readme.md` for the full list of RTO references.
 
+## Changelog
+
+| Date | Author | Change |
+|---|---|---|
+| 2026-07-17 | Claude Sonnet 5 (Anthropic) | `scipy.sparse`: migrated from legacy matrix to array-equivalent API — `scs.csr_matrix(tmp)` → `scs.csr_array(tmp)` when building the sparsified empirical covariance (`rto_covs`). No functional change. |
+
 ## Author
 
 Volker Rath (DIAS) — April 2025
