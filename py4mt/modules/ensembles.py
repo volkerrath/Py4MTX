@@ -104,6 +104,16 @@ Modified: 2026-07-17 by Claude Sonnet 5 (Anthropic) — migrated from legacy
     get_roughness/make_prior_cov where `eye` was imported aliased as
     `eye_array` (silently returning a legacy sparse matrix instead of an
     array); now imports the genuine eye_array constructor.
+Modified: 2026-07-19 by Claude Sonnet 5 (Anthropic) — added a mesh-agnostic
+    GST perturbation machine: krige_pilot_points_to_targets(),
+    _draw_pilot_points(), generate_gst_perturbation() factor the pilot-point
+    placement + Ordinary-Kriging core out of generate_gst_model_ensemble()
+    so a single realisation can be generated in memory (no directory tree,
+    no file I/O) given nothing but a target point cloud. Also added the
+    ModEM rectilinear-grid wrappers modem_gst_cell_centers() and
+    generate_gst_perturbation_modem(). generate_gst_model_ensemble() itself
+    is unchanged. Written to support modem_nss.py (ModEM null-space shuttle,
+    analogous to femtic_nss.py).
 """
 
 from __future__ import annotations
@@ -1599,6 +1609,428 @@ def generate_gst_model_ensemble(
         print(mod_list)
 
     return mod_list
+
+
+# =============================================================================
+# Section: Mesh-agnostic GST perturbation machine
+# =============================================================================
+#
+# generate_gst_model_ensemble() (above) couples three separable concerns:
+#
+#   (a) pilot-point placement / value-drawing strategy
+#       (pp_mode: random | fixed | mixed | extrema;
+#        pp_value_mode: uniform | reference)
+#   (b) Ordinary Kriging of pilot-point values onto a target point cloud
+#   (c) FEMTIC-specific I/O — unstructured tetrahedral mesh, free-region
+#       barycentres via fem.read_femtic_mesh / fem.read_resistivity_block,
+#       per-member directory tree, resistivity_block file writing.
+#
+# The functions below factor (a)+(b) out into a mesh-agnostic "perturbation
+# machine" that only needs a target point cloud ``target_xyz`` — it has no
+# knowledge of FEMTIC's tetrahedral mesh, ModEM's rectilinear grid, or any
+# other mesh geometry.  A single realisation is returned directly as an
+# array (no directory tree, no file I/O), which is what a null-space-shuttle
+# script needs: one candidate perturbation per call.
+#
+# generate_gst_model_ensemble() itself is left untouched (it is production
+# code with its own file-based ensemble workflow); the new functions are
+# additive.  A future cleanup could reimplement its per-member loop as a
+# thin wrapper around generate_gst_perturbation(), but that is not done here
+# to avoid touching working FEMTIC code paths.
+#
+# Used by:
+#   - femtic_nss.py  (_make_perturbation_gst can be pointed at this instead
+#     of round-tripping through generate_gst_model_ensemble + a temp dir)
+#   - modem_nss.py   (ModEM has no unstructured mesh / free-region concept;
+#     it calls this directly with rectilinear grid cell centres — see
+#     modem_gst_cell_centers() / generate_gst_perturbation_modem() below)
+#
+# Author: Volker Rath (DIAS) / Claude Sonnet 5 (Anthropic), 2026-07-19.
+# =============================================================================
+
+
+def krige_pilot_points_to_targets(
+    target_xyz: np.ndarray,
+    pp_xyz: np.ndarray,
+    pp_vals: np.ndarray,
+    variogram,
+    log_rho_min: float,
+    log_rho_max: float,
+) -> np.ndarray:
+    """Ordinary-Krig pilot-point values onto an arbitrary target point cloud.
+
+    Mesh-agnostic: ``target_xyz`` may be FEMTIC free-region barycentres,
+    ModEM rectilinear cell centres, or any other point cloud.
+
+    Parameters
+    ----------
+    target_xyz : ndarray, shape (n_targets, 3)
+        Target coordinates (x, y, z) — metres, z convention consistent with
+        ``pp_xyz`` (FEMTIC / ModEM both use z positive-down).
+    pp_xyz : ndarray, shape (n_pp, 3)
+        Pilot-point coordinates.
+    pp_vals : ndarray, shape (n_pp,)
+        Pilot-point log₁₀(ρ) values.
+    variogram : gstools CovModel instance
+        Already-constructed variogram (e.g. ``gstools.Spherical(...)``).
+    log_rho_min, log_rho_max : float
+        Clamp applied to the Kriged field.
+
+    Returns
+    -------
+    field : ndarray, shape (n_targets,)
+        Kriged and clamped log₁₀(ρ) field at ``target_xyz``.
+
+    Author: Claude Sonnet 5 (Anthropic), 2026-07-19.
+    AI-generated — review before use in production.
+    """
+    try:
+        import gstools as gs
+    except ImportError:
+        raise ImportError(
+            "krige_pilot_points_to_targets requires gstools.  "
+            "Install with: pip install gstools"
+        )
+
+    krig = gs.krige.Ordinary(
+        model=variogram,
+        cond_pos=(pp_xyz[:, 0], pp_xyz[:, 1], pp_xyz[:, 2]),
+        cond_val=pp_vals,
+    )
+    field, _ = krig((target_xyz[:, 0], target_xyz[:, 1], target_xyz[:, 2]))
+    return np.clip(field, log_rho_min, log_rho_max)
+
+
+def _draw_pilot_points(
+    pp_mode: str,
+    n_pp: int,
+    pp_bbox: Sequence[float],
+    pp_coords: Optional[np.ndarray],
+    pp_extrema: np.ndarray,
+    rng: Generator,
+) -> np.ndarray:
+    """Draw pilot-point locations for one realisation (shared by all callers).
+
+    Same placement semantics as ``generate_gst_model_ensemble``'s member
+    loop: ``"random"`` / ``"fixed"`` / ``"mixed"`` / ``"extrema"``.
+
+    Returns
+    -------
+    pp_xyz : ndarray, shape (n, 3)
+    """
+    pp_bbox = list(pp_bbox)
+
+    if pp_mode == "random":
+        x = rng.uniform(pp_bbox[0], pp_bbox[1], n_pp)
+        y = rng.uniform(pp_bbox[2], pp_bbox[3], n_pp)
+        z = rng.uniform(pp_bbox[4], pp_bbox[5], n_pp)
+        return np.column_stack([x, y, z])
+
+    if pp_mode in ("fixed", "mixed"):
+        if pp_coords is None:
+            raise ValueError(f"pp_coords must be supplied when pp_mode='{pp_mode}'.")
+        fixed = np.asarray(pp_coords, dtype=float)
+        if fixed.ndim != 2 or fixed.shape[1] != 3:
+            raise ValueError("pp_coords must have shape (N, 3).")
+        if pp_mode == "fixed":
+            return fixed
+        rnd_x = rng.uniform(pp_bbox[0], pp_bbox[1], n_pp)
+        rnd_y = rng.uniform(pp_bbox[2], pp_bbox[3], n_pp)
+        rnd_z = rng.uniform(pp_bbox[4], pp_bbox[5], n_pp)
+        return np.vstack([fixed, np.column_stack([rnd_x, rnd_y, rnd_z])])
+
+    if pp_mode == "extrema":
+        rnd_x = rng.uniform(pp_bbox[0], pp_bbox[1], n_pp)
+        rnd_y = rng.uniform(pp_bbox[2], pp_bbox[3], n_pp)
+        rnd_z = rng.uniform(pp_bbox[4], pp_bbox[5], n_pp)
+        return np.vstack([pp_extrema, np.column_stack([rnd_x, rnd_y, rnd_z])])
+
+    raise ValueError(
+        f"pp_mode must be 'random', 'fixed', 'mixed', or 'extrema', got '{pp_mode}'."
+    )
+
+
+def generate_gst_perturbation(
+    target_xyz: np.ndarray,
+    *,
+    pp_mode: str = "random",
+    n_pp: int = 100,
+    pp_bbox: Sequence[float] = (-50000., 50000., -50000., 50000., 0., 80000.),
+    pp_coords: Optional[np.ndarray] = None,
+    pp_roi: Optional[Sequence[float]] = None,
+    pp_extrema_k: int = 30,
+    pp_extrema_which: str = "both",
+    log_rho_min: float = 0.0,
+    log_rho_max: float = 4.0,
+    pp_value_mode: str = "uniform",
+    pp_value_delta: float = 0.5,
+    ref_log_rho: Optional[np.ndarray] = None,
+    vario_model: str = "Spherical",
+    vario_range: float | Sequence[float] = 20000.,
+    vario_sill: float = 0.5,
+    vario_nugget: float = 0.01,
+    vario_angles: Optional[Sequence[float]] = None,
+    rng: Optional[Generator] = None,
+    out: bool = True,
+) -> np.ndarray:
+    """Generate one geostatistical (pilot-point Kriging) field on a target grid.
+
+    Mesh-agnostic generalisation of the per-member body of
+    ``generate_gst_model_ensemble``: given nothing but a target point cloud
+    ``target_xyz``, place pilot points, draw log₁₀(ρ) values at them, Krig
+    to every target point, and return the resulting field directly (no
+    file I/O, no directory tree).  This is the "perturbation machine" used
+    by null-space-shuttle scripts (``femtic_nss.py``, ``modem_nss.py``) to
+    generate individual perturbation candidates for null-space projection.
+
+    Parameters
+    ----------
+    target_xyz : ndarray, shape (n_targets, 3)
+        Target coordinates (easting, northing, depth), z positive-down.
+        For FEMTIC: free-region barycentres.  For ModEM: rectilinear grid
+        cell centres (see ``modem_gst_cell_centers``).
+    pp_mode, n_pp, pp_bbox, pp_coords, pp_roi, pp_extrema_k, pp_extrema_which :
+        Pilot-point placement — identical semantics to
+        ``generate_gst_model_ensemble`` (see its docstring).
+    log_rho_min, log_rho_max : float
+        Draw bounds and post-Kriging clamp, log₁₀(Ω·m).
+    pp_value_mode : {"uniform", "reference"}
+        ``"uniform"`` draws Uniform(log_rho_min, log_rho_max) at each pilot
+        point.  ``"reference"`` draws ``ref_log_rho(nearest target) ±
+        pp_value_delta`` — requires ``ref_log_rho``.
+    pp_value_delta : float
+        Half-width of the perturbation around the reference value (only
+        used when ``pp_value_mode="reference"``).
+    ref_log_rho : ndarray, shape (n_targets,), optional
+        Reference log₁₀(ρ) at each ``target_xyz`` row.  Required when
+        ``pp_mode="extrema"`` or ``pp_value_mode="reference"``.
+    vario_model, vario_range, vario_sill, vario_nugget, vario_angles :
+        Variogram parameters — identical semantics to
+        ``generate_gst_model_ensemble``.
+    rng : numpy.random.Generator, optional
+        Shared random generator.  If None, uses ``np.random.default_rng()``.
+    out : bool
+        If True, print a short progress summary.
+
+    Returns
+    -------
+    field : ndarray, shape (n_targets,)
+        Kriged, clamped log₁₀(ρ) field at ``target_xyz``.
+
+    Notes
+    -----
+    Requires ``gstools``.  For a perturbation *delta* to feed into a
+    null-space shuttle, subtract a reference model from the returned field,
+    e.g. ``dm = generate_gst_perturbation(...) - m_ref``.
+
+    Author: Volker Rath (DIAS) / Claude Sonnet 5 (Anthropic), 2026-07-19.
+    AI-generated — review before use in production.
+    """
+    rng = default_rng() if rng is None else rng
+    target_xyz = np.asarray(target_xyz, dtype=float)
+    cx, cy, cz = target_xyz[:, 0], target_xyz[:, 1], target_xyz[:, 2]
+
+    if pp_value_mode not in ("uniform", "reference"):
+        raise ValueError(
+            f"pp_value_mode must be 'uniform' or 'reference', got '{pp_value_mode}'."
+        )
+    if pp_value_mode == "reference" and ref_log_rho is None:
+        raise ValueError("ref_log_rho must be supplied when pp_value_mode='reference'.")
+    if pp_mode == "extrema" and ref_log_rho is None:
+        raise ValueError("ref_log_rho must be supplied when pp_mode='extrema'.")
+
+    # --- variogram ---
+    try:
+        import gstools as gs
+    except ImportError:
+        raise ImportError(
+            "generate_gst_perturbation requires gstools.  "
+            "Install with: pip install gstools"
+        )
+    vario_cls = getattr(gs, vario_model)
+    if np.isscalar(vario_range):
+        len_scale, anis = float(vario_range), [1.0, 1.0]
+    else:
+        h_range, v_range = vario_range
+        len_scale, anis = float(h_range), [1.0, float(v_range) / float(h_range)]
+    vario_kwargs = dict(dim=3, var=vario_sill, len_scale=len_scale,
+                         nugget=vario_nugget, anis=anis)
+    if vario_angles is not None:
+        vario_kwargs["angles"] = np.deg2rad(vario_angles)
+    variogram = vario_cls(**vario_kwargs)
+
+    # --- pilot-point locations ---
+    pp_extrema = np.empty((0, 3), dtype=float)
+    if pp_mode == "extrema":
+        pp_extrema = _find_extrema_pilot_points(
+            cx=cx, cy=cy, cz=cz, ref_log_rho=ref_log_rho,
+            k=pp_extrema_k, which=pp_extrema_which, roi=pp_roi,
+        )
+        if len(pp_extrema) == 0:
+            warnings.warn(
+                "generate_gst_perturbation: no extrema found in ROI — "
+                "falling back to pure random pilot-point placement.",
+                RuntimeWarning, stacklevel=2,
+            )
+            pp_mode = "random"
+
+    pp_xyz = _draw_pilot_points(pp_mode, n_pp, pp_bbox, pp_coords, pp_extrema, rng)
+
+    # --- pilot-point values ---
+    if pp_value_mode == "reference":
+        from scipy.spatial import KDTree
+        tree = KDTree(target_xyz)
+        _, nn_idx = tree.query(pp_xyz)
+        pp_vals = ref_log_rho[nn_idx] + rng.uniform(-pp_value_delta, pp_value_delta, len(pp_xyz))
+        pp_vals = np.clip(pp_vals, log_rho_min, log_rho_max)
+    else:
+        pp_vals = rng.uniform(log_rho_min, log_rho_max, len(pp_xyz))
+
+    field = krige_pilot_points_to_targets(
+        target_xyz, pp_xyz, pp_vals, variogram, log_rho_min, log_rho_max,
+    )
+
+    if out:
+        print(
+            f"generate_gst_perturbation: {len(pp_xyz)} pilot points "
+            f"({pp_mode}/{pp_value_mode}) -> {len(target_xyz)} targets, "
+            f"field range [{field.min():.3f}, {field.max():.3f}]"
+        )
+
+    return field
+
+
+# -----------------------------------------------------------------------
+# Structured-grid (ModEM) helpers
+# -----------------------------------------------------------------------
+
+def modem_gst_cell_centers(
+    dx: np.ndarray,
+    dy: np.ndarray,
+    dz: np.ndarray,
+    free_mask: Optional[np.ndarray] = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Cell-centre coordinates for a ModEM rectilinear grid.
+
+    ModEM has no unstructured mesh / free-region concept: cell centres
+    follow directly from the cumulative cell widths ``dx, dy, dz`` (as
+    read by ``modem.read_mod``), relative to the model's own local origin
+    (x=0, y=0 at the northwest corner in the ModEM convention; z=0 at the
+    surface, positive down).  This is the ModEM analogue of the
+    tetrahedral-mesh barycentre computation used for FEMTIC in
+    ``generate_gst_model_ensemble``.
+
+    Parameters
+    ----------
+    dx, dy, dz : ndarray, shape (nx,), (ny,), (nz,)
+        Cell widths in metres, as returned by ``modem.read_mod``.
+    free_mask : ndarray of bool, shape (nx, ny, nz), optional
+        True for cells to include (typically ``~aircells``).  If None, all
+        cells are included.
+
+    Returns
+    -------
+    xyz : ndarray, shape (n_free, 3)
+        Cell-centre coordinates [x, y, z] (z positive-down) of the
+        selected (free) cells, in the same flattening order as
+        ``mval[free_mask]``.
+    flat_idx : ndarray, shape (n_free,)
+        Linear (C-order) indices into the flattened (nx*ny*nz,) model
+        array, so a field returned by ``generate_gst_perturbation`` can be
+        scattered back with
+        ``full = np.full(nx*ny*nz, fill); full[flat_idx] = field``.
+
+    Author: Claude Sonnet 5 (Anthropic), 2026-07-19.
+    AI-generated — review before use in production, in particular the
+    origin/sign convention against your ModEM coordinate setup.
+    """
+    x_edges = np.concatenate([[0.0], np.cumsum(dx)])
+    y_edges = np.concatenate([[0.0], np.cumsum(dy)])
+    z_edges = np.concatenate([[0.0], np.cumsum(dz)])
+    cx1d = 0.5 * (x_edges[:-1] + x_edges[1:])
+    cy1d = 0.5 * (y_edges[:-1] + y_edges[1:])
+    cz1d = 0.5 * (z_edges[:-1] + z_edges[1:])
+
+    nx, ny, nz = len(dx), len(dy), len(dz)
+    CX, CY, CZ = np.meshgrid(cx1d, cy1d, cz1d, indexing="ij")
+
+    if free_mask is None:
+        free_mask = np.ones((nx, ny, nz), dtype=bool)
+
+    flat_idx = np.flatnonzero(free_mask)
+    xyz = np.column_stack([CX.ravel()[flat_idx],
+                            CY.ravel()[flat_idx],
+                            CZ.ravel()[flat_idx]])
+    return xyz, flat_idx
+
+
+def generate_gst_perturbation_modem(
+    dx: np.ndarray,
+    dy: np.ndarray,
+    dz: np.ndarray,
+    ref_log_rho: np.ndarray,
+    aircells: Optional[np.ndarray] = None,
+    **gst_kwargs,
+) -> np.ndarray:
+    """ModEM structured-grid wrapper around ``generate_gst_perturbation``.
+
+    Computes rectilinear cell centres via ``modem_gst_cell_centers``,
+    restricted to non-air cells, then Krigs a single geostatistical
+    realisation onto them via the mesh-agnostic perturbation machine.
+    Air cells are passed through unchanged from ``ref_log_rho``.
+
+    Parameters
+    ----------
+    dx, dy, dz : ndarray
+        Cell widths (metres), as returned by ``modem.read_mod``.
+    ref_log_rho : ndarray, shape (nx, ny, nz)
+        Reference model in log₁₀(ρ) (or loge — see Notes), used as the
+        pass-through value for air cells and, if
+        ``pp_value_mode="reference"`` or ``pp_mode="extrema"``, as the
+        anchor field for pilot-point values / extremum detection.
+    aircells : ndarray of bool, shape (nx, ny, nz), optional
+        True for air (or otherwise fixed) cells to exclude from Kriging.
+        If None, all cells are treated as free.
+    **gst_kwargs
+        Forwarded to ``generate_gst_perturbation`` (pp_mode, n_pp, pp_bbox,
+        log_rho_min, log_rho_max, vario_model, vario_range, vario_sill,
+        vario_nugget, vario_angles, rng, out, ...).
+
+    Returns
+    -------
+    field : ndarray, shape (nx, ny, nz)
+        Kriged model: free cells replaced by the Kriged values, air cells
+        unchanged from ``ref_log_rho``.
+
+    Notes
+    -----
+    ``modem.read_mod`` stores models in natural-log (``trans="LOGE"``) by
+    convention in this codebase, whereas the FEMTIC GST tooling and its
+    ``log_rho_min``/``log_rho_max``/``vario_sill`` defaults are expressed
+    in log10(Ω·m).  Convert with ``rho_log10 = rho_loge / np.log(10.0)``
+    before calling, and convert the returned field back
+    (``rho_loge = rho_log10 * np.log(10.0)``) — or pass ``log_rho_min`` /
+    ``log_rho_max`` / ``vario_sill`` already rescaled for natural-log units
+    if you prefer to work in loge throughout.  This conversion is left to
+    the caller (see ``modem_nss.py``) rather than hard-coded here, since it
+    depends on which transform the rest of the pipeline uses.
+
+    Author: Volker Rath (DIAS) / Claude Sonnet 5 (Anthropic), 2026-07-19.
+    AI-generated — review before use in production.
+    """
+    nx, ny, nz = ref_log_rho.shape
+    free_mask = ~aircells if aircells is not None else np.ones((nx, ny, nz), dtype=bool)
+
+    xyz, flat_idx = modem_gst_cell_centers(dx, dy, dz, free_mask=free_mask)
+    ref_flat = ref_log_rho.ravel(order="C")[flat_idx]
+
+    field_free = generate_gst_perturbation(
+        xyz, ref_log_rho=ref_flat, **gst_kwargs,
+    )
+
+    out_flat = ref_log_rho.ravel(order="C").copy()
+    out_flat[flat_idx] = field_free
+    return out_flat.reshape(nx, ny, nz, order="C")
 
 
 # =============================================================================
