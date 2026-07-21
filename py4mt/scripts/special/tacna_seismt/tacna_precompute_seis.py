@@ -53,6 +53,13 @@ from scipy.interpolate import RegularGridInterpolator
 # USER SETTINGS
 # =====================================================================
 
+# Directory for all NetCDF outputs written by this script (created if it
+# doesn't exist). Default "." keeps everything in the current directory,
+# matching the previous (fixed) behaviour. tacna_plot_seis.py has a
+# matching NC_DIR setting to read from wherever this is pointed at.
+# OUTPUT_DIR = "."
+OUTPUT_DIR = "./precompute/"
+
 # Input velocity model files
 FNAME_VP = "./seistomo/FD_vp_model.nc"
 FNAME_VS = "./seistomo/FD_vs_model.nc"
@@ -68,8 +75,21 @@ FNAME_VS = "./seistomo/FD_vs_model.nc"
 # to match (just inside) the topo/bath bounds below, with margin around
 # both profile endpoints; if you add profiles reaching further, widen this
 # and MAP_LON/MAP_LAT to match.
-TAR_LON = [-70.79, -69.48]
-TAR_LAT = [-18.34, -17.01]
+#
+# Kept identical to TAR_LON/TAR_LAT in tacna_precompute_modem.py (with a
+# small extra margin) so both pipelines cover the same geographic area —
+# the union of the seismic box [-70.79, -69.48] x [-18.34, -17.01] and the
+# ModEM box [-70.55, -69.40] x [-18.35, -16.95], padded by ~0.05°.
+# Set CROP_TO_REGION = True to crop the velocity models to TAR_LON/TAR_LAT
+# (and DEPTH_RANGE) below before any output is written. Set to False to
+# keep the full source-model extent (only DEPTH_RANGE is still applied).
+# Same toggle/convention as CROP_TO_REGION in tacna_precompute_modem.py —
+# kept here explicitly (rather than always-on) so both precompute scripts
+# behave the same way and it's obvious at a glance whether a given run was
+# cropped to the region of interest.
+CROP_TO_REGION = True
+TAR_LON = [-70.84, -69.35]
+TAR_LAT = [-18.40, -16.90]
 # Lower bound was 0 (sea level), which silently discarded any above-sea-
 # level coverage the source model has (e.g. under a volcanic edifice) —
 # the same VSLICES zmin_km=-8.0 fix in tacna_plot_seis.py can't recover
@@ -85,8 +105,8 @@ DEPTH_RANGE = [-8, 100]          # km
 DEPTH_INDEX = [5, 9, 13]
 
 # Topo/bath geographic bounds (slightly wider than velocity subset)
-MAP_LON = [-70.798043, -69.46973]
-MAP_LAT = [-18.3423,   -17.0034]
+MAP_LON = [-70.94, -69.25]
+MAP_LAT = [-18.50, -16.80]
 
 # Output UTM-km grid spacing (km)
 TOPO_SPACING_KM = 1.0
@@ -103,6 +123,13 @@ GEOTIFF_PATH = ""    # path to local GeoTIFF       (used when TOPO_SOURCE="geoti
 # =====================================================================
 # END USER SETTINGS
 # =====================================================================
+
+Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
+
+
+def outpath(name):
+    """Join a bare output filename onto OUTPUT_DIR."""
+    return str(Path(OUTPUT_DIR) / name)
 
 
 # ------------------------------------------------------------------
@@ -139,7 +166,7 @@ def add_utm_coords(ds):
     return ds
 
 
-def geo_to_utm_km_nc(da, outpath, spacing_km=1.0):
+def geo_to_utm_km_nc(da, outfile, spacing_km=1.0):
     """
     Reproject a geographic (lon/lat) DataArray to a regular UTM Zone 19S
     grid (km) via bilinear interpolation and write to NetCDF.
@@ -147,7 +174,7 @@ def geo_to_utm_km_nc(da, outpath, spacing_km=1.0):
     Parameters
     ----------
     da         : xr.DataArray with 'lat'/'lon' (or 'y'/'x') dim coordinates
-    outpath    : output NetCDF path
+    outfile    : output NetCDF path (use outpath(name) to place it in OUTPUT_DIR)
     spacing_km : output grid spacing in km
     """
     lat_dim = "lat" if "lat" in da.dims else "y"
@@ -196,11 +223,11 @@ def geo_to_utm_km_nc(da, outpath, spacing_km=1.0):
         },
         attrs=da.attrs,
     )
-    result.to_netcdf(outpath)
-    print(f"  Saved: {outpath}")
+    result.to_netcdf(outfile)
+    print(f"  Saved: {outfile}")
 
 
-def slice_to_utm_km_nc(da, outpath):
+def slice_to_utm_km_nc(da, outfile):
     """
     Convert a 2D (lat, lon) velocity DataArray that carries utm_easting /
     utm_northing auxiliary coordinates (metres) to a Cartesian UTM-km NetCDF.
@@ -228,8 +255,8 @@ def slice_to_utm_km_nc(da, outpath):
         },
         attrs=da.attrs,
     )
-    result.to_netcdf(outpath)
-    print(f"  Saved: {outpath}")
+    result.to_netcdf(outfile)
+    print(f"  Saved: {outfile}")
 
 
 # ------------------------------------------------------------------
@@ -350,10 +377,16 @@ print("Reading velocity models …")
 vtomop = xr.open_dataset(FNAME_VP)
 vtomos = xr.open_dataset(FNAME_VS)
 
-vp  = vtomop.sel(lat=slice(bottom, top), lon=slice(left, right),
-                 depth=slice(*DEPTH_RANGE))
-vs  = vtomos.sel(lat=slice(bottom, top), lon=slice(left, right),
-                 depth=slice(*DEPTH_RANGE))
+if CROP_TO_REGION:
+    vp  = vtomop.sel(lat=slice(bottom, top), lon=slice(left, right),
+                     depth=slice(*DEPTH_RANGE))
+    vs  = vtomos.sel(lat=slice(bottom, top), lon=slice(left, right),
+                     depth=slice(*DEPTH_RANGE))
+    print(f"  Region: cropped to TAR_LON={TAR_LON}, TAR_LAT={TAR_LAT}")
+else:
+    vp  = vtomop.sel(depth=slice(*DEPTH_RANGE))
+    vs  = vtomos.sel(depth=slice(*DEPTH_RANGE))
+    print("  Region: full source-model extent (CROP_TO_REGION=False)")
 vps = vp / vs
 
 print(f"  Requested depth range: {DEPTH_RANGE[0]} – {DEPTH_RANGE[1]} km")
@@ -364,13 +397,13 @@ vp  = add_utm_coords(vp)
 vs  = add_utm_coords(vs)
 vps = add_utm_coords(vps)
 
-vp.to_netcdf("tacna_vp.nc")
-vs.to_netcdf("tacna_vs.nc")
-vps.to_netcdf("tacna_vps.nc")
+vp.to_netcdf(outpath("tacna_vp.nc"))
+vs.to_netcdf(outpath("tacna_vs.nc"))
+vps.to_netcdf(outpath("tacna_vps.nc"))
 print("Saved velocity subsets:")
-print("  tacna_vp.nc")
-print("  tacna_vs.nc")
-print("  tacna_vps.nc")
+print(f"  {outpath('tacna_vp.nc')}")
+print(f"  {outpath('tacna_vs.nc')}")
+print(f"  {outpath('tacna_vps.nc')}")
 
 # ------------------------------------------------------------------
 # 2. Topography and bathymetry (no GMT)
@@ -395,8 +428,8 @@ bath_da = xr.DataArray(
 )
 
 print("\nReprojecting topo/bath to UTM-km grids …")
-geo_to_utm_km_nc(topo_da, "tacna_topo_utm.nc", spacing_km=TOPO_SPACING_KM)
-geo_to_utm_km_nc(bath_da, "tacna_bath_utm.nc", spacing_km=TOPO_SPACING_KM)
+geo_to_utm_km_nc(topo_da, outpath("tacna_topo_utm.nc"), spacing_km=TOPO_SPACING_KM)
+geo_to_utm_km_nc(bath_da, outpath("tacna_bath_utm.nc"), spacing_km=TOPO_SPACING_KM)
 
 # Note: tacna_topo_shade_utm.nc is intentionally NOT written here.
 # Hillshade is computed on-the-fly in tacna_plot_seis.py via
@@ -411,8 +444,8 @@ print("\nPre-computing per-depth UTM-km velocity slices …")
 for d_index in DEPTH_INDEX:
     depth_km = int(depth_coord.item(d_index))
     tag = f"{depth_km}km"
-    slice_to_utm_km_nc(vp["data"].isel(depth=d_index),  f"tacna_vp_utm_{tag}.nc")
-    slice_to_utm_km_nc(vs["data"].isel(depth=d_index),  f"tacna_vs_utm_{tag}.nc")
-    slice_to_utm_km_nc(vps["data"].isel(depth=d_index), f"tacna_vps_utm_{tag}.nc")
+    slice_to_utm_km_nc(vp["data"].isel(depth=d_index),  outpath(f"tacna_vp_utm_{tag}.nc"))
+    slice_to_utm_km_nc(vs["data"].isel(depth=d_index),  outpath(f"tacna_vs_utm_{tag}.nc"))
+    slice_to_utm_km_nc(vps["data"].isel(depth=d_index), outpath(f"tacna_vps_utm_{tag}.nc"))
 
 print("\nDone. All UTM-km grids ready for tacna_plot_seis.py.")

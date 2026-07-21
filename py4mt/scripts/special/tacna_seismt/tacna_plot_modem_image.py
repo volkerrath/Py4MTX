@@ -1,8 +1,8 @@
-#!/usr/bin/env python3
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-tacna_plot_modem.py
-===================
+tacna_plot_modem_image.py
+=========================
 Companion plotting script for tacna_precompute_modem.py.
 
 Produces depth-slice maps of log10(ρ) (or linear ρ) from a ModEM 3-D MT
@@ -240,12 +240,36 @@ def export_colormap_to_cpt(cmap, vmin, vmax, outpath, n_steps=32):
 # USER SETTINGS
 # =====================================================================
 
+
+# Directory to read precomputed NetCDF files from (must match OUTPUT_DIR
+# in tacna_precompute_modem.py). Default "." reads from the current
+# directory, matching the previous (fixed) behaviour.
+NC_DIR = "./precompute/"
+
+# Directory for saved figures (created if it doesn't exist). Default "."
+# writes into the current directory, matching the previous behaviour.
+PLOT_DIR = "./plots/"
+
+# Appended to every saved figure's filename (before the extension) — lets
+# output from this script (resampled "image" rendering) be told apart at
+# a glance from tacna_plot_modem_mesh.py's exact-mesh output, e.g.
+# "modem_rho_1km_tacna_img.pdf" vs "..._msh.pdf". Set to "" to disable.
+PLOT_FILENAME_SUFFIX = "_img"
+
+
 PLOT_FORMATS = [".pdf", ".jpg"]
 PLOT_DPI     = 600
 
-# Figure sizes (cm).  Set HEIGHT to None to derive automatically.
-HORZ_WIDTH_CM  = 10.0
-HORZ_HEIGHT_CM = None   # None → derived from UTM aspect ratio
+# Figure sizes (cm).
+# Horizontal maps: FIG_WIDTH controls the *map panel's* width only.
+# FIG_HEIGHT is always derived from it and the UTM data aspect ratio —
+# there is no manual height override — so 1 km in easting always renders
+# as exactly the same length as 1 km in northing, guaranteed by
+# construction (see create_map_figure()), not merely by an aspect setting
+# a colorbar could throw off.
+FIG_WIDTH = 10.0   # cm — map panel width; a colorbar (if shown) adds its
+                    # own extra width/height beyond this, never competing
+                    # with the map for space.
 
 VSLICE_WIDTH_CM  = 14.0
 VSLICE_HEIGHT_CM = None  # None → derived from VE and profile length
@@ -253,7 +277,7 @@ VSLICE_HEIGHT_CM = None  # None → derived from VE and profile length
 # Depth slices to plot — must match values used in tacna_precompute_modem.py.
 # Each entry corresponds to one DEPTH_SLICES_KM value; tag strings are
 # constructed the same way as in the precompute script.
-DEPTH_SLICES_KM = [5.0, 9.0, 13.0,]
+DEPTH_SLICES_KM = [1.0, 5.0, 9.0]
 
 # Seismicity depth windows (km), one pair per entry in DEPTH_SLICES_KM.
 # Set both to None to show all seismicity on every slice.
@@ -261,8 +285,8 @@ ZMIN_SEISM = [-5,  0,  5, 15, 30]
 ZMAX_SEISM = [ 5, 10, 20, 30, 55]
 
 # Colour-scale limits for log10(ρ) [Ω·m]; adjust to your model range
-CMIN_RHO = 0.5    # log10(Ω·m) — ~3 Ω·m
-CMAX_RHO = 4.0    # log10(Ω·m) — ~10,000 Ω·m
+CMIN_RHO = 1.    # log10(Ω·m) — ~3 Ω·m
+CMAX_RHO = 3.    # log10(Ω·m) — ~10,000 Ω·m
 
 # Air cells above the model surface are stored with RHO_AIR (~1e17 Ω·m,
 # i.e. log10(ρ) ≈ 17) in tacna_precompute_modem.py. Any cell at or above this
@@ -282,18 +306,29 @@ AIR_LOG10_RHO_THRESHOLD = 10.0
 # Missing sensitivity data (NaN — e.g. outside the .sns file's own
 # coverage) is always treated as fully shaded/blanked: we have no basis for
 # claiming a cell is well-resolved just because we have no information.
-USE_SENSITIVITY = True
+USE_SENSITIVITY = False
 
 # Cells with sensitivity below this are fully blanked (set to NaN,
 # transparent) — poorly-resolved regions disappear entirely, the same way
 # air cells do. Set to None to disable blanking.
-SENS_BLANK_THRESHOLD = None
+# NOTE: kept ON *in addition to* SENS_ALPHA_RANGE below — belt-and-braces.
+# SENS_ALPHA_RANGE already makes these cells fully transparent by itself,
+# but blanking to NaN also removes them from the colour-scale/data array,
+# which matters if this array is reused elsewhere (e.g. exported).
+SENS_BLANK_THRESHOLD = -4   # log10(1e-4) — sensitivity < 1e-4
 
 # Cells with sensitivity between these two values get a smooth semi-
-# transparent overlay fading from fully shaded (SENS_SHADE_MAX_ALPHA, at or
-# below the first value) to unshaded (0 alpha, at or above the second) — a
-# softer "how much to trust this" cue than a hard blank cutoff. Set to None
-# to disable shading. Values are in the same units as SENS_TRANSFORM.
+# transparent white overlay fading from fully shaded (SENS_SHADE_MAX_ALPHA,
+# at or below the first value) to unshaded (0 alpha, at or above the
+# second) — a softer "how much to trust this" cue than a hard blank cutoff.
+# Set to None to disable shading. Values are in the same units as
+# SENS_TRANSFORM.
+# Switched OFF for now: it was washing everything from -4 to 0 with an
+# opaque-ish white layer, which is a *different* effect from "make the
+# low-sensitivity area transparent" (it actually makes it more opaque, just
+# white instead of coloured) and was likely what made sensitivity masking
+# look like it wasn't doing anything useful. Re-enable if you also want
+# that softer cue on top of the hard cutoff below.
 SENS_SHADE_RANGE = None   # e.g. (-2.0, 0.0)
 SENS_SHADE_COLOR = "white"
 SENS_SHADE_MAX_ALPHA = 0.85
@@ -309,8 +344,26 @@ SENS_SHADE_MAX_ALPHA = 0.85
 # structure to topography. Can be used together with SENS_SHADE_RANGE/
 # SENS_BLANK_THRESHOLD, or on its own. Set to None to disable (data alpha
 # stays the constant 1 - ALPHA_RHO everywhere, as before). Values are in
-# the same units as SENS_TRANSFORM.
-SENS_ALPHA_RANGE = None   # e.g. (-2.0, 0.0)
+# the same units as SENS_TRANSFORM (log10 sensitivity by default).
+#
+# NOTE on the upper bound: with SENS_TRANSFORM="LOG10", sensitivity itself
+# is normalised to [0, 1], so log10(sensitivity) never exceeds 0 — the
+# best-resolved cell you can ever have sits at exactly 0. That means the
+# *second* value of this range (where opacity reaches its normal maximum)
+# should essentially always stay 0; only the first value (how lenient the
+# cutoff is) is worth changing.
+#
+# Example (a) — sharp cutoff, no fade: everything below the threshold is
+# fully transparent, everything at/above it is fully opaque, nothing in
+# between. This is what's currently active below.
+SENS_ALPHA_RANGE = (-4., -4.)
+# SENS_ALPHA_RANGE = (-3., -3.)    # more lenient cutoff (sens < 1e-3)
+# SENS_ALPHA_RANGE = (-2., -2.)    # stricter cutoff (sens < 1e-2)
+#
+# Example (b) — soft fade from -2 up to 0: cells fade in gradually as
+# sensitivity improves from 1e-2 to 1 (fully resolved), rather than
+# snapping straight from invisible to fully opaque.
+# SENS_ALPHA_RANGE = (-2., 0.)
 
 # Colourmap: matplotlib built-in name ("jet_r", "RdBu", "turbo_r", "bwr_r",
 # etc.), OR a path to a colourmap file to import (.cpt = GMT colour palette
@@ -354,6 +407,16 @@ NC_TOPO_SEIS = "tacna_topo_utm.nc"     # set to "" to use NC_TOPO_MODEM
 REGION_SOURCE    = "model"
 REGION_MARGIN_KM = 0.0
 
+# Explicit override of the map's displayed x/y range (UTM km), applied
+# *after* REGION_SOURCE/REGION_MARGIN_KM compute the region above — crops
+# (or expands) the displayed view without touching how that region is
+# computed. Also feeds the feature-clipping (_in_region), the map figure's
+# aspect ratio, and the lon/lat tick overlay, so all stay consistent with
+# what's actually drawn. Set to None (default) to use the REGION_SOURCE
+# extent unchanged. Analogous to the per-slice "xlim" in VSLICES below.
+MAP_XLIM = [310.0, 445.0]    # e.g. [300.0, 420.0]  (easting,  km)
+MAP_YLIM = [7971.6, 8120.5]  # e.g. [7960.0, 8080.0] (northing, km)
+
 # Hillshade parameters
 HS_AZIMUTH  = 315
 HS_ALTITUDE = 45
@@ -368,9 +431,19 @@ OCEAN_COLOR = "#6baed6"
 
 # =====================================================================
 # COLORBAR SETTINGS
+# SHOW_COLORBAR      : False omits the colorbar entirely — the map panel
+#                      itself is completely unaffected either way.
+# COLORBAR_POSITION  : "right" | "left" | "bottom" | "top"
+# The colorbar is placed in its own explicitly-sized axes, added as EXTRA
+# width (right/left) or height (bottom/top) beyond the map panel — it
+# never steals space from the map, so it can never distort its scale.
+# COLORBAR_SIZE      : bar length, as a fraction (0-1) of the map edge
+#                      it's attached to
+# COLORBAR_ASPECT    : bar length / bar thickness (thickness is derived)
 # =====================================================================
+SHOW_COLORBAR       = True
 COLORBAR_POSITION   = "right"   # "right" | "left" | "bottom" | "top"
-COLORBAR_SIZE       = 0.05
+COLORBAR_SIZE       = 0.85      # bar length, fraction of the map edge
 COLORBAR_PAD        = 0.10      # inches
 COLORBAR_ASPECT     = 20
 COLORBAR_LABEL_SIZE = 8
@@ -378,16 +451,22 @@ COLORBAR_TICK_SIZE  = 7
 COLORBAR_NTICKS     = 5
 
 # =====================================================================
-# LAT/LON SECONDARY AXES
-# When True, a secondary top x-axis (longitude) and right y-axis (latitude)
-# are added after the UTM-km plot.  The primary bottom/left axes keep their
-# UTM km labels; lon/lat appear on top/right as a cosmetic overlay.
-# LATLON_NTICKS : number of tick positions on each secondary axis
-# LATLON_DECIMALS : decimal places on lon/lat tick labels
+# MAP AXES UNITS
+# Selects what the map's bottom/left tick labels show — one or the other,
+# not both (the tick *positions* are simply relabelled in place; no extra
+# axes are added).
+# AXES_UNITS : "km"     — UTM easting/northing in km (default).
+#              "latlon" — longitude/latitude in degrees.
+# LATLON_NTICKS   : number of tick positions when AXES_UNITS="latlon"
+# LATLON_DECIMALS : decimal places on the lon/lat tick labels
+# AXES_KM_COMMA   : when AXES_UNITS="km", add a thousands comma
+#                   (American style, e.g. "8,000"). False -> plain "8000".
+#                   Has no effect when AXES_UNITS="latlon".
 # =====================================================================
-SHOW_LATLON_AXES = True
+AXES_UNITS       = "km"   # "km" | "latlon"
 LATLON_NTICKS    = 5
 LATLON_DECIMALS  = 2
+AXES_KM_COMMA    = True
 
 # =====================================================================
 # FEATURE OVERLAY SETTINGS
@@ -411,8 +490,31 @@ CSV_SEISMCAT = "./features/catalog_welllocated_15_simple5.csv"
 CSV_VOLCANES    = "./features/volcanes.csv"
 VOLC_LABEL_IDX  = [5, 12, 13]   # row indices to label
 
+# Volcano label text: full name vs. short/abbreviated name.
+# VOLC_LABEL_FULL_NAME : True  -> use VOLC_NAME_COL_FULL
+#                        False -> use VOLC_NAME_COL_SHORT (default)
+VOLC_LABEL_FULL_NAME = False
+VOLC_NAME_COL_FULL   = "NAME"      # column used when VOLC_LABEL_FULL_NAME=True
+VOLC_NAME_COL_SHORT  = "VOLCAN2"   # column used when VOLC_LABEL_FULL_NAME=False
+
 # --- Cities CSV (columns x=lon, y=lat, Name) ---
 CSV_CITIES = "./features/cities.csv"
+
+# =====================================================================
+# MAP FEATURE LAYERS — simple on/off switches
+# Each flag controls one overlay layer on the map. SHOW_SEISMICITY and
+# SHOW_MT_SITES also control the matching projection onto vertical
+# sections (VSLICE_EQ_STYLE / VSLICE_MT_STYLE), so turning a feature off
+# applies everywhere it would otherwise appear, not just on the map.
+# =====================================================================
+SHOW_PROFILE_LINES    = True   # static profile_CD / profile_2 lines
+SHOW_VSLICE_LINES     = True   # VSLICES cross-section lines + endpoint labels
+SHOW_SEISMICITY       = True
+SHOW_MT_SITES         = True
+SHOW_VOLCANOES        = True   # inactive volcano markers + labels
+SHOW_VOLCANOES_ACTIVE = True   # active volcano markers
+SHOW_CITIES           = True
+SHOW_NORTH_ARROW      = True
 
 # =====================================================================
 # MARKER & LABEL STYLE SETTINGS
@@ -444,9 +546,8 @@ VOLC_INACT_MARKER_STYLE = dict(
     marker="^", s=16, facecolors="black", edgecolors="black",
     linewidths=0.2, zorder=13,
 )
-VOLC_LABEL_STYLE  = dict(fontsize=6, fontweight="bold", color="white",
+VOLC_LABEL_STYLE  = dict(fontsize=6, fontweight="bold", color="black",
                           zorder=14, offset_x=0.3, offset_y=0.3)
-VOLC_LABEL_STROKE = dict(linewidth=1.5, foreground="black")
 
 VOLC_ACT_MARKER_STYLE = dict(
     marker="^", s=16, facecolors="red", edgecolors="black",
@@ -457,9 +558,8 @@ CITY_MARKER_STYLE = dict(
     marker="s", s=18, facecolors="white", edgecolors="black",
     linewidths=0.2, zorder=13,
 )
-CITY_LABEL_STYLE  = dict(fontsize=6, color="white", zorder=14,
+CITY_LABEL_STYLE  = dict(fontsize=6, color="black", zorder=14,
                           offset_x=0.3, offset_y=-0.3)
-CITY_LABEL_STROKE = dict(linewidth=1.5, foreground="black")
 
 ARROW_STYLE       = dict(color="dimgray", lw=2, mutation_scale=14)
 ARROW_LABEL_STYLE = dict(fontsize=9, fontweight="bold", color="dimgray")
@@ -488,6 +588,12 @@ ARROW_LABEL_STYLE = dict(fontsize=9, fontweight="bold", color="dimgray")
 #             narrows the plotted view, so it's cheap to iterate on for
 #             fine-tuning a figure. Omit or set to None for the full
 #             profile (default).
+#   ylim    : optional [ytop, ybottom] — crop the *displayed* depth-axis
+#             range without recomputing anything. Depth in km, positive
+#             down, given top-first (ytop is the shallower/smaller value,
+#             e.g. negative to include topography). Omit or set to None
+#             for the default range (topo/headroom-derived top, zmax_km
+#             at the bottom).
 #
 # Set VSLICES = [] to skip all vertical sections.
 # =====================================================================
@@ -503,7 +609,7 @@ VSLICES = [
         # _project_seismicity_to_profile — the catalogue used here has
         # events down to z = -5.75 km. -8.0 gives some margin.
         zmin_km  = -8.0,
-        zmax_km  = 60.0,
+        zmax_km  = 30.0,
         npts     = 200,
         nz       = 150,
         swath_km = 10.0,
@@ -516,7 +622,57 @@ VSLICE_CMIN_RHO = CMIN_RHO
 VSLICE_CMAX_RHO = CMAX_RHO
 
 # Vertical exaggeration (1 = true scale)
-VSLICE_VE = 1.0
+VSLICE_VE = 2.0
+
+# Force true equal x/y (km) scale on sections, overriding VSLICE_VE with
+# 1.0 whenever True. Off by default: real profiles are typically much
+# longer than they are deep, so a literal 1:1 scale usually isn't what
+# you want day-to-day — VSLICE_VE stays the normal, always-available
+# control for how exaggerated (or not) a section looks. This flag exists
+# only for the occasional figure where true, undistorted scale actually
+# matters (e.g. comparing directly against a map at the same scale).
+VSLICE_EQUAL_SCALE = False
+
+# VE-label placement on cross-section figures.
+# VSLICE_VE_POS : one of "lower right", "lower left", "upper right",
+#                 "upper left", or an explicit (x, y, ha, va) tuple in
+#                 axes-fraction coordinates.
+# VSLICE_VE_STYLE : remaining ax.text() kwargs (fontsize, color, etc.)
+VSLICE_VE_POS   = "lower right"
+VSLICE_VE_STYLE = dict(fontsize=7, color="black")
+
+# How the 3-D model is sampled onto a section's profile points:
+#   "nearest" — use the value of whichever mesh cell actually contains
+#               each sample point, with no blending across cell
+#               boundaries. Piecewise-constant, i.e. every colour in the
+#               section is a real, unmodified cell value — a true cut
+#               through the mesh's own cells, not a smoothed resampling.
+#               (The along-profile *sample spacing* — VSLICES' npts/nz —
+#               is still a regular grid, not the mesh's own irregular cell
+#               boundaries, so this isn't a full geometric mesh-polygon
+#               cut for an arbitrary-angle profile; but the values plotted
+#               are exact, unblended cell values, which is the part that
+#               actually matters visually.)
+#   "linear"  — smooth trilinear interpolation between neighbouring cells
+#               (the previous default) — nicer-looking but can visually
+#               blur sharp resistivity/sensitivity contrasts across real
+#               cell boundaries, and can imply resolution the mesh doesn't
+#               have.
+# The section's pcolormesh shading follows this automatically: "nearest"
+# draws flat, undecorated cell blocks; "linear" uses "gouraud" (smooth
+# per-vertex shading) so the rendering matches how the values were
+# produced either way.
+VSLICE_INTERP_METHOD = "nearest"
+
+# --- Free-text annotation (optional) ---
+# Draws one extra line of arbitrary text on every figure this script
+# produces (both depth slices and vertical sections) — e.g. a version tag,
+# a processing note, or a "DRAFT" watermark. Set to None or "" to disable.
+# Default position is top-left; the VE label now sits lower-right on
+# sections (see VSLICE_VE_POS above), so the two no longer collide.
+ANNOTATION_TEXT  = None                  # e.g. "Preliminary — v3 mesh"
+ANNOTATION_POS   = (0.01, 0.99)          # (x, y) in axes-fraction coords
+ANNOTATION_STYLE = dict(fontsize=7, color="gray", ha="left", va="top")
 
 # Horizontal axis for vertical sections:
 #   "utm"      — UTM easting or northing (km)
@@ -525,7 +681,7 @@ VSLICE_X_AXIS = "utm"
 
 # Seismicity marker style on cross-section
 VSLICE_EQ_STYLE = dict(
-    s=4, facecolors="white", edgecolors="black",
+    s=2, facecolors="white", edgecolors="black",
     linewidths=0.2, zorder=11,
 )
 
@@ -551,6 +707,13 @@ VSLICE_MAP_LINE_STYLE = dict(color="magenta", lw=0.8, ls="--", zorder=15)
 # =====================================================================
 # END USER SETTINGS
 # =====================================================================
+
+os.makedirs(PLOT_DIR, exist_ok=True)
+
+
+def ncpath(name):
+    """Join a bare precomputed-NetCDF filename onto NC_DIR."""
+    return os.path.join(NC_DIR, name)
 
 
 # ------------------------------------------------------------------
@@ -618,17 +781,30 @@ def sens_data_alpha(sens, low, high, base_alpha):
     return np.where(np.isnan(sens), 0.0, alpha)
 
 
-def draw_sens_shade_overlay(ax, alpha_2d, extent, zorder):
-    """Draw a solid-colour overlay (SENS_SHADE_COLOR) whose per-pixel alpha
-    comes from alpha_2d, to visually de-emphasise poorly-resolved cells."""
+def draw_sens_shade_overlay(ax, vx, vy, alpha_2d, zorder,
+                            e_edges=None, n_edges=None):
+    """Draw a solid-colour overlay (SENS_SHADE_COLOR) whose per-cell alpha
+    comes from alpha_2d, to visually de-emphasise poorly-resolved cells.
+    Uses pcolormesh with the true (non-uniform) ModEM grid rather than
+    imshow+extent, for the same reason the resistivity raster does — see
+    the note by the resistivity pcolormesh call above. Uses exact cell
+    edges (shading="flat") when e_edges/n_edges are supplied and match
+    vx/vy in size, else falls back to centre-based shading="nearest"."""
     rgb = mcolors.to_rgb(SENS_SHADE_COLOR)
-    rgba = np.zeros((*alpha_2d.shape, 4), dtype=float)
-    rgba[..., 0] = rgb[0]
-    rgba[..., 1] = rgb[1]
-    rgba[..., 2] = rgb[2]
-    rgba[..., 3] = alpha_2d
-    ax.imshow(rgba, origin="lower", extent=extent, zorder=zorder,
-             interpolation="nearest")
+    shade_cmap = mcolors.ListedColormap([rgb])
+    if (e_edges is not None and n_edges is not None and
+            e_edges.size == vx.size + 1 and n_edges.size == vy.size + 1):
+        ax.pcolormesh(
+            e_edges, n_edges, np.zeros_like(alpha_2d),
+            cmap=shade_cmap, vmin=0, vmax=1, shading="flat",
+            alpha=alpha_2d, zorder=zorder,
+        )
+    else:
+        ax.pcolormesh(
+            vx, vy, np.zeros_like(alpha_2d),
+            cmap=shade_cmap, vmin=0, vmax=1, shading="nearest",
+            alpha=alpha_2d, zorder=zorder,
+        )
 
 
 def load_sens_depth_slice(tag, ref_shape, ref_northing, ref_easting):
@@ -639,8 +815,12 @@ def load_sens_depth_slice(tag, ref_shape, ref_northing, ref_easting):
     """
     if not USE_SENSITIVITY:
         return None
-    path = f"modem_sens_utm_{tag}.nc"
+    path = ncpath(f"modem_sens_utm_{tag}.nc")
     if not os.path.exists(path):
+        print(f"  WARNING: {path} not found — sensitivity masking/shading "
+              f"is disabled for this depth slice. Check that "
+              f"tacna_precompute_modem.py found the .sns file (look for its "
+              f"own WARNING) and that OUTPUT_DIR there matches NC_DIR here.")
         return None
     _da = xr.open_dataarray(path)
     sy = _da["northing"].values
@@ -670,9 +850,40 @@ def load_sens_depth_slice(tag, ref_shape, ref_northing, ref_easting):
 # ------------------------------------------------------------------
 def save_fig(fig, stem):
     for fmt in PLOT_FORMATS:
-        out = stem + fmt
+        out = os.path.join(PLOT_DIR, stem + PLOT_FILENAME_SUFFIX + fmt)
         fig.savefig(out, dpi=PLOT_DPI, bbox_inches="tight")
         print(f"  Saved: {out}")
+
+
+def draw_annotation(ax):
+    """Draw the optional free-text annotation (ANNOTATION_TEXT), if set."""
+    if ANNOTATION_TEXT:
+        ax.text(*ANNOTATION_POS, ANNOTATION_TEXT,
+                transform=ax.transAxes, zorder=25, **ANNOTATION_STYLE)
+
+
+# ------------------------------------------------------------------
+# VE-label position resolver (used by plot_vertical_slice)
+# ------------------------------------------------------------------
+_VE_POS_PRESETS = {
+    "upper right": (0.99, 0.99, "right", "top"),
+    "upper left":  (0.01, 0.99, "left",  "top"),
+    "lower right": (0.99, 0.01, "right", "bottom"),
+    "lower left":  (0.01, 0.01, "left",  "bottom"),
+}
+
+
+def _resolve_ve_pos(spec):
+    """Resolve VSLICE_VE_POS into an (x, y, ha, va) tuple in axes fraction."""
+    if isinstance(spec, str):
+        try:
+            return _VE_POS_PRESETS[spec.lower()]
+        except KeyError:
+            raise ValueError(
+                f"VSLICE_VE_POS={spec!r} not recognised; choose one of "
+                f"{list(_VE_POS_PRESETS)} or an explicit (x, y, ha, va) tuple."
+            )
+    return spec
 
 
 # ------------------------------------------------------------------
@@ -693,6 +904,15 @@ def clipped_scatter(ax, xe, yn, **kwargs):
 
 
 def clipped_labels(ax, xe, yn, labels, style_dict):
+    """
+    Draw text labels for points inside the map region.
+
+    style_dict must include 'offset_x' and 'offset_y' (km); remaining keys
+    are passed to ax.text().  An optional 'stroke' key (dict) activates a
+    withStroke path-effect. Callers may pass a shared/global style dict
+    directly — it's copied internally, never mutated.
+    """
+    style_dict = dict(style_dict)
     ox = style_dict.pop("offset_x", 0.0)
     oy = style_dict.pop("offset_y", 0.0)
     stroke = style_dict.pop("stroke", None)
@@ -722,29 +942,141 @@ def draw_north_arrow(ax, x_km, y_km, length_km=4.0):
 
 
 # ------------------------------------------------------------------
-# Colourbar
+# Map figure creation — guarantees equal x/y (km) scale BY CONSTRUCTION
 # ------------------------------------------------------------------
-def add_colorbar(fig, ax, mappable, label):
+def _build_panel_figure(panel_w_in, panel_h_in, size_label="panel"):
+    """
+    Shared machinery behind create_map_figure() and create_section_figure():
+    given a panel's exact physical size in inches, place it (and an
+    optional colorbar, added as EXTRA canvas beyond the panel) via
+    explicit inch-based axes placement — never matplotlib's automatic
+    colorbar space-stealing (fig.colorbar(..., ax=...)) or tight_layout(),
+    both of which can produce a badly broken layout for panels with an
+    extreme aspect ratio (e.g. a long, shallow cross-section).
+
+    Returns (fig, ax, cax) — cax is the colorbar axes, or None if
+    SHOW_COLORBAR is False.
+    """
     pos = COLORBAR_POSITION.lower()
-    if pos in ("right", "left"):
-        orientation = "vertical"
-    elif pos in ("bottom", "top"):
-        orientation = "horizontal"
-    else:
-        raise ValueError(f"COLORBAR_POSITION={COLORBAR_POSITION!r} invalid.")
-    cbar = fig.colorbar(
-        mappable, ax=ax,
-        orientation=orientation,
-        location=pos,
-        fraction=COLORBAR_SIZE,
-        pad=COLORBAR_PAD / fig.get_size_inches()[0],
-        aspect=COLORBAR_ASPECT,
-        shrink=0.85,
-    )
+    if pos not in ("right", "left", "bottom", "top"):
+        raise ValueError(
+            f"COLORBAR_POSITION={COLORBAR_POSITION!r} is not valid. "
+            "Choose 'right', 'left', 'bottom', or 'top'."
+        )
+
+    pad_in = COLORBAR_PAD
+    bar_len_in = bar_thick_in = 0.0
+    cbar_w_in = cbar_h_in = 0.0
+    if SHOW_COLORBAR:
+        if pos in ("right", "left"):
+            bar_len_in = COLORBAR_SIZE * panel_h_in
+            cbar_w_in = bar_thick_in = bar_len_in / COLORBAR_ASPECT
+        else:
+            bar_len_in = COLORBAR_SIZE * panel_w_in
+            cbar_h_in = bar_thick_in = bar_len_in / COLORBAR_ASPECT
+
+    fig_w_in = panel_w_in + (cbar_w_in + pad_in if cbar_w_in else 0.0)
+    fig_h_in = panel_h_in + (cbar_h_in + pad_in if cbar_h_in else 0.0)
+    print(f"Figure size ({size_label}): {fig_w_in:.2f} × {fig_h_in:.2f} in "
+          f"({size_label} {panel_w_in:.2f} × {panel_h_in:.2f} in)")
+
+    fig = plt.figure(figsize=(fig_w_in, fig_h_in))
+
+    panel_left   = (cbar_w_in + pad_in) / fig_w_in if (SHOW_COLORBAR and pos == "left") else 0.0
+    panel_bottom = (cbar_h_in + pad_in) / fig_h_in if (SHOW_COLORBAR and pos == "bottom") else 0.0
+    panel_w_frac = panel_w_in / fig_w_in
+    panel_h_frac = panel_h_in / fig_h_in
+    ax = fig.add_axes([panel_left, panel_bottom, panel_w_frac, panel_h_frac])
+
+    cax = None
+    if SHOW_COLORBAR:
+        bar_len_frac = (bar_len_in / fig_h_in) if pos in ("right", "left") \
+            else (bar_len_in / fig_w_in)
+        if pos == "right":
+            cax = fig.add_axes([
+                (panel_w_in + pad_in) / fig_w_in,
+                panel_bottom + (panel_h_frac - bar_len_frac) / 2,
+                cbar_w_in / fig_w_in, bar_len_frac,
+            ])
+        elif pos == "left":
+            cax = fig.add_axes([
+                0.0,
+                panel_bottom + (panel_h_frac - bar_len_frac) / 2,
+                cbar_w_in / fig_w_in, bar_len_frac,
+            ])
+        elif pos == "top":
+            cax = fig.add_axes([
+                panel_left + (panel_w_frac - bar_len_frac) / 2,
+                (panel_h_in + pad_in) / fig_h_in,
+                bar_len_frac, cbar_h_in / fig_h_in,
+            ])
+        elif pos == "bottom":
+            cax = fig.add_axes([
+                panel_left + (panel_w_frac - bar_len_frac) / 2,
+                0.0,
+                bar_len_frac, cbar_h_in / fig_h_in,
+            ])
+
+    return fig, ax, cax
+
+
+def create_map_figure():
+    """
+    Build a horizontal-map figure whose map axes is sized in physical
+    inches to exactly match the UTM data aspect ratio ((ymax-ymin) /
+    (xmax-xmin)) — so 1 km in easting always renders as exactly the same
+    length as 1 km in northing, guaranteed by explicit inch-based axes
+    placement rather than relying on matplotlib's 'equal' aspect setting
+    plus automatic colorbar space-stealing (fig.colorbar(..., ax=...)),
+    which can desync from the actual rendered box in some layouts.
+
+    FIG_WIDTH controls only the map panel's width; height is always
+    derived. If SHOW_COLORBAR is True, the colorbar is added as EXTRA
+    width (right/left) or height (bottom/top) beyond the map panel, so it
+    never competes with the map for space and can never distort it.
+
+    Returns (fig, ax, cax) — cax is the colorbar axes, or None if
+    SHOW_COLORBAR is False.
+    """
+    map_w_in = FIG_WIDTH / 2.54
+    map_h_in = map_w_in * (ymax - ymin) / (xmax - xmin)
+    return _build_panel_figure(map_w_in, map_h_in, size_label="map")
+
+
+def create_section_figure(w_in, h_in):
+    """
+    Build a vertical-section figure at the given panel size (in inches —
+    already computed by the caller from VSLICE_WIDTH_CM and the profile's
+    own depth-range/VE-derived aspect ratio). Same explicit inch-based
+    axes placement as create_map_figure(), which matters most here: real
+    profiles are usually much longer than they are deep, and the old
+    tight_layout()-plus-space-stealing-colorbar approach could produce a
+    badly broken/overlapping layout for that kind of wide, short panel.
+
+    Returns (fig, ax, cax) — cax is the colorbar axes, or None if
+    SHOW_COLORBAR is False.
+    """
+    return _build_panel_figure(w_in, h_in, size_label="section")
+
+
+def finish_panel_colorbar(cax, mappable, label):
+    """Render the colorbar into the cax returned by create_map_figure()
+    or create_section_figure()."""
+    if cax is None:
+        return None
+    pos = COLORBAR_POSITION.lower()
+    orientation = "vertical" if pos in ("right", "left") else "horizontal"
+    cbar = cax.figure.colorbar(mappable, cax=cax, orientation=orientation)
     cbar.set_label(label, fontsize=COLORBAR_LABEL_SIZE)
     cbar.ax.tick_params(labelsize=COLORBAR_TICK_SIZE)
     cbar.locator = matplotlib.ticker.MaxNLocator(nbins=COLORBAR_NTICKS)
     cbar.update_ticks()
+    if pos == "left":
+        cax.yaxis.set_ticks_position("left")
+        cax.yaxis.set_label_position("left")
+    if pos == "top":
+        cax.xaxis.set_ticks_position("top")
+        cax.xaxis.set_label_position("top")
     return cbar
 
 
@@ -761,7 +1093,7 @@ def add_latlon_ticks(ax):
     evenly spaced UTM-km positions — the round geographic values are then
     converted back to UTM km to place the ticks.
 
-    Controlled by SHOW_LATLON_AXES, LATLON_NTICKS, LATLON_DECIMALS.
+    Controlled by AXES_UNITS, LATLON_NTICKS, LATLON_DECIMALS.
     """
     e_mid_m = (xmin + xmax) / 2.0 * 1e3
     n_mid_m = (ymin + ymax) / 2.0 * 1e3
@@ -878,7 +1210,7 @@ def compute_vertical_slice_modem(vslice):
         _sample_profile_points(e_ends, n_ends, npts)
 
     # Load 3-D model (dims: depth, northing, easting)
-    _da  = xr.open_dataarray("modem_model_utm.nc")
+    _da  = xr.open_dataarray(ncpath("modem_model_utm.nc"))
     e_ax = _da["easting"].values    # km
     n_ax = _da["northing"].values   # km
     d_ax = _da["depth"].values      # km
@@ -893,7 +1225,7 @@ def compute_vertical_slice_modem(vslice):
 
     interp = RegularGridInterpolator(
         (d_ax, n_ax, e_ax), vals,
-        method="linear", bounds_error=False, fill_value=np.nan,
+        method=VSLICE_INTERP_METHOD, bounds_error=False, fill_value=np.nan,
     )
 
     depth_km = np.linspace(zmin, zmax, nz)
@@ -941,13 +1273,20 @@ def compute_vertical_slice_modem(vslice):
     # pixel-aligned. Applied only to the *displayed* section, after
     # surf_depth has already been fixed from the air mask.
     sens_section = None
-    if USE_SENSITIVITY and os.path.exists("modem_sens_utm.nc"):
-        _sda  = xr.open_dataarray("modem_sens_utm.nc")
+    if USE_SENSITIVITY and not os.path.exists(ncpath("modem_sens_utm.nc")):
+        print("  WARNING: modem_sens_utm.nc not found — sensitivity "
+              "masking/shading is disabled for this section. Check that "
+              "tacna_precompute_modem.py found the .sns file (look for its "
+              "own WARNING) and that OUTPUT_DIR there matches NC_DIR here.")
+    if USE_SENSITIVITY and os.path.exists(ncpath("modem_sens_utm.nc")):
+        _sda  = xr.open_dataarray(ncpath("modem_sens_utm.nc"))
         se_ax = _sda["easting"].values
         sn_ax = _sda["northing"].values
         sd_ax = _sda["depth"].values
         svals = _sda.values
         _sda.close()
+
+        print(' sens min = ', np.amin(svals))
 
         if sn_ax[0] > sn_ax[-1]:
             sn_ax = sn_ax[::-1]; svals = svals[:, ::-1, :]
@@ -956,14 +1295,16 @@ def compute_vertical_slice_modem(vslice):
 
         sens_interp = RegularGridInterpolator(
             (sd_ax, sn_ax, se_ax), svals,
-            method="linear", bounds_error=False, fill_value=np.nan,
+            method=VSLICE_INTERP_METHOD, bounds_error=False, fill_value=np.nan,
         )
         sens_section = sens_interp(
             np.column_stack([d_q, n_q, e_q])).reshape(nz, npts)
 
         if SENS_BLANK_THRESHOLD is not None:
-            section = np.where(sens_section < SENS_BLANK_THRESHOLD,
-                               np.nan, section)
+            _blank_mask = sens_section < SENS_BLANK_THRESHOLD
+            print(f"  sens blanking: {np.sum(_blank_mask)}/{_blank_mask.size} "
+                  f"cells below threshold ({SENS_BLANK_THRESHOLD})")
+            section = np.where(_blank_mask, np.nan, section)
 
     # Topo along profile — kept only to flag ocean (elevation <= 0) for the
     # bathymetry fill colour; NOT used to position the surface line/MT
@@ -1029,7 +1370,7 @@ def plot_vertical_slice(dist_km, depth_km, section, e_ends, n_ends,
     swath  = vslice.get("swath_km", 10.0)
     zmin_s = vslice.get("zmin_km", depth_km[0])
     zmax_s = vslice.get("zmax_km", depth_km[-1])
-    ve     = VSLICE_VE
+    ve     = 1.0 if VSLICE_EQUAL_SCALE else VSLICE_VE
     name   = vslice.get("name", "profile")
 
     # Choose horizontal coordinate
@@ -1076,7 +1417,16 @@ def plot_vertical_slice(dist_km, depth_km, section, e_ends, n_ends,
            if VSLICE_HEIGHT_CM is None else VSLICE_HEIGHT_CM / 2.54
     print(f"  Section figure size: {w_in:.2f} × {h_in:.2f} in")
 
-    fig, ax = plt.subplots(figsize=(w_in, h_in))
+    fig, ax, cax = create_section_figure(w_in, h_in)
+
+    # VE label drawn first (low zorder) so the (semi-transparent) data
+    # image sits over it rather than being covered by it.
+    if ve != 1.0:
+        vx, vy, vha, vva = _resolve_ve_pos(VSLICE_VE_POS)
+        ax.text(vx, vy, f"VE = {ve:.1f}×",
+                transform=ax.transAxes, ha=vha, va=vva,
+                zorder=1, **VSLICE_VE_STYLE)
+
     norm = mcolors.Normalize(vmin=cmin, vmax=cmax)
     # Per-cell alpha for the data layer itself: constant (1-ALPHA_RHO) as
     # before, unless SENS_ALPHA_RANGE is set — then it fades toward fully
@@ -1087,10 +1437,18 @@ def plot_vertical_slice(dist_km, depth_km, section, e_ends, n_ends,
     if sens_section is not None and SENS_ALPHA_RANGE is not None:
         data_alpha = sens_data_alpha(sens_section, SENS_ALPHA_RANGE[0],
                                      SENS_ALPHA_RANGE[1], 1.0 - ALPHA_RHO)
+    # Shading follows how the data was sampled: "nearest" (piecewise-
+    # constant, unblended real cell values — see VSLICE_INTERP_METHOD)
+    # gets flat, undecorated blocks so the rendering doesn't re-introduce
+    # smoothing the sampling deliberately avoided; "linear" (smoothed
+    # trilinear interpolation) keeps the previous "gouraud" look, which
+    # matches how those values were produced.
+    _section_shading = "nearest" if VSLICE_INTERP_METHOD == "nearest" else "gouraud"
     im = ax.pcolormesh(
         x_arr, depth_km, section,
-        cmap=cmap, norm=norm, shading="gouraud",
+        cmap=cmap, norm=norm, shading=_section_shading,
         alpha=data_alpha, zorder=5,
+        antialiased=(_section_shading != "nearest"),
     )
     # NOTE: previously used shading="auto" + set_rasterized(True) to fix
     # vector-format seams between cells, but rasterized artists render
@@ -1099,7 +1457,10 @@ def plot_vertical_slice(dist_km, depth_km, section, e_ends, n_ends,
     # matplotlib bug, not something in this pipeline. Gouraud shading
     # (smooth per-vertex interpolation, no discrete cell polygons) removes
     # the seams without rasterizing anything, so the inverted axis renders
-    # correctly.
+    # correctly. When VSLICE_INTERP_METHOD="nearest" reintroduces flat
+    # shading (deliberately, for a true unblended cut), antialiased=False
+    # is used instead to suppress the same hairline-seam artifact — this
+    # doesn't rasterize anything, so the invert_yaxis bug doesn't apply.
 
     if sens_section is not None and SENS_SHADE_RANGE is not None:
         alpha_2d = sens_shade_alpha(sens_section, SENS_SHADE_RANGE[0],
@@ -1111,8 +1472,9 @@ def plot_vertical_slice(dist_km, depth_km, section, e_ends, n_ends,
         # main data — no separate imshow/extent/origin bookkeeping needed.
         ax.pcolormesh(
             x_arr, depth_km, np.zeros_like(alpha_2d),
-            cmap=shade_cmap, vmin=0, vmax=1, shading="gouraud",
+            cmap=shade_cmap, vmin=0, vmax=1, shading=_section_shading,
             alpha=alpha_2d, zorder=6,
+            antialiased=(_section_shading != "nearest"),
         )
 
     # Surface line/fill now come from the section's own data (surf_depth),
@@ -1134,9 +1496,9 @@ def plot_vertical_slice(dist_km, depth_km, section, e_ends, n_ends,
 
     ax.plot(x_arr, surf_depth, **VSLICE_TOPO_STYLE)
 
-    if len(eq_x):
+    if SHOW_SEISMICITY and len(eq_x):
         ax.scatter(eq_x, eq_dep, **VSLICE_EQ_STYLE)
-    if len(mt_x):
+    if SHOW_MT_SITES and len(mt_x):
         ax.scatter(mt_x, mt_dep, **VSLICE_MT_STYLE)
 
     x0, x1 = x_arr[0], x_arr[-1]
@@ -1145,7 +1507,11 @@ def plot_vertical_slice(dist_km, depth_km, section, e_ends, n_ends,
         ax.set_xlim(xlim[0], xlim[1])
     else:
         ax.set_xlim(min(x0, x1), max(x0, x1))
-    ax.set_ylim(y_top, depth_km[-1])
+    ylim = vslice.get("ylim", None)
+    if ylim is not None:
+        ax.set_ylim(ylim[0], ylim[1])
+    else:
+        ax.set_ylim(y_top, depth_km[-1])
     ax.invert_yaxis()
     ax.set_xlabel(x_label, fontsize=8)
     ax.set_ylabel("Depth (km)", fontsize=8)
@@ -1161,20 +1527,15 @@ def plot_vertical_slice(dist_km, depth_km, section, e_ends, n_ends,
 
     ax.set_title(f"log$_{{10}}$ρ — {name}  (swath ±{swath} km)", fontsize=9)
 
-    if ve != 1.0:
-        ax.text(0.99, 0.01, f"VE = {ve:.1f}×",
-                transform=ax.transAxes, ha="right", va="bottom",
-                fontsize=7, color="gray")
-
-    add_colorbar(fig, ax, im, cbar_label)
-    fig.tight_layout()
+    finish_panel_colorbar(cax, im, cbar_label)
+    draw_annotation(ax)
     save_fig(fig, stem)
     plt.close(fig)
 
 # --- Topography ---
 # Prefer the higher-resolution seis-pipeline topo if available
-_topo_path = NC_TOPO_SEIS if (NC_TOPO_SEIS and os.path.exists(NC_TOPO_SEIS)) \
-             else NC_TOPO_MODEM
+_topo_path = ncpath(NC_TOPO_SEIS) if (NC_TOPO_SEIS and os.path.exists(ncpath(NC_TOPO_SEIS))) \
+             else ncpath(NC_TOPO_MODEM)
 print(f"Loading topography from: {_topo_path}")
 _topo_da = xr.open_dataarray(_topo_path)
 
@@ -1213,7 +1574,7 @@ topo_norm   = mcolors.Normalize(vmin=TOPO_VMIN, vmax=TOPO_VMAX)
 # may be a different, unrelated DEM used purely to make the map basemap
 # look nicer; reusing it for the section mask left thin unmasked slivers of
 # real resistivity poking through wherever the two surfaces disagreed.
-_modem_topo_da = xr.open_dataarray(NC_TOPO_MODEM)
+_modem_topo_da = xr.open_dataarray(ncpath(NC_TOPO_MODEM))
 if "easting" in _modem_topo_da.dims:
     modem_topo_x = _modem_topo_da["easting"].values
     modem_topo_y = _modem_topo_da["northing"].values
@@ -1231,10 +1592,10 @@ if modem_topo_y[0] > modem_topo_y[-1]:
 CMAP_TOPO   = plt.get_cmap("gray")
 
 # --- Bathymetry (optional) ---
-_use_bath = bool(NC_BATH and os.path.exists(NC_BATH))
+_use_bath = bool(NC_BATH and os.path.exists(ncpath(NC_BATH)))
 if _use_bath:
-    print(f"Loading bathymetry from: {NC_BATH}")
-    _bath_da = xr.open_dataarray(NC_BATH)
+    print(f"Loading bathymetry from: {ncpath(NC_BATH)}")
+    _bath_da = xr.open_dataarray(ncpath(NC_BATH))
     bath_x = _bath_da["x"].values if "x" in _bath_da.dims else _bath_da["easting"].values
     bath_y = _bath_da["y"].values if "y" in _bath_da.dims else _bath_da["northing"].values
     bath_z = _bath_da.values
@@ -1246,8 +1607,8 @@ else:
     print("Bathymetry file not found — ocean fill skipped.")
 
 # --- MT site positions from NetCDF ---
-print(f"Loading MT sites from: {NC_SITES}")
-_sites_ds = xr.open_dataset(NC_SITES)
+print(f"Loading MT sites from: {ncpath(NC_SITES)}")
+_sites_ds = xr.open_dataset(ncpath(NC_SITES))
 mt_e      = _sites_ds["easting"].values
 mt_n      = _sites_ds["northing"].values
 mt_names  = _sites_ds["name"].values.tolist()
@@ -1260,7 +1621,7 @@ _sites_ds.close()
 _tag0 = f"{DEPTH_SLICES_KM[0]:.0f}km" \
         if DEPTH_SLICES_KM[0] == int(DEPTH_SLICES_KM[0]) \
         else f"{DEPTH_SLICES_KM[0]:.1f}km"
-_nc0 = f"modem_rho_utm_{_tag0}.nc"
+_nc0 = ncpath(f"modem_rho_utm_{_tag0}.nc")
 _da0 = xr.open_dataarray(_nc0)
 _e0  = _da0["easting"].values
 _n0  = _da0["northing"].values
@@ -1279,12 +1640,16 @@ else:
     print("Region source: topo grid")
 
 xmin, xmax, ymin, ymax = utm_region
-print(f"UTM region (km): {utm_region}")
 
-fig_w = HORZ_WIDTH_CM / 2.54
-fig_h = fig_w * (ymax - ymin) / (xmax - xmin) \
-        if HORZ_HEIGHT_CM is None else HORZ_HEIGHT_CM / 2.54
-print(f"Figure size (map): {fig_w:.2f} × {fig_h:.2f} in")
+if MAP_XLIM is not None:
+    xmin, xmax = MAP_XLIM
+if MAP_YLIM is not None:
+    ymin, ymax = MAP_YLIM
+if MAP_XLIM is not None or MAP_YLIM is not None:
+    print(f"UTM region overridden by MAP_XLIM/MAP_YLIM: "
+          f"[{xmin}, {xmax}, {ymin}, {ymax}]")
+else:
+    print(f"UTM region (km): {utm_region}")
 
 # ==================================================================
 # Feature layers (CSV-based)
@@ -1294,7 +1659,12 @@ utmv_e, utmv_n = to_utm_km(
     volcanes["LONG"][VOLC_LABEL_IDX].values,
     volcanes["LAT"][VOLC_LABEL_IDX].values,
 )
-namev = volcanes["VOLCAN2"][VOLC_LABEL_IDX].values
+_volc_name_col = VOLC_NAME_COL_FULL if VOLC_LABEL_FULL_NAME else VOLC_NAME_COL_SHORT
+if _volc_name_col not in volcanes.columns:
+    print(f"  WARNING: volcano name column {_volc_name_col!r} not found in "
+          f"{CSV_VOLCANES} — falling back to {VOLC_NAME_COL_SHORT!r}.")
+    _volc_name_col = VOLC_NAME_COL_SHORT
+namev = volcanes[_volc_name_col][VOLC_LABEL_IDX].values
 
 volc_act_e, volc_act_n = [], []
 for i in range(len(volcanes)):
@@ -1344,45 +1714,54 @@ def draw_basemap(ax):
         )
     ax.set_xlabel("Easting (km)", fontsize=8)
     ax.set_ylabel("Northing (km)", fontsize=8)
+    if AXES_UNITS == "km" and AXES_KM_COMMA:
+        _comma_fmt = mpl.ticker.StrMethodFormatter("{x:,.0f}")
+        ax.xaxis.set_major_formatter(_comma_fmt)
+        ax.yaxis.set_major_formatter(_comma_fmt)
     ax.tick_params(labelsize=7)
 
 
 def draw_features(ax, eq_e, eq_n):
-    if len(prof_cd_e):
-        ax.plot(prof_cd_e, prof_cd_n, clip_on=True, **PROFILE_CD_STYLE)
-    if len(prof2_e):
-        ax.plot(prof2_e, prof2_n, clip_on=True, **PROFILE_2_STYLE)
+    if SHOW_PROFILE_LINES:
+        if len(prof_cd_e):
+            ax.plot(prof_cd_e, prof_cd_n, clip_on=True, **PROFILE_CD_STYLE)
+        if len(prof2_e):
+            ax.plot(prof2_e, prof2_n, clip_on=True, **PROFILE_2_STYLE)
 
     # Vertical slice profile lines drawn on the map
-    for vi, vs in enumerate(VSLICES):
-        ve_ends, vn_ends = _profile_utm_km(vs)
-        lbl_start, lbl_end = _profile_labels(vi)
-        ax.plot(ve_ends, vn_ends, clip_on=True,
-                label=vs.get("name", "slice"), **VSLICE_MAP_LINE_STYLE)
-        for xy, lbl in zip(zip(ve_ends, vn_ends), (lbl_start, lbl_end)):
-            if _in_region(np.array([xy[0]]), np.array([xy[1]]))[0]:
-                ax.text(xy[0], xy[1], lbl, fontsize=7, fontweight="bold",
-                        color=VSLICE_MAP_LINE_STYLE["color"],
-                        ha="center", va="bottom", clip_on=True, zorder=16)
+    if SHOW_VSLICE_LINES:
+        for vi, vs in enumerate(VSLICES):
+            ve_ends, vn_ends = _profile_utm_km(vs)
+            lbl_start, lbl_end = _profile_labels(vi)
+            ax.plot(ve_ends, vn_ends, clip_on=True,
+                    label=vs.get("name", "slice"), **VSLICE_MAP_LINE_STYLE)
+            for xy, lbl in zip(zip(ve_ends, vn_ends), (lbl_start, lbl_end)):
+                if _in_region(np.array([xy[0]]), np.array([xy[1]]))[0]:
+                    ax.text(xy[0], xy[1], lbl, fontsize=7, fontweight="bold",
+                            color=VSLICE_MAP_LINE_STYLE["color"],
+                            ha="center", va="bottom", clip_on=True, zorder=16)
 
-    clipped_scatter(ax, eq_e, eq_n, label="Seismicity", **EQ_MARKER_STYLE)
+    if SHOW_SEISMICITY:
+        clipped_scatter(ax, eq_e, eq_n, label="Seismicity", **EQ_MARKER_STYLE)
 
     # MT sites from NetCDF (already in UTM km)
-    clipped_scatter(ax, mt_e, mt_n, label="MT site", **MT_MARKER_STYLE)
+    if SHOW_MT_SITES:
+        clipped_scatter(ax, mt_e, mt_n, label="MT site", **MT_MARKER_STYLE)
 
-    clipped_scatter(ax, utmv_e, utmv_n, **VOLC_INACT_MARKER_STYLE)
-    clipped_labels(ax, utmv_e, utmv_n, namev,
-                   {**VOLC_LABEL_STYLE, "stroke": VOLC_LABEL_STROKE})
+    if SHOW_VOLCANOES:
+        clipped_scatter(ax, utmv_e, utmv_n, **VOLC_INACT_MARKER_STYLE)
+        clipped_labels(ax, utmv_e, utmv_n, namev, VOLC_LABEL_STYLE)
 
-    if volc_act_e:
+    if SHOW_VOLCANOES_ACTIVE and volc_act_e:
         clipped_scatter(ax, volc_act_e, volc_act_n,
                         label="Active volcano", **VOLC_ACT_MARKER_STYLE)
 
-    clipped_scatter(ax, cit_e, cit_n, label="City", **CITY_MARKER_STYLE)
-    clipped_labels(ax, cit_e, cit_n, name_cit,
-                   {**CITY_LABEL_STYLE, "stroke": CITY_LABEL_STROKE})
+    if SHOW_CITIES:
+        clipped_scatter(ax, cit_e, cit_n, label="City", **CITY_MARKER_STYLE)
+        clipped_labels(ax, cit_e, cit_n, name_cit, CITY_LABEL_STYLE)
 
-    draw_north_arrow(ax, arr_e[0], arr_n[0], length_km=ARROW_LEN_KM)
+    if SHOW_NORTH_ARROW:
+        draw_north_arrow(ax, arr_e[0], arr_n[0], length_km=ARROW_LEN_KM)
 
 
 # ==================================================================
@@ -1390,11 +1769,33 @@ def draw_features(ax, eq_e, eq_n):
 # ==================================================================
 import matplotlib.ticker   # noqa: E402 — needed for add_colorbar above
 
+# True (non-uniform) ModEM cell-edge coordinates, if tacna_precompute_modem.py
+# produced them (modem_grid_edges_utm.nc). These let the depth-slice raster
+# be drawn as an exact, non-interpolated cut through the mesh's actual cells
+# (pcolormesh + shading="flat") instead of being resampled onto a uniform
+# pixel grid. Falls back to the approximate shading="nearest" (cell centres
+# only, edges reconstructed as midpoints) if the file isn't there yet — e.g.
+# output from an older precompute run.
+HAVE_GRID_EDGES = os.path.exists(ncpath("modem_grid_edges_utm.nc"))
+if HAVE_GRID_EDGES:
+    _edges_da = xr.open_dataset(ncpath("modem_grid_edges_utm.nc"))
+    grid_e_edges = _edges_da["easting_edges"].values
+    grid_n_edges = _edges_da["northing_edges"].values
+    _edges_da.close()
+    print("Using exact cell-edge geometry from modem_grid_edges_utm.nc "
+          "for depth-slice rendering.")
+else:
+    grid_e_edges = grid_n_edges = None
+    print("WARNING: modem_grid_edges_utm.nc not found — falling back to "
+          "approximate cell boundaries (shading='nearest') for depth "
+          "slices. Re-run tacna_precompute_modem.py to get exact cell "
+          "edges.")
+
 out_list = []
 
 for ii, d_km in enumerate(DEPTH_SLICES_KM):
     tag   = f"{d_km:.0f}km" if d_km == int(d_km) else f"{d_km:.1f}km"
-    nc    = f"modem_rho_utm_{tag}.nc"
+    nc    = ncpath(f"modem_rho_utm_{tag}.nc")
     label = f"{d_km:.0f} km" if d_km == int(d_km) else f"{d_km:.1f} km"
 
     print(f"Plotting log10(ρ) at {label} …")
@@ -1425,7 +1826,10 @@ for ii, d_km in enumerate(DEPTH_SLICES_KM):
     sens_vz = load_sens_depth_slice(tag, vz.shape, vy, vx)
     if sens_vz is not None:
         if SENS_BLANK_THRESHOLD is not None:
-            vz = np.where(sens_vz < SENS_BLANK_THRESHOLD, np.nan, vz)
+            _blank_mask = sens_vz < SENS_BLANK_THRESHOLD
+            print(f"  sens blanking: {np.sum(_blank_mask)}/{_blank_mask.size} "
+                  f"cells below threshold ({SENS_BLANK_THRESHOLD})")
+            vz = np.where(_blank_mask, np.nan, vz)
 
     # Seismicity depth filter
     zmin = ZMIN_SEISM[ii] if ZMIN_SEISM[ii] is not None else -np.inf
@@ -1434,7 +1838,7 @@ for ii, d_km in enumerate(DEPTH_SLICES_KM):
     eq_e = eq_e0[mask_eqs]
     eq_n = eq_n0[mask_eqs]
 
-    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+    fig, ax, cax = create_map_figure()
     draw_basemap(ax)
 
     norm = mcolors.Normalize(vmin=CMIN_RHO, vmax=CMAX_RHO)
@@ -1446,24 +1850,51 @@ for ii, d_km in enumerate(DEPTH_SLICES_KM):
     if sens_vz is not None and SENS_ALPHA_RANGE is not None:
         data_alpha = sens_data_alpha(sens_vz, SENS_ALPHA_RANGE[0],
                                      SENS_ALPHA_RANGE[1], 1.0 - ALPHA_RHO)
-    im = ax.imshow(
-        vz, cmap=CMAP_RHO, norm=norm, origin="lower",
-        extent=[vx.min(), vx.max(), vy.min(), vy.max()],
-        alpha=data_alpha,
-        aspect="equal", interpolation="bilinear", zorder=5,
-    )
+    edges_ok = (HAVE_GRID_EDGES and
+                grid_e_edges.size == vx.size + 1 and
+                grid_n_edges.size == vy.size + 1)
+    if edges_ok:
+        im = ax.pcolormesh(
+            grid_e_edges, grid_n_edges, vz, cmap=CMAP_RHO, norm=norm,
+            alpha=data_alpha, shading="flat", zorder=5,
+        )
+    else:
+        if HAVE_GRID_EDGES:
+            print(f"  WARNING: modem_grid_edges_utm.nc size doesn't match "
+                  f"this slice ({grid_e_edges.size-1}×{grid_n_edges.size-1} "
+                  f"cells vs {vx.size}×{vy.size}) — falling back to "
+                  f"approximate cell boundaries for this figure.")
+        im = ax.pcolormesh(
+            vx, vy, vz, cmap=CMAP_RHO, norm=norm,
+            alpha=data_alpha, shading="nearest", zorder=5,
+        )
+    # NOTE: previously ax.imshow(vz, extent=[vx.min(), vx.max(), ...]).
+    # imshow always assumes uniform pixel spacing across that extent, but
+    # ModEM meshes are NOT uniform — dx/dy grow geometrically in the
+    # padding cells outside the fine core region. Passing a non-uniform
+    # grid's min/max as an imshow extent silently stretches/compresses
+    # individual cells to fit a uniform pixel grid, which is exactly the
+    # kind of "resistivity is shifted relative to topography" misalignment
+    # this was producing — the topography raster (already on a uniform
+    # grid) was positioned correctly, but the ModEM raster wasn't.
+    # With modem_grid_edges_utm.nc available, shading="flat" against the
+    # true cumulative cell edges gives an exact cut through the actual
+    # mesh cells — no interpolation, no resampling, each rendered patch is
+    # one real ModEM cell. Without it, shading="nearest" against cell
+    # centres is used as an approximation (matplotlib reconstructs
+    # boundaries as midpoints between centres, which is only exact where
+    # neighbouring cells happen to be the same width).
     if sens_vz is not None and SENS_SHADE_RANGE is not None:
         alpha_2d = sens_shade_alpha(sens_vz, SENS_SHADE_RANGE[0],
                                     SENS_SHADE_RANGE[1], SENS_SHADE_MAX_ALPHA)
-        draw_sens_shade_overlay(ax, alpha_2d,
-                               [vx.min(), vx.max(), vy.min(), vy.max()],
-                               zorder=6)
+        draw_sens_shade_overlay(ax, vx, vy, alpha_2d, zorder=6,
+                               e_edges=grid_e_edges, n_edges=grid_n_edges)
     draw_features(ax, eq_e, eq_n)
     ax.set_title(f"log$_{{10}}$ρ at {label}", fontsize=9)
-    add_colorbar(fig, ax, im, "log$_{10}$(ρ / Ω·m)")
-    if SHOW_LATLON_AXES:
+    finish_panel_colorbar(cax, im, "log$_{10}$(ρ / Ω·m)")
+    if AXES_UNITS == "latlon":
         add_latlon_ticks(ax)
-    fig.tight_layout()
+    draw_annotation(ax)
 
     stem = f"modem_rho_{tag}_tacna"
     save_fig(fig, stem)

@@ -88,6 +88,14 @@ except ImportError:
 # USER SETTINGS
 # =====================================================================
 
+# Directory for all NetCDF outputs written by this script (created if it
+# doesn't exist). Default "." keeps everything in the current directory,
+# matching the previous (fixed) behaviour. tacna_plot_modem_image.py /
+# tacna_plot_modem_mesh.py have a matching NC_DIR setting to read from
+# wherever this is pointed at.
+# OUTPUT_DIR = "."
+OUTPUT_DIR = "./precompute/"
+
 # --- Input files (without extension) ---
 MODEL_FILE = "./mt/Tacna_final"    # reads MODEL_FILE + MODEL_EXT
 DATA_FILE  = "./mt/Tacna_final"    # reads DATA_FILE  + DATA_EXT
@@ -100,11 +108,29 @@ DATA_EXT   = ".dat"
 # counts). Typically shares its base name too, but can be set separately.
 # Set USE_SENSITIVITY = False to skip reading/writing it entirely.
 USE_SENSITIVITY = True
-SENS_FILE = MODEL_FILE      # base name (without extension)
+# SENS_FILE = MODEL_FILE      # base name (without extension)
+SENS_FILE = "/home/vrath/MT_Data/Tacna/TAC_30_JAC/TAC30_nerr_sp-8_sens_cov_max/TAC30_nerr_sp-8_total_cov_max"
 SENS_EXT  = ".sns"
 # "LOG10" is usually more useful for sensitivity, which commonly spans many
 # orders of magnitude; "LINEAR" keeps raw values as stored in the file.
 SENS_TRANSFORM = "LOG10"
+
+# The consistency check below only compares *shape* and *cell sizes*
+# between the .sns and .rho meshes — it can't detect an axis that's simply
+# stored back-to-front, since a reversed cell-width array can still have
+# identical shape and (if padding is roughly symmetric) still pass an
+# allclose comparison on cell sizes. If your sensitivity file comes from a
+# different tool than the .rho model and ends up mirrored east-west or
+# north-south relative to the resistivity model (e.g. compared against a
+# GeoTools/other-software rendering of the same file), flip the relevant
+# axis here rather than in the plot script, so every downstream product
+# (3-D field, depth slices) is corrected once, consistently.
+SENS_FLIP_EASTING  = False  # this file doesn't need an East-West flip
+SENS_FLIP_NORTHING = True  # empirically confirmed against real station
+                              # positions for TAC_G2_ZT1_nerr_sp-8_Dtype_
+                              # zfull_sqr_max.sns — a different .sns file
+                              # may need different settings; re-validate
+                              # if you switch files again.
 
 # --- Reference point (must match the model file; sign-checked at runtime) ---
 # ModEM stores [lat, lon, elevation_m] in the last data line of the .rho file.
@@ -119,7 +145,12 @@ REFERENCE_LON = None   # degrees, WGS84; None → read from model file
 OUTPUT_TRANSFORM = "LOG10"
 
 # --- Depth slices to export as 2-D horizontal NetCDF grids (km, positive down) ---
-DEPTH_SLICES_KM = [5.0, 9.0, 13.0,]
+# Must match DEPTH_SLICES_KM in tacna_plot_modem_mesh.py — both the resistivity
+# (modem_rho_utm_{tag}.nc) and sensitivity (modem_sens_utm_{tag}.nc) depth
+# slices are written from this one list, in the same loop (see "8. Depth
+# slices" below), so keeping this in sync automatically keeps sensitivity
+# covering the same depths as resistivity.
+DEPTH_SLICES_KM = [1., 5.0, 9.0]
 
 # --- Air-cell resistivity threshold (Ω·m) used by get_topo ---
 RHO_AIR = 1.0e17
@@ -144,7 +175,7 @@ TRIM_PAD = [7, 7, 7, 7, 0]
 # trimmed extent.
 #
 # IMPORTANT: this box must fully contain every VSLICES profile endpoint
-# defined in tacna_plot_modem.py (PROFILE_CD_LON/LAT etc.), not just the
+# defined in tacna_plot_modem_image.py (PROFILE_CD_LON/LAT etc.), not just the
 # seis-script's own region — the two are defined independently and can
 # silently drift apart. profile_CD's endpoints, [-70.476, -18.255] and
 # [-69.499, -17.048], both fell *outside* the box below on every side when
@@ -152,9 +183,14 @@ TRIM_PAD = [7, 7, 7, 7, 0]
 # data at all near either end of the profile (a white gap at both edges of
 # the section, unrelated to the depth-axis fix). Widened with margin here;
 # if you add profiles reaching further, widen this to match.
+#
+# Kept identical to TAR_LON/TAR_LAT in tacna_precompute_seis.py so both
+# pipelines cover the same geographic area — the union of the ModEM box
+# [-70.55, -69.40] x [-18.35, -16.95] and the seismic box
+# [-70.79, -69.48] x [-18.34, -17.01], padded by ~0.05°.
 CROP_TO_REGION = True
-TAR_LON = [-70.55, -69.40]
-TAR_LAT = [-18.35, -16.95]
+TAR_LON = [-70.84, -69.35]
+TAR_LAT = [-18.40, -16.90]
 
 # --- UTM zone override ---
 # By default the zone is inferred from REFERENCE_LON.  Set manually if needed.
@@ -164,6 +200,13 @@ UTM_HEMI     = None        # "N" or "S"; None → infer from REFERENCE_LAT
 # =====================================================================
 # END USER SETTINGS
 # =====================================================================
+
+Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
+
+
+def outpath(name):
+    """Join a bare output filename onto OUTPUT_DIR."""
+    return str(Path(OUTPUT_DIR) / name)
 
 
 # ------------------------------------------------------------------
@@ -240,6 +283,32 @@ def build_utm_axes(dx, dy, reference, transformer, lat_ref, lon_ref):
     return utm_e_km, utm_n_km
 
 
+def build_utm_edges(dx, dy, reference, transformer, lat_ref, lon_ref):
+    """
+    Same convention as build_utm_axes, but returns cell EDGE coordinates
+    (n+1 values for n cells) rather than cell centres — the true, exact
+    boundaries between adjacent ModEM cells (which are NOT evenly spaced,
+    since padding cells grow geometrically outward from the fine core
+    region). These are what a caller needs for an exact, non-interpolated
+    pcolormesh(edges_e, edges_n, field, shading="flat") rendering that
+    shows a true cut through the mesh's actual cells rather than smoothing
+    or resampling them onto a uniform pixel grid.
+
+    Must be called with the SAME dx/dy (i.e. same trim/crop state) used
+    for the matching build_utm_axes() call, so edges and centres describe
+    the same set of cells.
+    """
+    x_edges_local = np.concatenate([[0.0], np.cumsum(dx)]) - np.sum(dx) / 2.0
+    y_edges_local = np.concatenate([[0.0], np.cumsum(dy)]) - np.sum(dy) / 2.0
+
+    ref_e, ref_n = _ref_to_utm(transformer, lat_ref, lon_ref)   # km
+
+    utm_n_edges_km = ref_n + x_edges_local / 1e3   # shape (nx+1,)
+    utm_e_edges_km = ref_e + y_edges_local / 1e3   # shape (ny+1,)
+
+    return utm_e_edges_km, utm_n_edges_km
+
+
 # ------------------------------------------------------------------
 # Depth axis builder
 # ------------------------------------------------------------------
@@ -262,6 +331,18 @@ def build_depth_axis_km(dz, ref_z=0.0):
     z_edges = np.concatenate([[0.0], np.cumsum(dz)]) + ref_z
     z_centres = 0.5 * (z_edges[:-1] + z_edges[1:])   # metres
     return z_centres / 1e3
+
+
+def build_depth_edges_km(dz, ref_z=0.0):
+    """
+    Return cell EDGE depths in km (n+1 values for n cells), on the same
+    datum as build_depth_axis_km (see its docstring for ref_z). These are
+    the true, non-uniform depth-cell boundaries — dz grows with depth just
+    like dx/dy grow in the horizontal padding — needed for an exact,
+    non-interpolated vertical-section cut through the mesh's real cells.
+    """
+    z_edges = np.concatenate([[0.0], np.cumsum(dz)]) + ref_z
+    return z_edges / 1e3
 
 
 # ------------------------------------------------------------------
@@ -323,7 +404,39 @@ def trim_model(dx, dy, dz, mval, trim):
 # NetCDF writers
 # ------------------------------------------------------------------
 
-def save_3d_model(utm_e_km, utm_n_km, depth_km, rho_transformed, outpath):
+def save_grid_edges(utm_e_edges_km, utm_n_edges_km, depth_edges_km, outfile):
+    """
+    Write the true (non-uniform) UTM cell EDGE coordinates shared by every
+    field on this mesh — resistivity, sensitivity, all depth slices — plus
+    the depth-cell edges, to a small standalone NetCDF. The plot script
+    uses these for an exact, non-interpolated pcolormesh(edges, edges,
+    field, shading="flat") rendering — for depth slices AND vertical
+    sections: each rendered patch is then a true cut through one actual
+    mesh cell, rather than a value resampled/interpolated onto a uniform
+    pixel grid or blended between neighbouring cells.
+    """
+    ds = xr.Dataset(
+        {
+            "easting_edges": (
+                "easting_edge", utm_e_edges_km.astype(np.float32),
+                {"units": "km", "long_name": "UTM easting cell edges"},
+            ),
+            "northing_edges": (
+                "northing_edge", utm_n_edges_km.astype(np.float32),
+                {"units": "km", "long_name": "UTM northing cell edges"},
+            ),
+            "depth_edges": (
+                "depth_edge", depth_edges_km.astype(np.float32),
+                {"units": "km", "long_name": "Depth cell edges",
+                 "positive": "down"},
+            ),
+        }
+    )
+    ds.to_netcdf(outfile)
+    print(f"  Saved: {outfile}")
+
+
+def save_3d_model(utm_e_km, utm_n_km, depth_km, rho_transformed, outfile):
     """Write full 3-D resistivity model to NetCDF."""
     long_name = {
         "LOG10": "log10 resistivity",
@@ -357,11 +470,11 @@ def save_3d_model(utm_e_km, utm_n_km, depth_km, rho_transformed, outpath):
         attrs={"long_name": long_name, "units": units,
                "transform": OUTPUT_TRANSFORM},
     )
-    da.to_netcdf(outpath)
-    print(f"  Saved: {outpath}")
+    da.to_netcdf(outfile)
+    print(f"  Saved: {outfile}")
 
 
-def save_3d_field(utm_e_km, utm_n_km, depth_km, field, outpath,
+def save_3d_field(utm_e_km, utm_n_km, depth_km, field, outfile,
                   long_name, units, transform):
     """
     Write an arbitrary 3-D field (same mesh/orientation as the resistivity
@@ -387,12 +500,12 @@ def save_3d_field(utm_e_km, utm_n_km, depth_km, field, outpath,
         },
         attrs={"long_name": long_name, "units": units, "transform": transform},
     )
-    da.to_netcdf(outpath)
-    print(f"  Saved: {outpath}")
+    da.to_netcdf(outfile)
+    print(f"  Saved: {outfile}")
 
 
 def save_depth_slice_field(utm_e_km, utm_n_km, depth_km_axis, field,
-                           target_depth_km, outpath, long_name, units,
+                           target_depth_km, outfile, long_name, units,
                            transform):
     """
     Generic version of save_depth_slice, parameterised by name/units/
@@ -424,11 +537,11 @@ def save_depth_slice_field(utm_e_km, utm_n_km, depth_km_axis, field,
             "transform":       transform,
         },
     )
-    da.to_netcdf(outpath)
-    print(f"  Saved: {outpath}")
+    da.to_netcdf(outfile)
+    print(f"  Saved: {outfile}")
 
 
-def save_topo(utm_e_km, utm_n_km, topo_m, outpath):
+def save_topo(utm_e_km, utm_n_km, topo_m, outfile):
     """
     Write 2-D surface topography (metres) to NetCDF.
 
@@ -455,12 +568,12 @@ def save_topo(utm_e_km, utm_n_km, topo_m, outpath):
                "positive": "up",
                "note": "Derived from shallowest non-air cell in ModEM model"},
     )
-    da.to_netcdf(outpath)
-    print(f"  Saved: {outpath}")
+    da.to_netcdf(outfile)
+    print(f"  Saved: {outfile}")
 
 
 def save_depth_slice(utm_e_km, utm_n_km, depth_km_axis, rho_transformed,
-                     target_depth_km, outpath):
+                     target_depth_km, outfile):
     """
     Interpolate the 3-D model to a target depth and save as 2-D NetCDF.
 
@@ -502,11 +615,11 @@ def save_depth_slice(utm_e_km, utm_n_km, depth_km_axis, rho_transformed,
             "transform":   OUTPUT_TRANSFORM,
         },
     )
-    da.to_netcdf(outpath)
-    print(f"  Saved: {outpath}")
+    da.to_netcdf(outfile)
+    print(f"  Saved: {outfile}")
 
 
-def save_sites(utm_e_km_sites, utm_n_km_sites, elev_m_sites, site_names, outpath):
+def save_sites(utm_e_km_sites, utm_n_km_sites, elev_m_sites, site_names, outfile):
     """Write MT site positions to NetCDF."""
     n = len(site_names)
     ds = xr.Dataset(
@@ -529,8 +642,8 @@ def save_sites(utm_e_km_sites, utm_n_km_sites, elev_m_sites, site_names, outpath
                                      attrs={"long_name": "Site name"}),
         }
     )
-    ds.to_netcdf(outpath)
-    print(f"  Saved: {outpath}  ({n} sites)")
+    ds.to_netcdf(outfile)
+    print(f"  Saved: {outfile}  ({n} sites)")
 
 
 # ==================================================================
@@ -556,6 +669,16 @@ dx, dy, dz, mval, reference, trans_in = mdm.read_mod(
 sens = None
 if USE_SENSITIVITY:
     print("\n=== Reading sensitivity/resolution model ===")
+    # Guard against a common mistake: if SENS_FILE already ends with
+    # SENS_EXT (e.g. someone pasted a full filename including ".sns"),
+    # the naive SENS_FILE + SENS_EXT concatenation below would silently
+    # build a nonexistent double-extension path (".sns.sns") and just
+    # look like "file not found" with no clue why.
+    if SENS_FILE.endswith(SENS_EXT):
+        print(f"  NOTE: SENS_FILE already ends with {SENS_EXT!r} — "
+              f"stripping it before appending SENS_EXT, to avoid building "
+              f"a nonexistent '...{SENS_EXT}{SENS_EXT}' path.")
+        SENS_FILE = SENS_FILE[: -len(SENS_EXT)]
     sens_path = Path(SENS_FILE + SENS_EXT)
     if not sens_path.exists():
         print(f"  WARNING: {sens_path} not found — skipping sensitivity "
@@ -573,6 +696,20 @@ if USE_SENSITIVITY:
             print(f"  WARNING: {sens_path} cell sizes don't match the "
                   f"resistivity model's — meshes may not be identical. "
                   f"Proceeding, but double-check this file is the right one.")
+
+        if sens is not None and (SENS_FLIP_EASTING or SENS_FLIP_NORTHING):
+            # sens has shape (North, East, Down) — same convention as mval
+            # (see build_utm_axes). Flipping here, before trim/crop, keeps
+            # every downstream product (3-D field, depth slices) consistent
+            # without needing a second fix in the plot script.
+            if SENS_FLIP_EASTING:
+                sens = sens[:, ::-1, :]
+                print("  Flipped sensitivity along East-West axis "
+                      "(SENS_FLIP_EASTING = True)")
+            if SENS_FLIP_NORTHING:
+                sens = sens[::-1, :, :]
+                print("  Flipped sensitivity along North-South axis "
+                      "(SENS_FLIP_NORTHING = True)")
 
 # Read the data file to get the geographic reference point and site coordinates.
 # The .dat header line "> lat lon" gives the model origin in geographic coords.
@@ -618,7 +755,10 @@ dx, dy, dz, mval, z_trim_offset_m = trim_model(dx, dy, dz, mval, TRIM_PAD)
 print("\n=== Building UTM coordinate axes ===")
 utm_e_km, utm_n_km = build_utm_axes(dx, dy, reference, transformer,
                                      lat_ref, lon_ref)
+utm_e_edges_km, utm_n_edges_km = build_utm_edges(dx, dy, reference, transformer,
+                                                  lat_ref, lon_ref)
 depth_km = build_depth_axis_km(dz, ref_z=reference[2] + z_trim_offset_m)
+depth_edges_km = build_depth_edges_km(dz, ref_z=reference[2] + z_trim_offset_m)
 
 print(f"  Easting  range: {utm_e_km.min():.1f} – {utm_e_km.max():.1f} km")
 print(f"  Northing range: {utm_n_km.min():.1f} – {utm_n_km.max():.1f} km")
@@ -651,14 +791,41 @@ if CROP_TO_REGION:
     # contiguous — slice rather than fancy-index so dx/dy/mval stay aligned.
     sl_e = slice(idx_e.min(), idx_e.max() + 1)
     sl_n = slice(idx_n.min(), idx_n.max() + 1)
+    # Edge arrays have one more element than centres (n cells -> n+1
+    # edges), so their matching slice needs to extend one index further.
+    sl_e_edges = slice(idx_e.min(), idx_e.max() + 2)
+    sl_n_edges = slice(idx_n.min(), idx_n.max() + 2)
 
     utm_e_km = utm_e_km[sl_e]
     utm_n_km = utm_n_km[sl_n]
+    utm_e_edges_km = utm_e_edges_km[sl_e_edges]
+    utm_n_edges_km = utm_n_edges_km[sl_n_edges]
     dy       = dy[sl_e]     # East cell widths, indexed like easting
     dx       = dx[sl_n]     # North cell widths, indexed like northing
     mval     = mval[sl_n, sl_e, :]
     if sens is not None:
         sens = sens[sl_n, sl_e, :]
+
+    # CROP_TO_REGION above selects cells by *centre* falling inside the
+    # box — the boundary cell on each side can still be a large padding
+    # cell (tens of km, near the mesh edge), so its true, non-uniform
+    # edge can extend well past e_min/e_max/n_min/n_max. The topography
+    # raster (a separate DEM, cropped tightly to the same box) always
+    # stops exactly at the box — so left un-clipped, the exact-geometry
+    # resistivity/sensitivity rendering would visibly overhang past
+    # where the topo basemap ends. Clip only the outermost edge of the
+    # boundary cells to the requested box: the cell keeps its real
+    # value, just truncated at the window the box defines, matching the
+    # topo raster's own hard cutoff there.
+    print(f"  Boundary-cell edge overhang before clipping: "
+          f"easting [{e_min - utm_e_edges_km[0]:+.2f}, "
+          f"{utm_e_edges_km[-1] - e_max:+.2f}] km, "
+          f"northing [{n_min - utm_n_edges_km[0]:+.2f}, "
+          f"{utm_n_edges_km[-1] - n_max:+.2f}] km")
+    utm_e_edges_km[0]  = max(utm_e_edges_km[0],  e_min)
+    utm_e_edges_km[-1] = min(utm_e_edges_km[-1], e_max)
+    utm_n_edges_km[0]  = max(utm_n_edges_km[0],  n_min)
+    utm_n_edges_km[-1] = min(utm_n_edges_km[-1], n_max)
 
     print(f"  Cropped easting  range: {utm_e_km.min():.1f} – {utm_e_km.max():.1f} km"
           f"  ({mval.shape[1]} cells)")
@@ -691,13 +858,15 @@ xcnt, ycnt, topo_m = mdm.get_topo(
 )
 # xcnt/ycnt are local offsets in metres, matching dx/dy after trimming.
 # We use the already-built UTM axes instead.
-save_topo(utm_e_km, utm_n_km, topo_m, "modem_topo_utm.nc")
+save_topo(utm_e_km, utm_n_km, topo_m, outpath("modem_topo_utm.nc"))
 
 # ------------------------------------------------------------------
 # 7. Full 3-D model
 # ------------------------------------------------------------------
 print("\n=== Saving 3-D model ===")
-save_3d_model(utm_e_km, utm_n_km, depth_km, rho_out, "modem_model_utm.nc")
+save_3d_model(utm_e_km, utm_n_km, depth_km, rho_out, outpath("modem_model_utm.nc"))
+save_grid_edges(utm_e_edges_km, utm_n_edges_km, depth_edges_km,
+                outpath("modem_grid_edges_utm.nc"))
 
 if sens_out is not None:
     print("\n=== Saving 3-D sensitivity/resolution field ===")
@@ -709,7 +878,7 @@ if sens_out is not None:
         "LOG10": "log10(sensitivity)", "LOGE": "ln(sensitivity)",
         "LINEAR": "sensitivity",
     }.get(SENS_TRANSFORM.upper(), "sensitivity")
-    save_3d_field(utm_e_km, utm_n_km, depth_km, sens_out, "modem_sens_utm.nc",
+    save_3d_field(utm_e_km, utm_n_km, depth_km, sens_out, outpath("modem_sens_utm.nc"),
                  sens_long_name, sens_units, SENS_TRANSFORM)
 
 # ------------------------------------------------------------------
@@ -719,10 +888,10 @@ print("\n=== Saving depth slices ===")
 for d_km in DEPTH_SLICES_KM:
     tag = f"{d_km:.0f}km" if d_km == int(d_km) else f"{d_km:.1f}km"
     save_depth_slice(utm_e_km, utm_n_km, depth_km, rho_out,
-                     d_km, f"modem_rho_utm_{tag}.nc")
+                     d_km, outpath(f"modem_rho_utm_{tag}.nc"))
     if sens_out is not None:
         save_depth_slice_field(utm_e_km, utm_n_km, depth_km, sens_out, d_km,
-                               f"modem_sens_utm_{tag}.nc",
+                               outpath(f"modem_sens_utm_{tag}.nc"),
                                sens_long_name, sens_units, SENS_TRANSFORM)
 
 # ------------------------------------------------------------------
@@ -745,7 +914,7 @@ site_e_km = site_e_raw / 1e3
 site_n_km = site_n_raw / 1e3
 
 save_sites(site_e_km, site_n_km, site_elevs, unique_names.tolist(),
-           "modem_sites_utm.nc")
+           outpath("modem_sites_utm.nc"))
 
 # ------------------------------------------------------------------
 # Summary
@@ -754,6 +923,7 @@ print("\n=== Done — output files ===")
 outputs = [
     "modem_topo_utm.nc",
     "modem_model_utm.nc",
+    "modem_grid_edges_utm.nc",
     "modem_sites_utm.nc",
 ] + [
     "modem_rho_utm_{}.nc".format(
@@ -770,4 +940,4 @@ if sens_out is not None:
         for d in DEPTH_SLICES_KM
     ]
 for f in outputs:
-    print(f"  {f}")
+    print(f"  {outpath(f)}")
