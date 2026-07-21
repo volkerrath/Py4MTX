@@ -58,11 +58,11 @@ from scipy.interpolate import RegularGridInterpolator
 # matching the previous (fixed) behaviour. tacna_plot_seis.py has a
 # matching NC_DIR setting to read from wherever this is pointed at.
 # OUTPUT_DIR = "."
-OUTPUT_DIR = "./precompute/"
+OUTPUT_DIR = "../precompute/"
 
 # Input velocity model files
-FNAME_VP = "./seistomo/FD_vp_model.nc"
-FNAME_VS = "./seistomo/FD_vs_model.nc"
+FNAME_VP = "../seistomo/FD_vp_model.nc"
+FNAME_VS = "../seistomo/FD_vs_model.nc"
 
 # Velocity subset geographic bounds
 # IMPORTANT: this must fully contain every VSLICES profile endpoint defined

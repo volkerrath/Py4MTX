@@ -61,7 +61,6 @@ AI-generated code — review before use in production.
 import warnings
 import os
 import sys
-import matplotlib.patheffects as pe
 
 import numpy as np
 import xarray as xr
@@ -70,189 +69,20 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import matplotlib.ticker
-from matplotlib.colors import LightSource
 from matplotlib.path import Path as MplPath
-from pyproj import Transformer
-from scipy.ndimage import gaussian_filter
 from scipy.interpolate import RegularGridInterpolator
+
+import plotpy
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 
 # ---------------------------------------------------------------------
-# Colormap import helper
+# Colormap import helper (matplotlib name / GMT .cpt file / plain RGB(A)
+# file) — see plotpy.load_colormap for the full docstring.
 # ---------------------------------------------------------------------
-def load_colormap(spec, name=None):
-    """
-    Resolve a colourmap spec into a matplotlib Colormap.
-
-    Accepts, in order of precedence:
-      - an existing Colormap instance — returned unchanged
-      - a path to a GMT ``.cpt`` file — parsed directly, preserving the
-        file's own (possibly non-uniform) colour-stop spacing. This lets
-        you use the *actual* original palette for an exact visual
-        comparison against GMT-produced figures, instead of a same-ish
-        matplotlib named stand-in.
-      - a path to a plain text/CSV file of RGB(A) rows (0-255 or 0-1,
-        whitespace- or comma-separated, one colour per line) — built into
-        an evenly-spaced ListedColormap. Useful for reusing an exact
-        palette exported from another tool (e.g. ParaView, Generic
-        Mapping Tools' makecpt, a colleague's colour list) so two
-        different figures use pixel-identical colours for comparison.
-      - any matplotlib-registered colormap name (built-in, or registered
-        by a third-party package such as cmcrameri/cmocean if that
-        package has been imported elsewhere in the process) — resolved
-        via plt.get_cmap, unchanged from the original behaviour.
-
-    Parameters
-    ----------
-    spec : str or matplotlib.colors.Colormap
-    name : str, optional — name to register the resulting colormap under
-           (defaults to the file's base name, or the spec string itself)
-
-    Returns
-    -------
-    matplotlib.colors.Colormap
-    """
-    if isinstance(spec, mcolors.Colormap):
-        return spec
-
-    spec = str(spec)
-    ext = os.path.splitext(spec)[1].lower()
-    cmap_name = name or os.path.splitext(os.path.basename(spec))[0]
-
-    if ext == ".cpt":
-        return _load_cpt_colormap(spec, cmap_name)
-    if ext in (".txt", ".csv", ".dat") and os.path.exists(spec):
-        return _load_rgb_list_colormap(spec, cmap_name)
-
-    # Not a recognised file — treat as a matplotlib-registered name
-    # (built-in, or from a third-party package already imported).
-    return plt.get_cmap(spec)
-
-
-def _parse_cpt_color(tokens):
-    """Parse a single .cpt colour field: 'R G B', 'R/G/B', '#hex', or grey."""
-    if len(tokens) >= 3:
-        r, g, b = (float(t) for t in tokens[:3])
-        return (r / 255, g / 255, b / 255)
-    tok = tokens[0]
-    if tok.startswith("#"):
-        return mcolors.to_rgb(tok)
-    if "/" in tok:
-        r, g, b = (float(t) for t in tok.split("/"))
-        return (r / 255, g / 255, b / 255)
-    v = float(tok)
-    return (v / 255, v / 255, v / 255)
-
-
-def _load_cpt_colormap(path, name):
-    """Parse a GMT .cpt colour-palette file into a LinearSegmentedColormap,
-    preserving its own colour-stop spacing (not assumed to be uniform)."""
-    stops = []
-    with open(path) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or line[0] in "BFNbfn":
-                continue
-            parts = line.split()
-            try:
-                if len(parts) >= 8:
-                    z0 = float(parts[0]); c0 = _parse_cpt_color(parts[1:4])
-                    z1 = float(parts[4]); c1 = _parse_cpt_color(parts[5:8])
-                elif len(parts) == 4:
-                    z0 = float(parts[0]); c0 = _parse_cpt_color([parts[1]])
-                    z1 = float(parts[2]); c1 = _parse_cpt_color([parts[3]])
-                else:
-                    continue
-            except ValueError:
-                continue
-            stops.append((z0, c0))
-            stops.append((z1, c1))
-
-    if not stops:
-        raise ValueError(f"No colour stops parsed from .cpt file: {path}")
-
-    zs = np.array([s[0] for s in stops], dtype=float)
-    zmin, zmax = zs.min(), zs.max()
-    span = zmax - zmin if zmax > zmin else 1.0
-    seen = {}
-    for z, c in stops:
-        seen[round((z - zmin) / span, 6)] = c
-    positions_colors = sorted(seen.items())
-    return mcolors.LinearSegmentedColormap.from_list(name, positions_colors)
-
-
-def _load_rgb_list_colormap(path, name):
-    """Build a ListedColormap from a plain text/CSV file of RGB(A) rows.
-    Values may be 0-255 or 0-1; whitespace- or comma-separated."""
-    rows = []
-    with open(path) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            parts = line.replace(",", " ").split()
-            if len(parts) >= 3:
-                rows.append([float(p) for p in parts[:4]])
-
-    if not rows:
-        raise ValueError(f"No colour rows parsed from: {path}")
-
-    arr = np.array(rows, dtype=float)
-    if arr.max() > 1.0:
-        arr[:, :3] /= 255.0
-        if arr.shape[1] == 4:
-            arr[:, 3] /= 255.0
-    return mcolors.ListedColormap(arr, name=name)
-
-
-def export_colormap_to_cpt(cmap, vmin, vmax, outpath, n_steps=32):
-    """
-    Export a matplotlib Colormap to a GMT-style .cpt file over [vmin, vmax].
-
-    Reverse of load_colormap()'s .cpt import — samples n_steps+1 points
-    across the colourmap and writes them as n_steps colour segments, so a
-    colourmap actually used here (a matplotlib built-in name, or something
-    already imported from a file/package via load_colormap) can be
-    re-exported for use in GMT, or shared with a colleague for an exact
-    comparison against a figure made with a named/registered colourmap
-    rather than a hand-picked .cpt.
-
-    Parameters
-    ----------
-    cmap : str or matplotlib.colors.Colormap — resolved via load_colormap
-           if not already a Colormap instance
-    vmin, vmax : float — data range the colourmap is stretched over; the
-           .cpt's own z breakpoints are written in this range so it's
-           directly usable for the same data in GMT
-    outpath : str — output .cpt file path
-    n_steps : int — number of colour segments (n_steps+1 sample points)
-    """
-    cmap = load_colormap(cmap) if not isinstance(cmap, mcolors.Colormap) else cmap
-    zs = np.linspace(vmin, vmax, n_steps + 1)
-    fracs = np.linspace(0.0, 1.0, n_steps + 1)
-    rgb = (np.array([cmap(f)[:3] for f in fracs]) * 255).round().astype(int)
-
-    lines = ["# COLOR_MODEL = RGB",
-             f"# Exported from matplotlib colormap {cmap.name!r} "
-             f"over [{vmin}, {vmax}]"]
-    for i in range(n_steps):
-        z0, z1 = zs[i], zs[i + 1]
-        r0, g0, b0 = rgb[i]
-        r1, g1, b1 = rgb[i + 1]
-        lines.append(f"{z0:<12.6g} {r0:3d} {g0:3d} {b0:3d}   "
-                     f"{z1:<12.6g} {r1:3d} {g1:3d} {b1:3d}")
-
-    r0, g0, b0 = rgb[0]
-    r1, g1, b1 = rgb[-1]
-    lines.append(f"B {r0} {g0} {b0}")
-    lines.append(f"F {r1} {g1} {b1}")
-    lines.append("N 128 128 128")
-
-    with open(outpath, "w") as f:
-        f.write("\n".join(lines) + "\n")
-    print(f"  Exported colourmap to: {outpath}")
+load_colormap = plotpy.load_colormap
+export_colormap_to_cpt = plotpy.export_colormap_to_cpt
 
 
 # =====================================================================
@@ -262,11 +92,11 @@ def export_colormap_to_cpt(cmap, vmin, vmax, outpath, n_steps=32):
 # Directory to read precomputed NetCDF files from (must match OUTPUT_DIR
 # in tacna_precompute_modem.py). Default "." reads from the current
 # directory, matching the previous (fixed) behaviour.
-NC_DIR = "./precompute/"
+NC_DIR = "../precompute/"
 
 # Directory for saved figures (created if it doesn't exist). Default "."
 # writes into the current directory, matching the previous behaviour.
-PLOT_DIR = "./plots/"
+PLOT_DIR = "../plots/"
 
 # Appended to every saved figure's filename (before the extension) — lets
 # output from this script (exact-mesh rendering) be told apart at a
@@ -294,18 +124,19 @@ VSLICE_HEIGHT_CM = None  # None → derived from VE and profile length
 # Depth slices to plot — must match values used in tacna_precompute_modem.py.
 # Each entry corresponds to one DEPTH_SLICES_KM value; tag strings are
 # constructed the same way as in the precompute script.
-DEPTH_SLICES_KM = [-3., -1., 0, 3.0, 5.0, 9.0, 13.0,]
+DEPTH_SLICES_KM = [1., 5., 9.]
 
 # Seismicity depth windows (km), one pair per entry in DEPTH_SLICES_KM.
 # Set both to None to show all seismicity on every slice.
-# NOTE: reset to "no filter" for every slice below — the previous
-# ZMIN_SEISM/ZMAX_SEISM values were already a leftover from an earlier,
-# differently-sized DEPTH_SLICES_KM and no longer had a reliable
-# correspondence to today's 7 slices, so rather than guess, every slice
-# now shows all seismicity by default. Re-add specific (zmin, zmax) pairs
-# per slice below if you want per-depth filtering back.
-ZMIN_SEISM = [None] * len(DEPTH_SLICES_KM)
-ZMAX_SEISM = [None] * len(DEPTH_SLICES_KM)
+# Contiguous, non-overlapping bins split at the midpoint between adjacent
+# slice depths (1, 5, 9 km -> split at 3 and 7 km), so every earthquake
+# is assigned to exactly one slice — the one closest to its own depth —
+# rather than showing everything on every map or leaving gaps. The
+# outermost bins are left open (None) so no shallow/deep event is
+# arbitrarily excluded. Same scheme as ZMIN_SEISM/ZMAX_SEISM in
+# tacna_plot_seis.py and tacna_plot_modem_image.py.
+ZMIN_SEISM = [None, 3.0, 7.0]
+ZMAX_SEISM = [3.0,  7.0, None]
 
 if not (len(ZMIN_SEISM) == len(ZMAX_SEISM) == len(DEPTH_SLICES_KM)):
     sys.exit(
@@ -347,7 +178,7 @@ USE_SENSITIVITY = True
 # SENS_ALPHA_RANGE already makes these cells fully transparent by itself,
 # but blanking to NaN also removes them from the colour-scale/data array,
 # which matters if this array is reused elsewhere (e.g. exported).
-SENS_BLANK_THRESHOLD = -4   # log10(1e-4) — sensitivity < 1e-4
+SENS_BLANK_THRESHOLD = -6   # log10(1e-4) — sensitivity < 1e-4
 
 # Cells with sensitivity between these two values get a smooth semi-
 # transparent white overlay fading from fully shaded (SENS_SHADE_MAX_ALPHA,
@@ -416,7 +247,7 @@ CMAP_SENS = "jet_r"
 # is set wider than SENS_BLANK_THRESHOLD/SENS_ALPHA_RANGE on purpose, so
 # this plot shows the falloff you're deciding a cutoff against, not just
 # a clipped version of it.
-CMIN_SENS = -6.0
+CMIN_SENS = -4.0
 CMAX_SENS = 0.0
 SENS_CBAR_LABEL = "log$_{10}$(sensitivity)"
 
@@ -425,7 +256,7 @@ SENS_CBAR_LABEL = "log$_{10}$(sensitivity)"
 # table, .txt/.csv = plain RGB(A) list) — useful to match a specific
 # published palette, or the same palette used in tacna_plot_seis.py, for
 # direct visual comparison, e.g.:
-#   CMAP_RHO = "./cpt/rho_gmt.cpt"
+#   CMAP_RHO = "../cpt/rho_gmt.cpt"
 CMAP_RHO = "jet_r"
 CMAP_RHO = load_colormap(CMAP_RHO)
 
@@ -539,10 +370,10 @@ ARROW_LAT    = -18.1
 ARROW_LEN_KM = 4.0
 
 # --- Seismicity CSV (space-delimited; columns x=lon, y=lat, z=depth km) ---
-CSV_SEISMCAT = "./features/catalog_welllocated_15_simple5.csv"
+CSV_SEISMCAT = "../features/catalog_welllocated_15_simple5.csv"
 
 # --- Volcanoes CSV ---
-CSV_VOLCANES    = "./features/volcanes.csv"
+CSV_VOLCANES    = "../features/volcanes.csv"
 VOLC_LABEL_IDX  = [5, 12, 13]   # row indices to label
 
 # Volcano label text: full name vs. short/abbreviated name.
@@ -553,7 +384,7 @@ VOLC_NAME_COL_FULL   = "NAME"      # column used when VOLC_LABEL_FULL_NAME=True
 VOLC_NAME_COL_SHORT  = "VOLCAN2"   # column used when VOLC_LABEL_FULL_NAME=False
 
 # --- Cities CSV (columns x=lon, y=lat, Name) ---
-CSV_CITIES = "./features/cities.csv"
+CSV_CITIES = "../features/cities.csv"
 
 # =====================================================================
 # MAP FEATURE LAYERS — simple on/off switches
@@ -742,85 +573,13 @@ def ncpath(name):
 
 
 # ------------------------------------------------------------------
-# Coordinate helper (for feature CSVs that are in lon/lat)
+# Coordinate helper / hillshade / sensitivity-alpha helpers — see
+# plotpy for implementation
 # ------------------------------------------------------------------
-_to_utm = Transformer.from_crs("EPSG:4326", "EPSG:32719", always_xy=True)
-_to_geo = Transformer.from_crs("EPSG:32719", "EPSG:4326", always_xy=True)
-
-
-def to_utm_km(lon, lat):
-    """Convert geographic lon/lat to UTM Zone 19S easting/northing in km."""
-    lon = np.asarray(lon, dtype=float)
-    lat = np.asarray(lat, dtype=float)
-    e, n = _to_utm.transform(lon, lat)
-    return e / 1e3, n / 1e3
-
-
-# ------------------------------------------------------------------
-# Hillshade
-# ------------------------------------------------------------------
-def compute_hillshade(z2d, dx_km, dy_km, azimuth=315, altitude=45, sigma=1.0):
-    """Return a [0, 1] hillshade array for a 2-D elevation grid (metres).
-
-    LightSource.hillshade() computes the surface gradient with
-    numpy.gradient, which uses one-sided (lower-quality) differences at
-    the true boundary rows/columns of whatever array it's given, instead
-    of the centred differences used everywhere else — producing a
-    visibly different thin stripe right along the top, bottom, and side
-    edges of the rendered hillshade, unrelated to the real terrain.
-    Padding the elevation by a few pixels before filtering/shading (using
-    an odd/slope-preserving reflection, which continues the local
-    gradient rather than mirroring values — plain mirroring introduces
-    its own artificial kink right at the seam) and cropping the result
-    back down to the original shape gives every true-edge pixel a proper
-    two-sided gradient too, removing the stripe.
-    """
-    ls = LightSource(azdeg=azimuth, altdeg=altitude)
-    pad = max(int(np.ceil(3 * sigma)), 3) if sigma > 0 else 3
-    z_padded = np.pad(z2d, pad, mode="reflect", reflect_type="odd")
-    if sigma > 0:
-        z_padded = gaussian_filter(z_padded, sigma=sigma)
-    hs_padded = ls.hillshade(z_padded, dx=dx_km * 1e3, dy=dy_km * 1e3, vert_exag=1.0)
-    return hs_padded[pad:-pad, pad:-pad]
-
-
-# ------------------------------------------------------------------
-# Sensitivity-based shading/blanking
-# ------------------------------------------------------------------
-def sens_shade_alpha(sens, low, high, max_alpha):
-    """
-    Map a sensitivity array to a shading alpha in [0, max_alpha]:
-    max_alpha at/below `low`, 0 at/above `high`, linearly interpolated
-    in between. NaN (missing sensitivity data) is treated as max_alpha —
-    conservative, since missing information is not evidence of good
-    resolution.
-    """
-    sens = np.asarray(sens, dtype=float)
-    if high == low:
-        alpha = np.where(sens <= low, max_alpha, 0.0)
-    else:
-        frac = np.clip((high - sens) / (high - low), 0.0, 1.0)
-        alpha = frac * max_alpha
-    return np.where(np.isnan(sens), max_alpha, alpha)
-
-
-def sens_data_alpha(sens, low, high, base_alpha):
-    """
-    Map a sensitivity array to a per-cell alpha for the *data layer
-    itself* (as opposed to sens_shade_alpha's overlay-on-top alpha): 0
-    (fully transparent — whatever is drawn underneath, e.g. the
-    topography basemap, shows straight through) at/below `low`,
-    base_alpha (the normal data opacity) at/above `high`, linearly
-    interpolated in between. NaN (missing sensitivity data) is treated
-    as 0 — conservative, same reasoning as blanking.
-    """
-    sens = np.asarray(sens, dtype=float)
-    if high == low:
-        alpha = np.where(sens >= high, base_alpha, 0.0)
-    else:
-        frac = np.clip((sens - low) / (high - low), 0.0, 1.0)
-        alpha = frac * base_alpha
-    return np.where(np.isnan(sens), 0.0, alpha)
+to_utm_km = plotpy.to_utm_km
+compute_hillshade = plotpy.compute_hillshade
+sens_shade_alpha = plotpy.sens_shade_alpha
+sens_data_alpha = plotpy.sens_data_alpha
 
 
 def draw_sens_shade_overlay(ax, e_edges, n_edges, alpha_2d, zorder):
@@ -887,300 +646,83 @@ def save_fig(fig, stem):
 
 def draw_annotation(ax):
     """Draw the optional free-text annotation (ANNOTATION_TEXT), if set."""
-    if ANNOTATION_TEXT:
-        ax.text(*ANNOTATION_POS, ANNOTATION_TEXT,
-                transform=ax.transAxes, zorder=25, **ANNOTATION_STYLE)
+    plotpy.draw_annotation(ax, ANNOTATION_TEXT, ANNOTATION_POS, ANNOTATION_STYLE)
 
 
-# ------------------------------------------------------------------
-# VE-label position resolver (used by plot_vertical_slice)
-# ------------------------------------------------------------------
-_VE_POS_PRESETS = {
-    "upper right": (0.99, 0.99, "right", "top"),
-    "upper left":  (0.01, 0.99, "left",  "top"),
-    "lower right": (0.99, 0.01, "right", "bottom"),
-    "lower left":  (0.01, 0.01, "left",  "bottom"),
-}
+def _region():
+    return (xmin, xmax, ymin, ymax)
 
 
-def _resolve_ve_pos(spec):
-    """Resolve VSLICE_VE_POS into an (x, y, ha, va) tuple in axes fraction."""
-    if isinstance(spec, str):
-        try:
-            return _VE_POS_PRESETS[spec.lower()]
-        except KeyError:
-            raise ValueError(
-                f"VSLICE_VE_POS={spec!r} not recognised; choose one of "
-                f"{list(_VE_POS_PRESETS)} or an explicit (x, y, ha, va) tuple."
-            )
-    return spec
+def _colorbar_settings():
+    return dict(show=SHOW_COLORBAR, position=COLORBAR_POSITION,
+                size=COLORBAR_SIZE, pad=COLORBAR_PAD, aspect=COLORBAR_ASPECT,
+                label_size=COLORBAR_LABEL_SIZE, tick_size=COLORBAR_TICK_SIZE,
+                nticks=COLORBAR_NTICKS)
 
 
-# ------------------------------------------------------------------
-# Clip-aware scatter / text helpers
-# ------------------------------------------------------------------
+_resolve_ve_pos = plotpy.resolve_ve_pos
+
+
 def _in_region(xe, yn):
-    return (
-        (xe >= xmin) & (xe <= xmax) &
-        (yn >= ymin) & (yn <= ymax)
-    )
+    """Boolean mask: True where (xe, yn) fall inside the map region."""
+    return plotpy.in_region(xe, yn, _region())
 
 
 def clipped_scatter(ax, xe, yn, **kwargs):
-    mask = _in_region(np.asarray(xe), np.asarray(yn))
-    if not np.any(mask):
-        return
-    ax.scatter(np.asarray(xe)[mask], np.asarray(yn)[mask], **kwargs)
+    """scatter() restricted to points inside the map region."""
+    plotpy.clipped_scatter(ax, xe, yn, _region(), **kwargs)
 
 
 def clipped_labels(ax, xe, yn, labels, style_dict):
-    """
-    Draw text labels for points inside the map region.
-
-    style_dict must include 'offset_x' and 'offset_y' (km); remaining keys
-    are passed to ax.text().  An optional 'stroke' key (dict) activates a
-    withStroke path-effect. Callers may pass a shared/global style dict
-    directly — it's copied internally, never mutated.
-    """
-    style_dict = dict(style_dict)
-    ox = style_dict.pop("offset_x", 0.0)
-    oy = style_dict.pop("offset_y", 0.0)
-    stroke = style_dict.pop("stroke", None)
-    path_effects = [pe.withStroke(**stroke)] if stroke else []
-    xe = np.asarray(xe, dtype=float)
-    yn = np.asarray(yn, dtype=float)
-    mask = _in_region(xe, yn)
-    for x, y, lbl, inside in zip(xe, yn, labels, mask):
-        if not inside:
-            continue
-        ax.text(x + ox, y + oy, lbl,
-                path_effects=path_effects if path_effects else None,
-                **style_dict)
+    """Draw text labels for points inside the map region — see
+    plotpy.clipped_labels for the full docstring."""
+    plotpy.clipped_labels(ax, xe, yn, labels, style_dict, _region())
 
 
-# ------------------------------------------------------------------
-# North arrow
-# ------------------------------------------------------------------
 def draw_north_arrow(ax, x_km, y_km, length_km=4.0):
-    if not _in_region(np.array([x_km]), np.array([y_km]))[0]:
-        return
-    ax.annotate("", xy=(x_km, y_km + length_km), xytext=(x_km, y_km),
-                arrowprops=dict(arrowstyle="-|>", **ARROW_STYLE),
-                annotation_clip=True)
-    ax.text(x_km, y_km + length_km + 0.8, "N",
-            ha="center", va="bottom", clip_on=True, **ARROW_LABEL_STYLE)
+    """Draw a north arrow at UTM position (x_km, y_km) if inside region."""
+    plotpy.draw_north_arrow(ax, x_km, y_km, _region(),
+                             ARROW_STYLE, ARROW_LABEL_STYLE, length_km)
 
 
 # ------------------------------------------------------------------
-# Map figure creation — guarantees equal x/y (km) scale BY CONSTRUCTION
+# Map/section figure creation — guarantees equal x/y (km) scale BY
+# CONSTRUCTION; see plotpy.build_panel_figure for the full docstring.
 # ------------------------------------------------------------------
-def _build_panel_figure(panel_w_in, panel_h_in, size_label="panel"):
-    """
-    Shared machinery behind create_map_figure() and create_section_figure():
-    given a panel's exact physical size in inches, place it (and an
-    optional colorbar, added as EXTRA canvas beyond the panel) via
-    explicit inch-based axes placement — never matplotlib's automatic
-    colorbar space-stealing (fig.colorbar(..., ax=...)) or tight_layout(),
-    both of which can produce a badly broken layout for panels with an
-    extreme aspect ratio (e.g. a long, shallow cross-section).
-
-    Returns (fig, ax, cax) — cax is the colorbar axes, or None if
-    SHOW_COLORBAR is False.
-    """
-    pos = COLORBAR_POSITION.lower()
-    if pos not in ("right", "left", "bottom", "top"):
-        raise ValueError(
-            f"COLORBAR_POSITION={COLORBAR_POSITION!r} is not valid. "
-            "Choose 'right', 'left', 'bottom', or 'top'."
-        )
-
-    pad_in = COLORBAR_PAD
-    bar_len_in = bar_thick_in = 0.0
-    cbar_w_in = cbar_h_in = 0.0
-    if SHOW_COLORBAR:
-        if pos in ("right", "left"):
-            bar_len_in = COLORBAR_SIZE * panel_h_in
-            cbar_w_in = bar_thick_in = bar_len_in / COLORBAR_ASPECT
-        else:
-            bar_len_in = COLORBAR_SIZE * panel_w_in
-            cbar_h_in = bar_thick_in = bar_len_in / COLORBAR_ASPECT
-
-    fig_w_in = panel_w_in + (cbar_w_in + pad_in if cbar_w_in else 0.0)
-    fig_h_in = panel_h_in + (cbar_h_in + pad_in if cbar_h_in else 0.0)
-    print(f"Figure size ({size_label}): {fig_w_in:.2f} × {fig_h_in:.2f} in "
-          f"({size_label} {panel_w_in:.2f} × {panel_h_in:.2f} in)")
-
-    fig = plt.figure(figsize=(fig_w_in, fig_h_in))
-
-    panel_left   = (cbar_w_in + pad_in) / fig_w_in if (SHOW_COLORBAR and pos == "left") else 0.0
-    panel_bottom = (cbar_h_in + pad_in) / fig_h_in if (SHOW_COLORBAR and pos == "bottom") else 0.0
-    panel_w_frac = panel_w_in / fig_w_in
-    panel_h_frac = panel_h_in / fig_h_in
-    ax = fig.add_axes([panel_left, panel_bottom, panel_w_frac, panel_h_frac])
-
-    cax = None
-    if SHOW_COLORBAR:
-        bar_len_frac = (bar_len_in / fig_h_in) if pos in ("right", "left") \
-            else (bar_len_in / fig_w_in)
-        if pos == "right":
-            cax = fig.add_axes([
-                (panel_w_in + pad_in) / fig_w_in,
-                panel_bottom + (panel_h_frac - bar_len_frac) / 2,
-                cbar_w_in / fig_w_in, bar_len_frac,
-            ])
-        elif pos == "left":
-            cax = fig.add_axes([
-                0.0,
-                panel_bottom + (panel_h_frac - bar_len_frac) / 2,
-                cbar_w_in / fig_w_in, bar_len_frac,
-            ])
-        elif pos == "top":
-            cax = fig.add_axes([
-                panel_left + (panel_w_frac - bar_len_frac) / 2,
-                (panel_h_in + pad_in) / fig_h_in,
-                bar_len_frac, cbar_h_in / fig_h_in,
-            ])
-        elif pos == "bottom":
-            cax = fig.add_axes([
-                panel_left + (panel_w_frac - bar_len_frac) / 2,
-                0.0,
-                bar_len_frac, cbar_h_in / fig_h_in,
-            ])
-
-    return fig, ax, cax
-
-
 def create_map_figure():
-    """
-    Build a horizontal-map figure whose map axes is sized in physical
-    inches to exactly match the UTM data aspect ratio ((ymax-ymin) /
-    (xmax-xmin)) — so 1 km in easting always renders as exactly the same
-    length as 1 km in northing, guaranteed by explicit inch-based axes
-    placement rather than relying on matplotlib's 'equal' aspect setting
-    plus automatic colorbar space-stealing (fig.colorbar(..., ax=...)),
-    which can desync from the actual rendered box in some layouts.
-
-    FIG_WIDTH controls only the map panel's width; height is always
-    derived. If SHOW_COLORBAR is True, the colorbar is added as EXTRA
-    width (right/left) or height (bottom/top) beyond the map panel, so it
-    never competes with the map for space and can never distort it.
-
-    Returns (fig, ax, cax) — cax is the colorbar axes, or None if
-    SHOW_COLORBAR is False.
-    """
     map_w_in = FIG_WIDTH / 2.54
     map_h_in = map_w_in * (ymax - ymin) / (xmax - xmin)
-    return _build_panel_figure(map_w_in, map_h_in, size_label="map")
+    return plotpy.build_panel_figure(map_w_in, map_h_in, _colorbar_settings(),
+                                      size_label="map")
 
 
 def create_section_figure(w_in, h_in):
-    """
-    Build a vertical-section figure at the given panel size (in inches —
-    already computed by the caller from VSLICE_WIDTH_CM and the profile's
-    own depth-range/VE-derived aspect ratio). Same explicit inch-based
-    axes placement as create_map_figure(), which matters most here: real
-    profiles are usually much longer than they are deep, and the old
-    tight_layout()-plus-space-stealing-colorbar approach could produce a
-    badly broken/overlapping layout for that kind of wide, short panel.
-
-    Returns (fig, ax, cax) — cax is the colorbar axes, or None if
-    SHOW_COLORBAR is False.
-    """
-    return _build_panel_figure(w_in, h_in, size_label="section")
+    return plotpy.build_panel_figure(w_in, h_in, _colorbar_settings(),
+                                      size_label="section")
 
 
 def finish_panel_colorbar(cax, mappable, label):
     """Render the colorbar into the cax returned by create_map_figure()
     or create_section_figure()."""
-    if cax is None:
-        return None
-    pos = COLORBAR_POSITION.lower()
-    orientation = "vertical" if pos in ("right", "left") else "horizontal"
-    cbar = cax.figure.colorbar(mappable, cax=cax, orientation=orientation)
-    cbar.set_label(label, fontsize=COLORBAR_LABEL_SIZE)
-    cbar.ax.tick_params(labelsize=COLORBAR_TICK_SIZE)
-    cbar.locator = matplotlib.ticker.MaxNLocator(nbins=COLORBAR_NTICKS)
-    cbar.update_ticks()
-    if pos == "left":
-        cax.yaxis.set_ticks_position("left")
-        cax.yaxis.set_label_position("left")
-    if pos == "top":
-        cax.xaxis.set_ticks_position("top")
-        cax.xaxis.set_label_position("top")
-    return cbar
-
+    return plotpy.finish_panel_colorbar(cax, mappable, label, _colorbar_settings())
 
 # ------------------------------------------------------------------
 # Secondary lon/lat axes  (cosmetic overlay on UTM-km plot)
 # ------------------------------------------------------------------
 def add_latlon_ticks(ax):
-    """
-    Replace UTM-km tick labels on the primary axes with lon/lat values.
-    No extra axes created — existing ticks are reformatted in-place.
-
-    Tick *positions* are chosen at round lon/lat values (e.g. 0.1/0.2/0.5°
-    steps, picked automatically via matplotlib's MaxNLocator) rather than at
-    evenly spaced UTM-km positions — the round geographic values are then
-    converted back to UTM km to place the ticks.
-
-    Controlled by AXES_UNITS, LATLON_NTICKS, LATLON_DECIMALS.
-    """
-    e_mid_m = (xmin + xmax) / 2.0 * 1e3
-    n_mid_m = (ymin + ymax) / 2.0 * 1e3
-    fmt = f"{{:.{LATLON_DECIMALS}f}}°"
-
-    # Geographic extent of the map along each edge (mid-line of the other axis)
-    lon_min, _ = _to_geo.transform(xmin * 1e3, n_mid_m)
-    lon_max, _ = _to_geo.transform(xmax * 1e3, n_mid_m)
-    _, lat_min = _to_geo.transform(e_mid_m, ymin * 1e3)
-    _, lat_max = _to_geo.transform(e_mid_m, ymax * 1e3)
-
-    # Round tick values (nice 1/2/5-type steps), clipped to the map extent
-    lon_locator = mpl.ticker.MaxNLocator(nbins=LATLON_NTICKS, steps=[1, 2, 5, 10])
-    lat_locator = mpl.ticker.MaxNLocator(nbins=LATLON_NTICKS, steps=[1, 2, 5, 10])
-    lon_vals = [v for v in lon_locator.tick_values(min(lon_min, lon_max), max(lon_min, lon_max))
-                if min(lon_min, lon_max) <= v <= max(lon_min, lon_max)]
-    lat_vals = [v for v in lat_locator.tick_values(min(lat_min, lat_max), max(lat_min, lat_max))
-                if min(lat_min, lat_max) <= v <= max(lat_min, lat_max)]
-
-    # Convert round lon/lat values back to UTM km for tick placement
-    e_ticks_km = np.array([_to_utm.transform(lon, (lat_min + lat_max) / 2.0)[0]
-                            for lon in lon_vals]) / 1e3
-    n_ticks_km = np.array([_to_utm.transform((lon_min + lon_max) / 2.0, lat)[1]
-                            for lat in lat_vals]) / 1e3
-
-    lon_labels = [fmt.format(v) for v in lon_vals]
-    lat_labels = [fmt.format(v) for v in lat_vals]
-
-    ax.set_xticks(e_ticks_km)
-    ax.set_xticklabels(lon_labels, fontsize=COLORBAR_TICK_SIZE)
-    ax.set_xlabel("Longitude", fontsize=COLORBAR_LABEL_SIZE)
-
-    ax.set_yticks(n_ticks_km)
-    ax.set_yticklabels(lat_labels, fontsize=COLORBAR_TICK_SIZE)
-    ax.set_ylabel("Latitude", fontsize=COLORBAR_LABEL_SIZE)
+    """Replace UTM-km tick labels with lon/lat values — see
+    plotpy.add_latlon_ticks for the full docstring. Controlled by
+    AXES_UNITS, LATLON_NTICKS, LATLON_DECIMALS."""
+    plotpy.add_latlon_ticks(ax, _region(), LATLON_NTICKS, LATLON_DECIMALS,
+                             COLORBAR_LABEL_SIZE, COLORBAR_TICK_SIZE)
 
 
 # ==================================================================
 # Vertical slice engine
 # ==================================================================
 
-def _profile_utm_km(vslice):
-    """Return (e_km, n_km) endpoint arrays, converting latlon → UTM if needed."""
-    p1 = np.asarray(vslice["p1"], float)
-    p2 = np.asarray(vslice["p2"], float)
-    if vslice.get("coord", "latlon").lower() == "latlon":
-        e1, n1 = to_utm_km([p1[0]], [p1[1]])
-        e2, n2 = to_utm_km([p2[0]], [p2[1]])
-        return np.array([e1[0], e2[0]]), np.array([n1[0], n2[0]])
-    else:
-        return np.array([p1[0], p2[0]]), np.array([p1[1], p2[1]])
-
-
-def _profile_labels(index):
-    """A/A' for index 0, B/B' for index 1, etc."""
-    letter = chr(ord('A') + index)
-    return letter, letter + "'"
+_profile_utm_km = plotpy.profile_utm_km
+_profile_labels = plotpy.profile_labels
 
 
 def _grid_line_crossings(p0, p1, edges):
@@ -1406,22 +948,11 @@ def compute_vertical_slice_modem(vslice):
 
 
 def _project_seismicity_to_profile(e_ends, n_ends, swath_km, zmin_km, zmax_km):
-    """Events within swath_km of the profile and within depth range; returns (along_km, depth_km)."""
-    de = e_ends[1] - e_ends[0]
-    dn = n_ends[1] - n_ends[0]
-    L  = np.sqrt(de**2 + dn**2)
-    if L == 0:
-        return np.array([]), np.array([])
-    ue, un = de / L, dn / L
-    ve = eq_e0 - e_ends[0]
-    vn = eq_n0 - n_ends[0]
-    along  = ve * ue + vn * un
-    across = np.abs(ve * (-un) + vn * ue)
-    mask = (
-        (across <= swath_km) & (along >= 0) & (along <= L) &
-        (zeqs >= zmin_km) & (zeqs <= zmax_km)
-    )
-    return along[mask], zeqs[mask]
+    """Events within swath_km of the profile and within depth range;
+    returns (along_km, depth_km)."""
+    return plotpy.project_points_to_profile(
+        eq_e0, eq_n0, e_ends, n_ends, swath_km, z0=zeqs,
+        zmin_km=zmin_km, zmax_km=zmax_km)
 
 
 def _project_mt_sites_to_profile(e_ends, n_ends, swath_km):
@@ -1432,18 +963,7 @@ def _project_mt_sites_to_profile(e_ends, n_ends, swath_km):
     surf_depth (interpolated at each site's along-profile position) by the
     caller instead.
     """
-    de = e_ends[1] - e_ends[0]
-    dn = n_ends[1] - n_ends[0]
-    L  = np.sqrt(de**2 + dn**2)
-    if L == 0:
-        return np.array([])
-    ue, un = de / L, dn / L
-    ve = mt_e - e_ends[0]
-    vn = mt_n - n_ends[0]
-    along  = ve * ue + vn * un
-    across = np.abs(ve * (-un) + vn * ue)
-    mask   = (across <= swath_km) & (along >= 0) & (along <= L)
-    return along[mask]
+    return plotpy.project_points_to_profile(mt_e, mt_n, e_ends, n_ends, swath_km)
 
 
 def plot_vertical_slice(s_edges, d_edges, section, e_ends, n_ends,

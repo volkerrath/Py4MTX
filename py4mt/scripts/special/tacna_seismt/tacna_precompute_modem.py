@@ -94,11 +94,11 @@ except ImportError:
 # tacna_plot_modem_mesh.py have a matching NC_DIR setting to read from
 # wherever this is pointed at.
 # OUTPUT_DIR = "."
-OUTPUT_DIR = "./precompute/"
+OUTPUT_DIR = "../precompute/"
 
 # --- Input files (without extension) ---
-MODEL_FILE = "./mt/Tacna_final"    # reads MODEL_FILE + MODEL_EXT
-DATA_FILE  = "./mt/Tacna_final"    # reads DATA_FILE  + DATA_EXT
+MODEL_FILE = "../mt/Tacna_final"    # reads MODEL_FILE + MODEL_EXT
+DATA_FILE  = "../mt/Tacna_final"    # reads DATA_FILE  + DATA_EXT
 MODEL_EXT  = ".rho"
 DATA_EXT   = ".dat"
 
