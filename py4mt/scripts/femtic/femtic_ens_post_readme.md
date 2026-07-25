@@ -60,7 +60,7 @@ interest auto-scaling (`MOD_ROI_*`) is specific to this script.
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `PERCENTILES` | list of float | `[2.3, 15.9, 50.0, 84.1, 97.7]` | Percentile levels (2-σ / 1-σ normal-equivalent). |
-| `QDIFF_PAIRS` | list of `(lo, hi)` | `[(15.9, 84.1)]` | Percentile-pair differences `\|P_hi - P_lo\|` computed as extra, outlier-robust spread statistics (both values must also appear in `PERCENTILES`). Saved as `<P>_qdiff_<lo>_<hi>` and plottable under the same key in `MOD_STATS_WHAT`. |
+| `QDIFF_PAIRS` | list of `(lo, hi)` | `[(15.9, 84.1), (2.3, 97.7)]` | Percentile-pair differences `\|P_hi - P_lo\|` computed as extra, outlier-robust spread statistics (both values must also appear in `PERCENTILES`). The default gives both a 1-sigma-equivalent (`15.9`/`84.1`) and 2-sigma-equivalent (`2.3`/`97.7`) spread. Saved as `<P>_qdiff_<lo>_<hi>` and plottable under the same key in `MOD_STATS_WHAT`. |
 
 ### Covariance
 
@@ -123,6 +123,43 @@ genuinely needed downstream:
   so that's the recommended first step rather than adding process-level
   parallelism to the dense path.
 
+### Bootstrap variance estimation
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `BOOTSTRAP_VAR` | bool | `False` | Enable an alternative bootstrap estimate of the ensemble variance, computed and saved alongside the plug-in `VAR`. |
+| `BOOTSTRAP_N` | int | `500` | Number of bootstrap resamples. |
+| `BOOTSTRAP_SEED` | int / `None` | `None` | `None` = fresh OS entropy; an integer makes the bootstrap reproducible. |
+
+The plug-in variance (`np.var(ens_matrix, axis=0)`) uses each member
+exactly once — a single point estimate. When `N_members` is small (order
+30–100, typical for RTO/GST ensembles), that estimate itself can be
+noisy. `BOOTSTRAP_VAR=True` resamples the `N_members` members with
+replacement `BOOTSTRAP_N` times, computes the plug-in variance of each
+resample, and reports:
+
+- **`var_boot`** — the mean plug-in variance across all resamples. Generally
+  a smoother, more stable estimate than the single `VAR` value, though for
+  well-behaved ensembles the two are usually close (see the worked example
+  in the script's own smoke-test: with 40 synthetic members drawn from a
+  known distribution, plug-in and bootstrap variance agreed to within a
+  few percent).
+- **`var_boot_se`** — the bootstrap standard error *of `var_boot` itself*
+  (i.e. how much the variance estimate would be expected to jitter from
+  one 32-64-member ensemble to another) — a diagnostic of estimator
+  noise, not a spread statistic of the model. Not plotted by default;
+  add `"var_boot_se"` to `MOD_STATS_WHAT` and an entry to `MOD_STATS_CLIM`
+  if you want a slice figure of it.
+- **`err_boot`** = `sqrt(var_boot)`, on the same scale as `MAD`/`QDIFF`,
+  automatically added to `MOD_STATS_WHAT` when `BOOTSTRAP_VAR=True`.
+
+Cost is `O(BOOTSTRAP_N × n_members × n_free)` time and `O(n_free)` memory
+(running sums, not a stored `(BOOTSTRAP_N, n_free)` array) — independent
+of mesh size in memory, and linear in `BOOTSTRAP_N` in time. `BOOTSTRAP_N
+= 500` is a reasonable default; reduce for a quick look, increase (e.g.
+2000+) to shrink `var_boot_se` further if the plug-in-vs-bootstrap spread
+matters for your analysis.
+
 ### Output
 
 | Parameter | Type | Default | Description |
@@ -157,9 +194,9 @@ Writes each selected statistic as a FEMTIC block file, then plots it.
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `MOD_STATS` | bool | `False` | Enable statistics slice plots. |
-| `MOD_STATS_WHAT` | list of str | `["avg","var","med","mad"]` + one key per `PERCENTILES` level + one per `QDIFF_PAIRS` entry | Which statistics to plot. Subset of `"avg"`, `"var"`, `"med"`, `"mad"`, plus auto-generated percentile keys (e.g. `2.3` → `"p2_3"`, `50.0` → `"p50"`, `97.7` → `"p97_7"`) and qdiff keys (e.g. `(15.9, 84.1)` → `"qdiff_15_9_84_1"`). Default includes all of them. |
+| `MOD_STATS_WHAT` | list of str | `["avg","med","err","mad"]` + one key per `PERCENTILES` level + one per `QDIFF_PAIRS` entry (+ `"err_boot"` when `BOOTSTRAP_VAR=True`) | Which statistics to plot. Subset of `"avg"`, `"var"`, `"err"`, `"med"`, `"mad"`, `"var_boot"`, `"err_boot"`, `"var_boot_se"`, plus auto-generated percentile keys (e.g. `2.3` → `"p2_3"`, `50.0` → `"p50"`, `97.7` → `"p97_7"`) and qdiff keys (e.g. `(15.9, 84.1)` → `"qdiff_15_9_84_1"`). `"err"` = `sqrt(var)` is plotted by default *instead of* `"var"`, since `var` is in (log10 Ω·m)² and isn't on the same scale as `MAD`/`QDIFF` (log10 Ω·m); add `"var"` back manually (with a `MOD_STATS_CLIM` entry) if you specifically want the raw-variance panel. |
 | `MOD_STATS_DIR` | str | `stats_plots/` | Destination for block files and figures. |
-| `MOD_STATS_CLIM` | dict | `{"var": [-2,2], "mad": [-2,2], "qdiff_...": [-2,2]}` | Per-statistic colour-scale override, keyed like `MOD_STATS_WHAT`. Each value is `[vmin, vmax]` or `None` (auto). `"avg"`/`"med"`/percentile keys aren't listed and fall back to `MOD_CLIM` automatically (same log10(Ω·m) space as the model). `"var"`/`"mad"`/`"qdiff_*"` (spread statistics on an unrelated, typically much narrower scale) default to a fixed `[-2, 2]` range; set a key to `None` to switch that one back to auto per-panel scaling. |
+| `MOD_STATS_CLIM` | dict | `{"var": [-2,2], "err": [-2,2], "mad": [-2,2], "qdiff_...": [-2,2]}` (+ `"var_boot"`/`"err_boot"`: `[-2,2]` when `BOOTSTRAP_VAR=True`) | Per-statistic colour-scale override, keyed like `MOD_STATS_WHAT`. Each value is `[vmin, vmax]` or `None` (auto). `"avg"`/`"med"`/percentile keys aren't listed and fall back to `MOD_CLIM` automatically (same log10(Ω·m) space as the model). `"var"`/`"err"`/`"mad"`/`"qdiff_*"`/`"var_boot"`/`"err_boot"` (spread statistics on an unrelated, typically much narrower scale) default to a fixed `[-2, 2]` range; set a key to `None` to switch that one back to auto per-panel scaling. |
 
 **Why `MOD_STATS_CLIM` exists.** `MOD_CLIM` fixes the colour scale for the
 resistivity model itself (log10 Ω·m), typically something like `[0, 4]`.
@@ -207,6 +244,7 @@ and `femtic_rto_prep.py`.
 | `MOD_NROWS / NCOLS` | Grid layout. Default `2 / 2`, matching the 4 default `MOD_SLICES` panels (2 maps + ns + ew); `None` = 1 row × N columns. Adjust if you change the number of panels. |
 | `MOD_TICK_FONTSIZE` | Font size for axis tick labels and colourbar ticks. Default `7`, matching `fviz.plot_model_slices`' own default. |
 | `MOD_LABEL_FONTSIZE` | Font size for axis labels, panel titles, and colourbar label. Default `8`, matching `fviz.plot_model_slices`' own default. |
+| `MOD_SHOW_IN_SPYDER` | `True` (default) and running inside Spyder (detected via `utl.runtime_env() == "spyder"`) → every saved figure is also displayed inline in Spyder's Plots pane via `plt.show()`, in addition to being written to disk. No effect outside Spyder; set `False` to disable even under Spyder. |
 
 ### Site overlay
 
@@ -245,12 +283,16 @@ Keys follow the pattern `<PREFIX>_<stat>`:
 | `<P>_cov_eigval` | `(r,)` | Covariance eigenvalues, `r = min(N_members, N_free)`. Present only if `COMPUTE_COV=True` and `COV_METHOD="low_rank"`. |
 | `<P>_cov_eigvec` | `(N_free, r)` | Covariance eigenvectors; `C = eigvec @ diag(eigval) @ eigvec.T`. Present only if `COMPUTE_COV=True` and `COV_METHOD="low_rank"`. |
 | `<P>_avg` | `(N_free,)` | Element-wise mean over members. |
-| `<P>_var` | `(N_free,)` | Element-wise variance over members. |
+| `<P>_var` | `(N_free,)` | Element-wise variance over members (plug-in, ddof=0). |
+| `<P>_err` | `(N_free,)` | `sqrt(var)` — standard deviation, on the same scale as `MAD`/`QDIFF`. |
 | `<P>_med` | `(N_free,)` | Element-wise median over members. |
 | `<P>_mad` | `(N_free,)` | Median absolute deviation. |
 | `<P>_prc` | `(N_prc, N_free)` | Percentile values at `PERCENTILES` levels. |
 | `<P>_prc_levels` | `(N_prc,)` | The `PERCENTILES` levels themselves, for self-describing output. |
-| `<P>_qdiff_<lo>_<hi>` | `(N_free,)` | `\|P_hi - P_lo\|` per free parameter, one key per `QDIFF_PAIRS` entry (e.g. `<P>_qdiff_15_9_84_1`). |
+| `<P>_qdiff_<lo>_<hi>` | `(N_free,)` | `\|P_hi - P_lo\|` per free parameter, one key per `QDIFF_PAIRS` entry (e.g. `<P>_qdiff_15_9_84_1`, `<P>_qdiff_2_3_97_7`). |
+| `<P>_var_boot` | `(N_free,)` | Bootstrap mean variance across `BOOTSTRAP_N` resamples. Present only if `BOOTSTRAP_VAR=True`. |
+| `<P>_err_boot` | `(N_free,)` | `sqrt(var_boot)`. Present only if `BOOTSTRAP_VAR=True`. |
+| `<P>_var_boot_se` | `(N_free,)` | Bootstrap standard error of `var_boot` itself (estimator-noise diagnostic, not a model spread statistic). Present only if `BOOTSTRAP_VAR=True`. |
 
 If `COMPUTE_COV=False`, none of the `<P>_cov*` keys are present.
 
@@ -322,3 +364,5 @@ correct.
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `COMPUTE_COV` (skip covariance entirely) and `COV_METHOD="low_rank"` (exact thin-SVD factorisation of the centred ensemble, avoiding the dense `N_free × N_free` matrix — see Covariance section). `MOD_STATS` now also writes a block file and slice figure for each `PERCENTILES` level (`p2_3`, `p50`, `p97_7`, …), included by default in `MOD_STATS_WHAT`. Added `<P>_prc_levels` to the `.npz` output. |
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `MOD_STATS_CLIM` for per-statistic colour scaling (`VAR`/`MAD`/`QDIFF` default to a fixed `[-2, 2]` range instead of silently reusing `MOD_CLIM`, which made them blank; set a key to `None` for auto per-panel scaling instead). Added `QDIFF_PAIRS` (default `[(15.9, 84.1)]`): percentile-difference spread statistics, saved to the `.npz` and plottable via `MOD_STATS`. Added `MOD_ROI_AUTO`/`MOD_ROI_PAD_XY`/`MOD_ROI_ZLIM`: automatic `MOD_XLIM`/`MOD_YLIM`/`MOD_ZLIM` from the site bounding box, which also activates `femtic_viz.py`'s existing aspect-ratio panel-width logic so map/ns/ew panels size themselves differently. Changed `MOD_NROWS`/`MOD_NCOLS` defaults to `2`/`2`. Also fixed a sign bug in `femtic_viz.py`'s `plot_model_slices` (ns/ew curtain panels rendered blank/upside down whenever `MOD_ZLIM` was set) — the bug was dormant under the old `MOD_ZLIM=None` default and is fixed as part of enabling `MOD_ROI_AUTO`. |
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `MOD_TICK_FONTSIZE` / `MOD_LABEL_FONTSIZE`, passed through to every `_plot_slice()` call (`MOD_QC` and `MOD_STATS`). Axis tick labels, axis labels, panel titles, and colourbar text were previously fixed at `plot_model_slices`' internal defaults with no way to override them from this script. |
+| 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `MOD_SHOW_IN_SPYDER` (default `True`): when running inside Spyder, every saved figure is also displayed inline via `plt.show()` (`fviz.plot_model_slices`' new `show=` parameter), without changing what gets saved to disk. No effect outside Spyder. |
+| 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `(2.3, 97.7)` to the default `QDIFF_PAIRS` (alongside `(15.9, 84.1)`), giving both 1-sigma- and 2-sigma-equivalent spread statistics. Added `<P>_err = sqrt(var)`: `MOD_STATS_WHAT`'s default now plots `"err"` instead of `"var"`, since `var` (in (log10 Ω·m)²) was never on the same scale as `MAD`/`QDIFF` (log10 Ω·m); `var` remains available on request. Added `BOOTSTRAP_VAR`/`BOOTSTRAP_N`/`BOOTSTRAP_SEED` and the new `_bootstrap_variance()` helper: an alternative bootstrap estimate of the ensemble variance (resample members with replacement, average the plug-in variance of each replicate), reporting `var_boot`, `err_boot` (added to `MOD_STATS_WHAT` automatically when enabled), and `var_boot_se` (the bootstrap estimate's own standard error, an estimator-noise diagnostic). See the new "Bootstrap variance estimation" section. |

@@ -260,7 +260,73 @@ Provenance:
                         -zlim[0]*dz_sc]). No effect when zlim=None (the
                         previous default), which is why this went
                         unnoticed until callers started passing an
-                        explicit MOD_ZLIM."""
+                        explicit MOD_ZLIM.
+    2026-07-25  Claude Sonnet 5 (Anthropic)
+                        plot_ensemble_slices: fixed a second, independent
+                        upside-down bug in the "ns"/"ew" curtain panels --
+                        this function has its own local _axis_slice_params
+                        (separate from plot_model_slices's), which set
+                        inv=[True, True, False] for axis 0/1. The resulting
+                        v_ax already works out to [0,0,-1] (plotted depth =
+                        -depth, 0 at the surface, negative going down),
+                        which is already the correct top-shallow /
+                        bottom-deep orientation under matplotlib's default
+                        axis direction -- so the invert_yaxis() triggered by
+                        inv=True was flipping it a second time, putting
+                        deep at the top. inv is now [False, False, False]
+                        for these two axes. (The "map" panels were never
+                        affected -- they don't use invert_v -- and a
+                        spot-check of the "plane" panel's invert_v=True at
+                        a representative strike/dip suggests it is correctly
+                        oriented as-is, since its v_ax sign convention is
+                        strike/dip-dependent and differs from the
+                        axis-aligned ns/ew case; not exhaustively verified
+                        across all strike/dip combinations.) A second,
+                        related bug was fixed in the same rendering loop:
+                        the per-panel zlim override applied
+                        ax.set_ylim([zlim[1], zlim[0]]) using the *positive*
+                        depth values directly against the same -depth data
+                        convention -- same root cause as the plot_model_
+                        slices fix above, just not caught there since it's
+                        a separate code path. Now negates zlim to
+                        ax.set_ylim([-zlim[1], -zlim[0]]).
+    2026-07-25  Claude Sonnet 5 (Anthropic)
+                        plot_model_slices / plot_ensemble_slices: added a
+                        show parameter (default False). Previously a
+                        figure was either saved (plot_file given) or shown
+                        interactively (plot_file=None) -- never both, so
+                        callers running in an interactive environment
+                        (Spyder, Jupyter) that also wanted to save to disk
+                        never saw the figure inline. show=True now calls
+                        plt.show() in addition to fig.savefig() when
+                        plot_file is given (unchanged, save-only, when
+                        show=False -- default preserves prior behaviour).
+                        plot_ensemble_slices applies this to both the
+                        joint figure and per-member figures
+                        (per_member_file=True).
+    2026-07-25  Claude Sonnet 5 (Anthropic)
+                        plot_model_slices: fixed a site-marker elevation
+                        sign bug in the "ns"/"ew"/"plane" curtain/plane
+                        panels. Mesh polygons plot v = -z_mesh (z positive-
+                        down), and since site.dat's elev column is
+                        standard positive-up elevation with z_mesh = -elev,
+                        a site's correct plotted v-coordinate is
+                        -z_mesh = -(-elev) = +elev -- the same sign the
+                        mesh polygons already use. The site-marker code
+                        instead plotted -elev (the opposite sign): a
+                        station on a topographic high (elev > 0) appeared
+                        below the surface, and vice versa, while the
+                        surrounding topography (drawn from the mesh) was
+                        correctly oriented -- an inconsistency that reads
+                        as "still upside down" even after the two 2026-07-
+                        25 sign fixes above, which only affected the mesh-
+                        polygon axis range/orientation, not this separate
+                        site-marker computation. Fixed in all three
+                        branches (ns/ew: -elev*dz_sc -> elev*dz_sc; plane:
+                        same fix, though that panel's own mesh-polygon
+                        orientation uses a separate strike/dip-dependent
+                        v_ax + invert_v=True convention that was not
+                        independently re-verified in this pass)."""
 
 from __future__ import annotations
 
@@ -3379,6 +3445,7 @@ def plot_model_slices(
     label_fontsize: int = 8,
     nrms_annotation: Optional[dict] = None,
     figure_title: Optional[str] = None,
+    show: bool = False,
     out: bool = True,
 ):
     """Produce a multi-panel figure of axis-parallel FEMTIC model slices.
@@ -3451,7 +3518,9 @@ def plot_model_slices(
         -> (x_m, y_m)`` used to place ``map_markers``.  ``None`` -> markers
         skipped when ``display_coords != "model"``.
     plot_file
-        Save path; ``None`` = interactive ``show()``.
+        Save path; ``None`` = interactive ``show()`` (equivalent to
+        ``show=True`` with no save). When ``plot_file`` is given *and*
+        ``show=True``, the figure is both saved and displayed.
     dpi
         Saved-figure DPI.
     equal_aspect
@@ -3539,6 +3608,13 @@ def plot_model_slices(
     figure_title
         Overall figure title (suptitle).  ``None`` → the basename of
         *model_file*.
+    show
+        If True, also display the figure interactively via
+        ``plt.show()`` -- in addition to saving, when ``plot_file`` is
+        also given. Useful in interactive environments (e.g. Spyder,
+        Jupyter) where saving to disk shouldn't preclude also seeing the
+        figure inline. Default False (save-only, matching prior
+        behaviour) when ``plot_file`` is given.
     out
         Print progress messages.
     """
@@ -4091,7 +4167,13 @@ def plot_model_slices(
                     if projection_dist is not None and abs(sx_m - x0) > projection_dist:
                         continue
                     mk = dict(_sms); mk.setdefault("label", f"Site {sn}")
-                    ax.plot((sy_m + dN)*sc, -_elev*_dz_sc, linestyle="none", **mk)
+                    # Polygon v-coord is -depth = -z_mesh; z_mesh = -elev (z
+                    # positive-down, elev positive-up per site.dat), so a
+                    # site's plotted v-coord is -z_mesh = -(-elev) = +elev,
+                    # matching the sign the mesh polygons already use. Was
+                    # -_elev (wrong sign: put topography sites underground
+                    # and vice versa) -- fixed 2026-07-25.
+                    ax.plot((sy_m + dN)*sc, _elev*_dz_sc, linestyle="none", **mk)
 
         elif kind == "ew":
             y0 = float(spec.get("y0", 0.0))
@@ -4139,7 +4221,8 @@ def plot_model_slices(
                     if projection_dist is not None and abs(sy_m - y0) > projection_dist:
                         continue
                     mk = dict(_sms); mk.setdefault("label", f"Site {sn}")
-                    ax.plot((sx_m + dE)*sc, -_elev*_dz_sc, linestyle="none", **mk)
+                    # See matching comment in the "ns" branch above.
+                    ax.plot((sx_m + dE)*sc, _elev*_dz_sc, linestyle="none", **mk)
 
         elif kind == "plane":
             _pt     = np.asarray(spec.get("point", [0., 0., 0.]), dtype=float)
@@ -4177,7 +4260,14 @@ def plot_model_slices(
                         continue
                     u_coord = float(np.dot(site_xyz, u_ax))
                     mk = dict(_sms); mk.setdefault("label", f"Site {sn}")
-                    ax.plot(u_coord, -_elev*_dz_sc, linestyle="none", **mk)
+                    # Same elev-sign fix as ns/ew (elev = -z_mesh, positive
+                    # up). Note: the plane panel's mesh polygons use their
+                    # own strike/dip-dependent v_ax + invert_v=True instead
+                    # of this simple elevation axis, and that combination
+                    # was not independently re-verified here -- if plane
+                    # panels still look wrong, check the interaction
+                    # between invert_v and this marker position too.
+                    ax.plot(u_coord, _elev*_dz_sc, linestyle="none", **mk)
 
         else:
             ax.set_visible(False)
@@ -4286,6 +4376,8 @@ def plot_model_slices(
         fig.savefig(plot_file, dpi=dpi, bbox_inches="tight")
         if out:
             print(f"  plot: saved -> {plot_file}")
+        if show:
+            plt.show()
     else:
         plt.show()
 
@@ -4707,6 +4799,7 @@ def plot_ensemble_slices(
     dpi: int = 200,
     tick_fontsize: int = 6,
     label_fontsize: int = 7,
+    show: bool = False,
     out: bool = True,
 ) -> None:
     """Produce a joint ensemble figure using exact tetrahedron-plane intersection.
@@ -4764,6 +4857,10 @@ def plot_ensemble_slices(
     label_fontsize
         Font size for axis labels, panel titles, row labels, colourbar labels,
         and suptitle.  Default ``7``.
+    show
+        If True, also display the joint figure interactively via
+        ``plt.show()`` -- in addition to saving, when ``plot_file`` is
+        also given. Default False (save-only, matching prior behaviour).
     out
         Print progress messages.
 
@@ -4833,7 +4930,16 @@ def plot_ensemble_slices(
         normals = [np.array([1., 0., 0.]),
                    np.array([0., 1., 0.]),
                    np.array([0., 0., 1.])]
-        inv = [True, True, False]
+        # For axis 0 ("ns") and axis 1 ("ew") the resulting v_ax works out to
+        # [0, 0, -1] in both cases (see _slice_geometry_indices, which plots
+        # v = p @ v_ax with no further sign handling), so the plotted depth
+        # coordinate is already -depth: 0 at the surface, increasingly
+        # negative going down. With matplotlib's default (non-inverted)
+        # y-axis that already puts shallow at the top and deep at the
+        # bottom -- the correct orientation -- with no inversion needed.
+        # inv=True here was flipping that a second time, putting deep at
+        # the top: fixed 2026-07-25 (was [True, True, False]).
+        inv = [False, False, False]
         pt  = np.zeros(3); pt[axis] = val
         n   = normals[axis]
         ref = np.array([0., 0., 1.]) if axis != 2 else np.array([1., 0., 0.])
@@ -5058,7 +5164,15 @@ def plot_ensemble_slices(
             _xl = sg["xlim"]; _yl = sg["ylim"]; _zl = sg["zlim"]
             if _xl is not None: ax.set_xlim(_xl)
             if _yl is not None: ax.set_ylim(_yl)
-            if _zl is not None: ax.set_ylim([_zl[1], _zl[0]])
+            if _zl is not None:
+                # Curtain-panel v-coord is -depth (see _slice_geometry_indices /
+                # _axis_slice_params: v_ax = [0,0,-1] for ns/ew), but _zl is
+                # given in positive-down depth like everywhere else in this
+                # codebase (e.g. MOD_ZLIM = [0, 20000]). Negate to match the
+                # data range -- same bug/fix as plot_model_slices's ns/ew
+                # branches; without this, a positive zlim never overlaps the
+                # (negative) plotted data and the panel comes out blank.
+                ax.set_ylim([-_zl[1], -_zl[0]])
             if sg.get("invert_x", False):
                 ax.invert_xaxis()
 
@@ -5097,6 +5211,8 @@ def plot_ensemble_slices(
         fig.savefig(str(plot_file), dpi=dpi, bbox_inches="tight")
         if out:
             print(f"  ensemble: joint figure saved -> {plot_file}")
+        if show:
+            plt.show()
     else:
         plt.show()
 
@@ -5121,6 +5237,8 @@ def plot_ensemble_slices(
             fig_m.tight_layout()
             per_path = f"{_stem}_member{i}{_ext}"
             fig_m.savefig(per_path, dpi=dpi, bbox_inches="tight")
+            if show:
+                plt.show()
             plt.close(fig_m)
             if out:
                 print(f"  ensemble: member {i} saved -> {per_path}")

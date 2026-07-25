@@ -258,6 +258,12 @@ Note: `fviz.plot_ensemble_slices` does not currently support `depth_km`/
 kwargs would raise `TypeError`; this script no longer does so as of
 2026-07-25 (see Provenance).
 
+### Inline display in Spyder (`MOD_SHOW_IN_SPYDER`)
+
+| Variable | Default | Description |
+|---|---|---|
+| `MOD_SHOW_IN_SPYDER` | `True` | When this script is running inside Spyder (detected once at startup via `utl.runtime_env() == "spyder"`), every saved figure — QC, model, and ensemble slice plots — is also displayed inline in Spyder's Plots pane via `plt.show()`, in addition to being written to disk. No effect outside Spyder (plain `python`, other IDEs still save-only). Set `False` to disable even under Spyder. |
+
 The member file list is built automatically using `MOD_RESISTIVITY_FILE` (the filename
 written by `generate_gst_model_ensemble`).  To visualise converged inversion results
 rather than initial models, change the filename to the desired iterate
@@ -422,6 +428,7 @@ No sparse-matrix file (`.npz`) is required.
 | 2026-07-09 | vrath / Claude Sonnet 5 (Anthropic) | Moved `MOD_ORIGIN_METHOD` next to the `MOD_UTM_ORIGIN_*`/`MOD_UTM_ZONE_OVERRIDE` block; removed the duplicate later declaration next to the site-overlay settings. The shared plotting config block now has identical variable order and naming to `femtic_ens_post.py` and `femtic_nss.py` (single `MOD_DPI` knob in all three — `femtic_ens_post.py`'s earlier `MOD_QC_DPI`/`MOD_STATS_DPI` split was also removed). The `fviz.plot_model_slices()` call is byte-for-byte identical in every visual-affecting argument across all three scripts — only the models plotted differ. |
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `RANDOM_SEED` (default `None`) for optional reproducible ensembles — a shared, optionally seeded `rng` now also drives `ens.generate_data_ensemble` (new `rng` parameter, forwarded to `femtic.modify_data`). Added `MOD_SAVE_PILOT_POINTS` (default `True`) / `MOD_PILOT_POINTS_FILE`: writes every member's pilot-point coordinates and drawn log₁₀(ρ) values to a compressed `pilot_points.npz`, with `RANDOM_SEED` and pilot-point/variogram config recorded for a self-describing archive. See `ensembles_readme.md` for the underlying `generate_gst_model_ensemble` / `generate_data_ensemble` changes. |
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `MOD_TICK_FONTSIZE`/`MOD_LABEL_FONTSIZE` (QC/model slice plots) and `ENS_TICK_FONTSIZE`/`ENS_LABEL_FONTSIZE` (ensemble slice plot) — axis tick/label font sizes were previously fixed at `femtic_viz.py`'s internal defaults with no way to override them here. Also removed `depth_km=True`/`horiz_km=True` from the `plot_ensemble_slices` call — that function doesn't accept those parameters and the call would have raised `TypeError` the first time `PLOT_SLICES_ENS` was set `True` (dormant since it defaults to `False`). Corrected the "QC slice plot" table above, which still documented the old `QC_SLICES`/`QC_CMAP`/etc. variables removed by the 2026-06-07 update. |
+| 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `MOD_SHOW_IN_SPYDER` (default `True`): when running inside Spyder, every saved figure (QC, model, ensemble) is also displayed inline via `plt.show()`, without changing what gets saved to disk. No effect outside Spyder. |
 
 ## Author
 

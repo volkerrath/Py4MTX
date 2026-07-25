@@ -99,6 +99,14 @@ Provenance
                 panel title, and colourbar text were previously fixed at
                 plot_model_slices' internal defaults with no way to
                 override them from this script.
+    2026-07-25  Claude Sonnet 5 (Anthropic)
+                Added MOD_SHOW_IN_SPYDER (default True): when this script
+                is running inside Spyder (detected once via
+                utl.runtime_env() == "spyder"), the MOD_QC figure is also
+                displayed inline via plt.show() (fviz.plot_model_slices'
+                new show= parameter), without changing what gets saved to
+                disk. No effect outside Spyder. Set MOD_SHOW_IN_SPYDER=
+                False to disable even under Spyder.
 
 @author: vrath
 """
@@ -211,6 +219,21 @@ NSS_AMPLITUDE = 1.0
 # Verbose output
 # ---------------------------------------------------------------------------
 OUT = True
+
+#: When True (default) and this script is running inside Spyder, the
+#: MOD_QC figure is also displayed inline (Spyder's Plots pane) via
+#: plt.show(), in addition to being written to disk -- no change to what
+#: gets saved. Has no effect outside Spyder; set False to disable even
+#: under Spyder.
+MOD_SHOW_IN_SPYDER = True
+
+#: Detected once at import time; utl.runtime_env() returns 'spyder' when
+#: running inside Spyder's IPython console (SPYDER_KERNEL env var /
+#: spyder_kernels module), 'jupyter'/'ipython-*'/'python' otherwise.
+_IN_SPYDER = (utl.runtime_env() == "spyder")
+_SHOW_PLOTS = MOD_SHOW_IN_SPYDER and _IN_SPYDER
+if _IN_SPYDER:
+    print(f"Detected Spyder — inline figure display {'enabled' if _SHOW_PLOTS else 'disabled (MOD_SHOW_IN_SPYDER=False)'}.\n")
 
 # ---------------------------------------------------------------------------
 # Mesh (required for the QC slice plot)
@@ -513,6 +536,7 @@ def _plot_slice(block_file: str, pdf_file: str,
         alpha_blank_thresh  = MOD_ALPHA_BLANK_THRESH,
         plot_file           = pdf_file,
         dpi                 = MOD_DPI,
+        show                = _SHOW_PLOTS,
         out                 = OUT,
     )
     if OUT:

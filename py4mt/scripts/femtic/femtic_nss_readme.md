@@ -137,6 +137,7 @@ scripts with no renaming.
 | `MOD_DPI` | int | `600` | Figure DPI. |
 | `MOD_TICK_FONTSIZE` | int | `7` | Axis tick labels and colourbar ticks (matches `fviz.plot_model_slices`' own default). |
 | `MOD_LABEL_FONTSIZE` | int | `8` | Axis labels, panel title, colourbar label (matches `fviz.plot_model_slices`' own default). |
+| `MOD_SHOW_IN_SPYDER` | bool | `True` | When running inside Spyder (detected via `utl.runtime_env() == "spyder"`), the `MOD_QC` figure is also displayed inline in Spyder's Plots pane via `plt.show()`, in addition to being written to disk. No effect outside Spyder; set `False` to disable even under Spyder. |
 
 The shared slice/plot, site-overlay, and geographic/UTM-origin parameters
 (`MOD_SLICES`, `MOD_XLIM/YLIM/ZLIM`, `MOD_CMAP`, `MOD_CLIM`,
@@ -427,6 +428,7 @@ and wire `RANDOM_SEED` through there as well.
 | 2026-07-09 | vrath / Claude Sonnet 5 (Anthropic) | Added the shared `MOD_*` plotting config block, `femtic_viz` import, `_resolve_origin_and_sites()` / `_plot_slice()` helpers, and an optional QC slice plot of `MODEL_OUT` (`MOD_QC = True`). Config surface is identical in name and order to `femtic_ens_post.py` and `femtic_gst_prep.py`, so a block can now be copied between all three scripts with no renaming. Uses a single `MOD_DPI` knob, matching `femtic_gst_prep.py` and the now-simplified `femtic_ens_post.py`. |
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `RANDOM_SEED` for optional reproducible model perturbations (step 4). Fixed two reproducibility bugs: `_make_perturbation_gst` was constructing a fresh, unseeded `np.random.default_rng()` inline on every call; `_make_perturbation_random` was hardcoded to `np.random.default_rng(seed=0)` regardless of any seed elsewhere. Both now use the shared, module-level `rng`. Step 3's `inv.rsvd` randomness is explicitly *not* covered — see Reproducibility section. |
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `MOD_TICK_FONTSIZE` / `MOD_LABEL_FONTSIZE`, passed through to the `MOD_QC` plot. Axis tick labels, axis labels, panel title, and colourbar text were previously fixed at `plot_model_slices`' internal defaults with no way to override them from this script. |
+| 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `MOD_SHOW_IN_SPYDER` (default `True`): when running inside Spyder, the `MOD_QC` figure is also displayed inline via `plt.show()`, without changing what gets saved to disk. No effect outside Spyder. |
 
 **How to configure the GST variogram?**
 The variogram controls the spatial coherence of the Kriged perturbation.

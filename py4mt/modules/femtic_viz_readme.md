@@ -373,6 +373,7 @@ fviz.plot_model_slices(
 | `latlon_to_model_fn` | `None` | Callable for `map_markers` placement |
 | `plot_file` | `None` | Save path; `None` = `plt.show()` |
 | `dpi` | `200` | Saved-figure DPI |
+| `show` | `False` | If `True`, also call `plt.show()` after saving (when `plot_file` is given) — displays the figure inline in addition to writing it to disk. Useful in interactive environments (Spyder, Jupyter). No effect when `plot_file=None` (already shown either way). |
 | `equal_aspect` | `True` | Equal aspect on map/ns/ew panels |
 | `depth_km` | `False` | Depth axis in km on curtain/plane panels |
 | `horiz_km` | `False` | Horizontal axis in km in `"model"` mode |
@@ -383,6 +384,8 @@ fviz.plot_model_slices(
 | `alpha_file` | `None` | Second block file with log10 weights for per-element fading/blanking |
 | `alpha_mode` | `"fade"` | `"fade"` = proportional; `"blank"` = hard cutoff |
 | `alpha_blank_thresh` | `0.0` | log10 threshold for blanking |
+| `tick_fontsize` | `7` | Font size for axis tick labels and colourbar ticks |
+| `label_fontsize` | `8` | Font size for axis labels, panel titles, colourbar label |
 | `borehole_sites` | `None` | List of borehole spec dicts — appended as extra columns to the right |
 | `borehole_style` | `None` | Baseline line kwargs for borehole traces |
 | `borehole_clim` | `None` | `[rho_min, rho_max]` in Ω·m for borehole x-axis; `None` = auto |
@@ -624,13 +627,16 @@ fviz.plot_ensemble_slices(
 | `stat_rows` | `("mean", "std")` | Stat rows appended after member rows |
 | `cmap` | `"turbo_r"` | Colormap for member / mean / median rows |
 | `clim` | `None` | `[vmin, vmax]` log₁₀(Ω·m); `None` = auto from ensemble |
-| `xlim`, `ylim`, `zlim` | `None` | Global axis limits in model-local metres |
+| `xlim`, `ylim`, `zlim` | `None` | Global axis limits in model-local metres. `zlim` is positive-down depth (e.g. `[0, 20000]`; negative values represent elevation above the datum, as in the example above) — internally negated to match the curtain panels' `-depth` plot coordinate. |
 | `ocean_color` | `"lightgrey"` | Flat colour for ocean cells |
 | `ocean_value` | `0.25` | Ω·m sentinel for ocean cells |
 | `air_bgcolor` | `None` | Axes facecolor for air / background |
 | `plot_file` | `None` | Joint figure path; `None` → interactive window |
 | `per_member_file` | `False` | Save `_memberN` figures alongside the joint figure |
 | `dpi` | `200` | Saved-figure DPI |
+| `tick_fontsize` | `6` | Font size for axis tick labels and colourbar ticks |
+| `label_fontsize` | `7` | Font size for axis labels, row labels, panel titles, colourbar label, suptitle |
+| `show` | `False` | If `True`, also call `plt.show()` after saving (applies to both the joint figure and any per-member figures from `per_member_file=True`) — displays inline in addition to writing to disk. Useful in interactive environments (Spyder, Jupyter). |
 
 The `"std"` row is rendered on a separate `cividis` colormap anchored at zero.
 NaN (air, missing) cells are excluded from all statistics.
@@ -653,5 +659,10 @@ NaN (air, missing) cells are excluded from all statistics.
 | 2026-05-31 | vrath / Claude Sonnet 4.6 | Added per-panel `invert_x` key to `plot_model_slices` and `plot_ensemble_slices`. Fixed `_outline_curtain_top` calls (removed). Fixed `read_femtic_mesh` node-coordinate column swap and index assignment. |
 | 2026-06-03 | Claude Sonnet 4.6 | `plot_borehole_logs`: log-scale Ω·m x-axis; `z_top="surface"`; lat/lon legend; per-trace Line2D style; `npz_file` NPZ export with JSON header. Added `_sample_borehole_logs()` private helper (shared by `plot_borehole_logs` and `plot_model_slices`). `plot_model_slices`: added `borehole_sites` / `borehole_style` / `borehole_clim` / `borehole_shared` / `borehole_resolve_xy` for embedded borehole columns. |
 | 2026-06-04 | vrath / Claude Sonnet 4.6 | Script-level split only: `femtic_mod_plot_slice.py` drives `plot_model_slices`; new `femtic_mod_plot_bh.py` drives `plot_borehole_logs`. Both functions and `_sample_borehole_logs` remain in this module. |
+| 2026-07-25 | Claude Sonnet 5 (Anthropic) | `plot_model_slices`: fixed a depth-axis sign bug in the `"ns"`/`"ew"` curtain-panel branches. Polygon y-coordinates are plotted as `-depth`, but the `zlim` override applied `ax.set_ylim([zlim[1], zlim[0]])` with the *positive* depth values, so the axis range never overlapped the plotted data whenever `zlim` was actually set — panels came out blank or upside down. Fixed to negate `zlim` to match the data convention. No effect when `zlim=None` (the previous default), which is why this went unnoticed until callers (`femtic_ens_post.py`'s `MOD_ROI_AUTO`) started passing an explicit `MOD_ZLIM`. |
+| 2026-07-25 | Claude Sonnet 5 (Anthropic) | `plot_ensemble_slices`: fixed two independent bugs in the `"ns"`/`"ew"` curtain panels. (1) This function has its own local `_axis_slice_params` (separate from `plot_model_slices`'s), which set `inv=[True, True, False]` for axis 0/1. The resulting `v_ax` already works out to `[0,0,-1]` (plotted depth = `-depth`), which is already the correct top-shallow/bottom-deep orientation under matplotlib's default axis direction — so the `invert_yaxis()` triggered by `inv=True` was flipping it a second time, putting deep at the top. `inv` is now `[False, False, False]` for these two axes. (2) The per-panel `zlim` override applied `ax.set_ylim([zlim[1], zlim[0]])` using the *positive* depth values directly against that same `-depth` data convention, so a positive `zlim` never overlapped the plotted data — same root cause as the `plot_model_slices` fix above, just a separate code path; now negates `zlim` to `ax.set_ylim([-zlim[1], -zlim[0]])`. (`"map"` panels were never affected by either bug. A spot-check of the `"plane"` panel's `invert_v=True` at a representative strike/dip suggests it's correctly oriented as-is — its `v_ax` sign is strike/dip-dependent, unlike the fixed axis-aligned ns/ew case — but this was not exhaustively verified across all strike/dip combinations.) |
+| 2026-07-25 | Claude Sonnet 5 (Anthropic) | Documentation fix only (no code change in this module): added missing `tick_fontsize` / `label_fontsize` rows to the `plot_model_slices` and `plot_ensemble_slices` parameter tables above — both parameters already existed in the actual function signatures (since the 2026-07-09 / earlier updates) but were never documented here. Prompted by adding `MOD_TICK_FONTSIZE`/`MOD_LABEL_FONTSIZE`/`ENS_TICK_FONTSIZE`/`ENS_LABEL_FONTSIZE` config to the calling scripts (`femtic_ens_post.py`, `femtic_gst_prep.py`, `femtic_rto_prep.py`, `femtic_nss.py`), which previously had no way to override these font sizes at all. |
+| 2026-07-25 | Claude Sonnet 5 (Anthropic) | `plot_model_slices` / `plot_ensemble_slices`: added a `show` parameter (default `False`). Previously a figure was either saved (`plot_file` given) or shown interactively (`plot_file=None`) — never both, so callers running in an interactive environment (Spyder, Jupyter) that also wanted to save to disk never saw the figure inline. `show=True` now calls `plt.show()` in addition to `fig.savefig()` when `plot_file` is given; `show=False` (default) preserves prior save-only behaviour. `plot_ensemble_slices` applies this to both the joint figure and per-member figures (`per_member_file=True`). |
+| 2026-07-25 | Claude Sonnet 5 (Anthropic) | `plot_model_slices`: fixed a site-marker elevation sign bug in the `"ns"`/`"ew"`/`"plane"` curtain/plane panels. Mesh polygons plot `v = -z_mesh` (z positive-down), and since `site.dat`'s `elev` column is standard positive-up elevation with `z_mesh = -elev`, a site's correct plotted v-coordinate is `-z_mesh = -(-elev) = +elev` — the same sign the mesh polygons already use. The site-marker code instead plotted `-elev` (the opposite sign): a station on a topographic high (`elev > 0`) appeared *below* the surface and vice versa, while the surrounding topography (drawn from the mesh) was correctly oriented — an inconsistency that reads as "still upside down" even after the two prior 2026-07-25 sign fixes above, which only affected the mesh-polygon axis range/orientation, not this separate site-marker computation. Fixed in all three branches (`ns`/`ew`: `-elev*dz_sc` → `elev*dz_sc`; `plane`: same fix, though that panel's own mesh-polygon orientation uses a separate strike/dip-dependent `v_ax` + `invert_v=True` convention that was not independently re-verified in this pass). |
 
 Author: Volker Rath (DIAS)

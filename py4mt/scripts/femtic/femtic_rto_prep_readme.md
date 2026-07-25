@@ -89,6 +89,7 @@ makes the *entire* ensemble (data + model perturbation, plus the
 | `ENS_CMAP/CLIM` | Colormap and limits for ensemble plot |
 | `ENS_STAT_ROWS` | Summary rows: `["mean", "std", "median"]` subset |
 | `ENS_TICK_FONTSIZE` / `ENS_LABEL_FONTSIZE` | Axis tick/label font sizes for the ensemble slice plot. Defaults `6`/`7`, matching `fviz.plot_ensemble_slices`' own defaults; independent of the `MOD_*` pair above since the joint member × slice grid needs smaller text to stay readable. |
+| `MOD_SHOW_IN_SPYDER` | `True` (default) and running inside Spyder (detected via `utl.runtime_env() == "spyder"`) → every saved figure (QC, model, ensemble) is also displayed inline in Spyder's Plots pane via `plt.show()`, in addition to being written to disk. No effect outside Spyder; set `False` to disable even under Spyder. |
 
 ---
 
@@ -126,3 +127,7 @@ dict(kind="plane", point=[0,0,5000], strike=45, dip=60)
   `ENS_LABEL_FONTSIZE` (ensemble slice plot) — axis tick/label font sizes
   were previously fixed at `femtic_viz.py`'s internal defaults with no way
   to override them here.
+- 2026-07-25 (Claude Sonnet 5, Anthropic): Added `MOD_SHOW_IN_SPYDER`
+  (default `True`): when running inside Spyder, every saved figure is
+  also displayed inline via `plt.show()`, without changing what gets
+  saved to disk. No effect outside Spyder.

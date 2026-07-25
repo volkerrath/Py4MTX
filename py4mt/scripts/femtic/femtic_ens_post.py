@@ -144,6 +144,34 @@ Provenance
             labels, axis labels, panel titles, and colourbar text were
             previously fixed at plot_model_slices' internal defaults with
             no way to override them from this script.
+2026-07-25  Claude Sonnet 5 (Anthropic)
+            Added the (2.3, 97.7) pair to QDIFF_PAIRS (default now
+            [(15.9, 84.1), (2.3, 97.7)]), giving both a 1-sigma- and
+            2-sigma-equivalent interquantile spread statistic.
+            Added ens_err = sqrt(ens_var) ("err"): VAR is in
+            (log10 Ω·m)² and was never on the same scale as MAD/QDIFF
+            (log10 Ω·m), so MOD_STATS_WHAT's default now plots "err"
+            instead of "var" (var is still computed, saved, and available
+            as a MOD_STATS_WHAT entry on request). Added BOOTSTRAP_VAR /
+            BOOTSTRAP_N / BOOTSTRAP_SEED: an alternative bootstrap
+            estimate of the ensemble variance (_bootstrap_variance() new
+            helper), resampling the N_members members with replacement
+            BOOTSTRAP_N times and averaging the plug-in variance of each
+            replicate -- generally more stable than the single plug-in
+            estimate when N_members is small. Reports both var_boot and
+            its own bootstrap standard error var_boot_se (diagnostic of
+            how noisy the variance estimate itself is). err_boot =
+            sqrt(var_boot) is added to MOD_STATS_WHAT automatically when
+            BOOTSTRAP_VAR=True. All new arrays (err, and when enabled
+            var_boot/err_boot/var_boot_se) are saved to the .npz.
+2026-07-25  Claude Sonnet 5 (Anthropic)
+            Added MOD_SHOW_IN_SPYDER (default True): when this script is
+            running inside Spyder (detected once via utl.runtime_env() ==
+            "spyder"), every saved figure is also displayed inline via
+            plt.show() (fviz.plot_model_slices' new show= parameter),
+            without changing what gets saved to disk. No effect outside
+            Spyder. Set MOD_SHOW_IN_SPYDER=False to disable even under
+            Spyder.
 """
 from __future__ import annotations
 
@@ -209,10 +237,11 @@ PERCENTILES = [2.3, 15.9, 50.0, 84.1, 97.7]
 #: Percentile-pair differences to compute as extra spread statistics, e.g.
 #: (15.9, 84.1) -> the 1-sigma-equivalent interquantile range
 #: |P84.1 - P15.9|ᵢ per free parameter (an outlier-robust alternative to
-#: VAR/MAD). Each value in a pair must also appear in PERCENTILES. Stored
-#: in the .npz as f"{P}_qdiff_<lo>_<hi>" and available for MOD_STATS
-#: plotting under the same key.
-QDIFF_PAIRS = [(15.9, 84.1)]
+#: VAR/MAD). (2.3, 97.7) similarly gives the 2-sigma-equivalent range.
+#: Each value in a pair must also appear in PERCENTILES. Stored in the
+#: .npz as f"{P}_qdiff_<lo>_<hi>" and available for MOD_STATS plotting
+#: under the same key.
+QDIFF_PAIRS = [(15.9, 84.1), (2.3, 97.7)]
 
 # ---------------------------------------------------------------------------
 # Covariance
@@ -251,6 +280,22 @@ SPARSIFY     = True
 SPARSE_THRESH = 1.0e-8   # relative threshold for zeroing small entries
 
 # ---------------------------------------------------------------------------
+# Bootstrap variance estimation (optional, alternative to the plug-in VAR)
+# ---------------------------------------------------------------------------
+#: Direct/plug-in variance (np.var(ens_matrix, axis=0, ddof=1)) uses each
+#: member exactly once. When N_members is small (order 30-100, typical for
+#: RTO/GST ensembles), that single estimate can be noisy. Setting
+#: BOOTSTRAP_VAR=True adds an alternative: resample the N_members members
+#: with replacement BOOTSTRAP_N times, compute the plug-in variance of each
+#: resample, and report the mean across resamples (a smoothed, generally
+#: more stable estimate) together with its own bootstrap standard error --
+#: i.e. how noisy the variance estimate itself is. This does not replace
+#: VAR; both are computed and saved side by side.
+BOOTSTRAP_VAR  = True
+BOOTSTRAP_N    = 500     # number of bootstrap resamples
+BOOTSTRAP_SEED = None    # None = fresh OS entropy; int = reproducible
+
+# ---------------------------------------------------------------------------
 # Output
 # ---------------------------------------------------------------------------
 ENSEMBLE_RESULTS = ENSEMBLE_DIR + ENSEMBLE_PREFIX.upper() + "_results.npz"
@@ -269,7 +314,7 @@ MOD_OCEAN_RHO = 0.25    # Ω·m  (region 1 when treated as ocean)
 # QC slice plot — best-nRMS converged member
 # ---------------------------------------------------------------------------
 #: Set True to plot the best-nRMS member.
-MOD_QC      =  True
+MOD_QC      = True
 MOD_QC_FILE = ENSEMBLE_DIR + ENSEMBLE_PREFIX + "_qc.pdf"
 
 # ---------------------------------------------------------------------------
@@ -278,15 +323,20 @@ MOD_QC_FILE = ENSEMBLE_DIR + ENSEMBLE_PREFIX + "_qc.pdf"
 #: Set True to write derived stat members as block files and plot them.
 #: Requires MOD_MESH and a valid template file (taken from best member).
 MOD_STATS      = True
-#: Which statistics to plot.  Subset of: "avg", "var", "med", "mad", plus
-#: one auto-generated key per PERCENTILES level (e.g. 2.3 -> "p2_3",
-#: 50.0 -> "p50", 97.7 -> "p97_7") and one per QDIFF_PAIRS entry (e.g.
-#: (15.9, 84.1) -> "qdiff_15_9_84_1"). Default below includes all of them.
-MOD_STATS_WHAT = ["avg", "var", "med", "mad"] + [
+#: Which statistics to plot.  Subset of: "avg", "var", "err", "med", "mad",
+#: plus one auto-generated key per PERCENTILES level (e.g. 2.3 -> "p2_3",
+#: 50.0 -> "p50", 97.7 -> "p97_7"), one per QDIFF_PAIRS entry (e.g.
+#: (15.9, 84.1) -> "qdiff_15_9_84_1"), and "err_boot" (+ "var_boot") when
+#: BOOTSTRAP_VAR=True. "err" = sqrt(var) -- plotted by default instead of
+#: "var" itself, since var is in (log10 Ω·m)² and isn't on the same scale
+#: as MAD/QDIFF (log10 Ω·m); "var" remains available (add it back here
+#: manually, and add an entry to MOD_STATS_CLIM for it) for anyone who
+#: specifically wants the raw variance panel.
+MOD_STATS_WHAT = ["avg", "med", "err", "mad"] + [
     "p" + f"{_p:g}".replace(".", "_") for _p in PERCENTILES
 ] + [
     f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_") for _lo, _hi in QDIFF_PAIRS
-]
+] + (["err_boot"] if BOOTSTRAP_VAR else [])
 #: Output directory for stat block files and figures.
 MOD_STATS_DIR  = ENSEMBLE_DIR + "/stats_plots/"
 
@@ -295,17 +345,22 @@ MOD_STATS_DIR  = ENSEMBLE_DIR + "/stats_plots/"
 #: [vmin, vmax] pair, or None for automatic per-panel scaling from that
 #: statistic's own data range. AVG/MED and the percentile fields aren't
 #: listed here — they fall back to MOD_CLIM automatically (same log10(Ω·m)
-#: space as the model itself). VAR/MAD/QDIFF are spread statistics on a
-#: completely different, typically much narrower scale, so they get their
-#: own fixed range below rather than auto-scaling per panel — set to
-#: [-2, 2] as a sensible starting range; adjust per-key, or set a key to
-#: None to fall back to auto-scaling for that one statistic.
+#: space as the model itself). VAR/ERR/MAD/QDIFF (and VAR_BOOT/ERR_BOOT
+#: when BOOTSTRAP_VAR=True) are spread statistics on a completely
+#: different, typically much narrower scale, so they get their own fixed
+#: range below rather than auto-scaling per panel — set to [-2, 2] as a
+#: sensible starting range; adjust per-key, or set a key to None to fall
+#: back to auto-scaling for that one statistic.
 MOD_STATS_CLIM = {
     "var": [-2.0, 2.0],
+    "err": [-2.0, 2.0],
     "mad": [-2.0, 2.0],
 }
 for _lo, _hi in QDIFF_PAIRS:
     MOD_STATS_CLIM[f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_")] = [-2.0, 2.0]
+if BOOTSTRAP_VAR:
+    MOD_STATS_CLIM["var_boot"] = [-2.0, 2.0]
+    MOD_STATS_CLIM["err_boot"] = [-2.0, 2.0]
 
 # ---------------------------------------------------------------------------
 # Shared slice / plot parameters
@@ -408,17 +463,89 @@ MOD_FIGSIZE      = None   # [w, h] cm; overrides auto when set
 
 #: Axis annotation font sizes, passed through to fviz.plot_model_slices.
 #: Defaults match plot_model_slices' own defaults.
-MOD_TICK_FONTSIZE  = 12    # axis tick labels, colourbar ticks
+MOD_TICK_FONTSIZE  = 12   # axis tick labels, colourbar ticks
 MOD_LABEL_FONTSIZE = 12    # axis labels, panel titles, colourbar label
+
+#: When True (default) and this script is running inside Spyder, every
+#: saved figure is also displayed inline (Spyder's Plots pane) via
+#: plt.show(), in addition to being written to disk -- no change to what
+#: gets saved. Has no effect outside Spyder (plain python / other IDEs
+#: still save-only, matching prior behaviour); set False to disable even
+#: under Spyder.
+MOD_SHOW_IN_SPYDER = True
 
 # ---------------------------------------------------------------------------
 # Verbose output
 # ---------------------------------------------------------------------------
 OUT = True
 
+#: Detected once at import time; utl.runtime_env() returns 'spyder' when
+#: running inside Spyder's IPython console (SPYDER_KERNEL env var / spyder_
+#: kernels module), 'jupyter'/'ipython-*'/'python' otherwise.
+_IN_SPYDER = (utl.runtime_env() == "spyder")
+_SHOW_PLOTS = MOD_SHOW_IN_SPYDER and _IN_SPYDER
+if _IN_SPYDER:
+    print(f"Detected Spyder — inline figure display {'enabled' if _SHOW_PLOTS else 'disabled (MOD_SHOW_IN_SPYDER=False)'}.\n")
+
 # ===========================================================================
 # Helpers
 # ===========================================================================
+
+def _bootstrap_variance(ens_matrix: np.ndarray, n_boot: int,
+                         rng: np.random.Generator, out: bool = True):
+    """Bootstrap estimate of per-free-parameter variance across members.
+
+    Resamples the N_members ensemble members with replacement ``n_boot``
+    times; each replicate's variance is computed the same way as the
+    plug-in estimator (``np.var(replicate, axis=0)``, ddof=0, matching
+    ``ens_var`` elsewhere in this script). The bootstrap variance estimate
+    is the mean of these ``n_boot`` replicate variances -- generally a
+    smoother, more stable estimate than the single plug-in value when
+    N_members is small (order 30-100, typical for RTO/GST ensembles).
+
+    Memory use is O(n_free), independent of n_boot: running sums are
+    accumulated one bootstrap replicate at a time rather than storing the
+    full (n_boot, n_free) array of replicate variances (which would be
+    prohibitively large for big meshes, e.g. n_boot=500 x n_free=1e5 x
+    8 bytes = 400 MB, worse for larger meshes).
+
+    Parameters
+    ----------
+    ens_matrix : ndarray, shape (n_members, n_free)
+        Stacked ensemble in log10(rho).
+    n_boot : int
+        Number of bootstrap resamples.
+    rng : numpy.random.Generator
+        Random generator driving the resampling (pass a seeded one via
+        BOOTSTRAP_SEED for reproducibility).
+    out : bool
+        Print progress every ~10% of resamples.
+
+    Returns
+    -------
+    var_boot : ndarray, shape (n_free,)
+        Mean plug-in variance across the n_boot bootstrap replicates.
+    var_boot_se : ndarray, shape (n_free,)
+        Bootstrap standard error of var_boot itself (spread of the
+        replicate variances around their mean) -- a diagnostic of how
+        noisy the variance estimate is, not a spread statistic of the
+        model directly.
+    """
+    n_members, n_free = ens_matrix.shape
+    sum_v  = np.zeros(n_free)
+    sum_v2 = np.zeros(n_free)
+    _report_every = max(n_boot // 10, 1)
+    for _b in range(n_boot):
+        _idx = rng.integers(0, n_members, size=n_members)
+        _v = np.var(ens_matrix[_idx], axis=0)     # ddof=0, matches ens_var
+        sum_v  += _v
+        sum_v2 += _v * _v
+        if out and ((_b + 1) % _report_every == 0 or _b == n_boot - 1):
+            print(f"  bootstrap {_b + 1}/{n_boot}")
+    var_boot    = sum_v / n_boot
+    var_boot_se = np.sqrt(np.maximum(sum_v2 / n_boot - var_boot ** 2, 0.0))
+    return var_boot, var_boot_se
+
 
 def _resolve_origin_and_sites():
     """Estimate UTM origin from MOD_SITE_DAT; collect site model-local coords.
@@ -563,6 +690,7 @@ def _plot_slice(block_file: str, pdf_file: str,
         alpha_blank_thresh  = MOD_ALPHA_BLANK_THRESH,
         plot_file           = pdf_file,
         dpi                 = MOD_DPI,
+        show                = _SHOW_PLOTS,
         out                 = OUT,
     )
     if OUT:
@@ -641,6 +769,7 @@ ne       = ens_matrix.shape
 
 ens_avg  = np.mean  (ens_matrix, axis=0)                           # (n_free,)
 ens_var  = np.var   (ens_matrix, axis=0)                           # (n_free,)
+ens_err  = np.sqrt(ens_var)                                        # (n_free,) -- std, comparable to MAD/QDIFF
 ens_med  = np.median(ens_matrix, axis=0)                           # (n_free,)
 ens_mad  = np.median(np.abs(ens_matrix - ens_med[np.newaxis, :]),
                      axis=0)                                        # (n_free,)
@@ -657,13 +786,32 @@ for _lo, _hi in QDIFF_PAIRS:
     _qkey = f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_")
     ens_qdiff[_qkey] = np.abs(ens_prc[_ihi] - ens_prc[_ilo])       # (n_free,)
 
+# --- Bootstrap variance estimate (optional alternative to the plug-in VAR) ---
+ens_var_boot    = None
+ens_err_boot    = None
+ens_var_boot_se = None
+if BOOTSTRAP_VAR:
+    print(f"\nBootstrap variance estimation: {BOOTSTRAP_N} resamples "
+          f"(seed={BOOTSTRAP_SEED if BOOTSTRAP_SEED is not None else '(fresh entropy)'}) …")
+    _boot_rng = np.random.default_rng(BOOTSTRAP_SEED)
+    ens_var_boot, ens_var_boot_se = _bootstrap_variance(
+        ens_matrix, BOOTSTRAP_N, _boot_rng, out=OUT,
+    )
+    ens_err_boot = np.sqrt(ens_var_boot)
+
 print(f"\nStatistics (over {n_members} members, {ne[1]} free parameters):")
 print(f"  mean   log10(ρ): [{ens_avg.min():.3f}, {ens_avg.max():.3f}]")
 print(f"  var    log10(ρ): [{ens_var.min():.4f}, {ens_var.max():.4f}]")
+print(f"  err    log10(ρ): [{ens_err.min():.4f}, {ens_err.max():.4f}]  (= sqrt(var))")
 print(f"  median log10(ρ): [{ens_med.min():.3f}, {ens_med.max():.3f}]")
 print(f"  MAD    log10(ρ): [{ens_mad.min():.4f}, {ens_mad.max():.4f}]")
 for _qkey, _qval in ens_qdiff.items():
     print(f"  {_qkey}: [{_qval.min():.4f}, {_qval.max():.4f}]")
+if BOOTSTRAP_VAR:
+    print(f"  var_boot  log10(ρ): [{ens_var_boot.min():.4f}, {ens_var_boot.max():.4f}]")
+    print(f"  err_boot  log10(ρ): [{ens_err_boot.min():.4f}, {ens_err_boot.max():.4f}]  (= sqrt(var_boot))")
+    print(f"  var_boot_se       : [{ens_var_boot_se.min():.4f}, {ens_var_boot_se.max():.4f}]  "
+          f"(bootstrap SE of var_boot itself)")
 
 # --- (3) Empirical covariance (optional) -----------------------------------
 ens_cov       = None
@@ -707,6 +855,7 @@ ens_dict = {
     f"{P}_ens":        ens_matrix,
     f"{P}_avg":        ens_avg,
     f"{P}_var":        ens_var,
+    f"{P}_err":        ens_err,
     f"{P}_med":        ens_med,
     f"{P}_mad":        ens_mad,
     f"{P}_prc":        ens_prc,
@@ -714,6 +863,10 @@ ens_dict = {
 }
 for _qkey, _qval in ens_qdiff.items():
     ens_dict[f"{P}_{_qkey}"] = _qval
+if BOOTSTRAP_VAR:
+    ens_dict[f"{P}_var_boot"]    = ens_var_boot
+    ens_dict[f"{P}_err_boot"]    = ens_err_boot
+    ens_dict[f"{P}_var_boot_se"] = ens_var_boot_se
 if ens_cov is not None:
     ens_dict[f"{P}_cov"] = ens_cov
 if ens_cov_eigval is not None:
@@ -784,13 +937,15 @@ if MOD_STATS:
         _stat_map = {
             "avg": (ens_avg, "mean"),
             "var": (ens_var, "variance"),
+            "err": (ens_err, "error (std = sqrt(var))"),
             "med": (ens_med, "median"),
             "mad": (ens_mad, "MAD"),
         }
         # "Value-scale" keys share the model's own log10(Ω·m) range and
-        # default to MOD_CLIM; everything else ("var", "mad", "qdiff_*")
-        # is a spread statistic on a different scale and defaults to None
-        # (auto per-panel). MOD_STATS_CLIM always takes precedence.
+        # default to MOD_CLIM; everything else ("var", "err", "mad",
+        # "qdiff_*", "var_boot", "err_boot") is a spread statistic on a
+        # different scale and defaults to None (auto per-panel).
+        # MOD_STATS_CLIM always takes precedence.
         _value_scale_keys = {"avg", "med"}
 
         # One entry per PERCENTILES level, keyed e.g. 2.3 -> "p2_3", 50.0 -> "p50".
@@ -802,6 +957,11 @@ if MOD_STATS:
         # One entry per QDIFF_PAIRS entry (spread statistic — auto scale).
         for _qkey, _qval in ens_qdiff.items():
             _stat_map[_qkey] = (_qval, f"|{_qkey}| spread")
+
+        # Bootstrap variance / error (spread statistics — auto scale).
+        if BOOTSTRAP_VAR:
+            _stat_map["var_boot"] = (ens_var_boot, "bootstrap variance")
+            _stat_map["err_boot"] = (ens_err_boot, "bootstrap error (std)")
 
         for _key in MOD_STATS_WHAT:
             if _key not in _stat_map:

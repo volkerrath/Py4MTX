@@ -174,6 +174,15 @@ Provenance:
                 km-scaling support), so the call would have raised
                 TypeError the first time PLOT_SLICES_ENS was set True;
                 dormant until now since it defaults to False.
+    2026-07-25  Claude Sonnet 5 (Anthropic)
+                Added MOD_SHOW_IN_SPYDER (default True): when this script
+                is running inside Spyder (detected once via
+                utl.runtime_env() == "spyder"), every saved figure (QC,
+                model, ensemble slice plots) is also displayed inline via
+                plt.show() (fviz.plot_model_slices' / plot_ensemble_
+                slices' new show= parameter), without changing what gets
+                saved to disk. No effect outside Spyder. Set
+                MOD_SHOW_IN_SPYDER=False to disable even under Spyder.
 """
 
 import os
@@ -221,6 +230,21 @@ titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng + "\n\n")
 
 OUT = True
+
+#: When True (default) and this script is running inside Spyder, every
+#: saved figure (QC, model, ensemble slice plots) is also displayed
+#: inline (Spyder's Plots pane) via plt.show(), in addition to being
+#: written to disk -- no change to what gets saved. Has no effect outside
+#: Spyder; set False to disable even under Spyder.
+MOD_SHOW_IN_SPYDER = True
+
+#: Detected once at import time; utl.runtime_env() returns 'spyder' when
+#: running inside Spyder's IPython console (SPYDER_KERNEL env var /
+#: spyder_kernels module), 'jupyter'/'ipython-*'/'python' otherwise.
+_IN_SPYDER = (utl.runtime_env() == "spyder")
+_SHOW_PLOTS = MOD_SHOW_IN_SPYDER and _IN_SPYDER
+if _IN_SPYDER:
+    print(f"Detected Spyder — inline figure display {'enabled' if _SHOW_PLOTS else 'disabled (MOD_SHOW_IN_SPYDER=False)'}.\n")
 
 """
 Reproducibility (optional).
@@ -782,6 +806,7 @@ if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC
             latlon_to_model_fn = fem.latlon_to_model,
             plot_file       = out_pdf,
             dpi             = MOD_DPI,
+            show            = _SHOW_PLOTS,
             equal_aspect    = MOD_EQUAL_ASPECT,
             depth_km        = MOD_DEPTH_KM,
             horiz_km        = MOD_HORIZ_KM,
@@ -867,6 +892,7 @@ if PLOT_DATA or PLOT_MODEL:   # only runs when the viz block was entered
             per_member_file = ENS_PER_MEMBER,
             plot_file       = ENS_PLOT_FILE,
             dpi             = ENS_PLOT_DPI,
+            show            = _SHOW_PLOTS,
             out             = True,
         )
         print("ensemble slice plot saved.")
