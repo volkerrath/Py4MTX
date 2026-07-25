@@ -15,13 +15,13 @@ Run the Geostatistical (GST) ensemble algorithm for MT inversion:
 
 The model perturbation follows the geostatistical initial-model ensemble approach
 described in:
+Suzuki, K.; Assessing inversion uncertainty from initial-model variability in 
+    3-D magnetotelluric inversion: Application to a geothermal field
+    Journal of Applied Geophysics, 251, 106320
+    doi:10.1016/j.jappgeo.2026.106320, 2026
 
-    Suzuki, K.; ...
-        Geostatistical initial-model ensemble for magnetotelluric uncertainty
-        quantification.
-        [full reference to be completed]
 
-The data perturbation follows:
+The (optional) data perturbation follows:
 
     Bardsley, J. M.; Solonen, A.; Haario, H. & Laine, M.
         Randomize-Then-Optimize: a Method for Sampling from Posterior

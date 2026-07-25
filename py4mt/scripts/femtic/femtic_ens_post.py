@@ -27,6 +27,12 @@ Blatter, D.; Morzfeld, M.; Key, K. & Constable, S.
     geophysical data – Part II: application in 1-D and 2-D problems.
     Geophysical Journal International, doi:10.1093/gji/ggac242, 2022.
 
+Suzuki, K.; Assessing inversion uncertainty from initial-model variability in 
+    3-D magnetotelluric inversion: Application to a geothermal field
+    Journal of Applied Geophysics, 251, 106320
+    doi:10.1016/j.jappgeo.2026.106320, 2026
+
+
 @author: vrath
 
 Provenance
@@ -131,12 +137,15 @@ FEMTIC="4.3"
 # ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/ensembles/misti/ensemble/"
 ENSEMBLE_DIR = r"/media/vrath/LargeBack/misti/ensemble/"
 ENSEMBLE_NAME = "misti_gst_suzuki_"
+# ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/ensembles/misti/ensemble/"
+# ENSEMBLE_NAME = "misti_gst_suzuki_"
+
 #: Prefix used for .npz output keys and default file/figure names.
 #: e.g. "rto" → keys rto_ens, rto_avg, …  and file RTO_results.npz.
 ENSEMBLE_PREFIX = "Misti_gstat"
 
 #: Maximum normalised RMS accepted from femtic.cnv.
-NRMS_MAX = 1.4
+NRMS_MAX = 1.5
 
 # ---------------------------------------------------------------------------
 # Statistics

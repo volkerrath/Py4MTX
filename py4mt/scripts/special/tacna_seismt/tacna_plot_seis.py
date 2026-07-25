@@ -70,7 +70,7 @@ NC_DIR = "../precompute/"
 
 # Directory for saved figures (created if it doesn't exist). Default "."
 # writes into the current directory, matching the previous behaviour.
-PLOT_DIR = "../plots/"
+PLOT_DIR = "../plots_seis/"
 
 PLOT_WHAT    = ["vps"]           # any subset of ["vp", "vs", "vps"]
 PLOT_FORMATS = [".pdf", ".jpg"]  # output formats
@@ -149,10 +149,11 @@ if EXPORT_CPT:
                            EXPORT_CPT_PATHS["vps"], EXPORT_CPT_NSTEPS)
 
 # Profile lines (lon/lat endpoint pairs)
-PROFILE_CD_LON = [-70.476, -69.499213]
-PROFILE_CD_LAT = [-18.255, -17.0481]
-PROFILE_2_LON  = [-69.670, -70.034]
-PROFILE_2_LAT  = [-17.695, -17.267]
+
+PROFILE_CD_LON = [-70.034, -69.670]
+PROFILE_CD_LAT = [-17.267, -17.695]
+PROFILE_2_LON  = [-69.580, -70.48]
+PROFILE_2_LAT  = [-17.135, -18.245]
 
 # North-arrow anchor (lon, lat) and shaft length (km)
 ARROW_LON    = -73.6
@@ -160,10 +161,13 @@ ARROW_LAT    = -18.1
 ARROW_LEN_KM = 4.0
 
 # Feature CSV paths
-CSV_VOLCANES = "../features/volcanes.csv"
-CSV_SEISMCAT = "../features/catalog_welllocated_15_simple5.csv"
-CSV_MT_SITES = "../features/done/MTTacna_Sitelist.csv"
-CSV_CITIES   = "../features/cities.csv"
+CSV_VOLCANES      = "../features/volcanes.csv"
+CSV_SEISMCAT      = "../features/catalog_welllocated_15_simple5.csv"
+CSV_MT_SITES      = "../features/done/MTTacna_Sitelist.csv"
+CSV_CITIES        = "../features/cities.csv"
+CSV_SEISMIC_SITES = "../features/seismic_sites.csv"  # no header row; columns
+                                                       # are network, station,
+                                                       # lat, lon, elev_m
 
 # Volcano rows to label (indices into volcanes.csv)
 VOLC_LABEL_IDX = [5, 12, 13]
@@ -182,7 +186,7 @@ NC_TOPO_SHADE = "tacna_topo_shade_utm.nc"  # presence noted; hillshade recompute
 
 # Region source: "topo" uses topo-grid extent; "data" uses velocity-subset extent
 REGION_SOURCE    = "data"
-REGION_MARGIN_KM = -0.001
+REGION_MARGIN_KM = 0.0
 
 # Explicit override of the map's displayed x/y range (UTM km), applied
 # *after* REGION_SOURCE/REGION_MARGIN_KM compute the region above — crops
@@ -193,8 +197,8 @@ REGION_MARGIN_KM = -0.001
 # extent unchanged. Analogous to the per-slice "xlim" in VSLICES below.
 # MAP_XLIM = None   # e.g. [300.0, 420.0]  (easting,  km)
 # MAP_YLIM = None   # e.g. [7960.0, 8080.0] (northing, km)
-MAP_XLIM = [310.0, 445.0]    # e.g. [300.0, 420.0]  (easting,  km)
-MAP_YLIM = [7971.6, 8120.5]  # e.g. [7960.0, 8080.0] (northing, km)
+MAP_XLIM = [310.0, 455.]    # e.g. [300.0, 420.0]  (easting,  km)
+MAP_YLIM = [7971.6, 8125]  # e.g. [7960.0, 8080.0] (northing, km)
 
 # Hillshade parameters
 HS_AZIMUTH  = 315   # Sun azimuth (degrees)
@@ -243,13 +247,26 @@ AXES_KM_COMMA    = True
 # COLORBAR_LABEL_*   : font sizes for the bar label and tick annotations
 # =====================================================================
 SHOW_COLORBAR       = True
-COLORBAR_POSITION   = "right"   # "right" | "left" | "bottom" | "top"
+COLORBAR_POSITION   = "bottom"   # "right" | "left" | "bottom" | "top"
 COLORBAR_SIZE       = 0.85      # bar length, fraction of the map edge
 COLORBAR_PAD        = 0.10      # inches between map axes and colorbar
 COLORBAR_ASPECT     = 20        # bar length / bar thickness
-COLORBAR_LABEL_SIZE = 8         # pt, label font size
-COLORBAR_TICK_SIZE  = 7         # pt, tick annotation font size
-COLORBAR_NTICKS     = 5         # approximate number of tick intervals
+COLORBAR_LABEL_SIZE = 12         # pt, label font size
+COLORBAR_TICK_SIZE  = 12         # pt, tick annotation font size
+COLORBAR_NTICKS     = None      # None = matplotlib picks automatically,
+                                # sized to the colorbar's actual length;
+                                # set an int to force a specific count
+
+# =====================================================================
+# AXIS FONT SETTINGS
+# Font sizes for the plot axes themselves (map Easting/Northing, or
+# section distance/depth axis labels and their tick annotations) and the
+# figure title. Separate from COLORBAR_LABEL_SIZE/COLORBAR_TICK_SIZE,
+# which only affect the colorbar's own label/ticks.
+# =====================================================================
+AXIS_LABEL_SIZE = 12   # pt — "Easting (km)" / "Northing (km)" / "Depth (km)" etc.
+AXIS_TICK_SIZE  = 12   # pt — tick annotations on both axes
+AXIS_TITLE_SIZE = 12   # pt — the "Vp/Vs at ..." / "... — profile_CD" title
 
 # =====================================================================
 # MAP FEATURE LAYERS — simple on/off switches
@@ -262,6 +279,7 @@ SHOW_PROFILE_LINES    = True   # static profile_CD / profile_2 lines
 SHOW_VSLICE_LINES     = True   # VSLICES cross-section lines + endpoint labels
 SHOW_SEISMICITY       = True
 SHOW_MT_SITES         = True
+SHOW_SEISMIC_SITES    = True
 SHOW_VOLCANOES        = True   # inactive volcano markers + labels
 SHOW_VOLCANOES_ACTIVE = True   # active volcano markers
 SHOW_CITIES           = True
@@ -279,8 +297,12 @@ PROFILE_2_STYLE  = dict(color="gray",  lw=0.4, zorder=10)
 
 # --- Seismicity ---
 EQ_MARKER_STYLE = dict(
-    s=4, facecolors="white", edgecolors="black",
-    linewidths=0.2, zorder=11,
+    marker="o",
+    s=4.5,
+    facecolors="white",
+    edgecolors="black",
+    linewidths=0.2,
+    zorder=11,
 )
 
 # Inverted-triangle marker for MT sites whose *apex* — not its centroid —
@@ -293,34 +315,76 @@ MT_PIN_MARKER = MplPath(_MT_PIN_VERTS, _MT_PIN_CODES)
 
 # --- MT sites ---
 MT_MARKER_STYLE = dict(
-    marker=MT_PIN_MARKER, s=14, facecolors="blue", edgecolors="black",
-    linewidths=0.4, alpha=0.6, zorder=12,
+    marker="v",
+    s=10,
+    facecolors="yellow",
+    edgecolors="black",
+    linewidths=0.7,
+    zorder=12,
+)
+
+# Off (mode="none") by default — MT site names are usually too dense to
+# label cleanly at map scale; switch mode to "full"/"firstN"/"lastN" to
+# turn them on. rotation=90 (vertical) keeps close-together station
+# names from overlapping each other horizontally.
+MT_LABEL_STYLE = dict(fontsize=5, color="black", zorder=14, rotation=90,
+                       offset_x=0.3, offset_y=0.3, mode="none")
+
+# --- Seismic sites (seismometer stations, seismic_sites.csv) ---
+SEISMIC_SITES_MARKER_STYLE = dict(
+    marker="v",
+    s=10,
+    facecolors="green",
+    edgecolors="black",
+    linewidths=0.7,
+    zorder=12,
 )
 
 # --- Inactive volcanoes ---
 VOLC_INACT_MARKER_STYLE = dict(
-    marker="^", s=16, facecolors="black", edgecolors="black",
-    linewidths=0.2, zorder=13,
+    marker="^",
+    s=10,
+    facecolors="blue",
+    edgecolors="black",
+    linewidths=0.7,
+    zorder=13,
 )
+# Every *_LABEL_STYLE dict below accepts a "mode" key controlling how
+# much of each feature's name is shown as text (the marker itself is
+# unaffected either way — this only controls the name text):
+#   "full"   - the complete name (default for volcanoes/cities)
+#   "none"   - no text at all, marker only (default for MT sites)
+#   "firstN" - first N characters, e.g. "first3"
+#   "lastN"  - last N characters, e.g. "last3"
 VOLC_LABEL_STYLE = dict(
     fontsize=6, fontweight="bold", color="black", zorder=14,
     offset_x=0.3, offset_y=0.3,   # km offsets from marker centre
+    mode="full",
 )
 
 # --- Active volcanoes ---
 VOLC_ACT_MARKER_STYLE = dict(
-    marker="^", s=16, facecolors="red", edgecolors="black",
-    linewidths=0.2, zorder=13,
+    marker="^",
+    s=10,
+    facecolors="red",
+    edgecolors="black",
+    linewidths=0.7,
+    zorder=13,
 )
 
 # --- Cities ---
 CITY_MARKER_STYLE = dict(
-    marker="s", s=18, facecolors="white", edgecolors="black",
-    linewidths=0.2, zorder=13,
+    marker="s",
+    s=6,
+    facecolors="black",
+    edgecolors="black",
+    linewidths=0.2,
+    zorder=13,
 )
 CITY_LABEL_STYLE = dict(
-    fontsize=6, color="black", zorder=14,
+    fontsize=6, color="white", zorder=14,
     offset_x=0.3, offset_y=-0.3,  # km offsets from marker centre
+    mode="full",
 )
 
 # --- North arrow ---
@@ -362,16 +426,31 @@ ARROW_LABEL_STYLE = dict(fontsize=9, fontweight="bold", color="dimgray")
 # =====================================================================
 VSLICES = [
     dict(
-        name    = "profile_CD",
-        p1      = [-70.476, -18.255],   # lon, lat
-        p2      = [-69.499, -17.048],
+        name    = "profile AA'",
+        p1      = [-70.48, -18.245],   # lon, lat
+        p2      = [-69.580, -17.135],
         coord   = "latlon",
         # zmin_km must be negative enough to reach above sea level, or real
         # seismicity there (e.g. within a volcanic edifice — inside the
         # grey topo fill) gets silently excluded by the (zeqs >= zmin_km)
         # filter in _project_seismicity_to_profile — the catalogue used
         # here has events down to z = -5.75 km. -8.0 gives some margin.
-        # (Same fix as tacna_plot_modem_image.py's VSLICES.)
+        zmin_km = -8.0,
+        zmax_km = 30.0,
+        npts    = 200,
+        nz      = 150,
+        swath_km= 10.0,
+    ),
+    dict(
+        name    = "profile BB'",
+        p1      = [-70.034, -17.267],   # lon, lat
+        p2      = [-69.670, -17.695],
+        coord   = "latlon",
+        # zmin_km must be negative enough to reach above sea level, or real
+        # seismicity there (e.g. within a volcanic edifice — inside the
+        # grey topo fill) gets silently excluded by the (zeqs >= zmin_km)
+        # filter in _project_seismicity_to_profile — the catalogue used
+        # here has events down to z = -5.75 km. -8.0 gives some margin.
         zmin_km = -8.0,
         zmax_km = 30.0,
         npts    = 200,
@@ -414,12 +493,16 @@ VSLICE_VE_STYLE = dict(fontsize=7, color="black")
 # Horizontal axis for vertical sections:
 #   "utm"      — UTM easting or northing (km), xlim = profile endpoint coords
 #   "distance" — cumulative distance from p1 (km), xlim = [0, profile_length]
-VSLICE_X_AXIS = "distance" #"utm"
+VSLICE_X_AXIS = "distance"
 
 # Seismicity marker style on cross-section (overrides EQ_MARKER_STYLE)
 VSLICE_EQ_STYLE = dict(
-    s=4, facecolors="white", edgecolors="black",
-    linewidths=0.2, zorder=11,
+    marker="o",
+    s=4.5,
+    facecolors="white",
+    edgecolors="black",
+    linewidths=0.2,
+    zorder=11,
 )
 
 # Topographic surface line style on cross-section
@@ -496,7 +579,7 @@ def _colorbar_settings():
     return dict(show=SHOW_COLORBAR, position=COLORBAR_POSITION,
                 size=COLORBAR_SIZE, pad=COLORBAR_PAD, aspect=COLORBAR_ASPECT,
                 label_size=COLORBAR_LABEL_SIZE, tick_size=COLORBAR_TICK_SIZE,
-                nticks=COLORBAR_NTICKS)
+                nticks=COLORBAR_NTICKS, title_size=AXIS_TITLE_SIZE)
 
 
 _resolve_ve_pos = plotpy.resolve_ve_pos
@@ -507,9 +590,16 @@ def _in_region(xe, yn):
     return plotpy.in_region(xe, yn, _region())
 
 
-def clipped_scatter(ax, xe, yn, **kwargs):
-    """scatter() restricted to points inside the map region."""
-    plotpy.clipped_scatter(ax, xe, yn, _region(), **kwargs)
+def clipped_markers(ax, xe, yn, **kwargs):
+    """plot()-marker restricted to points inside the map region — true
+    linear markersize (points), not scatter's area-based s. See
+    plotpy.clipped_markers for the full docstring."""
+    plotpy.clipped_markers(ax, xe, yn, _region(), **kwargs)
+
+
+# Backward-compatible alias for any old call sites still using the former
+# name; clipped_markers (ax.plot-based, linear markersize) is now primary.
+clipped_scatter = clipped_markers
 
 
 def clipped_labels(ax, xe, yn, labels, style_dict):
@@ -535,15 +625,37 @@ def create_map_figure():
                                       size_label="map")
 
 
+def _vslice_colorbar_settings():
+    """
+    Same as _colorbar_settings(), but with a FIXED thickness (inches)
+    computed once from whichever of VSLICE_WIDTH_CM/VSLICE_HEIGHT_CM is
+    the fixed panel dimension for this run (see the fixed-dimension
+    choice in plot_vertical_slice) — never from a profile's own derived
+    (and therefore possibly-varying) dimension. This keeps every vertical
+    section's colorbar the same thickness regardless of the profile's
+    own length, without needing to know every other profile's length in
+    advance.
+    """
+    settings = _colorbar_settings()
+    ref_len_in = (VSLICE_HEIGHT_CM if VSLICE_HEIGHT_CM is not None
+                  else VSLICE_WIDTH_CM) / 2.54
+    settings["thickness_in"] = (COLORBAR_SIZE * ref_len_in) / COLORBAR_ASPECT
+    return settings
+
+
 def create_section_figure(w_in, h_in):
-    return plotpy.build_panel_figure(w_in, h_in, _colorbar_settings(),
+    return plotpy.build_panel_figure(w_in, h_in, _vslice_colorbar_settings(),
                                       size_label="section")
 
 
 def finish_panel_colorbar(cax, mappable, label):
-    """Render the colorbar into the cax returned by create_map_figure()
-    or create_section_figure()."""
+    """Render the colorbar into the cax returned by create_map_figure()."""
     return plotpy.finish_panel_colorbar(cax, mappable, label, _colorbar_settings())
+
+
+def finish_section_colorbar(cax, mappable, label):
+    """Render the colorbar into the cax returned by create_section_figure()."""
+    return plotpy.finish_panel_colorbar(cax, mappable, label, _vslice_colorbar_settings())
 
 
 # ------------------------------------------------------------------
@@ -554,7 +666,7 @@ def add_latlon_ticks(ax):
     plotpy.add_latlon_ticks for the full docstring. Controlled by
     AXES_UNITS, LATLON_NTICKS, LATLON_DECIMALS."""
     plotpy.add_latlon_ticks(ax, _region(), LATLON_NTICKS, LATLON_DECIMALS,
-                             COLORBAR_LABEL_SIZE, COLORBAR_TICK_SIZE)
+                             AXIS_LABEL_SIZE, AXIS_TICK_SIZE)
 
 
 # ==================================================================
@@ -670,6 +782,7 @@ def plot_vertical_slice(dist_km, depth_km, section, e_ends, n_ends,
     x-axis : UTM easting/northing (km) when VSLICE_X_AXIS="utm",
              or cumulative distance from p1 when VSLICE_X_AXIS="distance".
              xlim defaults to the two profile endpoint coordinates.
+
     y-axis : depth (km, positive down, increasing downward).
              ylim defaults to the topo/headroom-derived top and zmax_km.
     Endpoint labels (lbl_start, lbl_end) are annotated on the x-axis.
@@ -699,9 +812,21 @@ def plot_vertical_slice(dist_km, depth_km, section, e_ends, n_ends,
     # --- figure dimensions ---
     profile_len = dist_km[-1]
     depth_range = depth_km[-1] - depth_km[0]
-    w_in = VSLICE_WIDTH_CM / 2.54
-    h_in = w_in * (depth_range * ve) / profile_len \
-           if VSLICE_HEIGHT_CM is None else VSLICE_HEIGHT_CM / 2.54
+    # Exactly one of VSLICE_WIDTH_CM / VSLICE_HEIGHT_CM is the fixed
+    # dimension; the other is derived from it via profile_len and VE.
+    # Fix VSLICE_HEIGHT_CM (leave VSLICE_WIDTH_CM alone — it's ignored in
+    # this case) if you want every section in a run to share the same
+    # vertical extent, so they're directly comparable at a glance,
+    # regardless of how long each profile is — width then varies
+    # naturally with each profile's own length. Fix VSLICE_WIDTH_CM
+    # (VSLICE_HEIGHT_CM = None, the default) for the reverse: every panel
+    # the same width, height varying with profile length instead.
+    if VSLICE_HEIGHT_CM is not None:
+        h_in = VSLICE_HEIGHT_CM / 2.54
+        w_in = h_in * profile_len / (depth_range * ve)
+    else:
+        w_in = VSLICE_WIDTH_CM / 2.54
+        h_in = w_in * (depth_range * ve) / profile_len
     print(f"  Section figure size: {w_in:.2f} × {h_in:.2f} in")
 
     fig, ax, cax = create_section_figure(w_in, h_in)
@@ -758,7 +883,7 @@ def plot_vertical_slice(dist_km, depth_km, section, e_ends, n_ends,
 
     # Seismicity
     if SHOW_SEISMICITY and len(eq_x):
-        ax.scatter(eq_x, eq_dep, **VSLICE_EQ_STYLE)
+        plotpy.markers(ax, eq_x, eq_dep, **VSLICE_EQ_STYLE)
 
     # Axes
     x0, x1 = x_arr[0], x_arr[-1]
@@ -773,25 +898,26 @@ def plot_vertical_slice(dist_km, depth_km, section, e_ends, n_ends,
     else:
         ax.set_ylim(y_top, depth_km[-1])
     ax.invert_yaxis()
-    ax.set_xlabel(x_label, fontsize=8)
-    ax.set_ylabel("Depth (km)", fontsize=8)
-    ax.tick_params(labelsize=7)
+    ax.set_xlabel(x_label, fontsize=AXIS_LABEL_SIZE)
+    ax.set_ylabel("Depth (km)", fontsize=AXIS_LABEL_SIZE)
+    ax.tick_params(labelsize=AXIS_TICK_SIZE)
 
     # Endpoint labels at the top of the section (A / A', B / B', …)
     # y_top is the topmost data coordinate (smallest depth, possibly negative)
     for xpos, lbl in ((x0, lbl_start), (x1, lbl_end)):
         ax.text(xpos, y_top, lbl,
                 ha="center", va="bottom",
-                fontsize=8, fontweight="bold",
+                fontsize=AXIS_LABEL_SIZE, fontweight="bold",
                 color="black",
                 clip_on=False, zorder=20)
 
     title_var = {"vp": "Vp", "vs": "Vs", "vps": "Vp/Vs"}[var]
-    ax.set_title(f"{title_var} — {name}  (swath ±{swath} km)", fontsize=9)
+    ax.set_title(f"{title_var} — {name}", fontsize=AXIS_TITLE_SIZE)
 
-    finish_panel_colorbar(cax, im, cbar_label)
+    finish_section_colorbar(cax, im, cbar_label)
     draw_annotation(ax)
     save_fig(fig, stem)
+    plt.show()
     plt.close(fig)
 
 
@@ -885,6 +1011,21 @@ zeqs   = eqs["z"].values
 
 tacna  = pd.read_csv(CSV_MT_SITES, delimiter=" ")
 mt_e, mt_n = to_utm_km(tacna["x"].values, tacna["y"].values)
+# Site-name column isn't standardised across sitelist exports — try the
+# common variants, falling back to blank labels (harmless: MT_LABEL_STYLE
+# defaults to mode="none" anyway, so no text is drawn unless explicitly
+# turned on) rather than raising if the file has none of them.
+for _name_col in ("Site", "site", "name", "Name", "station", "Station"):
+    if _name_col in tacna.columns:
+        mt_names = tacna[_name_col].astype(str).tolist()
+        break
+else:
+    mt_names = [""] * len(tacna)
+
+seis_sites = pd.read_csv(CSV_SEISMIC_SITES, header=None,
+                          names=["network", "station", "lat", "lon", "elev_m"])
+seis_site_e, seis_site_n = to_utm_km(seis_sites["lon"].values, seis_sites["lat"].values)
+seis_site_names = seis_sites["station"].values
 
 cities    = pd.read_csv(CSV_CITIES)
 cit_e, cit_n = to_utm_km(cities["x"].values, cities["y"].values)
@@ -930,13 +1071,13 @@ def draw_basemap(ax):
         vmin=0, vmax=1, alpha=0.85, aspect="auto",
         interpolation="none", zorder=3,
     )
-    ax.set_xlabel("Easting (km)", fontsize=8)
-    ax.set_ylabel("Northing (km)", fontsize=8)
+    ax.set_xlabel("Easting (km)", fontsize=AXIS_LABEL_SIZE)
+    ax.set_ylabel("Northing (km)", fontsize=AXIS_LABEL_SIZE)
     if AXES_UNITS == "km" and AXES_KM_COMMA:
         _comma_fmt = mpl.ticker.StrMethodFormatter("{x:,.0f}")
         ax.xaxis.set_major_formatter(_comma_fmt)
         ax.yaxis.set_major_formatter(_comma_fmt)
-    ax.tick_params(labelsize=7)
+    ax.tick_params(labelsize=AXIS_TICK_SIZE)
 
 
 def draw_features(ax, eq_e, eq_n):
@@ -956,31 +1097,37 @@ def draw_features(ax, eq_e, eq_n):
                     label=vs.get("name", "slice"), **VSLICE_MAP_LINE_STYLE)
             for xy, lbl in zip(zip(ve_ends, vn_ends), (lbl_start, lbl_end)):
                 if _in_region(np.array([xy[0]]), np.array([xy[1]]))[0]:
-                    ax.text(xy[0], xy[1], lbl, fontsize=7, fontweight="bold",
+                    ax.text(xy[0], xy[1], lbl, fontsize=AXIS_TICK_SIZE, fontweight="bold",
                             color=VSLICE_MAP_LINE_STYLE["color"],
                             ha="center", va="bottom", clip_on=True, zorder=16)
 
     # Seismicity
     if SHOW_SEISMICITY:
-        clipped_scatter(ax, eq_e, eq_n, label="Seismicity", **EQ_MARKER_STYLE)
+        clipped_markers(ax, eq_e, eq_n, label="Seismicity", **EQ_MARKER_STYLE)
 
     # MT sites
     if SHOW_MT_SITES:
-        clipped_scatter(ax, mt_e, mt_n, label="MT site", **MT_MARKER_STYLE)
+        clipped_markers(ax, mt_e, mt_n, label="MT site", **MT_MARKER_STYLE)
+        clipped_labels(ax, mt_e, mt_n, mt_names, MT_LABEL_STYLE)
+
+    # Seismic sites (seismometer stations)
+    if SHOW_SEISMIC_SITES:
+        clipped_markers(ax, seis_site_e, seis_site_n, label="Seismic site",
+                        **SEISMIC_SITES_MARKER_STYLE)
 
     # Inactive volcanoes
     if SHOW_VOLCANOES:
-        clipped_scatter(ax, utmv_e, utmv_n, **VOLC_INACT_MARKER_STYLE)
+        clipped_markers(ax, utmv_e, utmv_n, **VOLC_INACT_MARKER_STYLE)
         clipped_labels(ax, utmv_e, utmv_n, namev, VOLC_LABEL_STYLE)
 
     # Active volcanoes
     if SHOW_VOLCANOES_ACTIVE and volc_act_e:
-        clipped_scatter(ax, volc_act_e, volc_act_n,
+        clipped_markers(ax, volc_act_e, volc_act_n,
                         label="Active volcano", **VOLC_ACT_MARKER_STYLE)
 
     # Cities
     if SHOW_CITIES:
-        clipped_scatter(ax, cit_e, cit_n, label="City", **CITY_MARKER_STYLE)
+        clipped_markers(ax, cit_e, cit_n, label="City", **CITY_MARKER_STYLE)
         clipped_labels(ax, cit_e, cit_n, name_cit, CITY_LABEL_STYLE)
 
     # North arrow
@@ -1030,13 +1177,14 @@ for ii, d_index in enumerate(DEPTH_INDEX):
             aspect="equal", interpolation="bilinear", zorder=5,
         )
         draw_features(ax, eq_e, eq_n)
-        ax.set_title(f"Vp/Vs at {depth_label}", fontsize=9)
+        ax.set_title(f"Vp/Vs at {depth_label}", fontsize=AXIS_TITLE_SIZE)
         finish_panel_colorbar(cax, im, "Vp/Vs")
         if AXES_UNITS == "latlon":
             add_latlon_ticks(ax)
         draw_annotation(ax)
         stem = f"vps_tomo_{tag}_tacna"
         save_fig(fig, stem)
+        plt.show()
         plt.close(fig)
         out_list.append(stem)
 
@@ -1061,13 +1209,14 @@ for ii, d_index in enumerate(DEPTH_INDEX):
             aspect="equal", interpolation="bilinear", zorder=5,
         )
         draw_features(ax, eq_e, eq_n)
-        ax.set_title(f"Vp at {depth_label}", fontsize=9)
+        ax.set_title(f"Vp at {depth_label}", fontsize=AXIS_TITLE_SIZE)
         finish_panel_colorbar(cax, im, "Vp (m/s)")
         if AXES_UNITS == "latlon":
             add_latlon_ticks(ax)
         draw_annotation(ax)
         stem = f"vp_tomo_{tag}_tacna"
         save_fig(fig, stem)
+        plt.show()
         plt.close(fig)
         out_list.append(stem)
 
@@ -1092,13 +1241,14 @@ for ii, d_index in enumerate(DEPTH_INDEX):
             aspect="equal", interpolation="bilinear", zorder=5,
         )
         draw_features(ax, eq_e, eq_n)
-        ax.set_title(f"Vs at {depth_label}", fontsize=9)
+        ax.set_title(f"Vs at {depth_label}", fontsize=AXIS_TITLE_SIZE)
         finish_panel_colorbar(cax, im, "Vs (m/s)")
         if AXES_UNITS == "latlon":
             add_latlon_ticks(ax)
         draw_annotation(ax)
         stem = f"vs_tomo_{tag}_tacna"
         save_fig(fig, stem)
+        plt.show()
         plt.close(fig)
         out_list.append(stem)
 

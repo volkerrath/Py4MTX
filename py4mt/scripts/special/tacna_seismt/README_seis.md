@@ -167,13 +167,48 @@ every figure the script produces, positioned/styled via `ANNOTATION_POS` /
 `ANNOTATION_STYLE`.
 
 **Map feature layers:** `SHOW_PROFILE_LINES`, `SHOW_VSLICE_LINES`,
-`SHOW_SEISMICITY`, `SHOW_MT_SITES`, `SHOW_VOLCANOES`,
-`SHOW_VOLCANOES_ACTIVE`, `SHOW_CITIES`, `SHOW_NORTH_ARROW` — one boolean
-per overlay layer, all default `True`. `SHOW_SEISMICITY` also controls
-the matching seismicity scatter on vertical sections
-(`VSLICE_EQ_STYLE`), so turning it off applies everywhere the layer would
-otherwise appear, not just on the map. Same flags, same behaviour, in all
-three plot scripts.
+`SHOW_SEISMICITY`, `SHOW_MT_SITES`, `SHOW_SEISMIC_SITES`,
+`SHOW_VOLCANOES`, `SHOW_VOLCANOES_ACTIVE`, `SHOW_CITIES`,
+`SHOW_NORTH_ARROW` — one boolean per overlay layer, all default `True`.
+`SHOW_SEISMICITY` also controls the matching seismicity scatter on
+vertical sections (`VSLICE_EQ_STYLE`), so turning it off applies
+everywhere the layer would otherwise appear, not just on the map. Same
+flags, same behaviour, in all three plot scripts.
+
+**Marker sizing is linear (diameter), not area.** Every marker —
+seismicity, MT sites, seismic sites, volcanoes, cities, both on maps and
+on vertical sections — is drawn with `plotpy.clipped_markers`/
+`plotpy.markers` (`ax.plot()`-based). A style dict's `s=18` means an
+18 pt marker, not `ax.scatter()`'s 18 pt² area (which works out to a
+much smaller ~4.8 pt diameter). There are no `ax.scatter()` calls
+anywhere in any of the three plot scripts.
+
+**Label text — full name, truncated, or none:** every `*_LABEL_STYLE`
+dict (`VOLC_LABEL_STYLE`, `CITY_LABEL_STYLE`, `MT_LABEL_STYLE`) accepts
+a `mode` key controlling how much of the feature's name is drawn as
+text — the marker itself is unaffected either way:
+- `"full"` — the complete name (default for volcanoes/cities)
+- `"none"` — marker only, no text (default for MT sites — station
+  names are usually too dense to label cleanly at map scale)
+- `"firstN"` / `"lastN"` — first/last N characters, e.g. `"first3"`
+
+**MT site labels** (`MT_LABEL_STYLE`, new) — off (`mode="none"`) by
+default; switch to `"full"`/`"firstN"`/`"lastN"` to turn on. Defaults to
+small, vertical text (`fontsize=5, rotation=90`) so close-together
+station names don't overlap horizontally. In `tacna_plot_seis.py`, MT
+site names are read from `CSV_MT_SITES` — the sitelist's own site-name
+column isn't standardised across exports, so the loader tries `Site`,
+`site`, `name`, `Name`, `station`, `Station` in turn and falls back to
+blank labels (harmless, since the default is `mode="none"` anyway) if
+none of those columns exist.
+
+**Seismic sites** (`CSV_SEISMIC_SITES`, default
+`../features/seismic_sites.csv`) — seismometer station locations, a
+plain CSV with **no header row**: columns are `network`, `station`,
+`lat`, `lon`, `elev_m`. Default marker: filled green square, size 18
+(`SEISMIC_SITES_MARKER_STYLE`). Map-only (no vertical-section
+projection, unlike seismicity/MT sites) and not currently labelled with
+station names — just the marker.
 
 Seismicity on maps can additionally be depth-filtered per slice via
 `ZMIN_SEISM`/`ZMAX_SEISM` (km, one `(zmin, zmax)` pair per entry in
@@ -193,7 +228,9 @@ full-name column isn't present. City labels always use `cities.csv`'s
 `Name` column — its only name field, and already the full city name — so
 there's no separate full/short toggle for cities. Volcano and city labels
 are plain black text (`VOLC_LABEL_STYLE`/`CITY_LABEL_STYLE`) with no
-stroke/halo effect.
+stroke/halo effect. `SHOW_VOLC_LABELS`/`SHOW_CITY_LABELS` (default
+`True`) switch the name text off independently of `SHOW_VOLCANOES`/
+`SHOW_CITIES` — set either to `False` to keep the marker with no label.
 
 **Figure size & colorbar:**
 
@@ -203,12 +240,31 @@ stroke/halo effect.
   equal-scale guarantee above unconditional. (`VSLICE_WIDTH_CM`/
   `VSLICE_HEIGHT_CM` are separate and unaffected — cross-sections keep a
   settable height since `VSLICE_VE` deliberately makes them non-square.)
+- **`VSLICE_WIDTH_CM` is the panel width of the *longest* profile in
+  `VSLICES`** — every other profile's panel is proportionally narrower,
+  scaled by its own length relative to that longest one, rather than
+  every profile independently filling the same fixed width regardless of
+  how long it actually is. This means every section in a run shares the
+  exact same horizontal km-per-cm scale (and, since `VSLICE_VE`/depth
+  range are normally the same across profiles, ends up the same height
+  too) — so a short profile and a long profile drawn in the same run are
+  now directly comparable at a glance, rather than the short one looking
+  artificially "zoomed in" (visibly larger fonts/markers/colorbar
+  relative to the data) purely because it was stretched to the same
+  width as a much longer profile. Same behaviour, in all three plot
+  scripts.
 - `SHOW_COLORBAR` (default `True`) — set `False` to omit the colorbar
   entirely; the map panel itself is completely unaffected either way.
 - `COLORBAR_POSITION` (`"right"` default, or `"left"`/`"bottom"`/
   `"top"`) — the colorbar is added as *extra* width (right/left) or
   height (bottom/top) beyond the map panel, so it never competes with
-  the map for space and can never distort it.
+  the map for space and can never distort it. For `"left"`/`"bottom"`/
+  `"top"`, extra clearance is automatically reserved beyond `COLORBAR_PAD`
+  so the colorbar doesn't collide with whatever the main axes normally
+  draws in that same space using ordinary (non-managed) layout — y
+  tick labels/ylabel for `"left"`, x tick labels/xlabel for `"bottom"`,
+  the plot title for `"top"` — sized from `AXIS_LABEL_SIZE`/
+  `AXIS_TICK_SIZE`/`AXIS_TITLE_SIZE` below.
 - `COLORBAR_SIZE` (default `0.85`) — bar length, as a fraction of the
   map edge it's attached to. (Previously this was matplotlib's
   `fraction` parameter — bar *thickness* relative to the map, default
@@ -219,6 +275,14 @@ stroke/halo effect.
   thickness is derived from this and `COLORBAR_SIZE`.
 - `COLORBAR_PAD` (inches), `COLORBAR_LABEL_SIZE`, `COLORBAR_TICK_SIZE`,
   `COLORBAR_NTICKS` — unchanged.
+
+**Axis fonts:** `AXIS_LABEL_SIZE` (default `8`pt), `AXIS_TICK_SIZE`
+(default `7`pt), `AXIS_TITLE_SIZE` (default `9`pt) — font sizes for the
+map/section axis labels (`"Easting (km)"`/`"Northing (km)"`/
+`"Depth (km)"`/distance or lon-lat labels), their tick annotations, and
+the per-figure title, respectively. Separate from `COLORBAR_LABEL_SIZE`/
+`COLORBAR_TICK_SIZE`, which only affect the colorbar's own label/ticks.
+Same three settings, same behaviour, in all three plot scripts.
 
 **Other notable settings:** `PLOT_FORMATS`/`PLOT_DPI` (output formats and
 resolution), `CMIN_*`/`CMAX_*` and `CMAP_*` (colour scales — accept a

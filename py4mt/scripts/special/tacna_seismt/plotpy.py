@@ -27,6 +27,7 @@ AI-generated code — review before use in production.
 """
 
 import os
+import re
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -301,6 +302,46 @@ def sens_data_alpha(sens, low, high, base_alpha):
 
 
 # =====================================================================
+# Robust surface detection (used by compute_vertical_slice_* for the
+# topo line/fill on cross-sections)
+# =====================================================================
+def first_valid_run(valid, min_run=1):
+    """
+    For each column of a (n_depth, n_seg) boolean array (True = real,
+    non-air data), find the shallowest depth index where at least
+    min_run CONSECUTIVE cells are valid, rather than just the first
+    valid cell on its own.
+
+    A plain "first valid cell" surface pick is vulnerable to a single
+    spurious cell — one padding/air cell that wasn't actually assigned a
+    true air resistivity, or one column's data landing in the wrong mesh
+    cell — being mistaken for the real topographic surface, producing a
+    tall, sharp, flat-topped artifact standing above the genuine terrain
+    on either side of it. Requiring a short run of consecutive valid
+    cells (min_run=1 disables this and reverts to "first valid cell")
+    filters that out: real rock, once reached, stays valid for many
+    cells going deeper, while a spurious single cell does not.
+
+    Returns (has_data, first_valid_idx), both length n_seg.
+    """
+    if min_run <= 1:
+        has_data = valid.any(axis=0)
+        first_valid_idx = np.argmax(valid, axis=0)
+        return has_data, first_valid_idx
+
+    n_depth = valid.shape[0]
+    run = np.zeros_like(valid, dtype=int)
+    run[0] = valid[0].astype(int)
+    for d in range(1, n_depth):
+        run[d] = np.where(valid[d], run[d - 1] + 1, 0)
+    meets = run >= min_run
+    has_data = meets.any(axis=0)
+    idx_of_run_end = np.argmax(meets, axis=0)
+    first_valid_idx = np.clip(idx_of_run_end - (min_run - 1), 0, n_depth - 1)
+    return has_data, first_valid_idx
+
+
+# =====================================================================
 # VE-label position resolver (used by plot_vertical_slice)
 # =====================================================================
 _VE_POS_PRESETS = {
@@ -327,6 +368,7 @@ def resolve_ve_pos(spec):
     return spec
 
 
+
 # =====================================================================
 # Clip-aware scatter / text helpers
 # =====================================================================
@@ -348,19 +390,118 @@ def clipped_scatter(ax, xe, yn, region, **kwargs):
     ax.scatter(xe[mask], yn[mask], **kwargs)
 
 
+# Scatter-style kwarg name -> ax.plot() marker kwarg name. 's' (scatter's
+# AREA in points^2) intentionally maps straight to 'markersize' (plot's
+# DIAMETER in points) with no sqrt conversion — that reinterpretation is
+# the whole point of clipped_markers/markers: a style dict written as
+# s=18 was meant to read as "18 pt marker", but scatter renders it as an
+# 18 pt^2 area (~4.8 pt diameter), a much smaller and less predictable
+# marker than the number in the settings suggests.
+_MARKER_KWARG_MAP = {
+    "s": "markersize",
+    "facecolors": "markerfacecolor",
+    "facecolor": "markerfacecolor",
+    "edgecolors": "markeredgecolor",
+    "edgecolor": "markeredgecolor",
+    "linewidths": "markeredgewidth",
+    "linewidth": "markeredgewidth",
+}
+
+
+def _scatter_kwargs_to_plot_kwargs(kwargs):
+    out = {}
+    for k, v in kwargs.items():
+        out[_MARKER_KWARG_MAP.get(k, k)] = v
+    return out
+
+
+def clipped_markers(ax, xe, yn, region, **kwargs):
+    """
+    ax.plot()-based marker scatter, restricted to points inside `region`,
+    with TRUE LINEAR markersize (points diameter) rather than scatter's
+    area-based `s` (points^2). Accepts the same style-dict kwargs as
+    clipped_scatter (s, facecolors, edgecolors, linewidths, marker, alpha,
+    zorder, label, ...) — including custom Path markers — and translates
+    them to their ax.plot() equivalents (see _MARKER_KWARG_MAP). No lines
+    are drawn between points (linestyle="none").
+    """
+    xe = np.asarray(xe)
+    yn = np.asarray(yn)
+    mask = in_region(xe, yn, region)
+    if not np.any(mask):
+        return
+    plot_kwargs = _scatter_kwargs_to_plot_kwargs(kwargs)
+    plot_kwargs.setdefault("linestyle", "none")
+    # ax.scatter() draws a circle if no marker is given; ax.plot() draws
+    # NOTHING (not even a visible point) with marker=None and
+    # linestyle="none" — a style dict that relied on scatter's implicit
+    # default (never specifying marker=...) would silently vanish here
+    # without this fallback.
+    plot_kwargs.setdefault("marker", "o")
+    ax.plot(xe[mask], yn[mask], **plot_kwargs)
+
+
+def markers(ax, xe, yn, **kwargs):
+    """
+    ax.plot()-based marker scatter, with TRUE LINEAR markersize (points
+    diameter) rather than scatter's area-based `s` (points^2) — same
+    kwarg translation as clipped_markers (see _MARKER_KWARG_MAP and its
+    marker="o" fallback), but with NO region-clipping. For callers where
+    every point is already known to be within the plotted domain (e.g.
+    seismicity/MT-site positions already projected onto a vertical
+    section's own along-profile/depth axes) and clipping would be
+    redundant.
+    """
+    xe = np.asarray(xe)
+    yn = np.asarray(yn)
+    if xe.size == 0:
+        return
+    plot_kwargs = _scatter_kwargs_to_plot_kwargs(kwargs)
+    plot_kwargs.setdefault("linestyle", "none")
+    plot_kwargs.setdefault("marker", "o")
+    ax.plot(xe, yn, **plot_kwargs)
+
+
+def apply_label_mode(label, mode):
+    """
+    Transform a label's text according to `mode`:
+      "full"      - unchanged (default)
+      "none"      - suppressed entirely (returns None)
+      "firstN"    - first N characters, e.g. "first3"
+      "lastN"     - last N characters, e.g. "last3"
+    Unrecognised modes fall back to "full" (the label is used unchanged)
+    rather than raising, since a typo here shouldn't crash a whole map.
+    """
+    if mode is None or mode == "full":
+        return label
+    if mode == "none":
+        return None
+    m = re.match(r"^(first|last)(\d+)$", mode)
+    if m:
+        n = int(m.group(2))
+        return label[:n] if m.group(1) == "first" else label[-n:]
+    return label
+
+
 def clipped_labels(ax, xe, yn, labels, style_dict, region):
     """
     Draw text labels for points inside `region`.
 
     style_dict must include 'offset_x' and 'offset_y' (km); remaining keys
     are passed to ax.text(). An optional 'stroke' key (dict) activates a
-    withStroke path-effect. Callers may pass a shared/global style dict
-    directly — it's copied internally, never mutated.
+    withStroke path-effect. An optional 'mode' key controls how much of
+    each label's text is shown — see apply_label_mode() for the options
+    ("full" default, "none", "firstN", "lastN"). Callers may pass a
+    shared/global style dict directly — it's copied internally, never
+    mutated.
     """
     style_dict = dict(style_dict)
     ox = style_dict.pop("offset_x", 0.0)
     oy = style_dict.pop("offset_y", 0.0)
     stroke = style_dict.pop("stroke", None)
+    mode = style_dict.pop("mode", "full")
+    if mode == "none":
+        return
     path_effects = [pe.withStroke(**stroke)] if stroke else []
     xe = np.asarray(xe, dtype=float)
     yn = np.asarray(yn, dtype=float)
@@ -368,7 +509,10 @@ def clipped_labels(ax, xe, yn, labels, style_dict, region):
     for x, y, lbl, inside in zip(xe, yn, labels, mask):
         if not inside:
             continue
-        ax.text(x + ox, y + oy, lbl,
+        text = apply_label_mode(lbl, mode)
+        if text is None:
+            continue
+        ax.text(x + ox, y + oy, text,
                 path_effects=path_effects if path_effects else None,
                 **style_dict)
 
@@ -418,6 +562,27 @@ def build_panel_figure(panel_w_in, panel_h_in, colorbar, size_label="panel"):
         )
 
     pad_in = colorbar["pad"]
+    if show and pos != "right":
+        # For every position except "right", the colorbar's dedicated gap
+        # is also exactly where the main axes' OWN decorations render,
+        # using ordinary (non-managed) matplotlib layout that doesn't
+        # know a colorbar is there: y tick labels + ylabel just left of
+        # the axes ("left"), x tick labels + xlabel just below ("bottom"),
+        # and the plot title just above ("top"). A plain pad_in (a few
+        # tenths of an inch) isn't enough room for that text, so it
+        # collides with the colorbar. Reserve extra clearance sized from
+        # the actual font sizes in use, on top of the requested pad.
+        tick_size = colorbar.get("tick_size", 7)
+        label_size = colorbar.get("label_size", 8)
+        title_size = colorbar.get("title_size", 9)
+        text_in = lambda *sizes: sum(sizes) / 72.0 * 1.6 + 0.05
+        extra_clearance = {
+            "left":   text_in(tick_size, label_size),
+            "bottom": text_in(tick_size, label_size),
+            "top":    text_in(title_size),
+        }[pos]
+        pad_in += extra_clearance
+
     bar_len_in = bar_thick_in = 0.0
     cbar_w_in = cbar_h_in = 0.0
     if show:
