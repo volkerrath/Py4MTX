@@ -163,6 +163,7 @@ the top of the script.  No other edits are needed for a standard run.
 | `HDF5_FILE` | `WORK_DIR + "Inversion_results.h5"` | Input HDF5 archive |
 | `MODEL_TEMPLATE` | `WORK_DIR + "resistivity_block_iter0.dat"` | FEMTIC template block |
 | `MODEL_OUT` | `WORK_DIR + "resistivity_block_nss.dat"` | Output block |
+| `RANDOM_SEED` | `None` | `None` = fresh OS entropy (default, non-reproducible). An integer makes step 4's model perturbation reproducible: a shared `rng = np.random.default_rng(RANDOM_SEED)` drives both `PERTURB_MODE = "gst"` (passed to `ens.generate_gst_model_ensemble`) and `PERTURB_MODE = "random"` (used directly in `_make_perturbation_random`). **Does not** cover step 3's randomised SVD (`inv.rsvd`) — see the caveat below. |
 
 ### Perturbation mode  (step 4)
 
@@ -248,8 +249,13 @@ of the same shape.  The perturbation is projected onto the null space of Js, so
 any data-sensitive component is automatically removed before the result is added
 to the model.
 
-The default placeholder returns a unit-Gaussian random vector (seeded for
-reproducibility).  Replace the body between the `*** EDIT ***` markers:
+The default placeholder returns a unit-Gaussian random vector drawn from
+the shared, module-level `rng` (see `RANDOM_SEED` above) — fresh OS entropy
+by default, or a reproducible draw when `RANDOM_SEED` is set. (Prior to
+2026-07-25 this was hardcoded to `np.random.default_rng(seed=0)`, always
+the same draw regardless of any seed configured elsewhere — not
+reproducible-by-choice, just permanently fixed.) Replace the body between
+the `*** EDIT ***` markers:
 
 ```python
 # Push a target region towards higher resistivity
@@ -259,9 +265,13 @@ dm[region_indices] = 1.0          # +1 log unit in target region
 # Uniform bias across the whole model
 dm = np.full_like(m, 0.5)         # +0.5 log units everywhere
 
-# Seeded random ensemble member
-rng = np.random.default_rng(seed=42)
+# Random ensemble member, respecting RANDOM_SEED (just use the shared rng)
 dm = rng.standard_normal(m.size) * 0.2
+
+# Or an independent, explicitly-seeded draw if you want this placeholder
+# to vary independently of RANDOM_SEED:
+rng_local = np.random.default_rng(seed=42)
+dm = rng_local.standard_normal(m.size) * 0.2
 ```
 
 ### `_make_perturbation_gst(m_ref)`
@@ -273,7 +283,11 @@ def _make_perturbation_gst(m_ref: np.ndarray) -> np.ndarray:
 
 Used when `PERTURB_MODE = "gst"`.  Calls
 `ens.generate_gst_model_ensemble()` for a single realisation in a temporary
-subdirectory under `WORK_DIR`.  The Kriged resistivity block is read back,
+subdirectory under `WORK_DIR`, passing the shared, module-level `rng` (see
+`RANDOM_SEED` above) so the draw is reproducible when `RANDOM_SEED` is set.
+(Prior to 2026-07-25 this constructed a fresh `np.random.default_rng()`
+inline on every call — never reproducible, regardless of any seed
+configured elsewhere.)  The Kriged resistivity block is read back,
 the reference-model vector is subtracted, and the delta is returned:
 
 ```
@@ -384,6 +398,24 @@ needed.
 
 ---
 
+## Reproducibility
+
+`RANDOM_SEED` (default `None`) covers **step 4 only** — the model
+perturbation. Set it to an integer and both `PERTURB_MODE = "gst"` and
+`PERTURB_MODE = "random"` become reproducible, driven by a single shared
+`rng = np.random.default_rng(RANDOM_SEED)` constructed once at the top of
+the script.
+
+**Not covered:** step 3's randomised SVD of `Js` (`inv.rsvd`, Halko et al.
+2011) uses its own internal randomness for the range-finder projection.
+`inverse.py` is a separate module; whether `rsvd()` exposes an `rng`/`seed`
+parameter wasn't verified here, so `RANDOM_SEED` does not currently reach
+it. If you need bit-for-bit-identical `U`/`S`/`Vt` (not just an
+identical perturbation `dm`) across runs, check `inv.rsvd`'s signature
+and wire `RANDOM_SEED` through there as well.
+
+---
+
 ## Provenance
 
 | Date | Author | Change |
@@ -391,6 +423,7 @@ needed.
 | 2026-05-17 | vrath / Claude Sonnet 4.6 | Created, modelled on `femtic_mod_edit.py` |
 | 2026-06-23 | vrath / Claude Sonnet 4.6 | Merged GST model generation from `femtic_gst_prep.py`. Added `PERTURB_MODE` switch; `"gst"` path calls `ens.generate_gst_model_ensemble` for a single realisation and returns `m_gst − m_ref` as perturbation delta. Full GST config block (`GST_PP_*`, `GST_VARIO_*`). `"random"` retains original Gaussian placeholder in `_make_perturbation_random`. Added `ensembles` import. |
 | 2026-07-09 | vrath / Claude Sonnet 5 (Anthropic) | Added the shared `MOD_*` plotting config block, `femtic_viz` import, `_resolve_origin_and_sites()` / `_plot_slice()` helpers, and an optional QC slice plot of `MODEL_OUT` (`MOD_QC = True`). Config surface is identical in name and order to `femtic_ens_post.py` and `femtic_gst_prep.py`, so a block can now be copied between all three scripts with no renaming. Uses a single `MOD_DPI` knob, matching `femtic_gst_prep.py` and the now-simplified `femtic_ens_post.py`. |
+| 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `RANDOM_SEED` for optional reproducible model perturbations (step 4). Fixed two reproducibility bugs: `_make_perturbation_gst` was constructing a fresh, unseeded `np.random.default_rng()` inline on every call; `_make_perturbation_random` was hardcoded to `np.random.default_rng(seed=0)` regardless of any seed elsewhere. Both now use the shared, module-level `rng`. Step 3's `inv.rsvd` randomness is explicitly *not* covered — see Reproducibility section. |
 
 **How to configure the GST variogram?**
 The variogram controls the spatial coherence of the Kriged perturbation.

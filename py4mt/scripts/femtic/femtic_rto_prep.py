@@ -147,6 +147,19 @@ Provenance:
                 member index (direct lookup replaces positional indexing);
                 dat_ens_files is an ordered list over ENS_MEMBERS with a
                 companion _ens_pos dict for sample_indices translation.
+    2026-07-25  Claude Sonnet 5 (Anthropic)
+                Added RANDOM_SEED (default None): when set to an integer,
+                rng = np.random.default_rng(RANDOM_SEED) instead of a fresh
+                OS-entropy generator. The model-perturbation path
+                (generate_rto_model_ensemble) already accepted and used
+                rng; the data-perturbation call (generate_data_ensemble)
+                did not forward it at all, so PERTURB_DAT draws were never
+                reproducible even when the model draws were — fixed by
+                passing rng=rng there too (ensembles.generate_data_ensemble
+                gained an rng parameter for this, forwarded to
+                femtic.modify_data). VIZ_SAMPLES also derives from the
+                same shared rng, as before. Resolved seed is echoed to the
+                console at startup.
 """
 
 import os
@@ -186,7 +199,6 @@ os.environ["OMP_NUM_THREADS"] = N_THREADS
 os.environ["OPENBLAS_NUM_THREADS"] = N_THREADS
 os.environ["MKL_NUM_THREADS"] = N_THREADS
 
-rng = np.random.default_rng()
 nan = np.nan  # float("NaN")
 version, _ = versionstrg()
 fname = inspect.getfile(inspect.currentframe())
@@ -195,6 +207,20 @@ titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng + "\n\n")
 
 OUT = True
+
+"""
+Reproducibility (optional).
+-----------------------------------------------------------------------
+Set RANDOM_SEED to an integer for a fully reproducible ensemble: same
+perturbed data sets, same roughness-matrix model draws (low-rank or
+full-rank), and same VIZ_SAMPLES draw, given identical templates/config.
+None (default) uses fresh OS entropy — a different ensemble every run,
+as before.
+"""
+RANDOM_SEED = None   # e.g. 20260725 for a reproducible run; None = fresh entropy
+
+rng = np.random.default_rng(RANDOM_SEED)
+print(f"RNG seed: {RANDOM_SEED if RANDOM_SEED is not None else '(fresh entropy — not reproducible)'}\n")
 
 """
 Base setup.
@@ -524,6 +550,7 @@ data_ensemble = ens.generate_data_ensemble(alg="rto",
                                            draw_from=DAT_PDF,
                                            method=DAT_METHOD,
                                            errors=ERRORS,
+                                           rng=rng,
                                            out=True)
 print("data ensemble ready!")
 print("\n")

@@ -9,6 +9,24 @@ Creates sub-directories with template files and generates reduced data sets
 @author:   vrath
 @project:  py4mt — Python for Magnetotellurics
 @inversion: FEMTIC
+
+Provenance:
+    2026-03-03  Claude          Renamed user-set parameters to UPPERCASE;
+                                 generated README.
+    2026-07-25  Claude Sonnet 5 (Anthropic)
+                Added RANDOM_SEED (default None) for optional reproducible
+                runs, matching the pattern used in femtic_rto_prep.py /
+                femtic_gst_prep.py / femtic_nss.py: rng =
+                np.random.default_rng(RANDOM_SEED), resolved seed echoed
+                to the console. rng is threaded into the generate_data_fcn
+                call for when random "subset" mode is used.
+                Flagged (did not fix) a pre-existing, unrelated issue:
+                fem.generate_directories() and fem.generate_data_fcn() do
+                not exist in the current femtic.py / ensembles.py — this
+                script predates the consolidation of directory/data-
+                ensemble generation into ensembles.py and will raise
+                AttributeError as written. See the KNOWN ISSUE comment
+                block near RANDOM_SEED.
 """
 
 import os
@@ -30,12 +48,37 @@ import femtic as fem
 import util as utl
 from version import versionstrg
 
-rng = np.random.default_rng()
 nan = np.nan
 version, _ = versionstrg()
 fname = inspect.getfile(inspect.currentframe())
 titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng + "\n\n")
+
+# -----------------------------------------------------------------------
+# Reproducibility (optional)
+# -----------------------------------------------------------------------
+# Set RANDOM_SEED to an integer for a reproducible run (relevant only if/
+# when CHOICE_MODE uses random subset selection, e.g. ["subset", N] --
+# leave-one-site-out ("site" mode) is deterministic and doesn't consume
+# rng draws at all). None (default) uses fresh OS entropy.
+RANDOM_SEED = None   # e.g. 20260725 for a reproducible run; None = fresh entropy
+
+rng = np.random.default_rng(RANDOM_SEED)
+print(f"RNG seed: {RANDOM_SEED if RANDOM_SEED is not None else '(fresh entropy — not reproducible)'}\n")
+
+# -----------------------------------------------------------------------
+# KNOWN ISSUE (unrelated to the reproducibility change above):
+# fem.generate_directories() and fem.generate_data_fcn() below do not
+# exist in the current femtic.py / ensembles.py. This script predates the
+# consolidation of directory/data-ensemble generation into ensembles.py
+# (compare femtic_rto_prep.py / femtic_gst_prep.py, which call
+# ens.generate_directories() / ens.generate_data_ensemble()). As written,
+# both calls below will raise AttributeError before the RNG is ever used.
+# RANDOM_SEED / rng are wired through anyway so this script is consistent
+# with the rest of the project once the calls are migrated or a
+# jackknife-specific generator is added to ensembles.py -- ask if you'd
+# like that migration done as a follow-up.
+# -----------------------------------------------------------------------
 
 # =============================================================================
 #  Configuration
@@ -86,5 +129,7 @@ data_ensemble = fem.generate_data_fcn(
     N_samples=N_SAMPLES,
     file_in="observe.dat",
     choice_mode=CHOICE_MODE,
+    rng=rng,   # only exercised by random "subset" mode; verify this kwarg
+               # exists once generate_data_fcn is restored/migrated
     out=True,
 )

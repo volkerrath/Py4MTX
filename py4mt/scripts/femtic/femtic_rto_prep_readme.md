@@ -46,6 +46,20 @@ Optional diagnostic plots:
 |---|---|
 | `N_SAMPLES` | Number of ensemble members |
 | `FROM_TO` | `[start, end]` to restart a subset; `None` = all |
+| `RANDOM_SEED` | `None` (default) = fresh OS entropy, a different ensemble every run. An integer makes the run fully reproducible: the shared `rng = np.random.default_rng(RANDOM_SEED)` drives the roughness-matrix model draw (`generate_rto_model_ensemble`, already `rng`-aware), the data perturbation (`generate_data_ensemble`, now also `rng`-aware — see below), and the `VIZ_SAMPLES` diagnostic-plot draw. |
+
+### Reproducibility
+
+Before this update, `PERTURB_DAT` draws were **never** reproducible even
+when `RANDOM_SEED`-style seeding was used for the model perturbation:
+`ens.generate_data_ensemble` didn't accept an `rng` at all, so every call
+to the underlying `femtic.modify_data` silently fell back to its own
+fresh, unseeded generator. `generate_data_ensemble` now accepts `rng` and
+forwards it to `modify_data`, and this script passes the same shared
+`rng` used by `generate_rto_model_ensemble`, so setting `RANDOM_SEED`
+makes the *entire* ensemble (data + model perturbation, plus the
+`VIZ_SAMPLES` draw) reproducible together.
+
 
 ### Data perturbation (`PERTURB_DAT`)
 | Variable | Description |
@@ -96,3 +110,8 @@ dict(kind="plane", point=[0,0,5000], strike=45, dip=60)
   `fviz.plot_model_slices`.
 - `depth_km=True`, `horiz_km=True` added to `plot_model_slices` (QC)
   and `plot_ensemble_slices` calls.
+- 2026-07-25 (Claude Sonnet 5, Anthropic): Added `RANDOM_SEED` for
+  optional reproducible ensembles. Fixed a reproducibility gap where
+  `generate_data_ensemble` silently used its own unseeded generator even
+  when the model-perturbation `rng` was seeded — it now accepts and
+  forwards `rng` to `femtic.modify_data`.

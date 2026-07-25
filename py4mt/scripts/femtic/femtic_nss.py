@@ -73,6 +73,25 @@ Provenance
                 scripts with no renaming. Uses a single MOD_DPI knob (no
                 per-plot-type split), matching femtic_gst_prep.py and the
                 now-simplified femtic_ens_post.py.
+    2026-07-25  Claude Sonnet 5 (Anthropic)
+                Added RANDOM_SEED (default None): when set to an integer,
+                a shared rng = np.random.default_rng(RANDOM_SEED) drives
+                Step 4's model perturbation instead of unseeded/hardcoded
+                randomness. Two bugs fixed en route: (1) _make_perturbation_
+                gst (PERTURB_MODE="gst") called
+                ens.generate_gst_model_ensemble(rng=np.random.default_rng())
+                -- a fresh, unseeded generator constructed inline every
+                call -- now passes the shared rng instead. (2)
+                _make_perturbation_random (PERTURB_MODE="random") used
+                np.random.default_rng(seed=0) -- hardcoded, always the same
+                draw regardless of any seed the user might set -- now uses
+                the shared rng too, so it follows RANDOM_SEED like every
+                other reproducibility-aware script in this project instead
+                of being silently pinned to seed 0. NOTE: Step 3's
+                randomised SVD (inv.rsvd) is NOT covered by RANDOM_SEED --
+                inverse.py is a separate module and its internal
+                range-finder randomness was not verified/wired through;
+                see the RANDOM_SEED config comment for details.
 
 @author: vrath
 """
@@ -112,6 +131,26 @@ version, _ = versionstrg()
 fname = inspect.getfile(inspect.currentframe())
 titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng + "\n\n")
+
+# ---------------------------------------------------------------------------
+# Reproducibility (optional)
+# ---------------------------------------------------------------------------
+#: Set RANDOM_SEED to an integer for a reproducible run: same GST
+#: perturbation (Step 4, PERTURB_MODE = "gst") and same random-Gaussian
+#: perturbation (Step 4, PERTURB_MODE = "random"), given identical
+#: HDF5 input / templates / config. None (default) uses fresh OS entropy.
+#:
+#: NOTE: the randomised SVD in Step 3 (inv.rsvd) uses its own internal
+#: randomness for the range-finder projection and is NOT currently driven
+#: by RANDOM_SEED -- inverse.py is a separate module and its rsvd() may or
+#: may not expose an rng/seed parameter. If exact bit-for-bit
+#: reproducibility of the SVD itself matters (not just the perturbation
+#: step), check inv.rsvd's signature and wire RANDOM_SEED through there
+#: too before relying on this flag for full end-to-end determinism.
+RANDOM_SEED = None   # e.g. 20260725 for a reproducible run; None = fresh entropy
+
+rng = np.random.default_rng(RANDOM_SEED)
+print(f"RNG seed: {RANDOM_SEED if RANDOM_SEED is not None else '(fresh entropy — not reproducible)'}\n")
 
 
 # ===========================================================================
@@ -587,8 +626,13 @@ def _make_perturbation_random(m: np.ndarray) -> np.ndarray:
     # *** EDIT BELOW THIS LINE to replace the Gaussian placeholder ***
     # -----------------------------------------------------------------------
 
-    rng_local = np.random.default_rng(seed=0)
-    dm = rng_local.standard_normal(m.size)
+    # Uses the shared module-level `rng` (see RANDOM_SEED in the
+    # configuration section) so this placeholder respects the same
+    # reproducibility switch as the "gst" perturbation mode: fresh OS
+    # entropy by default, or a fixed draw when RANDOM_SEED is set.
+    # (Previously hardcoded to np.random.default_rng(seed=0) -- always the
+    # same draw regardless of RANDOM_SEED, and not reproducible-by-choice.)
+    dm = rng.standard_normal(m.size)
 
     # -----------------------------------------------------------------------
     # *** EDIT ABOVE THIS LINE ***
@@ -647,7 +691,7 @@ def _make_perturbation_gst(m_ref: np.ndarray) -> np.ndarray:
             output_target    = "resistivity_block",
             resistivity_file = "resistivity_block_iter0.dat",
             reference_file   = "referencemodel.dat",
-            rng              = np.random.default_rng(),
+            rng              = rng,
             out              = OUT,
         )
 

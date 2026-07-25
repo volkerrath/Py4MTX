@@ -11,6 +11,23 @@ Prepare jackknife uncertainty analysis directories for FEMTIC.
 | Part of | **py4mt** — Python for Magnetotellurics |
 | Inversion code | FEMTIC |
 | README generated | 3 March 2026 by Claude (Anthropic), from cleaned source |
+| README updated | 25 July 2026 by Claude Sonnet 5 (Anthropic) — added `RANDOM_SEED`; flagged a known issue (see below) |
+
+## ⚠ Known issue (unrelated to the reproducibility update)
+
+`fem.generate_directories()` and `fem.generate_data_fcn()`, called near the
+bottom of this script, **do not exist** in the current `femtic.py` /
+`ensembles.py`. This script predates the consolidation of directory- and
+data-ensemble generation into `ensembles.py` — compare `femtic_rto_prep.py`
+/ `femtic_gst_prep.py`, which call `ens.generate_directories()` /
+`ens.generate_data_ensemble()` instead. As written, both calls will raise
+`AttributeError` before the RNG below is ever consumed. `RANDOM_SEED` /
+`rng` have been wired through anyway so the script is consistent with the
+rest of the project once the calls are migrated, or a dedicated
+jackknife/leave-one-site-out generator is added to `ensembles.py` — that
+migration has not been done here since it needs a design decision (a new
+`ensembles.py` function, or restoring the old `femtic.py` functions) rather
+than a mechanical fix.
 
 ## Purpose
 
@@ -34,6 +51,7 @@ reduced data set (e.g. leave-one-site-out) is generated.
 | `FILES` | List of template file names (control.dat, observe.dat, mesh.dat, …). |
 | `CHOICE_MODE` | `["site"]` for leave-one-site-out, or `["subset", N]` for random subsets. |
 | `N_SAMPLES` | Number of jackknife samples (read from `control.dat` or set manually). |
+| `RANDOM_SEED` | `None` (default) = fresh OS entropy. An integer makes the run reproducible — relevant only when `CHOICE_MODE = ["subset", N]` (random selection); `["site"]` leave-one-out is deterministic and doesn't consume any random draws. |
 
 ## Inputs
 
