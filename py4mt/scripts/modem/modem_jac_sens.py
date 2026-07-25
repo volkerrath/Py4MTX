@@ -74,7 +74,7 @@ PER_INTERVALS = [
 ]
 
 TYPE = "cov"
-TRANSFORM = "max"
+TRANSFORM = "siz max"
 
 if TRANSFORM is None:
     snsstring = TYPE.lower()
