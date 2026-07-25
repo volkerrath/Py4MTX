@@ -326,7 +326,57 @@ Provenance:
                         same fix, though that panel's own mesh-polygon
                         orientation uses a separate strike/dip-dependent
                         v_ax + invert_v=True convention that was not
-                        independently re-verified in this pass)."""
+                        independently re-verified in this pass).
+    2026-07-25  Claude Sonnet 5 (Anthropic)
+                        plot_model_slices / plot_ensemble_slices: ns/ew
+                        curtain panels' depth axis showed negative tick
+                        labels (0, -2.5, -5, ..., -20) even though the
+                        vertical orientation itself (shallow top / deep
+                        bottom) was already correct after the prior
+                        2026-07-25 sign fixes -- the negative numbers came
+                        from the internal -depth plot coordinate leaking
+                        into the displayed ticks. Added a FuncFormatter
+                        (mticker) on the y-axis of ns/ew panels in both
+                        functions that displays the tick's positive-down
+                        value instead (e.g. internal -15 -> label "15"),
+                        so depth reads as positive-down as expected, while
+                        the internal plotting convention (needed for
+                        correct stacking order) is unchanged. Not applied
+                        to "plane" panels (down-dip axis, separate
+                        convention, not independently re-verified).
+    2026-07-25  Claude Sonnet 5 (Anthropic)
+                        plot_model_slices: found and fixed the actual
+                        remaining cause of "still upside down" in the
+                        "ns"/"ew" curtain panels -- a double negation.
+                        _slice_geometry() already projects each 3-D
+                        intersection point onto v_ax = [0,0,-1] (see
+                        _axis_slice_params), so the "pz" unpacked from its
+                        returned polys is already -z_mesh. The polys_d
+                        line then negated it AGAIN (-pz), giving effective
+                        v = +z_mesh: underground structure (z_mesh large
+                        positive, since z is positive-down) landed at
+                        large positive v -- entirely outside any sane
+                        zlim window like [-20,0] km -- while only the
+                        small above-datum sliver (topography, z_mesh
+                        slightly negative -> small positive pz -> small
+                        negative v after the bad double negation) stayed
+                        visible, and with its sense flipped besides. This
+                        is exactly what the reported figures showed: a
+                        thin wavy (topography-like) coloured strip near
+                        the top of the window and a uniform blank/grey
+                        field below, even though "map" panels at the same
+                        depths (which don't go through this code path)
+                        showed real structure throughout. Fixed by using
+                        "pz" directly instead of negating it again in both
+                        the "ns" and "ew" branches; the "plane" branch was
+                        checked and does not have this bug (it passes
+                        _slice_geometry's polys straight through with no
+                        second transform). No changes needed to the prior
+                        zlim-sign fix, the site-marker elevation-sign fix,
+                        or the depth-tick-label formatter above -- all of
+                        those were built on the (correct, it turns out)
+                        assumption that v = -z_mesh, which is what this
+                        fix now actually produces."""
 
 from __future__ import annotations
 
@@ -3622,10 +3672,22 @@ def plot_model_slices(
         import matplotlib
         import matplotlib.pyplot as plt
         import matplotlib.colors as mcolors
+        import matplotlib.ticker as mticker
         from matplotlib.collections import PolyCollection
     except ImportError:
         print("  plot_model_slices: Matplotlib not available -- skipping.")
         return
+
+    # Curtain/plane panels plot depth internally as -depth (z positive-
+    # down; see polys_d in the "ns"/"ew" branches below), so that shallow
+    # sits at the top and deep at the bottom under matplotlib's default,
+    # non-inverted y-axis. That internal convention is display-only
+    # plumbing, not something the reader should have to interpret --
+    # ticks would otherwise read as negative numbers for a quantity
+    # (depth) that is positive-down by definition. This formatter shows
+    # the tick's positive-down value instead.
+    _depth_tick_fmt = mticker.FuncFormatter(
+        lambda v, _pos: "0" if v == 0 else f"{-v:g}")
 
     _sm  = site_marker        or dict(marker="v", color="black", ms=4, zorder=10)
     _sms = site_marker_slices or dict(marker="o", color="black", ms=4, zorder=10)
@@ -4127,7 +4189,16 @@ def plot_model_slices(
             normal, point, u_ax, v_ax, inv = _axis_slice_params(0, x0)
             polys, vals, eidx = _slice_geometry(nodes, conn, rho_elem,
                                           normal, point, u_ax, v_ax)
-            polys_d = [[((py + dN)*sc, -pz*_dz_sc) for py, pz in poly]
+            # _slice_geometry already projects each 3-D intersection point
+            # onto v_ax=[0,0,-1] (see _axis_slice_params), i.e. pz here is
+            # already -z_mesh (z positive-down). Negating it AGAIN (as this
+            # line used to) gives +z_mesh: underground structure (z_mesh
+            # large positive) lands far outside any sane zlim window, and
+            # only the small above-sea-level sliver (z_mesh slightly
+            # negative -> small negative here) remains visible -- inverted,
+            # since higher elevation was plotting further from datum in the
+            # wrong direction. Fixed 2026-07-25: use pz directly.
+            polys_d = [[((py + dN)*sc, pz*_dz_sc) for py, pz in poly]
                        for poly in polys]
             _pa = _compute_poly_alphas(eidx, _alpha_vals, alpha_mode,
                                        alpha_blank_thresh)
@@ -4138,6 +4209,7 @@ def plot_model_slices(
                                          poly_alphas=_pa)
             ax.set_xlabel(f"y (northing){sfx}", fontsize=label_fontsize)
             ax.set_ylabel("depth (km)" if depth_km else "depth (m)", fontsize=label_fontsize)
+            ax.yaxis.set_major_formatter(_depth_tick_fmt)
             if _ylim is not None:
                 ax.set_xlim([(v + dN)*sc for v in _ylim])
             if _zlim is not None:
@@ -4183,7 +4255,10 @@ def plot_model_slices(
             normal, point, u_ax, v_ax, inv = _axis_slice_params(1, y0)
             polys, vals, eidx = _slice_geometry(nodes, conn, rho_elem,
                                           normal, point, u_ax, v_ax)
-            polys_d = [[((px + dE)*sc, -pz*_dz_sc) for px, pz in poly]
+            # Same fix as the "ns" branch above: pz here is already
+            # -z_mesh (from _slice_geometry's v_ax=[0,0,-1] projection),
+            # so use it directly instead of negating it again.
+            polys_d = [[((px + dE)*sc, pz*_dz_sc) for px, pz in poly]
                        for poly in polys]
             _pa = _compute_poly_alphas(eidx, _alpha_vals, alpha_mode,
                                        alpha_blank_thresh)
@@ -4194,6 +4269,7 @@ def plot_model_slices(
                                          poly_alphas=_pa)
             ax.set_xlabel(f"x (easting){sfx}", fontsize=label_fontsize)
             ax.set_ylabel("depth (km)" if depth_km else "depth (m)", fontsize=label_fontsize)
+            ax.yaxis.set_major_formatter(_depth_tick_fmt)
             if _xlim is not None:
                 ax.set_xlim([(v + dE)*sc for v in _xlim])
             if _zlim is not None:
@@ -4878,6 +4954,7 @@ def plot_ensemble_slices(
         import matplotlib.pyplot as plt
         import matplotlib.colors as mcolors
         import matplotlib.cm as mcm
+        import matplotlib.ticker as mticker
         from matplotlib.collections import PolyCollection
     except ImportError:  # pragma: no cover
         raise ImportError(
@@ -5160,6 +5237,15 @@ def plot_ensemble_slices(
             )
             ax.set_xlabel(sg["xlabel"], fontsize=label_fontsize)
             ax.tick_params(labelsize=tick_fontsize)
+            if sg["ylabel"].startswith("depth"):
+                # ns/ew panels plot depth internally as -depth (z
+                # positive-down; see _slice_geometry_indices /
+                # _axis_slice_params above) so shallow sits at the top
+                # under matplotlib's default axis direction. That's
+                # display-only plumbing -- show the tick's positive-down
+                # value instead of the internal negative one.
+                ax.yaxis.set_major_formatter(mticker.FuncFormatter(
+                    lambda v, _pos: "0" if v == 0 else f"{-v:g}"))
 
             _xl = sg["xlim"]; _yl = sg["ylim"]; _zl = sg["zlim"]
             if _xl is not None: ax.set_xlim(_xl)
