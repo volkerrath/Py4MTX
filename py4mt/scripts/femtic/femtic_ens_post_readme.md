@@ -39,7 +39,8 @@ Ensemble sub-directories  (rto_*, gst_*, member_*, …)
 All `MOD_*` variables below (mesh, ocean/air, UTM origin, display coordinates,
 site overlay, slice specs, colormap/limits, alpha/blanking, figure layout)
 use the same names and semantics as the ensemble-generation scripts, so a
-config block can be copied between scripts with no renaming.
+config block can be copied between scripts with no renaming. Region-of-
+interest auto-scaling (`MOD_ROI_*`) is specific to this script.
 
 ---
 
@@ -59,6 +60,7 @@ config block can be copied between scripts with no renaming.
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `PERCENTILES` | list of float | `[2.3, 15.9, 50.0, 84.1, 97.7]` | Percentile levels (2-σ / 1-σ normal-equivalent). |
+| `QDIFF_PAIRS` | list of `(lo, hi)` | `[(15.9, 84.1)]` | Percentile-pair differences `\|P_hi - P_lo\|` computed as extra, outlier-robust spread statistics (both values must also appear in `PERCENTILES`). Saved as `<P>_qdiff_<lo>_<hi>` and plottable under the same key in `MOD_STATS_WHAT`. |
 
 ### Covariance
 
@@ -155,8 +157,19 @@ Writes each selected statistic as a FEMTIC block file, then plots it.
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `MOD_STATS` | bool | `False` | Enable statistics slice plots. |
-| `MOD_STATS_WHAT` | list of str | `["avg","var","med","mad"]` + one key per `PERCENTILES` level | Which statistics to plot. Subset of `"avg"`, `"var"`, `"med"`, `"mad"`, plus auto-generated percentile keys (e.g. `2.3` → `"p2_3"`, `50.0` → `"p50"`, `97.7` → `"p97_7"`). Default includes all of them. |
+| `MOD_STATS_WHAT` | list of str | `["avg","var","med","mad"]` + one key per `PERCENTILES` level + one per `QDIFF_PAIRS` entry | Which statistics to plot. Subset of `"avg"`, `"var"`, `"med"`, `"mad"`, plus auto-generated percentile keys (e.g. `2.3` → `"p2_3"`, `50.0` → `"p50"`, `97.7` → `"p97_7"`) and qdiff keys (e.g. `(15.9, 84.1)` → `"qdiff_15_9_84_1"`). Default includes all of them. |
 | `MOD_STATS_DIR` | str | `stats_plots/` | Destination for block files and figures. |
+| `MOD_STATS_CLIM` | dict | `{}` | Per-statistic colour-scale override, keyed like `MOD_STATS_WHAT`. Each value is `[vmin, vmax]` or `None` (auto). Falls back to `MOD_CLIM` for `"avg"`/`"med"`/percentile keys (same log10(Ω·m) space as the model) and to `None` (auto per-panel) for `"var"`/`"mad"`/`"qdiff_*"` (spread statistics on an unrelated scale — see notes below). |
+
+**Why `MOD_STATS_CLIM` exists.** `MOD_CLIM` fixes the colour scale for the
+resistivity model itself (log10 Ω·m), typically something like `[0, 4]`.
+Applying that same range to `VAR` (variance of log10ρ, usually well under 1)
+or `MAD`/`QDIFF` (spread in log10ρ, also a small number) made those panels
+come out essentially blank — everything mapped to the bottom of the
+colour scale. `MOD_STATS_CLIM` lets `AVG`/`MED`/percentile panels keep
+sharing `MOD_CLIM` (so they're visually comparable to each other and to
+the QC plot) while `VAR`/`MAD`/`QDIFF_*` automatically get their own
+scale from their own data range, unless you set an explicit override.
 
 Block files are written using the lowest-nRMS member as format template
 (preserves header, bounds, and flag columns).  Output filenames follow the
@@ -171,10 +184,13 @@ and `femtic_rto_prep.py`.
 | Parameter | Description |
 |---|---|
 | `MOD_SLICES` | List of slice-spec dicts (`kind`, `z0`/`x0`/`y0`). Kinds: `"map"`, `"ns"`, `"ew"`, `"plane"`. |
-| `MOD_XLIM / YLIM / ZLIM` | Global axis limits (model-local metres); `None` = auto. |
+| `MOD_XLIM / YLIM / ZLIM` | Global axis limits (model-local metres); `None` = auto. Overridden automatically by `MOD_ROI_AUTO` (below) when sites are available. |
+| `MOD_ROI_AUTO` | Default `True`. When site positions are available, derives `MOD_XLIM`/`MOD_YLIM` from the site bounding box + `MOD_ROI_PAD_XY`, and sets `MOD_ZLIM` from `MOD_ROI_ZLIM` — overriding any literal values set above. Falls back to the literals (or full-mesh auto-scaling) when no sites are found. |
+| `MOD_ROI_PAD_XY` | Default `5000.0` m. Padding added around the site bounding box for `MOD_XLIM`/`MOD_YLIM`. |
+| `MOD_ROI_ZLIM` | Default `[0.0, 20000.0]` m (positive-down). Depth range applied to `MOD_ZLIM` for `ns`/`ew`/`plane` panels when `MOD_ROI_AUTO=True`; `None` leaves `MOD_ZLIM` untouched. |
 | `MOD_CMAP` | Matplotlib colormap name. |
 | `MOD_DPI` | Figure DPI, used by both `MOD_QC` and `MOD_STATS` plots. |
-| `MOD_CLIM` | `[log10(ρ_min), log10(ρ_max)]`; `None` = auto. |
+| `MOD_CLIM` | `[log10(ρ_min), log10(ρ_max)]`; `None` = auto. Default colour scale for `MOD_QC` and for any `MOD_STATS` panel not overridden by `MOD_STATS_CLIM`. |
 | `MOD_OCEAN_COLOR` | Flat colour for ocean/lake cells; `None` = colormap. |
 | `MOD_AIR_COLOR` | Flat colour for air cells. |
 | `MOD_AIR_BGCOLOR` | Axes facecolor for air; `None` = figure default. |
@@ -184,9 +200,9 @@ and `femtic_rto_prep.py`.
 | `MOD_EQUAL_ASPECT` | Equal aspect ratio on map/curtain panels. |
 | `MOD_DEPTH_KM / HORIZ_KM` | Axis units. |
 | `MOD_PANEL_HEIGHT` | Panel height in cm. |
-| `MOD_PANEL_WIDTH` | Panel width in cm; `None` = auto from aspect ratio. |
+| `MOD_PANEL_WIDTH` | Panel width in cm; `None` = auto from aspect ratio. With `MOD_EQUAL_ASPECT=True` and real `MOD_XLIM`/`MOD_YLIM`/`MOD_ZLIM` (e.g. from `MOD_ROI_AUTO`), map/ns/ew panels end up with genuinely different widths instead of being forced square. |
 | `MOD_FIGSIZE` | `[w, h]` cm; overrides auto layout when set. |
-| `MOD_NROWS / NCOLS` | Grid layout; `None` = 1 row × N columns. |
+| `MOD_NROWS / NCOLS` | Grid layout. Default `2 / 2`, matching the 4 default `MOD_SLICES` panels (2 maps + ns + ew); `None` = 1 row × N columns. Adjust if you change the number of panels. |
 
 ### Site overlay
 
@@ -230,6 +246,7 @@ Keys follow the pattern `<PREFIX>_<stat>`:
 | `<P>_mad` | `(N_free,)` | Median absolute deviation. |
 | `<P>_prc` | `(N_prc, N_free)` | Percentile values at `PERCENTILES` levels. |
 | `<P>_prc_levels` | `(N_prc,)` | The `PERCENTILES` levels themselves, for self-describing output. |
+| `<P>_qdiff_<lo>_<hi>` | `(N_free,)` | `\|P_hi - P_lo\|` per free parameter, one key per `QDIFF_PAIRS` entry (e.g. `<P>_qdiff_15_9_84_1`). |
 
 If `COMPUTE_COV=False`, none of the `<P>_cov*` keys are present.
 
@@ -299,3 +316,4 @@ correct.
 | 2026-07-09 | vrath / Claude Sonnet 5 (Anthropic) | Merged `MOD_QC_DPI` / `MOD_STATS_DPI` into a single `MOD_DPI` knob, matching `femtic_gst_prep.py` and `femtic_nss.py` (one figure-DPI setting per script, not one per plot type). `_plot_slice()` no longer takes a `dpi` argument; it reads `MOD_DPI` directly. |
 | 2026-07-17 | Claude Sonnet 5 (Anthropic) | `scipy.sparse`: migrated from legacy matrix to array-equivalent API — `scs.csr_matrix(tmp)` → `scs.csr_array(tmp)` when building the sparsified empirical covariance (`ens_covs`). No functional change; `ens_covs` is only used for its `.nnz` count. |
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `COMPUTE_COV` (skip covariance entirely) and `COV_METHOD="low_rank"` (exact thin-SVD factorisation of the centred ensemble, avoiding the dense `N_free × N_free` matrix — see Covariance section). `MOD_STATS` now also writes a block file and slice figure for each `PERCENTILES` level (`p2_3`, `p50`, `p97_7`, …), included by default in `MOD_STATS_WHAT`. Added `<P>_prc_levels` to the `.npz` output. |
+| 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `MOD_STATS_CLIM` for per-statistic colour scaling (VAR/MAD/QDIFF now auto-scale by default instead of silently reusing `MOD_CLIM`, which made them blank). Added `QDIFF_PAIRS` (default `[(15.9, 84.1)]`): percentile-difference spread statistics, saved to the `.npz` and plottable via `MOD_STATS`. Added `MOD_ROI_AUTO`/`MOD_ROI_PAD_XY`/`MOD_ROI_ZLIM`: automatic `MOD_XLIM`/`MOD_YLIM`/`MOD_ZLIM` from the site bounding box, which also activates `femtic_viz.py`'s existing aspect-ratio panel-width logic so map/ns/ew panels size themselves differently. Changed `MOD_NROWS`/`MOD_NCOLS` defaults to `2`/`2`. Also fixed a sign bug in `femtic_viz.py`'s `plot_model_slices` (ns/ew curtain panels rendered blank/upside down whenever `MOD_ZLIM` was set) — the bug was dormant under the old `MOD_ZLIM=None` default and is fixed as part of enabling `MOD_ROI_AUTO`. |

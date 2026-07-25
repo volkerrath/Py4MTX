@@ -245,7 +245,22 @@ Provenance:
                         plot_borehole_logs: added ``tick_fontsize`` and
                         ``label_fontsize`` parameters (both default ``None``
                         → derived from ``legend_fontsize``); replaced
-                        hardcoded tick / xlabel / ylabel literals."""
+                        hardcoded tick / xlabel / ylabel literals.
+    2026-07-25  Claude Sonnet 5 (Anthropic)
+                        plot_model_slices: fixed depth-axis sign bug in the
+                        "ns" and "ew" curtain-panel branches. Polygon
+                        y-coordinates are plotted as -depth (positive-down
+                        depth negated), but the zlim override applied
+                        ax.set_ylim([zlim[1], zlim[0]]) with the *positive*
+                        depth values, so the axis range never overlapped
+                        the (negative) plotted data whenever zlim was
+                        actually set -- panels came out blank or upside
+                        down. Both branches now negate zlim to match the
+                        data convention: ax.set_ylim([-zlim[1]*dz_sc,
+                        -zlim[0]*dz_sc]). No effect when zlim=None (the
+                        previous default), which is why this went
+                        unnoticed until callers started passing an
+                        explicit MOD_ZLIM."""
 
 from __future__ import annotations
 
@@ -4050,7 +4065,12 @@ def plot_model_slices(
             if _ylim is not None:
                 ax.set_xlim([(v + dN)*sc for v in _ylim])
             if _zlim is not None:
-                ax.set_ylim([_zlim[1]*_dz_sc, _zlim[0]*_dz_sc])
+                # Polygon y-coords are plotted as -depth (see polys_d above,
+                # positive-down depth -> negative plot-y). zlim is given in
+                # positive-down depth, so it must be negated here too, or
+                # the axis range (positive) never overlaps the data range
+                # (negative) and the panel comes out blank / upside down.
+                ax.set_ylim([-_zlim[1]*_dz_sc, -_zlim[0]*_dz_sc])
             if _invert_x:
                 ax.invert_xaxis()
             if _fmt_y is not None:
@@ -4095,7 +4115,10 @@ def plot_model_slices(
             if _xlim is not None:
                 ax.set_xlim([(v + dE)*sc for v in _xlim])
             if _zlim is not None:
-                ax.set_ylim([_zlim[1]*_dz_sc, _zlim[0]*_dz_sc])
+                # See matching comment in the "ns" branch above: polygon
+                # y-coords are -depth, so zlim (positive-down) must be
+                # negated to overlap the plotted data range.
+                ax.set_ylim([-_zlim[1]*_dz_sc, -_zlim[0]*_dz_sc])
             if _invert_x:
                 ax.invert_xaxis()
             if _fmt_x is not None:

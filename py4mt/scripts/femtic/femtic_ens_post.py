@@ -107,6 +107,34 @@ Provenance
             slice figure for each PERCENTILES level in addition to
             avg/var/med/mad, keyed as "p2_3", "p50", "p97_7", etc.
             (default MOD_STATS_WHAT includes all of them).
+2026-07-25  Claude Sonnet 5 (Anthropic)
+            Added MOD_STATS_CLIM: per-statistic colour-scale override for
+            MOD_STATS plots. AVG/MED/percentile panels default to the
+            shared MOD_CLIM (same log10(Ω·m) space as the model); VAR/MAD/
+            QDIFF panels — a different scale entirely — now default to
+            automatic per-panel scaling instead of silently reusing
+            MOD_CLIM (which previously made them blank or meaningless).
+            _plot_slice() gained a clim= parameter to carry this through.
+            Added QDIFF_PAIRS (default [(15.9, 84.1)]): computes
+            |P_hi - P_lo| per free parameter as an outlier-robust spread
+            statistic, saved to the .npz as f"{P}_qdiff_<lo>_<hi>" and
+            available in MOD_STATS under the same key. Added
+            MOD_ROI_AUTO/MOD_ROI_PAD_XY/MOD_ROI_ZLIM: MOD_XLIM/MOD_YLIM
+            are now derived automatically from the site bounding box (+
+            padding) and MOD_ZLIM from MOD_ROI_ZLIM, applied once after
+            _resolve_origin_and_sites() and picked up by every subsequent
+            _plot_slice() call. This also feeds femtic_viz.py's existing
+            aspect-ratio panel-width logic (MOD_PANEL_WIDTH=None +
+            MOD_EQUAL_ASPECT=True), so map vs. ns vs. ew panels now size
+            themselves differently instead of coming out uniformly square
+            whenever xlim/ylim/zlim were previously left at their
+            full-mesh-auto None default. Changed MOD_NROWS/MOD_NCOLS
+            defaults from None/None (1 row) to 2/2, matching the 4 default
+            MOD_SLICES panels. Also fixed a matching sign bug in
+            femtic_viz.py's plot_model_slices (ns/ew curtain panels came
+            out blank/upside down whenever MOD_ZLIM was actually set,
+            which is why the bug was invisible until this ROI change made
+            MOD_ZLIM non-None by default) — see femtic_viz.py provenance.
 """
 from __future__ import annotations
 
@@ -172,6 +200,14 @@ NRMS_MAX = 1.5
 # ---------------------------------------------------------------------------
 #: Percentile levels. Default: 2-σ / 1-σ normal-equivalent.
 PERCENTILES = [2.3, 15.9, 50.0, 84.1, 97.7]
+
+#: Percentile-pair differences to compute as extra spread statistics, e.g.
+#: (15.9, 84.1) -> the 1-sigma-equivalent interquantile range
+#: |P84.1 - P15.9|ᵢ per free parameter (an outlier-robust alternative to
+#: VAR/MAD). Each value in a pair must also appear in PERCENTILES. Stored
+#: in the .npz as f"{P}_qdiff_<lo>_<hi>" and available for MOD_STATS
+#: plotting under the same key.
+QDIFF_PAIRS = [(15.9, 84.1)]
 
 # ---------------------------------------------------------------------------
 # Covariance
@@ -239,12 +275,27 @@ MOD_QC_FILE = ENSEMBLE_DIR + ENSEMBLE_PREFIX + "_qc.pdf"
 MOD_STATS      = False
 #: Which statistics to plot.  Subset of: "avg", "var", "med", "mad", plus
 #: one auto-generated key per PERCENTILES level (e.g. 2.3 -> "p2_3",
-#: 50.0 -> "p50", 97.7 -> "p97_7").  Default below includes all of them.
+#: 50.0 -> "p50", 97.7 -> "p97_7") and one per QDIFF_PAIRS entry (e.g.
+#: (15.9, 84.1) -> "qdiff_15_9_84_1"). Default below includes all of them.
 MOD_STATS_WHAT = ["avg", "var", "med", "mad"] + [
     "p" + f"{_p:g}".replace(".", "_") for _p in PERCENTILES
+] + [
+    f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_") for _lo, _hi in QDIFF_PAIRS
 ]
 #: Output directory for stat block files and figures.
 MOD_STATS_DIR  = ENSEMBLE_DIR + "/stats_plots/"
+
+#: Per-statistic colour-scale override, keyed the same as MOD_STATS_WHAT
+#: (e.g. "var", "p50", "qdiff_15_9_84_1"). Each value is an explicit
+#: [vmin, vmax] pair, or None for automatic per-panel scaling from that
+#: statistic's own data range. Leave empty (default) to use the built-in
+#: fallback: AVG/MED and the percentile fields share MOD_CLIM (they live
+#: in the same log10(Ω·m) space as the model itself), while VAR/MAD/QDIFF
+#: -- spread statistics on a completely different scale -- default to None
+#: (auto), since forcing MOD_CLIM onto them would make those panels blank
+#: or meaningless. Add an entry here to override any of that, e.g.
+#: MOD_STATS_CLIM["var"] = [0.0, 0.5].
+MOD_STATS_CLIM = {}
 
 # ---------------------------------------------------------------------------
 # Shared slice / plot parameters
@@ -303,6 +354,19 @@ MOD_XLIM = None    # [xmin, xmax] model-local metres; None = auto
 MOD_YLIM = None    # [ymin, ymax] model-local metres; None = auto
 MOD_ZLIM = None    # [zmin, zmax] model-local metres; None = auto
 
+# --- Region of interest (auto xlim/ylim/zlim from site positions) ----------
+#: When True and site positions are available (MOD_SITE_DAT / MOD_SITE_NUMBER,
+#: subject to MOD_PLOT_SITES_MAPS/SLICES as usual), MOD_XLIM/MOD_YLIM are
+#: derived automatically from the site bounding box + MOD_ROI_PAD_XY, and
+#: MOD_ZLIM is set from MOD_ROI_ZLIM -- overriding the literal MOD_XLIM/
+#: MOD_YLIM/MOD_ZLIM values above. Falls back to those literals (or to
+#: full-mesh auto-scaling if they're also None) when no sites are found.
+#: Also drives the per-panel aspect-ratio sizing below (MOD_PANEL_WIDTH),
+#: since that sizing needs an actual extent to compute widths from.
+MOD_ROI_AUTO   = True
+MOD_ROI_PAD_XY = 5000.0             # metres of padding around the site bbox
+MOD_ROI_ZLIM   = [0.0, 20000.0]     # depth range (m, positive-down) for ns/ew/plane panels; None = leave MOD_ZLIM as-is
+
 MOD_DPI         = 600            # figure DPI, used by both MOD_QC and MOD_STATS
 MOD_CMAP        = "turbo_r"
 MOD_CLIM        = [0.0, 4.0]     # [log10_min, log10_max] Ω·m; None = auto
@@ -319,9 +383,16 @@ MOD_ALPHA_BLANK_THRESH = 0.0
 MOD_EQUAL_ASPECT = True
 MOD_DEPTH_KM     = True
 MOD_HORIZ_KM     = True
-MOD_NROWS        = None   # None = auto (1 row)
-MOD_NCOLS        = None   # None = auto (len(MOD_SLICES) cols)
+#: 2x2 grid matching the 4 default MOD_SLICES panels (2 maps + ns + ew).
+#: Adjust to len(MOD_SLICES) if you change the number of panels; None/None
+#: falls back to a single row of len(MOD_SLICES) columns.
+MOD_NROWS        = 2      # None = auto (1 row)
+MOD_NCOLS        = 2      # None = auto (len(MOD_SLICES) cols)
 MOD_PANEL_HEIGHT = 16.0   # cm
+#: None = auto per-column width from each panel's own aspect ratio (needs
+#: MOD_EQUAL_ASPECT=True and real xlim/ylim/zlim -- supplied automatically
+#: by MOD_ROI_AUTO above -- so map, ns, and ew panels naturally end up
+#: different widths instead of being forced square).
 MOD_PANEL_WIDTH  = None   # cm; None = auto from aspect ratio
 MOD_FIGSIZE      = None   # [w, h] cm; overrides auto when set
 
@@ -406,17 +477,28 @@ def _resolve_origin_and_sites():
 def _plot_slice(block_file: str, pdf_file: str,
                 utm_e, utm_n, utm_lat, utm_lon,
                 utm_zone, utm_north, site_xys: list,
-                obs_coords_only: bool = False) -> None:
+                obs_coords_only: bool = False,
+                clim=None) -> None:
     """Call fviz.plot_model_slices with the shared MOD_* config.
 
     Mirrors the plotting call in femtic_gst_prep.py / femtic_rto_prep.py
     exactly, so QC and statistics figures use the same options (CRS
     handling, site overlay, alpha/blanking, figure layout) as the
     ensemble-generation scripts.
+
+    Parameters
+    ----------
+    clim : [vmin, vmax] | None
+        Per-call colour-scale override. ``None`` (default) falls back to
+        the module-level ``MOD_CLIM``, unchanged from previous behaviour.
+        Used by the MOD_STATS block to give VAR/MAD/QDIFF panels their own
+        automatic scale instead of forcing MOD_CLIM onto them.
     """
     if fviz is None:
         print("  plot_slice: femtic_viz not available — skipping.")
         return
+
+    _clim = MOD_CLIM if clim is None else clim
 
     _slices_resolved = fem.resolve_slice_positions(
         MOD_SLICES, utm_zone, utm_north,
@@ -428,7 +510,7 @@ def _plot_slice(block_file: str, pdf_file: str,
         mesh_file           = MOD_MESH,
         slices              = _slices_resolved,
         cmap                = MOD_CMAP,
-        clim                = MOD_CLIM,
+        clim                = _clim,
         xlim                = MOD_XLIM,
         ylim                = MOD_YLIM,
         zlim                = MOD_ZLIM,
@@ -547,11 +629,24 @@ ens_mad  = np.median(np.abs(ens_matrix - ens_med[np.newaxis, :]),
                      axis=0)                                        # (n_free,)
 ens_prc  = np.percentile(ens_matrix, PERCENTILES, axis=0)          # (n_prc, n_free)
 
+# --- Percentile-pair differences (robust spread, e.g. 1-sigma-equivalent IQR) ---
+ens_qdiff = {}   # key -> (n_free,) array
+for _lo, _hi in QDIFF_PAIRS:
+    if _lo not in PERCENTILES or _hi not in PERCENTILES:
+        print(f"  QDIFF_PAIRS: ({_lo}, {_hi}) not both in PERCENTILES — skipped.")
+        continue
+    _ilo = PERCENTILES.index(_lo)
+    _ihi = PERCENTILES.index(_hi)
+    _qkey = f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_")
+    ens_qdiff[_qkey] = np.abs(ens_prc[_ihi] - ens_prc[_ilo])       # (n_free,)
+
 print(f"\nStatistics (over {n_members} members, {ne[1]} free parameters):")
 print(f"  mean   log10(ρ): [{ens_avg.min():.3f}, {ens_avg.max():.3f}]")
 print(f"  var    log10(ρ): [{ens_var.min():.4f}, {ens_var.max():.4f}]")
 print(f"  median log10(ρ): [{ens_med.min():.3f}, {ens_med.max():.3f}]")
 print(f"  MAD    log10(ρ): [{ens_mad.min():.4f}, {ens_mad.max():.4f}]")
+for _qkey, _qval in ens_qdiff.items():
+    print(f"  {_qkey}: [{_qval.min():.4f}, {_qval.max():.4f}]")
 
 # --- (3) Empirical covariance (optional) -----------------------------------
 ens_cov       = None
@@ -600,6 +695,8 @@ ens_dict = {
     f"{P}_prc":        ens_prc,
     f"{P}_prc_levels": np.asarray(PERCENTILES),
 }
+for _qkey, _qval in ens_qdiff.items():
+    ens_dict[f"{P}_{_qkey}"] = _qval
 if ens_cov is not None:
     ens_dict[f"{P}_cov"] = ens_cov
 if ens_cov_eigval is not None:
@@ -614,6 +711,22 @@ _need_plot = MOD_QC or MOD_STATS
 if _need_plot:
     (utm_e, utm_n, utm_lat, utm_lon,
      utm_zone, utm_north, site_xys, obs_coords_only) = _resolve_origin_and_sites()
+
+    # --- Region of interest: override MOD_XLIM/YLIM/ZLIM from site bbox ---
+    if MOD_ROI_AUTO and site_xys:
+        _sx = np.array([s[1] for s in site_xys])
+        _sy = np.array([s[2] for s in site_xys])
+        MOD_XLIM = [float(_sx.min() - MOD_ROI_PAD_XY), float(_sx.max() + MOD_ROI_PAD_XY)]
+        MOD_YLIM = [float(_sy.min() - MOD_ROI_PAD_XY), float(_sy.max() + MOD_ROI_PAD_XY)]
+        if MOD_ROI_ZLIM is not None:
+            MOD_ZLIM = list(MOD_ROI_ZLIM)
+        print(f"\nROI (from {len(site_xys)} sites, pad={MOD_ROI_PAD_XY:.0f} m):")
+        print(f"  MOD_XLIM = {MOD_XLIM}")
+        print(f"  MOD_YLIM = {MOD_YLIM}")
+        print(f"  MOD_ZLIM = {MOD_ZLIM}")
+    elif MOD_ROI_AUTO:
+        print("\nROI: MOD_ROI_AUTO=True but no sites available — "
+              "using literal MOD_XLIM/MOD_YLIM/MOD_ZLIM instead.")
 
 # --- (6) QC slice plot — best-nRMS member ---------------------------------
 if MOD_QC:
@@ -657,16 +770,29 @@ if MOD_STATS:
             "med": (ens_med, "median"),
             "mad": (ens_mad, "MAD"),
         }
+        # "Value-scale" keys share the model's own log10(Ω·m) range and
+        # default to MOD_CLIM; everything else ("var", "mad", "qdiff_*")
+        # is a spread statistic on a different scale and defaults to None
+        # (auto per-panel). MOD_STATS_CLIM always takes precedence.
+        _value_scale_keys = {"avg", "med"}
+
         # One entry per PERCENTILES level, keyed e.g. 2.3 -> "p2_3", 50.0 -> "p50".
         for _i, _pval in enumerate(PERCENTILES):
             _pkey = "p" + f"{_pval:g}".replace(".", "_")
             _stat_map[_pkey] = (ens_prc[_i], f"{_pval:g}th percentile")
+            _value_scale_keys.add(_pkey)
+
+        # One entry per QDIFF_PAIRS entry (spread statistic — auto scale).
+        for _qkey, _qval in ens_qdiff.items():
+            _stat_map[_qkey] = (_qval, f"|{_qkey}| spread")
 
         for _key in MOD_STATS_WHAT:
             if _key not in _stat_map:
                 print(f"  MOD_STATS: unknown stat '{_key}' — skipped.")
                 continue
             _vec, _label = _stat_map[_key]
+            _default_clim = MOD_CLIM if _key in _value_scale_keys else None
+            _clim = MOD_STATS_CLIM.get(_key, _default_clim)
             _block_out = os.path.join(
                 MOD_STATS_DIR,
                 f"resistivity_block_{P}_{_key}.dat",
@@ -685,7 +811,7 @@ if MOD_STATS:
                 ocean_rho  = MOD_OCEAN_RHO,
                 out        = OUT,
             )
-            print(f"STATS: plotting {_label} → {_pdf_out}")
+            print(f"STATS: plotting {_label} → {_pdf_out}  (clim={_clim})")
             _plot_slice(
                 block_file      = _block_out,
                 pdf_file        = _pdf_out,
@@ -697,6 +823,7 @@ if MOD_STATS:
                 utm_north       = utm_north,
                 site_xys        = site_xys,
                 obs_coords_only = obs_coords_only,
+                clim            = _clim,
             )
 
 print("\nfemtic_ens_post.py complete.")
