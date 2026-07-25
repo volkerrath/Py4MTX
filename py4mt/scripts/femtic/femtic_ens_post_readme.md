@@ -64,8 +64,62 @@ config block can be copied between scripts with no renaming.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `SPARSIFY` | bool | `True` | Threshold small entries in the covariance to create a CSR sparse version. |
+| `COMPUTE_COV` | bool | `True` | Set `False` to skip covariance estimation entirely. Statistics, percentiles, and slice plots are unaffected; only the `*_cov*` keys are omitted from the `.npz`. |
+| `COV_METHOD` | str | `"full"` | `"full"` = dense empirical covariance. `"low_rank"` = thin SVD of the centred ensemble instead — see below. |
+| `SPARSIFY` | bool | `True` | (`COV_METHOD="full"` only) Threshold small entries in the covariance to create a CSR sparse version. |
 | `SPARSE_THRESH` | float | `1e-8` | Relative threshold: entries with `|C_ij| / max|C| ≤ SPARSE_THRESH` are zeroed. |
+
+**`COV_METHOD="low_rank"`.** The empirical covariance of `n_members`
+samples has rank ≤ `n_members - 1`. Since `n_members` (tens to a few
+hundred) is normally far smaller than `n_free` (thousands to hundreds of
+thousands of mesh cells), forming the dense `n_free × n_free` covariance
+is both the slowest step in the script and, past a few thousand free
+parameters, not something that fits in memory at all (e.g. `n_free=1e5`
+→ 80 GB just to store it).
+
+Instead, `"low_rank"` takes the thin SVD of the centred ensemble matrix
+`Xc` (shape `n_members × n_free`):
+
+```
+Xc = U S Vᵀ         (economy SVD, cost O(n_members² · n_free))
+C  = Xcᵀ Xc / (m-1) = Vᵀᵀ diag(S²/(m-1)) Vᵀ     — exact, not an approximation
+```
+
+This is stored as `f"{P}_cov_eigval"` (`(r,)`, `r = min(n_members, n_free)`)
+and `f"{P}_cov_eigvec"` (`(n_free, r)`) in place of the dense `f"{P}_cov"`.
+The full covariance reconstructs exactly as
+`eigvec @ diag(eigval) @ eigvec.T`, and downstream consumers that only
+need matrix-vector products, low-rank sampling, or leading eigenpairs
+(e.g. `gdm.py`, prior sampling in `ensembles.py`) can use the factors
+directly without ever forming the dense matrix. Cost drops to
+`O(n_members² · n_free)` time and `O(n_members · n_free)` memory.
+
+**Other ways to speed up `COV_METHOD="full"`**, if the dense matrix is
+genuinely needed downstream:
+- Make sure NumPy/SciPy are linked against a multi-threaded BLAS (OpenBLAS
+  or MKL) — the `Xᵀ X` product inside `empirical_covariance` is a single
+  `dgemm` call and will use all cores automatically; check with
+  `numpy.show_config()` and set `OMP_NUM_THREADS` / `MKL_NUM_THREADS`
+  before launching Python if it's pinned to one core.
+- Cast `ens_matrix` to `float32` before the covariance call if the extra
+  precision isn't needed — halves memory traffic and roughly doubles
+  BLAS throughput on most hardware.
+- If only a fixed block/neighbourhood structure of `C` is ever queried
+  (e.g. covariance restricted to a region of interest), compute that
+  sub-block directly (`Xc[:, idx].T @ Xc[:, idx]`) instead of the full
+  matrix and slicing afterwards.
+- For truly large `n_free` where even the low-rank factors are awkward,
+  a randomized SVD (`sklearn.utils.extmath.randomized_svd` on `Xc`, or
+  `scipy.sparse.linalg.svds`) approximates the same factorisation with
+  fewer passes over the data — usually unnecessary here since the thin
+  SVD above is already exact and cheap, but relevant if `n_members`
+  itself becomes large (thousands).
+- `joblib.Parallel` / `multiprocessing` can shard the outer product sum
+  across process pools for the dense case, but for this problem shape
+  (`n_members` small, `n_free` large) the algorithmic fix (`"low_rank"`)
+  outperforms parallelizing the naive computation by orders of magnitude,
+  so that's the recommended first step rather than adding process-level
+  parallelism to the dense path.
 
 ### Output
 
@@ -101,7 +155,7 @@ Writes each selected statistic as a FEMTIC block file, then plots it.
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `MOD_STATS` | bool | `False` | Enable statistics slice plots. |
-| `MOD_STATS_WHAT` | list of str | `["avg","var","med","mad"]` | Which statistics to plot. Subset of `"avg"`, `"var"`, `"med"`, `"mad"`. |
+| `MOD_STATS_WHAT` | list of str | `["avg","var","med","mad"]` + one key per `PERCENTILES` level | Which statistics to plot. Subset of `"avg"`, `"var"`, `"med"`, `"mad"`, plus auto-generated percentile keys (e.g. `2.3` → `"p2_3"`, `50.0` → `"p50"`, `97.7` → `"p97_7"`). Default includes all of them. |
 | `MOD_STATS_DIR` | str | `stats_plots/` | Destination for block files and figures. |
 
 Block files are written using the lowest-nRMS member as format template
@@ -167,12 +221,17 @@ Keys follow the pattern `<PREFIX>_<stat>`:
 |---|---|---|
 | `<P>_model_list` | `(N, 3)` | `[block_file, n_iter, nRMS]` per accepted member. |
 | `<P>_ens` | `(N_members, N_free)` | Stacked ensemble in log₁₀(Ω·m). |
-| `<P>_cov` | `(N_free, N_free)` | Empirical covariance matrix. |
+| `<P>_cov` | `(N_free, N_free)` | Empirical covariance matrix. Present only if `COMPUTE_COV=True` and `COV_METHOD="full"`. |
+| `<P>_cov_eigval` | `(r,)` | Covariance eigenvalues, `r = min(N_members, N_free)`. Present only if `COMPUTE_COV=True` and `COV_METHOD="low_rank"`. |
+| `<P>_cov_eigvec` | `(N_free, r)` | Covariance eigenvectors; `C = eigvec @ diag(eigval) @ eigvec.T`. Present only if `COMPUTE_COV=True` and `COV_METHOD="low_rank"`. |
 | `<P>_avg` | `(N_free,)` | Element-wise mean over members. |
 | `<P>_var` | `(N_free,)` | Element-wise variance over members. |
 | `<P>_med` | `(N_free,)` | Element-wise median over members. |
 | `<P>_mad` | `(N_free,)` | Median absolute deviation. |
 | `<P>_prc` | `(N_prc, N_free)` | Percentile values at `PERCENTILES` levels. |
+| `<P>_prc_levels` | `(N_prc,)` | The `PERCENTILES` levels themselves, for self-describing output. |
+
+If `COMPUTE_COV=False`, none of the `<P>_cov*` keys are present.
 
 ### Statistics block files (MOD_STATS = True)
 
@@ -239,3 +298,4 @@ correct.
 | 2026-07-07 | vrath / Claude Sonnet 5 (Anthropic) | Renamed the entire plotting config surface to match `femtic_gst_prep.py` / `femtic_rto_prep.py` exactly (`MOD_*` prefix throughout: mesh, ocean/air, UTM origin, display coords, site overlay, slice specs, colormap/limits, figure layout). Added `MOD_OCEAN`/`MOD_AIR_RHO`, `MOD_SITE_NUMBER` (observe.dat fallback), `MOD_AIR_COLOR`, `MOD_ALPHA_FILE/MODE/BLANK_THRESH`, `MOD_PANEL_WIDTH`, `MOD_FIGSIZE`. Removed a latent duplicate `MOD_XLIM/YLIM/ZLIM` assignment that silently discarded the first (non-`None`) values. A config block can now be copied between `femtic_ens_post.py` and the ensemble-generation scripts with no renaming. |
 | 2026-07-09 | vrath / Claude Sonnet 5 (Anthropic) | Merged `MOD_QC_DPI` / `MOD_STATS_DPI` into a single `MOD_DPI` knob, matching `femtic_gst_prep.py` and `femtic_nss.py` (one figure-DPI setting per script, not one per plot type). `_plot_slice()` no longer takes a `dpi` argument; it reads `MOD_DPI` directly. |
 | 2026-07-17 | Claude Sonnet 5 (Anthropic) | `scipy.sparse`: migrated from legacy matrix to array-equivalent API — `scs.csr_matrix(tmp)` → `scs.csr_array(tmp)` when building the sparsified empirical covariance (`ens_covs`). No functional change; `ens_covs` is only used for its `.nnz` count. |
+| 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `COMPUTE_COV` (skip covariance entirely) and `COV_METHOD="low_rank"` (exact thin-SVD factorisation of the centred ensemble, avoiding the dense `N_free × N_free` matrix — see Covariance section). `MOD_STATS` now also writes a block file and slice figure for each `PERCENTILES` level (`p2_3`, `p50`, `p97_7`, …), included by default in `MOD_STATS_WHAT`. Added `<P>_prc_levels` to the `.npz` output. |

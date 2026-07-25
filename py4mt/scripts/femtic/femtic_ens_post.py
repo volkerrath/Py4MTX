@@ -88,6 +88,25 @@ Provenance
             API — scs.csr_matrix(tmp) → scs.csr_array(tmp) when building
             the sparsified empirical covariance (ens_covs). No functional
             change; ens_covs is only used for its .nnz count.
+2026-07-25  Claude Sonnet 5 (Anthropic)
+            Covariance estimation made optional (COMPUTE_COV; skips step
+            (3) entirely, omitting the *_cov* keys from the .npz output).
+            Added COV_METHOD="low_rank": thin SVD of the centred ensemble
+            matrix (n_members, n_free) instead of the dense empirical
+            covariance. Since the sample covariance of n_members draws
+            has rank <= n_members-1, this is an *exact* factorisation
+            (not an approximation) whenever n_members << n_free — the
+            usual case — cutting cost from O(n_free^2 * n_members) time /
+            O(n_free^2) memory to O(n_members^2 * n_free) time /
+            O(n_members * n_free) memory. Stores f"{P}_cov_eigval" /
+            f"{P}_cov_eigvec" in place of the dense f"{P}_cov"; full
+            covariance reconstructs exactly as
+            eigvec @ diag(eigval) @ eigvec.T. Also saved f"{P}_prc_levels"
+            (the PERCENTILES list itself) alongside f"{P}_prc" for
+            self-describing output. MOD_STATS now writes a block file and
+            slice figure for each PERCENTILES level in addition to
+            avg/var/med/mad, keyed as "p2_3", "p50", "p97_7", etc.
+            (default MOD_STATS_WHAT includes all of them).
 """
 from __future__ import annotations
 
@@ -135,7 +154,8 @@ FEMTIC="4.3"
 # ---------------------------------------------------------------------------
 
 # ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/ensembles/misti/ensemble/"
-ENSEMBLE_DIR = r"/media/vrath/LargeBack/misti/ensemble/"
+#ENSEMBLE_DIR = r"/media/vrath/LargeBack/misti/ensemble/"
+ENSEMBLE_DIR = r"//FEMTIC_work/Ensembles/misti_gst/ensemble/"
 ENSEMBLE_NAME = "misti_gst_suzuki_"
 # ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/ensembles/misti/ensemble/"
 # ENSEMBLE_NAME = "misti_gst_suzuki_"
@@ -156,6 +176,36 @@ PERCENTILES = [2.3, 15.9, 50.0, 84.1, 97.7]
 # ---------------------------------------------------------------------------
 # Covariance
 # ---------------------------------------------------------------------------
+#: Set False to skip covariance estimation entirely.  Mean/var/median/MAD/
+#: percentiles and slice plots are unaffected — only the *_cov* /
+#: *_cov_eigval* / *_cov_eigvec* keys are omitted from the .npz output.
+#: Skipping is worthwhile whenever the covariance itself isn't needed
+#: downstream (e.g. plain ensemble statistics runs), since it is by far
+#: the most expensive step for large meshes.
+COMPUTE_COV = True
+
+#: "full"     — dense empirical covariance (n_free x n_free) via
+#:              sklearn.covariance.empirical_covariance.  Cost
+#:              O(n_free^2 * n_members) time, O(n_free^2) memory — fine
+#:              for a few thousand free parameters, prohibitive beyond
+#:              that (e.g. n_free=1e5 -> 80 GB just to store it).
+#: "low_rank" — thin SVD of the centred ensemble matrix instead.  Since
+#:              the empirical covariance of n_members samples has rank
+#:              <= n_members-1, this is an *exact* factorisation (not an
+#:              approximation) whenever n_members << n_free, which is the
+#:              usual case here.  Cost drops to
+#:              O(n_members^2 * n_free) time and O(n_members * n_free)
+#:              memory — orders of magnitude cheaper.  Stores
+#:              f"{P}_cov_eigval" (r,) and f"{P}_cov_eigvec" (n_free, r)
+#:              with r = n_members instead of a dense f"{P}_cov"; the
+#:              full covariance can be reconstructed exactly as
+#:              eigvec @ diag(eigval) @ eigvec.T.  Same spirit as the
+#:              randomized-SVD-on-R approach used for low-rank prior
+#:              sampling in ensembles.py.
+COV_METHOD = "full"
+
+#: Sparsify the dense covariance (COV_METHOD="full" only). Ignored for
+#: "low_rank", which is already a compact factorisation.
 SPARSIFY     = True
 SPARSE_THRESH = 1.0e-8   # relative threshold for zeroing small entries
 
@@ -187,8 +237,12 @@ MOD_QC_FILE = ENSEMBLE_DIR + ENSEMBLE_PREFIX + "_qc.pdf"
 #: Set True to write derived stat members as block files and plot them.
 #: Requires MOD_MESH and a valid template file (taken from best member).
 MOD_STATS      = False
-#: Which statistics to plot.  Subset of: "avg", "var", "med", "mad".
-MOD_STATS_WHAT = ["avg", "var", "med", "mad"]
+#: Which statistics to plot.  Subset of: "avg", "var", "med", "mad", plus
+#: one auto-generated key per PERCENTILES level (e.g. 2.3 -> "p2_3",
+#: 50.0 -> "p50", 97.7 -> "p97_7").  Default below includes all of them.
+MOD_STATS_WHAT = ["avg", "var", "med", "mad"] + [
+    "p" + f"{_p:g}".replace(".", "_") for _p in PERCENTILES
+]
 #: Output directory for stat block files and figures.
 MOD_STATS_DIR  = ENSEMBLE_DIR + "/stats_plots/"
 
@@ -499,31 +553,58 @@ print(f"  var    log10(ρ): [{ens_var.min():.4f}, {ens_var.max():.4f}]")
 print(f"  median log10(ρ): [{ens_med.min():.3f}, {ens_med.max():.3f}]")
 print(f"  MAD    log10(ρ): [{ens_mad.min():.4f}, {ens_mad.max():.4f}]")
 
-# --- (3) Empirical covariance ---------------------------------------------
-print("\nComputing empirical covariance …")
-ens_cov = sklearn.covariance.empirical_covariance(ens_matrix)
+# --- (3) Empirical covariance (optional) -----------------------------------
+ens_cov       = None
+ens_covs      = None
+ens_cov_eigval = None
+ens_cov_eigvec = None
 
-ens_covs = None
-if SPARSIFY:
-    tmp    = ens_cov.copy()
-    tmp[np.abs(tmp) / np.amax(np.abs(tmp)) <= SPARSE_THRESH] = 0.0
-    ens_covs = scs.csr_array(tmp)
-    nnz      = ens_covs.nnz
-    total    = ens_cov.size
-    print(f"  Sparse covariance: {nnz}/{total} non-zeros "
-          f"({100.0*nnz/total:.2f}%), threshold={SPARSE_THRESH:.1e}")
+if COMPUTE_COV:
+    if COV_METHOD == "low_rank":
+        print("\nComputing low-rank covariance factorisation (thin SVD) …")
+        _Xc = ens_matrix - ens_avg[np.newaxis, :]           # (m, n_free), centred
+        _m  = _Xc.shape[0]
+        # Thin SVD of the (m, n_free) centred ensemble: cost O(m^2 * n_free),
+        # memory O(m * n_free) — never forms the n_free x n_free covariance.
+        # C = Xc^T Xc / (m-1) = Vt.T @ diag(S^2/(m-1)) @ Vt, exactly (rank <= m-1).
+        _U, _S, _Vt = np.linalg.svd(_Xc, full_matrices=False)
+        ens_cov_eigval = (_S ** 2) / max(_m - 1, 1)          # (r,)  r = min(m, n_free)
+        ens_cov_eigvec = _Vt.T                               # (n_free, r)
+        print(f"  rank r={ens_cov_eigval.size}  "
+              f"eigval range=[{ens_cov_eigval.min():.3e}, {ens_cov_eigval.max():.3e}]")
+        print("  Full covariance can be reconstructed exactly as "
+              "eigvec @ diag(eigval) @ eigvec.T")
+    else:
+        print("\nComputing empirical covariance …")
+        ens_cov = sklearn.covariance.empirical_covariance(ens_matrix)
+
+        if SPARSIFY:
+            tmp    = ens_cov.copy()
+            tmp[np.abs(tmp) / np.amax(np.abs(tmp)) <= SPARSE_THRESH] = 0.0
+            ens_covs = scs.csr_array(tmp)
+            nnz      = ens_covs.nnz
+            total    = ens_cov.size
+            print(f"  Sparse covariance: {nnz}/{total} non-zeros "
+                  f"({100.0*nnz/total:.2f}%), threshold={SPARSE_THRESH:.1e}")
+else:
+    print("\nCOMPUTE_COV=False — skipping covariance estimation.")
 
 # --- (4) Save .npz --------------------------------------------------------
 ens_dict = {
     f"{P}_model_list": model_list,
     f"{P}_ens":        ens_matrix,
-    f"{P}_cov":        ens_cov,
     f"{P}_avg":        ens_avg,
     f"{P}_var":        ens_var,
     f"{P}_med":        ens_med,
     f"{P}_mad":        ens_mad,
     f"{P}_prc":        ens_prc,
+    f"{P}_prc_levels": np.asarray(PERCENTILES),
 }
+if ens_cov is not None:
+    ens_dict[f"{P}_cov"] = ens_cov
+if ens_cov_eigval is not None:
+    ens_dict[f"{P}_cov_eigval"] = ens_cov_eigval
+    ens_dict[f"{P}_cov_eigvec"] = ens_cov_eigvec
 
 np.savez_compressed(ENSEMBLE_RESULTS, **ens_dict)
 print(f"\nResults saved → {ENSEMBLE_RESULTS}")
@@ -576,6 +657,10 @@ if MOD_STATS:
             "med": (ens_med, "median"),
             "mad": (ens_mad, "MAD"),
         }
+        # One entry per PERCENTILES level, keyed e.g. 2.3 -> "p2_3", 50.0 -> "p50".
+        for _i, _pval in enumerate(PERCENTILES):
+            _pkey = "p" + f"{_pval:g}".replace(".", "_")
+            _stat_map[_pkey] = (ens_prc[_i], f"{_pval:g}th percentile")
 
         for _key in MOD_STATS_WHAT:
             if _key not in _stat_map:
