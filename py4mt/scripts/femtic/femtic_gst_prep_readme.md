@@ -215,17 +215,17 @@ pilot-point cloud without re-running Kriging.
 
 ### QC slice plot (`PLOT_SLICES_QC`)
 
-When `PLOT_SLICES_QC = True` (inside the viz block, requires `PLOT_DATA` or `PLOT_MODEL` to be `True`), a slice figure of each Kriged initial model is saved for each selected ensemble member using `fviz.plot_model_slices` (exact tetrahedron-plane intersection, model-local metres only).
+When `PLOT_SLICES_QC = True` (inside the viz block, requires `PLOT_DATA` or `PLOT_MODEL` to be `True`), a slice figure of each Kriged initial model is saved for each selected ensemble member using `fviz.plot_model_slices` (exact tetrahedron-plane intersection, model-local metres only), via the shared `_plot_member_slices()` helper.
 
-| Variable | Default | Description |
-|---|---|---|
-| `PLOT_SLICES_QC` | `False` | Enable / disable the QC slice plot |
-| `QC_SLICES` | 4 slices | Slice-spec list in model-local metres — same format as `femtic_mod_plot.PLOT_SLICES`; optional `invert_x=True` per panel flips horizontal axis on curtain/plane panels |
-| `QC_CMAP` | `"turbo_r"` | Matplotlib colormap |
-| `QC_CLIM` | `[0., 4.]` | log₁₀(Ω·m) colour limits; `None` = auto |
-| `QC_XLIM`, `QC_YLIM`, `QC_ZLIM` | `None` | Global axis limits in model-local metres |
-| `QC_OCEAN_COLOR` | `"lightgrey"` | Flat colour for ocean cells |
-| `MOD_DPI` | `200` | Figure DPI |
+> **Note:** as of 2026-06-07 this uses the full shared `MOD_*` plotting
+> config block (`MOD_SLICES`, `MOD_CMAP`, `MOD_CLIM`, `MOD_XLIM`/`YLIM`/
+> `ZLIM`, `MOD_OCEAN_COLOR`, `MOD_DPI`, site overlay, UTM origin, etc. —
+> the same block documented under "Model perturbation" / shared with
+> `femtic_ens_post.py` and `femtic_rto_prep.py`) rather than the earlier,
+> now-removed `QC_SLICES`/`QC_CMAP`/`QC_CLIM`/`QC_XLIM`/`QC_YLIM`/
+> `QC_ZLIM`/`QC_OCEAN_COLOR` variables. `MOD_TICK_FONTSIZE` (default `7`)
+> and `MOD_LABEL_FONTSIZE` (default `8`) control the axis tick/label font
+> sizes for this plot.
 
 Figures are saved as `gst_qc<PLOT_STR>.pdf` in each member's subdirectory alongside the existing `gst_data` and `gst_model` figures.  The member file list uses `MOD_RESISTIVITY_FILE` so it always targets the Kriged initial model.
 
@@ -250,6 +250,13 @@ statistical summary rows.
 | `ENS_PER_MEMBER` | `False` | Also save one single-row figure per member |
 | `ENS_PLOT_DPI` | `300` | Figure DPI |
 | `ENS_PLOT_FILE` | `plots/gst_ensemble_slices.pdf` | Joint figure output path |
+| `ENS_TICK_FONTSIZE` | `6` | Font size for axis tick labels and colourbar ticks (`fviz.plot_ensemble_slices`' own default; independent of `MOD_TICK_FONTSIZE` above) |
+| `ENS_LABEL_FONTSIZE` | `7` | Font size for axis labels, row labels, panel titles, colourbar label, suptitle (`fviz.plot_ensemble_slices`' own default) |
+
+Note: `fviz.plot_ensemble_slices` does not currently support `depth_km`/
+`horiz_km` axis-unit scaling (plain metres only) — a call passing those
+kwargs would raise `TypeError`; this script no longer does so as of
+2026-07-25 (see Provenance).
 
 The member file list is built automatically using `MOD_RESISTIVITY_FILE` (the filename
 written by `generate_gst_model_ensemble`).  To visualise converged inversion results
@@ -414,6 +421,7 @@ No sparse-matrix file (`.npz`) is required.
 | 2026-07-05 | vrath / Claude Sonnet 5 (Anthropic) | Raised default `MOD_PP_EXTREMA_K` from 9 to 30 (recommended range 7–15 → 20–40) — the local extremum test was flagging too many spurious minima/maxima at small k. Corrected stale "Model diagnostic figures" description: figures plot the **generated `MOD_RESISTIVITY_FILE`** (reference model after pilot-point Kriging), not a side-by-side reference-vs-Kriged comparison. |
 | 2026-07-09 | vrath / Claude Sonnet 5 (Anthropic) | Moved `MOD_ORIGIN_METHOD` next to the `MOD_UTM_ORIGIN_*`/`MOD_UTM_ZONE_OVERRIDE` block; removed the duplicate later declaration next to the site-overlay settings. The shared plotting config block now has identical variable order and naming to `femtic_ens_post.py` and `femtic_nss.py` (single `MOD_DPI` knob in all three — `femtic_ens_post.py`'s earlier `MOD_QC_DPI`/`MOD_STATS_DPI` split was also removed). The `fviz.plot_model_slices()` call is byte-for-byte identical in every visual-affecting argument across all three scripts — only the models plotted differ. |
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `RANDOM_SEED` (default `None`) for optional reproducible ensembles — a shared, optionally seeded `rng` now also drives `ens.generate_data_ensemble` (new `rng` parameter, forwarded to `femtic.modify_data`). Added `MOD_SAVE_PILOT_POINTS` (default `True`) / `MOD_PILOT_POINTS_FILE`: writes every member's pilot-point coordinates and drawn log₁₀(ρ) values to a compressed `pilot_points.npz`, with `RANDOM_SEED` and pilot-point/variogram config recorded for a self-describing archive. See `ensembles_readme.md` for the underlying `generate_gst_model_ensemble` / `generate_data_ensemble` changes. |
+| 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `MOD_TICK_FONTSIZE`/`MOD_LABEL_FONTSIZE` (QC/model slice plots) and `ENS_TICK_FONTSIZE`/`ENS_LABEL_FONTSIZE` (ensemble slice plot) — axis tick/label font sizes were previously fixed at `femtic_viz.py`'s internal defaults with no way to override them here. Also removed `depth_km=True`/`horiz_km=True` from the `plot_ensemble_slices` call — that function doesn't accept those parameters and the call would have raised `TypeError` the first time `PLOT_SLICES_ENS` was set `True` (dormant since it defaults to `False`). Corrected the "QC slice plot" table above, which still documented the old `QC_SLICES`/`QC_CMAP`/etc. variables removed by the 2026-06-07 update. |
 
 ## Author
 

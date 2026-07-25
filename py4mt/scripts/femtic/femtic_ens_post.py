@@ -137,6 +137,13 @@ Provenance
             out blank/upside down whenever MOD_ZLIM was actually set,
             which is why the bug was invisible until this ROI change made
             MOD_ZLIM non-None by default) — see femtic_viz.py provenance.
+2026-07-25  Claude Sonnet 5 (Anthropic)
+            Added MOD_TICK_FONTSIZE / MOD_LABEL_FONTSIZE (defaults 7 / 8,
+            matching fviz.plot_model_slices' own defaults), passed through
+            to every _plot_slice() call (MOD_QC and MOD_STATS). Axis tick
+            labels, axis labels, panel titles, and colourbar text were
+            previously fixed at plot_model_slices' internal defaults with
+            no way to override them from this script.
 """
 from __future__ import annotations
 
@@ -403,6 +410,11 @@ MOD_PANEL_HEIGHT = 16.0   # cm
 MOD_PANEL_WIDTH  = None   # cm; None = auto from aspect ratio
 MOD_FIGSIZE      = None   # [w, h] cm; overrides auto when set
 
+#: Axis annotation font sizes, passed through to fviz.plot_model_slices.
+#: Defaults match plot_model_slices' own defaults.
+MOD_TICK_FONTSIZE  = 7    # axis tick labels, colourbar ticks
+MOD_LABEL_FONTSIZE = 8    # axis labels, panel titles, colourbar label
+
 # ---------------------------------------------------------------------------
 # Verbose output
 # ---------------------------------------------------------------------------
@@ -548,6 +560,8 @@ def _plot_slice(block_file: str, pdf_file: str,
         figsize             = [v / 2.54 for v in MOD_FIGSIZE] if MOD_FIGSIZE is not None else None,
         nrows               = MOD_NROWS,
         ncols               = MOD_NCOLS,
+        tick_fontsize       = MOD_TICK_FONTSIZE,
+        label_fontsize      = MOD_LABEL_FONTSIZE,
         alpha_file          = MOD_ALPHA_FILE,
         alpha_mode          = MOD_ALPHA_MODE,
         alpha_blank_thresh  = MOD_ALPHA_BLANK_THRESH,

@@ -92,6 +92,13 @@ Provenance
                 inverse.py is a separate module and its internal
                 range-finder randomness was not verified/wired through;
                 see the RANDOM_SEED config comment for details.
+    2026-07-25  Claude Sonnet 5 (Anthropic)
+                Added MOD_TICK_FONTSIZE / MOD_LABEL_FONTSIZE (defaults 7/8,
+                matching fviz.plot_model_slices' own defaults), passed
+                through to the MOD_QC call. Axis tick labels, axis labels,
+                panel title, and colourbar text were previously fixed at
+                plot_model_slices' internal defaults with no way to
+                override them from this script.
 
 @author: vrath
 """
@@ -301,6 +308,12 @@ MOD_PANEL_HEIGHT = 16.0   # cm
 MOD_PANEL_WIDTH  = None   # cm; None = auto from aspect ratio
 MOD_FIGSIZE      = None   # [w, h] cm; overrides auto when set
 
+#: Axis annotation font sizes, passed through to fviz.plot_model_slices
+#: (used by the MOD_QC plot below). Defaults match plot_model_slices'
+#: own defaults.
+MOD_TICK_FONTSIZE  = 7    # axis tick labels, colourbar ticks
+MOD_LABEL_FONTSIZE = 8    # axis labels, panel titles, colourbar label
+
 # ===========================================================================
 # Step 4 configuration — model perturbation mode
 # ===========================================================================
@@ -493,6 +506,8 @@ def _plot_slice(block_file: str, pdf_file: str,
         figsize             = [v / 2.54 for v in MOD_FIGSIZE] if MOD_FIGSIZE is not None else None,
         nrows               = MOD_NROWS,
         ncols               = MOD_NCOLS,
+        tick_fontsize       = MOD_TICK_FONTSIZE,
+        label_fontsize      = MOD_LABEL_FONTSIZE,
         alpha_file          = MOD_ALPHA_FILE,
         alpha_mode          = MOD_ALPHA_MODE,
         alpha_blank_thresh  = MOD_ALPHA_BLANK_THRESH,

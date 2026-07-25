@@ -135,6 +135,20 @@ Provenance:
                 "<ENSEMBLE_DIR><ENSEMBLE_NAME>pilot_points.npz"), with
                 RANDOM_SEED and the pilot-point/variogram config recorded
                 alongside for a self-describing archive.
+    2026-07-25  Claude Sonnet 5 (Anthropic)
+                Added MOD_TICK_FONTSIZE / MOD_LABEL_FONTSIZE (defaults 7/8,
+                matching fviz.plot_model_slices' own defaults) and
+                ENS_TICK_FONTSIZE / ENS_LABEL_FONTSIZE (defaults 6/7,
+                matching fviz.plot_ensemble_slices' own defaults, and
+                independent of the MOD_* pair since the joint member x
+                slice grid needs smaller text to stay readable). Wired into
+                the PLOT_SLICES_QC/PLOT_MODEL call (_plot_member_slices)
+                and the PLOT_SLICES_ENS call respectively. Also removed
+                depth_km=True/horiz_km=True from the plot_ensemble_slices
+                call — that function does not accept those parameters (no
+                km-scaling support), so the call would have raised
+                TypeError the first time PLOT_SLICES_ENS was set True;
+                dormant until now since it defaults to False.
 """
 
 import os
@@ -548,6 +562,12 @@ if PLOT_DATA or PLOT_MODEL:
     MOD_PANEL_WIDTH   = None   # cm; None = auto from aspect ratio
     MOD_FIGSIZE       = None   # [w, h] cm; overrides auto when set
 
+    #: Axis annotation font sizes, passed through to fviz.plot_model_slices
+    #: (used by both PLOT_SLICES_QC and PLOT_MODEL below). Defaults match
+    #: plot_model_slices' own defaults.
+    MOD_TICK_FONTSIZE  = 7    # axis tick labels, colourbar ticks
+    MOD_LABEL_FONTSIZE = 8    # axis labels, panel titles, colourbar label
+
     # --- Ensemble slice plot (femtic_viz.plot_ensemble_slices) ---------------
     #: Set True to produce a joint member × slice figure after generation.
     PLOT_SLICES_ENS = False
@@ -562,6 +582,11 @@ if PLOT_DATA or PLOT_MODEL:
     ENS_PER_MEMBER  = False
     ENS_PLOT_DPI    = 300
     ENS_PLOT_FILE   = PLOT_DIR + "gst_ensemble_slices" + PLOT_STR + ".pdf"
+    #: Axis annotation font sizes for plot_ensemble_slices (independent of
+    #: MOD_TICK_FONTSIZE/MOD_LABEL_FONTSIZE above -- plot_ensemble_slices'
+    #: joint member x slice grid uses smaller defaults so more rows fit).
+    ENS_TICK_FONTSIZE  = 6
+    ENS_LABEL_FONTSIZE = 7
 
     # --- QC slice plot of Kriged initial models ------------------------------
     #: Set True to produce one slice figure per selected member.
@@ -829,6 +854,8 @@ if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC
             horiz_km        = MOD_HORIZ_KM,
             nrows           = MOD_NROWS,
             ncols           = MOD_NCOLS,
+            tick_fontsize   = MOD_TICK_FONTSIZE,
+            label_fontsize  = MOD_LABEL_FONTSIZE,
             panel_height    = MOD_PANEL_HEIGHT / 2.54,
             panel_width     = MOD_PANEL_WIDTH / 2.54 if MOD_PANEL_WIDTH is not None else None,
             figsize         = [v / 2.54 for v in MOD_FIGSIZE] if MOD_FIGSIZE is not None else None,
@@ -904,8 +931,8 @@ if PLOT_DATA or PLOT_MODEL:
             zlim            = ENS_ZLIM,
             ocean_color     = ENS_OCEAN_COLOR,
             ocean_value     = 0.25,
-            depth_km        = True,
-            horiz_km        = True,
+            tick_fontsize   = ENS_TICK_FONTSIZE,
+            label_fontsize  = ENS_LABEL_FONTSIZE,
             per_member_file = ENS_PER_MEMBER,
             plot_file       = ENS_PLOT_FILE,
             dpi             = ENS_PLOT_DPI,

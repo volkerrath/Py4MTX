@@ -83,10 +83,12 @@ makes the *entire* ensemble (data + model perturbation, plus the
 | `PLOT_MODEL` | Enable model ensemble plot |
 | `PLOT_SLICES_QC` | Enable per-member QC slice plot |
 | `PLOT_SLICES_ENS` | Enable joint ensemble slice figure |
-| `QC_SLICES` | Slice dicts for QC plots (model-local metres, `kind` key) |
+| `MOD_SLICES` | Slice dicts for QC/model plots (model-local metres, `kind` key). As of 2026-06-07 the QC plot uses the full shared `MOD_*` plotting config block (`MOD_CMAP`, `MOD_CLIM`, `MOD_XLIM`/`YLIM`/`ZLIM`, `MOD_OCEAN_COLOR`, `MOD_DPI`, site overlay, UTM origin, etc. — same as `femtic_gst_prep.py`/`femtic_ens_post.py`), not the older `QC_SLICES`/`QC_CMAP`/etc. variables. |
+| `MOD_TICK_FONTSIZE` / `MOD_LABEL_FONTSIZE` | Axis tick/label font sizes for the QC/model slice plot. Defaults `7`/`8`, matching `fviz.plot_model_slices`' own defaults. |
 | `ENS_SLICES` | Slice dicts for ensemble plot |
 | `ENS_CMAP/CLIM` | Colormap and limits for ensemble plot |
 | `ENS_STAT_ROWS` | Summary rows: `["mean", "std", "median"]` subset |
+| `ENS_TICK_FONTSIZE` / `ENS_LABEL_FONTSIZE` | Axis tick/label font sizes for the ensemble slice plot. Defaults `6`/`7`, matching `fviz.plot_ensemble_slices`' own defaults; independent of the `MOD_*` pair above since the joint member × slice grid needs smaller text to stay readable. |
 
 ---
 
@@ -108,10 +110,19 @@ dict(kind="plane", point=[0,0,5000], strike=45, dip=60)
 - `MOD_SLICES` updated from `{"type": "map", ...}` to
   `dict(kind="map", ...)` — the `"type"` key is no longer accepted by
   `fviz.plot_model_slices`.
-- `depth_km=True`, `horiz_km=True` added to `plot_model_slices` (QC)
-  and `plot_ensemble_slices` calls.
+- `depth_km=True`, `horiz_km=True` added to the `plot_model_slices` (QC)
+  call. **Correction (2026-07-25):** these were also mistakenly being
+  passed to the `plot_ensemble_slices` call, which does not accept them
+  (no km-scaling support there) — that call would have raised `TypeError`
+  the first time `PLOT_SLICES_ENS` was set `True`. Removed from that call;
+  `plot_ensemble_slices` output remains in plain metres.
 - 2026-07-25 (Claude Sonnet 5, Anthropic): Added `RANDOM_SEED` for
   optional reproducible ensembles. Fixed a reproducibility gap where
   `generate_data_ensemble` silently used its own unseeded generator even
   when the model-perturbation `rng` was seeded — it now accepts and
   forwards `rng` to `femtic.modify_data`.
+- 2026-07-25 (Claude Sonnet 5, Anthropic): Added `MOD_TICK_FONTSIZE`/
+  `MOD_LABEL_FONTSIZE` (QC/model slice plots) and `ENS_TICK_FONTSIZE`/
+  `ENS_LABEL_FONTSIZE` (ensemble slice plot) — axis tick/label font sizes
+  were previously fixed at `femtic_viz.py`'s internal defaults with no way
+  to override them here.
