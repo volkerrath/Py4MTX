@@ -111,10 +111,12 @@ Provenance
             Added MOD_STATS_CLIM: per-statistic colour-scale override for
             MOD_STATS plots. AVG/MED/percentile panels default to the
             shared MOD_CLIM (same log10(Ω·m) space as the model); VAR/MAD/
-            QDIFF panels — a different scale entirely — now default to
-            automatic per-panel scaling instead of silently reusing
-            MOD_CLIM (which previously made them blank or meaningless).
-            _plot_slice() gained a clim= parameter to carry this through.
+            QDIFF panels — a different scale entirely — default to a fixed
+            [-2, 2] range instead of silently reusing MOD_CLIM (which
+            previously made them blank or meaningless); set any of those
+            keys to None in MOD_STATS_CLIM to fall back to auto per-panel
+            scaling instead. _plot_slice() gained a clim= parameter to
+            carry this through.
             Added QDIFF_PAIRS (default [(15.9, 84.1)]): computes
             |P_hi - P_lo| per free parameter as an outlier-robust spread
             statistic, saved to the .npz as f"{P}_qdiff_<lo>_<hi>" and
@@ -288,14 +290,19 @@ MOD_STATS_DIR  = ENSEMBLE_DIR + "/stats_plots/"
 #: Per-statistic colour-scale override, keyed the same as MOD_STATS_WHAT
 #: (e.g. "var", "p50", "qdiff_15_9_84_1"). Each value is an explicit
 #: [vmin, vmax] pair, or None for automatic per-panel scaling from that
-#: statistic's own data range. Leave empty (default) to use the built-in
-#: fallback: AVG/MED and the percentile fields share MOD_CLIM (they live
-#: in the same log10(Ω·m) space as the model itself), while VAR/MAD/QDIFF
-#: -- spread statistics on a completely different scale -- default to None
-#: (auto), since forcing MOD_CLIM onto them would make those panels blank
-#: or meaningless. Add an entry here to override any of that, e.g.
-#: MOD_STATS_CLIM["var"] = [0.0, 0.5].
-MOD_STATS_CLIM = {}
+#: statistic's own data range. AVG/MED and the percentile fields aren't
+#: listed here — they fall back to MOD_CLIM automatically (same log10(Ω·m)
+#: space as the model itself). VAR/MAD/QDIFF are spread statistics on a
+#: completely different, typically much narrower scale, so they get their
+#: own fixed range below rather than auto-scaling per panel — set to
+#: [-2, 2] as a sensible starting range; adjust per-key, or set a key to
+#: None to fall back to auto-scaling for that one statistic.
+MOD_STATS_CLIM = {
+    "var": [-2.0, 2.0],
+    "mad": [-2.0, 2.0],
+}
+for _lo, _hi in QDIFF_PAIRS:
+    MOD_STATS_CLIM[f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_")] = [-2.0, 2.0]
 
 # ---------------------------------------------------------------------------
 # Shared slice / plot parameters

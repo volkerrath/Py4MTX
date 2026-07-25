@@ -159,7 +159,7 @@ Writes each selected statistic as a FEMTIC block file, then plots it.
 | `MOD_STATS` | bool | `False` | Enable statistics slice plots. |
 | `MOD_STATS_WHAT` | list of str | `["avg","var","med","mad"]` + one key per `PERCENTILES` level + one per `QDIFF_PAIRS` entry | Which statistics to plot. Subset of `"avg"`, `"var"`, `"med"`, `"mad"`, plus auto-generated percentile keys (e.g. `2.3` → `"p2_3"`, `50.0` → `"p50"`, `97.7` → `"p97_7"`) and qdiff keys (e.g. `(15.9, 84.1)` → `"qdiff_15_9_84_1"`). Default includes all of them. |
 | `MOD_STATS_DIR` | str | `stats_plots/` | Destination for block files and figures. |
-| `MOD_STATS_CLIM` | dict | `{}` | Per-statistic colour-scale override, keyed like `MOD_STATS_WHAT`. Each value is `[vmin, vmax]` or `None` (auto). Falls back to `MOD_CLIM` for `"avg"`/`"med"`/percentile keys (same log10(Ω·m) space as the model) and to `None` (auto per-panel) for `"var"`/`"mad"`/`"qdiff_*"` (spread statistics on an unrelated scale — see notes below). |
+| `MOD_STATS_CLIM` | dict | `{"var": [-2,2], "mad": [-2,2], "qdiff_...": [-2,2]}` | Per-statistic colour-scale override, keyed like `MOD_STATS_WHAT`. Each value is `[vmin, vmax]` or `None` (auto). `"avg"`/`"med"`/percentile keys aren't listed and fall back to `MOD_CLIM` automatically (same log10(Ω·m) space as the model). `"var"`/`"mad"`/`"qdiff_*"` (spread statistics on an unrelated, typically much narrower scale) default to a fixed `[-2, 2]` range; set a key to `None` to switch that one back to auto per-panel scaling. |
 
 **Why `MOD_STATS_CLIM` exists.** `MOD_CLIM` fixes the colour scale for the
 resistivity model itself (log10 Ω·m), typically something like `[0, 4]`.
@@ -168,8 +168,10 @@ or `MAD`/`QDIFF` (spread in log10ρ, also a small number) made those panels
 come out essentially blank — everything mapped to the bottom of the
 colour scale. `MOD_STATS_CLIM` lets `AVG`/`MED`/percentile panels keep
 sharing `MOD_CLIM` (so they're visually comparable to each other and to
-the QC plot) while `VAR`/`MAD`/`QDIFF_*` automatically get their own
-scale from their own data range, unless you set an explicit override.
+the QC plot) while `VAR`/`MAD`/`QDIFF_*` get their own, much narrower
+fixed range (`[-2, 2]` by default) so they stay comparable to *each
+other* across members/panels/runs; edit the values in `MOD_STATS_CLIM`
+directly, or set a key to `None`, to change that behaviour.
 
 Block files are written using the lowest-nRMS member as format template
 (preserves header, bounds, and flag columns).  Output filenames follow the
@@ -316,4 +318,4 @@ correct.
 | 2026-07-09 | vrath / Claude Sonnet 5 (Anthropic) | Merged `MOD_QC_DPI` / `MOD_STATS_DPI` into a single `MOD_DPI` knob, matching `femtic_gst_prep.py` and `femtic_nss.py` (one figure-DPI setting per script, not one per plot type). `_plot_slice()` no longer takes a `dpi` argument; it reads `MOD_DPI` directly. |
 | 2026-07-17 | Claude Sonnet 5 (Anthropic) | `scipy.sparse`: migrated from legacy matrix to array-equivalent API — `scs.csr_matrix(tmp)` → `scs.csr_array(tmp)` when building the sparsified empirical covariance (`ens_covs`). No functional change; `ens_covs` is only used for its `.nnz` count. |
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `COMPUTE_COV` (skip covariance entirely) and `COV_METHOD="low_rank"` (exact thin-SVD factorisation of the centred ensemble, avoiding the dense `N_free × N_free` matrix — see Covariance section). `MOD_STATS` now also writes a block file and slice figure for each `PERCENTILES` level (`p2_3`, `p50`, `p97_7`, …), included by default in `MOD_STATS_WHAT`. Added `<P>_prc_levels` to the `.npz` output. |
-| 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `MOD_STATS_CLIM` for per-statistic colour scaling (VAR/MAD/QDIFF now auto-scale by default instead of silently reusing `MOD_CLIM`, which made them blank). Added `QDIFF_PAIRS` (default `[(15.9, 84.1)]`): percentile-difference spread statistics, saved to the `.npz` and plottable via `MOD_STATS`. Added `MOD_ROI_AUTO`/`MOD_ROI_PAD_XY`/`MOD_ROI_ZLIM`: automatic `MOD_XLIM`/`MOD_YLIM`/`MOD_ZLIM` from the site bounding box, which also activates `femtic_viz.py`'s existing aspect-ratio panel-width logic so map/ns/ew panels size themselves differently. Changed `MOD_NROWS`/`MOD_NCOLS` defaults to `2`/`2`. Also fixed a sign bug in `femtic_viz.py`'s `plot_model_slices` (ns/ew curtain panels rendered blank/upside down whenever `MOD_ZLIM` was set) — the bug was dormant under the old `MOD_ZLIM=None` default and is fixed as part of enabling `MOD_ROI_AUTO`. |
+| 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `MOD_STATS_CLIM` for per-statistic colour scaling (`VAR`/`MAD`/`QDIFF` default to a fixed `[-2, 2]` range instead of silently reusing `MOD_CLIM`, which made them blank; set a key to `None` for auto per-panel scaling instead). Added `QDIFF_PAIRS` (default `[(15.9, 84.1)]`): percentile-difference spread statistics, saved to the `.npz` and plottable via `MOD_STATS`. Added `MOD_ROI_AUTO`/`MOD_ROI_PAD_XY`/`MOD_ROI_ZLIM`: automatic `MOD_XLIM`/`MOD_YLIM`/`MOD_ZLIM` from the site bounding box, which also activates `femtic_viz.py`'s existing aspect-ratio panel-width logic so map/ns/ew panels size themselves differently. Changed `MOD_NROWS`/`MOD_NCOLS` defaults to `2`/`2`. Also fixed a sign bug in `femtic_viz.py`'s `plot_model_slices` (ns/ew curtain panels rendered blank/upside down whenever `MOD_ZLIM` was set) — the bug was dormant under the old `MOD_ZLIM=None` default and is fixed as part of enabling `MOD_ROI_AUTO`. |

@@ -114,6 +114,21 @@ Modified: 2026-07-19 by Claude Sonnet 5 (Anthropic) — added a mesh-agnostic
     generate_gst_perturbation_modem(). generate_gst_model_ensemble() itself
     is unchanged. Written to support modem_nss.py (ModEM null-space shuttle,
     analogous to femtic_nss.py).
+Updated 2026-07-25 by Claude Sonnet 5 (Anthropic) -- generate_gst_model_
+    ensemble gained save_pilot_points / pilot_points_file / seed: when
+    save_pilot_points=True, every member's pilot-point coordinates
+    (pp_x/y/z) and drawn log10(rho) values (pp_vals) are accumulated
+    during the member loop and written to a single compressed .npz
+    (default f"{dir_base}pilot_points.npz") after it completes, alongside
+    pp_mode/pp_value_mode/variogram/log_rho_min/log_rho_max/seed metadata
+    for a self-describing archive. seed is informational only (recorded,
+    not used to seed anything -- pass a seeded rng for that); reproducible
+    runs are the caller's responsibility (femtic_gst_prep.py now does this
+    via a RANDOM_SEED config variable). generate_data_ensemble gained an
+    rng parameter, forwarded to femtic.modify_data (which already accepted
+    one) for each member, so the data-perturbation path can share the same
+    seeded generator as the model-perturbation path instead of each
+    modify_data call silently falling back to its own unseeded generator.
 """
 
 from __future__ import annotations
@@ -1188,6 +1203,10 @@ def generate_gst_model_ensemble(
     reference_file: str = "referencemodel.dat",
     rng: Optional[Generator] = None,
     out: bool = True,
+    # --- reproducibility / pilot-point export ---
+    save_pilot_points: bool = False,
+    pilot_points_file: Optional[str] = None,
+    seed: Optional[int] = None,
 ) -> list[str]:
     """Generate a geostatistical initial-model ensemble via pilot-point Kriging.
 
@@ -1330,8 +1349,32 @@ def generate_gst_model_ensemble(
         Filename for the prior / reference model (default ``referencemodel.dat``).
     rng : numpy.random.Generator, optional
         Shared random generator.  If None, uses ``np.random.default_rng()``.
+        Pass a generator seeded by the caller (e.g.
+        ``np.random.default_rng(RANDOM_SEED)``) for a fully reproducible
+        ensemble — same pilot-point locations and values every run, given
+        identical templates/config.
     out : bool
         If True, print progress messages.
+
+    Reproducibility / pilot-point export
+    -------------------------------------
+    save_pilot_points : bool
+        If True, write every member's pilot-point coordinates and drawn
+        log₁₀(ρ) values to ``pilot_points_file`` as a single compressed
+        ``.npz`` after the member loop completes. Useful for reproducibility
+        audits, GST parameter diagnostics, or re-plotting the pilot-point
+        cloud without re-running Kriging. Default False (no extra I/O).
+    pilot_points_file : str, optional
+        Output path for the pilot-point archive. ``None`` (default) writes
+        to ``f"{dir_base}pilot_points.npz"`` — alongside the per-member
+        directories, at the ensemble root. Ignored when
+        ``save_pilot_points=False``.
+    seed : int, optional
+        Informational only — recorded in the ``pilot_points.npz`` archive
+        (key ``"seed"``, ``-1`` if not given) so the archive is
+        self-describing. Does **not** seed the RNG itself; pass a seeded
+        generator via ``rng`` for that. Typically the same integer used to
+        construct ``rng`` in the caller.
 
     Returns
     -------
@@ -1342,6 +1385,22 @@ def generate_gst_model_ensemble(
     Notes
     -----
     Requires ``gstools`` (pip install gstools).
+
+    ``pilot_points.npz`` contents (when ``save_pilot_points=True``)
+    -----------------------------------------------------------------
+    ``member_ids``   : (n_members,) int — the processed member indices
+                        (``fromto_arr``).
+    ``pp_x/y/z``     : (n_members, n_pp_total) float — pilot-point
+                        coordinates (easting, northing, depth) per member.
+                        ``n_pp_total`` is constant across members for a
+                        given ``pp_mode`` (fixed skeleton size + ``n_pp``
+                        random fill points, where applicable).
+    ``pp_vals``      : (n_members, n_pp_total) float — log₁₀(ρ) values
+                        drawn at each pilot point, per member.
+    ``pp_mode``, ``pp_value_mode``, ``log_rho_min``, ``log_rho_max``,
+    ``vario_model``, ``vario_range``, ``vario_sill``, ``vario_nugget``,
+    ``seed`` — scalar/array metadata mirroring the call's configuration,
+    for self-describing archives.
 
     Author: Volker Rath (DIAS)
     Created with the help of Claude Sonnet 4.6 (Anthropic), 2026-04-27.
@@ -1522,6 +1581,15 @@ def generate_gst_model_ensemble(
 
     mod_list: list[str] = []
 
+    # Accumulators for the optional pilot-point archive (save_pilot_points).
+    # Lists of (n_pp_total,) arrays, one entry appended per member; stacked
+    # into (n_members, n_pp_total) after the loop. n_pp_total is constant
+    # across members for a given pp_mode, so stacking is always safe.
+    _pp_x_all: list[np.ndarray] = []
+    _pp_y_all: list[np.ndarray] = []
+    _pp_z_all: list[np.ndarray] = []
+    _pp_vals_all: list[np.ndarray] = []
+
     for iens in fromto_arr:
         member_dir = f"{dir_base}{iens}/"
 
@@ -1561,6 +1629,12 @@ def generate_gst_model_ensemble(
             pp_vals = np.clip(pp_vals, log_rho_min, log_rho_max)
         else:  # "uniform"
             pp_vals = rng.uniform(log_rho_min, log_rho_max, len(pp_x))
+
+        if save_pilot_points:
+            _pp_x_all.append(pp_x)
+            _pp_y_all.append(pp_y)
+            _pp_z_all.append(pp_z)
+            _pp_vals_all.append(pp_vals)
 
         # --- Ordinary Kriging ---
         krig = gs.krige.Ordinary(
@@ -1607,6 +1681,34 @@ def generate_gst_model_ensemble(
     if out:
         print("\nlist of written model files:")
         print(mod_list)
+
+    if save_pilot_points:
+        _pp_file = (pilot_points_file if pilot_points_file is not None
+                    else f"{dir_base}pilot_points.npz")
+        _pp_x_arr    = np.asarray(_pp_x_all)      # (n_members, n_pp_total)
+        _pp_y_arr    = np.asarray(_pp_y_all)
+        _pp_z_arr    = np.asarray(_pp_z_all)
+        _pp_vals_arr = np.asarray(_pp_vals_all)
+        np.savez_compressed(
+            _pp_file,
+            member_ids=fromto_arr,
+            pp_x=_pp_x_arr,
+            pp_y=_pp_y_arr,
+            pp_z=_pp_z_arr,
+            pp_vals=_pp_vals_arr,
+            pp_mode=pp_mode,
+            pp_value_mode=pp_value_mode,
+            log_rho_min=log_rho_min,
+            log_rho_max=log_rho_max,
+            vario_model=vario_model,
+            vario_range=np.asarray(vario_range, dtype=float),
+            vario_sill=vario_sill,
+            vario_nugget=vario_nugget,
+            seed=seed if seed is not None else -1,
+        )
+        if out:
+            print(f"\nPilot points written: {_pp_file}  "
+                  f"({_pp_x_arr.shape[0]} members x {_pp_x_arr.shape[1]} points)")
 
     return mod_list
 
@@ -2791,6 +2893,7 @@ def generate_data_ensemble(alg: str = 'rto',
     draw_from: Sequence[float | str] = ("normal", 0.0, 1.0),
     method: str = "add",
     errors: Sequence[Sequence[float]] | Sequence[list] = (),
+    rng: Optional[Generator] = None,
     out: bool = True,
 ) -> list[str]:
     """
@@ -2817,6 +2920,15 @@ def generate_data_ensemble(alg: str = 'rto',
         Placeholder for different perturbation strategies (currently unused).
     errors : sequence
         Error specifications forwarded to :func:`modify_data`.
+    rng : numpy.random.Generator, optional
+        Shared random generator, forwarded to :func:`femtic.modify_data` for
+        each member.  Pass a generator seeded by the caller for a fully
+        reproducible data ensemble.  If None, each call to
+        :func:`modify_data` falls back to its own fresh, non-reproducible
+        generator — pass a shared, seeded ``rng`` here whenever the model
+        ensemble (``generate_gst_model_ensemble`` / ``generate_rto_model_
+        ensemble``) is also being seeded, so both perturbation paths are
+        reproducible together.
     out : bool
         If True, print status messages.
 
@@ -2836,6 +2948,7 @@ def generate_data_ensemble(alg: str = 'rto',
             draw_from=draw_from,
             method=method,
             errors=errors,
+            rng=rng,
             out=out,
         )
         obs_list.append(file)

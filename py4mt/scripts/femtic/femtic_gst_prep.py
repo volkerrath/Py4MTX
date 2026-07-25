@@ -120,6 +120,21 @@ Provenance:
                 or reordering, and the fviz.plot_model_slices() call is
                 byte-for-byte identical in every visual-affecting argument
                 across all three - only the models plotted differ.
+    2026-07-25  Claude Sonnet 5 (Anthropic)
+                Added RANDOM_SEED (default None): when set to an integer,
+                rng = np.random.default_rng(RANDOM_SEED) instead of a fresh
+                OS-entropy generator, giving a fully reproducible ensemble
+                (pilot-point locations/values, PERTURB_DAT data
+                perturbations, and the VIZ_SAMPLES draw all derive from the
+                same shared rng, now threaded through
+                ens.generate_data_ensemble as well — see ensembles.py
+                provenance). Added MOD_SAVE_PILOT_POINTS (default True) /
+                MOD_PILOT_POINTS_FILE: writes every member's pilot-point
+                coordinates and drawn log10(rho) values to a single
+                compressed pilot_points.npz (default
+                "<ENSEMBLE_DIR><ENSEMBLE_NAME>pilot_points.npz"), with
+                RANDOM_SEED and the pilot-point/variogram config recorded
+                alongside for a self-describing archive.
 """
 
 import os
@@ -153,7 +168,6 @@ os.environ["OMP_NUM_THREADS"] = N_THREADS
 os.environ["OPENBLAS_NUM_THREADS"] = N_THREADS
 os.environ["MKL_NUM_THREADS"] = N_THREADS
 
-rng = np.random.default_rng()
 nan = np.nan
 version, _ = versionstrg()
 fname = inspect.getfile(inspect.currentframe())
@@ -162,6 +176,22 @@ titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng + "\n\n")
 
 OUT = True
+
+"""
+Reproducibility (optional).
+-----------------------------------------------------------------------
+Set RANDOM_SEED to an integer for a fully reproducible ensemble: same
+pilot-point locations/values, same data perturbations (if PERTURB_DAT),
+and same VIZ_SAMPLES draw, given identical templates/config. None
+(default) uses fresh OS entropy — a different ensemble every run, as
+before. The resolved seed is also recorded in pilot_points.npz (see
+MOD_SAVE_PILOT_POINTS below) so a given ensemble's provenance is
+self-describing even if this script's config changes later.
+"""
+RANDOM_SEED = None   # e.g. 20260725 for a reproducible run; None = fresh entropy
+
+rng = np.random.default_rng(RANDOM_SEED)
+print(f"RNG seed: {RANDOM_SEED if RANDOM_SEED is not None else '(fresh entropy — not reproducible)'}\n")
 
 
 """
@@ -341,6 +371,21 @@ if PERTURB_MOD:
     MOD_OUTPUT_TARGET    = "both"
     MOD_RESISTIVITY_FILE = "resistivity_block_iter0.dat"
     MOD_REFERENCE_FILE   = "referencemodel.dat"
+
+    # ------------------------------------------------------------------
+    # Pilot-point coordinates and perturbations — optional .npz export
+    # ------------------------------------------------------------------
+    # When True, every member's pilot-point coordinates (easting,
+    # northing, depth) and drawn log10(rho) perturbation values are
+    # written to a single compressed .npz alongside the ensemble
+    # directories (default: ENSEMBLE_DIR/ENSEMBLE_NAME + "pilot_points.npz").
+    # Useful for reproducibility audits, GST parameter diagnostics, or
+    # re-plotting the pilot-point cloud without re-running Kriging. Arrays
+    # are shaped (n_members, n_pp_total); RANDOM_SEED is recorded alongside
+    # them for a self-describing archive. See ensembles_readme.md for the
+    # full key list.
+    MOD_SAVE_PILOT_POINTS = True
+    MOD_PILOT_POINTS_FILE = None  # None = "<ENSEMBLE_DIR><ENSEMBLE_NAME>pilot_points.npz"
 
 else:
     MOD_REF      = None
@@ -563,6 +608,7 @@ if PERTURB_DAT:
                                                draw_from=DAT_PDF,
                                                method=DAT_METHOD,
                                                errors=ERRORS,
+                                               rng=rng,
                                                out=True)
     print("data ensemble ready!")
     print("\n")
@@ -657,6 +703,9 @@ if PERTURB_MOD:
         reference_file=MOD_REFERENCE_FILE,
         rng=rng,
         out=True,
+        save_pilot_points=MOD_SAVE_PILOT_POINTS,
+        pilot_points_file=MOD_PILOT_POINTS_FILE,
+        seed=RANDOM_SEED,
     )
     print("\nmodel ensemble (geostatistical initial models) ready!")
     print("\n")

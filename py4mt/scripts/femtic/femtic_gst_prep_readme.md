@@ -54,6 +54,20 @@ femtic_gst_post.py   →   collect results & statistics
 No upstream roughness-matrix computation is required (contrast with
 `femtic_rto_rough.py` → `femtic_rto_prep.py`).
 
+## Reproducibility
+
+By default `RANDOM_SEED = None`, so every run draws fresh pilot-point
+locations/values (and, if `PERTURB_DAT`, fresh data perturbations) from OS
+entropy — no two runs produce the same ensemble. Set `RANDOM_SEED` to an
+integer for a bit-for-bit reproducible ensemble instead: the single shared
+`rng = np.random.default_rng(RANDOM_SEED)` drives pilot-point placement and
+values, the optional data perturbation (`ens.generate_data_ensemble` now
+accepts and forwards `rng`), and the `VIZ_SAMPLES` diagnostic-plot draw.
+The resolved seed is echoed to the console and recorded in
+`pilot_points.npz` (see below), so a given ensemble's provenance is
+self-describing even if this script's config is edited afterwards.
+
+
 ## Configuration
 
 All settings are at the top of the script.
@@ -69,6 +83,7 @@ All settings are at the top of the script.
 | `LINK_LIST`      | Template files symlinked into each member directory.                |
 | `ENSEMBLE_NAME`  | Prefix for member directories (e.g. `ubinas_gst_`).                |
 | `FROM_TO`        | `None` for 0 … N−1, or `(start, stop)` to continue / patch members.|
+| `RANDOM_SEED`    | `None` (default) = fresh OS entropy, a different ensemble every run. An integer makes the run fully reproducible: `rng = np.random.default_rng(RANDOM_SEED)` drives pilot-point locations/values, `PERTURB_DAT` data perturbations (via `ens.generate_data_ensemble(rng=rng, ...)`), and the `VIZ_SAMPLES` draw. Recorded in `pilot_points.npz` (see below) for self-describing provenance. |
 
 ### Model perturbation
 
@@ -172,6 +187,31 @@ three spatial dimensions (easting, northing, depth) are handled natively.
 | `MOD_RESISTIVITY_FILE`| Filename for the initial model (default: `resistivity_block_iter0.dat`).|
 | `MOD_REFERENCE_FILE`  | Filename for the reference / prior model (default: `referencemodel.dat`).|
 | `MOD_REF`             | Full path to the template reference model — read once to obtain mesh cell-centre coordinates. |
+
+#### Pilot-point export (`MOD_SAVE_PILOT_POINTS`)
+
+| Variable                | Default | Description                                                              |
+|-------------------------|---------|---------------------------------------------------------------------------|
+| `MOD_SAVE_PILOT_POINTS` | `True`  | Write every member's pilot-point coordinates and drawn log₁₀(ρ) values to a single compressed `.npz`. |
+| `MOD_PILOT_POINTS_FILE` | `None`  | Output path. `None` = `f"{ENSEMBLE_DIR}{ENSEMBLE_NAME}pilot_points.npz"` (ensemble root, alongside the member directories). |
+
+Written after the member loop completes, via
+`ens.generate_gst_model_ensemble(save_pilot_points=..., pilot_points_file=..., seed=RANDOM_SEED, ...)`.
+Contents:
+
+| Key | Shape | Description |
+|---|---|---|
+| `member_ids` | `(N,)` int | Processed member indices. |
+| `pp_x`, `pp_y`, `pp_z` | `(N, n_pp_total)` | Pilot-point coordinates (easting, northing, depth) per member. `n_pp_total` is constant across members for a given `MOD_PP_MODE` (fixed/extrema skeleton size + `MOD_N_PP` random fill, where applicable). |
+| `pp_vals` | `(N, n_pp_total)` | log₁₀(ρ) value drawn at each pilot point, per member. |
+| `pp_mode`, `pp_value_mode`, `log_rho_min`, `log_rho_max`, `vario_model`, `vario_range`, `vario_sill`, `vario_nugget` | scalar/array | Snapshot of the pilot-point and variogram config used for this run. |
+| `seed` | scalar int | `RANDOM_SEED` used to construct `rng` (`-1` if `RANDOM_SEED` was `None`). Informational only — recorded for provenance, not used to re-seed anything on load. |
+
+Useful for reproducibility audits (`np.load(...)["pp_x"]` etc.), feeding
+the GST parameter-diagnostic functions in `ensembles.py`
+(`gst_pilot_point_cv`, `gst_parameter_diagnostics`), or re-plotting the
+pilot-point cloud without re-running Kriging.
+
 
 ### QC slice plot (`PLOT_SLICES_QC`)
 
@@ -373,6 +413,7 @@ No sparse-matrix file (`.npz`) is required.
 | 2026-07-05 | vrath / Claude Sonnet 5 (Anthropic) | Added `MOD_PP_VALUE_MODE` (`"uniform"` \| `"reference"`) and `MOD_PP_VALUE_DELTA` config variables, passed to `ens.generate_gst_model_ensemble` as `pp_value_mode` / `pp_value_delta`. `"uniform"` (default) preserves the original `Uniform(MOD_LOG_RHO_MIN, MOD_LOG_RHO_MAX)` pilot-point draw. `"reference"` instead draws `referencemodel(nearest free region) ± MOD_PP_VALUE_DELTA`, anchoring pilot-point values to the local reference model. |
 | 2026-07-05 | vrath / Claude Sonnet 5 (Anthropic) | Raised default `MOD_PP_EXTREMA_K` from 9 to 30 (recommended range 7–15 → 20–40) — the local extremum test was flagging too many spurious minima/maxima at small k. Corrected stale "Model diagnostic figures" description: figures plot the **generated `MOD_RESISTIVITY_FILE`** (reference model after pilot-point Kriging), not a side-by-side reference-vs-Kriged comparison. |
 | 2026-07-09 | vrath / Claude Sonnet 5 (Anthropic) | Moved `MOD_ORIGIN_METHOD` next to the `MOD_UTM_ORIGIN_*`/`MOD_UTM_ZONE_OVERRIDE` block; removed the duplicate later declaration next to the site-overlay settings. The shared plotting config block now has identical variable order and naming to `femtic_ens_post.py` and `femtic_nss.py` (single `MOD_DPI` knob in all three — `femtic_ens_post.py`'s earlier `MOD_QC_DPI`/`MOD_STATS_DPI` split was also removed). The `fviz.plot_model_slices()` call is byte-for-byte identical in every visual-affecting argument across all three scripts — only the models plotted differ. |
+| 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `RANDOM_SEED` (default `None`) for optional reproducible ensembles — a shared, optionally seeded `rng` now also drives `ens.generate_data_ensemble` (new `rng` parameter, forwarded to `femtic.modify_data`). Added `MOD_SAVE_PILOT_POINTS` (default `True`) / `MOD_PILOT_POINTS_FILE`: writes every member's pilot-point coordinates and drawn log₁₀(ρ) values to a compressed `pilot_points.npz`, with `RANDOM_SEED` and pilot-point/variogram config recorded for a self-describing archive. See `ensembles_readme.md` for the underlying `generate_gst_model_ensemble` / `generate_data_ensemble` changes. |
 
 ## Author
 

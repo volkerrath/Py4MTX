@@ -66,7 +66,7 @@ Convenience helper: `pick_lam_from_rtr_diag(R, alpha=..., statistic="median", mi
 | Function                         | Purpose                                               |
 |----------------------------------|-------------------------------------------------------|
 | `generate_directories()`         | Create numbered member directories, copy templates.   |
-| `generate_data_ensemble()`       | Perturb `observe.dat` in each member directory.       |
+| `generate_data_ensemble()`       | Perturb `observe.dat` in each member directory. Accepts `rng` (forwarded to `femtic.modify_data`) for reproducible data perturbations. |
 | `generate_rto_model_ensemble()`  | Sample from roughness precision and write perturbed models (RTO). |
 | `generate_gst_model_ensemble()`  | Pilot-point Ordinary Kriging → geostatistical initial models (GST). |
 
@@ -170,6 +170,50 @@ roughness matrix is required.
 | `vario_nugget`   | Nugget in (log₁₀ Ω·m)².  Keep ≤ 10 % of sill.                                          |
 | `vario_angles`   | Rotation `[α, β, γ]` in degrees; `None` = axis-aligned.                                 |
 | `output_target`  | `"resistivity_block"` / `"referencemodel"` / `"both"` (recommended).                   |
+| `rng`            | `numpy.random.Generator`, optional. Shared generator; pass a seeded one (e.g. `np.random.default_rng(seed)`) for a reproducible ensemble. `None` = fresh, non-reproducible generator. |
+| `save_pilot_points` | `bool`, default `False`. Write every member's pilot-point coordinates and drawn log₁₀(ρ) values to `pilot_points_file` after the member loop. |
+| `pilot_points_file` | `str`, optional. Output path for the pilot-point archive. `None` (default) → `f"{dir_base}pilot_points.npz"`. Ignored when `save_pilot_points=False`. |
+| `seed`           | `int`, optional. Informational only — recorded in `pilot_points.npz` (`"seed"`, `-1` if omitted) for a self-describing archive. Does **not** seed the RNG; pass a seeded generator via `rng` for that. |
+
+### Reproducibility & the `pilot_points.npz` archive
+
+`generate_gst_model_ensemble` itself never seeds anything — reproducibility
+is entirely up to the caller, via the `rng` it passes in:
+
+```python
+seed = 20260725
+rng  = np.random.default_rng(seed)
+
+mod_list = generate_gst_model_ensemble(
+    ...,
+    rng               = rng,
+    save_pilot_points = True,
+    pilot_points_file = None,        # -> f"{dir_base}pilot_points.npz"
+    seed              = seed,        # recorded in the archive, not used to seed
+)
+```
+
+With `save_pilot_points=True`, the coordinates and values actually drawn
+for every member — the ground truth of what the Kriging step consumed —
+are written to a single compressed `.npz`:
+
+| Key | Shape | Description |
+|---|---|---|
+| `member_ids` | `(n_members,)` int | Processed member indices (`fromto_arr`). |
+| `pp_x`, `pp_y`, `pp_z` | `(n_members, n_pp_total)` float | Pilot-point coordinates (easting, northing, depth) per member. `n_pp_total` is constant across members for a given `pp_mode` (fixed/extrema skeleton size + `n_pp` random fill, where applicable), so stacking into one array is always well-defined. |
+| `pp_vals` | `(n_members, n_pp_total)` float | log₁₀(ρ) value drawn at each pilot point, per member. |
+| `pp_mode`, `pp_value_mode`, `log_rho_min`, `log_rho_max`, `vario_model`, `vario_range`, `vario_sill`, `vario_nugget`, `seed` | scalar/array | Snapshot of the call's configuration. |
+
+```python
+d = np.load("ubinas_gst_pilot_points.npz")
+d["pp_x"].shape        # (n_members, n_pp_total)
+d["pp_vals"][3]        # log10(rho) values drawn for member 3
+int(d["seed"])         # -1 if the run wasn't seeded
+```
+
+Useful for reproducibility audits, feeding the GST parameter-diagnostic
+functions below (`gst_pilot_point_cv`, `gst_parameter_diagnostics`), or
+re-plotting the pilot-point cloud without re-running Kriging.
 
 ### Tuning guidance
 
@@ -544,3 +588,27 @@ FEMTIC runs needed unless noted).
 - No functional/numerical change; the module already built matrices via
   `csr_array`/`csc_array`/`coo_array` internally, so this is purely a type
   and import cleanup plus the `eye_array` fix.
+
+### Changelog (2026-07-25) — reproducible ensembles & pilot-point export
+
+- `generate_gst_model_ensemble` gained `save_pilot_points` / `pilot_points_file`
+  / `seed`. With `save_pilot_points=True`, every member's pilot-point
+  coordinates (`pp_x`/`pp_y`/`pp_z`) and drawn log₁₀(ρ) values (`pp_vals`)
+  are accumulated during the member loop and written to a single compressed
+  `.npz` (default `f"{dir_base}pilot_points.npz"`) after it completes,
+  alongside `pp_mode`/`pp_value_mode`/variogram/`log_rho_min`/`log_rho_max`/
+  `seed` metadata — see the "Reproducibility & the `pilot_points.npz`
+  archive" section above for the full key list and an example.
+- `seed` is informational only: it's recorded in the archive but does not
+  seed anything itself — pass a seeded `rng` for that. Reproducibility is
+  therefore entirely the caller's responsibility; `femtic_gst_prep.py` now
+  does this via a `RANDOM_SEED` config variable (see its README).
+- `generate_data_ensemble` gained an `rng` parameter, forwarded to
+  `femtic.modify_data` (which already accepted one) for each member. Before
+  this change every `modify_data` call fell back to its own fresh, unseeded
+  generator regardless of any `rng` the model-perturbation path was using —
+  so `PERTURB_DAT` runs were never reproducible even when
+  `generate_gst_model_ensemble`/`generate_rto_model_ensemble` were seeded.
+  Passing the same shared `rng` to both now makes the full ensemble
+  (model *and* data perturbation) reproducible together.
+
