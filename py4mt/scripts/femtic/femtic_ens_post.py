@@ -190,16 +190,12 @@ FEMTIC="4.3"
 # Ensemble input
 # ---------------------------------------------------------------------------
 
-# ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/ensembles/misti/ensemble/"
-#ENSEMBLE_DIR = r"/media/vrath/LargeBack/misti/ensemble/"
-ENSEMBLE_DIR = r"//FEMTIC_work/Ensembles/misti_gst/ensemble/"
+ENSEMBLE_DIR = r"/home/vrath/FEMTIC_work/Ensembles/misti_gst/ensemble/"
 ENSEMBLE_NAME = "misti_gst_suzuki_"
-# ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/ensembles/misti/ensemble/"
-# ENSEMBLE_NAME = "misti_gst_suzuki_"
 
 #: Prefix used for .npz output keys and default file/figure names.
 #: e.g. "rto" → keys rto_ens, rto_avg, …  and file RTO_results.npz.
-ENSEMBLE_PREFIX = "Misti_gstat"
+ENSEMBLE_PREFIX = "misti_gst_suzuki"
 
 #: Maximum normalised RMS accepted from femtic.cnv.
 NRMS_MAX = 1.5
@@ -247,7 +243,7 @@ COMPUTE_COV = True
 #:              eigvec @ diag(eigval) @ eigvec.T.  Same spirit as the
 #:              randomized-SVD-on-R approach used for low-rank prior
 #:              sampling in ensembles.py.
-COV_METHOD = "full"
+COV_METHOD = "low_rank"
 
 #: Sparsify the dense covariance (COV_METHOD="full" only). Ignored for
 #: "low_rank", which is already a compact factorisation.
@@ -273,7 +269,7 @@ MOD_OCEAN_RHO = 0.25    # Ω·m  (region 1 when treated as ocean)
 # QC slice plot — best-nRMS converged member
 # ---------------------------------------------------------------------------
 #: Set True to plot the best-nRMS member.
-MOD_QC      = False
+MOD_QC      =  True
 MOD_QC_FILE = ENSEMBLE_DIR + ENSEMBLE_PREFIX + "_qc.pdf"
 
 # ---------------------------------------------------------------------------
@@ -281,7 +277,7 @@ MOD_QC_FILE = ENSEMBLE_DIR + ENSEMBLE_PREFIX + "_qc.pdf"
 # ---------------------------------------------------------------------------
 #: Set True to write derived stat members as block files and plot them.
 #: Requires MOD_MESH and a valid template file (taken from best member).
-MOD_STATS      = False
+MOD_STATS      = True
 #: Which statistics to plot.  Subset of: "avg", "var", "med", "mad", plus
 #: one auto-generated key per PERCENTILES level (e.g. 2.3 -> "p2_3",
 #: 50.0 -> "p50", 97.7 -> "p97_7") and one per QDIFF_PAIRS entry (e.g.
@@ -382,7 +378,7 @@ MOD_ROI_PAD_XY = 5000.0             # metres of padding around the site bbox
 MOD_ROI_ZLIM   = [0.0, 20000.0]     # depth range (m, positive-down) for ns/ew/plane panels; None = leave MOD_ZLIM as-is
 
 MOD_DPI         = 600            # figure DPI, used by both MOD_QC and MOD_STATS
-MOD_CMAP        = "turbo_r"
+MOD_CMAP        = "jet_r"
 MOD_CLIM        = [0.0, 4.0]     # [log10_min, log10_max] Ω·m; None = auto
 MOD_OCEAN_COLOR = "lightgrey"    # flat colour for ocean cells; None = colormap
 MOD_AIR_COLOR   = "whitesmoke"
@@ -412,8 +408,8 @@ MOD_FIGSIZE      = None   # [w, h] cm; overrides auto when set
 
 #: Axis annotation font sizes, passed through to fviz.plot_model_slices.
 #: Defaults match plot_model_slices' own defaults.
-MOD_TICK_FONTSIZE  = 7    # axis tick labels, colourbar ticks
-MOD_LABEL_FONTSIZE = 8    # axis labels, panel titles, colourbar label
+MOD_TICK_FONTSIZE  = 12    # axis tick labels, colourbar ticks
+MOD_LABEL_FONTSIZE = 12    # axis labels, panel titles, colourbar label
 
 # ---------------------------------------------------------------------------
 # Verbose output
