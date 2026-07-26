@@ -172,6 +172,13 @@ Provenance
             without changing what gets saved to disk. No effect outside
             Spyder. Set MOD_SHOW_IN_SPYDER=False to disable even under
             Spyder.
+2026-07-26  Claude Sonnet 5 (Anthropic)
+            Fixed MOD_ROI_ZLIM default: was [0.0, 20000.0], which — now
+            that the z-increases-downward sign convention is correct —
+            clipped the ns/ew/plane panels exactly at the z=0 datum and
+            hid any topography (mesh cells with z < 0) sitting above it.
+            Changed to [-1000.0, 20000.0], giving 1 km of headroom above
+            the datum so topography is included in the plotted range.
 """
 from __future__ import annotations
 
@@ -430,7 +437,11 @@ MOD_ZLIM = None    # [zmin, zmax] model-local metres; None = auto
 #: since that sizing needs an actual extent to compute widths from.
 MOD_ROI_AUTO   = True
 MOD_ROI_PAD_XY = 5000.0             # metres of padding around the site bbox
-MOD_ROI_ZLIM   = [0.0, 20000.0]     # depth range (m, positive-down) for ns/ew/plane panels; None = leave MOD_ZLIM as-is
+MOD_ROI_ZLIM   = [-1000.0, 20000.0] # depth range (m, positive-down) for ns/ew/plane panels; None = leave MOD_ZLIM as-is
+#: Lower bound is negative (above the z=0 datum) to give ~1 km of headroom
+#: so topography (mesh cells with z < 0) is not clipped out of the ns/ew/
+#: plane panels. Previously [0.0, 20000.0] cut panels off exactly at the
+#: datum, hiding any topography above it.
 
 MOD_DPI         = 600            # figure DPI, used by both MOD_QC and MOD_STATS
 MOD_CMAP        = "jet_r"
