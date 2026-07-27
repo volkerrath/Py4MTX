@@ -97,20 +97,23 @@ except ImportError:
 OUTPUT_DIR = "../precompute/"
 
 # --- Input files (without extension) ---
-MODEL_FILE = "../mt/Tacna_final"    # reads MODEL_FILE + MODEL_EXT
-DATA_FILE  = "../mt/Tacna_final"    # reads DATA_FILE  + DATA_EXT
-MODEL_EXT  = ".rho"
-DATA_EXT   = ".dat"
+MODEL_FILE = "../mt//TAC_100_smooth2_short/TACG26b_100ZT_Alpha03_smooth_NLCG_007"  # reads MODEL_FILE + MODEL_EXT
+DATA_FILE = "../mt/TAC_100_smooth2_short/TACG26b_100ZT_Alpha03_smooth_NLCG_007"  # reads DATA_FILE  + DATA_EXT
+MODEL_EXT = ".rho"
+DATA_EXT = ".dat"
 
 # --- Sensitivity/resolution file (optional, for shading/blanking) ---
 # Same grid format as the .rho model file — read with the same reader
 # (mdm.read_mod), so it must share the .rho file's mesh (dx/dy/dz, cell
 # counts). Typically shares its base name too, but can be set separately.
 # Set USE_SENSITIVITY = False to skip reading/writing it entirely.
-USE_SENSITIVITY = True
+USE_SENSITIVITY = False
 # SENS_FILE = MODEL_FILE      # base name (without extension)
-SENS_FILE = "/home/vrath/MT_Data/Tacna/TAC_30_JAC/TAC30_nerr_sp-8_sens_cov_max/TAC30_nerr_sp-8_total_cov_max"
-SENS_EXT  = ".sns"
+SENS_FILE = (
+    "../mt/TAC30_nerr_sp-8_anco_cov_max"
+)
+# SENS_FILE = "/home/vrath/MT_Data/Tacna/TAC_30_JAC/TAC30_nerr_sp-8_sens_cov_max/TAC30_nerr_sp-8_total_cov_max"
+SENS_EXT = ".sns"
 # "LOG10" is usually more useful for sensitivity, which commonly spans many
 # orders of magnitude; "LINEAR" keeps raw values as stored in the file.
 SENS_TRANSFORM = "LOG10"
@@ -125,18 +128,18 @@ SENS_TRANSFORM = "LOG10"
 # GeoTools/other-software rendering of the same file), flip the relevant
 # axis here rather than in the plot script, so every downstream product
 # (3-D field, depth slices) is corrected once, consistently.
-SENS_FLIP_EASTING  = False  # this file doesn't need an East-West flip
-SENS_FLIP_NORTHING = True  # empirically confirmed against real station
-                              # positions for TAC_G2_ZT1_nerr_sp-8_Dtype_
-                              # zfull_sqr_max.sns — a different .sns file
-                              # may need different settings; re-validate
-                              # if you switch files again.
+SENS_FLIP_EASTING = False  # this file doesn't need an East-West flip
+SENS_FLIP_NORTHING = False  # empirically confirmed against real station
+# positions for TAC_G2_ZT1_nerr_sp-8_Dtype_
+# zfull_sqr_max.sns — a different .sns file
+# may need different settings; re-validate
+# if you switch files again.
 
 # --- Reference point (must match the model file; sign-checked at runtime) ---
 # ModEM stores [lat, lon, elevation_m] in the last data line of the .rho file.
 # Leave as None to read directly from the file (recommended).
-REFERENCE_LAT = None   # degrees, WGS84; None → read from model file
-REFERENCE_LON = None   # degrees, WGS84; None → read from model file
+REFERENCE_LAT = None  # degrees, WGS84; None → read from model file
+REFERENCE_LON = None  # degrees, WGS84; None → read from model file
 
 # --- Resistivity transform for output ---
 # "LOG10"  : save log10(ρ)  [most common for visualisation]
@@ -150,10 +153,24 @@ OUTPUT_TRANSFORM = "LOG10"
 # slices are written from this one list, in the same loop (see "8. Depth
 # slices" below), so keeping this in sync automatically keeps sensitivity
 # covering the same depths as resistivity.
-DEPTH_SLICES_KM = [1., 5.0, 9.0]
+DEPTH_SLICES_KM = [-3., -1., 1.0, 5.0, 9.0]
 
 # --- Air-cell resistivity threshold (Ω·m) used by get_topo ---
 RHO_AIR = 1.0e17
+
+# --- Air-cell masking threshold (Ω·m) for the saved model itself ---
+# Any cell at or above this resistivity is masked to NaN before the
+# output transform is applied — baked into modem_rho_utm_{tag}.nc and
+# modem_model_utm.nc directly, rather than left for each plot script to
+# re-derive its own air/rock cutoff from the raw resistivity value. NaN
+# then propagates naturally through everything downstream: map color
+# scales, RegularGridInterpolator (image script), and the exact per-cell
+# lookup (mesh script) all just see "no data" and treat it consistently,
+# with no risk of one consumer's threshold disagreeing with another's.
+# Deliberately far below RHO_AIR itself (1e10 vs 1e17) — real rock in
+# this model tops out at a few thousand Ω·m at most, so this has a huge
+# margin on both sides and won't accidentally catch resistive rock.
+AIR_RHO_THRESHOLD = 1.0e10
 
 # --- Padding cells to trim from each face before output ---
 # ModEM models have large padding cells at the boundary that distort colour scales.
@@ -194,8 +211,8 @@ TAR_LAT = [-18.40, -16.90]
 
 # --- UTM zone override ---
 # By default the zone is inferred from REFERENCE_LON.  Set manually if needed.
-UTM_ZONE     = None        # e.g. 19;  None → auto-detect
-UTM_HEMI     = None        # "N" or "S"; None → infer from REFERENCE_LAT
+UTM_ZONE = None  # e.g. 19;  None → auto-detect
+UTM_HEMI = None  # "N" or "S"; None → infer from REFERENCE_LAT
 
 # =====================================================================
 # END USER SETTINGS
@@ -213,8 +230,10 @@ def outpath(name):
 # UTM projection helpers
 # ------------------------------------------------------------------
 
-def _build_transformer(lat_ref: float, lon_ref: float,
-                        zone_override=None, hemi_override=None):
+
+def _build_transformer(
+    lat_ref: float, lon_ref: float, zone_override=None, hemi_override=None
+):
     """Return a pyproj Transformer (WGS84 → UTM) for the reference point."""
     if zone_override is not None:
         zone = int(zone_override)
@@ -228,7 +247,9 @@ def _build_transformer(lat_ref: float, lon_ref: float,
 
     epsg = (32600 + zone) if hemi == "N" else (32700 + zone)
     print(f"  UTM zone {zone}{hemi}  (EPSG:{epsg})")
-    transformer = Transformer.from_crs("EPSG:4326", f"EPSG:{epsg}", always_xy=True)
+    transformer = Transformer.from_crs(
+        "EPSG:4326", f"EPSG:{epsg}", always_xy=True
+    )
     return transformer, epsg
 
 
@@ -241,6 +262,7 @@ def _ref_to_utm(transformer, lat_ref, lon_ref):
 # ------------------------------------------------------------------
 # Mesh coordinate builder
 # ------------------------------------------------------------------
+
 
 def build_utm_axes(dx, dy, reference, transformer, lat_ref, lon_ref):
     """
@@ -268,17 +290,17 @@ def build_utm_axes(dx, dy, reference, transformer, lat_ref, lon_ref):
     utm_n_km : 1-D array, UTM northing of cell centres (km)
     """
     # Cell-centre offsets from the model centre in metres (North / East)
-    x_local = np.cumsum(dx) - np.sum(dx) / 2.0   # North offsets, m
-    y_local = np.cumsum(dy) - np.sum(dy) / 2.0   # East  offsets, m
+    x_local = np.cumsum(dx) - np.sum(dx) / 2.0  # North offsets, m
+    y_local = np.cumsum(dy) - np.sum(dy) / 2.0  # East  offsets, m
     x_local -= dx / 2.0
     y_local -= dy / 2.0
 
     # UTM coordinates of the geographic reference point
-    ref_e, ref_n = _ref_to_utm(transformer, lat_ref, lon_ref)   # km
+    ref_e, ref_n = _ref_to_utm(transformer, lat_ref, lon_ref)  # km
 
     # North offset → +northing;  East offset → +easting
-    utm_n_km = ref_n + x_local / 1e3   # shape (nx,)
-    utm_e_km = ref_e + y_local / 1e3   # shape (ny,)
+    utm_n_km = ref_n + x_local / 1e3  # shape (nx,)
+    utm_e_km = ref_e + y_local / 1e3  # shape (ny,)
 
     return utm_e_km, utm_n_km
 
@@ -301,10 +323,10 @@ def build_utm_edges(dx, dy, reference, transformer, lat_ref, lon_ref):
     x_edges_local = np.concatenate([[0.0], np.cumsum(dx)]) - np.sum(dx) / 2.0
     y_edges_local = np.concatenate([[0.0], np.cumsum(dy)]) - np.sum(dy) / 2.0
 
-    ref_e, ref_n = _ref_to_utm(transformer, lat_ref, lon_ref)   # km
+    ref_e, ref_n = _ref_to_utm(transformer, lat_ref, lon_ref)  # km
 
-    utm_n_edges_km = ref_n + x_edges_local / 1e3   # shape (nx+1,)
-    utm_e_edges_km = ref_e + y_edges_local / 1e3   # shape (ny+1,)
+    utm_n_edges_km = ref_n + x_edges_local / 1e3  # shape (nx+1,)
+    utm_e_edges_km = ref_e + y_edges_local / 1e3  # shape (ny+1,)
 
     return utm_e_edges_km, utm_n_edges_km
 
@@ -312,6 +334,7 @@ def build_utm_edges(dx, dy, reference, transformer, lat_ref, lon_ref):
 # ------------------------------------------------------------------
 # Depth axis builder
 # ------------------------------------------------------------------
+
 
 def build_depth_axis_km(dz, ref_z=0.0):
     """
@@ -329,7 +352,7 @@ def build_depth_axis_km(dz, ref_z=0.0):
     """
     nz = len(dz)
     z_edges = np.concatenate([[0.0], np.cumsum(dz)]) + ref_z
-    z_centres = 0.5 * (z_edges[:-1] + z_edges[1:])   # metres
+    z_centres = 0.5 * (z_edges[:-1] + z_edges[1:])  # metres
     return z_centres / 1e3
 
 
@@ -349,15 +372,28 @@ def build_depth_edges_km(dz, ref_z=0.0):
 # Apply transform to resistivity values
 # ------------------------------------------------------------------
 
+
 def apply_transform(mval, trans):
-    """Return mval (Ω·m, physical) converted to the requested representation."""
+    """
+    Return mval (Ω·m, physical) converted to the requested representation.
+
+    Air cells (resistivity >= AIR_RHO_THRESHOLD) are masked to NaN here,
+    once, before the transform — not left for each plot script to
+    re-derive its own air/rock cutoff from the transformed value. NaN
+    then propagates naturally through every downstream consumer (map
+    color scales, interpolation, exact per-cell lookups) with a single,
+    consistent source of truth for "is this air".
+    """
+    mval = mval.copy().astype(float)
+    mval[mval >= AIR_RHO_THRESHOLD] = np.nan
+
     trans = trans.upper()
     if trans == "LOG10":
         return np.log10(np.where(mval > 0, mval, np.nan))
     elif trans in ("LOGE", "LN"):
         return np.log(np.where(mval > 0, mval, np.nan))
     elif trans == "LINEAR":
-        return mval.copy()
+        return mval
     else:
         raise ValueError(f"Unknown OUTPUT_TRANSFORM={trans!r}")
 
@@ -365,6 +401,7 @@ def apply_transform(mval, trans):
 # ------------------------------------------------------------------
 # Trim padding cells
 # ------------------------------------------------------------------
+
 
 def trim_model(dx, dy, dz, mval, trim):
     """
@@ -391,18 +428,21 @@ def trim_model(dx, dy, dz, mval, trim):
     sl_z = slice(tz0, None)
 
     mval_t = mval[sl_x, sl_y, sl_z]
-    dx_t   = dx[sl_x]
-    dy_t   = dy[sl_y]
-    dz_t   = dz[sl_z]
+    dx_t = dx[sl_x]
+    dy_t = dy[sl_y]
+    dz_t = dz[sl_z]
     z_trim_offset_m = float(np.sum(dz[:tz0])) if tz0 else 0.0
 
-    print(f"  After trimming: {mval_t.shape[0]}×{mval_t.shape[1]}×{mval_t.shape[2]} cells")
+    print(
+        f"  After trimming: {mval_t.shape[0]}×{mval_t.shape[1]}×{mval_t.shape[2]} cells"
+    )
     return dx_t, dy_t, dz_t, mval_t, z_trim_offset_m
 
 
 # ------------------------------------------------------------------
 # NetCDF writers
 # ------------------------------------------------------------------
+
 
 def save_grid_edges(utm_e_edges_km, utm_n_edges_km, depth_edges_km, outfile):
     """
@@ -418,17 +458,23 @@ def save_grid_edges(utm_e_edges_km, utm_n_edges_km, depth_edges_km, outfile):
     ds = xr.Dataset(
         {
             "easting_edges": (
-                "easting_edge", utm_e_edges_km.astype(np.float32),
+                "easting_edge",
+                utm_e_edges_km.astype(np.float32),
                 {"units": "km", "long_name": "UTM easting cell edges"},
             ),
             "northing_edges": (
-                "northing_edge", utm_n_edges_km.astype(np.float32),
+                "northing_edge",
+                utm_n_edges_km.astype(np.float32),
                 {"units": "km", "long_name": "UTM northing cell edges"},
             ),
             "depth_edges": (
-                "depth_edge", depth_edges_km.astype(np.float32),
-                {"units": "km", "long_name": "Depth cell edges",
-                 "positive": "down"},
+                "depth_edge",
+                depth_edges_km.astype(np.float32),
+                {
+                    "units": "km",
+                    "long_name": "Depth cell edges",
+                    "positive": "down",
+                },
             ),
         }
     )
@@ -440,63 +486,87 @@ def save_3d_model(utm_e_km, utm_n_km, depth_km, rho_transformed, outfile):
     """Write full 3-D resistivity model to NetCDF."""
     long_name = {
         "LOG10": "log10 resistivity",
-        "LOGE":  "ln resistivity",
+        "LOGE": "ln resistivity",
         "LINEAR": "resistivity",
     }.get(OUTPUT_TRANSFORM.upper(), "resistivity")
     units = {
         "LOG10": "log10(Ohm.m)",
-        "LOGE":  "ln(Ohm.m)",
+        "LOGE": "ln(Ohm.m)",
         "LINEAR": "Ohm.m",
     }.get(OUTPUT_TRANSFORM.upper(), "Ohm.m")
 
     # rho_transformed has shape (nx, ny, nz) — ModEM (N, E, Down)
     # Reorder to (z, y, x) = (depth, northing, easting) for NetCDF convention
-    data = np.transpose(rho_transformed, (2, 0, 1))   # (nz, nx, ny)
+    data = np.transpose(rho_transformed, (2, 0, 1))  # (nz, nx, ny)
 
     da = xr.DataArray(
         data.astype(np.float32),
         dims=["depth", "northing", "easting"],
         coords={
-            "depth":    xr.Variable("depth",    depth_km,
-                                    attrs={"units": "km", "positive": "down",
-                                           "long_name": "Depth below surface"}),
-            "northing": xr.Variable("northing", utm_n_km,
-                                    attrs={"units": "km",
-                                           "long_name": "UTM northing"}),
-            "easting":  xr.Variable("easting",  utm_e_km,
-                                    attrs={"units": "km",
-                                           "long_name": "UTM easting"}),
+            "depth": xr.Variable(
+                "depth",
+                depth_km,
+                attrs={
+                    "units": "km",
+                    "positive": "down",
+                    "long_name": "Depth below surface",
+                },
+            ),
+            "northing": xr.Variable(
+                "northing",
+                utm_n_km,
+                attrs={"units": "km", "long_name": "UTM northing"},
+            ),
+            "easting": xr.Variable(
+                "easting",
+                utm_e_km,
+                attrs={"units": "km", "long_name": "UTM easting"},
+            ),
         },
-        attrs={"long_name": long_name, "units": units,
-               "transform": OUTPUT_TRANSFORM},
+        attrs={
+            "long_name": long_name,
+            "units": units,
+            "transform": OUTPUT_TRANSFORM,
+        },
     )
     da.to_netcdf(outfile)
     print(f"  Saved: {outfile}")
 
 
-def save_3d_field(utm_e_km, utm_n_km, depth_km, field, outfile,
-                  long_name, units, transform):
+def save_3d_field(
+    utm_e_km, utm_n_km, depth_km, field, outfile, long_name, units, transform
+):
     """
     Write an arbitrary 3-D field (same mesh/orientation as the resistivity
     model) to NetCDF. Generic version of save_3d_model, parameterised by
     name/units/transform instead of assuming resistivity — used for the
     sensitivity/resolution field.
     """
-    data = np.transpose(field, (2, 0, 1))   # (nx,ny,nz) -> (nz, nx, ny)
+    data = np.transpose(field, (2, 0, 1))  # (nx,ny,nz) -> (nz, nx, ny)
 
     da = xr.DataArray(
         data.astype(np.float32),
         dims=["depth", "northing", "easting"],
         coords={
-            "depth":    xr.Variable("depth",    depth_km,
-                                    attrs={"units": "km", "positive": "down",
-                                           "long_name": "Depth below surface"}),
-            "northing": xr.Variable("northing", utm_n_km,
-                                    attrs={"units": "km",
-                                           "long_name": "UTM northing"}),
-            "easting":  xr.Variable("easting",  utm_e_km,
-                                    attrs={"units": "km",
-                                           "long_name": "UTM easting"}),
+            "depth": xr.Variable(
+                "depth",
+                depth_km,
+                attrs={
+                    "units": "km",
+                    "positive": "down",
+                    "long_name": "Depth below surface",
+                },
+            ),
+            "northing": xr.Variable(
+                "northing",
+                utm_n_km,
+                attrs={"units": "km", "long_name": "UTM northing"},
+            ),
+            "easting": xr.Variable(
+                "easting",
+                utm_e_km,
+                attrs={"units": "km", "long_name": "UTM easting"},
+            ),
         },
         attrs={"long_name": long_name, "units": units, "transform": transform},
     )
@@ -504,9 +574,17 @@ def save_3d_field(utm_e_km, utm_n_km, depth_km, field, outfile,
     print(f"  Saved: {outfile}")
 
 
-def save_depth_slice_field(utm_e_km, utm_n_km, depth_km_axis, field,
-                           target_depth_km, outfile, long_name, units,
-                           transform):
+def save_depth_slice_field(
+    utm_e_km,
+    utm_n_km,
+    depth_km_axis,
+    field,
+    target_depth_km,
+    outfile,
+    long_name,
+    units,
+    transform,
+):
     """
     Generic version of save_depth_slice, parameterised by name/units/
     transform instead of assuming resistivity — used for the
@@ -514,27 +592,33 @@ def save_depth_slice_field(utm_e_km, utm_n_km, depth_km_axis, field,
     """
     iz = int(np.argmin(np.abs(depth_km_axis - target_depth_km)))
     actual_depth = depth_km_axis[iz]
-    print(f"  Depth slice {target_depth_km} km → nearest cell centre {actual_depth:.2f} km")
+    print(
+        f"  Depth slice {target_depth_km} km → nearest cell centre {actual_depth:.2f} km"
+    )
 
-    slc = field[:, :, iz]   # (nx, ny) = (northing, easting)
+    slc = field[:, :, iz]  # (nx, ny) = (northing, easting)
 
     da = xr.DataArray(
         slc.astype(np.float32),
         dims=["northing", "easting"],
         coords={
-            "northing": xr.Variable("northing", utm_n_km,
-                                    attrs={"units": "km",
-                                           "long_name": "UTM northing"}),
-            "easting":  xr.Variable("easting",  utm_e_km,
-                                    attrs={"units": "km",
-                                           "long_name": "UTM easting"}),
+            "northing": xr.Variable(
+                "northing",
+                utm_n_km,
+                attrs={"units": "km", "long_name": "UTM northing"},
+            ),
+            "easting": xr.Variable(
+                "easting",
+                utm_e_km,
+                attrs={"units": "km", "long_name": "UTM easting"},
+            ),
         },
         attrs={
-            "long_name":       f"{long_name} at {actual_depth:.1f} km depth",
-            "units":           units,
-            "depth_km":        float(actual_depth),
+            "long_name": f"{long_name} at {actual_depth:.1f} km depth",
+            "units": units,
+            "depth_km": float(actual_depth),
             "target_depth_km": float(target_depth_km),
-            "transform":       transform,
+            "transform": transform,
         },
     )
     da.to_netcdf(outfile)
@@ -551,29 +635,42 @@ def save_topo(utm_e_km, utm_n_km, topo_m, outfile):
     non-air cell face, which is 0 or negative for surface above the model
     top.  Negate to get elevation positive up.
     """
-    elev_m = -topo_m   # shape (nx, ny) = (northing, easting), positive up
+    elev_m = -topo_m  # shape (nx, ny) = (northing, easting), positive up
 
     da = xr.DataArray(
         elev_m.astype(np.float32),
         dims=["northing", "easting"],
         coords={
-            "northing": xr.Variable("northing", utm_n_km,
-                                    attrs={"units": "km",
-                                           "long_name": "UTM northing"}),
-            "easting":  xr.Variable("easting",  utm_e_km,
-                                    attrs={"units": "km",
-                                           "long_name": "UTM easting"}),
+            "northing": xr.Variable(
+                "northing",
+                utm_n_km,
+                attrs={"units": "km", "long_name": "UTM northing"},
+            ),
+            "easting": xr.Variable(
+                "easting",
+                utm_e_km,
+                attrs={"units": "km", "long_name": "UTM easting"},
+            ),
         },
-        attrs={"long_name": "Surface elevation", "units": "m",
-               "positive": "up",
-               "note": "Derived from shallowest non-air cell in ModEM model"},
+        attrs={
+            "long_name": "Surface elevation",
+            "units": "m",
+            "positive": "up",
+            "note": "Derived from shallowest non-air cell in ModEM model",
+        },
     )
     da.to_netcdf(outfile)
     print(f"  Saved: {outfile}")
 
 
-def save_depth_slice(utm_e_km, utm_n_km, depth_km_axis, rho_transformed,
-                     target_depth_km, outfile):
+def save_depth_slice(
+    utm_e_km,
+    utm_n_km,
+    depth_km_axis,
+    rho_transformed,
+    target_depth_km,
+    outfile,
+):
     """
     Interpolate the 3-D model to a target depth and save as 2-D NetCDF.
 
@@ -584,15 +681,19 @@ def save_depth_slice(utm_e_km, utm_n_km, depth_km_axis, rho_transformed,
     """
     iz = int(np.argmin(np.abs(depth_km_axis - target_depth_km)))
     actual_depth = depth_km_axis[iz]
-    print(f"  Depth slice {target_depth_km} km → nearest cell centre {actual_depth:.2f} km")
+    print(
+        f"  Depth slice {target_depth_km} km → nearest cell centre {actual_depth:.2f} km"
+    )
 
     # Extract slice: shape (nx, ny) = (northing, easting) — no transpose needed
     slc = rho_transformed[:, :, iz]
 
-    long_name = f"{OUTPUT_TRANSFORM} resistivity at {actual_depth:.1f} km depth"
+    long_name = (
+        f"{OUTPUT_TRANSFORM} resistivity at {actual_depth:.1f} km depth"
+    )
     units = {
         "LOG10": "log10(Ohm.m)",
-        "LOGE":  "ln(Ohm.m)",
+        "LOGE": "ln(Ohm.m)",
         "LINEAR": "Ohm.m",
     }.get(OUTPUT_TRANSFORM.upper(), "Ohm.m")
 
@@ -600,46 +701,60 @@ def save_depth_slice(utm_e_km, utm_n_km, depth_km_axis, rho_transformed,
         slc.astype(np.float32),
         dims=["northing", "easting"],
         coords={
-            "northing": xr.Variable("northing", utm_n_km,
-                                    attrs={"units": "km",
-                                           "long_name": "UTM northing"}),
-            "easting":  xr.Variable("easting",  utm_e_km,
-                                    attrs={"units": "km",
-                                           "long_name": "UTM easting"}),
+            "northing": xr.Variable(
+                "northing",
+                utm_n_km,
+                attrs={"units": "km", "long_name": "UTM northing"},
+            ),
+            "easting": xr.Variable(
+                "easting",
+                utm_e_km,
+                attrs={"units": "km", "long_name": "UTM easting"},
+            ),
         },
         attrs={
-            "long_name":   long_name,
-            "units":       units,
-            "depth_km":    float(actual_depth),
+            "long_name": long_name,
+            "units": units,
+            "depth_km": float(actual_depth),
             "target_depth_km": float(target_depth_km),
-            "transform":   OUTPUT_TRANSFORM,
+            "transform": OUTPUT_TRANSFORM,
         },
     )
     da.to_netcdf(outfile)
     print(f"  Saved: {outfile}")
 
 
-def save_sites(utm_e_km_sites, utm_n_km_sites, elev_m_sites, site_names, outfile):
+def save_sites(
+    utm_e_km_sites, utm_n_km_sites, elev_m_sites, site_names, outfile
+):
     """Write MT site positions to NetCDF."""
     n = len(site_names)
     ds = xr.Dataset(
         {
-            "easting":  xr.DataArray(utm_e_km_sites.astype(np.float32),
-                                     dims=["site"],
-                                     attrs={"units": "km",
-                                            "long_name": "UTM easting"}),
-            "northing": xr.DataArray(utm_n_km_sites.astype(np.float32),
-                                     dims=["site"],
-                                     attrs={"units": "km",
-                                            "long_name": "UTM northing"}),
-            "elevation": xr.DataArray(elev_m_sites.astype(np.float32),
-                                      dims=["site"],
-                                      attrs={"units": "m",
-                                             "long_name": "Site elevation",
-                                             "positive": "up"}),
-            "name":     xr.DataArray(np.array(site_names, dtype=object),
-                                     dims=["site"],
-                                     attrs={"long_name": "Site name"}),
+            "easting": xr.DataArray(
+                utm_e_km_sites.astype(np.float32),
+                dims=["site"],
+                attrs={"units": "km", "long_name": "UTM easting"},
+            ),
+            "northing": xr.DataArray(
+                utm_n_km_sites.astype(np.float32),
+                dims=["site"],
+                attrs={"units": "km", "long_name": "UTM northing"},
+            ),
+            "elevation": xr.DataArray(
+                elev_m_sites.astype(np.float32),
+                dims=["site"],
+                attrs={
+                    "units": "m",
+                    "long_name": "Site elevation",
+                    "positive": "up",
+                },
+            ),
+            "name": xr.DataArray(
+                np.array(site_names, dtype=object),
+                dims=["site"],
+                attrs={"long_name": "Site name"},
+            ),
         }
     )
     ds.to_netcdf(outfile)
@@ -675,27 +790,39 @@ if USE_SENSITIVITY:
     # build a nonexistent double-extension path (".sns.sns") and just
     # look like "file not found" with no clue why.
     if SENS_FILE.endswith(SENS_EXT):
-        print(f"  NOTE: SENS_FILE already ends with {SENS_EXT!r} — "
-              f"stripping it before appending SENS_EXT, to avoid building "
-              f"a nonexistent '...{SENS_EXT}{SENS_EXT}' path.")
+        print(
+            f"  NOTE: SENS_FILE already ends with {SENS_EXT!r} — "
+            f"stripping it before appending SENS_EXT, to avoid building "
+            f"a nonexistent '...{SENS_EXT}{SENS_EXT}' path."
+        )
         SENS_FILE = SENS_FILE[: -len(SENS_EXT)]
     sens_path = Path(SENS_FILE + SENS_EXT)
     if not sens_path.exists():
-        print(f"  WARNING: {sens_path} not found — skipping sensitivity "
-              f"shading/blanking (set USE_SENSITIVITY = False to silence).")
+        print(
+            f"  WARNING: {sens_path} not found — skipping sensitivity "
+            f"shading/blanking (set USE_SENSITIVITY = False to silence)."
+        )
     else:
         sdx, sdy, sdz, sens, sref, strans_in = mdm.read_mod(
             file=SENS_FILE, modext=SENS_EXT, trans="LINEAR", out=True
         )
         if sens.shape != mval.shape:
-            print(f"  WARNING: {sens_path} has shape {sens.shape}, resistivity "
-                  f"model has {mval.shape} — meshes don't match, cannot use "
-                  f"for shading/blanking. Skipping.")
+            print(
+                f"  WARNING: {sens_path} has shape {sens.shape}, resistivity "
+                f"model has {mval.shape} — meshes don't match, cannot use "
+                f"for shading/blanking. Skipping."
+            )
             sens = None
-        elif not (np.allclose(sdx, dx) and np.allclose(sdy, dy) and np.allclose(sdz, dz)):
-            print(f"  WARNING: {sens_path} cell sizes don't match the "
-                  f"resistivity model's — meshes may not be identical. "
-                  f"Proceeding, but double-check this file is the right one.")
+        elif not (
+            np.allclose(sdx, dx)
+            and np.allclose(sdy, dy)
+            and np.allclose(sdz, dz)
+        ):
+            print(
+                f"  WARNING: {sens_path} cell sizes don't match the "
+                f"resistivity model's — meshes may not be identical. "
+                f"Proceeding, but double-check this file is the right one."
+            )
 
         if sens is not None and (SENS_FLIP_EASTING or SENS_FLIP_NORTHING):
             # sens has shape (North, East, Down) — same convention as mval
@@ -704,33 +831,58 @@ if USE_SENSITIVITY:
             # without needing a second fix in the plot script.
             if SENS_FLIP_EASTING:
                 sens = sens[:, ::-1, :]
-                print("  Flipped sensitivity along East-West axis "
-                      "(SENS_FLIP_EASTING = True)")
+                print(
+                    "  Flipped sensitivity along East-West axis "
+                    "(SENS_FLIP_EASTING = True)"
+                )
             if SENS_FLIP_NORTHING:
                 sens = sens[::-1, :, :]
-                print("  Flipped sensitivity along North-South axis "
-                      "(SENS_FLIP_NORTHING = True)")
+                print(
+                    "  Flipped sensitivity along North-South axis "
+                    "(SENS_FLIP_NORTHING = True)"
+                )
 
 # Read the data file to get the geographic reference point and site coordinates.
 # The .dat header line "> lat lon" gives the model origin in geographic coords.
 # Data columns: Period Code GG_Lat GG_Lon X(m) Y(m) Z(m) Component Real Imag Error
 #   col 2 = GG_Lat (°), col 3 = GG_Lon (°)
 #   col 4 = X (m, North), col 5 = Y (m, East), col 6 = Z (m, positive down)
-Site, Comp, Data, Head = mdm.read_data(Datfile=DATA_FILE, modext=DATA_EXT, out=True)
+Site, Comp, Data, Head = mdm.read_data(
+    Datfile=DATA_FILE, modext=DATA_EXT, out=True
+)
 
 # Extract geographic reference from the "> lat lon" header line
-_ref_line = [l for l in Head if l.startswith(">") and
-             len(l.split()) == 3 and
-             not any(c.isalpha() for c in l.replace(".", "").replace("-", "").replace(">", "").strip())]
+_ref_line = [
+    l
+    for l in Head
+    if l.startswith(">")
+    and len(l.split()) == 3
+    and not any(
+        c.isalpha()
+        for c in l.replace(".", "").replace("-", "").replace(">", "").strip()
+    )
+]
 if _ref_line and REFERENCE_LAT is None:
     _parts = _ref_line[0].split()
     lat_ref = float(_parts[1])
     lon_ref = float(_parts[2])
-    print(f"  Geographic reference from .dat header: lat={lat_ref:.4f}°  lon={lon_ref:.4f}°")
+    print(
+        f"  Geographic reference from .dat header: lat={lat_ref:.4f}°  lon={lon_ref:.4f}°"
+    )
 else:
-    lat_ref = REFERENCE_LAT if REFERENCE_LAT is not None else float(np.mean(Data[:, 1]))
-    lon_ref = REFERENCE_LON if REFERENCE_LON is not None else float(np.mean(Data[:, 2]))
-    print(f"  Geographic reference (override/fallback): lat={lat_ref:.4f}°  lon={lon_ref:.4f}°")
+    lat_ref = (
+        REFERENCE_LAT
+        if REFERENCE_LAT is not None
+        else float(np.mean(Data[:, 1]))
+    )
+    lon_ref = (
+        REFERENCE_LON
+        if REFERENCE_LON is not None
+        else float(np.mean(Data[:, 2]))
+    )
+    print(
+        f"  Geographic reference (override/fallback): lat={lat_ref:.4f}°  lon={lon_ref:.4f}°"
+    )
 
 # ------------------------------------------------------------------
 # 2. UTM transformer
@@ -753,10 +905,12 @@ dx, dy, dz, mval, z_trim_offset_m = trim_model(dx, dy, dz, mval, TRIM_PAD)
 # 4. Build coordinate axes
 # ------------------------------------------------------------------
 print("\n=== Building UTM coordinate axes ===")
-utm_e_km, utm_n_km = build_utm_axes(dx, dy, reference, transformer,
-                                     lat_ref, lon_ref)
-utm_e_edges_km, utm_n_edges_km = build_utm_edges(dx, dy, reference, transformer,
-                                                  lat_ref, lon_ref)
+utm_e_km, utm_n_km = build_utm_axes(
+    dx, dy, reference, transformer, lat_ref, lon_ref
+)
+utm_e_edges_km, utm_n_edges_km = build_utm_edges(
+    dx, dy, reference, transformer, lat_ref, lon_ref
+)
 depth_km = build_depth_axis_km(dz, ref_z=reference[2] + z_trim_offset_m)
 depth_edges_km = build_depth_edges_km(dz, ref_z=reference[2] + z_trim_offset_m)
 
@@ -800,9 +954,9 @@ if CROP_TO_REGION:
     utm_n_km = utm_n_km[sl_n]
     utm_e_edges_km = utm_e_edges_km[sl_e_edges]
     utm_n_edges_km = utm_n_edges_km[sl_n_edges]
-    dy       = dy[sl_e]     # East cell widths, indexed like easting
-    dx       = dx[sl_n]     # North cell widths, indexed like northing
-    mval     = mval[sl_n, sl_e, :]
+    dy = dy[sl_e]  # East cell widths, indexed like easting
+    dx = dx[sl_n]  # North cell widths, indexed like northing
+    mval = mval[sl_n, sl_e, :]
     if sens is not None:
         sens = sens[sl_n, sl_e, :]
 
@@ -817,20 +971,26 @@ if CROP_TO_REGION:
     # boundary cells to the requested box: the cell keeps its real
     # value, just truncated at the window the box defines, matching the
     # topo raster's own hard cutoff there.
-    print(f"  Boundary-cell edge overhang before clipping: "
-          f"easting [{e_min - utm_e_edges_km[0]:+.2f}, "
-          f"{utm_e_edges_km[-1] - e_max:+.2f}] km, "
-          f"northing [{n_min - utm_n_edges_km[0]:+.2f}, "
-          f"{utm_n_edges_km[-1] - n_max:+.2f}] km")
-    utm_e_edges_km[0]  = max(utm_e_edges_km[0],  e_min)
+    print(
+        f"  Boundary-cell edge overhang before clipping: "
+        f"easting [{e_min - utm_e_edges_km[0]:+.2f}, "
+        f"{utm_e_edges_km[-1] - e_max:+.2f}] km, "
+        f"northing [{n_min - utm_n_edges_km[0]:+.2f}, "
+        f"{utm_n_edges_km[-1] - n_max:+.2f}] km"
+    )
+    utm_e_edges_km[0] = max(utm_e_edges_km[0], e_min)
     utm_e_edges_km[-1] = min(utm_e_edges_km[-1], e_max)
-    utm_n_edges_km[0]  = max(utm_n_edges_km[0],  n_min)
+    utm_n_edges_km[0] = max(utm_n_edges_km[0], n_min)
     utm_n_edges_km[-1] = min(utm_n_edges_km[-1], n_max)
 
-    print(f"  Cropped easting  range: {utm_e_km.min():.1f} – {utm_e_km.max():.1f} km"
-          f"  ({mval.shape[1]} cells)")
-    print(f"  Cropped northing range: {utm_n_km.min():.1f} – {utm_n_km.max():.1f} km"
-          f"  ({mval.shape[0]} cells)")
+    print(
+        f"  Cropped easting  range: {utm_e_km.min():.1f} – {utm_e_km.max():.1f} km"
+        f"  ({mval.shape[1]} cells)"
+    )
+    print(
+        f"  Cropped northing range: {utm_n_km.min():.1f} – {utm_n_km.max():.1f} km"
+        f"  ({mval.shape[0]} cells)"
+    )
 
 # ------------------------------------------------------------------
 # 5. Apply output transform
@@ -849,12 +1009,16 @@ if sens is not None:
 print("\n=== Extracting model topography ===")
 # get_topo expects physical mval (Ω·m) and reference in metres
 xcnt, ycnt, topo_m = mdm.get_topo(
-    dx=dx, dy=dy, dz=dz, mval=mval,
-    ref=[0., 0., reference[2] + z_trim_offset_m],  # keep in sync with
+    dx=dx,
+    dy=dy,
+    dz=dz,
+    mval=mval,
+    ref=[0.0, 0.0, reference[2] + z_trim_offset_m],  # keep in sync with
     # build_depth_axis_km's ref_z above — both must use the same z
     # reference (reference[2] plus any top-z trim offset) or this
     # topography and the model's own depth axis go back out of alignment.
-    mvalair=RHO_AIR, out=True,
+    mvalair=RHO_AIR,
+    out=True,
 )
 # xcnt/ycnt are local offsets in metres, matching dx/dy after trimming.
 # We use the already-built UTM axes instead.
@@ -864,22 +1028,38 @@ save_topo(utm_e_km, utm_n_km, topo_m, outpath("modem_topo_utm.nc"))
 # 7. Full 3-D model
 # ------------------------------------------------------------------
 print("\n=== Saving 3-D model ===")
-save_3d_model(utm_e_km, utm_n_km, depth_km, rho_out, outpath("modem_model_utm.nc"))
-save_grid_edges(utm_e_edges_km, utm_n_edges_km, depth_edges_km,
-                outpath("modem_grid_edges_utm.nc"))
+save_3d_model(
+    utm_e_km, utm_n_km, depth_km, rho_out, outpath("modem_model_utm.nc")
+)
+save_grid_edges(
+    utm_e_edges_km,
+    utm_n_edges_km,
+    depth_edges_km,
+    outpath("modem_grid_edges_utm.nc"),
+)
 
 if sens_out is not None:
     print("\n=== Saving 3-D sensitivity/resolution field ===")
     sens_long_name = {
-        "LOG10": "log10 sensitivity", "LOGE": "ln sensitivity",
+        "LOG10": "log10 sensitivity",
+        "LOGE": "ln sensitivity",
         "LINEAR": "sensitivity",
     }.get(SENS_TRANSFORM.upper(), "sensitivity")
     sens_units = {
-        "LOG10": "log10(sensitivity)", "LOGE": "ln(sensitivity)",
+        "LOG10": "log10(sensitivity)",
+        "LOGE": "ln(sensitivity)",
         "LINEAR": "sensitivity",
     }.get(SENS_TRANSFORM.upper(), "sensitivity")
-    save_3d_field(utm_e_km, utm_n_km, depth_km, sens_out, outpath("modem_sens_utm.nc"),
-                 sens_long_name, sens_units, SENS_TRANSFORM)
+    save_3d_field(
+        utm_e_km,
+        utm_n_km,
+        depth_km,
+        sens_out,
+        outpath("modem_sens_utm.nc"),
+        sens_long_name,
+        sens_units,
+        SENS_TRANSFORM,
+    )
 
 # ------------------------------------------------------------------
 # 8. Depth slices
@@ -887,12 +1067,26 @@ if sens_out is not None:
 print("\n=== Saving depth slices ===")
 for d_km in DEPTH_SLICES_KM:
     tag = f"{d_km:.0f}km" if d_km == int(d_km) else f"{d_km:.1f}km"
-    save_depth_slice(utm_e_km, utm_n_km, depth_km, rho_out,
-                     d_km, outpath(f"modem_rho_utm_{tag}.nc"))
+    save_depth_slice(
+        utm_e_km,
+        utm_n_km,
+        depth_km,
+        rho_out,
+        d_km,
+        outpath(f"modem_rho_utm_{tag}.nc"),
+    )
     if sens_out is not None:
-        save_depth_slice_field(utm_e_km, utm_n_km, depth_km, sens_out, d_km,
-                               outpath(f"modem_sens_utm_{tag}.nc"),
-                               sens_long_name, sens_units, SENS_TRANSFORM)
+        save_depth_slice_field(
+            utm_e_km,
+            utm_n_km,
+            depth_km,
+            sens_out,
+            d_km,
+            outpath(f"modem_sens_utm_{tag}.nc"),
+            sens_long_name,
+            sens_units,
+            SENS_TRANSFORM,
+        )
 
 # ------------------------------------------------------------------
 # 9. Site positions from data file
@@ -903,18 +1097,25 @@ print("\n=== Saving MT site positions ===")
 # X(m)/Y(m)/Z(m) (cols 4,5,6) as the model Cartesian coordinates.
 # Elevation: Z(m) is positive down in ModEM; negate for positive-up.
 _, unique_idx = np.unique(Site, return_index=True)
-unique_names  = Site[unique_idx]
-site_lats     = Data[unique_idx, 1]    # GG_Lat, degrees
-site_lons     = Data[unique_idx, 2]    # GG_Lon, degrees
-site_elevs    = -Data[unique_idx, 6]   # Z(m) positive down → negate for positive up
+unique_names = Site[unique_idx]
+site_lats = Data[unique_idx, 1]  # GG_Lat, degrees
+site_lons = Data[unique_idx, 2]  # GG_Lon, degrees
+site_elevs = -Data[
+    unique_idx, 6
+]  # Z(m) positive down → negate for positive up
 
 # Project geographic coords to UTM km
 site_e_raw, site_n_raw = transformer.transform(site_lons, site_lats)
 site_e_km = site_e_raw / 1e3
 site_n_km = site_n_raw / 1e3
 
-save_sites(site_e_km, site_n_km, site_elevs, unique_names.tolist(),
-           outpath("modem_sites_utm.nc"))
+save_sites(
+    site_e_km,
+    site_n_km,
+    site_elevs,
+    unique_names.tolist(),
+    outpath("modem_sites_utm.nc"),
+)
 
 # ------------------------------------------------------------------
 # Summary
@@ -926,9 +1127,7 @@ outputs = [
     "modem_grid_edges_utm.nc",
     "modem_sites_utm.nc",
 ] + [
-    "modem_rho_utm_{}.nc".format(
-        f"{d:.0f}km" if d == int(d) else f"{d:.1f}km"
-    )
+    "modem_rho_utm_{}.nc".format(f"{d:.0f}km" if d == int(d) else f"{d:.1f}km")
     for d in DEPTH_SLICES_KM
 ]
 if sens_out is not None:

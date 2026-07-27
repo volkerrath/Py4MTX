@@ -179,6 +179,12 @@ Provenance
             hid any topography (mesh cells with z < 0) sitting above it.
             Changed to [-1000.0, 20000.0], giving 1 km of headroom above
             the datum so topography is included in the plotted range.
+2026-07-26  Claude Sonnet 5 (Anthropic)
+            Added MOD_VERT_EXAG (default 1.0 = true scale): vertical
+            exaggeration factor for ns/ew curtain panels, passed through
+            to femtic_viz.py's plot_model_slices(vert_exag=...). Map
+            panels are unaffected. Per-panel override available via a
+            "vert_exag" key in the corresponding MOD_SLICES entry.
 """
 from __future__ import annotations
 
@@ -226,11 +232,11 @@ FEMTIC="4.3"
 # ---------------------------------------------------------------------------
 
 ENSEMBLE_DIR = r"/home/vrath/FEMTIC_work/Ensembles/misti_gst/ensemble/"
-ENSEMBLE_NAME = "misti_gst_suzuki_"
+ENSEMBLE_NAME = "misti_gst_suzuki_rnd_"
 
 #: Prefix used for .npz output keys and default file/figure names.
 #: e.g. "rto" → keys rto_ens, rto_avg, …  and file RTO_results.npz.
-ENSEMBLE_PREFIX = "misti_gst_suzuki"
+ENSEMBLE_PREFIX = "misti_gst_suzuki_rnd"
 
 #: Maximum normalised RMS accepted from femtic.cnv.
 NRMS_MAX = 1.5
@@ -359,15 +365,15 @@ MOD_STATS_DIR  = ENSEMBLE_DIR + "/stats_plots/"
 #: sensible starting range; adjust per-key, or set a key to None to fall
 #: back to auto-scaling for that one statistic.
 MOD_STATS_CLIM = {
-    "var": [-2.0, 2.0],
-    "err": [-2.0, 2.0],
-    "mad": [-2.0, 2.0],
+    "var": [.0, 1.0],
+    "err": [.0, 1.0],
+    "mad": [.0, 1.0],
 }
 for _lo, _hi in QDIFF_PAIRS:
-    MOD_STATS_CLIM[f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_")] = [-2.0, 2.0]
+    MOD_STATS_CLIM[f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_")] = [.0, 1.0]
 if BOOTSTRAP_VAR:
-    MOD_STATS_CLIM["var_boot"] = [-2.0, 2.0]
-    MOD_STATS_CLIM["err_boot"] = [-2.0, 2.0]
+    MOD_STATS_CLIM["var_boot"] = [.0, 1.0]
+    MOD_STATS_CLIM["err_boot"] = [.0, 1.0]
 
 # ---------------------------------------------------------------------------
 # Shared slice / plot parameters
@@ -457,6 +463,7 @@ MOD_ALPHA_BLANK_THRESH = 0.0
 
 # --- Figure layout -----------------------------------------------------------
 MOD_EQUAL_ASPECT = True
+MOD_VERT_EXAG    = 1.0    # vertical exaggeration for ns/ew curtain panels (1.0 = true scale); no effect on map panels or when MOD_EQUAL_ASPECT=False. Per-panel override: add a "vert_exag" key to that entry in MOD_SLICES.
 MOD_DEPTH_KM     = True
 MOD_HORIZ_KM     = True
 #: 2x2 grid matching the 4 default MOD_SLICES panels (2 maps + ns + ew).
@@ -689,6 +696,7 @@ def _plot_slice(block_file: str, pdf_file: str,
         depth_km            = MOD_DEPTH_KM,
         horiz_km            = MOD_HORIZ_KM,
         equal_aspect        = MOD_EQUAL_ASPECT,
+        vert_exag           = MOD_VERT_EXAG,
         panel_height        = MOD_PANEL_HEIGHT / 2.54,
         panel_width         = MOD_PANEL_WIDTH / 2.54 if MOD_PANEL_WIDTH is not None else None,
         figsize             = [v / 2.54 for v in MOD_FIGSIZE] if MOD_FIGSIZE is not None else None,

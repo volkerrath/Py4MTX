@@ -376,7 +376,17 @@ Provenance:
                         or the depth-tick-label formatter above -- all of
                         those were built on the (correct, it turns out)
                         assumption that v = -z_mesh, which is what this
-                        fix now actually produces."""
+                        fix now actually produces.
+    2026-07-27  Claude Sonnet 5   plot_model_slices: added plt.close(fig)
+                        after savefig/show (matching plot_ensemble_slices)
+                        and now returns fig. Previously the figure was
+                        never closed, so per-member loops in
+                        femtic_rto_prep.py / femtic_gst_prep.py
+                        (_plot_member_slices, called once per VIZ_SAMPLES
+                        entry for QC and model plots) leaked one open
+                        figure per call, triggering matplotlib's "more
+                        than 20 figures opened" RuntimeWarning and
+                        growing memory use over long ensemble runs."""
 
 from __future__ import annotations
 
@@ -4456,6 +4466,9 @@ def plot_model_slices(
             plt.show()
     else:
         plt.show()
+
+    plt.close(fig)
+    return fig
 
 
 # =============================================================================

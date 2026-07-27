@@ -117,9 +117,10 @@ PLOT_DPI = 600
 FIG_WIDTH = 10.0  # cm — map panel width; a colorbar (if shown) adds its
 # own extra width/height beyond this, never competing
 # with the map for space.
-
-VSLICE_WIDTH_CM = 14.0
-VSLICE_HEIGHT_CM = None  # None → derived from VE and profile length
+# VSLICE_WIDTH_CM  = 14.0
+# VSLICE_HEIGHT_CM = None  # None → derived from VE and profile length
+VSLICE_WIDTH_CM  = None
+VSLICE_HEIGHT_CM =10.  # N
 
 # Depth slices to plot — must match values used in tacna_precompute_modem.py.
 # Each entry corresponds to one DEPTH_SLICES_KM value; tag strings are
@@ -309,6 +310,13 @@ HS_AZIMUTH = 315
 HS_ALTITUDE = 45
 HS_SIGMA = 1.0  # Gaussian pre-smooth sigma (pixels); 0 = off
 
+# Draw the topography (hillshade + colour) raster under the map. Set to
+# False for a plain white basemap. Topo coordinates are still loaded
+# regardless (used for REGION_SOURCE="topo" and the ModEM topo used for
+# vertical-section masking), only the expensive hillshade computation and
+# the raster draw itself are skipped.
+SHOW_TOPO_BASEMAP = True
+
 # Topo colour normalisation range (metres)
 TOPO_VMIN = 1000
 TOPO_VMAX = 6000
@@ -329,13 +337,13 @@ OCEAN_COLOR = "#6baed6"
 # COLORBAR_ASPECT    : bar length / bar thickness (thickness is derived)
 # =====================================================================
 SHOW_COLORBAR = True
-COLORBAR_POSITION = "bottom"  # "right" | "left" | "bottom" | "top"
+COLORBAR_POSITION = "right"  # "right" | "left" | "bottom" | "top"
 COLORBAR_SIZE = 0.85  # bar length, fraction of the map edge
 COLORBAR_PAD = 0.10  # inches
 COLORBAR_ASPECT = 20
 COLORBAR_LABEL_SIZE = 12
 COLORBAR_TICK_SIZE = 12
-COLORBAR_NTICKS = None  # None = matplotlib picks automatically, sized to
+COLORBAR_NTICKS = 7   # None = matplotlib picks automatically, sized to
                         # the colorbar's actual length; set an int to force
                         # a specific tick count instead
 
@@ -1432,8 +1440,9 @@ def plot_vertical_slice(
 
     fig, ax, cax = create_section_figure(w_in, h_in)
 
-    # VE label drawn first (low zorder) so the (semi-transparent) data
-    # image sits over it rather than being covered by it.
+    # VE label must sit above the data pcolormesh (zorder=5) and every
+    # other section overlay (topo/profile/markers go up to zorder=20),
+    # so it stays visible regardless of data_alpha.
     if ve != 1.0:
         vx, vy, vha, vva = _resolve_ve_pos(VSLICE_VE_POS)
         ax.text(
@@ -1443,7 +1452,7 @@ def plot_vertical_slice(
             transform=ax.transAxes,
             ha=vha,
             va=vva,
-            zorder=1,
+            zorder=21,
             **VSLICE_VE_STYLE,
         )
 
@@ -1615,12 +1624,17 @@ if topo_y[0] > topo_y[-1]:
 dx_km = float(np.median(np.diff(topo_x)))
 dy_km = float(np.median(np.diff(topo_y)))
 
-print("Computing hillshade …")
-topo_hs = compute_hillshade(
-    topo_z, dx_km, dy_km, HS_AZIMUTH, HS_ALTITUDE, HS_SIGMA
-)
 topo_extent = [topo_x.min(), topo_x.max(), topo_y.min(), topo_y.max()]
-topo_norm = mcolors.Normalize(vmin=TOPO_VMIN, vmax=TOPO_VMAX)
+if SHOW_TOPO_BASEMAP:
+    print("Computing hillshade …")
+    topo_hs = compute_hillshade(
+        topo_z, dx_km, dy_km, HS_AZIMUTH, HS_ALTITUDE, HS_SIGMA
+    )
+    topo_norm = mcolors.Normalize(vmin=TOPO_VMIN, vmax=TOPO_VMAX)
+else:
+    print("Topography basemap disabled (SHOW_TOPO_BASEMAP=False) — skipping hillshade.")
+    topo_hs   = None
+    topo_norm = None
 
 # --- ModEM's own topography (for vertical-section masking only) ---
 # The vertical-section surface mask must line up with wherever mval itself
@@ -1778,24 +1792,25 @@ def draw_basemap(ax):
     ax.set_xlim(xmin, xmax)
     ax.set_ylim(ymin, ymax)
     ax.set_aspect("equal", adjustable="box")
-    ax.imshow(
-        CMAP_TOPO(topo_norm(topo_z)),
-        origin="lower",
-        extent=topo_extent,
-        aspect="auto",
-        interpolation="bilinear",
-        zorder=1,
-    )
-    ax.imshow(
-        topo_hs,
-        cmap="gray",
-        origin="lower",
-        extent=topo_extent,
-        alpha=0.45,
-        aspect="auto",
-        interpolation="bilinear",
-        zorder=2,
-    )
+    if SHOW_TOPO_BASEMAP:
+        ax.imshow(
+            CMAP_TOPO(topo_norm(topo_z)),
+            origin="lower",
+            extent=topo_extent,
+            aspect="auto",
+            interpolation="bilinear",
+            zorder=1,
+        )
+        ax.imshow(
+            topo_hs,
+            cmap="gray",
+            origin="lower",
+            extent=topo_extent,
+            alpha=0.45,
+            aspect="auto",
+            interpolation="bilinear",
+            zorder=2,
+        )
     if _use_bath:
         bath_mask = np.where(bath_z <= 0, 1.0, np.nan)
         ax.imshow(

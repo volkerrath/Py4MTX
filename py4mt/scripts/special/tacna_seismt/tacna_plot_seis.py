@@ -89,8 +89,10 @@ FIG_WIDTH = 10.0   # cm — map panel width; a colorbar (if shown) adds its
 
 # Vertical sections: height derived from (depth_range * VE / profile_len)
 # scaled to VSLICE_WIDTH_CM if None.
-VSLICE_WIDTH_CM  = 14.0
-VSLICE_HEIGHT_CM = None  # None → derived from VE and profile length
+# VSLICE_WIDTH_CM  = 14.0
+# VSLICE_HEIGHT_CM = None  # None → derived from VE and profile length
+VSLICE_WIDTH_CM  = None
+VSLICE_HEIGHT_CM =10.  # 
 
 DEPTH_INDEX = [5, 9, 13]
 
@@ -205,6 +207,13 @@ HS_AZIMUTH  = 315   # Sun azimuth (degrees)
 HS_ALTITUDE = 45    # Sun elevation (degrees)
 HS_SIGMA    = 1.0   # Gaussian pre-smooth sigma (pixels); 0 = no smoothing
 
+# Draw the topography (hillshade + colour) raster under the map. Set to
+# False for a plain white basemap. Topo coordinates/elevation are still
+# loaded regardless (used for REGION_SOURCE="topo" and the topo line drawn
+# along vertical-section profiles), only the expensive hillshade
+# computation and the raster draw itself are skipped.
+SHOW_TOPO_BASEMAP = True
+
 # Topo colour normalisation range (metres); matches grayC_dsc CPT limits
 TOPO_VMIN = 1000
 TOPO_VMAX = 6000
@@ -247,13 +256,13 @@ AXES_KM_COMMA    = True
 # COLORBAR_LABEL_*   : font sizes for the bar label and tick annotations
 # =====================================================================
 SHOW_COLORBAR       = True
-COLORBAR_POSITION   = "bottom"   # "right" | "left" | "bottom" | "top"
+COLORBAR_POSITION   = "right "   # "right" | "left" | "bottom" | "top"
 COLORBAR_SIZE       = 0.85      # bar length, fraction of the map edge
 COLORBAR_PAD        = 0.10      # inches between map axes and colorbar
 COLORBAR_ASPECT     = 20        # bar length / bar thickness
 COLORBAR_LABEL_SIZE = 12         # pt, label font size
 COLORBAR_TICK_SIZE  = 12         # pt, tick annotation font size
-COLORBAR_NTICKS     = None      # None = matplotlib picks automatically,
+COLORBAR_NTICKS     = 7      # None = matplotlib picks automatically,
                                 # sized to the colorbar's actual length;
                                 # set an int to force a specific count
 
@@ -831,13 +840,14 @@ def plot_vertical_slice(dist_km, depth_km, section, e_ends, n_ends,
 
     fig, ax, cax = create_section_figure(w_in, h_in)
 
-    # VE label drawn first (low zorder) so the (semi-transparent) data
-    # image sits over it rather than being covered by it.
+    # VE label must sit above the data pcolormesh (zorder=5) and every
+    # other section overlay (topo/profile/markers go up to zorder=20),
+    # so it stays visible regardless of data_alpha.
     if ve != 1.0:
         vx, vy, vha, vva = _resolve_ve_pos(VSLICE_VE_POS)
         ax.text(vx, vy, f"VE = {ve:.1f}×",
                 transform=ax.transAxes, ha=vha, va=vva,
-                zorder=1, **VSLICE_VE_STYLE)
+                zorder=21, **VSLICE_VE_STYLE)
 
     norm = mcolors.Normalize(vmin=cmin, vmax=cmax)
     im = ax.pcolormesh(
@@ -934,9 +944,13 @@ _topo_da.close()
 dx_km = float(np.median(np.diff(topo_x)))
 dy_km = float(np.median(np.diff(topo_y)))
 
-print("Computing hillshade …")
-topo_hs = compute_hillshade(topo_z, dx_km, dy_km,
-                             HS_AZIMUTH, HS_ALTITUDE, HS_SIGMA)
+if SHOW_TOPO_BASEMAP:
+    print("Computing hillshade …")
+    topo_hs = compute_hillshade(topo_z, dx_km, dy_km,
+                                 HS_AZIMUTH, HS_ALTITUDE, HS_SIGMA)
+else:
+    print("Topography basemap disabled (SHOW_TOPO_BASEMAP=False) — skipping hillshade.")
+    topo_hs = None
 
 print("Loading bathymetry grid …")
 _bath_da = xr.open_dataarray(ncpath(NC_BATH))
@@ -947,7 +961,7 @@ _bath_da.close()
 
 topo_extent = [topo_x.min(), topo_x.max(), topo_y.min(), topo_y.max()]
 bath_extent = [bath_x.min(), bath_x.max(), bath_y.min(), bath_y.max()]
-topo_norm   = mcolors.Normalize(vmin=TOPO_VMIN, vmax=TOPO_VMAX)
+topo_norm   = mcolors.Normalize(vmin=TOPO_VMIN, vmax=TOPO_VMAX) if SHOW_TOPO_BASEMAP else None
 CMAP_TOPO   = plt.get_cmap("gray")
 
 
@@ -1055,15 +1069,16 @@ def draw_basemap(ax):
     ax.set_ylim(ymin, ymax)
     ax.set_aspect("equal", adjustable="box")
 
-    ax.imshow(
-        CMAP_TOPO(topo_norm(topo_z)),
-        origin="lower", extent=topo_extent,
-        aspect="auto", interpolation="bilinear", zorder=1,
-    )
-    ax.imshow(
-        topo_hs, cmap="gray", origin="lower", extent=topo_extent,
-        alpha=0.45, aspect="auto", interpolation="bilinear", zorder=2,
-    )
+    if SHOW_TOPO_BASEMAP:
+        ax.imshow(
+            CMAP_TOPO(topo_norm(topo_z)),
+            origin="lower", extent=topo_extent,
+            aspect="auto", interpolation="bilinear", zorder=1,
+        )
+        ax.imshow(
+            topo_hs, cmap="gray", origin="lower", extent=topo_extent,
+            alpha=0.45, aspect="auto", interpolation="bilinear", zorder=2,
+        )
     bath_mask = np.where(bath_z <= 0, 1.0, np.nan)
     ax.imshow(
         bath_mask, origin="lower", extent=bath_extent,

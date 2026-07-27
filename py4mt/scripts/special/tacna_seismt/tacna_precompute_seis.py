@@ -90,6 +90,9 @@ FNAME_VS = "../seistomo/FD_vs_model.nc"
 CROP_TO_REGION = True
 TAR_LON = [-70.84, -69.35]
 TAR_LAT = [-18.40, -16.90]
+
+# TAR_LON = [-70.79, -69.50]
+# TAR_LAT = [-18.34, -16.99]
 # Lower bound was 0 (sea level), which silently discarded any above-sea-
 # level coverage the source model has (e.g. under a volcanic edifice) —
 # the same VSLICES zmin_km=-8.0 fix in tacna_plot_seis.py can't recover

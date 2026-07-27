@@ -101,9 +101,10 @@ PLOT_DPI     = 600
 FIG_WIDTH = 10.0   # cm — map panel width; a colorbar (if shown) adds its
                     # own extra width/height beyond this, never competing
                     # with the map for space.
-
-VSLICE_WIDTH_CM  = 14.0
-VSLICE_HEIGHT_CM = None  # None → derived from VE and profile length
+# VSLICE_WIDTH_CM  = 14.0
+# VSLICE_HEIGHT_CM = None  # None → derived from VE and profile length
+VSLICE_WIDTH_CM  = None
+VSLICE_HEIGHT_CM =10.  # None → derived from VE and profile length
 
 # Depth slices to plot — must match values used in tacna_precompute_modem.py.
 # Each entry corresponds to one DEPTH_SLICES_KM value; tag strings are
@@ -235,6 +236,30 @@ if EXPORT_CPT:
 # Resistivity overlay transparency (0 = opaque, 1 = invisible)
 ALPHA_RHO = 0.45
 
+# --- Isolines (contours) on top of the resistivity images ---
+# Applies to both the depth-slice maps and the vertical sections below.
+# Independent on/off switches so e.g. maps can carry isolines while
+# sections stay clean, or vice versa.
+ISO_LINES_MAP    = False   # depth-slice map images
+ISO_LINES_VSLICE = False   # vertical-section images
+
+# Contour levels, in the same units as the plotted data (log10(ρ) [Ω·m]):
+#   "auto"          -> ISO_AUTO_N evenly spaced levels spanning the
+#                      finite data range of each individual panel
+#   [v1, v2, ...]    -> explicit list of log10(ρ) values, used as-is,
+#                      shared by every panel (e.g. [1.0, 2.0, 3.0])
+ISO_LEVELS_MAP    = "auto"
+ISO_LEVELS_VSLICE = "auto"
+ISO_AUTO_N = 6   # number of levels when ISO_LEVELS_* == "auto"
+
+# Line style for the isolines themselves
+ISO_STYLE = dict(colors="black", linewidths=0.6, linestyles="solid", zorder=7)
+
+# Inline value labels along each contour line
+ISO_LABEL          = True
+ISO_LABEL_FMT      = "%.1f"
+ISO_LABEL_FONTSIZE = 6
+
 # Pre-computed UTM-km NetCDF files from tacna_precompute_modem.py
 NC_TOPO_MODEM = "modem_topo_utm.nc"    # 2-D elevation, dims (northing, easting)
 NC_SITES      = "modem_sites_utm.nc"   # MT site positions
@@ -270,6 +295,14 @@ HS_ALTITUDE = 45
 HS_SIGMA    = 1.0   # Gaussian pre-smooth sigma (pixels); 0 = off
 
 # Topo colour normalisation range (metres)
+# Draw the topography (hillshade + colour) raster under the map. Set to
+# False for a plain white basemap (e.g. presentation slides, or when the
+# resistivity/ocean overlays alone are cluttered enough). Topo coordinates
+# are still loaded regardless (used for REGION_SOURCE="topo" and the ModEM
+# topo used for vertical-section masking), only the expensive hillshade
+# computation and the raster draw itself are skipped.
+SHOW_TOPO_BASEMAP = True
+
 TOPO_VMIN = 1000
 TOPO_VMAX = 6000
 
@@ -289,13 +322,13 @@ OCEAN_COLOR = "#6baed6"
 # COLORBAR_ASPECT    : bar length / bar thickness (thickness is derived)
 # =====================================================================
 SHOW_COLORBAR       = True
-COLORBAR_POSITION   = "bottom"   # "right" | "left" | "bottom" | "top"
+COLORBAR_POSITION   = "right"   # "right" | "left" | "bottom" | "top"
 COLORBAR_SIZE       = 0.85      # bar length, fraction of the map edge
 COLORBAR_PAD        = 0.10      # inches
 COLORBAR_ASPECT     = 20
 COLORBAR_LABEL_SIZE = 12
 COLORBAR_TICK_SIZE  = 12
-COLORBAR_NTICKS     = None  # None = matplotlib picks automatically, sized
+COLORBAR_NTICKS     = 7 # None = matplotlib picks automatically, sized
                             # to the colorbar's actual length; set an int
                             # to force a specific tick count instead
 
@@ -668,6 +701,46 @@ os.makedirs(PLOT_DIR, exist_ok=True)
 def ncpath(name):
     """Join a bare precomputed-NetCDF filename onto NC_DIR."""
     return os.path.join(NC_DIR, name)
+
+
+def resolve_iso_levels(data2d, levels_spec, n_auto=ISO_AUTO_N):
+    """Resolve an ISO_LEVELS_* setting into an explicit list of contour
+    levels for one panel.
+
+    "auto" (or None) picks n_auto evenly spaced levels spanning the finite
+    (non-NaN) data range of this particular panel — panels differ, so this
+    is computed fresh each time rather than once globally. An explicit
+    list/tuple is used verbatim, unchanged, so every panel shares the same
+    levels. Returns [] if there's no usable finite data (e.g. an
+    all-air/all-NaN panel) or an explicit level list was empty.
+    """
+    if levels_spec is None or (isinstance(levels_spec, str) and levels_spec.lower() == "auto"):
+        finite = data2d[np.isfinite(data2d)]
+        if finite.size == 0:
+            return []
+        vmin, vmax = float(finite.min()), float(finite.max())
+        if vmin == vmax:
+            return []
+        # Interior points only (exclude the flat/degenerate panel edges)
+        return list(np.linspace(vmin, vmax, n_auto + 2)[1:-1])
+    return list(levels_spec)
+
+
+def draw_iso_contours(ax, x, y, data2d, levels_spec, n_auto=ISO_AUTO_N):
+    """Overlay isolines (contours) of data2d on ax, using ISO_STYLE/
+    ISO_LABEL/ISO_LABEL_FMT/ISO_LABEL_FONTSIZE. x, y are the same 1-D
+    cell-centre coordinate arrays used for the pcolormesh/data itself
+    (contour always works from cell centres, regardless of whether the
+    filled raster used exact cell edges). No-op if there are no usable
+    levels (see resolve_iso_levels).
+    """
+    levels = resolve_iso_levels(data2d, levels_spec, n_auto)
+    if not levels:
+        return None
+    cs = ax.contour(x, y, data2d, levels=levels, **ISO_STYLE)
+    if ISO_LABEL:
+        ax.clabel(cs, fmt=ISO_LABEL_FMT, fontsize=ISO_LABEL_FONTSIZE, inline=True)
+    return cs
 
 
 # ------------------------------------------------------------------
@@ -1112,13 +1185,14 @@ def plot_vertical_slice(dist_km, depth_km, section, e_ends, n_ends,
 
     fig, ax, cax = create_section_figure(w_in, h_in)
 
-    # VE label drawn first (low zorder) so the (semi-transparent) data
-    # image sits over it rather than being covered by it.
+    # VE label must sit above the data pcolormesh (zorder=5) and every
+    # other section overlay (topo/profile/markers go up to zorder=20),
+    # so it stays visible regardless of data_alpha.
     if ve != 1.0:
         vx, vy, vha, vva = _resolve_ve_pos(VSLICE_VE_POS)
         ax.text(vx, vy, f"VE = {ve:.1f}×",
                 transform=ax.transAxes, ha=vha, va=vva,
-                zorder=1, **VSLICE_VE_STYLE)
+                zorder=21, **VSLICE_VE_STYLE)
 
     norm = mcolors.Normalize(vmin=cmin, vmax=cmax)
     # Per-cell alpha for the data layer itself. Sections have no basemap
@@ -1169,6 +1243,9 @@ def plot_vertical_slice(dist_km, depth_km, section, e_ends, n_ends,
             alpha=alpha_2d, zorder=6,
             antialiased=(_section_shading != "nearest"),
         )
+
+    if ISO_LINES_VSLICE:
+        draw_iso_contours(ax, x_arr, depth_km, section, ISO_LEVELS_VSLICE)
 
     # Surface line/fill now come from the section's own data (surf_depth),
     # not a separately-referenced topography raster — see the note in
@@ -1265,10 +1342,15 @@ if topo_y[0] > topo_y[-1]:
 dx_km = float(np.median(np.diff(topo_x)))
 dy_km = float(np.median(np.diff(topo_y)))
 
-print("Computing hillshade …")
-topo_hs = compute_hillshade(topo_z, dx_km, dy_km, HS_AZIMUTH, HS_ALTITUDE, HS_SIGMA)
 topo_extent = [topo_x.min(), topo_x.max(), topo_y.min(), topo_y.max()]
-topo_norm   = mcolors.Normalize(vmin=TOPO_VMIN, vmax=TOPO_VMAX)
+if SHOW_TOPO_BASEMAP:
+    print("Computing hillshade …")
+    topo_hs   = compute_hillshade(topo_z, dx_km, dy_km, HS_AZIMUTH, HS_ALTITUDE, HS_SIGMA)
+    topo_norm = mcolors.Normalize(vmin=TOPO_VMIN, vmax=TOPO_VMAX)
+else:
+    print("Topography basemap disabled (SHOW_TOPO_BASEMAP=False) — skipping hillshade.")
+    topo_hs   = None
+    topo_norm = None
 
 # --- ModEM's own topography (for vertical-section masking only) ---
 # The vertical-section surface mask must line up with wherever mval itself
@@ -1403,15 +1485,16 @@ def draw_basemap(ax):
     ax.set_xlim(xmin, xmax)
     ax.set_ylim(ymin, ymax)
     ax.set_aspect("equal", adjustable="box")
-    ax.imshow(
-        CMAP_TOPO(topo_norm(topo_z)),
-        origin="lower", extent=topo_extent,
-        aspect="auto", interpolation="bilinear", zorder=1,
-    )
-    ax.imshow(
-        topo_hs, cmap="gray", origin="lower", extent=topo_extent,
-        alpha=0.45, aspect="auto", interpolation="bilinear", zorder=2,
-    )
+    if SHOW_TOPO_BASEMAP:
+        ax.imshow(
+            CMAP_TOPO(topo_norm(topo_z)),
+            origin="lower", extent=topo_extent,
+            aspect="auto", interpolation="bilinear", zorder=1,
+        )
+        ax.imshow(
+            topo_hs, cmap="gray", origin="lower", extent=topo_extent,
+            alpha=0.45, aspect="auto", interpolation="bilinear", zorder=2,
+        )
     if _use_bath:
         bath_mask = np.where(bath_z <= 0, 1.0, np.nan)
         ax.imshow(
@@ -1603,6 +1686,8 @@ for ii, d_km in enumerate(DEPTH_SLICES_KM):
                                     SENS_SHADE_RANGE[1], SENS_SHADE_MAX_ALPHA)
         draw_sens_shade_overlay(ax, vx, vy, alpha_2d, zorder=6,
                                e_edges=grid_e_edges, n_edges=grid_n_edges)
+    if ISO_LINES_MAP:
+        draw_iso_contours(ax, vx, vy, vz, ISO_LEVELS_MAP)
     draw_features(ax, eq_e, eq_n)
     ax.set_title(f"log$_{{10}}$ρ at {label}", fontsize=AXIS_TITLE_SIZE)
     finish_panel_colorbar(cax, im, "log$_{10}$(ρ / Ω·m)")
