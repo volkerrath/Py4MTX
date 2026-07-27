@@ -548,12 +548,37 @@ def utm_zone_from_latlon(lat: float, lon: float, *, override: int | None = None
     northern : bool  True if lat ≥ 0
 
     VR 2026-05-23, Claude Sonnet 4.6 (Anthropic)
+    2026-07-27  Claude Sonnet 5 (Anthropic)
+                Added an explicit, actionable error when lat/lon are
+                None or otherwise non-numeric, instead of letting a bare
+                float(None) raise an opaque TypeError deep in this
+                function. Triggered in practice by caller scripts that
+                fall back to a "hard-coded origin" without actually
+                having set one (e.g. femtic_gst_prep.py /
+                femtic_rto_prep.py when MOD_SITE_DAT was unavailable and
+                MOD_UTM_ORIGIN_LAT/LON were left at their None default).
     """
     if override is not None:
         zone = int(override)
         if not 1 <= zone <= 60:
             raise ValueError(f"utm_zone_from_latlon: override={zone} out of range 1–60.")
+        if lat is None:
+            raise ValueError(
+                "utm_zone_from_latlon: override given but lat=None — "
+                "a latitude is still needed to determine the hemisphere "
+                "(northern = lat >= 0). Pass a real latitude value."
+            )
         return zone, float(lat) >= 0.0
+    if lat is None or lon is None:
+        raise ValueError(
+            f"utm_zone_from_latlon: lat/lon must be real numbers, got "
+            f"lat={lat!r}, lon={lon!r}. This usually means an origin was "
+            f"never actually resolved or hard-coded upstream (e.g. a "
+            f"site file was unavailable and no fallback lat/lon/override "
+            f"was configured) — check the caller's origin-resolution "
+            f"logic, or pass override=<zone> if only a UTM zone number "
+            f"(plus lat's sign) is needed."
+        )
     lon = float(lon)
     lat = float(lat)
     if abs(lat) > 84.0:

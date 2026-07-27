@@ -209,6 +209,24 @@ Provenance:
                 keys untouched; applied right before
                 fem.resolve_slice_positions(MOD_SLICES, ...) and at the
                 plot_ensemble_slices(slices=ENS_SLICES, ...) call.
+    2026-07-27  Claude Sonnet 5 (Anthropic)
+                Fixed a crash when MOD_ORIGIN_METHOD is set but
+                MOD_SITE_DAT is unavailable/empty *and* no hard-coded
+                MOD_UTM_ORIGIN_LAT/LON was actually provided: the
+                script printed a "using hard-coded origin" warning but
+                then unconditionally called
+                utl.utm_zone_from_latlon(None, None, ...), raising
+                TypeError: float() argument must be ... 'NoneType'
+                deep inside util.py. Now guarded exactly like the
+                equivalent block in femtic_ens_post.py /
+                femtic_nss.py: the call only runs if both lat and lon
+                resolved to real values; otherwise
+                _mod_utm_zone/_mod_utm_northern stay None (any
+                ("latlon")-tuple MOD_SLICES/ENS_SLICES entries are
+                then skipped downstream by
+                fem.resolve_slice_positions, same as in those two
+                scripts) and a clear warning is printed naming the fix
+                (set MOD_UTM_ORIGIN_LAT/LON or fix MOD_SITE_DAT).
 """
 
 import os
@@ -810,9 +828,17 @@ if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC
                       f"E={_mod_utm_origin_e:.1f} m, N={_mod_utm_origin_n:.1f} m, "
                       f"lat={_mod_utm_origin_lat:.5f}°, lon={_mod_utm_origin_lon:.5f}°")
 
-    _mod_utm_zone, _mod_utm_northern = utl.utm_zone_from_latlon(
-        _mod_utm_origin_lat, _mod_utm_origin_lon,
-        override=MOD_UTM_ZONE_OVERRIDE)
+    _mod_utm_zone, _mod_utm_northern = None, None
+    if _mod_utm_origin_lat is not None and _mod_utm_origin_lon is not None:
+        _mod_utm_zone, _mod_utm_northern = utl.utm_zone_from_latlon(
+            _mod_utm_origin_lat, _mod_utm_origin_lon,
+            override=MOD_UTM_ZONE_OVERRIDE)
+    else:
+        print("  WARNING: no valid UTM origin resolved (MOD_SITE_DAT "
+              "unavailable/empty and MOD_UTM_ORIGIN_LAT/LON not set) — "
+              "UTM zone/hemisphere left unresolved; any (\"latlon\")-tuple "
+              "slice specs in MOD_SLICES/ENS_SLICES will be skipped. Set "
+              "MOD_UTM_ORIGIN_LAT/LON (or fix MOD_SITE_DAT) to resolve this.")
 
     # --- resolve slice positions ---------------------------------------------
     _mod_slices_resolved = fem.resolve_slice_positions(

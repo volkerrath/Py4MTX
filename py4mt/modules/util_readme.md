@@ -309,3 +309,4 @@ Modified: 2026-03-25 — added ft_convention.py section; Claude Sonnet 4.6 (Anth
 Modified: 2026-03-26 — added unpack_compressed(), pack_compressed(), run_queue() sections; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-04-02 — added petrophysical models section (merged from resistivity_models.py); Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-05-25 — moved numerical utilities (KL divergence, L-curve, DCT, residual norms) to `inverse.py`; removed shims; Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-07-27 — `utm_zone_from_latlon`: raises a clear, actionable `ValueError` when `lat`/`lon` are `None` (or non-numeric) instead of an opaque `TypeError` from `float(None)`; also validates that a real `lat` is still supplied when `override` is given (needed for the hemisphere sign). No change to normal-case behavior. Claude Sonnet 5 (Anthropic)
