@@ -179,12 +179,39 @@ Provenance
             hid any topography (mesh cells with z < 0) sitting above it.
             Changed to [-1000.0, 20000.0], giving 1 km of headroom above
             the datum so topography is included in the plotted range.
-2026-07-26  Claude Sonnet 5 (Anthropic)
-            Added MOD_VERT_EXAG (default 1.0 = true scale): vertical
-            exaggeration factor for ns/ew curtain panels, passed through
-            to femtic_viz.py's plot_model_slices(vert_exag=...). Map
-            panels are unaffected. Per-panel override available via a
-            "vert_exag" key in the corresponding MOD_SLICES entry.
+2026-07-27  Claude Sonnet 5 (Anthropic)
+            Homogenized spatial config parameters to km: MOD_XLIM /
+            MOD_YLIM / MOD_ZLIM, MOD_PROJECTION_DIST, MOD_ROI_PAD_XY,
+            and MOD_ROI_ZLIM are now specified in km instead of metres
+            (values and comments updated, e.g. MOD_ROI_ZLIM =
+            [-1.0, 20.0] instead of [-1000.0, 20000.0]). The
+            ROI-from-site-bbox block now divides the (still-metres)
+            site coordinates by 1000 before combining them with the
+            km-valued MOD_ROI_PAD_XY. femtic_viz.py itself is
+            unchanged and still expects metres (matching mesh.dat);
+            new module-level helpers _km_to_m() / _lim_km_to_m()
+            convert these config values to metres at the
+            fviz.plot_model_slices call site in _plot_slice().
+            MOD_UTM_ORIGIN_E/N left in metres (absolute UTM geodetic
+            convention, not a model-local span).
+2026-07-27  Claude Sonnet 5 (Anthropic)
+            MOD_PLOT_SITES_SLICES: default changed False -> True, so
+            site markers (projected onto the plane, within
+            MOD_PROJECTION_DIST) now also appear on the ns/ew/plane
+            curtain panels by default, matching femtic_rto_prep.py /
+            femtic_gst_prep.py. No femtic_viz.py change needed -- the
+            sites_in_slices / site_marker_slices plumbing already
+            existed; only this script's default was off.
+2026-07-27  Claude Sonnet 5 (Anthropic)
+            Extended the km homogenization to the MOD_SLICES slice-spec
+            dicts, which were missed in the earlier pass: numeric
+            x0/y0/z0 values (e.g. dict(kind="map", z0=5.0)) are now km
+            instead of metres. New helper _slices_km_to_m() walks the
+            list of dicts, scaling any plain-numeric x0/y0/z0 by 1000
+            and leaving (value, "latlon") tuples / other keys
+            untouched; applied right before
+            fem.resolve_slice_positions(MOD_SLICES, ...) in
+            _plot_slice().
 """
 from __future__ import annotations
 
@@ -216,6 +243,49 @@ try:
 except ImportError:
     fviz = None
 
+
+def _km_to_m(val):
+    """Convert a scalar distance in km to metres; None passes through.
+
+    Used to convert MOD_PROJECTION_DIST/MOD_ROI_PAD_XY (and similar scalar
+    spatial config parameters, now specified in km) to the metres expected
+    by femtic_viz.py, which works in model-local/UTM metres throughout
+    (matching mesh.dat).
+    """
+    return None if val is None else float(val) * 1000.0
+
+
+def _lim_km_to_m(lim):
+    """Convert a [min, max] km limit pair to metres; None passes through.
+
+    Used to convert MOD_XLIM/MOD_YLIM/MOD_ZLIM/MOD_ROI_ZLIM (now specified
+    in km) to the metres expected by femtic_viz.py.
+    """
+    return None if lim is None else [float(v) * 1000.0 for v in lim]
+
+
+def _slices_km_to_m(slices):
+    """Convert model-local km slice coordinates (x0/y0/z0) to metres.
+
+    ``slices`` is the MOD_SLICES list of dicts, e.g.
+    ``dict(kind="map", z0=5.0)`` or ``dict(kind="ns", x0=0.0)``. Plain
+    numeric x0/y0/z0 values (model-local km) are converted to metres;
+    (value, "latlon") tuples are left untouched since those are
+    degrees, resolved separately by fem.resolve_slice_positions().
+    None passes through.
+    """
+    if slices is None:
+        return None
+    out = []
+    for spec in slices:
+        spec = dict(spec)
+        for key in ("x0", "y0", "z0"):
+            if key in spec and isinstance(spec[key], (int, float)):
+                spec[key] = spec[key] * 1000.0
+        out.append(spec)
+    return out
+
+
 rng = np.random.default_rng()
 nan = np.nan
 
@@ -232,11 +302,11 @@ FEMTIC="4.3"
 # ---------------------------------------------------------------------------
 
 ENSEMBLE_DIR = r"/home/vrath/FEMTIC_work/Ensembles/misti_gst/ensemble/"
-ENSEMBLE_NAME = "misti_gst_suzuki_rnd_"
+ENSEMBLE_NAME = "misti_gst_suzuki_"
 
 #: Prefix used for .npz output keys and default file/figure names.
 #: e.g. "rto" → keys rto_ens, rto_avg, …  and file RTO_results.npz.
-ENSEMBLE_PREFIX = "misti_gst_suzuki_rnd"
+ENSEMBLE_PREFIX = "misti_gst_suzuki"
 
 #: Maximum normalised RMS accepted from femtic.cnv.
 NRMS_MAX = 1.5
@@ -365,15 +435,15 @@ MOD_STATS_DIR  = ENSEMBLE_DIR + "/stats_plots/"
 #: sensible starting range; adjust per-key, or set a key to None to fall
 #: back to auto-scaling for that one statistic.
 MOD_STATS_CLIM = {
-    "var": [.0, 1.0],
-    "err": [.0, 1.0],
-    "mad": [.0, 1.0],
+    "var": [-2.0, 2.0],
+    "err": [-2.0, 2.0],
+    "mad": [-2.0, 2.0],
 }
 for _lo, _hi in QDIFF_PAIRS:
-    MOD_STATS_CLIM[f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_")] = [.0, 1.0]
+    MOD_STATS_CLIM[f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_")] = [-2.0, 2.0]
 if BOOTSTRAP_VAR:
-    MOD_STATS_CLIM["var_boot"] = [.0, 1.0]
-    MOD_STATS_CLIM["err_boot"] = [.0, 1.0]
+    MOD_STATS_CLIM["var_boot"] = [-2.0, 2.0]
+    MOD_STATS_CLIM["err_boot"] = [-2.0, 2.0]
 
 # ---------------------------------------------------------------------------
 # Shared slice / plot parameters
@@ -409,9 +479,9 @@ MOD_SITE_NAMES  = None   # list of names to plot, or None = all sites
 MOD_SITE_NUMBER = None
 
 MOD_PLOT_SITES_MAPS   = True    # show markers on map panels
-MOD_PLOT_SITES_SLICES = False   # show markers on curtain / plane panels
-#: Max distance [m] from a curtain plane for a site to appear on it.
-MOD_PROJECTION_DIST = 5000.0    # metres; None = show all sites on every panel
+MOD_PLOT_SITES_SLICES = True    # show markers on curtain / plane panels
+#: Max distance [km] from a curtain plane for a site to appear on it.
+MOD_PROJECTION_DIST = 5.0    # km; None = show all sites on every panel
 
 MOD_SITE_MARKER        = dict(marker="v", color="black", ms=8, zorder=10, label=None)
 MOD_SITE_MARKER_SLICES = None
@@ -423,14 +493,14 @@ MOD_MAP_MARKERS = []
 #:   (value, "utm") | (value, "latlon")
 #: Depth z0 is always model-local metres (no CRS tagging).
 MOD_SLICES = [
-    dict(kind="map", z0=5000.0),
-    dict(kind="map", z0=15000.0),
-    dict(kind="ns",  x0=0.0),
-    dict(kind="ew",  y0=0.0),
+    dict(kind="map", z0=5.0),    # km
+    dict(kind="map", z0=15.0),   # km
+    dict(kind="ns",  x0=0.0),    # km
+    dict(kind="ew",  y0=0.0),    # km
 ]
-MOD_XLIM = None    # [xmin, xmax] model-local metres; None = auto
-MOD_YLIM = None    # [ymin, ymax] model-local metres; None = auto
-MOD_ZLIM = None    # [zmin, zmax] model-local metres; None = auto
+MOD_XLIM = None    # [xmin, xmax] model-local km; None = auto
+MOD_YLIM = None    # [ymin, ymax] model-local km; None = auto
+MOD_ZLIM = None    # [zmin, zmax] model-local km; None = auto
 
 # --- Region of interest (auto xlim/ylim/zlim from site positions) ----------
 #: When True and site positions are available (MOD_SITE_DAT / MOD_SITE_NUMBER,
@@ -442,8 +512,8 @@ MOD_ZLIM = None    # [zmin, zmax] model-local metres; None = auto
 #: Also drives the per-panel aspect-ratio sizing below (MOD_PANEL_WIDTH),
 #: since that sizing needs an actual extent to compute widths from.
 MOD_ROI_AUTO   = True
-MOD_ROI_PAD_XY = 5000.0             # metres of padding around the site bbox
-MOD_ROI_ZLIM   = [-1000.0, 20000.0] # depth range (m, positive-down) for ns/ew/plane panels; None = leave MOD_ZLIM as-is
+MOD_ROI_PAD_XY = 5.0             # km of padding around the site bbox
+MOD_ROI_ZLIM   = [-1.0, 20.0]    # depth range (km, positive-down) for ns/ew/plane panels; None = leave MOD_ZLIM as-is
 #: Lower bound is negative (above the z=0 datum) to give ~1 km of headroom
 #: so topography (mesh cells with z < 0) is not clipped out of the ns/ew/
 #: plane panels. Previously [0.0, 20000.0] cut panels off exactly at the
@@ -463,7 +533,6 @@ MOD_ALPHA_BLANK_THRESH = 0.0
 
 # --- Figure layout -----------------------------------------------------------
 MOD_EQUAL_ASPECT = True
-MOD_VERT_EXAG    = 1.0    # vertical exaggeration for ns/ew curtain panels (1.0 = true scale); no effect on map panels or when MOD_EQUAL_ASPECT=False. Per-panel override: add a "vert_exag" key to that entry in MOD_SLICES.
 MOD_DEPTH_KM     = True
 MOD_HORIZ_KM     = True
 #: 2x2 grid matching the 4 default MOD_SLICES panels (2 maps + ns + ew).
@@ -661,7 +730,7 @@ def _plot_slice(block_file: str, pdf_file: str,
     _clim = MOD_CLIM if clim is None else clim
 
     _slices_resolved = fem.resolve_slice_positions(
-        MOD_SLICES, utm_zone, utm_north,
+        _slices_km_to_m(MOD_SLICES), utm_zone, utm_north,
         utm_e, utm_n, utm_lat, utm_lon,
         verbose=OUT,
     )
@@ -671,9 +740,9 @@ def _plot_slice(block_file: str, pdf_file: str,
         slices              = _slices_resolved,
         cmap                = MOD_CMAP,
         clim                = _clim,
-        xlim                = MOD_XLIM,
-        ylim                = MOD_YLIM,
-        zlim                = MOD_ZLIM,
+        xlim                = _lim_km_to_m(MOD_XLIM),
+        ylim                = _lim_km_to_m(MOD_YLIM),
+        zlim                = _lim_km_to_m(MOD_ZLIM),
         ocean_color         = MOD_OCEAN_COLOR,
         ocean_value         = MOD_OCEAN_RHO,
         air_color           = MOD_AIR_COLOR,
@@ -685,7 +754,7 @@ def _plot_slice(block_file: str, pdf_file: str,
         site_marker         = MOD_SITE_MARKER,
         site_marker_slices  = MOD_SITE_MARKER_SLICES,
         map_markers         = MOD_MAP_MARKERS,
-        projection_dist     = MOD_PROJECTION_DIST,
+        projection_dist     = _km_to_m(MOD_PROJECTION_DIST),
         display_coords      = MOD_DISPLAY_COORDS,
         utm_origin_e        = utm_e,
         utm_origin_n        = utm_n,
@@ -696,7 +765,6 @@ def _plot_slice(block_file: str, pdf_file: str,
         depth_km            = MOD_DEPTH_KM,
         horiz_km            = MOD_HORIZ_KM,
         equal_aspect        = MOD_EQUAL_ASPECT,
-        vert_exag           = MOD_VERT_EXAG,
         panel_height        = MOD_PANEL_HEIGHT / 2.54,
         panel_width         = MOD_PANEL_WIDTH / 2.54 if MOD_PANEL_WIDTH is not None else None,
         figsize             = [v / 2.54 for v in MOD_FIGSIZE] if MOD_FIGSIZE is not None else None,
@@ -903,16 +971,18 @@ if _need_plot:
 
     # --- Region of interest: override MOD_XLIM/YLIM/ZLIM from site bbox ---
     if MOD_ROI_AUTO and site_xys:
-        _sx = np.array([s[1] for s in site_xys])
-        _sy = np.array([s[2] for s in site_xys])
-        MOD_XLIM = [float(_sx.min() - MOD_ROI_PAD_XY), float(_sx.max() + MOD_ROI_PAD_XY)]
-        MOD_YLIM = [float(_sy.min() - MOD_ROI_PAD_XY), float(_sy.max() + MOD_ROI_PAD_XY)]
+        _sx = np.array([s[1] for s in site_xys])   # model-local metres
+        _sy = np.array([s[2] for s in site_xys])   # model-local metres
+        MOD_XLIM = [float(_sx.min() / 1000.0 - MOD_ROI_PAD_XY),
+                    float(_sx.max() / 1000.0 + MOD_ROI_PAD_XY)]
+        MOD_YLIM = [float(_sy.min() / 1000.0 - MOD_ROI_PAD_XY),
+                    float(_sy.max() / 1000.0 + MOD_ROI_PAD_XY)]
         if MOD_ROI_ZLIM is not None:
             MOD_ZLIM = list(MOD_ROI_ZLIM)
-        print(f"\nROI (from {len(site_xys)} sites, pad={MOD_ROI_PAD_XY:.0f} m):")
-        print(f"  MOD_XLIM = {MOD_XLIM}")
-        print(f"  MOD_YLIM = {MOD_YLIM}")
-        print(f"  MOD_ZLIM = {MOD_ZLIM}")
+        print(f"\nROI (from {len(site_xys)} sites, pad={MOD_ROI_PAD_XY:.2f} km):")
+        print(f"  MOD_XLIM = {MOD_XLIM} km")
+        print(f"  MOD_YLIM = {MOD_YLIM} km")
+        print(f"  MOD_ZLIM = {MOD_ZLIM} km")
     elif MOD_ROI_AUTO:
         print("\nROI: MOD_ROI_AUTO=True but no sites available — "
               "using literal MOD_XLIM/MOD_YLIM/MOD_ZLIM instead.")

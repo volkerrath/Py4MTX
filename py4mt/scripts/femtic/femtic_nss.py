@@ -107,6 +107,50 @@ Provenance
                 new show= parameter), without changing what gets saved to
                 disk. No effect outside Spyder. Set MOD_SHOW_IN_SPYDER=
                 False to disable even under Spyder.
+    2026-07-27  Claude Sonnet 5 (Anthropic)
+                Homogenized spatial config parameters to km: MOD_XLIM /
+                MOD_YLIM / MOD_ZLIM and MOD_PROJECTION_DIST are now
+                specified in km instead of metres (values and comments
+                updated accordingly). femtic_viz.py itself is unchanged
+                and still expects metres (matching mesh.dat); new
+                module-level helpers _km_to_m() / _lim_km_to_m()
+                convert these config values to metres at the
+                fviz.plot_model_slices call site. MOD_UTM_ORIGIN_E/N
+                left in metres (absolute UTM geodetic convention, not
+                a model-local span).
+    2026-07-27  Claude Sonnet 5 (Anthropic)
+                MOD_PLOT_SITES_SLICES: default changed False -> True,
+                so site markers (projected onto the plane, within
+                MOD_PROJECTION_DIST) now also appear on the ns/ew/
+                plane curtain panels by default, matching
+                femtic_rto_prep.py / femtic_gst_prep.py. No
+                femtic_viz.py change needed -- the sites_in_slices /
+                site_marker_slices plumbing already existed; only
+                this script's default was off.
+    2026-07-27  Claude Sonnet 5 (Anthropic)
+                Extended the km homogenization to the geostatistical
+                (pilot-point/variogram) parameters, which were missed
+                in the earlier pass: GST_PP_BBOX, GST_PP_ROI, and
+                GST_PP_COORDS are now specified in km (model-local,
+                same convention as MOD_XLIM/YLIM/ZLIM); GST_VARIO_RANGE
+                (horizontal, vertical correlation lengths) likewise.
+                New helpers _range_km_to_m() (scalar-or-tuple) and
+                _coords_km_to_m() ((N,3) array) convert these to the
+                metres expected by ensembles.py at the
+                ens.generate_gst_model_ensemble call site, alongside
+                the existing _lim_km_to_m() (reused for the bbox/ROI
+                6-element lists). GST_PP_EXTREMA_K (a neighbour count)
+                and GST_VARIO_SILL/NUGGET (variance units) are
+                unaffected.
+    2026-07-27  Claude Sonnet 5 (Anthropic)
+                Extended the km homogenization to the MOD_SLICES
+                slice-spec dicts, which were missed in the earlier
+                passes: numeric x0/y0/z0 values (e.g. dict(kind="map",
+                z0=5.0)) are now km instead of metres. New helper
+                _slices_km_to_m() walks the list of dicts, scaling any
+                plain-numeric x0/y0/z0 by 1000 and leaving (value,
+                "latlon") tuples / other keys untouched; applied right
+                before fem.resolve_slice_positions(MOD_SLICES, ...).
 
 @author: vrath
 """
@@ -141,6 +185,74 @@ try:
     import femtic_viz as fviz
 except ImportError:
     fviz = None
+
+
+def _km_to_m(val):
+    """Convert a scalar distance in km to metres; None passes through.
+
+    Used to convert MOD_PROJECTION_DIST (and similar scalar spatial
+    config parameters, now specified in km) to the metres expected by
+    femtic_viz.py, which works in model-local/UTM metres throughout
+    (matching mesh.dat).
+    """
+    return None if val is None else float(val) * 1000.0
+
+
+def _lim_km_to_m(lim):
+    """Convert a [min, max] km limit pair to metres; None passes through.
+
+    Used to convert MOD_XLIM/MOD_YLIM/MOD_ZLIM (now specified in km) to
+    the metres expected by femtic_viz.py. Also reused for GST_PP_BBOX /
+    GST_PP_ROI, which are longer [xmin,xmax,ymin,ymax,zmin,zmax] lists
+    in the same model-local km convention.
+    """
+    return None if lim is None else [float(v) * 1000.0 for v in lim]
+
+
+def _slices_km_to_m(slices):
+    """Convert model-local km slice coordinates (x0/y0/z0) to metres.
+
+    ``slices`` is the MOD_SLICES list of dicts, e.g.
+    ``dict(kind="map", z0=5.0)`` or ``dict(kind="ns", x0=0.0)``. Plain
+    numeric x0/y0/z0 values (model-local km) are converted to metres;
+    (value, "latlon") tuples are left untouched since those are
+    degrees, resolved separately by fem.resolve_slice_positions().
+    None passes through.
+    """
+    if slices is None:
+        return None
+    out = []
+    for spec in slices:
+        spec = dict(spec)
+        for key in ("x0", "y0", "z0"):
+            if key in spec and isinstance(spec[key], (int, float)):
+                spec[key] = spec[key] * 1000.0
+        out.append(spec)
+    return out
+
+
+def _range_km_to_m(rng):
+    """Convert a scalar or (horizontal, vertical) km range to metres.
+
+    Used for GST_VARIO_RANGE (variogram correlation length), which may
+    be a single scalar (isotropic) or a 2-tuple (horizontal, vertical).
+    None passes through.
+    """
+    if rng is None:
+        return None
+    if isinstance(rng, (int, float)):
+        return float(rng) * 1000.0
+    return tuple(float(v) * 1000.0 for v in rng)
+
+
+def _coords_km_to_m(coords):
+    """Convert an (N, 3) array of km pilot-point coordinates to metres.
+
+    Used for GST_PP_COORDS (explicit pilot-point easting/northing/depth,
+    same model-local km convention as GST_PP_BBOX). None passes through.
+    """
+    return None if coords is None else np.asarray(coords, dtype=float) * 1000.0
+
 
 version, _ = versionstrg()
 fname = inspect.getfile(inspect.currentframe())
@@ -286,9 +398,9 @@ MOD_SITE_NAMES  = None   # list of names to plot, or None = all sites
 MOD_SITE_NUMBER = None
 
 MOD_PLOT_SITES_MAPS   = True    # show markers on map panels
-MOD_PLOT_SITES_SLICES = False   # show markers on curtain / plane panels
+MOD_PLOT_SITES_SLICES = True    # show markers on curtain / plane panels
 #: Max distance [m] from a curtain plane for a site to appear on it.
-MOD_PROJECTION_DIST = 5000.0    # metres; None = show all sites on every panel
+MOD_PROJECTION_DIST = 5.0    # km; None = show all sites on every panel
 
 MOD_SITE_MARKER        = dict(marker="v", color="black", ms=8, zorder=10, label=None)
 MOD_SITE_MARKER_SLICES = None
@@ -300,14 +412,14 @@ MOD_MAP_MARKERS = []
 #:   (value, "utm") | (value, "latlon")
 #: Depth z0 is always model-local metres (no CRS tagging).
 MOD_SLICES = [
-    dict(kind="map", z0=5000.0),
-    dict(kind="map", z0=15000.0),
-    dict(kind="ns",  x0=0.0),
-    dict(kind="ew",  y0=0.0),
+    dict(kind="map", z0=5.0),    # km
+    dict(kind="map", z0=15.0),   # km
+    dict(kind="ns",  x0=0.0),    # km
+    dict(kind="ew",  y0=0.0),    # km
 ]
-MOD_XLIM = None    # [xmin, xmax] model-local metres; None = auto
-MOD_YLIM = None    # [ymin, ymax] model-local metres; None = auto
-MOD_ZLIM = None    # [zmin, zmax] model-local metres; None = auto
+MOD_XLIM = None    # [xmin, xmax] model-local km; None = auto
+MOD_YLIM = None    # [ymin, ymax] model-local km; None = auto
+MOD_ZLIM = None    # [zmin, zmax] model-local km; None = auto
 
 MOD_DPI         = 600            # figure DPI
 MOD_CMAP        = "turbo_r"
@@ -368,19 +480,21 @@ if PERTURB_MODE == "gst":
     GST_N_PP = 100
 
     # Bounding box for random pilot-point placement:
-    #   [x_min, x_max, y_min, y_max, z_min, z_max]  (metres, z positive-down)
-    GST_PP_BBOX = [-50000., 50000.,   # easting  range (m)
-                   -50000., 50000.,   # northing range (m)
-                        0., 80000.]   # depth     range (m)
+    #   [x_min, x_max, y_min, y_max, z_min, z_max]  (km, model-local, z positive-down)
+    GST_PP_BBOX = [-50., 50.,   # easting  range (km)
+                   -50., 50.,   # northing range (km)
+                     0., 80.]   # depth     range (km)
 
     # Explicit pilot-point coordinates for "fixed" or "mixed" mode.
-    # Shape: (N, 3) — columns: [easting, northing, depth].
-    GST_PP_COORDS = None   # e.g. np.array([[x, y, z], ...])
+    # Shape: (N, 3) — columns: [easting, northing, depth], km, same
+    # model-local convention as GST_PP_BBOX.
+    GST_PP_COORDS = None   # e.g. np.array([[x, y, z], ...])  (km)
 
     # --- "extrema" mode ------------------------------------------------------
-    # GST_PP_ROI: sub-volume [x_min,x_max,y_min,y_max,z_min,z_max] restricting
-    #   which free regions are eligible as extremum seeds.  None = full extent.
-    GST_PP_ROI           = None   # None = full extent
+    # GST_PP_ROI: sub-volume [x_min,x_max,y_min,y_max,z_min,z_max] (km)
+    #   restricting which free regions are eligible as extremum seeds.
+    #   None = full extent.
+    GST_PP_ROI           = None   # None = full extent; km
     GST_PP_EXTREMA_K     = 9      # neighbourhood size for extremum detection
     GST_PP_EXTREMA_WHICH = "both" # "both" | "minima" | "maxima"
 
@@ -394,7 +508,7 @@ if PERTURB_MODE == "gst":
     # GST_VARIO_MODEL: gstools covariance model class name (string).
     #   Common choices: "Spherical", "Gaussian", "Exponential", "Matern".
     #
-    # GST_VARIO_RANGE: correlation length (m).  A 2-tuple
+    # GST_VARIO_RANGE: correlation length (km).  A 2-tuple
     #   (horizontal_range, vertical_range) sets geometric anisotropy.
     #   Recommended: h_range ≈ half survey aperture; v_range ≈ half target depth.
     #
@@ -404,7 +518,7 @@ if PERTURB_MODE == "gst":
     #
     # GST_VARIO_ANGLES: rotation [α, β, γ] in degrees; None = axis-aligned.
     GST_VARIO_MODEL   = "Spherical"
-    GST_VARIO_RANGE   = (8000., 4000.)  # (horizontal, vertical) in m
+    GST_VARIO_RANGE   = (8., 4.)         # (horizontal, vertical) in km
     GST_VARIO_SILL    = 0.5
     GST_VARIO_NUGGET  = 0.01
     GST_VARIO_ANGLES  = None   # [alpha, beta, gamma] deg; None = axis-aligned
@@ -489,7 +603,7 @@ def _plot_slice(block_file: str, pdf_file: str,
         return
 
     _slices_resolved = fem.resolve_slice_positions(
-        MOD_SLICES, utm_zone, utm_north,
+        _slices_km_to_m(MOD_SLICES), utm_zone, utm_north,
         utm_e, utm_n, utm_lat, utm_lon,
         verbose=OUT,
     )
@@ -499,9 +613,9 @@ def _plot_slice(block_file: str, pdf_file: str,
         slices              = _slices_resolved,
         cmap                = MOD_CMAP,
         clim                = MOD_CLIM,
-        xlim                = MOD_XLIM,
-        ylim                = MOD_YLIM,
-        zlim                = MOD_ZLIM,
+        xlim                = _lim_km_to_m(MOD_XLIM),
+        ylim                = _lim_km_to_m(MOD_YLIM),
+        zlim                = _lim_km_to_m(MOD_ZLIM),
         ocean_color         = MOD_OCEAN_COLOR,
         ocean_value         = MOD_OCEAN_RHO,
         air_color           = MOD_AIR_COLOR,
@@ -513,7 +627,7 @@ def _plot_slice(block_file: str, pdf_file: str,
         site_marker         = MOD_SITE_MARKER,
         site_marker_slices  = MOD_SITE_MARKER_SLICES,
         map_markers         = MOD_MAP_MARKERS,
-        projection_dist     = MOD_PROJECTION_DIST,
+        projection_dist     = _km_to_m(MOD_PROJECTION_DIST),
         display_coords      = MOD_DISPLAY_COORDS,
         utm_origin_e        = utm_e,
         utm_origin_n        = utm_n,
@@ -715,15 +829,15 @@ def _make_perturbation_gst(m_ref: np.ndarray) -> np.ndarray:
             mesh_file        = GST_MESH,
             pp_mode          = GST_PP_MODE,
             n_pp             = GST_N_PP,
-            pp_bbox          = GST_PP_BBOX,
-            pp_coords        = GST_PP_COORDS,
-            pp_roi           = GST_PP_ROI,
+            pp_bbox          = _lim_km_to_m(GST_PP_BBOX),
+            pp_coords        = _coords_km_to_m(GST_PP_COORDS),
+            pp_roi           = _lim_km_to_m(GST_PP_ROI),
             pp_extrema_k     = GST_PP_EXTREMA_K,
             pp_extrema_which = GST_PP_EXTREMA_WHICH,
             log_rho_min      = GST_LOG_RHO_MIN,
             log_rho_max      = GST_LOG_RHO_MAX,
             vario_model      = GST_VARIO_MODEL,
-            vario_range      = GST_VARIO_RANGE,
+            vario_range      = _range_km_to_m(GST_VARIO_RANGE),
             vario_sill       = GST_VARIO_SILL,
             vario_nugget     = GST_VARIO_NUGGET,
             vario_angles     = GST_VARIO_ANGLES,

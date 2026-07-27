@@ -183,6 +183,32 @@ Provenance:
                 slices' new show= parameter), without changing what gets
                 saved to disk. No effect outside Spyder. Set
                 MOD_SHOW_IN_SPYDER=False to disable even under Spyder.
+    2026-07-27  Claude Sonnet 5 (Anthropic)
+                Homogenized spatial config parameters to km: MOD_XLIM /
+                MOD_YLIM / MOD_ZLIM, ENS_XLIM / ENS_YLIM / ENS_ZLIM, and
+                MOD_PROJECTION_DIST are now specified in km instead of
+                metres (values and comments updated accordingly, e.g.
+                MOD_XLIM = [-25., 25.] instead of [-25000., 25000.]).
+                femtic_viz.py itself is unchanged and still expects
+                metres (matching mesh.dat); new module-level helpers
+                _km_to_m() / _lim_km_to_m() convert these config values
+                to metres at each fviz.plot_model_slices /
+                plot_ensemble_slices call site. MOD_UTM_ORIGIN_E/N left
+                in metres (absolute UTM geodetic convention, not a
+                model-local span).
+    2026-07-27  Claude Sonnet 5 (Anthropic)
+                Extended the km homogenization to the MOD_SLICES /
+                ENS_SLICES slice-spec dicts, which were missed in the
+                earlier passes: numeric x0/y0/z0 values (e.g.
+                dict(kind="map", z0=1.0)) are now km instead of metres.
+                (value, "latlon")-tuple entries (e.g. x0=(-71.5,
+                "latlon")) are unaffected -- those are degrees, resolved
+                by fem.resolve_slice_positions(). New helper
+                _slices_km_to_m() walks the list of dicts, scaling any
+                plain-numeric x0/y0/z0 by 1000 and leaving tuples/other
+                keys untouched; applied right before
+                fem.resolve_slice_positions(MOD_SLICES, ...) and at the
+                plot_ensemble_slices(slices=ENS_SLICES, ...) call.
 """
 
 import os
@@ -216,6 +242,49 @@ import ensembles as ens
 import femtic_viz as fviz
 
 from util import stop
+
+
+def _km_to_m(val):
+    """Convert a scalar distance in km to metres; None passes through.
+
+    Used to convert MOD_PROJECTION_DIST (and similar scalar spatial
+    config parameters, now specified in km) to the metres expected by
+    femtic_viz.py, which works in model-local/UTM metres throughout
+    (matching mesh.dat).
+    """
+    return None if val is None else float(val) * 1000.0
+
+
+def _lim_km_to_m(lim):
+    """Convert a [min, max] km limit pair to metres; None passes through.
+
+    Used to convert MOD_XLIM/MOD_YLIM/MOD_ZLIM/ENS_XLIM/ENS_YLIM/ENS_ZLIM
+    (now specified in km) to the metres expected by femtic_viz.py.
+    """
+    return None if lim is None else [float(v) * 1000.0 for v in lim]
+
+
+def _slices_km_to_m(slices):
+    """Convert model-local km slice coordinates (x0/y0/z0) to metres.
+
+    ``slices`` is the MOD_SLICES/ENS_SLICES list of dicts, e.g.
+    ``dict(kind="map", z0=1.0)`` or ``dict(kind="ns", x0=0.0)``. Plain
+    numeric x0/y0/z0 values (model-local km) are converted to metres;
+    (value, "latlon") tuples are left untouched since those are
+    degrees, resolved separately by fem.resolve_slice_positions().
+    None passes through.
+    """
+    if slices is None:
+        return None
+    out = []
+    for spec in slices:
+        spec = dict(spec)
+        for key in ("x0", "y0", "z0"):
+            if key in spec and isinstance(spec[key], (int, float)):
+                spec[key] = spec[key] * 1000.0
+        out.append(spec)
+    return out
+
 
 N_THREADS = "32"
 os.environ["OMP_NUM_THREADS"] = N_THREADS
@@ -472,8 +541,8 @@ if PLOT_DATA or PLOT_MODEL:
     MOD_SITE_NUMBER = None
     MOD_PLOT_SITES_MAPS   = True   # show markers on map panels
     MOD_PLOT_SITES_SLICES = True   # show markers on curtain / plane panels
-    #: Max distance [m] from a curtain plane for a site to appear on it.
-    MOD_PROJECTION_DIST = 1000.   # metres; None = show all sites on every panel
+    #: Max distance [km] from a curtain plane for a site to appear on it.
+    MOD_PROJECTION_DIST = 1.0   # km; None = show all sites on every panel
     MOD_SITE_MARKER = dict(marker="v", color="black", ms=4, zorder=10, label=None)
     MOD_SITE_MARKER_SLICES = dict(marker="v", color="black", ms=4, zorder=10, label=None)
     #: Extra point markers on map panels only (each dict: latlon, marker, color, ms, name).
@@ -503,16 +572,16 @@ if PLOT_DATA or PLOT_MODEL:
     #:   (value, "utm") | (value, "latlon")
     #: Depth z0 is always model-local metres (no CRS tagging).
     MOD_SLICES = [
-        dict(kind="map", z0=1000.0),
-        dict(kind="map", z0=25000.0),
-        # dict(kind="ns",  x0=0.0),
-        # dict(kind="ew",  y0=0.0),
+        dict(kind="map", z0=1.0),    # km
+        dict(kind="map", z0=25.0),   # km
+        # dict(kind="ns",  x0=0.0),   # km
+        # dict(kind="ew",  y0=0.0),   # km
         dict(kind="ns",  x0=(-71.536322, "latlon")),
         dict(kind="ew",  y0=(-16.196900, "latlon")),
     ]
-    MOD_XLIM = [-25000., 25000.]   # [xmin, xmax] model-local m; None = auto
-    MOD_YLIM = [-25000., 25000.]   # [ymin, ymax] model-local m; None = auto
-    MOD_ZLIM = [ -10000., 30000.]   # [zmin, zmax] model-local m; None = auto
+    MOD_XLIM = [-25., 25.]   # [xmin, xmax] model-local km; None = auto
+    MOD_YLIM = [-25., 25.]   # [ymin, ymax] model-local km; None = auto
+    MOD_ZLIM = [-10., 30.]   # [zmin, zmax] model-local km; None = auto
 
     # --- Figure layout -------------------------------------------------------
     MOD_EQUAL_ASPECT  = True
@@ -747,7 +816,7 @@ if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC
 
     # --- resolve slice positions ---------------------------------------------
     _mod_slices_resolved = fem.resolve_slice_positions(
-        MOD_SLICES,
+        _slices_km_to_m(MOD_SLICES),
         _mod_utm_zone, _mod_utm_northern,
         _mod_utm_origin_e, _mod_utm_origin_n,
         _mod_utm_origin_lat, _mod_utm_origin_lon,
@@ -782,16 +851,16 @@ if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC
             slices          = _mod_slices_resolved,
             cmap            = MOD_CMAP,
             clim            = MOD_CLIM,
-            xlim            = MOD_XLIM,
-            ylim            = MOD_YLIM,
-            zlim            = MOD_ZLIM,
+            xlim            = _lim_km_to_m(MOD_XLIM),
+            ylim            = _lim_km_to_m(MOD_YLIM),
+            zlim            = _lim_km_to_m(MOD_ZLIM),
             ocean_color     = MOD_OCEAN_COLOR,
             ocean_value     = MOD_OCEAN_RHO,
             air_color       = MOD_AIR_COLOR,
             air_bgcolor     = MOD_AIR_BGCOLOR,
             site_xys        = _mod_site_xys,
             obs_coords_only = _mod_sites_from_obs,
-            projection_dist = MOD_PROJECTION_DIST,
+            projection_dist = _km_to_m(MOD_PROJECTION_DIST),
             sites_in_maps   = MOD_PLOT_SITES_MAPS,
             sites_in_slices = MOD_PLOT_SITES_SLICES,
             site_marker     = MOD_SITE_MARKER,
@@ -877,14 +946,14 @@ if PLOT_DATA or PLOT_MODEL:   # only runs when the viz block was entered
         fviz.plot_ensemble_slices(
             member_files    = _ens_block_files,
             mesh_file       = MOD_MESH,
-            slices          = ENS_SLICES,
+            slices          = _slices_km_to_m(ENS_SLICES),
             labels          = _ens_labels,
             stat_rows       = ENS_STAT_ROWS,
             cmap            = ENS_CMAP,
             clim            = ENS_CLIM,
-            xlim            = ENS_XLIM,
-            ylim            = ENS_YLIM,
-            zlim            = ENS_ZLIM,
+            xlim            = _lim_km_to_m(ENS_XLIM),
+            ylim            = _lim_km_to_m(ENS_YLIM),
+            zlim            = _lim_km_to_m(ENS_ZLIM),
             ocean_color     = ENS_OCEAN_COLOR,
             ocean_value     = 0.25,
             tick_fontsize   = ENS_TICK_FONTSIZE,

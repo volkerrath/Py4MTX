@@ -276,6 +276,35 @@ if EXPORT_CPT:
 # Resistivity overlay transparency (0 = opaque, 1 = invisible)
 ALPHA_RHO = 0.45
 
+# --- Isolines (contours) on top of the resistivity images ---
+# Applies to both the depth-slice maps and the vertical sections below.
+# Independent on/off switches so e.g. maps can carry isolines while
+# sections stay clean, or vice versa. Note: unlike this script's exact,
+# non-interpolated pcolormesh fill (each patch = one true mesh cell),
+# contour lines are inherently interpolated between cell centres — there's
+# no way to draw a smooth isoline through blocky, piecewise-constant data
+# without some interpolation; this affects only the isolines, not the
+# underlying colour fill.
+ISO_LINES_MAP    = False   # depth-slice map images
+ISO_LINES_VSLICE = False   # vertical-section images
+
+# Contour levels, in the same units as the plotted data (log10(ρ) [Ω·m]):
+#   "auto"          -> ISO_AUTO_N evenly spaced levels spanning the
+#                      finite data range of each individual panel
+#   [v1, v2, ...]    -> explicit list of log10(ρ) values, used as-is,
+#                      shared by every panel (e.g. [1.0, 2.0, 3.0])
+ISO_LEVELS_MAP    = "auto"
+ISO_LEVELS_VSLICE = "auto"
+ISO_AUTO_N = 6   # number of levels when ISO_LEVELS_* == "auto"
+
+# Line style for the isolines themselves
+ISO_STYLE = dict(colors="black", linewidths=0.6, linestyles="solid", zorder=7)
+
+# Inline value labels along each contour line
+ISO_LABEL          = True
+ISO_LABEL_FMT      = "%.1f"
+ISO_LABEL_FONTSIZE = 6
+
 # Pre-computed UTM-km NetCDF files from tacna_precompute_modem.py
 NC_TOPO_MODEM = "modem_topo_utm.nc"  # 2-D elevation, dims (northing, easting)
 NC_SITES = "modem_sites_utm.nc"  # MT site positions
@@ -733,6 +762,54 @@ os.makedirs(PLOT_DIR, exist_ok=True)
 def ncpath(name):
     """Join a bare precomputed-NetCDF filename onto NC_DIR."""
     return os.path.join(NC_DIR, name)
+
+
+def _edges_to_centers(edges):
+    """Cell-centre coordinates from a 1-D array of cell edges (length N+1
+    -> length N). Used only for contour(), which needs point coordinates
+    matching the data shape — the exact-edge pcolormesh fill elsewhere in
+    this script doesn't need this.
+    """
+    edges = np.asarray(edges)
+    return 0.5 * (edges[:-1] + edges[1:])
+
+
+def resolve_iso_levels(data2d, levels_spec, n_auto=ISO_AUTO_N):
+    """Resolve an ISO_LEVELS_* setting into an explicit list of contour
+    levels for one panel.
+
+    "auto" (or None) picks n_auto evenly spaced levels spanning the finite
+    (non-NaN) data range of this particular panel — panels differ, so this
+    is computed fresh each time rather than once globally. An explicit
+    list/tuple is used verbatim, unchanged, so every panel shares the same
+    levels. Returns [] if there's no usable finite data (e.g. an
+    all-air/all-NaN panel) or an explicit level list was empty.
+    """
+    if levels_spec is None or (isinstance(levels_spec, str) and levels_spec.lower() == "auto"):
+        finite = data2d[np.isfinite(data2d)]
+        if finite.size == 0:
+            return []
+        vmin, vmax = float(finite.min()), float(finite.max())
+        if vmin == vmax:
+            return []
+        return list(np.linspace(vmin, vmax, n_auto + 2)[1:-1])
+    return list(levels_spec)
+
+
+def draw_iso_contours(ax, x, y, data2d, levels_spec, n_auto=ISO_AUTO_N):
+    """Overlay isolines (contours) of data2d on ax, using ISO_STYLE/
+    ISO_LABEL/ISO_LABEL_FMT/ISO_LABEL_FONTSIZE. x, y must be 1-D
+    cell-centre coordinates matching data2d's shape (use
+    _edges_to_centers() first if only cell edges are available). No-op if
+    there are no usable levels (see resolve_iso_levels).
+    """
+    levels = resolve_iso_levels(data2d, levels_spec, n_auto)
+    if not levels:
+        return None
+    cs = ax.contour(x, y, data2d, levels=levels, **ISO_STYLE)
+    if ISO_LABEL:
+        ax.clabel(cs, fmt=ISO_LABEL_FMT, fontsize=ISO_LABEL_FONTSIZE, inline=True)
+    return cs
 
 
 # ------------------------------------------------------------------
@@ -1506,6 +1583,11 @@ def plot_vertical_slice(
             antialiased=False,
         )
 
+    if ISO_LINES_VSLICE:
+        _iso_x = _edges_to_centers(x_edges)
+        _iso_d = _edges_to_centers(d_edges)
+        draw_iso_contours(ax, _iso_x, _iso_d, section, ISO_LEVELS_VSLICE)
+
     # Surface line/fill come from the section's own exact data (surf_depth
     # — the true top edge of each segment's shallowest real rock cell), so
     # they're drawn as a proper staircase (ax.stairs), not a smoothed
@@ -2025,6 +2107,8 @@ for ii, d_km in enumerate(DEPTH_SLICES_KM):
         draw_sens_shade_overlay(
             ax, grid_e_edges, grid_n_edges, alpha_2d, zorder=6
         )
+    if ISO_LINES_MAP:
+        draw_iso_contours(ax, vx, vy, vz, ISO_LEVELS_MAP)
     draw_features(ax, eq_e, eq_n)
     ax.set_title(f"log$_{{10}}$ρ at {label}", fontsize=AXIS_TITLE_SIZE)
     finish_panel_colorbar(cax, im, "log$_{10}$(ρ / Ω·m)")

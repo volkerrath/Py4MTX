@@ -158,6 +158,45 @@ Provenance:
                 slices' new show= parameter), without changing what gets
                 saved to disk. No effect outside Spyder. Set
                 MOD_SHOW_IN_SPYDER=False to disable even under Spyder.
+    2026-07-27  Claude Sonnet 5 (Anthropic)
+                Homogenized spatial config parameters to km: MOD_XLIM /
+                MOD_YLIM / MOD_ZLIM, ENS_XLIM / ENS_YLIM / ENS_ZLIM, and
+                MOD_PROJECTION_DIST are now specified in km instead of
+                metres (values and comments updated accordingly, e.g.
+                MOD_XLIM = [-15., 15.] instead of [-15000., 15000.]).
+                femtic_viz.py itself is unchanged and still expects
+                metres (matching mesh.dat); new module-level helpers
+                _km_to_m() / _lim_km_to_m() convert these config values
+                to metres at each fviz.plot_model_slices /
+                plot_ensemble_slices call site. MOD_UTM_ORIGIN_E/N left
+                in metres (absolute UTM geodetic convention, not a
+                model-local span).
+    2026-07-27  Claude Sonnet 5 (Anthropic)
+                Extended the km homogenization to the geostatistical
+                (pilot-point/variogram) parameters, which were missed
+                in the earlier pass: MOD_PP_BBOX, MOD_PP_ROI, and
+                MOD_PP_COORDS are now specified in km (model-local,
+                same convention as MOD_XLIM/YLIM/ZLIM); MOD_VARIO_RANGE
+                (horizontal, vertical correlation lengths) likewise.
+                New helpers _range_km_to_m() (scalar-or-tuple) and
+                _coords_km_to_m() ((N,3) array) convert these to the
+                metres expected by ensembles.py at the
+                ens.generate_gst_model_ensemble call site, alongside
+                the existing _lim_km_to_m() (reused for the bbox/ROI
+                6-element lists). MOD_PP_EXTREMA_K (a neighbour count,
+                not a distance) and MOD_VARIO_SILL/NUGGET (variance
+                units, not distances) are unaffected.
+    2026-07-27  Claude Sonnet 5 (Anthropic)
+                Extended the km homogenization to the MOD_SLICES /
+                ENS_SLICES slice-spec dicts, which were missed in the
+                earlier passes: numeric x0/y0/z0 values (e.g.
+                dict(kind="map", z0=5.0)) are now km instead of metres.
+                New helper _slices_km_to_m() walks the list of dicts,
+                scaling any plain-numeric x0/y0/z0 by 1000 and leaving
+                (value, "latlon") tuples / other keys untouched;
+                applied right before
+                fem.resolve_slice_positions(MOD_SLICES, ...) and at the
+                plot_ensemble_slices(slices=ENS_SLICES, ...) call.
 """
 
 import os
@@ -185,6 +224,75 @@ import ensembles as ens
 import femtic_viz as fviz
 
 from util import stop
+
+
+def _km_to_m(val):
+    """Convert a scalar distance in km to metres; None passes through.
+
+    Used to convert MOD_PROJECTION_DIST (and similar scalar spatial
+    config parameters, now specified in km) to the metres expected by
+    femtic_viz.py, which works in model-local/UTM metres throughout
+    (matching mesh.dat).
+    """
+    return None if val is None else float(val) * 1000.0
+
+
+def _lim_km_to_m(lim):
+    """Convert a [min, max] km limit pair to metres; None passes through.
+
+    Used to convert MOD_XLIM/MOD_YLIM/MOD_ZLIM/ENS_XLIM/ENS_YLIM/ENS_ZLIM
+    (now specified in km) to the metres expected by femtic_viz.py.
+    Also reused for MOD_PP_BBOX / MOD_PP_ROI, which are longer
+    [xmin,xmax,ymin,ymax,zmin,zmax] lists in the same model-local km
+    convention.
+    """
+    return None if lim is None else [float(v) * 1000.0 for v in lim]
+
+
+def _slices_km_to_m(slices):
+    """Convert model-local km slice coordinates (x0/y0/z0) to metres.
+
+    ``slices`` is the MOD_SLICES/ENS_SLICES list of dicts, e.g.
+    ``dict(kind="map", z0=1.0)`` or ``dict(kind="ns", x0=0.0)``. Plain
+    numeric x0/y0/z0 values (model-local km) are converted to metres;
+    (value, "latlon") tuples are left untouched since those are
+    degrees, resolved separately by fem.resolve_slice_positions().
+    None passes through.
+    """
+    if slices is None:
+        return None
+    out = []
+    for spec in slices:
+        spec = dict(spec)
+        for key in ("x0", "y0", "z0"):
+            if key in spec and isinstance(spec[key], (int, float)):
+                spec[key] = spec[key] * 1000.0
+        out.append(spec)
+    return out
+
+
+def _range_km_to_m(rng):
+    """Convert a scalar or (horizontal, vertical) km range to metres.
+
+    Used for MOD_VARIO_RANGE (variogram correlation length), which may be
+    a single scalar (isotropic) or a 2-tuple (horizontal, vertical).
+    None passes through.
+    """
+    if rng is None:
+        return None
+    if isinstance(rng, (int, float)):
+        return float(rng) * 1000.0
+    return tuple(float(v) * 1000.0 for v in rng)
+
+
+def _coords_km_to_m(coords):
+    """Convert an (N, 3) array of km pilot-point coordinates to metres.
+
+    Used for MOD_PP_COORDS (explicit pilot-point easting/northing/depth,
+    same model-local km convention as MOD_PP_BBOX). None passes through.
+    """
+    return None if coords is None else np.asarray(coords, dtype=float) * 1000.0
+
 
 N_THREADS = "32"
 os.environ["OMP_NUM_THREADS"] = N_THREADS
@@ -310,20 +418,22 @@ if PERTURB_MOD:
     MOD_N_PP = 100
 
     # Bounding box for random pilot-point placement:
-    #   [x_min, x_max, y_min, y_max, z_min, z_max]  (metres, z positive-down)
-    MOD_PP_BBOX = [-25000., 25000.,   # easting  range (m)
-                   -25000., 25000.,   # northing range (m)
-                        0., 60000.]   # depth     range (m, positive-down)
+    #   [x_min, x_max, y_min, y_max, z_min, z_max]  (km, model-local, z positive-down)
+    MOD_PP_BBOX = [-25., 25.,   # easting  range (km)
+                   -25., 25.,   # northing range (km)
+                     0., 60.]   # depth     range (km, positive-down)
 
     # Explicit pilot-point coordinates used when MOD_PP_MODE = "fixed"
-    # or "mixed".  Shape: (N, 3) — columns: [easting, northing, depth].
-    MOD_PP_COORDS = None  # e.g. np.array([[x, y, z], ...])
+    # or "mixed".  Shape: (N, 3) — columns: [easting, northing, depth],
+    # km, same model-local convention as MOD_PP_BBOX.
+    MOD_PP_COORDS = None  # e.g. np.array([[x, y, z], ...])  (km)
 
     # ------------------------------------------------------------------
     # "extrema" mode — pilot points seeded at local resistivity extrema
     # ------------------------------------------------------------------
     # MOD_PP_ROI: bounding box [x_min, x_max, y_min, y_max, z_min, z_max]
-    #   restricting which free regions are eligible as extremum seeds.
+    #   (km, model-local) restricting which free regions are eligible as
+    #   extremum seeds.
     #   None = full free-region extent (equivalent to MOD_PP_BBOX).
     #   z positive-down (FEMTIC convention).
     #   Tip: tighten to the survey footprint to exclude deep/lateral padding.
@@ -338,7 +448,7 @@ if PERTURB_MOD:
     #   "both"   — conductive and resistive anomaly cores (recommended).
     #   "minima" — conductive anomalies only (low resistivity).
     #   "maxima" — resistive anomalies only (high resistivity).
-    MOD_PP_ROI           = None   # None = full extent; or [xmn,xmx,ymn,ymx,zmn,zmx]
+    MOD_PP_ROI           = None   # None = full extent; or [xmn,xmx,ymn,ymx,zmn,zmx] (km)
     MOD_PP_EXTREMA_K     = 33     # neighbourhood size for extremum detection
     MOD_PP_EXTREMA_WHICH = "both" # "both" | "minima" | "maxima"
 
@@ -381,7 +491,7 @@ if PERTURB_MOD:
     #   Common choices: "Spherical", "Gaussian", "Exponential",
     #                   "Matern", "Linear", "PowerLaw".
     #
-    # MOD_VARIO_RANGE: correlation length (m).  A 2-tuple
+    # MOD_VARIO_RANGE: correlation length (km).  A 2-tuple
     #   (horizontal_range, vertical_range) sets geometric anisotropy.
     #   A scalar applies isotropically.
     #   Recommended: h_range ≈ half survey aperture; v_range ≈ half target depth.
@@ -395,7 +505,7 @@ if PERTURB_MOD:
     # MOD_VARIO_ANGLES: rotation [α, β, γ] in degrees (optional).
     #   None = axis-aligned anisotropy.
     MOD_VARIO_MODEL   = "Spherical"     # gstools covariance model class
-    MOD_VARIO_RANGE   = (8000., 4000.) # (horizontal, vertical) ranges in m
+    MOD_VARIO_RANGE   = (8., 4.)        # (horizontal, vertical) ranges in km
     MOD_VARIO_SILL    = 0.5             # sill in (log10 Ohm.m)^2
     MOD_VARIO_NUGGET  = 0.01            # nugget in (log10 Ohm.m)^2
     MOD_VARIO_ANGLES  = None            # [alpha, beta, gamma] deg; None = axis-aligned
@@ -543,7 +653,7 @@ if PLOT_DATA or PLOT_MODEL:
     MOD_PLOT_SITES_MAPS   = True   # show markers on map panels
     MOD_PLOT_SITES_SLICES = True   # show markers on curtain / plane panels
     #: Max distance [m] from a curtain plane for a site to appear on it.
-    MOD_PROJECTION_DIST = 1000.   # metres; None = show all sites on every panel
+    MOD_PROJECTION_DIST = 1.0   # km; None = show all sites on every panel
     MOD_SITE_MARKER = dict(marker="v", color="black", ms=4, zorder=10, label=None)
     MOD_SITE_MARKER_SLICES = dict(marker="v", color="black", ms=4, zorder=10, label=None)
     #: Extra point markers on map panels only (each dict: latlon, marker, color, ms, name).
@@ -567,14 +677,14 @@ if PLOT_DATA or PLOT_MODEL:
     #:   (value, "utm") | (value, "latlon")
     #: Depth z0 is always model-local metres (no CRS tagging).
     MOD_SLICES = [
-        dict(kind="map", z0=5000.0),
-        dict(kind="map", z0=15000.0),
-        dict(kind="ns",  x0=0.0),
-        dict(kind="ew",  y0=0.0),
+        dict(kind="map", z0=5.0),    # km
+        dict(kind="map", z0=15.0),   # km
+        dict(kind="ns",  x0=0.0),    # km
+        dict(kind="ew",  y0=0.0),    # km
     ]
-    MOD_XLIM = [-15000., 15000.]   # [xmin, xmax] model-local m; None = auto
-    MOD_YLIM = [-15000., 15000.]   # [ymin, ymax] model-local m; None = auto
-    MOD_ZLIM = [ -6000.,  30000.]   # [zmin, zmax] model-local m; None = auto
+    MOD_XLIM = [-15., 15.]   # [xmin, xmax] model-local km; None = auto
+    MOD_YLIM = [-15., 15.]   # [ymin, ymax] model-local km; None = auto
+    MOD_ZLIM = [-6., 30.]   # [zmin, zmax] model-local km; None = auto
 
     # --- Figure layout -------------------------------------------------------
     MOD_EQUAL_ASPECT  = True
@@ -733,9 +843,9 @@ if PERTURB_MOD:
         mesh_file=MOD_MESH,
         pp_mode=MOD_PP_MODE,
         n_pp=MOD_N_PP,
-        pp_bbox=MOD_PP_BBOX,
-        pp_coords=MOD_PP_COORDS,
-        pp_roi=MOD_PP_ROI,
+        pp_bbox=_lim_km_to_m(MOD_PP_BBOX),
+        pp_coords=_coords_km_to_m(MOD_PP_COORDS),
+        pp_roi=_lim_km_to_m(MOD_PP_ROI),
         pp_extrema_k=MOD_PP_EXTREMA_K,
         pp_extrema_which=MOD_PP_EXTREMA_WHICH,
         log_rho_min=MOD_LOG_RHO_MIN,
@@ -743,7 +853,7 @@ if PERTURB_MOD:
         pp_value_mode=MOD_PP_VALUE_MODE,
         pp_value_delta=MOD_PP_VALUE_DELTA,
         vario_model=MOD_VARIO_MODEL,
-        vario_range=MOD_VARIO_RANGE,
+        vario_range=_range_km_to_m(MOD_VARIO_RANGE),
         vario_sill=MOD_VARIO_SILL,
         vario_nugget=MOD_VARIO_NUGGET,
         vario_angles=MOD_VARIO_ANGLES,
@@ -814,7 +924,7 @@ if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC
 
     # --- resolve slice positions ---------------------------------------------
     _mod_slices_resolved = fem.resolve_slice_positions(
-        MOD_SLICES,
+        _slices_km_to_m(MOD_SLICES),
         _mod_utm_zone, _mod_utm_northern,
         _mod_utm_origin_e, _mod_utm_origin_n,
         _mod_utm_origin_lat, _mod_utm_origin_lon,
@@ -849,16 +959,16 @@ if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC
             slices          = _mod_slices_resolved,
             cmap            = MOD_CMAP,
             clim            = MOD_CLIM,
-            xlim            = MOD_XLIM,
-            ylim            = MOD_YLIM,
-            zlim            = MOD_ZLIM,
+            xlim            = _lim_km_to_m(MOD_XLIM),
+            ylim            = _lim_km_to_m(MOD_YLIM),
+            zlim            = _lim_km_to_m(MOD_ZLIM),
             ocean_color     = MOD_OCEAN_COLOR,
             ocean_value     = MOD_OCEAN_RHO,
             air_color       = MOD_AIR_COLOR,
             air_bgcolor     = MOD_AIR_BGCOLOR,
             site_xys        = _mod_site_xys,
             obs_coords_only = _mod_sites_from_obs,
-            projection_dist = MOD_PROJECTION_DIST,
+            projection_dist = _km_to_m(MOD_PROJECTION_DIST),
             sites_in_maps   = MOD_PLOT_SITES_MAPS,
             sites_in_slices = MOD_PLOT_SITES_SLICES,
             site_marker     = MOD_SITE_MARKER,
@@ -946,14 +1056,14 @@ if PLOT_DATA or PLOT_MODEL:
         fviz.plot_ensemble_slices(
             member_files    = _ens_block_files,
             mesh_file       = MOD_MESH,
-            slices          = ENS_SLICES,
+            slices          = _slices_km_to_m(ENS_SLICES),
             labels          = _ens_labels,
             stat_rows       = ENS_STAT_ROWS,
             cmap            = ENS_CMAP,
             clim            = ENS_CLIM,
-            xlim            = ENS_XLIM,
-            ylim            = ENS_YLIM,
-            zlim            = ENS_ZLIM,
+            xlim            = _lim_km_to_m(ENS_XLIM),
+            ylim            = _lim_km_to_m(ENS_YLIM),
+            zlim            = _lim_km_to_m(ENS_ZLIM),
             ocean_color     = ENS_OCEAN_COLOR,
             ocean_value     = 0.25,
             tick_fontsize   = ENS_TICK_FONTSIZE,

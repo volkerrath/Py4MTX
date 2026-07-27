@@ -118,6 +118,34 @@ CMIN_VPS, CMAX_VPS = 1.7,  2.1
 # Velocity overlay transparency (0 = opaque, 1 = invisible)
 ALPHA_VELOCITY = 0.50
 
+# --- Isolines (contours) on top of the velocity images ---
+# Applies to both the depth-slice maps and the vertical sections below.
+# Independent on/off switches so e.g. maps can carry isolines while
+# sections stay clean, or vice versa.
+ISO_LINES_MAP    = False   # depth-slice map images (vp, vs, vps)
+ISO_LINES_VSLICE = False   # vertical-section images (vp, vs, vps)
+
+# Contour levels. Since Vp (m/s), Vs (m/s), and Vp/Vs sit on very
+# different numeric scales, each of these may be given EITHER:
+#   "auto"                        -> applied to every field: ISO_AUTO_N
+#                                    evenly spaced levels spanning the
+#                                    finite data range of each panel
+#   [v1, v2, ...]                  -> applied to every field, as-is
+#   {"vp": ..., "vs": ..., "vps": ...} -> per-field spec (each value
+#                                    itself "auto" or an explicit list);
+#                                    fields not present default to "auto"
+ISO_LEVELS_MAP    = "auto"
+ISO_LEVELS_VSLICE = "auto"
+ISO_AUTO_N = 6   # number of levels when a spec resolves to "auto"
+
+# Line style for the isolines themselves
+ISO_STYLE = dict(colors="black", linewidths=0.6, linestyles="solid", zorder=7)
+
+# Inline value labels along each contour line
+ISO_LABEL          = True
+ISO_LABEL_FMT      = "%.1f"
+ISO_LABEL_FONTSIZE = 6
+
 # Colourmap names: matplotlib built-in name, OR a path to a colourmap file
 # to import (.cpt = GMT colour palette table, .txt/.csv = plain RGB(A)
 # list) — useful to reproduce the exact original palette for comparison
@@ -557,6 +585,58 @@ def ncpath(name):
     return os.path.join(NC_DIR, name)
 
 
+def _resolve_iso_spec(spec, var):
+    """ISO_LEVELS_MAP/ISO_LEVELS_VSLICE may be a single "auto"/list
+    (applied to every field) or a dict keyed by field name ("vp"/"vs"/
+    "vps") for per-field control, since Vp, Vs, and Vp/Vs sit on very
+    different numeric scales. Fields absent from the dict default to
+    "auto".
+    """
+    if isinstance(spec, dict):
+        return spec.get(var, "auto")
+    return spec
+
+
+def resolve_iso_levels(data2d, levels_spec, n_auto=ISO_AUTO_N):
+    """Resolve an (already per-field-resolved, via _resolve_iso_spec)
+    ISO_LEVELS_* setting into an explicit list of contour levels for one
+    panel.
+
+    "auto" (or None) picks n_auto evenly spaced levels spanning the finite
+    (non-NaN) data range of this particular panel — panels differ, so this
+    is computed fresh each time rather than once globally. An explicit
+    list/tuple is used verbatim, unchanged, so every panel of that field
+    shares the same levels. Returns [] if there's no usable finite data
+    or an explicit level list was empty.
+    """
+    if levels_spec is None or (isinstance(levels_spec, str) and levels_spec.lower() == "auto"):
+        finite = data2d[np.isfinite(data2d)]
+        if finite.size == 0:
+            return []
+        vmin, vmax = float(finite.min()), float(finite.max())
+        if vmin == vmax:
+            return []
+        return list(np.linspace(vmin, vmax, n_auto + 2)[1:-1])
+    return list(levels_spec)
+
+
+def draw_iso_contours(ax, x, y, data2d, levels_spec, var, n_auto=ISO_AUTO_N):
+    """Overlay isolines (contours) of data2d on ax, using ISO_STYLE/
+    ISO_LABEL/ISO_LABEL_FMT/ISO_LABEL_FONTSIZE. x, y are the same 1-D
+    cell-centre coordinate arrays used for the plotted raster/section.
+    var is the field name ("vp"/"vs"/"vps"), used to resolve a per-field
+    entry if levels_spec is a dict. No-op if there are no usable levels.
+    """
+    spec = _resolve_iso_spec(levels_spec, var)
+    levels = resolve_iso_levels(data2d, spec, n_auto)
+    if not levels:
+        return None
+    cs = ax.contour(x, y, data2d, levels=levels, **ISO_STYLE)
+    if ISO_LABEL:
+        ax.clabel(cs, fmt=ISO_LABEL_FMT, fontsize=ISO_LABEL_FONTSIZE, inline=True)
+    return cs
+
+
 # ------------------------------------------------------------------
 # ------------------------------------------------------------------
 # Coordinate helper / hillshade — see plotpy for implementation
@@ -863,6 +943,9 @@ def plot_vertical_slice(dist_km, depth_km, section, e_ends, n_ends,
     # (smooth per-vertex interpolation, no discrete cell polygons) removes
     # the seams without rasterizing anything, so the inverted axis renders
     # correctly.
+
+    if ISO_LINES_VSLICE:
+        draw_iso_contours(ax, x_arr, depth_km, section, ISO_LEVELS_VSLICE, var)
 
     # Topo line / optional fill.
     # surf_depth is the topographic surface expressed on the depth axis,
@@ -1191,6 +1274,8 @@ for ii, d_index in enumerate(DEPTH_INDEX):
             alpha=1.0 - ALPHA_VELOCITY,
             aspect="equal", interpolation="bilinear", zorder=5,
         )
+        if ISO_LINES_MAP:
+            draw_iso_contours(ax, vx, vy, vz, ISO_LEVELS_MAP, "vps")
         draw_features(ax, eq_e, eq_n)
         ax.set_title(f"Vp/Vs at {depth_label}", fontsize=AXIS_TITLE_SIZE)
         finish_panel_colorbar(cax, im, "Vp/Vs")
@@ -1223,6 +1308,8 @@ for ii, d_index in enumerate(DEPTH_INDEX):
             alpha=1.0 - ALPHA_VELOCITY,
             aspect="equal", interpolation="bilinear", zorder=5,
         )
+        if ISO_LINES_MAP:
+            draw_iso_contours(ax, vx, vy, vz, ISO_LEVELS_MAP, "vp")
         draw_features(ax, eq_e, eq_n)
         ax.set_title(f"Vp at {depth_label}", fontsize=AXIS_TITLE_SIZE)
         finish_panel_colorbar(cax, im, "Vp (m/s)")
@@ -1255,6 +1342,8 @@ for ii, d_index in enumerate(DEPTH_INDEX):
             alpha=1.0 - ALPHA_VELOCITY,
             aspect="equal", interpolation="bilinear", zorder=5,
         )
+        if ISO_LINES_MAP:
+            draw_iso_contours(ax, vx, vy, vz, ISO_LEVELS_MAP, "vs")
         draw_features(ax, eq_e, eq_n)
         ax.set_title(f"Vs at {depth_label}", fontsize=AXIS_TITLE_SIZE)
         finish_panel_colorbar(cax, im, "Vs (m/s)")
