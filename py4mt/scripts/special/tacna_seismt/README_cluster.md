@@ -66,8 +66,9 @@ joint grid, clusters them with fuzzy c-means, and writes:
 | Output file                    | Contents                                   |
 |----------------------------------|---------------------------------------------|
 | `tacna_clusters.nc`              | Hard cluster label + membership ("confidence") on the joint regular grid — dims `(depth, northing, easting)`, genuinely regular UTM-km, unlike any of the source grids |
-| `tacna_cluster_centers.csv`      | Cluster centers in raw (physical) units, point counts, fractions |
-| `clusters_{depth}km_tacna.{ext}` | One map per entry in `PLOT_DEPTHS_KM`, one file per `PLOT_FORMATS` entry |
+| `tacna_cluster_centers.csv`      | Cluster centers in raw (physical) units, point counts, fractions, and a `weight` row recording the `CLUSTER_WEIGHTS` used |
+| `clusters_{depth}km_tacna.{ext}` | Plain cluster map, one per entry in `PLOT_DEPTHS_KM`, one file per `PLOT_FORMATS` entry |
+| `clusters_{depth}km_tacna_annotated.{ext}` | The same map, additionally annotated with seismicity/MT-sites/volcanoes/cities (see "Specific (annotated) cluster maps" below) — produced *in parallel* with the plain map above, not instead of it; toggle with `SHOW_SPECIFIC_PLOT` |
 
 Both `tacna_clusters.nc` and `tacna_cluster_centers.csv` are written into
 `NC_DIR`, alongside their inputs.
@@ -100,13 +101,17 @@ Both `tacna_clusters.nc` and `tacna_cluster_centers.csv` are written into
 5. **Standardize** (z-score, `STANDARDIZE`) — on by default, since
    resistivity/conductivity/Vp-Vs-ratio/density live on very different
    numeric scales and units, and Euclidean distance would otherwise be
-   dominated by whichever variable has the largest raw range.
+   dominated by whichever variable has the largest raw range. Then
+   **weight** (`CLUSTER_WEIGHTS`) — each standardized feature is scaled
+   by `sqrt(weight)` before clustering, letting some variables count more
+   (or less) toward cluster assignment than others; every variable starts
+   at weight `1.0` (no effect). See "Per-variable weighting" below.
 6. **Fuzzy c-means** — a self-contained (NumPy-only) implementation of
    the standard Bezdek (1981) algorithm; see `fuzzy_cmeans()` in the
    script. Reports the fuzzy partition coefficient (FPC, 1/`N_CLUSTERS`
    = maximally fuzzy, 1 = fully crisp) as a quick quality check, printed
-   alongside a table of cluster centers (back-transformed to raw
-   physical units) and sizes.
+   alongside a table of cluster centers (back-transformed out of the
+   weighting and standardization, into raw physical units) and sizes.
 7. **Reconstruct + save.** The hard label (`argmax` membership) and its
    membership value are written back onto the joint grid (`-1`/`NaN`
    where a cell was dropped in step 4) and saved to `tacna_clusters.nc`.
@@ -141,6 +146,15 @@ Both `tacna_clusters.nc` and `tacna_cluster_centers.csv` are written into
   put both `"rho"` and `"cond"` in `CLUSTER_VARS` directly — same
   information, just inverted, so clustering on both is redundant rather
   than genuinely adding a feature.
+- `CLUSTER_WEIGHTS` — a `{variable: weight}` dict, initialized to `1.0`
+  for every `VARIABLE_SOURCES` entry (no effect vs. unweighted
+  clustering). Raise a variable's weight to make it count more toward
+  cluster assignment, lower it to count less; must stay positive. Applied
+  as a weighted Euclidean distance in fuzzy c-means — see "Per-variable
+  weighting" below. Keyed by whichever name ends up in
+  `active_cluster_vars` — set `"cond"`'s weight (not `"rho"`'s) if
+  `USE_CONDUCTIVITY` is swapping it in; both keys exist in the dict so
+  either works regardless of the swap.
 - `STANDARDIZE` (default `True`) — z-score each feature before
   clustering; see step 5 above.
 - `GRID_EASTING_KM` / `GRID_NORTHING_KM` / `GRID_DEPTH_KM` — each a
@@ -203,6 +217,28 @@ Both `tacna_clusters.nc` and `tacna_cluster_centers.csv` are written into
 - `AXIS_LABEL_SIZE`/`AXIS_TICK_SIZE`/`AXIS_TITLE_SIZE`,
   `ANNOTATION_TEXT`/`ANNOTATION_POS`/`ANNOTATION_STYLE` — same as the
   other plot scripts.
+- `SHOW_SPECIFIC_PLOT` (default `True`) — produce the second,
+  feature-annotated set of cluster maps (see "Specific (annotated)
+  cluster maps" below), *in addition to* the plain maps above, which are
+  always produced regardless of this setting.
+- `CSV_VOLCANES`/`CSV_SEISMCAT`/`CSV_MT_SITES`/`CSV_CITIES`/
+  `CSV_SEISMIC_SITES` — same files/format as `tacna_plot_seis.py`.
+- `SHOW_SEISMICITY`/`SHOW_MT_SITES`/`SHOW_SEISMIC_SITES`/
+  `SHOW_VOLCANOES`/`SHOW_VOLCANOES_ACTIVE`/`SHOW_CITIES` — per-layer
+  on/off switches, same meaning as `tacna_plot_seis.py`. Only affect the
+  annotated map; the plain map never shows any of these.
+- `ZMIN_SEISM`/`ZMAX_SEISM` — seismicity depth windows (km), one pair per
+  entry in `PLOT_DEPTHS_KM` (matched positionally — must be the same
+  length as `PLOT_DEPTHS_KM` if `SHOW_SPECIFIC_PLOT` and
+  `SHOW_SEISMICITY` are both on, or the script exits with an error). Pad
+  an entry with `None`/`None` to show all seismicity on that particular
+  slice regardless of depth.
+- `VOLC_LABEL_IDX`, `VOLC_LABEL_FULL_NAME`, `VOLC_NAME_COL_FULL`/
+  `VOLC_NAME_COL_SHORT`, and the `*_MARKER_STYLE`/`*_LABEL_STYLE` dicts
+  (`EQ_MARKER_STYLE`, `MT_MARKER_STYLE`/`MT_LABEL_STYLE`,
+  `SEISMIC_SITES_MARKER_STYLE`, `VOLC_INACT_MARKER_STYLE`/
+  `VOLC_LABEL_STYLE`, `VOLC_ACT_MARKER_STYLE`, `CITY_MARKER_STYLE`/
+  `CITY_LABEL_STYLE`) — same defaults and meaning as `tacna_plot_seis.py`.
 
 ### Resistivity vs. conductivity
 
@@ -252,6 +288,42 @@ keep memory bounded for large point counts. Unit-tested against
 synthetic, well-separated Gaussian blobs (recovers all cluster centers
 correctly, FPC ≈ 0.99).
 
+### Per-variable weighting
+
+`CLUSTER_WEIGHTS` lets individual variables count more or less toward
+cluster assignment than a plain (unweighted) Euclidean distance would
+give them. Each standardized feature is scaled by `sqrt(weight)` before
+`fuzzy_cmeans()` runs — equivalent to the weighted Euclidean distance
+`d² = Σⱼ weightⱼ · (xⱼ − cⱼ)²` — and the resulting cluster centers are
+divided back by the same `sqrt(weight)` afterward, before undoing
+standardization, so `tacna_cluster_centers.csv` and `tacna_clusters.nc`
+always report centers in true physical units regardless of how they were
+weighted. Every variable starts at weight `1.0`, identical to unweighted
+clustering; raise a weight above `1.0` to let that variable dominate
+cluster assignment more, or drop it below `1.0` (but keep it positive) to
+let it matter less — useful e.g. if one variable is much noisier or less
+reliable than the others but you don't want to drop it from `CLUSTER_VARS`
+entirely. Unit-tested with a synthetic example (one informative, one pure
+noise variable): down-weighting the noisy variable raised cluster-recovery
+accuracy from 59% to 100%.
+
+### Specific (annotated) cluster maps
+
+A second map is produced for every `PLOT_DEPTHS_KM` entry, in addition to
+(never instead of) the plain cluster map — see `SHOW_SPECIFIC_PLOT` above.
+It reuses the exact same cluster overlay (`_draw_cluster_overlay()` — same
+imshow, title, colorbar, lon/lat ticks, annotation) on the exact same
+basemap, then layers `tacna_plot_seis.py`-style feature markers/labels on
+top via `draw_specific_features()`: seismicity (filtered to that slice's
+`ZMIN_SEISM`/`ZMAX_SEISM` window), MT sites, seismic sites, inactive and
+active volcanoes, and cities — using the identical CSV files, on/off
+switches, and marker/label style dicts as `tacna_plot_seis.py`, so the
+annotated cluster maps look visually consistent with that script's own
+depth-slice maps. `clipped_markers`/`clipped_labels` are the same
+`plotpy.py` helpers `tacna_plot_seis.py` itself uses — no duplicated
+plotting logic. Saved as `clusters_{depth}km_tacna_annotated.{ext}`,
+alongside (not replacing) `clusters_{depth}km_tacna.{ext}`.
+
 ---
 
 ## Coordinate convention
@@ -266,10 +338,11 @@ not inherited from any source file's own resolution.
 ## Dependencies
 
 ```
-numpy, xarray, matplotlib, pyproj, scipy
+numpy, xarray, pandas, matplotlib, pyproj, scipy
 ```
 (`scipy.interpolate.RBFInterpolator` for the interpolation,
-`scipy.spatial.Delaunay` for convex-hull masking) plus the local
+`scipy.spatial.Delaunay` for convex-hull masking; `pandas` for the
+feature CSVs used by the specific/annotated cluster maps) plus the local
 `plotpy.py` helper module. No `scikit-fuzzy` dependency — the fuzzy
 c-means implementation is self-contained.
 
@@ -285,10 +358,12 @@ python3 tacna_cluster.py      # loads native point clouds, RBF-interpolates
 ```
 
 Run `tacna_cluster.py` again whenever `CLUSTER_VARS`, `USE_CONDUCTIVITY`,
-`STANDARDIZE`, the `GRID_*_KM` settings, the `RBF_*` settings,
-`MASK_TO_CONVEX_HULL`, `N_CLUSTERS`, `FUZZINESS`, or `RANDOM_SEED` change,
-or whenever `tacna_precompute.py` has been re-run with different data.
-Changing only plotting settings (colours, `PLOT_DEPTHS_KM`, basemap
-styling, colorbar, annotations) still requires re-running the whole
-script — clustering and plotting aren't split into separate steps here,
+`CLUSTER_WEIGHTS`, `STANDARDIZE`, the `GRID_*_KM` settings, the `RBF_*`
+settings, `MASK_TO_CONVEX_HULL`, `N_CLUSTERS`, `FUZZINESS`, or
+`RANDOM_SEED` change, or whenever `tacna_precompute.py` has been re-run
+with different data. Changing only plotting settings (colours,
+`PLOT_DEPTHS_KM`, basemap styling, colorbar, annotations,
+`SHOW_SPECIFIC_PLOT` and its feature-layer settings) still requires
+re-running the whole script — clustering and plotting aren't split into
+separate steps here,
 unlike the precompute/plot separation in the other two pipelines.

@@ -102,9 +102,11 @@ from pathlib import Path
 
 import numpy as np
 import xarray as xr
+import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+from matplotlib.path import Path as MplPath
 from scipy.interpolate import RBFInterpolator
 from scipy.spatial import Delaunay
 
@@ -112,6 +114,9 @@ import plotpy
 
 to_utm_km = plotpy.to_utm_km
 compute_hillshade = plotpy.compute_hillshade
+clipped_markers = plotpy.clipped_markers
+clipped_labels = plotpy.clipped_labels
+draw_north_arrow = plotpy.draw_north_arrow
 
 # =====================================================================
 # USER SETTINGS
@@ -170,6 +175,20 @@ CLUSTER_VARS = ["rho", "vps", "dens"]
 # so clustering on both is redundant/collinear rather than genuinely
 # adding a feature).
 USE_CONDUCTIVITY = True
+
+# --- Per-variable clustering weights ---
+# Multiplies each (already standardized, if STANDARDIZE) feature by
+# sqrt(weight) before fuzzy c-means, so a larger weight makes that
+# variable count more toward cluster assignment — equivalent to a
+# weighted Euclidean distance d^2 = sum_j weight_j * (x_j - c_j)^2.
+# Initialized to 1.0 for every registered VARIABLE_SOURCES entry (no
+# effect vs. unweighted clustering); edit individual values to change
+# how much each variable influences cluster assignment. Any CLUSTER_VARS
+# entry not present here falls back to 1.0 too. Keyed by the variable
+# name as it appears in active_cluster_vars — i.e. use "cond"'s weight
+# (not "rho"'s) if USE_CONDUCTIVITY swaps it in; both are listed below
+# so either works regardless of the swap.
+CLUSTER_WEIGHTS = {k: 1.0 for k in VARIABLE_SOURCES}
 
 # --- Standardize (z-score) each variable before clustering ---
 # Strongly recommended: rho/cond/vps/dens have very different numeric
@@ -271,6 +290,97 @@ AXIS_TITLE_SIZE = 12
 ANNOTATION_TEXT = None
 ANNOTATION_POS = (0.01, 0.99)
 ANNOTATION_STYLE = dict(fontsize=7, color="gray", ha="left", va="top")
+
+# =====================================================================
+# SPECIFIC PLOT SETTINGS — borrowed from tacna_plot_seis.py
+# =====================================================================
+# A SECOND, feature-annotated set of cluster maps (seismicity, MT/
+# seismic sites, volcanoes, cities), drawn IN ADDITION to the plain
+# cluster maps above — those are always still produced regardless of
+# SHOW_SPECIFIC_PLOT, so the two sets exist in parallel, not as
+# alternatives. Settings/styles here intentionally mirror
+# tacna_plot_seis.py's own (same CSVs, same marker/label style dicts,
+# same on/off switches) so the annotated cluster maps look consistent
+# with that script's depth-slice maps.
+SHOW_SPECIFIC_PLOT = True
+
+# --- Feature CSV paths (same files/format as tacna_plot_seis.py) ---
+CSV_VOLCANES      = "../features/volcanes.csv"
+CSV_SEISMCAT      = "../features/catalog_welllocated_15_simple5.csv"
+CSV_MT_SITES      = "../features/done/MTTacna_Sitelist.csv"
+CSV_CITIES        = "../features/cities.csv"
+CSV_SEISMIC_SITES = "../features/seismic_sites.csv"  # no header row; columns
+                                                       # are network, station,
+                                                       # lat, lon, elev_m
+
+# --- Feature layers — on/off switches (same meaning as tacna_plot_seis.py) ---
+SHOW_SEISMICITY       = True
+SHOW_MT_SITES         = True
+SHOW_SEISMIC_SITES    = True
+SHOW_VOLCANOES        = True   # inactive volcano markers + labels
+SHOW_VOLCANOES_ACTIVE = True   # active volcano markers
+SHOW_CITIES           = True
+
+# --- Seismicity depth windows (km), one pair per entry in PLOT_DEPTHS_KM
+# (matched positionally, same convention as tacna_plot_seis.py's
+# ZMIN_SEISM/ZMAX_SEISM vs. DEPTH_INDEX). Set both to None for a given
+# slice to show all seismicity on it regardless of depth. ---
+ZMIN_SEISM = [-7, 1, 9]
+ZMAX_SEISM = [1, 9, 30]
+
+# --- Volcano rows to label (indices into CSV_VOLCANES) ---
+VOLC_LABEL_IDX = [5, 12, 13]
+VOLC_LABEL_FULL_NAME = False
+VOLC_NAME_COL_FULL   = "NAME"      # column used when VOLC_LABEL_FULL_NAME=True
+VOLC_NAME_COL_SHORT  = "VOLCAN2"   # column used when VOLC_LABEL_FULL_NAME=False
+
+# --- Marker & label styles (same defaults as tacna_plot_seis.py) ---
+EQ_MARKER_STYLE = dict(
+    marker="o", s=4.5, facecolors="white", edgecolors="black",
+    linewidths=0.2, zorder=11,
+)
+MT_MARKER_STYLE = dict(
+    marker="v", s=10, facecolors="yellow", edgecolors="black",
+    linewidths=0.7, zorder=12,
+)
+MT_LABEL_STYLE = dict(
+    fontsize=5, color="black", zorder=14, rotation=90,
+    offset_x=0.3, offset_y=0.3, mode="none",
+)
+SEISMIC_SITES_MARKER_STYLE = dict(
+    marker="v", s=10, facecolors="green", edgecolors="black",
+    linewidths=0.7, zorder=12,
+)
+VOLC_INACT_MARKER_STYLE = dict(
+    marker="^", s=10, facecolors="blue", edgecolors="black",
+    linewidths=0.7, zorder=13,
+)
+VOLC_LABEL_STYLE = dict(
+    fontsize=6, fontweight="bold", color="black", zorder=14,
+    offset_x=0.3, offset_y=0.3, mode="full",
+)
+VOLC_ACT_MARKER_STYLE = dict(
+    marker="^", s=10, facecolors="red", edgecolors="black",
+    linewidths=0.7, zorder=13,
+)
+CITY_MARKER_STYLE = dict(
+    marker="s", s=6, facecolors="black", edgecolors="black",
+    linewidths=0.2, zorder=13,
+)
+CITY_LABEL_STYLE = dict(
+    fontsize=6, color="white", zorder=14,
+    offset_x=0.3, offset_y=-0.3, mode="full",
+)
+
+if SHOW_SPECIFIC_PLOT and SHOW_SEISMICITY:
+    if not (len(ZMIN_SEISM) == len(ZMAX_SEISM) == len(PLOT_DEPTHS_KM)):
+        raise SystemExit(
+            f"ZMIN_SEISM ({len(ZMIN_SEISM)}), ZMAX_SEISM ({len(ZMAX_SEISM)}), "
+            f"and PLOT_DEPTHS_KM ({len(PLOT_DEPTHS_KM)}) must all be the same "
+            f"length — one seismicity depth-window pair per depth slice. Pad "
+            f"the shorter list(s) with None (= show all seismicity) for any "
+            f"slice that doesn't need a filter."
+        )
 
 # =====================================================================
 # END USER SETTINGS
@@ -644,15 +754,37 @@ else:
     feat_std = np.ones(X_raw.shape[1])
     X = X_raw
 
+# --- Apply per-variable weighting (weighted Euclidean distance) ---
+# d^2 = sum_j weight_j * (x_j - c_j)^2 is equivalent to ordinary
+# Euclidean distance on features pre-scaled by sqrt(weight_j); undone
+# below (divide by the same sqrt(weight)) before the standardization
+# inverse transform, so centers_raw stays in true physical units either
+# way.
+weight_vector = np.array(
+    [CLUSTER_WEIGHTS.get(k, 1.0) for k in active_cluster_vars], dtype=float
+)
+if np.any(weight_vector <= 0):
+    raise ValueError(
+        f"CLUSTER_WEIGHTS must be positive; got "
+        f"{dict(zip(active_cluster_vars, weight_vector))}."
+    )
+print(
+    "Cluster weights: " +
+    ", ".join(f"{k}={w:g}" for k, w in zip(active_cluster_vars, weight_vector))
+)
+sqrt_weight = np.sqrt(weight_vector)
+X_weighted = X * sqrt_weight[None, :]
+
 # ==================================================================
 # Fuzzy c-means
 # ==================================================================
 print(f"\nRunning fuzzy c-means: n_clusters={N_CLUSTERS}, m={FUZZINESS} …")
-centers_std, U, fpc, n_iter = fuzzy_cmeans(
-    X, N_CLUSTERS, m=FUZZINESS, max_iter=MAX_ITER, tol=TOL, seed=RANDOM_SEED
+centers_weighted, U, fpc, n_iter = fuzzy_cmeans(
+    X_weighted, N_CLUSTERS, m=FUZZINESS, max_iter=MAX_ITER, tol=TOL, seed=RANDOM_SEED
 )
 hard_label = np.argmax(U, axis=1)
 membership_max = np.max(U, axis=1)
+centers_std = centers_weighted / sqrt_weight[None, :]
 centers_raw = centers_std * feat_std + feat_mean
 
 print(
@@ -715,6 +847,9 @@ out_ds = xr.Dataset(
         "rbf_kernel": RBF_KERNEL,
         "rbf_neighbors": str(RBF_NEIGHBORS),
         "mask_to_convex_hull": str(MASK_TO_CONVEX_HULL),
+        "cluster_weights": ", ".join(
+            f"{k}={w:g}" for k, w in zip(active_cluster_vars, weight_vector)
+        ),
         "fuzziness_m": FUZZINESS,
         "standardized": str(STANDARDIZE),
         "fpc": fpc,
@@ -730,6 +865,7 @@ centers_csv = ncpath("tacna_cluster_centers.csv")
 with safe_open_w(centers_csv, newline="") as f:
     w = csv.writer(f)
     w.writerow(["cluster", "n_points", "fraction"] + active_cluster_vars)
+    w.writerow(["weight", "", ""] + [f"{wt:g}" for wt in weight_vector])
     for c in range(N_CLUSTERS):
         n_c = int(np.sum(hard_label == c))
         w.writerow(
@@ -848,25 +984,95 @@ def save_fig(fig, stem):
 
 
 # ==================================================================
+# Feature layers for the specific (annotated) plot — same CSVs/loading
+# as tacna_plot_seis.py
+# ==================================================================
+if SHOW_SPECIFIC_PLOT:
+    print("\nLoading feature layers for the specific (annotated) plot …")
+
+    volcanes = pd.read_csv(CSV_VOLCANES)
+    utmv_e, utmv_n = to_utm_km(
+        volcanes["LONG"][VOLC_LABEL_IDX].values,
+        volcanes["LAT"][VOLC_LABEL_IDX].values,
+    )
+    _volc_name_col = VOLC_NAME_COL_FULL if VOLC_LABEL_FULL_NAME else VOLC_NAME_COL_SHORT
+    if _volc_name_col not in volcanes.columns:
+        print(f"  WARNING: volcano name column {_volc_name_col!r} not found in "
+              f"{CSV_VOLCANES} — falling back to {VOLC_NAME_COL_SHORT!r}.")
+        _volc_name_col = VOLC_NAME_COL_SHORT
+    namev = volcanes[_volc_name_col][VOLC_LABEL_IDX].values
+
+    volc_act_e, volc_act_n = [], []
+    for _i in range(len(volcanes)):
+        if "ACT" in str(volcanes["ESTADO"][_i]):
+            _ae, _an = to_utm_km([volcanes["LONG"][_i]], [volcanes["LAT"][_i]])
+            volc_act_e.append(_ae[0])
+            volc_act_n.append(_an[0])
+
+    eqs = pd.read_csv(CSV_SEISMCAT, delimiter=" ")
+    eq_e0, eq_n0 = to_utm_km(eqs["x"].values, eqs["y"].values)
+    zeqs = eqs["z"].values
+
+    tacna = pd.read_csv(CSV_MT_SITES, delimiter=" ")
+    mt_e, mt_n = to_utm_km(tacna["x"].values, tacna["y"].values)
+    for _name_col in ("Site", "site", "name", "Name", "station", "Station"):
+        if _name_col in tacna.columns:
+            mt_names = tacna[_name_col].astype(str).tolist()
+            break
+    else:
+        mt_names = [""] * len(tacna)
+
+    seis_sites = pd.read_csv(CSV_SEISMIC_SITES, header=None,
+                              names=["network", "station", "lat", "lon", "elev_m"])
+    seis_site_e, seis_site_n = to_utm_km(seis_sites["lon"].values, seis_sites["lat"].values)
+    seis_site_names = seis_sites["station"].values
+
+    cities = pd.read_csv(CSV_CITIES)
+    cit_e, cit_n = to_utm_km(cities["x"].values, cities["y"].values)
+    name_cit = cities["Name"].values
+
+
+def draw_specific_features(ax, eq_e, eq_n):
+    """Overlay seismicity/MT-site/seismic-site/volcano/city feature layers
+    borrowed from tacna_plot_seis.py's draw_features() — all markers/
+    labels clipped to the map region. North arrow is already drawn by
+    draw_basemap()."""
+    if SHOW_SEISMICITY:
+        clipped_markers(ax, eq_e, eq_n, _region(), label="Seismicity", **EQ_MARKER_STYLE)
+
+    if SHOW_MT_SITES:
+        clipped_markers(ax, mt_e, mt_n, _region(), label="MT site", **MT_MARKER_STYLE)
+        clipped_labels(ax, mt_e, mt_n, mt_names, MT_LABEL_STYLE, _region())
+
+    if SHOW_SEISMIC_SITES:
+        clipped_markers(ax, seis_site_e, seis_site_n, _region(), label="Seismic site",
+                         **SEISMIC_SITES_MARKER_STYLE)
+
+    if SHOW_VOLCANOES:
+        clipped_markers(ax, utmv_e, utmv_n, _region(), **VOLC_INACT_MARKER_STYLE)
+        clipped_labels(ax, utmv_e, utmv_n, namev, VOLC_LABEL_STYLE, _region())
+
+    if SHOW_VOLCANOES_ACTIVE and volc_act_e:
+        clipped_markers(ax, volc_act_e, volc_act_n, _region(),
+                         label="Active volcano", **VOLC_ACT_MARKER_STYLE)
+
+    if SHOW_CITIES:
+        clipped_markers(ax, cit_e, cit_n, _region(), label="City", **CITY_MARKER_STYLE)
+        clipped_labels(ax, cit_e, cit_n, name_cit, CITY_LABEL_STYLE, _region())
+
+
+# ==================================================================
 # Plot cluster maps
 # ==================================================================
 cluster_cmap = plt.get_cmap(CLUSTER_CMAP, N_CLUSTERS)
 bounds = np.arange(-0.5, N_CLUSTERS + 0.5, 1.0)
 cluster_norm = mcolors.BoundaryNorm(bounds, cluster_cmap.N)
 
-for target_depth in PLOT_DEPTHS_KM:
-    iz = int(np.argmin(np.abs(d_axis - target_depth)))
-    actual_depth = float(d_axis[iz])
-    print(
-        f"\nPlotting clusters at {target_depth} km "
-        f"(nearest available: {actual_depth:.2f} km) …"
-    )
 
-    label_slice = label_grid[iz].astype(float)  # (northing, easting)
-    label_slice[label_slice < 0] = np.nan  # -1 (missing) -> NaN, transparent
-
-    fig, ax, cax = create_map_figure()
-    draw_basemap(ax)
+def _draw_cluster_overlay(ax, cax, label_slice, actual_depth):
+    """Cluster imshow + title + colorbar + lon/lat ticks + free-text
+    annotation — the part shared by both the plain and the specific
+    (annotated) cluster maps."""
     im = ax.imshow(
         label_slice, cmap=cluster_cmap, norm=cluster_norm, origin="lower",
         extent=[e_axis.min(), e_axis.max(), n_axis.min(), n_axis.max()],
@@ -886,9 +1092,52 @@ for target_depth in PLOT_DEPTHS_KM:
         )
     plotpy.draw_annotation(ax, ANNOTATION_TEXT, ANNOTATION_POS, ANNOTATION_STYLE)
 
+
+for i_depth, target_depth in enumerate(PLOT_DEPTHS_KM):
+    iz = int(np.argmin(np.abs(d_axis - target_depth)))
+    actual_depth = float(d_axis[iz])
+    print(
+        f"\nPlotting clusters at {target_depth} km "
+        f"(nearest available: {actual_depth:.2f} km) …"
+    )
+
+    label_slice = label_grid[iz].astype(float)  # (northing, easting)
+    label_slice[label_slice < 0] = np.nan  # -1 (missing) -> NaN, transparent
+
     tag = f"{actual_depth:.0f}km" if actual_depth == int(actual_depth) else f"{actual_depth:.1f}km"
+
+    # --- Plain cluster map (unchanged, kept in parallel) ---
+    fig, ax, cax = create_map_figure()
+    draw_basemap(ax)
+    _draw_cluster_overlay(ax, cax, label_slice, actual_depth)
     save_fig(fig, f"clusters_{tag}_tacna")
     plt.show()
     plt.close(fig)
+
+    # --- Specific (annotated) cluster map — same cluster overlay, plus
+    # tacna_plot_seis.py-style feature layers. Additional, not a
+    # replacement for the plain map above. ---
+    if SHOW_SPECIFIC_PLOT:
+        if SHOW_SEISMICITY:
+            zmin, zmax = ZMIN_SEISM[i_depth], ZMAX_SEISM[i_depth]
+            if zmin is None and zmax is None:
+                eq_e, eq_n = eq_e0, eq_n0
+            else:
+                _zmask = np.ones(len(zeqs), dtype=bool)
+                if zmin is not None:
+                    _zmask &= zeqs >= zmin
+                if zmax is not None:
+                    _zmask &= zeqs <= zmax
+                eq_e, eq_n = eq_e0[_zmask], eq_n0[_zmask]
+        else:
+            eq_e, eq_n = np.array([]), np.array([])
+
+        fig, ax, cax = create_map_figure()
+        draw_basemap(ax)
+        _draw_cluster_overlay(ax, cax, label_slice, actual_depth)
+        draw_specific_features(ax, eq_e, eq_n)
+        save_fig(fig, f"clusters_{tag}_tacna_annotated")
+        plt.show()
+        plt.close(fig)
 
 print("\nDone.")
