@@ -14,8 +14,18 @@ AI-generated code — review before use in production.
 ## Pipeline
 
 ```
-tacna_precompute_seis.py  →  UTM-km NetCDF/CSV files  →  tacna_plot_seis.py  →  figures
+tacna_precompute.py (Part B)  →  UTM-km NetCDF files  →  tacna_plot_seis.py  →  figures
 ```
+
+**`tacna_precompute_seis.py` and `tacna_precompute_modem.py` have been
+merged into a single `tacna_precompute.py`** — Part B (seismic tomography,
+this README) and Part A (ModEM/MT, `README_mt.md`) now live in one script,
+one run, because they share region-of-interest settings
+(`OUTPUT_DIR`/`CROP_TO_REGION`/`TAR_LON`/`TAR_LAT` — see SHARED SETTINGS in
+the script) and because Part B now also carries a density model
+(`FNAME_DENS`, exported as `tacna_dens*.nc`), processed identically to
+Vp/Vs. All of Part B's own outputs below are unchanged from the original
+`tacna_precompute_seis.py`, apart from the density addition.
 
 **`plotpy.py`** must sit alongside the scripts — it's a small shared module
 of plotting helpers (`import plotpy`) used by all three plot scripts:
@@ -33,16 +43,35 @@ work once (reprojection, topo fetch, depth-slice extraction); plot only
 reads the results and draws, so figure iteration (colours, styling, crop
 boxes, profiles) is fast and doesn't re-touch the source data.
 
-### 1. `tacna_precompute_seis.py`
+### 1. `tacna_precompute.py` — Part B (seismic tomography + density)
 
-Reads the raw Vp/Vs finite-difference tomography model and produces:
+Reads the raw Vp/Vs/density finite-difference tomography models and produces:
 
 | Output file                     | Contents                                   |
 |----------------------------------|---------------------------------------------|
-| `tacna_vp.nc`, `tacna_vs.nc`, `tacna_vps.nc` | Full geographic (lat/lon) subsets, with UTM easting/northing as auxiliary coords |
+| `tacna_vp.nc`, `tacna_vs.nc`, `tacna_vps.nc`, `tacna_dens.nc` | Full geographic (lat/lon) subsets, with UTM easting/northing as auxiliary coords |
 | `tacna_topo_utm.nc`              | Topography on a UTM-km grid                |
 | `tacna_bath_utm.nc`              | Bathymetry mask (elevation ≤ 0) on the same grid |
-| `tacna_vp_utm_{depth}km.nc`, `tacna_vs_utm_{depth}km.nc`, `tacna_vps_utm_{depth}km.nc` | Per-depth UTM-km slices, one set per entry in `DEPTH_INDEX` |
+| `tacna_vp_utm_{depth}km.nc`, `tacna_vs_utm_{depth}km.nc`, `tacna_vps_utm_{depth}km.nc`, `tacna_dens_utm_{depth}km.nc` | Per-depth UTM-km slices, one set per entry in `DEPTH_INDEX` |
+
+**No more MT resistivity resampling here.** Earlier versions of this
+script also resampled Part A's resistivity onto this grid directly
+(`modem_rho_on_seisgrid*.nc`). That step has moved to `tacna_cluster.py`,
+which RBF-interpolates resistivity (from `modem_submesh_points.nc`, Part
+A) together with Vp/Vs/density onto its own jointly-defined regular grid
+instead — see `README_cluster.md`.
+
+**Density is named `dens`, not `rho`.** `FNAME_DENS` (default
+`"../seistomo/FD_rho_model.nc"` — the source *file* is still named
+`FD_rho_model.nc` on disk, matching the `FD_vp_model.nc`/`FD_vs_model.nc`
+convention) is read, cropped, and sliced with exactly the same logic
+already used for Vp/Vs. It's expected on the same `(lat, lon, depth)` grid
+as `FD_vp_model.nc`; a non-fatal warning prints at run time if that grid
+doesn't match (a silent mismatch there would misalign density against
+velocity). Only the *output naming* was changed to `dens` — "rho" is
+already used throughout Part A for MT resistivity (`modem_rho_utm_*.nc`),
+and having the same-sounding name for two physically different
+quantities on two different grids was a bug waiting to happen.
 
 Topography comes from the `elevation` package (SRTM/ETOPO, via the `eio`
 CLI), a local ETOPO NetCDF, or a local GeoTIFF — selected with
@@ -51,21 +80,21 @@ computes it on the fly with `matplotlib.colors.LightSource`.
 
 **Key settings:**
 
-- `OUTPUT_DIR` (default `"."`) — directory all `.nc` outputs above are
+- `OUTPUT_DIR` (default `"."`, **shared** with Part A now that precompute
+  is a single script) — directory all `.nc` outputs above are
   written to (created automatically if it doesn't exist). Keep this in
   sync with `NC_DIR` in `tacna_plot_seis.py` so the plot script reads
   from wherever precompute actually wrote to.
-- `FNAME_VP` / `FNAME_VS` — input tomography NetCDF files.
-- `CROP_TO_REGION` (default `True`) — if `True`, crop the velocity models
+- `FNAME_VP` / `FNAME_VS` / `FNAME_DENS` — input tomography NetCDF files.
+- `CROP_TO_REGION` (default `True`, **shared** with Part A — one setting
+  now, not two kept in sync) — if `True`, crop the velocity/density models
   to `TAR_LON`/`TAR_LAT` (and `DEPTH_RANGE`) before writing any output; if
   `False`, keep the full source-model extent (`DEPTH_RANGE` still
-  applies). Same toggle/convention as `CROP_TO_REGION` in
-  `tacna_precompute_modem.py`.
-- `TAR_LON` / `TAR_LAT` — geographic crop box for the velocity subset.
-  **Kept identical to `TAR_LON`/`TAR_LAT` in `tacna_precompute_modem.py`**
-  so both pipelines cover the same ground — currently the union of the two
-  pipelines' original boxes, padded by ~0.05°. Must fully contain every
-  `VSLICES` profile endpoint defined in `tacna_plot_seis.py`, or you'll get
+  applies).
+- `TAR_LON` / `TAR_LAT` (**shared** with Part A) — geographic crop box for
+  the velocity/density subset, currently the union of the two pipelines'
+  original boxes, padded by ~0.05°. Must fully contain every `VSLICES`
+  profile endpoint defined in `tacna_plot_seis.py`, or you'll get
   a silent no-data gap at the edge of a cross-section.
 - `DEPTH_RANGE` — depth window (km) kept from the source model; the lower
   bound is intentionally negative (e.g. `-8`) so above-sea-level model
@@ -94,7 +123,7 @@ Reads the files above and produces two kinds of figures:
 
 - `NC_DIR` (default `"."`) — directory to read precomputed NetCDF files
   from (`tacna_vp.nc`, `NC_TOPO`, per-depth slices, etc.). Must match
-  `OUTPUT_DIR` in `tacna_precompute_seis.py`.
+  `OUTPUT_DIR` in `tacna_precompute.py`.
 - `PLOT_DIR` (default `"."`) — directory saved figures are written to
   (created automatically if it doesn't exist).
 
@@ -305,16 +334,24 @@ model.
 numpy, matplotlib, xarray, pandas, pyproj, scipy, rioxarray, elevation (eio)
 ```
 (`rioxarray`/`elevation` only needed for `TOPO_SOURCE="elevation"` or
-`"geotiff"`.)
+`"geotiff"`.) `tacna_precompute.py` additionally needs the local `modem.py`
+helper library (`read_mod`, `read_data`, `cells3d`, `get_topo`) on the
+path — required for Part A even if you only care about Part B's
+Vp/Vs/density outputs, since precompute is now one script covering both.
 
 ## Typical run
 
 ```bash
-python3 tacna_precompute_seis.py   # writes *.nc into the working directory
-python3 tacna_plot_seis.py         # reads them, writes figures (PLOT_FORMATS)
+python3 tacna_precompute.py   # writes *.nc for BOTH Part A (MT) and
+                               # Part B (seismic) into OUTPUT_DIR
+python3 tacna_plot_seis.py    # reads Part B's files, writes figures (PLOT_FORMATS)
 ```
 
-Run precompute again whenever the source tomography model, `TAR_LON`/
-`TAR_LAT`, `DEPTH_RANGE`, or `DEPTH_INDEX` change. Everything else
-(colours, styling, crop views, profile definitions, annotations) only
-needs re-running `tacna_plot_seis.py`.
+`tacna_precompute.py` runs Part A and Part B in one pass — see
+`README_mt.md`'s "Typical run" for why they can't be split.
+
+Run precompute again whenever the source tomography/density models,
+`TAR_LON`/`TAR_LAT`, `DEPTH_RANGE`, or `DEPTH_INDEX` change (or anything in
+`README_mt.md`'s Part A settings, since a single run covers both).
+Everything else (colours, styling, crop views, profile definitions,
+annotations) only needs re-running `tacna_plot_seis.py`.

@@ -1923,9 +1923,9 @@ def calc_resnorm(data_obs=None, data_calc=None, data_std=None, p=2):
     return rnorm, resid
 
 
-def calc_rms(dcalc=None, dobs=None, Wd=1.0):
+def calc_rms(dcalc=None, dobs=None, Wd=1.0, nscale=0, weighted = True):
     '''
-    Calculate NRMS and SRMS misfit metrics.
+    Calculate NRMS and SMAPE misfit metrics.
 
     Parameters
     ----------
@@ -1947,13 +1947,27 @@ def calc_rms(dcalc=None, dobs=None, Wd=1.0):
     '''
     sizedat = np.shape(dcalc)
     nd = sizedat[0]
-    rscal = Wd * (dobs - dcalc).T
+
+
+    resid = Wd * (dobs - dcalc).T
+
+
     print(sizedat, nd)
 
-    nrms = np.sqrt(np.sum(np.power(np.abs(rscal), 2)) / (nd - 1))
+    if nscale > 0:
+        nrms = np.sqrt(np.sum(np.power(np.abs(resid), 2)) / (nd - 1))
+    else:
+        nrms = np.sqrt(np.sum(np.power(np.abs(resid), 2)) / (nd))
 
-    serr = 2.0 * nd * np.abs(rscal) / (np.abs(dobs.T) + np.abs(dcalc.T))
-    ssq = np.sum(np.power(serr, 2))
-    srms = 100.0 * np.sqrt(ssq / nd)
 
-    return nrms, srms
+    if weighted:
+        resid = Wd * (dobs - dcalc).T
+    else:
+        resid = dobs - dcalc
+
+    serr = np.abs(resid)
+    sscl = np.abs(dobs) + np.abs(dcalc)
+    ssq = np.sum(serr / sscl)
+    smape = 100.0 * ssq/nd
+
+    return nrms, smape

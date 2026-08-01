@@ -129,7 +129,11 @@ These functions lived in `util.py` but belong here conceptually.
 
 ### Residual norms
 - `calc_resnorm(data_obs, data_calc, data_std, p=2)` — *p*-norm of weighted residuals
-- `calc_rms(dcalc, dobs, Wd=1.0)` — NRMS and SRMS misfit metrics
+- `calc_rms(dcalc, dobs, Wd=1.0, nscale=0)` — NRMS and SMAPE misfit metrics
+  (`nscale > 0` divides the NRMS sum-of-squares by `nd - 1` instead of `nd`;
+  `SMAPE` here is `100 * sum(|Wd*(dobs-dcalc)| / (|dobs|+|dcalc|)) / nd`,
+  i.e. the un-doubled-denominator SMAPE variant, bounded in [0, 100%],
+  applied to the `Wd`-weighted residual rather than the raw residual)
 
 
 ---
@@ -145,6 +149,15 @@ These functions lived in `util.py` but belong here conceptually.
 - Hansen, P. C. (1998). *Rank Deficient and Discrete Ill-Posed Problems*. SIAM, Philadelphia.
 
 ## Changelog
+
+### Changelog (2026-07-30) — calc_rms: SRMS replaced by SMAPE, `nscale` added
+- `calc_rms` gained an `nscale` parameter (`>0` uses `nd - 1` in the NRMS
+  denominator, matching sample-variance convention; `0`, the default,
+  uses `nd`).
+- The second returned metric is now SMAPE (`100 * sum(|resid| / (|dobs|
+  + |dcalc|)) / nd`), replacing the previous SRMS calculation, whose
+  numerator/denominator handling had a regression causing it to return
+  a per-datum array instead of a scalar. Fixed by the user (vrath).
 
 ### Changelog (2026-07-17) — scipy.sparse: matrix → array API
 - Migrated from legacy `scipy.sparse` matrix classes to the array-equivalent

@@ -15,10 +15,20 @@ AI-generated code — review before use in production.
 ## Pipeline
 
 ```
-tacna_precompute_modem.py  →  UTM-km NetCDF/CSV files  →  tacna_plot_modem_image.py  →  figures
+tacna_precompute.py (Part A)  →  UTM-km NetCDF files  →  tacna_plot_modem_image.py  →  figures
                                                         (or tacna_plot_modem_mesh.py for an
                                                          exact, unresampled mesh cut)
 ```
+
+**`tacna_precompute_modem.py` and `tacna_precompute_seis.py` have been
+merged into a single `tacna_precompute.py`** — Part A (ModEM/MT, this
+README) and Part B (seismic tomography, `README_seis.md`) now live in one
+script, one run, because they share region-of-interest settings
+(`OUTPUT_DIR`/`CROP_TO_REGION`/`TAR_LON`/`TAR_LAT` — see SHARED SETTINGS in
+the script) and because Part A now also resamples resistivity directly
+onto Part B's grid (see "MT resistivity on the seismic grid" below). All
+of Part A's own native-ModEM-mesh outputs are unchanged and still written
+exactly as before.
 
 **`plotpy.py`** must sit alongside the scripts — it's a small shared
 module of plotting helpers (`import plotpy`), also used by
@@ -26,21 +36,22 @@ module of plotting helpers (`import plotpy`), also used by
 full list of what it covers). Both ModEM plot scripts additionally use
 its sensitivity-alpha helpers (`sens_shade_alpha`/`sens_data_alpha`).
 
-### 1. `tacna_precompute_modem.py`
+### 1. `tacna_precompute.py` — Part A (ModEM / MT)
 
 Reads a ModEM resistivity model (`MODEL_FILE` + `.rho`) and data file
-(`DATA_FILE` + `.dat`), and writes UTM-km NetCDF/CSV outputs analogous to
-`tacna_precompute_seis.py`'s:
+(`DATA_FILE` + `.dat`), and writes UTM-km NetCDF outputs analogous to Part
+B's (`README_seis.md`):
 
 | Output file                        | Contents                                   |
 |--------------------------------------|---------------------------------------------|
-| `modem_model_utm.nc`                 | Full 3-D log₁₀(ρ) model on the UTM-km mesh |
+| `modem_model_utm.nc`                 | Full 3-D log₁₀(ρ) model on the native UTM-km ModEM mesh |
 | `modem_sens_utm.nc`                  | Full 3-D sensitivity/resolution field (if `USE_SENSITIVITY` and the `.sns` file is found) |
 | `modem_topo_utm.nc`                  | 2-D surface topography extracted from the model (shallowest non-air cell per column) |
 | `modem_sites_utm.nc`                 | MT site positions + names |
 | `modem_grid_edges_utm.nc`            | True cumulative cell-edge coordinates (for exact, unresampled mesh rendering) |
-| `modem_rho_utm_{depth}km.nc`         | Horizontal log₁₀(ρ) slice, one per entry in `DEPTH_SLICES_KM` |
-| `modem_sens_utm_{depth}km.nc`        | Matching sensitivity slice (optional) |
+| `modem_rho_utm_{depth}km.nc`         | Horizontal log₁₀(ρ) slice, one per entry in `DEPTH_SLICES_KM`, on the native ModEM mesh |
+| `modem_sens_utm_{depth}km.nc`        | Matching sensitivity slice (optional), on the native ModEM mesh |
+| `modem_submesh_points.nc`            | Full native ModEM submesh, flattened to one row per cell (easting/northing/depth + resistivity + sensitivity) — for `tacna_cluster.py` (`README_cluster.md`) |
 
 ModEM's local Cartesian mesh (origin = the reference point read from the
 `.rho` file's last non-comment line) is projected to absolute UTM
@@ -48,9 +59,19 @@ easting/northing via that reference point and a UTM transformer — **the
 geographic reference must come from the `> lat lon` header line, not from
 treating the mesh's local metre offsets as degrees.**
 
+**No more MT-onto-seismic-grid resampling here.** Earlier versions of this
+script resampled resistivity onto Part B's seismic Vp/Vs/density grid
+directly in precompute (`modem_rho_on_seisgrid*.nc`, toggled by
+`MT_TO_SEIS_GRID`). That step has moved to `tacna_cluster.py`, which now
+RBF-interpolates resistivity/conductivity — read straight from
+`modem_submesh_points.nc` below — onto a jointly-defined regular grid,
+rather than onto the seismic tomography's own grid specifically. See
+`README_cluster.md`.
+
 **Key settings:**
 
-- `OUTPUT_DIR` (default `"."`) — directory all `.nc` outputs above are
+- `OUTPUT_DIR` (default `"."`, both parts share this one setting now that
+  precompute is a single script) — directory all `.nc` outputs above are
   written to (created automatically if it doesn't exist). Keep this in
   sync with `NC_DIR` in `tacna_plot_modem_image.py`/
   `tacna_plot_modem_mesh.py` so the plot scripts read from wherever
@@ -58,26 +79,30 @@ treating the mesh's local metre offsets as degrees.**
 - `MODEL_FILE`/`MODEL_EXT`, `DATA_FILE`/`DATA_EXT` — ModEM input files.
 - `USE_SENSITIVITY`, `SENS_FILE`/`SENS_EXT`, `SENS_TRANSFORM`,
   `SENS_FLIP_EASTING`/`SENS_FLIP_NORTHING` — optional sensitivity field
-  (for shading/blanking poorly-resolved cells in the plot script).
+  (for shading/blanking poorly-resolved cells in the plot script, and now
+  also included in `modem_submesh_points.nc` if enabled).
 - `REFERENCE_LAT`/`REFERENCE_LON` — override the georeferencing point
   (default: read from the model file).
-- `DEPTH_SLICES_KM` — depths to export; **must match `DEPTH_SLICES_KM` in
-  `tacna_plot_modem_image.py`/`tacna_plot_modem_mesh.py`**, since both the resistivity
-  and sensitivity depth slices are written from this one list.
+- `DEPTH_SLICES_KM` — depths to export **on the native ModEM mesh**; must
+  match `DEPTH_SLICES_KM` in `tacna_plot_modem_image.py`/
+  `tacna_plot_modem_mesh.py`, since both the resistivity and sensitivity
+  depth slices are written from this one list.
+- `EXPORT_SUBMESH_TABLE` (default `True`) — write `modem_submesh_points.nc`
+  (see above); `False` skips it (`tacna_cluster.py` needs this file for
+  its `"rho"`/`"cond"`/`"sens"` variables).
 - `TRIM_PAD` — padding cells dropped from each mesh face before output
   (ModEM padding cells grow geometrically toward the boundary, so this
   alone usually still leaves a domain far larger than the area of
   interest).
-- `CROP_TO_REGION` (default `True`) — crop the trimmed grid further to
+- `CROP_TO_REGION` (default `True`, **shared** with Part B — one setting
+  now, not two kept in sync) — crop the trimmed grid further to
   `TAR_LON`/`TAR_LAT` before any output is written; `False` keeps the full
-  trimmed extent. Same toggle/convention as `CROP_TO_REGION` in
-  `tacna_precompute_seis.py`.
-- `TAR_LON` / `TAR_LAT` — geographic crop box. **Kept identical to
-  `TAR_LON`/`TAR_LAT` in `tacna_precompute_seis.py`** so both pipelines
-  cover the same ground — currently the union of the two pipelines'
-  original boxes, padded by ~0.05°. Must fully contain every `VSLICES`
-  profile endpoint defined in `tacna_plot_modem_image.py`, or you'll get a
-  silent no-data gap at the edge of a cross-section.
+  trimmed extent.
+- `TAR_LON` / `TAR_LAT` (**shared** with Part B) — geographic crop box,
+  currently the union of the two pipelines' original boxes, padded by
+  ~0.05°. Must fully contain every `VSLICES` profile endpoint defined in
+  `tacna_plot_modem_image.py`, or you'll get a silent no-data gap at the
+  edge of a cross-section.
 - `UTM_ZONE`/`UTM_HEMI` — manual UTM zone/hemisphere override (default:
   inferred from the reference longitude/latitude).
 
@@ -100,7 +125,7 @@ would misrepresent the mesh's real (non-uniform) cell geometry.
 
 - `NC_DIR` (default `"."`) — directory to read precomputed NetCDF files
   from (`modem_model_utm.nc`, `NC_TOPO_MODEM`, per-depth slices, etc.).
-  Must match `OUTPUT_DIR` in `tacna_precompute_modem.py`. Same setting,
+  Must match `OUTPUT_DIR` in `tacna_precompute.py`. Same setting,
   same behaviour, in both `tacna_plot_modem_image.py` and
   `tacna_plot_modem_mesh.py`.
 - `PLOT_DIR` (default `"."`) — directory saved figures are written to
@@ -295,7 +320,7 @@ stroke/halo effect. `SHOW_VOLC_LABELS`/`SHOW_CITY_LABELS` (default
   those two boundary cells to `zmin_km`/`zmax_km` — each boundary cell
   keeps its real value, just displayed clipped at the requested window
   (the same "keep the value, clip the display" approach
-  `tacna_precompute_modem.py` uses for `CROP_TO_REGION`). The topography
+  `tacna_precompute.py` (Part A) uses for `CROP_TO_REGION`). The topography
   surface line/fill (`surf_depth`) is computed from those same cells'
   *true, unclamped* edges rather than the window-clamped ones — using
   the clamped edges there would flatten a segment's surface to exactly
@@ -326,7 +351,7 @@ stroke/halo effect. `SHOW_VOLC_LABELS`/`SHOW_CITY_LABELS` (default
   which would look exactly like an isolated, flat-topped topography
   artifact, since neighbouring segments (still landing on a consistent,
   if wrong, cell) look fine. If you hit this, re-run
-  `tacna_precompute_modem.py` fully in one pass. This class of bug isn't
+  `tacna_precompute.py` fully in one pass. This class of bug isn't
   possible in `tacna_plot_modem_image.py`, which only ever interpolates
   within one file's own self-consistent coordinate axes rather than
   combining two independently-computed files.
@@ -366,7 +391,7 @@ stroke/halo effect. `SHOW_VOLC_LABELS`/`SHOW_CITY_LABELS` (default
   use `surf_depth` only. Same setting, same behaviour, in both
   `tacna_plot_modem_image.py` and `tacna_plot_modem_mesh.py`.
 - **Air cells are masked to `NaN` at the source**, in
-  `tacna_precompute_modem.py`'s `apply_transform()`, before the log
+  `tacna_precompute.py` (Part A) `apply_transform()`, before the log
   transform and before saving `modem_model_utm.nc`/
   `modem_rho_utm_{tag}.nc` — controlled by `AIR_RHO_THRESHOLD` (Ω·m,
   linear, default `1e10`). `NaN` then propagates through everything
@@ -376,7 +401,7 @@ stroke/halo effect. `SHOW_VOLC_LABELS`/`SHOW_CITY_LABELS` (default
   cutoff independently. The plot scripts' own
   `AIR_LOG10_RHO_THRESHOLD`-based masking is kept as a defensive
   fallback (harmless no-op against already-`NaN` cells) for older
-  precompute output. **Re-run `tacna_precompute_modem.py`** to pick this
+  precompute output. **Re-run `tacna_precompute.py`** to pick this
   up — it only takes effect once the model/depth-slice files are
   regenerated with it.
 - Section figure height is sized from the *actual* displayed depth span,
@@ -473,13 +498,21 @@ plus the local `modem.py` helper library (`read_mod`, `read_data`,
 ## Typical run
 
 ```bash
-python3 tacna_precompute_modem.py   # writes *.nc/*.csv into the working directory
-python3 tacna_plot_modem_image.py         # reads them, writes figures (resampled sections)
+python3 tacna_precompute.py         # writes *.nc for BOTH Part A (MT) and
+                                     # Part B (seismic) into OUTPUT_DIR
+python3 tacna_plot_modem_image.py   # reads them, writes figures (resampled sections)
 # or, for an exact unresampled mesh cut:
 python3 tacna_plot_modem_mesh.py
 ```
 
+`tacna_precompute.py` runs Part A and Part B in one pass — but unlike
+earlier versions, Part B no longer depends on Part A's resistivity beyond
+both being in the same script; they're independent now. If you only need
+to re-run the plot side, nothing here changes.
+
 Run precompute again whenever the `.rho`/`.dat` files, `TRIM_PAD`,
-`CROP_TO_REGION`/`TAR_LON`/`TAR_LAT`, or `DEPTH_SLICES_KM` change.
-Everything else (colours, styling, crop views, profile definitions,
-annotations, sensitivity shading) only needs re-running the plot script.
+`CROP_TO_REGION`/`TAR_LON`/`TAR_LAT`, `DEPTH_SLICES_KM`, or
+`EXPORT_SUBMESH_TABLE` change (or anything in `README_seis.md`'s Part B
+settings, since a single run covers both). Everything else (colours,
+styling, crop views, profile definitions, annotations, sensitivity
+shading) only needs re-running the plot script.
