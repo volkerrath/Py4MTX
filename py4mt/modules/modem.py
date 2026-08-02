@@ -2306,6 +2306,7 @@ def insert_body_condition(dx=None, dy=None, dz=None,
                           rho_in=None, body=None,
                           smooth=None, scale=1.0,
                           reference=None, pad=[0, 0, 0],
+                          outside=None,
                           out=True):
     """
     insert_body_condition.
@@ -2330,6 +2331,13 @@ def insert_body_condition(dx=None, dy=None, dz=None,
         Parameter reference.
     pad : object
         Parameter pad.
+    outside : float or None
+        If not None, replace every cell whose centre is NOT inside the
+        body's geometry with this resistivity value (Ohm.m), overriding
+        whatever was in `rho_in` there. Pass `np.nan` to blank the
+        exterior with NaN instead of a resistivity value. Cells in the
+        padding margin (`pad`) are also treated as exterior. Default
+        None leaves all exterior cells untouched.
     out : object
         Parameter out.
     
@@ -2369,6 +2377,7 @@ def insert_body_condition(dx=None, dy=None, dz=None,
     nz = np.shape(zc)[0]
 
     rho_out = np.log(rho_in.copy())
+    inside_mask = np.zeros(rho_out.shape, dtype=bool)
 
     # geom= body[0]
     # action = body[1]
@@ -2448,6 +2457,7 @@ def insert_body_condition(dx=None, dy=None, dz=None,
                     position = [xpoint, ypoint, zpoint]
                     if in_ellipsoid(position, bcent, baxes, bangl):
                         n_inside = n_inside + 1
+                        inside_mask[ii, jj, kk] = True
                         if condit is None:
                             rho_out[ii, jj, kk] = eval(actstring)
                         else:
@@ -2494,6 +2504,7 @@ def insert_body_condition(dx=None, dy=None, dz=None,
                     position = [xpoint, ypoint, zpoint]
                     if in_box(position, bcent, baxes, bangl):
                         n_inside = n_inside + 1
+                        inside_mask[ii, jj, kk] = True
                         if condit is None:
                             rho_out[ii, jj, kk] = eval(actstring)
                         else:
@@ -2506,6 +2517,22 @@ def insert_body_condition(dx=None, dy=None, dz=None,
             print(n_changed, ' cells changed.')
         else:
             print('insert_body: no cell centers inside box! Exit.')
+
+    if outside is not None:
+        n_outside = int(np.sum(~inside_mask))
+        if isinstance(outside, float) and np.isnan(outside):
+            fill_val = np.nan
+        else:
+            fill_val = np.log(outside)
+        rho_out[~inside_mask] = fill_val
+        if out:
+            if isinstance(outside, float) and np.isnan(outside):
+                print(n_outside, ' cells outside body set to NaN.')
+            else:
+                print(n_outside, ' cells outside body set to ' + str(outside) + ' Ohm.m.')
+        if np.isnan(fill_val) and smooth is not None:
+            print('Warning: smoothing a NaN-filled exterior will propagate NaN '
+                  'into the body edge; consider smooth=None with outside=np.nan.')
 
     if smooth is not None:
         if 'uni' in smooth[0].lower():
@@ -2528,6 +2555,7 @@ def insert_body(dx=None, dy=None, dz=None,
                 rho_in=None, body=None,
                 pad=[0, 0, 0],
                 smooth=None, scale=1.0, reference=None,
+                outside=None,
                 out=True):
     """
     insert_body.
@@ -2552,6 +2580,13 @@ def insert_body(dx=None, dy=None, dz=None,
         Parameter scale.
     reference : object
         Parameter reference.
+    outside : float or None
+        If not None, replace every cell whose centre is NOT inside the
+        body's geometry with this resistivity value (Ohm.m), overriding
+        whatever was in `rho_in` there. Pass `np.nan` to blank the
+        exterior with NaN instead of a resistivity value. Cells in the
+        padding margin (`pad`) are also treated as exterior. Default
+        None leaves all exterior cells untouched.
     out : object
         Parameter out.
     
@@ -2591,6 +2626,7 @@ def insert_body(dx=None, dy=None, dz=None,
     nz = np.shape(zc)[0]
 
     rho_out = np.log(rho_in.copy())
+    inside_mask = np.zeros(rho_out.shape, dtype=bool)
 
     geom = body[0]
     action = body[1]
@@ -2654,6 +2690,7 @@ def insert_body(dx=None, dy=None, dz=None,
                     position = [xpoint, ypoint, zpoint]
                     if in_ellipsoid(position, bcent, baxes, bangl):
                         n_inside = n_inside + 1
+                        inside_mask[ii, jj, kk] = True
                         rho_out[ii, jj, kk] = eval(actstring)
 
         print(n_inside, ' points in ellipsoid found.')
@@ -2688,9 +2725,26 @@ def insert_body(dx=None, dy=None, dz=None,
                     position = [xpoint, ypoint, zpoint]
                     if in_box(position, bcent, baxes, bangl):
                         n_inside = n_inside + 1
+                        inside_mask[ii, jj, kk] = True
                         rho_out[ii, jj, kk] = eval(actstring)
 
         print(n_inside, ' points in box found.')
+
+    if outside is not None:
+        n_outside = int(np.sum(~inside_mask))
+        if isinstance(outside, float) and np.isnan(outside):
+            fill_val = np.nan
+        else:
+            fill_val = np.log(outside)
+        rho_out[~inside_mask] = fill_val
+        if out:
+            if isinstance(outside, float) and np.isnan(outside):
+                print(n_outside, ' cells outside body set to NaN.')
+            else:
+                print(n_outside, ' cells outside body set to ' + str(outside) + ' Ohm.m.')
+        if np.isnan(fill_val) and smooth is not None:
+            print('Warning: smoothing a NaN-filled exterior will propagate NaN '
+                  'into the body edge; consider smooth=None with outside=np.nan.')
 
     if smooth is not None:
         if 'uni' in smooth[0].lower():

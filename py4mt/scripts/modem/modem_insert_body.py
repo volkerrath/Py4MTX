@@ -58,6 +58,10 @@ ELL = [
 BODIES = [ELL]
 ADDITIVE = False
 SMOOTHER = ["uniform", 1]
+# Set to a resistivity value (Ohm.m) to replace everything outside the
+# body with that value, or to np.nan to blank the exterior. None (default)
+# leaves cells outside the body unchanged.
+OUTSIDE = None
 
 # =============================================================================
 #  Read model
@@ -83,7 +87,8 @@ for ibody in range(nb):
 
     if "add" not in ACTION:
         rho_out = mod.insert_body_condition(
-            dx, dy, dz, rho_in, body, smooth=SMOOTHER, reference=refmod
+            dx, dy, dz, rho_in, body, smooth=SMOOTHER, reference=refmod,
+            outside=OUTSIDE,
         )
         Modout = MOD_FILE_OUT + "_" + body[0] + str(ibody) + "_" + SMOOTHER[0]
         mod.write_mod(
@@ -94,7 +99,8 @@ for ibody in range(nb):
     elif ibody > 0:
         rho_in = rho_out.copy()
         rho_out = mod.insert_body(
-            dx, dy, dz, rho_in, body, smooth=SMOOTHER, reference=refmod
+            dx, dy, dz, rho_in, body, smooth=SMOOTHER, reference=refmod,
+            outside=OUTSIDE,
         )
 
     elapsed = time.perf_counter() - start
