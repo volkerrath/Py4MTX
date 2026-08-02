@@ -3,97 +3,74 @@
 """
 tacna_cluster.py
 =================
-Fuzzy c-means clustering of MT resistivity/conductivity + seismic
-tomography properties (Vp, Vs, Vp/Vs, density), each loaded from its own
-NATIVE grid produced by tacna_precompute.py and RBF-interpolated onto one
-JOINTLY-DEFINED regular UTM-km grid — defined here, independent of either
-source's own grid — before clustering.
+Clusters MT resistivity/conductivity + seismic tomography properties
+(Vp, Vs, Vp/Vs, density) that have already been interpolated onto a
+common grid by tacna_interpolate.py, via fuzzy c-means or a
+self-organizing map (SOM), and plots depth-slice maps.
+
+This is the clustering-only half of what used to be
+tacna_cluster_rbf.py / tacna_cluster_kriging.py / tacna_cluster_som.py:
+those three scripts each duplicated grid-building + interpolation +
+clustering + plotting, differing only in interpolation method (RBF vs.
+kriging) or clustering method (fuzzy c-means vs. SOM). This script does
+NOT build any grid or interpolate anything — it just reads whichever
+grid tacna_interpolate.py already produced (INTERP_FILE), and is
+therefore completely agnostic to how that grid was built (a fresh joint
+UTM grid or a reused seismic-tomography native grid) or which
+interpolation method produced it (RBF/kriging/IDW). CLUSTERING_METHOD
+picks fuzzy c-means or SOM independently of any of that.
 
 Pipeline
 --------
-tacna_precompute.py  →  tacna_cluster.py  →  tacna_clusters.nc + figures
-
-Where the interpolation moved (changed from an earlier version)
--------------------------------------------------------------------
-Earlier versions of this pipeline resampled MT resistivity onto the
-seismic tomography's own grid inside tacna_precompute.py
-(modem_rho_on_seisgrid*.nc), and this script just loaded already-aligned
-files. That resampling step now lives HERE instead, and uses RBF
-interpolation (scipy.interpolate.RBFInterpolator) rather than trilinear
-resampling onto someone else's grid:
-  - MT resistivity/conductivity/sensitivity: loaded directly from
-    tacna_precompute.py's modem_submesh_points.nc — Part A's full native
-    ModEM mesh, already flattened to a point table (easting_km,
-    northing_km, depth_km, value) — no gridded intermediate needed.
-  - Vp/Vs/Vp-Vs-ratio/density: loaded from tacna_precompute.py's Part B
-    outputs (tacna_vp.nc etc. — gridded (depth, lat, lon) cubes with 2-D
-    utm_easting/utm_northing aux coords) and flattened into a point cloud
-    here.
-Every selected variable — regardless of which native grid/resolution it
-started on — is then RBF-interpolated onto ONE common regular grid
-(GRID_EASTING_KM / GRID_NORTHING_KM / GRID_DEPTH_KM below), so variables
-no longer need to already share a grid before this script can combine
-them.
+tacna_precompute.py → tacna_interpolate.py → tacna_interp_<method>.nc
+                                                     ↓
+                                    tacna_cluster.py → tacna_clusters.nc + figures
 
 What this script does
 ----------------------
-1. Loads each CLUSTER_VARS entry as a native point cloud (see
-   VARIABLE_SOURCES for the registry of what's available and where it
-   comes from).
-2. Builds the joint regular interpolation grid (explicit bounds, or
-   auto = the tightest common overlap of every loaded variable's own
-   extent, so the grid doesn't reach into regions only some variables
-   cover).
-3. RBF-interpolates each variable onto that grid independently
-   (scipy.interpolate.RBFInterpolator), optionally masking grid points
-   outside that variable's own 3-D convex hull back to NaN — RBF
-   extrapolates smoothly forever otherwise, which would let
-   under-constrained corners quietly influence the clustering.
-4. Flattens the (now grid-aligned) variables into one feature table,
-   drops any point with a NaN in a selected variable, optionally
-   standardizes (z-score) each feature.
-5. Runs a self-contained fuzzy c-means (Bezdek, 1981), reporting the
-   fuzzy partition coefficient (FPC) as a quick cluster-quality check.
-6. Reconstructs the hard cluster label (argmax membership) and its
-   membership value back onto the joint grid, and saves:
-     - tacna_clusters.nc — dims (depth, northing, easting), a genuine
-       regular UTM-km grid (unlike the source grids, which are either a
-       point cloud or an approximately-regular geographic grid)
-     - tacna_cluster_centers.csv — cluster centers in raw (physical)
-       units, point counts, and fractions
-7. Plots horizontal cluster maps at PLOT_DEPTHS_KM, using the same
-   topography/bathymetry basemap and deterministic equal-scale panel
-   layout as tacna_plot_seis.py / tacna_plot_modem_image.py
-   (plotpy.build_panel_figure).
-
-Starting variable set (change CLUSTER_VARS to add/remove)
------------------------------------------------------------
-Starting deliberately simple: rho (MT resistivity), vps (Vp/Vs ratio),
-dens (density). vp/vs/sens/cond are already registered in
-VARIABLE_SOURCES below (just not in CLUSTER_VARS) — adding them later is
-a one-line change.
-
-Resistivity vs. conductivity
--------------------------------
-See resistivity_to_conductivity(): USE_CONDUCTIVITY swaps "rho" for
-"cond" (derived by inverting the resistivity loaded from
-modem_submesh_points.nc, using that variable's own `units` attribute to
-apply the correct inversion regardless of tacna_precompute.py's
-OUTPUT_TRANSFORM setting).
+1. Reads INTERP_FILE (tacna_interpolate.py's output) — grid coords/dims,
+   per-variable interpolated fields and their units, and enough
+   attributes (target_grid_mode, interp_vars) to know how to plot it.
+2. Picks CLUSTER_VARS, a subset of whatever variables are actually in
+   INTERP_FILE (defaults to all of them) — so you can interpolate a
+   superset once and cluster on different subsets without re-running
+   tacna_interpolate.py.
+3. Builds one feature table, drops any grid cell with a NaN in a
+   selected variable, optionally standardizes (z-score) each feature,
+   then weights (CLUSTER_WEIGHTS).
+4. Clusters via CLUSTERING_METHOD:
+   - "fcm" — a self-contained (NumPy-only) fuzzy c-means (Bezdek, 1981),
+     N_CLUSTERS discrete classes, reporting the fuzzy partition
+     coefficient (FPC) as a quick quality check.
+   - "som" — a self-contained (NumPy-only) Kohonen self-organizing map,
+     SOM_ROWS x SOM_COLS neurons, every point labelled with its
+     best-matching unit (BMU) over the FULL neuron grid (not collapsed
+     to N clusters), colored with a topological colormap so visually
+     similar map colors reflect genuinely similar feature-space
+     neighbors.
+5. Reconstructs the hard label + membership/quantization-error back onto
+   the grid and saves tacna_clusters.nc / tacna_cluster_centers.csv.
+6. Plots horizontal cluster maps at PLOT_DEPTHS_KM, on the same
+   topography/bathymetry basemap as tacna_plot_seis.py. If INTERP_FILE
+   was built on a regular UTM-km ("joint") grid this uses a plain
+   imshow(extent=...); if it was built on a reused seismic-tomography
+   ("seismic") grid — not regular in UTM space — this uses
+   pcolormesh(shading="nearest") against that grid's own 2-D
+   utm_easting_km/utm_northing_km coordinates instead.
 
 Dependencies
 ------------
-    numpy, xarray, matplotlib, pyproj, scipy (RBFInterpolator, Delaunay)
+    numpy, xarray, pandas, matplotlib
 plus the local `plotpy.py` helper module (also used by the plot
-scripts) for the basemap/figure-layout helpers. The fuzzy c-means
-implementation itself is self-contained (NumPy only, no scikit-fuzzy).
+scripts). The fuzzy c-means / SOM implementations are self-contained
+(NumPy only, no scikit-fuzzy/MiniSom).
 
 Authors: Svetlana Byrdina (SMB) & Volker Rath (DIAS)
-AI-assisted development: Claude (Anthropic), 2026-07-31. RBF
-interpolation onto a jointly-defined regular grid moved in here from
-tacna_precompute.py: Claude (Anthropic), 2026-07-31. Rectangular RoI
-mask (APPLY_ROI_MASK/ROI_VERTICES_KM) added: Claude (Anthropic),
-2026-08-01.
+AI-assisted development: Claude (Anthropic). Split out of
+tacna_cluster_rbf.py / tacna_cluster_kriging.py / tacna_cluster_som.py
+into a single, interpolation-method-agnostic clustering script that
+reads tacna_interpolate.py's output instead of building any grid or
+interpolating itself: Claude (Anthropic), 2026-08-02.
 License: GNU General Public License v3 (GPL-3.0-or-later).
 AI-generated code — review before use in production.
 """
@@ -108,18 +85,8 @@ import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
-from matplotlib.path import Path as MplPath
-from scipy.interpolate import RBFInterpolator
-from scipy.spatial import Delaunay
 
 import plotpy
-
-N_THREADS = "32"
-os.environ["OMP_NUM_THREADS"] = N_THREADS
-os.environ["OPENBLAS_NUM_THREADS"] = N_THREADS
-os.environ["MKL_NUM_THREADS"] = N_THREADS
-
-
 
 to_utm_km = plotpy.to_utm_km
 compute_hillshade = plotpy.compute_hillshade
@@ -132,167 +99,77 @@ draw_north_arrow = plotpy.draw_north_arrow
 # =====================================================================
 
 # --- Input/output directories ---
-NC_DIR = "../precompute/"   # must match OUTPUT_DIR in tacna_precompute.py;
+NC_DIR = "../precompute/"   # must match tacna_interpolate.py's NC_DIR;
                              # tacna_clusters.nc / tacna_cluster_centers.csv
-                             # are also written here, alongside their inputs
+                             # are also written here.
 PLOT_DIR = "../plots_cluster/"
 PLOT_FORMATS = [".pdf", ".jpg"]
 PLOT_DPI = 600
 
-# --- Variable registry ---
-# Two kinds of source:
-#   "modem_points" — a flat point table (tacna_precompute.py's
-#     modem_submesh_points.nc, Part A): already (easting_km, northing_km,
-#     depth_km, value) rows at full native ModEM resolution — read
-#     as-is, just filtered to valid (finite) rows.
-#   "seis_grid"    — a gridded (depth, lat, lon) cube (tacna_precompute.py
-#     Part B's tacna_vp.nc / tacna_vs.nc / tacna_vps.nc / tacna_dens.nc),
-#     with 2-D utm_easting/utm_northing aux coords — flattened + the
-#     horizontal coords broadcast across every depth level, into a point
-#     cloud, by load_seis_grid_points() below.
-# Either way, every variable becomes a point cloud before RBF
-# interpolation onto the joint regular grid — so sources on different
-# native grids/resolutions can be combined freely.
-VARIABLE_SOURCES = {
-    "rho":  dict(kind="modem_points", file="modem_submesh_points.nc",
-                 value_var="resistivity", label="log10 resistivity",
-                 units="log10(Ohm.m)"),
-    "cond": dict(kind="modem_points", file="modem_submesh_points.nc",
-                 value_var="resistivity", label="conductivity", units=None,
-                 derive="conductivity_from_rho"),
-    "sens": dict(kind="modem_points", file="modem_submesh_points.nc",
-                 value_var="sensitivity", label="sensitivity",
-                 units="(as stored)"),
-    "vp":   dict(kind="seis_grid", file="tacna_vp.nc",   var="data", label="Vp",      units="km/s"),
-    "vs":   dict(kind="seis_grid", file="tacna_vs.nc",   var="data", label="Vs",      units="km/s"),
-    "vps":  dict(kind="seis_grid", file="tacna_vps.nc",  var="data", label="Vp/Vs",   units=""),
-    "dens": dict(kind="seis_grid", file="tacna_dens.nc", var="data", label="Density", units="(as stored)"),
-}
+# --- Which tacna_interpolate.py output to read ---
+# Bare filename, looked up under NC_DIR — e.g. "tacna_interp_rbf.nc",
+# "tacna_interp_kriging.nc", "tacna_interp_idw.nc", or whatever
+# tacna_interpolate.py's OUTPUT_FILE was set to.
+INTERP_FILE = "tacna_interp_rbf.nc"
 
 # --- Which variables to actually cluster on ---
-# Start simple; extend by adding more VARIABLE_SOURCES keys here (e.g.
-# "vp", "vs", "sens") once you're ready.
-CLUSTER_VARS = ["rho", "vps", "dens"]
-
-# --- Use conductivity instead of resistivity, optionally ---
-# If True, any "rho" entry in CLUSTER_VARS is swapped for "cond"
-# (conductivity, derived from the same modem_submesh_points.nc points) at
-# load time — so you can flip between resistivity- and conductivity-based
-# clustering without editing CLUSTER_VARS itself. No effect if "rho"
-# isn't in CLUSTER_VARS (and don't put both "rho" and "cond" in
-# CLUSTER_VARS directly — they're the same information, just inverted,
-# so clustering on both is redundant/collinear rather than genuinely
-# adding a feature).
-USE_CONDUCTIVITY = False
+# None = use every variable in INTERP_FILE (its own interp_vars
+# attribute). Set an explicit subset to cluster on fewer than what was
+# interpolated — must all be present in INTERP_FILE, or this raises
+# telling you to add them to tacna_interpolate.py's INTERP_VARS and
+# re-run it first.
+CLUSTER_VARS = None
 
 # --- Per-variable clustering weights ---
 # Multiplies each (already standardized, if STANDARDIZE) feature by
-# sqrt(weight) before fuzzy c-means, so a larger weight makes that
-# variable count more toward cluster assignment — equivalent to a
-# weighted Euclidean distance d^2 = sum_j weight_j * (x_j - c_j)^2.
-# Initialized to 1.0 for every registered VARIABLE_SOURCES entry (no
-# effect vs. unweighted clustering); edit individual values to change
-# how much each variable influences cluster assignment. Any CLUSTER_VARS
-# entry not present here falls back to 1.0 too. Keyed by the variable
-# name as it appears in active_cluster_vars — i.e. use "cond"'s weight
-# (not "rho"'s) if USE_CONDUCTIVITY swaps it in; both are listed below
-# so either works regardless of the swap.
-CLUSTER_WEIGHTS = {k: 1.0 for k in VARIABLE_SOURCES}
+# sqrt(weight) before clustering, so a larger weight makes that variable
+# count more toward cluster assignment — equivalent to a weighted
+# Euclidean distance d^2 = sum_j weight_j * (x_j - c_j)^2. Any
+# CLUSTER_VARS entry not listed here falls back to 1.0 (no effect).
+CLUSTER_WEIGHTS = {}
 
 # --- Standardize (z-score) each variable before clustering ---
 # Strongly recommended: rho/cond/vps/dens have very different numeric
-# ranges and units, and Euclidean distance in fuzzy c-means would
-# otherwise be dominated by whichever variable happens to have the
-# largest raw range.
+# ranges and units, and Euclidean distance would otherwise be dominated
+# by whichever variable happens to have the largest raw range.
 STANDARDIZE = True
 
-# --- Joint regular interpolation grid ---
-# Every CLUSTER_VARS source — regardless of its own native grid/format —
-# gets RBF-interpolated onto ONE common regular UTM-km grid before
-# clustering, defined here. min/max = None auto-computes from the
-# intersection (tightest common overlap) of every loaded variable's own
-# point-cloud extent, so the grid never reaches further than every
-# selected variable actually covers — avoiding unconstrained RBF
-# extrapolation into a region only some variables have data near.
-# Override with explicit numbers to pin down a specific grid regardless
-# of which variables happen to be selected (e.g. for a reproducible grid
-# across separate runs with different CLUSTER_VARS).
-GRID_EASTING_KM  = dict(min=None, max=None, step=2.0)
-GRID_NORTHING_KM = dict(min=None, max=None, step=2.0)
-GRID_DEPTH_KM    = dict(min=-4, max=36, step=1.0)
+# --- Clustering method ---
+# "fcm" = fuzzy c-means (Bezdek, 1981), N_CLUSTERS discrete classes.
+# "som" = self-organizing map (Kohonen, 1982): trains a SOM_ROWS x
+#   SOM_COLS grid of neurons and labels every point with its
+#   best-matching unit (BMU) -- i.e. the FULL neuron grid is kept as the
+#   output classification (SOM_ROWS*SOM_COLS classes), not collapsed
+#   down to N_CLUSTERS. N_CLUSTERS/FUZZINESS/MAX_ITER/TOL below are only
+#   used when CLUSTERING_METHOD == "fcm"; SOM_* settings are only used
+#   when CLUSTERING_METHOD == "som".
+CLUSTERING_METHOD = "fcm"
 
-# --- RBF interpolation settings ---
-# scipy.interpolate.RBFInterpolator, fit independently per variable on
-# its own native point cloud, then evaluated at the joint grid above.
-RBF_KERNEL = "linear"        # "linear" | "thin_plate_spline" | "cubic" |
-                              # "quintic" | "multiquadric" |
-                              # "inverse_multiquadric" | "gaussian" | …
-                              # (see scipy.interpolate.RBFInterpolator).
-                              # "multiquadric"/"inverse_multiquadric"/
-                              # "gaussian" additionally require RBF_EPSILON.
-RBF_EPSILON = None            # shape parameter; required for the kernels
-                              # noted above, unused by "linear"/
-                              # "thin_plate_spline"/"cubic"/"quintic".
-RBF_SMOOTHING = 0.0           # 0 = exact interpolation; > 0 = smoothing
-RBF_NEIGHBORS = 26            # use only the N nearest source points per
-                              # query point (fast, local); None = exact
-                              # global RBF using every source point
-                              # (accurate but can be slow/memory-heavy for
-                              # large point clouds, e.g. the full
-                              # modem_submesh_points.nc table)
-RBF_DEGREE = None             # polynomial term degree; None = kernel default
-
-# --- Mask grid points outside each variable's own data footprint ---
-# RBFInterpolator extrapolates smoothly forever past the convex hull of
-# its source points; MASK_TO_CONVEX_HULL clips that back to NaN outside
-# each variable's own 3-D convex hull, so clustering isn't driven by
-# unconstrained extrapolation in corners only some variables actually
-# cover. Uses scipy.spatial.Delaunay per variable — can be slow for very
-# large point clouds; set False to skip (keeps RBF's raw extrapolation
-# everywhere on the joint grid instead).
-MASK_TO_CONVEX_HULL = True
-
-# --- Region of interest (RoI) mask ---
-# An explicit rectangular box, independent of GRID_EASTING_KM/
-# GRID_NORTHING_KM (which set the *grid extent/resolution*) and of
-# MASK_TO_CONVEX_HULL (which is per-variable, driven by each variable's
-# own data footprint). This is a single, joint box applied identically
-# to every variable after interpolation: any joint-grid cell whose
-# (easting, northing) falls outside the box is set to NaN, regardless of
-# depth. Use this to exclude a margin of the grid you deliberately made
-# larger than the area you actually want clustered (e.g. a wider grid
-# kept only so RBF/kriging aren't extrapolating right at the clustering
-# region's edge), without having to shrink GRID_EASTING_KM/
-# GRID_NORTHING_KM themselves.
-#
-# Given as the box's four corners, in order (closed automatically — do
-# not repeat the first point at the end), so a rotated (non-axis-
-# aligned) box works too, not just an axis-aligned min/max one:
-#   [(e1, n1), (e2, n2), (e3, n3), (e4, n4)]
-# Set to None to disable (no RoI masking; identical to earlier versions
-# of this script).
-APPLY_ROI_MASK = False
-ROI_VERTICES_KM = [
-    (330.0, 7990.0),
-    (430.0, 7990.0),
-    (430.0, 8080.0),
-    (330.0, 8080.0),
-]
-# Optional depth restriction (km, positive down) — applied together with
-# the horizontal box above; either bound may be None to leave it open.
-ROI_DEPTH_MIN_KM = None
-ROI_DEPTH_MAX_KM = None
-
-# --- Fuzzy c-means settings ---
+# --- Fuzzy c-means settings (CLUSTERING_METHOD == "fcm") ---
 N_CLUSTERS = 3
 FUZZINESS = 2.0      # "m" in the FCM literature; > 1, 2.0 is conventional
 MAX_ITER = 300
 TOL = 1e-5            # stop once max membership change between iterations < TOL
 RANDOM_SEED = 42
 
+# --- Self-organizing map settings (CLUSTERING_METHOD == "som") ---
+SOM_ROWS = 5
+SOM_COLS = 5
+SOM_N_ITER = 8000     # online (one random sample per iteration) updates,
+                       # NOT epochs over the full dataset
+SOM_LR0 = 0.5          # initial learning rate; decays exponentially to
+                       # 1% of this by the final iteration
+SOM_SIGMA0 = None     # initial neighborhood radius, grid units; None =
+                       # max(SOM_ROWS, SOM_COLS) / 2. Decays exponentially
+                       # to a floor of 0.5.
+SOM_SEED = 42
+
 # --- Plotting ---
 PLOT_DEPTHS_KM = [1.0, 5.0, 9.0]   # nearest available depth level is used for each
-CLUSTER_CMAP = "tab10"             # qualitative colormap, one colour per cluster
+CLUSTER_CMAP = "tab10"             # qualitative colormap, used only for
+                                    # CLUSTERING_METHOD == "fcm" (SOM uses
+                                    # a topological colormap instead, see
+                                    # som_grid_colormap())
 CLUSTER_ALPHA = 0.80
 
 SHOW_TOPO_BASEMAP = True
@@ -300,8 +177,8 @@ HS_AZIMUTH, HS_ALTITUDE, HS_SIGMA = 315, 45, 1.0
 TOPO_VMIN, TOPO_VMAX = 1000, 6000
 OCEAN_COLOR = "#6baed6"
 
-MAP_XLIM = None    # e.g. [310.0, 455.]  (easting,  km); None = auto from the joint grid
-MAP_YLIM = None    # e.g. [7971.6, 8125] (northing, km); None = auto from the joint grid
+MAP_XLIM = None    # e.g. [310.0, 455.]  (easting,  km); None = auto from the grid
+MAP_YLIM = None    # e.g. [7971.6, 8125] (northing, km); None = auto from the grid
 REGION_MARGIN_KM = 0.0
 FIG_WIDTH = 10.0    # cm — map panel width; height is derived, equal-scale by construction
 
@@ -334,17 +211,8 @@ ANNOTATION_STYLE = dict(fontsize=7, color="gray", ha="left", va="top")
 # =====================================================================
 # SPECIFIC PLOT SETTINGS — borrowed from tacna_plot_seis.py
 # =====================================================================
-# A SECOND, feature-annotated set of cluster maps (seismicity, MT/
-# seismic sites, volcanoes, cities), drawn IN ADDITION to the plain
-# cluster maps above — those are always still produced regardless of
-# SHOW_SPECIFIC_PLOT, so the two sets exist in parallel, not as
-# alternatives. Settings/styles here intentionally mirror
-# tacna_plot_seis.py's own (same CSVs, same marker/label style dicts,
-# same on/off switches) so the annotated cluster maps look consistent
-# with that script's depth-slice maps.
 SHOW_SPECIFIC_PLOT = True
 
-# --- Feature CSV paths (same files/format as tacna_plot_seis.py) ---
 CSV_VOLCANES      = "../features/volcanes.csv"
 CSV_SEISMCAT      = "../features/catalog_welllocated_15_simple5.csv"
 CSV_MT_SITES      = "../features/done/MTTacna_Sitelist.csv"
@@ -353,7 +221,6 @@ CSV_SEISMIC_SITES = "../features/seismic_sites.csv"  # no header row; columns
                                                        # are network, station,
                                                        # lat, lon, elev_m
 
-# --- Feature layers — on/off switches (same meaning as tacna_plot_seis.py) ---
 SHOW_SEISMICITY       = True
 SHOW_MT_SITES         = True
 SHOW_SEISMIC_SITES    = True
@@ -361,20 +228,14 @@ SHOW_VOLCANOES        = True   # inactive volcano markers + labels
 SHOW_VOLCANOES_ACTIVE = True   # active volcano markers
 SHOW_CITIES           = True
 
-# --- Seismicity depth windows (km), one pair per entry in PLOT_DEPTHS_KM
-# (matched positionally, same convention as tacna_plot_seis.py's
-# ZMIN_SEISM/ZMAX_SEISM vs. DEPTH_INDEX). Set both to None for a given
-# slice to show all seismicity on it regardless of depth. ---
 ZMIN_SEISM = [-7, 1, 9]
 ZMAX_SEISM = [1, 9, 30]
 
-# --- Volcano rows to label (indices into CSV_VOLCANES) ---
 VOLC_LABEL_IDX = [5, 12, 13]
 VOLC_LABEL_FULL_NAME = False
 VOLC_NAME_COL_FULL   = "NAME"      # column used when VOLC_LABEL_FULL_NAME=True
 VOLC_NAME_COL_SHORT  = "VOLCAN2"   # column used when VOLC_LABEL_FULL_NAME=False
 
-# --- Marker & label styles (same defaults as tacna_plot_seis.py) ---
 EQ_MARKER_STYLE = dict(
     marker="o", s=4.5, facecolors="white", edgecolors="black",
     linewidths=0.2, zorder=11,
@@ -437,10 +298,8 @@ def ncpath(name):
 def safe_to_netcdf(obj, path):
     """
     Write a Dataset/DataArray to NetCDF, overwriting any existing file at
-    `path` even if it's read-only — e.g. left over from an earlier run —
-    which otherwise makes xarray's own to_netcdf() raise PermissionError
-    instead of just overwriting it. Removes the stale file first (fixing
-    its permissions first if needed), then writes normally.
+    `path` even if it's read-only (see tacna_interpolate.py's own copy of
+    this helper for the full rationale).
     """
     p = Path(path)
     if p.exists():
@@ -475,25 +334,16 @@ def fuzzy_cmeans(X, n_clusters, m=2.0, max_iter=300, tol=1e-5, seed=42):
     Parameters
     ----------
     X : ndarray, shape (n_samples, n_features)
-        Already NaN-free — drop or otherwise handle NaNs before calling.
+        Already NaN-free.
     n_clusters : int
     m : float
         Fuzziness exponent, > 1. 2.0 is the conventional default.
-    max_iter, tol : stopping criteria — stop once converged (max
-        membership change between iterations < tol) or max_iter is hit.
+    max_iter, tol : stopping criteria.
     seed : random seed for the initial membership matrix.
 
     Returns
     -------
-    centers : ndarray, shape (n_clusters, n_features)
-    U       : ndarray, shape (n_samples, n_clusters)
-        Fuzzy membership matrix; each row sums to 1.
-    fpc     : float
-        Fuzzy partition coefficient, in [1/n_clusters, 1] — 1 means a
-        fully crisp partition, 1/n_clusters means maximally fuzzy
-        (every point equally split across every cluster).
-    n_iter  : int
-        Iterations actually run.
+    centers, U, fpc, n_iter — see body for details.
     """
     rng = np.random.default_rng(seed)
     n_samples, n_features = X.shape
@@ -505,12 +355,10 @@ def fuzzy_cmeans(X, n_clusters, m=2.0, max_iter=300, tol=1e-5, seed=42):
         Um = U ** m
         centers = (Um.T @ X) / Um.sum(axis=0)[:, None]
 
-        # Per-cluster distance loop (not a full (n, c, d) broadcast) to
-        # keep memory bounded for large point counts.
         dist = np.empty((n_samples, n_clusters))
         for j in range(n_clusters):
             dist[:, j] = np.linalg.norm(X - centers[j], axis=1)
-        dist = np.fmax(dist, 1e-12)  # avoid divide-by-zero exactly at a centre
+        dist = np.fmax(dist, 1e-12)
 
         inv = dist ** (-2.0 / (m - 1.0))
         U_new = inv / inv.sum(axis=1, keepdims=True)
@@ -524,280 +372,130 @@ def fuzzy_cmeans(X, n_clusters, m=2.0, max_iter=300, tol=1e-5, seed=42):
     return centers, U, fpc, it + 1
 
 
-def resistivity_to_conductivity(values, units):
-    """
-    Invert a resistivity field to conductivity, matching whichever
-    transform tacna_precompute.py's Part A actually applied
-    (OUTPUT_TRANSFORM = "LOG10" / "LOGE" / "LINEAR") — read from the
-    source variable's own `units` attribute (e.g. "log10(Ohm.m)",
-    "ln(Ohm.m)", "Ohm.m") rather than hard-coded here, so this keeps
-    working even if that setting changes upstream.
-
-    log10(sigma) = -log10(rho); ln(sigma) = -ln(rho); sigma = 1/rho.
-    """
-    u = (units or "").lower()
-    if "log10" in u:
-        return -values, "log10(S/m)"
-    if u.startswith("ln("):
-        return -values, "ln(S/m)"
-    # LINEAR ("Ohm.m") or anything unrecognized — invert directly.
-    with np.errstate(divide="ignore", invalid="ignore"):
-        cond = np.where(values != 0, 1.0 / values, np.nan)
-    return cond.astype(np.float64), "S/m"
-
-
 # ------------------------------------------------------------------
-# Native point-cloud loaders
+# Self-organizing map (self-contained, NumPy only)
 # ------------------------------------------------------------------
-def load_modem_points(file, value_var):
+def train_som(X, rows, cols, n_iter=8000, lr0=0.5, sigma0=None, seed=42):
     """
-    Load one variable from tacna_precompute.py's modem_submesh_points.nc
-    (Part A's flat, full-native-ModEM-resolution point table).
+    Online (sequential) Kohonen self-organizing map. See
+    tacna_cluster_som.py's original docstring for the full parameter
+    rationale; unchanged here.
+    """
+    rng = np.random.default_rng(seed)
+    n_samples, n_features = X.shape
+    n_neurons = rows * cols
+    if sigma0 is None:
+        sigma0 = max(rows, cols) / 2.0
 
-    Returns
-    -------
-    points : ndarray, shape (n, 3) — [easting_km, northing_km, depth_km]
-    values : ndarray, shape (n,)
-    units  : str — the source variable's own `units` attribute
-    """
-    path = ncpath(file)
-    ds = xr.open_dataset(path)
-    if value_var not in ds.data_vars:
-        ds.close()
+    data_min, data_max = X.min(axis=0), X.max(axis=0)
+    weights = rng.uniform(data_min, data_max, size=(n_neurons, n_features))
+
+    grid_r, grid_c = np.meshgrid(np.arange(rows), np.arange(cols), indexing="ij")
+    grid_coords = np.column_stack([grid_r.ravel(), grid_c.ravel()]).astype(np.float64)
+
+    sample_idx = rng.integers(0, n_samples, size=n_iter)
+
+    for it in range(n_iter):
+        frac = it / max(n_iter - 1, 1)
+        lr = lr0 * (0.01 ** frac)
+        sigma = max(sigma0 * (0.05 ** frac), 0.5)
+
+        x = X[sample_idx[it]]
+        dists = np.linalg.norm(weights - x, axis=1)
+        bmu = int(np.argmin(dists))
+
+        grid_dist_sq = np.sum((grid_coords - grid_coords[bmu]) ** 2, axis=1)
+        neighborhood = np.exp(-grid_dist_sq / (2.0 * sigma ** 2))
+
+        weights += lr * neighborhood[:, None] * (x - weights)
+
+    return weights, grid_coords
+
+
+def som_bmu_assign(X, weights):
+    """Assign every row of X to its best-matching unit (BMU)."""
+    dists = np.linalg.norm(X[:, None, :] - weights[None, :, :], axis=2)
+    bmu_idx = np.argmin(dists, axis=1)
+    qe = dists[np.arange(len(X)), bmu_idx]
+    return bmu_idx, qe
+
+
+def som_topographic_error(X, weights, grid_coords):
+    """Fraction of points whose best- and second-best-matching units are
+    NOT adjacent on the SOM grid (4-neighborhood, Manhattan distance 1)."""
+    dists = np.linalg.norm(X[:, None, :] - weights[None, :, :], axis=2)
+    order = np.argsort(dists, axis=1)
+    c1 = grid_coords[order[:, 0]]
+    c2 = grid_coords[order[:, 1]]
+    grid_dist = np.abs(c1 - c2).sum(axis=1)
+    return float(np.mean(grid_dist > 1))
+
+
+def som_grid_colormap(rows, cols):
+    """Topological ListedColormap: nearby SOM neurons get visually
+    similar colors — see tacna_cluster_som.py's original docstring."""
+    colors = np.zeros((rows * cols, 3))
+    for r in range(rows):
+        for c in range(cols):
+            hue = c / max(cols - 1, 1)
+            val = 0.55 + 0.45 * (r / max(rows - 1, 1))
+            colors[r * cols + c] = mcolors.hsv_to_rgb([hue, 0.75, val])
+    return mcolors.ListedColormap(colors)
+
+
+# ==================================================================
+# Read tacna_interpolate.py's output
+# ==================================================================
+interp_path = ncpath(INTERP_FILE)
+print(f"Reading interpolated grid: {interp_path} …")
+interp_ds = xr.open_dataset(interp_path)
+
+grid_mode = interp_ds.attrs["target_grid_mode"]        # "joint" | "seismic"
+dim_names = tuple(interp_ds.attrs["dim_names"].split(", "))
+dim_depth, dim_row, dim_col = dim_names
+interp_vars_available = interp_ds.attrs["interp_vars"].split(", ")
+
+if CLUSTER_VARS is None:
+    active_cluster_vars = list(interp_vars_available)
+else:
+    active_cluster_vars = list(CLUSTER_VARS)
+    missing = [v for v in active_cluster_vars if v not in interp_ds.data_vars]
+    if missing:
         raise KeyError(
-            f"{path!r} has no variable {value_var!r} — if this is "
-            f"'sensitivity', re-run tacna_precompute.py with "
-            f"USE_SENSITIVITY = True first."
+            f"CLUSTER_VARS {missing} not present in {INTERP_FILE!r} (it has "
+            f"{list(interp_ds.data_vars)}) — add them to tacna_interpolate.py's "
+            f"INTERP_VARS and re-run it first."
         )
-    valid = ds["valid"].values.astype(bool) & np.isfinite(ds[value_var].values)
-    points = np.column_stack([
-        ds["easting"].values[valid],
-        ds["northing"].values[valid],
-        ds["depth"].values[valid],
-    ]).astype(np.float64)
-    values = ds[value_var].values[valid].astype(np.float64)
-    units = ds[value_var].attrs.get("units", "")
-    ds.close()
-    return points, values, units
 
+print(f"Clustering on: {active_cluster_vars}  "
+      f"(grid_mode={grid_mode!r}, from {INTERP_FILE!r})")
 
-def load_seis_grid_points(file, var):
-    """
-    Load one variable from a tacna_precompute.py Part B output
-    (tacna_vp.nc etc.) — a gridded (depth, lat, lon) cube with 2-D
-    utm_easting/utm_northing aux coords (metres) — and flatten it into a
-    point cloud, broadcasting the horizontal coords across every depth
-    level.
+d_axis = interp_ds[dim_depth].values.astype(np.float64)
+row_coord = interp_ds[dim_row].values
+col_coord = interp_ds[dim_col].values
 
-    Returns
-    -------
-    points, values, units — same shapes/meaning as load_modem_points().
-    """
-    ds = xr.open_dataset(ncpath(file))
-    da = ds[var]
-    depth = ds["depth"].values
-    e2d_km = ds["utm_easting"].values / 1e3
-    n2d_km = ds["utm_northing"].values / 1e3
-    nz, nlat, nlon = da.shape
-    e3d = np.broadcast_to(e2d_km[None, :, :], (nz, nlat, nlon))
-    n3d = np.broadcast_to(n2d_km[None, :, :], (nz, nlat, nlon))
-    d3d = np.broadcast_to(depth[:, None, None], (nz, nlat, nlon))
-    vals3d = da.values.astype(np.float64)
-    valid = np.isfinite(vals3d)
-    points = np.column_stack(
-        [e3d[valid], n3d[valid], d3d[valid]]
-    ).astype(np.float64)
-    values = vals3d[valid]
-    units = da.attrs.get("units", "")
-    ds.close()
-    return points, values, units
-
-
-def load_variable_points(key):
-    """
-    Dispatch to the right native loader for VARIABLE_SOURCES[key], then
-    apply any registered `derive` transform (e.g. conductivity from
-    resistivity).
-    """
-    src = VARIABLE_SOURCES[key]
-    if src["kind"] == "modem_points":
-        points, values, units = load_modem_points(src["file"], src["value_var"])
-    elif src["kind"] == "seis_grid":
-        points, values, units = load_seis_grid_points(src["file"], src["var"])
-    else:
-        raise ValueError(f"Unknown VARIABLE_SOURCES kind {src['kind']!r} for {key!r}")
-
-    if src.get("derive") == "conductivity_from_rho":
-        values, units = resistivity_to_conductivity(values, units)
-
-    return points, values, units
-
-
-# ------------------------------------------------------------------
-# RBF interpolation onto the joint grid
-# ------------------------------------------------------------------
-def rbf_interpolate_to_grid(points, values, grid_points):
-    """
-    Fit scipy's RBFInterpolator on (points, values) — points shape
-    (n, 3) = [easting_km, northing_km, depth_km] — and evaluate it at
-    grid_points (m, 3). Uses the RBF_* settings above.
-    """
-    rbf = RBFInterpolator(
-        points, values,
-        kernel=RBF_KERNEL, epsilon=RBF_EPSILON, smoothing=RBF_SMOOTHING,
-        neighbors=RBF_NEIGHBORS, degree=RBF_DEGREE,
-    )
-    return rbf(grid_points)
-
-
-def outside_convex_hull(points, query_points):
-    """Boolean mask, True where query_points fall OUTSIDE the 3-D convex
-    hull of points — used to null out RBFInterpolator's unconstrained
-    extrapolation beyond a variable's own data footprint."""
-    hull = Delaunay(points)
-    return hull.find_simplex(query_points) < 0
-
-
-def outside_roi(query_points, vertices, depth_min, depth_max):
-    """
-    Boolean mask, True where query_points (n, 3) = [easting_km,
-    northing_km, depth_km] fall OUTSIDE the RoI box — a single,
-    variable-independent region applied identically to every variable's
-    interpolated grid (see APPLY_ROI_MASK/ROI_VERTICES_KM above).
-
-    The horizontal box is tested with a point-in-polygon check
-    (matplotlib.path.Path — already imported for other plotpy-adjacent
-    uses), so a rotated (non-axis-aligned) box works, not just an
-    axis-aligned min/max one. The optional depth window is a simple
-    range check, independent of the box's orientation.
-    """
-    poly = MplPath(np.asarray(vertices, dtype=np.float64))
-    outside = ~poly.contains_points(query_points[:, :2])
-    if depth_min is not None:
-        outside |= query_points[:, 2] < depth_min
-    if depth_max is not None:
-        outside |= query_points[:, 2] > depth_max
-    return outside
-
-
-# ==================================================================
-# Load native point clouds
-# ==================================================================
-active_cluster_vars = list(CLUSTER_VARS)
-if USE_CONDUCTIVITY:
-    active_cluster_vars = ["cond" if v == "rho" else v for v in active_cluster_vars]
-    if active_cluster_vars != list(CLUSTER_VARS):
-        print(f"USE_CONDUCTIVITY=True — clustering on {active_cluster_vars} "
-              f"instead of {CLUSTER_VARS}")
-
-print(f"Clustering on: {active_cluster_vars}")
-
-native_points = {}
-native_values = {}
+_loaded = {}
 resolved_units = {}
 for key in active_cluster_vars:
-    if key not in VARIABLE_SOURCES:
-        raise KeyError(
-            f"CLUSTER_VARS entry {key!r} has no matching VARIABLE_SOURCES "
-            f"registration. Known keys: {list(VARIABLE_SOURCES)}"
-        )
-    src = VARIABLE_SOURCES[key]
-    print(f"  Loading {key!r} ({src['kind']}) from {src['file']} …")
-    pts, vals, units = load_variable_points(key)
-    native_points[key] = pts
-    native_values[key] = vals
-    resolved_units[key] = units
-    print(
-        f"    {len(vals)} native points — "
-        f"E [{pts[:, 0].min():.1f}, {pts[:, 0].max():.1f}], "
-        f"N [{pts[:, 1].min():.1f}, {pts[:, 1].max():.1f}], "
-        f"D [{pts[:, 2].min():.1f}, {pts[:, 2].max():.1f}] km"
-    )
+    da = interp_ds[key]
+    _loaded[key] = da.values.astype(np.float32)
+    resolved_units[key] = da.attrs.get("units", "")
 
-# ==================================================================
-# Build the joint regular interpolation grid
-# ==================================================================
-print("\nBuilding joint regular interpolation grid …")
+if grid_mode == "joint":
+    e_axis = interp_ds[dim_col].values.astype(np.float64)     # "easting"
+    n_axis = interp_ds[dim_row].values.astype(np.float64)     # "northing"
+    utm_easting_2d = None
+    utm_northing_2d = None
+else:  # "seismic"
+    e_axis = None
+    n_axis = None
+    utm_easting_2d = interp_ds["utm_easting_km"].values
+    utm_northing_2d = interp_ds["utm_northing_km"].values
 
-
-def _auto_bounds(axis_index):
-    """Intersection (tightest common overlap) of every loaded variable's
-    own point-cloud extent along one coordinate axis (0=easting,
-    1=northing, 2=depth)."""
-    lo = max(native_points[k][:, axis_index].min() for k in active_cluster_vars)
-    hi = min(native_points[k][:, axis_index].max() for k in active_cluster_vars)
-    return float(lo), float(hi)
-
-
-def _grid_axis(spec, axis_index, name):
-    auto_lo, auto_hi = _auto_bounds(axis_index)
-    lo = spec["min"] if spec["min"] is not None else auto_lo
-    hi = spec["max"] if spec["max"] is not None else auto_hi
-    if hi <= lo:
-        raise RuntimeError(
-            f"Joint grid {name} range is empty ({lo} .. {hi}) — the "
-            f"selected CLUSTER_VARS don't overlap along this axis. Check "
-            f"GRID_{name.upper()}_KM or CLUSTER_VARS."
-        )
-    axis = np.arange(lo, hi + spec["step"] / 2.0, spec["step"])
-    print(
-        f"  {name}: {lo:.2f} .. {hi:.2f} km, step {spec['step']} km "
-        f"({len(axis)} points)"
-    )
-    return axis
-
-
-e_axis = _grid_axis(GRID_EASTING_KM, 0, "easting")
-n_axis = _grid_axis(GRID_NORTHING_KM, 1, "northing")
-d_axis = _grid_axis(GRID_DEPTH_KM, 2, "depth")
-
-Egrid, Ngrid, Dgrid = np.meshgrid(e_axis, n_axis, d_axis, indexing="ij")  # (ne, nn, nd)
-grid_points = np.column_stack([Egrid.ravel(), Ngrid.ravel(), Dgrid.ravel()])
-
-# --- RoI mask (same box for every variable — computed once) ---
-if APPLY_ROI_MASK:
-    roi_outside = outside_roi(grid_points, ROI_VERTICES_KM, ROI_DEPTH_MIN_KM, ROI_DEPTH_MAX_KM)
-    print(
-        f"\nRoI mask: {int(roi_outside.sum())} / {roi_outside.size} joint-grid "
-        f"points fall outside the RoI box and will be set to NaN "
-        f"(applies identically to every variable)"
-    )
-else:
-    roi_outside = None
-
-# ==================================================================
-# RBF-interpolate each variable onto the joint grid
-# ==================================================================
-_loaded = {}
-for key in active_cluster_vars:
-    print(
-        f"\nRBF-interpolating {key!r} onto the joint grid "
-        f"(kernel={RBF_KERNEL!r}, neighbors={RBF_NEIGHBORS}) …"
-    )
-    interp_vals = rbf_interpolate_to_grid(
-        native_points[key], native_values[key], grid_points
-    )
-    if MASK_TO_CONVEX_HULL:
-        outside = outside_convex_hull(native_points[key], grid_points)
-        interp_vals = np.where(outside, np.nan, interp_vals)
-        print(
-            f"    Masked {int(outside.sum())} / {outside.size} joint-grid "
-            f"points outside {key!r}'s own convex hull"
-        )
-    if APPLY_ROI_MASK:
-        interp_vals = np.where(roi_outside, np.nan, interp_vals)
-    # Egrid/Ngrid/Dgrid, and therefore interp_vals, are shaped (ne, nn, nd);
-    # transpose to (depth, northing, easting) to match the dim order used
-    # everywhere else in this pipeline (see tacna_precompute.py's
-    # save_3d_model).
-    _loaded[key] = np.transpose(
-        interp_vals.reshape(Egrid.shape), (2, 1, 0)
-    ).astype(np.float32)
-
-grid_shape = (len(d_axis), len(n_axis), len(e_axis))  # (depth, northing, easting)
+grid_shape = _loaded[active_cluster_vars[0]].shape  # (depth, row, col)
 n_total = int(np.prod(grid_shape))
-print(f"\nJoint grid shape (depth, northing, easting): {grid_shape}  "
-      f"({n_total} cells total)")
+interp_ds.close()
+print(f"Grid shape {dim_names}: {grid_shape} ({n_total} cells total)")
 
 # ==================================================================
 # Build feature table
@@ -811,10 +509,14 @@ print(
     f"Valid (finite in every selected variable): {n_valid} / {n_total} "
     f"({100.0 * n_valid / n_total:.1f}%)"
 )
-if n_valid < N_CLUSTERS:
+if CLUSTERING_METHOD not in ("fcm", "som"):
+    raise ValueError(f"CLUSTERING_METHOD must be 'fcm' or 'som', got {CLUSTERING_METHOD!r}.")
+n_labels = N_CLUSTERS if CLUSTERING_METHOD == "fcm" else SOM_ROWS * SOM_COLS
+
+if n_valid < n_labels:
     raise RuntimeError(
-        f"Only {n_valid} valid points — fewer than N_CLUSTERS={N_CLUSTERS}. "
-        "Check CLUSTER_VARS, the joint grid bounds, or MASK_TO_CONVEX_HULL."
+        f"Only {n_valid} valid points — fewer than the number of classes "
+        f"({n_labels}). Check CLUSTER_VARS or tacna_interpolate.py's masking settings."
     )
 
 X_raw = feature_stack[valid_mask]  # (n_valid, n_features)
@@ -822,19 +524,13 @@ X_raw = feature_stack[valid_mask]  # (n_valid, n_features)
 if STANDARDIZE:
     feat_mean = X_raw.mean(axis=0)
     feat_std = X_raw.std(axis=0)
-    feat_std[feat_std == 0] = 1.0  # guard against a constant column
+    feat_std[feat_std == 0] = 1.0
     X = (X_raw - feat_mean) / feat_std
 else:
     feat_mean = np.zeros(X_raw.shape[1])
     feat_std = np.ones(X_raw.shape[1])
     X = X_raw
 
-# --- Apply per-variable weighting (weighted Euclidean distance) ---
-# d^2 = sum_j weight_j * (x_j - c_j)^2 is equivalent to ordinary
-# Euclidean distance on features pre-scaled by sqrt(weight_j); undone
-# below (divide by the same sqrt(weight)) before the standardization
-# inverse transform, so centers_raw stays in true physical units either
-# way.
 weight_vector = np.array(
     [CLUSTER_WEIGHTS.get(k, 1.0) for k in active_cluster_vars], dtype=float
 )
@@ -851,35 +547,71 @@ sqrt_weight = np.sqrt(weight_vector)
 X_weighted = X * sqrt_weight[None, :]
 
 # ==================================================================
-# Fuzzy c-means
+# Cluster: fuzzy c-means or self-organizing map
 # ==================================================================
-print(f"\nRunning fuzzy c-means: n_clusters={N_CLUSTERS}, m={FUZZINESS} …")
-centers_weighted, U, fpc, n_iter = fuzzy_cmeans(
-    X_weighted, N_CLUSTERS, m=FUZZINESS, max_iter=MAX_ITER, tol=TOL, seed=RANDOM_SEED
-)
-hard_label = np.argmax(U, axis=1)
-membership_max = np.max(U, axis=1)
-centers_std = centers_weighted / sqrt_weight[None, :]
-centers_raw = centers_std * feat_std + feat_mean
+diagnostics = {}
 
-print(
-    f"Converged after {n_iter} iterations. "
-    f"Fuzzy partition coefficient (FPC): {fpc:.3f} "
-    f"(1/{N_CLUSTERS} = {1.0 / N_CLUSTERS:.3f} = fuzziest, 1 = crisp)"
-)
+if CLUSTERING_METHOD == "fcm":
+    print(f"\nRunning fuzzy c-means: n_clusters={N_CLUSTERS}, m={FUZZINESS} …")
+    centers_weighted, U, fpc, n_iter = fuzzy_cmeans(
+        X_weighted, N_CLUSTERS, m=FUZZINESS, max_iter=MAX_ITER, tol=TOL, seed=RANDOM_SEED
+    )
+    hard_label = np.argmax(U, axis=1)
+    membership_max = np.max(U, axis=1)
+    centers_std = centers_weighted / sqrt_weight[None, :]
+    centers_raw = centers_std * feat_std + feat_mean
+
+    print(
+        f"Converged after {n_iter} iterations. "
+        f"Fuzzy partition coefficient (FPC): {fpc:.3f} "
+        f"(1/{N_CLUSTERS} = {1.0 / N_CLUSTERS:.3f} = fuzziest, 1 = crisp)"
+    )
+    diagnostics["fuzziness_m"] = FUZZINESS
+    diagnostics["fpc"] = fpc
+    diagnostics["n_iter"] = n_iter
+    diagnostics["random_seed"] = RANDOM_SEED
+
+else:  # CLUSTERING_METHOD == "som"
+    print(
+        f"\nTraining SOM: grid={SOM_ROWS}x{SOM_COLS} ({n_labels} neurons), "
+        f"n_iter={SOM_N_ITER}, lr0={SOM_LR0} …"
+    )
+    weights_weighted, grid_coords = train_som(
+        X_weighted, SOM_ROWS, SOM_COLS,
+        n_iter=SOM_N_ITER, lr0=SOM_LR0, sigma0=SOM_SIGMA0, seed=SOM_SEED,
+    )
+    hard_label, qe = som_bmu_assign(X_weighted, weights_weighted)
+    membership_max = qe  # SOM's quantization error, NOT a [0, 1] membership value
+    topo_err = som_topographic_error(X_weighted, weights_weighted, grid_coords)
+    centers_std = weights_weighted / sqrt_weight[None, :]
+    centers_raw = centers_std * feat_std + feat_mean
+
+    print(
+        f"Done. Mean quantization error: {qe.mean():.3f} (standardized units); "
+        f"topographic error: {topo_err:.3f} "
+        f"(0 = perfectly neighborhood-preserving, higher = worse)"
+    )
+    diagnostics["som_grid"] = f"{SOM_ROWS}x{SOM_COLS}"
+    diagnostics["som_n_iter"] = SOM_N_ITER
+    diagnostics["som_lr0"] = SOM_LR0
+    diagnostics["som_sigma0"] = SOM_SIGMA0 if SOM_SIGMA0 is not None else max(SOM_ROWS, SOM_COLS) / 2.0
+    diagnostics["som_seed"] = SOM_SEED
+    diagnostics["mean_quantization_error"] = float(qe.mean())
+    diagnostics["topographic_error"] = topo_err
+
 print("\nCluster centers (raw units) and sizes:")
 header = "  cluster |    n    |  frac  | " + " | ".join(
     f"{k} ({resolved_units[k] or '-'})" for k in active_cluster_vars
 )
 print(header)
-for c in range(N_CLUSTERS):
+for c in range(n_labels):
     n_c = int(np.sum(hard_label == c))
     frac = n_c / n_valid
     vals = "  ".join(f"{centers_raw[c, j]:9.3f}" for j in range(len(active_cluster_vars)))
     print(f"  {c:7d} | {n_c:7d} | {frac:5.1%} | {vals}")
 
 # ==================================================================
-# Reconstruct joint grid + save
+# Reconstruct grid + save
 # ==================================================================
 label_flat = np.full(n_total, -1, dtype=np.int16)
 label_flat[valid_mask] = hard_label.astype(np.int16)
@@ -889,50 +621,60 @@ membership_flat = np.full(n_total, np.nan, dtype=np.float32)
 membership_flat[valid_mask] = membership_max.astype(np.float32)
 membership_grid = membership_flat.reshape(grid_shape)
 
+_method_label = "Fuzzy c-means" if CLUSTERING_METHOD == "fcm" else "SOM (self-organizing map)"
+_label_long_name = (
+    "Fuzzy c-means hard cluster label (argmax membership)" if CLUSTERING_METHOD == "fcm"
+    else "SOM best-matching-unit (BMU) index, flat row*cols+col over the SOM_ROWS x SOM_COLS grid"
+)
+_membership_long_name = (
+    "Membership of the assigned (hard-label) cluster" if CLUSTERING_METHOD == "fcm"
+    else "Quantization error: distance (standardized/weighted feature space) from the point to "
+         "its BMU weight vector -- smaller is a better fit, NOT a [0, 1] membership value"
+)
+
+out_coords = {
+    dim_depth: (dim_depth, d_axis, {"units": "km", "positive": "down"}),
+    dim_row: (dim_row, row_coord),
+    dim_col: (dim_col, col_coord),
+}
+if grid_mode == "seismic":
+    out_coords["utm_easting_km"] = ((dim_row, dim_col), utm_easting_2d)
+    out_coords["utm_northing_km"] = ((dim_row, dim_col), utm_northing_2d)
+
 out_ds = xr.Dataset(
     {
         "cluster_label": (
-            ("depth", "northing", "easting"), label_grid,
+            dim_names, label_grid,
             {
-                "long_name": "Fuzzy c-means hard cluster label (argmax membership)",
+                "long_name": _label_long_name,
                 "flag_value_missing": -1,
                 "cluster_vars": ", ".join(active_cluster_vars),
-                "n_clusters": N_CLUSTERS,
+                "n_clusters": n_labels,
+                "clustering_method": CLUSTERING_METHOD,
             },
         ),
         "membership": (
-            ("depth", "northing", "easting"), membership_grid,
+            dim_names, membership_grid,
             {
-                "long_name": "Membership of the assigned (hard-label) cluster",
-                "units": "1",
+                "long_name": _membership_long_name,
+                "units": "1" if CLUSTERING_METHOD == "fcm" else "(standardized/weighted feature units)",
             },
         ),
     },
-    coords={
-        "depth": ("depth", d_axis, {"units": "km", "positive": "down"}),
-        "northing": ("northing", n_axis, {"units": "km", "long_name": "UTM northing"}),
-        "easting": ("easting", e_axis, {"units": "km", "long_name": "UTM easting"}),
-    },
+    coords=out_coords,
     attrs={
         "description": (
-            "Fuzzy c-means clustering of " + ", ".join(active_cluster_vars) +
-            " on a jointly-defined regular UTM-km grid, RBF-interpolated "
-            "from each variable's own native grid (see tacna_cluster.py)."
+            f"{_method_label} clustering of " + ", ".join(active_cluster_vars) +
+            f" on the grid read from {INTERP_FILE} (see tacna_interpolate.py)."
         ),
-        "rbf_kernel": RBF_KERNEL,
-        "rbf_neighbors": str(RBF_NEIGHBORS),
-        "mask_to_convex_hull": str(MASK_TO_CONVEX_HULL),
-        "roi_applied": str(APPLY_ROI_MASK),
-        "roi_vertices_km": str(ROI_VERTICES_KM) if APPLY_ROI_MASK else "",
-        "roi_depth_range_km": f"{ROI_DEPTH_MIN_KM}, {ROI_DEPTH_MAX_KM}" if APPLY_ROI_MASK else "",
+        "source_interp_file": INTERP_FILE,
+        "target_grid_mode": grid_mode,
+        "clustering_method": CLUSTERING_METHOD,
         "cluster_weights": ", ".join(
             f"{k}={w:g}" for k, w in zip(active_cluster_vars, weight_vector)
         ),
-        "fuzziness_m": FUZZINESS,
         "standardized": str(STANDARDIZE),
-        "fpc": fpc,
-        "n_iter": n_iter,
-        "random_seed": RANDOM_SEED,
+        **{k: ("" if v is None else v) for k, v in diagnostics.items()},
     },
 )
 out_nc = ncpath("tacna_clusters.nc")
@@ -944,7 +686,7 @@ with safe_open_w(centers_csv, newline="") as f:
     w = csv.writer(f)
     w.writerow(["cluster", "n_points", "fraction"] + active_cluster_vars)
     w.writerow(["weight", "", ""] + [f"{wt:g}" for wt in weight_vector])
-    for c in range(N_CLUSTERS):
+    for c in range(n_labels):
         n_c = int(np.sum(hard_label == c))
         w.writerow(
             [c, n_c, f"{n_c / n_valid:.6f}"]
@@ -981,18 +723,25 @@ topo_norm = mcolors.Normalize(vmin=TOPO_VMIN, vmax=TOPO_VMAX) if SHOW_TOPO_BASEM
 CMAP_TOPO = plt.get_cmap("gray")
 
 # ==================================================================
-# Map region — directly from the joint grid, already regular UTM km
+# Map region
 # ==================================================================
+if grid_mode == "joint":
+    _e_min, _e_max = float(e_axis.min()), float(e_axis.max())
+    _n_min, _n_max = float(n_axis.min()), float(n_axis.max())
+else:
+    _e_min, _e_max = float(np.nanmin(utm_easting_2d)), float(np.nanmax(utm_easting_2d))
+    _n_min, _n_max = float(np.nanmin(utm_northing_2d)), float(np.nanmax(utm_northing_2d))
+
 if MAP_XLIM is not None:
     xmin, xmax = MAP_XLIM
 else:
-    xmin = float(e_axis.min()) - REGION_MARGIN_KM
-    xmax = float(e_axis.max()) + REGION_MARGIN_KM
+    xmin = _e_min - REGION_MARGIN_KM
+    xmax = _e_max + REGION_MARGIN_KM
 if MAP_YLIM is not None:
     ymin, ymax = MAP_YLIM
 else:
-    ymin = float(n_axis.min()) - REGION_MARGIN_KM
-    ymax = float(n_axis.max()) + REGION_MARGIN_KM
+    ymin = _n_min - REGION_MARGIN_KM
+    ymax = _n_max + REGION_MARGIN_KM
 print(f"Map region (km): [{xmin}, {xmax}, {ymin}, {ymax}]")
 
 
@@ -1005,7 +754,7 @@ def _colorbar_settings():
         show=SHOW_COLORBAR, position=COLORBAR_POSITION,
         size=COLORBAR_SIZE, pad=COLORBAR_PAD, aspect=COLORBAR_ASPECT,
         label_size=COLORBAR_LABEL_SIZE, tick_size=COLORBAR_TICK_SIZE,
-        nticks=N_CLUSTERS, title_size=AXIS_TITLE_SIZE,
+        nticks=n_labels, title_size=AXIS_TITLE_SIZE,
     )
 
 
@@ -1018,8 +767,7 @@ def create_map_figure():
 
 
 def draw_basemap(ax):
-    """Topo greyscale + hillshade + ocean fill; enforce map limits — same
-    construction as tacna_plot_seis.py's draw_basemap()."""
+    """Topo greyscale + hillshade + ocean fill; enforce map limits."""
     ax.set_xlim(xmin, xmax)
     ax.set_ylim(ymin, ymax)
     ax.set_aspect("equal", adjustable="box")
@@ -1112,9 +860,7 @@ if SHOW_SPECIFIC_PLOT:
 
 def draw_specific_features(ax, eq_e, eq_n):
     """Overlay seismicity/MT-site/seismic-site/volcano/city feature layers
-    borrowed from tacna_plot_seis.py's draw_features() — all markers/
-    labels clipped to the map region. North arrow is already drawn by
-    draw_basemap()."""
+    borrowed from tacna_plot_seis.py's draw_features()."""
     if SHOW_SEISMICITY:
         clipped_markers(ax, eq_e, eq_n, _region(), label="Seismicity", **EQ_MARKER_STYLE)
 
@@ -1142,27 +888,43 @@ def draw_specific_features(ax, eq_e, eq_n):
 # ==================================================================
 # Plot cluster maps
 # ==================================================================
-cluster_cmap = plt.get_cmap(CLUSTER_CMAP, N_CLUSTERS)
-bounds = np.arange(-0.5, N_CLUSTERS + 0.5, 1.0)
+if CLUSTERING_METHOD == "som":
+    cluster_cmap = som_grid_colormap(SOM_ROWS, SOM_COLS)
+else:
+    cluster_cmap = plt.get_cmap(CLUSTER_CMAP, N_CLUSTERS)
+bounds = np.arange(-0.5, n_labels + 0.5, 1.0)
 cluster_norm = mcolors.BoundaryNorm(bounds, cluster_cmap.N)
+
+_tick_stride = max(1, -(-n_labels // 12))  # ceil(n_labels / 12)
+_cbar_ticks = list(range(0, n_labels, _tick_stride))
 
 
 def _draw_cluster_overlay(ax, cax, label_slice, actual_depth):
-    """Cluster imshow + title + colorbar + lon/lat ticks + free-text
+    """Cluster map + title + colorbar + lon/lat ticks + free-text
     annotation — the part shared by both the plain and the specific
-    (annotated) cluster maps."""
-    im = ax.imshow(
-        label_slice, cmap=cluster_cmap, norm=cluster_norm, origin="lower",
-        extent=[e_axis.min(), e_axis.max(), n_axis.min(), n_axis.max()],
-        alpha=CLUSTER_ALPHA, aspect="equal", interpolation="nearest", zorder=5,
-    )
+    (annotated) cluster maps. Uses imshow(extent=...) for a regular
+    "joint" grid, pcolormesh(shading="nearest") against the grid's own
+    2-D UTM coords for a reused "seismic" grid (not regular in UTM
+    space)."""
+    if grid_mode == "joint":
+        im = ax.imshow(
+            label_slice, cmap=cluster_cmap, norm=cluster_norm, origin="lower",
+            extent=[e_axis.min(), e_axis.max(), n_axis.min(), n_axis.max()],
+            alpha=CLUSTER_ALPHA, aspect="equal", interpolation="nearest", zorder=5,
+        )
+    else:
+        im = ax.pcolormesh(
+            utm_easting_2d, utm_northing_2d, label_slice,
+            cmap=cluster_cmap, norm=cluster_norm, shading="nearest",
+            alpha=CLUSTER_ALPHA, zorder=5,
+        )
     ax.set_title(
-        f"Fuzzy clusters ({', '.join(active_cluster_vars)}) at {actual_depth:.1f} km",
+        f"{_method_label} classes ({', '.join(active_cluster_vars)}) at {actual_depth:.1f} km",
         fontsize=AXIS_TITLE_SIZE,
     )
     if SHOW_COLORBAR:
-        cbar = plotpy.finish_panel_colorbar(cax, im, "Cluster", _colorbar_settings())
-        cbar.set_ticks(list(range(N_CLUSTERS)))
+        cbar = plotpy.finish_panel_colorbar(cax, im, "Class", _colorbar_settings())
+        cbar.set_ticks(_cbar_ticks)
     if AXES_UNITS == "latlon":
         plotpy.add_latlon_ticks(
             ax, _region(), LATLON_NTICKS, LATLON_DECIMALS,
@@ -1179,12 +941,12 @@ for i_depth, target_depth in enumerate(PLOT_DEPTHS_KM):
         f"(nearest available: {actual_depth:.2f} km) …"
     )
 
-    label_slice = label_grid[iz].astype(float)  # (northing, easting)
+    label_slice = label_grid[iz].astype(float)  # (row, col)
     label_slice[label_slice < 0] = np.nan  # -1 (missing) -> NaN, transparent
 
     tag = f"{actual_depth:.0f}km" if actual_depth == int(actual_depth) else f"{actual_depth:.1f}km"
 
-    # --- Plain cluster map (unchanged, kept in parallel) ---
+    # --- Plain cluster map ---
     fig, ax, cax = create_map_figure()
     draw_basemap(ax)
     _draw_cluster_overlay(ax, cax, label_slice, actual_depth)
@@ -1192,9 +954,7 @@ for i_depth, target_depth in enumerate(PLOT_DEPTHS_KM):
     plt.show()
     plt.close(fig)
 
-    # --- Specific (annotated) cluster map — same cluster overlay, plus
-    # tacna_plot_seis.py-style feature layers. Additional, not a
-    # replacement for the plain map above. ---
+    # --- Specific (annotated) cluster map ---
     if SHOW_SPECIFIC_PLOT:
         if SHOW_SEISMICITY:
             zmin, zmax = ZMIN_SEISM[i_depth], ZMAX_SEISM[i_depth]
