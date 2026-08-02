@@ -275,6 +275,22 @@ outside each variable's own 3-D convex hull (`outside_convex_hull()`,
 via `scipy.spatial.Delaunay`), so the clustering only ever sees
 genuinely interpolated (not extrapolated) values for each variable.
 
+### Region of interest (RoI) mask
+
+`APPLY_ROI_MASK`/`ROI_VERTICES_KM` add a single, variable-independent
+rectangular box (given as its four corners, so a rotated box works too,
+not just an axis-aligned min/max one), applied identically to every
+`CLUSTER_VARS` entry after interpolation: grid cells whose easting/
+northing fall outside the box are set to NaN, exactly like
+`MASK_TO_CONVEX_HULL` but as one shared region rather than a per-variable
+data footprint. An optional `ROI_DEPTH_MIN_KM`/`ROI_DEPTH_MAX_KM` window
+narrows it further. Useful when `GRID_EASTING_KM`/`GRID_NORTHING_KM` are
+deliberately made wider than the area you actually want clustered — e.g.
+to keep RBF/kriging away from extrapolating right at the clustering
+region's edge — without shrinking the grid itself. Off by default
+(`APPLY_ROI_MASK = False`); the RoI box is recorded in
+`tacna_clusters.nc`'s attributes when enabled.
+
 ### Fuzzy c-means implementation
 
 `fuzzy_cmeans(X, n_clusters, m, max_iter, tol, seed)` is a small,
@@ -323,6 +339,36 @@ depth-slice maps. `clipped_markers`/`clipped_labels` are the same
 `plotpy.py` helpers `tacna_plot_seis.py` itself uses — no duplicated
 plotting logic. Saved as `clusters_{depth}km_tacna_annotated.{ext}`,
 alongside (not replacing) `clusters_{depth}km_tacna.{ext}`.
+
+---
+
+## Kriging variant (`tacna_cluster_kriging.py`)
+
+Same pipeline end to end (native point-cloud loading, joint regular
+grid, convex-hull masking, RoI masking, fuzzy c-means, plotting) — the
+only change is the interpolation step, which uses ordinary kriging
+(`pykrige.ok3d.OrdinaryKriging3D`) instead of
+`scipy.interpolate.RBFInterpolator`. Kept as a separate script rather
+than a switch inside `tacna_cluster.py` because kriging needs an extra
+variogram-fitting step per variable, and — unlike RBF's `neighbors=`
+local fit — `pykrige`'s variogram estimation is O(n²) in the source
+point count, so it doesn't scale to the full native ModEM point cloud
+as-is. `KRIGING_MAX_POINTS` (default `3000`) randomly subsamples any
+variable's native point cloud down to that many points before kriging
+if it's larger; `KRIGING_N_CLOSEST_POINTS` (default `50`, the kriging
+analogue of `RBF_NEIGHBORS`) then restricts each grid-point evaluation
+to its nearest neighbors within that subsample, via
+`KRIGING_BACKEND = "loop"` (pure Python, no compiled extension needed —
+`"C"` is faster if your `pykrige` build supports it for the 3-D class,
+with an automatic fallback to `"loop"` if it doesn't).
+
+Outputs are suffixed `_kriging` (`tacna_clusters_kriging.nc`,
+`tacna_cluster_centers_kriging.csv`) and figures go to
+`../plots_cluster_kriging/` by default, so a `tacna_cluster.py` (RBF)
+run in the same directory is never overwritten.
+
+Requires `pykrige` in addition to this pipeline's other dependencies
+(`pip install pykrige`).
 
 ---
 

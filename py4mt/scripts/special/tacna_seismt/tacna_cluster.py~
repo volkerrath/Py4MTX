@@ -91,9 +91,7 @@ implementation itself is self-contained (NumPy only, no scikit-fuzzy).
 Authors: Svetlana Byrdina (SMB) & Volker Rath (DIAS)
 AI-assisted development: Claude (Anthropic), 2026-07-31. RBF
 interpolation onto a jointly-defined regular grid moved in here from
-tacna_precompute.py: Claude (Anthropic), 2026-07-31. Rectangular RoI
-mask (APPLY_ROI_MASK/ROI_VERTICES_KM) added: Claude (Anthropic),
-2026-08-01.
+tacna_precompute.py: Claude (Anthropic), 2026-07-31.
 License: GNU General Public License v3 (GPL-3.0-or-later).
 AI-generated code — review before use in production.
 """
@@ -113,13 +111,6 @@ from scipy.interpolate import RBFInterpolator
 from scipy.spatial import Delaunay
 
 import plotpy
-
-N_THREADS = "32"
-os.environ["OMP_NUM_THREADS"] = N_THREADS
-os.environ["OPENBLAS_NUM_THREADS"] = N_THREADS
-os.environ["MKL_NUM_THREADS"] = N_THREADS
-
-
 
 to_utm_km = plotpy.to_utm_km
 compute_hillshade = plotpy.compute_hillshade
@@ -251,37 +242,6 @@ RBF_DEGREE = None             # polynomial term degree; None = kernel default
 # large point clouds; set False to skip (keeps RBF's raw extrapolation
 # everywhere on the joint grid instead).
 MASK_TO_CONVEX_HULL = True
-
-# --- Region of interest (RoI) mask ---
-# An explicit rectangular box, independent of GRID_EASTING_KM/
-# GRID_NORTHING_KM (which set the *grid extent/resolution*) and of
-# MASK_TO_CONVEX_HULL (which is per-variable, driven by each variable's
-# own data footprint). This is a single, joint box applied identically
-# to every variable after interpolation: any joint-grid cell whose
-# (easting, northing) falls outside the box is set to NaN, regardless of
-# depth. Use this to exclude a margin of the grid you deliberately made
-# larger than the area you actually want clustered (e.g. a wider grid
-# kept only so RBF/kriging aren't extrapolating right at the clustering
-# region's edge), without having to shrink GRID_EASTING_KM/
-# GRID_NORTHING_KM themselves.
-#
-# Given as the box's four corners, in order (closed automatically — do
-# not repeat the first point at the end), so a rotated (non-axis-
-# aligned) box works too, not just an axis-aligned min/max one:
-#   [(e1, n1), (e2, n2), (e3, n3), (e4, n4)]
-# Set to None to disable (no RoI masking; identical to earlier versions
-# of this script).
-APPLY_ROI_MASK = False
-ROI_VERTICES_KM = [
-    (330.0, 7990.0),
-    (430.0, 7990.0),
-    (430.0, 8080.0),
-    (330.0, 8080.0),
-]
-# Optional depth restriction (km, positive down) — applied together with
-# the horizontal box above; either bound may be None to leave it open.
-ROI_DEPTH_MIN_KM = None
-ROI_DEPTH_MAX_KM = None
 
 # --- Fuzzy c-means settings ---
 N_CLUSTERS = 3
@@ -658,28 +618,6 @@ def outside_convex_hull(points, query_points):
     return hull.find_simplex(query_points) < 0
 
 
-def outside_roi(query_points, vertices, depth_min, depth_max):
-    """
-    Boolean mask, True where query_points (n, 3) = [easting_km,
-    northing_km, depth_km] fall OUTSIDE the RoI box — a single,
-    variable-independent region applied identically to every variable's
-    interpolated grid (see APPLY_ROI_MASK/ROI_VERTICES_KM above).
-
-    The horizontal box is tested with a point-in-polygon check
-    (matplotlib.path.Path — already imported for other plotpy-adjacent
-    uses), so a rotated (non-axis-aligned) box works, not just an
-    axis-aligned min/max one. The optional depth window is a simple
-    range check, independent of the box's orientation.
-    """
-    poly = MplPath(np.asarray(vertices, dtype=np.float64))
-    outside = ~poly.contains_points(query_points[:, :2])
-    if depth_min is not None:
-        outside |= query_points[:, 2] < depth_min
-    if depth_max is not None:
-        outside |= query_points[:, 2] > depth_max
-    return outside
-
-
 # ==================================================================
 # Load native point clouds
 # ==================================================================
@@ -754,17 +692,6 @@ d_axis = _grid_axis(GRID_DEPTH_KM, 2, "depth")
 Egrid, Ngrid, Dgrid = np.meshgrid(e_axis, n_axis, d_axis, indexing="ij")  # (ne, nn, nd)
 grid_points = np.column_stack([Egrid.ravel(), Ngrid.ravel(), Dgrid.ravel()])
 
-# --- RoI mask (same box for every variable — computed once) ---
-if APPLY_ROI_MASK:
-    roi_outside = outside_roi(grid_points, ROI_VERTICES_KM, ROI_DEPTH_MIN_KM, ROI_DEPTH_MAX_KM)
-    print(
-        f"\nRoI mask: {int(roi_outside.sum())} / {roi_outside.size} joint-grid "
-        f"points fall outside the RoI box and will be set to NaN "
-        f"(applies identically to every variable)"
-    )
-else:
-    roi_outside = None
-
 # ==================================================================
 # RBF-interpolate each variable onto the joint grid
 # ==================================================================
@@ -784,8 +711,6 @@ for key in active_cluster_vars:
             f"    Masked {int(outside.sum())} / {outside.size} joint-grid "
             f"points outside {key!r}'s own convex hull"
         )
-    if APPLY_ROI_MASK:
-        interp_vals = np.where(roi_outside, np.nan, interp_vals)
     # Egrid/Ngrid/Dgrid, and therefore interp_vals, are shaped (ne, nn, nd);
     # transpose to (depth, northing, easting) to match the dim order used
     # everywhere else in this pipeline (see tacna_precompute.py's
@@ -922,9 +847,6 @@ out_ds = xr.Dataset(
         "rbf_kernel": RBF_KERNEL,
         "rbf_neighbors": str(RBF_NEIGHBORS),
         "mask_to_convex_hull": str(MASK_TO_CONVEX_HULL),
-        "roi_applied": str(APPLY_ROI_MASK),
-        "roi_vertices_km": str(ROI_VERTICES_KM) if APPLY_ROI_MASK else "",
-        "roi_depth_range_km": f"{ROI_DEPTH_MIN_KM}, {ROI_DEPTH_MAX_KM}" if APPLY_ROI_MASK else "",
         "cluster_weights": ", ".join(
             f"{k}={w:g}" for k, w in zip(active_cluster_vars, weight_vector)
         ),

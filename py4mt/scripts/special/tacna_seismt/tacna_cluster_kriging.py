@@ -1,36 +1,56 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-tacna_cluster.py
-=================
-Fuzzy c-means clustering of MT resistivity/conductivity + seismic
-tomography properties (Vp, Vs, Vp/Vs, density), each loaded from its own
-NATIVE grid produced by tacna_precompute.py and RBF-interpolated onto one
-JOINTLY-DEFINED regular UTM-km grid — defined here, independent of either
-source's own grid — before clustering.
+tacna_cluster_kriging.py
+=========================
+Kriging variant of tacna_cluster.py. Identical pipeline (fuzzy c-means
+clustering of MT resistivity/conductivity + seismic tomography
+properties, each loaded from its own NATIVE grid produced by
+tacna_precompute.py, onto one JOINTLY-DEFINED regular UTM-km grid before
+clustering) — the only change is the interpolation step: this version
+uses Ordinary Kriging (pykrige.ok3d.OrdinaryKriging3D) instead of
+scipy.interpolate.RBFInterpolator. See tacna_cluster.py's own docstring
+and README_cluster.md for the rest of the pipeline, which is unchanged
+here (RoI mask, convex-hull masking, fuzzy c-means, plotting, etc.).
 
 Pipeline
 --------
-tacna_precompute.py  →  tacna_cluster.py  →  tacna_clusters.nc + figures
+tacna_precompute.py → tacna_cluster_kriging.py → tacna_clusters_kriging.nc + figures
+
+Why a separate script rather than a KRIGING_VS_RBF switch
+-----------------------------------------------------------
+Kriging and RBF interpolation solve differently-shaped problems here:
+kriging additionally fits a variogram model per variable (extra cost,
+but yields a kriging-variance field "for free"), and pykrige's
+implementation doesn't scale to the full native ModEM point cloud the
+way RBFInterpolator's neighbors= local fit does — see
+KRIGING_MAX_POINTS below. Keeping this as its own file avoids a single
+script with two interpolation code paths tangled through one set of
+USER SETTINGS.
 
 Where the interpolation moved (changed from an earlier version)
 -------------------------------------------------------------------
 Earlier versions of this pipeline resampled MT resistivity onto the
 seismic tomography's own grid inside tacna_precompute.py
 (modem_rho_on_seisgrid*.nc), and this script just loaded already-aligned
-files. That resampling step now lives HERE instead, and uses RBF
-interpolation (scipy.interpolate.RBFInterpolator) rather than trilinear
-resampling onto someone else's grid:
+files. That resampling step now lives HERE instead, and uses kriging
+(pykrige.ok3d.OrdinaryKriging3D) rather than trilinear resampling onto
+someone else's grid:
   - MT resistivity/conductivity/sensitivity: loaded directly from
     tacna_precompute.py's modem_submesh_points.nc — Part A's full native
     ModEM mesh, already flattened to a point table (easting_km,
     northing_km, depth_km, value) — no gridded intermediate needed.
+    Randomly subsampled to KRIGING_MAX_POINTS before kriging if the
+    native point count exceeds it (see "Kriging settings" below) —
+    unlike RBFInterpolator's neighbors= local fit, pykrige's variogram
+    estimation is O(n^2) in the point count and doesn't scale to the
+    full native ModEM mesh.
   - Vp/Vs/Vp-Vs-ratio/density: loaded from tacna_precompute.py's Part B
     outputs (tacna_vp.nc etc. — gridded (depth, lat, lon) cubes with 2-D
     utm_easting/utm_northing aux coords) and flattened into a point cloud
-    here.
+    here, also subject to the same KRIGING_MAX_POINTS subsampling.
 Every selected variable — regardless of which native grid/resolution it
-started on — is then RBF-interpolated onto ONE common regular grid
+started on — is then kriged onto ONE common regular grid
 (GRID_EASTING_KM / GRID_NORTHING_KM / GRID_DEPTH_KM below), so variables
 no longer need to already share a grid before this script can combine
 them.
@@ -44,11 +64,14 @@ What this script does
    auto = the tightest common overlap of every loaded variable's own
    extent, so the grid doesn't reach into regions only some variables
    cover).
-3. RBF-interpolates each variable onto that grid independently
-   (scipy.interpolate.RBFInterpolator), optionally masking grid points
-   outside that variable's own 3-D convex hull back to NaN — RBF
-   extrapolates smoothly forever otherwise, which would let
-   under-constrained corners quietly influence the clustering.
+3. Krige-interpolates each variable onto that grid independently
+   (pykrige.ok3d.OrdinaryKriging3D — fits a variogram model, then
+   evaluates via ordinary kriging), optionally masking grid points
+   outside that variable's own 3-D convex hull back to NaN — kriging
+   also extrapolates past the convex hull with no natural cutoff, same
+   as RBF, which would let under-constrained corners quietly influence
+   the clustering. Optionally also masks to a rectangular RoI box
+   (APPLY_ROI_MASK/ROI_VERTICES_KM — see tacna_cluster.py).
 4. Flattens the (now grid-aligned) variables into one feature table,
    drops any point with a NaN in a selected variable, optionally
    standardizes (z-score) each feature.
@@ -56,11 +79,13 @@ What this script does
    fuzzy partition coefficient (FPC) as a quick cluster-quality check.
 6. Reconstructs the hard cluster label (argmax membership) and its
    membership value back onto the joint grid, and saves:
-     - tacna_clusters.nc — dims (depth, northing, easting), a genuine
-       regular UTM-km grid (unlike the source grids, which are either a
-       point cloud or an approximately-regular geographic grid)
-     - tacna_cluster_centers.csv — cluster centers in raw (physical)
-       units, point counts, and fractions
+     - tacna_clusters_kriging.nc — dims (depth, northing, easting), a
+       genuine regular UTM-km grid (unlike the source grids, which are
+       either a point cloud or an approximately-regular geographic grid)
+     - tacna_cluster_centers_kriging.csv — cluster centers in raw
+       (physical) units, point counts, and fractions
+   (filenames suffixed "_kriging" so a same-directory RBF run via
+   tacna_cluster.py is never overwritten by this script, or vice versa)
 7. Plots horizontal cluster maps at PLOT_DEPTHS_KM, using the same
    topography/bathymetry basemap and deterministic equal-scale panel
    layout as tacna_plot_seis.py / tacna_plot_modem_image.py
@@ -83,17 +108,23 @@ OUTPUT_TRANSFORM setting).
 
 Dependencies
 ------------
-    numpy, xarray, matplotlib, pyproj, scipy (RBFInterpolator, Delaunay)
+    numpy, xarray, matplotlib, pandas, pyproj, scipy (Delaunay only —
+    RBFInterpolator no longer used here), pykrige (ok3d.OrdinaryKriging3D)
 plus the local `plotpy.py` helper module (also used by the plot
 scripts) for the basemap/figure-layout helpers. The fuzzy c-means
 implementation itself is self-contained (NumPy only, no scikit-fuzzy).
+pykrige is not part of the rest of this pipeline's dependency set — see
+"Kriging settings" below for why (variogram-fitting cost forced a
+KRIGING_MAX_POINTS subsampling step that tacna_cluster.py's RBF version
+doesn't need).
 
 Authors: Svetlana Byrdina (SMB) & Volker Rath (DIAS)
-AI-assisted development: Claude (Anthropic), 2026-07-31. RBF
-interpolation onto a jointly-defined regular grid moved in here from
-tacna_precompute.py: Claude (Anthropic), 2026-07-31. Rectangular RoI
-mask (APPLY_ROI_MASK/ROI_VERTICES_KM) added: Claude (Anthropic),
-2026-08-01.
+AI-assisted development: Claude (Anthropic), 2026-07-31 (as
+tacna_cluster.py). Rectangular RoI mask (APPLY_ROI_MASK/
+ROI_VERTICES_KM) added: Claude (Anthropic), 2026-08-01. This kriging
+variant (pykrige.ok3d.OrdinaryKriging3D replacing
+scipy.interpolate.RBFInterpolator) split off from tacna_cluster.py:
+Claude (Anthropic), 2026-08-01.
 License: GNU General Public License v3 (GPL-3.0-or-later).
 AI-generated code — review before use in production.
 """
@@ -109,12 +140,12 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from matplotlib.path import Path as MplPath
-from scipy.interpolate import RBFInterpolator
 from scipy.spatial import Delaunay
+from pykrige.ok3d import OrdinaryKriging3D
 
 import plotpy
 
-N_THREADS = "32"
+N_THREADS = "8"
 os.environ["OMP_NUM_THREADS"] = N_THREADS
 os.environ["OPENBLAS_NUM_THREADS"] = N_THREADS
 os.environ["MKL_NUM_THREADS"] = N_THREADS
@@ -135,7 +166,10 @@ draw_north_arrow = plotpy.draw_north_arrow
 NC_DIR = "../precompute/"   # must match OUTPUT_DIR in tacna_precompute.py;
                              # tacna_clusters.nc / tacna_cluster_centers.csv
                              # are also written here, alongside their inputs
-PLOT_DIR = "../plots_cluster/"
+PLOT_DIR = "../plots_cluster_kriging/"  # separate from tacna_cluster.py's
+                                         # "../plots_cluster/" so the two
+                                         # scripts' figures never overwrite
+                                         # each other
 PLOT_FORMATS = [".pdf", ".jpg"]
 PLOT_DPI = 600
 
@@ -150,7 +184,7 @@ PLOT_DPI = 600
 #     with 2-D utm_easting/utm_northing aux coords — flattened + the
 #     horizontal coords broadcast across every depth level, into a point
 #     cloud, by load_seis_grid_points() below.
-# Either way, every variable becomes a point cloud before RBF
+# Either way, every variable becomes a point cloud before kriging
 # interpolation onto the joint regular grid — so sources on different
 # native grids/resolutions can be combined freely.
 VARIABLE_SOURCES = {
@@ -208,11 +242,11 @@ STANDARDIZE = True
 
 # --- Joint regular interpolation grid ---
 # Every CLUSTER_VARS source — regardless of its own native grid/format —
-# gets RBF-interpolated onto ONE common regular UTM-km grid before
+# gets krige-interpolated onto ONE common regular UTM-km grid before
 # clustering, defined here. min/max = None auto-computes from the
 # intersection (tightest common overlap) of every loaded variable's own
 # point-cloud extent, so the grid never reaches further than every
-# selected variable actually covers — avoiding unconstrained RBF
+# selected variable actually covers — avoiding unconstrained kriging
 # extrapolation into a region only some variables have data near.
 # Override with explicit numbers to pin down a specific grid regardless
 # of which variables happen to be selected (e.g. for a reproducible grid
@@ -221,35 +255,65 @@ GRID_EASTING_KM  = dict(min=None, max=None, step=2.0)
 GRID_NORTHING_KM = dict(min=None, max=None, step=2.0)
 GRID_DEPTH_KM    = dict(min=-4, max=36, step=1.0)
 
-# --- RBF interpolation settings ---
-# scipy.interpolate.RBFInterpolator, fit independently per variable on
-# its own native point cloud, then evaluated at the joint grid above.
-RBF_KERNEL = "linear"        # "linear" | "thin_plate_spline" | "cubic" |
-                              # "quintic" | "multiquadric" |
-                              # "inverse_multiquadric" | "gaussian" | …
-                              # (see scipy.interpolate.RBFInterpolator).
-                              # "multiquadric"/"inverse_multiquadric"/
-                              # "gaussian" additionally require RBF_EPSILON.
-RBF_EPSILON = None            # shape parameter; required for the kernels
-                              # noted above, unused by "linear"/
-                              # "thin_plate_spline"/"cubic"/"quintic".
-RBF_SMOOTHING = 0.0           # 0 = exact interpolation; > 0 = smoothing
-RBF_NEIGHBORS = 26            # use only the N nearest source points per
-                              # query point (fast, local); None = exact
-                              # global RBF using every source point
-                              # (accurate but can be slow/memory-heavy for
-                              # large point clouds, e.g. the full
-                              # modem_submesh_points.nc table)
-RBF_DEGREE = None             # polynomial term degree; None = kernel default
+# --- Kriging settings ---
+# pykrige.ok3d.OrdinaryKriging3D, fit independently per variable on its
+# own native point cloud, then evaluated at the joint grid above.
+KRIGING_VARIOGRAM_MODEL = "spherical"   # "linear" | "power" | "gaussian" |
+                              # "spherical" | "exponential" | "hole-effect"
+                              # (see pykrige.ok3d.OrdinaryKriging3D)
+KRIGING_NLAGS = 6            # number of bins used when fitting the
+                              # empirical variogram
+KRIGING_WEIGHT = True         # give more weight to closer lags when
+                              # fitting the variogram model (pykrige's
+                              # own `weight` argument) — usually improves
+                              # the fit at short lags, which matter most
+                              # for interpolation
+KRIGING_N_CLOSEST_POINTS = 50 # use only the N nearest source points per
+                              # query point (fast, local — the kriging
+                              # analogue of RBF_NEIGHBORS in
+                              # tacna_cluster.py); None = exact global
+                              # kriging using every (subsampled, see
+                              # KRIGING_MAX_POINTS) source point at once.
+                              # Requires KRIGING_BACKEND "loop" or "C" —
+                              # ignored (a warning is printed) under
+                              # "vectorized".
+KRIGING_BACKEND = "loop"      # "vectorized" (fast, ignores
+                              # KRIGING_N_CLOSEST_POINTS, always global) |
+                              # "loop" (pure Python, respects
+                              # KRIGING_N_CLOSEST_POINTS, no compiled
+                              # extension needed — the safe default) |
+                              # "C" (fastest local option, needs pykrige's
+                              # optional Cython extension AND — unlike the
+                              # 2-D OrdinaryKriging class — support for it
+                              # isn't confirmed for OrdinaryKriging3D in
+                              # every pykrige version; if it raises, this
+                              # script falls back to "loop" automatically.
+                              # Test on a small run before relying on it.)
+KRIGING_MAX_POINTS = 10000    # pykrige's variogram estimation is O(n^2)
+                              # in the number of source points, unlike
+                              # RBFInterpolator's neighbors= local fit —
+                              # this makes the full native-resolution
+                              # modem_submesh_points.nc table (often
+                              # >>10,000 points) impractical as-is. If a
+                              # variable's native point cloud exceeds
+                              # this count, it is randomly subsampled
+                              # (KRIGING_RANDOM_SEED) down to this many
+                              # points BEFORE kriging. None = never
+                              # subsample (only safe for small point
+                              # clouds, e.g. seis_grid-sourced variables
+                              # on a coarse tomography grid).
+KRIGING_RANDOM_SEED = 42
 
 # --- Mask grid points outside each variable's own data footprint ---
-# RBFInterpolator extrapolates smoothly forever past the convex hull of
-# its source points; MASK_TO_CONVEX_HULL clips that back to NaN outside
-# each variable's own 3-D convex hull, so clustering isn't driven by
-# unconstrained extrapolation in corners only some variables actually
-# cover. Uses scipy.spatial.Delaunay per variable — can be slow for very
-# large point clouds; set False to skip (keeps RBF's raw extrapolation
-# everywhere on the joint grid instead).
+# Ordinary kriging, like RBF, extrapolates past the convex hull of its
+# source points with no natural cutoff; MASK_TO_CONVEX_HULL clips that
+# back to NaN outside each variable's own 3-D convex hull, so clustering
+# isn't driven by unconstrained extrapolation in corners only some
+# variables actually cover. Uses scipy.spatial.Delaunay per variable —
+# can be slow for very large point clouds; set False to skip (keeps
+# kriging's raw extrapolation everywhere on the joint grid instead).
+# Computed on the (possibly KRIGING_MAX_POINTS-subsampled) points
+# actually used for kriging, not the full native point cloud.
 MASK_TO_CONVEX_HULL = True
 
 # --- Region of interest (RoI) mask ---
@@ -634,25 +698,84 @@ def load_variable_points(key):
 
 
 # ------------------------------------------------------------------
-# RBF interpolation onto the joint grid
+# Kriging interpolation onto the joint grid
 # ------------------------------------------------------------------
-def rbf_interpolate_to_grid(points, values, grid_points):
+def subsample_for_kriging(points, values, max_points, seed, label):
     """
-    Fit scipy's RBFInterpolator on (points, values) — points shape
-    (n, 3) = [easting_km, northing_km, depth_km] — and evaluate it at
-    grid_points (m, 3). Uses the RBF_* settings above.
+    Randomly subsample (points, values) down to max_points rows if they
+    exceed it — pykrige's variogram estimation is O(n^2) in the source
+    point count, unlike RBFInterpolator's neighbors= local fit, so the
+    full native-resolution point cloud (e.g. modem_submesh_points.nc)
+    is usually impractical as-is. No-op if max_points is None or the
+    point cloud is already small enough.
     """
-    rbf = RBFInterpolator(
-        points, values,
-        kernel=RBF_KERNEL, epsilon=RBF_EPSILON, smoothing=RBF_SMOOTHING,
-        neighbors=RBF_NEIGHBORS, degree=RBF_DEGREE,
+    n = len(points)
+    if max_points is None or n <= max_points:
+        return points, values
+    rng = np.random.default_rng(seed)
+    idx = rng.choice(n, size=max_points, replace=False)
+    print(
+        f"    Subsampled {label!r}: {max_points} / {n} points for kriging "
+        f"(KRIGING_MAX_POINTS)"
     )
-    return rbf(grid_points)
+    return points[idx], values[idx]
+
+
+def kriging_interpolate_to_grid(points, values, grid_points):
+    """
+    Fit pykrige's OrdinaryKriging3D on (points, values) — points shape
+    (n, 3) = [easting_km, northing_km, depth_km] — and evaluate it at
+    grid_points (m, 3). Uses the KRIGING_* settings above. Returns just
+    the kriged values (drops the kriging-variance field pykrige also
+    returns — not currently used downstream, but easy to plumb through
+    later if wanted for uncertainty-aware clustering).
+    """
+    backend = KRIGING_BACKEND
+    exec_kwargs = {}
+    if KRIGING_N_CLOSEST_POINTS is not None:
+        if backend == "vectorized":
+            print(
+                "    WARNING: KRIGING_N_CLOSEST_POINTS is set but "
+                "KRIGING_BACKEND='vectorized' ignores it (always global) — "
+                "set KRIGING_BACKEND to 'loop' or 'C' for local kriging."
+            )
+        else:
+            exec_kwargs["n_closest_points"] = KRIGING_N_CLOSEST_POINTS
+
+    ok3d = OrdinaryKriging3D(
+        points[:, 0], points[:, 1], points[:, 2], values,
+        variogram_model=KRIGING_VARIOGRAM_MODEL, nlags=KRIGING_NLAGS,
+        weight=KRIGING_WEIGHT, exact_values=True,
+    )
+    if backend == "C":
+        try:
+            kvalues, _sigma_sq = ok3d.execute(
+                "points", grid_points[:, 0], grid_points[:, 1], grid_points[:, 2],
+                backend="C", **exec_kwargs,
+            )
+        except Exception as exc:
+            print(
+                f"    WARNING: KRIGING_BACKEND='C' failed ({type(exc).__name__}: "
+                f"{exc}) — pykrige's compiled extension is likely unavailable or "
+                f"unsupported for OrdinaryKriging3D in this pykrige version; "
+                f"retrying with backend='loop' (slower, no compiled extension "
+                f"needed)."
+            )
+            kvalues, _sigma_sq = ok3d.execute(
+                "points", grid_points[:, 0], grid_points[:, 1], grid_points[:, 2],
+                backend="loop", **exec_kwargs,
+            )
+    else:
+        kvalues, _sigma_sq = ok3d.execute(
+            "points", grid_points[:, 0], grid_points[:, 1], grid_points[:, 2],
+            backend=backend, **exec_kwargs,
+        )
+    return np.asarray(kvalues)
 
 
 def outside_convex_hull(points, query_points):
     """Boolean mask, True where query_points fall OUTSIDE the 3-D convex
-    hull of points — used to null out RBFInterpolator's unconstrained
+    hull of points — used to null out kriging's unconstrained
     extrapolation beyond a variable's own data footprint."""
     hull = Delaunay(points)
     return hull.find_simplex(query_points) < 0
@@ -766,19 +889,22 @@ else:
     roi_outside = None
 
 # ==================================================================
-# RBF-interpolate each variable onto the joint grid
+# Krige-interpolate each variable onto the joint grid
 # ==================================================================
 _loaded = {}
 for key in active_cluster_vars:
     print(
-        f"\nRBF-interpolating {key!r} onto the joint grid "
-        f"(kernel={RBF_KERNEL!r}, neighbors={RBF_NEIGHBORS}) …"
+        f"\nKriging {key!r} onto the joint grid "
+        f"(variogram={KRIGING_VARIOGRAM_MODEL!r}, "
+        f"n_closest_points={KRIGING_N_CLOSEST_POINTS}) …"
     )
-    interp_vals = rbf_interpolate_to_grid(
-        native_points[key], native_values[key], grid_points
+    kpoints, kvalues_src = subsample_for_kriging(
+        native_points[key], native_values[key],
+        KRIGING_MAX_POINTS, KRIGING_RANDOM_SEED, key,
     )
+    interp_vals = kriging_interpolate_to_grid(kpoints, kvalues_src, grid_points)
     if MASK_TO_CONVEX_HULL:
-        outside = outside_convex_hull(native_points[key], grid_points)
+        outside = outside_convex_hull(kpoints, grid_points)
         interp_vals = np.where(outside, np.nan, interp_vals)
         print(
             f"    Masked {int(outside.sum())} / {outside.size} joint-grid "
@@ -916,11 +1042,14 @@ out_ds = xr.Dataset(
     attrs={
         "description": (
             "Fuzzy c-means clustering of " + ", ".join(active_cluster_vars) +
-            " on a jointly-defined regular UTM-km grid, RBF-interpolated "
-            "from each variable's own native grid (see tacna_cluster.py)."
+            " on a jointly-defined regular UTM-km grid, krige-interpolated "
+            "from each variable's own native grid (see "
+            "tacna_cluster_kriging.py)."
         ),
-        "rbf_kernel": RBF_KERNEL,
-        "rbf_neighbors": str(RBF_NEIGHBORS),
+        "interpolation_method": "ordinary_kriging",
+        "kriging_variogram_model": KRIGING_VARIOGRAM_MODEL,
+        "kriging_n_closest_points": str(KRIGING_N_CLOSEST_POINTS),
+        "kriging_max_points": str(KRIGING_MAX_POINTS),
         "mask_to_convex_hull": str(MASK_TO_CONVEX_HULL),
         "roi_applied": str(APPLY_ROI_MASK),
         "roi_vertices_km": str(ROI_VERTICES_KM) if APPLY_ROI_MASK else "",
@@ -935,11 +1064,11 @@ out_ds = xr.Dataset(
         "random_seed": RANDOM_SEED,
     },
 )
-out_nc = ncpath("tacna_clusters.nc")
+out_nc = ncpath("tacna_clusters_kriging.nc")
 safe_to_netcdf(out_ds, out_nc)
 print(f"\nSaved: {out_nc}")
 
-centers_csv = ncpath("tacna_cluster_centers.csv")
+centers_csv = ncpath("tacna_cluster_centers_kriging.csv")
 with safe_open_w(centers_csv, newline="") as f:
     w = csv.writer(f)
     w.writerow(["cluster", "n_points", "fraction"] + active_cluster_vars)

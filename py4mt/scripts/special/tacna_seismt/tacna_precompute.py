@@ -214,7 +214,7 @@ def safe_to_netcdf(obj, path):
 # =====================================================================
 
 # --- Input files (without extension) ---
-MODEL_FILE = "../mt//TAC_100_smooth2_short/TACG26b_100ZT_Alpha03_smooth_NLCG_007"  # reads MODEL_FILE + MODEL_EXT
+MODEL_FILE = "../mt/TAC_100_smooth2_short/TACG26b_100ZT_Alpha03_smooth_NLCG_007"  # reads MODEL_FILE + MODEL_EXT
 DATA_FILE = "../mt/TAC_100_smooth2_short/TACG26b_100ZT_Alpha03_smooth_NLCG_007"  # reads DATA_FILE  + DATA_EXT
 MODEL_EXT = ".rho"
 DATA_EXT = ".dat"
@@ -226,10 +226,8 @@ DATA_EXT = ".dat"
 # Set USE_SENSITIVITY = False to skip reading/writing it entirely.
 USE_SENSITIVITY = False
 # SENS_FILE = MODEL_FILE      # base name (without extension)
-SENS_FILE = (
-    "../mt/TAC30_nerr_sp-8_anco_cov_max"
-)
-# SENS_FILE = "/home/vrath/MT_Data/Tacna/TAC_30_JAC/TAC30_nerr_sp-8_sens_cov_max/TAC30_nerr_sp-8_total_cov_max"
+# SENS_FILE = ("../mt/TAC30_nerr_sp-8_anco_cov_max")
+SENS_FILE = ("../mt/TAC_G2_ZT1_nerr_sp-8_Dtype_zfull_sqr_max.sns")
 SENS_EXT = ".sns"
 # "LOG10" is usually more useful for sensitivity, which commonly spans many
 # orders of magnitude; "LINEAR" keeps raw values as stored in the file.
