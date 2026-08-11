@@ -184,7 +184,7 @@ investigation) it may be convenient to do a final normalization by the maximum v
 # Ensemble methods for uncertainty quantification
 
 Below you see first results for our newly implemented ensemble method for 3-D magnetotelluric inversions (FEMTIC-based). This follows the general approach formulated
-by [14]. The example is for a survey of the Misti volcano (Southern Peru) published by Romero-Beltran et al. (2026) [16]
+by [14]. The example is for a survey of the Misti volcano (Southern Peru) published by Romero-Beltran et al. (2026) [16] 
 
 <p align="center">
   <img src="images/misti_rnd.png"
@@ -192,7 +192,7 @@ by [14]. The example is for a survey of the Misti volcano (Southern Peru) publis
        width="1000">
   <br>
   <em>Misti inversion results (a) with associated uncertainties (b). These results were obtained from an approach similar to the geostatistical perturbation proposed in [14],
-	  in this case with randomly placed pilot points. </em>
+	  in this case with randomly placed pilot points. The first six maps are horizontal slides at various depths, the last two are orthogonal vertical slices through the Misti summit.</em>
 </p>
 
 # Note: AI generated scripts
