@@ -1,20 +1,26 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-tacna_precompute.py
+precompute.py
 ====================
-Combined pre-computation script for the Tacna imaging pipeline.
+Combined pre-computation script for the imaging pipeline.
+
+Site-specific settings (input files, region box, depth lists, etc.) are
+kept as capitalized constants below; where they differ between sites, the
+currently-active value is live and any other site's value is kept as a
+labeled, commented-out alternative (e.g. "# TACNA") right next to it, so
+switching sites is a matter of swapping which line is commented.
 
 This merges what were previously two separate scripts:
-  * tacna_precompute_modem.py  (Part A below) — ModEM 3-D MT resistivity
+  * precompute_modem.py  (Part A below) — ModEM 3-D MT resistivity
     inversion results (+ optional sensitivity/resolution field).
-  * tacna_precompute_seis.py   (Part B below) — seismic tomography
+  * precompute_seis.py   (Part B below) — seismic tomography
     Vp / Vs / Vp-Vs-ratio, topography/bathymetry, and (new) density.
 
 Both parts read their own model files, reproject/crop/slice them onto UTM
 (Zone 19S, EPSG:32719) grids in km, and write NetCDF files consumed by the
-companion plot scripts (tacna_plot_modem_image.py, tacna_plot_modem_mesh.py,
-tacna_plot_seis.py). They are combined into one script because they share
+companion plot scripts (plot_modem_image.py, plot_modem_mesh.py,
+plot_seis.py). They are combined into one script because they share
 region-of-interest settings (TAR_LON/TAR_LAT/CROP_TO_REGION — see SHARED
 SETTINGS below) and because a density model, added here, sits alongside the
 seismic Vp/Vs tomography and is processed exactly the same way.
@@ -34,15 +40,15 @@ Part A (ModEM / MT, native ModEM mesh):
                                 sensitivity), for clustering
 
 Part B (seismic tomography + density, seismic grid):
-  tacna_topo_utm.nc          — topography on UTM-km grid
-  tacna_bath_utm.nc          — bathymetry mask (topo ≤ 0) on UTM-km grid
-  tacna_vp.nc / tacna_vs.nc / tacna_vps.nc / tacna_dens.nc
+  {SITE_PREFIX}_topo_utm.nc          — topography on UTM-km grid
+  {SITE_PREFIX}_bath_utm.nc          — bathymetry mask (topo ≤ 0) on UTM-km grid
+  {SITE_PREFIX}_vp.nc / {SITE_PREFIX}_vs.nc / {SITE_PREFIX}_vps.nc / {SITE_PREFIX}_dens.nc
                               — full Vp / Vs / Vp-Vs-ratio / density subsets
                                 (depth coord + UTM aux coords)
-  tacna_vp_utm_{tag}.nc  }
-  tacna_vs_utm_{tag}.nc  }
-  tacna_vps_utm_{tag}.nc }    — per-depth UTM-km slices
-  tacna_dens_utm_{tag}.nc}    — per-depth UTM-km density slice
+  {SITE_PREFIX}_vp_utm_{tag}.nc  }
+  {SITE_PREFIX}_vs_utm_{tag}.nc  }
+  {SITE_PREFIX}_vps_utm_{tag}.nc }    — per-depth UTM-km slices
+  {SITE_PREFIX}_dens_utm_{tag}.nc}    — per-depth UTM-km density slice
 
 Density (Part B) — renamed "dens", not "rho"
 ------------------------------------------------
@@ -53,8 +59,8 @@ DEPTH_INDEX depths, same UTM reprojection helper (slice_to_utm_km_nc). It
 is expected to sit on the same (lat, lon, depth) grid as FD_vp_model.nc; a
 non-fatal warning is printed at run time if that grid doesn't match, since
 a silent mismatch there would misalign density slices against velocity
-ones. Exported as "dens" (tacna_dens.nc, tacna_dens_utm_{tag}.nc) rather
-than "rho", since "rho" is already used throughout Part A for MT
+ones. Exported as "dens" ({SITE_PREFIX}_dens.nc, {SITE_PREFIX}_dens_utm_{tag}.nc)
+rather than "rho", since "rho" is already used throughout Part A for MT
 resistivity (modem_rho_utm_*.nc) — same-sounding names on two physically
 different quantities, on two different grids, was a bug waiting to happen.
 
@@ -62,11 +68,11 @@ Note — no more MT-onto-seismic-grid resampling here
 ------------------------------------------------------------------
 Earlier versions of this script resampled resistivity onto the seismic
 Vp/Vs/density grid here in precompute (modem_rho_on_seisgrid*.nc). That
-step has moved to tacna_cluster.py, which now RBF-interpolates every
+step has moved to cluster.py, which now RBF-interpolates every
 clustering variable — resistivity/conductivity from modem_submesh_points.nc
 below, Vp/Vs/density from Part B's own outputs — onto one jointly-defined
 regular grid, rather than onto the seismic tomography grid specifically.
-See tacna_cluster.py / README_cluster.md.
+See cluster.py / README_cluster.md.
 
 Full submesh point table, for clustering (Part A, new)
 ------------------------------------------------------------------
@@ -74,7 +80,7 @@ See save_submesh_table() below. modem_submesh_points.nc flattens the full
 3-D resistivity (and sensitivity) field on its own native ModEM submesh —
 at full native resolution — into one row per cell: easting_km/northing_km/
 depth_km as ordinary columns alongside resistivity/sensitivity. This is
-now tacna_cluster.py's actual source for resistivity: it loads this point
+now cluster.py's actual source for resistivity: it loads this point
 table directly and RBF-interpolates it onto the joint clustering grid
 (rather than this script resampling it onto the seismic grid first, as it
 used to). Air-masked/out-of-mesh cells stay NaN (with a `valid` flag)
@@ -121,7 +127,7 @@ Dependencies
 
 Authors: Svetlana Byrdina (SMB) & Volker Rath (DIAS)
 AI-assisted development: Claude (Anthropic), 2026-06-29. Merged from
-tacna_precompute_modem.py / tacna_precompute_seis.py, extended with density
+precompute_modem.py / precompute_seis.py, extended with density
 (FD_rho_model.nc, exported as "dens") support, and extended again with MT
 resistivity resampled onto the seismic grid: Claude (Anthropic), 2026-07-31.
 License: GNU General Public License v3 (GPL-3.0-or-later).
@@ -151,12 +157,21 @@ except ImportError:
 # SHARED SETTINGS  (used identically by Part A and Part B)
 # =====================================================================
 
+# --- Site selector ---
+# Prefixes every Part-B seismic/density output filename
+# ({SITE_PREFIX}_vp.nc, {SITE_PREFIX}_topo_utm.nc, etc. — see module
+# docstring). Change this (and the site-specific settings marked with a
+# "# TACNA" comment throughout this file) to switch which site's inputs
+# and outputs are active.
+# SITE_PREFIX = "saba"
+SITE_PREFIX = "tacna"  # TACNA
+
 # Directory for all NetCDF outputs written by this script (created if it
 # doesn't exist). Default "." keeps everything in the current directory.
-# tacna_plot_modem_image.py / tacna_plot_modem_mesh.py / tacna_plot_seis.py
-# have a matching NC_DIR setting to read from wherever this is pointed at.
+# plot_modem_image.py / plot_modem_mesh.py / plot_seis.py have a matching
+# NC_DIR setting to read from wherever this is pointed at.
 # OUTPUT_DIR = "."
-OUTPUT_DIR = "../precompute/"
+OUTPUT_DIR = "../precompute/tacna/"
 
 # --- Geographic region of interest ---
 # TRIM_PAD (Part A) only drops a fixed number of cells and typically still
@@ -167,20 +182,23 @@ OUTPUT_DIR = "../precompute/"
 # each part's full (trimmed, for ModEM) source extent instead.
 #
 # IMPORTANT: this box must fully contain every VSLICES profile endpoint
-# defined in tacna_plot_modem_image.py AND tacna_plot_seis.py
-# (PROFILE_CD_LON/LAT etc.) — profile_CD's endpoints, [-70.476, -18.255]
-# and [-69.499, -17.048], both fell *outside* an earlier, narrower version
-# of this box on every side, leaving no data at all near either end of the
-# profile (a white gap at both edges of the section). Widened with margin
-# here; if you add profiles reaching further, widen this to match.
+# defined in plot_modem_image.py AND plot_seis.py (PROFILE_CD_LON/LAT
+# etc.) — profile_CD's endpoints, [-70.476, -18.255] and [-69.499,
+# -17.048], both fell *outside* an earlier, narrower version of this box
+# on every side, leaving no data at all near either end of the profile (a
+# white gap at both edges of the section). Widened with margin here; if
+# you add profiles reaching further, widen this to match.
 #
 # This is the union of the original ModEM box [-70.55, -69.40] x
 # [-18.35, -16.95] and the original seismic box [-70.79, -69.48] x
 # [-18.34, -17.01], padded by ~0.05° — now shared by both parts of the
 # script so they always cover the same geographic area by construction.
 CROP_TO_REGION = True
-TAR_LON = [-70.84, -69.35]
-TAR_LAT = [-18.40, -16.90]
+TAR_LON = [-70.84, -69.35]  # TACNA
+TAR_LAT = [-18.40, -16.90]  # TACNA
+#TAR_LON = [-72.62, -71.271]
+#TAR_LAT = [-16.62, -15.109]  # passing by Sabancaya
+
 
 Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
 
@@ -214,8 +232,10 @@ def safe_to_netcdf(obj, path):
 # =====================================================================
 
 # --- Input files (without extension) ---
-MODEL_FILE = "../mt/TAC_100_smooth2_short/TACG26b_100ZT_Alpha03_smooth_NLCG_007"  # reads MODEL_FILE + MODEL_EXT
-DATA_FILE = "../mt/TAC_100_smooth2_short/TACG26b_100ZT_Alpha03_smooth_NLCG_007"  # reads DATA_FILE  + DATA_EXT
+MODEL_FILE = "../mt/tacna/TACG26b_Z1_NLCG_006_clip"  # TACNA
+DATA_FILE = "../mt/tacna/TAC_100_smooth2_short/TACG26b_100ZT_Alpha03_smooth_NLCG_007"  # TACNA
+#MODEL_FILE = "../mt/saba/SABA13_Z_Alpha01_priorP8_NLCG_016_clip"  # reads MODEL_FILE + MODEL_EXT
+#DATA_FILE = "../mt/saba/SABA13a_Z"  # reads DATA_FILE  + DATA_EXT
 MODEL_EXT = ".rho"
 DATA_EXT = ".dat"
 
@@ -226,8 +246,11 @@ DATA_EXT = ".dat"
 # Set USE_SENSITIVITY = False to skip reading/writing it entirely.
 USE_SENSITIVITY = False
 # SENS_FILE = MODEL_FILE      # base name (without extension)
-# SENS_FILE = ("../mt/TAC30_nerr_sp-8_anco_cov_max")
-SENS_FILE = ("../mt/TAC_G2_ZT1_nerr_sp-8_Dtype_zfull_sqr_max.sns")
+# SENS_FILE = "../mt/TAC30_nerr_sp-8_anco_cov_max"  # TACNA
+SENS_FILE = ("../mt/tacna/TAC_G2_ZT1_nerr_sp-8_Dtype_zfull_sqr_max.sns")  # TACNA
+#SENS_FILE = (
+    #"../mt/saba/SABA13a_total_sns"
+#)
 SENS_EXT = ".sns"
 # "LOG10" is usually more useful for sensitivity, which commonly spans many
 # orders of magnitude; "LINEAR" keeps raw values as stored in the file.
@@ -263,13 +286,13 @@ REFERENCE_LON = None  # degrees, WGS84; None → read from model file
 OUTPUT_TRANSFORM = "LOG10"
 
 # --- Depth slices to export as 2-D horizontal NetCDF grids (km, positive down) ---
-# Must match DEPTH_SLICES_KM in tacna_plot_modem_mesh.py — both the resistivity
+# Must match DEPTH_SLICES_KM in plot_modem_mesh.py — both the resistivity
 # (modem_rho_utm_{tag}.nc) and sensitivity (modem_sens_utm_{tag}.nc) depth
 # slices are written from this one list, in the same loop (see "8. Depth
 # slices" below), so keeping this in sync automatically keeps sensitivity
 # covering the same depths as resistivity.
-DEPTH_SLICES_KM = [-3., -1., 1.0, 5.0, 9.0]
-
+# DEPTH_SLICES_KM = [-3., -1., 1.0, 5.0, 9.0]  # TACNA
+DEPTH_SLICES_KM = [-3., 1.0, 6.0, 11.0, 16.0, 21.0, 26.0, 31.0, 36]
 # --- Export the full native ModEM submesh as a flat point table, for
 # clustering ---
 # Produces modem_submesh_points.nc: one row per ModEM cell (after
@@ -277,7 +300,7 @@ DEPTH_SLICES_KM = [-3., -1., 1.0, 5.0, 9.0]
 # columns alongside resistivity (and sensitivity, if USE_SENSITIVITY) —
 # ready to feed straight into a clustering script as an (n_points,
 # n_features) table, no reshaping needed. This is the FULL native ModEM
-# mesh resolution, as a point cloud — tacna_cluster.py reads this
+# mesh resolution, as a point cloud — cluster.py reads this
 # directly and RBF-interpolates it onto its own jointly-defined regular
 # grid (see README_cluster.md), rather than this script resampling it
 # onto any other grid first.
@@ -300,11 +323,31 @@ RHO_AIR = 1.0e17
 # margin on both sides and won't accidentally catch resistive rock.
 AIR_RHO_THRESHOLD = 1.0e10
 
+# --- "Illegal"/sentinel-value threshold, near-zero end (Ω·m or
+# sensitivity units — see note below) ---
+# Some .rho/.sns files mark invalid/no-data cells with a tiny non-zero
+# placeholder near the OTHER end of the scale from AIR_RHO_THRESHOLD
+# above — e.g. 1e-32 — rather than (or in addition to) a huge air-like
+# value. Applied by apply_transform() the same way AIR_RHO_THRESHOLD is:
+# once, here, before the transform, to whichever field is passed in
+# (resistivity or sensitivity — apply_transform() is shared by both), so
+# every downstream consumer sees a single consistent NaN rather than
+# re-deriving its own cutoff. Any cell with |value| <= this threshold is
+# masked to NaN — abs() because some codes use a negative sentinel too,
+# and because for the LOG10/LOGE transforms a genuine physical value
+# this close to zero would itself already blow up into a huge negative
+# log the moment the transform is applied, so there's no real resistivity
+# regime this could be mistaken for. Deliberately far below any real Ω·m
+# or sensitivity value (which never legitimately reach anywhere near
+# double precision's ~1e-300 underflow floor) — set to None to disable.
+ILLEGAL_LOW_THRESHOLD = 1.0e-20
+
 # --- Padding cells to trim from each face before output ---
 # ModEM models have large padding cells at the boundary that distort colour scales.
 # [trim_x0, trim_x1, trim_y0, trim_y1, trim_z0] — number of cells to drop
 # from the -x, +x, -y, +y faces and the top (z=0) face respectively.
 # Set all to 0 to keep the full model.
+# TRIM_PAD = [7, 7, 7, 7, 16]  # TACNA
 TRIM_PAD = [7, 7, 7, 7, 0]
 
 # --- Geographic region of interest ---
@@ -312,7 +355,7 @@ TRIM_PAD = [7, 7, 7, 7, 0]
 # section above (used identically by both the ModEM and seismic parts
 # of this script, which is exactly why they were merged into one).
 # IMPORTANT: this box must fully contain every VSLICES profile endpoint
-# defined in tacna_plot_modem_image.py (PROFILE_CD_LON/LAT etc.) — see
+# defined in plot_modem_image.py (PROFILE_CD_LON/LAT etc.) — see
 # the SHARED SETTINGS comment for the history of why this box has the
 # margins it does.
 
@@ -337,8 +380,8 @@ FNAME_VS = "../seistomo/FD_vs_model.nc"
 # script does not rescale it, only reprojects/crops/slices it exactly
 # like Vp/Vs). Expected on the same (lat, lon, depth) grid as FNAME_VP/
 # FNAME_VS — a soft consistency check at read time warns (does not
-# abort) if the grids disagree. Exported here as "dens" (tacna_dens.nc,
-# tacna_dens_utm_{tag}.nc) rather than "rho" — "rho" is already used
+# abort) if the grids disagree. Exported here as "dens" ({SITE_PREFIX}_dens.nc,
+# {SITE_PREFIX}_dens_utm_{tag}.nc) rather than "rho" — "rho" is already used
 # throughout Part A for MT resistivity (modem_rho_utm_*.nc etc.), and the
 # two are physically different quantities on different grids. The source
 # *file* itself is still named FD_rho_model.nc on disk (matching the
@@ -351,28 +394,29 @@ FNAME_DENS = "../seistomo/FD_rho_model.nc"
 # section above (used identically by both the ModEM and seismic parts
 # of this script). See that section's comment for why the box has the
 # margins it does (must fully contain every VSLICES profile endpoint
-# defined in tacna_plot_seis.py, PROFILE_CD_LON/LAT etc.).
+# defined in plot_seis.py, PROFILE_CD_LON/LAT etc.).
 
-# TAR_LON = [-70.79, -69.50]
-# TAR_LAT = [-18.34, -16.99]
+# TAR_LON = [-70.79, -69.50]  # TACNA, superseded by SHARED SETTINGS above
+# TAR_LAT = [-18.34, -16.99]  # TACNA, superseded by SHARED SETTINGS above
 # Lower bound was 0 (sea level), which silently discarded any above-sea-
 # level coverage the source model has (e.g. under a volcanic edifice) —
-# the same VSLICES zmin_km=-8.0 fix in tacna_plot_seis.py can't recover
+# the same VSLICES zmin_km=-8.0 fix in plot_seis.py can't recover
 # data that was already cropped out here at the source. -8 gives the same
 # margin used there for the catalogue's shallowest events (z = -5.75 km).
 # xarray's .sel(slice(...)) clips gracefully to whatever the source
 # actually covers, so this is safe even if FD_vp_model.nc/FD_vs_model.nc
 # don't extend that high — worth checking the printed depth range below
 # after re-running to see whether real coverage was gained or not.
+
 DEPTH_RANGE = [-8, 100]          # km
-
+# DEPTH_INDEX = [1, 5, 10, 15, 20, 25, 30]  # TACNA
+DEPTH_INDEX = [1, 5, 10, 15, 20, 25, 30, 35, 40]
 # Depth indices to export as per-depth UTM-km slices
-# DEPTH_INDEX = [5, 9, 13]
-DEPTH_INDEX = [1, 5, 10, 15, 20, 25, 30]
-
 # Topo/bath geographic bounds (slightly wider than velocity subset)
-MAP_LON = [-70.94, -69.25]
-MAP_LAT = [-18.50, -16.80]
+# MAP_LON = [-70.94, -69.25]  # TACNA
+# MAP_LAT = [-18.50, -16.80]  # TACNA
+MAP_LON = [TAR_LON[0], TAR_LON[1]]
+MAP_LAT = [TAR_LAT[0], TAR_LAT[1]]
 
 # Output UTM-km grid spacing (km)
 TOPO_SPACING_KM = 1.0
@@ -554,9 +598,32 @@ def apply_transform(mval, trans):
     then propagates naturally through every downstream consumer (map
     color scales, interpolation, exact per-cell lookups) with a single,
     consistent source of truth for "is this air".
+
+    Values at the other end of the scale (|mval| <= ILLEGAL_LOW_THRESHOLD,
+    e.g. a 1e-32 sentinel some .rho/.sns files use to mark invalid/
+    no-data cells) are masked to NaN the same way, for the same reason —
+    see ILLEGAL_LOW_THRESHOLD's own comment above. Shared by both the
+    resistivity and the sensitivity model (apply_transform() is called
+    on whichever is passed in), so this catches the same kind of sentinel
+    in either file.
     """
     mval = mval.copy().astype(float)
+
+    n_air = int(np.sum(mval >= AIR_RHO_THRESHOLD))
     mval[mval >= AIR_RHO_THRESHOLD] = np.nan
+
+    n_illegal = 0
+    if ILLEGAL_LOW_THRESHOLD is not None:
+        illegal = np.isfinite(mval) & (np.abs(mval) <= ILLEGAL_LOW_THRESHOLD)
+        n_illegal = int(np.sum(illegal))
+        mval[illegal] = np.nan
+
+    if n_illegal:
+        print(
+            f"    Masked {n_illegal} cell(s) with |value| <= "
+            f"ILLEGAL_LOW_THRESHOLD ({ILLEGAL_LOW_THRESHOLD:g}) to NaN "
+            f"(sentinel/no-data placeholder, not physical)"
+        )
 
     trans = trans.upper()
     if trans == "LOG10":
@@ -716,7 +783,7 @@ def save_submesh_table(
             "Full native-ModEM-submesh point table (one row per mesh cell, "
             "after TRIM_PAD/CROP_TO_REGION), at full native ModEM "
             "resolution. Intended as a feature table for clustering — see "
-            "tacna_cluster.py, which RBF-interpolates this onto its own "
+            "cluster.py, which RBF-interpolates this onto its own "
             "jointly-defined regular grid."
         ),
     })
@@ -1707,15 +1774,15 @@ vs  = add_utm_coords(vs)
 vps = add_utm_coords(vps)
 dens = add_utm_coords(dens)
 
-safe_to_netcdf(vp, outpath("tacna_vp.nc"))
-safe_to_netcdf(vs, outpath("tacna_vs.nc"))
-safe_to_netcdf(vps, outpath("tacna_vps.nc"))
-safe_to_netcdf(dens, outpath("tacna_dens.nc"))
+safe_to_netcdf(vp, outpath(f"{SITE_PREFIX}_vp.nc"))
+safe_to_netcdf(vs, outpath(f"{SITE_PREFIX}_vs.nc"))
+safe_to_netcdf(vps, outpath(f"{SITE_PREFIX}_vps.nc"))
+safe_to_netcdf(dens, outpath(f"{SITE_PREFIX}_dens.nc"))
 print("Saved velocity/density subsets:")
-print(f"  {outpath('tacna_vp.nc')}")
-print(f"  {outpath('tacna_vs.nc')}")
-print(f"  {outpath('tacna_vps.nc')}")
-print(f"  {outpath('tacna_dens.nc')}")
+print(f"  {outpath(f'{SITE_PREFIX}_vp.nc')}")
+print(f"  {outpath(f'{SITE_PREFIX}_vs.nc')}")
+print(f"  {outpath(f'{SITE_PREFIX}_vps.nc')}")
+print(f"  {outpath(f'{SITE_PREFIX}_dens.nc')}")
 
 # ------------------------------------------------------------------
 # 2. Topography and bathymetry (no GMT)
@@ -1740,11 +1807,11 @@ bath_da = xr.DataArray(
 )
 
 print("\nReprojecting topo/bath to UTM-km grids …")
-geo_to_utm_km_nc(topo_da, outpath("tacna_topo_utm.nc"), spacing_km=TOPO_SPACING_KM)
-geo_to_utm_km_nc(bath_da, outpath("tacna_bath_utm.nc"), spacing_km=TOPO_SPACING_KM)
+geo_to_utm_km_nc(topo_da, outpath(f"{SITE_PREFIX}_topo_utm.nc"), spacing_km=TOPO_SPACING_KM)
+geo_to_utm_km_nc(bath_da, outpath(f"{SITE_PREFIX}_bath_utm.nc"), spacing_km=TOPO_SPACING_KM)
 
-# Note: tacna_topo_shade_utm.nc is intentionally NOT written here.
-# Hillshade is computed on-the-fly in tacna_plot_seis.py via
+# Note: {SITE_PREFIX}_topo_shade_utm.nc is intentionally NOT written here.
+# Hillshade is computed on-the-fly in plot_seis.py via
 # matplotlib.colors.LightSource, which gives equivalent results.
 
 # ------------------------------------------------------------------
@@ -1756,9 +1823,9 @@ print("\nPre-computing per-depth UTM-km velocity/density slices …")
 for d_index in DEPTH_INDEX:
     depth_km_val = int(depth_coord.item(d_index))
     tag = f"{depth_km_val}km"
-    slice_to_utm_km_nc(vp["data"].isel(depth=d_index),  outpath(f"tacna_vp_utm_{tag}.nc"))
-    slice_to_utm_km_nc(vs["data"].isel(depth=d_index),  outpath(f"tacna_vs_utm_{tag}.nc"))
-    slice_to_utm_km_nc(vps["data"].isel(depth=d_index), outpath(f"tacna_vps_utm_{tag}.nc"))
-    slice_to_utm_km_nc(dens["data"].isel(depth=d_index), outpath(f"tacna_dens_utm_{tag}.nc"))
+    slice_to_utm_km_nc(vp["data"].isel(depth=d_index),  outpath(f"{SITE_PREFIX}_vp_utm_{tag}.nc"))
+    slice_to_utm_km_nc(vs["data"].isel(depth=d_index),  outpath(f"{SITE_PREFIX}_vs_utm_{tag}.nc"))
+    slice_to_utm_km_nc(vps["data"].isel(depth=d_index), outpath(f"{SITE_PREFIX}_vps_utm_{tag}.nc"))
+    slice_to_utm_km_nc(dens["data"].isel(depth=d_index), outpath(f"{SITE_PREFIX}_dens_utm_{tag}.nc"))
 
 print("\nDone (Part B). All seismic + density UTM-km grids ready.")

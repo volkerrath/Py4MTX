@@ -212,6 +212,20 @@ Provenance
             untouched; applied right before
             fem.resolve_slice_positions(MOD_SLICES, ...) in
             _plot_slice().
+2026-08-10  Claude Sonnet 5 (Anthropic)
+            femtic_viz.py fix: N-S curtain panels ("ns" kind, e.g. the
+            "N-S easting = ... km" panel in MOD_SLICES) were plotting
+            mirrored left-right relative to true geography -- verified
+            against a real ensemble QC figure where a resistive body at
+            positive y/north appeared on the "S" side of the panel. Root
+            cause and fix are in fviz.plot_model_slices' internal
+            _axis_slice_params() helper; no changes needed here beyond
+            picking up the updated femtic_viz.py. Also added
+            MOD_TICK_DECIMALS (default None = unchanged formatting):
+            controls the number of decimal digits shown on depth,
+            easting/northing, and lat/lon axis tick labels, threaded
+            through to fviz.plot_model_slices' new tick_decimals
+            parameter in _plot_slice().
 """
 from __future__ import annotations
 
@@ -296,17 +310,18 @@ print(titstrng + "\n\n")
 # ===========================================================================
 # Configuration
 # ===========================================================================
-FEMTIC="4.3"
+FEMTIC="5.0" #"4.3"
 # ---------------------------------------------------------------------------
 # Ensemble input
 # ---------------------------------------------------------------------------
 
-ENSEMBLE_DIR = r"/home/vrath/FEMTIC_work/Ensembles/misti_gst/ensemble/"
-ENSEMBLE_NAME = "misti_gst_suzuki_"
+# ENSEMBLE_DIR = r"/home/vrath/FEMTIC_work/Ensembles/misti_gst/ensemble/"
+ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/misti_gst_ensembles/"
+ENSEMBLE_NAME = "misti_gst_suzuki_rnd"
 
 #: Prefix used for .npz output keys and default file/figure names.
 #: e.g. "rto" → keys rto_ens, rto_avg, …  and file RTO_results.npz.
-ENSEMBLE_PREFIX = "misti_gst_suzuki"
+ENSEMBLE_PREFIX = "misti_gst_suzuki_rnd"
 
 #: Maximum normalised RMS accepted from femtic.cnv.
 NRMS_MAX = 1.5
@@ -435,15 +450,15 @@ MOD_STATS_DIR  = ENSEMBLE_DIR + "/stats_plots/"
 #: sensible starting range; adjust per-key, or set a key to None to fall
 #: back to auto-scaling for that one statistic.
 MOD_STATS_CLIM = {
-    "var": [-2.0, 2.0],
-    "err": [-2.0, 2.0],
-    "mad": [-2.0, 2.0],
+    "var": [-.0, .5],
+    "err": [-.0, .5],
+    "mad": [-.0, .5],
 }
 for _lo, _hi in QDIFF_PAIRS:
-    MOD_STATS_CLIM[f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_")] = [-2.0, 2.0]
+    MOD_STATS_CLIM[f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_")] = [.0, .5]
 if BOOTSTRAP_VAR:
-    MOD_STATS_CLIM["var_boot"] = [-2.0, 2.0]
-    MOD_STATS_CLIM["err_boot"] = [-2.0, 2.0]
+    MOD_STATS_CLIM["var_boot"] = [-.0, 0.5]
+    MOD_STATS_CLIM["err_boot"] = [-.0, 0.5]
 
 # ---------------------------------------------------------------------------
 # Shared slice / plot parameters
@@ -468,7 +483,7 @@ MOD_ORIGIN_METHOD = "box"
 #: "model"  — axis ticks in model-local metres (default)
 #: "utm"    — axis ticks in absolute UTM metres
 #: "latlon" — axis ticks in decimal degrees
-MOD_DISPLAY_COORDS = "model"
+MOD_DISPLAY_COORDS = "latlon"
 
 # --- Site overlay ------------------------------------------------------------
 #: Primary source: mt_make_sitelist.py CSV (name,lat,lon,elev,sitenum,E,N).
@@ -479,9 +494,9 @@ MOD_SITE_NAMES  = None   # list of names to plot, or None = all sites
 MOD_SITE_NUMBER = None
 
 MOD_PLOT_SITES_MAPS   = True    # show markers on map panels
-MOD_PLOT_SITES_SLICES = True    # show markers on curtain / plane panels
+MOD_PLOT_SITES_SLICES = False    # show markers on curtain / plane panels
 #: Max distance [km] from a curtain plane for a site to appear on it.
-MOD_PROJECTION_DIST = 5.0    # km; None = show all sites on every panel
+MOD_PROJECTION_DIST = 2.0    # km; None = show all sites on every panel
 
 MOD_SITE_MARKER        = dict(marker="v", color="black", ms=8, zorder=10, label=None)
 MOD_SITE_MARKER_SLICES = None
@@ -494,9 +509,12 @@ MOD_MAP_MARKERS = []
 #: Depth z0 is always model-local metres (no CRS tagging).
 MOD_SLICES = [
     dict(kind="map", z0=5.0),    # km
+    dict(kind="map", z0=10.0),   # km
     dict(kind="map", z0=15.0),   # km
-    dict(kind="ns",  x0=0.0),    # km
-    dict(kind="ew",  y0=0.0),    # km
+    dict(kind="map", z0=20.0),   # km
+    dict(kind="map", z0=25.0),   # km
+    dict(kind="ns",  x0=(-71.40723, 'latlon')),    # km
+    dict(kind="ew",  y0=(-16.299593, 'latlon')),    # km
 ]
 MOD_XLIM = None    # [xmin, xmax] model-local km; None = auto
 MOD_YLIM = None    # [ymin, ymax] model-local km; None = auto
@@ -513,7 +531,8 @@ MOD_ZLIM = None    # [zmin, zmax] model-local km; None = auto
 #: since that sizing needs an actual extent to compute widths from.
 MOD_ROI_AUTO   = True
 MOD_ROI_PAD_XY = 5.0             # km of padding around the site bbox
-MOD_ROI_ZLIM   = [-1.0, 20.0]    # depth range (km, positive-down) for ns/ew/plane panels; None = leave MOD_ZLIM as-is
+MOD_ROI_ZLIM   = [-6.0, 30.0]    
+#: depth range (km, positive-down) for ns/ew/plane panels; None = leave MOD_ZLIM as-is
 #: Lower bound is negative (above the z=0 datum) to give ~1 km of headroom
 #: so topography (mesh cells with z < 0) is not clipped out of the ns/ew/
 #: plane panels. Previously [0.0, 20000.0] cut panels off exactly at the
@@ -538,7 +557,7 @@ MOD_HORIZ_KM     = True
 #: 2x2 grid matching the 4 default MOD_SLICES panels (2 maps + ns + ew).
 #: Adjust to len(MOD_SLICES) if you change the number of panels; None/None
 #: falls back to a single row of len(MOD_SLICES) columns.
-MOD_NROWS        = 2      # None = auto (1 row)
+MOD_NROWS        = 4      # None = auto (1 row)
 MOD_NCOLS        = 2      # None = auto (len(MOD_SLICES) cols)
 MOD_PANEL_HEIGHT = 16.0   # cm
 #: None = auto per-column width from each panel's own aspect ratio (needs
@@ -550,8 +569,13 @@ MOD_FIGSIZE      = None   # [w, h] cm; overrides auto when set
 
 #: Axis annotation font sizes, passed through to fviz.plot_model_slices.
 #: Defaults match plot_model_slices' own defaults.
-MOD_TICK_FONTSIZE  = 12   # axis tick labels, colourbar ticks
-MOD_LABEL_FONTSIZE = 12    # axis labels, panel titles, colourbar label
+MOD_TICK_FONTSIZE  = 16   # axis tick labels, colourbar ticks
+MOD_LABEL_FONTSIZE = 16    # axis labels, panel titles, colourbar label
+
+#: Decimal digits shown on axis tick labels (depth, map/curtain
+#: easting-northing, and lat/lon all share this one setting). None (default)
+#: keeps plot_model_slices' own per-axis-type formatting unchanged.
+MOD_TICK_DECIMALS = None
 
 #: When True (default) and this script is running inside Spyder, every
 #: saved figure is also displayed inline (Spyder's Plots pane) via
@@ -772,6 +796,7 @@ def _plot_slice(block_file: str, pdf_file: str,
         ncols               = MOD_NCOLS,
         tick_fontsize       = MOD_TICK_FONTSIZE,
         label_fontsize      = MOD_LABEL_FONTSIZE,
+        tick_decimals       = MOD_TICK_DECIMALS,
         alpha_file          = MOD_ALPHA_FILE,
         alpha_mode          = MOD_ALPHA_MODE,
         alpha_blank_thresh  = MOD_ALPHA_BLANK_THRESH,

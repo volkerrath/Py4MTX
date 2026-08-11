@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-tacna_cluster.py
+cluster.py
 =================
 Clusters MT resistivity/conductivity + seismic tomography properties
 (Vp, Vs, Vp/Vs, density) that have already been interpolated onto a
-common grid by tacna_interpolate.py, via fuzzy c-means or a
+common grid by interpolate.py, via fuzzy c-means or a
 self-organizing map (SOM), and plots depth-slice maps.
 
 This is the clustering-only half of what used to be
-tacna_cluster_rbf.py / tacna_cluster_kriging.py / tacna_cluster_som.py:
+cluster_rbf.py / cluster_kriging.py / cluster_som.py:
 those three scripts each duplicated grid-building + interpolation +
 clustering + plotting, differing only in interpolation method (RBF vs.
 kriging) or clustering method (fuzzy c-means vs. SOM). This script does
 NOT build any grid or interpolate anything — it just reads whichever
-grid tacna_interpolate.py already produced (INTERP_FILE), and is
+grid interpolate.py already produced (INTERP_FILE), and is
 therefore completely agnostic to how that grid was built (a fresh joint
 UTM grid or a reused seismic-tomography native grid) or which
 interpolation method produced it (RBF/kriging/IDW). CLUSTERING_METHOD
@@ -22,19 +22,19 @@ picks fuzzy c-means or SOM independently of any of that.
 
 Pipeline
 --------
-tacna_precompute.py → tacna_interpolate.py → tacna_interp_<method>.nc
+precompute.py → interpolate.py → {SITE_PREFIX}_interp_<method>.nc
                                                      ↓
-                                    tacna_cluster.py → tacna_clusters.nc + figures
+                                    cluster.py → {SITE_PREFIX}_clusters.nc + figures
 
 What this script does
 ----------------------
-1. Reads INTERP_FILE (tacna_interpolate.py's output) — grid coords/dims,
+1. Reads INTERP_FILE (interpolate.py's output) — grid coords/dims,
    per-variable interpolated fields and their units, and enough
    attributes (target_grid_mode, interp_vars) to know how to plot it.
 2. Picks CLUSTER_VARS, a subset of whatever variables are actually in
    INTERP_FILE (defaults to all of them) — so you can interpolate a
    superset once and cluster on different subsets without re-running
-   tacna_interpolate.py.
+   interpolate.py.
 3. Builds one feature table, drops any grid cell with a NaN in a
    selected variable, optionally standardizes (z-score) each feature,
    then weights (CLUSTER_WEIGHTS).
@@ -49,9 +49,9 @@ What this script does
      similar map colors reflect genuinely similar feature-space
      neighbors.
 5. Reconstructs the hard label + membership/quantization-error back onto
-   the grid and saves tacna_clusters.nc / tacna_cluster_centers.csv.
+   the grid and saves {SITE_PREFIX}_clusters.nc / {SITE_PREFIX}_cluster_centers.csv.
 6. Plots horizontal cluster maps at PLOT_DEPTHS_KM, on the same
-   topography/bathymetry basemap as tacna_plot_seis.py. If INTERP_FILE
+   topography/bathymetry basemap as plot_seis.py. If INTERP_FILE
    was built on a regular UTM-km ("joint") grid this uses a plain
    imshow(extent=...); if it was built on a reused seismic-tomography
    ("seismic") grid — not regular in UTM space — this uses
@@ -67,9 +67,9 @@ scripts). The fuzzy c-means / SOM implementations are self-contained
 
 Authors: Svetlana Byrdina (SMB) & Volker Rath (DIAS)
 AI-assisted development: Claude (Anthropic). Split out of
-tacna_cluster_rbf.py / tacna_cluster_kriging.py / tacna_cluster_som.py
+cluster_rbf.py / cluster_kriging.py / cluster_som.py
 into a single, interpolation-method-agnostic clustering script that
-reads tacna_interpolate.py's output instead of building any grid or
+reads interpolate.py's output instead of building any grid or
 interpolating itself: Claude (Anthropic), 2026-08-02.
 License: GNU General Public License v3 (GPL-3.0-or-later).
 AI-generated code — review before use in production.
@@ -99,24 +99,31 @@ draw_north_arrow = plotpy.draw_north_arrow
 # =====================================================================
 
 # --- Input/output directories ---
-NC_DIR = "../precompute/"   # must match tacna_interpolate.py's NC_DIR;
-                             # tacna_clusters.nc / tacna_cluster_centers.csv
+# --- Site selector ---
+# Must match SITE_PREFIX in precompute.py / interpolate.py — used below
+# to find their outputs and to name this script's own outputs.
+SITE_PREFIX = "saba"
+# SITE_PREFIX = "tacna"  # TACNA
+
+# --- Input/output directories ---
+NC_DIR = "../precompute/"   # must match interpolate.py's NC_DIR;
+                             # {SITE_PREFIX}_clusters.nc / {SITE_PREFIX}_cluster_centers.csv
                              # are also written here.
 PLOT_DIR = "../plots_cluster/"
 PLOT_FORMATS = [".pdf", ".jpg"]
 PLOT_DPI = 600
 
-# --- Which tacna_interpolate.py output to read ---
-# Bare filename, looked up under NC_DIR — e.g. "tacna_interp_rbf.nc",
-# "tacna_interp_kriging.nc", "tacna_interp_idw.nc", or whatever
-# tacna_interpolate.py's OUTPUT_FILE was set to.
-INTERP_FILE = "tacna_interp_rbf.nc"
+# --- Which interpolate.py output to read ---
+# Bare filename, looked up under NC_DIR — e.g. "{SITE_PREFIX}_interp_rbf.nc",
+# "{SITE_PREFIX}_interp_kriging.nc", "{SITE_PREFIX}_interp_idw.nc", or
+# whatever interpolate.py's OUTPUT_FILE was set to.
+INTERP_FILE = f"{SITE_PREFIX}_interp_rbf.nc"
 
 # --- Which variables to actually cluster on ---
 # None = use every variable in INTERP_FILE (its own interp_vars
 # attribute). Set an explicit subset to cluster on fewer than what was
 # interpolated — must all be present in INTERP_FILE, or this raises
-# telling you to add them to tacna_interpolate.py's INTERP_VARS and
+# telling you to add them to interpolate.py's INTERP_VARS and
 # re-run it first.
 CLUSTER_VARS = None
 
@@ -143,7 +150,7 @@ STANDARDIZE = True
 #   down to N_CLUSTERS. N_CLUSTERS/FUZZINESS/MAX_ITER/TOL below are only
 #   used when CLUSTERING_METHOD == "fcm"; SOM_* settings are only used
 #   when CLUSTERING_METHOD == "som".
-CLUSTERING_METHOD = "fcm"
+CLUSTERING_METHOD = "som"
 
 # --- Fuzzy c-means settings (CLUSTERING_METHOD == "fcm") ---
 N_CLUSTERS = 3
@@ -155,7 +162,7 @@ RANDOM_SEED = 42
 # --- Self-organizing map settings (CLUSTERING_METHOD == "som") ---
 SOM_ROWS = 5
 SOM_COLS = 5
-SOM_N_ITER = 8000     # online (one random sample per iteration) updates,
+SOM_N_ITER = 12000     # online (one random sample per iteration) updates,
                        # NOT epochs over the full dataset
 SOM_LR0 = 0.5          # initial learning rate; decays exponentially to
                        # 1% of this by the final iteration
@@ -209,13 +216,14 @@ ANNOTATION_POS = (0.01, 0.99)
 ANNOTATION_STYLE = dict(fontsize=7, color="gray", ha="left", va="top")
 
 # =====================================================================
-# SPECIFIC PLOT SETTINGS — borrowed from tacna_plot_seis.py
+# SPECIFIC PLOT SETTINGS — borrowed from plot_seis.py
 # =====================================================================
 SHOW_SPECIFIC_PLOT = True
 
 CSV_VOLCANES      = "../features/volcanes.csv"
 CSV_SEISMCAT      = "../features/catalog_welllocated_15_simple5.csv"
-CSV_MT_SITES      = "../features/done/MTTacna_Sitelist.csv"
+CSV_MT_SITES      = "../features/done/MTsaba_Sitelist.csv"
+# CSV_MT_SITES      = "../features/done/MTTacna_Sitelist.csv"  # TACNA
 CSV_CITIES        = "../features/cities.csv"
 CSV_SEISMIC_SITES = "../features/seismic_sites.csv"  # no header row; columns
                                                        # are network, station,
@@ -232,9 +240,12 @@ ZMIN_SEISM = [-7, 1, 9]
 ZMAX_SEISM = [1, 9, 30]
 
 VOLC_LABEL_IDX = [5, 12, 13]
-VOLC_LABEL_FULL_NAME = False
-VOLC_NAME_COL_FULL   = "NAME"      # column used when VOLC_LABEL_FULL_NAME=True
-VOLC_NAME_COL_SHORT  = "VOLCAN2"   # column used when VOLC_LABEL_FULL_NAME=False
+# Volcano name column (volcanes.csv). Labels are truncated to their
+# first VOLC_LABEL_CHARS characters via VOLC_LABEL_STYLE's mode="firstN"
+# (see plotpy.apply_label_mode) rather than reading a separate
+# already-abbreviated column (e.g. "VOLCAN2") — one source of truth for
+# the name, with truncation as a display-only concern.
+VOLC_NAME_COL = "NAME"
 
 EQ_MARKER_STYLE = dict(
     marker="o", s=4.5, facecolors="white", edgecolors="black",
@@ -256,9 +267,12 @@ VOLC_INACT_MARKER_STYLE = dict(
     marker="^", s=10, facecolors="blue", edgecolors="black",
     linewidths=0.7, zorder=13,
 )
+VOLC_LABEL_CHARS = 4   # number of leading characters shown (mode="firstN"
+                        # below) — was previously a separate "VOLCAN2"
+                        # abbreviated-code column; adjust to taste.
 VOLC_LABEL_STYLE = dict(
     fontsize=6, fontweight="bold", color="black", zorder=14,
-    offset_x=0.3, offset_y=0.3, mode="full",
+    offset_x=0.3, offset_y=0.3, mode=f"first{VOLC_LABEL_CHARS}",
 )
 VOLC_ACT_MARKER_STYLE = dict(
     marker="^", s=10, facecolors="red", edgecolors="black",
@@ -298,7 +312,7 @@ def ncpath(name):
 def safe_to_netcdf(obj, path):
     """
     Write a Dataset/DataArray to NetCDF, overwriting any existing file at
-    `path` even if it's read-only (see tacna_interpolate.py's own copy of
+    `path` even if it's read-only (see interpolate.py's own copy of
     this helper for the full rationale).
     """
     p = Path(path)
@@ -378,7 +392,7 @@ def fuzzy_cmeans(X, n_clusters, m=2.0, max_iter=300, tol=1e-5, seed=42):
 def train_som(X, rows, cols, n_iter=8000, lr0=0.5, sigma0=None, seed=42):
     """
     Online (sequential) Kohonen self-organizing map. See
-    tacna_cluster_som.py's original docstring for the full parameter
+    cluster_som.py's original docstring for the full parameter
     rationale; unchanged here.
     """
     rng = np.random.default_rng(seed)
@@ -433,7 +447,7 @@ def som_topographic_error(X, weights, grid_coords):
 
 def som_grid_colormap(rows, cols):
     """Topological ListedColormap: nearby SOM neurons get visually
-    similar colors — see tacna_cluster_som.py's original docstring."""
+    similar colors — see cluster_som.py's original docstring."""
     colors = np.zeros((rows * cols, 3))
     for r in range(rows):
         for c in range(cols):
@@ -444,7 +458,7 @@ def som_grid_colormap(rows, cols):
 
 
 # ==================================================================
-# Read tacna_interpolate.py's output
+# Read interpolate.py's output
 # ==================================================================
 interp_path = ncpath(INTERP_FILE)
 print(f"Reading interpolated grid: {interp_path} …")
@@ -463,7 +477,7 @@ else:
     if missing:
         raise KeyError(
             f"CLUSTER_VARS {missing} not present in {INTERP_FILE!r} (it has "
-            f"{list(interp_ds.data_vars)}) — add them to tacna_interpolate.py's "
+            f"{list(interp_ds.data_vars)}) — add them to interpolate.py's "
             f"INTERP_VARS and re-run it first."
         )
 
@@ -516,7 +530,7 @@ n_labels = N_CLUSTERS if CLUSTERING_METHOD == "fcm" else SOM_ROWS * SOM_COLS
 if n_valid < n_labels:
     raise RuntimeError(
         f"Only {n_valid} valid points — fewer than the number of classes "
-        f"({n_labels}). Check CLUSTER_VARS or tacna_interpolate.py's masking settings."
+        f"({n_labels}). Check CLUSTER_VARS or interpolate.py's masking settings."
     )
 
 X_raw = feature_stack[valid_mask]  # (n_valid, n_features)
@@ -665,7 +679,7 @@ out_ds = xr.Dataset(
     attrs={
         "description": (
             f"{_method_label} clustering of " + ", ".join(active_cluster_vars) +
-            f" on the grid read from {INTERP_FILE} (see tacna_interpolate.py)."
+            f" on the grid read from {INTERP_FILE} (see interpolate.py)."
         ),
         "source_interp_file": INTERP_FILE,
         "target_grid_mode": grid_mode,
@@ -677,11 +691,11 @@ out_ds = xr.Dataset(
         **{k: ("" if v is None else v) for k, v in diagnostics.items()},
     },
 )
-out_nc = ncpath("tacna_clusters.nc")
+out_nc = ncpath(f"{SITE_PREFIX}_clusters.nc")
 safe_to_netcdf(out_ds, out_nc)
 print(f"\nSaved: {out_nc}")
 
-centers_csv = ncpath("tacna_cluster_centers.csv")
+centers_csv = ncpath(f"{SITE_PREFIX}_cluster_centers.csv")
 with safe_open_w(centers_csv, newline="") as f:
     w = csv.writer(f)
     w.writerow(["cluster", "n_points", "fraction"] + active_cluster_vars)
@@ -698,7 +712,7 @@ print(f"Saved: {centers_csv}")
 # Load topo/bath basemap
 # ==================================================================
 print("\nLoading topo/bath grids …")
-_topo_da = xr.open_dataarray(ncpath("tacna_topo_utm.nc"))
+_topo_da = xr.open_dataarray(ncpath(f"{SITE_PREFIX}_topo_utm.nc"))
 topo_x = _topo_da["x"].values
 topo_y = _topo_da["y"].values
 topo_z = _topo_da.values
@@ -711,7 +725,7 @@ if SHOW_TOPO_BASEMAP:
 else:
     topo_hs = None
 
-_bath_da = xr.open_dataarray(ncpath("tacna_bath_utm.nc"))
+_bath_da = xr.open_dataarray(ncpath(f"{SITE_PREFIX}_bath_utm.nc"))
 bath_x = _bath_da["x"].values
 bath_y = _bath_da["y"].values
 bath_z = _bath_da.values
@@ -811,7 +825,7 @@ def save_fig(fig, stem):
 
 # ==================================================================
 # Feature layers for the specific (annotated) plot — same CSVs/loading
-# as tacna_plot_seis.py
+# as plot_seis.py
 # ==================================================================
 if SHOW_SPECIFIC_PLOT:
     print("\nLoading feature layers for the specific (annotated) plot …")
@@ -821,12 +835,12 @@ if SHOW_SPECIFIC_PLOT:
         volcanes["LONG"][VOLC_LABEL_IDX].values,
         volcanes["LAT"][VOLC_LABEL_IDX].values,
     )
-    _volc_name_col = VOLC_NAME_COL_FULL if VOLC_LABEL_FULL_NAME else VOLC_NAME_COL_SHORT
-    if _volc_name_col not in volcanes.columns:
-        print(f"  WARNING: volcano name column {_volc_name_col!r} not found in "
-              f"{CSV_VOLCANES} — falling back to {VOLC_NAME_COL_SHORT!r}.")
-        _volc_name_col = VOLC_NAME_COL_SHORT
-    namev = volcanes[_volc_name_col][VOLC_LABEL_IDX].values
+    if VOLC_NAME_COL not in volcanes.columns:
+        print(f"  WARNING: volcano name column {VOLC_NAME_COL!r} not found in "
+              f"{CSV_VOLCANES} — labels will be blank.")
+        namev = [""] * len(VOLC_LABEL_IDX)
+    else:
+        namev = volcanes[VOLC_NAME_COL][VOLC_LABEL_IDX].values
 
     volc_act_e, volc_act_n = [], []
     for _i in range(len(volcanes)):
@@ -839,14 +853,14 @@ if SHOW_SPECIFIC_PLOT:
     eq_e0, eq_n0 = to_utm_km(eqs["x"].values, eqs["y"].values)
     zeqs = eqs["z"].values
 
-    tacna = pd.read_csv(CSV_MT_SITES, delimiter=" ")
-    mt_e, mt_n = to_utm_km(tacna["x"].values, tacna["y"].values)
+    _mt = pd.read_csv(CSV_MT_SITES, delimiter=" ")
+    mt_e, mt_n = to_utm_km(_mt["x"].values, _mt["y"].values)
     for _name_col in ("Site", "site", "name", "Name", "station", "Station"):
-        if _name_col in tacna.columns:
-            mt_names = tacna[_name_col].astype(str).tolist()
+        if _name_col in _mt.columns:
+            mt_names = _mt[_name_col].astype(str).tolist()
             break
     else:
-        mt_names = [""] * len(tacna)
+        mt_names = [""] * len(_mt)
 
     seis_sites = pd.read_csv(CSV_SEISMIC_SITES, header=None,
                               names=["network", "station", "lat", "lon", "elev_m"])
@@ -860,7 +874,7 @@ if SHOW_SPECIFIC_PLOT:
 
 def draw_specific_features(ax, eq_e, eq_n):
     """Overlay seismicity/MT-site/seismic-site/volcano/city feature layers
-    borrowed from tacna_plot_seis.py's draw_features()."""
+    borrowed from plot_seis.py's draw_features()."""
     if SHOW_SEISMICITY:
         clipped_markers(ax, eq_e, eq_n, _region(), label="Seismicity", **EQ_MARKER_STYLE)
 
@@ -950,7 +964,7 @@ for i_depth, target_depth in enumerate(PLOT_DEPTHS_KM):
     fig, ax, cax = create_map_figure()
     draw_basemap(ax)
     _draw_cluster_overlay(ax, cax, label_slice, actual_depth)
-    save_fig(fig, f"clusters_{tag}_tacna")
+    save_fig(fig, f"clusters_{tag}_{SITE_PREFIX}")
     plt.show()
     plt.close(fig)
 
@@ -974,7 +988,7 @@ for i_depth, target_depth in enumerate(PLOT_DEPTHS_KM):
         draw_basemap(ax)
         _draw_cluster_overlay(ax, cax, label_slice, actual_depth)
         draw_specific_features(ax, eq_e, eq_n)
-        save_fig(fig, f"clusters_{tag}_tacna_annotated")
+        save_fig(fig, f"clusters_{tag}_{SITE_PREFIX}_annotated")
         plt.show()
         plt.close(fig)
 

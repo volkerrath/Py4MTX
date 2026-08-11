@@ -386,7 +386,33 @@ Provenance:
                         entry for QC and model plots) leaked one open
                         figure per call, triggering matplotlib's "more
                         than 20 figures opened" RuntimeWarning and
-                        growing memory use over long ensemble runs."""
+                        growing memory use over long ensemble runs.
+    2026-08-10  Claude Sonnet 5   Fixed N-S curtain panels ("ns" kind)
+                        plotting mirrored left-right relative to true
+                        geography, in both plot_model_slices' and
+                        plot_ensemble_slices' copies of the nested
+                        _axis_slice_params() helper. cross(n, ref) with
+                        the shared ref=[0,0,1] gives u=[0,-1,0] (negative
+                        northing) for axis 0 ("ns") but u=[1,0,0]
+                        (positive easting) for axis 1 ("ew") -- an
+                        artefact never compensated downstream, so
+                        increasing real northing plotted left instead of
+                        right while the S(left)/N(right) compass labels
+                        (plot_model_slices only) assumed the untouched
+                        convention. Verified against a real model: a
+                        resistive body at positive y/north plotted on
+                        the "S" side of the N-S curtain in two ensemble
+                        QC figures, and confirmed against its correct
+                        position in the corresponding map panels of the
+                        same dataset. Fix flips u only for axis 0 (not
+                        v, which the already-fixed depth handling
+                        relies on being [0,0,-1]). "ew" and "map" panels
+                        were unaffected and are unchanged. Also added a
+                        tick_decimals parameter to both functions
+                        (None -> unchanged formatting) to control the
+                        number of decimal digits shown on depth,
+                        easting/northing, and (plot_model_slices only)
+                        lat/lon tick labels."""
 
 from __future__ import annotations
 
@@ -3503,6 +3529,7 @@ def plot_model_slices(
     borehole_resolve_xy=None,
     tick_fontsize: int = 7,
     label_fontsize: int = 8,
+    tick_decimals: Optional[int] = None,
     nrms_annotation: Optional[dict] = None,
     figure_title: Optional[str] = None,
     show: bool = False,
@@ -3660,6 +3687,13 @@ def plot_model_slices(
     label_fontsize
         Font size for axis labels, panel titles, colourbar label, and
         suptitle.  Default 8.
+    tick_decimals
+        Number of decimal digits shown on axis tick labels -- depth,
+        map/curtain easting-northing (model or UTM units), and lat/lon
+        (when ``display_coords="latlon"``) all use the same value.
+        ``None`` (default) keeps the previous per-axis-type formatting
+        unchanged: ``:g`` auto-precision for depth, plain Matplotlib
+        auto-ticks for easting/northing, ``.3f`` for lat/lon.
     nrms_annotation
         Optional dict with keys ``nrms`` (float), ``alpha`` (float), and
         ``panel`` (int or None).  When set, a text box reading
@@ -3696,8 +3730,13 @@ def plot_model_slices(
     # ticks would otherwise read as negative numbers for a quantity
     # (depth) that is positive-down by definition. This formatter shows
     # the tick's positive-down value instead.
-    _depth_tick_fmt = mticker.FuncFormatter(
-        lambda v, _pos: "0" if v == 0 else f"{-v:g}")
+    if tick_decimals is None:
+        _depth_tick_fmt = mticker.FuncFormatter(
+            lambda v, _pos: "0" if v == 0 else f"{-v:g}")
+    else:
+        _td = tick_decimals
+        _depth_tick_fmt = mticker.FuncFormatter(
+            lambda v, _pos, _d=_td: f"{(0.0 if v == 0 else -v):.{_d}f}")
 
     _sm  = site_marker        or dict(marker="v", color="black", ms=4, zorder=10)
     _sms = site_marker_slices or dict(marker="o", color="black", ms=4, zorder=10)
@@ -3714,6 +3753,21 @@ def plot_model_slices(
         ref = np.array([0., 0., 1.]) if axis != 2 else np.array([1., 0., 0.])
         u = np.cross(n, ref); u /= np.linalg.norm(u)
         v = np.cross(n, u);   v /= np.linalg.norm(v)
+        if axis == 0:
+            # cross(n, ref) with n=[1,0,0], ref=[0,0,1] gives u=[0,-1,0]
+            # (negative northing) for axis 0 ("ns"), unlike axis 1 ("ew")
+            # which gives u=[1,0,0] (positive easting) from the same
+            # construction -- an artefact of sharing one reference vector
+            # across axes, never compensated downstream. Result: increasing
+            # real northing plotted *left* instead of right, while the
+            # S(left)/N(right) compass labels below assumed the untouched
+            # convention, so N-S curtain panels came out mirrored (verified
+            # against the map panels of the same model: a body at positive
+            # y/north plotted on the "S" side). Flip u only here -- not v,
+            # which the already-fixed depth handling below relies on being
+            # [0,0,-1] -- so "ns" uses +northing left-to-right, matching
+            # "ew"'s +easting convention. Fixed 2026-08-10.
+            u = -u
         return n, pt, u, v, False
 
     def _tet_plane_intersection(verts, normal, d):
@@ -3916,18 +3970,24 @@ def plot_model_slices(
     else:
         sc, sfx = 1.0, " [m]"
 
-    # lat/lon tick formatters
+    # lat/lon tick formatters (or, for model/UTM display, plain decimal
+    # formatters) -- both honour tick_decimals when given.
     _fmt_x = _fmt_y = None
     if _disp == "latlon" and utm_to_latlon_fn is not None:
         import matplotlib.ticker as mticker
-        def _lon_fmt(val, _pos):
+        _lld = 3 if tick_decimals is None else tick_decimals
+        def _lon_fmt(val, _pos, _d=_lld):
             _, lon = utm_to_latlon_fn(val, utm_origin_n, utm_zone, utm_northern)
-            return f"{lon:.3f}"
-        def _lat_fmt(val, _pos):
+            return f"{lon:.{_d}f}"
+        def _lat_fmt(val, _pos, _d=_lld):
             lat, _ = utm_to_latlon_fn(utm_origin_e, val, utm_zone, utm_northern)
-            return f"{lat:.3f}"
+            return f"{lat:.{_d}f}"
         _fmt_x = mticker.FuncFormatter(_lon_fmt)
         _fmt_y = mticker.FuncFormatter(_lat_fmt)
+    elif tick_decimals is not None:
+        _hd = tick_decimals
+        _fmt_x = mticker.FuncFormatter(lambda v, _pos, _d=_hd: f"{v:.{_d}f}")
+        _fmt_y = mticker.FuncFormatter(lambda v, _pos, _d=_hd: f"{v:.{_d}f}")
 
     _horiz_km_eff = (sc == 1e-3)
     _do_equal = (equal_aspect
@@ -4888,6 +4948,7 @@ def plot_ensemble_slices(
     dpi: int = 200,
     tick_fontsize: int = 6,
     label_fontsize: int = 7,
+    tick_decimals: Optional[int] = None,
     show: bool = False,
     out: bool = True,
 ) -> None:
@@ -4946,6 +5007,12 @@ def plot_ensemble_slices(
     label_fontsize
         Font size for axis labels, panel titles, row labels, colourbar labels,
         and suptitle.  Default ``7``.
+    tick_decimals
+        Number of decimal digits shown on axis tick labels -- depth and
+        easting/northing (metres) both use the same value.  ``None``
+        (default) keeps the previous formatting unchanged: ``:g``
+        auto-precision for depth, plain Matplotlib auto-ticks for
+        easting/northing.
     show
         If True, also display the joint figure interactively via
         ``plt.show()`` -- in addition to saving, when ``plot_file`` is
@@ -5035,6 +5102,17 @@ def plot_ensemble_slices(
         ref = np.array([0., 0., 1.]) if axis != 2 else np.array([1., 0., 0.])
         u   = np.cross(n, ref); u /= np.linalg.norm(u)
         v   = np.cross(n, u);   v /= np.linalg.norm(v)
+        if axis == 0:
+            # Same u-sign artefact as plot_model_slices' copy of this
+            # helper: cross(n, ref) gives u=[0,-1,0] (negative northing)
+            # for axis 0 ("ns") but u=[1,0,0] (positive easting) for axis
+            # 1 ("ew"), from the same construction. Never compensated
+            # downstream (xlim=ylim spec was applied assuming +northing),
+            # so "ns" panels came out mirrored left-right. Flip u only --
+            # not v, which the depth handling above relies on being
+            # [0,0,-1] -- so "ns" uses +northing left-to-right like "ew"
+            # uses +easting. Fixed 2026-08-10.
+            u = -u
         return n, pt, u, v, inv[axis]
 
     def _slice_geometry_indices(nodes, conn, normal, point, u_ax, v_ax):
@@ -5257,8 +5335,22 @@ def plot_ensemble_slices(
                 # under matplotlib's default axis direction. That's
                 # display-only plumbing -- show the tick's positive-down
                 # value instead of the internal negative one.
+                if tick_decimals is None:
+                    ax.yaxis.set_major_formatter(mticker.FuncFormatter(
+                        lambda v, _pos: "0" if v == 0 else f"{-v:g}"))
+                else:
+                    _td = tick_decimals
+                    ax.yaxis.set_major_formatter(mticker.FuncFormatter(
+                        lambda v, _pos, _d=_td:
+                            f"{(0.0 if v == 0 else -v):.{_d}f}"))
+            elif tick_decimals is not None:
+                _td = tick_decimals
                 ax.yaxis.set_major_formatter(mticker.FuncFormatter(
-                    lambda v, _pos: "0" if v == 0 else f"{-v:g}"))
+                    lambda v, _pos, _d=_td: f"{v:.{_d}f}"))
+            if tick_decimals is not None:
+                _td = tick_decimals
+                ax.xaxis.set_major_formatter(mticker.FuncFormatter(
+                    lambda v, _pos, _d=_td: f"{v:.{_d}f}"))
 
             _xl = sg["xlim"]; _yl = sg["ylim"]; _zl = sg["zlim"]
             if _xl is not None: ax.set_xlim(_xl)
