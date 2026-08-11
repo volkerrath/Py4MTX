@@ -167,7 +167,7 @@ $\texttt{Py4MTX}$ calculates "Euclidean" sensitivities, which are the most commo
 
 $S^2_j = \sum_{i=1,n_d} \left|\tilde{J}_{ij}\right|^2=diag\left(\mathbf{\tilde{J}}^T\mathbf{\tilde{J}}\right)$.
 
-The square root of this sensitivity is often preferred, and is implemented in many popular inversion codes. Also availble
+The square root of this sensitivity is often preferred, and is implemented in many popular inversion codes. Also available
 is coverage, where the absolute values of the Jacobian are summed: 
 
 $\sum_{i=1,n_d} \left|\tilde{J}_{ij}\right|$
@@ -186,12 +186,20 @@ investigation) it may be convenient to do a final normalization by the maximum v
 Below you see first results for our newly implemented ensemble method for 3-D magnetotelluric inversions (FEMTIC-based). This follows the general approach formulated
 by [14]. The example is for a survey of the Misti volcano (Southern Peru) published by Romero-Beltran et al. (2026) [16]
 
+<p align="center">
+  <img src="images/misti_rnd.png"
+       alt="Model result"
+       width="1000">
+  <br>
+  <em>Misti inversion results (left) with associated uncertainties (bottom). This is similar to the geostatistical perturbation approach in [14],
+	  in this case with randomly placed pilot points. </em>
+</p>
 
 # Note: AI generated scripts
 
 Since summer 2025 we have experimented with AI tools such as OpenAI's ChatGPT and Anthropic's Claude when implementing further scripts/modules. This approach turned out to be very 
-usefulan efficient, though requiring careful formulations of tasks, thorough checks and tests. Many preexisting pieces of code were cleaned, commented, and sometimes reorganized by 
-Claude. In particular, the included README files were generated this way. A note concerning AI (co)authorship has been added to the docstrings and readme files. 
+useful and efficient, though requiring careful formulations of tasks, thorough checks and tests. Many preexisting pieces of code were cleaned, commented, and sometimes reorganized by 
+Claude. In particular, the included README files were generated this way. A note concerning AI (co)authorship has been added to the docstrings and README files. 
  
 
 # References
@@ -226,7 +234,6 @@ _[14] A. Suzuki (2026) "Assessing inversion uncertainty from initial-model varia
 
 _[15] S. Boyd, L. Vandenberghe (2004) "Convex Optimization", Cambridge University Press._ 
 
-_[16] G. Romero-Beltran, S. Byrdina, M. Unsworth, Y. Antayhua, H. Tavera, M. Ortega, J.L. Torres, V. Rath, M. Rivera, J. Ledo, D. Ramos, B. Ccallata, R. Ccacyancco (2026) "Magnetotelluric images of the hydrothermal and magmatic
-system beneath Volcan Misti (Peru)", Journal of Volcanology and Geothermal Research, 475, doi:10.1016/j.jvolgeores.2026.108625_
+_[16] G. Romero-Beltran, S. Byrdina, M. Unsworth, Y. Antayhua, H. Tavera, M. Ortega, J.L. Torres, V. Rath, M. Rivera, J. Ledo, D. Ramos, B. Ccallata, R. Ccacyancco (2026) "Magnetotelluric images of the hydrothermal and magmatic system beneath Volcan Misti (Peru)", Journal of Volcanology and Geothermal Research, 475, doi:10.1016/j.jvolgeores.2026.108625_
  
 
