@@ -4,7 +4,7 @@
 
 This repository currently contains scripts useful for EM imaging, modelling, and inversion. The workflows for reading and processing Jacobians from ModEM outputs has been merged from https://github.com/volkerrath/JacoPyAN, and will be further developed here. The tools refer to the 3D magnetotelluric inversion codes ModEM (available at https://github.com/magnetotellurics/ModEM) and FEMTIC (available at http://https://github.com/yoshiya-usui/femtic). Please be aware that this repo is under active development, and currently in a process of reorganization and adding tools related to FEMTIC, and thus some of these tools are not in production state. This collection is made available under GNU public license V3. 
 
-**Dependencies on mtpy have been removed from this toolbox.**
+** Dependencies on mtpy have been removed from this toolbox.**
 
 The repository contains the following subdirectories:
 
@@ -191,7 +191,7 @@ by [14]. The example is for a survey of the Misti volcano (Southern Peru) publis
        alt="Model result"
        width="1000">
   <br>
-  <em>Misti inversion results (left) with associated uncertainties (bottom). This is similar to the geostatistical perturbation approach in [14],
+  <em>Misti inversion results (a) with associated uncertainties (b). These results were obtained from an approach similar to the geostatistical perturbation proposed in [14],
 	  in this case with randomly placed pilot points. </em>
 </p>
 
