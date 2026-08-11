@@ -107,6 +107,17 @@ Provenance
             slice figure for each PERCENTILES level in addition to
             avg/var/med/mad, keyed as "p2_3", "p50", "p97_7", etc.
             (default MOD_STATS_WHAT includes all of them).
+2026-08-11  Claude Sonnet 5 (Anthropic)
+            Configuration block now explicitly labelled as the USER
+            SECTION. Added MOD_PLOT_FORMAT, documenting the Matplotlib
+            savefig extensions supported by fviz.plot_model_slices
+            (pdf/svg/eps vector; png/jpg/tif/webp raster). MOD_QC_FILE
+            and the MOD_STATS per-key figure path are now built without
+            an extension; _plot_slice() saves once per MOD_PLOT_FORMAT
+            entry (e.g. ["pdf", "jpg"] -> both "..._qc.pdf" and
+            "..._qc.jpg" from the same slice geometry). A bare string
+            ("pdf") still works, normalised internally to a single-entry
+            list.
 2026-07-25  Claude Sonnet 5 (Anthropic)
             Added MOD_STATS_CLIM: per-statistic colour-scale override for
             MOD_STATS plots. AVG/MED/percentile panels default to the
@@ -308,7 +319,7 @@ titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng + "\n\n")
 
 # ===========================================================================
-# Configuration
+# USER SECTION -- all user-set parameters below are UPPERCASE
 # ===========================================================================
 FEMTIC="5.0" #"4.3"
 # ---------------------------------------------------------------------------
@@ -409,11 +420,43 @@ MOD_AIR_RHO   = 1.0e9   # Ω·m  (region 0)
 MOD_OCEAN_RHO = 0.25    # Ω·m  (region 1 when treated as ocean)
 
 # ---------------------------------------------------------------------------
+# Figure output format
+# ---------------------------------------------------------------------------
+#: One or more file extensions. Every QC / MOD_STATS figure is saved once
+#: per entry (slice geometry resolved once and reused; the figure itself
+#: is still rebuilt per format, since plot_model_slices doesn't expose a
+#: way to re-save an already-built figure), so e.g. ["pdf", "jpg"] writes
+#: both a vector version for print and a raster preview in one run. A bare
+#: string ("pdf") also works and is treated as a single-entry list.
+#: MOD_QC_FILE / MOD_STATS_DIR filenames below are built without an
+#: extension; _plot_slice() appends each MOD_PLOT_FORMAT entry in turn.
+#: Supported values (Matplotlib Agg-backend savefig formats):
+#:   "pdf"  -- vector, multi-page-safe, default; best for print/publication
+#:   "svg"  -- vector, editable in Illustrator/Inkscape
+#:   "eps"  -- vector, legacy PostScript (no transparency support)
+#:   "png"  -- raster, lossless, transparency-capable; good for slides/web
+#:   "jpg" / "jpeg" -- raster, lossy, no transparency; small file size
+#:   "tif" / "tiff"  -- raster, lossless, common in publication workflows
+#:   "webp" -- raster, modern lossy/lossless web format
+#: Raster formats (png/jpg/tif/webp) are rendered at MOD_DPI; vector
+#: formats (pdf/svg/eps) are resolution-independent and MOD_DPI is ignored
+#: except for any embedded raster elements (e.g. rasterized markers).
+MOD_PLOT_FORMAT = ["pdf", "jpg"]
+
+#: Normalised to a list regardless of whether a bare string or a list was
+#: set above.
+_MOD_PLOT_FORMATS = (
+    [MOD_PLOT_FORMAT] if isinstance(MOD_PLOT_FORMAT, str) else list(MOD_PLOT_FORMAT)
+)
+
+# ---------------------------------------------------------------------------
 # QC slice plot — best-nRMS converged member
 # ---------------------------------------------------------------------------
 #: Set True to plot the best-nRMS member.
 MOD_QC      = True
-MOD_QC_FILE = ENSEMBLE_DIR + ENSEMBLE_PREFIX + "_qc.pdf"
+#: Extension-less base path; _plot_slice() appends ".<fmt>" per
+#: MOD_PLOT_FORMAT entry.
+MOD_QC_FILE = ENSEMBLE_DIR + ENSEMBLE_PREFIX + "_qc"
 
 # ---------------------------------------------------------------------------
 # Statistics slice plots — mean / variance / median / MAD
@@ -436,7 +479,7 @@ MOD_STATS_WHAT = ["avg", "med", "err", "mad"] + [
     f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_") for _lo, _hi in QDIFF_PAIRS
 ] + (["err_boot"] if BOOTSTRAP_VAR else [])
 #: Output directory for stat block files and figures.
-MOD_STATS_DIR  = ENSEMBLE_DIR + "/stats_plots/"
+MOD_STATS_DIR  = ENSEMBLE_DIR + "/stats_plots_rnd/"
 
 #: Per-statistic colour-scale override, keyed the same as MOD_STATS_WHAT
 #: (e.g. "var", "p50", "qdiff_15_9_84_1"). Each value is an explicit
@@ -507,7 +550,8 @@ MOD_MAP_MARKERS = []
 #: Slice positions accept plain floats (model-local m) or CRS-tagged tuples:
 #:   (value, "utm") | (value, "latlon")
 #: Depth z0 is always model-local metres (no CRS tagging).
-MOD_SLICES = [
+MOD_SLICES = [    
+    dict(kind="map", z0=0.0),    # km
     dict(kind="map", z0=5.0),    # km
     dict(kind="map", z0=10.0),   # km
     dict(kind="map", z0=15.0),   # km
@@ -575,7 +619,7 @@ MOD_LABEL_FONTSIZE = 16    # axis labels, panel titles, colourbar label
 #: Decimal digits shown on axis tick labels (depth, map/curtain
 #: easting-northing, and lat/lon all share this one setting). None (default)
 #: keeps plot_model_slices' own per-axis-type formatting unchanged.
-MOD_TICK_DECIMALS = None
+MOD_TICK_DECIMALS = 2
 
 #: When True (default) and this script is running inside Spyder, every
 #: saved figure is also displayed inline (Spyder's Plots pane) via
@@ -732,7 +776,7 @@ def _plot_slice(block_file: str, pdf_file: str,
                 utm_zone, utm_north, site_xys: list,
                 obs_coords_only: bool = False,
                 clim=None) -> None:
-    """Call fviz.plot_model_slices with the shared MOD_* config.
+    """Call fviz.plot_model_slices once per MOD_PLOT_FORMAT entry.
 
     Mirrors the plotting call in femtic_gst_prep.py / femtic_rto_prep.py
     exactly, so QC and statistics figures use the same options (CRS
@@ -741,6 +785,11 @@ def _plot_slice(block_file: str, pdf_file: str,
 
     Parameters
     ----------
+    pdf_file : str
+        Output path *without* an extension. ".<fmt>" is appended for each
+        entry in MOD_PLOT_FORMAT / _MOD_PLOT_FORMATS (e.g. base "foo" +
+        ["pdf", "jpg"] -> "foo.pdf" and "foo.jpg", same figure, one
+        savefig() call per format).
     clim : [vmin, vmax] | None
         Per-call colour-scale override. ``None`` (default) falls back to
         the module-level ``MOD_CLIM``, unchanged from previous behaviour.
@@ -758,55 +807,65 @@ def _plot_slice(block_file: str, pdf_file: str,
         utm_e, utm_n, utm_lat, utm_lon,
         verbose=OUT,
     )
-    fviz.plot_model_slices(
-        model_file          = block_file,
-        mesh_file           = MOD_MESH,
-        slices              = _slices_resolved,
-        cmap                = MOD_CMAP,
-        clim                = _clim,
-        xlim                = _lim_km_to_m(MOD_XLIM),
-        ylim                = _lim_km_to_m(MOD_YLIM),
-        zlim                = _lim_km_to_m(MOD_ZLIM),
-        ocean_color         = MOD_OCEAN_COLOR,
-        ocean_value         = MOD_OCEAN_RHO,
-        air_color           = MOD_AIR_COLOR,
-        air_bgcolor         = MOD_AIR_BGCOLOR,
-        site_xys            = site_xys,
-        obs_coords_only     = obs_coords_only,
-        sites_in_maps       = MOD_PLOT_SITES_MAPS,
-        sites_in_slices     = MOD_PLOT_SITES_SLICES,
-        site_marker         = MOD_SITE_MARKER,
-        site_marker_slices  = MOD_SITE_MARKER_SLICES,
-        map_markers         = MOD_MAP_MARKERS,
-        projection_dist     = _km_to_m(MOD_PROJECTION_DIST),
-        display_coords      = MOD_DISPLAY_COORDS,
-        utm_origin_e        = utm_e,
-        utm_origin_n        = utm_n,
-        utm_zone            = utm_zone,
-        utm_northern        = utm_north,
-        utm_to_latlon_fn    = utl.utm_to_latlon_zn,
-        latlon_to_model_fn  = fem.latlon_to_model,
-        depth_km            = MOD_DEPTH_KM,
-        horiz_km            = MOD_HORIZ_KM,
-        equal_aspect        = MOD_EQUAL_ASPECT,
-        panel_height        = MOD_PANEL_HEIGHT / 2.54,
-        panel_width         = MOD_PANEL_WIDTH / 2.54 if MOD_PANEL_WIDTH is not None else None,
-        figsize             = [v / 2.54 for v in MOD_FIGSIZE] if MOD_FIGSIZE is not None else None,
-        nrows               = MOD_NROWS,
-        ncols               = MOD_NCOLS,
-        tick_fontsize       = MOD_TICK_FONTSIZE,
-        label_fontsize      = MOD_LABEL_FONTSIZE,
-        tick_decimals       = MOD_TICK_DECIMALS,
-        alpha_file          = MOD_ALPHA_FILE,
-        alpha_mode          = MOD_ALPHA_MODE,
-        alpha_blank_thresh  = MOD_ALPHA_BLANK_THRESH,
-        plot_file           = pdf_file,
-        dpi                 = MOD_DPI,
-        show                = _SHOW_PLOTS,
-        out                 = OUT,
-    )
-    if OUT:
-        print(f"  saved → {pdf_file}")
+    for _fmt_i, _fmt in enumerate(_MOD_PLOT_FORMATS):
+        _fmt_file = f"{pdf_file}.{_fmt}"
+        # Only pop up the interactive window (if MOD_SHOW_IN_SPYDER) on the
+        # first format; re-displaying the same figure once per extra
+        # format would just spam the Plots pane for no benefit. Note the
+        # slice geometry (_slices_resolved, above) is computed once and
+        # reused, but plot_model_slices still builds and renders its own
+        # figure fresh on each call -- it doesn't expose a way to re-save
+        # an already-built figure under a second extension.
+        _show_this = _SHOW_PLOTS if _fmt_i == 0 else False
+        fviz.plot_model_slices(
+            model_file          = block_file,
+            mesh_file           = MOD_MESH,
+            slices              = _slices_resolved,
+            cmap                = MOD_CMAP,
+            clim                = _clim,
+            xlim                = _lim_km_to_m(MOD_XLIM),
+            ylim                = _lim_km_to_m(MOD_YLIM),
+            zlim                = _lim_km_to_m(MOD_ZLIM),
+            ocean_color         = MOD_OCEAN_COLOR,
+            ocean_value         = MOD_OCEAN_RHO,
+            air_color           = MOD_AIR_COLOR,
+            air_bgcolor         = MOD_AIR_BGCOLOR,
+            site_xys            = site_xys,
+            obs_coords_only     = obs_coords_only,
+            sites_in_maps       = MOD_PLOT_SITES_MAPS,
+            sites_in_slices     = MOD_PLOT_SITES_SLICES,
+            site_marker         = MOD_SITE_MARKER,
+            site_marker_slices  = MOD_SITE_MARKER_SLICES,
+            map_markers         = MOD_MAP_MARKERS,
+            projection_dist     = _km_to_m(MOD_PROJECTION_DIST),
+            display_coords      = MOD_DISPLAY_COORDS,
+            utm_origin_e        = utm_e,
+            utm_origin_n        = utm_n,
+            utm_zone            = utm_zone,
+            utm_northern        = utm_north,
+            utm_to_latlon_fn    = utl.utm_to_latlon_zn,
+            latlon_to_model_fn  = fem.latlon_to_model,
+            depth_km            = MOD_DEPTH_KM,
+            horiz_km            = MOD_HORIZ_KM,
+            equal_aspect        = MOD_EQUAL_ASPECT,
+            panel_height        = MOD_PANEL_HEIGHT / 2.54,
+            panel_width         = MOD_PANEL_WIDTH / 2.54 if MOD_PANEL_WIDTH is not None else None,
+            figsize             = [v / 2.54 for v in MOD_FIGSIZE] if MOD_FIGSIZE is not None else None,
+            nrows               = MOD_NROWS,
+            ncols               = MOD_NCOLS,
+            tick_fontsize       = MOD_TICK_FONTSIZE,
+            label_fontsize      = MOD_LABEL_FONTSIZE,
+            tick_decimals       = MOD_TICK_DECIMALS,
+            alpha_file          = MOD_ALPHA_FILE,
+            alpha_mode          = MOD_ALPHA_MODE,
+            alpha_blank_thresh  = MOD_ALPHA_BLANK_THRESH,
+            plot_file           = _fmt_file,
+            dpi                 = MOD_DPI,
+            show                = _show_this,
+            out                 = OUT,
+        )
+        if OUT:
+            print(f"  saved → {_fmt_file}")
 
 
 # ===========================================================================
@@ -1090,7 +1149,7 @@ if MOD_STATS:
             )
             _pdf_out = os.path.join(
                 MOD_STATS_DIR,
-                f"{P}_{_key}.pdf",
+                f"{P}_{_key}",
             )
             print(f"\nSTATS: writing {_label} → {_block_out}")
             fem.insert_model(

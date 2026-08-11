@@ -4517,7 +4517,10 @@ def plot_model_slices(
     fig.suptitle(figure_title if figure_title is not None
                  else os.path.basename(str(model_file)),
                  fontsize=label_fontsize + 2)
-    fig.tight_layout()
+    # rect leaves the top ~6% of the figure for the suptitle so it doesn't
+    # collide with the top row of panel titles. Without rect, tight_layout()
+    # fits the axes grid to the full figure height and ignores the suptitle.
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
     if plot_file is not None:
         fig.savefig(plot_file, dpi=dpi, bbox_inches="tight")
         if out:
