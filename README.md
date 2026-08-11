@@ -18,7 +18,10 @@ The repository contains the following subdirectories:
 
 	+ **joint**: prototypes for ADMM joint inversion [15]. This is currently early work in progress.
 
-	+ **general** for processing and visualization of MT data on the EDI level; 1-D inversions incl. anisotropy [7].
+	+ **general** for processing and visualization of MT data on the EDI level; 1-D inversions including anisotropy [7].
+
+	+ **special** scripts/modules related to certain geographical targets and data sets.
+
 
  -	**py4mt/modules**
  	Contains the modules called from the above scripts run for different tasks of MT interpretation.
@@ -40,11 +43,13 @@ The repository contains the following subdirectories:
 - 	**environment** 
 	Contains conda environment description files, and some useful helper files for working 
 	within the conda environment.
+
+
 Get your working copy via git from the command line:
 
 _git clone https://github.com/volkerrath/Py4MTX/_
 
-This version will run under Python 3.9+ (3.13 being the current development platform). To install it in a Linux environment (e.g. Ubuntu, SuSE), you need to do the following:
+This version will run under Python 3.11+ (3.13 being the current development platform). To install it in a Linux environment (e.g. Ubuntu, SuSE), you need to do the following:
 
 (1) Download the latest Anaconda or Miniconda version  (https://docs.conda.io/projects/conda/en/latest/user-guide/install/download.html), and install by running the downloaded bash script.  In order to make updates secure and avoid inconsistencies, copy .condarc to your home directory. As the Miniconda installer is not updated very frequently, it is useful to run the following within the Miniconda base environment:
 
@@ -176,18 +181,17 @@ the volume and its geometry is important when investigating the true role of thi
 different data types may vary 1-2 orders of magnitude), for some purposes (e.g., comparison of different data (sub)sets or definition of depths of 
 investigation) it may be convenient to do a final normalization by the maximum value in the model. All these options are implemented in the $\texttt{Py4MTX}$ toolbox. 
 
-<!--
-# Coming soon:
- -	**Probabilistic MT inversion for anisotropic 1-D layers [7] including transdimensional rj-mcmc [12]**
- -	**Randomize-Then-Optimize Uncertainty for 3-D MT [8, 9] with FEMTIC [10]**
- -	**Jacobian/Sensitivity-related functionality for 3-D anisotropic inversion [11]** 
--->
+# Ensemble methods for uncertainty quantification
+
+Below you see first results for our newly implemented ensemble method for 3-D magnetotelluric inversions (FEMTIC-based). This follows the general approach formulated
+by [14]. The example is for a survey of the Misti volcano (Southern Peru) published by Romero-Beltran et al. (2026) [16]
+
 
 # Note: AI generated scripts
 
 Since summer 2025 we have experimented with AI tools such as OpenAI's ChatGPT and Anthropic's Claude when implementing further scripts/modules. This approach turned out to be very 
-useful, though requiring thorough checks and test. Many preexisting pieces of code were cleaned, commented, and sometimes reorganized by claude. In particular, the 
-included readme files were generated this way. A note concerning AI (co)authorship has been added to the docstrings and readme files. 
+usefulan efficient, though requiring careful formulations of tasks, thorough checks and tests. Many preexisting pieces of code were cleaned, commented, and sometimes reorganized by 
+Claude. In particular, the included README files were generated this way. A note concerning AI (co)authorship has been added to the docstrings and readme files. 
  
 
 # References
@@ -210,7 +214,7 @@ _[8] D. Blatter, M. Morzfeld, K. Key, S. Constable (2022) "Uncertainty quantific
 
 _[9] D. Blatter, M. Morzfeld, K. Key, S. Constable (2022) "Uncertainty quantification for regularized inversion of electromagnetic geophysical data – Part II: application in 1-D and 2-D problems", Geophysical Journal International, 231, 1075–1095. doi:10.1093/gji/ggac242_
 
-_[10] H. Song, P. Yu, Y. Usui, M. Uyeshima, D. Diba, L. Zhang, (2025) "Three-dimensional Magnetotelluric Inversion based on a Data Space variant of Akaike’s Bayesian Information Criterion", Geophysics, doi:10.1190/geo-2025-0233_
+_[10] H. Song, P. Yu, Y. Usui, M. Uyeshima, D. Diba, L. Zhang (2025) "Three-dimensional Magnetotelluric Inversion based on a Data Space variant of Akaike’s Bayesian Information Criterion", Geophysics, doi:10.1190/geo-2025-0233_
 
 _[11] W. Kong, H. Tan, C. Lin, M. Unsworth, B. Lee, M. Peng, M. Wang, M., T. Tong (2021) "Three-dimensional inversion of magnetotelluric data for a resistivity model with arbitrary anisotropy", Journal of Geophysical Research: Solid Earth, doi:10.1029/2020JB020562_
  
@@ -221,4 +225,8 @@ _[13] E. Causse (2023) "Ensemble Scenario-Based Inversion: A New Approach for Es
 _[14] A. Suzuki (2026) "Assessing inversion uncertainty from initial-model variability in 3-D magnetotelluric inversion: Application to a geothermal field", Journal of Applied Geophysics, 251, 106320, doi:10.1016/j.jappgeo.2026.106320_
 
 _[15] S. Boyd, L. Vandenberghe (2004) "Convex Optimization", Cambridge University Press._ 
+
+_[16] G. Romero-Beltran, S. Byrdina, M. Unsworth, Y. Antayhua, H. Tavera, M. Ortega, J.L. Torres, V. Rath, M. Rivera, J. Ledo, D. Ramos, B. Ccallata, R. Ccacyancco (2026) "Magnetotelluric images of the hydrothermal and magmatic
+system beneath Volcan Misti (Peru)", Journal of Volcanology and Geothermal Research, 475, doi:10.1016/j.jvolgeores.2026.108625_
+ 
 
