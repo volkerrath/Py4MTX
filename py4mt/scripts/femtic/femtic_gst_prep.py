@@ -372,7 +372,7 @@ TEMPLATES = ENSEMBLE_DIR + "/templates/"
 if not os.path.isdir(TEMPLATES):
     sys.exit(" Directory: %s does not exist, needs to be copied !" % TEMPLATES)
 
-# Forr GST
+# For GST
 COPY_LIST = ["observe.dat",
              "resistivity_block_iter0.dat",]
 LINK_LIST = ["control.dat",

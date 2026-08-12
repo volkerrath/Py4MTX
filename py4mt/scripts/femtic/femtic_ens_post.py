@@ -237,6 +237,35 @@ Provenance
             easting/northing, and lat/lon axis tick labels, threaded
             through to fviz.plot_model_slices' new tick_decimals
             parameter in _plot_slice().
+2026-08-12  Claude Sonnet 5 (Anthropic)
+            Step (1)'s scan loop now checks os.path.isdir(d) before
+            looking for femtic.cnv/the model file inside it. dir_list
+            comes from utl.get_filelist(searchstr=[ENSEMBLE_NAME+"*"]),
+            a glob-style match against ENSEMBLE_DIR that can in
+            principle return non-directory matches (e.g. a stray file
+            sharing the ENSEMBLE_NAME prefix); previously such an entry
+            would fall through to os.path.join(d, "femtic.cnv") and get
+            printed/counted as a skipped ensemble member as if it were
+            a failed inversion run. Non-directory matches are now
+            skipped immediately with their own message. No change for
+            genuine run directories.
+2026-08-12  Claude Sonnet 5 (Anthropic)
+            A convergence diagnostic (nRMS bar chart / histogram over
+            all scanned directories, not just accepted members) and a
+            REPAIR procedure (rebuild non-converged directories with a
+            log10-mean-of-2-random-converged-members starting model,
+            for a restart) were prototyped in this script across several
+            iterations today, then moved out into a new standalone
+            script, femtic_ens_repair.py, once the design settled --
+            keeping this script focused on its original scope (summary
+            statistics, covariance, QC/statistics slice plots) rather
+            than growing an unrelated directory-repair responsibility.
+            No MOD_CONV*/MOD_REPAIR* config, conv_list, or step (1b)/(1c)
+            remain here; see femtic_ens_repair.py and
+            femtic_ens_repair_readme.md. fviz.plot_convergence_bar() and
+            fviz.plot_convergence_histogram() (added to femtic_viz.py
+            during the same work) are unaffected and still exported from
+            femtic_viz.py for that script to use.
 """
 from __future__ import annotations
 
@@ -885,6 +914,10 @@ model_count = 0
 ens_matrix  = None        # will become (n_members, n_free) float64
 
 for d in dir_list:
+    if not os.path.isdir(d):
+        print(f"\n  {d}: not a directory — skipped (not an ensemble run).")
+        continue
+
     print(f"\n  Inversion run: {d}")
     cnv_file = os.path.join(d, "femtic.cnv")
     if not os.path.isfile(cnv_file):

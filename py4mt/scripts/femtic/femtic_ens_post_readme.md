@@ -10,6 +10,13 @@ to a compressed `.npz` file.  Optionally produces slice figures for the
 
 Supersedes `femtic_rto_post.py`.
 
+For a convergence-rate diagnostic (nRMS bar chart / histogram over
+**every** scanned directory, not just converged members) and a REPAIR
+procedure for non-converged directories, see the companion script
+`femtic_ens_repair.py` (and `femtic_ens_repair_readme.md`) — that
+functionality briefly lived here during development and was moved out to
+keep this script focused on its original scope.
+
 ---
 
 ## Workflow
@@ -51,7 +58,7 @@ interest auto-scaling (`MOD_ROI_*`) is specific to this script.
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `ENSEMBLE_DIR` | str | — | Root directory containing ensemble sub-directories. |
-| `ENSEMBLE_NAME` | str | `"rto_*"` | Glob matched against sub-directory names. |
+| `ENSEMBLE_NAME` | str | `"rto_*"` | Glob matched against sub-directory names. Only actual directories among the matches are scanned as ensemble runs (`os.path.isdir()` checked in step (1)); a stray file that happens to match the glob is skipped rather than being mistaken for a failed inversion run. |
 | `ENSEMBLE_PREFIX` | str | `"rto"` | Prefix for `.npz` output keys and default filenames. Set to `"gst"`, `"ens"`, etc. as appropriate. |
 | `NRMS_MAX` | float | `1.4` | Members whose final nRMS exceeds this value are skipped. |
 
@@ -368,3 +375,5 @@ correct.
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `MOD_SHOW_IN_SPYDER` (default `True`): when running inside Spyder, every saved figure is also displayed inline via `plt.show()` (`fviz.plot_model_slices`' new `show=` parameter), without changing what gets saved to disk. No effect outside Spyder. |
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `(2.3, 97.7)` to the default `QDIFF_PAIRS` (alongside `(15.9, 84.1)`), giving both 1-sigma- and 2-sigma-equivalent spread statistics. Added `<P>_err = sqrt(var)`: `MOD_STATS_WHAT`'s default now plots `"err"` instead of `"var"`, since `var` (in (log10 Ω·m)²) was never on the same scale as `MAD`/`QDIFF` (log10 Ω·m); `var` remains available on request. Added `BOOTSTRAP_VAR`/`BOOTSTRAP_N`/`BOOTSTRAP_SEED` and the new `_bootstrap_variance()` helper: an alternative bootstrap estimate of the ensemble variance (resample members with replacement, average the plug-in variance of each replicate), reporting `var_boot`, `err_boot` (added to `MOD_STATS_WHAT` automatically when enabled), and `var_boot_se` (the bootstrap estimate's own standard error, an estimator-noise diagnostic). See the new "Bootstrap variance estimation" section. |
 | 2026-08-10 | Claude Sonnet 5 (Anthropic) | `femtic_viz.py` fix: `"N-S"` curtain panels (`MOD_SLICES` entries with `kind="ns"`) were plotting mirrored left-right relative to true geography — verified against two real ensemble QC figures where a resistive body sitting north-central in the `"map"` panels appeared on the `"S"` side of the `"N-S"` panel. Root cause and fix are entirely inside `fviz.plot_model_slices`' internal `_axis_slice_params()` helper (see `femtic_viz_readme.md` for details); no changes needed in this script beyond picking up the updated `femtic_viz.py`. `"ew"` and `"map"` panels were unaffected. Also added `MOD_TICK_DECIMALS` (default `None` = unchanged formatting): controls the number of decimal digits shown on depth / easting-northing / lat-lon axis tick labels, passed through to `fviz.plot_model_slices`' new `tick_decimals` parameter in `_plot_slice()`. |
+| 2026-08-12 | Claude Sonnet 5 (Anthropic) | Step (1)'s scan loop now checks `os.path.isdir(d)` before looking for `femtic.cnv`/the model file inside it. `dir_list` comes from a glob-style match (`utl.get_filelist(searchstr=[ENSEMBLE_NAME+"*"])`) against `ENSEMBLE_DIR`, which can in principle return non-directory matches (e.g. a stray file sharing the `ENSEMBLE_NAME` prefix); previously such an entry fell through to the `femtic.cnv` check and got printed as a skipped ensemble member as if it were a failed inversion run. Non-directory matches are now skipped immediately with their own log message. No change for genuine run directories. |
+| 2026-08-12 | Claude Sonnet 5 (Anthropic) | A convergence diagnostic (nRMS bar chart / binned histogram over all scanned directories) and a REPAIR procedure (rebuild non-converged directories with a starting model averaged from 2 random converged members, for a restart) were prototyped in this script across several iterations today, then moved out into a new standalone script, `femtic_ens_repair.py` (see `femtic_ens_repair_readme.md`), once the design settled — keeping this script focused on its original scope (summary statistics, covariance, QC/statistics slice plots). No `MOD_CONV*`/`MOD_REPAIR*` config or related step remains here. `fviz.plot_convergence_bar()` / `fviz.plot_convergence_histogram()` (added to `femtic_viz.py` during the same work; see `femtic_viz_readme.md`) are unaffected and now used by `femtic_ens_repair.py` instead. |

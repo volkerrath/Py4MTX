@@ -412,7 +412,65 @@ Provenance:
                         (None -> unchanged formatting) to control the
                         number of decimal digits shown on depth,
                         easting/northing, and (plot_model_slices only)
-                        lat/lon tick labels."""
+                        lat/lon tick labels.
+    2026-08-12  Claude Sonnet 5 (Anthropic)
+                        Added plot_convergence_bar(): standalone bar
+                        chart of per-member nRMS (from femtic.cnv),
+                        coloured by status ("accepted" / "rejected_nrms"
+                        / "missing_cnv" / "missing_model", inferred from
+                        a threshold when not supplied explicitly).
+                        Accepts members with no usable nRMS (None/NaN)
+                        alongside numeric ones so the ensemble scan loop
+                        in femtic_ens_post.py doesn't need to filter
+                        first; missing members render as a small hatched
+                        stub bar annotated "n/a" rather than vanishing.
+                        Sortable by nRMS (ascending, missing sort last)
+                        or by original scan order; optional dashed
+                        threshold line (e.g. NRMS_MAX) and per-bar value
+                        labels. No changes to any existing function.
+    2026-08-12  Claude Sonnet 5 (Anthropic)
+                        Added plot_convergence_histogram(): binned,
+                        stacked-by-status companion to
+                        plot_convergence_bar for large ensembles where a
+                        one-bar-per-member chart becomes a wall of rows.
+                        Bins nRMS into "auto" (default, 15) or a fixed
+                        number of equal-width bins spanning the finite
+                        nRMS range, stacks accepted/rejected_nrms counts
+                        per bin, and tallies members with no usable nRMS
+                        (None/NaN) into one extra "missing" bar appended
+                        after the last numeric bin (split further by
+                        missing_cnv/missing_model if both are present)
+                        rather than dropping them. Same status ->
+                        color/hatch/legend convention as
+                        plot_convergence_bar; the shared default map is
+                        now factored into a new _conv_status_style_map()
+                        module helper, used by both functions (no
+                        behaviour change to plot_convergence_bar itself).
+                        Optional dashed threshold line, per-bar count
+                        labels, log-y option. Now femtic_ens_post.py's
+                        default MOD_CONV rendering (MOD_CONV_PER_MEMBER
+                        =True switches back to plot_convergence_bar).
+    2026-08-12  Claude Sonnet 5 (Anthropic)
+                        plot_convergence_histogram(): changed the bin
+                        range to cover only members whose status is in
+                        the new binned_statuses parameter (default just
+                        ("accepted",)) instead of the full finite nRMS
+                        range. Rejected members ("rejected_nrms") no
+                        longer get real bins at all -- they're always
+                        lumped into one aggregate "rejected" bar (new
+                        show_rejected_bar parameter, default True),
+                        appended after the numeric bins next to the
+                        existing "missing" aggregate bar, mirroring how
+                        missing members were already handled. Rationale:
+                        a single far-over-threshold member could
+                        otherwise stretch the shared bin range and
+                        compress the entire accepted population into an
+                        unreadable sliver at one edge of the plot.
+                        Renamed/removed the old status_order parameter
+                        (no longer meaningful now that only
+                        binned_statuses gets real bins); no other public
+                        parameters changed. plot_convergence_bar is
+                        unaffected."""
 
 from __future__ import annotations
 
@@ -5442,3 +5500,591 @@ def plot_ensemble_slices(
         print("  ensemble: done.")
 
 
+def _conv_status_style_map(status_style: Optional[dict] = None) -> dict:
+    """Internal helper: default status -> {color, hatch, legend} map for the
+    nRMS convergence plots (plot_convergence_bar, plot_convergence_histogram),
+    merged with any caller-supplied overrides/extensions.
+    """
+    _default_style = {
+        "accepted":      dict(color="#3B7CB0", hatch=None, legend="accepted"),
+        "rejected_nrms": dict(color="#C0392B", hatch="//", legend="rejected (nRMS > threshold)"),
+        "missing_cnv":   dict(color="#888888", hatch="xx", legend="missing femtic.cnv"),
+        "missing_model": dict(color="#888888", hatch="xx", legend="missing model file"),
+        "missing":       dict(color="#888888", hatch="xx", legend="missing / unusable"),
+    }
+    if status_style:
+        for _k, _v in status_style.items():
+            _default_style.setdefault(_k, {})
+            _default_style[_k] = {**_default_style.get(_k, {}), **_v}
+    return _default_style
+
+
+def plot_convergence_bar(
+    labels: Sequence[str],
+    nrms: Sequence[Optional[float]],
+    *,
+    status: Optional[Sequence[str]] = None,
+    threshold: Optional[float] = None,
+    threshold_label: Optional[str] = None,
+    sort_by: Literal["nrms", "index"] = "nrms",
+    horizontal: bool = True,
+    log_x: bool = False,
+    status_style: Optional[dict] = None,
+    value_labels: bool = True,
+    bar_height: float = 0.7,
+    stub_frac: float = 0.02,
+    tick_fontsize: int = 7,
+    label_fontsize: int = 8,
+    figsize: Optional[Tuple[float, float]] = None,
+    dpi: int = 200,
+    title: Optional[str] = None,
+    plot_file: Optional[Union[str, Path]] = None,
+    show: bool = False,
+    out: bool = True,
+) -> None:
+    """Bar chart of per-member normalised RMS (nRMS) misfit for QC.
+
+    One bar per ensemble member, coloured by convergence status. Intended
+    for ``femtic.cnv`` -derived nRMS values collected while scanning an
+    ensemble directory tree (see femtic_ens_post.py), so it accepts
+    members with a missing/unusable nRMS (``nrms[i] is None`` or NaN --
+    e.g. no ``femtic.cnv`` found, or no matching model file) alongside
+    normally converged and over-threshold members, rather than requiring
+    the caller to filter first.
+
+    Parameters
+    ----------
+    labels
+        One label per member (e.g. ensemble sub-directory name).
+    nrms
+        One nRMS value per member, same length as ``labels``. Use
+        ``None`` (or ``float('nan')``) for members with no usable value.
+    status
+        Optional explicit status string per member, e.g. "accepted",
+        "rejected_nrms", "missing_cnv", "missing_model". When omitted,
+        status is inferred from ``nrms`` and ``threshold``: NaN ->
+        "missing"; else "rejected_nrms" if ``threshold`` is set and
+        ``nrms > threshold``, otherwise "accepted". Any status string not
+        recognised by ``status_style`` falls back to a neutral grey.
+    threshold
+        Draw a dashed reference line at this nRMS value (e.g. the
+        ``NRMS_MAX`` acceptance cutoff) and use it for status inference
+        when ``status`` is not supplied. ``None`` omits the line.
+    threshold_label
+        Text placed next to the threshold line. Defaults to
+        ``f"threshold = {threshold:g}"`` when ``threshold`` is set.
+    sort_by
+        "nrms" -- ascending nRMS (missing values sort last, as worst).
+        "index" -- original ``labels``/``nrms`` order (scan order).
+    horizontal
+        True (default) -- horizontal bars, one row per member; reads
+        better for many members / long directory-name labels. False --
+        vertical bars.
+    log_x
+        Use a log-scaled value axis. Useful when a few members have a
+        much larger nRMS than the rest and would otherwise compress the
+        bulk of the bars into an unreadable sliver.
+    status_style
+        Optional override / extension of the default status ->
+        ``dict(color=..., hatch=..., legend=...)`` mapping. Merged over
+        the built-in defaults (accepted=steelblue, rejected_nrms=
+        crimson/hatched, missing_cnv & missing_model=grey/hatched,
+        missing=grey/hatched); keys not present in the default map are
+        added, so custom status strings work without redefining
+        everything.
+    value_labels
+        Annotate each bar with its nRMS value (or "n/a" for missing
+        members) at the bar end.
+    bar_height
+        Bar thickness (data units along the category axis), 0-1.
+    stub_frac
+        Fraction of the value-axis range used as a zero-information
+        placeholder bar length for missing members (which have no nRMS
+        to size a real bar by), so they still read as a bar rather than
+        vanishing at zero width.
+    tick_fontsize, label_fontsize
+        Axis tick / axis-label & title font sizes.
+    figsize
+        (width, height) in inches. Defaults to a size that scales with
+        the number of members for horizontal layout (``(7, max(3,
+        0.28 * n))``), or a fixed (10, 5) for vertical layout.
+    dpi
+        Raster DPI passed to ``savefig`` (vector formats ignore it).
+    title
+        Figure title. Defaults to an auto-generated summary, e.g.
+        "Convergence: 42 accepted / 5 rejected (nRMS > 1.50) / 2 missing".
+    plot_file
+        Output path (with extension); ``None`` skips saving.
+    show
+        Call ``plt.show()`` after saving/building.
+    out
+        Print a one-line confirmation when ``plot_file`` is saved.
+
+    Returns
+    -------
+    None
+    """
+    plt = _require_mpl()
+    import matplotlib.ticker as mticker  # local import, matches module convention
+
+    n = len(labels)
+    if len(nrms) != n:
+        raise ValueError(f"labels ({n}) and nrms ({len(nrms)}) must be the same length.")
+
+    _labels = [str(lbl) for lbl in labels]
+    _nrms = np.array(
+        [np.nan if v is None else float(v) for v in nrms], dtype=float
+    )
+
+    # -- status inference --------------------------------------------------
+    if status is None:
+        _status = []
+        for v in _nrms:
+            if not np.isfinite(v):
+                _status.append("missing")
+            elif threshold is not None and v > threshold:
+                _status.append("rejected_nrms")
+            else:
+                _status.append("accepted")
+    else:
+        if len(status) != n:
+            raise ValueError(f"labels ({n}) and status ({len(status)}) must be the same length.")
+        _status = list(status)
+
+    # -- style map -----------------------------------------------------------
+    _default_style = _conv_status_style_map(status_style)
+    _fallback_style = dict(color="#555555", hatch=None, legend=None)
+
+    def _style_of(s: str) -> dict:
+        return _default_style.get(s, _fallback_style)
+
+    # -- sort order ------------------------------------------------------------
+    if sort_by == "nrms":
+        _key = np.where(np.isfinite(_nrms), _nrms, np.inf)
+        order = np.argsort(_key, kind="stable")
+    elif sort_by == "index":
+        order = np.arange(n)
+    else:
+        raise ValueError(f"sort_by must be 'nrms' or 'index', got {sort_by!r}.")
+
+    _labels_o = [_labels[i] for i in order]
+    _nrms_o = _nrms[order]
+    _status_o = [_status[i] for i in order]
+
+    # -- value-axis range / stub length for missing members -------------------
+    _finite = _nrms_o[np.isfinite(_nrms_o)]
+    _vmax = float(np.nanmax(_finite)) if _finite.size else 1.0
+    _vmax = max(_vmax, threshold if threshold is not None else 0.0, 1e-12)
+    _stub = stub_frac * _vmax
+    _plot_vals = np.where(np.isfinite(_nrms_o), _nrms_o, _stub)
+
+    # -- figure ------------------------------------------------------------
+    if figsize is None:
+        figsize = (7.0, max(3.0, 0.28 * n)) if horizontal else (10.0, 5.0)
+    fig, ax = plt.subplots(figsize=figsize)
+
+    pos = np.arange(n)
+    colors = [_style_of(s)["color"] for s in _status_o]
+    hatches = [_style_of(s)["hatch"] for s in _status_o]
+
+    if horizontal:
+        bars = ax.barh(pos, _plot_vals, height=bar_height, color=colors)
+        for _b, _h in zip(bars, hatches):
+            if _h:
+                _b.set_hatch(_h)
+                _b.set_edgecolor("black")
+                _b.set_linewidth(0.4)
+        ax.set_yticks(pos)
+        ax.set_yticklabels(_labels_o, fontsize=tick_fontsize)
+        ax.set_xlabel("nRMS", fontsize=label_fontsize)
+        ax.invert_yaxis()  # best/first sort entry at top
+        if log_x:
+            ax.set_xscale("log")
+        if threshold is not None:
+            ax.axvline(threshold, color="black", linestyle="--", linewidth=1.0)
+            ax.text(
+                threshold, n - 0.5,
+                threshold_label or f"threshold = {threshold:g}",
+                fontsize=tick_fontsize, ha="left", va="bottom", rotation=90,
+            )
+        if value_labels:
+            for _p, _v, _nv in zip(pos, _plot_vals, _nrms_o):
+                _txt = "n/a" if not np.isfinite(_nv) else f"{_nv:.3f}"
+                ax.text(_v, _p, f"  {_txt}", fontsize=tick_fontsize,
+                        va="center", ha="left")
+        ax.tick_params(axis="x", labelsize=tick_fontsize)
+    else:
+        bars = ax.bar(pos, _plot_vals, width=bar_height, color=colors)
+        for _b, _h in zip(bars, hatches):
+            if _h:
+                _b.set_hatch(_h)
+                _b.set_edgecolor("black")
+                _b.set_linewidth(0.4)
+        ax.set_xticks(pos)
+        ax.set_xticklabels(_labels_o, fontsize=tick_fontsize, rotation=90)
+        ax.set_ylabel("nRMS", fontsize=label_fontsize)
+        if log_x:
+            ax.set_yscale("log")
+        if threshold is not None:
+            ax.axhline(threshold, color="black", linestyle="--", linewidth=1.0)
+            ax.text(
+                n - 0.5, threshold,
+                threshold_label or f"threshold = {threshold:g}",
+                fontsize=tick_fontsize, ha="right", va="bottom",
+            )
+        if value_labels:
+            for _p, _v, _nv in zip(pos, _plot_vals, _nrms_o):
+                _txt = "n/a" if not np.isfinite(_nv) else f"{_nv:.3f}"
+                ax.text(_p, _v, _txt, fontsize=tick_fontsize,
+                        ha="center", va="bottom", rotation=90)
+        ax.tick_params(axis="y", labelsize=tick_fontsize)
+
+    # -- legend (one entry per status actually present) ------------------------
+    _seen = []
+    _handles = []
+    for s in _status_o:
+        if s in _seen:
+            continue
+        _seen.append(s)
+        _st = _style_of(s)
+        if _st.get("legend") is None:
+            continue
+        _patch = plt.Rectangle((0, 0), 1, 1, facecolor=_st["color"], hatch=_st["hatch"],
+                                edgecolor="black" if _st["hatch"] else _st["color"],
+                                linewidth=0.4 if _st["hatch"] else 0.0)
+        _handles.append(_patch)
+        _handles[-1].set_label(_st["legend"])
+    if _handles:
+        ax.legend(handles=_handles, fontsize=tick_fontsize, loc="best", framealpha=0.9)
+
+    # -- title ---------------------------------------------------------------
+    if title is None:
+        _n_acc = sum(1 for s in _status_o if s == "accepted")
+        _n_rej = sum(1 for s in _status_o if s == "rejected_nrms")
+        _n_mis = sum(1 for s in _status_o if s not in ("accepted", "rejected_nrms"))
+        _thr_txt = f" (nRMS > {threshold:g})" if threshold is not None else ""
+        title = (f"Convergence: {_n_acc} accepted / {_n_rej} rejected{_thr_txt} "
+                 f"/ {_n_mis} missing")
+    ax.set_title(title, fontsize=label_fontsize + 1)
+
+    fig.tight_layout()
+
+    if plot_file is not None:
+        fig.savefig(str(plot_file), dpi=dpi, bbox_inches="tight")
+        if out:
+            print(f"  convergence: figure saved -> {plot_file}")
+        if show:
+            plt.show()
+    elif show:
+        plt.show()
+
+    plt.close(fig)
+
+
+
+def plot_convergence_histogram(
+    nrms: Sequence[Optional[float]],
+    *,
+    status: Optional[Sequence[str]] = None,
+    threshold: Optional[float] = None,
+    threshold_label: Optional[str] = None,
+    bins: Union[int, Literal["auto"]] = "auto",
+    n_bins_auto: int = 15,
+    status_style: Optional[dict] = None,
+    binned_statuses: Sequence[str] = ("accepted",),
+    show_rejected_bar: bool = True,
+    show_missing_bar: bool = True,
+    log_y: bool = False,
+    value_labels: bool = True,
+    tick_fontsize: int = 7,
+    label_fontsize: int = 8,
+    figsize: Optional[Tuple[float, float]] = None,
+    dpi: int = 200,
+    title: Optional[str] = None,
+    plot_file: Optional[Union[str, Path]] = None,
+    show: bool = False,
+    out: bool = True,
+) -> None:
+    """Histogram of per-member nRMS misfit, binned over accepted members only.
+
+    Companion to ``plot_convergence_bar`` (one bar *per member*): this
+    function bins the nRMS values of ``binned_statuses`` members (default
+    just ``"accepted"``) into ``bins`` equal-width intervals, so it stays
+    readable for large ensembles where a per-member bar chart becomes a
+    wall of rows. Members outside ``binned_statuses`` don't get numeric
+    bins at all -- each such status is instead tallied into its own single
+    aggregate bar appended after the last numeric bin: one "rejected" bar
+    for ``"rejected_nrms"`` members (all lumped together, regardless of
+    how far over threshold each one is), and one "missing" bar for members
+    with no usable nRMS (``None``/NaN -- missing ``femtic.cnv``, missing
+    model file), itself stacked by missing sub-status if more than one is
+    present.
+
+    Parameters
+    ----------
+    nrms
+        One nRMS value per member. Use ``None`` (or NaN) for members with
+        no usable value.
+    status
+        Optional explicit status string per member (same length as
+        ``nrms``), e.g. "accepted", "rejected_nrms", "missing_cnv",
+        "missing_model". When omitted, inferred from ``nrms`` and
+        ``threshold`` the same way as ``plot_convergence_bar``: NaN ->
+        "missing"; else "rejected_nrms" if ``threshold`` is set and
+        ``nrms > threshold``, otherwise "accepted".
+    threshold
+        Draw a dashed reference line at this nRMS value (e.g. the
+        ``NRMS_MAX`` acceptance cutoff) and use it for status inference
+        when ``status`` is not supplied. ``None`` omits the line.
+    threshold_label
+        Text placed next to the threshold line. Defaults to
+        ``f"threshold = {threshold:g}"`` when ``threshold`` is set.
+    bins
+        "auto" (default) -- ``n_bins_auto`` equal-width bins spanning the
+        nRMS range of ``binned_statuses`` members only. int -- that many
+        equal-width bins spanning the same range.
+    n_bins_auto
+        Number of bins used when ``bins="auto"``.
+    status_style
+        Optional override / extension of the default status -> ``dict(
+        color=..., hatch=..., legend=...)`` mapping (same defaults as
+        ``plot_convergence_bar``: accepted=steelblue, rejected_nrms=
+        crimson/hatched, missing_cnv & missing_model & missing=
+        grey/hatched).
+    binned_statuses
+        Which status(es) get real nRMS-axis bins; the bin range is taken
+        from these members' nRMS values only. Default ``("accepted",)``
+        -- only accepted members are binned, so widely-scattered rejected
+        values can't stretch the axis and compress the accepted bulk into
+        a sliver. Members with any other status get one aggregate bar
+        each instead (see ``show_rejected_bar`` / ``show_missing_bar``).
+    show_rejected_bar
+        Append one bar (separated by a gap from the numeric bins)
+        tallying all members with status "rejected_nrms" (only relevant
+        when "rejected_nrms" is not itself in ``binned_statuses``).
+    show_missing_bar
+        Append one bar (separated by a gap) tallying all members with no
+        usable nRMS, split by their own status (missing_cnv /
+        missing_model / missing) if more than one such status is present.
+    log_y
+        Log-scale the count axis. Useful when one bin dominates and
+        smaller bins would otherwise be unreadable.
+    value_labels
+        Print the total count on top of each bar.
+    tick_fontsize, label_fontsize
+        Axis tick / axis-label & title font sizes.
+    figsize
+        (width, height) in inches. Defaults to ``(8, 4.5)``.
+    dpi
+        Raster DPI passed to ``savefig`` (vector formats ignore it).
+    title
+        Figure title. Defaults to an auto-generated summary, matching
+        ``plot_convergence_bar``'s default title.
+    plot_file
+        Output path (with extension); ``None`` skips saving.
+    show
+        Call ``plt.show()`` after saving/building.
+    out
+        Print a one-line confirmation when ``plot_file`` is saved.
+
+    Returns
+    -------
+    None
+    """
+    plt = _require_mpl()
+
+    _nrms = np.array(
+        [np.nan if v is None else float(v) for v in nrms], dtype=float
+    )
+    n = _nrms.size
+
+    # -- status inference (matches plot_convergence_bar) -----------------------
+    if status is None:
+        _status = []
+        for v in _nrms:
+            if not np.isfinite(v):
+                _status.append("missing")
+            elif threshold is not None and v > threshold:
+                _status.append("rejected_nrms")
+            else:
+                _status.append("accepted")
+    else:
+        if len(status) != n:
+            raise ValueError(f"nrms ({n}) and status ({len(status)}) must be the same length.")
+        _status = list(status)
+    _status = np.asarray(_status, dtype=object)
+
+    _style = _conv_status_style_map(status_style)
+    _fallback_style = dict(color="#555555", hatch=None, legend=None)
+
+    def _style_of(s: str) -> dict:
+        return _style.get(s, _fallback_style)
+
+    _finite_mask = np.isfinite(_nrms)
+    _missing_mask = ~_finite_mask
+    _binned_mask = _finite_mask & np.isin(_status, list(binned_statuses))
+    _rejected_mask = _finite_mask & ~_binned_mask & (_status == "rejected_nrms")
+
+    _binned_vals = _nrms[_binned_mask]
+    _binned_status = _status[_binned_mask]
+
+    if _binned_vals.size == 0:
+        raise ValueError(
+            "plot_convergence_histogram: no members with status in "
+            f"{tuple(binned_statuses)!r} to bin."
+        )
+
+    # -- bin edges: range of the binned members only ---------------------------
+    _vmin = float(np.min(_binned_vals))
+    _vmax = float(np.max(_binned_vals))
+    if _vmax <= _vmin:
+        _vmax = _vmin + 1.0  # degenerate range (single distinct value): give it width
+    _n_bins = n_bins_auto if bins == "auto" else int(bins)
+    _n_bins = max(_n_bins, 1)
+    edges = np.linspace(_vmin, _vmax, _n_bins + 1)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    width = edges[1] - edges[0]
+
+    # -- per-status counts per bin, stacking order ------------------------------
+    _present = list(dict.fromkeys(_binned_status.tolist()))  # unique, first-seen order
+    _order = [s for s in binned_statuses if s in _present]
+    _order += [s for s in _present if s not in _order]
+
+    counts_by_status = {}
+    for s in _order:
+        _vals_s = _binned_vals[_binned_status == s]
+        counts_by_status[s], _ = np.histogram(_vals_s, bins=edges)
+
+    # -- figure --------------------------------------------------------------
+    if figsize is None:
+        figsize = (8.0, 4.5)
+    fig, ax = plt.subplots(figsize=figsize)
+
+    bottom = np.zeros(_n_bins)
+    for s in _order:
+        _st = _style_of(s)
+        _c = counts_by_status[s]
+        _bars = ax.bar(centers, _c, width=width * 0.95, bottom=bottom,
+                        color=_st["color"], label=_st.get("legend") or s)
+        if _st.get("hatch"):
+            for _b in _bars:
+                _b.set_hatch(_st["hatch"])
+                _b.set_edgecolor("black")
+                _b.set_linewidth(0.4)
+        bottom = bottom + _c
+
+    if value_labels:
+        for _x, _h in zip(centers, bottom):
+            if _h > 0:
+                ax.text(_x, _h, f"{int(_h)}", fontsize=tick_fontsize,
+                        ha="center", va="bottom")
+
+    # -- aggregate bars: rejected (one bar) and missing (one bar, stacked) -----
+    _existing_labels = {_style_of(s).get("legend") for s in _order}
+    _extra_ticks: list = []
+    _extra_labels: list = []
+    _gap = width * 1.5
+    _cursor = edges[-1]   # right edge of the last numeric bin so far
+
+    def _add_aggregate_bar(mask: np.ndarray, xpos: float, subgroup: bool) -> None:
+        """Render one aggregate bar at xpos for the members selected by mask,
+        stacked by their own status if subgroup=True (used for "missing"),
+        or as a single flat count if subgroup=False (used for "rejected").
+        """
+        _sel_status = _status[mask]
+        if subgroup:
+            _sub_present = list(dict.fromkeys(_sel_status.tolist()))
+        else:
+            _sub_present = ["rejected_nrms"] if np.any(mask) else []
+        _b = 0.0
+        for s in _sub_present:
+            _st = _style_of(s)
+            _cnt = int(np.sum(_sel_status == s)) if subgroup else int(np.sum(mask))
+            _lbl = _st.get("legend")
+            _use_label = _lbl if _lbl not in _existing_labels else None
+            _bar = ax.bar(xpos, _cnt, width=width * 0.95, bottom=_b,
+                           color=_st["color"], label=_use_label)
+            if _use_label is not None:
+                _existing_labels.add(_use_label)
+            if _st.get("hatch"):
+                _bar[0].set_hatch(_st["hatch"])
+                _bar[0].set_edgecolor("black")
+                _bar[0].set_linewidth(0.4)
+            if value_labels and _cnt > 0:
+                ax.text(xpos, _b + _cnt, f"{_cnt}", fontsize=tick_fontsize,
+                        ha="center", va="bottom")
+            _b += _cnt
+            if not subgroup:
+                break  # single flat bar: one status only
+
+    n_rejected = int(_rejected_mask.sum())
+    if show_rejected_bar and n_rejected > 0:
+        ax.axvline(_cursor + _gap / 2.0, color="0.7", linestyle=":", linewidth=1.0)
+        _cursor = _cursor + _gap + width
+        _xpos = _cursor - width / 2.0
+        _add_aggregate_bar(_rejected_mask, _xpos, subgroup=False)
+        _extra_ticks.append(_xpos)
+        _extra_labels.append("rejected")
+
+    n_missing = int(_missing_mask.sum())
+    if show_missing_bar and n_missing > 0:
+        ax.axvline(_cursor + _gap / 2.0, color="0.7", linestyle=":", linewidth=1.0)
+        _cursor = _cursor + _gap + width
+        _xpos = _cursor - width / 2.0
+        _add_aggregate_bar(_missing_mask, _xpos, subgroup=True)
+        _extra_ticks.append(_xpos)
+        _extra_labels.append("missing")
+
+    _tick_pos = list(np.linspace(edges[0], edges[-1], min(_n_bins + 1, 8)))
+    ax.set_xticks(_tick_pos + _extra_ticks)
+    ax.set_xticklabels([f"{v:.2f}" for v in _tick_pos] + _extra_labels,
+                        fontsize=tick_fontsize, rotation=0)
+
+    if threshold is not None:
+        ax.axvline(threshold, color="black", linestyle="--", linewidth=1.0)
+        _ymax = ax.get_ylim()[1]
+        ax.text(threshold, _ymax, threshold_label or f"threshold = {threshold:g}",
+                fontsize=tick_fontsize, ha="left", va="top", rotation=90)
+
+    if log_y:
+        ax.set_yscale("log")
+
+    ax.set_xlabel("nRMS", fontsize=label_fontsize)
+    ax.set_ylabel("count", fontsize=label_fontsize)
+    ax.tick_params(axis="y", labelsize=tick_fontsize)
+
+    # -- legend (de-duplicated) -------------------------------------------------
+    _handles, _labels = ax.get_legend_handles_labels()
+    _seen = set()
+    _h2, _l2 = [], []
+    for _h, _l in zip(_handles, _labels):
+        if _l in _seen or not _l:
+            continue
+        _seen.add(_l)
+        _h2.append(_h)
+        _l2.append(_l)
+    if _h2:
+        ax.legend(_h2, _l2, fontsize=tick_fontsize, loc="best", framealpha=0.9)
+
+    # -- title -----------------------------------------------------------------
+    if title is None:
+        _n_acc = int(np.sum(_status == "accepted"))
+        _n_rej = int(np.sum(_status == "rejected_nrms"))
+        _n_mis = n - _n_acc - _n_rej
+        _thr_txt = f" (nRMS > {threshold:g})" if threshold is not None else ""
+        title = (f"Convergence: {_n_acc} accepted / {_n_rej} rejected{_thr_txt} "
+                 f"/ {_n_mis} missing")
+    ax.set_title(title, fontsize=label_fontsize + 1)
+
+    fig.tight_layout()
+
+    if plot_file is not None:
+        fig.savefig(str(plot_file), dpi=dpi, bbox_inches="tight")
+        if out:
+            print(f"  convergence histogram: figure saved -> {plot_file}")
+        if show:
+            plt.show()
+    elif show:
+        plt.show()
+
+    plt.close(fig)

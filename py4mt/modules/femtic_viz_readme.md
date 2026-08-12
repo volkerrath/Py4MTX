@@ -645,6 +645,107 @@ NaN (air, missing) cells are excluded from all statistics.
 
 ---
 
+## Convergence bar chart (`plot_convergence_bar`)
+
+Bar chart of per-member nRMS (e.g. from `femtic.cnv`), one bar per member,
+coloured by status. Accepts members with no usable nRMS (`None`/NaN —
+missing `femtic.cnv`, missing model file) alongside numeric ones, so the
+caller doesn't need to pre-filter a scan loop before plotting; used by
+`femtic_ens_post.py`'s convergence diagnostic (`MOD_CONV`).
+
+```python
+fviz.plot_convergence_bar(
+    labels    = ["rto_000", "rto_001", "rto_002", "rto_003"],
+    nrms      = [1.10, 1.82, None, 0.95],
+    status    = ["accepted", "rejected_nrms", "missing_cnv", "accepted"],
+    threshold = 1.5,
+    threshold_label = "NRMS_MAX",
+    sort_by   = "nrms",
+    horizontal = True,
+    plot_file = "convergence.pdf",
+    dpi       = 200,
+)
+```
+
+### Parameters summary
+
+| Parameter | Default | Description |
+|---|---|---|
+| `labels` | — | One label per member (e.g. ensemble sub-directory name) |
+| `nrms` | — | One nRMS value per member; `None`/NaN for members with no usable value |
+| `status` | `None` | Explicit per-member status string; `None` → inferred from `nrms`/`threshold` (`"missing"` / `"rejected_nrms"` / `"accepted"`) |
+| `threshold` | `None` | Draws a dashed reference line (e.g. `NRMS_MAX`) and feeds status inference when `status` is omitted |
+| `threshold_label` | `None` | Text next to the threshold line; defaults to `f"threshold = {threshold:g}"` |
+| `sort_by` | `"nrms"` | `"nrms"` (ascending, missing sort last) or `"index"` (original scan order) |
+| `horizontal` | `True` | `True` → horizontal bars (reads better for many members / long labels); `False` → vertical |
+| `log_x` | `False` | Log-scale the value axis |
+| `status_style` | `None` | Override/extend the default `status → dict(color, hatch, legend)` map (defaults: `accepted`=steelblue, `rejected_nrms`=crimson/hatched, `missing_cnv`/`missing_model`/`missing`=grey/hatched) |
+| `value_labels` | `True` | Annotate each bar with its nRMS value (or `"n/a"`) |
+| `stub_frac` | `0.02` | Placeholder bar length (fraction of value-axis range) for missing members, so they still read as a bar |
+| `tick_fontsize` / `label_fontsize` | `7` / `8` | Axis tick / axis-label & title font sizes |
+| `figsize` | `None` | `(w, h)` inches; default scales with member count for horizontal layout |
+| `dpi` | `200` | Saved-figure DPI |
+| `title` | `None` | Auto-generated summary (e.g. `"Convergence: 42 accepted / 5 rejected (nRMS > 1.50) / 2 missing"`) if omitted |
+| `plot_file` | `None` | Output path; `None` → interactive window only (if `show=True`) |
+| `show` | `False` | Also call `plt.show()` |
+| `out` | `True` | Print a one-line confirmation when `plot_file` is saved |
+
+---
+
+## Convergence histogram (`plot_convergence_histogram`)
+
+Binned companion to `plot_convergence_bar` for large ensembles, where one
+bar per member becomes a wall of rows. Bins **accepted** members' nRMS
+into equal-width intervals (the bin range is taken from accepted members
+only, so a wildly over-threshold rejected run can't stretch the axis and
+compress the accepted bulk into a sliver). Rejected members are lumped
+into one aggregate `"rejected"` bar; members with no usable nRMS
+(`None`/NaN) are lumped into one aggregate `"missing"` bar (split by
+sub-status if more than one is present). Both aggregate bars are
+appended after the last numeric bin, separated by a gap. Shares its
+default status → color/hatch/legend map with `plot_convergence_bar` via
+the internal `_conv_status_style_map()` helper.
+
+```python
+fviz.plot_convergence_histogram(
+    nrms      = [1.10, 1.82, None, 0.95, 1.32, 2.05, ...],
+    status    = ["accepted", "rejected_nrms", "missing_cnv", ...],
+    threshold = 1.5,
+    threshold_label = "NRMS_MAX",
+    bins      = "auto",
+    plot_file = "convergence_hist.pdf",
+    dpi       = 200,
+)
+```
+
+### Parameters summary
+
+| Parameter | Default | Description |
+|---|---|---|
+| `nrms` | — | One nRMS value per member; `None`/NaN for members with no usable value |
+| `status` | `None` | Explicit per-member status string; `None` → inferred from `nrms`/`threshold`, same convention as `plot_convergence_bar` |
+| `threshold` | `None` | Draws a dashed reference line (e.g. `NRMS_MAX`) and feeds status inference when `status` is omitted |
+| `threshold_label` | `None` | Text next to the threshold line; defaults to `f"threshold = {threshold:g}"` |
+| `bins` | `"auto"` | `"auto"` → `n_bins_auto` equal-width bins spanning the nRMS range of `binned_statuses` members only; int → that many bins |
+| `n_bins_auto` | `15` | Bin count used when `bins="auto"` |
+| `status_style` | `None` | Override/extend the default status → `dict(color, hatch, legend)` map |
+| `binned_statuses` | `("accepted",)` | Which status(es) get real nRMS-axis bins; the bin range comes from these members only. Everything else gets one aggregate bar (see below) |
+| `show_rejected_bar` | `True` | Append one bar tallying **all** `"rejected_nrms"` members together, regardless of how far over threshold each one is |
+| `show_missing_bar` | `True` | Append one bar tallying members with no usable nRMS (split by `missing_cnv`/`missing_model` if both present) |
+| `log_y` | `False` | Log-scale the count axis |
+| `value_labels` | `True` | Print the total count on top of each bar |
+| `tick_fontsize` / `label_fontsize` | `7` / `8` | Axis tick / axis-label & title font sizes |
+| `figsize` | `None` | `(w, h)` inches; default `(8, 4.5)` |
+| `dpi` | `200` | Saved-figure DPI |
+| `title` | `None` | Auto-generated summary (same convention as `plot_convergence_bar`) if omitted |
+| `plot_file` | `None` | Output path; `None` → interactive window only (if `show=True`) |
+| `show` | `False` | Also call `plt.show()` |
+| `out` | `True` | Print a one-line confirmation when `plot_file` is saved |
+
+Raises `ValueError` if no member has a status in `binned_statuses` (nothing to bin).
+
+---
+
 ## Provenance
 
 | Date | Author | Change |
@@ -670,5 +771,8 @@ NaN (air, missing) cells are excluded from all statistics.
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | `plot_model_slices` / `plot_ensemble_slices`: `ns`/`ew` curtain panels' depth axis showed *negative* tick labels (`0, -2.5, -5, ..., -20`) even though the vertical orientation itself (shallow top / deep bottom) was already correct after the prior sign fixes — the negative numbers came from the internal `-depth` plot coordinate leaking into the displayed ticks. Added a `matplotlib.ticker.FuncFormatter` on the y-axis of `ns`/`ew` panels in both functions that displays the tick's positive-down value instead (internal `-15` → label `"15"`), so depth reads as positive-down, while the internal plotting convention (needed for correct stacking order) is unchanged. Not applied to `"plane"` panels (down-dip axis, separate convention, not independently re-verified). |
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | `plot_model_slices`: found and fixed the actual remaining cause of "still upside down" in the `"ns"`/`"ew"` curtain panels — a **double negation**. `_slice_geometry()` already projects each 3-D intersection point onto `v_ax = [0,0,-1]`, so the `pz` unpacked from its returned `polys` is already `-z_mesh`. The `polys_d` line then negated it *again* (`-pz`), giving effective `v = +z_mesh`: underground structure (large positive `z_mesh`, z positive-down) landed at large positive `v` — entirely outside any sane `zlim` window like `[-20,0]` km — while only the small above-datum sliver (topography) stayed visible, with its sense flipped besides. This exactly matches the reported figures: a thin, topography-shaped coloured strip near the top of the window and a uniform blank/grey field below, even though `"map"` panels at the same depths (a different code path) showed real structure throughout. Fixed by using `pz` directly instead of negating it again, in both the `"ns"` and `"ew"` branches. The `"plane"` branch was checked and does **not** have this bug — it passes `_slice_geometry`'s `polys` straight through with no second transform. No changes were needed to the prior zlim-sign fix, the site-marker elevation-sign fix, or the depth-tick-label formatter above — all three were built on the (correct, as it turns out) assumption that `v = -z_mesh`, which is what this fix now actually produces. |
 | 2026-08-10 | Claude Sonnet 5 (Anthropic) | `plot_model_slices` / `plot_ensemble_slices`: fixed `"ns"` curtain panels plotting **mirrored left-right** relative to true geography — a distinct bug from the depth-axis fixes above (that family of fixes covered the *vertical* axis; this one is the *horizontal* axis of the N-S panel only). In the nested `_axis_slice_params(axis, val)` helper (a separate copy in each function), `u = cross(n, ref)` with the shared `ref=[0,0,1]` gives `u=[0,-1,0]` (negative northing) for `axis=0` ("ns") but `u=[1,0,0]` (positive easting) for `axis=1` ("ew") — an asymmetry from sharing one reference vector across axes, never compensated downstream. Increasing real northing therefore plotted *left* instead of right, while the `"S"`(left)/`"N"`(right) compass-corner labels in `plot_model_slices` assumed the untouched (unmirrored) convention, so data and labels were both wrong in a way that didn't cancel out. Verified against two real ensemble QC figures (`misti_gst_suzuki_ext_err_boot`, `misti_gst_suzuki_rnd_err_boot`): a resistive body sitting north-central in the `"map"` panels appeared on the `"S"` side of the `"N-S"` curtain panel in both. Fixed by flipping `u` only for `axis == 0` (not `v`, which the already-fixed depth handling above relies on being `[0,0,-1]`) in both functions' copies of the helper — `"ew"` and `"map"` panels were unaffected by the bug and are unchanged by the fix. Also added a `tick_decimals` parameter to both functions (see updated parameter tables above; `None` = unchanged formatting) to control decimal digits on depth / easting-northing / lat-lon tick labels. |
+| 2026-08-12 | Claude Sonnet 5 (Anthropic) | Added `plot_convergence_bar()`: standalone bar chart of per-member nRMS (e.g. from `femtic.cnv`), coloured/hatched by status (`"accepted"` / `"rejected_nrms"` / `"missing_cnv"` / `"missing_model"`, inferred from a `threshold` when not supplied explicitly). Members with no usable nRMS (`None`/NaN) render as a small hatched "n/a" stub bar rather than being silently dropped. Sortable by nRMS (ascending, missing sort last) or original order; optional dashed threshold line and per-bar value labels. Used by `femtic_ens_post.py`'s new `MOD_CONV` convergence diagnostic (see `femtic_ens_post_readme.md`). No changes to any existing function. |
+| 2026-08-12 | Claude Sonnet 5 (Anthropic) | Added `plot_convergence_histogram()`: binned, stacked-by-status companion to `plot_convergence_bar` for large ensembles, where a one-bar-per-member chart becomes a wall of rows. Bins nRMS into `"auto"` (default 15) or a fixed number of equal-width bins, stacks accepted/rejected_nrms counts per bin, and tallies members with no usable nRMS into one extra `"missing"` bar appended after the last numeric bin (split by `missing_cnv`/`missing_model` if both present) rather than dropping them. Factored the shared status → color/hatch/legend default map out of `plot_convergence_bar` into a new `_conv_status_style_map()` module helper, used by both functions (no behaviour change to `plot_convergence_bar`). Now `femtic_ens_post.py`'s default `MOD_CONV` rendering (`MOD_CONV_PER_MEMBER=True` switches back to `plot_convergence_bar`; see `femtic_ens_post_readme.md`). |
+| 2026-08-12 | Claude Sonnet 5 (Anthropic) | `plot_convergence_histogram()`: changed the bin range to cover only members whose status is in the new `binned_statuses` parameter (default `("accepted",)`) instead of the full finite nRMS range. Rejected members no longer get real bins at all — they're always lumped into one aggregate `"rejected"` bar (new `show_rejected_bar` parameter, default `True`), appended after the numeric bins next to the existing `"missing"` aggregate bar. A single far-over-threshold rejected member could previously stretch the shared bin range and compress the entire accepted population into an unreadable sliver at one edge of the plot; that's no longer possible. Removed the now-meaningless `status_order` parameter (only `binned_statuses` gets real bins now). `plot_convergence_bar` is unaffected. |
 
 Author: Volker Rath (DIAS)
