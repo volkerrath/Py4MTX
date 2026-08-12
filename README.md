@@ -20,7 +20,7 @@ The repository contains the following subdirectories:
 
 	+ **general** for processing and visualization of MT data on the EDI level; 1-D inversions including anisotropy [7].
 
-	+ **special** scripts/modules related to certain geographical targets and data sets.
+	+ **special** scripts/modules related to certain geographical targets and data sets xxx.
 
 
  -	**py4mt/modules**
