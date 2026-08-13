@@ -226,3 +226,4 @@ for bh in hdr["boreholes"]:
 | 2026-06-04 | vrath / Claude Sonnet 4.6 | **Split** from `femtic_mod_plot_slice.py` into this dedicated script. `PLOT_BOREHOLE` flag removed (script is the flag). `BOREHOLE_IN_SLICE` removed (handled in `femtic_mod_plot_slice.py`). UTM origin preamble retained so script runs independently |
 | 2026-06-04 | vrath / Claude Sonnet 4.6 | Added `BOREHOLE_MARKERS` (free arrow + text annotations) and `LEGEND_FONTSIZE`; forwarded to `fviz.plot_borehole_logs` |
 | 2026-06-26 | vrath / Claude Sonnet 4.6 | Added `TICK_FONTSIZE` and `LABEL_FONTSIZE` (both default `None` → derived from `LEGEND_FONTSIZE`); forwarded to `fviz.plot_borehole_logs` as `tick_fontsize` / `label_fontsize`. |
+| 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_mod_plot_bh_summary.md` output at end of run: writes user-set (UPPERCASE) parameters, script path, and run date/time. |

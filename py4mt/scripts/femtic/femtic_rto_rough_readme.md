@@ -71,6 +71,7 @@ See `README_femtic_rto_prep.md` for the full list of RTO references.
 |------------|--------|----------------------------------------------|
 | 2025-07-24 | vrath  | Created.                                     |
 | 2026-03-03 | Claude | Renamed user-set parameters to UPPERCASE.    |
+| 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_rto_rough_summary.md` output at end of run: user-set (UPPERCASE) parameters, script path, and run date/time. |
 
 ## Author
 

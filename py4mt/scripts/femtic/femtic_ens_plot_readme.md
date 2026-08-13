@@ -138,3 +138,6 @@ Position values accept:
 - Added `DEPTH_KM`, `HORIZ_KM`, `PLOT_EQUAL_ASPECT`, `PLOT_PANEL_HEIGHT`,
   `PLOT_NROWS`, `PLOT_NCOLS`, `PLOT_SITES_MAPS`, `PLOT_SITES_SLICES`,
   `SITE_MARKER_SLICES`, `MAP_MARKERS`, `DISPLAY_COORDS` config vars.
+- **2026-08-13 (Claude Sonnet 5, Anthropic):** Added `femtic_ens_plot_summary.md`
+  output at end of run: user-set (UPPERCASE) parameters, script path, and
+  run date/time.

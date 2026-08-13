@@ -138,3 +138,4 @@ offset tuple `ann_offset` in the script if crowding still occurs.
 | 2026-06-17 | vrath / Claude Sonnet 4.6 | Added `PLOT_LOG_X` / `PLOT_LOG_Y` for independent log₁₀ axes |
 | 2026-06-18 | vrath / Claude Sonnet 4.6 | Added `PLOT_XLIM` / `PLOT_YLIM`; offset annotations from markers via `xytext` |
 | 2026-07-05 | vrath / Claude Sonnet 5 | Added `SCALE_ROUGH` / `SCALE_MISFIT` optional axis scaling factors, displayed as "×10ⁿ" in the axis label; not applied to `nrms` or to saved `LC_dat.npz`; `PLOT_XLIM`/`PLOT_YLIM` auto-rescaled to match |
+| 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_lcurve_plot_summary.md` output at end of run: user-set (UPPERCASE) parameters, script path, and run date/time |

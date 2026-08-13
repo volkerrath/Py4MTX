@@ -16,6 +16,11 @@ References:
 Provenance:
     2025       vrath   Created.
     2026-03-03 Claude  Renamed user-set parameters to UPPERCASE.
+    2026-08-13 Claude Sonnet 5 (Anthropic)
+                       Added femtic_ens_from_covar_summary.md output at end
+                       of run: writes user-set (UPPERCASE) parameters,
+                       script path, and run date/time via
+                       utl.write_param_summary().
 """
 
 import os
@@ -76,3 +81,9 @@ for imod in np.arange(NEW_ENSEMBLE_SIZE):
 ensemble_dict = {"new_ens": new_ens, "sqrtcov": sqrtcov, "ref": ref}
 np.savez_compressed(NEW_ENSEMBLE_FILE, **ensemble_dict)
 print(f"Ensemble ({NEW_ENSEMBLE_SIZE} members) saved to {NEW_ENSEMBLE_FILE}")
+
+
+# ---------------------------------------------------------------------------
+# Parameter summary
+# ---------------------------------------------------------------------------
+utl.write_param_summary(__file__)

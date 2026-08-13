@@ -27,6 +27,10 @@ Provenance:
                 ensemble generation into ensembles.py and will raise
                 AttributeError as written. See the KNOWN ISSUE comment
                 block near RANDOM_SEED.
+    2026-08-13  Claude Sonnet 5 (Anthropic)
+                Added femtic_jcn_prep_summary.md output at end of run:
+                writes user-set (UPPERCASE) parameters, script path, and
+                run date/time via utl.write_param_summary().
 """
 
 import os
@@ -133,3 +137,9 @@ data_ensemble = fem.generate_data_fcn(
                # exists once generate_data_fcn is restored/migrated
     out=True,
 )
+
+
+# ---------------------------------------------------------------------------
+# Parameter summary
+# ---------------------------------------------------------------------------
+utl.write_param_summary(fname)

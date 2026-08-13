@@ -39,6 +39,10 @@ Provenance
                 PLOT_PANEL_HEIGHT, PLOT_NROWS, PLOT_NCOLS, PLOT_SITES_MAPS,
                 PLOT_SITES_SLICES, SITE_MARKER_SLICES, MAP_MARKERS,
                 DISPLAY_COORDS config vars.
+    2026-08-13  Claude Sonnet 5 (Anthropic)
+                Added femtic_ens_plot_summary.md output at end of run:
+                writes user-set (UPPERCASE) parameters, script path, and
+                run date/time via utl.write_param_summary().
 
 @author: vrath
 """
@@ -633,3 +637,9 @@ if PLOT_BOREHOLE:
             out            = OUT,
         )
         print("Borehole plot done.")
+
+
+# ---------------------------------------------------------------------------
+# Parameter summary
+# ---------------------------------------------------------------------------
+utl.write_param_summary(fname)

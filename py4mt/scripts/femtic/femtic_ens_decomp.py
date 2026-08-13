@@ -13,6 +13,10 @@ Provenance:
     2025       vrath   Created (as femtic_decomp_ens.py).
     2026-03-03 Claude  Renamed file to femtic_ens_decomp.py;
                        renamed user-set parameters to UPPERCASE.
+    2026-08-13 Claude Sonnet 5 (Anthropic)
+                       Added femtic_ens_decomp_summary.md output at end of
+                       run: writes user-set (UPPERCASE) parameters, script
+                       path, and run date/time via utl.write_param_summary().
 """
 
 import os
@@ -120,3 +124,9 @@ elif "ica" in proc_lower:
 
 np.savez_compressed(ENSEMBLE_RESULTS, **results_dict)
 print(f"\nResults saved to {ENSEMBLE_RESULTS}")
+
+
+# ---------------------------------------------------------------------------
+# Parameter summary
+# ---------------------------------------------------------------------------
+utl.write_param_summary(fname)

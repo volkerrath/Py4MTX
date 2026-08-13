@@ -18,6 +18,7 @@ Empirical Orthogonal Function (EOF) analysis of a FEMTIC model ensemble.
 |------------|--------|-----------------------------------------------------------------|
 | 2025       | vrath  | Created (as femtic_ensemble_eof.py).                            |
 | 2026-03-03 | Claude | Renamed file to femtic_ens_eof; params to UPPERCASE.            |
+| 2026-08-13 | Claude Sonnet 5 | Added `femtic_ens_eof_summary.md` output at end of run: user-set (UPPERCASE) parameters, script path, and run date/time. |
 
 ## Purpose
 

@@ -40,6 +40,11 @@ Provenance:
                         scs.csr_array(tmp) when building the sparsified
                         empirical covariance (rto_covs). No functional
                         change.
+    2026-08-13  Claude Sonnet 5 (Anthropic)
+                        Added femtic_rto_post_summary.md output at end of
+                        run: writes user-set (UPPERCASE) parameters,
+                        script path, and run date/time via
+                        utl.write_param_summary().
 '''
 import os
 import sys
@@ -224,3 +229,9 @@ if PLOT_QC:
             out         = True,
         )
         print(f"  QC: saved → {PLOT_QC_FILE}")
+
+
+# ---------------------------------------------------------------------------
+# Parameter summary
+# ---------------------------------------------------------------------------
+utl.write_param_summary(__file__)

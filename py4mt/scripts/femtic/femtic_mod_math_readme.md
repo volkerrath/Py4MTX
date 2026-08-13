@@ -232,3 +232,4 @@ pass restores spatial continuity while preserving the robustness advantage.
 | Date | Author | Change |
 |---|---|---|
 | 2026-06-11 | vrath / Claude Sonnet 4.6 (Anthropic) | Created. |
+| 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_mod_math_summary.md` output at end of run: writes user-set (UPPERCASE) parameters, script path, and run date/time. |

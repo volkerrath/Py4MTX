@@ -140,6 +140,10 @@ Provenance
                 the p1→p2 azimuth; dip is fixed at 90.  New helper
                 resolve_pos_two_point_profile() added to femtic.py;
                 resolve_slice_positions() extended with the "profile" branch.
+    2026-08-13  Claude Sonnet 5 (Anthropic)
+                Added femtic_mod_plot_slice_summary.md output at end of
+                run: writes user-set (UPPERCASE) parameters, script path,
+                and run date/time via utl.write_param_summary().
 
 @author: vrath
 """
@@ -651,3 +655,9 @@ fviz.plot_model_slices(
 )
 print("Slice plot done.")
 
+
+
+# ---------------------------------------------------------------------------
+# Parameter summary
+# ---------------------------------------------------------------------------
+utl.write_param_summary(fname)

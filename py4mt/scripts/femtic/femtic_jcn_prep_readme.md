@@ -12,6 +12,7 @@ Prepare jackknife uncertainty analysis directories for FEMTIC.
 | Inversion code | FEMTIC |
 | README generated | 3 March 2026 by Claude (Anthropic), from cleaned source |
 | README updated | 25 July 2026 by Claude Sonnet 5 (Anthropic) — added `RANDOM_SEED`; flagged a known issue (see below) |
+| README updated | 13 August 2026 by Claude Sonnet 5 (Anthropic) — added `femtic_jcn_prep_summary.md` output at end of run |
 
 ## ⚠ Known issue (unrelated to the reproducibility update)
 
@@ -66,6 +67,7 @@ reduced data set (e.g. leave-one-site-out) is generated.
 |------|-------------|
 | `jcn_<N>/` | One inversion directory per jackknife sample, ready to run FEMTIC. |
 | Modified `observe.dat` | Each directory contains a reduced data file with one site removed. |
+| `femtic_jcn_prep_summary.md` | Markdown summary of user-set (UPPERCASE) parameters, script path, and run date/time. |
 
 ## Dependencies
 

@@ -159,3 +159,8 @@ The geometry primitives used by `"smooth"`, `"wmean"`, `"ellipsoid"`, and
   All geometry primitives now live in `femtic.py` and are called via
   `fem.build_region_geometry()`, `fem.ellipsoid_mask()`, `fem.brick_mask()`.
 - `_smooth_body_boundary` and `_apply_bodies` remain local.
+
+## 2026-08-13 (parameter summary)
+
+- Added `femtic_mod_edit_summary.md` output at end of run: writes
+  user-set (UPPERCASE) parameters, script path, and run date/time.

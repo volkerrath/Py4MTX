@@ -62,6 +62,10 @@ Provenance
                 nRMS filter) and femtic_mod_edit.py (smooth operation, plotting
                 config, insert_model I/O).  New SUBSET_LIST / BLOCK_FILES
                 input modes.
+    2026-08-13  Claude Sonnet 5 (Anthropic)
+                Added femtic_mod_math_summary.md output at end of run:
+                writes user-set (UPPERCASE) parameters, script path, and
+                run date/time via utl.write_param_summary().
 
 @author: vrath
 """
@@ -620,3 +624,9 @@ if PLOT:
     )
 
 print("\nfemtic_mod_math.py complete.")
+
+
+# ---------------------------------------------------------------------------
+# Parameter summary
+# ---------------------------------------------------------------------------
+utl.write_param_summary(fname)

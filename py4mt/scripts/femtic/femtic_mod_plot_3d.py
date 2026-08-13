@@ -37,6 +37,10 @@ Provenance
                 Split from femtic_mod_plot.py into femtic_mod_plot_slice.py
                 (2-D slices + boreholes) and femtic_mod_plot_3d.py (this
                 script, PyVista 3-D rendering only).
+    2026-08-13  Claude Sonnet 5 (Anthropic)
+                Added femtic_mod_plot_3d_summary.md output at end of run:
+                writes user-set (UPPERCASE) parameters, script path, and
+                run date/time via utl.write_param_summary().
 
 @author: vrath
 """
@@ -271,3 +275,9 @@ fviz.plot_model_3d(
     out=OUT,
 )
 print("3-D plot done.")
+
+
+# ---------------------------------------------------------------------------
+# Parameter summary
+# ---------------------------------------------------------------------------
+utl.write_param_summary(fname)

@@ -191,3 +191,4 @@ mode: the grid is written but no PyVista render window is opened.
 | 2026-05-27 | vrath / Claude Sonnet 4.6 | `PLOT_XLIM/YLIM/ZLIM` passed for spatial clipping of VTU export and scene |
 | 2026-05-31 | vrath / Claude Sonnet 4.6 | Origin estimation before UTM zone derivation; hard-coded `UTM_ORIGIN_*` set to `None` |
 | 2026-06-03 | Claude Sonnet 4.6 | **Split** from `femtic_mod_plot.py` → `femtic_mod_plot_3d.py` (this script) + `femtic_mod_plot_slice.py` |
+| 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_mod_plot_3d_summary.md` output at end of run: writes user-set (UPPERCASE) parameters, script path, and run date/time |

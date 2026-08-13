@@ -18,6 +18,7 @@ Plot iteration-by-iteration convergence curves from FEMTIC inversions.
 |------------|--------|----------------------------------------------|
 | 2025       | vrath  | Created.                                     |
 | 2026-03-03 | Claude | Renamed user-set parameters to UPPERCASE.    |
+| 2026-08-13 | Claude Sonnet 5 | Added `femtic_convergence_plot_summary.md` output at end of run: user-set (UPPERCASE) parameters, script path, and run date/time. |
 
 ## Purpose
 

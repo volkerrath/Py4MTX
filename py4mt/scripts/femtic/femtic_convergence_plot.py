@@ -12,6 +12,11 @@ generates convergence plots as PDF.
 Provenance:
     2025       vrath   Created.
     2026-03-03 Claude  Renamed user-set parameters to UPPERCASE.
+    2026-08-13 Claude Sonnet 5 (Anthropic)
+                       Added femtic_convergence_plot_summary.md output at
+                       end of run: writes user-set (UPPERCASE) parameters,
+                       script path, and run date/time via
+                       utl.write_param_summary().
 """
 
 import os
@@ -141,3 +146,9 @@ for directory in dir_list:
     )
     plt.savefig(outfile)
     print(f"Saved {outfile}")
+
+
+# ---------------------------------------------------------------------------
+# Parameter summary
+# ---------------------------------------------------------------------------
+utl.write_param_summary(fname)

@@ -45,6 +45,10 @@ Provenance
 @project: Py4MTX
 @created: 2026-06-04
 @modified: 2026-06-04  vrath / Claude Sonnet 4.6 (Anthropic)
+@modified: 2026-08-13  Claude Sonnet 5 (Anthropic) -- Added
+    femtic_mod_plot_bh_summary.md output at end of run: writes user-set
+    (UPPERCASE) parameters, script path, and run date/time via
+    utl.write_param_summary().
 """
 
 import os
@@ -317,3 +321,9 @@ else:
         out            = OUT,
     )
     print("Borehole plot done.")
+
+
+# ---------------------------------------------------------------------------
+# Parameter summary
+# ---------------------------------------------------------------------------
+utl.write_param_summary(fname)

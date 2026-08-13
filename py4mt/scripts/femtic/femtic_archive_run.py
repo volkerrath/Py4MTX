@@ -5,6 +5,15 @@ Clean and optionally archive a FEMTIC run directory.
 
 Author: Volker Rath (DIAS)
 Created with the help of ChatGPT (GPT-5 Thinking) on 2026-04-07
+
+Provenance:
+    2026-04-07  vrath / ChatGPT (GPT-5 Thinking)  Created.
+    2026-08-13  Claude Sonnet 5 (Anthropic)
+                Added femtic_archive_run_summary.md output after CLI
+                argument parsing: writes the resolved argparse parameters,
+                script path, and run date/time via a self-contained
+                _write_param_summary() helper (stdlib only, no external
+                py4mt dependency).
 """
 
 from __future__ import annotations
@@ -25,6 +34,37 @@ for _base in [PY4MTX_ROOT + "/py4mt/modules/"]:
             sys.path.insert(0, str(_p))
 
 from typing import Iterable
+
+
+def _write_param_summary(fname: str, params: dict) -> str:
+    """Write a Markdown summary of this script's CLI parameters.
+
+    Self-contained (stdlib only) so this script keeps no dependency on
+    the py4mt module stack. Writes ``<script_dir>/<script_stem>_summary.md``
+    with the script path, run date/time, and the resolved CLI arguments.
+    """
+    from datetime import datetime
+
+    script_path = os.path.abspath(fname)
+    stem = os.path.splitext(os.path.basename(fname))[0]
+    out_path = os.path.join(os.path.dirname(script_path), stem + "_summary.md")
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    lines = [
+        "# Parameter summary: " + stem, "",
+        "- **Script path:** `" + script_path + "`",
+        "- **Run date/time:** " + now, "",
+        "## User-set parameters", "",
+        "| Parameter | Value |", "|---|---|",
+    ]
+    for k in sorted(params):
+        vstr = repr(params[k]).replace("|", "\\|").replace("\n", " ")
+        lines.append("| `" + k + "` | `" + vstr + "` |")
+
+    with open(out_path, "w") as fh:
+        fh.write("\n".join(lines) + "\n")
+    print("[write_param_summary] Wrote parameter summary to " + out_path)
+    return out_path
 
 
 def _normalize_protected_tokens(protected_tokens: Iterable[str]) -> tuple[str, ...]:
@@ -192,6 +232,8 @@ def main():
                         help="Do NOT include leading directory in archive")
 
     args = parser.parse_args()
+
+    _write_param_summary(__file__, vars(args))
 
     mt_archive_run(
         directory=args.directory,

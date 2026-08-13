@@ -95,6 +95,10 @@ Provenance:
                 ready-to-run restart directory (mesh/control/site/run
                 scripts all present via the copy), not just a bare
                 starting model as in the first version of this script.
+    2026-08-13  Claude Sonnet 5 (Anthropic)
+                Added femtic_ens_repair_summary.md output at end of run:
+                writes user-set (UPPERCASE) parameters, script path, and
+                run date/time via utl.write_param_summary().
 """
 from __future__ import annotations
 
@@ -476,3 +480,9 @@ if MOD_REPAIR:
               f"non-converged directory/ies repaired.")
 
 print("\nfemtic_ens_repair.py complete.")
+
+
+# ---------------------------------------------------------------------------
+# Parameter summary
+# ---------------------------------------------------------------------------
+utl.write_param_summary(__file__)

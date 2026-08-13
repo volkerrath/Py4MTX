@@ -25,6 +25,7 @@ Modified: 2026-03-26 — added unpack_compressed(), pack_compressed(), run_queue
 Modified: 2026-04-02 — merged resistivity_models.py (petrophysical models); Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-05-23 — added utm_zone_from_latlon(), latlon_to_utm_zn(), utm_to_latlon_zn() (zone+hemisphere API with pyproj-primary / Helmert fallback); Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-05-25 — moved KL divergence, L-curve, DCT wrappers, fractional derivative, and residual-norm helpers to inverse.py; removed shims; Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-08-13 — added write_param_summary() (writes a per-script Markdown summary of UPPERCASE user-set parameters, script path, and run date/time); Claude Sonnet 5 (Anthropic)
 """
 
 from __future__ import annotations
@@ -157,6 +158,81 @@ def load_workspace_hdf5(filename: str = "workspace.h5",
                     pass
             namespace[key] = raw
 
+
+
+# ---------------------------------------------------------------------------
+# Parameter summary (user-set config -> Markdown)
+# ---------------------------------------------------------------------------
+
+def write_param_summary(fname: str,
+                         namespace: Optional[Dict[str, Any]] = None,
+                         out_path: Optional[str] = None) -> str:
+    """
+    Write a Markdown summary of a script's user-set parameters.
+
+    Scans ``namespace`` for UPPERCASE, non-private, non-module,
+    non-callable names -- the established py4mt convention for
+    user-set config variables (``MOD_*``, ``ENS_*``, ``GST_*``,
+    ``DAT_*``, ``VIZ_*``, ``QC_*``, ``PLOT_*``, etc.) -- and writes
+    them, together with the script path and the run date/time, to
+    ``<script_dir>/<script_stem>_summary.md``.
+
+    Parameters
+    ----------
+    fname : str
+        Path to the calling script (typically
+        ``inspect.getfile(inspect.currentframe())``).
+    namespace : dict, optional
+        Namespace to scan for parameters. Defaults to the *caller's*
+        globals (i.e. the script's own module namespace), not
+        ``util.py``'s.
+    out_path : str, optional
+        Output ``.md`` path. Defaults to
+        ``<script_dir>/<script_stem>_summary.md``, i.e. next to the
+        script itself.
+
+    Returns
+    -------
+    str
+        Path to the written summary file.
+    """
+    from datetime import datetime
+
+    if namespace is None:
+        namespace = inspect.currentframe().f_back.f_globals
+
+    params = {k: v for k, v in _filter_namespace(namespace).items() if k.isupper()}
+
+    script_path = os.path.abspath(fname)
+    stem = os.path.splitext(os.path.basename(fname))[0]
+    if out_path is None:
+        out_path = os.path.join(os.path.dirname(script_path), stem + "_summary.md")
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    lines = [
+        "# Parameter summary: " + stem,
+        "",
+        "- **Script path:** `" + script_path + "`",
+        "- **Run date/time:** " + now,
+        "",
+        "## User-set parameters",
+        "",
+        "| Parameter | Value |",
+        "|---|---|",
+    ]
+    for k in sorted(params):
+        vstr = repr(params[k]).replace("|", "\\|").replace("\n", " ")
+        if len(vstr) > 300:
+            vstr = vstr[:300] + " ... (truncated)"
+        lines.append("| `" + k + "` | `" + vstr + "` |")
+
+    text = "\n".join(lines) + "\n"
+    with open(out_path, "w") as f:
+        f.write(text)
+
+    print("[write_param_summary] Wrote parameter summary to " + out_path)
+    return out_path
 
 
 # ---------------------------------------------------------------------------

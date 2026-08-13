@@ -18,6 +18,7 @@ Generate a synthetic model ensemble from a posterior covariance matrix.
 |------------|--------|----------------------------------------------|
 | 2025       | vrath  | Created.                                     |
 | 2026-03-03 | Claude | Renamed user-set parameters to UPPERCASE.    |
+| 2026-08-13 | Claude Sonnet 5 | Added `femtic_ens_from_covar_summary.md` output at end of run: user-set (UPPERCASE) parameters, script path, and run date/time. |
 
 ## Purpose
 

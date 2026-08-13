@@ -32,11 +32,46 @@ Provenance
 ----------
     2026-06-10  Claude Sonnet 4.6 (Anthropic)   Created.
     2026-06-12  Claude Sonnet 4.6 (Anthropic)   Replaced Unicode box chars with plain ASCII.
+    2026-08-13  Claude Sonnet 5 (Anthropic)     Added femtic_summarize_observe_dat_summary.md
+                output: writes CLI parameters, script path, and run date/time via a
+                self-contained _write_param_summary() helper (no femtic/util dependency).
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
+
+
+def _write_param_summary(fname: str, params: dict) -> str:
+    """Write a Markdown summary of this script's CLI parameters.
+
+    Self-contained (stdlib only). Writes
+    ``<script_dir>/<script_stem>_summary.md`` with the script path, run
+    date/time, and the resolved CLI arguments.
+    """
+    from datetime import datetime
+
+    script_path = os.path.abspath(fname)
+    stem = os.path.splitext(os.path.basename(fname))[0]
+    out_path = os.path.join(os.path.dirname(script_path), stem + "_summary.md")
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    lines = [
+        "# Parameter summary: " + stem, "",
+        "- **Script path:** `" + script_path + "`",
+        "- **Run date/time:** " + now, "",
+        "## User-set parameters", "",
+        "| Parameter | Value |", "|---|---|",
+    ]
+    for k in sorted(params):
+        vstr = repr(params[k]).replace("|", "\\|").replace("\n", " ")
+        lines.append("| `" + k + "` | `" + vstr + "` |")
+
+    with open(out_path, "w") as fh:
+        fh.write("\n".join(lines) + "\n")
+    print("[write_param_summary] Wrote parameter summary to " + out_path)
+    return out_path
 
 
 # ---------------------------------------------------------------------------
@@ -229,6 +264,8 @@ def main() -> None:
         help="observe.dat files, glob patterns, or directories (default: current dir).",
     )
     args = ap.parse_args()
+
+    _write_param_summary(__file__, vars(args))
 
     if _FEMTIC_AVAILABLE:
         print("[info] Using femtic.summarise_observe_dat", file=sys.stderr)

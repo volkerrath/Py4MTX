@@ -131,3 +131,6 @@ dict(kind="plane", point=[0,0,5000], strike=45, dip=60)
   (default `True`): when running inside Spyder, every saved figure is
   also displayed inline via `plt.show()`, without changing what gets
   saved to disk. No effect outside Spyder.
+- 2026-08-13 (Claude Sonnet 5, Anthropic): Added
+  `femtic_rto_prep_summary.md` output at end of run: writes user-set
+  (UPPERCASE) parameters, script path, and run date/time.

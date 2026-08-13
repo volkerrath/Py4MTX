@@ -22,12 +22,52 @@ Usage
 AI-generated code -- author: Claude, Anthropic.
 Date generated: 2026-06-12.
 Review before use in production.
+
+Provenance:
+    2026-06-12  Claude, Anthropic  Created.
+    2026-08-13  Claude Sonnet 5 (Anthropic)
+                Added femtic_summarize_model_cells_summary.md output after
+                CLI argument parsing: writes the resolved parameters,
+                script path, and run date/time via a self-contained
+                _write_param_summary() helper (stdlib only).
 """
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
+
+
+def _write_param_summary(fname: str, params: dict) -> str:
+    """Write a Markdown summary of this script's CLI parameters.
+
+    Self-contained (stdlib only). Writes
+    ``<script_dir>/<script_stem>_summary.md`` with the script path, run
+    date/time, and the resolved CLI arguments.
+    """
+    from datetime import datetime
+
+    script_path = os.path.abspath(fname)
+    stem = os.path.splitext(os.path.basename(fname))[0]
+    out_path = os.path.join(os.path.dirname(script_path), stem + "_summary.md")
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    lines = [
+        "# Parameter summary: " + stem, "",
+        "- **Script path:** `" + script_path + "`",
+        "- **Run date/time:** " + now, "",
+        "## User-set parameters", "",
+        "| Parameter | Value |", "|---|---|",
+    ]
+    for k in sorted(params):
+        vstr = repr(params[k]).replace("|", "\\|").replace("\n", " ")
+        lines.append("| `" + k + "` | `" + vstr + "` |")
+
+    with open(out_path, "w") as fh:
+        fh.write("\n".join(lines) + "\n")
+    print("[write_param_summary] Wrote parameter summary to " + out_path)
+    return out_path
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +229,9 @@ def print_summary(it: int, rho: dict, dist: dict | None) -> None:
 
 def main() -> None:
     args = sys.argv[1:] or ["."]
+
+    _write_param_summary(__file__, {"paths": args})
+
     pairs = collect_pairs(args)
 
     if not pairs:

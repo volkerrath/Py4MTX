@@ -96,6 +96,7 @@ See `femtic_rto_prep_readme.md` for the full list of RTO references.
 | Date | Author | Change |
 |---|---|---|
 | 2026-07-17 | Claude Sonnet 5 (Anthropic) | `scipy.sparse`: migrated from legacy matrix to array-equivalent API — `scs.csr_matrix(tmp)` → `scs.csr_array(tmp)` when building the sparsified empirical covariance (`rto_covs`). No functional change. |
+| 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_rto_post_summary.md` output at end of run: writes user-set (UPPERCASE) parameters, script path, and run date/time. |
 
 ## Author
 

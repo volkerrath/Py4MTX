@@ -185,3 +185,8 @@ python mt_archive_run.py run \
 
 Author: Volker Rath (DIAS)  
 Created with the help of ChatGPT (GPT-5 Thinking) on 2026-04-07
+
+| Date | Author | Change |
+|---|---|---|
+| 2026-04-07 | vrath / ChatGPT (GPT-5 Thinking) | Created. |
+| 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_archive_run_summary.md` output after CLI argument parsing: writes the resolved parameters (`directory`, `keep_n_low`, `keep_n_high`, `recursive`, `delete`, `compress`, `no_root`), script path, and run date/time via a self-contained, stdlib-only helper. |

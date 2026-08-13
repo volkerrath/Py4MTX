@@ -21,6 +21,10 @@ Provenance:
     2026-07-05 Claude  Flipped exponent sign in scale-factor label: since data
                        is divided by SCALE_*, a scale of 1e3 now shows "x10^-3"
                        (previously showed "x10^3").
+    2026-08-13 Claude Sonnet 5 (Anthropic)
+                       Added femtic_lcurve_plot_summary.md output at end of
+                       run: writes user-set (UPPERCASE) parameters, script
+                       path, and run date/time via utl.write_param_summary().
 """
 
 import os
@@ -226,3 +230,9 @@ plt.savefig(PLOT_NAME + ".svg")
 plt.savefig(PLOT_NAME + ".jpg", dpi=600., transparent=True)
 
 print(f"Saved {PLOT_NAME}.pdf and {PLOT_NAME}.jpg")
+
+
+# ---------------------------------------------------------------------------
+# Parameter summary
+# ---------------------------------------------------------------------------
+utl.write_param_summary(fname)

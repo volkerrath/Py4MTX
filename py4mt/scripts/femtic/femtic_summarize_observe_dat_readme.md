@@ -142,3 +142,4 @@ parsing; the fallback uses a minimal line-by-line parser.
 | Date | Author | Note |
 |---|---|---|
 | 2026-06-10 | Claude Sonnet 4.6 (Anthropic) | Created. |
+| 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_summarize_observe_dat_summary.md` output after CLI argument parsing: writes the resolved `paths` argument, script path, and run date/time via a self-contained, stdlib-only helper. |

@@ -266,6 +266,10 @@ Provenance
             fviz.plot_convergence_histogram() (added to femtic_viz.py
             during the same work) are unaffected and still exported from
             femtic_viz.py for that script to use.
+    2026-08-13  Claude Sonnet 5 (Anthropic)
+            Added femtic_ens_post_summary.md output at end of run: writes
+            user-set (UPPERCASE) parameters, script path, and run
+            date/time via utl.write_param_summary().
 """
 from __future__ import annotations
 
@@ -357,11 +361,11 @@ FEMTIC="5.0" #"4.3"
 
 # ENSEMBLE_DIR = r"/home/vrath/FEMTIC_work/Ensembles/misti_gst/ensemble/"
 ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/misti_gst_ensembles/"
-ENSEMBLE_NAME = "misti_gst_suzuki_rnd"
+ENSEMBLE_NAME = "misti_gst_suzuki_ext"
 
 #: Prefix used for .npz output keys and default file/figure names.
 #: e.g. "rto" → keys rto_ens, rto_avg, …  and file RTO_results.npz.
-ENSEMBLE_PREFIX = "misti_gst_suzuki_rnd"
+ENSEMBLE_PREFIX = "misti_gst_suzuki_ext"
 
 #: Maximum normalised RMS accepted from femtic.cnv.
 NRMS_MAX = 1.5
@@ -508,7 +512,7 @@ MOD_STATS_WHAT = ["avg", "med", "err", "mad"] + [
     f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_") for _lo, _hi in QDIFF_PAIRS
 ] + (["err_boot"] if BOOTSTRAP_VAR else [])
 #: Output directory for stat block files and figures.
-MOD_STATS_DIR  = ENSEMBLE_DIR + "/stats_plots_rnd/"
+MOD_STATS_DIR  = ENSEMBLE_DIR + "/stats_plots_ext/"
 
 #: Per-statistic colour-scale override, keyed the same as MOD_STATS_WHAT
 #: (e.g. "var", "p50", "qdiff_15_9_84_1"). Each value is an explicit
@@ -1210,3 +1214,9 @@ if MOD_STATS:
             )
 
 print("\nfemtic_ens_post.py complete.")
+
+
+# ---------------------------------------------------------------------------
+# Parameter summary
+# ---------------------------------------------------------------------------
+utl.write_param_summary(__file__)

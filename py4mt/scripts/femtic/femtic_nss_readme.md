@@ -429,6 +429,7 @@ and wire `RANDOM_SEED` through there as well.
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `RANDOM_SEED` for optional reproducible model perturbations (step 4). Fixed two reproducibility bugs: `_make_perturbation_gst` was constructing a fresh, unseeded `np.random.default_rng()` inline on every call; `_make_perturbation_random` was hardcoded to `np.random.default_rng(seed=0)` regardless of any seed elsewhere. Both now use the shared, module-level `rng`. Step 3's `inv.rsvd` randomness is explicitly *not* covered — see Reproducibility section. |
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `MOD_TICK_FONTSIZE` / `MOD_LABEL_FONTSIZE`, passed through to the `MOD_QC` plot. Axis tick labels, axis labels, panel title, and colourbar text were previously fixed at `plot_model_slices`' internal defaults with no way to override them from this script. |
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `MOD_SHOW_IN_SPYDER` (default `True`): when running inside Spyder, the `MOD_QC` figure is also displayed inline via `plt.show()`, without changing what gets saved to disk. No effect outside Spyder. |
+| 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_nss_summary.md` output at end of run: writes user-set (UPPERCASE) parameters, script path, and run date/time. |
 
 **How to configure the GST variogram?**
 The variogram controls the spatial coherence of the Kriged perturbation.

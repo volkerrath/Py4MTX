@@ -151,6 +151,10 @@ Provenance
                 plain-numeric x0/y0/z0 by 1000 and leaving (value,
                 "latlon") tuples / other keys untouched; applied right
                 before fem.resolve_slice_positions(MOD_SLICES, ...).
+    2026-08-13  Claude Sonnet 5 (Anthropic)
+                Added femtic_nss_summary.md output at end of run: writes
+                user-set (UPPERCASE) parameters, script path, and run
+                date/time via utl.write_param_summary().
 
 @author: vrath
 """
@@ -1011,3 +1015,9 @@ if MOD_QC:
         )
 
 print(f"\n  Total elapsed : {time.perf_counter() - t0_total:.2f} s")
+
+
+# ---------------------------------------------------------------------------
+# Parameter summary
+# ---------------------------------------------------------------------------
+utl.write_param_summary(fname)

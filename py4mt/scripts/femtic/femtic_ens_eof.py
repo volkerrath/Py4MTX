@@ -12,6 +12,10 @@ Provenance:
     2025       vrath   Created (as femtic_ensemble_eof.py).
     2026-03-03 Claude  Renamed file to femtic_ens_eof.py;
                        renamed user-set parameters to UPPERCASE.
+    2026-08-13 Claude Sonnet 5 (Anthropic)
+                       Added femtic_ens_eof_summary.md output at end of
+                       run: writes user-set (UPPERCASE) parameters, script
+                       path, and run date/time via utl.write_param_summary().
 """
 
 import os
@@ -149,3 +153,9 @@ for ie in np.arange(tens):
         model=eof_results[ie],
         model_file=outfile,
     )
+
+
+# ---------------------------------------------------------------------------
+# Parameter summary
+# ---------------------------------------------------------------------------
+utl.write_param_summary(fname)

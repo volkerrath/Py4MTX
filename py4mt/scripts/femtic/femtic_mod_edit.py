@@ -126,6 +126,10 @@ Provenance
                 delegate to fem.build_region_geometry(), fem.ellipsoid_mask(),
                 fem.brick_mask().  _smooth_body_boundary and _apply_bodies
                 remain local (workflow machinery, reference OUT global).
+    2026-08-13  Claude Sonnet 5 (Anthropic)
+                Added femtic_mod_edit_summary.md output at end of run:
+                writes user-set (UPPERCASE) parameters, script path, and
+                run date/time via utl.write_param_summary().
 
 @author: vrath
 """
@@ -1169,3 +1173,9 @@ if PLOT:
             dpi                = PLOT_DPI,
             out                = OUT,
         )
+
+
+# ---------------------------------------------------------------------------
+# Parameter summary
+# ---------------------------------------------------------------------------
+utl.write_param_summary(fname)

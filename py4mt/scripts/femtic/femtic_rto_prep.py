@@ -227,6 +227,10 @@ Provenance:
                 fem.resolve_slice_positions, same as in those two
                 scripts) and a clear warning is printed naming the fix
                 (set MOD_UTM_ORIGIN_LAT/LON or fix MOD_SITE_DAT).
+    2026-08-13  Claude Sonnet 5 (Anthropic)
+                Added femtic_rto_prep_summary.md output at end of run:
+                writes user-set (UPPERCASE) parameters, script path, and
+                run date/time via utl.write_param_summary().
 """
 
 import os
@@ -991,3 +995,9 @@ if PLOT_DATA or PLOT_MODEL:   # only runs when the viz block was entered
             out             = True,
         )
         print("ensemble slice plot saved.")
+
+
+# ---------------------------------------------------------------------------
+# Parameter summary
+# ---------------------------------------------------------------------------
+utl.write_param_summary(fname)
