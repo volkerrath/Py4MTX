@@ -437,7 +437,7 @@ if PERTURB_MOD:
     # Number of randomly drawn pilot points per member.
     # Used when MOD_PP_MODE = "random", "mixed", or "extrema" (fill).
     # Recommended: 50–200 for typical 3-D MT survey volumes.
-    MOD_N_PP = 100
+    MOD_N_PP = 128
 
     # Bounding box for random pilot-point placement:
     #   [x_min, x_max, y_min, y_max, z_min, z_max]  (km, model-local, z positive-down)

@@ -3,18 +3,23 @@
 """
 femtic_plot_ensemble.py — Ensemble slice plot for a set of FEMTIC inversion runs.
 
-Loops over a list of ensemble directories, collects the resistivity block
-file from each, and produces:
+Scans ENSEMBLE_DIR for converged ensemble members exactly the way
+femtic_ens_post.py does (ENSEMBLE_NAME* sub-directories, femtic.cnv,
+NRMS_MAX threshold), then produces:
 
-  (1) A joint multi-row figure — one row per ensemble member — using the
-      same slice geometry and PLOT_* parameters as femtic_mod_plot.py.
-      Optional statistical summary rows (mean, std, median of log₁₀(ρ))
-      are appended.  Optionally one figure per member is saved alongside.
+  (1) [default, PER_MEMBER_PLOT=True] Two fviz.plot_model_slices()
+      figures per converged member: the perturbed prior model
+      (resistivity_block_iter0.dat) and the best-fit model
+      (resistivity_block_iter{numit}.dat, numit from femtic.cnv), saved
+      as "<label>_iter0.<ext>" / "<label>_best.<ext>" in WORK_DIR.
 
-  (2) Optionally, a borehole resistivity log figure (same as step (6) in
-      femtic_mod_plot.py).
+  (2) [optional, PLOT_JOINT=True] The previous joint multi-row figure —
+      one row per member's best-fit model — with optional mean/std/median
+      summary rows, via fviz.plot_ensemble_slices().
 
-The ensemble step is taken directly from snippets.py (Snippet 1).
+  (3) Optionally, a borehole resistivity log figure (same as step (6) in
+      femtic_mod_plot.py), sampled from the first converged member's
+      best-fit model.
 
 Slice positions, UTM/geographic coordinate handling, site overlay, and
 all PLOT_* parameters follow the same conventions as femtic_mod_plot.py.
@@ -43,13 +48,35 @@ Provenance
                 Added femtic_ens_plot_summary.md output at end of run:
                 writes user-set (UPPERCASE) parameters, script path, and
                 run date/time via utl.write_param_summary().
+    2026-08-14  Claude Sonnet 5 (Anthropic)
+                Rewrote member handling to match femtic_ens_post.py:
+                converged members are now discovered by scanning
+                ENSEMBLE_DIR for "ENSEMBLE_NAME*" sub-directories and
+                reading femtic.cnv (same NRMS_MAX threshold, same
+                nRMS-column FEMTIC-version logic), replacing the old
+                fixed ENS_DIRS/BLOCK_PATTERN/ENS_ITER file list.
+                For each converged member, two single-model figures are
+                now produced via fviz.plot_model_slices(): the perturbed
+                prior (resistivity_block_iter0.dat) and the best-fit
+                model (resistivity_block_iter{numit}.dat, numit from
+                femtic.cnv), saved as "<label>_iter0.<ext>" and
+                "<label>_best.<ext>" in WORK_DIR. Controlled by new
+                PER_MEMBER_PLOT flag (default True). The previous joint
+                multi-row figure (fviz.plot_ensemble_slices, with
+                mean/std/median summary rows) is kept as an optional
+                extra, now gated by PLOT_JOINT (default False) and still
+                built from the same converged-member file list. Its
+                fviz.plot_ensemble_slices() call still has the
+                previously flagged keyword mismatch against the
+                function's current signature (would raise TypeError if
+                PLOT_JOINT=True) — this remains out of scope here and
+                is called out in a code comment at the call site.
 
 @author: vrath
 """
 
 import os
 import sys
-import glob
 import math
 import inspect
 from pathlib import Path
@@ -105,36 +132,52 @@ OBSERVE_FILE = WORK_DIR + "observe.dat"
 SITE_DAT = WORK_DIR + "site.dat"   # set to None to disable
 
 # ---------------------------------------------------------------------------
-# Ensemble input
+# Ensemble input — converged-member discovery
 # ---------------------------------------------------------------------------
-#: List of ensemble run directories.  Each directory must contain a
-#: resistivity block file named according to BLOCK_PATTERN (see below).
-#: Entries may be:
-#:   - absolute or WORK_DIR-relative paths
-#:   - glob patterns (e.g. WORK_DIR + "ubinas_rto_*") — expanded and sorted
-#:
-#: Example:
-#:   ENS_DIRS = sorted(glob.glob(WORK_DIR + "ubinas_rto_*/"))
-ENS_DIRS = [
-    # WORK_DIR + "ubinas_rto_0/",
-    # WORK_DIR + "ubinas_rto_1/",
-    # WORK_DIR + "ubinas_rto_2/",
-]
+#: FEMTIC version used for the run — controls which column of the last
+#: femtic.cnv line holds nRMS.  Must match femtic_ens_post.py's setting
+#: for the same ensemble so both scripts agree on what "converged" means.
+FEMTIC = "5.0"   # "4.3" | "5.0"
 
-#: Filename pattern for the resistivity block inside each ensemble directory.
-#: The placeholder {iter} is replaced by ENS_ITER.
-#: Example: "resistivity_block_iter{iter}.dat"  →  resistivity_block_iter10.dat
-BLOCK_PATTERN = "resistivity_block_iter{iter}.dat"
+#: Directory containing one sub-directory per ensemble member.
+ENSEMBLE_DIR = WORK_DIR
 
-#: Inversion iteration whose block file is used from each directory.
-ENS_ITER = 10
+#: Member sub-directories are matched via glob "<ENSEMBLE_NAME>*".
+ENSEMBLE_NAME = "ubinas_rto"
 
-#: Labels for the member rows — one string per directory.
-#: None → use the last component of each directory path.
+#: Maximum normalised RMS accepted from femtic.cnv.  Keep this equal to
+#: NRMS_MAX in femtic_ens_post.py so this script plots exactly the
+#: members ens_post included in its ensemble statistics.
+NRMS_MAX = 1.5
+
+#: Labels for the member plots/filenames — one string per converged
+#: member, in the order directories are found.  None → use each member
+#: directory's basename.
 ENS_LABELS = None
 
-#: Statistical summary rows appended after the member rows.
-#: Any subset of: "mean", "std", "median".
+# ---------------------------------------------------------------------------
+# Per-member plots (default): iter0 (perturbed prior) + best-fit model
+# ---------------------------------------------------------------------------
+#: If True, produce two fviz.plot_model_slices() figures for every
+#: converged member: "<label>_iter0.<ext>" (resistivity_block_iter0.dat,
+#: the perturbed/prior model) and "<label>_best.<ext>"
+#: (resistivity_block_iter{numit}.dat, the best-fit model at the
+#: iteration femtic.cnv reports).  Saved into WORK_DIR.
+PER_MEMBER_PLOT = True
+
+#: File extension for per-member plots (passed to plot_model_slices).
+PER_MEMBER_FORMAT = "pdf"
+
+# ---------------------------------------------------------------------------
+# Joint ensemble figure (optional extra)
+# ---------------------------------------------------------------------------
+#: If True, additionally build the old joint multi-row figure — one row
+#: per converged member (best-fit model) — via fviz.plot_ensemble_slices,
+#: with optional mean/std/median summary rows.
+PLOT_JOINT = False
+
+#: Statistical summary rows appended after the member rows in the joint
+#: figure.  Any subset of: "mean", "std", "median".
 #: "mean"   → cell-wise mean   of log10(ρ) across all members
 #: "std"    → cell-wise std    of log10(ρ); separate colormap (cividis)
 #: "median" → cell-wise median of log10(ρ) across all members
@@ -438,6 +481,69 @@ def plot_borehole_logs(
         plt.show()
 
 
+def _plot_member_slice(
+    block_file: str,
+    out_file: str,
+    *,
+    slices_resolved: list,
+    site_xys: list,
+    obs_coords_only: bool,
+    figure_title: str,
+    nrms_annotation: dict | None = None,
+) -> None:
+    """Call fviz.plot_model_slices once for a single block file.
+
+    Mirrors femtic_ens_post.py's ``_plot_slice`` helper: same PLOT_*
+    options (CRS handling, site overlay, figure layout) used throughout
+    this script, applied to one resistivity block file at a time.
+    """
+    if fviz is None:
+        print("  plot_member_slice: femtic_viz not available — skipping.")
+        return
+
+    fviz.plot_model_slices(
+        model_file          = block_file,
+        mesh_file           = MESH_FILE,
+        slices              = slices_resolved,
+        cmap                = PLOT_CMAP,
+        clim                = PLOT_CLIM,
+        xlim                = PLOT_XLIM,
+        ylim                = PLOT_YLIM,
+        zlim                = PLOT_ZLIM,
+        ocean_color         = PLOT_OCEAN_COLOR,
+        ocean_value         = OCEAN_RHO,
+        air_bgcolor         = PLOT_AIR_BGCOLOR,
+        site_xys            = site_xys,
+        obs_coords_only     = obs_coords_only,
+        sites_in_maps       = PLOT_SITES_MAPS,
+        sites_in_slices     = PLOT_SITES_SLICES,
+        site_marker         = SITE_MARKER,
+        site_marker_slices  = SITE_MARKER_SLICES,
+        map_markers         = MAP_MARKERS,
+        projection_dist     = PROJECTION_DIST,
+        display_coords      = DISPLAY_COORDS,
+        utm_origin_e        = UTM_ORIGIN_E,
+        utm_origin_n        = UTM_ORIGIN_N,
+        utm_zone            = UTM_ZONE,
+        utm_northern        = UTM_NORTHERN,
+        utm_to_latlon_fn    = utl.utm_to_latlon_zn,
+        latlon_to_model_fn  = fem.latlon_to_model,
+        depth_km            = DEPTH_KM,
+        horiz_km            = HORIZ_KM,
+        equal_aspect        = PLOT_EQUAL_ASPECT,
+        panel_height        = PLOT_PANEL_HEIGHT / 2.54,
+        nrows               = PLOT_NROWS,
+        ncols               = PLOT_NCOLS,
+        nrms_annotation     = nrms_annotation,
+        figure_title        = figure_title,
+        plot_file           = out_file,
+        dpi                 = PLOT_DPI,
+        out                 = OUT,
+    )
+    if OUT:
+        print(f"    saved → {out_file}")
+
+
 # ===========================================================================
 # Main
 # ===========================================================================
@@ -524,96 +630,176 @@ elif SITE_NUMBER is not None:
     _sites_from_obs = True
     print()
 
-# --- (5) Build ensemble file list from ENS_DIRS ---------------------------
-# Expand any glob patterns, sort, then locate the block file in each dir.
-_expanded_dirs = []
-for _d in ENS_DIRS:
-    _matches = sorted(glob.glob(str(_d)))
-    if _matches:
-        _expanded_dirs.extend(_matches)
+# --- (5) Scan ensemble directories for converged members -------------------
+# Mirrors femtic_ens_post.py Step (1) exactly: same NRMS_MAX threshold,
+# same femtic.cnv column logic per FEMTIC version, same
+# resistivity_block_iter{numit}.dat naming for the best-fit model — so
+# this script plots precisely the members ens_post included in its
+# ensemble statistics.
+dir_list = utl.get_filelist(
+    searchstr=[ENSEMBLE_NAME + "*"],
+    searchpath=ENSEMBLE_DIR,
+    fullpath=True,
+)
+print(f"Found {len(dir_list)} sub-directory/ies matching '{ENSEMBLE_NAME}'.")
+
+model_list = []   # list of dicts: label, dir, numit, nrms, iter0_file, best_file
+for _d in dir_list:
+    if not os.path.isdir(_d):
+        print(f"\n  {_d}: not a directory — skipped (not an ensemble run).")
+        continue
+
+    print(f"\n  Inversion run: {_d}")
+    _cnv_file = os.path.join(_d, "femtic.cnv")
+    if not os.path.isfile(_cnv_file):
+        print(f"    femtic.cnv not found — skipped.")
+        continue
+
+    with open(_cnv_file) as _fh:
+        _cnv = _fh.readlines()
+    _info = _cnv[-1].split()
+    if "4.3" in FEMTIC:
+        _numit = int(_info[0])
+        _nrms  = float(_info[6])
+    elif "5." in FEMTIC:
+        _numit = int(_info[0])
+        _nrms  = float(_info[8])
     else:
-        _expanded_dirs.append(str(_d))   # keep as-is; will fail gracefully below
+        sys.exit(f"FEMTIC version {FEMTIC!r} not recognised. Exit.")
 
-if not _expanded_dirs:
-    sys.exit("ENS_DIRS is empty — nothing to plot.  Set at least one directory.")
+    if _nrms > NRMS_MAX:
+        print(f"    nRMS={_nrms:.4f} > NRMS_MAX={NRMS_MAX} — skipped.")
+        continue
 
-_block_name = BLOCK_PATTERN.format(iter=ENS_ITER)
-ENS_FILES  = []
-ENS_LABELS_resolved = []
-_missing   = []
-for _d in _expanded_dirs:
-    _f = os.path.join(_d, _block_name)
-    if os.path.isfile(_f):
-        ENS_FILES.append(_f)
-        _label = (ENS_LABELS[len(ENS_FILES) - 1]
-                  if ENS_LABELS and len(ENS_FILES) <= len(ENS_LABELS)
-                  else os.path.basename(os.path.normpath(_d)))
-        ENS_LABELS_resolved.append(_label)
-    else:
-        _missing.append(_f)
+    _best_file  = os.path.join(_d, f"resistivity_block_iter{_numit}.dat")
+    _iter0_file = os.path.join(_d, "resistivity_block_iter0.dat")
 
-if _missing:
-    print(f"WARNING: {len(_missing)} block file(s) not found:")
-    for _mf in _missing:
-        print(f"  {_mf}")
+    if not os.path.isfile(_best_file):
+        print(f"    {_best_file} not found — skipped.")
+        continue
+    if not os.path.isfile(_iter0_file):
+        print(f"    {_iter0_file} not found — skipped.")
+        continue
 
-if not ENS_FILES:
-    sys.exit(f"No block files found (pattern: {_block_name}).  "
-             f"Check ENS_DIRS and ENS_ITER.")
+    _idx   = len(model_list)
+    _label = (ENS_LABELS[_idx] if ENS_LABELS and _idx < len(ENS_LABELS)
+              else os.path.basename(os.path.normpath(_d)))
+
+    print(f"    iter={_numit}  nRMS={_nrms:.4f}  {_best_file}")
+    model_list.append(dict(
+        label=_label, dir=_d, numit=_numit, nrms=_nrms,
+        iter0_file=_iter0_file, best_file=_best_file,
+    ))
+
+n_members = len(model_list)
+print(f"\nConverged members: {n_members}")
+
+if n_members == 0:
+    sys.exit("No converged members found. Nothing to do.")
+
+ENS_FILES = [m["best_file"] for m in model_list]   # kept for PLOT_JOINT / borehole
+ENS_LABELS_resolved = [m["label"] for m in model_list]
 
 if OUT:
-    print(f"Ensemble: {len(ENS_FILES)} member(s)  "
-          f"(block: {_block_name})")
-    for _lbl, _f in zip(ENS_LABELS_resolved, ENS_FILES):
-        print(f"  {_lbl:30s}  {_f}")
+    print(f"\nEnsemble: {n_members} converged member(s)")
+    for _m in model_list:
+        print(f"  {_m['label']:30s}  iter0={os.path.basename(_m['iter0_file'])}"
+              f"  best=iter{_m['numit']} (nRMS={_m['nrms']:.4f})")
     print()
 
-# --- (6) Ensemble slice plot  [from snippets.py Snippet 1] ----------------
-if fviz is None:
-    sys.exit("femtic_viz not available — cannot plot.  Check your installation.")
+# --- (6) Per-member plots: iter0 (perturbed prior) + best-fit model -------
+if PER_MEMBER_PLOT:
+    if fviz is None:
+        sys.exit("femtic_viz not available — cannot plot.  Check your installation.")
 
-print(f"Plotting ensemble: {len(ENS_FILES)} member(s) …")
-fviz.plot_ensemble_slices(
-    member_files       = ENS_FILES,
-    mesh_file          = MESH_FILE,
-    slices             = slices_resolved,
-    labels             = ENS_LABELS_resolved,
-    stat_rows          = ENS_STAT_ROWS,
-    cmap               = PLOT_CMAP,
-    clim               = PLOT_CLIM,
-    xlim               = PLOT_XLIM,
-    ylim               = PLOT_YLIM,
-    zlim               = PLOT_ZLIM,
-    ocean_color        = PLOT_OCEAN_COLOR,
-    ocean_value        = OCEAN_RHO,
-    air_bgcolor        = PLOT_AIR_BGCOLOR,
-    site_xys           = site_xys,
-    obs_coords_only    = _sites_from_obs,
-    sites_in_maps      = PLOT_SITES_MAPS,
-    sites_in_slices    = PLOT_SITES_SLICES,
-    site_marker        = SITE_MARKER,
-    site_marker_slices = SITE_MARKER_SLICES,
-    map_markers        = MAP_MARKERS,
-    projection_dist    = PROJECTION_DIST,
-    display_coords     = DISPLAY_COORDS,
-    utm_origin_e       = UTM_ORIGIN_E,
-    utm_origin_n       = UTM_ORIGIN_N,
-    utm_zone           = UTM_ZONE,
-    utm_northern       = UTM_NORTHERN,
-    utm_to_latlon_fn   = utl.utm_to_latlon_zn,
-    latlon_to_model_fn = fem.latlon_to_model,
-    depth_km           = DEPTH_KM,
-    horiz_km           = HORIZ_KM,
-    equal_aspect       = PLOT_EQUAL_ASPECT,
-    panel_height       = PLOT_PANEL_HEIGHT / 2.54,
-    nrows              = PLOT_NROWS,
-    ncols              = PLOT_NCOLS,
-    plot_file          = PLOT_ENS_FILE,
-    per_member_file    = ENS_PER_MEMBER,
-    dpi                = PLOT_DPI,
-    out                = OUT,
-)
-print("Ensemble plot done.")
+    print(f"Plotting {n_members} converged member(s), "
+          f"2 figures each (iter0 + best) …")
+    for _m in model_list:
+        _label = _m["label"]
+
+        _iter0_out = os.path.join(WORK_DIR, f"{_label}_iter0.{PER_MEMBER_FORMAT}")
+        print(f"\n  member {_label!r}: perturbed prior (iter0)")
+        _plot_member_slice(
+            block_file      = _m["iter0_file"],
+            out_file        = _iter0_out,
+            slices_resolved = slices_resolved,
+            site_xys        = site_xys,
+            obs_coords_only = _sites_from_obs,
+            figure_title    = f"{_label} — perturbed prior (iter0)",
+        )
+
+        _best_out = os.path.join(WORK_DIR, f"{_label}_best.{PER_MEMBER_FORMAT}")
+        print(f"  member {_label!r}: best fit (iter{_m['numit']}, "
+              f"nRMS={_m['nrms']:.4f})")
+        _plot_member_slice(
+            block_file      = _m["best_file"],
+            out_file        = _best_out,
+            slices_resolved = slices_resolved,
+            site_xys        = site_xys,
+            obs_coords_only = _sites_from_obs,
+            figure_title    = f"{_label} — best fit (iter{_m['numit']})",
+            nrms_annotation = dict(nrms=_m["nrms"]),
+        )
+    print("\nPer-member plots done.")
+
+# --- (6b) Joint multi-row ensemble figure (optional extra) ----------------
+# NOTE: this call passes several kwargs (site_xys, obs_coords_only,
+# sites_in_maps/slices, site_marker*, map_markers, projection_dist,
+# display_coords, utm_origin_e/n, utm_zone, utm_northern,
+# utm_to_latlon_fn, latlon_to_model_fn, depth_km, horiz_km, equal_aspect,
+# panel_height, nrows, ncols) that are NOT present in the current
+# fviz.plot_ensemble_slices() signature and will raise TypeError if
+# PLOT_JOINT=True. This is the previously flagged signature mismatch;
+# it is out of scope for this rewrite (PER_MEMBER_PLOT is now the
+# default, working path) and needs a separate design decision — either
+# extend plot_ensemble_slices() to accept these kwargs, or trim this
+# call down to what it currently supports.
+if PLOT_JOINT:
+    if fviz is None:
+        sys.exit("femtic_viz not available — cannot plot.  Check your installation.")
+
+    print(f"\nPlotting joint ensemble figure: {len(ENS_FILES)} member(s) …")
+    fviz.plot_ensemble_slices(
+        member_files       = ENS_FILES,
+        mesh_file          = MESH_FILE,
+        slices             = slices_resolved,
+        labels             = ENS_LABELS_resolved,
+        stat_rows          = ENS_STAT_ROWS,
+        cmap               = PLOT_CMAP,
+        clim               = PLOT_CLIM,
+        xlim               = PLOT_XLIM,
+        ylim               = PLOT_YLIM,
+        zlim               = PLOT_ZLIM,
+        ocean_color        = PLOT_OCEAN_COLOR,
+        ocean_value        = OCEAN_RHO,
+        air_bgcolor        = PLOT_AIR_BGCOLOR,
+        site_xys           = site_xys,
+        obs_coords_only    = _sites_from_obs,
+        sites_in_maps      = PLOT_SITES_MAPS,
+        sites_in_slices    = PLOT_SITES_SLICES,
+        site_marker        = SITE_MARKER,
+        site_marker_slices = SITE_MARKER_SLICES,
+        map_markers        = MAP_MARKERS,
+        projection_dist    = PROJECTION_DIST,
+        display_coords     = DISPLAY_COORDS,
+        utm_origin_e       = UTM_ORIGIN_E,
+        utm_origin_n       = UTM_ORIGIN_N,
+        utm_zone           = UTM_ZONE,
+        utm_northern       = UTM_NORTHERN,
+        utm_to_latlon_fn   = utl.utm_to_latlon_zn,
+        latlon_to_model_fn = fem.latlon_to_model,
+        depth_km           = DEPTH_KM,
+        horiz_km           = HORIZ_KM,
+        equal_aspect       = PLOT_EQUAL_ASPECT,
+        panel_height       = PLOT_PANEL_HEIGHT / 2.54,
+        nrows              = PLOT_NROWS,
+        ncols              = PLOT_NCOLS,
+        plot_file          = PLOT_ENS_FILE,
+        per_member_file    = ENS_PER_MEMBER,
+        dpi                = PLOT_DPI,
+        out                = OUT,
+    )
+    print("Joint ensemble plot done.")
 
 # --- (7) Borehole resistivity logs ----------------------------------------
 if PLOT_BOREHOLE:

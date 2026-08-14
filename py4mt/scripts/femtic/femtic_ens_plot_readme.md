@@ -7,17 +7,33 @@ borehole resistivity logs.
 
 ## Purpose
 
-`femtic_ens_plot.py` collects resistivity block files from a list of
-ensemble run directories and produces:
+`femtic_ens_plot.py` discovers converged ensemble members exactly the way
+`femtic_ens_post.py` does — scanning `ENSEMBLE_DIR` for `ENSEMBLE_NAME*`
+sub-directories and filtering on `femtic.cnv` / `NRMS_MAX` — and produces:
 
-1. A joint multi-row Matplotlib figure — one row per ensemble member —
-   using the same slice geometry and `PLOT_*` parameters as
-   `femtic_mod_plot.py`.  Optional statistical summary rows (mean, std,
-   median of log₁₀(ρ) across all members) are appended.  Optionally one
-   figure per member is saved alongside.
+1. **[default, `PER_MEMBER_PLOT=True`]** Two single-model Matplotlib
+   figures per converged member, via `fviz.plot_model_slices()`, using
+   the same slice geometry and `PLOT_*` parameters as `femtic_mod_plot.py`:
+   - `<label>_iter0.<ext>` — the perturbed prior model
+     (`resistivity_block_iter0.dat`)
+   - `<label>_best.<ext>` — the best-fit model
+     (`resistivity_block_iter{numit}.dat`, `numit` from `femtic.cnv`,
+     with an `nRMS = ...` annotation on the figure)
 
-2. Optionally, a borehole resistivity log figure (point-in-element sampling,
-   identical to step (7) in `femtic_mod_plot.py`).
+2. **[optional, `PLOT_JOINT=True`]** The previous joint multi-row figure —
+   one row per member's best-fit model — via `fviz.plot_ensemble_slices()`,
+   with optional statistical summary rows (mean, std, median of
+   log₁₀(ρ) across all members).
+   > **Known limitation:** this call currently passes several kwargs
+   > (`site_xys`, CRS/display options, layout options, …) that are not
+   > present in `plot_ensemble_slices()`'s current signature and will
+   > raise `TypeError`. This pre-existing mismatch is unresolved — see
+   > the code comment at the call site. `PLOT_JOINT` defaults to `False`
+   > so it doesn't affect normal use.
+
+3. Optionally, a borehole resistivity log figure (point-in-element sampling,
+   identical to step (7) in `femtic_mod_plot.py`), sampled from the first
+   converged member's best-fit model.
 
 ---
 
@@ -27,10 +43,11 @@ ensemble run directories and produces:
 ORIGIN_METHOD + SITE_DAT  →  UTM_ORIGIN_E/N/LAT/LON (bounding-box midpoint)
                           →  UTM zone auto-derived from origin lat/lon
 
-ENS_DIRS + BLOCK_PATTERN + ENS_ITER
+ENSEMBLE_DIR + ENSEMBLE_NAME + NRMS_MAX + FEMTIC
         |
-        v  glob expand + sort → locate block file in each directory
-   ENS_FILES  +  ENS_LABELS_resolved
+        v  utl.get_filelist() → per-dir femtic.cnv → numit, nRMS
+   model_list: [{label, dir, numit, nrms, iter0_file, best_file}, ...]
+   (converged members only — same set femtic_ens_post.py includes)
         |
         v  fem.resolve_slice_positions(PLOT_SLICES)
    slice positions in model-local metres
@@ -38,7 +55,10 @@ ENS_DIRS + BLOCK_PATTERN + ENS_ITER
         v  fem.read_site_dat(SITE_DAT)  [or fem.read_site_position fallback]
    site_xys: (name, x_m, y_m, elev_m) per site
         |
-        v  fviz.plot_ensemble_slices(...)
+        v  fviz.plot_model_slices(...)  × 2 per member   [PER_MEMBER_PLOT]
+<label>_iter0.<ext>  +  <label>_best.<ext>   (one pair per converged member)
+        |
+        v  fviz.plot_ensemble_slices(...)                [PLOT_JOINT]
 joint PDF  +  optional per-member PDFs
         |                                    [PLOT_BOREHOLE = True]
         v  fviz.plot_borehole_logs(...)
@@ -57,13 +77,25 @@ borehole PDF / interactive window
 | `OBSERVE_FILE` | `observe.dat` (fallback site source) |
 | `SITE_DAT` | `site.dat` CSV from `mt_make_sitelist.py` |
 
-### Ensemble input
+### Ensemble input — converged-member discovery
 | Variable | Description |
 |---|---|
-| `ENS_DIRS` | List of ensemble run directories (glob patterns accepted) |
-| `BLOCK_PATTERN` | Filename pattern, e.g. `"resistivity_block_iter{iter}.dat"` |
-| `ENS_ITER` | Iteration number substituted into `BLOCK_PATTERN` |
-| `ENS_LABELS` | Row labels; `None` → directory basenames |
+| `FEMTIC` | FEMTIC version (`"4.3"` / `"5.0"`) — selects the `femtic.cnv` nRMS column; must match `femtic_ens_post.py` |
+| `ENSEMBLE_DIR` | Directory containing one sub-directory per member |
+| `ENSEMBLE_NAME` | Member sub-directories matched via `"<ENSEMBLE_NAME>*"` |
+| `NRMS_MAX` | Max accepted nRMS from `femtic.cnv` — keep equal to `femtic_ens_post.py`'s value |
+| `ENS_LABELS` | Labels for member plots/filenames; `None` → directory basenames |
+
+### Per-member plots (default)
+| Variable | Description |
+|---|---|
+| `PER_MEMBER_PLOT` | If `True` (default), plot iter0 + best-fit figures for every converged member |
+| `PER_MEMBER_FORMAT` | File extension for per-member plots (e.g. `"pdf"`) |
+
+### Joint ensemble figure (optional extra)
+| Variable | Description |
+|---|---|
+| `PLOT_JOINT` | If `True`, additionally build the joint multi-row figure (see Known limitation above) |
 | `ENS_STAT_ROWS` | Summary rows: any subset of `["mean", "std", "median"]` |
 
 ### Origin estimation
@@ -141,3 +173,15 @@ Position values accept:
 - **2026-08-13 (Claude Sonnet 5, Anthropic):** Added `femtic_ens_plot_summary.md`
   output at end of run: user-set (UPPERCASE) parameters, script path, and
   run date/time.
+- **2026-08-14 (Claude Sonnet 5, Anthropic):** Replaced `ENS_DIRS` /
+  `BLOCK_PATTERN` / `ENS_ITER` with `ENSEMBLE_DIR` / `ENSEMBLE_NAME` /
+  `NRMS_MAX` / `FEMTIC` — converged members are now discovered the same
+  way `femtic_ens_post.py` does, via `femtic.cnv`. Default behaviour is
+  now two per-member figures (`PER_MEMBER_PLOT=True`): perturbed prior
+  (`iter0`) and best-fit (`iterX`, `numit` from `femtic.cnv`), each via
+  `fviz.plot_model_slices()`. The former joint multi-row figure is kept
+  as an optional extra (`PLOT_JOINT=False` by default); its
+  `plot_ensemble_slices()` call still has the previously flagged keyword
+  mismatch and will raise `TypeError` if enabled — unresolved, out of
+  scope for this change. Added `PER_MEMBER_PLOT`, `PER_MEMBER_FORMAT`,
+  `PLOT_JOINT` config vars.
