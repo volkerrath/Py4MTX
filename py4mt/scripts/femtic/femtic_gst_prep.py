@@ -370,18 +370,18 @@ N_SAMPLES = 32
 # ENSEMBLE_NAME = "ubinas_gst_suzuki_"
 
 ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/ensembles/misti/ensemble/"
-ENSEMBLE_NAME = "misti_gst_suzuki_"
+ENSEMBLE_NAME = "misti_gst_rnd_"
 
 TEMPLATES = ENSEMBLE_DIR + "/templates/"
 if not os.path.isdir(TEMPLATES):
     sys.exit(" Directory: %s does not exist, needs to be copied !" % TEMPLATES)
 
 # For GST
-COPY_LIST = ["observe.dat",
-             "resistivity_block_iter0.dat",]
+COPY_LIST = ["resistivity_block_iter0.dat",]
 LINK_LIST = ["control.dat",
              "mesh.dat",
              "referencemodel.dat",
+             "observe.dat",
              "distortion_iter0.dat", "site.dat",
              "run_femtic_dias.sh","run_femtic_kraken.sh"]
 
@@ -394,7 +394,7 @@ RELATIVE_LINKS = True   # True: portable relative symlinks (default, survives tg
 Control number of ensemble members for increase of sample number or restart
 of badly converged samples (see femtic_gst_post.py).
 """
-FROM_TO = np.arange(32,64)
+FROM_TO = np.arange(50,100)
 
 """
 Set up mode of model perturbations.
@@ -432,7 +432,7 @@ if PERTURB_MOD:
     #               add MOD_N_PP random fill points inside MOD_PP_BBOX.
     #               Structural skeleton is the same every member; values
     #               and fill locations change.  Requires scipy.spatial.
-    MOD_PP_MODE = "extrema" # "random"     # "random" | "fixed" | "mixed" | "extrema"
+    MOD_PP_MODE = "random" # "random"     # "random" | "fixed" | "mixed" | "extrema"
 
     # Number of randomly drawn pilot points per member.
     # Used when MOD_PP_MODE = "random", "mixed", or "extrema" (fill).
@@ -499,7 +499,7 @@ if PERTURB_MOD:
     #                 the ensemble anchored to the reference structure
     #                 instead of exploring the full resistivity range at
     #                 each pilot point.
-    MOD_PP_VALUE_MODE = "uniform"  # "uniform" | "reference"
+    MOD_PP_VALUE_MODE = "reference"  # "uniform" | "reference"
 
     # Half-width (log10 Ohm.m) of the symmetric perturbation around the
     # reference value.  Only used when MOD_PP_VALUE_MODE = "reference".
@@ -663,7 +663,7 @@ if PLOT_DATA or PLOT_MODEL:
     #: "model"  — axis ticks in model-local metres (default)
     #: "utm"    — axis ticks in absolute UTM metres
     #: "latlon" — axis ticks in decimal degrees
-    MOD_DISPLAY_COORDS = "model"
+    MOD_DISPLAY_COORDS = "latlon"
 
     # --- Site overlay ---------------------------------------------------------
     #: Primary source: mt_make_sitelist.py CSV (name,lat,lon,elev,sitenum,E,N).
