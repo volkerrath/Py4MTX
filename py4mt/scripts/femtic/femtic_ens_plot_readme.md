@@ -11,14 +11,24 @@ borehole resistivity logs.
 `femtic_ens_post.py` does — scanning `ENSEMBLE_DIR` for `ENSEMBLE_NAME*`
 sub-directories and filtering on `femtic.cnv` / `NRMS_MAX` — and produces:
 
-1. **[default, `PER_MEMBER_PLOT=True`]** Two single-model Matplotlib
-   figures per converged member, via `fviz.plot_model_slices()`, using
-   the same slice geometry and `PLOT_*` parameters as `femtic_mod_plot.py`:
-   - `<label>_iter0.<ext>` — the perturbed prior model
+1. **[default, `PER_MEMBER_PLOT=True`]** Per converged member, two
+   `fviz.plot_model_slices()` figures in their own sub-directory
+   `WORK_DIR/<label>/`, using the same slice geometry and `PLOT_*`
+   parameters as `femtic_mod_plot.py`:
+   - `iter0.<ext>` — the perturbed prior model
      (`resistivity_block_iter0.dat`)
-   - `<label>_best.<ext>` — the best-fit model
+   - `best.<ext>` — the best-fit model
      (`resistivity_block_iter{numit}.dat`, `numit` from `femtic.cnv`,
      with an `nRMS = ...` annotation on the figure)
+
+   One file pair per entry in `PLOT_FORMAT` (e.g. `["pdf", "jpg"]`
+   writes both a vector and a raster version — the figure is rebuilt
+   once per format). When `"pdf"` is among the formats and
+   `PER_MEMBER_PDF_CATALOG=True` (default), every per-member pdf figure
+   is *also* collected, in plot order, into one multi-page catalog PDF
+   via `matplotlib.backends.backend_pdf.PdfPages`, written to
+   `PER_MEMBER_CATALOG_FILE`. This is in addition to, not instead of,
+   the individual per-member files.
 
 2. **[optional, `PLOT_JOINT=True`]** The previous joint multi-row figure —
    one row per member's best-fit model — via `fviz.plot_ensemble_slices()`,
@@ -55,8 +65,11 @@ ENSEMBLE_DIR + ENSEMBLE_NAME + NRMS_MAX + FEMTIC
         v  fem.read_site_dat(SITE_DAT)  [or fem.read_site_position fallback]
    site_xys: (name, x_m, y_m, elev_m) per site
         |
-        v  fviz.plot_model_slices(...)  × 2 per member   [PER_MEMBER_PLOT]
-<label>_iter0.<ext>  +  <label>_best.<ext>   (one pair per converged member)
+        v  fviz.plot_model_slices(...)  × 2 per member × len(PLOT_FORMAT) [PER_MEMBER_PLOT]
+WORK_DIR/<label>/iter0.<ext>  +  WORK_DIR/<label>/best.<ext>   (per converged member)
+        |                                    ["pdf" in PLOT_FORMAT, PER_MEMBER_PDF_CATALOG]
+        v  PdfPages(PER_MEMBER_CATALOG_FILE)
+one multi-page pdf catalog, all member pdf figures in plot order
         |
         v  fviz.plot_ensemble_slices(...)                [PLOT_JOINT]
 joint PDF  +  optional per-member PDFs
@@ -90,7 +103,9 @@ borehole PDF / interactive window
 | Variable | Description |
 |---|---|
 | `PER_MEMBER_PLOT` | If `True` (default), plot iter0 + best-fit figures for every converged member |
-| `PER_MEMBER_FORMAT` | File extension for per-member plots (e.g. `"pdf"`) |
+| `PLOT_FORMAT` | Output format(s), e.g. `"pdf"` or `["pdf", "jpg"]` — normalised to `_PLOT_FORMATS` |
+| `PER_MEMBER_PDF_CATALOG` | If `True` (default) and `"pdf"` is among `_PLOT_FORMATS`, combine every per-member pdf figure into one multi-page catalog |
+| `PER_MEMBER_CATALOG_FILE` | Output path for the multi-page pdf catalog |
 
 ### Joint ensemble figure (optional extra)
 | Variable | Description |
@@ -185,3 +200,13 @@ Position values accept:
   mismatch and will raise `TypeError` if enabled — unresolved, out of
   scope for this change. Added `PER_MEMBER_PLOT`, `PER_MEMBER_FORMAT`,
   `PLOT_JOINT` config vars.
+- **2026-08-15 (Claude Sonnet 5, Anthropic):** `PER_MEMBER_FORMAT`
+  replaced by `PLOT_FORMAT`, which now accepts a list (e.g.
+  `["pdf", "jpg"]`, normalised to `_PLOT_FORMATS`), mirroring
+  `MOD_PLOT_FORMAT` in `femtic_ens_post.py`. Per-member files moved into
+  their own sub-directory `WORK_DIR/<label>/` as `iter0.<ext>` /
+  `best.<ext>` (previously the flat `<label>_iter0.<ext>` naming in
+  `WORK_DIR`). Added `PER_MEMBER_PDF_CATALOG` (default `True`) and
+  `PER_MEMBER_CATALOG_FILE`: when `"pdf"` is among `_PLOT_FORMATS`,
+  every per-member pdf figure is additionally combined into one
+  multi-page catalog via `matplotlib.backends.backend_pdf.PdfPages`.

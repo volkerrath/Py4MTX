@@ -7,11 +7,15 @@ Scans ENSEMBLE_DIR for converged ensemble members exactly the way
 femtic_ens_post.py does (ENSEMBLE_NAME* sub-directories, femtic.cnv,
 NRMS_MAX threshold), then produces:
 
-  (1) [default, PER_MEMBER_PLOT=True] Two fviz.plot_model_slices()
-      figures per converged member: the perturbed prior model
-      (resistivity_block_iter0.dat) and the best-fit model
-      (resistivity_block_iter{numit}.dat, numit from femtic.cnv), saved
-      as "<label>_iter0.<ext>" / "<label>_best.<ext>" in WORK_DIR.
+  (1) [default, PER_MEMBER_PLOT=True] Per converged member, two
+      fviz.plot_model_slices() figures in their own sub-directory
+      WORK_DIR/<label>/: the perturbed prior model (iter0.<ext>,
+      from resistivity_block_iter0.dat) and the best-fit model
+      (best.<ext>, from resistivity_block_iter{numit}.dat, numit from
+      femtic.cnv). One file per format in PLOT_FORMAT (e.g. ["pdf",
+      "jpg"]). When "pdf" is among the formats and
+      PER_MEMBER_PDF_CATALOG=True, every per-member pdf figure is also
+      combined into one multi-page catalog PDF (PER_MEMBER_CATALOG_FILE).
 
   (2) [optional, PLOT_JOINT=True] The previous joint multi-row figure —
       one row per member's best-fit model — with optional mean/std/median
@@ -71,6 +75,26 @@ Provenance
                 function's current signature (would raise TypeError if
                 PLOT_JOINT=True) — this remains out of scope here and
                 is called out in a code comment at the call site.
+    2026-08-15  Claude Sonnet 5 (Anthropic)
+                Per-member output reworked: (1) PLOT_FORMAT replaces
+                PER_MEMBER_FORMAT and now accepts a list, e.g.
+                ["pdf", "jpg"] (normalised to _PLOT_FORMATS), mirroring
+                MOD_PLOT_FORMAT in femtic_ens_post.py -- one savefig()
+                call per format, figure rebuilt per format since
+                plot_model_slices doesn't expose a re-save path.
+                (2) Per-member files now live in their own sub-directory
+                WORK_DIR/<label>/ as "iter0.<ext>" / "best.<ext>",
+                replacing the flat "<label>_iter0.<ext>" naming.
+                (3) New PER_MEMBER_PDF_CATALOG flag (default True):
+                when "pdf" is among _PLOT_FORMATS, every per-member pdf
+                Figure (iter0 + best, in plot order) is additionally
+                collected and written as one multi-page catalog via
+                matplotlib.backends.backend_pdf.PdfPages, to
+                PER_MEMBER_CATALOG_FILE. _plot_member_slice() now
+                returns the pdf-format Figure (or None) for this
+                purpose; plot_model_slices already closes the figure
+                before returning it, but the Figure object remains
+                valid for a later PdfPages.savefig() call.
 
 @author: vrath
 """
@@ -82,6 +106,7 @@ import inspect
 from pathlib import Path
 
 import numpy as np
+from matplotlib.backends.backend_pdf import PdfPages
 
 # ---------------------------------------------------------------------------
 # Py4MTX-specific settings and imports
@@ -115,13 +140,12 @@ print(titstrng + "\n\n")
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-WORK_DIR = r"/home/vrath/Py4MTX/work/rto/ubinas_data/"
-
+WORK_DIR = r"/media/vrath/LargeBack/Ensembles/misti_gst_ensembles/gst_rnd1/"
 #: Mesh file — always required for plotting.
-MESH_FILE = WORK_DIR + "mesh.dat"
+MESH_FILE = WORK_DIR + "/templates/mesh.dat"
 
 #: observe.dat — used by ESTIMATE_ORIGIN and as fallback for SITE_NUMBER.
-OBSERVE_FILE = WORK_DIR + "observe.dat"
+OBSERVE_FILE = WORK_DIR +  "/templates/observe.dat"
 
 #: Site list produced by mt_make_sitelist.py (WHAT_FOR="femtic").
 #: Format (comma-separated, no header):
@@ -129,7 +153,7 @@ OBSERVE_FILE = WORK_DIR + "observe.dat"
 #: Easting/northing are UTM metres; model-local x/y is derived via
 #: fem.utm_to_model using the mesh-centre origin.
 #: Set to None to fall back to the observe.dat / SITE_NUMBER path.
-SITE_DAT = WORK_DIR + "site.dat"   # set to None to disable
+SITE_DAT = WORK_DIR + "/templates/site.dat"   # set to None to disable
 
 # ---------------------------------------------------------------------------
 # Ensemble input — converged-member discovery
@@ -143,7 +167,7 @@ FEMTIC = "5.0"   # "4.3" | "5.0"
 ENSEMBLE_DIR = WORK_DIR
 
 #: Member sub-directories are matched via glob "<ENSEMBLE_NAME>*".
-ENSEMBLE_NAME = "ubinas_rto"
+ENSEMBLE_NAME = "misti_gst_suzuki_rnd"
 
 #: Maximum normalised RMS accepted from femtic.cnv.  Keep this equal to
 #: NRMS_MAX in femtic_ens_post.py so this script plots exactly the
@@ -159,14 +183,37 @@ ENS_LABELS = None
 # Per-member plots (default): iter0 (perturbed prior) + best-fit model
 # ---------------------------------------------------------------------------
 #: If True, produce two fviz.plot_model_slices() figures for every
-#: converged member: "<label>_iter0.<ext>" (resistivity_block_iter0.dat,
-#: the perturbed/prior model) and "<label>_best.<ext>"
-#: (resistivity_block_iter{numit}.dat, the best-fit model at the
-#: iteration femtic.cnv reports).  Saved into WORK_DIR.
+#: converged member: "iter0.<ext>" (resistivity_block_iter0.dat, the
+#: perturbed/prior model) and "best.<ext>" (resistivity_block_iter{numit}.dat,
+#: the best-fit model at the iteration femtic.cnv reports).  Each member
+#: gets its own sub-directory WORK_DIR/<label>/.
 PER_MEMBER_PLOT = True
 
-#: File extension for per-member plots (passed to plot_model_slices).
-PER_MEMBER_FORMAT = "pdf"
+#: Output format(s) for per-member plots (Matplotlib Agg-backend savefig
+#: formats).  A list saves one file per format per plot (the figure is
+#: still rebuilt per format, since plot_model_slices doesn't expose a way
+#: to re-save an already-built figure), e.g. ["pdf", "jpg"] writes both a
+#: vector version and a raster preview. A bare string ("pdf") also works
+#: and is treated as a single-entry list.
+#: Supported values: "pdf", "svg", "eps" (vector); "png", "jpg"/"jpeg",
+#: "tif"/"tiff", "webp" (raster, rendered at PLOT_DPI).
+PLOT_FORMAT = ["pdf"]
+
+#: Normalised to a list regardless of whether a bare string or a list was
+#: set above.
+_PLOT_FORMATS = (
+    [PLOT_FORMAT] if isinstance(PLOT_FORMAT, str) else list(PLOT_FORMAT)
+)
+
+#: If True and "pdf" is among _PLOT_FORMATS, additionally collect every
+#: per-member pdf figure (iter0 + best, in the order members are plotted)
+#: into one multi-page catalog PDF via matplotlib.backends.backend_pdf.
+#: PdfPages, saved as PER_MEMBER_CATALOG_FILE. Does not affect the
+#: individual per-member files, which are still written as usual.
+PER_MEMBER_PDF_CATALOG = True
+
+#: Output path for the multi-page pdf catalog.
+PER_MEMBER_CATALOG_FILE = WORK_DIR + "ens_plot_catalog.pdf"
 
 # ---------------------------------------------------------------------------
 # Joint ensemble figure (optional extra)
@@ -483,65 +530,91 @@ def plot_borehole_logs(
 
 def _plot_member_slice(
     block_file: str,
-    out_file: str,
+    out_stem: str,
     *,
     slices_resolved: list,
     site_xys: list,
     obs_coords_only: bool,
     figure_title: str,
     nrms_annotation: dict | None = None,
-) -> None:
-    """Call fviz.plot_model_slices once for a single block file.
+) -> "matplotlib.figure.Figure | None":
+    """Call fviz.plot_model_slices once per _PLOT_FORMATS entry.
 
     Mirrors femtic_ens_post.py's ``_plot_slice`` helper: same PLOT_*
     options (CRS handling, site overlay, figure layout) used throughout
     this script, applied to one resistivity block file at a time.
+
+    Parameters
+    ----------
+    out_stem : str
+        Output path *without* an extension. ".<fmt>" is appended for
+        each entry in PLOT_FORMAT / _PLOT_FORMATS (e.g. base "foo" +
+        ["pdf", "jpg"] -> "foo.pdf" and "foo.jpg", same figure, one
+        savefig() call per format — plot_model_slices doesn't expose a
+        way to re-save an already-built figure under a second
+        extension, so it is rebuilt fresh for each format.
+
+    Returns
+    -------
+    The Figure object from the "pdf" call, if "pdf" is among
+    _PLOT_FORMATS, else None. Used by the caller to build the optional
+    multi-page pdf catalog. Note plot_model_slices already closes the
+    figure (plt.close(fig)) before returning it -- the object is still
+    valid for a later pdf.savefig(fig) call, it just won't reopen an
+    interactive window.
     """
     if fviz is None:
         print("  plot_member_slice: femtic_viz not available — skipping.")
-        return
+        return None
 
-    fviz.plot_model_slices(
-        model_file          = block_file,
-        mesh_file           = MESH_FILE,
-        slices              = slices_resolved,
-        cmap                = PLOT_CMAP,
-        clim                = PLOT_CLIM,
-        xlim                = PLOT_XLIM,
-        ylim                = PLOT_YLIM,
-        zlim                = PLOT_ZLIM,
-        ocean_color         = PLOT_OCEAN_COLOR,
-        ocean_value         = OCEAN_RHO,
-        air_bgcolor         = PLOT_AIR_BGCOLOR,
-        site_xys            = site_xys,
-        obs_coords_only     = obs_coords_only,
-        sites_in_maps       = PLOT_SITES_MAPS,
-        sites_in_slices     = PLOT_SITES_SLICES,
-        site_marker         = SITE_MARKER,
-        site_marker_slices  = SITE_MARKER_SLICES,
-        map_markers         = MAP_MARKERS,
-        projection_dist     = PROJECTION_DIST,
-        display_coords      = DISPLAY_COORDS,
-        utm_origin_e        = UTM_ORIGIN_E,
-        utm_origin_n        = UTM_ORIGIN_N,
-        utm_zone            = UTM_ZONE,
-        utm_northern        = UTM_NORTHERN,
-        utm_to_latlon_fn    = utl.utm_to_latlon_zn,
-        latlon_to_model_fn  = fem.latlon_to_model,
-        depth_km            = DEPTH_KM,
-        horiz_km            = HORIZ_KM,
-        equal_aspect        = PLOT_EQUAL_ASPECT,
-        panel_height        = PLOT_PANEL_HEIGHT / 2.54,
-        nrows               = PLOT_NROWS,
-        ncols               = PLOT_NCOLS,
-        nrms_annotation     = nrms_annotation,
-        figure_title        = figure_title,
-        plot_file           = out_file,
-        dpi                 = PLOT_DPI,
-        out                 = OUT,
-    )
-    if OUT:
-        print(f"    saved → {out_file}")
+    _pdf_fig = None
+    for _fmt in _PLOT_FORMATS:
+        _out_file = f"{out_stem}.{_fmt}"
+        _fig = fviz.plot_model_slices(
+            model_file          = block_file,
+            mesh_file           = MESH_FILE,
+            slices              = slices_resolved,
+            cmap                = PLOT_CMAP,
+            clim                = PLOT_CLIM,
+            xlim                = PLOT_XLIM,
+            ylim                = PLOT_YLIM,
+            zlim                = PLOT_ZLIM,
+            ocean_color         = PLOT_OCEAN_COLOR,
+            ocean_value         = OCEAN_RHO,
+            air_bgcolor         = PLOT_AIR_BGCOLOR,
+            site_xys            = site_xys,
+            obs_coords_only     = obs_coords_only,
+            sites_in_maps       = PLOT_SITES_MAPS,
+            sites_in_slices     = PLOT_SITES_SLICES,
+            site_marker         = SITE_MARKER,
+            site_marker_slices  = SITE_MARKER_SLICES,
+            map_markers         = MAP_MARKERS,
+            projection_dist     = PROJECTION_DIST,
+            display_coords      = DISPLAY_COORDS,
+            utm_origin_e        = UTM_ORIGIN_E,
+            utm_origin_n        = UTM_ORIGIN_N,
+            utm_zone            = UTM_ZONE,
+            utm_northern        = UTM_NORTHERN,
+            utm_to_latlon_fn    = utl.utm_to_latlon_zn,
+            latlon_to_model_fn  = fem.latlon_to_model,
+            depth_km            = DEPTH_KM,
+            horiz_km            = HORIZ_KM,
+            equal_aspect        = PLOT_EQUAL_ASPECT,
+            panel_height        = PLOT_PANEL_HEIGHT / 2.54,
+            nrows               = PLOT_NROWS,
+            ncols               = PLOT_NCOLS,
+            nrms_annotation     = nrms_annotation,
+            figure_title        = figure_title,
+            plot_file           = _out_file,
+            dpi                 = PLOT_DPI,
+            out                 = OUT,
+        )
+        if OUT:
+            print(f"    saved → {_out_file}")
+        if _fmt == "pdf":
+            _pdf_fig = _fig
+
+    return _pdf_fig
 
 
 # ===========================================================================
@@ -708,39 +781,61 @@ if OUT:
     print()
 
 # --- (6) Per-member plots: iter0 (perturbed prior) + best-fit model -------
+# Each member gets its own sub-directory WORK_DIR/<label>/ containing
+# iter0.<ext> and best.<ext> (one pair of files per entry in _PLOT_FORMATS).
 if PER_MEMBER_PLOT:
     if fviz is None:
         sys.exit("femtic_viz not available — cannot plot.  Check your installation.")
 
     print(f"Plotting {n_members} converged member(s), "
-          f"2 figures each (iter0 + best) …")
-    for _m in model_list:
-        _label = _m["label"]
+          f"2 figures each (iter0 + best), formats={_PLOT_FORMATS} …")
 
-        _iter0_out = os.path.join(WORK_DIR, f"{_label}_iter0.{PER_MEMBER_FORMAT}")
+    _catalog_figs = []   # list of (title, fig) — pdf figures, in plot order
+    for _m in model_list:
+        _label     = _m["label"]
+        _member_dir = os.path.join(WORK_DIR, _label)
+        os.makedirs(_member_dir, exist_ok=True)
+
         print(f"\n  member {_label!r}: perturbed prior (iter0)")
-        _plot_member_slice(
+        _fig0 = _plot_member_slice(
             block_file      = _m["iter0_file"],
-            out_file        = _iter0_out,
+            out_stem        = os.path.join(_member_dir, "iter0"),
             slices_resolved = slices_resolved,
             site_xys        = site_xys,
             obs_coords_only = _sites_from_obs,
             figure_title    = f"{_label} — perturbed prior (iter0)",
         )
+        if _fig0 is not None:
+            _catalog_figs.append((f"{_label} — iter0", _fig0))
 
-        _best_out = os.path.join(WORK_DIR, f"{_label}_best.{PER_MEMBER_FORMAT}")
         print(f"  member {_label!r}: best fit (iter{_m['numit']}, "
               f"nRMS={_m['nrms']:.4f})")
-        _plot_member_slice(
+        _fig_best = _plot_member_slice(
             block_file      = _m["best_file"],
-            out_file        = _best_out,
+            out_stem        = os.path.join(_member_dir, "best"),
             slices_resolved = slices_resolved,
             site_xys        = site_xys,
             obs_coords_only = _sites_from_obs,
             figure_title    = f"{_label} — best fit (iter{_m['numit']})",
             nrms_annotation = dict(nrms=_m["nrms"]),
         )
+        if _fig_best is not None:
+            _catalog_figs.append((f"{_label} — best", _fig_best))
     print("\nPer-member plots done.")
+
+    # --- pdf catalog: every per-member pdf figure combined into one file ---
+    if PER_MEMBER_PDF_CATALOG and "pdf" in _PLOT_FORMATS:
+        if not _catalog_figs:
+            print("  pdf catalog: no pdf figures collected — skipping.")
+        else:
+            with PdfPages(PER_MEMBER_CATALOG_FILE) as _pdf:
+                for _title, _fig in _catalog_figs:
+                    _pdf.savefig(_fig)
+                _pdf_info = _pdf.infodict()
+                _pdf_info["Title"] = "femtic_ens_plot ensemble catalog"
+                _pdf_info["Author"] = "femtic_ens_plot.py"
+            print(f"  pdf catalog: {len(_catalog_figs)} page(s) → "
+                  f"{PER_MEMBER_CATALOG_FILE}")
 
 # --- (6b) Joint multi-row ensemble figure (optional extra) ----------------
 # NOTE: this call passes several kwargs (site_xys, obs_coords_only,
