@@ -90,11 +90,16 @@ Provenance
                 Figure (iter0 + best, in plot order) is additionally
                 collected and written as one multi-page catalog via
                 matplotlib.backends.backend_pdf.PdfPages, to
-                PER_MEMBER_CATALOG_FILE. _plot_member_slice() now
-                returns the pdf-format Figure (or None) for this
-                purpose; plot_model_slices already closes the figure
-                before returning it, but the Figure object remains
-                valid for a later PdfPages.savefig() call.
+                PER_MEMBER_CATALOG_FILE.
+    2026-08-16  Claude Sonnet 5 (Anthropic)
+                Reduced peak memory for large ensembles: the pdf catalog
+                is now opened once before the per-member loop and each
+                pdf figure is written via PdfPages.savefig() and
+                released (del + gc.collect()) immediately after it's
+                built, instead of accumulating every member's Figure
+                object in a Python list and writing them all at the end.
+                _plot_member_slice() gained a pdf_catalog= kwarg and no
+                longer returns a Figure.
 
 @author: vrath
 """
@@ -102,6 +107,7 @@ Provenance
 import os
 import sys
 import math
+import gc
 import inspect
 from pathlib import Path
 
@@ -213,7 +219,7 @@ _PLOT_FORMATS = (
 PER_MEMBER_PDF_CATALOG = True
 
 #: Output path for the multi-page pdf catalog.
-PER_MEMBER_CATALOG_FILE = WORK_DIR + "ens_plot_catalog.pdf"
+PER_MEMBER_CATALOG_FILE = WORK_DIR + ENSEMBLE_NAME+"_catalog.pdf"
 
 # ---------------------------------------------------------------------------
 # Joint ensemble figure (optional extra)
@@ -537,7 +543,8 @@ def _plot_member_slice(
     obs_coords_only: bool,
     figure_title: str,
     nrms_annotation: dict | None = None,
-) -> "matplotlib.figure.Figure | None":
+    pdf_catalog: "PdfPages | None" = None,
+) -> None:
     """Call fviz.plot_model_slices once per _PLOT_FORMATS entry.
 
     Mirrors femtic_ens_post.py's ``_plot_slice`` helper: same PLOT_*
@@ -553,21 +560,21 @@ def _plot_member_slice(
         savefig() call per format — plot_model_slices doesn't expose a
         way to re-save an already-built figure under a second
         extension, so it is rebuilt fresh for each format.
-
-    Returns
-    -------
-    The Figure object from the "pdf" call, if "pdf" is among
-    _PLOT_FORMATS, else None. Used by the caller to build the optional
-    multi-page pdf catalog. Note plot_model_slices already closes the
-    figure (plt.close(fig)) before returning it -- the object is still
-    valid for a later pdf.savefig(fig) call, it just won't reopen an
-    interactive window.
+    pdf_catalog : PdfPages, optional
+        If given and "pdf" is among _PLOT_FORMATS, the pdf-format
+        Figure is written to this already-open PdfPages immediately
+        after it's built, then the local reference is dropped so it
+        can be garbage-collected before the next member is plotted —
+        this keeps peak memory to one figure at a time instead of
+        holding every member's figure until the whole ensemble is
+        done. plot_model_slices already closes the figure
+        (plt.close(fig)) before returning it; the object is still
+        valid for a PdfPages.savefig() call right after.
     """
     if fviz is None:
         print("  plot_member_slice: femtic_viz not available — skipping.")
-        return None
+        return
 
-    _pdf_fig = None
     for _fmt in _PLOT_FORMATS:
         _out_file = f"{out_stem}.{_fmt}"
         _fig = fviz.plot_model_slices(
@@ -611,10 +618,17 @@ def _plot_member_slice(
         )
         if OUT:
             print(f"    saved → {_out_file}")
-        if _fmt == "pdf":
-            _pdf_fig = _fig
 
-    return _pdf_fig
+        if _fmt == "pdf" and pdf_catalog is not None:
+            pdf_catalog.savefig(_fig)
+
+        # Drop the reference immediately so the figure (axes, colorbars,
+        # gridded image data) can be garbage-collected before the next
+        # format/member is built, instead of accumulating across the
+        # whole ensemble. plt.close(fig) inside plot_model_slices already
+        # detached it from pyplot's figure registry; this just releases
+        # the last strong reference held here.
+        del _fig
 
 
 # ===========================================================================
@@ -783,6 +797,15 @@ if OUT:
 # --- (6) Per-member plots: iter0 (perturbed prior) + best-fit model -------
 # Each member gets its own sub-directory WORK_DIR/<label>/ containing
 # iter0.<ext> and best.<ext> (one pair of files per entry in _PLOT_FORMATS).
+#
+# Memory note: the pdf catalog (if enabled) is opened ONCE before this loop
+# and every pdf figure is written to it and released immediately after it's
+# built (see pdf_catalog= in _plot_member_slice), rather than accumulating
+# all figures in a Python list and writing them at the end. For a 50-member
+# ensemble that's the difference between ~2 live figures at a time and ~100
+# — the earlier approach held every member's Matplotlib Figure (axes,
+# colorbars, gridded slice arrays) in memory simultaneously until the very
+# last member was plotted.
 if PER_MEMBER_PLOT:
     if fviz is None:
         sys.exit("femtic_viz not available — cannot plot.  Check your installation.")
@@ -790,52 +813,62 @@ if PER_MEMBER_PLOT:
     print(f"Plotting {n_members} converged member(s), "
           f"2 figures each (iter0 + best), formats={_PLOT_FORMATS} …")
 
-    _catalog_figs = []   # list of (title, fig) — pdf figures, in plot order
-    for _m in model_list:
-        _label     = _m["label"]
-        _member_dir = os.path.join(WORK_DIR, _label)
-        os.makedirs(_member_dir, exist_ok=True)
+    _use_catalog = PER_MEMBER_PDF_CATALOG and "pdf" in _PLOT_FORMATS
+    _pdf_catalog = PdfPages(PER_MEMBER_CATALOG_FILE) if _use_catalog else None
+    _n_catalog_pages = 0
 
-        print(f"\n  member {_label!r}: perturbed prior (iter0)")
-        _fig0 = _plot_member_slice(
-            block_file      = _m["iter0_file"],
-            out_stem        = os.path.join(_member_dir, "iter0"),
-            slices_resolved = slices_resolved,
-            site_xys        = site_xys,
-            obs_coords_only = _sites_from_obs,
-            figure_title    = f"{_label} — perturbed prior (iter0)",
-        )
-        if _fig0 is not None:
-            _catalog_figs.append((f"{_label} — iter0", _fig0))
+    try:
+        for _m in model_list:
+            _label      = _m["label"]
+            _member_dir = os.path.join(WORK_DIR, _label)
+            os.makedirs(_member_dir, exist_ok=True)
 
-        print(f"  member {_label!r}: best fit (iter{_m['numit']}, "
-              f"nRMS={_m['nrms']:.4f})")
-        _fig_best = _plot_member_slice(
-            block_file      = _m["best_file"],
-            out_stem        = os.path.join(_member_dir, "best"),
-            slices_resolved = slices_resolved,
-            site_xys        = site_xys,
-            obs_coords_only = _sites_from_obs,
-            figure_title    = f"{_label} — best fit (iter{_m['numit']})",
-            nrms_annotation = dict(nrms=_m["nrms"]),
-        )
-        if _fig_best is not None:
-            _catalog_figs.append((f"{_label} — best", _fig_best))
+            print(f"\n  member {_label!r}: perturbed prior (iter0)")
+            _plot_member_slice(
+                block_file      = _m["iter0_file"],
+                out_stem        = os.path.join(_member_dir, "iter0"),
+                slices_resolved = slices_resolved,
+                site_xys        = site_xys,
+                obs_coords_only = _sites_from_obs,
+                figure_title    = f"{_label} — perturbed prior (iter0)",
+                pdf_catalog     = _pdf_catalog,
+            )
+            if _use_catalog:
+                _n_catalog_pages += 1
+
+            print(f"  member {_label!r}: best fit (iter{_m['numit']}, "
+                  f"nRMS={_m['nrms']:.4f})")
+            _plot_member_slice(
+                block_file      = _m["best_file"],
+                out_stem        = os.path.join(_member_dir, "best"),
+                slices_resolved = slices_resolved,
+                site_xys        = site_xys,
+                obs_coords_only = _sites_from_obs,
+                figure_title    = f"{_label} — best fit (iter{_m['numit']})",
+                nrms_annotation = dict(nrms=_m["nrms"]),
+                pdf_catalog     = _pdf_catalog,
+            )
+            if _use_catalog:
+                _n_catalog_pages += 1
+
+            # Matplotlib Figure/Axes hold reference cycles, so refcounting
+            # alone won't free them right away; force a cyclic-gc pass
+            # after each member so peak memory stays bounded by ~one
+            # member's figures rather than drifting upward over the run.
+            gc.collect()
+    finally:
+        if _pdf_catalog is not None:
+            _pdf_info = _pdf_catalog.infodict()
+            _pdf_info["Title"] = "femtic_ens_plot ensemble catalog"
+            _pdf_info["Author"] = "femtic_ens_plot.py"
+            _pdf_catalog.close()
+
     print("\nPer-member plots done.")
-
-    # --- pdf catalog: every per-member pdf figure combined into one file ---
-    if PER_MEMBER_PDF_CATALOG and "pdf" in _PLOT_FORMATS:
-        if not _catalog_figs:
-            print("  pdf catalog: no pdf figures collected — skipping.")
-        else:
-            with PdfPages(PER_MEMBER_CATALOG_FILE) as _pdf:
-                for _title, _fig in _catalog_figs:
-                    _pdf.savefig(_fig)
-                _pdf_info = _pdf.infodict()
-                _pdf_info["Title"] = "femtic_ens_plot ensemble catalog"
-                _pdf_info["Author"] = "femtic_ens_plot.py"
-            print(f"  pdf catalog: {len(_catalog_figs)} page(s) → "
-                  f"{PER_MEMBER_CATALOG_FILE}")
+    if _use_catalog:
+        print(f"  pdf catalog: {_n_catalog_pages} page(s) → "
+              f"{PER_MEMBER_CATALOG_FILE}")
+    elif PER_MEMBER_PDF_CATALOG:
+        print("  pdf catalog: \"pdf\" not in PLOT_FORMAT — skipped.")
 
 # --- (6b) Joint multi-row ensemble figure (optional extra) ----------------
 # NOTE: this call passes several kwargs (site_xys, obs_coords_only,

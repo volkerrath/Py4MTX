@@ -210,3 +210,10 @@ Position values accept:
   `PER_MEMBER_CATALOG_FILE`: when `"pdf"` is among `_PLOT_FORMATS`,
   every per-member pdf figure is additionally combined into one
   multi-page catalog via `matplotlib.backends.backend_pdf.PdfPages`.
+- **2026-08-16 (Claude Sonnet 5, Anthropic):** Reduced peak memory for
+  large ensembles: the pdf catalog is now opened once before the
+  per-member loop and each figure is written via `PdfPages.savefig()`
+  and released (`del` + `gc.collect()`) immediately after it's built,
+  instead of accumulating every member's `Figure` in a list and writing
+  them all at the end — bounds peak memory to roughly one member's
+  figures rather than the whole ensemble's.
