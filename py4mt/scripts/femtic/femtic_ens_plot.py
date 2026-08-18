@@ -275,7 +275,7 @@ UTM_ZONE_OVERRIDE = None
 #: "model"  — axis ticks in model-local metres (origin = 0, default)
 #: "utm"    — axis ticks in absolute UTM metres
 #: "latlon" — axis ticks in decimal degrees (lon for easting, lat for northing)
-DISPLAY_COORDS = "model"
+DISPLAY_COORDS = "latlon"
 
 # ---------------------------------------------------------------------------
 # Axis scaling and layout
@@ -293,8 +293,8 @@ PLOT_EQUAL_ASPECT = True
 PLOT_PANEL_HEIGHT = 16.0   # cm
 
 #: Grid layout.  None → 1 row / len(PLOT_SLICES) columns.
-PLOT_NROWS = None
-PLOT_NCOLS = None
+PLOT_NROWS = 4
+PLOT_NCOLS = 2
 
 # ---------------------------------------------------------------------------
 # Site overlay
@@ -334,7 +334,7 @@ OUT = True
 # Plotting
 # ---------------------------------------------------------------------------
 #: Figure DPI for saved files.
-PLOT_DPI = 300
+PLOT_DPI = 600
 
 #: Matplotlib colormap name.
 PLOT_CMAP = "turbo_r"
@@ -357,17 +357,30 @@ PLOT_AIR_BGCOLOR = None
 #:   kind="plane" → point, strike, dip
 #:   invert_x     → True to flip horizontal axis on ns/ew/plane panels
 #:                  (for comparison with sections using opposite convention)
-PLOT_SLICES = [
-    dict(kind="map",  z0=5000.0),
-    dict(kind="map",  z0=15000.0),
-    dict(kind="ns",   x0=(-70.8700, "latlon")),
-    dict(kind="ew",   y0=(-16.3500, "latlon")),
+# PLOT_SLICES = [
+#     dict(kind="map",  z0=5000.0),
+#     dict(kind="map",  z0=15000.0),
+#     dict(kind="ns",   x0=(-70.8700, "latlon")),
+#     dict(kind="ew",   y0=(-16.3500, "latlon")),
+# ]
+PLOT_SLICES = [    
+    dict(kind="map", z0=0.0),    # km
+    dict(kind="map", z0=5.0),    # km
+    dict(kind="map", z0=10.0),   # km
+    dict(kind="map", z0=15.0),   # km
+    dict(kind="map", z0=20.0),   # km
+    dict(kind="map", z0=25.0),   # km
+    dict(kind="ns",  x0=(-71.40723, 'latlon')),    # km
+    dict(kind="ew",  y0=(-16.299593, 'latlon')),    # km
 ]
 
 #: Global axis limits in model-local metres.  None → auto.
-PLOT_XLIM = [-20000., 20000.]
-PLOT_YLIM = [-20000., 20000.]
-PLOT_ZLIM = [  -6000., 15000.]
+# MOD_XLIM = None    # [xmin, xmax] model-local km; None = auto
+# MOD_YLIM = None    # [ymin, ymax] model-local km; None = auto
+# MOD_ZLIM = None    # [zmin, zmax] model-local km; None = auto
+PLOT_XLIM = [-25., 25.]
+PLOT_YLIM = [-25., 25.]
+PLOT_ZLIM = [  -6., 30.]
 
 #: Equal aspect ratio on map and curtain panels (model / utm coords only).
 PLOT_EQUAL_ASPECT = True
