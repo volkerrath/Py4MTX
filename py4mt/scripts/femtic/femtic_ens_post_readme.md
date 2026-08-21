@@ -68,6 +68,10 @@ interest auto-scaling (`MOD_ROI_*`) is specific to this script.
 |---|---|---|---|
 | `PERCENTILES` | list of float | `[2.3, 15.9, 50.0, 84.1, 97.7]` | Percentile levels (2-σ / 1-σ normal-equivalent). |
 | `QDIFF_PAIRS` | list of `(lo, hi)` | `[(15.9, 84.1), (2.3, 97.7)]` | Percentile-pair differences `\|P_hi - P_lo\|` computed as extra, outlier-robust spread statistics (both values must also appear in `PERCENTILES`). The default gives both a 1-sigma-equivalent (`15.9`/`84.1`) and 2-sigma-equivalent (`2.3`/`97.7`) spread. Saved as `<P>_qdiff_<lo>_<hi>` and plottable under the same key in `MOD_STATS_WHAT`. |
+| `COMPUTE_VAR_REDUX` | `bool` | `True` | Compute `<P>_var_prior` (variance of each member's iter0 model) and `<P>_var_redux = 1 - var/var_prior` (fractional variance reduction from the inversion), per free parameter. Requires `resistivity_block_iter0.dat` alongside each accepted member's converged model; if any is missing, both are skipped for the whole run with a warning. `"var_redux"` is added to `MOD_STATS_WHAT` automatically when enabled and computed. |
+| `REDUX_EPS` | `float` | `0.1` | Threshold on `var_redux` used only by `MOD_STATS_BLANK_BY_REDUX` below; free parameters with `var_redux < REDUX_EPS` are treated as essentially unconstrained (posterior ≈ prior). |
+| `MOD_STATS_BLANK_BY_REDUX` | `bool` | `False` | Blank cells with `var_redux < REDUX_EPS` in every `MOD_STATS` plot **except** `var_redux`'s own (`avg`, `med`, `err`, `mad`, percentiles, `qdiff_*`, `var_prior`, `var_boot`/`err_boot`). No effect unless `COMPUTE_VAR_REDUX=True` and `var_redux` was actually computed; does not affect `MOD_QC`. |
+| `MOD_STATS_BLANK_MODE` | `str` | `"blank"` | `"fade"` or `"blank"`, same two modes as `MOD_ALPHA_MODE`, applied when `MOD_STATS_BLANK_BY_REDUX=True`. |
 
 ### Covariance
 
@@ -301,8 +305,11 @@ Keys follow the pattern `<PREFIX>_<stat>`:
 | `<P>_var_boot` | `(N_free,)` | Bootstrap mean variance across `BOOTSTRAP_N` resamples. Present only if `BOOTSTRAP_VAR=True`. |
 | `<P>_err_boot` | `(N_free,)` | `sqrt(var_boot)`. Present only if `BOOTSTRAP_VAR=True`. |
 | `<P>_var_boot_se` | `(N_free,)` | Bootstrap standard error of `var_boot` itself (estimator-noise diagnostic, not a model spread statistic). Present only if `BOOTSTRAP_VAR=True`. |
+| `<P>_var_prior` | `(N_free,)` | Element-wise variance of each member's **iter0** (prior) model, `resistivity_block_iter0.dat`. Present only if `COMPUTE_VAR_REDUX=True` and every accepted member's iter0 file was found. |
+| `<P>_var_redux` | `(N_free,)` | Fractional variance reduction, `1 - var/var_prior`, per free parameter (`nan` where `var_prior=0`). Present only if `COMPUTE_VAR_REDUX=True` and `<P>_var_prior` was computed. |
 
 If `COMPUTE_COV=False`, none of the `<P>_cov*` keys are present.
+If `COMPUTE_VAR_REDUX=False`, or any accepted member is missing its iter0 file, neither `<P>_var_prior` nor `<P>_var_redux` is present (a warning is printed; nothing else in the run is affected).
 
 ### Statistics block files (MOD_STATS = True)
 
@@ -312,10 +319,12 @@ If `COMPUTE_COV=False`, none of the `<P>_cov*` keys are present.
   resistivity_block_<prefix>_var.dat
   resistivity_block_<prefix>_med.dat
   resistivity_block_<prefix>_mad.dat
+  resistivity_block_<prefix>_var_redux.dat   (if COMPUTE_VAR_REDUX=True)
   <prefix>_avg.pdf
   <prefix>_var.pdf
   <prefix>_med.pdf
   <prefix>_mad.pdf
+  <prefix>_var_redux.pdf                     (if COMPUTE_VAR_REDUX=True)
 ```
 
 All `.dat` files are valid FEMTIC resistivity block files usable as input
@@ -378,3 +387,5 @@ correct.
 | 2026-08-12 | Claude Sonnet 5 (Anthropic) | Step (1)'s scan loop now checks `os.path.isdir(d)` before looking for `femtic.cnv`/the model file inside it. `dir_list` comes from a glob-style match (`utl.get_filelist(searchstr=[ENSEMBLE_NAME+"*"])`) against `ENSEMBLE_DIR`, which can in principle return non-directory matches (e.g. a stray file sharing the `ENSEMBLE_NAME` prefix); previously such an entry fell through to the `femtic.cnv` check and got printed as a skipped ensemble member as if it were a failed inversion run. Non-directory matches are now skipped immediately with their own log message. No change for genuine run directories. |
 | 2026-08-12 | Claude Sonnet 5 (Anthropic) | A convergence diagnostic (nRMS bar chart / binned histogram over all scanned directories) and a REPAIR procedure (rebuild non-converged directories with a starting model averaged from 2 random converged members, for a restart) were prototyped in this script across several iterations today, then moved out into a new standalone script, `femtic_ens_repair.py` (see `femtic_ens_repair_readme.md`), once the design settled — keeping this script focused on its original scope (summary statistics, covariance, QC/statistics slice plots). No `MOD_CONV*`/`MOD_REPAIR*` config or related step remains here. `fviz.plot_convergence_bar()` / `fviz.plot_convergence_histogram()` (added to `femtic_viz.py` during the same work; see `femtic_viz_readme.md`) are unaffected and now used by `femtic_ens_repair.py` instead. |
 | 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_ens_post_summary.md` output at end of run: writes user-set (UPPERCASE) parameters, script path, and run date/time. |
+| 2026-08-21 | Claude Sonnet 5 (Anthropic) | Added `COMPUTE_VAR_REDUX` (default `True`): the scan loop now also reads each accepted member's iter0 (prior) model into `ens_matrix_prior`, from which `<P>_var_prior` (variance of the prior ensemble) and `<P>_var_redux = 1 - var/var_prior` (fractional variance reduction from the inversion) are computed and saved to the `.npz`. Computed only if every accepted member's `resistivity_block_iter0.dat` is found; otherwise skipped with a warning, with no effect on the rest of the run. `"var_redux"` is added to `MOD_STATS_WHAT` automatically (same pattern as `err_boot` for `BOOTSTRAP_VAR`), with `MOD_STATS_CLIM` defaults `var_prior: [-.0, .5]` (matching `var`) and `var_redux: [0.0, 1.0]` (bounded fraction; override to `None` for auto-scaling). |
+| 2026-08-21 | Claude Sonnet 5 (Anthropic) | Added `MOD_STATS_BLANK_BY_REDUX` (default `False`) + `REDUX_EPS` (default `0.1`): when enabled, free parameters with `var_redux < REDUX_EPS` are blanked (`MOD_STATS_BLANK_MODE`, default `"blank"`) in every `MOD_STATS` plot except `var_redux`'s own, using the same alpha/blanking mechanism as `MOD_ALPHA_FILE`/`MOD_ALPHA_MODE`/`MOD_ALPHA_BLANK_THRESH` but sourced from the in-memory `var_redux` array. `_plot_slice()` now accepts optional per-call `alpha_file`/`alpha_mode`/`alpha_blank_thresh` overrides (`None` = fall back to the existing module-level `MOD_ALPHA_*` settings), so `MOD_QC` and any run with the new option left off are unaffected. |

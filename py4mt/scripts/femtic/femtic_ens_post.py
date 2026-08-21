@@ -270,6 +270,42 @@ Provenance
             Added femtic_ens_post_summary.md output at end of run: writes
             user-set (UPPERCASE) parameters, script path, and run
             date/time via utl.write_param_summary().
+2026-08-21  Claude Sonnet 5 (Anthropic)
+            Added COMPUTE_VAR_REDUX (default True): alongside each
+            member's converged (posterior) model, the scan loop now also
+            reads that member's iter0 (prior) model
+            (resistivity_block_iter0.dat) into a second matrix,
+            ens_matrix_prior. From it, ens_var_prior = np.var(
+            ens_matrix_prior, axis=0) is computed (same log10(Ω·m)²
+            space as ens_var) and var_redux = 1 - ens_var / ens_var_prior
+            -- the fractional variance reduction achieved by the
+            inversion, per free parameter. var_redux is only computed if
+            every accepted member's iter0 file was found; otherwise it is
+            skipped with a warning and the run proceeds unaffected (no
+            change to the existing posterior-only statistics). Division
+            by a zero prior variance is guarded (result set to nan for
+            that parameter). f"{P}_var_prior" and f"{P}_var_redux" are
+            saved to the .npz whenever computed. "var_redux" is appended
+            to MOD_STATS_WHAT automatically when COMPUTE_VAR_REDUX=True
+            (same pattern as "err_boot" for BOOTSTRAP_VAR), with
+            MOD_STATS_CLIM entries for "var_prior" ([-.0, .5], matching
+            "var") and "var_redux" ([0.0, 1.0], since it is a bounded
+            fraction in typical use -- override either to None for
+            auto-scaling, or to a custom range, as usual.
+2026-08-21  Claude Sonnet 5 (Anthropic)
+            Added MOD_STATS_BLANK_BY_REDUX (default False) + REDUX_EPS
+            (default 0.1): when enabled (and var_redux was computed),
+            free parameters with var_redux < REDUX_EPS -- i.e. cells the
+            inversion barely moved away from the prior -- are blanked
+            (MOD_STATS_BLANK_MODE, default "blank") in every MOD_STATS
+            plot except var_redux's own. Implemented by writing the
+            var_redux block file once up front (same path the "var_redux"
+            MOD_STATS_WHAT entry would write anyway) and passing it as a
+            per-call alpha_file/alpha_mode/alpha_blank_thresh override to
+            _plot_slice(), which now accepts these as optional
+            parameters (None = fall back to the existing module-level
+            MOD_ALPHA_FILE/MODE/BLANK_THRESH, so MOD_QC and any run with
+            MOD_STATS_BLANK_BY_REDUX=False are completely unaffected).
 """
 from __future__ import annotations
 
@@ -360,12 +396,12 @@ FEMTIC="5.0" #"4.3"
 # ---------------------------------------------------------------------------
 
 # ENSEMBLE_DIR = r"/home/vrath/FEMTIC_work/Ensembles/misti_gst/ensemble/"
-ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/misti_gst_ensembles/"
-ENSEMBLE_NAME = "misti_gst_suzuki_ext"
+ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/misti2026/gst/"
+ENSEMBLE_NAME = "misti_gst_suzuki_rnd"
 
 #: Prefix used for .npz output keys and default file/figure names.
 #: e.g. "rto" → keys rto_ens, rto_avg, …  and file RTO_results.npz.
-ENSEMBLE_PREFIX = "misti_gst_suzuki_ext"
+ENSEMBLE_PREFIX = "misti_gst_suzuki_rnd"
 
 #: Maximum normalised RMS accepted from femtic.cnv.
 NRMS_MAX = 1.5
@@ -384,6 +420,24 @@ PERCENTILES = [2.3, 15.9, 50.0, 84.1, 97.7]
 #: .npz as f"{P}_qdiff_<lo>_<hi>" and available for MOD_STATS plotting
 #: under the same key.
 QDIFF_PAIRS = [(15.9, 84.1), (2.3, 97.7)]
+
+#: Set True to also compute the fractional variance reduction achieved by
+#: the inversion, var_redux = 1 - ens_var / ens_var_prior, per free
+#: parameter. Requires each accepted member's
+#: iter0 (prior) model file, resistivity_block_iter0.dat, to exist
+#: alongside its converged resistivity_block_iter{numit}.dat in the same
+#: run directory -- read once per member in the main scan loop below. If
+#: any accepted member is missing its iter0 file, var_redux (and
+#: var_prior) are skipped for the whole ensemble with a warning; nothing
+#: else in this script is affected.
+COMPUTE_VAR_REDUX = True
+
+#: Threshold on var_redux used only for the optional MOD_STATS_BLANK_BY_
+#: REDUX blanking below (see the MOD_STATS section) -- free parameters
+#: with var_redux < REDUX_EPS are considered essentially unconstrained
+#: by the inversion (posterior ~ prior). Has no effect unless
+#: MOD_STATS_BLANK_BY_REDUX=True. Ignored if COMPUTE_VAR_REDUX=False.
+REDUX_EPS = 0.1
 
 # ---------------------------------------------------------------------------
 # Covariance
@@ -510,7 +564,9 @@ MOD_STATS_WHAT = ["avg", "med", "err", "mad"] + [
     "p" + f"{_p:g}".replace(".", "_") for _p in PERCENTILES
 ] + [
     f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_") for _lo, _hi in QDIFF_PAIRS
-] + (["err_boot"] if BOOTSTRAP_VAR else [])
+] + (["err_boot"] if BOOTSTRAP_VAR else []) + (
+    ["var_redux"] if COMPUTE_VAR_REDUX else []
+)
 #: Output directory for stat block files and figures.
 MOD_STATS_DIR  = ENSEMBLE_DIR + "/stats_plots_ext/"
 
@@ -535,6 +591,29 @@ for _lo, _hi in QDIFF_PAIRS:
 if BOOTSTRAP_VAR:
     MOD_STATS_CLIM["var_boot"] = [-.0, 0.5]
     MOD_STATS_CLIM["err_boot"] = [-.0, 0.5]
+if COMPUTE_VAR_REDUX:
+    #: Same (log10 Ω·m)² scale as "var" — override if needed.
+    MOD_STATS_CLIM["var_prior"] = [-.0, .5]
+    #: var_redux = 1 - var/var_prior is a bounded fraction in typical
+    #: use (0 = no reduction, 1 = fully constrained); set to None here
+    #: for auto-scaling instead, e.g. if values run negative (posterior
+    #: variance larger than prior for some parameters).
+    MOD_STATS_CLIM["var_redux"] = [0.0, 1.0]
+
+#: Set True to blank out poorly-constrained cells (var_redux < REDUX_EPS)
+#: in every MOD_STATS plot *other than* var_redux's own plot -- avg, med,
+#: err, mad, percentiles, qdiff_*, var_prior, var_boot/err_boot -- using
+#: the same alpha/blanking mechanism as MOD_ALPHA_FILE/MODE/BLANK_THRESH
+#: below, but sourced from the in-memory var_redux array instead of an
+#: external sensitivity block. No effect unless COMPUTE_VAR_REDUX=True
+#: and var_redux was actually computed (all accepted members had an
+#: iter0 file); otherwise ignored with a warning. Does not affect MOD_QC
+#: (the best-nRMS member plot), which continues to use MOD_ALPHA_FILE
+#: only, if set.
+MOD_STATS_BLANK_BY_REDUX = False
+#: "fade" (progressively lower alpha below REDUX_EPS) or "blank" (fully
+#: transparent/masked below REDUX_EPS) -- same two modes as MOD_ALPHA_MODE.
+MOD_STATS_BLANK_MODE = "blank"
 
 # ---------------------------------------------------------------------------
 # Shared slice / plot parameters
@@ -808,7 +887,9 @@ def _plot_slice(block_file: str, pdf_file: str,
                 utm_e, utm_n, utm_lat, utm_lon,
                 utm_zone, utm_north, site_xys: list,
                 obs_coords_only: bool = False,
-                clim=None) -> None:
+                clim=None,
+                alpha_file=None, alpha_mode=None, alpha_blank_thresh=None,
+                ) -> None:
     """Call fviz.plot_model_slices once per MOD_PLOT_FORMAT entry.
 
     Mirrors the plotting call in femtic_gst_prep.py / femtic_rto_prep.py
@@ -828,6 +909,14 @@ def _plot_slice(block_file: str, pdf_file: str,
         the module-level ``MOD_CLIM``, unchanged from previous behaviour.
         Used by the MOD_STATS block to give VAR/MAD/QDIFF panels their own
         automatic scale instead of forcing MOD_CLIM onto them.
+    alpha_file, alpha_mode, alpha_blank_thresh : optional
+        Per-call overrides for the alpha/blanking block file, mode, and
+        threshold. ``None`` (default, for all three) falls back to the
+        module-level ``MOD_ALPHA_FILE`` / ``MOD_ALPHA_MODE`` /
+        ``MOD_ALPHA_BLANK_THRESH``, unchanged from previous behaviour.
+        Used by the MOD_STATS block's MOD_STATS_BLANK_BY_REDUX option to
+        blank by var_redux instead, without touching MOD_QC or any other
+        MOD_STATS panel that doesn't opt in.
     """
     if fviz is None:
         print("  plot_slice: femtic_viz not available — skipping.")
@@ -889,9 +978,10 @@ def _plot_slice(block_file: str, pdf_file: str,
             tick_fontsize       = MOD_TICK_FONTSIZE,
             label_fontsize      = MOD_LABEL_FONTSIZE,
             tick_decimals       = MOD_TICK_DECIMALS,
-            alpha_file          = MOD_ALPHA_FILE,
-            alpha_mode          = MOD_ALPHA_MODE,
-            alpha_blank_thresh  = MOD_ALPHA_BLANK_THRESH,
+            alpha_file          = MOD_ALPHA_FILE if alpha_file is None else alpha_file,
+            alpha_mode          = MOD_ALPHA_MODE if alpha_mode is None else alpha_mode,
+            alpha_blank_thresh  = (MOD_ALPHA_BLANK_THRESH if alpha_blank_thresh is None
+                                    else alpha_blank_thresh),
             plot_file           = _fmt_file,
             dpi                 = MOD_DPI,
             show                = _show_this,
@@ -916,6 +1006,10 @@ print(f"Found {len(dir_list)} sub-directory/ies matching '{ENSEMBLE_NAME}'.")
 model_list  = []          # list of [block_file, n_iter, nRMS]
 model_count = 0
 ens_matrix  = None        # will become (n_members, n_free) float64
+
+ens_matrix_prior  = None  # will become (n_members, n_free) float64
+prior_count       = 0     # accepted members whose iter0 file was found
+prior_missing_any = False
 
 for d in dir_list:
     if not os.path.isdir(d):
@@ -961,6 +1055,24 @@ for d in dir_list:
 
     model_count += 1
 
+    if COMPUTE_VAR_REDUX:
+        prior_file = os.path.join(d, "resistivity_block_iter0.dat")
+        if not os.path.isfile(prior_file):
+            print(f"    {prior_file} not found — var_redux unavailable "
+                  f"for this ensemble.")
+            prior_missing_any = True
+        else:
+            log_m_prior = fem.read_model(
+                model_file=prior_file, model_trans="log10", out=OUT,
+            )
+            if ens_matrix_prior is None:
+                ens_matrix_prior = log_m_prior[np.newaxis, :]
+            else:
+                ens_matrix_prior = np.vstack(
+                    (ens_matrix_prior, log_m_prior)
+                )
+            prior_count += 1
+
 n_members = model_count
 print(f"\nConverged members: {n_members}")
 
@@ -982,6 +1094,23 @@ ens_med  = np.median(ens_matrix, axis=0)                           # (n_free,)
 ens_mad  = np.median(np.abs(ens_matrix - ens_med[np.newaxis, :]),
                      axis=0)                                        # (n_free,)
 ens_prc  = np.percentile(ens_matrix, PERCENTILES, axis=0)          # (n_prc, n_free)
+
+# --- Prior variance / variance-reduction (optional) ------------------------
+ens_var_prior = None
+var_redux     = None
+if COMPUTE_VAR_REDUX:
+    if prior_missing_any or prior_count != n_members:
+        print(f"\n  COMPUTE_VAR_REDUX: only {prior_count}/{n_members} "
+              f"accepted members had an iter0 file — skipping var_prior "
+              f"and var_redux.")
+    else:
+        ens_var_prior = np.var(ens_matrix_prior, axis=0)               # (n_free,)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            var_redux = 1.0 - ens_var / ens_var_prior
+        var_redux[ens_var_prior == 0.0] = np.nan
+        print(f"\n  var_redux: [{np.nanmin(var_redux):.4f}, "
+              f"{np.nanmax(var_redux):.4f}]  "
+              f"(over {n_members} members, prior=iter0)")
 
 # --- Percentile-pair differences (robust spread, e.g. 1-sigma-equivalent IQR) ---
 ens_qdiff = {}   # key -> (n_free,) array
@@ -1075,6 +1204,10 @@ if BOOTSTRAP_VAR:
     ens_dict[f"{P}_var_boot"]    = ens_var_boot
     ens_dict[f"{P}_err_boot"]    = ens_err_boot
     ens_dict[f"{P}_var_boot_se"] = ens_var_boot_se
+if ens_var_prior is not None:
+    ens_dict[f"{P}_var_prior"] = ens_var_prior
+if var_redux is not None:
+    ens_dict[f"{P}_var_redux"] = var_redux
 if ens_cov is not None:
     ens_dict[f"{P}_cov"] = ens_cov
 if ens_cov_eigval is not None:
@@ -1173,6 +1306,48 @@ if MOD_STATS:
             _stat_map["var_boot"] = (ens_var_boot, "bootstrap variance")
             _stat_map["err_boot"] = (ens_err_boot, "bootstrap error (std)")
 
+        # Prior variance / variance-reduction (spread statistics — auto
+        # scale by default here; MOD_STATS_CLIM gives both a fixed range
+        # above). Only added if actually computed (all accepted members
+        # had an iter0 file) — see COMPUTE_VAR_REDUX.
+        if ens_var_prior is not None:
+            _stat_map["var_prior"] = (ens_var_prior, "prior (iter0) variance")
+        if var_redux is not None:
+            _stat_map["var_redux"] = (var_redux, "variance reduction 1-var/var_prior")
+        elif COMPUTE_VAR_REDUX and "var_redux" in MOD_STATS_WHAT:
+            print("  MOD_STATS: var_redux requested but not computed "
+                  "(missing iter0 file(s)) — skipped.")
+            MOD_STATS_WHAT = [k for k in MOD_STATS_WHAT if k != "var_redux"]
+
+        # --- Optional: blank poorly-constrained cells (var_redux < REDUX_EPS)
+        # in every other MOD_STATS plot. Writes the var_redux block file
+        # once, up front, so it's available as an alpha source regardless
+        # of where (or whether) "var_redux" itself sits in MOD_STATS_WHAT;
+        # the loop below still writes/overwrites the same file when it
+        # reaches the "var_redux" key on its own (identical content).
+        _redux_alpha_block = None
+        if MOD_STATS_BLANK_BY_REDUX:
+            if var_redux is None:
+                print("  MOD_STATS_BLANK_BY_REDUX: var_redux not computed "
+                      "— blanking disabled for this run.")
+            else:
+                _redux_alpha_block = os.path.join(
+                    MOD_STATS_DIR, f"resistivity_block_{P}_var_redux.dat",
+                )
+                fem.insert_model(
+                    template   = _best_file,
+                    model      = var_redux,
+                    model_file = _redux_alpha_block,
+                    ocean      = MOD_OCEAN,
+                    air_rho    = MOD_AIR_RHO,
+                    ocean_rho  = MOD_OCEAN_RHO,
+                    out        = OUT,
+                )
+                print(f"  MOD_STATS_BLANK_BY_REDUX: blanking cells with "
+                      f"var_redux < {REDUX_EPS:g} "
+                      f"(mode='{MOD_STATS_BLANK_MODE}') in all MOD_STATS "
+                      f"plots except var_redux's own.")
+
         for _key in MOD_STATS_WHAT:
             if _key not in _stat_map:
                 print(f"  MOD_STATS: unknown stat '{_key}' — skipped.")
@@ -1199,6 +1374,7 @@ if MOD_STATS:
                 out        = OUT,
             )
             print(f"STATS: plotting {_label} → {_pdf_out}  (clim={_clim})")
+            _use_redux_alpha = _redux_alpha_block is not None and _key != "var_redux"
             _plot_slice(
                 block_file      = _block_out,
                 pdf_file        = _pdf_out,
@@ -1211,6 +1387,9 @@ if MOD_STATS:
                 site_xys        = site_xys,
                 obs_coords_only = obs_coords_only,
                 clim            = _clim,
+                alpha_file          = _redux_alpha_block if _use_redux_alpha else None,
+                alpha_mode          = MOD_STATS_BLANK_MODE if _use_redux_alpha else None,
+                alpha_blank_thresh  = REDUX_EPS if _use_redux_alpha else None,
             )
 
 print("\nfemtic_ens_post.py complete.")

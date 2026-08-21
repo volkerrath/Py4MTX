@@ -10,12 +10,15 @@ NRMS_MAX threshold), then produces:
   (1) [default, PER_MEMBER_PLOT=True] Per converged member, two
       fviz.plot_model_slices() figures in their own sub-directory
       WORK_DIR/<label>/: the perturbed prior model (iter0.<ext>,
-      from resistivity_block_iter0.dat) and the best-fit model
-      (best.<ext>, from resistivity_block_iter{numit}.dat, numit from
-      femtic.cnv). One file per format in PLOT_FORMAT (e.g. ["pdf",
-      "jpg"]). When "pdf" is among the formats and
-      PER_MEMBER_PDF_CATALOG=True, every per-member pdf figure is also
-      combined into one multi-page catalog PDF (PER_MEMBER_CATALOG_FILE).
+      from resistivity_block_iter0.dat, colormap/scale PLOT_CMAP_ITER0
+      / PLOT_CLIM_ITER0) and the best-fit model (best.<ext>, from
+      resistivity_block_iter{numit}.dat, numit from femtic.cnv,
+      colormap/scale PLOT_CMAP_BEST / PLOT_CLIM_BEST). One file per format in PLOT_FORMAT (e.g.
+      ["pdf", "jpg"]). When "pdf" is among the formats,
+      PER_MEMBER_PDF_CATALOG_MODE selects which per-member pdf pages
+      (none / iter0 / best / both, interlaced per member) are also
+      combined into one multi-page catalog PDF
+      (PER_MEMBER_CATALOG_FILE).
 
   (2) [optional, PLOT_JOINT=True] The previous joint multi-row figure —
       one row per member's best-fit model — with optional mean/std/median
@@ -100,6 +103,69 @@ Provenance
                 object in a Python list and writing them all at the end.
                 _plot_member_slice() gained a pdf_catalog= kwarg and no
                 longer returns a Figure.
+    2026-08-20  Claude Sonnet 5 (Anthropic)
+                _plot_member_slice(): the pdf-format savefig call is
+                now wrapped in mpl.rc_context({"pdf.compression": 0})
+                to disable matplotlib's PDF indexed-colour image path
+                (backend_pdf.PdfFile._writeImg / np.searchsorted
+                palette mapping, gated on the pdf.compression
+                rcParam) at the source, plus a try/except IndexError
+                fallback (render PNG, convert to PDF with Pillow) as
+                a safety net in case the same class of bug (same code
+                path as matplotlib/matplotlib#25806) is hit some other
+                way. Data-/render-dependent, not a bug in this script
+                or in plot_model_slices -- generated/reviewed by
+                Claude, should be checked before relying on it in
+                production.
+    2026-08-20  Claude Sonnet 5 (Anthropic)
+                All user-facing length parameters in the Configuration
+                section (PLOT_SLICES z0/x0/y0/point, PLOT_XLIM/YLIM/ZLIM,
+                PROJECTION_DIST, MAP_MARKERS positions, BOREHOLE_SITES
+                x/y/z_top/z_bot/dz) are now entered in kilometres instead
+                of metres. A new "Unit conversion" block, run once right
+                after the config section, converts everything to
+                model-local metres before fem.resolve_slice_positions()
+                or fviz.plot_model_slices()/plot_ensemble_slices() see
+                it -- those functions and femtic_ens_post.py's own
+                convention are unchanged (still metres internally).
+                CRS-tagged specs, e.g. (value, "utm") / (value,
+                "latlon"), are absolute coordinates and are left
+                unchanged by the conversion; only plain numbers /
+                implicit-"model" specs are treated as model-local km.
+                Fixes a bug where PLOT_SLICES z0 values and
+                PLOT_XLIM/YLIM/ZLIM were written with "# km" comments
+                but silently consumed as metres (e.g. z0=25.0 plotted a
+                slice at 25 m depth, not 25 km, and PLOT_XLIM=[-25, 25]
+                restricted the map panels to a 50 m-wide box instead of
+                50 km). PROJECTION_DIST and the BOREHOLE_SITES example
+                were also updated from metres to km.
+    2026-08-20  Claude Sonnet 5 (Anthropic)
+                (1) PER_MEMBER_PDF_CATALOG (bool) replaced by
+                PER_MEMBER_PDF_CATALOG_MODE ("none" | "iter0" | "best" |
+                "both", default "both"), selecting which per-member pdf
+                pages go into the catalog: none, prior-only, best-only,
+                or both interlaced per member in plot order (iter0_A,
+                best_A, iter0_B, best_B, ...) -- "both" reproduces the
+                previous PER_MEMBER_PDF_CATALOG=True behaviour, since
+                the per-member loop already visits iter0 then best for
+                each member in turn. Validated against
+                _VALID_CATALOG_MODES at load time.
+                (2) PLOT_CLIM split into PLOT_CLIM_ITER0 and
+                PLOT_CLIM_BEST so the perturbed-prior and best-fit
+                model plots can use distinct log10(rho) colour scales
+                (the prior's resistivity range often differs
+                substantially from the inverted result). _plot_member_
+                slice() gained a required clim= kwarg -- the two call
+                sites in the per-member loop now pass PLOT_CLIM_ITER0 /
+                PLOT_CLIM_BEST respectively; the joint ensemble figure
+                (PLOT_JOINT), which only plots best-fit models, uses
+                PLOT_CLIM_BEST.
+                (3) PLOT_CMAP likewise split into PLOT_CMAP_ITER0 and
+                PLOT_CMAP_BEST, mirroring (2), so the colormap itself
+                -- not just the colour limits -- can differ between
+                the prior and best-fit plots. _plot_member_slice()
+                gained a required cmap= kwarg alongside clim=; the
+                joint ensemble figure uses PLOT_CMAP_BEST.
 
 @author: vrath
 """
@@ -112,6 +178,7 @@ import inspect
 from pathlib import Path
 
 import numpy as np
+import matplotlib as mpl
 from matplotlib.backends.backend_pdf import PdfPages
 
 # ---------------------------------------------------------------------------
@@ -146,7 +213,7 @@ print(titstrng + "\n\n")
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-WORK_DIR = r"/media/vrath/LargeBack/Ensembles/misti_gst_ensembles/gst_rnd1/"
+WORK_DIR = r"/media/vrath/LargeBack/Ensembles/misti2026/gst/"
 #: Mesh file — always required for plotting.
 MESH_FILE = WORK_DIR + "/templates/mesh.dat"
 
@@ -211,15 +278,28 @@ _PLOT_FORMATS = (
     [PLOT_FORMAT] if isinstance(PLOT_FORMAT, str) else list(PLOT_FORMAT)
 )
 
-#: If True and "pdf" is among _PLOT_FORMATS, additionally collect every
-#: per-member pdf figure (iter0 + best, in the order members are plotted)
+#: Controls which per-member figures (if any) are additionally collected
 #: into one multi-page catalog PDF via matplotlib.backends.backend_pdf.
-#: PdfPages, saved as PER_MEMBER_CATALOG_FILE. Does not affect the
-#: individual per-member files, which are still written as usual.
-PER_MEMBER_PDF_CATALOG = True
+#: PdfPages, saved as PER_MEMBER_CATALOG_FILE. Only takes effect when
+#: "pdf" is among _PLOT_FORMATS. Does not affect the individual
+#: per-member files, which are still written as usual regardless of
+#: this setting. One of:
+#:   "none"  — no catalog is built
+#:   "iter0" — catalog contains only the perturbed-prior (iter0) pages
+#:   "best"  — catalog contains only the best-fit pages
+#:   "both"  — catalog contains both, interlaced per member in plot
+#:             order (iter0_A, best_A, iter0_B, best_B, ...)
+PER_MEMBER_PDF_CATALOG_MODE = "both"   # "none" | "iter0" | "best" | "both"
 
 #: Output path for the multi-page pdf catalog.
 PER_MEMBER_CATALOG_FILE = WORK_DIR + ENSEMBLE_NAME+"_catalog.pdf"
+
+_VALID_CATALOG_MODES = ("none", "iter0", "best", "both")
+if PER_MEMBER_PDF_CATALOG_MODE not in _VALID_CATALOG_MODES:
+    raise ValueError(
+        f"PER_MEMBER_PDF_CATALOG_MODE={PER_MEMBER_PDF_CATALOG_MODE!r} — "
+        f"must be one of {_VALID_CATALOG_MODES}."
+    )
 
 # ---------------------------------------------------------------------------
 # Joint ensemble figure (optional extra)
@@ -311,8 +391,8 @@ PLOT_SITES_MAPS   = True
 #: Show site markers on curtain (ns/ew) panels.
 PLOT_SITES_SLICES = False
 
-#: Maximum distance (m) from slice plane for site projection onto curtains.
-PROJECTION_DIST = 5000.
+#: Maximum distance (km) from slice plane for site projection onto curtains.
+PROJECTION_DIST = 5.0
 
 #: Marker style for map panels.
 SITE_MARKER = dict(marker="v", color="black", ms=8, zorder=10, label=None)
@@ -322,7 +402,9 @@ SITE_MARKER_SLICES = None
 
 #: Additional map markers (e.g. known features).  List of dicts:
 #:   dict(pos=(x, y), marker="*", color="red", ms=10, label="label")
-#: pos accepts model-local metres or (value, "utm"/"latlon") tuples.
+#: pos accepts model-local km or (value, "utm"/"latlon") tuples (the
+#: latter are absolute coordinates -- UTM metres / decimal degrees --
+#: and are not affected by the km convention).
 MAP_MARKERS = []
 
 # ---------------------------------------------------------------------------
@@ -336,11 +418,20 @@ OUT = True
 #: Figure DPI for saved files.
 PLOT_DPI = 600
 
-#: Matplotlib colormap name.
-PLOT_CMAP = "turbo_r"
+#: Matplotlib colormap name — set separately for the perturbed-prior
+#: (iter0) and best-fit models, same reasoning as PLOT_CLIM_ITER0 /
+#: PLOT_CLIM_BEST below. PLOT_CMAP_BEST is also used for the joint
+#: ensemble figure (PLOT_JOINT), which only plots best-fit models.
+PLOT_CMAP_ITER0 = "turbo_r"
+PLOT_CMAP_BEST  = "turbo_r"
 
-#: Colour limits [log10(ρ_min), log10(ρ_max)] — None = auto.
-PLOT_CLIM = [0.0, 4.0]      # log10(Ω·m)
+#: Colour limits [log10(ρ_min), log10(ρ_max)] — None = auto. Set
+#: separately for the perturbed-prior (iter0) and best-fit models, since
+#: the prior's resistivity range often differs from the inverted result.
+#: PLOT_CLIM_BEST is also used for the joint ensemble figure (PLOT_JOINT),
+#: which only plots best-fit models.
+PLOT_CLIM_ITER0 = [0.0, 4.0]      # log10(Ω·m)
+PLOT_CLIM_BEST  = [0.0, 4.0]      # log10(Ω·m)
 
 #: Flat colour for ocean / lake cells.  None → use colormap.
 PLOT_OCEAN_COLOR = "lightgrey"
@@ -349,17 +440,23 @@ PLOT_OCEAN_COLOR = "lightgrey"
 PLOT_AIR_BGCOLOR = None
 
 #: Slice specification — same format as femtic_mod_plot.py PLOT_SLICES.
+#: All lengths below are given in KILOMETRES; the "Unit conversion" block
+#: further down converts them to model-local metres before fem/fviz see
+#: them.  CRS-tagged specs -- (value, "utm") in UTM metres, (value,
+#: "latlon") in decimal degrees -- are absolute coordinates and are left
+#: unchanged by that conversion.
 #: Each dict must have 'kind' and the matching position key:
-#:   kind="map"   → z0   (depth in model-local metres)
-#:   kind="ns"    → x0   (easting;  plain float = model-local m,
+#:   kind="map"   → z0   (depth in model-local km)
+#:   kind="ns"    → x0   (easting;  plain float = model-local km,
 #:                        or (value, "utm") / (value, "latlon"))
 #:   kind="ew"    → y0   (northing; same CRS tagging)
-#:   kind="plane" → point, strike, dip
+#:   kind="plane" → point ([x, y, z] model-local km, or ([x,y,z], "utm"
+#:                  / "latlon") with z still model-local km), strike, dip
 #:   invert_x     → True to flip horizontal axis on ns/ew/plane panels
 #:                  (for comparison with sections using opposite convention)
 # PLOT_SLICES = [
-#     dict(kind="map",  z0=5000.0),
-#     dict(kind="map",  z0=15000.0),
+#     dict(kind="map",  z0=5.0),
+#     dict(kind="map",  z0=15.0),
 #     dict(kind="ns",   x0=(-70.8700, "latlon")),
 #     dict(kind="ew",   y0=(-16.3500, "latlon")),
 # ]
@@ -370,14 +467,11 @@ PLOT_SLICES = [
     dict(kind="map", z0=15.0),   # km
     dict(kind="map", z0=20.0),   # km
     dict(kind="map", z0=25.0),   # km
-    dict(kind="ns",  x0=(-71.40723, 'latlon')),    # km
-    dict(kind="ew",  y0=(-16.299593, 'latlon')),    # km
+    dict(kind="ns",  x0=(-71.40723, 'latlon')),    # deg
+    dict(kind="ew",  y0=(-16.299593, 'latlon')),    # deg
 ]
 
-#: Global axis limits in model-local metres.  None → auto.
-# MOD_XLIM = None    # [xmin, xmax] model-local km; None = auto
-# MOD_YLIM = None    # [ymin, ymax] model-local km; None = auto
-# MOD_ZLIM = None    # [zmin, zmax] model-local km; None = auto
+#: Global axis limits in model-local KILOMETRES.  None → auto.
 PLOT_XLIM = [-25., 25.]
 PLOT_YLIM = [-25., 25.]
 PLOT_ZLIM = [  -6., 30.]
@@ -395,10 +489,11 @@ PLOT_BOREHOLE = False
 BOREHOLE_FILE = WORK_DIR + "ensemble_boreholes.pdf"
 
 #: List of borehole spec dicts — same format as femtic_mod_plot.py.
-#: Keys: "name", "x", "y", "z_top", "z_bot", "dz".
-#: x/y accept plain float (model-local m) or (value, "utm"/"latlon") tuples.
+#: Keys: "name", "x", "y", "z_top", "z_bot", "dz" — all lengths in km.
+#: x/y accept plain float (model-local km) or (value, "utm"/"latlon")
+#: tuples (absolute coordinates, left unchanged by the km conversion).
 BOREHOLE_SITES = [
-    # dict(name="BH-01", x=0.0, y=0.0, z_top=0.0, z_bot=20000., dz=200.),
+    # dict(name="BH-01", x=0.0, y=0.0, z_top=0.0, z_bot=20.0, dz=0.2),
 ]
 
 #: Matplotlib line style for borehole traces.
@@ -419,6 +514,114 @@ BOREHOLE_SHARED = True
 #:   "average" — arithmetic mean of all site UTM coordinates
 #: Requires SITE_DAT to be set and readable.
 ORIGIN_METHOD = "box"   # None | "box" | "average"
+
+
+# ===========================================================================
+# Unit conversion: user parameters above are in km  →  metres below
+# ===========================================================================
+# fem.resolve_slice_positions() and fviz.plot_model_slices() /
+# plot_ensemble_slices() require model-local metres (the convention shared
+# with femtic_ens_post.py and femtic.py, left unchanged here). Everything
+# the user sets above -- PLOT_SLICES z0/x0/y0/point, PLOT_XLIM/YLIM/ZLIM,
+# PROJECTION_DIST, MAP_MARKERS positions, BOREHOLE_SITES x/y/z_top/z_bot/dz
+# -- is in km, so it is converted exactly once here, immediately after the
+# config section. Nothing past this point needs to change; the rest of the
+# script (including femtic.py / femtic_viz.py) still works in metres.
+#
+# CRS-tagged position specs -- (value, "utm") in absolute UTM metres, or
+# (value, "latlon") in decimal degrees -- are absolute coordinates, not
+# model-local lengths, so they pass through unchanged. Only plain numbers
+# (or explicit ("model") tags) are treated as model-local km.
+
+def _km_to_m(v):
+    """Convert a plain scalar length from km to m; None passes through."""
+    return None if v is None else float(v) * 1000.0
+
+
+def _km_to_m_lim(lim):
+    """Convert an [lo, hi] limit pair from km to m; None (either) passes."""
+    if lim is None:
+        return None
+    return [None if x is None else float(x) * 1000.0 for x in lim]
+
+
+def _km_to_m_pos(raw):
+    """Convert an x0/y0-style position spec from km to m.
+
+    Plain numbers and explicit ("model") tags are model-local km and are
+    converted; ("utm") / ("latlon") tags are absolute coordinates and are
+    returned unchanged.
+    """
+    if isinstance(raw, (int, float)):
+        return float(raw) * 1000.0
+    if isinstance(raw, (list, tuple)) and len(raw) == 2 and isinstance(raw[1], str):
+        val, crs = raw
+        return (float(val) * 1000.0, crs) if crs == "model" else raw
+    raise ValueError(f"_km_to_m_pos: unexpected position spec {raw!r}")
+
+
+def _km_to_m_point(raw):
+    """Convert a plane-slice 'point' spec ([x, y, z], optionally CRS-tagged)
+    from km to m. z is always model-local and is always converted; x/y are
+    converted only under an implicit/explicit "model" CRS -- ("utm") /
+    ("latlon") x/y are absolute and left unchanged.
+    """
+    tagged = (isinstance(raw, (list, tuple)) and len(raw) == 2
+              and isinstance(raw[1], str))
+    pt, crs = (raw[0], raw[1]) if tagged else (raw, "model")
+    pt = list(pt)
+    if crs == "model":
+        pt = [pt[0] * 1000.0, pt[1] * 1000.0, pt[2] * 1000.0]
+    else:
+        pt = [pt[0], pt[1], pt[2] * 1000.0]
+    return (pt, crs) if tagged else pt
+
+
+def _km_to_m_slice(spec: dict) -> dict:
+    """Return a copy of one PLOT_SLICES entry with lengths converted km → m."""
+    s = dict(spec)
+    if "z0" in s:
+        s["z0"] = _km_to_m(s["z0"])
+    if "x0" in s:
+        s["x0"] = _km_to_m_pos(s["x0"])
+    if "y0" in s:
+        s["y0"] = _km_to_m_pos(s["y0"])
+    if "point" in s:
+        s["point"] = _km_to_m_point(s["point"])
+    for _k in ("xlim", "ylim", "zlim"):
+        if _k in s:
+            s[_k] = _km_to_m_lim(s[_k])
+    return s
+
+
+PLOT_SLICES = [_km_to_m_slice(_s) for _s in PLOT_SLICES]
+
+PLOT_XLIM = _km_to_m_lim(PLOT_XLIM)
+PLOT_YLIM = _km_to_m_lim(PLOT_YLIM)
+PLOT_ZLIM = _km_to_m_lim(PLOT_ZLIM)
+
+PROJECTION_DIST = _km_to_m(PROJECTION_DIST)
+
+_converted_markers = []
+for _mk in MAP_MARKERS:
+    _mk = dict(_mk)
+    if "pos" in _mk:
+        _mk["pos"] = _km_to_m_pos(_mk["pos"])
+    _converted_markers.append(_mk)
+MAP_MARKERS = _converted_markers
+
+_converted_boreholes = []
+for _bh in BOREHOLE_SITES:
+    _bh = dict(_bh)
+    if "x" in _bh:
+        _bh["x"] = _km_to_m_pos(_bh["x"])
+    if "y" in _bh:
+        _bh["y"] = _km_to_m_pos(_bh["y"])
+    for _k in ("z_top", "z_bot", "dz"):
+        if _k in _bh:
+            _bh[_k] = _km_to_m(_bh[_k])
+    _converted_boreholes.append(_bh)
+BOREHOLE_SITES = _converted_boreholes
 
 
 # ===========================================================================
@@ -555,6 +758,8 @@ def _plot_member_slice(
     site_xys: list,
     obs_coords_only: bool,
     figure_title: str,
+    cmap: str,
+    clim: list | None,
     nrms_annotation: dict | None = None,
     pdf_catalog: "PdfPages | None" = None,
 ) -> None:
@@ -573,6 +778,14 @@ def _plot_member_slice(
         savefig() call per format — plot_model_slices doesn't expose a
         way to re-save an already-built figure under a second
         extension, so it is rebuilt fresh for each format.
+    cmap : str
+        Matplotlib colormap name for this call — pass PLOT_CMAP_ITER0
+        or PLOT_CMAP_BEST from the caller so the perturbed-prior and
+        best-fit plots can use distinct colormaps.
+    clim : list or None
+        Colour limits [log10(ρ_min), log10(ρ_max)] for this call —
+        pass PLOT_CLIM_ITER0 or PLOT_CLIM_BEST from the caller so the
+        perturbed-prior and best-fit plots can use distinct scales.
     pdf_catalog : PdfPages, optional
         If given and "pdf" is among _PLOT_FORMATS, the pdf-format
         Figure is written to this already-open PdfPages immediately
@@ -590,12 +803,12 @@ def _plot_member_slice(
 
     for _fmt in _PLOT_FORMATS:
         _out_file = f"{out_stem}.{_fmt}"
-        _fig = fviz.plot_model_slices(
+        _kwargs = dict(
             model_file          = block_file,
             mesh_file           = MESH_FILE,
             slices              = slices_resolved,
-            cmap                = PLOT_CMAP,
-            clim                = PLOT_CLIM,
+            cmap                = cmap,
+            clim                = clim,
             xlim                = PLOT_XLIM,
             ylim                = PLOT_YLIM,
             zlim                = PLOT_ZLIM,
@@ -625,12 +838,46 @@ def _plot_member_slice(
             ncols               = PLOT_NCOLS,
             nrms_annotation     = nrms_annotation,
             figure_title        = figure_title,
-            plot_file           = _out_file,
             dpi                 = PLOT_DPI,
             out                 = OUT,
         )
+
+        # matplotlib's PDF backend only tries to write images as an
+        # "Indexed" PDF colour space (backend_pdf.PdfFile._writeImg,
+        # gated on the pdf.compression rcParam) when pdf.compression is
+        # truthy. That indexed-colour path is what triggers the
+        # np.searchsorted IndexError below (composited raster with few
+        # distinct colours; an anti-aliased pixel not in the
+        # pre-counted palette maps past the end of the palette array —
+        # data-/render-dependent, not a bug in plot_model_slices or in
+        # this script). Disabling compression for just this savefig()
+        # call forces the always-safe plain-RGB branch instead, at the
+        # cost of a somewhat larger pdf file. Scoped with rc_context so
+        # it doesn't affect global matplotlib state or non-pdf formats.
+        _rc_overrides = {"pdf.compression": 0} if _fmt == "pdf" else {}
+
+        try:
+            with mpl.rc_context(_rc_overrides):
+                _fig = fviz.plot_model_slices(plot_file=_out_file, **_kwargs)
+        except IndexError as _err:
+            # Belt-and-braces fallback in case some other render path
+            # still hits the same class of matplotlib PDF-backend bug
+            # (see matplotlib/matplotlib#25806) despite pdf.compression
+            # being disabled above. Render PNG instead (unaffected
+            # code path) and convert that to PDF with Pillow.
+            if _fmt != "pdf":
+                raise
+            print(f"    ! pdf save hit matplotlib indexed-colour bug "
+                  f"({_err}) -- falling back to PNG->PDF for {_out_file}")
+            _png_fallback = f"{out_stem}__pdf_fallback.png"
+            _fig = fviz.plot_model_slices(plot_file=_png_fallback, **_kwargs)
+            from PIL import Image
+            Image.open(_png_fallback).convert("RGB").save(
+                _out_file, "PDF", resolution=PLOT_DPI)
+            os.remove(_png_fallback)
+
         if OUT:
-            print(f"    saved → {_out_file}")
+            print(f"    saved -> {_out_file}")
 
         if _fmt == "pdf" and pdf_catalog is not None:
             pdf_catalog.savefig(_fig)
@@ -826,7 +1073,9 @@ if PER_MEMBER_PLOT:
     print(f"Plotting {n_members} converged member(s), "
           f"2 figures each (iter0 + best), formats={_PLOT_FORMATS} …")
 
-    _use_catalog = PER_MEMBER_PDF_CATALOG and "pdf" in _PLOT_FORMATS
+    _use_catalog = PER_MEMBER_PDF_CATALOG_MODE != "none" and "pdf" in _PLOT_FORMATS
+    _catalog_iter0 = _use_catalog and PER_MEMBER_PDF_CATALOG_MODE in ("iter0", "both")
+    _catalog_best  = _use_catalog and PER_MEMBER_PDF_CATALOG_MODE in ("best", "both")
     _pdf_catalog = PdfPages(PER_MEMBER_CATALOG_FILE) if _use_catalog else None
     _n_catalog_pages = 0
 
@@ -844,9 +1093,11 @@ if PER_MEMBER_PLOT:
                 site_xys        = site_xys,
                 obs_coords_only = _sites_from_obs,
                 figure_title    = f"{_label} — perturbed prior (iter0)",
-                pdf_catalog     = _pdf_catalog,
+                cmap            = PLOT_CMAP_ITER0,
+                clim            = PLOT_CLIM_ITER0,
+                pdf_catalog     = _pdf_catalog if _catalog_iter0 else None,
             )
-            if _use_catalog:
+            if _catalog_iter0:
                 _n_catalog_pages += 1
 
             print(f"  member {_label!r}: best fit (iter{_m['numit']}, "
@@ -858,10 +1109,12 @@ if PER_MEMBER_PLOT:
                 site_xys        = site_xys,
                 obs_coords_only = _sites_from_obs,
                 figure_title    = f"{_label} — best fit (iter{_m['numit']})",
+                cmap            = PLOT_CMAP_BEST,
+                clim            = PLOT_CLIM_BEST,
                 nrms_annotation = dict(nrms=_m["nrms"]),
-                pdf_catalog     = _pdf_catalog,
+                pdf_catalog     = _pdf_catalog if _catalog_best else None,
             )
-            if _use_catalog:
+            if _catalog_best:
                 _n_catalog_pages += 1
 
             # Matplotlib Figure/Axes hold reference cycles, so refcounting
@@ -878,9 +1131,9 @@ if PER_MEMBER_PLOT:
 
     print("\nPer-member plots done.")
     if _use_catalog:
-        print(f"  pdf catalog: {_n_catalog_pages} page(s) → "
-              f"{PER_MEMBER_CATALOG_FILE}")
-    elif PER_MEMBER_PDF_CATALOG:
+        print(f"  pdf catalog ({PER_MEMBER_PDF_CATALOG_MODE}): "
+              f"{_n_catalog_pages} page(s) → {PER_MEMBER_CATALOG_FILE}")
+    elif PER_MEMBER_PDF_CATALOG_MODE != "none":
         print("  pdf catalog: \"pdf\" not in PLOT_FORMAT — skipped.")
 
 # --- (6b) Joint multi-row ensemble figure (optional extra) ----------------
@@ -906,8 +1159,8 @@ if PLOT_JOINT:
         slices             = slices_resolved,
         labels             = ENS_LABELS_resolved,
         stat_rows          = ENS_STAT_ROWS,
-        cmap               = PLOT_CMAP,
-        clim               = PLOT_CLIM,
+        cmap               = PLOT_CMAP_BEST,
+        clim               = PLOT_CLIM_BEST,
         xlim               = PLOT_XLIM,
         ylim               = PLOT_YLIM,
         zlim               = PLOT_ZLIM,

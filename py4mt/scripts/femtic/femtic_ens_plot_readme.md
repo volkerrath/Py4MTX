@@ -16,19 +16,24 @@ sub-directories and filtering on `femtic.cnv` / `NRMS_MAX` — and produces:
    `WORK_DIR/<label>/`, using the same slice geometry and `PLOT_*`
    parameters as `femtic_mod_plot.py`:
    - `iter0.<ext>` — the perturbed prior model
-     (`resistivity_block_iter0.dat`)
+     (`resistivity_block_iter0.dat`), colormap `PLOT_CMAP_ITER0`,
+     colour scale `PLOT_CLIM_ITER0`
    - `best.<ext>` — the best-fit model
      (`resistivity_block_iter{numit}.dat`, `numit` from `femtic.cnv`,
-     with an `nRMS = ...` annotation on the figure)
+     with an `nRMS = ...` annotation on the figure), colormap
+     `PLOT_CMAP_BEST`, colour scale `PLOT_CLIM_BEST`
 
    One file pair per entry in `PLOT_FORMAT` (e.g. `["pdf", "jpg"]`
    writes both a vector and a raster version — the figure is rebuilt
-   once per format). When `"pdf"` is among the formats and
-   `PER_MEMBER_PDF_CATALOG=True` (default), every per-member pdf figure
-   is *also* collected, in plot order, into one multi-page catalog PDF
-   via `matplotlib.backends.backend_pdf.PdfPages`, written to
-   `PER_MEMBER_CATALOG_FILE`. This is in addition to, not instead of,
-   the individual per-member files.
+   once per format). When `"pdf"` is among the formats,
+   `PER_MEMBER_PDF_CATALOG_MODE` selects which per-member pdf pages
+   are *also* collected, in plot order, into one multi-page catalog
+   PDF via `matplotlib.backends.backend_pdf.PdfPages`, written to
+   `PER_MEMBER_CATALOG_FILE` — `"none"` (nothing), `"iter0"` (prior
+   pages only), `"best"` (best-fit pages only), or `"both"` (default;
+   both, interlaced per member: iter0_A, best_A, iter0_B, best_B, ...).
+   This is in addition to, not instead of, the individual per-member
+   files.
 
 2. **[optional, `PLOT_JOINT=True`]** The previous joint multi-row figure —
    one row per member's best-fit model — via `fviz.plot_ensemble_slices()`,
@@ -59,7 +64,7 @@ ENSEMBLE_DIR + ENSEMBLE_NAME + NRMS_MAX + FEMTIC
    model_list: [{label, dir, numit, nrms, iter0_file, best_file}, ...]
    (converged members only — same set femtic_ens_post.py includes)
         |
-        v  fem.resolve_slice_positions(PLOT_SLICES)
+        v  km → m unit conversion, then fem.resolve_slice_positions(PLOT_SLICES)
    slice positions in model-local metres
         |
         v  fem.read_site_dat(SITE_DAT)  [or fem.read_site_position fallback]
@@ -67,7 +72,7 @@ ENSEMBLE_DIR + ENSEMBLE_NAME + NRMS_MAX + FEMTIC
         |
         v  fviz.plot_model_slices(...)  × 2 per member × len(PLOT_FORMAT) [PER_MEMBER_PLOT]
 WORK_DIR/<label>/iter0.<ext>  +  WORK_DIR/<label>/best.<ext>   (per converged member)
-        |                                    ["pdf" in PLOT_FORMAT, PER_MEMBER_PDF_CATALOG]
+        |                                    ["pdf" in PLOT_FORMAT, PER_MEMBER_PDF_CATALOG_MODE != "none"]
         v  PdfPages(PER_MEMBER_CATALOG_FILE)
 one multi-page pdf catalog, all member pdf figures in plot order
         |
@@ -104,7 +109,11 @@ borehole PDF / interactive window
 |---|---|
 | `PER_MEMBER_PLOT` | If `True` (default), plot iter0 + best-fit figures for every converged member |
 | `PLOT_FORMAT` | Output format(s), e.g. `"pdf"` or `["pdf", "jpg"]` — normalised to `_PLOT_FORMATS` |
-| `PER_MEMBER_PDF_CATALOG` | If `True` (default) and `"pdf"` is among `_PLOT_FORMATS`, combine every per-member pdf figure into one multi-page catalog |
+| `PLOT_CMAP_ITER0` | Matplotlib colormap name for iter0 (prior) plots |
+| `PLOT_CMAP_BEST` | Matplotlib colormap name for best-fit plots (and the joint figure, `PLOT_JOINT`) |
+| `PLOT_CLIM_ITER0` | Colour limits `[log10(ρ_min), log10(ρ_max)]` for iter0 (prior) plots; `None` = auto |
+| `PLOT_CLIM_BEST` | Colour limits for best-fit plots (and the joint figure, `PLOT_JOINT`); `None` = auto |
+| `PER_MEMBER_PDF_CATALOG_MODE` | `"none"` / `"iter0"` / `"best"` / `"both"` (default) — which per-member pdf pages, if `"pdf"` is among `_PLOT_FORMATS`, go into the catalog; `"both"` interlaces per member (iter0_A, best_A, iter0_B, best_B, ...) |
 | `PER_MEMBER_CATALOG_FILE` | Output path for the multi-page pdf catalog |
 
 ### Joint ensemble figure (optional extra)
@@ -134,8 +143,8 @@ borehole PDF / interactive window
 ### Slice geometry
 | Variable | Description |
 |---|---|
-| `PLOT_SLICES` | List of slice dicts; `kind` = `"map"` / `"ns"` / `"ew"` / `"plane"` |
-| `PLOT_XLIM/YLIM/ZLIM` | Axis limits in model-local metres |
+| `PLOT_SLICES` | List of slice dicts; `kind` = `"map"` / `"ns"` / `"ew"` / `"plane"`; all model-local lengths in **km** |
+| `PLOT_XLIM/YLIM/ZLIM` | Axis limits in model-local **km** |
 
 ### Site overlay
 | Variable | Description |
@@ -143,10 +152,31 @@ borehole PDF / interactive window
 | `SITE_NAMES` | Site filter; `None` = all |
 | `PLOT_SITES_MAPS` | Show sites on map panels |
 | `PLOT_SITES_SLICES` | Show sites on curtain panels |
-| `PROJECTION_DIST` | Max distance (m) from slice plane for curtain projection |
+| `PROJECTION_DIST` | Max distance (**km**) from slice plane for curtain projection |
 | `SITE_MARKER` | Marker style dict for map panels |
 | `SITE_MARKER_SLICES` | Marker style for curtain panels (`None` → same as `SITE_MARKER`) |
-| `MAP_MARKERS` | Additional map markers (known features, etc.) |
+| `MAP_MARKERS` | Additional map markers (known features, etc.); `pos` in model-local **km** or CRS-tagged |
+
+---
+
+## Units
+
+All model-local length parameters the user sets — `PLOT_SLICES` (`z0`,
+plain `x0`/`y0`, `point`), `PLOT_XLIM`/`PLOT_YLIM`/`PLOT_ZLIM`,
+`PROJECTION_DIST`, `MAP_MARKERS` positions, and `BOREHOLE_SITES`
+(`x`/`y`/`z_top`/`z_bot`/`dz`) — are entered in **kilometres**. A unit
+conversion block, run once immediately after the configuration section,
+converts everything to model-local metres before `fem.resolve_slice_positions()`
+or `fviz.plot_model_slices()`/`plot_ensemble_slices()` see it; those
+functions and `femtic_ens_post.py`'s own convention are unaffected and
+still work in metres internally.
+
+CRS-tagged position specs — `(value, "utm")` in absolute UTM metres, or
+`(value, "latlon")` in decimal degrees — are absolute coordinates, not
+model-local lengths, and are **not** affected by the km conversion. For a
+`"plane"` slice's `point`, this applies per-axis: `z` is always
+model-local and always converted from km, while `x`/`y` are converted
+only under an implicit or explicit `"model"` CRS.
 
 ---
 
@@ -155,16 +185,16 @@ borehole PDF / interactive window
 Each entry is a dict with `kind` and the matching position key:
 
 ```python
-dict(kind="map",   z0=5000.0)                        # horizontal map at 5 km depth
+dict(kind="map",   z0=5.0)                           # horizontal map at 5 km depth
 dict(kind="ew",    y0=(-16.35, "latlon"))             # E-W section at lat −16.35°
-dict(kind="ns",    x0=(300000., "utm"))               # N-S section at UTM easting
-dict(kind="plane", point=[0,0,5000], strike=45, dip=60)
+dict(kind="ns",    x0=(300000., "utm"))               # N-S section at UTM easting (m, absolute)
+dict(kind="plane", point=[0, 0, 5.0], strike=45, dip=60)   # x,y,z in model-local km
 ```
 
 Position values accept:
-- plain `float` → model-local metres
-- `(value, "utm")` → UTM metres (easting for `x0`, northing for `y0`)
-- `(value, "latlon")` → longitude for `x0`, latitude for `y0`
+- plain `float` → model-local **km**
+- `(value, "utm")` → UTM metres, absolute (easting for `x0`, northing for `y0`)
+- `(value, "latlon")` → decimal degrees, absolute (longitude for `x0`, latitude for `y0`)
 
 ---
 
@@ -217,3 +247,39 @@ Position values accept:
   instead of accumulating every member's `Figure` in a list and writing
   them all at the end — bounds peak memory to roughly one member's
   figures rather than the whole ensemble's.
+- **2026-08-20 (Claude Sonnet 5, Anthropic):** All user-facing length
+  parameters — `PLOT_SLICES` (`z0`, plain `x0`/`y0`, `point`),
+  `PLOT_XLIM`/`PLOT_YLIM`/`PLOT_ZLIM`, `PROJECTION_DIST`, `MAP_MARKERS`
+  positions, `BOREHOLE_SITES` (`x`/`y`/`z_top`/`z_bot`/`dz`) — are now
+  entered in **kilometres** instead of metres. A new unit-conversion
+  block, run once right after the config section, converts everything
+  to model-local metres before `fem.resolve_slice_positions()` or
+  `fviz.plot_model_slices()`/`plot_ensemble_slices()` see it;
+  `femtic.py`/`femtic_viz.py` and `femtic_ens_post.py`'s own convention
+  are unchanged (still metres internally). CRS-tagged specs — `(value,
+  "utm")` / `(value, "latlon")` — are absolute coordinates and are left
+  unchanged by the conversion. This also fixes a pre-existing bug: the
+  active `PLOT_SLICES` block had `z0` values and `PLOT_XLIM/YLIM/ZLIM`
+  commented as `# km` but were actually consumed as metres, so map
+  slices were plotted at 0–25 **m** depth instead of 0–25 km, and the
+  map panels' extent was clipped to a ±25 m box instead of ±25 km —
+  producing flat, near-uniform panels zoomed in on a single point
+  rather than the full model domain. `PROJECTION_DIST` and the
+  `BOREHOLE_SITES` example were also updated from metres to km.
+- **2026-08-20 (Claude Sonnet 5, Anthropic):** (1) `PER_MEMBER_PDF_CATALOG`
+  (bool) replaced by `PER_MEMBER_PDF_CATALOG_MODE` (`"none"` / `"iter0"`
+  / `"best"` / `"both"`, default `"both"`), selecting which per-member
+  pdf pages go into the catalog — none, prior-only, best-only, or both
+  interlaced per member in plot order (iter0_A, best_A, iter0_B, best_B,
+  ...); `"both"` reproduces the previous `PER_MEMBER_PDF_CATALOG=True`
+  behaviour. Validated against an allowed-value list at load time.
+  (2) `PLOT_CLIM` split into `PLOT_CLIM_ITER0` and `PLOT_CLIM_BEST` so
+  the perturbed-prior and best-fit model plots can use distinct
+  log₁₀(ρ) colour scales, since the prior's resistivity range often
+  differs substantially from the inverted result. The joint ensemble
+  figure (`PLOT_JOINT`), which only plots best-fit models, now uses
+  `PLOT_CLIM_BEST`.
+  (3) `PLOT_CMAP` likewise split into `PLOT_CMAP_ITER0` and
+  `PLOT_CMAP_BEST`, mirroring (2), so the colormap itself — not just
+  the colour limits — can differ between the prior and best-fit plots.
+  The joint ensemble figure uses `PLOT_CMAP_BEST`.
