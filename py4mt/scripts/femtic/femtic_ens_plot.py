@@ -213,7 +213,8 @@ print(titstrng + "\n\n")
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-WORK_DIR = r"/media/vrath/LargeBack/Ensembles/misti2026/gst/"
+#WORK_DIR = r"/media/vrath/LargeBack/Ensembles/misti2026/gst/"
+WORK_DIR = r"/home/vrath/FEMTIC_work/Ensembles/misti_gst/"
 #: Mesh file — always required for plotting.
 MESH_FILE = WORK_DIR + "/templates/mesh.dat"
 
@@ -289,10 +290,10 @@ _PLOT_FORMATS = (
 #:   "best"  — catalog contains only the best-fit pages
 #:   "both"  — catalog contains both, interlaced per member in plot
 #:             order (iter0_A, best_A, iter0_B, best_B, ...)
-PER_MEMBER_PDF_CATALOG_MODE = "both"   # "none" | "iter0" | "best" | "both"
+PER_MEMBER_PDF_CATALOG_MODE = "best"   # "none" | "iter0" | "best" | "both"
 
 #: Output path for the multi-page pdf catalog.
-PER_MEMBER_CATALOG_FILE = WORK_DIR + ENSEMBLE_NAME+"_catalog.pdf"
+PER_MEMBER_CATALOG_FILE = WORK_DIR + ENSEMBLE_NAME+PER_MEMBER_PDF_CATALOG_MODE+"_catalog.pdf"
 
 _VALID_CATALOG_MODES = ("none", "iter0", "best", "both")
 if PER_MEMBER_PDF_CATALOG_MODE not in _VALID_CATALOG_MODES:
@@ -370,7 +371,7 @@ HORIZ_KM = True
 PLOT_EQUAL_ASPECT = True
 
 #: Panel height in cm.  Width auto-computed from axis limits when PLOT_EQUAL_ASPECT.
-PLOT_PANEL_HEIGHT = 16.0   # cm
+PLOT_PANEL_HEIGHT = 18.0   # cm
 
 #: Grid layout.  None → 1 row / len(PLOT_SLICES) columns.
 PLOT_NROWS = 4

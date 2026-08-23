@@ -396,7 +396,8 @@ FEMTIC="5.0" #"4.3"
 # ---------------------------------------------------------------------------
 
 # ENSEMBLE_DIR = r"/home/vrath/FEMTIC_work/Ensembles/misti_gst/ensemble/"
-ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/misti2026/gst/"
+#ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/misti2026/gst/"
+ENSEMBLE_DIR = r"/home/vrath/FEMTIC_work/Ensembles/misti_gst/"
 ENSEMBLE_NAME = "misti_gst_suzuki_rnd"
 
 #: Prefix used for .npz output keys and default file/figure names.
