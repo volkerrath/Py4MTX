@@ -117,6 +117,25 @@ Provenance
                 or in plot_model_slices -- generated/reviewed by
                 Claude, should be checked before relying on it in
                 production.
+    2026-08-23  Claude Sonnet 5 (Anthropic)
+                Fixed the fallout of the 2026-08-20 indexed-colour
+                workaround above: pdf.compression=0 was being applied
+                pre-emptively to every per-member pdf save, making
+                those files several times larger than necessary, and
+                -- because the catalog page for the same figure was
+                written by a separate PdfPages.savefig() call outside
+                that rc_context -- the catalog page kept the default
+                (compressed) size while the per-member file did not,
+                which is why per-member files were much larger than
+                the catalog. pdf.compression now stays at its default
+                for both the per-member save and the catalog append;
+                the compression-disabled retry (and, if that also
+                fails, the PNG->PDF fallback) is only triggered
+                reactively on an actual IndexError, for whichever
+                specific save hit it. The catalog-append savefig()
+                call is now guarded the same way, since it is an
+                independent write of the same figure and can in
+                principle hit the same bug on its own.
     2026-08-20  Claude Sonnet 5 (Anthropic)
                 All user-facing length parameters in the Configuration
                 section (PLOT_SLICES z0/x0/y0/point, PLOT_XLIM/YLIM/ZLIM,
@@ -846,42 +865,81 @@ def _plot_member_slice(
         # matplotlib's PDF backend only tries to write images as an
         # "Indexed" PDF colour space (backend_pdf.PdfFile._writeImg,
         # gated on the pdf.compression rcParam) when pdf.compression is
-        # truthy. That indexed-colour path is what triggers the
-        # np.searchsorted IndexError below (composited raster with few
-        # distinct colours; an anti-aliased pixel not in the
-        # pre-counted palette maps past the end of the palette array —
-        # data-/render-dependent, not a bug in plot_model_slices or in
-        # this script). Disabling compression for just this savefig()
-        # call forces the always-safe plain-RGB branch instead, at the
-        # cost of a somewhat larger pdf file. Scoped with rc_context so
-        # it doesn't affect global matplotlib state or non-pdf formats.
-        _rc_overrides = {"pdf.compression": 0} if _fmt == "pdf" else {}
-
+        # truthy. That indexed-colour path is what can trigger a
+        # np.searchsorted IndexError (composited raster with an
+        # anti-aliased pixel not in the pre-counted palette maps past
+        # the end of the palette array — data-/render-dependent, not a
+        # bug in plot_model_slices or in this script; same class of
+        # issue as matplotlib/matplotlib#25806).
+        #
+        # 2026-08-23: previously pdf.compression was disabled
+        # pre-emptively for every pdf save, which forced the always-
+        # safe plain-RGB branch but made every per-member pdf several
+        # times larger than it needed to be -- and, since the catalog
+        # page for the same figure was written by a second, separate
+        # PdfPages.savefig() call *outside* that rc_context, the two
+        # copies of the same figure ended up with different
+        # compression settings (catalog: default/compressed,
+        # per-member file: forced-uncompressed), which is why the
+        # per-member files were much larger than the catalog. Fixed:
+        # compression now stays at its default (compressed) for both
+        # the per-member file and the catalog page, and the
+        # uncompressed / composite-disabled workaround is only applied
+        # reactively, to whichever specific save actually hits the
+        # IndexError -- so the fix's file-size cost is paid only by
+        # the (rare) affected figure, not by the whole ensemble.
         try:
-            with mpl.rc_context(_rc_overrides):
-                _fig = fviz.plot_model_slices(plot_file=_out_file, **_kwargs)
+            _fig = fviz.plot_model_slices(plot_file=_out_file, **_kwargs)
         except IndexError as _err:
-            # Belt-and-braces fallback in case some other render path
-            # still hits the same class of matplotlib PDF-backend bug
-            # (see matplotlib/matplotlib#25806) despite pdf.compression
-            # being disabled above. Render PNG instead (unaffected
-            # code path) and convert that to PDF with Pillow.
             if _fmt != "pdf":
                 raise
             print(f"    ! pdf save hit matplotlib indexed-colour bug "
-                  f"({_err}) -- falling back to PNG->PDF for {_out_file}")
-            _png_fallback = f"{out_stem}__pdf_fallback.png"
-            _fig = fviz.plot_model_slices(plot_file=_png_fallback, **_kwargs)
-            from PIL import Image
-            Image.open(_png_fallback).convert("RGB").save(
-                _out_file, "PDF", resolution=PLOT_DPI)
-            os.remove(_png_fallback)
+                  f"({_err}) -- retrying {_out_file} with "
+                  f"pdf.compression disabled")
+            try:
+                with mpl.rc_context({"pdf.compression": 0}):
+                    _fig = fviz.plot_model_slices(
+                        plot_file=_out_file, **_kwargs)
+            except IndexError as _err2:
+                # Belt-and-braces fallback: render PNG (unaffected
+                # code path) and convert that to PDF with Pillow.
+                print(f"    ! retry also failed ({_err2}) -- falling "
+                      f"back to PNG->PDF for {_out_file}")
+                _png_fallback = f"{out_stem}__pdf_fallback.png"
+                _fig = fviz.plot_model_slices(
+                    plot_file=_png_fallback, **_kwargs)
+                from PIL import Image
+                Image.open(_png_fallback).convert("RGB").save(
+                    _out_file, "PDF", resolution=PLOT_DPI)
+                os.remove(_png_fallback)
 
         if OUT:
             print(f"    saved -> {_out_file}")
 
         if _fmt == "pdf" and pdf_catalog is not None:
-            pdf_catalog.savefig(_fig)
+            # This is a second, independent backend_pdf write of the
+            # same Figure and can in principle hit the same
+            # IndexError even when the primary save above succeeded
+            # (e.g. the primary save succeeded on retry with
+            # compression disabled, but this catalog append runs with
+            # default settings again). Guard it the same way rather
+            # than letting the whole run crash on a catalog-only
+            # failure.
+            try:
+                pdf_catalog.savefig(_fig)
+            except IndexError as _err:
+                print(f"    ! catalog page for {_out_file} hit "
+                      f"matplotlib indexed-colour bug ({_err}) -- "
+                      f"retrying with pdf.compression disabled")
+                try:
+                    with mpl.rc_context({"pdf.compression": 0}):
+                        pdf_catalog.savefig(_fig)
+                except IndexError as _err2:
+                    print(f"    ! catalog page for {_out_file} could "
+                          f"not be written even with compression "
+                          f"disabled ({_err2}) -- skipping this page "
+                          f"in the catalog (per-member file above is "
+                          f"unaffected)")
 
         # Drop the reference immediately so the figure (axes, colorbars,
         # gridded image data) can be garbage-collected before the next

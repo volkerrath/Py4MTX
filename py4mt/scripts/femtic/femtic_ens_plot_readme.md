@@ -283,3 +283,17 @@ Position values accept:
   `PLOT_CMAP_BEST`, mirroring (2), so the colormap itself — not just
   the colour limits — can differ between the prior and best-fit plots.
   The joint ensemble figure uses `PLOT_CMAP_BEST`.
+- **2026-08-23 (Claude Sonnet 5, Anthropic):** Fixed per-member pdf
+  files being much larger than the catalog pdf they feed into. The
+  matplotlib indexed-colour PDF workaround added on 2026-08-20
+  (`pdf.compression=0`) was being applied pre-emptively to every
+  per-member save, while the catalog page for the same figure was
+  written by a second, independent `PdfPages.savefig()` call outside
+  that override — so the catalog kept the default compressed size and
+  the per-member file did not. `pdf.compression` now stays at its
+  default (compressed) for both writes; disabling it is only tried
+  reactively, on an actual `IndexError` from the specific save that
+  hit it, so only an affected figure pays the larger-file cost. The
+  catalog-append call is now guarded the same way, since it renders
+  the figure independently and can in principle hit the same bug even
+  when the per-member save already succeeded.
