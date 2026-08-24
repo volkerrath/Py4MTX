@@ -57,10 +57,11 @@ print(titstrng + "\n\n")
 # =============================================================================
 #  Configuration
 # =============================================================================
-WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_10_LC/"
-PLOT_NAME = WORK_DIR + "Fig04_L-curve"
+# WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_10_LC/"
+WORK_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/lcurve/"
+PLOT_NAME = WORK_DIR + "Annecy_L-curve"
 PLOT_WHAT = "nrms"  # 'nrms' or 'misfit'
-PLOT_TITLE = r"Ubinas | ini = 10 $\Omega \cdot m$ " #"| distcorr"
+PLOT_TITLE = r"Annecy | ini = 100 $\Omega \cdot m$ " #"| distcorr"
 DISTORTION = None   # None → auto-detect from cnv column count (10 → distortion, 8 → no distortion)
 
 FONTSIZE = 10
@@ -70,9 +71,9 @@ PLOT_LOG_X = False
 PLOT_LOG_Y = False
 
 #: x-axis limits [min, max]; set to None for matplotlib auto-scaling.
-PLOT_XLIM = [0., 80000.] # None   # e.g. [0.0, 1e6]
+PLOT_XLIM = [0., 40000.] # None   # e.g. [0.0, 1e6]
 #: y-axis limits [min, max]; set to None for matplotlib auto-scaling.
-PLOT_YLIM = [0.5, 6.] # None   # e.g. [0.9, 5.0]
+PLOT_YLIM = [0.5, 1.5] # None   # e.g. [0.9, 5.0]
 
 #: Optional scaling factor for roughness (x-axis data divided by this value).
 #: Shown as "x10^n" appended to the axis label. Set to None or 1 to disable.
@@ -83,7 +84,7 @@ SCALE_ROUGH = 1.e3   # e.g. 1e3
 SCALE_MISFIT = None   # e.g. 1e4
 
 
-SEARCH_STRNG = "*L2"
+SEARCH_STRNG = "ann_reg*"
 dir_list = utl.get_filelist(
     searchstr=[SEARCH_STRNG], searchpath=WORK_DIR,
     sortedlist=True, fullpath=True,
@@ -100,6 +101,10 @@ for directory in dir_list:
     with open(directory + "/femtic.cnv") as cnv:
         content = cnv.readlines()
 
+    if np.shape(content)==(1,):
+        print(directory, "does not contain a valid .cnv file")
+        continue
+    
     line = content[-1].split()
     print(line)
     # Auto-detect distortion from column count; override with DISTORTION if set.

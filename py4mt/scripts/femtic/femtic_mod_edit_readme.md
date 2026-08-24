@@ -70,11 +70,20 @@ slice figure saved / shown
 | `OPERATION` | One of `"fill"`, `"smooth"`, `"perturb"`, `"clip"`, `"null"` |
 | `OP_FILL_VALUE` | Target log₁₀(ρ) for `"fill"` |
 | `OP_SMOOTH_MODE` | Smoothing kernel: `"physical"` (global-σ Gaussian, original) \| `"knn_uniform"` (flat K-NN average) \| `"knn_gauss"` (per-region Gaussian) |
-| `OP_SMOOTH_SIGMA` | Global Gaussian σ in metres — `"physical"` mode only |
+| `OP_SMOOTH_SIGMA` | Global Gaussian σ **in km** — `"physical"` mode only |
 | `OP_SMOOTH_K` | Number of nearest neighbours (all modes) |
 | `OP_SMOOTH_KNN_SIGMA_FRAC` | Per-region σ fraction for `"knn_gauss"`: σ_i = frac × d_{i,K} |
 | `OP_PERTURB_STD` | Noise standard deviation (log₁₀ Ω·m) for `"perturb"` |
 | `OP_CLIP_MIN/MAX` | log₁₀(ρ) bounds for `"clip"` |
+
+> **Units note:** all length-valued config inputs — `OP_SMOOTH_SIGMA`,
+> `OP_ELLIPSOID_BODIES`/`OP_BRICK_BODIES` (`center`, `axes`,
+> `boundary_smooth.sigma`), `PLOT_SLICES` (`z0`, `x0`, `y0`, `point`,
+> `xlim`/`ylim`/`zlim`), `PLOT_XLIM`/`PLOT_YLIM`/`PLOT_ZLIM`, and
+> `PROJECTION_DIST` — are entered **in km**. A single conversion block
+> right after the config section multiplies them by 1000 once; all
+> downstream code and the geometry helpers in `femtic.py` still operate
+> in metres unchanged.
 
 ### Origin estimation
 | Variable | Description |
@@ -86,12 +95,14 @@ slice figure saved / shown
 ### Plot
 | Variable | Description |
 |---|---|
-| `PLOT` | `True` to produce a slice figure after editing |
-| `PLOT_FILE` | Output path; `None` = interactive |
+| `PLOT_INPUT` | `True` to produce a slice figure of `MODEL_IN` (pre-operation) |
+| `PLOT_OUTPUT` | `True` to produce a slice figure of `MODEL_OUT` (post-operation); forced `False` for `OPERATION="null"` since no output file is written |
+| `PLOT_FILE` | Output-model figure path; `None` = interactive |
+| `PLOT_FILE_INPUT` | Input-model figure path; `None` = auto-derive from `PLOT_FILE` (`_input` suffix) |
 | `PLOT_CMAP` | Colormap (default `"turbo_r"`) |
 | `PLOT_CLIM` | `[vmin, vmax]` in log₁₀(Ω·m) |
-| `PLOT_SLICES` | Slice dicts — same format as `femtic_mod_plot.py` |
-| `PLOT_XLIM/YLIM/ZLIM` | Axis limits in model-local metres |
+| `PLOT_SLICES` | Slice dicts — same format as `femtic_mod_plot.py`, lengths **in km** |
+| `PLOT_XLIM/YLIM/ZLIM` | Axis limits in model-local **km** |
 | `DEPTH_KM` | `True` → depth axis in km |
 | `HORIZ_KM` | `True` → horizontal axes in km |
 | `PLOT_EQUAL_ASPECT` | Equal aspect ratio |
@@ -105,7 +116,7 @@ slice figure saved / shown
 | `SITE_NAMES` | Filter; `None` = all |
 | `PLOT_SITES_MAPS` | Show sites on map panels |
 | `PLOT_SITES_SLICES` | Show sites on curtain panels |
-| `PROJECTION_DIST` | Max distance (m) for curtain projection |
+| `PROJECTION_DIST` | Max distance (km) for curtain projection |
 | `SITE_MARKER` | Marker style dict |
 | `SITE_MARKER_SLICES` | Marker style for curtains |
 | `MAP_MARKERS` | Additional map markers |
@@ -164,3 +175,28 @@ The geometry primitives used by `"smooth"`, `"wmean"`, `"ellipsoid"`, and
 
 - Added `femtic_mod_edit_summary.md` output at end of run: writes
   user-set (UPPERCASE) parameters, script path, and run date/time.
+
+## 2026-08-23 (input/output plot)
+
+- Replaced the single `PLOT` flag with independent `PLOT_INPUT` /
+  `PLOT_OUTPUT` switches, so the pre-operation model (`MODEL_IN`) and the
+  post-operation model (`MODEL_OUT`) can be plotted separately, together,
+  or not at all — useful for before/after comparison.
+- Added `PLOT_FILE_INPUT` (auto-derived from `PLOT_FILE` with an `_input`
+  suffix when left `None`).
+- `PLOT_OUTPUT` is forced to `False` for `OPERATION="null"`, since no
+  output file is written in that case; use `PLOT_INPUT` instead.
+- UTM origin / site-position setup is now computed once and reused for
+  both plots.
+
+## 2026-08-23 (km-valued length inputs)
+
+- Switched length-valued config inputs from metres to km for easier
+  hand-editing: `OP_SMOOTH_SIGMA`; `OP_ELLIPSOID_BODIES`/
+  `OP_BRICK_BODIES` (`center`, `axes`, `boundary_smooth.sigma`);
+  `PLOT_SLICES` (`z0`, `x0`, `y0`, `point`, `xlim`/`ylim`/`zlim`);
+  `PLOT_XLIM`/`PLOT_YLIM`/`PLOT_ZLIM`; `PROJECTION_DIST`.
+- A single conversion block immediately after the config section
+  multiplies these by 1000 once; everything downstream (geometry
+  helpers in `femtic.py`, `fviz.plot_model_slices`) still operates in
+  metres, unchanged.

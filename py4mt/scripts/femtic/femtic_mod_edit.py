@@ -42,7 +42,7 @@ Available operations (OPERATION key)
     "brick"         Same as "ellipsoid" but with a rotated rectangular prism
                     (box) geometry.  Bodies are defined by OP_BRICK_BODIES;
                     each entry has the same keys as an ellipsoid body but
-                    axes = [a, b, c] are half-extents (metres), not semi-axes.
+                    axes = [a, b, c] are half-extents (km), not semi-axes.
                     The rotation uses the same ZYX convention.
                     Mask computed via fem.brick_mask().
     "null"          No-op: the input model is passed through unchanged and
@@ -57,15 +57,22 @@ New operations are easy to add — extend the ``_OPERATIONS`` dict below.
 
 Plotting
 --------
-    When PLOT = True the script calls ``plot_model_slices`` after writing,
-    which produces a single Matplotlib figure with a configurable list of
-    axis-parallel slices:
+    PLOT_INPUT and PLOT_OUTPUT independently control whether the *input*
+    model (MODEL_IN, pre-operation) and/or the *output* model (MODEL_OUT,
+    post-operation) are plotted via ``plot_model_slices``.  Either, both,
+    or neither may be requested; each produces its own Matplotlib figure
+    with a configurable list of axis-parallel slices:
       - horizontal map slices  (z = const)
       - NS curtain slices      (y = const, displayed as x vs z)
       - EW curtain slices      (x = const, displayed as y vs z)
     Air is transparent (NaN → no colour); ocean/lake cells are rendered in
     a flat colour (OCEAN_COLOR).  Axis limits, colormap, and colour range
-    are controlled by PLOT_* parameters.
+    are shared between both plots via PLOT_* parameters.  The output-model
+    figure is saved to PLOT_FILE; the input-model figure is saved to
+    PLOT_FILE_INPUT (auto-derived from PLOT_FILE with an "_input" suffix
+    when left as None).  When OPERATION == "null" no output file is ever
+    written, so PLOT_OUTPUT is forced to False — use PLOT_INPUT to inspect
+    the unmodified model.
 
 Provenance
 ----------
@@ -130,6 +137,24 @@ Provenance
                 Added femtic_mod_edit_summary.md output at end of run:
                 writes user-set (UPPERCASE) parameters, script path, and
                 run date/time via utl.write_param_summary().
+    2026-08-23  Claude Sonnet 5 (Anthropic)
+                Replaced single PLOT flag with independent PLOT_INPUT /
+                PLOT_OUTPUT switches so the unmodified input model and the
+                edited output model can be plotted separately, together, or
+                not at all.  Added PLOT_FILE_INPUT (auto-derived from
+                PLOT_FILE with an "_input" suffix when None).  PLOT_OUTPUT
+                is forced to False for OPERATION == "null" (no output file
+                is written in that case).  UTM origin / site-position setup
+                is now computed once and reused for both plots.
+    2026-08-23  Claude Sonnet 5 (Anthropic)
+                Switched length-valued config inputs (OP_SMOOTH_SIGMA,
+                OP_ELLIPSOID_BODIES/OP_BRICK_BODIES center/axes/
+                boundary_smooth sigma, PLOT_SLICES z0/x0/y0/point/xlim/
+                ylim/zlim, PLOT_XLIM/YLIM/ZLIM, PROJECTION_DIST) from
+                metres to km for easier hand-editing.  A single conversion
+                block after the config section multiplies these by 1000
+                once, so all downstream code still operates in metres
+                unchanged.
 
 @author: vrath
 """
@@ -172,17 +197,17 @@ print(titstrng + "\n\n")
 # Paths
 # ---------------------------------------------------------------------------
 # WORK_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/misti/ensemble/templates/"
-WORK_DIR = r"/home/vrath/work/MT_Data/Ubinas/ubinas_10_LC/corr/1_L2/"
+WORK_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/templates/"
 #: Template / source resistivity block (also used as format template by
 #: insert_model to preserve header, bounds and flag columns).
 # MODEL_IN  = WORK_DIR + "resistivity_block_iter0.dat"
-MODEL_IN  =WORK_DIR + "resistivity_block_iter0.dat"
+MODEL_IN  =WORK_DIR + "resistivity_block_iter18_best.dat"
 #: Mesh file — required for "smooth" and "ellipsoid"; ignored otherwise.
 MESH_FILE = WORK_DIR + "mesh.dat"
 
 #: Output file.  Set to MODEL_IN to overwrite in-place (be careful!).
 # MODEL_OUT = WORK_DIR + "reference_i15_smooth3000.dat"
-MODEL_OUT = WORK_DIR + "resistivity_block_iter0_10.dat"
+MODEL_OUT = WORK_DIR + "resistivity_block_iter0_nn500.dat"
 # ---------------------------------------------------------------------------
 # Ocean / fixed-region handling
 # ---------------------------------------------------------------------------
@@ -198,8 +223,8 @@ OCEAN_RHO = 0.25    # Ω·m written for region 1 when treated as ocean
 # ---------------------------------------------------------------------------
 #: One of: "fill" | "mean" | "wmean" | "median" | "clip" | "shift"
 #:         | "standardise" | "smooth" | "ellipsoid" | "brick" | "null"
-OPERATION = "fill"
-# OPERATION = "smooth"
+# OPERATION = "fill"
+OPERATION = "smooth"
 # OPERATION = "wmean"
 # OPERATION = "median"
 # OPERATION = "mean"
@@ -240,12 +265,13 @@ OP_SHIFT_VALUE  = 0.5    # added to every log10(ρ) — used by "shift"
 #: "knn_uniform" and "knn_gauss" require SciPy; they raise RuntimeError if it
 #: is absent.  "physical" falls back to a chunked dense path when SciPy is
 #: unavailable.
-OP_SMOOTH_MODE    = "physical"   # "physical" | "knn_uniform" | "knn_gauss"
+OP_SMOOTH_MODE    = "knn_uniform"   # "physical" | "knn_uniform" | "knn_gauss"
 
-#: Gaussian smoothing length σ in metres — used by mode "physical" only.
+#: Gaussian smoothing length σ in km — used by mode "physical" only.
 #: Controls the decay of the Gaussian weight with distance.  A good first
-#: guess is 1–2× the typical element edge length in the target depth range.
-OP_SMOOTH_SIGMA   = 3000.0  # metres
+#: guess is 1–2× the typical element edge length (in km) in the target
+#: depth range.  Converted to metres for internal use below.
+OP_SMOOTH_SIGMA   = 3.0   # km
 
 #: Number of nearest neighbours — used by all three modes.
 #:   "physical"    : neighbours beyond K get effectively zero weight if their
@@ -254,7 +280,7 @@ OP_SMOOTH_SIGMA   = 3000.0  # metres
 #:   "knn_gauss"   : exactly K neighbours enter the per-region Gaussian.
 #: Memory scales as n_free × K × 8 bytes (predictable, no variable-length
 #: lists).
-OP_SMOOTH_K       = 100     # nearest neighbours
+OP_SMOOTH_K       = 500     # nearest neighbours
 
 #: Per-region σ fraction — used by mode "knn_gauss" only.
 #: σ_i = OP_SMOOTH_KNN_SIGMA_FRAC × d_{i,K}  (distance to the K-th neighbour).
@@ -274,43 +300,45 @@ OP_SMOOTH_MAX_GB  = 4.0     # GiB
 #: Each dict must contain:
 #:   mode            : "replace" | "add"
 #:   value           : float  log10(Ω·m) — absolute if replace, signed offset if add
-#:   center          : [x, y, z]  metres, z positive-down
-#:   axes            : [a, b, c]  semi-axes in metres, all > 0
+#:   center          : [x, y, z]  km, z positive-down
+#:   axes            : [a, b, c]  semi-axes in km, all > 0
 #:   angles          : [α, β, γ]  ZYX rotation in degrees (yaw, pitch, roll)
 #:   boundary_smooth : optional dict — smooth the body boundary after insertion
-#:     sigma  : Gaussian length scale in metres (blend width per pass)
+#:     sigma  : Gaussian length scale in km (blend width per pass)
 #:     passes : number of smoothing passes (transition zone depth ≈ passes × σ)
+#: All lengths are converted to metres for internal use below.
 OP_ELLIPSOID_BODIES = [
     # dict(mode="replace", value=0.0,
-    #      center=[0.0, 0.0, 5000.0],
-    #      axes=[10000.0, 10000.0, 5000.0],
+    #      center=[0.0, 0.0, 5.0],
+    #      axes=[10.0, 10.0, 5.0],
     #      angles=[0.0, 0.0, 0.0]),
     # With boundary smoothing:
     dict(mode="replace", value=0.0,
-         center=[0.0, 0.0, 5000.0],
-         axes=[10000.0, 10000.0, 5000.0],
+         center=[0.0, 0.0, 5.0],
+         axes=[10.0, 10.0, 5.0],
          angles=[0.0, 0.0, 0.0],
-         boundary_smooth=dict(sigma=1000., passes=3)),
+         boundary_smooth=dict(sigma=1.0, passes=3)),
 ]
 
 # ---------------------------------------------------------------------------
 # Brick bodies — used by "brick" only
 # ---------------------------------------------------------------------------
 #: List of brick (rotated rectangular prism) body dicts, applied in order.
-#: Same keys as ellipsoid bodies; axes = [a, b, c] are half-extents (metres).
+#: Same keys as ellipsoid bodies; axes = [a, b, c] are half-extents in km.
 #: The box test in the rotated local frame is |x'| ≤ a, |y'| ≤ b, |z'| ≤ c.
 #: Optional boundary_smooth key: dict(sigma=…, passes=…) — see ellipsoid docs.
+#: All lengths are converted to metres for internal use below.
 OP_BRICK_BODIES = [
     dict(mode="replace", value=0.0,
-         center=[0.0, 0.0, 5000.0],
-         axes=[10000.0, 8000.0, 4000.0],
+         center=[0.0, 0.0, 5.0],
+         axes=[10.0, 8.0, 4.0],
          angles=[0.0, 0.0, 0.0]),
     # With boundary smoothing:
     # dict(mode="add", value=1.0,
-    #      center=[0.0, 0.0, 15000.0],
-    #      axes=[5000.0, 5000.0, 5000.0],
+    #      center=[0.0, 0.0, 15.0],
+    #      axes=[5.0, 5.0, 5.0],
     #      angles=[45.0, 0.0, 0.0],
-    #      boundary_smooth=dict(sigma=2000., passes=2)),
+    #      boundary_smooth=dict(sigma=2.0, passes=2)),
 ]
 
 # ---------------------------------------------------------------------------
@@ -321,14 +349,25 @@ OUT = True
 # ---------------------------------------------------------------------------
 # Plotting — requires femtic_viz and Matplotlib
 # ---------------------------------------------------------------------------
-#: Set True to plot slices of the *output* model after writing.
-PLOT = True
+#: Set True to plot slices of the *input* model (MODEL_IN), i.e. before
+#: OPERATION is applied.  Useful for before/after comparison.
+PLOT_INPUT = False
 
-#: Output file path — None → interactive show().
-PLOT_FILE = WORK_DIR + "resistivity_block_edited.pdf"
+#: Set True to plot slices of the *output* model (MODEL_OUT) after writing.
+#: Forced to False when OPERATION == "null", since no output file is
+#: written in that case — use PLOT_INPUT instead.
+PLOT_OUTPUT = True
+
+#: Output-model figure path — None → interactive show().
+PLOT_FILE = WORK_DIR + "resistivity_block_edited_nn500.pdf"
 if OPERATION != "null":
     PLOT_FILE = PLOT_FILE.replace("edited", OPERATION)
 print(PLOT_FILE)
+
+#: Input-model figure path — None → interactive show(); leave as None
+#: (default) to auto-derive from PLOT_FILE by inserting an "_input" suffix
+#: before the extension.  Only used when PLOT_INPUT = True.
+PLOT_FILE_INPUT = None
 
 #: Figure DPI for saved file.
 PLOT_DPI = 600
@@ -356,31 +395,33 @@ PLOT_AIR_BGCOLOR = None
 #:            "ns"    — N-S vertical section at x = x0   (y vs depth)
 #:            "ew"    — E-W vertical section at y = y0   (x vs depth)
 #:            "plane" — arbitrary plane by strike / dip / point
-#:   z0     : (map   only)  depth in metres
-#:   x0     : (ns    only)  easting — plain float = model-local metres
-#:   y0     : (ew    only)  northing — plain float = model-local metres
-#:   point  : (plane only)  [x, y, z] any point on the plane (metres)
+#:   z0     : (map   only)  depth in km
+#:   x0     : (ns    only)  easting — plain float = model-local km
+#:   y0     : (ew    only)  northing — plain float = model-local km
+#:   point  : (plane only)  [x, y, z] any point on the plane (km)
 #:   strike : (plane only)  clockwise from North, degrees (0=N, 90=E)
 #:   dip    : (plane only)  downward inclination from horizontal, degrees
-#:   xlim   : [xmin, xmax] — easting or along-strike axis limit
-#:   ylim   : [ymin, ymax] — northing or down-dip axis limit
-#:   zlim   : [zmin, zmax] — depth axis limit (ns/ew panels)
+#:   xlim   : [xmin, xmax] — easting or along-strike axis limit (km)
+#:   ylim   : [ymin, ymax] — northing or down-dip axis limit (km)
+#:   zlim   : [zmin, zmax] — depth axis limit (km, ns/ew panels)
 #:   title  : optional string override
 #:
 #: Per-panel xlim/ylim/zlim override the global PLOT_XLIM/PLOT_YLIM/PLOT_ZLIM.
+#: All lengths above are converted to metres for internal use below.
 PLOT_SLICES = [
-    dict(kind="map",   z0=5000.0),
-    dict(kind="map",   z0=15000.0),
+    dict(kind="map",   z0=5.0),
+    dict(kind="map",   z0=15.0),
     dict(kind="ns",    x0=0.0),
     dict(kind="ew",    y0=0.0),
-    # dict(kind="plane", point=[0., 0., 5000.], strike=45., dip=60.),
+    # dict(kind="plane", point=[0., 0., 5.], strike=45., dip=60.),
 ]
 
-#: Global axis limits in model-local metres — used for panels that do not
+#: Global axis limits in model-local km — used for panels that do not
 #: specify their own.  None → auto (inferred from data extent).
-PLOT_XLIM = [-20000., 20000.]   # [xmin, xmax] metres — easting
-PLOT_YLIM = [-20000., 20000.]   # [ymin, ymax] metres — northing
-PLOT_ZLIM = [  -6000., 15000.]  # [zmin, zmax] metres — depth (z positive-down)
+#: Converted to metres for internal use below.
+PLOT_XLIM = [-20., 20.]   # [xmin, xmax] km — easting
+PLOT_YLIM = [-20., 20.]   # [ymin, ymax] km — northing
+PLOT_ZLIM = [ -6., 15.]   # [zmin, zmax] km — depth (z positive-down)
 
 #: True → depth axis in km; False → metres.
 DEPTH_KM = True
@@ -426,12 +467,43 @@ SITE_NAMES  = None                    # None = all sites
 
 PLOT_SITES_MAPS   = True
 PLOT_SITES_SLICES = False
-PROJECTION_DIST   = 5000.   # m
+PROJECTION_DIST   = 5.0   # km — converted to metres for internal use below
 
 SITE_MARKER        = dict(marker="v", color="black", ms=8, zorder=10, label=None)
 SITE_MARKER_SLICES = None
 
 MAP_MARKERS = []
+
+
+# ---------------------------------------------------------------------------
+# Unit conversion: OP_*/PLOT_*/PROJECTION_DIST length parameters above are
+# entered in km for convenience; convert to metres here for internal use,
+# since femtic.py / femtic_viz.py and the model-local coordinate system
+# work in metres throughout.
+# ---------------------------------------------------------------------------
+_KM_TO_M = 1000.0
+
+OP_SMOOTH_SIGMA *= _KM_TO_M
+PROJECTION_DIST *= _KM_TO_M
+PLOT_XLIM = [v * _KM_TO_M for v in PLOT_XLIM]
+PLOT_YLIM = [v * _KM_TO_M for v in PLOT_YLIM]
+PLOT_ZLIM = [v * _KM_TO_M for v in PLOT_ZLIM]
+
+for _body in OP_ELLIPSOID_BODIES + OP_BRICK_BODIES:
+    _body["center"] = [v * _KM_TO_M for v in _body["center"]]
+    _body["axes"]   = [v * _KM_TO_M for v in _body["axes"]]
+    if _body.get("boundary_smooth"):
+        _body["boundary_smooth"]["sigma"] *= _KM_TO_M
+
+for _slc in PLOT_SLICES:
+    for _key in ("z0", "x0", "y0"):
+        if _key in _slc:
+            _slc[_key] *= _KM_TO_M
+    if "point" in _slc:
+        _slc["point"] = [v * _KM_TO_M for v in _slc["point"]]
+    for _key in ("xlim", "ylim", "zlim"):
+        if _key in _slc:
+            _slc[_key] = [v * _KM_TO_M for v in _slc[_key]]
 
 
 
@@ -1046,7 +1118,19 @@ else:
     print("Done.")
 
 # --- (3b) Derive UTM zone and site positions (needed for plot) -------------
-if PLOT:
+if OPERATION == "null" and PLOT_OUTPUT:
+    print(
+        "\n[femtic_mod_edit] NOTE: Operation 'null' writes no output model — "
+        "PLOT_OUTPUT forced to False.  Set PLOT_INPUT = True to inspect the "
+        "unmodified model instead.\n"
+    )
+    PLOT_OUTPUT = False
+
+if PLOT_INPUT and PLOT_FILE_INPUT is None and PLOT_FILE is not None:
+    _root, _ext = os.path.splitext(PLOT_FILE)
+    PLOT_FILE_INPUT = _root + "_input" + _ext
+
+if PLOT_INPUT or PLOT_OUTPUT:
     # --- sanity-check ORIGIN_METHOD vs SITE_DAT ----------------------------
     # (1) ORIGIN_METHOD requests site.dat estimation but the file is absent.
     if ORIGIN_METHOD is not None:
@@ -1125,10 +1209,10 @@ if PLOT:
                                           UTM_ORIGIN_E, UTM_ORIGIN_N)
             site_xys.append((row["name"], sx_m, sy_m, float(row.get("elev", 0.0))))
 
-# --- (4) Plot slices of output model ---------------------------------------
-if PLOT:
+# --- (4) Plot slices of input and/or output model ---------------------------
+if PLOT_INPUT or PLOT_OUTPUT:
     if fviz is None:
-        print("  PLOT: femtic_viz not available — skipping slice plot.")
+        print("  PLOT: femtic_viz not available — skipping slice plot(s).")
     else:
         _slices_resolved = fem.resolve_slice_positions(
             PLOT_SLICES, UTM_ZONE, UTM_NORTHERN,
@@ -1136,43 +1220,53 @@ if PLOT:
             UTM_ORIGIN_LAT, UTM_ORIGIN_LON,
             verbose=OUT,
         )
-        fviz.plot_model_slices(
-            model_file         = MODEL_IN if OPERATION == "null" else MODEL_OUT,
-            mesh_file          = MESH_FILE,
-            slices             = _slices_resolved,
-            cmap               = PLOT_CMAP,
-            clim               = PLOT_CLIM,
-            xlim               = PLOT_XLIM,
-            ylim               = PLOT_YLIM,
-            zlim               = PLOT_ZLIM,
-            ocean_color        = PLOT_OCEAN_COLOR,
-            ocean_value        = OCEAN_RHO,
-            air_bgcolor        = PLOT_AIR_BGCOLOR,
-            site_xys           = site_xys,
-            obs_coords_only    = False,
-            sites_in_maps      = PLOT_SITES_MAPS,
-            sites_in_slices    = PLOT_SITES_SLICES,
-            site_marker        = SITE_MARKER,
-            site_marker_slices = SITE_MARKER_SLICES,
-            map_markers        = MAP_MARKERS,
-            projection_dist    = PROJECTION_DIST,
-            display_coords     = DISPLAY_COORDS,
-            utm_origin_e       = UTM_ORIGIN_E,
-            utm_origin_n       = UTM_ORIGIN_N,
-            utm_zone           = UTM_ZONE,
-            utm_northern       = UTM_NORTHERN,
-            utm_to_latlon_fn   = utl.utm_to_latlon_zn,
-            latlon_to_model_fn = fem.latlon_to_model,
-            depth_km           = DEPTH_KM,
-            horiz_km           = HORIZ_KM,
-            equal_aspect       = PLOT_EQUAL_ASPECT,
-            panel_height       = PLOT_PANEL_HEIGHT / 2.54,
-            nrows              = PLOT_NROWS,
-            ncols              = PLOT_NCOLS,
-            plot_file          = PLOT_FILE,
-            dpi                = PLOT_DPI,
-            out                = OUT,
-        )
+
+        # (label, model file, output figure path)
+        _plot_jobs = []
+        if PLOT_INPUT:
+            _plot_jobs.append(("input model", MODEL_IN, PLOT_FILE_INPUT))
+        if PLOT_OUTPUT:
+            _plot_jobs.append(("output model", MODEL_OUT, PLOT_FILE))
+
+        for _label, _model_file, _plot_file in _plot_jobs:
+            print(f"  Plotting {_label}: {_model_file}")
+            fviz.plot_model_slices(
+                model_file         = _model_file,
+                mesh_file          = MESH_FILE,
+                slices             = _slices_resolved,
+                cmap               = PLOT_CMAP,
+                clim               = PLOT_CLIM,
+                xlim               = PLOT_XLIM,
+                ylim               = PLOT_YLIM,
+                zlim               = PLOT_ZLIM,
+                ocean_color        = PLOT_OCEAN_COLOR,
+                ocean_value        = OCEAN_RHO,
+                air_bgcolor        = PLOT_AIR_BGCOLOR,
+                site_xys           = site_xys,
+                obs_coords_only    = False,
+                sites_in_maps      = PLOT_SITES_MAPS,
+                sites_in_slices    = PLOT_SITES_SLICES,
+                site_marker        = SITE_MARKER,
+                site_marker_slices = SITE_MARKER_SLICES,
+                map_markers        = MAP_MARKERS,
+                projection_dist    = PROJECTION_DIST,
+                display_coords     = DISPLAY_COORDS,
+                utm_origin_e       = UTM_ORIGIN_E,
+                utm_origin_n       = UTM_ORIGIN_N,
+                utm_zone           = UTM_ZONE,
+                utm_northern       = UTM_NORTHERN,
+                utm_to_latlon_fn   = utl.utm_to_latlon_zn,
+                latlon_to_model_fn = fem.latlon_to_model,
+                depth_km           = DEPTH_KM,
+                horiz_km           = HORIZ_KM,
+                equal_aspect       = PLOT_EQUAL_ASPECT,
+                panel_height       = PLOT_PANEL_HEIGHT / 2.54,
+                nrows              = PLOT_NROWS,
+                ncols              = PLOT_NCOLS,
+                plot_file          = _plot_file,
+                dpi                = PLOT_DPI,
+                out                = OUT,
+            )
 
 
 # ---------------------------------------------------------------------------

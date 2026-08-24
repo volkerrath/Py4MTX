@@ -365,12 +365,13 @@ print(f"RNG seed: {RANDOM_SEED if RANDOM_SEED is not None else '(fresh entropy â
 """
 Base setup.
 """
-N_SAMPLES = 32
+N_SAMPLES = 64
 # ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/ubinas/ensemble/"
 # ENSEMBLE_NAME = "ubinas_gst_suzuki_"
 
-ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/ensembles/misti/ensemble/"
-ENSEMBLE_NAME = "misti_gst_rnd_"
+# ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/ensembles/misti/ensemble/"
+ENSEMBLE_DIR = r"/home/vrath/work/Ensembles/annecy2026/ensembles/"
+ENSEMBLE_NAME = "annecy_gst_rnd_"
 
 TEMPLATES = ENSEMBLE_DIR + "/templates/"
 if not os.path.isdir(TEMPLATES):
@@ -394,7 +395,7 @@ RELATIVE_LINKS = True   # True: portable relative symlinks (default, survives tg
 Control number of ensemble members for increase of sample number or restart
 of badly converged samples (see femtic_gst_post.py).
 """
-FROM_TO = np.arange(50,100)
+FROM_TO = np.arange(64)
 
 """
 Set up mode of model perturbations.
@@ -441,9 +442,9 @@ if PERTURB_MOD:
 
     # Bounding box for random pilot-point placement:
     #   [x_min, x_max, y_min, y_max, z_min, z_max]  (km, model-local, z positive-down)
-    MOD_PP_BBOX = [-25., 25.,   # easting  range (km)
-                   -25., 25.,   # northing range (km)
-                     0., 60.]   # depth     range (km, positive-down)
+    MOD_PP_BBOX = [-20., 20.,   # easting  range (km)
+                   -20., 20.,   # northing range (km)
+                    0.3, 20.]   # depth     range (km, positive-down)
 
     # Explicit pilot-point coordinates used when MOD_PP_MODE = "fixed"
     # or "mixed".  Shape: (N, 3) â€” columns: [easting, northing, depth],
@@ -504,7 +505,7 @@ if PERTURB_MOD:
     # Half-width (log10 Ohm.m) of the symmetric perturbation around the
     # reference value.  Only used when MOD_PP_VALUE_MODE = "reference".
     # Typical: 0.3-1.0 (factor ~2-10 in resistivity).
-    MOD_PP_VALUE_DELTA = 0.3
+    MOD_PP_VALUE_DELTA = 0.5
 
     # ------------------------------------------------------------------
     # Variogram model
@@ -699,22 +700,22 @@ if PLOT_DATA or PLOT_MODEL:
     #:   (value, "utm") | (value, "latlon")
     #: Depth z0 is always model-local metres (no CRS tagging).
     MOD_SLICES = [
-        dict(kind="map", z0=5.0),    # km
-        dict(kind="map", z0=15.0),   # km
+        dict(kind="map", z0=0.0),    # km
+        dict(kind="map", z0=1.0),   # km
         dict(kind="ns",  x0=0.0),    # km
         dict(kind="ew",  y0=0.0),    # km
     ]
     MOD_XLIM = [-15., 15.]   # [xmin, xmax] model-local km; None = auto
     MOD_YLIM = [-15., 15.]   # [ymin, ymax] model-local km; None = auto
-    MOD_ZLIM = [-6., 30.]   # [zmin, zmax] model-local km; None = auto
+    MOD_ZLIM = [-1., 15.]   # [zmin, zmax] model-local km; None = auto
 
     # --- Figure layout -------------------------------------------------------
     MOD_EQUAL_ASPECT  = True
     MOD_DEPTH_KM      = True
     MOD_HORIZ_KM      = True
-    MOD_NROWS         = None   # None = auto (1 row)
-    MOD_NCOLS         = None   # None = auto (len(MOD_SLICES) cols)
-    MOD_PANEL_HEIGHT  = 16.0   # cm
+    MOD_NROWS         = 3   # None = auto (1 row)
+    MOD_NCOLS         = 2   # None = auto (len(MOD_SLICES) cols)
+    MOD_PANEL_HEIGHT  = 18.0   # cm
     MOD_PANEL_WIDTH   = None   # cm; None = auto from aspect ratio
     MOD_FIGSIZE       = None   # [w, h] cm; overrides auto when set
 
@@ -741,8 +742,8 @@ if PLOT_DATA or PLOT_MODEL:
     #: Axis annotation font sizes for plot_ensemble_slices (independent of
     #: MOD_TICK_FONTSIZE/MOD_LABEL_FONTSIZE above -- plot_ensemble_slices'
     #: joint member x slice grid uses smaller defaults so more rows fit).
-    ENS_TICK_FONTSIZE  = 6
-    ENS_LABEL_FONTSIZE = 7
+    ENS_TICK_FONTSIZE  = 8
+    ENS_LABEL_FONTSIZE = 8
 
     # --- QC slice plot of Kriged initial models ------------------------------
     #: Set True to produce one slice figure per selected member.
