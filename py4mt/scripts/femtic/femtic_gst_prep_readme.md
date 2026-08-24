@@ -68,6 +68,40 @@ The resolved seed is echoed to the console and recorded in
 self-describing even if this script's config is edited afterwards.
 
 
+## Plot-only mode (`PLOT_ONLY`)
+
+Set `PLOT_ONLY = True` to skip both ensemble-generation steps entirely —
+Kriged initial models (`PERTURB_MOD`) and perturbed data (`PERTURB_DAT`) —
+and jump straight to `PLOT_DATA` / `PLOT_MODEL` / `PLOT_SLICES_QC` /
+`PLOT_SLICES_ENS`, which then re-plot the already-existing member files
+on disk. Use this to retune plot styling (colormap, slices, site overlay,
+stat rows, ...) without re-running Kriging or redrawing perturbed data.
+
+- `PERTURB_MOD` and `PERTURB_DAT` are forced to `False` when
+  `PLOT_ONLY = True`, regardless of how they are set in the config
+  section (a note is printed if either was `True`).
+- `generate_directories()` (directory creation, `COPY_LIST`/`LINK_LIST`
+  copy/symlink step) is skipped entirely under `PLOT_ONLY`, since it
+  would otherwise re-copy `COPY_LIST` — including
+  `resistivity_block_iter0.dat` — fresh from `TEMPLATES` into every
+  member directory, silently overwriting the already-Kriged member
+  models that `PLOT_ONLY` is meant to re-plot.
+- Per-member files (model, `observe.dat`) missing on disk are warned
+  about and skipped, one member at a time — never a hard error.
+
+This required two small structural changes, made when `PLOT_ONLY` was
+added:
+1. `MOD_MESH`, `MOD_RESISTIVITY_FILE`, and `MOD_REFERENCE_FILE` — the
+   three plotting-relevant paths — are now defined unconditionally
+   (previously only inside `if PERTURB_MOD:`, so plotting without
+   `PERTURB_MOD = True` would have raised a `NameError`).
+2. The `PLOT_DATA` plotting block was pulled out from inside
+   `if PERTURB_DAT:` into its own independent `if PLOT_DATA:` block. It
+   never used the `data_ensemble` return value — only file paths on
+   disk — so this is behaviour-preserving when `PERTURB_DAT = True`,
+   and now also works standalone. The `and PERTURB_MOD` gate on the
+   per-member `PLOT_MODEL` loop was removed for the same reason.
+
 ## Configuration
 
 All settings are at the top of the script.
@@ -76,6 +110,7 @@ All settings are at the top of the script.
 
 | Variable         | Description                                                         |
 |------------------|---------------------------------------------------------------------|
+| `PLOT_ONLY`      | `True` → skip `PERTURB_MOD`/`PERTURB_DAT` generation, re-plot existing member files only (see above). |
 | `N_SAMPLES`      | Number of ensemble members to generate.                             |
 | `ENSEMBLE_DIR`   | Root directory for the ensemble.                                    |
 | `TEMPLATES`      | Directory containing template FEMTIC input files.                   |
@@ -430,6 +465,7 @@ No sparse-matrix file (`.npz`) is required.
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `MOD_TICK_FONTSIZE`/`MOD_LABEL_FONTSIZE` (QC/model slice plots) and `ENS_TICK_FONTSIZE`/`ENS_LABEL_FONTSIZE` (ensemble slice plot) — axis tick/label font sizes were previously fixed at `femtic_viz.py`'s internal defaults with no way to override them here. Also removed `depth_km=True`/`horiz_km=True` from the `plot_ensemble_slices` call — that function doesn't accept those parameters and the call would have raised `TypeError` the first time `PLOT_SLICES_ENS` was set `True` (dormant since it defaults to `False`). Corrected the "QC slice plot" table above, which still documented the old `QC_SLICES`/`QC_CMAP`/etc. variables removed by the 2026-06-07 update. |
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `MOD_SHOW_IN_SPYDER` (default `True`): when running inside Spyder, every saved figure (QC, model, ensemble) is also displayed inline via `plt.show()`, without changing what gets saved to disk. No effect outside Spyder. |
 | 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_gst_prep_summary.md` output at end of run: writes user-set (UPPERCASE) parameters, script path, and run date/time. |
+| 2026-08-24 | Claude Sonnet 5 (Anthropic) | Added `PLOT_ONLY` mode: forces `PERTURB_MOD`/`PERTURB_DAT` off and skips `generate_directories()` entirely (which would otherwise overwrite already-Kriged member models via `COPY_LIST`), then re-plots existing member files from disk via `PLOT_DATA`/`PLOT_MODEL`/`PLOT_SLICES_QC`/`PLOT_SLICES_ENS`. Required making `MOD_MESH`/`MOD_RESISTIVITY_FILE`/`MOD_REFERENCE_FILE` unconditional (previously only defined inside `if PERTURB_MOD:`, a latent `NameError` risk) and decoupling the `PLOT_DATA` block from `if PERTURB_DAT:`. Missing per-member files are warned about and skipped, never a hard error. |
 
 ## Author
 

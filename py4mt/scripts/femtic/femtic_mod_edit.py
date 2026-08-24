@@ -155,6 +155,18 @@ Provenance
                 block after the config section multiplies these by 1000
                 once, so all downstream code still operates in metres
                 unchanged.
+    2026-08-24  Claude Sonnet 5 (Anthropic)
+                Added PLOT_ONLY mode: when True, steps (1)-(3) (read model,
+                build mesh context, apply OPERATION, write MODEL_OUT) are
+                skipped entirely and the script jumps straight to the
+                plotting section, re-plotting the already-existing MODEL_IN
+                / MODEL_OUT files on disk with the current PLOT_* settings.
+                Use this to iterate on plot styling (colormap, slices,
+                site overlay, ...) without re-running a potentially
+                expensive "smooth"/"ellipsoid"/"brick" operation.  If
+                PLOT_ONLY and PLOT_OUTPUT are both True but MODEL_OUT does
+                not exist on disk, the script exits with a clear error
+                (run once with PLOT_ONLY = False first).
 
 @author: vrath
 """
@@ -219,10 +231,23 @@ AIR_RHO   = 1.0e9   # Ω·m written for region 0 (air)
 OCEAN_RHO = 0.25    # Ω·m written for region 1 when treated as ocean
 
 # ---------------------------------------------------------------------------
+# Plot-only mode
+# ---------------------------------------------------------------------------
+#: True  → skip read/mesh-context/apply/write entirely (steps 1-3) and go
+#:         straight to plotting MODEL_IN / MODEL_OUT as they already exist
+#:         on disk.  Use this to retune PLOT_* settings without re-running
+#:         a possibly expensive OPERATION.  OPERATION is ignored in this
+#:         mode.  Requires MODEL_OUT to already exist if PLOT_OUTPUT = True.
+#: False → normal behaviour (read, apply OPERATION, write, then optionally
+#:         plot).
+PLOT_ONLY = False
+
+# ---------------------------------------------------------------------------
 # Operation to apply
 # ---------------------------------------------------------------------------
 #: One of: "fill" | "mean" | "wmean" | "median" | "clip" | "shift"
 #:         | "standardise" | "smooth" | "ellipsoid" | "brick" | "null"
+#: Ignored entirely when PLOT_ONLY = True.
 # OPERATION = "fill"
 OPERATION = "smooth"
 # OPERATION = "wmean"
@@ -1022,28 +1047,52 @@ _OPERATIONS: dict = {
 # Main
 # ===========================================================================
 
-if OPERATION not in _OPERATIONS:
-    sys.exit(
-        f"Unknown OPERATION={OPERATION!r}. "
-        f"Choose one of: {list(_OPERATIONS.keys())}."
+if PLOT_ONLY:
+    print(
+        "PLOT_ONLY = True: skipping read / mesh-context / apply / write "
+        "(OPERATION is ignored). Re-plotting existing files on disk with "
+        "current PLOT_* settings.\n"
     )
+    if not (PLOT_INPUT or PLOT_OUTPUT):
+        print(
+            "[femtic_mod_edit] WARNING: PLOT_ONLY = True but neither "
+            "PLOT_INPUT nor PLOT_OUTPUT is set — nothing to do.\n"
+        )
+    if not os.path.isfile(MODEL_IN):
+        sys.exit(
+            f"[femtic_mod_edit] ERROR: PLOT_ONLY = True but MODEL_IN does "
+            f"not exist:\n  {MODEL_IN}\n"
+        )
+    if PLOT_OUTPUT and not os.path.isfile(MODEL_OUT):
+        sys.exit(
+            f"[femtic_mod_edit] ERROR: PLOT_ONLY = True and PLOT_OUTPUT = "
+            f"True, but MODEL_OUT does not exist yet:\n  {MODEL_OUT}\n"
+            "  Run once with PLOT_ONLY = False to produce it, or set "
+            "PLOT_OUTPUT = False to plot MODEL_IN only.\n"
+        )
+else:
+    if OPERATION not in _OPERATIONS:
+        sys.exit(
+            f"Unknown OPERATION={OPERATION!r}. "
+            f"Choose one of: {list(_OPERATIONS.keys())}."
+        )
 
-# --- (1) Read free log10(ρ) vector ----------------------------------------
-print(f"Reading model: {MODEL_IN}")
-log_m = fem.read_model(
-    model_file=MODEL_IN,
-    model_trans="log10",
-    ocean=OCEAN,
-    out=OUT,
-)
-print(f"  free parameters: {log_m.size}")
-print(f"  log10(ρ) range before: [{log_m.min():.3f}, {log_m.max():.3f}]")
-print()
+    # --- (1) Read free log10(ρ) vector --------------------------------------
+    print(f"Reading model: {MODEL_IN}")
+    log_m = fem.read_model(
+        model_file=MODEL_IN,
+        model_trans="log10",
+        ocean=OCEAN,
+        out=OUT,
+    )
+    print(f"  free parameters: {log_m.size}")
+    print(f"  log10(ρ) range before: [{log_m.min():.3f}, {log_m.max():.3f}]")
+    print()
 
 # --- (1b) Build mesh-dependent contexts if needed -------------------------
 _NEEDS_MESH = {"smooth", "ellipsoid", "brick", "wmean"}
 
-if OPERATION in _NEEDS_MESH:
+if (not PLOT_ONLY) and OPERATION in _NEEDS_MESH:
     if not os.path.isfile(MESH_FILE):
         sys.exit(f"{OPERATION}: MESH_FILE not found: {MESH_FILE}")
 
@@ -1093,32 +1142,33 @@ if OPERATION in _NEEDS_MESH:
         print(f"  brick context ready: {len(OP_BRICK_BODIES)} body/bodies.")
     print()
 
-# --- (2) Apply operation ---------------------------------------------------
-apply_fn = _OPERATIONS[OPERATION]
-log_m_new = apply_fn(log_m)
+if not PLOT_ONLY:
+    # --- (2) Apply operation ------------------------------------------------
+    apply_fn = _OPERATIONS[OPERATION]
+    log_m_new = apply_fn(log_m)
 
-print(f"Operation '{OPERATION}' applied.")
-print(f"  log10(ρ) range after:  [{log_m_new.min():.3f}, {log_m_new.max():.3f}]")
-print()
+    print(f"Operation '{OPERATION}' applied.")
+    print(f"  log10(ρ) range after:  [{log_m_new.min():.3f}, {log_m_new.max():.3f}]")
+    print()
 
-# --- (3) Write modified model ---------------------------------------------
-if OPERATION == "null":
-    print("Operation 'null': no output file written (input model displayed as-is).")
-else:
-    print(f"Writing model: {MODEL_OUT}")
-    fem.insert_model(
-        template=MODEL_IN,
-        model=log_m_new,
-        model_file=MODEL_OUT,
-        ocean=OCEAN,
-        air_rho=AIR_RHO,
-        ocean_rho=OCEAN_RHO,
-        out=OUT,
-    )
-    print("Done.")
+    # --- (3) Write modified model --------------------------------------------
+    if OPERATION == "null":
+        print("Operation 'null': no output file written (input model displayed as-is).")
+    else:
+        print(f"Writing model: {MODEL_OUT}")
+        fem.insert_model(
+            template=MODEL_IN,
+            model=log_m_new,
+            model_file=MODEL_OUT,
+            ocean=OCEAN,
+            air_rho=AIR_RHO,
+            ocean_rho=OCEAN_RHO,
+            out=OUT,
+        )
+        print("Done.")
 
 # --- (3b) Derive UTM zone and site positions (needed for plot) -------------
-if OPERATION == "null" and PLOT_OUTPUT:
+if (not PLOT_ONLY) and OPERATION == "null" and PLOT_OUTPUT:
     print(
         "\n[femtic_mod_edit] NOTE: Operation 'null' writes no output model — "
         "PLOT_OUTPUT forced to False.  Set PLOT_INPUT = True to inspect the "

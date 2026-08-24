@@ -219,6 +219,24 @@ Provenance:
                 Added femtic_gst_prep_summary.md output at end of run:
                 writes user-set (UPPERCASE) parameters, script path, and
                 run date/time via utl.write_param_summary().
+    2026-08-24  Claude Sonnet 5 (Anthropic)
+                Added PLOT_ONLY mode: when True, PERTURB_MOD (Kriging) and
+                PERTURB_DAT (data perturbation) are forced off regardless of
+                their config value, and PLOT_DATA / PLOT_MODEL /
+                PLOT_SLICES_QC / PLOT_SLICES_ENS instead re-plot the
+                already-existing member files on disk. This required two
+                structural changes: (1) MOD_MESH, MOD_RESISTIVITY_FILE, and
+                MOD_REFERENCE_FILE — previously defined only inside
+                `if PERTURB_MOD:` — are now always defined, since the
+                plotting code needs them independent of whether Kriging
+                ran; (2) the PLOT_DATA block was pulled out from inside
+                `if PERTURB_DAT:` into its own independent block (it never
+                actually used the `data_ensemble` return value, only file
+                paths, so this is behaviour-preserving when PERTURB_DAT is
+                True) and the `and PERTURB_MOD` gate on the per-member
+                PLOT_MODEL loop was removed. Missing per-member files are
+                warned about and skipped (same behaviour as the pre-existing
+                PLOT_SLICES_QC loop), never a hard error.
 """
 
 import os
@@ -363,6 +381,22 @@ print(f"RNG seed: {RANDOM_SEED if RANDOM_SEED is not None else '(fresh entropy �
 
 
 """
+Plot-only mode.
+-----------------------------------------------------------------------
+Set PLOT_ONLY = True to skip both ensemble-generation steps entirely
+(Kriged initial models via PERTURB_MOD, perturbed data via PERTURB_DAT)
+and jump straight to the plotting sections (PLOT_DATA / PLOT_MODEL /
+PLOT_SLICES_QC / PLOT_SLICES_ENS), which then re-plot the already-
+existing member files on disk. Use this to retune plot styling (cmap,
+slices, site overlay, stat rows, ...) without re-running Kriging or
+redrawing perturbed data. PERTURB_MOD and PERTURB_DAT below are forced
+to False when PLOT_ONLY = True, regardless of how they are set.
+Per-member files missing on disk are warned about and skipped, not a
+hard error.
+"""
+PLOT_ONLY = False
+
+"""
 Base setup.
 """
 N_SAMPLES = 64
@@ -416,10 +450,25 @@ Low-level Kriging: ens.generate_gst_model_ensemble()
 -----------------------------------------------------------------------
 """
 PERTURB_MOD = True
+
+#: MOD_MESH / MOD_RESISTIVITY_FILE / MOD_REFERENCE_FILE are needed by the
+#: plotting sections (QC plots, per-member model plots, ensemble slice
+#: plot) regardless of whether Kriging actually runs this session, so
+#: they are defined unconditionally here rather than inside the
+#: PERTURB_MOD block below.
+MOD_MESH              = TEMPLATES + "mesh.dat"
+MOD_RESISTIVITY_FILE  = "resistivity_block_iter0.dat"
+MOD_REFERENCE_FILE    = "referencemodel.dat"
+
+if PLOT_ONLY:
+    if PERTURB_MOD:
+        print("PLOT_ONLY = True: forcing PERTURB_MOD = False "
+              "(no Kriging this run).")
+    PERTURB_MOD = False
+
 if PERTURB_MOD:
     MOD_REF = TEMPLATES + "referencemodel.dat"
     MOD_REF_BASE = os.path.basename(MOD_REF)
-    MOD_MESH = TEMPLATES + "mesh.dat"
     # ------------------------------------------------------------------
     # Pilot-point configuration
     # ------------------------------------------------------------------
@@ -539,9 +588,11 @@ if PERTURB_MOD:
     # "resistivity_block" — writes resistivity_block_iter0.dat only.
     # "referencemodel"    — writes referencemodel.dat only.
     # "both"              — writes both (recommended).
+    #: MOD_RESISTIVITY_FILE / MOD_REFERENCE_FILE are now set unconditionally
+    #: above (needed by plotting even when PERTURB_MOD is False); only
+    #: MOD_OUTPUT_TARGET (which controls what generate_gst_model_ensemble
+    #: writes) stays local to this block.
     MOD_OUTPUT_TARGET    = "both"
-    MOD_RESISTIVITY_FILE = "resistivity_block_iter0.dat"
-    MOD_REFERENCE_FILE   = "referencemodel.dat"
 
     # ------------------------------------------------------------------
     # Pilot-point coordinates and perturbations — optional .npz export
@@ -568,6 +619,13 @@ Set up mode of data perturbations.
 (Identical to the RTO data-perturbation block.)
 """
 PERTURB_DAT = False
+
+if PLOT_ONLY:
+    if PERTURB_DAT:
+        print("PLOT_ONLY = True: forcing PERTURB_DAT = False "
+              "(no data perturbation this run).")
+    PERTURB_DAT = False
+
 if PERTURB_DAT:
     DAT_METHOD = "add"
     DAT_PDF = ["normal", 0., 1.]
@@ -639,7 +697,8 @@ if PLOT_DATA or PLOT_MODEL:
     DAT_VTFLIMS = (-1.,   +1.)
     DAT_PTLIMS  = None
 
-    MOD_MESH = TEMPLATES + "mesh.dat"
+    #: MOD_MESH is already defined unconditionally above (needed regardless
+    #: of PERTURB_MOD); no need to redefine it here.
 
     # --- Ocean / air handling (must match the inversion setup) ---------------
     #: None = auto-infer; True / False = force ocean-present / ocean-absent.
@@ -752,17 +811,27 @@ if PLOT_DATA or PLOT_MODEL:
 
 """
 Generate ensemble directories and copy template files.
+
+Skipped entirely when PLOT_ONLY = True: generate_directories re-copies
+COPY_LIST (including resistivity_block_iter0.dat) fresh from TEMPLATES
+into every member directory, which would silently overwrite already-
+Kriged member models with the plain template file — exactly the files
+PLOT_ONLY is meant to re-plot without touching.
 """
-dir_list = ens.generate_directories(alg="gst",
-                                    dir_base=ENSEMBLE_DIR + ENSEMBLE_NAME,
-                                    templates=TEMPLATES,
-                                    copy_list=COPY_LIST,
-                                    link_list=LINK_LIST,
-                                    n_samples=N_SAMPLES,
-                                    fromto=FROM_TO,
-                                    relative_links=RELATIVE_LINKS,
-                                    out=True)
-print("\n")
+if PLOT_ONLY:
+    print("PLOT_ONLY = True: skipping generate_directories() — member "
+          "directories and files are assumed to already exist.\n")
+else:
+    dir_list = ens.generate_directories(alg="gst",
+                                        dir_base=ENSEMBLE_DIR + ENSEMBLE_NAME,
+                                        templates=TEMPLATES,
+                                        copy_list=COPY_LIST,
+                                        link_list=LINK_LIST,
+                                        n_samples=N_SAMPLES,
+                                        fromto=FROM_TO,
+                                        relative_links=RELATIVE_LINKS,
+                                        out=True)
+    print("\n")
 
 """
 Draw a random subset of ensemble members for visualization.
@@ -794,52 +863,61 @@ if PERTURB_DAT:
                                                out=True)
     print("data ensemble ready!")
     print("\n")
-    
-    
-    """
-    Data visualization
-    ------------------
-    Joint plot of original vs. perturbed observe.dat for the selected samples.
-    Helper: femtic_viz.plot_data_ensemble
-    """
-    if PLOT_DATA:
-        dat_orig_file = TEMPLATES + "observe.dat"
-        dat_ens_files = [
-            ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/observe.dat"
-            for i in range(N_SAMPLES)
-        ]
-    
-        for i_samp in VIZ_SAMPLES:
-            fig_dat, axs_dat = fviz.plot_data_ensemble(
-                orig_file=dat_orig_file,
-                ens_files=dat_ens_files,
-                sample_indices=[i_samp],
-                what=DAT_WHAT,
-                comps=DAT_COMPS,
-                show_errors_orig=DAT_SHOW_ERRORS_ORIG,
-                show_errors_pert=DAT_SHOW_ERRORS_PERT,
-                error_style_orig=DAT_ERROR_STYLE_ORIG,
-                error_style_pert=DAT_ERROR_STYLE_PERT,
-                n_sites=VIZ_N_SITES,
-                alpha_orig=DAT_ALPHA_ORIG,
-                alpha_pert=DAT_ALPHA_PERT,
-                comp_markers=DAT_COMP_MARKERS,
-                markersize=DAT_MARKERSIZE,
-                markevery=DAT_MARKEVERY,
-                perlims=DAT_PERLIMS,
-                rholims=DAT_RHOLIMS,
-                phslims=DAT_PHSLIMS,
-                vtflims=DAT_VTFLIMS,
-                ptlims=DAT_PTLIMS,
-                out=True,
-            )
-            member_dir = ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i_samp}/"
-            plot_path = member_dir + "gst_data" + PLOT_STR + ".pdf"
-            fig_dat.savefig(plot_path, bbox_inches="tight")
-            plt.close(fig_dat)
-            print(f"  data plot saved: {plot_path}")
-        print("data ensemble plots saved.")
-    
+
+"""
+Data visualization
+------------------
+Joint plot of original vs. perturbed observe.dat for the selected samples.
+Helper: femtic_viz.plot_data_ensemble
+
+Independent of PERTURB_DAT: only reads observe.dat files from disk (never
+touches the `data_ensemble` return value above), so it works equally well
+right after generation or later in a PLOT_ONLY = True run against files
+generated in a previous session. Members missing observe.dat are warned
+about and skipped.
+"""
+if PLOT_DATA:
+    dat_orig_file = TEMPLATES + "observe.dat"
+    dat_ens_files = [
+        ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/observe.dat"
+        for i in range(N_SAMPLES)
+    ]
+
+    for i_samp in VIZ_SAMPLES:
+        if not os.path.isfile(dat_ens_files[i_samp]):
+            print(f"  data: {dat_ens_files[i_samp]} not found — skipped.")
+            continue
+        fig_dat, axs_dat = fviz.plot_data_ensemble(
+            orig_file=dat_orig_file,
+            ens_files=dat_ens_files,
+            sample_indices=[i_samp],
+            what=DAT_WHAT,
+            comps=DAT_COMPS,
+            show_errors_orig=DAT_SHOW_ERRORS_ORIG,
+            show_errors_pert=DAT_SHOW_ERRORS_PERT,
+            error_style_orig=DAT_ERROR_STYLE_ORIG,
+            error_style_pert=DAT_ERROR_STYLE_PERT,
+            n_sites=VIZ_N_SITES,
+            alpha_orig=DAT_ALPHA_ORIG,
+            alpha_pert=DAT_ALPHA_PERT,
+            comp_markers=DAT_COMP_MARKERS,
+            markersize=DAT_MARKERSIZE,
+            markevery=DAT_MARKEVERY,
+            perlims=DAT_PERLIMS,
+            rholims=DAT_RHOLIMS,
+            phslims=DAT_PHSLIMS,
+            vtflims=DAT_VTFLIMS,
+            ptlims=DAT_PTLIMS,
+            out=True,
+        )
+        member_dir = ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i_samp}/"
+        plot_path = member_dir + "gst_data" + PLOT_STR + ".pdf"
+        fig_dat.savefig(plot_path, bbox_inches="tight")
+        plt.close(fig_dat)
+        print(f"  data plot saved: {plot_path}")
+    print("data ensemble plots saved.")
+
+
 
 """
 Generate geostatistical initial models: m0_i via pilot-point Kriging
@@ -1047,8 +1125,11 @@ if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC
             print(f"  QC slice plot saved: {_qc_pdf}")
         print("QC slice plots done.")
 
-    # --- Per-member model slice plots ----------------------------------------
-    if PLOT_MODEL and PERTURB_MOD:
+    # --- Per-member model slice plots -----------------------------------------
+    #: Reads MOD_RESISTIVITY_FILE from disk for each member — independent of
+    #: whether PERTURB_MOD ran this session, so PLOT_ONLY = True can re-plot
+    #: models Kriged in a previous run. Missing files are warned and skipped.
+    if PLOT_MODEL:
         _mod_files = [
             ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/{MOD_RESISTIVITY_FILE}"
             for i in range(N_SAMPLES)
@@ -1071,6 +1152,12 @@ One row per member, columns = slices defined by ENS_SLICES.
 Optional stat rows (mean, std, median of log10(ρ)) are appended at the bottom.
 
 Helper: femtic_viz.plot_ensemble_slices
+
+Reads MOD_RESISTIVITY_FILE per member from disk (MOD_MESH/MOD_RESISTIVITY_
+FILE are always defined regardless of PERTURB_MOD), so this also works
+unchanged under PLOT_ONLY = True. Unlike the QC/per-member loops above,
+missing member files are not individually checked here — any handling of
+absent files is left to fviz.plot_ensemble_slices itself.
 """
 if PLOT_DATA or PLOT_MODEL:
     if PLOT_SLICES_ENS:

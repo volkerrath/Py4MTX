@@ -21,6 +21,27 @@ Typical use cases:
 
 ---
 
+## Plot-only mode (`PLOT_ONLY`)
+
+Set `PLOT_ONLY = True` to skip steps (1)–(3) entirely — read, mesh-context
+build, apply `OPERATION`, write `MODEL_OUT` — and jump straight to
+plotting the already-existing `MODEL_IN` / `MODEL_OUT` files on disk with
+the current `PLOT_*` settings. `OPERATION` is ignored in this mode.
+
+Use this to retune colormap, slices, site overlay, axis limits, etc.
+without re-running a potentially expensive `"smooth"` / `"ellipsoid"` /
+`"brick"` operation.
+
+Guards:
+- `MODEL_IN` must exist, or the script exits with an error.
+- If `PLOT_OUTPUT = True`, `MODEL_OUT` must already exist on disk (i.e.
+  the script must have been run once already with `PLOT_ONLY = False`
+  producing that file); otherwise the script exits with a clear error
+  telling you to run it without `PLOT_ONLY` first, or set
+  `PLOT_OUTPUT = False` to plot `MODEL_IN` only.
+- If neither `PLOT_INPUT` nor `PLOT_OUTPUT` is set, a warning is printed
+  (nothing to do).
+
 ## Operations (`OPERATION`)
 
 | Value | Effect |
@@ -67,6 +88,7 @@ slice figure saved / shown
 ### Operation
 | Variable | Description |
 |---|---|
+| `PLOT_ONLY` | `True` → skip read/apply/write, just re-plot existing files (see above); `OPERATION` ignored |
 | `OPERATION` | One of `"fill"`, `"smooth"`, `"perturb"`, `"clip"`, `"null"` |
 | `OP_FILL_VALUE` | Target log₁₀(ρ) for `"fill"` |
 | `OP_SMOOTH_MODE` | Smoothing kernel: `"physical"` (global-σ Gaussian, original) \| `"knn_uniform"` (flat K-NN average) \| `"knn_gauss"` (per-region Gaussian) |
@@ -188,6 +210,21 @@ The geometry primitives used by `"smooth"`, `"wmean"`, `"ellipsoid"`, and
   output file is written in that case; use `PLOT_INPUT` instead.
 - UTM origin / site-position setup is now computed once and reused for
   both plots.
+
+## 2026-08-24 (PLOT_ONLY mode)
+
+- Added `PLOT_ONLY` config flag. When `True`, steps (1)-(3) (read model,
+  build mesh context, apply `OPERATION`, write `MODEL_OUT`) are skipped
+  entirely; the script goes straight to plotting the already-existing
+  `MODEL_IN` / `MODEL_OUT` files with the current `PLOT_*` settings.
+  `OPERATION` is ignored in this mode.
+- Guards: `MODEL_IN` must exist; if `PLOT_OUTPUT = True`, `MODEL_OUT`
+  must already exist too, or the script exits with a message to run once
+  with `PLOT_ONLY = False` first. A warning is printed if neither
+  `PLOT_INPUT` nor `PLOT_OUTPUT` is set.
+- Use case: iterating on plot styling (colormap, slices, site overlay,
+  axis limits, ...) without re-running a potentially expensive
+  `"smooth"` / `"ellipsoid"` / `"brick"` operation.
 
 ## 2026-08-23 (km-valued length inputs)
 
