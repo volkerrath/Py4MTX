@@ -88,6 +88,21 @@ Provenance
             API — scs.csr_matrix(tmp) → scs.csr_array(tmp) when building
             the sparsified empirical covariance (ens_covs). No functional
             change; ens_covs is only used for its .nnz count.
+2026-08-24  Claude Sonnet 5 (Anthropic)
+            Best-iteration selection (step (1), main block) fixed: (a)
+            dir_list is now filtered to os.path.isdir() entries immediately
+            after get_filelist(), since that function matches on name only
+            and can return non-directory hits; (b) the "best" iteration for
+            each ensemble member is now the one with the smallest nRMS
+            across the *entire* femtic.cnv convergence history, not simply
+            the last row — FEMTIC does not guarantee monotonic nRMS
+            reduction, so the last iteration is not necessarily the best.
+            iter0 (prior/starting model) is excluded from eligibility; a
+            WARNING is printed if iter0's nRMS is <= the best eligible
+            iter>0 nRMS, since that indicates the inversion did not
+            improve on the starting model. Ties (identical minimum nRMS at
+            two-plus iterations) resolve to the first (lowest-iteration)
+            occurrence.
 2026-07-25  Claude Sonnet 5 (Anthropic)
             Covariance estimation made optional (COMPUTE_COV; skips step
             (3) entirely, omitting the *_cov* keys from the .npz output).
@@ -306,6 +321,12 @@ Provenance
             parameters (None = fall back to the existing module-level
             MOD_ALPHA_FILE/MODE/BLANK_THRESH, so MOD_QC and any run with
             MOD_STATS_BLANK_BY_REDUX=False are completely unaffected).
+2026-09-06  Claude Sonnet 5 (Anthropic)
+            Added MOD_SHOW_MODEL_CENTRE (default True): marks the model
+            origin on "map" panels whenever MOD_DISPLAY_COORDS is
+            "utm"/"latlon" via fviz.plot_model_slices'
+            show_model_centre parameter; override style with a
+            MOD_MAP_MARKERS entry carrying "is_model_centre": True.
 """
 from __future__ import annotations
 
@@ -390,19 +411,14 @@ print(titstrng + "\n\n")
 # ===========================================================================
 # USER SECTION -- all user-set parameters below are UPPERCASE
 # ===========================================================================
-FEMTIC="5.0" #"4.3"
 # ---------------------------------------------------------------------------
 # Ensemble input
 # ---------------------------------------------------------------------------
-
-# ENSEMBLE_DIR = r"/home/vrath/FEMTIC_work/Ensembles/misti_gst/ensemble/"
-#ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/misti2026/gst/"
-ENSEMBLE_DIR = r"/home/vrath/FEMTIC_work/Ensembles/misti_gst/"
-ENSEMBLE_NAME = "misti_gst_suzuki_rnd"
-
+ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2/"
+ENSEMBLE_NAME = "annecy_rnd_2_"
 #: Prefix used for .npz output keys and default file/figure names.
 #: e.g. "rto" → keys rto_ens, rto_avg, …  and file RTO_results.npz.
-ENSEMBLE_PREFIX = "misti_gst_suzuki_rnd"
+ENSEMBLE_PREFIX = "annecy_rnd_2"
 
 #: Maximum normalised RMS accepted from femtic.cnv.
 NRMS_MAX = 1.5
@@ -544,7 +560,7 @@ _MOD_PLOT_FORMATS = (
 MOD_QC      = True
 #: Extension-less base path; _plot_slice() appends ".<fmt>" per
 #: MOD_PLOT_FORMAT entry.
-MOD_QC_FILE = ENSEMBLE_DIR + ENSEMBLE_PREFIX + "_qc"
+MOD_QC_FILE = ENSEMBLE_DIR + ENSEMBLE_PREFIX + "_best"
 
 # ---------------------------------------------------------------------------
 # Statistics slice plots — mean / variance / median / MAD
@@ -569,7 +585,7 @@ MOD_STATS_WHAT = ["avg", "med", "err", "mad"] + [
     ["var_redux"] if COMPUTE_VAR_REDUX else []
 )
 #: Output directory for stat block files and figures.
-MOD_STATS_DIR  = ENSEMBLE_DIR + "/stats_plots_ext/"
+MOD_STATS_DIR  = ENSEMBLE_DIR + "/stats_plots/"
 
 #: Per-statistic colour-scale override, keyed the same as MOD_STATS_WHAT
 #: (e.g. "var", "p50", "qdiff_15_9_84_1"). Each value is an explicit
@@ -583,18 +599,18 @@ MOD_STATS_DIR  = ENSEMBLE_DIR + "/stats_plots_ext/"
 #: sensible starting range; adjust per-key, or set a key to None to fall
 #: back to auto-scaling for that one statistic.
 MOD_STATS_CLIM = {
-    "var": [-.0, .5],
-    "err": [-.0, .5],
-    "mad": [-.0, .5],
+    "var": [-.0, .3],
+    "err": [-.0, .3],
+    "mad": [-.0, .3],
 }
 for _lo, _hi in QDIFF_PAIRS:
     MOD_STATS_CLIM[f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_")] = [.0, .5]
 if BOOTSTRAP_VAR:
-    MOD_STATS_CLIM["var_boot"] = [-.0, 0.5]
-    MOD_STATS_CLIM["err_boot"] = [-.0, 0.5]
+    MOD_STATS_CLIM["var_boot"] = [-.0, 0.3]
+    MOD_STATS_CLIM["err_boot"] = [-.0, 0.3]
 if COMPUTE_VAR_REDUX:
     #: Same (log10 Ω·m)² scale as "var" — override if needed.
-    MOD_STATS_CLIM["var_prior"] = [-.0, .5]
+    MOD_STATS_CLIM["var_prior"] = [-.0, .3]
     #: var_redux = 1 - var/var_prior is a bounded fraction in typical
     #: use (0 = no reduction, 1 = fully constrained); set to None here
     #: for auto-scaling instead, e.g. if values run negative (posterior
@@ -652,27 +668,47 @@ MOD_SITE_NUMBER = None
 MOD_PLOT_SITES_MAPS   = True    # show markers on map panels
 MOD_PLOT_SITES_SLICES = False    # show markers on curtain / plane panels
 #: Max distance [km] from a curtain plane for a site to appear on it.
-MOD_PROJECTION_DIST = 2.0    # km; None = show all sites on every panel
+MOD_PROJECTION_DIST = 1.0    # km; None = show all sites on every panel
 
 MOD_SITE_MARKER        = dict(marker="v", color="black", ms=8, zorder=10, label=None)
 MOD_SITE_MARKER_SLICES = None
 #: Extra point markers on map panels only (each dict: latlon, marker, color, ms, name).
 MOD_MAP_MARKERS = []
+#: Mark the model origin on every "map" panel whenever MOD_DISPLAY_COORDS
+#: is "utm"/"latlon" (no effect for "model"). Override style via a
+#: MOD_MAP_MARKERS entry with "is_model_centre": True.
+MOD_SHOW_MODEL_CENTRE = True
 
 # --- Slice specification ----------------------------------------------------
 #: Slice positions accept plain floats (model-local m) or CRS-tagged tuples:
 #:   (value, "utm") | (value, "latlon")
 #: Depth z0 is always model-local metres (no CRS tagging).
+# MOD_SLICES = [    
+#     dict(kind="map", z0=0.0),    # km
+#     dict(kind="map", z0=5.0),    # km
+#     dict(kind="map", z0=10.0),   # km
+#     dict(kind="map", z0=15.0),   # km
+#     dict(kind="map", z0=20.0),   # km
+#     dict(kind="map", z0=25.0),   # km
+#     dict(kind="ns",  x0=(-71.40723, 'latlon')),    # km
+#     dict(kind="ew",  y0=(-16.299593, 'latlon')),    # km
+# ]
 MOD_SLICES = [    
+    dict(kind="map", z0=-0.25),    # km
     dict(kind="map", z0=0.0),    # km
-    dict(kind="map", z0=5.0),    # km
-    dict(kind="map", z0=10.0),   # km
-    dict(kind="map", z0=15.0),   # km
-    dict(kind="map", z0=20.0),   # km
-    dict(kind="map", z0=25.0),   # km
-    dict(kind="ns",  x0=(-71.40723, 'latlon')),    # km
-    dict(kind="ew",  y0=(-16.299593, 'latlon')),    # km
+    dict(kind="map", z0=0.5),   # km
+    dict(kind="map", z0=1.0),   # km
+    dict(kind="map", z0=2.0),   # km
+    dict(kind="map", z0=2.5),   # km
+    dict(kind="map", z0=3.0),   # km
+    dict(kind="map", z0=4.0),   # km
+    dict(kind="map", z0=5.0),   # km
+    dict(kind="ns",  x0=0.),    # km
+    dict(kind="ew",  y0=0.),    # km
+    #dict(kind="ns",  x0=(-71.40723, 'latlon')),    # km
+    #dict(kind="ew",  y0=(-16.299593, 'latlon')),    # km
 ]
+
 MOD_XLIM = None    # [xmin, xmax] model-local km; None = auto
 MOD_YLIM = None    # [ymin, ymax] model-local km; None = auto
 MOD_ZLIM = None    # [zmin, zmax] model-local km; None = auto
@@ -687,15 +723,15 @@ MOD_ZLIM = None    # [zmin, zmax] model-local km; None = auto
 #: Also drives the per-panel aspect-ratio sizing below (MOD_PANEL_WIDTH),
 #: since that sizing needs an actual extent to compute widths from.
 MOD_ROI_AUTO   = True
-MOD_ROI_PAD_XY = 5.0             # km of padding around the site bbox
-MOD_ROI_ZLIM   = [-6.0, 30.0]    
+MOD_ROI_PAD_XY = 2.0             # km of padding around the site bbox
+MOD_ROI_ZLIM   = [-1.0, 7.0]    
 #: depth range (km, positive-down) for ns/ew/plane panels; None = leave MOD_ZLIM as-is
 #: Lower bound is negative (above the z=0 datum) to give ~1 km of headroom
 #: so topography (mesh cells with z < 0) is not clipped out of the ns/ew/
 #: plane panels. Previously [0.0, 20000.0] cut panels off exactly at the
 #: datum, hiding any topography above it.
 
-MOD_DPI         = 600            # figure DPI, used by both MOD_QC and MOD_STATS
+MOD_DPI         = 400            # figure DPI, used by both MOD_QC and MOD_STATS
 MOD_CMAP        = "jet_r"
 MOD_CLIM        = [0.0, 4.0]     # [log10_min, log10_max] Ω·m; None = auto
 MOD_OCEAN_COLOR = "lightgrey"    # flat colour for ocean cells; None = colormap
@@ -715,8 +751,8 @@ MOD_HORIZ_KM     = True
 #: Adjust to len(MOD_SLICES) if you change the number of panels; None/None
 #: falls back to a single row of len(MOD_SLICES) columns.
 MOD_NROWS        = 4      # None = auto (1 row)
-MOD_NCOLS        = 2      # None = auto (len(MOD_SLICES) cols)
-MOD_PANEL_HEIGHT = 16.0   # cm
+MOD_NCOLS        = 3     # None = auto (len(MOD_SLICES) cols)
+MOD_PANEL_HEIGHT = 18.0   # cm
 #: None = auto per-column width from each panel's own aspect ratio (needs
 #: MOD_EQUAL_ASPECT=True and real xlim/ylim/zlim -- supplied automatically
 #: by MOD_ROI_AUTO above -- so map, ns, and ew panels naturally end up
@@ -960,6 +996,7 @@ def _plot_slice(block_file: str, pdf_file: str,
             site_marker         = MOD_SITE_MARKER,
             site_marker_slices  = MOD_SITE_MARKER_SLICES,
             map_markers         = MOD_MAP_MARKERS,
+            show_model_centre   = MOD_SHOW_MODEL_CENTRE,
             projection_dist     = _km_to_m(MOD_PROJECTION_DIST),
             display_coords      = MOD_DISPLAY_COORDS,
             utm_origin_e        = utm_e,
@@ -997,11 +1034,17 @@ def _plot_slice(block_file: str, pdf_file: str,
 # ===========================================================================
 
 # --- (1) Scan ensemble directories ----------------------------------------
+# get_filelist() matches on name only (fnmatch over os.listdir), so it can
+# return non-directory matches (stray files, archives, etc.) alongside the
+# actual ensemble-member sub-directories. Filter to directories immediately,
+# before counting/looping, so downstream logic never has to think about
+# non-directory entries.
 dir_list = utl.get_filelist(
     searchstr=[ENSEMBLE_NAME+"*"],
     searchpath=ENSEMBLE_DIR,
     fullpath=True,
 )
+dir_list = [d for d in dir_list if os.path.isdir(d)]
 print(f"Found {len(dir_list)} sub-directory/ies matching '{ENSEMBLE_NAME}'.")
 
 model_list  = []          # list of [block_file, n_iter, nRMS]
@@ -1013,30 +1056,61 @@ prior_count       = 0     # accepted members whose iter0 file was found
 prior_missing_any = False
 
 for d in dir_list:
-    if not os.path.isdir(d):
-        print(f"\n  {d}: not a directory — skipped (not an ensemble run).")
-        continue
-
     print(f"\n  Inversion run: {d}")
     cnv_file = os.path.join(d, "femtic.cnv")
     if not os.path.isfile(cnv_file):
         print(f"    femtic.cnv not found — skipped.")
         continue
 
-    with open(cnv_file) as _fh:
-        cnv = _fh.readlines()
-    info  = cnv[-1].split()
-    if "4.3" in FEMTIC:
-        numit = int(info[0])
-        nrms  = float(info[6])
-    elif "5." in FEMTIC:
-        numit = int(info[0])
-        nrms  = float(info[8])
-    else:
-        sys.exit("FEMTIC version"+__file__+": does not exist! Exit.")
+    # Column positions are read from this file's own header row via
+    # fem.read_cnv() -- robust to FEMTIC version and to whether distortion
+    # parameters (the Beta/Distortion columns) are present, which shift
+    # RMS's column position independently of version (e.g. a 4.3 run WITH
+    # distortion has RMS at the same column as a typical 5.x run, not at
+    # the plain-4.3 position). A version-string switch conflated the two
+    # and silently misread nRMS for 4.3-with-distortion runs. Fixed
+    # 2026-09-02 -- see femtic_readme.md's read_cnv() entry.
+    try:
+        _cnv = fem.read_cnv(cnv_file)
+    except ValueError as e:
+        print(f"    {e} — skipped.")
+        continue
+
+    # Scan *every* convergence-history row — not just the last — to find
+    # the iteration with the smallest nRMS. The last iteration is not
+    # necessarily the best: FEMTIC does not guarantee monotonic nRMS
+    # reduction, and a run may drift upward again after its actual best
+    # iteration.
+    numit        = None
+    nrms         = None
+    iter0_nrms   = None   # tracked separately only to power the warning below
+    for _row in _cnv["rows"]:
+        _it, _nrms = int(_row["Iter"]), _row["RMS"]
+        if _it == 0:
+            # iter0 (prior/starting model) is not eligible as "best
+            # iteration" — it precedes any inversion step.
+            iter0_nrms = _nrms
+            continue
+        if nrms is None or _nrms < nrms:
+            numit, nrms = _it, _nrms
+            # ties: keep the first (lowest-iteration) occurrence of the
+            # minimum, so a strict "<" (not "<=") comparison is correct
+            # here — later equal values are simply not adopted.
+
+    if numit is None:
+        print(f"    no eligible (iter>0) convergence rows found in "
+              f"{cnv_file} — skipped.")
+        continue
+
+    if iter0_nrms is not None and iter0_nrms <= nrms:
+        print(f"    WARNING: iter0 nRMS={iter0_nrms:.4f} is <= the best "
+              f"eligible iter>0 nRMS={nrms:.4f} (iter={numit}) — the "
+              f"inversion did not improve on the starting model, but "
+              f"iter0 is excluded from selection by design.")
 
     if nrms > NRMS_MAX:
-        print(f"    nRMS={nrms:.4f} > NRMS_MAX={NRMS_MAX} — skipped.")
+        print(f"    best nRMS={nrms:.4f} (iter={numit}) > "
+              f"NRMS_MAX={NRMS_MAX} — skipped.")
         continue
 
     mod_file = os.path.join(d, f"resistivity_block_iter{numit}.dat")

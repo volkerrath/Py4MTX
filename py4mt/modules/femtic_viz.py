@@ -470,7 +470,41 @@ Provenance:
                         (no longer meaningful now that only
                         binned_statuses gets real bins); no other public
                         parameters changed. plot_convergence_bar is
-                        unaffected."""
+                        unaffected.
+    2026-08-25  Claude Sonnet 5 (Anthropic)
+                        plot_model_slices: the map/ns/ew panel horizontal
+                        axis labels said "x (easting)"/"y (northing)" in
+                        every display_coords mode, which was misleading
+                        in "latlon" mode -- the plotted/ticked values
+                        there (already converted via utm_to_latlon_fn)
+                        are geographic longitude/latitude in degrees, not
+                        model easting/northing. Replaced with plain
+                        "East"/"North" wording (still carrying the
+                        existing per-mode unit suffix, e.g. "East [km]",
+                        "East [ deg]") via new _elabel/_nlabel, applied
+                        uniformly across "model"/"utm"/"latlon" display
+                        modes for consistency (not just "latlon").
+                        plot_ensemble_slices' hardcoded map/ns/ew
+                        xlabel/ylabel strings (it has no display_coords
+                        parameter and always plots in model metres)
+                        updated the same way: "x (easting) [m]"/
+                        "y (northing) [m]" -> "East [m]"/"North [m]".
+    2026-09-06  Claude Sonnet 5 (Anthropic)
+                        plot_model_slices: added optional model-centre
+                        marker on "map" panels. New show_model_centre
+                        parameter (default True) draws the model origin
+                        (model-local x=0, y=0) whenever display_coords is
+                        "utm"/"latlon" (no-op for "model", where the
+                        origin is already the trivial (0, 0) point). No
+                        legend entry is ever produced for it. Style
+                        defaults to black "+", ms=10; overridable via a
+                        map_markers entry carrying "is_model_centre":
+                        True instead of "latlon" (that entry is filtered
+                        out of the regular map_markers loop before
+                        per-panel rendering, so it never needs a "latlon"
+                        key). plot_ensemble_slices is unaffected (no
+                        display_coords support, always model-local).
+    """
 
 from __future__ import annotations
 
@@ -3558,6 +3592,7 @@ def plot_model_slices(
     site_marker: Optional[dict] = None,
     site_marker_slices: Optional[dict] = None,
     map_markers: Optional[list] = None,
+    show_model_centre: bool = True,
     display_coords: str = "model",
     utm_origin_e: float = 0.0,
     utm_origin_n: float = 0.0,
@@ -3648,6 +3683,22 @@ def plot_model_slices(
         List of extra point-marker dicts overlaid on map panels only.
         Each dict: ``"latlon"`` ([lat, lon]), ``"marker"``, ``"color"``,
         ``"ms"``, ``"name"`` (legend label or ``None``).
+        A dict with ``"is_model_centre": True`` instead of ``"latlon"``
+        is treated specially: it does not plot as a regular marker but
+        instead overrides the style of the model-centre marker (see
+        ``show_model_centre``); its own ``"name"`` (if any) is ignored,
+        since the model-centre marker never gets a legend entry.
+    show_model_centre
+        When the axes are *not* in intrinsic model-local coordinates
+        (``display_coords in ("utm", "latlon")``), mark the model origin
+        (model-local ``x=0, y=0``) on every ``"map"`` panel so the mesh
+        centre remains identifiable once the axes are relabelled in UTM
+        or lat/lon.  Default style: black ``"+"``, ``ms=10``.  Override
+        the style via a ``map_markers`` entry with ``"is_model_centre":
+        True`` (see above).  Set ``False`` to force the marker off even
+        in UTM/latlon display.  Has no effect when
+        ``display_coords == "model"`` (the origin is trivially the
+        plotted (0, 0) point already) or on non-``"map"`` panel kinds.
     display_coords
         ``"model"`` (model-local m), ``"utm"`` (absolute UTM km), or
         ``"latlon"`` (decimal degrees).
@@ -4028,6 +4079,35 @@ def plot_model_slices(
     else:
         sc, sfx = 1.0, " [m]"
 
+    # -- model-centre marker (map panels only) ---------------------------
+    # An "is_model_centre" entry in map_markers overrides the marker style
+    # rather than plotting as a regular lat/lon marker -- pull it out of
+    # the list once here so the generic per-panel map_markers loop below
+    # never sees it (it has no "latlon" key and would otherwise KeyError).
+    _regular_map_markers = []
+    _model_centre_style: Optional[dict] = None
+    for _mm0 in (map_markers or []):
+        if _mm0.get("is_model_centre", False):
+            _model_centre_style = _mm0
+        else:
+            _regular_map_markers.append(_mm0)
+
+    _draw_model_centre = bool(show_model_centre) and _disp in ("utm", "latlon")
+    if _draw_model_centre:
+        _mc_marker = dict(marker="+", color="black", ms=10, mew=2, zorder=12)
+        if _model_centre_style is not None:
+            _mc_marker.update({k: v for k, v in _model_centre_style.items()
+                                if k not in ("is_model_centre", "latlon", "name")})
+
+    # Horizontal axis labels: "East"/"North" (with the display-mode unit
+    # suffix) for every display_coords mode. In "latlon" display the
+    # plotted/ticked values are geographic longitude/latitude in degrees
+    # rather than model easting/northing in metres/km, so the old
+    # "x (easting)"/"y (northing)" wording was misleading there; using
+    # the same plain "East"/"North" wording for "model"/"utm" too keeps
+    # all three display modes consistent.
+    _elabel, _nlabel = f"East{sfx}", f"North{sfx}"
+
     # lat/lon tick formatters (or, for model/UTM display, plain decimal
     # formatters) -- both honour tick_decimals when given.
     _fmt_x = _fmt_y = None
@@ -4275,8 +4355,8 @@ def plot_model_slices(
                                          poly_alphas=_pa)
             if mesh_outline and polys_d:
                 _outline_convex_hull(ax, polys_d, mesh_outline_color)
-            ax.set_xlabel(f"x (easting){sfx}", fontsize=label_fontsize)
-            ax.set_ylabel(f"y (northing){sfx}", fontsize=label_fontsize)
+            ax.set_xlabel(_elabel, fontsize=label_fontsize)
+            ax.set_ylabel(_nlabel, fontsize=label_fontsize)
             if _xlim is not None:
                 ax.set_xlim([(v + dE)*sc for v in _xlim])
             if _ylim is not None:
@@ -4292,7 +4372,7 @@ def plot_model_slices(
             for sn, sx_m, sy_m, _elev in (_site_xys if sites_in_maps else []):
                 mk = dict(_sm); mk.setdefault("label", f"Site {sn}")
                 ax.plot((sx_m + dE)*sc, (sy_m + dN)*sc, linestyle="none", **mk)
-            for _mm in (map_markers or []):
+            for _mm in _regular_map_markers:
                 _lat, _lon = _mm["latlon"]
                 if latlon_to_model_fn is not None:
                     _mx_m, _my_m = latlon_to_model_fn(
@@ -4308,6 +4388,11 @@ def plot_model_slices(
                 _mk.update({k: v for k, v in _mm.items()
                             if k not in ("latlon","marker","color","ms","zorder","name")})
                 ax.plot((_mx_m + dE)*sc, (_my_m + dN)*sc, linestyle="none", **_mk)
+            if _draw_model_centre:
+                # Model origin (model-local 0, 0); never gets a legend
+                # label (no "label" key passed).
+                ax.plot((0.0 + dE)*sc, (0.0 + dN)*sc,
+                        linestyle="none", **_mc_marker)
 
         elif kind == "ns":
             x0 = float(spec.get("x0", 0.0))
@@ -4335,7 +4420,7 @@ def plot_model_slices(
                                          ocean_color=ocean_color,
                                          air_color=air_color, ocean_value=ocean_value, invert_v=inv,
                                          poly_alphas=_pa)
-            ax.set_xlabel(f"y (northing){sfx}", fontsize=label_fontsize)
+            ax.set_xlabel(_nlabel, fontsize=label_fontsize)
             ax.set_ylabel("depth (km)" if depth_km else "depth (m)", fontsize=label_fontsize)
             ax.yaxis.set_major_formatter(_depth_tick_fmt)
             if _ylim is not None:
@@ -4395,7 +4480,7 @@ def plot_model_slices(
                                          ocean_color=ocean_color,
                                          air_color=air_color, ocean_value=ocean_value, invert_v=inv,
                                          poly_alphas=_pa)
-            ax.set_xlabel(f"x (easting){sfx}", fontsize=label_fontsize)
+            ax.set_xlabel(_elabel, fontsize=label_fontsize)
             ax.set_ylabel("depth (km)" if depth_km else "depth (m)", fontsize=label_fontsize)
             ax.yaxis.set_major_formatter(_depth_tick_fmt)
             if _xlim is not None:
@@ -5269,7 +5354,7 @@ def plot_ensemble_slices(
             title_tmpl  = title_tmpl or f"Map  z = {z0/1000:.1f} km"
             slice_geom.append(dict(polys=polys, eidx=eidx, invert_v=False,
                                    invert_x=bool(spec.get("invert_x", False)),
-                                   xlabel="x (easting) [m]", ylabel="y (northing) [m]",
+                                   xlabel="East [m]", ylabel="North [m]",
                                    xlim=_xlim, ylim=_ylim, zlim=None, title=title_tmpl))
 
         elif kind == "ns":
@@ -5279,7 +5364,7 @@ def plot_ensemble_slices(
             title_tmpl  = title_tmpl or f"N-S  x = {x0/1000:.1f} km"
             slice_geom.append(dict(polys=polys, eidx=eidx, invert_v=inv,
                                    invert_x=bool(spec.get("invert_x", False)),
-                                   xlabel="y (northing) [m]", ylabel="depth [m]",
+                                   xlabel="North [m]", ylabel="depth [m]",
                                    xlim=_ylim, ylim=None, zlim=_zlim, title=title_tmpl))
 
         elif kind == "ew":
@@ -5289,7 +5374,7 @@ def plot_ensemble_slices(
             title_tmpl  = title_tmpl or f"E-W  y = {y0/1000:.1f} km"
             slice_geom.append(dict(polys=polys, eidx=eidx, invert_v=inv,
                                    invert_x=bool(spec.get("invert_x", False)),
-                                   xlabel="x (easting) [m]", ylabel="depth [m]",
+                                   xlabel="East [m]", ylabel="depth [m]",
                                    xlim=_xlim, ylim=None, zlim=_zlim, title=title_tmpl))
 
         elif kind == "plane":

@@ -237,6 +237,30 @@ Provenance:
                 PLOT_MODEL loop was removed. Missing per-member files are
                 warned about and skipped (same behaviour as the pre-existing
                 PLOT_SLICES_QC loop), never a hard error.
+    2026-08-25  Claude Sonnet 5 (Anthropic)
+                MOD_PP_BBOX default changed from a fixed generic km box to
+                None. MOD_PP_BBOX and MOD_PP_ROI may now each be None or an
+                explicit 6-list; both are resolved inside
+                ens.generate_gst_model_ensemble against the model's actual
+                free-region extent: None -> full extent on every axis;
+                an explicit box has each of its six bounds clamped,
+                axis-wise, to that same extent, so a box wider than the
+                true model on some axis (e.g. reused from another survey)
+                is truncated to the model's actual size on that axis
+                instead of placing pilot points outside the free-region
+                domain. See ensembles.py provenance for the implementation
+                (_resolve_pp_box helper in generate_gst_model_ensemble).
+                No config plumbing changed here — MOD_PP_BBOX/MOD_PP_ROI
+                still pass through _lim_km_to_m() and ens.
+                generate_gst_model_ensemble(pp_bbox=..., pp_roi=...)
+                exactly as before; only the default value and the
+                in-comment documentation changed.
+    2026-09-06  Claude Sonnet 5 (Anthropic)
+                Added MOD_SHOW_MODEL_CENTRE (default True): marks the
+                model origin on "map" panels whenever MOD_DISPLAY_COORDS
+                is "utm"/"latlon" via fviz.plot_model_slices'
+                show_model_centre parameter; override style with a
+                MOD_MAP_MARKERS entry carrying "is_model_centre": True.
 """
 
 import os
@@ -402,10 +426,15 @@ Base setup.
 N_SAMPLES = 64
 # ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/ubinas/ensemble/"
 # ENSEMBLE_NAME = "ubinas_gst_suzuki_"
-
 # ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/ensembles/misti/ensemble/"
-ENSEMBLE_DIR = r"/home/vrath/work/Ensembles/annecy2026/ensembles/"
-ENSEMBLE_NAME = "annecy_gst_rnd_"
+# ENSEMBLE_DIR = r"/home/vrath/work/Ensembles/annecy2026/ensembles/"
+# ENSEMBLE_NAME = "annecy_rnd_2_"
+
+ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_4/"
+ENSEMBLE_NAME = "annecy_rnd_4_"
+
+# ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/misti2026/misti_gst_rndx/"
+# ENSEMBLE_NAME = "misti_rnd_1_xxx"
 
 TEMPLATES = ENSEMBLE_DIR + "/templates/"
 if not os.path.isdir(TEMPLATES):
@@ -487,14 +516,33 @@ if PERTURB_MOD:
     # Number of randomly drawn pilot points per member.
     # Used when MOD_PP_MODE = "random", "mixed", or "extrema" (fill).
     # Recommended: 50–200 for typical 3-D MT survey volumes.
-    MOD_N_PP = 128
+    MOD_N_PP = 100
 
     # Bounding box for random pilot-point placement:
     #   [x_min, x_max, y_min, y_max, z_min, z_max]  (km, model-local, z positive-down)
-    MOD_PP_BBOX = [-20., 20.,   # easting  range (km)
-                   -20., 20.,   # northing range (km)
-                    0.3, 20.]   # depth     range (km, positive-down)
-
+    #
+    #   None (default)  : use the full free-region extent of the model
+    #                      (axis-wise min/max of the free-region
+    #                      barycentres — i.e. the actual model domain,
+    #                      excluding fixed air/ocean regions).
+    #   explicit 6-list : each of the six bounds is independently clamped,
+    #                      axis-wise, to that same full extent — a bound
+    #                      wider than the true model size on some axis
+    #                      (e.g. a box copied over from a different
+    #                      survey) is simply truncated to the model's
+    #                      actual size on that axis; a bound already
+    #                      inside the model is left unchanged. Clamping
+    #                      (and the resolved None case) happens inside
+    #                      ens.generate_gst_model_ensemble, which prints a
+    #                      one-line message whenever a supplied box is
+    #                      actually narrowed.
+    MOD_PP_BBOX = None
+    # e.g. [-20., 20.,   # easting  range (km)
+    #       -20., 20.,   # northing range (km)
+    #        0.3, 20.]   # depth     range (km, positive-down)
+    # e.g. [-2000., 2000.,   # easting  range (km)
+    #       -2000., 2000.,   # northing range (km)
+    #        -0.3,  50.]   # depth     range (km, positive-down)
     # Explicit pilot-point coordinates used when MOD_PP_MODE = "fixed"
     # or "mixed".  Shape: (N, 3) — columns: [easting, northing, depth],
     # km, same model-local convention as MOD_PP_BBOX.
@@ -506,7 +554,10 @@ if PERTURB_MOD:
     # MOD_PP_ROI: bounding box [x_min, x_max, y_min, y_max, z_min, z_max]
     #   (km, model-local) restricting which free regions are eligible as
     #   extremum seeds.
-    #   None = full free-region extent (equivalent to MOD_PP_BBOX).
+    #   None = full free-region extent (same resolution rule as
+    #   MOD_PP_BBOX above). An explicit 6-list is likewise clamped
+    #   axis-wise to that full extent, so a ROI wider than the true model
+    #   on some axis is truncated to it rather than accepted as-is.
     #   z positive-down (FEMTIC convention).
     #   Tip: tighten to the survey footprint to exclude deep/lateral padding.
     #
@@ -554,7 +605,7 @@ if PERTURB_MOD:
     # Half-width (log10 Ohm.m) of the symmetric perturbation around the
     # reference value.  Only used when MOD_PP_VALUE_MODE = "reference".
     # Typical: 0.3-1.0 (factor ~2-10 in resistivity).
-    MOD_PP_VALUE_DELTA = 0.5
+    MOD_PP_VALUE_DELTA = 1.0
 
     # ------------------------------------------------------------------
     # Variogram model
@@ -735,14 +786,18 @@ if PLOT_DATA or PLOT_MODEL:
     MOD_PLOT_SITES_MAPS   = True   # show markers on map panels
     MOD_PLOT_SITES_SLICES = True   # show markers on curtain / plane panels
     #: Max distance [m] from a curtain plane for a site to appear on it.
-    MOD_PROJECTION_DIST = 1.0   # km; None = show all sites on every panel
+    MOD_PROJECTION_DIST = .5   # km; None = show all sites on every panel
     MOD_SITE_MARKER = dict(marker="v", color="black", ms=4, zorder=10, label=None)
     MOD_SITE_MARKER_SLICES = dict(marker="v", color="black", ms=4, zorder=10, label=None)
     #: Extra point markers on map panels only (each dict: latlon, marker, color, ms, name).
     MOD_MAP_MARKERS = []
+    #: Mark the model origin on every "map" panel whenever MOD_DISPLAY_COORDS
+    #: is "utm"/"latlon" (no effect for "model"). Override style via a
+    #: MOD_MAP_MARKERS entry with "is_model_centre": True.
+    MOD_SHOW_MODEL_CENTRE = True
 
     # --- Plotting -----------------------------------------------------------
-    MOD_DPI       = 200
+    MOD_DPI       = 300
     MOD_CMAP      = "turbo_r"
     MOD_CLIM      = [0.0, 4.0]     # [log10_min, log10_max] Ω·m; None = auto
     MOD_OCEAN_COLOR  = "lightgrey" # flat colour for ocean cells; None = colormap
@@ -764,9 +819,9 @@ if PLOT_DATA or PLOT_MODEL:
         dict(kind="ns",  x0=0.0),    # km
         dict(kind="ew",  y0=0.0),    # km
     ]
-    MOD_XLIM = [-15., 15.]   # [xmin, xmax] model-local km; None = auto
-    MOD_YLIM = [-15., 15.]   # [ymin, ymax] model-local km; None = auto
-    MOD_ZLIM = [-1., 15.]   # [zmin, zmax] model-local km; None = auto
+    MOD_XLIM = [-10., 10.]   # [xmin, xmax] model-local km; None = auto
+    MOD_YLIM = [-10., 10.]   # [ymin, ymax] model-local km; None = auto
+    MOD_ZLIM = [-1.,  5.]   # [zmin, zmax] model-local km; None = auto
 
     # --- Figure layout -------------------------------------------------------
     MOD_EQUAL_ASPECT  = True
@@ -781,8 +836,8 @@ if PLOT_DATA or PLOT_MODEL:
     #: Axis annotation font sizes, passed through to fviz.plot_model_slices
     #: (used by both PLOT_SLICES_QC and PLOT_MODEL below). Defaults match
     #: plot_model_slices' own defaults.
-    MOD_TICK_FONTSIZE  = 7    # axis tick labels, colourbar ticks
-    MOD_LABEL_FONTSIZE = 8    # axis labels, panel titles, colourbar label
+    MOD_TICK_FONTSIZE  = 10    # axis tick labels, colourbar ticks
+    MOD_LABEL_FONTSIZE = 11    # axis labels, panel titles, colourbar label
 
     # --- Ensemble slice plot (femtic_viz.plot_ensemble_slices) ---------------
     #: Set True to produce a joint member × slice figure after generation.
@@ -801,12 +856,12 @@ if PLOT_DATA or PLOT_MODEL:
     #: Axis annotation font sizes for plot_ensemble_slices (independent of
     #: MOD_TICK_FONTSIZE/MOD_LABEL_FONTSIZE above -- plot_ensemble_slices'
     #: joint member x slice grid uses smaller defaults so more rows fit).
-    ENS_TICK_FONTSIZE  = 8
-    ENS_LABEL_FONTSIZE = 8
+    ENS_TICK_FONTSIZE  = 10
+    ENS_LABEL_FONTSIZE = 11
 
     # --- QC slice plot of Kriged initial models ------------------------------
     #: Set True to produce one slice figure per selected member.
-    PLOT_SLICES_QC = False
+    PLOT_SLICES_QC = True
 
 
 """
@@ -958,7 +1013,7 @@ if PERTURB_MOD:
         vario_sill=MOD_VARIO_SILL,
         vario_nugget=MOD_VARIO_NUGGET,
         vario_angles=MOD_VARIO_ANGLES,
-        output_target=MOD_OUTPUT_TARGET,
+        output_target=MOD_OUTPUFalseT_TARGET,
         resistivity_file=MOD_RESISTIVITY_FILE,
         reference_file=MOD_REFERENCE_FILE,
         rng=rng,
@@ -1083,6 +1138,7 @@ if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC
             site_marker     = MOD_SITE_MARKER,
             site_marker_slices = MOD_SITE_MARKER_SLICES,
             map_markers     = MOD_MAP_MARKERS,
+            show_model_centre = MOD_SHOW_MODEL_CENTRE,
             display_coords  = MOD_DISPLAY_COORDS,
             utm_origin_e    = _mod_utm_origin_e,
             utm_origin_n    = _mod_utm_origin_n,

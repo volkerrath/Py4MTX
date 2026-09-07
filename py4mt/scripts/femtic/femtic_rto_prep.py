@@ -231,6 +231,32 @@ Provenance:
                 Added femtic_rto_prep_summary.md output at end of run:
                 writes user-set (UPPERCASE) parameters, script path, and
                 run date/time via utl.write_param_summary().
+    2026-09-02  Claude Sonnet 5 (Anthropic)
+                Fixed PLOT_SLICES_QC / PLOT_SLICES_ENS: both hardcoded the
+                literal filename "resistivity_block_iter0.dat" for the
+                per-member file to plot, but generate_rto_model_ensemble()
+                writes the actual RTO-perturbed model to
+                {member_dir}/{MOD_REF_BASE} (i.e. referencemodel.dat, per
+                the refmod=MOD_REF_BASE argument). Since
+                resistivity_block_iter0.dat is a shared, unperturbed
+                symlink (LINK_LIST) identical across every member, QC
+                plots and the ensemble slice panel were showing the same
+                unperturbed prior N times over -- never the actual
+                perturbation. Both now use {MOD_REF_BASE}, matching the
+                pattern PLOT_MODEL already used correctly. Confirms (per
+                Volker, 2026-09-02) that the reference model file itself
+                must never be modified in place: this fix does not touch
+                that invariant -- referencemodel.dat is in COPY_LIST (a
+                real per-member file, not a symlink to the shared
+                template), so generate_rto_model_ensemble's per-member
+                perturbation writes only ever land on that member's own
+                copy, never on TEMPLATES/referencemodel.dat.
+    2026-09-06  Claude Sonnet 5 (Anthropic)
+                Added MOD_SHOW_MODEL_CENTRE (default True): marks the
+                model origin on "map" panels whenever MOD_DISPLAY_COORDS
+                is "utm"/"latlon" via fviz.plot_model_slices'
+                show_model_centre parameter; override style with a
+                MOD_MAP_MARKERS entry carrying "is_model_centre": True.
 """
 
 import os
@@ -569,6 +595,10 @@ if PLOT_DATA or PLOT_MODEL:
     MOD_SITE_MARKER_SLICES = dict(marker="v", color="black", ms=4, zorder=10, label=None)
     #: Extra point markers on map panels only (each dict: latlon, marker, color, ms, name).
     MOD_MAP_MARKERS = []
+    #: Mark the model origin on every "map" panel whenever MOD_DISPLAY_COORDS
+    #: is "utm"/"latlon" (no effect for "model"). Override style via a
+    #: MOD_MAP_MARKERS entry with "is_model_centre": True.
+    MOD_SHOW_MODEL_CENTRE = True
 
     # --- Mesh-centre estimation from site.dat (optional) ---------------------
     #: None → use hard-coded values above.
@@ -896,6 +926,7 @@ if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC
             site_marker     = MOD_SITE_MARKER,
             site_marker_slices = MOD_SITE_MARKER_SLICES,
             map_markers     = MOD_MAP_MARKERS,
+            show_model_centre = MOD_SHOW_MODEL_CENTRE,
             display_coords  = MOD_DISPLAY_COORDS,
             utm_origin_e    = _mod_utm_origin_e,
             utm_origin_n    = _mod_utm_origin_n,
@@ -922,10 +953,10 @@ if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC
             out             = OUT,
         )
 
-    # --- QC plots of perturbed initial models (iter0) -----------------------
+    # --- QC plots of perturbed initial models -------------------------------
     if PLOT_SLICES_QC:
         _qc_files = {
-            i: ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/resistivity_block_iter0.dat"
+            i: ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/{MOD_REF_BASE}"
             for i in ENS_MEMBERS
         }
         for i_samp in VIZ_SAMPLES:
@@ -965,10 +996,9 @@ Helper: femtic_viz.plot_ensemble_slices
 """
 if PLOT_DATA or PLOT_MODEL:   # only runs when the viz block was entered
     if PLOT_SLICES_ENS:
-        # Build the list of converged model files for all active members.
-        # Adjust the filename pattern to match the desired iteration.
+        # Build the list of perturbed model files for all active members.
         _ens_block_files = [
-            ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/resistivity_block_iter0.dat"
+            ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/{MOD_REF_BASE}"
             for i in ENS_MEMBERS
         ]
         _ens_labels = [f"{ENSEMBLE_NAME}{i}" for i in ENS_MEMBERS]

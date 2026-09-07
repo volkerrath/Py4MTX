@@ -144,6 +144,12 @@ Provenance
                 Added femtic_mod_plot_slice_summary.md output at end of
                 run: writes user-set (UPPERCASE) parameters, script path,
                 and run date/time via utl.write_param_summary().
+    2026-09-06  Claude Sonnet 5 (Anthropic)
+                Added SHOW_MODEL_CENTRE (default True): marks the model
+                origin on "map" panels whenever DISPLAY_COORDS is
+                "utm"/"latlon" via fviz.plot_model_slices'
+                show_model_centre parameter; override style with a
+                MAP_MARKERS entry carrying "is_model_centre": True.
 
 @author: vrath
 """
@@ -324,6 +330,19 @@ MAP_MARKERS = [
 #     # dict(latlon=[-16.351, -70.9016], marker="^", color="magenta", ms=6,
 #     #      name="max elev"),
 # ]
+
+# ---------------------------------------------------------------------------
+# Model-centre marker
+# ---------------------------------------------------------------------------
+#: Mark the model origin (model-local x=0, y=0) on every "map" panel
+#: whenever DISPLAY_COORDS is "utm" or "latlon", so the mesh centre stays
+#: identifiable once the axes are relabelled in UTM / lat-lon.  No effect
+#: for DISPLAY_COORDS="model" (the origin is trivially the (0, 0) point
+#: there already).  Default style: black "+", ms=10.  To override the
+#: style, add a dict with "is_model_centre": True to MAP_MARKERS, e.g.
+#:   dict(is_model_centre=True, marker="+", color="blue", ms=12)
+#: Set False to force the marker off even in UTM/latlon display.
+SHOW_MODEL_CENTRE = True
 
 # ---------------------------------------------------------------------------
 # Plotting — requires femtic_viz and Matplotlib
@@ -627,6 +646,7 @@ fviz.plot_model_slices(
     site_marker=SITE_MARKER,
     site_marker_slices=SITE_MARKER_SLICES,
     map_markers=MAP_MARKERS,
+    show_model_centre=SHOW_MODEL_CENTRE,
     display_coords=DISPLAY_COORDS,
     utm_origin_e=UTM_ORIGIN_E,
     utm_origin_n=UTM_ORIGIN_N,

@@ -332,6 +332,7 @@ fviz.plot_model_slices(
         dict(latlon=[-16.35, -70.90], marker="*", color="red",
              ms=10, name="Summit"),
     ],
+    show_model_centre = True,   # marks model origin since display_coords != "model"
 
     depth_km     = True,
     horiz_km     = True,
@@ -365,7 +366,8 @@ fviz.plot_model_slices(
 | `sites_in_slices` | `False` | Site markers on curtain/plane panels |
 | `site_marker` | `dict(marker="v", …)` | Matplotlib kwargs for map markers |
 | `site_marker_slices` | `dict(marker="o", …)` | Matplotlib kwargs for curtain markers |
-| `map_markers` | `None` | Extra markers (lat/lon dicts) on map panels |
+| `map_markers` | `None` | Extra markers (lat/lon dicts) on map panels. An entry with `"is_model_centre": True` (instead of `"latlon"`) overrides the `show_model_centre` marker's style rather than plotting as a regular marker. |
+| `show_model_centre` | `True` | Marks the model origin (model-local x=0, y=0) on `"map"` panels whenever `display_coords` is `"utm"`/`"latlon"`; no-op for `"model"`. Never gets a legend entry. Default style: black `"+"`, `ms=10`; override via a `map_markers` entry as above. Set `False` to force off. |
 | `display_coords` | `"model"` | `"model"` / `"utm"` / `"latlon"` |
 | `utm_origin_e`, `utm_origin_n` | `0.0` | Mesh-centre UTM [m] |
 | `utm_zone`, `utm_northern` | `1`, `True` | UTM zone and hemisphere |
@@ -774,5 +776,6 @@ Raises `ValueError` if no member has a status in `binned_statuses` (nothing to b
 | 2026-08-12 | Claude Sonnet 5 (Anthropic) | Added `plot_convergence_bar()`: standalone bar chart of per-member nRMS (e.g. from `femtic.cnv`), coloured/hatched by status (`"accepted"` / `"rejected_nrms"` / `"missing_cnv"` / `"missing_model"`, inferred from a `threshold` when not supplied explicitly). Members with no usable nRMS (`None`/NaN) render as a small hatched "n/a" stub bar rather than being silently dropped. Sortable by nRMS (ascending, missing sort last) or original order; optional dashed threshold line and per-bar value labels. Used by `femtic_ens_post.py`'s new `MOD_CONV` convergence diagnostic (see `femtic_ens_post_readme.md`). No changes to any existing function. |
 | 2026-08-12 | Claude Sonnet 5 (Anthropic) | Added `plot_convergence_histogram()`: binned, stacked-by-status companion to `plot_convergence_bar` for large ensembles, where a one-bar-per-member chart becomes a wall of rows. Bins nRMS into `"auto"` (default 15) or a fixed number of equal-width bins, stacks accepted/rejected_nrms counts per bin, and tallies members with no usable nRMS into one extra `"missing"` bar appended after the last numeric bin (split by `missing_cnv`/`missing_model` if both present) rather than dropping them. Factored the shared status → color/hatch/legend default map out of `plot_convergence_bar` into a new `_conv_status_style_map()` module helper, used by both functions (no behaviour change to `plot_convergence_bar`). Now `femtic_ens_post.py`'s default `MOD_CONV` rendering (`MOD_CONV_PER_MEMBER=True` switches back to `plot_convergence_bar`; see `femtic_ens_post_readme.md`). |
 | 2026-08-12 | Claude Sonnet 5 (Anthropic) | `plot_convergence_histogram()`: changed the bin range to cover only members whose status is in the new `binned_statuses` parameter (default `("accepted",)`) instead of the full finite nRMS range. Rejected members no longer get real bins at all — they're always lumped into one aggregate `"rejected"` bar (new `show_rejected_bar` parameter, default `True`), appended after the numeric bins next to the existing `"missing"` aggregate bar. A single far-over-threshold rejected member could previously stretch the shared bin range and compress the entire accepted population into an unreadable sliver at one edge of the plot; that's no longer possible. Removed the now-meaningless `status_order` parameter (only `binned_statuses` gets real bins now). `plot_convergence_bar` is unaffected. |
+| 2026-09-06 | Claude Sonnet 5 (Anthropic) | `plot_model_slices`: added a `show_model_centre` parameter (default `True`). On `"map"` panels, whenever `display_coords` is `"utm"`/`"latlon"` (axes not in intrinsic model-local coordinates), marks the model origin (model-local x=0, y=0) so the mesh centre stays identifiable once the axes are relabelled — no-op for `display_coords="model"`. Default style: black `"+"`, `ms=10`; never gets a legend entry. Style is overridable via a `map_markers` entry carrying `"is_model_centre": True` instead of `"latlon"` — that entry is filtered out of the regular per-panel `map_markers` loop before rendering (so it never needs a `"latlon"` key and can't collide with a real marker). `plot_ensemble_slices` is unaffected — it has no `display_coords` support and always plots in model-local metres, where a model-centre marker adds no information. |
 
 Author: Volker Rath (DIAS)

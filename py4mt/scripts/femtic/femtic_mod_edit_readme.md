@@ -141,7 +141,8 @@ slice figure saved / shown
 | `PROJECTION_DIST` | Max distance (km) for curtain projection |
 | `SITE_MARKER` | Marker style dict |
 | `SITE_MARKER_SLICES` | Marker style for curtains |
-| `MAP_MARKERS` | Additional map markers |
+| `MAP_MARKERS` | Additional map markers. An entry with `"is_model_centre": True` (instead of `"latlon"`) overrides the model-centre marker's style rather than plotting as a regular marker. |
+| `SHOW_MODEL_CENTRE` | Marks the model origin on `"map"` panels whenever `DISPLAY_COORDS` is `"utm"`/`"latlon"` (no-op for `"model"`); default `True`. Default style: black `"+"`, `ms=10`; no legend entry. Override via `MAP_MARKERS` as above; set `False` to force off. |
 
 ---
 
@@ -237,3 +238,10 @@ The geometry primitives used by `"smooth"`, `"wmean"`, `"ellipsoid"`, and
   multiplies these by 1000 once; everything downstream (geometry
   helpers in `femtic.py`, `fviz.plot_model_slices`) still operates in
   metres, unchanged.
+
+## 2026-09-06 (model-centre marker)
+
+- Added `SHOW_MODEL_CENTRE` (default `True`): marks the model origin on
+  `"map"` panels whenever `DISPLAY_COORDS` is `"utm"`/`"latlon"`, via
+  `fviz.plot_model_slices`'s new `show_model_centre` parameter. Override
+  style with a `MAP_MARKERS` entry carrying `"is_model_centre": True`.

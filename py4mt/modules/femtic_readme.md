@@ -583,4 +583,37 @@ Updated: 2026-06-22
   `scipy.sparse.sparray` in `sample_precision_gaussian_gmrf`. No functional
   change.
 
+### Changelog (2026-09-02) --- header-driven femtic.cnv parsing
+- Added `read_cnv(source)`: reads a FEMTIC convergence file (`femtic.cnv`)
+  by parsing its own header row (e.g. `Iter#  Retrial#  Alpha  Beta  Damp
+  Roughness  Distortion  Misfit  RMS  ObjFunc`) into a name -> column-index
+  map, instead of assuming fixed column positions. The `Beta`/`Distortion`
+  columns only appear when distortion parameters are being inverted, which
+  shifts every column after them (`RMS` at index 6 without distortion,
+  index 8 with it) independently of the FEMTIC version number -- a
+  4.3-with-distortion run has the same column layout as a typical 5.x run,
+  not the same layout as plain 4.3.
+- `get_nrms()` rewritten to use `read_cnv()` internally. It previously
+  hardcoded `misft=nline[7]`, `nrmse=nline[8]` unconditionally (correct
+  only for the with-distortion layout, silently wrong for
+  without-distortion runs). Return values and the empty-file fallback
+  (`(-1, 1e32)` with a printed message) are unchanged; a missing
+  `femtic.cnv` still raises `FileNotFoundError` as before.
+- Also removed a stray leftover `print(nline)` debug statement inside the
+  old parsing loop, dropped along with the loop it lived in.
+- `femtic_ens_post.py`'s inline best-iteration scan (previously its own
+  `"4.3"`/`"5."` version-string switch on `nrms_col`, with the same
+  distortion-blind bug) now calls `fem.read_cnv()` too -- see
+  `femtic_ens_post_readme.md`'s matching changelog entry.
+
+### Changelog (2026-09-02b) --- read_cnv columnar option
+- Added `columnar` parameter to `read_cnv()` (default `False`, backward
+  compatible -- return dict keys are unchanged unless requested). When
+  `columnar=True`, an additional `"data"` entry is returned: a dict mapping
+  each header column name to a 1-D `np.ndarray` of that column's values
+  over the whole convergence history (row order preserved), e.g.
+  `cnv["data"]["RMS"]` for the full nRMS trace, without having to loop
+  over `"rows"` and pull one field out of each dict by hand -- convenient
+  for convergence-curve plotting and similar whole-column access.
+
 Author: Volker Rath (DIAS)

@@ -129,6 +129,22 @@ Updated 2026-07-25 by Claude Sonnet 5 (Anthropic) -- generate_gst_model_
     one) for each member, so the data-perturbation path can share the same
     seeded generator as the model-perturbation path instead of each
     modify_data call silently falling back to its own unseeded generator.
+Updated 2026-08-25 by Claude Sonnet 5 (Anthropic) -- generate_gst_model_
+    ensemble: pp_bbox default changed from a fixed generic tuple to None;
+    pp_bbox / pp_roi are now resolved against the model's actual free-
+    region extent (axis-wise min/max of the free-region barycentres
+    computed from mesh_file/ref_mod_file) right after that extent becomes
+    available. None resolves to the full extent on every axis; a supplied
+    box has each of its six bounds independently clamped to that extent,
+    so a bbox/ROI wider than the true model on some axis (e.g. reused from
+    a different survey) is truncated to the model's actual size on that
+    axis rather than placing pilot points outside the free-region domain
+    or (for pp_roi) silently accepting an over-wide box. A one-line log
+    message is printed (out=True) whenever clamping actually changes a
+    supplied box. generate_gst_perturbation / _draw_pilot_points (the
+    mesh-agnostic perturbation machine used by femtic_nss.py / modem_nss.py)
+    are unchanged by this update -- they take a bare target point cloud
+    with no mesh to derive an extent from.
 """
 
 from __future__ import annotations
@@ -1180,7 +1196,7 @@ def generate_gst_model_ensemble(
     # --- pilot points ---
     pp_mode: str = "random",
     n_pp: int = 100,
-    pp_bbox: Sequence[float] = (-50000., 50000., -50000., 50000., 0., 80000.),
+    pp_bbox: Optional[Sequence[float]] = None,
     pp_coords: Optional[np.ndarray] = None,
     pp_roi: Optional[Sequence[float]] = None,
     pp_extrema_k: int = 30,
@@ -1269,17 +1285,28 @@ def generate_gst_model_ensemble(
         Number of randomly drawn pilot points per member.  Used when
         ``pp_mode`` is ``"random"``, ``"mixed"``, or ``"extrema"`` (fill).
         Recommended: 50–200 for typical 3-D MT survey volumes.
-    pp_bbox : sequence of 6 floats
+    pp_bbox : sequence of 6 floats, optional
         Bounding box ``[x_min, x_max, y_min, y_max, z_min, z_max]`` (metres,
         z positive-down) for random pilot-point placement.
+        ``None`` (default) uses the full free-region extent of the model
+        (axis-wise min/max of the free-region barycentres actually present
+        in ``mesh_file`` / ``ref_mod_file``).  If a bbox is supplied, each
+        of the six values is independently clamped, axis-wise, to that same
+        full-extent box — a bound wider than the true model size (e.g. a
+        generic template value left over from a different survey) is simply
+        truncated to the model's actual size on that axis rather than
+        placing pilot points outside the free-region domain; a bound
+        already inside the model extent is left unchanged.
     pp_coords : ndarray, shape (N, 3), optional
         Explicit pilot-point coordinates (easting, northing, depth).
         Required when ``pp_mode`` is ``"fixed"`` or ``"mixed"``.
     pp_roi : sequence of 6 floats, optional
         ``[x_min, x_max, y_min, y_max, z_min, z_max]`` (metres, z positive-
         down) restricting the extremum search to a sub-volume of the model.
-        Only used when ``pp_mode`` is ``"extrema"``.  None = full free-region
-        extent.  Tip: set tighter than ``pp_bbox`` to exclude padding cells.
+        Only used when ``pp_mode`` is ``"extrema"``.  Resolved with the same
+        None-means-full-extent / axis-wise-clamp-if-supplied rule as
+        ``pp_bbox`` above.  Tip: set tighter than ``pp_bbox`` to exclude
+        padding cells.
     pp_extrema_k : int
         Neighbourhood size (including self) for the local extremum test in
         ``"extrema"`` mode.  Larger k yields fewer, smoother extrema.
@@ -1469,6 +1496,53 @@ def generate_gst_model_ensemble(
         print(f"  {n_cells} free regions.")
 
     # ------------------------------------------------------------------
+    # Resolve pp_bbox / pp_roi against the true model size.
+    #
+    # full_extent is the axis-wise bounding box of the free-region
+    # barycentres actually present in this mesh/reference-model pair —
+    # i.e. the real "full model size" for pilot-point placement (excludes
+    # fixed air/ocean regions).
+    #
+    #   pp_bbox / pp_roi = None           -> full_extent (unchanged axis
+    #                                         behaviour: an all-None ROI
+    #                                         already meant "no mask", which
+    #                                         is equivalent to full_extent).
+    #   pp_bbox / pp_roi = [xmn,...,zmx]  -> each of the six bounds is
+    #                                         clamped, axis-wise, to
+    #                                         full_extent; a bound that
+    #                                         already lies inside the model
+    #                                         is left untouched, one that
+    #                                         exceeds the model size on
+    #                                         that axis is truncated to it.
+    # ------------------------------------------------------------------
+    full_extent = [
+        float(cx.min()), float(cx.max()),
+        float(cy.min()), float(cy.max()),
+        float(cz.min()), float(cz.max()),
+    ]
+
+    def _resolve_pp_box(box, label):
+        if box is None:
+            return list(full_extent)
+        box = [float(v) for v in box]
+        clamped = [
+            max(box[0], full_extent[0]), min(box[1], full_extent[1]),
+            max(box[2], full_extent[2]), min(box[3], full_extent[3]),
+            max(box[4], full_extent[4]), min(box[5], full_extent[5]),
+        ]
+        if out and clamped != box:
+            print(f"  {label} exceeds model extent — clamped axis-wise "
+                  f"{box} -> {clamped}")
+        return clamped
+
+    pp_bbox = _resolve_pp_box(pp_bbox, "pp_bbox")
+    pp_roi  = _resolve_pp_box(pp_roi,  "pp_roi")
+
+    if out:
+        print(f"  Model free-region extent (m): {full_extent}")
+        print(f"  pp_bbox (resolved):           {pp_bbox}")
+
+    # ------------------------------------------------------------------
     # Build gstools variogram model.
     # ------------------------------------------------------------------
     vario_cls = getattr(gs, vario_model)
@@ -1540,7 +1614,7 @@ def generate_gst_model_ensemble(
     else:
         pp_fixed = np.empty((0, 3), dtype=float)
 
-    pp_bbox = list(pp_bbox)
+    # pp_bbox already resolved to a plain list of 6 floats above.
 
     # ------------------------------------------------------------------
     # Pre-compute extrema pilot-point skeleton (same geometry each member).

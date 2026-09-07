@@ -9,7 +9,7 @@ NRMS_MAX threshold), then produces:
 
   (1) [default, PER_MEMBER_PLOT=True] Per converged member, two
       fviz.plot_model_slices() figures in their own sub-directory
-      WORK_DIR/<label>/: the perturbed prior model (iter0.<ext>,
+      ENSEMBLE_DIR/<label>/: the perturbed prior model (iter0.<ext>,
       from resistivity_block_iter0.dat, colormap/scale PLOT_CMAP_ITER0
       / PLOT_CLIM_ITER0) and the best-fit model (best.<ext>, from
       resistivity_block_iter{numit}.dat, numit from femtic.cnv,
@@ -20,11 +20,7 @@ NRMS_MAX threshold), then produces:
       combined into one multi-page catalog PDF
       (PER_MEMBER_CATALOG_FILE).
 
-  (2) [optional, PLOT_JOINT=True] The previous joint multi-row figure —
-      one row per member's best-fit model — with optional mean/std/median
-      summary rows, via fviz.plot_ensemble_slices().
-
-  (3) Optionally, a borehole resistivity log figure (same as step (6) in
+  (2) Optionally, a borehole resistivity log figure (same as step (6) in
       femtic_mod_plot.py), sampled from the first converged member's
       best-fit model.
 
@@ -67,7 +63,7 @@ Provenance
                 prior (resistivity_block_iter0.dat) and the best-fit
                 model (resistivity_block_iter{numit}.dat, numit from
                 femtic.cnv), saved as "<label>_iter0.<ext>" and
-                "<label>_best.<ext>" in WORK_DIR. Controlled by new
+                "<label>_best.<ext>" in ENSEMBLE_DIR. Controlled by new
                 PER_MEMBER_PLOT flag (default True). The previous joint
                 multi-row figure (fviz.plot_ensemble_slices, with
                 mean/std/median summary rows) is kept as an optional
@@ -86,7 +82,7 @@ Provenance
                 call per format, figure rebuilt per format since
                 plot_model_slices doesn't expose a re-save path.
                 (2) Per-member files now live in their own sub-directory
-                WORK_DIR/<label>/ as "iter0.<ext>" / "best.<ext>",
+                ENSEMBLE_DIR/<label>/ as "iter0.<ext>" / "best.<ext>",
                 replacing the flat "<label>_iter0.<ext>" naming.
                 (3) New PER_MEMBER_PDF_CATALOG flag (default True):
                 when "pdf" is among _PLOT_FORMATS, every per-member pdf
@@ -185,6 +181,38 @@ Provenance
                 the prior and best-fit plots. _plot_member_slice()
                 gained a required cmap= kwarg alongside clim=; the
                 joint ensemble figure uses PLOT_CMAP_BEST.
+    2026-08-25  Claude Sonnet 5 (Anthropic)
+                Removed PLOT_JOINT and the entire joint multi-row
+                ensemble figure it gated (the fviz.plot_ensemble_slices
+                call in the former step (6b)), along with its
+                now-unused config vars ENS_STAT_ROWS, PLOT_ENS_FILE,
+                ENS_PER_MEMBER. This removes the previously flagged
+                keyword-mismatch call (site_xys, obs_coords_only,
+                utm_origin_e/n, panel_height, nrows, ncols, and others
+                not present in plot_ensemble_slices()'s current
+                signature) rather than fixing it, since PER_MEMBER_PLOT
+                is the only path actually in use. PLOT_CMAP_BEST /
+                PLOT_CLIM_BEST doc comments that referenced the joint
+                figure updated accordingly; ENS_FILES is kept (still
+                used by the borehole step, now (7)). Also added
+                PLOT_PANEL_WIDTH (cm; None = auto from aspect ratio),
+                mirroring femtic_ens_post.py's MOD_PANEL_WIDTH: when
+                set it overrides plot_model_slices()'s per-column
+                auto-width with one fixed value, taking precedence over
+                PLOT_PANEL_HEIGHT-driven aspect-ratio sizing; when None
+                (default, unchanged prior behaviour) PLOT_PANEL_HEIGHT
+                alone drives sizing as before. Wired into the single
+                shared _kwargs dict in _plot_member_slice(), so both
+                the iter0 and best-fit per-member figures pick it up.
+    2026-09-06  Claude Sonnet 5 (Anthropic)
+                Added SHOW_MODEL_CENTRE (default True): marks the model
+                origin on "map" panels whenever DISPLAY_COORDS is
+                "utm"/"latlon" via fviz.plot_model_slices'
+                show_model_centre parameter; override style with a
+                MAP_MARKERS entry carrying "is_model_centre": True.
+                Wired into the single shared _kwargs dict, so every
+                plot_model_slices() call site here (iter0, best-fit, and
+                the pdf-fallback retries) picks it up.
 
 @author: vrath
 """
@@ -231,13 +259,23 @@ print(titstrng + "\n\n")
 
 # ---------------------------------------------------------------------------
 # Paths
+#: ENSEMBLE_DIR - Directory containing one sub-directory per ensemble member.
+#: ENSEMBLE_NAME - Member sub-directories are matched via glob "<ENSEMBLE_NAME>*".
 # ---------------------------------------------------------------------------
-WORK_DIR = r"/media/vrath/LargeBack/Ensembles/misti2026/gst/"
+WORK_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2/"
+
+ENSEMBLE_NAME = "annecy_rnd_2_"
+ENSEMBLE_DIR = WORK_DIR
+
+
+
+
 #: Mesh file — always required for plotting.
-MESH_FILE = WORK_DIR + "/templates/mesh.dat"
+
+MESH_FILE = ENSEMBLE_DIR + ENSEMBLE_NAME +"/templates/mesh.dat"
 
 #: observe.dat — used by ESTIMATE_ORIGIN and as fallback for SITE_NUMBER.
-OBSERVE_FILE = WORK_DIR +  "/templates/observe.dat"
+OBSERVE_FILE = ENSEMBLE_DIR +  "/templates/observe.dat"
 
 #: Site list produced by mt_make_sitelist.py (WHAT_FOR="femtic").
 #: Format (comma-separated, no header):
@@ -245,7 +283,7 @@ OBSERVE_FILE = WORK_DIR +  "/templates/observe.dat"
 #: Easting/northing are UTM metres; model-local x/y is derived via
 #: fem.utm_to_model using the mesh-centre origin.
 #: Set to None to fall back to the observe.dat / SITE_NUMBER path.
-SITE_DAT = WORK_DIR + "/templates/site.dat"   # set to None to disable
+SITE_DAT = ENSEMBLE_DIR + "/templates/site.dat"   # set to None to disable
 
 # ---------------------------------------------------------------------------
 # Ensemble input — converged-member discovery
@@ -253,13 +291,10 @@ SITE_DAT = WORK_DIR + "/templates/site.dat"   # set to None to disable
 #: FEMTIC version used for the run — controls which column of the last
 #: femtic.cnv line holds nRMS.  Must match femtic_ens_post.py's setting
 #: for the same ensemble so both scripts agree on what "converged" means.
-FEMTIC = "5.0"   # "4.3" | "5.0"
-
-#: Directory containing one sub-directory per ensemble member.
-ENSEMBLE_DIR = WORK_DIR
+FEMTIC = "4.3"   # "4.3" | "5.0"
 
 #: Member sub-directories are matched via glob "<ENSEMBLE_NAME>*".
-ENSEMBLE_NAME = "misti_gst_suzuki_rnd"
+
 
 #: Maximum normalised RMS accepted from femtic.cnv.  Keep this equal to
 #: NRMS_MAX in femtic_ens_post.py so this script plots exactly the
@@ -278,7 +313,7 @@ ENS_LABELS = None
 #: converged member: "iter0.<ext>" (resistivity_block_iter0.dat, the
 #: perturbed/prior model) and "best.<ext>" (resistivity_block_iter{numit}.dat,
 #: the best-fit model at the iteration femtic.cnv reports).  Each member
-#: gets its own sub-directory WORK_DIR/<label>/.
+#: gets its own sub-directory ENSEMBLE_DIR/<label>/.
 PER_MEMBER_PLOT = True
 
 #: Output format(s) for per-member plots (Matplotlib Agg-backend savefig
@@ -311,7 +346,7 @@ _PLOT_FORMATS = (
 PER_MEMBER_PDF_CATALOG_MODE = "both"   # "none" | "iter0" | "best" | "both"
 
 #: Output path for the multi-page pdf catalog.
-PER_MEMBER_CATALOG_FILE = WORK_DIR + ENSEMBLE_NAME+"_catalog.pdf"
+PER_MEMBER_CATALOG_FILE = ENSEMBLE_DIR + ENSEMBLE_NAME+"_catalog.pdf"
 
 _VALID_CATALOG_MODES = ("none", "iter0", "best", "both")
 if PER_MEMBER_PDF_CATALOG_MODE not in _VALID_CATALOG_MODES:
@@ -319,29 +354,6 @@ if PER_MEMBER_PDF_CATALOG_MODE not in _VALID_CATALOG_MODES:
         f"PER_MEMBER_PDF_CATALOG_MODE={PER_MEMBER_PDF_CATALOG_MODE!r} — "
         f"must be one of {_VALID_CATALOG_MODES}."
     )
-
-# ---------------------------------------------------------------------------
-# Joint ensemble figure (optional extra)
-# ---------------------------------------------------------------------------
-#: If True, additionally build the old joint multi-row figure — one row
-#: per converged member (best-fit model) — via fviz.plot_ensemble_slices,
-#: with optional mean/std/median summary rows.
-PLOT_JOINT = False
-
-#: Statistical summary rows appended after the member rows in the joint
-#: figure.  Any subset of: "mean", "std", "median".
-#: "mean"   → cell-wise mean   of log10(ρ) across all members
-#: "std"    → cell-wise std    of log10(ρ); separate colormap (cividis)
-#: "median" → cell-wise median of log10(ρ) across all members
-ENS_STAT_ROWS = ["mean", "std"]
-
-#: Output file for the joint ensemble figure.
-#:   None → interactive show().
-PLOT_ENS_FILE = WORK_DIR + "ensemble.pdf"
-
-#: If True, also save one figure per member alongside the joint figure.
-#: Per-member files are named by replacing ".pdf" with "_memberN.pdf".
-ENS_PER_MEMBER = False
 
 # ---------------------------------------------------------------------------
 # Ocean / air handling (must match the inversion setup)
@@ -391,6 +403,14 @@ PLOT_EQUAL_ASPECT = True
 #: Panel height in cm.  Width auto-computed from axis limits when PLOT_EQUAL_ASPECT.
 PLOT_PANEL_HEIGHT = 16.0   # cm
 
+#: None = auto per-column width from each panel's own aspect ratio (needs
+#: PLOT_EQUAL_ASPECT=True and real xlim/ylim/zlim). When set, overrides
+#: that auto-width with one fixed value for every column -- same
+#: precedence as femtic_ens_post.py's MOD_PANEL_WIDTH: PLOT_PANEL_WIDTH
+#: wins if not None, otherwise PLOT_PANEL_HEIGHT alone drives sizing via
+#: the aspect-ratio auto-width.
+PLOT_PANEL_WIDTH  = None   # cm; None = auto from aspect ratio
+
 #: Grid layout.  None → 1 row / len(PLOT_SLICES) columns.
 PLOT_NROWS = 4
 PLOT_NCOLS = 2
@@ -426,6 +446,11 @@ SITE_MARKER_SLICES = None
 #: and are not affected by the km convention).
 MAP_MARKERS = []
 
+#: Mark the model origin (model-local x=0, y=0) on every "map" panel
+#: whenever DISPLAY_COORDS is "utm"/"latlon" (no effect for "model").
+#: Override style via a MAP_MARKERS entry with "is_model_centre": True.
+SHOW_MODEL_CENTRE = True
+
 # ---------------------------------------------------------------------------
 # Verbose output
 # ---------------------------------------------------------------------------
@@ -439,16 +464,13 @@ PLOT_DPI = 600
 
 #: Matplotlib colormap name — set separately for the perturbed-prior
 #: (iter0) and best-fit models, same reasoning as PLOT_CLIM_ITER0 /
-#: PLOT_CLIM_BEST below. PLOT_CMAP_BEST is also used for the joint
-#: ensemble figure (PLOT_JOINT), which only plots best-fit models.
+#: PLOT_CLIM_BEST below.
 PLOT_CMAP_ITER0 = "turbo_r"
 PLOT_CMAP_BEST  = "turbo_r"
 
 #: Colour limits [log10(ρ_min), log10(ρ_max)] — None = auto. Set
 #: separately for the perturbed-prior (iter0) and best-fit models, since
 #: the prior's resistivity range often differs from the inverted result.
-#: PLOT_CLIM_BEST is also used for the joint ensemble figure (PLOT_JOINT),
-#: which only plots best-fit models.
 PLOT_CLIM_ITER0 = [0.0, 4.0]      # log10(Ω·m)
 PLOT_CLIM_BEST  = [0.0, 4.0]      # log10(Ω·m)
 
@@ -505,7 +527,7 @@ PLOT_EQUAL_ASPECT = True
 PLOT_BOREHOLE = False
 
 #: Output file for the borehole figure.  None → interactive show().
-BOREHOLE_FILE = WORK_DIR + "ensemble_boreholes.pdf"
+BOREHOLE_FILE = ENSEMBLE_DIR + "ensemble_boreholes.pdf"
 
 #: List of borehole spec dicts — same format as femtic_mod_plot.py.
 #: Keys: "name", "x", "y", "z_top", "z_bot", "dz" — all lengths in km.
@@ -841,6 +863,7 @@ def _plot_member_slice(
             site_marker         = SITE_MARKER,
             site_marker_slices  = SITE_MARKER_SLICES,
             map_markers         = MAP_MARKERS,
+            show_model_centre   = SHOW_MODEL_CENTRE,
             projection_dist     = PROJECTION_DIST,
             display_coords      = DISPLAY_COORDS,
             utm_origin_e        = UTM_ORIGIN_E,
@@ -853,6 +876,7 @@ def _plot_member_slice(
             horiz_km            = HORIZ_KM,
             equal_aspect        = PLOT_EQUAL_ASPECT,
             panel_height        = PLOT_PANEL_HEIGHT / 2.54,
+            panel_width         = PLOT_PANEL_WIDTH / 2.54 if PLOT_PANEL_WIDTH is not None else None,
             nrows               = PLOT_NROWS,
             ncols               = PLOT_NCOLS,
             nrms_annotation     = nrms_annotation,
@@ -1102,7 +1126,7 @@ print(f"\nConverged members: {n_members}")
 if n_members == 0:
     sys.exit("No converged members found. Nothing to do.")
 
-ENS_FILES = [m["best_file"] for m in model_list]   # kept for PLOT_JOINT / borehole
+ENS_FILES = [m["best_file"] for m in model_list]   # kept for borehole plotting
 ENS_LABELS_resolved = [m["label"] for m in model_list]
 
 if OUT:
@@ -1113,7 +1137,7 @@ if OUT:
     print()
 
 # --- (6) Per-member plots: iter0 (perturbed prior) + best-fit model -------
-# Each member gets its own sub-directory WORK_DIR/<label>/ containing
+# Each member gets its own sub-directory ENSEMBLE_DIR/<label>/ containing
 # iter0.<ext> and best.<ext> (one pair of files per entry in _PLOT_FORMATS).
 #
 # Memory note: the pdf catalog (if enabled) is opened ONCE before this loop
@@ -1140,7 +1164,7 @@ if PER_MEMBER_PLOT:
     try:
         for _m in model_list:
             _label      = _m["label"]
-            _member_dir = os.path.join(WORK_DIR, _label)
+            _member_dir = os.path.join(ENSEMBLE_DIR, _label)
             os.makedirs(_member_dir, exist_ok=True)
 
             print(f"\n  member {_label!r}: perturbed prior (iter0)")
@@ -1194,66 +1218,7 @@ if PER_MEMBER_PLOT:
     elif PER_MEMBER_PDF_CATALOG_MODE != "none":
         print("  pdf catalog: \"pdf\" not in PLOT_FORMAT — skipped.")
 
-# --- (6b) Joint multi-row ensemble figure (optional extra) ----------------
-# NOTE: this call passes several kwargs (site_xys, obs_coords_only,
-# sites_in_maps/slices, site_marker*, map_markers, projection_dist,
-# display_coords, utm_origin_e/n, utm_zone, utm_northern,
-# utm_to_latlon_fn, latlon_to_model_fn, depth_km, horiz_km, equal_aspect,
-# panel_height, nrows, ncols) that are NOT present in the current
-# fviz.plot_ensemble_slices() signature and will raise TypeError if
-# PLOT_JOINT=True. This is the previously flagged signature mismatch;
-# it is out of scope for this rewrite (PER_MEMBER_PLOT is now the
-# default, working path) and needs a separate design decision — either
-# extend plot_ensemble_slices() to accept these kwargs, or trim this
-# call down to what it currently supports.
-if PLOT_JOINT:
-    if fviz is None:
-        sys.exit("femtic_viz not available — cannot plot.  Check your installation.")
-
-    print(f"\nPlotting joint ensemble figure: {len(ENS_FILES)} member(s) …")
-    fviz.plot_ensemble_slices(
-        member_files       = ENS_FILES,
-        mesh_file          = MESH_FILE,
-        slices             = slices_resolved,
-        labels             = ENS_LABELS_resolved,
-        stat_rows          = ENS_STAT_ROWS,
-        cmap               = PLOT_CMAP_BEST,
-        clim               = PLOT_CLIM_BEST,
-        xlim               = PLOT_XLIM,
-        ylim               = PLOT_YLIM,
-        zlim               = PLOT_ZLIM,
-        ocean_color        = PLOT_OCEAN_COLOR,
-        ocean_value        = OCEAN_RHO,
-        air_bgcolor        = PLOT_AIR_BGCOLOR,
-        site_xys           = site_xys,
-        obs_coords_only    = _sites_from_obs,
-        sites_in_maps      = PLOT_SITES_MAPS,
-        sites_in_slices    = PLOT_SITES_SLICES,
-        site_marker        = SITE_MARKER,
-        site_marker_slices = SITE_MARKER_SLICES,
-        map_markers        = MAP_MARKERS,
-        projection_dist    = PROJECTION_DIST,
-        display_coords     = DISPLAY_COORDS,
-        utm_origin_e       = UTM_ORIGIN_E,
-        utm_origin_n       = UTM_ORIGIN_N,
-        utm_zone           = UTM_ZONE,
-        utm_northern       = UTM_NORTHERN,
-        utm_to_latlon_fn   = utl.utm_to_latlon_zn,
-        latlon_to_model_fn = fem.latlon_to_model,
-        depth_km           = DEPTH_KM,
-        horiz_km           = HORIZ_KM,
-        equal_aspect       = PLOT_EQUAL_ASPECT,
-        panel_height       = PLOT_PANEL_HEIGHT / 2.54,
-        nrows              = PLOT_NROWS,
-        ncols              = PLOT_NCOLS,
-        plot_file          = PLOT_ENS_FILE,
-        per_member_file    = ENS_PER_MEMBER,
-        dpi                = PLOT_DPI,
-        out                = OUT,
-    )
-    print("Joint ensemble plot done.")
-
-# --- (7) Borehole resistivity logs ----------------------------------------
+# --- (7) Borehole resistivity logs ------------------------------------------
 if PLOT_BOREHOLE:
     if not BOREHOLE_SITES:
         print("  Borehole plot skipped: BOREHOLE_SITES is empty.")

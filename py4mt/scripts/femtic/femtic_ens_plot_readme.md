@@ -35,20 +35,15 @@ sub-directories and filtering on `femtic.cnv` / `NRMS_MAX` — and produces:
    This is in addition to, not instead of, the individual per-member
    files.
 
-2. **[optional, `PLOT_JOINT=True`]** The previous joint multi-row figure —
-   one row per member's best-fit model — via `fviz.plot_ensemble_slices()`,
-   with optional statistical summary rows (mean, std, median of
-   log₁₀(ρ) across all members).
-   > **Known limitation:** this call currently passes several kwargs
-   > (`site_xys`, CRS/display options, layout options, …) that are not
-   > present in `plot_ensemble_slices()`'s current signature and will
-   > raise `TypeError`. This pre-existing mismatch is unresolved — see
-   > the code comment at the call site. `PLOT_JOINT` defaults to `False`
-   > so it doesn't affect normal use.
-
-3. Optionally, a borehole resistivity log figure (point-in-element sampling,
+2. Optionally, a borehole resistivity log figure (point-in-element sampling,
    identical to step (7) in `femtic_mod_plot.py`), sampled from the first
    converged member's best-fit model.
+
+> **Removed:** the former joint multi-row ensemble figure
+> (`PLOT_JOINT=True`, via `fviz.plot_ensemble_slices()`) has been removed
+> entirely — see Changelog, 2026-08-25. It was never the default path
+> (`PER_MEMBER_PLOT` always was) and its call carried a long-standing
+> keyword mismatch against `plot_ensemble_slices()`'s current signature.
 
 ---
 
@@ -75,9 +70,6 @@ WORK_DIR/<label>/iter0.<ext>  +  WORK_DIR/<label>/best.<ext>   (per converged me
         |                                    ["pdf" in PLOT_FORMAT, PER_MEMBER_PDF_CATALOG_MODE != "none"]
         v  PdfPages(PER_MEMBER_CATALOG_FILE)
 one multi-page pdf catalog, all member pdf figures in plot order
-        |
-        v  fviz.plot_ensemble_slices(...)                [PLOT_JOINT]
-joint PDF  +  optional per-member PDFs
         |                                    [PLOT_BOREHOLE = True]
         v  fviz.plot_borehole_logs(...)
 borehole PDF / interactive window
@@ -110,17 +102,11 @@ borehole PDF / interactive window
 | `PER_MEMBER_PLOT` | If `True` (default), plot iter0 + best-fit figures for every converged member |
 | `PLOT_FORMAT` | Output format(s), e.g. `"pdf"` or `["pdf", "jpg"]` — normalised to `_PLOT_FORMATS` |
 | `PLOT_CMAP_ITER0` | Matplotlib colormap name for iter0 (prior) plots |
-| `PLOT_CMAP_BEST` | Matplotlib colormap name for best-fit plots (and the joint figure, `PLOT_JOINT`) |
+| `PLOT_CMAP_BEST` | Matplotlib colormap name for best-fit plots |
 | `PLOT_CLIM_ITER0` | Colour limits `[log10(ρ_min), log10(ρ_max)]` for iter0 (prior) plots; `None` = auto |
-| `PLOT_CLIM_BEST` | Colour limits for best-fit plots (and the joint figure, `PLOT_JOINT`); `None` = auto |
+| `PLOT_CLIM_BEST` | Colour limits for best-fit plots; `None` = auto |
 | `PER_MEMBER_PDF_CATALOG_MODE` | `"none"` / `"iter0"` / `"best"` / `"both"` (default) — which per-member pdf pages, if `"pdf"` is among `_PLOT_FORMATS`, go into the catalog; `"both"` interlaces per member (iter0_A, best_A, iter0_B, best_B, ...) |
 | `PER_MEMBER_CATALOG_FILE` | Output path for the multi-page pdf catalog |
-
-### Joint ensemble figure (optional extra)
-| Variable | Description |
-|---|---|
-| `PLOT_JOINT` | If `True`, additionally build the joint multi-row figure (see Known limitation above) |
-| `ENS_STAT_ROWS` | Summary rows: any subset of `["mean", "std", "median"]` |
 
 ### Origin estimation
 | Variable | Description |
@@ -138,6 +124,7 @@ borehole PDF / interactive window
 | `HORIZ_KM` | `True` → horizontal axes in km |
 | `PLOT_EQUAL_ASPECT` | Equal aspect ratio on all panels |
 | `PLOT_PANEL_HEIGHT` | Panel height in cm |
+| `PLOT_PANEL_WIDTH` | Panel width in cm; `None` (default) = auto per-column width from each panel's aspect ratio (needs `PLOT_EQUAL_ASPECT=True`). When set, overrides that auto-width with one fixed value for every column — takes precedence over `PLOT_PANEL_HEIGHT`-driven sizing, mirroring `femtic_ens_post.py`'s `MOD_PANEL_WIDTH` |
 | `PLOT_NROWS/NCOLS` | Grid layout (`None` = auto) |
 
 ### Slice geometry
@@ -297,3 +284,21 @@ Position values accept:
   catalog-append call is now guarded the same way, since it renders
   the figure independently and can in principle hit the same bug even
   when the per-member save already succeeded.
+- **2026-08-25 (Claude Sonnet 5, Anthropic):** Removed `PLOT_JOINT` and
+  the joint multi-row ensemble figure entirely (the `fviz.plot_
+  ensemble_slices()` call in the former step (6b) of the workflow),
+  along with its now-unused config vars `ENS_STAT_ROWS`, `PLOT_ENS_
+  FILE`, `ENS_PER_MEMBER` — rather than fixing the long-standing
+  keyword mismatch against `plot_ensemble_slices()`'s current
+  signature, since `PER_MEMBER_PLOT` was always the only path actually
+  exercised. `PLOT_CMAP_BEST`/`PLOT_CLIM_BEST` docs updated to drop
+  the now-obsolete "and the joint figure" mentions; `ENS_FILES` is
+  kept (still feeds the borehole step, renumbered (7)). Also added
+  `PLOT_PANEL_WIDTH` (cm; `None` = auto from aspect ratio), mirroring
+  `femtic_ens_post.py`'s `MOD_PANEL_WIDTH`: when set it overrides
+  `plot_model_slices()`'s per-column auto-width with one fixed value,
+  taking precedence over `PLOT_PANEL_HEIGHT`-driven sizing; `None`
+  (default, unchanged prior behaviour) leaves `PLOT_PANEL_HEIGHT`
+  alone driving the aspect-ratio auto-width. Wired into the single
+  shared `_kwargs` dict in `_plot_member_slice()`, so both the iter0
+  and best-fit per-member figures pick it up.

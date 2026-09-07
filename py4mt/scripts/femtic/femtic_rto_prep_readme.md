@@ -90,6 +90,8 @@ makes the *entire* ensemble (data + model perturbation, plus the
 | `ENS_STAT_ROWS` | Summary rows: `["mean", "std", "median"]` subset |
 | `ENS_TICK_FONTSIZE` / `ENS_LABEL_FONTSIZE` | Axis tick/label font sizes for the ensemble slice plot. Defaults `6`/`7`, matching `fviz.plot_ensemble_slices`' own defaults; independent of the `MOD_*` pair above since the joint member × slice grid needs smaller text to stay readable. |
 | `MOD_SHOW_IN_SPYDER` | `True` (default) and running inside Spyder (detected via `utl.runtime_env() == "spyder"`) → every saved figure (QC, model, ensemble) is also displayed inline in Spyder's Plots pane via `plt.show()`, in addition to being written to disk. No effect outside Spyder; set `False` to disable even under Spyder. |
+| `MOD_MAP_MARKERS` | Extra lat/lon point markers on QC/model map panels only. An entry with `"is_model_centre": True` (instead of `"latlon"`) overrides the model-centre marker's style rather than plotting as a regular marker. |
+| `MOD_SHOW_MODEL_CENTRE` | `True` (default): marks the model origin on `"map"` panels whenever `MOD_DISPLAY_COORDS` is `"utm"`/`"latlon"` (no-op for `"model"`). Default style: black `"+"`, `ms=10`; no legend entry. Override via `MOD_MAP_MARKERS` as above; set `False` to force off. |
 
 ---
 
@@ -134,3 +136,8 @@ dict(kind="plane", point=[0,0,5000], strike=45, dip=60)
 - 2026-08-13 (Claude Sonnet 5, Anthropic): Added
   `femtic_rto_prep_summary.md` output at end of run: writes user-set
   (UPPERCASE) parameters, script path, and run date/time.
+- 2026-09-06 (Claude Sonnet 5, Anthropic): Added `MOD_SHOW_MODEL_CENTRE`
+  (default `True`): marks the model origin on `"map"` panels whenever
+  `MOD_DISPLAY_COORDS` is `"utm"`/`"latlon"`, via
+  `fviz.plot_model_slices`'s new `show_model_centre` parameter. Override
+  style with a `MOD_MAP_MARKERS` entry carrying `"is_model_centre": True`.

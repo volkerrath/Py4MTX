@@ -177,6 +177,97 @@ def read_distortion_file(path=None):
     # print(type(c))
     return c, c_dash
 
+def read_cnv(source, *, columnar: bool = False) -> dict:
+    """Read a FEMTIC convergence file (``femtic.cnv``) using its own header
+    row to determine column positions.
+
+    FEMTIC's ``.cnv`` column layout is not fixed: the ``Beta``/``Distortion``
+    (and, in ABIC/cross-gradient runs, ``LmdCG``/``CrossGra``/
+    ``MupdateMean``/``ABIC``) columns only appear depending on run options,
+    shifting every column after them -- independent of the FEMTIC version
+    number. Parsing by name off the file's own header row (e.g.
+    ``Iter#  Retrial#  Alpha  Beta  Damp  Roughness  Distortion  Misfit  RMS
+    ObjFunc``) is robust to that, and to any future column additions,
+    without needing a version/feature switch at all.
+
+    Parameters
+    ----------
+    source : str | Path
+        Path to a ``femtic.cnv`` file, or to a directory containing one
+        (``femtic.cnv`` is looked up inside it).
+    columnar : bool, optional
+        If True, also build a ``"data"`` entry: a dict mapping each header
+        column name to a 1-D ``np.ndarray`` of that column's values across
+        the whole convergence history (row order preserved), e.g.
+        ``cnv["data"]["RMS"]`` for the full nRMS trace. Default False --
+        the per-row ``"rows"`` list already covers most uses, so this is
+        opt-in extra work/memory for convergence-curve plotting and
+        similar whole-column access.
+
+    Returns
+    -------
+    dict with keys:
+
+        ``"columns"`` : dict[str, int]
+            Column name -> 0-based index, taken verbatim from the header
+            row actually present in this file (trailing ``#`` stripped,
+            e.g. ``"Iter#"`` -> ``"Iter"``, ``"Retrial#"`` -> ``"Retrial"``).
+            Only columns present in *this* file's header appear here --
+            e.g. no ``"Beta"``/``"Distortion"`` keys for a
+            without-distortion run.
+        ``"rows"`` : list[dict[str, float]]
+            One dict per data row, keyed by the same names as
+            ``"columns"``. ``"Iter"``/``"Retrial"`` are integer-valued
+            floats (round cleanly with ``int(...)``).
+        ``"data"`` : dict[str, np.ndarray], only present if ``columnar=True``
+            Column name -> array of that column's values over all rows,
+            same names as ``"columns"``.
+
+    Raises
+    ------
+    ValueError
+        If no header row (a non-numeric row containing the token
+        ``"RMS"``) is found before the first data row.
+
+    Author: Claude Sonnet 5 (Anthropic), 2026-09-02.
+    """
+    path = Path(source)
+    if path.is_dir():
+        path = path / "femtic.cnv"
+
+    columns: Optional[dict] = None
+    rows: list = []
+
+    with open(path, "r", errors="ignore") as f:
+        for line in f:
+            tokens = line.split()
+            if not tokens:
+                continue
+            if columns is None:
+                if "RMS" in tokens:
+                    columns = {tok.rstrip("#"): i for i, tok in enumerate(tokens)}
+                continue  # any line before the header is found is a
+                          # comment/blank row, header-detection or not
+            try:
+                row = {name: float(tokens[idx]) for name, idx in columns.items()}
+            except (ValueError, IndexError):
+                continue  # trailing comment / malformed row
+            rows.append(row)
+
+    if columns is None:
+        raise ValueError(
+            f"read_cnv: no header row (containing 'RMS') found in {path}."
+        )
+
+    result = {"columns": columns, "rows": rows}
+    if columnar:
+        result["data"] = {
+            name: np.array([row[name] for row in rows], dtype=float)
+            for name in columns
+        }
+    return result
+
+
 def get_nrms(directory=None):
     '''
     Get best (smallest) nRMS from FEMTIC run.
@@ -189,46 +280,37 @@ def get_nrms(directory=None):
     Returns
     -------
     num_best : int
-        DESCRIPTION.
+        Iteration number with the smallest nRMS.
     nrm_best : float
-        DESCRIPTION.
+        The corresponding (smallest) nRMS value.
 
+    Notes
+    -----
+    Column positions are read from femtic.cnv's own header row via
+    :func:`read_cnv`, so this works regardless of FEMTIC version or
+    whether distortion parameters (the ``Beta``/``Distortion`` columns)
+    are present -- previously hardcoded indices (``misft=nline[7]``,
+    ``nrmse=nline[8]``) silently matched only the with-distortion column
+    layout. Fixed 2026-09-02.
     '''
     if directory is None:
         sys.exit('get_nrms: No directory given! Exit.')
-    convergence = []
-    fline = -1
-    with open(directory+'/femtic.cnv') as cnv:
-        content = cnv.readlines()
 
-        for line in content:
+    try:
+        cnv = read_cnv(os.path.join(directory, 'femtic.cnv'))
+        rows = cnv["rows"]
+    except ValueError:
+        rows = []
 
-            if '#' in line:
-                continue
-            fline = fline + 1
-            #print (line)
-            nline = line.split()
-            if len(nline)==0:
-                continue
-            print(nline)
-            itern = int(nline[0])
-            retry = int(nline[1])
-            alpha = float(nline[2])
-            rough = float(nline[5])
-            misft = float(nline[7])
-            nrmse = float(nline[8])
-
-            convergence.append([itern, retry, alpha, rough, misft, nrmse])
-
-    if len(convergence)==0:
+    if len(rows) == 0:
         print (directory, '/femtic.cnv', ' is empty!')
         num_best = -1
         nrm_best = 1e32
     else:
-        c = np.array(convergence)
-        index_min = np.argmin(c[:,5])
-        nrm_best = c[index_min,5]
-        num_best = int(round(c[index_min,0]))
+        nrmse = np.array([r["RMS"] for r in rows])
+        index_min = int(np.argmin(nrmse))
+        nrm_best = float(nrmse[index_min])
+        num_best = int(round(rows[index_min]["Iter"]))
 
     return num_best, nrm_best
 

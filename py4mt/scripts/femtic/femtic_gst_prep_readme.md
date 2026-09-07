@@ -299,6 +299,13 @@ kwargs would raise `TypeError`; this script no longer does so as of
 |---|---|---|
 | `MOD_SHOW_IN_SPYDER` | `True` | When this script is running inside Spyder (detected once at startup via `utl.runtime_env() == "spyder"`), every saved figure — QC, model, and ensemble slice plots — is also displayed inline in Spyder's Plots pane via `plt.show()`, in addition to being written to disk. No effect outside Spyder (plain `python`, other IDEs still save-only). Set `False` to disable even under Spyder. |
 
+### Model-centre marker (`MOD_SHOW_MODEL_CENTRE`)
+
+| Variable | Default | Description |
+|---|---|---|
+| `MOD_MAP_MARKERS` | `[]` | Extra lat/lon point markers on QC/model map panels only. An entry with `"is_model_centre": True` (instead of `"latlon"`) overrides the model-centre marker's style rather than plotting as a regular marker. |
+| `MOD_SHOW_MODEL_CENTRE` | `True` | Marks the model origin on `"map"` panels whenever `MOD_DISPLAY_COORDS` is `"utm"`/`"latlon"` (no-op for `"model"`). Default style: black `"+"`, `ms=10`; no legend entry. Override via `MOD_MAP_MARKERS` as above; set `False` to force off. |
+
 The member file list is built automatically using `MOD_RESISTIVITY_FILE` (the filename
 written by `generate_gst_model_ensemble`).  To visualise converged inversion results
 rather than initial models, change the filename to the desired iterate
@@ -464,6 +471,7 @@ No sparse-matrix file (`.npz`) is required.
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `RANDOM_SEED` (default `None`) for optional reproducible ensembles — a shared, optionally seeded `rng` now also drives `ens.generate_data_ensemble` (new `rng` parameter, forwarded to `femtic.modify_data`). Added `MOD_SAVE_PILOT_POINTS` (default `True`) / `MOD_PILOT_POINTS_FILE`: writes every member's pilot-point coordinates and drawn log₁₀(ρ) values to a compressed `pilot_points.npz`, with `RANDOM_SEED` and pilot-point/variogram config recorded for a self-describing archive. See `ensembles_readme.md` for the underlying `generate_gst_model_ensemble` / `generate_data_ensemble` changes. |
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `MOD_TICK_FONTSIZE`/`MOD_LABEL_FONTSIZE` (QC/model slice plots) and `ENS_TICK_FONTSIZE`/`ENS_LABEL_FONTSIZE` (ensemble slice plot) — axis tick/label font sizes were previously fixed at `femtic_viz.py`'s internal defaults with no way to override them here. Also removed `depth_km=True`/`horiz_km=True` from the `plot_ensemble_slices` call — that function doesn't accept those parameters and the call would have raised `TypeError` the first time `PLOT_SLICES_ENS` was set `True` (dormant since it defaults to `False`). Corrected the "QC slice plot" table above, which still documented the old `QC_SLICES`/`QC_CMAP`/etc. variables removed by the 2026-06-07 update. |
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `MOD_SHOW_IN_SPYDER` (default `True`): when running inside Spyder, every saved figure (QC, model, ensemble) is also displayed inline via `plt.show()`, without changing what gets saved to disk. No effect outside Spyder. |
+| 2026-09-06 | Claude Sonnet 5 (Anthropic) | Added `MOD_SHOW_MODEL_CENTRE` (default `True`): marks the model origin on `"map"` panels whenever `MOD_DISPLAY_COORDS` is `"utm"`/`"latlon"`, via `fviz.plot_model_slices`'s new `show_model_centre` parameter. Override style with a `MOD_MAP_MARKERS` entry carrying `"is_model_centre": True`. |
 | 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_gst_prep_summary.md` output at end of run: writes user-set (UPPERCASE) parameters, script path, and run date/time. |
 | 2026-08-24 | Claude Sonnet 5 (Anthropic) | Added `PLOT_ONLY` mode: forces `PERTURB_MOD`/`PERTURB_DAT` off and skips `generate_directories()` entirely (which would otherwise overwrite already-Kriged member models via `COPY_LIST`), then re-plots existing member files from disk via `PLOT_DATA`/`PLOT_MODEL`/`PLOT_SLICES_QC`/`PLOT_SLICES_ENS`. Required making `MOD_MESH`/`MOD_RESISTIVITY_FILE`/`MOD_REFERENCE_FILE` unconditional (previously only defined inside `if PERTURB_MOD:`, a latent `NameError` risk) and decoupling the `PLOT_DATA` block from `if PERTURB_DAT:`. Missing per-member files are warned about and skipped, never a hard error. |
 

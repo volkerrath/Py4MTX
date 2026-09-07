@@ -187,7 +187,8 @@ For a standalone borehole figure (higher DPI, separate PDF), use
 | `PROJECTION_DIST` | `1000.` | Max distance [m] from slice plane for site to appear |
 | `SITE_MARKER` | `dict(marker="v",…)` | Marker style for map panels |
 | `SITE_MARKER_SLICES` | `dict(marker="v",…)` | Marker style for curtain / plane panels |
-| `MAP_MARKERS` | `[]` | Extra lat/lon point markers on map panels only |
+| `MAP_MARKERS` | `[]` | Extra lat/lon point markers on map panels only. An entry with `"is_model_centre": True` (instead of `"latlon"`) overrides the model-centre marker's style rather than plotting as a regular marker. |
+| `SHOW_MODEL_CENTRE` | `True` | Marks the model origin on `"map"` panels whenever `DISPLAY_COORDS` is `"utm"`/`"latlon"` (no-op for `"model"`). Default style: black `"+"`, `ms=10`; no legend entry. Override style via `MAP_MARKERS` as above; set `False` to force off. |
 
 ### Plotting
 
@@ -267,3 +268,4 @@ For a standalone borehole figure (higher DPI, separate PDF), use
 | 2026-06-19 | Claude Sonnet 4.6 | `kind="profile"` added to `PLOT_SLICES`: vertical fence section defined by two endpoint positions (`p1`, `p2`) each accepting model-local / UTM / latlon CRS tags; `strike` derived from p1→p2 azimuth; `dip` fixed at 90°. New helper `resolve_pos_two_point_profile()` in `femtic.py`; `resolve_slice_positions()` extended. |
 | 2026-06-26 | vrath / Claude Sonnet 4.6 | Added `TICK_FONTSIZE` (default `7`) and `LABEL_FONTSIZE` (default `8`) config constants; forwarded to `plot_model_slices` as `tick_fontsize` / `label_fontsize`. |
 | 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_mod_plot_slice_summary.md` output at end of run: writes user-set (UPPERCASE) parameters, script path, and run date/time. |
+| 2026-09-06 | Claude Sonnet 5 (Anthropic) | Added `SHOW_MODEL_CENTRE` (default `True`): marks the model origin on `"map"` panels whenever `DISPLAY_COORDS` is `"utm"`/`"latlon"`, via `fviz.plot_model_slices`'s new `show_model_centre` parameter. Override style with a `MAP_MARKERS` entry carrying `"is_model_centre": True`. |
