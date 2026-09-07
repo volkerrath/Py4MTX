@@ -64,7 +64,8 @@ Ensemble sub-directories  (rto_*, gst_*, member_*, …)
 | `ENSEMBLE_NAME` | str | — | Glob matched against sub-directory names. Only actual directories among the matches are scanned (`os.path.isdir()` checked in step (1)); a stray file that happens to match the glob is skipped. |
 | `ENSEMBLE_PREFIX` | str | — | Prefix for default file/figure names. |
 | `NRMS_MAX` | float | `1.5` | Members whose final nRMS exceeds this value are tagged `"rejected_nrms"`. |
-| `FEMTIC` | str | `"5.0"` | FEMTIC version string; controls which `femtic.cnv` column holds nRMS (`"4.3"` → column 6, `"5.x"` → column 8). |
+
+nRMS and the iteration number are read from each member's `femtic.cnv` via `fem.read_cnv()`, which parses column positions from the file's own header row (case-insensitive substring match) — no FEMTIC-version setting needed.
 
 ### Ocean / air handling (REPAIR only)
 
@@ -173,7 +174,7 @@ This script does **not** write a `.npz` results file — that remains
 ## Quick start
 
 ```python
-# Edit ENSEMBLE_DIR, ENSEMBLE_NAME, ENSEMBLE_PREFIX, NRMS_MAX, FEMTIC
+# Edit ENSEMBLE_DIR, ENSEMBLE_NAME, ENSEMBLE_PREFIX, NRMS_MAX
 # in the USER SECTION, then:
 python femtic_ens_repair.py
 ```
@@ -215,5 +216,6 @@ skipped.
 | 2026-08-12 | Claude Sonnet 5 (Anthropic) | Created. Split out of `femtic_ens_post.py`, where a convergence diagnostic and a REPAIR procedure had been prototyped across several iterations earlier the same day (see `femtic_ens_post_readme.md`'s changelog for that history). Step (1)'s directory scan reuses `femtic_ens_post.py`'s scan loop, including its `os.path.isdir(d)` guard against non-directory glob matches. Step (2) (convergence diagnostic) defaults to the binned histogram with the aggregate `"missing"` bar turned **off** (`MOD_CONV_SHOW_MISSING=False`) at the user's request. Step (3) (REPAIR) creates a **new sibling** `_restart` directory per non-converged member rather than renaming the original in place, at the user's explicit request, so the original failed-run directory is preserved unmodified under its original name; REPAIR is skipped (with a console warning) if a target `_restart` directory already exists, or if fewer than `MOD_REPAIR_MIN_MEMBERS` converged members are available. The repaired model is the element-wise mean of 2 distinct converged members' **log₁₀(ρ)** models, matching this codebase's existing log10-space averaging convention. |
 | 2026-08-12 | Claude Sonnet 5 (Anthropic) | REPAIR now `shutil.copytree()`'s the **entire** original directory to the `_restart` copy (`symlinks=True`, so `LINK_LIST` entries — `control.dat`, `mesh.dat`, `referencemodel.dat`, `distortion_iter0.dat`, `site.dat`, run scripts — stay symlinks to the shared template rather than being followed/duplicated) before overwriting `MOD_REPAIR_MODEL_NAME` with the repaired model, instead of creating a bare directory with just that one file. `resistivity_block_iter0.dat` is itself a `COPY_LIST` entry, so it already exists as a real file (not a symlink) in the fresh copy; REPAIR simply replaces its contents. Added a defensive `os.path.islink()` guard before the overwrite regardless, mirroring `femtic.py`'s own `insert_model` symlink-hazard guard. `_restart` directories produced by REPAIR are now ready to restart FEMTIC in directly. |
 | 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_ens_repair_summary.md` output at end of run: writes user-set (UPPERCASE) parameters, script path, and run date/time. |
+| 2026-09-07 | Claude Sonnet 5 (Anthropic) | Removed the `FEMTIC` config variable and its `"4.3"`/`"5."` version-string switch on the nRMS column index (6 vs 8): that switch only matched one specific column layout, and silently misread nRMS (e.g. reading the Distortion or Misfit column instead) for any run whose actual column count didn't match the assumed FEMTIC-version pairing. Now uses `fem.read_cnv()`, matching `femtic_ens_post.py`'s `get_nrms()`-based fix of 2026-09-02 — column positions are read from `femtic.cnv`'s own header row every time, independent of version or Beta/Distortion presence. |
 
 Author: Volker Rath (DIAS)

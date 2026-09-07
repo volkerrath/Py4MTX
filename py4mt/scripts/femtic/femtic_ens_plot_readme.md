@@ -53,7 +53,7 @@ sub-directories and filtering on `femtic.cnv` / `NRMS_MAX` — and produces:
 ORIGIN_METHOD + SITE_DAT  →  UTM_ORIGIN_E/N/LAT/LON (bounding-box midpoint)
                           →  UTM zone auto-derived from origin lat/lon
 
-ENSEMBLE_DIR + ENSEMBLE_NAME + NRMS_MAX + FEMTIC
+ENSEMBLE_DIR + ENSEMBLE_NAME + NRMS_MAX
         |
         v  utl.get_filelist() → per-dir femtic.cnv → numit, nRMS
    model_list: [{label, dir, numit, nrms, iter0_file, best_file}, ...]
@@ -90,11 +90,12 @@ borehole PDF / interactive window
 ### Ensemble input — converged-member discovery
 | Variable | Description |
 |---|---|
-| `FEMTIC` | FEMTIC version (`"4.3"` / `"5.0"`) — selects the `femtic.cnv` nRMS column; must match `femtic_ens_post.py` |
 | `ENSEMBLE_DIR` | Directory containing one sub-directory per member |
 | `ENSEMBLE_NAME` | Member sub-directories matched via `"<ENSEMBLE_NAME>*"` |
 | `NRMS_MAX` | Max accepted nRMS from `femtic.cnv` — keep equal to `femtic_ens_post.py`'s value |
 | `ENS_LABELS` | Labels for member plots/filenames; `None` → directory basenames |
+
+nRMS and the iteration number are read from each member's `femtic.cnv` via `fem.read_cnv()`, which parses column positions from the file's own header row (case-insensitive substring match) — no FEMTIC-version setting needed.
 
 ### Per-member plots (default)
 | Variable | Description |
@@ -142,7 +143,8 @@ borehole PDF / interactive window
 | `PROJECTION_DIST` | Max distance (**km**) from slice plane for curtain projection |
 | `SITE_MARKER` | Marker style dict for map panels |
 | `SITE_MARKER_SLICES` | Marker style for curtain panels (`None` → same as `SITE_MARKER`) |
-| `MAP_MARKERS` | Additional map markers (known features, etc.); `pos` in model-local **km** or CRS-tagged |
+| `MAP_MARKERS` | Additional map markers (known features, etc.); `pos` in model-local **km** or CRS-tagged. An entry with `"is_model_centre": True` (instead of `"pos"`) overrides the model-centre marker's style rather than plotting as a regular marker. |
+| `SHOW_MODEL_CENTRE` | `True` (default): marks the model origin on `"map"` panels whenever `DISPLAY_COORDS` is `"utm"`/`"latlon"` (no-op for `"model"`). Default style: black `"+"`, `ms=10`; no legend entry. Override via `MAP_MARKERS` as above; set `False` to force off. |
 
 ---
 
@@ -302,3 +304,18 @@ Position values accept:
   alone driving the aspect-ratio auto-width. Wired into the single
   shared `_kwargs` dict in `_plot_member_slice()`, so both the iter0
   and best-fit per-member figures pick it up.
+- **2026-09-06 (Claude Sonnet 5, Anthropic):** Added `SHOW_MODEL_CENTRE`
+  (default `True`): marks the model origin on `"map"` panels whenever
+  `DISPLAY_COORDS` is `"utm"`/`"latlon"`, via `fviz.plot_model_slices`'s
+  new `show_model_centre` parameter. Override style with a `MAP_MARKERS`
+  entry carrying `"is_model_centre": True`.
+- **2026-09-07 (Claude Sonnet 5, Anthropic):** Removed the `FEMTIC`
+  config variable and its `"4.3"`/`"5."` version-string switch on the
+  nRMS column index (6 vs 8): that switch only matched one specific
+  column layout, and silently misread nRMS (e.g. reading the Distortion
+  or Misfit column instead) for any run whose actual column count
+  didn't match the assumed FEMTIC-version pairing. Now uses
+  `fem.read_cnv()`, matching `femtic_ens_post.py`'s `get_nrms()`-based
+  fix of 2026-09-02 — column positions are read from `femtic.cnv`'s own
+  header row every time, independent of version or Beta/Distortion
+  presence.

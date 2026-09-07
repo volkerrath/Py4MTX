@@ -213,6 +213,17 @@ Provenance
                 Wired into the single shared _kwargs dict, so every
                 plot_model_slices() call site here (iter0, best-fit, and
                 the pdf-fallback retries) picks it up.
+    2026-09-07  Claude Sonnet 5 (Anthropic)
+                Removed the FEMTIC config variable and its "4.3"/"5."
+                version-string switch on the nRMS column index (6 vs 8):
+                that switch only matched one specific column layout, and
+                silently misread nRMS (e.g. reading the Distortion or
+                Misfit column instead) for any run whose actual column
+                count didn't match the assumed FEMTIC-version pairing.
+                Now uses fem.read_cnv(), matching femtic_ens_post.py's
+                get_nrms()-based fix of 2026-09-02 -- column positions
+                are read from femtic.cnv's own header row every time,
+                independent of version or Beta/Distortion presence.
 
 @author: vrath
 """
@@ -288,12 +299,9 @@ SITE_DAT = ENSEMBLE_DIR + "/templates/site.dat"   # set to None to disable
 # ---------------------------------------------------------------------------
 # Ensemble input — converged-member discovery
 # ---------------------------------------------------------------------------
-#: FEMTIC version used for the run — controls which column of the last
-#: femtic.cnv line holds nRMS.  Must match femtic_ens_post.py's setting
-#: for the same ensemble so both scripts agree on what "converged" means.
-FEMTIC = "4.3"   # "4.3" | "5.0"
-
-#: Member sub-directories are matched via glob "<ENSEMBLE_NAME>*".
+#: Member sub-directories are matched via glob "<ENSEMBLE_NAME>*". nRMS is
+#: read from femtic.cnv via fem.read_cnv(), which parses column positions
+#: from the file's own header row -- no FEMTIC-version setting needed.
 
 
 #: Maximum normalised RMS accepted from femtic.cnv.  Keep this equal to
@@ -1061,7 +1069,7 @@ elif SITE_NUMBER is not None:
 
 # --- (5) Scan ensemble directories for converged members -------------------
 # Mirrors femtic_ens_post.py Step (1) exactly: same NRMS_MAX threshold,
-# same femtic.cnv column logic per FEMTIC version, same
+# same fem.read_cnv()-based column lookup, same
 # resistivity_block_iter{numit}.dat naming for the best-fit model — so
 # this script plots precisely the members ens_post included in its
 # ensemble statistics.
@@ -1084,17 +1092,24 @@ for _d in dir_list:
         print(f"    femtic.cnv not found — skipped.")
         continue
 
-    with open(_cnv_file) as _fh:
-        _cnv = _fh.readlines()
-    _info = _cnv[-1].split()
-    if "4.3" in FEMTIC:
-        _numit = int(_info[0])
-        _nrms  = float(_info[6])
-    elif "5." in FEMTIC:
-        _numit = int(_info[0])
-        _nrms  = float(_info[8])
-    else:
-        sys.exit(f"FEMTIC version {FEMTIC!r} not recognised. Exit.")
+    # Column positions are read from this file's own header row via
+    # fem.read_cnv() (case-insensitive substring match, e.g. "rms" ->
+    # "RMS"), so this works regardless of FEMTIC version or whether
+    # Beta/Distortion columns are present -- previously hardcoded
+    # indices selected by a "4.3"/"5." version string silently matched
+    # only one specific column layout and misread nRMS for any run whose
+    # actual column count didn't match that assumption.
+    try:
+        _rows = fem.read_cnv(_cnv_file)["rows"]
+    except ValueError as _e:
+        print(f"    {_e}")
+        continue
+    if not _rows:
+        print(f"    femtic.cnv is empty — skipped.")
+        continue
+    _last = _rows[-1]
+    _numit = int(round(_last["Iter"]))
+    _nrms  = float(_last["RMS"])
 
     if _nrms > NRMS_MAX:
         print(f"    nRMS={_nrms:.4f} > NRMS_MAX={NRMS_MAX} — skipped.")

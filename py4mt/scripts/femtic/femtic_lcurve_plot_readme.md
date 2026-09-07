@@ -29,12 +29,19 @@ the curve.
 
 ### `femtic.cnv` column layout
 
+Column positions are read from each file's own header row via
+`fem.read_cnv()` (case-insensitive substring match, e.g. `"rough"` ->
+`"Roughness"`, `"rms"` -> `"RMS"`), so this is robust to FEMTIC version
+and to whether the `Beta`/`Distortion` columns are present — no fixed
+column-count assumption is made. A typical header looks like:
+
 ```
-Iter#  Retrial#  Alpha  Damp  Roughness  Misfit  RMS  ObjFunc
-  0       1        2     3       4         5       6      7
+Iter#  Retrial#  Alpha  Beta  Damp  Roughness  Distortion  Misfit  RMS  ObjFunc
 ```
 
-Only the **last line** (final iteration) is used from each file.
+(or, without distortion parameters being inverted, without the
+`Beta`/`Distortion` columns). Only the **last line** (final iteration) is
+used from each file.
 
 ---
 
@@ -139,3 +146,4 @@ offset tuple `ann_offset` in the script if crowding still occurs.
 | 2026-06-18 | vrath / Claude Sonnet 4.6 | Added `PLOT_XLIM` / `PLOT_YLIM`; offset annotations from markers via `xytext` |
 | 2026-07-05 | vrath / Claude Sonnet 5 | Added `SCALE_ROUGH` / `SCALE_MISFIT` optional axis scaling factors, displayed as "×10ⁿ" in the axis label; not applied to `nrms` or to saved `LC_dat.npz`; `PLOT_XLIM`/`PLOT_YLIM` auto-rescaled to match |
 | 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_lcurve_plot_summary.md` output at end of run: user-set (UPPERCASE) parameters, script path, and run date/time |
+| 2026-09-07 | Claude Sonnet 5 (Anthropic) | Removed `DISTORTION` and the raw-token-count / index-based column lookup (8 vs 10 columns) it drove: that heuristic silently matched only those two specific `femtic.cnv` layouts and misread nRMS (e.g. reading `Distortion` or `Misfit` instead of `RMS`) for any other column count. Now uses `fem.read_cnv()`, which reads column positions from each file's own header row (case-insensitive substring match), same fix already applied to `femtic_ens_post.py`'s `get_nrms()` and (2026-09-07) `femtic_ens_plot.py` / `femtic_ens_repair.py`. |

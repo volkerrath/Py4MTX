@@ -99,6 +99,17 @@ Provenance:
                 Added femtic_ens_repair_summary.md output at end of run:
                 writes user-set (UPPERCASE) parameters, script path, and
                 run date/time via utl.write_param_summary().
+    2026-09-07  Claude Sonnet 5 (Anthropic)
+                Removed the FEMTIC config variable and its "4.3"/"5."
+                version-string switch on the nRMS column index (6 vs 8):
+                that switch only matched one specific column layout, and
+                silently misread nRMS (e.g. reading the Distortion or
+                Misfit column instead) for any run whose actual column
+                count didn't match the assumed FEMTIC-version pairing.
+                Now uses fem.read_cnv(), matching femtic_ens_post.py's
+                get_nrms()-based fix of 2026-09-02 -- column positions
+                are read from femtic.cnv's own header row every time,
+                independent of version or Beta/Distortion presence.
 """
 from __future__ import annotations
 
@@ -134,7 +145,6 @@ print(titstrng + "\n\n")
 # ===========================================================================
 # USER SECTION -- all user-set parameters below are UPPERCASE
 # ===========================================================================
-FEMTIC = "5.0"  # "4.3"
 
 # ---------------------------------------------------------------------------
 # Ensemble input
@@ -314,17 +324,26 @@ for d in dir_list:
         conv_list.append(dict(label=_label, dir=d, nrms=None, status="missing_cnv"))
         continue
 
-    with open(cnv_file) as _fh:
-        cnv = _fh.readlines()
-    info = cnv[-1].split()
-    if "4.3" in FEMTIC:
-        numit = int(info[0])
-        nrms  = float(info[6])
-    elif "5." in FEMTIC:
-        numit = int(info[0])
-        nrms  = float(info[8])
-    else:
-        sys.exit("FEMTIC version " + __file__ + ": does not exist! Exit.")
+    # Column positions are read from this file's own header row via
+    # fem.read_cnv() (case-insensitive substring match, e.g. "rms" ->
+    # "RMS"), so this works regardless of FEMTIC version or whether
+    # Beta/Distortion columns are present -- previously hardcoded
+    # indices selected by a "4.3"/"5." version string silently matched
+    # only one specific column layout and misread nRMS for any run whose
+    # actual column count didn't match that assumption.
+    try:
+        _rows = fem.read_cnv(cnv_file)["rows"]
+    except ValueError as _e:
+        print(f"    {_e}")
+        conv_list.append(dict(label=_label, dir=d, nrms=None, status="missing_cnv"))
+        continue
+    if not _rows:
+        print(f"    femtic.cnv is empty — skipped.")
+        conv_list.append(dict(label=_label, dir=d, nrms=None, status="missing_cnv"))
+        continue
+    _last = _rows[-1]
+    numit = int(round(_last["Iter"]))
+    nrms  = float(_last["RMS"])
 
     if nrms > NRMS_MAX:
         print(f"    nRMS={nrms:.4f} > NRMS_MAX={NRMS_MAX} — skipped.")

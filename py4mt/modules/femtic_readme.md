@@ -616,4 +616,30 @@ Updated: 2026-06-22
   over `"rows"` and pull one field out of each dict by hand -- convenient
   for convergence-curve plotting and similar whole-column access.
 
+### Changelog (2026-09-07) --- read_cnv: case-insensitive, substring column matching
+
+- `read_cnv()`'s header-row detection and column-name mapping previously
+  required an exact, case-sensitive token match (header-row detection:
+  literal `"RMS"` in the split tokens; column naming: the raw header
+  token verbatim, e.g. `"Roughness"`). Both now use a case-insensitive
+  **substring** test against a canonical pattern list
+  (`_CNV_CANONICAL_PATTERNS`, e.g. `"rough"` -> `"Roughness"`, `"rms"` ->
+  `"RMS"`, `"iter"` -> `"Iter"`, ...; also covers the ABIC/cross-gradient
+  columns `LmdCG`/`CrossGra`/`MupdateMean`/`ABIC`). Header-row detection
+  now requires both an "iter"-like and an "rms"-like token (either case),
+  rather than the literal token `"RMS"`. A header token that matches no
+  known pattern is kept verbatim (trailing `#` stripped), so a genuinely
+  new future column is still captured rather than silently dropped. This
+  guards against a header spelled or capitalised differently in a future
+  FEMTIC version (e.g. `"roughness"` lower-case, or `"Rough"`
+  abbreviated) silently breaking column identification the same way the
+  original hardcoded-index bugs did.
+- Prompted by three still-unmigrated callers (`femtic_ens_plot.py`,
+  `femtic_ens_repair.py`, `femtic_lcurve_plot.py`) each retaining their
+  own pre-`read_cnv()` hardcoded/version-switch or column-count column
+  lookup, which is exactly the kind of column mismatch `read_cnv()` was
+  built to eliminate. All three now call `fem.read_cnv()` directly and
+  had their `FEMTIC`/`DISTORTION` config variables removed; see their
+  own READMEs' 2026-09-07 changelog entries.
+
 Author: Volker Rath (DIAS)

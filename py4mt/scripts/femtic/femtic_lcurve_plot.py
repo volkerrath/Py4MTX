@@ -25,6 +25,18 @@ Provenance:
                        Added femtic_lcurve_plot_summary.md output at end of
                        run: writes user-set (UPPERCASE) parameters, script
                        path, and run date/time via utl.write_param_summary().
+    2026-09-07 Claude Sonnet 5 (Anthropic)
+                       Removed DISTORTION and the raw-token-count / index
+                       based column lookup (8 vs 10 columns) it drove:
+                       that heuristic silently matched only those two
+                       specific femtic.cnv layouts and misread nRMS (e.g.
+                       reading Distortion or Misfit instead of RMS) for
+                       any other column count. Now uses fem.read_cnv(),
+                       which reads column positions from each file's own
+                       header row (case-insensitive substring match), same
+                       fix already applied to femtic_ens_post.py's
+                       get_nrms() and (2026-09-07) femtic_ens_plot.py /
+                       femtic_ens_repair.py.
 """
 
 import os
@@ -62,7 +74,6 @@ WORK_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/lcurve/"
 PLOT_NAME = WORK_DIR + "Annecy_L-curve"
 PLOT_WHAT = "nrms"  # 'nrms' or 'misfit'
 PLOT_TITLE = r"Annecy | ini = 100 $\Omega \cdot m$ " #"| distcorr"
-DISTORTION = None   # None → auto-detect from cnv column count (10 → distortion, 8 → no distortion)
 
 FONTSIZE = 10
 #: Use log10 scale on the x-axis (misfit / nRMS).
@@ -93,37 +104,32 @@ dir_list = utl.get_filelist(
 # =============================================================================
 #  Read final convergence values
 # =============================================================================
-#  Iter#,  Retrial#, Alpha, Damp, Rough, Misfit, RMS, ObjFunc
-#  Iter#,  Retrial#, Alpha, Beta, Damp,  Rough,  Dist,  Misfit, nRMS,  ObjFunc
-#  0,      1,        2,     3,    4,     5,      6,     7,      8      9
+# Column positions are read from each femtic.cnv's own header row via
+# fem.read_cnv() (case-insensitive substring match, e.g. "rough" ->
+# "Roughness", "rms" -> "RMS"), so this is robust to FEMTIC version and
+# to whether the Beta/Distortion columns are present -- previously
+# hardcoded indices, chosen from the line's raw token count (8 vs 10
+# columns) or an explicit DISTORTION override, silently matched only
+# those two specific layouts and misread nRMS (e.g. reading Distortion
+# or Misfit instead) for any other column count.
 l_curve = []
 for directory in dir_list:
-    with open(directory + "/femtic.cnv") as cnv:
-        content = cnv.readlines()
-
-    if np.shape(content)==(1,):
+    try:
+        _rows = fem.read_cnv(directory)["rows"]
+    except ValueError:
         print(directory, "does not contain a valid .cnv file")
         continue
-    
-    line = content[-1].split()
-    print(line)
-    # Auto-detect distortion from column count; override with DISTORTION if set.
-    # 8 cols (no distortion): alpha=2, rough=4, misfit=5, nRMS=6, obj=7
-    # 10 cols (distortion):   alpha=2, rough=5, dist=6,   misfit=7, nRMS=8, obj=9
-    _has_dist = (DISTORTION if DISTORTION is not None else len(line) == 10)
-    if _has_dist:
-        alpha = float(line[2])
-        rough = float(line[5])
-        misft = float(line[7])
-        nrmse = float(line[8])
-        objfc = float(line[9])
-    else:
-        alpha = float(line[2])
-        rough = float(line[4])
-        misft = float(line[5])
-        nrmse = float(line[6])
-        objfc = float(line[7])
-        
+    if not _rows:
+        print(directory, "does not contain a valid .cnv file")
+        continue
+
+    _last = _rows[-1]
+    alpha = float(_last["Alpha"])
+    rough = float(_last["Roughness"])
+    misft = float(_last["Misfit"])
+    nrmse = float(_last["RMS"])
+    objfc = float(_last["ObjFunc"])
+
     l_curve.append([alpha, rough, misft, nrmse, objfc])
 
 lc = np.array(l_curve).reshape((-1, 5))

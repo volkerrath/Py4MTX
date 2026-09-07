@@ -29,7 +29,8 @@ workflow scripts.  All scripts live in `scripts/femtic/`.
 | Script | Purpose |
 |--------|---------|
 | `femtic_convergence_plot.py` | Read `femtic.cnv` from one or more inversion directories and plot misfit, nRMS, or roughness vs. iteration number. |
-| `femtic_lcurve_plot.py` | Harvest final-iteration α / roughness / nRMS from multiple directories and plot the L-curve; annotates each point with its α value. `DISTORTION=None` auto-detects column layout from cnv line length. |
+| `femtic_plot_conv.py` | Plot any `femtic.cnv` field(s) — by name, via `fem.read_cnv(columnar=True)` — vs. iteration/row index, overlaid across one or more run directories; no version/column-count switch. |
+| `femtic_lcurve_plot.py` | Harvest final-iteration α / roughness / nRMS from multiple directories and plot the L-curve; annotates each point with its α value. Column positions read from each `femtic.cnv`'s own header row via `fem.read_cnv()`. |
 
 ---
 
@@ -105,14 +106,14 @@ femtic_rto_post.py   →  RTO_results.npz
 |-------|---------|
 | Model visualisation | 3 |
 | Model manipulation | 2 |
-| Diagnostics and L-curve | 2 |
+| Diagnostics and L-curve | 3 |
 | RTO uncertainty | 4 |
 | GST uncertainty | 1 |
 | Ensemble analysis | 5 |
 | Jackknife | 1 |
 | Nullspace shuttle | 1 |
 | Utilities | 3 |
-| **Total** | **22** |
+| **Total** | **23** |
 
 ---
 

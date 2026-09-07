@@ -177,6 +177,50 @@ def read_distortion_file(path=None):
     # print(type(c))
     return c, c_dash
 
+#: Canonical femtic.cnv column names, matched against each header token
+#: via a case-insensitive **substring** test rather than an exact string
+#: match. FEMTIC's own header spelling/casing is not guaranteed to stay
+#: fixed across versions (e.g. "Roughness" could just as well appear as
+#: "roughness", "Rough", or similar in some future release) -- matching
+#: on a short, lower-case substring of the canonical name is robust to
+#: that, in the same way the original name/position-independent design
+#: of read_cnv() was robust to the Beta/Distortion columns coming and
+#: going. Order matters only in that no pattern below may be a substring
+#: of a different pattern's own canonical token; first match wins.
+_CNV_CANONICAL_PATTERNS = [
+    ("iter",        "Iter"),
+    ("retrial",     "Retrial"),
+    ("alpha",       "Alpha"),
+    ("beta",        "Beta"),
+    ("damp",        "Damp"),
+    ("rough",       "Roughness"),
+    ("distort",     "Distortion"),
+    ("misfit",      "Misfit"),
+    ("rms",         "RMS"),
+    ("obj",         "ObjFunc"),
+    ("lmdcg",       "LmdCG"),
+    ("crossgra",    "CrossGra"),
+    ("mupdatemean", "MupdateMean"),
+    ("abic",        "ABIC"),
+]
+
+
+def _cnv_canonical_name(token: str) -> str:
+    """Map one femtic.cnv header token to its canonical column name via a
+    case-insensitive substring match against ``_CNV_CANONICAL_PATTERNS``
+    (e.g. a token containing "rough", any case, -> "Roughness"). Tokens
+    that don't match any known pattern are returned verbatim (trailing
+    ``#`` stripped) so unrecognised/future columns are still captured
+    rather than silently dropped.
+    """
+    raw = token.rstrip("#")
+    low = raw.lower()
+    for pattern, canonical in _CNV_CANONICAL_PATTERNS:
+        if pattern in low:
+            return canonical
+    return raw
+
+
 def read_cnv(source, *, columnar: bool = False) -> dict:
     """Read a FEMTIC convergence file (``femtic.cnv``) using its own header
     row to determine column positions.
@@ -189,6 +233,18 @@ def read_cnv(source, *, columnar: bool = False) -> dict:
     ``Iter#  Retrial#  Alpha  Beta  Damp  Roughness  Distortion  Misfit  RMS
     ObjFunc``) is robust to that, and to any future column additions,
     without needing a version/feature switch at all.
+
+    Header tokens are matched to canonical column names (``"Iter"``,
+    ``"Roughness"``, ``"RMS"``, ...) case-insensitively via a short
+    substring of each canonical name (see ``_CNV_CANONICAL_PATTERNS``,
+    e.g. ``"rough"`` for ``"Roughness"``, ``"rms"`` for ``"RMS"``) rather
+    than an exact, case-sensitive match against one hardcoded spelling --
+    so a header written with different capitalisation, or a column named
+    e.g. "Rough" instead of "Roughness", still resolves to the same
+    canonical key every caller relies on (``row["RMS"]``,
+    ``row["Roughness"]``, ...). Header-row *detection* itself uses the
+    same substring test against "iter" and "rms" (both required, either
+    case), rather than requiring the literal token ``"RMS"``.
 
     Parameters
     ----------
@@ -209,11 +265,11 @@ def read_cnv(source, *, columnar: bool = False) -> dict:
     dict with keys:
 
         ``"columns"`` : dict[str, int]
-            Column name -> 0-based index, taken verbatim from the header
-            row actually present in this file (trailing ``#`` stripped,
-            e.g. ``"Iter#"`` -> ``"Iter"``, ``"Retrial#"`` -> ``"Retrial"``).
-            Only columns present in *this* file's header appear here --
-            e.g. no ``"Beta"``/``"Distortion"`` keys for a
+            Canonical column name -> 0-based index (see
+            ``_CNV_CANONICAL_PATTERNS``; an unrecognised header token is
+            kept verbatim, trailing ``#`` stripped, e.g. a genuinely novel
+            future column). Only columns present in *this* file's header
+            appear here -- e.g. no ``"Beta"``/``"Distortion"`` keys for a
             without-distortion run.
         ``"rows"`` : list[dict[str, float]]
             One dict per data row, keyed by the same names as
@@ -226,10 +282,13 @@ def read_cnv(source, *, columnar: bool = False) -> dict:
     Raises
     ------
     ValueError
-        If no header row (a non-numeric row containing the token
-        ``"RMS"``) is found before the first data row.
+        If no header row (a line naming both an "Iter"-like and an
+        "RMS"-like column, matched case-insensitively) is found before
+        the first data row.
 
     Author: Claude Sonnet 5 (Anthropic), 2026-09-02.
+    Updated: Claude Sonnet 5 (Anthropic), 2026-09-07 -- case-insensitive,
+    substring-based header/column matching (see docstring above).
     """
     path = Path(source)
     if path.is_dir():
@@ -244,8 +303,12 @@ def read_cnv(source, *, columnar: bool = False) -> dict:
             if not tokens:
                 continue
             if columns is None:
-                if "RMS" in tokens:
-                    columns = {tok.rstrip("#"): i for i, tok in enumerate(tokens)}
+                _low = [tok.lower() for tok in tokens]
+                _has_iter = any("iter" in tok for tok in _low)
+                _has_rms  = any("rms" in tok for tok in _low)
+                if _has_iter and _has_rms:
+                    columns = {_cnv_canonical_name(tok): i
+                               for i, tok in enumerate(tokens)}
                 continue  # any line before the header is found is a
                           # comment/blank row, header-detection or not
             try:
@@ -256,7 +319,8 @@ def read_cnv(source, *, columnar: bool = False) -> dict:
 
     if columns is None:
         raise ValueError(
-            f"read_cnv: no header row (containing 'RMS') found in {path}."
+            f"read_cnv: no header row (naming both an 'Iter'-like and an "
+            f"'RMS'-like column, case-insensitive) found in {path}."
         )
 
     result = {"columns": columns, "rows": rows}
