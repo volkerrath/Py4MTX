@@ -191,7 +191,7 @@ by [14]. The example is for a survey of the Misti volcano (Southern Peru) publis
        alt="Model result"
        width="1000">
   <br>
-  <em>Misti inversion results (a) with associated uncertainties (b). These results were obtained from an approach similar to the geostatistical perturbation proposed in [14],
+  <em>Misti inversion results (a) with associated ensemble spreads (b). These results were obtained from an approach similar to the geostatistical perturbation proposed in [14],
 	  in this case with randomly placed pilot points. The first six maps are horizontal slides at various depths, the last two are orthogonal vertical slices through the Misti summit.
 	  Note that two main reasons exist for low ensemble spreads: (1) resistivity structure is well determined ("resolved") by the data, (2) there is no sensitivity at all. We are currently
 	  working on a remedy/mitigation for this problematic,  shared by all  ensemble methods of this type. 
