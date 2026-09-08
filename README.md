@@ -201,7 +201,7 @@ by [14]. The example is for a survey of the Misti volcano (Southern Peru) publis
 # Note: AI generated scripts
 
 Since summer 2025 we have experimented with AI tools such as OpenAI's ChatGPT and Anthropic's Claude when implementing further scripts/modules. This approach turned out to be very 
-useful and efficient, though requiring careful formulations of tasks, thorough checks and tests. Many preexisting pieces of code were cleaned, commented, and sometimes reorganized by 
+useful and efficient, though requiring careful formulations of tasks, thorough checks and tests. Many preexisting pieces of code were cleaned, documented, and sometimes reorganized by 
 Claude. In particular, the included README files were generated this way. A note concerning AI (co)authorship has been added to the doc strings and README files. 
  
 
