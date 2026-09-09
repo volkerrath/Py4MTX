@@ -273,20 +273,17 @@ print(titstrng + "\n\n")
 #: ENSEMBLE_DIR - Directory containing one sub-directory per ensemble member.
 #: ENSEMBLE_NAME - Member sub-directories are matched via glob "<ENSEMBLE_NAME>*".
 # ---------------------------------------------------------------------------
-WORK_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2/"
+ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2/"
 
 ENSEMBLE_NAME = "annecy_rnd_2_"
-ENSEMBLE_DIR = WORK_DIR
-
-
 
 
 #: Mesh file — always required for plotting.
 
-MESH_FILE = ENSEMBLE_DIR + ENSEMBLE_NAME +"/templates/mesh.dat"
+MESH_FILE = ENSEMBLE_DIR +"/templates/mesh.dat"
 
 #: observe.dat — used by ESTIMATE_ORIGIN and as fallback for SITE_NUMBER.
-OBSERVE_FILE = ENSEMBLE_DIR +  "/templates/observe.dat"
+OBSERVE_FILE = ENSEMBLE_DIR + "/templates/observe.dat"
 
 #: Site list produced by mt_make_sitelist.py (WHAT_FOR="femtic").
 #: Format (comma-separated, no header):

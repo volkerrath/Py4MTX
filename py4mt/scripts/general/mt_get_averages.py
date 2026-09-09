@@ -52,16 +52,27 @@ rho_global (scalar), n_sites (int).
 @modified:  2026-06-13 — Zavg phase folded to [0°,90°] via fold_phase flag in _INVAR_SPEC; Claude Sonnet 4.6 (Anthropic)
 @modified:  2026-06-13 — ERRORS switch ("std"/"bootstrap"/None); bootstrap std-of-the-mean per bin and globally; global interval in print/annotation; rho_global_std in NPZ; Claude Sonnet 4.6 (Anthropic)
 @modified:  2026-06-13 — fix global error: resample per-site log-means (not pooled values), stay in log space, report multiplicative factor ×/÷ σ_g; Claude Sonnet 4.6 (Anthropic)
+@modified:  2026-09-07 — BUILD_FROM_EDI switch: collection can now be built directly from an EDI_DIR via the new data_proc.make_collection() instead of requiring a pre-existing COLL_FILE; optional SAVE_COLLECTION caches the built collection to COLL_FILE; added PY4MTX_ROOT sys.path setup and data_proc import; Claude Sonnet 5 (Anthropic)
 """
 
 from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+
+PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
+
+for _base in [PY4MTX_ROOT + "/py4mt/modules/"]:
+    for _p in [Path(_base), *Path(_base).rglob("*")]:
+        if _p.is_dir() and str(_p) not in sys.path:
+            sys.path.insert(0, str(_p))
+
+from data_proc import make_collection
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -78,6 +89,17 @@ PLOT_DIR   = WORK_DIR + "../plots/"
 DATA_DIR   = WORK_DIR                  # NPZ averages written here
 NAME_STR   = "Review_std"
 PLOT_FORMAT = [".pdf", ".jpg"]
+
+# --- Collection source ------------------------------------------------------
+# BUILD_FROM_EDI = False (default): load an existing COLL_FILE, exactly as
+#   before.
+# BUILD_FROM_EDI = True: skip COLL_FILE entirely and build the collection
+#   in-memory directly from an EDI directory via data_proc.make_collection()
+#   (Zdet/Zssq/Zavg computed on the fly). Optionally cache the result to
+#   COLL_FILE by leaving SAVE_COLLECTION = True.
+BUILD_FROM_EDI  = False
+EDI_DIR         = "/home/vrath/MT_Data/TEST/edis_exp_interp/"
+SAVE_COLLECTION = True   # only used when BUILD_FROM_EDI = True
 
 # Which quantities to process and plot
 PLOT_SSQ = True    # Zssq — sum-of-squares invariant
@@ -423,14 +445,26 @@ def _plot_invar(
 
 
 # ---------------------------------------------------------------------------
-# Load collection
+# Load (or build) collection
 # ---------------------------------------------------------------------------
-if not os.path.isfile(COLL_FILE):
-    sys.exit(f" Collection file not found: {COLL_FILE}")
+if BUILD_FROM_EDI:
+    if not os.path.isdir(EDI_DIR):
+        sys.exit(f" EDI directory not found: {EDI_DIR}")
 
-data    = np.load(COLL_FILE, allow_pickle=True)
-records = data["records"]
-print(f"Loaded {len(records)} stations from {COLL_FILE}")
+    records = make_collection(
+        EDI_DIR,
+        save_path=COLL_FILE if SAVE_COLLECTION else None,
+        compute_invariants=True,      # Zdet, Zssq, Zavg (+ *_err)
+        compute_phase_tensor=False,   # not needed here
+    )
+    print(f"Built collection: {len(records)} stations from {EDI_DIR}")
+else:
+    if not os.path.isfile(COLL_FILE):
+        sys.exit(f" Collection file not found: {COLL_FILE}")
+
+    data    = np.load(COLL_FILE, allow_pickle=True)
+    records = data["records"]
+    print(f"Loaded {len(records)} stations from {COLL_FILE}")
 
 # _INVAR_SPEC maps tag → (src_key, extractor, fold_phase)
 #   src_key    : key to look up in the record dict

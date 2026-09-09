@@ -145,6 +145,39 @@ Updated 2026-08-25 by Claude Sonnet 5 (Anthropic) -- generate_gst_model_
     mesh-agnostic perturbation machine used by femtic_nss.py / modem_nss.py)
     are unchanged by this update -- they take a bare target point cloud
     with no mesh to derive an extent from.
+Updated 2026-09-09 by Claude Sonnet 5 (Anthropic) -- added
+eof_model_from_covariance(), sample_new_models_from_ensemble(), and
+sample_new_models_from_covariance() (EOF/PCA section, after
+sample_physical_ensemble()), for femtic_ens_repair.py's new
+MOD_REPAIR_METHOD="eof_sample" option. eof_model_from_covariance() builds
+an EOFModel directly from a precomputed covariance (either the
+"low_rank" eigval/eigvec factorisation or a dense "full" cov, as saved
+by femtic_ens_post.py's COMPUTE_COV) instead of fitting one from a raw
+ensemble matrix, so sample_physical_ensemble() can be reused unchanged
+regardless of whether the covariance is fit on the fly or loaded from
+disk. The two sample_new_models_from_* wrappers handle the
+samples-as-rows <-> samples-as-columns transpose between
+femtic_ens_*.py's ens_matrix convention (n_members, n_free) and
+fit_eof_model()/sample_physical_ensemble()'s (ncells, nsamples)
+convention, so callers never touch EOFModel/fit_eof_model directly. Note:
+eof_generate_ensemble() (defined earlier in this section) is dead code --
+its body is only a docstring, so it always returns None -- pre-existing
+and unrelated to this change; flagged here rather than fixed, pending
+confirmation of whether it should be implemented or removed.
+Updated 2026-09-09 by Claude Sonnet 5 (Anthropic) -- added pp_regen_every
+to generate_gst_model_ensemble(): optional int controlling how often the
+*random* pilot-point component is redrawn (every member, as before, when
+None; once per block of pp_regen_every consecutive processed members
+otherwise, via a new position-keyed cache -- pp_mode="random"'s whole
+point set, or the random-fill portion of "mixed"/"extrema"; pp_coords /
+the extrema skeleton are never affected either way). Pilot-point values
+are still redrawn every member regardless, so blocked members still
+differ from each other; only the locations are shared within a block.
+No effect for pp_mode="fixed" (nothing random to regenerate; a warning
+is printed if set anyway). Recorded in the pilot_points.npz archive
+(save_pilot_points=True) as "pp_regen_every" (-1 if not set), alongside
+the existing "seed" metadata. femtic_gst_prep.py's new MOD_PP_REGEN_EVERY
+threads through to this parameter -- see its README's matching entry.
 """
 
 from __future__ import annotations
@@ -1201,6 +1234,7 @@ def generate_gst_model_ensemble(
     pp_roi: Optional[Sequence[float]] = None,
     pp_extrema_k: int = 30,
     pp_extrema_which: str = "both",
+    pp_regen_every: Optional[int] = None,
     # --- resistivity range ---
     log_rho_min: float = 0.0,
     log_rho_max: float = 4.0,
@@ -1316,6 +1350,29 @@ def generate_gst_model_ensemble(
     pp_extrema_which : {"both", "minima", "maxima"}
         Which extrema to use as pilot-point seeds in ``"extrema"`` mode.
         ``"both"`` (default) seeds both conductive and resistive anomaly cores.
+    pp_regen_every : int, optional
+        If ``None`` (default), the per-member *random* pilot-point
+        component keeps its existing behaviour: freshly redrawn for
+        **every** member when ``pp_mode="random"`` (the whole point set)
+        or for the random-fill portion of ``"mixed"``/``"extrema"``
+        (skeleton/``pp_coords`` untouched either way, as always). If set
+        to an integer ``K >= 1``, that random component is instead drawn
+        once per **block of K consecutive processed members** (grouped
+        by position within ``fromto``/``range(n_samples)``, not by
+        member index — relevant only if ``fromto`` has gaps) and reused,
+        unchanged, by the other ``K-1`` members in that block; a new
+        draw is taken at the start of the next block. Pilot-point
+        **values** (``pp_vals``) are always redrawn every member
+        regardless of this setting, so members sharing a block still
+        differ from each other — only the pilot-point *locations* are
+        held in common within a block. This decouples geometry churn
+        from value churn: e.g. with ``K=10`` you get 10 members
+        exploring value-randomness alone at one random pilot-point
+        layout, then a fresh layout for the next 10 -- useful for
+        variance decomposition / GST parameter diagnostics that want to
+        separate the two sources of ensemble spread. No effect when
+        ``pp_mode="fixed"`` (there is no random component to regenerate
+        — a one-line warning is printed if set in that case).
 
     Resistivity range
     -----------------
@@ -1426,8 +1483,9 @@ def generate_gst_model_ensemble(
                         drawn at each pilot point, per member.
     ``pp_mode``, ``pp_value_mode``, ``log_rho_min``, ``log_rho_max``,
     ``vario_model``, ``vario_range``, ``vario_sill``, ``vario_nugget``,
-    ``seed`` — scalar/array metadata mirroring the call's configuration,
-    for self-describing archives.
+    ``seed``, ``pp_regen_every`` (``-1`` if not set) — scalar/array
+    metadata mirroring the call's configuration, for self-describing
+    archives.
 
     Author: Volker Rath (DIAS)
     Created with the help of Claude Sonnet 4.6 (Anthropic), 2026-04-27.
@@ -1646,6 +1704,52 @@ def generate_gst_model_ensemble(
         pp_extrema = np.empty((0, 3), dtype=float)
 
     # ------------------------------------------------------------------
+    # Validate pp_regen_every and set up the block-caching helper for the
+    # random pilot-point component. See the pp_regen_every docstring
+    # entry above for the semantics.
+    # ------------------------------------------------------------------
+    if pp_regen_every is not None:
+        if int(pp_regen_every) < 1:
+            raise ValueError(
+                f"pp_regen_every must be >= 1 (or None), got {pp_regen_every!r}."
+            )
+        pp_regen_every = int(pp_regen_every)
+        if pp_mode == "fixed":
+            print(f"  WARNING: pp_regen_every={pp_regen_every} has no effect "
+                  f"with pp_mode='fixed' — there is no random pilot-point "
+                  f"component to regenerate (locations come entirely from "
+                  f"pp_coords).")
+        elif out:
+            print(f"  Pilot-point locations: random component regenerated "
+                  f"every {pp_regen_every} member(s) (pp_mode='{pp_mode}'); "
+                  f"pilot-point values still redrawn every member.")
+
+    #: (block_id -> (rnd_x, rnd_y, rnd_z)) cache used only when
+    #: pp_regen_every is set; block_id = position-in-fromto_arr //
+    #: pp_regen_every, so members sharing a block reuse the same random
+    #: pilot-point locations while still drawing fresh values each time.
+    _regen_cache: dict[int, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
+
+    def _draw_or_reuse_random_component(pos: int):
+        """(n_pp,) uniform draws in pp_bbox -- fresh every call if
+        pp_regen_every is None (original behaviour), otherwise cached
+        per block of pp_regen_every consecutive positions."""
+        if pp_regen_every is None:
+            return (
+                rng.uniform(pp_bbox[0], pp_bbox[1], n_pp),
+                rng.uniform(pp_bbox[2], pp_bbox[3], n_pp),
+                rng.uniform(pp_bbox[4], pp_bbox[5], n_pp),
+            )
+        block_id = pos // pp_regen_every
+        if block_id not in _regen_cache:
+            _regen_cache[block_id] = (
+                rng.uniform(pp_bbox[0], pp_bbox[1], n_pp),
+                rng.uniform(pp_bbox[2], pp_bbox[3], n_pp),
+                rng.uniform(pp_bbox[4], pp_bbox[5], n_pp),
+            )
+        return _regen_cache[block_id]
+
+    # ------------------------------------------------------------------
     # Member loop.
     # ------------------------------------------------------------------
     fromto_arr = _resolve_fromto(fromto, n_samples)
@@ -1664,31 +1768,26 @@ def generate_gst_model_ensemble(
     _pp_z_all: list[np.ndarray] = []
     _pp_vals_all: list[np.ndarray] = []
 
-    for iens in fromto_arr:
+    for _pos, iens in enumerate(fromto_arr):
         member_dir = f"{dir_base}{iens}/"
 
         # --- pilot-point locations ---
         if pp_mode == "random":
-            pp_x = rng.uniform(pp_bbox[0], pp_bbox[1], n_pp)
-            pp_y = rng.uniform(pp_bbox[2], pp_bbox[3], n_pp)
-            pp_z = rng.uniform(pp_bbox[4], pp_bbox[5], n_pp)
+            pp_x, pp_y, pp_z = _draw_or_reuse_random_component(_pos)
         elif pp_mode == "fixed":
             pp_x = pp_fixed[:, 0]
             pp_y = pp_fixed[:, 1]
             pp_z = pp_fixed[:, 2]
         elif pp_mode == "mixed":
-            rnd_x = rng.uniform(pp_bbox[0], pp_bbox[1], n_pp)
-            rnd_y = rng.uniform(pp_bbox[2], pp_bbox[3], n_pp)
-            rnd_z = rng.uniform(pp_bbox[4], pp_bbox[5], n_pp)
+            rnd_x, rnd_y, rnd_z = _draw_or_reuse_random_component(_pos)
             pp_x = np.concatenate([pp_fixed[:, 0], rnd_x])
             pp_y = np.concatenate([pp_fixed[:, 1], rnd_y])
             pp_z = np.concatenate([pp_fixed[:, 2], rnd_z])
         else:  # "extrema"
             # Fixed structural skeleton (same geometry every member) plus
-            # n_pp random fill points drawn fresh for each member.
-            rnd_x = rng.uniform(pp_bbox[0], pp_bbox[1], n_pp)
-            rnd_y = rng.uniform(pp_bbox[2], pp_bbox[3], n_pp)
-            rnd_z = rng.uniform(pp_bbox[4], pp_bbox[5], n_pp)
+            # n_pp random fill points -- fresh every member by default,
+            # or regenerated every pp_regen_every members instead.
+            rnd_x, rnd_y, rnd_z = _draw_or_reuse_random_component(_pos)
             pp_x = np.concatenate([pp_extrema[:, 0], rnd_x])
             pp_y = np.concatenate([pp_extrema[:, 1], rnd_y])
             pp_z = np.concatenate([pp_extrema[:, 2], rnd_z])
@@ -1779,6 +1878,7 @@ def generate_gst_model_ensemble(
             vario_sill=vario_sill,
             vario_nugget=vario_nugget,
             seed=seed if seed is not None else -1,
+            pp_regen_every=pp_regen_every if pp_regen_every is not None else -1,
         )
         if out:
             print(f"\nPilot points written: {_pp_file}  "
@@ -3830,6 +3930,281 @@ if __name__ == "__main__":
 
     print(X.shape, "->", Xnew.shape)
 
+
+# ---------------------------------------------------------------------------
+# Bridging a precomputed ensemble covariance (e.g. femtic_ens_post.py's
+# COMPUTE_COV output) into the same EOFModel container used by
+# fit_eof_model()/sample_physical_ensemble() above, plus two femtic-shaped
+# convenience wrappers (samples-as-rows, matching ens_matrix throughout the
+# femtic_ens_* scripts, instead of EOFModel's samples-as-columns
+# convention) for drawing new candidate models from an existing ensemble --
+# used by femtic_ens_repair.py's MOD_REPAIR_METHOD="eof_sample" option.
+# ---------------------------------------------------------------------------
+
+
+def eof_model_from_covariance(
+    mean: ArrayLike,
+    n_samples_fit: int,
+    *,
+    eigval: Optional[ArrayLike] = None,
+    eigvec: Optional[ArrayLike] = None,
+    cov: Optional[ArrayLike] = None,
+    nmodes: Optional[int] = None,
+    var_fraction: Optional[float] = None,
+    dtype: np.dtype = np.float64,
+) -> "EOFModel":
+    """Build an :class:`EOFModel` from an already-computed covariance,
+    instead of fitting one from a raw ensemble matrix (:func:`fit_eof_model`).
+
+    Two input forms are accepted, matching femtic_ens_post.py's two
+    ``COV_METHOD`` outputs:
+
+    - ``eigval`` (r,) + ``eigvec`` (ncells, r) -- the low-rank
+      factorisation saved as ``f"{P}_cov_eigval"``/``f"{P}_cov_eigvec"``
+      when ``COV_METHOD="low_rank"``. These are exact eigenpairs of the
+      sample covariance ``C = eigvec @ diag(eigval) @ eigvec.T``, so no
+      further decomposition is needed -- just re-derive the singular
+      values ``s = sqrt(eigval * (n_samples_fit - 1))`` that
+      :class:`EOFModel`/:func:`sample_physical_ensemble` expect.
+    - ``cov`` (ncells, ncells) -- the dense covariance saved as
+      ``f"{P}_cov"`` when ``COV_METHOD="full"``. Eigendecomposed here
+      (``scipy.linalg.eigh``, descending) and truncated the same way
+      :func:`fit_eof_model` truncates its SVD.
+
+    Exactly one of ``eigval``/``eigvec`` or ``cov`` must be given.
+
+    Parameters
+    ----------
+    mean : (ncells,)
+        Ensemble mean in physical space (e.g. femtic_ens_post.py's
+        ``f"{P}_avg"``, log10(rho)).
+    n_samples_fit : int
+        Number of ensemble members the covariance was estimated from
+        (``n_members`` in femtic_ens_post.py) -- needed to recover
+        singular values from eigenvalues (and hence match
+        :func:`sample_physical_ensemble`'s ``factor = s/sqrt(nfit-1)``
+        convention) and to guard against sampling from a covariance
+        fit to too few members.
+    eigval, eigvec : array_like, optional
+        Low-rank factorisation (see above).
+    cov : array_like, optional
+        Dense covariance matrix (see above).
+    nmodes, var_fraction : optional
+        Same truncation options as :func:`fit_eof_model`; only used for
+        the ``cov`` input (the ``eigval``/``eigvec`` input is already
+        truncated to whatever rank femtic_ens_post.py saved -- pass
+        ``nmodes`` <= that rank to truncate further if wanted).
+    dtype : numpy dtype, optional
+        Computation dtype.
+
+    Returns
+    -------
+    EOFModel
+        ``prewhiten=False``, ``w=None`` in both cases -- neither
+        femtic_ens_post.py covariance path applies prewhitening, so
+        there is nothing to unwhiten here; this model can be passed
+        directly to :func:`sample_physical_ensemble`.
+
+    Raises
+    ------
+    ValueError
+        If neither or both of ``(eigval, eigvec)``/``cov`` are given,
+        or ``n_samples_fit < 2``.
+    """
+    mean = np.asarray(mean, dtype=dtype).reshape(-1)
+    ncells = mean.shape[0]
+
+    if n_samples_fit < 2:
+        raise ValueError(
+            f"n_samples_fit={n_samples_fit} < 2 -- covariance is degenerate "
+            f"or undefined below 2 samples."
+        )
+
+    have_lowrank = eigval is not None and eigvec is not None
+    have_dense = cov is not None
+    if have_lowrank == have_dense:
+        raise ValueError(
+            "eof_model_from_covariance: pass exactly one of "
+            "(eigval, eigvec) or cov."
+        )
+
+    if have_lowrank:
+        eigval = np.asarray(eigval, dtype=dtype).reshape(-1)
+        eigvec = np.asarray(eigvec, dtype=dtype)
+        if eigvec.shape[0] != ncells or eigvec.shape[1] != eigval.shape[0]:
+            raise ValueError(
+                f"eigvec shape {eigvec.shape} inconsistent with mean "
+                f"({ncells},) / eigval ({eigval.shape[0]},)."
+            )
+        # Descending order expected downstream (truncation keeps the
+        # leading/largest modes); femtic_ens_post.py's np.linalg.svd
+        # already returns them descending, but sort defensively in case
+        # this is fed a covariance from elsewhere.
+        order = np.argsort(eigval)[::-1]
+        eigval = eigval[order]
+        eigvec = eigvec[:, order]
+
+        r = eigval.size
+        if nmodes is not None:
+            k = min(int(nmodes), r)
+        elif var_fraction is not None:
+            vf = float(var_fraction)
+            if not (0.0 < vf <= 1.0):
+                raise ValueError("var_fraction must be in (0, 1].")
+            cumev = np.cumsum(eigval) / np.sum(eigval)
+            k = int(np.searchsorted(cumev, vf) + 1)
+        else:
+            k = r
+
+        eigval_k = np.clip(eigval[:k], 0.0, None)
+        U = eigvec[:, :k]
+        s = np.sqrt(eigval_k * (n_samples_fit - 1))
+
+    else:
+        cov = np.asarray(cov, dtype=dtype)
+        if cov.shape != (ncells, ncells):
+            raise ValueError(
+                f"cov shape {cov.shape} inconsistent with mean ({ncells},)."
+            )
+        w, V = scipy.linalg.eigh(cov)          # ascending
+        order = np.argsort(w)[::-1]
+        w = np.clip(w[order], 0.0, None)
+        V = V[:, order]
+
+        r = w.size
+        if nmodes is not None:
+            k = min(int(nmodes), r)
+        elif var_fraction is not None:
+            vf = float(var_fraction)
+            if not (0.0 < vf <= 1.0):
+                raise ValueError("var_fraction must be in (0, 1].")
+            cumev = np.cumsum(w) / np.sum(w)
+            k = int(np.searchsorted(cumev, vf) + 1)
+        else:
+            k = r
+
+        U = V[:, :k]
+        s = np.sqrt(w[:k] * (n_samples_fit - 1))
+
+    return EOFModel(
+        mean=mean,
+        U=U.copy(),
+        s=s.copy(),
+        n_samples_fit=int(n_samples_fit),
+        prewhiten=False,
+        w=None,
+        eps=0.0,
+    )
+
+
+def sample_new_models_from_ensemble(
+    ens_matrix: ArrayLike,
+    n_new: int,
+    *,
+    nmodes: Optional[int] = None,
+    var_fraction: Optional[float] = None,
+    prewhiten: bool = False,
+    rng: Optional[np.random.Generator] = None,
+    scale: float = 1.0,
+    coef: Literal["gaussian", "rademacher"] = "gaussian",
+) -> np.ndarray:
+    """Draw ``n_new`` new candidate models from an ensemble's own empirical
+    covariance, fit on the fly from ``ens_matrix``.
+
+    Thin, femtic-shaped convenience wrapper around
+    :func:`fit_eof_model` + :func:`sample_physical_ensemble`: those two
+    use the ``(ncells, nsamples)`` (samples-as-columns) convention, while
+    every ``femtic_ens_*.py`` script (and hence ``ens_matrix`` as passed
+    in here) uses ``(n_members, n_free)`` (samples-as-rows) -- this
+    wrapper transposes on the way in and out so callers never have to
+    think about the mismatch.
+
+    Parameters
+    ----------
+    ens_matrix : array_like, shape (n_members, n_free)
+        Existing ensemble (e.g. the converged members' log10(rho)
+        models), same orientation as ``ens_matrix``/``ens_avg`` etc.
+        throughout femtic_ens_post.py/femtic_ens_repair.py.
+    n_new : int
+        Number of new candidate models to draw.
+    nmodes, var_fraction, prewhiten : optional
+        Passed straight through to :func:`fit_eof_model`.
+    rng : numpy.random.Generator, optional
+        Random generator; ``None`` uses fresh OS entropy.
+    scale : float, optional
+        Overall scale factor on the sampled anomalies (see
+        :func:`sample_physical_ensemble`); 1.0 = draw from the ensemble's
+        own covariance as-is.
+    coef : {"gaussian", "rademacher"}, optional
+        Latent-coefficient distribution; see :func:`sample_physical_ensemble`.
+
+    Returns
+    -------
+    new_models : ndarray, shape (n_new, n_free)
+        New candidate models, same orientation as ``ens_matrix``.
+    """
+    X = np.asarray(ens_matrix, dtype=float).T          # (n_free, n_members)
+    model = fit_eof_model(
+        X, nmodes=nmodes, var_fraction=var_fraction, prewhiten=prewhiten,
+    )
+    X_new = sample_physical_ensemble(
+        model, n_new, rng=rng, coef=coef, scale=scale,
+    )                                                    # (n_free, n_new)
+    return X_new.T                                       # (n_new, n_free)
+
+
+def sample_new_models_from_covariance(
+    mean: ArrayLike,
+    n_samples_fit: int,
+    n_new: int,
+    *,
+    eigval: Optional[ArrayLike] = None,
+    eigvec: Optional[ArrayLike] = None,
+    cov: Optional[ArrayLike] = None,
+    nmodes: Optional[int] = None,
+    var_fraction: Optional[float] = None,
+    rng: Optional[np.random.Generator] = None,
+    scale: float = 1.0,
+    coef: Literal["gaussian", "rademacher"] = "gaussian",
+) -> np.ndarray:
+    """Draw ``n_new`` new candidate models from a *precomputed* ensemble
+    covariance (e.g. loaded from femtic_ens_post.py's ``.npz`` output),
+    without needing the raw ensemble matrix at all.
+
+    Femtic-shaped convenience wrapper around
+    :func:`eof_model_from_covariance` + :func:`sample_physical_ensemble`
+    (samples-as-rows in/out; see :func:`sample_new_models_from_ensemble`
+    for why the transpose is needed). See
+    :func:`eof_model_from_covariance` for the ``eigval``/``eigvec``
+    vs. ``cov`` input forms (exactly one must be given).
+
+    Parameters
+    ----------
+    mean : (n_free,)
+        Ensemble mean, e.g. femtic_ens_post.py's ``f"{P}_avg"``.
+    n_samples_fit : int
+        Number of members the covariance was estimated from
+        (femtic_ens_post.py's ``n_members``).
+    n_new : int
+        Number of new candidate models to draw.
+    eigval, eigvec, cov, nmodes, var_fraction :
+        See :func:`eof_model_from_covariance`.
+    rng, scale, coef :
+        See :func:`sample_physical_ensemble`.
+
+    Returns
+    -------
+    new_models : ndarray, shape (n_new, n_free)
+    """
+    model = eof_model_from_covariance(
+        mean, n_samples_fit,
+        eigval=eigval, eigvec=eigvec, cov=cov,
+        nmodes=nmodes, var_fraction=var_fraction,
+    )
+    X_new = sample_physical_ensemble(
+        model, n_new, rng=rng, coef=coef, scale=scale,
+    )                                                    # (n_free, n_new)
+    return X_new.T                                       # (n_new, n_free)
 
 
 # ---------------------------------------------------------------------------

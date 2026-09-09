@@ -73,6 +73,59 @@ interest auto-scaling (`MOD_ROI_*`) is specific to this script.
 | `MOD_STATS_BLANK_BY_REDUX` | `bool` | `False` | Blank cells with `var_redux < REDUX_EPS` in every `MOD_STATS` plot **except** `var_redux`'s own (`avg`, `med`, `err`, `mad`, percentiles, `qdiff_*`, `var_prior`, `var_boot`/`err_boot`). No effect unless `COMPUTE_VAR_REDUX=True` and `var_redux` was actually computed; does not affect `MOD_QC`. |
 | `MOD_STATS_BLANK_MODE` | `str` | `"blank"` | `"fade"` or `"blank"`, same two modes as `MOD_ALPHA_MODE`, applied when `MOD_STATS_BLANK_BY_REDUX=True`. |
 
+### Sensitivity statistics
+
+Low ensemble spread (`VAR`/`ERR`/`MAD` above) is ambiguous on its own: it
+can mean the data genuinely constrain a cell, or that regularisation
+collapsed a null-space cell regardless of the data. This section adds
+two independent sensitivity diagnostics to tell the two apart, plus a
+combined flag. Either diagnostic can be switched off independently and
+degrades gracefully (printed warning, corresponding `.npz` keys and
+`MOD_STATS_WHAT` entries omitted) if its required per-member files are
+missing for some or all members — same pattern as `COMPUTE_VAR_REDUX`.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `COMPUTE_SENS` | bool | `True` | (1) Per-member linearised cumulative sensitivity, aggregated across the ensemble. Requires a `model_iterX.h5` alongside each accepted member's `resistivity_block_iterX.dat`. |
+| `SENS_H5_PATTERN` | str | `"model_iter{numit}.h5"` | Per-member HDF5 filename, relative to the member's run directory, with `{numit}` substituted by that member's best (accepted) iteration — the same iteration used for `ens_matrix`. |
+| `SENS_H5_GROUP` | str or `None` | `None` | HDF5 group containing the sensitivity dataset(s); `None` reads from the file root. |
+| `SENS_CUMSENS_KEY` | str | `"cumulative_sensitivity"` | Dataset name for a precomputed 1-D cumulative sensitivity vector, tried first. |
+| `SENS_JACOBIAN_KEY` | str | `"jacobian"` | Dataset name for the raw 2-D Jacobian, used only if `SENS_CUMSENS_KEY` is absent. |
+| `SENS_ERROR_KEY` | str or `None` | `"data_error"` | Dataset name for a 1-D per-datum error vector used to weight the Jacobian sum; `None` disables weighting. |
+| `SENS_LOW_THRESH_FRAC` | float | `0.05` | Fraction of the ensemble-mean cumulative sensitivity's own maximum below which a cell is flagged "low sensitivity". |
+| `COMPUTE_SIMRC` | bool | `True` | (2) Ensemble-native "SimRC" sensitivity — correlates the already-collected model ensemble against a forward-response ensemble read from each member's `result_XXX.txt` files. No Jacobian required. |
+| `SIMRC_RESULT_FILES` | dict | `{"rhophas": "result_MT.txt", "vtf": "result_VTF.txt"}` | `{data_type: filename}`, relative to each member's run directory. A member missing every listed file is dropped from the SimRC ensemble with a warning. |
+| `SIMRC_SITE_FILE` | str | `ENSEMBLE_DIR + "templates/site.dat"` | Site-metadata file shared across the ensemble (site geometry is identical across RTO/GST members). |
+| `SIMRC_DATA_KIND` | str | `"rhophas"` | Fallback `data_type` passed to `fem.get_femtic_data()` for any `SIMRC_RESULT_FILES` key not already `"imp"`/`"vtf"`/`"pt"`/`"rhophas"`. |
+| `SIMRC_CHUNK` | int | `200` | Data columns processed per chunk when accumulating the model/data cross-covariance — bounds peak memory to `O(SIMRC_CHUNK * n_free)` instead of forming the full `(n_data, n_free)` matrix. |
+| `SIMRC_LOW_THRESH_FRAC` | float | `0.05` | Fraction of the ensemble SimRC cumulative-correlation's own maximum below which a cell is flagged "low SimRC sensitivity". |
+| `COMPUTE_NULL_SPACE_FLAG` | bool | `True` | Flag cells with `ERR` below its own `FLAG_SPREAD_PERCENTILE` **and** low sensitivity by every available measure above (`AND` across `COMPUTE_SENS`/`COMPUTE_SIMRC`'s low-sensitivity masks — conservative, minimises false positives) as `<P>_flag_null_space`. |
+| `FLAG_SPREAD_PERCENTILE` | float | `25.0` | `ERR` below this percentile of its own distribution counts as "low spread" for the flag above. |
+
+**Why two measures instead of one.** (1) is a classical linearised
+diagnostic (Christiansen & Auken, 2012, *Geophysics* 77, WB171,
+doi:10.1190/geo2011-0393.1) computed once per member and then
+aggregated — the aggregation (mean/median/min/max/std/CV across members)
+guards against trusting a single, possibly locally atypical,
+linearisation point; a large coefficient of variation (`<P>_sens_cv`)
+flags cells where the linearised sensitivity itself is strongly
+model-dependent (i.e. the problem is locally nonlinear there), which is
+exactly where (2) should be trusted instead. (2) (Bobe, Keller & Van De
+Vijver, 2021, *Geophysical Prospecting*, doi:10.1111/1365-2478.13068) is
+built directly from the finite ensemble spread rather than an
+infinitesimal derivative, so it remains valid in that nonlinear regime,
+at the cost of needing a converged forward run (not just a Jacobian) per
+member. Using `AND` for `flag_null_space` means a cell is only flagged
+once every available measure agrees it is both unresolved and
+insensitive — a deliberately conservative choice over `OR`.
+
+**Model iterX.h5 schema is provisional.** No writer for this file exists
+elsewhere in the codebase yet; `fem.read_h5_sensitivity()`'s dataset
+names are all configurable arguments (see `femtic_readme.md`) precisely
+so this section can be pointed at whatever layout the actual FEMTIC HDF5
+export ends up using once that pipeline is finalised (see the open item
+"HDF5 archive schema compatibility with FEMTIC v5").
+
 ### Covariance
 
 | Parameter | Type | Default | Description |
@@ -308,9 +361,19 @@ Keys follow the pattern `<PREFIX>_<stat>`:
 | `<P>_var_boot_se` | `(N_free,)` | Bootstrap standard error of `var_boot` itself (estimator-noise diagnostic, not a model spread statistic). Present only if `BOOTSTRAP_VAR=True`. |
 | `<P>_var_prior` | `(N_free,)` | Element-wise variance of each member's **iter0** (prior) model, `resistivity_block_iter0.dat`. Present only if `COMPUTE_VAR_REDUX=True` and every accepted member's iter0 file was found. |
 | `<P>_var_redux` | `(N_free,)` | Fractional variance reduction, `1 - var/var_prior`, per free parameter (`nan` where `var_prior=0`). Present only if `COMPUTE_VAR_REDUX=True` and `<P>_var_prior` was computed. |
+| `<P>_sens_mean` | `(N_free,)` | Mean per-member cumulative sensitivity across the ensemble (Christiansen & Auken, 2012). Present only if `COMPUTE_SENS=True` and at least one member's `model_iterX.h5` was found. |
+| `<P>_sens_median/_min/_max/_std` | `(N_free,)` | Corresponding median, min, max, and standard deviation (ddof=1) of per-member cumulative sensitivity across the ensemble. Same presence condition as `<P>_sens_mean`. |
+| `<P>_sens_cv` | `(N_free,)` | Coefficient of variation, `sens_std/sens_mean` — large values flag cells where the linearised sensitivity is strongly model-dependent (nonlinear regime). Same presence condition as `<P>_sens_mean`. |
+| `<P>_sens_low_mask` | `(N_free,)` bool | `sens_mean < SENS_LOW_THRESH_FRAC * max(sens_mean)`. Same presence condition as `<P>_sens_mean`. |
+| `<P>_simrc_coef` | `(N_free,)` | Cumulative `\|regression coefficient\|` between the forward-response ensemble and the model ensemble (Bobe, Keller & Van De Vijver, 2021). Present only if `COMPUTE_SIMRC=True` and at least one member's result files were found. |
+| `<P>_simrc_corr` | `(N_free,)` | Cumulative `\|correlation\|`, the normalised counterpart of `<P>_simrc_coef`. Same presence condition. |
+| `<P>_simrc_low_mask` | `(N_free,)` bool | `simrc_corr < SIMRC_LOW_THRESH_FRAC * max(simrc_corr)`. Same presence condition. |
+| `<P>_flag_null_space` | `(N_free,)` bool | `ERR` below `FLAG_SPREAD_PERCENTILE` **and** low sensitivity by every available measure (`<P>_sens_low_mask`/`<P>_simrc_low_mask`, `AND`ed together where both exist). Present only if `COMPUTE_NULL_SPACE_FLAG=True` and at least one sensitivity measure was computed. |
 
 If `COMPUTE_COV=False`, none of the `<P>_cov*` keys are present.
 If `COMPUTE_VAR_REDUX=False`, or any accepted member is missing its iter0 file, neither `<P>_var_prior` nor `<P>_var_redux` is present (a warning is printed; nothing else in the run is affected).
+If `COMPUTE_SENS=False`, or no accepted member's `model_iterX.h5` was found, none of the `<P>_sens_*` keys are present.
+If `COMPUTE_SIMRC=False`, or no accepted member's result files were found, neither `<P>_simrc_coef` nor `<P>_simrc_corr`/`<P>_simrc_low_mask` is present.
 
 ### Statistics block files (MOD_STATS = True)
 
@@ -393,3 +456,4 @@ correct.
 | 2026-08-24 | Claude Sonnet 5 (Anthropic) | Step (1)'s best-iteration selection fixed: (a) `dir_list` is now filtered to `os.path.isdir()` entries immediately after `utl.get_filelist()`, since that function matches on filename only (`fnmatch` over `os.listdir`) and can return non-directory hits — folding the earlier 2026-08-12 inline `os.path.isdir(d)` check into an upfront filter rather than a per-iteration skip. (b) The "best" iteration for each ensemble member is now the one with the **smallest nRMS across the entire `femtic.cnv` convergence history**, not simply the last row — FEMTIC does not guarantee monotonic nRMS reduction, so the last iteration was not necessarily the best. `iter0` (prior/starting model) is excluded from eligibility; a `WARNING` is printed if `iter0`'s nRMS is `<=` the best eligible `iter>0` nRMS, since that indicates the inversion did not improve on the starting model. Ties (identical minimum nRMS at two-plus iterations) resolve to the first (lowest-iteration) occurrence. Runs with no eligible `iter>0` row are skipped with a message rather than raising. |
 | 2026-09-02 | Claude Sonnet 5 (Anthropic) | Fixed the best-iteration column lookup: replaced the `"4.3"`/`"5."` version-string switch on `nrms_col` (`6` vs `8`) with `fem.read_cnv()`, which reads column positions from `femtic.cnv`'s own header row. The `Beta`/`Distortion` columns only appear when distortion parameters are being inverted, shifting `RMS`'s column independently of FEMTIC version -- a 4.3 run *with* distortion has `RMS` at the same column as a typical 5.x run, not at plain 4.3's position, so the version-only switch silently read the wrong column (`Roughness` instead of `RMS`) for that combination. The now-unused `FEMTIC` config variable was removed. Iteration/nRMS selection logic (iter0 exclusion, tie-breaking, the iter0-nRMS warning) is unchanged. |
 | 2026-09-06 | Claude Sonnet 5 (Anthropic) | Added `MOD_SHOW_MODEL_CENTRE` (default `True`): marks the model origin on `"map"` panels whenever `MOD_DISPLAY_COORDS` is `"utm"`/`"latlon"`, via `fviz.plot_model_slices`'s new `show_model_centre` parameter. Override style with a `MOD_MAP_MARKERS` entry carrying `"is_model_centre": True`. |
+| 2026-09-08 | Claude Sonnet 5 (Anthropic) | Added a "Sensitivity statistics" section (new config block, between `REDUX_EPS` and Covariance) mitigating the ambiguity that low ensemble spread (`VAR`/`ERR`/`MAD`) can mean either genuine data control or a regularisation-collapsed null-space cell. Two independent diagnostics, each separately switchable: (1) `COMPUTE_SENS` — per-member linearised cumulative sensitivity (Christiansen & Auken, 2012, doi:10.1190/geo2011-0393.1), read from each accepted member's Jacobian via the new `fem.read_h5_sensitivity()` (`SENS_H5_PATTERN="model_iter{numit}.h5"`, schema-provisional — see `femtic_readme.md`), aggregated across the ensemble (`sens_mean`/`_median`/`_min`/`_max`/`_std`/`_cv`); large `sens_cv` flags cells where the linearised sensitivity is itself model-dependent (nonlinear regime), where (2) should be trusted instead. (2) `COMPUTE_SIMRC` — ensemble-native "SimRC" sensitivity (Bobe, Keller & Van De Vijver, 2021, doi:10.1111/1365-2478.13068): per-member forward ("cal") responses collected via the new `fem.collect_forward_response()` (`SIMRC_RESULT_FILES`, `SIMRC_SITE_FILE`) into a data ensemble, then cumulative `\|regression coefficient\|`/`\|correlation\|` against the model ensemble computed in `SIMRC_CHUNK`-sized data-column chunks (no Jacobian needed). Model rows are matched to exactly the members that also produced a forward-response row (`simrc_keep_idx`), since `COMPUTE_SENS`/`COMPUTE_VAR_REDUX` can drop different members than `COMPUTE_SIMRC` does. Both diagnostics degrade gracefully (printed warning, `.npz` keys and `MOD_STATS_WHAT` entries omitted) when required per-member files are missing, following the existing `COMPUTE_VAR_REDUX` pattern. Added `COMPUTE_NULL_SPACE_FLAG` (default `True`): flags cells with `ERR` below its own `FLAG_SPREAD_PERCENTILE` **and** low sensitivity by every available measure (`AND`, not `OR` — conservative) as `<P>_flag_null_space`, plottable via `MOD_STATS` the same way `var_redux` is. New `.npz` keys: `<P>_sens_mean/_median/_min/_max/_std/_cv/_low_mask`, `<P>_simrc_coef/_corr/_low_mask`, `<P>_flag_null_space`. New auto-added `MOD_STATS_WHAT` entries: `"sens_mean"`, `"sens_cv"`, `"simrc_corr"`, `"flag_null_space"`. |

@@ -97,6 +97,22 @@ Modified: 2026-07-17 by Claude Sonnet 5 (Anthropic) — migrated from legacy
     and updated the scipy.sparse.spmatrix type hint to scipy.sparse.sparray
     in sample_precision_gaussian_gmrf(). No functional change; module
     already used csr_array/csc_array/coo_array internally.
+Modified: 2026-09-08 by Claude Sonnet 5 (Anthropic) — added two functions
+    supporting ensemble-level sensitivity diagnostics (mitigating the
+    "low ensemble spread means well-resolved OR null-space" ambiguity in
+    RTO/GST ensembles): read_h5_sensitivity() reads or derives a
+    per-free-parameter cumulative sensitivity vector from a (schema-
+    provisional) model_iterX.h5 file, either from a precomputed dataset
+    or by summing |Jacobian| columns (optionally error-weighted), cf.
+    Christiansen & Auken (2012), Geophysics 77, WB171,
+    doi:10.1190/geo2011-0393.1; collect_forward_response() flattens one
+    ensemble member's calculated ("cal") forward response across MT/VTF/
+    PT result_XXX.txt files into a single vector, for building a
+    per-member forward-response ensemble used by the "SimRC" ensemble-
+    native sensitivity measure of Bobe, Keller & Van De Vijver (2021),
+    Geophysical Prospecting, doi:10.1111/1365-2478.13068. Both consumed
+    by femtic_ens_post.py's new COMPUTE_SENS/COMPUTE_SIMRC pipeline; see
+    femtic_ens_post_readme.md.
 """
 from __future__ import annotations
 
@@ -2128,6 +2144,89 @@ def get_femtic_data(
     return data_dict
 
 
+def collect_forward_response(
+    result_files: Dict[str, str],
+    site_file: str,
+    data_kind: str = "rhophas",
+    out: bool = True,
+) -> Tuple[np.ndarray, list]:
+    """
+    Flatten one FEMTIC member's *calculated* forward response across one
+    or more observation types into a single 1-D vector.
+
+    Intended for building an ensemble data matrix (n_members, n_data) for
+    ensemble-native sensitivity measures (e.g. SimRC / correlation
+    sensitivity, Bobe, Keller & Van De Vijver, 2021,
+    Geophysical Prospecting, doi:10.1111/1365-2478.13068) directly from
+    per-member ``result_XXX.txt`` files, with no Jacobian required.
+
+    Parameters
+    ----------
+    result_files : dict
+        Mapping ``{data_type: path}`` for the ``result_XXX.txt`` files
+        present in one ensemble member's run directory, e.g.
+        ``{"rhophas": "run_003/result_MT.txt", "vtf": "run_003/result_VTF.txt"}``.
+        Only entries whose path exists are used; a member missing every
+        requested type raises ``FileNotFoundError``.
+    site_file : str
+        Site metadata file shared across the ensemble (see
+        :func:`get_femtic_data`) -- normally identical for every member,
+        since only the model (and hence the calculated response) differs
+        across an RTO/GST ensemble, not the site geometry.
+    data_kind : str, optional
+        Passed to :func:`get_femtic_data` as ``data_type`` for every
+        entry in ``result_files`` whose key does not itself look like a
+        recognised type (``"imp"``/``"vtf"``/``"pt"``/``"rhophas"``); use
+        per-type dict keys (e.g. ``"vtf"``) to mix types in one call.
+    out : bool, optional
+        Print a one-line summary per data type read.
+
+    Returns
+    -------
+    d_cal : ndarray, shape (n_data,)
+        Concatenated, flattened "cal" (calculated/forward) values across
+        all data types found, in the order ``result_files`` is iterated
+        (dict insertion order) -- this order must be identical for every
+        ensemble member for the resulting per-member vectors to line up
+        column-for-column.
+    manifest : list of (str, int)
+        ``(data_type, n_values)`` pairs recording how ``d_cal`` was
+        assembled, for sanity-checking that every member produced the
+        same composition/length before stacking into an ensemble matrix.
+
+    Raises
+    ------
+    FileNotFoundError
+        If none of the paths in ``result_files`` exist.
+
+    Author: Claude Sonnet 5 (Anthropic), 2026-09-08
+    """
+    chunks: list[np.ndarray] = []
+    manifest: list[Tuple[str, int]] = []
+
+    for dtyp, path in result_files.items():
+        if not os.path.isfile(path):
+            continue
+        kind = dtyp if dtyp.lower() in ("imp", "vtf", "pt", "rhophas") else data_kind
+        dd = get_femtic_data(path, site_file, data_type=kind, out=out)
+        vals = np.asarray(dd["cal"], dtype=float).ravel()
+        chunks.append(vals)
+        manifest.append((dtyp, vals.size))
+
+    if not chunks:
+        raise FileNotFoundError(
+            f"collect_forward_response: none of {list(result_files.values())} "
+            f"exist."
+        )
+
+    d_cal = np.concatenate(chunks)
+    if out:
+        print(f"collect_forward_response: assembled {d_cal.size} values from "
+              f"{[m[0] for m in manifest]}")
+
+    return d_cal, manifest
+
+
 def centroid_tetrahedron(nodes: np.ndarray) -> np.ndarray:
     """
     Compute centroid of a tetrahedron given node coordinates.
@@ -3227,6 +3326,162 @@ def hdf5_to_npz(
                 arrays[key] = _np.array(item[()])
 
     _np.savez(npz_path, **arrays)
+
+
+def read_h5_sensitivity(
+    h5_path: str,
+    group: str | None = None,
+    cumsens_key: str = "cumulative_sensitivity",
+    jacobian_key: str = "jacobian",
+    error_key: str | None = "data_error",
+    normalize: bool = False,
+    out: bool = True,
+) -> np.ndarray:
+    """
+    Read (or derive) a per-free-parameter cumulative sensitivity vector
+    from a FEMTIC-style ``model_iterX.h5`` file.
+
+    Schema (provisional)
+    ---------------------
+    This function assumes an HDF5 layout that does not yet exist anywhere
+    else in the codebase, so it is deliberately configurable via the
+    ``*_key``/``group`` arguments rather than hardcoded. Two alternative
+    contents are supported, tried in this order:
+
+    1. A pre-computed 1-D dataset ``cumsens_key`` (default
+       ``"cumulative_sensitivity"``), shape ``(n_free,)`` -- used as-is if
+       present. This is the cheap path if the sensitivity summation is
+       done upstream (e.g. inside FEMTIC or the HDF5-export step) instead
+       of per-post-processing-run.
+    2. A 2-D Jacobian/sensitivity-matrix dataset ``jacobian_key`` (default
+       ``"jacobian"``), shape ``(n_data, n_free)``, with entries
+       G_ij = d(log d_i) / d(log m_j) -- the standard FEMTIC sensitivity
+       convention (cf. Christiansen & Auken, 2012, Geophysics 77, WB171).
+       The cumulative sensitivity is then computed here as
+
+           S_j = sum_i |G_ij|                      (error_key is None)
+           S_j = sum_i |G_ij| / sigma_i             (error_key given)
+
+       i.e. optionally weighted by the inverse of a 1-D per-datum error
+       vector ``error_key`` (default ``"data_error"``, shape
+       ``(n_data,)``), matching the error-normalised sensitivity used by
+       Christiansen & Auken (2012) and Oldenburg & Li (1999). If
+       ``error_key`` is set but the dataset is absent, an unweighted sum
+       is used with a printed warning.
+
+    Both datasets may live at the HDF5 root or inside a named ``group``
+    (mirroring :func:`npz_to_hdf5`/:func:`hdf5_to_npz`'s ``group``
+    parameter); pass ``group=None`` (default) to look at the root first
+    and fall back to the group only if given.
+
+    Parameters
+    ----------
+    h5_path : str
+        Path to the per-member, per-iteration HDF5 file (e.g.
+        ``model_iter7.h5``).
+    group : str or None, optional
+        HDF5 group containing the sensitivity dataset(s). ``None``
+        (default) reads from the file root.
+    cumsens_key : str, optional
+        Dataset name for a pre-computed cumulative sensitivity vector.
+    jacobian_key : str, optional
+        Dataset name for the raw Jacobian/sensitivity matrix, used only
+        if ``cumsens_key`` is not found.
+    error_key : str or None, optional
+        Dataset name for a 1-D per-datum error vector used to weight the
+        Jacobian sum (``None`` disables weighting).
+    normalize : bool, optional
+        If True, divide the returned vector by its own maximum (so it
+        runs from 0 to 1). Off by default so that per-member magnitudes
+        remain comparable before ensemble aggregation -- normalise after
+        aggregating across members instead, if at all (see
+        ``femtic_ens_post.py``'s SENS_NORMALIZE).
+    out : bool, optional
+        Print a one-line summary.
+
+    Returns
+    -------
+    cum_sens : ndarray, shape (n_free,)
+        Cumulative sensitivity per free parameter, in the same
+        cell/region ordering as the corresponding
+        ``resistivity_block_iterX.dat`` / :func:`read_model` output.
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``h5_path`` does not exist.
+    KeyError
+        If neither ``cumsens_key`` nor ``jacobian_key`` is found (in
+        ``group`` or at the root).
+
+    Notes
+    -----
+    This schema is provisional: adjust ``group``/``cumsens_key``/
+    ``jacobian_key``/``error_key`` to match whatever layout the actual
+    FEMTIC HDF5 export ends up using once that pipeline is finalised
+    (see femtic_readme.md, "HDF5 archive schema compatibility with
+    FEMTIC v5" -- open item).
+
+    Author: Claude Sonnet 5 (Anthropic), 2026-09-08
+    """
+    try:
+        import h5py
+    except Exception as exc:  # pragma: no cover
+        raise ImportError("read_h5_sensitivity requires the 'h5py' package.") from exc
+
+    if not os.path.isfile(h5_path):
+        raise FileNotFoundError(f"read_h5_sensitivity: {h5_path} not found.")
+
+    def _lookup(h5, key):
+        """Try group/key first (if group given), then root/key."""
+        if group is not None and group in h5 and key in h5[group]:
+            return np.asarray(h5[group][key][()])
+        if key in h5:
+            return np.asarray(h5[key][()])
+        return None
+
+    with h5py.File(h5_path, "r") as h5:
+        cum_sens = _lookup(h5, cumsens_key)
+        if cum_sens is not None:
+            if out:
+                print(f"read_h5_sensitivity: using precomputed '{cumsens_key}' "
+                      f"from {h5_path}  shape={cum_sens.shape}")
+        else:
+            jac = _lookup(h5, jacobian_key)
+            if jac is None:
+                raise KeyError(
+                    f"read_h5_sensitivity: neither '{cumsens_key}' nor "
+                    f"'{jacobian_key}' found in {h5_path} "
+                    f"(group={group!r})."
+                )
+            jac = np.abs(jac)
+            if error_key is not None:
+                err = _lookup(h5, error_key)
+                if err is None:
+                    print(f"  WARNING: '{error_key}' not found in {h5_path} -- "
+                          f"using unweighted |Jacobian| sum.")
+                else:
+                    err = np.asarray(err, dtype=float)
+                    with np.errstate(divide="ignore", invalid="ignore"):
+                        jac = jac / err[:, np.newaxis]
+                    jac[~np.isfinite(jac)] = 0.0
+            cum_sens = np.sum(jac, axis=0)
+            if out:
+                print(f"read_h5_sensitivity: derived cumulative sensitivity from "
+                      f"'{jacobian_key}' {jac.shape} in {h5_path}  "
+                      f"-> shape={cum_sens.shape}")
+
+    cum_sens = np.asarray(cum_sens, dtype=float).ravel()
+    if normalize:
+        _mx = np.nanmax(cum_sens)
+        if _mx > 0:
+            cum_sens = cum_sens / _mx
+
+    if out:
+        print(f"  cumulative sensitivity range: "
+              f"[{np.nanmin(cum_sens):.4e}, {np.nanmax(cum_sens):.4e}]")
+
+    return cum_sens
 
 
 def npz_to_netcdf(

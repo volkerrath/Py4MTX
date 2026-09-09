@@ -134,6 +134,32 @@ All settings are at the top of the script.
 | `MOD_PP_ROI`     | Bounding box restricting the extremum search (same format as `MOD_PP_BBOX`). `None` = full free-region extent. Only used in `"extrema"` mode. |
 | `MOD_PP_EXTREMA_K` | Neighbourhood size (including self) for the local extremum test. Larger k → smoother field, fewer extrema. Recommended: 20–40; increase further (e.g. 30+) if too many spurious minima/maxima are detected. Only used in `"extrema"` mode. |
 | `MOD_PP_EXTREMA_WHICH` | Which extrema to use as seeds: `"both"` (default), `"minima"` (conductive anomalies), or `"maxima"` (resistive anomalies). Only used in `"extrema"` mode. |
+| `MOD_PP_REGEN_EVERY` | `None` (default) — the random pilot-point component is redrawn every member, as before. An integer `K` instead redraws it once per block of `K` consecutive members, reusing it for the rest of the block; pilot-point values are still redrawn every member regardless. No effect for `MOD_PP_MODE = "fixed"`. See "Regenerating pilot points every *n*th member" below. |
+
+#### Regenerating pilot points every *n*th member
+
+By default, `"random"` draws a completely fresh pilot-point cloud
+(locations **and** values) for every member, and `"mixed"`/`"extrema"`
+redraw their random-fill points the same way (their fixed skeleton never
+changes). `MOD_PP_REGEN_EVERY` adds a middle ground: hold the random
+component's **locations** fixed across a block of `MOD_PP_REGEN_EVERY`
+consecutive members, while still drawing fresh **values** at those
+locations for every member in the block; the next block gets a fresh set
+of locations.
+
+This separates the two sources of ensemble spread that are normally
+entangled together: with `MOD_PP_REGEN_EVERY = 10`, members 0–9 share
+one random pilot-point layout and differ only in the Kriged values at
+it, members 10–19 share a different layout, and so on. Comparing
+within-block spread to across-block spread is a direct diagnostic for
+which source — pilot-point value randomness or pilot-point location
+randomness — dominates the ensemble's spatial resolution.
+
+```python
+MOD_PP_MODE         = "random"
+MOD_N_PP            = 100
+MOD_PP_REGEN_EVERY  = 10   # new random layout every 10 members
+```
 
 **`MOD_PP_MODE` options:**
 
@@ -472,6 +498,7 @@ No sparse-matrix file (`.npz`) is required.
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `MOD_TICK_FONTSIZE`/`MOD_LABEL_FONTSIZE` (QC/model slice plots) and `ENS_TICK_FONTSIZE`/`ENS_LABEL_FONTSIZE` (ensemble slice plot) — axis tick/label font sizes were previously fixed at `femtic_viz.py`'s internal defaults with no way to override them here. Also removed `depth_km=True`/`horiz_km=True` from the `plot_ensemble_slices` call — that function doesn't accept those parameters and the call would have raised `TypeError` the first time `PLOT_SLICES_ENS` was set `True` (dormant since it defaults to `False`). Corrected the "QC slice plot" table above, which still documented the old `QC_SLICES`/`QC_CMAP`/etc. variables removed by the 2026-06-07 update. |
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `MOD_SHOW_IN_SPYDER` (default `True`): when running inside Spyder, every saved figure (QC, model, ensemble) is also displayed inline via `plt.show()`, without changing what gets saved to disk. No effect outside Spyder. |
 | 2026-09-06 | Claude Sonnet 5 (Anthropic) | Added `MOD_SHOW_MODEL_CENTRE` (default `True`): marks the model origin on `"map"` panels whenever `MOD_DISPLAY_COORDS` is `"utm"`/`"latlon"`, via `fviz.plot_model_slices`'s new `show_model_centre` parameter. Override style with a `MOD_MAP_MARKERS` entry carrying `"is_model_centre": True`. |
+| 2026-09-09 | Claude Sonnet 5 (Anthropic) | Added `MOD_PP_REGEN_EVERY` (default `None` = unchanged behaviour): passed to `ens.generate_gst_model_ensemble`'s new `pp_regen_every` parameter, which redraws the *random* pilot-point component (whole point set for `MOD_PP_MODE="random"`; random-fill portion of `"mixed"`/`"extrema"`) only once every `MOD_PP_REGEN_EVERY` consecutive members instead of every member — pilot-point values are still redrawn every member regardless, so members sharing a block still differ. Separates "spread from pilot-point value randomness" from "spread from pilot-point location randomness". No effect for `MOD_PP_MODE = "fixed"`. See `ensembles_readme.md` for the full explanation and an example. Also fixed a pre-existing bug found while wiring this in: the `ens.generate_gst_model_ensemble` call passed `output_target=MOD_OUTPUFalseT_TARGET`, an undefined variable (the actual config variable is `MOD_OUTPUT_TARGET`), which raised `NameError` on every `PERTURB_MOD=True` run before Kriging could start; corrected to `MOD_OUTPUT_TARGET`. |
 | 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_gst_prep_summary.md` output at end of run: writes user-set (UPPERCASE) parameters, script path, and run date/time. |
 | 2026-08-24 | Claude Sonnet 5 (Anthropic) | Added `PLOT_ONLY` mode: forces `PERTURB_MOD`/`PERTURB_DAT` off and skips `generate_directories()` entirely (which would otherwise overwrite already-Kriged member models via `COPY_LIST`), then re-plots existing member files from disk via `PLOT_DATA`/`PLOT_MODEL`/`PLOT_SLICES_QC`/`PLOT_SLICES_ENS`. Required making `MOD_MESH`/`MOD_RESISTIVITY_FILE`/`MOD_REFERENCE_FILE` unconditional (previously only defined inside `if PERTURB_MOD:`, a latent `NameError` risk) and decoupling the `PLOT_DATA` block from `if PERTURB_DAT:`. Missing per-member files are warned about and skipped, never a hard error. |
 

@@ -261,6 +261,28 @@ Provenance:
                 is "utm"/"latlon" via fviz.plot_model_slices'
                 show_model_centre parameter; override style with a
                 MOD_MAP_MARKERS entry carrying "is_model_centre": True.
+    2026-09-09  Claude Sonnet 5 (Anthropic)
+                Added MOD_PP_REGEN_EVERY (default None = unchanged
+                behaviour): threads through to ensembles.
+                generate_gst_model_ensemble()'s new pp_regen_every
+                parameter, which regenerates the *random* pilot-point
+                component (the whole point set for MOD_PP_MODE="random";
+                the random-fill portion of "mixed"/"extrema") only once
+                every MOD_PP_REGEN_EVERY consecutive members instead of
+                every member -- pilot-point values are still redrawn
+                every member regardless, so blocked members still
+                differ. Useful for separating value-randomness spread
+                from location-randomness spread. See ensembles_readme.md
+                for the full parameter documentation.
+                Also fixed a pre-existing bug in the
+                ens.generate_gst_model_ensemble() call:
+                output_target=MOD_OUTPUFalseT_TARGET referenced a
+                variable that was never defined anywhere (the actual
+                config variable is MOD_OUTPUT_TARGET), so PERTURB_MOD=True
+                runs raised a NameError before reaching Kriging. Corrected
+                to output_target=MOD_OUTPUT_TARGET; unrelated to the
+                MOD_PP_REGEN_EVERY change but found and fixed in the same
+                pass since it blocked testing the call site at all.
 """
 
 import os
@@ -574,6 +596,28 @@ if PERTURB_MOD:
     MOD_PP_ROI           = None   # None = full extent; or [xmn,xmx,ymn,ymx,zmn,zmx] (km)
     MOD_PP_EXTREMA_K     = 33     # neighbourhood size for extremum detection
     MOD_PP_EXTREMA_WHICH = "both" # "both" | "minima" | "maxima"
+
+    # ------------------------------------------------------------------
+    # Optional: regenerate the random pilot-point component only every
+    # nth member, instead of every member
+    # ------------------------------------------------------------------
+    # MOD_PP_REGEN_EVERY controls how often the *random* pilot-point
+    # component (the whole point set for MOD_PP_MODE="random"; only the
+    # random-fill points for "mixed"/"extrema" -- MOD_PP_COORDS / the
+    # extrema skeleton are never affected) is redrawn:
+    #   None    : redraw every member (default, original behaviour).
+    #   integer : redraw once every MOD_PP_REGEN_EVERY consecutive
+    #             members, reusing the same locations for the rest of
+    #             that block. Pilot-point VALUES are still drawn fresh
+    #             every member regardless, so members sharing a block
+    #             still differ from each other -- only the geometry is
+    #             held in common. Useful for separating "spread from
+    #             pilot-point value randomness" (within a block) from
+    #             "spread from pilot-point location randomness" (across
+    #             blocks), e.g. for GST parameter diagnostics. No effect
+    #             when MOD_PP_MODE = "fixed" (nothing random to
+    #             regenerate; a warning is printed if set anyway).
+    MOD_PP_REGEN_EVERY = None  # e.g. 10 -> new random layout every 10 members
 
     # ------------------------------------------------------------------
     # Resistivity range for pilot-point values
@@ -1004,6 +1048,7 @@ if PERTURB_MOD:
         pp_roi=_lim_km_to_m(MOD_PP_ROI),
         pp_extrema_k=MOD_PP_EXTREMA_K,
         pp_extrema_which=MOD_PP_EXTREMA_WHICH,
+        pp_regen_every=MOD_PP_REGEN_EVERY,
         log_rho_min=MOD_LOG_RHO_MIN,
         log_rho_max=MOD_LOG_RHO_MAX,
         pp_value_mode=MOD_PP_VALUE_MODE,
@@ -1013,7 +1058,7 @@ if PERTURB_MOD:
         vario_sill=MOD_VARIO_SILL,
         vario_nugget=MOD_VARIO_NUGGET,
         vario_angles=MOD_VARIO_ANGLES,
-        output_target=MOD_OUTPUFalseT_TARGET,
+        output_target=MOD_OUTPUT_TARGET,
         resistivity_file=MOD_RESISTIVITY_FILE,
         reference_file=MOD_REFERENCE_FILE,
         rng=rng,

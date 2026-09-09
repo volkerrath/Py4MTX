@@ -106,6 +106,7 @@ Modified: 2026-04-27 — estimate_errors rewritten: spline-residual and MAD meth
 Modified: 2026-05-23 — added read_sitelist(): parse FEMTIC sitelist CSV (name,lat,lon,elev,sitenum,easting,northing) with optional name filter; raw values only, no CRS conversion; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-06-12 — absorbed correct_ft_convention() from mt_ft_convention.py into processing helpers; no public API change; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-06-13 — added compute_zavg(): off-diagonal geometric-mean invariant sqrt(Zxy*Zyx); same signature/error-propagation pattern as compute_zdet/compute_zssq; Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-09-07 — added make_collection(): build a station-dict collection directly from a directory of EDI files (load_edi + optional FT correction + Zdet/Zssq/Zavg invariants), returned in-memory and optionally saved via save_list_of_dicts_npz() as the COLL_FILE consumed by mt_get_averages.py; Claude Sonnet 5 (Anthropic)
 """
 
 from __future__ import annotations
@@ -3182,6 +3183,145 @@ def load_list_of_dicts_npz(
     with np.load(path.as_posix(), allow_pickle=True) as z:
         arr = z[key]
     return list(arr.tolist())
+
+
+def make_collection(
+    edi_dir: str | Path,
+    *,
+    ext: str = ".edi",
+    save_path: str | Path | None = None,
+    manufacturer: str = "metronix",
+    drop_invalid_periods: bool = True,
+    freq_order: str = "inc",
+    ft_correction: Optional[Dict[str, str]] = None,
+    compute_invariants: bool = True,
+    compute_phase_tensor: bool = False,
+    use_filename_as_station: bool = True,
+    station_upper: bool = False,
+    verbose: bool = True,
+) -> List[Dict[str, Any]]:
+    """
+    Build an in-memory MT station collection directly from a directory of
+    EDI files, and optionally save it as the collection ``.npz`` consumed by
+    :mod:`mt_get_averages` (its ``COLL_FILE``).
+
+    This factors out the "read EDI directory → compute invariants → collect"
+    portion of :mod:`mt_data_processor`'s processing loop into a single
+    reusable call, without any of that script's export/plotting machinery.
+
+    Parameters
+    ----------
+    edi_dir : str or pathlib.Path
+        Directory containing ``.edi`` (or other ``ext``) files.
+    ext : str, optional
+        File extension to search for. Default ``".edi"``.
+    save_path : str, pathlib.Path, or None, optional
+        If given, the resulting list of station dicts is written via
+        :func:`save_list_of_dicts_npz` to this path (i.e. a ``COLL_FILE``).
+        If ``None`` (default), nothing is written to disk.
+    manufacturer : {"metronix", "phoenix", "delta"}, optional
+        Passed to :func:`load_edi`. Default ``"metronix"``.
+    drop_invalid_periods : bool, optional
+        Passed to :func:`load_edi`. Default ``True``.
+    freq_order : {"inc", "dec", "keep"}, optional
+        Passed to :func:`load_edi`. Default ``"inc"``.
+    ft_correction : dict or None, optional
+        If given, must supply ``{"from_convention": ..., "to_convention": ...}``
+        and is passed to :func:`correct_ft_convention` for each station
+        (in-place, applied right after loading). ``None`` (default) skips
+        this step.
+    compute_invariants : bool, optional
+        If ``True`` (default), compute ``Zdet``, ``Zssq``, and ``Zavg``
+        (plus their ``*_err`` companions) via :func:`compute_zdet`,
+        :func:`compute_zssq`, :func:`compute_zavg` and store them in each
+        station dict. These are the keys :mod:`mt_get_averages` reads.
+    compute_phase_tensor : bool, optional
+        If ``True``, also compute the phase tensor via :func:`compute_pt`
+        and store as ``"P"``/``"P_err"``. Default ``False`` (not needed by
+        :mod:`mt_get_averages`).
+    use_filename_as_station : bool, optional
+        If ``True`` (default), the station name stored in each record
+        (``"station"`` key) is taken from the EDI filename (stem) rather
+        than the EDI header — mirrors ``STAT_FILE`` in
+        :mod:`mt_data_processor`.
+    station_upper : bool, optional
+        If ``True``, upper-case the station name. Default ``False``.
+    verbose : bool, optional
+        Print one line per station read, and a summary line if *save_path*
+        is given. Default ``True``.
+
+    Returns
+    -------
+    list[dict]
+        One station dictionary per EDI file (same layout as returned by
+        :func:`load_edi`, augmented with invariant/phase-tensor keys as
+        requested). This is exactly the ``records`` list stored under the
+        ``"records"`` key by :func:`save_list_of_dicts_npz` /
+        :func:`load_list_of_dicts_npz`.
+
+    Notes
+    -----
+    Only the pieces of :mod:`mt_data_processor`'s loop needed to populate
+    ``Zdet``/``Zssq``/``Zavg`` are reproduced here — no error setting,
+    interpolation, rotation, per-station export, or plotting. Use
+    :mod:`mt_data_processor` directly for the full processing pipeline.
+    """
+    edi_dir = str(edi_dir)
+    if not edi_dir.endswith("/"):
+        edi_dir = edi_dir + "/"
+
+    edi_files = get_data_list(edi_dir, ext=ext, sort=True, fullpath=True)
+
+    records: List[Dict[str, Any]] = []
+    for edi in edi_files:
+        data_dict = load_edi(
+            edi,
+            drop_invalid_periods=drop_invalid_periods,
+            freq_order=freq_order,
+            manufacturer=manufacturer,
+        )
+
+        if ft_correction is not None:
+            correct_ft_convention(data_dict, **ft_correction)
+
+        Z = data_dict["Z"]
+        Z_err = data_dict.get("Z_err")
+
+        if compute_phase_tensor:
+            P, P_err = compute_pt(Z, Z_err)
+            data_dict["P"] = P
+            data_dict["P_err"] = P_err
+
+        if compute_invariants:
+            Zdet, Zdet_err = compute_zdet(Z, Z_err)
+            data_dict["Zdet"] = Zdet
+            data_dict["Zdet_err"] = Zdet_err
+            Zssq, Zssq_err = compute_zssq(Z, Z_err)
+            data_dict["Zssq"] = Zssq
+            data_dict["Zssq_err"] = Zssq_err
+            Zavg, Zavg_err = compute_zavg(Z, Z_err)
+            data_dict["Zavg"] = Zavg
+            data_dict["Zavg_err"] = Zavg_err
+
+        station = data_dict.get("station")
+        if use_filename_as_station:
+            station = Path(edi).stem
+        if station_upper and station is not None:
+            station = station.upper()
+        data_dict["station"] = station
+
+        if verbose:
+            print(f" Read edi file: {edi}  ->  station '{station}'"
+                  f"  ({np.size(data_dict.get('freq'))} frequencies)")
+
+        records.append(data_dict)
+
+    if save_path is not None:
+        save_list_of_dicts_npz(records=records, path=save_path)
+        if verbose:
+            print(f"Wrote collection ({len(records)} stations) to {save_path}")
+
+    return records
 
 
 def _is_scalar(x: Any) -> bool:

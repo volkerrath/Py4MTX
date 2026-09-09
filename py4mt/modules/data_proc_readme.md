@@ -524,6 +524,56 @@ for s in sites:
 
 ---
 
+## Building a station collection from a directory of EDI files
+
+### `make_collection(edi_dir, *, ext=".edi", save_path=None, manufacturer="metronix", drop_invalid_periods=True, freq_order="inc", ft_correction=None, compute_invariants=True, compute_phase_tensor=False, use_filename_as_station=True, station_upper=False, verbose=True)`
+
+Reads every EDI file in `edi_dir`, computes the impedance invariants
+(`Zdet`, `Zssq`, `Zavg`, plus their `*_err` companions) via `compute_zdet`,
+`compute_zssq`, `compute_zavg`, and returns the resulting list of station
+dicts — the exact `records` layout expected by `mt_get_averages.py`.
+
+This factors out the "read EDI directory → compute invariants → collect"
+portion of `mt_data_processor.py`'s per-station loop into one reusable call,
+without any of that script's export/plotting machinery (no EDI/NPZ/HDF/MAT
+export, no diagnostic plots, no error setting/interpolation/rotation).
+
+```python
+import data_proc as dp
+
+# In-memory only
+records = dp.make_collection("/path/to/edi_dir/")
+
+# Also cache it to disk as a COLL_FILE for mt_get_averages.py
+records = dp.make_collection(
+    "/path/to/edi_dir/",
+    save_path="/path/to/Review_collection.npz",
+)
+```
+
+| Argument | Default | Effect |
+|----------|---------|--------|
+| `ext` | `".edi"` | File extension searched for in `edi_dir` |
+| `save_path` | `None` | If given, write `records` via `save_list_of_dicts_npz` (a `COLL_FILE`) |
+| `manufacturer` | `"metronix"` | Forwarded to `load_edi` |
+| `drop_invalid_periods` | `True` | Forwarded to `load_edi` |
+| `freq_order` | `"inc"` | Forwarded to `load_edi` |
+| `ft_correction` | `None` | If given, e.g. `{"from_convention": "e+iwt", "to_convention": "e-iwt"}`, applied via `correct_ft_convention` right after loading |
+| `compute_invariants` | `True` | Compute `Zdet`/`Zssq`/`Zavg` (+ `*_err`) |
+| `compute_phase_tensor` | `False` | Also compute `P`/`P_err` via `compute_pt` (not needed by `mt_get_averages.py`) |
+| `use_filename_as_station` | `True` | Station name taken from the EDI filename stem rather than the EDI header (mirrors `STAT_FILE` in `mt_data_processor.py`) |
+| `station_upper` | `False` | Upper-case the station name |
+| `verbose` | `True` | Print one line per station, plus a summary if `save_path` is given |
+
+Returns the list of station dicts (also written to `save_path` if given, in
+the same format read by `load_list_of_dicts_npz`).
+
+`mt_get_averages.py` can call this directly (`BUILD_FROM_EDI = True`) to
+skip the intermediate `COLL_FILE` entirely, or use it to (re)generate a
+`COLL_FILE` cache.
+
+---
+
 ## References
 
 - Efron, B. (1979). Bootstrap Methods: Another Look at the Jackknife. *Annals of Statistics*, 7(1), 1–26.
@@ -542,3 +592,4 @@ Modified: 2026-03-16 — freq_order parameter (load_edi, save_edi), compute_rhop
 Modified: 2026-03-25 — manufacturer parameter in load_edi (phoenix/metronix/delta); FT-convention correction (conjugation of Z and T for Phoenix); manufacturer and ft_convention keys in data_dict; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-04-27 — estimate_errors section rewritten: spline_residual, spline_residual_smoothed, and mad methods; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-05-23 — added read_sitelist(): parse FEMTIC sitelist CSV (name,lat,lon,elev,sitenum,easting,northing) with optional name filter; raw values only, no CRS conversion; Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-09-07 — added make_collection(): build a station-dict collection directly from a directory of EDI files (load_edi + optional FT correction + Zdet/Zssq/Zavg invariants), returned in-memory and optionally saved via save_list_of_dicts_npz() as the COLL_FILE consumed by mt_get_averages.py; Claude Sonnet 5 (Anthropic)

@@ -174,6 +174,43 @@ roughness matrix is required.
 | `save_pilot_points` | `bool`, default `False`. Write every member's pilot-point coordinates and drawn log₁₀(ρ) values to `pilot_points_file` after the member loop. |
 | `pilot_points_file` | `str`, optional. Output path for the pilot-point archive. `None` (default) → `f"{dir_base}pilot_points.npz"`. Ignored when `save_pilot_points=False`. |
 | `seed`           | `int`, optional. Informational only — recorded in `pilot_points.npz` (`"seed"`, `-1` if omitted) for a self-describing archive. Does **not** seed the RNG; pass a seeded generator via `rng` for that. |
+| `pp_regen_every` | `int`, optional. `None` (default) — the random pilot-point component (whole point set for `"random"`; random-fill portion of `"mixed"`/`"extrema"`) is redrawn every member, as before. An integer `K` instead redraws it once per block of `K` consecutive processed members, reusing it for the rest of the block; pilot-point **values** are still redrawn every member regardless. No effect for `pp_mode="fixed"`. See "Regenerating pilot points every *n*th member" below. |
+
+### Regenerating pilot points every *n*th member
+
+By default, `pp_mode="random"` draws a completely fresh pilot-point cloud
+(locations **and** values) for every member, and `"mixed"`/`"extrema"`
+redraw their random-fill points the same way (their fixed skeleton never
+changes). `pp_regen_every` adds a middle ground: hold the **locations**
+of that random component fixed across a block of `pp_regen_every`
+consecutive members, while still drawing fresh **values** at those
+locations for every member in the block. A new block gets a fresh set of
+locations.
+
+This decouples the two sources of ensemble spread that are normally
+entangled: with `pp_regen_every=10`, members 0–9 all share one random
+pilot-point layout and differ only in the resistivity values Kriged onto
+it (spread from value randomness alone, at fixed geometry), members
+10–19 share a different layout, and so on. Comparing within-block spread
+to across-block spread is a direct diagnostic for which source dominates
+the ensemble's spatial resolution — useful alongside
+`gst_parameter_diagnostics` when choosing `n_pp`/variogram parameters.
+
+Blocks are counted by **position within the processed member list**
+(`fromto`/`range(n_samples)`), not by raw member index — only relevant
+if `fromto` has gaps. `pp_regen_every=1` is equivalent to `None` (every
+block has exactly one member, so nothing is ever reused). Recorded in
+`pilot_points.npz` as `"pp_regen_every"` (`-1` if not set).
+
+```python
+# Members 0-9 share one random pilot-point layout, 10-19 a different one, etc.
+mod_list = generate_gst_model_ensemble(
+    ...,
+    pp_mode         = "random",
+    n_pp            = 100,
+    pp_regen_every  = 10,
+)
+```
 
 ### Reproducibility & the `pilot_points.npz` archive
 
@@ -202,7 +239,7 @@ are written to a single compressed `.npz`:
 | `member_ids` | `(n_members,)` int | Processed member indices (`fromto_arr`). |
 | `pp_x`, `pp_y`, `pp_z` | `(n_members, n_pp_total)` float | Pilot-point coordinates (easting, northing, depth) per member. `n_pp_total` is constant across members for a given `pp_mode` (fixed/extrema skeleton size + `n_pp` random fill, where applicable), so stacking into one array is always well-defined. |
 | `pp_vals` | `(n_members, n_pp_total)` float | log₁₀(ρ) value drawn at each pilot point, per member. |
-| `pp_mode`, `pp_value_mode`, `log_rho_min`, `log_rho_max`, `vario_model`, `vario_range`, `vario_sill`, `vario_nugget`, `seed` | scalar/array | Snapshot of the call's configuration. |
+| `pp_mode`, `pp_value_mode`, `log_rho_min`, `log_rho_max`, `vario_model`, `vario_range`, `vario_sill`, `vario_nugget`, `seed`, `pp_regen_every` | scalar/array | Snapshot of the call's configuration (`pp_regen_every` is `-1` if not set). |
 
 ```python
 d = np.load("ubinas_gst_pilot_points.npz")
@@ -612,3 +649,61 @@ FEMTIC runs needed unless noted).
   Passing the same shared `rng` to both now makes the full ensemble
   (model *and* data perturbation) reproducible together.
 
+### Changelog (2026-09-09) — covariance-based ensemble sampling for repair
+
+Three functions added after `sample_physical_ensemble()` (EOF/PCA
+section), giving `femtic_ens_repair.py`'s new
+`MOD_REPAIR_METHOD="eof_sample"` option a way to draw new candidate
+starting models from an existing ensemble's own empirical covariance,
+rather than only averaging two random members:
+
+- `eof_model_from_covariance(mean, n_samples_fit, eigval=, eigvec=,
+  cov=, ...)`: builds an `EOFModel` directly from a *precomputed*
+  covariance instead of fitting one from a raw ensemble matrix —
+  accepts either femtic_ens_post.py's `"low_rank"` factorisation
+  (`eigval`/`eigvec`, exact eigenpairs, no decomposition needed) or its
+  `"full"` dense `cov` (eigendecomposed and truncated here the same way
+  `fit_eof_model` truncates its SVD). Returns the same `EOFModel`
+  container `fit_eof_model()` does, so `sample_physical_ensemble()`
+  works identically regardless of which path built the model.
+- `sample_new_models_from_ensemble(ens_matrix, n_new, ...)` /
+  `sample_new_models_from_covariance(mean, n_samples_fit, n_new, ...)`:
+  thin femtic-shaped convenience wrappers (`fit_eof_model`/
+  `eof_model_from_covariance` + `sample_physical_ensemble`) that handle
+  the transpose between `femtic_ens_*.py`'s `ens_matrix` convention
+  — samples as rows, `(n_members, n_free)` — and
+  `fit_eof_model`/`sample_physical_ensemble`'s samples-as-columns
+  `(ncells, nsamples)` convention, so callers never touch `EOFModel`
+  directly. `femtic_ens_repair.py` itself calls the lower-level
+  `fit_eof_model`/`eof_model_from_covariance`/`sample_physical_ensemble`
+  directly instead (fitting once, then sampling once per non-converged
+  member), but these wrappers are the simpler one-shot entry point for
+  other callers.
+
+**Note (pre-existing, unrelated):** `eof_generate_ensemble()`, defined
+earlier in this section, has an empty body (only a docstring) and always
+returns `None` — flagged here rather than fixed, pending confirmation of
+whether it should be implemented or removed.
+
+### Changelog (2026-09-09) — periodic pilot-point regeneration
+
+- `generate_gst_model_ensemble` gained `pp_regen_every` (default `None` =
+  unchanged behaviour). When set to an integer `K`, the *random*
+  pilot-point component (`pp_mode="random"`'s whole point set, or the
+  random-fill portion of `"mixed"`/`"extrema"`) is redrawn once per block
+  of `K` consecutive processed members instead of every member, via a
+  new position-keyed cache; pilot-point values are still redrawn every
+  member regardless, so members sharing a block still differ. No effect
+  for `pp_mode="fixed"` (a warning is printed if set anyway, since there
+  is no random component to regenerate). See "Regenerating pilot points
+  every *n*th member" above for the full explanation and an example.
+- Recorded in `pilot_points.npz` as `"pp_regen_every"` (`-1` if not set).
+- The member loop now iterates `enumerate(fromto_arr)` (tracking each
+  member's position, needed for the block-caching above) instead of
+  `fromto_arr` alone; no change to iteration order or per-member output.
+- `femtic_gst_prep.py` gained a matching `MOD_PP_REGEN_EVERY` config
+  variable — see its own README's matching changelog entry, which also
+  notes an unrelated pre-existing bug fixed in the same pass
+  (`output_target=MOD_OUTPUFalseT_TARGET`, an undefined-variable typo
+  that raised `NameError` on every `PERTURB_MOD=True` run, corrected to
+  `MOD_OUTPUT_TARGET`).

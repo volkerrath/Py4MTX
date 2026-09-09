@@ -20,6 +20,7 @@ Zssq / Zdet / Zavg — site overlay, log-average plots, and NPZ export.
 | Modified | 2026-06-13 — `FIG_SIZE_CM`; `PLOT_ERRORS` / `ERR_ALPHA` shaded std bands on all three averages; `rho_std` / `phi_std` added to NPZ; Claude Sonnet 4.6 (Anthropic) |
 | Modified | 2026-06-13 — Zavg phase folded to [0°, 90°] via `fold_phase` flag; Claude Sonnet 4.6 (Anthropic) |
 | Modified | 2026-06-13 — `ERRORS` switch (`"std"`/`"bootstrap"`/`None`); bootstrap std-of-the-mean per bin and globally; global interval in print/annotation; `rho_global_std` in NPZ; Claude Sonnet 4.6 (Anthropic) |
+| Modified | 2026-09-07 — `BUILD_FROM_EDI` switch: collection can now be built directly from `EDI_DIR` via the new `data_proc.make_collection()` instead of requiring a pre-existing `COLL_FILE`; optional `SAVE_COLLECTION` caches the built collection to `COLL_FILE`; added `PY4MTX_ROOT` sys.path setup and `data_proc` import; Claude Sonnet 5 (Anthropic) |
 
 ## Purpose
 
@@ -144,9 +145,18 @@ to screen and shown in the plot annotation.
 
 ## Workflow
 
-1. **Load** the collection NPZ (`COLL_FILE`); extract `freq` and the active
-   quantity per station. `Zssq`, `Zdet`, `Zavg` are read from direct keys
-   (require `INVARS = True` in `mt_data_processor.py`).
+0. **Obtain the collection** — either:
+   - **Load** an existing collection NPZ (`COLL_FILE`), the default
+     (`BUILD_FROM_EDI = False`); or
+   - **Build** it directly from a directory of EDI files
+     (`BUILD_FROM_EDI = True`, `EDI_DIR`), via the new
+     `data_proc.make_collection()` (computes `Zdet`/`Zssq`/`Zavg` on the
+     fly). If `SAVE_COLLECTION = True`, the built collection is also cached
+     to `COLL_FILE`.
+1. Extract `freq` and the active quantity per station. `Zssq`, `Zdet`,
+   `Zavg` are read from direct keys (require `INVARS = True` in
+   `mt_data_processor.py`, or `compute_invariants=True` — the default — in
+   `data_proc.make_collection()`).
    Frequencies outside `FREQ_RANGE` are masked out before any processing.
    For `Zavg`, phase is folded into [0°, 90°] after computation.
 2. **Compute** per-site `rho_a` and `phi` via `_rho_phi_from_zinvar`.
@@ -165,7 +175,10 @@ to screen and shown in the plot annotation.
 | Constant | Default | Description |
 |----------|---------|-------------|
 | `WORK_DIR` | *(set per project)* | Root working directory |
-| `COLL_FILE` | `WORK_DIR + "TEST_test_proc_collection.npz"` | Input collection NPZ |
+| `COLL_FILE` | `WORK_DIR + "TEST_test_proc_collection.npz"` | Collection NPZ: read from when `BUILD_FROM_EDI = False`; written to (cached) when `BUILD_FROM_EDI = True` and `SAVE_COLLECTION = True` |
+| `BUILD_FROM_EDI` | `False` | If `True`, skip `COLL_FILE` and build the collection directly from `EDI_DIR` via `data_proc.make_collection()` |
+| `EDI_DIR` | *(set per project)* | Directory of `.edi` files; only used when `BUILD_FROM_EDI = True` |
+| `SAVE_COLLECTION` | `True` | If `BUILD_FROM_EDI = True`, also cache the built collection to `COLL_FILE` |
 | `PLOT_DIR` | `WORK_DIR + "../plots/"` | Output plot directory (created if missing) |
 | `DATA_DIR` | `WORK_DIR` | Output NPZ directory (created if missing) |
 | `NAME_STR` | `"Ubinas_ssq2"` | Base name for all output files |
@@ -242,6 +255,10 @@ Each `{NAME_STR}_{tag}_avg.npz` contains:
 
 ## Dependencies
 
-`numpy`, `matplotlib`; py4mt: `data_proc` (collection NPZ format).
-`Zssq` and `Zdet` require `INVARS = True` in `mt_data_processor.py`.
+`numpy`, `matplotlib`; py4mt: `data_proc` (`make_collection`, collection NPZ
+format; requires `PY4MTX_ROOT` env var and `data_proc.py` on the module
+path).
+`Zssq` and `Zdet` require `INVARS = True` in `mt_data_processor.py`
+(if loading a pre-built `COLL_FILE`), or `compute_invariants=True` — the
+default — in `data_proc.make_collection()` (if `BUILD_FROM_EDI = True`).
 `Zavg` requires only that `Z` is present (always the case).

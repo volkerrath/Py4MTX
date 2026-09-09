@@ -32,6 +32,15 @@ Suzuki, K.; Assessing inversion uncertainty from initial-model variability in
     Journal of Applied Geophysics, 251, 106320
     doi:10.1016/j.jappgeo.2026.106320, 2026
 
+Christiansen, A. V. & Auken, E.
+    A global measure for depth of investigation.
+    Geophysics, 2012, 77, WB171-WB177, doi:10.1190/geo2011-0393.1
+
+Bobe, C.; Keller, J. & Van De Vijver, E.
+    Sensitivity and depth of investigation from Monte Carlo ensemble
+    statistics.
+    Geophysical Prospecting, 2021, doi:10.1111/1365-2478.13068
+
 
 @author: vrath
 
@@ -327,6 +336,57 @@ Provenance
             "utm"/"latlon" via fviz.plot_model_slices'
             show_model_centre parameter; override style with a
             MOD_MAP_MARKERS entry carrying "is_model_centre": True.
+2026-09-08  Claude Sonnet 5 (Anthropic)
+            Added a "Sensitivity statistics" section mitigating the
+            ambiguity that low ensemble spread (VAR/ERR/MAD) can mean
+            either "well-resolved by the data" or "collapsed by the
+            regularisation regardless of the data" (null space). Two
+            independent, ensemble-level diagnostics, either individually
+            switchable:
+            (1) COMPUTE_SENS: per-member linearised cumulative
+            sensitivity (Christiansen & Auken, 2012, Geophysics 77,
+            WB171, doi:10.1190/geo2011-0393.1), read from each accepted
+            member's Jacobian via the new fem.read_h5_sensitivity()
+            (SENS_H5_PATTERN="model_iter{numit}.h5", schema-provisional
+            -- see femtic_readme.md), then aggregated across the
+            ensemble (mean/median/min/max/std/CV) instead of trusting a
+            single member's linearisation; large CV flags cells where
+            the sensitivity structure is strongly model-dependent
+            (nonlinear regime), where SimRC below should be trusted
+            instead.
+            (2) COMPUTE_SIMRC: ensemble-native "SimRC" sensitivity (Bobe,
+            Keller & Van De Vijver, 2021, Geophysical Prospecting,
+            doi:10.1111/1365-2478.13068): per-member forward ("cal")
+            responses are collected via the new
+            fem.collect_forward_response() (SIMRC_RESULT_FILES,
+            SIMRC_SITE_FILE) into a data ensemble matrix, and the
+            cumulative |regression coefficient| and |correlation|
+            between that data ensemble and the already-collected model
+            ensemble (ens_matrix) are computed in data-column chunks
+            (SIMRC_CHUNK) to bound memory -- no Jacobian needed. The
+            model-side rows used are exactly the members that also
+            produced a forward-response row (simrc_keep_idx), since
+            COMPUTE_SENS/COMPUTE_VAR_REDUX can drop different members
+            than COMPUTE_SIMRC does.
+            Both (1) and (2) degrade gracefully -- printed warning,
+            corresponding MOD_STATS_WHAT entries and .npz keys omitted --
+            when their required per-member files are missing for some or
+            all members, following the existing COMPUTE_VAR_REDUX
+            pattern.
+            Added COMPUTE_NULL_SPACE_FLAG (default True): flags free
+            parameters with ERR below its own FLAG_SPREAD_PERCENTILE
+            *and* low sensitivity by every available measure above
+            (AND, not OR -- conservative, minimises false positives) as
+            likely null-space rather than genuinely data-constrained;
+            saved as boolean f"{P}_flag_null_space" and plottable/
+            usable as an alpha-blank source the same way var_redux is.
+            New .npz keys: f"{P}_sens_mean/_median/_min/_max/_std/_cv/
+            _low_mask", f"{P}_simrc_coef/_corr/_low_mask",
+            f"{P}_flag_null_space". New MOD_STATS_WHAT entries
+            "sens_mean", "sens_cv", "simrc_corr", "flag_null_space"
+            (auto-added when the corresponding COMPUTE_* flag is True,
+            auto-removed if that diagnostic could not actually be
+            computed for this ensemble).
 """
 from __future__ import annotations
 
@@ -457,6 +517,108 @@ COMPUTE_VAR_REDUX = True
 REDUX_EPS = 0.1
 
 # ---------------------------------------------------------------------------
+# Sensitivity statistics
+# ---------------------------------------------------------------------------
+# Low ensemble spread (small VAR/ERR/MAD above) can mean either that the
+# data genuinely constrain a cell, or that regularisation collapsed a
+# null-space cell regardless of the data -- the two are indistinguishable
+# from spread alone. This section adds two independent, ensemble-level
+# sensitivity diagnostics to disambiguate them:
+#
+#   (1) SENS_*   -- per-member linearised cumulative sensitivity
+#                   (Christiansen & Auken, 2012, Geophysics 77, WB171,
+#                   doi:10.1190/geo2011-0393.1), read from each accepted
+#                   member's Jacobian in model_iter<numit>.h5 via
+#                   fem.read_h5_sensitivity(), then aggregated (mean,
+#                   median, min, max, std) across the ensemble instead of
+#                   trusting a single member's linearisation.
+#   (2) SIMRC_*  -- ensemble-native "SimRC" sensitivity (Bobe, Keller &
+#                   Van De Vijver, 2021, Geophysical Prospecting,
+#                   doi:10.1111/1365-2478.13068): regression-coefficient
+#                   and correlation between the model ensemble
+#                   (ens_matrix, already collected above) and a forward-
+#                   response ensemble read from each member's
+#                   result_XXX.txt files. Needs no Jacobian at all, and
+#                   -- being built from the finite ensemble spread rather
+#                   than an infinitesimal derivative -- remains valid
+#                   even where the problem is locally nonlinear.
+#
+# Either block can be disabled independently; each degrades gracefully
+# (printed warning, keys omitted from the .npz) if its required files are
+# missing for some or all members.
+
+# --- (1) Per-member Jacobian-based cumulative sensitivity -------------------
+#: Set False to skip entirely (no model_iterX.h5 files available yet).
+COMPUTE_SENS = True
+
+#: Per-member HDF5 file, relative to each ensemble-member run directory,
+#: with "{numit}" substituted by that member's best (accepted) iteration
+#: number -- i.e. the Jacobian for the *same* iteration whose resistivity
+#: block was used to build ens_matrix above.
+SENS_H5_PATTERN = "model_iter{numit}.h5"
+
+#: See fem.read_h5_sensitivity() for the meaning of these -- schema is
+#: provisional/configurable until the actual FEMTIC HDF5 export settles.
+SENS_H5_GROUP     = None
+SENS_CUMSENS_KEY  = "cumulative_sensitivity"
+SENS_JACOBIAN_KEY = "jacobian"
+SENS_ERROR_KEY    = "data_error"   # None to disable error-weighting
+
+#: Fraction of the ensemble-mean cumulative sensitivity's own maximum
+#: below which a free parameter is flagged "low sensitivity" -- used both
+#: for the standalone sens_low_mask statistic and (combined with ensemble
+#: spread) for FLAG_NULL_SPACE below.
+SENS_LOW_THRESH_FRAC = 0.05
+
+# --- (2) Ensemble-native SimRC sensitivity ----------------------------------
+#: Set False to skip entirely (no per-member result_XXX.txt files, or
+#: forward-response ensemble not wanted).
+COMPUTE_SIMRC = True
+
+#: {data_type: filename} -- filenames are relative to each ensemble-member
+#: run directory. Only entries whose file actually exists for a member
+#: are used for that member (see fem.collect_forward_response()); a
+#: member missing every listed file is dropped from the SimRC ensemble
+#: with a warning, mirroring the COMPUTE_VAR_REDUX prior-file handling.
+#: Keys are also passed as the "data_type" arg to fem.get_femtic_data(),
+#: so use "rhophas"/"imp"/"vtf"/"pt" (or a dict value understood by
+#: SIMRC_DATA_KIND below) as appropriate for what FEMTIC wrote.
+SIMRC_RESULT_FILES = {
+    "rhophas": "result_MT.txt",
+    "vtf":     "result_VTF.txt",
+}
+
+#: Site-metadata file shared across the whole ensemble (site geometry
+#: does not vary between RTO/GST members, only the model/response does).
+SIMRC_SITE_FILE = ENSEMBLE_DIR + "templates/site.dat"
+
+#: Fallback data_type passed to fem.get_femtic_data() for any
+#: SIMRC_RESULT_FILES key not already one of "imp"/"vtf"/"pt"/"rhophas".
+SIMRC_DATA_KIND = "rhophas"
+
+#: Number of data columns processed per chunk when accumulating the
+#: (n_data, n_free) cross-covariance between the data and model
+#: ensembles -- bounds peak memory to O(SIMRC_CHUNK * n_free) instead of
+#: forming the full cross-covariance matrix at once.
+SIMRC_CHUNK = 200
+
+#: Fraction of the ensemble SimRC cumulative-correlation's own maximum
+#: below which a free parameter is flagged "low SimRC sensitivity".
+SIMRC_LOW_THRESH_FRAC = 0.05
+
+# --- Combined diagnostic: null-space vs. genuinely well-resolved -----------
+#: When True (and at least one of COMPUTE_SENS/COMPUTE_SIMRC succeeded),
+#: flag free parameters with BOTH low ensemble spread (ERR below its own
+#: FLAG_SPREAD_PERCENTILE) AND low sensitivity (below the corresponding
+#: *_LOW_THRESH_FRAC above, using whichever of SENS/SimRC is available --
+#: both if both are) as likely prior-collapsed null-space cells rather
+#: than genuinely data-constrained ones. Saved as a boolean array
+#: f"{P}_flag_null_space" and, if MOD_STATS is on, usable directly as an
+#: alpha-blank source the same way var_redux is.
+COMPUTE_NULL_SPACE_FLAG = True
+FLAG_SPREAD_PERCENTILE  = 25.0   # ERR below this percentile counts as "low spread"
+
+# ---------------------------------------------------------------------------
 # Covariance
 # ---------------------------------------------------------------------------
 #: Set False to skip covariance estimation entirely.  Mean/var/median/MAD/
@@ -583,6 +745,12 @@ MOD_STATS_WHAT = ["avg", "med", "err", "mad"] + [
     f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_") for _lo, _hi in QDIFF_PAIRS
 ] + (["err_boot"] if BOOTSTRAP_VAR else []) + (
     ["var_redux"] if COMPUTE_VAR_REDUX else []
+) + (
+    ["sens_mean", "sens_cv"] if COMPUTE_SENS else []
+) + (
+    ["simrc_corr"] if COMPUTE_SIMRC else []
+) + (
+    ["flag_null_space"] if COMPUTE_NULL_SPACE_FLAG else []
 )
 #: Output directory for stat block files and figures.
 MOD_STATS_DIR  = ENSEMBLE_DIR + "/stats_plots/"
@@ -616,6 +784,23 @@ if COMPUTE_VAR_REDUX:
     #: for auto-scaling instead, e.g. if values run negative (posterior
     #: variance larger than prior for some parameters).
     MOD_STATS_CLIM["var_redux"] = [0.0, 1.0]
+if COMPUTE_SENS:
+    #: Auto-scaled by default (cumulative sensitivity has no fixed range,
+    #: unlike the log10(Ω·m) or bounded-fraction statistics above); set
+    #: explicit [vmin, vmax] here once representative values are known.
+    MOD_STATS_CLIM["sens_mean"] = None
+    #: Coefficient of variation across members — nominally >= 0, usually
+    #: small (<1) where the linearisation is stable; auto-scaled by default.
+    MOD_STATS_CLIM["sens_cv"] = None
+if COMPUTE_SIMRC:
+    #: Cumulative |correlation| is naturally bounded (sum of values each
+    #: in [0, 1] per datum) but its overall scale depends on n_data, so
+    #: this is left auto-scaled by default too.
+    MOD_STATS_CLIM["simrc_corr"] = None
+if COMPUTE_NULL_SPACE_FLAG:
+    #: Boolean 0/1 flag — fixed [0, 1] range so it always renders as a
+    #: clean binary map regardless of how many cells are flagged.
+    MOD_STATS_CLIM["flag_null_space"] = [0.0, 1.0]
 
 #: Set True to blank out poorly-constrained cells (var_redux < REDUX_EPS)
 #: in every MOD_STATS plot *other than* var_redux's own plot -- avg, med,
@@ -1055,6 +1240,21 @@ ens_matrix_prior  = None  # will become (n_members, n_free) float64
 prior_count       = 0     # accepted members whose iter0 file was found
 prior_missing_any = False
 
+sens_matrix       = None  # will become (n_sens_members, n_free) float64
+sens_count        = 0     # accepted members whose model_iterX.h5 was found
+sens_missing_any  = False
+
+ens_data_matrix   = None  # will become (n_simrc_members, n_data) float64
+simrc_count       = 0     # accepted members whose result files were found
+simrc_missing_any = False
+simrc_manifest    = None  # (data_type, n_values) list from the first member
+#: Row indices into ens_matrix (i.e. which accepted members, in append
+#: order) that also contributed a row to ens_data_matrix -- needed so the
+#: model/data cross-covariance below pairs up the *same* members, since
+#: COMPUTE_SIMRC can drop members that COMPUTE_VAR_REDUX/sensitivity did
+#: not (and vice versa).
+simrc_keep_idx    = []
+
 for d in dir_list:
     print(f"\n  Inversion run: {d}")
     cnv_file = os.path.join(d, "femtic.cnv")
@@ -1148,6 +1348,65 @@ for d in dir_list:
                 )
             prior_count += 1
 
+    # --- (1) Per-member cumulative sensitivity (optional) -------------
+    if COMPUTE_SENS:
+        sens_h5 = os.path.join(d, SENS_H5_PATTERN.format(numit=numit))
+        try:
+            sens_vec = fem.read_h5_sensitivity(
+                sens_h5,
+                group        = SENS_H5_GROUP,
+                cumsens_key  = SENS_CUMSENS_KEY,
+                jacobian_key = SENS_JACOBIAN_KEY,
+                error_key    = SENS_ERROR_KEY,
+                normalize    = False,
+                out          = OUT,
+            )
+        except (FileNotFoundError, KeyError) as e:
+            print(f"    COMPUTE_SENS: {e} — member skipped for sensitivity.")
+            sens_missing_any = True
+        else:
+            if sens_vec.shape[0] != log_m.shape[0]:
+                print(f"    COMPUTE_SENS: {sens_h5} gives {sens_vec.shape[0]} "
+                      f"parameters, expected {log_m.shape[0]} — member "
+                      f"skipped for sensitivity.")
+                sens_missing_any = True
+            else:
+                if sens_matrix is None:
+                    sens_matrix = sens_vec[np.newaxis, :]
+                else:
+                    sens_matrix = np.vstack((sens_matrix, sens_vec))
+                sens_count += 1
+
+    # --- (2) Per-member forward response for SimRC (optional) ---------
+    if COMPUTE_SIMRC:
+        _result_paths = {
+            k: os.path.join(d, v) for k, v in SIMRC_RESULT_FILES.items()
+        }
+        try:
+            d_cal, manifest = fem.collect_forward_response(
+                _result_paths, SIMRC_SITE_FILE,
+                data_kind = SIMRC_DATA_KIND, out = OUT,
+            )
+        except FileNotFoundError as e:
+            print(f"    COMPUTE_SIMRC: {e} — member skipped for SimRC.")
+            simrc_missing_any = True
+        else:
+            if simrc_manifest is None:
+                simrc_manifest = manifest
+            elif manifest != simrc_manifest:
+                print(f"    COMPUTE_SIMRC: {d} response composition "
+                      f"{manifest} != first member's {simrc_manifest} — "
+                      f"member skipped for SimRC.")
+                simrc_missing_any = True
+                d_cal = None
+            if d_cal is not None:
+                if ens_data_matrix is None:
+                    ens_data_matrix = d_cal[np.newaxis, :]
+                else:
+                    ens_data_matrix = np.vstack((ens_data_matrix, d_cal))
+                simrc_keep_idx.append(model_count - 1)  # row just appended to ens_matrix
+                simrc_count += 1
+
 n_members = model_count
 print(f"\nConverged members: {n_members}")
 
@@ -1225,6 +1484,122 @@ if BOOTSTRAP_VAR:
     print(f"  var_boot_se       : [{ens_var_boot_se.min():.4f}, {ens_var_boot_se.max():.4f}]  "
           f"(bootstrap SE of var_boot itself)")
 
+# --- (2b) Sensitivity statistics: (1) per-member Jacobian aggregation ------
+sens_mean = sens_median = sens_min = sens_max_ = sens_std = sens_cv = None
+sens_low_mask = None
+if COMPUTE_SENS:
+    if sens_matrix is None or sens_count == 0:
+        print("\n  COMPUTE_SENS: no model_iterX.h5 sensitivity files found — skipped.")
+    else:
+        if sens_missing_any or sens_count != n_members:
+            print(f"\n  COMPUTE_SENS: sensitivity available for {sens_count}/"
+                  f"{n_members} accepted members — aggregating over those only.")
+        sens_mean   = np.mean  (sens_matrix, axis=0)
+        sens_median = np.median(sens_matrix, axis=0)
+        sens_min    = np.min   (sens_matrix, axis=0)
+        sens_max_   = np.max   (sens_matrix, axis=0)
+        sens_std    = (np.std(sens_matrix, axis=0, ddof=1) if sens_count > 1
+                        else np.zeros_like(sens_mean))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            sens_cv = sens_std / sens_mean
+        sens_cv[~np.isfinite(sens_cv)] = 0.0
+        _sens_max_all = np.nanmax(sens_mean)
+        sens_low_mask = sens_mean < (SENS_LOW_THRESH_FRAC * _sens_max_all)
+        print(f"\n  Sensitivity (Jacobian, {sens_count} members):")
+        print(f"    mean cumulative sensitivity: "
+              f"[{sens_mean.min():.4e}, {sens_mean.max():.4e}]")
+        print(f"    coefficient of variation across members: "
+              f"[{sens_cv.min():.3f}, {sens_cv.max():.3f}]  "
+              f"(large values -> sensitivity structure is model-dependent/"
+              f"nonlinear there; trust SimRC over a single Jacobian instead)")
+        print(f"    low-sensitivity cells (< {SENS_LOW_THRESH_FRAC:g} of max): "
+              f"{int(np.sum(sens_low_mask))}/{sens_low_mask.size}")
+
+# --- (2c) Sensitivity statistics: (2) ensemble-native SimRC ----------------
+simrc_coef = simrc_corr = None
+simrc_low_mask = None
+if COMPUTE_SIMRC:
+    if ens_data_matrix is None or simrc_count == 0:
+        print("\n  COMPUTE_SIMRC: no per-member forward-response files found "
+              "— skipped.")
+    else:
+        if simrc_missing_any or simrc_count != n_members:
+            print(f"\n  COMPUTE_SIMRC: forward response available for "
+                  f"{simrc_count}/{n_members} accepted members — SimRC "
+                  f"computed over that matched subset only.")
+        # Model side must use exactly the members that also contributed a
+        # forward-response row -- COMPUTE_SENS/COMPUTE_VAR_REDUX can drop
+        # different members, so ens_matrix and ens_data_matrix need not
+        # otherwise line up row-for-row.
+        _Msub  = ens_matrix[simrc_keep_idx, :]                # (simrc_count, n_free)
+        _Mc    = _Msub - np.mean(_Msub, axis=0, keepdims=True)
+        _var_m = (np.var(_Msub, axis=0, ddof=1) if simrc_count > 1
+                  else np.ones(_Msub.shape[1]))
+        _std_m = np.sqrt(_var_m)
+
+        _Dc    = ens_data_matrix - np.mean(ens_data_matrix, axis=0, keepdims=True)
+        _std_d = (np.std(ens_data_matrix, axis=0, ddof=1) if simrc_count > 1
+                  else np.ones(ens_data_matrix.shape[1]))
+
+        n_free_ = _Mc.shape[1]
+        n_data_ = _Dc.shape[1]
+        simrc_coef = np.zeros(n_free_)   # cumulative |regression coefficient|
+        simrc_corr = np.zeros(n_free_)   # cumulative |correlation|
+        _denom = max(simrc_count - 1, 1)
+
+        print(f"\n  SimRC (ensemble-native sensitivity, {simrc_count} "
+              f"members, {n_data_} data, chunk={SIMRC_CHUNK}) …")
+        # Chunked over data columns so the (n_data, n_free) cross-covariance
+        # is never formed in full -- peak memory O(SIMRC_CHUNK * n_free).
+        for lo in range(0, n_data_, SIMRC_CHUNK):
+            hi = min(lo + SIMRC_CHUNK, n_data_)
+            _cov_block = (_Dc[:, lo:hi].T @ _Mc) / _denom      # (chunk, n_free_)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                _coef_block = _cov_block / _var_m[np.newaxis, :]
+                _corr_block = _cov_block / (
+                    _std_d[lo:hi, np.newaxis] * _std_m[np.newaxis, :]
+                )
+            _coef_block[~np.isfinite(_coef_block)] = 0.0
+            _corr_block[~np.isfinite(_corr_block)] = 0.0
+            simrc_coef += np.sum(np.abs(_coef_block), axis=0)
+            simrc_corr += np.sum(np.abs(_corr_block), axis=0)
+
+        _simrc_max_all = np.nanmax(simrc_corr)
+        simrc_low_mask = simrc_corr < (SIMRC_LOW_THRESH_FRAC * _simrc_max_all)
+        print(f"    cumulative |regression coeff.|: "
+              f"[{simrc_coef.min():.4e}, {simrc_coef.max():.4e}]")
+        print(f"    cumulative |correlation|      : "
+              f"[{simrc_corr.min():.4e}, {simrc_corr.max():.4e}]")
+        print(f"    low-SimRC cells (< {SIMRC_LOW_THRESH_FRAC:g} of max): "
+              f"{int(np.sum(simrc_low_mask))}/{simrc_low_mask.size}")
+
+# --- (2d) Combined diagnostic: low spread AND low sensitivity --------------
+# Operationalises the mitigation strategy: a cell is flagged as a likely
+# regularisation-collapsed null-space cell -- rather than genuinely
+# data-constrained -- only when BOTH ensemble spread is small AND every
+# available independent sensitivity measure also says it's small. Using
+# AND across available measures (rather than OR) is deliberately
+# conservative: it minimises false positives at the cost of leaving some
+# genuine null-space cells unflagged when only one measure is available.
+flag_null_space = None
+if COMPUTE_NULL_SPACE_FLAG:
+    _low_sens_parts = [m for m in (sens_low_mask, simrc_low_mask) if m is not None]
+    if not _low_sens_parts:
+        print("\n  COMPUTE_NULL_SPACE_FLAG: neither sensitivity measure "
+              "available — skipped.")
+    else:
+        _spread_thresh = np.percentile(ens_err, FLAG_SPREAD_PERCENTILE)
+        _low_spread = ens_err < _spread_thresh
+        _low_sens = (np.logical_and.reduce(_low_sens_parts)
+                     if len(_low_sens_parts) > 1 else _low_sens_parts[0])
+        flag_null_space = _low_spread & _low_sens
+        print(f"\n  flag_null_space: "
+              f"{int(np.sum(flag_null_space))}/{flag_null_space.size} cells "
+              f"flagged (ERR < {FLAG_SPREAD_PERCENTILE:g}th percentile AND "
+              f"low sensitivity by {'both' if len(_low_sens_parts) > 1 else 'the available'} "
+              f"measure(s)) — likely regularisation-collapsed rather than "
+              f"genuinely data-constrained.")
+
 # --- (3) Empirical covariance (optional) -----------------------------------
 ens_cov       = None
 ens_covs      = None
@@ -1283,6 +1658,20 @@ if ens_var_prior is not None:
     ens_dict[f"{P}_var_prior"] = ens_var_prior
 if var_redux is not None:
     ens_dict[f"{P}_var_redux"] = var_redux
+if sens_mean is not None:
+    ens_dict[f"{P}_sens_mean"]   = sens_mean
+    ens_dict[f"{P}_sens_median"] = sens_median
+    ens_dict[f"{P}_sens_min"]    = sens_min
+    ens_dict[f"{P}_sens_max"]    = sens_max_
+    ens_dict[f"{P}_sens_std"]    = sens_std
+    ens_dict[f"{P}_sens_cv"]     = sens_cv
+    ens_dict[f"{P}_sens_low_mask"] = sens_low_mask
+if simrc_coef is not None:
+    ens_dict[f"{P}_simrc_coef"] = simrc_coef
+    ens_dict[f"{P}_simrc_corr"] = simrc_corr
+    ens_dict[f"{P}_simrc_low_mask"] = simrc_low_mask
+if flag_null_space is not None:
+    ens_dict[f"{P}_flag_null_space"] = flag_null_space
 if ens_cov is not None:
     ens_dict[f"{P}_cov"] = ens_cov
 if ens_cov_eigval is not None:
@@ -1393,6 +1782,38 @@ if MOD_STATS:
             print("  MOD_STATS: var_redux requested but not computed "
                   "(missing iter0 file(s)) — skipped.")
             MOD_STATS_WHAT = [k for k in MOD_STATS_WHAT if k != "var_redux"]
+
+        # Sensitivity statistics (1) -- per-member Jacobian aggregation,
+        # and (2) -- ensemble-native SimRC. Both are None if their
+        # section above found no usable per-member files; drop the
+        # corresponding MOD_STATS_WHAT entries in that case rather than
+        # erroring, same pattern as var_redux above.
+        if sens_mean is not None:
+            _stat_map["sens_mean"] = (sens_mean, "mean cumulative sensitivity (Jacobian)")
+            _stat_map["sens_cv"]   = (sens_cv, "sensitivity coeff. of variation across members")
+        else:
+            for _k in ("sens_mean", "sens_cv"):
+                if _k in MOD_STATS_WHAT:
+                    print(f"  MOD_STATS: {_k} requested but COMPUTE_SENS found "
+                          f"no usable model_iterX.h5 files — skipped.")
+            MOD_STATS_WHAT = [k for k in MOD_STATS_WHAT if k not in ("sens_mean", "sens_cv")]
+
+        if simrc_corr is not None:
+            _stat_map["simrc_corr"] = (simrc_corr, "SimRC cumulative |correlation|")
+        elif "simrc_corr" in MOD_STATS_WHAT:
+            print("  MOD_STATS: simrc_corr requested but COMPUTE_SIMRC found "
+                  "no usable per-member result files — skipped.")
+            MOD_STATS_WHAT = [k for k in MOD_STATS_WHAT if k != "simrc_corr"]
+
+        if flag_null_space is not None:
+            _stat_map["flag_null_space"] = (
+                flag_null_space.astype(float),
+                "flag: low spread AND low sensitivity (likely null space)",
+            )
+        elif "flag_null_space" in MOD_STATS_WHAT:
+            print("  MOD_STATS: flag_null_space requested but neither "
+                  "sensitivity measure was available — skipped.")
+            MOD_STATS_WHAT = [k for k in MOD_STATS_WHAT if k != "flag_null_space"]
 
         # --- Optional: blank poorly-constrained cells (var_redux < REDUX_EPS)
         # in every other MOD_STATS plot. Writes the var_redux block file

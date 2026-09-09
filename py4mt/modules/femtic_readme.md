@@ -642,4 +642,41 @@ Updated: 2026-06-22
   had their `FEMTIC`/`DISTORTION` config variables removed; see their
   own READMEs' 2026-09-07 changelog entries.
 
+### Changelog (2026-09-08) --- sensitivity-ensemble support functions
+
+Two new functions added to support `femtic_ens_post.py`'s new
+`COMPUTE_SENS`/`COMPUTE_SIMRC` sensitivity diagnostics, which mitigate the
+ambiguity that low RTO/GST ensemble spread can reflect either genuine
+data control or a regularisation-collapsed null-space cell.
+
+- Added `read_h5_sensitivity(h5_path, group=None, cumsens_key=..., 
+  jacobian_key=..., error_key=..., normalize=False, out=True)`: reads or
+  derives a per-free-parameter cumulative sensitivity vector from a
+  `model_iterX.h5` file. Tries a precomputed 1-D `cumsens_key` dataset
+  first; falls back to summing `|Jacobian|` columns from a 2-D
+  `jacobian_key` dataset, optionally weighted by a 1-D `error_key`
+  per-datum error vector (cf. Christiansen & Auken, 2012, *Geophysics*
+  77, WB171, doi:10.1190/geo2011-0393.1; Oldenburg & Li, 1999,
+  *Geophysics* 64, 403-416, doi:10.1190/1.1444545). **Schema is
+  provisional** -- no `model_iterX.h5` writer exists elsewhere in the
+  codebase yet, so every dataset name is a configurable argument rather
+  than hardcoded; adjust once the actual FEMTIC HDF5 export settles (see
+  "HDF5 archive schema compatibility with FEMTIC v5" -- open item).
+- Added `collect_forward_response(result_files, site_file,
+  data_kind="rhophas", out=True)`: flattens one ensemble member's
+  calculated ("cal") forward response across whichever `result_XXX.txt`
+  files exist for it (MT/VTF/PT) into a single 1-D vector plus a
+  `(data_type, n_values)` manifest, via `get_femtic_data()`. Used to
+  build a per-member forward-response ensemble for the "SimRC"
+  ensemble-native sensitivity measure (Bobe, Keller & Van De Vijver,
+  2021, *Geophysical Prospecting*, doi:10.1111/1365-2478.13068), which
+  needs no Jacobian at all -- it correlates the model ensemble directly
+  against the forward-response ensemble.
+
+Both are consumed by `femtic_ens_post.py`'s main scan loop; see
+`femtic_ens_post_readme.md`'s matching 2026-09-08 entry for the full
+pipeline (aggregation across members, the combined
+`flag_null_space` diagnostic, `.npz` output keys, and `MOD_STATS`
+plotting).
+
 Author: Volker Rath (DIAS)
