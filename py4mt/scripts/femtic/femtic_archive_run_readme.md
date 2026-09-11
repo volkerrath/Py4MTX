@@ -100,6 +100,25 @@ python mt_archive_run.py run \
 - `.tgz`
 - `.tar.gz`
 
+### ⚠️ Symlinks: use `.tgz`/`.tar.gz`, not `.zip`
+
+If your run directories contain symlinks (common if you link in
+shared mesh/model files, ensemble members, or scratch-space outputs),
+**prefer `.tgz`/`.tar.gz` over `.zip`**:
+
+- `.tgz`/`.tar.gz` (via Python's `tarfile`) preserve symlinks as real
+  symlink entries, including broken/dangling ones -- nothing is
+  followed or duplicated.
+- `.zip` (via Python's `zipfile`) has no concept of a symlink: a valid
+  symlink is dereferenced and stored as a full duplicate copy of its
+  target's content (silently, and possibly bloating the archive if the
+  same target is linked from many places), and a broken/dangling
+  symlink cannot be stored at all. The script prints a warning
+  whenever `--compress` targets a `.zip` file, and skips (with a
+  printed message) any file it can't add rather than aborting the
+  whole archive -- but the safer option is simply to use `.tgz` when
+  links matter.
+
 ---
 
 ## 📁 Archive Structure
@@ -166,6 +185,61 @@ Note: unlike earlier versions of this script, `.h5` is **not** a
 blanket-protected suffix any more. Only the three named HDF5 files
 above are protected; any other `*_iterN.h5` file is subject to the
 same keep-lowest/keep-highest iteration logic as the `.dat` files.
+
+---
+
+## 🚫 Excluded and ✅ Always-Included Subdirectories
+
+Both only apply when `--recursive` is set -- a non-recursive run never
+looks inside subdirectories in the first place.
+
+#### `--exclude-dirs` (default: `plots`)
+
+Any subdirectory whose name (case-insensitive) matches one of these,
+at any depth, is skipped entirely -- not scanned, not deleted, not
+archived. Useful for plot/figure output that has nothing to do with
+the inversion state and doesn't need to travel with the archive.
+
+```
+python mt_archive_run.py run --recursive --exclude-dirs plots figures
+```
+
+#### `--always-include-dirs` (default: `templates python`)
+
+Any subdirectory whose name (case-insensitive) matches one of these,
+at any depth, is **not scanned at all** -- exactly like
+`--exclude-dirs`, no file inside it is checked against the iteration
+pattern or the protection rules, and nothing inside it is ever
+deleted. Unlike `--exclude-dirs`, though, the whole directory is
+located and added to the compressed archive **untouched**, as a
+single recursive directory add (preserving its internal structure,
+permissions, and symlinks -- with `.tgz`/`.tar.gz`; see the symlink
+note under Compression for `.zip`). Useful for template files or
+accompanying Python scripts that belong with the run but are not run
+output and shouldn't be subject to per-file iteration logic at all.
+
+```
+python mt_archive_run.py run --recursive --always-include-dirs templates python scripts
+```
+
+Example directory:
+```
+run/
+  model_iter0.dat ... model_iter50.dat
+  plots/            <- excluded entirely (--exclude-dirs)
+    misfit_iter30.png
+  templates/        <- not scanned, archived untouched (--always-include-dirs)
+    control_template_iter0.dat
+  python/           <- not scanned, archived untouched (--always-include-dirs)
+    postprocess.py
+```
+
+Here `plots/misfit_iter30.png` never appears anywhere (not scanned,
+not deleted, not archived). `templates/` and `python/` are likewise
+never scanned -- `control_template_iter0.dat` is never evaluated
+against the iteration pattern, so it's neither "kept" nor "deleted" in
+the usual sense -- but both directories are added to the archive in
+their entirety, exactly as they are on disk.
 
 ---
 
@@ -262,8 +336,10 @@ Caveats:
 | `--keep-n-high` | Number of highest iterations to keep |
 | `--recursive` | Scan subdirectories |
 | `--delete` | Actually delete files (otherwise dry-run) |
-| `--compress` | Output archive path |
+| `--compress` | Output archive path (`.zip`, `.tgz`, `.tar.gz`) |
 | `--no-root` | Do not include leading directory in archive |
+| `--exclude-dirs` | Subdirectory names (case-insensitive) to skip entirely when `--recursive` is set: not scanned, not deleted, not archived. Default: `plots` |
+| `--always-include-dirs` | Subdirectory names (case-insensitive) that are never scanned (like `--exclude-dirs`), but are added to the compressed archive untouched, as whole directories, when `--recursive` is set. Default: `templates python` |
 
 ---
 
@@ -303,6 +379,8 @@ Created with the help of ChatGPT (GPT-5 Thinking) on 2026-04-07
 | 2026-04-07 | vrath / ChatGPT (GPT-5 Thinking) | Created. |
 | 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_archive_run_summary.md` output after CLI argument parsing: writes the resolved parameters (`directory`, `keep_n_low`, `keep_n_high`, `recursive`, `delete`, `compress`, `no_root`), script path, and run date/time via a self-contained, stdlib-only helper. |
 | 2026-09-11 | Claude Sonnet 5 (Anthropic) | HDF5 support: removed the blanket `.h5` suffix protection and replaced it with exact-filename protection for `mesh.h5`, `rough.h5`, `jac.h5`; `iterX.h5` is now matched by the iteration regex like `iterX.dat`. Fixed iteration keep-selection to be grouped per containing directory instead of pooled globally, so `--recursive` gives correct results when run above an ensemble of run subdirectories with differing iteration counts. |
+| 2026-09-11 | Claude Sonnet 5 (Anthropic) | Added `--exclude-dirs` (default: `plots`) to prune whole subdirectories from the `--recursive` walk (not scanned, not deleted, not archived), and `--always-include-dirs` (default: `templates python`) to always fully protect and include whole subdirectories in the archive. Added a printed warning when `--compress` targets a `.zip` file, since `zipfile` dereferences symlinks (duplicating target content) and fails outright on broken symlinks, whereas `.tgz`/`.tar.gz` (`tarfile`) preserves symlinks -- including broken ones -- as real symlink entries; zip writing now also skips an unstorable file with a message instead of aborting the whole archive. |
+| 2026-09-11 | Claude Sonnet 5 (Anthropic) | Corrected `--always-include-dirs`: these directories are now never scanned at all (like `--exclude-dirs`), rather than scanned file-by-file and marked protected; each is located as a whole and added to the archive untouched via a recursive directory add. |
 
 **Note on AI assistance:** this script and README were produced with the
 help of AI tools (ChatGPT and Claude, see table above) and have not
