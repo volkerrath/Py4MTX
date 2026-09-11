@@ -77,17 +77,12 @@ from data_proc import make_collection
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-# WORK_DIR   = "/home/vrath/Py4MTX/py4mt/data/rto/ubinas/edi/proc/"
-# COLL_FILE  = WORK_DIR + "Ubinas_collection.npz"
 
-WORK_DIR   = "/home/vrath/work/MT_Data/Tacna/NEW/edis_26b/proc/"
-COLL_FILE  = WORK_DIR + "TacnaProf_collection.npz"
-
-WORK_DIR = "/home/vrath/MT_Data/TEST/edis_exp_interp/proc/"
-COLL_FILE  = WORK_DIR + "Review_collection.npz"
+WORK_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/"
+COLL_FILE  = WORK_DIR + "annecy_collection.npz"
 PLOT_DIR   = WORK_DIR + "../plots/"
 DATA_DIR   = WORK_DIR                  # NPZ averages written here
-NAME_STR   = "Review_std"
+NAME_STR   = "Annecy"
 PLOT_FORMAT = [".pdf", ".jpg"]
 
 # --- Collection source ------------------------------------------------------
@@ -97,8 +92,8 @@ PLOT_FORMAT = [".pdf", ".jpg"]
 #   in-memory directly from an EDI directory via data_proc.make_collection()
 #   (Zdet/Zssq/Zavg computed on the fly). Optionally cache the result to
 #   COLL_FILE by leaving SAVE_COLLECTION = True.
-BUILD_FROM_EDI  = False
-EDI_DIR         = "/home/vrath/MT_Data/TEST/edis_exp_interp/"
+BUILD_FROM_EDI  = True
+EDI_DIR         = WORK_DIR +"edi_files"
 SAVE_COLLECTION = True   # only used when BUILD_FROM_EDI = True
 
 # Which quantities to process and plot

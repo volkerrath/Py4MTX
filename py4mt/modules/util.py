@@ -3230,3 +3230,276 @@ def hashin_shtrikman_n_phase(
     )
 
 
+def inspect_hdf5(filename, show_data=False, max_elements=20):
+    """
+    Inspect the structure and contents of an HDF5 file.
+
+    Recursively prints all groups and datasets. For datasets, the shape,
+    data type, and attributes are displayed. Dataset values can optionally
+    be printed when the total number of elements does not exceed
+    ``max_elements``.
+
+    Parameters
+    ----------
+    filename : str or pathlib.Path
+        Path to the HDF5 file.
+    show_data : bool, optional
+        If True, print values of sufficiently small datasets.
+        Default is False.
+    max_elements : int, optional
+        Maximum number of elements for which dataset values are printed.
+        Default is 20.
+
+    Returns
+    -------
+    None
+
+    Author: Volker Rath (DIAS)
+    Created with the help of ChatGPT (GPT-5 Thinking) on 2026-09-10
+    """
+    def _print_attributes(obj, indent):
+        """
+        Print all HDF5 attributes associated with an object.
+
+        Parameters
+        ----------
+        obj : h5py.Group or h5py.Dataset
+            HDF5 object whose attributes are printed.
+        indent : str
+            Indentation string used for formatted output.
+
+        Returns
+        -------
+        None
+        """
+        for key, value in obj.attrs.items():
+            print(f"{indent}@{key} = {value}")
+
+    def _inspect(name, obj):
+        """
+        Print information about one HDF5 group or dataset.
+
+        Parameters
+        ----------
+        name : str
+            Full HDF5 path of the object.
+        obj : h5py.Group or h5py.Dataset
+            HDF5 object being inspected.
+
+        Returns
+        -------
+        None
+        """
+        depth = name.count("/")
+        indent = "    " * depth
+
+        if isinstance(obj, h5py.Group):
+            print(f"{indent}[GROUP] {name}/")
+            _print_attributes(obj, indent + "    ")
+
+        elif isinstance(obj, h5py.Dataset):
+            print(
+                f"{indent}[DATASET] {name} "
+                f"shape={obj.shape}, dtype={obj.dtype}"
+            )
+
+            _print_attributes(obj, indent + "    ")
+
+            if show_data and obj.size <= max_elements:
+                print(f"{indent}    data = {obj[()]}")
+
+
+    with h5py.File(filename, "r") as hdf:
+        print(f"HDF5 file: {filename}")
+
+        _print_attributes(hdf, "    ")
+
+        if len(hdf) == 0:
+            print("    <empty>")
+            return
+
+        hdf.visititems(_inspect)
+
+def load_hdf5(filename, items=None, flat=False):
+    """
+    Load all or selected contents of an HDF5 file.
+
+    By default, the HDF5 group hierarchy is preserved as nested Python
+    dictionaries. With ``flat=True``, datasets are returned in a flat
+    dictionary using their complete HDF5 paths as keys.
+
+    Parameters
+    ----------
+    filename : str or pathlib.Path
+        Path to the HDF5 file.
+    items : str or sequence of str, optional
+        HDF5 paths to load. If None, all datasets are loaded.
+
+        A single dataset or group may be specified as a string, for example
+        ``"stations/UBI01/Z"`` or ``"stations/UBI01"``.
+
+        Multiple datasets or groups may be specified as a sequence, for
+        example ``["stations/UBI01/Z", "stations/UBI02/Z"]``.
+
+        Selecting a group loads all datasets below that group.
+    flat : bool, optional
+        If False, preserve the HDF5 hierarchy as nested dictionaries.
+        If True, return a flat dictionary whose keys are complete HDF5
+        dataset paths. Default is False.
+
+    Returns
+    -------
+    data : dict
+        Dictionary containing the requested HDF5 datasets.
+
+        With ``flat=False``::
+
+            {
+                "stations": {
+                    "UBI01": {
+                        "freq": array(...),
+                        "Z": array(...)
+                    }
+                }
+            }
+
+        With ``flat=True``::
+
+            {
+                "stations/UBI01/freq": array(...),
+                "stations/UBI01/Z": array(...)
+            }
+
+    Raises
+    ------
+    KeyError
+        If a requested HDF5 path does not exist.
+    TypeError
+        If ``items`` has an invalid type.
+
+    Author: Volker Rath (DIAS)
+    Created with the help of ChatGPT (GPT-5 Thinking) on 2026-09-10
+    """
+
+    def _insert_nested(data, path, value):
+        """
+        Insert a value into a nested dictionary using an HDF5 path.
+
+        Parameters
+        ----------
+        data : dict
+            Dictionary receiving the value.
+        path : str
+            Slash-separated HDF5 dataset path.
+        value : object
+            Dataset value to insert.
+
+        Returns
+        -------
+        None
+        """
+        parts = path.strip("/").split("/")
+        target = data
+
+        for part in parts[:-1]:
+            target = target.setdefault(part, {})
+
+        target[parts[-1]] = value
+
+    def _read_group(group, data, prefix=""):
+        """
+        Recursively read all datasets below an HDF5 group.
+
+        Parameters
+        ----------
+        group : h5py.Group
+            HDF5 group to traverse.
+        data : dict
+            Output dictionary.
+        prefix : str, optional
+            HDF5 path prefix of the current group.
+
+        Returns
+        -------
+        None
+        """
+        for name, obj in group.items():
+            path = f"{prefix}/{name}" if prefix else name
+
+            if isinstance(obj, h5py.Group):
+                _read_group(obj, data, path)
+
+            elif isinstance(obj, h5py.Dataset):
+                value = obj[()]
+
+                if flat:
+                    data[path] = value
+                else:
+                    _insert_nested(data, path, value)
+
+    def _read_item(hdf, path, data):
+        """
+        Read one requested HDF5 dataset or group.
+
+        Parameters
+        ----------
+        hdf : h5py.File
+            Open HDF5 file.
+        path : str
+            Path of the requested object.
+        data : dict
+            Output dictionary.
+
+        Returns
+        -------
+        None
+        """
+        path = path.strip("/")
+
+        if not path:
+            raise ValueError("Empty HDF5 item path")
+
+        if path not in hdf:
+            raise KeyError(
+                f"HDF5 item '{path}' not found in '{filename}'"
+            )
+
+        obj = hdf[path]
+
+        if isinstance(obj, h5py.Dataset):
+            value = obj[()]
+
+            if flat:
+                data[path] = value
+            else:
+                _insert_nested(data, path, value)
+
+        elif isinstance(obj, h5py.Group):
+            _read_group(obj, data, path)
+
+    if items is None:
+        requested = None
+
+    elif isinstance(items, str):
+        requested = [items]
+
+    else:
+        try:
+            requested = list(items)
+        except TypeError as exc:
+            raise TypeError(
+                "items must be None, a string, or a sequence of strings"
+            ) from exc
+
+    data = {}
+
+    with h5py.File(filename, "r") as hdf:
+
+        if requested is None:
+            _read_group(hdf, data)
+
+        else:
+            for path in requested:
+                _read_item(hdf, path, data)
+
+    return data

@@ -70,7 +70,7 @@ print(titstrng + "\n\n")
 #  Configuration
 # =============================================================================
 # WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_10_LC/"
-WORK_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/lcurve/"
+WORK_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/lcurves/lcurve100/"
 PLOT_NAME = WORK_DIR + "Annecy_L-curve"
 PLOT_WHAT = "nrms"  # 'nrms' or 'misfit'
 PLOT_TITLE = r"Annecy | ini = 100 $\Omega \cdot m$ " #"| distcorr"
@@ -82,9 +82,9 @@ PLOT_LOG_X = False
 PLOT_LOG_Y = False
 
 #: x-axis limits [min, max]; set to None for matplotlib auto-scaling.
-PLOT_XLIM = [0., 40000.] # None   # e.g. [0.0, 1e6]
+PLOT_XLIM = [-1000., 50000.] # None   # e.g. [0.0, 1e6]
 #: y-axis limits [min, max]; set to None for matplotlib auto-scaling.
-PLOT_YLIM = [0.5, 1.5] # None   # e.g. [0.9, 5.0]
+PLOT_YLIM = [0.4, 1.5] # None   # e.g. [0.9, 5.0]
 
 #: Optional scaling factor for roughness (x-axis data divided by this value).
 #: Shown as "x10^n" appended to the axis label. Set to None or 1 to disable.
@@ -164,7 +164,7 @@ def _scale_suffix(scale):
         return ""
     exponent = -np.log10(scale)
     if np.isclose(exponent, np.round(exponent)):
-        return fr" $\times\,10^{{{int(np.round(exponent))}}}$"
+        return fr" $/ 10^{{{int(np.round(exponent))}}}$"
     return fr" $\times\,{1/scale:g}$"
 
 
