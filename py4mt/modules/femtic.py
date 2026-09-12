@@ -113,6 +113,26 @@ Modified: 2026-09-08 by Claude Sonnet 5 (Anthropic) — added two functions
     Geophysical Prospecting, doi:10.1111/1365-2478.13068. Both consumed
     by femtic_ens_post.py's new COMPUTE_SENS/COMPUTE_SIMRC pipeline; see
     femtic_ens_post_readme.md.
+Modified: 2026-09-11 by Claude Sonnet 5 (Anthropic) — added
+    convert_resistivity_block_to_anisotropic(), a helper that converts a
+    v4 (isotropic-only) resistivity_block_iterX.dat into v5 (anisotropic)
+    format for use with anisotropy-capable FEMTIC builds. By default every
+    region is re-written as v5 aniso_type 0 (isotropic) with the same
+    resistivity, so the file is a pure format upgrade; optionally, selected
+    region indices can be marked transverse-isotropic (type 1) or generally
+    anisotropic (type 2) with caller-supplied rhoYY/rhoZZ ratios, rotation
+    angles, and fix flags. Reuses the existing _parse_region_line_v4 /
+    _format_region_line_v5 / _ANISO_* infrastructure (see the 2026-06-22
+    changelog entry). Also exposed as CLI subcommand
+    "iso-to-aniso-block". This code is AI-generated (Claude, Anthropic) and
+    should be reviewed before production use.
+
+    IMPORTANT CAVEAT: the anisotropic region-line layout below was
+    reverse-engineered from the two example files and the manual slides
+    shipped in FemticAniso.zip (Manual_Of_FEMTIC_Anisotropic.pdf), not from
+    FEMTIC's own source code. Please double-check the written file against
+    a fresh FEMTIC-anisotropic run (or against the Anisotropic/ example)
+    before trusting it in production.
 """
 from __future__ import annotations
 
@@ -1110,6 +1130,197 @@ def insert_model(
             f"insert_model: fmt={fmt}, nreg={nreg}, ocean_present={ocean_present}, "
             f"fixed={n_fixed}, free={n_free}."
         )
+
+
+def convert_resistivity_block_to_anisotropic(
+    model_file_in: str | Path,
+    model_file_out: str | Path,
+    *,
+    aniso_regions: Sequence[int] | None = None,
+    aniso_type: int = _ANISO_TI,
+    rhoYY_ratio: float = 1.0,
+    rhoZZ_ratio: float = 1.0,
+    strike: float = 0.0,
+    dip: float = 0.0,
+    slant: float = 0.0,
+    fix_strike: bool = True,
+    fix_dip: bool = True,
+    fix_slant: bool = True,
+    fix_rho_from_flag: bool = True,
+    out: bool = True,
+) -> Path:
+    """Convert a v4 (isotropic-only) resistivity block to v5 (anisotropic) format.
+
+    Author: Claude (Anthropic). Generated 2026-09-11 for Volker Rath (DIAS).
+    AI-generated code — please review before production use (see the
+    IMPORTANT CAVEAT below and the matching module-docstring changelog entry).
+
+    FEMTIC's anisotropic build reads ``resistivity_block_iterX.dat`` in the
+    "v5" per-region layout (``ireg  aniso_type  ...``, see
+    :func:`_parse_region_line_v5` / :func:`_format_region_line_v5`) instead
+    of the plain isotropic "v4" layout (``ireg  rho  rho_lo  rho_hi  n  flag``)
+    used by the standard (non-anisotropic) build. This helper rewrites a
+    v4 file into v5 so it can be fed to an anisotropy-capable FEMTIC build.
+
+    By default (``aniso_regions=None``) this is a **pure format conversion**:
+    every region is written with ``aniso_type=0`` (v5-isotropic) and the same
+    resistivity, bounds, and fix flag as in the input file — the model is
+    physically unchanged, only the file layout changes. This matches how the
+    FEMTIC-anisotropic example files were derived from their isotropic
+    originals (mesh.dat/observe.dat/element→region mapping identical;
+    only the resistivity-parameter section reformatted).
+
+    Passing ``aniso_regions`` additionally marks the given region indices as
+    transverse-isotropic (``aniso_type=1``, the default) or generally
+    anisotropic (``aniso_type=2``), using the same ``rhoXX`` as the original
+    isotropic value, ``rhoYY = rhoXX * rhoYY_ratio`` (and, for general
+    anisotropy, ``rhoZZ = rhoXX * rhoZZ_ratio``), and the given rotation
+    angles. With the defaults (``rhoYY_ratio=rhoZZ_ratio=1.0``,
+    ``strike=dip=slant=0.0``) the marked regions remain numerically
+    isotropic but are flagged as anisotropic cell types — exactly how the
+    shipped ``Anisotropic/resistivity_block_iter0.dat`` example marks its
+    boundary regions, presumably so that they can later be perturbed away
+    from isotropy (e.g. by hand or in a subsequent inversion step) without a
+    further file-format change.
+
+    Parameters
+    ----------
+    model_file_in
+        Path to a v4 (isotropic) ``resistivity_block_iterX.dat``.
+    model_file_out
+        Path to write the v5 (anisotropic-format) file to.
+    aniso_regions
+        Region indices (0-based, matching the file's own numbering) to mark
+        as anisotropic. ``None`` (default) converts the format only, leaving
+        every region at ``aniso_type=0``.
+    aniso_type
+        ``_ANISO_TI`` (1, transverse isotropy) or ``_ANISO_GA`` (2, general
+        anisotropy) — applied to every region listed in ``aniso_regions``.
+    rhoYY_ratio, rhoZZ_ratio
+        Multiplicative ratios applied to the original (isotropic) resistivity
+        to obtain ``rhoYY`` and ``rhoZZ`` for marked regions. ``rhoZZ_ratio``
+        is only used when ``aniso_type == _ANISO_GA``.
+    strike, dip, slant
+        Rotation angles in degrees applied to marked regions. ``slant`` is
+        only used when ``aniso_type == _ANISO_GA``.
+    fix_strike, fix_dip, fix_slant
+        Whether the corresponding rotation angle is held fixed (not
+        inverted) for marked regions. ``fix_slant`` is only used for
+        ``_ANISO_GA``.
+    fix_rho_from_flag
+        If True (default), ``fix_rhoXX``/``fix_rhoYY``(``/fix_rhoZZ``) for
+        marked regions are copied from the original v4 ``flag`` column
+        (0 = free, 1 = fixed), matching the input file's own fixed/free
+        bookkeeping. If False, the principal resistivities of marked
+        regions are always left free (0) regardless of the input flag.
+    out
+        If True, print a short summary line.
+
+    Returns
+    -------
+    Path
+        ``Path(model_file_out)``.
+
+    Raises
+    ------
+    ValueError
+        If ``model_file_in`` is already in v5 format, if ``aniso_type`` is
+        not ``_ANISO_TI``/``_ANISO_GA``, or if ``aniso_regions`` contains an
+        index outside ``[0, nreg)``.
+    """
+    if aniso_type not in (_ANISO_TI, _ANISO_GA):
+        raise ValueError(
+            f"convert_resistivity_block_to_anisotropic: aniso_type must be "
+            f"_ANISO_TI ({_ANISO_TI}) or _ANISO_GA ({_ANISO_GA}), got {aniso_type!r}."
+        )
+
+    in_path = Path(model_file_in)
+    out_path = Path(model_file_out)
+
+    # Read the entire input file into memory first (mirrors insert_model's
+    # approach) so that in-place conversion (model_file_out == model_file_in)
+    # cannot truncate the source before it has been fully parsed.
+    with in_path.open("r", encoding="utf-8", errors="replace") as fin:
+        lines = fin.readlines()
+
+    if not lines:
+        raise ValueError(f"convert_resistivity_block_to_anisotropic: empty file: {in_path}")
+
+    header = lines[0]
+    hdr_parts = header.split()
+    if len(hdr_parts) < 2:
+        raise ValueError(f"Invalid resistivity block header: {hdr_parts!r}")
+    nelem = int(hdr_parts[0])
+    nreg = int(hdr_parts[1])
+
+    if nreg <= 0:
+        raise ValueError("No regions in resistivity block (nreg<=0).")
+
+    elem_lines = lines[1 : 1 + nelem]
+    region_start = 1 + nelem
+    region_lines = lines[region_start : region_start + nreg]
+    if len(region_lines) != nreg:
+        raise ValueError(
+            f"Unexpected EOF while reading region lines: expected {nreg}, got {len(region_lines)}."
+        )
+
+    fmt = _detect_block_format(region_lines[0])
+    if fmt == "v5":
+        raise ValueError(
+            f"convert_resistivity_block_to_anisotropic: {in_path} is already "
+            "in v5 (anisotropic) format — nothing to convert."
+        )
+
+    aniso_set: set[int] = set()
+    if aniso_regions is not None:
+        aniso_set = {int(r) for r in aniso_regions}
+        bad = sorted(r for r in aniso_set if not (0 <= r < nreg))
+        if bad:
+            raise ValueError(
+                f"convert_resistivity_block_to_anisotropic: aniso_regions "
+                f"contains out-of-range indices for nreg={nreg}: {bad}."
+            )
+
+    with out_path.open("w", encoding="utf-8") as fout:
+        fout.write(header)
+        for line in elem_lines:
+            fout.write(line)
+
+        for i in range(nreg):
+            ireg, rho, lo, hi, _n, flag = _parse_region_line_v4(region_lines[i])
+            if ireg != i:
+                raise ValueError(f"Expected region index {i} at line {i}, got {ireg}.")
+
+            if i not in aniso_set:
+                d = dict(
+                    ireg=ireg, aniso_type=_ANISO_ISO,
+                    rhoXX=rho, rhoYY=rho, rhoZZ=rho,
+                    strike=0.0, dip=0.0, slant=0.0,
+                    rho_lo=lo, rho_hi=hi, flag=flag,
+                    fix_rhoXX=0, fix_rhoYY=0, fix_rhoZZ=0,
+                    fix_strike=0, fix_dip=0, fix_slant=0,
+                )
+            else:
+                fix_rho = int(flag) if fix_rho_from_flag else 0
+                d = dict(
+                    ireg=ireg, aniso_type=int(aniso_type),
+                    rhoXX=rho, rhoYY=rho * rhoYY_ratio, rhoZZ=rho * rhoZZ_ratio,
+                    strike=float(strike), dip=float(dip), slant=float(slant),
+                    rho_lo=lo, rho_hi=hi, flag=flag,
+                    fix_rhoXX=fix_rho, fix_rhoYY=fix_rho, fix_rhoZZ=fix_rho,
+                    fix_strike=int(fix_strike), fix_dip=int(fix_dip), fix_slant=int(fix_slant),
+                )
+
+            fout.write(_format_region_line_v5(d) + "\n")
+
+    if out:
+        print(
+            f"convert_resistivity_block_to_anisotropic: wrote {out_path} "
+            f"(nelem={nelem}, nreg={nreg}, aniso_type={aniso_type}, "
+            f"marked_anisotropic={len(aniso_set)})."
+        )
+
+    return out_path
 
 
 # ============================================================================
@@ -6550,6 +6761,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     - femtic-to-npz
     - npz-to-vtk
     - npz-to-femtic
+    - iso-to-aniso-block
     - edi-to-observe
     """
     import argparse
@@ -6707,6 +6919,37 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         help="If set, also modify elements in fixed regions (NOT recommended).",
     )
 
+    # iso-to-aniso-block
+    p_i2a = sub.add_parser(
+        "iso-to-aniso-block",
+        help="Convert a v4 (isotropic) resistivity_block_iterX.dat to v5 (anisotropic) format.",
+    )
+    p_i2a.add_argument("--in", dest="block_in", required=True, help="Input v4 resistivity block.")
+    p_i2a.add_argument("--out", dest="block_out", required=True, help="Output v5 resistivity block.")
+    p_i2a.add_argument(
+        "--aniso-regions",
+        nargs="+",
+        type=int,
+        default=None,
+        metavar="IREG",
+        help="Region indices to mark anisotropic (default: none — format conversion only).",
+    )
+    p_i2a.add_argument(
+        "--aniso-type",
+        type=int,
+        default=1,
+        choices=[1, 2],
+        help="1=transverse isotropy (default), 2=general anisotropy.",
+    )
+    p_i2a.add_argument("--rhoyy-ratio", type=float, default=1.0, help="rhoYY = rhoXX * ratio (default 1.0).")
+    p_i2a.add_argument("--rhozz-ratio", type=float, default=1.0, help="rhoZZ = rhoXX * ratio (general anisotropy only).")
+    p_i2a.add_argument("--strike", type=float, default=0.0, help="Strike angle in degrees (default 0.0).")
+    p_i2a.add_argument("--dip", type=float, default=0.0, help="Dip angle in degrees (default 0.0).")
+    p_i2a.add_argument("--slant", type=float, default=0.0, help="Slant angle in degrees (general anisotropy only).")
+    p_i2a.add_argument("--free-strike", action="store_true", help="Leave strike free (default: fixed).")
+    p_i2a.add_argument("--free-dip", action="store_true", help="Leave dip free (default: fixed).")
+    p_i2a.add_argument("--free-slant", action="store_true", help="Leave slant free (default: fixed).")
+
     # edi-to-observe
     p_e2o = sub.add_parser(
         "edi-to-observe",
@@ -6842,6 +7085,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             out=True,
         )
         print("Wrote NPZ:", args.npz_out)
+        return 0
+
+    if args.cmd == "iso-to-aniso-block":
+        convert_resistivity_block_to_anisotropic(
+            args.block_in,
+            args.block_out,
+            aniso_regions=args.aniso_regions,
+            aniso_type=args.aniso_type,
+            rhoYY_ratio=args.rhoyy_ratio,
+            rhoZZ_ratio=args.rhozz_ratio,
+            strike=args.strike,
+            dip=args.dip,
+            slant=args.slant,
+            fix_strike=not args.free_strike,
+            fix_dip=not args.free_dip,
+            fix_slant=not args.free_slant,
+            out=True,
+        )
         return 0
 
     if args.cmd == "edi-to-observe":

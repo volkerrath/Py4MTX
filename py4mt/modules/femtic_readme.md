@@ -30,6 +30,10 @@ and all sampling helpers live exclusively in `ensembles.py`.
   C′ matrices.
 - **Resistivity-block model workflow** — a clean 3-step read → NPZ → modify →
   write pipeline for `resistivity_block_iterX.dat`.
+- **Isotropic → anisotropic block conversion** — convert a v4 (isotropic-only)
+  `resistivity_block_iterX.dat` to v5 (anisotropic) format, optionally
+  marking selected regions transverse-isotropic or generally anisotropic
+  (`convert_resistivity_block_to_anisotropic`).
 - **Mesh I/O** — parse FEMTIC `mesh.dat` tetrahedral meshes.
 - **NPZ ↔ VTK / VTU** — convert NPZ model files for ParaView / PyVista.
 - **NPZ ↔ NetCDF / HDF5** — CF-compliant and HDF5 export/import.
@@ -162,6 +166,18 @@ python femtic.py npz-to-femtic \
     --mesh-out mesh_reconstructed.dat \
     --rho-block-out resistivity_block_iter0_reconstructed.dat
 
+# Pure v4 -> v5 format conversion (all regions stay isotropic)
+python femtic.py iso-to-aniso-block \
+    --in resistivity_block_iter0.dat \
+    --out resistivity_block_iter0_aniso.dat
+
+# Also mark selected regions transverse-isotropic (rhoXX = rhoYY, angles fixed at 0)
+python femtic.py iso-to-aniso-block \
+    --in resistivity_block_iter0.dat \
+    --out resistivity_block_iter0_aniso.dat \
+    --aniso-regions 257 258 259 \
+    --aniso-type 1
+
 python femtic.py edi-to-observe SITE01.edi SITE02.edi \
     --xy-csv positions.csv \
     --out observe.dat
@@ -182,6 +198,7 @@ python femtic.py edi-to-observe SITE01.edi SITE02.edi \
 | `observe_to_site_viz_list()` | Read observe.dat and return per-site dicts with Z, rhoa, phase. |
 | `modify_data()`       | Add Gaussian perturbations to observation data.                  |
 | `insert_model()`      | Write sampled log₁₀ρ into a resistivity block file.     |
+| `convert_resistivity_block_to_anisotropic()` | Convert a v4 (isotropic) resistivity block to v5 (anisotropic) format; optionally mark regions TI/GA. |
 | `read_distortion_file()` | Read FEMTIC galvanic distortion file.                |
 | `read_resistivity_block()` | Parse resistivity block file → dict of arrays.     |
 | `tet_volumes()` | Vectorised tetrahedral volume via scalar triple product (nelem,). |
@@ -464,7 +481,7 @@ Optional for visualisation and export:
 
 ## Version / provenance
 
-Updated: 2026-06-22
+Updated: 2026-09-11
 
 ### Changelog (2026-06-22)
 - **v5 (anisotropic) resistivity-block format support** added throughout.
@@ -678,5 +695,58 @@ Both are consumed by `femtic_ens_post.py`'s main scan loop; see
 pipeline (aggregation across members, the combined
 `flag_null_space` diagnostic, `.npz` output keys, and `MOD_STATS`
 plotting).
+
+### Changelog (2026-09-11) --- iso-to-anisotropic resistivity-block conversion
+
+Added by Claude Sonnet 5 (Anthropic), 2026-09-11. AI-generated code --
+please review before production use.
+
+- Added `convert_resistivity_block_to_anisotropic(model_file_in,
+  model_file_out, *, aniso_regions=None, aniso_type=_ANISO_TI,
+  rhoYY_ratio=1.0, rhoZZ_ratio=1.0, strike=0.0, dip=0.0, slant=0.0,
+  fix_strike=True, fix_dip=True, fix_slant=True,
+  fix_rho_from_flag=True, out=True)`: converts a v4 (isotropic-only)
+  `resistivity_block_iterX.dat` into v5 (anisotropic) format, for use
+  with anisotropy-capable FEMTIC builds. Reuses the existing
+  `_parse_region_line_v4()` / `_format_region_line_v5()` / `_ANISO_*`
+  infrastructure from the 2026-06-22 v5-format-support entry above
+  rather than duplicating parsing/formatting logic.
+  - Default (`aniso_regions=None`): pure format conversion -- every
+    region is written as `aniso_type=0` (v5-isotropic) with the same
+    resistivity, bounds, and fix flag as the input; the model is
+    physically unchanged.
+  - `aniso_regions=[...]`: additionally marks the given 0-based region
+    indices as transverse-isotropic (`aniso_type=1`, default) or
+    general anisotropy (`aniso_type=2`), using `rhoYY = rhoXX *
+    rhoYY_ratio` (and, for general anisotropy, `rhoZZ = rhoXX *
+    rhoZZ_ratio`) and the given rotation angles. With the defaults
+    (`*_ratio=1.0`, angles `0.0`), marked regions stay numerically
+    isotropic but are flagged as anisotropic cell types -- matching how
+    the boundary regions in the shipped `FemticAniso.zip` anisotropic
+    example are marked.
+  - Raises `ValueError` on an already-v5 input file, an unsupported
+    `aniso_type`, or an out-of-range region index in `aniso_regions`.
+  - Also exposed as CLI subcommand `iso-to-aniso-block` (`--in`,
+    `--out`, `--aniso-regions`, `--aniso-type`, `--rhoyy-ratio`,
+    `--rhozz-ratio`, `--strike`, `--dip`, `--slant`, `--free-strike`,
+    `--free-dip`, `--free-slant`).
+  - Inserted immediately after `insert_model()`.
+- **Verification**: run against the `Isotropic/resistivity_block_iter0.dat`
+  / `Anisotropic/resistivity_block_iter0.dat` example pair shipped in
+  `FemticAniso.zip` (32 boundary regions marked TI, matching the
+  example). A field-by-field comparison of the parsed v5 structures
+  showed the converted file is identical to the shipped anisotropic
+  example, except for the air region's resistivity (1e9 in the
+  isotropic source vs. 1e10 in the shipped anisotropic example) --
+  an incidental difference specific to that demo file, not a format
+  rule, so it is not reproduced automatically.
+  - **Caveat**: the v5 region-line layout was reverse-engineered from
+    the `FemticAniso.zip` example files and
+    `Manual_Of_FEMTIC_Anisotropic.pdf` slides (not from FEMTIC's C++
+    source), per the 2026-06-22 entry above. Please double-check
+    against a fresh FEMTIC-anisotropic run before relying on it in
+    production.
+- Updated: `Key data-handling functions` table, `Overview`,
+  `Command-line interface` section.
 
 Author: Volker Rath (DIAS)

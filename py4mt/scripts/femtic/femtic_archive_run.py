@@ -282,7 +282,7 @@ def mt_archive_run(
     pattern: str = r"_iter(\d+)",
     protected_tokens: Iterable[str] = ("obs", "ref", "mesh", "iter0", "control"),
     protected_suffixes: Iterable[str] = (".log", ".sh", ".cnv"),
-    protected_filenames: Iterable[str] = ("mesh.h5", "rough.h5", "jac.h5", "jacobian.h5"),
+    protected_filenames: Iterable[str] = ("mesh.h5", "rough.h5", "jac.h5"),
     exclude_dirs: Iterable[str] = ("plots",),
     always_include_dirs: Iterable[str] = ("templates", "python"),
     keep_n_low: int = 1,
