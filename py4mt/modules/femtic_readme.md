@@ -749,4 +749,67 @@ please review before production use.
 - Updated: `Key data-handling functions` table, `Overview`,
   `Command-line interface` section.
 
+### Changelog (2026-09-13) --- results_iterX.h5 readers
+
+Added by Claude Sonnet 5 (Anthropic), 2026-09-13, as the Python side of
+merging FEMTIC's C++ `model_iterX.h5` + `data_iterX.h5` HDF5 output into one
+`results_iterX.h5` per iteration (as sibling `/model`, `/data`, `/distortion`
+groups; `/data` rows also gained `cal_re`/`cal_im` calculated-response
+fields alongside the existing observed `re_val`/`im_val`/`re_err`/`im_err`).
+This resolves the "HDF5 archive schema compatibility with FEMTIC v5" open
+item that `read_h5_sensitivity()`'s 2026-09-08 entry (above) flagged: that
+function's schema was provisional because no writer existed yet at the time.
+
+- Added `read_results_model(source, *, out=True)`: reads the `/model` group
+  -- metadata, `element_block_map`, `blocks`, mesh node/element arrays, and
+  the two sensitivity datasets (`raw`, `volume_normalised`) when present.
+- Added `read_results_data(source, *, out=True, decode_labels=True)`: reads
+  the `/data` group's compound row array, plus (when `decode_labels=True`,
+  the default) human-readable `datatype_name`/`component_name` string
+  arrays derived from the new `RESULTS_H5_DATATYPE_NAMES`/
+  `RESULTS_H5_COMPONENT_NAMES` lookup tables.
+- Added `read_results_distortion(source, *, out=True)`: reads the
+  `/distortion` group (site IDs, `param1..param4`, `isFixed`, and a decoded
+  `type_name`); returns `None` when the run had no distortion estimation
+  (there is no pre-2026-09-13 equivalent for this group).
+- Added `read_results_hdf5(h5_path, *, out=True)`: the umbrella reader --
+  opens the file once and returns `{"model":..., "data":..., "distortion":...}`,
+  each `None` if that group is absent.
+- All four transparently accept either a path or an already-open
+  `h5py.File`/`h5py.Group` (the umbrella reader opens once and passes the
+  handle to each sub-reader), and all four fall back to the older,
+  standalone `model_iterX.h5`/`data_iterX.h5` layout (root-level content, no
+  `/distortion`) when pointed at a pre-2026-09-13 file -- **except** that
+  `read_results_data(decode_labels=True)` (the default) raises `KeyError` on
+  such a file, since `cal_re`/`cal_im` cannot be reconstructed after the
+  fact; pass `decode_labels=False` for observed-data-only access to old
+  files.
+- Updated `read_h5_sensitivity()` (2026-09-08 entry, above) now that the
+  schema it called provisional is settled: `cumsens_key` now defaults to
+  `"raw"` and is looked up automatically under `model/sensitivity` (in
+  addition to the explicit `group` and the file root) even with
+  `group=None`, so `read_h5_sensitivity("results_iter7.h5")` with no other
+  arguments works against FEMTIC's own output; `error_key` now defaults to
+  `"data_errors"` (plural, matching `jacobian.h5`'s real dataset name --
+  the previous default, `"data_error"` singular, never matched any real
+  file).
+- **Verification**: h5py was not installable in the authoring environment
+  (no network access), so this was tested against a minimal in-memory
+  mock of h5py's `File`/`Group`/`Dataset`/`attrs` API surface rather than a
+  real HDF5 file. Covered: the new combined-file schema end-to-end (model +
+  data + distortion, including label decoding); both legacy fallback
+  shapes; the `decode_labels=True` `KeyError` on old data files; and
+  `read_h5_sensitivity()`'s new automatic `model/sensitivity` fallback plus
+  the `jacobian.h5`-with-error-weighting path. One real bug was caught this
+  way and fixed before it shipped: a legacy `data_iterX.h5` has a top-level
+  DATASET literally named `data` (not a group), which the naive "does
+  `h5["data"]` exist" check would have silently mis-detected as the new
+  `/data` GROUP, only to fail confusingly several lines later when the
+  reader tried to index into it like one -- `_h5_find_group()`'s group
+  lookup now explicitly checks `isinstance(..., h5py.Group)` to rule this
+  out. **Not yet re-verified against a real FEMTIC-written file on disk** --
+  run `read_results_hdf5()` against an actual run's output as a final
+  check; it prints a one-line summary of everything it found.
+- Updated: module docstring changelog, `Overview` bullet list.
+
 Author: Volker Rath (DIAS)

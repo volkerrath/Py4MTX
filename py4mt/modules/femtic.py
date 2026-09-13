@@ -17,6 +17,8 @@ This module covers:
 - **Mesh I/O** — parse FEMTIC ``mesh.dat`` tetrahedral meshes.
 - **NPZ ↔ VTK / VTU** — convert NPZ model files for ParaView / PyVista.
 - **NPZ ↔ NetCDF / HDF5** — CF-compliant and HDF5 export/import.
+- **results_iterX.h5 readers** — read_results_hdf5() and its sub-readers for
+  FEMTIC's combined model+data+distortion HDF5 output (Section 6a).
 - **CLI interface** — subcommand-style command-line usage for batch conversion.
 
 Roughness / prior-covariance / matrix tools (``get_roughness``,
@@ -133,6 +135,42 @@ Modified: 2026-09-11 by Claude Sonnet 5 (Anthropic) — added
     FEMTIC's own source code. Please double-check the written file against
     a fresh FEMTIC-anisotropic run (or against the Anisotropic/ example)
     before trusting it in production.
+Modified: 2026-09-13 by Claude Sonnet 5 (Anthropic) — added Section 6a:
+    read_results_model(), read_results_data(), read_results_distortion(),
+    and the umbrella read_results_hdf5(), reading FEMTIC's new
+    results_iterX.h5 (the C++ HDF5 output extension now merges the former
+    model_iterX.h5 + data_iterX.h5 pair into one file, as sibling /model,
+    /data, /distortion groups; /data rows also gained cal_re/cal_im
+    calculated-response fields alongside the existing observed re_val/
+    im_val/re_err/im_err). All four readers transparently fall back to the
+    older, standalone model_iterX.h5/data_iterX.h5 layout (root-level
+    content, no /distortion) when pointed at a pre-2026-09-13 file, EXCEPT
+    that read_results_data(decode_labels=True) (the default) raises
+    KeyError on such a file, since cal_re/cal_im cannot be reconstructed
+    after the fact -- pass decode_labels=False for observed-data-only
+    access to old files. This closes the "HDF5 archive schema
+    compatibility with FEMTIC v5" open item read_h5_sensitivity()'s
+    2026-09-08 entry pointed at: that function's schema was provisional
+    because no writer existed yet; it now defaults to the settled
+    /model/sensitivity/raw (or .../volume_normalised) location in
+    results_iterX.h5 for the precomputed path, tried automatically even
+    with group=None, and to jacobian.h5's real dataset name /data_errors
+    (previously the placeholder "data_error", singular, which never
+    matched any real file) for the derived-from-Jacobian fallback path.
+    Tested against a minimal in-memory h5py-API mock (h5py itself was not
+    installable in the environment this was authored in), covering: the
+    new combined-file schema end-to-end; both legacy fallback shapes,
+    including the case that actually needed the isinstance(..., h5py.Group)
+    guard in _h5_find_group -- a legacy data_iterX.h5 has a top-level
+    DATASET literally named "data" (not a group), which would otherwise be
+    silently mis-detected as the new schema and fail confusingly several
+    lines later; the decode_labels=True KeyError on old files; and
+    read_h5_sensitivity()'s new automatic model/sensitivity fallback plus
+    the jacobian.h5 path with error weighting. Not yet re-verified against
+    a real FEMTIC-written file on disk -- run
+    inspect_file()-style spot checks (or just read_results_hdf5() itself,
+    since it prints a one-line summary of everything it found) against an
+    actual run's output as a final check.
 """
 from __future__ import annotations
 
@@ -3542,59 +3580,78 @@ def hdf5_to_npz(
 def read_h5_sensitivity(
     h5_path: str,
     group: str | None = None,
-    cumsens_key: str = "cumulative_sensitivity",
+    cumsens_key: str = "raw",
     jacobian_key: str = "jacobian",
-    error_key: str | None = "data_error",
+    error_key: str | None = "data_errors",
     normalize: bool = False,
     out: bool = True,
 ) -> np.ndarray:
     """
-    Read (or derive) a per-free-parameter cumulative sensitivity vector
-    from a FEMTIC-style ``model_iterX.h5`` file.
+    Read (or derive) a per-free-parameter cumulative sensitivity vector,
+    either from a FEMTIC ``results_iterX.h5`` file's precomputed
+    ``/model/sensitivity/*`` datasets, or derived from a ``jacobian.h5``
+    file's raw Jacobian.
 
-    Schema (provisional)
-    ---------------------
-    This function assumes an HDF5 layout that does not yet exist anywhere
-    else in the codebase, so it is deliberately configurable via the
-    ``*_key``/``group`` arguments rather than hardcoded. Two alternative
+    Schema
+    ------
+    As of 2026-09-13 this schema is settled (see
+    :mod:`Section 6a <femtic>`/``OutputHDF5.h`` in the FEMTIC C++ source
+    tree) -- this function was originally written against a provisional
+    schema before that pipeline existed; the defaults below now match the
+    real files, and the ``*_key``/``group`` arguments remain configurable
+    for anyone reading an older or customised export. Two alternative
     contents are supported, tried in this order:
 
-    1. A pre-computed 1-D dataset ``cumsens_key`` (default
-       ``"cumulative_sensitivity"``), shape ``(n_free,)`` -- used as-is if
-       present. This is the cheap path if the sensitivity summation is
-       done upstream (e.g. inside FEMTIC or the HDF5-export step) instead
-       of per-post-processing-run.
+    1. A pre-computed 1-D dataset ``cumsens_key`` (default ``"raw"``),
+       shape ``(n_free,)`` -- used as-is if present. FEMTIC itself writes
+       exactly this at ``results_iterX.h5``'s ``/model/sensitivity/raw``
+       (and ``/model/sensitivity/volume_normalised`` as an alternative --
+       pass ``cumsens_key="volume_normalised"`` for the volume-normalised
+       version), whenever sensitivity was computed for that iteration; see
+       ``getSensitivityScalarValuesReduced()``/``outputModelToHDF5()`` in
+       the FEMTIC C++ source. `group` defaults to `None`, which this
+       function's lookup treats as "try the file root, then
+       ``model/sensitivity`` automatically" -- so
+       ``read_h5_sensitivity("results_iter7.h5")`` with no other arguments
+       works out of the box against FEMTIC's own output.
     2. A 2-D Jacobian/sensitivity-matrix dataset ``jacobian_key`` (default
        ``"jacobian"``), shape ``(n_data, n_free)``, with entries
        G_ij = d(log d_i) / d(log m_j) -- the standard FEMTIC sensitivity
        convention (cf. Christiansen & Auken, 2012, Geophysics 77, WB171).
-       The cumulative sensitivity is then computed here as
+       This matches ``jacobian.h5``'s ``/jacobian`` dataset (root-level, no
+       group needed -- see ``outputJacobianToHDF5()``). The cumulative
+       sensitivity is then computed here as
 
            S_j = sum_i |G_ij|                      (error_key is None)
            S_j = sum_i |G_ij| / sigma_i             (error_key given)
 
        i.e. optionally weighted by the inverse of a 1-D per-datum error
-       vector ``error_key`` (default ``"data_error"``, shape
-       ``(n_data,)``), matching the error-normalised sensitivity used by
-       Christiansen & Auken (2012) and Oldenburg & Li (1999). If
-       ``error_key`` is set but the dataset is absent, an unweighted sum
-       is used with a printed warning.
+       vector ``error_key`` (default ``"data_errors"``, shape
+       ``(n_data,)``, matching ``jacobian.h5``'s ``/data_errors``),
+       matching the error-normalised sensitivity used by Christiansen &
+       Auken (2012) and Oldenburg & Li (1999). If ``error_key`` is set but
+       the dataset is absent, an unweighted sum is used with a printed
+       warning.
 
-    Both datasets may live at the HDF5 root or inside a named ``group``
-    (mirroring :func:`npz_to_hdf5`/:func:`hdf5_to_npz`'s ``group``
-    parameter); pass ``group=None`` (default) to look at the root first
-    and fall back to the group only if given.
+    Note that the two paths above normally come from two DIFFERENT files
+    (``results_iterX.h5`` for the precomputed path, ``jacobian.h5`` for the
+    raw-Jacobian path) -- point `h5_path` at whichever file has the
+    information you want; this function does not merge the two.
 
     Parameters
     ----------
     h5_path : str
-        Path to the per-member, per-iteration HDF5 file (e.g.
-        ``model_iter7.h5``).
+        Path to a ``results_iterX.h5`` (precomputed path) or ``jacobian.h5``
+        (raw-Jacobian path) file.
     group : str or None, optional
         HDF5 group containing the sensitivity dataset(s). ``None``
-        (default) reads from the file root.
+        (default) tries the file root first, then ``"model/sensitivity"``
+        (the precomputed dataset's real location in ``results_iterX.h5``).
+        Pass an explicit group to override either lookup.
     cumsens_key : str, optional
-        Dataset name for a pre-computed cumulative sensitivity vector.
+        Dataset name for a pre-computed cumulative sensitivity vector
+        (default ``"raw"``; pass ``"volume_normalised"`` for the
+        volume-normalised alternative FEMTIC also writes).
     jacobian_key : str, optional
         Dataset name for the raw Jacobian/sensitivity matrix, used only
         if ``cumsens_key`` is not found.
@@ -3623,17 +3680,19 @@ def read_h5_sensitivity(
         If ``h5_path`` does not exist.
     KeyError
         If neither ``cumsens_key`` nor ``jacobian_key`` is found (in
-        ``group`` or at the root).
+        ``group``, at the root, or -- for ``cumsens_key`` -- under
+        ``model/sensitivity``).
 
-    Notes
-    -----
-    This schema is provisional: adjust ``group``/``cumsens_key``/
-    ``jacobian_key``/``error_key`` to match whatever layout the actual
-    FEMTIC HDF5 export ends up using once that pipeline is finalised
-    (see femtic_readme.md, "HDF5 archive schema compatibility with
-    FEMTIC v5" -- open item).
+    See Also
+    --------
+    read_results_model : reads the whole ``/model`` group at once (including
+        both sensitivity datasets, when present), if you need more than
+        just the cumulative sensitivity vector.
 
-    Author: Claude Sonnet 5 (Anthropic), 2026-09-08
+    Author: Claude Sonnet 5 (Anthropic), 2026-09-08.
+    Updated 2026-09-13 (schema settled; defaults now match FEMTIC's real
+    ``results_iterX.h5``/``jacobian.h5`` output; automatic
+    ``model/sensitivity`` fallback added) by Claude Sonnet 5 (Anthropic).
     """
     try:
         import h5py
@@ -3644,12 +3703,25 @@ def read_h5_sensitivity(
         raise FileNotFoundError(f"read_h5_sensitivity: {h5_path} not found.")
 
     def _lookup(h5, key):
-        """Try group/key first (if group given), then root/key."""
-        if group is not None and group in h5 and key in h5[group]:
-            return np.asarray(h5[group][key][()])
-        if key in h5:
-            return np.asarray(h5[key][()])
+        """
+        Try, in order: the explicit `group` (if given), the file root, and
+        -- only for the precomputed cumsens_key path, since that's the one
+        real dataset name that moved when model_iterX.h5 was merged into
+        results_iterX.h5 -- "model/sensitivity" (skipped for jacobian_key/
+        error_key, which always live at jacobian.h5's root).
+        """
+        candidate_groups = [group] if group is not None else []
+        candidate_groups.append(None)  # root
+        if key == cumsens_key:
+            candidate_groups.append("model/sensitivity")
+        for grp in candidate_groups:
+            if grp is None:
+                if key in h5:
+                    return np.asarray(h5[key][()])
+            elif grp in h5 and key in h5[grp]:
+                return np.asarray(h5[grp][key][()])
         return None
+
 
     with h5py.File(h5_path, "r") as h5:
         cum_sens = _lookup(h5, cumsens_key)
@@ -3693,6 +3765,449 @@ def read_h5_sensitivity(
               f"[{np.nanmin(cum_sens):.4e}, {np.nanmax(cum_sens):.4e}]")
 
     return cum_sens
+
+
+# ============================================================================
+# SECTION 6a: results_iterX.h5 readers (model + data + distortion)
+# ============================================================================
+#
+# As of 2026-09-13, FEMTIC's C++ HDF5 output (``_HDF5_OUT``, all three active
+# source trees: femtic_v4_src, femtic_v5_src, femtic_dabic_v2.7_src) writes
+# ONE file per iteration, ``results_iterX.h5``, with three sibling top-level
+# groups -- replacing the older, separate ``model_iterX.h5`` +
+# ``data_iterX.h5`` pair (``distortion_iterX.dat`` is still ALSO written
+# separately, unchanged, alongside the new HDF5 embedding). This is the
+# schema that :func:`read_h5_sensitivity` above called "provisional" -- it
+# is now settled; see ``OutputHDF5.h`` (``outputResultsToHDF5``) in the
+# FEMTIC C++ source tree for the authoritative, currently-maintained schema
+# comment, which the readers below mirror field-for-field.
+#
+#   /model/metadata             -- attrs: iterNum, nElem, nNodes, nBlocks,
+#                                   anisotropic (v5 only; absent on v4/dabic)
+#   /model/element_block_map    -- int[nElem]
+#   /model/blocks               -- compound[nBlocks]: blockID, resistivity,
+#                                   rho_min, rho_max, weight, type
+#                                   (+ rho_xx, rho_yy, rho_zz, strike, dip,
+#                                   slant on v5 only)
+#   /model/mesh/node_coords     -- double[nNodes, 3]
+#   /model/mesh/elem_nodes      -- int[nElem, nNodesPerElem]
+#   /model/sensitivity/raw               -- double[nBlocks] (only present
+#   /model/sensitivity/volume_normalised -- double[nBlocks]  when sensitivity
+#                                            was computed this iteration)
+#
+#   /data/metadata   -- attrs: nRows, iterNum, nMissingCalc
+#   /data/data       -- compound[nRows]: freq, datatype, site_id, site_x,
+#                        site_y, site_z, re_val, im_val, re_err, im_err,
+#                        cal_re, cal_im, component (dataset itself absent
+#                        when nRows == 0)
+#
+#   /distortion/metadata -- attrs: iterNum, nRows, type
+#   /distortion/params   -- compound[nRows]: site_id, param1..param4,
+#                            isFixed (group entirely absent when distortion
+#                            estimation was disabled for the run)
+#
+# Older ``model_iterX.h5``/``data_iterX.h5`` files (written before
+# 2026-09-13) are also readable here: they have the same dataset content but
+# at the file root instead of under ``/model``/``/data``, and never have a
+# ``/distortion`` group -- the readers below fall back to the root
+# transparently, so old and new files both work with the same call.
+
+RESULTS_H5_DATATYPE_NAMES: dict[int, str] = {
+    0: "MT",
+    1: "APP_RES_AND_PHS",
+    2: "HTF",
+    3: "VTF",
+    4: "PT",
+    5: "NMT",
+    6: "NMT2",
+    7: "NMT2_APP_RES_AND_PHS",
+}
+
+RESULTS_H5_COMPONENT_NAMES: dict[str, list[str]] = {
+    "MT":                   ["Zxx", "Zxy", "Zyx", "Zyy"],
+    "NMT2":                 ["Zxx", "Zxy", "Zyx", "Zyy"],
+    "APP_RES_AND_PHS":      ["rhoXX", "rhoXY", "rhoYX", "rhoYY",
+                              "phsXX", "phsXY", "phsYX", "phsYY"],
+    "NMT2_APP_RES_AND_PHS": ["rhoXX", "rhoXY", "rhoYX", "rhoYY",
+                              "phsXX", "phsXY", "phsYX", "phsYY"],
+    "HTF":                  ["Txx", "Txy", "Tyx", "Tyy"],
+    "VTF":                  ["Tzx", "Tzy"],
+    "PT":                   ["PTxx", "PTxy", "PTyx", "PTyy"],
+    "NMT":                  ["Yx", "Yy"],
+}
+
+# AnalysisControl::TypeOfDistortion, as written to /distortion/metadata "type"
+RESULTS_H5_DISTORTION_TYPE_NAMES: dict[int, str] = {
+    0: "NO_DISTORTION",
+    1: "ESTIMATE_DISTORTION_MATRIX_DIFFERENCE",
+    2: "ESTIMATE_GAINS_AND_ROTATIONS",
+    3: "ESTIMATE_GAINS_ONLY",
+}
+
+
+def _h5_open_source(source, h5py_module):
+    """
+    Return ``(h5_obj, should_close)`` for `source`, which may be a path
+    (``str``/``Path``) or an already-open ``h5py.File``/``h5py.Group``
+    (the latter lets :func:`read_results_hdf5` open the file once and hand
+    the same handle to each sub-reader).
+    """
+    if isinstance(source, (str, Path)):
+        return h5py_module.File(source, "r"), True
+    return source, False
+
+
+def _h5_find_group(h5, h5py_module, new_name: str, root_markers: Sequence[str]):
+    """
+    Return the group to read from: ``h5[new_name]`` if present AND it is
+    actually an ``h5py.Group`` (current schema, e.g.
+    ``"model"``/``"data"``/``"distortion"``); otherwise `h5` itself if it
+    already looks like that group (pre-2026-09-13 files, whose content sits
+    at the root -- detected via `root_markers`, e.g. ``("metadata",
+    "blocks")`` for the model group); otherwise ``None``.
+
+    The explicit ``isinstance(..., Group)`` check matters for one specific
+    legacy case: the old, standalone ``data_iterX.h5`` wrote its rows to a
+    top-level DATASET literally named ``/data`` (not a group) -- so
+    ``"data" in h5`` is true for such a file, but ``h5["data"]`` is a
+    Dataset, not a Group, and callers here always expect a Group (they index
+    into it with ``g["metadata"]`` etc). Without this check that legacy file
+    would be silently mis-detected as the new schema and then fail with a
+    confusing TypeError several lines later instead of falling through to
+    the root-marker fallback below, where it belongs.
+    """
+    if new_name in h5 and isinstance(h5[new_name], h5py_module.Group):
+        return h5[new_name]
+    if all(marker in h5 for marker in root_markers):
+        return h5
+    return None
+
+
+def read_results_model(source, *, out: bool = True) -> dict:
+    """
+    Read the ``/model`` group of a ``results_iterX.h5`` file (or an older,
+    standalone ``model_iterX.h5``).
+
+    Parameters
+    ----------
+    source : str, Path, h5py.File, or h5py.Group
+        Path to a ``results_iterX.h5``/``model_iterX.h5`` file, or an
+        already-open h5py file/group (as passed internally by
+        :func:`read_results_hdf5`).
+    out : bool, optional
+        Print a one-line summary.
+
+    Returns
+    -------
+    dict with keys:
+        iterNum, nElem, nNodes, nBlocks : int
+        anisotropic : bool or None
+            None if the "anisotropic" attribute is absent (v4/dabic v2.7
+            runs, which have no anisotropic resistivity blocks).
+        element_block_map : ndarray, shape (nElem,)
+        blocks : structured ndarray, shape (nBlocks,)
+            Fields: blockID, resistivity, rho_min, rho_max, weight, type,
+            and (v5 only) rho_xx, rho_yy, rho_zz, strike, dip, slant.
+        node_coords : ndarray, shape (nNodes, 3)
+        elem_nodes : ndarray, shape (nElem, nNodesPerElem)
+        sensitivity_raw, sensitivity_volume_normalised : ndarray or None
+            Shape (nBlocks,) each; None if sensitivity was not computed
+            this iteration (see FEMTIC's ``doesCalculateSensitivity()``).
+
+    Raises
+    ------
+    KeyError
+        If no ``/model`` group (or root-level fallback content) is found.
+
+    Author: Claude Sonnet 5 (Anthropic), 2026-09-13
+    """
+    try:
+        import h5py
+    except Exception as exc:  # pragma: no cover
+        raise ImportError("read_results_model requires the 'h5py' package.") from exc
+
+    h5, should_close = _h5_open_source(source, h5py)
+    try:
+        g = _h5_find_group(h5, h5py, "model", ("metadata", "blocks"))
+        if g is None:
+            raise KeyError(
+                f"read_results_model: no '/model' group (or root-level "
+                f"model content) found in {getattr(h5, 'filename', source)!r}."
+            )
+
+        meta = dict(g["metadata"].attrs)
+        result = {
+            "iterNum": int(meta.get("iterNum", -1)),
+            "nElem": int(meta.get("nElem", 0)),
+            "nNodes": int(meta.get("nNodes", 0)),
+            "nBlocks": int(meta.get("nBlocks", 0)),
+            "anisotropic": bool(meta["anisotropic"]) if "anisotropic" in meta else None,
+            "element_block_map": np.asarray(g["element_block_map"][()]),
+            "blocks": np.asarray(g["blocks"][()]),
+            "node_coords": np.asarray(g["mesh/node_coords"][()]),
+            "elem_nodes": np.asarray(g["mesh/elem_nodes"][()]),
+            "sensitivity_raw": (
+                np.asarray(g["sensitivity/raw"][()]) if "sensitivity" in g else None
+            ),
+            "sensitivity_volume_normalised": (
+                np.asarray(g["sensitivity/volume_normalised"][()])
+                if "sensitivity" in g else None
+            ),
+        }
+    finally:
+        if should_close:
+            h5.close()
+
+    if out:
+        sens_note = ", sensitivity present" if result["sensitivity_raw"] is not None else ""
+        aniso_note = (
+            f", anisotropic={result['anisotropic']}" if result["anisotropic"] is not None else ""
+        )
+        print(f"read_results_model: iter {result['iterNum']}: "
+              f"{result['nElem']} elements, {result['nNodes']} nodes, "
+              f"{result['nBlocks']} blocks{aniso_note}{sens_note}")
+
+    return result
+
+
+def read_results_data(source, *, out: bool = True, decode_labels: bool = True) -> dict:
+    """
+    Read the ``/data`` group of a ``results_iterX.h5`` file (or an older,
+    standalone ``data_iterX.h5``).
+
+    Parameters
+    ----------
+    source : str, Path, h5py.File, or h5py.Group
+        Path to a ``results_iterX.h5``/``data_iterX.h5`` file, or an
+        already-open h5py file/group.
+    out : bool, optional
+        Print a one-line summary (including a warning if `nMissingCalc` > 0).
+    decode_labels : bool, optional
+        If True (default), also return human-readable ``datatype_name`` and
+        ``component_name`` string arrays alongside the raw integer codes
+        (see :data:`RESULTS_H5_DATATYPE_NAMES` / :data:`RESULTS_H5_COMPONENT_NAMES`).
+
+    Returns
+    -------
+    dict with keys:
+        iterNum, nRows, nMissingCalc : int
+            `nMissingCalc` counts rows where no PE reported a calculated
+            value for that datum (should be 0 in a normal run -- see the
+            WARNING logged by FEMTIC itself when this is nonzero).
+        rows : structured ndarray, shape (nRows,)
+            Fields: freq, datatype, site_id, site_x, site_y, site_z,
+            re_val, im_val, re_err, im_err, cal_re, cal_im, component.
+            `re_val`/`im_val` and `re_err`/`im_err` are the OBSERVED value
+            and its standard error; `cal_re`/`cal_im` are the CALCULATED
+            (forward-modelled) response for the same datum -- added
+            2026-09-13, absent from pre-2026-09-13 ``data_iterX.h5`` files
+            (in which case this function raises, since `cal_re`/`cal_im`
+            cannot be reconstructed after the fact).
+        datatype_name, component_name : ndarray of str, shape (nRows,)
+            Only present if `decode_labels` is True and `nRows` > 0.
+
+    Notes
+    -----
+    `cal_im` is 0 (not NaN) for real-valued datatypes (APP_RES_AND_PHS, PT).
+    NaN in `cal_re`/`cal_im` indicates a genuinely missing calculated value
+    for that row (see `nMissingCalc` above), not a real-valued datatype.
+
+    Author: Claude Sonnet 5 (Anthropic), 2026-09-13
+    """
+    try:
+        import h5py
+    except Exception as exc:  # pragma: no cover
+        raise ImportError("read_results_data requires the 'h5py' package.") from exc
+
+    h5, should_close = _h5_open_source(source, h5py)
+    try:
+        g = _h5_find_group(h5, h5py, "data", ("metadata",))
+        if g is None:
+            # Oldest fallback: pre-2026-09-13 data_iterX.h5 kept nRows/iterNum
+            # as attributes directly on the file root, with no /metadata
+            # subgroup at all.
+            if "data" in h5 or ("nRows" in h5.attrs and "iterNum" in h5.attrs):
+                g = h5
+                meta = dict(h5.attrs)
+            else:
+                raise KeyError(
+                    f"read_results_data: no '/data' group (or root-level "
+                    f"data content) found in {getattr(h5, 'filename', source)!r}."
+                )
+        else:
+            meta = dict(g["metadata"].attrs) if "metadata" in g else dict(g.attrs)
+
+        nRows = int(meta.get("nRows", 0))
+        nMissingCalc = int(meta.get("nMissingCalc", 0))
+        rows = np.asarray(g["data"][()]) if "data" in g and nRows > 0 else np.array([])
+
+        result = {
+            "iterNum": int(meta.get("iterNum", -1)),
+            "nRows": nRows,
+            "nMissingCalc": nMissingCalc,
+            "rows": rows,
+        }
+
+        if decode_labels and nRows > 0:
+            if "cal_re" not in rows.dtype.names:
+                raise KeyError(
+                    "read_results_data: this file predates the 2026-09-13 "
+                    "schema change and has no cal_re/cal_im fields -- "
+                    "calculated response values cannot be reconstructed "
+                    "after the fact. Re-run FEMTIC to get a results_iterX.h5 "
+                    "with calculated values, or pass decode_labels=False and "
+                    "ignore cal_re/cal_im if you only need the observed data."
+                )
+            dtype_name = np.array(
+                [RESULTS_H5_DATATYPE_NAMES.get(int(d), f"UNKNOWN({d})") for d in rows["datatype"]]
+            )
+            component_name = np.array([
+                (RESULTS_H5_COMPONENT_NAMES[dt][c]
+                 if dt in RESULTS_H5_COMPONENT_NAMES and c < len(RESULTS_H5_COMPONENT_NAMES[dt])
+                 else f"c{c}")
+                for dt, c in zip(dtype_name, rows["component"])
+            ])
+            result["datatype_name"] = dtype_name
+            result["component_name"] = component_name
+    finally:
+        if should_close:
+            h5.close()
+
+    if out:
+        warn = f"  WARNING: {nMissingCalc} row(s) missing a calculated value!" if result["nMissingCalc"] else ""
+        print(f"read_results_data: iter {result['iterNum']}: {result['nRows']} rows{warn}")
+
+    return result
+
+
+def read_results_distortion(source, *, out: bool = True) -> dict | None:
+    """
+    Read the ``/distortion`` group of a ``results_iterX.h5`` file.
+
+    There is no pre-2026-09-13 equivalent (distortion parameters were only
+    ever written to the text file ``distortion_iterX.dat``, not embedded in
+    HDF5) -- this returns ``None`` whenever the group is absent, which
+    covers both older files and runs with distortion estimation disabled.
+
+    Parameters
+    ----------
+    source : str, Path, h5py.File, or h5py.Group
+        Path to a ``results_iterX.h5`` file, or an already-open h5py
+        file/group.
+    out : bool, optional
+        Print a one-line summary.
+
+    Returns
+    -------
+    dict or None
+        None if the run had no distortion estimation (or predates this
+        group). Otherwise, a dict with keys:
+            iterNum, nRows : int
+            type : int
+                Raw ``AnalysisControl::TypeOfDistortion`` code.
+            type_name : str
+                Human-readable name, see
+                :data:`RESULTS_H5_DISTORTION_TYPE_NAMES`.
+            rows : structured ndarray, shape (nRows,)
+                Fields: site_id, param1, param2, param3, param4, isFixed.
+                Meaning of param1..4 depends on `type_name` -- mirrors
+                ``ObservedData::outputDistortionParams()``
+                (``distortion_iterX.dat``) field-for-field:
+                    ESTIMATE_DISTORTION_MATRIX_DIFFERENCE: Cxx, Cxy, Cyx, Cyy
+                    ESTIMATE_GAINS_AND_ROTATIONS: ExGain, EyGain,
+                        ExRotation(deg), EyRotation(deg)
+                    ESTIMATE_GAINS_ONLY: ExGain, EyGain; param3/4 unused (0.0)
+
+    Author: Claude Sonnet 5 (Anthropic), 2026-09-13
+    """
+    try:
+        import h5py
+    except Exception as exc:  # pragma: no cover
+        raise ImportError("read_results_distortion requires the 'h5py' package.") from exc
+
+    h5, should_close = _h5_open_source(source, h5py)
+    try:
+        g = _h5_find_group(h5, h5py, "distortion", ("metadata", "params"))
+        if g is None:
+            result = None
+        else:
+            meta = dict(g["metadata"].attrs)
+            nRows = int(meta.get("nRows", 0))
+            typeCode = int(meta.get("type", -1))
+            rows = np.asarray(g["params"][()]) if "params" in g and nRows > 0 else np.array([])
+            result = {
+                "iterNum": int(meta.get("iterNum", -1)),
+                "nRows": nRows,
+                "type": typeCode,
+                "type_name": RESULTS_H5_DISTORTION_TYPE_NAMES.get(typeCode, f"UNKNOWN({typeCode})"),
+                "rows": rows,
+            }
+    finally:
+        if should_close:
+            h5.close()
+
+    if out:
+        if result is None:
+            print("read_results_distortion: no /distortion group in this file "
+                  "(distortion estimation disabled, or a pre-2026-09-13 file).")
+        else:
+            print(f"read_results_distortion: iter {result['iterNum']}: "
+                  f"{result['nRows']} rows, type={result['type_name']}")
+
+    return result
+
+
+def read_results_hdf5(h5_path: str | Path, *, out: bool = True) -> dict:
+    """
+    Read a full ``results_iterX.h5`` file: model, data, and (if present)
+    distortion, in one call, opening the file only once.
+
+    Also accepts older, standalone ``model_iterX.h5``/``data_iterX.h5``
+    files for backward compatibility (see :func:`read_results_model` /
+    :func:`read_results_data`); in that case whichever group is absent from
+    the given file comes back as None.
+
+    Parameters
+    ----------
+    h5_path : str or Path
+        Path to the ``results_iterX.h5`` (or legacy ``model_iterX.h5`` /
+        ``data_iterX.h5``) file.
+    out : bool, optional
+        Print a one-line summary (and forward `out` to each sub-reader).
+
+    Returns
+    -------
+    dict with keys "model", "data", "distortion"
+        Each is either the corresponding sub-reader's return value, or
+        None if that group is not present in this file.
+
+    Raises
+    ------
+    FileNotFoundError
+        If `h5_path` does not exist.
+
+    Author: Claude Sonnet 5 (Anthropic), 2026-09-13
+    """
+    try:
+        import h5py
+    except Exception as exc:  # pragma: no cover
+        raise ImportError("read_results_hdf5 requires the 'h5py' package.") from exc
+
+    if not os.path.isfile(h5_path):
+        raise FileNotFoundError(f"read_results_hdf5: {h5_path} not found.")
+
+    with h5py.File(h5_path, "r") as h5:
+        model = read_results_model(h5, out=out) if _h5_find_group(h5, h5py, "model", ("metadata", "blocks")) is not None else None
+        data = read_results_data(h5, out=out) if _h5_find_group(h5, h5py, "data", ("metadata",)) is not None else None
+        distortion = read_results_distortion(h5, out=out)
+
+    if out:
+        print(f"read_results_hdf5: {h5_path} -> "
+              f"model={'yes' if model is not None else 'no'}, "
+              f"data={'yes' if data is not None else 'no'}, "
+              f"distortion={'yes' if distortion is not None else 'no'}")
+
+    return {"model": model, "data": data, "distortion": distortion}
 
 
 def npz_to_netcdf(
