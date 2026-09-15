@@ -50,6 +50,55 @@ Provenance:
                 directories and added to the archive untouched via a
                 recursive directory add, instead of being scanned
                 file-by-file and marked individually protected.
+    2026-09-15  Claude Sonnet 5 (Anthropic)
+                Confirmed/kept the existing extension-agnostic iteration
+                matching (pattern is matched against the filename only,
+                so model_iterN.dat, model_iterN.h5, and any other
+                extension are all treated identically as iteration
+                files -- no code change was needed here, this was
+                already the behavior). Updated the default
+                protected_filenames set from ("mesh.h5", "rough.h5",
+                "jac.h5") to ("mesh.h5", "jacobian.h5", "rough.h5") per
+                request -- jac.h5 is no longer protected by default; if
+                your runs still use that name, pass it explicitly via
+                protected_filenames (no CLI flag exposes this yet).
+                Added an explicit "Files that will be kept" listing,
+                printed during a dry run (i.e. whenever --delete is not
+                given) regardless of whether --compress is also given,
+                so a plain dry run now shows the full kept-file list
+                and not just the per-directory "Kept iterations" line.
+    2026-09-15  Claude Sonnet 5 (Anthropic)  (same-day follow-up)
+                Added support for running directly on top of several
+                individual ensemble run directories via shell wildcards
+                (e.g. ``ensemble/run_*``), instead of only via
+                --recursive from a shared parent. The ``directory``
+                positional argument now accepts one or more paths
+                and/or glob patterns; patterns are expanded internally
+                with the stdlib ``glob`` module too, so a quoted
+                pattern (e.g. ``"ensemble/run_*"``, needed if you don't
+                want your shell to expand it first, or on Windows)
+                works the same as shell-expanded arguments. Each
+                matched directory keeps its own independent
+                keep-lowest/keep-highest iteration selection (same
+                per-containing-directory grouping already used by
+                --recursive), and the archive's relative paths are
+                computed from the matched directories' common parent,
+                so an archive built from ``run_001 run_002`` looks the
+                same as one built with --recursive over their shared
+                parent.
+    2026-09-15  Claude Sonnet 5 (Anthropic)  (second same-day follow-up)
+                Decoupled --compress from --delete: previously,
+                --compress without --delete only printed a "WOULD ADD"
+                preview and never wrote an actual archive file, so a
+                real, on-disk .tgz/.zip required also deleting the
+                source files via --delete. --compress now always
+                writes a real archive containing the kept-file
+                selection, regardless of --delete -- so --compress
+                alone gives a genuine, already-smaller archive while
+                leaving every source file untouched. --delete
+                continues to control only whether the unwanted
+                iteration files are removed from the source
+                directories, entirely independent of archiving.
 
     NOTE: This script was produced with AI assistance (see provenance
     log above). It has not been independently verified for production
@@ -60,6 +109,7 @@ Provenance:
 from __future__ import annotations
 
 import argparse
+import glob as glob_module
 import re
 import tarfile
 import zipfile
@@ -122,6 +172,60 @@ def _normalize_protected_filenames(
     protected_filenames: Iterable[str],
 ) -> tuple[str, ...]:
     return tuple(str(name).lower() for name in protected_filenames)
+
+
+def _expand_directory_args(patterns: Iterable[str]) -> list[Path]:
+    """Turn CLI directory arguments into a de-duplicated list of directory
+    Paths, expanding any glob wildcards (``*``, ``?``, ``[...]``) that
+    survived shell expansion -- e.g. because the pattern was quoted, or
+    because the shell in use (e.g. on Windows) doesn't expand globs
+    itself. Plain literal paths (no wildcard, already a real directory)
+    pass through unchanged. Non-directory matches (stray files caught by
+    a loose pattern) and patterns that match nothing are reported and
+    skipped rather than aborting the whole run.
+    """
+    resolved: list[Path] = []
+    for pat in patterns:
+        matches = sorted(glob_module.glob(pat))
+        if matches:
+            for m in matches:
+                p = Path(m)
+                if p.is_dir():
+                    resolved.append(p)
+                else:
+                    print(f"Skipping non-directory match for {pat!r}: {p}")
+        else:
+            p = Path(pat)
+            if p.is_dir():
+                resolved.append(p)
+            else:
+                print(f"WARNING: no directory matches {pat!r} -- skipping")
+
+    seen: set[Path] = set()
+    unique: list[Path] = []
+    for p in resolved:
+        rp = p.resolve()
+        if rp not in seen:
+            seen.add(rp)
+            unique.append(p)
+    return unique
+
+
+def _common_base_dir(directories: list[Path]) -> Path:
+    """Pick the base directory that archive paths are computed relative
+    to. For a single directory this is that directory itself (unchanged
+    behavior). For several directories (e.g. matched by a wildcard
+    pattern over multiple ensemble runs), it's their common parent, so
+    the archive nests each run under its own name exactly as a
+    --recursive run over that shared parent would.
+    """
+    if len(directories) == 1:
+        return directories[0]
+    try:
+        return Path(os.path.commonpath([str(d) for d in directories]))
+    except ValueError:
+        # e.g. paths on different drives on Windows -- fall back to cwd
+        return Path(".")
 
 
 def _collect_files(
@@ -192,6 +296,22 @@ def _select_kept_iterations(
     return set(unique[:keep_n_low] + unique[-keep_n_high:])
 
 
+def _print_kept_files(
+    final_keep: Iterable[Path], always_include_paths: Iterable[Path] = ()
+) -> None:
+    """Print the full list of files that will be kept (not deleted).
+
+    Called during a dry run so the user can see exactly what survives
+    the keep-lowest/keep-highest + protection rules, independent of
+    whether --compress is also given.
+    """
+    print("\nFiles that will be kept (dry-run, nothing deleted):")
+    for f in sorted(set(final_keep)):
+        print(f"  KEEP {f}")
+    for d in sorted(set(always_include_paths)):
+        print(f"  KEEP (always-included, whole directory) {d}/")
+
+
 def _arcname(filepath: Path, base_dir: Path, include_root: bool) -> Path:
     rel = filepath.relative_to(base_dir)
     return (base_dir.name / rel) if include_root else rel
@@ -234,9 +354,18 @@ def _write_tgz(
 
 
 def _compress(
-    compress_path, files, base_dir: Path, dry_run: bool, include_root: bool,
-    extra_dirs: Iterable[Path] = (),
+    compress_path, files, base_dir: Path, include_root: bool,
+    extra_dirs: Iterable[Path] = (), deleted_source: bool = False,
 ):
+    """Write the compressed archive from the kept-file selection.
+
+    This always writes a real archive when ``compress_path`` is given --
+    independent of whether the caller also deleted the unwanted files
+    from the source directories (``deleted_source``, i.e. ``--delete``
+    was passed). The archive only ever contains the kept-file
+    selection either way, so --compress alone (no --delete) gives a
+    real, smaller archive while leaving every source file untouched.
+    """
     if compress_path is None:
         return
 
@@ -260,13 +389,6 @@ def _compress(
             "entries."
         )
 
-    if dry_run:
-        for f in files:
-            print(f"  WOULD ADD {f}")
-        for d in extra_dirs:
-            print(f"  WOULD ADD (untouched, whole directory) {d}/")
-        return
-
     if name.endswith(".zip"):
         _write_zip(archive_path, files, base_dir, include_root, extra_dirs)
     elif name.endswith(".tgz") or name.endswith(".tar.gz"):
@@ -274,15 +396,23 @@ def _compress(
     else:
         raise ValueError("Unsupported archive format")
 
-    print(f"Archive written: {archive_path}")
+    if deleted_source:
+        print(f"Archive written: {archive_path}")
+    else:
+        print(
+            f"Archive written: {archive_path} "
+            "(source files left untouched -- pass --delete to also "
+            "remove the unwanted iterations from disk)"
+        )
 
 
 def mt_archive_run(
-    directory: str | Path,
+    directory: str | Path | Iterable[str | Path],
     pattern: str = r"_iter(\d+)",
     protected_tokens: Iterable[str] = ("obs", "ref", "mesh", "iter0", "control"),
-    protected_suffixes: Iterable[str] = (".log", ".sh", ".cnv"),
-    protected_filenames: Iterable[str] = ("mesh.h5", "rough.h5", "jac.h5"),
+    protected_suffixes: Iterable[str] = (".sh", ".cnv", ".py"),
+    #protected_suffixes: Iterable[str] = (".log", ".sh", ".cnv"),
+    protected_filenames: Iterable[str] = ("mesh.h5", "jacobian.h5", "rough.h5"),
     exclude_dirs: Iterable[str] = ("plots",),
     always_include_dirs: Iterable[str] = ("templates", "python"),
     keep_n_low: int = 1,
@@ -292,7 +422,17 @@ def mt_archive_run(
     compress_path: str | Path | None = None,
     include_root: bool = True,
 ) -> None:
-    """Clean (and optionally archive) a FEMTIC run directory.
+    """Clean (and optionally archive) one or more FEMTIC run directories.
+
+    ``directory`` accepts a single path, or an iterable of paths --
+    typically several individual ensemble run directories matched by a
+    shell wildcard (e.g. ``run_*``) and passed straight through by
+    argparse. Each directory keeps its own independent
+    keep-lowest/keep-highest selection (see below), the same as
+    --recursive over their shared parent would give; this is the
+    lighter-weight alternative when you already know which run
+    directories you want and don't need a full recursive walk to find
+    them.
 
     Iteration files are matched by ``pattern`` regardless of extension,
     so e.g. ``model_iter12.dat`` and ``model_iter12.h5`` are both treated
@@ -324,12 +464,35 @@ def mt_archive_run(
 
     Both are only meaningful when ``recursive=True``; a non-recursive
     run never looks inside subdirectories in the first place.
+
+    ``dry_run`` (set to False by ``--delete`` on the CLI) controls only
+    whether the unwanted iteration files are actually removed from the
+    source directories. It has no effect on ``compress_path``: if a
+    compress target is given, a real archive is written either way,
+    containing exactly the same kept-file selection. So
+    ``compress_path`` set with ``dry_run=True`` (the default, i.e. no
+    ``--delete``) gives you a genuine, already-smaller archive while
+    leaving every source file exactly as it was.
     """
 
     if keep_n_low < 1 or keep_n_high < 1:
         raise ValueError("keep_n_low and keep_n_high must be >= 1")
 
-    directory = Path(directory)
+    if isinstance(directory, (str, Path)):
+        directories = [Path(directory)]
+    else:
+        directories = [Path(d) for d in directory]
+
+    if not directories:
+        print("No directories to process.")
+        return
+
+    base_dir = _common_base_dir(directories)
+    if len(directories) > 1:
+        print(f"Processing {len(directories)} directories (archive base: {base_dir}):")
+        for d in directories:
+            print(f"  {d}")
+
     regex = re.compile(pattern, re.IGNORECASE)
 
     ptok = _normalize_protected_tokens(protected_tokens)
@@ -341,11 +504,12 @@ def mt_archive_run(
     # always_include_dirs are pruned from the per-file scan just like
     # exclude_dirs -- they are never scanned -- but are located
     # separately below and archived as whole directories, untouched.
-    always_include_paths: list[Path] = (
-        _find_named_dirs(directory, always_dirs, excl_dirs) if recursive else []
-    )
-
-    files = _collect_files(directory, recursive, excl_dirs + always_dirs)
+    always_include_paths: list[Path] = []
+    files: list[Path] = []
+    for d in directories:
+        if recursive:
+            always_include_paths.extend(_find_named_dirs(d, always_dirs, excl_dirs))
+        files.extend(_collect_files(d, recursive, excl_dirs + always_dirs))
 
     matched = []
     protected = []
@@ -363,9 +527,11 @@ def mt_archive_run(
 
     if not matched:
         print("No iteration files found.")
+        if dry_run:
+            _print_kept_files(protected, always_include_paths)
         _compress(
-            compress_path, protected, directory, dry_run, include_root,
-            always_include_paths,
+            compress_path, protected, base_dir, include_root,
+            always_include_paths, deleted_source=not dry_run,
         )
         return
 
@@ -395,6 +561,9 @@ def mt_archive_run(
 
     final_keep = sorted(set(to_keep).union(protected_set))
 
+    if dry_run:
+        _print_kept_files(final_keep, always_include_paths)
+
     if not dry_run:
         for f in to_delete:
             try:
@@ -403,19 +572,40 @@ def mt_archive_run(
                 print(f"FAILED {f}: {e}")
 
     _compress(
-        compress_path, final_keep, directory, dry_run, include_root,
-        always_include_paths,
+        compress_path, final_keep, base_dir, include_root,
+        always_include_paths, deleted_source=not dry_run,
     )
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("directory", nargs="?", default=".")
+    parser.add_argument(
+        "directory", nargs="*", default=["."],
+        help="One or more directories to process, or wildcard patterns "
+             "matching several at once (e.g. 'ensemble/run_*') -- run "
+             "directly on top of individual ensemble runs without "
+             "needing --recursive over their shared parent. Quote a "
+             "pattern if you want this script (rather than your shell) "
+             "to expand it. Default: current directory.",
+    )
     parser.add_argument("--keep-n-low", type=int, default=1)
     parser.add_argument("--keep-n-high", type=int, default=1)
     parser.add_argument("--recursive", action="store_true")
-    parser.add_argument("--delete", action="store_true")
-    parser.add_argument("--compress", default=None)
+    parser.add_argument(
+        "--delete", action="store_true",
+        help="Actually remove the unwanted iteration files from the "
+             "source directories. Independent of --compress: omit "
+             "this to leave every source file untouched (a dry run "
+             "for deletion), even while writing a real archive.",
+    )
+    parser.add_argument(
+        "--compress", default=None,
+        help="Archive path (.zip, .tgz, .tar.gz). Always writes a real "
+             "archive containing the kept-file selection, whether or "
+             "not --delete is also given -- so --compress alone gives "
+             "a genuine, already-smaller archive with the source "
+             "directories left exactly as they were.",
+    )
     parser.add_argument("--no-root", action="store_true",
                         help="Do NOT include leading directory in archive")
     parser.add_argument(
@@ -436,8 +626,12 @@ def main():
 
     _write_param_summary(__file__, vars(args))
 
+    directories = _expand_directory_args(args.directory)
+    if not directories:
+        parser.error("No directory matched any of: " + ", ".join(args.directory))
+
     mt_archive_run(
-        directory=args.directory,
+        directory=directories,
         keep_n_low=args.keep_n_low,
         keep_n_high=args.keep_n_high,
         recursive=args.recursive,

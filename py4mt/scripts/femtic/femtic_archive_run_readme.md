@@ -21,13 +21,18 @@ This utility keeps selected low- and high-iteration files, preserves protected f
 - Never delete protected files:
   - by substring tokens (e.g. `obs`, `mesh`)
   - by suffix (e.g. `.log`, `.cnv`)
-  - by exact filename (e.g. `mesh.h5`, `rough.h5`, `jac.h5`)
+  - by exact filename (e.g. `mesh.h5`, `jacobian.h5`, `rough.h5`)
 - Case-insensitive matching
-- Safe by default (`dry-run`)
-- Optional deletion (`--delete`)
+- Safe by default (`dry-run`): without `--delete`, no source file is
+  ever touched -- this applies independently of `--compress`, so a
+  real archive can be written while every source file is left as-is
+- Optional deletion (`--delete`) of the source files, entirely
+  independent of archiving
 - Optional compression:
   - `.zip`
   - `.tgz` / `.tar.gz`
+  - always writes a real, on-disk archive containing only the
+    kept-file selection, whether or not `--delete` is also given
 - Optional inclusion of leading directory in archive
 
 ---
@@ -48,7 +53,7 @@ log.txt
 mesh.cnv
 mesh.h5
 rough.h5
-jac.h5
+jacobian.h5
 ```
 
 This tool allows you to:
@@ -88,12 +93,30 @@ python mt_archive_run.py results --recursive
 
 ## 📦 Compression
 
-### Create archive (recommended)
+`--compress` and `--delete` are independent: `--compress` always
+writes a real archive containing the kept-file selection, whether or
+not `--delete` is also given. Use `--compress` alone for a genuine,
+already-smaller archive with every source file left exactly as it
+was; add `--delete` if you also want the unwanted iterations removed
+from the source directories.
+
+### Create archive without touching the source files
+```
+python mt_archive_run.py run --compress run_cleaned.tgz
+```
+This writes a real, already-reduced `run_cleaned.tgz` containing only
+the kept iterations plus protected files. `run/` itself is left
+completely unchanged -- every file, including the ones not in the
+archive, is still there.
+
+### Create archive and clean up the source directory
 ```
 python mt_archive_run.py run \
     --delete \
     --compress run_cleaned.tgz
 ```
+Same archive contents as above, but the unwanted iteration files are
+also deleted from `run/` afterwards.
 
 ### Supported formats
 - `.zip`
@@ -166,7 +189,7 @@ obs, ref, mesh, iter0, control
 
 #### Exact filenames (case-insensitive, not extension/suffix matching)
 ```
-mesh.h5, rough.h5, jac.h5
+mesh.h5, jacobian.h5, rough.h5
 ```
 
 Examples:
@@ -174,7 +197,7 @@ Examples:
 mesh.cnv          → protected (suffix match)
 mesh.h5           → protected (exact filename match)
 rough.h5          → protected (exact filename match)
-jac.h5             → protected (exact filename match)
+jacobian.h5       → protected (exact filename match)
 run.log           → protected (suffix match)
 observations.dat  → protected (token match)
 model_iter42.h5   → NOT protected -- treated as an iteration file,
@@ -250,8 +273,8 @@ FEMTIC run subdirectories, e.g.:
 
 ```
 ensemble/
-  run_001/  (model_iter0..iterN.dat/.h5, mesh.h5, rough.h5, jac.h5, run.log, ...)
-  run_002/  (model_iter0..iterM.dat/.h5, mesh.h5, rough.h5, jac.h5, run.log, ...)
+  run_001/  (model_iter0..iterN.dat/.h5, mesh.h5, rough.h5, jacobian.h5, run.log, ...)
+  run_002/  (model_iter0..iterM.dat/.h5, mesh.h5, rough.h5, jacobian.h5, run.log, ...)
   ...
 ```
 
@@ -271,7 +294,7 @@ Iteration selection is applied **per containing directory**, not
 pooled across the whole tree, so `run_001` and `run_002` each keep
 their own lowest/highest iterations even if one run went to iteration
 50 and another stopped at iteration 12. Protected files (`mesh.h5`,
-`rough.h5`, `jac.h5`, logs, observation files, etc.) are preserved in
+`rough.h5`, `jacobian.h5`, logs, observation files, etc.) are preserved in
 every run subdirectory independently. The resulting archive mirrors
 the retained directory tree (`ensemble/run_001/...`,
 `ensemble/run_002/...`), so nothing from different runs gets mixed
@@ -288,11 +311,11 @@ ensemble/
     model_iter1.dat  model_iter1.h5
     model_iter2.dat  model_iter2.h5
     model_iter3.dat  model_iter3.h5   <- highest iteration in this run
-    mesh.h5  rough.h5  jac.h5  run.log  observations.dat
+    mesh.h5  rough.h5  jacobian.h5  run.log  observations.dat
   run_002/
     model_iter0.dat  model_iter0.h5   (protected: iter0 is a protected token)
     model_iter1.dat  model_iter1.h5   <- highest iteration in this run
-    mesh.h5  rough.h5  jac.h5  run.log
+    mesh.h5  rough.h5  jacobian.h5  run.log
 ```
 
 Running:
@@ -312,7 +335,7 @@ Kept iterations in ensemble/run_002: [1]
 and deletes `model_iter2.*` from `run_001` (not present in `run_002`
 at all), while keeping `model_iter1.*`/`model_iter3.*` in `run_001`
 and `model_iter1.*` in `run_002` -- plus the always-protected
-`iter0.*`, `mesh.h5`, `rough.h5`, `jac.h5`, `run.log`, and
+`iter0.*`, `mesh.h5`, `rough.h5`, `jacobian.h5`, `run.log`, and
 `observations.dat` files in both. `ensemble_cleaned.tgz` then contains
 the retained files under their original `run_001/...`/`run_002/...`
 paths.
@@ -327,16 +350,54 @@ Caveats:
   and check the printed `Kept iterations in <dir>: [...]` lines for
   every run subdirectory before adding `--delete`.
 
+### Alternative: Target the Individual Run Directories Directly (Wildcards)
+
+`--recursive` walks down from a shared parent to *find* the run
+directories. If you already know which ones you want, you can instead
+pass them -- or a wildcard pattern matching them -- straight to the
+`directory` argument, with no `--recursive` needed:
+
+```
+python mt_archive_run.py ensemble/run_* --keep-n-low 1 --keep-n-high 1 \
+    --delete --compress ensemble_cleaned.tgz
+```
+
+This gives the identical result as the `--recursive` example above:
+each matched directory (`ensemble/run_001`, `ensemble/run_002`, ...)
+gets its own independent keep-lowest/keep-highest selection, and the
+archive nests each run under its own name (`ensemble/run_001/...`,
+`ensemble/run_002/...`) using the matched directories' common parent
+as the base. Unlike `--recursive`, it never looks inside
+`ensemble/other_stuff/` or any other sibling directory the wildcard
+doesn't match -- so it's a good fit when the ensemble folder contains
+things alongside the runs that you don't want scanned at all.
+
+The `directory` argument accepts one or more paths, and more than one
+wildcard pattern can be given at once (e.g. `run_* backup_run_*`).
+If your shell already expands the pattern (the normal case in bash),
+that's all you need. If you'd rather this script do the expansion
+itself -- e.g. to avoid a "no matches" error from an empty shell glob,
+or on a shell that doesn't expand wildcards -- quote the pattern:
+
+```
+python mt_archive_run.py "ensemble/run_*" --keep-n-low 1 --keep-n-high 1
+```
+
+Both forms behave identically. A pattern (quoted or not) that matches
+nothing prints a warning and is skipped rather than aborting the run;
+a non-directory match (a stray file caught by a loose pattern) is
+skipped the same way.
+
 ## ⚙️ Options
 
 | Option | Description |
 |------|-------------|
-| `directory` | Directory to process (default: `.`) |
+| `directory` | One or more directories to process, or wildcard pattern(s) matching several (e.g. `ensemble/run_*`); quote a pattern to have this script expand it instead of the shell (default: `.`) |
 | `--keep-n-low` | Number of lowest iterations to keep |
 | `--keep-n-high` | Number of highest iterations to keep |
 | `--recursive` | Scan subdirectories |
-| `--delete` | Actually delete files (otherwise dry-run) |
-| `--compress` | Output archive path (`.zip`, `.tgz`, `.tar.gz`) |
+| `--delete` | Actually remove the unwanted iteration files from the source directories (otherwise dry run -- nothing on disk is touched). Independent of `--compress`. |
+| `--compress` | Output archive path (`.zip`, `.tgz`, `.tar.gz`). Always writes a real archive with the kept-file selection, whether or not `--delete` is given. |
 | `--no-root` | Do not include leading directory in archive |
 | `--exclude-dirs` | Subdirectory names (case-insensitive) to skip entirely when `--recursive` is set: not scanned, not deleted, not archived. Default: `plots` |
 | `--always-include-dirs` | Subdirectory names (case-insensitive) that are never scanned (like `--exclude-dirs`), but are added to the compressed archive untouched, as whole directories, when `--recursive` is set. Default: `templates python` |
@@ -381,6 +442,9 @@ Created with the help of ChatGPT (GPT-5 Thinking) on 2026-04-07
 | 2026-09-11 | Claude Sonnet 5 (Anthropic) | HDF5 support: removed the blanket `.h5` suffix protection and replaced it with exact-filename protection for `mesh.h5`, `rough.h5`, `jac.h5`; `iterX.h5` is now matched by the iteration regex like `iterX.dat`. Fixed iteration keep-selection to be grouped per containing directory instead of pooled globally, so `--recursive` gives correct results when run above an ensemble of run subdirectories with differing iteration counts. |
 | 2026-09-11 | Claude Sonnet 5 (Anthropic) | Added `--exclude-dirs` (default: `plots`) to prune whole subdirectories from the `--recursive` walk (not scanned, not deleted, not archived), and `--always-include-dirs` (default: `templates python`) to always fully protect and include whole subdirectories in the archive. Added a printed warning when `--compress` targets a `.zip` file, since `zipfile` dereferences symlinks (duplicating target content) and fails outright on broken symlinks, whereas `.tgz`/`.tar.gz` (`tarfile`) preserves symlinks -- including broken ones -- as real symlink entries; zip writing now also skips an unstorable file with a message instead of aborting the whole archive. |
 | 2026-09-11 | Claude Sonnet 5 (Anthropic) | Corrected `--always-include-dirs`: these directories are now never scanned at all (like `--exclude-dirs`), rather than scanned file-by-file and marked protected; each is located as a whole and added to the archive untouched via a recursive directory add. |
+| 2026-09-15 | Claude Sonnet 5 (Anthropic) | Iteration matching was already extension-agnostic (any `_iterN` file, `.dat`, `.h5`, or otherwise, is treated the same) -- no code change needed there. Changed the default protected filenames from `mesh.h5`, `rough.h5`, `jac.h5` to `mesh.h5`, `jacobian.h5`, `rough.h5` (`jac.h5` is no longer protected by default). Dry runs (i.e. whenever `--delete` is not given) now print an explicit "Files that will be kept" list, independent of whether `--compress` is also given. |
+| 2026-09-15 | Claude Sonnet 5 (Anthropic) (same-day follow-up) | Added support for running directly on top of individual ensemble run directories via wildcards (e.g. `ensemble/run_*`), instead of only via `--recursive` from a shared parent. `directory` now accepts one or more paths/patterns; unmatched or non-directory patterns are skipped with a warning rather than aborting. Each matched directory keeps its own keep-lowest/keep-highest selection, and archive paths are computed relative to the matched directories' common parent, matching `--recursive`'s output structure. |
+| 2026-09-15 | Claude Sonnet 5 (Anthropic) (third same-day follow-up) | Decoupled `--compress` from `--delete`. Previously, `--compress` without `--delete` only printed a "WOULD ADD" preview and never wrote a real archive file. `--compress` now always writes a real, on-disk archive containing the kept-file selection regardless of `--delete` -- so `--compress` alone gives a genuine, already-smaller archive with every source file left untouched. `--delete` continues to control only whether the unwanted iteration files are removed from the source directories. |
 
 **Note on AI assistance:** this script and README were produced with the
 help of AI tools (ChatGPT and Claude, see table above) and have not
