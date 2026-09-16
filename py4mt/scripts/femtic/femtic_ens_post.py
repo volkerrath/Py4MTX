@@ -387,6 +387,31 @@ Provenance
             (auto-added when the corresponding COMPUTE_* flag is True,
             auto-removed if that diagnostic could not actually be
             computed for this ensemble).
+2026-09-16  Claude Sonnet 5 (Anthropic)
+            Adapted COMPUTE_SENS to the settled (2026-09-13) FEMTIC HDF5
+            schema: model_iterX.h5/data_iterX.h5 were merged into one
+            results_iterX.h5 per iteration (sibling /model, /data,
+            /distortion groups), with the per-block cumulative
+            sensitivity now precomputed by FEMTIC itself at
+            /model/sensitivity/{raw,volume_normalised} -- no Jacobian
+            assembly needed. SENS_H5_PATTERN changed from
+            "model_iter{numit}.h5" to "results_iter{numit}.h5" (older,
+            pre-2026-09-13 ensembles are no longer supported by this
+            script). Replaced the hardcoded SENS_CUMSENS_KEY with
+            SENS_KIND ("raw" | "volume_normalised"), matching
+            fem.read_h5_sensitivity()'s updated cumsens_key default and
+            automatic model/sensitivity group fallback (fem.py, same
+            date). No fallback to jacobian.h5 if a member's
+            results_iter{numit}.h5 lacks sensitivity for that iteration
+            (by design -- jacobian.h5 is a separate, fixed-name file
+            that may hold a different iteration entirely): that member
+            is skipped for sensitivity with a printed warning, same as
+            before. Updated stale "model_iterX.h5" wording in the
+            COMPUTE_SENS section's comments, warnings, and variable
+            comments to match.
+
+    This script targets FEMTIC's current HDF5 output layout only.
+    AI-generated code -- review before production use.
 """
 from __future__ import annotations
 
@@ -528,10 +553,13 @@ REDUX_EPS = 0.1
 #   (1) SENS_*   -- per-member linearised cumulative sensitivity
 #                   (Christiansen & Auken, 2012, Geophysics 77, WB171,
 #                   doi:10.1190/geo2011-0393.1), read from each accepted
-#                   member's Jacobian in model_iter<numit>.h5 via
-#                   fem.read_h5_sensitivity(), then aggregated (mean,
-#                   median, min, max, std) across the ensemble instead of
-#                   trusting a single member's linearisation.
+#                   member's results_iter<numit>.h5 via
+#                   fem.read_h5_sensitivity() -- FEMTIC writes this
+#                   precomputed, at /model/sensitivity/{raw,volume_normalised},
+#                   whenever sensitivity was computed for that iteration, so
+#                   no Jacobian assembly is needed here -- then aggregated
+#                   (mean, median, min, max, std) across the ensemble instead
+#                   of trusting a single member's linearisation.
 #   (2) SIMRC_*  -- ensemble-native "SimRC" sensitivity (Bobe, Keller &
 #                   Van De Vijver, 2021, Geophysical Prospecting,
 #                   doi:10.1111/1365-2478.13068): regression-coefficient
@@ -548,21 +576,50 @@ REDUX_EPS = 0.1
 # missing for some or all members.
 
 # --- (1) Per-member Jacobian-based cumulative sensitivity -------------------
-#: Set False to skip entirely (no model_iterX.h5 files available yet).
+#: Set False to skip entirely (no results_iterX.h5 files available yet).
 COMPUTE_SENS = True
 
 #: Per-member HDF5 file, relative to each ensemble-member run directory,
 #: with "{numit}" substituted by that member's best (accepted) iteration
-#: number -- i.e. the Jacobian for the *same* iteration whose resistivity
-#: block was used to build ens_matrix above.
-SENS_H5_PATTERN = "model_iter{numit}.h5"
+#: number -- i.e. the same iteration whose resistivity block was used to
+#: build ens_matrix above.
+#:
+#: This is FEMTIC's current (settled 2026-09-13) merged output file --
+#: model + data + distortion as sibling /model, /data, /distortion groups
+#: in one HDF5 file per iteration, replacing the older separate
+#: model_iterX.h5/data_iterX.h5 pair. Older ensemble runs predating this
+#: change are not supported by this script; rerun those inversions with a
+#: current FEMTIC build if their sensitivity is needed here.
+SENS_H5_PATTERN = "results_iter{numit}.h5"
 
-#: See fem.read_h5_sensitivity() for the meaning of these -- schema is
-#: provisional/configurable until the actual FEMTIC HDF5 export settles.
-SENS_H5_GROUP     = None
-SENS_CUMSENS_KEY  = "cumulative_sensitivity"
+#: See fem.read_h5_sensitivity() for the full lookup rules. group=None
+#: tries the file root, then falls back to "model/sensitivity"
+#: automatically -- FEMTIC's real location for these datasets in
+#: results_iterX.h5 -- so no group override is normally needed.
+SENS_H5_GROUP = None
+
+#: Which of FEMTIC's two precomputed per-block sensitivity datasets to use:
+#:   "raw"                -- sum|J[:,block]| across all data rows (Ohm.m
+#:                            units follow the model parameterisation)
+#:   "volume_normalised"  -- the above divided by block volume (m^-3),
+#:                            i.e. sensitivity density
+#: Passed through as fem.read_h5_sensitivity()'s cumsens_key.
+SENS_KIND = "raw"
+assert SENS_KIND in ("raw", "volume_normalised"), \
+    f"SENS_KIND must be 'raw' or 'volume_normalised', got {SENS_KIND!r}"
+
+#: Jacobian/error dataset names, used only if SENS_KIND's dataset is not
+#: found in results_iter{numit}.h5 (e.g. sensitivity was disabled for that
+#: iteration in control.dat). These never resolve against results_iterX.h5
+#: in practice (the raw Jacobian only exists in the separate, fixed-name
+#: jacobian.h5 -- which holds an arbitrary, possibly different iteration,
+#: and is deliberately NOT consulted here): a missing SENS_KIND dataset
+#: therefore falls straight through to "not found", and that member is
+#: skipped for sensitivity with a printed warning -- see the COMPUTE_SENS
+#: loop below. Left in place only because fem.read_h5_sensitivity() always
+#: takes these arguments; do not point them at jacobian.h5.
 SENS_JACOBIAN_KEY = "jacobian"
-SENS_ERROR_KEY    = "data_error"   # None to disable error-weighting
+SENS_ERROR_KEY    = "data_errors"   # None to disable error-weighting
 
 #: Fraction of the ensemble-mean cumulative sensitivity's own maximum
 #: below which a free parameter is flagged "low sensitivity" -- used both
@@ -1241,7 +1298,7 @@ prior_count       = 0     # accepted members whose iter0 file was found
 prior_missing_any = False
 
 sens_matrix       = None  # will become (n_sens_members, n_free) float64
-sens_count        = 0     # accepted members whose model_iterX.h5 was found
+sens_count        = 0     # accepted members whose results_iterX.h5 was found
 sens_missing_any  = False
 
 ens_data_matrix   = None  # will become (n_simrc_members, n_data) float64
@@ -1355,13 +1412,17 @@ for d in dir_list:
             sens_vec = fem.read_h5_sensitivity(
                 sens_h5,
                 group        = SENS_H5_GROUP,
-                cumsens_key  = SENS_CUMSENS_KEY,
+                cumsens_key  = SENS_KIND,
                 jacobian_key = SENS_JACOBIAN_KEY,
                 error_key    = SENS_ERROR_KEY,
                 normalize    = False,
                 out          = OUT,
             )
         except (FileNotFoundError, KeyError) as e:
+            # No fallback to jacobian.h5 by design (see SENS_JACOBIAN_KEY
+            # comment above) -- a missing SENS_KIND dataset at this
+            # member's numit just means sensitivity wasn't computed for
+            # that iteration; skip this member for sensitivity and move on.
             print(f"    COMPUTE_SENS: {e} — member skipped for sensitivity.")
             sens_missing_any = True
         else:
@@ -1489,7 +1550,7 @@ sens_mean = sens_median = sens_min = sens_max_ = sens_std = sens_cv = None
 sens_low_mask = None
 if COMPUTE_SENS:
     if sens_matrix is None or sens_count == 0:
-        print("\n  COMPUTE_SENS: no model_iterX.h5 sensitivity files found — skipped.")
+        print("\n  COMPUTE_SENS: no results_iterX.h5 sensitivity files found — skipped.")
     else:
         if sens_missing_any or sens_count != n_members:
             print(f"\n  COMPUTE_SENS: sensitivity available for {sens_count}/"
@@ -1795,7 +1856,7 @@ if MOD_STATS:
             for _k in ("sens_mean", "sens_cv"):
                 if _k in MOD_STATS_WHAT:
                     print(f"  MOD_STATS: {_k} requested but COMPUTE_SENS found "
-                          f"no usable model_iterX.h5 files — skipped.")
+                          f"no usable results_iterX.h5 files — skipped.")
             MOD_STATS_WHAT = [k for k in MOD_STATS_WHAT if k not in ("sens_mean", "sens_cv")]
 
         if simrc_corr is not None:
