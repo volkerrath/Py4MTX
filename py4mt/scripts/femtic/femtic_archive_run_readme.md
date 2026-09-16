@@ -12,8 +12,10 @@ This utility keeps selected low- and high-iteration files, preserves protected f
   regardless of extension -- `model_iter12.dat` and `model_iter12.h5`
   are both treated as iteration files
 - Keep:
-  - lowest `keep_n_low` iterations
-  - highest `keep_n_high` iterations
+  - lowest `keep_n_low` iterations (0 is allowed -- keep none from
+    the low end)
+  - highest `keep_n_high` iterations (must be >= 1 -- you always keep
+    at least the highest iteration)
   - selection is done **per containing directory**, so running with
     `--recursive` over several run subdirectories (an "ensemble")
     keeps each run's own lowest/highest iterations, even if runs
@@ -78,6 +80,22 @@ python mt_archive_run.py . \
     --keep-n-low 1 \
     --keep-n-high 1
 ```
+
+### Keep only the highest iteration (drop the low end entirely)
+```
+python mt_archive_run.py . \
+    --keep-n-low 0 \
+    --keep-n-high 1
+```
+`--keep-n-low 0` is allowed and keeps nothing from the low end of the
+matched iterations. `iter0` is still kept regardless, though -- it's
+protected by the default `iter0` token independently of
+`--keep-n-low`/`--keep-n-high` (see Protected Files below). If you
+truly need to discard `iter0` too, drop `iter0` from
+`protected_tokens` (no `--protected-tokens` CLI flag is exposed yet;
+call `mt_archive_run()` directly, or ask for the flag to be added).
+`--keep-n-high` must always be >= 1 -- you always keep at least the
+highest iteration.
 
 ### Actually delete unwanted files
 ```
@@ -213,8 +231,11 @@ same keep-lowest/keep-highest iteration logic as the `.dat` files.
 
 ## 🚫 Excluded and ✅ Always-Included Subdirectories
 
-Both only apply when `--recursive` is set -- a non-recursive run never
-looks inside subdirectories in the first place.
+`--exclude-dirs` only applies when `--recursive` is set -- a
+non-recursive run never looks inside subdirectories in the first
+place. `--always-include-dirs` gets one extra check that runs
+unconditionally (see below), but finding it at deeper nesting or
+under more than one distinct parent still needs `--recursive`.
 
 #### `--exclude-dirs` (default: `plots`)
 
@@ -230,16 +251,43 @@ python mt_archive_run.py run --recursive --exclude-dirs plots figures
 #### `--always-include-dirs` (default: `templates python`)
 
 Any subdirectory whose name (case-insensitive) matches one of these,
-at any depth, is **not scanned at all** -- exactly like
-`--exclude-dirs`, no file inside it is checked against the iteration
-pattern or the protection rules, and nothing inside it is ever
-deleted. Unlike `--exclude-dirs`, though, the whole directory is
-located and added to the compressed archive **untouched**, as a
+at any depth under `--recursive`, is **not scanned at all** --
+exactly like `--exclude-dirs`, no file inside it is checked against
+the iteration pattern or the protection rules, and nothing inside it
+is ever deleted. Unlike `--exclude-dirs`, though, the whole directory
+is located and added to the compressed archive **untouched**, as a
 single recursive directory add (preserving its internal structure,
 permissions, and symlinks -- with `.tgz`/`.tar.gz`; see the symlink
 note under Compression for `.zip`). Useful for template files or
 accompanying Python scripts that belong with the run but are not run
 output and shouldn't be subject to per-file iteration logic at all.
+
+**This one extra check runs even without `--recursive`:** the script
+always looks for `--always-include-dirs` names as *immediate
+children of the archive's base directory* -- the common parent when
+several directories or a wildcard are given, or the directory itself
+otherwise. This matches the usual ensemble layout, where `templates/`
+and `python/` sit as siblings of `run_1`, `run_2`, ... directly under
+one ensemble folder:
+
+```
+ensemble_x/
+  run_1/  run_2/  ...
+  templates/
+  python/
+```
+
+```
+python mt_archive_run.py ensemble_x/run_* --keep-n-low 1 --keep-n-high 1 \
+    --compress ensemble_x_cleaned.tgz
+```
+
+Even though this targets the `run_*` directories directly and never
+passes `--recursive`, `ensemble_x/templates` and `ensemble_x/python`
+are still found (as `ensemble_x` is the runs' common parent) and
+added to the archive untouched. `--recursive` is still needed if your
+always-include directories sit deeper than one level down, or your
+matched directories don't share a single common parent.
 
 ```
 python mt_archive_run.py run --recursive --always-include-dirs templates python scripts
@@ -393,14 +441,14 @@ skipped the same way.
 | Option | Description |
 |------|-------------|
 | `directory` | One or more directories to process, or wildcard pattern(s) matching several (e.g. `ensemble/run_*`); quote a pattern to have this script expand it instead of the shell (default: `.`) |
-| `--keep-n-low` | Number of lowest iterations to keep |
-| `--keep-n-high` | Number of highest iterations to keep |
+| `--keep-n-low` | Number of lowest iterations to keep. May be 0 (keep none from the low end). Default: 1 |
+| `--keep-n-high` | Number of highest iterations to keep. Must be >= 1. Default: 1 |
 | `--recursive` | Scan subdirectories |
 | `--delete` | Actually remove the unwanted iteration files from the source directories (otherwise dry run -- nothing on disk is touched). Independent of `--compress`. |
 | `--compress` | Output archive path (`.zip`, `.tgz`, `.tar.gz`). Always writes a real archive with the kept-file selection, whether or not `--delete` is given. |
 | `--no-root` | Do not include leading directory in archive |
 | `--exclude-dirs` | Subdirectory names (case-insensitive) to skip entirely when `--recursive` is set: not scanned, not deleted, not archived. Default: `plots` |
-| `--always-include-dirs` | Subdirectory names (case-insensitive) that are never scanned (like `--exclude-dirs`), but are added to the compressed archive untouched, as whole directories, when `--recursive` is set. Default: `templates python` |
+| `--always-include-dirs` | Subdirectory names (case-insensitive) that are never scanned, but added to the compressed archive untouched, as whole directories. Always checked as immediate children of the archive's base directory (no `--recursive` needed for that); `--recursive` is needed for deeper nesting or more than one distinct parent. Default: `templates python` |
 
 ---
 
@@ -445,6 +493,8 @@ Created with the help of ChatGPT (GPT-5 Thinking) on 2026-04-07
 | 2026-09-15 | Claude Sonnet 5 (Anthropic) | Iteration matching was already extension-agnostic (any `_iterN` file, `.dat`, `.h5`, or otherwise, is treated the same) -- no code change needed there. Changed the default protected filenames from `mesh.h5`, `rough.h5`, `jac.h5` to `mesh.h5`, `jacobian.h5`, `rough.h5` (`jac.h5` is no longer protected by default). Dry runs (i.e. whenever `--delete` is not given) now print an explicit "Files that will be kept" list, independent of whether `--compress` is also given. |
 | 2026-09-15 | Claude Sonnet 5 (Anthropic) (same-day follow-up) | Added support for running directly on top of individual ensemble run directories via wildcards (e.g. `ensemble/run_*`), instead of only via `--recursive` from a shared parent. `directory` now accepts one or more paths/patterns; unmatched or non-directory patterns are skipped with a warning rather than aborting. Each matched directory keeps its own keep-lowest/keep-highest selection, and archive paths are computed relative to the matched directories' common parent, matching `--recursive`'s output structure. |
 | 2026-09-15 | Claude Sonnet 5 (Anthropic) (third same-day follow-up) | Decoupled `--compress` from `--delete`. Previously, `--compress` without `--delete` only printed a "WOULD ADD" preview and never wrote a real archive file. `--compress` now always writes a real, on-disk archive containing the kept-file selection regardless of `--delete` -- so `--compress` alone gives a genuine, already-smaller archive with every source file left untouched. `--delete` continues to control only whether the unwanted iteration files are removed from the source directories. |
+| 2026-09-15 | Claude Sonnet 5 (Anthropic) (fourth same-day follow-up) | `--always-include-dirs` names are now also looked for as immediate children of the archive's base directory (the common parent when several directories/wildcards are given, or the directory itself otherwise), via an always-on, non-recursive check -- not just when `--recursive` is set. Matches the usual ensemble layout (`run_1`, `run_2`, ..., `templates/`, `python/` as siblings under one ensemble folder): targeting the run directories directly via a wildcard, e.g. `ensemble_x/run_*`, now still picks up `ensemble_x/templates` and `ensemble_x/python` with no `--recursive` needed. `--recursive` is still required for always-include directories nested deeper than one level, or spread under more than one distinct parent. |
+| 2026-09-15 | Claude Sonnet 5 (Anthropic) (fifth same-day follow-up) | `--keep-n-low` may now be `0` ("keep none of the matched iteration files from the low end"), instead of rejecting anything below `1`. `--keep-n-high` still must be `>= 1` -- you always keep at least the highest iteration -- so this is an asymmetric relaxation. `iter0` is unaffected either way: it's kept via its own `iter0` protected-token match, independent of `--keep-n-low`/`--keep-n-high`. Also fixed a latent slicing bug this change would otherwise have exposed: Python's `list[-0:]` is the *whole* list (since `-0 == 0`), not an empty one, so a `keep_n_high == 0` could never have correctly meant "keep none from the high end" without an explicit guard -- added defensively even though the CLI no longer allows `keep_n_high == 0` to reach it. |
 
 **Note on AI assistance:** this script and README were produced with the
 help of AI tools (ChatGPT and Claude, see table above) and have not

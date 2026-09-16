@@ -99,6 +99,45 @@ Provenance:
                 continues to control only whether the unwanted
                 iteration files are removed from the source
                 directories, entirely independent of archiving.
+    2026-09-15  Claude Sonnet 5 (Anthropic)  (third same-day follow-up)
+                always_include_dirs (default: templates, python) are
+                now also located as immediate children of the
+                archive's base directory -- the common parent when
+                several directories/wildcards are given, or the
+                directory itself otherwise -- via a single
+                non-recursive listing that runs unconditionally, not
+                just when --recursive is set. This matches the usual
+                ensemble layout (run_1, run_2, ..., templates/,
+                python/ all as siblings under one ensemble folder):
+                targeting the run directories directly, e.g. via
+                ``ensemble_x/run_*``, now still picks up
+                ``ensemble_x/templates`` and ``ensemble_x/python`` and
+                adds them to the archive untouched, with no
+                --recursive needed. --recursive is still required to
+                find always_include_dirs at deeper nesting, or under
+                more than one distinct parent. Deduplicated so this
+                doesn't double-report/double-add a directory already
+                found via a recursive walk.
+    2026-09-15  Claude Sonnet 5 (Anthropic)  (fourth same-day follow-up)
+                keep_n_low may now be 0 ("keep none of the matched
+                iteration files from the low end"), rather than
+                rejecting any value below 1 outright -- e.g.
+                keep_n_low=0, keep_n_high=1 keeps only the single
+                highest iteration and discards everything else matched
+                (iter0 remains kept regardless, via its separate
+                iter0-token protection). keep_n_high still must be >=
+                1 -- there is always at least the highest iteration
+                worth keeping -- so this is an asymmetric relaxation,
+                not a blanket one. Also fixed a latent bug this change
+                would otherwise have exposed in
+                _select_kept_iterations: Python's list[-0:] evaluates
+                to list[0:] (the whole list, since -0 == 0), not an
+                empty slice, so keep_n_high == 0 could never have been
+                sliced directly to mean "keep none from the high end"
+                -- now handled with an explicit guard instead (kept
+                even though keep_n_high == 0 no longer reaches this
+                function via the CLI/mt_archive_run validation, as a
+                defensive correctness fix).
 
     NOTE: This script was produced with AI assistance (see provenance
     log above). It has not been independently verified for production
@@ -292,8 +331,19 @@ def _select_kept_iterations(
     keep_n_low: int,
     keep_n_high: int,
 ) -> set[int]:
+    """Pick which iteration numbers survive the keep-lowest/keep-highest
+    rule. ``keep_n_low`` may be 0 ("keep none from the low end");
+    ``mt_archive_run`` enforces ``keep_n_high >= 1`` before this is
+    called, so the ``keep_n_high == 0`` case shouldn't normally arise
+    here -- but it's still handled correctly (as empty) rather than
+    silently wrong, since Python's ``list[-0:]`` is ``list[0:]`` (the
+    *whole* list, as ``-0 == 0``), not an empty slice, if sliced
+    directly without this guard.
+    """
     unique = sorted(set(iter_values))
-    return set(unique[:keep_n_low] + unique[-keep_n_high:])
+    low_part = unique[:keep_n_low] if keep_n_low > 0 else []
+    high_part = unique[-keep_n_high:] if keep_n_high > 0 else []
+    return set(low_part + high_part)
 
 
 def _print_kept_files(
@@ -409,9 +459,8 @@ def _compress(
 def mt_archive_run(
     directory: str | Path | Iterable[str | Path],
     pattern: str = r"_iter(\d+)",
-    protected_tokens: Iterable[str] = ("obs", "ref", "mesh", "iter0", "control"),
-    protected_suffixes: Iterable[str] = (".sh", ".cnv", ".py"),
-    #protected_suffixes: Iterable[str] = (".log", ".sh", ".cnv"),
+    protected_tokens: Iterable[str] = ("obs", "ref", "mesh", "iter0", "control", "rough"),
+    protected_suffixes: Iterable[str] = (".sh", ".cnv"),
     protected_filenames: Iterable[str] = ("mesh.h5", "jacobian.h5", "rough.h5"),
     exclude_dirs: Iterable[str] = ("plots",),
     always_include_dirs: Iterable[str] = ("templates", "python"),
@@ -439,6 +488,17 @@ def mt_archive_run(
     as iteration files unless they also match a protected token, suffix,
     or exact filename.
 
+    ``keep_n_low`` may be 0, meaning "keep none of the matched
+    iteration files from the low end" -- e.g. ``keep_n_low=0,
+    keep_n_high=1`` keeps only the single highest iteration and
+    discards every other matched iteration file. ``keep_n_high`` must
+    always be >= 1 (there is always at least one iteration -- the
+    highest -- worth keeping). This does NOT affect iteration 0's
+    separate protection via the ``iter0`` protected token (default
+    ``protected_tokens``): an ``iter0`` file is kept regardless of
+    ``keep_n_low``/``keep_n_high``, since it's matched as a protected
+    file before iteration selection ever runs.
+
     When ``recursive`` is True (e.g. run from a directory that sits
     above several FEMTIC run subdirectories -- an "ensemble" layout),
     the keep-lowest/keep-highest iteration selection is applied
@@ -462,8 +522,17 @@ def mt_archive_run(
     accompanying Python scripts that belong with the run but aren't run
     output and don't need per-file iteration logic applied to them.
 
-    Both are only meaningful when ``recursive=True``; a non-recursive
-    run never looks inside subdirectories in the first place.
+    Both are only meaningful when ``recursive=True`` for finding
+    matches *inside* the given directories or at deeper nesting.
+    ``always_include_dirs`` also gets one extra, always-on check: its
+    names are looked for as immediate children of the archive's base
+    directory (the common parent when several directories/wildcards
+    are given, or the directory itself otherwise) -- e.g. templates/
+    and python/ sitting alongside run_1, run_2, ... directly under an
+    ensemble folder -- so that a normal ensemble layout gets its
+    always-include directories archived even when you target the
+    individual run directories directly (with or without wildcards)
+    rather than running --recursive over their shared parent.
 
     ``dry_run`` (set to False by ``--delete`` on the CLI) controls only
     whether the unwanted iteration files are actually removed from the
@@ -475,8 +544,11 @@ def mt_archive_run(
     leaving every source file exactly as it was.
     """
 
-    if keep_n_low < 1 or keep_n_high < 1:
-        raise ValueError("keep_n_low and keep_n_high must be >= 1")
+    if keep_n_low < 0 or keep_n_high < 1:
+        raise ValueError(
+            "keep_n_low must be >= 0 and keep_n_high must be >= 1 "
+            "(you always need at least the highest iteration)"
+        )
 
     if isinstance(directory, (str, Path)):
         directories = [Path(directory)]
@@ -510,6 +582,30 @@ def mt_archive_run(
         if recursive:
             always_include_paths.extend(_find_named_dirs(d, always_dirs, excl_dirs))
         files.extend(_collect_files(d, recursive, excl_dirs + always_dirs))
+
+    # Also look for always_include_dirs as immediate children of the
+    # archive's base directory -- e.g. templates/ and python/ sitting
+    # alongside run_1, run_2, ... directly under an ensemble folder.
+    # This is a single non-recursive listing, so it always runs (no
+    # --recursive needed) as long as it wouldn't just re-find something
+    # already picked up above (a directory itself in `directories`, or
+    # already found by the recursive walk).
+    directory_set = {d.resolve() for d in directories}
+    already_found = {p.resolve() for p in always_include_paths}
+    if base_dir.is_dir():
+        for p in sorted(base_dir.iterdir()):
+            if not p.is_dir():
+                continue
+            name_l = p.name.lower()
+            if name_l in excl_dirs or name_l not in always_dirs:
+                continue
+            rp = p.resolve()
+            if rp in directory_set or rp in already_found:
+                continue
+            always_include_paths.append(p)
+            already_found.add(rp)
+
+    always_include_paths = sorted(set(always_include_paths))
 
     matched = []
     protected = []
@@ -588,8 +684,19 @@ def main():
              "pattern if you want this script (rather than your shell) "
              "to expand it. Default: current directory.",
     )
-    parser.add_argument("--keep-n-low", type=int, default=1)
-    parser.add_argument("--keep-n-high", type=int, default=1)
+    parser.add_argument(
+        "--keep-n-low", type=int, default=1,
+        help="Number of lowest matched iterations to keep. 0 keeps "
+             "none from this end (the always-protected iter0 file is "
+             "unaffected -- it's kept regardless, via the iter0 "
+             "protected token). Default: 1.",
+    )
+    parser.add_argument(
+        "--keep-n-high", type=int, default=1,
+        help="Number of highest matched iterations to keep. Must be "
+             ">= 1 -- you always need at least the highest iteration. "
+             "Default: 1.",
+    )
     parser.add_argument("--recursive", action="store_true")
     parser.add_argument(
         "--delete", action="store_true",
