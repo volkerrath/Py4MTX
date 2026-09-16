@@ -79,7 +79,7 @@ ROUGH_FILE = WORK_DIR + "roughening_matrix.out"
 
 
 
-OUT_ROUGH = "q"
+OUT_ROUGH = "r"
 SPARSE_FORMAT = "coo"
 ROUGH_NEW = WORK_DIR+OUT_ROUGH+"_"+SPARSE_FORMAT+".npz"
 

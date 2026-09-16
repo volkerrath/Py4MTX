@@ -74,7 +74,8 @@ fname = inspect.getfile(inspect.currentframe())
 titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng+'\n\n')
 
-WORK_DIR = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
+# WORK_DIR = '/home/vrath/FEMTIC_work/test/' #PY4MTX_DATA+'Misti/MISTI_test/'
+WORK_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2/"
 
 MATRIX_IN = 'R'
 FORMAT_IN =  'coo'
