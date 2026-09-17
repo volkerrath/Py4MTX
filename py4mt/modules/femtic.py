@@ -4659,6 +4659,63 @@ This module provides:
 
 Author: Volker Rath (DIAS)
 Created with the help of ChatGPT (GPT-5 Thinking) on 2025-12-31
+
+Provenance:
+    2025-12-31  vrath / ChatGPT (GPT-5 Thinking)   Created.
+    2026-09-17  Claude Sonnet 5 (Anthropic)
+                modify_data: reset-then-perturb is now strictly two-pass
+                per site -- every error column slated for reset is
+                computed from the as-read data before any perturbation
+                draw is made, rather than interleaved column-by-column
+                with the draws. For MT and VTF (interleaved Re/Im pairs),
+                the reset sigma is now derived from the pair's complex
+                magnitude (sigma_re = sigma_im = rel_pair * |Z| or |T|)
+                and shared by both columns, instead of each column using
+                abs() of its own individual value -- the previous
+                per-column form could give the Re and Im part of one
+                complex quantity very different, magnitude-dependent
+                errors whenever one part happened to be numerically small
+                (and, combined with a mismatched `errors` vector, silently
+                mixed up different components' errors -- see
+                femtic_rto_prep_readme.md, 2026-09-17). A mismatch between
+                a pair's Re/Im entries in `errors` now raises a warning
+                naming the pair and site. PT is unaffected: its columns
+                are independent real numbers (no Re/Im pairing), so the
+                original per-column sigma = rel_k * abs(val_k) still
+                applies unchanged. Confirmed the no-reset path
+                (errors=([],[],[])) is bit-for-bit unchanged: with
+                `rel is None`, Pass 1 is a no-op and Pass 2 draws straight
+                from the file's own (possibly Re/Im-asymmetric, e.g.
+                empirically-derived) error columns exactly as before --
+                the pairing/magnitude logic only ever engages inside the
+                reset (Pass 1) branch.
+    2026-09-17  Claude Sonnet 5 (Anthropic)
+                Added `derive_pt_from_z` (default False): when True and
+                the file has both an MT and a PT block, PT's per-site
+                data is overridden, after the normal reset/perturb pass,
+                by the phase tensor of the already-perturbed Z of the
+                matching MT site (matched by site name, then by nearest
+                frequency within rtol=1e-6). PT's error column is left
+                untouched by this option. Sites/frequencies with no MT
+                match, or a singular Re(Z), keep their
+                independently-perturbed PT value (fallback), with a
+                message printed when out=True. AI-generated; please
+                review before production use.
+    2026-09-17  Claude Sonnet 5 (Anthropic)
+                Fixed IndexError in modify_data: obs_type-driven
+                `errors[0]`/`errors[1]`/`errors[2]` indexing crashed as
+                soon as any block was read if `errors` was a bare `[]`
+                (a caller's shorthand for "no reset for any type") rather
+                than the nominal length-3 [MT, VTF, PT] sequence -- hit in
+                practice via femtic_rto_prep.py's RESET_ERRORS=False
+                branch (see its 2026-09-17 entry below for the matching
+                config-side fix). Each slot is now fetched defensively
+                (out-of-range -> [], i.e. no reset for that obs_type)
+                instead of indexing errors[...] directly; confirmed
+                errors=[], errors=([],[],[]), and the default
+                ([],[],[]) now all run without error and give
+                bit-for-bit identical output for the same seed.
+                AI-generated; please review before production use.
 """
 
 _OBS_DATALEN: dict[str, int] = {
@@ -6122,6 +6179,7 @@ def modify_data(
     bootstrap_n: int = 200,
     bootstrap_rng: Generator | None = None,
     bootstrap_seed: int | None = None,
+    derive_pt_from_z: bool = False,
 ) -> list[dict[str, Any]] | None:
     """Perturb a FEMTIC-style observation file (``observe.dat``) and rewrite it in-place.
 
@@ -6151,6 +6209,27 @@ def modify_data(
         - [] (empty): keep existing per-datum error columns
         - [scalar]: broadcast to all components
         - [vector]: component-wise relative errors (length MT=8, VTF/PT=4)
+
+        Reset is a strict prerequisite of perturbation: for every site, all
+        error columns to be reset are computed first, from a snapshot of the
+        as-read data, in a pass that completes before any perturbation draw
+        is made. Perturbation then reads only from that finalized error
+        array, never from a partially-updated one.
+
+        MT and VTF columns are interleaved complex pairs (``Zxx_re,
+        Zxx_im, Zxy_re, Zxy_im, ...`` / ``Tzx_re, Tzx_im, Tzy_re,
+        Tzy_im``). For these, the reset error is **shared by the Re and Im
+        column of each pair** and is computed from the pair's complex
+        magnitude, not from each column's own value:
+        ``sigma_re = sigma_im = rel_pair * |Z|`` (or ``|T|``), with
+        ``rel_pair`` taken as the mean of the pair's two ``errors`` entries
+        (they should normally be equal; a mismatch triggers a warning).
+        This avoids the previous per-column behaviour, where a component's
+        Re and Im parts could get different, magnitude-dependent errors
+        purely because one part happened to be numerically smaller than
+        the other. PT has no Re/Im split (``PTxx, PTxy, PTyx, PTyy`` are
+        each independent real numbers), so its four columns keep the
+        original per-column treatment: ``sigma_k = rel_k * abs(val_k)``.
     draw_from : sequence
         Noise distribution spec.  The first element names the distribution;
         subsequent elements are parameters.  Supported distributions:
@@ -6194,6 +6273,30 @@ def modify_data(
     bootstrap_seed : int, optional
         Convenience seed for the bootstrap RNG.  Ignored when ``bootstrap_rng``
         is provided.
+    derive_pt_from_z : bool
+        If True and the file contains both an ``MT`` block and a ``PT`` block,
+        replace each PT site's independently-drawn data with the phase
+        tensor computed from the *already-perturbed* impedance ``Z`` of the
+        matching MT site (matched by site name, then by frequency; matching
+        is exact for the name and uses the nearest frequency within a
+        relative tolerance of ``1e-6``). This runs as a final pass, after
+        every block (including PT) has already gone through the normal
+        reset/perturb path above, so it is a strict override, not a
+        replacement of that path:
+
+        - PT rows with no matching MT site or no matching MT frequency keep
+          their independently-perturbed value (a graceful fallback; a
+          message is printed when ``out`` is True).
+        - PT's ``error`` column (whether reset via ``errors[2]`` or left as
+          read from the file) is **not** touched by this option -- it still
+          reflects the requested/nominal PT uncertainty even though the
+          overridden data now comes from ``Z`` rather than from that
+          uncertainty.
+        - Use this when a downstream step needs the ensemble's PT values to
+          be physically consistent with its perturbed impedances (e.g. a
+          joint MT+PT diagnostic on the same ensemble member), instead of
+          PT and Z being perturbed independently of one another.
+        Defaults to False (PT is perturbed independently, as before).
 
     Returns
     -------
@@ -6201,6 +6304,8 @@ def modify_data(
         If ``return_sites`` is True, returns a flattened list of per-site dictionaries
         after perturbation. Otherwise returns None.
     """
+    import warnings
+
     # ---- RNG setup -------------------------------------------------------
     rng = default_rng(seed) if rng is None else rng
     if bootstrap_rng is None:
@@ -6210,7 +6315,6 @@ def modify_data(
 
     # ---- backward-compat: 'method' param (accepted but unused) -----------
     if method is not None:
-        import warnings
         warnings.warn(
             "modify_data: the 'method' parameter is deprecated and has no effect. "
             "Use 'draw_from' to select the perturbation distribution.",
@@ -6250,16 +6354,30 @@ def modify_data(
         if dat_length is None:
             raise NotImplementedError(f"modify_data: obs_type={obs_type!r} not supported")
 
-        # Select relative errors for this block type (if given).
+        # Select relative errors for this block type (if given). `errors`
+        # is nominally a length-3 [MT, VTF, PT] sequence, but callers have
+        # passed a bare `[]` for "no reset at all" -- guard against any
+        # short/empty `errors` here instead of indexing errors[0..2]
+        # directly, so obs_type-agnostic "no reset" inputs don't crash.
+        def _errors_slot(idx: int) -> Sequence[float]:
+            try:
+                return errors[idx]
+            except IndexError:
+                return []
+
         rel: np.ndarray | None
         if obs_type == "MT":
-            rel = _rel_err_array(errors[0], dat_length)
+            rel = _rel_err_array(_errors_slot(0), dat_length)
         elif obs_type == "VTF":
-            rel = _rel_err_array(errors[1], dat_length)
+            rel = _rel_err_array(_errors_slot(1), dat_length)
         elif obs_type == "PT":
-            rel = _rel_err_array(errors[2], dat_length)
+            rel = _rel_err_array(_errors_slot(2), dat_length)
         else:
             rel = None
+
+        # MT and VTF store interleaved (Re, Im) pairs per complex component;
+        # PT columns are independent real numbers (no Re/Im split).
+        is_complex_pairs = obs_type in ("MT", "VTF")
 
         if out:
             print(f"Block {bi}: {obs_type} (sites: {len(block.get('sites', []))})")
@@ -6278,18 +6396,45 @@ def modify_data(
                     msg += " (overwriting errors from relative errors)"
                 print(msg)
 
-            # Overwrite errors (optional) and draw perturbations component-wise.
+            # ---- Pass 1: reset error columns from `rel`, if requested. ---
+            # This pass runs to completion, from the as-read `data` only,
+            # before Pass 2 draws a single perturbation -- the reset is
+            # never interleaved with, or based on, already-perturbed values.
+            if rel is not None:
+                if is_complex_pairs:
+                    n_pairs = dat_length // 2
+                    rel_pair = np.empty(n_pairs, dtype=float)
+                    for j in range(n_pairs):
+                        r_re, r_im = float(rel[2 * j]), float(rel[2 * j + 1])
+                        if not np.isclose(r_re, r_im):
+                            warnings.warn(
+                                f"modify_data: {obs_type} pair {j} (site {si}) has "
+                                f"different relative errors for Re ({r_re}) and Im "
+                                f"({r_im}); a single shared sigma is derived from the "
+                                f"complex magnitude and applied to both parts. Using "
+                                f"their mean ({0.5 * (r_re + r_im)!r}). Pass equal "
+                                f"values for both columns of a pair to silence this.",
+                                stacklevel=2,
+                            )
+                        rel_pair[j] = 0.5 * (r_re + r_im)
+
+                    for i in range(nfreq):
+                        for j in range(n_pairs):
+                            k_re, k_im = 2 * j, 2 * j + 1
+                            mag = float(np.hypot(data[i, k_re], data[i, k_im]))
+                            sigma = mag * rel_pair[j]
+                            err[i, k_re] = sigma
+                            err[i, k_im] = sigma
+                else:
+                    for i in range(nfreq):
+                        for k in range(dat_length):
+                            err[i, k] = abs(float(data[i, k])) * float(rel[k])
+
+            # ---- Pass 2: draw perturbations from the now-finalized sigma. -
             for i in range(nfreq):
                 for k in range(dat_length):
                     val = float(data[i, k])
-
-                    if rel is not None:
-                        sigma = float(abs(val) * float(rel[k]))
-                        err[i, k] = sigma
-                    else:
-                        sigma = float(err[i, k])
-
-                    sigma_eff = sigma * float(scalfac)
+                    sigma_eff = float(err[i, k]) * float(scalfac)
 
                     if not np.isfinite(sigma_eff) or sigma_eff <= 0.0:
                         continue
@@ -6306,6 +6451,77 @@ def modify_data(
 
             if compute_mt_derived and obs_type == "MT":
                 _augment_mt_site(site, n_boot=int(bootstrap_n), rng=boot_rng)
+
+    # ---- Optional: override PT data with phase tensor of the already- ----
+    # ---- perturbed Z, matched by site name and frequency. -----------------
+    if derive_pt_from_z:
+        mt_blocks = [b for b in blocks if str(b["obs_type"]) == "MT"]
+        pt_blocks = [b for b in blocks if str(b["obs_type"]) == "PT"]
+
+        if not mt_blocks:
+            if out:
+                print(
+                    "modify_data: derive_pt_from_z=True but no MT block found; "
+                    "PT left as independently perturbed."
+                )
+        elif not pt_blocks:
+            if out:
+                print("modify_data: derive_pt_from_z=True but no PT block found; nothing to do.")
+        else:
+            # name -> (freq, perturbed Z data) lookup, built from every MT site.
+            mt_lookup: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+            for mtb in mt_blocks:
+                for mt_site in mtb.get("sites", []):
+                    name = str(mt_site["site_header_tokens"][0])
+                    mt_lookup[name] = (
+                        np.asarray(mt_site["freq"], dtype=float),
+                        np.asarray(mt_site["data"], dtype=float),
+                    )
+
+            n_overridden = 0
+            n_fallback = 0
+            for ptb in pt_blocks:
+                for pt_site in ptb.get("sites", []):
+                    pname = str(pt_site["site_header_tokens"][0])
+                    if pname not in mt_lookup:
+                        n_fallback += int(pt_site["nfreq"])
+                        if out:
+                            print(
+                                f"modify_data: derive_pt_from_z: no matching MT site "
+                                f"for PT site {pname!r}; left as independently perturbed."
+                            )
+                        continue
+
+                    mt_freq, mt_data = mt_lookup[pname]
+                    pt_freq = np.asarray(pt_site["freq"], dtype=float)
+                    pt_data = np.asarray(pt_site["data"], dtype=float)
+
+                    for i, f in enumerate(pt_freq):
+                        j = int(np.argmin(np.abs(mt_freq - f)))
+                        if not np.isclose(mt_freq[j], f, rtol=1e-6, atol=0.0):
+                            n_fallback += 1
+                            continue  # no matching MT frequency -> keep independent draw
+                        Z = _mt_data_to_tensor(mt_data[j, :])
+                        phi = _phase_tensor_from_Z(Z)
+                        if not np.all(np.isfinite(phi)):
+                            n_fallback += 1
+                            if out:
+                                print(
+                                    f"modify_data: derive_pt_from_z: singular Re(Z) for "
+                                    f"site {pname!r} at freq={f:.6g}; PT row left as "
+                                    f"independently perturbed."
+                                )
+                            continue
+                        pt_data[i, :] = [phi[0, 0], phi[0, 1], phi[1, 0], phi[1, 1]]
+                        n_overridden += 1
+
+                    pt_site["data"] = pt_data
+
+            if out:
+                msg = f"modify_data: derive_pt_from_z: {n_overridden} PT row(s) set from perturbed Z"
+                if n_fallback:
+                    msg += f", {n_fallback} left independently perturbed (no MT site/frequency match)"
+                print(msg + ".")
 
     # Rewrite in-place (frequency first, values then errors).
     write_observe_dat(parsed, template_file)

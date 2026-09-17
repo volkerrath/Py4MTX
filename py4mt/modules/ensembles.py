@@ -178,6 +178,15 @@ is printed if set anyway). Recorded in the pilot_points.npz archive
 (save_pilot_points=True) as "pp_regen_every" (-1 if not set), alongside
 the existing "seed" metadata. femtic_gst_prep.py's new MOD_PP_REGEN_EVERY
 threads through to this parameter -- see its README's matching entry.
+Updated 2026-09-17 by Claude Sonnet 5 (Anthropic) -- generate_data_ensemble
+gained a derive_pt_from_z parameter (default False), forwarded verbatim to
+femtic.modify_data. When True and a member's observe.dat has both an MT and
+a PT block, that member's PT data is overridden, after its normal
+reset/perturb pass, by the phase tensor of that same member's own
+already-perturbed Z (matched by site name and frequency), instead of PT
+being perturbed independently of Z; sites/frequencies without an MT match
+keep their independently-perturbed PT value. AI-generated; please review
+before production use.
 """
 
 from __future__ import annotations
@@ -3069,6 +3078,7 @@ def generate_data_ensemble(alg: str = 'rto',
     errors: Sequence[Sequence[float]] | Sequence[list] = (),
     rng: Optional[Generator] = None,
     out: bool = True,
+    derive_pt_from_z: bool = False,
 ) -> list[str]:
     """
     Generate an ensemble of perturbed observation files in ensemble directories.
@@ -3105,6 +3115,14 @@ def generate_data_ensemble(alg: str = 'rto',
         reproducible together.
     out : bool
         If True, print status messages.
+    derive_pt_from_z : bool
+        Forwarded to :func:`femtic.modify_data`. If True and a member's
+        ``file_in`` contains both an MT and a PT block, each PT site's
+        perturbed data is overridden by the phase tensor of that member's
+        own already-perturbed Z (matched by site name and frequency),
+        instead of being perturbed independently of Z. PT sites/frequencies
+        with no MT match keep their independently-perturbed value. Defaults
+        to False (previous behaviour: PT perturbed independently).
 
     Returns
     -------
@@ -3124,6 +3142,7 @@ def generate_data_ensemble(alg: str = 'rto',
             errors=errors,
             rng=rng,
             out=out,
+            derive_pt_from_z=derive_pt_from_z,
         )
         obs_list.append(file)
 

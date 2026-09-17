@@ -257,6 +257,46 @@ Provenance:
                 is "utm"/"latlon" via fviz.plot_model_slices'
                 show_model_centre parameter; override style with a
                 MOD_MAP_MARKERS entry carrying "is_model_centre": True.
+    2026-09-17  Claude Sonnet 5 (Anthropic)
+                Fixed RESET_ERRORS/ERRORS: the MT relative-error row used
+                [0.15,.05,.05,0.15] * 2 (list concatenation), which does
+                NOT duplicate each value onto its (Re, Im) pair -- given
+                the interleaved Zxx_re,Zxx_im,Zxy_re,Zxy_im,... column
+                order, it silently gave the Re and Im column of the same
+                complex component different, mismatched relative errors
+                (e.g. Zxx: re=0.15, im=0.05). Replaced with
+                [v for v in _mt_rel for _ in range(2)], which duplicates
+                each value so Re and Im of a pair share one relative
+                error; same fix applied to the VTF row (numerically inert
+                there since both original VTF values were 0.05, but the
+                same trap applies if they ever differ). PT is unaffected
+                -- its 4 columns (PTxx,PTxy,PTyx,PTyy) are independent
+                real numbers, not Re/Im pairs. Companion fix in
+                femtic.modify_data (see femtic_readme.md) now derives the
+                MT/VTF reset sigma from each pair's complex magnitude and
+                applies it to both columns, and warns if a caller still
+                passes mismatched Re/Im values for a pair.
+    2026-09-17  Claude Sonnet 5 (Anthropic)
+                Added DERIVE_PT_FROM_Z (default False), wired through
+                ens.generate_data_ensemble's new derive_pt_from_z parameter
+                to femtic.modify_data. When True and observe.dat has both
+                an MT and a PT block, each member's PT data is overridden
+                by the phase tensor of that same member's own
+                already-perturbed Z (matched by site name and frequency)
+                rather than being perturbed independently of Z; PT's error
+                column is unaffected. Picked up automatically by the
+                existing UPPERCASE parameter summary (utl.write_param_
+                summary) -- no separate wiring needed there.
+    2026-09-17  Claude Sonnet 5 (Anthropic)
+                Fixed RESET_ERRORS=False branch: ERRORS = [] crashed
+                femtic.modify_data with IndexError as soon as it read any
+                data block (errors[0]/[1]/[2] indexed unconditionally by
+                obs_type). ERRORS is now set to ([], [], []) in that
+                branch -- the length-3 [MT, VTF, PT] shape modify_data
+                actually expects for "no reset". modify_data itself was
+                also hardened to fetch each slot defensively rather than
+                indexing directly, so a bare [] no longer crashes even if
+                passed here again by mistake.
 """
 
 import os
@@ -380,12 +420,13 @@ print(f"RNG seed: {RANDOM_SEED if RANDOM_SEED is not None else '(fresh entropy �
 """
 Base setup.
 """
-N_SAMPLES = 32
+N_SAMPLES = 64
 # ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/ubinas/ensemble/"
 # ENSEMBLE_NAME = "ubinas_rto_"
 
-ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/misti/ensemble/"
-ENSEMBLE_NAME = "misti_rto_"
+# ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/misti/ensemble/"
+ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_rto_0/"
+ENSEMBLE_NAME = "annecy_rto_"
 
 # TEMPLATES = ENSEMBLE_DIR + "templates/"
 TEMPLATES = ENSEMBLE_DIR + "/templates/"
@@ -410,7 +451,7 @@ ENS_LIST accepts two forms:
   None              — process all members 0 … N_SAMPLES-1 (default)
   [i, j, k, …]     — explicit list of member indices to process
 """
-ENS_LIST = [0,3,4,5, 19, 20, 22, 24, 26 ] #None
+ENS_LIST = None
 
 
 """
@@ -423,7 +464,7 @@ if PERTURB_MOD:
     MOD_REF_BASE = os.path.basename(MOD_REF)
     MOD_METHOD = "add"
     # if ModCov is not None, this needs to be normal
-    MOD_MU = 1.5  # alpha =1/ mu = sqrt(1/alpha)
+    MOD_MU = 1.4142135623730951  # alpha =1/ mu = sqrt(1/alpha)
     MOD_PDF = ["normal", 0., MOD_MU]
     # ["exp", L], ["gauss", L], ["matern", L, MatPars], ["femtic"], None
     R_FILE = TEMPLATES + r"/R_coo"
@@ -466,13 +507,38 @@ if PERTURB_DAT:
 
 RESET_ERRORS = True
 if RESET_ERRORS:
+    # MT/VTF columns are interleaved (Re, Im) pairs per complex component
+    # (Zxx,Zxy,Zyx,Zyy / Tzx,Tzy). Each entry below is duplicated (not
+    # concatenated) so the Re and Im column of a pair share the SAME
+    # relative error, e.g. [0.15,.05,.05,0.15] -> [.15,.15,.05,.05,.05,.05,.15,.15].
+    # femtic.modify_data then applies that shared value to the pair's
+    # complex magnitude, giving Re and Im the same sigma. Using
+    # `[...] * 2` here instead (list concatenation, not duplication) would
+    # silently give Re and Im of the same component different, mismatched
+    # relative errors -- do not do that.
+    _mt_rel = [0.15, .05, .05, 0.15]         # Zxx, Zxy, Zyx, Zyy
+    _vtf_rel = [0.05, 0.05]                  # Tzx, Tzy
     ERRORS = [
-        [0.25, .1, .1, 0.25] * 2,         # Impedance
-        [0.05, 0.05] * 2,                   # VTF
-        [.5, .2, .2, .5],                 # PT
+        [v for v in _mt_rel for _ in range(2)],    # Impedance (8 = 4 pairs x Re/Im)
+        [v for v in _vtf_rel for _ in range(2)],   # VTF (4 = 2 pairs x Re/Im)
+        [.15, .05, .05, .15],                      # PT: PTxx,PTxy,PTyx,PTyy (no Re/Im split)
     ]
 else:
-    ERRORS = []
+    ERRORS = ([], [], [])   # must stay a length-3 [MT, VTF, PT] sequence --
+                             # femtic.modify_data indexes errors[0..2] by
+                             # obs_type regardless of RESET_ERRORS; a bare
+                             # [] here previously raised IndexError as soon
+                             # as any block was read (fixed defensively in
+                             # modify_data too, but keep this correct).
+
+# If the observation file has both an MT and a PT block, optionally replace
+# each PT site's perturbed data with the phase tensor of that same member's
+# own already-perturbed Z (matched by site name and frequency), instead of
+# perturbing PT independently of Z. PT's error column is unaffected either
+# way -- see femtic.modify_data's derive_pt_from_z docstring. Sites or
+# frequencies with no matching MT counterpart keep their
+# independently-perturbed PT value.
+DERIVE_PT_FROM_Z = False
 
 
 """
@@ -721,7 +787,8 @@ data_ensemble = ens.generate_data_ensemble(alg="rto",
                                            method=DAT_METHOD,
                                            errors=ERRORS,
                                            rng=rng,
-                                           out=True)
+                                           out=True,
+                                           derive_pt_from_z=DERIVE_PT_FROM_Z)
 print("data ensemble ready!")
 print("\n")
 

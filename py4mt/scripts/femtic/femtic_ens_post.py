@@ -409,6 +409,35 @@ Provenance
             before. Updated stale "model_iterX.h5" wording in the
             COMPUTE_SENS section's comments, warnings, and variable
             comments to match.
+2026-09-17  Claude Sonnet 5 (Anthropic)
+            Generalised the MOD_STATS blanking/fading scheme from a single
+            hardcoded var_redux switch to MOD_STATS_BLANK_SOURCES: a list
+            of (source_name, direction, thresh) triples, source_name one
+            of "var_redux"/"sens_mean"/"sens_cv"/"simrc_corr"/
+            "flag_null_space" and direction one of "below" (blank where
+            value < thresh -- var_redux/sens_mean/simrc_corr: low means
+            poorly resolved), "above" (blank where value > thresh --
+            sens_cv: high means the linearised sensitivity itself is
+            untrustworthy there, a different question from resolution),
+            or "flag" (blank where value != 0 -- flag_null_space is
+            already boolean). Multiple entries combine via the new
+            MOD_STATS_BLANK_COMBINE ("and"/"or", default "and"), with a
+            printed warning whenever more than one entry is listed (e.g.
+            flag_null_space alongside its own sens_mean/simrc_corr inputs
+            is redundant, though harmless). Replaces the old
+            MOD_STATS_BLANK_BY_REDUX boolean; default is an empty list
+            (blanking off), matching the previous default. Internally,
+            every source is turned into a plain boolean "blank this cell"
+            mask in Python (per its own direction) before being combined
+            and written out as a single 0/1 alpha-block file, so
+            femtic_viz.py's existing alpha_file/alpha_mode/
+            alpha_blank_thresh mechanism (unchanged) only ever sees the
+            "value < 0.5" case it already handled for var_redux. Also
+            added SENS_CV_HIGH_THRESH (default 1.0, i.e. std >= mean) for
+            the "sens_cv"/"above" case, and NULL_SPACE_COMBINE ("and"/"or",
+            default "and", matching prior hardcoded behaviour) generalising
+            flag_null_space's own sens_low_mask/simrc_low_mask combination
+            the same way.
 
     This script targets FEMTIC's current HDF5 output layout only.
     AI-generated code -- review before production use.
@@ -534,11 +563,11 @@ QDIFF_PAIRS = [(15.9, 84.1), (2.3, 97.7)]
 #: else in this script is affected.
 COMPUTE_VAR_REDUX = True
 
-#: Threshold on var_redux used only for the optional MOD_STATS_BLANK_BY_
-#: REDUX blanking below (see the MOD_STATS section) -- free parameters
-#: with var_redux < REDUX_EPS are considered essentially unconstrained
-#: by the inversion (posterior ~ prior). Has no effect unless
-#: MOD_STATS_BLANK_BY_REDUX=True. Ignored if COMPUTE_VAR_REDUX=False.
+#: Threshold on var_redux -- free parameters with var_redux < REDUX_EPS
+#: are considered essentially unconstrained by the inversion (posterior ~
+#: prior). Used by var_redux's own MOD_STATS_CLIM handling above, and, if
+#: ("var_redux", "below", REDUX_EPS) is listed in MOD_STATS_BLANK_SOURCES
+#: below, as that source's threshold too. Ignored if COMPUTE_VAR_REDUX=False.
 REDUX_EPS = 0.1
 
 # ---------------------------------------------------------------------------
@@ -627,6 +656,16 @@ SENS_ERROR_KEY    = "data_errors"   # None to disable error-weighting
 #: spread) for FLAG_NULL_SPACE below.
 SENS_LOW_THRESH_FRAC = 0.05
 
+#: Coefficient-of-variation (std/mean of the per-member cumulative
+#: sensitivity, across the ensemble) above which sens_cv is considered
+#: "high" -- i.e. the linearised sensitivity itself is model-dependent
+#: enough not to be trusted at that cell (see MOD_STATS_BLANK_SOURCES'
+#: "sens_cv" entry below, direction="above"). Unlike SENS_LOW_THRESH_FRAC
+#: this is an absolute threshold on the CV itself, not a fraction of a
+#: maximum -- 1.0 means "std as large as the mean". Only consulted if
+#: "sens_cv" is actually listed in MOD_STATS_BLANK_SOURCES.
+SENS_CV_HIGH_THRESH = 1.0
+
 # --- (2) Ensemble-native SimRC sensitivity ----------------------------------
 #: Set False to skip entirely (no per-member result_XXX.txt files, or
 #: forward-response ensemble not wanted).
@@ -674,6 +713,14 @@ SIMRC_LOW_THRESH_FRAC = 0.05
 #: alpha-blank source the same way var_redux is.
 COMPUTE_NULL_SPACE_FLAG = True
 FLAG_SPREAD_PERCENTILE  = 25.0   # ERR below this percentile counts as "low spread"
+#: How to combine multiple available "low sensitivity" measures (sens_low_mask,
+#: simrc_low_mask) when both are present: "and" (default, conservative -- a
+#: cell must be flagged low by EVERY available measure) or "or" (liberal --
+#: flagged low by ANY available measure). Has no effect when only one
+#: sensitivity measure is available (that measure is used as-is either way).
+NULL_SPACE_COMBINE = "and"
+assert NULL_SPACE_COMBINE in ("and", "or"), \
+    f"NULL_SPACE_COMBINE must be 'and' or 'or', got {NULL_SPACE_COMBINE!r}"
 
 # ---------------------------------------------------------------------------
 # Covariance
@@ -859,19 +906,46 @@ if COMPUTE_NULL_SPACE_FLAG:
     #: clean binary map regardless of how many cells are flagged.
     MOD_STATS_CLIM["flag_null_space"] = [0.0, 1.0]
 
-#: Set True to blank out poorly-constrained cells (var_redux < REDUX_EPS)
-#: in every MOD_STATS plot *other than* var_redux's own plot -- avg, med,
-#: err, mad, percentiles, qdiff_*, var_prior, var_boot/err_boot -- using
-#: the same alpha/blanking mechanism as MOD_ALPHA_FILE/MODE/BLANK_THRESH
-#: below, but sourced from the in-memory var_redux array instead of an
-#: external sensitivity block. No effect unless COMPUTE_VAR_REDUX=True
-#: and var_redux was actually computed (all accepted members had an
-#: iter0 file); otherwise ignored with a warning. Does not affect MOD_QC
-#: (the best-nRMS member plot), which continues to use MOD_ALPHA_FILE
-#: only, if set.
-MOD_STATS_BLANK_BY_REDUX = False
-#: "fade" (progressively lower alpha below REDUX_EPS) or "blank" (fully
-#: transparent/masked below REDUX_EPS) -- same two modes as MOD_ALPHA_MODE.
+#: Blank out poorly-constrained cells in every MOD_STATS plot *other than*
+#: a listed source's own plot -- avg, med, err, mad, percentiles, qdiff_*,
+#: var_prior, var_boot/err_boot -- using the same alpha/blanking mechanism
+#: as MOD_ALPHA_FILE/MODE/BLANK_THRESH below, sourced from one or more
+#: already-computed in-memory statistics instead of an external block file.
+#: Does not affect MOD_QC (the best-nRMS member plot), which continues to
+#: use MOD_ALPHA_FILE only, if set.
+#:
+#: Each entry is a (source_name, direction, thresh) triple:
+#:   source_name : "var_redux" | "sens_mean" | "sens_cv" | "simrc_corr"
+#:                 | "flag_null_space" -- must be a statistic this run
+#:                 actually computed (its COMPUTE_* flag was True and it
+#:                 succeeded), else it's skipped with a printed warning.
+#:   direction   : "below" -- blank where value <  thresh (var_redux,
+#:                             sens_mean, simrc_corr: low = poorly resolved)
+#:                 "above" -- blank where value >  thresh (sens_cv: high =
+#:                             linearised sensitivity itself untrustworthy
+#:                             there, a different question from "resolved")
+#:                 "flag"  -- blank where value != 0 (flag_null_space is
+#:                             already a 0/1 flag; thresh is ignored)
+#:   thresh      : REDUX_EPS / (SENS_LOW_THRESH_FRAC * max) / SENS_CV_HIGH_THRESH
+#:                 / (SIMRC_LOW_THRESH_FRAC * max) / None, as appropriate --
+#:                 see each COMPUTE_* section above for the matching constant.
+#: Empty list (default) disables blanking entirely, matching the previous
+#: MOD_STATS_BLANK_BY_REDUX=False default.
+MOD_STATS_BLANK_SOURCES = [
+    # ("var_redux", "below", REDUX_EPS),
+]
+#: How multiple MOD_STATS_BLANK_SOURCES entries combine into one mask:
+#: "and" (default, conservative -- ALL listed sources must flag a cell) or
+#: "or" (liberal -- ANY listed source flagging it is enough). Only matters,
+#: and only prints a warning, when more than one entry is listed -- e.g.
+#: "flag_null_space" is already itself an AND of sens_mean/simrc_corr, so
+#: listing it alongside them is redundant (harmless, but worth knowing).
+MOD_STATS_BLANK_COMBINE = "and"
+assert MOD_STATS_BLANK_COMBINE in ("and", "or"), \
+    f"MOD_STATS_BLANK_COMBINE must be 'and' or 'or', got {MOD_STATS_BLANK_COMBINE!r}"
+#: "fade" (progressively lower alpha below/above threshold) or "blank"
+#: (fully transparent/masked) -- same two modes as MOD_ALPHA_MODE. Applies
+#: to the combined mask as a whole, not per-source.
 MOD_STATS_BLANK_MODE = "blank"
 
 # ---------------------------------------------------------------------------
@@ -1193,8 +1267,9 @@ def _plot_slice(block_file: str, pdf_file: str,
         threshold. ``None`` (default, for all three) falls back to the
         module-level ``MOD_ALPHA_FILE`` / ``MOD_ALPHA_MODE`` /
         ``MOD_ALPHA_BLANK_THRESH``, unchanged from previous behaviour.
-        Used by the MOD_STATS block's MOD_STATS_BLANK_BY_REDUX option to
-        blank by var_redux instead, without touching MOD_QC or any other
+        Used by the MOD_STATS block's MOD_STATS_BLANK_SOURCES option to
+        blank by var_redux/sens_mean/sens_cv/simrc_corr/flag_null_space
+        (singly or combined) instead, without touching MOD_QC or any other
         MOD_STATS panel that doesn't opt in.
     """
     if fviz is None:
@@ -1637,11 +1712,13 @@ if COMPUTE_SIMRC:
 # --- (2d) Combined diagnostic: low spread AND low sensitivity --------------
 # Operationalises the mitigation strategy: a cell is flagged as a likely
 # regularisation-collapsed null-space cell -- rather than genuinely
-# data-constrained -- only when BOTH ensemble spread is small AND every
-# available independent sensitivity measure also says it's small. Using
-# AND across available measures (rather than OR) is deliberately
-# conservative: it minimises false positives at the cost of leaving some
-# genuine null-space cells unflagged when only one measure is available.
+# data-constrained -- when spread is small AND (NULL_SPACE_COMBINE="and")
+# or OR (NULL_SPACE_COMBINE="or") every/any available independent
+# sensitivity measure also says it's small. "and" (the default) is
+# deliberately conservative: it minimises false positives at the cost of
+# leaving some genuine null-space cells unflagged when both measures are
+# available but disagree; "or" is more liberal. With only one measure
+# available, NULL_SPACE_COMBINE has no effect -- that measure is used as-is.
 flag_null_space = None
 if COMPUTE_NULL_SPACE_FLAG:
     _low_sens_parts = [m for m in (sens_low_mask, simrc_low_mask) if m is not None]
@@ -1651,13 +1728,19 @@ if COMPUTE_NULL_SPACE_FLAG:
     else:
         _spread_thresh = np.percentile(ens_err, FLAG_SPREAD_PERCENTILE)
         _low_spread = ens_err < _spread_thresh
-        _low_sens = (np.logical_and.reduce(_low_sens_parts)
-                     if len(_low_sens_parts) > 1 else _low_sens_parts[0])
+        if len(_low_sens_parts) > 1:
+            _low_sens = (np.logical_and.reduce(_low_sens_parts)
+                         if NULL_SPACE_COMBINE == "and"
+                         else np.logical_or.reduce(_low_sens_parts))
+            _combine_desc = f"{NULL_SPACE_COMBINE.upper()} of both"
+        else:
+            _low_sens = _low_sens_parts[0]
+            _combine_desc = "the available"
         flag_null_space = _low_spread & _low_sens
         print(f"\n  flag_null_space: "
               f"{int(np.sum(flag_null_space))}/{flag_null_space.size} cells "
               f"flagged (ERR < {FLAG_SPREAD_PERCENTILE:g}th percentile AND "
-              f"low sensitivity by {'both' if len(_low_sens_parts) > 1 else 'the available'} "
+              f"low sensitivity by {_combine_desc} "
               f"measure(s)) — likely regularisation-collapsed rather than "
               f"genuinely data-constrained.")
 
@@ -1876,34 +1959,73 @@ if MOD_STATS:
                   "sensitivity measure was available — skipped.")
             MOD_STATS_WHAT = [k for k in MOD_STATS_WHAT if k != "flag_null_space"]
 
-        # --- Optional: blank poorly-constrained cells (var_redux < REDUX_EPS)
-        # in every other MOD_STATS plot. Writes the var_redux block file
-        # once, up front, so it's available as an alpha source regardless
-        # of where (or whether) "var_redux" itself sits in MOD_STATS_WHAT;
-        # the loop below still writes/overwrites the same file when it
-        # reaches the "var_redux" key on its own (identical content).
-        _redux_alpha_block = None
-        if MOD_STATS_BLANK_BY_REDUX:
-            if var_redux is None:
-                print("  MOD_STATS_BLANK_BY_REDUX: var_redux not computed "
-                      "— blanking disabled for this run.")
-            else:
-                _redux_alpha_block = os.path.join(
-                    MOD_STATS_DIR, f"resistivity_block_{P}_var_redux.dat",
+        # --- Optional: blank poorly-constrained cells in every other
+        # MOD_STATS plot, per MOD_STATS_BLANK_SOURCES. Each listed source
+        # is turned into a boolean "blank this cell" mask according to its
+        # own direction, the masks are combined via MOD_STATS_BLANK_COMBINE,
+        # and the single resulting 0/1 mask is written once, up front, as
+        # the alpha-blank block file used by every MOD_STATS plot below
+        # (except a plot whose own statistic is one of the active sources).
+        _blank_source_arrays = {
+            "var_redux":       var_redux,
+            "sens_mean":       sens_mean,
+            "sens_cv":         sens_cv,
+            "simrc_corr":      simrc_corr,
+            "flag_null_space": (flag_null_space.astype(float)
+                                 if flag_null_space is not None else None),
+        }
+        _blank_source_names = {s[0] for s in MOD_STATS_BLANK_SOURCES}
+        _stats_alpha_block = None
+        if MOD_STATS_BLANK_SOURCES:
+            if len(MOD_STATS_BLANK_SOURCES) > 1:
+                print(f"  MOD_STATS_BLANK_SOURCES: combining "
+                      f"{len(MOD_STATS_BLANK_SOURCES)} sources with "
+                      f"MOD_STATS_BLANK_COMBINE='{MOD_STATS_BLANK_COMBINE}' "
+                      f"-- note 'flag_null_space' is already itself an AND "
+                      f"of the other sensitivity measures, so combining it "
+                      f"with them is likely redundant.")
+            _masks = []
+            for _bname, _bdir, _bthresh in MOD_STATS_BLANK_SOURCES:
+                _barr = _blank_source_arrays.get(_bname)
+                if _barr is None:
+                    print(f"  MOD_STATS_BLANK_SOURCES: '{_bname}' not "
+                          f"available for this ensemble — skipped.")
+                    continue
+                if _bdir == "below":
+                    _masks.append(_barr < _bthresh)
+                elif _bdir == "above":
+                    _masks.append(_barr > _bthresh)
+                elif _bdir == "flag":
+                    _masks.append(_barr != 0.0)
+                else:
+                    print(f"  MOD_STATS_BLANK_SOURCES: unknown direction "
+                          f"'{_bdir}' for '{_bname}' — skipped.")
+            if _masks:
+                _blank_mask = (np.logical_and.reduce(_masks)
+                                if MOD_STATS_BLANK_COMBINE == "and"
+                                else np.logical_or.reduce(_masks))
+                _stats_alpha_block = os.path.join(
+                    MOD_STATS_DIR, f"resistivity_block_{P}_blank_mask.dat",
                 )
+                # 0 = blanked/faded, 1 = kept -- matches alpha_blank_thresh
+                # below (a plain "value < 0.5" test, same mechanism used
+                # for var_redux previously).
                 fem.insert_model(
                     template   = _best_file,
-                    model      = var_redux,
-                    model_file = _redux_alpha_block,
+                    model      = np.where(_blank_mask, 0.0, 1.0),
+                    model_file = _stats_alpha_block,
                     ocean      = MOD_OCEAN,
                     air_rho    = MOD_AIR_RHO,
                     ocean_rho  = MOD_OCEAN_RHO,
                     out        = OUT,
                 )
-                print(f"  MOD_STATS_BLANK_BY_REDUX: blanking cells with "
-                      f"var_redux < {REDUX_EPS:g} "
+                print(f"  MOD_STATS_BLANK_SOURCES: blanking "
+                      f"{int(np.sum(_blank_mask))}/{_blank_mask.size} cells "
                       f"(mode='{MOD_STATS_BLANK_MODE}') in all MOD_STATS "
-                      f"plots except var_redux's own.")
+                      f"plots except {sorted(_blank_source_names)}'s own.")
+            else:
+                print("  MOD_STATS_BLANK_SOURCES: no requested sources were "
+                      "available — blanking disabled for this run.")
 
         for _key in MOD_STATS_WHAT:
             if _key not in _stat_map:
@@ -1931,7 +2053,8 @@ if MOD_STATS:
                 out        = OUT,
             )
             print(f"STATS: plotting {_label} → {_pdf_out}  (clim={_clim})")
-            _use_redux_alpha = _redux_alpha_block is not None and _key != "var_redux"
+            _use_blank_alpha = (_stats_alpha_block is not None
+                                 and _key not in _blank_source_names)
             _plot_slice(
                 block_file      = _block_out,
                 pdf_file        = _pdf_out,
@@ -1944,9 +2067,9 @@ if MOD_STATS:
                 site_xys        = site_xys,
                 obs_coords_only = obs_coords_only,
                 clim            = _clim,
-                alpha_file          = _redux_alpha_block if _use_redux_alpha else None,
-                alpha_mode          = MOD_STATS_BLANK_MODE if _use_redux_alpha else None,
-                alpha_blank_thresh  = REDUX_EPS if _use_redux_alpha else None,
+                alpha_file          = _stats_alpha_block if _use_blank_alpha else None,
+                alpha_mode          = MOD_STATS_BLANK_MODE if _use_blank_alpha else None,
+                alpha_blank_thresh  = 0.5 if _use_blank_alpha else None,
             )
 
 print("\nfemtic_ens_post.py complete.")
