@@ -538,7 +538,7 @@ else:
 # way -- see femtic.modify_data's derive_pt_from_z docstring. Sites or
 # frequencies with no matching MT counterpart keep their
 # independently-perturbed PT value.
-DERIVE_PT_FROM_Z = False
+DERIVE_PT_FROM_Z = True
 
 
 """
@@ -569,7 +569,7 @@ if PLOT_DATA or PLOT_MODEL:
     # Number of MT sites to include in each data-plot row.
     # Sites are drawn without replacement from the full site list.
     # Set to None to show all available sites.
-    VIZ_N_SITES = 10
+    VIZ_N_SITES = 3
     
     # --- data plot ---
     # what:  list of panel types — one subplot column per entry.
@@ -585,7 +585,7 @@ if PLOT_DATA or PLOT_MODEL:
     
     # Shorter alternative (single string broadcast to every rho/phase column):
     # DAT_COMPS = "xy,yx"
-    DAT_SHOW_ERRORS_ORIG = False     # show error envelopes on original curves
+    DAT_SHOW_ERRORS_ORIG = True     # show error envelopes on original curves
     # (raw template errors can be noisy at long
     # periods — set False to hide them)
     DAT_SHOW_ERRORS_PERT = True    # show error envelopes on perturbed curves
@@ -697,6 +697,21 @@ if PLOT_DATA or PLOT_MODEL:
         dict(kind="ns",  x0=(-71.536322, "latlon")),
         dict(kind="ew",  y0=(-16.196900, "latlon")),
     ]
+    MOD_SLICES = [    
+    dict(kind="map", z0=-0.25),    # km
+    dict(kind="map", z0=0.0),    # km
+    dict(kind="map", z0=0.5),   # km
+    dict(kind="map", z0=1.0),   # km
+    dict(kind="map", z0=2.0),   # km
+    dict(kind="map", z0=2.5),   # km
+    dict(kind="map", z0=3.0),   # km
+    dict(kind="map", z0=4.0),   # km
+    dict(kind="map", z0=5.0),   # km
+    dict(kind="ns",  x0=0.),    # km
+    dict(kind="ew",  y0=0.),    # km
+    #dict(kind="ns",  x0=(-71.40723, 'latlon')),    # km
+    #dict(kind="ew",  y0=(-16.299593, 'latlon')),    # km
+]
     MOD_XLIM = [-25., 25.]   # [xmin, xmax] model-local km; None = auto
     MOD_YLIM = [-25., 25.]   # [ymin, ymax] model-local km; None = auto
     MOD_ZLIM = [-10., 30.]   # [zmin, zmax] model-local km; None = auto
@@ -705,8 +720,8 @@ if PLOT_DATA or PLOT_MODEL:
     MOD_EQUAL_ASPECT  = True
     MOD_DEPTH_KM      = True
     MOD_HORIZ_KM      = True
-    MOD_NROWS         = None   # None = auto (1 row)
-    MOD_NCOLS         = None   # None = auto (len(MOD_SLICES) cols)
+    MOD_NROWS         = 4   # None = auto (1 row)
+    MOD_NCOLS         = 3   # None = auto (len(MOD_SLICES) cols)
     MOD_PANEL_HEIGHT  = 16.0   # cm
     MOD_PANEL_WIDTH   = None   # cm; None = auto from aspect ratio
     MOD_FIGSIZE       = None   # [w, h] cm; overrides auto when set

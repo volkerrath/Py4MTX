@@ -680,7 +680,7 @@ COMPUTE_SIMRC = True
 #: so use "rhophas"/"imp"/"vtf"/"pt" (or a dict value understood by
 #: SIMRC_DATA_KIND below) as appropriate for what FEMTIC wrote.
 SIMRC_RESULT_FILES = {
-    "rhophas": "result_MT.txt",
+    "imp": "result_MT.txt",
     "vtf":     "result_VTF.txt",
 }
 
@@ -932,6 +932,7 @@ if COMPUTE_NULL_SPACE_FLAG:
 #: Empty list (default) disables blanking entirely, matching the previous
 #: MOD_STATS_BLANK_BY_REDUX=False default.
 MOD_STATS_BLANK_SOURCES = [
+    ("sens_mean", "below", 0.01),
     # ("var_redux", "below", REDUX_EPS),
 ]
 #: How multiple MOD_STATS_BLANK_SOURCES entries combine into one mask:
