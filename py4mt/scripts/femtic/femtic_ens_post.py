@@ -438,6 +438,13 @@ Provenance
             default "and", matching prior hardcoded behaviour) generalising
             flag_null_space's own sens_low_mask/simrc_low_mask combination
             the same way.
+2026-09-19  Claude Sonnet 5 (Anthropic)
+            Plot-extent consistency with femtic_rto_prep.py /
+            femtic_gst_prep.py: no functional change here -- this
+            script's MOD_ROI_AUTO/MOD_ROI_PAD_XY/MOD_ROI_ZLIM block is
+            the reference, and the two prep scripts now carry the same
+            three variables with the same defaults and semantics.
+            Comment/whitespace tidy only.
 
     This script targets FEMTIC's current HDF5 output layout only.
     AI-generated code -- review before production use.
@@ -1039,9 +1046,12 @@ MOD_ZLIM = None    # [zmin, zmax] model-local km; None = auto
 #: full-mesh auto-scaling if they're also None) when no sites are found.
 #: Also drives the per-panel aspect-ratio sizing below (MOD_PANEL_WIDTH),
 #: since that sizing needs an actual extent to compute widths from.
+#: The same three MOD_ROI_* variables (same defaults, same semantics) now
+#: exist in femtic_rto_prep.py and femtic_gst_prep.py, so the plot extent
+#: is identical between prep-time and post-time figures.
 MOD_ROI_AUTO   = True
 MOD_ROI_PAD_XY = 2.0             # km of padding around the site bbox
-MOD_ROI_ZLIM   = [-1.0, 7.0]    
+MOD_ROI_ZLIM   = [-1.0, 7.0]
 #: depth range (km, positive-down) for ns/ew/plane panels; None = leave MOD_ZLIM as-is
 #: Lower bound is negative (above the z=0 datum) to give ~1 km of headroom
 #: so topography (mesh cells with z < 0) is not clipped out of the ns/ew/

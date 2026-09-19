@@ -85,8 +85,13 @@ makes the *entire* ensemble (data + model perturbation, plus the
 | `PLOT_SLICES_ENS` | Enable joint ensemble slice figure |
 | `MOD_SLICES` | Slice dicts for QC/model plots (model-local metres, `kind` key). As of 2026-06-07 the QC plot uses the full shared `MOD_*` plotting config block (`MOD_CMAP`, `MOD_CLIM`, `MOD_XLIM`/`YLIM`/`ZLIM`, `MOD_OCEAN_COLOR`, `MOD_DPI`, site overlay, UTM origin, etc. — same as `femtic_gst_prep.py`/`femtic_ens_post.py`), not the older `QC_SLICES`/`QC_CMAP`/etc. variables. |
 | `MOD_TICK_FONTSIZE` / `MOD_LABEL_FONTSIZE` | Axis tick/label font sizes for the QC/model slice plot. Defaults `7`/`8`, matching `fviz.plot_model_slices`' own defaults. |
+| `MOD_XLIM` / `MOD_YLIM` / `MOD_ZLIM` | Literal plot extent, model-local **km**; `None` = auto. Overridden by `MOD_ROI_AUTO` (below) when site positions are available. |
+| `MOD_ROI_AUTO` | Default `True`. With site positions available (`MOD_SITE_DAT` / `MOD_SITE_NUMBER`, subject to `MOD_PLOT_SITES_MAPS/SLICES`), `MOD_XLIM`/`MOD_YLIM` are derived from the site bounding box + `MOD_ROI_PAD_XY` and `MOD_ZLIM` is set from `MOD_ROI_ZLIM`, overriding the literals. Falls back to the literals if no sites are found. Identical to `femtic_ens_post.py` / `femtic_gst_prep.py`. Also drives the aspect-ratio panel sizing (`MOD_PANEL_WIDTH = None`). |
+| `MOD_ROI_PAD_XY` | Default `2.0` km. Padding around the site bounding box. |
+| `MOD_ROI_ZLIM` | Default `[-1.0, 7.0]` km, positive-down; `None` leaves `MOD_ZLIM` as set. Negative lower bound keeps ~1 km of headroom above the z = 0 datum so topography is not clipped. |
 | `ENS_SLICES` | Slice dicts for ensemble plot |
 | `ENS_CMAP/CLIM` | Colormap and limits for ensemble plot |
+| `ENS_XLIM` / `ENS_YLIM` / `ENS_ZLIM` | Default to `MOD_XLIM`/`YLIM`/`ZLIM` and follow the `MOD_ROI_AUTO` result automatically, unless set to their own separate value. |
 | `ENS_STAT_ROWS` | Summary rows: `["mean", "std", "median"]` subset |
 | `ENS_TICK_FONTSIZE` / `ENS_LABEL_FONTSIZE` | Axis tick/label font sizes for the ensemble slice plot. Defaults `6`/`7`, matching `fviz.plot_ensemble_slices`' own defaults; independent of the `MOD_*` pair above since the joint member × slice grid needs smaller text to stay readable. |
 | `MOD_SHOW_IN_SPYDER` | `True` (default) and running inside Spyder (detected via `utl.runtime_env() == "spyder"`) → every saved figure (QC, model, ensemble) is also displayed inline in Spyder's Plots pane via `plt.show()`, in addition to being written to disk. No effect outside Spyder; set `False` to disable even under Spyder. |
@@ -141,3 +146,12 @@ dict(kind="plane", point=[0,0,5000], strike=45, dip=60)
   `MOD_DISPLAY_COORDS` is `"utm"`/`"latlon"`, via
   `fviz.plot_model_slices`'s new `show_model_centre` parameter. Override
   style with a `MOD_MAP_MARKERS` entry carrying `"is_model_centre": True`.
+- 2026-09-19 (Claude Sonnet 5, Anthropic): Plot extent made consistent with
+  `femtic_ens_post.py`: added `MOD_ROI_AUTO` / `MOD_ROI_PAD_XY` / `MOD_ROI_ZLIM`
+  (same names, defaults and semantics). `MOD_XLIM`/`MOD_YLIM` now come from the
+  site bounding box + padding and `MOD_ZLIM` from `MOD_ROI_ZLIM` whenever sites
+  are available, for QC/model and ensemble slice plots alike (`ENS_*LIM` were
+  plain aliases of `MOD_*LIM` and are re-linked to the result unless given a
+  separate value). The origin/site-resolution block now also runs for
+  `PLOT_SLICES_ENS`, so the ensemble plot gets the ROI even when
+  `PLOT_MODEL`/`PLOT_SLICES_QC` are off.

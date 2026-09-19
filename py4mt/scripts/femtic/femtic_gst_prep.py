@@ -283,6 +283,25 @@ Provenance:
                 to output_target=MOD_OUTPUT_TARGET; unrelated to the
                 MOD_PP_REGEN_EVERY change but found and fixed in the same
                 pass since it blocked testing the call site at all.
+    2026-09-19  Claude Sonnet 5 (Anthropic)
+                Made the plot extent consistent with femtic_ens_post.py:
+                added MOD_ROI_AUTO / MOD_ROI_PAD_XY / MOD_ROI_ZLIM (same
+                names, defaults and semantics). With MOD_ROI_AUTO=True and
+                site positions available, MOD_XLIM/MOD_YLIM are derived from
+                the site bounding box + MOD_ROI_PAD_XY and MOD_ZLIM from
+                MOD_ROI_ZLIM, overriding the literal MOD_XLIM/YLIM/ZLIM;
+                applied once, right after the site positions are read, and
+                picked up by every plot_model_slices call (QC and model
+                plots). ENS_XLIM/YLIM/ZLIM were plain config-time aliases of
+                MOD_*, so they would have kept the literal values; they are
+                now re-linked to the ROI result unless they were given their
+                own separate value. Widened the origin/site-resolution gate
+                to also run for PLOT_SLICES_ENS, so the ensemble-slice plot
+                sees the same extent even when PLOT_MODEL/PLOT_SLICES_QC are
+                off. Falls back to the literal limits if no sites are found.
+                MOD_PP_ROI (extrema-search region) is deliberately NOT
+                touched: it stays independent of the plot extent and is
+                never derived from, or overridden by, the site-bbox ROI.
 """
 
 import os
@@ -867,6 +886,30 @@ if PLOT_DATA or PLOT_MODEL:
     MOD_YLIM = [-10., 10.]   # [ymin, ymax] model-local km; None = auto
     MOD_ZLIM = [-1.,  5.]   # [zmin, zmax] model-local km; None = auto
 
+    # --- Region of interest (auto xlim/ylim/zlim from site positions) --------
+    #: Identical to the block in femtic_ens_post.py, so prep-time and post-time
+    #: figures share one plot extent.
+    #: When True and site positions are available (MOD_SITE_DAT / MOD_SITE_NUMBER,
+    #: subject to MOD_PLOT_SITES_MAPS/SLICES as usual), MOD_XLIM/MOD_YLIM are
+    #: derived automatically from the site bounding box + MOD_ROI_PAD_XY, and
+    #: MOD_ZLIM is set from MOD_ROI_ZLIM -- overriding the literal MOD_XLIM/
+    #: MOD_YLIM/MOD_ZLIM values above. Falls back to those literals (or to
+    #: full-mesh auto-scaling if they're also None) when no sites are found.
+    #: ENS_XLIM/YLIM/ZLIM below follow the result automatically, unless they
+    #: have been given their own, separate values.
+    #: Also drives the per-panel aspect-ratio sizing below (MOD_PANEL_WIDTH),
+    #: since that sizing needs an actual extent to compute widths from.
+    #: NOTE: this is the *plot* extent only. It is unrelated to MOD_PP_ROI
+    #: (pilot-point extrema search region, see above), which is left exactly
+    #: as configured and is never derived from, or overridden by, this block.
+    MOD_ROI_AUTO   = True
+    MOD_ROI_PAD_XY = 2.0             # km of padding around the site bbox
+    MOD_ROI_ZLIM   = [-1.0, 7.0]
+    #: depth range (km, positive-down) for ns/ew/plane panels; None = leave MOD_ZLIM as-is
+    #: Lower bound is negative (above the z=0 datum) to give ~1 km of headroom
+    #: so topography (mesh cells with z < 0) is not clipped out of the ns/ew/
+    #: plane panels.
+
     # --- Figure layout -------------------------------------------------------
     MOD_EQUAL_ASPECT  = True
     MOD_DEPTH_KM      = True
@@ -889,6 +932,8 @@ if PLOT_DATA or PLOT_MODEL:
     ENS_SLICES      = MOD_SLICES   # reuse same slice specs; override if needed
     ENS_CMAP        = MOD_CMAP
     ENS_CLIM        = MOD_CLIM
+    #: ENS_XLIM/YLIM/ZLIM follow MOD_XLIM/YLIM/ZLIM, including the automatic
+    #: MOD_ROI_AUTO override applied later, unless set to separate values here.
     ENS_XLIM        = MOD_XLIM
     ENS_YLIM        = MOD_YLIM
     ENS_ZLIM        = MOD_ZLIM
@@ -1083,7 +1128,7 @@ PLOT_MODEL:     same call for the final-iterate (or iter0) model file.
                 Saved as gst_model<PLOT_STR>.pdf.
 Both flags are independent; set either or both to True.
 """
-if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC):
+if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC or PLOT_SLICES_ENS):
 
     # --- resolve UTM origin --------------------------------------------------
     _mod_utm_origin_lat = MOD_UTM_ORIGIN_LAT
@@ -1159,6 +1204,37 @@ if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC
             sx_m, sy_m = fem.read_site_position(_obs_file, _sn)
             _mod_site_xys.append((_sn, sx_m, sy_m, 0.0))
         _mod_sites_from_obs = True
+
+    # --- Region of interest: override MOD_XLIM/YLIM/ZLIM from site bbox -------
+    #: Same logic as femtic_ens_post.py. ENS_XLIM/YLIM/ZLIM are plain aliases of
+    #: MOD_XLIM/YLIM/ZLIM (set at config time); remember which of them are
+    #: still untouched aliases *before* MOD_* is rebound, so that a deliberately
+    #: separate ENS_* value is not clobbered.
+    _ens_x_follows = ENS_XLIM is MOD_XLIM
+    _ens_y_follows = ENS_YLIM is MOD_YLIM
+    _ens_z_follows = ENS_ZLIM is MOD_ZLIM
+    if MOD_ROI_AUTO and _mod_site_xys:
+        _sx = np.array([s[1] for s in _mod_site_xys])   # model-local metres
+        _sy = np.array([s[2] for s in _mod_site_xys])   # model-local metres
+        MOD_XLIM = [float(_sx.min() / 1000.0 - MOD_ROI_PAD_XY),
+                    float(_sx.max() / 1000.0 + MOD_ROI_PAD_XY)]
+        MOD_YLIM = [float(_sy.min() / 1000.0 - MOD_ROI_PAD_XY),
+                    float(_sy.max() / 1000.0 + MOD_ROI_PAD_XY)]
+        if MOD_ROI_ZLIM is not None:
+            MOD_ZLIM = list(MOD_ROI_ZLIM)
+        if _ens_x_follows:
+            ENS_XLIM = MOD_XLIM
+        if _ens_y_follows:
+            ENS_YLIM = MOD_YLIM
+        if _ens_z_follows:
+            ENS_ZLIM = MOD_ZLIM
+        print(f"\nROI (from {len(_mod_site_xys)} sites, pad={MOD_ROI_PAD_XY:.2f} km):")
+        print(f"  MOD_XLIM = {MOD_XLIM} km")
+        print(f"  MOD_YLIM = {MOD_YLIM} km")
+        print(f"  MOD_ZLIM = {MOD_ZLIM} km")
+    elif MOD_ROI_AUTO:
+        print("\nROI: MOD_ROI_AUTO=True but no sites available -- "
+              "using literal MOD_XLIM/MOD_YLIM/MOD_ZLIM instead.")
 
     # --- helper: call plot_model_slices for one model file -------------------
     def _plot_member_slices(mod_file, out_pdf):

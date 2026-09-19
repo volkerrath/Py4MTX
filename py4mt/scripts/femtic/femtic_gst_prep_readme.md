@@ -305,7 +305,7 @@ statistical summary rows.
 | `ENS_SLICES` | 4 slices | Slice-spec list in model-local metres — same format as `femtic_mod_plot.PLOT_SLICES`; kinds: `"map"`, `"ns"`, `"ew"`, `"plane"`; optional `invert_x=True` per panel flips horizontal axis on curtain/plane panels |
 | `ENS_CMAP` | `"turbo_r"` | Matplotlib colormap for member and mean/median rows |
 | `ENS_CLIM` | `[0., 4.]` | log₁₀(Ω·m) colour limits; `None` = auto from ensemble range |
-| `ENS_XLIM`, `ENS_YLIM`, `ENS_ZLIM` | `None` | Global axis limits in model-local metres; `None` = auto |
+| `ENS_XLIM`, `ENS_YLIM`, `ENS_ZLIM` | `MOD_XLIM`/`YLIM`/`ZLIM` | Global axis limits in model-local **km**; `None` = auto. Follow the `MOD_ROI_AUTO` result automatically unless set to their own separate value |
 | `ENS_OCEAN_COLOR` | `"lightgrey"` | Flat colour for ocean cells |
 | `ENS_STAT_ROWS` | `["mean", "std"]` | Stat rows appended after member rows; any subset of `"mean"`, `"std"`, `"median"` |
 | `ENS_PER_MEMBER` | `False` | Also save one single-row figure per member |
@@ -389,9 +389,12 @@ from 0 … `N_SAMPLES − 1` each run.  The drawn list is printed at runtime.
 | `MOD_LOG10`            | Plot log₁₀(ρ) if `True`.                                                          |
 | `MOD_CMAP`             | Matplotlib colormap (default `'jet_r'`).                                           |
 | `MOD_CLIM`             | `(vmin, vmax)` in log₁₀(Ω·m); `None` = auto from reference model.                |
-| `MOD_XLIM`             | `(xmin, xmax)` in metres for map slices; `None` = auto.                            |
-| `MOD_YLIM`             | `(ymin, ymax)` in metres — northing (map) or along-profile (curtain); `None` = auto.|
-| `MOD_ZLIM`             | `(zmin, zmax)` in metres for curtain slices (negative-down); `None` = auto.        |
+| `MOD_XLIM`             | `[xmin, xmax]` in model-local km; `None` = auto. Overridden by `MOD_ROI_AUTO` when sites are available. |
+| `MOD_YLIM`             | `[ymin, ymax]` in model-local km; `None` = auto. Overridden by `MOD_ROI_AUTO` when sites are available. |
+| `MOD_ZLIM`             | `[zmin, zmax]` in model-local km, positive-down; `None` = auto. Overridden by `MOD_ROI_AUTO` / `MOD_ROI_ZLIM` when sites are available. |
+| `MOD_ROI_AUTO`         | Default `True`. Derives `MOD_XLIM`/`MOD_YLIM` from the site bounding box + `MOD_ROI_PAD_XY` and sets `MOD_ZLIM` from `MOD_ROI_ZLIM`; falls back to the literals if no sites are found. Identical to `femtic_ens_post.py` / `femtic_rto_prep.py`. **Plot extent only — unrelated to `MOD_PP_ROI`** (the extrema-search region), which is never derived from or overridden by it. |
+| `MOD_ROI_PAD_XY`       | Default `2.0` km. Padding around the site bounding box. |
+| `MOD_ROI_ZLIM`         | Default `[-1.0, 7.0]` km, positive-down; `None` leaves `MOD_ZLIM` as set. |
 | `MOD_MESH_LINES`       | Overlay triangulation edges on filled patches (default `False`).                   |
 | `MOD_MESH_LW`          | Line width for mesh edge overlay (pt).                                             |
 | `MOD_MESH_COLOR`       | Colour for mesh edge overlay.                                                      |
@@ -501,6 +504,7 @@ No sparse-matrix file (`.npz`) is required.
 | 2026-09-09 | Claude Sonnet 5 (Anthropic) | Added `MOD_PP_REGEN_EVERY` (default `None` = unchanged behaviour): passed to `ens.generate_gst_model_ensemble`'s new `pp_regen_every` parameter, which redraws the *random* pilot-point component (whole point set for `MOD_PP_MODE="random"`; random-fill portion of `"mixed"`/`"extrema"`) only once every `MOD_PP_REGEN_EVERY` consecutive members instead of every member — pilot-point values are still redrawn every member regardless, so members sharing a block still differ. Separates "spread from pilot-point value randomness" from "spread from pilot-point location randomness". No effect for `MOD_PP_MODE = "fixed"`. See `ensembles_readme.md` for the full explanation and an example. Also fixed a pre-existing bug found while wiring this in: the `ens.generate_gst_model_ensemble` call passed `output_target=MOD_OUTPUFalseT_TARGET`, an undefined variable (the actual config variable is `MOD_OUTPUT_TARGET`), which raised `NameError` on every `PERTURB_MOD=True` run before Kriging could start; corrected to `MOD_OUTPUT_TARGET`. |
 | 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_gst_prep_summary.md` output at end of run: writes user-set (UPPERCASE) parameters, script path, and run date/time. |
 | 2026-08-24 | Claude Sonnet 5 (Anthropic) | Added `PLOT_ONLY` mode: forces `PERTURB_MOD`/`PERTURB_DAT` off and skips `generate_directories()` entirely (which would otherwise overwrite already-Kriged member models via `COPY_LIST`), then re-plots existing member files from disk via `PLOT_DATA`/`PLOT_MODEL`/`PLOT_SLICES_QC`/`PLOT_SLICES_ENS`. Required making `MOD_MESH`/`MOD_RESISTIVITY_FILE`/`MOD_REFERENCE_FILE` unconditional (previously only defined inside `if PERTURB_MOD:`, a latent `NameError` risk) and decoupling the `PLOT_DATA` block from `if PERTURB_DAT:`. Missing per-member files are warned about and skipped, never a hard error. |
+| 2026-09-19 | Claude Sonnet 5 (Anthropic) | Plot extent made consistent with `femtic_ens_post.py`: added `MOD_ROI_AUTO` / `MOD_ROI_PAD_XY` / `MOD_ROI_ZLIM` (same names, defaults and semantics). `MOD_XLIM`/`MOD_YLIM` now come from the site bounding box + padding and `MOD_ZLIM` from `MOD_ROI_ZLIM` whenever sites are available, for QC/model and ensemble slice plots alike (`ENS_*LIM` are re-linked to the result unless given a separate value). The origin/site-resolution block now also runs for `PLOT_SLICES_ENS`. `MOD_PP_ROI` (extrema-search region) is deliberately left untouched and independent of the plot extent. Also corrected stale metre-based unit wording for `MOD_XLIM`/`YLIM`/`ZLIM` and `ENS_*LIM` in this README (values are km). |
 
 ## Author
 
