@@ -131,6 +131,17 @@ Provenance
             slice figure for each PERCENTILES level in addition to
             avg/var/med/mad, keyed as "p2_3", "p50", "p97_7", etc.
             (default MOD_STATS_WHAT includes all of them).
+2026-09-22  Claude Sonnet 5 (Anthropic)
+            Added a simple, max-normalised "small spread" blanking option
+            alongside the existing sensitivity one: SPREAD_LOW_THRESH_FRAC
+            (default 0.05, mirroring SENS_LOW_THRESH_FRAC) + spread_low_mask
+            (ens_err < SPREAD_LOW_THRESH_FRAC * ens_err.max(), always
+            computed, saved as f"{P}_spread_low_mask"). Registered as
+            source_name "err" in MOD_STATS_BLANK_SOURCES (keyed to match
+            _stat_map's "err" entry so it is correctly excluded from its
+            own plot, same as the other sources). Does not change
+            flag_null_space, which still uses the percentile-based
+            FLAG_SPREAD_PERCENTILE.
 2026-08-11  Claude Sonnet 5 (Anthropic)
             Configuration block now explicitly labelled as the USER
             SECTION. Added MOD_PLOT_FORMAT, documenting the Matplotlib
@@ -640,7 +651,7 @@ SENS_H5_GROUP = None
 #:   "volume_normalised"  -- the above divided by block volume (m^-3),
 #:                            i.e. sensitivity density
 #: Passed through as fem.read_h5_sensitivity()'s cumsens_key.
-SENS_KIND = "raw"
+SENS_KIND = "volume_normalised"
 assert SENS_KIND in ("raw", "volume_normalised"), \
     f"SENS_KIND must be 'raw' or 'volume_normalised', got {SENS_KIND!r}"
 
@@ -707,7 +718,7 @@ SIMRC_CHUNK = 200
 
 #: Fraction of the ensemble SimRC cumulative-correlation's own maximum
 #: below which a free parameter is flagged "low SimRC sensitivity".
-SIMRC_LOW_THRESH_FRAC = 0.05
+SIMRC_LOW_THRESH_FRAC = 0.001
 
 # --- Combined diagnostic: null-space vs. genuinely well-resolved -----------
 #: When True (and at least one of COMPUTE_SENS/COMPUTE_SIMRC succeeded),
@@ -720,6 +731,16 @@ SIMRC_LOW_THRESH_FRAC = 0.05
 #: alpha-blank source the same way var_redux is.
 COMPUTE_NULL_SPACE_FLAG = True
 FLAG_SPREAD_PERCENTILE  = 25.0   # ERR below this percentile counts as "low spread"
+
+#: Fraction of the ensemble ERR's (sqrt(var), spread) own maximum below
+#: which a free parameter is flagged "small spread" -- a simple max-
+#: normalised alternative to FLAG_SPREAD_PERCENTILE above, in the same
+#: style as SENS_LOW_THRESH_FRAC for sensitivity. Only used for the
+#: standalone spread_low_mask statistic and the "err" entry available in
+#: MOD_STATS_BLANK_SOURCES below; does not affect flag_null_space, which
+#: still uses FLAG_SPREAD_PERCENTILE.
+SPREAD_LOW_THRESH_FRAC = 0.001
+
 #: How to combine multiple available "low sensitivity" measures (sens_low_mask,
 #: simrc_low_mask) when both are present: "and" (default, conservative -- a
 #: cell must be flagged low by EVERY available measure) or "or" (liberal --
@@ -922,24 +943,35 @@ if COMPUTE_NULL_SPACE_FLAG:
 #: use MOD_ALPHA_FILE only, if set.
 #:
 #: Each entry is a (source_name, direction, thresh) triple:
-#:   source_name : "var_redux" | "sens_mean" | "sens_cv" | "simrc_corr"
+#:   source_name : "err" (= small ensemble spread) | "var_redux"
+#:                 | "sens_mean" | "sens_cv" | "simrc_corr"
 #:                 | "flag_null_space" -- must be a statistic this run
 #:                 actually computed (its COMPUTE_* flag was True and it
-#:                 succeeded), else it's skipped with a printed warning.
-#:   direction   : "below" -- blank where value <  thresh (var_redux,
-#:                             sens_mean, simrc_corr: low = poorly resolved)
+#:                 succeeded, or -- for "err", always available -- ens_err
+#:                 itself), else it's skipped with a printed warning.
+#:   direction   : "below" -- blank where value <  thresh ("err",
+#:                             var_redux, sens_mean, simrc_corr: low =
+#:                             poorly resolved / little information)
 #:                 "above" -- blank where value >  thresh (sens_cv: high =
 #:                             linearised sensitivity itself untrustworthy
 #:                             there, a different question from "resolved")
 #:                 "flag"  -- blank where value != 0 (flag_null_space is
 #:                             already a 0/1 flag; thresh is ignored)
-#:   thresh      : REDUX_EPS / (SENS_LOW_THRESH_FRAC * max) / SENS_CV_HIGH_THRESH
-#:                 / (SIMRC_LOW_THRESH_FRAC * max) / None, as appropriate --
-#:                 see each COMPUTE_* section above for the matching constant.
+#:   thresh      : (SPREAD_LOW_THRESH_FRAC * max) / REDUX_EPS /
+#:                 (SENS_LOW_THRESH_FRAC * max) / SENS_CV_HIGH_THRESH /
+#:                 (SIMRC_LOW_THRESH_FRAC * max) / None, as appropriate --
+#:                 see each COMPUTE_* section above for the matching
+#:                 constant. "err" and "sens_mean" are both normalised to
+#:                 their own max, so the same *_LOW_THRESH_FRAC value
+#:                 (e.g. the shared default 0.05) means "below 5% of the
+#:                 largest value seen" in either case -- fill in the
+#:                 literal number here once you know the printed range
+#:                 (see the spread_low_mask / sens_low_mask console lines).
 #: Empty list (default) disables blanking entirely, matching the previous
 #: MOD_STATS_BLANK_BY_REDUX=False default.
 MOD_STATS_BLANK_SOURCES = [
     ("sens_mean", "below", 0.01),
+    # ("err", "below", 0.01),  # small spread; replace with SPREAD_LOW_THRESH_FRAC * max(ens_err) from the console output
     # ("var_redux", "below", REDUX_EPS),
 ]
 #: How multiple MOD_STATS_BLANK_SOURCES entries combine into one mask:
@@ -1050,7 +1082,7 @@ MOD_ZLIM = None    # [zmin, zmax] model-local km; None = auto
 #: exist in femtic_rto_prep.py and femtic_gst_prep.py, so the plot extent
 #: is identical between prep-time and post-time figures.
 MOD_ROI_AUTO   = True
-MOD_ROI_PAD_XY = 2.0             # km of padding around the site bbox
+MOD_ROI_PAD_XY = 4.0             # km of padding around the site bbox
 MOD_ROI_ZLIM   = [-1.0, 7.0]
 #: depth range (km, positive-down) for ns/ew/plane panels; None = leave MOD_ZLIM as-is
 #: Lower bound is negative (above the z=0 datum) to give ~1 km of headroom
@@ -1631,6 +1663,15 @@ if BOOTSTRAP_VAR:
     print(f"  var_boot_se       : [{ens_var_boot_se.min():.4f}, {ens_var_boot_se.max():.4f}]  "
           f"(bootstrap SE of var_boot itself)")
 
+# --- Small-spread flag: ERR normalised to its own max (simple alternative
+# to flag_null_space's percentile-based FLAG_SPREAD_PERCENTILE), same
+# max-normalised style as sens_low_mask below. Always available (ens_err
+# is always computed), so it needs no COMPUTE_* switch of its own.
+_spread_max_all = np.nanmax(ens_err)
+spread_low_mask = ens_err < (SPREAD_LOW_THRESH_FRAC * _spread_max_all)
+print(f"  small-spread cells (< {SPREAD_LOW_THRESH_FRAC:g} of max err): "
+      f"{int(np.sum(spread_low_mask))}/{spread_low_mask.size}")
+
 # --- (2b) Sensitivity statistics: (1) per-member Jacobian aggregation ------
 sens_mean = sens_median = sens_min = sens_max_ = sens_std = sens_cv = None
 sens_low_mask = None
@@ -1802,6 +1843,7 @@ ens_dict = {
     f"{P}_mad":        ens_mad,
     f"{P}_prc":        ens_prc,
     f"{P}_prc_levels": np.asarray(PERCENTILES),
+    f"{P}_spread_low_mask": spread_low_mask,
 }
 for _qkey, _qval in ens_qdiff.items():
     ens_dict[f"{P}_{_qkey}"] = _qval
@@ -1978,6 +2020,9 @@ if MOD_STATS:
         # the alpha-blank block file used by every MOD_STATS plot below
         # (except a plot whose own statistic is one of the active sources).
         _blank_source_arrays = {
+            "err":             ens_err,   # "small spread" -- keyed "err" to
+                                           # match _stat_map so it's excluded
+                                           # from its own plot like the rest
             "var_redux":       var_redux,
             "sens_mean":       sens_mean,
             "sens_cv":         sens_cv,

@@ -16,18 +16,18 @@ Data-misfit diagnostics for FEMTIC results_iterN.h5 files:
                     line, a quartile line (slope = robust scale, intercept
                     = bias), and a pointwise confidence envelope.
 
-All three work on a single run (best iteration) or on an ensemble of runs
-(best iteration of each member).
+All three work on single runs (best iteration of each) or on an ensemble of
+runs (best iteration of each member).
 
 @author   vrath
 @project  py4mt
 @created  2026-09-18
-@modified 2026-09-19
+@modified 2026-09-21
 
 Provenance
 ----------
 Author      : Claude Sonnet 5 (Anthropic)
-Generated   : 2026-09-19
+Generated   : 2026-09-19 (last modified 2026-09-21)
 Notice      : This code is AI-generated. Review and test it before any
               production use.
 
@@ -40,13 +40,30 @@ https://doi.org/10.1186/s40623-023-01832-5
 
 Run modes
 ---------
-single    One run. RUN_PATHS holds a run directory (containing
-          results_iter*.h5) or one results file. For a directory the
-          iteration is chosen by ITERATION ("best" = smallest overall
-          error-normalized RMS of the /data rows, "last", or an integer).
-ensemble  Several runs (directories, files, or glob patterns). The chosen
+single    RUN_PATHS is a list of runs (run directories containing
+          results_iter*.h5, results files, or glob patterns). Every entry
+          is processed on its own -- they do NOT form an ensemble. For a
+          directory the iteration is chosen by ITERATION ("best" = smallest
+          overall error-normalized RMS of the /data rows, "last", or an
+          integer).
+ensemble  All entries of RUN_PATHS together form one ensemble. The chosen
           iteration of every run is one member; members are matched row by
           row (datatype, site, component, frequency).
+
+Fit measures (from inverse.py): for the error-normalized residuals r,
+    nrms  = sqrt(mean(r^2))            expected 1    for r ~ N(0,1)
+    r_mae = sqrt(pi/2) * mean(|r|)     expected 1
+    r_med = median(|r|) / 0.6745       expected 1
+    q95   = 95th percentile of |r|     expected 1.96
+plus the mean of r (bias). They are given for both normalizations (err =
+conventional, err+syn = Baba's RMS2; the latter only if M > 1) in the overall
+table (<prefix>_fit_measures.txt) and in the crossplot and histogram tables.
+Robust measures (r_mae, r_med, q95) that stay near their expected values
+while nrms is large point to a few outliers rather than a general misfit.
+
+Output location: OUT_DIR = None (default) writes into the run directory
+(single: the directory of each chosen results file; ensemble: the common
+parent directory of the member directories); a string forces one directory.
 
 Method notes (see also the readme)
 ----------------------------------
@@ -66,7 +83,7 @@ identical to RMS1 (only the conventional histogram is drawn).
 Usage
 -----
     python femtic_data_misfit.py                       # config below
-    python femtic_data_misfit.py single   ./run01/
+    python femtic_data_misfit.py single   ./run01/ ./run02/   # separately
     python femtic_data_misfit.py ensemble "./ens/member_*/"
 
 Changelog
@@ -80,6 +97,26 @@ Changelog
 2026-09-19b Claude Sonnet 5 (Anthropic): added third method "qq" (normal Q-Q
             plots of the normalized residuals in frequency/period bands);
             band selection factored out of the histogram function.
+2026-09-21  Claude Sonnet 5 (Anthropic): (1) OUT_DIR = None writes into the
+            run directory (ensemble: common parent of the members);
+            (2) single mode processes every entry of RUN_PATHS separately
+            (a list of singles, not an ensemble); (3) QQ_EQUAL_AXES gives
+            optionally equal (square) Q-Q axes.
+2026-09-21b Claude Sonnet 5 (Anthropic): (4) several measures of data fit
+            (nrms, r_mae, r_med, q95 from inverse.py, plus mean) in an
+            overall table per data type and in the crossplot and histogram
+            tables; FIT_MEASURES switch. Crossplot statistics now use the
+            same residuals as the histograms (RMS1 reference = REF_MEMBER
+            response if set).
+2026-09-21c Claude Sonnet 5 (Anthropic): the run name (directory of the
+            chosen results file) and iteration are shown in the title of
+            every plot in single mode (ensemble: "ensemble of M runs").
+2026-09-21d Claude Sonnet 5 (Anthropic): fixed PLOT_FORMATS handling: a plain
+            string such as (".pdf") (no trailing comma) was iterated
+            character by character (".", "p", "d", "f") and produced four
+            PNG files with names ending in "", "p", "d", "f"; _save() now
+            accepts a string, adds a missing dot and passes the format
+            explicitly (unsupported extensions raise).
 """
 from __future__ import annotations
 
@@ -103,14 +140,27 @@ if PY4MTX_ROOT:
             sys.path.insert(0, _pth)
 
 import femtic as fem  # noqa: E402
+import inverse as inv  # noqa: E402  (nrms, r_mae, r_med, q95)
 
 # ---------------------------------------------------------------------------
 # User configuration
 # ---------------------------------------------------------------------------
 # --- what to run ---
-RUN_MODE: str = "single"                 # "single" | "ensemble"
-RUN_PATHS: List[str] = ["./run/"]        # run dirs, results files, or globs
-                                         # (overridden by argv)
+
+# "single":   every entry of RUN_PATHS is processed on its own (a list of
+#             singles; they do NOT form an ensemble)
+# "ensemble": all entries together form one ensemble
+#  RUN_MODE: str = "ensemble"               # "single" | "ensemble"
+RUN_MODE: str = "single"               # "single" | "ensemble"
+RUN_PATHS: List[str] = [
+    "/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2/ann*_0/",
+    "/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2/ann*_59/",
+    ]        # run dirs, results files, or globs (overridden by argv)
+# RUN_MODE: str = "single"
+# RUN_PATHS: List[str] = [
+#     "/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2/annecy_rnd_2_59/",
+#     "/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2/annecy_rnd_2_60/",
+#     ]
 ITERATION: Union[str, int] = "best"      # "best" | "last" | integer
 ITER_PATTERN: str = "results_iter*.h5"   # searched in each run directory
 METHODS: Tuple[str, ...] = ("crossplot", "histogram", "qq")
@@ -124,11 +174,17 @@ REF_MEMBER: Optional[int] = None   # RMS1 reference: None = ensemble mean;
                                    # member (as in Baba's "6th model")
 
 # --- output ---
-OUT_DIR: str = "./misfit/"
-OUT_PREFIX: Optional[str] = None   # None -> derived from run / ensemble
-PLOT_FORMATS: Tuple[str, ...] = (".png", ".pdf")
+OUT_DIR: Optional[str] = None      # None -> into the run directory (single:
+                                   # each run's own; ensemble: common parent
+                                   # of the member directories); or a path
+OUT_PREFIX: Optional[str] = "Misfits"  # None -> derived from run / ensemble;
+                                   # if set with several singles it is
+                                   # prepended: <OUT_PREFIX>_<run>_iter<N>
+PLOT_FORMATS: Tuple[str, ...] = (".pdf",)   # a tuple: note the comma!
 PLOT_DPI: int = 300
 WRITE_STATS: bool = True
+FIT_MEASURES: bool = True   # overall table of fit measures (per data type
+                            # and pooled) -> <prefix>_fit_measures.txt
 SHOW: bool = False
 
 # --- selection (None = everything) ---
@@ -163,6 +219,8 @@ QQ_BAND_AXIS: str = "frequency"     # "frequency" | "period"
 QQ_BANDS_PER_DECADE: int = 2
 QQ_BY_COMPONENT: bool = False       # False: per data type, components pooled
 QQ_LIMIT: float = 10.0              # max |sample quantile| shown
+QQ_EQUAL_AXES: bool = False         # True: same range on both axes, square
+                                    # panels (1:1 line at 45 degrees)
 QQ_CONFIDENCE: Optional[float] = 0.95   # pointwise envelope; None = off
 QQ_MIN_N: int = 10                  # skip bands with fewer values
 QQ_NCOLS: int = 4
@@ -411,19 +469,37 @@ def build_panels(ds: dict, *, datatypes: Optional[Sequence[str]] = None,
     return panels
 
 
+def fit_measures(r: np.ndarray) -> dict:
+    """
+    Fit measures of error-normalized residuals (non-finite values ignored):
+    n, nrms, r_mae, r_med, q95 (all from inverse.py) and the mean (bias).
+    Expected for N(0,1) residuals: nrms = r_mae = r_med = 1, q95 = 1.96.
+    """
+    r = np.asarray(r, dtype=float).ravel()
+    r = r[np.isfinite(r)]
+    return dict(
+        n=int(r.size),
+        nrms=float(inv.nrms(r)),
+        r_mae=float(inv.r_mae(r)),
+        r_med=float(inv.r_med(r)),
+        q95=float(inv.q95(r)),
+        mean=float(np.mean(r)) if r.size else float("nan"),
+    )
+
+
 def panel_stats(p: dict) -> dict:
-    """n, rms, nRMS1 (obs error only), nRMS2 (obs + synthesized error)."""
+    """
+    n, plain rms, and the fit measures of the panel's normalized residuals:
+    m1 (conventional, obs error only) and m2 (obs + synthesized error);
+    nrms1 / nrms2 are shortcuts for m1["nrms"] / m2["nrms"].
+    """
     res = p["obs"] - p["cal"]
     n = res.size
     rms = float(np.sqrt(np.mean(res**2))) if n else float("nan")
-    ok = np.isfinite(p["err"]) & (p["err"] > 0.0)
-    if np.any(ok):
-        e2 = p["err"][ok] ** 2
-        nrms1 = float(np.sqrt(np.mean(res[ok] ** 2 / e2)))
-        nrms2 = float(np.sqrt(np.mean(res[ok] ** 2 / (e2 + p["eps"][ok] ** 2))))
-    else:
-        nrms1 = nrms2 = float("nan")
-    return dict(n=n, n_dropped=p["n_dropped"], rms=rms, nrms1=nrms1, nrms2=nrms2)
+    _, r1, r2 = normalized_residuals(p)
+    m1, m2 = fit_measures(r1), fit_measures(r2)
+    return dict(n=n, n_dropped=p["n_dropped"], rms=rms, m1=m1, m2=m2,
+                nrms1=m1["nrms"], nrms2=m2["nrms"])
 
 
 def normalized_residuals(p: dict) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -565,13 +641,13 @@ def select_bands(freq: np.ndarray, *, per_decade: int, axis: str,
 
 
 def _rms(a: np.ndarray) -> float:
-    return float(np.sqrt(np.mean(a**2))) if a.size else float("nan")
+    return float(inv.nrms(a))
 
 
 def plot_residual_histograms(
     title: str, freq: np.ndarray, r1: np.ndarray, r2: np.ndarray, *,
     has_syn: bool, per_decade: int, axis: str, ncols: int, panel_size: float,
-    limit: float, bin_width: float, min_n: int,
+    limit: float, bin_width: float, min_n: int, run_label: str = "",
 ):
     """
     Histograms of normalized residuals: first panel pools all bands, then
@@ -581,7 +657,8 @@ def plot_residual_histograms(
     of the bars; blue dashed: +/- RMS of the bars (Baba 2023, Fig. 10a).
 
     Returns (figure, stats) where stats is a list of dicts with keys
-    band, n, rms1, rms2, mean2, n_out.
+    band, n, m1, m2 (fit_measures of the RMS1- / RMS2-normalized residuals),
+    n_out (values of the plotted variant outside +/- limit).
     """
     import matplotlib.pyplot as plt
 
@@ -636,13 +713,13 @@ def plot_residual_histograms(
         ax.tick_params(labelsize=8)
         if k == 0:
             ax.legend(fontsize=7, loc="upper right")
-        stats.append(dict(band=label, n=nn, rms1=rms1, rms2=rms2,
-                          mean2=float(np.mean(a2)) if a2.size else float("nan"),
-                          n_out=n_out))
+        stats.append(dict(band=label, n=nn, m1=fit_measures(a1),
+                          m2=fit_measures(a2), n_out=n_out))
     for ax in axf[n:]:
         ax.set_visible(False)
     fig.suptitle(f"{title}: normalized residuals, {axis} bands "
-                 f"({per_decade} per decade)", fontsize=12)
+                 f"({per_decade} per decade)" + (f"\n{run_label}" if run_label else ""),
+                 fontsize=12)
     return fig, stats
 
 
@@ -671,6 +748,7 @@ def plot_qq_bands(
     title: str, freq: np.ndarray, r1: np.ndarray, r2: np.ndarray, *,
     has_syn: bool, per_decade: int, axis: str, ncols: int, panel_size: float,
     limit: float, confidence: Optional[float], min_n: int,
+    equal_axes: bool = False, run_label: str = "",
 ):
     """
     Normal Q-Q plots of the normalized residuals: first panel pools all
@@ -683,7 +761,8 @@ def plot_qq_bands(
     intercept = bias). Gray band: pointwise confidence envelope around the
     quartile line, from the asymptotic standard error of order statistics,
     se_i = sqrt(p_i (1 - p_i) / n) / phi(z_i), so it judges the Gaussian
-    shape irrespective of scale and bias.
+    shape irrespective of scale and bias. With `equal_axes` both axes get
+    the same range (at most +/- `limit`) and the panels are square.
 
     Returns (figure, stats); stats rows have keys band, n, slope1, slope2,
     icpt, out_pct (percentage of the dots outside the envelope).
@@ -746,12 +825,20 @@ def plot_qq_bands(
             ax.legend(fontsize=7, loc="lower right")
         stats.append(dict(band=label, n=nn, slope1=slope1, slope2=slope2,
                           icpt=icpt, out_pct=out_pct))
-    axf[0].set_ylim(-ymax, ymax)
+    if equal_axes:
+        zmax = float(np.max(np.abs(qq_points(main_all)[0]))) if main_all.size else 1.0
+        lim = min(limit, max(ymax, 1.05 * zmax))
+        axf[0].set_xlim(-lim, lim)
+        axf[0].set_ylim(-lim, lim)
+        for ax in axf[:n]:
+            ax.set_aspect("equal", adjustable="box")
+    else:
+        axf[0].set_ylim(-ymax, ymax)
     for ax in axf[n:]:
         ax.set_visible(False)
     env = f", {100 * confidence:.0f}% envelope" if confidence else ""
-    fig.suptitle(f"{title}: normal Q-Q, {axis} bands ({per_decade} per decade){env}",
-                 fontsize=12)
+    fig.suptitle(f"{title}: normal Q-Q, {axis} bands ({per_decade} per decade){env}"
+                 + (f"\n{run_label}" if run_label else ""), fontsize=12)
     return fig, stats
 
 
@@ -770,29 +857,80 @@ def group_panels(panels: Dict[str, List[dict]], *, by_component: bool) -> Dict[s
 # ---------------------------------------------------------------------------
 # Text tables (plain ASCII)
 # ---------------------------------------------------------------------------
+FIT_MEASURE_NOTE = (
+    "# r = error-normalized residuals; norm 'err' = conventional (Baba RMS1),\n"
+    "# 'err+syn' = obs + synthesized error (Baba RMS2, ensemble only).\n"
+    "# nrms = sqrt(mean(r^2)); r_mae = sqrt(pi/2)*mean(|r|); r_med = median(|r|)/0.6745;\n"
+    "# q95 = 95th percentile of |r|; mean = bias.\n"
+    "# Expected for N(0,1) residuals: nrms = r_mae = r_med = 1, q95 = 1.96, mean = 0."
+)
+_MK = ("nrms", "r_mae", "r_med", "q95")
+_MN = {"nrms": "nrms", "r_mae": "rmae", "r_med": "rmed", "q95": "q95"}
+
+
 def format_crossplot_stats(panels: Dict[str, List[dict]], *, has_syn: bool) -> str:
+    cols = [f"{_MN[k]}{sfx}" for k in _MK for sfx in (("1", "2") if has_syn else ("",))]
     hdr = (f"{'datatype':<22} {'component':<8} {'part':<5} {'n':>7} "
-           f"{'dropped':>8} {'rms':>12} {'nrms1':>8}" + (f" {'nrms2':>8}" if has_syn else ""))
+           f"{'dropped':>8} {'rms':>12}" + "".join(f" {c:>8}" for c in cols))
     lines = ["=" * len(hdr), hdr, "-" * len(hdr)]
     for dname, lst in panels.items():
         for p in lst:
             s = panel_stats(p)
+            vals = [s[m][k] for k in _MK for m in (("m1", "m2") if has_syn else ("m1",))]
             lines.append(f"{dname:<22} {p['component']:<8} {p['part']:<5} {s['n']:>7d} "
-                         f"{s['n_dropped']:>8d} {s['rms']:>12.4e} {s['nrms1']:>8.3f}"
-                         + (f" {s['nrms2']:>8.3f}" if has_syn else ""))
+                         f"{s['n_dropped']:>8d} {s['rms']:>12.4e}"
+                         + "".join(f" {v:>8.3f}" for v in vals))
     lines.append("=" * len(hdr))
     return "\n".join(lines)
 
 
+def _measure_rows(label_a: str, label_b: str, n: int, m1: dict, m2: dict, *,
+                  has_syn: bool, extra: Optional[Tuple[str, str]] = None) -> List[str]:
+    """Table rows (norm 'err' and, if has_syn, 'err+syn') for one residual set."""
+    out = []
+    variants = [("err", m1)] + ([("err+syn", m2)] if has_syn else [])
+    for k, (nm, m) in enumerate(variants):
+        ex = "" if extra is None else f" {extra[k] if k < len(extra) else '':>6}"
+        out.append(f"{label_a:<26} " + (f"{label_b:<24} " if label_b else "")
+                   + f"{nm:<8} {m['n']:>7d} "
+                   f"{m['nrms']:>8.3f} {m['r_mae']:>8.3f} {m['r_med']:>8.3f} "
+                   f"{m['q95']:>8.3f} {m['mean']:>8.3f}{ex}")
+    return out
+
+
+def _measure_header(first: str, second: str, *, extra: str = "") -> str:
+    return (f"{first:<26} " + (f"{second:<24} " if second else "")
+            + f"{'norm':<8} {'n':>7} {'nrms':>8} {'r_mae':>8} "
+            f"{'r_med':>8} {'q95':>8} {'mean':>8}" + (f" {extra:>6}" if extra else ""))
+
+
 def format_hist_stats(all_stats: Dict[str, List[dict]], *, has_syn: bool) -> str:
-    hdr = (f"{'group':<26} {'band':<24} {'n':>7} {'rms1':>8}"
-           + (f" {'rms2':>8}" if has_syn else "") + f" {'mean':>8} {'n_out':>6}")
+    hdr = _measure_header("group", "band", extra="n_out")
     lines = ["=" * len(hdr), hdr, "-" * len(hdr)]
     for g, lst in all_stats.items():
         for s in lst:
-            lines.append(f"{g:<26} {s['band']:<24} {s['n']:>7d} {s['rms1']:>8.3f}"
-                         + (f" {s['rms2']:>8.3f}" if has_syn else "")
-                         + f" {s['mean2']:>8.3f} {s['n_out']:>6d}")
+            # n_out refers to the plotted variant (err+syn if has_syn, else err)
+            extra = ("", str(s["n_out"])) if has_syn else (str(s["n_out"]),)
+            lines.extend(_measure_rows(g, s["band"], s["n"], s["m1"], s["m2"],
+                                       has_syn=has_syn, extra=extra))
+    lines.append("=" * len(hdr))
+    return "\n".join(lines)
+
+
+def format_fit_measures(panels: Dict[str, List[dict]], *, has_syn: bool) -> str:
+    """Overall fit measures: pooled over everything ('ALL') and per data type."""
+    scopes: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
+    for dname, lst in panels.items():
+        parts = [normalized_residuals(p) for p in lst]
+        scopes[dname] = (np.concatenate([q[1] for q in parts]),
+                         np.concatenate([q[2] for q in parts]))
+    scopes = {"ALL": (np.concatenate([v[0] for v in scopes.values()]),
+                      np.concatenate([v[1] for v in scopes.values()])), **scopes}
+    hdr = _measure_header("scope", "")
+    lines = ["=" * len(hdr), hdr, "-" * len(hdr)]
+    for name, (a1, a2) in scopes.items():
+        lines.extend(_measure_rows(name, "", a1.size, fit_measures(a1),
+                                   fit_measures(a2), has_syn=has_syn))
     lines.append("=" * len(hdr))
     return "\n".join(lines)
 
@@ -822,10 +960,19 @@ def format_runs(runs: Sequence[dict]) -> str:
 # ---------------------------------------------------------------------------
 # Script driver
 # ---------------------------------------------------------------------------
-def _save(fig, stem: str, formats: Sequence[str], dpi: int) -> None:
+def _save(fig, stem: str, formats: Union[str, Sequence[str]], dpi: int) -> None:
+    """
+    Save `fig` as stem + ext for every extension in `formats`. A plain string
+    (e.g. ".pdf") counts as one format; extensions may be given with or
+    without the leading dot; the file format is passed explicitly, so an
+    unsupported extension raises instead of silently producing a PNG.
+    """
+    if isinstance(formats, str):
+        formats = (formats,)
     for ext in formats:
+        ext = "." + str(ext).lstrip(".")
         out = stem + ext
-        fig.savefig(out, dpi=dpi)
+        fig.savefig(out, dpi=dpi, format=ext[1:])
         print(f"femtic_data_misfit: wrote {out}")
 
 
@@ -835,25 +982,35 @@ def _write(path: str, header: str, body: str) -> None:
     print(f"femtic_data_misfit: wrote {path}")
 
 
-def main(argv: Sequence[str]) -> int:
-    import matplotlib
-    if not SHOW:
-        matplotlib.use("Agg")
+def default_prefix(runs: Sequence[dict], mode: str) -> str:
+    """File-name prefix: <run>_iter<N> (single), ensemble_M<M> (ensemble)."""
+    if mode == "single":
+        base = os.path.basename(os.path.normpath(runs[0]["run"]))
+        return base if os.path.isfile(runs[0]["run"]) else f"{base}_iter{runs[0]['iter']}"
+    return f"ensemble_M{len(runs)}"
+
+
+def default_out_dir(runs: Sequence[dict]) -> str:
+    """
+    Directory of the chosen results file(s): the run directory for one run;
+    for an ensemble their common parent directory.
+    """
+    dirs = [os.path.dirname(os.path.abspath(r["path"])) for r in runs]
+    if len(set(dirs)) == 1:
+        return dirs[0]
+    try:
+        return os.path.commonpath(dirs)
+    except ValueError:
+        return os.getcwd()
+
+
+def process_runs(runs: Sequence[dict], *, mode: str, out_dir: str, prefix: str) -> int:
+    """
+    Run the selected METHODS on one dataset built from `runs` (one run for
+    "single", all members for "ensemble"). Returns 0 on success.
+    """
     import matplotlib.pyplot as plt
 
-    argv = list(argv)
-    mode = RUN_MODE
-    if argv and argv[0] in ("single", "ensemble"):
-        mode = argv.pop(0)
-    paths = expand_paths(argv if argv else RUN_PATHS)
-    if not paths:
-        print("femtic_data_misfit: no run paths given.")
-        return 1
-    if mode == "single" and len(paths) > 1:
-        print(f"femtic_data_misfit: single mode, using only {paths[0]}")
-        paths = paths[:1]
-
-    runs = [resolve_run(p, iteration=ITERATION, pattern=ITER_PATTERN) for p in paths]
     ds = build_dataset([r["data"] for r in runs], obs_mode=ENSEMBLE_OBS,
                        ref_member=REF_MEMBER)
     M = ds["M"]
@@ -870,23 +1027,27 @@ def main(argv: Sequence[str]) -> int:
         print(f"femtic_data_misfit: member RMS min/median/max = "
               f"{np.nanmin(rr):.3f} / {np.nanmedian(rr):.3f} / {np.nanmax(rr):.3f}")
 
-    os.makedirs(OUT_DIR, exist_ok=True)
-    if OUT_PREFIX:
-        prefix = OUT_PREFIX
-    elif mode == "single":
-        base = os.path.basename(os.path.normpath(runs[0]["run"]))
-        prefix = base if os.path.isfile(runs[0]["run"]) else f"{base}_iter{runs[0]['iter']}"
+    os.makedirs(out_dir, exist_ok=True)
+    print(f"femtic_data_misfit: output directory {out_dir}")
+    if M > 1:
+        title_extra = f"ensemble of {M} runs (best iterations)"
     else:
-        prefix = f"ensemble_M{M}"
-    title_extra = (f"ensemble of {M} runs (best iterations)" if M > 1
-                   else f"iteration {runs[0]['iter']}")
+        run_name = os.path.basename(os.path.dirname(os.path.abspath(runs[0]["path"])))
+        title_extra = f"{run_name}, iteration {runs[0]['iter']}"
     if WRITE_STATS:
-        _write(os.path.join(OUT_DIR, f"{prefix}_runs.txt"), f"# mode={mode}", runs_txt)
+        _write(os.path.join(out_dir, f"{prefix}_runs.txt"), f"# mode={mode}", runs_txt)
 
     panels = build_panels(ds, datatypes=DATATYPES, components=COMPONENTS)
     if not panels:
         print("femtic_data_misfit: nothing left after DATATYPES/COMPONENTS selection.")
         return 1
+
+    if FIT_MEASURES:
+        table = format_fit_measures(panels, has_syn=has_syn)
+        print(table)
+        if WRITE_STATS:
+            _write(os.path.join(out_dir, f"{prefix}_fit_measures.txt"),
+                   f"# {title_extra}\n{FIT_MEASURE_NOTE}", table)
 
     if "crossplot" in METHODS:
         crange = global_logf_range(panels) if COLOR_RANGE == "global" else None
@@ -896,7 +1057,7 @@ def main(argv: Sequence[str]) -> int:
                 panel_size=PANEL_SIZE, cmap=CMAP, color_range=crange,
                 marker_size=MARKER_SIZE, alpha=ALPHA, log_rho=LOG_RHO,
                 show_errorbars=SHOW_ERRORBARS, equal_aspect=EQUAL_ASPECT)
-            _save(fig, os.path.join(OUT_DIR, f"{prefix}_crossplot_{_safe_name(dname)}"),
+            _save(fig, os.path.join(out_dir, f"{prefix}_crossplot_{_safe_name(dname)}"),
                   PLOT_FORMATS, PLOT_DPI)
             if SHOW:
                 plt.show()
@@ -904,8 +1065,10 @@ def main(argv: Sequence[str]) -> int:
         table = format_crossplot_stats(panels, has_syn=has_syn)
         print(table)
         if WRITE_STATS:
-            _write(os.path.join(OUT_DIR, f"{prefix}_crossplot_stats.txt"),
-                   f"# {title_extra}", table)
+            _write(os.path.join(out_dir, f"{prefix}_crossplot_stats.txt"),
+                   f"# {title_extra}\n{FIT_MEASURE_NOTE}\n"
+                   "# columns with suffix 1 / 2: conventional / obs+syn normalization "
+                   "(ensemble only); rmae = r_mae, rmed = r_med", table)
 
     if "histogram" in METHODS:
         if not has_syn:
@@ -924,9 +1087,10 @@ def main(argv: Sequence[str]) -> int:
                 gname, freq, r1, r2, has_syn=has_syn,
                 per_decade=HIST_BANDS_PER_DECADE, axis=HIST_BAND_AXIS,
                 ncols=HIST_NCOLS, panel_size=HIST_PANEL_SIZE, limit=HIST_LIMIT,
-                bin_width=HIST_BIN_WIDTH, min_n=HIST_MIN_N)
+                bin_width=HIST_BIN_WIDTH, min_n=HIST_MIN_N,
+                run_label=title_extra)
             all_stats[gname] = stats
-            _save(fig, os.path.join(OUT_DIR, f"{prefix}_hist_{_safe_name(gname)}"),
+            _save(fig, os.path.join(out_dir, f"{prefix}_hist_{_safe_name(gname)}"),
                   PLOT_FORMATS, PLOT_DPI)
             if SHOW:
                 plt.show()
@@ -934,9 +1098,10 @@ def main(argv: Sequence[str]) -> int:
         table = format_hist_stats(all_stats, has_syn=has_syn)
         print(table)
         if WRITE_STATS:
-            _write(os.path.join(OUT_DIR, f"{prefix}_hist_stats.txt"),
+            _write(os.path.join(out_dir, f"{prefix}_hist_stats.txt"),
                    f"# {title_extra}; bands: {HIST_BANDS_PER_DECADE} per decade "
-                   f"({HIST_BAND_AXIS})", table)
+                   f"({HIST_BAND_AXIS})\n{FIT_MEASURE_NOTE}\n"
+                   "# n_out: values of the plotted variant outside +/- HIST_LIMIT", table)
 
     if "qq" in METHODS:
         qq_stats: Dict[str, List[dict]] = {}
@@ -952,9 +1117,10 @@ def main(argv: Sequence[str]) -> int:
                 gname, freq, r1, r2, has_syn=has_syn,
                 per_decade=QQ_BANDS_PER_DECADE, axis=QQ_BAND_AXIS,
                 ncols=QQ_NCOLS, panel_size=QQ_PANEL_SIZE, limit=QQ_LIMIT,
-                confidence=QQ_CONFIDENCE, min_n=QQ_MIN_N)
+                confidence=QQ_CONFIDENCE, min_n=QQ_MIN_N,
+                equal_axes=QQ_EQUAL_AXES, run_label=title_extra)
             qq_stats[gname] = stats
-            _save(fig, os.path.join(OUT_DIR, f"{prefix}_qq_{_safe_name(gname)}"),
+            _save(fig, os.path.join(out_dir, f"{prefix}_qq_{_safe_name(gname)}"),
                   PLOT_FORMATS, PLOT_DPI)
             if SHOW:
                 plt.show()
@@ -962,10 +1128,56 @@ def main(argv: Sequence[str]) -> int:
         table = format_qq_stats(qq_stats, has_syn=has_syn)
         print(table)
         if WRITE_STATS:
-            _write(os.path.join(OUT_DIR, f"{prefix}_qq_stats.txt"),
+            _write(os.path.join(out_dir, f"{prefix}_qq_stats.txt"),
                    f"# {title_extra}; bands: {QQ_BANDS_PER_DECADE} per decade "
                    f"({QQ_BAND_AXIS})", table)
     return 0
+
+
+def main(argv: Sequence[str]) -> int:
+    import matplotlib
+    if not SHOW:
+        matplotlib.use("Agg")
+
+    argv = list(argv)
+    mode = RUN_MODE
+    if argv and argv[0] in ("single", "ensemble"):
+        mode = argv.pop(0)
+    paths = expand_paths(argv if argv else RUN_PATHS)
+    if not paths:
+        print("femtic_data_misfit: no run paths given.")
+        return 1
+
+    if mode == "ensemble":
+        runs = [resolve_run(p, iteration=ITERATION, pattern=ITER_PATTERN) for p in paths]
+        prefix = OUT_PREFIX or default_prefix(runs, mode)
+        out_dir = OUT_DIR or default_out_dir(runs)
+        return process_runs(runs, mode=mode, out_dir=out_dir, prefix=prefix)
+
+    # single: every entry on its own (not an ensemble)
+    rc = 0
+    for k, p in enumerate(paths):
+        print(f"femtic_data_misfit: ===== run {k + 1} of {len(paths)}: {p}")
+        try:
+            run = resolve_run(p, iteration=ITERATION, pattern=ITER_PATTERN)
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"femtic_data_misfit: skipping {p}: {exc}")
+            rc = 1
+            continue
+        derived = default_prefix([run], "single")
+        if not OUT_PREFIX:
+            prefix = derived
+        elif len(paths) == 1:
+            prefix = OUT_PREFIX
+        else:
+            prefix = f"{OUT_PREFIX}_{derived}"
+        out_dir = OUT_DIR or default_out_dir([run])
+        try:
+            rc = max(rc, process_runs([run], mode="single", out_dir=out_dir, prefix=prefix))
+        except (ValueError, KeyError) as exc:
+            print(f"femtic_data_misfit: {p} failed: {exc}")
+            rc = 1
+    return rc
 
 
 if __name__ == "__main__":

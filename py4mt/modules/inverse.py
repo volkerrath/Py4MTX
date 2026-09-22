@@ -148,6 +148,167 @@ _COMP_MAP = {"xx": (0, 0), "xy": (0, 1), "yx": (1, 0), "yy": (1, 1)}
 # =============================================================================
 
 
+def normalized_residuals(obs, pred, err):
+    """
+    Calculate error-normalized residuals.
+
+    Parameters
+    ----------
+    obs : array_like
+        Observed data.
+    pred : array_like
+        Predicted data.
+    err : array_like
+        Standard errors of the observations.
+
+    Returns
+    -------
+    ndarray
+        Normalized residuals (obs - pred) / err.
+
+    Author: Volker Rath (DIAS)
+    Created with the help of ChatGPT (GPT-5 Thinking) on 2026-09-21
+    """
+    obs = np.asarray(obs)
+    pred = np.asarray(pred)
+    err = np.asarray(err)
+
+    return (obs - pred) / err
+
+
+def _valid_residuals(residuals):
+    """
+    Return finite residuals as a one-dimensional array.
+
+    Parameters
+    ----------
+    residuals : array_like
+        Residual values.
+
+    Returns
+    -------
+    ndarray
+        Flattened array containing only finite residuals.
+
+    Author: Volker Rath (DIAS)
+    Created with the help of ChatGPT (GPT-5 Thinking) on 2026-09-21
+    """
+    r = np.asarray(residuals, dtype=float).ravel()
+    return r[np.isfinite(r)]
+
+
+def nrms(residuals):
+    """
+    Calculate normalized root-mean-square residual.
+
+    Parameters
+    ----------
+    residuals : array_like
+        Error-normalized residuals.
+
+    Returns
+    -------
+    float
+        Normalized RMS,
+
+            sqrt(mean(r**2))
+
+    Author: Volker Rath (DIAS)
+    Created with the help of ChatGPT (GPT-5 Thinking) on 2026-09-21
+    """
+    r = _valid_residuals(residuals)
+
+    if r.size == 0:
+        return np.nan
+
+    return np.sqrt(np.mean(r**2))
+
+
+def r_mae(residuals):
+    """
+    Calculate Gaussian-normalized mean absolute residual.
+
+    The scaling is chosen such that the expectation is one for
+    standard normally distributed residuals.
+
+    Parameters
+    ----------
+    residuals : array_like
+        Error-normalized residuals.
+
+    Returns
+    -------
+    float
+        Scaled mean absolute residual,
+
+            sqrt(pi / 2) * mean(abs(r))
+
+    Author: Volker Rath (DIAS)
+    Created with the help of ChatGPT (GPT-5 Thinking) on 2026-09-21
+    """
+    r = _valid_residuals(residuals)
+
+    if r.size == 0:
+        return np.nan
+
+    return np.sqrt(np.pi / 2.0) * np.mean(np.abs(r))
+
+
+def r_med(residuals):
+    """
+    Calculate Gaussian-normalized median absolute residual.
+
+    The scaling is chosen such that the population value is one
+    for standard normally distributed residuals.
+
+    Parameters
+    ----------
+    residuals : array_like
+        Error-normalized residuals.
+
+    Returns
+    -------
+    float
+        Scaled median absolute residual,
+
+            median(abs(r)) / 0.67448975
+
+    Author: Volker Rath (DIAS)
+    Created with the help of ChatGPT (GPT-5 Thinking) on 2026-09-21
+    """
+    r = _valid_residuals(residuals)
+
+    if r.size == 0:
+        return np.nan
+
+    return np.median(np.abs(r)) / 0.6744897501960817
+
+
+def q95(residuals, q=0.95):
+    """
+    Calculate the 95th percentile of absolute normalized residuals.
+
+    Parameters
+    ----------
+    residuals : array_like
+        Error-normalized residuals.
+    q : float
+        quantile, default=0.95.
+    Returns
+    -------
+    float
+        95th percentile of abs(r).
+
+    Author: Volker Rath (DIAS)
+    Created with the help of ChatGPT (GPT-5 Thinking) on 2026-09-21
+    """
+    r = _valid_residuals(residuals)
+
+    if r.size == 0:
+        return np.nan
+
+    return np.quantile(np.abs(r), q)
+
 # -----------------------------------------------------------------------------
 # A1. Thresholding and TV-style regularisation (Split Bregman)
 # -----------------------------------------------------------------------------
