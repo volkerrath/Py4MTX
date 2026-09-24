@@ -1,7 +1,7 @@
 # Parameter summary: femtic_ens_post
 
 - **Script path:** `/home/vrath/Py4MTX/py4mt/scripts/femtic/femtic_ens_post.py`
-- **Run date/time:** 2026-09-23 09:37:31
+- **Run date/time:** 2026-09-24 09:36:23
 
 ## User-set parameters
 
@@ -66,7 +66,7 @@
 | `MOD_STATS` | `True` |
 | `MOD_STATS_BLANK_COMBINE` | `'and'` |
 | `MOD_STATS_BLANK_MODE` | `'blank'` |
-| `MOD_STATS_BLANK_SOURCES` | `[('sens_mean_na', 'below', 0.05), ('sens_mean_an', 'below', 0.05), ('err', 'below', 0.001)]` |
+| `MOD_STATS_BLANK_SOURCES` | `[('flag_null_space', 'flag', None)]` |
 | `MOD_STATS_CLIM` | `{'var': [-0.0, 0.3], 'err': [-0.0, 0.3], 'mad': [-0.0, 0.3], 'spread_low_mask': [0.0, 1.0], 'qdiff_15_9_84_1': [0.0, 0.5], 'qdiff_2_3_97_7': [0.0, 0.5], 'var_boot': [-0.0, 0.3], 'err_boot': [-0.0, 0.3], 'var_prior': [-0.0, 0.3], 'var_redux': [0.0, 1.0], 'sens_mean_na': [0.0, 1.0], 'sens_mean_an': [0 ... (truncated)` |
 | `MOD_STATS_DIR` | `'/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2//stats_plots/'` |
 | `MOD_STATS_WHAT` | `['avg', 'med', 'err', 'mad', 'spread_low_mask', 'p2_3', 'p15_9', 'p50', 'p84_1', 'p97_7', 'qdiff_15_9_84_1', 'qdiff_2_3_97_7', 'err_boot', 'var_redux']` |
