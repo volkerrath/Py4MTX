@@ -1,7 +1,7 @@
 # Parameter summary: femtic_ens_post
 
 - **Script path:** `/home/vrath/Py4MTX/py4mt/scripts/femtic/femtic_ens_post.py`
-- **Run date/time:** 2026-09-20 17:01:17
+- **Run date/time:** 2026-09-23 09:37:31
 
 ## User-set parameters
 
@@ -66,10 +66,10 @@
 | `MOD_STATS` | `True` |
 | `MOD_STATS_BLANK_COMBINE` | `'and'` |
 | `MOD_STATS_BLANK_MODE` | `'blank'` |
-| `MOD_STATS_BLANK_SOURCES` | `[('sens_mean', 'below', 0.01)]` |
-| `MOD_STATS_CLIM` | `{'var': [-0.0, 0.3], 'err': [-0.0, 0.3], 'mad': [-0.0, 0.3], 'qdiff_15_9_84_1': [0.0, 0.5], 'qdiff_2_3_97_7': [0.0, 0.5], 'var_boot': [-0.0, 0.3], 'err_boot': [-0.0, 0.3], 'var_prior': [-0.0, 0.3], 'var_redux': [0.0, 1.0], 'sens_mean': None, 'sens_cv': None, 'simrc_corr': None, 'flag_null_space': [0 ... (truncated)` |
+| `MOD_STATS_BLANK_SOURCES` | `[('sens_mean_na', 'below', 0.05), ('sens_mean_an', 'below', 0.05), ('err', 'below', 0.001)]` |
+| `MOD_STATS_CLIM` | `{'var': [-0.0, 0.3], 'err': [-0.0, 0.3], 'mad': [-0.0, 0.3], 'spread_low_mask': [0.0, 1.0], 'qdiff_15_9_84_1': [0.0, 0.5], 'qdiff_2_3_97_7': [0.0, 0.5], 'var_boot': [-0.0, 0.3], 'err_boot': [-0.0, 0.3], 'var_prior': [-0.0, 0.3], 'var_redux': [0.0, 1.0], 'sens_mean_na': [0.0, 1.0], 'sens_mean_an': [0 ... (truncated)` |
 | `MOD_STATS_DIR` | `'/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2//stats_plots/'` |
-| `MOD_STATS_WHAT` | `['avg', 'med', 'err', 'mad', 'p2_3', 'p15_9', 'p50', 'p84_1', 'p97_7', 'qdiff_15_9_84_1', 'qdiff_2_3_97_7', 'err_boot', 'var_redux']` |
+| `MOD_STATS_WHAT` | `['avg', 'med', 'err', 'mad', 'spread_low_mask', 'p2_3', 'p15_9', 'p50', 'p84_1', 'p97_7', 'qdiff_15_9_84_1', 'qdiff_2_3_97_7', 'err_boot', 'var_redux']` |
 | `MOD_TICK_DECIMALS` | `2` |
 | `MOD_TICK_FONTSIZE` | `16` |
 | `MOD_UTM_ORIGIN_E` | `None` |
@@ -94,12 +94,13 @@
 | `SENS_H5_GROUP` | `None` |
 | `SENS_H5_PATTERN` | `'results_iter{numit}.h5'` |
 | `SENS_JACOBIAN_KEY` | `'jacobian'` |
-| `SENS_KIND` | `'raw'` |
+| `SENS_KIND` | `'volume_normalised'` |
 | `SENS_LOW_THRESH_FRAC` | `0.05` |
 | `SIMRC_CHUNK` | `200` |
 | `SIMRC_DATA_KIND` | `'rhophas'` |
-| `SIMRC_LOW_THRESH_FRAC` | `0.05` |
+| `SIMRC_LOW_THRESH_FRAC` | `0.001` |
 | `SIMRC_RESULT_FILES` | `{'imp': 'result_MT.txt', 'vtf': 'result_VTF.txt'}` |
 | `SIMRC_SITE_FILE` | `'/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2/templates/site.dat'` |
 | `SPARSE_THRESH` | `1e-08` |
 | `SPARSIFY` | `True` |
+| `SPREAD_LOW_THRESH_FRAC` | `0.001` |
