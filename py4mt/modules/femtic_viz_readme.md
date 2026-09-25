@@ -388,6 +388,7 @@ fviz.plot_model_slices(
 | `alpha_blank_thresh` | `0.0` | log10 threshold for blanking |
 | `cbar_label` | `None` | Colourbar label; `None` = `"log10(rho / Ohm*m)"` |
 | `air_log10_thresh` | `8.0` | log10 value above which polygons are drawn as air |
+| `figure_title_fontsize` | `None` | Figure-title (file name) font size; `None` = `label_fontsize + 6` |
 | `tick_fontsize` | `7` | Font size for axis tick labels and colourbar ticks |
 | `label_fontsize` | `8` | Font size for axis labels, panel titles, colourbar label |
 | `tick_decimals` | `None` | Decimal digits on depth / easting-northing (model or UTM) / lat-lon tick labels, all sharing one value. `None` = prior per-axis-type formatting unchanged (`:g` for depth, Matplotlib auto for easting/northing, `.3f` for lat/lon) |
@@ -782,3 +783,5 @@ Raises `ValueError` if no member has a status in `binned_statuses` (nothing to b
 
 Author: Volker Rath (DIAS)
 | 2026-09-25 | Claude Opus 5.5 (Anthropic) | `plot_model_slices`: new `alpha_mode="direct"` (raw alpha-file value = polygon alpha, clipped to [0, 1]; NaN/<=0 omitted). Fixed the inverted `"fade"` formula (`clip(w/thresh)` -> `clip(1 - w/thresh)` for `thresh < 0`, now matching the docstring). **Behaviour change** for any caller using `alpha_mode="fade"` with `alpha_blank_thresh < 0`: fading now goes the documented way. Unknown `alpha_mode` raises. New `cbar_label` (default `"log10(rho / Ohm*m)"`) and `air_log10_thresh` (default `8.0`) parameters. Auto `clim` now excludes air (region 0 / log10 > `air_log10_thresh`), ocean (region 1 at `ocean_value`) and non-positive values, computed from raw element values (previously region 1 was forced to `ocean_value` even for land models). Colourbar built from a plain `ScalarMappable`, so faded panels keep an opaque colourbar. |
+| 2026-09-25b | Claude Opus 5.5 (Anthropic) | Fix for the 2026-09-25 colourbar change: its `ScalarMappable` was named `_sm`, which shadowed the site-marker dict `_sm` in `plot_model_slices`, so every map panel after the first one with sites raised `TypeError: '_ScalarMappable' object is not iterable`. Renamed to `_cb_mappable`.  Legend now drawn only when a labelled artist exists (silences the `No artists with labels found` warning when `site_marker` has `label=None`). |
+| 2026-09-25c | Claude Opus 5.5 (Anthropic) | `plot_model_slices`: new `figure_title_fontsize` parameter; default for the figure title (file name) raised from `label_fontsize + 2` to `label_fontsize + 6`. |

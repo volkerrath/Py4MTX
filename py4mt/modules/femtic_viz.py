@@ -521,6 +521,17 @@ Provenance:
                         even when it is a free land region. Colourbar now
                         built from a plain ScalarMappable so it is never
                         drawn with a faded collection's alpha.
+                        Same day, fix: the colourbar ScalarMappable was first
+                        named _sm, overwriting the site-marker dict of the
+                        same name after the first panel ("TypeError:
+                        '_ScalarMappable' object is not iterable" on the next
+                        map panel with sites). Renamed to _cb_mappable.
+                        Also: legend only drawn when a labelled artist
+                        exists (silences "No artists with labels" warning
+                        for site_marker label=None).
+                        Also: new figure_title_fontsize (default
+                        label_fontsize + 6, previously + 2) for the file
+                        name shown as figure title.
                         AI-generated code -- review before production use.
     """
 
@@ -3645,6 +3656,7 @@ def plot_model_slices(
     tick_decimals: Optional[int] = None,
     nrms_annotation: Optional[dict] = None,
     figure_title: Optional[str] = None,
+    figure_title_fontsize: Optional[float] = None,
     show: bool = False,
     out: bool = True,
 ):
@@ -3843,6 +3855,9 @@ def plot_model_slices(
     figure_title
         Overall figure title (suptitle).  ``None`` → the basename of
         *model_file*.
+    figure_title_fontsize
+        Font size of the figure title.  ``None`` → ``label_fontsize + 6``
+        (was ``label_fontsize + 2`` before 2026-09-25).
     show
         If True, also display the figure interactively via
         ``plt.show()`` -- in addition to saving, when ``plot_file`` is
@@ -4614,9 +4629,10 @@ def plot_model_slices(
         if mappable is not None:
             # Plain ScalarMappable so the colourbar is never drawn with a
             # faded polygon collection's alpha (alpha_file fade/direct).
-            _sm = matplotlib.cm.ScalarMappable(norm=mappable.norm,
-                                               cmap=mappable.cmap)
-            cb = fig.colorbar(_sm, ax=ax, fraction=0.046, pad=0.04)
+            # NB: not "_sm" -- that name is the site-marker dict (above).
+            _cb_mappable = matplotlib.cm.ScalarMappable(norm=mappable.norm,
+                                                        cmap=mappable.cmap)
+            cb = fig.colorbar(_cb_mappable, ax=ax, fraction=0.046, pad=0.04)
             cb.set_label(cbar_label if cbar_label is not None
                          else "log10(rho / Ohm*m)", fontsize=label_fontsize)
             cb.ax.tick_params(labelsize=tick_fontsize)
@@ -4631,7 +4647,9 @@ def plot_model_slices(
             (map_markers and kind == "map" and
              any(m.get("name") for m in map_markers))
         )
-        if _show_legend:
+        # Only if something actually carries a label (site_marker with
+        # label=None, as in the calling scripts' defaults, produces none).
+        if _show_legend and ax.get_legend_handles_labels()[0]:
             ax.legend(fontsize=tick_fontsize, loc="lower right")
 
     # -- nRMS annotation -------------------------------------------------------
@@ -4712,7 +4730,8 @@ def plot_model_slices(
 
     fig.suptitle(figure_title if figure_title is not None
                  else os.path.basename(str(model_file)),
-                 fontsize=label_fontsize + 2)
+                 fontsize=(figure_title_fontsize if figure_title_fontsize
+                           is not None else label_fontsize + 6))
     # rect leaves the top ~6% of the figure for the suptitle so it doesn't
     # collide with the top row of panel titles. Without rect, tight_layout()
     # fits the axes grid to the full figure height and ignores the suptitle.

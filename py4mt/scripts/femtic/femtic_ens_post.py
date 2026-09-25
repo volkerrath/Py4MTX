@@ -577,6 +577,31 @@ Provenance
             longer be painted as air or ocean. Requires the 2026-09-25
             femtic_viz.py (alpha_mode="direct", cbar_label,
             air_log10_thresh).
+            Same day: per-member COMPUTE_SENS/COMPUTE_SIMRC skip reasons
+            are collected and summarised after the scan loop, and the
+            MOD_ALPHA_SOURCE "not available" message now states why (flag
+            off, or first per-member failure reason).
+            Same day: FIX sensitivity length mismatch (e.g. 54588 vs 54587
+            -> every member skipped, no sens_* keys). FEMTIC writes one
+            sensitivity value per resistivity block including fixed ones;
+            new _sens_to_free() maps it onto the free parameters using the
+            region table of the first member (len == n_free / nreg /
+            nreg-1). Block order is verified once against
+            /model/blocks["blockID"] (permutation undone if needed).
+            Same day: COMPUTE_SIMRC now reads the calculated responses
+            (cal_re/cal_im) and errors from /data/data of the same
+            results_iter{numit}.h5 (fem.read_results_data) instead of
+            per-member result_MT.txt / result_VTF.txt, which the current
+            FEMTIC runs no longer write. Removed SIMRC_RESULT_FILES,
+            SIMRC_SITE_FILE, SIMRC_DATA_KIND; new SIMRC_ERR_WEIGHT (default
+            True: columns divided by the first member's errors, so |coef|
+            sums over mixed datatypes are dimensionless). Imaginary parts
+            of real-valued datatypes and columns with error <= 0 are
+            dropped; members with NaN calculated values or a different
+            data composition are skipped.
+            Same day: MOD_TITLE_FONTSIZE (default None = MOD_LABEL_FONTSIZE
+            + 6) for the file name shown as figure title
+            (plot_model_slices figure_title_fontsize).
 
     This script targets FEMTIC's current HDF5 output layout only.
     AI-generated code -- review before production use.
@@ -716,8 +741,8 @@ QDIFF_PAIRS = [(15.9, 84.1), (2.3, 97.7)]
 #                   doi:10.1111/1365-2478.13068): regression-coefficient
 #                   and correlation between the model ensemble
 #                   (ens_matrix, already collected above) and a forward-
-#                   response ensemble read from each member's
-#                   result_XXX.txt files. Needs no Jacobian at all, and
+#                   response ensemble read from /data/data (cal_re/cal_im)
+#                   of the same results_iter<numit>.h5. Needs no Jacobian, and
 #                   -- being built from the finite ensemble spread rather
 #                   than an infinitesimal derivative -- remains valid
 #                   even where the problem is locally nonlinear.
@@ -810,30 +835,23 @@ SENS_ERROR_KEY    = "data_errors"   # None to disable error-weighting
 #: are ratios and stay linear.
 
 # --- (2) Ensemble-native SimRC sensitivity ----------------------------------
-#: Set False to skip entirely (no per-member result_XXX.txt files, or
-#: forward-response ensemble not wanted).
+#: Set False to skip entirely.
+#: The forward responses are read from the same per-member
+#: results_iter{numit}.h5 as the sensitivity (SENS_H5_PATTERN, best-nRMS
+#: iteration), group /data/data: calculated values cal_re/cal_im, with
+#: re_err/im_err for weighting. One data column per real part, plus one per
+#: imaginary part for complex datatypes (MT, HTF, VTF, NMT, NMT2); the
+#: imaginary part of real-valued datatypes (APP_RES_AND_PHS, PT,
+#: NMT2_APP_RES_AND_PHS) is dropped, as are columns with error <= 0. The
+#: data composition (datatype, site, frequency, component) must match the
+#: first member's; members with missing calculated values (NaN) are skipped.
 COMPUTE_SIMRC = True
 
-#: {data_type: filename} -- filenames are relative to each ensemble-member
-#: run directory. Only entries whose file actually exists for a member
-#: are used for that member (see fem.collect_forward_response()); a
-#: member missing every listed file is dropped from the SimRC ensemble
-#: with a warning.
-#: Keys are also passed as the "data_type" arg to fem.get_femtic_data(),
-#: so use "rhophas"/"imp"/"vtf"/"pt" (or a dict value understood by
-#: SIMRC_DATA_KIND below) as appropriate for what FEMTIC wrote.
-SIMRC_RESULT_FILES = {
-    "imp": "result_MT.txt",
-    "vtf":     "result_VTF.txt",
-}
-
-#: Site-metadata file shared across the whole ensemble (site geometry
-#: does not vary between RTO/GST members, only the model/response does).
-SIMRC_SITE_FILE = ENSEMBLE_DIR + "templates/site.dat"
-
-#: Fallback data_type passed to fem.get_femtic_data() for any
-#: SIMRC_RESULT_FILES key not already one of "imp"/"vtf"/"pt"/"rhophas".
-SIMRC_DATA_KIND = "rhophas"
+#: Divide every data column by its error (from the first usable member),
+#: making the regression coefficients dimensionless so that |coef| sums
+#: over mixed datatypes (impedance, tipper, rho/phase) are meaningful.
+#: The correlation measure (simrc_corr) is unaffected by this scaling.
+SIMRC_ERR_WEIGHT = True
 
 #: Number of data columns processed per chunk when accumulating the
 #: (n_data, n_free) cross-covariance between the data and model
@@ -1168,6 +1186,9 @@ MOD_FIGSIZE      = None   # [w, h] cm; overrides auto when set
 #: Defaults match plot_model_slices' own defaults.
 MOD_TICK_FONTSIZE  = 16   # axis tick labels, colourbar ticks
 MOD_LABEL_FONTSIZE = 16    # axis labels, panel titles, colourbar label
+#: Font size of the figure title (the block-file name above the panels);
+#: None = MOD_LABEL_FONTSIZE + 6.
+MOD_TITLE_FONTSIZE = None
 
 #: Decimal digits shown on axis tick labels (depth, map/curtain
 #: easting-northing, and lat/lon all share this one setting). None (default)
@@ -1341,6 +1362,116 @@ def _write_alpha_block(alpha: np.ndarray, template: str, path: str) -> None:
     )
 
 
+_SENS_MAP = {}   # cached once: nreg, free_idx, chosen mapping (see below)
+
+
+def _sens_block_order(sens_h5, n):
+    """Region index of each sensitivity entry, from /model/blocks["blockID"].
+
+    Returns None when blockID is simply 0..n-1 (or cannot be read), else
+    the blockID array to scatter by. Read once (same mesh for all members).
+    """
+    try:
+        import h5py
+        with h5py.File(sens_h5, "r") as h5:
+            ids = np.asarray(h5["model/blocks"]["blockID"][()], dtype=int)
+    except Exception as e:                      # schema/h5py issues: warn only
+        print(f"    COMPUTE_SENS: could not read model/blocks/blockID "
+              f"({type(e).__name__}: {e}) — assuming block order == region order.")
+        return None
+    if ids.shape[0] != n:
+        print(f"    COMPUTE_SENS: blockID length {ids.shape[0]} != {n} — "
+              f"assuming block order == region order.")
+        return None
+    if np.array_equal(ids, np.arange(n)):
+        print(f"    COMPUTE_SENS: blockID == 0..{n-1} — block order == region order (verified).")
+        return None
+    if np.array_equal(np.sort(ids), np.arange(n)):
+        print(f"    COMPUTE_SENS: blockID is a permutation of 0..{n-1} — reordering.")
+        return ids
+    print(f"    COMPUTE_SENS: blockID not a permutation of 0..{n-1} "
+          f"(min {ids.min()}, max {ids.max()}) — assuming block order == region order.")
+    return None
+
+
+def _sens_to_free(sens_vec, block_file, sens_h5=None):
+    """Reduce a FEMTIC sensitivity vector to the free-parameter vector.
+
+    FEMTIC writes /model/sensitivity/* with one entry per resistivity
+    block (region), including fixed ones (air, ocean, flagged blocks),
+    while read_model() returns free regions only. Region layout and flags
+    are identical across the ensemble, so they are read once (from the
+    first member's block file) and the mapping is chosen by length:
+        len == n_free   -> used as is
+        len == nreg     -> sens[free_idx]        (all regions, incl. air)
+        len == nreg - 1 -> sens[free_idx - 1]    (all regions except air)
+    If ``sens_h5`` is given, /model/blocks["blockID"] is checked once; a
+    permuted order is undone before mapping (identity: nothing to do).
+    Returns None if no mapping fits.
+    """
+    if not _SENS_MAP:
+        st = fem._read_resistivity_block_struct(block_file, ocean=MOD_OCEAN,
+                                                out=False)
+        _SENS_MAP["nreg"] = int(st["nreg"])
+        _SENS_MAP["free_idx"] = np.asarray(st["free_idx"], dtype=int)
+    nreg, free_idx = _SENS_MAP["nreg"], _SENS_MAP["free_idx"]
+    n = sens_vec.shape[0]
+    if sens_h5 is not None and "order" not in _SENS_MAP:
+        _SENS_MAP["order"] = _sens_block_order(sens_h5, n)
+    _order = _SENS_MAP.get("order")
+    if _order is not None and _order.shape[0] == n:
+        _tmp = np.empty_like(sens_vec)
+        _tmp[_order] = sens_vec                  # entry k belongs to region blockID[k]
+        sens_vec = _tmp
+    if n == free_idx.size:
+        how, out_vec = "free only", sens_vec
+    elif n == nreg:
+        how, out_vec = "all regions -> free_idx", sens_vec[free_idx]
+    elif n == nreg - 1:
+        how, out_vec = "all but air -> free_idx-1", sens_vec[free_idx - 1]
+    else:
+        return None
+    if _SENS_MAP.get("how") != how:
+        _SENS_MAP["how"] = how
+        print(f"    COMPUTE_SENS: sensitivity length {n}, nreg={nreg}, "
+              f"n_free={free_idx.size} -> mapping '{how}'.")
+    return out_vec
+
+
+#: FEMTIC datatype codes whose values are real (cal_im == 0 by design).
+_REAL_DATATYPES = {1, 4, 7}   # APP_RES_AND_PHS, PT, NMT2_APP_RES_AND_PHS
+
+
+def _simrc_columns(rows):
+    """Calculated-data vector, composition key and errors from /data/data.
+
+    Returns (d_cal, manifest, d_err): real parts for all rows, then
+    imaginary parts for complex datatypes; columns with error <= 0 or
+    non-finite error are dropped. ``manifest`` is a bytes key over
+    (datatype, site_id, freq, component) plus the column selection, used
+    to check that all members share the same data layout.
+    """
+    if rows.size == 0:
+        raise ValueError("no data rows in /data/data")
+    if "cal_re" not in rows.dtype.names:
+        raise KeyError("no cal_re/cal_im in /data/data (pre-2026-09-13 file)")
+    dt = np.asarray(rows["datatype"], dtype=int)
+    re_err = np.asarray(rows["re_err"], dtype=float)
+    im_err = np.asarray(rows["im_err"], dtype=float)
+    keep_re = np.isfinite(re_err) & (re_err > 0.0)
+    keep_im = (~np.isin(dt, list(_REAL_DATATYPES))
+               & np.isfinite(im_err) & (im_err > 0.0))
+    d_cal = np.concatenate([np.asarray(rows["cal_re"], dtype=float)[keep_re],
+                            np.asarray(rows["cal_im"], dtype=float)[keep_im]])
+    d_err = np.concatenate([re_err[keep_re], im_err[keep_im]])
+    key = np.rec.fromarrays(
+        [dt, np.asarray(rows["site_id"], dtype=int),
+         np.round(np.asarray(rows["freq"], dtype=float), 10),
+         np.asarray(rows["component"], dtype=int)])
+    manifest = key.tobytes() + keep_re.tobytes() + keep_im.tobytes()
+    return d_cal, manifest, d_err
+
+
 def _resolve_origin_and_sites():
     """Estimate UTM origin from MOD_SITE_DAT; collect site model-local coords.
 
@@ -1509,6 +1640,7 @@ def _plot_slice(block_file: str, pdf_file: str,
             ncols               = MOD_NCOLS,
             tick_fontsize       = MOD_TICK_FONTSIZE,
             label_fontsize      = MOD_LABEL_FONTSIZE,
+            figure_title_fontsize = MOD_TITLE_FONTSIZE,
             tick_decimals       = MOD_TICK_DECIMALS,
             alpha_file          = alpha_file,
             alpha_mode          = "direct",
@@ -1546,11 +1678,14 @@ ens_matrix  = None        # will become (n_members, n_free) float64
 sens_matrix       = None  # will become (n_sens_members, n_free) float64
 sens_count        = 0     # accepted members whose results_iterX.h5 was found
 sens_missing_any  = False
+sens_fail         = []    # (member dir, reason) for skipped members
 
 ens_data_matrix   = None  # will become (n_simrc_members, n_data) float64
 simrc_count       = 0     # accepted members whose result files were found
 simrc_missing_any = False
-simrc_manifest    = None  # (data_type, n_values) list from the first member
+simrc_fail        = []    # (member dir, reason) for skipped members
+simrc_manifest    = None  # bytes key of the first member's data composition
+simrc_err         = None  # first member's per-column errors (SIMRC_ERR_WEIGHT)
 #: Row indices into ens_matrix (i.e. which accepted members, in append
 #: order) that also contributed a row to ens_data_matrix -- needed so the
 #: model/data cross-covariance below pairs up the *same* members, since
@@ -1653,12 +1788,19 @@ for d in dir_list:
             # that iteration; skip this member for sensitivity and move on.
             print(f"    COMPUTE_SENS: {e} — member skipped for sensitivity.")
             sens_missing_any = True
+            sens_fail.append((d, f"{type(e).__name__}: {e}"))
         else:
-            if sens_vec.shape[0] != log_m.shape[0]:
-                print(f"    COMPUTE_SENS: {sens_h5} gives {sens_vec.shape[0]} "
-                      f"parameters, expected {log_m.shape[0]} — member "
+            _n_raw = sens_vec.shape[0]
+            sens_vec = _sens_to_free(sens_vec, mod_file, sens_h5)
+            if sens_vec is None or sens_vec.shape[0] != log_m.shape[0]:
+                print(f"    COMPUTE_SENS: {sens_h5} gives {_n_raw} "
+                      f"values; no mapping to {log_m.shape[0]} free "
+                      f"parameters (nreg={_SENS_MAP.get('nreg')}) — member "
                       f"skipped for sensitivity.")
                 sens_missing_any = True
+                sens_fail.append((d, f"size {_n_raw} vs n_free "
+                                     f"{log_m.shape[0]}, nreg "
+                                     f"{_SENS_MAP.get('nreg')}"))
             else:
                 if sens_matrix is None:
                     sens_matrix = sens_vec[np.newaxis, :]
@@ -1668,27 +1810,32 @@ for d in dir_list:
 
     # --- (2) Per-member forward response for SimRC (optional) ---------
     if COMPUTE_SIMRC:
-        _result_paths = {
-            k: os.path.join(d, v) for k, v in SIMRC_RESULT_FILES.items()
-        }
+        _res_h5 = os.path.join(d, SENS_H5_PATTERN.format(numit=numit))
         try:
-            d_cal, manifest = fem.collect_forward_response(
-                _result_paths, SIMRC_SITE_FILE,
-                data_kind = SIMRC_DATA_KIND, out = OUT,
-            )
-        except FileNotFoundError as e:
+            _rd = fem.read_results_data(_res_h5, out=OUT)
+            d_cal, manifest, d_err = _simrc_columns(_rd["rows"])
+        except (FileNotFoundError, KeyError, ValueError, OSError) as e:
             print(f"    COMPUTE_SIMRC: {e} — member skipped for SimRC.")
             simrc_missing_any = True
+            simrc_fail.append((d, f"{type(e).__name__}: {e}"))
         else:
             if simrc_manifest is None:
                 simrc_manifest = manifest
-            elif manifest != simrc_manifest:
-                print(f"    COMPUTE_SIMRC: {d} response composition "
-                      f"{manifest} != first member's {simrc_manifest} — "
-                      f"member skipped for SimRC.")
+                simrc_err = d_err
+            if manifest != simrc_manifest:
+                print(f"    COMPUTE_SIMRC: {_res_h5} data composition differs "
+                      f"from the first member's — member skipped for SimRC.")
                 simrc_missing_any = True
-                d_cal = None
-            if d_cal is not None:
+                simrc_fail.append((d, "data composition differs from first member"))
+            elif not np.all(np.isfinite(d_cal)):
+                _nbad = int(np.sum(~np.isfinite(d_cal)))
+                print(f"    COMPUTE_SIMRC: {_nbad} missing calculated value(s) "
+                      f"in {_res_h5} — member skipped for SimRC.")
+                simrc_missing_any = True
+                simrc_fail.append((d, f"{_nbad} missing calculated values"))
+            else:
+                if SIMRC_ERR_WEIGHT:
+                    d_cal = d_cal / simrc_err
                 if ens_data_matrix is None:
                     ens_data_matrix = d_cal[np.newaxis, :]
                 else:
@@ -1698,6 +1845,22 @@ for d in dir_list:
 
 n_members = model_count
 print(f"\nConverged members: {n_members}")
+
+
+def _report_skips(tag, flag, count, fails, nmax=5):
+    """One-block summary of why per-member sensitivity/SimRC reads failed."""
+    if not flag:
+        print(f"  {tag}: disabled.")
+        return
+    print(f"  {tag}: usable for {count}/{n_members} accepted members.")
+    for _d, _why in fails[:nmax]:
+        print(f"    skipped {os.path.basename(os.path.normpath(_d))}: {_why}")
+    if len(fails) > nmax:
+        print(f"    ... and {len(fails) - nmax} more.")
+
+
+_report_skips("COMPUTE_SENS", COMPUTE_SENS, sens_count, sens_fail)
+_report_skips("COMPUTE_SIMRC", COMPUTE_SIMRC, simrc_count, simrc_fail)
 
 if n_members == 0:
     sys.exit("No converged members found. Nothing to do.")
@@ -1822,8 +1985,8 @@ if COMPUTE_SENS:
 simrc_coef = simrc_corr = None   # log10 after computation
 if COMPUTE_SIMRC:
     if ens_data_matrix is None or simrc_count == 0:
-        print("\n  COMPUTE_SIMRC: no per-member forward-response files found "
-              "— skipped.")
+        print("\n  COMPUTE_SIMRC: no member with usable calculated data in "
+              "results_iterX.h5 — skipped (see skip summary above).")
     else:
         if simrc_missing_any or simrc_count != n_members:
             print(f"\n  COMPUTE_SIMRC: forward response available for "
@@ -2009,8 +2172,20 @@ _need_plot = (MOD_QC or MOD_STATS) and fviz is not None and bool(model_list)
 if _need_plot and MOD_ALPHA_SOURCE:
     _a_name, _a_op, _a_thr = _parse_alpha_source(MOD_ALPHA_SOURCE)
     if _a_name not in _stat_map:
-        print(f"\n  MOD_ALPHA_SOURCE: '{_a_name}' not available for this run "
-              f"(available: {sorted(_stat_map)}) — blanking disabled.")
+        if _a_name.startswith("sens_"):
+            _why = ("COMPUTE_SENS=False" if not COMPUTE_SENS else
+                    f"no member had usable sensitivity ({sens_count}/"
+                    f"{n_members}; first reason: "
+                    f"{sens_fail[0][1] if sens_fail else 'n/a'})")
+        elif _a_name.startswith("simrc_"):
+            _why = ("COMPUTE_SIMRC=False" if not COMPUTE_SIMRC else
+                    f"no member had usable forward responses ({simrc_count}/"
+                    f"{n_members}; first reason: "
+                    f"{simrc_fail[0][1] if simrc_fail else 'n/a'})")
+        else:
+            _why = "unknown statistic name"
+        print(f"\n  MOD_ALPHA_SOURCE: '{_a_name}' not available — {_why}. "
+              f"Available: {sorted(_stat_map)}. Blanking disabled.")
     else:
         _alpha = _alpha_from_condition(_stat_map[_a_name][0], _a_op, _a_thr,
                                        MOD_ALPHA_MODE, MOD_ALPHA_FADE_WIDTH)
