@@ -542,12 +542,49 @@ Provenance
             three variables with the same defaults and semantics.
             Comment/whitespace tidy only.
 
+2026-09-25  Claude Opus 5.5 (Anthropic)
+            Simplification and blanking fix.
+            Root cause of "no blanked areas": fem.insert_model() writes
+            10**v, while plot_model_slices() reads an alpha file's RAW
+            region values -- the 0/1 blank mask arrived as 1/10 and never
+            fell below alpha_blank_thresh=0.5, so nothing was ever blanked.
+            The alpha block is now written with raw values == alpha
+            (_write_alpha_block) and plotted with femtic_viz's new
+            alpha_mode="direct".
+            Blanking/fading reduced to ONE expression in the shared slice
+            block: MOD_ALPHA_SOURCE = "<name> <op> <value>" (op in > >= <
+            <=, name any computed statistic, regex-parsed, never eval'ed),
+            with MOD_ALPHA_MODE ("blank"|"fade"), MOD_ALPHA_FADE_WIDTH and
+            MOD_ALPHA_QC (apply to the best-member figure too). Removed
+            MOD_ALPHA_FILE/_BLANK_THRESH and MOD_STATS_BLANK_SOURCES/
+            _COMBINE/_MODE.
+            Sensitivity aggregates (mean/median/min/max/std, raw/na/an) and
+            SimRC sums (simrc_coef/_corr) are now log10 in memory, .npz and
+            plots (values <= 0 -> NaN); sens_cv_* stay linear.
+            Removed var_redux entirely (COMPUTE_VAR_REDUX, REDUX_EPS, iter0
+            reads, var_prior). Removed the threshold/mask/flag machinery
+            that only fed the old blanking: SENS_LOW_THRESH_FRAC,
+            SENS_CV_HIGH_THRESH, SIMRC_LOW_THRESH_FRAC,
+            SPREAD_LOW_THRESH_FRAC, COMPUTE_NULL_SPACE_FLAG,
+            FLAG_SPREAD_PERCENTILE, NULL_SPACE_COMBINE and the
+            *_low_mask / flag_null_space arrays, panels and .npz keys.
+            MOD_STATS_CLIM replaced by MOD_STATS_STYLE (per-panel cmap/
+            clim/label), moved to the shared slice block. Fixed clim=None
+            silently falling back to MOD_CLIM in _plot_slice (auto-scaling
+            never happened). MOD_STATS block files now use sentinel air
+            (1e30) / ocean (1e-30) resistivities, plotted with matching
+            air_log10_thresh/ocean_value, so a statistic value can no
+            longer be painted as air or ocean. Requires the 2026-09-25
+            femtic_viz.py (alpha_mode="direct", cbar_label,
+            air_log10_thresh).
+
     This script targets FEMTIC's current HDF5 output layout only.
     AI-generated code -- review before production use.
 """
 from __future__ import annotations
 
 import os
+import re
 import sys
 import inspect
 from pathlib import Path
@@ -655,24 +692,6 @@ PERCENTILES = [2.3, 15.9, 50.0, 84.1, 97.7]
 #: under the same key.
 QDIFF_PAIRS = [(15.9, 84.1), (2.3, 97.7)]
 
-#: Set True to also compute the fractional variance reduction achieved by
-#: the inversion, var_redux = 1 - ens_var / ens_var_prior, per free
-#: parameter. Requires each accepted member's
-#: iter0 (prior) model file, resistivity_block_iter0.dat, to exist
-#: alongside its converged resistivity_block_iter{numit}.dat in the same
-#: run directory -- read once per member in the main scan loop below. If
-#: any accepted member is missing its iter0 file, var_redux (and
-#: var_prior) are skipped for the whole ensemble with a warning; nothing
-#: else in this script is affected.
-COMPUTE_VAR_REDUX = True
-
-#: Threshold on var_redux -- free parameters with var_redux < REDUX_EPS
-#: are considered essentially unconstrained by the inversion (posterior ~
-#: prior). Used by var_redux's own MOD_STATS_CLIM handling above, and, if
-#: ("var_redux", "below", REDUX_EPS) is listed in MOD_STATS_BLANK_SOURCES
-#: below, as that source's threshold too. Ignored if COMPUTE_VAR_REDUX=False.
-REDUX_EPS = 0.1
-
 # ---------------------------------------------------------------------------
 # Sensitivity statistics
 # ---------------------------------------------------------------------------
@@ -760,15 +779,13 @@ assert SENS_KIND in ("raw", "volume_normalised"), \
 #:         absolute sensitivity dominates the average, same as a plain
 #:         ensemble mean would), THEN the resulting aggregate is divided
 #:         by ITS OWN max, purely so the final numbers/threshold sit on a
-#:         [0, ~1] scale for plotting and MOD_STATS_BLANK_SOURCES.
+#:         [0, ~1] scale (log10 <= 0) for plotting and MOD_ALPHA_SOURCE.
 #:
-#: Both give a strictly max-normalised statistic (_na's own max may be
-#: < 1, since different members peak at different cells and normalising
-#: per-member first does not force the ensemble mean back to 1; _an's is
-#: always exactly 1 by construction), so SENS_LOW_THRESH_FRAC applies
-#: identically to either as "fraction of that statistic's own max". Both
-#: are always computed when COMPUTE_SENS succeeds; use whichever (or
-#: both) in MOD_STATS_WHAT / MOD_STATS_BLANK_SOURCES.
+#: Both give a max-normalised statistic (_na's own max may be < 1, since
+#: different members peak at different cells; _an's is exactly 1 by
+#: construction), i.e. log10 values <= 0 after the log10 conversion. Both
+#: are always computed when COMPUTE_SENS succeeds; use whichever (or both)
+#: in MOD_STATS_WHAT / MOD_ALPHA_SOURCE.
 
 #: Jacobian/error dataset names, used only if SENS_KIND's dataset is not
 #: found in results_iter{numit}.h5 (e.g. sensitivity was disabled for that
@@ -783,22 +800,14 @@ assert SENS_KIND in ("raw", "volume_normalised"), \
 SENS_JACOBIAN_KEY = "jacobian"
 SENS_ERROR_KEY    = "data_errors"   # None to disable error-weighting
 
-#: Fraction of a sensitivity statistic's own maximum below which a free
-#: parameter is flagged "low sensitivity" -- used for both sens_low_mask_na
-#: and sens_low_mask_an (and, combined with ensemble spread) for
-#: FLAG_NULL_SPACE below.
-SENS_LOW_THRESH_FRAC = 0.05
-
-#: Coefficient-of-variation (std/mean of the per-member cumulative
-#: sensitivity, across the ensemble) above which sens_cv_na/sens_cv_an is
-#: considered "high" -- i.e. the linearised sensitivity itself is
-#: model-dependent enough not to be trusted at that cell (see
-#: MOD_STATS_BLANK_SOURCES' "sens_cv_na"/"sens_cv_an" entries below,
-#: direction="above"). Unlike SENS_LOW_THRESH_FRAC this is an absolute
-#: threshold on the CV itself, not a fraction of a maximum -- 1.0 means
-#: "std as large as the mean". Only consulted if "sens_cv_na"/"sens_cv_an"
-#: is actually listed in MOD_STATS_BLANK_SOURCES.
-SENS_CV_HIGH_THRESH = 1.0
+#: All sensitivity aggregates (sens_mean/_median/_min/_max/_std, in their
+#: _raw/_na/_an versions) and the SimRC sums (simrc_coef/_corr) are strictly
+#: positive and span many decades, so they are converted to log10 right
+#: after aggregation -- in memory, in the .npz, in the plotted block files,
+#: and in MOD_ALPHA_SOURCE expressions (e.g. "sens_mean_an > -3." means
+#: "an-normalised mean sensitivity above 1e-3 of its maximum"). Values <= 0
+#: (e.g. a cell with exactly zero sensitivity) become NaN. sens_cv_na/_an
+#: are ratios and stay linear.
 
 # --- (2) Ensemble-native SimRC sensitivity ----------------------------------
 #: Set False to skip entirely (no per-member result_XXX.txt files, or
@@ -809,7 +818,7 @@ COMPUTE_SIMRC = True
 #: run directory. Only entries whose file actually exists for a member
 #: are used for that member (see fem.collect_forward_response()); a
 #: member missing every listed file is dropped from the SimRC ensemble
-#: with a warning, mirroring the COMPUTE_VAR_REDUX prior-file handling.
+#: with a warning.
 #: Keys are also passed as the "data_type" arg to fem.get_femtic_data(),
 #: so use "rhophas"/"imp"/"vtf"/"pt" (or a dict value understood by
 #: SIMRC_DATA_KIND below) as appropriate for what FEMTIC wrote.
@@ -831,40 +840,6 @@ SIMRC_DATA_KIND = "rhophas"
 #: ensembles -- bounds peak memory to O(SIMRC_CHUNK * n_free) instead of
 #: forming the full cross-covariance matrix at once.
 SIMRC_CHUNK = 200
-
-#: Fraction of the ensemble SimRC cumulative-correlation's own maximum
-#: below which a free parameter is flagged "low SimRC sensitivity".
-SIMRC_LOW_THRESH_FRAC = 0.001
-
-# --- Combined diagnostic: null-space vs. genuinely well-resolved -----------
-#: When True (and at least one of COMPUTE_SENS/COMPUTE_SIMRC succeeded),
-#: flag free parameters with BOTH low ensemble spread (ERR below its own
-#: FLAG_SPREAD_PERCENTILE) AND low sensitivity (below the corresponding
-#: *_LOW_THRESH_FRAC above, using whichever of SENS/SimRC is available --
-#: both if both are) as likely prior-collapsed null-space cells rather
-#: than genuinely data-constrained ones. Saved as a boolean array
-#: f"{P}_flag_null_space" and, if MOD_STATS is on, usable directly as an
-#: alpha-blank source the same way var_redux is.
-COMPUTE_NULL_SPACE_FLAG = True
-FLAG_SPREAD_PERCENTILE  = 25.0   # ERR below this percentile counts as "low spread"
-
-#: Fraction of the ensemble ERR's (sqrt(var), spread) own maximum below
-#: which a free parameter is flagged "small spread" -- a simple max-
-#: normalised alternative to FLAG_SPREAD_PERCENTILE above, in the same
-#: style as SENS_LOW_THRESH_FRAC for sensitivity. Only used for the
-#: standalone spread_low_mask statistic and the "err" entry available in
-#: MOD_STATS_BLANK_SOURCES below; does not affect flag_null_space, which
-#: still uses FLAG_SPREAD_PERCENTILE.
-SPREAD_LOW_THRESH_FRAC = 0.001
-
-#: How to combine multiple available "low sensitivity" measures (sens_low_mask,
-#: simrc_low_mask) when both are present: "and" (default, conservative -- a
-#: cell must be flagged low by EVERY available measure) or "or" (liberal --
-#: flagged low by ANY available measure). Has no effect when only one
-#: sensitivity measure is available (that measure is used as-is either way).
-NULL_SPACE_COMBINE = "and"
-assert NULL_SPACE_COMBINE in ("and", "or"), \
-    f"NULL_SPACE_COMBINE must be 'and' or 'or', got {NULL_SPACE_COMBINE!r}"
 
 # ---------------------------------------------------------------------------
 # Covariance
@@ -979,176 +954,30 @@ MOD_QC_FILE = ENSEMBLE_DIR + ENSEMBLE_PREFIX + "_best"
 #: Requires MOD_MESH and a valid template file (taken from best member).
 MOD_STATS      = True
 #: Which statistics to plot.  Subset of: "avg", "var", "err", "med", "mad",
-#: "spread_low_mask" (boolean "small spread" flag, always available),
-#: "sens_mean_raw" (ensemble-mean sensitivity in SENS_KIND's native,
-#: un-normalised units), "sens_mean_na"/"sens_cv_na"/"sens_low_mask_na"
-#: and "sens_mean_an"/"sens_cv_an"/"sens_low_mask_an" (the two
-#: normalised sensitivity-aggregation orders -- normalise-then-average
-#: vs. average-then-normalise, see SENS_KIND's docstring above -- when
-#: COMPUTE_SENS succeeds), plus one auto-generated key per PERCENTILES
-#: level (e.g. 2.3 -> "p2_3", 50.0 -> "p50", 97.7 -> "p97_7"), one per
-#: QDIFF_PAIRS entry (e.g. (15.9, 84.1) -> "qdiff_15_9_84_1"), and
-#: "err_boot" (+ "var_boot") when BOOTSTRAP_VAR=True. "err" = sqrt(var) --
-#: plotted by default instead of "var" itself, since var is in
-#: (log10 Ω·m)² and isn't on the same scale as MAD/QDIFF (log10 Ω·m);
-#: "var" remains available (add it back here manually, and add an entry
-#: to MOD_STATS_CLIM for it) for anyone who specifically wants the raw
-#: variance panel.
-MOD_STATS_WHAT = ["avg", "med", "err", "mad", "spread_low_mask"] + [
+#: one auto-generated key per PERCENTILES level (e.g. 2.3 -> "p2_3",
+#: 50.0 -> "p50", 97.7 -> "p97_7"), one per QDIFF_PAIRS entry (e.g.
+#: (15.9, 84.1) -> "qdiff_15_9_84_1"), "err_boot" (+ "var_boot") when
+#: BOOTSTRAP_VAR=True, and -- when COMPUTE_SENS / COMPUTE_SIMRC succeed --
+#: the log10 sensitivity panels "sens_mean_raw", "sens_mean_na",
+#: "sens_mean_an", "sens_median_na"/"_an", "sens_min_na"/"_an",
+#: "sens_max_na"/"_an", "sens_std_na"/"_an", the linear ratios
+#: "sens_cv_na"/"_an", and "simrc_coef"/"simrc_corr" (log10).
+#: "err" = sqrt(var) is plotted by default instead of "var", since var is in
+#: (log10 Ohm.m)^2 and not on the same scale as MAD/QDIFF (log10 Ohm.m).
+#: Colour map, colour limits and colourbar label of every panel are set
+#: per key in MOD_STATS_STYLE (shared slice block below).
+MOD_STATS_WHAT = ["avg", "med", "err", "mad"] + [
     "p" + f"{_p:g}".replace(".", "_") for _p in PERCENTILES
 ] + [
     f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_") for _lo, _hi in QDIFF_PAIRS
 ] + (["err_boot"] if BOOTSTRAP_VAR else []) + (
-    ["var_redux"] if COMPUTE_VAR_REDUX else []
-) + (
-    ["sens_mean_raw", "sens_mean_na", "sens_cv_na", "sens_low_mask_na",
-     "sens_mean_an", "sens_cv_an", "sens_low_mask_an"] if COMPUTE_SENS else []
+    ["sens_mean_raw", "sens_mean_na", "sens_cv_na",
+     "sens_mean_an", "sens_cv_an"] if COMPUTE_SENS else []
 ) + (
     ["simrc_corr"] if COMPUTE_SIMRC else []
-) + (
-    ["flag_null_space"] if COMPUTE_NULL_SPACE_FLAG else []
 )
 #: Output directory for stat block files and figures.
 MOD_STATS_DIR  = ENSEMBLE_DIR + "/stats_plots/"
-
-#: Per-statistic colour-scale override, keyed the same as MOD_STATS_WHAT
-#: (e.g. "var", "p50", "qdiff_15_9_84_1"). Each value is an explicit
-#: [vmin, vmax] pair, or None for automatic per-panel scaling from that
-#: statistic's own data range. AVG/MED and the percentile fields aren't
-#: listed here — they fall back to MOD_CLIM automatically (same log10(Ω·m)
-#: space as the model itself). VAR/ERR/MAD/QDIFF (and VAR_BOOT/ERR_BOOT
-#: when BOOTSTRAP_VAR=True) are spread statistics on a completely
-#: different, typically much narrower scale, so they get their own fixed
-#: range below rather than auto-scaling per panel — set to [-2, 2] as a
-#: sensible starting range; adjust per-key, or set a key to None to fall
-#: back to auto-scaling for that one statistic.
-MOD_STATS_CLIM = {
-    "var": [-.0, .3],
-    "err": [-.0, .3],
-    "mad": [-.0, .3],
-    #: Boolean 0/1 flag — fixed [0, 1] range so it always renders as a
-    #: clean binary map regardless of how many cells are flagged.
-    "spread_low_mask": [0.0, 1.0],
-}
-for _lo, _hi in QDIFF_PAIRS:
-    MOD_STATS_CLIM[f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_")] = [.0, .5]
-if BOOTSTRAP_VAR:
-    MOD_STATS_CLIM["var_boot"] = [-.0, 0.3]
-    MOD_STATS_CLIM["err_boot"] = [-.0, 0.3]
-if COMPUTE_VAR_REDUX:
-    #: Same (log10 Ω·m)² scale as "var" — override if needed.
-    MOD_STATS_CLIM["var_prior"] = [-.0, .3]
-    #: var_redux = 1 - var/var_prior is a bounded fraction in typical
-    #: use (0 = no reduction, 1 = fully constrained); set to None here
-    #: for auto-scaling instead, e.g. if values run negative (posterior
-    #: variance larger than prior for some parameters).
-    MOD_STATS_CLIM["var_redux"] = [0.0, 1.0]
-if COMPUTE_SENS:
-    #: Native SENS_KIND units ("raw" = sum|J|, or "volume_normalised" =
-    #: sum|J|/block volume) -- scale is run- and SENS_KIND-dependent, so
-    #: this is auto-scaled by default; override once representative
-    #: values are known for this ensemble/mesh.
-    MOD_STATS_CLIM["sens_mean_raw"] = None
-    #: Both sensitivity-aggregation versions are max-normalised by
-    #: construction (see SENS_KIND's docstring above), so both default to
-    #: the fixed [0, 1] range.
-    MOD_STATS_CLIM["sens_mean_na"] = [0.0, 1.0]
-    MOD_STATS_CLIM["sens_mean_an"] = [0.0, 1.0]
-    #: Coefficient of variation across members — nominally >= 0, usually
-    #: small (<1) where the linearisation is stable; auto-scaled by default.
-    MOD_STATS_CLIM["sens_cv_na"] = None
-    MOD_STATS_CLIM["sens_cv_an"] = None
-    #: Boolean 0/1 flags — fixed [0, 1] range, same as spread_low_mask.
-    MOD_STATS_CLIM["sens_low_mask_na"] = [0.0, 1.0]
-    MOD_STATS_CLIM["sens_low_mask_an"] = [0.0, 1.0]
-if COMPUTE_SIMRC:
-    #: Cumulative |correlation| is naturally bounded (sum of values each
-    #: in [0, 1] per datum) but its overall scale depends on n_data, so
-    #: this is left auto-scaled by default too.
-    MOD_STATS_CLIM["simrc_corr"] = None
-if COMPUTE_NULL_SPACE_FLAG:
-    #: Boolean 0/1 flag — fixed [0, 1] range so it always renders as a
-    #: clean binary map regardless of how many cells are flagged.
-    MOD_STATS_CLIM["flag_null_space"] = [0.0, 1.0]
-
-#: Blank out poorly-constrained cells in every MOD_STATS plot -- avg, med,
-#: err, mad, percentiles, qdiff_*, var_prior, var_boot/err_boot, and a
-#: listed source's own plot too -- using the same alpha/blanking mechanism
-#: as MOD_ALPHA_FILE/MODE/BLANK_THRESH below, sourced from one or more
-#: already-computed in-memory statistics instead of an external block file.
-#: Does not affect MOD_QC (the best-nRMS member plot), which continues to
-#: use MOD_ALPHA_FILE only, if set.
-#:
-#: Each entry is a (source_name, direction, thresh) triple:
-#:   source_name : "err" (= small ensemble spread) | "var_redux"
-#:                 | "sens_mean_na" | "sens_mean_an" | "sens_cv_na"
-#:                 | "sens_cv_an" | "simrc_corr" | "flag_null_space" --
-#:                 must be a statistic this run actually computed (its
-#:                 COMPUTE_* flag was True and it succeeded, or -- for
-#:                 "err", always available -- ens_err itself), else it's
-#:                 skipped with a printed warning.
-#:   direction   : "below" -- blank where value <  thresh ("err",
-#:                             var_redux, sens_mean_na/_an, simrc_corr:
-#:                             low = poorly resolved / little information)
-#:                 "above" -- blank where value >  thresh (sens_cv_na/_an:
-#:                             high = linearised sensitivity itself
-#:                             untrustworthy there, a different question
-#:                             from "resolved")
-#:                 "flag"  -- blank where value != 0 (flag_null_space is
-#:                             already a 0/1 flag; thresh is ignored)
-#:   thresh      : "err" and "sens_mean_na"/"sens_mean_an" are compared
-#:                 against arrays that are normalised to their own max
-#:                 right where the blank mask is built (sens_mean_na/_an
-#:                 are themselves already max-normalised statistics, see
-#:                 SENS_KIND's docstring above, so this is a no-op for
-#:                 them in practice), so thresh for any of the three is
-#:                 simply the fraction to use directly -- pass
-#:                 SPREAD_LOW_THRESH_FRAC / SENS_LOW_THRESH_FRAC
-#:                 themselves (or any other fraction in [0, 1]), no need
-#:                 to multiply by a printed max first. Everything else
-#:                 keeps its own natural units: REDUX_EPS (var_redux),
-#:                 SENS_CV_HIGH_THRESH (sens_cv_na/_an, an unbounded
-#:                 ratio, not max-normalised), (SIMRC_LOW_THRESH_FRAC *
-#:                 max) (simrc_corr is not pre-normalised here, unlike
-#:                 err/sens_mean_na/_an), or None for "flag".
-#: Empty list (default) disables blanking entirely, matching the previous
-#: MOD_STATS_BLANK_BY_REDUX=False default.
-#:
-#: Default below blanks on "flag_null_space" alone, not on the individual
-#: spread/sensitivity sources: low spread and low sensitivity only need
-#: blanking when they coincide (regularisation parked the cell near the
-#: prior and the ensemble never got pushed away from it) -- low spread
-#: with HIGH sensitivity is a genuine result, and low sensitivity with
-#: HIGH spread is already visible as spread in the VAR/ERR/MAD panels, so
-#: neither alone should hide a cell. flag_null_space already encodes
-#: exactly that AND, using FLAG_SPREAD_PERCENTILE (a percentile of the
-#: spread distribution, not an absolute fraction-of-max threshold like
-#: SPREAD_LOW_THRESH_FRAC) for its spread side, so it can't collapse to
-#: "zero cells ever" the way a miscalibrated SPREAD_LOW_THRESH_FRAC can
-#: when ANDed directly against sens_mean_na/_an here. The commented-out
-#: entries below remain for per-source diagnostic tuning (see the
-#: spread_low_mask/sens_low_mask_na/_an panels) -- they are not the
-#: recommended way to drive the actual blanking anymore.
-MOD_STATS_BLANK_SOURCES = [
-    ("flag_null_space", "flag", None),
-    # ("sens_mean_na", "below", SENS_LOW_THRESH_FRAC),
-    # ("sens_mean_an", "below", SENS_LOW_THRESH_FRAC),
-    # ("err", "below", SPREAD_LOW_THRESH_FRAC),
-    # ("var_redux", "below", REDUX_EPS),
-]
-#: How multiple MOD_STATS_BLANK_SOURCES entries combine into one mask:
-#: "and" (default, conservative -- ALL listed sources must flag a cell) or
-#: "or" (liberal -- ANY listed source flagging it is enough). Only matters,
-#: and only prints a warning, when more than one entry is listed -- e.g.
-#: "flag_null_space" is already itself an AND of sens_mean/simrc_corr, so
-#: listing it alongside them is redundant (harmless, but worth knowing).
-MOD_STATS_BLANK_COMBINE = "and"
-assert MOD_STATS_BLANK_COMBINE in ("and", "or"), \
-    f"MOD_STATS_BLANK_COMBINE must be 'and' or 'or', got {MOD_STATS_BLANK_COMBINE!r}"
-#: "fade" (progressively lower alpha below/above threshold) or "blank"
-#: (fully transparent/masked) -- same two modes as MOD_ALPHA_MODE. Applies
-#: to the combined mask as a whole, not per-source.
-MOD_STATS_BLANK_MODE = "blank"
 
 # ---------------------------------------------------------------------------
 # Shared slice / plot parameters
@@ -1259,10 +1088,64 @@ MOD_OCEAN_COLOR = "lightgrey"    # flat colour for ocean cells; None = colormap
 MOD_AIR_COLOR   = "whitesmoke"
 MOD_AIR_BGCOLOR = None           # axes facecolor for air; None = figure default
 
-# --- Alpha / blanking by second block file (optional) -----------------------
-MOD_ALPHA_FILE         = None    # path to sensitivity block; None = disabled
-MOD_ALPHA_MODE         = "fade"  # "fade" | "blank"
-MOD_ALPHA_BLANK_THRESH = 0.0
+# --- Per-panel style (MOD_STATS) ------------------------------------------
+#: Per-statistic overrides for every MOD_STATS panel, keyed as in
+#: MOD_STATS_WHAT. Each value is a dict with any of
+#:   "cmap"  : Matplotlib colormap name                (default MOD_CMAP)
+#:   "clim"  : [vmin, vmax] in the panel's own units,
+#:             None = auto-scale from the data         (default see below)
+#:   "label" : colourbar label                         (default see below)
+#: Keys/fields not given fall back to the defaults: value-scale panels
+#: (avg, med, p*) use MOD_CMAP / MOD_CLIM / "log10(rho / Ohm*m)"; every
+#: other panel uses MOD_CMAP / auto clim / the statistic's own name.
+#: Sensitivity panels are log10 (see the Sensitivity statistics section),
+#: so e.g. clim=[-4, 0] shows four decades below the normalised maximum.
+MOD_STATS_STYLE = {
+    "var": dict(clim=[0.0, 0.3], label="var log10(rho)"),
+    "err": dict(clim=[0.0, 0.3], label="std log10(rho)"),
+    "mad": dict(clim=[0.0, 0.3], label="MAD log10(rho)"),
+}
+for _lo, _hi in QDIFF_PAIRS:
+    MOD_STATS_STYLE[f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_")] = dict(
+        clim=[0.0, 0.5], label=f"P{_hi:g} - P{_lo:g}  log10(rho)")
+if BOOTSTRAP_VAR:
+    MOD_STATS_STYLE["var_boot"] = dict(clim=[0.0, 0.3], label="bootstrap var log10(rho)")
+    MOD_STATS_STYLE["err_boot"] = dict(clim=[0.0, 0.3], label="bootstrap std log10(rho)")
+if COMPUTE_SENS:
+    #: Native SENS_KIND units -- run- and mesh-dependent, auto-scaled.
+    MOD_STATS_STYLE["sens_mean_raw"] = dict(
+        cmap="viridis", clim=None, label=f"log10 S ({SENS_KIND})")
+    for _sfx in ("na", "an"):
+        for _st in ("mean", "median", "min", "max", "std"):
+            MOD_STATS_STYLE[f"sens_{_st}_{_sfx}"] = dict(
+                cmap="viridis", clim=[-4.0, 0.0],
+                label=f"log10 S/Smax ({_st}, {_sfx})")
+        MOD_STATS_STYLE[f"sens_cv_{_sfx}"] = dict(
+            cmap="viridis", clim=None, label=f"CV of S ({_sfx})")
+if COMPUTE_SIMRC:
+    MOD_STATS_STYLE["simrc_coef"] = dict(cmap="viridis", clim=None,
+                                         label="log10 sum|SimRC|")
+    MOD_STATS_STYLE["simrc_corr"] = dict(cmap="viridis", clim=None,
+                                         label="log10 sum|corr|")
+
+# --- Blanking / fading (optional) ------------------------------------------
+#: One condition "<name> <op> <value>" selecting the cells to SHOW; cells
+#: failing it are blanked or faded. <name> is any statistic key known to
+#: MOD_STATS (see MOD_STATS_WHAT; computed statistics are available here
+#: even if not listed for plotting), <op> is one of > >= < <=, and <value>
+#: is in that statistic's own units (log10 for sensitivities). Examples:
+#:   "sens_mean_an > -3."    keep cells within 3 decades of max sensitivity
+#:   "err < 0.2"             keep cells with ensemble std below 0.2 decades
+#: None disables blanking/fading.
+MOD_ALPHA_SOURCE = "sens_mean_an > -3."
+#: "blank" -- failing cells are removed (hard cut).
+#: "fade"  -- failing cells fade linearly from opaque at the threshold to
+#:            fully transparent MOD_ALPHA_FADE_WIDTH beyond it (same units
+#:            as <value>, e.g. 1.0 = one decade for log10 sensitivities).
+MOD_ALPHA_MODE       = "blank"
+MOD_ALPHA_FADE_WIDTH = 1.0
+#: Apply the same mask to the MOD_QC (best-member) figure as well.
+MOD_ALPHA_QC         = True
 
 # --- Figure layout -----------------------------------------------------------
 MOD_EQUAL_ASPECT = True
@@ -1372,6 +1255,92 @@ def _bootstrap_variance(ens_matrix: np.ndarray, n_boot: int,
     return var_boot, var_boot_se
 
 
+#: Sentinel air/ocean resistivities used only in MOD_STATS block files: a
+#: statistic (e.g. a log10 sensitivity of -0.6, or a raw log10 sensitivity
+#: above 8) must never coincide with the values plot_model_slices uses to
+#: recognise ocean (log10(ocean_value) +- 0.05) or air (log10 > threshold).
+_STATS_AIR_RHO          = 1.0e30
+_STATS_AIR_LOG10_THRESH = 29.0
+_STATS_OCEAN_RHO        = 1.0e-30
+
+_ALPHA_EXPR_RE = re.compile(
+    r"^\s*([A-Za-z_]\w*)\s*(>=|<=|>|<)\s*"
+    r"([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)\s*$"
+)
+
+
+def _log10_pos(x):
+    """log10 of a strictly positive array; values <= 0 or non-finite -> NaN."""
+    x = np.asarray(x, dtype=float)
+    out = np.full(x.shape, np.nan)
+    ok = np.isfinite(x) & (x > 0.0)
+    out[ok] = np.log10(x[ok])
+    return out
+
+
+def _parse_alpha_source(expr: str):
+    """Parse MOD_ALPHA_SOURCE ("name op value") -> (name, op, value).
+
+    Only a single comparison is allowed; nothing is evaluated.
+    """
+    m = _ALPHA_EXPR_RE.match(expr)
+    if m is None:
+        raise ValueError(
+            f"MOD_ALPHA_SOURCE={expr!r}: expected '<name> <op> <value>' "
+            f"with op one of > >= < <=, e.g. 'sens_mean_an > -3.'")
+    return m.group(1), m.group(2), float(m.group(3))
+
+
+def _alpha_from_condition(arr, op: str, thr: float, mode: str,
+                          width: float) -> np.ndarray:
+    """Per-free-parameter alpha in [0, 1] from a single comparison.
+
+    Cells satisfying ``arr <op> thr`` get alpha 1. Failing cells get 0
+    ("blank") or fade linearly with distance beyond the threshold, reaching
+    0 at ``width`` ("fade"). NaN values always get 0.
+    """
+    arr = np.asarray(arr, dtype=float)
+    with np.errstate(invalid="ignore"):
+        if op == ">":
+            keep, dist = arr > thr, thr - arr
+        elif op == ">=":
+            keep, dist = arr >= thr, thr - arr
+        elif op == "<":
+            keep, dist = arr < thr, arr - thr
+        else:  # "<="
+            keep, dist = arr <= thr, arr - thr
+    if mode == "blank":
+        alpha = keep.astype(float)
+    elif mode == "fade":
+        if width <= 0.0:
+            raise ValueError("MOD_ALPHA_FADE_WIDTH must be > 0 for 'fade'.")
+        alpha = np.where(keep, 1.0, np.clip(1.0 - dist / width, 0.0, 1.0))
+    else:
+        raise ValueError(f"MOD_ALPHA_MODE must be 'blank' or 'fade', got {mode!r}")
+    alpha[~np.isfinite(arr)] = 0.0
+    return alpha
+
+
+def _write_alpha_block(alpha: np.ndarray, template: str, path: str) -> None:
+    """Write per-free-parameter alpha so the file's RAW values equal alpha.
+
+    fem.insert_model() writes 10**v, and plot_model_slices reads alpha
+    files as raw region values -- so v = log10(alpha) (alpha = 0 -> raw 0).
+    Air/ocean are written as 1.0 (they are drawn separately anyway).
+    """
+    with np.errstate(divide="ignore"):
+        v = np.where(alpha > 0.0, np.log10(np.maximum(alpha, 1e-300)), -np.inf)
+    fem.insert_model(
+        template   = template,
+        model      = v,
+        model_file = path,
+        ocean      = MOD_OCEAN,
+        air_rho    = 1.0,
+        ocean_rho  = 1.0,
+        out        = OUT,
+    )
+
+
 def _resolve_origin_and_sites():
     """Estimate UTM origin from MOD_SITE_DAT; collect site model-local coords.
 
@@ -1445,43 +1414,44 @@ def _plot_slice(block_file: str, pdf_file: str,
                 utm_e, utm_n, utm_lat, utm_lon,
                 utm_zone, utm_north, site_xys: list,
                 obs_coords_only: bool = False,
-                clim=None,
-                alpha_file=None, alpha_mode=None, alpha_blank_thresh=None,
+                clim="model", cmap=None, cbar_label=None,
+                alpha_file=None, stats_panel: bool = False,
                 ) -> None:
     """Call fviz.plot_model_slices once per MOD_PLOT_FORMAT entry.
 
-    Mirrors the plotting call in femtic_gst_prep.py / femtic_rto_prep.py
-    exactly, so QC and statistics figures use the same options (CRS
-    handling, site overlay, alpha/blanking, figure layout) as the
-    ensemble-generation scripts.
+    Mirrors the plotting call in femtic_gst_prep.py / femtic_rto_prep.py,
+    so QC and statistics figures share the MOD_SLICES geometry, CRS
+    handling, site overlay and figure layout.
 
     Parameters
     ----------
     pdf_file : str
-        Output path *without* an extension. ".<fmt>" is appended for each
-        entry in MOD_PLOT_FORMAT / _MOD_PLOT_FORMATS (e.g. base "foo" +
-        ["pdf", "jpg"] -> "foo.pdf" and "foo.jpg", same figure, one
-        savefig() call per format).
-    clim : [vmin, vmax] | None
-        Per-call colour-scale override. ``None`` (default) falls back to
-        the module-level ``MOD_CLIM``, unchanged from previous behaviour.
-        Used by the MOD_STATS block to give VAR/MAD/QDIFF panels their own
-        automatic scale instead of forcing MOD_CLIM onto them.
-    alpha_file, alpha_mode, alpha_blank_thresh : optional
-        Per-call overrides for the alpha/blanking block file, mode, and
-        threshold. ``None`` (default, for all three) falls back to the
-        module-level ``MOD_ALPHA_FILE`` / ``MOD_ALPHA_MODE`` /
-        ``MOD_ALPHA_BLANK_THRESH``, unchanged from previous behaviour.
-        Used by the MOD_STATS block's MOD_STATS_BLANK_SOURCES option to
-        blank by var_redux/sens_mean_na/sens_mean_an/sens_cv_na/sens_cv_an/
-        simrc_corr/flag_null_space (singly or combined) instead, without
-        touching MOD_QC or any other MOD_STATS panel that doesn't opt in.
+        Output path *without* an extension; ".<fmt>" is appended for each
+        MOD_PLOT_FORMAT entry.
+    clim : "model" | [vmin, vmax] | None
+        "model" (default) = MOD_CLIM; None = auto-scale from the data;
+        a pair = explicit range (from MOD_STATS_STYLE). Previously None
+        silently fell back to MOD_CLIM, so auto-scaling never happened.
+    cmap, cbar_label : optional
+        Per-panel overrides (from MOD_STATS_STYLE); None falls back to
+        MOD_CMAP / plot_model_slices' default label.
+    alpha_file : str | None
+        Alpha block written by _write_alpha_block() (raw values = alpha in
+        [0, 1]); plotted with alpha_mode="direct". None = no blanking.
+    stats_panel : bool
+        True for MOD_STATS panels. Their block files use sentinel
+        resistivities for air/ocean (_STATS_AIR_RHO / _STATS_OCEAN_RHO) so
+        that a statistic value can never be mistaken for air (log10 > 8)
+        or ocean (log10 ~ log10(MOD_OCEAN_RHO)) by plot_model_slices.
     """
     if fviz is None:
         print("  plot_slice: femtic_viz not available — skipping.")
         return
 
-    _clim = MOD_CLIM if clim is None else clim
+    _clim = MOD_CLIM if (isinstance(clim, str) and clim == "model") else clim
+    _cmap = MOD_CMAP if cmap is None else cmap
+    _ocean_value = _STATS_OCEAN_RHO if stats_panel else MOD_OCEAN_RHO
+    _air_thresh  = _STATS_AIR_LOG10_THRESH if stats_panel else 8.0
 
     _slices_resolved = fem.resolve_slice_positions(
         _slices_km_to_m(MOD_SLICES), utm_zone, utm_north,
@@ -1502,13 +1472,15 @@ def _plot_slice(block_file: str, pdf_file: str,
             model_file          = block_file,
             mesh_file           = MOD_MESH,
             slices              = _slices_resolved,
-            cmap                = MOD_CMAP,
+            cmap                = _cmap,
             clim                = _clim,
+            cbar_label          = cbar_label,
             xlim                = _lim_km_to_m(MOD_XLIM),
             ylim                = _lim_km_to_m(MOD_YLIM),
             zlim                = _lim_km_to_m(MOD_ZLIM),
             ocean_color         = MOD_OCEAN_COLOR,
-            ocean_value         = MOD_OCEAN_RHO,
+            ocean_value         = _ocean_value,
+            air_log10_thresh    = _air_thresh,
             air_color           = MOD_AIR_COLOR,
             air_bgcolor         = MOD_AIR_BGCOLOR,
             site_xys            = site_xys,
@@ -1538,10 +1510,8 @@ def _plot_slice(block_file: str, pdf_file: str,
             tick_fontsize       = MOD_TICK_FONTSIZE,
             label_fontsize      = MOD_LABEL_FONTSIZE,
             tick_decimals       = MOD_TICK_DECIMALS,
-            alpha_file          = MOD_ALPHA_FILE if alpha_file is None else alpha_file,
-            alpha_mode          = MOD_ALPHA_MODE if alpha_mode is None else alpha_mode,
-            alpha_blank_thresh  = (MOD_ALPHA_BLANK_THRESH if alpha_blank_thresh is None
-                                    else alpha_blank_thresh),
+            alpha_file          = alpha_file,
+            alpha_mode          = "direct",
             plot_file           = _fmt_file,
             dpi                 = MOD_DPI,
             show                = _show_this,
@@ -1573,10 +1543,6 @@ model_list  = []          # list of [block_file, n_iter, nRMS]
 model_count = 0
 ens_matrix  = None        # will become (n_members, n_free) float64
 
-ens_matrix_prior  = None  # will become (n_members, n_free) float64
-prior_count       = 0     # accepted members whose iter0 file was found
-prior_missing_any = False
-
 sens_matrix       = None  # will become (n_sens_members, n_free) float64
 sens_count        = 0     # accepted members whose results_iterX.h5 was found
 sens_missing_any  = False
@@ -1588,8 +1554,8 @@ simrc_manifest    = None  # (data_type, n_values) list from the first member
 #: Row indices into ens_matrix (i.e. which accepted members, in append
 #: order) that also contributed a row to ens_data_matrix -- needed so the
 #: model/data cross-covariance below pairs up the *same* members, since
-#: COMPUTE_SIMRC can drop members that COMPUTE_VAR_REDUX/sensitivity did
-#: not (and vice versa).
+#: COMPUTE_SIMRC can drop members that COMPUTE_SENS did not (and vice
+#: versa).
 simrc_keep_idx    = []
 
 for d in dir_list:
@@ -1666,24 +1632,6 @@ for d in dir_list:
         ens_matrix = np.vstack((ens_matrix, log_m))   # (k, n_free)
 
     model_count += 1
-
-    if COMPUTE_VAR_REDUX:
-        prior_file = os.path.join(d, "resistivity_block_iter0.dat")
-        if not os.path.isfile(prior_file):
-            print(f"    {prior_file} not found — var_redux unavailable "
-                  f"for this ensemble.")
-            prior_missing_any = True
-        else:
-            log_m_prior = fem.read_model(
-                model_file=prior_file, model_trans="log10", out=OUT,
-            )
-            if ens_matrix_prior is None:
-                ens_matrix_prior = log_m_prior[np.newaxis, :]
-            else:
-                ens_matrix_prior = np.vstack(
-                    (ens_matrix_prior, log_m_prior)
-                )
-            prior_count += 1
 
     # --- (1) Per-member cumulative sensitivity (optional) -------------
     if COMPUTE_SENS:
@@ -1770,23 +1718,6 @@ ens_mad  = np.median(np.abs(ens_matrix - ens_med[np.newaxis, :]),
                      axis=0)                                        # (n_free,)
 ens_prc  = np.percentile(ens_matrix, PERCENTILES, axis=0)          # (n_prc, n_free)
 
-# --- Prior variance / variance-reduction (optional) ------------------------
-ens_var_prior = None
-var_redux     = None
-if COMPUTE_VAR_REDUX:
-    if prior_missing_any or prior_count != n_members:
-        print(f"\n  COMPUTE_VAR_REDUX: only {prior_count}/{n_members} "
-              f"accepted members had an iter0 file — skipping var_prior "
-              f"and var_redux.")
-    else:
-        ens_var_prior = np.var(ens_matrix_prior, axis=0)               # (n_free,)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            var_redux = 1.0 - ens_var / ens_var_prior
-        var_redux[ens_var_prior == 0.0] = np.nan
-        print(f"\n  var_redux: [{np.nanmin(var_redux):.4f}, "
-              f"{np.nanmax(var_redux):.4f}]  "
-              f"(over {n_members} members, prior=iter0)")
-
 # --- Percentile-pair differences (robust spread, e.g. 1-sigma-equivalent IQR) ---
 ens_qdiff = {}   # key -> (n_free,) array
 for _lo, _hi in QDIFF_PAIRS:
@@ -1825,24 +1756,15 @@ if BOOTSTRAP_VAR:
     print(f"  var_boot_se       : [{ens_var_boot_se.min():.4f}, {ens_var_boot_se.max():.4f}]  "
           f"(bootstrap SE of var_boot itself)")
 
-# --- Small-spread flag: ERR normalised to its own max (simple alternative
-# to flag_null_space's percentile-based FLAG_SPREAD_PERCENTILE), same
-# max-normalised style as sens_low_mask below. Always available (ens_err
-# is always computed), so it needs no COMPUTE_* switch of its own.
-_spread_max_all = np.nanmax(ens_err)
-spread_low_mask = ens_err < (SPREAD_LOW_THRESH_FRAC * _spread_max_all)
-print(f"  small-spread cells (< {SPREAD_LOW_THRESH_FRAC:g} of max err): "
-      f"{int(np.sum(spread_low_mask))}/{spread_low_mask.size}")
-
 # --- (2b) Sensitivity statistics: (1) per-member Jacobian aggregation ------
 # Two aggregation orders, computed side by side -- see SENS_KIND's
 # docstring above for why there is no single "correct" one now that the
 # per-member sensitivity in results_iterX.h5 is confirmed NOT to already
 # be normalised to that member's own max.
-sens_mean_na = sens_median_na = sens_min_na = sens_max_na = sens_std_na = sens_cv_na = None
-sens_mean_an = sens_median_an = sens_min_an = sens_max_an = sens_std_an = sens_cv_an = None
-sens_low_mask_na = sens_low_mask_an = None
-sens_mean_raw = None
+_SENS_STATS = ("mean", "median", "min", "max", "std")
+#: key -> log10 array, e.g. sens["mean_na"], sens["cv_an"] (cv linear);
+#: empty when COMPUTE_SENS is off or found no usable files.
+sens = {}
 if COMPUTE_SENS:
     if sens_matrix is None or sens_count == 0:
         print("\n  COMPUTE_SENS: no results_iterX.h5 sensitivity files found — skipped.")
@@ -1851,71 +1773,53 @@ if COMPUTE_SENS:
             print(f"\n  COMPUTE_SENS: sensitivity available for {sens_count}/"
                   f"{n_members} accepted members — aggregating over those only.")
 
-        # --- "_raw": ensemble mean with NO normalisation at all, in
-        # SENS_KIND's native physical units ("raw" = sum|J|, or
-        # "volume_normalised" = sum|J|/block volume) -- for inspecting the
-        # actual sensitivity magnitude/units FEMTIC reports, alongside the
-        # two dimensionless, max-normalised aggregates below. Plotted on
-        # the same slice geometry as every other MOD_STATS panel.
-        sens_mean_raw = np.mean(sens_matrix, axis=0)
+        def _aggregate(M):
+            """mean/median/min/max/std/cv across members (rows), linear."""
+            agg = {
+                "mean":   np.mean  (M, axis=0),
+                "median": np.median(M, axis=0),
+                "min":    np.min   (M, axis=0),
+                "max":    np.max   (M, axis=0),
+                "std":    (np.std(M, axis=0, ddof=1) if M.shape[0] > 1
+                           else np.zeros(M.shape[1])),
+            }
+            with np.errstate(divide="ignore", invalid="ignore"):
+                cv = agg["std"] / agg["mean"]
+            cv[~np.isfinite(cv)] = 0.0
+            agg["cv"] = cv
+            return agg
 
-        # --- "_na": normalise each member (its own row-max), THEN average ---
-        _sens_row_max = np.max(sens_matrix, axis=1, keepdims=True)  # (n_mem, 1)
-        _sens_row_max[_sens_row_max == 0.0] = 1.0   # guard an all-zero member
-        _sens_matrix_na = sens_matrix / _sens_row_max
-        sens_mean_na   = np.mean  (_sens_matrix_na, axis=0)
-        sens_median_na = np.median(_sens_matrix_na, axis=0)
-        sens_min_na    = np.min   (_sens_matrix_na, axis=0)
-        sens_max_na    = np.max   (_sens_matrix_na, axis=0)
-        sens_std_na    = (np.std(_sens_matrix_na, axis=0, ddof=1) if sens_count > 1
-                           else np.zeros_like(sens_mean_na))
-        with np.errstate(divide="ignore", invalid="ignore"):
-            sens_cv_na = sens_std_na / sens_mean_na
-        sens_cv_na[~np.isfinite(sens_cv_na)] = 0.0
-        _sens_na_max_all = np.nanmax(sens_mean_na)
-        sens_low_mask_na = sens_mean_na < (SENS_LOW_THRESH_FRAC * _sens_na_max_all)
+        # "_raw": plain ensemble mean in SENS_KIND's native units.
+        sens["mean_raw"] = _log10_pos(np.mean(sens_matrix, axis=0))
 
-        # --- "_an": average the RAW ensemble first, THEN normalise the ---
-        # --- resulting aggregate by its own max --------------------------
-        sens_mean_an   = np.mean  (sens_matrix, axis=0)
-        sens_median_an = np.median(sens_matrix, axis=0)
-        sens_min_an    = np.min   (sens_matrix, axis=0)
-        sens_max_an    = np.max   (sens_matrix, axis=0)
-        sens_std_an    = (np.std(sens_matrix, axis=0, ddof=1) if sens_count > 1
-                           else np.zeros_like(sens_mean_an))
-        with np.errstate(divide="ignore", invalid="ignore"):
-            sens_cv_an = sens_std_an / sens_mean_an
-        sens_cv_an[~np.isfinite(sens_cv_an)] = 0.0
-        _sens_an_renorm = np.nanmax(sens_mean_an)
-        if _sens_an_renorm > 0:
-            sens_mean_an   = sens_mean_an   / _sens_an_renorm
-            sens_median_an = sens_median_an / _sens_an_renorm
-            sens_min_an    = sens_min_an    / _sens_an_renorm
-            sens_max_an    = sens_max_an    / _sens_an_renorm
-            sens_std_an    = sens_std_an    / _sens_an_renorm
-        _sens_an_max_all = np.nanmax(sens_mean_an)
-        sens_low_mask_an = sens_mean_an < (SENS_LOW_THRESH_FRAC * _sens_an_max_all)
+        # "_na": normalise each member by its own max, THEN aggregate.
+        _row_max = np.max(sens_matrix, axis=1, keepdims=True)
+        _row_max[_row_max == 0.0] = 1.0            # guard an all-zero member
+        _agg = _aggregate(sens_matrix / _row_max)
+        for _st in _SENS_STATS:
+            sens[f"{_st}_na"] = _log10_pos(_agg[_st])
+        sens["cv_na"] = _agg["cv"]
+
+        # "_an": aggregate the RAW ensemble, THEN normalise by max(mean).
+        _agg = _aggregate(sens_matrix)
+        _renorm = np.nanmax(_agg["mean"])
+        _renorm = _renorm if _renorm > 0 else 1.0
+        for _st in _SENS_STATS:
+            sens[f"{_st}_an"] = _log10_pos(_agg[_st] / _renorm)
+        sens["cv_an"] = _agg["cv"]
 
         print(f"\n  Sensitivity (Jacobian, {sens_count} members, SENS_KIND="
-              f"'{SENS_KIND}'):")
-        print(f"    raw ensemble mean (native units, not normalised): "
-              f"[{sens_mean_raw.min():.4e}, {sens_mean_raw.max():.4e}]")
-        print(f"    normalise-then-average -- mean cumulative sensitivity: "
-              f"[{sens_mean_na.min():.4e}, {sens_mean_na.max():.4e}]")
-        print(f"    average-then-normalise -- mean cumulative sensitivity: "
-              f"[{sens_mean_an.min():.4e}, {sens_mean_an.max():.4e}]")
-        print(f"    coefficient of variation across members (na / an): "
-              f"[{sens_cv_na.min():.3f}, {sens_cv_na.max():.3f}]  /  "
-              f"[{sens_cv_an.min():.3f}, {sens_cv_an.max():.3f}]  "
-              f"(large values -> sensitivity structure is model-dependent/"
-              f"nonlinear there; trust SimRC over a single Jacobian instead)")
-        print(f"    low-sensitivity cells (< {SENS_LOW_THRESH_FRAC:g} of max), "
-              f"na / an: {int(np.sum(sens_low_mask_na))}/{sens_low_mask_na.size}"
-              f"  /  {int(np.sum(sens_low_mask_an))}/{sens_low_mask_an.size}")
+              f"'{SENS_KIND}'), log10:")
+        for _k in ("mean_raw", "mean_na", "mean_an"):
+            print(f"    sens_{_k:<9s}: [{np.nanmin(sens[_k]):.3f}, "
+                  f"{np.nanmax(sens[_k]):.3f}]  "
+                  f"({int(np.sum(~np.isfinite(sens[_k])))} non-positive -> NaN)")
+        print(f"    sens_cv (na / an, linear): "
+              f"[{sens['cv_na'].min():.3f}, {sens['cv_na'].max():.3f}]  /  "
+              f"[{sens['cv_an'].min():.3f}, {sens['cv_an'].max():.3f}]")
 
 # --- (2c) Sensitivity statistics: (2) ensemble-native SimRC ----------------
-simrc_coef = simrc_corr = None
-simrc_low_mask = None
+simrc_coef = simrc_corr = None   # log10 after computation
 if COMPUTE_SIMRC:
     if ens_data_matrix is None or simrc_count == 0:
         print("\n  COMPUTE_SIMRC: no per-member forward-response files found "
@@ -1926,7 +1830,7 @@ if COMPUTE_SIMRC:
                   f"{simrc_count}/{n_members} accepted members — SimRC "
                   f"computed over that matched subset only.")
         # Model side must use exactly the members that also contributed a
-        # forward-response row -- COMPUTE_SENS/COMPUTE_VAR_REDUX can drop
+        # forward-response row -- COMPUTE_SENS can drop
         # different members, so ens_matrix and ens_data_matrix need not
         # otherwise line up row-for-row.
         _Msub  = ens_matrix[simrc_keep_idx, :]                # (simrc_count, n_free)
@@ -1962,50 +1866,12 @@ if COMPUTE_SIMRC:
             simrc_coef += np.sum(np.abs(_coef_block), axis=0)
             simrc_corr += np.sum(np.abs(_corr_block), axis=0)
 
-        _simrc_max_all = np.nanmax(simrc_corr)
-        simrc_low_mask = simrc_corr < (SIMRC_LOW_THRESH_FRAC * _simrc_max_all)
-        print(f"    cumulative |regression coeff.|: "
-              f"[{simrc_coef.min():.4e}, {simrc_coef.max():.4e}]")
-        print(f"    cumulative |correlation|      : "
-              f"[{simrc_corr.min():.4e}, {simrc_corr.max():.4e}]")
-        print(f"    low-SimRC cells (< {SIMRC_LOW_THRESH_FRAC:g} of max): "
-              f"{int(np.sum(simrc_low_mask))}/{simrc_low_mask.size}")
-
-# --- (2d) Combined diagnostic: low spread AND low sensitivity --------------
-# Operationalises the mitigation strategy: a cell is flagged as a likely
-# regularisation-collapsed null-space cell -- rather than genuinely
-# data-constrained -- when spread is small AND (NULL_SPACE_COMBINE="and")
-# or OR (NULL_SPACE_COMBINE="or") every/any available independent
-# sensitivity measure also says it's small. "and" (the default) is
-# deliberately conservative: it minimises false positives at the cost of
-# leaving some genuine null-space cells unflagged when both measures are
-# available but disagree; "or" is more liberal. With only one measure
-# available, NULL_SPACE_COMBINE has no effect -- that measure is used as-is.
-flag_null_space = None
-if COMPUTE_NULL_SPACE_FLAG:
-    _low_sens_parts = [m for m in (sens_low_mask_na, sens_low_mask_an, simrc_low_mask)
-                       if m is not None]
-    if not _low_sens_parts:
-        print("\n  COMPUTE_NULL_SPACE_FLAG: neither sensitivity measure "
-              "available — skipped.")
-    else:
-        _spread_thresh = np.percentile(ens_err, FLAG_SPREAD_PERCENTILE)
-        _low_spread = ens_err < _spread_thresh
-        if len(_low_sens_parts) > 1:
-            _low_sens = (np.logical_and.reduce(_low_sens_parts)
-                         if NULL_SPACE_COMBINE == "and"
-                         else np.logical_or.reduce(_low_sens_parts))
-            _combine_desc = f"{NULL_SPACE_COMBINE.upper()} of both"
-        else:
-            _low_sens = _low_sens_parts[0]
-            _combine_desc = "the available"
-        flag_null_space = _low_spread & _low_sens
-        print(f"\n  flag_null_space: "
-              f"{int(np.sum(flag_null_space))}/{flag_null_space.size} cells "
-              f"flagged (ERR < {FLAG_SPREAD_PERCENTILE:g}th percentile AND "
-              f"low sensitivity by {_combine_desc} "
-              f"measure(s)) — likely regularisation-collapsed rather than "
-              f"genuinely data-constrained.")
+        simrc_coef = _log10_pos(simrc_coef)
+        simrc_corr = _log10_pos(simrc_corr)
+        print(f"    log10 cumulative |regression coeff.|: "
+              f"[{np.nanmin(simrc_coef):.3f}, {np.nanmax(simrc_coef):.3f}]")
+        print(f"    log10 cumulative |correlation|      : "
+              f"[{np.nanmin(simrc_corr):.3f}, {np.nanmax(simrc_corr):.3f}]")
 
 # --- (3) Empirical covariance (optional) -----------------------------------
 ens_cov       = None
@@ -2054,7 +1920,6 @@ ens_dict = {
     f"{P}_mad":        ens_mad,
     f"{P}_prc":        ens_prc,
     f"{P}_prc_levels": np.asarray(PERCENTILES),
-    f"{P}_spread_low_mask": spread_low_mask,
 }
 for _qkey, _qval in ens_qdiff.items():
     ens_dict[f"{P}_{_qkey}"] = _qval
@@ -2062,32 +1927,11 @@ if BOOTSTRAP_VAR:
     ens_dict[f"{P}_var_boot"]    = ens_var_boot
     ens_dict[f"{P}_err_boot"]    = ens_err_boot
     ens_dict[f"{P}_var_boot_se"] = ens_var_boot_se
-if ens_var_prior is not None:
-    ens_dict[f"{P}_var_prior"] = ens_var_prior
-if var_redux is not None:
-    ens_dict[f"{P}_var_redux"] = var_redux
-if sens_mean_na is not None:
-    ens_dict[f"{P}_sens_mean_raw"]    = sens_mean_raw
-    ens_dict[f"{P}_sens_mean_na"]     = sens_mean_na
-    ens_dict[f"{P}_sens_median_na"]   = sens_median_na
-    ens_dict[f"{P}_sens_min_na"]      = sens_min_na
-    ens_dict[f"{P}_sens_max_na"]      = sens_max_na
-    ens_dict[f"{P}_sens_std_na"]      = sens_std_na
-    ens_dict[f"{P}_sens_cv_na"]       = sens_cv_na
-    ens_dict[f"{P}_sens_low_mask_na"] = sens_low_mask_na
-    ens_dict[f"{P}_sens_mean_an"]     = sens_mean_an
-    ens_dict[f"{P}_sens_median_an"]   = sens_median_an
-    ens_dict[f"{P}_sens_min_an"]      = sens_min_an
-    ens_dict[f"{P}_sens_max_an"]      = sens_max_an
-    ens_dict[f"{P}_sens_std_an"]      = sens_std_an
-    ens_dict[f"{P}_sens_cv_an"]       = sens_cv_an
-    ens_dict[f"{P}_sens_low_mask_an"] = sens_low_mask_an
-if simrc_coef is not None:
+for _k, _v in sens.items():               # log10 (cv_* linear)
+    ens_dict[f"{P}_sens_{_k}"] = _v
+if simrc_coef is not None:                # log10
     ens_dict[f"{P}_simrc_coef"] = simrc_coef
     ens_dict[f"{P}_simrc_corr"] = simrc_corr
-    ens_dict[f"{P}_simrc_low_mask"] = simrc_low_mask
-if flag_null_space is not None:
-    ens_dict[f"{P}_flag_null_space"] = flag_null_space
 if ens_cov is not None:
     ens_dict[f"{P}_cov"] = ens_cov
 if ens_cov_eigval is not None:
@@ -2098,8 +1942,7 @@ np.savez_compressed(ENSEMBLE_RESULTS, **ens_dict)
 print(f"\nResults saved → {ENSEMBLE_RESULTS}")
 
 # --- (5) Resolve UTM origin and sites (needed for any plot) ---------------
-_need_plot = MOD_QC or MOD_STATS
-if _need_plot:
+if MOD_QC or MOD_STATS:
     (utm_e, utm_n, utm_lat, utm_lon,
      utm_zone, utm_north, site_xys, obs_coords_only) = _resolve_origin_and_sites()
 
@@ -2121,7 +1964,69 @@ if _need_plot:
         print("\nROI: MOD_ROI_AUTO=True but no sites available — "
               "using literal MOD_XLIM/MOD_YLIM/MOD_ZLIM instead.")
 
-# --- (6) QC slice plot — best-nRMS member ---------------------------------
+# --- (6) Statistic map, style, and blanking/fading mask ---------------------
+# _stat_map: key -> (vector over free parameters, description). Used both
+# for MOD_STATS panels and as the namespace of MOD_ALPHA_SOURCE.
+_stat_map = {
+    "avg": (ens_avg, "mean"),
+    "var": (ens_var, "variance"),
+    "err": (ens_err, "error (std = sqrt(var))"),
+    "med": (ens_med, "median"),
+    "mad": (ens_mad, "MAD"),
+}
+_value_scale_keys = {"avg", "med"}
+for _i, _pval in enumerate(PERCENTILES):
+    _pkey = "p" + f"{_pval:g}".replace(".", "_")
+    _stat_map[_pkey] = (ens_prc[_i], f"{_pval:g}th percentile")
+    _value_scale_keys.add(_pkey)
+for _qkey, _qval in ens_qdiff.items():
+    _stat_map[_qkey] = (_qval, f"|{_qkey}| spread")
+if BOOTSTRAP_VAR:
+    _stat_map["var_boot"] = (ens_var_boot, "bootstrap variance")
+    _stat_map["err_boot"] = (ens_err_boot, "bootstrap error (std)")
+for _k, _v in sens.items():
+    _stat_map[f"sens_{_k}"] = (
+        _v, f"sensitivity {_k} ({'linear' if _k.startswith('cv') else 'log10'})")
+if simrc_corr is not None:
+    _stat_map["simrc_coef"] = (simrc_coef, "log10 SimRC cumulative |regression coeff.|")
+    _stat_map["simrc_corr"] = (simrc_corr, "log10 SimRC cumulative |correlation|")
+
+
+def _panel_style(key):
+    """(cmap, clim, label) for a MOD_STATS panel: MOD_STATS_STYLE over defaults."""
+    st = MOD_STATS_STYLE.get(key, {})
+    if key in _value_scale_keys:
+        d_clim, d_label = MOD_CLIM, "log10(rho / Ohm*m)"
+    else:
+        d_clim, d_label = None, key
+    return (st.get("cmap", MOD_CMAP),
+            st.get("clim", d_clim),
+            st.get("label", d_label))
+
+
+_alpha_block = None
+_need_plot = (MOD_QC or MOD_STATS) and fviz is not None and bool(model_list)
+if _need_plot and MOD_ALPHA_SOURCE:
+    _a_name, _a_op, _a_thr = _parse_alpha_source(MOD_ALPHA_SOURCE)
+    if _a_name not in _stat_map:
+        print(f"\n  MOD_ALPHA_SOURCE: '{_a_name}' not available for this run "
+              f"(available: {sorted(_stat_map)}) — blanking disabled.")
+    else:
+        _alpha = _alpha_from_condition(_stat_map[_a_name][0], _a_op, _a_thr,
+                                       MOD_ALPHA_MODE, MOD_ALPHA_FADE_WIDTH)
+        os.makedirs(MOD_STATS_DIR, exist_ok=True)
+        _alpha_block = os.path.join(MOD_STATS_DIR,
+                                    f"resistivity_block_{P}_alpha.dat")
+        _write_alpha_block(_alpha, min(model_list, key=lambda x: x[2])[0],
+                           _alpha_block)
+        print(f"\n  MOD_ALPHA_SOURCE '{MOD_ALPHA_SOURCE}' "
+              f"(mode='{MOD_ALPHA_MODE}'): "
+              f"{int(np.sum(_alpha >= 1.0))} shown, "
+              f"{int(np.sum((_alpha > 0.0) & (_alpha < 1.0)))} faded, "
+              f"{int(np.sum(_alpha <= 0.0))} blanked "
+              f"of {_alpha.size} cells.")
+
+# --- (7) QC slice plot — best-nRMS member ---------------------------------
 if MOD_QC:
     if fviz is None:
         print("\n  MOD_QC: femtic_viz not available — skipping.")
@@ -2143,9 +2048,10 @@ if MOD_QC:
             utm_north       = utm_north,
             site_xys        = site_xys,
             obs_coords_only = obs_coords_only,
+            alpha_file      = _alpha_block if MOD_ALPHA_QC else None,
         )
 
-# --- (7) Statistics slice plots -------------------------------------------
+# --- (8) Statistics slice plots -------------------------------------------
 if MOD_STATS:
     if fviz is None:
         print("\n  MOD_STATS: femtic_viz not available — skipping.")
@@ -2157,221 +2063,29 @@ if MOD_STATS:
         # Template = lowest-nRMS member (preserves header / flag columns)
         _best_file = min(model_list, key=lambda x: x[2])[0]
 
-        _stat_map = {
-            "avg": (ens_avg, "mean"),
-            "var": (ens_var, "variance"),
-            "err": (ens_err, "error (std = sqrt(var))"),
-            "med": (ens_med, "median"),
-            "mad": (ens_mad, "MAD"),
-            "spread_low_mask": (
-                spread_low_mask.astype(float),
-                f"flag: small spread (< {SPREAD_LOW_THRESH_FRAC:g} of max err)",
-            ),
-        }
-        # "Value-scale" keys share the model's own log10(Ω·m) range and
-        # default to MOD_CLIM; everything else ("var", "err", "mad",
-        # "qdiff_*", "var_boot", "err_boot") is a spread statistic on a
-        # different scale and defaults to None (auto per-panel).
-        # MOD_STATS_CLIM always takes precedence.
-        _value_scale_keys = {"avg", "med"}
-
-        # One entry per PERCENTILES level, keyed e.g. 2.3 -> "p2_3", 50.0 -> "p50".
-        for _i, _pval in enumerate(PERCENTILES):
-            _pkey = "p" + f"{_pval:g}".replace(".", "_")
-            _stat_map[_pkey] = (ens_prc[_i], f"{_pval:g}th percentile")
-            _value_scale_keys.add(_pkey)
-
-        # One entry per QDIFF_PAIRS entry (spread statistic — auto scale).
-        for _qkey, _qval in ens_qdiff.items():
-            _stat_map[_qkey] = (_qval, f"|{_qkey}| spread")
-
-        # Bootstrap variance / error (spread statistics — auto scale).
-        if BOOTSTRAP_VAR:
-            _stat_map["var_boot"] = (ens_var_boot, "bootstrap variance")
-            _stat_map["err_boot"] = (ens_err_boot, "bootstrap error (std)")
-
-        # Prior variance / variance-reduction (spread statistics — auto
-        # scale by default here; MOD_STATS_CLIM gives both a fixed range
-        # above). Only added if actually computed (all accepted members
-        # had an iter0 file) — see COMPUTE_VAR_REDUX.
-        if ens_var_prior is not None:
-            _stat_map["var_prior"] = (ens_var_prior, "prior (iter0) variance")
-        if var_redux is not None:
-            _stat_map["var_redux"] = (var_redux, "variance reduction 1-var/var_prior")
-        elif COMPUTE_VAR_REDUX and "var_redux" in MOD_STATS_WHAT:
-            print("  MOD_STATS: var_redux requested but not computed "
-                  "(missing iter0 file(s)) — skipped.")
-            MOD_STATS_WHAT = [k for k in MOD_STATS_WHAT if k != "var_redux"]
-
-        # Sensitivity statistics (1) -- per-member Jacobian aggregation,
-        # two orders side by side (see SENS_KIND's docstring above) --
-        # and (2) -- ensemble-native SimRC. All None if their section
-        # above found no usable per-member files; drop the corresponding
-        # MOD_STATS_WHAT entries in that case rather than erroring, same
-        # pattern as var_redux above.
-        if sens_mean_na is not None:
-            _stat_map["sens_mean_raw"] = (
-                sens_mean_raw,
-                f"mean cumulative sensitivity, raw ensemble average "
-                f"(SENS_KIND='{SENS_KIND}', not normalised)")
-            _stat_map["sens_mean_na"] = (
-                sens_mean_na, "mean cumulative sensitivity, normalise-then-average")
-            _stat_map["sens_cv_na"] = (
-                sens_cv_na, "sensitivity coeff. of variation across members (na)")
-            _stat_map["sens_low_mask_na"] = (
-                sens_low_mask_na.astype(float),
-                f"flag: low sensitivity, na (< {SENS_LOW_THRESH_FRAC:g} of max)",
-            )
-            _stat_map["sens_mean_an"] = (
-                sens_mean_an, "mean cumulative sensitivity, average-then-normalise")
-            _stat_map["sens_cv_an"] = (
-                sens_cv_an, "sensitivity coeff. of variation across members (an)")
-            _stat_map["sens_low_mask_an"] = (
-                sens_low_mask_an.astype(float),
-                f"flag: low sensitivity, an (< {SENS_LOW_THRESH_FRAC:g} of max)",
-            )
-        else:
-            _sens_keys = ("sens_mean_raw", "sens_mean_na", "sens_cv_na", "sens_low_mask_na",
-                          "sens_mean_an", "sens_cv_an", "sens_low_mask_an")
-            for _k in _sens_keys:
-                if _k in MOD_STATS_WHAT:
-                    print(f"  MOD_STATS: {_k} requested but COMPUTE_SENS found "
-                          f"no usable results_iterX.h5 files — skipped.")
-            MOD_STATS_WHAT = [k for k in MOD_STATS_WHAT if k not in _sens_keys]
-
-        if simrc_corr is not None:
-            _stat_map["simrc_corr"] = (simrc_corr, "SimRC cumulative |correlation|")
-        elif "simrc_corr" in MOD_STATS_WHAT:
-            print("  MOD_STATS: simrc_corr requested but COMPUTE_SIMRC found "
-                  "no usable per-member result files — skipped.")
-            MOD_STATS_WHAT = [k for k in MOD_STATS_WHAT if k != "simrc_corr"]
-
-        if flag_null_space is not None:
-            _stat_map["flag_null_space"] = (
-                flag_null_space.astype(float),
-                "flag: low spread AND low sensitivity (likely null space)",
-            )
-        elif "flag_null_space" in MOD_STATS_WHAT:
-            print("  MOD_STATS: flag_null_space requested but neither "
-                  "sensitivity measure was available — skipped.")
-            MOD_STATS_WHAT = [k for k in MOD_STATS_WHAT if k != "flag_null_space"]
-
-        # --- Optional: blank poorly-constrained cells in every MOD_STATS
-        # plot, per MOD_STATS_BLANK_SOURCES. Each listed source is turned
-        # into a boolean "blank this cell" mask according to its own
-        # direction, the masks are combined via MOD_STATS_BLANK_COMBINE,
-        # and the single resulting 0/1 mask is written once, up front, as
-        # the alpha-blank block file used by every MOD_STATS plot below,
-        # including a source statistic's own plot.
-        #
-        # "err" and "sens_mean_na"/"sens_mean_an" are all normalised to
-        # their own max right here (sens_mean_na/_an are already
-        # max-normalised statistics themselves -- see SENS_KIND's
-        # docstring above -- so dividing by their max here is a no-op in
-        # practice; "err"/spread is not normalised anywhere else, so it
-        # is normalised only for this dict) -- this is what makes a plain
-        # fraction like SPREAD_LOW_THRESH_FRAC/SENS_LOW_THRESH_FRAC (e.g.
-        # 0.05 = "5% of max") a valid MOD_STATS_BLANK_SOURCES thresh for
-        # any of the three, regardless of SENS_KIND, units, or ensemble size.
-        _err_max_all = np.nanmax(ens_err)
-        _sens_na_max_all = np.nanmax(sens_mean_na) if sens_mean_na is not None else None
-        _sens_an_max_all = np.nanmax(sens_mean_an) if sens_mean_an is not None else None
-        _blank_source_arrays = {
-            "err":             (ens_err / _err_max_all
-                                 if _err_max_all > 0 else ens_err),
-            "var_redux":       var_redux,
-            "sens_mean_na":    (sens_mean_na / _sens_na_max_all
-                                 if sens_mean_na is not None and _sens_na_max_all > 0
-                                 else sens_mean_na),
-            "sens_mean_an":    (sens_mean_an / _sens_an_max_all
-                                 if sens_mean_an is not None and _sens_an_max_all > 0
-                                 else sens_mean_an),
-            "sens_cv_na":      sens_cv_na,
-            "sens_cv_an":      sens_cv_an,
-            "simrc_corr":      simrc_corr,
-            "flag_null_space": (flag_null_space.astype(float)
-                                 if flag_null_space is not None else None),
-        }
-        _blank_source_names = {s[0] for s in MOD_STATS_BLANK_SOURCES}
-        _stats_alpha_block = None
-        if MOD_STATS_BLANK_SOURCES:
-            if len(MOD_STATS_BLANK_SOURCES) > 1:
-                print(f"  MOD_STATS_BLANK_SOURCES: combining "
-                      f"{len(MOD_STATS_BLANK_SOURCES)} sources with "
-                      f"MOD_STATS_BLANK_COMBINE='{MOD_STATS_BLANK_COMBINE}' "
-                      f"-- note 'flag_null_space' is already itself an AND "
-                      f"of the other sensitivity measures, so combining it "
-                      f"with them is likely redundant.")
-            _masks = []
-            for _bname, _bdir, _bthresh in MOD_STATS_BLANK_SOURCES:
-                _barr = _blank_source_arrays.get(_bname)
-                if _barr is None:
-                    print(f"  MOD_STATS_BLANK_SOURCES: '{_bname}' not "
-                          f"available for this ensemble — skipped.")
-                    continue
-                if _bdir == "below":
-                    _masks.append(_barr < _bthresh)
-                elif _bdir == "above":
-                    _masks.append(_barr > _bthresh)
-                elif _bdir == "flag":
-                    _masks.append(_barr != 0.0)
-                else:
-                    print(f"  MOD_STATS_BLANK_SOURCES: unknown direction "
-                          f"'{_bdir}' for '{_bname}' — skipped.")
-            if _masks:
-                _blank_mask = (np.logical_and.reduce(_masks)
-                                if MOD_STATS_BLANK_COMBINE == "and"
-                                else np.logical_or.reduce(_masks))
-                _stats_alpha_block = os.path.join(
-                    MOD_STATS_DIR, f"resistivity_block_{P}_blank_mask.dat",
-                )
-                # 0 = blanked/faded, 1 = kept -- matches alpha_blank_thresh
-                # below (a plain "value < 0.5" test, same mechanism used
-                # for var_redux previously).
-                fem.insert_model(
-                    template   = _best_file,
-                    model      = np.where(_blank_mask, 0.0, 1.0),
-                    model_file = _stats_alpha_block,
-                    ocean      = MOD_OCEAN,
-                    air_rho    = MOD_AIR_RHO,
-                    ocean_rho  = MOD_OCEAN_RHO,
-                    out        = OUT,
-                )
-                print(f"  MOD_STATS_BLANK_SOURCES: blanking "
-                      f"{int(np.sum(_blank_mask))}/{_blank_mask.size} cells "
-                      f"(mode='{MOD_STATS_BLANK_MODE}') in every MOD_STATS "
-                      f"plot, including {sorted(_blank_source_names)}'s own.")
-            else:
-                print("  MOD_STATS_BLANK_SOURCES: no requested sources were "
-                      "available — blanking disabled for this run.")
-
         for _key in MOD_STATS_WHAT:
             if _key not in _stat_map:
-                print(f"  MOD_STATS: unknown stat '{_key}' — skipped.")
+                print(f"  MOD_STATS: '{_key}' not available for this run — skipped.")
                 continue
             _vec, _label = _stat_map[_key]
-            _default_clim = MOD_CLIM if _key in _value_scale_keys else None
-            _clim = MOD_STATS_CLIM.get(_key, _default_clim)
+            _cmap, _clim, _cbl = _panel_style(_key)
             _block_out = os.path.join(
-                MOD_STATS_DIR,
-                f"resistivity_block_{P}_{_key}.dat",
-            )
-            _pdf_out = os.path.join(
-                MOD_STATS_DIR,
-                f"{P}_{_key}",
-            )
+                MOD_STATS_DIR, f"resistivity_block_{P}_{_key}.dat")
+            _pdf_out = os.path.join(MOD_STATS_DIR, f"{P}_{_key}")
             print(f"\nSTATS: writing {_label} → {_block_out}")
+            # insert_model writes 10**v; plot_model_slices log10s it back,
+            # so the panel shows _vec itself (NaN -> 0 raw -> not drawn).
             fem.insert_model(
                 template   = _best_file,
-                model      = _vec,
+                model      = np.where(np.isfinite(_vec), _vec, -np.inf),
                 model_file = _block_out,
                 ocean      = MOD_OCEAN,
-                air_rho    = MOD_AIR_RHO,
-                ocean_rho  = MOD_OCEAN_RHO,
+                air_rho    = _STATS_AIR_RHO,
+                ocean_rho  = _STATS_OCEAN_RHO,
                 out        = OUT,
             )
-            print(f"STATS: plotting {_label} → {_pdf_out}  (clim={_clim})")
-            _use_blank_alpha = _stats_alpha_block is not None
+            print(f"STATS: plotting {_label} → {_pdf_out}  "
+                  f"(cmap={_cmap}, clim={_clim})")
             _plot_slice(
                 block_file      = _block_out,
                 pdf_file        = _pdf_out,
@@ -2384,9 +2098,10 @@ if MOD_STATS:
                 site_xys        = site_xys,
                 obs_coords_only = obs_coords_only,
                 clim            = _clim,
-                alpha_file          = _stats_alpha_block if _use_blank_alpha else None,
-                alpha_mode          = MOD_STATS_BLANK_MODE if _use_blank_alpha else None,
-                alpha_blank_thresh  = 0.5 if _use_blank_alpha else None,
+                cmap            = _cmap,
+                cbar_label      = _cbl,
+                alpha_file      = _alpha_block,
+                stats_panel     = True,
             )
 
 print("\nfemtic_ens_post.py complete.")

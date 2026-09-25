@@ -384,8 +384,10 @@ fviz.plot_model_slices(
 | `panel_width` | `None` | Column width in inches; `None` = auto from aspect |
 | `figsize` | `None` | `[width, height]` in inches; overrides auto sizing |
 | `alpha_file` | `None` | Second block file with log10 weights for per-element fading/blanking |
-| `alpha_mode` | `"fade"` | `"fade"` = proportional; `"blank"` = hard cutoff |
+| `alpha_mode` | `"fade"` | `"fade"` = proportional; `"blank"` = hard cutoff; `"direct"` = raw alpha-file value used as alpha |
 | `alpha_blank_thresh` | `0.0` | log10 threshold for blanking |
+| `cbar_label` | `None` | Colourbar label; `None` = `"log10(rho / Ohm*m)"` |
+| `air_log10_thresh` | `8.0` | log10 value above which polygons are drawn as air |
 | `tick_fontsize` | `7` | Font size for axis tick labels and colourbar ticks |
 | `label_fontsize` | `8` | Font size for axis labels, panel titles, colourbar label |
 | `tick_decimals` | `None` | Decimal digits on depth / easting-northing (model or UTM) / lat-lon tick labels, all sharing one value. `None` = prior per-axis-type formatting unchanged (`:g` for depth, Matplotlib auto for easting/northing, `.3f` for lat/lon) |
@@ -779,3 +781,4 @@ Raises `ValueError` if no member has a status in `binned_statuses` (nothing to b
 | 2026-09-06 | Claude Sonnet 5 (Anthropic) | `plot_model_slices`: added a `show_model_centre` parameter (default `True`). On `"map"` panels, whenever `display_coords` is `"utm"`/`"latlon"` (axes not in intrinsic model-local coordinates), marks the model origin (model-local x=0, y=0) so the mesh centre stays identifiable once the axes are relabelled — no-op for `display_coords="model"`. Default style: black `"+"`, `ms=10`; never gets a legend entry. Style is overridable via a `map_markers` entry carrying `"is_model_centre": True` instead of `"latlon"` — that entry is filtered out of the regular per-panel `map_markers` loop before rendering (so it never needs a `"latlon"` key and can't collide with a real marker). `plot_ensemble_slices` is unaffected — it has no `display_coords` support and always plots in model-local metres, where a model-centre marker adds no information. |
 
 Author: Volker Rath (DIAS)
+| 2026-09-25 | Claude Opus 5.5 (Anthropic) | `plot_model_slices`: new `alpha_mode="direct"` (raw alpha-file value = polygon alpha, clipped to [0, 1]; NaN/<=0 omitted). Fixed the inverted `"fade"` formula (`clip(w/thresh)` -> `clip(1 - w/thresh)` for `thresh < 0`, now matching the docstring). **Behaviour change** for any caller using `alpha_mode="fade"` with `alpha_blank_thresh < 0`: fading now goes the documented way. Unknown `alpha_mode` raises. New `cbar_label` (default `"log10(rho / Ohm*m)"`) and `air_log10_thresh` (default `8.0`) parameters. Auto `clim` now excludes air (region 0 / log10 > `air_log10_thresh`), ocean (region 1 at `ocean_value`) and non-positive values, computed from raw element values (previously region 1 was forced to `ocean_value` even for land models). Colourbar built from a plain `ScalarMappable`, so faded panels keep an opaque colourbar. |

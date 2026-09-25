@@ -68,24 +68,16 @@ interest auto-scaling (`MOD_ROI_*`) is shared with `femtic_rto_prep.py` and `fem
 |---|---|---|---|
 | `PERCENTILES` | list of float | `[2.3, 15.9, 50.0, 84.1, 97.7]` | Percentile levels (2-σ / 1-σ normal-equivalent). |
 | `QDIFF_PAIRS` | list of `(lo, hi)` | `[(15.9, 84.1), (2.3, 97.7)]` | Percentile-pair differences `\|P_hi - P_lo\|` computed as extra, outlier-robust spread statistics (both values must also appear in `PERCENTILES`). The default gives both a 1-sigma-equivalent (`15.9`/`84.1`) and 2-sigma-equivalent (`2.3`/`97.7`) spread. Saved as `<P>_qdiff_<lo>_<hi>` and plottable under the same key in `MOD_STATS_WHAT`. |
-| `COMPUTE_VAR_REDUX` | `bool` | `True` | Compute `<P>_var_prior` (variance of each member's iter0 model) and `<P>_var_redux = 1 - var/var_prior` (fractional variance reduction from the inversion), per free parameter. Requires `resistivity_block_iter0.dat` alongside each accepted member's converged model; if any is missing, both are skipped for the whole run with a warning. `"var_redux"` is added to `MOD_STATS_WHAT` automatically when enabled and computed. |
-| `REDUX_EPS` | `float` | `0.1` | Threshold on `var_redux`; free parameters with `var_redux < REDUX_EPS` are treated as essentially unconstrained (posterior ≈ prior). Used by `var_redux`'s own `MOD_STATS_CLIM` handling and, if listed, as `MOD_STATS_BLANK_SOURCES`' `"var_redux"` threshold. |
-| `SENS_CV_HIGH_THRESH` | `float` | `1.0` | Absolute threshold on `sens_cv_na`/`sens_cv_an` (std/mean of per-member cumulative sensitivity) above which the linearised sensitivity is considered untrustworthy at that cell. Only consulted if `"sens_cv_na"`/`"sens_cv_an"` is listed in `MOD_STATS_BLANK_SOURCES`, direction `"above"`. |
-| `NULL_SPACE_COMBINE` | `str` | `"and"` | `"and"` (conservative — a cell must be low-sensitivity by **every** available measure) or `"or"` (liberal — **any** available measure is enough), for `flag_null_space`'s own combination of `sens_low_mask_na`/`sens_low_mask_an`/`simrc_low_mask`. No effect if only one measure is available. |
-| `MOD_STATS_BLANK_SOURCES` | `list[tuple]` | `[("flag_null_space","flag",None)]` | List of `(source_name, direction, thresh)` triples selecting which already-computed statistic(s) blank cells in **every** `MOD_STATS` plot, including a listed source's own. `source_name`: `"err"` (small ensemble spread, always available) \| `"var_redux"` \| `"sens_mean_na"` \| `"sens_mean_an"` \| `"sens_cv_na"` \| `"sens_cv_an"` \| `"simrc_corr"` \| `"flag_null_space"` (the latter six must have actually been computed, else skipped with a warning). `direction`: `"below"` (blank where value < thresh — `err`/`var_redux`/`sens_mean_na`/`sens_mean_an`/`simrc_corr`: low means poorly resolved/little information), `"above"` (blank where value > thresh — `sens_cv_na`/`sens_cv_an`: high means the linearised sensitivity itself is untrustworthy there, not that the cell is unconstrained), or `"flag"` (blank where value != 0 — `flag_null_space` is already 0/1; `thresh` ignored). `"err"` and `"sens_mean_na"`/`"sens_mean_an"` are all compared against arrays normalised to their own max right where the blank mask is built (the two sensitivity aggregates are already max-normalised statistics themselves — see `SENS_KIND`'s note below), so `thresh` for any of the three is simply the fraction to use directly — pass `SPREAD_LOW_THRESH_FRAC`/`SENS_LOW_THRESH_FRAC` themselves, no need to multiply by a printed max first. **Default blanks on `flag_null_space` alone** rather than ANDing the individual spread/sensitivity sources together — low spread or low sensitivity *alone* shouldn't hide a cell (see the note above the `COMPUTE_NULL_SPACE_FLAG` section), and `flag_null_space`'s spread side uses a percentile (`FLAG_SPREAD_PERCENTILE`) rather than an absolute fraction-of-max threshold, so it can't silently collapse to zero blanked cells the way a miscalibrated `SPREAD_LOW_THRESH_FRAC` can when ANDed directly against the sensitivity sources. The individual sources remain available (commented out in the script) for per-criterion diagnostic tuning. Empty list disables blanking, matching the old `MOD_STATS_BLANK_BY_REDUX=False` default. Does not affect `MOD_QC`. |
-| `MOD_STATS_BLANK_COMBINE` | `str` | `"and"` | How multiple `MOD_STATS_BLANK_SOURCES` entries combine: `"and"` (all must flag a cell) or `"or"` (any is enough). Only matters — and only prints a warning — when more than one entry is listed; e.g. `"flag_null_space"` is already itself an AND of `sens_mean_na`/`sens_mean_an`/`simrc_corr`, so listing it alongside them is redundant (harmless). |
-| `MOD_STATS_BLANK_MODE` | `str` | `"blank"` | `"fade"` or `"blank"`, same two modes as `MOD_ALPHA_MODE`, applied to the combined `MOD_STATS_BLANK_SOURCES` mask as a whole. |
 
 ### Sensitivity statistics
 
 Low ensemble spread (`VAR`/`ERR`/`MAD` above) is ambiguous on its own: it
 can mean the data genuinely constrain a cell, or that regularisation
 collapsed a null-space cell regardless of the data. This section adds
-two independent sensitivity diagnostics to tell the two apart, plus a
-combined flag. Either diagnostic can be switched off independently and
+two independent sensitivity diagnostics to tell the two apart. Either diagnostic can be switched off independently and
 degrades gracefully (printed warning, corresponding `.npz` keys and
 `MOD_STATS_WHAT` entries omitted) if its required per-member files are
-missing for some or all members — same pattern as `COMPUTE_VAR_REDUX`.
+missing for some or all members.
 
 > **Two aggregation orders, computed side by side.** FEMTIC's per-block
 > sensitivity in `results_iterX.h5` (whichever `SENS_KIND` dataset is
@@ -94,7 +86,7 @@ missing for some or all members — same pattern as `COMPUTE_VAR_REDUX`.
 > a common, threshold-friendly scale before aggregating across the
 > ensemble. Both orders below are always computed when `COMPUTE_SENS`
 > succeeds (suffixes `_na`/`_an` throughout — config, `.npz` keys,
-> `MOD_STATS_WHAT`/`MOD_STATS_BLANK_SOURCES` entries):
+> `MOD_STATS_WHAT`/`MOD_ALPHA_SOURCE` names):
 > - **`_na` (normalise, then average)** — each member's raw vector is
 >   divided by *its own* max right after reading, so every member
 >   contributes equally regardless of its absolute sensitivity scale,
@@ -107,10 +99,14 @@ missing for some or all members — same pattern as `COMPUTE_VAR_REDUX`.
 >   the resulting aggregate is divided by *its own* max, so it always
 >   peaks at exactly `1.0`.
 >
-> Both are strictly max-normalised statistics, so `SENS_LOW_THRESH_FRAC`
-> applies identically to either as "fraction of that statistic's own
-> max" — pick one, the other, or both in `MOD_STATS_WHAT`/
-> `MOD_STATS_BLANK_SOURCES`.
+> Both are max-normalised statistics.
+>
+> **log10.** All sensitivity aggregates (`mean`/`median`/`min`/`max`/`std`,
+> `_raw`/`_na`/`_an`) and the SimRC sums (`simrc_coef`/`simrc_corr`) are
+> strictly positive and are stored, plotted and used in `MOD_ALPHA_SOURCE`
+> as **log10** (values <= 0 -> NaN). Normalised sensitivities are
+> therefore <= 0, e.g. `"sens_mean_an > -3."` keeps cells within three
+> decades of the maximum. `sens_cv_*` are ratios and stay linear.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
@@ -122,16 +118,11 @@ missing for some or all members — same pattern as `COMPUTE_VAR_REDUX`.
 | `SENS_ERROR_KEY` | str or `None` | `"data_errors"` | Dataset name for a 1-D per-datum error vector used to weight the Jacobian sum if the fallback above ever fires; `None` disables weighting. |
 
 > **No `jacobian.h5` fallback, by design.** If a member's `results_iter{numit}.h5` doesn't have sensitivity for that iteration (e.g. sensitivity calculation was disabled in `control.dat` for that step), this script does **not** fall back to reading `jacobian.h5` — that file is separate, has a fixed name, and may hold an entirely different (arbitrary "last computed") iteration than `numit`. That member is simply skipped for `COMPUTE_SENS`, with a printed warning, same as any other missing-file case.
-| `SENS_LOW_THRESH_FRAC` | float | `0.05` | Fraction of a sensitivity aggregate's own maximum below which a cell is flagged "low sensitivity" — used for both `sens_low_mask_na` and `sens_low_mask_an`. |
 | `COMPUTE_SIMRC` | bool | `True` | (2) Ensemble-native "SimRC" sensitivity — correlates the already-collected model ensemble against a forward-response ensemble read from each member's `result_XXX.txt` files. No Jacobian required. |
 | `SIMRC_RESULT_FILES` | dict | `{"rhophas": "result_MT.txt", "vtf": "result_VTF.txt"}` | `{data_type: filename}`, relative to each member's run directory. A member missing every listed file is dropped from the SimRC ensemble with a warning. |
 | `SIMRC_SITE_FILE` | str | `ENSEMBLE_DIR + "templates/site.dat"` | Site-metadata file shared across the ensemble (site geometry is identical across RTO/GST members). |
 | `SIMRC_DATA_KIND` | str | `"rhophas"` | Fallback `data_type` passed to `fem.get_femtic_data()` for any `SIMRC_RESULT_FILES` key not already `"imp"`/`"vtf"`/`"pt"`/`"rhophas"`. |
 | `SIMRC_CHUNK` | int | `200` | Data columns processed per chunk when accumulating the model/data cross-covariance — bounds peak memory to `O(SIMRC_CHUNK * n_free)` instead of forming the full `(n_data, n_free)` matrix. |
-| `SIMRC_LOW_THRESH_FRAC` | float | `0.05` | Fraction of the ensemble SimRC cumulative-correlation's own maximum below which a cell is flagged "low SimRC sensitivity". |
-| `COMPUTE_NULL_SPACE_FLAG` | bool | `True` | Flag cells with `ERR` below its own `FLAG_SPREAD_PERCENTILE` **and** low sensitivity by every available measure above (`AND` across `COMPUTE_SENS`/`COMPUTE_SIMRC`'s low-sensitivity masks — conservative, minimises false positives) as `<P>_flag_null_space`. |
-| `FLAG_SPREAD_PERCENTILE` | float | `25.0` | `ERR` below this percentile of its own distribution counts as "low spread" for the flag above. |
-| `SPREAD_LOW_THRESH_FRAC` | float | `0.05` | Fraction of `ERR`'s own maximum below which a cell is flagged "small spread" — a simple max-normalised alternative to `FLAG_SPREAD_PERCENTILE`, mirroring `SENS_LOW_THRESH_FRAC` for sensitivity. Feeds the standalone `spread_low_mask` and the `"err"` entry in `MOD_STATS_BLANK_SOURCES`; does not affect `flag_null_space`. |
 
 **Why two measures instead of one.** (1) is a classical linearised
 diagnostic (Christiansen & Auken, 2012, *Geophysics* 77, WB171,
@@ -146,9 +137,12 @@ Vijver, 2021, *Geophysical Prospecting*, doi:10.1111/1365-2478.13068) is
 built directly from the finite ensemble spread rather than an
 infinitesimal derivative, so it remains valid in that nonlinear regime,
 at the cost of needing a converged forward run (not just a Jacobian) per
-member. Using `AND` for `flag_null_space` means a cell is only flagged
-once every available measure agrees it is both unresolved and
-insensitive — a deliberately conservative choice over `OR`.
+member. SimRC in short: for each datum, the ensemble covariance between the
+forward responses and each model parameter, divided by that parameter's
+ensemble variance, is a regression coefficient that equals the
+differential sensitivity for a linear forward problem; dividing by both
+standard deviations gives a correlation. Summing `|coef|` / `|corr|` over
+all data gives the cumulative measures stored here.
 
 **Model iterX.h5 schema is provisional.** No writer for this file exists
 elsewhere in the codebase yet; `fem.read_h5_sensitivity()`'s dataset
@@ -243,7 +237,7 @@ resample, and reports:
   (i.e. how much the variance estimate would be expected to jitter from
   one 32-64-member ensemble to another) — a diagnostic of estimator
   noise, not a spread statistic of the model. Not plotted by default;
-  add `"var_boot_se"` to `MOD_STATS_WHAT` and an entry to `MOD_STATS_CLIM`
+  add `"var_boot_se"` to `MOD_STATS_WHAT` and an entry to `MOD_STATS_STYLE`
   if you want a slice figure of it.
 - **`err_boot`** = `sqrt(var_boot)`, on the same scale as `MAD`/`QDIFF`,
   automatically added to `MOD_STATS_WHAT` when `BOOTSTRAP_VAR=True`.
@@ -289,21 +283,22 @@ Writes each selected statistic as a FEMTIC block file, then plots it.
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `MOD_STATS` | bool | `False` | Enable statistics slice plots. |
-| `MOD_STATS_WHAT` | list of str | `["avg","med","err","mad"]` + one key per `PERCENTILES` level + one per `QDIFF_PAIRS` entry (+ `"err_boot"` when `BOOTSTRAP_VAR=True`) | Which statistics to plot. Subset of `"avg"`, `"var"`, `"err"`, `"med"`, `"mad"`, `"var_boot"`, `"err_boot"`, `"var_boot_se"`, plus auto-generated percentile keys (e.g. `2.3` → `"p2_3"`, `50.0` → `"p50"`, `97.7` → `"p97_7"`) and qdiff keys (e.g. `(15.9, 84.1)` → `"qdiff_15_9_84_1"`). `"err"` = `sqrt(var)` is plotted by default *instead of* `"var"`, since `var` is in (log10 Ω·m)² and isn't on the same scale as `MAD`/`QDIFF` (log10 Ω·m); add `"var"` back manually (with a `MOD_STATS_CLIM` entry) if you specifically want the raw-variance panel. |
+| `MOD_STATS_WHAT` | list of str | `["avg","med","err","mad"]` + one key per `PERCENTILES` level + one per `QDIFF_PAIRS` entry (+ `"err_boot"` when `BOOTSTRAP_VAR=True`) | Which statistics to plot. Subset of `"avg"`, `"var"`, `"err"`, `"med"`, `"mad"`, `"var_boot"`, `"err_boot"`, the log10 sensitivity keys (`"sens_mean_raw"`, `"sens_{mean,median,min,max,std}_{na,an}"`), `"sens_cv_na"`/`"sens_cv_an"` (linear), `"simrc_coef"`/`"simrc_corr"` (log10), plus auto-generated percentile keys (e.g. `2.3` → `"p2_3"`, `50.0` → `"p50"`, `97.7` → `"p97_7"`) and qdiff keys (e.g. `(15.9, 84.1)` → `"qdiff_15_9_84_1"`). `"err"` = `sqrt(var)` is plotted by default *instead of* `"var"`, since `var` is in (log10 Ω·m)² and isn't on the same scale as `MAD`/`QDIFF` (log10 Ω·m); add `"var"` back manually (with a `MOD_STATS_STYLE` entry) if you specifically want the raw-variance panel. |
 | `MOD_STATS_DIR` | str | `stats_plots/` | Destination for block files and figures. |
-| `MOD_STATS_CLIM` | dict | `{"var": [-2,2], "err": [-2,2], "mad": [-2,2], "qdiff_...": [-2,2]}` (+ `"var_boot"`/`"err_boot"`: `[-2,2]` when `BOOTSTRAP_VAR=True`) | Per-statistic colour-scale override, keyed like `MOD_STATS_WHAT`. Each value is `[vmin, vmax]` or `None` (auto). `"avg"`/`"med"`/percentile keys aren't listed and fall back to `MOD_CLIM` automatically (same log10(Ω·m) space as the model). `"var"`/`"err"`/`"mad"`/`"qdiff_*"`/`"var_boot"`/`"err_boot"` (spread statistics on an unrelated, typically much narrower scale) default to a fixed `[-2, 2]` range; set a key to `None` to switch that one back to auto per-panel scaling. |
 
-**Why `MOD_STATS_CLIM` exists.** `MOD_CLIM` fixes the colour scale for the
-resistivity model itself (log10 Ω·m), typically something like `[0, 4]`.
-Applying that same range to `VAR` (variance of log10ρ, usually well under 1)
-or `MAD`/`QDIFF` (spread in log10ρ, also a small number) made those panels
-come out essentially blank — everything mapped to the bottom of the
-colour scale. `MOD_STATS_CLIM` lets `AVG`/`MED`/percentile panels keep
-sharing `MOD_CLIM` (so they're visually comparable to each other and to
-the QC plot) while `VAR`/`MAD`/`QDIFF_*` get their own, much narrower
-fixed range (`[-2, 2]` by default) so they stay comparable to *each
-other* across members/panels/runs; edit the values in `MOD_STATS_CLIM`
-directly, or set a key to `None`, to change that behaviour.
+**Per-panel style.** `MOD_CLIM` fixes the colour scale for the model
+itself (log10 Ohm.m). Spread statistics (`VAR`/`ERR`/`MAD`/`QDIFF`) and
+sensitivities live on entirely different scales, so each panel's colour
+map, colour limits and colourbar label are set in `MOD_STATS_STYLE` (in
+the shared slice block). `clim=None` now really auto-scales (it used to
+fall back to `MOD_CLIM`).
+
+**Sentinel air/ocean in statistics block files.** `plot_model_slices`
+recognises air as log10 > threshold and ocean as log10 ~ log10(ocean
+value). A statistic that happened to sit near those values (e.g. a log10
+sensitivity of -0.6, the log10 of 0.25 Ohm.m) used to be painted as ocean.
+MOD_STATS block files therefore write air as 1e30 and ocean as 1e-30 and
+are plotted with matching `air_log10_thresh`/`ocean_value`.
 
 Block files are written using the lowest-nRMS member as format template
 (preserves header, bounds, and flag columns).  Output filenames follow the
@@ -324,13 +319,15 @@ and `femtic_rto_prep.py`.
 | `MOD_ROI_ZLIM` | Default `[-1.0, 7.0]` km (positive-down). Depth range applied to `MOD_ZLIM` for `ns`/`ew`/`plane` panels when `MOD_ROI_AUTO=True`; `None` leaves `MOD_ZLIM` untouched. The negative lower bound leaves ~1 km of headroom above the z = 0 datum so topography is not clipped. |
 | `MOD_CMAP` | Matplotlib colormap name. |
 | `MOD_DPI` | Figure DPI, used by both `MOD_QC` and `MOD_STATS` plots. |
-| `MOD_CLIM` | `[log10(ρ_min), log10(ρ_max)]`; `None` = auto. Default colour scale for `MOD_QC` and for any `MOD_STATS` panel not overridden by `MOD_STATS_CLIM`. |
+| `MOD_CLIM` | `[log10(ρ_min), log10(ρ_max)]`; `None` = auto. Default colour scale for `MOD_QC` and for any `MOD_STATS` panel not overridden by `MOD_STATS_STYLE`. |
 | `MOD_OCEAN_COLOR` | Flat colour for ocean/lake cells; `None` = colormap. |
 | `MOD_AIR_COLOR` | Flat colour for air cells. |
 | `MOD_AIR_BGCOLOR` | Axes facecolor for air; `None` = figure default. |
-| `MOD_ALPHA_FILE` | Path to a second (e.g. sensitivity) block file used to fade/blank low-sensitivity cells; `None` = disabled. |
-| `MOD_ALPHA_MODE` | `"fade"` or `"blank"`. |
-| `MOD_ALPHA_BLANK_THRESH` | Threshold below which cells are faded/blanked. |
+| `MOD_ALPHA_SOURCE` | Single condition `"<name> <op> <value>"` selecting the cells to **show** (e.g. `"sens_mean_an > -3."`); `<name>` is any statistic key computed this run (see `MOD_STATS_WHAT`), `<op>` one of `> >= < <=`, `<value>` in that statistic's own units (log10 for sensitivities). Parsed with a regex, never `eval`ed. `None` = off. |
+| `MOD_ALPHA_MODE` | `"blank"` (failing cells removed) or `"fade"` (failing cells fade linearly from opaque at the threshold to transparent `MOD_ALPHA_FADE_WIDTH` beyond it). |
+| `MOD_ALPHA_FADE_WIDTH` | Fade width in the source's units (e.g. `1.0` = one decade). Default `1.0`. |
+| `MOD_ALPHA_QC` | Also apply the mask to the `MOD_QC` best-member figure. Default `True`. |
+| `MOD_STATS_STYLE` | Per-panel `dict(cmap=..., clim=..., label=...)` keyed as in `MOD_STATS_WHAT`; missing fields fall back to `MOD_CMAP`, `MOD_CLIM` (value-scale panels `avg`/`med`/`p*`) or auto-scaling (all others, `clim=None`), and a default colourbar label. Sensitivity/SimRC panels default to `viridis`; normalised sensitivities to `clim=[-4, 0]` (log10). |
 | `MOD_EQUAL_ASPECT` | Equal aspect ratio on map/curtain panels. |
 | `MOD_DEPTH_KM / HORIZ_KM` | Axis units. |
 | `MOD_PANEL_HEIGHT` | Panel height in cm. |
@@ -390,27 +387,20 @@ Keys follow the pattern `<PREFIX>_<stat>`:
 | `<P>_var_boot` | `(N_free,)` | Bootstrap mean variance across `BOOTSTRAP_N` resamples. Present only if `BOOTSTRAP_VAR=True`. |
 | `<P>_err_boot` | `(N_free,)` | `sqrt(var_boot)`. Present only if `BOOTSTRAP_VAR=True`. |
 | `<P>_var_boot_se` | `(N_free,)` | Bootstrap standard error of `var_boot` itself (estimator-noise diagnostic, not a model spread statistic). Present only if `BOOTSTRAP_VAR=True`. |
-| `<P>_var_prior` | `(N_free,)` | Element-wise variance of each member's **iter0** (prior) model, `resistivity_block_iter0.dat`. Present only if `COMPUTE_VAR_REDUX=True` and every accepted member's iter0 file was found. |
-| `<P>_var_redux` | `(N_free,)` | Fractional variance reduction, `1 - var/var_prior`, per free parameter (`nan` where `var_prior=0`). Present only if `COMPUTE_VAR_REDUX=True` and `<P>_var_prior` was computed. |
 | `<P>_sens_mean_raw` | `(N_free,)` | Mean per-member cumulative sensitivity across the ensemble, **no normalisation**: `sens_matrix.mean(axis=0)` in `SENS_KIND`'s native units (`"raw"` = `sum\|J\|`, or `"volume_normalised"` = `sum\|J\|`/block volume). Present only if `COMPUTE_SENS=True` and at least one member's `results_iterX.h5` was found. Plottable as the `"sens_mean_raw"` `MOD_STATS` panel, on the same slice geometry as the model itself. |
 | `<P>_sens_mean_na` | `(N_free,)` | Mean per-member cumulative sensitivity across the ensemble, **normalise-then-average**: each member's raw vector is divided by its own max before averaging (Christiansen & Auken, 2012). Present only if `COMPUTE_SENS=True` and at least one member's `results_iterX.h5` was found. |
 | `<P>_sens_median_na/_min_na/_max_na/_std_na` | `(N_free,)` | Corresponding median, min, max, and standard deviation (ddof=1) for the `_na` aggregation. Same presence condition as `<P>_sens_mean_na`. |
 | `<P>_sens_cv_na` | `(N_free,)` | Coefficient of variation, `sens_std_na/sens_mean_na` — large values flag cells where the linearised sensitivity is strongly model-dependent (nonlinear regime). Same presence condition as `<P>_sens_mean_na`. |
-| `<P>_sens_low_mask_na` | `(N_free,)` bool | `sens_mean_na < SENS_LOW_THRESH_FRAC * max(sens_mean_na)`. Same presence condition as `<P>_sens_mean_na`. Also plottable as the `"sens_low_mask_na"` `MOD_STATS` panel. |
 | `<P>_sens_mean_an` | `(N_free,)` | Mean per-member cumulative sensitivity across the ensemble, **average-then-normalise**: the raw ensemble is averaged first, then the result is divided by its own max (always peaks at exactly `1.0`). Same presence condition as `<P>_sens_mean_na`. |
 | `<P>_sens_median_an/_min_an/_max_an/_std_an` | `(N_free,)` | Corresponding median, min, max, and standard deviation (ddof=1) for the `_an` aggregation, all divided by the same renormalisation factor as `<P>_sens_mean_an`. Same presence condition as `<P>_sens_mean_na`. |
 | `<P>_sens_cv_an` | `(N_free,)` | Coefficient of variation, `sens_std_an/sens_mean_an` (renormalisation cancels in the ratio, so this equals the raw ensemble's CV). Same presence condition as `<P>_sens_mean_na`. |
-| `<P>_sens_low_mask_an` | `(N_free,)` bool | `sens_mean_an < SENS_LOW_THRESH_FRAC * max(sens_mean_an)`. Same presence condition as `<P>_sens_mean_na`. Also plottable as the `"sens_low_mask_an"` `MOD_STATS` panel. |
-| `<P>_spread_low_mask` | `(N_free,)` bool | `ens_err < SPREAD_LOW_THRESH_FRAC * max(ens_err)` — "small spread" flag. Always present (no `COMPUTE_*` gate); usable directly as the `"err"` source in `MOD_STATS_BLANK_SOURCES`. Also plottable as the `"spread_low_mask"` `MOD_STATS` panel. |
 | `<P>_simrc_coef` | `(N_free,)` | Cumulative `\|regression coefficient\|` between the forward-response ensemble and the model ensemble (Bobe, Keller & Van De Vijver, 2021). Present only if `COMPUTE_SIMRC=True` and at least one member's result files were found. |
 | `<P>_simrc_corr` | `(N_free,)` | Cumulative `\|correlation\|`, the normalised counterpart of `<P>_simrc_coef`. Same presence condition. |
-| `<P>_simrc_low_mask` | `(N_free,)` bool | `simrc_corr < SIMRC_LOW_THRESH_FRAC * max(simrc_corr)`. Same presence condition. |
-| `<P>_flag_null_space` | `(N_free,)` bool | `ERR` below `FLAG_SPREAD_PERCENTILE` **and** low sensitivity by every available measure (`<P>_sens_low_mask_na`/`<P>_sens_low_mask_an`/`<P>_simrc_low_mask`, `AND`ed together where multiple exist). Present only if `COMPUTE_NULL_SPACE_FLAG=True` and at least one sensitivity measure was computed. |
 
 If `COMPUTE_COV=False`, none of the `<P>_cov*` keys are present.
-If `COMPUTE_VAR_REDUX=False`, or any accepted member is missing its iter0 file, neither `<P>_var_prior` nor `<P>_var_redux` is present (a warning is printed; nothing else in the run is affected).
+All `<P>_sens_*` keys except `<P>_sens_cv_*`, and `<P>_simrc_coef`/`<P>_simrc_corr`, are **log10** since 2026-09-25 (non-positive values -> NaN).
 If `COMPUTE_SENS=False`, or no accepted member's `results_iterX.h5` was found, none of the `<P>_sens_*` keys are present.
-If `COMPUTE_SIMRC=False`, or no accepted member's result files were found, neither `<P>_simrc_coef` nor `<P>_simrc_corr`/`<P>_simrc_low_mask` is present.
+If `COMPUTE_SIMRC=False`, or no accepted member's result files were found, neither `<P>_simrc_coef` nor `<P>_simrc_corr` is present.
 
 ### Statistics block files (MOD_STATS = True)
 
@@ -420,12 +410,11 @@ If `COMPUTE_SIMRC=False`, or no accepted member's result files were found, neith
   resistivity_block_<prefix>_var.dat
   resistivity_block_<prefix>_med.dat
   resistivity_block_<prefix>_mad.dat
-  resistivity_block_<prefix>_var_redux.dat   (if COMPUTE_VAR_REDUX=True)
+  resistivity_block_<prefix>_alpha.dat       (if MOD_ALPHA_SOURCE is set; raw values = alpha)
   <prefix>_avg.pdf
   <prefix>_var.pdf
   <prefix>_med.pdf
   <prefix>_mad.pdf
-  <prefix>_var_redux.pdf                     (if COMPUTE_VAR_REDUX=True)
 ```
 
 All `.dat` files are valid FEMTIC resistivity block files usable as input
@@ -434,11 +423,6 @@ pipeline.
 
 ---
 
-| 2026-09-24 | Claude Sonnet 5 (Anthropic) | Added a third sensitivity panel, `"sens_mean_raw"`: the plain ensemble mean of `sens_matrix` with no normalisation at all, in `SENS_KIND`'s native physical units (`"raw"` = `sum\|J\|`, or `"volume_normalised"` = `sum\|J\|`/block volume) — alongside the existing dimensionless, max-normalised `sens_mean_na`/`_an`. Plotted on the same `MOD_STATS` slice geometry (same template, mesh, ROI, `MOD_XLIM`/`YLIM`/`ZLIM`) as every other panel, including the model itself. Auto-scaled `MOD_STATS_CLIM` by default (its scale is run- and `SENS_KIND`-dependent). New `.npz` key: `<P>_sens_mean_raw`. Not wired into `MOD_STATS_BLANK_SOURCES` (its un-normalised scale makes a fixed threshold meaningless, same reasoning as `sens_mean_na`/`_an` before normalisation). |
-| 2026-09-23c | Claude Sonnet 5 (Anthropic) | Changed `MOD_STATS_BLANK_SOURCES`' default from three separately-ANDed sources (`sens_mean_na`/`_an`, `err`) to `flag_null_space` alone. Rationale: low spread and low sensitivity only need blanking when they **coincide** (regularisation parked a cell near the prior and the ensemble never got pushed away) — low spread with high sensitivity is a genuine result, and low sensitivity with high spread is already visible as spread in `VAR`/`ERR`/`MAD`, so neither alone should hide a cell. `flag_null_space` already encodes exactly that `AND`, and does so using `FLAG_SPREAD_PERCENTILE` (a percentile of the spread distribution) rather than an absolute fraction-of-max threshold, so it can't silently collapse to zero blanked cells the way a miscalibrated `SPREAD_LOW_THRESH_FRAC` ANDed directly against the sensitivity sources just did in practice. The three individual sources remain available, commented out, for per-criterion diagnostic tuning. |
-| 2026-09-23b | Claude Sonnet 5 (Anthropic) | Per user confirmation against an actual `results_iter10.h5`: per-member sensitivity is **not** normalised to that member's own max, as previously assumed. Replaced the single `SENS_RENORMALISE` switch with two side-by-side aggregation pipelines, always both computed when `COMPUTE_SENS` succeeds (suffixes `_na`/`_an` throughout config, `.npz` keys, and `MOD_STATS_WHAT`/`MOD_STATS_BLANK_SOURCES` entries): **`_na`** (normalise, then average) divides each member's raw vector by its own max right after reading, then aggregates across the (now per-member-normalised) ensemble; **`_an`** (average, then normalise) aggregates the raw ensemble first, then divides the resulting aggregate by its own max. `flag_null_space`'s low-sensitivity combination now considers `sens_low_mask_na`, `sens_low_mask_an`, and `simrc_low_mask` (was: a single `sens_low_mask` + `simrc_low_mask`). The old singular `sens_mean`/`_median`/`_min`/`_max`/`_std`/`_cv`/`_low_mask` names and `SENS_RENORMALISE` are gone; every consumer (blanking, plotting, `.npz` output) now works from the two suffixed sets. |
-| 2026-09-23 | Claude Sonnet 5 (Anthropic) | Fixed `MOD_STATS_BLANK_SOURCES` not blanking anything regardless of threshold: `"sens_mean"` and `"err"` are now compared on a consistently max-normalised scale wherever the blank mask is built, so a plain fraction (`SENS_LOW_THRESH_FRAC`/`SPREAD_LOW_THRESH_FRAC`, e.g. `0.05` = "5% of max") is always a valid threshold regardless of `SENS_KIND`, physical units, or ensemble size — previously an absolute number like `0.01` was compared against `sens_mean`'s raw (`SENS_KIND`- and run-dependent) scale, which for `"volume_normalised"` sensitivity in particular could sit nowhere near typical `sens_mean` values, silently blanking nothing no matter what threshold was tried. Added `SENS_RENORMALISE` (default `True`): since FEMTIC normalises each member's own per-block sensitivity to that member's own max=1 before writing it, `sens_mean`/`_median`/`_min`/`_max`/`_std` are now renormalised to `sens_mean`'s own max=1 immediately after ensemble aggregation, matching FEMTIC's convention and making `MOD_STATS_CLIM["sens_mean"]` default to the fixed `[0, 1]` range (previously auto-scaled). `MOD_STATS_BLANK_SOURCES`'s default list now references `SENS_LOW_THRESH_FRAC`/`SPREAD_LOW_THRESH_FRAC` directly instead of a guessed absolute number. Blanking now applies to every `MOD_STATS` panel, including a listed source's own plot (previously excluded); `MOD_QC` is still unaffected. Added two new plottable diagnostic panels, analogous to `flag_null_space`: `"spread_low_mask"` (always available) and `"sens_low_mask"` (when `COMPUTE_SENS` succeeds) — boolean 0/1 maps of exactly which cells each criterion would blank, auto-added to `MOD_STATS_WHAT`, useful for tuning thresholds visually before combining them via `MOD_STATS_BLANK_SOURCES`. *(Superseded same-day by the entry above once the max=1 assumption behind `SENS_RENORMALISE` was checked against real data and found false.)* |
-| 2026-09-22 | Claude Sonnet 5 (Anthropic) | Added a simple, max-normalised "small spread" blanking option alongside the existing sensitivity one: `SPREAD_LOW_THRESH_FRAC` (default `0.05`, mirroring `SENS_LOW_THRESH_FRAC`) and `spread_low_mask` (`ens_err < SPREAD_LOW_THRESH_FRAC * max(ens_err)`, always computed, saved as `<P>_spread_low_mask`). Registered as `source_name="err"` in `MOD_STATS_BLANK_SOURCES` (keyed to match the `"err"` entry in the internal stat map, so it's correctly excluded from its own plot like the other sources). Does not change `flag_null_space`, which still uses the percentile-based `FLAG_SPREAD_PERCENTILE`. |
 
 ## Quick start
 
@@ -503,3 +487,9 @@ correct.
 | 2026-09-17 | Claude Sonnet 5 (Anthropic) | Generalised the `MOD_STATS` blanking/fading scheme: replaced the single hardcoded `MOD_STATS_BLANK_BY_REDUX` boolean with `MOD_STATS_BLANK_SOURCES`, a list of `(source_name, direction, thresh)` triples so `sens_mean`, `sens_cv`, `simrc_corr`, and `flag_null_space` can each be used as a blanking source (singly or combined via the new `MOD_STATS_BLANK_COMBINE`, `"and"`/`"or"`, default `"and"`, with a printed warning whenever more than one source is listed). `direction` is `"below"` (var_redux/sens_mean/simrc_corr: low means poorly resolved), `"above"` (sens_cv: high means the linearised sensitivity itself is untrustworthy there — a different question from resolution, per Bobe, Keller & Van De Vijver, 2021, doi:10.1111/1365-2478.13068, on differential-vs-regression sensitivity divergence under nonlinearity), or `"flag"` (flag_null_space is already boolean). Default is an empty list (blanking off), matching the previous default. Internally each source becomes a plain boolean mask in Python before being combined and written as one 0/1 alpha-block file, so `femtic_viz.py`'s existing alpha mechanism is untouched. Added `SENS_CV_HIGH_THRESH` (default `1.0`) and `NULL_SPACE_COMBINE` (`"and"`/`"or"`, default `"and"`, matching prior hardcoded behaviour), generalising `flag_null_space`'s own `sens_low_mask`/`simrc_low_mask` combination the same way. |
 | 2026-09-16 | Claude Sonnet 5 (Anthropic) | Adapted `COMPUTE_SENS` to FEMTIC's settled (2026-09-13) HDF5 schema: `model_iterX.h5`/`data_iterX.h5` were merged into one `results_iterX.h5` per iteration (sibling `/model`, `/data`, `/distortion` groups), with the per-block cumulative sensitivity now precomputed by FEMTIC itself at `/model/sensitivity/{raw,volume_normalised}` — no Jacobian assembly needed. `SENS_H5_PATTERN` changed from `"model_iter{numit}.h5"` to `"results_iter{numit}.h5"` (older, pre-2026-09-13 ensembles are no longer supported by this script). Replaced the hardcoded `SENS_CUMSENS_KEY` with `SENS_KIND` (`"raw"` \| `"volume_normalised"`), matching `fem.read_h5_sensitivity()`'s updated `cumsens_key` default and automatic `model/sensitivity` group fallback (`femtic.py`, same date). No fallback to `jacobian.h5` if a member's `results_iter{numit}.h5` lacks sensitivity for that iteration (by design — `jacobian.h5` is a separate, fixed-name file that may hold a different iteration entirely): that member is skipped for sensitivity with a printed warning, same as before. Updated stale `model_iterX.h5` wording throughout this README and the script's comments/warnings to match. |
 | 2026-09-19 | Claude Sonnet 5 (Anthropic) | Plot-extent consistency with `femtic_rto_prep.py` / `femtic_gst_prep.py`: no functional change to this script. Its `MOD_ROI_AUTO`/`MOD_ROI_PAD_XY`/`MOD_ROI_ZLIM` block is the reference; the two prep scripts now carry the same variables with the same defaults and semantics. Corrected stale unit/default statements for `MOD_XLIM`/`YLIM`/`ZLIM`, `MOD_ROI_PAD_XY` and `MOD_ROI_ZLIM` in this README (values are km, not metres; defaults `2.0` and `[-1.0, 7.0]`). |
+| 2026-09-22 | Claude Sonnet 5 (Anthropic) | Added a simple, max-normalised "small spread" blanking option alongside the existing sensitivity one: `SPREAD_LOW_THRESH_FRAC` (default `0.05`, mirroring `SENS_LOW_THRESH_FRAC`) and `spread_low_mask` (`ens_err < SPREAD_LOW_THRESH_FRAC * max(ens_err)`, always computed, saved as `<P>_spread_low_mask`). Registered as `source_name="err"` in `MOD_STATS_BLANK_SOURCES` (keyed to match the `"err"` entry in the internal stat map, so it's correctly excluded from its own plot like the other sources). Does not change `flag_null_space`, which still uses the percentile-based `FLAG_SPREAD_PERCENTILE`. |
+| 2026-09-23 | Claude Sonnet 5 (Anthropic) | Fixed `MOD_STATS_BLANK_SOURCES` not blanking anything regardless of threshold: `"sens_mean"` and `"err"` are now compared on a consistently max-normalised scale wherever the blank mask is built, so a plain fraction (`SENS_LOW_THRESH_FRAC`/`SPREAD_LOW_THRESH_FRAC`, e.g. `0.05` = "5% of max") is always a valid threshold regardless of `SENS_KIND`, physical units, or ensemble size — previously an absolute number like `0.01` was compared against `sens_mean`'s raw (`SENS_KIND`- and run-dependent) scale, which for `"volume_normalised"` sensitivity in particular could sit nowhere near typical `sens_mean` values, silently blanking nothing no matter what threshold was tried. Added `SENS_RENORMALISE` (default `True`): since FEMTIC normalises each member's own per-block sensitivity to that member's own max=1 before writing it, `sens_mean`/`_median`/`_min`/`_max`/`_std` are now renormalised to `sens_mean`'s own max=1 immediately after ensemble aggregation, matching FEMTIC's convention and making `MOD_STATS_CLIM["sens_mean"]` default to the fixed `[0, 1]` range (previously auto-scaled). `MOD_STATS_BLANK_SOURCES`'s default list now references `SENS_LOW_THRESH_FRAC`/`SPREAD_LOW_THRESH_FRAC` directly instead of a guessed absolute number. Blanking now applies to every `MOD_STATS` panel, including a listed source's own plot (previously excluded); `MOD_QC` is still unaffected. Added two new plottable diagnostic panels, analogous to `flag_null_space`: `"spread_low_mask"` (always available) and `"sens_low_mask"` (when `COMPUTE_SENS` succeeds) — boolean 0/1 maps of exactly which cells each criterion would blank, auto-added to `MOD_STATS_WHAT`, useful for tuning thresholds visually before combining them via `MOD_STATS_BLANK_SOURCES`. *(Superseded same-day by the entry above once the max=1 assumption behind `SENS_RENORMALISE` was checked against real data and found false.)* |
+| 2026-09-23b | Claude Sonnet 5 (Anthropic) | Per user confirmation against an actual `results_iter10.h5`: per-member sensitivity is **not** normalised to that member's own max, as previously assumed. Replaced the single `SENS_RENORMALISE` switch with two side-by-side aggregation pipelines, always both computed when `COMPUTE_SENS` succeeds (suffixes `_na`/`_an` throughout config, `.npz` keys, and `MOD_STATS_WHAT`/`MOD_STATS_BLANK_SOURCES` entries): **`_na`** (normalise, then average) divides each member's raw vector by its own max right after reading, then aggregates across the (now per-member-normalised) ensemble; **`_an`** (average, then normalise) aggregates the raw ensemble first, then divides the resulting aggregate by its own max. `flag_null_space`'s low-sensitivity combination now considers `sens_low_mask_na`, `sens_low_mask_an`, and `simrc_low_mask` (was: a single `sens_low_mask` + `simrc_low_mask`). The old singular `sens_mean`/`_median`/`_min`/`_max`/`_std`/`_cv`/`_low_mask` names and `SENS_RENORMALISE` are gone; every consumer (blanking, plotting, `.npz` output) now works from the two suffixed sets. |
+| 2026-09-23c | Claude Sonnet 5 (Anthropic) | Changed `MOD_STATS_BLANK_SOURCES`' default from three separately-ANDed sources (`sens_mean_na`/`_an`, `err`) to `flag_null_space` alone. Rationale: low spread and low sensitivity only need blanking when they **coincide** (regularisation parked a cell near the prior and the ensemble never got pushed away) — low spread with high sensitivity is a genuine result, and low sensitivity with high spread is already visible as spread in `VAR`/`ERR`/`MAD`, so neither alone should hide a cell. `flag_null_space` already encodes exactly that `AND`, and does so using `FLAG_SPREAD_PERCENTILE` (a percentile of the spread distribution) rather than an absolute fraction-of-max threshold, so it can't silently collapse to zero blanked cells the way a miscalibrated `SPREAD_LOW_THRESH_FRAC` ANDed directly against the sensitivity sources just did in practice. The three individual sources remain available, commented out, for per-criterion diagnostic tuning. |
+| 2026-09-24 | Claude Sonnet 5 (Anthropic) | Added a third sensitivity panel, `"sens_mean_raw"`: the plain ensemble mean of `sens_matrix` with no normalisation at all, in `SENS_KIND`'s native physical units (`"raw"` = `sum\|J\|`, or `"volume_normalised"` = `sum\|J\|`/block volume) — alongside the existing dimensionless, max-normalised `sens_mean_na`/`_an`. Plotted on the same `MOD_STATS` slice geometry (same template, mesh, ROI, `MOD_XLIM`/`YLIM`/`ZLIM`) as every other panel, including the model itself. Auto-scaled `MOD_STATS_CLIM` by default (its scale is run- and `SENS_KIND`-dependent). New `.npz` key: `<P>_sens_mean_raw`. Not wired into `MOD_STATS_BLANK_SOURCES` (its un-normalised scale makes a fixed threshold meaningless, same reasoning as `sens_mean_na`/`_an` before normalisation). |
+| 2026-09-25 | Claude Opus 5.5 (Anthropic) | Simplification + blanking fix. **Root cause of "no blanked areas":** `fem.insert_model()` writes `10**v`, but `plot_model_slices` reads alpha files as *raw* values; the 0/1 mask therefore arrived as 1/10 and never fell below the 0.5 threshold. The alpha block is now written so its raw values equal alpha (`_write_alpha_block`) and plotted with the new `alpha_mode="direct"`. Replaced `MOD_ALPHA_FILE`/`_BLANK_THRESH`, `MOD_STATS_BLANK_SOURCES`/`_COMBINE`/`_MODE` with a single `MOD_ALPHA_SOURCE` expression (`"<name> <op> <value>"`) plus `MOD_ALPHA_MODE` (`blank`/`fade`), `MOD_ALPHA_FADE_WIDTH`, `MOD_ALPHA_QC`, all in the shared slice block. Sensitivity aggregates and SimRC sums are now log10 (memory, `.npz`, plots). Removed `COMPUTE_VAR_REDUX`/`REDUX_EPS`/`var_prior`/`var_redux` and the iter0 reads; removed `SENS_LOW_THRESH_FRAC`, `SENS_CV_HIGH_THRESH`, `SIMRC_LOW_THRESH_FRAC`, `SPREAD_LOW_THRESH_FRAC`, `COMPUTE_NULL_SPACE_FLAG`, `FLAG_SPREAD_PERCENTILE`, `NULL_SPACE_COMBINE` and the `*_low_mask`/`flag_null_space` arrays and panels. `MOD_STATS_CLIM` replaced by `MOD_STATS_STYLE` (per-panel `cmap`/`clim`/`label`) in the shared slice block. Fixed `clim=None` silently falling back to `MOD_CLIM` (auto-scaling never happened). MOD_STATS block files use sentinel air (1e30)/ocean (1e-30) resistivities so statistic values cannot be mistaken for air/ocean. Requires the 2026-09-25 `femtic_viz.py`. |

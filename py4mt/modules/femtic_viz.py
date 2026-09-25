@@ -504,6 +504,24 @@ Provenance:
                         per-panel rendering, so it never needs a "latlon"
                         key). plot_ensemble_slices is unaffected (no
                         display_coords support, always model-local).
+    2026-09-25  Claude Opus 5.5 (Anthropic)
+                        plot_model_slices: new alpha_mode="direct" (raw
+                        alpha-file value used as polygon alpha, clipped to
+                        [0, 1], NaN -> 0, <= 0 omitted). Fixed inverted
+                        "fade" formula: clip(w/thresh) -> clip(1 - w/thresh)
+                        for thresh < 0, matching the docstring (w >= 0
+                        opaque, w <= thresh transparent). Unknown alpha_mode
+                        now raises. New cbar_label (default unchanged) and
+                        air_log10_thresh (default 8.0, unchanged behaviour)
+                        parameters, so non-resistivity panels can carry
+                        their own label and sentinel air value. Auto clim
+                        (clim=None) is now computed from raw element values
+                        excluding air/ocean/non-positive cells, instead of
+                        rho_plot, which forced ocean_value onto region 1
+                        even when it is a free land region. Colourbar now
+                        built from a plain ScalarMappable so it is never
+                        drawn with a faded collection's alpha.
+                        AI-generated code -- review before production use.
     """
 
 from __future__ import annotations
@@ -3613,6 +3631,8 @@ def plot_model_slices(
     alpha_file=None,
     alpha_mode: str = "fade",
     alpha_blank_thresh: float = 0.0,
+    cbar_label: Optional[str] = None,
+    air_log10_thresh: float = 8.0,
     mesh_outline: bool = True,
     mesh_outline_color: str = "0.35",
     borehole_sites: Optional[list] = None,
@@ -3752,11 +3772,23 @@ def plot_model_slices(
           fully transparent.  Intermediate values produce proportional fading.
         - ``"blank"`` -- hard threshold: polygons with ``log10_val < alpha_blank_thresh``
           are omitted entirely; all others are fully opaque.
+        - ``"direct"`` -- the raw alpha-file value IS the polygon alpha,
+          clipped to [0, 1] (NaN -> 0); polygons with alpha <= 0 are
+          omitted. ``alpha_blank_thresh`` is ignored. Intended for alpha
+          blocks computed by the caller (e.g. femtic_ens_post.py).
 
         Default ``"fade"``.
     alpha_blank_thresh
         Log10 threshold (<= 0) below which polygons are blanked / fully faded.
         Default ``0.0`` (any negative log10 value triggers suppression).
+    cbar_label
+        Colourbar label; ``None`` -> ``"log10(rho / Ohm*m)"``.
+    air_log10_thresh
+        Polygons with log10(value) above this are treated as air (flat
+        ``air_color``). Default 8.0 suits resistivity models (air = 1e9);
+        callers plotting other quantities through a resistivity block
+        should raise it (and write air with a matching sentinel) so that
+        large values are not mistaken for air.
     mesh_outline
         If ``True`` (default), draw a thin convex-hull outline around the
         intersection polygons on **map** panels and a top-edge polyline on
@@ -3920,16 +3952,22 @@ def plot_model_slices(
         """Return per-polygon alpha array (float, 0-1) or None."""
         if alpha_vals is None or len(eidx) == 0:
             return None
-        w = alpha_vals[eidx]          # log10 values at intersecting elements
+        w = alpha_vals[eidx]          # raw values at intersecting elements
+        if mode == "direct":
+            a = np.clip(w, 0.0, 1.0)
+            a[~np.isfinite(w)] = 0.0
+            return a
         if mode == "blank":
             return (w >= thresh).astype(float)
-        else:  # "fade"
+        if mode == "fade":
             if thresh >= 0.0:
                 # thresh=0 -> anything <0 fully transparent, >=0 fully opaque
-                return np.clip(w / min(thresh, -1e-9), 0.0, 1.0) if thresh < 0 \
-                       else (w >= 0.0).astype(float)
-            a = np.clip(w / thresh, 0.0, 1.0)   # thresh < 0
-            return a
+                return (w >= 0.0).astype(float)
+            # thresh < 0: w >= 0 opaque, w <= thresh transparent, linear
+            # in between (previously clip(w/thresh) -- inverted).
+            return np.clip(1.0 - w / thresh, 0.0, 1.0)
+        raise ValueError(
+            f"alpha_mode must be 'fade', 'blank' or 'direct', got {mode!r}")
 
     def _outline_convex_hull(ax, polys_display, color, zorder=5):
         """Draw a thin convex-hull outline around all polygon vertices.
@@ -3993,9 +4031,9 @@ def plot_model_slices(
         with np.errstate(divide="ignore", invalid="ignore"):
             ov_log = math.log10(ocean_value) if ocean_value > 0 else float("nan")
         # Air: rho ~ 1e9 (flag=1, fixed at AIR_RHO); detect by threshold.
-        # vals are log10(rho); log10(1e8) = 8 is a safe threshold between
-        # any real rock resistivity and air.
-        is_air   = vals > 8.0
+        # vals are log10(rho); air_log10_thresh (default 8) separates any
+        # real rock resistivity from air.
+        is_air   = vals > air_log10_thresh
         is_ocean = ~is_air & np.isfinite(vals) & np.isclose(vals, ov_log, atol=0.05)
         is_data  = ~is_air & ~is_ocean & np.isfinite(vals)
 
@@ -4201,9 +4239,19 @@ def plot_model_slices(
     if clim is not None:
         norm = mcolors.Normalize(vmin=float(clim[0]), vmax=float(clim[1]))
     else:
+        # Auto range from the raw element values, excluding air (region 0
+        # or log10 > air_log10_thresh), ocean (region 1 at ocean_value)
+        # and non-positive values -- rho_plot would force ocean_value onto
+        # region 1 even when it is a free land region or a sentinel.
         with np.errstate(divide="ignore", invalid="ignore"):
-            _lall = np.log10(rho_plot[np.isfinite(rho_plot)])
-        _lall = _lall[np.isfinite(_lall)]
+            _lraw = np.log10(np.asarray(rho_elem, dtype=float))
+            _ov_l = math.log10(ocean_value) if ocean_value > 0 else np.nan
+        _reg  = np.asarray(block.region_of_elem).astype(int)
+        _keep = ((_reg != 0) & np.isfinite(_lraw) & (_lraw <= air_log10_thresh)
+                 & ~((_reg == 1) & np.isclose(_lraw, _ov_l, atol=0.05)))
+        _lall = _lraw[_keep]
+        if _lall.size == 0:
+            _lall = np.array([0.0, 1.0])
         norm  = mcolors.Normalize(vmin=float(_lall.min()),
                                   vmax=float(_lall.max()))
 
@@ -4564,8 +4612,13 @@ def plot_model_slices(
             continue
 
         if mappable is not None:
-            cb = fig.colorbar(mappable, ax=ax, fraction=0.046, pad=0.04)
-            cb.set_label("log10(rho / Ohm*m)", fontsize=label_fontsize)
+            # Plain ScalarMappable so the colourbar is never drawn with a
+            # faded polygon collection's alpha (alpha_file fade/direct).
+            _sm = matplotlib.cm.ScalarMappable(norm=mappable.norm,
+                                               cmap=mappable.cmap)
+            cb = fig.colorbar(_sm, ax=ax, fraction=0.046, pad=0.04)
+            cb.set_label(cbar_label if cbar_label is not None
+                         else "log10(rho / Ohm*m)", fontsize=label_fontsize)
             cb.ax.tick_params(labelsize=tick_fontsize)
 
         ax.set_title(title, fontsize=label_fontsize + 1)
