@@ -15,6 +15,18 @@ Dependencies
 
 Author: Volker Rath (DIAS)
 Created by ChatGPT (GPT-5 Thinking) on 2025-12-21
+
+Changelog
+---------
+2026-09-26  Claude Sonnet 5 (Anthropic): added data-misfit helpers
+            (read_data_rows, read_data_calc, match_data_rows,
+            read_data_misfit, modem_is_real_only_datatype,
+            MODEM_REAL_ONLY_DATATYPES, MODEM_COMPLEX_DATATYPES), placed
+            just after read_data(). Written for modem_data_misfit.py
+            (observed-vs-calculated crossplot/histogram/Q-Q diagnostics,
+            modelled on femtic_data_misfit.py). AI-generated; reviewed by
+            ast.parse() and a synthetic-data smoke test (see
+            modem_readme.md), not yet run against real ModEM output.
 """
 
 import os
@@ -496,6 +508,456 @@ def read_data(Datfile=None,  modext='.dat', out=True):
         print('readDat: %i data read from %s' % (nD[0], file))
 
     return Site, Comp, Data, Head
+
+
+# ---------------------------------------------------------------------------
+# Data-misfit helpers: matching observed vs. calculated ModEM data files
+# ---------------------------------------------------------------------------
+# ModEM writes observed and calculated (forward-response) data to separate
+# text files of identical column layout -- unlike FEMTIC, which bundles
+# both into one results_iterN.h5 per iteration. The routines below read
+# either file with a single, block-aware parser (`read_data_rows`), match
+# an observed/calculated pair row by row (`match_data_rows`), and combine
+# them into one per-datum table (`read_data_misfit`) that mirrors the shape
+# of `femtic.read_results_data()`'s `/data` rows, so the same downstream
+# panel-building, plotting and fit-measure code can be shared between the
+# two inversion codes (see modem_data_misfit.py, femtic_data_misfit.py).
+#
+# Provenance
+# ----------
+# Author    : Claude Sonnet 5 (Anthropic)
+# Generated : 2026-09-26
+# Notice    : This code is AI-generated. Review and test it before any
+#             production use.
+#
+# Changelog
+# ---------
+# 2026-09-26  Claude Sonnet 5 (Anthropic): added read_data_rows,
+#             read_data_calc, match_data_rows, read_data_misfit,
+#             modem_is_real_only_datatype, MODEM_REAL_ONLY_DATATYPES,
+#             MODEM_COMPLEX_DATATYPES -- for modem_data_misfit.py.
+
+# Canonical ModEM DataType labels (as they appear on the first '>' header
+# line of each data block); see also read_data_jac()'s docstring, which
+# lists the same six types under their integer codes.
+MODEM_REAL_ONLY_DATATYPES = ("Off_Diagonal_Rho_Phase", "Phase_Tensor")
+MODEM_COMPLEX_DATATYPES = ("Full_Impedance", "Off_Diagonal_Impedance",
+                          "Full_Vertical_Components", "Full_Interstation_TF")
+
+
+def modem_is_real_only_datatype(name):
+    """
+    modem_is_real_only_datatype.
+
+    Parameters
+    ----------
+    name : str
+        A ModEM DataType label, e.g. from a data block's first '>' header
+        line, or from `read_data_rows()`'s `datatype_name` field.
+
+    Returns
+    -------
+    out : bool
+        True if `name` is one of the real-valued types
+        (`MODEM_REAL_ONLY_DATATYPES`: apparent-resistivity/phase, phase
+        tensor -- one real number per component, no separate imaginary
+        part). False for a complex type (`MODEM_COMPLEX_DATATYPES`) or an
+        unrecognised label.
+
+    Notes
+    -----
+    Comparison is case- and separator-insensitive ('PhaseTensor',
+    'phase_tensor' and 'Phase Tensor' all match), since the exact spelling
+    used in a given ModEM installation's data files was not verified here.
+
+    author: Claude Sonnet 5 (Anthropic), 2026-09-26
+    """
+    key = str(name).strip().lower().replace('_', '').replace(' ', '')
+    return key in ('offdiagonalrhophase', 'phasetensor')
+
+
+def _modem_data_path(datfile, modext):
+    """Append `modext` unless `datfile` already ends with it (case-
+    insensitive) -- lets callers pass either a bare base name (the
+    convention used by read_data()/read_mod() elsewhere in this module) or
+    a full path with extension already attached (as produced by glob())."""
+    datfile = str(datfile)
+    return datfile if datfile.lower().endswith(modext.lower()) else datfile + modext
+
+
+def read_data_rows(Datfile=None, modext='.dat', out=True):
+    """
+    read_data_rows.
+
+    Parameters
+    ----------
+    Datfile : str
+        ModEM data file. Either a bare base name (modext is appended, the
+        convention used by read_data()) or a full path already ending in
+        modext (e.g. from glob.glob()).
+    modext : str, optional
+        Extension appended to `Datfile` if not already present. Default
+        '.dat'.
+    out : bool, optional
+        Print a one-line summary. Default True.
+
+    Returns
+    -------
+    out : dict
+        nRows : int
+        datatype_name, component_name, site : ndarray of str, shape (nRows,)
+        period, freq, lat, lon, x, y, z : ndarray of float, shape (nRows,)
+        re_val, im_val : ndarray of float, shape (nRows,)
+            Real part (or the value itself for a real-valued type -- see
+            MODEM_REAL_ONLY_DATATYPES) and imaginary part (0.0, not NaN,
+            for a real-valued type).
+        err : ndarray of float, shape (nRows,)
+            The single error given for the datum. ModEM applies the same
+            error to both the real and imaginary part of a complex datum
+            -- there is no separate im_err column in the file (see also
+            modem_data_split.py, which relies on the same convention).
+        is_complex : ndarray of bool, shape (nRows,)
+        head : list of str
+            Every '#'/'>' header line, in file order (provenance only).
+        file : str
+            The path actually opened.
+
+    Notes
+    -----
+    Standard ModEM ASCII data-file format: an 8-line '#'/'>' block header
+    (2 free-text comment lines, then DataType / sign convention / units /
+    origin / rotation / "nFreq nSites" on 6 '>' lines) precedes each group
+    of data lines; a file may hold more than one block (e.g. impedance
+    followed by vertical-field data), each with its own header. Each data
+    line has
+
+        period code lat lon X Y Z component real imag error   (11 columns,
+                                                                 complex types)
+        period code lat lon X Y Z component value error       (10 columns,
+                                                                 MODEM_REAL_ONLY_DATATYPES)
+
+    The column *count* (10 vs. 11) decides which layout a line uses -- this
+    is unambiguous, unlike guessing a real-valued type from the component
+    string alone (as read_data() does, and as modem_data_split.py's
+    parse_modem_dat() flags as an unverified assumption). If a line's
+    column count disagrees with what its block's DataType would predict
+    (via `modem_is_real_only_datatype`), a warning is printed but the
+    column count -- not the DataType label -- decides the actual parsing.
+
+    A line with neither 10 nor 11 columns is skipped with a warning
+    (should not happen for a well-formed file).
+
+    author: Claude Sonnet 5 (Anthropic), 2026-09-26
+    """
+    file = _modem_data_path(Datfile, modext)
+
+    head = []
+    dtype_l = []
+    site_l = []
+    lat_l = []
+    lon_l = []
+    x_l = []
+    y_l = []
+    z_l = []
+    per_l = []
+    comp_l = []
+    re_l = []
+    im_l = []
+    err_l = []
+    cplx_l = []
+
+    gt_buffer = []
+    cur_dtype = 'UNKNOWN'
+    n_mismatch = 0
+    n_skipped = 0
+
+    with open(file) as fd:
+        for line in fd:
+            s = line.strip()
+            if not s:
+                continue
+            if line.startswith('#'):
+                head.append(line)
+                continue
+            if line.startswith('>'):
+                head.append(line)
+                gt_buffer.append(line)
+                continue
+
+            # first data line after a header block: the block's DataType
+            # is the first '>' line just collected.
+            if gt_buffer:
+                name = gt_buffer[0].lstrip('>').strip()
+                cur_dtype = name if name else 'UNKNOWN'
+                gt_buffer = []
+
+            t = s.split()
+            ncol = len(t)
+            if ncol == 11:
+                is_cplx = True
+            elif ncol == 10:
+                is_cplx = False
+            else:
+                print("read_data_rows: %s: skipping line with %i columns "
+                      "(expected 10 or 11): %r" % (file, ncol, s))
+                n_skipped += 1
+                continue
+
+            if cur_dtype != 'UNKNOWN' and is_cplx == modem_is_real_only_datatype(cur_dtype):
+                n_mismatch += 1
+
+            per_l.append(float(t[0]))
+            site_l.append(t[1])
+            lat_l.append(float(t[2]))
+            lon_l.append(float(t[3]))
+            x_l.append(float(t[4]))
+            y_l.append(float(t[5]))
+            z_l.append(float(t[6]))
+            comp_l.append(t[7])
+            dtype_l.append(cur_dtype)
+            cplx_l.append(is_cplx)
+            if is_cplx:
+                re_l.append(float(t[8]))
+                im_l.append(float(t[9]))
+                err_l.append(float(t[10]))
+            else:
+                re_l.append(float(t[8]))
+                im_l.append(0.0)
+                err_l.append(float(t[9]))
+
+    n = len(per_l)
+    if n_mismatch and out:
+        print("read_data_rows: %s: WARNING: %i line(s) whose column count "
+              "disagrees with their block's DataType." % (file, n_mismatch))
+
+    period = np.asarray(per_l, dtype=float)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        freq = np.where(period > 0.0, 1.0 / period, np.nan)
+
+    result = dict(
+        nRows=n,
+        file=file,
+        datatype_name=np.asarray(dtype_l, dtype=object),
+        component_name=np.asarray(comp_l, dtype=object),
+        site=np.asarray(site_l, dtype=object),
+        lat=np.asarray(lat_l, dtype=float),
+        lon=np.asarray(lon_l, dtype=float),
+        x=np.asarray(x_l, dtype=float),
+        y=np.asarray(y_l, dtype=float),
+        z=np.asarray(z_l, dtype=float),
+        period=period,
+        freq=freq,
+        re_val=np.asarray(re_l, dtype=float),
+        im_val=np.asarray(im_l, dtype=float),
+        err=np.asarray(err_l, dtype=float),
+        is_complex=np.asarray(cplx_l, dtype=bool),
+        head=head,
+    )
+    if out:
+        ndt = len(np.unique(result['datatype_name'])) if n else 0
+        nst = len(np.unique(result['site'])) if n else 0
+        skip = '' if not n_skipped else '  (%i line(s) skipped)' % n_skipped
+        print('read_data_rows: %i data read from %s (%i data type(s), '
+              '%i site(s))%s' % (n, file, ndt, nst, skip))
+
+    return result
+
+
+def read_data_calc(Datfile=None, modext='.dat', out=True):
+    """
+    read_data_calc.
+
+    Parameters
+    ----------
+    Datfile : str
+        ModEM calculated/response (forward-modelled) data file. Same
+        conventions as `read_data_rows()`.
+    modext : str, optional
+        Default '.dat'.
+    out : bool, optional
+        Default True.
+
+    Returns
+    -------
+    out : dict
+        See `read_data_rows()`.
+
+    Notes
+    -----
+    A calculated-data file is, by format, indistinguishable from an
+    observed-data file (ModEM writes the forward response in the same
+    layout it reads observed data in, typically re-using the observed
+    error column unchanged). This is a thin, explicitly named wrapper
+    around `read_data_rows()` so call sites document intent; use
+    `read_data_misfit()` to combine an observed/calculated pair.
+
+    author: Claude Sonnet 5 (Anthropic), 2026-09-26
+    """
+    return read_data_rows(Datfile, modext=modext, out=out)
+
+
+def match_data_rows(rows_a=None, rows_b=None, key_round=8):
+    """
+    match_data_rows.
+
+    Parameters
+    ----------
+    rows_a, rows_b : dict
+        As returned by `read_data_rows()` / `read_data_calc()`.
+    key_round : int, optional
+        Decimal places `period` is rounded to before matching, to absorb
+        floating-point round-trip noise. Default 8.
+
+    Returns
+    -------
+    idx_a, idx_b : ndarray of int
+        Index arrays into `rows_a` / `rows_b`: row k of each is the same
+        datum (period, site, component), in `rows_a`'s original order.
+    n_a, n_b, n_matched : int
+        Row counts of `rows_a`, `rows_b`, and of the match.
+
+    Notes
+    -----
+    Matched by (round(period, key_round), site, component) -- the same key
+    used for NRMS matching in modem_data_split.py. ModEM applies one error
+    to both the real and imaginary part of a datum, so no separate im_err
+    needs matching. If a key occurs more than once in `rows_b` (should not
+    happen for a well-formed file), the first occurrence is used.
+
+    author: Claude Sonnet 5 (Anthropic), 2026-09-26
+    """
+    def _keys(rows):
+        per = np.round(np.asarray(rows['period'], dtype=float), key_round)
+        site = np.asarray(rows['site'], dtype=object)
+        comp = np.asarray(rows['component_name'], dtype=object)
+        return list(zip(per.tolist(), site.tolist(), comp.tolist()))
+
+    keys_a = _keys(rows_a)
+    keys_b = _keys(rows_b)
+
+    map_b = {}
+    for j, k in enumerate(keys_b):
+        if k not in map_b:
+            map_b[k] = j
+
+    idx_a = []
+    idx_b = []
+    for i, k in enumerate(keys_a):
+        j = map_b.get(k)
+        if j is not None:
+            idx_a.append(i)
+            idx_b.append(j)
+
+    idx_a = np.asarray(idx_a, dtype=np.int64)
+    idx_b = np.asarray(idx_b, dtype=np.int64)
+    return idx_a, idx_b, rows_a['nRows'], rows_b['nRows'], idx_a.size
+
+
+def read_data_misfit(Obsfile=None, Calcfile=None, modext='.dat',
+                     key_round=8, out=True):
+    """
+    read_data_misfit.
+
+    Parameters
+    ----------
+    Obsfile : str
+        Observed ModEM data file (see `read_data_rows()` for path/modext
+        conventions).
+    Calcfile : str
+        Calculated (forward-response) ModEM data file, same conventions.
+    modext : str, optional
+        Default '.dat'.
+    key_round : int, optional
+        Passed to `match_data_rows()`. Default 8.
+    out : bool, optional
+        Print a one-line summary. Default True.
+
+    Returns
+    -------
+    out : dict
+        nRows : int
+            Number of matched rows.
+        nObs, nCalc, nUnmatchedObs, nUnmatchedCalc : int
+        rows : structured ndarray, shape (nRows,)
+            Fields: freq, period, site (<U64), lat, lon, site_x, site_y,
+            site_z, datatype_name (<U64), component_name (<U32), re_val,
+            im_val, re_err, im_err, cal_re, cal_im.
+            `re_val`/`im_val`/`re_err` are the OBSERVED value and its
+            standard error; `im_err` is a copy of `re_err` (see
+            `match_data_rows()`); `cal_re`/`cal_im` are the CALCULATED
+            (forward-modelled) response for the same datum -- the ModEM
+            analogue of `femtic.read_results_data()`'s `/data` rows, which
+            FEMTIC already writes with observed and calculated values
+            combined (ModEM writes them to two separate files of
+            identical layout instead, hence the matching step here).
+        datatype_name, component_name : ndarray of str, shape (nRows,)
+            Aliases for `rows["datatype_name"]` / `rows["component_name"]`,
+            for the same shape of return dict as
+            `femtic.read_results_data()`.
+
+    Notes
+    -----
+    `im_val`/`cal_im` are 0.0 (not NaN) for a real-valued data type (see
+    `modem_is_real_only_datatype`). Observed rows with no matching
+    calculated datum are dropped (counted in `nUnmatchedObs`) and a
+    warning is printed; calculated rows with no matching observed datum
+    are simply not used (`nUnmatchedCalc`, informational only).
+
+    author: Claude Sonnet 5 (Anthropic), 2026-09-26
+    """
+    obs = read_data_rows(Obsfile, modext=modext, out=False)
+    cal = read_data_rows(Calcfile, modext=modext, out=False)
+
+    idx_o, idx_c, n_obs, n_cal, n_matched = match_data_rows(
+        obs, cal, key_round=key_round)
+
+    row_dtype = np.dtype([
+        ('freq', 'f8'), ('period', 'f8'),
+        ('site', 'U64'), ('lat', 'f8'), ('lon', 'f8'),
+        ('site_x', 'f8'), ('site_y', 'f8'), ('site_z', 'f8'),
+        ('datatype_name', 'U64'), ('component_name', 'U32'),
+        ('re_val', 'f8'), ('im_val', 'f8'),
+        ('re_err', 'f8'), ('im_err', 'f8'),
+        ('cal_re', 'f8'), ('cal_im', 'f8'),
+    ])
+    rows = np.zeros(n_matched, dtype=row_dtype)
+    rows['freq'] = obs['freq'][idx_o]
+    rows['period'] = obs['period'][idx_o]
+    rows['site'] = obs['site'][idx_o]
+    rows['lat'] = obs['lat'][idx_o]
+    rows['lon'] = obs['lon'][idx_o]
+    rows['site_x'] = obs['x'][idx_o]
+    rows['site_y'] = obs['y'][idx_o]
+    rows['site_z'] = obs['z'][idx_o]
+    rows['datatype_name'] = obs['datatype_name'][idx_o]
+    rows['component_name'] = obs['component_name'][idx_o]
+    rows['re_val'] = obs['re_val'][idx_o]
+    rows['im_val'] = obs['im_val'][idx_o]
+    rows['re_err'] = obs['err'][idx_o]
+    rows['im_err'] = obs['err'][idx_o]        # ModEM: one error for re & im
+    rows['cal_re'] = cal['re_val'][idx_c]
+    rows['cal_im'] = cal['im_val'][idx_c]
+
+    n_unmatched_obs = n_obs - n_matched
+    n_unmatched_calc = n_cal - n_matched
+    if out:
+        warn = ''
+        if n_unmatched_obs:
+            warn = ('  WARNING: %i observed row(s) with no matching '
+                    'calculated datum!' % n_unmatched_obs)
+        print('read_data_misfit: %i matched rows (obs %i, calc %i)%s'
+              % (n_matched, n_obs, n_cal, warn))
+        if n_unmatched_calc:
+            print('read_data_misfit:   (%i calculated row(s) not present '
+                  'in the observed file)' % n_unmatched_calc)
+
+    return dict(
+        nRows=n_matched, nObs=n_obs, nCalc=n_cal,
+        nUnmatchedObs=n_unmatched_obs, nUnmatchedCalc=n_unmatched_calc,
+        rows=rows,
+        datatype_name=rows['datatype_name'],
+        component_name=rows['component_name'],
+    )
 
 
 def write_data(Datfile=None, Dat=None, Site=None, Comp=None, Head=None,

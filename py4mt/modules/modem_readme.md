@@ -23,6 +23,41 @@ needed when working with the ModEM 3-D magnetotelluric inversion package.
 - NetCDF export:
   - `write_data_ncd(NCfile, Dat, Site, Comp, ...)`
 
+### Data-misfit helpers (observed vs. calculated data) -- added 2026-09-26
+
+For `modem_data_misfit.py` (crossplot/histogram/Q-Q diagnostics, modelled
+on `femtic_data_misfit.py`). Unlike FEMTIC's `results_iterN.h5`, which
+bundles observed and calculated values in one file, ModEM writes them to
+two separate, identically-formatted files -- these routines parse and
+match them:
+
+- `read_data_rows(Datfile, modext=".dat", out=True)` -- parse one ModEM
+  data file; tracks each data block's DataType from its `>` header, and
+  tells real-valued rows (`Off_Diagonal_Rho_Phase`, `Phase_Tensor`, 10
+  columns) from complex rows (11 columns) apart by **column count**, not
+  by guessing from the component-code text (unlike `read_data()` above).
+- `read_data_calc(Datfile, modext=".dat", out=True)` -- same reader, named
+  for a calculated/response file (identical format).
+- `match_data_rows(rows_a, rows_b, key_round=8)` -- match two
+  `read_data_rows()` outputs by `(period, site, component)`.
+- `read_data_misfit(Obsfile, Calcfile, modext=".dat", key_round=8, out=True)`
+  -- read an observed/calculated pair and combine them into one per-datum
+  structured-array table (fields include `re_val`/`im_val`/`re_err`/
+  `im_err` from the observed file and `cal_re`/`cal_im` from the
+  calculated file) -- the ModEM analogue of `femtic.read_results_data()`.
+- `modem_is_real_only_datatype(name)` -- case/separator-insensitive check
+  against `MODEM_REAL_ONLY_DATATYPES = ("Off_Diagonal_Rho_Phase",
+  "Phase_Tensor")`; `MODEM_COMPLEX_DATATYPES` lists the other four.
+
+ModEM gives one error per datum, applied to both the real and imaginary
+part -- `read_data_misfit()` copies it into both `re_err` and `im_err`
+rather than inventing a second value.
+
+See `modem_data_misfit_readme.md` for the full workflow, including how a
+calculated file may be an exact file, a directory searched for
+`..._NLCG_*.dat`-style iteration files, or a glob, with "best"/"last"/an
+explicit iteration number selecting among candidates.
+
 ### Model file helpers
 - Read/Write ModEM `.rho` models:
   - `read_mod(file, modext=".rho", trans="LINEAR", ...)`
@@ -330,3 +365,19 @@ kl_truncation_analysis(rho_target, modes, mean_m, shape=shape, singular_values=s
 - ModEM stores models in a **Fortran order** layout; keep an eye on `order='F'` reshaping in readers/writers.
 - Be consistent about whether a model is stored in **linear resistivity** or **log-transformed** values.
   The `trans` argument in readers/writers controls this.
+
+## Changelog
+
+### Changelog (2026-09-26) --- data-misfit helpers
+
+Claude Sonnet 5 (Anthropic), 2026-09-26: added `read_data_rows`,
+`read_data_calc`, `match_data_rows`, `read_data_misfit`,
+`modem_is_real_only_datatype`, `MODEM_REAL_ONLY_DATATYPES`,
+`MODEM_COMPLEX_DATATYPES` (placed just after `read_data()`), for the new
+`modem_data_misfit.py` script (observed-vs-calculated crossplot/
+histogram/Q-Q diagnostics, modelled on `femtic_data_misfit.py`). Real-
+valued vs. complex data rows are now told apart by column count (10 vs.
+11), resolving the ambiguity `modem_data_split.py`'s `parse_modem_dat()`
+flags as an unverified assumption. AI-generated; verified with
+`ast.parse()` and a synthetic-data smoke test (see
+`modem_data_misfit_readme.md`), not yet run against real ModEM output.
