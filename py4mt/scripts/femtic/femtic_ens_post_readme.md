@@ -121,6 +121,17 @@ missing for some or all members.
 | `COMPUTE_SIMRC` | bool | `True` | (2) Ensemble-native "SimRC" sensitivity from the model ensemble and the calculated responses (`cal_re`/`cal_im`, errors `re_err`/`im_err`) in `/data/data` of each member's `results_iter<numit>.h5` (same file as the sensitivity). Real parts of all rows plus imaginary parts of complex datatypes; columns with error <= 0 dropped. Members with NaN calculated values or a different data composition are skipped. |
 | `SIMRC_ERR_WEIGHT` | bool | `True` | Divide each data column by its error (first usable member), so `simrc_coef` sums over mixed datatypes are dimensionless. `simrc_corr` is unaffected. |
 | `SIMRC_CHUNK` | int | `200` | Data columns processed per chunk when accumulating the model/data cross-covariance — bounds peak memory to `O(SIMRC_CHUNK * n_free)` instead of forming the full `(n_data, n_free)` matrix. |
+| `SENS_ROI_NORMALIZE` | bool | `False` | Optional, display-time only. When `True`, every `sens_*` panel actually plotted (not `sens_cv_*`, a linear ratio) is re-centred, right before its block file is written, so the ROI's own max (the same box driving `MOD_XLIM`/`MOD_YLIM`/`MOD_ZLIM`, including `MOD_ROI_AUTO`) becomes log10 = 0 instead of the whole-mesh max — equivalent to dividing by the max *within the ROI* rather than over the whole mesh. Never touches the `.npz` output or `MOD_ALPHA_SOURCE` (both still see the original, whole-mesh-normalised values). Cells outside the ROI can come out `> 0` (log10) once renormalised this way, since they may exceed the ROI's own max — expected. `simrc_coef`/`simrc_corr` are **not** renormalised by this switch (left as-is pending more experience with tuning SimRC thresholds), but see below. |
+
+**ROI diagnostic (always on, independent of `SENS_ROI_NORMALIZE`).**
+Every `sens_*`/`simrc_*` panel that is both listed in `MOD_STATS_WHAT`
+and actually plotted has its *original* (whole-mesh-normalised, as
+currently stored) min/max printed to the console, restricted to the free
+parameters whose volume-weighted centroid falls inside the ROI — a quick
+read of the value range actually in view, meant to make picking a
+`MOD_ALPHA_SOURCE` threshold easier without guessing. Degrades
+gracefully (printed warning, diagnostic skipped for the run) if the mesh
+or region geometry can't be read.
 
 **Why two measures instead of one.** (1) is a classical linearised
 diagnostic (Christiansen & Auken, 2012, *Geophysics* 77, WB171,
@@ -265,24 +276,44 @@ Must match the values used by the FEMTIC inversion that produced the ensemble.
 | `MOD_AIR_RHO` | float | `1.0e9` | Ω·m sentinel for air cells (region 0), used when writing stat block files. |
 | `MOD_OCEAN_RHO` | float | `0.25` | Ω·m sentinel for ocean cells (region 1), used for both block-file writing and plotting. |
 
-### QC slice plot
+### Panels to plot
 
-Produces a single slice figure of the **lowest-nRMS** converged member.
+**Since 2026-09-26, one list drives everything.** `MOD_QC` used to be a
+separate on/off switch that had to be kept in sync with `MOD_STATS_WHAT`
+by hand (turn on QC *and* remember `MOD_STATS_WHAT` is still what it
+should be, or vice versa). It is now just the special `"best"` entry in
+`MOD_STATS_WHAT` — the *one* list of panel sources, alongside
+`MOD_ALPHA_SOURCE` as the *one* blanking option (Shared slice / plot
+parameters, below) — and `MOD_QC` / `MOD_STATS` are derived from it, not
+set directly:
+
+```python
+MOD_QC    = "best" in MOD_STATS_WHAT
+MOD_STATS = bool(set(MOD_STATS_WHAT) - {"best"})
+```
+
+To turn a panel off, edit the one list — drop `"best"` for no QC plot, or
+set `MOD_STATS_WHAT = []` for nothing at all. A key requested that isn't
+actually available this run (its `COMPUTE_*` flag is off, say) is skipped
+with a printed message, never an error, so trimming a `COMPUTE_*` flag
+never means also editing this list back down.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `MOD_QC` | bool | `False` | Enable QC slice plot. |
-| `MOD_QC_FILE` | str | `<prefix>_qc.pdf` | Output path; `None` → interactive `show()`. |
+| `MOD_STATS_WHAT` | list of str | `["best","avg","med","err","mad"]` + one key per `PERCENTILES` level + one per `QDIFF_PAIRS` entry (+ `"err_boot"` when `BOOTSTRAP_VAR=True`) | Which panels to plot. `"best"` plots the best-nRMS converged member (to `MOD_QC_FILE`) — the former `MOD_QC` switch. Every other entry is a statistic key: subset of `"avg"`, `"var"`, `"err"`, `"med"`, `"mad"`, `"var_boot"`, `"err_boot"`, the log10 sensitivity keys (`"sens_mean_raw"`, `"sens_{mean,median,min,max,std}_{na,an}"`), `"sens_cv_na"`/`"sens_cv_an"` (linear), `"simrc_coef"`/`"simrc_corr"` (log10), plus auto-generated percentile keys (e.g. `2.3` → `"p2_3"`, `50.0` → `"p50"`, `97.7` → `"p97_7"`) and qdiff keys (e.g. `(15.9, 84.1)` → `"qdiff_15_9_84_1"`). `"err"` = `sqrt(var)` is plotted by default *instead of* `"var"`, since `var` is in (log10 Ω·m)² and isn't on the same scale as `MAD`/`QDIFF` (log10 Ω·m); add `"var"` back manually (with a `MOD_STATS_STYLE` entry) if you specifically want the raw-variance panel. |
+| `MOD_QC` | bool | derived | `"best" in MOD_STATS_WHAT`. Not user-set — edit `MOD_STATS_WHAT` instead. |
+| `MOD_QC_FILE` | str | `<prefix>_best` | Output path for the `"best"` panel; `_plot_slice()` appends `.<fmt>` per `MOD_PLOT_FORMAT` entry. |
+| `MOD_STATS` | bool | derived | `bool(set(MOD_STATS_WHAT) - {"best"})`. Not user-set — edit `MOD_STATS_WHAT` instead. |
+| `MOD_STATS_DIR` | str | `stats_plots/` | Destination for block files and figures (the non-`"best"` panels). |
 
-### Statistics slice plots
+**Scope note.** `MOD_NROWS`/`MOD_NCOLS` (grid layout *within* one panel's
+figure, sized to `MOD_SLICES` — an unrelated list) and the
+`COMPUTE_SENS`/`COMPUTE_SIMRC`/`COMPUTE_COV`/`BOOTSTRAP_VAR` switches
+(which also gate what is saved to the `.npz`, regardless of whether it is
+ever plotted) were deliberately left as separate settings — neither can
+be safely inferred from "which panels to plot" alone.
 
 Writes each selected statistic as a FEMTIC block file, then plots it.
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `MOD_STATS` | bool | `False` | Enable statistics slice plots. |
-| `MOD_STATS_WHAT` | list of str | `["avg","med","err","mad"]` + one key per `PERCENTILES` level + one per `QDIFF_PAIRS` entry (+ `"err_boot"` when `BOOTSTRAP_VAR=True`) | Which statistics to plot. Subset of `"avg"`, `"var"`, `"err"`, `"med"`, `"mad"`, `"var_boot"`, `"err_boot"`, the log10 sensitivity keys (`"sens_mean_raw"`, `"sens_{mean,median,min,max,std}_{na,an}"`), `"sens_cv_na"`/`"sens_cv_an"` (linear), `"simrc_coef"`/`"simrc_corr"` (log10), plus auto-generated percentile keys (e.g. `2.3` → `"p2_3"`, `50.0` → `"p50"`, `97.7` → `"p97_7"`) and qdiff keys (e.g. `(15.9, 84.1)` → `"qdiff_15_9_84_1"`). `"err"` = `sqrt(var)` is plotted by default *instead of* `"var"`, since `var` is in (log10 Ω·m)² and isn't on the same scale as `MAD`/`QDIFF` (log10 Ω·m); add `"var"` back manually (with a `MOD_STATS_STYLE` entry) if you specifically want the raw-variance panel. |
-| `MOD_STATS_DIR` | str | `stats_plots/` | Destination for block files and figures. |
 
 **Per-panel style.** `MOD_CLIM` fixes the colour scale for the model
 itself (log10 Ohm.m). Spread statistics (`VAR`/`ERR`/`MAD`/`QDIFF`) and
@@ -348,7 +379,7 @@ and `femtic_rto_prep.py`.
 | `MOD_PROJECTION_DIST` | Maximum projection distance (m) for curtain panels; `None` = show all sites on every panel. |
 | `MOD_SITE_MARKER / MARKER_SLICES` | Marker style dicts for map / curtain overlays. |
 | `MOD_MAP_MARKERS` | Extra point markers on map panels only. An entry with `"is_model_centre": True` (instead of `"latlon"`) overrides the model-centre marker's style rather than plotting as a regular marker. |
-| `MOD_SHOW_MODEL_CENTRE` | `True` (default): marks the model origin on `"map"` panels whenever `MOD_DISPLAY_COORDS` is `"utm"`/`"latlon"` (no-op for `"model"`). Default style: black `"+"`, `ms=10`; no legend entry. Override via `MOD_MAP_MARKERS` as above; set `False` to force off. |
+| `MOD_SHOW_MODEL_CENTRE` | `True` (default): marks the model origin on `"map"` panels whenever `MOD_DISPLAY_COORDS` is `"utm"`/`"latlon"` (no-op for `"model"`). Default style (since 2026-09-26): yellow star with a black edge, `ms=14`, at `zorder=15` (above every other map-panel artist); no legend entry. Override via `MOD_MAP_MARKERS` as above; set `False` to force off. |
 
 ### Geographic / UTM origin
 
@@ -495,3 +526,6 @@ correct.
 | 2026-09-25c | Claude Opus 5.5 (Anthropic) | **Fix:** sensitivity vectors from `results_iterX.h5` have one entry per resistivity block *including fixed ones* (e.g. 54588 vs 54587 free parameters), so every member was skipped and no `sens_*` statistics existed -- which also means the old `flag_null_space` blanking can never have worked on such runs. New `_sens_to_free()` maps the vector onto the free parameters using the first member's region table (`len == n_free` as is; `== nreg` -> `sens[free_idx]`; `== nreg-1` -> `sens[free_idx-1]`) and prints the chosen mapping once. Block order is verified once against `/model/blocks["blockID"]` (identity confirmed in the log; a permutation is undone; unreadable -> warning, identity assumed). |
 | 2026-09-25d | Claude Opus 5.5 (Anthropic) | `COMPUTE_SIMRC` now reads the calculated responses and errors from `/data/data` of the same `results_iter<numit>.h5` (`fem.read_results_data`) instead of per-member `result_MT.txt`/`result_VTF.txt`, which current FEMTIC runs no longer write ("no per-member forward-response files found"). Removed `SIMRC_RESULT_FILES`, `SIMRC_SITE_FILE`, `SIMRC_DATA_KIND`; new `SIMRC_ERR_WEIGHT` (default `True`). Imaginary parts of real-valued datatypes (APP_RES_AND_PHS, PT, NMT2_APP_RES_AND_PHS) and columns with error <= 0 are dropped; data composition (datatype, site, frequency, component) is checked against the first member. |
 | 2026-09-25e | Claude Opus 5.5 (Anthropic) | New `MOD_TITLE_FONTSIZE` (default `None` = `MOD_LABEL_FONTSIZE + 6`) for the file name shown as figure title, passed as `figure_title_fontsize` to `plot_model_slices`. |
+| 2026-09-26 | Claude Sonnet 5 (Anthropic) | Model-centre marker: picked up `femtic_viz.py`'s 2026-09-26 default-style change (thin black `"+"` → yellow star with a black edge, higher `zorder`) — no functional change here, `MOD_SHOW_MODEL_CENTRE`/`MOD_MAP_MARKERS` wiring is unchanged. |
+| 2026-09-26b | Claude Sonnet 5 (Anthropic) | Added a region-of-interest diagnostic for the log10 sensitivity panels: every `sens_*`/`simrc_*` entry in `MOD_STATS_WHAT` that gets plotted now prints its original (whole-mesh-normalised, as stored) min/max restricted to the free parameters inside the ROI (`MOD_XLIM`/`MOD_YLIM`/`MOD_ZLIM`, including `MOD_ROI_AUTO`) — meant to make picking a `MOD_ALPHA_SOURCE` threshold easier. New `SENS_ROI_NORMALIZE` (default `False`): optionally re-centres each `sens_*` panel (not `sens_cv_*`) to the ROI's own max instead of the whole-mesh max, display-only (the `.npz` and `MOD_ALPHA_SOURCE` are unaffected); `simrc_coef`/`simrc_corr` are diagnosed but never renormalised by this switch, per explicit request. New helper `_roi_free_mask()`, built on `fem.build_region_geometry()` and the same `free_idx` mapping as `_sens_to_free()`; degrades gracefully if mesh/region geometry can't be read. See the "Sensitivity statistics" section above for the full parameter description. |
+| 2026-09-26c | Claude Sonnet 5 (Anthropic) | Simplified the panel-selection interface per user request ("set panels to plot by a list of sources and one blanking option; determine the other settings from these"): `MOD_ALPHA_SOURCE` was already the one blanking option (2026-09-25). `MOD_QC` was a second switch that had to be kept in sync with `MOD_STATS_WHAT` by hand; it is now the special `"best"` entry in `MOD_STATS_WHAT` itself (default `MOD_STATS_WHAT` gained `"best"` as its first entry, preserving the previous `MOD_QC=True` default). `MOD_QC`/`MOD_STATS` are still set, but derived (`MOD_QC = "best" in MOD_STATS_WHAT`; `MOD_STATS = bool(set(MOD_STATS_WHAT) - {"best"})`) so every downstream use of those two names is unchanged; turning either off is now just editing the one list. `MOD_NROWS`/`MOD_NCOLS` (sized to the unrelated `MOD_SLICES` list) and the `COMPUTE_*`/`BOOTSTRAP_VAR` `.npz`-computation switches were deliberately left untouched — see "Panels to plot" above for the scope reasoning. |

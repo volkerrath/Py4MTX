@@ -532,6 +532,21 @@ Provenance:
                         Also: new figure_title_fontsize (default
                         label_fontsize + 6, previously + 2) for the file
                         name shown as figure title.
+    2026-09-26  Claude Sonnet 5 (Anthropic)
+                        Model-centre marker was being plotted correctly but
+                        was effectively invisible in practice: a thin black
+                        "+" (ms=10, zorder=12) is easily lost against the
+                        axes frame/ticks and the (also black by default)
+                        site markers. Default style changed to a large
+                        yellow star with a black edge (marker="*",
+                        markerfacecolor="yellow", markeredgecolor="black",
+                        ms=14, mew=1.2) at zorder=15, above every other
+                        map-panel artist including site markers, so it now
+                        reads clearly against any colormap. No change to
+                        show_model_centre's on/off logic (still "map"
+                        panels only, still requires display_coords in
+                        ("utm", "latlon")); override via a map_markers entry
+                        with "is_model_centre": True as before.
                         AI-generated code -- review before production use.
     """
 
@@ -3725,12 +3740,15 @@ def plot_model_slices(
         (``display_coords in ("utm", "latlon")``), mark the model origin
         (model-local ``x=0, y=0``) on every ``"map"`` panel so the mesh
         centre remains identifiable once the axes are relabelled in UTM
-        or lat/lon.  Default style: black ``"+"``, ``ms=10``.  Override
-        the style via a ``map_markers`` entry with ``"is_model_centre":
-        True`` (see above).  Set ``False`` to force the marker off even
-        in UTM/latlon display.  Has no effect when
-        ``display_coords == "model"`` (the origin is trivially the
-        plotted (0, 0) point already) or on non-``"map"`` panel kinds.
+        or lat/lon.  Default style: yellow 5-point star (``"*"``) with a
+        black edge, ``ms=14``, ``mew=1.2``, plotted at ``zorder=15`` (above
+        every other map-panel artist, including site markers) so it reads
+        clearly against any colormap or other black markers.  Override the
+        style via a ``map_markers`` entry with ``"is_model_centre": True``
+        (see above).  Set ``False`` to force the marker off even in
+        UTM/latlon display.  Has no effect when ``display_coords ==
+        "model"`` (the origin is trivially the plotted (0, 0) point
+        already) or on non-``"map"`` panel kinds.
     display_coords
         ``"model"`` (model-local m), ``"utm"`` (absolute UTM km), or
         ``"latlon"`` (decimal degrees).
@@ -4147,7 +4165,15 @@ def plot_model_slices(
 
     _draw_model_centre = bool(show_model_centre) and _disp in ("utm", "latlon")
     if _draw_model_centre:
-        _mc_marker = dict(marker="+", color="black", ms=10, mew=2, zorder=12)
+        # A thin black "+" at the default ms/zorder used before 2026-09-26
+        # was easy to lose against the axes frame, ticks, and the (also
+        # black, by default) site markers -- effectively invisible in
+        # practice even though it was being plotted correctly. Switched to
+        # a large yellow star with a black edge at a zorder above every
+        # other map-panel artist (site markers included) so it is always
+        # unambiguous regardless of colormap or marker clutter underneath.
+        _mc_marker = dict(marker="*", markerfacecolor="yellow",
+                           markeredgecolor="black", ms=14, mew=1.2, zorder=15)
         if _model_centre_style is not None:
             _mc_marker.update({k: v for k, v in _model_centre_style.items()
                                 if k not in ("is_model_centre", "latlon", "name")})

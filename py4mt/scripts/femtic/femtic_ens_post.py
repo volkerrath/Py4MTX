@@ -27,7 +27,7 @@ Blatter, D.; Morzfeld, M.; Key, K. & Constable, S.
     geophysical data – Part II: application in 1-D and 2-D problems.
     Geophysical Journal International, doi:10.1093/gji/ggac242, 2022.
 
-Suzuki, K.; Assessing inversion uncertainty from initial-model variability in 
+Suzuki, K.; Assessing inversion uncertainty from initial-model variability in
     3-D magnetotelluric inversion: Application to a geothermal field
     Journal of Applied Geophysics, 251, 106320
     doi:10.1016/j.jappgeo.2026.106320, 2026
@@ -602,10 +602,63 @@ Provenance
             Same day: MOD_TITLE_FONTSIZE (default None = MOD_LABEL_FONTSIZE
             + 6) for the file name shown as figure title
             (plot_model_slices figure_title_fontsize).
+2026-09-26  Claude Sonnet 5 (Anthropic)
+            Model-centre marker: see femtic_viz.py provenance (2026-09-26)
+            -- default style changed from a thin black "+" (effectively
+            invisible against the axes frame and other black markers) to
+            a large yellow star with a black edge. No change here beyond
+            picking up the updated femtic_viz.py; MOD_SHOW_MODEL_CENTRE /
+            MOD_MAP_MARKERS wiring is unchanged.
+            Added a region-of-interest diagnostic for the log10 sensitivity
+            panels: every sens_*/simrc_* entry in MOD_STATS_WHAT that gets
+            plotted now has its original (whole-mesh-normalised, as
+            already stored/plotted) min/max printed to the console,
+            restricted to the free parameters whose volume-weighted
+            centroid (fem.build_region_geometry(), same free_idx mapping
+            as _sens_to_free()) falls inside the resolved ROI
+            (MOD_XLIM/MOD_YLIM/MOD_ZLIM, i.e. the same box already driving
+            the MOD_STATS slice plots, including any MOD_ROI_AUTO
+            override) -- meant to make picking a MOD_ALPHA_SOURCE
+            threshold easier without guessing at the value range in view.
+            New SENS_ROI_NORMALIZE (default False): when True, additionally
+            re-centres each sens_* panel (not sens_cv_*, a linear ratio) so
+            the ROI's own max becomes log10 = 0 instead of the whole-mesh
+            max, right before that panel's block file is written --
+            display-only, the .npz output and MOD_ALPHA_SOURCE evaluation
+            are unaffected. simrc_coef/simrc_corr are diagnosed (min/max
+            printed) but never renormalised by this switch, per explicit
+            request -- no experience yet with tuning SimRC thresholds.
+            New helper _roi_free_mask() (module scope, cached): resolves
+            the ROI membership mask once per run and is reused across all
+            sens_*/simrc_* panels; degrades gracefully (printed warning,
+            ROI diagnostic skipped) if mesh/region geometry can't be read.
+            Simplified the panel-selection interface per user request ("set
+            panels to plot by a list of sources and one blanking option;
+            determine the other settings from these"): MOD_ALPHA_SOURCE was
+            already the one blanking option (2026-09-25). MOD_QC was a
+            second, separate on/off switch that had to be kept in sync with
+            MOD_STATS_WHAT by hand; it is now the special "best" entry in
+            MOD_STATS_WHAT itself (default MOD_STATS_WHAT gained "best" as
+            its first entry, preserving the previous MOD_QC=True default),
+            handled by the existing QC code path (section 7) and skipped in
+            the per-statistic loop (section 8). MOD_QC and MOD_STATS are
+            still set (derived: MOD_QC = "best" in MOD_STATS_WHAT;
+            MOD_STATS = bool(set(MOD_STATS_WHAT) - {"best"})) purely so
+            every downstream use of those two names is unchanged. Turning
+            either off is now just editing the one list (drop "best", or
+            set MOD_STATS_WHAT = [] for neither). Scope note: MOD_NROWS/
+            MOD_NCOLS (governs the MOD_SLICES grid per panel, an unrelated
+            axis to "which panels") and the COMPUTE_SENS/COMPUTE_SIMRC/
+            COMPUTE_COV/BOOTSTRAP_VAR .npz-computation switches were left
+            untouched by design -- both control things beyond what a single
+            "what to plot" list can safely imply (grid size has no relation
+            to len(MOD_STATS_WHAT); the COMPUTE_* flags also gate what is
+            saved to the .npz regardless of whether it is ever plotted).
 
     This script targets FEMTIC's current HDF5 output layout only.
     AI-generated code -- review before production use.
 """
+
 from __future__ import annotations
 
 import os
@@ -781,8 +834,10 @@ SENS_H5_GROUP = None
 #:                            i.e. sensitivity density
 #: Passed through as fem.read_h5_sensitivity()'s cumsens_key.
 SENS_KIND = "volume_normalised"
-assert SENS_KIND in ("raw", "volume_normalised"), \
-    f"SENS_KIND must be 'raw' or 'volume_normalised', got {SENS_KIND!r}"
+assert SENS_KIND in (
+    "raw",
+    "volume_normalised",
+), f"SENS_KIND must be 'raw' or 'volume_normalised', got {SENS_KIND!r}"
 
 #: FEMTIC's per-block sensitivity in results_iterX.h5 (whichever SENS_KIND
 #: dataset is used) is NOT normalised to each member's own max -- confirmed
@@ -823,7 +878,7 @@ assert SENS_KIND in ("raw", "volume_normalised"), \
 #: loop below. Left in place only because fem.read_h5_sensitivity() always
 #: takes these arguments; do not point them at jacobian.h5.
 SENS_JACOBIAN_KEY = "jacobian"
-SENS_ERROR_KEY    = "data_errors"   # None to disable error-weighting
+SENS_ERROR_KEY = "data_errors"  # None to disable error-weighting
 
 #: All sensitivity aggregates (sens_mean/_median/_min/_max/_std, in their
 #: _raw/_na/_an versions) and the SimRC sums (simrc_coef/_corr) are strictly
@@ -892,8 +947,8 @@ COV_METHOD = "low_rank"
 
 #: Sparsify the dense covariance (COV_METHOD="full" only). Ignored for
 #: "low_rank", which is already a compact factorisation.
-SPARSIFY     = True
-SPARSE_THRESH = 1.0e-8   # relative threshold for zeroing small entries
+SPARSIFY = True
+SPARSE_THRESH = 1.0e-8  # relative threshold for zeroing small entries
 
 # ---------------------------------------------------------------------------
 # Bootstrap variance estimation (optional, alternative to the plug-in VAR)
@@ -907,9 +962,9 @@ SPARSE_THRESH = 1.0e-8   # relative threshold for zeroing small entries
 #: more stable estimate) together with its own bootstrap standard error --
 #: i.e. how noisy the variance estimate itself is. This does not replace
 #: VAR; both are computed and saved side by side.
-BOOTSTRAP_VAR  = True
-BOOTSTRAP_N    = 500     # number of bootstrap resamples
-BOOTSTRAP_SEED = None    # None = fresh OS entropy; int = reproducible
+BOOTSTRAP_VAR = True
+BOOTSTRAP_N = 500  # number of bootstrap resamples
+BOOTSTRAP_SEED = None  # None = fresh OS entropy; int = reproducible
 
 # ---------------------------------------------------------------------------
 # Output
@@ -922,9 +977,9 @@ ENSEMBLE_RESULTS = ENSEMBLE_DIR + ENSEMBLE_PREFIX.upper() + "_results.npz"
 MOD_MESH = ENSEMBLE_DIR + "templates/mesh.dat"
 
 # --- Ocean / air handling (must match the inversion setup) ----------------
-MOD_OCEAN     = None
-MOD_AIR_RHO   = 1.0e9   # Ω·m  (region 0)
-MOD_OCEAN_RHO = 0.25    # Ω·m  (region 1 when treated as ocean)
+MOD_OCEAN = None
+MOD_AIR_RHO = 1.0e9  # Ω·m  (region 0)
+MOD_OCEAN_RHO = 0.25  # Ω·m  (region 1 when treated as ocean)
 
 # ---------------------------------------------------------------------------
 # Figure output format
@@ -953,49 +1008,96 @@ MOD_PLOT_FORMAT = ["pdf", "jpg"]
 #: Normalised to a list regardless of whether a bare string or a list was
 #: set above.
 _MOD_PLOT_FORMATS = (
-    [MOD_PLOT_FORMAT] if isinstance(MOD_PLOT_FORMAT, str) else list(MOD_PLOT_FORMAT)
+    [MOD_PLOT_FORMAT]
+    if isinstance(MOD_PLOT_FORMAT, str)
+    else list(MOD_PLOT_FORMAT)
 )
 
 # ---------------------------------------------------------------------------
-# QC slice plot — best-nRMS converged member
+# Panels to plot -- ONE list of sources (MOD_STATS_WHAT) plus ONE blanking
+# option (MOD_ALPHA_SOURCE, shared slice block below). There used to be a
+# separate MOD_QC on/off switch to keep in sync with this list by hand;
+# it is now just the special "best" entry below, so "what gets plotted"
+# lives in exactly one place. MOD_QC / MOD_STATS still exist afterwards
+# (derived, not user-set) purely so the rest of the script (sections
+# (7)/(8) and the origin/site-resolution gate) is unchanged.
 # ---------------------------------------------------------------------------
-#: Set True to plot the best-nRMS member.
-MOD_QC      = True
-#: Extension-less base path; _plot_slice() appends ".<fmt>" per
-#: MOD_PLOT_FORMAT entry.
-MOD_QC_FILE = ENSEMBLE_DIR + ENSEMBLE_PREFIX + "_best"
-
-# ---------------------------------------------------------------------------
-# Statistics slice plots — mean / variance / median / MAD
-# ---------------------------------------------------------------------------
-#: Set True to write derived stat members as block files and plot them.
-#: Requires MOD_MESH and a valid template file (taken from best member).
-MOD_STATS      = True
-#: Which statistics to plot.  Subset of: "avg", "var", "err", "med", "mad",
-#: one auto-generated key per PERCENTILES level (e.g. 2.3 -> "p2_3",
-#: 50.0 -> "p50", 97.7 -> "p97_7"), one per QDIFF_PAIRS entry (e.g.
-#: (15.9, 84.1) -> "qdiff_15_9_84_1"), "err_boot" (+ "var_boot") when
-#: BOOTSTRAP_VAR=True, and -- when COMPUTE_SENS / COMPUTE_SIMRC succeed --
-#: the log10 sensitivity panels "sens_mean_raw", "sens_mean_na",
-#: "sens_mean_an", "sens_median_na"/"_an", "sens_min_na"/"_an",
-#: "sens_max_na"/"_an", "sens_std_na"/"_an", the linear ratios
-#: "sens_cv_na"/"_an", and "simrc_coef"/"simrc_corr" (log10).
+#: Which panels to plot. The special entry "best" plots the best-nRMS
+#: converged member (to MOD_QC_FILE) -- formerly the standalone MOD_QC
+#: switch. Every other entry is a statistic key: subset of "avg", "var",
+#: "err", "med", "mad", one auto-generated key per PERCENTILES level (e.g.
+#: 2.3 -> "p2_3", 50.0 -> "p50", 97.7 -> "p97_7"), one per QDIFF_PAIRS
+#: entry (e.g. (15.9, 84.1) -> "qdiff_15_9_84_1"), "err_boot"
+#: (+ "var_boot") when BOOTSTRAP_VAR=True, and -- when COMPUTE_SENS /
+#: COMPUTE_SIMRC succeed -- the log10 sensitivity panels "sens_mean_raw",
+#: "sens_mean_na", "sens_mean_an", "sens_median_na"/"_an",
+#: "sens_min_na"/"_an", "sens_max_na"/"_an", "sens_std_na"/"_an", the
+#: linear ratios "sens_cv_na"/"_an", and "simrc_coef"/"simrc_corr"
+#: (log10). A key requested here but not actually available for this run
+#: (e.g. its COMPUTE_* flag is off) is skipped with a printed message,
+#: never an error -- so trimming a COMPUTE_* flag never requires editing
+#: this list back down too.
 #: "err" = sqrt(var) is plotted by default instead of "var", since var is in
 #: (log10 Ohm.m)^2 and not on the same scale as MAD/QDIFF (log10 Ohm.m).
-#: Colour map, colour limits and colourbar label of every panel are set
-#: per key in MOD_STATS_STYLE (shared slice block below).
-MOD_STATS_WHAT = ["avg", "med", "err", "mad"] + [
-    "p" + f"{_p:g}".replace(".", "_") for _p in PERCENTILES
-] + [
-    f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_") for _lo, _hi in QDIFF_PAIRS
-] + (["err_boot"] if BOOTSTRAP_VAR else []) + (
-    ["sens_mean_raw", "sens_mean_na", "sens_cv_na",
-     "sens_mean_an", "sens_cv_an"] if COMPUTE_SENS else []
-) + (
-    ["simrc_corr"] if COMPUTE_SIMRC else []
+#: Colour map, colour limits and colourbar label of every statistic panel
+#: are set per key in MOD_STATS_STYLE (shared slice block below); "best"
+#: always plots at MOD_CLIM/MOD_CMAP directly (no MOD_STATS_STYLE entry).
+MOD_STATS_WHAT = (
+      ["best", "avg", "med", "err", "mad"]
+#    + ["p" + f"{_p:g}".replace(".", "_") for _p in PERCENTILES]
+    + [f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_") for _lo, _hi in QDIFF_PAIRS]
+    + (["err_boot"] if BOOTSTRAP_VAR else [])
+    + (
+        [
+            "sens_mean_raw",
+            "sens_mean_na",
+            "sens_cv_na",
+            "sens_mean_an",
+            "sens_cv_an",
+        ]
+        if COMPUTE_SENS
+        else []
+    )
+    + (["simrc_corr"] if COMPUTE_SIMRC else [])
 )
-#: Output directory for stat block files and figures.
-MOD_STATS_DIR  = ENSEMBLE_DIR + "/stats_plots/"
+
+#: Extension-less base path for the "best" panel; _plot_slice() appends
+#: ".<fmt>" per MOD_PLOT_FORMAT entry.
+MOD_QC_FILE = ENSEMBLE_DIR + ENSEMBLE_PREFIX + "_best"
+
+#: Output directory for the other panels' block files and figures.
+#: Requires MOD_MESH and a valid template file (taken from best member).
+MOD_STATS_DIR = ENSEMBLE_DIR + "/stats_plots/"
+
+#: Derived from MOD_STATS_WHAT above -- not user-set. Remove "best" from
+#: the list (or set MOD_STATS_WHAT = []) to turn either off, instead of a
+#: separate boolean.
+MOD_QC = "best" in MOD_STATS_WHAT
+MOD_STATS = bool(set(MOD_STATS_WHAT) - {"best"})
+
+#: ROI diagnostic for the log10 sensitivity panels ("sens_mean_raw",
+#: "sens_{mean,median,min,max,std}_{na,an}" -- NOT "sens_cv_na"/"_an",
+#: which are linear ratios, and NOT "simrc_coef"/"simrc_corr", left
+#: untouched pending more experience with that method).
+#:
+#: Regardless of SENS_ROI_NORMALIZE below, every such panel that is both
+#: listed in MOD_STATS_WHAT and actually plotted has its *original*
+#: (whole-mesh-normalised, as currently stored/plotted) min/max printed
+#: to the console, restricted to the free parameters inside the ROI (the
+#: same box driving the MOD_STATS slice plots: MOD_XLIM/MOD_YLIM/MOD_ZLIM,
+#: including any MOD_ROI_AUTO override) -- a quick read of the value range
+#: actually in view, to help pick a MOD_ALPHA_SOURCE threshold.
+#:
+#: SENS_ROI_NORMALIZE (default False) additionally *re-centres* each such
+#: panel, right before it is written/plotted, so that the ROI's own max
+#: becomes log10 = 0 instead of the whole-mesh max (equivalent to dividing
+#: the underlying linear quantity by its max within the ROI rather than
+#: over the whole mesh). This is a display-only transform: it never
+#: touches the .npz output (sens_mean_an etc. are saved exactly as before)
+#: or MOD_ALPHA_SOURCE (which still reads the untransformed _stat_map
+#: values). Cells outside the ROI can come out > 0 (log10) once
+#: renormalised this way -- expected, since they may exceed the ROI's max.
+SENS_ROI_NORMALIZE = True
 
 # ---------------------------------------------------------------------------
 # Shared slice / plot parameters
@@ -1005,11 +1107,11 @@ MOD_STATS_DIR  = ENSEMBLE_DIR + "/stats_plots/"
 
 # --- Geographic / UTM origin of the mesh centre ----------------------------
 #: Set to None when MOD_ORIGIN_METHOD will estimate the origin from MOD_SITE_DAT.
-MOD_UTM_ORIGIN_LAT    = None   # decimal degrees, positive = North
-MOD_UTM_ORIGIN_LON    = None   # decimal degrees, positive = East
-MOD_UTM_ORIGIN_E      = None   # UTM easting  [m]
-MOD_UTM_ORIGIN_N      = None   # UTM northing [m]
-MOD_UTM_ZONE_OVERRIDE = None   # override auto-derived zone; None = auto
+MOD_UTM_ORIGIN_LAT = None  # decimal degrees, positive = North
+MOD_UTM_ORIGIN_LON = None  # decimal degrees, positive = East
+MOD_UTM_ORIGIN_E = None  # UTM easting  [m]
+MOD_UTM_ORIGIN_N = None  # UTM northing [m]
+MOD_UTM_ZONE_OVERRIDE = None  # override auto-derived zone; None = auto
 
 #: "box"     → midpoint of UTM bounding box of all sites in MOD_SITE_DAT.
 #: "average" → arithmetic mean of UTM coordinates in MOD_SITE_DAT.
@@ -1025,17 +1127,17 @@ MOD_DISPLAY_COORDS = "latlon"
 # --- Site overlay ------------------------------------------------------------
 #: Primary source: mt_make_sitelist.py CSV (name,lat,lon,elev,sitenum,E,N).
 #: Set to None to fall back to observe.dat / MOD_SITE_NUMBER.
-MOD_SITE_DAT    = ENSEMBLE_DIR + "templates/site.dat"
-MOD_SITE_NAMES  = None   # list of names to plot, or None = all sites
+MOD_SITE_DAT = ENSEMBLE_DIR + "templates/site.dat"
+MOD_SITE_NAMES = None  # list of names to plot, or None = all sites
 #: Fallback: site number(s) from observe.dat (int or list of ints).
 MOD_SITE_NUMBER = None
 
-MOD_PLOT_SITES_MAPS   = True    # show markers on map panels
-MOD_PLOT_SITES_SLICES = False    # show markers on curtain / plane panels
+MOD_PLOT_SITES_MAPS = True  # show markers on map panels
+MOD_PLOT_SITES_SLICES = False  # show markers on curtain / plane panels
 #: Max distance [km] from a curtain plane for a site to appear on it.
-MOD_PROJECTION_DIST = 1.0    # km; None = show all sites on every panel
+MOD_PROJECTION_DIST = 1.0  # km; None = show all sites on every panel
 
-MOD_SITE_MARKER        = dict(marker="v", color="black", ms=8, zorder=10, label=None)
+MOD_SITE_MARKER = dict(marker="v", color="black", ms=8, zorder=10, label=None)
 MOD_SITE_MARKER_SLICES = None
 #: Extra point markers on map panels only (each dict: latlon, marker, color, ms, name).
 MOD_MAP_MARKERS = []
@@ -1048,7 +1150,7 @@ MOD_SHOW_MODEL_CENTRE = True
 #: Slice positions accept plain floats (model-local m) or CRS-tagged tuples:
 #:   (value, "utm") | (value, "latlon")
 #: Depth z0 is always model-local metres (no CRS tagging).
-# MOD_SLICES = [    
+# MOD_SLICES = [
 #     dict(kind="map", z0=0.0),    # km
 #     dict(kind="map", z0=5.0),    # km
 #     dict(kind="map", z0=10.0),   # km
@@ -1058,25 +1160,25 @@ MOD_SHOW_MODEL_CENTRE = True
 #     dict(kind="ns",  x0=(-71.40723, 'latlon')),    # km
 #     dict(kind="ew",  y0=(-16.299593, 'latlon')),    # km
 # ]
-MOD_SLICES = [    
-    dict(kind="map", z0=-0.25),    # km
-    dict(kind="map", z0=0.0),    # km
-    dict(kind="map", z0=0.5),   # km
-    dict(kind="map", z0=1.0),   # km
-    dict(kind="map", z0=2.0),   # km
-    dict(kind="map", z0=2.5),   # km
-    dict(kind="map", z0=3.0),   # km
-    dict(kind="map", z0=4.0),   # km
-    dict(kind="map", z0=5.0),   # km
-    dict(kind="ns",  x0=0.),    # km
-    dict(kind="ew",  y0=0.),    # km
-    #dict(kind="ns",  x0=(-71.40723, 'latlon')),    # km
-    #dict(kind="ew",  y0=(-16.299593, 'latlon')),    # km
+MOD_SLICES = [
+    dict(kind="map", z0=-0.25),  # km
+    dict(kind="map", z0=0.0),  # km
+    dict(kind="map", z0=0.5),  # km
+    dict(kind="map", z0=1.0),  # km
+    dict(kind="map", z0=2.0),  # km
+    dict(kind="map", z0=2.5),  # km
+    dict(kind="map", z0=3.0),  # km
+    dict(kind="map", z0=4.0),  # km
+    dict(kind="map", z0=5.0),  # km
+    dict(kind="ns", x0=0.0),  # km
+    dict(kind="ew", y0=0.0),  # km
+    # dict(kind="ns",  x0=(-71.40723, 'latlon')),    # km
+    # dict(kind="ew",  y0=(-16.299593, 'latlon')),    # km
 ]
 
-MOD_XLIM = None    # [xmin, xmax] model-local km; None = auto
-MOD_YLIM = None    # [ymin, ymax] model-local km; None = auto
-MOD_ZLIM = None    # [zmin, zmax] model-local km; None = auto
+MOD_XLIM = None  # [xmin, xmax] model-local km; None = auto
+MOD_YLIM = None  # [ymin, ymax] model-local km; None = auto
+MOD_ZLIM = None  # [zmin, zmax] model-local km; None = auto
 
 # --- Region of interest (auto xlim/ylim/zlim from site positions) ----------
 #: When True and site positions are available (MOD_SITE_DAT / MOD_SITE_NUMBER,
@@ -1090,21 +1192,21 @@ MOD_ZLIM = None    # [zmin, zmax] model-local km; None = auto
 #: The same three MOD_ROI_* variables (same defaults, same semantics) now
 #: exist in femtic_rto_prep.py and femtic_gst_prep.py, so the plot extent
 #: is identical between prep-time and post-time figures.
-MOD_ROI_AUTO   = True
-MOD_ROI_PAD_XY = 4.0             # km of padding around the site bbox
-MOD_ROI_ZLIM   = [-1.0, 7.0]
+MOD_ROI_AUTO = True
+MOD_ROI_PAD_XY = 4.0  # km of padding around the site bbox
+MOD_ROI_ZLIM = [-1.0, 7.0]
 #: depth range (km, positive-down) for ns/ew/plane panels; None = leave MOD_ZLIM as-is
 #: Lower bound is negative (above the z=0 datum) to give ~1 km of headroom
 #: so topography (mesh cells with z < 0) is not clipped out of the ns/ew/
 #: plane panels. Previously [0.0, 20000.0] cut panels off exactly at the
 #: datum, hiding any topography above it.
 
-MOD_DPI         = 400            # figure DPI, used by both MOD_QC and MOD_STATS
-MOD_CMAP        = "jet_r"
-MOD_CLIM        = [0.0, 4.0]     # [log10_min, log10_max] Ω·m; None = auto
-MOD_OCEAN_COLOR = "lightgrey"    # flat colour for ocean cells; None = colormap
-MOD_AIR_COLOR   = "whitesmoke"
-MOD_AIR_BGCOLOR = None           # axes facecolor for air; None = figure default
+MOD_DPI = 400  # figure DPI, used by both MOD_QC and MOD_STATS
+MOD_CMAP = "jet_r"
+MOD_CLIM = [0.0, 4.0]  # [log10_min, log10_max] Ω·m; None = auto
+MOD_OCEAN_COLOR = "lightgrey"  # flat colour for ocean cells; None = colormap
+MOD_AIR_COLOR = "whitesmoke"
+MOD_AIR_BGCOLOR = None  # axes facecolor for air; None = figure default
 
 # --- Per-panel style (MOD_STATS) ------------------------------------------
 #: Per-statistic overrides for every MOD_STATS panel, keyed as in
@@ -1125,26 +1227,37 @@ MOD_STATS_STYLE = {
 }
 for _lo, _hi in QDIFF_PAIRS:
     MOD_STATS_STYLE[f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_")] = dict(
-        clim=[0.0, 0.5], label=f"P{_hi:g} - P{_lo:g}  log10(rho)")
+        clim=[0.0, 0.5], label=f"P{_hi:g} - P{_lo:g}  log10(rho)"
+    )
 if BOOTSTRAP_VAR:
-    MOD_STATS_STYLE["var_boot"] = dict(clim=[0.0, 0.3], label="bootstrap var log10(rho)")
-    MOD_STATS_STYLE["err_boot"] = dict(clim=[0.0, 0.3], label="bootstrap std log10(rho)")
+    MOD_STATS_STYLE["var_boot"] = dict(
+        clim=[0.0, 0.3], label="bootstrap var log10(rho)"
+    )
+    MOD_STATS_STYLE["err_boot"] = dict(
+        clim=[0.0, 0.3], label="bootstrap std log10(rho)"
+    )
 if COMPUTE_SENS:
     #: Native SENS_KIND units -- run- and mesh-dependent, auto-scaled.
     MOD_STATS_STYLE["sens_mean_raw"] = dict(
-        cmap="viridis", clim=None, label=f"log10 S ({SENS_KIND})")
+        cmap="viridis", clim=None, label=f"log10 S ({SENS_KIND})"
+    )
     for _sfx in ("na", "an"):
         for _st in ("mean", "median", "min", "max", "std"):
             MOD_STATS_STYLE[f"sens_{_st}_{_sfx}"] = dict(
-                cmap="viridis", clim=[-4.0, 0.0],
-                label=f"log10 S/Smax ({_st}, {_sfx})")
+                cmap="viridis",
+                clim=[-4.0, 0.0],
+                label=f"log10 S/Smax ({_st}, {_sfx})",
+            )
         MOD_STATS_STYLE[f"sens_cv_{_sfx}"] = dict(
-            cmap="viridis", clim=None, label=f"CV of S ({_sfx})")
+            cmap="viridis", clim=None, label=f"CV of S ({_sfx})"
+        )
 if COMPUTE_SIMRC:
-    MOD_STATS_STYLE["simrc_coef"] = dict(cmap="viridis", clim=None,
-                                         label="log10 sum|SimRC|")
-    MOD_STATS_STYLE["simrc_corr"] = dict(cmap="viridis", clim=None,
-                                         label="log10 sum|corr|")
+    MOD_STATS_STYLE["simrc_coef"] = dict(
+        cmap="viridis", clim=None, label="log10 sum|SimRC|"
+    )
+    MOD_STATS_STYLE["simrc_corr"] = dict(
+        cmap="viridis", clim=None, label="log10 sum|corr|"
+    )
 
 # --- Blanking / fading (optional) ------------------------------------------
 #: One condition "<name> <op> <value>" selecting the cells to SHOW; cells
@@ -1155,40 +1268,40 @@ if COMPUTE_SIMRC:
 #:   "sens_mean_an > -3."    keep cells within 3 decades of max sensitivity
 #:   "err < 0.2"             keep cells with ensemble std below 0.2 decades
 #: None disables blanking/fading.
-MOD_ALPHA_SOURCE = "sens_mean_an > -3."
+MOD_ALPHA_SOURCE = "sens_mean_an > -5.5"
 #: "blank" -- failing cells are removed (hard cut).
 #: "fade"  -- failing cells fade linearly from opaque at the threshold to
 #:            fully transparent MOD_ALPHA_FADE_WIDTH beyond it (same units
 #:            as <value>, e.g. 1.0 = one decade for log10 sensitivities).
-MOD_ALPHA_MODE       = "blank"
+MOD_ALPHA_MODE = "blank"
 MOD_ALPHA_FADE_WIDTH = 1.0
 #: Apply the same mask to the MOD_QC (best-member) figure as well.
-MOD_ALPHA_QC         = True
+MOD_ALPHA_QC = True
 
 # --- Figure layout -----------------------------------------------------------
 MOD_EQUAL_ASPECT = True
-MOD_DEPTH_KM     = True
-MOD_HORIZ_KM     = True
+MOD_DEPTH_KM = True
+MOD_HORIZ_KM = True
 #: 2x2 grid matching the 4 default MOD_SLICES panels (2 maps + ns + ew).
 #: Adjust to len(MOD_SLICES) if you change the number of panels; None/None
 #: falls back to a single row of len(MOD_SLICES) columns.
-MOD_NROWS        = 4      # None = auto (1 row)
-MOD_NCOLS        = 3     # None = auto (len(MOD_SLICES) cols)
-MOD_PANEL_HEIGHT = 18.0   # cm
+MOD_NROWS = 4  # None = auto (1 row)
+MOD_NCOLS = 3  # None = auto (len(MOD_SLICES) cols)
+MOD_PANEL_HEIGHT = 18.0  # cm
 #: None = auto per-column width from each panel's own aspect ratio (needs
 #: MOD_EQUAL_ASPECT=True and real xlim/ylim/zlim -- supplied automatically
 #: by MOD_ROI_AUTO above -- so map, ns, and ew panels naturally end up
 #: different widths instead of being forced square).
-MOD_PANEL_WIDTH  = None   # cm; None = auto from aspect ratio
-MOD_FIGSIZE      = None   # [w, h] cm; overrides auto when set
+MOD_PANEL_WIDTH = None  # cm; None = auto from aspect ratio
+MOD_FIGSIZE = None  # [w, h] cm; overrides auto when set
 
 #: Axis annotation font sizes, passed through to fviz.plot_model_slices.
 #: Defaults match plot_model_slices' own defaults.
-MOD_TICK_FONTSIZE  = 16   # axis tick labels, colourbar ticks
-MOD_LABEL_FONTSIZE = 16    # axis labels, panel titles, colourbar label
+MOD_TICK_FONTSIZE = 16  # axis tick labels, colourbar ticks
+MOD_LABEL_FONTSIZE = 16  # axis labels, panel titles, colourbar label
 #: Font size of the figure title (the block-file name above the panels);
 #: None = MOD_LABEL_FONTSIZE + 6.
-MOD_TITLE_FONTSIZE = None
+MOD_TITLE_FONTSIZE = MOD_LABEL_FONTSIZE + 10
 
 #: Decimal digits shown on axis tick labels (depth, map/curtain
 #: easting-northing, and lat/lon all share this one setting). None (default)
@@ -1211,17 +1324,24 @@ OUT = True
 #: Detected once at import time; utl.runtime_env() returns 'spyder' when
 #: running inside Spyder's IPython console (SPYDER_KERNEL env var / spyder_
 #: kernels module), 'jupyter'/'ipython-*'/'python' otherwise.
-_IN_SPYDER = (utl.runtime_env() == "spyder")
+_IN_SPYDER = utl.runtime_env() == "spyder"
 _SHOW_PLOTS = MOD_SHOW_IN_SPYDER and _IN_SPYDER
 if _IN_SPYDER:
-    print(f"Detected Spyder — inline figure display {'enabled' if _SHOW_PLOTS else 'disabled (MOD_SHOW_IN_SPYDER=False)'}.\n")
+    print(
+        f"Detected Spyder — inline figure display {'enabled' if _SHOW_PLOTS else 'disabled (MOD_SHOW_IN_SPYDER=False)'}.\n"
+    )
 
 # ===========================================================================
 # Helpers
 # ===========================================================================
 
-def _bootstrap_variance(ens_matrix: np.ndarray, n_boot: int,
-                         rng: np.random.Generator, out: bool = True):
+
+def _bootstrap_variance(
+    ens_matrix: np.ndarray,
+    n_boot: int,
+    rng: np.random.Generator,
+    out: bool = True,
+):
     """Bootstrap estimate of per-free-parameter variance across members.
 
     Resamples the N_members ensemble members with replacement ``n_boot``
@@ -1261,18 +1381,18 @@ def _bootstrap_variance(ens_matrix: np.ndarray, n_boot: int,
         model directly.
     """
     n_members, n_free = ens_matrix.shape
-    sum_v  = np.zeros(n_free)
+    sum_v = np.zeros(n_free)
     sum_v2 = np.zeros(n_free)
     _report_every = max(n_boot // 10, 1)
     for _b in range(n_boot):
         _idx = rng.integers(0, n_members, size=n_members)
-        _v = np.var(ens_matrix[_idx], axis=0)     # ddof=0, matches ens_var
-        sum_v  += _v
+        _v = np.var(ens_matrix[_idx], axis=0)  # ddof=0, matches ens_var
+        sum_v += _v
         sum_v2 += _v * _v
         if out and ((_b + 1) % _report_every == 0 or _b == n_boot - 1):
             print(f"  bootstrap {_b + 1}/{n_boot}")
-    var_boot    = sum_v / n_boot
-    var_boot_se = np.sqrt(np.maximum(sum_v2 / n_boot - var_boot ** 2, 0.0))
+    var_boot = sum_v / n_boot
+    var_boot_se = np.sqrt(np.maximum(sum_v2 / n_boot - var_boot**2, 0.0))
     return var_boot, var_boot_se
 
 
@@ -1280,9 +1400,9 @@ def _bootstrap_variance(ens_matrix: np.ndarray, n_boot: int,
 #: statistic (e.g. a log10 sensitivity of -0.6, or a raw log10 sensitivity
 #: above 8) must never coincide with the values plot_model_slices uses to
 #: recognise ocean (log10(ocean_value) +- 0.05) or air (log10 > threshold).
-_STATS_AIR_RHO          = 1.0e30
+_STATS_AIR_RHO = 1.0e30
 _STATS_AIR_LOG10_THRESH = 29.0
-_STATS_OCEAN_RHO        = 1.0e-30
+_STATS_OCEAN_RHO = 1.0e-30
 
 _ALPHA_EXPR_RE = re.compile(
     r"^\s*([A-Za-z_]\w*)\s*(>=|<=|>|<)\s*"
@@ -1308,12 +1428,14 @@ def _parse_alpha_source(expr: str):
     if m is None:
         raise ValueError(
             f"MOD_ALPHA_SOURCE={expr!r}: expected '<name> <op> <value>' "
-            f"with op one of > >= < <=, e.g. 'sens_mean_an > -3.'")
+            f"with op one of > >= < <=, e.g. 'sens_mean_an > -3.'"
+        )
     return m.group(1), m.group(2), float(m.group(3))
 
 
-def _alpha_from_condition(arr, op: str, thr: float, mode: str,
-                          width: float) -> np.ndarray:
+def _alpha_from_condition(
+    arr, op: str, thr: float, mode: str, width: float
+) -> np.ndarray:
     """Per-free-parameter alpha in [0, 1] from a single comparison.
 
     Cells satisfying ``arr <op> thr`` get alpha 1. Failing cells get 0
@@ -1337,7 +1459,9 @@ def _alpha_from_condition(arr, op: str, thr: float, mode: str,
             raise ValueError("MOD_ALPHA_FADE_WIDTH must be > 0 for 'fade'.")
         alpha = np.where(keep, 1.0, np.clip(1.0 - dist / width, 0.0, 1.0))
     else:
-        raise ValueError(f"MOD_ALPHA_MODE must be 'blank' or 'fade', got {mode!r}")
+        raise ValueError(
+            f"MOD_ALPHA_MODE must be 'blank' or 'fade', got {mode!r}"
+        )
     alpha[~np.isfinite(arr)] = 0.0
     return alpha
 
@@ -1352,17 +1476,17 @@ def _write_alpha_block(alpha: np.ndarray, template: str, path: str) -> None:
     with np.errstate(divide="ignore"):
         v = np.where(alpha > 0.0, np.log10(np.maximum(alpha, 1e-300)), -np.inf)
     fem.insert_model(
-        template   = template,
-        model      = v,
-        model_file = path,
-        ocean      = MOD_OCEAN,
-        air_rho    = 1.0,
-        ocean_rho  = 1.0,
-        out        = OUT,
+        template=template,
+        model=v,
+        model_file=path,
+        ocean=MOD_OCEAN,
+        air_rho=1.0,
+        ocean_rho=1.0,
+        out=OUT,
     )
 
 
-_SENS_MAP = {}   # cached once: nreg, free_idx, chosen mapping (see below)
+_SENS_MAP = {}  # cached once: nreg, free_idx, chosen mapping (see below)
 
 
 def _sens_block_order(sens_h5, n):
@@ -1373,24 +1497,35 @@ def _sens_block_order(sens_h5, n):
     """
     try:
         import h5py
+
         with h5py.File(sens_h5, "r") as h5:
             ids = np.asarray(h5["model/blocks"]["blockID"][()], dtype=int)
-    except Exception as e:                      # schema/h5py issues: warn only
-        print(f"    COMPUTE_SENS: could not read model/blocks/blockID "
-              f"({type(e).__name__}: {e}) — assuming block order == region order.")
+    except Exception as e:  # schema/h5py issues: warn only
+        print(
+            f"    COMPUTE_SENS: could not read model/blocks/blockID "
+            f"({type(e).__name__}: {e}) — assuming block order == region order."
+        )
         return None
     if ids.shape[0] != n:
-        print(f"    COMPUTE_SENS: blockID length {ids.shape[0]} != {n} — "
-              f"assuming block order == region order.")
+        print(
+            f"    COMPUTE_SENS: blockID length {ids.shape[0]} != {n} — "
+            f"assuming block order == region order."
+        )
         return None
     if np.array_equal(ids, np.arange(n)):
-        print(f"    COMPUTE_SENS: blockID == 0..{n-1} — block order == region order (verified).")
+        print(
+            f"    COMPUTE_SENS: blockID == 0..{n-1} — block order == region order (verified)."
+        )
         return None
     if np.array_equal(np.sort(ids), np.arange(n)):
-        print(f"    COMPUTE_SENS: blockID is a permutation of 0..{n-1} — reordering.")
+        print(
+            f"    COMPUTE_SENS: blockID is a permutation of 0..{n-1} — reordering."
+        )
         return ids
-    print(f"    COMPUTE_SENS: blockID not a permutation of 0..{n-1} "
-          f"(min {ids.min()}, max {ids.max()}) — assuming block order == region order.")
+    print(
+        f"    COMPUTE_SENS: blockID not a permutation of 0..{n-1} "
+        f"(min {ids.min()}, max {ids.max()}) — assuming block order == region order."
+    )
     return None
 
 
@@ -1410,8 +1545,9 @@ def _sens_to_free(sens_vec, block_file, sens_h5=None):
     Returns None if no mapping fits.
     """
     if not _SENS_MAP:
-        st = fem._read_resistivity_block_struct(block_file, ocean=MOD_OCEAN,
-                                                out=False)
+        st = fem._read_resistivity_block_struct(
+            block_file, ocean=MOD_OCEAN, out=False
+        )
         _SENS_MAP["nreg"] = int(st["nreg"])
         _SENS_MAP["free_idx"] = np.asarray(st["free_idx"], dtype=int)
     nreg, free_idx = _SENS_MAP["nreg"], _SENS_MAP["free_idx"]
@@ -1421,7 +1557,7 @@ def _sens_to_free(sens_vec, block_file, sens_h5=None):
     _order = _SENS_MAP.get("order")
     if _order is not None and _order.shape[0] == n:
         _tmp = np.empty_like(sens_vec)
-        _tmp[_order] = sens_vec                  # entry k belongs to region blockID[k]
+        _tmp[_order] = sens_vec  # entry k belongs to region blockID[k]
         sens_vec = _tmp
     if n == free_idx.size:
         how, out_vec = "free only", sens_vec
@@ -1433,13 +1569,93 @@ def _sens_to_free(sens_vec, block_file, sens_h5=None):
         return None
     if _SENS_MAP.get("how") != how:
         _SENS_MAP["how"] = how
-        print(f"    COMPUTE_SENS: sensitivity length {n}, nreg={nreg}, "
-              f"n_free={free_idx.size} -> mapping '{how}'.")
+        print(
+            f"    COMPUTE_SENS: sensitivity length {n}, nreg={nreg}, "
+            f"n_free={free_idx.size} -> mapping '{how}'."
+        )
     return out_vec
 
 
+_ROI_MASK = {}  # cached once: free-parameter boolean mask inside the ROI
+
+
+def _roi_free_mask(block_file, n_free):
+    """Boolean mask (n_free,), True where a free parameter's volume-weighted
+    centroid falls inside the current ROI (MOD_XLIM/MOD_YLIM/MOD_ZLIM, km,
+    already resolved -- including any MOD_ROI_AUTO override -- by the time
+    this is called from the MOD_STATS loop).
+
+    Reuses the same region-index / free_idx convention as _sens_to_free()
+    (populating _SENS_MAP from ``block_file`` if it is not already cached)
+    plus fem.build_region_geometry() for volume-weighted free-region
+    centroids, then tests each centroid's [x, y, z] directly against the
+    resolved (metres) MOD_XLIM/MOD_YLIM/MOD_ZLIM box -- an axis-aligned
+    box, so no rotation handling (fem.brick_mask()) is needed. Cached
+    after the first call (same mesh/ROI for every panel in one run).
+    Returns None (with a one-time printed warning) if the mesh or region
+    geometry cannot be read -- callers should then skip the ROI
+    diagnostic for this run rather than fail it.
+    """
+    if "mask" in _ROI_MASK:
+        return _ROI_MASK["mask"]
+    try:
+        if not _SENS_MAP:
+            st = fem._read_resistivity_block_struct(
+                block_file, ocean=MOD_OCEAN, out=False
+            )
+            _SENS_MAP["nreg"] = int(st["nreg"])
+            _SENS_MAP["free_idx"] = np.asarray(st["free_idx"], dtype=int)
+            _SENS_MAP["elem_region"] = np.asarray(st["elem_region"], dtype=int)
+        elif "elem_region" not in _SENS_MAP:
+            st = fem._read_resistivity_block_struct(
+                block_file, ocean=MOD_OCEAN, out=False
+            )
+            _SENS_MAP["elem_region"] = np.asarray(st["elem_region"], dtype=int)
+        free_idx = _SENS_MAP["free_idx"]
+        if free_idx.size != n_free:
+            print(
+                f"  ROI: free_idx size {free_idx.size} != n_free {n_free} "
+                f"— skipping ROI diagnostic."
+            )
+            _ROI_MASK["mask"] = None
+            return None
+        nodes, conn = fem.read_femtic_mesh(MOD_MESH)
+        region_ctr, _ = fem.build_region_geometry(
+            nodes, conn, _SENS_MAP["elem_region"], free_idx
+        )
+        _xlim_m = _lim_km_to_m(MOD_XLIM)
+        _ylim_m = _lim_km_to_m(MOD_YLIM)
+        _zlim_m = _lim_km_to_m(MOD_ZLIM)
+        mask = np.ones(n_free, dtype=bool)
+        if _xlim_m is not None:
+            mask &= (region_ctr[:, 0] >= min(_xlim_m)) & (
+                region_ctr[:, 0] <= max(_xlim_m)
+            )
+        if _ylim_m is not None:
+            mask &= (region_ctr[:, 1] >= min(_ylim_m)) & (
+                region_ctr[:, 1] <= max(_ylim_m)
+            )
+        if _zlim_m is not None:
+            mask &= (region_ctr[:, 2] >= min(_zlim_m)) & (
+                region_ctr[:, 2] <= max(_zlim_m)
+            )
+        _ROI_MASK["mask"] = mask
+        print(
+            f"  ROI diagnostic: {int(mask.sum())} of {n_free} free "
+            f"parameters inside MOD_XLIM/MOD_YLIM/MOD_ZLIM."
+        )
+        return mask
+    except Exception as e:
+        print(
+            f"  ROI diagnostic: could not resolve free-parameter geometry "
+            f"({type(e).__name__}: {e}) — skipping."
+        )
+        _ROI_MASK["mask"] = None
+        return None
+
+
 #: FEMTIC datatype codes whose values are real (cal_im == 0 by design).
-_REAL_DATATYPES = {1, 4, 7}   # APP_RES_AND_PHS, PT, NMT2_APP_RES_AND_PHS
+_REAL_DATATYPES = {1, 4, 7}  # APP_RES_AND_PHS, PT, NMT2_APP_RES_AND_PHS
 
 
 def _simrc_columns(rows):
@@ -1459,15 +1675,26 @@ def _simrc_columns(rows):
     re_err = np.asarray(rows["re_err"], dtype=float)
     im_err = np.asarray(rows["im_err"], dtype=float)
     keep_re = np.isfinite(re_err) & (re_err > 0.0)
-    keep_im = (~np.isin(dt, list(_REAL_DATATYPES))
-               & np.isfinite(im_err) & (im_err > 0.0))
-    d_cal = np.concatenate([np.asarray(rows["cal_re"], dtype=float)[keep_re],
-                            np.asarray(rows["cal_im"], dtype=float)[keep_im]])
+    keep_im = (
+        ~np.isin(dt, list(_REAL_DATATYPES))
+        & np.isfinite(im_err)
+        & (im_err > 0.0)
+    )
+    d_cal = np.concatenate(
+        [
+            np.asarray(rows["cal_re"], dtype=float)[keep_re],
+            np.asarray(rows["cal_im"], dtype=float)[keep_im],
+        ]
+    )
     d_err = np.concatenate([re_err[keep_re], im_err[keep_im]])
     key = np.rec.fromarrays(
-        [dt, np.asarray(rows["site_id"], dtype=int),
-         np.round(np.asarray(rows["freq"], dtype=float), 10),
-         np.asarray(rows["component"], dtype=int)])
+        [
+            dt,
+            np.asarray(rows["site_id"], dtype=int),
+            np.round(np.asarray(rows["freq"], dtype=float), 10),
+            np.asarray(rows["component"], dtype=int),
+        ]
+    )
     manifest = key.tobytes() + keep_re.tobytes() + keep_im.tobytes()
     return d_cal, manifest, d_err
 
@@ -1488,17 +1715,21 @@ def _resolve_origin_and_sites():
         True if site_xys was populated from observe.dat / MOD_SITE_NUMBER
         rather than MOD_SITE_DAT.
     """
-    _e   = MOD_UTM_ORIGIN_E
-    _n   = MOD_UTM_ORIGIN_N
+    _e = MOD_UTM_ORIGIN_E
+    _n = MOD_UTM_ORIGIN_N
     _lat = MOD_UTM_ORIGIN_LAT
     _lon = MOD_UTM_ORIGIN_LON
     _zone, _north = None, None
 
-    if MOD_ORIGIN_METHOD is not None and MOD_SITE_DAT and os.path.isfile(MOD_SITE_DAT):
+    if (
+        MOD_ORIGIN_METHOD is not None
+        and MOD_SITE_DAT
+        and os.path.isfile(MOD_SITE_DAT)
+    ):
         _sdat = fem.read_site_dat(MOD_SITE_DAT)
         if _sdat:
-            _Es  = np.array([d["easting"]  for d in _sdat])
-            _Ns  = np.array([d["northing"] for d in _sdat])
+            _Es = np.array([d["easting"] for d in _sdat])
+            _Ns = np.array([d["northing"] for d in _sdat])
             if MOD_ORIGIN_METHOD == "box":
                 _e = 0.5 * (_Es.min() + _Es.max())
                 _n = 0.5 * (_Ns.min() + _Ns.max())
@@ -1508,7 +1739,8 @@ def _resolve_origin_and_sites():
             _lats = np.array([d["lat"] for d in _sdat])
             _lons = np.array([d["lon"] for d in _sdat])
             _zone, _north = utl.utm_zone_from_latlon(
-                float(_lats.mean()), float(_lons.mean()),
+                float(_lats.mean()),
+                float(_lons.mean()),
                 override=MOD_UTM_ZONE_OVERRIDE,
             )
             _lat, _lon = utl.utm_to_latlon_zn(_e, _n, _zone, _north)
@@ -1523,16 +1755,15 @@ def _resolve_origin_and_sites():
     _need_sites = MOD_PLOT_SITES_MAPS or MOD_PLOT_SITES_SLICES
     if _need_sites and MOD_SITE_DAT and os.path.isfile(MOD_SITE_DAT):
         for row in fem.read_site_dat(MOD_SITE_DAT, site_names=MOD_SITE_NAMES):
-            sx, sy = fem.utm_to_model(
-                row["easting"], row["northing"], _e, _n
-            )
-            site_xys.append(
-                (row["name"], sx, sy, float(row.get("elev", 0.0)))
-            )
+            sx, sy = fem.utm_to_model(row["easting"], row["northing"], _e, _n)
+            site_xys.append((row["name"], sx, sy, float(row.get("elev", 0.0))))
     elif _need_sites and MOD_SITE_NUMBER is not None:
         _obs_file = ENSEMBLE_DIR + "templates/observe.dat"
-        _site_nums = (MOD_SITE_NUMBER if isinstance(MOD_SITE_NUMBER, (list, tuple))
-                      else [MOD_SITE_NUMBER])
+        _site_nums = (
+            MOD_SITE_NUMBER
+            if isinstance(MOD_SITE_NUMBER, (list, tuple))
+            else [MOD_SITE_NUMBER]
+        )
         for _sn in _site_nums:
             sx, sy = fem.read_site_position(_obs_file, _sn)
             site_xys.append((_sn, sx, sy, 0.0))
@@ -1541,13 +1772,23 @@ def _resolve_origin_and_sites():
     return _e, _n, _lat, _lon, _zone, _north, site_xys, obs_coords_only
 
 
-def _plot_slice(block_file: str, pdf_file: str,
-                utm_e, utm_n, utm_lat, utm_lon,
-                utm_zone, utm_north, site_xys: list,
-                obs_coords_only: bool = False,
-                clim="model", cmap=None, cbar_label=None,
-                alpha_file=None, stats_panel: bool = False,
-                ) -> None:
+def _plot_slice(
+    block_file: str,
+    pdf_file: str,
+    utm_e,
+    utm_n,
+    utm_lat,
+    utm_lon,
+    utm_zone,
+    utm_north,
+    site_xys: list,
+    obs_coords_only: bool = False,
+    clim="model",
+    cmap=None,
+    cbar_label=None,
+    alpha_file=None,
+    stats_panel: bool = False,
+) -> None:
     """Call fviz.plot_model_slices once per MOD_PLOT_FORMAT entry.
 
     Mirrors the plotting call in femtic_gst_prep.py / femtic_rto_prep.py,
@@ -1582,11 +1823,16 @@ def _plot_slice(block_file: str, pdf_file: str,
     _clim = MOD_CLIM if (isinstance(clim, str) and clim == "model") else clim
     _cmap = MOD_CMAP if cmap is None else cmap
     _ocean_value = _STATS_OCEAN_RHO if stats_panel else MOD_OCEAN_RHO
-    _air_thresh  = _STATS_AIR_LOG10_THRESH if stats_panel else 8.0
+    _air_thresh = _STATS_AIR_LOG10_THRESH if stats_panel else 8.0
 
     _slices_resolved = fem.resolve_slice_positions(
-        _slices_km_to_m(MOD_SLICES), utm_zone, utm_north,
-        utm_e, utm_n, utm_lat, utm_lon,
+        _slices_km_to_m(MOD_SLICES),
+        utm_zone,
+        utm_north,
+        utm_e,
+        utm_n,
+        utm_lat,
+        utm_lon,
         verbose=OUT,
     )
     for _fmt_i, _fmt in enumerate(_MOD_PLOT_FORMATS):
@@ -1600,54 +1846,60 @@ def _plot_slice(block_file: str, pdf_file: str,
         # an already-built figure under a second extension.
         _show_this = _SHOW_PLOTS if _fmt_i == 0 else False
         fviz.plot_model_slices(
-            model_file          = block_file,
-            mesh_file           = MOD_MESH,
-            slices              = _slices_resolved,
-            cmap                = _cmap,
-            clim                = _clim,
-            cbar_label          = cbar_label,
-            xlim                = _lim_km_to_m(MOD_XLIM),
-            ylim                = _lim_km_to_m(MOD_YLIM),
-            zlim                = _lim_km_to_m(MOD_ZLIM),
-            ocean_color         = MOD_OCEAN_COLOR,
-            ocean_value         = _ocean_value,
-            air_log10_thresh    = _air_thresh,
-            air_color           = MOD_AIR_COLOR,
-            air_bgcolor         = MOD_AIR_BGCOLOR,
-            site_xys            = site_xys,
-            obs_coords_only     = obs_coords_only,
-            sites_in_maps       = MOD_PLOT_SITES_MAPS,
-            sites_in_slices     = MOD_PLOT_SITES_SLICES,
-            site_marker         = MOD_SITE_MARKER,
-            site_marker_slices  = MOD_SITE_MARKER_SLICES,
-            map_markers         = MOD_MAP_MARKERS,
-            show_model_centre   = MOD_SHOW_MODEL_CENTRE,
-            projection_dist     = _km_to_m(MOD_PROJECTION_DIST),
-            display_coords      = MOD_DISPLAY_COORDS,
-            utm_origin_e        = utm_e,
-            utm_origin_n        = utm_n,
-            utm_zone            = utm_zone,
-            utm_northern        = utm_north,
-            utm_to_latlon_fn    = utl.utm_to_latlon_zn,
-            latlon_to_model_fn  = fem.latlon_to_model,
-            depth_km            = MOD_DEPTH_KM,
-            horiz_km            = MOD_HORIZ_KM,
-            equal_aspect        = MOD_EQUAL_ASPECT,
-            panel_height        = MOD_PANEL_HEIGHT / 2.54,
-            panel_width         = MOD_PANEL_WIDTH / 2.54 if MOD_PANEL_WIDTH is not None else None,
-            figsize             = [v / 2.54 for v in MOD_FIGSIZE] if MOD_FIGSIZE is not None else None,
-            nrows               = MOD_NROWS,
-            ncols               = MOD_NCOLS,
-            tick_fontsize       = MOD_TICK_FONTSIZE,
-            label_fontsize      = MOD_LABEL_FONTSIZE,
-            figure_title_fontsize = MOD_TITLE_FONTSIZE,
-            tick_decimals       = MOD_TICK_DECIMALS,
-            alpha_file          = alpha_file,
-            alpha_mode          = "direct",
-            plot_file           = _fmt_file,
-            dpi                 = MOD_DPI,
-            show                = _show_this,
-            out                 = OUT,
+            model_file=block_file,
+            mesh_file=MOD_MESH,
+            slices=_slices_resolved,
+            cmap=_cmap,
+            clim=_clim,
+            cbar_label=cbar_label,
+            xlim=_lim_km_to_m(MOD_XLIM),
+            ylim=_lim_km_to_m(MOD_YLIM),
+            zlim=_lim_km_to_m(MOD_ZLIM),
+            ocean_color=MOD_OCEAN_COLOR,
+            ocean_value=_ocean_value,
+            air_log10_thresh=_air_thresh,
+            air_color=MOD_AIR_COLOR,
+            air_bgcolor=MOD_AIR_BGCOLOR,
+            site_xys=site_xys,
+            obs_coords_only=obs_coords_only,
+            sites_in_maps=MOD_PLOT_SITES_MAPS,
+            sites_in_slices=MOD_PLOT_SITES_SLICES,
+            site_marker=MOD_SITE_MARKER,
+            site_marker_slices=MOD_SITE_MARKER_SLICES,
+            map_markers=MOD_MAP_MARKERS,
+            show_model_centre=MOD_SHOW_MODEL_CENTRE,
+            projection_dist=_km_to_m(MOD_PROJECTION_DIST),
+            display_coords=MOD_DISPLAY_COORDS,
+            utm_origin_e=utm_e,
+            utm_origin_n=utm_n,
+            utm_zone=utm_zone,
+            utm_northern=utm_north,
+            utm_to_latlon_fn=utl.utm_to_latlon_zn,
+            latlon_to_model_fn=fem.latlon_to_model,
+            depth_km=MOD_DEPTH_KM,
+            horiz_km=MOD_HORIZ_KM,
+            equal_aspect=MOD_EQUAL_ASPECT,
+            panel_height=MOD_PANEL_HEIGHT / 2.54,
+            panel_width=(
+                MOD_PANEL_WIDTH / 2.54 if MOD_PANEL_WIDTH is not None else None
+            ),
+            figsize=(
+                [v / 2.54 for v in MOD_FIGSIZE]
+                if MOD_FIGSIZE is not None
+                else None
+            ),
+            nrows=MOD_NROWS,
+            ncols=MOD_NCOLS,
+            tick_fontsize=MOD_TICK_FONTSIZE,
+            label_fontsize=MOD_LABEL_FONTSIZE,
+            figure_title_fontsize=MOD_TITLE_FONTSIZE,
+            tick_decimals=MOD_TICK_DECIMALS,
+            alpha_file=alpha_file,
+            alpha_mode="direct",
+            plot_file=_fmt_file,
+            dpi=MOD_DPI,
+            show=_show_this,
+            out=OUT,
         )
         if OUT:
             print(f"  saved → {_fmt_file}")
@@ -1664,34 +1916,34 @@ def _plot_slice(block_file: str, pdf_file: str,
 # before counting/looping, so downstream logic never has to think about
 # non-directory entries.
 dir_list = utl.get_filelist(
-    searchstr=[ENSEMBLE_NAME+"*"],
+    searchstr=[ENSEMBLE_NAME + "*"],
     searchpath=ENSEMBLE_DIR,
     fullpath=True,
 )
 dir_list = [d for d in dir_list if os.path.isdir(d)]
 print(f"Found {len(dir_list)} sub-directory/ies matching '{ENSEMBLE_NAME}'.")
 
-model_list  = []          # list of [block_file, n_iter, nRMS]
+model_list = []  # list of [block_file, n_iter, nRMS]
 model_count = 0
-ens_matrix  = None        # will become (n_members, n_free) float64
+ens_matrix = None  # will become (n_members, n_free) float64
 
-sens_matrix       = None  # will become (n_sens_members, n_free) float64
-sens_count        = 0     # accepted members whose results_iterX.h5 was found
-sens_missing_any  = False
-sens_fail         = []    # (member dir, reason) for skipped members
+sens_matrix = None  # will become (n_sens_members, n_free) float64
+sens_count = 0  # accepted members whose results_iterX.h5 was found
+sens_missing_any = False
+sens_fail = []  # (member dir, reason) for skipped members
 
-ens_data_matrix   = None  # will become (n_simrc_members, n_data) float64
-simrc_count       = 0     # accepted members whose result files were found
+ens_data_matrix = None  # will become (n_simrc_members, n_data) float64
+simrc_count = 0  # accepted members whose result files were found
 simrc_missing_any = False
-simrc_fail        = []    # (member dir, reason) for skipped members
-simrc_manifest    = None  # bytes key of the first member's data composition
-simrc_err         = None  # first member's per-column errors (SIMRC_ERR_WEIGHT)
+simrc_fail = []  # (member dir, reason) for skipped members
+simrc_manifest = None  # bytes key of the first member's data composition
+simrc_err = None  # first member's per-column errors (SIMRC_ERR_WEIGHT)
 #: Row indices into ens_matrix (i.e. which accepted members, in append
 #: order) that also contributed a row to ens_data_matrix -- needed so the
 #: model/data cross-covariance below pairs up the *same* members, since
 #: COMPUTE_SIMRC can drop members that COMPUTE_SENS did not (and vice
 #: versa).
-simrc_keep_idx    = []
+simrc_keep_idx = []
 
 for d in dir_list:
     print(f"\n  Inversion run: {d}")
@@ -1719,9 +1971,9 @@ for d in dir_list:
     # necessarily the best: FEMTIC does not guarantee monotonic nRMS
     # reduction, and a run may drift upward again after its actual best
     # iteration.
-    numit        = None
-    nrms         = None
-    iter0_nrms   = None   # tracked separately only to power the warning below
+    numit = None
+    nrms = None
+    iter0_nrms = None  # tracked separately only to power the warning below
     for _row in _cnv["rows"]:
         _it, _nrms = int(_row["Iter"]), _row["RMS"]
         if _it == 0:
@@ -1736,19 +1988,25 @@ for d in dir_list:
             # here — later equal values are simply not adopted.
 
     if numit is None:
-        print(f"    no eligible (iter>0) convergence rows found in "
-              f"{cnv_file} — skipped.")
+        print(
+            f"    no eligible (iter>0) convergence rows found in "
+            f"{cnv_file} — skipped."
+        )
         continue
 
     if iter0_nrms is not None and iter0_nrms <= nrms:
-        print(f"    WARNING: iter0 nRMS={iter0_nrms:.4f} is <= the best "
-              f"eligible iter>0 nRMS={nrms:.4f} (iter={numit}) — the "
-              f"inversion did not improve on the starting model, but "
-              f"iter0 is excluded from selection by design.")
+        print(
+            f"    WARNING: iter0 nRMS={iter0_nrms:.4f} is <= the best "
+            f"eligible iter>0 nRMS={nrms:.4f} (iter={numit}) — the "
+            f"inversion did not improve on the starting model, but "
+            f"iter0 is excluded from selection by design."
+        )
 
     if nrms > NRMS_MAX:
-        print(f"    best nRMS={nrms:.4f} (iter={numit}) > "
-              f"NRMS_MAX={NRMS_MAX} — skipped.")
+        print(
+            f"    best nRMS={nrms:.4f} (iter={numit}) > "
+            f"NRMS_MAX={NRMS_MAX} — skipped."
+        )
         continue
 
     mod_file = os.path.join(d, f"resistivity_block_iter{numit}.dat")
@@ -1762,9 +2020,9 @@ for d in dir_list:
     log_m = fem.read_model(model_file=mod_file, model_trans="log10", out=OUT)
 
     if ens_matrix is None:
-        ens_matrix = log_m[np.newaxis, :]         # (1, n_free)
+        ens_matrix = log_m[np.newaxis, :]  # (1, n_free)
     else:
-        ens_matrix = np.vstack((ens_matrix, log_m))   # (k, n_free)
+        ens_matrix = np.vstack((ens_matrix, log_m))  # (k, n_free)
 
     model_count += 1
 
@@ -1774,12 +2032,12 @@ for d in dir_list:
         try:
             sens_vec = fem.read_h5_sensitivity(
                 sens_h5,
-                group        = SENS_H5_GROUP,
-                cumsens_key  = SENS_KIND,
-                jacobian_key = SENS_JACOBIAN_KEY,
-                error_key    = SENS_ERROR_KEY,
-                normalize    = False,
-                out          = OUT,
+                group=SENS_H5_GROUP,
+                cumsens_key=SENS_KIND,
+                jacobian_key=SENS_JACOBIAN_KEY,
+                error_key=SENS_ERROR_KEY,
+                normalize=False,
+                out=OUT,
             )
         except (FileNotFoundError, KeyError) as e:
             # No fallback to jacobian.h5 by design (see SENS_JACOBIAN_KEY
@@ -1793,14 +2051,21 @@ for d in dir_list:
             _n_raw = sens_vec.shape[0]
             sens_vec = _sens_to_free(sens_vec, mod_file, sens_h5)
             if sens_vec is None or sens_vec.shape[0] != log_m.shape[0]:
-                print(f"    COMPUTE_SENS: {sens_h5} gives {_n_raw} "
-                      f"values; no mapping to {log_m.shape[0]} free "
-                      f"parameters (nreg={_SENS_MAP.get('nreg')}) — member "
-                      f"skipped for sensitivity.")
+                print(
+                    f"    COMPUTE_SENS: {sens_h5} gives {_n_raw} "
+                    f"values; no mapping to {log_m.shape[0]} free "
+                    f"parameters (nreg={_SENS_MAP.get('nreg')}) — member "
+                    f"skipped for sensitivity."
+                )
                 sens_missing_any = True
-                sens_fail.append((d, f"size {_n_raw} vs n_free "
-                                     f"{log_m.shape[0]}, nreg "
-                                     f"{_SENS_MAP.get('nreg')}"))
+                sens_fail.append(
+                    (
+                        d,
+                        f"size {_n_raw} vs n_free "
+                        f"{log_m.shape[0]}, nreg "
+                        f"{_SENS_MAP.get('nreg')}",
+                    )
+                )
             else:
                 if sens_matrix is None:
                     sens_matrix = sens_vec[np.newaxis, :]
@@ -1823,14 +2088,20 @@ for d in dir_list:
                 simrc_manifest = manifest
                 simrc_err = d_err
             if manifest != simrc_manifest:
-                print(f"    COMPUTE_SIMRC: {_res_h5} data composition differs "
-                      f"from the first member's — member skipped for SimRC.")
+                print(
+                    f"    COMPUTE_SIMRC: {_res_h5} data composition differs "
+                    f"from the first member's — member skipped for SimRC."
+                )
                 simrc_missing_any = True
-                simrc_fail.append((d, "data composition differs from first member"))
+                simrc_fail.append(
+                    (d, "data composition differs from first member")
+                )
             elif not np.all(np.isfinite(d_cal)):
                 _nbad = int(np.sum(~np.isfinite(d_cal)))
-                print(f"    COMPUTE_SIMRC: {_nbad} missing calculated value(s) "
-                      f"in {_res_h5} — member skipped for SimRC.")
+                print(
+                    f"    COMPUTE_SIMRC: {_nbad} missing calculated value(s) "
+                    f"in {_res_h5} — member skipped for SimRC."
+                )
                 simrc_missing_any = True
                 simrc_fail.append((d, f"{_nbad} missing calculated values"))
             else:
@@ -1840,7 +2111,9 @@ for d in dir_list:
                     ens_data_matrix = d_cal[np.newaxis, :]
                 else:
                     ens_data_matrix = np.vstack((ens_data_matrix, d_cal))
-                simrc_keep_idx.append(model_count - 1)  # row just appended to ens_matrix
+                simrc_keep_idx.append(
+                    model_count - 1
+                )  # row just appended to ens_matrix
                 simrc_count += 1
 
 n_members = model_count
@@ -1870,54 +2143,70 @@ if n_members == 0:
 # axis=1 → reduce over free parameters (was the bug in the original script)
 
 # --- (2) Summary statistics -----------------------------------------------
-P        = ENSEMBLE_PREFIX
-ne       = ens_matrix.shape
+P = ENSEMBLE_PREFIX
+ne = ens_matrix.shape
 
-ens_avg  = np.mean  (ens_matrix, axis=0)                           # (n_free,)
-ens_var  = np.var   (ens_matrix, axis=0)                           # (n_free,)
-ens_err  = np.sqrt(ens_var)                                        # (n_free,) -- std, comparable to MAD/QDIFF
-ens_med  = np.median(ens_matrix, axis=0)                           # (n_free,)
-ens_mad  = np.median(np.abs(ens_matrix - ens_med[np.newaxis, :]),
-                     axis=0)                                        # (n_free,)
-ens_prc  = np.percentile(ens_matrix, PERCENTILES, axis=0)          # (n_prc, n_free)
+ens_avg = np.mean(ens_matrix, axis=0)  # (n_free,)
+ens_var = np.var(ens_matrix, axis=0)  # (n_free,)
+ens_err = np.sqrt(ens_var)  # (n_free,) -- std, comparable to MAD/QDIFF
+ens_med = np.median(ens_matrix, axis=0)  # (n_free,)
+ens_mad = np.median(
+    np.abs(ens_matrix - ens_med[np.newaxis, :]), axis=0
+)  # (n_free,)
+ens_prc = np.percentile(ens_matrix, PERCENTILES, axis=0)  # (n_prc, n_free)
 
 # --- Percentile-pair differences (robust spread, e.g. 1-sigma-equivalent IQR) ---
-ens_qdiff = {}   # key -> (n_free,) array
+ens_qdiff = {}  # key -> (n_free,) array
 for _lo, _hi in QDIFF_PAIRS:
     if _lo not in PERCENTILES or _hi not in PERCENTILES:
-        print(f"  QDIFF_PAIRS: ({_lo}, {_hi}) not both in PERCENTILES — skipped.")
+        print(
+            f"  QDIFF_PAIRS: ({_lo}, {_hi}) not both in PERCENTILES — skipped."
+        )
         continue
     _ilo = PERCENTILES.index(_lo)
     _ihi = PERCENTILES.index(_hi)
     _qkey = f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_")
-    ens_qdiff[_qkey] = np.abs(ens_prc[_ihi] - ens_prc[_ilo])       # (n_free,)
+    ens_qdiff[_qkey] = np.abs(ens_prc[_ihi] - ens_prc[_ilo])  # (n_free,)
 
 # --- Bootstrap variance estimate (optional alternative to the plug-in VAR) ---
-ens_var_boot    = None
-ens_err_boot    = None
+ens_var_boot = None
+ens_err_boot = None
 ens_var_boot_se = None
 if BOOTSTRAP_VAR:
-    print(f"\nBootstrap variance estimation: {BOOTSTRAP_N} resamples "
-          f"(seed={BOOTSTRAP_SEED if BOOTSTRAP_SEED is not None else '(fresh entropy)'}) …")
+    print(
+        f"\nBootstrap variance estimation: {BOOTSTRAP_N} resamples "
+        f"(seed={BOOTSTRAP_SEED if BOOTSTRAP_SEED is not None else '(fresh entropy)'}) …"
+    )
     _boot_rng = np.random.default_rng(BOOTSTRAP_SEED)
     ens_var_boot, ens_var_boot_se = _bootstrap_variance(
-        ens_matrix, BOOTSTRAP_N, _boot_rng, out=OUT,
+        ens_matrix,
+        BOOTSTRAP_N,
+        _boot_rng,
+        out=OUT,
     )
     ens_err_boot = np.sqrt(ens_var_boot)
 
 print(f"\nStatistics (over {n_members} members, {ne[1]} free parameters):")
 print(f"  mean   log10(ρ): [{ens_avg.min():.3f}, {ens_avg.max():.3f}]")
 print(f"  var    log10(ρ): [{ens_var.min():.4f}, {ens_var.max():.4f}]")
-print(f"  err    log10(ρ): [{ens_err.min():.4f}, {ens_err.max():.4f}]  (= sqrt(var))")
+print(
+    f"  err    log10(ρ): [{ens_err.min():.4f}, {ens_err.max():.4f}]  (= sqrt(var))"
+)
 print(f"  median log10(ρ): [{ens_med.min():.3f}, {ens_med.max():.3f}]")
 print(f"  MAD    log10(ρ): [{ens_mad.min():.4f}, {ens_mad.max():.4f}]")
 for _qkey, _qval in ens_qdiff.items():
     print(f"  {_qkey}: [{_qval.min():.4f}, {_qval.max():.4f}]")
 if BOOTSTRAP_VAR:
-    print(f"  var_boot  log10(ρ): [{ens_var_boot.min():.4f}, {ens_var_boot.max():.4f}]")
-    print(f"  err_boot  log10(ρ): [{ens_err_boot.min():.4f}, {ens_err_boot.max():.4f}]  (= sqrt(var_boot))")
-    print(f"  var_boot_se       : [{ens_var_boot_se.min():.4f}, {ens_var_boot_se.max():.4f}]  "
-          f"(bootstrap SE of var_boot itself)")
+    print(
+        f"  var_boot  log10(ρ): [{ens_var_boot.min():.4f}, {ens_var_boot.max():.4f}]"
+    )
+    print(
+        f"  err_boot  log10(ρ): [{ens_err_boot.min():.4f}, {ens_err_boot.max():.4f}]  (= sqrt(var_boot))"
+    )
+    print(
+        f"  var_boot_se       : [{ens_var_boot_se.min():.4f}, {ens_var_boot_se.max():.4f}]  "
+        f"(bootstrap SE of var_boot itself)"
+    )
 
 # --- (2b) Sensitivity statistics: (1) per-member Jacobian aggregation ------
 # Two aggregation orders, computed side by side -- see SENS_KIND's
@@ -1930,21 +2219,28 @@ _SENS_STATS = ("mean", "median", "min", "max", "std")
 sens = {}
 if COMPUTE_SENS:
     if sens_matrix is None or sens_count == 0:
-        print("\n  COMPUTE_SENS: no results_iterX.h5 sensitivity files found — skipped.")
+        print(
+            "\n  COMPUTE_SENS: no results_iterX.h5 sensitivity files found — skipped."
+        )
     else:
         if sens_missing_any or sens_count != n_members:
-            print(f"\n  COMPUTE_SENS: sensitivity available for {sens_count}/"
-                  f"{n_members} accepted members — aggregating over those only.")
+            print(
+                f"\n  COMPUTE_SENS: sensitivity available for {sens_count}/"
+                f"{n_members} accepted members — aggregating over those only."
+            )
 
         def _aggregate(M):
             """mean/median/min/max/std/cv across members (rows), linear."""
             agg = {
-                "mean":   np.mean  (M, axis=0),
+                "mean": np.mean(M, axis=0),
                 "median": np.median(M, axis=0),
-                "min":    np.min   (M, axis=0),
-                "max":    np.max   (M, axis=0),
-                "std":    (np.std(M, axis=0, ddof=1) if M.shape[0] > 1
-                           else np.zeros(M.shape[1])),
+                "min": np.min(M, axis=0),
+                "max": np.max(M, axis=0),
+                "std": (
+                    np.std(M, axis=0, ddof=1)
+                    if M.shape[0] > 1
+                    else np.zeros(M.shape[1])
+                ),
             }
             with np.errstate(divide="ignore", invalid="ignore"):
                 cv = agg["std"] / agg["mean"]
@@ -1957,7 +2253,7 @@ if COMPUTE_SENS:
 
         # "_na": normalise each member by its own max, THEN aggregate.
         _row_max = np.max(sens_matrix, axis=1, keepdims=True)
-        _row_max[_row_max == 0.0] = 1.0            # guard an all-zero member
+        _row_max[_row_max == 0.0] = 1.0  # guard an all-zero member
         _agg = _aggregate(sens_matrix / _row_max)
         for _st in _SENS_STATS:
             sens[f"{_st}_na"] = _log10_pos(_agg[_st])
@@ -1971,54 +2267,72 @@ if COMPUTE_SENS:
             sens[f"{_st}_an"] = _log10_pos(_agg[_st] / _renorm)
         sens["cv_an"] = _agg["cv"]
 
-        print(f"\n  Sensitivity (Jacobian, {sens_count} members, SENS_KIND="
-              f"'{SENS_KIND}'), log10:")
+        print(
+            f"\n  Sensitivity (Jacobian, {sens_count} members, SENS_KIND="
+            f"'{SENS_KIND}'), log10:"
+        )
         for _k in ("mean_raw", "mean_na", "mean_an"):
-            print(f"    sens_{_k:<9s}: [{np.nanmin(sens[_k]):.3f}, "
-                  f"{np.nanmax(sens[_k]):.3f}]  "
-                  f"({int(np.sum(~np.isfinite(sens[_k])))} non-positive -> NaN)")
-        print(f"    sens_cv (na / an, linear): "
-              f"[{sens['cv_na'].min():.3f}, {sens['cv_na'].max():.3f}]  /  "
-              f"[{sens['cv_an'].min():.3f}, {sens['cv_an'].max():.3f}]")
+            print(
+                f"    sens_{_k:<9s}: [{np.nanmin(sens[_k]):.3f}, "
+                f"{np.nanmax(sens[_k]):.3f}]  "
+                f"({int(np.sum(~np.isfinite(sens[_k])))} non-positive -> NaN)"
+            )
+        print(
+            f"    sens_cv (na / an, linear): "
+            f"[{sens['cv_na'].min():.3f}, {sens['cv_na'].max():.3f}]  /  "
+            f"[{sens['cv_an'].min():.3f}, {sens['cv_an'].max():.3f}]"
+        )
 
 # --- (2c) Sensitivity statistics: (2) ensemble-native SimRC ----------------
-simrc_coef = simrc_corr = None   # log10 after computation
+simrc_coef = simrc_corr = None  # log10 after computation
 if COMPUTE_SIMRC:
     if ens_data_matrix is None or simrc_count == 0:
-        print("\n  COMPUTE_SIMRC: no member with usable calculated data in "
-              "results_iterX.h5 — skipped (see skip summary above).")
+        print(
+            "\n  COMPUTE_SIMRC: no member with usable calculated data in "
+            "results_iterX.h5 — skipped (see skip summary above)."
+        )
     else:
         if simrc_missing_any or simrc_count != n_members:
-            print(f"\n  COMPUTE_SIMRC: forward response available for "
-                  f"{simrc_count}/{n_members} accepted members — SimRC "
-                  f"computed over that matched subset only.")
+            print(
+                f"\n  COMPUTE_SIMRC: forward response available for "
+                f"{simrc_count}/{n_members} accepted members — SimRC "
+                f"computed over that matched subset only."
+            )
         # Model side must use exactly the members that also contributed a
         # forward-response row -- COMPUTE_SENS can drop
         # different members, so ens_matrix and ens_data_matrix need not
         # otherwise line up row-for-row.
-        _Msub  = ens_matrix[simrc_keep_idx, :]                # (simrc_count, n_free)
-        _Mc    = _Msub - np.mean(_Msub, axis=0, keepdims=True)
-        _var_m = (np.var(_Msub, axis=0, ddof=1) if simrc_count > 1
-                  else np.ones(_Msub.shape[1]))
+        _Msub = ens_matrix[simrc_keep_idx, :]  # (simrc_count, n_free)
+        _Mc = _Msub - np.mean(_Msub, axis=0, keepdims=True)
+        _var_m = (
+            np.var(_Msub, axis=0, ddof=1)
+            if simrc_count > 1
+            else np.ones(_Msub.shape[1])
+        )
         _std_m = np.sqrt(_var_m)
 
-        _Dc    = ens_data_matrix - np.mean(ens_data_matrix, axis=0, keepdims=True)
-        _std_d = (np.std(ens_data_matrix, axis=0, ddof=1) if simrc_count > 1
-                  else np.ones(ens_data_matrix.shape[1]))
+        _Dc = ens_data_matrix - np.mean(ens_data_matrix, axis=0, keepdims=True)
+        _std_d = (
+            np.std(ens_data_matrix, axis=0, ddof=1)
+            if simrc_count > 1
+            else np.ones(ens_data_matrix.shape[1])
+        )
 
         n_free_ = _Mc.shape[1]
         n_data_ = _Dc.shape[1]
-        simrc_coef = np.zeros(n_free_)   # cumulative |regression coefficient|
-        simrc_corr = np.zeros(n_free_)   # cumulative |correlation|
+        simrc_coef = np.zeros(n_free_)  # cumulative |regression coefficient|
+        simrc_corr = np.zeros(n_free_)  # cumulative |correlation|
         _denom = max(simrc_count - 1, 1)
 
-        print(f"\n  SimRC (ensemble-native sensitivity, {simrc_count} "
-              f"members, {n_data_} data, chunk={SIMRC_CHUNK}) …")
+        print(
+            f"\n  SimRC (ensemble-native sensitivity, {simrc_count} "
+            f"members, {n_data_} data, chunk={SIMRC_CHUNK}) …"
+        )
         # Chunked over data columns so the (n_data, n_free) cross-covariance
         # is never formed in full -- peak memory O(SIMRC_CHUNK * n_free).
         for lo in range(0, n_data_, SIMRC_CHUNK):
             hi = min(lo + SIMRC_CHUNK, n_data_)
-            _cov_block = (_Dc[:, lo:hi].T @ _Mc) / _denom      # (chunk, n_free_)
+            _cov_block = (_Dc[:, lo:hi].T @ _Mc) / _denom  # (chunk, n_free_)
             with np.errstate(divide="ignore", invalid="ignore"):
                 _coef_block = _cov_block / _var_m[np.newaxis, :]
                 _corr_block = _cov_block / (
@@ -2031,68 +2345,78 @@ if COMPUTE_SIMRC:
 
         simrc_coef = _log10_pos(simrc_coef)
         simrc_corr = _log10_pos(simrc_corr)
-        print(f"    log10 cumulative |regression coeff.|: "
-              f"[{np.nanmin(simrc_coef):.3f}, {np.nanmax(simrc_coef):.3f}]")
-        print(f"    log10 cumulative |correlation|      : "
-              f"[{np.nanmin(simrc_corr):.3f}, {np.nanmax(simrc_corr):.3f}]")
+        print(
+            f"    log10 cumulative |regression coeff.|: "
+            f"[{np.nanmin(simrc_coef):.3f}, {np.nanmax(simrc_coef):.3f}]"
+        )
+        print(
+            f"    log10 cumulative |correlation|      : "
+            f"[{np.nanmin(simrc_corr):.3f}, {np.nanmax(simrc_corr):.3f}]"
+        )
 
 # --- (3) Empirical covariance (optional) -----------------------------------
-ens_cov       = None
-ens_covs      = None
+ens_cov = None
+ens_covs = None
 ens_cov_eigval = None
 ens_cov_eigvec = None
 
 if COMPUTE_COV:
     if COV_METHOD == "low_rank":
         print("\nComputing low-rank covariance factorisation (thin SVD) …")
-        _Xc = ens_matrix - ens_avg[np.newaxis, :]           # (m, n_free), centred
-        _m  = _Xc.shape[0]
+        _Xc = ens_matrix - ens_avg[np.newaxis, :]  # (m, n_free), centred
+        _m = _Xc.shape[0]
         # Thin SVD of the (m, n_free) centred ensemble: cost O(m^2 * n_free),
         # memory O(m * n_free) — never forms the n_free x n_free covariance.
         # C = Xc^T Xc / (m-1) = Vt.T @ diag(S^2/(m-1)) @ Vt, exactly (rank <= m-1).
         _U, _S, _Vt = np.linalg.svd(_Xc, full_matrices=False)
-        ens_cov_eigval = (_S ** 2) / max(_m - 1, 1)          # (r,)  r = min(m, n_free)
-        ens_cov_eigvec = _Vt.T                               # (n_free, r)
-        print(f"  rank r={ens_cov_eigval.size}  "
-              f"eigval range=[{ens_cov_eigval.min():.3e}, {ens_cov_eigval.max():.3e}]")
-        print("  Full covariance can be reconstructed exactly as "
-              "eigvec @ diag(eigval) @ eigvec.T")
+        ens_cov_eigval = (_S**2) / max(_m - 1, 1)  # (r,)  r = min(m, n_free)
+        ens_cov_eigvec = _Vt.T  # (n_free, r)
+        print(
+            f"  rank r={ens_cov_eigval.size}  "
+            f"eigval range=[{ens_cov_eigval.min():.3e}, {ens_cov_eigval.max():.3e}]"
+        )
+        print(
+            "  Full covariance can be reconstructed exactly as "
+            "eigvec @ diag(eigval) @ eigvec.T"
+        )
     else:
         print("\nComputing empirical covariance …")
         ens_cov = sklearn.covariance.empirical_covariance(ens_matrix)
 
         if SPARSIFY:
-            tmp    = ens_cov.copy()
+            tmp = ens_cov.copy()
             tmp[np.abs(tmp) / np.amax(np.abs(tmp)) <= SPARSE_THRESH] = 0.0
             ens_covs = scs.csr_array(tmp)
-            nnz      = ens_covs.nnz
-            total    = ens_cov.size
-            print(f"  Sparse covariance: {nnz}/{total} non-zeros "
-                  f"({100.0*nnz/total:.2f}%), threshold={SPARSE_THRESH:.1e}")
+            nnz = ens_covs.nnz
+            total = ens_cov.size
+            print(
+                f"  Sparse covariance: {nnz}/{total} non-zeros "
+                f"({100.0*nnz/total:.2f}%), threshold={SPARSE_THRESH:.1e}"
+            )
 else:
     print("\nCOMPUTE_COV=False — skipping covariance estimation.")
 
 # --- (4) Save .npz --------------------------------------------------------
 ens_dict = {
     f"{P}_model_list": model_list,
-    f"{P}_ens":        ens_matrix,
-    f"{P}_avg":        ens_avg,
-    f"{P}_var":        ens_var,
-    f"{P}_err":        ens_err,
-    f"{P}_med":        ens_med,
-    f"{P}_mad":        ens_mad,
-    f"{P}_prc":        ens_prc,
+    f"{P}_ens": ens_matrix,
+    f"{P}_avg": ens_avg,
+    f"{P}_var": ens_var,
+    f"{P}_err": ens_err,
+    f"{P}_med": ens_med,
+    f"{P}_mad": ens_mad,
+    f"{P}_prc": ens_prc,
     f"{P}_prc_levels": np.asarray(PERCENTILES),
 }
 for _qkey, _qval in ens_qdiff.items():
     ens_dict[f"{P}_{_qkey}"] = _qval
 if BOOTSTRAP_VAR:
-    ens_dict[f"{P}_var_boot"]    = ens_var_boot
-    ens_dict[f"{P}_err_boot"]    = ens_err_boot
+    ens_dict[f"{P}_var_boot"] = ens_var_boot
+    ens_dict[f"{P}_err_boot"] = ens_err_boot
     ens_dict[f"{P}_var_boot_se"] = ens_var_boot_se
-for _k, _v in sens.items():               # log10 (cv_* linear)
+for _k, _v in sens.items():  # log10 (cv_* linear)
     ens_dict[f"{P}_sens_{_k}"] = _v
-if simrc_coef is not None:                # log10
+if simrc_coef is not None:  # log10
     ens_dict[f"{P}_simrc_coef"] = simrc_coef
     ens_dict[f"{P}_simrc_corr"] = simrc_corr
 if ens_cov is not None:
@@ -2106,26 +2430,42 @@ print(f"\nResults saved → {ENSEMBLE_RESULTS}")
 
 # --- (5) Resolve UTM origin and sites (needed for any plot) ---------------
 if MOD_QC or MOD_STATS:
-    (utm_e, utm_n, utm_lat, utm_lon,
-     utm_zone, utm_north, site_xys, obs_coords_only) = _resolve_origin_and_sites()
+    (
+        utm_e,
+        utm_n,
+        utm_lat,
+        utm_lon,
+        utm_zone,
+        utm_north,
+        site_xys,
+        obs_coords_only,
+    ) = _resolve_origin_and_sites()
 
     # --- Region of interest: override MOD_XLIM/YLIM/ZLIM from site bbox ---
     if MOD_ROI_AUTO and site_xys:
-        _sx = np.array([s[1] for s in site_xys])   # model-local metres
-        _sy = np.array([s[2] for s in site_xys])   # model-local metres
-        MOD_XLIM = [float(_sx.min() / 1000.0 - MOD_ROI_PAD_XY),
-                    float(_sx.max() / 1000.0 + MOD_ROI_PAD_XY)]
-        MOD_YLIM = [float(_sy.min() / 1000.0 - MOD_ROI_PAD_XY),
-                    float(_sy.max() / 1000.0 + MOD_ROI_PAD_XY)]
+        _sx = np.array([s[1] for s in site_xys])  # model-local metres
+        _sy = np.array([s[2] for s in site_xys])  # model-local metres
+        MOD_XLIM = [
+            float(_sx.min() / 1000.0 - MOD_ROI_PAD_XY),
+            float(_sx.max() / 1000.0 + MOD_ROI_PAD_XY),
+        ]
+        MOD_YLIM = [
+            float(_sy.min() / 1000.0 - MOD_ROI_PAD_XY),
+            float(_sy.max() / 1000.0 + MOD_ROI_PAD_XY),
+        ]
         if MOD_ROI_ZLIM is not None:
             MOD_ZLIM = list(MOD_ROI_ZLIM)
-        print(f"\nROI (from {len(site_xys)} sites, pad={MOD_ROI_PAD_XY:.2f} km):")
+        print(
+            f"\nROI (from {len(site_xys)} sites, pad={MOD_ROI_PAD_XY:.2f} km):"
+        )
         print(f"  MOD_XLIM = {MOD_XLIM} km")
         print(f"  MOD_YLIM = {MOD_YLIM} km")
         print(f"  MOD_ZLIM = {MOD_ZLIM} km")
     elif MOD_ROI_AUTO:
-        print("\nROI: MOD_ROI_AUTO=True but no sites available — "
-              "using literal MOD_XLIM/MOD_YLIM/MOD_ZLIM instead.")
+        print(
+            "\nROI: MOD_ROI_AUTO=True but no sites available — "
+            "using literal MOD_XLIM/MOD_YLIM/MOD_ZLIM instead."
+        )
 
 # --- (6) Statistic map, style, and blanking/fading mask ---------------------
 # _stat_map: key -> (vector over free parameters, description). Used both
@@ -2149,10 +2489,18 @@ if BOOTSTRAP_VAR:
     _stat_map["err_boot"] = (ens_err_boot, "bootstrap error (std)")
 for _k, _v in sens.items():
     _stat_map[f"sens_{_k}"] = (
-        _v, f"sensitivity {_k} ({'linear' if _k.startswith('cv') else 'log10'})")
+        _v,
+        f"sensitivity {_k} ({'linear' if _k.startswith('cv') else 'log10'})",
+    )
 if simrc_corr is not None:
-    _stat_map["simrc_coef"] = (simrc_coef, "log10 SimRC cumulative |regression coeff.|")
-    _stat_map["simrc_corr"] = (simrc_corr, "log10 SimRC cumulative |correlation|")
+    _stat_map["simrc_coef"] = (
+        simrc_coef,
+        "log10 SimRC cumulative |regression coeff.|",
+    )
+    _stat_map["simrc_corr"] = (
+        simrc_corr,
+        "log10 SimRC cumulative |correlation|",
+    )
 
 
 def _panel_style(key):
@@ -2162,9 +2510,11 @@ def _panel_style(key):
         d_clim, d_label = MOD_CLIM, "log10(rho / Ohm*m)"
     else:
         d_clim, d_label = None, key
-    return (st.get("cmap", MOD_CMAP),
-            st.get("clim", d_clim),
-            st.get("label", d_label))
+    return (
+        st.get("cmap", MOD_CMAP),
+        st.get("clim", d_clim),
+        st.get("label", d_label),
+    )
 
 
 _alpha_block = None
@@ -2173,33 +2523,50 @@ if _need_plot and MOD_ALPHA_SOURCE:
     _a_name, _a_op, _a_thr = _parse_alpha_source(MOD_ALPHA_SOURCE)
     if _a_name not in _stat_map:
         if _a_name.startswith("sens_"):
-            _why = ("COMPUTE_SENS=False" if not COMPUTE_SENS else
-                    f"no member had usable sensitivity ({sens_count}/"
-                    f"{n_members}; first reason: "
-                    f"{sens_fail[0][1] if sens_fail else 'n/a'})")
+            _why = (
+                "COMPUTE_SENS=False"
+                if not COMPUTE_SENS
+                else f"no member had usable sensitivity ({sens_count}/"
+                f"{n_members}; first reason: "
+                f"{sens_fail[0][1] if sens_fail else 'n/a'})"
+            )
         elif _a_name.startswith("simrc_"):
-            _why = ("COMPUTE_SIMRC=False" if not COMPUTE_SIMRC else
-                    f"no member had usable forward responses ({simrc_count}/"
-                    f"{n_members}; first reason: "
-                    f"{simrc_fail[0][1] if simrc_fail else 'n/a'})")
+            _why = (
+                "COMPUTE_SIMRC=False"
+                if not COMPUTE_SIMRC
+                else f"no member had usable forward responses ({simrc_count}/"
+                f"{n_members}; first reason: "
+                f"{simrc_fail[0][1] if simrc_fail else 'n/a'})"
+            )
         else:
             _why = "unknown statistic name"
-        print(f"\n  MOD_ALPHA_SOURCE: '{_a_name}' not available — {_why}. "
-              f"Available: {sorted(_stat_map)}. Blanking disabled.")
+        print(
+            f"\n  MOD_ALPHA_SOURCE: '{_a_name}' not available — {_why}. "
+            f"Available: {sorted(_stat_map)}. Blanking disabled."
+        )
     else:
-        _alpha = _alpha_from_condition(_stat_map[_a_name][0], _a_op, _a_thr,
-                                       MOD_ALPHA_MODE, MOD_ALPHA_FADE_WIDTH)
+        _alpha = _alpha_from_condition(
+            _stat_map[_a_name][0],
+            _a_op,
+            _a_thr,
+            MOD_ALPHA_MODE,
+            MOD_ALPHA_FADE_WIDTH,
+        )
         os.makedirs(MOD_STATS_DIR, exist_ok=True)
-        _alpha_block = os.path.join(MOD_STATS_DIR,
-                                    f"resistivity_block_{P}_alpha.dat")
-        _write_alpha_block(_alpha, min(model_list, key=lambda x: x[2])[0],
-                           _alpha_block)
-        print(f"\n  MOD_ALPHA_SOURCE '{MOD_ALPHA_SOURCE}' "
-              f"(mode='{MOD_ALPHA_MODE}'): "
-              f"{int(np.sum(_alpha >= 1.0))} shown, "
-              f"{int(np.sum((_alpha > 0.0) & (_alpha < 1.0)))} faded, "
-              f"{int(np.sum(_alpha <= 0.0))} blanked "
-              f"of {_alpha.size} cells.")
+        _alpha_block = os.path.join(
+            MOD_STATS_DIR, f"resistivity_block_{P}_alpha.dat"
+        )
+        _write_alpha_block(
+            _alpha, min(model_list, key=lambda x: x[2])[0], _alpha_block
+        )
+        print(
+            f"\n  MOD_ALPHA_SOURCE '{MOD_ALPHA_SOURCE}' "
+            f"(mode='{MOD_ALPHA_MODE}'): "
+            f"{int(np.sum(_alpha >= 1.0))} shown, "
+            f"{int(np.sum((_alpha > 0.0) & (_alpha < 1.0)))} faded, "
+            f"{int(np.sum(_alpha <= 0.0))} blanked "
+            f"of {_alpha.size} cells."
+        )
 
 # --- (7) QC slice plot — best-nRMS member ---------------------------------
 if MOD_QC:
@@ -2208,22 +2575,23 @@ if MOD_QC:
     elif not model_list:
         print("\n  MOD_QC: no converged members — skipping.")
     else:
-        _best      = min(model_list, key=lambda x: x[2])
+        _best = min(model_list, key=lambda x: x[2])
         _best_file, _best_iter, _best_nrms = _best
-        print(f"\nQC: best member  nRMS={_best_nrms:.4f}  "
-              f"iter={_best_iter}")
+        print(
+            f"\nQC: best member  nRMS={_best_nrms:.4f}  " f"iter={_best_iter}"
+        )
         _plot_slice(
-            block_file      = _best_file,
-            pdf_file        = MOD_QC_FILE,
-            utm_e           = utm_e,
-            utm_n           = utm_n,
-            utm_lat         = utm_lat,
-            utm_lon         = utm_lon,
-            utm_zone        = utm_zone,
-            utm_north       = utm_north,
-            site_xys        = site_xys,
-            obs_coords_only = obs_coords_only,
-            alpha_file      = _alpha_block if MOD_ALPHA_QC else None,
+            block_file=_best_file,
+            pdf_file=MOD_QC_FILE,
+            utm_e=utm_e,
+            utm_n=utm_n,
+            utm_lat=utm_lat,
+            utm_lon=utm_lon,
+            utm_zone=utm_zone,
+            utm_north=utm_north,
+            site_xys=site_xys,
+            obs_coords_only=obs_coords_only,
+            alpha_file=_alpha_block if MOD_ALPHA_QC else None,
         )
 
 # --- (8) Statistics slice plots -------------------------------------------
@@ -2239,44 +2607,103 @@ if MOD_STATS:
         _best_file = min(model_list, key=lambda x: x[2])[0]
 
         for _key in MOD_STATS_WHAT:
+            if _key == "best":
+                continue  # handled by the QC block above (section 7)
             if _key not in _stat_map:
-                print(f"  MOD_STATS: '{_key}' not available for this run — skipped.")
+                print(
+                    f"  MOD_STATS: '{_key}' not available for this run — skipped."
+                )
                 continue
             _vec, _label = _stat_map[_key]
+            _roi_normalised = False
+
+            # --- ROI diagnostic / optional ROI-max renormalisation --------
+            # Print the original (whole-mesh-normalised, as stored) ROI
+            # min/max for every sens_*/simrc_* panel actually plotted -- a
+            # quick read of the value range in view, to help pick a
+            # MOD_ALPHA_SOURCE threshold. SENS_ROI_NORMALIZE additionally
+            # re-centres the panel to the ROI's own max, but only for
+            # sens_* (not sens_cv_*, a linear ratio; not simrc_coef/_corr,
+            # left as-is pending more experience with that method).
+            _is_sens = _key.startswith("sens_") and not _key.startswith(
+                "sens_cv"
+            )
+            _is_simrc = _key.startswith("simrc_")
+            if _is_sens or _is_simrc:
+                _roi_mask = _roi_free_mask(_best_file, _vec.shape[0])
+                if _roi_mask is not None and np.any(_roi_mask):
+                    _roi_vals = _vec[_roi_mask]
+                    _roi_vals = _roi_vals[np.isfinite(_roi_vals)]
+                    if _roi_vals.size:
+                        print(
+                            f"  {_key}: original ROI min={_roi_vals.min():.3f}, "
+                            f"max={_roi_vals.max():.3f} (log10, whole-mesh-"
+                            f"normalised, n={_roi_vals.size} free params)"
+                        )
+                        if _is_sens and SENS_ROI_NORMALIZE:
+                            _roi_max = _roi_vals.max()
+                            _vec = _vec - _roi_max
+                            _label = f"{_label}, ROI-renormalised"
+                            _roi_normalised = True
+                    else:
+                        print(
+                            f"  {_key}: no finite values inside the ROI — "
+                            f"skipping ROI diagnostic for this panel."
+                        )
+
             _cmap, _clim, _cbl = _panel_style(_key)
+            if _roi_normalised:
+                _cbl = (
+                    f"{_cbl} [ROI-renorm.]"
+                    if _cbl
+                    else "ROI-renormalised (log10)"
+                )
+                # ROI renormalisation can push values above the whole-mesh-
+                # normalised default clim (e.g. [-4, 0]) since cells outside
+                # the ROI may now exceed the ROI's own max -- auto-scale
+                # unless the user explicitly overrode clim for this key in
+                # MOD_STATS_STYLE.
+                if (
+                    _key not in MOD_STATS_STYLE
+                    or "clim" not in MOD_STATS_STYLE[_key]
+                ):
+                    _clim = None
             _block_out = os.path.join(
-                MOD_STATS_DIR, f"resistivity_block_{P}_{_key}.dat")
+                MOD_STATS_DIR, f"resistivity_block_{P}_{_key}.dat"
+            )
             _pdf_out = os.path.join(MOD_STATS_DIR, f"{P}_{_key}")
             print(f"\nSTATS: writing {_label} → {_block_out}")
             # insert_model writes 10**v; plot_model_slices log10s it back,
             # so the panel shows _vec itself (NaN -> 0 raw -> not drawn).
             fem.insert_model(
-                template   = _best_file,
-                model      = np.where(np.isfinite(_vec), _vec, -np.inf),
-                model_file = _block_out,
-                ocean      = MOD_OCEAN,
-                air_rho    = _STATS_AIR_RHO,
-                ocean_rho  = _STATS_OCEAN_RHO,
-                out        = OUT,
+                template=_best_file,
+                model=np.where(np.isfinite(_vec), _vec, -np.inf),
+                model_file=_block_out,
+                ocean=MOD_OCEAN,
+                air_rho=_STATS_AIR_RHO,
+                ocean_rho=_STATS_OCEAN_RHO,
+                out=OUT,
             )
-            print(f"STATS: plotting {_label} → {_pdf_out}  "
-                  f"(cmap={_cmap}, clim={_clim})")
+            print(
+                f"STATS: plotting {_label} → {_pdf_out}  "
+                f"(cmap={_cmap}, clim={_clim})"
+            )
             _plot_slice(
-                block_file      = _block_out,
-                pdf_file        = _pdf_out,
-                utm_e           = utm_e,
-                utm_n           = utm_n,
-                utm_lat         = utm_lat,
-                utm_lon         = utm_lon,
-                utm_zone        = utm_zone,
-                utm_north       = utm_north,
-                site_xys        = site_xys,
-                obs_coords_only = obs_coords_only,
-                clim            = _clim,
-                cmap            = _cmap,
-                cbar_label      = _cbl,
-                alpha_file      = _alpha_block,
-                stats_panel     = True,
+                block_file=_block_out,
+                pdf_file=_pdf_out,
+                utm_e=utm_e,
+                utm_n=utm_n,
+                utm_lat=utm_lat,
+                utm_lon=utm_lon,
+                utm_zone=utm_zone,
+                utm_north=utm_north,
+                site_xys=site_xys,
+                obs_coords_only=obs_coords_only,
+                clim=_clim,
+                cmap=_cmap,
+                cbar_label=_cbl,
+                alpha_file=_alpha_block,
+                stats_panel=True,
             )
 
 print("\nfemtic_ens_post.py complete.")

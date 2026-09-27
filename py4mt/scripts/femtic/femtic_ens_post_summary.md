@@ -1,7 +1,7 @@
 # Parameter summary: femtic_ens_post
 
 - **Script path:** `/home/vrath/Py4MTX/py4mt/scripts/femtic/femtic_ens_post.py`
-- **Run date/time:** 2026-09-25 19:16:42
+- **Run date/time:** 2026-09-26 19:40:17
 
 ## User-set parameters
 
@@ -24,7 +24,7 @@
 | `MOD_ALPHA_FADE_WIDTH` | `1.0` |
 | `MOD_ALPHA_MODE` | `'blank'` |
 | `MOD_ALPHA_QC` | `True` |
-| `MOD_ALPHA_SOURCE` | `'sens_mean_an > -3.'` |
+| `MOD_ALPHA_SOURCE` | `'sens_mean_an > -5.5'` |
 | `MOD_CLIM` | `[0.0, 4.0]` |
 | `MOD_CMAP` | `'jet_r'` |
 | `MOD_DEPTH_KM` | `True` |
@@ -64,9 +64,10 @@
 | `MOD_STATS` | `True` |
 | `MOD_STATS_DIR` | `'/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2//stats_plots/'` |
 | `MOD_STATS_STYLE` | `{'var': {'clim': [0.0, 0.3], 'label': 'var log10(rho)'}, 'err': {'clim': [0.0, 0.3], 'label': 'std log10(rho)'}, 'mad': {'clim': [0.0, 0.3], 'label': 'MAD log10(rho)'}, 'qdiff_15_9_84_1': {'clim': [0.0, 0.5], 'label': 'P84.1 - P15.9  log10(rho)'}, 'qdiff_2_3_97_7': {'clim': [0.0, 0.5], 'label': 'P97 ... (truncated)` |
-| `MOD_STATS_WHAT` | `['avg', 'med', 'err', 'mad', 'p2_3', 'p15_9', 'p50', 'p84_1', 'p97_7', 'qdiff_15_9_84_1', 'qdiff_2_3_97_7', 'err_boot', 'sens_mean_raw', 'sens_mean_na', 'sens_cv_na', 'sens_mean_an', 'sens_cv_an', 'simrc_corr']` |
+| `MOD_STATS_WHAT` | `['best', 'avg', 'med', 'err', 'mad', 'qdiff_15_9_84_1', 'qdiff_2_3_97_7', 'err_boot', 'sens_mean_raw', 'sens_mean_na', 'sens_cv_na', 'sens_mean_an', 'sens_cv_an', 'simrc_corr']` |
 | `MOD_TICK_DECIMALS` | `2` |
 | `MOD_TICK_FONTSIZE` | `16` |
+| `MOD_TITLE_FONTSIZE` | `26` |
 | `MOD_UTM_ORIGIN_E` | `None` |
 | `MOD_UTM_ORIGIN_LAT` | `None` |
 | `MOD_UTM_ORIGIN_LON` | `None` |
@@ -87,9 +88,8 @@
 | `SENS_H5_PATTERN` | `'results_iter{numit}.h5'` |
 | `SENS_JACOBIAN_KEY` | `'jacobian'` |
 | `SENS_KIND` | `'volume_normalised'` |
+| `SENS_ROI_NORMALIZE` | `True` |
 | `SIMRC_CHUNK` | `200` |
-| `SIMRC_DATA_KIND` | `None` |
-| `SIMRC_RESULT_FILES` | `{'imp': 'result_MT.txt', 'vtf': 'result_VTF.txt'}` |
-| `SIMRC_SITE_FILE` | `'/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2/templates/site.dat'` |
+| `SIMRC_ERR_WEIGHT` | `True` |
 | `SPARSE_THRESH` | `1e-08` |
 | `SPARSIFY` | `True` |
