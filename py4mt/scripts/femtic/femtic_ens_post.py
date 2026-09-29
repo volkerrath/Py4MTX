@@ -1050,9 +1050,8 @@ MOD_STATS_WHAT = (
     + (
         [
             "sens_mean_raw",
-            "sens_mean_na",
-            "sens_cv_na",
             "sens_mean_an",
+            "sens_median_an"
             "sens_cv_an",
         ]
         if COMPUTE_SENS
@@ -1067,7 +1066,7 @@ MOD_QC_FILE = ENSEMBLE_DIR + ENSEMBLE_PREFIX + "_best"
 
 #: Output directory for the other panels' block files and figures.
 #: Requires MOD_MESH and a valid template file (taken from best member).
-MOD_STATS_DIR = ENSEMBLE_DIR + "/stats_plots/"
+MOD_STATS_DIR = ENSEMBLE_DIR + "/stats_plots_median/"
 
 #: Derived from MOD_STATS_WHAT above -- not user-set. Remove "best" from
 #: the list (or set MOD_STATS_WHAT = []) to turn either off, instead of a
@@ -1268,7 +1267,7 @@ if COMPUTE_SIMRC:
 #:   "sens_mean_an > -3."    keep cells within 3 decades of max sensitivity
 #:   "err < 0.2"             keep cells with ensemble std below 0.2 decades
 #: None disables blanking/fading.
-MOD_ALPHA_SOURCE = "sens_mean_an > -5.5"
+MOD_ALPHA_SOURCE = "sens_median_an > -5.5"
 #: "blank" -- failing cells are removed (hard cut).
 #: "fade"  -- failing cells fade linearly from opaque at the threshold to
 #:            fully transparent MOD_ALPHA_FADE_WIDTH beyond it (same units

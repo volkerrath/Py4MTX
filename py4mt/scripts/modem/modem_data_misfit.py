@@ -177,8 +177,8 @@ import inverse as inv  # noqa: E402  (nrms, r_mae, r_med, q95)
 # "ensemble": all entries together form one ensemble
 RUN_MODE: str = "single"               # "single" | "ensemble"
 RUN_PATHS: List[Tuple[str, str]] = [
-    ("/media/vrath/LargeBack/ModEM/Annecy/annecy_obs.dat",
-     "/media/vrath/LargeBack/ModEM/Annecy/annecy_run/"),
+    ("/home/vrath/work/Tacna_MT_Seis/mt/TAC_100_smooth2_short/TAC26b_ZT_5_10a.dat",
+     "/home/vrath/work/Tacna_MT_Seis/mt/TAC_100_smooth2_short/TACG26b_100ZT_Alpha03_smooth_NLCG_007.dat"),
     ]        # (observed file, calculated file/dir/glob) pairs (overridden by argv)
 # RUN_MODE: str = "ensemble"
 # RUN_PATHS: List[Tuple[str, str]] = [
@@ -213,7 +213,7 @@ PLOT_DPI: int = 300
 WRITE_STATS: bool = True
 FIT_MEASURES: bool = True   # overall table of fit measures (per data type
                             # and pooled) -> <prefix>_fit_measures.txt
-SHOW: bool = False
+SHOW: bool = True
 
 # --- selection (None = everything) ---
 DATATYPES: Optional[Sequence[str]] = None     # e.g. ["Full_Impedance"]
@@ -247,7 +247,7 @@ QQ_BAND_AXIS: str = "frequency"     # "frequency" | "period"
 QQ_BANDS_PER_DECADE: int = 2
 QQ_BY_COMPONENT: bool = False       # False: per data type, components pooled
 QQ_LIMIT: float = 10.0              # max |sample quantile| shown
-QQ_EQUAL_AXES: bool = False         # True: same range on both axes, square
+QQ_EQUAL_AXES: bool = True         # True: same range on both axes, square
                                     # panels (1:1 line at 45 degrees)
 QQ_CONFIDENCE: Optional[float] = 0.95   # pointwise envelope; None = off
 QQ_MIN_N: int = 10                  # skip bands with fewer values
