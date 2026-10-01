@@ -1058,6 +1058,7 @@ MOD_STATS_WHAT = (
         else []
     )
     + (["simrc_corr"] if COMPUTE_SIMRC else [])
+    + (["simrc_coef"] if COMPUTE_SIMRC else [])
 )
 
 #: Extension-less base path for the "best" panel; _plot_slice() appends

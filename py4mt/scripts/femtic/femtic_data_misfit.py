@@ -16,18 +16,27 @@ Data-misfit diagnostics for FEMTIC results_iterN.h5 files:
                     line, a quartile line (slope = robust scale, intercept
                     = bias), and a pointwise confidence envelope.
 
-All three work on single runs (best iteration of each) or on an ensemble of
+  4. "curves"    - OPTIONAL (not in the default METHODS): response curves per
+                    site, observed data with errors against the calculated
+                    response, drawn with the data_viz plotters (add_rho,
+                    add_phase, add_tipper, add_pt). For an ensemble the
+                    members can be drawn as many thin curves, as a per-period
+                    density of all member curves, as percentile bands, or a
+                    combination ("auto" switches from curves to density when
+                    the ensemble is large).
+
+All four work on single runs (best iteration of each) or on an ensemble of
 runs (best iteration of each member).
 
 @author   vrath
 @project  py4mt
 @created  2026-09-18
-@modified 2026-09-21
+@modified 2026-09-30
 
 Provenance
 ----------
-Author      : Claude Sonnet 5 (Anthropic)
-Generated   : 2026-09-19 (last modified 2026-09-21)
+Author      : Claude (Anthropic)
+Generated   : 2026-09-19 (last modified 2026-09-30)
 Notice      : This code is AI-generated. Review and test it before any
               production use.
 
@@ -80,6 +89,39 @@ per-component (real/imaginary) normalized residuals, as in Baba's Fig. 10a,
 with N(0, RMS^2) overlaid. In single mode M = 1, eps_syn = 0, and RMS2 is
 identical to RMS1 (only the conventional histogram is drawn).
 
+Optional plotting section ("curves", see also the CURVES_* settings)
+--------------------------------------------------------------------
+Needs data_viz.py (and, if importable, femtic_viz.py for the component
+marker convention) on the path; nothing else changes if "curves" is not in
+METHODS. One figure (one page of <prefix>_curves.pdf) per selected site, one
+panel per quantity in CURVES_WHAT ("rho", "phase", "tipper", "pt"):
+
+    single run   observed data (markers, error bars or shading) and the
+                 calculated response (line).
+    ensemble     the calculated responses of all M members, as
+                 "curves"   thin transparent lines (at most CURVES_SUBSAMPLE),
+                 "density"  per-period density of all member curves (member
+                            curves are interpolated onto a fine log-period
+                            grid and binned in y; the colour opacity is the
+                            fraction of members per bin -- this scales to
+                            hundreds of members),
+                 "bands"    percentile envelopes (CURVES_BAND_PCT),
+                 or a "+"-joined combination such as "density+bands";
+                 "auto" = curves for M <= CURVES_MAX_CURVES, else density.
+                 The ensemble median (CURVES_MEDIAN) and the observed data
+                 (mean over members, as in the other methods) are drawn on
+                 top.
+
+Quantities are derived from the /data rows in the same way as
+data_viz.datadict_to_plot_df (rho_a = |Z|^2 / (mu0 omega) with Z in SI ohm as
+stored by FEMTIC; phase = atan2(Im Z, Re Z); the error of rho_a and of the
+phase from the complex modulus of the errors); the only difference is that
+the calculated phase is put on the branch of the observed phase (no 360
+degree jumps for members crossing +-180, common for yx). Apparent-resistivity/phase
+data types (APP_RES_AND_PHS) are taken as stored (rho in ohm.m, phase in
+degrees unless CURVES_APPRES_PHASE_DEG = False). Data types without a
+data_viz plotter (HTF, NMT) are skipped.
+
 Usage
 -----
     python femtic_data_misfit.py                       # config below
@@ -117,6 +159,24 @@ Changelog
             PNG files with names ending in "", "p", "d", "f"; _save() now
             accepts a string, adds a missing dot and passes the format
             explicitly (unsupported extensions raise).
+2026-09-30  Claude (Anthropic): optional fourth method "curves": per-site
+            response curves (observed vs. calculated) built on the data_viz
+            plotters; ensemble-aware (many thin curves, per-period density,
+            percentile bands, ensemble median); CURVES_* settings; site
+            selection (even / first / worst / best by nRMS, or explicit ids);
+            multi-page PDF; per-site nRMS table (<prefix>_site_nrms.txt).
+            build_dataset() now also keeps the per-member calculated
+            responses (cal_re_m, cal_im_m, shape (M, rows)) and the site
+            coordinates (site_x, site_y); the other three methods are
+            unchanged.
+2026-09-30b Claude (Anthropic): site names for "curves" from the site.dat of
+            mt_make_sitelist.py (femtic.read_site_dat): shown in the figure
+            titles, the file names and <prefix>_site_nrms.txt, and accepted in
+            CURVES_SITES; CURVES_SITE_DAT ("auto" searches the results
+            directory and two levels up) and CURVES_SITE_ID_OFFSET.
+2026-09-30c Claude (Anthropic): CURVES_OBSERVED_ONLY = True draws only the
+            observed data (markers + errors) in "curves"; calculated
+            response, ensemble layers and nRMS in the title are omitted.
 """
 from __future__ import annotations
 
@@ -164,6 +224,7 @@ RUN_PATHS: List[str] = [
 ITERATION: Union[str, int] = "best"      # "best" | "last" | integer
 ITER_PATTERN: str = "results_iter*.h5"   # searched in each run directory
 METHODS: Tuple[str, ...] = ("crossplot", "histogram", "qq")
+# METHODS = ("crossplot", "histogram", "qq", "curves")   # "curves" is optional
 
 # --- ensemble handling ---
 ENSEMBLE_OBS: str = "mean"     # observed values/errors: "mean" over members
@@ -225,6 +286,65 @@ QQ_CONFIDENCE: Optional[float] = 0.95   # pointwise envelope; None = off
 QQ_MIN_N: int = 10                  # skip bands with fewer values
 QQ_NCOLS: int = 4
 QQ_PANEL_SIZE: float = 3.0
+
+# --- response curves (optional method "curves"; add it to METHODS) ---
+# Needs data_viz.py on the path. One figure per site, one panel per entry of
+# CURVES_WHAT; PLOT_FORMATS/PLOT_DPI/OUT_DIR/OUT_PREFIX apply as usual.
+CURVES_WHAT: Tuple[str, ...] = ("rho", "phase", "tipper")   # + "pt"
+CURVES_COMPS: str = "xy,yx"        # impedance components (rho and phase panels)
+CURVES_SITE_DAT: Optional[str] = "auto"   # site.dat from mt_make_sitelist.py
+                                   # (name,lat,lon,elev,sitenum,E,N): gives the
+                                   # site names. "auto" = look for site.dat in
+                                   # the results directory and up to two
+                                   # levels above; a path; None = no names
+CURVES_SITE_ID_OFFSET: int = 0     # site_id in the results file = sitenum
+                                   # in site.dat + this offset
+CURVES_SITES: Union[None, int, Sequence[Union[int, str]]] = 12
+                                   # None = all sites; int N = N sites (chosen
+                                   # by CURVES_SITE_ORDER); list = these
+                                   # site_id values and/or site names
+CURVES_SITE_ORDER: str = "even"    # for an int CURVES_SITES: "even" (spread
+                                   # over the site list), "id" (first N),
+                                   # "worst" / "best" (by site nRMS)
+CURVES_MAX_SITES: int = 200        # safety cap on the number of figures
+
+# ensemble display (ignored for a single run: observed + calculated line)
+CURVES_ENS_MODE: str = "auto"      # "auto" | "curves" | "density" | "bands",
+                                   # or "+"-joined, e.g. "density+bands"
+CURVES_MAX_CURVES: int = 50        # auto: curves up to this many members,
+                                   # density above
+CURVES_SUBSAMPLE: int = 100        # "curves": at most this many members drawn
+CURVES_MEMBER_ALPHA: Optional[float] = None   # None = from number of curves
+CURVES_MEDIAN: bool = True         # ensemble median on top
+CURVES_BAND_PCT: Tuple[float, ...] = (5.0, 25.0)  # bands: p..100-p percentiles
+CURVES_DENSITY_NX: int = 200       # density: log-period grid points
+CURVES_DENSITY_NY: int = 60        # density: y bins
+CURVES_DENSITY_GAMMA: float = 0.5  # < 1 makes sparse regions more visible
+CURVES_SEED: int = 0               # member subsampling
+
+# observed data
+CURVES_OBS_ERRORS: str = "bar"     # "bar" | "shade" | "none"
+CURVES_OBSERVED_ONLY: bool = False # True: draw only the observed data (no calculated response, no ensemble layers)
+CURVES_OBS_MARKERSIZE: float = 3.5
+CURVES_LINEWIDTH: float = 1.2      # calculated / median line
+
+# axes
+CURVES_INVERT_X: bool = True       # True = as data_viz (period decreasing
+                                   # to the right); False = period increasing
+CURVES_PERIOD_LIM: Optional[Tuple[float, float]] = None   # (Tmin, Tmax) [s]
+CURVES_YLIM: Dict[str, Optional[Tuple[float, float]]] = {
+    "rho": None, "phase": None, "tipper": None, "pt": None}
+CURVES_PANEL_SIZE: Tuple[float, float] = (4.2, 3.4)       # width, height [in]
+CURVES_LEGEND_LOC: Optional[str] = "below"   # "below" (under each panel), a
+                                   # matplotlib loc such as "upper right", or
+                                   # None for no legend. Avoid "best" with
+                                   # density: matplotlib then needs seconds
+                                   # per panel to place it
+CURVES_MULTIPAGE: bool = True      # ".pdf": one file, one page per site;
+                                   # other formats: one file per site in a
+                                   # sub-directory <prefix>_curves/
+CURVES_APPRES_PHASE_DEG: bool = True   # APP_RES_AND_PHS phase in degrees
+                                       # (False: radians)
 
 
 # ---------------------------------------------------------------------------
@@ -410,10 +530,16 @@ def build_dataset(datas: Sequence[dict], *, obs_mode: str = "mean",
         err_re=obs_like("re_err"), err_im=obs_like("im_err"),
         cal_re=mu_re, cal_im=mu_im, ref_re=ref_re, ref_im=ref_im,
         eps_syn=eps,
+        site_x=np.asarray(r0["site_x"], float),
+        site_y=np.asarray(r0["site_y"], float),
     )
     for k in list(ds):
         if isinstance(ds[k], np.ndarray) and ds[k].shape[:1] == ok.shape:
             ds[k] = ds[k][ok]
+    # per-member calculated responses, shape (M, n_rows): for the "curves"
+    # method (added after the 1-D filter above, which would mis-handle 2-D)
+    ds["cal_re_m"] = cal_re[:, ok]
+    ds["cal_im_m"] = cal_im[:, ok]
     ds["n_dropped_nan"] = n_drop
     return ds
 
@@ -855,6 +981,628 @@ def group_panels(panels: Dict[str, List[dict]], *, by_component: bool) -> Dict[s
 
 
 # ---------------------------------------------------------------------------
+# Method 4 (optional): response curves per site -- observed data and the
+# calculated response, single run or ensemble (curves / density / bands)
+# ---------------------------------------------------------------------------
+CURVE_PANELS = ("rho", "phase", "tipper", "pt")
+_CURVE_PLOTTER = {"rho": "add_rho", "phase": "add_phase",
+                  "tipper": "add_tipper", "pt": "add_pt"}
+_COMP_COLOR = {"xy": "tab:blue", "yx": "tab:red", "xx": "tab:green",
+               "yy": "tab:orange"}
+_IDX_COLOR = ("tab:blue", "tab:orange", "tab:green", "tab:red")
+_IDX_MARKER = ("o", "^", "s", "d")                 # as data_viz.add_tipper/add_pt
+_TIPPER_COLS = ("Tx_re", "Tx_im", "Ty_re", "Ty_im")
+_PT_COLS = ("ptxx_re", "ptxy_re", "ptyx_re", "ptyy_re")
+_CURVE_TYPES = ("MT", "NMT2", "APP_RES_AND_PHS", "NMT2_APP_RES_AND_PHS",
+                "VTF", "PT")                       # data types that can be drawn
+_CURVE_LAYERS = ("curves", "density", "bands")
+
+
+def _curves_cfg() -> dict:
+    """Snapshot of the CURVES_* settings (read when the method is run)."""
+    return dict(
+        what=tuple(CURVES_WHAT), comps=CURVES_COMPS, sites=CURVES_SITES,
+        site_order=CURVES_SITE_ORDER, max_sites=CURVES_MAX_SITES,
+        ens_mode=CURVES_ENS_MODE, max_curves=CURVES_MAX_CURVES,
+        subsample=CURVES_SUBSAMPLE, member_alpha=CURVES_MEMBER_ALPHA,
+        median=CURVES_MEDIAN, band_pct=tuple(CURVES_BAND_PCT),
+        dens_nx=CURVES_DENSITY_NX, dens_ny=CURVES_DENSITY_NY,
+        dens_gamma=CURVES_DENSITY_GAMMA, seed=CURVES_SEED,
+        obs_only=bool(CURVES_OBSERVED_ONLY),
+        obs_errors=CURVES_OBS_ERRORS, obs_ms=CURVES_OBS_MARKERSIZE,
+        lw=CURVES_LINEWIDTH, invert_x=CURVES_INVERT_X,
+        period_lim=CURVES_PERIOD_LIM, ylim=dict(CURVES_YLIM),
+        panel_size=tuple(CURVES_PANEL_SIZE), multipage=CURVES_MULTIPAGE,
+        appres_deg=CURVES_APPRES_PHASE_DEG, legend_loc=CURVES_LEGEND_LOC,
+        site_dat=CURVES_SITE_DAT, id_offset=CURVES_SITE_ID_OFFSET,
+    )
+
+
+def load_site_names(spec: Optional[str], search_dirs: Sequence[str], offset: int,
+                    site_ids: Sequence[int]) -> Dict[int, str]:
+    """
+    Site names by site_id from a site.dat written by mt_make_sitelist.py
+    (read with femtic.read_site_dat): site_id = sitenum + offset.
+
+    spec: None -> {}; "auto" -> first site.dat found in `search_dirs`; else a
+    path. A missing or unreadable file only gives a message and {}.
+    """
+    if not spec:
+        return {}
+    path = None
+    if spec == "auto":
+        for d in search_dirs:
+            p = os.path.join(d, "site.dat")
+            if os.path.isfile(p):
+                path = p
+                break
+        if path is None:
+            print("femtic_data_misfit: curves: no site.dat found "
+                  f"(looked in {list(search_dirs)}); sites are labelled by id.")
+            return {}
+    else:
+        path = spec
+    try:
+        rows = fem.read_site_dat(path)
+    except (OSError, ValueError) as exc:
+        print(f"femtic_data_misfit: curves: cannot read site.dat ({exc}); "
+              "sites are labelled by id.")
+        return {}
+    names = {int(r["sitenum"]) + int(offset): str(r["name"]) for r in rows}
+    hit = sum(1 for s in site_ids if s in names)
+    print(f"femtic_data_misfit: curves: {len(names)} site names from {path}; "
+          f"{hit} of {len(site_ids)} site ids matched (site_id = sitenum + {offset}).")
+    if hit < len(site_ids):
+        print("femtic_data_misfit: curves: WARNING: not all site ids have a name; "
+              "check CURVES_SITE_ID_OFFSET and that site.dat belongs to this data set.")
+    return names
+
+
+def _curve_modules():
+    """
+    Import data_viz (required) and femtic_viz (optional; only its component
+    marker convention is used). Returns (data_viz, markers, comp_class).
+    """
+    import data_viz as dv  # noqa: WPS433 (imported only when "curves" runs)
+    try:
+        import femtic_viz as fv
+        markers = dict(fv.DEFAULT_COMP_MARKERS)
+        comp_class = fv._comp_class
+    except Exception:
+        markers = {"ii": "o", "ij": "s", "inv": "^"}
+
+        def comp_class(comp: str) -> str:
+            c = str(comp).strip().lower()
+            return "ii" if c in ("xx", "yy") else ("ij" if c in ("xy", "yx") else "inv")
+    return dv, markers, comp_class
+
+
+def site_nrms(ds: dict) -> Dict[int, dict]:
+    """
+    Per site: number of residual values n, conventional nRMS (RMS1 reference,
+    real and imaginary parts, as in the other methods) and the site x, y as
+    stored in the results file. Keys are the integer site ids.
+    """
+    n = ds["freq"].size
+    cpx = ~np.isin(ds["datatype_name"], REAL_ONLY_TYPES)
+    parts = []
+    for ko, kr, ke, msk in (("obs_re", "ref_re", "err_re", np.ones(n, bool)),
+                            ("obs_im", "ref_im", "err_im", cpx)):
+        err = ds[ke]
+        ok = (msk & np.isfinite(err) & (err > 0.0)
+              & np.isfinite(ds[ko]) & np.isfinite(ds[kr]))
+        r = np.full(n, np.nan)
+        r[ok] = (ds[ko][ok] - ds[kr][ok]) / err[ok]
+        parts.append(r)
+    sid = ds["site_id"]
+    out: Dict[int, dict] = {}
+    for s in np.unique(sid):
+        m = sid == s
+        r = np.concatenate([p[m] for p in parts])
+        r = r[np.isfinite(r)]
+        i0 = int(np.flatnonzero(m)[0])
+        out[int(s)] = dict(
+            n=int(r.size),
+            nrms=float(inv.nrms(r)) if r.size else float("nan"),
+            x=float(ds["site_x"][i0]), y=float(ds["site_y"][i0]))
+    return out
+
+
+def select_sites(info: Dict[int, dict], spec, order: str, max_sites: int) -> List[int]:
+    """
+    Choose the sites to plot from the per-site table `info` (see site_nrms).
+
+    spec  None -> all; int N -> N sites; sequence -> exactly these sites, given
+          as site ids (int) and/or site names (str, if info has "name").
+    order for an int spec: "even" (evenly spread over the sorted site ids),
+          "id" (first N), "worst" / "best" (largest / smallest nRMS first).
+          Without an int spec "worst"/"best" still order the whole list.
+    """
+    ids = sorted(info)
+    if spec is not None and not isinstance(spec, (int, np.integer)):
+        by_name = {d["name"]: s for s, d in info.items() if d.get("name")}
+        sel, miss = [], []
+        for item in spec:
+            if isinstance(item, str):
+                if item in by_name:
+                    sel.append(by_name[item])
+                elif item.strip().isdigit() and int(item) in info:
+                    sel.append(int(item))
+                else:
+                    miss.append(item)
+            elif int(item) in info:
+                sel.append(int(item))
+            else:
+                miss.append(item)
+        if miss:
+            print(f"femtic_data_misfit: curves: sites not in the data: {miss}")
+    else:
+        if order not in ("even", "id", "worst", "best"):
+            raise ValueError(f"CURVES_SITE_ORDER {order!r} not in even/id/worst/best.")
+
+        def key(s: int) -> float:
+            v = info[s]["nrms"]
+            return v if np.isfinite(v) else float("-inf")
+
+        if order == "worst":
+            ids = sorted(ids, key=lambda s: -key(s))
+        elif order == "best":
+            ids = sorted(ids, key=lambda s: (not np.isfinite(info[s]["nrms"]), key(s)))
+        if spec is None:
+            sel = ids
+        else:
+            n = max(0, min(int(spec), len(ids)))
+            if order == "even" and n > 0:
+                pos = np.unique(np.round(np.linspace(0, len(ids) - 1, n)).astype(int))
+                sel = [ids[i] for i in pos]
+            else:
+                sel = ids[:n]
+    if max_sites and len(sel) > max_sites:
+        print(f"femtic_data_misfit: curves: {len(sel)} sites selected, "
+              f"limited to CURVES_MAX_SITES = {max_sites}.")
+        sel = sel[:max_sites]
+    return sel
+
+
+def site_series(ds: dict, sid: int, *, appres_deg: bool = True) -> Dict[str, dict]:
+    """
+    Plot-ready series of one site, keyed by data_viz column name (rho_xy,
+    phi_xy, Tx_re, Tx_im, ptxy_re, ...). Each value is a dict with panel
+    ("rho"/"phase"/"tipper"/"pt"), freq, period (ascending), obs, err (NaN
+    where not usable) and cal, shape (M, n) -- one row per ensemble member.
+
+    Same conventions as data_viz.datadict_to_plot_df: rho_a = |Z|^2/(mu0*omega)
+    (FEMTIC's Z is in SI ohm), phase = atan2(Im, Re) in degrees, and the
+    errors of rho_a and phase from the complex modulus of the errors of Z.
+    One deliberate difference: the calculated phase is put on the branch of
+    the observed phase (differences wrapped to +-180 degrees), so members that
+    cross +-180 do not jump by 360.
+    """
+    mu0 = 4.0e-7 * np.pi
+    sel = ds["site_id"] == sid
+    dn, cn = ds["datatype_name"], ds["component_name"]
+    out: Dict[str, dict] = {}
+
+    def put(col: str, panel: str, f, obs, err, cal) -> None:
+        good = np.isfinite(obs) & np.isfinite(f) & (f > 0.0)
+        if not good.any():
+            return
+        order = np.argsort(-f[good])                   # period ascending
+        f_ = f[good][order]
+        e_ = err[good][order]
+        o_ = obs[good][order]
+        c_ = cal[:, good][:, order]
+        if panel == "phase":
+            # calculated phase on the branch of the observed phase (degrees):
+            # members that cross +-180 (typical for the yx component, ~ -180)
+            # would otherwise jump by 360 and ruin medians and densities
+            c_ = o_ + (c_ - o_ + 180.0) % 360.0 - 180.0
+        out[col] = dict(
+            panel=panel, freq=f_, period=1.0 / f_, obs=o_,
+            err=np.where(np.isfinite(e_) & (e_ > 0.0), e_, np.nan), cal=c_)
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        for dname in np.unique(dn[sel]):
+            md = sel & (dn == dname)
+            for cname in np.unique(cn[md]):
+                m = md & (cn == cname)
+                f = ds["freq"][m]
+                o_re, o_im = ds["obs_re"][m], ds["obs_im"][m]
+                e_re, e_im = ds["err_re"][m], ds["err_im"][m]
+                c_re, c_im = ds["cal_re_m"][:, m], ds["cal_im_m"][:, m]
+                lc = str(cname).lower()
+                if dname in ("MT", "NMT2") and str(cname).startswith("Z"):
+                    c = lc[1:]
+                    om = 2.0 * np.pi * f
+                    zabs = np.hypot(o_re, o_im)
+                    sig = np.hypot(e_re, e_im)
+                    put(f"rho_{c}", "rho", f, zabs**2 / (mu0 * om),
+                        2.0 * zabs * sig / (mu0 * om),
+                        (c_re**2 + c_im**2) / (mu0 * om))
+                    put(f"phi_{c}", "phase", f, np.degrees(np.arctan2(o_im, o_re)),
+                        np.degrees(sig / np.where(zabs > 0.0, zabs, np.nan)),
+                        np.degrees(np.arctan2(c_im, c_re)))
+                elif dname in ("APP_RES_AND_PHS", "NMT2_APP_RES_AND_PHS"):
+                    if lc.startswith("rho"):
+                        put("rho_" + lc[3:], "rho", f, o_re, e_re, c_re)
+                    elif lc.startswith("phs"):
+                        k = 1.0 if appres_deg else 180.0 / np.pi
+                        put("phi_" + lc[3:], "phase", f, o_re * k, e_re * k, c_re * k)
+                elif dname == "VTF" and str(cname).startswith("Tz"):
+                    c = lc[2:]                         # "x" | "y"
+                    put(f"T{c}_re", "tipper", f, o_re, e_re, c_re)
+                    put(f"T{c}_im", "tipper", f, o_im, e_im, c_im)
+                elif dname == "PT" and str(cname).startswith("PT"):
+                    put(f"pt{lc[2:]}_re", "pt", f, o_re, e_re, c_re)
+    return out
+
+
+def _series_label(col: str) -> str:
+    if col.startswith("rho_"):
+        return "rho " + col[4:].upper()
+    if col.startswith("phi_"):
+        return "phase " + col[4:].upper()
+    if col.startswith("pt"):
+        return "PT" + col[2:4]
+    return ("Re(" if col.endswith("_re") else "Im(") + col[:2] + ")"
+
+
+def resolve_layers(mode: str, M: int, max_curves: int) -> List[str]:
+    """Ensemble display layers for M members ([] for a single run)."""
+    if M <= 1:
+        return []
+    mode = str(mode).strip().lower()
+    if mode == "auto":
+        return ["curves"] if M <= max_curves else ["density"]
+    layers = [s.strip() for s in mode.split("+") if s.strip()]
+    bad = [s for s in layers if s not in _CURVE_LAYERS]
+    if bad or not layers:
+        raise ValueError(f"CURVES_ENS_MODE {mode!r}: use auto or a '+'-joined "
+                         f"combination of {_CURVE_LAYERS}.")
+    return layers
+
+
+def _draw(ax, plotter, frame, col: str, panel: str, *, color, ls, lw, alpha,
+          marker, ms, zorder, show_errors: bool = False) -> None:
+    """
+    Draw one series with a data_viz plotter and then normalize what it drew.
+
+    The plotters pick their own marker/colour defaults, toggle the x-axis
+    direction on every call and colour error shading from the colour cycle,
+    so after the call: the axis direction is restored, the new lines get the
+    requested marker/size/zorder, and new shading gets `color`.
+    """
+    n_lines, n_coll = len(ax.lines), len(ax.collections)
+    was_inv = ax.xaxis_inverted()
+    kw = dict(ax=ax, legend=False, show_errors=show_errors, color=color,
+              linestyle=ls, linewidth=lw, alpha=alpha)
+    if show_errors:
+        kw["error_alpha"] = 0.2
+    if panel in ("rho", "phase"):
+        kw["comps"] = col.split("_", 1)[1]
+    plotter(frame, **kw)
+    if ax.xaxis_inverted() != was_inv:
+        ax.invert_xaxis()
+    for ln in list(ax.lines)[n_lines:]:
+        ln.set_marker(marker if marker else "none")
+        ln.set_markersize(ms)
+        ln.set_zorder(zorder)
+    for cl in list(ax.collections)[n_coll:]:
+        cl.set_facecolor(color)
+        cl.set_zorder(zorder - 0.5)
+
+
+def draw_density(ax, period: np.ndarray, y: np.ndarray, *, log_y: bool, color,
+                 nx: int, ny: int, gamma: float, zorder: float = 1.0) -> bool:
+    """
+    Per-period density of many curves. `y` has shape (M, n) at the ascending
+    `period` (n,). Every member curve is linearly interpolated (in log period,
+    and in log10 y if `log_y`) onto `nx` grid points, binned in `ny` y-bins,
+    and drawn with pcolormesh in `color` whose opacity is the fraction of
+    members in the bin (PowerNorm with `gamma`; gamma < 1 lifts sparse
+    regions). Returns False if nothing could be drawn.
+    """
+    import matplotlib.colors as mcolors
+
+    n = period.size
+    if n < 2 or y.shape[0] < 2:
+        return False
+    lx = np.log10(period)
+    xg = np.linspace(lx[0], lx[-1], nx)
+    idx = np.clip(np.searchsorted(lx, xg, side="right") - 1, 0, n - 2)
+    dx = lx[idx + 1] - lx[idx]
+    t = np.where(dx > 0.0, (xg - lx[idx]) / np.where(dx > 0.0, dx, 1.0), 0.0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        yv = np.where(y > 0.0, np.log10(y), np.nan) if log_y else np.asarray(y, float)
+    yi = yv[:, idx] * (1.0 - t) + yv[:, idx + 1] * t          # (M, nx)
+    fin = np.isfinite(yi)
+    if not fin.any():
+        return False
+    lo, hi = np.nanpercentile(yi, [0.25, 99.75])
+    pad = 0.05 * (hi - lo) if hi > lo else (0.25 if log_y else max(1e-3, 0.05 * abs(lo)))
+    lo, hi = lo - pad, hi + pad
+    dy = (hi - lo) / ny
+    b = np.floor((np.where(fin, yi, lo) - lo) / dy)
+    ok = fin & (b >= 0) & (b < ny)
+    col = np.broadcast_to(np.arange(nx), yi.shape)
+    flat = b[ok].astype(np.int64) + ny * col[ok]
+    counts = np.bincount(flat, minlength=ny * nx).reshape(nx, ny).T.astype(float)
+    nvalid = fin.sum(axis=0).astype(float)
+    dens = counts / np.where(nvalid > 0.0, nvalid, 1.0)
+    if not np.any(dens > 0.0):
+        return False
+    step = xg[1] - xg[0]
+    xe = np.concatenate(([xg[0] - 0.5 * step], 0.5 * (xg[:-1] + xg[1:]),
+                         [xg[-1] + 0.5 * step]))
+    ye = lo + dy * np.arange(ny + 1)
+    X = 10.0**xe
+    Y = 10.0**ye if log_y else ye
+    rgb = mcolors.to_rgb(color)
+    cmap = mcolors.LinearSegmentedColormap.from_list("dens", [rgb + (0.0,), rgb + (1.0,)])
+    cmap.set_bad((1.0, 1.0, 1.0, 0.0))
+    norm = mcolors.PowerNorm(gamma=gamma, vmin=0.0, vmax=float(dens.max()))
+    ax.pcolormesh(X, Y, np.ma.masked_less_equal(dens, 0.0), cmap=cmap, norm=norm,
+                  shading="flat", rasterized=True, zorder=zorder)
+    return True
+
+
+def draw_bands(ax, period: np.ndarray, y: np.ndarray, *, pct, color,
+               zorder: float = 1.5) -> None:
+    """Percentile envelopes p..100-p of the member curves (one fill per p)."""
+    for p in pct:
+        lo, hi = np.nanpercentile(y, [p, 100.0 - p], axis=0)
+        ax.fill_between(period, lo, hi, color=color, alpha=0.18, linewidth=0,
+                        zorder=zorder)
+
+
+def plot_site_curves(sid: int, series: Dict[str, dict], info: dict, *, M: int,
+                     layers: Sequence[str], cfg: dict, title_extra: str,
+                     dv, markers: dict, comp_class, rng):
+    """
+    One figure for one site: a panel per quantity in cfg["what"] that has data.
+    Returns the figure, or None if the site has nothing to draw.
+    """
+    import matplotlib.pyplot as plt
+    import pandas as pd
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
+
+    comps = [c.strip().lower() for c in str(cfg["comps"]).split(",") if c.strip()]
+    panels: List[Tuple[str, List[str]]] = []
+    for w in cfg["what"]:
+        if w == "rho":
+            cols = [f"rho_{c}" for c in comps]
+        elif w == "phase":
+            cols = [f"phi_{c}" for c in comps]
+        elif w == "tipper":
+            cols = list(_TIPPER_COLS)
+        else:
+            cols = list(_PT_COLS)
+        cols = [c for c in cols if c in series]
+        if cols:
+            panels.append((w, cols))
+    if not panels:
+        return None
+
+    nc = len(panels)
+    fig, axes = plt.subplots(1, nc, figsize=(cfg["panel_size"][0] * nc, cfg["panel_size"][1]),
+                             squeeze=False, constrained_layout=True)
+    obs_only = cfg["obs_only"]
+    if obs_only:
+        layers = []
+    if M > 1 and "curves" in layers:
+        sub = (np.arange(M) if M <= cfg["subsample"]
+               else np.sort(rng.choice(M, size=cfg["subsample"], replace=False)))
+        alpha_m = cfg["member_alpha"] or float(np.clip(3.0 / np.sqrt(sub.size), 0.05, 0.6))
+    else:
+        sub, alpha_m = np.arange(0), 0.3
+
+    def frame(s: dict, col: str, vals, err=None):
+        d = {"freq": s["freq"], "period": s["period"], col: vals}
+        if err is not None:
+            d[col + "_err"] = err
+        return pd.DataFrame(d)
+
+    for ax, (w, cols) in zip(axes[0], panels):
+        plotter = getattr(dv, _CURVE_PLOTTER[w])
+        log_y = (w == "rho")
+        ax.set_xscale("log")
+        if log_y:
+            ax.set_yscale("log")
+        handles = []
+        for k, col in enumerate(cols):
+            s = series[col]
+            comp = col.split("_", 1)[1] if w in ("rho", "phase") else ""
+            color = (_COMP_COLOR.get(comp, _IDX_COLOR[k % 4]) if w in ("rho", "phase")
+                     else _IDX_COLOR[k % 4])
+            mk = (markers.get(comp_class(comp), "o") if w in ("rho", "phase")
+                  else _IDX_MARKER[k % 4])
+            handles.append(Line2D([], [], color=color, lw=1.5, label=_series_label(col)))
+            cal = s["cal"]
+            if obs_only:
+                pass
+            elif M > 1:
+                if "density" in layers:
+                    draw_density(ax, s["period"], cal, log_y=log_y, color=color,
+                                 nx=cfg["dens_nx"], ny=cfg["dens_ny"],
+                                 gamma=cfg["dens_gamma"])
+                if "bands" in layers:
+                    draw_bands(ax, s["period"], cal, pct=cfg["band_pct"], color=color)
+                if "curves" in layers:
+                    for j in sub:
+                        _draw(ax, plotter, frame(s, col, cal[j]), col, w, color=color,
+                              ls="-", lw=0.6, alpha=alpha_m, marker=None, ms=0.0,
+                              zorder=2.0)
+                if cfg["median"]:
+                    _draw(ax, plotter, frame(s, col, np.nanmedian(cal, axis=0)), col, w,
+                          color=color, ls="-", lw=cfg["lw"] + 0.4, alpha=1.0,
+                          marker=None, ms=0.0, zorder=3.0)
+            else:
+                _draw(ax, plotter, frame(s, col, cal[0]), col, w, color=color, ls="-",
+                      lw=cfg["lw"], alpha=1.0, marker=None, ms=0.0, zorder=3.0)
+            # observed data on top
+            emode = cfg["obs_errors"]
+            _draw(ax, plotter, frame(s, col, s["obs"], s["err"] if emode == "shade" else None),
+                  col, w, color=color, ls="none", lw=0.0, alpha=1.0, marker=mk,
+                  ms=cfg["obs_ms"], zorder=5.0, show_errors=(emode == "shade"))
+            if emode == "bar":
+                err, y = s["err"], s["obs"]
+                good = np.isfinite(err) & (err > 0.0)
+                lo = np.minimum(err, 0.9 * y) if log_y else err
+                if good.any():
+                    ax.errorbar(s["period"][good], y[good],
+                                yerr=[lo[good], err[good]], fmt="none", ecolor=color,
+                                elinewidth=0.7, capsize=1.5, zorder=4.5)
+        # style entries (what the marker / line / shading means)
+        style = [Line2D([], [], color="0.3", marker="o", ls="none", ms=3.5, label="observed")]
+        if obs_only:
+            pass
+        elif M > 1:
+            if "density" in layers:
+                style.append(Patch(facecolor="0.6", alpha=0.6, label=f"density (M={M})"))
+            if "bands" in layers:
+                style.append(Patch(facecolor="0.6", alpha=0.35, label="percentile bands"))
+            if "curves" in layers:
+                style.append(Line2D([], [], color="0.5", lw=0.8, label=f"members ({sub.size})"))
+            if cfg["median"]:
+                style.append(Line2D([], [], color="0.2", lw=1.6, label="ensemble median"))
+        else:
+            style.append(Line2D([], [], color="0.3", lw=1.4, label="calculated"))
+        allh = handles + style
+        if cfg["legend_loc"] == "below":
+            ax.legend(handles=allh, fontsize=6.5, loc="upper center",
+                      bbox_to_anchor=(0.5, -0.22), frameon=False,
+                      ncol=min(4, len(allh)))
+        elif cfg["legend_loc"]:
+            ax.legend(handles=allh, fontsize=6.5, loc=cfg["legend_loc"], framealpha=0.75,
+                      ncol=2 if len(allh) > 5 else 1)
+        ax.tick_params(labelsize=8)
+        if cfg["period_lim"] is not None:
+            cur = sorted(ax.get_xlim())
+            lo, hi = cfg["period_lim"]
+            ax.set_xlim(cur[0] if lo is None else lo, cur[1] if hi is None else hi)
+        yl = cfg["ylim"].get(w)
+        if yl is not None:
+            cur = sorted(ax.get_ylim())
+            ax.set_ylim(cur[0] if yl[0] is None else yl[0], cur[1] if yl[1] is None else yl[1])
+        if cfg["invert_x"] != ax.xaxis_inverted():
+            ax.invert_xaxis()
+    who = f"site {info['name']} (id {sid}" if info.get("name") else f"site {sid} ("
+    fit = "" if obs_only else f"nRMS = {info['nrms']:.2f}, "
+    fig.suptitle(f"{who}, x={info['x']:g}, y={info['y']:g}), {fit}"
+                 f"n = {info['n']}{' (observed only)' if obs_only else ''}\n{title_extra}",
+                 fontsize=10)
+    return fig
+
+
+def format_site_nrms(info: Dict[int, dict]) -> str:
+    hdr = (f"{'site_id':>8} {'name':<16} {'site_x':>14} {'site_y':>14} {'n':>7} "
+           f"{'nrms':>8}")
+    lines = ["=" * len(hdr), hdr, "-" * len(hdr)]
+    for s in sorted(info):
+        d = info[s]
+        lines.append(f"{s:>8d} {d.get('name', ''):<16} {d['x']:>14.6g} {d['y']:>14.6g} "
+                     f"{d['n']:>7d} {d['nrms']:>8.3f}")
+    lines.append("=" * len(hdr))
+    return "\n".join(lines)
+
+
+def run_curves(ds: dict, *, out_dir: str, prefix: str, title_extra: str,
+               search_dirs: Sequence[str] = ()) -> int:
+    """
+    Method "curves": one figure per selected site (see the CURVES_* settings).
+    Returns 0 on success, 1 if data_viz is missing or the settings are invalid.
+    """
+    import matplotlib.pyplot as plt
+
+    try:
+        dv, markers, comp_class = _curve_modules()
+    except ImportError as exc:
+        print(f"femtic_data_misfit: curves: needs data_viz.py on the path ({exc}).")
+        return 1
+    cfg = _curves_cfg()
+    bad = [w for w in cfg["what"] if w not in CURVE_PANELS]
+    if bad or not cfg["what"]:
+        print(f"femtic_data_misfit: curves: CURVES_WHAT entries must be from "
+              f"{CURVE_PANELS}; got {tuple(cfg['what'])}.")
+        return 1
+    if cfg["obs_errors"] not in ("bar", "shade", "none"):
+        print("femtic_data_misfit: curves: CURVES_OBS_ERRORS must be bar/shade/none.")
+        return 1
+    M = ds["M"]
+    try:
+        layers = resolve_layers(cfg["ens_mode"], M, cfg["max_curves"])
+    except ValueError as exc:
+        print(f"femtic_data_misfit: curves: {exc}")
+        return 1
+
+    skipped = sorted(set(np.unique(ds["datatype_name"]).tolist()) - set(_CURVE_TYPES))
+    if skipped:
+        print(f"femtic_data_misfit: curves: no plotter for data types {skipped}, skipped.")
+    info = site_nrms(ds)
+    names = load_site_names(cfg["site_dat"], search_dirs, cfg["id_offset"], sorted(info))
+    for s, nm in names.items():
+        if s in info:
+            info[s]["name"] = nm
+    if WRITE_STATS:
+        _write(os.path.join(out_dir, f"{prefix}_site_nrms.txt"),
+               f"# {title_extra}; per-site nRMS, conventional normalization (RMS1)\n"
+               "# site_x / site_y as stored in the results file; name from site.dat",
+               format_site_nrms(info))
+    try:
+        sids = select_sites(info, cfg["sites"], cfg["site_order"], cfg["max_sites"])
+    except ValueError as exc:
+        print(f"femtic_data_misfit: curves: {exc}")
+        return 1
+    if cfg["obs_only"]:
+        layers = []
+    print(f"femtic_data_misfit: curves: {len(sids)} of {len(info)} sites, M={M}, "
+          f"layers={'observed only' if cfg['obs_only'] else '+'.join(layers) if layers else 'single run'}")
+    if not sids:
+        print("femtic_data_misfit: curves: no sites selected, nothing to plot.")
+        return 0
+
+    exts = ["." + str(e).lstrip(".") for e in
+            ((PLOT_FORMATS,) if isinstance(PLOT_FORMATS, str) else PLOT_FORMATS)]
+    multipage = bool(cfg["multipage"]) and ".pdf" in exts
+    pdf_path = os.path.join(out_dir, f"{prefix}_curves.pdf")
+    pdf = None                                    # opened with the first page
+    other = [e for e in exts if not (multipage and e == ".pdf")]
+    sub_dir = os.path.join(out_dir, f"{prefix}_curves")
+    if other:
+        os.makedirs(sub_dir, exist_ok=True)
+
+    rng = np.random.default_rng(cfg["seed"])
+    n_done = 0
+    try:
+        for sid in sids:
+            series = site_series(ds, sid, appres_deg=cfg["appres_deg"])
+            fig = plot_site_curves(sid, series, info[sid], M=M, layers=layers, cfg=cfg,
+                                   title_extra=title_extra, dv=dv, markers=markers,
+                                   comp_class=comp_class, rng=rng)
+            if fig is None:
+                print(f"femtic_data_misfit: curves: site {sid}: nothing to draw, skipped.")
+                continue
+            if multipage:
+                if pdf is None:
+                    from matplotlib.backends.backend_pdf import PdfPages
+                    pdf = PdfPages(pdf_path)
+                pdf.savefig(fig, dpi=PLOT_DPI)
+            if other:
+                tag = f"{sid}_{_safe_name(info[sid]['name'])}" if info[sid].get("name") else f"{sid}"
+                _save(fig, os.path.join(sub_dir, f"{prefix}_curves_site{tag}"), other, PLOT_DPI)
+            if SHOW:
+                plt.show()
+            plt.close(fig)
+            n_done += 1
+    finally:
+        if pdf is not None:
+            pdf.close()
+            print(f"femtic_data_misfit: wrote {pdf_path} ({n_done} pages)")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Text tables (plain ASCII)
 # ---------------------------------------------------------------------------
 FIT_MEASURE_NOTE = (
@@ -1131,6 +1879,19 @@ def process_runs(runs: Sequence[dict], *, mode: str, out_dir: str, prefix: str) 
             _write(os.path.join(out_dir, f"{prefix}_qq_stats.txt"),
                    f"# {title_extra}; bands: {QQ_BANDS_PER_DECADE} per decade "
                    f"({QQ_BAND_AXIS})", table)
+
+    if "curves" in METHODS:
+        # where to look for site.dat: the results directories and up to two
+        # levels above them (ensemble members sit in a common parent)
+        sdirs: List[str] = []
+        for r in runs:
+            d = os.path.dirname(os.path.abspath(r["path"]))
+            for _ in range(3):
+                if d not in sdirs:
+                    sdirs.append(d)
+                d = os.path.dirname(d)
+        return run_curves(ds, out_dir=out_dir, prefix=prefix, title_extra=title_extra,
+                          search_dirs=sdirs)
     return 0
 
 

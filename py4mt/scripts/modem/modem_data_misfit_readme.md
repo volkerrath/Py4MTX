@@ -41,8 +41,8 @@ femtic_data_misfit.py" in the script's own docstring for the itemised list.
 
 ## Overview
 
-Three methods, selected with `METHODS` (default: all three) -- identical
-to `femtic_data_misfit.py`:
+Four methods, selected with `METHODS` (default: the first three; add
+`"curves"` for the fourth) -- identical to `femtic_data_misfit.py`:
 
 1. **crossplot** -- observed vs. calculated scatter plots, one panel per data
    type / component (Re and Im separately for complex types), log10
@@ -64,6 +64,64 @@ to `femtic_data_misfit.py`:
    in orange (slope1 / slope2 in the table); in single mode only the
    conventional residuals are shown. `QQ_EQUAL_AXES = True` gives square
    panels with the ideal line at 45 degrees.
+
+4. **curves** (optional) -- per-site response curves, ported from
+   `femtic_data_misfit.py` (2026-09-30c). See "Response curves" below.
+
+## Response curves (method `"curves"`)
+
+One figure per selected site, one panel per entry of `CURVES_WHAT`
+(`"rho"`, `"phase"`, `"tipper"`, `"pt"`); observed data (markers with
+error bars or shading, `CURVES_OBS_ERRORS`) and the calculated response.
+Lines and markers are drawn with the `data_viz.py` plotters, which must be
+importable (`femtic_viz.py` is used if present, only for the component
+marker convention). Site labels are the site codes of the data file, so no
+`site.dat` is needed; `CURVES_SITES` takes `None` (all), an integer N
+(chosen by `CURVES_SITE_ORDER`: `"even"`, `"id"`, `"worst"`, `"best"`), or a
+list of site codes (case-insensitive match).
+
+| Mode (`CURVES_ENS_MODE`) | Drawn |
+|---|---|
+| single run | one calculated line per component |
+| `"curves"` | thin transparent member responses (`CURVES_SUBSAMPLE`) |
+| `"density"` | per-period density of all members (colour opacity = fraction of members; `CURVES_DENSITY_*`) |
+| `"bands"` | percentile envelopes (`CURVES_BAND_PCT`) |
+| `"auto"` (default) | curves up to `CURVES_MAX_CURVES` members, density above; `"+"` combines, e.g. `"density+bands"` |
+
+The ensemble median is drawn on top (`CURVES_MEDIAN`).
+**`CURVES_OBSERVED_ONLY = True`** draws only the observed data (no
+calculated line, no ensemble layers, no nRMS in the title); it works for
+single runs and ensembles.
+
+Output: `<prefix>_curves.pdf` (one page per site; other formats: one file
+per site in `<prefix>_curves/`) and `<prefix>_site_nrms.txt` (per-site
+nRMS, conventional normalization).
+
+Data types drawn: `Full_Impedance` / `Off_Diagonal_Impedance` (rho_a and
+phase from Z: rho_a = |Z|^2/(mu0 omega), phase = atan2(Im, Re) in degrees),
+`Off_Diagonal_Rho_Phase` (as stored), `Full_Vertical_Components` (Re/Im of
+Tx, Ty), `Phase_Tensor` (PTxx..PTyy). `Full_Interstation_TF` is skipped
+with a message. The calculated phase is put on the branch of the observed
+phase so members crossing +-180 degrees do not jump.
+
+ModEM-specific assumptions -- **please check against your files**:
+
+- **Impedance units.** Values are taken as SI ohm. If the data file header
+  says `[mV/km]/[nT]` set `CURVES_Z_UNITS = "mV/km/nT"` (factor 4 pi 1e-4);
+  for `[V/m]/[T]` use `"V/m/T"` (factor mu0). A quick check is the level of
+  the apparent resistivity.
+- **Sign convention.** The sign of Im(Z) is kept as stored; set
+  `CURVES_Z_CONJ = True` for data written with exp(+i omega t).
+- **Off_Diagonal_Rho_Phase** is assumed to hold rho in ohm m and phase in
+  degrees (`CURVES_APPRES_PHASE_DEG`); `CURVES_RHOPHS_LOG10 = True` if rho is
+  stored as log10.
+- **Errors.** ModEM's single error applies to Re and Im; the error of rho_a
+  and phase uses the complex modulus of the two errors, as
+  `data_viz.datadict_to_plot_df` does (about sqrt(2) larger than a
+  projection onto the direction of Z).
+- **Site coordinates** appear in the titles only if the rows returned by
+  `modem.read_data_misfit` carry fields `x`/`y` (or `site_x`/`site_y`);
+  otherwise they are NaN and omitted.
 
 ## Fit measures
 
@@ -157,7 +215,15 @@ for several singles), exactly as in `femtic_data_misfit.py`.
 | `ITERATION` | `"best"` | `"best"`, `"last"`, or integer |
 | `CALC_PATTERN` | `"*_NLCG_*.dat"` | Search pattern when `calc` is a directory |
 | `KEY_ROUND` | 8 | Period-rounding decimals for obs/calc row matching |
-| `METHODS` | all three | `"crossplot"`, `"histogram"`, `"qq"` |
+| `METHODS` | first three | `"crossplot"`, `"histogram"`, `"qq"`, `"curves"` (optional) |
+| `CURVES_WHAT`, `CURVES_COMPS` | `("rho","phase","tipper")`, `"xy,yx"` | Panels and impedance components |
+| `CURVES_SITES`, `CURVES_SITE_ORDER`, `CURVES_MAX_SITES` | 12, `"even"`, 200 | Site selection (codes of the data file) |
+| `CURVES_ENS_MODE`, `CURVES_MAX_CURVES`, `CURVES_SUBSAMPLE`, `CURVES_MEMBER_ALPHA`, `CURVES_MEDIAN` | `"auto"`, 50, 100, None, True | Ensemble display |
+| `CURVES_BAND_PCT`, `CURVES_DENSITY_NX/NY/GAMMA`, `CURVES_SEED` | (5,25), 200/60/0.5, 0 | Bands and density |
+| `CURVES_OBSERVED_ONLY` | False | Draw only the observed data |
+| `CURVES_OBS_ERRORS`, `CURVES_OBS_MARKERSIZE`, `CURVES_LINEWIDTH` | `"bar"`, 3.5, 1.2 | Observed errors (`"bar"`/`"shade"`/`"none"`), sizes |
+| `CURVES_INVERT_X`, `CURVES_PERIOD_LIM`, `CURVES_YLIM`, `CURVES_PANEL_SIZE`, `CURVES_LEGEND_LOC`, `CURVES_MULTIPAGE` | see script | Axes and layout (`"best"` legend is slow with density) |
+| `CURVES_Z_UNITS`, `CURVES_Z_CONJ`, `CURVES_RHOPHS_LOG10`, `CURVES_APPRES_PHASE_DEG` | `"ohm"`, False, False, True | ModEM data conventions (see above) |
 | `ENSEMBLE_OBS` | `"mean"` | Observed data across members: `"mean"` or `"first"` |
 | `REF_MEMBER` | `None` | RMS1 reference (None = ensemble mean) |
 | `OUT_DIR` | `None` | `None` = run directory (ensemble: common parent); or a path |
@@ -267,6 +333,16 @@ flagged above and in the script's own docstring:
     the synthetic bias injected into the test data.
 - **Not yet run against real ModEM output.**
 
+- **Curves, synthetic tests only** (stubbed `modem` reader, synthetic pickled
+  data standing in for ModEM files): the crossplot/histogram/Q-Q text and
+  PNG outputs are byte-identical to the previous version (single and
+  5-member ensemble); curves were run for a single run, an ensemble in
+  auto / density+bands / observed-only modes, PDF output, site selection
+  by code (with an unknown code), invalid `CURVES_Z_UNITS` / `CURVES_WHAT`
+  (exit code 1), and the unit conversion (field units vs. SI agree to
+  machine precision). Figures were inspected visually. Not run on real
+  ModEM files or with the real `modem.py`.
+
 ## Reference
 
 Baba, K. (2023): A simple method to evaluate the uncertainty of
@@ -288,3 +364,13 @@ script: obs/calc pair run resolution (`resolve_run`, `_iter_from_name`,
 (`build_dataset`/`_row_keys` adapted to string datatype/site/component
 keys); crossplot/histogram/Q-Q plotting, fit measures and table
 formatting carried over unchanged from `femtic_data_misfit.py`.
+
+### Changelog (2026-10-01) --- optional response curves
+
+Claude (Anthropic), 2026-10-01. AI-generated code -- please review.
+Method `"curves"` ported from `femtic_data_misfit.py` (2026-09-30c): per-site
+observed/calculated curves, ensemble curves / density / bands / median,
+observed-only mode (`CURVES_OBSERVED_ONLY`), per-site nRMS table.
+`build_dataset()` also keeps the per-member responses (`cal_re_m`,
+`cal_im_m`) and site coordinates (`site_x`, `site_y`, NaN if absent). The
+other three methods are unchanged.

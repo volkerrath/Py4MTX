@@ -1,7 +1,7 @@
 # Parameter summary: femtic_ens_post
 
 - **Script path:** `/home/vrath/Py4MTX/py4mt/scripts/femtic/femtic_ens_post.py`
-- **Run date/time:** 2026-09-28 18:16:03
+- **Run date/time:** 2026-09-30 10:31:50
 
 ## User-set parameters
 
@@ -64,7 +64,7 @@
 | `MOD_STATS` | `True` |
 | `MOD_STATS_DIR` | `'/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2//stats_plots_median/'` |
 | `MOD_STATS_STYLE` | `{'var': {'clim': [0.0, 0.3], 'label': 'var log10(rho)'}, 'err': {'clim': [0.0, 0.3], 'label': 'std log10(rho)'}, 'mad': {'clim': [0.0, 0.3], 'label': 'MAD log10(rho)'}, 'qdiff_15_9_84_1': {'clim': [0.0, 0.5], 'label': 'P84.1 - P15.9  log10(rho)'}, 'qdiff_2_3_97_7': {'clim': [0.0, 0.5], 'label': 'P97 ... (truncated)` |
-| `MOD_STATS_WHAT` | `['best', 'avg', 'med', 'err', 'mad', 'qdiff_15_9_84_1', 'qdiff_2_3_97_7', 'err_boot', 'sens_mean_raw', 'sens_mean_an', 'sens_median_ansens_cv_an', 'simrc_corr']` |
+| `MOD_STATS_WHAT` | `['best', 'avg', 'med', 'err', 'mad', 'qdiff_15_9_84_1', 'qdiff_2_3_97_7', 'err_boot', 'sens_mean_raw', 'sens_mean_an', 'sens_median_ansens_cv_an', 'simrc_corr', 'simrc_coef']` |
 | `MOD_TICK_DECIMALS` | `2` |
 | `MOD_TICK_FONTSIZE` | `16` |
 | `MOD_TITLE_FONTSIZE` | `26` |
