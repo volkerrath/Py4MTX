@@ -471,8 +471,8 @@ N_SAMPLES = 64
 # ENSEMBLE_DIR = r"/home/vrath/work/Ensembles/annecy2026/ensembles/"
 # ENSEMBLE_NAME = "annecy_rnd_2_"
 
-ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_4/"
-ENSEMBLE_NAME = "annecy_rnd_4_"
+ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_0/"
+ENSEMBLE_NAME = "annecy_gst_"
 
 # ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/misti2026/misti_gst_rndx/"
 # ENSEMBLE_NAME = "misti_rnd_1_xxx"
@@ -557,7 +557,7 @@ if PERTURB_MOD:
     # Number of randomly drawn pilot points per member.
     # Used when MOD_PP_MODE = "random", "mixed", or "extrema" (fill).
     # Recommended: 50–200 for typical 3-D MT survey volumes.
-    MOD_N_PP = 100
+    MOD_N_PP = 128
 
     # Bounding box for random pilot-point placement:
     #   [x_min, x_max, y_min, y_max, z_min, z_max]  (km, model-local, z positive-down)
@@ -746,14 +746,29 @@ if PERTURB_DAT:
 
 RESET_ERRORS = True
 if RESET_ERRORS:
+    # MT/VTF columns are interleaved (Re, Im) pairs per complex component
+    # (Zxx,Zxy,Zyx,Zyy / Tzx,Tzy). Each entry below is duplicated (not
+    # concatenated) so the Re and Im column of a pair share the SAME
+    # relative error, e.g. [0.15,.05,.05,0.15] -> [.15,.15,.05,.05,.05,.05,.15,.15].
+    # femtic.modify_data then applies that shared value to the pair's
+    # complex magnitude, giving Re and Im the same sigma. Using
+    # `[...] * 2` here instead (list concatenation, not duplication) would
+    # silently give Re and Im of the same component different, mismatched
+    # relative errors -- do not do that.
+    _mt_rel = [0.15, .05, .05, 0.15]         # Zxx, Zxy, Zyx, Zyy
+    _vtf_rel = [0.05, 0.05]                  # Tzx, Tzy
     ERRORS = [
-        [0.25, .1, .1, 0.25] * 2,   # Impedance
-        [0.05, 0.05] * 2,            # VTF
-        [.5, .2, .2, .5],            # PT
+        [v for v in _mt_rel for _ in range(2)],    # Impedance (8 = 4 pairs x Re/Im)
+        [v for v in _vtf_rel for _ in range(2)],   # VTF (4 = 2 pairs x Re/Im)
+        [.15, .05, .05, .15],                      # PT: PTxx,PTxy,PTyx,PTyy (no Re/Im split)
     ]
 else:
-    ERRORS = []
-
+    ERRORS = ([], [], [])   # must stay a length-3 [MT, VTF, PT] sequence --
+                             # femtic.modify_data indexes errors[0..2] by
+                             # obs_type regardless of RESET_ERRORS; a bare
+                             # [] here previously raised IndexError as soon
+                             # as any block was read (fixed defensively in
+                             # modify_data too, but keep this correct).
 
 """
 Visualization config.
@@ -763,7 +778,7 @@ plot_model_ensemble use the same randomly drawn set of ensemble members
 (VIZ_N_SAMPLES).  plot_data_ensemble additionally sub-samples a fixed number
 of MT sites per row (VIZ_N_SITES); set to None to show all sites.
 """
-PLOT_DATA  = False  # True
+PLOT_DATA  = True  # True
 PLOT_MODEL = True  # True
 
 if PLOT_DATA or PLOT_MODEL:

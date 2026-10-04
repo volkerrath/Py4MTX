@@ -280,7 +280,7 @@ QQ_BAND_AXIS: str = "frequency"     # "frequency" | "period"
 QQ_BANDS_PER_DECADE: int = 2
 QQ_BY_COMPONENT: bool = False       # False: per data type, components pooled
 QQ_LIMIT: float = 10.0              # max |sample quantile| shown
-QQ_EQUAL_AXES: bool = False         # True: same range on both axes, square
+QQ_EQUAL_AXES: bool = True         # True: same range on both axes, square
                                     # panels (1:1 line at 45 degrees)
 QQ_CONFIDENCE: Optional[float] = 0.95   # pointwise envelope; None = off
 QQ_MIN_N: int = 10                  # skip bands with fewer values
@@ -291,7 +291,7 @@ QQ_PANEL_SIZE: float = 3.0
 # Needs data_viz.py on the path. One figure per site, one panel per entry of
 # CURVES_WHAT; PLOT_FORMATS/PLOT_DPI/OUT_DIR/OUT_PREFIX apply as usual.
 CURVES_WHAT: Tuple[str, ...] = ("rho", "phase", "tipper")   # + "pt"
-CURVES_COMPS: str = "xy,yx"        # impedance components (rho and phase panels)
+CURVES_COMPS: str = "xx, xy, yx, yy"        # impedance components (rho and phase panels)
 CURVES_SITE_DAT: Optional[str] = "auto"   # site.dat from mt_make_sitelist.py
                                    # (name,lat,lon,elev,sitenum,E,N): gives the
                                    # site names. "auto" = look for site.dat in
@@ -333,7 +333,7 @@ CURVES_INVERT_X: bool = True       # True = as data_viz (period decreasing
                                    # to the right); False = period increasing
 CURVES_PERIOD_LIM: Optional[Tuple[float, float]] = None   # (Tmin, Tmax) [s]
 CURVES_YLIM: Dict[str, Optional[Tuple[float, float]]] = {
-    "rho": None, "phase": None, "tipper": None, "pt": None}
+    "rho": None, "phase": (-180.,+180.,), "tipper": (-0.5,+0.5,), "pt": None}
 CURVES_PANEL_SIZE: Tuple[float, float] = (4.2, 3.4)       # width, height [in]
 CURVES_LEGEND_LOC: Optional[str] = "below"   # "below" (under each panel), a
                                    # matplotlib loc such as "upper right", or

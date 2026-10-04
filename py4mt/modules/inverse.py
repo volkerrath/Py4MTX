@@ -2132,3 +2132,80 @@ def calc_rms(dcalc=None, dobs=None, Wd=1.0, nscale=0, weighted = True):
     smape = 100.0 * ssq/nd
 
     return nrms, smape
+
+
+import numpy as np
+
+
+def effective_sensitivity_coverage(J, eps=None):
+    """
+    Calculate effective sensitivity coverage for each model parameter.
+
+    The input Jacobian is assumed to be error-scaled, i.e.
+
+        J = C_d^{-1/2} J_raw
+
+    For model parameter j, the normalized squared sensitivities are
+
+        p_ij = J_ij**2 / sum_i(J_ij**2),
+
+    and the effective number of contributing data is
+
+        N_eff,j = 1 / sum_i(p_ij**2)
+
+                = (sum_i J_ij**2)**2 / sum_i J_ij**4.
+
+    Parameters
+    ----------
+    J : array_like, shape (n_data, n_model)
+        Error-scaled Jacobian.
+    eps : float, optional
+        Threshold below which a Jacobian column is considered insensitive.
+        By default, machine precision is used.
+
+    Returns
+    -------
+    n_eff : ndarray, shape (n_model,)
+        Effective number of data contributing to each model parameter.
+        Values range from 1 to n_data for sensitive parameters. Parameters
+        with negligible total sensitivity are assigned 0.
+
+    Usage
+    -----
+    sensitivity = np.linalg.norm(J, axis=0)
+    n_eff = effective_sensitivity_coverage(J)
+
+    Notes
+    -----
+    N_eff = 1 indicates that effectively one datum dominates the sensitivity
+    to a parameter. N_eff approaching n_data indicates that the sensitivity
+    is distributed approximately uniformly over all data.
+
+    N_eff measures the distribution of sensitivity, not its absolute
+    magnitude. It should therefore generally be considered together with
+    an integrated sensitivity measure such as
+
+        sqrt(sum_i J_ij**2).
+
+    Author: Volker Rath (DIAS)
+    Created with the help of ChatGPT (GPT-5 Thinking) on 2026-10-04
+    """
+    J = np.asarray(J, dtype=float)
+
+    if J.ndim != 2:
+        raise ValueError("J must have shape (n_data, n_model).")
+
+    if eps is None:
+        eps = np.finfo(float).eps
+
+    J2 = J**2
+
+    sum2 = np.sum(J2, axis=0)
+    sum4 = np.sum(J2**2, axis=0)
+
+    n_eff = np.zeros(J.shape[1], dtype=float)
+
+    valid = sum2 > eps
+    n_eff[valid] = sum2[valid]**2 / sum4[valid]
+
+    return n_eff
