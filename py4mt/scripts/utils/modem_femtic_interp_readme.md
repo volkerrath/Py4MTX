@@ -47,6 +47,35 @@ assumes mesh nodes are (northing, easting, z); use `"en"` otherwise.
 The script prints grid vs. mesh bounding boxes and warns if they do not
 overlap. A wrong frame shows up as low coverage.
 
+## Georeferencing (COORD_MODE = "georef")
+
+Instead of hand-set offsets, the placement of the ModEM grid in the FEMTIC
+frame is computed from the UTM origins of both models (same UTM zone;
+`UTM_ZONE` / `UTM_NORTHERN`, else derived from the mean site lat/lon).
+
+FEMTIC origin (UTM of the mesh centre), `FEMTIC_ORIGIN_METHOD`:
+
+| Method          | Input                                                              |
+|-----------------|--------------------------------------------------------------------|
+| `box` (default) | `SITE_DAT` (name,lat,lon,elev,num,E,N): midpoint of the site bounding box, as in femtic_gst_prep |
+| `calibration`   | `CALIBRATION_SITES` (lat/lon or UTM) + model-local x/y [km] in `OBSERVE_DAT` (x = east, y = north); origin = mean(UTM_site - local), residuals printed |
+| `manual`        | `FEMTIC_ORIGIN_UTM = (easting, northing)`                          |
+
+ModEM origin (UTM of the data-frame origin X = Y = 0), `MODEM_ORIGIN_METHOD`:
+
+| Method          | Input                                                              |
+|-----------------|--------------------------------------------------------------------|
+| `data` (default)| `MODEM_DATA + MODEM_DATA_EXT`: per-site lat/lon and X (north), Y (east); origin = mean(UTM_site - (Y, X)); scatter over sites printed |
+| `manual`        | `MODEM_ORIGIN_LATLON = (lat, lon)`                                 |
+
+The ModEM grid is placed with its stored reference corner in the data
+frame and shifted by (UTM_modem - UTM_femtic) in north/east; `OFFSET_*`
+are added on top. This assumes the `.rho` reference corner is expressed in
+the same frame as the data-file X/Y (check the printed bounding boxes).
+A large residual in the origin tables points to wrong coordinates, a
+wrong zone, or swapped X/Y. The UTM conversion is built in
+(`latlon_to_utm`, WGS84, Kruger series, sub-mm; no pyproj/util needed).
+
 ## Outputs
 
 modem2femtic: `FEMTIC_OUT` (block written via `femtic.insert_model`).
@@ -58,6 +87,10 @@ Optional `DIAGNOSTICS_NPZ` stores coverage (and region/cell values).
 - constant model reproduced exactly in both directions;
 - aligned tets/cells round trip: max relative error 5e-15;
 - air template cells preserved; partial overlap keeps template values;
+- UTM conversion checked against the numerically integrated meridian arc
+  (central meridian) and the Snyder series off the meridian (< 1e-5 m);
+- georef: `box`, `calibration` and `manual` placements run end to end; box
+  and calibration reproduce a hand-set `reference` + offsets run exactly;
 - full file-I/O run through real `modem.py`/`femtic.py` (numba, netCDF4 and
   ensembles stubbed): region values converge to an independent fine-voxel
   reference as `OVERSAMPLE` grows.
@@ -72,3 +105,6 @@ Optional `DIAGNOSTICS_NPZ` stores coverage (and region/cell values).
 ## Changelog
 
 - 2026-10-04  Claude Sonnet 5.5 (Anthropic): created script and readme.
+- 2026-10-05  Claude Sonnet 5.5 (Anthropic): added `COORD_MODE = "georef"`
+  (FEMTIC origin from site.dat box / observe.dat calibration / manual;
+  ModEM origin from data-file lat/lon + X/Y / manual; built-in UTM).
