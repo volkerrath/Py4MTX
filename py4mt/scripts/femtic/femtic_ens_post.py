@@ -654,6 +654,22 @@ Provenance
             "what to plot" list can safely imply (grid size has no relation
             to len(MOD_STATS_WHAT); the COMPUTE_* flags also gate what is
             saved to the .npz regardless of whether it is ever plotted).
+2026-10-07  Claude Sonnet 5.5 (Anthropic)
+            Vertical sections are now configured in MOD_SLICES itself, as
+            dict(kind="plane", point=[x, y] km, strike=azimuth deg,
+            dip=90); the default list ends with a SW-NE (strike 45) section
+            through the model origin. New helper _plane_spec_km_to_m()
+            converts such entries (km -> m) in _plot_slice(); other kinds
+            still go through fem.resolve_slice_positions and the original
+            order is kept. The section uses the same limits as the other
+            slices: along-strike range = MOD_XLIM x MOD_YLIM projected onto
+            the strike (whole mesh if either is None; optional per-entry
+            xlim in km), depth range = MOD_ZLIM; horizontal axis in model
+            km. Requires the updated femtic_viz.py (vertical "plane"
+            panels, 2026-10-07). Also fixed a missing comma in the default
+            MOD_STATS_WHAT that silently merged "sens_median_an" and
+            "sens_cv_an" into the non-existent key
+            "sens_median_ansens_cv_an" (neither panel was plotted).
 
     This script targets FEMTIC's current HDF5 output layout only.
     AI-generated code -- review before production use.
@@ -661,6 +677,7 @@ Provenance
 
 from __future__ import annotations
 
+import math
 import os
 import re
 import sys
@@ -733,6 +750,45 @@ def _slices_km_to_m(slices):
     return out
 
 
+def _plane_spec_km_to_m(spec):
+    """Convert a MOD_SLICES ``kind="plane"`` entry (km) to a plot spec (m).
+
+    Accepted keys (km / degrees): ``point`` = [x, y] or [x, y, z] model-local
+    km (default [0, 0] = model origin), ``strike`` (geographic azimuth,
+    degrees clockwise from north, for dip = 90; default 0), ``dip``
+    (default 90), ``invert_x``, ``title``, and optionally ``xlim`` =
+    [min, max] along-strike km relative to ``point``.
+
+    For a vertical plane (dip = 90) without an explicit ``xlim`` the
+    along-strike range is derived from the same limits as the other panels:
+    the corners of the MOD_XLIM x MOD_YLIM box (east x north, model-local
+    km) are projected onto the strike direction, so the section covers the
+    same ROI. If either of MOD_XLIM / MOD_YLIM is None the whole mesh is
+    shown. The depth range follows MOD_ZLIM like every other curtain panel
+    (applied inside femtic_viz.plot_model_slices).
+    """
+    sp = dict(spec)
+    pt = list(sp.get("point", [0.0, 0.0]))
+    pt += [0.0] * (3 - len(pt))
+    sp["point"] = [float(v) * 1000.0 for v in pt[:3]]
+    sp.setdefault("strike", 0.0)
+    sp.setdefault("dip", 90.0)
+    if "xlim" in sp:
+        sp["xlim"] = _lim_km_to_m(sp["xlim"])
+    elif abs(float(sp["dip"]) - 90.0) < 1e-6:
+        if MOD_XLIM is not None and MOD_YLIM is not None:
+            _s = math.radians(float(sp["strike"]))
+            _u = [
+                (ex - pt[0]) * math.sin(_s) + (ny - pt[1]) * math.cos(_s)
+                for ex in MOD_XLIM
+                for ny in MOD_YLIM
+            ]
+            sp["xlim"] = [min(_u) * 1000.0, max(_u) * 1000.0]
+        else:
+            sp["xlim"] = None
+    return sp
+
+
 rng = np.random.default_rng()
 nan = np.nan
 
@@ -746,11 +802,11 @@ print(titstrng + "\n\n")
 # ---------------------------------------------------------------------------
 # Ensemble input
 # ---------------------------------------------------------------------------
-ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2/"
-ENSEMBLE_NAME = "annecy_rnd_2_"
+ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_0/"
+ENSEMBLE_NAME = "annecy_gst_"
 #: Prefix used for .npz output keys and default file/figure names.
 #: e.g. "rto" → keys rto_ens, rto_avg, …  and file RTO_results.npz.
-ENSEMBLE_PREFIX = "annecy_rnd_2"
+ENSEMBLE_PREFIX = "annecy_hst"
 
 #: Maximum normalised RMS accepted from femtic.cnv.
 NRMS_MAX = 1.5
@@ -1051,7 +1107,7 @@ MOD_STATS_WHAT = (
         [
             "sens_mean_raw",
             "sens_mean_an",
-            "sens_median_an"
+            "sens_median_an",
             "sens_cv_an",
         ]
         if COMPUTE_SENS
@@ -1172,6 +1228,13 @@ MOD_SLICES = [
     dict(kind="map", z0=5.0),  # km
     dict(kind="ns", x0=0.0),  # km
     dict(kind="ew", y0=0.0),  # km
+    #: Vertical section along a strike through ``point`` (model-local km,
+    #: [0, 0] = model origin). strike = geographic azimuth, degrees
+    #: clockwise from north: 45 = SW (left) -> NE (right), 135 = NW -> SE.
+    #: Horizontal axis = along-strike distance from ``point`` in model km;
+    #: its range follows MOD_XLIM x MOD_YLIM (projected onto the strike),
+    #: its depth range MOD_ZLIM. Optional: xlim=[min, max] (km) to override.
+    dict(kind="plane", point=[0.0, 0.0], strike=45.0, dip=90.0),
     # dict(kind="ns",  x0=(-71.40723, 'latlon')),    # km
     # dict(kind="ew",  y0=(-16.299593, 'latlon')),    # km
 ]
@@ -1825,16 +1888,28 @@ def _plot_slice(
     _ocean_value = _STATS_OCEAN_RHO if stats_panel else MOD_OCEAN_RHO
     _air_thresh = _STATS_AIR_LOG10_THRESH if stats_panel else 8.0
 
-    _slices_resolved = fem.resolve_slice_positions(
-        _slices_km_to_m(MOD_SLICES),
-        utm_zone,
-        utm_north,
-        utm_e,
-        utm_n,
-        utm_lat,
-        utm_lon,
-        verbose=OUT,
+    # "plane" entries (vertical sections) are converted here (km -> m, no
+    # CRS tagging); all other kinds go through fem.resolve_slice_positions
+    # exactly as before. Original MOD_SLICES order is preserved.
+    _others = [sp for sp in MOD_SLICES if sp.get("kind") != "plane"]
+    _others_res = iter(
+        fem.resolve_slice_positions(
+            _slices_km_to_m(_others),
+            utm_zone,
+            utm_north,
+            utm_e,
+            utm_n,
+            utm_lat,
+            utm_lon,
+            verbose=OUT,
+        )
+        if _others
+        else []
     )
+    _slices_resolved = [
+        _plane_spec_km_to_m(sp) if sp.get("kind") == "plane" else next(_others_res)
+        for sp in MOD_SLICES
+    ]
     for _fmt_i, _fmt in enumerate(_MOD_PLOT_FORMATS):
         _fmt_file = f"{pdf_file}.{_fmt}"
         # Only pop up the interactive window (if MOD_SHOW_IN_SPYDER) on the

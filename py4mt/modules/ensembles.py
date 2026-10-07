@@ -23,170 +23,225 @@ All functions are importable; no code is executed on import.
 
 Author: Volker Rath (DIAS)
 Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-02 (UTC)
-Updated 2026-03-31 by Claude (Anthropic): removed debug print in
-sample_rtr_full_rank; removed dead commented-out code in
-generate_rto_model_ensemble; removed redundant per-sample print.
-Updated 2026-03-31 by Claude (Anthropic): consolidated _diag_rtr
-into _rtr_diag (single helper); removed dead estimate_low_rank_eigpairs;
-enriched docstrings with tuning recommendations.
-Updated 2026-04-02 by Claude (Anthropic): fixed FileNotFoundError in
-generate_rto_model_ensemble — template argument to fem.insert_model now uses
-the full per-member path (_orig.dat backup) instead of the bare basename.
-Updated 2026-04-02 by Claude (Anthropic): fixed generate_rto_model_ensemble
-write-back loop — now reads reference log10-resistivity from the backup
-template and adds the perturbation before calling insert_model (method='add'),
-so perturbed models are reference + delta_log10 rather than bare perturbations.
-Updated 2026-04-11 by Claude Sonnet 4.6 (Anthropic): moved check_sparse_matrix
-here from femtic.py (consolidation of all matrix/roughness tools into ensembles);
-femtic.py Section 2 now imports these functions from ensembles rather than
-duplicating them.
-Updated 2026-04-27 by Claude Sonnet 4.6 (Anthropic): added
-generate_gst_model_ensemble — geostatistical initial-model ensemble via
-pilot-point Ordinary Kriging (gstools).  No roughness matrix required.
-Updated 2026-04-27 by Claude Sonnet 4.6 (Anthropic): renamed
-generate_model_ensemble to generate_rto_model_ensemble for consistency
-with generate_gst_model_ensemble.
-Updated 2026-05-28 by Claude Sonnet 4.6 (Anthropic): put_files and
-generate_directories gained a relative_links parameter (default True):
-relative symlinks survive tgz/copy to another machine; False restores the
-previous absolute-path behaviour.
-Updated 2026-05-28 by Claude Sonnet 4.6 (Anthropic): fixed template-clobbering
-bug in generate_gst_model_ensemble — when output_target='both', the first
-insert_model call (resistivity_block) could overwrite reference_file before
-the second call read it as template; template_path is now resolved once before
-either write.
-Updated 2026-05-28 by Claude Sonnet 4.6 (Anthropic): added GST parameter
-estimation section — four functions for choosing variogram parameters before
-committing to a full ensemble run: gst_variogram_from_rto_samples (Strategy 1:
-fit variogram to RTO samples), gst_pilot_point_cv (Strategy 2: LOO-CV on
-reference model), gst_sill_from_jacobian (Strategy 3: linearised Jacobian
-sill calibration), gst_parameter_diagnostics (Strategy 4: integrating
-diagnostic with optional plot).
-Updated 2026-06-06 by Claude Sonnet 4.6 (Anthropic): added "extrema" pilot-
-point mode to generate_gst_model_ensemble.  New helper
-_find_extrema_pilot_points (KDTree-based local extremum detection on free-
-region barycentres, optional ROI mask).  New parameters pp_roi, pp_extrema_k,
-pp_extrema_which; graceful fallback to "random" if no extrema are found.
-Requires scipy.spatial (already a transitive dependency).
-Updated 2026-06-10 by Claude Sonnet 4.6 (Anthropic): added _resolve_fromto
-helper; all four ensemble functions (generate_directories,
-generate_rto_model_ensemble, generate_gst_model_ensemble,
-generate_data_ensemble) now accept an explicit list of member indices in
-addition to None (all).  Range semantics ([start, stop]) removed — a list
-always means explicit indices.  Type hints updated to Optional[List[int]];
-Union/Tuple removed from fromto signatures.  Matching change in
-femtic_rto_prep.py: FROM_TO renamed to ENS_LIST.
-Updated 2026-07-05 by Claude Sonnet 5 (Anthropic): added pp_value_mode /
-pp_value_delta to generate_gst_model_ensemble.  pp_value_mode="uniform"
-(default) preserves the original Uniform(log_rho_min, log_rho_max) draw;
-pp_value_mode="reference" instead draws pilot-point values as
-reference_model(nearest free region) ± pp_value_delta (log10 Ohm.m),
-using a scipy.spatial.KDTree nearest-neighbour lookup against the free-
-region barycentres.  Reference log10(rho) at free regions is now computed
-unconditionally (previously only inside the "extrema" pp_mode branch) so
-it is available to both "extrema" placement and "reference" value mode.
-Updated 2026-07-05 by Claude Sonnet 5 (Anthropic): raised the default
-neighbourhood size for extremum detection from k=9 to k=30 in both
-_find_extrema_pilot_points and generate_gst_model_ensemble's pp_extrema_k
-— the strictly-less/greater-than-all-neighbours test was flagging too
-many spurious local minima/maxima at small k on typical FEMTIC meshes;
-recommended range updated from 7-15 to 20-40.
-Modified: 2026-07-17 by Claude Sonnet 5 (Anthropic) — migrated from legacy
-    scipy.sparse matrix classes to the array-equivalent API throughout:
-    removed unused isspmatrix import; updated scipy.sparse.spmatrix type
-    hints to scipy.sparse.sparray (get_roughness, make_prior_cov,
-    prune_inplace, prune_rebuild, dense_to_csr, matrix_reduce,
-    check_sparse_matrix, build_rtr_operator, make_rtr_preconditioner,
-    make_sparse_cholesky_precision_solver, _rtr_diag, pick_lam_from_rtr_diag);
-    replaced scipy.sparse.identity() (returns a legacy matrix) with
-    scipy.sparse.eye_array() in make_rtr_preconditioner and
-    make_sparse_cholesky_precision_solver. Also fixed a latent bug in
-    get_roughness/make_prior_cov where `eye` was imported aliased as
-    `eye_array` (silently returning a legacy sparse matrix instead of an
-    array); now imports the genuine eye_array constructor.
-Modified: 2026-07-19 by Claude Sonnet 5 (Anthropic) — added a mesh-agnostic
-    GST perturbation machine: krige_pilot_points_to_targets(),
-    _draw_pilot_points(), generate_gst_perturbation() factor the pilot-point
-    placement + Ordinary-Kriging core out of generate_gst_model_ensemble()
-    so a single realisation can be generated in memory (no directory tree,
-    no file I/O) given nothing but a target point cloud. Also added the
-    ModEM rectilinear-grid wrappers modem_gst_cell_centers() and
-    generate_gst_perturbation_modem(). generate_gst_model_ensemble() itself
-    is unchanged. Written to support modem_nss.py (ModEM null-space shuttle,
-    analogous to femtic_nss.py).
-Updated 2026-07-25 by Claude Sonnet 5 (Anthropic) -- generate_gst_model_
-    ensemble gained save_pilot_points / pilot_points_file / seed: when
-    save_pilot_points=True, every member's pilot-point coordinates
-    (pp_x/y/z) and drawn log10(rho) values (pp_vals) are accumulated
-    during the member loop and written to a single compressed .npz
-    (default f"{dir_base}pilot_points.npz") after it completes, alongside
-    pp_mode/pp_value_mode/variogram/log_rho_min/log_rho_max/seed metadata
-    for a self-describing archive. seed is informational only (recorded,
-    not used to seed anything -- pass a seeded rng for that); reproducible
-    runs are the caller's responsibility (femtic_gst_prep.py now does this
-    via a RANDOM_SEED config variable). generate_data_ensemble gained an
-    rng parameter, forwarded to femtic.modify_data (which already accepted
-    one) for each member, so the data-perturbation path can share the same
-    seeded generator as the model-perturbation path instead of each
-    modify_data call silently falling back to its own unseeded generator.
-Updated 2026-08-25 by Claude Sonnet 5 (Anthropic) -- generate_gst_model_
-    ensemble: pp_bbox default changed from a fixed generic tuple to None;
-    pp_bbox / pp_roi are now resolved against the model's actual free-
-    region extent (axis-wise min/max of the free-region barycentres
-    computed from mesh_file/ref_mod_file) right after that extent becomes
-    available. None resolves to the full extent on every axis; a supplied
-    box has each of its six bounds independently clamped to that extent,
-    so a bbox/ROI wider than the true model on some axis (e.g. reused from
-    a different survey) is truncated to the model's actual size on that
-    axis rather than placing pilot points outside the free-region domain
-    or (for pp_roi) silently accepting an over-wide box. A one-line log
-    message is printed (out=True) whenever clamping actually changes a
-    supplied box. generate_gst_perturbation / _draw_pilot_points (the
-    mesh-agnostic perturbation machine used by femtic_nss.py / modem_nss.py)
-    are unchanged by this update -- they take a bare target point cloud
-    with no mesh to derive an extent from.
-Updated 2026-09-09 by Claude Sonnet 5 (Anthropic) -- added
-eof_model_from_covariance(), sample_new_models_from_ensemble(), and
-sample_new_models_from_covariance() (EOF/PCA section, after
-sample_physical_ensemble()), for femtic_ens_repair.py's new
-MOD_REPAIR_METHOD="eof_sample" option. eof_model_from_covariance() builds
-an EOFModel directly from a precomputed covariance (either the
-"low_rank" eigval/eigvec factorisation or a dense "full" cov, as saved
-by femtic_ens_post.py's COMPUTE_COV) instead of fitting one from a raw
-ensemble matrix, so sample_physical_ensemble() can be reused unchanged
-regardless of whether the covariance is fit on the fly or loaded from
-disk. The two sample_new_models_from_* wrappers handle the
-samples-as-rows <-> samples-as-columns transpose between
-femtic_ens_*.py's ens_matrix convention (n_members, n_free) and
-fit_eof_model()/sample_physical_ensemble()'s (ncells, nsamples)
-convention, so callers never touch EOFModel/fit_eof_model directly. Note:
-eof_generate_ensemble() (defined earlier in this section) is dead code --
-its body is only a docstring, so it always returns None -- pre-existing
-and unrelated to this change; flagged here rather than fixed, pending
-confirmation of whether it should be implemented or removed.
-Updated 2026-09-09 by Claude Sonnet 5 (Anthropic) -- added pp_regen_every
-to generate_gst_model_ensemble(): optional int controlling how often the
-*random* pilot-point component is redrawn (every member, as before, when
-None; once per block of pp_regen_every consecutive processed members
-otherwise, via a new position-keyed cache -- pp_mode="random"'s whole
-point set, or the random-fill portion of "mixed"/"extrema"; pp_coords /
-the extrema skeleton are never affected either way). Pilot-point values
-are still redrawn every member regardless, so blocked members still
-differ from each other; only the locations are shared within a block.
-No effect for pp_mode="fixed" (nothing random to regenerate; a warning
-is printed if set anyway). Recorded in the pilot_points.npz archive
-(save_pilot_points=True) as "pp_regen_every" (-1 if not set), alongside
-the existing "seed" metadata. femtic_gst_prep.py's new MOD_PP_REGEN_EVERY
-threads through to this parameter -- see its README's matching entry.
-Updated 2026-09-17 by Claude Sonnet 5 (Anthropic) -- generate_data_ensemble
-gained a derive_pt_from_z parameter (default False), forwarded verbatim to
-femtic.modify_data. When True and a member's observe.dat has both an MT and
-a PT block, that member's PT data is overridden, after its normal
-reset/perturb pass, by the phase tensor of that same member's own
-already-perturbed Z (matched by site name and frequency), instead of PT
-being perturbed independently of Z; sites/frequencies without an MT match
-keep their independently-perturbed PT value. AI-generated; please review
-before production use.
+
+Provenance
+----------
+2026-03-31  Claude (Anthropic)
+            removed debug print in sample_rtr_full_rank; removed dead
+            commented-out code in generate_rto_model_ensemble; removed
+            redundant per-sample print.
+2026-03-31  Claude (Anthropic)
+            consolidated _diag_rtr into _rtr_diag (single helper);
+            removed dead estimate_low_rank_eigpairs; enriched docstrings
+            with tuning recommendations.
+2026-04-02  Claude (Anthropic)
+            fixed FileNotFoundError in generate_rto_model_ensemble —
+            template argument to fem.insert_model now uses the full
+            per-member path (_orig.dat backup) instead of the bare
+            basename.
+2026-04-02  Claude (Anthropic)
+            fixed generate_rto_model_ensemble write-back loop — now
+            reads reference log10-resistivity from the backup template
+            and adds the perturbation before calling insert_model
+            (method='add'), so perturbed models are reference +
+            delta_log10 rather than bare perturbations.
+2026-04-11  Claude Sonnet 4.6 (Anthropic)
+            moved check_sparse_matrix here from femtic.py (consolidation
+            of all matrix/roughness tools into ensembles); femtic.py
+            Section 2 now imports these functions from ensembles rather
+            than duplicating them.
+2026-04-27  Claude Sonnet 4.6 (Anthropic)
+            added generate_gst_model_ensemble — geostatistical
+            initial-model ensemble via pilot-point Ordinary Kriging
+            (gstools).  No roughness matrix required.
+2026-04-27  Claude Sonnet 4.6 (Anthropic)
+            renamed generate_model_ensemble to
+            generate_rto_model_ensemble for consistency with
+            generate_gst_model_ensemble.
+2026-05-28  Claude Sonnet 4.6 (Anthropic)
+            put_files and generate_directories gained a relative_links
+            parameter (default True): relative symlinks survive tgz/copy
+            to another machine; False restores the previous
+            absolute-path behaviour.
+2026-05-28  Claude Sonnet 4.6 (Anthropic)
+            fixed template-clobbering bug in generate_gst_model_ensemble
+            — when output_target='both', the first insert_model call
+            (resistivity_block) could overwrite reference_file before
+            the second call read it as template; template_path is now
+            resolved once before either write.
+2026-05-28  Claude Sonnet 4.6 (Anthropic)
+            added GST parameter estimation section — four functions for
+            choosing variogram parameters before committing to a full
+            ensemble run: gst_variogram_from_rto_samples (Strategy 1:
+            fit variogram to RTO samples), gst_pilot_point_cv (Strategy
+            2: LOO-CV on reference model), gst_sill_from_jacobian
+            (Strategy 3: linearised Jacobian sill calibration),
+            gst_parameter_diagnostics (Strategy 4: integrating
+            diagnostic with optional plot).
+2026-06-06  Claude Sonnet 4.6 (Anthropic)
+            added "extrema" pilot-point mode to
+            generate_gst_model_ensemble.  New helper
+            _find_extrema_pilot_points (KDTree-based local extremum
+            detection on free-region barycentres, optional ROI mask).
+            New parameters pp_roi, pp_extrema_k, pp_extrema_which;
+            graceful fallback to "random" if no extrema are found.
+            Requires scipy.spatial (already a transitive dependency).
+2026-06-10  Claude Sonnet 4.6 (Anthropic)
+            added _resolve_fromto helper; all four ensemble functions
+            (generate_directories, generate_rto_model_ensemble,
+            generate_gst_model_ensemble, generate_data_ensemble) now
+            accept an explicit list of member indices in addition to
+            None (all).  Range semantics ([start, stop]) removed — a
+            list always means explicit indices.  Type hints updated to
+            Optional[List[int]]; Union/Tuple removed from fromto
+            signatures.  Matching change in femtic_rto_prep.py: FROM_TO
+            renamed to ENS_LIST.
+2026-07-05  Claude Sonnet 5 (Anthropic)
+            added pp_value_mode / pp_value_delta to
+            generate_gst_model_ensemble.  pp_value_mode="uniform"
+            (default) preserves the original Uniform(log_rho_min,
+            log_rho_max) draw; pp_value_mode="reference" instead draws
+            pilot-point values as reference_model(nearest free region) ±
+            pp_value_delta (log10 Ohm.m), using a scipy.spatial.KDTree
+            nearest-neighbour lookup against the free-region
+            barycentres.  Reference log10(rho) at free regions is now
+            computed unconditionally (previously only inside the
+            "extrema" pp_mode branch) so it is available to both
+            "extrema" placement and "reference" value mode.
+2026-07-05  Claude Sonnet 5 (Anthropic)
+            raised the default neighbourhood size for extremum detection
+            from k=9 to k=30 in both _find_extrema_pilot_points and
+            generate_gst_model_ensemble's pp_extrema_k — the
+            strictly-less/greater-than-all-neighbours test was flagging
+            too many spurious local minima/maxima at small k on typical
+            FEMTIC meshes; recommended range updated from 7-15 to 20-40.
+2026-07-17  Claude Sonnet 5 (Anthropic)
+            migrated from legacy scipy.sparse matrix classes to the
+            array-equivalent API throughout: removed unused isspmatrix
+            import; updated scipy.sparse.spmatrix type hints to
+            scipy.sparse.sparray (get_roughness, make_prior_cov,
+            prune_inplace, prune_rebuild, dense_to_csr, matrix_reduce,
+            check_sparse_matrix, build_rtr_operator,
+            make_rtr_preconditioner,
+            make_sparse_cholesky_precision_solver, _rtr_diag,
+            pick_lam_from_rtr_diag); replaced scipy.sparse.identity()
+            (returns a legacy matrix) with scipy.sparse.eye_array() in
+            make_rtr_preconditioner and
+            make_sparse_cholesky_precision_solver. Also fixed a latent
+            bug in get_roughness/make_prior_cov where `eye` was imported
+            aliased as `eye_array` (silently returning a legacy sparse
+            matrix instead of an array); now imports the genuine
+            eye_array constructor.
+2026-07-19  Claude Sonnet 5 (Anthropic)
+            added a mesh-agnostic GST perturbation machine:
+            krige_pilot_points_to_targets(), _draw_pilot_points(),
+            generate_gst_perturbation() factor the pilot-point placement
+            + Ordinary-Kriging core out of generate_gst_model_ensemble()
+            so a single realisation can be generated in memory (no
+            directory tree, no file I/O) given nothing but a target
+            point cloud. Also added the ModEM rectilinear-grid wrappers
+            modem_gst_cell_centers() and
+            generate_gst_perturbation_modem().
+            generate_gst_model_ensemble() itself is unchanged. Written
+            to support modem_nss.py (ModEM null-space shuttle, analogous
+            to femtic_nss.py).
+2026-07-25  Claude Sonnet 5 (Anthropic)
+            generate_gst_model_ensemble gained save_pilot_points /
+            pilot_points_file / seed: when save_pilot_points=True, every
+            member's pilot-point coordinates (pp_x/y/z) and drawn
+            log10(rho) values (pp_vals) are accumulated during the
+            member loop and written to a single compressed .npz (default
+            f"{dir_base}pilot_points.npz") after it completes, alongside
+            pp_mode/pp_value_mode/variogram/log_rho_min/log_rho_max/seed
+            metadata for a self-describing archive. seed is
+            informational only (recorded, not used to seed anything --
+            pass a seeded rng for that); reproducible runs are the
+            caller's responsibility (femtic_gst_prep.py now does this
+            via a RANDOM_SEED config variable). generate_data_ensemble
+            gained an rng parameter, forwarded to femtic.modify_data
+            (which already accepted one) for each member, so the
+            data-perturbation path can share the same seeded generator
+            as the model-perturbation path instead of each modify_data
+            call silently falling back to its own unseeded generator.
+2026-08-25  Claude Sonnet 5 (Anthropic)
+            generate_gst_model_ensemble: pp_bbox default changed from a
+            fixed generic tuple to None; pp_bbox / pp_roi are now
+            resolved against the model's actual free-region extent
+            (axis-wise min/max of the free-region barycentres computed
+            from mesh_file/ref_mod_file) right after that extent becomes
+            available. None resolves to the full extent on every axis; a
+            supplied box has each of its six bounds independently
+            clamped to that extent, so a bbox/ROI wider than the true
+            model on some axis (e.g. reused from a different survey) is
+            truncated to the model's actual size on that axis rather
+            than placing pilot points outside the free-region domain or
+            (for pp_roi) silently accepting an over-wide box. A one-line
+            log message is printed (out=True) whenever clamping actually
+            changes a supplied box. generate_gst_perturbation /
+            _draw_pilot_points (the mesh-agnostic perturbation machine
+            used by femtic_nss.py / modem_nss.py) are unchanged by this
+            update -- they take a bare target point cloud with no mesh
+            to derive an extent from.
+2026-09-09  Claude Sonnet 5 (Anthropic)
+            added eof_model_from_covariance(),
+            sample_new_models_from_ensemble(), and
+            sample_new_models_from_covariance() (EOF/PCA section, after
+            sample_physical_ensemble()), for femtic_ens_repair.py's new
+            MOD_REPAIR_METHOD="eof_sample" option.
+            eof_model_from_covariance() builds an EOFModel directly from
+            a precomputed covariance (either the "low_rank"
+            eigval/eigvec factorisation or a dense "full" cov, as saved
+            by femtic_ens_post.py's COMPUTE_COV) instead of fitting one
+            from a raw ensemble matrix, so sample_physical_ensemble()
+            can be reused unchanged regardless of whether the covariance
+            is fit on the fly or loaded from disk. The two
+            sample_new_models_from_* wrappers handle the samples-as-rows
+            <-> samples-as-columns transpose between femtic_ens_*.py's
+            ens_matrix convention (n_members, n_free) and
+            fit_eof_model()/sample_physical_ensemble()'s (ncells,
+            nsamples) convention, so callers never touch
+            EOFModel/fit_eof_model directly. Note:
+            eof_generate_ensemble() (defined earlier in this section) is
+            dead code -- its body is only a docstring, so it always
+            returns None -- pre-existing and unrelated to this change;
+            flagged here rather than fixed, pending confirmation of
+            whether it should be implemented or removed.
+2026-09-09  Claude Sonnet 5 (Anthropic)
+            added pp_regen_every to generate_gst_model_ensemble():
+            optional int controlling how often the *random* pilot-point
+            component is redrawn (every member, as before, when None;
+            once per block of pp_regen_every consecutive processed
+            members otherwise, via a new position-keyed cache --
+            pp_mode="random"'s whole point set, or the random-fill
+            portion of "mixed"/"extrema"; pp_coords / the extrema
+            skeleton are never affected either way). Pilot-point values
+            are still redrawn every member regardless, so blocked
+            members still differ from each other; only the locations are
+            shared within a block. No effect for pp_mode="fixed"
+            (nothing random to regenerate; a warning is printed if set
+            anyway). Recorded in the pilot_points.npz archive
+            (save_pilot_points=True) as "pp_regen_every" (-1 if not
+            set), alongside the existing "seed" metadata.
+            femtic_gst_prep.py's new MOD_PP_REGEN_EVERY threads through
+            to this parameter -- see its README's matching entry.
+2026-09-17  Claude Sonnet 5 (Anthropic)
+            generate_data_ensemble gained a derive_pt_from_z parameter
+            (default False), forwarded verbatim to femtic.modify_data.
+            When True and a member's observe.dat has both an MT and a PT
+            block, that member's PT data is overridden, after its normal
+            reset/perturb pass, by the phase tensor of that same
+            member's own already-perturbed Z (matched by site name and
+            frequency), instead of PT being perturbed independently of
+            Z; sites/frequencies without an MT match keep their
+            independently-perturbed PT value.
+2026-10-07  Claude Sonnet 5.5 (Anthropic)
+            Reformatted this module docstring: the changelog was a mix of
+            flush-left "Updated ..." paragraphs and indented "Modified: ..."
+            blocks with inconsistent separators; now one "Provenance" list
+            (date, author, indented text) as in the other py4mt modules.
+            Wording of all earlier entries is unchanged; no code change.
+
+AI-generated; please review before production use.
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-modem_femtic_interp.py
+femtic_modem_trans.py
 
 Volume-aware interpolation between a ModEM model (regular hexahedral
 .rho grid) and a FEMTIC model (tetrahedral mesh + region-based
@@ -19,7 +19,7 @@ resistivity block). Both directions are supported:
 @author     vrath
 @project    py4mt
 @created    2026-10-04
-@modified   2026-10-05
+@modified   2026-10-07
 
 Method (what "volume-aware" means here)
 ---------------------------------------
@@ -77,13 +77,24 @@ computed from their UTM origins:
     data frame, shifted by (UTM_modem - UTM_femtic). Both origins use the
     same UTM zone (UTM_ZONE, or derived from the site mean).
 
+Observed data (optional, TRANSFORM_DATA = True)
+-----------------------------------------------
+The same script can also transform the observed data: FEMTIC observe.dat
+(MT, VTF, PT blocks) <-> ModEM data file (Full_Impedance,
+Full_Vertical_Components, Phase_Tensor; Off_Diagonal_Impedance read with
+MISSING_ERR), in both directions. Units (Ohm / [V/m]/[T] / [mV/km]/[nT]),
+FT sign, period/frequency, error merging and the site frame shift (same
+placement as the model grid, COORD_MODE) are handled; see the readme.
+FEMTIC conventions (Z in Ohm, exp(-i omega t), header "name x y z" with
+x = east, tipper sign) are assumed, not verified against real runs.
+
 Provenance
 ----------
 Author    : Claude (Anthropic)
 Generated : 2026-10-04
 Notice    : This code is AI-generated. Review and test it before any
             production use. Verified with ast.parse() and a synthetic-
-            data test (see modem_femtic_interp_readme.md); NOT yet run
+            data test (see femtic_modem_trans_readme.md); NOT yet run
             against real ModEM / FEMTIC files.
 
 Changelog
@@ -93,6 +104,14 @@ Changelog
             FEMTIC origin from site.dat bounding box / observe.dat
             calibration sites, ModEM origin from the data file lat/lon
             and X/Y; built-in UTM conversion (latlon_to_utm).
+2026-10-07  Claude Sonnet 5.5 (Anthropic): renamed modem_femtic_interp.py
+            -> femtic_modem_trans.py (and the readme accordingly); the
+            module name no longer implies model interpolation only, since
+            data transformation is to be added. No functional change.
+2026-10-07  Claude Sonnet 5.5 (Anthropic): optional observed-data
+            transformation (TRANSFORM_DATA): read_modem_data,
+            write_modem_data, read/write_femtic_observe, _run_data,
+            utm_to_latlon; run() split into _run_model() / _run_data().
 """
 from __future__ import annotations
 
@@ -141,7 +160,9 @@ UTM_ZONE = None                     # None = derive from site mean lat/lon
 UTM_NORTHERN = None                 # None = derive from site mean latitude
 FEMTIC_ORIGIN_METHOD = "box"        # "box" | "calibration" | "manual"
 SITE_DAT = "site.dat"               # box: CSV name,lat,lon,elev,num,E,N
-OBSERVE_DAT = "observe.dat"         # calibration: model-local site x/y [km]
+OBSERVE_DAT = "observe.dat"         # calibration: model-local site x/y [km];
+                                    #   also the FEMTIC data INPUT of the
+                                    #   data transformation (see below)
 CALIBRATION_SITES = []              # calibration: [{"site": 3,
                                     #   "crs": "latlon"|"utm",
                                     #   "coords": [lon, lat] | [E, N]}, ...]
@@ -171,6 +192,39 @@ CHUNK_TETS = 100_000
 SEED = 0
 
 DIAGNOSTICS_NPZ = None              # e.g. "interp_diag.npz" (coverage etc.)
+
+# --- what to run ---
+TRANSFORM_MODEL = True              # model interpolation (as before)
+TRANSFORM_DATA = False              # optional: transform observed data
+
+# --- data transformation (used when TRANSFORM_DATA = True) ---
+# Direction: None = follow DIRECTION (modem2femtic: ModEM data file ->
+# FEMTIC observe.dat; femtic2modem: FEMTIC observe.dat -> ModEM data file);
+# or set "modem2femtic" / "femtic2modem" explicitly.
+DATA_DIRECTION = None
+# Inputs: femtic2modem reads OBSERVE_DAT, modem2femtic reads
+# MODEM_DATA + MODEM_DATA_EXT (both defined above).
+OBSERVE_OUT = "observe_from_modem.dat"          # modem2femtic: output file
+MODEM_DATA_OUT = "modem_data_from_femtic"       # femtic2modem: output base
+DATA_TYPES = ("MT", "VTF", "PT")    # FEMTIC block types to transform
+FEMTIC_SITE_XY = "en"               # observe.dat site header (x, y): "en" =
+                                    #   (east, north) [m]; "ne" = swapped
+DATA_Z_OFFSET = 0.0                 # z_femtic = Z_modem + DATA_Z_OFFSET [m]
+                                    #   (both z-down); site z is carried over
+# ModEM output conventions (femtic2modem)
+MODEM_Z_UNITS_OUT = "[mV/km]/[nT]"  # "Ohm" | "[V/m]/[T]" | "[mV/km]/[nT]"
+MODEM_FT_OUT = "exp(-i\\omega t)"    # or "exp(+i\\omega t)" (conjugates Z, T)
+MODEM_ERR_COMBINE = "max"           # one ModEM error from FEMTIC re/im
+                                    #   errors: "max" | "mean" | "min" |
+                                    #   "re" | "im"
+MODEM_DATA_COMMENT = "femtic_modem_trans.py"
+# modem2femtic
+OBSERVE_PREAMBLE = None             # optional comment line(s) before MT block
+MISSING_ERR = None                  # component absent in a ModEM block (e.g.
+                                    #   ZXX/ZYY of Off_Diagonal_Impedance, or
+                                    #   a period lacking a component): None =
+                                    #   drop that frequency/block; a number =
+                                    #   write value 0 with this error
 
 
 # ===========================================================================
@@ -588,6 +642,52 @@ def latlon_to_utm(lat, lon, zone: int, northern: bool
     return e0 + k0 * big_a * es, n0 + k0 * big_a * xs
 
 
+def utm_to_latlon(easting, northing, zone: int, northern: bool
+                  ) -> Tuple[np.ndarray, np.ndarray]:
+    """UTM (easting, northing) [m] -> WGS84 (lat, lon) [deg]; inverse of
+    :func:`latlon_to_utm` (Kruger n-series, Karney 2011; vectorised)."""
+    e = np.asarray(easting, dtype=float)
+    nn = np.asarray(northing, dtype=float)
+    k0, e0, n0 = 0.9996, 500000.0, (0.0 if northern else 10000000.0)
+    f = _WGS84_F
+    n = f / (2.0 - f)
+    big_a = _WGS84_A / (1.0 + n) * (1.0 + n**2 / 4.0 + n**4 / 64.0
+                                    + n**6 / 256.0)
+    beta = (
+        n / 2 - 2 * n**2 / 3 + 37 * n**3 / 96 - n**4 / 360
+        - 81 * n**5 / 512 + 96199 * n**6 / 604800,
+        n**2 / 48 + n**3 / 15 - 437 * n**4 / 1440 + 46 * n**5 / 105
+        - 1118711 * n**6 / 3870720,
+        17 * n**3 / 480 - 37 * n**4 / 840 - 209 * n**5 / 4480
+        + 5569 * n**6 / 90720,
+        4397 * n**4 / 161280 - 11 * n**5 / 504 - 830251 * n**6 / 7257600,
+        4583 * n**5 / 161280 - 108847 * n**6 / 3991680,
+        20648693 * n**6 / 638668800)
+    delta = (
+        2 * n - 2 * n**2 / 3 - 2 * n**3 + 116 * n**4 / 45
+        + 26 * n**5 / 45 - 2854 * n**6 / 675,
+        7 * n**2 / 3 - 8 * n**3 / 5 - 227 * n**4 / 45
+        + 2704 * n**5 / 315 + 2323 * n**6 / 945,
+        56 * n**3 / 15 - 136 * n**4 / 35 - 1262 * n**5 / 105
+        + 73814 * n**6 / 2835,
+        4279 * n**4 / 630 - 332 * n**5 / 35 - 399572 * n**6 / 14175,
+        4174 * n**5 / 315 - 144838 * n**6 / 6237,
+        601676 * n**6 / 22275)
+    xi_p = (nn - n0) / (k0 * big_a)
+    eta_p = (e - e0) / (k0 * big_a)
+    xi, eta = xi_p.copy(), eta_p.copy()
+    for j, b in enumerate(beta, start=1):
+        xi = xi - b * np.sin(2 * j * xi_p) * np.cosh(2 * j * eta_p)
+        eta = eta - b * np.cos(2 * j * xi_p) * np.sinh(2 * j * eta_p)
+    chi = np.arcsin(np.sin(xi) / np.cosh(eta))
+    phi = chi.copy()
+    for j, d in enumerate(delta, start=1):
+        phi = phi + d * np.sin(2 * j * chi)
+    lon = (6.0 * zone - 183.0) + np.degrees(np.arctan2(np.sinh(eta),
+                                                        np.cos(xi)))
+    return np.degrees(phi), lon
+
+
 def origin_from_bbox(easting: np.ndarray, northing: np.ndarray
                      ) -> Tuple[float, float]:
     """Bounding-box midpoint (UTM origin of the FEMTIC mesh centre)."""
@@ -637,9 +737,13 @@ def _read_modem_sites(mod) -> Tuple[np.ndarray, np.ndarray, np.ndarray,
     return data[first, 1], data[first, 2], data[first, 3], data[first, 4]
 
 
-def _georef_offsets(fem, mod) -> Tuple[float, float]:
-    """Compute (OFFSET_N, OFFSET_E) of the ModEM data frame in the FEMTIC
-    frame from the two UTM origins; prints a summary table."""
+def _georef_full(fem, mod) -> dict:
+    """Compute the placement of the ModEM data frame in the FEMTIC frame
+    from the two UTM origins; prints a summary table.
+
+    Returns a dict with off_n, off_e (ModEM data frame in the FEMTIC frame
+    [m]), the UTM origins f_e, f_n (FEMTIC) and m_e, m_n (ModEM data
+    frame), the UTM zone and hemisphere flag."""
     meth = str(FEMTIC_ORIGIN_METHOD).lower()
     mmeth = str(MODEM_ORIGIN_METHOD).lower()
     print("  Georeferencing (UTM)")
@@ -736,7 +840,422 @@ def _georef_offsets(fem, mod) -> Tuple[float, float]:
     print("  ModEM frame offset in FEMTIC frame: N %.1f m  E %.1f m"
           % (off_n, off_e))
     print()
-    return off_n, off_e
+    return dict(off_n=off_n, off_e=off_e, f_e=f_e, f_n=f_n, m_e=m_e,
+                m_n=m_n, zone=zone, north=north)
+
+
+def _georef_offsets(fem, mod) -> Tuple[float, float]:
+    """(OFFSET_N, OFFSET_E) of the ModEM data frame in the FEMTIC frame."""
+    g = _georef_full(fem, mod)
+    return g["off_n"], g["off_e"]
+
+
+# ===========================================================================
+# Observed-data transformation (optional, TRANSFORM_DATA = True)
+# ===========================================================================
+#
+# Neutral in-memory form (FEMTIC layout, SI units, e^{-i omega t}):
+#   blocks[type] = [ dict(name, freq (nf,) Hz ascending,
+#                         data (nf, ncol), err (nf, ncol)), ... ]
+#   MT: ncol = 8 (Zxx_re, Zxx_im, ..., Zyy_im) [Ohm]; VTF: ncol = 4
+#   (Tzx_re, Tzx_im, Tzy_re, Tzy_im); PT: ncol = 4 (Pxx, Pxy, Pyx, Pyy).
+
+_MU0 = 4.0e-7 * np.pi
+_MODEM_BLOCK_TYPES = {              # normalised ModEM DataType -> (type, comps)
+    "fullimpedance": ("MT", ("ZXX", "ZXY", "ZYX", "ZYY")),
+    "offdiagonalimpedance": ("MT", ("ZXX", "ZXY", "ZYX", "ZYY")),
+    "fullverticalcomponents": ("VTF", ("TX", "TY")),
+    "phasetensor": ("PT", ("PTXX", "PTXY", "PTYX", "PTYY")),
+}
+_MODEM_OUT_NAMES = {"MT": "Full_Impedance", "VTF": "Full_Vertical_Components",
+                    "PT": "Phase_Tensor"}
+
+
+def _norm_key(text: str) -> str:
+    return str(text).strip().lower().replace("_", "").replace(" ", "")
+
+
+def _z_unit_factor(label: str) -> float:
+    """Multiplier converting a ModEM impedance unit label to SI Ohm."""
+    key = _norm_key(label)
+    table = {"ohm": 1.0, "[ohm]": 1.0, "[v/m]/[t]": _MU0,
+             "[mv/km]/[nt]": _MU0 * 1.0e3}
+    if key not in table:
+        raise ValueError("unknown ModEM impedance unit %r (expected Ohm, "
+                         "[V/m]/[T] or [mV/km]/[nT])" % label)
+    return table[key]
+
+
+def _ft_sign(text: str) -> int:
+    """-1 for exp(-i omega t), +1 for exp(+i omega t)."""
+    t = str(text)
+    if "+" in t:
+        return 1
+    if "-" not in t:
+        print("  WARNING: cannot parse the ModEM FT convention %r; "
+              "assuming exp(-i\\omega t)" % t)
+    return -1
+
+
+def _pkey(period: float) -> float:
+    """Period key tolerant to formatting noise (9 significant digits)."""
+    return float("%.9g" % period)
+
+
+def _combine_err(ere: np.ndarray, eim: np.ndarray, how: str) -> np.ndarray:
+    h = str(how).lower()
+    if h == "max":
+        return np.maximum(ere, eim)
+    if h == "min":
+        return np.minimum(ere, eim)
+    if h == "mean":
+        return 0.5 * (ere + eim)
+    if h == "re":
+        return ere
+    if h == "im":
+        return eim
+    raise ValueError("MODEM_ERR_COMBINE must be max|min|mean|re|im")
+
+
+def read_modem_data(path: str) -> dict:
+    """Read a ModEM data file (Full_Impedance, Off_Diagonal_Impedance,
+    Full_Vertical_Components, Phase_Tensor blocks).
+
+    Values are converted to the neutral form described above: impedances
+    to SI Ohm (unit label of the block header), complex data conjugated if
+    the block is exp(+i omega t), one ModEM error copied to the real and
+    imaginary error column. Blocks of other DataTypes are skipped; a
+    period missing a component is dropped, or filled with value 0 and
+    error MISSING_ERR if that is set.
+
+    Returns dict(blocks, pos, origin, skipped, n_dropped); pos[site] =
+    (lat, lon, X north, Y east, Z down) in the ModEM data frame [m].
+    """
+    groups, hdr, rows = [], [], None
+    with open(path, "r") as fh:
+        for ln in fh:
+            t = ln.strip()
+            if not t or t.startswith("#"):
+                continue
+            if t.startswith(">"):
+                if rows is not None:
+                    groups.append((hdr, rows))
+                    hdr, rows = [], None
+                hdr.append(t[1:].strip())
+                continue
+            if rows is None:
+                rows = []
+            rows.append(t.split())
+    if rows is not None:
+        groups.append((hdr, rows))
+    if not groups:
+        raise ValueError("no data blocks found in %s" % path)
+
+    acc: Dict[Tuple[str, str], Dict[float, dict]] = {}
+    ncols: Dict[str, int] = {}
+    pos: Dict[str, tuple] = {}
+    skipped, origin = [], None
+    for hdr, rows in groups:
+        name = hdr[0] if hdr else "?"
+        key = _norm_key(name)
+        if key not in _MODEM_BLOCK_TYPES:
+            skipped.append(name)
+            continue
+        ftype, comps = _MODEM_BLOCK_TYPES[key]
+        sgn = _ft_sign(hdr[1]) if len(hdr) > 1 else -1
+        fz = 1.0
+        if ftype == "MT":
+            fz = _z_unit_factor(hdr[2]) if len(hdr) > 2 else 1.0
+        if len(hdr) > 3:
+            try:
+                if abs(float(hdr[3].split()[0])) > 1.0e-6:
+                    print("  WARNING: block %s has orientation %s deg; "
+                          "NOT applied" % (name, hdr[3]))
+            except ValueError:
+                pass
+        if len(hdr) > 4 and origin is None:
+            try:
+                tk = hdr[4].split()
+                origin = (float(tk[0]), float(tk[1]))
+            except (ValueError, IndexError):
+                pass
+        ncols[ftype] = 8 if ftype == "MT" else 4
+        for tk in rows:
+            comp = tk[7].upper()
+            if comp not in comps:
+                continue
+            site = tk[1]
+            pos.setdefault(site, (float(tk[2]), float(tk[3]), float(tk[4]),
+                                  float(tk[5]), float(tk[6])))
+            if ftype == "PT":                    # real: Period..Comp Val Err
+                val, err = float(tk[8]), float(tk[9])
+            else:                                # Re Im Err
+                val = complex(float(tk[8]), float(tk[9]))
+                if sgn > 0:
+                    val = val.conjugate()
+                val *= fz
+                err = float(tk[10]) * fz
+            d = acc.setdefault((ftype, site), {}).setdefault(
+                _pkey(float(tk[0])), {})
+            d[comp] = (val, err)
+
+    blocks: Dict[str, list] = {}
+    n_dropped = 0
+    for (ftype, site), per in acc.items():
+        comps = [v[1] for v in _MODEM_BLOCK_TYPES.values() if v[0] == ftype][0]
+        fr, dat, er = [], [], []
+        for pk in sorted(per, reverse=True):          # period desc = f asc
+            d = per[pk]
+            if len(d) < len(comps) and MISSING_ERR is None:
+                n_dropped += 1
+                continue
+            vrow, erow = [], []
+            for c in comps:
+                v, e = d.get(c, (0.0, MISSING_ERR))
+                if ftype == "PT":
+                    vrow.append(float(np.real(v)))
+                    erow.append(float(e))
+                else:
+                    vrow += [float(np.real(v)), float(np.imag(v))]
+                    erow += [float(e), float(e)]
+            fr.append(1.0 / pk)
+            dat.append(vrow)
+            er.append(erow)
+        if fr:
+            blocks.setdefault(ftype, []).append(dict(
+                name=site, freq=np.array(fr), data=np.array(dat),
+                err=np.array(er)))
+    return dict(blocks=blocks, pos=pos, origin=origin, skipped=skipped,
+                n_dropped=n_dropped)
+
+
+def write_modem_data(path: str, blocks: dict, sites: dict, *,
+                     z_units: str, ft: str, err_combine: str,
+                     comment: str, origin_latlon: Tuple[float, float]) -> dict:
+    """Write a ModEM data file from the neutral form.
+
+    sites[name] = (lat, lon, X north, Y east, Z down). Impedances are
+    divided by the unit factor of z_units, conjugated (Z and tipper) for
+    exp(+i omega t); FEMTIC real/imag errors are merged to one ModEM
+    error (err_combine; PT: the single error). Rows are ordered by period
+    (ascending) then site. Returns row/zero-error counts."""
+    sgn = _ft_sign(ft)
+    fz = _z_unit_factor(z_units)
+    stats = dict(rows=0, zero_err=0)
+    out = []
+    for ftype in ("MT", "VTF", "PT"):
+        if ftype not in blocks:
+            continue
+        comps = [v[1] for v in _MODEM_BLOCK_TYPES.values()
+                 if v[0] == ftype][0]
+        ncomp = len(comps)
+        recs: Dict[float, list] = {}
+        names = []
+        for b in blocks[ftype]:
+            if b["name"] not in sites:
+                raise KeyError("no position for site %r" % b["name"])
+            names.append(b["name"])
+            lat, lon, X, Y, Z = sites[b["name"]]
+            for i, f in enumerate(b["freq"]):
+                T = 1.0 / float(f)
+                dat, er = b["data"][i], b["err"][i]
+                if ftype == "PT":
+                    vals = [(dat[k], None, er[k]) for k in range(ncomp)]
+                else:
+                    zr, zi = dat[0::2], dat[1::2]
+                    e = _combine_err(er[0::2], er[1::2], err_combine)
+                    z = zr + 1j * zi
+                    if sgn > 0:
+                        z = np.conj(z)
+                    if ftype == "MT":
+                        z, e = z / fz, e / fz
+                    vals = [(z[k].real, z[k].imag, e[k])
+                            for k in range(ncomp)]
+                recs.setdefault(_pkey(T), []).append(
+                    (b["name"], T, lat, lon, X, Y, Z, vals))
+        out.append("# %s" % comment)
+        out.append("# Period(s) Code GG_Lat GG_Lon X(m) Y(m) Z(m) "
+                   "Component Real Imag Error")
+        out.append("> %s" % _MODEM_OUT_NAMES[ftype])
+        out.append("> %s" % ft)
+        out.append("> %s" % (z_units if ftype == "MT" else "[]"))
+        out.append("> 0.00")
+        out.append("> %.6f %.6f" % origin_latlon)
+        out.append("> %d %d" % (len(recs), len(set(names))))
+        for pk in sorted(recs):
+            for (nm, T, lat, lon, X, Y, Z, vals) in recs[pk]:
+                for k, (re_, im_, e_) in enumerate(vals):
+                    if not e_ > 0.0:
+                        stats["zero_err"] += 1
+                    head = "%14.8E %-14s %12.6f %12.6f %12.1f %12.1f %12.1f" \
+                           % (T, nm, lat, lon, X, Y, Z)
+                    if ftype == "PT":
+                        out.append("%s %-6s %14.6E %14.6E"
+                                   % (head, comps[k], re_, e_))
+                    else:
+                        out.append("%s %-6s %14.6E %14.6E %14.6E"
+                                   % (head, comps[k], re_, im_, e_))
+                    stats["rows"] += 1
+    Path(path).write_text("\n".join(out) + "\n", encoding="utf-8")
+    return stats
+
+
+def read_femtic_observe(fem, path: str, types: Sequence[str]) -> dict:
+    """Read FEMTIC observe.dat into the neutral form via
+    femtic.read_observe_dat. pos[name] = (north, east, z_down) [m] in the
+    FEMTIC frame (site header x, y interpreted via FEMTIC_SITE_XY)."""
+    parsed = fem.read_observe_dat(path, compute_mt_derived=False)
+    xy = str(FEMTIC_SITE_XY).lower()
+    if xy not in ("en", "ne"):
+        raise ValueError("FEMTIC_SITE_XY must be 'en' or 'ne'")
+    blocks: Dict[str, list] = {}
+    pos: Dict[str, tuple] = {}
+    for blk in parsed["blocks"]:
+        t = str(blk["obs_type"])
+        if t not in types:
+            continue
+        for s in blk["sites"]:
+            tk = s["site_header_tokens"]
+            x, y, z = float(tk[1]), float(tk[2]), float(tk[3])
+            e, n = (x, y) if xy == "en" else (y, x)
+            pos.setdefault(tk[0], (n, e, z))
+            blocks.setdefault(t, []).append(dict(
+                name=tk[0], freq=np.asarray(s["freq"], float),
+                data=np.asarray(s["data"], float),
+                err=np.asarray(s["error"], float)))
+    return dict(blocks=blocks, pos=pos)
+
+
+def write_femtic_observe(fem, path: str, blocks: dict, pos: dict) -> None:
+    """Write the neutral form as FEMTIC observe.dat (femtic.write_observe_dat).
+    pos[name] = (north, east, z_down) [m] in the FEMTIC frame."""
+    xy = str(FEMTIC_SITE_XY).lower()
+    pre = OBSERVE_PREAMBLE
+    if pre is None:
+        pre_lines = []
+    elif isinstance(pre, str):
+        pre_lines = pre.split("\n")
+    else:
+        pre_lines = list(pre)
+    parsed = dict(preamble_lines=[p if p.endswith("\n") else p + "\n"
+                                  for p in pre_lines],
+                  blocks=[], end_line="END\n", tail_lines=[])
+    for t in ("MT", "VTF", "PT"):
+        if t not in blocks:
+            continue
+        sites = []
+        for b in blocks[t]:
+            n, e, z = pos[b["name"]]
+            x, y = (e, n) if xy == "en" else (n, e)
+            nf = len(b["freq"])
+            sites.append(dict(
+                site_header_line="%s %.3f %.3f %.3f\n" % (b["name"], x, y, z),
+                nfreq=nf, nfreq_line="%d\n" % nf, freq=b["freq"],
+                data=b["data"], error=b["err"], extras=[]))
+        parsed["blocks"].append(dict(
+            obs_type=t, header_line="%s    %d\n" % (t, len(sites)),
+            sites=sites))
+    fem.write_observe_dat(parsed, path)
+
+
+def _data_frame_shift(fem, mod):
+    """(shift_n, shift_e, georef): FEMTIC position = ModEM data-frame
+    position + shift. Mirrors the grid placement of the model step so
+    sites and model stay mutually consistent. georef is the dict of
+    _georef_full (COORD_MODE = "georef") or None."""
+    mode = str(COORD_MODE).lower()
+    if mode == "georef":
+        g = _georef_full(fem, mod)
+        return g["off_n"] + OFFSET_N, g["off_e"] + OFFSET_E, g
+    dx, dy, dz, _, ref, _ = mod.read_mod(file=MODEM_MODEL, modext=MODEM_EXT,
+                                         trans="LINEAR", out=False)
+    grid = ModemGrid(dx, dy, dz, ref, coord_mode="reference")
+    if mode.startswith("cen"):
+        c = [0.5 * (grid.e[a][0] + grid.e[a][-1]) for a in (0, 1)]
+    elif mode == "reference":
+        c = [0.0, 0.0]
+    else:
+        raise ValueError("COORD_MODE must be centre|reference|georef")
+    return OFFSET_N - c[0], OFFSET_E - c[1], None
+
+
+def _run_data() -> None:
+    """Optional observed-data transformation (module-level config)."""
+    import femtic as fem
+    import modem as mod
+
+    direction = DATA_DIRECTION or DIRECTION
+    types = tuple(str(t).upper() for t in DATA_TYPES)
+    print("  Observed-data transformation: %s  types=%s"
+          % (direction, ",".join(types)))
+    shift_n, shift_e, geo = _data_frame_shift(fem, mod)
+    print("  data-frame shift (FEMTIC = ModEM + shift): N %.1f  E %.1f  "
+          "z %.1f m" % (shift_n, shift_e, DATA_Z_OFFSET))
+
+    if direction == "modem2femtic":
+        src = "%s%s" % (MODEM_DATA, MODEM_DATA_EXT)
+        ds = read_modem_data(src)
+        blocks = {t: v for t, v in ds["blocks"].items() if t in types}
+        if not blocks:
+            raise ValueError("no usable %s data in %s (skipped blocks: %s)"
+                             % ("/".join(types), src, ds["skipped"]))
+        pos = {nm: (p[2] + shift_n, p[3] + shift_e, p[4] + DATA_Z_OFFSET)
+               for nm, p in ds["pos"].items()}
+        write_femtic_observe(fem, OBSERVE_OUT, blocks, pos)
+        print("  read %s: %s" % (src, ", ".join(
+            "%s %d sites" % (t, len(v)) for t, v in blocks.items())))
+        if ds["skipped"]:
+            print("  skipped DataTypes: %s" % ", ".join(ds["skipped"]))
+        if ds["n_dropped"]:
+            print("  periods dropped (component missing, MISSING_ERR unset)"
+                  ": %d" % ds["n_dropped"])
+        print("  written: %s" % OBSERVE_OUT)
+    elif direction == "femtic2modem":
+        ds = read_femtic_observe(fem, OBSERVE_DAT, types)
+        if not ds["blocks"]:
+            raise ValueError("no %s blocks in %s" % ("/".join(types),
+                                                     OBSERVE_DAT))
+        rows = None
+        if geo is None and os.path.isfile(SITE_DAT):
+            rows = {r["name"]: r for r in fem.read_site_dat(SITE_DAT)}
+        sites, nolatlon = {}, 0
+        for nm, (n, e, z) in ds["pos"].items():
+            X, Y, Z = n - shift_n, e - shift_e, z - DATA_Z_OFFSET
+            if geo is not None:
+                lat, lon = utm_to_latlon(geo["m_e"] + Y, geo["m_n"] + X,
+                                         geo["zone"], geo["north"])
+                lat, lon = float(lat), float(lon)
+            elif rows is not None and nm in rows:
+                lat, lon = rows[nm]["lat"], rows[nm]["lon"]
+            else:
+                lat = lon = 0.0
+                nolatlon += 1
+            sites[nm] = (lat, lon, X, Y, Z)
+        if nolatlon:
+            print("  WARNING: %d site(s) without lat/lon (set COORD_MODE="
+                  "'georef' or provide SITE_DAT); written as 0.0" % nolatlon)
+        if geo is not None:
+            o = utm_to_latlon(geo["m_e"], geo["m_n"], geo["zone"],
+                              geo["north"])
+            origin = (float(o[0]), float(o[1]))
+        elif MODEM_ORIGIN_LATLON is not None:
+            origin = (float(MODEM_ORIGIN_LATLON[0]),
+                      float(MODEM_ORIGIN_LATLON[1]))
+        else:
+            origin = (0.0, 0.0)
+        out = MODEM_DATA_OUT + MODEM_DATA_EXT
+        st = write_modem_data(
+            out, ds["blocks"], sites, z_units=MODEM_Z_UNITS_OUT,
+            ft=MODEM_FT_OUT, err_combine=MODEM_ERR_COMBINE,
+            comment=MODEM_DATA_COMMENT, origin_latlon=origin)
+        print("  read %s: %s" % (OBSERVE_DAT, ", ".join(
+            "%s %d sites" % (t, len(v)) for t, v in ds["blocks"].items())))
+        print("  ModEM rows written: %d (non-positive errors: %d)"
+              % (st["rows"], st["zero_err"]))
+        print("  written: %s" % out)
+    else:
+        raise ValueError("DATA_DIRECTION/DIRECTION must be 'modem2femtic' "
+                         "or 'femtic2modem'")
 
 
 def _print_bboxes(grid: ModemGrid, nodes: np.ndarray) -> None:
@@ -761,13 +1280,13 @@ def _fmt_ratio(a: float, b: float) -> str:
     return "n/a" if b == 0 else "%.1f%%" % (100.0 * a / b)
 
 
-def run() -> None:
-    """Run the configured interpolation (uses the module-level config)."""
+def _run_model() -> None:
+    """Model interpolation (uses the module-level config)."""
     import femtic as fem
     import modem as mod
 
     t0 = time.time()
-    print("modem_femtic_interp: DIRECTION=%s  AVERAGING=%s"
+    print("femtic_modem_trans: DIRECTION=%s  AVERAGING=%s"
           % (DIRECTION, AVERAGING))
 
     dx, dy, dz, rho, ref, _ = mod.read_mod(
@@ -859,7 +1378,7 @@ def run() -> None:
                       mval=new, reference=ref, trans=MODEM_OUT_TRANS,
                       aircells=None, blank=1.0e-30,
                       header="# ModEM model interpolated from FEMTIC "
-                             "(volume-weighted, modem_femtic_interp.py)",
+                             "(volume-weighted, femtic_modem_trans.py)",
                       out=True)
         ncell = int(np.prod(grid.shape))
         print("\n  Summary (ModEM cells)")
@@ -883,6 +1402,20 @@ def run() -> None:
         np.savez_compressed(DIAGNOSTICS_NPZ, **diag)
         print("  diagnostics: %s" % DIAGNOSTICS_NPZ)
     print("  elapsed: %.1f s" % (time.time() - t0))
+
+
+def run() -> None:
+    """Run the configured steps: model interpolation (TRANSFORM_MODEL) and
+    optionally observed-data transformation (TRANSFORM_DATA)."""
+    if not (TRANSFORM_MODEL or TRANSFORM_DATA):
+        print("nothing to do: TRANSFORM_MODEL and TRANSFORM_DATA are False")
+        return
+    if TRANSFORM_MODEL:
+        _run_model()
+    if TRANSFORM_DATA:
+        t0 = time.time()
+        _run_data()
+        print("  elapsed (data): %.1f s" % (time.time() - t0))
 
 
 if __name__ == "__main__":

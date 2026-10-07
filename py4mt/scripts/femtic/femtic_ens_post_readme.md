@@ -341,7 +341,7 @@ and `femtic_rto_prep.py`.
 
 | Parameter | Description |
 |---|---|
-| `MOD_SLICES` | List of slice-spec dicts (`kind`, `z0`/`x0`/`y0`). Kinds: `"map"`, `"ns"`, `"ew"`, `"plane"`. |
+| `MOD_SLICES` | List of slice-spec dicts (`kind`, `z0`/`x0`/`y0`). Kinds: `"map"`, `"ns"`, `"ew"`, `"plane"` (see "Vertical section" below). |
 | `MOD_XLIM / YLIM / ZLIM` | Global axis limits (model-local **km**); `None` = auto. Overridden automatically by `MOD_ROI_AUTO` (below) when sites are available. |
 | `MOD_ROI_AUTO` | Default `True`. When site positions are available, derives `MOD_XLIM`/`MOD_YLIM` from the site bounding box + `MOD_ROI_PAD_XY`, and sets `MOD_ZLIM` from `MOD_ROI_ZLIM` — overriding any literal values set above. Falls back to the literals (or full-mesh auto-scaling) when no sites are found. |
 | `MOD_ROI_PAD_XY` | Default `2.0` km. Padding added around the site bounding box for `MOD_XLIM`/`MOD_YLIM`. |
@@ -367,6 +367,34 @@ and `femtic_rto_prep.py`.
 | `MOD_LABEL_FONTSIZE` | Font size for axis labels, panel titles, and colourbar label. Default `8`, matching `fviz.plot_model_slices`' own default. |
 | `MOD_TICK_DECIMALS` | Decimal digits shown on depth / easting-northing / lat-lon tick labels (all share this one value). Default `None` = `fviz.plot_model_slices`' own per-axis-type formatting unchanged. |
 | `MOD_SHOW_IN_SPYDER` | `True` (default) and running inside Spyder (detected via `utl.runtime_env() == "spyder"`) → every saved figure is also displayed inline in Spyder's Plots pane via `plt.show()`, in addition to being written to disk. No effect outside Spyder; set `False` to disable even under Spyder. |
+
+### Vertical section (a `kind="plane"` entry in `MOD_SLICES`)
+
+A vertical section along any strike is configured like every other slice,
+as an entry of `MOD_SLICES` (units km / degrees). The default list ends
+with a SW-NE section through the model origin:
+
+```python
+dict(kind="plane", point=[0.0, 0.0], strike=45.0, dip=90.0)
+```
+
+| Key | Default | Description |
+|---|---|---|
+| `point` | `[0, 0]` | `[x, y]` (or `[x, y, z]`) model-local km the section passes through; `[0, 0]` = model origin. |
+| `strike` | `0` | For `dip = 90`: geographic azimuth, degrees clockwise from north. `45` = SW (left) to NE (right); `135` = NW to SE. |
+| `dip` | `90` | `90` = vertical section (as described here). Other dips use the legacy `femtic_viz` plane panel unchanged. |
+| `xlim` | derived | Optional along-strike range `[min, max]` in km relative to `point` (negative = SW end). |
+| `invert_x`, `title` | | Passed through to `femtic_viz`. |
+
+Limits are the same as for the other slices: the along-strike range is the
+`MOD_XLIM` x `MOD_YLIM` box projected onto the strike direction (whole mesh
+if either is `None`, e.g. after `MOD_ROI_AUTO` it follows the auto ROI), and
+the depth range is `MOD_ZLIM`. The horizontal axis is always in **model km**
+(0 at `point`), independent of `MOD_DISPLAY_COORDS`. The panel takes part in
+the normal `MOD_NROWS x MOD_NCOLS` grid, colour scale, blanking and colourbar
+of its figure, and shows sites within `MOD_PROJECTION_DIST` when
+`MOD_PLOT_SITES_SLICES` is `True`. Requires the `femtic_viz.py` of
+2026-10-07 or later.
 
 ### Site overlay
 
@@ -529,3 +557,4 @@ correct.
 | 2026-09-26 | Claude Sonnet 5 (Anthropic) | Model-centre marker: picked up `femtic_viz.py`'s 2026-09-26 default-style change (thin black `"+"` → yellow star with a black edge, higher `zorder`) — no functional change here, `MOD_SHOW_MODEL_CENTRE`/`MOD_MAP_MARKERS` wiring is unchanged. |
 | 2026-09-26b | Claude Sonnet 5 (Anthropic) | Added a region-of-interest diagnostic for the log10 sensitivity panels: every `sens_*`/`simrc_*` entry in `MOD_STATS_WHAT` that gets plotted now prints its original (whole-mesh-normalised, as stored) min/max restricted to the free parameters inside the ROI (`MOD_XLIM`/`MOD_YLIM`/`MOD_ZLIM`, including `MOD_ROI_AUTO`) — meant to make picking a `MOD_ALPHA_SOURCE` threshold easier. New `SENS_ROI_NORMALIZE` (default `False`): optionally re-centres each `sens_*` panel (not `sens_cv_*`) to the ROI's own max instead of the whole-mesh max, display-only (the `.npz` and `MOD_ALPHA_SOURCE` are unaffected); `simrc_coef`/`simrc_corr` are diagnosed but never renormalised by this switch, per explicit request. New helper `_roi_free_mask()`, built on `fem.build_region_geometry()` and the same `free_idx` mapping as `_sens_to_free()`; degrades gracefully if mesh/region geometry can't be read. See the "Sensitivity statistics" section above for the full parameter description. |
 | 2026-09-26c | Claude Sonnet 5 (Anthropic) | Simplified the panel-selection interface per user request ("set panels to plot by a list of sources and one blanking option; determine the other settings from these"): `MOD_ALPHA_SOURCE` was already the one blanking option (2026-09-25). `MOD_QC` was a second switch that had to be kept in sync with `MOD_STATS_WHAT` by hand; it is now the special `"best"` entry in `MOD_STATS_WHAT` itself (default `MOD_STATS_WHAT` gained `"best"` as its first entry, preserving the previous `MOD_QC=True` default). `MOD_QC`/`MOD_STATS` are still set, but derived (`MOD_QC = "best" in MOD_STATS_WHAT`; `MOD_STATS = bool(set(MOD_STATS_WHAT) - {"best"})`) so every downstream use of those two names is unchanged; turning either off is now just editing the one list. `MOD_NROWS`/`MOD_NCOLS` (sized to the unrelated `MOD_SLICES` list) and the `COMPUTE_*`/`BOOTSTRAP_VAR` `.npz`-computation switches were deliberately left untouched — see "Panels to plot" above for the scope reasoning. |
+| 2026-10-07 | Claude Sonnet 5.5 (Anthropic) | Vertical sections are configured in `MOD_SLICES` as `dict(kind="plane", point=[x, y] km, strike=azimuth deg, dip=90)`; the default list ends with a SW-NE (strike 45) section through the model origin. New helper `_plane_spec_km_to_m()` converts such entries (km to m) in `_plot_slice()`; other kinds still go through `fem.resolve_slice_positions`, original order kept. Same limits as the other slices: along-strike range = `MOD_XLIM` x `MOD_YLIM` projected onto the strike (optional per-entry `xlim`), depth range = `MOD_ZLIM`; horizontal axis in model km. Requires updated `femtic_viz.py`. Also fixed a missing comma in the default `MOD_STATS_WHAT` that merged `"sens_median_an"` and `"sens_cv_an"` into the non-existent key `"sens_median_ansens_cv_an"`, so neither panel was plotted. |

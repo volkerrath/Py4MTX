@@ -547,6 +547,26 @@ Provenance:
                         panels only, still requires display_coords in
                         ("utm", "latlon")); override via a map_markers entry
                         with "is_model_centre": True as before.
+    2026-10-07  Claude Sonnet 5.5 (Anthropic)
+                        plot_model_slices: vertical "plane" panels (dip = 90)
+                        rewritten as proper vertical sections.
+                        _plane_basis() builds u = n x [0,1,0], which for a
+                        vertical plane (horizontal normal) is the vertical
+                        direction, so elevation was plotted on the horizontal
+                        axis and along-strike distance on the vertical one.
+                        Vertical planes now use the ns/ew convention:
+                        horizontal = along-strike distance from "point"
+                        in model km (always, independent of display_coords),
+                        vertical = -depth
+                        with positive-down depth tick labels, zlim, optional
+                        spec-level xlim (along-strike range in m), compass
+                        corner labels (e.g. SW / NE), equal aspect, and
+                        correctly projected site markers. For dip = 90
+                        "strike" is a geographic azimuth clockwise from north
+                        (viz frame x = easting, y = northing); dipping planes
+                        keep the legacy code path and strike convention
+                        unchanged. Auto figure width now handles vertical
+                        sections.
                         AI-generated code -- review before production use.
     """
 
@@ -4360,6 +4380,14 @@ def plot_model_slices(
                 elif kind == "ew":
                     hspan = (_xl[1]-_xl[0])*sc    if _xl else _panel_h*200
                     vspan = (_zl[1]-_zl[0])*_dz_sc if _zl else _panel_h*200
+                elif kind == "plane" and abs(float(spec.get("dip", 90.0)) - 90.0) < 1e-6:
+                    # vertical section (2026-10-07): wide panel; exact
+                    # span only known when xlim and zlim are both given.
+                    if _xl and _zl:
+                        hspan = (_xl[1]-_xl[0])*1e-3
+                        vspan = (_zl[1]-_zl[0])*_dz_sc
+                    else:
+                        hspan, vspan = 1.8, 1.0
                 else:
                     hspan = vspan = 1.0
                 ratio = hspan / vspan if vspan > 0 else 1.0
@@ -4610,42 +4638,112 @@ def plot_model_slices(
             if out:
                 print(f"    plane slice strike={_strike:.0f} deg dip={_dip:.0f} deg ...")
             normal = _strike_dip_to_normal(_strike, _dip)
-            u_ax, v_ax = _plane_basis(normal)
-            polys, vals, eidx = _slice_geometry(nodes, conn, rho_elem,
-                                          normal, _pt, u_ax, v_ax)
-            _pa = _compute_poly_alphas(eidx, _alpha_vals, alpha_mode,
-                                       alpha_blank_thresh)
-            mappable = _plot_slice_panel(ax, polys, vals,
-                                         cmap_obj=cmap_obj, norm=norm,
-                                         ocean_color=ocean_color,
-                                         air_color=air_color, ocean_value=ocean_value, invert_v=True,
-                                         poly_alphas=_pa)
-            ax.set_xlabel("along-strike (m)", fontsize=label_fontsize)
-            ax.set_ylabel("down-dip (km)" if depth_km else "down-dip (m)", fontsize=label_fontsize)
-            if _xlim is not None:
-                ax.set_xlim(_xlim)
-            if _ylim is not None:
-                ax.set_ylim(_ylim)
-            if _invert_x:
-                ax.invert_xaxis()
-            if title is None:
-                title = f"Plane  str={_strike:.0f} deg  dip={_dip:.0f} deg"
-            if sites_in_slices:
-                for sn, sx_m, sy_m, _elev in _site_xys:
-                    site_xyz  = np.array([sx_m, sy_m, -_elev]) - _pt
-                    perp_dist = abs(float(np.dot(site_xyz, normal)))
-                    if projection_dist is not None and perp_dist > projection_dist:
-                        continue
-                    u_coord = float(np.dot(site_xyz, u_ax))
-                    mk = dict(_sms); mk.setdefault("label", f"Site {sn}")
-                    # Same elev-sign fix as ns/ew (elev = -z_mesh, positive
-                    # up). Note: the plane panel's mesh polygons use their
-                    # own strike/dip-dependent v_ax + invert_v=True instead
-                    # of this simple elevation axis, and that combination
-                    # was not independently re-verified here -- if plane
-                    # panels still look wrong, check the interaction
-                    # between invert_v and this marker position too.
-                    ax.plot(u_coord, _elev*_dz_sc, linestyle="none", **mk)
+            if abs(_dip - 90.0) < 1e-6:
+                # --- vertical section (added 2026-10-07) -----------------
+                # _plane_basis() builds u = n x [0,1,0], which for a
+                # vertical plane (horizontal normal) is the VERTICAL
+                # direction -- elevation ended up on the horizontal axis
+                # and along-strike distance on the vertical one. Vertical
+                # sections instead use the same convention as "ns"/"ew":
+                # horizontal axis = along-strike distance, vertical axis =
+                # -depth (shallow at top), depth tick labels positive-down.
+                # For vertical planes "strike" is a GEOGRAPHIC azimuth,
+                # clockwise from north (viz frame: x = easting, y =
+                # northing), so strike=45 reads SW (left) -> NE (right)
+                # unless invert_x=True. (_strike_dip_to_normal() measures
+                # strike from the +x axis instead, which is not a compass
+                # azimuth; it is left untouched for dipping planes.) Along-strike distance is relative
+                # to `point`'s own projection (0 at the point).
+                _s_rad = math.radians(_strike)
+                normal = np.array([math.cos(_s_rad), -math.sin(_s_rad), 0.0])
+                u_ax = np.array([math.sin(_s_rad), math.cos(_s_rad), 0.0])
+                v_ax = np.array([0.0, 0.0, -1.0])
+                polys, vals, eidx = _slice_geometry(nodes, conn, rho_elem,
+                                                    normal, _pt, u_ax, v_ax)
+                _u0 = float(_pt @ u_ax)
+                _hsc = 1e-3   # always model km, whatever display_coords is
+                polys_d = [[((pu - _u0)*_hsc, pv*_dz_sc) for pu, pv in poly]
+                           for poly in polys]
+                _pa = _compute_poly_alphas(eidx, _alpha_vals, alpha_mode,
+                                           alpha_blank_thresh)
+                mappable = _plot_slice_panel(
+                    ax, polys_d, vals, cmap_obj=cmap_obj, norm=norm,
+                    ocean_color=ocean_color, air_color=air_color,
+                    ocean_value=ocean_value, invert_v=False, poly_alphas=_pa)
+                ax.set_xlabel(f"along strike, azimuth {_strike:.0f} deg "
+                              "[model km]", fontsize=label_fontsize)
+                ax.set_ylabel("depth (km)" if depth_km else "depth (m)",
+                              fontsize=label_fontsize)
+                ax.yaxis.set_major_formatter(_depth_tick_fmt)
+                if _xlim is not None:
+                    # along-strike range [m] relative to `point`
+                    ax.set_xlim([v*_hsc for v in _xlim])
+                if _zlim is not None:
+                    ax.set_ylim([-_zlim[1]*_dz_sc, -_zlim[0]*_dz_sc])
+                if _invert_x:
+                    ax.invert_xaxis()
+                if _do_equal:
+                    ax.set_aspect("equal", adjustable="box")
+                if title is None:
+                    title = f"Section  azimuth N{_strike:.0f}E"
+                _c_l = _s_rad + math.pi if not _invert_x else _s_rad
+                _c_r = _s_rad if not _invert_x else _s_rad + math.pi
+                def _compass(a):
+                    _n = math.cos(a); _e = math.sin(a)
+                    return (("N" if _n > 0.38 else "S" if _n < -0.38 else "")
+                            + ("E" if _e > 0.38 else "W" if _e < -0.38 else ""))
+                ax.text(0.02, 0.98, _compass(_c_l), transform=ax.transAxes,
+                        ha="left", va="top", fontsize=label_fontsize,
+                        fontweight="bold", clip_on=False, zorder=10)
+                ax.text(0.98, 0.98, _compass(_c_r), transform=ax.transAxes,
+                        ha="right", va="top", fontsize=label_fontsize,
+                        fontweight="bold", clip_on=False, zorder=10)
+                if sites_in_slices:
+                    for sn, sx_m, sy_m, _elev in _site_xys:
+                        _sxyz = np.array([sx_m, sy_m, -_elev]) - _pt
+                        if (projection_dist is not None
+                                and abs(float(_sxyz @ normal)) > projection_dist):
+                            continue
+                        mk = dict(_sms); mk.setdefault("label", f"Site {sn}")
+                        ax.plot(float(_sxyz @ u_ax)*_hsc, _elev*_dz_sc,
+                                linestyle="none", **mk)
+            else:
+                u_ax, v_ax = _plane_basis(normal)
+                polys, vals, eidx = _slice_geometry(nodes, conn, rho_elem,
+                                              normal, _pt, u_ax, v_ax)
+                _pa = _compute_poly_alphas(eidx, _alpha_vals, alpha_mode,
+                                           alpha_blank_thresh)
+                mappable = _plot_slice_panel(ax, polys, vals,
+                                             cmap_obj=cmap_obj, norm=norm,
+                                             ocean_color=ocean_color,
+                                             air_color=air_color, ocean_value=ocean_value, invert_v=True,
+                                             poly_alphas=_pa)
+                ax.set_xlabel("along-strike (m)", fontsize=label_fontsize)
+                ax.set_ylabel("down-dip (km)" if depth_km else "down-dip (m)", fontsize=label_fontsize)
+                if _xlim is not None:
+                    ax.set_xlim(_xlim)
+                if _ylim is not None:
+                    ax.set_ylim(_ylim)
+                if _invert_x:
+                    ax.invert_xaxis()
+                if title is None:
+                    title = f"Plane  str={_strike:.0f} deg  dip={_dip:.0f} deg"
+                if sites_in_slices:
+                    for sn, sx_m, sy_m, _elev in _site_xys:
+                        site_xyz  = np.array([sx_m, sy_m, -_elev]) - _pt
+                        perp_dist = abs(float(np.dot(site_xyz, normal)))
+                        if projection_dist is not None and perp_dist > projection_dist:
+                            continue
+                        u_coord = float(np.dot(site_xyz, u_ax))
+                        mk = dict(_sms); mk.setdefault("label", f"Site {sn}")
+                        # Same elev-sign fix as ns/ew (elev = -z_mesh, positive
+                        # up). Note: the plane panel's mesh polygons use their
+                        # own strike/dip-dependent v_ax + invert_v=True instead
+                        # of this simple elevation axis, and that combination
+                        # was not independently re-verified here -- if plane
+                        # panels still look wrong, check the interaction
+                        # between invert_v and this marker position too.
+                        ax.plot(u_coord, _elev*_dz_sc, linestyle="none", **mk)
 
         else:
             ax.set_visible(False)
