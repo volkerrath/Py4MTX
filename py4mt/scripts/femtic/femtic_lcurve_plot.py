@@ -37,6 +37,12 @@ Provenance:
                        fix already applied to femtic_ens_post.py's
                        get_nrms() and (2026-09-07) femtic_ens_plot.py /
                        femtic_ens_repair.py.
+    2026-10-08 Claude Sonnet 5.5 (Anthropic)
+                       Convergence file name is now configurable (CNV_FILE,
+                       default "femtic.cnv"; a list of candidates is allowed,
+                       first existing wins), passed to fem.read_cnv() as
+                       filename=. Requires the femtic.py of the same date.
+                       AI-generated; review before production use.
 """
 
 import os
@@ -95,6 +101,10 @@ SCALE_ROUGH = 1.e3   # e.g. 1e3
 SCALE_MISFIT = None   # e.g. 1e4
 
 
+#: Name of the FEMTIC convergence file inside each run directory. A single
+#: name or a list of candidate names (first existing one is used).
+CNV_FILE = "femtic.cnv"
+
 SEARCH_STRNG = "ann_reg*"
 dir_list = utl.get_filelist(
     searchstr=[SEARCH_STRNG], searchpath=WORK_DIR,
@@ -115,7 +125,7 @@ dir_list = utl.get_filelist(
 l_curve = []
 for directory in dir_list:
     try:
-        _rows = fem.read_cnv(directory)["rows"]
+        _rows = fem.read_cnv(directory, filename=CNV_FILE)["rows"]
     except ValueError:
         print(directory, "does not contain a valid .cnv file")
         continue

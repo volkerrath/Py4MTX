@@ -19,6 +19,7 @@ Plot iteration-by-iteration convergence curves from FEMTIC inversions.
 | 2025       | vrath  | Created.                                     |
 | 2026-03-03 | Claude | Renamed user-set parameters to UPPERCASE.    |
 | 2026-08-13 | Claude Sonnet 5 | Added `femtic_convergence_plot_summary.md` output at end of run: user-set (UPPERCASE) parameters, script path, and run date/time. |
+| 2026-10-08 | Claude Sonnet 5.5 | Convergence file name configurable via `CNV_FILE` (default `femtic.cnv`; list of candidates allowed); column positions now read from the header row via `fem.read_cnv()` instead of fixed indices. AI-generated; review before production use. |
 
 ## Purpose
 
@@ -40,9 +41,9 @@ chosen quantity evolves with iteration number.
 |------|-------------|
 | `WORK_DIR` | Directory containing inversion sub-directories. |
 | `SEARCH_STRNG` | Glob pattern to find sub-directories (e.g. `kra*`). |
+| `CNV_FILE` | Convergence file name in each sub-directory (default `"femtic.cnv"`; a list gives candidates, first existing wins). |
 
-Each sub-directory must contain `femtic.cnv` with columns:
-iteration, retry, alpha, …, roughness, …, misfit, nRMS.
+Each sub-directory must contain the convergence file (`CNV_FILE`, default `femtic.cnv`) with a header row naming (at least) Alpha, Roughness, Misfit and RMS; positions are read from the header via `fem.read_cnv()`.
 
 ## Outputs
 
@@ -55,6 +56,7 @@ One PDF per inversion directory:
 - `PLOT_NAME` — base name for the plot title and filename.
 - `PLOT_WHAT` — `'misfit'`, `'rms'`, or `'rough'`.
 - `SEARCH_STRNG` — glob pattern.
+- `CNV_FILE` — name of the convergence file (or list of candidates).
 
 ## Dependencies
 

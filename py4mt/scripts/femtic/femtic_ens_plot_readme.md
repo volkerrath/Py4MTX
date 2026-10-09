@@ -92,6 +92,7 @@ borehole PDF / interactive window
 |---|---|
 | `ENSEMBLE_DIR` | Directory containing one sub-directory per member |
 | `ENSEMBLE_NAME` | Member sub-directories matched via `"<ENSEMBLE_NAME>*"` |
+| `CNV_FILE` | Convergence file name in each member directory (default `"femtic.cnv"`; a list gives candidates, first existing wins) -- keep equal to `femtic_ens_post.py`'s value |
 | `NRMS_MAX` | Max accepted nRMS from `femtic.cnv` — keep equal to `femtic_ens_post.py`'s value |
 | `ENS_LABELS` | Labels for member plots/filenames; `None` → directory basenames |
 
@@ -319,3 +320,4 @@ Position values accept:
   fix of 2026-09-02 — column positions are read from `femtic.cnv`'s own
   header row every time, independent of version or Beta/Distortion
   presence.
+- **2026-10-08 (Claude Sonnet 5.5, Anthropic):** Convergence file name is now configurable via `CNV_FILE` (default `"femtic.cnv"`; list of candidates allowed), resolved per member with `fem.resolve_cnv_path()`. AI-generated; review before production use.

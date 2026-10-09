@@ -128,6 +128,31 @@ Usage
     python femtic_data_misfit.py single   ./run01/ ./run02/   # separately
     python femtic_data_misfit.py ensemble "./ens/member_*/"
 
+Examples: "single" (each entry is its own run, one output set per run)
+    # config block: RUN_MODE = "single"; ITERATION = "best"
+    RUN_PATHS = ["/data/ens/run01/", "/data/ens/run02/"]
+    #   -> two independent evaluations, prefixes Misfits_run01_iter<N> and
+    #      Misfits_run02_iter<N> (OUT_PREFIX = "Misfits"; None -> run01_iter<N>),
+    #      each written into the directory of its chosen results file.
+    python femtic_data_misfit.py single ./run01/                # one run
+    python femtic_data_misfit.py single ./run01/ ./run02/       # two runs
+    python femtic_data_misfit.py single "./ens/run_*/"          # glob: one each
+    # a fixed iteration instead of the best one: ITERATION = 25 ("last" and
+    # "best" are also allowed); a results file may be given directly:
+    python femtic_data_misfit.py single ./run01/results_iter25.h5
+
+Examples: "ensemble" (all entries together form ONE ensemble, M members)
+    # config block: RUN_MODE = "ensemble"; ITERATION = "last"
+    RUN_PATHS = ["/data/ens/member_*/"]       # one member per directory
+    python femtic_data_misfit.py ensemble "./ens/member_*/"
+    python femtic_data_misfit.py ensemble ./m01/ ./m02/ ./m03/
+    #   -> one output set, prefix ensemble_M<M>, written into the common
+    #      parent directory of the members (OUT_DIR = "/some/dir" forces
+    #      one directory). The chosen iteration of each member is one
+    #      member of the ensemble; members must share the same data rows.
+    #      Gives RMS1 and RMS2 (Baba 2023; RMS2 needs M > 1).
+    #   Quote globs so the shell does not expand them (the script expands them).
+
 Changelog
 ---------
 2026-09-18  Claude Sonnet 5 (Anthropic): initial version (as
@@ -177,6 +202,13 @@ Changelog
 2026-09-30c Claude (Anthropic): CURVES_OBSERVED_ONLY = True draws only the
             observed data (markers + errors) in "curves"; calculated
             response, ensemble layers and nRMS in the title are omitted.
+2026-10-08  Claude (Anthropic), AI-generated, review before use: documentation
+            only -- explicit "single" and "ensemble" usage examples (config
+            block and command line) added to the Usage section and readme.
+2026-10-08b Claude (Anthropic), AI-generated, review before use: resolve_run()
+            skips files h5py cannot open (OSError, e.g. "file signature not
+            found") like unreadable results; ensemble mode skips members
+            without a usable file and continues with the rest.
 """
 from __future__ import annotations
 
@@ -211,10 +243,9 @@ import inverse as inv  # noqa: E402  (nrms, r_mae, r_med, q95)
 #             singles; they do NOT form an ensemble)
 # "ensemble": all entries together form one ensemble
 #  RUN_MODE: str = "ensemble"               # "single" | "ensemble"
-RUN_MODE: str = "single"               # "single" | "ensemble"
+RUN_MODE: str = "ensemble"               # "single" | "ensemble"
 RUN_PATHS: List[str] = [
-    "/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2/ann*_0/",
-    "/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2/ann*_59/",
+ r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_0/ann*/"
     ]        # run dirs, results files, or globs (overridden by argv)
 # RUN_MODE: str = "single"
 # RUN_PATHS: List[str] = [
@@ -418,7 +449,8 @@ def resolve_run(path: str, *, iteration: Union[str, int], pattern: str) -> dict:
     for c in cands:
         try:
             d = fem.read_results_data(c, out=False)
-        except KeyError as exc:
+        except (KeyError, OSError) as exc:
+            # OSError: not an HDF5 file / truncated / still being written
             print(f"femtic_data_misfit: skipping {c}: {exc}")
             continue
         if d["nRows"] == 0:
@@ -1910,7 +1942,16 @@ def main(argv: Sequence[str]) -> int:
         return 1
 
     if mode == "ensemble":
-        runs = [resolve_run(p, iteration=ITERATION, pattern=ITER_PATTERN) for p in paths]
+        runs = []
+        for p in paths:
+            try:
+                runs.append(resolve_run(p, iteration=ITERATION, pattern=ITER_PATTERN))
+            except (FileNotFoundError, ValueError) as exc:
+                print(f"femtic_data_misfit: skipping member {p}: {exc}")
+        if not runs:
+            print("femtic_data_misfit: no usable ensemble member found.")
+            return 1
+        print(f"femtic_data_misfit: ensemble of {len(runs)} of {len(paths)} runs")
         prefix = OUT_PREFIX or default_prefix(runs, mode)
         out_dir = OUT_DIR or default_out_dir(runs)
         return process_runs(runs, mode=mode, out_dir=out_dir, prefix=prefix)

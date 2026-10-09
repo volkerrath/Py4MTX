@@ -802,13 +802,24 @@ print(titstrng + "\n\n")
 # ---------------------------------------------------------------------------
 # Ensemble input
 # ---------------------------------------------------------------------------
-ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_0/"
-ENSEMBLE_NAME = "annecy_gst_"
+ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_rto_0/"
+ENSEMBLE_NAME = "annecy_rto_"
 #: Prefix used for .npz output keys and default file/figure names.
 #: e.g. "rto" → keys rto_ens, rto_avg, …  and file RTO_results.npz.
-ENSEMBLE_PREFIX = "annecy_hst"
+ENSEMBLE_PREFIX = "annecy_rto_0"
 
-#: Maximum normalised RMS accepted from femtic.cnv.
+# ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2/"
+# ENSEMBLE_NAME = "annecy_rnd_2_"
+# #: Prefix used for .npz output keys and default file/figure names.
+# #: e.g. "rto" → keys rto_ens, rto_avg, …  and file RTO_results.npz.
+# ENSEMBLE_PREFIX = "annecy_rnd_2"
+
+#: Name of the FEMTIC convergence file inside each ensemble member
+#: directory. A single name or a list of candidates (first existing wins),
+#: e.g. CNV_FILE = ["femtic.cnv", "femtic_run2.cnv"].
+CNV_FILE = "femtic.cnv"
+
+#: Maximum normalised RMS accepted from the convergence file (CNV_FILE).
 NRMS_MAX = 1.5
 
 # ---------------------------------------------------------------------------
@@ -2022,9 +2033,9 @@ simrc_keep_idx = []
 
 for d in dir_list:
     print(f"\n  Inversion run: {d}")
-    cnv_file = os.path.join(d, "femtic.cnv")
+    cnv_file = str(fem.resolve_cnv_path(d, CNV_FILE))
     if not os.path.isfile(cnv_file):
-        print(f"    femtic.cnv not found — skipped.")
+        print(f"    {os.path.basename(cnv_file)} not found — skipped.")
         continue
 
     # Column positions are read from this file's own header row via

@@ -295,8 +295,32 @@ def _cnv_canonical_name(token: str) -> str:
     return raw
 
 
-def read_cnv(source, *, columnar: bool = False) -> dict:
-    """Read a FEMTIC convergence file (``femtic.cnv``) using its own header
+CNV_DEFAULT_NAME = "femtic.cnv"
+
+
+def resolve_cnv_path(directory, filename=CNV_DEFAULT_NAME):
+    """Return the path of the convergence file inside ``directory``.
+
+    ``filename`` is either a single file name or a list/tuple of candidate
+    names; with several candidates the first one that exists is returned.
+    If none exists, the path built from the first candidate is returned
+    (so the caller gets a meaningful FileNotFoundError).
+    """
+    if filename is None:
+        filename = CNV_DEFAULT_NAME
+    names = [filename] if isinstance(filename, (str, os.PathLike)) else list(filename)
+    if not names:
+        names = [CNV_DEFAULT_NAME]
+    directory = Path(directory)
+    for n in names:
+        if (directory / n).is_file():
+            return directory / n
+    return directory / names[0]
+
+
+def read_cnv(source, *, columnar: bool = False,
+             filename=CNV_DEFAULT_NAME) -> dict:
+    """Read a FEMTIC convergence file (default ``femtic.cnv``) using its own header
     row to determine column positions.
 
     FEMTIC's ``.cnv`` column layout is not fixed: the ``Beta``/``Distortion``
@@ -323,8 +347,13 @@ def read_cnv(source, *, columnar: bool = False) -> dict:
     Parameters
     ----------
     source : str | Path
-        Path to a ``femtic.cnv`` file, or to a directory containing one
-        (``femtic.cnv`` is looked up inside it).
+        Path to a convergence file, or to a directory containing one
+        (``filename`` is looked up inside it).
+    filename : str | sequence of str, optional
+        Name of the convergence file looked up when ``source`` is a
+        directory (ignored if ``source`` is a file path). May be a list or
+        tuple of candidate names; the first existing one is used.
+        Default ``"femtic.cnv"``.
     columnar : bool, optional
         If True, also build a ``"data"`` entry: a dict mapping each header
         column name to a 1-D ``np.ndarray`` of that column's values across
@@ -366,7 +395,7 @@ def read_cnv(source, *, columnar: bool = False) -> dict:
     """
     path = Path(source)
     if path.is_dir():
-        path = path / "femtic.cnv"
+        path = resolve_cnv_path(path, filename)
 
     columns: Optional[dict] = None
     rows: list = []
@@ -406,7 +435,7 @@ def read_cnv(source, *, columnar: bool = False) -> dict:
     return result
 
 
-def get_nrms(directory=None):
+def get_nrms(directory=None, filename=CNV_DEFAULT_NAME):
     '''
     Get best (smallest) nRMS from FEMTIC run.
 
@@ -414,6 +443,9 @@ def get_nrms(directory=None):
     ----------
     directory : string, optional
         Directory containing FEMTIC convergence file. The default is None.
+    filename : str | sequence of str, optional
+        Name of the convergence file (or list of candidate names; first
+        existing wins). The default is ``"femtic.cnv"``.
 
     Returns
     -------
@@ -435,13 +467,13 @@ def get_nrms(directory=None):
         sys.exit('get_nrms: No directory given! Exit.')
 
     try:
-        cnv = read_cnv(os.path.join(directory, 'femtic.cnv'))
+        cnv = read_cnv(directory, filename=filename)
         rows = cnv["rows"]
     except ValueError:
         rows = []
 
     if len(rows) == 0:
-        print (directory, '/femtic.cnv', ' is empty!')
+        print (resolve_cnv_path(directory, filename), ' is empty!')
         num_best = -1
         nrm_best = 1e32
     else:

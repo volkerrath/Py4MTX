@@ -813,3 +813,10 @@ function's schema was provisional because no writer existed yet at the time.
 - Updated: module docstring changelog, `Overview` bullet list.
 
 Author: Volker Rath (DIAS)
+
+### Changelog (2026-10-08) --- configurable convergence file name
+- `read_cnv(source, *, columnar=False, filename="femtic.cnv")` and
+  `get_nrms(directory, filename="femtic.cnv")` accept a different file name
+  (or a list/tuple of candidates; first existing wins). New helper
+  `resolve_cnv_path(directory, filename)`. Defaults unchanged. AI-generated
+  (Claude Sonnet 5.5, Anthropic); review before production use.

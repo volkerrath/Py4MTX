@@ -194,6 +194,45 @@ python modem_data_misfit.py single   obs1.dat calc1.dat obs2.dat calc2.dat
 python modem_data_misfit.py ensemble obs1.dat calc1.dat obs2.dat calc2.dat
 ```
 
+### Example: `single`
+
+Every (obs, calc) pair is its own run; one output set per run.
+
+```
+# config block
+RUN_MODE  = "single"
+ITERATION = "best"                       # or "last", or an integer such as 50
+RUN_PATHS = [("/data/inv/obs.dat", "/data/inv/")]      # calc = directory,
+                                         # searched with CALC_PATTERN
+RUN_PATHS = [("/data/inv/obs.dat", "/data/inv/run_NLCG_050.dat")]  # or a file
+
+python modem_data_misfit.py single obs.dat calc_NLCG_050.dat
+python modem_data_misfit.py single obsA.dat calcA.dat obsB.dat calcB.dat
+```
+
+Output: `<OUT_PREFIX>_<run>_iter<N>_*` (`OUT_PREFIX = None` gives
+`<run>_iter<N>`), written next to the chosen calculated file unless `OUT_DIR`
+is set.
+
+### Example: `ensemble`
+
+All pairs together form one ensemble of M members. Matching obs/calc globs of
+equal length are zipped pairwise (`expand_run_pairs`, sorted order).
+
+```
+# config block
+RUN_MODE  = "ensemble"
+RUN_PATHS = [("/data/rto/rto_*_obs.dat", "/data/rto/rto_*_NLCG_050.dat")]
+
+python modem_data_misfit.py ensemble obs1.dat calc1.dat obs2.dat calc2.dat
+python modem_data_misfit.py ensemble "rto_*_obs.dat" "rto_*_NLCG_050.dat"
+```
+
+Output: one set with prefix `ensemble_M<M>` in the common parent directory of
+the calculated files (or `OUT_DIR`). Rows are matched across members
+(`KEY_ROUND`); RMS1 and RMS2 (Baba 2023) are reported, RMS2 needs M > 1.
+Quote glob patterns so the shell does not expand them.
+
 `modem.py` and `inverse.py` (fit measures; it imports `aniso`) must be
 importable; if `PY4MTX_ROOT` is set, `$PY4MTX_ROOT/py4mt/modules` and
 `.../scripts` are added to `sys.path`.
@@ -374,3 +413,9 @@ observed-only mode (`CURVES_OBSERVED_ONLY`), per-site nRMS table.
 `build_dataset()` also keeps the per-member responses (`cal_re_m`,
 `cal_im_m`) and site coordinates (`site_x`, `site_y`, NaN if absent). The
 other three methods are unchanged.
+
+### Changelog (2026-10-08) --- usage examples
+
+Documentation only: explicit `single` and `ensemble` usage examples (config
+block and command line) added to Usage and to the script docstring. Claude
+(Anthropic), AI-generated, review before production use.

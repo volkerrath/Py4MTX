@@ -63,6 +63,7 @@ Ensemble sub-directories  (rto_*, gst_*, member_*, …)
 | `ENSEMBLE_DIR` | str | — | Root directory containing ensemble sub-directories. |
 | `ENSEMBLE_NAME` | str | — | Glob matched against sub-directory names. Only actual directories among the matches are scanned (`os.path.isdir()` checked in step (1)); a stray file that happens to match the glob is skipped. |
 | `ENSEMBLE_PREFIX` | str | — | Prefix for default file/figure names. |
+| `CNV_FILE` | str or list | `"femtic.cnv"` | Convergence file name in each member directory; a list gives candidate names (first existing wins). Directories without it are tagged `"missing_cnv"`. |
 | `NRMS_MAX` | float | `1.5` | Members whose final nRMS exceeds this value are tagged `"rejected_nrms"`. |
 
 nRMS and the iteration number are read from each member's `femtic.cnv` via `fem.read_cnv()`, which parses column positions from the file's own header row (case-insensitive substring match) — no FEMTIC-version setting needed.
@@ -217,5 +218,6 @@ skipped.
 | 2026-08-12 | Claude Sonnet 5 (Anthropic) | REPAIR now `shutil.copytree()`'s the **entire** original directory to the `_restart` copy (`symlinks=True`, so `LINK_LIST` entries — `control.dat`, `mesh.dat`, `referencemodel.dat`, `distortion_iter0.dat`, `site.dat`, run scripts — stay symlinks to the shared template rather than being followed/duplicated) before overwriting `MOD_REPAIR_MODEL_NAME` with the repaired model, instead of creating a bare directory with just that one file. `resistivity_block_iter0.dat` is itself a `COPY_LIST` entry, so it already exists as a real file (not a symlink) in the fresh copy; REPAIR simply replaces its contents. Added a defensive `os.path.islink()` guard before the overwrite regardless, mirroring `femtic.py`'s own `insert_model` symlink-hazard guard. `_restart` directories produced by REPAIR are now ready to restart FEMTIC in directly. |
 | 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_ens_repair_summary.md` output at end of run: writes user-set (UPPERCASE) parameters, script path, and run date/time. |
 | 2026-09-07 | Claude Sonnet 5 (Anthropic) | Removed the `FEMTIC` config variable and its `"4.3"`/`"5."` version-string switch on the nRMS column index (6 vs 8): that switch only matched one specific column layout, and silently misread nRMS (e.g. reading the Distortion or Misfit column instead) for any run whose actual column count didn't match the assumed FEMTIC-version pairing. Now uses `fem.read_cnv()`, matching `femtic_ens_post.py`'s `get_nrms()`-based fix of 2026-09-02 — column positions are read from `femtic.cnv`'s own header row every time, independent of version or Beta/Distortion presence. |
+| 2026-10-08 | Claude Sonnet 5.5 (Anthropic) | New config `CNV_FILE` (default `"femtic.cnv"`, single name or candidate list) replaces the hard-coded `femtic.cnv` in step (1)'s scan loop; uses `fem.resolve_cnv_path()`. AI-generated; review before production use. |
 
 Author: Volker Rath (DIAS)

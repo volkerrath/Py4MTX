@@ -213,6 +213,41 @@ Two run modes (`RUN_MODE`, or first command-line word):
     python femtic_data_misfit.py single   ./run01/ ./run02/   # separately
     python femtic_data_misfit.py ensemble "./ens/member_*/"
 
+### Example: `single`
+
+Every entry is its own run (no ensemble); one output set per run.
+
+    # config block
+    RUN_MODE  = "single"
+    ITERATION = "best"          # or "last", or an integer such as 25
+    RUN_PATHS = ["/data/ens/run01/", "/data/ens/run02/"]
+
+    python femtic_data_misfit.py single ./run01/ ./run02/
+    python femtic_data_misfit.py single "./ens/run_*/"      # glob: one run each
+    python femtic_data_misfit.py single ./run01/results_iter25.h5
+
+Output: `<OUT_PREFIX>_<run>_iter<N>_*` (e.g. `Misfits_run01_iter25_crossplot_*`,
+`..._hist_*`, `..._qq_*`, `..._fit_measures.txt`) in the directory of each
+chosen results file; with `OUT_PREFIX = None` the prefix is `<run>_iter<N>`.
+
+### Example: `ensemble`
+
+All entries together form one ensemble of M members (the chosen iteration of
+each run is one member; rows are matched by datatype, site, component and
+frequency).
+
+    # config block
+    RUN_MODE  = "ensemble"
+    ITERATION = "last"
+    RUN_PATHS = ["/data/ens/member_*/"]
+
+    python femtic_data_misfit.py ensemble "./ens/member_*/"
+    python femtic_data_misfit.py ensemble ./m01/ ./m02/ ./m03/
+
+Output: one set with prefix `ensemble_M<M>`, in the common parent directory
+of the members (or `OUT_DIR` if set). RMS1 and RMS2 (Baba 2023) are reported;
+RMS2 needs M > 1. Quote glob patterns so the shell does not expand them.
+
 `femtic.py` (and `ensembles.py`, which it imports) and `inverse.py` (fit
 measures; it imports `aniso`) must be importable; if
 `PY4MTX_ROOT` is set, `$PY4MTX_ROOT/py4mt/modules` and `.../scripts` are
@@ -499,3 +534,9 @@ Claude Sonnet 5 (Anthropic), 2026-09-19:
 
 Claude Sonnet 5 (Anthropic), 2026-09-18: observed-vs-calculated crossplots
 (as `femtic_crossplot.py`).
+
+### Changelog (2026-10-08) --- usage examples
+
+Documentation only: explicit `single` and `ensemble` usage examples (config
+block and command line) added to Usage and to the script docstring. Claude
+(Anthropic), AI-generated, review before production use.

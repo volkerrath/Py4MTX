@@ -25,7 +25,7 @@ the curve.
 
 | File | Location | Description |
 |------|----------|-------------|
-| `femtic.cnv` | `<run_dir>/femtic.cnv` | FEMTIC convergence log; one line per iteration |
+| `femtic.cnv` (default, see `CNV_FILE`) | `<run_dir>/<CNV_FILE>` | FEMTIC convergence log; one line per iteration |
 
 ### `femtic.cnv` column layout
 
@@ -67,6 +67,7 @@ used from each file.
 | `PLOT_YLIM` | `list` or `None` | `None` | y-axis limits `[ymin, ymax]`; `None` = matplotlib auto |
 | `SCALE_ROUGH` | `float` or `None` | `None` | Divide roughness values by this factor before plotting; shown as "×10ⁿ" next to the roughness label. `None`/`1` disables. |
 | `SCALE_MISFIT` | `float` or `None` | `None` | Divide misfit values by this factor before plotting; shown as "×10ⁿ" next to the misfit label. Ignored when `PLOT_WHAT = "nrms"`. `None`/`1` disables. |
+| `CNV_FILE` | `str` or `list` | `"femtic.cnv"` | Convergence file name in each run directory; a list gives candidate names (first existing wins) |
 | `SEARCH_STRNG` | `str` | `"*L2"` | Glob pattern passed to `utl.get_filelist` to identify run directories |
 
 ### `PLOT_WHAT` detail
@@ -147,3 +148,4 @@ offset tuple `ann_offset` in the script if crowding still occurs.
 | 2026-07-05 | vrath / Claude Sonnet 5 | Added `SCALE_ROUGH` / `SCALE_MISFIT` optional axis scaling factors, displayed as "×10ⁿ" in the axis label; not applied to `nrms` or to saved `LC_dat.npz`; `PLOT_XLIM`/`PLOT_YLIM` auto-rescaled to match |
 | 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_lcurve_plot_summary.md` output at end of run: user-set (UPPERCASE) parameters, script path, and run date/time |
 | 2026-09-07 | Claude Sonnet 5 (Anthropic) | Removed `DISTORTION` and the raw-token-count / index-based column lookup (8 vs 10 columns) it drove: that heuristic silently matched only those two specific `femtic.cnv` layouts and misread nRMS (e.g. reading `Distortion` or `Misfit` instead of `RMS`) for any other column count. Now uses `fem.read_cnv()`, which reads column positions from each file's own header row (case-insensitive substring match), same fix already applied to `femtic_ens_post.py`'s `get_nrms()` and (2026-09-07) `femtic_ens_plot.py` / `femtic_ens_repair.py`. |
+| 2026-10-08 | Claude Sonnet 5.5 (Anthropic) | Convergence file name configurable via `CNV_FILE` (default `femtic.cnv`), passed to `fem.read_cnv(..., filename=)`. AI-generated; review before production use. |

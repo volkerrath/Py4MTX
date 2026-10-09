@@ -110,6 +110,12 @@ Provenance:
                 get_nrms()-based fix of 2026-09-02 -- column positions
                 are read from femtic.cnv's own header row every time,
                 independent of version or Beta/Distortion presence.
+    2026-10-08  Claude Sonnet 5.5 (Anthropic)
+                Convergence file name is now configurable: new CNV_FILE
+                (default "femtic.cnv"; a list of candidate names is
+                allowed, first existing wins), resolved per directory via
+                fem.resolve_cnv_path(). Requires the femtic.py of the same
+                date. AI-generated; review before production use.
 """
 from __future__ import annotations
 
@@ -153,7 +159,11 @@ ENSEMBLE_DIR    = r"/media/vrath/LargeBack/Ensembles/misti_gst_ensembles/"
 ENSEMBLE_NAME   = "misti_gst_suzuki_rnd"
 ENSEMBLE_PREFIX = "misti_gst_suzuki_rnd"
 
-#: Maximum normalised RMS accepted from femtic.cnv.
+#: Name of the FEMTIC convergence file inside each member directory. A single
+#: name or a list of candidate names (first existing one is used).
+CNV_FILE = "femtic.cnv"
+
+#: Maximum normalised RMS accepted from the convergence file.
 NRMS_MAX = 1.5
 
 # ---------------------------------------------------------------------------
@@ -318,9 +328,9 @@ for d in dir_list:
 
     print(f"\n  Inversion run: {d}")
     _label = os.path.basename(os.path.normpath(d))
-    cnv_file = os.path.join(d, "femtic.cnv")
+    cnv_file = str(fem.resolve_cnv_path(d, CNV_FILE))
     if not os.path.isfile(cnv_file):
-        print(f"    femtic.cnv not found — skipped.")
+        print(f"    {os.path.basename(cnv_file)} not found -- skipped.")
         conv_list.append(dict(label=_label, dir=d, nrms=None, status="missing_cnv"))
         continue
 
@@ -338,7 +348,7 @@ for d in dir_list:
         conv_list.append(dict(label=_label, dir=d, nrms=None, status="missing_cnv"))
         continue
     if not _rows:
-        print(f"    femtic.cnv is empty — skipped.")
+        print(f"    {os.path.basename(cnv_file)} is empty -- skipped.")
         conv_list.append(dict(label=_label, dir=d, nrms=None, status="missing_cnv"))
         continue
     _last = _rows[-1]

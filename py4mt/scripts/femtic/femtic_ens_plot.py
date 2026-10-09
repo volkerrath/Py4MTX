@@ -224,6 +224,12 @@ Provenance
                 get_nrms()-based fix of 2026-09-02 -- column positions
                 are read from femtic.cnv's own header row every time,
                 independent of version or Beta/Distortion presence.
+    2026-10-08  Claude Sonnet 5.5 (Anthropic)
+                Convergence file name is now configurable: new CNV_FILE
+                (default "femtic.cnv"; a list of candidate names is
+                allowed, first existing wins), resolved per member via
+                fem.resolve_cnv_path(). Requires the femtic.py of the same
+                date. AI-generated; review before production use.
 
 @author: vrath
 """
@@ -301,7 +307,12 @@ SITE_DAT = ENSEMBLE_DIR + "/templates/site.dat"   # set to None to disable
 #: from the file's own header row -- no FEMTIC-version setting needed.
 
 
-#: Maximum normalised RMS accepted from femtic.cnv.  Keep this equal to
+#: Name of the FEMTIC convergence file inside each member directory. A single
+#: name or a list of candidate names (first existing one is used).  Keep this
+#: equal to CNV_FILE in femtic_ens_post.py.
+CNV_FILE = "femtic.cnv"
+
+#: Maximum normalised RMS accepted from the convergence file.  Keep this equal to
 #: NRMS_MAX in femtic_ens_post.py so this script plots exactly the
 #: members ens_post included in its ensemble statistics.
 NRMS_MAX = 1.5
@@ -1084,9 +1095,9 @@ for _d in dir_list:
         continue
 
     print(f"\n  Inversion run: {_d}")
-    _cnv_file = os.path.join(_d, "femtic.cnv")
+    _cnv_file = str(fem.resolve_cnv_path(_d, CNV_FILE))
     if not os.path.isfile(_cnv_file):
-        print(f"    femtic.cnv not found — skipped.")
+        print(f"    {os.path.basename(_cnv_file)} not found -- skipped.")
         continue
 
     # Column positions are read from this file's own header row via
@@ -1102,7 +1113,7 @@ for _d in dir_list:
         print(f"    {_e}")
         continue
     if not _rows:
-        print(f"    femtic.cnv is empty — skipped.")
+        print(f"    {os.path.basename(_cnv_file)} is empty -- skipped.")
         continue
     _last = _rows[-1]
     _numit = int(round(_last["Iter"]))

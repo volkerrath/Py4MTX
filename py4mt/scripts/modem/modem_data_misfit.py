@@ -118,6 +118,31 @@ Usage
     python modem_data_misfit.py single   obs1.dat calc1.dat obs2.dat calc2.dat
     python modem_data_misfit.py ensemble obs1.dat calc1.dat obs2.dat calc2.dat
 
+Examples: "single" (each (obs, calc) pair is its own run)
+    # config block: RUN_MODE = "single"; ITERATION = "best"
+    RUN_PATHS = [("/data/inv/obs.dat", "/data/inv/")]
+    #   calc is a directory: the candidates matching CALC_PATTERN
+    #   ("*_NLCG_*.dat") are searched and ITERATION picks one ("best" =
+    #   smallest overall RMS, "last", or an integer such as 50).
+    RUN_PATHS = [("/data/inv/obs.dat", "/data/inv/run_NLCG_050.dat")]  # file
+    python modem_data_misfit.py single obs.dat calc_NLCG_050.dat
+    python modem_data_misfit.py single obsA.dat calcA.dat obsB.dat calcB.dat
+    #   -> two independent evaluations (flat argv = obs/calc pairs); prefix
+    #      Misfits_<run>_iter<N> (OUT_PREFIX = None -> <run>_iter<N>), written
+    #      next to the chosen calculated file unless OUT_DIR is set.
+
+Examples: "ensemble" (all pairs together form ONE ensemble, M members)
+    # config block: RUN_MODE = "ensemble"
+    RUN_PATHS = [("/data/rto/rto_*_obs.dat", "/data/rto/rto_*_NLCG_050.dat")]
+    #   matching obs/calc globs of equal length are zipped pairwise by
+    #   expand_run_pairs(): one (obs, calc) pair per member (sorted order).
+    python modem_data_misfit.py ensemble obs1.dat calc1.dat obs2.dat calc2.dat
+    python modem_data_misfit.py ensemble "rto_*_obs.dat" "rto_*_NLCG_050.dat"
+    #   -> one output set, prefix ensemble_M<M>, in the common parent
+    #      directory of the calculated files. Rows are matched across members
+    #      (KEY_ROUND); gives RMS1 and RMS2 (Baba 2023; RMS2 needs M > 1).
+    #   Quote globs so the shell does not expand them (the script expands them).
+
 Verification
 ------------
 - ast.parse() passes; no non-ASCII characters in the source.
@@ -160,6 +185,9 @@ Full_Interstation_TF is not drawn.
 
 Changelog
 ---------
+2026-10-08  Claude (Anthropic), AI-generated, review before use: documentation
+            only -- explicit "single" and "ensemble" usage examples (config
+            block and command line) added to the Usage section and readme.
 2026-10-01  Claude (Anthropic): optional method "curves" ported from
             femtic_data_misfit.py (response curves per site, ensemble
             curves/density/bands, CURVES_OBSERVED_ONLY); build_dataset()

@@ -4,8 +4,8 @@
 Plot convergence curves (misfit, nRMS, or roughness vs. iteration)
 from FEMTIC inversion runs.
 
-Reads femtic.cnv files from a set of inversion directories and
-generates convergence plots as PDF.
+Reads FEMTIC convergence files (default femtic.cnv, see CNV_FILE) from a
+set of inversion directories and generates convergence plots as PDF.
 
 @author: vrath
 
@@ -17,6 +17,15 @@ Provenance:
                        end of run: writes user-set (UPPERCASE) parameters,
                        script path, and run date/time via
                        utl.write_param_summary().
+    2026-10-08 Claude Sonnet 5.5 (Anthropic)
+                Convergence file name is now configurable (CNV_FILE,
+                default "femtic.cnv"; a list of candidates is allowed,
+                first existing wins) via fem.resolve_cnv_path(), which
+                requires the femtic.py of the same date. Also replaced the
+                hard-coded column indices (nline[5], [7], [8]) by
+                fem.read_cnv(), which reads column positions from each
+                file's header row, as in the other femtic_* scripts.
+                AI-generated; review before production use.
 """
 
 import os
@@ -53,6 +62,10 @@ WORK_DIR = r"/home/vrath/FEMTIC_work/krafla6big_L2_L_curve/"
 PLOT_NAME = r"Krafla_L2_Convergence"
 PLOT_WHAT = "rough"  # Options: 'misfit', 'rms', 'rough'
 
+#: Name of the FEMTIC convergence file inside each run directory. A single
+#: name or a list of candidate names (first existing one is used).
+CNV_FILE = "femtic.cnv"
+
 SEARCH_STRNG = "kra*"
 dir_list = utl.get_filelist(
     searchstr=[SEARCH_STRNG], searchpath=WORK_DIR,
@@ -63,31 +76,23 @@ dir_list = utl.get_filelist(
 #  Read convergence data and plot
 # =============================================================================
 for directory in dir_list:
-    convergence = []
-    iteration = -1
-
-    with open(directory + "/femtic.cnv") as cnv:
-        content = cnv.readlines()
-        for line in content:
-            if "#" in line:
-                continue
-            iteration += 1
-            nline = line.split()
-            itern = int(nline[0])
-            retry = int(nline[1])
-            if retry > 0:
-                itern = itern + retry
-            alpha = float(nline[2])
-            rough = float(nline[5])
-            misft = float(nline[7])
-            nrmse = float(nline[8])
-            convergence.append([iteration, alpha, rough, misft, nrmse])
-
-    if len(convergence) == 0:
-        print(directory, "/femtic.cnv is empty!")
+    cnv_path = fem.resolve_cnv_path(directory, CNV_FILE)
+    # Column positions come from the file's own header row via
+    # fem.read_cnv(), robust to FEMTIC version and to the presence of
+    # Beta/Distortion columns.
+    try:
+        rows = fem.read_cnv(directory, filename=CNV_FILE)["rows"]
+    except ValueError as err:
+        print(cnv_path, "does not contain a valid .cnv file:", err)
         continue
 
-    c = np.array(convergence)
+    if len(rows) == 0:
+        print(cnv_path, "is empty!")
+        continue
+
+    # x-axis is the running row index (retrials count as separate points).
+    c = np.array([[k, r["Alpha"], r["Roughness"], r["Misfit"], r["RMS"]]
+                  for k, r in enumerate(rows)])
     itern = c[:, 0]
     alpha = c[:, 1]
     rough = c[:, 2]
