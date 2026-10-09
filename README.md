@@ -2,7 +2,7 @@
 # Python Tools for MT
 
 
-This repository currently contains scripts useful for EM imaging, modelling, and inversion. The workflows for reading and processing Jacobians from ModEM outputs has been merged from https://github.com/volkerrath/JacoPyAN, and will be further developed here. The tools refer to the 3D magnetotelluric inversion codes ModEM (available at https://github.com/magnetotellurics/ModEM) and FEMTIC (available at http://https://github.com/yoshiya-usui/femtic). Please be aware that this repo is under active development, and currently in a process of reorganization and adding tools related to FEMTIC, and thus some of these tools are not in production state. This collection is made available under GNU public license V3. 
+This repository currently contains scripts useful for EM imaging, modelling, and inversion. The tools refer to the 3D magnetotelluric inversion codes ModEM (https://github.com/magnetotellurics/ModEM), FEMTIC (https://github.com/yoshiya-usui/femtic), and FEMTIC-DABIC (https://github.com/hsong-28/FEMTIC-DABIC). Please be aware that this repo is under active development, and currently in a process of reorganization and adding tools related to FEMTIC, and thus some of these tools are not in production state. This collection is made available under GNU public license V3. 
 
 ** Dependencies on mtpy have been removed from this toolbox.**
 
