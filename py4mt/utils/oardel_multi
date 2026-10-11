@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage()
+{
+    echo "Usage:" >&2
+    echo "  $(basename "$0") name='JOB_NAME_OR_SQL_PATTERN'" >&2
+    echo "  $(basename "$0") JOB_ID_OR_RANGE [JOB_ID_OR_RANGE ...]" >&2
+    echo "Examples:" >&2
+    echo "  $(basename "$0") name='whatever'" >&2
+    echo "  $(basename "$0") name='misti_rto_%'" >&2
+    echo "  $(basename "$0") 12345 12346 12347" >&2
+    echo "  $(basename "$0") 12345-12349 12400" >&2
+}
+
+if (( $# == 0 )); then
+    usage
+    exit 2
+fi
+
+if [[ $1 == -h || $1 == --help ]]; then
+    usage
+    exit 0
+fi
+
+if ! command -v oardel >/dev/null 2>&1; then
+    echo "Error: OAR3 command 'oardel' was not found." >&2
+    exit 127
+fi
+
+job_ids=()
+
+if [[ $1 == name=* ]]; then
+    if (( $# != 1 )); then
+        echo "Error: name= cannot be combined with job IDs." >&2
+        usage
+        exit 2
+    fi
+
+    if ! command -v oarstat >/dev/null 2>&1; then
+        echo "Error: OAR3 command 'oarstat' was not found." >&2
+        exit 127
+    fi
+
+    pattern=${1#name=}
+    if [[ -z $pattern ]]; then
+        echo "Error: name= must not be empty." >&2
+        exit 2
+    fi
+
+    # Escape a single quote for the SQL string used by oarstat.
+    pattern=${pattern//\'/\'\'}
+    current_user=${USER:-$(id -un)}
+    current_user=${current_user//\'/\'\'}
+
+    mapfile -t job_ids < <(
+        oarstat --sql "job_user='$current_user' AND job_name LIKE '$pattern'" |
+            awk '$1 ~ /^[0-9]+$/ {print $1}'
+    )
+else
+    max_range_size=10000
+
+    for job_spec in "$@"; do
+        if [[ $job_spec =~ ^[0-9]+$ ]]; then
+            job_ids+=("$job_spec")
+        elif [[ $job_spec =~ ^([0-9]+)-([0-9]+)$ ]]; then
+            first_id=$((10#${BASH_REMATCH[1]}))
+            last_id=$((10#${BASH_REMATCH[2]}))
+
+            if (( first_id > last_id )); then
+                echo "Error: descending job range '$job_spec'." >&2
+                exit 2
+            fi
+
+            range_size=$((last_id - first_id + 1))
+            if (( range_size > max_range_size )); then
+                echo "Error: job range '$job_spec' contains more than" \
+                    "$max_range_size jobs." >&2
+                exit 2
+            fi
+
+            for ((job_id = first_id; job_id <= last_id; job_id++)); do
+                job_ids+=("$job_id")
+            done
+        else
+            echo "Error: invalid job ID or range '$job_spec'." >&2
+            usage
+            exit 2
+        fi
+    done
+fi
+
+if [[ ${#job_ids[@]} -eq 0 ]]; then
+    echo "No matching jobs found."
+    exit 0
+fi
+
+# Remove duplicates while preserving the order supplied by the user.
+declare -A seen_job_ids=()
+unique_job_ids=()
+for job_id in "${job_ids[@]}"; do
+    if [[ -z ${seen_job_ids[$job_id]+present} ]]; then
+        seen_job_ids[$job_id]=true
+        unique_job_ids+=("$job_id")
+    fi
+done
+job_ids=("${unique_job_ids[@]}")
+
+printf 'Matching job IDs: %s\n' "${job_ids[*]}"
+read -r -p "Delete these jobs? [y/N] " answer
+
+if [[ $answer =~ ^[Yy]$ ]]; then
+    oardel "${job_ids[@]}"
+else
+    echo "Cancelled."
+fi

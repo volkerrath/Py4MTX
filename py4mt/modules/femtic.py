@@ -171,6 +171,13 @@ Modified: 2026-09-13 by Claude Sonnet 5 (Anthropic) — added Section 6a:
     inspect_file()-style spot checks (or just read_results_hdf5() itself,
     since it prints a one-line summary of everything it found) against an
     actual run's output as a final check.
+Modified: 2026-10-11 by Claude Sonnet 5.5 (Anthropic) -- read_femtic_mesh()
+    is now the package's only mesh reader (femtic_viz.py's own copy was
+    removed; it wraps this one). New optional x/y column swap: parameter
+    ``swap_xy`` (None = module default ``MESH_SWAP_XY``, False), for meshes
+    stored as x = northing, y = easting. Element lines now need only >= 5
+    columns (id + 4 node ids), as the removed viz reader allowed.
+    AI-generated code -- review before production use.
 """
 from __future__ import annotations
 
@@ -2562,22 +2569,45 @@ except ImportError:  # pragma: no cover
 # ============================================================================
 
 
-def read_femtic_mesh(mesh_path: str) -> Tuple[np.ndarray, np.ndarray]:
+#: Module-wide default for the optional x/y column swap of read_femtic_mesh().
+#: False (default) = node coordinates exactly as stored in mesh.dat.
+#: True = swap the first two columns on read (legacy femtic_viz.py behaviour,
+#: for meshes stored as x = northing, y = easting, so that nodes[:, 0] is the
+#: easting and nodes[:, 1] the northing). A script can set it once
+#: (``fem.MESH_SWAP_XY = True``) and every reader/plotter picks it up.
+MESH_SWAP_XY: bool = False
+
+
+def read_femtic_mesh(
+    mesh_path: str,
+    swap_xy: Optional[bool] = None,
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     Read a FEMTIC TETRA mesh file and return node coordinates and connectivity.
+
+    This is the only mesh reader of the package: femtic_viz.py and the
+    scripts call it (femtic_viz.py wraps the result in its ``FemticMesh``).
 
     Parameters
     ----------
     mesh_path : str
         Path to the mesh file (usually "mesh.dat").
+    swap_xy : bool or None
+        Swap the first two node-coordinate columns after reading.
+        None (default) = use the module-level ``MESH_SWAP_XY`` (False).
+        Only needed for meshes stored as (x = northing, y = easting); the
+        result is then ``nodes[:, 0]`` = easting, ``nodes[:, 1]`` = northing.
 
     Returns
     -------
     nodes : ndarray, shape (nn, 3)
-        Node coordinates [x, y, z].
+        Node coordinates [x, y, z] (z positive down), columns swapped if
+        requested.
     conn : ndarray, shape (nelem, 4)
         Tetrahedral connectivity (0-based node indices).
     """
+    if swap_xy is None:
+        swap_xy = MESH_SWAP_XY
     with open(mesh_path, "r", errors="ignore") as f:
         header = f.readline().strip()
         if header.upper() != "TETRA":
@@ -2613,7 +2643,8 @@ def read_femtic_mesh(mesh_path: str) -> Tuple[np.ndarray, np.ndarray]:
             if not line:
                 raise ValueError("Unexpected EOF while reading element block.")
             parts = line.split()
-            if len(parts) < 9:
+            # element id, (optional extra indices), then the 4 vertex node ids
+            if len(parts) < 5:
                 raise ValueError(f"Element line has too few columns: {line!r}")
             ie = int(parts[0])
             n1, n2, n3, n4 = map(int, parts[-4:])
@@ -2621,6 +2652,8 @@ def read_femtic_mesh(mesh_path: str) -> Tuple[np.ndarray, np.ndarray]:
                 raise ValueError(f"Element index {ie} out of range 0..{nelem-1}.")
             conn[ie] = (n1, n2, n3, n4)
 
+    if swap_xy:
+        nodes = nodes[:, [1, 0, 2]]
     return nodes, conn
 
 

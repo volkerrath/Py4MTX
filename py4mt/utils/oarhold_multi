@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+#
+# Hold multiple OAR3 jobs selected by name, job IDs, or inclusive ID ranges.
+
+set -euo pipefail
+
+usage()
+{
+    echo "Usage:" >&2
+    echo "  $(basename "$0") [running=true] name='JOB_NAME_OR_SQL_PATTERN'" >&2
+    echo "  $(basename "$0") [running=true] JOB_ID_OR_RANGE [...]" >&2
+    echo "Examples:" >&2
+    echo "  $(basename "$0") name='whatever'" >&2
+    echo "  $(basename "$0") name='misti_rto_%'" >&2
+    echo "  $(basename "$0") 12345-12349 12400" >&2
+    echo "  $(basename "$0") running=true 12345-12349" >&2
+}
+
+if (( $# == 0 )); then
+    usage
+    exit 2
+fi
+
+if [[ $1 == -h || $1 == --help ]]; then
+    usage
+    exit 0
+fi
+
+if ! command -v oarhold >/dev/null 2>&1; then
+    echo "Error: OAR3 command 'oarhold' was not found." >&2
+    exit 127
+fi
+
+include_running=false
+selectors=()
+
+for argument in "$@"; do
+    case $argument in
+        running=true)
+            include_running=true
+            ;;
+        running=false)
+            include_running=false
+            ;;
+        running=*)
+            echo "Error: running= must be true or false." >&2
+            exit 2
+            ;;
+        *)
+            selectors+=("$argument")
+            ;;
+    esac
+done
+
+if (( ${#selectors[@]} == 0 )); then
+    echo "Error: no job name, ID, or range was supplied." >&2
+    usage
+    exit 2
+fi
+
+job_ids=()
+
+if [[ ${selectors[0]} == name=* ]]; then
+    if (( ${#selectors[@]} != 1 )); then
+        echo "Error: name= cannot be combined with job IDs or ranges." >&2
+        usage
+        exit 2
+    fi
+
+    if ! command -v oarstat >/dev/null 2>&1; then
+        echo "Error: OAR3 command 'oarstat' was not found." >&2
+        exit 127
+    fi
+
+    pattern=${selectors[0]#name=}
+    if [[ -z $pattern ]]; then
+        echo "Error: name= must not be empty." >&2
+        exit 2
+    fi
+
+    pattern=${pattern//\'/\'\'}
+    current_user=${USER:-$(id -un)}
+    current_user=${current_user//\'/\'\'}
+
+    mapfile -t job_ids < <(
+        oarstat --sql "job_user='$current_user' AND job_name LIKE '$pattern'" |
+            awk '$1 ~ /^[0-9]+$/ {print $1}'
+    )
+else
+    max_range_size=10000
+
+    for job_spec in "${selectors[@]}"; do
+        if [[ $job_spec =~ ^[0-9]+$ ]]; then
+            job_ids+=("$job_spec")
+        elif [[ $job_spec =~ ^([0-9]+)-([0-9]+)$ ]]; then
+            first_id=$((10#${BASH_REMATCH[1]}))
+            last_id=$((10#${BASH_REMATCH[2]}))
+
+            if (( first_id > last_id )); then
+                echo "Error: descending job range '$job_spec'." >&2
+                exit 2
+            fi
+
+            range_size=$((last_id - first_id + 1))
+            if (( range_size > max_range_size )); then
+                echo "Error: job range '$job_spec' contains more than" \
+                    "$max_range_size jobs." >&2
+                exit 2
+            fi
+
+            for ((job_id = first_id; job_id <= last_id; job_id++)); do
+                job_ids+=("$job_id")
+            done
+        else
+            echo "Error: invalid job ID or range '$job_spec'." >&2
+            usage
+            exit 2
+        fi
+    done
+fi
+
+if (( ${#job_ids[@]} == 0 )); then
+    echo "No matching jobs found."
+    exit 0
+fi
+
+declare -A seen_job_ids=()
+unique_job_ids=()
+for job_id in "${job_ids[@]}"; do
+    if [[ -z ${seen_job_ids[$job_id]+present} ]]; then
+        seen_job_ids[$job_id]=true
+        unique_job_ids+=("$job_id")
+    fi
+done
+job_ids=("${unique_job_ids[@]}")
+
+printf 'Matching job IDs: %s\n' "${job_ids[*]}"
+if [[ $include_running == true ]]; then
+    echo "Running jobs will be suspended."
+fi
+read -r -p "Hold these jobs? [y/N] " answer
+
+if [[ $answer =~ ^[Yy]$ ]]; then
+    hold_options=()
+    if [[ $include_running == true ]]; then
+        hold_options+=("--running")
+    fi
+    oarhold "${hold_options[@]}" "${job_ids[@]}"
+else
+    echo "Cancelled."
+fi

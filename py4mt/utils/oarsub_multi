@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+#
+# Submit matching OAR3 job scripts from matching directories.
+#
+# Usage:
+#   oarsub_multi dirs='directory_pattern' job='job_pattern'
+#
+# Example:
+#   oarsub_multi dirs='xxx??' job='run.femtic_kraken.sh'
+
+set -euo pipefail
+
+usage()
+{
+    echo "Usage: $(basename "$0") dirs='DIRECTORY_GLOB' job='JOB_GLOB'" >&2
+    echo "Example: $(basename "$0") dirs='xxx??' job='run.femtic_kraken.sh'" >&2
+}
+
+dir_pattern=
+job_pattern=
+
+for argument in "$@"; do
+    case $argument in
+        dirs=*)
+            dir_pattern=${argument#dirs=}
+            ;;
+        job=*)
+            job_pattern=${argument#job=}
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Error: unknown parameter '$argument'." >&2
+            usage
+            exit 2
+            ;;
+    esac
+done
+
+if [[ -z $dir_pattern || -z $job_pattern ]]; then
+    echo "Error: both dirs= and job= are required." >&2
+    usage
+    exit 2
+fi
+
+if ! command -v oarsub >/dev/null 2>&1; then
+    echo "Error: OAR3 command 'oarsub' was not found." >&2
+    exit 127
+fi
+
+mapfile -t directories < <(compgen -G "$dir_pattern" || true)
+
+if (( ${#directories[@]} == 0 )); then
+    echo "No directory matching '$dir_pattern'." >&2
+    exit 1
+fi
+
+successful_directories=0
+failed=0
+
+for directory in "${directories[@]}"; do
+    [[ -d $directory ]] || continue
+
+    (
+        cd -- "$directory" || exit
+
+        mapfile -t jobs < <(compgen -G "$job_pattern" || true)
+        if (( ${#jobs[@]} == 0 )); then
+            echo "No job matching '$job_pattern' in '$directory'." >&2
+            exit 1
+        fi
+
+        found_job=false
+        directory_failed=false
+
+        for job in "${jobs[@]}"; do
+            [[ -f $job ]] || continue
+            found_job=true
+
+            if submission=$(oarsub -S "./$job" 2>&1); then
+                echo "Submitted '$job' from '$directory':"
+                echo "$submission"
+            else
+                echo "Failed to submit '$job' from '$directory':" >&2
+                echo "$submission" >&2
+                directory_failed=true
+            fi
+        done
+
+        if [[ $found_job == false ]]; then
+            echo "No regular job file matching '$job_pattern' in '$directory'." >&2
+            exit 1
+        fi
+
+        [[ $directory_failed == false ]]
+    ) && (( successful_directories += 1 )) || (( failed += 1 ))
+done
+
+if (( successful_directories == 0 && failed == 0 )); then
+    echo "No directory matching '$dir_pattern'." >&2
+    exit 1
+fi
+
+if (( failed > 0 )); then
+    directory_word=directories
+    if (( failed == 1 )); then
+        directory_word=directory
+    fi
+    echo "Warning: submission failed in $failed $directory_word." >&2
+    exit 1
+fi

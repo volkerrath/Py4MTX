@@ -367,6 +367,17 @@ These functions operate on the raw `(nodes, conn)` arrays returned by
 `read_femtic_mesh()` and are used internally by `femtic_mod_edit.py` and
 `ensembles.py`.
 
+### `read_femtic_mesh(mesh_path, swap_xy=None)`
+
+The package's only mesh reader (`femtic_viz.py` wraps it). Returns
+`(nodes, conn)`: node coordinates `[x, y, z]` (z positive down) exactly as
+stored in `mesh.dat`, and 0-based tetra connectivity. `swap_xy=True` swaps
+the first two columns after reading, for meshes stored as x = northing,
+y = easting (so that `nodes[:, 0]` is the easting); `None` (default) uses
+the module-level `MESH_SWAP_XY` (`False`), which a script can set once to
+change the behaviour of every reader and plotter in the run. Element lines
+need at least 5 columns (id + 4 node ids).
+
 ### `tet_volumes(nodes, conn)`
 
 Vectorised tetrahedral volume computation using the scalar triple product:
@@ -820,3 +831,12 @@ Author: Volker Rath (DIAS)
   (or a list/tuple of candidates; first existing wins). New helper
   `resolve_cnv_path(directory, filename)`. Defaults unchanged. AI-generated
   (Claude Sonnet 5.5, Anthropic); review before production use.
+
+### Changelog (2026-10-11) --- single mesh reader, optional x/y swap
+
+`read_femtic_mesh()` is now the only mesh reader in the package: the copy
+in `femtic_viz.py` was removed (that module wraps this one). New optional
+`swap_xy` argument and module-level default `MESH_SWAP_XY = False`; the
+swap that `femtic_viz` applied unconditionally since 2026-05-31 is now off
+unless requested. Element lines require >= 5 columns (was 9). AI-generated
+code -- review before production use.

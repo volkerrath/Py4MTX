@@ -568,6 +568,19 @@ Provenance:
                         unchanged. Auto figure width now handles vertical
                         sections.
                         AI-generated code -- review before production use.
+    2026-10-11  Claude Sonnet 5.5 (Anthropic)
+                        read_femtic_mesh() removed from this module: the
+                        mesh reader now lives only in femtic.py
+                        (femtic.read_femtic_mesh). Internal callers use the
+                        private wrapper _load_mesh(), which puts its
+                        (nodes, conn) result into a FemticMesh. The
+                        2026-05-31 x/y column swap is no longer applied by
+                        default; it is an option of the femtic reader
+                        (swap_xy argument / femtic.MESH_SWAP_XY). Callers
+                        outside this file must switch from
+                        fviz.read_femtic_mesh(path) -> FemticMesh to
+                        nodes, conn = fem.read_femtic_mesh(path).
+                        AI-generated code -- review before production use.
     """
 
 from __future__ import annotations
@@ -651,78 +664,22 @@ class FemticResistivityBlock:
 # FEMTIC parsing helpers (direct, no NPZ)
 # =============================================================================
 
-def read_femtic_mesh(mesh_path: Union[str, Path]) -> FemticMesh:
-    """Read a FEMTIC ``mesh.dat`` file (TETRA) into NumPy arrays.
+def _load_mesh(mesh_path: Union[str, Path]) -> FemticMesh:
+    """Read a FEMTIC ``mesh.dat`` through ``femtic.read_femtic_mesh``.
 
-    Parameters
-    ----------
-    mesh_path
-        Path to the FEMTIC mesh file (usually ``mesh.dat``).
-
-    Returns
-    -------
-    mesh
-        Parsed mesh (nodes and connectivity). Connectivity is returned as
-        **0-based row indices** into the returned ``nodes`` array.
-
-    Notes
-    -----
-    FEMTIC mesh files store node coordinates as::
-
-        node_id  x  y  z
-
-    and element lines often contain additional indices before the four vertex
-    node IDs (e.g. edge indices). In such cases, the **last four** integer
-    fields are the tetra vertex node IDs. This reader therefore uses
-    ``parts[-4:]`` for connectivity.
+    The mesh reader lives only in femtic.py; this wrapper just puts its
+    ``(nodes, conn)`` result into a :class:`FemticMesh`. The optional x/y
+    column swap is controlled there (``femtic.MESH_SWAP_XY`` or the
+    ``swap_xy`` argument of ``femtic.read_femtic_mesh``); with the default
+    (no swap) ``nodes`` holds the coordinates exactly as stored in the file.
     """
-    mesh_path = Path(mesh_path)
-
-    with mesh_path.open("r", errors="ignore") as f:
-        header = f.readline().strip()
-        if header.upper() != "TETRA":
-            raise ValueError(f"Unsupported mesh type {header!r}; expected 'TETRA'.")
-
-        nn_line = f.readline().split()
-        if not nn_line:
-            raise ValueError("Missing node count after 'TETRA' header.")
-        nn = int(nn_line[0])
-
-        nodes = np.empty((nn, 3), dtype=float)
-        for _ in range(nn):
-            parts = f.readline().split()
-            if len(parts) < 4:
-                raise ValueError(f"Malformed node line: {parts!r}")
-            idx = int(parts[0])
-            if not (0 <= idx < nn):
-                raise ValueError(f"Node index {idx} out of range 0..{nn-1}.")
-            # FEMTIC mesh stores nodes as (index, x=northing, y=easting, z=down).
-            # Remap to geographic convention used throughout femtic_viz.py:
-            #   nodes[:,0] = easting, nodes[:,1] = northing, nodes[:,2] = z-down.
-            nodes[idx, 0] = float(parts[2])   # easting  ← FEMTIC column y
-            nodes[idx, 1] = float(parts[1])   # northing ← FEMTIC column x
-            nodes[idx, 2] = float(parts[3])   # z positive-down (unchanged)
-
-        id2row = {i: i for i in range(nn)}   # identity: file index == row index
-
-        ne_line = f.readline().split()
-        if not ne_line:
-            raise ValueError("Missing element count after nodes.")
-        nelem = int(ne_line[0])
-
-        conn = np.empty((nelem, 4), dtype=int)
-
-        for _ in range(nelem):
-            parts = f.readline().split()
-            if len(parts) < 5:
-                raise ValueError(f"Malformed element line: {parts!r}")
-            ie   = int(parts[0])
-            if not (0 <= ie < nelem):
-                raise ValueError(f"Element index {ie} out of range 0..{nelem-1}.")
-            nids = [int(parts[-4]), int(parts[-3]), int(parts[-2]), int(parts[-1])]
-            conn[ie, :] = nids   # node IDs == row indices after index-based node read
-
+    try:
+        import femtic as _fem  # type: ignore
+    except ImportError as e:  # pragma: no cover
+        raise ImportError("Could not import femtic.py for read_femtic_mesh.") from e
+    nodes, conn = _fem.read_femtic_mesh(str(mesh_path))
     return FemticMesh(nodes=nodes, conn=conn)
+
 
 def read_resistivity_block(block_path: Union[str, Path]) -> FemticResistivityBlock:
     """Read a FEMTIC ``resistivity_block_iterX.dat`` file.
@@ -1017,7 +974,7 @@ def unstructured_grid_from_femtic(
         - ``log10_resistivity`` (if possible)
         - ``region``
     """
-    mesh = read_femtic_mesh(mesh_path)
+    mesh = _load_mesh(mesh_path)
     block = read_resistivity_block(block_path)
 
     rho_elem = map_regions_to_element_rho(
@@ -2935,7 +2892,7 @@ def plot_model_ensemble(
             )
 
     # Read mesh once -- shared by all runs
-    mesh = read_femtic_mesh(mesh_file)
+    mesh = _load_mesh(mesh_file)
     if out:
         print(f"plot_model_ensemble: mesh read from {mesh_file}")
 
@@ -4234,7 +4191,7 @@ def plot_model_slices(
     # -- load model ------------------------------------------------------------
     if out:
         print(f"  plot: reading model {os.path.basename(str(model_file))}")
-    mesh    = read_femtic_mesh(mesh_file)
+    mesh    = _load_mesh(mesh_file)
     block   = read_resistivity_block(model_file)
     rho_elem = map_regions_to_element_rho(block.region_of_elem, block.region_rho)
     # rho_plot: NaN for air, ocean sentinel replaced -- used for colormap norm only.
@@ -5061,7 +5018,7 @@ def plot_borehole_logs(
 
     if out:
         print(f"  boreholes: reading model {os.path.basename(str(model_file))}")
-    mesh     = read_femtic_mesh(mesh_file)
+    mesh     = _load_mesh(mesh_file)
     block    = read_resistivity_block(model_file)
     rho_elem = map_regions_to_element_rho(block.region_of_elem, block.region_rho)
     rho_plot = prepare_rho_for_plotting(
@@ -5519,7 +5476,7 @@ def plot_ensemble_slices(
     # -- load mesh -------------------------------------------------------------
     if out:
         print(f"  ensemble: reading mesh {Path(mesh_file).name}")
-    mesh  = read_femtic_mesh(mesh_file)
+    mesh  = _load_mesh(mesh_file)
     nodes = mesh.nodes
     conn  = mesh.conn
 

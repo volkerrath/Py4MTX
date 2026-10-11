@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+#
+# Delete, hold, or resume multiple OAR3 jobs selected by name, IDs, or ranges.
+
+set -euo pipefail
+
+usage()
+{
+    echo "Usage:" >&2
+    echo "  $(basename "$0") task=TASK [running=true] name='JOB_NAME_OR_SQL_PATTERN'" >&2
+    echo "  $(basename "$0") task=TASK [running=true] JOB_ID_OR_RANGE [...]" >&2
+    echo >&2
+    echo "TASK is one of: delete, hold, resume" >&2
+    echo "running=true is valid only with task=hold." >&2
+    echo >&2
+    echo "Examples:" >&2
+    echo "  $(basename "$0") task=delete 12345-12349" >&2
+    echo "  $(basename "$0") task=hold name='misti_rto_%'" >&2
+    echo "  $(basename "$0") task=hold running=true 12345-12349" >&2
+    echo "  $(basename "$0") task=resume 12345-12349 12400" >&2
+}
+
+if (( $# == 0 )); then
+    usage
+    exit 2
+fi
+
+task=
+include_running=false
+selectors=()
+
+for argument in "$@"; do
+    case $argument in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        task=*)
+            if [[ -n $task ]]; then
+                echo "Error: task= was supplied more than once." >&2
+                exit 2
+            fi
+            task=${argument#task=}
+            ;;
+        running=true)
+            include_running=true
+            ;;
+        running=false)
+            include_running=false
+            ;;
+        running=*)
+            echo "Error: running= must be true or false." >&2
+            exit 2
+            ;;
+        *)
+            selectors+=("$argument")
+            ;;
+    esac
+done
+
+case $task in
+    delete)
+        oar_command=oardel
+        action=Delete
+        ;;
+    hold)
+        oar_command=oarhold
+        action=Hold
+        ;;
+    resume)
+        oar_command=oarresume
+        action=Resume
+        ;;
+    "")
+        echo "Error: task= is required." >&2
+        usage
+        exit 2
+        ;;
+    *)
+        echo "Error: task must be delete, hold, or resume." >&2
+        usage
+        exit 2
+        ;;
+esac
+
+if [[ $include_running == true && $task != hold ]]; then
+    echo "Error: running=true is valid only with task=hold." >&2
+    exit 2
+fi
+
+if (( ${#selectors[@]} == 0 )); then
+    echo "Error: no job name, ID, or range was supplied." >&2
+    usage
+    exit 2
+fi
+
+if ! command -v "$oar_command" >/dev/null 2>&1; then
+    echo "Error: OAR3 command '$oar_command' was not found." >&2
+    exit 127
+fi
+
+job_ids=()
+
+if [[ ${selectors[0]} == name=* ]]; then
+    if (( ${#selectors[@]} != 1 )); then
+        echo "Error: name= cannot be combined with job IDs or ranges." >&2
+        usage
+        exit 2
+    fi
+
+    if ! command -v oarstat >/dev/null 2>&1; then
+        echo "Error: OAR3 command 'oarstat' was not found." >&2
+        exit 127
+    fi
+
+    pattern=${selectors[0]#name=}
+    if [[ -z $pattern ]]; then
+        echo "Error: name= must not be empty." >&2
+        exit 2
+    fi
+
+    # Escape single quotes for the SQL string passed to oarstat.
+    pattern=${pattern//\'/\'\'}
+    current_user=${USER:-$(id -un)}
+    current_user=${current_user//\'/\'\'}
+
+    mapfile -t job_ids < <(
+        oarstat --sql "job_user='$current_user' AND job_name LIKE '$pattern'" |
+            awk '$1 ~ /^[0-9]+$/ {print $1}'
+    )
+else
+    max_range_size=10000
+
+    for job_spec in "${selectors[@]}"; do
+        if [[ $job_spec =~ ^[0-9]+$ ]]; then
+            job_ids+=("$job_spec")
+        elif [[ $job_spec =~ ^([0-9]+)-([0-9]+)$ ]]; then
+            first_id=$((10#${BASH_REMATCH[1]}))
+            last_id=$((10#${BASH_REMATCH[2]}))
+
+            if (( first_id > last_id )); then
+                echo "Error: descending job range '$job_spec'." >&2
+                exit 2
+            fi
+
+            range_size=$((last_id - first_id + 1))
+            if (( range_size > max_range_size )); then
+                echo "Error: job range '$job_spec' contains more than" \
+                    "$max_range_size jobs." >&2
+                exit 2
+            fi
+
+            for ((job_id = first_id; job_id <= last_id; job_id++)); do
+                job_ids+=("$job_id")
+            done
+        else
+            echo "Error: invalid job ID or range '$job_spec'." >&2
+            usage
+            exit 2
+        fi
+    done
+fi
+
+if (( ${#job_ids[@]} == 0 )); then
+    echo "No matching jobs found."
+    exit 0
+fi
+
+# Remove duplicates while preserving the order supplied by the user.
+declare -A seen_job_ids=()
+unique_job_ids=()
+for job_id in "${job_ids[@]}"; do
+    if [[ -z ${seen_job_ids[$job_id]+present} ]]; then
+        seen_job_ids[$job_id]=true
+        unique_job_ids+=("$job_id")
+    fi
+done
+job_ids=("${unique_job_ids[@]}")
+
+printf 'Matching job IDs: %s\n' "${job_ids[*]}"
+if [[ $include_running == true ]]; then
+    echo "Running jobs will be suspended."
+fi
+read -r -p "$action these jobs? [y/N] " answer
+
+if [[ ! $answer =~ ^[Yy]$ ]]; then
+    echo "Cancelled."
+    exit 0
+fi
+
+if [[ $task == hold && $include_running == true ]]; then
+    oarhold --running "${job_ids[@]}"
+else
+    "$oar_command" "${job_ids[@]}"
+fi

@@ -39,7 +39,9 @@ Ensemble sub-directories  (rto_*, gst_*, member_*, …)
           │
           ├──▶  MOD_QC = True   →  slice figure of best-nRMS member
           │
-          └──▶  MOD_STATS = True  →  block files + slice figures for each stat
+          ├──▶  MOD_STATS = True  →  block files + slice figures for each stat
+          │
+          └──▶  MOD_BH = [...]    →  1-D resistivity-depth profiles at boreholes
 ```
 
 **Plotting config is shared with `femtic_gst_prep.py` / `femtic_rto_prep.py`.**
@@ -265,6 +267,7 @@ matters for your analysis.
 |---|---|---|---|
 | `ENSEMBLE_RESULTS` | str | `<PREFIX>_results.npz` | Path for the output `.npz` file. |
 | `MOD_MESH` | str | `templates/mesh.dat` | Tetrahedral mesh — required for all slice plots. |
+| `MOD_MESH_SWAP_XY` | bool / None | `None` | Optional swap of the first two node-coordinate columns when `femtic.read_femtic_mesh` reads `MOD_MESH` (for meshes stored as x = northing, y = easting). `None` = femtic default (no swap); sets `fem.MESH_SWAP_XY` for the whole run, so slice figures, the borehole block and the ROI diagnostic all see the same axes. |
 | `OUT` | bool | `True` | Verbose console output. |
 
 ### Ocean / air handling
@@ -397,6 +400,89 @@ of its figure, and shows sites within `MOD_PROJECTION_DIST` when
 `MOD_PLOT_SITES_SLICES` is `True`. Requires the `femtic_viz.py` of
 2026-10-07 or later.
 
+### Borehole profiles (`MOD_BH`, optional)
+
+1-D resistivity-depth profiles through the ensemble at one or more vertical
+"boreholes": ensemble statistics, every member (drawn semi-transparent),
+and/or the best member, one panel per borehole, all in one figure.
+`MOD_BH` is a list of dicts in the same spirit as `MOD_SLICES`; an empty
+list (`MOD_BH = []`) switches the block off. It runs as step (9), after the
+slice figures, and works from the same in-memory ensemble (`ens_matrix` and
+the statistics), so no extra block files are written.
+
+| Key | Meaning |
+|---|---|
+| `name` | Panel title and key in the `.npz` (spaces become `_`). Required. |
+| `x`, `y` | Horizontal position. Plain float = model-local **km**; `(value, "utm")` = UTM metres in the mesh zone; `(value, "latlon")` = decimal degrees (x = longitude, y = latitude). Both must carry the same tag. Required unless `sites` is given. |
+| `sites` | Instead of `x`/`y`: `"all"` (every site in `MOD_SITE_DAT`) or a list of site names. The entry is a template, expanded to one borehole per site (named after the site) with all its other keys (`z_top`, `z_bot`, `dz`, `what`, `alpha`, `xlim`, `style`) applied to each. Site UTM coordinates are used, so it needs `MOD_SITE_DAT` and a resolvable UTM origin. Names are made unique (`S1`, `S1_2`, ...) because they key the `.npz`. |
+| `n_random`, `seed` | With `sites`: use only `n_random` sites drawn at random (without replacement) from the selected ones. `seed` (int) makes the draw reproducible; `None` (default) draws afresh each run. The chosen names are printed. |
+| `z_top` | Float km (z down, model datum) or `"surface"` (default) = top of the first non-air element at (x, y); offshore that is the sea surface, so give a float to start at the sea floor. Resolved to about dz/5. |
+| `z_bot` | Float km. Default `MOD_ZLIM[1]` if set (after `MOD_ROI_AUTO`), else 20 km. |
+| `dz` | Sampling interval, km. Default 0.05. |
+| `what` | List of items to draw, in drawing order: `"avg"` (ensemble mean of log10 rho), `"med"`, `"percentiles"` (one line per `PERCENTILES` level), single percentile keys (`"p50"`, `"p15_9"`, ... as in `MOD_STATS_WHAT`), `"sigma1"` / `"sigma2"` (the 1- / 2-sigma quantile pairs P15.87 / P84.13 and P2.28 / P97.72 of the members in log10 rho, two lines each, computed directly, so independent of `PERCENTILES`), `"ensemble"` (all accepted members), `"best"` (best-nRMS member). Default `["avg", "percentiles"]`. Unknown names are reported and skipped. |
+| `alpha` | Opacity (0..1) of the `"ensemble"` lines. Default `MOD_BH_ALPHA`. Only used when `"ensemble"` is in `what`. |
+| `xlim` | `[rho_min, rho_max]` in Ohm.m for this panel (default `MOD_BH_XLIM`). |
+| `style` | Per-entry style overrides, keyed like `MOD_BH_STYLE`, e.g. `dict(avg=dict(color="navy", lw=3))`. |
+
+Median and 1-sigma quantiles over a faint ensemble (the default entry);
+items are drawn in the order of `what` and `"ensemble"` is always at the
+bottom, so list it first:
+
+```python
+MOD_BH = [
+    dict(sites="all", n_random=6, seed=1, z_bot=5.0,        # 6 random sites
+         what=["ensemble", "med", "sigma1"], alpha=0.05),
+    dict(sites="all", z_bot=5.0, what=["avg", "ensemble"], alpha=0.1),  # one panel per site
+    dict(name="BH-1",
+         x=(-70.868025, "latlon"), y=(-16.363436, "latlon"),
+         z_top="surface", z_bot=4.0, dz=0.05,
+         what=["avg", "percentiles", "ensemble"], alpha=0.15),
+    dict(name="BH-2", x=2.0, y=-3.0, z_top=0.0, z_bot=6.0,
+         what=["med", "p15_9", "p84_1", "best"]),
+]
+```
+
+Global settings:
+
+| Parameter | Default | Description |
+|---|---|---|
+| `MOD_BH_FILE` | `<dir><prefix>_boreholes` | Output path without extension; one figure per `MOD_PLOT_FORMAT` entry. |
+| `MOD_BH_NPZ` | `True` | Also write `<MOD_BH_FILE>.npz`. |
+| `MOD_BH_ALPHA` | `0.15` | Default opacity of the ensemble lines. |
+| `MOD_BH_XLIM` | `None` | x range in Ohm.m (log axis). `None` = `10**MOD_CLIM`, shared with the slice figures; auto if `MOD_CLIM` is `None` too. |
+| `MOD_BH_PANEL_SIZE` | `[10.0, 15.0]` | Panel width, height in cm. |
+| `MOD_BH_NCOLS` | `None` | Panel columns; `None` = up to 4. |
+| `MOD_BH_PER_FIG` | `None` | Maximum panels per figure; further figures get `_01`, `_02`, ... suffixes. Useful with `sites`. `None` = all in one. |
+| `MOD_BH_SHARE_DEPTH` | `True` | One common depth range (union over all entries) for all panels. |
+| `MOD_BH_LEGEND_LOC` | `"lower right"` | Legend position; `None` = no legend. |
+| `MOD_BH_STYLE` | see script | Line style per item: `"avg"`, `"med"`, `"best"`, `"ensemble"`, `"percentiles"` (all percentile lines), one percentile key, or `"sigma1"` / `"sigma2"` (both lines of the pair; defaults navy dashed / steelblue dotted). Any Matplotlib `Line2D` keyword; `"percentiles"` may carry `"cmap"` (default `"viridis"`) to colour the lines by level. |
+
+Shared with the slice figures: `MOD_PLOT_FORMAT`, `MOD_DPI`, `MOD_CLIM`
+(x range), `MOD_TICK_FONTSIZE` / `MOD_LABEL_FONTSIZE` / `MOD_TITLE_FONTSIZE`,
+`MOD_DEPTH_KM`, `MOD_DISPLAY_COORDS` (panel-title coordinates),
+`MOD_OCEAN` / `MOD_OCEAN_RHO`, `MOD_MESH`, and the UTM-origin resolution of
+step (5) (needed for `"utm"` / `"latlon"` positions).
+
+Notes:
+
+- **Depth convention:** z is positive downward, as everywhere in FEMTIC. The
+  vertical axis increases downward and is labelled depth; values are model z,
+  so levels above the datum (topography, `z_top` above sea level) are
+  negative. `z_top`, `z_bot` and the figure axis use the same convention.
+- Statistics are formed in log10(rho) space and shown in Ohm.m, so `"avg"`
+  is the geometric mean, exactly as in the slice panels.
+- Air and levels outside the mesh are gaps (NaN). Ocean cells show
+  `MOD_OCEAN_RHO` when region 1 is an ocean block; other fixed regions keep
+  their template value.
+- The tetrahedron containing each level is found once per borehole (exact
+  barycentric test, same as `fem.extract_borehole_log`), then reused for all
+  statistics and all members.
+- Only value-scale statistics (`avg`, `med`, percentiles) can be drawn; the
+  spread and sensitivity statistics have different units.
+- All members must share the region structure of the best member (as already
+  assumed for the statistics block files); otherwise the block is skipped
+  with a message.
+
 ### Site overlay
 
 | Parameter | Description |
@@ -482,6 +568,15 @@ pipeline.
 ---
 
 
+### Borehole profiles (`MOD_BH`)
+
+`<MOD_BH_FILE>.<fmt>` (one per `MOD_PLOT_FORMAT` entry) and, if `MOD_BH_NPZ`,
+`<MOD_BH_FILE>.npz` with `depth_<name>` (m, z down), one array per drawn item
+`<key>_<name>` (`avg`, `med`, `p50`, `best`, ... in Ohm.m, NaN = air / outside
+mesh), `ensemble_<name>` (`n_members x n_levels`, only if drawn) and a JSON
+`header` (member files, best member, percentile levels, per-borehole
+position, z range and keys).
+
 ## Quick start
 
 ```bash
@@ -560,3 +655,6 @@ correct.
 | 2026-09-26c | Claude Sonnet 5 (Anthropic) | Simplified the panel-selection interface per user request ("set panels to plot by a list of sources and one blanking option; determine the other settings from these"): `MOD_ALPHA_SOURCE` was already the one blanking option (2026-09-25). `MOD_QC` was a second switch that had to be kept in sync with `MOD_STATS_WHAT` by hand; it is now the special `"best"` entry in `MOD_STATS_WHAT` itself (default `MOD_STATS_WHAT` gained `"best"` as its first entry, preserving the previous `MOD_QC=True` default). `MOD_QC`/`MOD_STATS` are still set, but derived (`MOD_QC = "best" in MOD_STATS_WHAT`; `MOD_STATS = bool(set(MOD_STATS_WHAT) - {"best"})`) so every downstream use of those two names is unchanged; turning either off is now just editing the one list. `MOD_NROWS`/`MOD_NCOLS` (sized to the unrelated `MOD_SLICES` list) and the `COMPUTE_*`/`BOOTSTRAP_VAR` `.npz`-computation switches were deliberately left untouched — see "Panels to plot" above for the scope reasoning. |
 | 2026-10-07 | Claude Sonnet 5.5 (Anthropic) | Vertical sections are configured in `MOD_SLICES` as `dict(kind="plane", point=[x, y] km, strike=azimuth deg, dip=90)`; the default list ends with a SW-NE (strike 45) section through the model origin. New helper `_plane_spec_km_to_m()` converts such entries (km to m) in `_plot_slice()`; other kinds still go through `fem.resolve_slice_positions`, original order kept. Same limits as the other slices: along-strike range = `MOD_XLIM` x `MOD_YLIM` projected onto the strike (optional per-entry `xlim`), depth range = `MOD_ZLIM`; horizontal axis in model km. Requires updated `femtic_viz.py`. Also fixed a missing comma in the default `MOD_STATS_WHAT` that merged `"sens_median_an"` and `"sens_cv_an"` into the non-existent key `"sens_median_ansens_cv_an"`, so neither panel was plotted. |
 | 2026-10-08 | Claude Sonnet 5.5 (Anthropic) | New config `CNV_FILE` (default `"femtic.cnv"`, single name or candidate list) replaces the hard-coded `femtic.cnv` in step (1)'s scan loop; uses `fem.resolve_cnv_path()`. AI-generated; review before production use. |
+| 2026-10-11 | Claude Sonnet 5.5 (Anthropic) | New optional `MOD_BH` block (step 9): 1-D resistivity-depth borehole profiles from the ensemble. List of dicts like `MOD_SLICES` (`name`, `x`/`y` as model-local km or `(v,"utm")`/`(v,"latlon")`, `z_top` (km or `"surface"`), `z_bot`, `dz`, `what` = list of `"avg"`, `"med"`, `"percentiles"` / single percentile keys, `"ensemble"`, `"best"`, `alpha` = ensemble opacity, optional `xlim`, `style`). New globals `MOD_BH_FILE`, `MOD_BH_NPZ`, `MOD_BH_ALPHA`, `MOD_BH_XLIM`, `MOD_BH_PANEL_SIZE`, `MOD_BH_NCOLS`, `MOD_BH_SHARE_DEPTH`, `MOD_BH_LEGEND_LOC`, `MOD_BH_STYLE`; shares `MOD_PLOT_FORMAT`, `MOD_DPI`, `MOD_CLIM`, fonts, `MOD_DEPTH_KM`, `MOD_DISPLAY_COORDS`. Step (5) (origin / site resolution) now also runs when only `MOD_BH` is set. Element search once per borehole, reused for all statistics and members; verified against `fem.extract_borehole_log` on a synthetic mesh. New helpers `_bh_*` and `_plot_boreholes()`. Provenance: AI-generated, review before production use. |
+| 2026-10-11b | Claude Sonnet 5.5 (Anthropic) | `MOD_BH`: new `sites` key (`"all"` or list of names; template expanded to one borehole per site of `MOD_SITE_DAT`), `MOD_BH_PER_FIG` (paging), `MOD_BH_NCOLS = None` now up to 4 columns, unique borehole names. Depth documented as z positive downward. Mesh reading: `fviz.read_femtic_mesh` was removed; `fem.read_femtic_mesh` is the only reader, the former x/y swap is off by default and available as `MOD_MESH_SWAP_XY` (needs the matching `femtic.py` / `femtic_viz.py` of 2026-10-11). This also makes `_roi_free_mask()` use the same axis convention as the plots. |
+| 2026-10-11c | Claude Sonnet 5.5 (Anthropic) | `MOD_BH`: `n_random` / `seed` keys (random subset of the sites of a `sites` template); `"sigma1"` / `"sigma2"` in `what` (1-/2-sigma quantile pairs of the members, drawn as two lines with one legend entry); default entry now draws the ensemble at `alpha=0.05` beneath the median and the 1-sigma quantiles; new `MOD_BH_STYLE` keys `"sigma1"`, `"sigma2"`. |

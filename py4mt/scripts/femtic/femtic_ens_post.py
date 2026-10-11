@@ -670,6 +670,44 @@ Provenance
             MOD_STATS_WHAT that silently merged "sens_median_an" and
             "sens_cv_an" into the non-existent key
             "sens_median_ansens_cv_an" (neither panel was plotted).
+2026-10-11  Claude Sonnet 5.5 (Anthropic)
+            New optional block MOD_BH (step (9)): 1-D resistivity-depth
+            profiles at borehole positions, plotted from the ensemble
+            statistics (avg, med, percentiles), the individual members
+            ("ensemble", drawn with opacity alpha) and the best member
+            ("best"). MOD_BH is a list of dicts, analogous to MOD_SLICES
+            (horizontal position as model-local km or CRS-tagged
+            (value, "latlon"/"utm"), depths in km, plus a "what" list);
+            an empty list switches the block off. The borehole element
+            search is done once per borehole and reused for every
+            statistic and every member, so sampling the whole ensemble
+            costs one array lookup per member. Shares MOD_PLOT_FORMAT,
+            MOD_DPI, MOD_CLIM (x-range), the font sizes, MOD_DEPTH_KM,
+            MOD_OCEAN/MOD_OCEAN_RHO and the UTM-origin resolution of the
+            slice figures; step (5) now also runs when only MOD_BH is
+            set. Sampled profiles are exported to an .npz. AI-generated
+            code -- review before production use.
+2026-10-11c Claude Sonnet 5.5 (Anthropic)
+            MOD_BH: "n_random" / "seed" keys draw N sites at random from a
+            "sites" template; "sigma1" / "sigma2" in "what" draw the
+            1-/2-sigma quantile pairs (P15.87/P84.13, P2.28/P97.72 of the
+            members, computed directly, independent of PERCENTILES). The
+            default MOD_BH entry now draws the ensemble at alpha=0.05
+            underneath the median and the 1-sigma quantiles. AI-generated
+            code -- review before production use.
+2026-10-11b Claude Sonnet 5.5 (Anthropic)
+            MOD_BH: (1) new "sites" key -- a template entry expanded to one
+            borehole per site of MOD_SITE_DAT ("all" or a list of names);
+            MOD_BH_PER_FIG pages many panels over several figures and
+            MOD_BH_NCOLS = None now means up to 4 columns. (2) Depth is
+            z positive downward (axis increases downward, values above the
+            datum are negative), same as the curtain panels. (3) The mesh
+            is read by fem.read_femtic_mesh only (the femtic_viz copy was
+            removed); the old x/y swap is no longer applied by default and
+            is an option, MOD_MESH_SWAP_XY (None = femtic default). This
+            also makes _roi_free_mask() read the mesh in the same axis
+            convention as the plots. AI-generated code -- review before
+            production use.
 
     This script targets FEMTIC's current HDF5 output layout only.
     AI-generated code -- review before production use.
@@ -802,11 +840,11 @@ print(titstrng + "\n\n")
 # ---------------------------------------------------------------------------
 # Ensemble input
 # ---------------------------------------------------------------------------
-ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_rto_0/"
+ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_rto_1_orig-err/"
 ENSEMBLE_NAME = "annecy_rto_"
 #: Prefix used for .npz output keys and default file/figure names.
 #: e.g. "rto" → keys rto_ens, rto_avg, …  and file RTO_results.npz.
-ENSEMBLE_PREFIX = "annecy_rto_0"
+ENSEMBLE_PREFIX = "annecy_rto_1"
 
 # ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2/"
 # ENSEMBLE_NAME = "annecy_rnd_2_"
@@ -817,10 +855,11 @@ ENSEMBLE_PREFIX = "annecy_rto_0"
 #: Name of the FEMTIC convergence file inside each ensemble member
 #: directory. A single name or a list of candidates (first existing wins),
 #: e.g. CNV_FILE = ["femtic.cnv", "femtic_run2.cnv"].
-CNV_FILE = "femtic.cnv"
+# CNV_FILE = "femtic.cnv"
+CNV_FILE = "FEMTIC-DABIC.cnv"
 
 #: Maximum normalised RMS accepted from the convergence file (CNV_FILE).
-NRMS_MAX = 1.5
+NRMS_MAX = 2.
 
 # ---------------------------------------------------------------------------
 # Statistics
@@ -1043,6 +1082,15 @@ ENSEMBLE_RESULTS = ENSEMBLE_DIR + ENSEMBLE_PREFIX.upper() + "_results.npz"
 # ---------------------------------------------------------------------------
 MOD_MESH = ENSEMBLE_DIR + "templates/mesh.dat"
 
+#: Optional swap of the first two node-coordinate columns when reading
+#: MOD_MESH (femtic.read_femtic_mesh, which is used by every plot and by the
+#: borehole block). None = leave femtic's default (no swap: coordinates as
+#: stored in mesh.dat, with x = easting, y = northing); True = swap, for
+#: meshes stored as x = northing, y = easting; False = force no swap.
+MOD_MESH_SWAP_XY = None
+if MOD_MESH_SWAP_XY is not None:
+    fem.MESH_SWAP_XY = bool(MOD_MESH_SWAP_XY)
+
 # --- Ocean / air handling (must match the inversion setup) ----------------
 MOD_OCEAN = None
 MOD_AIR_RHO = 1.0e9  # Ω·m  (region 0)
@@ -1250,6 +1298,114 @@ MOD_SLICES = [
     # dict(kind="ew",  y0=(-16.299593, 'latlon')),    # km
 ]
 
+# --- Borehole profiles (optional) --------------------------------------------
+#: 1-D resistivity-depth profiles through the ensemble at vertical "boreholes".
+#: One panel per entry, all panels in one figure (MOD_BH_FILE). An empty list
+#: ([]) switches the block off. Entries are dicts, in the same spirit as
+#: MOD_SLICES (plain horizontal positions are model-local km, depths km):
+#:
+#:   "name"  : str    -- panel title / key in the .npz file         (required)
+#:   "x","y" : horizontal position. Plain float = model-local km (origin =
+#:             mesh centre); (value, "utm") = UTM metres in the mesh zone;
+#:             (value, "latlon") = decimal degrees (x = longitude,
+#:             y = latitude). x and y must carry the same tag. (required,
+#:             unless "sites" is given)
+#:   "sites" : instead of "x"/"y": "all" (every site in MOD_SITE_DAT) or a
+#:             list of site names. The entry is then a template: it is
+#:             expanded to one borehole per site, named after the site, with
+#:             all other keys ("z_top", "z_bot", "dz", "what", "alpha",
+#:             "xlim", "style") applied to each. Needs MOD_SITE_DAT.
+#:   "n_random", "seed" : with "sites": use only N sites drawn at random
+#:             (without replacement) from the selected ones; "seed" = int
+#:             makes the draw reproducible, None (default) draws afresh
+#:             every run. The chosen names are printed.
+#:   "z_top" : float km (z-down, model datum) or "surface" = top of the first
+#:             non-air element at (x, y) (sea level offshore). Default "surface".
+#:   "z_bot" : float km, bottom of the profile. Default: MOD_ZLIM[1] if set,
+#:             else 20 km.
+#:   "dz"    : float km, sampling interval. Default 0.05 (50 m).
+#:   "what"  : list of what to draw (order = drawing order). Any of
+#:               "avg"          ensemble mean of log10(rho) (geometric mean)
+#:               "med"          ensemble median
+#:               "percentiles"  one line per level in PERCENTILES
+#:               "p50", "p15_9" ... single percentile(s), keys as in
+#:                              MOD_STATS_WHAT
+#:               "sigma1"       the 1-sigma quantile pair, P15.87 and P84.13 of
+#:                              the members (log10 rho), two lines
+#:               "sigma2"       the 2-sigma pair, P2.28 and P97.72
+#:               "ensemble"     every accepted member, thin lines drawn with
+#:                              opacity "alpha"
+#:               "best"         the best-nRMS member
+#:             Default ["avg", "percentiles"].
+#:   "alpha" : opacity of the "ensemble" lines, 0..1. Default MOD_BH_ALPHA.
+#:   "xlim"  : [rho_min, rho_max] in Ohm.m for this panel (default MOD_BH_XLIM).
+#:   "style" : dict of per-entry style overrides, keyed like MOD_BH_STYLE.
+#: Air and out-of-mesh levels are left as gaps.
+MOD_BH = [
+    dict(
+        name="model centre",
+        x=0.0,
+        y=0.0,  # km, model-local
+        z_top="surface",
+        z_bot=5.0,
+        dz=0.05,  # km
+        what=["ensemble", "med", "sigma1"],  # ensemble first = underneath
+        alpha=0.05,
+    ),
+    # dict(sites="all", n_random=6, seed=1,   # 6 random sites, reproducible
+    #      z_bot=5.0, what=["ensemble", "med", "sigma1"], alpha=0.05),
+    # dict(sites="all", z_top="surface", z_bot=5.0, dz=0.05,   # one panel per site
+    #      what=["avg", "percentiles", "ensemble"], alpha=0.1),
+    # dict(sites=["SITE01", "SITE07"], z_bot=5.0, what=["med", "best"]),
+    # dict(name="BH-1",
+    #      x=(-70.868025, "latlon"), y=(-16.363436, "latlon"),
+    #      z_top="surface", z_bot=4.0, dz=0.05,
+    #      what=["med", "p15_9", "p84_1", "best"]),
+    # dict(name="BH-2",
+    #      x=(229100.0, "utm"), y=(8184000.0, "utm"),
+    #      z_top=0.0, z_bot=6.0, dz=0.1,
+    #      what=["avg", "ensemble"], alpha=0.08,
+    #      style=dict(avg=dict(color="navy", lw=3))),
+]
+
+#: Output path (no extension) of the borehole figure; one file per
+#: MOD_PLOT_FORMAT entry is written.
+MOD_BH_FILE = ENSEMBLE_DIR + ENSEMBLE_PREFIX + "_boreholes"
+#: Export the sampled profiles (depth, statistics, all members) to an .npz
+#: next to MOD_BH_FILE (<MOD_BH_FILE>.npz). False = skip.
+MOD_BH_NPZ = True
+#: Default opacity of the "ensemble" lines (per-entry "alpha" overrides).
+MOD_BH_ALPHA = 0.15
+#: x-axis (resistivity) range in Ohm.m, log scale. None = 10**MOD_CLIM
+#: (shared with the slice figures); if MOD_CLIM is None too, auto.
+MOD_BH_XLIM = None
+#: Panel size [width, height] in cm and number of panel columns
+#: (None = up to 4 columns). MOD_BH_PER_FIG = maximum panels per figure
+#: (None = all in one); further figures get a _01, _02, ... suffix. Useful
+#: with "sites".
+MOD_BH_PANEL_SIZE = [10.0, 15.0]
+MOD_BH_NCOLS = None
+MOD_BH_PER_FIG = None
+#: True = all panels use one common depth range (union of the entries'
+#: ranges), so profiles can be compared by eye.
+MOD_BH_SHARE_DEPTH = True
+#: Matplotlib legend location per panel; None = no legend.
+MOD_BH_LEGEND_LOC = "lower right"
+#: Line style per drawn item, keyed "avg", "med", "best", "ensemble",
+#: "percentiles" (all percentile lines), a single percentile key such as
+#: "p50", or "sigma1" / "sigma2" (both lines of the pair). Any Matplotlib Line2D keyword is allowed. "percentiles" may carry
+#: "cmap" instead of "color": the lines are then coloured by level from that
+#: colormap. Per-entry "style" dicts override these.
+MOD_BH_STYLE = {
+    "avg": dict(color="black", lw=2.0, ls="-"),
+    "med": dict(color="crimson", lw=2.0, ls="-"),
+    "best": dict(color="tab:orange", lw=1.6, ls="-"),
+    "ensemble": dict(color="0.25", lw=0.6, ls="-"),
+    "percentiles": dict(cmap="viridis", lw=1.2, ls="--"),
+    "sigma1": dict(color="navy", lw=1.6, ls="--"),
+    "sigma2": dict(color="steelblue", lw=1.2, ls=":"),
+}
+
 MOD_XLIM = None  # [xmin, xmax] model-local km; None = auto
 MOD_YLIM = None  # [ymin, ymax] model-local km; None = auto
 MOD_ZLIM = None  # [zmin, zmax] model-local km; None = auto
@@ -1268,7 +1424,7 @@ MOD_ZLIM = None  # [zmin, zmax] model-local km; None = auto
 #: is identical between prep-time and post-time figures.
 MOD_ROI_AUTO = True
 MOD_ROI_PAD_XY = 4.0  # km of padding around the site bbox
-MOD_ROI_ZLIM = [-1.0, 7.0]
+MOD_ROI_ZLIM = [-1.0, 5.0]
 #: depth range (km, positive-down) for ns/ew/plane panels; None = leave MOD_ZLIM as-is
 #: Lower bound is negative (above the z=0 datum) to give ~1 km of headroom
 #: so topography (mesh cells with z < 0) is not clipped out of the ns/ew/
@@ -1301,7 +1457,7 @@ MOD_STATS_STYLE = {
 }
 for _lo, _hi in QDIFF_PAIRS:
     MOD_STATS_STYLE[f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_")] = dict(
-        clim=[0.0, 0.5], label=f"P{_hi:g} - P{_lo:g}  log10(rho)"
+        clim=[0.0, 0.3], label=f"P{_hi:g} - P{_lo:g}  log10(rho)"
     )
 if BOOTSTRAP_VAR:
     MOD_STATS_STYLE["var_boot"] = dict(
@@ -1348,7 +1504,14 @@ MOD_ALPHA_SOURCE = "sens_median_an > -5.5"
 #:            fully transparent MOD_ALPHA_FADE_WIDTH beyond it (same units
 #:            as <value>, e.g. 1.0 = one decade for log10 sensitivities).
 MOD_ALPHA_MODE = "blank"
-MOD_ALPHA_FADE_WIDTH = 1.0
+MOD_ALPHA_SOURCE = "sens_median_an > -3."
+#: "blank" -- failing cells are removed (hard cut).
+#: "fade"  -- failing cells fade linearly from opaque at the threshold to
+#:            fully transparent MOD_ALPHA_FADE_WIDTH beyond it (same units
+#:            as <value>, e.g. 1.0 = one decade for log10 sensitivities).
+MOD_ALPHA_MODE = "fade"
+MOD_ALPHA_FADE_WIDTH = 0.5
+
 #: Apply the same mask to the MOD_QC (best-member) figure as well.
 MOD_ALPHA_QC = True
 
@@ -1991,6 +2154,383 @@ def _plot_slice(
             print(f"  saved → {_fmt_file}")
 
 
+# ---------------------------------------------------------------------------
+# Borehole profiles (MOD_BH)
+# ---------------------------------------------------------------------------
+_BH_CACHE = {}  # mesh arrays, built once (first borehole) and reused
+
+
+def _bh_mesh():
+    """Mesh arrays for the borehole search, read once.
+
+    Uses fem.read_femtic_mesh(), the package's only mesh reader, with its
+    default axis handling (MOD_MESH_SWAP_XY): nodes[:, 0] = easting,
+    nodes[:, 1] = northing, nodes[:, 2] = z-down (model-local metres).
+    Per-element bounding boxes are cached for the lateral pre-filter.
+    """
+    if "verts" not in _BH_CACHE:
+        nodes, conn = fem.read_femtic_mesh(MOD_MESH)
+        verts = nodes[conn]  # (n_elem, 4, 3)
+        _BH_CACHE["n_elem"] = int(conn.shape[0])
+        _BH_CACHE["verts"] = verts
+        for _i, _ax in enumerate("xyz"):
+            _BH_CACHE[_ax + "min"] = verts[:, :, _i].min(axis=1)
+            _BH_CACHE[_ax + "max"] = verts[:, :, _i].max(axis=1)
+    return _BH_CACHE
+
+
+def _bh_column(x_m, y_m):
+    """Indices of the elements whose (x, y) bounding box holds the point."""
+    c = _bh_mesh()
+    return np.where(
+        (c["xmin"] <= x_m)
+        & (x_m <= c["xmax"])
+        & (c["ymin"] <= y_m)
+        & (y_m <= c["ymax"])
+    )[0]
+
+
+def _bh_locate(x_m, y_m, depths_m, cand=None):
+    """Index of the tetrahedron containing (x_m, y_m, z) for each depth.
+
+    Exact barycentric point-in-tetrahedron test (same tolerance as
+    fem.extract_borehole_log), vectorised over the candidate elements of the
+    column. Returns an int array, -1 where no element contains the point
+    (outside the mesh). This is the expensive part of a borehole and is done
+    once; every statistic and every member then reads its values from the
+    returned element indices (see _bh_values()).
+    """
+    c = _bh_mesh()
+    depths_m = np.asarray(depths_m, dtype=float)
+    elem = np.full(depths_m.size, -1, dtype=np.int64)
+    if cand is None:
+        cand = _bh_column(x_m, y_m)
+    if cand.size == 0:
+        return elem
+    V = c["verts"][cand]  # (nc, 4, 3)
+    v0 = V[:, 0, :]
+    T = np.transpose(V[:, 1:, :] - v0[:, None, :], (0, 2, 1))  # edge vectors
+    det = np.linalg.det(T)
+    ok = np.isfinite(det) & (np.abs(det) > 0.0)
+    cand, v0, T = cand[ok], v0[ok], T[ok]
+    if cand.size == 0:
+        return elem
+    Tinv = np.linalg.inv(T)
+    zmin, zmax = c["zmin"][cand], c["zmax"][cand]
+    tol = 1.0e-10
+    for i, z in enumerate(depths_m):
+        sel = np.where((zmin <= z) & (z <= zmax))[0]
+        if sel.size == 0:
+            continue
+        lam = np.einsum(
+            "nij,nj->ni", Tinv[sel], np.array([x_m, y_m, z]) - v0[sel]
+        )
+        inside = (lam.min(axis=1) >= -tol) & (lam.sum(axis=1) <= 1.0 + tol)
+        hit = np.where(inside)[0]
+        if hit.size:
+            elem[i] = cand[sel[hit[0]]]
+    return elem
+
+
+def _bh_surface_m(x_m, y_m, dz_m, z_bot_m, elem_region):
+    """z (m, z-down) of the top of the first non-air element at (x_m, y_m).
+
+    Coarse scan from the top of the column (air included) downwards, then a
+    refinement of the last coarse step at dz/5. Returns None if the column
+    holds no non-air element above z_bot_m.
+    """
+    c = _bh_mesh()
+    cand = _bh_column(x_m, y_m)
+    if cand.size == 0:
+        return None
+    z0 = float(c["zmin"][cand].min())
+
+    def _first_solid(depths):
+        el = _bh_locate(x_m, y_m, depths, cand=cand)
+        solid = (el >= 0) & (elem_region[np.maximum(el, 0)] != 0)
+        idx = np.where(solid)[0]
+        return int(idx[0]) if idx.size else None
+
+    step = max(float(dz_m), 250.0)
+    coarse = np.arange(z0, z_bot_m + 0.5 * step, step)
+    j = _first_solid(coarse)
+    if j is None:
+        return None
+    if j == 0:
+        return float(coarse[0])
+    fine = np.arange(coarse[j - 1], coarse[j] + 1e-9, max(float(dz_m) / 5.0, 1.0))
+    k = _first_solid(fine)
+    return float(fine[k]) if k is not None else float(coarse[j])
+
+
+def _bh_resolve_xy(spec, utm_e, utm_n, zone, north):
+    """(x_m, y_m, lat, lon) of a MOD_BH entry; lat/lon None if unknown.
+
+    Plain floats are model-local km; (value, "utm") / (value, "latlon")
+    tuples as for MOD_SLICES. x and y must carry the same CRS tag.
+    """
+    xv, xc = fem.parse_pos_crs(spec["x"])
+    yv, yc = fem.parse_pos_crs(spec["y"])
+    if xc != yc:
+        raise ValueError(
+            f"MOD_BH '{spec.get('name', '?')}': x CRS {xc!r} and y CRS "
+            f"{yc!r} must match."
+        )
+    lat = lon = None
+    if xc == "model":
+        x_m, y_m = float(xv) * 1000.0, float(yv) * 1000.0
+        if utm_e is not None:
+            try:
+                lat, lon = utl.utm_to_latlon_zn(
+                    utm_e + x_m, utm_n + y_m, zone, north
+                )
+            except Exception:
+                lat = lon = None
+        return x_m, y_m, lat, lon
+    if utm_e is None:
+        raise ValueError(
+            f"MOD_BH '{spec.get('name', '?')}': CRS {xc!r} needs the UTM "
+            f"origin (MOD_SITE_DAT + MOD_ORIGIN_METHOD, or "
+            f"MOD_UTM_ORIGIN_*)."
+        )
+    if xc == "utm":
+        x_m, y_m = fem.utm_to_model(float(xv), float(yv), utm_e, utm_n)
+        try:
+            lat, lon = utl.utm_to_latlon_zn(float(xv), float(yv), zone, north)
+        except Exception:
+            lat = lon = None
+        return x_m, y_m, lat, lon
+    if xc == "latlon":
+        lon, lat = float(xv), float(yv)
+        x_m, y_m = fem.latlon_to_model(lat, lon, zone, north, utm_e, utm_n)
+        return x_m, y_m, lat, lon
+    raise ValueError(
+        f"MOD_BH '{spec.get('name', '?')}': unknown CRS {xc!r}; use plain "
+        f"km, 'utm' or 'latlon'."
+    )
+
+
+def _bh_pos_str(x_m, y_m, lat, lon, utm_e, utm_n):
+    """Short position text for the panel title, following MOD_DISPLAY_COORDS."""
+    if MOD_DISPLAY_COORDS == "latlon" and lat is not None:
+        return f"{lat:.4f}, {lon:.4f} (lat, lon)"
+    if MOD_DISPLAY_COORDS == "utm" and utm_e is not None:
+        return f"E {(utm_e + x_m) / 1000.0:.2f}, N {(utm_n + y_m) / 1000.0:.2f} km"
+    return f"x {x_m / 1000.0:.2f}, y {y_m / 1000.0:.2f} km"
+
+
+#: Quantile levels (percent) of the "sigmaN" shortcuts: P(Phi(-N)), P(Phi(N)).
+_BH_SIGMA_Q = {
+    "sigma1_lo": 15.8655,
+    "sigma1_hi": 84.1345,
+    "sigma2_lo": 2.2750,
+    "sigma2_hi": 97.7250,
+}
+
+
+def _bh_expand_what(what, value_keys):
+    """Expand a MOD_BH "what" list to an ordered list of draw keys.
+
+    "percentiles" -> one key per PERCENTILES level; "avg", "med", single
+    percentile keys, "ensemble" and "best" pass through. Unknown names are
+    reported and dropped.
+    """
+    pct_keys = [
+        "p" + f"{_p:g}".replace(".", "_")
+        for _p in PERCENTILES
+        if "p" + f"{_p:g}".replace(".", "_") in value_keys
+    ]
+    keys = []
+    for w in what:
+        if w == "percentiles":
+            new = pct_keys
+        elif w in ("sigma1", "sigma2"):
+            new = [w + "_lo", w + "_hi"]
+        elif w in ("ensemble", "best") or w in value_keys:
+            new = [w]
+        else:
+            print(
+                f"  MOD_BH: '{w}' is not available (use 'avg', 'med', "
+                f"'percentiles', a percentile key {pct_keys}, 'sigma1', "
+                f"'sigma2', 'ensemble' or 'best') - skipped."
+            )
+            new = []
+        keys += [k for k in new if k not in keys]
+    return keys
+
+
+def _bh_style(key, spec, n_pct_index=None, n_pct=None):
+    """Line2D kwargs for draw key ``key`` (MOD_BH_STYLE < entry "style")."""
+    key = key.split("_")[0] if key.startswith("sigma") else key
+    is_pct = key.startswith("p") and key not in ("percentiles",)
+    st = {}
+    layers = [MOD_BH_STYLE, spec.get("style", {})]
+    for layer in layers:
+        if is_pct:
+            st.update(layer.get("percentiles", {}))
+        st.update(layer.get(key, {}))
+    cmap = st.pop("cmap", None)
+    if is_pct and cmap is not None and "color" not in st:
+        import matplotlib
+
+        frac = 0.0 if not n_pct or n_pct < 2 else n_pct_index / (n_pct - 1)
+        st["color"] = matplotlib.colormaps[cmap](0.05 + 0.80 * frac)
+    return st
+
+
+def _bh_values(vec, reg_lvl, fixed_log10, free_pos, rho_out=True):
+    """Map free-parameter vector(s) to values along a borehole.
+
+    vec : (..., n_free) log10(rho) of the free regions (a statistic vector
+        or the whole ens_matrix).
+    reg_lvl : region index per depth level (-1 where no element).
+    fixed_log10 : (nreg,) log10(rho) of fixed regions (NaN = air).
+    free_pos : (nreg,) position of a region in the free vector, -1 = fixed.
+
+    Returns (..., n_lvl) in Ohm.m (rho_out=True) or log10; NaN for air and
+    for levels outside the mesh.
+    """
+    vec = np.asarray(vec, dtype=float)
+    n_lvl = reg_lvl.size
+    out = np.full(vec.shape[:-1] + (n_lvl,), np.nan)
+    inside = reg_lvl >= 0
+    fpos = np.where(inside, free_pos[np.maximum(reg_lvl, 0)], -1)
+    is_free = inside & (fpos >= 0)
+    is_fixed = inside & (fpos < 0)
+    if is_free.any():
+        out[..., is_free] = vec[..., fpos[is_free]]
+    if is_fixed.any():
+        out[..., is_fixed] = fixed_log10[reg_lvl[is_fixed]]
+    return 10.0**out if rho_out else out
+
+
+def _plot_boreholes(profiles, plot_base):
+    """One figure with a resistivity-depth panel per borehole profile.
+
+    ``profiles`` : list of dicts built in step (9): name, pos_str, spec,
+    depth (m, z-down), lines {key: rho(n_lvl)}, ens (n_mem, n_lvl) or None.
+    The figure is built once and saved once per MOD_PLOT_FORMAT entry.
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+
+    n = len(profiles)
+    ncols = min(int(MOD_BH_NCOLS), n) if MOD_BH_NCOLS else min(n, 4)
+    nrows = int(math.ceil(n / ncols))
+    w, h = MOD_BH_PANEL_SIZE
+    fig, axs = plt.subplots(
+        nrows,
+        ncols,
+        figsize=(w * ncols / 2.54, h * nrows / 2.54),
+        squeeze=False,
+    )
+    axs = axs.ravel()
+    scale = 1000.0 if MOD_DEPTH_KM else 1.0
+    tick_fs, label_fs = MOD_TICK_FONTSIZE, MOD_LABEL_FONTSIZE
+
+    if MOD_BH_XLIM is not None:
+        glob_xlim = list(MOD_BH_XLIM)
+    elif MOD_CLIM is not None:
+        glob_xlim = [10.0 ** MOD_CLIM[0], 10.0 ** MOD_CLIM[1]]
+    else:
+        glob_xlim = None
+
+    for k, (ax, pr) in enumerate(zip(axs, profiles)):
+        spec, depth = pr["spec"], pr["depth"] / scale
+        pct_keys = [q for q in pr["lines"] if q.startswith("p")]
+        handles = []
+        # draw in the order given by "what"
+        for key in pr["order"]:
+            if key == "ensemble":
+                ens = pr["ens"]
+                st = _bh_style("ensemble", spec)
+                alpha = float(spec.get("alpha", MOD_BH_ALPHA))
+                ax.plot(ens.T, depth, alpha=alpha, zorder=1, **st)
+                proxy = dict(st)
+                handles.append(
+                    Line2D(
+                        [],
+                        [],
+                        label=f"ensemble (n={ens.shape[0]})",
+                        **{**proxy, "alpha": max(alpha, 0.6)},
+                    )
+                )
+                continue
+            if key not in pr["lines"]:
+                continue
+            if key.startswith("sigma"):
+                st = _bh_style(key, spec)
+                n_sig = key[5]
+                label = (
+                    f"{n_sig}-sigma quantiles"
+                    if key.endswith("_lo")
+                    else "_nolegend_"
+                )
+                z = 2
+            elif key in pct_keys:
+                st = _bh_style(key, spec, pct_keys.index(key), len(pct_keys))
+                label = "P" + key[1:].replace("_", ".")
+                z = 2
+            else:
+                st = _bh_style(key, spec)
+                label = {"avg": "mean", "med": "median", "best": "best member"}[
+                    key
+                ]
+                z = 3
+            (ln,) = ax.plot(pr["lines"][key], depth, label=label, zorder=z, **st)
+            if label != "_nolegend_":
+                handles.append(ln)
+
+        ax.set_xscale("log")
+        xl = spec.get("xlim", glob_xlim)
+        if xl is not None:
+            ax.set_xlim(xl)
+        ax.set_title(f"{pr['name']}\n{pr['pos_str']}", fontsize=tick_fs - 2)
+        ax.set_xlabel("resistivity (Ohm.m)", fontsize=label_fs)
+        if k % ncols == 0:
+            ax.set_ylabel(
+                "depth (km)" if MOD_DEPTH_KM else "depth (m)", fontsize=label_fs
+            )
+        ax.tick_params(labelsize=tick_fs)
+        ax.grid(True, which="both", axis="x", lw=0.3, alpha=0.5)
+        ax.grid(True, which="major", axis="y", lw=0.3, alpha=0.5)
+        if handles and MOD_BH_LEGEND_LOC is not None:
+            ax.legend(
+                handles=handles,
+                fontsize=max(tick_fs - 4, 6),
+                loc=MOD_BH_LEGEND_LOC,
+                framealpha=0.85,
+            )
+
+    for ax in axs[n:]:
+        ax.set_visible(False)
+
+    # depth range: common (union) or per panel; y axis points down
+    ranges = [
+        (np.nanmin(pr["depth"]) / scale, np.nanmax(pr["depth"]) / scale)
+        for pr in profiles
+    ]
+    for k, (ax, (lo, hi)) in enumerate(zip(axs, ranges)):
+        if MOD_BH_SHARE_DEPTH:
+            lo = min(r[0] for r in ranges)
+            hi = max(r[1] for r in ranges)
+        ax.set_ylim(hi, lo)
+
+    fig.suptitle(
+        os.path.basename(os.path.normpath(ENSEMBLE_DIR)) + "  " + ENSEMBLE_PREFIX,
+        fontsize=MOD_TITLE_FONTSIZE,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    for _fmt in _MOD_PLOT_FORMATS:
+        _f = f"{plot_base}.{_fmt}"
+        fig.savefig(_f, dpi=MOD_DPI, bbox_inches="tight")
+        if OUT:
+            print(f"  saved -> {_f}")
+    if _SHOW_PLOTS:
+        plt.show()
+    plt.close(fig)
+
+
 # ===========================================================================
 # Main
 # ===========================================================================
@@ -2515,7 +3055,7 @@ np.savez_compressed(ENSEMBLE_RESULTS, **ens_dict)
 print(f"\nResults saved → {ENSEMBLE_RESULTS}")
 
 # --- (5) Resolve UTM origin and sites (needed for any plot) ---------------
-if MOD_QC or MOD_STATS:
+if MOD_QC or MOD_STATS or MOD_BH:
     (
         utm_e,
         utm_n,
@@ -2791,6 +3331,247 @@ if MOD_STATS:
                 alpha_file=_alpha_block,
                 stats_panel=True,
             )
+
+# --- (9) Borehole profiles (optional, MOD_BH) -----------------------------
+# Resistivity-depth profiles at the MOD_BH positions: ensemble statistics
+# (avg / med / percentiles), all members ("ensemble", drawn with opacity
+# "alpha") and/or the best member. The element search is done once per
+# borehole; each statistic / member then costs one array lookup.
+_bh_ready = False
+if MOD_BH:
+    if fviz is None:
+        print("\n  MOD_BH: femtic_viz not available - skipping.")
+    elif not model_list:
+        print("\n  MOD_BH: no converged members - skipping.")
+    else:
+        print("\nBOREHOLES:")
+        _best_i = min(range(len(model_list)), key=lambda i: model_list[i][2])
+        _best_file = model_list[_best_i][0]
+
+        # Region structure of the template (lowest-nRMS member); all members
+        # share it, as for the MOD_STATS block files.
+        _st = fem._read_resistivity_block_struct(
+            _best_file, ocean=MOD_OCEAN, out=False
+        )
+        _bh_er = np.asarray(_st["elem_region"], dtype=np.int64)
+        _bh_nreg = int(_st["nreg"])
+        _bh_free = np.asarray(_st["free_idx"], dtype=np.int64)
+        if _bh_free.size != ens_matrix.shape[1]:
+            print(
+                f"  MOD_BH: template has {_bh_free.size} free regions but "
+                f"the ensemble has {ens_matrix.shape[1]} - skipping."
+            )
+        elif _bh_er.size != _bh_mesh()["n_elem"]:
+            print(
+                f"  MOD_BH: block file has {_bh_er.size} elements but "
+                f"MOD_MESH has {_bh_mesh()['n_elem']} - skipping."
+            )
+        else:
+            _bh_ready = True
+
+if _bh_ready:
+    # log10(rho) of fixed regions: air = NaN (gap), ocean = MOD_OCEAN_RHO,
+    # other fixed regions keep the template value.
+    _bh_fixed = np.log10(np.asarray(_st["region_rho"], dtype=float))
+    _bh_fixed[0] = np.nan
+    if _bh_nreg > 1 and _st["meta"]["ocean_present"]:
+        _bh_fixed[1] = np.log10(MOD_OCEAN_RHO)
+    _bh_fpos = np.full(_bh_nreg, -1, dtype=np.int64)
+    _bh_fpos[_bh_free] = np.arange(_bh_free.size)
+
+    # keys usable for borehole lines: value-scale statistics
+    _bh_value_keys = {k for k in _value_scale_keys if k in _stat_map}
+
+    _bh_profiles = []
+    _bh_npz = {}
+    _bh_hdr = []
+    _bh_names = set()
+
+    # Expand "sites" templates (one borehole per site, from MOD_SITE_DAT).
+    _bh_specs = []
+    for _tpl in MOD_BH:
+        if "sites" not in _tpl:
+            _bh_specs.append(_tpl)
+            continue
+        if not MOD_SITE_DAT or not os.path.isfile(MOD_SITE_DAT):
+            print("  MOD_BH: 'sites' needs MOD_SITE_DAT - entry skipped.")
+            continue
+        if utm_e is None:
+            print("  MOD_BH: 'sites' needs the UTM origin - entry skipped.")
+            continue
+        _sel = _tpl["sites"]
+        if isinstance(_sel, str) and _sel.strip().lower() == "all":
+            _want = None
+        else:
+            _want = [_sel] if isinstance(_sel, str) else [str(v) for v in _sel]
+        _rows = fem.read_site_dat(MOD_SITE_DAT, site_names=_want)
+        if _want is not None:
+            _miss = sorted(set(_want) - {str(r["name"]) for r in _rows})
+            if _miss:
+                print(f"  MOD_BH: sites not found in MOD_SITE_DAT: {_miss}")
+        _nr = _tpl.get("n_random")
+        if _nr is not None and int(_nr) < len(_rows):
+            _pick = np.random.default_rng(_tpl.get("seed")).choice(
+                len(_rows), size=int(_nr), replace=False
+            )
+            _rows = [_rows[i] for i in sorted(_pick)]
+            print(
+                f"  n_random={int(_nr)}"
+                f"{'' if _tpl.get('seed') is not None else ' (no seed, not reproducible)'}"
+                f": {[str(r['name']) for r in _rows]}"
+            )
+        print(f"  sites template -> {len(_rows)} borehole(s)")
+        for _r in _rows:
+            _t = {
+                k: v
+                for k, v in _tpl.items()
+                if k not in ("sites", "n_random", "seed")
+            }
+            _t.update(
+                name=str(_r["name"]),
+                x=(float(_r["easting"]), "utm"),
+                y=(float(_r["northing"]), "utm"),
+            )
+            _bh_specs.append(_t)
+
+    for _spec in _bh_specs:
+        _nm = str(_spec.get("name", f"BH{len(_bh_profiles) + 1}"))
+        _nm0, _dup = _nm, 1
+        while _nm in _bh_names:  # names key the .npz arrays: keep unique
+            _dup += 1
+            _nm = f"{_nm0}_{_dup}"
+        if _nm != _nm0:
+            print(f"  MOD_BH: name '{_nm0}' already used - renamed '{_nm}'.")
+        _bh_names.add(_nm)
+        try:
+            _x_m, _y_m, _lat, _lon = _bh_resolve_xy(
+                _spec, utm_e, utm_n, utm_zone, utm_north
+            )
+        except KeyError as _e:
+            print(f"  MOD_BH '{_nm}': missing key {_e} - skipped.")
+            continue
+        except ValueError as _e:
+            print(f"  {_e} - skipped.")
+            continue
+
+        _dz = float(_spec.get("dz", 0.05)) * 1000.0
+        _zb_km = _spec.get(
+            "z_bot", MOD_ZLIM[1] if MOD_ZLIM is not None else 20.0
+        )
+        _zb = float(_zb_km) * 1000.0
+        _zt_raw = _spec.get("z_top", "surface")
+        if isinstance(_zt_raw, str) and _zt_raw.strip().lower() == "surface":
+            _zt = _bh_surface_m(_x_m, _y_m, _dz, _zb, _bh_er)
+            if _zt is None:
+                print(
+                    f"  MOD_BH '{_nm}': no non-air element above "
+                    f"z_bot={_zb_km} km at this position - skipped."
+                )
+                continue
+            print(f"  {_nm}: z_top='surface' -> {_zt / 1000.0:.3f} km")
+        else:
+            _zt = float(_zt_raw) * 1000.0
+        if _zb <= _zt or _dz <= 0.0:
+            print(f"  MOD_BH '{_nm}': need z_bot > z_top and dz > 0 - skipped.")
+            continue
+
+        _depth = np.arange(_zt, _zb + 0.5 * _dz, _dz)
+        _elem = _bh_locate(_x_m, _y_m, _depth)
+        _reg = np.where(_elem >= 0, _bh_er[np.maximum(_elem, 0)], -1)
+        _n_hit = int(np.sum(_reg > 0))
+        print(
+            f"  {_nm}: x={_x_m / 1000.0:.3f} km, y={_y_m / 1000.0:.3f} km, "
+            f"{_depth.size} levels, {_n_hit} in non-air elements"
+        )
+        if _n_hit == 0:
+            print(f"  MOD_BH '{_nm}': profile is entirely air/outside - skipped.")
+            continue
+
+        _order = _bh_expand_what(
+            _spec.get("what", ["avg", "percentiles"]), _bh_value_keys
+        )
+        _lines = {}
+        for _k in _order:
+            if _k == "ensemble":
+                continue
+            if _k == "best":
+                _vec = ens_matrix[_best_i]
+            elif _k in _BH_SIGMA_Q:
+                _vec = np.percentile(ens_matrix, _BH_SIGMA_Q[_k], axis=0)
+            else:
+                _vec = _stat_map[_k][0]
+            _lines[_k] = _bh_values(_vec, _reg, _bh_fixed, _bh_fpos)
+        _ens = (
+            _bh_values(ens_matrix, _reg, _bh_fixed, _bh_fpos)
+            if "ensemble" in _order
+            else None
+        )
+        _bh_profiles.append(
+            dict(
+                name=_nm,
+                pos_str=_bh_pos_str(_x_m, _y_m, _lat, _lon, utm_e, utm_n),
+                spec=_spec,
+                depth=_depth,
+                order=_order,
+                lines=_lines,
+                ens=_ens,
+            )
+        )
+
+        _safe = _nm.replace(" ", "_")
+        _bh_npz[f"depth_{_safe}"] = _depth
+        for _k, _v in _lines.items():
+            _bh_npz[f"{_k}_{_safe}"] = _v
+        if _ens is not None:
+            _bh_npz[f"ensemble_{_safe}"] = _ens
+        _bh_hdr.append(
+            dict(
+                name=_nm,
+                x_m=_x_m,
+                y_m=_y_m,
+                lat=None if _lat is None else float(_lat),
+                lon=None if _lon is None else float(_lon),
+                z_top_m=float(_zt),
+                z_bot_m=float(_zb),
+                dz_m=float(_dz),
+                n_levels=int(_depth.size),
+                keys=list(_lines) + (["ensemble"] if _ens is not None else []),
+            )
+        )
+
+    if _bh_profiles:
+        if MOD_BH_NPZ:
+            import json
+
+            _bh_npz["header"] = np.array(
+                json.dumps(
+                    dict(
+                        ensemble_prefix=ENSEMBLE_PREFIX,
+                        depth_unit="m, z positive-down, model datum",
+                        rho_unit="Ohm.m (NaN = air / outside mesh)",
+                        members=[m[0] for m in model_list],
+                        best_member=_best_file,
+                        percentiles=list(PERCENTILES),
+                        boreholes=_bh_hdr,
+                    ),
+                    indent=2,
+                )
+            )
+            os.makedirs(os.path.dirname(MOD_BH_FILE) or ".", exist_ok=True)
+            np.savez_compressed(MOD_BH_FILE + ".npz", **_bh_npz)
+            print(f"  profiles saved -> {MOD_BH_FILE}.npz")
+        os.makedirs(os.path.dirname(MOD_BH_FILE) or ".", exist_ok=True)
+        _per = int(MOD_BH_PER_FIG) if MOD_BH_PER_FIG else len(_bh_profiles)
+        _chunks = [
+            _bh_profiles[i : i + _per] for i in range(0, len(_bh_profiles), _per)
+        ]
+        for _ic, _ch in enumerate(_chunks):
+            _plot_boreholes(
+                _ch,
+                MOD_BH_FILE if len(_chunks) == 1 else f"{MOD_BH_FILE}_{_ic + 1:02d}",
+            )
+    else:
+        print("  MOD_BH: no usable borehole - nothing plotted.")
 
 print("\nfemtic_ens_post.py complete.")
 
