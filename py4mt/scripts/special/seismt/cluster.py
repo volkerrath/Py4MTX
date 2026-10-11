@@ -61,7 +61,7 @@ What this script does
 Dependencies
 ------------
     numpy, xarray, pandas, matplotlib
-plus the local `plotpy.py` helper module (also used by the plot
+plus the local `tomomt.py` helper module (also used by the plot
 scripts). The fuzzy c-means / SOM implementations are self-contained
 (NumPy only, no scikit-fuzzy/MiniSom).
 
@@ -76,7 +76,6 @@ AI-generated code — review before use in production.
 """
 
 import csv
-import os
 from pathlib import Path
 
 import numpy as np
@@ -85,14 +84,15 @@ import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+from scipy.interpolate import RegularGridInterpolator
 
-import plotpy
+import tomomt
 
-to_utm_km = plotpy.to_utm_km
-compute_hillshade = plotpy.compute_hillshade
-clipped_markers = plotpy.clipped_markers
-clipped_labels = plotpy.clipped_labels
-draw_north_arrow = plotpy.draw_north_arrow
+to_utm_km = tomomt.to_utm_km
+compute_hillshade = tomomt.compute_hillshade
+clipped_markers = tomomt.clipped_markers
+clipped_labels = tomomt.clipped_labels
+draw_north_arrow = tomomt.draw_north_arrow
 
 # =====================================================================
 # USER SETTINGS
@@ -102,22 +102,22 @@ draw_north_arrow = plotpy.draw_north_arrow
 # --- Site selector ---
 # Must match SITE_PREFIX in precompute.py / interpolate.py — used below
 # to find their outputs and to name this script's own outputs.
-SITE_PREFIX = "saba"
-# SITE_PREFIX = "tacna"  # TACNA
+SITE_PREFIX = "tacna"
+# SITE_PREFIX = "ubinas"  # ubinas
 
 # --- Input/output directories ---
-NC_DIR = "../precompute/"   # must match interpolate.py's NC_DIR;
+NC_DIR = "../precompute/"+ f"{SITE_PREFIX}/"   # must match interpolate.py's NC_DIR;
                              # {SITE_PREFIX}_clusters.nc / {SITE_PREFIX}_cluster_centers.csv
                              # are also written here.
 PLOT_DIR = "../plots_cluster/"
-PLOT_FORMATS = [".pdf", ".jpg"]
+PLOT_FORMATS = [".pdf", ".png"]
 PLOT_DPI = 600
 
 # --- Which interpolate.py output to read ---
 # Bare filename, looked up under NC_DIR — e.g. "{SITE_PREFIX}_interp_rbf.nc",
 # "{SITE_PREFIX}_interp_kriging.nc", "{SITE_PREFIX}_interp_idw.nc", or
 # whatever interpolate.py's OUTPUT_FILE was set to.
-INTERP_FILE = f"{SITE_PREFIX}_interp_rbf.nc"
+INTERP_FILE = f"{SITE_PREFIX}_interp_kriging.nc"
 
 # --- Which variables to actually cluster on ---
 # None = use every variable in INTERP_FILE (its own interp_vars
@@ -125,7 +125,7 @@ INTERP_FILE = f"{SITE_PREFIX}_interp_rbf.nc"
 # interpolated — must all be present in INTERP_FILE, or this raises
 # telling you to add them to interpolate.py's INTERP_VARS and
 # re-run it first.
-CLUSTER_VARS = None
+CLUSTER_VARS =  None # ["rho",  "dens", "vps", "vp"] #None
 
 # --- Per-variable clustering weights ---
 # Multiplies each (already standardized, if STANDARDIZE) feature by
@@ -134,6 +134,14 @@ CLUSTER_VARS = None
 # Euclidean distance d^2 = sum_j weight_j * (x_j - c_j)^2. Any
 # CLUSTER_VARS entry not listed here falls back to 1.0 (no effect).
 CLUSTER_WEIGHTS = {}
+#CLUSTER_WEIGHTS = {
+#    "rho_femtic": 2.0,   # counts 2× more than weight-1 variables (sqrt(4)=2)
+#    "vps":        2.0,   # counts ~1.4× more
+#    "vp":         1.0,   # neutral
+#    "vs":         1.0,   # neutral
+#    "dens":       1.0,  # counts 2× less (sqrt(0.25)=0.5)
+#}
+
 
 # --- Standardize (z-score) each variable before clustering ---
 # Strongly recommended: rho/cond/vps/dens have very different numeric
@@ -150,11 +158,11 @@ STANDARDIZE = True
 #   down to N_CLUSTERS. N_CLUSTERS/FUZZINESS/MAX_ITER/TOL below are only
 #   used when CLUSTERING_METHOD == "fcm"; SOM_* settings are only used
 #   when CLUSTERING_METHOD == "som".
-CLUSTERING_METHOD = "som"
+CLUSTERING_METHOD = "fcm"
 
 # --- Fuzzy c-means settings (CLUSTERING_METHOD == "fcm") ---
-N_CLUSTERS = 3
-FUZZINESS = 2.0      # "m" in the FCM literature; > 1, 2.0 is conventional
+N_CLUSTERS = 5
+FUZZINESS = 1.8      # "m" in the FCM literature; > 1, 2.0 is conventional
 MAX_ITER = 300
 TOL = 1e-5            # stop once max membership change between iterations < TOL
 RANDOM_SEED = 42
@@ -172,11 +180,21 @@ SOM_SIGMA0 = None     # initial neighborhood radius, grid units; None =
 SOM_SEED = 42
 
 # --- Plotting ---
-PLOT_DEPTHS_KM = [1.0, 5.0, 9.0]   # nearest available depth level is used for each
+
 CLUSTER_CMAP = "tab10"             # qualitative colormap, used only for
                                     # CLUSTERING_METHOD == "fcm" (SOM uses
                                     # a topological colormap instead, see
                                     # som_grid_colormap())
+if "tac" in SITE_PREFIX: 
+    PLOT_DEPTHS_KM = [1.0, 5.0, 9.0]   # nearest available depth level is used for each
+    ZMIN_SEISM = [-7, 1, 9]
+    ZMAX_SEISM = [1, 9, 30]
+if "ubi" in SITE_PREFIX: 
+    PLOT_DEPTHS_KM = [-1.0, 5.0, 14.0, 28]
+    ZMIN_SEISM = [-7, -1, 5, 14]
+    ZMAX_SEISM = [-1, 5, 14, 28]
+
+
 CLUSTER_ALPHA = 0.80
 
 SHOW_TOPO_BASEMAP = True
@@ -222,12 +240,30 @@ SHOW_SPECIFIC_PLOT = True
 
 CSV_VOLCANES      = "../features/volcanes.csv"
 CSV_SEISMCAT      = "../features/catalog_welllocated_15_simple5.csv"
-CSV_MT_SITES      = "../features/done/MTsaba_Sitelist.csv"
-# CSV_MT_SITES      = "../features/done/MTTacna_Sitelist.csv"  # TACNA
+CSV_MT_SITES      = "../features/done/MTubinas_Sitelist.csv"
+# CSV_MT_SITES      = "../features/done/MTubinas_Sitelist.csv"  # ubinas
 CSV_CITIES        = "../features/cities.csv"
 CSV_SEISMIC_SITES = "../features/seismic_sites.csv"  # no header row; columns
                                                        # are network, station,
                                                        # lat, lon, elev_m
+
+
+
+if "tac" in SITE_PREFIX:                                                       
+    PROFILE_1_LON  = [-70.48, -69.580]
+    PROFILE_1_LAT  = [ -18.245, -17.135]
+    PROFILE_2_LON = [ -70.034, -69.670]
+    PROFILE_2_LAT = [ -17.267, -17.695]                                                       
+
+if "ubi" in SITE_PREFIX:   
+    PROFILE_1_LON = [-70.79, -70.95]
+    PROFILE_1_LAT = [-16.52, -16.22]
+    PROFILE_2_LON  = [-71.05, -70.73]
+    PROFILE_2_LAT  = [-16.459, -16.21]
+
+
+
+
 
 SHOW_SEISMICITY       = True
 SHOW_MT_SITES         = True
@@ -236,13 +272,11 @@ SHOW_VOLCANOES        = True   # inactive volcano markers + labels
 SHOW_VOLCANOES_ACTIVE = True   # active volcano markers
 SHOW_CITIES           = True
 
-ZMIN_SEISM = [-7, 1, 9]
-ZMAX_SEISM = [1, 9, 30]
 
 VOLC_LABEL_IDX = [5, 12, 13]
 # Volcano name column (volcanes.csv). Labels are truncated to their
 # first VOLC_LABEL_CHARS characters via VOLC_LABEL_STYLE's mode="firstN"
-# (see plotpy.apply_label_mode) rather than reading a separate
+# (see tomomt.apply_label_mode) rather than reading a separate
 # already-abbreviated column (e.g. "VOLCAN2") — one source of truth for
 # the name, with truncation as a display-only concern.
 VOLC_NAME_COL = "NAME"
@@ -298,6 +332,87 @@ if SHOW_SPECIFIC_PLOT and SHOW_SEISMICITY:
         )
 
 # =====================================================================
+# VERTICAL SLICE SETTINGS
+#
+# Same schema as plot_seis.py / plot_femtic_mesh.py:
+#   name     : str   — label used in title and output filename
+#   p1, p2   : [x, y] — endpoints, UTM km or lon/lat (see coord)
+#   coord    : "utm" | "latlon"
+#   zmin_km  : top  of section (km, positive down; negative = above sea level)
+#   zmax_km  : base of section (km)
+#   npts     : number of sample points along the profile
+#   swath_km : half-width for seismicity projection
+#   xlim     : optional [xmin, xmax] — crop displayed x-axis (units from
+#              VSLICE_X_AXIS: UTM km or distance km).  None = full range.
+#   ylim     : optional [ytop, ybottom] — crop displayed depth-axis (km).
+#              None = topo/headroom-derived top to zmax_km.
+# =====================================================================
+VSLICES = [
+    dict(
+        name="profile AA'", 
+        p1 = [PROFILE_1_LON[0], PROFILE_1_LAT[0]],   # lon, lat
+        p2 = [PROFILE_1_LON[1], PROFILE_1_LAT[1]],
+        coord="latlon", 
+        zmin_km=-6.0, 
+        zmax_km=30.0, 
+        swath_km=10.0,
+    ),
+    dict(
+        name="profile BB'", 
+        p1 = [PROFILE_2_LON[0], PROFILE_2_LAT[0]],   # lon, lat
+        p2 = [PROFILE_2_LON[1], PROFILE_2_LAT[1]],
+        coord="latlon", 
+        zmin_km=-6.0, 
+        zmax_km=30.0, 
+        swath_km=10.0,
+    ),
+]
+
+
+# Colour-scale for vertical slices: defaults to the same as the maps;
+# override per-variable by adding entries here (same dict keys as CMAP_SETTINGS).
+VSLICE_CMAP_OVERRIDES = {}
+
+if "tac" in SITE_PREFIX:
+    VSLICE_VE           = 3.0
+else:
+    VSLICE_VE           = 1.0
+    
+VSLICE_EQUAL_SCALE  = False
+VSLICE_VE_POS       = "lower right"
+VSLICE_VE_STYLE     = dict(fontsize=7, color="black")
+VSLICE_X_AXIS       = "distance"   # "distance" | "utm"
+
+VSLICE_EQ_STYLE = dict(
+    marker="o", s=4.5,
+    facecolors="white", edgecolors="black", linewidths=0.2, zorder=11,
+)
+VSLICE_TOPO_STYLE        = dict(color="dimgray", lw=0.5, zorder=12)
+VSLICE_SHOW_TOPO_FILL    = False
+VSLICE_TOPO_LAND_COLOR   = "gray"
+VSLICE_TOPO_OCEAN_COLOR  = "#6baed6"
+VSLICE_TOPO_HEADROOM_KM  = 1.0
+VSLICE_MAP_LINE_STYLE    = dict(color="magenta", lw=0.8, ls="--", zorder=15)
+
+# --- Free-text annotation ---
+ANNOTATION_TEXT  = None
+ANNOTATION_POS   = (0.01, 0.99)
+ANNOTATION_STYLE = dict(fontsize=7, color="gray", ha="left", va="top")
+
+# --- Section plotting toggle ---
+# True  : compute and plot a cluster vertical section for every VSLICES entry.
+# False : skip section plotting entirely (only depth-slice maps are produced).
+PLOT_SECTIONS = True
+
+# Section figure size: fixed height in cm (same convention as plot_interp_ubinas).
+# Width is derived from profile length / depth range / VSLICE_VE so that
+# the physical aspect ratio is always correct.
+# VSLICE_HEIGHT_CM = None → use VSLICE_WIDTH_CM as the fixed dimension instead.
+VSLICE_HEIGHT_CM = 15.24   # 6 inches — matches plot_interp_ubinas / structure_ubinas
+VSLICE_WIDTH_CM  = None    # None → derived from height
+
+
+# =====================================================================
 # END USER SETTINGS
 # =====================================================================
 
@@ -306,36 +421,11 @@ Path(PLOT_DIR).mkdir(parents=True, exist_ok=True)
 
 def ncpath(name):
     """Join a bare NetCDF filename onto NC_DIR."""
-    return os.path.join(NC_DIR, name)
+    return tomomt.resolve_path(NC_DIR, name)
 
 
-def safe_to_netcdf(obj, path):
-    """
-    Write a Dataset/DataArray to NetCDF, overwriting any existing file at
-    `path` even if it's read-only (see interpolate.py's own copy of
-    this helper for the full rationale).
-    """
-    p = Path(path)
-    if p.exists():
-        try:
-            p.unlink()
-        except PermissionError:
-            os.chmod(p, 0o644)
-            p.unlink()
-    obj.to_netcdf(path)
-
-
-def safe_open_w(path, **kwargs):
-    """Like open(path, 'w', ...), but first clears a read-only leftover
-    file at `path` (same PermissionError issue as safe_to_netcdf)."""
-    p = Path(path)
-    if p.exists():
-        try:
-            p.unlink()
-        except PermissionError:
-            os.chmod(p, 0o644)
-            p.unlink()
-    return open(path, "w", **kwargs)
+safe_to_netcdf = tomomt.safe_to_netcdf
+safe_open_w = tomomt.safe_open_w
 
 
 # ------------------------------------------------------------------
@@ -773,10 +863,8 @@ def _colorbar_settings():
 
 
 def create_map_figure():
-    map_w_in = FIG_WIDTH / 2.54
-    map_h_in = map_w_in * (ymax - ymin) / (xmax - xmin)
-    return plotpy.build_panel_figure(
-        map_w_in, map_h_in, _colorbar_settings(), size_label="map"
+    return tomomt.build_map_figure(
+        FIG_WIDTH, xmin, xmax, ymin, ymax, _colorbar_settings(), size_label="map"
     )
 
 
@@ -810,17 +898,244 @@ def draw_basemap(ax):
     ax.tick_params(labelsize=AXIS_TICK_SIZE)
     if SHOW_NORTH_ARROW:
         arr_e, arr_n = to_utm_km([ARROW_LON], [ARROW_LAT])
-        plotpy.draw_north_arrow(
+        tomomt.draw_north_arrow(
             ax, arr_e[0], arr_n[0], _region(),
             ARROW_STYLE, ARROW_LABEL_STYLE, ARROW_LEN_KM,
         )
 
 
 def save_fig(fig, stem):
-    for fmt in PLOT_FORMATS:
-        out = os.path.join(PLOT_DIR, stem + fmt)
-        fig.savefig(out, dpi=PLOT_DPI, bbox_inches="tight")
-        print(f"  Saved: {out}")
+    return tomomt.save_fig(fig, stem, PLOT_DIR, PLOT_FORMATS, PLOT_DPI)
+
+
+# ==================================================================
+# Vertical section helpers
+# ==================================================================
+
+def _section_colorbar_settings():
+    s = _colorbar_settings()
+    ref_in = (VSLICE_HEIGHT_CM if VSLICE_HEIGHT_CM is not None
+              else VSLICE_WIDTH_CM) / 2.54
+    s["thickness_in"] = (COLORBAR_SIZE * ref_in) / COLORBAR_ASPECT
+    return s
+
+
+def _topo_interp():
+    """Build a RegularGridInterpolator on the topo grid (northing, easting)."""
+    ty = topo_y if topo_y[0] < topo_y[-1] else topo_y[::-1]
+    tz = topo_z if topo_y[0] < topo_y[-1] else topo_z[::-1, :]
+    return RegularGridInterpolator(
+        (ty, topo_x), tz, method="linear", bounds_error=False, fill_value=np.nan,
+    )
+
+
+def compute_cluster_section(vslice, label_grid_3d, d_axis_in, e_ax, n_ax):
+    """
+    Sample the integer cluster-label grid along a profile by nearest-neighbour
+    lookup (NearestNDInterpolator on the 3-D grid — identical to the method
+    used for cluster *maps*, which already use interpolation="nearest").
+
+    Returns
+    -------
+    dist_km      : 1-D along-profile distance
+    depth_plot   : 1-D depth axis clipped to [zmin_km, zmax_km]
+    section      : 2-D float array (ndepth_clipped, npts), NaN where label == -1
+    e_ends, n_ends : profile endpoint UTM km
+    topo_prof    : 1-D surface elevation (m) along profile, or None
+    utm_x        : x-axis array (same as dist_km when VSLICE_X_AXIS=="distance")
+    utm_xlabel   : label string for that axis
+    """
+    npts    = vslice.get("npts", 200)
+    zmin_km = vslice.get("zmin_km", float(d_axis_in[0]))
+    zmax_km = vslice.get("zmax_km", float(d_axis_in[-1]))
+
+    e_ends, n_ends = tomomt.profile_utm_km(vslice)
+    dist_km, e_pts, n_pts, utm_x, utm_xlabel = \
+        tomomt.sample_profile_points(e_ends, n_ends, npts)
+
+    # Clip depth axis to display window
+    d_ax = d_axis_in.copy()
+    if d_ax[0] > d_ax[-1]:
+        d_ax = d_ax[::-1]
+        label_grid_3d = label_grid_3d[::-1, :, :]
+
+    # Ensure horizontal axes ascending for the interpolator
+    lv3 = label_grid_3d.astype(float)
+    lv3[lv3 < 0] = np.nan   # -1 (missing) → NaN
+
+    n_asc = n_ax if n_ax[0] < n_ax[-1] else n_ax[::-1]
+    e_asc = e_ax if e_ax[0] < e_ax[-1] else e_ax[::-1]
+    if n_ax[0] > n_ax[-1]:
+        lv3 = lv3[:, ::-1, :]
+    if e_ax[0] > e_ax[-1]:
+        lv3 = lv3[:, :, ::-1]
+
+    interp = RegularGridInterpolator(
+        (d_ax, n_asc, e_asc), lv3,
+        method="nearest", bounds_error=False, fill_value=np.nan,
+    )
+
+    # Clip to display window
+    d_mask    = (d_ax >= zmin_km) & (d_ax <= zmax_km)
+    depth_plot = d_ax[d_mask]
+
+    nz = len(depth_plot)
+    d_q = np.repeat(depth_plot, npts)
+    n_q = np.tile(n_pts, nz)
+    e_q = np.tile(e_pts, nz)
+    section = interp(np.column_stack([d_q, n_q, e_q])).reshape(nz, npts)
+
+    # Topography along profile
+    topo_prof = None
+    if topo_z is not None:
+        topo_prof = _topo_interp()(np.column_stack([n_pts, e_pts]))
+
+    return dist_km, depth_plot, section, e_ends, n_ends, topo_prof, utm_x, utm_xlabel
+
+
+def plot_cluster_section(vslice, vi, label_grid_3d, d_axis_in, e_ax, n_ax,
+                         annotated=False):
+    """
+    Produce and save one cluster vertical-section figure.
+
+    Parameters
+    ----------
+    vslice        : VSLICES dict entry
+    vi            : index into VSLICES (used for profile endpoint labels)
+    label_grid_3d : (ndepth, nrow, ncol) int array of cluster labels
+    d_axis_in     : 1-D depth axis (km)
+    e_ax, n_ax    : 1-D easting / northing axes (km)
+    annotated     : if True, add seismicity projection (requires SHOW_SPECIFIC_PLOT)
+    """
+    name    = vslice.get("name", "profile")
+    swath   = vslice.get("swath_km", 10.0)
+    zmin_km = vslice.get("zmin_km", float(d_axis_in[0]))
+    zmax_km = vslice.get("zmax_km", float(d_axis_in[-1]))
+    ve      = 1.0 if VSLICE_EQUAL_SCALE else VSLICE_VE
+
+    dist_km, depth_plot, section, e_ends, n_ends, topo_prof, utm_x, utm_xlabel = \
+        compute_cluster_section(vslice, label_grid_3d, d_axis_in, e_ax, n_ax)
+
+    lbl_start, lbl_end = tomomt.profile_labels(vi)
+
+    if VSLICE_X_AXIS == "distance":
+        x_arr, x_label = dist_km, "Distance along profile (km)"
+    else:
+        x_arr, x_label = utm_x, utm_xlabel
+
+    # Figure size: same formula as plot_interp_ubinas / structure_ubinas
+    profile_len = dist_km[-1]
+    depth_range = (float(depth_plot[-1]) - float(depth_plot[0])) \
+                  if len(depth_plot) > 1 else (zmax_km - zmin_km)
+    if VSLICE_HEIGHT_CM is not None:
+        h_in = VSLICE_HEIGHT_CM / 2.54
+        w_in = h_in * profile_len / max(depth_range * ve, 1e-6)
+    else:
+        w_in = VSLICE_WIDTH_CM / 2.54
+        h_in = w_in * (depth_range * ve) / profile_len
+
+    fig, ax, cax = tomomt.build_panel_figure(w_in, h_in,
+                                              _section_colorbar_settings(),
+                                              size_label="section")
+
+    # VE label
+    if ve != 1.0:
+        vx, vy, vha, vva = tomomt.resolve_ve_pos(VSLICE_VE_POS)
+        ax.text(vx, vy, f"VE = {ve:.1f}×",
+                transform=ax.transAxes, ha=vha, va=vva,
+                zorder=21, **VSLICE_VE_STYLE)
+
+    # Cluster section (nearest-neighbour colours — no blending between classes)
+    im = ax.pcolormesh(
+        x_arr, depth_plot, section,
+        cmap=cluster_cmap, norm=cluster_norm,
+        shading="nearest", alpha=CLUSTER_ALPHA, zorder=5,
+    )
+
+    # Topo line
+    y_top = float(depth_plot[0]) if len(depth_plot) else zmin_km
+    if topo_prof is not None:
+        surf_depth = -topo_prof / 1e3
+        finite_surf = surf_depth[np.isfinite(surf_depth)]
+        if finite_surf.size > 0:
+            y_top = float(finite_surf.min()) - VSLICE_TOPO_HEADROOM_KM
+            if VSLICE_SHOW_TOPO_FILL:
+                land  = topo_prof > 0
+                ocean = topo_prof <= 0
+                if land.any():
+                    ax.fill_between(x_arr, 0.0, surf_depth, where=land,
+                                    color=VSLICE_TOPO_LAND_COLOR, alpha=0.5,
+                                    zorder=6, interpolate=True)
+                if ocean.any():
+                    ax.fill_between(x_arr, 0.0, surf_depth, where=ocean,
+                                    color=VSLICE_TOPO_OCEAN_COLOR, alpha=0.5,
+                                    zorder=6, interpolate=True)
+            ax.plot(x_arr, surf_depth, **VSLICE_TOPO_STYLE)
+        else:
+            print(f"    WARNING: topo all-NaN for '{name}' — topo line skipped.")
+
+    # Seismicity projection (annotated variant only)
+    if annotated and SHOW_SPECIFIC_PLOT and SHOW_SEISMICITY:
+        eq_dist, eq_dep = tomomt.project_points_to_profile(
+            eq_e0, eq_n0, e_ends, n_ends, swath,
+            z0=zeqs, zmin_km=zmin_km, zmax_km=zmax_km,
+        )
+        if len(eq_dist):
+            eq_x = np.interp(eq_dist, dist_km, x_arr)
+            tomomt.markers(ax, eq_x, eq_dep, **VSLICE_EQ_STYLE)
+
+    # MT sites on section (annotated variant only)
+    if annotated and SHOW_SPECIFIC_PLOT and SHOW_MT_SITES:
+        de = e_ends[1] - e_ends[0]
+        dn = n_ends[1] - n_ends[0]
+        L  = np.sqrt(de**2 + dn**2)
+        if L > 0:
+            ue, un = de / L, dn / L
+            ve_mt = mt_e - e_ends[0]
+            vn_mt = mt_n - n_ends[0]
+            along  = ve_mt * ue + vn_mt * un
+            across = np.abs(ve_mt * (-un) + vn_mt * ue)
+            in_swath = (across <= swath) & (along >= 0) & (along <= L)
+            if in_swath.any():
+                # Place MT sites at topo surface depth
+                mt_topo = _topo_interp()(
+                    np.column_stack([mt_n[in_swath], mt_e[in_swath]])
+                )
+                mt_dep = np.where(np.isfinite(mt_topo), -mt_topo / 1e3, 0.0)
+                mt_x = np.interp(along[in_swath], dist_km, x_arr)
+                tomomt.markers(ax, mt_x, mt_dep, **MT_MARKER_STYLE)
+
+    # Axes
+    xlim = vslice.get("xlim", None)
+    ax.set_xlim(xlim if xlim is not None else (x_arr[0], x_arr[-1]))
+    ylim = vslice.get("ylim", None)
+    ax.set_ylim(ylim if ylim is not None else (y_top, zmax_km))
+    ax.invert_yaxis()
+    ax.set_xlabel(x_label, fontsize=AXIS_LABEL_SIZE)
+    ax.set_ylabel("Depth (km)", fontsize=AXIS_LABEL_SIZE)
+    ax.tick_params(labelsize=AXIS_TICK_SIZE)
+
+    # Profile endpoint labels
+    x0, x1 = x_arr[0], x_arr[-1]
+    for xpos, lbl in ((x0, lbl_start), (x1, lbl_end)):
+        ax.text(xpos, y_top, lbl,
+                ha="center", va="bottom",
+                fontsize=AXIS_LABEL_SIZE, fontweight="bold",
+                color="black", clip_on=False, zorder=20)
+
+    ax.set_title(
+        f"{_method_label} classes ({', '.join(active_cluster_vars)}) — {name}",
+        fontsize=AXIS_TITLE_SIZE,
+    )
+    tomomt.finish_panel_colorbar(cax, im, "Class", _section_colorbar_settings())
+    tomomt.draw_annotation(ax, ANNOTATION_TEXT, ANNOTATION_POS, ANNOTATION_STYLE)
+
+    ann_tag = "_annotated" if annotated else ""
+    safe_name = name.replace(" ", "_").replace("'", "p")
+    stem = f"clusters_section_{safe_name}_{SITE_PREFIX}{ann_tag}"
+    save_fig(fig, stem)
+    plt.show()
+    plt.close(fig)
 
 
 # ==================================================================
@@ -937,14 +1252,14 @@ def _draw_cluster_overlay(ax, cax, label_slice, actual_depth):
         fontsize=AXIS_TITLE_SIZE,
     )
     if SHOW_COLORBAR:
-        cbar = plotpy.finish_panel_colorbar(cax, im, "Class", _colorbar_settings())
+        cbar = tomomt.finish_panel_colorbar(cax, im, "Class", _colorbar_settings())
         cbar.set_ticks(_cbar_ticks)
     if AXES_UNITS == "latlon":
-        plotpy.add_latlon_ticks(
+        tomomt.add_latlon_ticks(
             ax, _region(), LATLON_NTICKS, LATLON_DECIMALS,
             AXIS_LABEL_SIZE, AXIS_TICK_SIZE,
         )
-    plotpy.draw_annotation(ax, ANNOTATION_TEXT, ANNOTATION_POS, ANNOTATION_STYLE)
+    tomomt.draw_annotation(ax, ANNOTATION_TEXT, ANNOTATION_POS, ANNOTATION_STYLE)
 
 
 for i_depth, target_depth in enumerate(PLOT_DEPTHS_KM):
@@ -993,3 +1308,38 @@ for i_depth, target_depth in enumerate(PLOT_DEPTHS_KM):
         plt.close(fig)
 
 print("\nDone.")
+
+
+# ==================================================================
+# Plot cluster vertical sections
+# ==================================================================
+if PLOT_SECTIONS and VSLICES:
+    # For "joint" grids the 3-D label array has dims (depth, northing, easting)
+    # with 1-D coordinate axes e_axis / n_axis.  For "seismic" grids the
+    # horizontal layout is irregular (2-D utm coords) so vertical sections are
+    # not implemented (a regular UTM grid is required for the RegularGridInterpolator).
+    if grid_mode != "joint":
+        print(
+            "\nNote: PLOT_SECTIONS is only supported for TARGET_GRID='joint' "
+            "(regular UTM-km grid). The loaded INTERP_FILE uses a 'seismic' "
+            "grid with 2-D UTM coordinates — section plotting skipped."
+        )
+    else:
+        print(f"\nPlotting {len(VSLICES)} cluster vertical section(s) …")
+        for vi, vslice in enumerate(VSLICES):
+            name = vslice.get("name", f"profile{vi}")
+            print(f"  Section: {name!r}")
+
+            # Plain section (no seismicity / MT overlay)
+            plot_cluster_section(
+                vslice, vi, label_grid, d_axis, e_axis, n_axis,
+                annotated=False,
+            )
+
+            # Annotated section (seismicity + MT sites) — only when
+            # SHOW_SPECIFIC_PLOT is True and the feature layers are loaded
+            if SHOW_SPECIFIC_PLOT:
+                plot_cluster_section(
+                    vslice, vi, label_grid, d_axis, e_axis, n_axis,
+                    annotated=True,
+                )

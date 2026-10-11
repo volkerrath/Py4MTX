@@ -103,7 +103,7 @@ Dependencies
 ------------
     numpy, xarray, pandas, matplotlib, scipy (RegularGridInterpolator,
     only used for "joint"-mode vertical sections)
-plus the local `plotpy.py` helper module.
+plus the local `tomomt.py` helper module.
 
 Authors: Svetlana Byrdina (SMB) & Volker Rath (DIAS)
 AI-assisted development: Claude (Anthropic). Written from
@@ -126,15 +126,15 @@ import matplotlib.colors as mcolors
 import matplotlib.ticker
 from scipy.interpolate import RegularGridInterpolator
 
-import plotpy
+import tomomt
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # ---------------------------------------------------------------------
 # Colormap import helper (matplotlib name / GMT .cpt file / plain RGB(A)
-# file) — see plotpy.load_colormap for the full docstring.
+# file) — see tomomt.load_colormap for the full docstring.
 # ---------------------------------------------------------------------
-load_colormap = plotpy.load_colormap
+load_colormap = tomomt.load_colormap
 
 
 # =====================================================================
@@ -184,30 +184,10 @@ INTERP_FILE = f"{SITE_PREFIX}_interp_kriging.nc"
 # with both the area (SITE_PREFIX) and the interpolation method that
 # produced INTERP_FILE, matching cluster.py's own filenames. An
 # unrecognised method string is flagged (printed warning) and passed
-# through unchanged rather than guessed at.
-_INTERP_METHOD_TAG_MAP = {
-    "kriging": "krig", "krige": "krig", "krig": "krig",
-    "rbf": "rbf",
-    "idw": "idw",
-    "nearest_neighbour": "nn", "nearest_neighbor": "nn",
-    "nearest": "nn", "nn": "nn",
-}
-
-
-def _derive_interp_tag(filename):
-    stem_name = os.path.splitext(os.path.basename(filename))[0]
-    marker = "_interp_"
-    method_str = stem_name.split(marker, 1)[1] if marker in stem_name else stem_name
-    method_str = method_str.lower()
-    for key, tag in _INTERP_METHOD_TAG_MAP.items():
-        if key in method_str:
-            return tag
-    print(f"  WARNING: could not recognise interpolation method from "
-          f"INTERP_FILE={filename!r} (looked for one of "
-          f"{sorted(set(_INTERP_METHOD_TAG_MAP.values()))}) — using raw "
-          f"string {method_str!r} in output filenames instead.")
-    return method_str
-
+# through unchanged rather than guessed at. tomomt.derive_interp_tag()
+# (tomomt.INTERP_METHOD_TAG_MAP) is this same mapping/logic, now shared
+# with structure.py/crossplots.py -- see tomomt.py's module docstring.
+_derive_interp_tag = tomomt.derive_interp_tag
 
 INTERP_TAG = _derive_interp_tag(INTERP_FILE)
 
@@ -280,7 +260,7 @@ if not (len(ZMIN_SEISM) == len(ZMAX_SEISM) == len(PLOT_DEPTHS_KM)):
 # Keyed by the field name as it appears in INTERP_FILE (e.g. "rho",
 # "cond", "sens", "vp", "vs", "vps", "dens"). cmin/cmax = None -> that
 # particular panel auto-scales to its own finite data range (computed
-# fresh per depth slice/section). cmap accepts anything plotpy.load_colormap
+# fresh per depth slice/section). cmap accepts anything tomomt.load_colormap
 # does (matplotlib name, .cpt file, plain RGB(A) file). A field not
 # listed here falls back to DEFAULT_CMAP and full auto-scaling.
 #
@@ -424,7 +404,7 @@ CSV_SEISMIC_SITES = "../features/seismic_sites.csv"  # no header row; columns
 VOLC_LABEL_IDX = [5, 12, 13]
 # VOLC_NAME_COL : volcano name column (volcanes.csv). Labels are
 # truncated to their first VOLC_LABEL_CHARS characters via
-# VOLC_LABEL_STYLE's mode="firstN" (see plotpy.apply_label_mode) rather
+# VOLC_LABEL_STYLE's mode="firstN" (see tomomt.apply_label_mode) rather
 # than reading a separate already-abbreviated column (e.g. "VOLCAN2").
 VOLC_NAME_COL = "NAME"
 
@@ -543,7 +523,7 @@ os.makedirs(PLOT_DIR, exist_ok=True)
 
 def ncpath(name):
     """Join a bare precomputed-NetCDF filename onto NC_DIR."""
-    return os.path.join(NC_DIR, name)
+    return tomomt.resolve_path(NC_DIR, name)
 
 
 # ------------------------------------------------------------------
@@ -594,76 +574,38 @@ def _slice_range(data2d, cmin, cmax):
             cmax if cmax is not None else auto_max)
 
 
-def _resolve_iso_spec(spec, key):
-    """ISO_LEVELS_MAP/ISO_LEVELS_VSLICE may be a single "auto"/list
-    (applied to every field) or a dict keyed by field name for per-field
-    control. Fields absent from the dict default to "auto"."""
-    if isinstance(spec, dict):
-        return spec.get(key, "auto")
-    return spec
-
-
-def resolve_iso_levels(data2d, levels_spec, n_auto=ISO_AUTO_N):
-    """Resolve an (already per-field-resolved) ISO_LEVELS_* setting into
-    an explicit list of contour levels for one panel. "auto"/None picks
-    n_auto evenly spaced levels spanning the finite data range of this
-    particular panel. Returns [] if there's no usable finite data."""
-    if levels_spec is None or (isinstance(levels_spec, str) and levels_spec.lower() == "auto"):
-        finite = data2d[np.isfinite(data2d)]
-        if finite.size == 0:
-            return []
-        vmin, vmax = float(finite.min()), float(finite.max())
-        if vmin == vmax:
-            return []
-        return list(np.linspace(vmin, vmax, n_auto + 2)[1:-1])
-    return list(levels_spec)
-
-
 def draw_iso_contours(ax, x, y, data2d, levels_spec, key, n_auto=ISO_AUTO_N):
     """Overlay isolines of data2d on ax, using ISO_STYLE/ISO_LABEL*. key
     is the field name, used to resolve a per-field entry if levels_spec
     is a dict. x/y may be 1-D (regular "joint" grid) or 2-D matching
     data2d's shape (curvilinear "seismic" grid's own utm_easting_km/
     utm_northing_km) — ax.contour() accepts either. No-op if there are
-    no usable levels."""
-    spec = _resolve_iso_spec(levels_spec, key)
-    levels = resolve_iso_levels(data2d, spec, n_auto)
-    if not levels:
-        return None
-    cs = ax.contour(x, y, data2d, levels=levels, **ISO_STYLE)
-    if ISO_LABEL:
-        ax.clabel(cs, fmt=ISO_LABEL_FMT, fontsize=ISO_LABEL_FONTSIZE, inline=True)
-    return cs
+    no usable levels. See tomomt.draw_iso_contours for the implementation."""
+    return tomomt.draw_iso_contours(ax, x, y, data2d, levels_spec, ISO_STYLE,
+                                     n_auto=n_auto, label=ISO_LABEL,
+                                     label_fmt=ISO_LABEL_FMT,
+                                     label_fontsize=ISO_LABEL_FONTSIZE, key=key)
 
 
 # ------------------------------------------------------------------
-# Coordinate helper / hillshade — see plotpy for implementation
+# Coordinate helper / hillshade — see tomomt for implementation
 # ------------------------------------------------------------------
-to_utm_km = plotpy.to_utm_km
-compute_hillshade = plotpy.compute_hillshade
+to_utm_km = tomomt.to_utm_km
+compute_hillshade = tomomt.compute_hillshade
 
 
 def save_fig(fig, stem):
-    for fmt in PLOT_FORMATS:
-        out = os.path.join(PLOT_DIR, stem + fmt)
-        fig.savefig(out, dpi=PLOT_DPI, bbox_inches="tight")
-        print(f"  Saved: {out}")
+    return tomomt.save_fig(fig, stem, PLOT_DIR, PLOT_FORMATS, PLOT_DPI)
 
 
 def _maybe_show():
     """Display the current figure only if SHOW_PLOTS=True *and* matplotlib
-    is actually running an interactive backend (mpl.is_interactive() --
-    true in Spyder's own console/Qt backend, false for the default
-    non-interactive "Agg" backend a plain terminal or batch job gets).
-    Saved output (save_fig, called just before this in every caller) is
-    unaffected either way -- this only controls the on-screen pop-up,
-    never whether files get written."""
-    if SHOW_PLOTS and mpl.is_interactive():
-        plt.show()
+    is actually running an interactive backend -- see tomomt.maybe_show()."""
+    tomomt.maybe_show(SHOW_PLOTS)
 
 
 def draw_annotation(ax):
-    plotpy.draw_annotation(ax, ANNOTATION_TEXT, ANNOTATION_POS, ANNOTATION_STYLE)
+    tomomt.draw_annotation(ax, ANNOTATION_TEXT, ANNOTATION_POS, ANNOTATION_STYLE)
 
 
 def _region():
@@ -677,41 +619,39 @@ def _colorbar_settings():
                 nticks=COLORBAR_NTICKS, title_size=AXIS_TITLE_SIZE)
 
 
-_resolve_ve_pos = plotpy.resolve_ve_pos
+_resolve_ve_pos = tomomt.resolve_ve_pos
 
 
 def _in_region(xe, yn):
-    return plotpy.in_region(xe, yn, _region())
+    return tomomt.in_region(xe, yn, _region())
 
 
 def clipped_markers(ax, xe, yn, **kwargs):
-    plotpy.clipped_markers(ax, xe, yn, _region(), **kwargs)
+    tomomt.clipped_markers(ax, xe, yn, _region(), **kwargs)
 
 
 def clipped_labels(ax, xe, yn, labels, style_dict):
-    plotpy.clipped_labels(ax, xe, yn, labels, style_dict, _region())
+    tomomt.clipped_labels(ax, xe, yn, labels, style_dict, _region())
 
 
 def draw_north_arrow(ax, x_km, y_km, length_km=4.0):
-    plotpy.draw_north_arrow(ax, x_km, y_km, _region(),
+    tomomt.draw_north_arrow(ax, x_km, y_km, _region(),
                              ARROW_STYLE, ARROW_LABEL_STYLE, length_km)
 
 
 def create_map_figure():
-    map_w_in = FIG_WIDTH / 2.54
-    map_h_in = map_w_in * (ymax - ymin) / (xmax - xmin)
-    return plotpy.build_panel_figure(map_w_in, map_h_in, _colorbar_settings(),
-                                      size_label="map")
+    return tomomt.build_map_figure(FIG_WIDTH, xmin, xmax, ymin, ymax,
+                                    _colorbar_settings(), size_label="map")
 
 
 def _build_dual_panel_figure(panel_w_in, panel_h_in, colorbar, gap_in=0.6,
                               size_label="panel"):
     """
-    Sibling of plotpy.build_panel_figure(): lays out TWO identically-sized
+    Sibling of tomomt.build_panel_figure(): lays out TWO identically-sized
     panels (each panel_w_in × panel_h_in), each with its own colorbar per
     `colorbar` settings, in one figure — used to put a field and its
     gradient magnitude next to each other (see PAIR_GRADIENT_WITH_FIELD
-    in the settings above). Not in plotpy.py itself since it's only
+    in the settings above). Not in tomomt.py itself since it's only
     needed here; mirrors build_panel_figure's inch-exact placement math,
     just duplicated per panel and offset by one panel-plus-colorbar
     "block" size plus gap_in.
@@ -729,7 +669,7 @@ def _build_dual_panel_figure(panel_w_in, panel_h_in, colorbar, gap_in=0.6,
     Returns (fig, ax_1, cax_1, ax_2, cax_2) — reading order is left-then-
     right for the side-by-side case, top-then-bottom for the stacked
     case. cax_* is None if colorbar["show"] is False, same convention as
-    plotpy.build_panel_figure.
+    tomomt.build_panel_figure.
     """
     show = colorbar["show"]
     pos = colorbar["position"].lower()
@@ -833,8 +773,7 @@ def _build_dual_panel_figure(panel_w_in, panel_h_in, colorbar, gap_in=0.6,
 
 
 def create_map_figure_pair():
-    map_w_in = FIG_WIDTH / 2.54
-    map_h_in = map_w_in * (ymax - ymin) / (xmax - xmin)
+    map_w_in, map_h_in = tomomt.map_panel_size_in(FIG_WIDTH, xmin, xmax, ymin, ymax)
     return _build_dual_panel_figure(map_w_in, map_h_in, _colorbar_settings(),
                                      gap_in=PAIR_GAP_CM / 2.54, size_label="map")
 
@@ -853,26 +792,26 @@ def _vslice_colorbar_settings():
 
 
 def create_section_figure(w_in, h_in):
-    return plotpy.build_panel_figure(w_in, h_in, _vslice_colorbar_settings(),
+    return tomomt.build_panel_figure(w_in, h_in, _vslice_colorbar_settings(),
                                       size_label="section")
 
 
 def finish_panel_colorbar(cax, mappable, label):
-    return plotpy.finish_panel_colorbar(cax, mappable, label, _colorbar_settings())
+    return tomomt.finish_panel_colorbar(cax, mappable, label, _colorbar_settings())
 
 
 def finish_section_colorbar(cax, mappable, label):
-    return plotpy.finish_panel_colorbar(cax, mappable, label, _vslice_colorbar_settings())
+    return tomomt.finish_panel_colorbar(cax, mappable, label, _vslice_colorbar_settings())
 
 
 def add_latlon_ticks(ax):
-    plotpy.add_latlon_ticks(ax, _region(), LATLON_NTICKS, LATLON_DECIMALS,
+    tomomt.add_latlon_ticks(ax, _region(), LATLON_NTICKS, LATLON_DECIMALS,
                              AXIS_LABEL_SIZE, AXIS_TICK_SIZE)
 
 
-_profile_utm_km = plotpy.profile_utm_km
-_profile_labels = plotpy.profile_labels
-_sample_profile_points = plotpy.sample_profile_points
+_profile_utm_km = tomomt.profile_utm_km
+_profile_labels = tomomt.profile_labels
+_sample_profile_points = tomomt.sample_profile_points
 
 
 # ==================================================================
@@ -1283,7 +1222,7 @@ def compute_vertical_slice_joint(vslice, field3d):
 
 
 def _project_seismicity_to_profile(e_ends, n_ends, swath_km, zmin_km, zmax_km):
-    return plotpy.project_points_to_profile(
+    return tomomt.project_points_to_profile(
         eq_e0, eq_n0, e_ends, n_ends, swath_km, z0=zeqs,
         zmin_km=zmin_km, zmax_km=zmax_km)
 
@@ -1334,7 +1273,7 @@ def _render_vertical_slice_panel(ax, cax, x_arr, x_label, depth_km, section,
         ax.plot(x_arr, surf_depth, **VSLICE_TOPO_STYLE)
 
     if SHOW_SEISMICITY and len(eq_x):
-        plotpy.markers(ax, eq_x, eq_dep, **VSLICE_EQ_STYLE)
+        tomomt.markers(ax, eq_x, eq_dep, **VSLICE_EQ_STYLE)
 
     x0, x1 = x_arr[0], x_arr[-1]
     xlim = vslice.get("xlim", None)

@@ -1,7 +1,7 @@
-# Tacna Seismic Tomography Pipeline
+# Seismic Tomography Pipeline
 
 GMT/PyGMT-free pipeline for plotting Vp, Vs, and Vp/Vs seismic tomography
-results for the Tacna region (southern Peru) on a UTM Zone 19S (EPSG:32719)
+results for the survey region on a UTM Zone 19S (EPSG:32719)
 grid, using only NumPy / Matplotlib / xarray / pandas / pyproj / scipy.
 
 Authors: Svetlana Byrdina (SMB) & Volker Rath (DIAS)
@@ -14,21 +14,21 @@ AI-generated code — review before use in production.
 ## Pipeline
 
 ```
-tacna_precompute.py (Part B)  →  UTM-km NetCDF files  →  tacna_plot_seis.py  →  figures
+{SITE_PREFIX}_precompute.py (Part B)  →  UTM-km NetCDF files  →  {SITE_PREFIX}_plot_seis.py  →  figures
 ```
 
-**`tacna_precompute_seis.py` and `tacna_precompute_modem.py` have been
-merged into a single `tacna_precompute.py`** — Part B (seismic tomography,
+**`{SITE_PREFIX}_precompute_seis.py` and `{SITE_PREFIX}_precompute_modem.py` have been
+merged into a single `{SITE_PREFIX}_precompute.py`** — Part B (seismic tomography,
 this README) and Part A (ModEM/MT, `README_mt.md`) now live in one script,
 one run, because they share region-of-interest settings
 (`OUTPUT_DIR`/`CROP_TO_REGION`/`TAR_LON`/`TAR_LAT` — see SHARED SETTINGS in
 the script) and because Part B now also carries a density model
-(`FNAME_DENS`, exported as `tacna_dens*.nc`), processed identically to
+(`FNAME_DENS`, exported as `{SITE_PREFIX}_dens*.nc`), processed identically to
 Vp/Vs. All of Part B's own outputs below are unchanged from the original
-`tacna_precompute_seis.py`, apart from the density addition.
+`{SITE_PREFIX}_precompute_seis.py`, apart from the density addition.
 
-**`plotpy.py`** must sit alongside the scripts — it's a small shared module
-of plotting helpers (`import plotpy`) used by all three plot scripts:
+**`tomomt.py`** must sit alongside the scripts — it's a small shared module
+of plotting helpers (`import tomomt`) used by all three plot scripts:
 colormap loading (matplotlib name / GMT `.cpt` file / plain RGB(A) file),
 UTM↔lon/lat conversion, hillshading, region-clipped scatter/label helpers,
 the north arrow, the deterministic (equal-scale-by-construction) map/
@@ -36,27 +36,27 @@ section figure layout, the lon/lat tick overlay, the free-text annotation,
 VE-label positioning, and generic profile-point sampling/projection
 (shared by seismicity and, in the ModEM scripts, MT sites). Each plot
 script owns its own settings and passes them in as arguments; nothing in
-`plotpy.py` reads a calling script's globals directly.
+`tomomt.py` reads a calling script's globals directly.
 
 Precompute and plot are deliberately separate: precompute does the slow
 work once (reprojection, topo fetch, depth-slice extraction); plot only
 reads the results and draws, so figure iteration (colours, styling, crop
 boxes, profiles) is fast and doesn't re-touch the source data.
 
-### 1. `tacna_precompute.py` — Part B (seismic tomography + density)
+### 1. `{SITE_PREFIX}_precompute.py` — Part B (seismic tomography + density)
 
 Reads the raw Vp/Vs/density finite-difference tomography models and produces:
 
 | Output file                     | Contents                                   |
 |----------------------------------|---------------------------------------------|
-| `tacna_vp.nc`, `tacna_vs.nc`, `tacna_vps.nc`, `tacna_dens.nc` | Full geographic (lat/lon) subsets, with UTM easting/northing as auxiliary coords |
-| `tacna_topo_utm.nc`              | Topography on a UTM-km grid                |
-| `tacna_bath_utm.nc`              | Bathymetry mask (elevation ≤ 0) on the same grid |
-| `tacna_vp_utm_{depth}km.nc`, `tacna_vs_utm_{depth}km.nc`, `tacna_vps_utm_{depth}km.nc`, `tacna_dens_utm_{depth}km.nc` | Per-depth UTM-km slices, one set per entry in `DEPTH_INDEX` |
+| `{SITE_PREFIX}_vp.nc`, `{SITE_PREFIX}_vs.nc`, `{SITE_PREFIX}_vps.nc`, `{SITE_PREFIX}_dens.nc` | Full geographic (lat/lon) subsets, with UTM easting/northing as auxiliary coords |
+| `{SITE_PREFIX}_topo_utm.nc`              | Topography on a UTM-km grid                |
+| `{SITE_PREFIX}_bath_utm.nc`              | Bathymetry mask (elevation ≤ 0) on the same grid |
+| `{SITE_PREFIX}_vp_utm_{depth}km.nc`, `{SITE_PREFIX}_vs_utm_{depth}km.nc`, `{SITE_PREFIX}_vps_utm_{depth}km.nc`, `{SITE_PREFIX}_dens_utm_{depth}km.nc` | Per-depth UTM-km slices, one set per entry in `DEPTH_INDEX` |
 
 **No more MT resistivity resampling here.** Earlier versions of this
 script also resampled Part A's resistivity onto this grid directly
-(`modem_rho_on_seisgrid*.nc`). That step has moved to `tacna_cluster.py`,
+(`modem_rho_on_seisgrid*.nc`). That step has moved to `{SITE_PREFIX}_cluster.py`,
 which RBF-interpolates resistivity (from `modem_submesh_points.nc`, Part
 A) together with Vp/Vs/density onto its own jointly-defined regular grid
 instead — see `README_cluster.md`.
@@ -75,7 +75,7 @@ quantities on two different grids was a bug waiting to happen.
 
 Topography comes from the `elevation` package (SRTM/ETOPO, via the `eio`
 CLI), a local ETOPO NetCDF, or a local GeoTIFF — selected with
-`TOPO_SOURCE`. Hillshade is **not** precomputed here; `tacna_plot_seis.py`
+`TOPO_SOURCE`. Hillshade is **not** precomputed here; `{SITE_PREFIX}_plot_seis.py`
 computes it on the fly with `matplotlib.colors.LightSource`.
 
 **Key settings:**
@@ -83,7 +83,7 @@ computes it on the fly with `matplotlib.colors.LightSource`.
 - `OUTPUT_DIR` (default `"."`, **shared** with Part A now that precompute
   is a single script) — directory all `.nc` outputs above are
   written to (created automatically if it doesn't exist). Keep this in
-  sync with `NC_DIR` in `tacna_plot_seis.py` so the plot script reads
+  sync with `NC_DIR` in `{SITE_PREFIX}_plot_seis.py` so the plot script reads
   from wherever precompute actually wrote to.
 - `FNAME_VP` / `FNAME_VS` / `FNAME_DENS` — input tomography NetCDF files.
 - `CROP_TO_REGION` (default `True`, **shared** with Part A — one setting
@@ -94,20 +94,20 @@ computes it on the fly with `matplotlib.colors.LightSource`.
 - `TAR_LON` / `TAR_LAT` (**shared** with Part A) — geographic crop box for
   the velocity/density subset, currently the union of the two pipelines'
   original boxes, padded by ~0.05°. Must fully contain every `VSLICES`
-  profile endpoint defined in `tacna_plot_seis.py`, or you'll get
+  profile endpoint defined in `{SITE_PREFIX}_plot_seis.py`, or you'll get
   a silent no-data gap at the edge of a cross-section.
 - `DEPTH_RANGE` — depth window (km) kept from the source model; the lower
   bound is intentionally negative (e.g. `-8`) so above-sea-level model
   coverage (e.g. under a volcanic edifice) isn't discarded.
 - `DEPTH_INDEX` — which depth levels to export as UTM-km slices (must be
-  kept in sync with `DEPTH_INDEX` in `tacna_plot_seis.py`).
+  kept in sync with `DEPTH_INDEX` in `{SITE_PREFIX}_plot_seis.py`).
 - `MAP_LON` / `MAP_LAT` — topo/bathymetry fetch bounds; kept slightly
   wider than `TAR_LON`/`TAR_LAT` so the basemap isn't clipped tighter than
   the data.
 - `TOPO_SOURCE` (`"elevation"` / `"etopo"` / `"geotiff"`) — topography
   backend, with `ETOPO_PATH` / `GEOTIFF_PATH` for the local-file backends.
 
-### 2. `tacna_plot_seis.py`
+### 2. `{SITE_PREFIX}_plot_seis.py`
 
 Reads the files above and produces two kinds of figures:
 
@@ -122,8 +122,8 @@ Reads the files above and produces two kinds of figures:
 **Input/output directories:**
 
 - `NC_DIR` (default `"."`) — directory to read precomputed NetCDF files
-  from (`tacna_vp.nc`, `NC_TOPO`, per-depth slices, etc.). Must match
-  `OUTPUT_DIR` in `tacna_precompute.py`.
+  from (`{SITE_PREFIX}_vp.nc`, `NC_TOPO`, per-depth slices, etc.). Must match
+  `OUTPUT_DIR` in `{SITE_PREFIX}_precompute.py`.
 - `PLOT_DIR` (default `"."`) — directory saved figures are written to
   (created automatically if it doesn't exist).
 
@@ -144,9 +144,9 @@ Reads the files above and produces two kinds of figures:
   space-stealing (which can desync from the actual rendered box). See
   `FIG_WIDTH` and the colorbar settings below.
 - The actual UTM min/max used for a given run are only known once
-  precompute has produced `tacna_vp.nc` — `tacna_plot_seis.py` prints
+  precompute has produced `{SITE_PREFIX}_vp.nc` — `{SITE_PREFIX}_plot_seis.py` prints
   `UTM region (km): [xmin, xmax, ymin, ymax]` at runtime, or read them
-  directly: `xr.open_dataset("tacna_vp.nc")["utm_easting"/"utm_northing"]`.
+  directly: `xr.open_dataset("{SITE_PREFIX}_vp.nc")["utm_easting"/"utm_northing"]`.
 - `AXES_UNITS` (`"km"` default, or `"latlon"`) — selects what the map's
   bottom/left tick labels show: UTM easting/northing in km, or longitude/
   latitude in degrees. It's an in-place relabelling of the primary axes
@@ -206,8 +206,8 @@ flags, same behaviour, in all three plot scripts.
 
 **Marker sizing is linear (diameter), not area.** Every marker —
 seismicity, MT sites, seismic sites, volcanoes, cities, both on maps and
-on vertical sections — is drawn with `plotpy.clipped_markers`/
-`plotpy.markers` (`ax.plot()`-based). A style dict's `s=18` means an
+on vertical sections — is drawn with `tomomt.clipped_markers`/
+`tomomt.markers` (`ax.plot()`-based). A style dict's `s=18` means an
 18 pt marker, not `ax.scatter()`'s 18 pt² area (which works out to a
 much smaller ~4.8 pt diameter). There are no `ax.scatter()` calls
 anywhere in any of the three plot scripts.
@@ -224,7 +224,7 @@ text — the marker itself is unaffected either way:
 **MT site labels** (`MT_LABEL_STYLE`, new) — off (`mode="none"`) by
 default; switch to `"full"`/`"firstN"`/`"lastN"` to turn on. Defaults to
 small, vertical text (`fontsize=5, rotation=90`) so close-together
-station names don't overlap horizontally. In `tacna_plot_seis.py`, MT
+station names don't overlap horizontally. In `{SITE_PREFIX}_plot_seis.py`, MT
 site names are read from `CSV_MT_SITES` — the sitelist's own site-name
 column isn't standardised across exports, so the loader tries `Site`,
 `site`, `name`, `Name`, `station`, `Station` in turn and falls back to
@@ -244,9 +244,9 @@ Seismicity on maps can additionally be depth-filtered per slice via
 `DEPTH_INDEX` — `None` in either slot means unbounded, i.e. no filter on
 that side). All three lists must be the same length, or the script exits
 with an explanatory error rather than silently mis-indexing — this used
-to fail silently in `tacna_plot_modem_image.py` (stale, longer-than-needed
+to fail silently in `{SITE_PREFIX}_plot_modem_image.py` (stale, longer-than-needed
 lists left over from an earlier `DEPTH_SLICES_KM`), which was why its
-maps showed different seismicity than `tacna_plot_modem_mesh.py`'s despite
+maps showed different seismicity than `{SITE_PREFIX}_plot_modem_mesh.py`'s despite
 both reading the identical catalog; fixed and now guarded the same way in
 all three scripts.
 
@@ -334,7 +334,7 @@ model.
 numpy, matplotlib, xarray, pandas, pyproj, scipy, rioxarray, elevation (eio)
 ```
 (`rioxarray`/`elevation` only needed for `TOPO_SOURCE="elevation"` or
-`"geotiff"`.) `tacna_precompute.py` additionally needs the local `modem.py`
+`"geotiff"`.) `{SITE_PREFIX}_precompute.py` additionally needs the local `modem.py`
 helper library (`read_mod`, `read_data`, `cells3d`, `get_topo`) on the
 path — required for Part A even if you only care about Part B's
 Vp/Vs/density outputs, since precompute is now one script covering both.
@@ -342,16 +342,16 @@ Vp/Vs/density outputs, since precompute is now one script covering both.
 ## Typical run
 
 ```bash
-python3 tacna_precompute.py   # writes *.nc for BOTH Part A (MT) and
+python3 {SITE_PREFIX}_precompute.py   # writes *.nc for BOTH Part A (MT) and
                                # Part B (seismic) into OUTPUT_DIR
-python3 tacna_plot_seis.py    # reads Part B's files, writes figures (PLOT_FORMATS)
+python3 {SITE_PREFIX}_plot_seis.py    # reads Part B's files, writes figures (PLOT_FORMATS)
 ```
 
-`tacna_precompute.py` runs Part A and Part B in one pass — see
+`{SITE_PREFIX}_precompute.py` runs Part A and Part B in one pass — see
 `README_mt.md`'s "Typical run" for why they can't be split.
 
 Run precompute again whenever the source tomography/density models,
 `TAR_LON`/`TAR_LAT`, `DEPTH_RANGE`, or `DEPTH_INDEX` change (or anything in
 `README_mt.md`'s Part A settings, since a single run covers both).
 Everything else (colours, styling, crop views, profile definitions,
-annotations) only needs re-running `tacna_plot_seis.py`.
+annotations) only needs re-running `{SITE_PREFIX}_plot_seis.py`.

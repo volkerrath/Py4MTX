@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-tacna_plot_modem_mesh.py
+plot_modem_mesh.py
 ========================
-Companion plotting script for tacna_precompute_modem.py.
+Companion plotting script for precompute.py.
 
 Produces depth-slice maps and vertical cross-sections of log10(ρ) (or
-linear ρ) from a ModEM 3-D MT inversion result for the Tacna region. Reads
-the UTM-km NetCDF files produced by tacna_precompute_modem.py; no
+linear ρ) from a ModEM 3-D MT inversion result. Reads
+the UTM-km NetCDF files produced by precompute.py; no
 GMT/PyGMT required.
 
 Exact mesh rendering
@@ -17,7 +17,7 @@ cells outside the fine core region), so this script never resamples the
 model onto a uniform pixel grid or interpolates/blends values across cell
 boundaries. Every figure is a true, unblended cut through the mesh's own
 cells, using the exact cell-edge geometry from modem_grid_edges_utm.nc
-(written by tacna_precompute_modem.py):
+(written by precompute.py):
 * Depth slices: pcolormesh(easting_edges, northing_edges, field,
   shading="flat") — each rendered patch is exactly one real mesh cell, at
   its true position and true size.
@@ -28,12 +28,12 @@ cells, using the exact cell-edge geometry from modem_grid_edges_utm.nc
   RegularGridInterpolator, no resampling.
 
 Shares the same basemap engine (topo hillshade, ocean fill, feature overlays,
-colourbar placement, clipping) as tacna_plot_seis.py.  The main differences
+colourbar placement, clipping) as plot_seis.py.  The main differences
 are:
 
 * Data overlay: log10(ρ) depth slices from modem_rho_utm_{D}km.nc
   instead of seismic-velocity grids.
-* Sensitivity-based shading/blanking: if tacna_precompute_modem.py found a
+* Sensitivity-based shading/blanking: if precompute.py found a
   .sns sensitivity/resolution file, modem_sens_utm.nc /
   modem_sens_utm_{D}km.nc are used to blank (NaN) and/or shade
   poorly-resolved cells on both the horizontal slices and the vertical
@@ -45,7 +45,7 @@ are:
 * Topo NetCDF: modem_topo_utm.nc (elevation in metres, positive up,
   dims northing/easting) produced by the ModEM precompute script.
 * No bathymetry file is required from the precompute script; the seis-pipeline
-  bath grid (tacna_bath_utm.nc) can be reused if available, otherwise the
+  bath grid ({SITE_PREFIX}_bath_utm.nc) can be reused if available, otherwise the
   ocean fill is skipped gracefully.
 
 Dependencies
@@ -72,25 +72,40 @@ import matplotlib.ticker
 from matplotlib.path import Path as MplPath
 from scipy.interpolate import RegularGridInterpolator
 
-import plotpy
+import tomomt
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 
 # ---------------------------------------------------------------------
 # Colormap import helper (matplotlib name / GMT .cpt file / plain RGB(A)
-# file) — see plotpy.load_colormap for the full docstring.
+# file) — see tomomt.load_colormap for the full docstring.
 # ---------------------------------------------------------------------
-load_colormap = plotpy.load_colormap
-export_colormap_to_cpt = plotpy.export_colormap_to_cpt
+load_colormap = tomomt.load_colormap
+export_colormap_to_cpt = tomomt.export_colormap_to_cpt
 
 
 # =====================================================================
 # USER SETTINGS
 # =====================================================================
 
+# --- Site selector ---
+# Must match SITE_PREFIX in precompute.py / interpolate.py. Note: unlike
+# the seismic-tomography outputs, precompute.py's ModEM (Part A) outputs
+# (modem_*.nc) are NOT site-prefixed — only one site's ModEM mesh can
+# live in NC_DIR at a time (selected via precompute.py's own MODEL_FILE/
+# DATA_FILE, not by this setting). SITE_PREFIX here only affects the
+# seismic-pipeline bath/topo grid reused for the ocean fill (NC_BATH/
+# NC_TOPO_SEIS below) and this script's own output filenames — it does
+# NOT need to match whichever site precompute.py's ModEM part was run
+# for, though normally it should.
+SITE_PREFIX = "tacna"
+# SITE_PREFIX = "saba"  # SABA — see the note above MAP_XLIM/MAP_YLIM
+# further down: this script's region/profile/arrow settings have not
+# been re-verified for Sabancaya.
+
 # Directory to read precomputed NetCDF files from (must match OUTPUT_DIR
-# in tacna_precompute_modem.py). Default "." reads from the current
+# in precompute.py). Default "." reads from the current
 # directory, matching the previous (fixed) behaviour.
 NC_DIR = "../precompute/"
 
@@ -100,12 +115,27 @@ PLOT_DIR = "../plots_mt/"
 
 # Appended to every saved figure's filename (before the extension) — lets
 # output from this script (exact-mesh rendering) be told apart at a
-# glance from tacna_plot_modem_image.py's resampled output, e.g.
-# "modem_rho_1km_tacna_msh.pdf" vs "..._img.pdf". Set to "" to disable.
+# glance from plot_modem_image.py's resampled output, e.g.
+# "modem_rho_1km_saba_msh.pdf" vs "..._img.pdf". Set to "" to disable.
 PLOT_FILENAME_SUFFIX = "_msh"
 
 PLOT_FORMATS = [".pdf", ".jpg"]
 PLOT_DPI = 600
+
+# Whether to also display each figure on screen after saving it (in
+# addition to always writing PLOT_FORMATS to disk). Previously this
+# script called plt.show() unconditionally, which is only harmless in an
+# environment that keeps a live GUI event loop open between calls (e.g.
+# Spyder's own console). Run the same script from a plain terminal, a
+# batch job, or the DIAS cluster and plt.show() either blocks waiting on
+# a display that will never advance, or errors outright on a machine
+# with no display at all -- neither of which has anything to do with
+# whether the figures themselves were produced correctly. SHOW_PLOTS
+# defaults to False so headless/batch runs "just work"; _maybe_show()
+# below additionally only calls plt.show() when matplotlib is actually
+# running an interactive backend, so turning this on is still safe if
+# the script happens to run somewhere headless.
+SHOW_PLOTS = False
 
 # Figure sizes (cm).
 # Horizontal maps: FIG_WIDTH controls the *map panel's* width only.
@@ -122,7 +152,7 @@ FIG_WIDTH = 10.0  # cm — map panel width; a colorbar (if shown) adds its
 VSLICE_WIDTH_CM  = None
 VSLICE_HEIGHT_CM =10.  # N
 
-# Depth slices to plot — must match values used in tacna_precompute_modem.py.
+# Depth slices to plot — must match values used in precompute.py.
 # Each entry corresponds to one DEPTH_SLICES_KM value; tag strings are
 # constructed the same way as in the precompute script.
 DEPTH_SLICES_KM = [1.0, 5.0, 9.0]
@@ -135,7 +165,7 @@ DEPTH_SLICES_KM = [1.0, 5.0, 9.0]
 # rather than showing everything on every map or leaving gaps. The
 # outermost bins are left open (None) so no shallow/deep event is
 # arbitrarily excluded. Same scheme as ZMIN_SEISM/ZMAX_SEISM in
-# tacna_plot_seis.py and tacna_plot_modem_image.py.
+# plot_seis.py and plot_modem_image.py.
 ZMIN_SEISM = [None, 3.0, 7.0]
 ZMAX_SEISM = [3.0, 7.0, None]
 
@@ -153,7 +183,7 @@ CMIN_RHO = 0.0  # log10(Ω·m) — ~3 Ω·m
 CMAX_RHO = 3.0  # log10(Ω·m) — ~10,000 Ω·m
 
 # Air cells above the model surface are stored with RHO_AIR (~1e17 Ω·m,
-# i.e. log10(ρ) ≈ 17) in tacna_precompute_modem.py. Any cell at or above this
+# i.e. log10(ρ) ≈ 17) in precompute.py. Any cell at or above this
 # threshold is treated as air/no-data and masked to NaN — independent of
 # CMIN_RHO/CMAX_RHO, so changing the display colour range never re-exposes
 # the air layer. Used for both the horizontal depth slices and the vertical
@@ -162,7 +192,7 @@ AIR_LOG10_RHO_THRESHOLD = 10.0
 
 # --- Sensitivity-based shading/blanking (optional) ---
 # Reads modem_sens_utm.nc / modem_sens_utm_{D}km.nc from
-# tacna_precompute_modem.py (only produced if USE_SENSITIVITY was True
+# precompute.py (only produced if USE_SENSITIVITY was True
 # there, and a .sns file was found). Units match SENS_TRANSFORM chosen in
 # that script (default log10(sensitivity)). Applies to both the horizontal
 # depth slices and the vertical sections.
@@ -255,7 +285,7 @@ SENS_CBAR_LABEL = "log$_{10}$(sensitivity)"
 # Colourmap: matplotlib built-in name ("jet_r", "RdBu", "turbo_r", "bwr_r",
 # etc.), OR a path to a colourmap file to import (.cpt = GMT colour palette
 # table, .txt/.csv = plain RGB(A) list) — useful to match a specific
-# published palette, or the same palette used in tacna_plot_seis.py, for
+# published palette, or the same palette used in plot_seis.py, for
 # direct visual comparison, e.g.:
 #   CMAP_RHO = "../cpt/rho_gmt.cpt"
 CMAP_RHO = "jet_r"
@@ -305,18 +335,18 @@ ISO_LABEL          = True
 ISO_LABEL_FMT      = "%.1f"
 ISO_LABEL_FONTSIZE = 6
 
-# Pre-computed UTM-km NetCDF files from tacna_precompute_modem.py
+# Pre-computed UTM-km NetCDF files from precompute.py
 NC_TOPO_MODEM = "modem_topo_utm.nc"  # 2-D elevation, dims (northing, easting)
 NC_SITES = "modem_sites_utm.nc"  # MT site positions
 
 # Optional: reuse bathymetry from the seis pipeline if available
-NC_BATH = "tacna_bath_utm.nc"  # set to "" to skip ocean fill
+NC_BATH = f"{SITE_PREFIX}_bath_utm.nc"  # set to "" to skip ocean fill
 
 # Optional: reuse external topo/hillshade from seis pipeline if available.
 # If set, overrides NC_TOPO_MODEM for the greyscale basemap (the ModEM topo
 # is coarser and may show mesh artefacts).
 # Set to "" to use the ModEM topography extracted from the model.
-NC_TOPO_SEIS = "tacna_topo_utm.nc"  # set to "" to use NC_TOPO_MODEM
+NC_TOPO_SEIS = f"{SITE_PREFIX}_topo_utm.nc"  # set to "" to use NC_TOPO_MODEM
 
 # Region source:
 #   "model"  — use the extent of the resistivity grid (recommended)
@@ -331,6 +361,18 @@ REGION_MARGIN_KM = 0.0
 # aspect ratio, and the lon/lat tick overlay, so all stay consistent with
 # what's actually drawn. Set to None (default) to use the REGION_SOURCE
 # extent unchanged. Analogous to the per-slice "xlim" in VSLICES below.
+#
+# NOT re-verified for Sabancaya: these bounds (and PROFILE_1_LON/LAT,
+# PROFILE_2_LON/LAT, ARROW_LON/LAT, VOLC_LABEL_IDX further below) are
+# carried over unchanged from the original Tacna-only version of this
+# script — same stale-reference gap as plot_seis.py/plot_dens.py.
+# ModEM's own MODEL_FILE/DATA_FILE (set in precompute.py) already select
+# the right site's inversion result regardless, so this only affects the
+# map's displayed crop/profile lines/arrow position, not which data is
+# plotted — but it means a saba run will currently show Tacna's window
+# unless you override these explicitly. Left as the Tacna values (rather
+# than None/auto) since that's the only verified crop known to work; set
+# your own once a Sabancaya framing has been chosen.
 MAP_XLIM = [310.0, 455.0]  # e.g. [300.0, 420.0]  (easting,  km)
 MAP_YLIM = [7971.6, 8125]  # e.g. [7960.0, 8080.0] (northing, km)
 
@@ -417,8 +459,8 @@ AXES_KM_COMMA = True
 # PROFILE_2_LON  = [-69.670, -70.034]
 # PROFILE_2_LAT  = [-17.695, -17.267]
 
-PROFILE_CD_LON = [-70.034, -69.670]
-PROFILE_CD_LAT = [-17.267, -17.695]
+PROFILE_1_LON = [-70.034, -69.670]
+PROFILE_1_LAT = [-17.267, -17.695]
 PROFILE_2_LON = [-69.580, -70.48]
 PROFILE_2_LAT = [-17.135, -18.245]
 
@@ -435,11 +477,11 @@ CSV_VOLCANES = "../features/volcanes.csv"
 VOLC_LABEL_IDX = [5, 12, 13]  # row indices to label
 
 # Volcano label text: full name vs. short/abbreviated name.
-# VOLC_LABEL_FULL_NAME : True  -> use VOLC_NAME_COL_FULL
-#                        False -> use VOLC_NAME_COL_SHORT (default)
-VOLC_LABEL_FULL_NAME = False
-VOLC_NAME_COL_FULL = "NAME"  # column used when VOLC_LABEL_FULL_NAME=True
-VOLC_NAME_COL_SHORT = "VOLCAN2"  # column used when VOLC_LABEL_FULL_NAME=False
+# VOLC_NAME_COL : volcano name column (volcanes.csv). Labels are
+# truncated to their first VOLC_LABEL_CHARS characters via
+# VOLC_LABEL_STYLE's mode="firstN" (see tomomt.apply_label_mode) rather
+# than reading a separate already-abbreviated column (e.g. "VOLCAN2").
+VOLC_NAME_COL = "NAME"
 
 # --- Cities CSV (columns x=lon, y=lat, Name) ---
 CSV_CITIES = "../features/cities.csv"
@@ -469,7 +511,7 @@ SHOW_NORTH_ARROW = True
 # MARKER & LABEL STYLE SETTINGS
 # =====================================================================
 
-PROFILE_CD_STYLE = dict(color="black", lw=0.4, zorder=10)
+PROFILE_1_STYLE = dict(color="black", lw=0.4, zorder=10)
 PROFILE_2_STYLE = dict(color="gray", lw=0.4, zorder=10)
 
 EQ_MARKER_STYLE = dict(
@@ -548,6 +590,9 @@ VOLC_INACT_MARKER_STYLE = dict(
 #   "none"   - no text at all, marker only (default for MT sites)
 #   "firstN" - first N characters, e.g. "first3"
 #   "lastN"  - last N characters, e.g. "last3"
+VOLC_LABEL_CHARS = 4   # number of leading characters shown (mode="firstN"
+                        # below) — was previously a separate "VOLCAN2"
+                        # abbreviated-code column; adjust to taste.
 VOLC_LABEL_STYLE = dict(
     fontsize=6,
     fontweight="bold",
@@ -555,7 +600,7 @@ VOLC_LABEL_STYLE = dict(
     zorder=14,
     offset_x=0.3,
     offset_y=0.3,
-    mode="full",
+    mode=f"first{VOLC_LABEL_CHARS}",
 )
 
 VOLC_ACT_MARKER_STYLE = dict(
@@ -761,7 +806,7 @@ os.makedirs(PLOT_DIR, exist_ok=True)
 
 def ncpath(name):
     """Join a bare precomputed-NetCDF filename onto NC_DIR."""
-    return os.path.join(NC_DIR, name)
+    return tomomt.resolve_path(NC_DIR, name)
 
 
 def _edges_to_centers(edges):
@@ -774,52 +819,28 @@ def _edges_to_centers(edges):
     return 0.5 * (edges[:-1] + edges[1:])
 
 
-def resolve_iso_levels(data2d, levels_spec, n_auto=ISO_AUTO_N):
-    """Resolve an ISO_LEVELS_* setting into an explicit list of contour
-    levels for one panel.
-
-    "auto" (or None) picks n_auto evenly spaced levels spanning the finite
-    (non-NaN) data range of this particular panel — panels differ, so this
-    is computed fresh each time rather than once globally. An explicit
-    list/tuple is used verbatim, unchanged, so every panel shares the same
-    levels. Returns [] if there's no usable finite data (e.g. an
-    all-air/all-NaN panel) or an explicit level list was empty.
-    """
-    if levels_spec is None or (isinstance(levels_spec, str) and levels_spec.lower() == "auto"):
-        finite = data2d[np.isfinite(data2d)]
-        if finite.size == 0:
-            return []
-        vmin, vmax = float(finite.min()), float(finite.max())
-        if vmin == vmax:
-            return []
-        return list(np.linspace(vmin, vmax, n_auto + 2)[1:-1])
-    return list(levels_spec)
-
-
 def draw_iso_contours(ax, x, y, data2d, levels_spec, n_auto=ISO_AUTO_N):
     """Overlay isolines (contours) of data2d on ax, using ISO_STYLE/
     ISO_LABEL/ISO_LABEL_FMT/ISO_LABEL_FONTSIZE. x, y must be 1-D
     cell-centre coordinates matching data2d's shape (use
     _edges_to_centers() first if only cell edges are available). No-op if
-    there are no usable levels (see resolve_iso_levels).
+    there are no usable levels. See tomomt.draw_iso_contours for the
+    implementation.
     """
-    levels = resolve_iso_levels(data2d, levels_spec, n_auto)
-    if not levels:
-        return None
-    cs = ax.contour(x, y, data2d, levels=levels, **ISO_STYLE)
-    if ISO_LABEL:
-        ax.clabel(cs, fmt=ISO_LABEL_FMT, fontsize=ISO_LABEL_FONTSIZE, inline=True)
-    return cs
+    return tomomt.draw_iso_contours(ax, x, y, data2d, levels_spec, ISO_STYLE,
+                                     n_auto=n_auto, label=ISO_LABEL,
+                                     label_fmt=ISO_LABEL_FMT,
+                                     label_fontsize=ISO_LABEL_FONTSIZE)
 
 
 # ------------------------------------------------------------------
 # Coordinate helper / hillshade / sensitivity-alpha helpers — see
-# plotpy for implementation
+# tomomt.py for implementation
 # ------------------------------------------------------------------
-to_utm_km = plotpy.to_utm_km
-compute_hillshade = plotpy.compute_hillshade
-sens_shade_alpha = plotpy.sens_shade_alpha
-sens_data_alpha = plotpy.sens_data_alpha
+to_utm_km = tomomt.to_utm_km
+compute_hillshade = tomomt.compute_hillshade
+sens_shade_alpha = tomomt.sens_shade_alpha
+sens_data_alpha = tomomt.sens_data_alpha
 
 
 def draw_sens_shade_overlay(ax, e_edges, n_edges, alpha_2d, zorder):
@@ -847,57 +868,30 @@ def load_sens_depth_slice(tag, ref_shape, ref_northing, ref_easting):
     Load modem_sens_utm_{tag}.nc for the horizontal-slice loop, re-oriented
     to match the resistivity slice's own (northing, easting) orientation.
     Returns None if sensitivity is disabled or the file doesn't exist.
+    See tomomt.load_sens_depth_slice for the implementation.
     """
-    if not USE_SENSITIVITY:
-        return None
     path = ncpath(f"modem_sens_utm_{tag}.nc")
-    if not os.path.exists(path):
-        print(
-            f"  WARNING: {path} not found — sensitivity masking/shading "
-            f"is disabled for this depth slice. Check that "
-            f"tacna_precompute_modem.py found the .sns file (look for its "
-            f"own WARNING) and that OUTPUT_DIR there matches NC_DIR here."
-        )
-        return None
-    _da = xr.open_dataarray(path)
-    sy = _da["northing"].values
-    sx = _da["easting"].values
-    sv = _da.values.copy().astype(float)
-    _da.close()
-
-    if sv.shape[0] != len(sy):
-        sv = sv.T
-    if sy[0] > sy[-1]:
-        sy = sy[::-1]
-        sv = sv[::-1, :]
-    if sx[0] > sx[-1]:
-        sx = sx[::-1]
-        sv = sv[:, ::-1]
-
-    if sv.shape != ref_shape or not (
-        np.allclose(sy, ref_northing) and np.allclose(sx, ref_easting)
-    ):
-        print(
-            f"  WARNING: {path} grid doesn't match the resistivity slice "
-            f"— skipping shading/blanking for this depth."
-        )
-        return None
-    return sv
+    return tomomt.load_sens_depth_slice(path, USE_SENSITIVITY, ref_shape,
+                                         ref_northing, ref_easting)
 
 
 # ------------------------------------------------------------------
 # Save helper
 # ------------------------------------------------------------------
 def save_fig(fig, stem):
-    for fmt in PLOT_FORMATS:
-        out = os.path.join(PLOT_DIR, stem + PLOT_FILENAME_SUFFIX + fmt)
-        fig.savefig(out, dpi=PLOT_DPI, bbox_inches="tight")
-        print(f"  Saved: {out}")
+    return tomomt.save_fig(fig, stem + PLOT_FILENAME_SUFFIX, PLOT_DIR,
+                            PLOT_FORMATS, PLOT_DPI)
+
+
+def _maybe_show():
+    """Display the current figure only if SHOW_PLOTS=True *and* matplotlib
+    is actually running an interactive backend -- see tomomt.maybe_show()."""
+    tomomt.maybe_show(SHOW_PLOTS)
 
 
 def draw_annotation(ax):
     """Draw the optional free-text annotation (ANNOTATION_TEXT), if set."""
-    plotpy.draw_annotation(
+    tomomt.draw_annotation(
         ax, ANNOTATION_TEXT, ANNOTATION_POS, ANNOTATION_STYLE
     )
 
@@ -920,19 +914,19 @@ def _colorbar_settings():
     )
 
 
-_resolve_ve_pos = plotpy.resolve_ve_pos
+_resolve_ve_pos = tomomt.resolve_ve_pos
 
 
 def _in_region(xe, yn):
     """Boolean mask: True where (xe, yn) fall inside the map region."""
-    return plotpy.in_region(xe, yn, _region())
+    return tomomt.in_region(xe, yn, _region())
 
 
 def clipped_markers(ax, xe, yn, **kwargs):
     """plot()-marker restricted to points inside the map region — true
     linear markersize (points), not scatter's area-based s. See
-    plotpy.clipped_markers for the full docstring."""
-    plotpy.clipped_markers(ax, xe, yn, _region(), **kwargs)
+    tomomt.clipped_markers for the full docstring."""
+    tomomt.clipped_markers(ax, xe, yn, _region(), **kwargs)
 
 
 # Backward-compatible alias for any old call sites still using the former
@@ -942,25 +936,25 @@ clipped_scatter = clipped_markers
 
 def clipped_labels(ax, xe, yn, labels, style_dict):
     """Draw text labels for points inside the map region — see
-    plotpy.clipped_labels for the full docstring."""
-    plotpy.clipped_labels(ax, xe, yn, labels, style_dict, _region())
+    tomomt.clipped_labels for the full docstring."""
+    tomomt.clipped_labels(ax, xe, yn, labels, style_dict, _region())
 
 
 def draw_north_arrow(ax, x_km, y_km, length_km=4.0):
     """Draw a north arrow at UTM position (x_km, y_km) if inside region."""
-    plotpy.draw_north_arrow(
+    tomomt.draw_north_arrow(
         ax, x_km, y_km, _region(), ARROW_STYLE, ARROW_LABEL_STYLE, length_km
     )
 
 
 # ------------------------------------------------------------------
 # Map/section figure creation — guarantees equal x/y (km) scale BY
-# CONSTRUCTION; see plotpy.build_panel_figure for the full docstring.
+# CONSTRUCTION; see tomomt.build_panel_figure for the full docstring.
 # ------------------------------------------------------------------
 def create_map_figure():
     map_w_in = FIG_WIDTH / 2.54
     map_h_in = map_w_in * (ymax - ymin) / (xmax - xmin)
-    return plotpy.build_panel_figure(
+    return tomomt.build_panel_figure(
         map_w_in, map_h_in, _colorbar_settings(), size_label="map"
     )
 
@@ -984,21 +978,21 @@ def _vslice_colorbar_settings():
 
 
 def create_section_figure(w_in, h_in):
-    return plotpy.build_panel_figure(
+    return tomomt.build_panel_figure(
         w_in, h_in, _vslice_colorbar_settings(), size_label="section"
     )
 
 
 def finish_panel_colorbar(cax, mappable, label):
     """Render the colorbar into the cax returned by create_map_figure()."""
-    return plotpy.finish_panel_colorbar(
+    return tomomt.finish_panel_colorbar(
         cax, mappable, label, _colorbar_settings()
     )
 
 
 def finish_section_colorbar(cax, mappable, label):
     """Render the colorbar into the cax returned by create_section_figure()."""
-    return plotpy.finish_panel_colorbar(
+    return tomomt.finish_panel_colorbar(
         cax, mappable, label, _vslice_colorbar_settings()
     )
 
@@ -1008,9 +1002,9 @@ def finish_section_colorbar(cax, mappable, label):
 # ------------------------------------------------------------------
 def add_latlon_ticks(ax):
     """Replace UTM-km tick labels with lon/lat values — see
-    plotpy.add_latlon_ticks for the full docstring. Controlled by
+    tomomt.add_latlon_ticks for the full docstring. Controlled by
     AXES_UNITS, LATLON_NTICKS, LATLON_DECIMALS."""
-    plotpy.add_latlon_ticks(
+    tomomt.add_latlon_ticks(
         ax,
         _region(),
         LATLON_NTICKS,
@@ -1024,8 +1018,8 @@ def add_latlon_ticks(ax):
 # Vertical slice engine
 # ==================================================================
 
-_profile_utm_km = plotpy.profile_utm_km
-_profile_labels = plotpy.profile_labels
+_profile_utm_km = tomomt.profile_utm_km
+_profile_labels = tomomt.profile_labels
 
 
 def _grid_line_crossings(p0, p1, edges):
@@ -1165,7 +1159,7 @@ def compute_vertical_slice_modem(vslice):
             f"modem_grid_edges_utm.nc doesn't match modem_model_utm.nc "
             f"(edges describe {len(d_edges)-1}×{len(n_edges)-1}×"
             f"{len(e_edges)-1} cells, model has {vals.shape}) — re-run "
-            f"tacna_precompute_modem.py."
+            f"precompute.py."
         )
 
     # Matching cell *counts* (checked above) isn't enough to guarantee
@@ -1198,7 +1192,7 @@ def compute_vertical_slice_modem(vslice):
             "exact-mesh lookup using them together will silently pick the "
             "wrong cell for some profile segments — the likely cause of "
             "isolated, flat-topped topography artifacts. Re-run "
-            "tacna_precompute_modem.py fully (in one pass, so both files "
+            "precompute.py fully (in one pass, so both files "
             "come from the same settings) before plotting."
         )
 
@@ -1207,9 +1201,9 @@ def compute_vertical_slice_modem(vslice):
     # the outermost edge of the two boundary cells to zmin_s/zmax_s
     # exactly — each boundary cell keeps its real value, just truncated
     # at the requested window (same "keep the value, clip the display"
-    # approach tacna_precompute_modem.py uses for CROP_TO_REGION). This
+    # approach precompute.py uses for CROP_TO_REGION). This
     # makes the section's depth range — and so its derived figure height
-    # — match tacna_plot_modem_image.py's uniformly-resampled axis
+    # — match plot_modem_image.py's uniformly-resampled axis
     # exactly, rather than differing by however much of the boundary
     # cells' real thickness would otherwise extend past what was asked
     # for.
@@ -1223,7 +1217,7 @@ def compute_vertical_slice_modem(vslice):
     # Only clamp a boundary edge to the requested window if the model's
     # real data actually extends past it — i.e. we're legitimately
     # truncating a real cell's displayed extent, the same "keep the
-    # value, clip the display" trick tacna_precompute_modem.py uses for
+    # value, clip the display" trick precompute.py uses for
     # CROP_TO_REGION. If the model's real edge is already within the
     # window (its own physical grid simply doesn't reach as far as
     # zmin_km/zmax_km — routine here, since the .rho file only extends
@@ -1275,12 +1269,12 @@ def compute_vertical_slice_modem(vslice):
     # artificial plateau, not the model's actual (if blocky) topography.
     # "Shallowest valid cell" itself is also required to start a run of
     # at least VSLICE_SURFACE_MIN_RUN consecutive valid cells (see
-    # plotpy.first_valid_run) — a single spurious valid cell (e.g. a
+    # tomomt.first_valid_run) — a single spurious valid cell (e.g. a
     # padding cell not truly at RHO_AIR, or a column that landed in the
     # wrong mesh cell) would otherwise read as a real, if oddly placed,
     # topographic surface, producing a tall flat-topped artifact.
     valid = ~np.isnan(section)
-    has_data, first_valid_idx = plotpy.first_valid_run(
+    has_data, first_valid_idx = tomomt.first_valid_run(
         valid, VSLICE_SURFACE_MIN_RUN
     )
     surf_depth = np.full(n_seg, d_edges_c[-1])
@@ -1293,7 +1287,7 @@ def compute_vertical_slice_modem(vslice):
         print(
             "  WARNING: modem_sens_utm.nc not found — sensitivity "
             "masking/shading is disabled for this section. Check that "
-            "tacna_precompute_modem.py found the .sns file (look for its "
+            "precompute.py found the .sns file (look for its "
             "own WARNING) and that OUTPUT_DIR there matches NC_DIR here."
         )
     if USE_SENSITIVITY and os.path.exists(ncpath("modem_sens_utm.nc")):
@@ -1373,7 +1367,7 @@ def compute_vertical_slice_modem(vslice):
 def _project_seismicity_to_profile(e_ends, n_ends, swath_km, zmin_km, zmax_km):
     """Events within swath_km of the profile and within depth range;
     returns (along_km, depth_km)."""
-    return plotpy.project_points_to_profile(
+    return tomomt.project_points_to_profile(
         eq_e0,
         eq_n0,
         e_ends,
@@ -1393,7 +1387,7 @@ def _project_mt_sites_to_profile(e_ends, n_ends, swath_km):
     surf_depth (interpolated at each site's along-profile position) by the
     caller instead.
     """
-    return plotpy.project_points_to_profile(
+    return tomomt.project_points_to_profile(
         mt_e, mt_n, e_ends, n_ends, swath_km
     )
 
@@ -1487,7 +1481,7 @@ def plot_vertical_slice(
     # for, silently reducing the effective VE and, since how much taller
     # depends on how the surface height was determined, making the
     # apparent amount of "white space" above the topo line differ from
-    # tacna_plot_modem_image.py's uniformly-resampled surface.
+    # plot_modem_image.py's uniformly-resampled surface.
     #
     # Uses the originally REQUESTED zmin_s here, not d_edges[0]: since
     # d_edges[0] no longer gets stretched out to zmin_s when the model's
@@ -1630,9 +1624,9 @@ def plot_vertical_slice(
         ax.plot(x_mid, dem_depth_km, **VSLICE_DEM_TOPO_STYLE)
 
     if SHOW_SEISMICITY and len(eq_x):
-        plotpy.markers(ax, eq_x, eq_dep, **VSLICE_EQ_STYLE)
+        tomomt.markers(ax, eq_x, eq_dep, **VSLICE_EQ_STYLE)
     if SHOW_MT_SITES and len(mt_x):
-        plotpy.markers(ax, mt_x, mt_dep, **VSLICE_MT_STYLE)
+        tomomt.markers(ax, mt_x, mt_dep, **VSLICE_MT_STYLE)
 
     x0, x1 = x_edges[0], x_edges[-1]
     xlim = vslice.get("xlim", None)
@@ -1669,7 +1663,7 @@ def plot_vertical_slice(
     finish_section_colorbar(cax, im, cbar_label)
     draw_annotation(ax)
     save_fig(fig, stem)
-    plt.show()
+    _maybe_show()
     plt.close(fig)
 
 
@@ -1822,16 +1816,14 @@ utmv_e, utmv_n = to_utm_km(
     volcanes["LONG"][VOLC_LABEL_IDX].values,
     volcanes["LAT"][VOLC_LABEL_IDX].values,
 )
-_volc_name_col = (
-    VOLC_NAME_COL_FULL if VOLC_LABEL_FULL_NAME else VOLC_NAME_COL_SHORT
-)
-if _volc_name_col not in volcanes.columns:
+if VOLC_NAME_COL not in volcanes.columns:
     print(
-        f"  WARNING: volcano name column {_volc_name_col!r} not found in "
-        f"{CSV_VOLCANES} — falling back to {VOLC_NAME_COL_SHORT!r}."
+        f"  WARNING: volcano name column {VOLC_NAME_COL!r} not found in "
+        f"{CSV_VOLCANES} — labels will be blank."
     )
-    _volc_name_col = VOLC_NAME_COL_SHORT
-namev = volcanes[_volc_name_col][VOLC_LABEL_IDX].values
+    namev = [""] * len(VOLC_LABEL_IDX)
+else:
+    namev = volcanes[VOLC_NAME_COL][VOLC_LABEL_IDX].values
 
 volc_act_e, volc_act_n = [], []
 for i in range(len(volcanes)):
@@ -1859,7 +1851,7 @@ seis_site_e, seis_site_n = to_utm_km(
 seis_site_names = seis_sites["station"].values
 
 prof_cd_e, prof_cd_n = (
-    to_utm_km(PROFILE_CD_LON, PROFILE_CD_LAT) if PROFILE_CD_LON else ([], [])
+    to_utm_km(PROFILE_1_LON, PROFILE_1_LAT) if PROFILE_1_LON else ([], [])
 )
 prof2_e, prof2_n = (
     to_utm_km(PROFILE_2_LON, PROFILE_2_LAT) if PROFILE_2_LON else ([], [])
@@ -1919,7 +1911,7 @@ def draw_basemap(ax):
 def draw_features(ax, eq_e, eq_n):
     if SHOW_PROFILE_LINES:
         if len(prof_cd_e):
-            ax.plot(prof_cd_e, prof_cd_n, clip_on=True, **PROFILE_CD_STYLE)
+            ax.plot(prof_cd_e, prof_cd_n, clip_on=True, **PROFILE_1_STYLE)
         if len(prof2_e):
             ax.plot(prof2_e, prof2_n, clip_on=True, **PROFILE_2_STYLE)
 
@@ -1995,7 +1987,7 @@ def draw_features(ax, eq_e, eq_n):
 import matplotlib.ticker  # noqa: E402 — needed for add_colorbar above
 
 # True (non-uniform) ModEM cell-edge coordinates, written by
-# tacna_precompute_modem.py. Every raster in this script — depth slices
+# precompute.py. Every raster in this script — depth slices
 # and vertical sections — is rendered as an exact cut through these real
 # mesh cells (pcolormesh + shading="flat"), never resampled onto a
 # uniform pixel grid or interpolated across cell boundaries, so this file
@@ -2004,7 +1996,7 @@ if not os.path.exists(ncpath("modem_grid_edges_utm.nc")):
     sys.exit(
         f"{ncpath('modem_grid_edges_utm.nc')} not found. This script "
         "requires the exact cell-edge geometry written by "
-        "tacna_precompute_modem.py — re-run it (with the current version, "
+        "precompute.py — re-run it (with the current version, "
         "and matching OUTPUT_DIR/NC_DIR) before plotting."
     )
 _edges_da = xr.open_dataset(ncpath("modem_grid_edges_utm.nc"))
@@ -2082,7 +2074,7 @@ for ii, d_km in enumerate(DEPTH_SLICES_KM):
             f"modem_grid_edges_utm.nc size ({grid_e_edges.size-1}×"
             f"{grid_n_edges.size-1} cells) doesn't match this slice "
             f"({vx.size}×{vy.size} cells) — re-run "
-            f"tacna_precompute_modem.py so the edges file matches the "
+            f"precompute.py so the edges file matches the "
             f"current model/crop settings."
         )
     # Each rendered patch is exactly one real ModEM cell, at its true
@@ -2116,9 +2108,9 @@ for ii, d_km in enumerate(DEPTH_SLICES_KM):
         add_latlon_ticks(ax)
     draw_annotation(ax)
 
-    stem = f"modem_rho_{tag}_tacna"
+    stem = f"modem_rho_{tag}_{SITE_PREFIX}"
     save_fig(fig, stem)
-    plt.show()
+    _maybe_show()
     plt.close(fig)
     out_list.append(stem)
 
@@ -2148,9 +2140,9 @@ for ii, d_km in enumerate(DEPTH_SLICES_KM):
             add_latlon_ticks(ax_s)
         draw_annotation(ax_s)
 
-        stem_s = f"modem_sens_map_{tag}_tacna"
+        stem_s = f"modem_sens_map_{tag}_{SITE_PREFIX}"
         save_fig(fig_s, stem_s)
-        plt.show()
+        _maybe_show()
         plt.close(fig_s)
         out_list.append(stem_s)
 
@@ -2180,7 +2172,7 @@ if VSLICES:
             L,
             air_valid,
         ) = compute_vertical_slice_modem(vslice)
-        stem = f"modem_section_{name}_tacna"
+        stem = f"modem_section_{name}_{SITE_PREFIX}"
         plot_vertical_slice(
             s_edges,
             d_edges,
@@ -2210,7 +2202,7 @@ if VSLICES:
         if PLOT_SENSITIVITY_MAPS and sens_section is not None:
             print(f"  Computing sensitivity section: {name} …")
             sens_section_masked = np.where(air_valid, sens_section, np.nan)
-            stem_s = f"modem_section_{name}_sens_tacna"
+            stem_s = f"modem_section_{name}_sens_{SITE_PREFIX}"
             plot_vertical_slice(
                 s_edges,
                 d_edges,

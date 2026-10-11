@@ -134,14 +134,14 @@ inclusion; none are guessed.
 
 ## Configuration
 
-- `SITE_PREFIX` — `"tacna"`/`"saba"`, must match `interpolate.py`.
+- `SITE_PREFIX` — your site's short code (e.g. `"site_a"`), must match `interpolate.py`.
 - `INTERP_FILE` — explicit path, or `None` to auto-pick the newest
   `{SITE_PREFIX}_interp_*.nc` in the current directory.
 - `STRUCTURE_PAIRS` — list of `(field_a, field_b, label)` tuples for the
   pairwise measures (cross-gradient, cosine, cosine², optional MI).
   `field_a`/`field_b` must be variable names present in `INTERP_FILE`
   (e.g. `"rho"`, `"vp"`, `"vs"`, `"vpvs"`, `"dens"`). `label=None` falls
-  back to `"{field_a}_vs_{field_b}"` in titles/filenames.
+  back to `"{field_a}-{field_b}"` in titles/filenames.
 - `GRAMIAN_GROUPS` — list of `(fields, label)` tuples, `fields` a 2- or
   3-tuple of variable names, for the Gramian determinant. Defaults mirror
   `STRUCTURE_PAIRS`'s pairs (N=2, mainly a cross-check against the
@@ -174,6 +174,16 @@ inclusion; none are guessed.
 - `ISO_LINES_MAP` / `ISO_LINES_VSLICE` / `ISO_LEVELS` — independent
   isoline toggles for maps and sections, following the same
   per-script-independent pattern as the other plot scripts.
+- `PLOT_FORMATS` — list of matplotlib-supported output extensions, e.g.
+  `["png"]` or `["png", "pdf"]`. `save_paris()` saves once per format and
+  returns a list of paths.
+- `SHOW_PLOTS` — also display each figure on screen, in addition to
+  saving it. Only actually shows if `matplotlib.is_interactive()` is
+  also `True` (e.g. Spyder's Qt/inline backends); safe to leave on when
+  running headless on the DIAS HPC cluster or from a terminal, since an
+  unconditional `plt.show()` would otherwise block/error there — same
+  fix already applied in `plot_joint.py` via `SHOW_PLOTS`/`_maybe_show()`,
+  mirrored here. Defaults `False`.
 
 ## Grid support: `"joint"` only
 
@@ -194,7 +204,7 @@ clear `ValueError` if `INTERP_FILE` isn't a `"joint"`-mode grid. Re-run
 ## Three known integration seams (by design, not oversight)
 
 1. **Basemap/marker/label styling.** This script does its own minimal
-   `imshow`/`pcolormesh` plotting rather than calling into `plotpy.py`'s
+   `pcolormesh` plotting rather than calling into `tomomt.py`'s
    `build_panel_figure`/`finish_panel_colorbar`/`draw_north_arrow`/
    `add_latlon_ticks`/`clipped_markers`/`clipped_labels`, since their exact
    current signatures weren't available to verify against here. Swapping
@@ -222,13 +232,15 @@ definition-before-use scan were also run on the delivered file.
 
 ## Output
 
-PNGs named
-`{SITE_PREFIX}_{group}_{tag}_{INTERP_TAG}_map_z<depth>km.png` (maps,
+Files named
+`{SITE_PREFIX}_{group}_{tag}_{INTERP_TAG}_map_z<depth>km.<ext>` (maps,
 `tag` one of `crossgrad_mag`/`crossgrad_norm`/`cosine`/`cosine2`/
-`gramian`/`gramian_norm`/`mi`) or `..._sec_<name>.png` (sections, MI
+`gramian`/`gramian_norm`/`mi`) or `..._sec_<name>.<ext>` (sections, MI
 excluded), titled with the field group, the quantity plotted, and
 `[SITE_PREFIX, INTERP_TAG]` — same suffix convention as `plot_joint.py`.
-All outputs for a run are bundled into
+`group` is `field_a-field_b` (or the 2-/3-field Gramian group, dash-joined)
+when `label=None`. `<ext>` is once per entry in `PLOT_FORMATS` (`png` by
+default). All outputs for a run are bundled into
 `{SITE_PREFIX}_structure_YYYYMMDD_HHMM.zip` (Europe/Paris timestamp, both
 the zip name and each member's internal mtime), matching the rest of the
 pipeline's delivery convention.

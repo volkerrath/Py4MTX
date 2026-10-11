@@ -27,15 +27,15 @@ arbitrary set of interpolated fields is covered here.
 
 ## Site selector
 
-`SITE_PREFIX` ("tacna" or "saba") must match `SITE_PREFIX` in
-`precompute.py`/`interpolate.py`. Default is `"saba"` — the complete,
-verified configuration for this script. Several Tacna-only geographic
-settings (`PROFILE_CD_LON/LAT`, `PROFILE_2_LON/LAT`, `VSLICES`
-endpoints, `ARROW_LON/LAT`, `VOLC_LABEL_IDX`) are carried over from
-`plot_seis.py` and have **not** been re-verified for Sabancaya —
-flagged inline in the script rather than guessed at. `MAP_XLIM`/
-`MAP_YLIM` default to `None` (auto from the grid), which is safe for
-either site.
+`SITE_PREFIX` must match `SITE_PREFIX` in `precompute.py`/`interpolate.py`.
+Whichever site is the live (uncommented) value has the complete,
+verified configuration for this script; several geographic settings
+(`PROFILE_CD_LON/LAT`, `PROFILE_2_LON/LAT`, `VSLICES` endpoints,
+`ARROW_LON/LAT`, `VOLC_LABEL_IDX`) are carried over from `plot_seis.py`
+and are flagged inline in the script as **not yet re-verified** for
+whichever site isn't currently live — check those before switching
+`SITE_PREFIX` to the other site. `MAP_XLIM`/`MAP_YLIM` default to `None`
+(auto from the grid), which is safe regardless of site.
 
 ## Two grid modes (see `interpolate.py`'s `TARGET_GRID`)
 
@@ -152,7 +152,7 @@ produced.
 
 Every panel title also carries the same area + interpolation-method
 tag as the filename, appended as a `[SITE_PREFIX, INTERP_TAG]` suffix,
-e.g. `rho at 5.0 km [tacna, krig]` or `|∇vp| — profile AA' [saba, rbf]`
+e.g. `rho at 5.0 km [site_a, krig]` or `|∇vp| — profile AA' [site_b, rbf]`
 — so a figure is self-identifying even once separated from its
 filename (e.g. pasted into a slide or PDF report).
 
@@ -160,7 +160,7 @@ filename (e.g. pasted into a slide or PDF report).
 
 `numpy`, `xarray`, `pandas`, `matplotlib`, `scipy`
 (`RegularGridInterpolator`, only used for `"joint"`-mode vertical
-sections), plus the local `plotpy.py` helper module.
+sections), plus the local `tomomt.py` helper module.
 
 ---
 Authors: Svetlana Byrdina (SMB) & Volker Rath (DIAS).

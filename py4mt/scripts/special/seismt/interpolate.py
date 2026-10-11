@@ -33,12 +33,12 @@ precompute.py  →  interpolate.py  →  {SITE_PREFIX}_interp_<method>.nc
                                                         ↓
                                           cluster.py  →  {SITE_PREFIX}_clusters.nc + figures
 
-Two kinds of native source (VARIABLE_SOURCES below)
+Three kinds of native source (VARIABLE_SOURCES below)
 -----------------------------------------------------
-  "modem_points" — a flat point table (precompute.py's
+  "modem_points"  — a flat point table (precompute.py's
     modem_submesh_points.nc, Part A): already (easting_km, northing_km,
     depth_km, value) rows at full native ModEM resolution.
-  "seis_grid"    — a gridded (depth, row, col) cube (precompute.py
+  "seis_grid"     — a gridded (depth, row, col) cube (precompute.py
     Part B's {SITE_PREFIX}_vp.nc / {SITE_PREFIX}_vs.nc / {SITE_PREFIX}_vps.nc / {SITE_PREFIX}_dens.nc),
     with 2-D utm_easting/utm_northing aux coords — flattened, with the
     horizontal coords broadcast across every depth level, into a point
@@ -46,6 +46,22 @@ Two kinds of native source (VARIABLE_SOURCES below)
     that source's own second/third dimension is actually called (lat/
     lon, y/x, ...) — never assumed/hard-coded, always read from the
     file itself.
+  "femtic_points" — a flat point table, precompute.py's Part C output
+    (femtic_submesh_points.nc): one row per FEMTIC tetrahedral mesh
+    element (centroid + log10(resistivity)), already in the same
+    (easting_km, northing_km, depth_km) convention as the other two
+    kinds and already air/ocean/fixed-excluded (NaN + valid=0, not
+    dropped) -- same schema as "modem_points" above, loaded by the same
+    load_point_table() below. precompute.py's Part C SETTINGS owns the
+    FEMTIC_DIR/FEMTIC_ORIGIN_E_M/FEMTIC_ORIGIN_N_M/FEMTIC_DEPTH_OFFSET_KM/
+    FEMTIC_INCLUDE_FIXED/FEMTIC_OCEAN choices that produced it -- this
+    script no longer touches the raw mesh.dat/resistivity_block_iterX.dat
+    files at all. Since this is just another native source feeding the
+    same point-cloud → interpolation pipeline as the other two kinds, a
+    ModEM-derived "rho" and a FEMTIC-derived "rho_femtic" can both be
+    declared and interpolated onto the same joint grid in the same run —
+    directly comparable, e.g. as a two-inversion-code cross-check via
+    structure.py's cross-gradient/cosine-similarity diagnostics.
 
 Target grid: TARGET_GRID = "joint" | "seismic"
 ------------------------------------------------
@@ -139,13 +155,14 @@ AI-generated code — review before use in production.
 """
 
 import os
-from pathlib import Path
-
+import sys
 import numpy as np
 import xarray as xr
 from scipy.interpolate import RBFInterpolator
 from scipy.spatial import Delaunay, cKDTree
 from matplotlib.path import Path as MplPath
+
+import tomomt
 
 # Cap BLAS/OpenMP thread counts used by scipy's linear-algebra-heavy
 # interpolators (RBF/kriging); set before any heavy computation, has no
@@ -166,29 +183,49 @@ os.environ["MKL_NUM_THREADS"] = N_THREADS
 # {SITE_PREFIX}_vp.nc / {SITE_PREFIX}_vs.nc / {SITE_PREFIX}_vps.nc /
 # {SITE_PREFIX}_dens.nc outputs and to name this script's own default
 # output file.
-SITE_PREFIX = "saba"
+SITE_PREFIX = "ubinas"
 # SITE_PREFIX = "tacna"  # TACNA
 
 # --- Input/output directories ---
-NC_DIR = "../precompute/saba/"   # must match OUTPUT_DIR in precompute.py;
+NC_DIR = "../precompute/ubinas_small/"   # must match OUTPUT_DIR in precompute.py;
                              # {SITE_PREFIX}_interp_<method>.nc is written
-                             # here too, alongside its inputs.
+                             # here too, alongside its inputs. FEMTIC mesh
+                             # products (femtic_submesh_points.nc) are also
+                             # precompute.py outputs now, so they live here
+                             # too -- see Part C SETTINGS in precompute.py
+                             # for the FEMTIC_DIR/ORIGIN/DEPTH_OFFSET/
+                             # INCLUDE_FIXED/OCEAN settings that produced it.
 
 # --- Variable registry ---
-# Two kinds of source — see module docstring. Every variable becomes a
+# Three kinds of source — see module docstring. Every variable becomes a
 # point cloud (load_variable_points()) before interpolation onto the
-# target grid, so sources on different native grids/resolutions can be
-# combined freely.
+# target grid, so sources on different native grids/resolutions/mesh
+# codes can be combined freely.
 VARIABLE_SOURCES = {
-    "rho":  dict(kind="modem_points", file="modem_submesh_points.nc",
-                 value_var="resistivity", label="log10 resistivity",
-                 units="log10(Ohm.m)"),
-    "cond": dict(kind="modem_points", file="modem_submesh_points.nc",
-                 value_var="resistivity", label="conductivity", units=None,
-                 derive="conductivity_from_rho"),
-    "sens": dict(kind="modem_points", file="modem_submesh_points.nc",
-                 value_var="sensitivity", label="sensitivity",
-                 units="(as stored)"),
+    #"rho":  dict(kind="modem_points", file="modem_submesh_points.nc",
+    #             value_var="resistivity", label="log10 resistivity",
+    #             units="log10(Ohm.m)"),
+    # FEMTIC alternative/companion to the ModEM "rho" entry above — same
+    # physical quantity, different inversion code's mesh. Give it its
+    # own key (e.g. "rho_femtic", as here) to interpolate BOTH onto the
+    # same joint grid for a direct cross-gradient/cosine-similarity
+    # comparison via structure.py, or reuse the "rho" key itself instead
+    # to swap ModEM for FEMTIC as this project's single resistivity
+    # source. Reads precompute.py's Part C output (femtic_submesh_points.nc)
+    # — same schema/NaN convention as modem_submesh_points.nc, so this is
+    # just another "modem_points"-shaped point table under a
+    # self-documenting kind name; see precompute.py's Part C SETTINGS for
+    # the FEMTIC_ORIGIN_E_M/FEMTIC_ORIGIN_N_M/FEMTIC_INCLUDE_FIXED/
+    # FEMTIC_OCEAN choices baked into that file.
+    "rho_femtic": dict(kind="femtic_points", file="femtic_submesh_points.nc",
+                  value_var="resistivity", label="log10 resistivity (FEMTIC)",
+                  units="log10(Ohm.m)"),
+    #"cond": dict(kind="modem_points", file="modem_submesh_points.nc",
+    #             value_var="resistivity", label="conductivity", units=None,
+     #            derive="conductivity_from_rho"),
+    #"sens": dict(kind="modem_points", file="modem_submesh_points.nc",
+     #            value_var="sensitivity", label="sensitivity",
+     #            units="(as stored)"),
     "vp":   dict(kind="seis_grid", file=f"{SITE_PREFIX}_vp.nc",   var="data", label="Vp",      units="km/s"),
     "vs":   dict(kind="seis_grid", file=f"{SITE_PREFIX}_vs.nc",   var="data", label="Vs",      units="km/s"),
     "vps":  dict(kind="seis_grid", file=f"{SITE_PREFIX}_vps.nc",  var="data", label="Vp/Vs",   units=""),
@@ -202,7 +239,7 @@ VARIABLE_SOURCES = {
 # interpolate a superset once and cluster on different subsets without
 # re-running this script, as long as you don't need a variable that
 # isn't listed here.
-INTERP_VARS = ["rho", "vps", "dens"]
+INTERP_VARS = ["rho_femtic", "dens", "vp", "vs","vps"]
 
 # --- Use conductivity instead of resistivity, optionally ---
 # If True, any "rho" entry in INTERP_VARS is swapped for "cond"
@@ -226,7 +263,27 @@ TARGET_GRID = "joint"
 # regardless of which variables happen to be selected.
 GRID_EASTING_KM  = dict(min=None, max=None, step=2.0)
 GRID_NORTHING_KM = dict(min=None, max=None, step=2.0)
-GRID_DEPTH_KM    = dict(min=-4, max=36, step=1.0)
+
+# GRID_DEPTH_KM — two modes, controlled by whether "inc" is present:
+#
+#   Uniform (existing behaviour):
+#       dict(min=..., max=..., step=1.0)
+#       Layers are evenly spaced at the given step.  min/max=None
+#       triggers the same auto-bound as easting/northing.
+#
+#   Geometrically increasing:
+#       dict(min=..., max=..., d1=0.5, inc=1.5)
+#       Layer thicknesses grow by a constant factor INC each step:
+#           thickness[0] = D1,  thickness[k] = D1 * INC**k
+#       Layer centres are the cumulative sum of those thicknesses,
+#       offset from MIN (the top of the first layer).  The sequence
+#       is truncated once a layer centre would exceed MAX.
+#       D1  : thickness of the first layer (km, > 0)
+#       INC : growth factor per layer (> 1 for increasing thickness)
+#       min/max may not be None in this mode — explicit bounds required.
+# GRID_DEPTH_KM    = dict(min=-6, max=40, step=2.0)
+# Example geometric depth axis:
+GRID_DEPTH_KM  = dict(min=-3, max=50, d1=0.1, inc=1.2)
 
 # --- Seismic reference grid (TARGET_GRID == "seismic") ---
 # Which VARIABLE_SOURCES entry's native grid to reuse as the
@@ -234,7 +291,7 @@ GRID_DEPTH_KM    = dict(min=-4, max=36, step=1.0)
 SEISMIC_MESH_VAR = "vps"
 
 # --- Interpolation method ---
-INTERP_METHOD = "nearest"   # "rbf" | "kriging" | "idw" | "nearest"
+INTERP_METHOD =  "nearest"   # "rbf" | "kriging" | "idw" | "nearest"
 
 # --- RBF settings (INTERP_METHOD == "rbf") ---
 RBF_KERNEL = "linear"        # "linear" | "thin_plate_spline" | "cubic" |
@@ -254,12 +311,58 @@ RBF_DEGREE = None            # polynomial term degree; None = kernel default
 # --- Kriging settings (INTERP_METHOD == "kriging") ---
 KRIGING_VARIOGRAM_MODEL = "spherical"   # "linear" | "power" | "gaussian" |
                                           # "spherical" | "exponential" | ...
+                                          #
+                                          # Model shape controls how abruptly
+                                          # correlation drops off with distance:
+                                          #   "spherical"   — reaches zero at
+                                          #                   exactly the range;
+                                          #                   compact support,
+                                          #                   less smearing.
+                                          #   "exponential" — decays gradually,
+                                          #                   never truly zero;
+                                          #                   more smearing.
+                                          #   "gaussian"    — very smooth decay,
+                                          #                   most smearing.
+                                          #   "linear"      — no nugget implied,
+                                          #                   always increasing.
+
+# Explicit variogram parameters.  None = auto-fit from data (pykrige
+# estimates sill, range, and nugget by least-squares fitting to the
+# experimental variogram — the result is often a large range that
+# over-smooths when data are sparse).
+#
+# Override with a dict to enforce a specific correlation length:
+#   "spherical" / "exponential" / "gaussian":
+#       {"sill": S, "range": R, "nugget": N}
+#       R (km) = correlation length.  Smaller R → sharper transitions,
+#                less smearing.  Should not exceed the data spacing by
+#                more than a factor of ~2-3.
+#       S      = data variance (set to np.var(values) as a first guess).
+#       N      = nugget (small-scale / measurement noise variance); 0 for
+#                perfectly smooth data, > 0 to allow some misfit at the
+#                source points and reduce ringing.
+#   "linear":
+#       {"slope": A, "nugget": N}
+#   "power":
+#       {"scale": A, "exponent": E, "nugget": N}
+#
+# Example — spherical model, 10 km correlation length, no nugget:
+# KRIGING_VARIOGRAM_PARAMS = {"sill": 0.3, "range": 10.0, "nugget": 0.0}
+KRIGING_VARIOGRAM_PARAMS = None          # None = auto-fit from data
+
 KRIGING_NLAGS = 6             # number of bins used when fitting the variogram
+                              # (only relevant when KRIGING_VARIOGRAM_PARAMS is
+                              # None — ignored if parameters are fixed manually)
 KRIGING_WEIGHT = True         # weight closer lags more when fitting the variogram
+                              # (ignored when KRIGING_VARIOGRAM_PARAMS is set)
 KRIGING_N_CLOSEST_POINTS = 50 # use only the N nearest source points per query
                               # point (fast, local); requires KRIGING_BACKEND
                               # "loop" or "C" — "vectorized" always ignores it
                               # (always global).
+                              # Reducing this also limits smoothing: a query
+                              # point can only borrow information from its N
+                              # nearest neighbours, so distant structure cannot
+                              # bleed in.
 KRIGING_BACKEND = "loop"      # "vectorized" | "loop" | "C" (falls back to
                               # "loop" automatically if "C" isn't supported)
 KRIGING_MAX_POINTS = 6000     # pykrige's variogram estimation is O(n^2) in
@@ -300,15 +403,15 @@ MASK_TO_CONVEX_HULL = True
 # disable.
 APPLY_ROI_MASK = False
 ROI_VERTICES_KM = [
-    (330.0, 7990.0),
-    (430.0, 7990.0),
-    (430.0, 8080.0),
-    (330.0, 8080.0),
+    (2804.0, 8174.0),
+    (3175.0, 8174.0),
+    (3175.0, 8206.0),
+    (2804.0, 8206.0),
 ]
 # Optional depth restriction (km, positive down) — applied together with
 # the horizontal box above; either bound may be None to leave it open.
-ROI_DEPTH_MIN_KM = None
-ROI_DEPTH_MAX_KM = None
+ROI_DEPTH_MIN_KM = -6 #None
+ROI_DEPTH_MAX_KM = 40 #None
 
 # --- Gradient of the interpolated field(s) (optional) ---
 # If True, compute the spatial gradient of each GRADIENT_VARS entry on
@@ -362,25 +465,10 @@ OUTPUT_FILE = None
 
 def ncpath(name):
     """Join a bare NetCDF filename onto NC_DIR."""
-    return os.path.join(NC_DIR, name)
+    return tomomt.resolve_path(NC_DIR, name)
 
 
-def safe_to_netcdf(obj, path):
-    """
-    Write a Dataset/DataArray to NetCDF, overwriting any existing file at
-    `path` even if it's read-only — e.g. left over from an earlier run —
-    which otherwise makes xarray's own to_netcdf() raise PermissionError
-    instead of just overwriting it. Removes the stale file first (fixing
-    its permissions first if needed), then writes normally.
-    """
-    p = Path(path)
-    if p.exists():
-        try:
-            p.unlink()
-        except PermissionError:
-            os.chmod(p, 0o644)
-            p.unlink()
-    obj.to_netcdf(path)
+safe_to_netcdf = tomomt.safe_to_netcdf
 
 
 # ------------------------------------------------------------------
@@ -409,10 +497,16 @@ def resistivity_to_conductivity(values, units):
 # ------------------------------------------------------------------
 # Native point-cloud loaders
 # ------------------------------------------------------------------
-def load_modem_points(file, value_var):
+def load_point_table(file, value_var):
     """
-    Load one variable from precompute.py's modem_submesh_points.nc
-    (Part A's flat, full-native-ModEM-resolution point table).
+    Load one variable from a flat, one-row-per-cell/element NetCDF point
+    table -- precompute.py's modem_submesh_points.nc (Part A, full native
+    ModEM resolution) or femtic_submesh_points.nc (Part C, one row per
+    FEMTIC mesh element) -- both share the same schema (easting/
+    northing/depth columns in km, a `valid` flag, and the named
+    value_var), so one loader covers both; VARIABLE_SOURCES' kind label
+    ("modem_points" / "femtic_points") stays self-documenting even
+    though the code path is shared.
 
     Returns
     -------
@@ -451,7 +545,7 @@ def load_seis_grid_points(file, var):
 
     Returns
     -------
-    points, values, units — same shapes/meaning as load_modem_points().
+    points, values, units — same shapes/meaning as load_point_table().
     """
     ds = xr.open_dataset(ncpath(file))
     da = ds[var]
@@ -473,6 +567,8 @@ def load_seis_grid_points(file, var):
     return points, values, units
 
 
+
+
 def load_variable_points(key):
     """
     Dispatch to the right native loader for VARIABLE_SOURCES[key], then
@@ -480,8 +576,13 @@ def load_variable_points(key):
     resistivity).
     """
     src = VARIABLE_SOURCES[key]
-    if src["kind"] == "modem_points":
-        points, values, units = load_modem_points(src["file"], src["value_var"])
+    if src["kind"] in ("modem_points", "femtic_points"):
+        # Both are flat NetCDF point tables with the same schema (see
+        # load_point_table's docstring) -- Part A's modem_submesh_points.nc
+        # and Part C's femtic_submesh_points.nc respectively. Kept as
+        # distinct kind labels for self-documentation even though the
+        # code path is shared.
+        points, values, units = load_point_table(src["file"], src["value_var"])
     elif src["kind"] == "seis_grid":
         points, values, units = load_seis_grid_points(src["file"], src["var"])
     else:
@@ -498,10 +599,26 @@ def load_variable_points(key):
 # ------------------------------------------------------------------
 def build_joint_grid(active_vars, native_points):
     """
-    Build a fresh, genuinely regular UTM-km grid (TARGET_GRID ==
-    "joint") from GRID_EASTING_KM/GRID_NORTHING_KM/GRID_DEPTH_KM,
-    auto-bounded (where min/max is None) to the tightest common overlap
-    of every active variable's own point-cloud extent.
+    Build a fresh UTM-km grid (TARGET_GRID == "joint") from
+    GRID_EASTING_KM / GRID_NORTHING_KM / GRID_DEPTH_KM.
+
+    Easting and northing axes are always uniform (step-based, with
+    optional auto-bounds from the tightest common overlap of every
+    active variable's own point-cloud extent).
+
+    Depth supports two modes, selected by whether GRID_DEPTH_KM
+    contains the key "inc":
+
+      Uniform  — dict(min, max, step):
+          np.arange spacing; min/max=None triggers auto-bounds.
+
+      Geometric — dict(min, max, d1, inc):
+          Layer thicknesses grow by a constant factor INC each step:
+              thickness[k] = d1 * inc**k
+          Layer centres are the cumulative mid-points of those
+          thicknesses, starting from MIN (top of the first layer).
+          The sequence stops once a centre would exceed MAX.
+          min and max must be explicit (not None) in this mode.
 
     Returns a dict with grid_points (m, 3) = [easting, northing, depth]
     plus the axes and output shape, in the (depth, northing, easting)
@@ -512,7 +629,7 @@ def build_joint_grid(active_vars, native_points):
         hi = min(native_points[k][:, axis_index].max() for k in active_vars)
         return float(lo), float(hi)
 
-    def _grid_axis(spec, axis_index, name):
+    def _uniform_axis(spec, axis_index, name):
         auto_lo, auto_hi = _auto_bounds(axis_index)
         lo = spec["min"] if spec["min"] is not None else auto_lo
         hi = spec["max"] if spec["max"] is not None else auto_hi
@@ -529,9 +646,54 @@ def build_joint_grid(active_vars, native_points):
         )
         return axis
 
-    e_axis = _grid_axis(GRID_EASTING_KM, 0, "easting")
-    n_axis = _grid_axis(GRID_NORTHING_KM, 1, "northing")
-    d_axis = _grid_axis(GRID_DEPTH_KM, 2, "depth")
+    def _geometric_depth_axis(spec):
+        if spec["min"] is None or spec["max"] is None:
+            raise ValueError(
+                "GRID_DEPTH_KM with 'inc' (geometric mode) requires explicit "
+                "'min' and 'max' — auto-bounds are not supported for this mode."
+            )
+        lo  = float(spec["min"])
+        hi  = float(spec["max"])
+        d1  = float(spec["d1"])
+        inc = float(spec["inc"])
+        if d1 <= 0:
+            raise ValueError(f"GRID_DEPTH_KM 'd1' must be > 0, got {d1}.")
+        if inc <= 1.0:
+            raise ValueError(f"GRID_DEPTH_KM 'inc' must be > 1, got {inc}.")
+        # Layer k has thickness d1*inc**k; its centre is at
+        # lo + sum(thicknesses[0..k-1]) + thickness[k]/2.
+        centres = []
+        top = lo   # top edge of the current layer
+        k = 0
+        while True:
+            thick = d1 * (inc ** k)
+            centre = top + thick / 2.0
+            if centre > hi:
+                break
+            centres.append(centre)
+            top += thick
+            k += 1
+        if not centres:
+            raise RuntimeError(
+                f"Geometric depth axis produced no layers in [{lo}, {hi}] km "
+                f"with d1={d1}, inc={inc}."
+            )
+        axis = np.array(centres)
+        thicknesses = np.array([d1 * inc ** j for j in range(len(centres))])
+        print(
+            f"  depth (geometric inc): {lo:.3f} .. {hi:.3f} km, "
+            f"d1={d1} km, inc={inc} → "
+            f"{len(axis)} layers, "
+            f"thickness [{thicknesses[0]:.3f} .. {thicknesses[-1]:.3f}] km"
+        )
+        return axis
+
+    e_axis = _uniform_axis(GRID_EASTING_KM,  0, "easting")
+    n_axis = _uniform_axis(GRID_NORTHING_KM, 1, "northing")
+    if "inc" in GRID_DEPTH_KM:
+        d_axis = _geometric_depth_axis(GRID_DEPTH_KM)
+    else:
+        d_axis = _uniform_axis(GRID_DEPTH_KM, 2, "depth")
 
     Egrid, Ngrid, Dgrid = np.meshgrid(e_axis, n_axis, d_axis, indexing="ij")  # (ne, nn, nd)
     grid_points = np.column_stack([Egrid.ravel(), Ngrid.ravel(), Dgrid.ravel()])
@@ -647,7 +809,29 @@ def kriging_interpolate_to_grid(points, values, grid_points):
         points[:, 0], points[:, 1], points[:, 2], values,
         variogram_model=KRIGING_VARIOGRAM_MODEL, nlags=KRIGING_NLAGS,
         weight=KRIGING_WEIGHT, exact_values=True,
+        variogram_parameters=KRIGING_VARIOGRAM_PARAMS,  # None = auto-fit
     )
+    # Always print the variogram parameters actually used so you can
+    # diagnose over-smoothing (a very large fitted range is the usual cause).
+    # Written to both stdout (flush=True) and stderr (never buffered) so
+    # the line appears immediately regardless of how the script is run.
+    vp = ok3d.variogram_model_parameters
+    _label = "auto-fit" if KRIGING_VARIOGRAM_PARAMS is None else "fixed"
+    _m = KRIGING_VARIOGRAM_MODEL
+    if _m in ("spherical", "exponential", "gaussian"):
+        _vp_str = (f"Variogram {_label} ({_m}): "
+                   f"sill={vp[0]:.4g}, range={vp[1]:.4g} km, nugget={vp[2]:.4g}")
+    elif _m == "linear":
+        _vp_str = (f"Variogram {_label} ({_m}): "
+                   f"slope={vp[0]:.4g}, nugget={vp[1]:.4g}")
+    elif _m == "power":
+        _vp_str = (f"Variogram {_label} ({_m}): "
+                   f"scale={vp[0]:.4g}, exponent={vp[1]:.4g}, nugget={vp[2]:.4g}")
+    else:
+        _vp_str = f"Variogram {_label} ({_m}): params={list(vp)}"
+    print(f"    {_vp_str}", flush=True)
+    sys.stderr.write(f"    {_vp_str}\n")
+    sys.stderr.flush()
     if backend == "C":
         try:
             kvalues, _sigma_sq = ok3d.execute(

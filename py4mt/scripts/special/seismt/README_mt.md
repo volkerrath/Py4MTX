@@ -1,7 +1,7 @@
-# Tacna ModEM Magnetotelluric (MT) Pipeline
+# ModEM Magnetotelluric (MT) Pipeline
 
 GMT/PyGMT-free pipeline for plotting log₁₀(ρ) results from a ModEM 3-D MT
-inversion of the Tacna region (southern Peru) on a UTM Zone 19S
+inversion of the survey region on a UTM Zone 19S
 (EPSG:32719) grid, sharing the same basemap engine, styling conventions,
 and settings layout as the seismic-tomography pipeline (`README_seis.md`).
 
@@ -15,13 +15,13 @@ AI-generated code — review before use in production.
 ## Pipeline
 
 ```
-tacna_precompute.py (Part A)  →  UTM-km NetCDF files  →  tacna_plot_modem_image.py  →  figures
-                                                        (or tacna_plot_modem_mesh.py for an
+{SITE_PREFIX}_precompute.py (Part A)  →  UTM-km NetCDF files  →  {SITE_PREFIX}_plot_modem_image.py  →  figures
+                                                        (or {SITE_PREFIX}_plot_modem_mesh.py for an
                                                          exact, unresampled mesh cut)
 ```
 
-**`tacna_precompute_modem.py` and `tacna_precompute_seis.py` have been
-merged into a single `tacna_precompute.py`** — Part A (ModEM/MT, this
+**`{SITE_PREFIX}_precompute_modem.py` and `{SITE_PREFIX}_precompute_seis.py` have been
+merged into a single `{SITE_PREFIX}_precompute.py`** — Part A (ModEM/MT, this
 README) and Part B (seismic tomography, `README_seis.md`) now live in one
 script, one run, because they share region-of-interest settings
 (`OUTPUT_DIR`/`CROP_TO_REGION`/`TAR_LON`/`TAR_LAT` — see SHARED SETTINGS in
@@ -30,13 +30,13 @@ onto Part B's grid (see "MT resistivity on the seismic grid" below). All
 of Part A's own native-ModEM-mesh outputs are unchanged and still written
 exactly as before.
 
-**`plotpy.py`** must sit alongside the scripts — it's a small shared
-module of plotting helpers (`import plotpy`), also used by
-`tacna_plot_seis.py` (see `README_seis.md`'s Pipeline section for the
+**`tomomt.py`** must sit alongside the scripts — it's a small shared
+module of plotting helpers (`import tomomt`), also used by
+`{SITE_PREFIX}_plot_seis.py` (see `README_seis.md`'s Pipeline section for the
 full list of what it covers). Both ModEM plot scripts additionally use
 its sensitivity-alpha helpers (`sens_shade_alpha`/`sens_data_alpha`).
 
-### 1. `tacna_precompute.py` — Part A (ModEM / MT)
+### 1. `{SITE_PREFIX}_precompute.py` — Part A (ModEM / MT)
 
 Reads a ModEM resistivity model (`MODEL_FILE` + `.rho`) and data file
 (`DATA_FILE` + `.dat`), and writes UTM-km NetCDF outputs analogous to Part
@@ -51,7 +51,7 @@ B's (`README_seis.md`):
 | `modem_grid_edges_utm.nc`            | True cumulative cell-edge coordinates (for exact, unresampled mesh rendering) |
 | `modem_rho_utm_{depth}km.nc`         | Horizontal log₁₀(ρ) slice, one per entry in `DEPTH_SLICES_KM`, on the native ModEM mesh |
 | `modem_sens_utm_{depth}km.nc`        | Matching sensitivity slice (optional), on the native ModEM mesh |
-| `modem_submesh_points.nc`            | Full native ModEM submesh, flattened to one row per cell (easting/northing/depth + resistivity + sensitivity) — for `tacna_cluster.py` (`README_cluster.md`) |
+| `modem_submesh_points.nc`            | Full native ModEM submesh, flattened to one row per cell (easting/northing/depth + resistivity + sensitivity) — for `{SITE_PREFIX}_cluster.py` (`README_cluster.md`) |
 
 ModEM's local Cartesian mesh (origin = the reference point read from the
 `.rho` file's last non-comment line) is projected to absolute UTM
@@ -62,7 +62,7 @@ treating the mesh's local metre offsets as degrees.**
 **No more MT-onto-seismic-grid resampling here.** Earlier versions of this
 script resampled resistivity onto Part B's seismic Vp/Vs/density grid
 directly in precompute (`modem_rho_on_seisgrid*.nc`, toggled by
-`MT_TO_SEIS_GRID`). That step has moved to `tacna_cluster.py`, which now
+`MT_TO_SEIS_GRID`). That step has moved to `{SITE_PREFIX}_cluster.py`, which now
 RBF-interpolates resistivity/conductivity — read straight from
 `modem_submesh_points.nc` below — onto a jointly-defined regular grid,
 rather than onto the seismic tomography's own grid specifically. See
@@ -73,8 +73,8 @@ rather than onto the seismic tomography's own grid specifically. See
 - `OUTPUT_DIR` (default `"."`, both parts share this one setting now that
   precompute is a single script) — directory all `.nc` outputs above are
   written to (created automatically if it doesn't exist). Keep this in
-  sync with `NC_DIR` in `tacna_plot_modem_image.py`/
-  `tacna_plot_modem_mesh.py` so the plot scripts read from wherever
+  sync with `NC_DIR` in `{SITE_PREFIX}_plot_modem_image.py`/
+  `{SITE_PREFIX}_plot_modem_mesh.py` so the plot scripts read from wherever
   precompute actually wrote to.
 - `MODEL_FILE`/`MODEL_EXT`, `DATA_FILE`/`DATA_EXT` — ModEM input files.
 - `USE_SENSITIVITY`, `SENS_FILE`/`SENS_EXT`, `SENS_TRANSFORM`,
@@ -84,11 +84,11 @@ rather than onto the seismic tomography's own grid specifically. See
 - `REFERENCE_LAT`/`REFERENCE_LON` — override the georeferencing point
   (default: read from the model file).
 - `DEPTH_SLICES_KM` — depths to export **on the native ModEM mesh**; must
-  match `DEPTH_SLICES_KM` in `tacna_plot_modem_image.py`/
-  `tacna_plot_modem_mesh.py`, since both the resistivity and sensitivity
+  match `DEPTH_SLICES_KM` in `{SITE_PREFIX}_plot_modem_image.py`/
+  `{SITE_PREFIX}_plot_modem_mesh.py`, since both the resistivity and sensitivity
   depth slices are written from this one list.
 - `EXPORT_SUBMESH_TABLE` (default `True`) — write `modem_submesh_points.nc`
-  (see above); `False` skips it (`tacna_cluster.py` needs this file for
+  (see above); `False` skips it (`{SITE_PREFIX}_cluster.py` needs this file for
   its `"rho"`/`"cond"`/`"sens"` variables).
 - `TRIM_PAD` — padding cells dropped from each mesh face before output
   (ModEM padding cells grow geometrically toward the boundary, so this
@@ -101,41 +101,41 @@ rather than onto the seismic tomography's own grid specifically. See
 - `TAR_LON` / `TAR_LAT` (**shared** with Part B) — geographic crop box,
   currently the union of the two pipelines' original boxes, padded by
   ~0.05°. Must fully contain every `VSLICES` profile endpoint defined in
-  `tacna_plot_modem_image.py`, or you'll get a silent no-data gap at the
+  `{SITE_PREFIX}_plot_modem_image.py`, or you'll get a silent no-data gap at the
   edge of a cross-section.
 - `UTM_ZONE`/`UTM_HEMI` — manual UTM zone/hemisphere override (default:
   inferred from the reference longitude/latitude).
 
-### 2. `tacna_plot_modem_image.py`
+### 2. `{SITE_PREFIX}_plot_modem_image.py`
 
 Reads the files above and produces the same two figure kinds as the seis
 pipeline — horizontal log₁₀(ρ) depth-slice maps and arbitrary vertical
 cross-sections — using **resampled** (interpolated or nearest-cell)
 values on a regular sampling grid along each profile.
 
-`tacna_plot_modem_mesh.py` is a companion script that instead renders the exact
+`{SITE_PREFIX}_plot_modem_mesh.py` is a companion script that instead renders the exact
 ModEM mesh: every rendered patch is one real, unblended mesh cell at its
 true position and size (`pcolormesh(..., shading="flat")` against
 `modem_grid_edges_utm.nc`'s true cell-edge geometry, both for depth slices
 and for the sequence of cells a profile actually crosses on a section) —
-use it when the resampling/interpolation `tacna_plot_modem_image.py` applies
+use it when the resampling/interpolation `{SITE_PREFIX}_plot_modem_image.py` applies
 would misrepresent the mesh's real (non-uniform) cell geometry.
 
 **Input/output directories:**
 
 - `NC_DIR` (default `"."`) — directory to read precomputed NetCDF files
   from (`modem_model_utm.nc`, `NC_TOPO_MODEM`, per-depth slices, etc.).
-  Must match `OUTPUT_DIR` in `tacna_precompute.py`. Same setting,
-  same behaviour, in both `tacna_plot_modem_image.py` and
-  `tacna_plot_modem_mesh.py`.
+  Must match `OUTPUT_DIR` in `{SITE_PREFIX}_precompute.py`. Same setting,
+  same behaviour, in both `{SITE_PREFIX}_plot_modem_image.py` and
+  `{SITE_PREFIX}_plot_modem_mesh.py`.
 - `PLOT_DIR` (default `"."`) — directory saved figures are written to
   (created automatically if it doesn't exist). Same in both plot scripts.
 - `PLOT_FILENAME_SUFFIX` — appended to every saved figure's filename
   before the extension, so output from the two scripts never collides
   and is distinguishable at a glance: `"_img"` in
-  `tacna_plot_modem_image.py` (resampled rendering), `"_msh"` in
-  `tacna_plot_modem_mesh.py` (exact-mesh rendering), e.g.
-  `modem_rho_1km_tacna_img.pdf` vs `modem_rho_1km_tacna_msh.pdf`. Set to
+  `{SITE_PREFIX}_plot_modem_image.py` (resampled rendering), `"_msh"` in
+  `{SITE_PREFIX}_plot_modem_mesh.py` (exact-mesh rendering), e.g.
+  `modem_rho_1km_{SITE_PREFIX}_img.pdf` vs `modem_rho_1km_{SITE_PREFIX}_msh.pdf`. Set to
   `""` to disable.
 
 **Map region & extent:**
@@ -144,7 +144,7 @@ would misrepresent the mesh's real (non-uniform) cell geometry.
   `"topo"` (topo-grid extent, wider), combined with `REGION_MARGIN_KM`.
 - `MAP_XLIM` / `MAP_YLIM` (UTM km, default `None`) — explicit override of
   the displayed map extent, applied *after* `REGION_SOURCE` computes the
-  region — same mechanism as in `tacna_plot_seis.py`. Map axes are
+  region — same mechanism as in `{SITE_PREFIX}_plot_seis.py`. Map axes are
   already in UTM km, driven off `modem_rho_utm_{depth}km.nc`'s own
   `easting`/`northing` coordinates.
 - Maps always render at exact equal x/y scale (1 km in easting = 1 km in
@@ -155,7 +155,7 @@ would misrepresent the mesh's real (non-uniform) cell geometry.
   matplotlib's `ax.set_aspect("equal")` plus automatic colorbar
   space-stealing (which can desync from the actual rendered box). See
   `FIG_WIDTH` and the colorbar settings below. Same in both
-  `tacna_plot_modem_image.py` and `tacna_plot_modem_mesh.py`.
+  `{SITE_PREFIX}_plot_modem_image.py` and `{SITE_PREFIX}_plot_modem_mesh.py`.
 - `AXES_UNITS` (`"km"` default, or `"latlon"`) — selects what the map's
   bottom/left tick labels show: UTM easting/northing in km, or longitude/
   latitude in degrees. It's an in-place relabelling of the primary axes
@@ -170,11 +170,11 @@ would misrepresent the mesh's real (non-uniform) cell geometry.
 **Vertical sections (`VSLICES`):** same structure as the seis pipeline
 (`name`, `p1`/`p2`, `coord`, `zmin_km`/`zmax_km`, `npts`/`nz`,
 `swath_km`, optional per-slice `xlim`/`ylim`). `VSLICE_X_AXIS` switches
-between `"utm"` and `"distance"`, exactly as in `tacna_plot_seis.py`.
+between `"utm"` and `"distance"`, exactly as in `{SITE_PREFIX}_plot_seis.py`.
 `VSLICE_INTERP_METHOD` (`"nearest"` — true unblended cell values,
 default — or `"linear"` — smoothed trilinear interpolation) controls how
 the 3-D model is sampled onto a section's profile points in
-`tacna_plot_modem_image.py` (not applicable to `tacna_plot_modem_mesh.py`, which
+`{SITE_PREFIX}_plot_modem_image.py` (not applicable to `{SITE_PREFIX}_plot_modem_mesh.py`, which
 always cuts the exact mesh).
 
 **Topography on sections:** the surface line is always drawn
@@ -201,12 +201,12 @@ inch-based axes placement, not `tight_layout()` plus a space-stealing
 colorbar — which matters even more here, since that older approach could
 produce a badly broken/overlapping layout specifically for the
 wide-short panel shape a real profile tends to have. Same in all three
-plot scripts — `tacna_plot_modem_mesh.py` in particular was missing
+plot scripts — `{SITE_PREFIX}_plot_modem_mesh.py` in particular was missing
 `VSLICE_VE_POS`/`VSLICE_VE_STYLE` (the VE label was drawn at a fixed
 position/style) until this pass; it now matches the other two.
 
 **Free-text annotation:** `ANNOTATION_TEXT` (default `None`), same
-mechanism as `tacna_plot_seis.py`.
+mechanism as `{SITE_PREFIX}_plot_seis.py`.
 
 **Sensitivity shading/blanking** (only meaningful if precompute wrote a
 sensitivity field): `USE_SENSITIVITY`, `SENS_BLANK_THRESHOLD` (blank
@@ -220,7 +220,7 @@ basemap underneath shows through. Sections have no basemap underneath, so
 they default to fully opaque (`ALPHA_RHO` doesn't apply there) —
 `SENS_ALPHA_RANGE`, if set, is the only thing that fades a section's data
 layer, to let the topo fill/line show through in poorly-resolved cells.
-Same in both `tacna_plot_modem_image.py` and `tacna_plot_modem_mesh.py`.
+Same in both `{SITE_PREFIX}_plot_modem_image.py` and `{SITE_PREFIX}_plot_modem_mesh.py`.
 
 **Map feature layers:** `SHOW_PROFILE_LINES`, `SHOW_VSLICE_LINES`,
 `SHOW_SEISMICITY`, `SHOW_MT_SITES`, `SHOW_SEISMIC_SITES`,
@@ -230,13 +230,13 @@ Same in both `tacna_plot_modem_image.py` and `tacna_plot_modem_mesh.py`.
 seismicity/MT-site scatter on vertical sections (`VSLICE_EQ_STYLE`/
 `VSLICE_MT_STYLE`), so turning a layer off applies everywhere it would
 otherwise appear, not just on the map. Same flags, same behaviour, in all
-three plot scripts (`tacna_plot_seis.py`, `tacna_plot_modem_image.py`,
-`tacna_plot_modem_mesh.py`).
+three plot scripts (`{SITE_PREFIX}_plot_seis.py`, `{SITE_PREFIX}_plot_modem_image.py`,
+`{SITE_PREFIX}_plot_modem_mesh.py`).
 
 **Marker sizing is linear (diameter), not area.** Every marker —
 seismicity, MT sites, seismic sites, volcanoes, cities, both on maps and
-on vertical sections — is drawn with `plotpy.clipped_markers`/
-`plotpy.markers` (`ax.plot()`-based). A style dict's `s=18` means an
+on vertical sections — is drawn with `tomomt.clipped_markers`/
+`tomomt.markers` (`ax.plot()`-based). A style dict's `s=18` means an
 18 pt marker, not `ax.scatter()`'s 18 pt² area (which works out to a
 much smaller ~4.8 pt diameter). There are no `ax.scatter()` calls
 anywhere in any of the three plot scripts.
@@ -254,8 +254,8 @@ text — the marker itself is unaffected either way:
 default; switch to `"full"`/`"firstN"`/`"lastN"` to turn on. Defaults to
 small, vertical text (`fontsize=5, rotation=90`) so close-together
 station names don't overlap horizontally. Names come from
-`modem_sites_utm.nc`'s `"name"` variable in `tacna_plot_modem_image.py`/
-`tacna_plot_modem_mesh.py`.
+`modem_sites_utm.nc`'s `"name"` variable in `{SITE_PREFIX}_plot_modem_image.py`/
+`{SITE_PREFIX}_plot_modem_mesh.py`.
 
 **Seismic sites** (`CSV_SEISMIC_SITES`, default
 `../features/seismic_sites.csv`) — seismometer station locations, a
@@ -270,10 +270,10 @@ Seismicity on maps can additionally be depth-filtered per slice via
 `DEPTH_SLICES_KM` — `None` in either slot means unbounded, i.e. no filter
 on that side). All three lists must be the same length, or the script
 exits with an explanatory error rather than silently mis-indexing — this
-used to fail silently in `tacna_plot_modem_image.py` (stale,
+used to fail silently in `{SITE_PREFIX}_plot_modem_image.py` (stale,
 longer-than-needed lists left over from an earlier `DEPTH_SLICES_KM`),
 which was why its maps showed different seismicity than
-`tacna_plot_modem_mesh.py`'s despite both reading the identical catalog;
+`{SITE_PREFIX}_plot_modem_mesh.py`'s despite both reading the identical catalog;
 fixed and now guarded the same way in all three scripts.
 
 Volcano labels: `VOLC_LABEL_FULL_NAME` (default `False`) switches between
@@ -295,7 +295,7 @@ stroke/halo effect. `SHOW_VOLC_LABELS`/`SHOW_CITY_LABELS` (default
   equal-scale guarantee above unconditional. (`VSLICE_WIDTH_CM`/
   `VSLICE_HEIGHT_CM` are separate and unaffected — cross-sections keep a
   settable height since `VSLICE_VE` deliberately makes them non-square.)
-  Same in both `tacna_plot_modem_image.py` and `tacna_plot_modem_mesh.py`
+  Same in both `{SITE_PREFIX}_plot_modem_image.py` and `{SITE_PREFIX}_plot_modem_mesh.py`
   — the latter also applies it to its optional standalone sensitivity
   map (`PLOT_SENSITIVITY_MAPS`).
 - **`VSLICE_WIDTH_CM` is the panel width of the *longest* profile in
@@ -312,15 +312,15 @@ stroke/halo effect. `SHOW_VOLC_LABELS`/`SHOW_CITY_LABELS` (default
   width as a much longer profile. Same behaviour, in all three plot
   scripts.
 - Section depth range (and so the derived figure height) for a given
-  `VSLICES` entry matches exactly between `tacna_plot_modem_image.py` and
-  `tacna_plot_modem_mesh.py`: both clip to exactly `zmin_km`/`zmax_km`.
+  `VSLICES` entry matches exactly between `{SITE_PREFIX}_plot_modem_image.py` and
+  `{SITE_PREFIX}_plot_modem_mesh.py`: both clip to exactly `zmin_km`/`zmax_km`.
   `mesh` still selects real mesh cell edges internally (one cell of
   padding on each side, so a boundary cell isn't sliced in the middle of
   a real interior edge), but then truncates only the outermost edge of
   those two boundary cells to `zmin_km`/`zmax_km` — each boundary cell
   keeps its real value, just displayed clipped at the requested window
   (the same "keep the value, clip the display" approach
-  `tacna_precompute.py` (Part A) uses for `CROP_TO_REGION`). The topography
+  `{SITE_PREFIX}_precompute.py` (Part A) uses for `CROP_TO_REGION`). The topography
   surface line/fill (`surf_depth`) is computed from those same cells'
   *true, unclamped* edges rather than the window-clamped ones — using
   the clamped edges there would flatten a segment's surface to exactly
@@ -337,8 +337,8 @@ stroke/halo effect. `SHOW_VOLC_LABELS`/`SHOW_CITY_LABELS` (default
   it on only if you've confirmed (e.g. via `VSLICE_PRINT_SURFACE_CELLS`
   below) that a genuinely air-classified single cell is being read in
   isolation. Same setting, same behaviour, in both
-  `tacna_plot_modem_image.py` and `tacna_plot_modem_mesh.py`.
-- `tacna_plot_modem_mesh.py` now also checks, at load time, that
+  `{SITE_PREFIX}_plot_modem_image.py` and `{SITE_PREFIX}_plot_modem_mesh.py`.
+- `{SITE_PREFIX}_plot_modem_mesh.py` now also checks, at load time, that
   `modem_grid_edges_utm.nc` and `modem_model_utm.nc` actually describe
   the *same* cells — every model cell centre must fall inside its
   supposedly matching edge interval — not just that their cell *counts*
@@ -351,11 +351,11 @@ stroke/halo effect. `SHOW_VOLC_LABELS`/`SHOW_CITY_LABELS` (default
   which would look exactly like an isolated, flat-topped topography
   artifact, since neighbouring segments (still landing on a consistent,
   if wrong, cell) look fine. If you hit this, re-run
-  `tacna_precompute.py` fully in one pass. This class of bug isn't
-  possible in `tacna_plot_modem_image.py`, which only ever interpolates
+  `{SITE_PREFIX}_precompute.py` fully in one pass. This class of bug isn't
+  possible in `{SITE_PREFIX}_plot_modem_image.py`, which only ever interpolates
   within one file's own self-consistent coordinate axes rather than
   combining two independently-computed files.
-- `VSLICE_PRINT_SURFACE_CELLS` (default `True`, `tacna_plot_modem_mesh.py`
+- `VSLICE_PRINT_SURFACE_CELLS` (default `True`, `{SITE_PREFIX}_plot_modem_mesh.py`
   only) — **diagnostic only, doesn't change what's plotted.** Prints,
   for every profile segment, its `(i, j)` cell, position, detected
   `surf_depth`, and the raw `log10(ρ)` values (with their air/rock
@@ -370,7 +370,7 @@ stroke/halo effect. `SHOW_VOLC_LABELS`/`SHOW_CITY_LABELS` (default
   nothing above that exists in the file at all, by construction);
   `VSLICES` entries commonly request more headroom than that
   (`zmin_km = -8` while the model's own top edge might be at, say,
-  `-4.9`). `tacna_plot_modem_mesh.py`'s boundary-edge display clamp is
+  `-4.9`). `{SITE_PREFIX}_plot_modem_mesh.py`'s boundary-edge display clamp is
   now conditional on the model's real data actually reaching past the
   requested window — previously it was unconditional, stretching that
   boundary cell's displayed thickness out to fill the entire gap between
@@ -389,9 +389,9 @@ stroke/halo effect. `SHOW_VOLC_LABELS`/`SHOW_CITY_LABELS` (default
   plays no part in defining the surface, the fill, the seismicity/
   MT-site depth cutoff, or the figure headroom either way — those always
   use `surf_depth` only. Same setting, same behaviour, in both
-  `tacna_plot_modem_image.py` and `tacna_plot_modem_mesh.py`.
+  `{SITE_PREFIX}_plot_modem_image.py` and `{SITE_PREFIX}_plot_modem_mesh.py`.
 - **Air cells are masked to `NaN` at the source**, in
-  `tacna_precompute.py` (Part A) `apply_transform()`, before the log
+  `{SITE_PREFIX}_precompute.py` (Part A) `apply_transform()`, before the log
   transform and before saving `modem_model_utm.nc`/
   `modem_rho_utm_{tag}.nc` — controlled by `AIR_RHO_THRESHOLD` (Ω·m,
   linear, default `1e10`). `NaN` then propagates through everything
@@ -401,7 +401,7 @@ stroke/halo effect. `SHOW_VOLC_LABELS`/`SHOW_CITY_LABELS` (default
   cutoff independently. The plot scripts' own
   `AIR_LOG10_RHO_THRESHOLD`-based masking is kept as a defensive
   fallback (harmless no-op against already-`NaN` cells) for older
-  precompute output. **Re-run `tacna_precompute.py`** to pick this
+  precompute output. **Re-run `{SITE_PREFIX}_precompute.py`** to pick this
   up — it only takes effect once the model/depth-slice files are
   regenerated with it.
 - Section figure height is sized from the *actual* displayed depth span,
@@ -414,8 +414,8 @@ stroke/halo effect. `SHOW_VOLC_LABELS`/`SHOW_CITY_LABELS` (default
   quietly reducing the effective `VSLICE_VE` and leaving a different
   amount of "extra" white space above the topo line in each script,
   since how much taller depends on each script's own way of locating the
-  surface (`tacna_plot_modem_image.py`'s uniformly-resampled axis vs.
-  `tacna_plot_modem_mesh.py`'s exact mesh-cell edges). Same fix in both.
+  surface (`{SITE_PREFIX}_plot_modem_image.py`'s uniformly-resampled axis vs.
+  `{SITE_PREFIX}_plot_modem_mesh.py`'s exact mesh-cell edges). Same fix in both.
 - `SHOW_COLORBAR` (default `True`) — set `False` to omit the colorbar
   entirely; the map panel itself is completely unaffected either way.
 - `COLORBAR_POSITION` (`"right"` default, or `"left"`/`"bottom"`/
@@ -427,7 +427,7 @@ stroke/halo effect. `SHOW_VOLC_LABELS`/`SHOW_CITY_LABELS` (default
   draws in that same space using ordinary (non-managed) layout — y
   tick labels/ylabel for `"left"`, x tick labels/xlabel for `"bottom"`,
   the plot title for `"top"` — sized from `AXIS_LABEL_SIZE`/
-  `AXIS_TICK_SIZE`/`AXIS_TITLE_SIZE` below. (`tacna_plot_modem_mesh.py`
+  `AXIS_TICK_SIZE`/`AXIS_TITLE_SIZE` below. (`{SITE_PREFIX}_plot_modem_mesh.py`
   defaults to `COLORBAR_POSITION = "bottom"`, so this fix matters there
   in particular.)
 - `COLORBAR_SIZE` (default `0.85`) — bar length, as a fraction of the
@@ -466,14 +466,14 @@ Depth is km, positive down; `z = 0` is sea level / the top of the model
 (the ModEM mesh's z=0 face).
 
 **Settings are kept in sync across all three plot scripts**, using
-`tacna_plot_modem_mesh.py`'s values as the reference — colours, sizes,
+`{SITE_PREFIX}_plot_modem_mesh.py`'s values as the reference — colours, sizes,
 fonts, thresholds, toggles, etc. Where a setting's value is inherently
 script-specific (output directories, `PLOT_FILENAME_SUFFIX`, data-source
 paths, colour-scale ranges for a different physical quantity), it's
 deliberately left as-is rather than force-matched. Two settings use
 different literal values that mean the same thing in each script's own
 terms rather than a shared literal: `REGION_SOURCE` ("model" in the
-ModEM scripts, "data" in `tacna_plot_seis.py` — `tacna_plot_seis.py` has
+ModEM scripts, "data" in `{SITE_PREFIX}_plot_seis.py` — `{SITE_PREFIX}_plot_seis.py` has
 no "model" branch, so forcing the ModEM scripts' literal string would
 silently fall through to different behaviour instead of matching it).
 This now also includes the marker/label style dicts themselves
@@ -481,7 +481,7 @@ This now also includes the marker/label style dicts themselves
 `VOLC_INACT_MARKER_STYLE`, `VOLC_ACT_MARKER_STYLE`, `CITY_MARKER_STYLE`,
 `VOLC_LABEL_STYLE`, `CITY_LABEL_STYLE`, `MT_LABEL_STYLE`) and `VSLICES`
 itself: all three scripts now define the same two profiles, `"profile
-AA'"` and `"profile BB'"`, at the same coordinates. `tacna_plot_seis.py`
+AA'"` and `"profile BB'"`, at the same coordinates. `{SITE_PREFIX}_plot_seis.py`
 doesn't yet have MT-site-on-section support (`VSLICE_MT_STYLE` and the
 matching projection/plotting), unlike the two ModEM scripts — that would
 be a new feature rather than a settings sync, so it hasn't been added
@@ -498,14 +498,14 @@ plus the local `modem.py` helper library (`read_mod`, `read_data`,
 ## Typical run
 
 ```bash
-python3 tacna_precompute.py         # writes *.nc for BOTH Part A (MT) and
+python3 {SITE_PREFIX}_precompute.py         # writes *.nc for BOTH Part A (MT) and
                                      # Part B (seismic) into OUTPUT_DIR
-python3 tacna_plot_modem_image.py   # reads them, writes figures (resampled sections)
+python3 {SITE_PREFIX}_plot_modem_image.py   # reads them, writes figures (resampled sections)
 # or, for an exact unresampled mesh cut:
-python3 tacna_plot_modem_mesh.py
+python3 {SITE_PREFIX}_plot_modem_mesh.py
 ```
 
-`tacna_precompute.py` runs Part A and Part B in one pass — but unlike
+`{SITE_PREFIX}_precompute.py` runs Part A and Part B in one pass — but unlike
 earlier versions, Part B no longer depends on Part A's resistivity beyond
 both being in the same script; they're independent now. If you only need
 to re-run the plot side, nothing here changes.

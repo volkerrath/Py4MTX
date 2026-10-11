@@ -28,10 +28,10 @@ AI-generated code — review before use in production.
 precompute.py  →  interpolate.py  →  {SITE_PREFIX}_interp_<method>.nc  →  plot_joint.py  →  figures
 ```
 
-`SITE_PREFIX` (default `"saba"`, with `"tacna"` available as the
-commented alternative — see `precompute.py`/`interpolate.py`) selects
-which site's `{SITE_PREFIX}_interp_<method>.nc`, topo/bath grids, and MT
-sitelist this script reads, and prefixes its own output filenames.
+`SITE_PREFIX` (whichever site is the live, uncommented value — see
+`precompute.py`/`interpolate.py`) selects which site's
+`{SITE_PREFIX}_interp_<method>.nc`, topo/bath grids, and MT sitelist
+this script reads, and prefixes its own output filenames.
 
 `plot_joint.py` reads `INTERP_FILE` — no grid-building or
 interpolation of its own — and is therefore agnostic to which
@@ -41,7 +41,7 @@ choice (`joint`/`seismic`) produced it. Point `INTERP_FILE` at whichever
 superset of variables (and their gradients) once and plot different
 `PLOT_VARS` subsets without re-running `interpolate.py`.
 
-`plotpy.py` must sit alongside `plot_joint.py` — the shared
+`tomomt.py` must sit alongside `plot_joint.py` — the shared
 plotting helper module also used by the MT, seismic, and clustering
 scripts.
 
@@ -104,8 +104,8 @@ the `VSLICE_WIDTH_CM`/`VSLICE_HEIGHT_CM`-derived section size):
 
 `PAIR_GAP_CM` sets the gap between the two panels (horizontal gap if
 side by side, vertical gap if stacked). The geometry math lives in
-`_build_dual_panel_figure()` — a local sibling of `plotpy.build_panel_figure()`
-(not added to `plotpy.py` itself, since it's only needed here); it
+`_build_dual_panel_figure()` — a local sibling of `tomomt.build_panel_figure()`
+(not added to `tomomt.py` itself, since it's only needed here); it
 supports all four `COLORBAR_POSITION` choices (`right`/`left`/`top`/`bottom`)
 in either orientation.
 
@@ -155,7 +155,7 @@ ranges here are left as placeholders (`None`) for exactly this reason.
 Volcano labels always read the same `volcanes.csv` column
 (`VOLC_NAME_COL`, default `"NAME"`) and are truncated to their first
 `VOLC_LABEL_CHARS` characters (default `4`) via `VOLC_LABEL_STYLE`'s
-`mode="firstN"` (see `plotpy.apply_label_mode`) — this replaced an
+`mode="firstN"` (see `tomomt.apply_label_mode`) — this replaced an
 earlier two-column approach (a full-name column plus a separately
 maintained abbreviated-code column) with one source of truth for the
 name and a single number controlling how much of it is shown.
@@ -245,7 +245,7 @@ grid-mode coordinate layout.
 numpy, xarray, pandas, matplotlib, scipy (RegularGridInterpolator —
 only used for "joint"-mode vertical sections)
 ```
-plus the local `plotpy.py` helper module.
+plus the local `tomomt.py` helper module.
 
 ## Typical run
 
