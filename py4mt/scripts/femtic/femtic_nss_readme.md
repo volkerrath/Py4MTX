@@ -369,7 +369,7 @@ indicate that `RSVD_RANK` is too small or `NSS_SV_THRESH` is too large.
 | `numpy` | Array operations, norm computations |
 | `h5py` | Reading `Inversion_results.h5` |
 | `inverse` (Py4MTX) | `rsvd`, `find_range`, `subspace_iter`, `ortho_basis` |
-| `femtic` (Py4MTX) | `read_model`, `extract_model`, `insert_model`, `write_model` |
+| `femtic` (Py4MTX) | `read_model`, `insert_model` |
 | `ensembles` (Py4MTX) | `generate_gst_model_ensemble` (GST mode only) |
 | `util` (Py4MTX) | `print_title` |
 | `version` (Py4MTX) | `versionstrg` |
@@ -430,6 +430,7 @@ and wire `RANDOM_SEED` through there as well.
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `MOD_TICK_FONTSIZE` / `MOD_LABEL_FONTSIZE`, passed through to the `MOD_QC` plot. Axis tick labels, axis labels, panel title, and colourbar text were previously fixed at `plot_model_slices`' internal defaults with no way to override them from this script. |
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `MOD_SHOW_IN_SPYDER` (default `True`): when running inside Spyder, the `MOD_QC` figure is also displayed inline via `plt.show()`, without changing what gets saved to disk. No effect outside Spyder. |
 | 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_nss_summary.md` output at end of run: writes user-set (UPPERCASE) parameters, script path, and run date/time. |
+| 2026-10-11 | Claude Sonnet 5.5 (Anthropic) | Model I/O adapted to the current `femtic.py`: the start model is read with `fem.read_model(..., out=False)`, which returns the free-region log10(rho) vector directly (the former `read_model` + `extract_model` pair is gone), and the result is written with `fem.insert_model(template=..., model=..., model_file=..., out=...)`, which writes the file itself. |
 
 **How to configure the GST variogram?**
 The variogram controls the spatial coherence of the Kriged perturbation.

@@ -14,7 +14,6 @@ data pre/post-processing.  All scripts live in `scripts/general/`.
 | `mt_make_sitelist.py` | Read all `.edi` files in a directory and write a site list (name, lat, lon, elev) in WALDIM, FEMTIC, or general CSV format. |
 | `mt_calc_ptdim.py` | Use phase-tensor analysis to classify each MT station / frequency as 1-D, 2-D, or 3-D; writes per-site dimensionality tables and a combined summary. |
 | `mt_kmz_waldim.py` | Export WALDIM dimensionality classification results as a KMZ file for Google Earth, with colour-coded site markers (3-class or 10-class scheme). |
-| `mt_archive_run.py` | Clean and optionally archive iteration directories: keep lowest / highest N iterations, protect specified files (by token or suffix), delete the rest (dry-run by default), compress to `.zip` or `.tgz`. |
 
 ---
 
@@ -52,12 +51,12 @@ data pre/post-processing.  All scripts live in `scripts/general/`.
 
 | Group | Scripts |
 |-------|---------|
-| Data processing | 6 |
+| Data processing | 5 |
 | Plotting | 2 |
 | Anisotropic 1-D (deterministic + Bayesian) | 4 |
 | Transdimensional 1-D (rjMCMC) | 3 |
-| **Total** | **15** |
+| **Total** | **14** |
 
 ---
 
-*Generated 2026-06-26 from README files in `scripts/general/`.*
+*Generated 2026-06-26 from README files in `scripts/general/`; updated 2026-10-11 (removed `mt_archive_run.py`, which is not in the directory; the FEMTIC equivalent is `femtic/femtic_archive_run.py`).*

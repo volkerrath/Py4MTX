@@ -54,6 +54,7 @@ for _base in [PY4MTX_ROOT + "/py4mt/modules/"]:
 
 #import modules
 import femtic as fem
+import ensembles as ens
 import util as utl
 from version import versionstrg
 
@@ -84,20 +85,20 @@ SPARSE_FORMAT = "coo"
 ROUGH_NEW = WORK_DIR+OUT_ROUGH+"_"+SPARSE_FORMAT+".npz"
 
 
-R   = fem.get_roughness(filerough=ROUGH_FILE,
+R   = ens.get_roughness(filerough=ROUGH_FILE,
                    spformat = SPARSE_FORMAT,
                    out=True)
 
 
 if "q" in OUT_ROUGH.lower():
     Q = R.T@R
-    fem.check_sparse_matrix(Q)
+    ens.check_sparse_matrix(Q)
     ROUGH_NEW = WORK_DIR+"Q_"+SPARSE_FORMAT+".npz"
     print("saved to", ROUGH_NEW)
     print("Sparse format is", Q.format)
     scs.save_npz(ROUGH_NEW, Q)
 else:
-    fem.check_sparse_matrix(R)
+    ens.check_sparse_matrix(R)
     ROUGH_NEW = WORK_DIR+"R_"+SPARSE_FORMAT+".npz"
     print("saved to", ROUGH_NEW)
     print("Sparse format is", R.format)

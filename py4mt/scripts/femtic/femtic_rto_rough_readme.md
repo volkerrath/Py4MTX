@@ -37,12 +37,12 @@ femtic_rto_prep.py    →   ensemble generation (if using R directly)
 - If `OUT_ROUGH` contains `'q'` (case-insensitive), the script computes
   `Q = R^T R` and saves the precision matrix.
 - Otherwise it saves the roughness matrix `R` directly.
-- A sparse-matrix diagnostic is printed via `fem.check_sparse_matrix()`.
+- A sparse-matrix diagnostic is printed via `ens.check_sparse_matrix()`.
 
 ## Key function
 
 ```python
-R = fem.get_roughness(
+R = ens.get_roughness(
     filerough=ROUGH_FILE,
     spformat=SPARSE_FORMAT,
     out=True,
@@ -72,6 +72,7 @@ See `README_femtic_rto_prep.md` for the full list of RTO references.
 | 2025-07-24 | vrath  | Created.                                     |
 | 2026-03-03 | Claude | Renamed user-set parameters to UPPERCASE.    |
 | 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_rto_rough_summary.md` output at end of run: user-set (UPPERCASE) parameters, script path, and run date/time. |
+| 2026-10-11 | Claude Sonnet 5.5 (Anthropic) | `get_roughness` and `check_sparse_matrix` now called from `ensembles` (`ens.`), where they live; `fem.` calls raised `AttributeError`. |
 
 ## Author
 

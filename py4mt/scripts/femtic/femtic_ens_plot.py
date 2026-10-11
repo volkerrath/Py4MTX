@@ -731,7 +731,7 @@ def plot_borehole_logs(
 
     if out:
         print(f"  boreholes: reading model {os.path.basename(model_file)}")
-    mesh     = fviz.read_femtic_mesh(mesh_file)
+    nodes, conn = fem.read_femtic_mesh(mesh_file)   # femtic.py is the only mesh reader
     block    = fviz.read_resistivity_block(model_file)
     rho_elem = fviz.map_regions_to_element_rho(block.region_of_elem, block.region_rho)
     rho_plot = fviz.prepare_rho_for_plotting(
@@ -740,8 +740,6 @@ def plot_borehole_logs(
         ocean_value=float(OCEAN_RHO),
         region_of_elem=block.region_of_elem,
     )
-    nodes = mesh.nodes
-    conn  = mesh.conn
 
     style = dict(lw=1.2, marker="none")
     if borehole_style:

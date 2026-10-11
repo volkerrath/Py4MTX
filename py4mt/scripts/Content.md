@@ -4,9 +4,9 @@
 
 All scripts are part of the `py4mt` / `py4mtx` package (DIAS / Volker Rath).
 They are organised into subdirectories by inversion code and functional group:
-`femtic/`, `modem/`, `general/`, and `joint/`.
-The template `py4mt_template.py` remains at the scripts root.
-Each subdirectory contains its own `Content.md` with a detailed listing.
+`femtic/`, `modem/`, `general/`, and `joint/` (each with its own `Content.md`
+holding the detailed listing), plus `utils/` and `special/` (listed at the end).
+The template `py4mt_template.py` and the helper `py2ipynb` remain at the scripts root.
 
 ---
 
@@ -20,6 +20,8 @@ FEMTIC is a 3-D finite-element MT inversion code (Yoshiya Usui).
 |--------|---------|
 | `femtic/femtic_mod_plot_slice.py` | 2-D slice panels (map, N-S, E-W, arbitrary plane) with site overlays, compass corner labels, and nRMS annotation from `femtic.cnv`. |
 | `femtic/femtic_mod_plot_bh.py` | Standalone 1-D ρ(z) borehole resistivity logs from a tetrahedral mesh. |
+| `femtic/femtic_plot_nrms.py` | Map of per-site nRMS misfit (best iteration from `femtic.cnv`, residuals from `results_iter<N>.h5`). |
+| `femtic/femtic_plot_distort.py` | Map of static galvanic distortion matrices as ellipses (optional Groom–Bailey panels). |
 | `femtic/femtic_mod_plot_3d.py` | PyVista 3-D rendering and VTK/VTU export; slice planes, iso-surfaces, spatial clipping. |
 
 ---
@@ -38,6 +40,8 @@ FEMTIC is a 3-D finite-element MT inversion code (Yoshiya Usui).
 | Script | Purpose |
 |--------|---------|
 | `femtic/femtic_convergence_plot.py` | Plot misfit, nRMS, or roughness vs. iteration from one or more `femtic.cnv` files. |
+| `femtic/femtic_plot_conv.py` | Plot any `femtic.cnv` field(s) vs. iteration, overlaid across run directories. |
+| `femtic/femtic_data_misfit.py` | Crossplots, normalised-residual histograms and Q-Q plots (and optional response curves) from `results_iter<N>.h5`; single run or ensemble. |
 | `femtic/femtic_lcurve_plot.py` | Plot L-curve (roughness vs. nRMS / misfit) across multiple α runs; auto-detects distortion column layout. |
 
 ---
@@ -49,9 +53,8 @@ FEMTIC is a 3-D finite-element MT inversion code (Yoshiya Usui).
 | `femtic/femtic_rto_rough.py` | Read `roughening_matrix.out`, save sparse R / Q = RᵀR as `.npz`. |
 | `femtic/femtic_rto_prior.py` | Build prior covariance proxy from roughness matrix. |
 | `femtic/femtic_rto_prep.py` | Generate full RTO ensemble (perturb data + draw prior model perturbations). |
-| `femtic/femtic_rto_post.py` | Postprocess converged RTO ensemble; compute statistics, save `RTO_results.npz`. |
 
-**RTO workflow:** `rto_rough` → `rto_prior` → `rto_prep` → *(run FEMTIC)* → `rto_post`
+**RTO workflow:** `rto_rough` → `rto_prior` → `rto_prep` → *(run FEMTIC)* → `ens_post`
 
 ---
 
@@ -67,8 +70,9 @@ FEMTIC is a 3-D finite-element MT inversion code (Yoshiya Usui).
 
 | Script | Purpose |
 |--------|---------|
-| `femtic/femtic_ens_post.py` | Algorithm-agnostic ensemble postprocessing: nRMS filter, statistics, covariance, optional slice figures. Supersedes `femtic_rto_post.py`. |
+| `femtic/femtic_ens_post.py` | Algorithm-agnostic ensemble postprocessing: nRMS filter, statistics, covariance, optional slice figures and borehole profiles (`MOD_BH`). Replaces the former `femtic_rto_post.py`. |
 | `femtic/femtic_ens_plot.py` | Joint multi-row slice figure for ensemble runs with optional statistics rows and borehole columns. |
+| `femtic/femtic_ens_repair.py` | Convergence diagnostic for all ensemble directories; restart directories for non-converged members. |
 | `femtic/femtic_ens_decomp.py` | PCA / ICA decomposition of a filtered ensemble matrix. |
 | `femtic/femtic_ens_eof.py` | EOFs via SVD on a demeaned ensemble matrix. |
 | `femtic/femtic_ens_from_covar.py` | Draw samples from posterior covariance via Cholesky decomposition. |
@@ -79,7 +83,7 @@ FEMTIC is a 3-D finite-element MT inversion code (Yoshiya Usui).
 
 | Script | Purpose |
 |--------|---------|
-| `femtic/femtic_jcn_prep.py` | Create N member directories with reduced `observe.dat` files (leave-one-site-out or random subsets). |
+| `femtic/femtic_jcn_prep.py` | Create N member directories with reduced `observe.dat` files (leave-one-site-out or random site subsets). |
 
 ---
 
@@ -112,6 +116,7 @@ ModEM is a 3-D MT inversion code based on non-linear conjugate gradients.
 | `modem/modem_mod_fill.py` | Replace subsurface cells with a constant resistivity (homogeneous starting model). |
 | `modem/modem_mod_stats.py` | Cell-wise statistics across a model ensemble or summary statistics for a single model. |
 | `modem/modem_mod_trans.py` | Convert ModEM `.rho` model to UBC or RLM/CGG format. |
+| `modem/modem_nss.py` | Nullspace shuttle for ModEM (counterpart of `femtic_nss.py`). |
 | `modem/modem_improc.py` | Apply spatial filters (Gaussian, median, anisotropic diffusion) to a 3-D ModEM model. |
 | `modem/modem_insert_body.py` | Insert synthetic ellipsoids or boxes into a ModEM model with optional smoothing. |
 | `modem/modem_insert_multi.py` | Generate perturbed models (checkerboard / random) and project through Jacobian null-space via pre-computed SVD. |
@@ -140,6 +145,7 @@ ModEM is a 3-D MT inversion code based on non-linear conjugate gradients.
 | `modem/modem_data_split.py` | Split ModEM data files by period band. |
 | `modem/modem_generate_alphas.py` | Compute depth-dependent smoothing alpha parameters. |
 | `modem/modem_generate_sites_synthetic.py` | Create a rectangular grid of synthetic MT station locations. |
+| `modem/modem_data_misfit.py` | Crossplots, normalised-residual histograms and Q-Q plots for ModEM observed/calculated data (counterpart of `femtic_data_misfit.py`). |
 | `modem/modem_plot_rms.py` | Parse ModEM `.log` files and plot all nRMS convergence curves. |
 | `modem/modem_plot_slices.py` | ModEM model slice visualisation. *(Work-in-progress.)* |
 
@@ -158,7 +164,6 @@ Scripts applicable across inversion codes or for data pre/post-processing.
 | `general/mt_make_sitelist.py` | Read `.edi` files and write site list in WALDIM, FEMTIC, or CSV format. |
 | `general/mt_calc_ptdim.py` | Phase-tensor dimensionality classification (1-D/2-D/3-D) per station and frequency. |
 | `general/mt_kmz_waldim.py` | Export WALDIM dimensionality classification as a KMZ file for Google Earth. |
-| `general/mt_archive_run.py` | Clean and optionally archive iteration directories; keep selected iterations, protect specified files, compress. |
 
 ---
 
@@ -206,9 +211,22 @@ ADMM-based joint MT + seismic tomography inversion.
 | `joint/coupling_fcm.py` | Fuzzy C-Means latent-field coupling. |
 | `joint/coupling_interp.py` | Shared mesh interpolation utilities. |
 | `joint/inversion_state.py` | Shared inversion state container. |
-| `joint/mt_fwd.py` | MT forward-model wrapper. |
+| `joint/mt_fwd.py` | FEMTIC MT forward-model wrapper (uses `femtic` model/mesh I/O). |
 | `joint/seistomo_fwd.py` | Seismic tomography forward-model wrapper. |
 | `joint/seistomo_prep.py` | Seismic tomography data / mesh preprocessing. |
+
+---
+
+## Other directories
+
+These have no `Content.md` of their own.
+
+| Path | Contents |
+|------|----------|
+| `utils/inspect_hdf5.py` | Recursively list the groups, datasets (shape, dtype, layout, compression) and attributes of an HDF5 file without loading the data. |
+| `utils/femtic_modem_trans.py` | Volume-weighted interpolation between a ModEM `.rho` model and a FEMTIC mesh + resistivity block, in both directions (`modem2femtic`, `femtic2modem`). Readme: `utils/femtic_modem_trans_readme.md`. |
+| `special/seismt/` | Tacna (southern Peru) imaging pipeline for seismic tomography (Vp, Vs, Vp/Vs) and ModEM resistivity: `precompute.py`, `interpolate.py`, `cluster.py`, `plot_seis.py`, `plot_modem*.py`, `plot_joint.py`, `plotpy.py`, `modem.py` (local copy of ModEM I/O), `make_cpts.py`. See `special/seismt/README*.md`. |
+| `py2ipynb` | Shell helper: converts `MT*.py` scripts to notebooks with `jupytext`. |
 
 ---
 
@@ -216,25 +234,27 @@ ADMM-based joint MT + seismic tomography inversion.
 
 | Group | Scripts |
 |-------|---------|
-| FEMTIC — model visualisation | 3 |
+| FEMTIC — model visualisation | 5 |
 | FEMTIC — model manipulation | 2 |
-| FEMTIC — diagnostics / L-curve | 2 |
-| FEMTIC — RTO uncertainty | 4 |
+| FEMTIC — diagnostics / L-curve | 4 |
+| FEMTIC — RTO uncertainty | 3 |
 | FEMTIC — GST uncertainty | 1 |
-| FEMTIC — ensemble analysis | 5 |
+| FEMTIC — ensemble analysis | 6 |
 | FEMTIC — jackknife | 1 |
 | FEMTIC — nullspace shuttle | 1 |
 | FEMTIC — utilities | 3 |
-| ModEM — model manipulation | 8 |
+| ModEM — model manipulation | 9 |
 | ModEM — Jacobian analysis | 6 |
-| ModEM — data / inversion utilities | 5 |
-| General MT — data processing | 6 |
+| ModEM — data / inversion utilities | 6 |
+| General MT — data processing | 5 |
 | General MT — plotting | 2 |
 | General MT — anisotropic 1-D | 4 |
 | General MT — transdimensional 1-D | 3 |
 | Joint inversion | 11 |
-| **Total** | **67** |
+| **Total** | **72** |
+
+(`utils/` and `special/` are not counted.)
 
 ---
 
-*Generated 2026-06-26 from README files in `scripts.zip`.*
+*Generated 2026-06-26 from README files in `scripts.zip`; updated 2026-10-11.*

@@ -12,23 +12,27 @@ Prepare jackknife uncertainty analysis directories for FEMTIC.
 | Inversion code | FEMTIC |
 | README generated | 3 March 2026 by Claude (Anthropic), from cleaned source |
 | README updated | 25 July 2026 by Claude Sonnet 5 (Anthropic) — added `RANDOM_SEED`; flagged a known issue (see below) |
+| README updated | 11 October 2026 by Claude Sonnet 5.5 (Anthropic) — script migrated to `ensembles.py`; known issue resolved |
 | README updated | 13 August 2026 by Claude Sonnet 5 (Anthropic) — added `femtic_jcn_prep_summary.md` output at end of run |
 
-## ⚠ Known issue (unrelated to the reproducibility update)
+## Migration (11 October 2026)
 
-`fem.generate_directories()` and `fem.generate_data_fcn()`, called near the
-bottom of this script, **do not exist** in the current `femtic.py` /
-`ensembles.py`. This script predates the consolidation of directory- and
-data-ensemble generation into `ensembles.py` — compare `femtic_rto_prep.py`
-/ `femtic_gst_prep.py`, which call `ens.generate_directories()` /
-`ens.generate_data_ensemble()` instead. As written, both calls will raise
-`AttributeError` before the RNG below is ever consumed. `RANDOM_SEED` /
-`rng` have been wired through anyway so the script is consistent with the
-rest of the project once the calls are migrated, or a dedicated
-jackknife/leave-one-site-out generator is added to `ensembles.py` — that
-migration has not been done here since it needs a design decision (a new
-`ensembles.py` function, or restoring the old `femtic.py` functions) rather
-than a mechanical fix.
+The script used `fem.generate_directories()` and `fem.generate_data_fcn()`,
+neither of which exists any more. It now calls `ens.generate_directories()`
+(`ensembles.py`) and a local function `make_jackknife_data()`, built on
+`fem.read_observe_dat` / `fem.write_observe_dat`. It was also fixed that
+directories were created as `jcn_<i>` while the data call used `ens_<i>`
+(both now use `DIR_BASE`). Tested on a synthetic four-site MT + VTF
+`observe.dat` (both modes); not run on real data.
+
+Things to be aware of:
+
+- `observe.dat` is **copied** into each member (the original stays next to
+  it as `observe_orig.dat`); `control.dat`, `mesh.dat`, the starting model
+  and `distortion_iter0.dat` are symlinked.
+- `distortion_iter0.dat` is **not** trimmed when sites are dropped.
+- `"subset"` mode is a reinterpretation of an undocumented old option:
+  each of `N_SAMPLES` members keeps `SUBSET_SIZE` random sites.
 
 ## Purpose
 
@@ -39,9 +43,9 @@ reduced data set (e.g. leave-one-site-out) is generated.
 
 ## Workflow
 
-1. Reads `control.dat` to determine the number of sites / sample count.
-2. Creates *N* sub-directories (`jcn_0`, `jcn_1`, …) by copying template files.
-3. Generates reduced `observe.dat` files with one site (or subset) removed.
+1. `"site"` mode: counts the unique site names in the template `observe.dat` (a differing count in line 1 of `control.dat` is reported, not fatal).
+2. Creates *N* sub-directories (`jcn_0`, `jcn_1`, …); copies `COPY_FILES`, symlinks `LINK_FILES`.
+3. Writes a reduced `observe.dat` into each (one site removed, or a random subset kept); block header counts are updated in every data block (MT, VTF, PT).
 
 ## Configuration constants
 
@@ -50,16 +54,19 @@ reduced data set (e.g. leave-one-site-out) is generated.
 | `ENSEMBLE_DIR` | Base directory for jackknife runs. |
 | `TEMPLATES` | Path to the template directory. |
 | `FILES` | List of template file names (control.dat, observe.dat, mesh.dat, …). |
-| `CHOICE_MODE` | `["site"]` for leave-one-site-out, or `["subset", N]` for random subsets. |
-| `N_SAMPLES` | Number of jackknife samples (read from `control.dat` or set manually). |
-| `RANDOM_SEED` | `None` (default) = fresh OS entropy. An integer makes the run reproducible — relevant only when `CHOICE_MODE = ["subset", N]` (random selection); `["site"]` leave-one-out is deterministic and doesn't consume any random draws. |
+| `COPY_FILES` / `LINK_FILES` | Files copied into / symlinked in each member; `LINK_FILES` is `FILES` minus `COPY_FILES`. |
+| `CHOICE_MODE` | `["site"]` for leave-one-site-out, or `["subset"]` for random subsets. |
+| `N_SAMPLES` | Number of members. In `"site"` mode it is overwritten with the number of sites in `observe.dat`; in `"subset"` mode set it manually. |
+| `SUBSET_SIZE` | `"subset"` mode only: number of sites kept per member. |
+| `DIR_BASE` | Member directory prefix (`ENSEMBLE_DIR + "jcn_"`). |
+| `RANDOM_SEED` | `None` (default) = fresh OS entropy. An integer makes the run reproducible — relevant only when `CHOICE_MODE = ["subset"]` (random selection); `["site"]` leave-one-out is deterministic and doesn't consume any random draws. |
 
 ## Inputs
 
 | Item | Description |
 |------|-------------|
 | `TEMPLATES/` directory | Contains the template files to copy into each run directory. |
-| `control.dat` | First line provides the site count used for jackknife sampling. |
+| `observe.dat` | Source of the site list and data (read and rewritten with `fem.read_observe_dat` / `fem.write_observe_dat`). |
 
 ## Outputs
 
@@ -71,4 +78,4 @@ reduced data set (e.g. leave-one-site-out) is generated.
 
 ## Dependencies
 
-`numpy`; py4mt modules: `femtic`, `util`, `version`.
+`numpy`; py4mt modules: `femtic`, `ensembles`, `util`, `version`.

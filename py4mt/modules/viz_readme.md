@@ -74,6 +74,9 @@ All plotters read their configuration from `**pltargs`. Common keys:
 
 ## Changelog
 
+### Changelog (2026-10-11) — FEMTIC I/O alignment
+- `plot_sparsity_pattern`: the sparse-matrix check is now `ensembles.check_sparse_matrix` (the function lives in `ensembles.py`; the former `femtic.check_sparse_matrix` call raised `AttributeError`).
+
 ### Changelog (2026-07-17) — scipy.sparse: matrix → array API
 - Migrated from legacy `scipy.sparse` matrix classes to the array-equivalent
   API in `plot_sparsity_pattern`: `coo_matrix` → `coo_array`; removed a

@@ -431,10 +431,10 @@ def plot_sparsity_pattern(
     from scipy.sparse import csr_array, csc_array, coo_array, eye_array, issparse
     from matspy import spy_to_mpl, spy
 
-    import femtic as fem
+    import ensembles as ens   # check_sparse_matrix lives in ensembles.py
 
     m = coo_array(matrix)
-    fem.check_sparse_matrix(m)
+    ens.check_sparse_matrix(m)
 
     # plotting
     options = {'title': plottitle,

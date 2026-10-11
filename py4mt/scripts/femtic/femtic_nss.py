@@ -854,9 +854,10 @@ def _make_perturbation_gst(m_ref: np.ndarray) -> np.ndarray:
 
         # Read back the Kriged initial model from the temporary member directory
         gst_block_file = tmp_base + "0/resistivity_block_iter0.dat"
-        gst_block = fem.read_model(gst_block_file)
-        # extract_free_values returns the free-region log10(ρ) vector
-        m_gst = fem.extract_model(gst_block)
+        # read_model returns the free-region log10(rho) vector directly
+        m_gst = fem.read_model(
+            model_file=gst_block_file, model_trans="log10",
+            ocean=MOD_OCEAN, out=False)
 
     finally:
         # Always clean up the temporary tree
@@ -981,9 +982,15 @@ t0 = time.perf_counter()
 
 # ``fem.insert_model`` merges the free-region vector back into the template
 # structure preserving header, bounds, fixed regions, air, and ocean.
-model_block = fem.read_model(MODEL_TEMPLATE)
-model_block_nss = fem.insert_model(model_block, model_nss)
-fem.write_model(MODEL_OUT, model_block_nss)
+fem.insert_model(
+    template=MODEL_TEMPLATE,
+    model=model_nss,
+    model_file=MODEL_OUT,
+    ocean=MOD_OCEAN,
+    air_rho=MOD_AIR_RHO,
+    ocean_rho=MOD_OCEAN_RHO,
+    out=OUT,
+)
 
 print(f"  Written : {MODEL_OUT}")
 print(f"  elapsed : {time.perf_counter() - t0:.2f} s")

@@ -45,7 +45,7 @@ femtic_rto_prep.py    →   ensemble directories
 The heavy lifting is performed by:
 
 ```python
-fem.make_prior_cov(
+ens.make_prior_cov(
     rough=R,
     outmatrix=MATRIX_OUT,
     regeps=REG_EPS,
@@ -86,6 +86,7 @@ See `README_femtic_rto_prep.md` for the full list of RTO references.
 | 2025-07-24 | vrath  | Created.                                     |
 | 2026-03-03 | Claude | Renamed user-set parameters to UPPERCASE.    |
 | 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_rto_prior_summary.md` output at end of run: user-set (UPPERCASE) parameters, script path, and run date/time. |
+| 2026-10-11 | Claude Sonnet 5.5 (Anthropic) | `make_prior_cov` now called from `ensembles` (`ens.`), where it lives; the `fem.` call raised `AttributeError`. |
 
 ## Author
 

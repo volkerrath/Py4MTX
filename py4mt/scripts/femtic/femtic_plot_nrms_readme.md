@@ -16,16 +16,18 @@ output (`OUTPUT_BASENAME` + `OUTPUT_FORMATS`).
    in this script recomputes or second-guesses it.
 2. **Per-site breakdown for that iteration.** `femtic.cnv` has no per-site
    information at all, only one row per iteration, so the actual per-site
-   residuals come from `data_iter<N>.h5` (`N` = the iteration selected in
-   step 1), read via `femtic_hdf5_readers.read_data_hdf5`.
+   residuals come from `results_iter<N>.h5` (`N` = the iteration selected in
+   step 1), read via `femtic.read_results_data`.
 3. **Per-site nRMS:**
 
    ```
    nRMS_site = sqrt( mean_i[ ((obs_i - cal_i) / err_i)**2 ] )
    ```
 
-   pooled over every frequency, component, and station type
-   (`STATION_TYPES`) recorded for that site in the HDF5 file.
+   pooled over every frequency, component, and data type
+   (`STATION_TYPES`) recorded for that site in the HDF5 file. Real and
+   imaginary parts count separately; the imaginary part is skipped for
+   the real-valued types `APP_RES_AND_PHS`, `NMT2_APP_RES_AND_PHS`, `PT`.
 
 A well-fit site should sit near `nRMS = 1`; the default colour map
 (`RdBu_r`) is diverging and centred there via
@@ -43,7 +45,7 @@ worth knowing since it explains some of the defensive checks below:
   whole-run, per-*iteration* trace with no per-site breakdown at all, so
   that alone can't drive a per-site map.
 - Final, confirmed design (this one): `femtic.cnv` picks *which
-  iteration*; `data_iter<N>.h5` supplies the per-site residuals *for*
+  iteration*; `results_iter<N>.h5` supplies the per-site residuals *for*
   that iteration.
 
 ---
@@ -51,9 +53,7 @@ worth knowing since it explains some of the defensive checks below:
 ## Installation / requirements
 
 - `numpy`, `matplotlib` (required)
-- `h5py` (required, via `femtic_hdf5_readers.py`)
-- `femtic_hdf5_readers.py` must be importable alongside this script (the
-  version supplied in `FemticModified.zip`, `python/femtic_hdf5_readers.py`)
+- `h5py` (required, by `femtic.read_results_data`)
 - `rasterio`, and either the `elevation` package (auto-download, requires
   GDAL + internet) or a pre-downloaded GeoTIFF via `SRTM_LOCAL_FILE`
   (only required when `BASEMAP_ENABLE = True`)
@@ -66,32 +66,28 @@ A missing/failed SRTM basemap only disables the basemap (with a warning)
 
 ## Accuracy note -- please read
 
-This script's HDF5 reading depends entirely on `femtic_hdf5_readers.py`,
-and that module's own readme is explicit that its `data_iter<N>.h5` schema
-was **"reconstructed from prior FEMTIC C++ porting sessions, not
-re-verified against a live .h5 file"** -- component order/count within
-`cal`/`obs`/`err`, and the `station_id` numbering convention, are called
-out there as provisional/unconfirmed. That uncertainty is inherited
-unchanged here. Concretely:
+**Migration, 2026-10-11.** The script originally read per-station-type
+groups of `data_iter<N>.h5` through a separately supplied
+`femtic_hdf5_readers.py`, which is no longer part of the code base. It now
+uses `femtic.read_results_data` (flat structured rows of a
+`results_iter<N>.h5`: `datatype`, `site_id`, `re_val`/`im_val`,
+`re_err`/`im_err`, `cal_re`/`cal_im`; older standalone `data_iter<N>.h5`
+files are accepted by that reader too). The pooling arithmetic was
+re-checked on synthetic rows against hand-computed values; **the file
+reading was not run against a real FEMTIC file** (h5py was not
+installable where this was done).
 
-- If `read_data_hdf5` raises `FemticHDF5SchemaError`, or per-site nRMS
-  values look implausible, that most likely means the schema assumption
-  is wrong for your build -- run `femtic_hdf5_readers.inspect_file()` on
-  one `data_iter<N>.h5` and compare against what `read_data_hdf5` expects,
-  per that module's own readme.
-- `_resolve_station_ids` assumes `data_iter<N>.h5`'s `station_id` and
-  `site.dat`'s `sitenum` use the same integer convention. It requires
-  *every* unique `station_id` value to match a `sitenum` before accepting
-  a mapping (tried as-is, then with a `+1` offset for a possible
-  0-based/1-based mismatch) -- a partial coincidental overlap is
-  deliberately **not** accepted, since that would risk silently pooling
-  some sites' residuals under the wrong site. Neither mapping matching
-  raises, with the overlap counts for both attempts shown, rather than
-  guessing.
-- The residual-pooling arithmetic itself (`(obs-cal)/err`, squared, summed,
-  pooled across records/types, `sqrt(mean(...))`) is independently
-  verified (see below) and is not in question -- it's the *shape and
-  numbering* of what comes out of `read_data_hdf5` that's unconfirmed.
+- `_resolve_station_ids` is applied **per data type** and assumes the
+  results file's `site_id` and `site.dat`'s `sitenum` use the same integer
+  convention. It requires *every* unique `site_id` of that type to match a
+  `sitenum` before accepting a mapping (tried as-is, then with a `+1`
+  offset); a partial overlap is deliberately **not** accepted. A data type
+  that cannot be mapped is skipped with a warning (the old code raised);
+  if no type can be mapped the script raises. Note that `femtic_data_misfit.py`
+  documents that VTF may carry its own `site_id` range (e.g. 1001...) --
+  such types are skipped here rather than mis-assigned.
+- Per-site nRMS values that look implausible most likely point at the
+  `site_id` numbering, not at the arithmetic.
 
 ---
 
@@ -110,7 +106,7 @@ import femtic_plot_nrms as fpn
 
 fpn.plot_nrms_glyphs(
     femtic_dir=".",
-    data_iter_template="data_iter{iter}.h5",
+    results_iter_template="results_iter{iter}.h5",
     site_dat="site.dat",
     display_coords="latlon",
 )
@@ -122,10 +118,10 @@ fpn.plot_nrms_glyphs(
 
 | Input | Role |
 |---|---|
-| `FEMTIC_DIR` | Directory containing `femtic.cnv` and the `data_iter<N>.h5` files. |
-| `DATA_ITER_TEMPLATE` | Filename template (relative to `FEMTIC_DIR`) for the per-iteration HDF5 data file; must contain the literal `{iter}` placeholder. |
-| `STATION_TYPES` | `None` (pool every station-type group present, e.g. `MT` + `VTF` + `PT`) or a list to restrict to specific types. |
-| `SITE_DAT` | Sitelist CSV (`mt_make_sitelist.py` format), read via `fem.read_site_dat` for coordinates and matched to `data_iter<N>.h5`'s `station_id` (see accuracy note above). |
+| `FEMTIC_DIR` | Directory containing `femtic.cnv` and the `results_iter<N>.h5` files. |
+| `RESULTS_ITER_TEMPLATE` | Filename template (relative to `FEMTIC_DIR`) for the per-iteration HDF5 results file (renamed from `DATA_ITER_TEMPLATE`, default now `results_iter{iter}.h5`); must contain the literal `{iter}` placeholder. |
+| `STATION_TYPES` | `None` (pool every data type present, e.g. `MT` + `VTF` + `PT`; names as in `fem.RESULTS_H5_DATATYPE_NAMES`) or a list to restrict to specific types. |
+| `SITE_DAT` | Sitelist CSV (`mt_make_sitelist.py` format), read via `fem.read_site_dat` for coordinates and matched to the results file's `site_id` (see accuracy note above). |
 
 ---
 
@@ -146,6 +142,11 @@ fpn.plot_nrms_glyphs(
 ---
 
 ## Verification performed
+
+*(2026-10-11: items below about `femtic_hdf5_readers` stubs, `attrs["iteration"]`
+and `DATA_ITER_TEMPLATE` describe the earlier reader and are kept as history.
+After the migration only the pooling arithmetic and the `site_id` matching
+were re-tested, on synthetic rows; see the accuracy note.)*
 
 - `ast.parse()` syntax check.
 - **Iteration selection**: a synthetic `femtic.cnv` with four iterations
@@ -194,6 +195,7 @@ fpn.plot_nrms_glyphs(
 | Date | Author | Change |
 |---|---|---|
 | 2026-09-13 | Claude Sonnet 5 (Anthropic) | Created (v1): per-site nRMS glyph map computed directly from `result_XXX.txt` residuals -- **superseded**, no tie to a specific FEMTIC iteration. |
+| 2026-10-11 | Claude Sonnet 5.5 (Anthropic) | Migrated HDF5 input from the absent `femtic_hdf5_readers.read_data_hdf5` (`data_iter<N>.h5`) to `femtic.read_results_data` (`results_iter<N>.h5`); `DATA_ITER_TEMPLATE` -> `RESULTS_ITER_TEMPLATE`; imaginary parts now pooled (skipped for real-valued types); unmappable data types are skipped with a warning. Arithmetic checked on synthetic rows; file reading untested (no h5py). |
 | 2026-09-13 | Claude Sonnet 5 (Anthropic) | Rewritten (v2): best iteration now selected from `femtic.cnv` via `fem.get_nrms`; per-site residuals read from that iteration's `data_iter<N>.h5` via `femtic_hdf5_readers.read_data_hdf5`. Added `_resolve_station_ids` (station_id/sitenum matching with a 0-based/1-based fallback, full-containment check only) and `TITLE_SHOW_ITERATION`. Verified against a hand-written `femtic_hdf5_readers` stub (see "Verification performed"); found and fixed a partial-overlap matching bug during that testing. AI-generated; the real `femtic_hdf5_readers.py` HDF5 schema itself remains unverified against a live file (inherited from that module's own readme). |
 
 Author: Volker Rath (DIAS)

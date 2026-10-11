@@ -68,7 +68,7 @@ All plotters accept `**pltargs` keyword arguments.
 | `plot_rhophas` | ρ_a and phase with model comparison and error envelopes |
 | `plot_phastens` | Phase tensor components vs period |
 | `plot_vtf` | Tipper (Re/Im of Tx and Ty) |
-| `plot_sparsity_pattern` | Sparsity pattern of a matrix |
+| `plot_sparsity_pattern` | Sparsity pattern of a matrix (uses `ensembles.check_sparse_matrix`) |
 | `plot_plane_cross` | Vertical cross-section planes for 3-D model display |
 | `make_pdf_catalog` | Merge PDFs into a single catalog (PyMuPDF) |
 
@@ -258,16 +258,22 @@ Plot flags on the instance: `_plotLowestMisfitModels`, `_plotMisfits`
 ### `femtic.py` — FEMTIC-specific I/O, model conversion, and format utilities
 
 FEMTIC file I/O, model read/write, mesh parsing, and format conversion.
-Matrix/roughness tools and ensemble generation are delegated to `ensembles.py`
-(re-exported here for backward compatibility).
+Matrix/roughness tools, directory set-up and ensemble generation live **only**
+in `ensembles.py` (they are no longer re-exported here: call `ens.get_roughness`,
+`ens.make_prior_cov`, `ens.check_sparse_matrix`, `ens.generate_directories`, …).
 
 | Capability | Key functions |
 |---|---|
-| Data I/O (`observe.dat`) | `read_observe_dat`, `write_observe_dat`, `modify_data` |
+| Data I/O (`observe.dat`) | `read_observe_dat`, `write_observe_dat` (block header counts are written verbatim — update them when dropping sites), `modify_data` |
 | EDI → observe.dat | `edi_list_to_observe_dat`, `observe_to_site_viz_list` |
-| Resistivity-block model workflow | `read_model_to_npz`, `modify_model_npz`, `write_model_from_npz` |
-| Distortion file I/O | `read_distortion_file` |
-| Mesh I/O | tetrahedral `mesh.dat` parsing |
+| Resistivity block (free-region model) | `read_model` (returns the free-region log₁₀ρ vector only), `insert_model` (writes the block file, returns `None`), `read_resistivity_block`, `write_resistivity_block`, `_read_resistivity_block_struct` (element→region map, free indices, region ρ, `meta`), `build_region_geometry` (volume-weighted free-region centroids), `summarise_model_file` |
+| Resistivity-block NPZ workflow | `read_model_to_npz`, `modify_model_npz`, `write_model_from_npz` |
+| Distortion file I/O | `read_distortion_file`, `read_results_distortion` |
+| Mesh I/O | `read_femtic_mesh(path, swap_xy=None)` → `(nodes, conn)`, the **only** mesh reader (`femtic_viz` calls it); `write_femtic_mesh`. `mesh.dat` is x = northing, y = easting, z positive down; `swap_xy=True` or the module default `MESH_SWAP_XY` swaps x/y for old conventions. |
+| Results HDF5 (`results_iterN.h5`) | `read_results_hdf5`, `read_results_model`, `read_results_data` (structured rows with observed and calculated values), `read_results_distortion`; `read_h5_sensitivity` |
+| Convergence file | `read_cnv`, `get_nrms`, `resolve_cnv_path` |
+| Sites and positions | `read_site_dat`, `read_site_position`, `utm_to_model`, `latlon_to_model`, `estimate_utm_origin`, `resolve_slice_positions` |
+| Borehole sampling | `extract_borehole_log` |
 | NPZ ↔ VTK / VTU | `unstructured_grid_from_femtic` (via PyVista) |
 | NPZ ↔ NetCDF / HDF5 | CF-compliant and HDF5 export/import |
 | CLI | `femtic-to-npz`, `npz-to-vtk`, `npz-to-femtic`, `edi-to-observe` |
@@ -294,6 +300,14 @@ Visualisation for FEMTIC resistivity models operating directly on
 | PyVista surface sampling | `build_curtain_surface`, `build_map_surface`, `sample_grid_on_surface` |
 | RTO/GST ensemble data plots | `plot_data_ensemble` |
 | RTO/GST ensemble model plots | `plot_model_ensemble` |
+| Model slice panels (map, curtains, oblique plane) | `plot_model_slices`; ensemble version `plot_ensemble_slices` |
+| Borehole ρ(z) logs | `plot_borehole_logs` |
+| 3-D rendering | `plot_model_3d` |
+| Convergence diagnostics | `plot_convergence_bar`, `plot_convergence_histogram` |
+
+The mesh is read with `femtic.read_femtic_mesh` (via the internal `_load_mesh()`,
+which wraps the result in `FemticMesh`); `femtic_viz` no longer has a reader of
+its own, so the optional x/y swap is controlled in `femtic.py`.
 
 `plot_data_ensemble` supports multi-panel layouts (`what` list), independent
 error-style control per curve (`error_style_orig` / `error_style_pert`),
@@ -309,7 +323,7 @@ Ocean cells rendered in flat light-grey by default; controlled via `ocean_color`
 ### `ensembles.py` — Roughness / precision matrix tools and ensemble generation
 
 Single source of truth for all matrix, roughness, and sampling utilities shared
-across the FEMTIC ecosystem.  `femtic.py` imports from here.
+across the FEMTIC ecosystem.  `femtic.py` no longer re-exports these; `ensembles.py` imports `femtic` lazily where it needs file I/O.
 
 | Group | Key functions |
 |---|---|
@@ -482,8 +496,9 @@ aniso  ────────────────────────�
                                              │
                                            mcmc_viz
 
-femtic ──► ensembles
-femtic_viz ──► femtic
+femtic ◄──► ensembles   (lazy imports in both directions)
+femtic_viz ──► femtic   (mesh, model and NPZ I/O)
+viz ──► ensembles       (check_sparse_matrix in plot_sparsity_pattern)
 
 data_proc ──► data_viz
 modem ──► jac_proc (via modem scripts)
@@ -509,4 +524,4 @@ util  ◄── (imported by all scripts and most modules)
 
 ---
 
-*Generated 2026-06-26 from README files in `modules.zip`; missing READMEs synthesised from source.*
+*Generated 2026-06-26 from README files in `modules.zip`; missing READMEs synthesised from source. FEMTIC/ensembles/viz sections updated 2026-10-11.*

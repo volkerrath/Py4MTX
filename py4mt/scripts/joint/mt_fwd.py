@@ -19,7 +19,7 @@ Author: VR 2026-05-11, Claude Sonnet 4.6 (Anthropic)
 from __future__ import annotations
 import os
 import numpy as np
-from model_interp import ModelGrid
+from coupling_interp import ModelGrid
 
 
 class MTForward:
@@ -54,8 +54,13 @@ class MTForward:
         try:
             import femtic as fem
             self._fem  = fem
-            log_rho, self._block_struct = fem.read_model(
-                self.model_file, model_trans="log10")
+            # read_model returns the free-region log10(rho) vector only; the
+            # region structure (element->region map, free-region indices)
+            # comes from the block-struct reader.
+            log_rho = fem.read_model(
+                self.model_file, model_trans="log10", out=False)
+            self._block_struct = fem._read_resistivity_block_struct(
+                self.model_file, model_trans="log10", out=False)
             self._m        = log_rho.copy()
             self._centroids = self._load_centroids()
         except ImportError:
@@ -70,19 +75,17 @@ class MTForward:
             print(f"  MTForward: {len(self._m)} free regions loaded.")
 
     def _load_centroids(self) -> np.ndarray:
-        """Compute region centroids from the FEMTIC mesh."""
+        """Volume-weighted centroids of the free regions of the FEMTIC mesh.
+
+        Row k belongs to the k-th free parameter of the model vector (air,
+        ocean and other fixed regions are not part of it).
+        """
         fem = self._fem
-        nodes, conn, region_id = fem.read_femtic_mesh(self.mesh_file)
-        # Average node coordinates per region
-        n_reg = self._m.shape[0]
-        ctr   = np.zeros((n_reg, 3))
-        cnt   = np.zeros(n_reg, dtype=int)
-        for ie, rid in enumerate(region_id):
-            if 0 <= rid < n_reg:
-                ctr[rid] += nodes[conn[ie]].mean(axis=0)
-                cnt[rid] += 1
-        cnt = np.maximum(cnt, 1)
-        return ctr / cnt[:, np.newaxis]
+        nodes, conn = fem.read_femtic_mesh(self.mesh_file)
+        st = self._block_struct
+        ctr, _ = fem.build_region_geometry(
+            nodes, conn, st["elem_region"], st["free_idx"])
+        return ctr
 
     # ── ModelGrid ─────────────────────────────────────────────────────────────
 
@@ -128,7 +131,7 @@ class MTForward:
             np.save(path.replace(".dat", ".npy"), self._m)
             return
         self._fem.insert_model(
-            self._m, template=self.model_file,
-            model_trans="log10", out_file=path)
+            template=self.model_file, model=self._m,
+            model_file=path, out=self.out)
         if self.out:
             print(f"  MTForward: model saved → {path}")

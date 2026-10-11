@@ -54,6 +54,7 @@ for _base in [PY4MTX_ROOT + "/py4mt/modules/"]:
 
 #import modules
 import femtic as fem
+import ensembles as ens
 import util as utl
 from version import versionstrg
 
@@ -98,7 +99,7 @@ print(type(R))
 print('Sparse format is', R.format)
 
 
-M = fem.make_prior_cov(rough=R,
+M = ens.make_prior_cov(rough=R,
                           outmatrix = MATRIX_OUT,
                           regeps = REG_EPS,
                           spformat = FORMAT_OUT,
@@ -109,7 +110,7 @@ M = fem.make_prior_cov(rough=R,
                           nthreads = n_threads,
                           out=True)
 
-# fem.check_sparse_matrix(M)
+# ens.check_sparse_matrix(M)
 print('matrix done')
 
 M = FACTOR*M

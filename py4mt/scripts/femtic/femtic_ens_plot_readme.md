@@ -190,6 +190,8 @@ Position values accept:
 
 ## Changes from previous version
 
+- 2026-10-11: the local borehole-log helper reads the mesh with `fem.read_femtic_mesh(path)` (returns `nodes, conn`; the reader now lives only in `femtic.py`, with the optional `swap_xy` switch / `femtic.MESH_SWAP_XY`) instead of the removed `fviz.read_femtic_mesh`.
+
 - `ESTIMATE_ORIGIN` / `CALIBRATION_SITES` / `UPDATE_CONFIG` replaced by
   `ORIGIN_METHOD` (`None` | `"box"` | `"average"`).  Origin estimation
   now runs **before** UTM zone derivation, fixing a `TypeError` when

@@ -25,7 +25,7 @@ Author: VR 2026-05-11, Claude Sonnet 4.6 (Anthropic)
 
 from __future__ import annotations
 import numpy as np
-from model_interp import ModelGrid
+from coupling_interp import ModelGrid
 
 
 class SeisTomoForward:
