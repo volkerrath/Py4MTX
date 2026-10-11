@@ -268,6 +268,7 @@ for several singles), exactly as in `femtic_data_misfit.py`.
 | `OUT_DIR` | `None` | `None` = run directory (ensemble: common parent); or a path |
 | `OUT_PREFIX` | `None` | File prefix; prepended if several singles |
 | `PLOT_FORMATS`, `PLOT_DPI` | `(".pdf",)`, 300 | Figure output; must be a tuple (comma!) |
+| `PLOT_DIR` | `"plots"` | Directory for all figures: `None` = with the tables; relative name = sub-directory of the output directory (per run); absolute path = one directory for all figures |
 | `DATATYPES`, `COMPONENTS` | `None` | Restrict selection, e.g. `["Full_Impedance"]`, `["ZXY","ZYX"]` |
 | `NCOLS`, `PANEL_SIZE`, `EQUAL_ASPECT` | 4, 3.3, True | Crossplot layout |
 | `CMAP`, `COLOR_RANGE` | `"turbo"`, `"global"` | log10 f colouring |
@@ -419,3 +420,15 @@ other three methods are unchanged.
 Documentation only: explicit `single` and `ensemble` usage examples (config
 block and command line) added to Usage and to the script docstring. Claude
 (Anthropic), AI-generated, review before production use.
+
+### Changelog (2026-10-09) --- separate plot directory
+
+Claude (Anthropic), 2026-10-09. AI-generated code -- please review.
+New option `PLOT_DIR` (default `"plots"`): all figures (crossplot, histogram,
+Q-Q and, if enabled, curves incl. the per-site files/sub-directory) are
+written there; text tables (`*_stats.txt`, `*_fit_measures.txt`,
+`*_runs.txt`, `*_site_nrms.txt`) stay in the output directory (`OUT_DIR`).
+`None` restores the old behaviour (figures next to the tables); a relative
+name is a sub-directory of the output directory, so several singles each get
+their own; an absolute path collects everything in one directory (file names
+stay distinct through the prefix). New helper `resolve_plot_dir()`.

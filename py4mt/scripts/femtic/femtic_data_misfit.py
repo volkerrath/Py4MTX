@@ -31,12 +31,12 @@ runs (best iteration of each member).
 @author   vrath
 @project  py4mt
 @created  2026-09-18
-@modified 2026-09-30
+@modified 2026-10-09
 
 Provenance
 ----------
 Author      : Claude (Anthropic)
-Generated   : 2026-09-19 (last modified 2026-09-30)
+Generated   : 2026-09-19 (last modified 2026-10-10)
 Notice      : This code is AI-generated. Review and test it before any
               production use.
 
@@ -155,6 +155,32 @@ Examples: "ensemble" (all entries together form ONE ensemble, M members)
 
 Changelog
 ---------
+2026-10-10b Claude (Anthropic), AI-generated, review before use: sites at the
+            same POSITION are merged (SITE_MERGE_BY_POSITION, SITE_MERGE_TOL):
+            if data types number the same station differently (MT 1..48,
+            VTF 1001..1048), all rows at one position get the site_id of the
+            first occurrence of that position (row order, usually the
+            impedance data). One "curves" figure and one line of the per-site
+            table per position; the table has an also_ids column. New
+            merge_sites_by_position(); build_dataset(site_merge_tol=...)
+            keeps site_id_raw and site_alias. Crossplot / histogram / Q-Q
+            are not affected.
+2026-10-10  Claude (Anthropic), AI-generated, review before use: site names
+            for "curves" are now assigned by COORDINATES (site_x / site_y of
+            the results file against easting / northing of site.dat, with a
+            common shift found by the script): CURVES_SITE_MATCH = "auto"
+            (default; uses sitenum + CURVES_SITE_ID_OFFSET only if the results
+            have no coordinates), "coords", "id"; CURVES_SITE_TOL. Reason: the site_id values of the results
+            file follow the station order of observe.dat (here a case-
+            insensitive name order), not the sitenum of site.dat. New helpers
+            _read_site_dat_xy(), match_sites_by_coords(); load_site_names()
+            now takes the per-site table `info`.
+2026-10-09  Claude (Anthropic), AI-generated, review before use: new option
+            PLOT_DIR puts all figures (crossplot, histogram, Q-Q, curves)
+            into a separate directory (None = with the tables; relative
+            name = sub-directory of the output directory; absolute path =
+            one directory for all). Text tables stay in the output
+            directory. New helper resolve_plot_dir().
 2026-09-18  Claude Sonnet 5 (Anthropic): initial version (as
             femtic_crossplot.py): observed-vs-calculated crossplots.
 2026-09-19  Claude Sonnet 5 (Anthropic): renamed to femtic_data_misfit.py;
@@ -244,9 +270,13 @@ import inverse as inv  # noqa: E402  (nrms, r_mae, r_med, q95)
 # "ensemble": all entries together form one ensemble
 #  RUN_MODE: str = "ensemble"               # "single" | "ensemble"
 RUN_MODE: str = "ensemble"               # "single" | "ensemble"
+# RUN_PATHS: List[str] = [
+#  r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_0/ann*/"
+#     ]        # run dirs, results files, or globs (overridden by argv)
 RUN_PATHS: List[str] = [
- r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_0/ann*/"
+     r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_rto_0_reset-err/ann*/"
     ]        # run dirs, results files, or globs (overridden by argv)
+
 # RUN_MODE: str = "single"
 # RUN_PATHS: List[str] = [
 #     "/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2/annecy_rnd_2_59/",
@@ -254,7 +284,7 @@ RUN_PATHS: List[str] = [
 #     ]
 ITERATION: Union[str, int] = "best"      # "best" | "last" | integer
 ITER_PATTERN: str = "results_iter*.h5"   # searched in each run directory
-METHODS: Tuple[str, ...] = ("crossplot", "histogram", "qq")
+METHODS: Tuple[str, ...] = ("crossplot", "histogram", "qq", "curves", )
 # METHODS = ("crossplot", "histogram", "qq", "curves")   # "curves" is optional
 
 # --- ensemble handling ---
@@ -265,15 +295,36 @@ REF_MEMBER: Optional[int] = None   # RMS1 reference: None = ensemble mean;
                                    # integer = calculated response of that
                                    # member (as in Baba's "6th model")
 
+# --- sites ---
+SITE_MERGE_BY_POSITION: bool = True   # data types often number the same station
+                                      # differently (e.g. MT 1..48, VTF 1001..1048).
+                                      # True: all rows at the same position get the
+                                      # site_id of the FIRST occurrence of that
+                                      # position (row order of the results file,
+                                      # usually the impedance data): VTF 1001 -> 1.
+                                      # Affects the per-site table and the "curves"
+                                      # figures (one figure per position, all data
+                                      # types together); not the other methods
+SITE_MERGE_TOL: float = 1.0           # [m] positions closer than this are the same
+
 # --- output ---
-OUT_DIR: Optional[str] = None      # None -> into the run directory (single:
+OUT_DIR: Optional[str] = (
+    "/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_0_reset-err/results/"
+)
+# None      # None -> into the run directory (single:
                                    # each run's own; ensemble: common parent
                                    # of the member directories); or a path
 OUT_PREFIX: Optional[str] = "Misfits"  # None -> derived from run / ensemble;
                                    # if set with several singles it is
                                    # prepended: <OUT_PREFIX>_<run>_iter<N>
-PLOT_FORMATS: Tuple[str, ...] = (".pdf",)   # a tuple: note the comma!
+PLOT_FORMATS: Tuple[str, ...] = (".pdf", "jpg",)   # a tuple: note the comma!
 PLOT_DPI: int = 300
+PLOT_DIR: Optional[str] = "plots"  # where the figures go (tables stay in
+                            # the output directory). None = same directory
+                            # as the tables; a relative name = sub-directory
+                            # of the output directory (per run); an absolute
+                            # path = that one directory for all figures
+                            # (file names stay distinct via the prefix)
 WRITE_STATS: bool = True
 FIT_MEASURES: bool = True   # overall table of fit measures (per data type
                             # and pooled) -> <prefix>_fit_measures.txt
@@ -321,18 +372,34 @@ QQ_PANEL_SIZE: float = 3.0
 # --- response curves (optional method "curves"; add it to METHODS) ---
 # Needs data_viz.py on the path. One figure per site, one panel per entry of
 # CURVES_WHAT; PLOT_FORMATS/PLOT_DPI/OUT_DIR/OUT_PREFIX apply as usual.
-CURVES_WHAT: Tuple[str, ...] = ("rho", "phase", "tipper")   # + "pt"
-CURVES_COMPS: str = "xx, xy, yx, yy"        # impedance components (rho and phase panels)
-CURVES_SITE_DAT: Optional[str] = "auto"   # site.dat from mt_make_sitelist.py
-                                   # (name,lat,lon,elev,sitenum,E,N): gives the
-                                   # site names. "auto" = look for site.dat in
-                                   # the results directory and up to two
-                                   # levels above; a path; None = no names
-CURVES_SITE_ID_OFFSET: int = 0     # site_id in the results file = sitenum
-                                   # in site.dat + this offset
-CURVES_SITES: Union[None, int, Sequence[Union[int, str]]] = 12
-                                   # None = all sites; int N = N sites (chosen
-                                   # by CURVES_SITE_ORDER); list = these
+CURVES_WHAT: Tuple[str, ...] = ("rho", "phase", "tipper")  # + "pt"
+CURVES_COMPS: str = (
+    "xx, xy, yx, yy"  # impedance components (rho and phase panels)
+)
+CURVES_SITE_DAT: Optional[str] = (
+    "/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_rto_0_reset-err/templates/site.dat"
+)
+# "auto"   # site.dat from mt_make_sitelist.py
+# (name,lat,lon,elev,sitenum,E,N): gives the
+# site names. "auto" = look for site.dat in
+# the results directory and up to two
+# levels above; a path; None = no names
+CURVES_SITE_ID_OFFSET: int = 0  # site_id in the results file = sitenum
+# in site.dat + this offset (only used by
+# CURVES_SITE_MATCH = "id" and as the fallback)
+CURVES_SITE_MATCH: str = "auto"  # how the site.dat names are assigned to the
+# site_id values of the results file:
+# "auto"   by coordinates (site_x / site_y of the
+#          results file against easting / northing of
+#          site.dat; a common shift is found by the
+#          script); by id (sitenum + offset) only if
+#          the results file has no coordinates
+# "coords" by coordinates only
+# "id"     by sitenum + CURVES_SITE_ID_OFFSET only
+CURVES_SITE_TOL: float = 15.0   # [m] largest distance for a coordinate match
+CURVES_SITES: Union[None, int, Sequence[Union[int, str]]] = None
+# None = all sites; int N = N sites (chosen
+# by CURVES_SITE_ORDER); list = these
                                    # site_id values and/or site names
 CURVES_SITE_ORDER: str = "even"    # for an int CURVES_SITES: "even" (spread
                                    # over the site list), "id" (first N),
@@ -514,15 +581,99 @@ def align_members(datas: Sequence[dict]) -> List[np.ndarray]:
     return [np.array([m[key] for key in common], dtype=np.int64) for m in maps]
 
 
+_NO_STATION_POSITION = ("HTF", "NMT")   # x / y is not the position of one station
+
+
+def merge_sites_by_position(ds: dict, tol: float) -> dict:
+    """
+    Give all rows at the same position the site_id of the first occurrence of
+    that position.
+
+    Different data types often number the same station differently (MT 1..48,
+    VTF 1001..1048). For every (data type, site_id) the position (site_x,
+    site_y, of its first row) is taken; positions closer than `tol` metres
+    are one site, and its id is the site_id of the first row (in the row
+    order of the dataset, i.e. normally the impedance data) found at that
+    position. Data types without a single station position (HTF, NMT) and
+    rows without a finite position keep their id. If the id of a new position
+    is already used by another position (the same number used for two
+    different stations), the new position gets a fresh id above the largest
+    existing one (reported).
+
+    Replaces ds["site_id"]; adds ds["site_id_raw"] (the original ids) and
+    ds["site_alias"] ({kept id: sorted other ids merged into it}). Returns a
+    dict with n_ids (distinct original ids), n_sites (distinct ids now),
+    n_changed and the list of collisions.
+    """
+    sid = np.asarray(ds["site_id"]).astype(np.int64)
+    ds["site_id_raw"] = sid.copy()
+    ds["site_alias"] = {}
+    out = dict(n_ids=int(np.unique(sid).size), n_sites=int(np.unique(sid).size),
+               n_changed=0, collisions=[])
+    if sid.size == 0:
+        return out
+    dn = np.asarray(ds["datatype_name"]).astype(str)
+    x = np.asarray(ds["site_x"], float)
+    y = np.asarray(ds["site_y"], float)
+    key = np.char.add(np.char.add(dn, "|"), sid.astype(str))
+    ukey, first, inv = np.unique(key, return_index=True, return_inverse=True)
+    canon_u = np.zeros(ukey.size, dtype=np.int64)
+    rx: List[float] = []
+    ry: List[float] = []
+    rid: List[int] = []
+    used = set()
+    next_new = int(sid.max()) + 1
+    for k in np.argsort(first):                   # order of first occurrence
+        i0 = int(first[k])
+        s0, px, py = int(sid[i0]), float(x[i0]), float(y[i0])
+        if dn[i0] in _NO_STATION_POSITION or not (np.isfinite(px) and np.isfinite(py)):
+            canon_u[k] = s0
+            continue
+        j = -1
+        if rid:
+            dist = np.hypot(np.asarray(rx) - px, np.asarray(ry) - py)
+            j = int(np.argmin(dist))
+            if dist[j] > tol:
+                j = -1
+        if j >= 0:
+            canon_u[k] = rid[j]
+            continue
+        c = s0
+        if c in used:                             # same number, different place
+            c = next_new
+            next_new += 1
+            out["collisions"].append((dn[i0], s0, c))
+        used.add(c)
+        rx.append(px)
+        ry.append(py)
+        rid.append(c)
+        canon_u[k] = c
+    new = canon_u[inv]
+    ds["site_id"] = new
+    alias: Dict[int, List[int]] = {}
+    for a, b in set(zip(sid.tolist(), new.tolist())):
+        if a != b:
+            alias.setdefault(b, []).append(a)
+    ds["site_alias"] = {b: sorted(v) for b, v in alias.items()}
+    out["n_sites"] = int(np.unique(new).size)
+    out["n_changed"] = int(np.count_nonzero(new != sid))
+    return out
+
+
 def build_dataset(datas: Sequence[dict], *, obs_mode: str = "mean",
-                  ref_member: Optional[int] = None) -> dict:
+                  ref_member: Optional[int] = None,
+                  site_merge_tol: Optional[float] = None) -> dict:
     """
     Combine M >= 1 results datasets into one set of aligned arrays.
 
     Returns a dict with M and per-row arrays: freq, site_id, component,
     datatype_name, component_name, obs_re/im, err_re/im, cal_re/im (ensemble
     mean), ref_re/im (reference response for RMS1), eps_syn (Baba Eq. 13,
-    zero for M = 1), plus n_dropped_nan.
+    zero for M = 1), plus n_dropped_nan, site_id_raw and site_alias.
+
+    site_merge_tol: None = keep the site ids of the results file; a number
+    = merge_sites_by_position() with this tolerance in metres (after the
+    members have been aligned on the original ids).
     """
     M = len(datas)
     idx = align_members(datas)
@@ -573,6 +724,18 @@ def build_dataset(datas: Sequence[dict], *, obs_mode: str = "mean",
     ds["cal_re_m"] = cal_re[:, ok]
     ds["cal_im_m"] = cal_im[:, ok]
     ds["n_dropped_nan"] = n_drop
+    ds["site_id_raw"] = np.asarray(ds["site_id"]).astype(np.int64)
+    ds["site_alias"] = {}
+    if site_merge_tol is not None:
+        st = merge_sites_by_position(ds, float(site_merge_tol))
+        ex = ", ".join(f"{a} -> {b}" for a, b in sorted(
+            (a, b) for b, v in ds["site_alias"].items() for a in v)[:4])
+        print(f"femtic_data_misfit: sites: {st['n_ids']} site ids -> {st['n_sites']} positions "
+              f"(tolerance {float(site_merge_tol):g} m); rows of the later occurrences get the "
+              f"id of the first one" + (f" ({ex}, ...)" if ex else "") + ".")
+        for dname, a, b in st["collisions"]:
+            print(f"femtic_data_misfit: sites: WARNING: {dname} id {a} is at a different "
+                  f"position than an earlier station with the same id; it is now id {b}.")
     return ds
 
 
@@ -1047,18 +1210,106 @@ def _curves_cfg() -> dict:
         panel_size=tuple(CURVES_PANEL_SIZE), multipage=CURVES_MULTIPAGE,
         appres_deg=CURVES_APPRES_PHASE_DEG, legend_loc=CURVES_LEGEND_LOC,
         site_dat=CURVES_SITE_DAT, id_offset=CURVES_SITE_ID_OFFSET,
+        site_match=CURVES_SITE_MATCH, site_tol=float(CURVES_SITE_TOL),
     )
 
 
-def load_site_names(spec: Optional[str], search_dirs: Sequence[str], offset: int,
-                    site_ids: Sequence[int]) -> Dict[int, str]:
+def _read_site_dat_xy(path: str) -> List[Tuple[str, int, float, float]]:
     """
-    Site names by site_id from a site.dat written by mt_make_sitelist.py
-    (read with femtic.read_site_dat): site_id = sitenum + offset.
+    (name, sitenum, easting, northing) from a site.dat of mt_make_sitelist.py
+    (columns name, lat, lon, elev, sitenum, easting, northing; comma or
+    white-space separated). Lines that do not fit are skipped.
+    """
+    out: List[Tuple[str, int, float, float]] = []
+    with open(path, "r", errors="replace") as fh:
+        for ln in fh:
+            ln = ln.strip()
+            if not ln or ln.startswith("#"):
+                continue
+            p = [x.strip() for x in (ln.split(",") if "," in ln else ln.split())]
+            if len(p) < 7:
+                continue
+            try:
+                out.append((p[0], int(float(p[4])), float(p[5]), float(p[6])))
+            except ValueError:
+                continue
+    return out
+
+
+def match_sites_by_coords(info: Dict[int, dict],
+                          sites: Sequence[Tuple[str, int, float, float]],
+                          tol: float) -> Tuple[Dict[int, str], dict]:
+    """
+    Assign site.dat names to the site ids of the results file by position.
+
+    The results file stores site_x / site_y (m) relative to the model origin,
+    site.dat the easting / northing (UTM, m). Both frames, (x, y) = (north,
+    east) and (x, y) = (east, north), are tried together with a common shift;
+    the shift is found from candidate pairs (a few reference ids against every
+    site) and refined by the median over the matches. An id gets the name of
+    the nearest site if it lies within `tol` metres. Several ids at the same
+    place (e.g. MT and VTF stations of one site) get the same name.
+
+    Returns ({site_id: name}, stats) with stats = n_ids, n_hit, n_sites,
+    dmax, shift (sx, sy), frame.
+    """
+    from scipy.spatial import cKDTree
+    ids = [s for s in sorted(info)
+           if np.isfinite(info[s].get("x", np.nan)) and np.isfinite(info[s].get("y", np.nan))]
+    stats = dict(n_ids=len(ids), n_hit=0, n_sites=0, dmax=float("nan"),
+                 shift=(float("nan"), float("nan")), frame="")
+    if not ids or not sites:
+        return {}, stats
+    x = np.array([info[s]["x"] for s in ids], dtype=float)
+    y = np.array([info[s]["y"] for s in ids], dtype=float)
+    east = np.array([q[2] for q in sites], dtype=float)
+    north = np.array([q[3] for q in sites], dtype=float)
+    refs = np.unique(np.linspace(0, len(ids) - 1, min(5, len(ids))).astype(int))
+    best = None                                   # (count, frame, shift, tree, pts)
+    for frame, pts in (("x=north, y=east", np.c_[north, east]),
+                       ("x=east, y=north", np.c_[east, north])):
+        tree = cKDTree(pts)
+        for r in refs:
+            for k in range(len(pts)):
+                sx, sy = pts[k, 0] - x[r], pts[k, 1] - y[r]
+                d, _ = tree.query(np.c_[x + sx, y + sy])
+                cnt = int((d <= tol).sum())
+                if best is None or cnt > best[0]:
+                    best = (cnt, frame, (sx, sy), tree, pts)
+    cnt, frame, (sx, sy), tree, pts = best
+    for _ in range(2):                            # refine the shift
+        d, j = tree.query(np.c_[x + sx, y + sy])
+        ok = d <= tol
+        if not ok.any():
+            break
+        sx = float(np.median(pts[j[ok], 0] - x[ok]))
+        sy = float(np.median(pts[j[ok], 1] - y[ok]))
+    d, j = tree.query(np.c_[x + sx, y + sy])
+    ok = d <= tol
+    names = {ids[i]: str(sites[j[i]][0]) for i in range(len(ids)) if ok[i]}
+    stats.update(n_hit=int(ok.sum()), n_sites=len(set(j[ok].tolist())),
+                 dmax=float(d[ok].max()) if ok.any() else float("nan"),
+                 shift=(sx, sy), frame=frame)
+    return names, stats
+
+
+def load_site_names(spec: Optional[str], search_dirs: Sequence[str], offset: int,
+                    info: Dict[int, dict], match: str = "auto",
+                    tol: float = 15.0) -> Dict[int, str]:
+    """
+    Site names by site_id from a site.dat written by mt_make_sitelist.py.
+
+    match "coords": by position (match_sites_by_coords); "id": site_id =
+    sitenum + offset (read with femtic.read_site_dat); "auto": by position,
+    and by id only if the results file carries no site coordinates at all.
+    The numbering of the site_id values in the results file follows the
+    order of the stations in observe.dat, which need not be the order of
+    site.dat; matching by position does not depend on it.
 
     spec: None -> {}; "auto" -> first site.dat found in `search_dirs`; else a
     path. A missing or unreadable file only gives a message and {}.
     """
+    tag = "femtic_data_misfit: curves:"
     if not spec:
         return {}
     path = None
@@ -1069,24 +1320,53 @@ def load_site_names(spec: Optional[str], search_dirs: Sequence[str], offset: int
                 path = p
                 break
         if path is None:
-            print("femtic_data_misfit: curves: no site.dat found "
+            print(f"{tag} no site.dat found "
                   f"(looked in {list(search_dirs)}); sites are labelled by id.")
             return {}
     else:
         path = spec
+    site_ids = sorted(info)
+
+    if match in ("auto", "coords"):
+        try:
+            sites = _read_site_dat_xy(path)
+        except OSError as exc:
+            print(f"{tag} cannot read site.dat ({exc}); sites are labelled by id.")
+            return {}
+        names, st = match_sites_by_coords(info, sites, tol)
+        n_ids = st["n_ids"]
+        print(f"{tag} {len(sites)} sites in {path}; matched by coordinates: "
+              f"{st['n_hit']} of {len(site_ids)} site ids ({st['n_sites']} different "
+              f"sites; frame {st['frame']}; shift {st['shift'][0]:.1f}, "
+              f"{st['shift'][1]:.1f} m; largest distance {st['dmax']:.1f} m; "
+              f"tolerance {tol:g} m).")
+        if n_ids or match == "coords":
+            miss = [s for s in site_ids if s not in names]
+            if miss:
+                print(f"{tag} WARNING: no site within {tol:g} m for the site ids "
+                      f"{miss[:10]}{' ...' if len(miss) > 10 else ''}; those are "
+                      "labelled by id.")
+            if st["n_hit"] < 0.5 * len(site_ids):
+                print(f"{tag} WARNING: fewer than half of the ids matched by "
+                      "coordinates -- is this the site.dat of the data set? (The "
+                      "names found are probably wrong; set CURVES_SITE_DAT = None "
+                      "to switch names off.)")
+            return names
+        print(f"{tag} the results file has no site coordinates; trying "
+              f"site_id = sitenum + {offset}.")
     try:
         rows = fem.read_site_dat(path)
     except (OSError, ValueError) as exc:
-        print(f"femtic_data_misfit: curves: cannot read site.dat ({exc}); "
-              "sites are labelled by id.")
+        print(f"{tag} cannot read site.dat ({exc}); sites are labelled by id.")
         return {}
     names = {int(r["sitenum"]) + int(offset): str(r["name"]) for r in rows}
-    hit = sum(1 for s in site_ids if s in names)
-    print(f"femtic_data_misfit: curves: {len(names)} site names from {path}; "
+    hit = sum(1 for sid in site_ids if sid in names)
+    print(f"{tag} {len(names)} site names from {path}; "
           f"{hit} of {len(site_ids)} site ids matched (site_id = sitenum + {offset}).")
     if hit < len(site_ids):
-        print("femtic_data_misfit: curves: WARNING: not all site ids have a name; "
-              "check CURVES_SITE_ID_OFFSET and that site.dat belongs to this data set.")
+        print(f"{tag} WARNING: not all site ids have a name; the site_id numbering "
+              "of the results file may differ from site.dat -- check "
+              "CURVES_SITE_ID_OFFSET, or use CURVES_SITE_MATCH = \"coords\".")
     return names
 
 
@@ -1136,7 +1416,8 @@ def site_nrms(ds: dict) -> Dict[int, dict]:
         out[int(s)] = dict(
             n=int(r.size),
             nrms=float(inv.nrms(r)) if r.size else float("nan"),
-            x=float(ds["site_x"][i0]), y=float(ds["site_y"][i0]))
+            x=float(ds["site_x"][i0]), y=float(ds["site_y"][i0]),
+            also=list(ds.get("site_alias", {}).get(int(s), [])))
     return out
 
 
@@ -1529,17 +1810,19 @@ def plot_site_curves(sid: int, series: Dict[str, dict], info: dict, *, M: int,
 
 def format_site_nrms(info: Dict[int, dict]) -> str:
     hdr = (f"{'site_id':>8} {'name':<16} {'site_x':>14} {'site_y':>14} {'n':>7} "
-           f"{'nrms':>8}")
+           f"{'nrms':>8}  also_ids")
     lines = ["=" * len(hdr), hdr, "-" * len(hdr)]
     for s in sorted(info):
         d = info[s]
         lines.append(f"{s:>8d} {d.get('name', ''):<16} {d['x']:>14.6g} {d['y']:>14.6g} "
-                     f"{d['n']:>7d} {d['nrms']:>8.3f}")
+                     f"{d['n']:>7d} {d['nrms']:>8.3f}  "
+                     + ",".join(str(i) for i in d.get("also", [])))
     lines.append("=" * len(hdr))
     return "\n".join(lines)
 
 
 def run_curves(ds: dict, *, out_dir: str, prefix: str, title_extra: str,
+               plot_dir: Optional[str] = None,
                search_dirs: Sequence[str] = ()) -> int:
     """
     Method "curves": one figure per selected site (see the CURVES_* settings).
@@ -1561,6 +1844,9 @@ def run_curves(ds: dict, *, out_dir: str, prefix: str, title_extra: str,
     if cfg["obs_errors"] not in ("bar", "shade", "none"):
         print("femtic_data_misfit: curves: CURVES_OBS_ERRORS must be bar/shade/none.")
         return 1
+    if cfg["site_match"] not in ("auto", "coords", "id"):
+        print("femtic_data_misfit: curves: CURVES_SITE_MATCH must be auto/coords/id.")
+        return 1
     M = ds["M"]
     try:
         layers = resolve_layers(cfg["ens_mode"], M, cfg["max_curves"])
@@ -1572,14 +1858,16 @@ def run_curves(ds: dict, *, out_dir: str, prefix: str, title_extra: str,
     if skipped:
         print(f"femtic_data_misfit: curves: no plotter for data types {skipped}, skipped.")
     info = site_nrms(ds)
-    names = load_site_names(cfg["site_dat"], search_dirs, cfg["id_offset"], sorted(info))
+    names = load_site_names(cfg["site_dat"], search_dirs, cfg["id_offset"], info,
+                            cfg["site_match"], cfg["site_tol"])
     for s, nm in names.items():
         if s in info:
             info[s]["name"] = nm
     if WRITE_STATS:
         _write(os.path.join(out_dir, f"{prefix}_site_nrms.txt"),
                f"# {title_extra}; per-site nRMS, conventional normalization (RMS1)\n"
-               "# site_x / site_y as stored in the results file; name from site.dat",
+               "# site_x / site_y as stored in the results file; name from site.dat;\n"
+               "# also_ids: other site ids (e.g. VTF) at the same position, merged into site_id",
                format_site_nrms(info))
     try:
         sids = select_sites(info, cfg["sites"], cfg["site_order"], cfg["max_sites"])
@@ -1597,10 +1885,12 @@ def run_curves(ds: dict, *, out_dir: str, prefix: str, title_extra: str,
     exts = ["." + str(e).lstrip(".") for e in
             ((PLOT_FORMATS,) if isinstance(PLOT_FORMATS, str) else PLOT_FORMATS)]
     multipage = bool(cfg["multipage"]) and ".pdf" in exts
-    pdf_path = os.path.join(out_dir, f"{prefix}_curves.pdf")
+    pdf_dir = plot_dir or out_dir                 # figures; tables stay in out_dir
+    os.makedirs(pdf_dir, exist_ok=True)
+    pdf_path = os.path.join(pdf_dir, f"{prefix}_curves.pdf")
     pdf = None                                    # opened with the first page
     other = [e for e in exts if not (multipage and e == ".pdf")]
-    sub_dir = os.path.join(out_dir, f"{prefix}_curves")
+    sub_dir = os.path.join(pdf_dir, f"{prefix}_curves")
     if other:
         os.makedirs(sub_dir, exist_ok=True)
 
@@ -1740,6 +2030,21 @@ def format_runs(runs: Sequence[dict]) -> str:
 # ---------------------------------------------------------------------------
 # Script driver
 # ---------------------------------------------------------------------------
+def resolve_plot_dir(out_dir: str, plot_dir: Optional[str] = None) -> str:
+    """
+    Directory for the figures. `plot_dir` None/empty -> `out_dir`; a
+    relative name -> sub-directory of `out_dir`; an absolute path (with
+    ~ expanded) -> used as given. The directory is created.
+    """
+    if not plot_dir:
+        d = out_dir
+    else:
+        p = os.path.expanduser(str(plot_dir))
+        d = p if os.path.isabs(p) else os.path.join(out_dir, p)
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
 def _save(fig, stem: str, formats: Union[str, Sequence[str]], dpi: int) -> None:
     """
     Save `fig` as stem + ext for every extension in `formats`. A plain string
@@ -1792,7 +2097,8 @@ def process_runs(runs: Sequence[dict], *, mode: str, out_dir: str, prefix: str) 
     import matplotlib.pyplot as plt
 
     ds = build_dataset([r["data"] for r in runs], obs_mode=ENSEMBLE_OBS,
-                       ref_member=REF_MEMBER)
+                       ref_member=REF_MEMBER,
+                       site_merge_tol=SITE_MERGE_TOL if SITE_MERGE_BY_POSITION else None)
     M = ds["M"]
     has_syn = M > 1
     print(f"femtic_data_misfit: mode={mode}, members M={M}, rows={ds['freq'].size}, "
@@ -1809,6 +2115,8 @@ def process_runs(runs: Sequence[dict], *, mode: str, out_dir: str, prefix: str) 
 
     os.makedirs(out_dir, exist_ok=True)
     print(f"femtic_data_misfit: output directory {out_dir}")
+    fig_dir = resolve_plot_dir(out_dir, PLOT_DIR)
+    print(f"femtic_data_misfit: figure directory {fig_dir}")
     if M > 1:
         title_extra = f"ensemble of {M} runs (best iterations)"
     else:
@@ -1837,7 +2145,7 @@ def process_runs(runs: Sequence[dict], *, mode: str, out_dir: str, prefix: str) 
                 panel_size=PANEL_SIZE, cmap=CMAP, color_range=crange,
                 marker_size=MARKER_SIZE, alpha=ALPHA, log_rho=LOG_RHO,
                 show_errorbars=SHOW_ERRORBARS, equal_aspect=EQUAL_ASPECT)
-            _save(fig, os.path.join(out_dir, f"{prefix}_crossplot_{_safe_name(dname)}"),
+            _save(fig, os.path.join(fig_dir, f"{prefix}_crossplot_{_safe_name(dname)}"),
                   PLOT_FORMATS, PLOT_DPI)
             if SHOW:
                 plt.show()
@@ -1870,7 +2178,7 @@ def process_runs(runs: Sequence[dict], *, mode: str, out_dir: str, prefix: str) 
                 bin_width=HIST_BIN_WIDTH, min_n=HIST_MIN_N,
                 run_label=title_extra)
             all_stats[gname] = stats
-            _save(fig, os.path.join(out_dir, f"{prefix}_hist_{_safe_name(gname)}"),
+            _save(fig, os.path.join(fig_dir, f"{prefix}_hist_{_safe_name(gname)}"),
                   PLOT_FORMATS, PLOT_DPI)
             if SHOW:
                 plt.show()
@@ -1900,7 +2208,7 @@ def process_runs(runs: Sequence[dict], *, mode: str, out_dir: str, prefix: str) 
                 confidence=QQ_CONFIDENCE, min_n=QQ_MIN_N,
                 equal_axes=QQ_EQUAL_AXES, run_label=title_extra)
             qq_stats[gname] = stats
-            _save(fig, os.path.join(out_dir, f"{prefix}_qq_{_safe_name(gname)}"),
+            _save(fig, os.path.join(fig_dir, f"{prefix}_qq_{_safe_name(gname)}"),
                   PLOT_FORMATS, PLOT_DPI)
             if SHOW:
                 plt.show()
@@ -1923,6 +2231,7 @@ def process_runs(runs: Sequence[dict], *, mode: str, out_dir: str, prefix: str) 
                     sdirs.append(d)
                 d = os.path.dirname(d)
         return run_curves(ds, out_dir=out_dir, prefix=prefix, title_extra=title_extra,
+                          plot_dir=fig_dir,
                           search_dirs=sdirs)
     return 0
 

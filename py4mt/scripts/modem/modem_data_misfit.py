@@ -29,12 +29,12 @@ ensemble of runs (chosen calculated response of each member).
 @author   vrath
 @project  py4mt
 @created  2026-09-26
-@modified 2026-10-01
+@modified 2026-10-09
 
 Provenance
 ----------
 Author      : Claude (Anthropic)
-Generated   : 2026-09-26 (last modified 2026-10-01)
+Generated   : 2026-09-26 (last modified 2026-10-09)
 Notice      : This code is AI-generated. Review and test it before any
               production use.
 
@@ -185,6 +185,12 @@ Full_Interstation_TF is not drawn.
 
 Changelog
 ---------
+2026-10-09  Claude (Anthropic), AI-generated, review before use: new option
+            PLOT_DIR puts all figures (crossplot, histogram, Q-Q, curves)
+            into a separate directory (None = with the tables; relative
+            name = sub-directory of the output directory; absolute path =
+            one directory for all). Text tables stay in the output
+            directory. New helper resolve_plot_dir().
 2026-10-08  Claude (Anthropic), AI-generated, review before use: documentation
             only -- explicit "single" and "ensemble" usage examples (config
             block and command line) added to the Usage section and readme.
@@ -270,6 +276,12 @@ OUT_PREFIX: Optional[str] = "Misfits"  # None -> derived from run / ensemble;
                                    # prepended: <OUT_PREFIX>_<run>_iter<N>
 PLOT_FORMATS: Tuple[str, ...] = (".pdf",)   # a tuple: note the comma!
 PLOT_DPI: int = 300
+PLOT_DIR: Optional[str] = "plots"  # where the figures go (tables stay in
+                            # the output directory). None = same directory
+                            # as the tables; a relative name = sub-directory
+                            # of the output directory (per run); an absolute
+                            # path = that one directory for all figures
+                            # (file names stay distinct via the prefix)
 WRITE_STATS: bool = True
 FIT_MEASURES: bool = True   # overall table of fit measures (per data type
                             # and pooled) -> <prefix>_fit_measures.txt
@@ -1588,7 +1600,8 @@ def format_site_nrms(info: Dict[str, dict]) -> str:
     return "\n".join(lines)
 
 
-def run_curves(ds: dict, *, out_dir: str, prefix: str, title_extra: str) -> int:
+def run_curves(ds: dict, *, out_dir: str, prefix: str, title_extra: str,
+               plot_dir: Optional[str] = None) -> int:
     """
     Method "curves": one figure per selected site (see the CURVES_* settings).
     Returns 0 on success, 1 if data_viz is missing or the settings are invalid.
@@ -1646,10 +1659,12 @@ def run_curves(ds: dict, *, out_dir: str, prefix: str, title_extra: str) -> int:
     exts = ["." + str(e).lstrip(".") for e in
             ((PLOT_FORMATS,) if isinstance(PLOT_FORMATS, str) else PLOT_FORMATS)]
     multipage = bool(cfg["multipage"]) and ".pdf" in exts
-    pdf_path = os.path.join(out_dir, f"{prefix}_curves.pdf")
+    pdf_dir = plot_dir or out_dir                 # figures; tables stay in out_dir
+    os.makedirs(pdf_dir, exist_ok=True)
+    pdf_path = os.path.join(pdf_dir, f"{prefix}_curves.pdf")
     pdf = None                                    # opened with the first page
     other = [e for e in exts if not (multipage and e == ".pdf")]
-    sub_dir = os.path.join(out_dir, f"{prefix}_curves")
+    sub_dir = os.path.join(pdf_dir, f"{prefix}_curves")
     if other:
         os.makedirs(sub_dir, exist_ok=True)
 
@@ -1792,6 +1807,21 @@ def format_runs(runs: Sequence[dict]) -> str:
 # ---------------------------------------------------------------------------
 # Script driver
 # ---------------------------------------------------------------------------
+def resolve_plot_dir(out_dir: str, plot_dir: Optional[str] = None) -> str:
+    """
+    Directory for the figures. `plot_dir` None/empty -> `out_dir`; a
+    relative name -> sub-directory of `out_dir`; an absolute path (with
+    ~ expanded) -> used as given. The directory is created.
+    """
+    if not plot_dir:
+        d = out_dir
+    else:
+        p = os.path.expanduser(str(plot_dir))
+        d = p if os.path.isabs(p) else os.path.join(out_dir, p)
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
 def _save(fig, stem: str, formats: Union[str, Sequence[str]], dpi: int) -> None:
     """
     Save `fig` as stem + ext for every extension in `formats`. A plain string
@@ -1862,6 +1892,8 @@ def process_runs(runs: Sequence[dict], *, mode: str, out_dir: str, prefix: str) 
 
     os.makedirs(out_dir, exist_ok=True)
     print(f"modem_data_misfit: output directory {out_dir}")
+    fig_dir = resolve_plot_dir(out_dir, PLOT_DIR)
+    print(f"modem_data_misfit: figure directory {fig_dir}")
     if M > 1:
         title_extra = f"ensemble of {M} runs"
     else:
@@ -1891,7 +1923,7 @@ def process_runs(runs: Sequence[dict], *, mode: str, out_dir: str, prefix: str) 
                 panel_size=PANEL_SIZE, cmap=CMAP, color_range=crange,
                 marker_size=MARKER_SIZE, alpha=ALPHA, log_rho=LOG_RHO,
                 show_errorbars=SHOW_ERRORBARS, equal_aspect=EQUAL_ASPECT)
-            _save(fig, os.path.join(out_dir, f"{prefix}_crossplot_{_safe_name(dname)}"),
+            _save(fig, os.path.join(fig_dir, f"{prefix}_crossplot_{_safe_name(dname)}"),
                   PLOT_FORMATS, PLOT_DPI)
             if SHOW:
                 plt.show()
@@ -1924,7 +1956,7 @@ def process_runs(runs: Sequence[dict], *, mode: str, out_dir: str, prefix: str) 
                 bin_width=HIST_BIN_WIDTH, min_n=HIST_MIN_N,
                 run_label=title_extra)
             all_stats[gname] = stats
-            _save(fig, os.path.join(out_dir, f"{prefix}_hist_{_safe_name(gname)}"),
+            _save(fig, os.path.join(fig_dir, f"{prefix}_hist_{_safe_name(gname)}"),
                   PLOT_FORMATS, PLOT_DPI)
             if SHOW:
                 plt.show()
@@ -1954,7 +1986,7 @@ def process_runs(runs: Sequence[dict], *, mode: str, out_dir: str, prefix: str) 
                 confidence=QQ_CONFIDENCE, min_n=QQ_MIN_N,
                 equal_axes=QQ_EQUAL_AXES, run_label=title_extra)
             qq_stats[gname] = stats
-            _save(fig, os.path.join(out_dir, f"{prefix}_qq_{_safe_name(gname)}"),
+            _save(fig, os.path.join(fig_dir, f"{prefix}_qq_{_safe_name(gname)}"),
                   PLOT_FORMATS, PLOT_DPI)
             if SHOW:
                 plt.show()
@@ -1967,7 +1999,8 @@ def process_runs(runs: Sequence[dict], *, mode: str, out_dir: str, prefix: str) 
                    f"({QQ_BAND_AXIS})", table)
 
     if "curves" in METHODS:
-        return run_curves(ds, out_dir=out_dir, prefix=prefix, title_extra=title_extra)
+        return run_curves(ds, out_dir=out_dir, prefix=prefix, title_extra=title_extra,
+                          plot_dir=fig_dir)
     return 0
 
 
