@@ -1342,20 +1342,21 @@ MOD_SLICES = [
 #:   "style" : dict of per-entry style overrides, keyed like MOD_BH_STYLE.
 #: Air and out-of-mesh levels are left as gaps.
 MOD_BH = [
-    dict(
-        name="model centre",
-        x=0.0,
-        y=0.0,  # km, model-local
-        z_top="surface",
-        z_bot=5.0,
-        dz=0.05,  # km
-        what=["ensemble", "med", "sigma1"],  # ensemble first = underneath
-        alpha=0.05,
-    ),
+    # dict(
+    #     name="model centre",
+    #     x=0.0,
+    #     y=0.0,  # km, model-local
+    #     z_top="surface",
+    #     z_bot=4.0,
+    #     dz=0.05,  # km
+    #     what=["ensemble", "med", "sigma1". "sigma2",],  # ensemble first = underneath
+    #     alpha=0.3,
+    # ),
     # dict(sites="all", n_random=6, seed=1,   # 6 random sites, reproducible
     #      z_bot=5.0, what=["ensemble", "med", "sigma1"], alpha=0.05),
-    # dict(sites="all", z_top="surface", z_bot=5.0, dz=0.05,   # one panel per site
-    #      what=["avg", "percentiles", "ensemble"], alpha=0.1),
+    dict(sites="all", z_top="surface", z_bot=4.0, dz=0.05,   # one panel per site
+             what=["ensemble", "med", "sigma1", "sigma2",],  # ensemble first = underneath
+             alpha=0.3,),
     # dict(sites=["SITE01", "SITE07"], z_bot=5.0, what=["med", "best"]),
     # dict(name="BH-1",
     #      x=(-70.868025, "latlon"), y=(-16.363436, "latlon"),
@@ -1383,8 +1384,8 @@ MOD_BH_XLIM = None
 #: (None = up to 4 columns). MOD_BH_PER_FIG = maximum panels per figure
 #: (None = all in one); further figures get a _01, _02, ... suffix. Useful
 #: with "sites".
-MOD_BH_PANEL_SIZE = [10.0, 15.0]
-MOD_BH_NCOLS = None
+MOD_BH_PANEL_SIZE = [8.0, 16.0]
+MOD_BH_NCOLS = 3
 MOD_BH_PER_FIG = None
 #: True = all panels use one common depth range (union of the entries'
 #: ranges), so profiles can be compared by eye.
@@ -1400,7 +1401,7 @@ MOD_BH_STYLE = {
     "avg": dict(color="black", lw=2.0, ls="-"),
     "med": dict(color="crimson", lw=2.0, ls="-"),
     "best": dict(color="tab:orange", lw=1.6, ls="-"),
-    "ensemble": dict(color="0.25", lw=0.6, ls="-"),
+    "ensemble": dict(color="0.5", lw=0.6, ls="-"),
     "percentiles": dict(cmap="viridis", lw=1.2, ls="--"),
     "sigma1": dict(color="navy", lw=1.6, ls="--"),
     "sigma2": dict(color="steelblue", lw=1.2, ls=":"),
@@ -1504,7 +1505,7 @@ MOD_ALPHA_SOURCE = "sens_median_an > -5.5"
 #:            fully transparent MOD_ALPHA_FADE_WIDTH beyond it (same units
 #:            as <value>, e.g. 1.0 = one decade for log10 sensitivities).
 MOD_ALPHA_MODE = "blank"
-MOD_ALPHA_SOURCE = "sens_median_an > -3."
+MOD_ALPHA_SOURCE = "sens_median_an > -5."
 #: "blank" -- failing cells are removed (hard cut).
 #: "fade"  -- failing cells fade linearly from opaque at the threshold to
 #:            fully transparent MOD_ALPHA_FADE_WIDTH beyond it (same units

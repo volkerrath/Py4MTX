@@ -23,6 +23,10 @@ This module provides:
   `resistivity_block_iterX.dat` for RTO and related algorithms.
 - **Geostatistical initial-model ensemble** (`generate_gst_model_ensemble`) —
   pilot-point Ordinary Kriging (gstools) for the GST uncertainty method.
+- **Streaming mean / variance / quantiles** (`welford_update`,
+  `batch_moments`, `chan_merge`, `moments_variance`, `hist_update`,
+  `hist_quantiles`) for ensembles too large to hold in memory; partial
+  results merge across chunks or MPI ranks.
 - **EOF / PCA analysis** (`compute_eofs`, `eof_reconstruct`, `eof_sample`,
   `fit_eof_model`, `sample_physical_ensemble`) for ensemble dimension reduction.
 - **Weighted Karhunen–Loève decomposition** on unstructured FEMTIC meshes
@@ -108,6 +112,69 @@ solve_Q = make_precision_solver(
 )
 x = solve_Q(b)
 ```
+
+### Streaming mean / variance / quantiles
+
+Per-cell mean and variance of a very large ensemble (e.g. many nullspace-
+shuttle models) from three quantities per cell: `n`, `mean` and `M2` (sum of
+squared deviations from the mean), with `var = M2 / (n - ddof)`.
+
+| Function                                   | Purpose                                              |
+|--------------------------------------------|------------------------------------------------------|
+| `welford_update(n, mean, m2, x)`           | Add one sample (or one value per cell), Welford 1962. |
+| `batch_moments(x, axis=0)`                 | `(n, mean, M2)` of an in-memory chunk (two-pass).    |
+| `chan_merge(n_a, mean_a, m2_a, n_b, mean_b, m2_b)` | Pairwise merge of two accumulators (Chan et al. 1983). |
+| `moments_variance(n, m2, ddof=1)`          | Variance from `(n, M2)`; NaN where `n <= ddof`.      |
+| `hist_update(counts, x, lo, hi)`           | Add a chunk to per-cell fixed-bin histograms (in place); returns the number of clipped values. |
+| `hist_quantiles(counts, lo, hi, probs)`    | Per-cell quantiles from the histograms, shape `(len(probs), ncell)`. |
+
+```python
+import numpy as np
+from ensembles import batch_moments, chan_merge, moments_variance
+
+n, mean, m2 = 0, np.zeros(ncell), np.zeros(ncell)
+for chunk in chunks:                       # chunk shape (n_models, ncell)
+    n, mean, m2 = chan_merge(n, mean, m2, *batch_moments(chunk, axis=0))
+var = moments_variance(n, m2)
+```
+
+For MPI runs each rank accumulates its own chunks; reduce the per-rank
+`(n, mean, M2)` triples with `chan_merge` (any reduction order gives the same
+result to working precision). For resistivity, accumulate `log10(rho)`.
+
+Quantiles need a summary larger than three numbers per cell. `hist_update`
+keeps a fixed-bin histogram per cell, an `(ncell, nbins)` count array, in
+`log10(rho)` over a common range `[lo, hi]`; histograms of the same range and
+bin count merge by plain addition (also across MPI ranks). `hist_quantiles`
+interpolates linearly inside the bin that holds the requested probability.
+Memory is `ncell * nbins * 4` bytes (`uint32`).
+
+```python
+import math
+from ensembles import hist_update, hist_quantiles
+
+counts = np.zeros((ncell, 256), dtype=np.uint32)
+for chunk in chunks:                       # same chunks as above
+    n_clip = hist_update(counts, chunk, lo, hi)
+phi = lambda k: 0.5 * (1.0 + math.erf(k / math.sqrt(2.0)))
+probs = [phi(k) for k in (-2, -1, 0, 1, 2)]        # 0.0228 ... 0.9772
+q = hist_quantiles(counts, lo, hi, probs)          # shape (5, ncell)
+```
+
+- The result is within one bin width `(hi - lo) / nbins` of the empirical
+  inverse-CDF quantile (`numpy.quantile(..., method="inverted_cdf")`).
+  numpy's default interpolates between neighbouring order statistics and can
+  differ from it by their spacing, which is large in the tails of a small
+  ensemble.
+- Values outside `[lo, hi]` go into the first / last bin (`hist_update`
+  returns how many); quantiles that fall in those bins are only bounds. Choose
+  the range from a pilot chunk with some margin.
+- For correlated ensembles (Markov-chain-like, or models shuttled from one
+  starting point) the quantiles are those of the visited models, not error
+  bars for independent samples.
+- The 1-sigma and 2-sigma probabilities are those of a normal distribution,
+  0.1587 / 0.8413 and 0.0228 / 0.9772. For a non-Gaussian distribution these
+  differ from `mean +/- k*std`; compare both.
 
 ### EOF / PCA
 
@@ -464,7 +531,7 @@ If you see `RuntimeError: Iterative solver did not converge` (full-rank mode):
 
 ## Version / provenance
 
-Updated: 2026-04-27 (GST); 2026-04-11 (consolidation); 2026-04-02 (cleanup)
+Updated: 2026-10-16 (streaming mean/variance, histogram quantiles); 2026-04-27 (GST); 2026-04-11 (consolidation); 2026-04-02 (cleanup)
 
 ### Changelog (2026-04-27)
 - Added `generate_gst_model_ensemble` — geostatistical initial-model ensemble
@@ -707,3 +774,38 @@ whether it should be implemented or removed.
   (`output_target=MOD_OUTPUFalseT_TARGET`, an undefined-variable typo
   that raised `NameError` on every `PERTURB_MOD=True` run, corrected to
   `MOD_OUTPUT_TARGET`).
+
+### Changelog (2026-10-16) -- streaming mean / variance
+
+Added by Claude Sonnet 5.5 (Anthropic). AI-generated code -- please review
+before production use.
+
+- Added `welford_update()`, `batch_moments()`, `chan_merge()` and
+  `moments_variance()` (after `generate_data_ensemble`, before the EOF/PCA
+  section). Vectorised over cells; no change to existing functions.
+  `chan_merge` is the pairwise update of Chan, Golub and LeVeque (1983) and
+  is safe when either side is empty.
+- Verification: against `numpy.var(ddof=1)` on data with mean 1e6 and sd 2
+  (hard for naive formulas), chunked merge, row-by-row Welford and a binary
+  tree of merges all agree to a relative error of about 1e-11.
+- References: Welford, B. P. (1962), Technometrics 4(3), 419-420,
+  doi:10.1080/00401706.1962.10490022 (DOI supplied by the user, not
+  independently confirmed); Chan, T. F., Golub, G. H., LeVeque, R. J. (1983),
+  The American Statistician 37(3), 242-247,
+  doi:10.1080/00031305.1983.10483115.
+
+### Changelog (2026-10-16) -- streaming quantiles
+
+Added by Claude Sonnet 5.5 (Anthropic). AI-generated code -- please review
+before production use.
+
+- Added `hist_update()` and `hist_quantiles()` to the streaming section:
+  per-cell fixed-bin histograms (mergeable by addition) and quantiles with
+  linear interpolation inside the bin. No change to existing functions.
+- Verification (synthetic Gaussian cells, 6000 samples, chunks of 700,
+  400 bins over [-2, 6], bin width 0.02): chunked mean and variance agree
+  with numpy to 1e-14; the quantiles at the +/-1 and +/-2 sigma
+  probabilities differ from `numpy.quantile` by at most 0.007, i.e. less
+  than one bin; histograms of two halves add up to the histogram of the
+  whole; an empty cell gives NaN; clipping is counted.
+- Used by `femtic_nss.py` (chunked nullspace-shuttle statistics).

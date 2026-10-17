@@ -12,6 +12,9 @@ This module contains:
 - Ensemble perturbation helpers for FEMTIC inputs (observe.dat and
   resistivity_block_iterX.dat).
 - Roughness/precision matrix helpers and sampling routines.
+- Streaming per-cell mean and variance (Welford update, Chan pairwise
+  merge) and streaming per-cell quantiles (fixed-bin histograms) for
+  ensembles too large to hold in memory.
 - Ensemble analysis tools (EOFs / PCA).
 - Weighted KL decomposition and a KL+PCE surrogate builder for log-resistivity
   fields on unstructured FEMTIC meshes.
@@ -240,6 +243,25 @@ Provenance
             blocks with inconsistent separators; now one "Provenance" list
             (date, author, indented text) as in the other py4mt modules.
             Wording of all earlier entries is unchanged; no code change.
+2026-10-16  Claude Sonnet 5.5 (Anthropic)
+            added a streaming mean/variance section (after
+            generate_data_ensemble, before the EOF/PCA section):
+            welford_update() (one-sample Welford update), batch_moments()
+            ((n, mean, M2) of a chunk), chan_merge() (pairwise merge of
+            two accumulators, Chan, Golub and LeVeque 1983, for combining
+            chunks or MPI ranks) and moments_variance() (M2 / (n - ddof)).
+            For ensembles too large to hold in memory, e.g. many
+            nullspace-shuttle models.  Vectorised over cells; no change to
+            existing functions.
+2026-10-16  Claude Sonnet 5.5 (Anthropic)
+            added streaming per-cell quantiles to the same section:
+            hist_update() (accumulate chunks into per-cell fixed-bin
+            histograms; histograms of equal range and bin count merge by
+            plain addition, also across MPI ranks) and hist_quantiles()
+            (quantiles with linear interpolation inside the bin, e.g. the
+            1-sigma and 2-sigma probabilities of a normal distribution).
+            Within one bin width of the empirical inverse-CDF quantile.  No
+            change to existing functions.
 
 AI-generated; please review before production use.
 """
@@ -3206,6 +3228,304 @@ def generate_data_ensemble(alg: str = 'rto',
         print(obs_list)
 
     return obs_list
+
+
+# -----------------------------------------------------------------------------
+# Streaming mean / variance (Welford update, Chan pairwise merge) and
+# streaming quantiles (fixed-bin histograms)
+# -----------------------------------------------------------------------------
+# For ensembles too large to hold in memory (e.g. many nullspace-shuttle
+# models), the per-cell mean and variance can be accumulated from three
+# quantities only:
+#
+#     n    : number of samples seen so far (scalar, or array over cells)
+#     mean : running mean, one value per cell
+#     M2   : running sum of squared deviations from the mean, per cell
+#
+# with  var = M2 / (n - ddof).  Partial results from different chunks or
+# MPI ranks are combined with chan_merge().
+#
+# References
+#   Welford, B. P. (1962), Technometrics 4(3), 419-420,
+#       doi:10.1080/00401706.1962.10490022  (DOI supplied by the user; not
+#       independently confirmed)
+#   Chan, T. F., Golub, G. H., LeVeque, R. J. (1983), The American
+#       Statistician 37(3), 242-247, doi:10.1080/00031305.1983.10483115
+#
+# For log-normally distributed quantities (resistivity) accumulate log10(rho).
+# -----------------------------------------------------------------------------
+
+def welford_update(
+    n: Union[int, np.ndarray],
+    mean: np.ndarray,
+    m2: np.ndarray,
+    x: ArrayLike,
+) -> Tuple[Union[int, np.ndarray], np.ndarray, np.ndarray]:
+    """Add one sample to a running (n, mean, M2) accumulator (Welford, 1962).
+
+    Parameters
+    ----------
+    n : int or ndarray
+        Number of samples accumulated so far.
+    mean, m2 : ndarray
+        Running mean and running sum of squared deviations (same shape).
+    x : float or ndarray
+        New sample, same shape as ``mean`` (one value per cell).
+
+    Returns
+    -------
+    n, mean, m2
+        Updated accumulator.  The inputs are not modified.
+    """
+    x = np.asarray(x, dtype=float)
+    n_new = n + 1
+    delta = x - mean
+    mean_new = mean + delta / n_new
+    m2_new = m2 + delta * (x - mean_new)
+    return n_new, mean_new, m2_new
+
+
+def batch_moments(
+    x: ArrayLike,
+    axis: int = 0,
+) -> Tuple[int, np.ndarray, np.ndarray]:
+    """Return ``(n, mean, M2)`` of a batch of samples along ``axis``.
+
+    Two-pass computation (mean first, then squared deviations), numerically
+    stable for a chunk held in memory.  NaNs are not handled; mask or remove
+    them beforehand.
+
+    Parameters
+    ----------
+    x : ndarray
+        Batch of samples, e.g. shape ``(n_models, n_cells)`` with ``axis=0``.
+    axis : int, optional
+        Axis along which the samples are stacked (default 0).
+
+    Returns
+    -------
+    n : int
+        Number of samples in the batch.
+    mean, m2 : ndarray
+        Mean and sum of squared deviations, with ``axis`` removed.
+    """
+    x = np.asarray(x, dtype=float)
+    n = x.shape[axis]
+    if n == 0:
+        shp = list(x.shape)
+        del shp[axis]
+        return 0, np.zeros(shp), np.zeros(shp)
+    mean = x.mean(axis=axis)
+    dev = x - np.expand_dims(mean, axis)
+    m2 = np.sum(dev * dev, axis=axis)
+    return n, mean, m2
+
+
+def chan_merge(
+    n_a: Union[int, np.ndarray],
+    mean_a: ArrayLike,
+    m2_a: ArrayLike,
+    n_b: Union[int, np.ndarray],
+    mean_b: ArrayLike,
+    m2_b: ArrayLike,
+) -> Tuple[Union[int, np.ndarray], np.ndarray, np.ndarray]:
+    """Combine two (n, mean, M2) accumulators (Chan, Golub, LeVeque, 1983).
+
+    The pairwise update is::
+
+        n    = n_a + n_b
+        d    = mean_b - mean_a
+        mean = mean_a + d * n_b / n
+        M2   = M2_a + M2_b + d**2 * n_a * n_b / n
+
+    It is safe if either side is empty (``n = 0``).  Use it to combine
+    chunks processed one after another, or the per-rank results of an MPI
+    run.  The merge is associative up to rounding, so any reduction order
+    gives the same result to working precision.
+
+    Parameters
+    ----------
+    n_a, mean_a, m2_a : accumulator A
+    n_b, mean_b, m2_b : accumulator B
+        Counts may be scalars or arrays broadcastable against the means.
+
+    Returns
+    -------
+    n, mean, m2
+        Merged accumulator.  ``n`` is an ``int`` for scalar input counts.
+    """
+    n_a = np.asarray(n_a, dtype=float)
+    n_b = np.asarray(n_b, dtype=float)
+    mean_a = np.asarray(mean_a, dtype=float)
+    mean_b = np.asarray(mean_b, dtype=float)
+    m2_a = np.asarray(m2_a, dtype=float)
+    m2_b = np.asarray(m2_b, dtype=float)
+
+    n = n_a + n_b
+    safe_n = np.where(n > 0, n, 1.0)
+    frac_b = n_b / safe_n
+    delta = mean_b - mean_a
+    mean = mean_a + delta * frac_b
+    m2 = m2_a + m2_b + delta * delta * n_a * frac_b
+
+    if n.ndim == 0:
+        n = int(n)
+    return n, mean, m2
+
+
+def moments_variance(
+    n: Union[int, np.ndarray],
+    m2: ArrayLike,
+    ddof: int = 1,
+) -> np.ndarray:
+    """Variance from an accumulator: ``M2 / (n - ddof)``; NaN where n <= ddof.
+
+    Parameters
+    ----------
+    n : int or ndarray
+        Sample count(s).
+    m2 : ndarray
+        Sum of squared deviations from the mean.
+    ddof : int, optional
+        Delta degrees of freedom (default 1, sample variance).
+    """
+    n = np.asarray(n, dtype=float)
+    m2 = np.asarray(m2, dtype=float)
+    denom = n - ddof
+    out = np.full(np.broadcast(m2, denom).shape, np.nan)
+    ok = denom > 0
+    np.divide(m2, denom, out=out, where=ok)
+    return out
+
+
+# Streaming quantiles.  Exact quantiles need all samples.  A fixed-bin
+# histogram per cell (ncell x nbins counts) is a mergeable summary: chunks,
+# and MPI ranks that use the same (lo, hi, nbins), combine by plain addition
+# of the count arrays.  The result is within one bin width (hi - lo) / nbins
+# of the empirical (inverse-CDF) quantile, i.e. of the order statistic that
+# holds the requested probability; definitions that interpolate between
+# neighbouring order statistics (numpy's default) can differ by the spacing
+# of those, which is large in the tails when the ensemble is small.
+# Values outside [lo, hi] are counted in the first / last bin (hist_update()
+# returns how many); quantiles that fall in those bins are then only bounds.
+# For members of one Markov-chain-like or otherwise correlated set the
+# result is the empirical quantile of the visited models, not an error bar
+# for independent samples.
+
+def hist_update(
+    counts: np.ndarray,
+    x: ArrayLike,
+    lo: float,
+    hi: float,
+) -> int:
+    """Add a chunk of samples to per-cell fixed-bin histograms (in place).
+
+    Parameters
+    ----------
+    counts : ndarray, shape (ncell, nbins), C-contiguous, integer
+        Histogram counts, modified in place.  Start from
+        ``np.zeros((ncell, nbins), dtype=np.uint32)``.
+    x : ndarray, shape (n_models, ncell) or (ncell,)
+        Samples, one value per cell.  Must be finite.
+    lo, hi : float
+        Value range covered by the bins, ``hi > lo``; bin width is
+        ``(hi - lo) / nbins``.  Use the same values for every chunk and rank.
+
+    Returns
+    -------
+    n_clipped : int
+        Number of values outside ``[lo, hi]`` that were put in the first or
+        last bin.
+    """
+    x = np.asarray(x, dtype=float)
+    if x.ndim == 1:
+        x = x[np.newaxis, :]
+    if counts.ndim != 2 or not counts.flags.c_contiguous:
+        raise ValueError("counts must be a C-contiguous 2-D array")
+    ncell, nbins = counts.shape
+    if x.ndim != 2 or x.shape[1] != ncell:
+        raise ValueError(
+            f"x has shape {x.shape}, expected (n_models, {ncell})")
+    if not hi > lo:
+        raise ValueError("hist_update: need hi > lo")
+    if not np.all(np.isfinite(x)):
+        raise ValueError("hist_update: x contains NaN or Inf")
+
+    n_clipped = int(np.count_nonzero((x < lo) | (x > hi)))
+    idx = np.floor((x - lo) * (nbins / (hi - lo))).astype(np.intp)
+    np.clip(idx, 0, nbins - 1, out=idx)
+
+    flat = counts.reshape(-1)                    # view; counts is C-contiguous
+    offs = np.arange(ncell, dtype=np.intp) * nbins
+    for row in idx:                              # one bin per cell and sample
+        flat[offs + row] += 1                    # indices are unique within a row
+    return n_clipped
+
+
+def hist_quantiles(
+    counts: np.ndarray,
+    lo: float,
+    hi: float,
+    probs: ArrayLike,
+    block: int = 20000,
+) -> np.ndarray:
+    """Per-cell quantiles from histograms built with :func:`hist_update`.
+
+    The cumulative counts are interpolated linearly inside the bin that
+    contains the requested probability.  The result is within one bin width
+    of the empirical inverse-CDF quantile (``method="inverted_cdf"`` in
+    numpy.quantile); numpy's default interpolation between neighbouring
+    order statistics can differ by their spacing in sparsely sampled tails.  Work is done in blocks of ``block``
+    cells to bound the memory of the cumulative sums.
+
+    Parameters
+    ----------
+    counts : ndarray, shape (ncell, nbins)
+        Histogram counts.
+    lo, hi : float
+        Range used when the histogram was filled.
+    probs : array_like of float, shape (nq,)
+        Probabilities in (0, 1), e.g. the normal-distribution probabilities
+        of -2, -1, 0, +1, +2 sigma: 0.0228, 0.1587, 0.5, 0.8413, 0.9772.
+    block : int, optional
+        Number of cells processed at a time.
+
+    Returns
+    -------
+    q : ndarray, shape (nq, ncell)
+        Quantile values; NaN for cells without samples.
+    """
+    counts = np.asarray(counts)
+    probs = np.atleast_1d(np.asarray(probs, dtype=float))
+    if np.any(probs < 0.0) or np.any(probs > 1.0):
+        raise ValueError("probs must lie in [0, 1]")
+    ncell, nbins = counts.shape
+    width = (hi - lo) / nbins
+    q = np.full((probs.size, ncell), np.nan)
+
+    for s in range(0, ncell, block):
+        c = counts[s:s + block].astype(np.int64)
+        cum = np.cumsum(c, axis=1)
+        tot = cum[:, -1]
+        for ip, p in enumerate(probs):
+            target = p * tot
+            # first bin whose cumulative count reaches the target
+            b = np.minimum(np.sum(cum < target[:, np.newaxis], axis=1),
+                           nbins - 1)
+            b1 = b[:, np.newaxis]
+            cnt = np.take_along_axis(c, b1, axis=1)[:, 0]
+            prev = np.where(
+                b > 0,
+                np.take_along_axis(cum, np.maximum(b1 - 1, 0), axis=1)[:, 0],
+                0)
+            frac = np.zeros(target.shape)
+            np.divide(target - prev, cnt, out=frac, where=cnt > 0)
+            frac = np.clip(frac, 0.0, 1.0)
+            val = lo + (b + frac) * width
+            val[tot == 0] = np.nan
+            q[ip, s:s + block] = val
+    return q
+
 
 def compute_eofs(
     E: np.ndarray,

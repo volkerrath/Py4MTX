@@ -6,11 +6,19 @@
 
 ## Purpose
 
-`femtic_nss.py` reads the final model and data from an HDF5 inversion archive,
-computes the data-weighted Jacobian, decomposes it via randomised SVD, generates
+`femtic_nss.py` reads the final model and data from FEMTIC's own results file
+(`results_iterX.h5`) and the Jacobian from its exchange file (`exchange.h5`),
+decomposes the data-weighted Jacobian via randomised SVD with N singular
+values / vectors, generates
 a model perturbation, and projects that perturbation onto the **null space** of
-the scaled Jacobian so that it leaves the predicted data unchanged.  The result
-is written as a new FEMTIC resistivity block.
+the scaled Jacobian so that it leaves the predicted data unchanged.  This is
+repeated for `NSS_N_MODELS` perturbations, **chunk by chunk**: each chunk of
+`NSS_CHUNK_SIZE` shuttled models is merged into streaming statistics and then
+discarded, so the ensemble never has to fit in memory.  The statistics are the
+per-block mean and variance of log10(rho) (Welford / Chan pairwise merge) and
+the per-block quantiles at the 1-sigma and 2-sigma probabilities (fixed-bin
+histograms).  The first shuttled model is written as a FEMTIC resistivity
+block, together with the mean and quantile models.
 
 Two perturbation modes are available, selected by `PERTURB_MODE`:
 
@@ -76,25 +84,53 @@ Verification: `‖Js · δm_null‖` is printed and should be near machine zero.
 
 | Step | What happens |
 |------|-------------|
-| **1** | Read `model`, `observed`, `calculated`, `errors`, `jacobian` from `Inversion_results.h5` |
-| **2** | Form `Js = diag(1/error) @ J` and normalised residual `rs` |
-| **3** | Randomised SVD of `Js` via `inverse.rsvd` (Halko et al., 2011) |
+| **1** | Read the final model (log10 rho of the free blocks) and misfit data from `results_iterX.h5`; read the Jacobian from `exchange.h5` |
+| **2** | `Js = J` (FEMTIC writes the Jacobian already error-weighted; divided by the errors only if `JAC_WEIGHTED = False`); approximate RMS misfit from the results file |
+| **3** | Randomised SVD of `Js` with N = `RSVD_RANK` singular values / vectors via `inverse.rsvd` (Halko et al., 2011) |
 | **4** | Generate raw perturbation δm̃ via `PERTURB_MODE`: `"gst"` → Kriged model delta; `"random"` → user-editable Gaussian |
-| **5** | Project δm̃ onto null space; add to model; write output block |
+| **5** | For each chunk of `NSS_CHUNK_SIZE` models: draw δm̃ (step 4), project onto the null space, add to the model, merge the chunk into the running mean / variance (`chan_merge`) and the per-block histograms (`hist_update`); discard the chunk |
+| **out** | Write the first model to `MODEL_OUT`, the mean and quantile models next to it, and all statistics to `NSS_STATS_FILE` |
 
 ---
 
 ## Input
 
-### HDF5 file — `Inversion_results.h5`
+### Results file - `results_iterX.h5`
+
+Written by FEMTIC when `ACTIVATE_HDF5_RESULTS` is set in `control.dat` (build
+with `HDF5_OUT=yes`); read here with `fem.read_results_hdf5`.
+
+| Group / dataset | Used for |
+|---|---|
+| `/model/blocks` (`resistivity`, `type`) | Final model: log10(rho) of the **free** blocks (`type` not 1 or 2), in ascending blockID order, i.e. the order of the Jacobian columns |
+| `/model/metadata` (`iterNum`, `anisotropic`) | Iteration number (compared with the Jacobian's); anisotropic (v5) files are rejected, because the model vector there is not one value per free block |
+| `/data/data` (`re_val`, `im_val`, `re_err`, `im_err`, `cal_re`, `cal_im`) | Approximate error-weighted RMS misfit, printed in step 2 |
+
+### Jacobian file - `exchange.h5`
+
+Written by FEMTIC when `ACTIVATE_HDF5_EXCHANGE` is set (build with
+`HDF5_JAC=yes`); it also holds the roughening matrix and the mesh.
 
 | Dataset | Shape | Description |
 |---------|-------|-------------|
-| `model` | (n_m,) | Final model — log₁₀(ρ) for free regions |
-| `observed` | (n_d,) | Observed data vector |
-| `calculated` | (n_d,) | Forward-modelled data at final model |
-| `errors` | (n_d,) | Data errors (positive, same units as data) |
-| `jacobian` | (n_d, n_m) | Sensitivity matrix at final model |
+| `/jacobian/values` | (n_d, n_m) | J = Cd^(-1/2) dF/dm, **already divided by the data errors** (`weighted` = 1) |
+| `/jacobian/data_errors` | (n_d,) | Standard deviation of each row; used only if `JAC_WEIGHTED = False` |
+| `/jacobian/metadata` | attributes | `iterNum`, `nData`, `nModel`, `weighted` |
+
+- Because J is already weighted, `Js = J`.  Dividing by the errors again, as
+  the earlier `Inversion_results.h5` version of this script did with its own
+  unweighted Jacobian, would weight the data twice.
+- The rows follow the inversion's global (PE-gathered) data ordering, **not**
+  the row order of `/data/data` in the results file, so rows of J cannot be
+  matched to rows of the results table.  The shuttle only needs the model
+  (column) space of J, so this does not matter here; it is why the misfit in
+  step 2 is computed from the results file alone.
+- The columns are the free blocks in ascending blockID order.  The script
+  stops if their number differs from the number of free blocks in the results
+  file or in `MODEL_TEMPLATE`, and reports a differing iteration number.
+- An older `jacobian.h5` (root-level dataset `/jacobian`, optionally
+  `/data_errors`) is also accepted.  It carries no `weighted` attribute, so
+  set `JAC_WEIGHTED` explicitly for such a file.
 
 ### Template resistivity block — `MODEL_TEMPLATE`
 
@@ -109,10 +145,27 @@ Only the free-region values are replaced.  Any valid FEMTIC resistivity block
 
 | File | Description |
 |------|-------------|
-| `resistivity_block_nss.dat` | Null-space-shuttled FEMTIC resistivity block |
+| `resistivity_block_nss.dat` | First null-space-shuttled FEMTIC resistivity block (`MODEL_OUT`) |
+| `resistivity_block_nss_mean.dat` | Per-block mean of log10(rho) over all shuttled models |
+| `resistivity_block_nss_q0228.dat`, `_q1587.dat`, `_q5000.dat`, `_q8413.dat`, `_q9772.dat` | Quantile models at the probabilities Phi(-2), Phi(-1), 0.5, Phi(+1), Phi(+2) of the standard normal distribution (0.0228, 0.1587, 0.5, 0.8413, 0.9772); one file per level of `NSS_SIGMAS` (`NSS_WRITE_STAT_MODELS`) |
+| `nss_stats.npz` | All statistics (see below) |
 | `nss_qc.pdf` | Optional QC slice figure of the output model (`MOD_QC = True`) |
 
-The `.dat` file is in standard FEMTIC format and can be used directly as the
+`nss_stats.npz` (`NSS_STATS_FILE`) holds, all for log10(rho) of the free blocks
+in ascending blockID order:
+
+| Key | Shape | Content |
+|-----|-------|---------|
+| `n` | scalar | Number of models accumulated |
+| `mean`, `std`, `m2` | (nm,) | Mean, sample standard deviation (ddof = 1), sum of squared deviations |
+| `sigma`, `probs` | (nq,) | Sigma levels (-2, -1, 0, 1, 2 for the default) and their normal-distribution probabilities |
+| `quantiles` | (nq, nm) | Empirical quantiles from the histograms, row `i` for `probs[i]` |
+| `gauss` | (nq, nm) | `mean + sigma[i] * std` for comparison (equal to the quantiles if the distribution is Gaussian) |
+| `hist_lo`, `hist_hi`, `hist_nbins`, `clip_fraction` | scalars | Histogram range, bin count, and the fraction of values that fell outside the range |
+| `reference_model` | (nm,) | The final model that the perturbations were added to |
+| `r_eff`, `amplitude` | scalars | Effective rank used for the projection and `NSS_AMPLITUDE` |
+
+The `.dat` files are in standard FEMTIC format and can be used directly as the
 starting model for a further inversion run or passed to `femtic_mod_edit.py` /
 `femtic_viz.py` for inspection.
 
@@ -163,7 +216,9 @@ the top of the script.  No other edits are needed for a standard run.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `WORK_DIR` | `/home/vrath/Py4MTX/work/` | Directory for all I/O |
-| `HDF5_FILE` | `WORK_DIR + "Inversion_results.h5"` | Input HDF5 archive |
+| `RESULTS_FILE` | `WORK_DIR + "results_iter10.h5"` | FEMTIC results file of the iteration the Jacobian belongs to (set the iteration number) |
+| `JACOBIAN_FILE` | `WORK_DIR + "exchange.h5"` | FEMTIC exchange file with the Jacobian (or a legacy `jacobian.h5`) |
+| `JAC_WEIGHTED` | `None` | Is J already divided by the data errors?  `None` = read the file's `weighted` attribute (exchange.h5: True; a legacy file without it: error); `True` = `Js = J`; `False` = `Js = diag(1/error) @ J` |
 | `MODEL_TEMPLATE` | `WORK_DIR + "resistivity_block_iter0.dat"` | FEMTIC template block |
 | `MODEL_OUT` | `WORK_DIR + "resistivity_block_nss.dat"` | Output block |
 | `RANDOM_SEED` | `None` | `None` = fresh OS entropy (default, non-reproducible). An integer makes step 4's model perturbation reproducible: a shared `rng = np.random.default_rng(RANDOM_SEED)` drives both `PERTURB_MODE = "gst"` (passed to `ens.generate_gst_model_ensemble`) and `PERTURB_MODE = "random"` (used directly in `_make_perturbation_random`). **Does not** cover step 3's randomised SVD (`inv.rsvd`) — see the caveat below. |
@@ -218,7 +273,7 @@ The GST block mirrors the equivalent config in `femtic_gst_prep.py`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `RSVD_RANK` | `300` | Target rank for rSVD of Js. Increase until the singular-value spectrum flattens. Must be ≪ min(n_d, n_m). |
+| `RSVD_RANK` | `300` | N: number of singular values / vectors computed by the rSVD of Js (target rank). Increase until the singular-value spectrum flattens. Must be << min(n_d, n_m). |
 | `RSVD_OVERSAMPLES` | `None` | Extra random columns. `None` → 2 × `RSVD_RANK` (Halko et al. default). |
 | `RSVD_SUBSPACE_ITERS` | `2` | Power iterations for improved accuracy. More iterations = better approximation at higher cost. |
 
@@ -228,6 +283,18 @@ The GST block mirrors the equivalent config in `femtic_gst_prep.py`.
 |----------|---------|-------------|
 | `NSS_SV_THRESH` | `1.0e-3` | Singular-value cutoff as a fraction of s₀. Vectors with s_i < τ · s₀ are treated as null-space. Smaller τ → larger effective rank → less null-space freedom. |
 | `NSS_AMPLITUDE` | `1.0` | Scale factor α applied to δm_null before adding to the model. Start at 0.1 and increase to explore the null space more aggressively. |
+
+### Ensemble statistics  (step 5)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NSS_N_MODELS` | `100` | Number of shuttled models. In `"gst"` mode each costs one Kriging run, which usually dominates the run time. |
+| `NSS_CHUNK_SIZE` | `25` | Models generated, projected and merged at a time. Memory is about `NSS_CHUNK_SIZE * nm * 8` bytes for the chunk plus a few temporaries of that size. |
+| `NSS_SIGMAS` | `(1.0, 2.0)` | Sigma levels. Quantiles are computed at Phi(-k), 0.5 and Phi(+k) of the standard normal distribution for each k (0.0228, 0.1587, 0.5, 0.8413, 0.9772). Use 1.96 for 2.5 / 97.5 %. |
+| `NSS_HIST_NBINS` | `256` | Histogram bins per block. Memory is `nm * NSS_HIST_NBINS * 4` bytes; the quantile error is at most one bin width. |
+| `NSS_HIST_RANGE` | `None` | `(lo, hi)` in log10(rho) common to all blocks. `None`: from the first chunk (min and max padded by half its span, at least 0.5 each side). Values outside go into the end bins. |
+| `NSS_WRITE_STAT_MODELS` | `True` | Write the mean and quantile models as resistivity blocks. |
+| `NSS_STATS_FILE` | `WORK_DIR + "nss_stats.npz"` | Archive with all statistics. |
 
 ### Diagnostics
 
@@ -309,13 +376,16 @@ by the `GST_VARIO_*` settings.
 def _nullspace_shuttle(dm, Vt, S, *, sv_thresh, amplitude) -> (dm_null, r_eff)
 ```
 
+`dm` is one vector of shape `(nm,)` or a chunk of shape `(n_models, nm)`;
+the chunk is projected row by row with one matrix product.
+
 Internal helper.  Not intended for editing.
 
 Computes the effective rank `r_eff` from `S` and `sv_thresh`, forms the
 row-space basis `Vr = Vt[:r_eff].T`, and returns:
 
 ```
-dm_null = amplitude * (dm  −  Vr @ (Vr.T @ dm))
+dm_null = amplitude * (dm  −  (dm @ Vr) @ Vr.T)
 ```
 
 Also returns `r_eff` for diagnostic printing.
@@ -324,16 +394,19 @@ Also returns `r_eff` for diagnostic printing.
 
 ## Printed diagnostics
 
+Example output (illustrative values):
+
 ```
-Step 1: Reading inversion results from HDF5
-  model      : (12345,)
-  jacobian   : (4800, 12345)
+Step 1: Reading FEMTIC results (model, data) and Jacobian
+  model (free blocks) : (12345,)  (log10 rho)
+  Jacobian            : (4800, 12345)  [exchange.h5, already error-weighted, used as is]
+  iteration           : results 20, Jacobian 20
   nd=4800, nm=12345
 
-Step 2: Computing scaled Jacobian Js = diag(1/error) @ J
+Step 2: Data-weighted Jacobian Js and misfit summary
   Js shape : (4800, 12345)
-  ||rs||   : 69.2832
-  RMS      : 1.0003
+  ||Js||_F : 5.1234e+03
+  RMS (approx., from results file) : 1.0003  (9580 of 9600 real/imag entries used)
 
 Step 3: Randomised SVD of Js
   Decomposition: U (4800, 300), S (300,), Vt (300, 12345)
@@ -341,20 +414,29 @@ Step 3: Randomised SVD of Js
   s[-1] = 1.8843e-01  (smallest in truncated set)
   Effective rank at threshold 1.0e-03: 247 / 300
 
-Step 4: Model perturbation  [PERTURB_MODE = 'gst']
-  ||dm_raw||  = 9.8431e+01
-  dm_raw range: [-1.823, 2.417]
-  elapsed     : 3.14 s
-
-Step 5: Nullspace shuttle
+Step 5: Nullspace shuttle ensemble, 1000 models in chunks of 25  [PERTURB_MODE = 'gst']
   Effective rank used for projection : 247
-  ||dm_null||  = 1.0934e+02
-  ||dm_row ||  = 1.9281e+01
-  ||Js @ dm_null|| (should be ~0) = 3.4e-12
-  model_nss range : [-0.124, 4.231]
+  mean ||dm_row|| (first chunk)       : 1.9281e+01
+  max ||Js @ dm_null|| (should be ~0) : 3.4e-12
+  histogram range [-3.120, 7.310] log10(rho), 256 bins, bin width 0.0407, 12 MB
+  models      1-25     of 1000: 78.20 s
+  ...
+  Models accumulated : 1000
+  model_nss (first) range : [-0.124, 4.231]
+  std (log10 rho) over blocks : median 0.1870, max 0.4410
+  -2.0 sigma  p = 0.0228  quantile vs Gaussian mean +/- k*std: median |diff| 0.0310
+  -1.0 sigma  p = 0.1587  quantile vs Gaussian mean +/- k*std: median |diff| 0.0190
+  +0.0 sigma  p = 0.5000  quantile vs Gaussian mean +/- k*std: median |diff| 0.0090
+  +1.0 sigma  p = 0.8413  quantile vs Gaussian mean +/- k*std: median |diff| 0.0190
+  +2.0 sigma  p = 0.9772  quantile vs Gaussian mean +/- k*std: median |diff| 0.0310
+  values outside histogram range : 0.0000 %
 
 Writing nullspace-shuttled model
-  Written: /home/vrath/Py4MTX/work/resistivity_block_nss.dat
+  Written : /home/vrath/Py4MTX/work/resistivity_block_nss.dat  (first of 1000 shuttled models)
+  Written : /home/vrath/Py4MTX/work/resistivity_block_nss_mean.dat
+  Written : /home/vrath/Py4MTX/work/resistivity_block_nss_q0228.dat
+  ...
+  Written : /home/vrath/Py4MTX/work/nss_stats.npz
 ```
 
 The key verification line is `‖Js · δm_null‖ ≈ 0`.  Values above ~ 10⁻⁶
@@ -367,10 +449,10 @@ indicate that `RSVD_RANK` is too small or `NSS_SV_THRESH` is too large.
 | Package | Role |
 |---------|------|
 | `numpy` | Array operations, norm computations |
-| `h5py` | Reading `Inversion_results.h5` |
+| `h5py` | Reading `exchange.h5` / `jacobian.h5` (and, via `femtic`, `results_iterX.h5`) |
 | `inverse` (Py4MTX) | `rsvd`, `find_range`, `subspace_iter`, `ortho_basis` |
-| `femtic` (Py4MTX) | `read_model`, `insert_model` |
-| `ensembles` (Py4MTX) | `generate_gst_model_ensemble` (GST mode only) |
+| `femtic` (Py4MTX) | `read_results_hdf5`, `read_model`, `insert_model` |
+| `ensembles` (Py4MTX) | `batch_moments`, `chan_merge`, `moments_variance`, `hist_update`, `hist_quantiles` (needs the 2026-10-16 version); `generate_gst_model_ensemble` (GST mode only) |
 | `util` (Py4MTX) | `print_title` |
 | `version` (Py4MTX) | `versionstrg` |
 | `gstools` | Variogram / Ordinary Kriging (via `ensembles`, GST mode only) |
@@ -393,6 +475,23 @@ freedom but producing a cleaner projection.  Watch the `r_eff` printed in
 step 3 and step 5: if `r_eff` equals `RSVD_RANK`, lower the threshold or
 increase the rank.
 
+**How to choose `NSS_HIST_NBINS` and `NSS_HIST_RANGE`?**
+The quantiles are accurate to one bin width, `(hi - lo) / NSS_HIST_NBINS`;
+0.04 in log10(rho) (about 10 % in resistivity) is fine for plots, use more bins
+if you need finer values. Check `values outside histogram range`: more than
+0.1 % triggers a warning, and the affected quantiles are then only bounds. The
+automatic range comes from the first chunk, so set `NSS_HIST_RANGE` explicitly
+(e.g. `(-2.0, 6.0)`) when `NSS_AMPLITUDE` is large or the models are
+heterogeneous.
+
+**How many models are enough?**
+The 1-sigma quantiles stabilise with a few hundred models, the 2-sigma
+quantiles need a few thousand; compare the quantile models with the Gaussian
+bands (`mean +/- k*std`) and with a run using different `RANDOM_SEED`. The
+models share one reference model and one projector, so the quantiles describe
+the null-space variability under the chosen perturbation prior (`PERTURB_MODE`,
+variogram), not a posterior in the Bayesian sense.
+
 **How to choose `NSS_AMPLITUDE`?**
 Start at 0.1.  Increase to 1.0 or beyond to produce more distinct
 null-space members.  Values ≫ 1 may push log₁₀(ρ) outside physically
@@ -407,7 +506,8 @@ needed.
 perturbation. Set it to an integer and both `PERTURB_MODE = "gst"` and
 `PERTURB_MODE = "random"` become reproducible, driven by a single shared
 `rng = np.random.default_rng(RANDOM_SEED)` constructed once at the top of
-the script.
+the script.  The models are drawn one after another, so a given seed gives the
+same ensemble for any `NSS_CHUNK_SIZE`.
 
 **Not covered:** step 3's randomised SVD of `Js` (`inv.rsvd`, Halko et al.
 2011) uses its own internal randomness for the range-finder projection.
@@ -431,6 +531,8 @@ and wire `RANDOM_SEED` through there as well.
 | 2026-07-25 | Claude Sonnet 5 (Anthropic) | Added `MOD_SHOW_IN_SPYDER` (default `True`): when running inside Spyder, the `MOD_QC` figure is also displayed inline via `plt.show()`, without changing what gets saved to disk. No effect outside Spyder. |
 | 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_nss_summary.md` output at end of run: writes user-set (UPPERCASE) parameters, script path, and run date/time. |
 | 2026-10-11 | Claude Sonnet 5.5 (Anthropic) | Model I/O adapted to the current `femtic.py`: the start model is read with `fem.read_model(..., out=False)`, which returns the free-region log10(rho) vector directly (the former `read_model` + `extract_model` pair is gone), and the result is written with `fem.insert_model(template=..., model=..., model_file=..., out=...)`, which writes the file itself. |
+| 2026-10-16 | Claude Sonnet 5.5 (Anthropic) | Steps 1-2 read FEMTIC's own HDF5 output: final model (log10 rho of the free blocks) from `results_iterX.h5` (`RESULTS_FILE`), Jacobian from `exchange.h5` (`JACOBIAN_FILE`; legacy `jacobian.h5` also accepted) instead of the ad-hoc `Inversion_results.h5` (`HDF5_FILE` removed). The exchange.h5 Jacobian is already SD-weighted, J = Cd^(-1/2) dF/dm, so `Js = J` (no second division by the errors; `JAC_WEIGHTED` overrides the file attribute). Jacobian rows follow the inversion's data ordering, not `/data/data`, so the step-2 RMS comes from the results file alone. Column count checked against the free blocks of the results file and `MODEL_TEMPLATE`; differing iteration numbers are reported; anisotropic (v5) results are rejected. Step 3 (rSVD with N = `RSVD_RANK` vectors) and the shuttle are unchanged. Verified with an in-memory h5py mock and a synthetic rank-15 Jacobian (`||Js dm_null||` about 3e-13); not run against a real FEMTIC file. AI-generated; review before production use. |
+| 2026-10-16 | Claude Sonnet 5.5 (Anthropic) | Chunked ensemble statistics in step 5: `NSS_N_MODELS` shuttled models in chunks of `NSS_CHUNK_SIZE`, merged into streaming per-block mean / variance (`ensembles.chan_merge`, Chan, Golub and LeVeque 1983) and histogram quantiles at the +/-1 and +/-2 sigma probabilities (`ensembles.hist_update` / `hist_quantiles`); Gaussian bands for comparison. `_nullspace_shuttle` accepts a chunk. First model still goes to `MODEL_OUT`; mean and quantile models and `nss_stats.npz` are new outputs. Tested with a synthetic rank-15 Jacobian (mean and std agree with numpy to rounding, quantiles within one bin width of numpy's inverted-CDF quantiles, `||Js dm_null||` about 1e-12); the GST mode, `fem.insert_model` and a real FEMTIC run were not exercised. AI-generated; review before production use. |
 
 **How to configure the GST variogram?**
 The variogram controls the spatial coherence of the Kriged perturbation.

@@ -241,10 +241,16 @@ import inverse as inv  # noqa: E402  (nrms, r_mae, r_med, q95)
 #             (a list of singles; they do NOT form an ensemble)
 # "ensemble": all entries together form one ensemble
 RUN_MODE: str = "single"               # "single" | "ensemble"
+# RUN_PATHS: List[Tuple[str, str]] = [
+#     ("/home/vrath/work/Tacna_MT_Seis/mt/TAC_100_smooth2_short/TAC26b_ZT_5_10a.dat",
+#      "/home/vrath/work/Tacna_MT_Seis/mt/TAC_100_smooth2_short/TACG26b_100ZT_Alpha03_smooth_NLCG_007.dat"),
+#     ]        # (observed file, calculated file/dir/glob) pairs (overridden by argv)
+RUN_MODE: str = "single"               # "single" | "ensemble"
 RUN_PATHS: List[Tuple[str, str]] = [
-    ("/home/vrath/work/Tacna_MT_Seis/mt/TAC_100_smooth2_short/TAC26b_ZT_5_10a.dat",
-     "/home/vrath/work/Tacna_MT_Seis/mt/TAC_100_smooth2_short/TACG26b_100ZT_Alpha03_smooth_NLCG_007.dat"),
-    ]        # (observed file, calculated file/dir/glob) pairs (overridden by argv)
+    (
+    "/media/vrath/LargeBack/MT_Data/TAC26c_Zonly/TAC26b_Zonly.dat",
+    "/media/vrath/LargeBack/MT_Data/TAC26c_Zonly/TACG26b_100Z_NLCG_019.dat",),
+    ]
 # RUN_MODE: str = "ensemble"
 # RUN_PATHS: List[Tuple[str, str]] = [
 #     ("/media/vrath/LargeBack/ModEM/Annecy/rto/annecy_rto_*_obs.dat",
@@ -254,9 +260,9 @@ RUN_PATHS: List[Tuple[str, str]] = [
 ITERATION: Union[str, int] = "best"          # "best" | "last" | integer
 CALC_PATTERN: str = "*_NLCG_*.dat"           # searched if `calc` is a directory
 KEY_ROUND: int = 8                           # period-rounding decimals for
-                                              # obs/calc row matching (see
+                                          # obs/calc row matching (see
                                               # modem.match_data_rows)
-METHODS: Tuple[str, ...] = ("crossplot", "histogram", "qq")
+METHODS: Tuple[str, ...] = ("crossplot", "histogram", "qq", "curves")
 # METHODS = ("crossplot", "histogram", "qq", "curves")   # + response curves per site
 
 # --- ensemble handling ---
