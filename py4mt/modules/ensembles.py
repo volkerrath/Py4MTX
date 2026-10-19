@@ -13,8 +13,9 @@ This module contains:
   resistivity_block_iterX.dat).
 - Roughness/precision matrix helpers and sampling routines.
 - Streaming per-cell mean and variance (Welford update, Chan pairwise
-  merge) and streaming per-cell quantiles (fixed-bin histograms) for
-  ensembles too large to hold in memory.
+  merge), third and fourth central moments (skewness, kurtosis) and
+  per-cell quantiles (fixed-bin histograms) for ensembles too large to hold
+  in memory.
 - Ensemble analysis tools (EOFs / PCA).
 - Weighted KL decomposition and a KL+PCE surrogate builder for log-resistivity
   fields on unstructured FEMTIC meshes.
@@ -262,6 +263,16 @@ Provenance
             1-sigma and 2-sigma probabilities of a normal distribution).
             Within one bin width of the empirical inverse-CDF quantile.  No
             change to existing functions.
+2026-10-17  Claude Sonnet 5.5 (Anthropic)
+            added streaming higher moments to the same section:
+            batch_moments4() ((n, mean, M2, M3, M4) of a chunk),
+            merge_moments4() (pairwise merge of two such accumulators,
+            Pebay 2008 / Terriberry 2007 / Pebay et al. 2016; reduces to
+            chan_merge() for n, mean, M2), skew_kurtosis() (skewness and
+            excess kurtosis, optionally bias-corrected) and
+            quantile_skewness() (Bowley coefficient from three quantiles,
+            e.g. the 1-sigma or 2-sigma quantiles of hist_quantiles()).
+            No change to existing functions.
 
 AI-generated; please review before production use.
 """
@@ -3525,6 +3536,181 @@ def hist_quantiles(
             val[tot == 0] = np.nan
             q[ip, s:s + block] = val
     return q
+
+
+# Streaming third and fourth central moments.  Carry (n, mean, M2, M3, M4)
+# per cell with Mk = sum((x - mean)**k); chunks and MPI ranks merge with
+# merge_moments4().  Skewness g1 = sqrt(n) * M3 / M2**1.5, excess kurtosis
+# g2 = n * M4 / M2**2 - 3.
+#
+# References
+#   Terriberry, T. B. (2007, updated 2008), Computing Higher-Order Moments
+#       Online, https://people.xiph.org/~tterribe/notes/homs.html
+#   Pebay, P. (2008), Formulas for robust, one-pass parallel computation of
+#       covariances and arbitrary-order statistical moments, Sandia report
+#       SAND2008-6212, doi:10.2172/1028931
+#   Pebay, P., Terriberry, T. B., Kolla, H., Bennett, J. (2016), Computational
+#       Statistics 31(4), 1305-1325, doi:10.1007/s00180-015-0637-z
+
+def batch_moments4(
+    x: ArrayLike,
+    axis: int = 0,
+) -> Tuple[int, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Return ``(n, mean, M2, M3, M4)`` of a batch of samples along ``axis``.
+
+    Two-pass computation (mean first, then centred powers), as in
+    :func:`batch_moments`.  NaNs are not handled.
+
+    Parameters
+    ----------
+    x : ndarray
+        Batch of samples, e.g. shape ``(n_models, n_cells)`` with ``axis=0``.
+    axis : int, optional
+        Axis along which the samples are stacked (default 0).
+
+    Returns
+    -------
+    n : int
+        Number of samples in the batch.
+    mean, m2, m3, m4 : ndarray
+        Mean and sums of the 2nd, 3rd and 4th powers of the deviations from
+        the mean, with ``axis`` removed.
+    """
+    x = np.asarray(x, dtype=float)
+    n = x.shape[axis]
+    if n == 0:
+        shp = list(x.shape)
+        del shp[axis]
+        z = np.zeros(shp)
+        return 0, z, z.copy(), z.copy(), z.copy()
+    mean = x.mean(axis=axis)
+    dev = x - np.expand_dims(mean, axis)
+    d2 = dev * dev
+    m2 = np.sum(d2, axis=axis)
+    m3 = np.sum(d2 * dev, axis=axis)
+    m4 = np.sum(d2 * d2, axis=axis)
+    return n, mean, m2, m3, m4
+
+
+def merge_moments4(
+    acc_a: Tuple,
+    acc_b: Tuple,
+) -> Tuple[Union[int, np.ndarray], np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Combine two ``(n, mean, M2, M3, M4)`` accumulators.
+
+    With ``d = mean_b - mean_a`` and ``n = n_a + n_b``::
+
+        mean = mean_a + d * n_b / n
+        M2 = M2a + M2b + d**2 * n_a * n_b / n
+        M3 = M3a + M3b + d**3 * n_a * n_b * (n_a - n_b) / n**2
+             + 3 * d * (n_a * M2b - n_b * M2a) / n
+        M4 = M4a + M4b + d**4 * n_a * n_b * (n_a**2 - n_a * n_b + n_b**2) / n**3
+             + 6 * d**2 * (n_a**2 * M2b + n_b**2 * M2a) / n**2
+             + 4 * d * (n_a * M3b - n_b * M3a) / n
+
+    ``n``, ``mean`` and ``M2`` are those of :func:`chan_merge`.  Safe if
+    either side is empty (``n = 0``); start a run from
+    ``(0, zeros, zeros, zeros, zeros)``.
+
+    Parameters
+    ----------
+    acc_a, acc_b : tuple
+        ``(n, mean, m2, m3, m4)``; counts may be scalars or arrays
+        broadcastable against the means.
+
+    Returns
+    -------
+    n, mean, m2, m3, m4
+        Merged accumulator (``n`` is an ``int`` for scalar input counts).
+    """
+    n_a, mean_a, m2_a, m3_a, m4_a = (np.asarray(v, dtype=float) for v in acc_a)
+    n_b, mean_b, m2_b, m3_b, m4_b = (np.asarray(v, dtype=float) for v in acc_b)
+
+    n = n_a + n_b
+    safe_n = np.where(n > 0, n, 1.0)
+    d = mean_b - mean_a
+    d2 = d * d
+    frac_b = n_b / safe_n
+
+    mean = mean_a + d * frac_b
+    m2 = m2_a + m2_b + d2 * n_a * frac_b
+    m3 = (m3_a + m3_b
+          + d2 * d * n_a * n_b * (n_a - n_b) / (safe_n * safe_n)
+          + 3.0 * d * (n_a * m2_b - n_b * m2_a) / safe_n)
+    m4 = (m4_a + m4_b
+          + d2 * d2 * n_a * n_b * (n_a * n_a - n_a * n_b + n_b * n_b)
+          / (safe_n ** 3)
+          + 6.0 * d2 * (n_a * n_a * m2_b + n_b * n_b * m2_a) / (safe_n * safe_n)
+          + 4.0 * d * (n_a * m3_b - n_b * m3_a) / safe_n)
+
+    if n.ndim == 0:
+        n = int(n)
+    return n, mean, m2, m3, m4
+
+
+def skew_kurtosis(
+    n: Union[int, np.ndarray],
+    m2: ArrayLike,
+    m3: ArrayLike,
+    m4: ArrayLike,
+    bias: bool = True,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Skewness and excess kurtosis from ``(n, M2, M3, M4)``.
+
+    ``bias=True`` gives the moment coefficients ``g1 = sqrt(n) * M3 / M2**1.5``
+    and ``g2 = n * M4 / M2**2 - 3``.  ``bias=False`` applies the usual
+    small-sample corrections ``G1 = g1 * sqrt(n * (n - 1)) / (n - 2)`` and
+    ``G2 = (n - 1) / ((n - 2) * (n - 3)) * ((n + 1) * g2 + 6)``.  The result
+    is NaN where ``M2 = 0`` or ``n`` is too small (``n < 3`` for the skewness,
+    ``n < 4`` for the corrected kurtosis).
+
+    Returns
+    -------
+    skew, ex_kurt : ndarray
+    """
+    n = np.asarray(n, dtype=float)
+    m2 = np.asarray(m2, dtype=float)
+    m3 = np.asarray(m3, dtype=float)
+    m4 = np.asarray(m4, dtype=float)
+    shape = np.broadcast(n, m2, m3, m4).shape
+    ok = (m2 > 0) & (n > 0)
+    skew = np.full(shape, np.nan)
+    kurt = np.full(shape, np.nan)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        g1 = np.sqrt(n) * m3 / m2 ** 1.5
+        g2 = n * m4 / (m2 * m2) - 3.0
+        if bias:
+            skew = np.where(ok, g1, np.nan)
+            kurt = np.where(ok, g2, np.nan)
+        else:
+            skew = np.where(ok & (n > 2),
+                            g1 * np.sqrt(n * (n - 1.0)) / (n - 2.0), np.nan)
+            kurt = np.where(ok & (n > 3),
+                            (n - 1.0) / ((n - 2.0) * (n - 3.0))
+                            * ((n + 1.0) * g2 + 6.0), np.nan)
+    return skew, kurt
+
+
+def quantile_skewness(
+    q_low: ArrayLike,
+    q_mid: ArrayLike,
+    q_high: ArrayLike,
+) -> np.ndarray:
+    """Bowley-type skewness ``(q_high + q_low - 2 q_mid) / (q_high - q_low)``.
+
+    Needs only three quantiles, e.g. the 1-sigma (0.1587, 0.5, 0.8413) or
+    2-sigma (0.0228, 0.5, 0.9772) quantiles from :func:`hist_quantiles`.  It
+    is 0 for a symmetric distribution, lies in [-1, 1] and is not dominated
+    by the tails; NaN where ``q_high == q_low``.
+    """
+    q_low = np.asarray(q_low, dtype=float)
+    q_mid = np.asarray(q_mid, dtype=float)
+    q_high = np.asarray(q_high, dtype=float)
+    width = q_high - q_low
+    out = np.full(np.broadcast(q_low, q_mid, q_high).shape, np.nan)
+    num = q_high + q_low - 2.0 * q_mid
+    np.divide(num, width, out=out, where=width > 0)
+    return out
 
 
 def compute_eofs(

@@ -23,10 +23,11 @@ This module provides:
   `resistivity_block_iterX.dat` for RTO and related algorithms.
 - **Geostatistical initial-model ensemble** (`generate_gst_model_ensemble`) —
   pilot-point Ordinary Kriging (gstools) for the GST uncertainty method.
-- **Streaming mean / variance / quantiles** (`welford_update`,
-  `batch_moments`, `chan_merge`, `moments_variance`, `hist_update`,
-  `hist_quantiles`) for ensembles too large to hold in memory; partial
-  results merge across chunks or MPI ranks.
+- **Streaming mean / variance / skewness / kurtosis / quantiles**
+  (`welford_update`, `batch_moments`, `chan_merge`, `moments_variance`,
+  `batch_moments4`, `merge_moments4`, `skew_kurtosis`, `quantile_skewness`,
+  `hist_update`, `hist_quantiles`) for ensembles too large to hold in memory;
+  partial results merge across chunks or MPI ranks.
 - **EOF / PCA analysis** (`compute_eofs`, `eof_reconstruct`, `eof_sample`,
   `fit_eof_model`, `sample_physical_ensemble`) for ensemble dimension reduction.
 - **Weighted Karhunen–Loève decomposition** on unstructured FEMTIC meshes
@@ -113,7 +114,7 @@ solve_Q = make_precision_solver(
 x = solve_Q(b)
 ```
 
-### Streaming mean / variance / quantiles
+### Streaming mean / variance / higher moments / quantiles
 
 Per-cell mean and variance of a very large ensemble (e.g. many nullspace-
 shuttle models) from three quantities per cell: `n`, `mean` and `M2` (sum of
@@ -127,6 +128,10 @@ squared deviations from the mean), with `var = M2 / (n - ddof)`.
 | `moments_variance(n, m2, ddof=1)`          | Variance from `(n, M2)`; NaN where `n <= ddof`.      |
 | `hist_update(counts, x, lo, hi)`           | Add a chunk to per-cell fixed-bin histograms (in place); returns the number of clipped values. |
 | `hist_quantiles(counts, lo, hi, probs)`    | Per-cell quantiles from the histograms, shape `(len(probs), ncell)`. |
+| `batch_moments4(x, axis=0)`                | `(n, mean, M2, M3, M4)` of an in-memory chunk (two-pass). |
+| `merge_moments4(acc_a, acc_b)`             | Pairwise merge of two `(n, mean, M2, M3, M4)` accumulators (Pebay 2008, Terriberry 2007). |
+| `skew_kurtosis(n, m2, m3, m4, bias=True)`  | Skewness `g1` and excess kurtosis `g2` (`bias=False`: `G1`, `G2`); NaN where undefined. |
+| `quantile_skewness(q_low, q_mid, q_high)`  | Bowley skewness `(q_high + q_low - 2 q_mid) / (q_high - q_low)` from three quantiles. |
 
 ```python
 import numpy as np
@@ -172,6 +177,14 @@ q = hist_quantiles(counts, lo, hi, probs)          # shape (5, ncell)
 - For correlated ensembles (Markov-chain-like, or models shuttled from one
   starting point) the quantiles are those of the visited models, not error
   bars for independent samples.
+- Higher moments: `Mk = sum((x - mean)**k)`; `g1 = sqrt(n) M3 / M2**1.5`,
+  `g2 = n M4 / M2**2 - 3`. Start a run from `(0, zeros, zeros, zeros, zeros)`
+  and `merge_moments4(acc, batch_moments4(chunk))` per chunk; MPI ranks merge
+  the same way. `n`, `mean` and `M2` are identical to `chan_merge`. The
+  sampling error of `g1` and `g2` for independent Gaussian samples is about
+  `sqrt(6/n)` and `sqrt(24/n)`, so the higher moments need many more models
+  than the 1-sigma quantiles. The Bowley coefficient from the quantiles
+  above needs no extra accumulators and is less sensitive to outliers.
 - The 1-sigma and 2-sigma probabilities are those of a normal distribution,
   0.1587 / 0.8413 and 0.0228 / 0.9772. For a non-Gaussian distribution these
   differ from `mean +/- k*std`; compare both.
@@ -531,7 +544,7 @@ If you see `RuntimeError: Iterative solver did not converge` (full-rank mode):
 
 ## Version / provenance
 
-Updated: 2026-10-16 (streaming mean/variance, histogram quantiles); 2026-04-27 (GST); 2026-04-11 (consolidation); 2026-04-02 (cleanup)
+Updated: 2026-10-17 (streaming skewness/kurtosis); 2026-10-16 (streaming mean/variance, histogram quantiles); 2026-04-27 (GST); 2026-04-11 (consolidation); 2026-04-02 (cleanup)
 
 ### Changelog (2026-04-27)
 - Added `generate_gst_model_ensemble` — geostatistical initial-model ensemble
@@ -809,3 +822,24 @@ before production use.
   than one bin; histograms of two halves add up to the histogram of the
   whole; an empty cell gives NaN; clipping is counted.
 - Used by `femtic_nss.py` (chunked nullspace-shuttle statistics).
+
+### Changelog (2026-10-17) -- streaming higher moments
+
+Added by Claude Sonnet 5.5 (Anthropic). AI-generated code -- please review
+before production use.
+
+- Added `batch_moments4()`, `merge_moments4()`, `skew_kurtosis()` and
+  `quantile_skewness()` to the streaming section. No change to existing
+  functions.
+- Verification (31 chunks, 20000 samples, 40 lognormal cells with an offset
+  of order 1e4): merged mean and variance agree with numpy to relative 1e-13;
+  `g1`, `g2` and the bias-corrected `G1`, `G2` agree with `scipy.stats.skew` /
+  `kurtosis` to 5e-10 and 2e-9 absolute (scipy itself loses digits with this
+  offset); `n`, `mean`, `M2` are identical to `chan_merge`; the merge is
+  independent of the order of the two accumulators; empty accumulators, `M2 = 0`
+  and too small `n` give NaN.
+- References: Terriberry, T. B. (2007, updated 2008), Computing Higher-Order
+  Moments Online, https://people.xiph.org/~tterribe/notes/homs.html; Pebay, P.
+  (2008), Sandia report SAND2008-6212, doi:10.2172/1028931; Pebay, P.,
+  Terriberry, T. B., Kolla, H., Bennett, J. (2016), Computational Statistics
+  31(4), 1305-1325, doi:10.1007/s00180-015-0637-z.

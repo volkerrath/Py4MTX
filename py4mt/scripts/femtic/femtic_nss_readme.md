@@ -15,9 +15,10 @@ the scaled Jacobian so that it leaves the predicted data unchanged.  This is
 repeated for `NSS_N_MODELS` perturbations, **chunk by chunk**: each chunk of
 `NSS_CHUNK_SIZE` shuttled models is merged into streaming statistics and then
 discarded, so the ensemble never has to fit in memory.  The statistics are the
-per-block mean and variance of log10(rho) (Welford / Chan pairwise merge) and
-the per-block quantiles at the 1-sigma and 2-sigma probabilities (fixed-bin
-histograms).  The first shuttled model is written as a FEMTIC resistivity
+per-block mean and variance of log10(rho) (Welford / Chan pairwise merge), the
+skewness and excess kurtosis (third and fourth central moments, same kind of
+merge) and the per-block quantiles at the 1-sigma and 2-sigma probabilities
+(fixed-bin histograms) with the Bowley quantile skewness derived from them.  The first shuttled model is written as a FEMTIC resistivity
 block, together with the mean and quantile models.
 
 Two perturbation modes are available, selected by `PERTURB_MODE`:
@@ -149,6 +150,8 @@ Only the free-region values are replaced.  Any valid FEMTIC resistivity block
 | `resistivity_block_nss_mean.dat` | Per-block mean of log10(rho) over all shuttled models |
 | `resistivity_block_nss_q0228.dat`, `_q1587.dat`, `_q5000.dat`, `_q8413.dat`, `_q9772.dat` | Quantile models at the probabilities Phi(-2), Phi(-1), 0.5, Phi(+1), Phi(+2) of the standard normal distribution (0.0228, 0.1587, 0.5, 0.8413, 0.9772); one file per level of `NSS_SIGMAS` (`NSS_WRITE_STAT_MODELS`) |
 | `nss_stats.npz` | All statistics (see below) |
+| `nss_models/resistivity_block_nss_0000.dat`, `_0001.dat`, ... | Only with `NSS_EXPORT_MODELS = True`: the first `min(NSS_N_MODELS, NSS_EXPORT_MAX)` shuttled models, one FEMTIC resistivity block each (same template, fixed regions, air and ocean as `MODEL_OUT`). Model 0000 is the same as `MODEL_OUT`. |
+| `nss_models.npz` | Only with `NSS_EXPORT_MODELS = True`: `models` (n_export, nm) and `reference_model` (nm,), log10(rho) of the free blocks; row `i` is file `_i` |
 | `nss_qc.pdf` | Optional QC slice figure of the output model (`MOD_QC = True`) |
 
 `nss_stats.npz` (`NSS_STATS_FILE`) holds, all for log10(rho) of the free blocks
@@ -158,6 +161,9 @@ in ascending blockID order:
 |-----|-------|---------|
 | `n` | scalar | Number of models accumulated |
 | `mean`, `std`, `m2` | (nm,) | Mean, sample standard deviation (ddof = 1), sum of squared deviations |
+| `m3`, `m4` | (nm,) | Sums of the cubed and fourth-power deviations from the mean (to merge or continue a run) |
+| `skew`, `ex_kurt` | (nm,) | Skewness and excess kurtosis (NaN for fewer than 4 models); `moments_unbiased` says which version |
+| `bowley`, `bowley_sigma` | (nk, nm), (nk,) | Bowley skewness `(q(+k) + q(-k) - 2 q50) / (q(+k) - q(-k))` for each positive sigma level k |
 | `sigma`, `probs` | (nq,) | Sigma levels (-2, -1, 0, 1, 2 for the default) and their normal-distribution probabilities |
 | `quantiles` | (nq, nm) | Empirical quantiles from the histograms, row `i` for `probs[i]` |
 | `gauss` | (nq, nm) | `mean + sigma[i] * std` for comparison (equal to the quantiles if the distribution is Gaussian) |
@@ -295,6 +301,11 @@ The GST block mirrors the equivalent config in `femtic_gst_prep.py`.
 | `NSS_HIST_RANGE` | `None` | `(lo, hi)` in log10(rho) common to all blocks. `None`: from the first chunk (min and max padded by half its span, at least 0.5 each side). Values outside go into the end bins. |
 | `NSS_WRITE_STAT_MODELS` | `True` | Write the mean and quantile models as resistivity blocks. |
 | `NSS_STATS_FILE` | `WORK_DIR + "nss_stats.npz"` | Archive with all statistics. |
+| `NSS_EXPORT_MODELS` | `False` | Export the individual shuttled models, for testing with a small ensemble. |
+| `NSS_EXPORT_MAX` | `100` | At most this many models are exported (the first ones); the statistics always use all `NSS_N_MODELS`. |
+| `NSS_EXPORT_DIR` | `WORK_DIR + "nss_models/"` | Directory for the exported resistivity blocks (created if missing). |
+| `NSS_EXPORT_NPZ` | `WORK_DIR + "nss_models.npz"` | All exported models as one array. |
+| `NSS_MOMENTS_UNBIASED` | `False` | `False`: moment coefficients `g1 = sqrt(n) M3 / M2^1.5`, `g2 = n M4 / M2^2 - 3`. `True`: small-sample corrected `G1`, `G2`. Matters only below about 50 models. |
 
 ### Diagnostics
 
@@ -429,6 +440,11 @@ Step 5: Nullspace shuttle ensemble, 1000 models in chunks of 25  [PERTURB_MODE =
   +0.0 sigma  p = 0.5000  quantile vs Gaussian mean +/- k*std: median |diff| 0.0090
   +1.0 sigma  p = 0.8413  quantile vs Gaussian mean +/- k*std: median |diff| 0.0190
   +2.0 sigma  p = 0.9772  quantile vs Gaussian mean +/- k*std: median |diff| 0.0310
+  skewness g1 : median +0.020, 5-95 % of blocks [-0.610, +0.720]
+  excess kurtosis g2 : median +0.150, 5-95 % of blocks [-0.700, +1.900]
+  Bowley skewness (1.0 sigma quantiles) : median +0.030, median |.| 0.110
+  Bowley skewness (2.0 sigma quantiles) : median +0.030, median |.| 0.100
+  blocks with |g1| > 2*sqrt(6/n) = 0.126 : 35.0 % (Gaussian, independent samples; the models are correlated)
   values outside histogram range : 0.0000 %
 
 Writing nullspace-shuttled model
@@ -452,7 +468,7 @@ indicate that `RSVD_RANK` is too small or `NSS_SV_THRESH` is too large.
 | `h5py` | Reading `exchange.h5` / `jacobian.h5` (and, via `femtic`, `results_iterX.h5`) |
 | `inverse` (Py4MTX) | `rsvd`, `find_range`, `subspace_iter`, `ortho_basis` |
 | `femtic` (Py4MTX) | `read_results_hdf5`, `read_model`, `insert_model` |
-| `ensembles` (Py4MTX) | `batch_moments`, `chan_merge`, `moments_variance`, `hist_update`, `hist_quantiles` (needs the 2026-10-16 version); `generate_gst_model_ensemble` (GST mode only) |
+| `ensembles` (Py4MTX) | `batch_moments4`, `merge_moments4`, `moments_variance`, `skew_kurtosis`, `quantile_skewness`, `hist_update`, `hist_quantiles` (needs the 2026-10-17 version); `generate_gst_model_ensemble` (GST mode only) |
 | `util` (Py4MTX) | `print_title` |
 | `version` (Py4MTX) | `versionstrg` |
 | `gstools` | Variogram / Ordinary Kriging (via `ensembles`, GST mode only) |
@@ -484,9 +500,23 @@ automatic range comes from the first chunk, so set `NSS_HIST_RANGE` explicitly
 (e.g. `(-2.0, 6.0)`) when `NSS_AMPLITUDE` is large or the models are
 heterogeneous.
 
+**Testing with individual models.**
+Set `NSS_EXPORT_MODELS = True` with a small `NSS_N_MODELS` (about 100). Every
+model is written as a resistivity block, so it can be run through FEMTIC
+(forward only, to confirm that the data fit is unchanged), plotted, or
+compared with the mean and quantile models. `||Js @ dm_null||` printed in step
+5 only checks the linearised data change; a forward run checks the full
+non-linear response. For large runs leave it off: the files are as large as the
+template and 100 000 models would not be useful.
+
 **How many models are enough?**
 The 1-sigma quantiles stabilise with a few hundred models, the 2-sigma
-quantiles need a few thousand; compare the quantile models with the Gaussian
+quantiles need a few thousand, and skewness and kurtosis more still: for
+independent Gaussian samples their standard errors are about `sqrt(6/n)` and
+`sqrt(24/n)`, i.e. 0.08 and 0.15 for n = 1000, and the correlation between the
+shuttled models makes them larger. The Bowley skewness from the quantiles is
+steadier and less sensitive to outlying models; if `g1` is large where the
+Bowley value is small, a few models dominate the tail.  Compare the quantile models with the Gaussian
 bands (`mean +/- k*std`) and with a run using different `RANDOM_SEED`. The
 models share one reference model and one projector, so the quantiles describe
 the null-space variability under the chosen perturbation prior (`PERTURB_MODE`,
@@ -533,6 +563,8 @@ and wire `RANDOM_SEED` through there as well.
 | 2026-10-11 | Claude Sonnet 5.5 (Anthropic) | Model I/O adapted to the current `femtic.py`: the start model is read with `fem.read_model(..., out=False)`, which returns the free-region log10(rho) vector directly (the former `read_model` + `extract_model` pair is gone), and the result is written with `fem.insert_model(template=..., model=..., model_file=..., out=...)`, which writes the file itself. |
 | 2026-10-16 | Claude Sonnet 5.5 (Anthropic) | Steps 1-2 read FEMTIC's own HDF5 output: final model (log10 rho of the free blocks) from `results_iterX.h5` (`RESULTS_FILE`), Jacobian from `exchange.h5` (`JACOBIAN_FILE`; legacy `jacobian.h5` also accepted) instead of the ad-hoc `Inversion_results.h5` (`HDF5_FILE` removed). The exchange.h5 Jacobian is already SD-weighted, J = Cd^(-1/2) dF/dm, so `Js = J` (no second division by the errors; `JAC_WEIGHTED` overrides the file attribute). Jacobian rows follow the inversion's data ordering, not `/data/data`, so the step-2 RMS comes from the results file alone. Column count checked against the free blocks of the results file and `MODEL_TEMPLATE`; differing iteration numbers are reported; anisotropic (v5) results are rejected. Step 3 (rSVD with N = `RSVD_RANK` vectors) and the shuttle are unchanged. Verified with an in-memory h5py mock and a synthetic rank-15 Jacobian (`||Js dm_null||` about 3e-13); not run against a real FEMTIC file. AI-generated; review before production use. |
 | 2026-10-16 | Claude Sonnet 5.5 (Anthropic) | Chunked ensemble statistics in step 5: `NSS_N_MODELS` shuttled models in chunks of `NSS_CHUNK_SIZE`, merged into streaming per-block mean / variance (`ensembles.chan_merge`, Chan, Golub and LeVeque 1983) and histogram quantiles at the +/-1 and +/-2 sigma probabilities (`ensembles.hist_update` / `hist_quantiles`); Gaussian bands for comparison. `_nullspace_shuttle` accepts a chunk. First model still goes to `MODEL_OUT`; mean and quantile models and `nss_stats.npz` are new outputs. Tested with a synthetic rank-15 Jacobian (mean and std agree with numpy to rounding, quantiles within one bin width of numpy's inverted-CDF quantiles, `||Js dm_null||` about 1e-12); the GST mode, `fem.insert_model` and a real FEMTIC run were not exercised. AI-generated; review before production use. |
+| 2026-10-17 | Claude Sonnet 5.5 (Anthropic) | Optional export of the individual shuttled models for testing: `NSS_EXPORT_MODELS` (default `False`), `NSS_EXPORT_MAX` (100), `NSS_EXPORT_DIR`, `NSS_EXPORT_NPZ`. The first `min(NSS_N_MODELS, NSS_EXPORT_MAX)` models are written as resistivity blocks inside the chunk loop plus one `.npz` array; statistics and memory use are unchanged. Tested with the synthetic setup (230 models, limit 100; 60 models, limit 100; export off): file counts and `.npz` contents match the generated models; `fem.insert_model` was a stub. AI-generated; review before production use. |
+| 2026-10-17 | Claude Sonnet 5.5 (Anthropic) | Higher moments: the streaming accumulator also carries M3 and M4 (`ensembles.batch_moments4` / `merge_moments4`, Pebay 2008; Terriberry 2007; Pebay et al. 2016). Per-block skewness and excess kurtosis (`NSS_MOMENTS_UNBIASED` selects the bias-corrected versions) and the Bowley quantile skewness for each sigma level are printed and written to `nss_stats.npz` (`skew`, `ex_kurt`, `m3`, `m4`, `bowley`, `bowley_sigma`). Needs the 2026-10-17 `ensembles.py`. Tested with the synthetic setup (230, 6, 3 and 2 models): skewness and kurtosis agree with `scipy.stats` to 1e-14, Bowley values agree with the quantile formula, models with fewer than 4 members give NaN; not run on real FEMTIC data. AI-generated; review before production use. |
 
 **How to configure the GST variogram?**
 The variogram controls the spatial coherence of the Kriged perturbation.

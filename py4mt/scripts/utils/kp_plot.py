@@ -12,7 +12,7 @@ Plots:
 Usage
 -----
     python kp_plot.py [--start YYYY-MM-DD] [--end YYYY-MM-DD]
-                      [--csv FILE] [--png FILE] [--all]
+                      [--csv FILE] [--output FILE] [--png FILE] [--all]
 
 Examples
 --------
@@ -26,8 +26,15 @@ Examples
     python kp_plot.py --start 2025-09-01 --end 2025-09-30 \
         --csv kp_sep2025.csv --png kp_sep2025.png
 
+    # Save PDF and JPEG figures
+    python kp_plot.py --output kp_april2023.pdf --output kp_april2023.jpg
+
     # Include preliminary and definitive Kp values
     python kp_plot.py --start 2026-10-01 --end 2026-10-17 --all
+
+    # Customize fonts and line styles
+    python kp_plot.py --label-fontsize 12 --tick-fontsize 10 \
+        --legend-fontsize 7 --daily-linestyle dashdot
 
     # Show command-line help
     python kp_plot.py --help
@@ -104,7 +111,10 @@ def get_kp(start="2023-04-01", end="2023-04-30",
     return df
 
 
-def plot_kp(df, ax=None, daily_max=True, storm_level=5.0):
+def plot_kp(df, ax=None, daily_max=True, storm_level=5.0,
+            label_fontsize=11, tick_fontsize=10, title_fontsize=12,
+            legend_fontsize=8, daily_linestyle="-",
+            threshold_linestyle="--", grid_linestyle=":"):
     """
     Plot three-hourly Kp indices and optionally daily maxima.
 
@@ -118,6 +128,11 @@ def plot_kp(df, ax=None, daily_max=True, storm_level=5.0):
         Overlay daily maximum Kp values.
     storm_level : float
         Threshold for highlighting geomagnetic storms.
+
+    label_fontsize, tick_fontsize, title_fontsize, legend_fontsize : float
+        Font sizes in points; legend defaults to 8 pt.
+    daily_linestyle, threshold_linestyle, grid_linestyle : str
+        Matplotlib line styles for the daily maximum, threshold, and grid.
 
     Returns
     -------
@@ -147,22 +162,23 @@ def plot_kp(df, ax=None, daily_max=True, storm_level=5.0):
         ax.step(
             daily.index, daily.to_numpy(),
             where="post", color="black",
-            linewidth=1.4, label="Daily maximum"
+            linewidth=1.4, linestyle=daily_linestyle, label="Daily maximum"
         )
 
     ax.axhline(
         storm_level, color="darkred",
-        linestyle="--", linewidth=1,
+        linestyle=threshold_linestyle, linewidth=1,
         label="Storm threshold"
     )
 
-    ax.set_ylabel(r"Planetary $K_p$")
-    ax.set_xlabel("Date (UTC)")
+    ax.set_ylabel(r"Planetary $K_p$", fontsize=label_fontsize)
+    ax.set_xlabel("Date (UTC)", fontsize=label_fontsize)
     ax.set_ylim(0, 9.2)
     ax.set_yticks(np.arange(0, 10, 1))
-    ax.set_title("Planetary geomagnetic Kp index (GFZ)")
-    ax.grid(True, linestyle=":", alpha=0.5)
-    ax.legend(loc="upper left")
+    ax.set_title("Planetary geomagnetic Kp index (GFZ)", fontsize=title_fontsize)
+    ax.grid(True, linestyle=grid_linestyle, alpha=0.5)
+    ax.legend(loc="upper left", fontsize=legend_fontsize)
+    ax.tick_params(axis="both", labelsize=tick_fontsize)
 
     ax.xaxis.set_major_locator(mdates.AutoDateLocator())
     ax.xaxis.set_major_formatter(
@@ -180,11 +196,24 @@ def main():
     parser.add_argument("--start", default="2023-04-01")
     parser.add_argument("--end", default="2023-04-30")
     parser.add_argument("--csv", default=None)
-    parser.add_argument("--png", default=None)
+    parser.add_argument("--png", default=None,
+                        help="Save PNG figure (legacy option)")
+    parser.add_argument(
+        "--output", action="append", default=[], metavar="FILE",
+        help="Save figure as PDF, JPG/JPEG, or PNG based on extension; "
+             "repeat to save multiple formats"
+    )
     parser.add_argument(
         "--all", action="store_true",
         help="Include non-definitive values"
     )
+    parser.add_argument("--label-fontsize", type=float, default=11)
+    parser.add_argument("--tick-fontsize", type=float, default=10)
+    parser.add_argument("--title-fontsize", type=float, default=12)
+    parser.add_argument("--legend-fontsize", type=float, default=8)
+    parser.add_argument("--daily-linestyle", default="-")
+    parser.add_argument("--threshold-linestyle", default="--")
+    parser.add_argument("--grid-linestyle", default=":")
     args = parser.parse_args()
 
     df = get_kp(
@@ -198,11 +227,29 @@ def main():
     if args.csv:
         df.to_csv(args.csv)
 
-    ax = plot_kp(df)
+    ax = plot_kp(
+        df, label_fontsize=args.label_fontsize,
+        tick_fontsize=args.tick_fontsize,
+        title_fontsize=args.title_fontsize,
+        legend_fontsize=args.legend_fontsize,
+        daily_linestyle=args.daily_linestyle,
+        threshold_linestyle=args.threshold_linestyle,
+        grid_linestyle=args.grid_linestyle,
+    )
     ax.figure.tight_layout()
 
+    outputs = list(args.output)
     if args.png:
-        ax.figure.savefig(args.png, dpi=300)
+        outputs.append(args.png)
+
+    for filename in outputs:
+        extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        if extension not in {"pdf", "jpg", "jpeg", "png"}:
+            parser.error(
+                f"Unsupported output format for {filename!r}; "
+                "use .pdf, .jpg, .jpeg, or .png"
+            )
+        ax.figure.savefig(filename, dpi=300, bbox_inches="tight")
 
     plt.show()
 

@@ -27,11 +27,14 @@ Workflow
         final model.  Each chunk is discarded after it has been merged into
         streaming statistics, so the ensemble never has to fit in memory:
         per-block mean and variance (Welford / Chan, pairwise merge of the
-        chunk moments) and per-block quantiles at the 1-sigma and 2-sigma
-        probabilities (fixed-bin histograms).  The first shuttled model is
+        chunk moments), skewness and excess kurtosis (third and fourth
+        central moments, same merge), and per-block quantiles at the
+        1-sigma and 2-sigma probabilities (fixed-bin histograms) with the
+        Bowley quantile skewness derived from them.  The first shuttled model is
         written to ``MODEL_OUT``; the mean and the quantile models are
         written next to it (``NSS_WRITE_STAT_MODELS``) and all statistics
-        go to ``NSS_STATS_FILE``.
+        go to ``NSS_STATS_FILE``.  For testing with a small ensemble the
+        individual models can also be exported (``NSS_EXPORT_MODELS``).
 
 Theory (brief)
 --------------
@@ -204,6 +207,27 @@ Provenance
                 New config: NSS_N_MODELS, NSS_CHUNK_SIZE, NSS_SIGMAS,
                 NSS_HIST_NBINS, NSS_HIST_RANGE, NSS_WRITE_STAT_MODELS,
                 NSS_STATS_FILE.  Needs the 2026-10-16 ensembles.py.
+                AI-generated code -- review before production use.
+    2026-10-17  Claude Sonnet 5.5 (Anthropic)
+                Higher moments: the streaming accumulator now also carries the
+                sums of the third and fourth powers of the deviations (M3, M4;
+                ensembles.batch_moments4 / merge_moments4, Pebay 2008,
+                Terriberry 2007, Pebay et al. 2016).  Skewness and excess
+                kurtosis per block (ensembles.skew_kurtosis, biased or
+                bias-corrected via NSS_MOMENTS_UNBIASED) and the Bowley
+                quantile skewness at each sigma level
+                (ensembles.quantile_skewness) are printed and stored in
+                NSS_STATS_FILE (keys skew, ex_kurt, m3, m4, bowley,
+                bowley_sigma).  Needs the 2026-10-17 ensembles.py.
+                AI-generated code -- review before production use.
+    2026-10-17  Claude Sonnet 5.5 (Anthropic)
+                Optional direct export of the individual shuttled models for
+                testing (NSS_EXPORT_MODELS, default False): the first
+                NSS_EXPORT_MAX models (default 100) are written as FEMTIC
+                resistivity blocks to NSS_EXPORT_DIR, one file per model,
+                and as one array (n_models, nm) of log10(rho) to
+                NSS_EXPORT_NPZ.  Done inside the chunk loop, so it does not
+                change the statistics or the memory use for large runs.
                 AI-generated code -- review before production use.
 
 @author: vrath
@@ -433,6 +457,30 @@ NSS_WRITE_STAT_MODELS = True
 #: All statistics (n, mean, std, quantiles, Gaussian bands, histogram range)
 #: as a NumPy .npz archive.
 NSS_STATS_FILE = WORK_DIR + "nss_stats.npz"
+
+#: Skewness and excess kurtosis: False = moment coefficients g1, g2 (default);
+#: True = small-sample corrected G1, G2 (needs n > 2 and n > 3).  The
+#: Bowley quantile skewness is not affected.
+NSS_MOMENTS_UNBIASED = False
+
+#: Export the individual shuttled models, for testing with a small ensemble
+#: (default off).  Each model is written as a FEMTIC resistivity block to
+#: NSS_EXPORT_DIR (resistivity_block_nss_0000.dat, ...; same template, fixed
+#: regions, air and ocean as MODEL_OUT), and all exported models are also
+#: stored as one array (n_export, nm) of log10(rho) in NSS_EXPORT_NPZ.
+NSS_EXPORT_MODELS = False
+
+#: Upper limit on the number of exported models.  If NSS_N_MODELS is larger,
+#: only the first NSS_EXPORT_MAX models are exported (the statistics still use
+#: all of them).  Each block file is about as large as MODEL_TEMPLATE.
+NSS_EXPORT_MAX = 100
+
+#: Directory for the exported resistivity-block files (created if missing).
+NSS_EXPORT_DIR = WORK_DIR + "nss_models/"
+
+#: Array of all exported models, keys "models" (n_export, nm) and
+#: "reference_model" (nm,), both log10(rho) of the free blocks.
+NSS_EXPORT_NPZ = WORK_DIR + "nss_models.npz"
 
 # ---------------------------------------------------------------------------
 # Verbose output
@@ -1237,9 +1285,25 @@ q_sigma = np.array(sorted({0.0} | {-abs(k) for k in NSS_SIGMAS}
 q_probs = np.array([_std_normal_cdf(k) for k in q_sigma])
 q_tags = [f"q{int(round(p * 1.0e4)):04d}" for p in q_probs]   # q0228, ..., q9772
 
-n_acc = 0                                 # streaming (n, mean, M2) per block
+# Optional export of the individual models (testing, small ensembles).
+n_export = min(NSS_N_MODELS, NSS_EXPORT_MAX) if NSS_EXPORT_MODELS else 0
+export_rows = []                          # log10(rho) rows kept for the .npz
+if n_export > 0:
+    os.makedirs(NSS_EXPORT_DIR, exist_ok=True)
+    _exp_stem, _exp_ext = os.path.splitext(os.path.basename(MODEL_OUT))
+    _exp_width = max(4, len(str(n_export - 1)))
+    if OUT:
+        print(f"  Exporting the first {n_export} of {NSS_N_MODELS} models "
+              f"to {NSS_EXPORT_DIR}")
+        if n_export < NSS_N_MODELS:
+            print(f"  (NSS_EXPORT_MAX = {NSS_EXPORT_MAX}; the statistics use "
+                  "all models)")
+
+n_acc = 0                                 # streaming (n, mean, M2, M3, M4) per block
 mean_acc = np.zeros(nm)
 m2_acc = np.zeros(nm)
+m3_acc = np.zeros(nm)
+m4_acc = np.zeros(nm)
 counts = None                             # (nm, NSS_HIST_NBINS) histograms
 h_lo = h_hi = None
 n_clipped = 0
@@ -1255,6 +1319,21 @@ for i0 in range(0, NSS_N_MODELS, NSS_CHUNK_SIZE):
     dm_null, r_eff = _nullspace_shuttle(
         dm_raw, Vt, S, sv_thresh=NSS_SV_THRESH, amplitude=NSS_AMPLITUDE)
     X = model[np.newaxis, :] + dm_null                    # (k, nm), log10(rho)
+
+    if len(export_rows) < n_export:                       # direct export
+        for j in range(min(k, n_export - len(export_rows))):
+            idx = len(export_rows)
+            fem.insert_model(
+                template=MODEL_TEMPLATE,
+                model=X[j],
+                model_file=os.path.join(
+                    NSS_EXPORT_DIR, f"{_exp_stem}_{idx:0{_exp_width}d}{_exp_ext}"),
+                ocean=MOD_OCEAN,
+                air_rho=MOD_AIR_RHO,
+                ocean_rho=MOD_OCEAN_RHO,
+                out=False,
+            )
+            export_rows.append(X[j].copy())
 
     if i0 == 0:
         model_first = X[0].copy()
@@ -1278,10 +1357,11 @@ for i0 in range(0, NSS_N_MODELS, NSS_CHUNK_SIZE):
                   f"{(h_hi - h_lo) / NSS_HIST_NBINS:.4f}, "
                   f"{counts.nbytes / 1.0e6:.0f} MB")
 
-    # Chunk moments, merged into the running accumulator (Chan et al. 1983).
-    n_c, mean_c, m2_c = ens.batch_moments(X, axis=0)
-    n_acc, mean_acc, m2_acc = ens.chan_merge(
-        n_acc, mean_acc, m2_acc, n_c, mean_c, m2_c)
+    # Chunk moments, merged into the running accumulator (Chan et al. 1983
+    # for n, mean, M2; Pebay 2008 / Terriberry 2007 for M3, M4).
+    n_acc, mean_acc, m2_acc, m3_acc, m4_acc = ens.merge_moments4(
+        (n_acc, mean_acc, m2_acc, m3_acc, m4_acc),
+        ens.batch_moments4(X, axis=0))
     # Chunk histograms (counts simply add).
     n_clipped += ens.hist_update(counts, X, h_lo, h_hi)
 
@@ -1291,14 +1371,42 @@ for i0 in range(0, NSS_N_MODELS, NSS_CHUNK_SIZE):
 
 model_nss = model_first                   # written to MODEL_OUT (and MOD_QC)
 
+if export_rows:
+    np.savez_compressed(
+        NSS_EXPORT_NPZ,
+        models=np.vstack(export_rows), reference_model=model,
+        r_eff=r_eff, amplitude=NSS_AMPLITUDE,
+        info="log10(rho) of the free blocks, ascending blockID order; "
+             "row i is <MODEL_OUT stem>_<i>.dat in NSS_EXPORT_DIR",
+    )
+    if OUT:
+        print(f"  Exported {len(export_rows)} models: {NSS_EXPORT_DIR} and "
+              f"{NSS_EXPORT_NPZ}")
+
 # Statistics from the accumulators.
 if n_acc > 1:
     std_acc = np.sqrt(ens.moments_variance(n_acc, m2_acc, ddof=1))
     quant = ens.hist_quantiles(counts, h_lo, h_hi, q_probs)       # (nq, nm)
     gauss = mean_acc[np.newaxis, :] + q_sigma[:, np.newaxis] * std_acc[np.newaxis, :]
     clip_frac = n_clipped / float(n_acc * nm)
+    skew_acc, kurt_acc = ens.skew_kurtosis(
+        n_acc, m2_acc, m3_acc, m4_acc, bias=not NSS_MOMENTS_UNBIASED)
+    if n_acc < 4:                       # too few models for g1, g2
+        skew_acc = np.full(nm, np.nan)
+        kurt_acc = np.full(nm, np.nan)
+    # Bowley skewness at each positive sigma level k: (q(+k) + q(-k) - 2 q50)
+    # / (q(+k) - q(-k)).
+    bowley_sigma = q_sigma[q_sigma > 0]
+    i_mid = int(np.flatnonzero(q_sigma == 0.0)[0])
+    bowley = np.stack([
+        ens.quantile_skewness(
+            quant[int(np.flatnonzero(q_sigma == -k)[0])],
+            quant[i_mid],
+            quant[int(np.flatnonzero(q_sigma == k)[0])])
+        for k in bowley_sigma])                                   # (nk, nm)
 else:
-    std_acc = quant = gauss = None
+    std_acc = quant = gauss = skew_acc = kurt_acc = bowley = None
+    bowley_sigma = None
     clip_frac = 0.0
 
 if OUT:
@@ -1311,12 +1419,29 @@ if OUT:
             dq = np.abs(quant[j] - gauss[j])
             print(f"  {ks:+.1f} sigma  p = {pj:.4f}  quantile vs Gaussian "
                   f"mean +/- k*std: median |diff| {np.nanmedian(dq):.4f}")
+        if n_acc >= 4:
+            print(f"  skewness g1 : median {np.nanmedian(skew_acc):+.3f}, "
+                  f"5-95 % of blocks [{np.nanpercentile(skew_acc, 5):+.3f}, "
+                  f"{np.nanpercentile(skew_acc, 95):+.3f}]")
+            print(f"  excess kurtosis g2 : median {np.nanmedian(kurt_acc):+.3f}, "
+                  f"5-95 % of blocks [{np.nanpercentile(kurt_acc, 5):+.3f}, "
+                  f"{np.nanpercentile(kurt_acc, 95):+.3f}]")
+        else:
+            print("  skewness / kurtosis : fewer than 4 models, set to NaN")
+        for kk, bw in zip(bowley_sigma, bowley):
+            print(f"  Bowley skewness ({kk:.1f} sigma quantiles) : median "
+                  f"{np.nanmedian(bw):+.3f}, median |.| {np.nanmedian(np.abs(bw)):.3f}")
+        if n_acc > 3:
+            se_g1 = math.sqrt(6.0 / n_acc)
+            print(f"  blocks with |g1| > 2*sqrt(6/n) = {2.0 * se_g1:.3f} : "
+                  f"{100.0 * np.nanmean(np.abs(skew_acc) > 2.0 * se_g1):.1f} % "
+                  "(Gaussian, independent samples; the models are correlated)")
         print(f"  values outside histogram range : {100.0 * clip_frac:.4f} %")
         if clip_frac > 1.0e-3:
             print("  WARNING: more than 0.1 % of the values were clipped to the "
                   "end bins; set NSS_HIST_RANGE wider.")
     else:
-        print("  Only one model: no variance or quantiles.")
+        print("  Only one model: no variance, quantiles or higher moments.")
     print(f"  elapsed         : {time.perf_counter() - t0:.2f} s")
 
 
@@ -1363,13 +1488,17 @@ if std_acc is not None:
 
     np.savez_compressed(
         NSS_STATS_FILE,
-        n=n_acc, mean=mean_acc, m2=m2_acc, std=std_acc,
+        n=n_acc, mean=mean_acc, m2=m2_acc, m3=m3_acc, m4=m4_acc, std=std_acc,
+        skew=skew_acc, ex_kurt=kurt_acc, moments_unbiased=NSS_MOMENTS_UNBIASED,
+        bowley=bowley, bowley_sigma=bowley_sigma,
         sigma=q_sigma, probs=q_probs, quantiles=quant, gauss=gauss,
         hist_lo=h_lo, hist_hi=h_hi, hist_nbins=NSS_HIST_NBINS,
         clip_fraction=clip_frac, reference_model=model,
         r_eff=r_eff, amplitude=NSS_AMPLITUDE,
         info="log10(rho) of the free blocks, ascending blockID order; "
-             "quantiles[i] belongs to probs[i] / sigma[i]",
+             "quantiles[i] belongs to probs[i] / sigma[i]; m2, m3, m4 are "
+             "sums of squared, cubed and fourth-power deviations from the "
+             "mean; bowley[i] belongs to bowley_sigma[i]",
     )
     print(f"  Written : {NSS_STATS_FILE}")
 
