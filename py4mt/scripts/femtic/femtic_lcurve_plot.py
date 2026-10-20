@@ -75,11 +75,16 @@ print(titstrng + "\n\n")
 # =============================================================================
 #  Configuration
 # =============================================================================
-# WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_10_LC/"
-WORK_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/lcurves/lcurve100/"
-PLOT_NAME = WORK_DIR + "Annecy_L-curve"
+
+# WORK_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/lcurves/lcurve100/"
+# PLOT_NAME = WORK_DIR + "Annecy_L-curve"
+# PLOT_WHAT = "nrms"  # 'nrms' or 'misfit'
+# PLOT_TITLE = r"Annecy | ini = 100 $\Omega \cdot m$ " #"| distcorr"
+
+WORK_DIR = r"/media/vrath/LargeBack/Ensembles/misti2026/l-curve/"
+PLOT_NAME = WORK_DIR + "Misti_L-curve"
 PLOT_WHAT = "nrms"  # 'nrms' or 'misfit'
-PLOT_TITLE = r"Annecy | ini = 100 $\Omega \cdot m$ " #"| distcorr"
+PLOT_TITLE = r"Misti Volcano" #"| distcorr"
 
 FONTSIZE = 10
 #: Use log10 scale on the x-axis (misfit / nRMS).
@@ -101,11 +106,13 @@ SCALE_ROUGH = 1.e3   # e.g. 1e3
 SCALE_MISFIT = None   # e.g. 1e4
 
 
-#: Name of the FEMTIC convergence file inside each run directory. A single
-#: name or a list of candidate names (first existing one is used).
-CNV_FILE = "femtic.cnv"
+#: Name of the FEMTIC convergence file inside each ensemble member
+#: directory. A single name or a list of candidates (first existing wins),
+#: e.g. CNV_FILE = ["femtic.cnv", "femtic_run2.cnv"].
+CNV_FILE = ["femtic.cnv", "FEMTIC-DABIC.cnv"]
 
-SEARCH_STRNG = "ann_reg*"
+
+SEARCH_STRNG = "lc_*"
 dir_list = utl.get_filelist(
     searchstr=[SEARCH_STRNG], searchpath=WORK_DIR,
     sortedlist=True, fullpath=True,
