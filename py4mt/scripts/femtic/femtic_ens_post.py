@@ -857,17 +857,23 @@ print(titstrng + "\n\n")
 # ---------------------------------------------------------------------------
 # Ensemble input
 # ---------------------------------------------------------------------------
-# ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_0/"
+# ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_0_reset-err/"
 # ENSEMBLE_NAME = "annecy_gst_"
 # #: Prefix used for .npz output keys and default file/figure names.
 # #: e.g. "rto" → keys rto_ens, rto_avg, …  and file RTO_results.npz.
 # ENSEMBLE_PREFIX = "annecy_gst_0"
 
-ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/misti2026/ensemble_gst_0/"
-ENSEMBLE_NAME = "misti_rnd_0_"
+ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_rto_1_orig-err/"
+ENSEMBLE_NAME = "annecy_rto_"
 #: Prefix used for .npz output keys and default file/figure names.
 #: e.g. "rto" → keys rto_ens, rto_avg, …  and file RTO_results.npz.
-ENSEMBLE_PREFIX = "misti_rnd_0"
+ENSEMBLE_PREFIX = "annecy_rto_1"
+
+# ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/misti2026/ensemble_gst_0/"
+# ENSEMBLE_NAME = "misti_rnd_0_"
+# #: Prefix used for .npz output keys and default file/figure names.
+# #: e.g. "rto" → keys rto_ens, rto_avg, …  and file RTO_results.npz.
+# ENSEMBLE_PREFIX = "misti_rnd_0"
 
 #: Name of the FEMTIC convergence file inside each ensemble member
 #: directory. A single name or a list of candidates (first existing wins),
