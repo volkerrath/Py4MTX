@@ -386,7 +386,7 @@ Provenance
             fviz.plot_convergence_histogram() (added to femtic_viz.py
             during the same work) are unaffected and still exported from
             femtic_viz.py for that script to use.
-    2026-08-13  Claude Sonnet 5 (Anthropic)
+2026-08-13  Claude Sonnet 5 (Anthropic)
             Added femtic_ens_post_summary.md output at end of run: writes
             user-set (UPPERCASE) parameters, script path, and run
             date/time via utl.write_param_summary().
@@ -708,6 +708,23 @@ Provenance
             also makes _roi_free_mask() read the mesh in the same axis
             convention as the plots. AI-generated code -- review before
             production use.
+2026-10-20  Claude Sonnet 5.5 (Anthropic)
+            "best" figure title now has a second line naming the member
+            (directory, iteration, nRMS), via a new figure_title argument of
+            _plot_slice() passed on to fviz.plot_model_slices. AI-generated
+            code -- review before production use.
+2026-10-20d Claude Sonnet 5.5 (Anthropic)
+            Per-member best nRMS written to NRMS_CSV (sorted, with status)
+            and plotted as a histogram (MOD_NRMS_HIST, MOD_NRMS_HIST_FILE,
+            MOD_NRMS_BINS). AI-generated code -- review before use.
+2026-10-20c Claude Sonnet 5.5 (Anthropic)
+            New user setting RESULTS_DIR (default <ENSEMBLE_DIR>/results/);
+            results .npz, "best" figure, stats_plots/ and borehole outputs
+            now default to it. AI-generated code -- review before use.
+2026-10-20b Claude Sonnet 5.5 (Anthropic)
+            Best-nRMS member also saved in the results .npz: <P>_best (vector),
+            <P>_best_member, <P>_best_file, <P>_best_iter, <P>_best_nrms.
+            AI-generated code -- review before production use.
 
     This script targets FEMTIC's current HDF5 output layout only.
     AI-generated code -- review before production use.
@@ -840,11 +857,11 @@ print(titstrng + "\n\n")
 # ---------------------------------------------------------------------------
 # Ensemble input
 # ---------------------------------------------------------------------------
-ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_rto_1_orig-err/"
-ENSEMBLE_NAME = "annecy_rto_"
+ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_0/"
+ENSEMBLE_NAME = "annecy_gst_"
 #: Prefix used for .npz output keys and default file/figure names.
 #: e.g. "rto" → keys rto_ens, rto_avg, …  and file RTO_results.npz.
-ENSEMBLE_PREFIX = "annecy_rto_1"
+ENSEMBLE_PREFIX = "annecy_gst_0"
 
 # ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2/"
 # ENSEMBLE_NAME = "annecy_rnd_2_"
@@ -855,8 +872,7 @@ ENSEMBLE_PREFIX = "annecy_rto_1"
 #: Name of the FEMTIC convergence file inside each ensemble member
 #: directory. A single name or a list of candidates (first existing wins),
 #: e.g. CNV_FILE = ["femtic.cnv", "femtic_run2.cnv"].
-# CNV_FILE = "femtic.cnv"
-CNV_FILE = "FEMTIC-DABIC.cnv"
+CNV_FILE = ["femtic.cnv", "FEMTIC-DABIC.cnv"]
 
 #: Maximum normalised RMS accepted from the convergence file (CNV_FILE).
 NRMS_MAX = 2.
@@ -1075,7 +1091,21 @@ BOOTSTRAP_SEED = None  # None = fresh OS entropy; int = reproducible
 # ---------------------------------------------------------------------------
 # Output
 # ---------------------------------------------------------------------------
-ENSEMBLE_RESULTS = ENSEMBLE_DIR + ENSEMBLE_PREFIX.upper() + "_results.npz"
+#: Directory for ALL outputs: results .npz, "best" figure, stats_plots/ and
+#: borehole figures/profiles. Created if missing. Absolute path, or build
+#: it from ENSEMBLE_DIR (default: <ENSEMBLE_DIR>/results/).
+RESULTS_DIR = os.path.join(ENSEMBLE_DIR, "results") + os.sep
+ENSEMBLE_RESULTS = RESULTS_DIR + ENSEMBLE_PREFIX.upper() + "_results.npz"
+
+#: Per-member best nRMS table (CSV): member, best iteration, nRMS, status
+#: ("accepted", "rejected_nrms_max", "no_model_file"). Always written.
+NRMS_CSV = RESULTS_DIR + ENSEMBLE_PREFIX + "_nrms.csv"
+#: Histogram of the per-member best nRMS (all members with a valid nRMS,
+#: accepted and rejected shown stacked, NRMS_MAX marked). Extension-less
+#: base path; one file per MOD_PLOT_FORMAT entry.
+MOD_NRMS_HIST = True
+MOD_NRMS_HIST_FILE = RESULTS_DIR + ENSEMBLE_PREFIX + "_nrms_hist"
+MOD_NRMS_BINS = "auto"  # int or any numpy.histogram_bin_edges rule
 
 # ---------------------------------------------------------------------------
 # Mesh (required for any slice plot)
@@ -1178,11 +1208,11 @@ MOD_STATS_WHAT = (
 
 #: Extension-less base path for the "best" panel; _plot_slice() appends
 #: ".<fmt>" per MOD_PLOT_FORMAT entry.
-MOD_QC_FILE = ENSEMBLE_DIR + ENSEMBLE_PREFIX + "_best"
+MOD_QC_FILE = RESULTS_DIR + ENSEMBLE_PREFIX + "_best"
 
 #: Output directory for the other panels' block files and figures.
 #: Requires MOD_MESH and a valid template file (taken from best member).
-MOD_STATS_DIR = ENSEMBLE_DIR + "/stats_plots_median/"
+MOD_STATS_DIR = RESULTS_DIR + "stats_plots/"
 
 #: Derived from MOD_STATS_WHAT above -- not user-set. Remove "best" from
 #: the list (or set MOD_STATS_WHAT = []) to turn either off, instead of a
@@ -1354,9 +1384,11 @@ MOD_BH = [
     # ),
     # dict(sites="all", n_random=6, seed=1,   # 6 random sites, reproducible
     #      z_bot=5.0, what=["ensemble", "med", "sigma1"], alpha=0.05),
+    #     what=["ensemble", "med", "sigma1". "sigma2",],  # ensemble first = underneath
+    #     alpha=0.3,
     dict(sites="all", z_top="surface", z_bot=4.0, dz=0.05,   # one panel per site
              what=["ensemble", "med", "sigma1", "sigma2",],  # ensemble first = underneath
-             alpha=0.3,),
+             alpha=0.6, xlim=[1., 10000.],),
     # dict(sites=["SITE01", "SITE07"], z_bot=5.0, what=["med", "best"]),
     # dict(name="BH-1",
     #      x=(-70.868025, "latlon"), y=(-16.363436, "latlon"),
@@ -1371,7 +1403,7 @@ MOD_BH = [
 
 #: Output path (no extension) of the borehole figure; one file per
 #: MOD_PLOT_FORMAT entry is written.
-MOD_BH_FILE = ENSEMBLE_DIR + ENSEMBLE_PREFIX + "_boreholes"
+MOD_BH_FILE = RESULTS_DIR + ENSEMBLE_PREFIX + "_boreholes"
 #: Export the sampled profiles (depth, statistics, all members) to an .npz
 #: next to MOD_BH_FILE (<MOD_BH_FILE>.npz). False = skip.
 MOD_BH_NPZ = True
@@ -1386,7 +1418,7 @@ MOD_BH_XLIM = None
 #: with "sites".
 MOD_BH_PANEL_SIZE = [8.0, 16.0]
 MOD_BH_NCOLS = 3
-MOD_BH_PER_FIG = None
+MOD_BH_PER_FIG = 12
 #: True = all panels use one common depth range (union of the entries'
 #: ranges), so profiles can be compared by eye.
 MOD_BH_SHARE_DEPTH = True
@@ -1401,7 +1433,7 @@ MOD_BH_STYLE = {
     "avg": dict(color="black", lw=2.0, ls="-"),
     "med": dict(color="crimson", lw=2.0, ls="-"),
     "best": dict(color="tab:orange", lw=1.6, ls="-"),
-    "ensemble": dict(color="0.5", lw=0.6, ls="-"),
+    "ensemble": dict(color="0.5", lw=0.7, ls="-"),
     "percentiles": dict(cmap="viridis", lw=1.2, ls="--"),
     "sigma1": dict(color="navy", lw=1.6, ls="--"),
     "sigma2": dict(color="steelblue", lw=1.2, ls=":"),
@@ -2026,6 +2058,7 @@ def _plot_slice(
     cbar_label=None,
     alpha_file=None,
     stats_panel: bool = False,
+    figure_title=None,
 ) -> None:
     """Call fviz.plot_model_slices once per MOD_PLOT_FORMAT entry.
 
@@ -2053,6 +2086,8 @@ def _plot_slice(
         resistivities for air/ocean (_STATS_AIR_RHO / _STATS_OCEAN_RHO) so
         that a statistic value can never be mistaken for air (log10 > 8)
         or ocean (log10 ~ log10(MOD_OCEAN_RHO)) by plot_model_slices.
+    figure_title : str | None
+        Figure title passed to plot_model_slices; None = block-file name.
     """
     if fviz is None:
         print("  plot_slice: femtic_viz not available — skipping.")
@@ -2143,6 +2178,7 @@ def _plot_slice(
             tick_fontsize=MOD_TICK_FONTSIZE,
             label_fontsize=MOD_LABEL_FONTSIZE,
             figure_title_fontsize=MOD_TITLE_FONTSIZE,
+            figure_title=figure_title,
             tick_decimals=MOD_TICK_DECIMALS,
             alpha_file=alpha_file,
             alpha_mode="direct",
@@ -2532,6 +2568,59 @@ def _plot_boreholes(profiles, plot_base):
     plt.close(fig)
 
 
+def _plot_nrms_hist(rows, plot_base):
+    """Histogram of per-member best nRMS; accepted/rejected stacked.
+
+    ``rows`` : list of (member, iter, nrms, status) as written to NRMS_CSV.
+    Saved once per MOD_PLOT_FORMAT entry.
+    """
+    import matplotlib.pyplot as plt
+
+    acc = np.array([r[2] for r in rows if r[3] == "accepted"], dtype=float)
+    rej = np.array([r[2] for r in rows if r[3] != "accepted"], dtype=float)
+    allv = np.concatenate((acc, rej))
+    if allv.size == 0:
+        print("  nRMS histogram: no members - skipped.")
+        return
+    edges = np.histogram_bin_edges(allv, bins=MOD_NRMS_BINS)
+    fig, ax = plt.subplots(figsize=(10 / 2.54 * 1.6, 8 / 2.54 * 1.6))
+    ax.hist(
+        [acc, rej],
+        bins=edges,
+        stacked=True,
+        color=["tab:blue", "tab:red"],
+        edgecolor="k",
+        label=[f"accepted (n={acc.size})", f"rejected (n={rej.size})"],
+    )
+    ax.axvline(NRMS_MAX, color="k", ls="--", lw=1.2, label=f"NRMS_MAX = {NRMS_MAX}")
+    if acc.size:
+        ax.axvline(
+            acc.min(), color="tab:orange", ls="-", lw=1.5,
+            label=f"best = {acc.min():.3f}",
+        )
+        ax.axvline(
+            np.median(acc), color="crimson", ls=":", lw=1.5,
+            label=f"median (accepted) = {np.median(acc):.3f}",
+        )
+    ax.set_xlabel("best nRMS per member", fontsize=MOD_LABEL_FONTSIZE)
+    ax.set_ylabel("number of members", fontsize=MOD_LABEL_FONTSIZE)
+    ax.tick_params(labelsize=MOD_TICK_FONTSIZE)
+    ax.legend(fontsize=MOD_TICK_FONTSIZE - 2)
+    fig.suptitle(
+        os.path.basename(os.path.normpath(ENSEMBLE_DIR)) + "  " + ENSEMBLE_PREFIX,
+        fontsize=MOD_TITLE_FONTSIZE,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    for _fmt in _MOD_PLOT_FORMATS:
+        _f = f"{plot_base}.{_fmt}"
+        fig.savefig(_f, dpi=MOD_DPI, bbox_inches="tight")
+        if OUT:
+            print(f"  saved -> {_f}")
+    if _SHOW_PLOTS:
+        plt.show()
+    plt.close(fig)
+
+
 # ===========================================================================
 # Main
 # ===========================================================================
@@ -2551,6 +2640,7 @@ dir_list = [d for d in dir_list if os.path.isdir(d)]
 print(f"Found {len(dir_list)} sub-directory/ies matching '{ENSEMBLE_NAME}'.")
 
 model_list = []  # list of [block_file, n_iter, nRMS]
+nrms_table = []  # (member, best_iter, nRMS, status) for NRMS_CSV / histogram
 model_count = 0
 ens_matrix = None  # will become (n_members, n_free) float64
 
@@ -2634,13 +2724,22 @@ for d in dir_list:
             f"    best nRMS={nrms:.4f} (iter={numit}) > "
             f"NRMS_MAX={NRMS_MAX} — skipped."
         )
+        nrms_table.append(
+            (os.path.basename(os.path.normpath(d)), numit, nrms, "rejected_nrms_max")
+        )
         continue
 
     mod_file = os.path.join(d, f"resistivity_block_iter{numit}.dat")
     if not os.path.isfile(mod_file):
         print(f"    {mod_file} not found — skipped.")
+        nrms_table.append(
+            (os.path.basename(os.path.normpath(d)), numit, nrms, "no_model_file")
+        )
         continue
 
+    nrms_table.append(
+        (os.path.basename(os.path.normpath(d)), numit, nrms, "accepted")
+    )
     print(f"    iter={numit}  nRMS={nrms:.4f}  {mod_file}")
     model_list.append([mod_file, numit, nrms])
 
@@ -3037,6 +3136,13 @@ ens_dict = {
 }
 for _qkey, _qval in ens_qdiff.items():
     ens_dict[f"{P}_{_qkey}"] = _qval
+# best-nRMS member (same row as the "best" panel / QC figure)
+_bi = min(range(len(model_list)), key=lambda i: model_list[i][2])
+ens_dict[f"{P}_best"] = ens_matrix[_bi]  # log10(rho), free blocks
+ens_dict[f"{P}_best_member"] = os.path.basename(os.path.dirname(model_list[_bi][0]))
+ens_dict[f"{P}_best_file"] = str(model_list[_bi][0])
+ens_dict[f"{P}_best_iter"] = int(model_list[_bi][1])
+ens_dict[f"{P}_best_nrms"] = float(model_list[_bi][2])
 if BOOTSTRAP_VAR:
     ens_dict[f"{P}_var_boot"] = ens_var_boot
     ens_dict[f"{P}_err_boot"] = ens_err_boot
@@ -3052,8 +3158,21 @@ if ens_cov_eigval is not None:
     ens_dict[f"{P}_cov_eigval"] = ens_cov_eigval
     ens_dict[f"{P}_cov_eigvec"] = ens_cov_eigvec
 
+os.makedirs(RESULTS_DIR, exist_ok=True)
 np.savez_compressed(ENSEMBLE_RESULTS, **ens_dict)
 print(f"\nResults saved → {ENSEMBLE_RESULTS}")
+
+# --- (4b) nRMS table (CSV) and histogram ----------------------------------
+import csv
+
+with open(NRMS_CSV, "w", newline="", encoding="utf-8") as _fh:
+    _w = csv.writer(_fh)
+    _w.writerow(["member", "best_iter", "nrms", "status"])
+    for _r in sorted(nrms_table, key=lambda r: r[2]):
+        _w.writerow([_r[0], _r[1], f"{_r[2]:.6f}", _r[3]])
+print(f"nRMS table saved -> {NRMS_CSV}  ({len(nrms_table)} members)")
+if MOD_NRMS_HIST:
+    _plot_nrms_hist(nrms_table, MOD_NRMS_HIST_FILE)
 
 # --- (5) Resolve UTM origin and sites (needed for any plot) ---------------
 if MOD_QC or MOD_STATS or MOD_BH:
@@ -3204,8 +3323,10 @@ if MOD_QC:
     else:
         _best = min(model_list, key=lambda x: x[2])
         _best_file, _best_iter, _best_nrms = _best
+        _best_member = os.path.basename(os.path.dirname(_best_file))
         print(
-            f"\nQC: best member  nRMS={_best_nrms:.4f}  " f"iter={_best_iter}"
+            f"\nQC: best member  {_best_member}  nRMS={_best_nrms:.4f}  "
+            f"iter={_best_iter}"
         )
         _plot_slice(
             block_file=_best_file,
@@ -3219,6 +3340,11 @@ if MOD_QC:
             site_xys=site_xys,
             obs_coords_only=obs_coords_only,
             alpha_file=_alpha_block if MOD_ALPHA_QC else None,
+            figure_title=(
+                f"{os.path.basename(_best_file)}\n"
+                f"best member: {_best_member}  iter {_best_iter}  "
+                f"nRMS {_best_nrms:.3f}"
+            ),
         )
 
 # --- (8) Statistics slice plots -------------------------------------------
