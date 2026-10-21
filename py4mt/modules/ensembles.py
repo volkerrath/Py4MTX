@@ -273,6 +273,47 @@ Provenance
             quantile_skewness() (Bowley coefficient from three quantiles,
             e.g. the 1-sigma or 2-sigma quantiles of hist_quantiles()).
             No change to existing functions.
+2026-10-21  Claude Sonnet 5.5 (Anthropic)
+            RTO prior perturbation corrected (audit of the femtic_rto
+            workflow: ensemble spreads far too small compared with GST).
+            (1) NEW sample_rto_prior() (+ prior_energy_ratio()): exact draws
+            from N(0, (alpha (R^T R + lam I))^-1) via
+            x = alpha^-1/2 Q^-1 (R^T xi1 + sqrt(lam) xi2), sparse LU or
+            Jacobi-CG with tight tolerance.  (2) generate_rto_model_ensemble
+            now uses it; new REQUIRED argument alpha (regularisation weight
+            of the member inversions; the old code sampled with an implicit
+            alpha = 1 and MOD_MU/MOD_PDF in femtic_rto_prep.py were never
+            passed on); algo is now "auto"/"splu"/"cg" (legacy "low rank" /
+            "full rank" are mapped with a DeprecationWarning, the old
+            low-rank arguments are ignored with a warning); exactly
+            len(members) draws are made; prints RMS std and the energy ratio
+            of the draws; optional start_from_perturbed copies the perturbed
+            model to resistivity_block_iter0.dat (symlink replaced, template
+            untouched).  (3) sample_rtr_low_rank() DEPRECATED: randomized_svd
+            returns the LARGEST singular values of R, i.e. the roughest modes
+            with the SMALLEST prior variance 1/s^2 (0.1-0.5 % of the prior
+            variance for 128 modes in a 3-D test; ensemble spread 0.2-0.3 of
+            the correct value in a linear RTO test); it now warns when
+            called.  (4) sample_rtr_full_rank() fixed: it drew
+            (R^T R + lam I)^-1 R^T xi, whose covariance is
+            Q^-1 R^T R Q^-1, not Q^-1 (smoothest modes damped by e/(e+lam),
+            null space of R without variance); the missing sqrt(lam) * xi2
+            term was added (lam is resolved by the new helper _resolve_lam,
+            shared with make_precision_solver).  Also affects
+            femtic.modify_model_npz(method="precision_sample").  When the
+            solver is built inside the sampler, CG now defaults to
+            rtol 1e-8 / atol 0 (was 1e-3 / 1e-4: 0.73 of the exact RMS std).
+            (5) make_precision_solver docstring: rtol = 1e-2 was recommended
+            for sampling, but a loose CG tolerance leaves the smoothest
+            (highest-variance) modes under-resolved (9 % of their variance at
+            rtol 1e-2, 72 % at 1e-3 in a Laplacian-type test); CG with
+            ILU did not converge there (spilu is not an SPD preconditioner).
+            (6) generate_rto_model_ensemble: optional remove_mean (default
+            False) subtracts each draw's global mean; the constant mode of
+            R^T R has a variance set by the arbitrary shift lam
+            (std ~ 1/sqrt(n * alpha * lam) per cell) and dominates the
+            printed RMS std although |R x|^2 does not see it; the printout
+            now also gives the RMS std without the global mean.
 
 AI-generated; please review before production use.
 """
@@ -1045,146 +1086,190 @@ def generate_rto_model_ensemble(
     fromto: Optional[List[int]] = None,
     refmod: str = "resistivity_block_iter0.dat",
     q: Optional[scipy.sparse.sparray | np.ndarray] = None,
-    algo: str = "low rank",
+    algo: str = "auto",
     method: str = "add",
-    # --- low-rank options (randomized SVD) ---
-    n_eig: int = 64,
-    n_oversampling: int = 10,
-    n_power_iter: int = 2,
-    sigma2_residual: float = 0.0,
-    # --- full-rank options (iterative solver) ---
+    alpha: Optional[float] = None,
     lam: float = 0.0,
-    lam_mode: str = "scaled_median_diag",
-    lam_alpha: float = 1.0e-5,
-    solver_method: str = "cg",
-    precond: str = "ilu",
+    lam_alpha: float = 1.0e-4,
+    solver_rtol: float = 1.0e-8,
+    start_from_perturbed: bool = False,
+    remove_mean: bool = False,
+    iter0_file: str = "resistivity_block_iter0.dat",
     rng: Optional[Generator] = None,
     out: bool = True,
+    **legacy,
 ) -> list[str]:
     """
-    Generate a resistivity model ensemble by sampling from N(0, (R^T R)^{-1}).
+    Generate a resistivity model ensemble for RTO by perturbing the reference
+    model with exact draws from the roughness prior N(0, (alpha (R^T R + lam I))^-1).
 
-    Pass the roughness matrix **R** directly (not Q = R^T R); both sampling
-    branches work with R and form Q implicitly.
+    Pass the roughness matrix **R** directly (not Q = R^T R).  Sampling is done
+    by :func:`sample_rto_prior`:
 
-    Two sampling strategies are supported via ``algo``:
+        x = alpha^(-1/2) Q^(-1) ( R^T xi1 + sqrt(lam) xi2 ),   Q = R^T R + lam I
 
-    - ``"low rank"`` — randomized SVD of R (fast, recommended).
-      Computes the leading k right singular vectors/values of R in
-      O(k) matvec passes, then samples in that subspace.  Much faster
-      than the former ``eigsh``-based approach.
-    - ``"full rank"`` — iterative CG solves for each sample (accurate,
-      but slower per sample for very large R).
+    which has covariance exactly (alpha Q)^(-1) (in exact arithmetic).
 
-    The resulting log10-resistivity perturbations are inserted into the
-    FEMTIC ``resistivity_block_iterX.dat`` file in each ensemble directory.
+    The resulting log10-resistivity perturbations are added to the reference
+    model of each member (``method="add"``) and inserted into the FEMTIC
+    block file ``refmod`` of that member directory.
 
     Parameters
     ----------
     dir_base : str
         Ensemble base directory (e.g. ``"./ens_"``).
     n_samples : int
-        Number of samples to generate.
-    fromto : None, (int, int), or list of int, optional
+        Number of samples if ``fromto`` is None.
+    fromto : None or list of int, optional
         Controls which members are written.  See :func:`_resolve_fromto`.
+        Exactly ``len(members)`` prior draws are made.
     refmod : str
         Name of the reference block file inside each ensemble directory.
     q : sparse matrix or ndarray
-        **Roughness matrix R** (not Q).  Both branches use R directly.
-    algo : {"low rank", "full rank"}
-        Sampling algorithm.
+        **Roughness matrix R** (not Q).
+    alpha : float
+        **Required.**  The regularisation weight with which the member
+        inversions are run, in the convention
+        ``cost = (d - F(m))^T Cd^-1 (d - F(m)) + alpha |R (m - m_ref)|^2``
+        (FEMTIC: check ``ObjFunc = Misfit + Alpha * Roughness`` in
+        ``femtic.cnv``).  The prior covariance is (alpha R^T R)^-1, so the
+        perturbation std scales as alpha^(-1/2).  Use ONE fixed alpha for the
+        draws and for all member inversions.  There is deliberately no
+        default: the former implicit alpha = 1 gave wrong ensemble spreads.
+    algo : {"auto", "splu", "cg"}
+        Solver for Q: sparse LU (factor once) or Jacobi-preconditioned CG.
+        "auto" uses LU up to 60000 unknowns, CG above.  The legacy values
+        ``"low rank"`` and ``"full rank"`` are accepted with a warning and
+        mapped to "auto" and "cg"; the old randomized-SVD sampler kept the
+        roughest instead of the smoothest modes (see :func:`sample_rtr_low_rank`).
     method : {"add", "replace"}
-        How to combine samples with existing log10 resistivity:
-        ``"add"`` adds the perturbation; ``"replace"`` overwrites.
-
-    Low-rank parameters (``algo="low rank"``) — recommended for production
-    -----------------------------------------------------------------------
-    n_eig : int
-        Number of singular triplets retained (rank of approximation).
-        **Recommended 128–256** for FEMTIC meshes; more modes give smoother,
-        more faithful samples and cost scales linearly with n_eig.
-    n_oversampling : int
-        Extra columns in the randomized range-finder.  10–15 is sufficient
-        for nearly all cases; rarely needs increasing.
-    n_power_iter : int
-        Power-iteration steps to sharpen the range-finder.
-        **Recommended 3–4** for FEMTIC roughness matrices, whose singular-value
-        spectra decay slowly; each iteration roughly halves the approximation
-        error at O(n_eig) matvec cost.
-    sigma2_residual : float
-        Isotropic residual variance added to each sample to represent
-        directions outside the rank-k subspace.  **Recommended ~1e-3**
-        (~10 % of typical log10(ρ) variance); set to 0 to disable.
-
-    Full-rank parameters (``algo="full rank"``) — for accuracy verification
-    ------------------------------------------------------------------------
+        ``"add"`` adds the perturbation to the reference log10 model (correct
+        RTO usage); ``"replace"`` uses the sample as absolute log10 values.
     lam : float
-        Diagonal shift seed (interpreted according to ``lam_mode``).
-    lam_mode : str
-        ``"scaled_median_diag"`` (default, recommended) or ``"fixed"``.
-        The auto rule sets λ = lam_alpha × median(diag(R^T R)).
+        Fixed diagonal shift.  If 0 (default), ``lam = lam_alpha * median(diag(R^T R))``.
+        Small and only there because R^T R is singular (constants).
     lam_alpha : float
-        Scale factor α for the scaled-diagonal λ rule.
-        **Recommended 1e-4** (range 1e-5 … 1e-3); this is the single
-        biggest speed lever — a larger shift improves CG conditioning
-        dramatically.  Raise to 1e-3 if convergence is still slow.
-    solver_method : str
-        ``"cg"`` (default, optimal for SPD Q) or ``"bicgstab"``.
-        CG is always preferred here; BiCGStab gives no benefit for
-        symmetric positive-definite systems.
-    precond : str
-        Preconditioner: ``"ilu"`` (default, recommended) or ``"jacobi"``.
-        ILU typically reduces CG iteration count by 3–5× compared with
-        Jacobi, at the cost of forming sparse Q = R^T R once.
-
-    Other
-    -----
+        Scale for the automatic shift (default 1e-4).
+    solver_rtol : float
+        CG relative residual tolerance (only ``algo="cg"``).  Keep it tight
+        (<= 1e-6): CG converges last on the smoothest modes, which carry the
+        largest prior variance.
+    start_from_perturbed : bool
+        If True, also copy the perturbed model to ``iter0_file`` in each member
+        directory (replacing a shared symlink by a real file; the template is
+        never written through the link), so every inversion starts at its own
+        prior draw as in Blatter et al. (2022).  Default False (all members
+        start from the shared ``resistivity_block_iter0.dat``).
+    remove_mean : bool
+        If True, subtract each draw's mean over the free regions.  R^T R is
+        singular (constants), so the draws contain a global offset of the whole
+        model with std ~ 1/sqrt(n * alpha * lam) that is set by the arbitrary
+        shift ``lam``, not by the data or the regularisation; ``|R x|^2``
+        (hence the member inversion, when the objective depends on the
+        reference model only through ``R (m - m_ref)``) does not see it.
+        It shows up in the RMS std printed with ``out=True`` and makes a
+        ``start_from_perturbed`` starting model needlessly far from the data.
+        Default False (exact sampler output); the energy ratio is unchanged
+        by the removal if R annihilates constants (checked; warning otherwise).
+    iter0_file : str
+        Name of the starting-model file used with ``start_from_perturbed``.
     rng : numpy.random.Generator, optional
         Shared random generator.
     out : bool
-        If True, print status messages.
+        If True, print status messages and the prior-perturbation diagnostics.
+    **legacy
+        Removed arguments of the earlier randomized-SVD implementation
+        (``n_eig``, ``n_oversampling``, ``n_power_iter``, ``sigma2_residual``,
+        ``lam_mode``, ``solver_method``, ``precond``) are accepted and ignored,
+        with a warning, so that old scripts do not crash.
 
     Returns
     -------
     mod_list : list of str
         Paths to the perturbed resistivity block files.
+
+    Notes
+    -----
+    A printed ``energy ratio`` = mean(alpha |R x|^2) / (rank of R) near 1 shows
+    that the perturbations are drawn with the intended strength and in all
+    directions.  (The former low-rank sampler gave ~ n_eig / n_free.)
     """
     if q is None:
         raise ValueError("generate_rto_model_ensemble: roughness matrix R (q) must be provided.")
+    if alpha is None:
+        raise ValueError(
+            "generate_rto_model_ensemble: 'alpha' must be given (the regularisation "
+            "weight of the member inversions, e.g. the Alpha column of femtic.cnv). "
+            "The prior covariance is (alpha R^T R)^-1; the former implicit alpha = 1 "
+            "gave wrong ensemble spreads."
+        )
+    if not (np.isfinite(alpha) and alpha > 0.0):
+        raise ValueError(f"generate_rto_model_ensemble: alpha must be positive and finite, got {alpha!r}.")
+
+    if legacy:
+        warnings.warn(
+            "generate_rto_model_ensemble: ignoring legacy argument(s) "
+            f"{sorted(legacy)} of the removed randomized-SVD implementation.",
+            DeprecationWarning, stacklevel=2,
+        )
+
+    algo_l = str(algo).strip().lower()
+    if algo_l.startswith("low"):
+        warnings.warn(
+            "generate_rto_model_ensemble: algo='low rank' is no longer available "
+            "(its randomized SVD kept the roughest modes, ~0.1-0.5 % of the prior "
+            "variance); using algo='auto'.", DeprecationWarning, stacklevel=2)
+        algo_l = "auto"
+    elif algo_l.startswith("full"):
+        warnings.warn(
+            "generate_rto_model_ensemble: algo='full rank' is now algo='cg' "
+            "(or 'splu'/'auto').", DeprecationWarning, stacklevel=2)
+        algo_l = "cg"
 
     rng = default_rng() if rng is None else rng
-
-    if "low" in algo.lower():
-        if out:
-            print(f"Low-rank sampling started (n_eig={n_eig}, randomized SVD).")
-        samples = sample_rtr_low_rank(
-            q,
-            n_samples=n_samples,
-            n_eig=n_eig,
-            sigma2_residual=sigma2_residual,
-            rng=rng,
-            n_oversampling=n_oversampling,
-            n_power_iter=n_power_iter,
-        )
-        if out:
-            print("Low-rank sampling done.")
-    else:
-        if out:
-            print("Full-rank sampling started (CG).")
-        samples = sample_rtr_full_rank(
-            R=q,
-            n_samples=n_samples,
-            lam=lam,
-            rng=rng,
-            solver_method=solver_method,
-            solver_kwargs={"precond": precond},
-            lam_mode=lam_mode,
-            lam_alpha=lam_alpha,
-        )
-        if out:
-            print("Full-rank sampling done.")
-
     fromto_arr = _resolve_fromto(fromto, n_samples)
+
+    if out:
+        print(f"RTO prior sampling started (alpha={alpha:g}, solver={algo_l}).")
+    samples, info = sample_rto_prior(
+        q,
+        n_samples=len(fromto_arr),
+        alpha=float(alpha),
+        lam=(float(lam) if lam and lam > 0.0 else None),
+        lam_alpha=float(lam_alpha),
+        method=algo_l,
+        rtol=float(solver_rtol),
+        rng=rng,
+        return_info=True,
+    )
+    if remove_mean:
+        Rq = q.tocsr() if issparse(q) else scipy.sparse.csr_array(np.asarray(q, dtype=np.float64))
+        ones = np.ones(Rq.shape[1])
+        r1 = float(np.linalg.norm(Rq @ ones))
+        r1_ref = float(np.linalg.norm(abs(Rq) @ ones))
+        if r1 > 1.0e-6 * max(r1_ref, 1.0e-300):
+            warnings.warn(
+                "generate_rto_model_ensemble: remove_mean=True, but R does not annihilate constants "
+                f"(|R 1| / |abs(R) 1| = {r1 / max(r1_ref, 1e-300):.2e}); the mean removal then "
+                "changes the roughness energy of the draws.", RuntimeWarning, stacklevel=2)
+        samples = samples - samples.mean(axis=1, keepdims=True)
+
+    if out:
+        e_ratio = prior_energy_ratio(q, samples, alpha=float(alpha))
+        if len(samples) > 1:
+            rms_std = float(np.sqrt(np.mean(np.var(samples, axis=0, ddof=1))))
+            zm = samples - samples.mean(axis=1, keepdims=True)
+            rms_zm = float(np.sqrt(np.mean(np.var(zm, axis=0, ddof=1))))
+        else:
+            rms_std = rms_zm = float("nan")
+        print(f"RTO prior sampling done: n={samples.shape[1]}, lam={info['lam']:.3e}, "
+              f"solver={info['method']}, RMS std = {rms_std:.4f} (log10 units; "
+              f"{rms_zm:.4f} after removing each draw's global mean), "
+              f"energy ratio = {e_ratio:.3f} (expect ~1).")
+        if not (0.5 < e_ratio < 2.0):
+            warnings.warn(
+                f"generate_rto_model_ensemble: prior energy ratio {e_ratio:.3f} is far from 1; "
+                "check R, alpha and the solver tolerance.", RuntimeWarning, stacklevel=2)
 
     mod_list: list[str] = []
     for iens, sample in zip(fromto_arr, samples):
@@ -1197,6 +1282,12 @@ def generate_rto_model_ensemble(
         # method="add": perturbed model = reference + perturbation (correct RTO usage).
         # method="replace": sample IS the full log10 model (absolute values).
         ref_log10 = fem.read_model(orig_file, model_trans="log10", out=False)
+        if ref_log10.size != sample.size:
+            raise ValueError(
+                f"generate_rto_model_ensemble: R has {sample.size} columns but the free "
+                f"region vector of {orig_file} has {ref_log10.size} entries; R rows/columns "
+                "must correspond to the free regions in region-index order."
+            )
         if method.lower() == "add":
             model_log10 = ref_log10 + sample
         else:  # "replace"
@@ -1207,6 +1298,15 @@ def generate_rto_model_ensemble(
             model=model_log10,
             model_file=file,
             model_name=f"sample{iens}")
+
+        if start_from_perturbed:
+            iter0 = f"{dir_base}{iens}/{iter0_file}"
+            if os.path.abspath(iter0) != os.path.abspath(file):
+                # Remove first: if iter0 is a symlink to the shared template, copying
+                # onto it would write through the link and modify the template.
+                if os.path.islink(iter0) or os.path.exists(iter0):
+                    os.remove(iter0)
+                shutil.copy2(file, iter0)
 
         mod_list.append(file)
 
@@ -5723,6 +5823,46 @@ def pick_lam_from_rtr_diag(
     return float(max(float(min_lam), float(lam)))
 
 
+def _resolve_lam(
+    R: np.ndarray | scipy.sparse.sparray,
+    lam: float = 0.0,
+    lam_mode: str = "fixed",
+    lam_alpha: Optional[float] = None,
+    lam_statistic: str = "median",
+    lam_min: float = 0.0,
+) -> float:
+    """Resolve the effective diagonal shift for Q = R^T R + lam I.
+
+    Single implementation of the rule used by :func:`make_precision_solver`
+    and :func:`sample_rtr_full_rank` (the sampler needs the same value for its
+    ``sqrt(lam) * xi2`` term).  See ``make_precision_solver`` for the modes.
+    """
+    mode = str(lam_mode).strip().lower()
+    lam_eff = float(lam)
+    if mode in {"scaled_median_diag", "median_diag", "scaled_diag", "diag"}:
+        alpha = float(lam_alpha) if lam_alpha is not None else float(lam)
+        lam_eff = pick_lam_from_rtr_diag(
+            R,
+            alpha=alpha,
+            statistic=lam_statistic,
+            min_lam=lam_min,
+        )
+    elif mode in {"auto", "auto_diag", "auto_median_diag"}:
+        if not np.isfinite(lam_eff) or lam_eff <= 0.0:
+            alpha = float(lam_alpha) if lam_alpha is not None else 1.0e-5
+            lam_eff = pick_lam_from_rtr_diag(
+                R,
+                alpha=alpha,
+                statistic=lam_statistic,
+                min_lam=lam_min,
+            )
+        else:
+            lam_eff = float(max(float(lam_min), lam_eff))
+    else:
+        lam_eff = float(max(float(lam_min), lam_eff))
+    return lam_eff
+
+
 def make_precision_solver(
     R: np.ndarray | scipy.sparse.sparray,
     lam: float = 0.0,
@@ -5764,14 +5904,18 @@ def make_precision_solver(
     lam
         Diagonal shift (used when ``lam_mode='fixed'``).
     rtol, atol
-        Iterative solver tolerances (SciPy style).  **Recommended rtol=1e-2**
-        for Monte Carlo sampling — high accuracy is unnecessary and 1e-2
-        typically halves CG iteration count versus the default 1e-3.
-        atol=0 (default) lets rtol alone govern convergence.
+        Iterative solver tolerances (SciPy style).  **For sampling keep rtol
+        tight (<= 1e-6)**: CG converges last on the smoothest modes, which
+        carry the largest prior variance; in a Laplacian-type test the
+        variance of the 12 smoothest modes was 72 % of target at rtol 1e-3
+        and 9 % at rtol 1e-2 (2026-10-21 audit).  atol=0 lets rtol alone
+        govern convergence.
     maxiter
         Maximum CG/BiCGStab iterations.  **Recommended 500–1000** to cap
         runaway solves on ill-conditioned problems.  With good λ and ILU
-        preconditioning, convergence typically occurs in <200 iterations.
+        preconditioning, convergence is often fast on FEMTIC-type problems,
+        but it stagnated on a Laplacian-type lattice test (2026-10-21);
+        check the iteration count and the energy ratio of the samples.
         None (default) is unlimited.
     M
         Explicit preconditioner LinearOperator.  If provided, overrides
@@ -5786,8 +5930,10 @@ def make_precision_solver(
         for non-symmetric operators (not applicable here).
     precond
         New preferred name for the preconditioner. Overrides ``mprec``.
-        **Recommended ``"ilu"``** — typically reduces CG iteration count 3–5×
-        vs ``"jacobi"`` (which requires no explicit Q, but is weaker).
+        ``"ilu"`` often reduces the CG iteration count, but ``spilu`` is not
+        a symmetric positive definite preconditioner and CG did not converge
+        with it on a Laplacian-type test matrix (2026-10-21 audit); ``"jacobi"``
+        (no explicit Q needed) is the safe choice.
         ``"amg"`` (requires pyamg) is the strongest option for very large
         systems.  ``None`` = no preconditioning (slow for ill-conditioned Q).
     precond_kwargs
@@ -5824,30 +5970,11 @@ def make_precision_solver(
     """
     meth = (solver_method or msolver or "cg").strip().lower()
 
-    # Resolve lam (optionally from diag(R.T R))
-    mode = str(lam_mode).strip().lower()
-    lam_eff = float(lam)
-    if mode in {"scaled_median_diag", "median_diag", "scaled_diag", "diag"}:
-        alpha = float(lam_alpha) if lam_alpha is not None else float(lam)
-        lam_eff = pick_lam_from_rtr_diag(
-            R,
-            alpha=alpha,
-            statistic=lam_statistic,
-            min_lam=lam_min,
-        )
-    elif mode in {"auto", "auto_diag", "auto_median_diag"}:
-        if not np.isfinite(lam_eff) or lam_eff <= 0.0:
-            alpha = float(lam_alpha) if lam_alpha is not None else 1.0e-5
-            lam_eff = pick_lam_from_rtr_diag(
-                R,
-                alpha=alpha,
-                statistic=lam_statistic,
-                min_lam=lam_min,
-            )
-        else:
-            lam_eff = float(max(float(lam_min), lam_eff))
-    else:
-        lam_eff = float(max(float(lam_min), lam_eff))
+    # Resolve lam (optionally from diag(R.T R)); shared with sample_rtr_full_rank
+    lam_eff = _resolve_lam(
+        R, lam=lam, lam_mode=lam_mode, lam_alpha=lam_alpha,
+        lam_statistic=lam_statistic, lam_min=lam_min,
+    )
 
     if meth in {"chol", "cholesky", "sparse_cholesky", "direct"}:
         return make_sparse_cholesky_precision_solver(
@@ -5916,7 +6043,11 @@ def sample_rtr_full_rank(
     solver_method
         Solver used when ``solver`` is None ("cg", "bicgstab", "cholesky").
     solver_kwargs
-        Extra args passed to :func:`make_precision_solver`.
+        Extra args passed to :func:`make_precision_solver`.  When the solver
+        is built here, ``rtol`` defaults to 1e-8 and ``atol`` to 0 (changed
+        2026-10-21 from the loose make_precision_solver defaults 1e-3 / 1e-4,
+        which under-resolve the smoothest modes); pass ``rtol``/``atol`` to
+        override.
     lam_mode, lam_alpha, lam_statistic, lam_min
         Passed through to :func:`make_precision_solver`. In particular,
 
@@ -5935,16 +6066,38 @@ def sample_rtr_full_rank(
     -----
     Uses the identity::
 
-        x = (R.T R + lam I)^{-1} R.T ξ,   ξ ~ N(0, I)
+        x = (R.T R + lam I)^{-1} ( R.T ξ1 + sqrt(lam) ξ2 ),   ξ1 ~ N(0, I_m), ξ2 ~ N(0, I_n)
+
+    whose covariance is exactly (R.T R + lam I)^{-1}.  (Until 2026-10-21 the
+    ``sqrt(lam) ξ2`` term was missing, giving Q^{-1} R.T R Q^{-1}: the
+    smoothest modes were damped by e/(e+lam) and the null space of R had no
+    variance.)  ``lam`` is resolved with the same rule as in
+    :func:`make_precision_solver`; if a prebuilt ``solver`` is passed, pass the
+    same ``lam``/``lam_mode``/``lam_alpha``/``lam_statistic``/``lam_min`` that
+    were used to build it.  For RTO prefer :func:`sample_rto_prior`, which also
+    applies the regularisation weight alpha.
 
     Author: Volker Rath (DIAS)
     Created with the help of ChatGPT (GPT-5 Thinking) on 2026-01-02 (UTC)
+    Corrected by Claude Sonnet 5.5 (Anthropic) on 2026-10-21.
     """
     rng = default_rng() if rng is None else rng
     m, n = R.shape
 
+    lam_eff = _resolve_lam(
+        R, lam=lam, lam_mode=lam_mode, lam_alpha=lam_alpha,
+        lam_statistic=lam_statistic, lam_min=lam_min,
+    )
+    sqrt_lam = float(np.sqrt(lam_eff)) if lam_eff > 0.0 else 0.0
+
     if solver is None:
         kw = dict(solver_kwargs or {})
+        # Sampling needs a tight tolerance: CG converges last on the smoothest modes,
+        # which carry most of the prior variance (rtol 1e-3 gave 0.73 and 1e-2 gave
+        # 0.50 of the exact RMS std in the 2026-10-21 lattice test).  Override via
+        # solver_kwargs if speed matters more than accuracy.
+        kw.setdefault("rtol", 1.0e-8)
+        kw.setdefault("atol", 0.0)
         solver = make_precision_solver(
             R=R,
             lam=lam,
@@ -5960,6 +6113,8 @@ def sample_rtr_full_rank(
     for ix in range(n_samples):
         xi = rng.standard_normal(size=m)
         b = R.T @ xi
+        if sqrt_lam > 0.0:
+            b = b + sqrt_lam * rng.standard_normal(size=n)
         samples[ix, :] = solver(b)
 
     return samples
@@ -5975,7 +6130,22 @@ def sample_rtr_low_rank(
     n_oversampling: int = 10,
     n_power_iter: int = 2,
 ) -> np.ndarray:
-    """Approximate sampling from N(0, (R^T R)^{-1}) using randomized SVD of R.
+    """DEPRECATED - do not use for RTO.  See :func:`sample_rto_prior`.
+
+    **Known error (2026-10-21 audit).**  ``randomized_svd`` returns the
+    *largest* singular values s_k of R, i.e. the roughest modes.  For
+    N(0, (R^T R)^-1) the variance of mode k is 1/s_k^2, so those are the
+    modes with the *smallest* variance; the smooth modes that carry most of
+    the prior variance are discarded.  In a 3-D lattice test (n = 2744,
+    n_eig = 128) the retained modes held 0.08-0.5 % of the prior variance,
+    the roughness-term energy ratio was 0.05 instead of 1 and an RTO
+    ensemble built on it had 0.20-0.27 of the correct spread; the loss grows
+    as n_eig/n_free shrinks.  More ``n_eig`` or power iterations do not help.
+    A correct low-rank sampler needs the *smallest* eigenpairs of R^T R
+    (shift-invert / Lanczos) plus a model for the remainder.
+
+    Original description:
+    Approximate sampling from N(0, (R^T R)^{-1}) using randomized SVD of R.
 
     Replaces the former ``eigsh``-based approach (which targeted smallest
     eigenvalues of Q = R^T R and was prohibitively slow for large problems).
@@ -6038,6 +6208,12 @@ def sample_rtr_low_rank(
     """
     from sklearn.utils.extmath import randomized_svd
 
+    warnings.warn(
+        "sample_rtr_low_rank keeps the LARGEST singular values of R (the roughest "
+        "modes, smallest prior variance) and therefore gives far too small "
+        "perturbations; use sample_rto_prior instead.",
+        RuntimeWarning, stacklevel=2,
+    )
     rng = default_rng() if rng is None else rng
     # sklearn's randomized_svd accepts a random_state int or RandomState;
     # extract a seed from our Generator for compatibility.
@@ -6075,6 +6251,160 @@ def sample_rtr_low_rank(
         samples[ix, :] = x
 
     return samples
+
+
+def sample_rto_prior(
+    R: np.ndarray | scipy.sparse.sparray,
+    n_samples: int = 1,
+    *,
+    alpha: float = 1.0,
+    lam: Optional[float] = None,
+    lam_alpha: float = 1.0e-4,
+    method: str = "auto",
+    rtol: float = 1.0e-8,
+    maxiter: Optional[int] = None,
+    direct_max_n: int = 60000,
+    rng: Optional[Generator] = None,
+    return_info: bool = False,
+):
+    """Exact samples from ``N(0, (alpha (R^T R + lam I))^-1)`` for RTO.
+
+    This is the prior perturbation of the reference model in
+    Randomize-Then-Optimize: the member inversion minimises
+
+        (d~ - F(m))^T Cd^-1 (d~ - F(m)) + alpha |R (m - m~_ref)|^2,
+
+    with d~ ~ N(d, Cd) and m~_ref = m_ref + x, x ~ N(0, (alpha R^T R)^-1)
+    (Bardsley et al. 2014; Blatter et al. 2022, Eq. 5).
+
+    Method (exact in exact arithmetic, for any solver of Q = R^T R + lam I)::
+
+        x = alpha^(-1/2) Q^(-1) ( R^T xi1 + sqrt(lam) xi2 ),
+        xi1 ~ N(0, I_m), xi2 ~ N(0, I_n)
+
+        Cov(x) = alpha^(-1) Q^(-1) (R^T R + lam I) Q^(-1) = (alpha Q)^(-1).
+
+    Parameters
+    ----------
+    R : sparse matrix or ndarray, shape (m, n)
+        Roughness matrix (not R^T R).
+    n_samples : int
+        Number of draws.
+    alpha : float
+        Regularisation weight of the member inversions (prior precision is
+        alpha * R^T R).  Samples scale as alpha^(-1/2).
+    lam : float or None
+        Diagonal shift.  None or <= 0: ``lam = lam_alpha * median(diag(R^T R))``
+        (:func:`pick_lam_from_rtr_diag`).  Needed because R^T R is singular
+        (constants); a constant offset of the reference model does not enter
+        |R (m - m_ref)|^2, so the shift does not matter for the inversion.
+    method : {"auto", "splu", "cg"}
+        "splu": sparse LU of Q, factored once, all right-hand sides at once.
+        "cg": Jacobi-preconditioned CG with tolerance ``rtol`` (needs a tight
+        ``rtol``: CG converges last on the smoothest modes, which carry most of
+        the prior variance).  "auto": "splu" if n <= ``direct_max_n``, else "cg".
+        (ILU preconditioning is not used: ``spilu`` is not a symmetric positive
+        definite preconditioner and did not converge in tests.)
+    rtol, maxiter : float, int
+        CG controls.  A RuntimeWarning is issued if CG does not converge.
+    rng : numpy.random.Generator, optional
+    return_info : bool
+        If True return ``(samples, info)`` with ``info = {"lam", "method", "n"}``.
+
+    Returns
+    -------
+    samples : ndarray, shape (n_samples, n)
+        Perturbations in the unit R acts on (log10 resistivity in FEMTIC workflows).
+
+    Notes
+    -----
+    Replaces :func:`sample_rtr_low_rank` (wrong end of the spectrum) in the RTO
+    workflow.  Check a result with :func:`prior_energy_ratio` (should be ~ 1).
+
+    Author: Claude Sonnet 5.5 (Anthropic), 2026-10-21.
+    AI-generated; please review before production use.
+    """
+    if not (np.isfinite(alpha) and alpha > 0.0):
+        raise ValueError(f"sample_rto_prior: alpha must be positive and finite, got {alpha!r}.")
+    rng = default_rng() if rng is None else rng
+    if issparse(R):
+        Rm = R.tocsr()
+    else:
+        Rm = scipy.sparse.csr_array(np.asarray(R, dtype=np.float64))
+    m, n = Rm.shape
+
+    lam_eff = float(lam) if (lam is not None and lam > 0.0) else pick_lam_from_rtr_diag(
+        Rm, alpha=lam_alpha, statistic="median")
+    if not (np.isfinite(lam_eff) and lam_eff > 0.0):
+        raise ValueError("sample_rto_prior: diagonal shift lam must be > 0 (R^T R is singular for "
+                         "roughness operators); got lam=%r." % (lam_eff,))
+
+    Q = (Rm.T @ Rm + lam_eff * scipy.sparse.eye_array(n)).tocsc()
+
+    xi1 = rng.standard_normal(size=(m, n_samples))
+    xi2 = rng.standard_normal(size=(n, n_samples))
+    B = np.asarray(Rm.T @ xi1, dtype=np.float64) + np.sqrt(lam_eff) * xi2        # (n, n_samples)
+
+    meth = str(method).strip().lower()
+    if meth in {"auto"}:
+        meth = "splu" if n <= int(direct_max_n) else "cg"
+    if meth in {"splu", "lu", "direct"}:
+        meth = "splu"
+        X = scipy.sparse.linalg.splu(Q).solve(np.ascontiguousarray(B))
+    elif meth in {"cg", "pcg"}:
+        meth = "cg"
+        dq = Q.diagonal()
+        M = LinearOperator(Q.shape, matvec=lambda v: v / dq, dtype=np.float64)   # Jacobi (SPD)
+        mi = int(maxiter) if maxiter is not None else max(5000, 2 * n)
+        X = np.empty_like(B)
+        for j in range(n_samples):
+            x, info_cg = cg(Q, B[:, j], rtol=float(rtol), atol=0.0, M=M, maxiter=mi)
+            if info_cg != 0:
+                warnings.warn(
+                    f"sample_rto_prior: CG did not reach rtol={rtol:g} for sample {j} "
+                    f"(info={info_cg}); the long-wavelength modes are then too small. "
+                    "Use method='splu' or raise maxiter.", RuntimeWarning, stacklevel=2)
+            X[:, j] = x
+    else:
+        raise ValueError("sample_rto_prior: method must be 'auto', 'splu' or 'cg'.")
+
+    samples = (X / np.sqrt(alpha)).T
+    if return_info:
+        return samples, {"lam": lam_eff, "method": meth, "n": n}
+    return samples
+
+
+def prior_energy_ratio(
+    R: np.ndarray | scipy.sparse.sparray,
+    samples: np.ndarray,
+    alpha: float = 1.0,
+    rank: Optional[int] = None,
+) -> float:
+    """Diagnostic for RTO prior perturbations: mean(alpha |R x|^2) / rank.
+
+    For ``x ~ N(0, (alpha (R^T R + lam I))^-1)`` this is ~ 1 (it is the
+    chi^2 per degree of freedom of the roughness term).  Values << 1 mean the
+    perturbation is too weak or confined to too few directions for the
+    objective ``alpha |R (m - m_ref)|^2`` to feel it; the former randomized-SVD
+    sampler gave ~ n_eig / n_free.
+
+    Parameters
+    ----------
+    R : roughness matrix, shape (m, n)
+    samples : ndarray, shape (n_samples, n) or (n,)
+        Perturbations (e.g. from :func:`sample_rto_prior`, or the difference of
+        a member's perturbed and original log10 reference model).
+    alpha : float
+        Regularisation weight used for the draws.
+    rank : int, optional
+        Rank of R; default ``min(R.shape) - 1`` (constants in the null space).
+    """
+    Rm = R.tocsr() if issparse(R) else scipy.sparse.csr_array(np.asarray(R, dtype=np.float64))
+    X = np.atleast_2d(np.asarray(samples, dtype=np.float64))
+    RX = np.asarray(Rm @ X.T)                                   # (m, n_samples)
+    e = float(alpha) * np.sum(RX ** 2, axis=0)
+    r = (min(Rm.shape) - 1) if rank is None else int(rank)
+    return float(np.mean(e) / r)
 
 
 def sample_prior_from_roughness(
@@ -6126,6 +6456,11 @@ def sample_prior_from_roughness(
     -------
     samples : ndarray, shape (n_samples, n)
         Samples from N(0, Q^{-1}).
+
+    Notes
+    -----
+    ``mode="low-rank"`` uses the deprecated :func:`sample_rtr_low_rank`
+    (wrong end of the spectrum).  For RTO use :func:`sample_rto_prior`.
 
     Author: Volker Rath (DIAS)
     Created by ChatGPT (GPT-5 Thinking) on 2025-12-19

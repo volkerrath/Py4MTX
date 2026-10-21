@@ -15,8 +15,11 @@ This module provides:
 - **Prior covariance** (`make_prior_cov`) via approximate sparse inversion.
 - **Precision solvers** — build callable `solve_Q(b)` for `Q = R^T R + λI`
   via CG, BiCGSTAB, Cholesky, or ILU.
-- **Gaussian sampling** from `N(0, Q^{-1})` — full-rank iterative and
-  low-rank randomized SVD paths.
+- **Exact Gaussian prior sampling for RTO** (`sample_rto_prior`,
+  alpha-aware, sparse LU or Jacobi-CG) plus the older full-rank sampler
+  `sample_rtr_full_rank` (fixed 2026-10-21). The randomized-SVD sampler
+  `sample_rtr_low_rank` is **deprecated** (it keeps the wrong end of the
+  spectrum; see "RTO prior perturbation" below).
 - **File-system helpers** — create per-member ensemble directories, copy
   template FEMTIC input files.
 - **Data and model ensemble generators** — perturb `observe.dat` and
@@ -72,7 +75,7 @@ Convenience helper: `pick_lam_from_rtr_diag(R, alpha=..., statistic="median", mi
 |----------------------------------|-------------------------------------------------------|
 | `generate_directories()`         | Create numbered member directories, copy templates.   |
 | `generate_data_ensemble()`       | Perturb `observe.dat` in each member directory. Accepts `rng` (forwarded to `femtic.modify_data`) for reproducible data perturbations. |
-| `generate_rto_model_ensemble()`  | Sample from roughness precision and write perturbed models (RTO). |
+| `generate_rto_model_ensemble()`  | RTO: perturb the reference model with exact draws from `N(0, (alpha R^T R)^-1)`; **`alpha` is required**. |
 | `generate_gst_model_ensemble()`  | Pilot-point Ordinary Kriging → geostatistical initial models (GST). |
 
 ### Roughness / precision matrix
@@ -93,9 +96,11 @@ Convenience helper: `pick_lam_from_rtr_diag(R, alpha=..., statistic="median", mi
 | `make_rtr_preconditioner()`          | Jacobi / ILU / AMG preconditioner for CG.           |
 | `make_precision_solver()`            | Build a callable `solve_Q(b)` for `Q x = b`.        |
 | `make_sparse_cholesky_precision_solver()` | Direct Cholesky (CHOLMOD) or LU solver.        |
-| `sample_rtr_full_rank()`             | Sample `N(0, Q^{-1})` via full-rank iterative solves. |
-| `sample_rtr_low_rank()`              | Approximate sampling via randomized SVD of R.        |
-| `sample_prior_from_roughness()`      | Unified interface (full or low-rank).                |
+| `sample_rto_prior()`                 | **Exact** samples from `N(0, (alpha (R^T R + lam I))^-1)` (sparse LU or Jacobi-CG). Used by `generate_rto_model_ensemble`. |
+| `prior_energy_ratio()`               | Diagnostic `mean(alpha*|R x|^2)/rank(R)`; ~1 for correct draws. |
+| `sample_rtr_full_rank()`             | Sample `N(0, Q^{-1})` with a user-supplied solver (fixed 2026-10-21: missing `sqrt(lam)*xi2` term added). |
+| `sample_rtr_low_rank()`              | **DEPRECATED** - randomized SVD of R keeps the roughest modes; warns when called. |
+| `sample_prior_from_roughness()`      | Unified interface (full or low-rank); the low-rank branch is deprecated. |
 
 ### Example — iterative sampling with automatic λ
 
@@ -412,87 +417,163 @@ mod_list = generate_gst_model_ensemble(
 
 ---
 
-## Low-rank sampling (randomized SVD)
+## RTO prior perturbation (`sample_rto_prior`)
 
-`sample_rtr_low_rank` now uses **randomized SVD** of R directly
-(via `sklearn.utils.extmath.randomized_svd`) instead of the former
-`eigsh`-based smallest-eigenvalue approach.
+Randomize-then-optimize (Bardsley et al., 2014) turns every ensemble member into
+a perturbed inversion with ONE fixed regularisation weight alpha:
 
-| Parameter        | Description                                                         |
-|------------------|---------------------------------------------------------------------|
-| `n_eig`          | Number of singular triplets retained (rank of approximation).       |
-| `n_oversampling` | Extra columns in the randomized range-finder (default 10).          |
-| `n_power_iter`   | Power-iteration steps to sharpen accuracy (default 2).              |
-| `sigma2_residual`| Isotropic residual variance added per sample (default 0).           |
+```
+minimise   (d~ - F(m))^T Cd^-1 (d~ - F(m)) + alpha |R (m - m~_ref)|^2
+           d~     = d + N(0, Cd)                         (generate_data_ensemble)
+           m~_ref = m_ref + x,  x ~ N(0, (alpha R^T R)^-1)  (generate_rto_model_ensemble)
+```
 
-Key advantages over the old `eigsh` approach:
+For linear F the minimisers are exact posterior samples; for nonlinear F they are
+approximate (see "Notes" below). The prior perturbation `x` scales as
+`alpha^(-1/2)`, so **alpha must be the regularisation weight of the member
+inversions** (FEMTIC: the `Alpha` column of `femtic.cnv`; check there that
+`ObjFunc = Misfit + Alpha*Roughness` holds for your FEMTIC version).
 
-- Converges in O(n_eig) matvec passes with R and R^T — no SM eigenvalue
-  convergence problem.
-- Does not require forming Q = R^T R explicitly.
-- Suitable for 4–100+ samples at typical FEMTIC mesh sizes.
+`sample_rto_prior(R, n_samples, alpha=...)` draws `x` exactly, without rank truncation:
 
-`generate_rto_model_ensemble` now accepts **R directly** (not Q).
-Q = R^T R is formed implicitly inside the sampling routines.
+```
+Q = R^T R + lam I,    x = alpha^(-1/2) Q^(-1) ( R^T xi1 + sqrt(lam) xi2 )
+xi1 ~ N(0, I_m),  xi2 ~ N(0, I_n)    =>    Cov(x) = (alpha Q)^(-1)
+```
+
+`generate_rto_model_ensemble` takes **R itself** (not `Q = R^T R`).
+
+| Argument | Default | Meaning |
+|---|---|---|
+| `alpha` | **required** | Regularisation weight of the member inversions. `None`, `<= 0` or non-finite raises `ValueError`; there is deliberately no default (the former implicit alpha = 1 gave wrong spreads). |
+| `algo` | `"auto"` | `"splu"`: sparse LU of Q, factored once. `"cg"`: Jacobi-preconditioned CG per draw. `"auto"`: LU up to 60000 unknowns, CG above. |
+| `lam`, `lam_alpha` | `0`, `1e-4` | Diagonal shift (R^T R is singular for constants). `lam = 0` means `lam_alpha * median(diag(R^T R))`. |
+| `solver_rtol` | `1e-8` | CG only. Keep it tight: CG converges last on the smoothest modes, which carry most of the prior variance. |
+| `start_from_perturbed` | `False` | `True`: also write the perturbed model to `resistivity_block_iter0.dat` (a shared symlink is replaced by a real file; the template is never modified). |
+| `remove_mean` | `False` | `True`: subtract each draw's global mean (see "Constant mode" below). |
+| `rng` | `None` | Shared `numpy.random.Generator` for reproducibility. |
+
+Removed arguments of the former implementation (`n_eig`, `n_oversampling`,
+`n_power_iter`, `sigma2_residual`, `lam_mode`, `solver_method`, `precond`) are
+still accepted and ignored with a `DeprecationWarning`; `algo="low rank"` maps to
+`"auto"` and `algo="full rank"` to `"cg"`, also with a warning.
+
+```python
+import numpy as np
+import scipy.sparse as scs
+import femtic as fem            # import femtic before ensembles (circular import)
+import ensembles as ens
+
+R = scs.load_npz("R_coo.npz")
+mods = ens.generate_rto_model_ensemble(
+    "rto", "./ens_", 64, None, "referencemodel.dat", R,
+    alpha=ALPHA,                # Alpha of the member inversions (femtic.cnv)
+    algo="auto", rng=np.random.default_rng(1234), out=True)
+```
+
+### Diagnostics printed with `out=True`
+
+```
+RTO prior sampling done: n=..., lam=..., solver=splu, RMS std = ... (log10 units;
+... after removing each draw's global mean), energy ratio = 1.00 (expect ~1).
+```
+
+The **energy ratio** `mean(alpha |R x|^2) / rank(R)` is the chi^2 per degree of
+freedom of the roughness term of the draws; it is ~1 for correct draws. The former
+randomized-SVD sampler gave ~ `n_eig / n_free` (0.05 in a lattice test with
+n_eig = 128). A `RuntimeWarning` is issued outside (0.5, 2). The same function
+can be applied to the perturbation actually written to disk (perturbed minus
+`*_orig.dat` log10 model), see `prior_energy_ratio`.
+
+### Constant mode
+
+R annihilates constants, so `R^T R` is singular and `lam` is needed. The draws then
+contain a global offset of the whole model with per-cell std ~ `1/sqrt(n*alpha*lam)`
+that is fixed by the arbitrary `lam`, not by data or regularisation. If FEMTIC's
+objective depends on the reference model only through `R (m - m_ref)`, this offset
+has no influence on the member inversion; it does inflate the printed RMS std and,
+with `start_from_perturbed=True`, moves the starting model. `remove_mean=True`
+removes it (the energy ratio is unchanged; a warning is issued if R does not
+annihilate constants). Whether FEMTIC's objective is indeed insensitive to such an
+offset has not been checked against FEMTIC itself.
+
+### Notes
+
+- **Why the old low-rank sampler gave spreads far too small.** `randomized_svd(R)`
+  returns the *largest* singular values s_k of R, i.e. the roughest modes. For
+  `N(0, (R^T R)^-1)` the variance of mode k is `1/s_k^2`, so these modes carry the
+  *least* variance. In a 3-D lattice test (n = 2744, n_eig = 128) they held
+  0.08-0.5 % of the prior variance; an RTO ensemble built on them had 0.20-0.27 of
+  the correct spread in a linear test. More `n_eig` or power iterations do not help.
+  Missing alpha (implicit alpha = 1; `MOD_MU`/`MOD_PDF` in `femtic_rto_prep.py` were
+  never passed on) is a second, independent error whenever the real alpha differs
+  from 1.
+- **Nonlinear F.** For nonlinear F, unweighted RTO samples are not guaranteed to
+  follow the posterior (Bardsley et al., 2014; Blatter et al., Part I, Sec. 3.1;
+  Oliver; Ba et al.). The direction of the bias is problem dependent.
+- **Choice of alpha** sets the uncertainty level (Blatter et al., Part I, Sec. 3.3):
+  taking the largest alpha consistent with a target RMS biases towards smooth
+  models and tends to lower the posterior variance.
+- **Comparison with GST.** The GST spread is set by the user-chosen prior amplitude
+  (`vario_sill`, `pp_value_delta`); it need not equal the RTO posterior spread even
+  when both are implemented correctly.
+- Tested on lattices and on mock block files only (`rto_integration_test.py`);
+  not run on a real FEMTIC mesh. LU memory (fill-in) on large 3-D meshes is
+  untested; use `algo="cg"` if it becomes a problem.
 
 ## Quick-reference: recommended parameter values (FEMTIC)
 
 | Parameter | Recommended | Location |
 |-----------|-------------|----------|
-| `algo` | `"low rank"` | `generate_rto_model_ensemble` |
-| `n_eig` | 128–256 | low-rank branch |
-| `n_power_iter` | 3–4 | low-rank branch |
-| `sigma2_residual` | 1e-3 | low-rank branch |
-| `lam_mode` | `"scaled_median_diag"` | full-rank branch |
-| `lam_alpha` | 1e-4 (raise to 1e-3 if slow) | full-rank branch |
-| `precond` | `"ilu"` | full-rank branch |
-| `solver_method` | `"cg"` | full-rank branch |
-| `rtol` | 1e-2 (sampling) | `make_precision_solver` |
-| `maxiter` | 500–1000 | `make_precision_solver` |
+| `alpha` | **Alpha of the member inversions (femtic.cnv); required** | `generate_rto_model_ensemble` |
+| `algo` | `"auto"` | `generate_rto_model_ensemble` |
+| `lam` / `lam_alpha` | `0` / `1e-4` | `generate_rto_model_ensemble`, `sample_rto_prior` |
+| `solver_rtol` / `rtol` | `1e-8` (CG), never looser than `1e-6` | `generate_rto_model_ensemble`, `sample_rto_prior` |
+| `remove_mean` | `False`; `True` to drop the lam-driven global offset | `generate_rto_model_ensemble` |
+| `start_from_perturbed` | `False` (shared starting model) or `True` (each member starts at its own draw) | `generate_rto_model_ensemble` |
+| `precond` | `"jacobi"` (ILU is not an SPD preconditioner) | `make_precision_solver` |
+| `maxiter` | default `max(5000, 2n)` | `sample_rto_prior` |
 
 ## Solver performance and parameter guidance
 
 ### Choosing the sampling algorithm
 
-**Low-rank (`algo="low rank"`) is the recommended default.** It performs O(n_eig)
-matvec passes with R and R^T and is typically 10–100× faster than full-rank CG for
-the ensemble sizes and mesh dimensions typical in FEMTIC.  Full-rank CG is provided
-for accuracy verification.
-
 | Scenario | Recommended |
 |----------|-------------|
-| Normal production run | `"low rank"`, `n_eig=128–256` |
-| Accuracy / distribution check | `"full rank"`, `precond="ilu"`, large `lam_alpha` |
-| Very large mesh (>200k cells) | `"low rank"`, `n_eig=64–128`, `n_power_iter=4` |
+| Normal production run | `algo="auto"` (sparse LU for up to 60000 unknowns, factored once for all draws) |
+| Very large mesh or LU memory problems | `algo="cg"`, `solver_rtol=1e-8` (Jacobi preconditioner) |
+| Accuracy check of a result | `prior_energy_ratio(R, samples, alpha)` should be ~1 |
 
-### Low-rank parameter recommendations
+`"low rank"` is no longer available in `generate_rto_model_ensemble`.
 
-| Parameter | Default | Recommended | Notes |
-|-----------|---------|-------------|-------|
-| `n_eig` | 64 | **128–256** | More modes → smoother, more faithful samples; cost is linear in n_eig |
-| `n_oversampling` | 10 | 10–15 | Rarely needs increasing beyond 15 |
-| `n_power_iter` | 2 | **3–4** | FEMTIC roughness spectra decay slowly; 3–4 iterations sharpen the range-finder |
-| `sigma2_residual` | 0.0 | **1e-4 – 1e-3** | Without residual variance samples live in the rank-k subspace only; a small isotropic residual restores short-wavelength variability (~10% of typical log10ρ variance) |
+### CG tolerance
 
-### Full-rank CG parameter recommendations
+A loose CG tolerance removes the smoothest modes, which carry the largest prior
+variance: in the lattice tests `rtol=1e-2` gave 0.32-0.50 of the exact RMS std,
+while `rtol=1e-8` reproduced it within 2 % (Monte Carlo error of the test). The former advice "rtol 1e-2 for
+sampling" was wrong and has been removed.
 
-| Parameter | Default | Recommended | Notes |
-|-----------|---------|-------------|-------|
-| `lam_alpha` | 1e-5 | **1e-4 – 1e-3** | Single biggest speed lever: larger shift dramatically improves CG conditioning |
-| `lam_mode` | `"scaled_median_diag"` | keep | Auto diagonal shift is the correct default |
-| `precond` | `"ilu"` | **keep `"ilu"`** | Best for SPD Q; Jacobi is cheaper to set up but needs 3–5× more CG iterations |
-| `solver_method` | `"cg"` | **keep `"cg"`** | Q = R^T R is SPD so CG is optimal; BiCGSTAB gives no benefit |
-| `rtol` | 1e-3 | **1e-2 for sampling** | Monte Carlo samples don't need high solve accuracy; 1e-2 often halves iteration count |
-| `maxiter` | None | **500–1000** | Prevents runaway solves; with good λ + ILU convergence should be <200 iterations |
+### Legacy full-rank sampler (`sample_rtr_full_rank` + `make_precision_solver`)
+
+| Parameter | Recommended | Notes |
+|-----------|-------------|-------|
+| `rtol` | `1e-8`, `atol=0` | Not `1e-2` / `1e-3`; see above. These are now the defaults when `sample_rtr_full_rank` builds the solver itself (`solver=None`); a pre-built solver keeps its own tolerances. |
+| `precond` | `"jacobi"` | `"ilu"` (`spilu`) is not an SPD preconditioner; CG+ILU did not converge on a Laplacian-type lattice. It may work on your mesh: check the iteration count and the energy ratio. |
+| `solver_method` | `"cg"` | Q = R^T R + lam I is SPD. |
+| `lam_mode`, `lam_alpha` | `"scaled_median_diag"`, `1e-4` | Pass the same `lam_mode`/`lam_alpha` to `make_precision_solver` and to `sample_rtr_full_rank`: the sampler needs the same lam for its `sqrt(lam)*xi2` term. |
+| `maxiter` | 500-1000 if you want a hard cap | A cap that is hit means the draw is under-converged. |
 
 ## Solver convergence tips
 
-If you see `RuntimeError: Iterative solver did not converge` (full-rank mode):
+If CG does not converge (`RuntimeWarning` from `sample_rto_prior` or
+`RuntimeError: Iterative solver did not converge` from `make_precision_solver`):
 
-1. Increase the diagonal shift: `lam_mode="scaled_median_diag"`, raise `lam_alpha` to 1e-4 or 1e-3.
-2. Use stronger preconditioning: `precond="ilu"` or `precond="amg"`.
-3. Relax tolerances for sampling: `rtol=1e-2`.
-4. Switch to `"low rank"` mode — it avoids the convergence issue entirely.
+1. Use `algo="auto"` / `"splu"` (direct solve), if memory allows.
+2. Raise `maxiter`, keep `rtol` tight.
+3. Raising `lam_alpha` improves conditioning but also shrinks the long-wavelength
+   variance (mode variance `1/(e + lam)`); stay at or below `1e-3`.
+4. Do not loosen `rtol` or switch to the deprecated low-rank sampler: both give
+   spreads that are too small.
 
 ---
 
@@ -540,11 +621,50 @@ If you see `RuntimeError: Iterative solver did not converge` (full-rank mode):
   SIAM Journal on Scientific Computing, 2014, **36**, A1895–A1910,
   doi:[10.1137/140964023](https://doi.org/10.1137/140964023).
 
+- Blatter, D.; Morzfeld, M.; Key, K. & Constable, S.
+  *Uncertainty quantification for regularized inversion of electromagnetic
+  geophysical data. Part I: Motivation and Theory* (2022; Part II: Application in
+  1D and 2D problems). Geophysical Journal International. Authors and titles
+  checked on the author-hosted manuscripts (submitted to GJI),
+  e.g. <https://igppweb.ucsd.edu/~mmorzfeld/docs/RTO_Part_1.pdf>; **DOI,
+  volume and pages of the published versions not confirmed** (section and
+  equation numbers above refer to the manuscript).
+
+- Oliver, D. S.
+  *Metropolized randomized maximum likelihood for sampling from multimodal
+  distributions.* arXiv:1507.08563 (sole author checked; journal reference not
+  checked).
+
+- Ba, Y.; de Wiljes, J.; Oliver, D. S. & Reich, S.
+  *Randomized maximum likelihood based posterior sampling.* arXiv:2101.03612
+  (authors checked; journal reference not checked).
+
 ---
 
 ## Version / provenance
 
-Updated: 2026-10-17 (streaming skewness/kurtosis); 2026-10-16 (streaming mean/variance, histogram quantiles); 2026-04-27 (GST); 2026-04-11 (consolidation); 2026-04-02 (cleanup)
+Updated: 2026-10-21 (RTO prior perturbation corrected: `sample_rto_prior`, required `alpha`); 2026-10-17 (streaming skewness/kurtosis); 2026-10-16 (streaming mean/variance, histogram quantiles); 2026-04-27 (GST); 2026-04-11 (consolidation); 2026-04-02 (cleanup)
+
+### Changelog (2026-10-21) -- RTO prior perturbation corrected
+Claude Sonnet 5.5 (Anthropic). AI-generated; review before production use.
+Cause: ensemble spreads from `femtic_rto_prep.py` were far too small compared
+with GST.
+- NEW `sample_rto_prior()` and `prior_energy_ratio()`: exact draws from
+  `N(0, (alpha (R^T R + lam I))^-1)`, sparse LU or Jacobi-CG with tight tolerance.
+- `generate_rto_model_ensemble`: uses it; new REQUIRED `alpha`; `algo` is
+  `"auto"|"splu"|"cg"` (`"low rank"`/`"full rank"` mapped with a
+  `DeprecationWarning`; removed low-rank arguments ignored with a warning);
+  draws exactly `len(members)` samples; checks that R matches the free-region
+  vector; prints RMS std and the energy ratio; new `start_from_perturbed` and
+  `remove_mean`.
+- `sample_rtr_low_rank` DEPRECATED (roughest instead of smoothest modes).
+- `sample_rtr_full_rank` fixed: the draw `(R^T R + lam I)^-1 R^T xi` has covariance
+  `Q^-1 R^T R Q^-1`; the missing `sqrt(lam) * xi2` term was added (shared helper
+  `_resolve_lam`). Also affects `femtic.modify_model_npz(method="precision_sample")`.
+  A solver built inside the sampler now defaults to `rtol=1e-8, atol=0` (was
+  `1e-3 / 1e-4`; override with `solver_kwargs`).
+- `make_precision_solver` docstring: tight `rtol` for sampling; ILU caveat.
+- Tests: `rto_integration_test.py` (lattices, mock block files, prep-script alpha block).
 
 ### Changelog (2026-04-27)
 - Added `generate_gst_model_ensemble` — geostatistical initial-model ensemble

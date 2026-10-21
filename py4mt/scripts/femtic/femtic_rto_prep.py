@@ -313,6 +313,26 @@ Provenance:
                 to also run for PLOT_SLICES_ENS, so the ensemble-slice plot
                 sees the same extent even when PLOT_MODEL/PLOT_SLICES_QC are
                 off. Falls back to the literal limits if no sites are found.
+    2026-10-21  Claude Sonnet 5.5 (Anthropic)
+                RTO prior perturbation corrected (ensemble spreads were far
+                too small compared with GST). Removed the dead MOD_MU /
+                MOD_PDF (defined, never passed on: the draw used an implicit
+                alpha = 1) and the randomized-SVD options MOD_N_EIG /
+                MOD_N_OVERSAMPLING / MOD_N_POWER_ITER / MOD_SIGMA2_RESIDUAL
+                (that sampler kept the roughest instead of the smoothest
+                modes, ~0.1-0.5 % of the prior variance). New REQUIRED
+                MOD_ALPHA = regularisation weight of the member inversions
+                (prior covariance (alpha R^T R)^-1), or MOD_ALPHA_CNV = a
+                femtic.cnv whose last-row Alpha is used (the script prints
+                a check of ObjFunc = Misfit + Alpha*Roughness); the script
+                exits before touching any directory if neither is given.
+                MOD_ALGO is now "auto" | "splu" | "cg"; new MOD_LAM_ALPHA,
+                MOD_RTOL, MOD_START_FROM_PERTURBED (default False),
+                MOD_REMOVE_MEAN (default False; drops the global-offset mode
+                whose variance is set by the arbitrary shift lam).
+                ens.generate_rto_model_ensemble now prints the RMS std and
+                the energy ratio of the prior draws (expect ~1).
+                See RTO_AUDIT_2026-10-21.md.
 """
 
 import os
@@ -479,34 +499,67 @@ if PERTURB_MOD:
     # filename only — used inside ensemble dirs
     MOD_REF_BASE = os.path.basename(MOD_REF)
     MOD_METHOD = "add"
-    # if ModCov is not None, this needs to be normal
-    MOD_MU = 1.4142135623730951  # alpha =1/ mu = sqrt(1/alpha)
-    MOD_PDF = ["normal", 0., MOD_MU]
+    # --- regularisation weight alpha: REQUIRED -----------------------------------
+    # The reference model is perturbed by x ~ N(0, (alpha R^T R)^-1)
+    # (Bardsley et al. 2014; Blatter et al. 2022, Eq. 5), so the perturbation std
+    # scales as alpha^(-1/2).  alpha MUST be the regularisation weight with which
+    # the member inversions are run (cost = misfit + alpha*|R(m - m_ref)|^2) --
+    # ONE fixed value for all members, run to convergence.
+    # There is deliberately no default: the former implicit alpha = 1
+    # (MOD_MU / MOD_PDF were defined but never passed on) gave ensemble spreads
+    # far too small.
+    MOD_ALPHA = None        # float > 0; or None to read it from MOD_ALPHA_CNV
+    MOD_ALPHA_CNV = None    # femtic.cnv (file or its directory): Alpha of its LAST row
+                            # is used if MOD_ALPHA is None, e.g. ENSEMBLE_DIR + "tmpl/femtic.cnv"
     # ["exp", L], ["gauss", L], ["matern", L, MatPars], ["femtic"], None
     R_FILE = TEMPLATES + r"/R_coo"
 
-    # Sampling algorithm: "low rank" (randomized SVD, recommended) or "full rank" (CG).
-    # Low-rank is 10-100x faster for typical FEMTIC mesh sizes.
-    MOD_ALGO = "low rank"
+    # Solver for Q = R^T R + lam I (exact sampling, no rank truncation):
+    #   "auto": sparse LU up to 60000 unknowns, Jacobi-CG above; "splu"; "cg".
+    MOD_ALGO = "auto"
+    MOD_LAM = 0.0           # >0: fixed diagonal shift; 0: MOD_LAM_ALPHA * median(diag(R^T R))
+    MOD_LAM_ALPHA = 1.0e-4  # R^T R is singular (constants); the shift does not enter the inversion
+    MOD_RTOL = 1.0e-8       # CG only. Keep tight: CG converges last on the smoothest
+                            # modes, which carry the largest prior variance.
 
-    # --- low-rank options (used when MOD_ALGO = "low rank") ---
-    # More n_eig -> smoother samples; cost is linear in n_eig.
-    # n_power_iter=3-4 sharpens accuracy for slowly decaying roughness spectra.
-    # sigma2_residual adds short-wavelength variability beyond the rank-k subspace;
-    # set to ~10% of typical log10(rho) variance (e.g. 1e-3 for std ~0.1 in log10).
-    MOD_N_EIG = 128 
-    MOD_N_OVERSAMPLING = 10     # extra columns in range-finder; 10-15 is fine
-    MOD_N_POWER_ITER = 3        # 3-4 recommended for FEMTIC roughness spectra
-    MOD_SIGMA2_RESIDUAL = 1e-3  # isotropic residual variance; 0 = disabled
+    # False: all members start from the shared (unperturbed) resistivity_block_iter0.dat
+    #        and only referencemodel.dat is perturbed.
+    # True : the perturbed model is also written to resistivity_block_iter0.dat (real
+    #        file; the shared symlink is replaced, the template is never modified), so
+    #        every inversion starts at its own prior draw as in Blatter et al. (2022).
+    MOD_START_FROM_PERTURBED = False
 
-    # --- full-rank options (used when MOD_ALGO = "full rank") ---
-    # lam_alpha is the key speed lever: raise to 1e-4 or 1e-3 if CG is slow.
-    MOD_LAM = 0.0
-    # auto diagonal shift from diag(R^T R)
-    MOD_LAM_MODE = "scaled_median_diag"
-    MOD_LAM_ALPHA = 1.0e-4                # raise to 1e-3 if CG convergence is slow
-    MOD_SOLVER = "cg"                     # CG is optimal for SPD Q = R^T R
-    MOD_PRECOND = "ilu"                   # ILU beats jacobi by 3-5x fewer iterations
+    # True: subtract each draw's global mean. The constant mode of R^T R carries a variance
+    # set by the arbitrary shift lam (per-cell std ~ 1/sqrt(n*alpha*lam)); |R x|^2 and
+    # hence the member inversion do not see it (if FEMTIC's objective depends on the
+    # reference model only through R(m - m_ref)), but it inflates the printed RMS std and,
+    # with MOD_START_FROM_PERTURBED, shifts the whole starting model. The energy ratio is
+    # unchanged. Default False = exact sampler output.
+    MOD_REMOVE_MEAN = False
+
+    # --- resolve alpha now (fail before any directory is touched) -------------------
+    if MOD_ALPHA is None and MOD_ALPHA_CNV is not None:
+        _cnv_rows = fem.read_cnv(MOD_ALPHA_CNV)["rows"]
+        if not _cnv_rows or "Alpha" not in _cnv_rows[-1]:
+            sys.exit(" MOD_ALPHA_CNV = %s has no 'Alpha' column / rows." % MOD_ALPHA_CNV)
+        _row = _cnv_rows[-1]
+        MOD_ALPHA = float(_row["Alpha"])
+        print(f"MOD_ALPHA = {MOD_ALPHA:g}  (Alpha of the last row, iteration "
+              f"{int(_row.get('Iter', -1))}, of {MOD_ALPHA_CNV})")
+        if all(_k in _row for _k in ("Misfit", "Roughness", "ObjFunc")):
+            _obj = _row["Misfit"] + MOD_ALPHA * _row["Roughness"]
+            _rel = abs(_obj - _row["ObjFunc"]) / max(abs(_row["ObjFunc"]), 1.0e-300)
+            print(f"  check: Misfit + Alpha*Roughness = {_obj:.6g}, ObjFunc = {_row['ObjFunc']:.6g} "
+                  f"(rel. diff {_rel:.1e})")
+            if _rel > 1.0e-3:
+                print("  WARNING: ObjFunc != Misfit + Alpha*Roughness. Verify FEMTIC's convention "
+                      "(Alpha^2? factor 1/2? extra Beta/Damp/Distortion terms?) before trusting "
+                      "MOD_ALPHA: the prior covariance must be (weight of |R(m-m_ref)|^2 * R^T R)^-1.")
+    if MOD_ALPHA is None or not (float(MOD_ALPHA) > 0.0):
+        sys.exit(" Set MOD_ALPHA (> 0) or MOD_ALPHA_CNV in the PERTURB_MOD block: the prior "
+                 "covariance is (alpha R^T R)^-1 and alpha must equal the regularisation weight "
+                 "of the member inversions (Alpha column of femtic.cnv).")
+    MOD_ALPHA = float(MOD_ALPHA)
 
 else:
     R_FILE = None
@@ -902,8 +955,8 @@ if PLOT_DATA:
 """
 Draw perturbed model sets: m̃ ∼ N(m, Cm)
 
-R is passed directly — Q = R^T R is formed implicitly inside
-generate_rto_model_ensemble, never explicitly materialised.
+R is passed directly — the sparse Q = R^T R + lam I is formed inside
+ens.sample_rto_prior (exact draws from N(0, (MOD_ALPHA R^T R)^-1), no rank truncation).
 """
 R = scs.load_npz(R_FILE + ".npz")
 print("roughness R loaded with shape:", np.shape(R))
@@ -916,18 +969,13 @@ model_ensemble = ens.generate_rto_model_ensemble(
     refmod=MOD_REF_BASE,
     method=MOD_METHOD,
     algo=MOD_ALGO,
-    q=R,                          # pass R directly — Q formed implicitly
-    # low-rank options
-    n_eig=MOD_N_EIG,
-    n_oversampling=MOD_N_OVERSAMPLING,
-    n_power_iter=MOD_N_POWER_ITER,
-    sigma2_residual=MOD_SIGMA2_RESIDUAL,
-    # full-rank options
+    q=R,                          # roughness matrix R (not R^T R)
+    alpha=MOD_ALPHA,              # regularisation weight of the member inversions
     lam=MOD_LAM,
-    lam_mode=MOD_LAM_MODE,
     lam_alpha=MOD_LAM_ALPHA,
-    solver_method=MOD_SOLVER,
-    precond=MOD_PRECOND,
+    solver_rtol=MOD_RTOL,
+    start_from_perturbed=MOD_START_FROM_PERTURBED,
+    remove_mean=MOD_REMOVE_MEAN,
     rng=rng,
     out=True,
 )

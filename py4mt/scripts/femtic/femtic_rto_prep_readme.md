@@ -12,7 +12,7 @@ MT inversion.
 ```
 for i = 1 : N_SAMPLES do
     Draw perturbed data:  d̃ᵢ ~ N(d, Cᵈ)
-    Draw perturbed model: m̃ᵢ ~ N(mᵣₑf, Cᵐ)   (via roughness-matrix prior)
+    Draw perturbed model: m̃ᵢ = mᵣₑf + xᵢ,  xᵢ ~ N(0, (α RᵀR)⁻¹)   (roughness-matrix prior)
     Write member directory i with perturbed observe.dat / starting model
 end
 ```
@@ -73,8 +73,18 @@ makes the *entire* ensemble (data + model perturbation, plus the
 | Variable | Description |
 |---|---|
 | `MOD_REF` | Reference model file |
-| `MOD_LAM` | Roughness regularisation weight |
-| `MOD_LAM_MODE` | `"fixed"` / `"auto"` |
+| `MOD_ALPHA` | **Required** (or `MOD_ALPHA_CNV`). Regularisation weight alpha of the member inversions; the model perturbation is `x ~ N(0, (alpha R^T R)^-1)`, std ~ `alpha^(-1/2)`. One fixed value for all members. The script exits before creating any directory if alpha is missing or `<= 0`. |
+| `MOD_ALPHA_CNV` | Path of a `femtic.cnv` (or its directory) whose last-row `Alpha` is used when `MOD_ALPHA = None`. The script prints `Misfit + Alpha*Roughness` against `ObjFunc` and warns if they differ by more than 0.1 %: verify FEMTIC's convention before trusting the value. |
+| `MOD_ALGO` | `"auto"` (default; sparse LU up to 60000 unknowns, Jacobi-CG above), `"splu"`, `"cg"`. |
+| `MOD_LAM` | Fixed diagonal shift for `R^T R + lam I`; `0` = `MOD_LAM_ALPHA * median(diag(R^T R))`. (Not the regularisation weight.) |
+| `MOD_LAM_ALPHA` | Scale of the automatic shift (default `1e-4`). |
+| `MOD_RTOL` | CG relative tolerance (default `1e-8`; keep tight). |
+| `MOD_START_FROM_PERTURBED` | `False` (default): members share the unperturbed `resistivity_block_iter0.dat`. `True`: each member also gets its perturbed model as starting model (real file replaces the symlink; the template is not modified). |
+| `MOD_REMOVE_MEAN` | `False` (default). `True`: subtract each draw's global mean (offset set by the arbitrary shift `lam`, invisible to `R`). |
+
+Removed (2026-10-21): `MOD_MU`, `MOD_PDF` (never passed on; implied alpha = 1),
+`MOD_N_EIG`, `MOD_N_OVERSAMPLING`, `MOD_N_POWER_ITER`, `MOD_SIGMA2_RESIDUAL`,
+`MOD_LAM_MODE`, `MOD_SOLVER`, `MOD_PRECOND`; `MOD_ALGO = "low rank"` is gone.
 
 ### Visualization
 | Variable | Description |
@@ -155,3 +165,16 @@ dict(kind="plane", point=[0,0,5000], strike=45, dip=60)
   separate value). The origin/site-resolution block now also runs for
   `PLOT_SLICES_ENS`, so the ensemble plot gets the ROI even when
   `PLOT_MODEL`/`PLOT_SLICES_QC` are off.
+- 2026-10-21 (Claude Sonnet 5.5, Anthropic): **RTO prior perturbation
+  corrected** (ensemble spreads were far too small compared with GST).
+  (1) The randomized-SVD sampler kept the roughest instead of the smoothest
+  modes (0.1-0.5 % of the prior variance in a lattice test); replaced by exact
+  sampling (`ens.sample_rto_prior`). (2) The perturbation had an implicit
+  alpha = 1 (`MOD_MU`/`MOD_PDF` were defined but never passed on); `MOD_ALPHA`
+  (or `MOD_ALPHA_CNV`) is now required. New `MOD_ALGO` values, `MOD_LAM_ALPHA`,
+  `MOD_RTOL`, `MOD_START_FROM_PERTURBED`, `MOD_REMOVE_MEAN`; the run prints the
+  RMS std and the energy ratio (expect ~1) of the draws. AI-generated; review
+  before production use. Details: `ensembles_readme.md`, changelog 2026-10-21.
+  `femtic_rto_prep.py` itself could not be run end to end here (`femtic_viz`
+  was not available); the alpha block and `ens.generate_rto_model_ensemble`
+  were tested separately (`rto_integration_test.py`).
