@@ -96,10 +96,9 @@ fname = inspect.getfile(inspect.currentframe())
 titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng + "\n\n")
 
-
 # ===========================================================================
 # USER SECTION -- edit here; every user parameter is in CAPITALS
-# ===========================================================================
+# ===========3================================================================
 
 # Directories and/or files to scan. Command-line arguments, if given,
 # replace this list.
@@ -115,7 +114,7 @@ MESH_FILE = "mesh.dat"
 SIZE_UNIT = "km"
 
 # Decimals of the model-size values (trailing zeros are dropped).
-SIZE_DECIMALS = 3
+SIZE_DECIMALS = 0
 
 # Region 1 as ocean: None = infer (flag == 1 and rho <= 1 Ohm.m),
 # True = ocean, False = no ocean.
@@ -123,7 +122,8 @@ OCEAN = None
 
 # Optional LaTeX table of the summaries. None = off; otherwise the name of
 # the .tex file to write (a relative path refers to the current directory).
-LATEX_FILE = None
+
+LATEX_FILE = "Ubinas_"+Path(fname).stem+".tex" #script_dir+".tex"# None
 
 # Caption and label of the table, used as they are (write LaTeX, e.g.
 # r"Problem size per iteration."). None = default caption / no label.
