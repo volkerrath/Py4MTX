@@ -31,6 +31,12 @@ from the environment, and <PY4MTX_ROOT>/py4mt/modules/ and
 <PY4MTX_ROOT>/py4mt/scripts/ are put on sys.path (version.py and util.py
 supply the title line printed at start-up).
 
+Optional LaTeX table: set LATEX_FILE in the USER SECTION to the name of a
+.tex file. It gets one booktabs row per iteration (elements, regions, n_rho,
+n_dist, Jacobian columns and, if mesh.dat was read, the x, y, z range).
+LATEX_STANDALONE = True writes a complete document instead of only the
+table environment.
+
 AI-generated code -- author: Claude, Anthropic.
 Date generated: 2026-06-12.
 Review before use in production.
@@ -57,6 +63,10 @@ Provenance:
                 on sys.path, version/util title line. The parsing code
                 itself is unchanged and still uses the standard library
                 only; femtic.py is not imported.
+    2026-10-24  Claude Sonnet 5.5 (Anthropic)
+                Added the optional LaTeX table (LATEX_FILE, LATEX_CAPTION,
+                LATEX_LABEL, LATEX_STANDALONE in the USER SECTION; builder
+                latex_table()). The printed summary is unchanged.
 """
 from __future__ import annotations
 
@@ -110,6 +120,19 @@ SIZE_DECIMALS = 3
 # Region 1 as ocean: None = infer (flag == 1 and rho <= 1 Ohm.m),
 # True = ocean, False = no ocean.
 OCEAN = None
+
+# Optional LaTeX table of the summaries. None = off; otherwise the name of
+# the .tex file to write (a relative path refers to the current directory).
+LATEX_FILE = None
+
+# Caption and label of the table, used as they are (write LaTeX, e.g.
+# r"Problem size per iteration."). None = default caption / no label.
+LATEX_CAPTION = None
+LATEX_LABEL = None
+
+# False = only the table environment, to be \input into a paper (needs the
+# booktabs package); True = a complete document that can be compiled as is.
+LATEX_STANDALONE = False
 
 # ===========================================================================
 # END OF USER SECTION
@@ -360,6 +383,97 @@ def size_lines(extent: dict, unit: str = "km", decimals: int = 3) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# LaTeX table (optional: LATEX_FILE)
+# ---------------------------------------------------------------------------
+
+def _tex_int(n: int) -> str:
+    """Integer with a thin space as thousands separator (no package needed)."""
+    return f"{n:,d}".replace(",", r"\,")
+
+
+def _tex_range(lo: float, hi: float, scale: float, decimals: int) -> str:
+    """``$[lo,\\,hi]$`` in math mode, so that a minus sign is a real minus."""
+    return "$[" + _fmt_num(lo * scale, decimals) + r",\," + _fmt_num(hi * scale, decimals) + "]$"
+
+
+def latex_table(rows: list[dict], unit: str = "km", decimals: int = 3,
+                caption: str | None = None, label: str | None = None,
+                standalone: bool = False) -> str:
+    """LaTeX source (booktabs) of the summary: one table row per iteration.
+
+    *rows* are dicts with the keys ``it``, ``nelem``, ``nreg``, ``n_rho``,
+    ``n_dist`` (None if there is no distortion file), ``n_total`` and
+    ``mesh`` (the dict of :func:`parse_mesh_extent`, or None). The x, y, z
+    range columns appear if at least one row has a mesh. *caption* and
+    *label* are used as they are (they are LaTeX). With *standalone* the
+    result is a complete document, otherwise only the table environment.
+    """
+    from datetime import datetime
+
+    scale = 1.0e-3 if unit == "km" else 1.0
+    with_size = any(r["mesh"] is not None for r in rows)
+
+    head = ["Iter.", "Elements", "Regions", r"$n_\rho$", r"$n_\mathrm{dist}$",
+            r"Jac.\ columns"]
+    colspec = "rrrrrr"
+    if with_size:
+        head += [f"${a}$ ({unit})" for a in "xyz"]
+        colspec += "ccc"
+
+    if caption is None:
+        caption = (r"Parameter dimension of the FEMTIC inversion per iteration: "
+                   r"mesh elements, resistivity regions, free resistivity "
+                   r"parameters $n_\rho$, free distortion parameters "
+                   r"$n_\mathrm{dist}$, and Jacobian columns "
+                   r"$n_\rho + n_\mathrm{dist}$.")
+        if with_size:
+            caption += (r" The model size is the bounding box of the mesh "
+                        r"nodes, including the air layer ($z$ positive down).")
+
+    body = [r"\begin{table}[htbp]", r"  \centering", r"  \small",
+            r"  \caption{" + caption + "}"]
+    if label:
+        body.append(r"  \label{" + label + "}")
+    body += [r"  \begin{tabular}{" + colspec + "}", r"    \toprule",
+             "    " + " & ".join(head) + r" \\", r"    \midrule"]
+    for r in rows:
+        cells = [str(r["it"]), _tex_int(r["nelem"]), _tex_int(r["nreg"]),
+                 _tex_int(r["n_rho"]),
+                 "--" if r["n_dist"] is None else _tex_int(r["n_dist"]),
+                 _tex_int(r["n_total"])]
+        if with_size:
+            m = r["mesh"]
+            if m is None:
+                cells += ["--"] * 3
+            else:
+                cells += [_tex_range(lo, hi, scale, decimals)
+                          for lo, hi in zip(m["min"], m["max"])]
+        body.append("    " + " & ".join(cells) + r" \\")
+    body += [r"    \bottomrule", r"  \end{tabular}", r"\end{table}"]
+
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    note = ["% Generated by femtic_summarize_model_cells.py on " + stamp]
+    if standalone:
+        out = [r"\documentclass{article}",
+               r"\usepackage[a4paper,margin=1.5cm]{geometry}",
+               r"\usepackage{booktabs}", r"\begin{document}", ""] + note + [""] \
+              + body + ["", r"\end{document}"]
+    else:
+        out = note + [r"% Needs \usepackage{booktabs} in the preamble."] + body
+    return "\n".join(out) + "\n"
+
+
+def _write_latex(text: str, path: str) -> None:
+    """Write the LaTeX source; a failure is reported but does not stop the run."""
+    try:
+        Path(path).write_text(text, encoding="utf-8")
+    except OSError as exc:
+        print(f"[error] cannot write LaTeX table to {path}: {exc}", file=sys.stderr)
+        return
+    print(f"[latex] Wrote LaTeX table to {Path(path).resolve()}")
+
+
+# ---------------------------------------------------------------------------
 # Pair up files by iteration number
 # ---------------------------------------------------------------------------
 
@@ -462,6 +576,10 @@ def main() -> None:
         "SIZE_UNIT":     SIZE_UNIT,
         "SIZE_DECIMALS": SIZE_DECIMALS,
         "OCEAN":         OCEAN,
+        "LATEX_FILE":       LATEX_FILE,
+        "LATEX_CAPTION":    LATEX_CAPTION,
+        "LATEX_LABEL":      LATEX_LABEL,
+        "LATEX_STANDALONE": LATEX_STANDALONE,
     })
 
     pairs = collect_pairs(args)
@@ -470,16 +588,35 @@ def main() -> None:
         print("No resistivity_block_iter*.dat files found.", file=sys.stderr)
         sys.exit(1)
 
+    latex_rows: list[dict] = []
     for it, rho_path, dist_path in pairs:
         try:
             rho  = parse_resistivity_block(rho_path, ocean=OCEAN)
             dist = parse_distortion(dist_path) if dist_path else None
             mesh, mesh_msg = get_mesh_extent(rho_path)
             print_summary(it, rho, dist, mesh, mesh_msg)
+            latex_rows.append({
+                "it":      it,
+                "nelem":   rho["nelem"],
+                "nreg":    rho["nreg"],
+                "n_rho":   rho["n_rho"],
+                "n_dist":  dist["n_distortion"] if dist else None,
+                "n_total": rho["n_rho"] + (dist["n_distortion"] if dist else 0),
+                "mesh":    mesh,
+            })
         except Exception as exc:
             print(f"[error] iter {it}: {exc}", file=sys.stderr)
 
     print(f"\n  {len(pairs)} iteration(s) processed.")
+
+    if LATEX_FILE is not None:
+        if latex_rows:
+            _write_latex(latex_table(latex_rows, SIZE_UNIT, SIZE_DECIMALS,
+                                     LATEX_CAPTION, LATEX_LABEL, LATEX_STANDALONE),
+                         LATEX_FILE)
+        else:
+            print("[warn] no iteration summarised -- no LaTeX table written",
+                  file=sys.stderr)
 
 
 if __name__ == "__main__":

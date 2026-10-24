@@ -49,6 +49,10 @@ When scanning a directory the script looks for a file literally named
 | Parameter | Default | Meaning |
 |---|---|---|
 | `PATHS` | `["."]` | `observe.dat` files, glob patterns, or directories to scan. Replaced by command-line arguments. |
+| `LATEX_FILE` | `None` | Name of a `.tex` file to write the summaries to as a LaTeX table (relative paths refer to the current directory). `None` = no LaTeX output. |
+| `LATEX_CAPTION` | `None` | Caption of the table, used as it is (write LaTeX). `None` = default caption. |
+| `LATEX_LABEL` | `None` | Label of the table, e.g. `"tab:observe"`. `None` = no `\label`. |
+| `LATEX_STANDALONE` | `False` | `False` = only the table environment (for `\input`); `True` = a complete document that compiles as it is. |
 
 ---
 
@@ -162,6 +166,55 @@ Column meanings:
 
 ---
 
+## LaTeX table
+
+Set `LATEX_FILE` in the user section (e.g. `LATEX_FILE = "observe.tex"`) and
+the summaries are also written as one LaTeX table, after all files have been
+processed. The printed summary does not change.
+
+- One table for all files. For each file: a line with its path (as given,
+  LaTeX special characters escaped), one row per observation type (sites,
+  `d/freq`, frequency rows, data values), and an italic total row.
+- If a file has dummy stations (0 frequencies), a small footnote line below
+  its total row lists them per observation type.
+- Thousands are separated by a thin space (`13\,440`), so no number package
+  is needed. The table uses `booktabs`; with `LATEX_STANDALONE = False` the
+  file has only the `table` environment (add `\usepackage{booktabs}` to your
+  paper and `\input{observe.tex}`), with `True` it is a complete `article`
+  document.
+- `LATEX_CAPTION` and `LATEX_LABEL` are used exactly as given, so write them
+  as LaTeX. The default caption explains the columns.
+- The table has five narrow columns and fits a single column of a two-column
+  layout; with many files it becomes long (it is a plain `tabular`, not a
+  `longtable`).
+- If the file cannot be written, an error is printed and the run is not
+  stopped.
+
+Example of the generated `tabular` for two files (synthetic test files; the
+second name was chosen to show the escaping):
+
+```
+\begin{tabular}{lrrrr}
+  \toprule
+  Obs type & Sites & d/freq & Freq.\ total & Data total \\
+  \midrule
+  \multicolumn{5}{l}{\texttt{ens\_01/observe.dat}} \\
+  MT & 3 & 8 & 11 & 88 \\
+  VTF & 3 & 4 & 8 & 32 \\
+  \textit{Total} & 6 &  & 19 & 120 \\
+  \multicolumn{5}{l}{\footnotesize Dummy stations (0 frequencies): VTF 1} \\
+  \midrule
+  \multicolumn{5}{l}{\texttt{ens\_02/obs\&rve\%\#1.dat}} \\
+  MT & 3 & 8 & 11 & 88 \\
+  VTF & 3 & 4 & 8 & 32 \\
+  \textit{Total} & 6 &  & 19 & 120 \\
+  \multicolumn{5}{l}{\footnotesize Dummy stations (0 frequencies): VTF 1} \\
+  \bottomrule
+\end{tabular}
+```
+
+---
+
 ## Observation types and data lengths
 
 | Type | d/freq | Components |
@@ -202,7 +255,8 @@ At the start of `main()`, after resolving the paths, the script writes
 `femtic_summarize_observe_dat_summary.md` (next to the script itself) via a
 small, self-contained `_write_param_summary()` helper (stdlib only). It
 records the script's absolute path, the run date/time, and the user
-parameter `PATHS` as resolved.
+parameters `PATHS` (as resolved), `LATEX_FILE`, `LATEX_CAPTION`, `LATEX_LABEL`
+and `LATEX_STANDALONE`.
 
 ---
 
@@ -210,7 +264,8 @@ parameter `PATHS` as resolved.
 
 - Python standard library for the fallback parser and all output
   (`argparse`, `inspect`, `os`, `sys`, `pathlib`, and `datetime` inside the
-  summary helper).
+  summary helper and the LaTeX builder).
+- To compile the LaTeX output: any LaTeX engine and the `booktabs` package.
 - Py4MTX header: the environment variables `PY4MTX_ROOT` and `PY4MTX_DATA`,
   and the Py4MTX modules `version` and `util` (title line only).
 - Optional: `femtic.py` (and, through it, `ensembles.py`, numpy, scipy,
@@ -226,6 +281,7 @@ parameter `PATHS` as resolved.
 | 2026-06-10 | Claude Sonnet 4.6 (Anthropic) | Created. |
 | 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_summarize_observe_dat_summary.md` output after CLI argument parsing: writes the resolved `paths` argument, script path, and run date/time via a self-contained, stdlib-only helper. |
 | 2026-10-24 | Claude Sonnet 5.5 (Anthropic) | Added the usual Py4MTX header (`PY4MTX_DATA` / `PY4MTX_ROOT` from the environment, `py4mt/modules` and `py4mt/scripts` on `sys.path`, `version` / `util` title line). With `femtic.py` now found, the table is printed by the script in plain ASCII instead of `femtic._print_observe_summary()` (Unicode box characters); parsing stays with `femtic.py`. Added a USER SECTION (`PATHS`); the fallback message now gives the import error; the fallback also counts dummy stations. README rewritten in plain ASCII with a real example. Tested with the real `femtic.py` and stub `version` / `util` / `ensembles` modules on a synthetic file; both parser routes gave identical tables. |
+| 2026-10-24 | Claude Sonnet 5.5 (Anthropic) | Added the optional LaTeX table: user parameters `LATEX_FILE`, `LATEX_CAPTION`, `LATEX_LABEL`, `LATEX_STANDALONE` and the builder `latex_table()`; one table for all files, with per-file block rows, a total row and escaped paths. Compiled with pdflatex (standalone use); printed output unchanged. |
 
 AI-generated documentation (Claude, Anthropic; generated 2026-10-24). Review
 before production use.

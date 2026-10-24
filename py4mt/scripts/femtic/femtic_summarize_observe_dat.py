@@ -20,6 +20,11 @@ from the environment, and <PY4MTX_ROOT>/py4mt/modules/ and
 <PY4MTX_ROOT>/py4mt/scripts/ are put on sys.path (version.py and util.py
 supply the title line printed at start-up).
 
+Optional LaTeX table: set LATEX_FILE in the USER SECTION to the name of a
+.tex file. It gets one booktabs table with, for every file, one row per
+observation type and a total row. LATEX_STANDALONE = True writes a complete
+document instead of only the table environment.
+
 When ``femtic.py`` is importable (normally the case once the Py4MTX paths
 are set) the file is parsed by :func:`femtic.summarise_observe_dat`; the
 table itself is always printed by this script, in plain ASCII. Otherwise
@@ -61,6 +66,10 @@ Provenance
                 The fallback message now says why femtic.py could not be
                 imported (femtic.py itself needs ensembles.py on the path).
                 Added the AI-generated notice above.
+    2026-10-24  Claude Sonnet 5.5 (Anthropic)
+                Added the optional LaTeX table (LATEX_FILE, LATEX_CAPTION,
+                LATEX_LABEL, LATEX_STANDALONE in the USER SECTION; builder
+                latex_table()). The printed summary is unchanged.
 """
 from __future__ import annotations
 
@@ -97,6 +106,19 @@ print(titstrng + "\n\n")
 # searched for a file literally named observe.dat). Command-line arguments,
 # if given, replace this list.
 PATHS = ["."]
+
+# Optional LaTeX table of the summaries. None = off; otherwise the name of
+# the .tex file to write (a relative path refers to the current directory).
+LATEX_FILE = None
+
+# Caption and label of the table, used as they are (write LaTeX, e.g.
+# r"Data-vector size of the ensemble."). None = default caption / no label.
+LATEX_CAPTION = None
+LATEX_LABEL = None
+
+# False = only the table environment, to be \input into a paper (needs the
+# booktabs package); True = a complete document that can be compiled as is.
+LATEX_STANDALONE = False
 
 # ===========================================================================
 # END OF USER SECTION
@@ -302,6 +324,97 @@ def _summarise(path: Path, *, out: bool = True) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# LaTeX table (optional: LATEX_FILE)
+# ---------------------------------------------------------------------------
+
+_TEX_SPECIAL = {
+    "\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "$": r"\$", "#": r"\#",
+    "_": r"\_", "{": r"\{", "}": r"\}", "~": r"\textasciitilde{}",
+    "^": r"\textasciicircum{}",
+}
+
+
+def _tex_escape(text) -> str:
+    """Escape the LaTeX special characters of *text*."""
+    return "".join(_TEX_SPECIAL.get(c, c) for c in str(text))
+
+
+def _tex_int(n: int) -> str:
+    """Integer with a thin space as thousands separator (no package needed)."""
+    return f"{n:,d}".replace(",", r"\,")
+
+
+def latex_table(summaries: list[dict], caption: str | None = None,
+                label: str | None = None, standalone: bool = False) -> str:
+    """LaTeX source (booktabs) of the summaries: one table for all files.
+
+    *summaries* are the dicts returned by ``summarise_observe_dat``. For each
+    file the table has a line with the path, one row per observation type, a
+    total row and, if there are dummy stations, a footnote line. *caption*
+    and *label* are used as they are (they are LaTeX). With *standalone* the
+    result is a complete document, otherwise only the table environment.
+    """
+    from datetime import datetime
+
+    ncol = 5
+    if caption is None:
+        caption = (r"Data content of the FEMTIC observation files: sites, "
+                   r"frequency rows, data values per frequency and site "
+                   r"(MT 8, VTF 4, PT 4), and the resulting length of the "
+                   r"data vector (frequency rows $\times$ data values per "
+                   r"frequency).")
+
+    body = [r"\begin{table}[htbp]", r"  \centering", r"  \small",
+            r"  \caption{" + caption + "}"]
+    if label:
+        body.append(r"  \label{" + label + "}")
+    body += [r"  \begin{tabular}{lrrrr}", r"    \toprule",
+             r"    Obs type & Sites & d/freq & Freq.\ total & Data total \\",
+             r"    \midrule"]
+    for k, s in enumerate(summaries):
+        if k:
+            body.append(r"    \midrule")
+        body.append(r"    \multicolumn{" + str(ncol) + r"}{l}{\texttt{"
+                    + _tex_escape(s["path"]) + r"}} \\")
+        for b in s["blocks"]:
+            body.append("    " + " & ".join([
+                _tex_escape(b["obs_type"]), _tex_int(b["n_sites"]),
+                str(b["dat_length"]), _tex_int(b["n_freq_total"]),
+                _tex_int(b["n_data_total"])]) + r" \\")
+        body.append("    " + " & ".join([
+            r"\textit{Total}", _tex_int(s["n_sites_total"]), "",
+            _tex_int(s["n_freq_total"]), _tex_int(s["n_data_total"])]) + r" \\")
+        empty = [(b["obs_type"], b.get("n_sites_empty", 0))
+                 for b in s["blocks"] if b.get("n_sites_empty", 0)]
+        if empty:
+            txt = ", ".join(f"{_tex_escape(t)} {n}" for t, n in empty)
+            body.append(r"    \multicolumn{" + str(ncol) + r"}{l}{\footnotesize "
+                        r"Dummy stations (0 frequencies): " + txt + r"} \\")
+    body += [r"    \bottomrule", r"  \end{tabular}", r"\end{table}"]
+
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    note = ["% Generated by femtic_summarize_observe_dat.py on " + stamp]
+    if standalone:
+        out = [r"\documentclass{article}",
+               r"\usepackage[a4paper,margin=1.5cm]{geometry}",
+               r"\usepackage{booktabs}", r"\begin{document}", ""] + note + [""] \
+              + body + ["", r"\end{document}"]
+    else:
+        out = note + [r"% Needs \usepackage{booktabs} in the preamble."] + body
+    return "\n".join(out) + "\n"
+
+
+def _write_latex(text: str, path: str) -> None:
+    """Write the LaTeX source; a failure is reported but does not stop the run."""
+    try:
+        Path(path).write_text(text, encoding="utf-8")
+    except OSError as exc:
+        print(f"[error] cannot write LaTeX table to {path}: {exc}", file=sys.stderr)
+        return
+    print(f"[latex] Wrote LaTeX table to {Path(path).resolve()}")
+
+
+# ---------------------------------------------------------------------------
 # CLI helpers
 # ---------------------------------------------------------------------------
 
@@ -334,7 +447,13 @@ def main() -> None:
     )
     args = ap.parse_args()
 
-    _write_param_summary(__file__, {"PATHS": args.paths})
+    _write_param_summary(__file__, {
+        "PATHS":            args.paths,
+        "LATEX_FILE":       LATEX_FILE,
+        "LATEX_CAPTION":    LATEX_CAPTION,
+        "LATEX_LABEL":      LATEX_LABEL,
+        "LATEX_STANDALONE": LATEX_STANDALONE,
+    })
 
     if _FEMTIC_AVAILABLE:
         print("[info] Using femtic.summarise_observe_dat (ASCII table from this script)",
@@ -349,17 +468,26 @@ def main() -> None:
         sys.exit(1)
 
     n_ok = 0
+    summaries: list[dict] = []
     for p in paths:
         if not p.exists():
             print(f"[warn] File not found: {p}", file=sys.stderr)
             continue
         try:
-            _summarise(p, out=True)
+            summaries.append(_summarise(p, out=True))
             n_ok += 1
         except Exception as exc:
             print(f"[error] {p.name}: {exc}", file=sys.stderr)
 
     print(f"\n  {n_ok}/{len(paths)} file(s) processed.")
+
+    if LATEX_FILE is not None:
+        if summaries:
+            _write_latex(latex_table(summaries, LATEX_CAPTION, LATEX_LABEL,
+                                     LATEX_STANDALONE), LATEX_FILE)
+        else:
+            print("[warn] no file summarised -- no LaTeX table written",
+                  file=sys.stderr)
 
 
 if __name__ == "__main__":

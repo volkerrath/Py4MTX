@@ -63,6 +63,10 @@ their name (`iter<N>`, e.g. `resistivity_block_iter3.dat` pairs with
 | `SIZE_UNIT` | `"km"` | Unit of the model-size lines, `"km"` or `"m"`. Mesh coordinates are taken to be in metres. Any other value stops the script with an error. |
 | `SIZE_DECIMALS` | `3` | Decimals of the model-size values (trailing zeros are dropped). |
 | `OCEAN` | `None` | Region 1 as ocean: `None` = infer (`flag == 1` and `rho <= 1 Ohm.m`), `True` = ocean, `False` = no ocean. |
+| `LATEX_FILE` | `None` | Name of a `.tex` file to write the summaries to as a LaTeX table (relative paths refer to the current directory). `None` = no LaTeX output. |
+| `LATEX_CAPTION` | `None` | Caption of the table, used as it is (write LaTeX). `None` = default caption. |
+| `LATEX_LABEL` | `None` | Label of the table, e.g. `"tab:model_cells"`. `None` = no `\label`. |
+| `LATEX_STANDALONE` | `False` | `False` = only the table environment (for `\input`); `True` = a complete document that compiles as it is. |
 
 ---
 
@@ -120,6 +124,48 @@ Notes:
 
 ---
 
+## LaTeX table
+
+Set `LATEX_FILE` in the user section (e.g. `LATEX_FILE = "model_cells.tex"`)
+and the summaries are also written as one LaTeX table, after all iterations
+have been processed. The printed summary does not change.
+
+- One row per iteration: iteration number, elements, regions, `n_rho`,
+  `n_dist`, Jacobian columns (`n_rho + n_dist`).
+- If `mesh.dat` was read for at least one iteration, three more columns give
+  the x, y, z range in `SIZE_UNIT` (same values as the printed summary).
+  Without any mesh these columns are left out.
+- `--` marks a missing value (no distortion file, or no mesh for that
+  iteration). In that case `n_dist` is `--` and the Jacobian columns are
+  `n_rho` alone, as in the printed summary.
+- Thousands are separated by a thin space (`254\,016`), so no number package
+  is needed. The table uses `booktabs`; with `LATEX_STANDALONE = False` the
+  file has only the `table` environment (add `\usepackage{booktabs}` to your
+  paper and `\input{model_cells.tex}`), with `True` it is a complete
+  `article` document.
+- `LATEX_CAPTION` and `LATEX_LABEL` are used exactly as given, so write them
+  as LaTeX. The default caption explains the columns.
+- With nine columns the table is too wide for one column of a two-column
+  layout; use `table*` or wrap the `tabular` in `\resizebox{\columnwidth}{!}{...}`.
+- If the file cannot be written, an error is printed and the run is not
+  stopped.
+
+Example of the generated `tabular` (synthetic test run, not a real inversion;
+iteration 1 has no distortion file):
+
+```
+\begin{tabular}{rrrrrrccc}
+  \toprule
+  Iter. & Elements & Regions & $n_\rho$ & $n_\mathrm{dist}$ & Jac.\ columns & $x$ (km) & $y$ (km) & $z$ (km) \\
+  \midrule
+  0 & 25 & 6 & 4 & 12 & 16 & $[-100,\,100]$ & $[-100,\,100]$ & $[-50,\,100]$ \\
+  1 & 25 & 6 & 4 & -- & 4 & $[-100,\,100]$ & $[-100,\,100]$ & $[-50,\,100]$ \\
+  \bottomrule
+\end{tabular}
+```
+
+---
+
 ## Programmatic usage
 
 The script's own functions can be imported and called directly (the Py4MTX
@@ -149,6 +195,10 @@ for line in size_lines(mesh, unit="km", decimals=3):
   a resistivity_block file, caches the result, and returns
   `(extent, None)` or `(None, message)`.
 - `size_lines(extent, unit="km", decimals=3)` - the formatted x / y / z lines.
+- `latex_table(rows, unit="km", decimals=3, caption=None, label=None, standalone=False)` -
+  the LaTeX source as a string. `rows` is a list of dicts with the keys `it`,
+  `nelem`, `nreg`, `n_rho`, `n_dist` (`None` if there is no distortion file),
+  `n_total` and `mesh` (a `parse_mesh_extent()` dict or `None`).
 
 ---
 
@@ -283,7 +333,8 @@ At the start of `main()`, after resolving the arguments, the script writes
 small, self-contained `_write_param_summary()` helper (stdlib only). It
 records the script's absolute path, the run date/time, and all user
 parameters (`PATHS` as resolved, `MESH_FILE`, `SIZE_UNIT`, `SIZE_DECIMALS`,
-`OCEAN`). The model size itself is printed to the terminal only; it is not
+`OCEAN`, `LATEX_FILE`, `LATEX_CAPTION`, `LATEX_LABEL`, `LATEX_STANDALONE`).
+The model size itself is printed to the terminal only; it is not
 written to this file.
 
 ---
@@ -291,7 +342,8 @@ written to this file.
 ## Dependencies
 
 - Python standard library for all parsing and output (`inspect`, `math`,
-  `os`, `re`, `sys`, `pathlib`, and `datetime` inside the summary helper).
+  `os`, `re`, `sys`, `pathlib`, and `datetime` inside the summary helper and the LaTeX builder).
+- To compile the LaTeX output: any LaTeX engine and the `booktabs` package.
 - Py4MTX header: the environment variables `PY4MTX_ROOT` and `PY4MTX_DATA`,
   and the Py4MTX modules `version` and `util` (title line only).
 
@@ -306,6 +358,7 @@ written to this file.
 | 2026-08-13 | Claude Sonnet 5 (Anthropic) | Rewrote this README to match the script's actual implementation: documented the real `sys.argv`-based CLI, the real `parse_resistivity_block()` / `parse_distortion()` return dicts, and the real fixed-width `print_summary()` output. |
 | 2026-10-24 | Claude Sonnet 5.5 (Anthropic) | Added the physical model size (x, y, z range from `mesh.dat`, km by default) to the per-iteration summary via `parse_mesh_extent()`, `get_mesh_extent()` and `size_lines()`. Added a USER SECTION (`PATHS`, `MESH_FILE`, `SIZE_UNIT`, `SIZE_DECIMALS`, `OCEAN`); the ocean override is now reachable from there. The parameter summary file records all of them. README rewritten in plain ASCII. Tested on synthetic meshes only (TETRA, header-less, HEXA header, missing, truncated; km and m). |
 | 2026-10-24 | Claude Sonnet 5.5 (Anthropic) | Added the usual Py4MTX header (`PY4MTX_DATA` / `PY4MTX_ROOT` from the environment, `py4mt/modules` and `py4mt/scripts` on `sys.path`, `version` / `util` title line). Parsing code unchanged. Tested with stub `version` / `util` modules, not the real ones. |
+| 2026-10-24 | Claude Sonnet 5.5 (Anthropic) | Added the optional LaTeX table: user parameters `LATEX_FILE`, `LATEX_CAPTION`, `LATEX_LABEL`, `LATEX_STANDALONE` and the builder `latex_table()`; one row per iteration, with the x / y / z range columns when a mesh was read. Compiled with pdflatex (standalone and `\input` use); printed output unchanged. |
 
 AI-generated documentation (Claude, Anthropic; generated 2026-10-24). Review
 before production use.
