@@ -178,6 +178,33 @@ Modified: 2026-10-11 by Claude Sonnet 5.5 (Anthropic) -- read_femtic_mesh()
     stored as x = northing, y = easting. Element lines now need only >= 5
     columns (id + 4 node ids), as the removed viz reader allowed.
     AI-generated code -- review before production use.
+Modified: 2026-10-22 by Claude Sonnet 5.5 (Anthropic) -- observe.dat I/O
+    now accepts the station-line layouts that FEMTIC uses with
+    ``OWNER_ELEMENT -1`` / ``ELEC_FIELD -1`` in control.dat, including the
+    dummy-VTF layout written by femtic_add_dummy_vtf.py
+    (``ID  H-ID  owner  X  Y``, dummy stations with 0 frequencies).
+    edi_list_to_observe_dat() (and the edi-to-observe CLI subcommand) now
+    writes that FEMTIC station line (``ID H-ID [owner] [E-type] X_km
+    Y_km``, IDs 1..N, positions converted m -> km) by default, instead of
+    ``name x y z``; new keywords ``header_layout`` ("legacy" restores the old
+    line), ``dummy_vtf``, ``site_type``, ``dummy_id_offset``, ``owner_type``,
+    ``elec_type``, ``id_map_file``; returns the list of sites written; the
+    block header counts the sites actually written (it counted all input
+    sites before).
+    Station lines of 4, 5 or 6 tokens are parsed by the new
+    _parse_site_header_tokens(); read_observe_dat() gained the keyword
+    arguments ``site_header_layout``, ``owner_column``, ``elec_column``
+    (all default to automatic detection) and stores the parsed fields in
+    ``site["header"]``. Header lines are still written back verbatim, so
+    modify_data() / write_observe_dat() keep the extra columns.
+    _site_header_to_meta() no longer mistakes H-ID / X / Y of a FEMTIC
+    station line for x / y / z. write_observe_dat() only checks the sign of
+    z for the legacy ``name x y z`` layout. read_site_position() no longer
+    returns the owner type as x. Zero-frequency stations are accepted
+    everywhere; observe_to_site_viz_list() skips them by default
+    (``skip_empty``). Block keywords APP_RES_AND_PHS and HTF are still not
+    supported but now give a clear error message.
+    AI-generated code -- review before production use.
 """
 from __future__ import annotations
 
@@ -2085,6 +2112,12 @@ def modify_data_fcn(
     it and draws noise accordingly.  It is a simpler alternative to
     :func:`modify_data` that does not require re-parsing the file into an
     internal representation.
+
+    Legacy: it takes the observation type from the first line of the file
+    only, so it handles files with a single block type.  Station lines with
+    4 to 6 tokens (owner / E-type columns) are recognised since 2026-10-22,
+    but files with several blocks (e.g. MT plus the dummy VTF block of the
+    ``OWNER_ELEMENT -1`` layout) need :func:`modify_data`.
     """
     # ---- RNG setup -------------------------------------------------------
     if rng is None:
@@ -2143,7 +2176,7 @@ def modify_data_fcn(
         num_freqs: list[int] = []
         for number, line in enumerate(data_block, 0):
             l = line.split()
-            if len(l) == 4:
+            if len(l) in (4, 5, 6):   # ID H-ID [owner] [E-type] X Y
                 if out:
                     print(l)
                 start_lines_site.append(number)
@@ -4680,8 +4713,10 @@ Each block starts with a header line
 where ``OBS_TYPE`` is one of ``MT``, ``VTF``, or ``PT``. A block contains one or
 more *site* sections, each of the form:
 
-- a site header line with **exactly 4 tokens** (kept verbatim)
-- a line containing the number of frequencies (integer)
+- a site (station) line of 4, 5 or 6 tokens (kept verbatim); see
+  "Station-line layouts" below
+- a line containing the number of frequencies (integer); ``0`` is allowed
+  (dummy station, no data rows)
 - ``N_FREQ`` data rows
 
 Each data row is assumed to contain:
@@ -4691,6 +4726,36 @@ Each data row is assumed to contain:
 - ``dat_length`` error values (standard deviations, σ)
 
 so the minimum number of numeric columns is ``1 + 2 * dat_length``.
+
+Station-line layouts
+--------------------
+FEMTIC station lines (manual v4.3, slides 36-45) are::
+
+    MT, PT :  ID  H-ID  [owner]  [E-type]  X_km  Y_km
+    VTF    :  ID  H-ID  [owner]            X_km  Y_km
+
+``owner`` (0 = downward, 1 = upward element) is present if control.dat has
+``OWNER_ELEMENT -1``; ``E-type`` (0 = horizontal, 1 = tangential electric
+field) is present if it has ``ELEC_FIELD -1`` (not for VTF).  With
+``OWNER_ELEMENT -1`` the "dummy VTF" trick of manual slides 55-58 works: the
+H-ID of an MT station points to a VTF station at the same place that has
+its own owner type and no data (``nfreq = 0``).
+
+The parser (:func:`_parse_site_header_tokens`) recognises, from the token
+count of each station line:
+
+- 4 tokens, ``ID H-ID X Y`` (both IDs integers) -> plain FEMTIC layout
+- 5 tokens -> ``ID H-ID owner X Y``
+- 6 tokens -> ``ID H-ID owner E-type X Y``
+- 4 tokens, ``name x_m y_m z_m`` (``H-ID`` not an integer) -> legacy layout
+  written by :func:`edi_list_to_observe_dat` up to 2026-10-22 (now only with
+  ``header_layout="legacy"``)
+
+A 5-token MT/PT line is ambiguous (owner only, or E-type only).  It is read
+as owner unless the file's VTF block shows that there is no owner column
+(4-token VTF lines), or the caller says otherwise with ``owner_column`` /
+``elec_column`` (also accepted by :func:`read_observe_dat` and the functions
+that call it).  Site dicts carry the parsed fields in ``site["header"]``.
 
 For ``MT`` blocks (``dat_length=8``), the data columns are assumed to be ordered as
 real/imag pairs:
@@ -4831,6 +4896,249 @@ def _is_block_header(tokens: list[str]) -> bool:
     except Exception:
         return False
     return True
+
+
+#: Block keywords that FEMTIC knows (manual v4.3, slides 36-45) but that this
+#: reader does not handle.  They are reported with a clear message instead of
+#: failing later as a "bad station line".
+_UNSUPPORTED_BLOCKS: tuple[str, ...] = ("APP_RES_AND_PHS", "HTF")
+
+#: Block types whose station lines may carry the electric-field-type column
+#: (``ELEC_FIELD -1`` in control.dat).  VTF and HTF stations never do.
+_E_TYPE_BLOCKS: tuple[str, ...] = ("MT", "PT", "APP_RES_AND_PHS")
+
+
+def _is_int_token(tok: str) -> bool:
+    """Return True if *tok* is a plain (ASCII) decimal integer such as ``12`` or ``-3``."""
+    t = tok[1:] if tok[:1] in ("+", "-") else tok
+    return bool(t) and t.isascii() and t.isdigit()
+
+
+def _resolve_header_columns(
+    obs_type: str | None,
+    ntok: int,
+    owner_column: bool | None = None,
+    elec_column: bool | None = None,
+    owner_hint: bool | None = None,
+) -> tuple[bool, bool]:
+    """Decide which optional columns a FEMTIC station line of *ntok* tokens has.
+
+    The station line is ``ID H-ID [owner] [E-type] X Y`` (the E-type column
+    does not exist for VTF/HTF).  *ntok* - 4 optional columns are present:
+
+    - 0 columns: neither.
+    - 2 columns: owner and E-type (MT, PT only).
+    - 1 column: owner **or** E-type (MT, PT); always owner for VTF.  For
+      MT/PT the choice is, in this order: ``owner_column`` if given, else
+      ``elec_column`` if given, else ``owner_hint`` (taken from the file's
+      VTF block by :func:`read_observe_dat`), else owner.
+
+    Parameters
+    ----------
+    obs_type : str or None
+        Block type (``"MT"``, ``"VTF"``, ``"PT"``) or None if unknown (treated
+        like MT).
+    ntok : int
+        Number of tokens of the station line.
+    owner_column, elec_column : bool or None
+        Caller's statement about control.dat (``OWNER_ELEMENT -1`` /
+        ``ELEC_FIELD -1``); None = not stated.  ``elec_column`` is ignored for
+        VTF/HTF blocks because they never have that column.
+    owner_hint : bool or None
+        Whether the file's VTF block has an owner column (None = unknown).
+
+    Returns
+    -------
+    (has_owner, has_elec) : tuple of bool
+
+    Raises
+    ------
+    ValueError
+        If *ntok* is impossible for the block type, or contradicts the
+        caller's statements.
+    """
+    can_elec = obs_type is None or obs_type in _E_TYPE_BLOCKS
+    n_opt = int(ntok) - 4
+    n_max = 2 if can_elec else 1
+    if n_opt < 0 or n_opt > n_max:
+        kind = obs_type if obs_type else "station"
+        raise ValueError(
+            f"{ntok} tokens in a {kind} station line; expected "
+            f"{'4 to 6 (ID H-ID [owner] [E-type] X Y)' if can_elec else '4 or 5 (ID H-ID [owner] X Y)'}."
+        )
+
+    def _conflict() -> ValueError:
+        return ValueError(
+            f"{ntok} tokens in a {obs_type or 'station'} station line contradict "
+            f"owner_column={owner_column}, elec_column={elec_column}."
+        )
+
+    if n_opt == 0:
+        if owner_column is True or (can_elec and elec_column is True):
+            raise _conflict()
+        return False, False
+
+    if n_opt == 2:  # only possible when can_elec
+        if owner_column is False or elec_column is False:
+            raise _conflict()
+        return True, True
+
+    # n_opt == 1
+    if not can_elec:
+        if owner_column is False:
+            raise _conflict()
+        return True, False
+    if owner_column is not None:
+        has_owner = bool(owner_column)
+        if elec_column is not None and bool(elec_column) == has_owner:
+            raise _conflict()
+    elif elec_column is not None:
+        has_owner = not bool(elec_column)
+    elif owner_hint is not None:
+        has_owner = bool(owner_hint)
+    else:
+        has_owner = True
+    return has_owner, not has_owner
+
+
+def _parse_site_header_tokens(
+    tokens: Sequence[str],
+    obs_type: str | None = None,
+    *,
+    layout: str = "auto",
+    owner_column: bool | None = None,
+    elec_column: bool | None = None,
+    owner_hint: bool | None = None,
+) -> dict[str, Any]:
+    """Parse the tokens of one observe.dat station line.
+
+    Parameters
+    ----------
+    tokens : sequence of str
+        The whitespace-split station line.
+    obs_type : str, optional
+        Block type; decides whether an E-type column is possible.
+    layout : {"auto", "femtic", "legacy"}
+        ``"femtic"``: ``ID H-ID [owner] [E-type] X_km Y_km`` (4 to 6 tokens).
+        ``"legacy"``: ``name x_m y_m z_m`` as written by
+        :func:`edi_list_to_observe_dat` (exactly 4 tokens).
+        ``"auto"`` (default): legacy if there are 4 tokens and ID or H-ID is
+        not an integer, FEMTIC otherwise.
+    owner_column, elec_column, owner_hint
+        See :func:`_resolve_header_columns`.
+
+    Returns
+    -------
+    dict with keys
+
+    - ``layout``  : ``"femtic"`` or ``"legacy"``
+    - ``name``    : str, first token (the station ID for FEMTIC layouts)
+    - ``hid``     : int or None, station ID for the horizontal magnetic field
+    - ``owner``   : int or None, owner-element type (0 downward, 1 upward)
+    - ``elec``    : int or None, electric-field type (0 horizontal, 1 tangential)
+    - ``x_km``, ``y_km`` : float or None, station position (FEMTIC layouts)
+    - ``x_m``, ``y_m``, ``z_m`` : float or None (legacy layout; z positive down)
+    - ``ntok``    : int, number of tokens
+
+    Raises
+    ------
+    ValueError
+        If the tokens do not fit the layout.
+    """
+    toks = [str(t) for t in tokens]
+    n = len(toks)
+    if layout not in ("auto", "femtic", "legacy"):
+        raise ValueError(f"site_header_layout must be 'auto', 'femtic' or 'legacy', got {layout!r}.")
+
+    if layout == "auto":
+        is_legacy = n == 4 and not (_is_int_token(toks[0]) and _is_int_token(toks[1]))
+    else:
+        is_legacy = layout == "legacy"
+
+    if is_legacy:
+        if n != 4:
+            raise ValueError(f"legacy station line needs 4 tokens (name x y z), got {n}.")
+        try:
+            x_m, y_m, z_m = float(toks[1]), float(toks[2]), float(toks[3])
+        except ValueError as e:
+            raise ValueError(
+                f"legacy station line {toks!r}: x, y, z are not numbers. If this is a FEMTIC "
+                f"'ID H-ID X Y' line, check that ID and H-ID are integers or pass "
+                f"site_header_layout='femtic'."
+            ) from e
+        return {
+            "layout": "legacy", "name": toks[0], "hid": None, "owner": None, "elec": None,
+            "x_km": None, "y_km": None, "x_m": x_m, "y_m": y_m, "z_m": z_m, "ntok": n,
+        }
+
+    if n < 4 or n > 6:
+        raise ValueError(
+            f"expected 4 to 6 tokens in a station line (ID H-ID [owner] [E-type] X Y), got {n}."
+        )
+    has_owner, has_elec = _resolve_header_columns(
+        obs_type, n, owner_column, elec_column, owner_hint
+    )
+    if not _is_int_token(toks[0]):
+        raise ValueError(f"station ID {toks[0]!r} is not an integer.")
+    if not _is_int_token(toks[1]):
+        raise ValueError(f"station ID for the H field {toks[1]!r} is not an integer.")
+    hid = int(toks[1])
+    i = 2
+    owner: int | None = None
+    elec: int | None = None
+    if has_owner:
+        if toks[i] not in ("0", "1"):
+            raise ValueError(
+                f"owner-element type {toks[i]!r} is not 0 or 1 (token {i + 1}). If this line has "
+                f"no owner column, check owner_column / elec_column."
+            )
+        owner = int(toks[i])
+        i += 1
+    if has_elec:
+        if toks[i] not in ("0", "1"):
+            raise ValueError(
+                f"electric-field type {toks[i]!r} is not 0 or 1 (token {i + 1}). If this line has "
+                f"no E-type column, check owner_column / elec_column."
+            )
+        elec = int(toks[i])
+        i += 1
+    try:
+        x_km, y_km = float(toks[i]), float(toks[i + 1])
+    except ValueError as e:
+        raise ValueError(f"X / Y {toks[i:i + 2]!r} are not numbers.") from e
+    return {
+        "layout": "femtic", "name": toks[0], "hid": hid, "owner": owner, "elec": elec,
+        "x_km": x_km, "y_km": y_km, "x_m": None, "y_m": None, "z_m": None, "ntok": n,
+    }
+
+
+def _owner_hint_from_lines(lines: list[str], block_starts: list[int]) -> bool | None:
+    """Tell from the first VTF station line whether the file has an owner column.
+
+    VTF station lines are ``ID H-ID [owner] X Y``: 4 tokens -> no owner
+    column, 5 -> owner column.  Used to resolve 5-token MT/PT lines, which
+    could be owner-only or E-type-only.  Returns None if there is no VTF
+    block, no VTF station, or an unusual token count.
+
+    Parameters
+    ----------
+    lines : list of str
+        All lines of the file.
+    block_starts : list of int
+        Start line of every block, followed by the END line as sentinel.
+    """
+    for bi in range(len(block_starts) - 1):
+        if lines[block_starts[bi]].split()[0] != "VTF":
+            continue
+        for k in range(block_starts[bi] + 1, block_starts[bi + 1]):
+            toks = lines[k].split()
+            if toks:
+                if len(toks) == 4:
+                    return False
+                if len(toks) == 5:
+                    return True
+                return None
+    return None
 
 
 def _rel_err_array(
@@ -5107,6 +5415,9 @@ def read_observe_dat(
     bootstrap_n: int = 200,
     bootstrap_rng: Generator | None = None,
     bootstrap_seed: int | None = None,
+    site_header_layout: str = "auto",
+    owner_column: bool | None = None,
+    elec_column: bool | None = None,
 ) -> dict[str, Any]:
     """Parse a FEMTIC-style ``observe.dat`` into a structured nested dictionary.
 
@@ -5114,6 +5425,20 @@ def read_observe_dat(
     ----------
     path : str or pathlib.Path
         Path to the observation file.
+    site_header_layout : {"auto", "femtic", "legacy"}
+        How station lines are read; see :func:`_parse_site_header_tokens`.
+        ``"auto"`` (default) takes ``ID H-ID [owner] [E-type] X Y`` with 4, 5
+        or 6 tokens, and the older ``name x y z`` layout of
+        :func:`edi_list_to_observe_dat` when ID or H-ID is not an integer.
+    owner_column : bool or None
+        True if the station lines carry the owner-element column
+        (``OWNER_ELEMENT -1`` in control.dat), False if not, None (default)
+        to detect it from the token count.
+    elec_column : bool or None
+        Same for the electric-field-type column (``ELEC_FIELD -1``; MT and PT
+        only).  Needed only for 5-token MT/PT lines that hold E-type but no
+        owner column; those are otherwise read as owner (unless the VTF block
+        shows there is no owner column).
     compute_mt_derived : bool
         If True, compute and attach MT derived quantities (phase tensor, Zdet, Zssq)
         to each MT site dictionary.
@@ -5151,8 +5476,12 @@ def read_observe_dat(
         Each site dict contains:
 
         - ``site_header_tokens`` : list[str]
-        - ``site_header_line`` : str (verbatim)
-        - ``nfreq`` : int
+        - ``site_header_line`` : str (verbatim; written back unchanged, so
+          owner / E-type columns survive :func:`write_observe_dat`)
+        - ``header`` : dict, parsed station line (``layout``, ``name``,
+          ``hid``, ``owner``, ``elec``, ``x_km``, ``y_km``, ...; see
+          :func:`_parse_site_header_tokens`)
+        - ``nfreq`` : int (0 for a dummy station; then ``freq`` etc. are empty)
         - ``freq`` : ndarray, shape (nfreq,)
         - ``data`` : ndarray, shape (nfreq, dat_length)
         - ``error`` : ndarray, shape (nfreq, dat_length)
@@ -5199,6 +5528,12 @@ def read_observe_dat(
         toks = lines[i].split()
         if _is_block_header(toks):
             block_starts.append(i)
+        elif len(toks) == 2 and toks[0] in _UNSUPPORTED_BLOCKS and _is_int_token(toks[1]):
+            raise ValueError(
+                f"Block '{toks[0]}' at line {i + 1} in {p} is part of the FEMTIC observe.dat "
+                f"format but is not supported by this reader (supported: "
+                f"{', '.join(_OBS_DATALEN)})."
+            )
 
     if not block_starts:
         raise ValueError(f"No data blocks detected in {p}.")
@@ -5207,6 +5542,9 @@ def read_observe_dat(
 
     # Append the END boundary as a sentinel for slicing.
     block_starts.append(end_idx)
+
+    # A VTF block with / without owner column settles 5-token MT/PT lines.
+    owner_hint = _owner_hint_from_lines(lines, block_starts)
 
     blocks: list[dict[str, Any]] = []
     for bi in range(len(block_starts) - 1):
@@ -5233,12 +5571,21 @@ def read_observe_dat(
                 li += 1
                 continue
 
-            # Site header must be exactly 4 tokens by convention here.
-            if len(toks) != 4:
-                raise ValueError(
-                    f"Cannot parse site header at line {start + li + 1} in {p}: "
-                    f"expected 4 tokens, got {len(toks)}."
+            # Station line: ID H-ID [owner] [E-type] X Y (4 to 6 tokens), or the
+            # legacy "name x y z".  The line itself is kept verbatim.
+            try:
+                header = _parse_site_header_tokens(
+                    toks,
+                    obs_type,
+                    layout=site_header_layout,
+                    owner_column=owner_column,
+                    elec_column=elec_column,
+                    owner_hint=owner_hint,
                 )
+            except ValueError as e:
+                raise ValueError(
+                    f"Cannot parse site header at line {start + li + 1} in {p}: {e}"
+                ) from e
 
             site_header_line = block_lines[li]
             site_header_tokens = toks[:]
@@ -5288,6 +5635,7 @@ def read_observe_dat(
                 "obs_type": obs_type,
                 "site_header_tokens": site_header_tokens,
                 "site_header_line": site_header_line,
+                "header": header,
                 "nfreq": nfreq,
                 "freq": freq,
                 "data": data,
@@ -5297,7 +5645,7 @@ def read_observe_dat(
                 "nfreq_line": block_lines[li + 1],
             }
 
-            if compute_mt_derived and obs_type == "MT":
+            if compute_mt_derived and obs_type == "MT" and nfreq > 0:
                 _augment_mt_site(site_dict, n_boot=int(bootstrap_n), rng=boot_rng)
 
             sites.append(site_dict)
@@ -5343,56 +5691,92 @@ def sites_as_dict_list(parsed: dict[str, Any]) -> list[dict[str, Any]]:
     return sites
 
 
-def _site_header_to_meta(site_header_tokens: list[str]) -> dict[str, Any]:
+def _site_header_to_meta(
+    site_header_tokens: list[str],
+    header: dict[str, Any] | None = None,
+    obs_type: str | None = None,
+) -> dict[str, Any]:
     """
-    Parse FEMTIC site header tokens (length 4) into a small metadata dict.
+    Parse FEMTIC site header tokens into a small metadata dict.
 
     Parameters
     ----------
     site_header_tokens : list of str
-        Exactly 4 tokens as read from observe.dat: ``[name, x, y, z]``.
+        Tokens of the station line as read from observe.dat.
+    header : dict, optional
+        Parsed station line (``site["header"]`` from :func:`read_observe_dat`).
+        If None, the tokens are parsed here with automatic layout detection
+        (:func:`_parse_site_header_tokens`).
+    obs_type : str, optional
+        Block type, used only when *header* is None.
 
     Returns
     -------
     meta : dict
         Contains:
 
-        - ``name``       : str — station name
+        - ``name``       : str - station name / ID (first token)
         - ``xyz``        : ndarray shape (3,) or None — Cartesian coordinates
           in the **FEMTIC model frame** (metres).  The z-axis points
           **downward**, so ``xyz[2]`` is positive for points below the datum
           and **negative** for surface/near-surface stations.
           Relation to geodetic elevation: ``xyz[2] == -elev_m``.
+          For FEMTIC station lines (``ID H-ID [owner] [E-type] X Y``, X and
+          Y in km) the file holds no z: ``xyz = [X*1000, Y*1000, nan]``.
         - ``elev_m``     : float or None — geodetic elevation in metres above
-          datum (z-up convention), derived as ``-xyz[2]``.  Provided as a
-          convenience so callers need not remember the sign flip.
+          datum (z-up convention), derived as ``-xyz[2]``; None if the
+          station line has no z.
         - ``raw_tokens`` : list[str] — verbatim token list
+        - ``layout``     : ``"femtic"`` or ``"legacy"`` (``name x y z``)
+        - ``hid``, ``owner``, ``elec`` : int or None - station ID for the H
+          field, owner-element type, electric-field type (None if the column
+          is absent)
+        - ``x_km``, ``y_km`` : float or None - FEMTIC station position (km)
 
     Notes
     -----
     FEMTIC uses a right-handed coordinate system with **z positive downward**
     (depth), consistent with the FEM mesh stored in ``mesh.dat``.  EDI files
     store elevation with the opposite sign (positive upward).  When building
-    an ``observe.dat`` site header from EDI metadata the correct mapping is::
+    a legacy ``name x y z`` site header from EDI metadata the correct mapping
+    is::
 
         z_femtic = -elev_m          # e.g. elev_m=500 m → z=-500 m
 
     Any code that writes the site header must apply this negation; omitting it
     silently places the station at an incorrect (sub-surface) position.
+
+    Before 2026-10-22 the tokens of a FEMTIC ``ID H-ID X Y`` line were read as
+    ``name x y z``, which gave ``xyz = [H-ID, X_km, Y_km]``.
     """
-    name = str(site_header_tokens[0])
+    if header is None:
+        try:
+            header = _parse_site_header_tokens(site_header_tokens, obs_type)
+        except ValueError:
+            # Unparseable tokens: keep the old lenient behaviour (name only).
+            header = {"layout": "unknown", "hid": None, "owner": None, "elec": None,
+                      "x_km": None, "y_km": None}
+
     xyz = None
-    try:
-        xyz = np.asarray(
-            [float(site_header_tokens[1]),
-             float(site_header_tokens[2]),
-             float(site_header_tokens[3])],
-            dtype=float,
-        )
-    except Exception:
-        xyz = None
-    elev_m = float(-xyz[2]) if xyz is not None else None
-    return {"name": name, "xyz": xyz, "elev_m": elev_m, "raw_tokens": site_header_tokens[:]}
+    elev_m = None
+    if header["layout"] == "legacy":
+        xyz = np.asarray([header["x_m"], header["y_m"], header["z_m"]], dtype=float)
+        elev_m = float(-xyz[2])
+    elif header["x_km"] is not None and header["y_km"] is not None:
+        xyz = np.asarray([1000.0 * header["x_km"], 1000.0 * header["y_km"], np.nan], dtype=float)
+
+    return {
+        "name": str(site_header_tokens[0]),
+        "xyz": xyz,
+        "elev_m": elev_m,
+        "raw_tokens": site_header_tokens[:],
+        "layout": header["layout"],
+        "hid": header["hid"],
+        "owner": header["owner"],
+        "elec": header["elec"],
+        "x_km": header["x_km"],
+        "y_km": header["y_km"],
+    }
 
 
 def _mt_arrays_to_complex_tensors(
@@ -5541,6 +5925,10 @@ def observe_to_site_viz_list(
     add_rhoa_phase: bool = True,
     mc_n: int = 200,
     mc_seed: int = 0,
+    skip_empty: bool = True,
+    site_header_layout: str = "auto",
+    owner_column: bool | None = None,
+    elec_column: bool | None = None,
 ) -> list[dict[str, Any]]:
     """Read observe.dat and return a per-site list of plot-ready dictionaries.
 
@@ -5574,6 +5962,13 @@ def observe_to_site_viz_list(
     mc_seed : int
         Integer seed for the Monte Carlo RNG used in rhoa / phase error
         propagation.
+    skip_empty : bool
+        If True (default), stations with 0 frequencies (the dummy VTF
+        stations of the ``OWNER_ELEMENT -1`` layout) are left out, since
+        there is nothing to plot.  Set False to keep them (empty arrays).
+    site_header_layout, owner_column, elec_column
+        Station-line layout options, forwarded to :func:`read_observe_dat`
+        (default: automatic detection).
 
     Returns
     -------
@@ -5583,16 +5978,22 @@ def observe_to_site_viz_list(
         Common fields (all obs types)
         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         - ``obs_type`` : str — ``"MT"``, ``"VTF"``, or ``"PT"``
-        - ``name``   : str — site name from the header
+        - ``name``   : str - site name / ID from the header
         - ``xyz``    : ndarray shape (3,) or None — site Cartesian coordinates
           in the **FEMTIC model frame** (metres).  ``xyz[2]`` follows the
           **z-positive-downward** convention used internally by FEMTIC:
           surface stations have ``xyz[2] < 0``.  Relation to geodetic
-          elevation: ``xyz[2] == -elev_m``.
+          elevation: ``xyz[2] == -elev_m``.  For FEMTIC station lines
+          (``ID H-ID [owner] [E-type] X Y``, km) there is no z in the file:
+          ``xyz = [X*1000, Y*1000, nan]``.
         - ``elev_m`` : float or None — geodetic elevation above datum in
           metres (z-up), i.e. ``-xyz[2]``.  Provided as a convenience alias
           so callers working with EDI-style metadata do not need to negate
-          ``xyz[2]`` manually.
+          ``xyz[2]`` manually.  None for FEMTIC station lines.
+        - ``hid``, ``owner``, ``elec_type`` : int or None - station ID for the
+          H field, owner-element type, electric-field type from the station
+          line (None if the column is absent)
+        - ``x_km``, ``y_km`` : float or None - FEMTIC station position (km)
         - ``nfreq``  : int — number of frequencies
         - ``freq``   : ndarray (nfreq,) — frequencies in Hz
         - ``per``    : ndarray (nfreq,) — periods in s (= 1 / freq)
@@ -5640,6 +6041,9 @@ def observe_to_site_viz_list(
         compute_mt_derived=bool(compute_mt_derived),
         bootstrap_n=int(bootstrap_n),
         bootstrap_seed=int(bootstrap_seed),
+        site_header_layout=site_header_layout,
+        owner_column=owner_column,
+        elec_column=elec_column,
     )
 
     sites_viz: list[dict[str, Any]] = []
@@ -5649,8 +6053,14 @@ def observe_to_site_viz_list(
         if str(site.get("obs_type", "")).upper() != obs_type:
             continue
 
+        # Dummy stations (0 frequencies) carry no data.
+        if skip_empty and int(site["nfreq"]) == 0:
+            continue
+
         # ---- meta --------------------------------------------------------
-        meta = _site_header_to_meta(site["site_header_tokens"])
+        meta = _site_header_to_meta(
+            site["site_header_tokens"], site.get("header"), obs_type
+        )
 
         freq = np.asarray(site["freq"], dtype=float)
         # Guard against zero or negative frequencies (should not occur in
@@ -5666,6 +6076,11 @@ def observe_to_site_viz_list(
             # the opposite sign (z positive downward), so elev_m == -xyz[2].
             # Provided as a convenience alias for EDI-style workflows.
             "elev_m": meta["elev_m"],
+            "hid": meta["hid"],
+            "owner": meta["owner"],
+            "elec_type": meta["elec"],
+            "x_km": meta["x_km"],
+            "y_km": meta["y_km"],
             "nfreq": int(site["nfreq"]),
             "freq": freq,
             "per": per,
@@ -5715,6 +6130,9 @@ def summarise_observe_dat(
     path_or_parsed: "str | Path | dict[str, Any]",
     *,
     out: bool = True,
+    site_header_layout: str = "auto",
+    owner_column: bool | None = None,
+    elec_column: bool | None = None,
 ) -> dict:
     """Summarise the data content of a FEMTIC ``observe.dat``.
 
@@ -5729,6 +6147,9 @@ def summarise_observe_dat(
         by :func:`read_observe_dat`.
     out : bool
         If True, print a formatted summary table to stdout.
+    site_header_layout, owner_column, elec_column
+        Station-line layout options, forwarded to :func:`read_observe_dat`
+        when a path is given (default: automatic detection).
 
     Returns
     -------
@@ -5739,6 +6160,7 @@ def summarise_observe_dat(
 
         ``obs_type`` (str),
         ``n_sites`` (int),
+        ``n_sites_empty`` (int)  - stations with 0 frequencies (dummy stations),
         ``dat_length`` (int)  — number of data values per frequency per site,
         ``n_freq_per_site`` (list[int])  — nfreq for each site,
         ``n_freq_total`` (int)  — sum of nfreq across all sites,
@@ -5756,6 +6178,9 @@ def summarise_observe_dat(
             path_or_parsed,
             compute_mt_derived=False,
             bootstrap_n=0,
+            site_header_layout=site_header_layout,
+            owner_column=owner_column,
+            elec_column=elec_column,
         )
         src_path = str(path_or_parsed)
 
@@ -5769,6 +6194,7 @@ def summarise_observe_dat(
         block_summaries.append({
             "obs_type":       obs_type,
             "n_sites":        len(sites),
+            "n_sites_empty":  sum(1 for n in nfreqs if n == 0),
             "dat_length":     dat_len,
             "n_freq_per_site": nfreqs,
             "n_freq_total":   n_freq_total,
@@ -5820,6 +6246,10 @@ def _print_observe_summary(s: dict) -> None:
     print(f"  │ Total                      │ {s['n_freq_total']:>8d} │ {s['n_data_total']:>8d} │")
     print(f"  └────────────────────────────┴──────────┴──────────┘")
     print(f"  Sites total   : {s['n_sites_total']:>8d}")
+    empty = [(b["obs_type"], b.get("n_sites_empty", 0)) for b in s["blocks"] if b.get("n_sites_empty", 0)]
+    if empty:
+        txt = ", ".join(f"{t} {n}" for t, n in empty)
+        print(f"  Dummy sites   : {txt} (0 frequencies)")
 
 
 def write_observe_dat(parsed: dict[str, Any], path: str | Path) -> None:
@@ -5835,7 +6265,10 @@ def write_observe_dat(parsed: dict[str, Any], path: str | Path) -> None:
     Notes
     -----
     - Preamble lines, header lines, site header lines, the END line, and tail lines are
-      written back verbatim where available.
+      written back verbatim where available.  Site header (station) lines are
+      never rewritten, so the owner-element / E-type columns of the
+      ``OWNER_ELEMENT -1`` / ``ELEC_FIELD -1`` layouts, and dummy stations
+      with ``0`` frequencies (no data rows), are preserved.
     - Data rows are rewritten in a clear numeric layout: frequency first, then values,
       then errors, and finally any extra numeric columns if present.
     - Floats are formatted in scientific notation with 8 digits after the decimal.
@@ -5851,8 +6284,10 @@ def write_observe_dat(parsed: dict[str, Any], path: str | Path) -> None:
 
         This function does not rewrite site header lines (they are preserved
         verbatim), so it cannot correct a wrong sign introduced upstream.  A
-        warning is issued if any site header is detected to have a positive z
-        value, which is almost certainly a sign error for MT survey stations.
+        warning is issued if any legacy ``name x y z`` site header is detected
+        to have a positive z value, which is almost certainly a sign error for
+        MT survey stations.  FEMTIC station lines (``ID H-ID [owner] [E-type]
+        X Y``) have no z and are not checked.
     """
     import warnings
 
@@ -5881,8 +6316,18 @@ def write_observe_dat(parsed: dict[str, Any], path: str | Path) -> None:
             shl = site.get("site_header_line", "")
             # Defensive check: warn if z coordinate appears to be positive
             # (z-up / geodetic sign), which indicates a likely negation error.
+            # Only the legacy "name x y z" layout has a z; a FEMTIC station
+            # line "ID H-ID [owner] [E-type] X Y" has none (its 4th token is
+            # Y, or the owner / E-type column), so it is not checked.
             _toks = shl.split()
-            if len(_toks) >= 4:
+            _hdr = site.get("header")
+            if _hdr is not None:
+                _legacy = _hdr.get("layout") == "legacy"
+            else:
+                _legacy = len(_toks) == 4 and not (
+                    _is_int_token(_toks[0]) and _is_int_token(_toks[1])
+                )
+            if _legacy and len(_toks) >= 4:
                 try:
                     _z_val = float(_toks[3])
                     if _z_val > 0.0:
@@ -6009,8 +6454,21 @@ def edi_list_to_observe_dat(
     fallback_y: float = 0.0,
     obs_type: str = "MT",
     preamble: str | list[str] | None = None,
-) -> None:
+    header_layout: str = "femtic",
+    dummy_vtf: bool = False,
+    site_type: str = "land",
+    dummy_id_offset: int = 1000,
+    owner_type: int | None = None,
+    elec_type: int | None = None,
+    id_map_file: str | Path | None = None,
+) -> list[dict[str, Any]]:
     """Write a list of EDI site dicts to a FEMTIC-style ``observe.dat`` file.
+
+    Station lines follow the FEMTIC manual (v4.3, slide 36): ``ID H-ID
+    [owner] [E-type] X_km Y_km``.  With ``dummy_vtf=True`` the file also gets
+    the dummy VTF stations of manual slides 55-58 (``OWNER_ELEMENT -1``), so
+    that E and H of every MT station are interpolated in different elements.
+    ``header_layout="legacy"`` gives the old ``name x y z`` station line.
 
     Each EDI dict is the structure returned by :func:`data_proc.load_edi`.
     Only MT impedance data (``Z`` / ``Z_err``) is currently supported;
@@ -6028,9 +6486,12 @@ def edi_list_to_observe_dat(
         - ``Z_err``   : ndarray (nfreq, 2, 2) or None — errors (variance or
           std depending on ``err_kind``).
         - ``err_kind``: ``"var"`` (default from ``load_edi``) or ``"std"``.
-        - ``station`` : str — site name written to the header token.
+        - ``station`` : str - site name.  Written to the station line only
+          for ``header_layout="legacy"``; otherwise it appears in the returned
+          list and in ``id_map_file``.
         - ``elev_m``  : float or None — geodetic elevation (m above datum,
-          **z-up**).  Negated automatically: ``z_femtic = -elev_m``.
+          **z-up**).  Legacy layout only: negated automatically,
+          ``z_femtic = -elev_m``.  The FEMTIC station line has no z.
 
         Optional position keys (see ``x_key`` / ``y_key``):
 
@@ -6055,11 +6516,44 @@ def edi_list_to_observe_dat(
         Useful for adding comments or FEMTIC control-file references.
         If a single string, it is split on ``\\n``.  Each line will have a
         trailing newline appended if absent.
+    header_layout : {"femtic", "legacy"}
+        ``"femtic"`` (default): ``ID  H-ID  [owner]  [E-type]  X_km  Y_km``
+        with consecutive IDs 1..N in the order the sites are written; X and Y
+        are the model-frame ``x_key`` / ``y_key`` values converted from
+        metres to km.  ``"legacy"``: ``name  x_m  y_m  z_m`` as written
+        before 2026-10-22 (not the layout FEMTIC itself reads;
+        :func:`read_observe_dat` still accepts it).
+    dummy_vtf : bool
+        If True (``header_layout="femtic"`` only): write the layout for
+        ``OWNER_ELEMENT -1``.  Each MT station gets owner type 0 (land) or 1
+        (seafloor) and H-ID = ID + ``dummy_id_offset``; a ``VTF`` block with
+        one dummy station per MT station follows (ID = H-ID = MT ID + offset,
+        same X/Y, owner type 1 for land / 0 for seafloor, ``0`` frequencies).
+        Manual slides 55-58.  Set ``OWNER_ELEMENT -1`` in control.dat.
+    site_type : {"land", "seafloor"}
+        Decides the owner types when ``dummy_vtf`` is True (land: E from the
+        downward element, H from the upward one; seafloor: the other way
+        round).
+    dummy_id_offset : int
+        Offset between MT ID and dummy VTF ID.  Must be >= the number of
+        sites written, so that the dummy IDs do not collide with MT IDs.
+    owner_type : int or None
+        0 or 1: write this owner-element type for every MT station, with
+        H-ID = ID (``OWNER_ELEMENT -1`` without dummy stations).  None (default):
+        no owner column.  Not combined with ``dummy_vtf``.
+    elec_type : int or None
+        0 (horizontal) or 1 (tangential): write this electric-field type
+        column for every MT station (``ELEC_FIELD -1``).  None: no column.
+    id_map_file : str, Path or None
+        If given, write a CSV ``id,name,x_m,y_m,elev_m`` linking the station
+        IDs to the EDI station names (the FEMTIC file keeps only the IDs).
 
     Returns
     -------
-    None
-        The file is written to ``path``; nothing is returned.
+    list of dict
+        One dict per site written: ``id``, ``hid``, ``name``, ``x_m``,
+        ``y_m``, ``elev_m`` (None if absent), ``nfreq``.  Before 2026-10-22
+        the function returned None.
 
     Raises
     ------
@@ -6081,10 +6575,17 @@ def edi_list_to_observe_dat(
 
         i.e. ``Z_SI ≈ Z_MT × 1.2566 × 10⁻³``.
 
-    **z-convention**
+    **z-convention (legacy layout only)**
         EDI elevation ``elev_m`` is geodetic (positive upward).  FEMTIC uses
         z positive downward, so the site header z is written as ``-elev_m``.
         Sites with ``elev_m = None`` are placed at ``z = 0.0`` with a warning.
+        The FEMTIC layout has no z: FEMTIC places the stations itself.
+
+    **IDs**
+        Sites skipped for lack of finite Z get no ID; the IDs of the written
+        sites are consecutive from 1 (as expected by the results readers,
+        e.g. :func:`get_femtic_data`).  The block header now counts the sites
+        actually written (before 2026-10-22 it counted all input sites).
 
     **Frequency ordering**
         Frequencies are written in the order they appear in ``edi["freq"]``.
@@ -6109,7 +6610,12 @@ def edi_list_to_observe_dat(
     ...     edi["x_m"] = x
     ...     edi["y_m"] = y
     >>>
-    >>> fem.edi_list_to_observe_dat(edis, "observe.dat")
+    >>> sites = fem.edi_list_to_observe_dat(edis, "observe.dat")
+    >>>
+    >>> # Dummy-VTF layout for a land survey (control.dat: OWNER_ELEMENT -1)
+    >>> sites = fem.edi_list_to_observe_dat(
+    ...     edis, "observe.dat", dummy_vtf=True, site_type="land",
+    ...     id_map_file="observe_ids.csv")
     """
     import warnings
 
@@ -6118,6 +6624,31 @@ def edi_list_to_observe_dat(
         raise NotImplementedError(
             f"edi_list_to_observe_dat: obs_type={obs_type!r} is not yet supported. "
             f"Only 'MT' is currently implemented."
+        )
+
+    layout = str(header_layout).lower()
+    if layout not in ("femtic", "legacy"):
+        raise ValueError(
+            f"edi_list_to_observe_dat: header_layout must be 'femtic' or 'legacy', "
+            f"got {header_layout!r}."
+        )
+    site_type = str(site_type).lower()
+    if site_type not in ("land", "seafloor"):
+        raise ValueError(
+            f"edi_list_to_observe_dat: site_type must be 'land' or 'seafloor', got {site_type!r}."
+        )
+    for _nm, _val in (("owner_type", owner_type), ("elec_type", elec_type)):
+        if _val is not None and _val not in (0, 1):
+            raise ValueError(f"edi_list_to_observe_dat: {_nm} must be 0, 1 or None, got {_val!r}.")
+    if layout == "legacy" and (dummy_vtf or owner_type is not None or elec_type is not None):
+        raise ValueError(
+            "edi_list_to_observe_dat: dummy_vtf / owner_type / elec_type need "
+            "header_layout='femtic'."
+        )
+    if dummy_vtf and owner_type is not None:
+        raise ValueError(
+            "edi_list_to_observe_dat: with dummy_vtf=True the owner types follow site_type; "
+            "do not pass owner_type."
         )
 
     out = Path(path)
@@ -6132,11 +6663,8 @@ def edi_list_to_observe_dat(
         for pl in preamble_lines:
             lines.append(pl if pl.endswith("\n") else pl + "\n")
 
-    # ---- block header -------------------------------------------------------
-    n_sites = len(edi_list)
-    lines.append(f"{obs_type}    {n_sites}\n")
-
-    # ---- sites --------------------------------------------------------------
+    # ---- collect the sites (positions, data rows) ---------------------------
+    recs: list[dict[str, Any]] = []
     for edi in edi_list:
         # -- station name
         name = str(edi.get("station") or "UNKNOWN")
@@ -6164,22 +6692,22 @@ def edi_list_to_observe_dat(
             )
             y_m = float(fallback_y)
 
-        # -- elevation → FEMTIC z (z positive downward → negate)
-        # Use explicit None checks: elev_m=0.0 (sea-level station) is valid
-        # and must not be treated as absent by a falsy "or" chain.
+        # -- elevation (EDI z-up).  Use explicit None checks: elev_m=0.0
+        # (sea-level station) is valid and must not be treated as absent.
         elev_m = edi.get("elev_m")
         if elev_m is None:
             elev_m = edi.get("elev")
-        if elev_m is None:
-            warnings.warn(
-                f"edi_list_to_observe_dat: site '{name}' has no elevation; "
-                f"using z=0.0 (surface at datum).",
-                UserWarning,
-                stacklevel=2,
-            )
-            z_femtic = 0.0
-        else:
-            z_femtic = -float(elev_m)   # EDI z-up → FEMTIC z-down
+        z_femtic = 0.0
+        if layout == "legacy":
+            if elev_m is None:
+                warnings.warn(
+                    f"edi_list_to_observe_dat: site '{name}' has no elevation; "
+                    f"using z=0.0 (surface at datum).",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            else:
+                z_femtic = -float(elev_m)   # EDI z-up -> FEMTIC z-down
 
         # -- frequencies and impedance
         freq = np.asarray(edi["freq"], dtype=float).ravel()
@@ -6187,7 +6715,7 @@ def edi_list_to_observe_dat(
         Z_err_raw = edi.get("Z_err")
         err_kind = str(edi.get("err_kind", "var"))
 
-        # Convert Z from MT field units to SI Ω
+        # Convert Z from MT field units to SI Ohm
         Z_si = Z_mt * _Z_MT_TO_SI
         Z_err_si = (np.asarray(Z_err_raw, dtype=complex) * _Z_MT_TO_SI
                     if Z_err_raw is not None else None)
@@ -6211,22 +6739,82 @@ def edi_list_to_observe_dat(
             Z_err_si = Z_err_si[finite_mask]
 
         nfreq = len(freq)
-
-        # -- site header line: name  x  y  z
-        lines.append(f"{name}    {x_m:.4f}    {y_m:.4f}    {z_femtic:.4f}\n")
-        lines.append(f"{nfreq}\n")
-
-        # -- data rows
+        rows: list[str] = []
         for fi in range(nfreq):
             Z_err_f = Z_err_si[fi] if Z_err_si is not None else None
             data_row, err_row = _edi_Z_to_observe_row(Z_si[fi], Z_err_f, err_kind)
             row_vals: list[float] = [float(freq[fi])] + data_row.tolist() + err_row.tolist()
-            lines.append(_format_row(row_vals))
+            rows.append(_format_row(row_vals))
+
+        recs.append({
+            "name": name, "x_m": x_m, "y_m": y_m,
+            "elev_m": None if elev_m is None else float(elev_m),
+            "z_femtic": z_femtic, "nfreq": nfreq, "rows": rows,
+        })
+
+    n_sites = len(recs)
+    if dummy_vtf and int(dummy_id_offset) < n_sites:
+        raise ValueError(
+            f"edi_list_to_observe_dat: dummy_id_offset={dummy_id_offset} must be >= the "
+            f"number of sites ({n_sites}), otherwise dummy IDs collide with MT IDs."
+        )
+
+    # ---- MT block ------------------------------------------------------------
+    # The count in the block header is the number of sites actually written.
+    lines.append(f"{obs_type}    {n_sites}\n")
+    if dummy_vtf:
+        mt_owner: int | None = 0 if site_type == "land" else 1
+        vtf_owner = 1 if site_type == "land" else 0
+    else:
+        mt_owner = owner_type
+        vtf_owner = None
+
+    result: list[dict[str, Any]] = []
+    for k, rec in enumerate(recs):
+        sid = k + 1
+        hid = sid + int(dummy_id_offset) if dummy_vtf else sid
+        if layout == "legacy":
+            # name  x  y  z  (not the FEMTIC layout; kept for old workflows)
+            lines.append(f"{rec['name']}    {rec['x_m']:.4f}    {rec['y_m']:.4f}    {rec['z_femtic']:.4f}\n")
+        else:
+            cols = [str(sid), str(hid)]
+            if mt_owner is not None:
+                cols.append(str(mt_owner))
+            if elec_type is not None:
+                cols.append(str(int(elec_type)))
+            cols.append(f"{rec['x_m'] / 1000.0:.6f}")
+            cols.append(f"{rec['y_m'] / 1000.0:.6f}")
+            lines.append("  ".join(cols) + "\n")
+        lines.append(f"{rec['nfreq']}\n")
+        lines.extend(rec["rows"])
+        result.append({
+            "id": sid, "hid": hid, "name": rec["name"], "x_m": rec["x_m"],
+            "y_m": rec["y_m"], "elev_m": rec["elev_m"], "nfreq": rec["nfreq"],
+        })
+
+    # ---- dummy VTF block -----------------------------------------------------
+    if dummy_vtf and n_sites > 0:
+        lines.append(f"VTF    {n_sites}\n")
+        for r in result:
+            did = r["hid"]
+            lines.append(
+                f"{did}  {did}  {vtf_owner}  {r['x_m'] / 1000.0:.6f}  {r['y_m'] / 1000.0:.6f}\n"
+            )
+            lines.append("0\n")
 
     # ---- END ----------------------------------------------------------------
     lines.append("END\n")
 
     out.write_text("".join(lines), encoding="utf-8")
+
+    if id_map_file is not None:
+        with open(id_map_file, "w", encoding="utf-8") as fh:
+            fh.write("id,name,x_m,y_m,elev_m\n")
+            for r in result:
+                elev = "" if r["elev_m"] is None else f"{r['elev_m']:.4f}"
+                fh.write(f"{r['id']},{r['name']},{r['x_m']:.4f},{r['y_m']:.4f},{elev}\n")
+
+    return result
 
 
 def modify_data(
@@ -6245,6 +6833,9 @@ def modify_data(
     bootstrap_rng: Generator | None = None,
     bootstrap_seed: int | None = None,
     derive_pt_from_z: bool = False,
+    site_header_layout: str = "auto",
+    owner_column: bool | None = None,
+    elec_column: bool | None = None,
 ) -> list[dict[str, Any]] | None:
     """Perturb a FEMTIC-style observation file (``observe.dat``) and rewrite it in-place.
 
@@ -6362,6 +6953,12 @@ def modify_data(
           joint MT+PT diagnostic on the same ensemble member), instead of
           PT and Z being perturbed independently of one another.
         Defaults to False (PT is perturbed independently, as before).
+    site_header_layout, owner_column, elec_column
+        Station-line layout options, forwarded to :func:`read_observe_dat`
+        (default: automatic detection of ``ID H-ID [owner] [E-type] X Y``).
+        Station lines are written back verbatim, so owner / E-type columns
+        are kept; dummy stations with 0 frequencies (``OWNER_ELEMENT -1``
+        layout) pass through unchanged.
 
     Returns
     -------
@@ -6407,6 +7004,9 @@ def modify_data(
         compute_mt_derived=False,  # recompute after perturbation
         bootstrap_n=0,
         bootstrap_rng=boot_rng,
+        site_header_layout=site_header_layout,
+        owner_column=owner_column,
+        elec_column=elec_column,
     )
     blocks = parsed["blocks"]
 
@@ -6514,7 +7114,7 @@ def modify_data(
             site["data"] = data
             site["error"] = err
 
-            if compute_mt_derived and obs_type == "MT":
+            if compute_mt_derived and obs_type == "MT" and nfreq > 0:
                 _augment_mt_site(site, n_boot=int(bootstrap_n), rng=boot_rng)
 
     # ---- Optional: override PT data with phase tensor of the already- ----
@@ -6606,6 +7206,9 @@ def convert_observe_dat(
     bootstrap_n: int = 200,
     bootstrap_seed: int = 0,
     sites_out: str | Path | None = None,
+    site_header_layout: str = "auto",
+    owner_column: bool | None = None,
+    elec_column: bool | None = None,
 ) -> list[dict[str, Any]]:
     """Convert an ``observe.dat`` file to a rewritten output file and return site dicts.
 
@@ -6629,6 +7232,9 @@ def convert_observe_dat(
 
         - ``.npz`` : saved as a compressed NumPy object array (key: ``sites``)
         - ``.pkl`` : saved via pickle
+    site_header_layout, owner_column, elec_column
+        Station-line layout options, forwarded to :func:`read_observe_dat`
+        (default: automatic detection).
 
     Returns
     -------
@@ -6641,6 +7247,9 @@ def convert_observe_dat(
         compute_mt_derived=bool(compute_mt_derived),
         bootstrap_n=int(bootstrap_n),
         bootstrap_rng=boot_rng,
+        site_header_layout=site_header_layout,
+        owner_column=owner_column,
+        elec_column=elec_column,
     )
     write_observe_dat(parsed, out_path)
     sites = sites_as_dict_list(parsed)
@@ -7130,24 +7739,38 @@ def resolve_slice_positions(slices: list,
 # ============================================================================
 
 
-def read_site_position(observe_file: str, site_number: int) -> tuple[float, float]:
+def read_site_position(
+    observe_file: str,
+    site_number: int,
+    *,
+    owner_column: bool | None = None,
+    elec_column: bool | None = None,
+) -> tuple[float, float]:
     """Return (x_m, y_m) model-local position for *site_number* from observe.dat.
 
-    The file format alternates between site-header lines::
+    The file format alternates between station lines::
 
-        <n>  <n>  <x_km>  <y_km>
+        <n>  <h>  [owner]  [E-type]  <x_km>  <y_km>
 
-    (where the first two tokens are the site number repeated) and data blocks.
-    This function scans the file linearly, identifies site-header lines by the
-    pattern ``int int float float``, and returns the (x, y) pair that matches
-    *site_number*.
+    (``n`` = station ID, ``h`` = station ID for the horizontal magnetic field,
+    usually the same number; ``owner`` / ``E-type`` are present with
+    ``OWNER_ELEMENT -1`` / ``ELEC_FIELD -1`` in control.dat) and data blocks.
+    This function scans the file linearly, identifies station lines by the
+    pattern ``int int [0|1] [0|1] float float`` (4 to 6 tokens), and returns
+    the (x, y) pair of the first one whose ID matches *site_number*.  Since the
+    MT block comes first in the usual files, the MT station is found before a
+    dummy VTF station that sits at the same place.
 
     Parameters
     ----------
     observe_file : str
         Path to observe.dat.
     site_number : int
-        1-based site index to find.
+        Station ID to find (the first column of the station line).
+    owner_column, elec_column : bool or None
+        Station-line layout, as in :func:`read_observe_dat` (default: detect
+        from the token count; a 5-token MT/PT line is read as owner unless the
+        file's VTF block shows there is no owner column).
 
     Returns
     -------
@@ -7160,24 +7783,46 @@ def read_site_position(observe_file: str, site_number: int) -> tuple[float, floa
         If *observe_file* does not exist.
     ValueError
         If *site_number* is not found in the file.
+
+    Notes
+    -----
+    Before 2026-10-22 the third and fourth token were always taken as X and
+    Y, so a station line with an owner column returned the owner type as x.
     """
     if not os.path.isfile(observe_file):
         raise FileNotFoundError(f"observe.dat not found: {observe_file}")
 
     with open(observe_file) as fh:
-        for line in fh:
-            parts = line.split()
-            if len(parts) < 4:
-                continue
-            try:
-                n1   = int(parts[0])
-                int(parts[1])
-                x_km = float(parts[2])
-                y_km = float(parts[3])
-            except ValueError:
-                continue
-            if n1 == site_number:
-                return x_km * 1000.0, y_km * 1000.0
+        lines = fh.readlines()
+
+    # Block structure: block keyword lines, and the owner hint from the VTF block.
+    end_idx = _find_end_index(lines)
+    block_starts = [i for i in range(end_idx) if _is_block_header(lines[i].split())]
+    owner_hint = _owner_hint_from_lines(lines, block_starts + [end_idx])
+
+    cur_type: str | None = None
+    for i in range(end_idx):
+        parts = lines[i].split()
+        if _is_block_header(parts):
+            cur_type = parts[0]
+            continue
+        if not 4 <= len(parts) <= 6:
+            continue
+        if not (_is_int_token(parts[0]) and _is_int_token(parts[1])):
+            continue
+        try:
+            hdr = _parse_site_header_tokens(
+                parts,
+                cur_type,
+                layout="femtic",
+                owner_column=owner_column,
+                elec_column=elec_column,
+                owner_hint=owner_hint,
+            )
+        except ValueError:
+            continue
+        if int(parts[0]) == site_number:
+            return hdr["x_km"] * 1000.0, hdr["y_km"] * 1000.0
 
     raise ValueError(
         f"Site {site_number} not found in {observe_file}.  Check SITE_NUMBER."
@@ -7756,8 +8401,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "Site positions must be supplied as model-frame (x, y) via the\n"
             "--xy-csv option (a CSV file with columns: station,x_m,y_m) or by\n"
             "embedding x_m / y_m keys in the EDI HEADER (not standard).\n\n"
-            "Elevation is taken from the EDI ELEV field and negated:\n"
-            "  z_femtic = -elev_m   (FEMTIC z positive downward)\n\n"
+            "Station lines are written as 'ID H-ID [owner] [E-type] X_km Y_km'\n"
+            "(IDs 1..N, positions converted from m to km); the EDI station names\n"
+            "can be saved with --id-map.  Use --dummy-vtf for the OWNER_ELEMENT -1\n"
+            "layout with dummy VTF stations.  --header-layout legacy writes the\n"
+            "old 'name x y z' station line (z_femtic = -elev_m).\n\n"
             "Z is converted from MT field units (mV/km/nT) to SI Ohm:\n"
             "  Z_SI = Z_MT * mu0 * 1e3"
         ),
@@ -7818,6 +8466,54 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         default=None,
         metavar="TEXT",
         help="Optional comment text prepended to observe.dat (use \\n for newlines).",
+    )
+    p_e2o.add_argument(
+        "--header-layout",
+        default="femtic",
+        choices=["femtic", "legacy"],
+        help="Station-line layout: femtic = 'ID H-ID [owner] [E-type] X_km Y_km' "
+             "(default), legacy = 'name x_m y_m z_m'.",
+    )
+    p_e2o.add_argument(
+        "--dummy-vtf",
+        action="store_true",
+        help="Write the OWNER_ELEMENT -1 layout with a dummy VTF station at every "
+             "MT station (manual slides 55-58); set OWNER_ELEMENT -1 in control.dat.",
+    )
+    p_e2o.add_argument(
+        "--site-type",
+        default="land",
+        choices=["land", "seafloor"],
+        help="Owner types for --dummy-vtf (default: land).",
+    )
+    p_e2o.add_argument(
+        "--dummy-id-offset",
+        type=int,
+        default=1000,
+        metavar="N",
+        help="Dummy VTF ID = MT ID + N (default 1000; must be >= number of sites).",
+    )
+    p_e2o.add_argument(
+        "--owner-type",
+        type=int,
+        default=None,
+        choices=[0, 1],
+        help="Owner-element column for all MT stations, without dummy stations "
+             "(OWNER_ELEMENT -1).  Default: no column.",
+    )
+    p_e2o.add_argument(
+        "--elec-type",
+        type=int,
+        default=None,
+        choices=[0, 1],
+        help="Electric-field-type column for all MT stations (ELEC_FIELD -1). "
+             "Default: no column.",
+    )
+    p_e2o.add_argument(
+        "--id-map",
+        default=None,
+        metavar="CSV",
+        help="Write a CSV 'id,name,x_m,y_m,elev_m' linking station IDs to EDI names.",
     )
 
     args = ap.parse_args(list(argv) if argv is not None else None)
@@ -7951,14 +8647,27 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
         preamble = args.preamble.replace("\\n", "\n") if args.preamble else None
 
-        edi_list_to_observe_dat(
-            edi_list,
-            args.out,
-            x_key=args.x_key,
-            y_key=args.y_key,
-            preamble=preamble,
-        )
-        print(f"Wrote {len(edi_list)} site(s) to: {args.out}")
+        try:
+            written = edi_list_to_observe_dat(
+                edi_list,
+                args.out,
+                x_key=args.x_key,
+                y_key=args.y_key,
+                preamble=preamble,
+                header_layout=args.header_layout,
+                dummy_vtf=args.dummy_vtf,
+                site_type=args.site_type,
+                dummy_id_offset=args.dummy_id_offset,
+                owner_type=args.owner_type,
+                elec_type=args.elec_type,
+                id_map_file=args.id_map,
+            )
+        except ValueError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        print(f"Wrote {len(written)} site(s) to: {args.out}")
+        if args.id_map:
+            print(f"Station ID table: {args.id_map}")
         return 0
 
     ap.error(f"Unknown command {args.cmd!r}")

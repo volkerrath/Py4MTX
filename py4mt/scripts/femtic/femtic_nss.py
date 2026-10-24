@@ -229,6 +229,29 @@ Provenance
                 NSS_EXPORT_NPZ.  Done inside the chunk loop, so it does not
                 change the statistics or the memory use for large runs.
                 AI-generated code -- review before production use.
+    2026-10-23  Claude Sonnet 5.5 (Anthropic)
+                Configurable reset of the random pilot-point layout in the
+                "gst" perturbation mode: new GST_PP_N_RESET (default None =
+                N_e = NSS_N_MODELS, i.e. one layout for the whole run; 1 = a
+                fresh layout for every model; n = a new layout every n
+                models).  Pilot-point values are redrawn for every model in
+                any case.  Mirrors MOD_PP_REGEN_EVERY of femtic_gst_prep.py,
+                but note the different default (there None = redraw for
+                every member).  Implemented with the new pp_cache /
+                pp_pos_offset arguments of ens.generate_gst_model_ensemble,
+                because this script calls it with n_samples=1 once per
+                model; _draw_perturbations / _make_perturbation_gst now
+                carry the global model index.  No effect for
+                GST_PP_MODE = "fixed" or PERTURB_MODE = "random".
+                Also fixed _make_perturbation_gst, which never created the
+                temporary member directory nor copied the template
+                (GST_REF_MOD -> referencemodel.dat) into it, so the call
+                to ens.generate_gst_model_ensemble could not find its
+                insert_model template; both are done before the call now.
+                Needs the 2026-10-23 ensembles.py.  The "gst" mode has not
+                been run against real FEMTIC files; only the new logic was
+                tested on a synthetic mesh.
+                AI-generated code -- review before production use.
 
 @author: vrath
 """
@@ -633,6 +656,18 @@ if PERTURB_MODE == "gst":
     # Number of random pilot points per shuttle realisation.
     # Recommended: 50–200 for typical 3-D MT survey volumes.
     GST_N_PP = 100
+
+    # Reset interval of the random pilot-point layout (in models).
+    # The random pilot-point LOCATIONS are redrawn every GST_PP_N_RESET
+    # models and shared by the models in between; the pilot-point VALUES
+    # are redrawn for every model regardless.
+    #   None -> N_e = NSS_N_MODELS: one layout for the whole run (default).
+    #   1    -> fresh layout for every model.
+    #   n    -> new layout every n models (e.g. 10 -> blocks of 10).
+    # Note the default differs from MOD_PP_REGEN_EVERY in femtic_gst_prep.py
+    # (None there = redraw for every member).  No effect for
+    # GST_PP_MODE = "fixed" (no random component) or PERTURB_MODE = "random".
+    GST_PP_N_RESET = None
 
     # Bounding box for random pilot-point placement:
     #   [x_min, x_max, y_min, y_max, z_min, z_max]  (km, model-local, z positive-down)
@@ -1120,7 +1155,26 @@ def _make_perturbation_random(m: np.ndarray) -> np.ndarray:
     return dm
 
 
-def _make_perturbation_gst(m_ref: np.ndarray) -> np.ndarray:
+#: Holds the random pilot-point layout of the current reset block.  Passed to
+#: ens.generate_gst_model_ensemble as ``pp_cache`` so that the layout survives
+#: the one-model-per-call pattern used below (see GST_PP_N_RESET).
+_gst_pp_cache: dict = {}
+
+
+def _gst_n_reset() -> int:
+    """Resolve GST_PP_N_RESET: None -> N_e = NSS_N_MODELS, else an int >= 1."""
+    n_reset = GST_PP_N_RESET
+    if n_reset is None:
+        n_reset = NSS_N_MODELS
+    n_reset = int(n_reset)
+    if n_reset < 1:
+        raise ValueError(
+            f"GST_PP_N_RESET must be >= 1 or None (= NSS_N_MODELS), "
+            f"got {GST_PP_N_RESET!r}.")
+    return n_reset
+
+
+def _make_perturbation_gst(m_ref: np.ndarray, idx: int = 0) -> np.ndarray:
     """Generate a geostatistical model perturbation via pilot-point Kriging.
 
     Calls ``ens.generate_gst_model_ensemble`` for a single realisation in a
@@ -1131,22 +1185,43 @@ def _make_perturbation_gst(m_ref: np.ndarray) -> np.ndarray:
 
     The null-space shuttle in step 5 projects out any data-sensitive component.
 
+    The random pilot-point layout is held for blocks of ``GST_PP_N_RESET``
+    consecutive models (default: all ``NSS_N_MODELS``); the pilot-point
+    values are redrawn for every model.  Because every call here draws one
+    model, the block structure is kept across calls through the module-level
+    cache ``_gst_pp_cache`` and the global model index ``idx``.
+
     Parameters
     ----------
     m_ref : numpy.ndarray, shape (nm,)
         Reference model in log10(ρ) (free regions only), as read from HDF5.
+    idx : int
+        Global index (0-based) of the model drawn, counted over the whole
+        run, not within a chunk.  Models must be requested in increasing
+        order.
 
     Returns
     -------
     dm : numpy.ndarray, shape (nm,)
         Perturbation in log10(ρ) space (same shape as m_ref).
     """
-    import tempfile, shutil
+    import shutil
 
     tmp_base = os.path.join(WORK_DIR, "_nss_gst_tmp_")
+    tmp_dir = tmp_base + "0/"
+
+    # No random component in "fixed" mode, so there is nothing to reset
+    # (ens would only print a warning if pp_regen_every were passed).
+    use_reset = GST_PP_MODE != "fixed"
 
     try:
-        # generate_gst_model_ensemble writes member 0 into ``tmp_base + "0/"``
+        # generate_gst_model_ensemble writes member 0 into ``tmp_dir`` and
+        # reads its insert_model template from ``tmp_dir + reference_file``,
+        # so the directory and the copied template must exist beforehand.
+        # (copy, not link: see the referencemodel.dat note in the README)
+        os.makedirs(tmp_dir, exist_ok=True)
+        shutil.copy2(GST_REF_MOD, tmp_dir + "referencemodel.dat")
+
         ens.generate_gst_model_ensemble(
             alg              = "gst",
             dir_base         = tmp_base,
@@ -1161,6 +1236,9 @@ def _make_perturbation_gst(m_ref: np.ndarray) -> np.ndarray:
             pp_roi           = _lim_km_to_m(GST_PP_ROI),
             pp_extrema_k     = GST_PP_EXTREMA_K,
             pp_extrema_which = GST_PP_EXTREMA_WHICH,
+            pp_regen_every   = _gst_n_reset() if use_reset else None,
+            pp_cache         = _gst_pp_cache if use_reset else None,
+            pp_pos_offset    = idx,
             log_rho_min      = GST_LOG_RHO_MIN,
             log_rho_max      = GST_LOG_RHO_MAX,
             vario_model      = GST_VARIO_MODEL,
@@ -1190,19 +1268,20 @@ def _make_perturbation_gst(m_ref: np.ndarray) -> np.ndarray:
     return m_gst - m_ref
 
 
-def _draw_perturbations(k: int) -> np.ndarray:
+def _draw_perturbations(k: int, i0: int = 0) -> np.ndarray:
     """Draw ``k`` raw perturbations with the mode set in PERTURB_MODE.
 
+    ``i0`` is the global index of the first model of the chunk (0-based);
+    it is needed in "gst" mode to honour GST_PP_N_RESET across chunks.
     Returns an array of shape (k, nm); rows are independent draws.
     """
     if PERTURB_MODE == "gst":
-        draw = _make_perturbation_gst
+        return np.stack([_make_perturbation_gst(model, i0 + j)
+                         for j in range(k)])
     elif PERTURB_MODE == "random":
-        draw = _make_perturbation_random
-    else:
-        raise ValueError(f"Unknown PERTURB_MODE: '{PERTURB_MODE}'. "
-                         "Choose 'random' or 'gst'.")
-    return np.stack([draw(model) for _ in range(k)])
+        return np.stack([_make_perturbation_random(model) for _ in range(k)])
+    raise ValueError(f"Unknown PERTURB_MODE: '{PERTURB_MODE}'. "
+                     "Choose 'random' or 'gst'.")
 
 
 # ===========================================================================
@@ -1274,6 +1353,17 @@ t0 = time.perf_counter()
 if NSS_N_MODELS < 1 or NSS_CHUNK_SIZE < 1:
     raise ValueError("NSS_N_MODELS and NSS_CHUNK_SIZE must be >= 1")
 
+if PERTURB_MODE == "gst":
+    _gst_pp_cache.clear()
+    if GST_PP_MODE != "fixed":
+        _n_reset = _gst_n_reset()          # validates GST_PP_N_RESET early
+        if OUT:
+            _n_layouts = -(-NSS_N_MODELS // _n_reset)
+            print(f"  Random pilot-point layout reset every {_n_reset} "
+                  f"model(s) -> {_n_layouts} layout(s) for {NSS_N_MODELS} "
+                  f"models (GST_PP_N_RESET = {GST_PP_N_RESET!r}); "
+                  "pilot-point values redrawn for every model.")
+
 
 def _std_normal_cdf(k: float) -> float:
     return 0.5 * (1.0 + math.erf(k / math.sqrt(2.0)))
@@ -1315,7 +1405,7 @@ for i0 in range(0, NSS_N_MODELS, NSS_CHUNK_SIZE):
     k = min(NSS_CHUNK_SIZE, NSS_N_MODELS - i0)
     t_chunk = time.perf_counter()
 
-    dm_raw = _draw_perturbations(k)                       # (k, nm)
+    dm_raw = _draw_perturbations(k, i0)                   # (k, nm)
     dm_null, r_eff = _nullspace_shuttle(
         dm_raw, Vt, S, sv_thresh=NSS_SV_THRESH, amplitude=NSS_AMPLITUDE)
     X = model[np.newaxis, :] + dm_null                    # (k, nm), log10(rho)

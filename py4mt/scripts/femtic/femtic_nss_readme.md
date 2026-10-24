@@ -252,11 +252,24 @@ The GST block mirrors the equivalent config in `femtic_gst_prep.py`.
 |----------|---------|-------------|
 | `GST_PP_MODE` | `"random"` | Placement strategy: `"random"` / `"fixed"` / `"mixed"` / `"extrema"` |
 | `GST_N_PP` | `100` | Number of random pilot points per realisation (used in `"random"`, `"mixed"`, `"extrema"`) |
+| `GST_PP_N_RESET` | `None` | Reset interval of the random pilot-point layout, in models. `None` = N_e = `NSS_N_MODELS` (one layout for the whole run); `1` = fresh layout for every model; `n` = new layout every `n` models. Pilot-point **values** are redrawn for every model in any case. No effect for `GST_PP_MODE = "fixed"` or `PERTURB_MODE = "random"`. See below. |
 | `GST_PP_BBOX` | `[-50000, 50000, -50000, 50000, 0, 80000]` | Bounding box [x_min, x_max, y_min, y_max, z_min, z_max] (m, z positive-down) |
 | `GST_PP_COORDS` | `None` | Explicit (N, 3) array of pilot-point locations for `"fixed"` / `"mixed"` mode |
 | `GST_PP_ROI` | `None` | Sub-volume for extremum search in `"extrema"` mode; `None` = full extent |
 | `GST_PP_EXTREMA_K` | `9` | Neighbourhood size for local extremum test in `"extrema"` mode |
 | `GST_PP_EXTREMA_WHICH` | `"both"` | Which extrema to seed: `"both"` / `"minima"` / `"maxima"` |
+
+**`GST_PP_N_RESET`.** The random pilot-point *locations* (the whole point set
+for `"random"`, the random-fill part for `"mixed"` / `"extrema"`) are drawn once per
+block of `GST_PP_N_RESET` consecutive models and shared by the models in
+that block; the pilot-point *values* are drawn anew for every model. With the
+default (`None` = `NSS_N_MODELS`) the whole run uses one layout, so the
+ensemble spread comes from value randomness at fixed geometry; with `1` every
+model has its own layout. Counting is over the whole run, so it does not depend
+on `NSS_CHUNK_SIZE`. The default differs from `MOD_PP_REGEN_EVERY` in
+`femtic_gst_prep.py`, where `None` means a fresh layout for every member.
+Values `< 1` raise `ValueError`; values larger than `NSS_N_MODELS` act like
+`None`.
 
 **Resistivity range**
 
@@ -355,10 +368,10 @@ rng_local = np.random.default_rng(seed=42)
 dm = rng_local.standard_normal(m.size) * 0.2
 ```
 
-### `_make_perturbation_gst(m_ref)`
+### `_make_perturbation_gst(m_ref, idx=0)`
 
 ```python
-def _make_perturbation_gst(m_ref: np.ndarray) -> np.ndarray:
+def _make_perturbation_gst(m_ref: np.ndarray, idx: int = 0) -> np.ndarray:
     ...
 ```
 
@@ -374,6 +387,20 @@ the reference-model vector is subtracted, and the delta is returned:
 ```
 dm = m_gst − m_ref       (log₁₀ Ω·m, free regions only)
 ```
+
+`idx` is the global (0-based) index of the model over the whole run, not within
+a chunk (`_draw_perturbations(k, i0)` passes `i0 + j`).  Together with the
+module-level cache `_gst_pp_cache` it lets `ens.generate_gst_model_ensemble`
+keep the `GST_PP_N_RESET` block structure although it is called with
+`n_samples=1` once per model (`pp_regen_every=GST_PP_N_RESET`,
+`pp_cache=_gst_pp_cache`, `pp_pos_offset=idx`; needs the 2026-10-23
+`ensembles.py`).  In `"fixed"` mode none of these is passed.
+
+Before each call the temporary member directory `_nss_gst_tmp_0/` is created
+and `GST_REF_MOD` is copied into it as `referencemodel.dat` (a copy, not a
+link), because `generate_gst_model_ensemble` reads its `insert_model` template
+from there.  Earlier versions did neither and could not have run in `"gst"`
+mode (see the provenance table).
 
 The temporary directory is cleaned up regardless of success or failure.  The
 spatial character of `dm` (correlation lengths, variance) is governed entirely
@@ -537,7 +564,10 @@ perturbation. Set it to an integer and both `PERTURB_MODE = "gst"` and
 `PERTURB_MODE = "random"` become reproducible, driven by a single shared
 `rng = np.random.default_rng(RANDOM_SEED)` constructed once at the top of
 the script.  The models are drawn one after another, so a given seed gives the
-same ensemble for any `NSS_CHUNK_SIZE`.
+same ensemble for any `NSS_CHUNK_SIZE`.  This includes the pilot-point layouts
+of `GST_PP_N_RESET`: the blocks are counted over the whole run and the layout
+is drawn from the same shared `rng`.  Changing `GST_PP_N_RESET` changes the
+random stream, so it changes the ensemble for a given seed.
 
 **Not covered:** step 3's randomised SVD of `Js` (`inv.rsvd`, Halko et al.
 2011) uses its own internal randomness for the range-finder projection.
@@ -565,6 +595,7 @@ and wire `RANDOM_SEED` through there as well.
 | 2026-10-16 | Claude Sonnet 5.5 (Anthropic) | Chunked ensemble statistics in step 5: `NSS_N_MODELS` shuttled models in chunks of `NSS_CHUNK_SIZE`, merged into streaming per-block mean / variance (`ensembles.chan_merge`, Chan, Golub and LeVeque 1983) and histogram quantiles at the +/-1 and +/-2 sigma probabilities (`ensembles.hist_update` / `hist_quantiles`); Gaussian bands for comparison. `_nullspace_shuttle` accepts a chunk. First model still goes to `MODEL_OUT`; mean and quantile models and `nss_stats.npz` are new outputs. Tested with a synthetic rank-15 Jacobian (mean and std agree with numpy to rounding, quantiles within one bin width of numpy's inverted-CDF quantiles, `||Js dm_null||` about 1e-12); the GST mode, `fem.insert_model` and a real FEMTIC run were not exercised. AI-generated; review before production use. |
 | 2026-10-17 | Claude Sonnet 5.5 (Anthropic) | Optional export of the individual shuttled models for testing: `NSS_EXPORT_MODELS` (default `False`), `NSS_EXPORT_MAX` (100), `NSS_EXPORT_DIR`, `NSS_EXPORT_NPZ`. The first `min(NSS_N_MODELS, NSS_EXPORT_MAX)` models are written as resistivity blocks inside the chunk loop plus one `.npz` array; statistics and memory use are unchanged. Tested with the synthetic setup (230 models, limit 100; 60 models, limit 100; export off): file counts and `.npz` contents match the generated models; `fem.insert_model` was a stub. AI-generated; review before production use. |
 | 2026-10-17 | Claude Sonnet 5.5 (Anthropic) | Higher moments: the streaming accumulator also carries M3 and M4 (`ensembles.batch_moments4` / `merge_moments4`, Pebay 2008; Terriberry 2007; Pebay et al. 2016). Per-block skewness and excess kurtosis (`NSS_MOMENTS_UNBIASED` selects the bias-corrected versions) and the Bowley quantile skewness for each sigma level are printed and written to `nss_stats.npz` (`skew`, `ex_kurt`, `m3`, `m4`, `bowley`, `bowley_sigma`). Needs the 2026-10-17 `ensembles.py`. Tested with the synthetic setup (230, 6, 3 and 2 models): skewness and kurtosis agree with `scipy.stats` to 1e-14, Bowley values agree with the quantile formula, models with fewer than 4 members give NaN; not run on real FEMTIC data. AI-generated; review before production use. |
+| 2026-10-23 | Claude Sonnet 5.5 (Anthropic) | Configurable reset of the random pilot-point layout in the `"gst"` mode: new `GST_PP_N_RESET` (default `None` = N_e = `NSS_N_MODELS`; `1` = new layout per model; `n` = every `n` models), mirroring `MOD_PP_REGEN_EVERY` of `femtic_gst_prep.py` (which needed no change) but with a different default. Implemented through the new `pp_cache` / `pp_pos_offset` arguments of `ens.generate_gst_model_ensemble` (needs the 2026-10-23 `ensembles.py`), because the script calls it with `n_samples=1` once per model; `_draw_perturbations(k, i0)` and `_make_perturbation_gst(m_ref, idx)` carry the global model index. **Bug fixed:** `_make_perturbation_gst` never created `_nss_gst_tmp_0/` nor copied the template into it, so `generate_gst_model_ensemble` could not find its `insert_model` template; both are now done before the call. Tested with extracted helpers on a synthetic mesh and a stand-in for gstools (Kriging replaced by inverse-distance weighting, gstools could not be installed): layouts per block for `n_reset` = `None`, 1, 3 and > N_e, identical ensembles for chunk sizes 1, 2, 7 and 100, `"fixed"` and `"random"` modes, invalid values rejected, and the uploaded version failing for want of the template. The `"gst"` mode has **not** been run with real gstools, a real mesh or a FEMTIC file. AI-generated; review before production use. |
 
 **How to configure the GST variogram?**
 The variogram controls the spatial coherence of the Kriged perturbation.

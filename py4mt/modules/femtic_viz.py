@@ -581,6 +581,15 @@ Provenance:
                         fviz.read_femtic_mesh(path) -> FemticMesh to
                         nodes, conn = fem.read_femtic_mesh(path).
                         AI-generated code -- review before production use.
+    2026-10-22  Claude Sonnet 5.5 (Anthropic)
+                        _observe_to_site_list(): VTF / PT stations with 0
+                        frequencies (the dummy VTF stations of the
+                        OWNER_ELEMENT -1 layout written by
+                        femtic_add_dummy_vtf.py) are skipped; they hold no
+                        data to plot. The 4-6 token station lines themselves
+                        are read by femtic.read_observe_dat (see
+                        femtic_readme.md, 2026-10-22). No other change.
+                        AI-generated code -- review before production use.
     """
 
 from __future__ import annotations
@@ -2292,6 +2301,8 @@ def _observe_to_site_list(
         obs = str(s.get("obs_type", "")).upper()
         if obs == "MT":
             continue   # already handled above
+        if int(s.get("nfreq", 1)) == 0:
+            continue   # dummy station (OWNER_ELEMENT -1 layout): no data
         d = {"freq": np.asarray(s["freq"], dtype=float), "obs_type": obs,
              "name": s.get("site_header_tokens", [""])[0]}
         raw = np.asarray(s["data"], dtype=float)

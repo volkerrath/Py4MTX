@@ -314,6 +314,22 @@ Provenance
             (std ~ 1/sqrt(n * alpha * lam) per cell) and dominates the
             printed RMS std although |R x|^2 does not see it; the printout
             now also gives the RMS std without the global mean.
+2026-10-23  Claude Sonnet 5.5 (Anthropic)
+            generate_gst_model_ensemble: two new optional parameters,
+            pp_cache and pp_pos_offset, that let a caller who invokes the
+            function repeatedly with n_samples=1 (e.g. femtic_nss.py, one
+            Kriging call per null-space shuttle) keep the block structure
+            of pp_regen_every across calls.  pp_cache is a caller-owned
+            dict that holds the random pilot-point layout of the current
+            block; pp_pos_offset is added to the position before the
+            block id is computed (block_id = (pos + offset) // K), i.e.
+            the global index of the first model of the call.  With both
+            left at their defaults the behaviour is unchanged (the cache
+            is local to the call).  Blocks older than the current one are
+            dropped from the cache when a new block is opened, so the
+            cache stays O(1) however many models are drawn.  Passing
+            pp_cache without pp_regen_every raises ValueError (it would
+            be silently ignored otherwise).
 
 AI-generated; please review before production use.
 """
@@ -350,8 +366,8 @@ import scipy.sparse
 import scipy.sparse.linalg
 
 from numpy.random import Generator, default_rng
-from scipy.sparse import issparse
-from scipy.sparse.linalg import LinearOperator, cg, eigsh, bicgstab, spilu
+from scipy.sparse import issparse, eye
+from scipy.sparse.linalg import LinearOperator, cg, eigsh, eigh, bicgstab, spilu, splu
 
 # Optional but kept for compatibility with earlier versions
 import joblib  # noqa: F401
@@ -1432,6 +1448,8 @@ def generate_gst_model_ensemble(
     pp_extrema_k: int = 30,
     pp_extrema_which: str = "both",
     pp_regen_every: Optional[int] = None,
+    pp_cache: Optional[dict] = None,
+    pp_pos_offset: int = 0,
     # --- resistivity range ---
     log_rho_min: float = 0.0,
     log_rho_max: float = 4.0,
@@ -1570,6 +1588,31 @@ def generate_gst_model_ensemble(
         separate the two sources of ensemble spread. No effect when
         ``pp_mode="fixed"`` (there is no random component to regenerate
         — a one-line warning is printed if set in that case).
+    pp_cache : dict, optional
+        Caller-owned dictionary that stores the random pilot-point layout
+        of the current ``pp_regen_every`` block.  Needed only when this
+        function is called **repeatedly with small batches** (typically
+        ``n_samples=1``) and the block structure of ``pp_regen_every`` is
+        to be honoured *across* calls: the cache that ``pp_regen_every``
+        uses internally is local to one call, so without ``pp_cache`` every
+        single-member call would start a fresh block (= a new layout for
+        every member).  Pass the **same** dict object, initially empty, to
+        every call of the series, together with ``pp_pos_offset``.
+        Default: ``None`` (call-local cache, original behaviour).
+        Requires ``pp_regen_every`` to be set (``ValueError`` otherwise).
+        Models must be requested in non-decreasing order of global index;
+        blocks older than the current one are discarded.  The dict holds
+        arrays of the layout only, so it is tiny and can be reused for a
+        later series after ``pp_cache.clear()``.  If ``rng`` is shared
+        between the calls, a series of ``n_samples=1`` calls reproduces
+        one ``n_samples=N`` call exactly.
+    pp_pos_offset : int
+        Added to the position of each member within this call before the
+        block id is computed, ``block_id = (pos + pp_pos_offset) //
+        pp_regen_every``.  Set it to the **global** index of the first
+        model of the call (0, 1, 2, ... for consecutive ``n_samples=1``
+        calls).  Default: 0.  Has no effect when ``pp_regen_every`` is
+        ``None``.
 
     Resistivity range
     -----------------
@@ -1905,6 +1948,11 @@ def generate_gst_model_ensemble(
     # random pilot-point component. See the pp_regen_every docstring
     # entry above for the semantics.
     # ------------------------------------------------------------------
+    if pp_cache is not None and pp_regen_every is None:
+        raise ValueError(
+            "pp_cache was given but pp_regen_every is None; the cache would "
+            "be ignored. Set pp_regen_every (>= 1) or drop pp_cache."
+        )
     if pp_regen_every is not None:
         if int(pp_regen_every) < 1:
             raise ValueError(
@@ -1925,20 +1973,30 @@ def generate_gst_model_ensemble(
     #: pp_regen_every is set; block_id = position-in-fromto_arr //
     #: pp_regen_every, so members sharing a block reuse the same random
     #: pilot-point locations while still drawing fresh values each time.
-    _regen_cache: dict[int, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
+    #: A caller-supplied pp_cache replaces the call-local dict so that the
+    #: block structure survives across repeated n_samples=1 calls (see the
+    #: pp_cache / pp_pos_offset docstring entries).
+    _regen_cache: dict[int, tuple[np.ndarray, np.ndarray, np.ndarray]] = (
+        pp_cache if pp_cache is not None else {}
+    )
+    _pos_offset = int(pp_pos_offset)
 
     def _draw_or_reuse_random_component(pos: int):
         """(n_pp,) uniform draws in pp_bbox -- fresh every call if
         pp_regen_every is None (original behaviour), otherwise cached
-        per block of pp_regen_every consecutive positions."""
+        per block of pp_regen_every consecutive (global) positions."""
         if pp_regen_every is None:
             return (
                 rng.uniform(pp_bbox[0], pp_bbox[1], n_pp),
                 rng.uniform(pp_bbox[2], pp_bbox[3], n_pp),
                 rng.uniform(pp_bbox[4], pp_bbox[5], n_pp),
             )
-        block_id = pos // pp_regen_every
+        block_id = (pos + _pos_offset) // pp_regen_every
         if block_id not in _regen_cache:
+            # Models arrive in non-decreasing order, so older blocks are
+            # never needed again: drop them to keep the cache O(1).
+            for _old in [k for k in _regen_cache if k < block_id]:
+                del _regen_cache[_old]
             _regen_cache[block_id] = (
                 rng.uniform(pp_bbox[0], pp_bbox[1], n_pp),
                 rng.uniform(pp_bbox[2], pp_bbox[3], n_pp),
@@ -6497,3 +6555,41 @@ def sample_prior_from_roughness(
         solver_method=solver_method or (msolver or "cg"),
         solver_kwargs={},  # solver already built above
     )
+
+def randomized_smooth_modes(R, k=20, oversample=10,
+                            n_iter=3, shift=1e-6,
+                            random_state=None):
+    """
+    Approximate the k smoothest eigenmodes of R = L.T @ L.
+
+    Returns
+    -------
+    eigenvalues : ndarray
+        Approximate smallest eigenvalues of R.
+    modes : ndarray
+        Corresponding orthonormal spatial modes.
+
+    Author: Volker Rath (DIAS)
+    Created with the help of ChatGPT (GPT-6) on 2026-10-24
+    """
+    n = R.shape[0]
+    ell = min(n, k + oversample)
+
+    rng = np.random.default_rng(random_state)
+    omega = rng.standard_normal((n, ell))
+
+    A = (R + shift * eye(n, format="csc")).tocsc()
+    solver = splu(A)
+
+    Q, _ = np.linalg.qr(omega, mode="reduced")
+
+    for _ in range(n_iter):
+        Y = solver.solve(Q)
+        Q, _ = np.linalg.qr(Y, mode="reduced")
+
+    B = Q.T @ (R @ Q)
+    values, vectors = eigh(B)
+
+    idx = np.argsort(values)[:k]
+
+    return values[idx], Q @ vectors[:, idx]

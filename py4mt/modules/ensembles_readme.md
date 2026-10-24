@@ -260,6 +260,8 @@ roughness matrix is required.
 | `pilot_points_file` | `str`, optional. Output path for the pilot-point archive. `None` (default) → `f"{dir_base}pilot_points.npz"`. Ignored when `save_pilot_points=False`. |
 | `seed`           | `int`, optional. Informational only — recorded in `pilot_points.npz` (`"seed"`, `-1` if omitted) for a self-describing archive. Does **not** seed the RNG; pass a seeded generator via `rng` for that. |
 | `pp_regen_every` | `int`, optional. `None` (default) — the random pilot-point component (whole point set for `"random"`; random-fill portion of `"mixed"`/`"extrema"`) is redrawn every member, as before. An integer `K` instead redraws it once per block of `K` consecutive processed members, reusing it for the rest of the block; pilot-point **values** are still redrawn every member regardless. No effect for `pp_mode="fixed"`. See "Regenerating pilot points every *n*th member" below. |
+| `pp_cache`       | `dict`, optional. Caller-owned dictionary holding the random pilot-point layout of the current `pp_regen_every` block. Only needed when the function is called **repeatedly with `n_samples=1`** and the block structure is to be kept across calls (the internal cache is local to one call). Pass the **same** dict to every call. Default `None` (call-local cache, unchanged behaviour). Requires `pp_regen_every` (`ValueError` otherwise). See "Keeping the block structure across single-member calls" below. |
+| `pp_pos_offset`  | `int`, default `0`. Added to the position of each member before the block id is computed, `block_id = (pos + pp_pos_offset) // pp_regen_every`; set it to the **global** index of the call's first model. No effect when `pp_regen_every` is `None`. |
 
 ### Regenerating pilot points every *n*th member
 
@@ -296,6 +298,37 @@ mod_list = generate_gst_model_ensemble(
     pp_regen_every  = 10,
 )
 ```
+
+### Keeping the block structure across single-member calls
+
+`pp_regen_every` counts positions **within one call**. A caller that draws
+its models one at a time (`n_samples=1`, as `femtic_nss.py` does, one
+Kriging call per null-space shuttle) would therefore start a new block --
+a new layout -- with every call. To keep the blocks across calls, pass one
+dict as `pp_cache` to all calls of the series and the global index of the
+call's first model as `pp_pos_offset`:
+
+```python
+cache = {}                              # one dict for the whole series
+rng   = np.random.default_rng(42)       # one shared generator
+for i in range(n_models):
+    generate_gst_model_ensemble(
+        ...,
+        n_samples      = 1,
+        rng            = rng,
+        pp_regen_every = n_reset,       # layout reset every n_reset models
+        pp_cache       = cache,
+        pp_pos_offset  = i,             # global index of this model
+    )
+```
+
+With a shared `rng`, such a series reproduces a single `n_samples=n_models`
+call exactly (same locations, values and Kriged fields; checked on a
+synthetic mesh with a stand-in for gstools). Models must be requested in
+non-decreasing order; blocks older than the current one are dropped from
+the cache, so it stays small however many models are drawn. `pp_cache`
+without `pp_regen_every` raises `ValueError`. Defaults leave the behaviour
+unchanged.
 
 ### Reproducibility & the `pilot_points.npz` archive
 
@@ -643,7 +676,30 @@ If CG does not converge (`RuntimeWarning` from `sample_rto_prior` or
 
 ## Version / provenance
 
-Updated: 2026-10-21 (RTO prior perturbation corrected: `sample_rto_prior`, required `alpha`); 2026-10-17 (streaming skewness/kurtosis); 2026-10-16 (streaming mean/variance, histogram quantiles); 2026-04-27 (GST); 2026-04-11 (consolidation); 2026-04-02 (cleanup)
+Updated: 2026-10-23 (`pp_cache` / `pp_pos_offset` for `generate_gst_model_ensemble`); 2026-10-21 (RTO prior perturbation corrected: `sample_rto_prior`, required `alpha`); 2026-10-17 (streaming skewness/kurtosis); 2026-10-16 (streaming mean/variance, histogram quantiles); 2026-04-27 (GST); 2026-04-11 (consolidation); 2026-04-02 (cleanup)
+
+### Changelog (2026-10-23) -- pilot-point reset interval across single-member calls
+Claude Sonnet 5.5 (Anthropic). AI-generated; review before production use.
+
+- `generate_gst_model_ensemble` gained two optional parameters, `pp_cache`
+  (caller-owned dict) and `pp_pos_offset` (int, default 0). Reason:
+  `pp_regen_every` (2026-09-09) keys its block cache by position within one
+  call, so a caller drawing one model per call (`femtic_nss.py`) could not use
+  it -- every call opened a new block. With the same dict and the global
+  model index as offset, the block structure now survives across calls.
+- Defaults are unchanged. Checked against the previous `ensembles.py` with
+  the same seed: identical locations, values and fields for `pp_regen_every`
+  `None` and 3.
+- The cache keeps only the current block (older blocks are dropped when a new
+  one opens), so memory is O(1) in the number of models.
+- `pp_cache` without `pp_regen_every` raises `ValueError` rather than being
+  ignored silently.
+- Used by `femtic_nss.py` (new `GST_PP_N_RESET`, see its README).
+- `femtic_gst_prep.py` is unchanged (it already had `MOD_PP_REGEN_EVERY`).
+- Tested with a stand-in for gstools (inverse-distance weighting instead of
+  Kriging; gstools could not be installed in the test environment), so the
+  block logic, rng stream and cache handling are covered, the Kriging itself
+  is untouched and was not re-run.
 
 ### Changelog (2026-10-21) -- RTO prior perturbation corrected
 Claude Sonnet 5.5 (Anthropic). AI-generated; review before production use.

@@ -86,16 +86,16 @@ PLOT_NAME = WORK_DIR + "Misti_L-curve"
 PLOT_WHAT = "nrms"  # 'nrms' or 'misfit'
 PLOT_TITLE = r"Misti Volcano" #"| distcorr"
 
-FONTSIZE = 10
+FONTSIZE = 9
 #: Use log10 scale on the x-axis (misfit / nRMS).
 PLOT_LOG_X = False
 #: Use log10 scale on the y-axis (roughness).
 PLOT_LOG_Y = False
 
 #: x-axis limits [min, max]; set to None for matplotlib auto-scaling.
-PLOT_XLIM = [-1000., 50000.] # None   # e.g. [0.0, 1e6]
+PLOT_XLIM = None #[-1000., 50000.] # None   # e.g. [0.0, 1e6]
 #: y-axis limits [min, max]; set to None for matplotlib auto-scaling.
-PLOT_YLIM = [0.4, 1.5] # None   # e.g. [0.9, 5.0]
+PLOT_YLIM = None #[0.4, 1.5] # None   # e.g. [0.9, 5.0]
 
 #: Optional scaling factor for roughness (x-axis data divided by this value).
 #: Shown as "x10^n" appended to the axis label. Set to None or 1 to disable.

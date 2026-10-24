@@ -461,8 +461,9 @@ N_SAMPLES = 64
 # ENSEMBLE_NAME = "ubinas_rto_"
 
 # ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/misti/ensemble/"
-ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_rto_0/"
-ENSEMBLE_NAME = "annecy_rto_"
+
+ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_reset-err/"
+ENSEMBLE_NAME = "ann_rto_reset-err_"
 
 # TEMPLATES = ENSEMBLE_DIR + "templates/"
 TEMPLATES = ENSEMBLE_DIR + "/templates/"
@@ -508,7 +509,7 @@ if PERTURB_MOD:
     # There is deliberately no default: the former implicit alpha = 1
     # (MOD_MU / MOD_PDF were defined but never passed on) gave ensemble spreads
     # far too small.
-    MOD_ALPHA = None        # float > 0; or None to read it from MOD_ALPHA_CNV
+    MOD_ALPHA = 0.5 #None        # float > 0; or None to read it from MOD_ALPHA_CNV
     MOD_ALPHA_CNV = None    # femtic.cnv (file or its directory): Alpha of its LAST row
                             # is used if MOD_ALPHA is None, e.g. ENSEMBLE_DIR + "tmpl/femtic.cnv"
     # ["exp", L], ["gauss", L], ["matern", L, MatPars], ["femtic"], None
@@ -623,7 +624,7 @@ PLOT_MODEL = True #True
 
 if PLOT_DATA or PLOT_MODEL:
     PLOT_STR = ""
-    PLOT_DIR = ENSEMBLE_DIR + "/plots/"
+    PLOT_DIR = ENSEMBLE_DIR + "/results/"
     if PLOT_DIR is not None:
         print(" Plots written to: %s" % PLOT_DIR)
         if not os.path.isdir(PLOT_DIR):
@@ -841,8 +842,8 @@ if PLOT_DATA or PLOT_MODEL:
     #: Axis annotation font sizes for plot_ensemble_slices (independent of
     #: MOD_TICK_FONTSIZE/MOD_LABEL_FONTSIZE above -- plot_ensemble_slices'
     #: joint member x slice grid uses smaller defaults so more rows fit).
-    ENS_TICK_FONTSIZE  = 6
-    ENS_LABEL_FONTSIZE = 7
+    ENS_TICK_FONTSIZE  = 10
+    ENS_LABEL_FONTSIZE = 10
 
     # --- QC slice plot of perturbed initial models ---------------------------
     #: Set True to produce one slice figure per selected member.

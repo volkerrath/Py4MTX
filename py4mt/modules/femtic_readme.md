@@ -205,10 +205,67 @@ python femtic.py edi-to-observe SITE01.edi SITE02.edi \
 | `build_region_geometry()` | Volume-weighted centroid and total volume for each free region. |
 | `ellipsoid_mask()` | Boolean mask for points inside a rotated ellipsoid (ZYX or SDS convention). |
 | `brick_mask()` | Boolean mask for points inside a rotated rectangular prism. |
-| `read_site_position()` | Return (x_m, y_m) model-local position for a site from observe.dat. |
+| `read_site_position()` | Return (x_m, y_m) model-local position for a site from observe.dat (4-6 token station lines). |
 | `read_site_dat()`     | Parse a `mt_make_sitelist.py` CSV (name, lat, lon, elev, sitenum, easting, northing). |
 | `estimate_utm_origin()` | Estimate mesh-centre UTM coordinates from calibration sites or bounding-box midpoint. |
 | `extract_borehole_log()` | Sample ρ along a vertical borehole by point-in-element search. |
+
+---
+
+## observe.dat station-line layouts (OWNER_ELEMENT -1, dummy VTF)
+
+Since 2026-10-22 the observe.dat reader accepts the station lines FEMTIC
+uses when `control.dat` has `OWNER_ELEMENT -1` and/or `ELEC_FIELD -1`
+(manual v4.3, slides 36-45), including the dummy-VTF layout written by
+`femtic_add_dummy_vtf.py` (manual slides 55-58):
+
+```
+MT, PT :  ID  H-ID  [owner]  [E-type]  X_km  Y_km
+VTF    :  ID  H-ID  [owner]            X_km  Y_km
+```
+
+`owner`: 0 = downward, 1 = upward element. `E-type`: 0 = horizontal,
+1 = tangential electric field (not for VTF). A dummy VTF station has
+`nfreq = 0` and no data rows.
+
+| Tokens | Read as                                   |
+|--------|-------------------------------------------|
+| 4      | `ID H-ID X Y` (as before)                 |
+| 5      | `ID H-ID owner X Y`                       |
+| 6      | `ID H-ID owner E-type X Y` (MT, PT only)  |
+| 4, `H-ID` not an integer | legacy `name x_m y_m z_m` (written by `edi_list_to_observe_dat`) |
+
+A 5-token MT/PT line could also be `ID H-ID E-type X Y` (only
+`ELEC_FIELD -1`). It is read as owner, unless the first VTF station of the
+file has 4 tokens (then there is no owner column), or the caller says so.
+
+```python
+d = fem.read_observe_dat("observe.dat")                      # automatic
+d = fem.read_observe_dat("observe.dat", elec_column=True,    # 5 tokens = E-type only,
+                         owner_column=False)                 # no VTF block to tell
+site = d["blocks"][0]["sites"][0]
+site["header"]    # {'layout': 'femtic', 'name': '1', 'hid': 1001, 'owner': 0,
+                  #  'elec': None, 'x_km': -2.671, 'y_km': 19.713, ...}
+```
+
+- The keywords `site_header_layout` (`"auto"`, `"femtic"`, `"legacy"`),
+  `owner_column` and `elec_column` (`True`, `False`, `None` = detect) are
+  accepted by `read_observe_dat`, `modify_data`, `convert_observe_dat`,
+  `summarise_observe_dat` and `observe_to_site_viz_list`
+  (`read_site_position` takes the last two).
+- Station lines and `nfreq` lines are written back verbatim, so
+  `modify_data` (and therefore `ensembles.generate_data_ensemble`) keeps the
+  owner / E-type columns and the dummy stations.
+- `observe_to_site_viz_list` skips stations with 0 frequencies
+  (`skip_empty=True`, default) and adds `hid`, `owner`, `elec_type`, `x_km`,
+  `y_km` to every entry.
+- `summarise_observe_dat` reports `n_sites_empty` per block.
+- Not supported: the block keywords `APP_RES_AND_PHS` and `HTF`; the reader
+  stops with a message naming the block.
+- `modify_data_fcn` (legacy, single block type) only recognises 5- and
+  6-token station lines; use `modify_data` for files with a VTF block.
+
+Tests: `python -I femtic_observe_io_test.py` (22 cases).
 
 ---
 
@@ -291,8 +348,13 @@ them reusable across scripts without copying code.
 
 ### `read_site_position(observe_file, site_number)`
 
-Scans `observe.dat` for a site-header line matching *site_number* and returns
-`(x_m, y_m)` in model-local metres (converted from the km stored in the file).
+Scans `observe.dat` for a station line whose ID matches *site_number* and
+returns `(x_m, y_m)` in model-local metres (converted from the km stored in
+the file). Station lines may have an owner and/or E-type column
+(see "observe.dat station-line layouts"); the first match wins, so for an
+MT station and a dummy VTF station at the same place the MT line is used.
+Before 2026-10-22 a station line with an owner column returned the owner
+type as x.
 
 ### `read_site_dat(path, site_names=None)`
 
@@ -492,7 +554,7 @@ Optional for visualisation and export:
 
 ## Version / provenance
 
-Updated: 2026-09-11
+Updated: 2026-10-22
 
 ### Changelog (2026-06-22)
 - **v5 (anisotropic) resistivity-block format support** added throughout.
@@ -840,3 +902,49 @@ in `femtic_viz.py` was removed (that module wraps this one). New optional
 swap that `femtic_viz` applied unconditionally since 2026-05-31 is now off
 unless requested. Element lines require >= 5 columns (was 9). AI-generated
 code -- review before production use.
+
+### Changelog (2026-10-22) --- observe.dat station lines with owner / E-type columns, dummy VTF
+
+Problem: `read_observe_dat` stopped with `expected 4 tokens, got 5` on an
+observe.dat written for `OWNER_ELEMENT -1` (station line
+`ID H-ID owner X Y`, dummy VTF stations with 0 frequencies, as written by
+`femtic_add_dummy_vtf.py`).
+
+- `read_observe_dat` parses station lines of 4, 5 or 6 tokens with the new
+  helper `_parse_site_header_tokens` (columns per manual v4.3 slides 36-45).
+  New keywords `site_header_layout`, `owner_column`, `elec_column`
+  (automatic by default); parsed fields in `site["header"]`; the verbatim
+  line is still in `site["site_header_line"]`.
+- Zero-frequency (dummy) stations are accepted by the reader, writer,
+  `modify_data`, `convert_observe_dat` and `summarise_observe_dat`
+  (new `n_sites_empty`); `observe_to_site_viz_list` skips them by default.
+- Fixed (existing behaviour, not only for the new layout):
+  `_site_header_to_meta` read the tokens of a FEMTIC `ID H-ID X Y` line as
+  `name x y z`, so `xyz` held `[H-ID, X_km, Y_km]`. For FEMTIC lines it now
+  gives `xyz = [X*1000, Y*1000, nan]` and `elev_m = None`; the legacy
+  `name x y z` layout is unchanged. Nothing in `ensembles.py`,
+  `femtic_viz.py` or `femtic_rto_prep.py` uses `xyz` / `elev_m`.
+- Fixed: `write_observe_dat` warned "positive z" for every FEMTIC station
+  line with Y > 0 (4th token = Y). The check now applies to the legacy layout
+  only.
+- Fixed: `read_site_position` took tokens 3 and 4 as X and Y, so with an
+  owner column it returned the owner type as x. It now reads the layout.
+  (`femtic_rto_prep.py` uses it for the site position in the QC plots.)
+- Clear error for the block keywords `APP_RES_AND_PHS` and `HTF` (still not
+  supported by the reader).
+- `modify_data_fcn` (legacy): station-line detection widened to 4-6 tokens.
+- `femtic_viz._observe_to_site_list`: skips VTF/PT stations with 0
+  frequencies.
+- Unchanged: `ensembles.py`, `femtic_rto_prep.py`. `generate_data_ensemble`
+  goes through `modify_data`, which keeps the station lines.
+- Open point: `edi_list_to_observe_dat` writes the legacy `name x y z`
+  station line, which does not match the manual's `ID H-ID X Y`. The reader
+  accepts both; check whether FEMTIC itself accepts files written by that
+  function.
+- The E-type column is placed after the owner column, following manual
+  slide 36. The manual examples for the dummy-VTF case (slides 56, 58) show
+  only the owner column.
+
+Tests: `femtic_observe_io_test.py`, 22 cases, all pass (they use the new
+features, so none passes on the previous `femtic.py`). AI-generated (Claude Sonnet 5.5, Anthropic); review
+before production use.
