@@ -367,7 +367,9 @@ import scipy.sparse.linalg
 
 from numpy.random import Generator, default_rng
 from scipy.sparse import issparse, eye
-from scipy.sparse.linalg import LinearOperator, cg, eigsh, eigh, bicgstab, spilu, splu
+from scipy.sparse.linalg import LinearOperator, cg, eigsh
+from scipy.sparse.linalg import bicgstab, spilu, splu
+from numpy.linalg import eigh
 
 # Optional but kept for compatibility with earlier versions
 import joblib  # noqa: F401

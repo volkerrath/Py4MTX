@@ -1,23 +1,35 @@
 #!/usr/bin/env python3
-"""summarize_model_cells.py
+"""femtic_summarize_model_cells.py
 
-Report the Jacobian parameter dimension for one or more FEMTIC inversion
-iterations, combining resistivity and distortion unknowns.
+Report the Jacobian parameter dimension and the physical size of the model
+for one or more FEMTIC inversion iterations, combining resistivity and
+distortion unknowns.
 
 For each iteration the script reads:
     resistivity_block_iterXX.dat  -- one rho value per free region
     distortion_iterXX.dat         -- four C-matrix values per free site
+    mesh.dat                      -- node coordinates, for the model size
+                                     (read once per directory; optional)
 
 and prints:
-    n_rho        free resistivity regions   (flag != 1, excl. air/ocean)
-    n_distortion free distortion parameters (4 x sites with flag == 0)
-    n_total      n_rho + n_distortion       -> Jacobian column count
+    n_rho         free resistivity regions   (flag != 1, excl. air/ocean)
+    n_distortion  free distortion parameters (4 x sites with flag == 0)
+    n_total       n_rho + n_distortion       -> Jacobian column count
+    model size    x, y, z range of the mesh, e.g. x = [-100, 100] km
 
 Usage
 -----
-    python summarize_model_cells.py /path/to/run/
-    python summarize_model_cells.py resistivity_block_iter*.dat
-    python summarize_model_cells.py        # current directory
+Edit the USER SECTION below, or pass paths on the command line (they
+replace PATHS):
+
+    python femtic_summarize_model_cells.py /path/to/run/
+    python femtic_summarize_model_cells.py resistivity_block_iter*.dat
+    python femtic_summarize_model_cells.py        # uses PATHS
+
+The Py4MTX environment must be set: PY4MTX_ROOT and PY4MTX_DATA are read
+from the environment, and <PY4MTX_ROOT>/py4mt/modules/ and
+<PY4MTX_ROOT>/py4mt/scripts/ are put on sys.path (version.py and util.py
+supply the title line printed at start-up).
 
 AI-generated code -- author: Claude, Anthropic.
 Date generated: 2026-06-12.
@@ -30,21 +42,86 @@ Provenance:
                 CLI argument parsing: writes the resolved parameters,
                 script path, and run date/time via a self-contained
                 _write_param_summary() helper (stdlib only).
+    2026-10-24  Claude Sonnet 5.5 (Anthropic)
+                Added the physical model size (x, y, z range of the mesh
+                nodes, in km by default) to the per-iteration summary,
+                read from mesh.dat by the new parse_mesh_extent() (stdlib
+                only, one read per directory). Added a USER SECTION with
+                all user parameters in capitals (PATHS, MESH_FILE,
+                SIZE_UNIT, SIZE_DECIMALS, OCEAN); the ocean override that
+                was only a function keyword is now reachable from there.
+                The parameter summary file now records all of them.
+    2026-10-24  Claude Sonnet 5.5 (Anthropic)
+                Added the usual Py4MTX header: PY4MTX_DATA / PY4MTX_ROOT
+                from the environment, py4mt/modules and py4mt/scripts put
+                on sys.path, version/util title line. The parsing code
+                itself is unchanged and still uses the standard library
+                only; femtic.py is not imported.
 """
 from __future__ import annotations
 
+import inspect
+import math
 import os
 import re
 import sys
 from pathlib import Path
 
+# ---------------------------------------------------------------------------
+# Py4MTX-specific settings and imports
+# ---------------------------------------------------------------------------
+PY4MTX_DATA = os.environ["PY4MTX_DATA"]
+PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
+
+mypath = [PY4MTX_ROOT + "/py4mt/modules/", PY4MTX_ROOT + "/py4mt/scripts/"]
+for pth in mypath:
+    if pth not in sys.path:
+        sys.path.insert(0, pth)
+
+from version import versionstrg
+import util as utl
+
+version, _ = versionstrg()
+fname = inspect.getfile(inspect.currentframe())
+titstrng = utl.print_title(version=version, fname=fname, out=False)
+print(titstrng + "\n\n")
+
+
+# ===========================================================================
+# USER SECTION -- edit here; every user parameter is in CAPITALS
+# ===========================================================================
+
+# Directories and/or files to scan. Command-line arguments, if given,
+# replace this list.
+PATHS = ["."]
+
+# Mesh file read for the model size. Looked up in the directory of each
+# resistivity_block file (an absolute path is used as it is). None = do not
+# print the model-size lines.
+MESH_FILE = "mesh.dat"
+
+# Unit of the model-size lines, "km" or "m". Mesh coordinates are taken
+# to be in metres (FEMTIC convention).
+SIZE_UNIT = "km"
+
+# Decimals of the model-size values (trailing zeros are dropped).
+SIZE_DECIMALS = 3
+
+# Region 1 as ocean: None = infer (flag == 1 and rho <= 1 Ohm.m),
+# True = ocean, False = no ocean.
+OCEAN = None
+
+# ===========================================================================
+# END OF USER SECTION
+# ===========================================================================
+
 
 def _write_param_summary(fname: str, params: dict) -> str:
-    """Write a Markdown summary of this script's CLI parameters.
+    """Write a Markdown summary of this script's user parameters.
 
     Self-contained (stdlib only). Writes
     ``<script_dir>/<script_stem>_summary.md`` with the script path, run
-    date/time, and the resolved CLI arguments.
+    date/time, and the resolved user parameters.
     """
     from datetime import datetime
 
@@ -148,6 +225,141 @@ def parse_distortion(path: Path) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Mesh parser (model size)
+# ---------------------------------------------------------------------------
+
+def _is_number(tok: str) -> bool:
+    try:
+        float(tok)
+    except ValueError:
+        return False
+    return True
+
+
+def _next_nonblank(fh):
+    """Return the next non-blank line of the open file, or None at EOF."""
+    for line in fh:
+        if line.strip():
+            return line
+    return None
+
+
+def parse_mesh_extent(path: Path) -> dict:
+    """Bounding box of the node coordinates in a FEMTIC ``mesh.dat``.
+
+    Layout assumed: an optional mesh-type line (``TETRA``, ``HEXA``, ...),
+    a line whose first token is the number of nodes, then one line
+    ``id  x  y  z`` per node (metres, z positive down). Everything after
+    the node block (elements) is not read.
+
+    Returns a dict with ``mesh_type`` (str or None), ``nnode`` (int),
+    ``min`` and ``max`` (3-tuples x, y, z in the units of the file).
+    Raises ValueError if the file does not follow this layout.
+    """
+    with path.open("r", encoding="utf-8", errors="replace") as fh:
+        first = _next_nonblank(fh)
+        if first is None:
+            raise ValueError("empty mesh file")
+        toks = first.split()
+        mesh_type = None
+        if not _is_number(toks[0]):
+            mesh_type = toks[0].upper()
+            second = _next_nonblank(fh)
+            if second is None:
+                raise ValueError(f"no node count after mesh type {mesh_type!r}")
+            toks = second.split()
+        try:
+            nnode = int(toks[0])
+        except ValueError:
+            raise ValueError(f"cannot read the node count from {toks!r}") from None
+        if nnode <= 0:
+            raise ValueError(f"node count {nnode} is not positive")
+
+        xmin = ymin = zmin = math.inf
+        xmax = ymax = zmax = -math.inf
+        n = 0
+        while n < nnode:
+            line = fh.readline()
+            if not line:
+                raise ValueError(f"end of file after {n} of {nnode} nodes")
+            p = line.split()
+            if not p:
+                continue
+            if len(p) < 4:
+                raise ValueError(f"bad node line {line.strip()!r}")
+            try:
+                x, y, z = float(p[1]), float(p[2]), float(p[3])
+            except ValueError:
+                raise ValueError(f"bad node line {line.strip()!r}") from None
+            if x < xmin: xmin = x
+            if x > xmax: xmax = x
+            if y < ymin: ymin = y
+            if y > ymax: ymax = y
+            if z < zmin: zmin = z
+            if z > zmax: zmax = z
+            n += 1
+
+    return {
+        "mesh_type": mesh_type,
+        "nnode":     nnode,
+        "min":       (xmin, ymin, zmin),
+        "max":       (xmax, ymax, zmax),
+    }
+
+
+_MESH_CACHE: dict = {}
+
+
+def get_mesh_extent(rho_path: Path):
+    """Return ``(extent, message)`` for the mesh next to *rho_path*.
+
+    ``extent`` is the dict of :func:`parse_mesh_extent` or None. ``message``
+    says why it is None (file missing / unreadable); it is None as well
+    when MESH_FILE is None (model-size lines switched off). The mesh is
+    read once per file and cached.
+    """
+    if MESH_FILE is None:
+        return None, None
+    mesh_path = rho_path.parent / MESH_FILE
+    key = str(mesh_path.resolve())
+    if key not in _MESH_CACHE:
+        if not mesh_path.is_file():
+            _MESH_CACHE[key] = (None, f"{MESH_FILE} not found in {rho_path.parent}")
+        else:
+            try:
+                _MESH_CACHE[key] = (parse_mesh_extent(mesh_path), None)
+            except Exception as exc:
+                _MESH_CACHE[key] = (None, f"{mesh_path.name}: {exc}")
+    return _MESH_CACHE[key]
+
+
+def _fmt_num(v: float, decimals: int) -> str:
+    s = f"{v:.{decimals}f}"
+    if "." in s:
+        s = s.rstrip("0").rstrip(".")
+    if s in ("", "-0"):
+        s = "0"
+    return s
+
+
+def size_lines(extent: dict, unit: str = "km", decimals: int = 3) -> list[str]:
+    """Format the model size as three lines ``x = [lo, hi] unit (size ...)``."""
+    scale = 1.0e-3 if unit == "km" else 1.0
+    rows = [
+        (name, lo * scale, hi * scale)
+        for name, lo, hi in zip("xyz", extent["min"], extent["max"])
+    ]
+    w = max(len(_fmt_num(v, decimals)) for r in rows for v in r[1:])
+    lines = []
+    for name, lo, hi in rows:
+        lines.append(
+            f"{name} = [{_fmt_num(lo, decimals):>{w}}, {_fmt_num(hi, decimals):>{w}}] "
+            f"{unit}   (size {_fmt_num(hi - lo, decimals)} {unit})"
+        )
+    return lines
+
+
+# ---------------------------------------------------------------------------
 # Pair up files by iteration number
 # ---------------------------------------------------------------------------
 
@@ -186,7 +398,8 @@ def collect_pairs(args: list[str]) -> list[tuple[int, Path, Path | None]]:
 # Output
 # ---------------------------------------------------------------------------
 
-def print_summary(it: int, rho: dict, dist: dict | None) -> None:
+def print_summary(it: int, rho: dict, dist: dict | None,
+                  mesh: dict | None = None, mesh_msg: str | None = None) -> None:
     n_dist  = dist["n_distortion"] if dist else 0
     n_total = rho["n_rho"] + n_dist
 
@@ -207,6 +420,15 @@ def print_summary(it: int, rho: dict, dist: dict | None) -> None:
     print(f"  Total elements  : {rho['nelem']:>10,d}  (tetrahedra)")
     print(f"  Total regions   : {rho['nreg']:>10,d}  (resistivity blocks)")
     print(f"  Ocean inferred  : {ocean_str}")
+    if mesh is not None:
+        lines = size_lines(mesh, SIZE_UNIT, SIZE_DECIMALS)
+        print(f"  Model size      : {lines[0]}")
+        for ln in lines[1:]:
+            print(f"                    {ln}")
+        print(f"                    (mesh bounding box incl. air, {mesh['nnode']:,d} nodes;"
+              f" z positive down)")
+    elif mesh_msg:
+        print(f"  Model size      : n/a ({mesh_msg})")
     print(SEP)
     print(row("Air regions",          rho["n_air"]))
     print(row("Ocean regions",        rho["n_ocean"]))
@@ -228,9 +450,19 @@ def print_summary(it: int, rho: dict, dist: dict | None) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    args = sys.argv[1:] or ["."]
+    if SIZE_UNIT not in ("km", "m"):
+        print(f"[error] SIZE_UNIT must be 'km' or 'm', got {SIZE_UNIT!r}", file=sys.stderr)
+        sys.exit(2)
 
-    _write_param_summary(__file__, {"paths": args})
+    args = sys.argv[1:] or list(PATHS)
+
+    _write_param_summary(__file__, {
+        "PATHS":         args,
+        "MESH_FILE":     MESH_FILE,
+        "SIZE_UNIT":     SIZE_UNIT,
+        "SIZE_DECIMALS": SIZE_DECIMALS,
+        "OCEAN":         OCEAN,
+    })
 
     pairs = collect_pairs(args)
 
@@ -240,9 +472,10 @@ def main() -> None:
 
     for it, rho_path, dist_path in pairs:
         try:
-            rho  = parse_resistivity_block(rho_path)
+            rho  = parse_resistivity_block(rho_path, ocean=OCEAN)
             dist = parse_distortion(dist_path) if dist_path else None
-            print_summary(it, rho, dist)
+            mesh, mesh_msg = get_mesh_extent(rho_path)
+            print_summary(it, rho, dist, mesh, mesh_msg)
         except Exception as exc:
             print(f"[error] iter {it}: {exc}", file=sys.stderr)
 

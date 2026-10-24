@@ -365,7 +365,7 @@ import femtic as fem
 import ensembles as ens
 import femtic_viz as fviz
 
-from util import stop
+# from util import stop
 
 
 def _km_to_m(val):
@@ -462,8 +462,10 @@ N_SAMPLES = 64
 
 # ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/misti/ensemble/"
 
-ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_reset-err/"
-ENSEMBLE_NAME = "ann_rto_reset-err_"
+# ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_reset-err/"
+# ENSEMBLE_NAME = "ann_rto_reset-err_"
+ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_orig-err/"
+ENSEMBLE_NAME = "ann_rto_orig-err_"
 
 # TEMPLATES = ENSEMBLE_DIR + "templates/"
 TEMPLATES = ENSEMBLE_DIR + "/templates/"
@@ -575,7 +577,7 @@ if PERTURB_DAT:
     DAT_METHOD = "add"
     DAT_PDF = ["normal", 0., 1.]
 
-RESET_ERRORS = True
+RESET_ERRORS = False
 if RESET_ERRORS:
     # MT/VTF columns are interleaved (Re, Im) pairs per complex component
     # (Zxx,Zxy,Zyx,Zyy / Tzx,Tzy). Each entry below is duplicated (not
