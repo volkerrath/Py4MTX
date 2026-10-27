@@ -358,7 +358,7 @@ fviz.plot_model_slices(
 | `xlim`, `ylim`, `zlim` | `None` | Global axis limits (model-local m) |
 | `ocean_color` | `"lightgrey"` | Flat colour for ocean polygons; `None` = colormap |
 | `ocean_value` | `0.25` | Ω·m sentinel for ocean cells |
-| `air_color` | `"whitesmoke"` | Flat colour for air polygons; `None` = blank gaps |
+| `air_color` | `"white"` | Flat colour for air polygons; `None` = blank gaps |
 | `air_bgcolor` | `None` | Axes facecolor for air region |
 | `site_xys` | `None` | `[(label, x_m, y_m, elev_m), …]` in model-local m |
 | `obs_coords_only` | `False` | Sites from `observe.dat` only (suppresses UTM/latlon display) |
@@ -377,7 +377,14 @@ fviz.plot_model_slices(
 | `plot_file` | `None` | Save path; `None` = `plt.show()` |
 | `dpi` | `200` | Saved-figure DPI |
 | `show` | `False` | If `True`, also call `plt.show()` after saving (when `plot_file` is given) — displays the figure inline in addition to writing it to disk. Useful in interactive environments (Spyder, Jupyter). No effect when `plot_file=None` (already shown either way). |
-| `equal_aspect` | `True` | Equal aspect on map/ns/ew panels |
+| `equal_aspect` | `True` | Legacy equal-aspect switch (map/ns/ew panels, model/utm display only; has no effect for `display_coords="latlon"`). With `vert_exag` set it only controls the **map** panels (1:1 when `True`) |
+| `vert_exag` | `None` | Vertical exaggeration of the section panels (ns, ew, vertical plane), computed from the real axis units, so it also holds for `display_coords="latlon"`: `1.0` = equal axes, `2.0` = vertical scale twice the horizontal, `0.5` = compressed. `None` = legacy behaviour (`equal_aspect` alone, output unchanged). Must be > 0. See "Equal axes and vertical exaggeration" |
+| `reference_file` | `None` | Reference model (block file on the same mesh as `model_file`) drawn as iso-resistivity lines on every slice panel. See "Reference model" |
+| `reference_levels` | `None` | Contour levels, log10(Ω·m); `None` = integer decades strictly inside the colour range of the figure |
+| `reference_style` | `None` | `LineCollection` keywords (default `colors="k"`, `linewidths=0.8`, `zorder=6`); a `label` key overrides `reference_label` |
+| `reference_label` | `"reference model"` | Legend entry (lower right of each panel); `None` = none |
+| `reference_ocean_value` | `None` | Ω·m of the reference's ocean cells (region 1) for masking; `None` = `ocean_value` |
+| `reference_air_log10_thresh` | `None` | log10 value above which reference cells count as air; `None` = `air_log10_thresh` |
 | `depth_km` | `False` | Depth axis in km on curtain/plane panels |
 | `horiz_km` | `False` | Horizontal axis in km in `"model"` mode |
 | `nrows`, `ncols` | `None` | Grid shape; surplus cells hidden |
@@ -402,6 +409,63 @@ fviz.plot_model_slices(
 Per-panel `invert_x` key in each slice dict (applies to `ns`, `ew`, `plane`
 kinds only): when `True`, calls `ax.invert_xaxis()` after rendering so the
 horizontal axis reads right-to-left.  Default `False`; no effect on `map` panels.
+
+### Equal axes and vertical exaggeration
+
+`equal_aspect=True` is the old switch and only acts when the display axes are
+in the same unit as depth (`display_coords` `"model"`/`"utm"`); with
+`display_coords="latlon"` the horizontal axis carries degree labels, so it
+leaves the panels free. `vert_exag` replaces that guess by the real thing:
+
+```python
+fviz.plot_model_slices(..., display_coords="latlon", equal_aspect=True,
+                       vert_exag=1.0)    # true scale, also in latlon display
+fviz.plot_model_slices(..., vert_exag=2.0)   # vertical scale 2x the horizontal
+```
+
+For a section panel the aspect (length of one y data unit / length of one x
+data unit) is set to `(h_sc / dz_sc) * vert_exag`, where `h_sc` and `dz_sc`
+are the scales of the two axes (km/m flags; in latlon display the
+horizontal axis is plotted in UTM metres under degree labels). Map panels
+stay 1:1 while `equal_aspect=True`, free otherwise. The auto panel width is
+computed from the same real extents (depth span times `vert_exag`), so the
+boxes come out in the right proportion; give `xlim` / `ylim` / `zlim` (or the
+slice's own `xlim`, `zlim`) so that extents exist. For the vertical `"plane"`
+panel the along-strike extent is the spec `xlim`, else the mesh diagonal.
+`vert_exag=None` (default) leaves all figures exactly as before (checked
+pixel-identical for `display_coords` `"model"` and `"latlon"`).
+
+### Reference model
+
+`reference_file` overlays a second model as iso-resistivity **lines** on every
+slice panel, e.g. a deterministic inversion over an ensemble member, or the
+starting model over the best-fit model. The block file must be on the same
+mesh as `model_file` (else `ValueError` naming both element counts); its
+region structure may differ.
+
+The lines are exact, not interpolated: every element is given a class (the
+number of `reference_levels` at or below its log10 resistivity; air, ocean and
+non-positive cells are ignored), and the segments drawn are the polygon edges
+shared by two slice polygons of different class. They therefore follow the
+mesh, work on every panel type (map, ns, ew, vertical and dipping plane) and
+display coordinate system, and are invariant to scale and offset of the
+display axes. Default levels are the integer decades strictly inside the
+colour range; pass `reference_levels=[1.0, 2.0, 3.0]` (log10 Ω·m) for explicit
+ones. A panel where no cell crosses a level gets no lines (and no legend
+entry).
+
+```python
+fviz.plot_model_slices(
+    ..., model_file="member_best.dat",
+    reference_file    = "deterministic_iter20.dat",
+    reference_levels  = [1.0, 2.0, 3.0],
+    reference_style   = dict(colors="k", linewidths=0.8, linestyles="--"),
+    reference_label   = "deterministic model",
+)
+```
+
+For `plot_borehole_logs` the same option draws the reference as a dashed
+profile per borehole (below).
 
 ### Embedded borehole columns
 
@@ -505,6 +569,13 @@ position formats the built-in logic cannot handle.
 | `clim` | `None` | x-axis limits `[rho_min, rho_max]` in Ω·m; `None` = auto |
 | `borehole_style` | `None` | Baseline Matplotlib line kwargs; per-spec keys override |
 | `shared` | `True` | `True` = all traces on one axes; `False` = one panel each |
+| `markers` | `None` | Free annotations on the depth axis (dicts with `depth`, optional `rho`, `text`, `borehole`, ...) |
+| `legend_fontsize` | `9` | Legend (shared mode) / panel-title (per-panel mode) size |
+| `tick_fontsize`, `label_fontsize` | `None` | Tick / label sizes; `None` = `legend_fontsize - 2` (at least 6) / `legend_fontsize` |
+| `figure_title` | `None` | Suptitle; `None` = basename of `model_file` |
+| `reference_file` | `None` | Reference block file (same mesh). Sampled at every borehole exactly like the model (same depths, same air / ocean handling) and drawn as a **dashed line in the colour of that borehole's own trace** (1.4 x line width, on top). `None` = none |
+| `reference_style` | `None` | `Line2D` overrides of the reference traces; a `color` given here replaces the pairing with the borehole colour |
+| `reference_label` | `"reference model"` | Legend text; `None` = no entry. Shared mode: one extra legend entry for the dashed style; per-panel mode: each panel gets a small legend "model" / reference |
 | `npz_file` | `None` | NPZ export path; `None` = auto (same stem as `plot_file`, `.npz`); `False` = skip |
 | `plot_file` | `None` | Save path for figure; `None` = `plt.show()` |
 | `dpi` | `200` | Saved-figure DPI |
@@ -518,6 +589,7 @@ The NPZ file contains:
 | `header` | scalar str | JSON metadata block |
 | `depth_<name>` | `(n_levels,)` | Depth samples [m, z positive-down] |
 | `rho_<name>` | `(n_levels,)` | Resistivity [Ω·m]; `NaN` where outside mesh or air |
+| `reference_rho_<name>` | `(n_levels,)` | Reference-model resistivity at the same levels; only with `reference_file` (header gets `reference_file` and per-borehole `reference_rho_key`) |
 
 `<name>` is the borehole `"name"` key with spaces replaced by underscores.
 
@@ -790,3 +862,4 @@ Author: Volker Rath (DIAS)
 | 2026-10-07 | Claude Sonnet 5.5 (Anthropic) | `plot_model_slices`: `"plane"` panels with `dip = 90` (vertical sections) rewritten. The legacy basis put elevation on the horizontal axis and along-strike distance on the vertical axis for vertical planes. They now follow the `"ns"`/`"ew"` convention: horizontal = along-strike distance from `point`, always in model km (independent of `display_coords`), vertical = depth (positive-down tick labels, `zlim` honoured), optional spec-level `xlim` = along-strike range in m relative to `point`, compass corner labels (e.g. `SW`/`NE`), equal aspect, correctly projected site markers. Spec: `dict(kind="plane", point=[x, y, 0.], strike=45., dip=90., invert_x=False, xlim=None)`; for `dip = 90` `strike` is a geographic azimuth clockwise from north (45 = SW left, NE right). Dipping planes (`dip != 90`) are unchanged. Verified on a synthetic mesh with a conductor 4.2 km NE of the origin (appears on the NE side of the 45 deg section, absent from the 135 deg section). |
 | 2026-10-11 | Claude Sonnet 5.5 (Anthropic) | `read_femtic_mesh()` removed from `femtic_viz.py`; the only mesh reader is now `femtic.read_femtic_mesh(path, swap_xy=None) -> (nodes, conn)`. Internally `femtic_viz` wraps it in a private `_load_mesh()` returning a `FemticMesh`. The x/y column swap added 2026-05-31 is no longer applied by default; it is an option (`swap_xy=True`, or set `femtic.MESH_SWAP_XY = True` once for a whole run) for meshes stored as x = northing, y = easting. Outside callers of `fviz.read_femtic_mesh(path)` must switch to `nodes, conn = fem.read_femtic_mesh(path)`. |
 | 2026-10-22 | Claude Sonnet 5.5 (Anthropic) | `_observe_to_site_list`: VTF / PT stations with 0 frequencies (dummy VTF stations of the `OWNER_ELEMENT -1` layout) are skipped, since they hold no data. Reading of the 4-6 token station lines is in `femtic.read_observe_dat` (see `femtic_readme.md`, 2026-10-22). No other change. |
+| 2026-10-27 | Claude Sonnet 5.5 (Anthropic) | `plot_model_slices`: new `vert_exag` (vertical exaggeration of ns / ew / vertical-plane panels from the real axis units, so it also works for `display_coords="latlon"`, where the legacy `equal_aspect` has no effect; `None` = unchanged, defaults checked pixel-identical) and optional reference model `reference_file` / `reference_levels` / `reference_style` / `reference_label` / `reference_ocean_value` / `reference_air_log10_thresh` (exact iso-resistivity lines from shared polygon edges between cells of different level class; new helper `_class_boundary_segments`; `ValueError` for a reference on another mesh). `plot_borehole_logs`: new `reference_file` / `reference_style` / `reference_label` (dashed twin profile per borehole, `reference_rho_<name>` in the NPZ). **Fix** in `plot_borehole_logs`: the depth axis was inverted once per borehole, so it pointed *upward* for an even number of boreholes -- now inverted only if not already. Doc fix: `air_color` default is `"white"`. AI-generated; review before production use. |

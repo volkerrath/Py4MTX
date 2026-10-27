@@ -36,8 +36,22 @@ sub-directories and filtering on `femtic.cnv` / `NRMS_MAX` — and produces:
    files.
 
 2. Optionally, a borehole resistivity log figure (point-in-element sampling,
-   identical to step (7) in `femtic_mod_plot.py`), sampled from the first
-   converged member's best-fit model.
+   drawn by `fviz.plot_borehole_logs()`: resistivity on a log axis, depth in
+   km pointing down), sampled from the first converged member's best-fit
+   model.
+
+3. Optionally, a **reference model** (`REF_FILE`) shown on both kinds of
+   figure: iso-resistivity lines on the slice panels, a dashed profile per
+   borehole. See "Reference model" below.
+
+4. Optionally (**`RESULTS_NPZ`**), the same kind of figures from the results
+   `.npz` of `femtic_ens_post.py` instead of the member directories -- "NPZ
+   mode", see "Working from the results .npz" below.
+
+The slice figures can be made publication-ready with **equal axes or a
+defined vertical exaggeration** (`PLOT_EQUAL_ASPECT`, `PLOT_VERT_EXAG`), and
+with the font, tick-label, title and figure-size options of
+`femtic_ens_post.py` (`PLOT_TICK_FONTSIZE`, ...). See "Display and layout".
 
 > **Removed:** the former joint multi-row ensemble figure
 > (`PLOT_JOINT=True`, via `fviz.plot_ensemble_slices()`) has been removed
@@ -98,6 +112,55 @@ borehole PDF / interactive window
 
 nRMS and the iteration number are read from each member's `femtic.cnv` via `fem.read_cnv()`, which parses column positions from the file's own header row (case-insensitive substring match) — no FEMTIC-version setting needed.
 
+### Working from the results .npz (NPZ mode)
+
+With `RESULTS_NPZ` set to the results file written by `femtic_ens_post.py`
+(`<RESULTS_DIR>/<ENSEMBLE_PREFIX.upper()>_results.npz`; the file its
+`PLOT_ONLY` mode reads) the script does **not** scan the member directories
+and does not read any cnv or member block file. Every figure is a block file
+written from a vector stored in the file (`femtic.insert_model`, template =
+the best member's region structure) and drawn by the same code as in the
+normal mode, so slices, layout, `PLOT_*` styling, `PLOT_VERT_EXAG` /
+`PLOT_EQUAL_ASPECT`, fonts, sites and the reference model act unchanged.
+
+| Variable | Default | Description |
+|---|---|---|
+| `RESULTS_NPZ` | `None` | `None` = normal mode (scan `ENSEMBLE_DIR`). Path = NPZ mode. |
+| `RESULTS_PREFIX` | `None` | Key prefix in the file (`ens_post`'s `ENSEMBLE_PREFIX`); `None` = the only ensemble in the file. |
+| `RESULTS_TEMPLATE` | `None` | Block file for header / regions / flags. `None` = the best member's file recorded in the `.npz` (must still exist); otherwise any block file of this ensemble (same mesh and free regions, e.g. the starting model). Only its structure is used. |
+| `RESULTS_OUT_DIR` | `None` | Output directory; `None` = `ens_plot/` next to the results file. Holds `<label>/best.<ext>`, `<prefix>_<key>.<ext>`, `blocks/` and the pdf catalog. |
+| `RESULTS_MEMBERS` | `"best"` | Best-fit figures of: `"none"`, `"best"` (lowest nRMS), `"all"`, or a list of 0-based indices and/or labels, e.g. `[0, 7, "ann_03"]`. Labels = `ENS_LABELS` or the member directory names recorded in the file. Figures carry the `nRMS = ...` annotation as in the normal mode. |
+| `RESULTS_STATS` | `["avg","med","err","mad"]` | Statistic figures, by key: `avg`, `med`, `var`, `err`, `mad`, `p<level>` (e.g. `p50`, `p2_3`), `qdiff_<lo>_<hi>`, `var_boot`, `err_boot`, `sens_<kind>`, `simrc_coef`, `simrc_corr` -- whatever the file holds; keys without data are skipped with a message. |
+| `RESULTS_STATS_STYLE` | spread stats `clim=[0, 0.3]` | Per-key `dict(cmap=, clim=, label=)`. Value statistics (`avg`, `med`, `p*`) default to `PLOT_CMAP_BEST` / `PLOT_CLIM_BEST` / `"log10(rho / Ohm*m)"`; all others to `PLOT_CMAP_BEST`, auto limits, the key as label. Sensitivity and SimRC statistics are log10 (the `cv_*` ones linear). |
+| `RESULTS_BOREHOLE_MODEL` | `"best"` | Model of the borehole figure (`PLOT_BOREHOLE`): `"best"`, a member index, `"avg"`, `"med"` or `"p<level>"`. Validated before any figure is made. (Normal mode: first converged member.) |
+
+Notes:
+
+- **Not available in NPZ mode:** the perturbed-prior (`iter0`) figures -- the
+  file holds the inverted models only (a note is printed). `PER_MEMBER_PLOT`
+  does not apply; `PER_MEMBER_PDF_CATALOG_MODE` `"best"` / `"both"` collects the
+  member figures drawn here into `<RESULTS_OUT_DIR>/<name of PER_MEMBER_CATALOG_FILE>`.
+  `NRMS_MAX` is not applied (the file holds the accepted members only).
+- **Reference model:** `REF_SLICES` `"slices"` / `"best"` put it on the member
+  figures, `"slices"` also on the statistic figures; on those the lines are drawn
+  at resistivity decades of `PLOT_CLIM_BEST`, not at decades of the plotted
+  statistic.
+- **Air / ocean:** the block files of this mode mark air and ocean by exact
+  sentinel values, so a *free* region with a resistivity near `OCEAN_RHO` is
+  drawn with its colour. In the normal mode `fviz.plot_model_slices` treats
+  every cell within 0.05 (log10) of `OCEAN_RHO` as ocean, so such cells show up
+  grey there. Otherwise the member figures of both modes are the same.
+- Still needed: `MESH_FILE`, `SITE_DAT` / `OBSERVE_FILE` (origin, sites),
+  `REF_FILE` if used, and the template.
+
+```python
+RESULTS_NPZ = "/data/ens/results/ANNECY_RTO_results.npz"
+RESULTS_MEMBERS = "best"
+RESULTS_STATS = ["avg", "err", "sens_mean_an"]
+PLOT_VERT_EXAG = 2.0
+PLOT_FORMAT = ["pdf"]
+```
+
 ### Per-member plots (default)
 | Variable | Description |
 |---|---|
@@ -124,8 +187,15 @@ nRMS and the iteration number are read from each member's `femtic.cnv` via `fem.
 | `DISPLAY_COORDS` | `"model"` / `"utm"` / `"latlon"` |
 | `DEPTH_KM` | `True` → depth axis in km |
 | `HORIZ_KM` | `True` → horizontal axes in km |
-| `PLOT_EQUAL_ASPECT` | Equal aspect ratio on all panels |
+| `PLOT_EQUAL_ASPECT` | `True`: map panels 1:1 and section panels (ns / ew / plane) at true scale (vertical exaggeration 1) — for every `DISPLAY_COORDS`, including `"latlon"`, because the aspect is computed from the real axis units, not from the tick labels. `False`: free aspect (each panel fills its box) |
+| `PLOT_VERT_EXAG` | `None` (default) = decided by `PLOT_EQUAL_ASPECT` (`True` → 1.0, `False` → free). A number VE > 0 fixes the section aspect exactly, whatever `PLOT_EQUAL_ASPECT` says: 1.0 = equal axes, 2.0 = vertical scale twice the horizontal, 0.5 = compressed. Map panels are not affected. Set `PLOT_XLIM/YLIM/ZLIM` (or the slice's own `xlim`/`zlim`) so the panel width follows from real extents |
 | `PLOT_PANEL_HEIGHT` | Panel height in cm |
+| `PLOT_FIGSIZE` | `[width, height]` of the whole figure in cm; `None` = from the panel sizes. Overrides `PLOT_PANEL_HEIGHT` / `PLOT_PANEL_WIDTH` when set |
+| `PLOT_TICK_FONTSIZE` | Tick-label size in points, also colourbar ticks (default 7 = fviz's default) |
+| `PLOT_LABEL_FONTSIZE` | Axis-label / panel-title / colourbar-label size (default 8) |
+| `PLOT_TITLE_FONTSIZE` | Figure-title size; `None` = `PLOT_LABEL_FONTSIZE + 6` |
+| `PLOT_TICK_DECIMALS` | Decimal digits of the axis tick labels (depth, easting/northing and lat/lon alike); `None` = fviz's own formatting |
+| `PLOT_AIR_COLOR` | Colour of air cells / the area above the topography (default `"white"`) |
 | `PLOT_PANEL_WIDTH` | Panel width in cm; `None` (default) = auto per-column width from each panel's aspect ratio (needs `PLOT_EQUAL_ASPECT=True`). When set, overrides that auto-width with one fixed value for every column — takes precedence over `PLOT_PANEL_HEIGHT`-driven sizing, mirroring `femtic_ens_post.py`'s `MOD_PANEL_WIDTH` |
 | `PLOT_NROWS/NCOLS` | Grid layout (`None` = auto) |
 
@@ -134,6 +204,61 @@ nRMS and the iteration number are read from each member's `femtic.cnv` via `fem.
 |---|---|
 | `PLOT_SLICES` | List of slice dicts; `kind` = `"map"` / `"ns"` / `"ew"` / `"plane"`; all model-local lengths in **km** |
 | `PLOT_XLIM/YLIM/ZLIM` | Axis limits in model-local **km** |
+
+### Equal axes and vertical exaggeration
+
+`PLOT_EQUAL_ASPECT` and `PLOT_VERT_EXAG` combine as follows (`vert_exag` is
+what is handed to `fviz.plot_model_slices`):
+
+| `PLOT_VERT_EXAG` | `PLOT_EQUAL_ASPECT` | maps | sections (ns / ew / plane) |
+|---|---|---|---|
+| `None` | `True` | 1:1 | true scale (VE = 1) |
+| `None` | `False` | free | free |
+| `2.0` | `True` | 1:1 | VE = 2 |
+| `2.0` | `False` | free | VE = 2 |
+
+The panel width is derived from the real extents (×VE for the depth span),
+so sections come out as wide as they should. With
+`DISPLAY_COORDS="latlon"` the horizontal axis is plotted in UTM metres under
+lat/lon tick labels, so VE is exact there too.
+
+> **Behaviour change (2026-10-27).** Before, `PLOT_EQUAL_ASPECT=True` had no
+> effect with `DISPLAY_COORDS="latlon"` (the check needed model/utm display),
+> and the file defined `PLOT_EQUAL_ASPECT` twice (the second definition
+> silently won). It is now one setting that acts for every display mode. For
+> the old free-aspect look in latlon display set `PLOT_EQUAL_ASPECT=False`.
+> Model display with `True` is unchanged (checked pixel-identical on a
+> synthetic model).
+
+### Reference model
+
+Compare every member with one model, e.g. a deterministic inversion, the
+starting model or a published model.
+
+| Variable | Description |
+|---|---|
+| `REF_FILE` | Resistivity block file on the **same mesh** as `MESH_FILE`; `None` (default) = off. Its region structure may differ from the members'. A missing file switches the reference off with a warning; a file with another element count stops the run with an error naming both counts |
+| `REF_SLICES` | `"slices"` (default): iso-resistivity lines on every panel of the iter0 and best-fit figures; `"best"`: best-fit figures only; `"none"`: not on slices |
+| `REF_BOREHOLE` | `True` (default): dashed reference profile per borehole, in the colour of that borehole's trace |
+| `REF_LEVELS` | Contour levels, log10(Ω·m), e.g. `[1.0, 2.0, 3.0]`; `None` = the integer decades inside the colour limits of the figure being drawn |
+| `REF_STYLE` | `LineCollection` keywords of the slice lines (default `dict(colors="k", linewidths=0.8)`); `linestyles="--"` etc. allowed |
+| `REF_LABEL` | Legend entry (lower right of each slice panel, and in the borehole legend); `None` = none |
+
+The lines are the exact boundaries between slice cells that lie on different
+sides of a level, so they follow the mesh and show no interpolation
+artefacts; air and ocean cells of the reference are ignored.
+
+### Borehole logs
+
+| Variable | Description |
+|---|---|
+| `PLOT_BOREHOLE` | `True` → draw the figure after the slice plots |
+| `BOREHOLE_SITES` | List of dicts: `name`, `x`, `y`, `z_top`, `z_bot`, `dz` (km; `x`/`y` may be CRS-tagged). `z_top` may be `"surface"` (minimum mesh-node depth at that position — with an air layer in the mesh that is the top of the air, so give a number to start at the ground). Line2D keywords (`color`, `ls`, `lw`, …) in a spec style that trace |
+| `BOREHOLE_FILE` | Figure path (extension sets the format); `None` = interactive window |
+| `BOREHOLE_STYLE` | Baseline Line2D style of all traces |
+| `BOREHOLE_XLIM` | x range as `[log10 min, log10 max]` (converted to Ω·m for the plot); `None` = auto |
+| `BOREHOLE_SHARED` | `True` = one axes for all boreholes; `False` = one panel each |
+| `BOREHOLE_NPZ` | `True` (default): also write the sampled profiles to `<BOREHOLE_FILE stem>.npz` (`depth_<name>`, `rho_<name>`, `reference_rho_<name>` with a reference) |
 
 ### Site overlay
 | Variable | Description |
@@ -189,6 +314,36 @@ Position values accept:
 ---
 
 ## Changes from previous version
+
+- **2026-10-27b (Claude Sonnet 5.5, Anthropic):** Can work from the results
+  `.npz` of `femtic_ens_post.py` (the file its new `PLOT_ONLY` mode reads):
+  new `RESULTS_NPZ` (`None` = unchanged normal mode), `RESULTS_PREFIX`,
+  `RESULTS_TEMPLATE`, `RESULTS_OUT_DIR`, `RESULTS_MEMBERS`, `RESULTS_STATS`,
+  `RESULTS_STATS_STYLE`, `RESULTS_BOREHOLE_MODEL`; see "Working from the
+  results .npz". Figures are drawn from stored vectors by the same
+  `_plot_member_slice()` (new keywords `stats_panel`, `cbar_label`,
+  `ref_clim`), with the same slices, styling, vertical exaggeration and
+  reference model. The iter0 figures cannot be made from a results file;
+  `NRMS_MAX` is not applied there. The normal mode is unchanged (member and
+  borehole output identical to the 2026-10-27 version on a synthetic
+  ensemble). AI-generated code -- review before production use.
+
+- **2026-10-27 (Claude Sonnet 5.5, Anthropic):** Publication-quality slices
+  and an optional reference model, built on the new `femtic_viz.py` of the
+  same date. (1) Equal axes or a defined vertical exaggeration: new
+  `PLOT_VERT_EXAG`; `PLOT_EQUAL_ASPECT` now acts for every `DISPLAY_COORDS`
+  (see "Equal axes and vertical exaggeration" for the one behaviour change)
+  and is defined once. (2) New options passed through to
+  `fviz.plot_model_slices`: `PLOT_FIGSIZE`, `PLOT_TICK_FONTSIZE`,
+  `PLOT_LABEL_FONTSIZE`, `PLOT_TITLE_FONTSIZE`, `PLOT_TICK_DECIMALS`,
+  `PLOT_AIR_COLOR` (defaults reproduce the previous figures). (3) Reference
+  model: `REF_FILE`, `REF_SLICES`, `REF_BOREHOLE`, `REF_LEVELS`,
+  `REF_STYLE`, `REF_LABEL`. (4) The local `plot_borehole_logs()` is replaced
+  by `fviz.plot_borehole_logs()`: log resistivity axis, depth in km pointing
+  down (the local version inverted the depth axis once per borehole, so it
+  pointed up for an even number of boreholes), `z_top="surface"`, per-spec
+  line styles, NPZ export (`BOREHOLE_NPZ`). `_km_to_m_point()` accepts `[x, y]`
+  points. AI-generated code — review before production use.
 
 - 2026-10-11: the local borehole-log helper reads the mesh with `fem.read_femtic_mesh(path)` (returns `nodes, conn`; the reader now lives only in `femtic.py`, with the optional `swap_xy` switch / `femtic.MESH_SWAP_XY`) instead of the removed `fviz.read_femtic_mesh`.
 

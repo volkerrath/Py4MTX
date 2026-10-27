@@ -24,6 +24,14 @@ NRMS_MAX threshold), then produces:
       femtic_mod_plot.py), sampled from the first converged member's
       best-fit model.
 
+  (3) [optional, RESULTS_NPZ set] NPZ mode: instead of scanning the member
+      directories, work from the results .npz written by femtic_ens_post.py:
+      best-fit figures of the stored members (RESULTS_MEMBERS), figures of
+      the stored ensemble statistics (RESULTS_STATS) and the borehole figure
+      (RESULTS_BOREHOLE_MODEL), all with the same slices, PLOT_* styling,
+      vertical exaggeration and reference model. The perturbed-prior (iter0)
+      figures need the member directories and are not available there.
+
 Slice positions, UTM/geographic coordinate handling, site overlay, and
 all PLOT_* parameters follow the same conventions as femtic_mod_plot.py.
 See that script and its README for full documentation.
@@ -230,6 +238,64 @@ Provenance
                 allowed, first existing wins), resolved per member via
                 fem.resolve_cnv_path(). Requires the femtic.py of the same
                 date. AI-generated; review before production use.
+    2026-10-27  Claude Sonnet 5.5 (Anthropic)
+                Publication-quality slices and an optional reference model,
+                using the new femtic_viz.py of the same date.
+                (1) Equal axes or a defined vertical exaggeration: new
+                PLOT_VERT_EXAG (None = decided by PLOT_EQUAL_ASPECT: True ->
+                1.0, False -> free aspect). The section aspect is computed
+                from the real axis units, so it now also works for
+                DISPLAY_COORDS="latlon" (before, PLOT_EQUAL_ASPECT had no
+                effect there). Note: with the default PLOT_EQUAL_ASPECT=True
+                and "latlon" the sections therefore change from free to true
+                scale; set PLOT_EQUAL_ASPECT=False to keep the old look.
+                The duplicate PLOT_EQUAL_ASPECT definition was removed.
+                (2) New options passed to fviz.plot_model_slices, as in
+                femtic_ens_post.py: PLOT_FIGSIZE, PLOT_TICK_FONTSIZE,
+                PLOT_LABEL_FONTSIZE, PLOT_TITLE_FONTSIZE, PLOT_TICK_DECIMALS,
+                PLOT_AIR_COLOR (defaults = previous output).
+                (3) Optional reference model: REF_FILE (block file on the
+                MESH_FILE mesh; None = off), REF_SLICES ("slices" | "best" |
+                "none"), REF_BOREHOLE, REF_LEVELS, REF_STYLE, REF_LABEL.
+                Slices: iso-resistivity lines on every panel; boreholes: a
+                dashed reference profile per borehole.
+                (4) The local plot_borehole_logs() was replaced by
+                fviz.plot_borehole_logs(): resistivity on a log axis, depth
+                in km pointing down (the local version inverted the axis
+                once per borehole, so even counts pointed up), z_top="surface"
+                (minimum mesh-node depth), per-spec line styles, NPZ export
+                (BOREHOLE_NPZ).
+                _km_to_m_point() accepts [x, y] points; z_top="surface" in
+                BOREHOLE_SITES survives the km conversion.
+                AI-generated code -- review before production use.
+    2026-10-27b Claude Sonnet 5.5 (Anthropic)
+                Can work from the results .npz of femtic_ens_post.py (also
+                what its plot-only mode reads). New settings RESULTS_NPZ
+                (None = scan member directories, as before), RESULTS_PREFIX,
+                RESULTS_TEMPLATE, RESULTS_OUT_DIR, RESULTS_MEMBERS ("none" |
+                "best" | "all" | indices / labels), RESULTS_STATS,
+                RESULTS_STATS_STYLE, RESULTS_BOREHOLE_MODEL. In that mode no
+                member directory, cnv or block file is read: each figure is a
+                block file written (femtic.insert_model, template = the best
+                member's structure) from a stored vector -- member rows of
+                the ensemble matrix, avg / med / err / mad / p* / qdiff_* /
+                *_boot / sens_* / simrc_* -- and drawn by the same
+                _plot_member_slice() (new keywords stats_panel, cbar_label,
+                ref_clim), so slices, layout, PLOT_VERT_EXAG, fonts and the
+                reference model (REF_*) act as usual; statistic panels get
+                the reference at resistivity decades (PLOT_CLIM_BEST), not at
+                decades of the plotted statistic. The borehole figure uses
+                RESULTS_BOREHOLE_MODEL ("best", a member index, "avg", "med",
+                "p<level>"), validated before any figure is made. Not
+                available from a results file: the iter0 prior figures
+                (skipped, noted at run time); NRMS_MAX is not applied. Air /
+                ocean of these figures are marked by exact sentinel values,
+                so a free region with a resistivity near OCEAN_RHO is no
+                longer drawn as ocean (in the normal mode fviz flags cells
+                within 0.05 in log10 of OCEAN_RHO). The normal path is
+                unchanged (figures and borehole output identical to the
+                2026-10-27 version, tested).
+                AI-generated code -- review before production use.
 
 @author: vrath
 """
@@ -323,6 +389,77 @@ NRMS_MAX = 1.5
 ENS_LABELS = None
 
 # ---------------------------------------------------------------------------
+# Work from the results .npz of femtic_ens_post.py  (optional)
+# ---------------------------------------------------------------------------
+#: None (default): scan ENSEMBLE_DIR for member directories as before.
+#: Path of a results file (femtic_ens_post.py writes
+#: <RESULTS_DIR>/<ENSEMBLE_PREFIX.upper()>_results.npz): NPZ MODE -- no member
+#: directory, cnv file or block file of the members is read. The figures are
+#: drawn from the vectors stored in the file, with the same slices, layout,
+#: PLOT_* styling, vertical exaggeration and reference model as in the normal
+#: mode:
+#:   * per-member best-fit models (rows of the stored ensemble matrix, with
+#:     their nRMS) -> RESULTS_MEMBERS,
+#:   * ensemble statistics (mean, median, std, MAD, percentiles, ... as far
+#:     as femtic_ens_post.py stored them) -> RESULTS_STATS,
+#:   * the borehole figure (PLOT_BOREHOLE) from the model RESULTS_BOREHOLE_MODEL.
+#: What the file does not hold cannot be plotted: the perturbed-prior (iter0)
+#: figures need the member directories, so they are skipped in this mode, and
+#: PER_MEMBER_PLOT / PER_MEMBER_PDF_CATALOG_MODE "iter0" do not apply
+#: (a catalog mode "best" / "both" collects the member figures drawn here).
+#: NRMS_MAX is not applied (the file holds the accepted members only).
+#: Still needed: MESH_FILE (+ SITE_DAT / OBSERVE_FILE for the origin and the
+#: site overlay), and a block file for the region structure (RESULTS_TEMPLATE).
+RESULTS_NPZ = None   # e.g. ENSEMBLE_DIR + "results/ANNECY_RTO_results.npz"
+
+#: Key prefix inside the file (femtic_ens_post.py's ENSEMBLE_PREFIX).
+#: None = the only ensemble in the file.
+RESULTS_PREFIX = None
+
+#: Template block file (header, region structure, flag columns; the panels
+#: are drawn from the stored vectors, not from this file's own values).
+#: None = the best member's block file recorded in the .npz; set it when
+#: that file is gone or the results were moved -- any resistivity block file
+#: of this ensemble (same mesh and regions, e.g. the starting model) will do.
+RESULTS_TEMPLATE = None
+
+#: Output directory of NPZ mode: <dir>/<label>/best.<ext> per member, the
+#: statistic figures <dir>/<prefix>_<key>.<ext>, the block files written from
+#: the vectors (<dir>/blocks/) and the pdf catalog. Created if missing.
+#: None = "ens_plot/" next to the results file.
+RESULTS_OUT_DIR = None
+
+#: Which stored members get a best-fit figure ("best.<ext>" in their own
+#: sub-directory, labelled by ENS_LABELS or the member directory's name):
+#: "none" | "best" (lowest nRMS, default) | "all" | a list of member indices
+#: (0-based, order of the file) and/or labels, e.g. [0, 7, "ann_rto_03"].
+RESULTS_MEMBERS = "best"
+
+#: Statistic figures, by key: "avg", "med", "var", "err" (std), "mad",
+#: "p<level>" (e.g. "p50", "p2_3"), "qdiff_<lo>_<hi>" (e.g. "qdiff_15_9_84_1"),
+#: "var_boot" / "err_boot", "sens_<kind>" (e.g. "sens_mean_an"),
+#: "simrc_coef" / "simrc_corr" -- whatever the file holds; a key without data
+#: is skipped with a message. [] = none.
+RESULTS_STATS = ["avg", "med", "err", "mad"]
+
+#: Per-statistic overrides for the figures above, keyed as in RESULTS_STATS:
+#: dict(cmap=..., clim=[vmin, vmax] | None, label="colourbar label"). Value
+#: statistics (avg, med, p*) default to PLOT_CMAP_BEST / PLOT_CLIM_BEST /
+#: "log10(rho / Ohm*m)"; all others to PLOT_CMAP_BEST, auto colour limits and
+#: the key as label. The sensitivity and SimRC statistics are log10 (the
+#: cv_* ones linear).
+RESULTS_STATS_STYLE = {
+    "var": dict(clim=[0.0, 0.3], label="var log10(rho)"),
+    "err": dict(clim=[0.0, 0.3], label="std log10(rho)"),
+    "mad": dict(clim=[0.0, 0.3], label="MAD log10(rho)"),
+}
+
+#: Model drawn in the borehole figure (PLOT_BOREHOLE) in NPZ mode: "best"
+#: (lowest nRMS), "avg", "med", "p<level>", or a member index. (In the normal
+#: mode it is the first converged member.)
+RESULTS_BOREHOLE_MODEL = "best"
+
+# ---------------------------------------------------------------------------
 # Per-member plots (default): iter0 (perturbed prior) + best-fit model
 # ---------------------------------------------------------------------------
 #: If True, produce two fviz.plot_model_slices() figures for every
@@ -413,8 +550,22 @@ DEPTH_KM = True
 #: True → horizontal axes in km (model/utm modes); False → metres.
 HORIZ_KM = True
 
-#: Equal aspect ratio on map and curtain panels (model/utm coords only).
+#: Equal axes.  True = map panels 1:1 and the section panels (ns / ew /
+#: vertical plane) at true scale, i.e. vertical exaggeration 1, ALSO when
+#: DISPLAY_COORDS is "latlon" (the aspect is computed from the real axis
+#: units, so degree tick labels do not matter).  False = free aspect (each
+#: panel fills its box) unless PLOT_VERT_EXAG is set.
 PLOT_EQUAL_ASPECT = True
+
+#: Vertical exaggeration of the section panels (ns, ew, vertical "plane"):
+#: None = decided by PLOT_EQUAL_ASPECT (True -> 1.0, False -> free aspect).
+#: A number VE > 0 fixes the section aspect exactly, whatever
+#: PLOT_EQUAL_ASPECT says: 1.0 = equal axes, 2.0 = the vertical scale is
+#: twice the horizontal one, 0.5 = compressed.  Map panels are not affected
+#: (they stay 1:1 while PLOT_EQUAL_ASPECT is True, free otherwise).  The panel
+#: width follows from the real extents, so PLOT_XLIM / PLOT_YLIM / PLOT_ZLIM
+#: (or the slice's own xlim / zlim) should be set.
+PLOT_VERT_EXAG = None
 
 #: Panel height in cm.  Width auto-computed from axis limits when PLOT_EQUAL_ASPECT.
 PLOT_PANEL_HEIGHT = 16.0   # cm
@@ -427,9 +578,28 @@ PLOT_PANEL_HEIGHT = 16.0   # cm
 #: the aspect-ratio auto-width.
 PLOT_PANEL_WIDTH  = None   # cm; None = auto from aspect ratio
 
+#: [width, height] of the whole figure in cm; None = from the panel sizes
+#: above.  When set it overrides PLOT_PANEL_HEIGHT / PLOT_PANEL_WIDTH.
+PLOT_FIGSIZE = None   # cm
+
 #: Grid layout.  None → 1 row / len(PLOT_SLICES) columns.
 PLOT_NROWS = 4
 PLOT_NCOLS = 2
+
+#: Annotation sizes (points), as in femtic_ens_post.py (MOD_TICK_FONTSIZE ...)
+#: -- for journal figures set them to the final print size.  The defaults are
+#: those of fviz.plot_model_slices, i.e. unchanged output.
+PLOT_TICK_FONTSIZE = 7     # axis tick labels, colourbar ticks
+PLOT_LABEL_FONTSIZE = 8    # axis labels, panel titles, colourbar label
+#: Figure title (above the panels); None = PLOT_LABEL_FONTSIZE + 6.
+PLOT_TITLE_FONTSIZE = None
+
+#: Decimal digits of the axis tick labels (depth, easting/northing and
+#: lat/lon share it).  None = fviz's own per-axis formatting, unchanged.
+PLOT_TICK_DECIMALS = None
+
+#: Colour of air cells (and of the area above the topography) in the slices.
+PLOT_AIR_COLOR = "white"
 
 # ---------------------------------------------------------------------------
 # Site overlay
@@ -533,8 +703,37 @@ PLOT_XLIM = [-25., 25.]
 PLOT_YLIM = [-25., 25.]
 PLOT_ZLIM = [  -6., 30.]
 
-#: Equal aspect ratio on map and curtain panels (model / utm coords only).
-PLOT_EQUAL_ASPECT = True
+# ---------------------------------------------------------------------------
+# Reference model  (optional)
+# ---------------------------------------------------------------------------
+#: A model to compare every member with: a resistivity block file
+#: (resistivity_block_iterX.dat) on the SAME mesh as MESH_FILE -- e.g. a
+#: deterministic inversion, the starting model or a published model.  Its
+#: region structure may differ from the members'.  None = no reference (the
+#: options below are then ignored).  A reference on another mesh stops the
+#: run with a message.
+REF_FILE = None   # e.g. ENSEMBLE_DIR + "/reference/resistivity_block_iter20.dat"
+
+#: Which per-member figures get the reference:
+#:   "slices" - iso-resistivity lines on every slice panel (iter0 and best)
+#:   "best"   - the same, on the best-fit figures only
+#:   "none"   - not on the slices
+REF_SLICES = "slices"   # "slices" | "best" | "none"
+
+#: Borehole figure: add the reference as a dashed line, one per borehole, in the
+#: colour of that borehole's trace.
+REF_BOREHOLE = True
+
+#: Contour levels, log10(Ohm.m), e.g. [1.0, 2.0, 3.0].  None = the integer
+#: decades inside the colour limits of the figure being drawn.
+REF_LEVELS = None
+
+#: Keywords of the slice lines (matplotlib LineCollection), e.g.
+#: dict(colors="k", linewidths=0.8, linestyles="--").
+REF_STYLE = dict(colors="k", linewidths=0.8)
+
+#: Legend entry of the slice lines (lower right of each panel); None = none.
+REF_LABEL = "reference model"
 
 # ---------------------------------------------------------------------------
 # Borehole resistivity logs  (optional — same as step 6 in femtic_mod_plot.py)
@@ -549,6 +748,12 @@ BOREHOLE_FILE = ENSEMBLE_DIR + "ensemble_boreholes.pdf"
 #: Keys: "name", "x", "y", "z_top", "z_bot", "dz" — all lengths in km.
 #: x/y accept plain float (model-local km) or (value, "utm"/"latlon")
 #: tuples (absolute coordinates, left unchanged by the km conversion).
+#: z_top may also be "surface" (the minimum mesh-node depth at that position;
+#: with an air layer in the mesh that is the top of the air, so give a number
+#: when you want the ground surface).
+#: Any Line2D keyword in a spec (color, ls, lw, ...) styles that trace.
+#: The figure is drawn by fviz.plot_borehole_logs; with REF_FILE set and
+#: REF_BOREHOLE True every borehole gets a dashed reference profile.
 BOREHOLE_SITES = [
     # dict(name="BH-01", x=0.0, y=0.0, z_top=0.0, z_bot=20.0, dz=0.2),
 ]
@@ -561,6 +766,11 @@ BOREHOLE_XLIM = [0.0, 4.0]
 
 #: True = all boreholes on one axes; False = one panel per borehole.
 BOREHOLE_SHARED = True
+
+#: True = also save the sampled profiles (depth_<name>, rho_<name>, and
+#: reference_rho_<name> when a reference is drawn) as an .npz next to
+#: BOREHOLE_FILE (same name, extension .npz).  Needs BOREHOLE_FILE.
+BOREHOLE_NPZ = True
 
 # ---------------------------------------------------------------------------
 # Mesh-centre estimation from site.dat  (optional)
@@ -618,19 +828,19 @@ def _km_to_m_pos(raw):
 
 
 def _km_to_m_point(raw):
-    """Convert a plane-slice 'point' spec ([x, y, z], optionally CRS-tagged)
-    from km to m. z is always model-local and is always converted; x/y are
-    converted only under an implicit/explicit "model" CRS -- ("utm") /
-    ("latlon") x/y are absolute and left unchanged.
+    """Convert a plane-slice 'point' spec ([x, y, z] or [x, y], optionally
+    CRS-tagged) from km to m. z (if given) is always model-local and is
+    always converted; x/y are converted only under an implicit/explicit
+    "model" CRS -- ("utm") / ("latlon") x/y are absolute and left unchanged.
     """
     tagged = (isinstance(raw, (list, tuple)) and len(raw) == 2
               and isinstance(raw[1], str))
     pt, crs = (raw[0], raw[1]) if tagged else (raw, "model")
     pt = list(pt)
     if crs == "model":
-        pt = [pt[0] * 1000.0, pt[1] * 1000.0, pt[2] * 1000.0]
-    else:
-        pt = [pt[0], pt[1], pt[2] * 1000.0]
+        pt[:2] = [v * 1000.0 for v in pt[:2]]
+    if len(pt) > 2:
+        pt[2] = pt[2] * 1000.0
     return (pt, crs) if tagged else pt
 
 
@@ -675,134 +885,218 @@ for _bh in BOREHOLE_SITES:
     if "y" in _bh:
         _bh["y"] = _km_to_m_pos(_bh["y"])
     for _k in ("z_top", "z_bot", "dz"):
-        if _k in _bh:
+        # z_top may be the string "surface" (minimum mesh-node depth there)
+        if _k in _bh and not isinstance(_bh[_k], str):
             _bh[_k] = _km_to_m(_bh[_k])
     _converted_boreholes.append(_bh)
 BOREHOLE_SITES = _converted_boreholes
+
+# Reference model: a missing file is reported once and switches it off;
+# REF_SLICES is validated here so a typo fails before any figure is made.
+if REF_SLICES not in ("slices", "best", "none"):
+    raise ValueError(
+        f"REF_SLICES={REF_SLICES!r} -- must be 'slices', 'best' or 'none'.")
+if REF_FILE is not None and not os.path.isfile(REF_FILE):
+    print(f"  WARNING: REF_FILE not found ({REF_FILE}) -- reference off.")
+    REF_FILE = None
 
 
 # ===========================================================================
 # Borehole helper
 # ===========================================================================
+# The borehole figure itself is drawn by fviz.plot_borehole_logs (log x axis,
+# depth in km pointing down, optional reference model, NPZ export); only the
+# position resolution stays here, because it needs this script's UTM origin.
 
-def _resolve_borehole_xy(spec: dict, zone: int, northern: bool) -> tuple[float, float]:
-    """Resolve borehole x/y position specs to model-local metres."""
-    return (
-        fem.resolve_pos_x(spec["x"], zone, northern,
-                          UTM_ORIGIN_E, UTM_ORIGIN_N,
-                          UTM_ORIGIN_LAT, UTM_ORIGIN_LON),
-        fem.resolve_pos_y(spec["y"], zone, northern,
-                          UTM_ORIGIN_E, UTM_ORIGIN_N,
-                          UTM_ORIGIN_LAT, UTM_ORIGIN_LON),
-    )
+def _resolve_borehole_xy(spec: dict) -> tuple[float, float]:
+    """Resolve borehole x/y position specs to model-local metres.
 
-
-def plot_borehole_logs(
-    model_file: str,
-    mesh_file: str,
-    borehole_sites: list,
-    *,
-    zone: int,
-    northern: bool,
-    clim=None,
-    borehole_style: dict | None = None,
-    shared: bool = True,
-    plot_file=None,
-    dpi: int = 200,
-    out: bool = True,
-):
-    """Produce a 1-D log₁₀(ρ) vs depth figure for a list of boreholes.
-
-    Delegates point-in-element search to ``fem.extract_borehole_log``.
-    Parameters are identical to femtic_mod_plot.py.
+    Passed to fviz.plot_borehole_logs as ``resolve_xy_fn``; plain numbers
+    are model-local metres (already converted from km above), CRS-tagged
+    specs are absolute and resolved against the UTM origin.
     """
-    if fviz is None:
-        print("  plot_borehole_logs: femtic_viz not available — skipping.")
-        return
-    if not borehole_sites:
-        print("  plot_borehole_logs: BOREHOLE_SITES is empty — skipping.")
-        return
-
-    try:
-        import matplotlib.pyplot as plt
-    except ImportError:
-        print("  plot_borehole_logs: Matplotlib not available — skipping.")
-        return
-
-    if out:
-        print(f"  boreholes: reading model {os.path.basename(model_file)}")
-    nodes, conn = fem.read_femtic_mesh(mesh_file)   # femtic.py is the only mesh reader
-    block    = fviz.read_resistivity_block(model_file)
-    rho_elem = fviz.map_regions_to_element_rho(block.region_of_elem, block.region_rho)
-    rho_plot = fviz.prepare_rho_for_plotting(
-        rho_elem,
-        air_is_nan=True,
-        ocean_value=float(OCEAN_RHO),
-        region_of_elem=block.region_of_elem,
+    return (
+        fem.resolve_pos_x(spec["x"], UTM_ZONE, UTM_NORTHERN,
+                          UTM_ORIGIN_E, UTM_ORIGIN_N,
+                          UTM_ORIGIN_LAT, UTM_ORIGIN_LON),
+        fem.resolve_pos_y(spec["y"], UTM_ZONE, UTM_NORTHERN,
+                          UTM_ORIGIN_E, UTM_ORIGIN_N,
+                          UTM_ORIGIN_LAT, UTM_ORIGIN_LON),
     )
 
-    style = dict(lw=1.2, marker="none")
-    if borehole_style:
-        style.update(borehole_style)
 
-    n    = len(borehole_sites)
-    logs = []
-    for spec in borehole_sites:
-        name  = spec.get("name", "?")
-        x_m, y_m = _resolve_borehole_xy(spec, zone, northern)
-        z_top = float(spec.get("z_top", 0.0))
-        z_bot = float(spec.get("z_bot", 20000.0))
-        dz    = float(spec.get("dz",    200.0))
-        if out:
-            print(f"  borehole {name!r}  x={x_m:.0f} m  y={y_m:.0f} m "
-                  f"  z=[{z_top:.0f}..{z_bot:.0f}]  dz={dz:.0f} m")
-        depths, rho = fem.extract_borehole_log(
-            nodes, conn, rho_plot, x_m, y_m, z_top, z_bot, dz, out=out
-        )
-        with np.errstate(divide="ignore", invalid="ignore"):
-            log_rho = np.where(rho > 0, np.log10(rho), np.nan)
-        logs.append(dict(name=name, depths=depths, log_rho=log_rho))
+def _vert_exag():
+    """Vertical exaggeration passed to fviz: PLOT_VERT_EXAG, else 1.0 for
+    PLOT_EQUAL_ASPECT=True, else None (free aspect)."""
+    if PLOT_VERT_EXAG is not None:
+        return float(PLOT_VERT_EXAG)
+    return 1.0 if PLOT_EQUAL_ASPECT else None
 
-    if shared:
-        fig, ax_arr = plt.subplots(1, 1, figsize=(4, 6))
-        ax_arr = [ax_arr] * n
+
+def _ref_levels(clim):
+    """Reference contour levels: REF_LEVELS, else the integer decades
+    strictly inside ``clim`` (None -> left to fviz: the figure's own range)."""
+    if REF_LEVELS is not None:
+        return [float(v) for v in np.atleast_1d(REF_LEVELS)]
+    if clim is None:
+        return None
+    lo, hi = float(min(clim)), float(max(clim))
+    lev = np.arange(math.floor(lo) + 1, math.ceil(hi), dtype=float)
+    return [float(v) for v in lev] if lev.size else [0.5 * (lo + hi)]
+
+# ===========================================================================
+# NPZ mode helpers (RESULTS_NPZ)
+# ===========================================================================
+#: Sentinel resistivities of block files written from a stored vector (as in
+#: femtic_ens_post.py): air / ocean are then recognised by an exact value, so
+#: no value of a plotted statistic (a std, a sensitivity, ...) can be taken
+#: for air (log10 rho > 8) or ocean (rho ~ OCEAN_RHO).
+_STATS_AIR_RHO = 1.0e30
+_STATS_OCEAN_RHO = 1.0e-30
+_STATS_AIR_LOG10_THRESH = 29.0
+
+
+def _write_vec_block(vec, template, out_file, *, real_model=False):
+    """Write a free-region log10(rho) vector into a block file.
+
+    The template supplies header, region structure and flag columns.
+    ``real_model=False`` (figures): sentinel air / ocean values, plotted with
+    ``_plot_member_slice(stats_panel=True)``. ``real_model=True`` (borehole
+    figure): air at AIR_RHO and ocean at OCEAN_RHO, as in a member's own
+    block file. Non-finite entries become 0 Ohm.m (not drawn).
+    """
+    os.makedirs(os.path.dirname(os.path.abspath(out_file)), exist_ok=True)
+    fem.insert_model(
+        template=template,
+        model=np.where(np.isfinite(vec), vec, -np.inf),
+        model_file=out_file,
+        ocean=OCEAN,
+        air_rho=AIR_RHO if real_model else _STATS_AIR_RHO,
+        ocean_rho=OCEAN_RHO if real_model else _STATS_OCEAN_RHO,
+        out=False,
+    )
+
+
+def _load_results_npz(path, prefix=None):
+    """Read what NPZ mode needs from a femtic_ens_post.py results file.
+
+    Returns a dict: ``prefix`` (key prefix used), ``ens`` (n_members x n_free
+    log10 matrix), ``members`` (list of dicts file / numit / nrms, one per
+    row of ``ens``), ``stats`` (key -> (vector, description)) and
+    ``value_keys`` (the statistics that are log10 resistivities).
+    Statistics missing from the file are skipped; avg / var / err / med / mad
+    are recomputed from the members when absent.
+    """
+    try:
+        z = np.load(path, allow_pickle=False)
+    except (ValueError, OSError) as e:
+        sys.exit(f"NPZ mode: cannot read {path}: {e}")
+    keys = set(z.files)
+    cand = sorted(
+        k[: -len("_ens")] for k in keys
+        if k.endswith("_ens") and f"{k[: -len('_ens')]}_avg" in keys
+    )
+    if prefix is not None:
+        if f"{prefix}_ens" not in keys:
+            sys.exit(f"NPZ mode: no '{prefix}_ens' in {path}. Ensemble "
+                     f"prefixes found: {cand if cand else 'none'}.")
+        pk = prefix
+    elif len(cand) == 1:
+        pk = cand[0]
     else:
-        fig, axes = plt.subplots(1, n, figsize=(3.5 * n, 6), sharey=True,
-                                 squeeze=False)
-        ax_arr = list(axes[0])
+        sys.exit(f"NPZ mode: {path} holds {len(cand)} ensembles {cand} -- "
+                 f"set RESULTS_PREFIX.")
 
-    prop_cycle = plt.rcParams["axes.prop_cycle"]
-    colors = [c["color"] for c in prop_cycle]
+    ens = np.asarray(z[f"{pk}_ens"], dtype=float)
+    if f"{pk}_model_list" not in keys:
+        sys.exit(f"NPZ mode: '{pk}_model_list' missing from {path}.")
+    # mixed-type lists are saved as a string array: [file, iter, nRMS]
+    members = [
+        dict(file=str(r[0]), numit=int(float(r[1])), nrms=float(r[2]))
+        for r in np.asarray(z[f"{pk}_model_list"]).reshape(-1, 3)
+    ]
+    if len(members) != ens.shape[0]:
+        sys.exit(f"NPZ mode: model_list has {len(members)} entries but the "
+                 f"ensemble matrix {ens.shape[0]} rows - inconsistent file.")
 
-    for idx, (spec, log) in enumerate(zip(borehole_sites, logs)):
-        ax  = ax_arr[idx]
-        col = colors[idx % len(colors)]
-        ax.plot(log["log_rho"], log["depths"],
-                color=col, label=log["name"], **style)
-        ax.invert_yaxis()
-        ax.set_ylabel("depth (m)")
-        ax.set_xlabel("log₁₀(ρ / Ω·m)")
-        if clim is not None:
-            ax.set_xlim(clim)
-        if not shared:
-            ax.set_title(log["name"], fontsize=9)
+    def get(name, recompute):
+        k = f"{pk}_{name}"
+        if k in keys:
+            return np.asarray(z[k], dtype=float)
+        print(f"  NPZ mode: '{k}' not in the file - recomputed from members.")
+        return recompute()
 
-    if shared:
-        ax_arr[0].legend(fontsize=8)
-        ax_arr[0].set_title("Borehole resistivity logs", fontsize=9)
+    var = get("var", lambda: np.var(ens, axis=0))
+    med = get("med", lambda: np.median(ens, axis=0))
+    stats = {
+        "avg": (get("avg", lambda: np.mean(ens, axis=0)), "mean"),
+        "var": (var, "variance"),
+        "err": (get("err", lambda: np.sqrt(var)), "error (std = sqrt(var))"),
+        "med": (med, "median"),
+        "mad": (get("mad", lambda: np.median(np.abs(ens - med), axis=0)),
+                "MAD"),
+    }
+    value_keys = {"avg", "med"}
+    if f"{pk}_prc" in keys and f"{pk}_prc_levels" in keys:
+        prc = np.asarray(z[f"{pk}_prc"], dtype=float)
+        for i, lv in enumerate(np.asarray(z[f"{pk}_prc_levels"]).ravel()):
+            key = "p" + f"{float(lv):g}".replace(".", "_")
+            stats[key] = (prc[i], f"{float(lv):g}th percentile")
+            value_keys.add(key)
+    for k in sorted(keys):
+        if k.startswith(f"{pk}_qdiff_"):
+            key = k[len(pk) + 1:]
+            stats[key] = (np.asarray(z[k], dtype=float), f"|{key}| spread")
+        elif k.startswith(f"{pk}_sens_"):
+            key = k[len(pk) + 1:]
+            kind = key[len("sens_"):]
+            stats[key] = (np.asarray(z[k], dtype=float),
+                          f"sensitivity {kind} "
+                          f"({'linear' if kind.startswith('cv') else 'log10'})")
+    if f"{pk}_var_boot" in keys:
+        vb = np.asarray(z[f"{pk}_var_boot"], dtype=float)
+        stats["var_boot"] = (vb, "bootstrap variance")
+        stats["err_boot"] = (
+            np.asarray(z[f"{pk}_err_boot"], dtype=float)
+            if f"{pk}_err_boot" in keys else np.sqrt(vb),
+            "bootstrap error (std)")
+    for key, desc in (("simrc_coef", "log10 SimRC cumulative |regression coeff.|"),
+                      ("simrc_corr", "log10 SimRC cumulative |correlation|")):
+        if f"{pk}_{key}" in keys:
+            stats[key] = (np.asarray(z[f"{pk}_{key}"], dtype=float), desc)
+    z.close()
+    return dict(prefix=pk, ens=ens, members=members, stats=stats,
+                value_keys=value_keys)
 
-    for ax in set(ax_arr):
-        ax.grid(axis="x", lw=0.4, alpha=0.5)
 
-    fig.suptitle(f"Model: {os.path.basename(model_file)}", fontsize=10)
-    fig.tight_layout()
-
-    if plot_file is not None:
-        fig.savefig(plot_file, dpi=dpi, bbox_inches="tight")
-        if out:
-            print(f"  boreholes: saved → {plot_file}")
+def _stat_style(key, value_keys):
+    """(cmap, clim, label) of a statistic figure: RESULTS_STATS_STYLE over
+    the defaults (value statistics at PLOT_CMAP_BEST / PLOT_CLIM_BEST)."""
+    st = (RESULTS_STATS_STYLE or {}).get(key, {})
+    if key in value_keys:
+        d_clim, d_label = PLOT_CLIM_BEST, "log10(rho / Ohm*m)"
     else:
-        plt.show()
+        d_clim, d_label = None, key
+    return (st.get("cmap", PLOT_CMAP_BEST), st.get("clim", d_clim),
+            st.get("label", d_label))
+
+
+def _select_members(spec, labels):
+    """Indices selected by RESULTS_MEMBERS: "none" | "best" is handled by
+    the caller; "all" or a list of 0-based indices and / or labels."""
+    n = len(labels)
+    if isinstance(spec, str) and spec == "all":
+        return list(range(n))
+    out = []
+    for item in (spec if isinstance(spec, (list, tuple)) else [spec]):
+        if isinstance(item, (int, np.integer)) and 0 <= int(item) < n:
+            out.append(int(item))
+        elif isinstance(item, str) and item in labels:
+            out.append(labels.index(item))
+        else:
+            print(f"  RESULTS_MEMBERS: {item!r} is not a member index "
+                  f"(0..{n - 1}) or label - ignored.")
+    return sorted(set(out))
 
 
 def _plot_member_slice(
@@ -817,6 +1111,10 @@ def _plot_member_slice(
     clim: list | None,
     nrms_annotation: dict | None = None,
     pdf_catalog: "PdfPages | None" = None,
+    with_reference: bool = False,
+    stats_panel: bool = False,
+    cbar_label: str | None = None,
+    ref_clim: list | None = None,
 ) -> None:
     """Call fviz.plot_model_slices once per _PLOT_FORMATS entry.
 
@@ -851,10 +1149,44 @@ def _plot_member_slice(
         done. plot_model_slices already closes the figure
         (plt.close(fig)) before returning it; the object is still
         valid for a PdfPages.savefig() call right after.
+    with_reference : bool
+        True = draw the reference model (REF_FILE; REF_LEVELS / REF_STYLE /
+        REF_LABEL) as iso-resistivity lines on every slice panel. Ignored
+        when REF_FILE is None.
+    stats_panel : bool
+        True for block files written from a stored vector (NPZ mode,
+        _write_vec_block): air / ocean carry the sentinel resistivities
+        _STATS_AIR_RHO / _STATS_OCEAN_RHO, so a value of the plotted
+        quantity can never be mistaken for air or ocean. False (default) =
+        a member's own block file, ocean at OCEAN_RHO, as always.
+    cbar_label : str or None
+        Colourbar label; None = fviz's default.
+    ref_clim : list or None
+        Colour range the reference iso-line levels are derived from (decades
+        inside it); None = ``clim``. Statistic panels pass PLOT_CLIM_BEST
+        here: the reference is a resistivity model, its lines stay at
+        resistivity decades whatever the panel shows.
+
+    Figure geometry and annotation come from PLOT_EQUAL_ASPECT /
+    PLOT_VERT_EXAG (equal axes or a defined vertical exaggeration of the
+    section panels), PLOT_FIGSIZE, PLOT_TICK_FONTSIZE, PLOT_LABEL_FONTSIZE,
+    PLOT_TITLE_FONTSIZE, PLOT_TICK_DECIMALS and PLOT_AIR_COLOR.
     """
     if fviz is None:
         print("  plot_member_slice: femtic_viz not available — skipping.")
         return
+
+    _ref_kw = {}
+    if with_reference and REF_FILE is not None:
+        _ref_kw = dict(
+            reference_file             = REF_FILE,
+            reference_levels           = _ref_levels(
+                clim if ref_clim is None else ref_clim),
+            reference_style            = dict(REF_STYLE or {}),
+            reference_label            = REF_LABEL,
+            reference_ocean_value      = OCEAN_RHO,
+            reference_air_log10_thresh = 8.0,
+        )
 
     for _fmt in _PLOT_FORMATS:
         _out_file = f"{out_stem}.{_fmt}"
@@ -868,7 +1200,8 @@ def _plot_member_slice(
             ylim                = PLOT_YLIM,
             zlim                = PLOT_ZLIM,
             ocean_color         = PLOT_OCEAN_COLOR,
-            ocean_value         = OCEAN_RHO,
+            ocean_value         = _STATS_OCEAN_RHO if stats_panel else OCEAN_RHO,
+            air_color           = PLOT_AIR_COLOR,
             air_bgcolor         = PLOT_AIR_BGCOLOR,
             site_xys            = site_xys,
             obs_coords_only     = obs_coords_only,
@@ -889,15 +1222,27 @@ def _plot_member_slice(
             depth_km            = DEPTH_KM,
             horiz_km            = HORIZ_KM,
             equal_aspect        = PLOT_EQUAL_ASPECT,
+            vert_exag           = _vert_exag(),
             panel_height        = PLOT_PANEL_HEIGHT / 2.54,
             panel_width         = PLOT_PANEL_WIDTH / 2.54 if PLOT_PANEL_WIDTH is not None else None,
+            figsize             = ([v / 2.54 for v in PLOT_FIGSIZE]
+                                   if PLOT_FIGSIZE is not None else None),
             nrows               = PLOT_NROWS,
             ncols               = PLOT_NCOLS,
+            tick_fontsize       = PLOT_TICK_FONTSIZE,
+            label_fontsize      = PLOT_LABEL_FONTSIZE,
+            tick_decimals       = PLOT_TICK_DECIMALS,
             nrms_annotation     = nrms_annotation,
             figure_title        = figure_title,
+            figure_title_fontsize = PLOT_TITLE_FONTSIZE,
             dpi                 = PLOT_DPI,
             out                 = OUT,
+            **_ref_kw,
         )
+        if stats_panel:
+            _kwargs["air_log10_thresh"] = _STATS_AIR_LOG10_THRESH
+        if cbar_label is not None:
+            _kwargs["cbar_label"] = cbar_label
 
         # matplotlib's PDF backend only tries to write images as an
         # "Indexed" PDF colour space (backend_pdf.PdfFile._writeImg,
@@ -1079,12 +1424,17 @@ elif SITE_NUMBER is not None:
 # resistivity_block_iter{numit}.dat naming for the best-fit model — so
 # this script plots precisely the members ens_post included in its
 # ensemble statistics.
-dir_list = utl.get_filelist(
+#
+# NPZ mode (RESULTS_NPZ set): nothing is scanned; model_list is filled from
+# the results file right after the loop instead.
+dir_list = ([] if RESULTS_NPZ is not None else utl.get_filelist(
     searchstr=[ENSEMBLE_NAME + "*"],
     searchpath=ENSEMBLE_DIR,
     fullpath=True,
-)
-print(f"Found {len(dir_list)} sub-directory/ies matching '{ENSEMBLE_NAME}'.")
+))
+if RESULTS_NPZ is None:
+    print(f"Found {len(dir_list)} sub-directory/ies matching "
+          f"'{ENSEMBLE_NAME}'.")
 
 model_list = []   # list of dicts: label, dir, numit, nrms, iter0_file, best_file
 for _d in dir_list:
@@ -1141,6 +1491,76 @@ for _d in dir_list:
         iter0_file=_iter0_file, best_file=_best_file,
     ))
 
+_res = None   # NPZ mode: arrays read from RESULTS_NPZ
+_bi = None    # NPZ mode: index of the lowest-nRMS member
+if RESULTS_NPZ is not None:
+    if not os.path.isfile(RESULTS_NPZ):
+        sys.exit(f"NPZ mode: results file not found: {RESULTS_NPZ}")
+    print(f"NPZ mode: reading {RESULTS_NPZ}")
+    _res = _load_results_npz(RESULTS_NPZ, RESULTS_PREFIX)
+    _used = set()
+    for _idx, _mm in enumerate(_res["members"]):
+        _d = os.path.dirname(_mm["file"])
+        _label = (ENS_LABELS[_idx] if ENS_LABELS and _idx < len(ENS_LABELS)
+                  else os.path.basename(os.path.normpath(_d)) or f"member_{_idx:03d}")
+        if _label in _used:   # labels name directories / files: keep unique
+            _label = f"{_label}_{_idx:03d}"
+        _used.add(_label)
+        model_list.append(dict(
+            label=_label, dir=_d, numit=_mm["numit"], nrms=_mm["nrms"],
+            iter0_file=None, best_file=_mm["file"], vec=_res["ens"][_idx],
+        ))
+    _bi = min(range(len(model_list)), key=lambda i: model_list[i]["nrms"])
+
+    # Template block file (structure only): the best member's own file as
+    # recorded in the .npz, or RESULTS_TEMPLATE when that is gone / elsewhere.
+    _tpl = RESULTS_TEMPLATE if RESULTS_TEMPLATE else model_list[_bi]["best_file"]
+    if not os.path.isfile(_tpl):
+        sys.exit(
+            f"NPZ mode: template block file not found: {_tpl}\n"
+            f"  The stored best-member file is {model_list[_bi]['best_file']}.\n"
+            f"  Set RESULTS_TEMPLATE to any resistivity block file of this "
+            f"ensemble (same mesh and regions) -- the figures are drawn from "
+            f"the stored vectors, only its structure is used.")
+    _tst = fem._read_resistivity_block_struct(_tpl, ocean=OCEAN, out=False)
+    _nfree = int(np.asarray(_tst["free_idx"]).size)
+    if _nfree != _res["ens"].shape[1]:
+        sys.exit(f"NPZ mode: template {_tpl} has {_nfree} free regions but "
+                 f"the ensemble has {_res['ens'].shape[1]} - it is not a "
+                 f"block file of this ensemble.")
+    NPZ_TEMPLATE = _tpl
+
+    # Model of the borehole figure: chosen (and validated) here, so a typo
+    # stops the run before any figure is made.
+    NPZ_BH = None
+    if PLOT_BOREHOLE and BOREHOLE_SITES:
+        _bsel = RESULTS_BOREHOLE_MODEL
+        _bvalid = sorted(_res["value_keys"] & set(_res["stats"]))
+        if isinstance(_bsel, str) and _bsel == "best":
+            NPZ_BH = (model_list[_bi]["vec"],
+                      f"best member {model_list[_bi]['label']}")
+        elif (isinstance(_bsel, (int, np.integer))
+              and 0 <= int(_bsel) < len(model_list)):
+            NPZ_BH = (model_list[int(_bsel)]["vec"],
+                      f"member {model_list[int(_bsel)]['label']}")
+        elif isinstance(_bsel, str) and _bsel in _bvalid:
+            NPZ_BH = (_res["stats"][_bsel][0], _res["stats"][_bsel][1])
+        else:
+            sys.exit(f"RESULTS_BOREHOLE_MODEL={_bsel!r}: use 'best', a member "
+                     f"index 0..{len(model_list) - 1} or one of {_bvalid}.")
+    NPZ_OUT_DIR = (RESULTS_OUT_DIR if RESULTS_OUT_DIR else os.path.join(
+        os.path.dirname(os.path.abspath(RESULTS_NPZ)), "ens_plot"))
+    NPZ_BLOCK_DIR = os.path.join(NPZ_OUT_DIR, "blocks")
+    print(f"  {len(model_list)} members, {_nfree} free parameters, prefix "
+          f"'{_res['prefix']}', best nRMS {model_list[_bi]['nrms']:.4f} "
+          f"({model_list[_bi]['label']})")
+    print(f"  statistics in the file: {sorted(_res['stats'])}")
+    print(f"  output directory: {NPZ_OUT_DIR}")
+    if PER_MEMBER_PLOT:
+        print("  NPZ mode: the iter0 (prior) figures need the member "
+              "directories - not made; RESULTS_MEMBERS / RESULTS_STATS "
+              "decide what is drawn.")
+
 n_members = len(model_list)
 print(f"\nConverged members: {n_members}")
 
@@ -1153,7 +1573,9 @@ ENS_LABELS_resolved = [m["label"] for m in model_list]
 if OUT:
     print(f"\nEnsemble: {n_members} converged member(s)")
     for _m in model_list:
-        print(f"  {_m['label']:30s}  iter0={os.path.basename(_m['iter0_file'])}"
+        _i0 = (os.path.basename(_m['iter0_file'])
+               if _m['iter0_file'] else "n/a (NPZ mode)")
+        print(f"  {_m['label']:30s}  iter0={_i0}"
               f"  best=iter{_m['numit']} (nRMS={_m['nrms']:.4f})")
     print()
 
@@ -1169,7 +1591,7 @@ if OUT:
 # — the earlier approach held every member's Matplotlib Figure (axes,
 # colorbars, gridded slice arrays) in memory simultaneously until the very
 # last member was plotted.
-if PER_MEMBER_PLOT:
+if PER_MEMBER_PLOT and RESULTS_NPZ is None:
     if fviz is None:
         sys.exit("femtic_viz not available — cannot plot.  Check your installation.")
 
@@ -1199,6 +1621,7 @@ if PER_MEMBER_PLOT:
                 cmap            = PLOT_CMAP_ITER0,
                 clim            = PLOT_CLIM_ITER0,
                 pdf_catalog     = _pdf_catalog if _catalog_iter0 else None,
+                with_reference  = REF_SLICES == "slices",
             )
             if _catalog_iter0:
                 _n_catalog_pages += 1
@@ -1216,6 +1639,7 @@ if PER_MEMBER_PLOT:
                 clim            = PLOT_CLIM_BEST,
                 nrms_annotation = dict(nrms=_m["nrms"]),
                 pdf_catalog     = _pdf_catalog if _catalog_best else None,
+                with_reference  = REF_SLICES in ("slices", "best"),
             )
             if _catalog_best:
                 _n_catalog_pages += 1
@@ -1239,23 +1663,142 @@ if PER_MEMBER_PLOT:
     elif PER_MEMBER_PDF_CATALOG_MODE != "none":
         print("  pdf catalog: \"pdf\" not in PLOT_FORMAT — skipped.")
 
+# --- (6n) NPZ mode: member and statistic figures from the stored vectors ---
+# Every figure is a block file written from a vector of RESULTS_NPZ (template =
+# the best member's structure) and drawn by the same _plot_member_slice() as
+# in the normal mode, i.e. with the same slices, layout, PLOT_* styling,
+# PLOT_VERT_EXAG and reference model.
+if RESULTS_NPZ is not None:
+    if fviz is None:
+        sys.exit("femtic_viz not available — cannot plot.  Check your installation.")
+    os.makedirs(NPZ_OUT_DIR, exist_ok=True)
+    _labels = [m["label"] for m in model_list]
+
+    # --- members: best-fit model of the selected rows ----------------------
+    if isinstance(RESULTS_MEMBERS, str) and RESULTS_MEMBERS == "none":
+        _sel = []
+    elif isinstance(RESULTS_MEMBERS, str) and RESULTS_MEMBERS == "best":
+        _sel = [_bi]
+    else:
+        _sel = _select_members(RESULTS_MEMBERS, _labels)
+    if _sel:
+        print(f"\nNPZ mode: {len(_sel)} member figure(s), "
+              f"formats={_PLOT_FORMATS} ...")
+    _use_catalog = (bool(_sel)
+                    and PER_MEMBER_PDF_CATALOG_MODE in ("best", "both")
+                    and "pdf" in _PLOT_FORMATS)
+    _catalog_file = os.path.join(
+        NPZ_OUT_DIR, os.path.basename(PER_MEMBER_CATALOG_FILE))
+    _pdf_catalog = PdfPages(_catalog_file) if _use_catalog else None
+    try:
+        for _i in _sel:
+            _m = model_list[_i]
+            _label = _m["label"]
+            _blk = os.path.join(NPZ_BLOCK_DIR, f"resistivity_block_{_label}_best.dat")
+            _write_vec_block(_m["vec"], NPZ_TEMPLATE, _blk)
+            _member_dir = os.path.join(NPZ_OUT_DIR, _label)
+            os.makedirs(_member_dir, exist_ok=True)
+            print(f"\n  member {_label!r}: best fit (iter{_m['numit']}, "
+                  f"nRMS={_m['nrms']:.4f})")
+            _plot_member_slice(
+                block_file      = _blk,
+                out_stem        = os.path.join(_member_dir, "best"),
+                slices_resolved = slices_resolved,
+                site_xys        = site_xys,
+                obs_coords_only = _sites_from_obs,
+                figure_title    = f"{_label} — best fit (iter{_m['numit']})",
+                cmap            = PLOT_CMAP_BEST,
+                clim            = PLOT_CLIM_BEST,
+                nrms_annotation = dict(nrms=_m["nrms"]),
+                pdf_catalog     = _pdf_catalog,
+                with_reference  = REF_SLICES in ("slices", "best"),
+                stats_panel     = True,
+            )
+            gc.collect()
+    finally:
+        if _pdf_catalog is not None:
+            _pdf_info = _pdf_catalog.infodict()
+            _pdf_info["Title"] = "femtic_ens_plot ensemble catalog"
+            _pdf_info["Author"] = "femtic_ens_plot.py"
+            _pdf_catalog.close()
+    if _use_catalog:
+        print(f"  pdf catalog ({PER_MEMBER_PDF_CATALOG_MODE}): "
+              f"{len(_sel)} page(s) -> {_catalog_file}")
+
+    # --- statistics --------------------------------------------------------
+    for _key in (RESULTS_STATS or []):
+        if _key not in _res["stats"]:
+            print(f"\n  RESULTS_STATS: '{_key}' is not in the results file "
+                  f"- skipped.")
+            continue
+        _vec, _desc = _res["stats"][_key]
+        _cmap, _clim, _cbl = _stat_style(_key, _res["value_keys"])
+        _blk = os.path.join(
+            NPZ_BLOCK_DIR, f"resistivity_block_{_res['prefix']}_{_key}.dat")
+        _write_vec_block(_vec, NPZ_TEMPLATE, _blk)
+        print(f"\n  statistic {_key!r} ({_desc}): cmap={_cmap}, clim={_clim}")
+        _plot_member_slice(
+            block_file      = _blk,
+            out_stem        = os.path.join(NPZ_OUT_DIR, f"{_res['prefix']}_{_key}"),
+            slices_resolved = slices_resolved,
+            site_xys        = site_xys,
+            obs_coords_only = _sites_from_obs,
+            figure_title    = f"{_res['prefix']}: {_desc}",
+            cmap            = _cmap,
+            clim            = _clim,
+            with_reference  = REF_SLICES == "slices",
+            stats_panel     = True,
+            cbar_label      = _cbl,
+            ref_clim        = PLOT_CLIM_BEST,
+        )
+        gc.collect()
+    print("\nNPZ mode: figures done.")
+
 # --- (7) Borehole resistivity logs ------------------------------------------
 if PLOT_BOREHOLE:
     if not BOREHOLE_SITES:
         print("  Borehole plot skipped: BOREHOLE_SITES is empty.")
     else:
-        # Use the first ensemble member as the reference model for the log.
+        # Normal mode: the first ensemble member is the model of the log.
+        _bh_model_file = ENS_FILES[0]
+        _bh_desc = f"member 0 ({ENS_LABELS_resolved[0]})"
+        _bh_label = ENS_LABELS_resolved[0]
+        if RESULTS_NPZ is not None:
+            # NPZ mode: RESULTS_BOREHOLE_MODEL (chosen above), written as a
+            # block file with the real air / ocean values (a log10 model).
+            _bvec, _bh_label = NPZ_BH
+            _bh_model_file = os.path.join(
+                NPZ_BLOCK_DIR, "resistivity_block_borehole.dat")
+            _write_vec_block(_bvec, NPZ_TEMPLATE, _bh_model_file,
+                             real_model=True)
+            _bh_desc = _bh_label
         print(f"Sampling {len(BOREHOLE_SITES)} borehole(s) "
-              f"from member 0 ({ENS_LABELS_resolved[0]}) …")
-        plot_borehole_logs(
-            model_file     = ENS_FILES[0],
+              f"from {_bh_desc} ...")
+        if fviz is None:
+            sys.exit("femtic_viz not available - cannot plot boreholes.")
+        fviz.plot_borehole_logs(
+            model_file     = _bh_model_file,
             mesh_file      = MESH_FILE,
             borehole_sites = BOREHOLE_SITES,
-            zone           = UTM_ZONE,
-            northern       = UTM_NORTHERN,
-            clim           = BOREHOLE_XLIM,
+            resolve_xy_fn  = _resolve_borehole_xy,
+            utm_zone       = UTM_ZONE,
+            utm_northern   = UTM_NORTHERN,
+            utm_origin_e   = UTM_ORIGIN_E,
+            utm_origin_n   = UTM_ORIGIN_N,
+            ocean_value    = OCEAN_RHO,
+            # BOREHOLE_XLIM is log10(Ohm.m); fviz takes Ohm.m
+            clim           = ([10.0 ** float(v) for v in BOREHOLE_XLIM]
+                              if BOREHOLE_XLIM is not None else None),
             borehole_style = BOREHOLE_STYLE,
             shared         = BOREHOLE_SHARED,
+            tick_fontsize  = PLOT_TICK_FONTSIZE,
+            label_fontsize = PLOT_LABEL_FONTSIZE,
+            figure_title   = f"Borehole logs: {_bh_label}",
+            reference_file  = REF_FILE if REF_BOREHOLE else None,
+            reference_label = REF_LABEL if REF_LABEL else None,
+            npz_file       = (os.path.splitext(BOREHOLE_FILE)[0] + ".npz"
+                              if (BOREHOLE_NPZ and BOREHOLE_FILE is not None)
+                              else False),
             plot_file      = BOREHOLE_FILE,
             dpi            = PLOT_DPI,
             out            = OUT,

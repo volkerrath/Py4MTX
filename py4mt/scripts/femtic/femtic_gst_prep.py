@@ -471,8 +471,8 @@ N_SAMPLES = 64
 # ENSEMBLE_DIR = r"/home/vrath/work/Ensembles/annecy2026/ensembles/"
 # ENSEMBLE_NAME = "annecy_rnd_2_"
 
-ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_0/"
-ENSEMBLE_NAME = "annecy_gst_"
+ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/GST/ann_gst_256_reset-err/"
+ENSEMBLE_NAME = "ann_gst256_"
 
 # ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/misti2026/misti_gst_rndx/"
 # ENSEMBLE_NAME = "misti_rnd_1_xxx"
@@ -557,7 +557,7 @@ if PERTURB_MOD:
     # Number of randomly drawn pilot points per member.
     # Used when MOD_PP_MODE = "random", "mixed", or "extrema" (fill).
     # Recommended: 50–200 for typical 3-D MT survey volumes.
-    MOD_N_PP = 128
+    MOD_N_PP = 64
 
     # Bounding box for random pilot-point placement:
     #   [x_min, x_max, y_min, y_max, z_min, z_max]  (km, model-local, z positive-down)

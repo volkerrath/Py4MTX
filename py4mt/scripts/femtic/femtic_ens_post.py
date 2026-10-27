@@ -10,6 +10,13 @@ empirical covariance, and saves everything to a compressed ``.npz`` file.
 Optionally produces slice figures for the **best-nRMS member** (QC) and
 for the **ensemble statistics** (mean, variance, median, MAD).
 
+With ``PLOT_ONLY = True`` nothing is scanned or recomputed: the script reads
+an existing results ``.npz`` (``PLOT_ONLY_NPZ``, default ``ENSEMBLE_RESULTS``)
+and only redraws the figures (best member, statistic panels, boreholes, nRMS
+histogram) -- for quick iteration on styling, slices, vertical exaggeration or
+the reference model. femtic_ens_plot.py can work from the same file
+(``RESULTS_NPZ``).
+
 References
 ----------
 Bardsley, J. M.; Solonen, A.; Haario, H. & Laine, M.
@@ -725,6 +732,63 @@ Provenance
             Best-nRMS member also saved in the results .npz: <P>_best (vector),
             <P>_best_member, <P>_best_file, <P>_best_iter, <P>_best_nrms.
             AI-generated code -- review before production use.
+2026-10-27  Claude Sonnet 5.5 (Anthropic)
+            Optional reference model. New settings MOD_REF_FILE (block file
+            on the MOD_MESH mesh; None = off), MOD_REF_SLICES, MOD_REF_BH,
+            MOD_REF_LEVELS, MOD_REF_STYLE, MOD_REF_LABEL. Slices: the
+            reference is drawn as iso-resistivity lines on the best panel and
+            on every MOD_STATS panel (femtic_viz.plot_model_slices,
+            reference_*). Boreholes: dashed "ref" line (MOD_BH_STYLE["ref"]),
+            added to every MOD_BH panel unless the entry has ref=False, or
+            listed in "what"; also saved as ref_<name> in the borehole .npz
+            (header: reference_file). A missing or wrong-mesh reference is
+            reported and switched off, the run continues. New MOD_VERT_EXAG
+            (default None = unchanged behaviour): vertical exaggeration of the
+            ns / ew / plane panels from real axis units, also for
+            MOD_DISPLAY_COORDS="latlon", where MOD_EQUAL_ASPECT alone does not
+            act. Needs the 2026-10-27 femtic_viz.py. AI-generated code --
+            review before production use.
+2026-10-27b Claude Sonnet 5.5 (Anthropic)
+            Plot-only mode. New settings PLOT_ONLY (default False),
+            PLOT_ONLY_NPZ (None = ENSEMBLE_RESULTS) and PLOT_ONLY_TEMPLATE.
+            With PLOT_ONLY=True, sections (1)-(4b) (member scan, statistics,
+            sensitivity / SimRC, covariance, writing the .npz and the nRMS
+            table) are replaced by reading the existing results .npz; the
+            variables the plotting sections use are rebuilt from it (members
+            with their nRMS, ensemble matrix, avg / var / err / med / mad /
+            percentiles, qdiff_*, *_boot, sens_*, simrc_*; the percentile
+            levels come from the file; missing avg ... mad / prc are
+            recomputed from the members) and sections (5)-(9) run unchanged:
+            "best" panel, MOD_STATS_WHAT panels, MOD_ALPHA_SOURCE blanking,
+            boreholes (with the reference model, MOD_VERT_EXAG etc.), and the
+            nRMS histogram from NRMS_CSV (also searched next to the .npz).
+            The template block file is the best member's own file as stored
+            in the .npz, or PLOT_ONLY_TEMPLATE when that is gone (results
+            moved to another machine); the "best" panel is then drawn from the
+            stored best vector. The .npz is never rewritten. In this mode the
+            default MOD_STATS_WHAT lists the sens / simrc / bootstrap panels
+            regardless of the COMPUTE_* / BOOTSTRAP_VAR flags (keys not in the
+            file are skipped with a message) and their MOD_STATS_STYLE entries
+            are always defined. The full-run code path is unchanged (figures
+            and .npz identical to the previous version, tested). The block
+            "(1) ... (4b)" is indented under "else:" of "if PLOT_ONLY:".
+            AI-generated code -- review before production use.
+2026-10-27c Claude Sonnet 5.5 (Anthropic)
+            Fallback for a missing block file. New setting ITER_FALLBACK
+            (default True). If resistivity_block_iter<N>.dat of a member's
+            best-nRMS iteration N does not exist, the member's model is taken
+            from the best iteration that has a block file (iteration > 0,
+            lowest nRMS among those with a file, ties -> lower iteration;
+            usually N-1) instead of dropping the member; NRMS_MAX is applied
+            to that iteration's nRMS, and the member enters the ensemble (and
+            its sensitivity file, SENS_H5_PATTERN) with that iteration. Logged
+            per member; status "accepted_fallback" in NRMS_CSV, counted in
+            the nRMS histogram legend (the histogram treats every status
+            starting with "accepted" as accepted). Without a usable
+            alternative the member is still "no_model_file". ITER_FALLBACK=
+            False restores the previous behaviour. With nothing missing the
+            results are identical to the previous version (tested).
+            AI-generated code -- review before production use.
 
     This script targets FEMTIC's current HDF5 output layout only.
     AI-generated code -- review before production use.
@@ -863,11 +927,11 @@ print(titstrng + "\n\n")
 # #: e.g. "rto" → keys rto_ens, rto_avg, …  and file RTO_results.npz.
 # ENSEMBLE_PREFIX = "annecy_gst_0"
 
-ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_rto_1_orig-err/"
-ENSEMBLE_NAME = "annecy_rto_"
+ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_orig-err/"
+ENSEMBLE_NAME = "ann_rto_orig-err_"
 #: Prefix used for .npz output keys and default file/figure names.
 #: e.g. "rto" → keys rto_ens, rto_avg, …  and file RTO_results.npz.
-ENSEMBLE_PREFIX = "annecy_rto_1"
+ENSEMBLE_PREFIX = "annecy_rto_orig-err"
 
 # ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/misti2026/ensemble_gst_0/"
 # ENSEMBLE_NAME = "misti_rnd_0_"
@@ -882,6 +946,53 @@ CNV_FILE = ["femtic.cnv", "FEMTIC-DABIC.cnv"]
 
 #: Maximum normalised RMS accepted from the convergence file (CNV_FILE).
 NRMS_MAX = 2.
+
+#: A member's model is taken from its best-nRMS iteration N
+#: (resistivity_block_iter<N>.dat). If that file does not exist (FEMTIC wrote
+#: no block file for that iteration), True = use the best iteration that does
+#: have a block file instead -- in practice usually N-1: the iteration > 0
+#: with the lowest nRMS among those with a file (ties: the lower iteration),
+#: and NRMS_MAX is then applied to ITS nRMS. The member enters with that
+#: iteration's nRMS and model (also for its sensitivity file), is reported in
+#: the log, and has status "accepted_fallback" in NRMS_CSV. If no such
+#: iteration exists or its nRMS exceeds NRMS_MAX, the member is skipped as
+#: "no_model_file". False = skip it without looking for another iteration.
+ITER_FALLBACK = True
+
+# ---------------------------------------------------------------------------
+# Plot-only mode
+# ---------------------------------------------------------------------------
+#: False (default): full run -- scan the member directories, compute the
+#: statistics, write the results .npz, then plot.
+#: True: PLOT-ONLY -- read an existing results .npz (ENSEMBLE_RESULTS, i.e.
+#: <RESULTS_DIR>/<ENSEMBLE_PREFIX.upper()>_results.npz) and run only the
+#: plotting sections: "best" panel, MOD_STATS_WHAT statistic panels,
+#: boreholes (MOD_BH) and the nRMS histogram. No member directory, cnv or
+#: h5 file is read, nothing is recomputed (missing avg/var/err/med/mad/prc
+#: are rebuilt from the stored members), and the .npz is NOT rewritten, so
+#: styling, slices, MOD_VERT_EXAG, reference model, colour limits etc. can be
+#: iterated in seconds. All plotting settings below act as in a full run.
+#: What the file does not hold is not plotted: sens_* / simrc_* / *_boot
+#: panels exist only if the full run computed them (COMPUTE_*, BOOTSTRAP_VAR),
+#: and MOD_STATS_WHAT keys without data are skipped with a message. The
+#: percentile levels are taken from the file. Still needed on disk: MOD_MESH,
+#: and a block file for the region structure (see PLOT_ONLY_TEMPLATE).
+PLOT_ONLY = False
+
+#: Results .npz to read in plot-only mode. None = ENSEMBLE_RESULTS (see
+#: above). If the file contains one ensemble under a different key prefix
+#: than ENSEMBLE_PREFIX, that prefix is detected automatically (outputs are
+#: still named after ENSEMBLE_PREFIX).
+PLOT_ONLY_NPZ = None
+
+#: Template block file in plot-only mode (None = the best member's block file
+#: recorded in the .npz). Only its header / region structure / flag columns
+#: are used; all panels are drawn from the stored vectors. Set it when the
+#: results were moved to another machine or the member directories are gone:
+#: any resistivity block file of this ensemble (same mesh, same free regions)
+#: will do, e.g. a copy of the starting model. The "best" panel is then
+#: rebuilt from the stored best vector instead of the member's own file.
+PLOT_ONLY_TEMPLATE = None
 
 # ---------------------------------------------------------------------------
 # Statistics
@@ -1104,7 +1215,8 @@ RESULTS_DIR = os.path.join(ENSEMBLE_DIR, "results") + os.sep
 ENSEMBLE_RESULTS = RESULTS_DIR + ENSEMBLE_PREFIX.upper() + "_results.npz"
 
 #: Per-member best nRMS table (CSV): member, best iteration, nRMS, status
-#: ("accepted", "rejected_nrms_max", "no_model_file"). Always written.
+#: ("accepted", "accepted_fallback" (see ITER_FALLBACK), "rejected_nrms_max",
+#: "no_model_file"). Always written.
 NRMS_CSV = RESULTS_DIR + ENSEMBLE_PREFIX + "_nrms.csv"
 #: Histogram of the per-member best nRMS (all members with a valid nRMS,
 #: accepted and rejected shown stacked, NRMS_MAX marked). Extension-less
@@ -1197,7 +1309,7 @@ MOD_STATS_WHAT = (
       ["best", "avg", "med", "err", "mad"]
 #    + ["p" + f"{_p:g}".replace(".", "_") for _p in PERCENTILES]
     + [f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_") for _lo, _hi in QDIFF_PAIRS]
-    + (["err_boot"] if BOOTSTRAP_VAR else [])
+    + (["err_boot"] if (BOOTSTRAP_VAR or PLOT_ONLY) else [])
     + (
         [
             "sens_mean_raw",
@@ -1205,11 +1317,11 @@ MOD_STATS_WHAT = (
             "sens_median_an",
             "sens_cv_an",
         ]
-        if COMPUTE_SENS
+        if (COMPUTE_SENS or PLOT_ONLY)
         else []
     )
-    + (["simrc_corr"] if COMPUTE_SIMRC else [])
-    + (["simrc_coef"] if COMPUTE_SIMRC else [])
+    + (["simrc_corr"] if (COMPUTE_SIMRC or PLOT_ONLY) else [])
+    + (["simrc_coef"] if (COMPUTE_SIMRC or PLOT_ONLY) else [])
 )
 
 #: Extension-less base path for the "best" panel; _plot_slice() appends
@@ -1334,6 +1446,35 @@ MOD_SLICES = [
     # dict(kind="ew",  y0=(-16.299593, 'latlon')),    # km
 ]
 
+# --- Reference model (optional) -----------------------------------------------
+#: A reference model to compare the ensemble with: a resistivity block file
+#: (resistivity_block_iterX.dat) on the SAME mesh as MOD_MESH -- e.g. a
+#: deterministic inversion, the prior/starting model or a published model.
+#: Its region structure may differ from the members'. None = no reference
+#: (everything below is then ignored). A missing file, or one with another
+#: element count than MOD_MESH, switches the reference off with a message.
+MOD_REF_FILE = None  # e.g. ENSEMBLE_DIR + "reference/resistivity_block_iter20.dat"
+#: Slices: draw the reference as iso-resistivity lines on every slice panel
+#: (the "best" panel and all MOD_STATS panels). The lines are the exact
+#: boundaries between slice cells lying on different sides of a level; air
+#: and ocean cells of the reference are ignored.
+MOD_REF_SLICES = True
+#: Boreholes: add the reference profile as a dashed line "reference model"
+#: to every MOD_BH panel. A MOD_BH entry can switch it off with ref=False, or
+#: list "ref" in its "what" to force it on and to set its drawing position.
+#: Style: MOD_BH_STYLE["ref"].
+MOD_REF_BH = True
+#: Contour levels in log10(Ohm.m), e.g. [1.0, 2.0, 3.0]. None = the integer
+#: decades inside MOD_CLIM (the reference model's own range if MOD_CLIM is
+#: None). Always in the reference model's units, whatever quantity a
+#: MOD_STATS panel shows.
+MOD_REF_LEVELS = None
+#: LineCollection keywords of the slice lines, e.g.
+#: dict(colors="k", linewidths=0.8, linestyles="--").
+MOD_REF_STYLE = dict(colors="k", linewidths=0.8)
+#: Legend entry of the slice lines (lower right of each panel); None = none.
+MOD_REF_LABEL = "reference model"
+
 # --- Borehole profiles (optional) --------------------------------------------
 #: 1-D resistivity-depth profiles through the ensemble at vertical "boreholes".
 #: One panel per entry, all panels in one figure (MOD_BH_FILE). An empty list
@@ -1372,7 +1513,14 @@ MOD_SLICES = [
 #:               "ensemble"     every accepted member, thin lines drawn with
 #:                              opacity "alpha"
 #:               "best"         the best-nRMS member
+#:               "ref"          the reference model (MOD_REF_FILE); added
+#:                              automatically (drawn last, on top) when
+#:                              MOD_REF_BH is True; list it here to choose its
+#:                              position, or to force it on when MOD_REF_BH is
+#:                              False
 #:             Default ["avg", "percentiles"].
+#:   "ref"   : False = no reference line in this panel although MOD_REF_BH is
+#:             True. Default True.
 #:   "alpha" : opacity of the "ensemble" lines, 0..1. Default MOD_BH_ALPHA.
 #:   "xlim"  : [rho_min, rho_max] in Ohm.m for this panel (default MOD_BH_XLIM).
 #:   "style" : dict of per-entry style overrides, keyed like MOD_BH_STYLE.
@@ -1443,6 +1591,7 @@ MOD_BH_STYLE = {
     "percentiles": dict(cmap="viridis", lw=1.2, ls="--"),
     "sigma1": dict(color="navy", lw=1.6, ls="--"),
     "sigma2": dict(color="steelblue", lw=1.2, ls=":"),
+    "ref": dict(color="black", lw=2.2, ls="--"),
 }
 
 MOD_XLIM = None  # [xmin, xmax] model-local km; None = auto
@@ -1498,14 +1647,14 @@ for _lo, _hi in QDIFF_PAIRS:
     MOD_STATS_STYLE[f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_")] = dict(
         clim=[0.0, 0.3], label=f"P{_hi:g} - P{_lo:g}  log10(rho)"
     )
-if BOOTSTRAP_VAR:
+if BOOTSTRAP_VAR or PLOT_ONLY:
     MOD_STATS_STYLE["var_boot"] = dict(
         clim=[0.0, 0.3], label="bootstrap var log10(rho)"
     )
     MOD_STATS_STYLE["err_boot"] = dict(
         clim=[0.0, 0.3], label="bootstrap std log10(rho)"
     )
-if COMPUTE_SENS:
+if COMPUTE_SENS or PLOT_ONLY:
     #: Native SENS_KIND units -- run- and mesh-dependent, auto-scaled.
     MOD_STATS_STYLE["sens_mean_raw"] = dict(
         cmap="viridis", clim=None, label=f"log10 S ({SENS_KIND})"
@@ -1520,7 +1669,7 @@ if COMPUTE_SENS:
         MOD_STATS_STYLE[f"sens_cv_{_sfx}"] = dict(
             cmap="viridis", clim=None, label=f"CV of S ({_sfx})"
         )
-if COMPUTE_SIMRC:
+if COMPUTE_SIMRC or PLOT_ONLY:
     MOD_STATS_STYLE["simrc_coef"] = dict(
         cmap="viridis", clim=None, label="log10 sum|SimRC|"
     )
@@ -1556,6 +1705,14 @@ MOD_ALPHA_QC = True
 
 # --- Figure layout -----------------------------------------------------------
 MOD_EQUAL_ASPECT = True
+#: Vertical exaggeration of the section panels (ns, ew and vertical "plane").
+#: None = as set by MOD_EQUAL_ASPECT (unchanged). A number fixes the aspect of
+#: every section from the real axis units: 1.0 = true equal axes, 2.0 = the
+#: vertical scale twice the horizontal one. Works for every
+#: MOD_DISPLAY_COORDS, also "latlon", where MOD_EQUAL_ASPECT alone does not
+#: act (its test needs model/utm display); map panels stay 1:1 while
+#: MOD_EQUAL_ASPECT is True.
+MOD_VERT_EXAG = None
 MOD_DEPTH_KM = True
 MOD_HORIZ_KM = True
 #: 2x2 grid matching the 4 default MOD_SLICES panels (2 maps + ns + ew).
@@ -2048,6 +2205,108 @@ def _resolve_origin_and_sites():
     return _e, _n, _lat, _lon, _zone, _north, site_xys, obs_coords_only
 
 
+# ---------------------------------------------------------------------------
+# Reference model (MOD_REF_FILE)
+# ---------------------------------------------------------------------------
+_REF_STATE = {"checked": False, "ok": False, "struct": None}
+
+
+def _ref_active() -> bool:
+    """True if MOD_REF_FILE is set and exists (checked, reported once)."""
+    if not _REF_STATE["checked"]:
+        _REF_STATE["checked"] = True
+        if MOD_REF_FILE is None:
+            pass
+        elif not os.path.isfile(MOD_REF_FILE):
+            print(f"  MOD_REF_FILE not found: {MOD_REF_FILE} - reference off.")
+        else:
+            _REF_STATE["ok"] = True
+    return bool(_REF_STATE["ok"])
+
+
+def _ref_disable(why: str) -> None:
+    """Switch the reference off for the rest of the run, with a message."""
+    print(f"  reference model off: {why}")
+    _REF_STATE["ok"] = False
+
+
+def _block_nelem(path) -> int:
+    """Element count from the header line of a resistivity block file."""
+    with open(path, "r", encoding="utf-8", errors="replace") as _f:
+        return int(_f.readline().split()[0])
+
+
+def _ref_struct():
+    """Region structure of the reference block file (read once); None = off."""
+    if not _ref_active():
+        return None
+    if _REF_STATE["struct"] is None:
+        _REF_STATE["struct"] = fem._read_resistivity_block_struct(
+            MOD_REF_FILE, ocean=MOD_OCEAN, out=False
+        )
+    return _REF_STATE["struct"]
+
+
+def _ref_levels() -> list:
+    """Contour levels (log10 Ohm.m) of the reference lines in the slices.
+
+    MOD_REF_LEVELS if given, else the integer decades strictly inside
+    MOD_CLIM, else inside the range of the reference model's own free
+    regions. The same levels serve every panel: the reference is always
+    contoured in its own units, whatever a MOD_STATS panel shows.
+    """
+    if MOD_REF_LEVELS is not None:
+        return [float(v) for v in np.atleast_1d(MOD_REF_LEVELS)]
+    if MOD_CLIM is not None:
+        lo, hi = float(min(MOD_CLIM)), float(max(MOD_CLIM))
+    else:
+        st = _ref_struct()
+        rho = np.asarray(st["region_rho"], dtype=float)
+        keep = np.isfinite(rho) & (rho > 0.0)
+        keep[0] = False  # air
+        if rho.size > 1 and st["meta"]["ocean_present"]:
+            keep[1] = False  # ocean
+        lg = np.log10(rho[keep])
+        lg = lg[lg <= 8.0]
+        if lg.size == 0:
+            return []
+        lo, hi = float(lg.min()), float(lg.max())
+    lev = np.arange(math.floor(lo) + 1, math.ceil(hi), dtype=float)
+    if lev.size == 0:
+        lev = np.array([0.5 * (lo + hi)])
+    return [float(v) for v in lev]
+
+
+def _ref_slice_kwargs(block_file: str) -> dict:
+    """plot_model_slices keywords for the reference lines ({} = no reference).
+
+    The reference must have the element count of the plotted block file
+    (same mesh); otherwise it is switched off with a message instead of
+    stopping the run.
+    """
+    if not (MOD_REF_SLICES and _ref_active()):
+        return {}
+    try:
+        n_ref, n_blk = _block_nelem(MOD_REF_FILE), _block_nelem(block_file)
+    except (OSError, ValueError, IndexError) as _err:
+        _ref_disable(f"cannot read the block-file headers ({_err}).")
+        return {}
+    if n_ref != n_blk:
+        _ref_disable(
+            f"MOD_REF_FILE has {n_ref} elements but the model has {n_blk} - "
+            f"it must live on the same mesh as MOD_MESH."
+        )
+        return {}
+    return dict(
+        reference_file=MOD_REF_FILE,
+        reference_levels=_ref_levels(),
+        reference_style=dict(MOD_REF_STYLE or {}),
+        reference_label=MOD_REF_LABEL,
+        reference_ocean_value=MOD_OCEAN_RHO,
+        reference_air_log10_thresh=8.0,
+    )
+
+
 def _plot_slice(
     block_file: str,
     pdf_file: str,
@@ -2094,11 +2353,18 @@ def _plot_slice(
         or ocean (log10 ~ log10(MOD_OCEAN_RHO)) by plot_model_slices.
     figure_title : str | None
         Figure title passed to plot_model_slices; None = block-file name.
+
+    Module settings used besides the MOD_* layout ones: MOD_REF_FILE /
+    MOD_REF_SLICES / MOD_REF_LEVELS / MOD_REF_STYLE / MOD_REF_LABEL (reference
+    iso-lines on every panel, stats panels included; the reference is read
+    from its own block file and always contoured in its own resistivity) and
+    MOD_VERT_EXAG (vertical exaggeration of the section panels).
     """
     if fviz is None:
         print("  plot_slice: femtic_viz not available — skipping.")
         return
 
+    _ref_kw = _ref_slice_kwargs(block_file)
     _clim = MOD_CLIM if (isinstance(clim, str) and clim == "model") else clim
     _cmap = MOD_CMAP if cmap is None else cmap
     _ocean_value = _STATS_OCEAN_RHO if stats_panel else MOD_OCEAN_RHO
@@ -2170,6 +2436,7 @@ def _plot_slice(
             depth_km=MOD_DEPTH_KM,
             horiz_km=MOD_HORIZ_KM,
             equal_aspect=MOD_EQUAL_ASPECT,
+            vert_exag=MOD_VERT_EXAG,
             panel_height=MOD_PANEL_HEIGHT / 2.54,
             panel_width=(
                 MOD_PANEL_WIDTH / 2.54 if MOD_PANEL_WIDTH is not None else None
@@ -2188,6 +2455,7 @@ def _plot_slice(
             tick_decimals=MOD_TICK_DECIMALS,
             alpha_file=alpha_file,
             alpha_mode="direct",
+            **_ref_kw,
             plot_file=_fmt_file,
             dpi=MOD_DPI,
             show=_show_this,
@@ -2389,13 +2657,13 @@ def _bh_expand_what(what, value_keys):
             new = pct_keys
         elif w in ("sigma1", "sigma2"):
             new = [w + "_lo", w + "_hi"]
-        elif w in ("ensemble", "best") or w in value_keys:
+        elif w in ("ensemble", "best", "ref") or w in value_keys:
             new = [w]
         else:
             print(
                 f"  MOD_BH: '{w}' is not available (use 'avg', 'med', "
                 f"'percentiles', a percentile key {pct_keys}, 'sigma1', "
-                f"'sigma2', 'ensemble' or 'best') - skipped."
+                f"'sigma2', 'ensemble', 'best' or 'ref') - skipped."
             )
             new = []
         keys += [k for k in new if k not in keys]
@@ -2514,6 +2782,10 @@ def _plot_boreholes(profiles, plot_base):
                 st = _bh_style(key, spec, pct_keys.index(key), len(pct_keys))
                 label = "P" + key[1:].replace("_", ".")
                 z = 2
+            elif key == "ref":
+                st = _bh_style(key, spec)
+                label = MOD_REF_LABEL if MOD_REF_LABEL else "_nolegend_"
+                z = 4  # on top of the ensemble statistics
             else:
                 st = _bh_style(key, spec)
                 label = {"avg": "mean", "med": "median", "best": "best member"}[
@@ -2582,8 +2854,13 @@ def _plot_nrms_hist(rows, plot_base):
     """
     import matplotlib.pyplot as plt
 
-    acc = np.array([r[2] for r in rows if r[3] == "accepted"], dtype=float)
-    rej = np.array([r[2] for r in rows if r[3] != "accepted"], dtype=float)
+    acc = np.array(
+        [r[2] for r in rows if r[3].startswith("accepted")], dtype=float
+    )
+    rej = np.array(
+        [r[2] for r in rows if not r[3].startswith("accepted")], dtype=float
+    )
+    n_fb = sum(1 for r in rows if r[3] == "accepted_fallback")
     allv = np.concatenate((acc, rej))
     if allv.size == 0:
         print("  nRMS histogram: no members - skipped.")
@@ -2596,7 +2873,12 @@ def _plot_nrms_hist(rows, plot_base):
         stacked=True,
         color=["tab:blue", "tab:red"],
         edgecolor="k",
-        label=[f"accepted (n={acc.size})", f"rejected (n={rej.size})"],
+        label=[
+            f"accepted (n={acc.size}"
+            + (f", {n_fb} with fallback iter" if n_fb else "")
+            + ")",
+            f"rejected (n={rej.size})",
+        ],
     )
     ax.axvline(NRMS_MAX, color="k", ls="--", lw=1.2, label=f"NRMS_MAX = {NRMS_MAX}")
     if acc.size:
@@ -2631,554 +2913,799 @@ def _plot_nrms_hist(rows, plot_base):
 # Main
 # ===========================================================================
 
-# --- (1) Scan ensemble directories ----------------------------------------
-# get_filelist() matches on name only (fnmatch over os.listdir), so it can
-# return non-directory matches (stray files, archives, etc.) alongside the
-# actual ensemble-member sub-directories. Filter to directories immediately,
-# before counting/looping, so downstream logic never has to think about
-# non-directory entries.
-dir_list = utl.get_filelist(
-    searchstr=[ENSEMBLE_NAME + "*"],
-    searchpath=ENSEMBLE_DIR,
-    fullpath=True,
-)
-dir_list = [d for d in dir_list if os.path.isdir(d)]
-print(f"Found {len(dir_list)} sub-directory/ies matching '{ENSEMBLE_NAME}'.")
+#: Plot-only state, filled by the PLOT_ONLY loader below and read by the
+#: best-member (QC) panel: name of the best member's block file as stored in
+#: the results .npz, and whether that panel must be rebuilt from the stored
+#: best vector (PLOT_ONLY_TEMPLATE given) instead of the member's own file.
+_po_best_name = None
+_plot_only_best_member = None
+_po_qc_from_vector = False
 
-model_list = []  # list of [block_file, n_iter, nRMS]
-nrms_table = []  # (member, best_iter, nRMS, status) for NRMS_CSV / histogram
-model_count = 0
-ens_matrix = None  # will become (n_members, n_free) float64
-
-sens_matrix = None  # will become (n_sens_members, n_free) float64
-sens_count = 0  # accepted members whose results_iterX.h5 was found
-sens_missing_any = False
-sens_fail = []  # (member dir, reason) for skipped members
-
-ens_data_matrix = None  # will become (n_simrc_members, n_data) float64
-simrc_count = 0  # accepted members whose result files were found
-simrc_missing_any = False
-simrc_fail = []  # (member dir, reason) for skipped members
-simrc_manifest = None  # bytes key of the first member's data composition
-simrc_err = None  # first member's per-column errors (SIMRC_ERR_WEIGHT)
-#: Row indices into ens_matrix (i.e. which accepted members, in append
-#: order) that also contributed a row to ens_data_matrix -- needed so the
-#: model/data cross-covariance below pairs up the *same* members, since
-#: COMPUTE_SIMRC can drop members that COMPUTE_SENS did not (and vice
-#: versa).
-simrc_keep_idx = []
-
-for d in dir_list:
-    print(f"\n  Inversion run: {d}")
-    cnv_file = str(fem.resolve_cnv_path(d, CNV_FILE))
-    if not os.path.isfile(cnv_file):
-        print(f"    {os.path.basename(cnv_file)} not found — skipped.")
-        continue
-
-    # Column positions are read from this file's own header row via
-    # fem.read_cnv() -- robust to FEMTIC version and to whether distortion
-    # parameters (the Beta/Distortion columns) are present, which shift
-    # RMS's column position independently of version (e.g. a 4.3 run WITH
-    # distortion has RMS at the same column as a typical 5.x run, not at
-    # the plain-4.3 position). A version-string switch conflated the two
-    # and silently misread nRMS for 4.3-with-distortion runs. Fixed
-    # 2026-09-02 -- see femtic_readme.md's read_cnv() entry.
+if PLOT_ONLY:
+    # --- (1)-(4b) replaced: read the existing results .npz ------------------
+    # Nothing is scanned, recomputed or written (no member directories, no
+    # cnv/h5 files, no new .npz); the variables that sections (5)-(9) use are
+    # rebuilt from the file, so those sections run exactly as in a full run.
+    _po_npz = PLOT_ONLY_NPZ if PLOT_ONLY_NPZ else ENSEMBLE_RESULTS
+    if not os.path.isfile(_po_npz):
+        sys.exit(f"PLOT_ONLY: results file not found: {_po_npz}")
+    print(f"PLOT_ONLY: reading {_po_npz}")
     try:
-        _cnv = fem.read_cnv(cnv_file)
-    except ValueError as e:
-        print(f"    {e} — skipped.")
-        continue
+        _z = np.load(_po_npz, allow_pickle=False)
+    except (ValueError, OSError) as _e:
+        sys.exit(f"PLOT_ONLY: cannot read {_po_npz}: {_e}")
+    _keys = set(_z.files)
 
-    # Scan *every* convergence-history row — not just the last — to find
-    # the iteration with the smallest nRMS. The last iteration is not
-    # necessarily the best: FEMTIC does not guarantee monotonic nRMS
-    # reduction, and a run may drift upward again after its actual best
-    # iteration.
-    numit = None
-    nrms = None
-    iter0_nrms = None  # tracked separately only to power the warning below
-    for _row in _cnv["rows"]:
-        _it, _nrms = int(_row["Iter"]), _row["RMS"]
-        if _it == 0:
-            # iter0 (prior/starting model) is not eligible as "best
-            # iteration" — it precedes any inversion step.
-            iter0_nrms = _nrms
-            continue
-        if nrms is None or _nrms < nrms:
-            numit, nrms = _it, _nrms
-            # ties: keep the first (lowest-iteration) occurrence of the
-            # minimum, so a strict "<" (not "<=") comparison is correct
-            # here — later equal values are simply not adopted.
-
-    if numit is None:
-        print(
-            f"    no eligible (iter>0) convergence rows found in "
-            f"{cnv_file} — skipped."
+    # Key prefix inside the file: normally ENSEMBLE_PREFIX; if the file holds
+    # exactly one other ensemble, that one is used (outputs keep P).
+    _pk = ENSEMBLE_PREFIX
+    if f"{_pk}_ens" not in _keys:
+        _cand = sorted(
+            k[: -len("_ens")]
+            for k in _keys
+            if k.endswith("_ens") and f"{k[: -len('_ens')]}_avg" in _keys
         )
-        continue
-
-    if iter0_nrms is not None and iter0_nrms <= nrms:
-        print(
-            f"    WARNING: iter0 nRMS={iter0_nrms:.4f} is <= the best "
-            f"eligible iter>0 nRMS={nrms:.4f} (iter={numit}) — the "
-            f"inversion did not improve on the starting model, but "
-            f"iter0 is excluded from selection by design."
-        )
-
-    if nrms > NRMS_MAX:
-        print(
-            f"    best nRMS={nrms:.4f} (iter={numit}) > "
-            f"NRMS_MAX={NRMS_MAX} — skipped."
-        )
-        nrms_table.append(
-            (os.path.basename(os.path.normpath(d)), numit, nrms, "rejected_nrms_max")
-        )
-        continue
-
-    mod_file = os.path.join(d, f"resistivity_block_iter{numit}.dat")
-    if not os.path.isfile(mod_file):
-        print(f"    {mod_file} not found — skipped.")
-        nrms_table.append(
-            (os.path.basename(os.path.normpath(d)), numit, nrms, "no_model_file")
-        )
-        continue
-
-    nrms_table.append(
-        (os.path.basename(os.path.normpath(d)), numit, nrms, "accepted")
-    )
-    print(f"    iter={numit}  nRMS={nrms:.4f}  {mod_file}")
-    model_list.append([mod_file, numit, nrms])
-
-    log_m = fem.read_model(model_file=mod_file, model_trans="log10", out=OUT)
-
-    if ens_matrix is None:
-        ens_matrix = log_m[np.newaxis, :]  # (1, n_free)
-    else:
-        ens_matrix = np.vstack((ens_matrix, log_m))  # (k, n_free)
-
-    model_count += 1
-
-    # --- (1) Per-member cumulative sensitivity (optional) -------------
-    if COMPUTE_SENS:
-        sens_h5 = os.path.join(d, SENS_H5_PATTERN.format(numit=numit))
-        try:
-            sens_vec = fem.read_h5_sensitivity(
-                sens_h5,
-                group=SENS_H5_GROUP,
-                cumsens_key=SENS_KIND,
-                jacobian_key=SENS_JACOBIAN_KEY,
-                error_key=SENS_ERROR_KEY,
-                normalize=False,
-                out=OUT,
+        if len(_cand) == 1:
+            print(
+                f"  PLOT_ONLY: no '{_pk}_ens' in the file; using its only "
+                f"ensemble, prefix '{_cand[0]}'."
             )
-        except (FileNotFoundError, KeyError) as e:
-            # No fallback to jacobian.h5 by design (see SENS_JACOBIAN_KEY
-            # comment above) -- a missing SENS_KIND dataset at this
-            # member's numit just means sensitivity wasn't computed for
-            # that iteration; skip this member for sensitivity and move on.
-            print(f"    COMPUTE_SENS: {e} — member skipped for sensitivity.")
-            sens_missing_any = True
-            sens_fail.append((d, f"{type(e).__name__}: {e}"))
+            _pk = _cand[0]
         else:
-            _n_raw = sens_vec.shape[0]
-            sens_vec = _sens_to_free(sens_vec, mod_file, sens_h5)
-            if sens_vec is None or sens_vec.shape[0] != log_m.shape[0]:
-                print(
-                    f"    COMPUTE_SENS: {sens_h5} gives {_n_raw} "
-                    f"values; no mapping to {log_m.shape[0]} free "
-                    f"parameters (nreg={_SENS_MAP.get('nreg')}) — member "
-                    f"skipped for sensitivity."
-                )
-                sens_missing_any = True
-                sens_fail.append(
-                    (
-                        d,
-                        f"size {_n_raw} vs n_free "
-                        f"{log_m.shape[0]}, nreg "
-                        f"{_SENS_MAP.get('nreg')}",
+            sys.exit(
+                f"PLOT_ONLY: no '{_pk}_ens' in {_po_npz}. Ensemble prefixes "
+                f"found: {_cand if _cand else 'none'} -- set ENSEMBLE_PREFIX "
+                f"to one of them."
+            )
+
+    def _po_get(name, recompute):
+        """Array <_pk>_<name> from the file, else recompute() from the members."""
+        _k = f"{_pk}_{name}"
+        if _k in _keys:
+            return np.asarray(_z[_k], dtype=float)
+        print(f"  PLOT_ONLY: '{_k}' not in the file - recomputed from members.")
+        return recompute()
+
+    ens_matrix = np.asarray(_z[f"{_pk}_ens"], dtype=float)  # (n_members, n_free)
+    n_members = int(ens_matrix.shape[0])
+    if n_members == 0:
+        sys.exit("PLOT_ONLY: the file holds no ensemble members. Nothing to do.")
+
+    ens_avg = _po_get("avg", lambda: np.mean(ens_matrix, axis=0))
+    ens_var = _po_get("var", lambda: np.var(ens_matrix, axis=0))
+    ens_err = _po_get("err", lambda: np.sqrt(np.var(ens_matrix, axis=0)))
+    ens_med = _po_get("med", lambda: np.median(ens_matrix, axis=0))
+    ens_mad = _po_get(
+        "mad",
+        lambda: np.median(
+            np.abs(ens_matrix - np.median(ens_matrix, axis=0)[np.newaxis, :]),
+            axis=0,
+        ),
+    )
+
+    # Percentile levels as stored (they define the p<level> panel keys).
+    if f"{_pk}_prc_levels" in _keys:
+        _lv = [float(v) for v in np.asarray(_z[f"{_pk}_prc_levels"]).ravel()]
+        if _lv != [float(v) for v in PERCENTILES]:
+            print(
+                f"  PLOT_ONLY: using the stored percentile levels {_lv} "
+                f"instead of PERCENTILES={list(PERCENTILES)}."
+            )
+        PERCENTILES = _lv
+    ens_prc = _po_get(
+        "prc", lambda: np.percentile(ens_matrix, PERCENTILES, axis=0)
+    )
+    if ens_prc.shape[0] != len(PERCENTILES):
+        sys.exit(
+            f"PLOT_ONLY: '{_pk}_prc' has {ens_prc.shape[0]} rows but there "
+            f"are {len(PERCENTILES)} percentile levels - inconsistent file."
+        )
+
+    # Optional statistics: whatever the full run stored.
+    ens_qdiff = {}
+    _pre = f"{_pk}_qdiff_"
+    for _k in sorted(_keys):
+        if _k.startswith(_pre):
+            ens_qdiff[_k[len(_pk) + 1 :]] = np.asarray(_z[_k], dtype=float)
+    ens_var_boot = ens_err_boot = ens_var_boot_se = None
+    if f"{_pk}_var_boot" in _keys:
+        ens_var_boot = np.asarray(_z[f"{_pk}_var_boot"], dtype=float)
+        ens_err_boot = (
+            np.asarray(_z[f"{_pk}_err_boot"], dtype=float)
+            if f"{_pk}_err_boot" in _keys
+            else np.sqrt(ens_var_boot)
+        )
+        if f"{_pk}_var_boot_se" in _keys:
+            ens_var_boot_se = np.asarray(_z[f"{_pk}_var_boot_se"], dtype=float)
+    sens = {}
+    _pre = f"{_pk}_sens_"
+    for _k in sorted(_keys):
+        if _k.startswith(_pre):
+            sens[_k[len(_pre) :]] = np.asarray(_z[_k], dtype=float)
+    simrc_coef = simrc_corr = None
+    if f"{_pk}_simrc_coef" in _keys and f"{_pk}_simrc_corr" in _keys:
+        simrc_coef = np.asarray(_z[f"{_pk}_simrc_coef"], dtype=float)
+        simrc_corr = np.asarray(_z[f"{_pk}_simrc_corr"], dtype=float)
+    # Only read by the failure message of MOD_ALPHA_SOURCE (which says
+    # "not stored in the results file" in this mode); defined for safety.
+    sens_count = simrc_count = 0
+    sens_fail = []
+    simrc_fail = []
+
+    # Member list: [block file, best iteration, nRMS] per row of ens_matrix
+    # (stored as a string array; mixed-type lists are saved that way).
+    if f"{_pk}_model_list" not in _keys:
+        sys.exit(f"PLOT_ONLY: '{_pk}_model_list' missing from {_po_npz}.")
+    model_list = [
+        [str(_r[0]), int(float(_r[1])), float(_r[2])]
+        for _r in np.asarray(_z[f"{_pk}_model_list"]).reshape(-1, 3)
+    ]
+    if len(model_list) != n_members:
+        sys.exit(
+            f"PLOT_ONLY: model_list has {len(model_list)} entries but the "
+            f"ensemble matrix has {n_members} rows - inconsistent file."
+        )
+    _bi = min(range(len(model_list)), key=lambda i: model_list[i][2])
+    _po_best_name = os.path.basename(
+        str(_z[f"{_pk}_best_file"]) if f"{_pk}_best_file" in _keys else model_list[_bi][0]
+    )
+    _plot_only_best_member = (
+        str(_z[f"{_pk}_best_member"])
+        if f"{_pk}_best_member" in _keys
+        else os.path.basename(os.path.dirname(model_list[_bi][0]))
+    )
+    if f"{_pk}_best" in _keys:
+        _sb = np.asarray(_z[f"{_pk}_best"], dtype=float)
+        if _sb.shape != ens_matrix[_bi].shape or not np.allclose(_sb, ens_matrix[_bi]):
+            print(
+                "  PLOT_ONLY: WARNING - stored best vector differs from the "
+                "lowest-nRMS row of the ensemble matrix."
+            )
+
+    # Template block file (header, region structure, flag columns): the best
+    # member's own file, or PLOT_ONLY_TEMPLATE when that is gone / elsewhere.
+    # model_list's best entry is pointed at it, so (5)-(9) use it unchanged.
+    _tpl = PLOT_ONLY_TEMPLATE if PLOT_ONLY_TEMPLATE else model_list[_bi][0]
+    if MOD_QC or MOD_STATS or MOD_BH:
+        if not os.path.isfile(_tpl):
+            sys.exit(
+                f"PLOT_ONLY: template block file not found: {_tpl}\n"
+                f"  The stored best-member file is {model_list[_bi][0]}.\n"
+                f"  Set PLOT_ONLY_TEMPLATE to any resistivity block file of "
+                f"this ensemble (same mesh and regions) -- the panels are "
+                f"drawn from the stored vectors, only its structure is used."
+            )
+        _tst = fem._read_resistivity_block_struct(_tpl, ocean=MOD_OCEAN, out=False)
+        if int(np.asarray(_tst["free_idx"]).size) != ens_matrix.shape[1]:
+            sys.exit(
+                f"PLOT_ONLY: template {_tpl} has "
+                f"{int(np.asarray(_tst['free_idx']).size)} free regions but the "
+                f"ensemble has {ens_matrix.shape[1]} - it is not a block file "
+                f"of this ensemble."
+            )
+    _po_qc_from_vector = os.path.abspath(_tpl) != os.path.abspath(model_list[_bi][0])
+    model_list[_bi][0] = _tpl
+
+    P = ENSEMBLE_PREFIX
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    print(
+        f"PLOT_ONLY: {n_members} members, {ens_matrix.shape[1]} free "
+        f"parameters, best nRMS {model_list[_bi][2]:.4f} "
+        f"({_plot_only_best_member}, iter {model_list[_bi][1]})."
+    )
+    _have = (
+        ["avg", "var", "err", "med", "mad"]
+        + ["p" + f"{_p:g}".replace(".", "_") for _p in PERCENTILES]
+        + list(ens_qdiff)
+        + (["var_boot", "err_boot"] if ens_var_boot is not None else [])
+        + [f"sens_{_k}" for _k in sens]
+        + (["simrc_coef", "simrc_corr"] if simrc_coef is not None else [])
+    )
+    print(f"  statistics in the file : {_have}")
+    print(f"  requested (MOD_STATS_WHAT): {list(MOD_STATS_WHAT)}")
+
+    # nRMS histogram from the CSV written by the full run (the .npz holds
+    # accepted members only, the histogram also shows the rejected ones).
+    if MOD_NRMS_HIST:
+        import csv
+
+        nrms_table = []
+        _po_csv = NRMS_CSV
+        _po_csv_alt = os.path.join(os.path.dirname(_po_npz), f"{_pk}_nrms.csv")
+        if not os.path.isfile(_po_csv):
+            _po_csv = _po_csv_alt
+        if os.path.isfile(_po_csv):
+            with open(_po_csv, newline="", encoding="utf-8") as _fh:
+                for _r in csv.DictReader(_fh):
+                    nrms_table.append(
+                        (_r["member"], int(_r["best_iter"]), float(_r["nrms"]), _r["status"])
                     )
-                )
-            else:
-                if sens_matrix is None:
-                    sens_matrix = sens_vec[np.newaxis, :]
-                else:
-                    sens_matrix = np.vstack((sens_matrix, sens_vec))
-                sens_count += 1
-
-    # --- (2) Per-member forward response for SimRC (optional) ---------
-    if COMPUTE_SIMRC:
-        _res_h5 = os.path.join(d, SENS_H5_PATTERN.format(numit=numit))
-        try:
-            _rd = fem.read_results_data(_res_h5, out=OUT)
-            d_cal, manifest, d_err = _simrc_columns(_rd["rows"])
-        except (FileNotFoundError, KeyError, ValueError, OSError) as e:
-            print(f"    COMPUTE_SIMRC: {e} — member skipped for SimRC.")
-            simrc_missing_any = True
-            simrc_fail.append((d, f"{type(e).__name__}: {e}"))
+            _plot_nrms_hist(nrms_table, MOD_NRMS_HIST_FILE)
         else:
-            if simrc_manifest is None:
-                simrc_manifest = manifest
-                simrc_err = d_err
-            if manifest != simrc_manifest:
-                print(
-                    f"    COMPUTE_SIMRC: {_res_h5} data composition differs "
-                    f"from the first member's — member skipped for SimRC."
-                )
-                simrc_missing_any = True
-                simrc_fail.append(
-                    (d, "data composition differs from first member")
-                )
-            elif not np.all(np.isfinite(d_cal)):
-                _nbad = int(np.sum(~np.isfinite(d_cal)))
-                print(
-                    f"    COMPUTE_SIMRC: {_nbad} missing calculated value(s) "
-                    f"in {_res_h5} — member skipped for SimRC."
-                )
-                simrc_missing_any = True
-                simrc_fail.append((d, f"{_nbad} missing calculated values"))
-            else:
-                if SIMRC_ERR_WEIGHT:
-                    d_cal = d_cal / simrc_err
-                if ens_data_matrix is None:
-                    ens_data_matrix = d_cal[np.newaxis, :]
-                else:
-                    ens_data_matrix = np.vstack((ens_data_matrix, d_cal))
-                simrc_keep_idx.append(
-                    model_count - 1
-                )  # row just appended to ens_matrix
-                simrc_count += 1
-
-n_members = model_count
-print(f"\nConverged members: {n_members}")
-
-
-def _report_skips(tag, flag, count, fails, nmax=5):
-    """One-block summary of why per-member sensitivity/SimRC reads failed."""
-    if not flag:
-        print(f"  {tag}: disabled.")
-        return
-    print(f"  {tag}: usable for {count}/{n_members} accepted members.")
-    for _d, _why in fails[:nmax]:
-        print(f"    skipped {os.path.basename(os.path.normpath(_d))}: {_why}")
-    if len(fails) > nmax:
-        print(f"    ... and {len(fails) - nmax} more.")
-
-
-_report_skips("COMPUTE_SENS", COMPUTE_SENS, sens_count, sens_fail)
-_report_skips("COMPUTE_SIMRC", COMPUTE_SIMRC, simrc_count, simrc_fail)
-
-if n_members == 0:
-    sys.exit("No converged members found. Nothing to do.")
-
-# ens_matrix shape: (n_members, n_free)
-# axis=0 → reduce over members  (correct for all aggregate statistics)
-# axis=1 → reduce over free parameters (was the bug in the original script)
-
-# --- (2) Summary statistics -----------------------------------------------
-P = ENSEMBLE_PREFIX
-ne = ens_matrix.shape
-
-ens_avg = np.mean(ens_matrix, axis=0)  # (n_free,)
-ens_var = np.var(ens_matrix, axis=0)  # (n_free,)
-ens_err = np.sqrt(ens_var)  # (n_free,) -- std, comparable to MAD/QDIFF
-ens_med = np.median(ens_matrix, axis=0)  # (n_free,)
-ens_mad = np.median(
-    np.abs(ens_matrix - ens_med[np.newaxis, :]), axis=0
-)  # (n_free,)
-ens_prc = np.percentile(ens_matrix, PERCENTILES, axis=0)  # (n_prc, n_free)
-
-# --- Percentile-pair differences (robust spread, e.g. 1-sigma-equivalent IQR) ---
-ens_qdiff = {}  # key -> (n_free,) array
-for _lo, _hi in QDIFF_PAIRS:
-    if _lo not in PERCENTILES or _hi not in PERCENTILES:
-        print(
-            f"  QDIFF_PAIRS: ({_lo}, {_hi}) not both in PERCENTILES — skipped."
-        )
-        continue
-    _ilo = PERCENTILES.index(_lo)
-    _ihi = PERCENTILES.index(_hi)
-    _qkey = f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_")
-    ens_qdiff[_qkey] = np.abs(ens_prc[_ihi] - ens_prc[_ilo])  # (n_free,)
-
-# --- Bootstrap variance estimate (optional alternative to the plug-in VAR) ---
-ens_var_boot = None
-ens_err_boot = None
-ens_var_boot_se = None
-if BOOTSTRAP_VAR:
-    print(
-        f"\nBootstrap variance estimation: {BOOTSTRAP_N} resamples "
-        f"(seed={BOOTSTRAP_SEED if BOOTSTRAP_SEED is not None else '(fresh entropy)'}) …"
-    )
-    _boot_rng = np.random.default_rng(BOOTSTRAP_SEED)
-    ens_var_boot, ens_var_boot_se = _bootstrap_variance(
-        ens_matrix,
-        BOOTSTRAP_N,
-        _boot_rng,
-        out=OUT,
-    )
-    ens_err_boot = np.sqrt(ens_var_boot)
-
-print(f"\nStatistics (over {n_members} members, {ne[1]} free parameters):")
-print(f"  mean   log10(ρ): [{ens_avg.min():.3f}, {ens_avg.max():.3f}]")
-print(f"  var    log10(ρ): [{ens_var.min():.4f}, {ens_var.max():.4f}]")
-print(
-    f"  err    log10(ρ): [{ens_err.min():.4f}, {ens_err.max():.4f}]  (= sqrt(var))"
-)
-print(f"  median log10(ρ): [{ens_med.min():.3f}, {ens_med.max():.3f}]")
-print(f"  MAD    log10(ρ): [{ens_mad.min():.4f}, {ens_mad.max():.4f}]")
-for _qkey, _qval in ens_qdiff.items():
-    print(f"  {_qkey}: [{_qval.min():.4f}, {_qval.max():.4f}]")
-if BOOTSTRAP_VAR:
-    print(
-        f"  var_boot  log10(ρ): [{ens_var_boot.min():.4f}, {ens_var_boot.max():.4f}]"
-    )
-    print(
-        f"  err_boot  log10(ρ): [{ens_err_boot.min():.4f}, {ens_err_boot.max():.4f}]  (= sqrt(var_boot))"
-    )
-    print(
-        f"  var_boot_se       : [{ens_var_boot_se.min():.4f}, {ens_var_boot_se.max():.4f}]  "
-        f"(bootstrap SE of var_boot itself)"
-    )
-
-# --- (2b) Sensitivity statistics: (1) per-member Jacobian aggregation ------
-# Two aggregation orders, computed side by side -- see SENS_KIND's
-# docstring above for why there is no single "correct" one now that the
-# per-member sensitivity in results_iterX.h5 is confirmed NOT to already
-# be normalised to that member's own max.
-_SENS_STATS = ("mean", "median", "min", "max", "std")
-#: key -> log10 array, e.g. sens["mean_na"], sens["cv_an"] (cv linear);
-#: empty when COMPUTE_SENS is off or found no usable files.
-sens = {}
-if COMPUTE_SENS:
-    if sens_matrix is None or sens_count == 0:
-        print(
-            "\n  COMPUTE_SENS: no results_iterX.h5 sensitivity files found — skipped."
-        )
-    else:
-        if sens_missing_any or sens_count != n_members:
             print(
-                f"\n  COMPUTE_SENS: sensitivity available for {sens_count}/"
-                f"{n_members} accepted members — aggregating over those only."
+                f"  PLOT_ONLY: nRMS table not found ({NRMS_CSV}, "
+                f"{_po_csv_alt}) - nRMS histogram skipped."
             )
-
-        def _aggregate(M):
-            """mean/median/min/max/std/cv across members (rows), linear."""
-            agg = {
-                "mean": np.mean(M, axis=0),
-                "median": np.median(M, axis=0),
-                "min": np.min(M, axis=0),
-                "max": np.max(M, axis=0),
-                "std": (
-                    np.std(M, axis=0, ddof=1)
-                    if M.shape[0] > 1
-                    else np.zeros(M.shape[1])
-                ),
-            }
-            with np.errstate(divide="ignore", invalid="ignore"):
-                cv = agg["std"] / agg["mean"]
-            cv[~np.isfinite(cv)] = 0.0
-            agg["cv"] = cv
-            return agg
-
-        # "_raw": plain ensemble mean in SENS_KIND's native units.
-        sens["mean_raw"] = _log10_pos(np.mean(sens_matrix, axis=0))
-
-        # "_na": normalise each member by its own max, THEN aggregate.
-        _row_max = np.max(sens_matrix, axis=1, keepdims=True)
-        _row_max[_row_max == 0.0] = 1.0  # guard an all-zero member
-        _agg = _aggregate(sens_matrix / _row_max)
-        for _st in _SENS_STATS:
-            sens[f"{_st}_na"] = _log10_pos(_agg[_st])
-        sens["cv_na"] = _agg["cv"]
-
-        # "_an": aggregate the RAW ensemble, THEN normalise by max(mean).
-        _agg = _aggregate(sens_matrix)
-        _renorm = np.nanmax(_agg["mean"])
-        _renorm = _renorm if _renorm > 0 else 1.0
-        for _st in _SENS_STATS:
-            sens[f"{_st}_an"] = _log10_pos(_agg[_st] / _renorm)
-        sens["cv_an"] = _agg["cv"]
-
-        print(
-            f"\n  Sensitivity (Jacobian, {sens_count} members, SENS_KIND="
-            f"'{SENS_KIND}'), log10:"
-        )
-        for _k in ("mean_raw", "mean_na", "mean_an"):
-            print(
-                f"    sens_{_k:<9s}: [{np.nanmin(sens[_k]):.3f}, "
-                f"{np.nanmax(sens[_k]):.3f}]  "
-                f"({int(np.sum(~np.isfinite(sens[_k])))} non-positive -> NaN)"
-            )
-        print(
-            f"    sens_cv (na / an, linear): "
-            f"[{sens['cv_na'].min():.3f}, {sens['cv_na'].max():.3f}]  /  "
-            f"[{sens['cv_an'].min():.3f}, {sens['cv_an'].max():.3f}]"
-        )
-
-# --- (2c) Sensitivity statistics: (2) ensemble-native SimRC ----------------
-simrc_coef = simrc_corr = None  # log10 after computation
-if COMPUTE_SIMRC:
-    if ens_data_matrix is None or simrc_count == 0:
-        print(
-            "\n  COMPUTE_SIMRC: no member with usable calculated data in "
-            "results_iterX.h5 — skipped (see skip summary above)."
-        )
-    else:
-        if simrc_missing_any or simrc_count != n_members:
-            print(
-                f"\n  COMPUTE_SIMRC: forward response available for "
-                f"{simrc_count}/{n_members} accepted members — SimRC "
-                f"computed over that matched subset only."
-            )
-        # Model side must use exactly the members that also contributed a
-        # forward-response row -- COMPUTE_SENS can drop
-        # different members, so ens_matrix and ens_data_matrix need not
-        # otherwise line up row-for-row.
-        _Msub = ens_matrix[simrc_keep_idx, :]  # (simrc_count, n_free)
-        _Mc = _Msub - np.mean(_Msub, axis=0, keepdims=True)
-        _var_m = (
-            np.var(_Msub, axis=0, ddof=1)
-            if simrc_count > 1
-            else np.ones(_Msub.shape[1])
-        )
-        _std_m = np.sqrt(_var_m)
-
-        _Dc = ens_data_matrix - np.mean(ens_data_matrix, axis=0, keepdims=True)
-        _std_d = (
-            np.std(ens_data_matrix, axis=0, ddof=1)
-            if simrc_count > 1
-            else np.ones(ens_data_matrix.shape[1])
-        )
-
-        n_free_ = _Mc.shape[1]
-        n_data_ = _Dc.shape[1]
-        simrc_coef = np.zeros(n_free_)  # cumulative |regression coefficient|
-        simrc_corr = np.zeros(n_free_)  # cumulative |correlation|
-        _denom = max(simrc_count - 1, 1)
-
-        print(
-            f"\n  SimRC (ensemble-native sensitivity, {simrc_count} "
-            f"members, {n_data_} data, chunk={SIMRC_CHUNK}) …"
-        )
-        # Chunked over data columns so the (n_data, n_free) cross-covariance
-        # is never formed in full -- peak memory O(SIMRC_CHUNK * n_free).
-        for lo in range(0, n_data_, SIMRC_CHUNK):
-            hi = min(lo + SIMRC_CHUNK, n_data_)
-            _cov_block = (_Dc[:, lo:hi].T @ _Mc) / _denom  # (chunk, n_free_)
-            with np.errstate(divide="ignore", invalid="ignore"):
-                _coef_block = _cov_block / _var_m[np.newaxis, :]
-                _corr_block = _cov_block / (
-                    _std_d[lo:hi, np.newaxis] * _std_m[np.newaxis, :]
-                )
-            _coef_block[~np.isfinite(_coef_block)] = 0.0
-            _corr_block[~np.isfinite(_corr_block)] = 0.0
-            simrc_coef += np.sum(np.abs(_coef_block), axis=0)
-            simrc_corr += np.sum(np.abs(_corr_block), axis=0)
-
-        simrc_coef = _log10_pos(simrc_coef)
-        simrc_corr = _log10_pos(simrc_corr)
-        print(
-            f"    log10 cumulative |regression coeff.|: "
-            f"[{np.nanmin(simrc_coef):.3f}, {np.nanmax(simrc_coef):.3f}]"
-        )
-        print(
-            f"    log10 cumulative |correlation|      : "
-            f"[{np.nanmin(simrc_corr):.3f}, {np.nanmax(simrc_corr):.3f}]"
-        )
-
-# --- (3) Empirical covariance (optional) -----------------------------------
-ens_cov = None
-ens_covs = None
-ens_cov_eigval = None
-ens_cov_eigvec = None
-
-if COMPUTE_COV:
-    if COV_METHOD == "low_rank":
-        print("\nComputing low-rank covariance factorisation (thin SVD) …")
-        _Xc = ens_matrix - ens_avg[np.newaxis, :]  # (m, n_free), centred
-        _m = _Xc.shape[0]
-        # Thin SVD of the (m, n_free) centred ensemble: cost O(m^2 * n_free),
-        # memory O(m * n_free) — never forms the n_free x n_free covariance.
-        # C = Xc^T Xc / (m-1) = Vt.T @ diag(S^2/(m-1)) @ Vt, exactly (rank <= m-1).
-        _U, _S, _Vt = np.linalg.svd(_Xc, full_matrices=False)
-        ens_cov_eigval = (_S**2) / max(_m - 1, 1)  # (r,)  r = min(m, n_free)
-        ens_cov_eigvec = _Vt.T  # (n_free, r)
-        print(
-            f"  rank r={ens_cov_eigval.size}  "
-            f"eigval range=[{ens_cov_eigval.min():.3e}, {ens_cov_eigval.max():.3e}]"
-        )
-        print(
-            "  Full covariance can be reconstructed exactly as "
-            "eigvec @ diag(eigval) @ eigvec.T"
-        )
-    else:
-        print("\nComputing empirical covariance …")
-        ens_cov = sklearn.covariance.empirical_covariance(ens_matrix)
-
-        if SPARSIFY:
-            tmp = ens_cov.copy()
-            tmp[np.abs(tmp) / np.amax(np.abs(tmp)) <= SPARSE_THRESH] = 0.0
-            ens_covs = scs.csr_array(tmp)
-            nnz = ens_covs.nnz
-            total = ens_cov.size
-            print(
-                f"  Sparse covariance: {nnz}/{total} non-zeros "
-                f"({100.0*nnz/total:.2f}%), threshold={SPARSE_THRESH:.1e}"
-            )
+    _z.close()
 else:
-    print("\nCOMPUTE_COV=False — skipping covariance estimation.")
+    # --- (1) Scan ensemble directories ----------------------------------------
+    # get_filelist() matches on name only (fnmatch over os.listdir), so it can
+    # return non-directory matches (stray files, archives, etc.) alongside the
+    # actual ensemble-member sub-directories. Filter to directories immediately,
+    # before counting/looping, so downstream logic never has to think about
+    # non-directory entries.
+    dir_list = utl.get_filelist(
+        searchstr=[ENSEMBLE_NAME + "*"],
+        searchpath=ENSEMBLE_DIR,
+        fullpath=True,
+    )
+    dir_list = [d for d in dir_list if os.path.isdir(d)]
+    print(f"Found {len(dir_list)} sub-directory/ies matching '{ENSEMBLE_NAME}'.")
 
-# --- (4) Save .npz --------------------------------------------------------
-ens_dict = {
-    f"{P}_model_list": model_list,
-    f"{P}_ens": ens_matrix,
-    f"{P}_avg": ens_avg,
-    f"{P}_var": ens_var,
-    f"{P}_err": ens_err,
-    f"{P}_med": ens_med,
-    f"{P}_mad": ens_mad,
-    f"{P}_prc": ens_prc,
-    f"{P}_prc_levels": np.asarray(PERCENTILES),
-}
-for _qkey, _qval in ens_qdiff.items():
-    ens_dict[f"{P}_{_qkey}"] = _qval
-# best-nRMS member (same row as the "best" panel / QC figure)
-_bi = min(range(len(model_list)), key=lambda i: model_list[i][2])
-ens_dict[f"{P}_best"] = ens_matrix[_bi]  # log10(rho), free blocks
-ens_dict[f"{P}_best_member"] = os.path.basename(os.path.dirname(model_list[_bi][0]))
-ens_dict[f"{P}_best_file"] = str(model_list[_bi][0])
-ens_dict[f"{P}_best_iter"] = int(model_list[_bi][1])
-ens_dict[f"{P}_best_nrms"] = float(model_list[_bi][2])
-if BOOTSTRAP_VAR:
-    ens_dict[f"{P}_var_boot"] = ens_var_boot
-    ens_dict[f"{P}_err_boot"] = ens_err_boot
-    ens_dict[f"{P}_var_boot_se"] = ens_var_boot_se
-for _k, _v in sens.items():  # log10 (cv_* linear)
-    ens_dict[f"{P}_sens_{_k}"] = _v
-if simrc_coef is not None:  # log10
-    ens_dict[f"{P}_simrc_coef"] = simrc_coef
-    ens_dict[f"{P}_simrc_corr"] = simrc_corr
-if ens_cov is not None:
-    ens_dict[f"{P}_cov"] = ens_cov
-if ens_cov_eigval is not None:
-    ens_dict[f"{P}_cov_eigval"] = ens_cov_eigval
-    ens_dict[f"{P}_cov_eigvec"] = ens_cov_eigvec
+    model_list = []  # list of [block_file, n_iter, nRMS]
+    nrms_table = []  # (member, best_iter, nRMS, status) for NRMS_CSV / histogram
+    model_count = 0
+    ens_matrix = None  # will become (n_members, n_free) float64
 
-os.makedirs(RESULTS_DIR, exist_ok=True)
-np.savez_compressed(ENSEMBLE_RESULTS, **ens_dict)
-print(f"\nResults saved → {ENSEMBLE_RESULTS}")
+    sens_matrix = None  # will become (n_sens_members, n_free) float64
+    sens_count = 0  # accepted members whose results_iterX.h5 was found
+    sens_missing_any = False
+    sens_fail = []  # (member dir, reason) for skipped members
 
-# --- (4b) nRMS table (CSV) and histogram ----------------------------------
-import csv
+    ens_data_matrix = None  # will become (n_simrc_members, n_data) float64
+    simrc_count = 0  # accepted members whose result files were found
+    simrc_missing_any = False
+    simrc_fail = []  # (member dir, reason) for skipped members
+    simrc_manifest = None  # bytes key of the first member's data composition
+    simrc_err = None  # first member's per-column errors (SIMRC_ERR_WEIGHT)
+    #: Row indices into ens_matrix (i.e. which accepted members, in append
+    #: order) that also contributed a row to ens_data_matrix -- needed so the
+    #: model/data cross-covariance below pairs up the *same* members, since
+    #: COMPUTE_SIMRC can drop members that COMPUTE_SENS did not (and vice
+    #: versa).
+    simrc_keep_idx = []
 
-with open(NRMS_CSV, "w", newline="", encoding="utf-8") as _fh:
-    _w = csv.writer(_fh)
-    _w.writerow(["member", "best_iter", "nrms", "status"])
-    for _r in sorted(nrms_table, key=lambda r: r[2]):
-        _w.writerow([_r[0], _r[1], f"{_r[2]:.6f}", _r[3]])
-print(f"nRMS table saved -> {NRMS_CSV}  ({len(nrms_table)} members)")
-if MOD_NRMS_HIST:
-    _plot_nrms_hist(nrms_table, MOD_NRMS_HIST_FILE)
+    for d in dir_list:
+        print(f"\n  Inversion run: {d}")
+        cnv_file = str(fem.resolve_cnv_path(d, CNV_FILE))
+        if not os.path.isfile(cnv_file):
+            print(f"    {os.path.basename(cnv_file)} not found — skipped.")
+            continue
+
+        # Column positions are read from this file's own header row via
+        # fem.read_cnv() -- robust to FEMTIC version and to whether distortion
+        # parameters (the Beta/Distortion columns) are present, which shift
+        # RMS's column position independently of version (e.g. a 4.3 run WITH
+        # distortion has RMS at the same column as a typical 5.x run, not at
+        # the plain-4.3 position). A version-string switch conflated the two
+        # and silently misread nRMS for 4.3-with-distortion runs. Fixed
+        # 2026-09-02 -- see femtic_readme.md's read_cnv() entry.
+        try:
+            _cnv = fem.read_cnv(cnv_file)
+        except ValueError as e:
+            print(f"    {e} — skipped.")
+            continue
+
+        # Scan *every* convergence-history row — not just the last — to find
+        # the iteration with the smallest nRMS. The last iteration is not
+        # necessarily the best: FEMTIC does not guarantee monotonic nRMS
+        # reduction, and a run may drift upward again after its actual best
+        # iteration.
+        numit = None
+        nrms = None
+        iter0_nrms = None  # tracked separately only to power the warning below
+        _cands = []  # (iteration, nRMS) of every eligible (iter > 0) row
+        for _row in _cnv["rows"]:
+            _it, _nrms = int(_row["Iter"]), _row["RMS"]
+            if _it == 0:
+                # iter0 (prior/starting model) is not eligible as "best
+                # iteration" — it precedes any inversion step.
+                iter0_nrms = _nrms
+                continue
+            _cands.append((_it, _nrms))
+            if nrms is None or _nrms < nrms:
+                numit, nrms = _it, _nrms
+                # ties: keep the first (lowest-iteration) occurrence of the
+                # minimum, so a strict "<" (not "<=") comparison is correct
+                # here — later equal values are simply not adopted.
+
+        if numit is None:
+            print(
+                f"    no eligible (iter>0) convergence rows found in "
+                f"{cnv_file} — skipped."
+            )
+            continue
+
+        if iter0_nrms is not None and iter0_nrms <= nrms:
+            print(
+                f"    WARNING: iter0 nRMS={iter0_nrms:.4f} is <= the best "
+                f"eligible iter>0 nRMS={nrms:.4f} (iter={numit}) — the "
+                f"inversion did not improve on the starting model, but "
+                f"iter0 is excluded from selection by design."
+            )
+
+        if nrms > NRMS_MAX:
+            print(
+                f"    best nRMS={nrms:.4f} (iter={numit}) > "
+                f"NRMS_MAX={NRMS_MAX} — skipped."
+            )
+            nrms_table.append(
+                (os.path.basename(os.path.normpath(d)), numit, nrms, "rejected_nrms_max")
+            )
+            continue
+
+        mod_file = os.path.join(d, f"resistivity_block_iter{numit}.dat")
+        _status = "accepted"
+        if not os.path.isfile(mod_file) and ITER_FALLBACK:
+            # best iteration has no block file: take the best iteration that
+            # has one (usually N-1); NRMS_MAX applies to ITS nRMS.
+            _avail = [
+                (_n2, _i2)
+                for _i2, _n2 in _cands
+                if os.path.isfile(
+                    os.path.join(d, f"resistivity_block_iter{_i2}.dat")
+                )
+            ]
+            if _avail:
+                _n2, _i2 = min(_avail)  # lowest nRMS, ties -> lowest iteration
+                if _n2 <= NRMS_MAX:
+                    print(
+                        f"    resistivity_block_iter{numit}.dat not found - "
+                        f"using iter{_i2} (nRMS={_n2:.4f}, best available; "
+                        f"iter{numit} had {nrms:.4f}) instead."
+                    )
+                    numit, nrms, _status = _i2, _n2, "accepted_fallback"
+                    mod_file = os.path.join(
+                        d, f"resistivity_block_iter{numit}.dat"
+                    )
+                else:
+                    print(
+                        f"    best available iteration iter{_i2} has "
+                        f"nRMS={_n2:.4f} > NRMS_MAX={NRMS_MAX}."
+                    )
+        if not os.path.isfile(mod_file):
+            print(f"    {mod_file} not found — skipped.")
+            nrms_table.append(
+                (os.path.basename(os.path.normpath(d)), numit, nrms, "no_model_file")
+            )
+            continue
+
+        nrms_table.append(
+            (os.path.basename(os.path.normpath(d)), numit, nrms, _status)
+        )
+        print(f"    iter={numit}  nRMS={nrms:.4f}  {mod_file}")
+        model_list.append([mod_file, numit, nrms])
+
+        log_m = fem.read_model(model_file=mod_file, model_trans="log10", out=OUT)
+
+        if ens_matrix is None:
+            ens_matrix = log_m[np.newaxis, :]  # (1, n_free)
+        else:
+            ens_matrix = np.vstack((ens_matrix, log_m))  # (k, n_free)
+
+        model_count += 1
+
+        # --- (1) Per-member cumulative sensitivity (optional) -------------
+        if COMPUTE_SENS:
+            sens_h5 = os.path.join(d, SENS_H5_PATTERN.format(numit=numit))
+            try:
+                sens_vec = fem.read_h5_sensitivity(
+                    sens_h5,
+                    group=SENS_H5_GROUP,
+                    cumsens_key=SENS_KIND,
+                    jacobian_key=SENS_JACOBIAN_KEY,
+                    error_key=SENS_ERROR_KEY,
+                    normalize=False,
+                    out=OUT,
+                )
+            except (FileNotFoundError, KeyError) as e:
+                # No fallback to jacobian.h5 by design (see SENS_JACOBIAN_KEY
+                # comment above) -- a missing SENS_KIND dataset at this
+                # member's numit just means sensitivity wasn't computed for
+                # that iteration; skip this member for sensitivity and move on.
+                print(f"    COMPUTE_SENS: {e} — member skipped for sensitivity.")
+                sens_missing_any = True
+                sens_fail.append((d, f"{type(e).__name__}: {e}"))
+            else:
+                _n_raw = sens_vec.shape[0]
+                sens_vec = _sens_to_free(sens_vec, mod_file, sens_h5)
+                if sens_vec is None or sens_vec.shape[0] != log_m.shape[0]:
+                    print(
+                        f"    COMPUTE_SENS: {sens_h5} gives {_n_raw} "
+                        f"values; no mapping to {log_m.shape[0]} free "
+                        f"parameters (nreg={_SENS_MAP.get('nreg')}) — member "
+                        f"skipped for sensitivity."
+                    )
+                    sens_missing_any = True
+                    sens_fail.append(
+                        (
+                            d,
+                            f"size {_n_raw} vs n_free "
+                            f"{log_m.shape[0]}, nreg "
+                            f"{_SENS_MAP.get('nreg')}",
+                        )
+                    )
+                else:
+                    if sens_matrix is None:
+                        sens_matrix = sens_vec[np.newaxis, :]
+                    else:
+                        sens_matrix = np.vstack((sens_matrix, sens_vec))
+                    sens_count += 1
+
+        # --- (2) Per-member forward response for SimRC (optional) ---------
+        if COMPUTE_SIMRC:
+            _res_h5 = os.path.join(d, SENS_H5_PATTERN.format(numit=numit))
+            try:
+                _rd = fem.read_results_data(_res_h5, out=OUT)
+                d_cal, manifest, d_err = _simrc_columns(_rd["rows"])
+            except (FileNotFoundError, KeyError, ValueError, OSError) as e:
+                print(f"    COMPUTE_SIMRC: {e} — member skipped for SimRC.")
+                simrc_missing_any = True
+                simrc_fail.append((d, f"{type(e).__name__}: {e}"))
+            else:
+                if simrc_manifest is None:
+                    simrc_manifest = manifest
+                    simrc_err = d_err
+                if manifest != simrc_manifest:
+                    print(
+                        f"    COMPUTE_SIMRC: {_res_h5} data composition differs "
+                        f"from the first member's — member skipped for SimRC."
+                    )
+                    simrc_missing_any = True
+                    simrc_fail.append(
+                        (d, "data composition differs from first member")
+                    )
+                elif not np.all(np.isfinite(d_cal)):
+                    _nbad = int(np.sum(~np.isfinite(d_cal)))
+                    print(
+                        f"    COMPUTE_SIMRC: {_nbad} missing calculated value(s) "
+                        f"in {_res_h5} — member skipped for SimRC."
+                    )
+                    simrc_missing_any = True
+                    simrc_fail.append((d, f"{_nbad} missing calculated values"))
+                else:
+                    if SIMRC_ERR_WEIGHT:
+                        d_cal = d_cal / simrc_err
+                    if ens_data_matrix is None:
+                        ens_data_matrix = d_cal[np.newaxis, :]
+                    else:
+                        ens_data_matrix = np.vstack((ens_data_matrix, d_cal))
+                    simrc_keep_idx.append(
+                        model_count - 1
+                    )  # row just appended to ens_matrix
+                    simrc_count += 1
+
+    n_members = model_count
+    print(f"\nConverged members: {n_members}")
+
+
+    def _report_skips(tag, flag, count, fails, nmax=5):
+        """One-block summary of why per-member sensitivity/SimRC reads failed."""
+        if not flag:
+            print(f"  {tag}: disabled.")
+            return
+        print(f"  {tag}: usable for {count}/{n_members} accepted members.")
+        for _d, _why in fails[:nmax]:
+            print(f"    skipped {os.path.basename(os.path.normpath(_d))}: {_why}")
+        if len(fails) > nmax:
+            print(f"    ... and {len(fails) - nmax} more.")
+
+
+    _report_skips("COMPUTE_SENS", COMPUTE_SENS, sens_count, sens_fail)
+    _report_skips("COMPUTE_SIMRC", COMPUTE_SIMRC, simrc_count, simrc_fail)
+
+    if n_members == 0:
+        sys.exit("No converged members found. Nothing to do.")
+
+    # ens_matrix shape: (n_members, n_free)
+    # axis=0 → reduce over members  (correct for all aggregate statistics)
+    # axis=1 → reduce over free parameters (was the bug in the original script)
+
+    # --- (2) Summary statistics -----------------------------------------------
+    P = ENSEMBLE_PREFIX
+    ne = ens_matrix.shape
+
+    ens_avg = np.mean(ens_matrix, axis=0)  # (n_free,)
+    ens_var = np.var(ens_matrix, axis=0)  # (n_free,)
+    ens_err = np.sqrt(ens_var)  # (n_free,) -- std, comparable to MAD/QDIFF
+    ens_med = np.median(ens_matrix, axis=0)  # (n_free,)
+    ens_mad = np.median(
+        np.abs(ens_matrix - ens_med[np.newaxis, :]), axis=0
+    )  # (n_free,)
+    ens_prc = np.percentile(ens_matrix, PERCENTILES, axis=0)  # (n_prc, n_free)
+
+    # --- Percentile-pair differences (robust spread, e.g. 1-sigma-equivalent IQR) ---
+    ens_qdiff = {}  # key -> (n_free,) array
+    for _lo, _hi in QDIFF_PAIRS:
+        if _lo not in PERCENTILES or _hi not in PERCENTILES:
+            print(
+                f"  QDIFF_PAIRS: ({_lo}, {_hi}) not both in PERCENTILES — skipped."
+            )
+            continue
+        _ilo = PERCENTILES.index(_lo)
+        _ihi = PERCENTILES.index(_hi)
+        _qkey = f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_")
+        ens_qdiff[_qkey] = np.abs(ens_prc[_ihi] - ens_prc[_ilo])  # (n_free,)
+
+    # --- Bootstrap variance estimate (optional alternative to the plug-in VAR) ---
+    ens_var_boot = None
+    ens_err_boot = None
+    ens_var_boot_se = None
+    if BOOTSTRAP_VAR:
+        print(
+            f"\nBootstrap variance estimation: {BOOTSTRAP_N} resamples "
+            f"(seed={BOOTSTRAP_SEED if BOOTSTRAP_SEED is not None else '(fresh entropy)'}) …"
+        )
+        _boot_rng = np.random.default_rng(BOOTSTRAP_SEED)
+        ens_var_boot, ens_var_boot_se = _bootstrap_variance(
+            ens_matrix,
+            BOOTSTRAP_N,
+            _boot_rng,
+            out=OUT,
+        )
+        ens_err_boot = np.sqrt(ens_var_boot)
+
+    print(f"\nStatistics (over {n_members} members, {ne[1]} free parameters):")
+    print(f"  mean   log10(ρ): [{ens_avg.min():.3f}, {ens_avg.max():.3f}]")
+    print(f"  var    log10(ρ): [{ens_var.min():.4f}, {ens_var.max():.4f}]")
+    print(
+        f"  err    log10(ρ): [{ens_err.min():.4f}, {ens_err.max():.4f}]  (= sqrt(var))"
+    )
+    print(f"  median log10(ρ): [{ens_med.min():.3f}, {ens_med.max():.3f}]")
+    print(f"  MAD    log10(ρ): [{ens_mad.min():.4f}, {ens_mad.max():.4f}]")
+    for _qkey, _qval in ens_qdiff.items():
+        print(f"  {_qkey}: [{_qval.min():.4f}, {_qval.max():.4f}]")
+    if BOOTSTRAP_VAR:
+        print(
+            f"  var_boot  log10(ρ): [{ens_var_boot.min():.4f}, {ens_var_boot.max():.4f}]"
+        )
+        print(
+            f"  err_boot  log10(ρ): [{ens_err_boot.min():.4f}, {ens_err_boot.max():.4f}]  (= sqrt(var_boot))"
+        )
+        print(
+            f"  var_boot_se       : [{ens_var_boot_se.min():.4f}, {ens_var_boot_se.max():.4f}]  "
+            f"(bootstrap SE of var_boot itself)"
+        )
+
+    # --- (2b) Sensitivity statistics: (1) per-member Jacobian aggregation ------
+    # Two aggregation orders, computed side by side -- see SENS_KIND's
+    # docstring above for why there is no single "correct" one now that the
+    # per-member sensitivity in results_iterX.h5 is confirmed NOT to already
+    # be normalised to that member's own max.
+    _SENS_STATS = ("mean", "median", "min", "max", "std")
+    #: key -> log10 array, e.g. sens["mean_na"], sens["cv_an"] (cv linear);
+    #: empty when COMPUTE_SENS is off or found no usable files.
+    sens = {}
+    if COMPUTE_SENS:
+        if sens_matrix is None or sens_count == 0:
+            print(
+                "\n  COMPUTE_SENS: no results_iterX.h5 sensitivity files found — skipped."
+            )
+        else:
+            if sens_missing_any or sens_count != n_members:
+                print(
+                    f"\n  COMPUTE_SENS: sensitivity available for {sens_count}/"
+                    f"{n_members} accepted members — aggregating over those only."
+                )
+
+            def _aggregate(M):
+                """mean/median/min/max/std/cv across members (rows), linear."""
+                agg = {
+                    "mean": np.mean(M, axis=0),
+                    "median": np.median(M, axis=0),
+                    "min": np.min(M, axis=0),
+                    "max": np.max(M, axis=0),
+                    "std": (
+                        np.std(M, axis=0, ddof=1)
+                        if M.shape[0] > 1
+                        else np.zeros(M.shape[1])
+                    ),
+                }
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    cv = agg["std"] / agg["mean"]
+                cv[~np.isfinite(cv)] = 0.0
+                agg["cv"] = cv
+                return agg
+
+            # "_raw": plain ensemble mean in SENS_KIND's native units.
+            sens["mean_raw"] = _log10_pos(np.mean(sens_matrix, axis=0))
+
+            # "_na": normalise each member by its own max, THEN aggregate.
+            _row_max = np.max(sens_matrix, axis=1, keepdims=True)
+            _row_max[_row_max == 0.0] = 1.0  # guard an all-zero member
+            _agg = _aggregate(sens_matrix / _row_max)
+            for _st in _SENS_STATS:
+                sens[f"{_st}_na"] = _log10_pos(_agg[_st])
+            sens["cv_na"] = _agg["cv"]
+
+            # "_an": aggregate the RAW ensemble, THEN normalise by max(mean).
+            _agg = _aggregate(sens_matrix)
+            _renorm = np.nanmax(_agg["mean"])
+            _renorm = _renorm if _renorm > 0 else 1.0
+            for _st in _SENS_STATS:
+                sens[f"{_st}_an"] = _log10_pos(_agg[_st] / _renorm)
+            sens["cv_an"] = _agg["cv"]
+
+            print(
+                f"\n  Sensitivity (Jacobian, {sens_count} members, SENS_KIND="
+                f"'{SENS_KIND}'), log10:"
+            )
+            for _k in ("mean_raw", "mean_na", "mean_an"):
+                print(
+                    f"    sens_{_k:<9s}: [{np.nanmin(sens[_k]):.3f}, "
+                    f"{np.nanmax(sens[_k]):.3f}]  "
+                    f"({int(np.sum(~np.isfinite(sens[_k])))} non-positive -> NaN)"
+                )
+            print(
+                f"    sens_cv (na / an, linear): "
+                f"[{sens['cv_na'].min():.3f}, {sens['cv_na'].max():.3f}]  /  "
+                f"[{sens['cv_an'].min():.3f}, {sens['cv_an'].max():.3f}]"
+            )
+
+    # --- (2c) Sensitivity statistics: (2) ensemble-native SimRC ----------------
+    simrc_coef = simrc_corr = None  # log10 after computation
+    if COMPUTE_SIMRC:
+        if ens_data_matrix is None or simrc_count == 0:
+            print(
+                "\n  COMPUTE_SIMRC: no member with usable calculated data in "
+                "results_iterX.h5 — skipped (see skip summary above)."
+            )
+        else:
+            if simrc_missing_any or simrc_count != n_members:
+                print(
+                    f"\n  COMPUTE_SIMRC: forward response available for "
+                    f"{simrc_count}/{n_members} accepted members — SimRC "
+                    f"computed over that matched subset only."
+                )
+            # Model side must use exactly the members that also contributed a
+            # forward-response row -- COMPUTE_SENS can drop
+            # different members, so ens_matrix and ens_data_matrix need not
+            # otherwise line up row-for-row.
+            _Msub = ens_matrix[simrc_keep_idx, :]  # (simrc_count, n_free)
+            _Mc = _Msub - np.mean(_Msub, axis=0, keepdims=True)
+            _var_m = (
+                np.var(_Msub, axis=0, ddof=1)
+                if simrc_count > 1
+                else np.ones(_Msub.shape[1])
+            )
+            _std_m = np.sqrt(_var_m)
+
+            _Dc = ens_data_matrix - np.mean(ens_data_matrix, axis=0, keepdims=True)
+            _std_d = (
+                np.std(ens_data_matrix, axis=0, ddof=1)
+                if simrc_count > 1
+                else np.ones(ens_data_matrix.shape[1])
+            )
+
+            n_free_ = _Mc.shape[1]
+            n_data_ = _Dc.shape[1]
+            simrc_coef = np.zeros(n_free_)  # cumulative |regression coefficient|
+            simrc_corr = np.zeros(n_free_)  # cumulative |correlation|
+            _denom = max(simrc_count - 1, 1)
+
+            print(
+                f"\n  SimRC (ensemble-native sensitivity, {simrc_count} "
+                f"members, {n_data_} data, chunk={SIMRC_CHUNK}) …"
+            )
+            # Chunked over data columns so the (n_data, n_free) cross-covariance
+            # is never formed in full -- peak memory O(SIMRC_CHUNK * n_free).
+            for lo in range(0, n_data_, SIMRC_CHUNK):
+                hi = min(lo + SIMRC_CHUNK, n_data_)
+                _cov_block = (_Dc[:, lo:hi].T @ _Mc) / _denom  # (chunk, n_free_)
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    _coef_block = _cov_block / _var_m[np.newaxis, :]
+                    _corr_block = _cov_block / (
+                        _std_d[lo:hi, np.newaxis] * _std_m[np.newaxis, :]
+                    )
+                _coef_block[~np.isfinite(_coef_block)] = 0.0
+                _corr_block[~np.isfinite(_corr_block)] = 0.0
+                simrc_coef += np.sum(np.abs(_coef_block), axis=0)
+                simrc_corr += np.sum(np.abs(_corr_block), axis=0)
+
+            simrc_coef = _log10_pos(simrc_coef)
+            simrc_corr = _log10_pos(simrc_corr)
+            print(
+                f"    log10 cumulative |regression coeff.|: "
+                f"[{np.nanmin(simrc_coef):.3f}, {np.nanmax(simrc_coef):.3f}]"
+            )
+            print(
+                f"    log10 cumulative |correlation|      : "
+                f"[{np.nanmin(simrc_corr):.3f}, {np.nanmax(simrc_corr):.3f}]"
+            )
+
+    # --- (3) Empirical covariance (optional) -----------------------------------
+    ens_cov = None
+    ens_covs = None
+    ens_cov_eigval = None
+    ens_cov_eigvec = None
+
+    if COMPUTE_COV:
+        if COV_METHOD == "low_rank":
+            print("\nComputing low-rank covariance factorisation (thin SVD) …")
+            _Xc = ens_matrix - ens_avg[np.newaxis, :]  # (m, n_free), centred
+            _m = _Xc.shape[0]
+            # Thin SVD of the (m, n_free) centred ensemble: cost O(m^2 * n_free),
+            # memory O(m * n_free) — never forms the n_free x n_free covariance.
+            # C = Xc^T Xc / (m-1) = Vt.T @ diag(S^2/(m-1)) @ Vt, exactly (rank <= m-1).
+            _U, _S, _Vt = np.linalg.svd(_Xc, full_matrices=False)
+            ens_cov_eigval = (_S**2) / max(_m - 1, 1)  # (r,)  r = min(m, n_free)
+            ens_cov_eigvec = _Vt.T  # (n_free, r)
+            print(
+                f"  rank r={ens_cov_eigval.size}  "
+                f"eigval range=[{ens_cov_eigval.min():.3e}, {ens_cov_eigval.max():.3e}]"
+            )
+            print(
+                "  Full covariance can be reconstructed exactly as "
+                "eigvec @ diag(eigval) @ eigvec.T"
+            )
+        else:
+            print("\nComputing empirical covariance …")
+            ens_cov = sklearn.covariance.empirical_covariance(ens_matrix)
+
+            if SPARSIFY:
+                tmp = ens_cov.copy()
+                tmp[np.abs(tmp) / np.amax(np.abs(tmp)) <= SPARSE_THRESH] = 0.0
+                ens_covs = scs.csr_array(tmp)
+                nnz = ens_covs.nnz
+                total = ens_cov.size
+                print(
+                    f"  Sparse covariance: {nnz}/{total} non-zeros "
+                    f"({100.0*nnz/total:.2f}%), threshold={SPARSE_THRESH:.1e}"
+                )
+    else:
+        print("\nCOMPUTE_COV=False — skipping covariance estimation.")
+
+    # --- (4) Save .npz --------------------------------------------------------
+    ens_dict = {
+        f"{P}_model_list": model_list,
+        f"{P}_ens": ens_matrix,
+        f"{P}_avg": ens_avg,
+        f"{P}_var": ens_var,
+        f"{P}_err": ens_err,
+        f"{P}_med": ens_med,
+        f"{P}_mad": ens_mad,
+        f"{P}_prc": ens_prc,
+        f"{P}_prc_levels": np.asarray(PERCENTILES),
+    }
+    for _qkey, _qval in ens_qdiff.items():
+        ens_dict[f"{P}_{_qkey}"] = _qval
+    # best-nRMS member (same row as the "best" panel / QC figure)
+    _bi = min(range(len(model_list)), key=lambda i: model_list[i][2])
+    ens_dict[f"{P}_best"] = ens_matrix[_bi]  # log10(rho), free blocks
+    ens_dict[f"{P}_best_member"] = os.path.basename(os.path.dirname(model_list[_bi][0]))
+    ens_dict[f"{P}_best_file"] = str(model_list[_bi][0])
+    ens_dict[f"{P}_best_iter"] = int(model_list[_bi][1])
+    ens_dict[f"{P}_best_nrms"] = float(model_list[_bi][2])
+    if BOOTSTRAP_VAR:
+        ens_dict[f"{P}_var_boot"] = ens_var_boot
+        ens_dict[f"{P}_err_boot"] = ens_err_boot
+        ens_dict[f"{P}_var_boot_se"] = ens_var_boot_se
+    for _k, _v in sens.items():  # log10 (cv_* linear)
+        ens_dict[f"{P}_sens_{_k}"] = _v
+    if simrc_coef is not None:  # log10
+        ens_dict[f"{P}_simrc_coef"] = simrc_coef
+        ens_dict[f"{P}_simrc_corr"] = simrc_corr
+    if ens_cov is not None:
+        ens_dict[f"{P}_cov"] = ens_cov
+    if ens_cov_eigval is not None:
+        ens_dict[f"{P}_cov_eigval"] = ens_cov_eigval
+        ens_dict[f"{P}_cov_eigvec"] = ens_cov_eigvec
+
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    np.savez_compressed(ENSEMBLE_RESULTS, **ens_dict)
+    print(f"\nResults saved → {ENSEMBLE_RESULTS}")
+
+    # --- (4b) nRMS table (CSV) and histogram ----------------------------------
+    import csv
+
+    with open(NRMS_CSV, "w", newline="", encoding="utf-8") as _fh:
+        _w = csv.writer(_fh)
+        _w.writerow(["member", "best_iter", "nrms", "status"])
+        for _r in sorted(nrms_table, key=lambda r: r[2]):
+            _w.writerow([_r[0], _r[1], f"{_r[2]:.6f}", _r[3]])
+    print(f"nRMS table saved -> {NRMS_CSV}  ({len(nrms_table)} members)")
+    if MOD_NRMS_HIST:
+        _plot_nrms_hist(nrms_table, MOD_NRMS_HIST_FILE)
 
 # --- (5) Resolve UTM origin and sites (needed for any plot) ---------------
 if MOD_QC or MOD_STATS or MOD_BH:
@@ -3236,7 +3763,7 @@ for _i, _pval in enumerate(PERCENTILES):
     _value_scale_keys.add(_pkey)
 for _qkey, _qval in ens_qdiff.items():
     _stat_map[_qkey] = (_qval, f"|{_qkey}| spread")
-if BOOTSTRAP_VAR:
+if ens_var_boot is not None:  # = BOOTSTRAP_VAR in a full run
     _stat_map["var_boot"] = (ens_var_boot, "bootstrap variance")
     _stat_map["err_boot"] = (ens_err_boot, "bootstrap error (std)")
 for _k, _v in sens.items():
@@ -3274,7 +3801,9 @@ _need_plot = (MOD_QC or MOD_STATS) and fviz is not None and bool(model_list)
 if _need_plot and MOD_ALPHA_SOURCE:
     _a_name, _a_op, _a_thr = _parse_alpha_source(MOD_ALPHA_SOURCE)
     if _a_name not in _stat_map:
-        if _a_name.startswith("sens_"):
+        if PLOT_ONLY:
+            _why = "not stored in the results .npz (plot-only mode)"
+        elif _a_name.startswith("sens_"):
             _why = (
                 "COMPUTE_SENS=False"
                 if not COMPUTE_SENS
@@ -3329,13 +3858,38 @@ if MOD_QC:
     else:
         _best = min(model_list, key=lambda x: x[2])
         _best_file, _best_iter, _best_nrms = _best
-        _best_member = os.path.basename(os.path.dirname(_best_file))
+        _best_member = _plot_only_best_member or os.path.basename(
+            os.path.dirname(_best_file)
+        )
+        _best_name = _po_best_name or os.path.basename(_best_file)
         print(
             f"\nQC: best member  {_best_member}  nRMS={_best_nrms:.4f}  "
             f"iter={_best_iter}"
         )
+        _qc_block, _qc_stats = _best_file, False
+        if _po_qc_from_vector:
+            # Plot-only with PLOT_ONLY_TEMPLATE: the template is not the best
+            # member's own file, so draw the stored best vector into it (same
+            # route and sentinels as the statistic panels).
+            os.makedirs(MOD_STATS_DIR, exist_ok=True)
+            _qc_block = os.path.join(
+                MOD_STATS_DIR, f"resistivity_block_{P}_best.dat"
+            )
+            fem.insert_model(
+                template=_best_file,
+                model=ens_matrix[
+                    min(range(len(model_list)), key=lambda i: model_list[i][2])
+                ],
+                model_file=_qc_block,
+                ocean=MOD_OCEAN,
+                air_rho=_STATS_AIR_RHO,
+                ocean_rho=_STATS_OCEAN_RHO,
+                out=OUT,
+            )
+            _qc_stats = True
         _plot_slice(
-            block_file=_best_file,
+            block_file=_qc_block,
+            stats_panel=_qc_stats,
             pdf_file=MOD_QC_FILE,
             utm_e=utm_e,
             utm_n=utm_n,
@@ -3347,7 +3901,7 @@ if MOD_QC:
             obs_coords_only=obs_coords_only,
             alpha_file=_alpha_block if MOD_ALPHA_QC else None,
             figure_title=(
-                f"{os.path.basename(_best_file)}\n"
+                f"{_best_name}\n"
                 f"best member: {_best_member}  iter {_best_iter}  "
                 f"nRMS {_best_nrms:.3f}"
             ),
@@ -3515,6 +4069,28 @@ if _bh_ready:
     # keys usable for borehole lines: value-scale statistics
     _bh_value_keys = {k for k in _value_scale_keys if k in _stat_map}
 
+    # Reference model (MOD_REF_FILE): log10(rho) per element, air = NaN,
+    # ocean = MOD_OCEAN_RHO (as for the ensemble lines). Wanted when
+    # MOD_REF_BH is on or a MOD_BH entry lists "ref" in its "what".
+    _bh_ref_el = None
+    if (
+        MOD_REF_BH or any("ref" in (_t.get("what") or ()) for _t in MOD_BH)
+    ) and _ref_active():
+        _rs = _ref_struct()
+        _rs_er = np.asarray(_rs["elem_region"], dtype=np.int64)
+        if _rs_er.size != _bh_er.size:
+            _ref_disable(
+                f"MOD_REF_FILE has {_rs_er.size} elements but the model has "
+                f"{_bh_er.size} - it must live on the same mesh as MOD_MESH."
+            )
+        else:
+            _rs_l = np.log10(np.asarray(_rs["region_rho"], dtype=float))
+            _rs_l[0] = np.nan
+            if _rs["nreg"] > 1 and _rs["meta"]["ocean_present"]:
+                _rs_l[1] = np.log10(MOD_OCEAN_RHO)
+            _bh_ref_el = _rs_l[_rs_er]
+            print(f"  reference model for the profiles: {MOD_REF_FILE}")
+
     _bh_profiles = []
     _bh_npz = {}
     _bh_hdr = []
@@ -3623,9 +4199,22 @@ if _bh_ready:
         _order = _bh_expand_what(
             _spec.get("what", ["avg", "percentiles"]), _bh_value_keys
         )
+        # reference line: listed explicitly in "what" (forces it on), or added
+        # last when MOD_REF_BH is on and the entry does not say ref=False
+        if _bh_ref_el is None:
+            _order = [_k for _k in _order if _k != "ref"]
+        elif "ref" not in _order and MOD_REF_BH and _spec.get("ref", True):
+            _order.append("ref")
         _lines = {}
         for _k in _order:
             if _k == "ensemble":
+                continue
+            if _k == "ref":
+                _lines[_k] = np.where(
+                    _elem >= 0,
+                    10.0 ** _bh_ref_el[np.maximum(_elem, 0)],
+                    np.nan,
+                )
                 continue
             if _k == "best":
                 _vec = ens_matrix[_best_i]
@@ -3684,6 +4273,9 @@ if _bh_ready:
                         rho_unit="Ohm.m (NaN = air / outside mesh)",
                         members=[m[0] for m in model_list],
                         best_member=_best_file,
+                        reference_file=(
+                            MOD_REF_FILE if _bh_ref_el is not None else None
+                        ),
                         percentiles=list(PERCENTILES),
                         boreholes=_bh_hdr,
                     ),

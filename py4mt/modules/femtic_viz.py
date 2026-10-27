@@ -590,6 +590,51 @@ Provenance:
                         are read by femtic.read_observe_dat (see
                         femtic_readme.md, 2026-10-22). No other change.
                         AI-generated code -- review before production use.
+    2026-10-27  Claude Sonnet 5.5 (Anthropic)
+                        plot_model_slices: (1) new vert_exag (default None =
+                        unchanged behaviour). A number > 0 fixes the aspect of
+                        every section panel (ns / ew / vertical "plane") so
+                        that the vertical scale is vert_exag times the
+                        horizontal one, whatever display_coords and
+                        depth_km / horiz_km are: vert_exag=1 is true equal
+                        axes, 2 is a 2x vertical exaggeration. The factor is
+                        derived from the real axis units, so it also works
+                        for display_coords="latlon" (horizontal axis in UTM
+                        metres) and for km depth against m horizontal axes,
+                        both of which equal_aspect=True silently left alone
+                        (its test needs model/utm display and equal units).
+                        Map panels stay 1:1 when equal_aspect is True. The
+                        automatic column widths use the same factor (spans
+                        in metres; None limits fall back to the mesh
+                        extents). (2) new reference_file (+ reference_levels,
+                        reference_style, reference_label,
+                        reference_ocean_value, reference_air_log10_thresh):
+                        optional reference model (a block file on the same
+                        mesh) drawn as iso-resistivity lines on top of every
+                        slice panel. The lines are the exact boundaries
+                        between slice polygons lying on different sides of a
+                        level (class edges of the piecewise-constant field,
+                        found from shared polygon edges), so there is no
+                        interpolation across air, ocean or the model
+                        boundary; air and ocean cells of the reference are
+                        ignored. Levels are log10(Ohm.m), default the integer
+                        decades inside the colour range.
+                        plot_borehole_logs: new reference_file /
+                        reference_style / reference_label draw the reference
+                        model's profile at every borehole (same colour as the
+                        borehole's own trace, dashed); exported to the npz as
+                        reference_rho_<name>. New private helper
+                        _class_boundary_segments(). All new arguments default
+                        to the previous behaviour (checked pixel-for-pixel
+                        against the previous version for display_coords
+                        "model" and "latlon").
+                        plot_borehole_logs, bug fix: the depth axis was
+                        inverted once per borehole, on the same axes (shared
+                        mode) or on shared y axes (sharey=True), so it
+                        toggled back and forth and depth increased upward
+                        whenever the number of boreholes was even; it is now
+                        inverted once.
+                        AI-generated code -- review before production use.
     """
 
 from __future__ import annotations
@@ -3602,6 +3647,75 @@ def _sample_borehole_logs(
     return logs
 
 
+def _class_boundary_segments(polys, cls) -> np.ndarray:
+    """Edges shared by two slice polygons of different class.
+
+    Used for the reference-model contour lines of ``plot_model_slices``: the
+    slice is a set of small polygons (tetrahedron / plane intersections)
+    carrying one value each, so the iso-line of a level is the set of polygon
+    edges that separate a polygon below the level from one above it. Nothing
+    is interpolated, hence nothing is drawn across gaps (air, ocean, outside
+    of the mesh) either.
+
+    Parameters
+    ----------
+    polys
+        List of polygons, each a list of ``(u, v)`` vertices in display
+        coordinates (any units; the tolerance is relative to the data span).
+    cls
+        ``(n_poly,)`` integer class per polygon (e.g. ``np.digitize`` of the
+        values against the contour levels); a negative class marks a polygon
+        that takes no part (air, ocean, NaN).
+
+    Returns
+    -------
+    segments : ``(n_seg, 2, 2)`` float array of ``[(u0, v0), (u1, v1)]``
+        segments, ready for ``matplotlib.collections.LineCollection``. Two
+        polygon edges are the same edge if their end points agree to 1e-9 of
+        the data span (floating-point noise of the plane intersection is
+        ~1e-16).
+    """
+    n = len(polys)
+    cls = np.asarray(cls)
+    if n == 0 or cls.shape[0] != n:
+        return np.empty((0, 2, 2), dtype=float)
+    counts = np.fromiter((len(p) for p in polys), dtype=np.int64, count=n)
+    if counts.sum() == 0:
+        return np.empty((0, 2, 2), dtype=float)
+    verts = np.concatenate([np.asarray(p, dtype=float).reshape(-1, 2)
+                            for p in polys if len(p)])
+    # polygons with < 3 vertices are degenerate: they own no edges
+    start = np.concatenate(([0], np.cumsum(counts)[:-1]))
+    poly_of_vert = np.repeat(np.arange(n), counts)
+    nxt = np.arange(verts.shape[0]) + 1
+    has = counts > 0
+    nxt[(start + counts - 1)[has]] = start[has]          # close each ring
+    keep = (counts >= 3)[poly_of_vert]
+    a, b, pid = verts[keep], verts[nxt][keep], poly_of_vert[keep]
+    if a.shape[0] == 0:
+        return np.empty((0, 2, 2), dtype=float)
+
+    # edge identity: integer-rounded end points, canonical (sorted) order
+    span = np.ptp(verts, axis=0)
+    tol = np.where(span > 0.0, span, 1.0) * 1.0e-9
+    ia = np.round(a / tol).astype(np.int64)
+    ib = np.round(b / tol).astype(np.int64)
+    swap = (ia[:, 0] > ib[:, 0]) | ((ia[:, 0] == ib[:, 0]) & (ia[:, 1] > ib[:, 1]))
+    lo = np.where(swap[:, None], ib, ia)
+    hi = np.where(swap[:, None], ia, ib)
+    key = np.concatenate((lo, hi), axis=1)
+    order = np.lexsort((key[:, 3], key[:, 2], key[:, 1], key[:, 0]))
+    ks = key[order]
+    same = np.all(ks[1:] == ks[:-1], axis=1)
+    first = np.nonzero(same)[0]
+    e1, e2 = order[first], order[first + 1]
+
+    c1, c2 = cls[pid[e1]], cls[pid[e2]]
+    sel = (c1 >= 0) & (c2 >= 0) & (c1 != c2)
+    e1 = e1[sel]
+    return np.stack((a[e1], b[e1]), axis=1)
+
+
 def plot_model_slices(
     model_file: Union[str, Path],
     mesh_file: Union[str, Path],
@@ -3660,6 +3774,13 @@ def plot_model_slices(
     nrms_annotation: Optional[dict] = None,
     figure_title: Optional[str] = None,
     figure_title_fontsize: Optional[float] = None,
+    vert_exag: Optional[float] = None,
+    reference_file=None,
+    reference_levels=None,
+    reference_style: Optional[dict] = None,
+    reference_label: Optional[str] = "reference model",
+    reference_ocean_value: Optional[float] = None,
+    reference_air_log10_thresh: Optional[float] = None,
     show: bool = False,
     out: bool = True,
 ):
@@ -3759,7 +3880,52 @@ def plot_model_slices(
         Saved-figure DPI.
     equal_aspect
         Call ``ax.set_aspect("equal")`` on map/ns/ew panels when both axes
-        carry the same physical scale.
+        carry the same physical scale.  Only acts for ``display_coords`` in
+        ``("model", "utm")`` with horizontal and depth axes in the same unit
+        (``horiz_km == depth_km``); use ``vert_exag`` for every other case.
+    vert_exag
+        ``None`` (default): axes as set by ``equal_aspect`` (unchanged).
+        A number ``> 0`` fixes the aspect of every section panel (ns / ew /
+        vertical ``"plane"``) so that the vertical scale is ``vert_exag``
+        times the horizontal one: ``1`` = true equal axes, ``2`` = vertical
+        exaggeration 2x, ``0.5`` = compressed.  The factor is computed from
+        the actual axis units, so it holds for ``display_coords="latlon"``
+        (whose horizontal axis is UTM metres under the lat/lon tick labels)
+        and for km depth against m horizontal axes, and it overrides
+        ``equal_aspect`` on section panels.  Map panels are kept 1:1
+        whenever ``equal_aspect`` is True.  The automatic column widths use
+        the same factor (``panel_width=None``, ``figsize=None``); limits
+        left at ``None`` fall back to the mesh extents there.
+    reference_file
+        Optional reference model: a ``resistivity_block_iterX.dat`` on the
+        **same mesh** as ``model_file`` (the region structure may differ).
+        It is drawn as iso-resistivity lines on top of every slice panel
+        (zorder 6, below site markers), e.g. a deterministic inversion over
+        an ensemble statistic.  The lines are the exact boundaries between
+        slice polygons lying on different sides of a level, so nothing is
+        interpolated across air, ocean or the model boundary.  Air (region
+        0, or log10 above ``reference_air_log10_thresh``) and ocean (region
+        1 at ``reference_ocean_value``) cells of the reference are ignored.
+        ``None`` = no reference.
+    reference_levels
+        Contour levels in log10(Ohm*m), e.g. ``[1, 2, 3]``.  ``None`` = the
+        integer decades strictly inside the colour range (``clim``, or the
+        value range of the reference when ``clim`` is None).
+    reference_style
+        ``LineCollection`` keyword overrides for the lines, e.g.
+        ``dict(colors="k", linewidths=0.8, linestyles="--")``.  Default
+        black, 0.8 pt, solid.
+    reference_label
+        Legend text of the reference lines; they then show up in the panel
+        legend (lower right) together with labelled site markers.  ``None``
+        = no legend entry.
+    reference_ocean_value
+        Ohm*m of the ocean in the reference model.  ``None`` = ``ocean_value``.
+        Differs from it when the plotted block carries sentinels (statistic
+        panels of femtic_ens_post.py) but the reference is a real model.
+    reference_air_log10_thresh
+        log10 threshold above which reference cells count as air.
+        ``None`` = ``air_log10_thresh``.
     depth_km
         Show depth axis in km on curtain and plane panels.
     horiz_km
@@ -3879,7 +4045,7 @@ def plot_model_slices(
         import matplotlib.pyplot as plt
         import matplotlib.colors as mcolors
         import matplotlib.ticker as mticker
-        from matplotlib.collections import PolyCollection
+        from matplotlib.collections import PolyCollection, LineCollection
     except ImportError:
         print("  plot_model_slices: Matplotlib not available -- skipping.")
         return
@@ -4199,6 +4365,34 @@ def plot_model_slices(
                  and _disp in ("model", "utm")
                  and _horiz_km_eff == depth_km)
 
+    # -- vertical exaggeration (section panels) ---------------------------------
+    # vert_exag=None keeps the legacy equal_aspect behaviour above. A number
+    # fixes the aspect of every section panel from the real axis units: one
+    # data unit of the horizontal axis is 1/h_sc metres, one of the depth
+    # axis 1/_dz metres, so (y length)/(x length) per data unit, i.e. the
+    # matplotlib aspect, is (h_sc / _dz) * vert_exag.  Valid for any
+    # display_coords ("latlon" plots UTM metres under its lat/lon labels).
+    _ve: Optional[float] = None
+    if vert_exag is not None:
+        _ve = float(vert_exag)
+        if not (math.isfinite(_ve) and _ve > 0.0):
+            raise ValueError(
+                f"plot_model_slices: vert_exag must be a number > 0, "
+                f"got {vert_exag!r}.")
+
+    def _apply_aspect(ax, panel, h_sc):
+        """panel = "map" or "section"; h_sc = horizontal data unit per metre."""
+        if _ve is None:
+            if _do_equal:
+                ax.set_aspect("equal", adjustable="box")
+            return
+        if panel == "map":
+            if equal_aspect:          # both map axes share one unit
+                ax.set_aspect("equal", adjustable="box")
+            return
+        _dz = 1e-3 if depth_km else 1.0
+        ax.set_aspect((h_sc / _dz) * _ve, adjustable="box")
+
     # -- load model ------------------------------------------------------------
     if out:
         print(f"  plot: reading model {os.path.basename(str(model_file))}")
@@ -4284,6 +4478,73 @@ def plot_model_slices(
         norm  = mcolors.Normalize(vmin=float(_lall.min()),
                                   vmax=float(_lall.max()))
 
+    # -- optional reference model: iso-lines on every slice panel ----------------
+    # One class per element = number of contour levels at or below its
+    # log10(rho); air / ocean / non-positive cells get -1 and are ignored.
+    # Slice polygons keep the element index (eidx) they come from, so the
+    # per-polygon class is just _ref_cls[eidx] -- no second geometry pass.
+    _ref_cls: Optional[np.ndarray] = None
+    _ref_lc_kw: dict = {}
+    _ref_label: Optional[str] = None
+    if reference_file is not None:
+        if out:
+            print(f"  plot: reading reference model "
+                  f"{os.path.basename(str(reference_file))}")
+        _rblk = read_resistivity_block(reference_file)
+        _rrho = map_regions_to_element_rho(_rblk.region_of_elem,
+                                           _rblk.region_rho)
+        if _rrho.shape[0] != conn.shape[0]:
+            raise ValueError(
+                f"reference_file element count ({_rrho.shape[0]}) != mesh "
+                f"element count ({conn.shape[0]}) -- the reference model "
+                f"must live on the same mesh.")
+        _r_air = (air_log10_thresh if reference_air_log10_thresh is None
+                  else float(reference_air_log10_thresh))
+        _r_oc = (float(ocean_value) if reference_ocean_value is None
+                 else float(reference_ocean_value))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            _rlog = np.log10(np.asarray(_rrho, dtype=float))
+            _roc_l = math.log10(_r_oc) if _r_oc > 0 else float("nan")
+        _rreg = np.asarray(_rblk.region_of_elem).astype(int)
+        _rbad = (~np.isfinite(_rlog) | (_rreg == 0) | (_rlog > _r_air)
+                 | ((_rreg == 1) & np.isclose(_rlog, _roc_l, atol=0.05)))
+        if reference_levels is None:
+            _lo, _hi = float(norm.vmin), float(norm.vmax)
+            _rlev = np.arange(math.ceil(_lo + 1e-9), math.floor(_hi - 1e-9) + 1.0)
+            if _rlev.size == 0:
+                _rlev = np.array([0.5 * (_lo + _hi)])
+        else:
+            _rlev = np.sort(np.atleast_1d(
+                np.asarray(reference_levels, dtype=float)))
+        _ref_cls = np.digitize(np.where(_rbad, 0.0, _rlog), _rlev)
+        _ref_cls[_rbad] = -1
+        _kw = dict(reference_style or {})
+        _ref_label = _kw.pop("label", reference_label)
+        _kw.setdefault("zorder", 6)
+        if not any(k in _kw for k in ("colors", "color", "c", "edgecolor",
+                                      "edgecolors")):
+            _kw["colors"] = "k"
+        if not any(k in _kw for k in ("linewidths", "linewidth", "lw")):
+            _kw["linewidths"] = 0.8
+        _ref_lc_kw = _kw
+        if out:
+            print("  plot: reference lines at log10(rho) = "
+                  + ", ".join(f"{v:g}" for v in _rlev)
+                  + f"  ({int(np.sum(~_rbad))} of {_rbad.size} cells used)")
+
+    def _overlay_reference(ax, polys_disp, eidx):
+        """Draw the reference iso-lines on one panel; True if any was drawn."""
+        if _ref_cls is None or len(eidx) == 0:
+            return False
+        segs = _class_boundary_segments(polys_disp, _ref_cls[eidx])
+        if segs.shape[0] == 0:
+            return False
+        lc = LineCollection(segs, **_ref_lc_kw)
+        if _ref_label is not None:
+            lc.set_label(_ref_label)
+        ax.add_collection(lc)
+        return True
+
     # -- sample boreholes (before figure, so depth range is known) ---------------
     _bh_logs: list = []
     _bh_sites = borehole_sites or []
@@ -4330,6 +4591,42 @@ def plot_model_slices(
         _panel_h = float(panel_height)
         if panel_width is not None:
             _col_widths = [float(panel_width)] * _ncols
+        elif _ve is not None:
+            # Column widths for a fixed aspect: spans in metres (same unit
+            # on both sides, so independent of display_coords / km flags),
+            # section heights multiplied by the vertical exaggeration; a
+            # limit left at None falls back to the mesh extent.
+            _ext_x = float(np.ptp(nodes[:, 0]))
+            _ext_y = float(np.ptp(nodes[:, 1]))
+            _ext_z = float(np.ptp(nodes[:, 2]))
+            _pw = []
+            for spec in slices:
+                kind = spec.get("kind", "map")
+                if kind in ("sn", "we"):
+                    kind = "ns" if kind == "sn" else "ew"
+                _xl = spec.get("xlim", xlim)
+                _yl = spec.get("ylim", ylim)
+                _zl = spec.get("zlim", zlim)
+                _sx = (_xl[1] - _xl[0]) if _xl else _ext_x
+                _sy = (_yl[1] - _yl[0]) if _yl else _ext_y
+                _sz = ((_zl[1] - _zl[0]) if _zl else _ext_z) * _ve
+                if kind == "map":
+                    hspan, vspan = _sx, _sy
+                elif kind == "ns":
+                    hspan, vspan = _sy, _sz
+                elif kind == "ew":
+                    hspan, vspan = _sx, _sz
+                elif (kind == "plane"
+                      and abs(float(spec.get("dip", 90.0)) - 90.0) < 1e-6):
+                    # along-strike range (spec xlim, m) or the mesh diagonal
+                    hspan = ((_xl[1] - _xl[0]) if _xl
+                             else math.hypot(_ext_x, _ext_y))
+                    vspan = _sz
+                else:
+                    hspan = vspan = 1.0
+                _pw.append(_panel_h * (hspan / vspan if vspan > 0 else 1.0))
+            _pw += [_panel_h] * (_nrows * _ncols - len(_pw))
+            _col_widths = [max(_pw[c::_ncols]) for c in range(_ncols)]
         elif _do_equal:
             _pw = []
             for spec in slices:
@@ -4412,6 +4709,7 @@ def plot_model_slices(
         _ylim = spec.get("ylim", ylim)
         _zlim = spec.get("zlim", zlim)
         mappable = None
+        _ref_drawn = False
 
         # Normalise reversed-direction aliases before dispatch.
         if kind in ("sn", "we"):
@@ -4450,8 +4748,8 @@ def plot_model_slices(
                 ax.xaxis.set_major_formatter(_fmt_x)
             if _fmt_y is not None:
                 ax.yaxis.set_major_formatter(_fmt_y)
-            if _do_equal:
-                ax.set_aspect("equal", adjustable="box")
+            _apply_aspect(ax, "map", sc)
+            _ref_drawn = _overlay_reference(ax, polys_d, eidx)
             if title is None:
                 title = f"Map  z = {z0/1000:.1f} km"
             for sn, sx_m, sy_m, _elev in (_site_xys if sites_in_maps else []):
@@ -4521,8 +4819,8 @@ def plot_model_slices(
                 ax.invert_xaxis()
             if _fmt_y is not None:
                 ax.xaxis.set_major_formatter(_fmt_y)
-            if _do_equal:
-                ax.set_aspect("equal", adjustable="box")
+            _apply_aspect(ax, "section", sc)
+            _ref_drawn = _overlay_reference(ax, polys_d, eidx)
             if title is None:
                 title = f"N-S  easting = {(x0 + utm_origin_e)/1000:.1f} km"
             _lbl_l, _lbl_r = ("N", "S") if _invert_x else ("S", "N")
@@ -4579,8 +4877,8 @@ def plot_model_slices(
                 ax.invert_xaxis()
             if _fmt_x is not None:
                 ax.xaxis.set_major_formatter(_fmt_x)
-            if _do_equal:
-                ax.set_aspect("equal", adjustable="box")
+            _apply_aspect(ax, "section", sc)
+            _ref_drawn = _overlay_reference(ax, polys_d, eidx)
             if title is None:
                 title = f"E-W  northing = {(y0 + utm_origin_n)/1000:.1f} km"
             _lbl_l, _lbl_r = ("E", "W") if _invert_x else ("W", "E")
@@ -4650,8 +4948,8 @@ def plot_model_slices(
                     ax.set_ylim([-_zlim[1]*_dz_sc, -_zlim[0]*_dz_sc])
                 if _invert_x:
                     ax.invert_xaxis()
-                if _do_equal:
-                    ax.set_aspect("equal", adjustable="box")
+                _apply_aspect(ax, "section", _hsc)
+                _ref_drawn = _overlay_reference(ax, polys_d, eidx)
                 if title is None:
                     title = f"Section  azimuth N{_strike:.0f}E"
                 _c_l = _s_rad + math.pi if not _invert_x else _s_rad
@@ -4686,6 +4984,7 @@ def plot_model_slices(
                                              ocean_color=ocean_color,
                                              air_color=air_color, ocean_value=ocean_value, invert_v=True,
                                              poly_alphas=_pa)
+                _ref_drawn = _overlay_reference(ax, polys, eidx)
                 ax.set_xlabel("along-strike (m)", fontsize=label_fontsize)
                 ax.set_ylabel("down-dip (km)" if depth_km else "down-dip (m)", fontsize=label_fontsize)
                 if _xlim is not None:
@@ -4737,7 +5036,8 @@ def plot_model_slices(
                 (sites_in_slices and kind in ("ns", "ew", "plane"))
             )) or
             (map_markers and kind == "map" and
-             any(m.get("name") for m in map_markers))
+             any(m.get("name") for m in map_markers)) or
+            bool(_ref_drawn and _ref_label)
         )
         # Only if something actually carries a label (site_marker with
         # label=None, as in the calling scripts' defaults, produces none).
@@ -4864,6 +5164,9 @@ def plot_borehole_logs(
     tick_fontsize: Optional[int] = None,
     label_fontsize: Optional[int] = None,
     figure_title: Optional[str] = None,
+    reference_file=None,
+    reference_style: Optional[dict] = None,
+    reference_label: Optional[str] = "reference model",
     npz_file=None,
     plot_file=None,
     dpi: int = 200,
@@ -4994,6 +5297,23 @@ def plot_borehole_logs(
     figure_title
         Overall figure title (suptitle).  ``None`` → the basename of
         *model_file*.
+    reference_file
+        Optional reference model (a block file on the same mesh as
+        *model_file*).  It is sampled at every borehole exactly like the main
+        model (same depths, same air / ocean handling) and drawn as a dashed
+        line in the colour of the borehole's own trace, one pair per
+        borehole.  Exported to the NPZ as ``reference_rho_<name>``.
+        ``None`` = no reference.
+    reference_style
+        ``Line2D`` keyword overrides for the reference traces (e.g.
+        ``dict(color="k", lw=2.0, ls="--")``); a ``color`` given here
+        replaces the pairing with the borehole colour.  Default: dashed,
+        1.4 x the main line width, drawn on top.
+    reference_label
+        Legend text of the reference traces (``None`` = no entry).  In
+        shared mode one extra legend entry is added for the dashed
+        reference style; in per-panel mode each panel gets a small legend
+        "model" / reference.
     npz_file
         Path for the NPZ data export.
 
@@ -5058,6 +5378,32 @@ def plot_borehole_logs(
         _ts.update(log["trace_style"])
         log["trace_style"] = _ts
 
+    # Optional reference model: same boreholes, same sampling, second model.
+    ref_logs = None
+    if reference_file is not None:
+        if out:
+            print(f"  boreholes: reading reference model "
+                  f"{os.path.basename(str(reference_file))}")
+        _rblk = read_resistivity_block(reference_file)
+        _rrho_elem = map_regions_to_element_rho(_rblk.region_of_elem,
+                                                _rblk.region_rho)
+        if _rrho_elem.shape[0] != conn.shape[0]:
+            raise ValueError(
+                f"reference_file element count ({_rrho_elem.shape[0]}) != "
+                f"mesh element count ({conn.shape[0]}) -- the reference "
+                f"model must live on the same mesh.")
+        _rrho_plot = prepare_rho_for_plotting(
+            _rrho_elem, air_is_nan=True, ocean_value=float(ocean_value),
+            region_of_elem=_rblk.region_of_elem)
+        ref_logs = _sample_borehole_logs(
+            nodes, conn, _rrho_plot, borehole_sites,
+            resolve_xy_fn=resolve_xy_fn,
+            utm_zone=utm_zone,
+            utm_northern=utm_northern,
+            utm_origin_e=utm_origin_e,
+            utm_origin_n=utm_origin_n,
+            out=False)
+
     # -------------------------------------------------------------------------
     # NPZ export
     # -------------------------------------------------------------------------
@@ -5086,6 +5432,8 @@ def plot_borehole_logs(
                 depth_key = f"depth_{log['name']}",
                 rho_key   = f"rho_{log['name']}",
             )
+            if ref_logs is not None:
+                _entry["reference_rho_key"] = f"reference_rho_{log['name']}"
             if log["lat"] is not None:
                 _entry["lat"] = float(log["lat"])
             if log["lon"] is not None:
@@ -5095,6 +5443,7 @@ def plot_borehole_logs(
         _header_dict = dict(
             created      = datetime.datetime.now().isoformat(timespec="seconds"),
             model_file   = str(model_file),
+            reference_file = None if reference_file is None else str(reference_file),
             mesh_file    = str(mesh_file),
             ocean_value  = ocean_value,
             depth_unit   = "m (z positive-down from datum)",
@@ -5105,10 +5454,12 @@ def plot_borehole_logs(
 
         # Pack arrays: depth_<name>, rho_<name> for each borehole + header
         _arrays: dict = {"header": np.array(_header_json)}
-        for log in logs:
+        for _il, log in enumerate(logs):
             _safe = log["name"].replace(" ", "_")
             _arrays[f"depth_{_safe}"] = log["depths"]
             _arrays[f"rho_{_safe}"]   = log["rho"]
+            if ref_logs is not None:
+                _arrays[f"reference_rho_{_safe}"] = ref_logs[_il]["rho"]
 
         np.savez(_npz_path, **_arrays)
         if out:
@@ -5125,6 +5476,16 @@ def plot_borehole_logs(
         fig, axs = plt.subplots(1, n, figsize=(4 * n, 8), sharey=True)
         ax_arr = list(axs) if n > 1 else [axs]
 
+    def _ln_kw(d):
+        """Line2D kwargs with the long aliases folded into the short ones."""
+        d = dict(d)
+        for _long, _short in (("linewidth", "lw"), ("linestyle", "ls"),
+                              ("c", "color"), ("markersize", "ms")):
+            if _long in d:
+                _v = d.pop(_long)
+                d.setdefault(_short, _v)
+        return d
+
     # Map borehole name -> axes for marker targeting
     name_to_ax: dict = {}
     for i, (log, ax) in enumerate(zip(logs, ax_arr)):
@@ -5135,12 +5496,31 @@ def plot_borehole_logs(
             np.isfinite(rho_vals) & (rho_vals > 0), rho_vals, np.nan)
 
         legend_label = f"{log['name']}\n{log['pos_str']}"
-        ax.plot(rho_plot_vals, depth_km, label=legend_label,
-                **log["trace_style"])
+        (_ln,) = ax.plot(rho_plot_vals, depth_km, label=legend_label,
+                         **log["trace_style"])
+        if ref_logs is not None:
+            # dashed twin of the borehole's own trace, on top of it
+            _rv = ref_logs[i]["rho"]
+            _rv = np.where(np.isfinite(_rv) & (_rv > 0), _rv, np.nan)
+            _rst = _ln_kw(log["trace_style"])
+            _rst.pop("label", None)
+            _rst.update(marker="none", ls="--", color=_ln.get_color(),
+                        lw=1.4 * float(_rst.get("lw", 1.2)),
+                        zorder=float(_rst.get("zorder", 2)) + 1.0)
+            _rst.update(_ln_kw(reference_style or {}))
+            (_rln,) = ax.plot(_rv, ref_logs[i]["depths"] / 1000.0, **_rst)
+            if not shared and reference_label is not None:
+                ax.legend([_ln, _rln], ["model", reference_label],
+                          fontsize=max(_tick_fs - 1, 6), loc="lower right")
         ax.set_xscale("log")
         ax.set_xlabel("resistivity (Ohm·m)", fontsize=_label_fs)
         ax.set_ylabel("depth (km)", fontsize=_label_fs)
-        ax.invert_yaxis()
+        # invert once only: in shared mode every borehole draws on the same
+        # axes, and with sharey=True the panels share one y axis, so an
+        # unconditional invert_yaxis() per borehole toggled back and forth
+        # (depth increased upward for an even number of boreholes).
+        if not ax.yaxis_inverted():
+            ax.invert_yaxis()
         if clim is not None:
             ax.set_xlim(clim)
         if not shared:
@@ -5150,7 +5530,15 @@ def plot_borehole_logs(
         name_to_ax[log["name"]] = ax
 
     if shared:
-        ax_arr[0].legend(fontsize=legend_fontsize, loc="lower right")
+        _hdl, _lab = ax_arr[0].get_legend_handles_labels()
+        if ref_logs is not None and reference_label is not None:
+            from matplotlib.lines import Line2D
+            _pst = dict(color="0.25", lw=1.4, ls="--")
+            _pst.update(_ln_kw(reference_style or {}))
+            _hdl.append(Line2D([], [], label=reference_label, **_pst))
+            _lab.append(reference_label)
+        ax_arr[0].legend(_hdl, _lab, fontsize=legend_fontsize,
+                         loc="lower right")
         ax_arr[0].set_title("Borehole resistivity logs",
                             fontsize=legend_fontsize + 1)
     for ax in set(ax_arr):
