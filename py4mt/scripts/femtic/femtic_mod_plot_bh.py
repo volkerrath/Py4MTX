@@ -49,6 +49,11 @@ Provenance
     femtic_mod_plot_bh_summary.md output at end of run: writes user-set
     (UPPERCASE) parameters, script path, and run date/time via
     utl.write_param_summary().
+@modified: 2026-10-28  Claude Sonnet 5.5 (Anthropic) -- The parameter
+    summary femtic_mod_plot_bh_summary.md is now written to WORK_DIR
+    instead of next to the script (utl.write_param_summary(fname,
+    out_dir=WORK_DIR)). Needs the util.py of the same date. AI-generated;
+    review before production use.
 """
 
 import os
@@ -326,4 +331,4 @@ else:
 # ---------------------------------------------------------------------------
 # Parameter summary
 # ---------------------------------------------------------------------------
-utl.write_param_summary(fname)
+utl.write_param_summary(fname, out_dir=WORK_DIR)

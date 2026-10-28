@@ -34,6 +34,13 @@ Provenance:
                 Added femtic_rto_rough_summary.md output at end of run:
                 writes user-set (UPPERCASE) parameters, script path, and
                 run date/time via utl.write_param_summary().
+    2026-10-28  Claude Sonnet 5.5 (Anthropic)
+                The parameter summary femtic_rto_rough_summary.md is now
+                written to the working directory set in this script
+                (WORK_DIR) instead of next to the script:
+                utl.write_param_summary(fname, out_dir=WORK_DIR). Needs
+                the util.py of the same date (new out_dir argument).
+                AI-generated; review before production use.
 """
 import os
 import sys
@@ -108,4 +115,4 @@ else:
 # ---------------------------------------------------------------------------
 # Parameter summary
 # ---------------------------------------------------------------------------
-utl.write_param_summary(fname)
+utl.write_param_summary(fname, out_dir=WORK_DIR)

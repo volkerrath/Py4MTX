@@ -227,3 +227,4 @@ for bh in hdr["boreholes"]:
 | 2026-06-04 | vrath / Claude Sonnet 4.6 | Added `BOREHOLE_MARKERS` (free arrow + text annotations) and `LEGEND_FONTSIZE`; forwarded to `fviz.plot_borehole_logs` |
 | 2026-06-26 | vrath / Claude Sonnet 4.6 | Added `TICK_FONTSIZE` and `LABEL_FONTSIZE` (both default `None` → derived from `LEGEND_FONTSIZE`); forwarded to `fviz.plot_borehole_logs` as `tick_fontsize` / `label_fontsize`. |
 | 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_mod_plot_bh_summary.md` output at end of run: writes user-set (UPPERCASE) parameters, script path, and run date/time. |
+| 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The parameter summary `femtic_mod_plot_bh_summary.md` is now written to `WORK_DIR` (the working directory set in the script) instead of next to the script: `utl.write_param_summary(fname, out_dir=WORK_DIR)`. Needs the `util.py` of the same date. AI-generated; review before production use. |

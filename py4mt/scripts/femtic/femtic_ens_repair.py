@@ -116,6 +116,13 @@ Provenance:
                 allowed, first existing wins), resolved per directory via
                 fem.resolve_cnv_path(). Requires the femtic.py of the same
                 date. AI-generated; review before production use.
+    2026-10-28  Claude Sonnet 5.5 (Anthropic)
+                The parameter summary femtic_ens_repair_summary.md is now
+                written to the working directory set in this script
+                (ENSEMBLE_DIR) instead of next to the script:
+                utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR).
+                Needs the util.py of the same date (new out_dir argument).
+                AI-generated; review before production use.
 """
 from __future__ import annotations
 
@@ -514,4 +521,4 @@ print("\nfemtic_ens_repair.py complete.")
 # ---------------------------------------------------------------------------
 # Parameter summary
 # ---------------------------------------------------------------------------
-utl.write_param_summary(__file__)
+utl.write_param_summary(__file__, out_dir=ENSEMBLE_DIR)

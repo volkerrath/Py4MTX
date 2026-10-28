@@ -789,6 +789,13 @@ Provenance
             False restores the previous behaviour. With nothing missing the
             results are identical to the previous version (tested).
             AI-generated code -- review before production use.
+2026-10-28  Claude Sonnet 5.5 (Anthropic)
+            The parameter summary femtic_ens_post_summary.md is now
+            written to the working directory set in this script
+            (ENSEMBLE_DIR) instead of next to the script:
+            utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR). Needs
+            the util.py of the same date (new out_dir argument).
+            AI-generated; review before production use.
 
     This script targets FEMTIC's current HDF5 output layout only.
     AI-generated code -- review before production use.
@@ -4304,4 +4311,4 @@ print("\nfemtic_ens_post.py complete.")
 # ---------------------------------------------------------------------------
 # Parameter summary
 # ---------------------------------------------------------------------------
-utl.write_param_summary(__file__)
+utl.write_param_summary(__file__, out_dir=ENSEMBLE_DIR)

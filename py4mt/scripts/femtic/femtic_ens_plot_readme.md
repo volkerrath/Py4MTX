@@ -478,3 +478,8 @@ Position values accept:
   header row every time, independent of version or Beta/Distortion
   presence.
 - **2026-10-08 (Claude Sonnet 5.5, Anthropic):** Convergence file name is now configurable via `CNV_FILE` (default `"femtic.cnv"`; list of candidates allowed), resolved per member with `fem.resolve_cnv_path()`. AI-generated; review before production use.
+- **2026-10-28 (Claude Sonnet 5.5, Anthropic):**
+  `femtic_ens_plot_summary.md` is now written to `ENSEMBLE_DIR` (the
+  working directory set in the script) instead of next to the script:
+  `utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR)`. Needs the
+  `util.py` of the same date. AI-generated; review before production use.

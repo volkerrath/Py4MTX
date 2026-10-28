@@ -233,3 +233,4 @@ pass restores spatial continuity while preserving the robustness advantage.
 |---|---|---|
 | 2026-06-11 | vrath / Claude Sonnet 4.6 (Anthropic) | Created. |
 | 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_mod_math_summary.md` output at end of run: writes user-set (UPPERCASE) parameters, script path, and run date/time. |
+| 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The parameter summary `femtic_mod_math_summary.md` is now written to `ENSEMBLE_DIR` (the working directory set in the script) instead of next to the script: `utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR)`. Needs the `util.py` of the same date. AI-generated; review before production use. |

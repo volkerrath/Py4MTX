@@ -296,6 +296,13 @@ Provenance
                 unchanged (figures and borehole output identical to the
                 2026-10-27 version, tested).
                 AI-generated code -- review before production use.
+    2026-10-28  Claude Sonnet 5.5 (Anthropic)
+                The parameter summary femtic_ens_plot_summary.md is now
+                written to the working directory set in this script
+                (ENSEMBLE_DIR) instead of next to the script:
+                utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR).
+                Needs the util.py of the same date (new out_dir argument).
+                AI-generated; review before production use.
 
 @author: vrath
 """
@@ -1809,4 +1816,4 @@ if PLOT_BOREHOLE:
 # ---------------------------------------------------------------------------
 # Parameter summary
 # ---------------------------------------------------------------------------
-utl.write_param_summary(fname)
+utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR)

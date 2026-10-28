@@ -245,3 +245,11 @@ The geometry primitives used by `"smooth"`, `"wmean"`, `"ellipsoid"`, and
   `"map"` panels whenever `DISPLAY_COORDS` is `"utm"`/`"latlon"`, via
   `fviz.plot_model_slices`'s new `show_model_centre` parameter. Override
   style with a `MAP_MARKERS` entry carrying `"is_model_centre": True`.
+
+## 2026-10-28 (summary location)
+
+- `femtic_mod_edit_summary.md` is now written to `WORK_DIR` (the working directory set
+  in the script) instead of next to the script:
+  `utl.write_param_summary(fname, out_dir=WORK_DIR)`. Needs the
+  `util.py` of the same date. AI-generated; review before
+  production use.

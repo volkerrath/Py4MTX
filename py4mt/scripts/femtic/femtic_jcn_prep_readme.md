@@ -14,6 +14,7 @@ Prepare jackknife uncertainty analysis directories for FEMTIC.
 | README updated | 25 July 2026 by Claude Sonnet 5 (Anthropic) — added `RANDOM_SEED`; flagged a known issue (see below) |
 | README updated | 11 October 2026 by Claude Sonnet 5.5 (Anthropic) — script migrated to `ensembles.py`; known issue resolved |
 | README updated | 13 August 2026 by Claude Sonnet 5 (Anthropic) — added `femtic_jcn_prep_summary.md` output at end of run |
+| README updated | 28 October 2026 by Claude Sonnet 5.5 (Anthropic) -- `femtic_jcn_prep_summary.md` is now written to `ENSEMBLE_DIR` instead of next to the script |
 
 ## Migration (11 October 2026)
 
@@ -74,7 +75,7 @@ reduced data set (e.g. leave-one-site-out) is generated.
 |------|-------------|
 | `jcn_<N>/` | One inversion directory per jackknife sample, ready to run FEMTIC. |
 | Modified `observe.dat` | Each directory contains a reduced data file with one site removed. |
-| `femtic_jcn_prep_summary.md` | Markdown summary of user-set (UPPERCASE) parameters, script path, and run date/time. |
+| `femtic_jcn_prep_summary.md` | Markdown summary of user-set (UPPERCASE) parameters, script path, and run date/time; written to `ENSEMBLE_DIR`. |
 
 ## Dependencies
 

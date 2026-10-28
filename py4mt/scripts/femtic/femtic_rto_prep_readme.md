@@ -178,3 +178,8 @@ dict(kind="plane", point=[0,0,5000], strike=45, dip=60)
   `femtic_rto_prep.py` itself could not be run end to end here (`femtic_viz`
   was not available); the alpha block and `ens.generate_rto_model_ensemble`
   were tested separately (`rto_integration_test.py`).
+- 2026-10-28 (Claude Sonnet 5.5, Anthropic): `femtic_rto_prep_summary.md`
+  is now written to `ENSEMBLE_DIR` (the working directory set in the
+  script) instead of next to the script: `utl.write_param_summary(fname,
+  out_dir=ENSEMBLE_DIR)`. Needs the `util.py` of the same date.
+  AI-generated; review before production use.

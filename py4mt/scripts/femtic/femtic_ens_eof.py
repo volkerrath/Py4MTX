@@ -16,6 +16,14 @@ Provenance:
                        Added femtic_ens_eof_summary.md output at end of
                        run: writes user-set (UPPERCASE) parameters, script
                        path, and run date/time via utl.write_param_summary().
+    2026-10-28  Claude Sonnet 5.5 (Anthropic)
+                       The parameter summary femtic_ens_eof_summary.md is
+                       now written to the working directory set in this
+                       script (ENSEMBLE_DIR) instead of next to the
+                       script: utl.write_param_summary(fname,
+                       out_dir=ENSEMBLE_DIR). Needs the util.py of the
+                       same date (new out_dir argument). AI-generated;
+                       review before production use.
 """
 
 import os
@@ -158,4 +166,4 @@ for ie in np.arange(tens):
 # ---------------------------------------------------------------------------
 # Parameter summary
 # ---------------------------------------------------------------------------
-utl.write_param_summary(fname)
+utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR)

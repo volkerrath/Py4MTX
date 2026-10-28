@@ -192,3 +192,4 @@ mode: the grid is written but no PyVista render window is opened.
 | 2026-05-31 | vrath / Claude Sonnet 4.6 | Origin estimation before UTM zone derivation; hard-coded `UTM_ORIGIN_*` set to `None` |
 | 2026-06-03 | Claude Sonnet 4.6 | **Split** from `femtic_mod_plot.py` → `femtic_mod_plot_3d.py` (this script) + `femtic_mod_plot_slice.py` |
 | 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_mod_plot_3d_summary.md` output at end of run: writes user-set (UPPERCASE) parameters, script path, and run date/time |
+| 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The parameter summary `femtic_mod_plot_3d_summary.md` is now written to `WORK_DIR` (the working directory set in the script) instead of next to the script: `utl.write_param_summary(fname, out_dir=WORK_DIR)`. Needs the `util.py` of the same date. AI-generated; review before production use. |

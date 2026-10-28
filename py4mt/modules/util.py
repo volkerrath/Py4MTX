@@ -26,6 +26,7 @@ Modified: 2026-04-02 — merged resistivity_models.py (petrophysical models); Cl
 Modified: 2026-05-23 — added utm_zone_from_latlon(), latlon_to_utm_zn(), utm_to_latlon_zn() (zone+hemisphere API with pyproj-primary / Helmert fallback); Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-05-25 — moved KL divergence, L-curve, DCT wrappers, fractional derivative, and residual-norm helpers to inverse.py; removed shims; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-08-13 — added write_param_summary() (writes a per-script Markdown summary of UPPERCASE user-set parameters, script path, and run date/time); Claude Sonnet 5 (Anthropic)
+Modified: 2026-10-28 -- write_param_summary(): new out_dir argument, so the summary can be written to the working directory set in the calling script instead of next to it (falls back to the script directory if out_dir cannot be used); Claude Sonnet 5.5 (Anthropic); AI-generated, review before production use
 """
 
 from __future__ import annotations
@@ -166,7 +167,8 @@ def load_workspace_hdf5(filename: str = "workspace.h5",
 
 def write_param_summary(fname: str,
                          namespace: Optional[Dict[str, Any]] = None,
-                         out_path: Optional[str] = None) -> str:
+                         out_path: Optional[str] = None,
+                         out_dir: Optional[str] = None) -> str:
     """
     Write a Markdown summary of a script's user-set parameters.
 
@@ -175,7 +177,7 @@ def write_param_summary(fname: str,
     user-set config variables (``MOD_*``, ``ENS_*``, ``GST_*``,
     ``DAT_*``, ``VIZ_*``, ``QC_*``, ``PLOT_*``, etc.) -- and writes
     them, together with the script path and the run date/time, to
-    ``<script_dir>/<script_stem>_summary.md``.
+    ``<out_dir>/<script_stem>_summary.md``.
 
     Parameters
     ----------
@@ -187,9 +189,14 @@ def write_param_summary(fname: str,
         globals (i.e. the script's own module namespace), not
         ``util.py``'s.
     out_path : str, optional
-        Output ``.md`` path. Defaults to
-        ``<script_dir>/<script_stem>_summary.md``, i.e. next to the
-        script itself.
+        Full output ``.md`` path. If given, it takes precedence over
+        ``out_dir``. Defaults to ``<out_dir>/<script_stem>_summary.md``.
+    out_dir : str, optional
+        Directory for the summary, normally the working directory set in
+        the calling script (``WORK_DIR``, ``ENSEMBLE_DIR``, ...). It is
+        created if missing. If it is None/empty, or if the file cannot be
+        written there (e.g. a drive that is not mounted), the summary is
+        written next to the script instead and a message says so.
 
     Returns
     -------
@@ -205,8 +212,18 @@ def write_param_summary(fname: str,
 
     script_path = os.path.abspath(fname)
     stem = os.path.splitext(os.path.basename(fname))[0]
-    if out_path is None:
-        out_path = os.path.join(os.path.dirname(script_path), stem + "_summary.md")
+    out_name = stem + "_summary.md"
+    default_path = os.path.join(os.path.dirname(script_path), out_name)
+
+    # Candidate target files, in order of preference.
+    if out_path is not None:
+        targets = [out_path]
+    else:
+        targets = []
+        if out_dir:
+            targets.append(os.path.join(
+                os.path.abspath(os.path.expanduser(str(out_dir))), out_name))
+        targets.append(default_path)
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -228,11 +245,25 @@ def write_param_summary(fname: str,
         lines.append("| `" + k + "` | `" + vstr + "` |")
 
     text = "\n".join(lines) + "\n"
-    with open(out_path, "w") as f:
-        f.write(text)
 
-    print("[write_param_summary] Wrote parameter summary to " + out_path)
-    return out_path
+    written = None
+    for n, target in enumerate(targets):
+        try:
+            tdir = os.path.dirname(target)
+            if tdir:
+                os.makedirs(tdir, exist_ok=True)
+            with open(target, "w") as f:
+                f.write(text)
+            written = target
+            break
+        except OSError as exc:
+            if n == len(targets) - 1:
+                raise
+            print("[write_param_summary] Cannot write to " + target
+                  + " (" + str(exc) + "); trying " + targets[n + 1] + " instead.")
+
+    print("[write_param_summary] Wrote parameter summary to " + written)
+    return written
 
 
 # ---------------------------------------------------------------------------

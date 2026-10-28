@@ -302,6 +302,13 @@ Provenance:
                 MOD_PP_ROI (extrema-search region) is deliberately NOT
                 touched: it stays independent of the plot extent and is
                 never derived from, or overridden by, the site-bbox ROI.
+    2026-10-28  Claude Sonnet 5.5 (Anthropic)
+                The parameter summary femtic_gst_prep_summary.md is now
+                written to the working directory set in this script
+                (ENSEMBLE_DIR) instead of next to the script:
+                utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR).
+                Needs the util.py of the same date (new out_dir argument).
+                AI-generated; review before production use.
 """
 
 import os
@@ -1390,4 +1397,4 @@ if PLOT_DATA or PLOT_MODEL:
 # ---------------------------------------------------------------------------
 # Parameter summary
 # ---------------------------------------------------------------------------
-utl.write_param_summary(fname)
+utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR)

@@ -19,6 +19,7 @@ Generate a synthetic model ensemble from a posterior covariance matrix.
 | 2025       | vrath  | Created.                                     |
 | 2026-03-03 | Claude | Renamed user-set parameters to UPPERCASE.    |
 | 2026-08-13 | Claude Sonnet 5 | Added `femtic_ens_from_covar_summary.md` output at end of run: user-set (UPPERCASE) parameters, script path, and run date/time. |
+| 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The parameter summary `femtic_ens_from_covar_summary.md` is now written to `NEW_ENSEMBLE_DIR` (the working directory set in the script) instead of next to the script: `utl.write_param_summary(fname, out_dir=NEW_ENSEMBLE_DIR)`. Needs the `util.py` of the same date. AI-generated; review before production use. |
 
 ## Purpose
 

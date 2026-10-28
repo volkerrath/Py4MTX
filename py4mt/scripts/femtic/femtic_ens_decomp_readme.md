@@ -19,6 +19,7 @@ Dimensionality reduction (PCA / ICA) on a FEMTIC model ensemble.
 | 2025       | vrath  | Created (as femtic_decomp_ens).                                 |
 | 2026-03-03 | Claude | Renamed file to femtic_ens_decomp; params to UPPERCASE.         |
 | 2026-08-13 | Claude Sonnet 5 | Added `femtic_ens_decomp_summary.md` output at end of run: user-set (UPPERCASE) parameters, script path, and run date/time. |
+| 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The parameter summary `femtic_ens_decomp_summary.md` is now written to `ENSEMBLE_DIR` (the working directory set in the script) instead of next to the script: `utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR)`. Needs the `util.py` of the same date. AI-generated; review before production use. |
 
 ## Purpose
 

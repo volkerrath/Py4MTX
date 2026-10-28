@@ -32,6 +32,13 @@ Provenance:
                 plotted against a running row index (0, 1, 2, ...), not
                 Iter# itself, so every row is visible rather than several
                 rows overplotting at the same x position.
+    2026-10-28  Claude Sonnet 5.5 (Anthropic)
+                The parameter summary femtic_plot_conv_summary.md is now
+                written to the working directory set in this script
+                (WORK_DIR) instead of next to the script:
+                utl.write_param_summary(fname, out_dir=WORK_DIR). Needs
+                the util.py of the same date (new out_dir argument).
+                AI-generated; review before production use.
 """
 
 import os
@@ -294,4 +301,4 @@ plt.close(fig)
 # ---------------------------------------------------------------------------
 # Parameter summary
 # ---------------------------------------------------------------------------
-utl.write_param_summary(fname)
+utl.write_param_summary(fname, out_dir=WORK_DIR)

@@ -131,7 +131,7 @@ sequence)"`).
 
 - `<PLOT_NAME>.<fmt>` — one convergence figure per `PLOT_FORMAT` entry.
 - `<CONV_DATA_FILE>` — `.npz` with one array per `"<label>__<field>"` key actually plotted (skipped if `CONV_DATA_FILE is None`).
-- `femtic_plot_conv_summary.md` — user-set (UPPERCASE) parameters, script path, and run date/time (via `utl.write_param_summary()`).
+- `<WORK_DIR>/femtic_plot_conv_summary.md` -- user-set (UPPERCASE) parameters, script path, and run date/time (via `utl.write_param_summary(fname, out_dir=WORK_DIR)`).
 
 ---
 
@@ -195,5 +195,6 @@ python femtic_plot_conv.py
 | Date | Author | Note |
 |---|---|---|
 | 2026-09-07 | Claude Sonnet 5 (Anthropic) | Created. |
+| 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The parameter summary `femtic_plot_conv_summary.md` is now written to `WORK_DIR` (the working directory set in the script) instead of next to the script: `utl.write_param_summary(fname, out_dir=WORK_DIR)`. Needs the `util.py` of the same date. AI-generated; review before production use. |
 
 Author: Volker Rath (DIAS)

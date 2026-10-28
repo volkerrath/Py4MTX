@@ -55,6 +55,13 @@ Provenance:
                   "jcn_<i>" but the data call used "ens_<i>").
                 * distortion_iter0.dat is NOT trimmed when sites are
                   dropped (see NOTE in the configuration block).
+    2026-10-28  Claude Sonnet 5.5 (Anthropic)
+                The parameter summary femtic_jcn_prep_summary.md is now
+                written to the working directory set in this script
+                (ENSEMBLE_DIR) instead of next to the script:
+                utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR).
+                Needs the util.py of the same date (new out_dir argument).
+                AI-generated; review before production use.
 """
 
 import os
@@ -241,4 +248,4 @@ data_ensemble = make_jackknife_data(
 # ---------------------------------------------------------------------------
 # Parameter summary
 # ---------------------------------------------------------------------------
-utl.write_param_summary(fname)
+utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR)

@@ -43,6 +43,14 @@ Provenance:
                        first existing wins), passed to fem.read_cnv() as
                        filename=. Requires the femtic.py of the same date.
                        AI-generated; review before production use.
+    2026-10-28  Claude Sonnet 5.5 (Anthropic)
+                       The parameter summary femtic_lcurve_plot_summary.md
+                       is now written to the working directory set in this
+                       script (WORK_DIR) instead of next to the script:
+                       utl.write_param_summary(fname, out_dir=WORK_DIR).
+                       Needs the util.py of the same date (new out_dir
+                       argument). AI-generated; review before production
+                       use.
 """
 
 import os
@@ -263,4 +271,4 @@ print(f"Saved {PLOT_NAME}.pdf and {PLOT_NAME}.jpg")
 # ---------------------------------------------------------------------------
 # Parameter summary
 # ---------------------------------------------------------------------------
-utl.write_param_summary(fname)
+utl.write_param_summary(fname, out_dir=WORK_DIR)

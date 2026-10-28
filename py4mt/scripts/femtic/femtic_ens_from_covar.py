@@ -21,6 +21,15 @@ Provenance:
                        of run: writes user-set (UPPERCASE) parameters,
                        script path, and run date/time via
                        utl.write_param_summary().
+    2026-10-28  Claude Sonnet 5.5 (Anthropic)
+                       The parameter summary
+                       femtic_ens_from_covar_summary.md is now written to
+                       the working directory set in this script
+                       (NEW_ENSEMBLE_DIR) instead of next to the script:
+                       utl.write_param_summary(fname,
+                       out_dir=NEW_ENSEMBLE_DIR). Needs the util.py of the
+                       same date (new out_dir argument). AI-generated;
+                       review before production use.
 """
 
 import os
@@ -86,4 +95,4 @@ print(f"Ensemble ({NEW_ENSEMBLE_SIZE} members) saved to {NEW_ENSEMBLE_FILE}")
 # ---------------------------------------------------------------------------
 # Parameter summary
 # ---------------------------------------------------------------------------
-utl.write_param_summary(__file__)
+utl.write_param_summary(__file__, out_dir=NEW_ENSEMBLE_DIR)

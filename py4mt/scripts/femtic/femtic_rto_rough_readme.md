@@ -73,6 +73,7 @@ See `README_femtic_rto_prep.md` for the full list of RTO references.
 | 2026-03-03 | Claude | Renamed user-set parameters to UPPERCASE.    |
 | 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_rto_rough_summary.md` output at end of run: user-set (UPPERCASE) parameters, script path, and run date/time. |
 | 2026-10-11 | Claude Sonnet 5.5 (Anthropic) | `get_roughness` and `check_sparse_matrix` now called from `ensembles` (`ens.`), where they live; `fem.` calls raised `AttributeError`. |
+| 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The parameter summary `femtic_rto_rough_summary.md` is now written to `WORK_DIR` (the working directory set in the script) instead of next to the script: `utl.write_param_summary(fname, out_dir=WORK_DIR)`. Needs the `util.py` of the same date. AI-generated; review before production use. |
 
 ## Author
 

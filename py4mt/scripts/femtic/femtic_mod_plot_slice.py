@@ -150,6 +150,13 @@ Provenance
                 "utm"/"latlon" via fviz.plot_model_slices'
                 show_model_centre parameter; override style with a
                 MAP_MARKERS entry carrying "is_model_centre": True.
+    2026-10-28  Claude Sonnet 5.5 (Anthropic)
+                The parameter summary femtic_mod_plot_slice_summary.md is
+                now written to the working directory set in this script
+                (WORK_DIR) instead of next to the script:
+                utl.write_param_summary(fname, out_dir=WORK_DIR). Needs
+                the util.py of the same date (new out_dir argument).
+                AI-generated; review before production use.
 
 @author: vrath
 """
@@ -680,4 +687,4 @@ print("Slice plot done.")
 # ---------------------------------------------------------------------------
 # Parameter summary
 # ---------------------------------------------------------------------------
-utl.write_param_summary(fname)
+utl.write_param_summary(fname, out_dir=WORK_DIR)

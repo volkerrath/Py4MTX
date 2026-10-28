@@ -333,6 +333,13 @@ Provenance:
                 ens.generate_rto_model_ensemble now prints the RMS std and
                 the energy ratio of the prior draws (expect ~1).
                 See RTO_AUDIT_2026-10-21.md.
+    2026-10-28  Claude Sonnet 5.5 (Anthropic)
+                The parameter summary femtic_rto_prep_summary.md is now
+                written to the working directory set in this script
+                (ENSEMBLE_DIR) instead of next to the script:
+                utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR).
+                Needs the util.py of the same date (new out_dir argument).
+                AI-generated; review before production use.
 """
 
 import os
@@ -1233,4 +1240,4 @@ if PLOT_DATA or PLOT_MODEL:   # only runs when the viz block was entered
 # ---------------------------------------------------------------------------
 # Parameter summary
 # ---------------------------------------------------------------------------
-utl.write_param_summary(fname)
+utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR)
