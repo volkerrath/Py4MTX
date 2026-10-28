@@ -790,12 +790,14 @@ Provenance
             results are identical to the previous version (tested).
             AI-generated code -- review before production use.
 2026-10-28  Claude Sonnet 5.5 (Anthropic)
-            The parameter summary femtic_ens_post_summary.md is now
-            written to the working directory set in this script
-            (ENSEMBLE_DIR) instead of next to the script:
-            utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR). Needs
-            the util.py of the same date (new out_dir argument).
-            AI-generated; review before production use.
+            The MOD_ALPHA_SOURCE mask (blank / fade) is no longer applied to
+            the sensitivity panels themselves (sens_*, simrc_*): shading a
+            sensitivity map by sensitivity is circular, and the unmasked map
+            shows where the threshold cuts. New MOD_ALPHA_EXCLUDE (tuple of
+            key prefixes, default ("sens_", "simrc_"); () restores the old
+            behaviour of masking every statistic panel). All other panels and
+            the best panel (MOD_ALPHA_QC) are masked as before.
+            AI-generated code -- review before production use.
 
     This script targets FEMTIC's current HDF5 output layout only.
     AI-generated code -- review before production use.
@@ -1337,7 +1339,7 @@ MOD_QC_FILE = RESULTS_DIR + ENSEMBLE_PREFIX + "_best"
 
 #: Output directory for the other panels' block files and figures.
 #: Requires MOD_MESH and a valid template file (taken from best member).
-MOD_STATS_DIR = RESULTS_DIR # + "stats_plots/"
+MOD_STATS_DIR = RESULTS_DIR + "stats_plots/"
 
 #: Derived from MOD_STATS_WHAT above -- not user-set. Remove "best" from
 #: the list (or set MOD_STATS_WHAT = []) to turn either off, instead of a
@@ -1466,7 +1468,7 @@ MOD_REF_FILE =ENSEMBLE_DIR + "/templates/referencemodel.dat"
 #: (the "best" panel and all MOD_STATS panels). The lines are the exact
 #: boundaries between slice cells lying on different sides of a level; air
 #: and ocean cells of the reference are ignored.
-MOD_REF_SLICES =False
+MOD_REF_SLICES = False
 #: Boreholes: add the reference profile as a dashed line "reference model"
 #: to every MOD_BH panel. A MOD_BH entry can switch it off with ref=False, or
 #: list "ref" in its "what" to force it on and to set its drawing position.
@@ -1550,7 +1552,7 @@ MOD_BH = [
     #     alpha=0.3,
     dict(sites="all", z_top="surface", z_bot=4.0, dz=0.05,   # one panel per site
              what=["ensemble", "med", "sigma1", "sigma2",],  # ensemble first = underneath
-             alpha=0.5, xlim=[1., 10000.],),
+             alpha=0.4, xlim=[1., 10000.],),
     # dict(sites=["SITE01", "SITE07"], z_bot=5.0, what=["med", "best"]),
     # dict(name="BH-1",
     #      x=(-70.868025, "latlon"), y=(-16.363436, "latlon"),
@@ -1647,20 +1649,20 @@ MOD_AIR_BGCOLOR = None  # axes facecolor for air; None = figure default
 #: Sensitivity panels are log10 (see the Sensitivity statistics section),
 #: so e.g. clim=[-4, 0] shows four decades below the normalised maximum.
 MOD_STATS_STYLE = {
-    "var": dict(clim=[0.0, 0.3], label="var log10(rho)"),
-    "err": dict(clim=[0.0, 0.3], label="std log10(rho)"),
-    "mad": dict(clim=[0.0, 0.3], label="MAD log10(rho)"),
+    "var": dict(clim=[0.0, 1.0], label="var log10(rho)"),
+    "err": dict(clim=[0.0, 1.0], label="std log10(rho)"),
+    "mad": dict(clim=[0.0, 1.0], label="MAD log10(rho)"),
 }
 for _lo, _hi in QDIFF_PAIRS:
     MOD_STATS_STYLE[f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_")] = dict(
-        clim=[0.0, 0.3], label=f"P{_hi:g} - P{_lo:g}  log10(rho)"
+        clim=[0.0, 1.0], label=f"P{_hi:g} - P{_lo:g}  log10(rho)"
     )
 if BOOTSTRAP_VAR or PLOT_ONLY:
     MOD_STATS_STYLE["var_boot"] = dict(
-        clim=[0.0, 0.3], label="bootstrap var log10(rho)"
+        clim=[0.0, 1.0], label="bootstrap var log10(rho)"
     )
     MOD_STATS_STYLE["err_boot"] = dict(
-        clim=[0.0, 0.3], label="bootstrap std log10(rho)"
+        clim=[0.0, 1.0], label="bootstrap std log10(rho)"
     )
 if COMPUTE_SENS or PLOT_ONLY:
     #: Native SENS_KIND units -- run- and mesh-dependent, auto-scaled.
@@ -1671,7 +1673,7 @@ if COMPUTE_SENS or PLOT_ONLY:
         for _st in ("mean", "median", "min", "max", "std"):
             MOD_STATS_STYLE[f"sens_{_st}_{_sfx}"] = dict(
                 cmap="viridis",
-                clim=[-4.0, 0.0],
+                clim=[-5.0, 0.0],
                 label=f"log10 S/Smax ({_st}, {_sfx})",
             )
         MOD_STATS_STYLE[f"sens_cv_{_sfx}"] = dict(
@@ -1710,6 +1712,14 @@ MOD_ALPHA_FADE_WIDTH = 1.
 
 #: Apply the same mask to the MOD_QC (best-member) figure as well.
 MOD_ALPHA_QC = True
+
+#: Statistic panels whose key starts with one of these prefixes are drawn
+#: WITHOUT the mask. Default: the sensitivity panels ("sens_*", "simrc_*") --
+#: shading a sensitivity map by sensitivity is circular, and the unmasked map
+#: is what shows where the MOD_ALPHA_SOURCE threshold cuts. All other panels
+#: (avg, err, ..., and the best panel via MOD_ALPHA_QC) are masked as before.
+#: () = mask every panel (the behaviour of earlier versions).
+MOD_ALPHA_EXCLUDE = ("sens_", "simrc_")
 
 # --- Figure layout -----------------------------------------------------------
 MOD_EQUAL_ASPECT = True
@@ -4023,7 +4033,11 @@ if MOD_STATS:
                 clim=_clim,
                 cmap=_cmap,
                 cbar_label=_cbl,
-                alpha_file=_alpha_block,
+                alpha_file=(
+                    None
+                    if _key.startswith(tuple(MOD_ALPHA_EXCLUDE))
+                    else _alpha_block
+                ),
                 stats_panel=True,
             )
 
@@ -4312,4 +4326,4 @@ print("\nfemtic_ens_post.py complete.")
 # ---------------------------------------------------------------------------
 # Parameter summary
 # ---------------------------------------------------------------------------
-utl.write_param_summary(__file__, out_dir=ENSEMBLE_DIR)
+utl.write_param_summary(__file__)
