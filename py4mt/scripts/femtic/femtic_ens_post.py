@@ -1337,7 +1337,7 @@ MOD_QC_FILE = RESULTS_DIR + ENSEMBLE_PREFIX + "_best"
 
 #: Output directory for the other panels' block files and figures.
 #: Requires MOD_MESH and a valid template file (taken from best member).
-MOD_STATS_DIR = RESULTS_DIR + "stats_plots/"
+MOD_STATS_DIR = RESULTS_DIR # + "stats_plots/"
 
 #: Derived from MOD_STATS_WHAT above -- not user-set. Remove "best" from
 #: the list (or set MOD_STATS_WHAT = []) to turn either off, instead of a
@@ -1460,12 +1460,13 @@ MOD_SLICES = [
 #: Its region structure may differ from the members'. None = no reference
 #: (everything below is then ignored). A missing file, or one with another
 #: element count than MOD_MESH, switches the reference off with a message.
-MOD_REF_FILE = None  # e.g. ENSEMBLE_DIR + "reference/resistivity_block_iter20.dat"
+# MOD_REF_FILE = None  # e.g. ENSEMBLE_DIR + "reference/resistivity_block_iter20.dat"
+MOD_REF_FILE =ENSEMBLE_DIR + "/templates/referencemodel.dat" 
 #: Slices: draw the reference as iso-resistivity lines on every slice panel
 #: (the "best" panel and all MOD_STATS panels). The lines are the exact
 #: boundaries between slice cells lying on different sides of a level; air
 #: and ocean cells of the reference are ignored.
-MOD_REF_SLICES = True
+MOD_REF_SLICES =False
 #: Boreholes: add the reference profile as a dashed line "reference model"
 #: to every MOD_BH panel. A MOD_BH entry can switch it off with ref=False, or
 #: list "ref" in its "what" to force it on and to set its drawing position.
@@ -1549,7 +1550,7 @@ MOD_BH = [
     #     alpha=0.3,
     dict(sites="all", z_top="surface", z_bot=4.0, dz=0.05,   # one panel per site
              what=["ensemble", "med", "sigma1", "sigma2",],  # ensemble first = underneath
-             alpha=0.6, xlim=[1., 10000.],),
+             alpha=0.5, xlim=[1., 10000.],),
     # dict(sites=["SITE01", "SITE07"], z_bot=5.0, what=["med", "best"]),
     # dict(name="BH-1",
     #      x=(-70.868025, "latlon"), y=(-16.363436, "latlon"),
@@ -1705,7 +1706,7 @@ MOD_ALPHA_SOURCE = "sens_median_an > -5."
 #:            fully transparent MOD_ALPHA_FADE_WIDTH beyond it (same units
 #:            as <value>, e.g. 1.0 = one decade for log10 sensitivities).
 MOD_ALPHA_MODE = "fade"
-MOD_ALPHA_FADE_WIDTH = 0.5
+MOD_ALPHA_FADE_WIDTH = 1.
 
 #: Apply the same mask to the MOD_QC (best-member) figure as well.
 MOD_ALPHA_QC = True
