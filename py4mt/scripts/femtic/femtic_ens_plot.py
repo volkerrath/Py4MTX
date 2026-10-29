@@ -22,7 +22,10 @@ NRMS_MAX threshold), then produces:
 
   (2) Optionally, a borehole resistivity log figure (same as step (6) in
       femtic_mod_plot.py), sampled from the first converged member's
-      best-fit model.
+      best-fit model, and/or (BOREHOLE_HEATMAP) a heat map of the whole
+      ensemble along the same boreholes: at every depth the members'
+      log10(rho) are histogrammed and shown as a colour image, with the
+      median / quantile lines on top.
 
   (3) [optional, RESULTS_NPZ set] NPZ mode: instead of scanning the member
       directories, work from the results .npz written by femtic_ens_post.py:
@@ -303,6 +306,38 @@ Provenance
                 utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR).
                 Needs the util.py of the same date (new out_dir argument).
                 AI-generated; review before production use.
+    2026-10-29  Claude Sonnet 5.5 (Anthropic)
+                Borehole heat map. New settings BOREHOLE_HEATMAP (default
+                False), BOREHOLE_HEATMAP_FILE, BOREHOLE_HEAT_BINS,
+                BOREHOLE_HEAT_NORM ("fraction" | "row_max"),
+                BOREHOLE_HEAT_SCALE ("linear" | "sqrt" | "log" colour scale),
+                BOREHOLE_HEAT_VMIN, BOREHOLE_HEAT_VMAX (explicit limits show
+                as arrows on the colour bar; a log scale leaves empty bins
+                blank), BOREHOLE_HEAT_CMAP,
+                BOREHOLE_HEAT_OVERLAY ("avg" | "med" | "sigma1" | "sigma2" |
+                "ref"), BOREHOLE_HEAT_STYLE, BOREHOLE_HEAT_PANEL_SIZE,
+                BOREHOLE_HEAT_NCOLS, BOREHOLE_HEAT_NPZ and BOREHOLE_LINES
+                (default True; False skips the fviz log figure). With
+                PLOT_BOREHOLE and BOREHOLE_SITES the whole ensemble is sampled
+                along each borehole (normal mode: the members' best-fit block
+                files; NPZ mode: the stored ensemble matrix on the template's
+                region structure) and drawn in this script, not by fviz
+                (fviz.plot_borehole_logs shows a single model): exact
+                point-in-tetrahedron search once per borehole, one lookup per
+                member, per-depth histogram of log10(rho) over the
+                BOREHOLE_XLIM range (members outside it are not shown; the
+                fractions still refer to all valid members), pcolormesh with a
+                shared colour bar. Auto colour maximum (BOREHOLE_HEAT_VMAX =
+                None) = 99th percentile of the non-zero fractions, so levels
+                with a single value in every member (ocean) do not wash out
+                the rest. The
+                sampling and the histogram are those of femtic_ens_post.py
+                (MOD_BH item "heatmap"). The histograms go to an .npz
+                (heat_<name>, heat_edges_<name>, depth_<name>). BOREHOLE_SITES
+                entries are not extended (their extra keys would reach fviz as
+                line keywords). With the new settings at their defaults the
+                run is unchanged. AI-generated code -- review before
+                production use.
 
 @author: vrath
 """
@@ -779,6 +814,90 @@ BOREHOLE_SHARED = True
 #: BOREHOLE_FILE (same name, extension .npz).  Needs BOREHOLE_FILE.
 BOREHOLE_NPZ = True
 
+#: True = draw the log figure above (one model, fviz.plot_borehole_logs; file
+#: BOREHOLE_FILE).  False = skip it, e.g. to make only the heat map.
+BOREHOLE_LINES = True
+
+# --- Heat map of the whole ensemble ------------------------------------------
+#: True = additionally draw a HEAT MAP of the ensemble along the same boreholes
+#: (BOREHOLE_SITES; needs PLOT_BOREHOLE): at every depth level the log10(rho) of
+#: all members is histogrammed and shown as a colour image (resistivity on the
+#: log x axis, depth pointing down), one panel per borehole, one shared colour
+#: bar.  The members are the converged ensemble (normal mode: their best-fit
+#: block files; NPZ mode: the rows of the stored ensemble matrix).  Drawn
+#: here, not by fviz; independent of BOREHOLE_LINES.  Air and levels outside
+#: the mesh are left blank.  Keys of a BOREHOLE_SITES entry used by the heat
+#: map: "name", "x", "y", "z_top", "z_bot", "dz" (defaults: z_top "surface",
+#: z_bot 20 km, dz 50 m; z_top="surface" is the top of the mesh column, as
+#: for the log figure, i.e. the top of the air if the mesh has an air layer).
+BOREHOLE_HEATMAP = False
+
+#: Output file of the heat map (extension = format).  None -> interactive show().
+BOREHOLE_HEATMAP_FILE = ENSEMBLE_DIR + "ensemble_boreholes_heatmap.pdf"
+
+#: Number of bins in log10(rho) across BOREHOLE_XLIM (the data range when
+#: BOREHOLE_XLIM is None), or a list of log10(rho) bin edges.  Members outside
+#: the range are not shown (e.g. ocean cells at 0.25 Ohm.m with BOREHOLE_XLIM
+#: [0, 4]); the fractions still refer to all valid members, so such a level
+#: sums to less than 1.
+BOREHOLE_HEAT_BINS = 60
+
+#: Colour scale:  "fraction" = fraction of the valid members per bin (a depth
+#: level sums to 1 if all members are inside the range);  "row_max" = every
+#: depth level scaled to its own maximum (1 = most populated bin).
+BOREHOLE_HEAT_NORM = "fraction"
+
+#: Shape of the colour scale between BOREHOLE_HEAT_VMIN and BOREHOLE_HEAT_VMAX:
+#:   "linear" : colour proportional to the value (default)
+#:   "sqrt"   : square-root scale -- lifts the low densities, keeps the peaks
+#:              distinguishable
+#:   "log"    : logarithmic scale over the decades between VMIN and VMAX
+#:              (default VMIN = smallest non-zero value of the figure, i.e. one
+#:              member); empty bins (0) are left blank.
+BOREHOLE_HEAT_SCALE = "linear"
+
+#: Lower end of the colour scale.  None = 0 ("linear" / "sqrt"); the smallest
+#: non-zero value of the figure ("log"; a log scale needs a value > 0).  A
+#: number sets it explicitly, e.g. 0.02 to blank out bins holding less than 2 %
+#: of the members; values below it get the lowest colour (an arrow on the
+#: colour bar), and with "log" they are left out.
+BOREHOLE_HEAT_VMIN = None
+
+#: Upper end of the colour scale ("fraction" norm; "row_max" is always 1).
+#: None = for "linear" / "sqrt" the 99th percentile of the non-zero fractions
+#: of the figure, so that a few levels in which every member has the same value
+#: (the ocean, fixed regions: fraction 1) do not wash out the rest (the colour
+#: bar then ends in an arrow); for "log" the maximum.  1.0 = the full range.
+BOREHOLE_HEAT_VMAX = None
+
+#: Matplotlib colormap of the heat map (light = few members).  A single-hue
+#: light-to-dark map ("Greys", "Blues", "Purples", ...) keeps the overlay lines
+#: readable.
+BOREHOLE_HEAT_CMAP = "Greys"
+
+#: Lines drawn on top of the heat map, in this order: "avg" (mean of log10 rho),
+#: "med" (median), "sigma1" (P15.87 / P84.13), "sigma2" (P2.28 / P97.72) and
+#: "ref" (the reference model, needs REF_FILE and REF_BOREHOLE).  [] = none.
+BOREHOLE_HEAT_OVERLAY = ["med", "sigma1"]
+
+#: Matplotlib Line2D keywords per overlay item.
+BOREHOLE_HEAT_STYLE = {
+    "avg": dict(color="black", lw=1.6, ls="-"),
+    "med": dict(color="crimson", lw=1.8, ls="-"),
+    "sigma1": dict(color="navy", lw=1.2, ls="--"),
+    "sigma2": dict(color="steelblue", lw=1.0, ls=":"),
+    "ref": dict(color="black", lw=1.8, ls="--"),
+}
+
+#: Panel size [width, height] in cm and number of panel columns.
+BOREHOLE_HEAT_PANEL_SIZE = [8.0, 16.0]
+BOREHOLE_HEAT_NCOLS = 3
+
+#: True = also save the histograms (heat_<name>, heat_edges_<name>, depth_<name>,
+#: n_members) as an .npz next to BOREHOLE_HEATMAP_FILE (same name, extension
+#: .npz).  Needs BOREHOLE_HEATMAP_FILE.
+BOREHOLE_HEAT_NPZ = True
+
 # ---------------------------------------------------------------------------
 # Mesh-centre estimation from site.dat  (optional)
 # ---------------------------------------------------------------------------
@@ -907,6 +1026,28 @@ if REF_FILE is not None and not os.path.isfile(REF_FILE):
     print(f"  WARNING: REF_FILE not found ({REF_FILE}) -- reference off.")
     REF_FILE = None
 
+# Borehole heat map settings: validated here, so a typo fails before any
+# figure is made.
+if BOREHOLE_HEAT_NORM not in ("fraction", "row_max"):
+    raise ValueError(
+        f"BOREHOLE_HEAT_NORM={BOREHOLE_HEAT_NORM!r} -- must be 'fraction' "
+        f"or 'row_max'.")
+if BOREHOLE_HEAT_SCALE not in ("linear", "sqrt", "log"):
+    raise ValueError(
+        f"BOREHOLE_HEAT_SCALE={BOREHOLE_HEAT_SCALE!r} -- must be 'linear', "
+        f"'sqrt' or 'log'.")
+if BOREHOLE_HEAT_VMIN is not None and BOREHOLE_HEAT_VMIN < 0:
+    raise ValueError("BOREHOLE_HEAT_VMIN must be >= 0 (or None).")
+if (BOREHOLE_HEAT_SCALE == "log" and BOREHOLE_HEAT_VMIN is not None
+        and BOREHOLE_HEAT_VMIN <= 0):
+    raise ValueError("BOREHOLE_HEAT_SCALE='log' needs BOREHOLE_HEAT_VMIN > 0.")
+_bad_overlay = [k for k in (BOREHOLE_HEAT_OVERLAY or [])
+                if k not in ("avg", "med", "sigma1", "sigma2", "ref")]
+if _bad_overlay:
+    raise ValueError(
+        f"BOREHOLE_HEAT_OVERLAY: unknown item(s) {_bad_overlay} -- use "
+        f"'avg', 'med', 'sigma1', 'sigma2', 'ref'.")
+
 
 # ===========================================================================
 # Borehole helper
@@ -950,6 +1091,447 @@ def _ref_levels(clim):
     lo, hi = float(min(clim)), float(max(clim))
     lev = np.arange(math.floor(lo) + 1, math.ceil(hi), dtype=float)
     return [float(v) for v in lev] if lev.size else [0.5 * (lo + hi)]
+
+
+# ===========================================================================
+# Borehole heat map (BOREHOLE_HEATMAP)
+# ===========================================================================
+# fviz.plot_borehole_logs draws ONE model. The heat map needs every member
+# along the borehole, so it is sampled and drawn here: an exact
+# point-in-tetrahedron search once per borehole, then one array lookup per
+# member, and a per-depth histogram. Sampling and histogram are the same as
+# in femtic_ens_post.py (MOD_BH item "heatmap").
+_HM_CACHE = {}   # mesh arrays, built once
+
+
+def _hm_mesh():
+    """Mesh arrays for the borehole search (read once, fem.read_femtic_mesh).
+
+    nodes[:, 0] = easting, nodes[:, 1] = northing, nodes[:, 2] = z-down
+    (model-local metres); per-element bounding boxes for the lateral filter.
+    """
+    if "verts" not in _HM_CACHE:
+        nodes, conn = fem.read_femtic_mesh(MESH_FILE)
+        verts = nodes[conn]                       # (n_elem, 4, 3)
+        _HM_CACHE["n_elem"] = int(conn.shape[0])
+        _HM_CACHE["verts"] = verts
+        for _i, _ax in enumerate("xyz"):
+            _HM_CACHE[_ax + "min"] = verts[:, :, _i].min(axis=1)
+            _HM_CACHE[_ax + "max"] = verts[:, :, _i].max(axis=1)
+    return _HM_CACHE
+
+
+def _hm_column(x_m, y_m):
+    """Indices of the elements whose (x, y) bounding box holds the point."""
+    c = _hm_mesh()
+    return np.where((c["xmin"] <= x_m) & (x_m <= c["xmax"])
+                    & (c["ymin"] <= y_m) & (y_m <= c["ymax"]))[0]
+
+
+def _hm_locate(x_m, y_m, depths_m, cand):
+    """Tetrahedron index containing (x_m, y_m, z) for each depth, -1 outside.
+
+    Exact barycentric test over the candidate elements ``cand`` of the column.
+    """
+    c = _hm_mesh()
+    depths_m = np.asarray(depths_m, dtype=float)
+    elem = np.full(depths_m.size, -1, dtype=np.int64)
+    if cand.size == 0:
+        return elem
+    V = c["verts"][cand]                          # (nc, 4, 3)
+    v0 = V[:, 0, :]
+    T = np.transpose(V[:, 1:, :] - v0[:, None, :], (0, 2, 1))
+    det = np.linalg.det(T)
+    ok = np.isfinite(det) & (np.abs(det) > 0.0)
+    cand, v0, T = cand[ok], v0[ok], T[ok]
+    if cand.size == 0:
+        return elem
+    Tinv = np.linalg.inv(T)
+    zmin, zmax = c["zmin"][cand], c["zmax"][cand]
+    tol = 1.0e-10
+    for i, z in enumerate(depths_m):
+        sel = np.where((zmin <= z) & (z <= zmax))[0]
+        if sel.size == 0:
+            continue
+        lam = np.einsum("nij,nj->ni", Tinv[sel],
+                        np.array([x_m, y_m, z]) - v0[sel])
+        inside = (lam.min(axis=1) >= -tol) & (lam.sum(axis=1) <= 1.0 + tol)
+        hit = np.where(inside)[0]
+        if hit.size:
+            elem[i] = cand[sel[hit[0]]]
+    return elem
+
+
+def _hm_region_rho(st):
+    """Resistivity (Ohm.m) per region of a block-file structure: air (region
+    0) = NaN, ocean (region 1, when present) = OCEAN_RHO."""
+    rr = np.asarray(st["region_rho"], dtype=float).copy()
+    rr[0] = np.nan
+    if int(st["nreg"]) > 1 and st["meta"]["ocean_present"]:
+        rr[1] = OCEAN_RHO
+    return rr
+
+
+def _hm_levels(elem_region, region_rho, elem):
+    """Resistivity at each depth level (NaN where elem < 0 or air)."""
+    out = np.full(elem.size, np.nan)
+    ok = elem >= 0
+    out[ok] = region_rho[elem_region[elem[ok]]]
+    return out
+
+
+def _hm_pos_str(x_m, y_m):
+    """Short position text for the panel title, following DISPLAY_COORDS."""
+    try:
+        if DISPLAY_COORDS == "latlon":
+            lat, lon = utl.utm_to_latlon_zn(UTM_ORIGIN_E + x_m,
+                                            UTM_ORIGIN_N + y_m,
+                                            UTM_ZONE, UTM_NORTHERN)
+            return f"{lat:.4f}, {lon:.4f} (lat, lon)"
+        if DISPLAY_COORDS == "utm":
+            return (f"E {(UTM_ORIGIN_E + x_m) / 1000.0:.2f}, "
+                    f"N {(UTM_ORIGIN_N + y_m) / 1000.0:.2f} km")
+    except Exception:
+        pass
+    return f"x {x_m / 1000.0:.2f}, y {y_m / 1000.0:.2f} km"
+
+
+def _hm_sample(sites):
+    """Sample the ensemble (``model_list``) along the BOREHOLE_SITES.
+
+    Returns a list of dicts (name, x_m, y_m, depth in m z-down, ens
+    (n_members, n_levels) in Ohm.m with NaN for air / outside the mesh, ref
+    (n_levels) or None). Boreholes that are unusable are reported and left out.
+    """
+    mesh_n = _hm_mesh()["n_elem"]
+    profs, used = [], set()
+    for i, spec in enumerate(sites):
+        name = str(spec.get("name", f"BH{i + 1}"))
+        nm0, dup = name, 1
+        while name in used:                       # names key the .npz arrays
+            dup += 1
+            name = f"{nm0}_{dup}"
+        try:
+            x_m, y_m = _resolve_borehole_xy(spec)
+        except (KeyError, ValueError) as e:
+            print(f"  heat map '{name}': {e} - skipped.")
+            continue
+        cand = _hm_column(x_m, y_m)
+        zt_raw = spec.get("z_top", "surface")
+        if isinstance(zt_raw, str) and zt_raw.strip().lower() == "surface":
+            if cand.size == 0:
+                print(f"  heat map '{name}': position is outside the mesh "
+                      f"- skipped.")
+                continue
+            zt = float(_hm_mesh()["zmin"][cand].min())
+        else:
+            zt = float(zt_raw)
+        zb = float(spec.get("z_bot", 20000.0))
+        dz = float(spec.get("dz", 50.0))
+        if zb <= zt or dz <= 0.0:
+            print(f"  heat map '{name}': need z_bot > z_top and dz > 0 "
+                  f"- skipped.")
+            continue
+        depth = np.arange(zt, zb + 0.5 * dz, dz)
+        elem = _hm_locate(x_m, y_m, depth, cand)
+        if not (elem >= 0).any():
+            print(f"  heat map '{name}': profile is entirely outside the "
+                  f"mesh - skipped.")
+            continue
+        used.add(name)
+        profs.append(dict(name=name, x_m=x_m, y_m=y_m, depth=depth,
+                          elem=elem, ref=None,
+                          ens=np.full((len(model_list), depth.size), np.nan)))
+        print(f"  {name}: x={x_m / 1000.0:.3f} km, y={y_m / 1000.0:.3f} km, "
+              f"{depth.size} levels")
+    if not profs:
+        return profs
+
+    def _check(er, what):
+        if er.size != mesh_n:
+            sys.exit(f"Heat map: {what} has {er.size} elements but MESH_FILE "
+                     f"{mesh_n} - it must live on the same mesh.")
+
+    if RESULTS_NPZ is not None:
+        # NPZ mode: members are rows of the stored log10 matrix, the region
+        # structure is the template's
+        er = np.asarray(_tst["elem_region"], dtype=np.int64)
+        _check(er, "the template block file")
+        base = _hm_region_rho(_tst)
+        free = np.asarray(_tst["free_idx"], dtype=np.int64)
+        for k, m in enumerate(model_list):
+            rr = base.copy()
+            rr[free] = 10.0 ** np.asarray(m["vec"], dtype=float)
+            for p in profs:
+                p["ens"][k] = _hm_levels(er, rr, p["elem"])
+    else:
+        for k, m in enumerate(model_list):
+            st = fem._read_resistivity_block_struct(
+                m["best_file"], ocean=OCEAN, out=False)
+            er = np.asarray(st["elem_region"], dtype=np.int64)
+            _check(er, m["best_file"])
+            rr = _hm_region_rho(st)
+            for p in profs:
+                p["ens"][k] = _hm_levels(er, rr, p["elem"])
+            if OUT:
+                print(f"    member {k + 1}/{len(model_list)} sampled "
+                      f"({m['label']})")
+
+    if "ref" in (BOREHOLE_HEAT_OVERLAY or []) and REF_FILE and REF_BOREHOLE:
+        st = fem._read_resistivity_block_struct(REF_FILE, ocean=OCEAN,
+                                                out=False)
+        er = np.asarray(st["elem_region"], dtype=np.int64)
+        if er.size != mesh_n:
+            print(f"  heat map: REF_FILE has {er.size} elements but MESH_FILE "
+                  f"{mesh_n} - reference line skipped.")
+        else:
+            rr = _hm_region_rho(st)
+            for p in profs:
+                p["ref"] = _hm_levels(er, rr, p["elem"])
+    return profs
+
+
+def _hm_edges(ens_rho):
+    """log10(rho) bin edges: BOREHOLE_HEAT_BINS as a list of edges, or N equal
+    bins across BOREHOLE_XLIM (the range of the finite values if None)."""
+    if np.ndim(BOREHOLE_HEAT_BINS) > 0:
+        edges = np.asarray(BOREHOLE_HEAT_BINS, dtype=float)
+        if edges.size < 2 or not np.all(np.diff(edges) > 0):
+            raise ValueError("BOREHOLE_HEAT_BINS must be an int or an "
+                             "increasing list of >= 2 log10(rho) edges.")
+        return edges
+    nb = int(BOREHOLE_HEAT_BINS)
+    if nb < 1:
+        raise ValueError("BOREHOLE_HEAT_BINS must be >= 1.")
+    if BOREHOLE_XLIM is not None:
+        lo, hi = float(BOREHOLE_XLIM[0]), float(BOREHOLE_XLIM[1])
+    else:
+        ok = np.isfinite(ens_rho) & (ens_rho > 0)
+        lg = np.log10(ens_rho[ok])
+        lo, hi = float(lg.min()), float(lg.max())
+        if hi - lo < 1.0e-6:
+            lo, hi = lo - 0.5, hi + 0.5
+    return np.linspace(lo, hi, nb + 1)
+
+
+def _hm_hist(ens_rho, edges):
+    """(n_levels, n_bins) fraction of the valid members per bin at each depth
+    level. Members outside the edges are not binned but still count in the
+    denominator (a row then sums to less than 1; the last bin includes its
+    upper edge); levels without a valid member are NaN."""
+    n_mem, n_lvl = ens_rho.shape
+    nb = len(edges) - 1
+    with np.errstate(invalid="ignore", divide="ignore"):
+        lg = np.log10(ens_rho)
+    valid = np.isfinite(lg)
+    inside = valid & (lg >= edges[0]) & (lg <= edges[-1])
+    idx = np.clip(np.searchsorted(edges, lg, side="right") - 1, 0, nb - 1)
+    flat = idx + nb * np.arange(n_lvl)[None, :]
+    counts = np.bincount(flat[inside], minlength=n_lvl * nb).reshape(n_lvl, nb)
+    n_val = valid.sum(axis=0).astype(float)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        frac = counts / n_val[:, None]
+    frac[n_val == 0, :] = np.nan
+    return frac
+
+
+def _hm_display(frac):
+    """Heat map values as drawn (BOREHOLE_HEAT_NORM) from the fractions."""
+    if BOREHOLE_HEAT_NORM == "row_max":
+        import warnings
+        with warnings.catch_warnings(), np.errstate(invalid="ignore",
+                                                    divide="ignore"):
+            warnings.simplefilter("ignore", RuntimeWarning)   # all-NaN levels
+            return frac / np.nanmax(frac, axis=1, keepdims=True)
+    return frac
+
+
+def _hm_log_ticks(norm):
+    """1-2-5 colour-bar ticks for a log scale of less than 3 decades (the
+    default shows only the powers of ten), else None."""
+    if np.log10(norm.vmax / norm.vmin) >= 3.0:
+        return None
+    cand = np.array([m * 10.0 ** e for e in range(-8, 2) for m in (1.0, 2.0, 5.0)])
+    tk = cand[(cand >= norm.vmin * (1 - 1e-9)) & (cand <= norm.vmax * (1 + 1e-9))]
+    return tk if tk.size >= 2 else None
+
+
+def _hm_scale(heats):
+    """Colour scale of the heat map: (norm, colour-bar extend).
+
+    ``heats`` : the displayed arrays (_hm_display) of the panels.  The norm is
+    BOREHOLE_HEAT_SCALE between BOREHOLE_HEAT_VMIN and BOREHOLE_HEAT_VMAX (or
+    their automatic values); ``extend`` is "neither" / "min" / "max" / "both"
+    for data beyond the scale.
+    """
+    from matplotlib import colors
+    log = BOREHOLE_HEAT_SCALE == "log"
+    fin = np.concatenate([h[np.isfinite(h)] for h in heats])
+    pos = fin[fin > 0]
+    d_max = float(pos.max()) if pos.size else 1.0
+    d_min = float(pos.min()) if pos.size else 1.0
+    if BOREHOLE_HEAT_NORM == "row_max":
+        vmax = 1.0
+    elif BOREHOLE_HEAT_VMAX is not None:
+        vmax = float(BOREHOLE_HEAT_VMAX)
+    elif log or not pos.size:
+        vmax = d_max
+    else:
+        vmax = float(np.percentile(pos, 99.0))
+    if BOREHOLE_HEAT_VMIN is not None:
+        vmin = float(BOREHOLE_HEAT_VMIN)
+    else:
+        vmin = d_min if log else 0.0
+    if not vmax > vmin:      # one value only, or an unlucky explicit pair
+        vmax = vmin * 10.0 if log else vmin + 1.0
+    # zeros are blank on a log scale, so they do not count there
+    lo = d_min if log else (float(fin.min()) if fin.size else 0.0)
+    ext_min = lo < vmin * (1.0 - 1.0e-9)
+    ext_max = d_max > vmax * (1.0 + 1.0e-9)
+    extend = {(0, 0): "neither", (1, 0): "min", (0, 1): "max",
+              (1, 1): "both"}[(int(ext_min), int(ext_max))]
+    if log:
+        norm = colors.LogNorm(vmin=vmin, vmax=vmax)
+    elif BOREHOLE_HEAT_SCALE == "sqrt":
+        norm = colors.PowerNorm(0.5, vmin=vmin, vmax=vmax)
+    else:
+        norm = colors.Normalize(vmin=vmin, vmax=vmax)
+    return norm, extend
+
+
+def _hm_depth_edges(depth):
+    """Cell edges (n + 1) around the depth levels."""
+    d = np.asarray(depth, dtype=float)
+    if d.size == 1:
+        return np.array([d[0] - 0.5, d[0] + 0.5])
+    first = d[0] - 0.5 * (d[1] - d[0])
+    last = d[-1] + 0.5 * (d[-1] - d[-2])
+    return np.concatenate(([first], 0.5 * (d[1:] + d[:-1]), [last]))
+
+
+def _hm_overlay(ens_rho):
+    """Overlay lines in Ohm.m: {"avg": a, "med": a, "sigma1": (lo, hi), ...}."""
+    import warnings
+    with np.errstate(invalid="ignore", divide="ignore"):
+        lg = np.log10(ens_rho)
+    out = {}
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)   # all-NaN levels
+        out["avg"] = 10.0 ** np.nanmean(lg, axis=0)
+        out["med"] = 10.0 ** np.nanmedian(lg, axis=0)
+        out["sigma1"] = tuple(10.0 ** np.nanpercentile(lg, q, axis=0)
+                              for q in (15.8655, 84.1345))
+        out["sigma2"] = tuple(10.0 ** np.nanpercentile(lg, q, axis=0)
+                              for q in (2.2750, 97.7250))
+    return out
+
+
+def _plot_borehole_heatmaps(profs, out_file):
+    """One figure, a heat-map panel per borehole, one shared colour bar.
+
+    ``profs`` from _hm_sample(). Writes ``out_file`` (None -> plt.show()) and
+    returns the dict saved to the .npz (heat_<name>, heat_edges_<name>,
+    depth_<name>).
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+
+    n = len(profs)
+    ncols = max(1, min(int(BOREHOLE_HEAT_NCOLS), n))
+    nrows = int(math.ceil(n / ncols))
+    w, h = BOREHOLE_HEAT_PANEL_SIZE
+    fig, axs = plt.subplots(nrows, ncols, squeeze=False,
+                            figsize=(w * ncols / 2.54, h * nrows / 2.54))
+    axs = axs.ravel()
+    scale = 1000.0 if DEPTH_KM else 1.0
+    tick_fs, label_fs = PLOT_TICK_FONTSIZE, PLOT_LABEL_FONTSIZE
+    title_fs = (PLOT_TITLE_FONTSIZE if PLOT_TITLE_FONTSIZE is not None
+                else label_fs + 6)
+
+    saved = {}
+    for p in profs:
+        p["edges"] = _hm_edges(p["ens"])
+        p["frac"] = _hm_hist(p["ens"], p["edges"])
+        saved[f"depth_{p['name'].replace(' ', '_')}"] = p["depth"]
+        saved[f"heat_{p['name'].replace(' ', '_')}"] = p["frac"]
+        saved[f"heat_edges_{p['name'].replace(' ', '_')}"] = p["edges"]
+    norm, extend = _hm_scale([_hm_display(p["frac"]) for p in profs])
+
+    mesh = None
+    for k, (ax, p) in enumerate(zip(axs, profs)):
+        depth = p["depth"] / scale
+        hval = _hm_display(p["frac"])
+        # NaN (air) is always blank; on a log scale so are the empty bins
+        hval = np.ma.masked_where(
+            ~(hval > 0) if BOREHOLE_HEAT_SCALE == "log" else ~np.isfinite(hval),
+            hval)
+        mesh = ax.pcolormesh(
+            10.0 ** p["edges"], _hm_depth_edges(depth), hval,
+            cmap=BOREHOLE_HEAT_CMAP, norm=norm, shading="flat",
+            rasterized=True, zorder=0)
+        ov = _hm_overlay(p["ens"])
+        if p["ref"] is not None:
+            ov["ref"] = p["ref"]
+        handles = []
+        names = {"avg": "mean", "med": "median", "sigma1": "1-sigma quantiles",
+                 "sigma2": "2-sigma quantiles", "ref": REF_LABEL or "reference"}
+        for key in (BOREHOLE_HEAT_OVERLAY or []):
+            if key not in ov:
+                continue
+            st = dict(BOREHOLE_HEAT_STYLE.get(key, {}))
+            lines = ov[key] if isinstance(ov[key], tuple) else (ov[key],)
+            for j, ln in enumerate(lines):
+                ax.plot(ln, depth, zorder=3,
+                        label=names[key] if j == 0 else "_nolegend_", **st)
+            handles.append(Line2D([], [], label=names[key], **st))
+        ax.set_xscale("log")
+        ax.set_xlim(10.0 ** p["edges"][0], 10.0 ** p["edges"][-1])
+        ax.set_title(f"{p['name']}\n{_hm_pos_str(p['x_m'], p['y_m'])}",
+                     fontsize=tick_fs - 2 if tick_fs > 2 else tick_fs)
+        ax.set_xlabel("resistivity (Ohm.m)", fontsize=label_fs)
+        if k % ncols == 0:
+            ax.set_ylabel("depth (km)" if DEPTH_KM else "depth (m)",
+                          fontsize=label_fs)
+        ax.tick_params(labelsize=tick_fs)
+        ax.grid(True, which="both", axis="x", lw=0.3, alpha=0.5)
+        ax.grid(True, which="major", axis="y", lw=0.3, alpha=0.5)
+        if handles:
+            ax.legend(handles=handles, fontsize=max(tick_fs - 1, 5),
+                      loc="lower right", framealpha=0.85)
+    for ax in axs[n:]:
+        ax.set_visible(False)
+
+    # one common depth range (union), y axis pointing down
+    lo = min(float(np.nanmin(p["depth"])) for p in profs) / scale
+    hi = max(float(np.nanmax(p["depth"])) for p in profs) / scale
+    for ax in axs[:n]:
+        ax.set_ylim(hi, lo)
+
+    fig.suptitle(f"Borehole heat maps: {os.path.basename(os.path.normpath(ENSEMBLE_DIR))} "
+                 f"({len(model_list)} members)", fontsize=title_fs)
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    cb = fig.colorbar(mesh, ax=list(axs[:n]), location="right",
+                      fraction=0.03, pad=0.02, shrink=0.6,
+                      extend=extend)
+    cb.set_label("fraction of ensemble members per bin"
+                 if BOREHOLE_HEAT_NORM == "fraction"
+                 else "fraction of the per-depth maximum", fontsize=label_fs)
+    cb.ax.tick_params(labelsize=tick_fs)
+    if BOREHOLE_HEAT_SCALE == "log" and _hm_log_ticks(norm) is not None:
+        from matplotlib import ticker
+        cb.set_ticks(_hm_log_ticks(norm))
+        cb.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter("%g"))
+        cb.ax.minorticks_off()
+
+    if out_file:
+        os.makedirs(os.path.dirname(os.path.abspath(out_file)), exist_ok=True)
+        fig.savefig(out_file, dpi=PLOT_DPI, bbox_inches="tight")
+        print(f"  saved -> {out_file}")
+    else:
+        plt.show()
+    plt.close(fig)
+    return saved
+
 
 # ===========================================================================
 # NPZ mode helpers (RESULTS_NPZ)
@@ -1540,7 +2122,7 @@ if RESULTS_NPZ is not None:
     # Model of the borehole figure: chosen (and validated) here, so a typo
     # stops the run before any figure is made.
     NPZ_BH = None
-    if PLOT_BOREHOLE and BOREHOLE_SITES:
+    if PLOT_BOREHOLE and BOREHOLE_SITES and BOREHOLE_LINES:
         _bsel = RESULTS_BOREHOLE_MODEL
         _bvalid = sorted(_res["value_keys"] & set(_res["stats"]))
         if isinstance(_bsel, str) and _bsel == "best":
@@ -1766,51 +2348,86 @@ if PLOT_BOREHOLE:
     if not BOREHOLE_SITES:
         print("  Borehole plot skipped: BOREHOLE_SITES is empty.")
     else:
-        # Normal mode: the first ensemble member is the model of the log.
-        _bh_model_file = ENS_FILES[0]
-        _bh_desc = f"member 0 ({ENS_LABELS_resolved[0]})"
-        _bh_label = ENS_LABELS_resolved[0]
-        if RESULTS_NPZ is not None:
-            # NPZ mode: RESULTS_BOREHOLE_MODEL (chosen above), written as a
-            # block file with the real air / ocean values (a log10 model).
-            _bvec, _bh_label = NPZ_BH
-            _bh_model_file = os.path.join(
-                NPZ_BLOCK_DIR, "resistivity_block_borehole.dat")
-            _write_vec_block(_bvec, NPZ_TEMPLATE, _bh_model_file,
-                             real_model=True)
-            _bh_desc = _bh_label
-        print(f"Sampling {len(BOREHOLE_SITES)} borehole(s) "
-              f"from {_bh_desc} ...")
-        if fviz is None:
-            sys.exit("femtic_viz not available - cannot plot boreholes.")
-        fviz.plot_borehole_logs(
-            model_file     = _bh_model_file,
-            mesh_file      = MESH_FILE,
-            borehole_sites = BOREHOLE_SITES,
-            resolve_xy_fn  = _resolve_borehole_xy,
-            utm_zone       = UTM_ZONE,
-            utm_northern   = UTM_NORTHERN,
-            utm_origin_e   = UTM_ORIGIN_E,
-            utm_origin_n   = UTM_ORIGIN_N,
-            ocean_value    = OCEAN_RHO,
-            # BOREHOLE_XLIM is log10(Ohm.m); fviz takes Ohm.m
-            clim           = ([10.0 ** float(v) for v in BOREHOLE_XLIM]
-                              if BOREHOLE_XLIM is not None else None),
-            borehole_style = BOREHOLE_STYLE,
-            shared         = BOREHOLE_SHARED,
-            tick_fontsize  = PLOT_TICK_FONTSIZE,
-            label_fontsize = PLOT_LABEL_FONTSIZE,
-            figure_title   = f"Borehole logs: {_bh_label}",
-            reference_file  = REF_FILE if REF_BOREHOLE else None,
-            reference_label = REF_LABEL if REF_LABEL else None,
-            npz_file       = (os.path.splitext(BOREHOLE_FILE)[0] + ".npz"
-                              if (BOREHOLE_NPZ and BOREHOLE_FILE is not None)
-                              else False),
-            plot_file      = BOREHOLE_FILE,
-            dpi            = PLOT_DPI,
-            out            = OUT,
-        )
-        print("Borehole plot done.")
+        if BOREHOLE_LINES:
+            # Normal mode: the first ensemble member is the model of the log.
+            _bh_model_file = ENS_FILES[0]
+            _bh_desc = f"member 0 ({ENS_LABELS_resolved[0]})"
+            _bh_label = ENS_LABELS_resolved[0]
+            if RESULTS_NPZ is not None:
+                # NPZ mode: RESULTS_BOREHOLE_MODEL (chosen above), written as a
+                # block file with the real air / ocean values (a log10 model).
+                _bvec, _bh_label = NPZ_BH
+                _bh_model_file = os.path.join(
+                    NPZ_BLOCK_DIR, "resistivity_block_borehole.dat")
+                _write_vec_block(_bvec, NPZ_TEMPLATE, _bh_model_file,
+                                 real_model=True)
+                _bh_desc = _bh_label
+            print(f"Sampling {len(BOREHOLE_SITES)} borehole(s) "
+                  f"from {_bh_desc} ...")
+            if fviz is None:
+                sys.exit("femtic_viz not available - cannot plot boreholes.")
+            fviz.plot_borehole_logs(
+                model_file     = _bh_model_file,
+                mesh_file      = MESH_FILE,
+                borehole_sites = BOREHOLE_SITES,
+                resolve_xy_fn  = _resolve_borehole_xy,
+                utm_zone       = UTM_ZONE,
+                utm_northern   = UTM_NORTHERN,
+                utm_origin_e   = UTM_ORIGIN_E,
+                utm_origin_n   = UTM_ORIGIN_N,
+                ocean_value    = OCEAN_RHO,
+                # BOREHOLE_XLIM is log10(Ohm.m); fviz takes Ohm.m
+                clim           = ([10.0 ** float(v) for v in BOREHOLE_XLIM]
+                                  if BOREHOLE_XLIM is not None else None),
+                borehole_style = BOREHOLE_STYLE,
+                shared         = BOREHOLE_SHARED,
+                tick_fontsize  = PLOT_TICK_FONTSIZE,
+                label_fontsize = PLOT_LABEL_FONTSIZE,
+                figure_title   = f"Borehole logs: {_bh_label}",
+                reference_file  = REF_FILE if REF_BOREHOLE else None,
+                reference_label = REF_LABEL if REF_LABEL else None,
+                npz_file       = (os.path.splitext(BOREHOLE_FILE)[0] + ".npz"
+                                  if (BOREHOLE_NPZ and BOREHOLE_FILE is not None)
+                                  else False),
+                plot_file      = BOREHOLE_FILE,
+                dpi            = PLOT_DPI,
+                out            = OUT,
+            )
+            print("Borehole plot done.")
+
+        # Heat map of the whole ensemble along the same boreholes (drawn here,
+        # not by fviz; independent of BOREHOLE_LINES).
+        if BOREHOLE_HEATMAP:
+            print(f"Sampling {len(BOREHOLE_SITES)} borehole(s) from "
+                  f"{len(model_list)} members for the heat map ...")
+            _hm_profs = _hm_sample(BOREHOLE_SITES)
+            if not _hm_profs:
+                print("  Heat map skipped: no usable borehole.")
+            else:
+                _hm_saved = _plot_borehole_heatmaps(_hm_profs,
+                                                    BOREHOLE_HEATMAP_FILE)
+                if BOREHOLE_HEAT_NPZ and BOREHOLE_HEATMAP_FILE is not None:
+                    import json
+                    _hm_saved["n_members"] = np.array(len(model_list))
+                    _hm_saved["header"] = np.array(json.dumps(dict(
+                        heat_unit=("heat_<name>: (n_levels, n_bins) fraction "
+                                   "of the valid members per bin (rows sum "
+                                   "to 1); heat_edges_<name>: bin edges in "
+                                   "log10(Ohm.m); depth_<name>: m, z "
+                                   "positive-down, model datum"),
+                        rows_sum_to=("1 when all members are inside the "
+                                     "edges, else less"),
+                        source=(RESULTS_NPZ if RESULTS_NPZ is not None
+                                else ENSEMBLE_DIR),
+                        members=[m["best_file"] for m in model_list],
+                        boreholes=[dict(name=_p["name"], x_m=float(_p["x_m"]),
+                                        y_m=float(_p["y_m"]))
+                                   for _p in _hm_profs],
+                    ), indent=2))
+                    _hm_npz = os.path.splitext(BOREHOLE_HEATMAP_FILE)[0] + ".npz"
+                    np.savez_compressed(_hm_npz, **_hm_saved)
+                    print(f"  heat-map histograms saved -> {_hm_npz}")
+                print("Borehole heat map done.")
 
 
 # ---------------------------------------------------------------------------

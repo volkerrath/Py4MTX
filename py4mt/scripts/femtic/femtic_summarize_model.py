@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""femtic_summarize_model_cells.py
+"""femtic_summarize_model.py
 
 Report the Jacobian parameter dimension and the physical size of the model
 for one or more FEMTIC inversion iterations, combining resistivity and
-distortion unknowns.
+distortion unknowns. Works for tetrahedral and hexahedral meshes; the
+hexahedra may be deformed (no regular grid is assumed anywhere).
 
 For each iteration the script reads:
     resistivity_block_iterXX.dat  -- one rho value per free region
@@ -16,15 +17,23 @@ and prints:
     n_distortion  free distortion parameters (4 x sites with flag == 0)
     n_total       n_rho + n_distortion       -> Jacobian column count
     model size    x, y, z range of the mesh, e.g. x = [-100, 100] km
+    cell type     tetrahedra / hexahedra, from the type line of mesh.dat
+
+Optional (CELL_STATS = True, needs numpy): the element block of mesh.dat is
+read as well, and the script prints the total model volume and the smallest,
+median and largest cell volume. Hexahedron volumes are exact for deformed
+cells (trilinear map, 2 x 2 x 2 Gauss quadrature, which is exact for the
+volume integral, also for non-planar faces). For hexahedra it also says
+whether they are all axis-aligned boxes or (partly) deformed.
 
 Usage
 -----
 Edit the USER SECTION below, or pass paths on the command line (they
 replace PATHS):
 
-    python femtic_summarize_model_cells.py /path/to/run/
-    python femtic_summarize_model_cells.py resistivity_block_iter*.dat
-    python femtic_summarize_model_cells.py        # uses PATHS
+    python femtic_summarize_model.py /path/to/run/
+    python femtic_summarize_model.py resistivity_block_iter*.dat
+    python femtic_summarize_model.py        # uses PATHS
 
 The Py4MTX environment must be set: PY4MTX_ROOT and PY4MTX_DATA are read
 from the environment, and <PY4MTX_ROOT>/py4mt/modules/ and
@@ -36,6 +45,11 @@ Optional LaTeX table: set LATEX_FILE in the USER SECTION to the name of a
 n_dist, Jacobian columns and, if mesh.dat was read, the x, y, z range).
 LATEX_STANDALONE = True writes a complete document instead of only the
 table environment.
+
+Output file names: OUT_FILE in the USER SECTION is a prefix put in front of
+the names of the two files the script writes, the parameter summary
+(<OUT_FILE><script name>_summary.md, next to the script) and the LaTeX table
+(<OUT_FILE><LATEX_FILE>; a directory in LATEX_FILE is kept).
 
 AI-generated code -- author: Claude, Anthropic.
 Date generated: 2026-06-12.
@@ -67,6 +81,44 @@ Provenance:
                 Added the optional LaTeX table (LATEX_FILE, LATEX_CAPTION,
                 LATEX_LABEL, LATEX_STANDALONE in the USER SECTION; builder
                 latex_table()). The printed summary is unchanged.
+    2026-10-28  Claude Sonnet 5.5 (Anthropic)
+                Renamed from femtic_summarize_model_cells.py to
+                summarize_model.py (the parameter summary and the default
+                LATEX_FILE name follow the script name).
+                Generalised from tetrahedral to hexahedral meshes, which
+                may be deformed. The element label is no longer fixed to
+                "tetrahedra": it comes from the type line of mesh.dat
+                (TETRA -> tetrahedra, any type containing HEX -> hexahedra,
+                otherwise "cell type unknown"). parse_mesh_extent() now also
+                returns cell_type and the element count of the mesh, and
+                requires integer node ids, so that a mesh.dat that does not
+                have an "id x y z" node block gives an n/a message instead
+                of a wrong size. A different element count in mesh.dat and
+                resistivity_block is reported as a warning. New optional
+                CELL_STATS / HEX_NODE_ORDER: parse_mesh_cells() reads the
+                element block and gives total and min/median/max cell
+                volume (tetrahedra and hexahedra, exact for deformed
+                hexahedra) and the regular/deformed classification of
+                hexahedra; failed checks (node ids out of range, repeated
+                vertices, volumes of mixed sign or zero) are reported
+                instead of printing numbers. The TETRA layout follows
+                read_femtic_mesh() in femtic.py; the hexahedral layouts are
+                ASSUMED (same node block; vertex ids are the last 8 tokens
+                of an element line, as for TETRA) and are NOT verified
+                against real FEMTIC files. Regular (axis-aligned) and
+                deformed hexahedra and the TETRA output were tested on
+                synthetic meshes only. Cosmetic: removed a stray "3" from
+                a banner line.
+    2026-10-28  Claude Sonnet 5.5 (Anthropic)
+                Renamed from summarize_model.py to femtic_summarize_model.py
+                (the femtic_ prefix of the other scripts in this directory).
+                New user parameter OUT_FILE: a prefix for the names of the
+                parameter summary .md file and of the LaTeX .tex file (a
+                path separator in it is refused). It replaces the hard-coded
+                "Ubinas_" in the default LATEX_FILE, which is now the script
+                name + ".tex"; OUT_FILE is set to "Ubinas_" so that the
+                .tex name keeps its prefix, and the .md file gets it too.
+                The parameter summary records OUT_FILE.
 """
 from __future__ import annotations
 
@@ -98,7 +150,7 @@ print(titstrng + "\n\n")
 
 # ===========================================================================
 # USER SECTION -- edit here; every user parameter is in CAPITALS
-# ===========3================================================================
+# ===========================================================================
 
 # Directories and/or files to scan. Command-line arguments, if given,
 # replace this list.
@@ -116,14 +168,35 @@ SIZE_UNIT = "km"
 # Decimals of the model-size values (trailing zeros are dropped).
 SIZE_DECIMALS = 0
 
+# Also read the element block of mesh.dat (needs numpy) and print the total
+# model volume, the min / median / max cell volume and, for hexahedra,
+# whether the cells are regular boxes or deformed. False = only the cell
+# type and the bounding box (standard library only, fast on large meshes).
+CELL_STATS = False
+
+# Order of the 8 vertex ids of a hexahedron in mesh.dat (only used with
+# CELL_STATS). "vtk": 0-1-2-3 around the first face, 4-5-6-7 above/below
+# them in the same sense (VTK_HEXAHEDRON). "tensor": lexicographic, node
+# index = i + 2*j + 4*k for the corner (i, j, k) in {0, 1}^3 (x fastest).
+# Not verified for FEMTIC; if the check "volumes of one sign" fails the
+# script says so, then try the other value.
+HEX_NODE_ORDER = "vtk"
+
 # Region 1 as ocean: None = infer (flag == 1 and rho <= 1 Ohm.m),
 # True = ocean, False = no ocean.
 OCEAN = None
 
-# Optional LaTeX table of the summaries. None = off; otherwise the name of
-# the .tex file to write (a relative path refers to the current directory).
+# Prefix put in front of the names of the files this script writes: the
+# parameter summary (<OUT_FILE><script name>_summary.md, next to the script)
+# and the LaTeX table (<OUT_FILE><LATEX_FILE>; a directory part of LATEX_FILE
+# is kept, the prefix goes before the file name). "" or None = no prefix.
+# It is a file-name prefix only: it must not contain "/" or "\".
+OUT_FILE = "Ubinas_"
 
-LATEX_FILE = "Ubinas_"+Path(fname).stem+".tex" #script_dir+".tex"# None
+# Optional LaTeX table of the summaries. None = off; otherwise the name of
+# the .tex file to write (a relative path refers to the current directory);
+# OUT_FILE is put in front of the file name.
+LATEX_FILE = Path(fname).stem + ".tex"
 
 # Caption and label of the table, used as they are (write LaTeX, e.g.
 # r"Problem size per iteration."). None = default caption / no label.
@@ -139,18 +212,30 @@ LATEX_STANDALONE = False
 # ===========================================================================
 
 
-def _write_param_summary(fname: str, params: dict) -> str:
+def _out_prefix() -> str:
+    """OUT_FILE as a string (None = no prefix)."""
+    return "" if OUT_FILE is None else str(OUT_FILE)
+
+
+def _prefixed(path, prefix: str) -> str:
+    """*path* with *prefix* put in front of its file name (directory kept)."""
+    p = Path(path)
+    return str(p.parent / (prefix + p.name))
+
+
+def _write_param_summary(fname: str, params: dict, prefix: str = "") -> str:
     """Write a Markdown summary of this script's user parameters.
 
     Self-contained (stdlib only). Writes
-    ``<script_dir>/<script_stem>_summary.md`` with the script path, run
-    date/time, and the resolved user parameters.
+    ``<script_dir>/<prefix><script_stem>_summary.md`` with the script path,
+    run date/time, and the resolved user parameters.
     """
     from datetime import datetime
 
     script_path = os.path.abspath(fname)
     stem = os.path.splitext(os.path.basename(fname))[0]
-    out_path = os.path.join(os.path.dirname(script_path), stem + "_summary.md")
+    out_path = os.path.join(os.path.dirname(script_path),
+                            prefix + stem + "_summary.md")
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     lines = [
@@ -267,16 +352,53 @@ def _next_nonblank(fh):
     return None
 
 
+# Cell types known from the type line of mesh.dat:
+#   key      -> (plural label, vertices per element)
+_CELL_TYPES = {
+    "tetra": ("tetrahedra", 4),
+    "hexa":  ("hexahedra",  8),
+}
+
+
+def cell_type_from_header(token: str | None) -> str | None:
+    """Cell type key for the type line of ``mesh.dat``.
+
+    ``TETRA`` -> ``"tetra"``; any type containing ``HEX`` (``HEXA`` and
+    other hexahedral variants, deformed or not) -> ``"hexa"``. ``None`` for
+    a missing or unknown type line.
+    """
+    if not token:
+        return None
+    up = token.upper()
+    if up.startswith("TET"):
+        return "tetra"
+    if "HEX" in up:
+        return "hexa"
+    return None
+
+
+def cell_label(cell_type: str | None) -> str:
+    """Plural name of the cells for the printed summary."""
+    if cell_type in _CELL_TYPES:
+        return _CELL_TYPES[cell_type][0]
+    return "cell type unknown"
+
+
 def parse_mesh_extent(path: Path) -> dict:
     """Bounding box of the node coordinates in a FEMTIC ``mesh.dat``.
 
     Layout assumed: an optional mesh-type line (``TETRA``, ``HEXA``, ...),
     a line whose first token is the number of nodes, then one line
-    ``id  x  y  z`` per node (metres, z positive down). Everything after
-    the node block (elements) is not read.
+    ``id  x  y  z`` per node (metres, z positive down; the id must be an
+    integer). The bounding box needs no regular grid, so it is valid for
+    deformed hexahedral meshes too. After the node block only the element
+    count (first token of the next line) is read, if it is an integer; the
+    elements themselves are not read (see :func:`parse_mesh_cells`).
 
-    Returns a dict with ``mesh_type`` (str or None), ``nnode`` (int),
-    ``min`` and ``max`` (3-tuples x, y, z in the units of the file).
+    Returns a dict with ``mesh_type`` (str or None), ``cell_type``
+    (``"tetra"``, ``"hexa"`` or None, see :func:`cell_type_from_header`),
+    ``nnode`` (int), ``nelem`` (element count stated in the file, int or
+    None), ``min`` and ``max`` (3-tuples x, y, z in the units of the file).
     Raises ValueError if the file does not follow this layout.
     """
     with path.open("r", encoding="utf-8", errors="replace") as fh:
@@ -311,6 +433,7 @@ def parse_mesh_extent(path: Path) -> dict:
             if len(p) < 4:
                 raise ValueError(f"bad node line {line.strip()!r}")
             try:
+                int(p[0])
                 x, y, z = float(p[1]), float(p[2]), float(p[3])
             except ValueError:
                 raise ValueError(f"bad node line {line.strip()!r}") from None
@@ -322,12 +445,240 @@ def parse_mesh_extent(path: Path) -> dict:
             if z > zmax: zmax = z
             n += 1
 
+        nelem = None
+        nel_line = _next_nonblank(fh)
+        if nel_line is not None:
+            tok = nel_line.split()[0]
+            if tok.lstrip("+-").isdigit():
+                nelem = int(tok)
+
     return {
         "mesh_type": mesh_type,
+        "cell_type": cell_type_from_header(mesh_type),
         "nnode":     nnode,
+        "nelem":     nelem,
         "min":       (xmin, ymin, zmin),
         "max":       (xmax, ymax, zmax),
     }
+
+
+# ---------------------------------------------------------------------------
+# Cell statistics (optional: CELL_STATS, needs numpy)
+# ---------------------------------------------------------------------------
+
+# Hexahedron vertex order -> tensor order (index = i + 2*j + 4*k, x fastest).
+# VTK vertices 0..7 are the corners (0,0,0) (1,0,0) (1,1,0) (0,1,0)
+# (0,0,1) (1,0,1) (1,1,1) (0,1,1). Entry t gives the file vertex that sits at
+# tensor corner t.
+_HEX_TO_TENSOR = {
+    "tensor": (0, 1, 2, 3, 4, 5, 6, 7),
+    "vtk":    (0, 1, 3, 2, 4, 5, 7, 6),
+}
+
+
+def tetra_volumes(pts):
+    """Signed volumes of tetrahedra; *pts* has shape (n, 4, 3)."""
+    import numpy as np
+
+    a = pts[:, 1] - pts[:, 0]
+    b = pts[:, 2] - pts[:, 0]
+    c = pts[:, 3] - pts[:, 0]
+    return np.einsum("ij,ij->i", a, np.cross(b, c)) / 6.0
+
+
+def hexa_volumes(pts, order: str = "vtk"):
+    """Signed volumes of hexahedra; *pts* has shape (n, 8, 3).
+
+    Each cell is the trilinear image of the unit cube, so its corners may sit
+    anywhere (deformed cells, non-planar faces). The volume is the integral
+    of det(J) over the cube. det(J) has degree 2 in each of the three cell
+    coordinates, so 2 x 2 x 2 Gauss quadrature gives the volume exactly.
+    The sign is positive for a right-handed corner order in the coordinate
+    system of the nodes (FEMTIC has z down, so valid cells may be negative);
+    only a mixture of signs points to a wrong vertex order.
+    """
+    import numpy as np
+
+    if order not in _HEX_TO_TENSOR:
+        raise ValueError(f"HEX_NODE_ORDER must be 'vtk' or 'tensor', got {order!r}")
+    p = pts[:, list(_HEX_TO_TENSOR[order]), :]
+    t = np.arange(8)
+    s = np.stack([(t & 1) * 2 - 1, ((t >> 1) & 1) * 2 - 1, ((t >> 2) & 1) * 2 - 1],
+                 axis=1).astype(float)                  # corner signs, (8, 3)
+    g = 1.0 / math.sqrt(3.0)
+    vol = np.zeros(p.shape[0])
+    for xi in (-g, g):
+        for eta in (-g, g):
+            for zeta in (-g, g):
+                fx = 1.0 + s[:, 0] * xi
+                fy = 1.0 + s[:, 1] * eta
+                fz = 1.0 + s[:, 2] * zeta
+                dn = np.stack([s[:, 0] * fy * fz,
+                               s[:, 1] * fx * fz,
+                               s[:, 2] * fx * fy], axis=1) / 8.0   # (8, 3)
+                jac = np.einsum("nta,tb->nab", p, dn)   # d x_a / d xi_b
+                vol += np.linalg.det(jac)
+    return vol
+
+
+def _read_cells(path: Path, ext: dict, hex_order: str) -> dict:
+    """Read the element block of *path* and compute the cell statistics.
+
+    *ext* is the result of :func:`parse_mesh_extent` for the same file.
+    Layout assumed: after the node block a line with the element count, then
+    one line per element whose LAST ``nv`` tokens are the vertex ids
+    (``nv`` = 4 for TETRA, 8 for hexahedra); anything before them (element
+    id, neighbour ids) is ignored. This is how ``read_femtic_mesh()`` in
+    femtic.py reads TETRA; for the hexahedral types it is an assumption.
+    Raises ValueError if the file contradicts it.
+    """
+    import numpy as np
+
+    ctype = ext["cell_type"]
+    if ctype is None:
+        raise ValueError("cell type unknown (the type line of mesh.dat is "
+                         "missing, or neither TETRA nor a hexahedral type)")
+    if hex_order not in _HEX_TO_TENSOR:
+        raise ValueError(f"HEX_NODE_ORDER must be 'vtk' or 'tensor', got {hex_order!r}")
+    nv = _CELL_TYPES[ctype][1]
+    nnode = ext["nnode"]
+
+    with path.open("r", encoding="utf-8", errors="replace") as fh:
+        _next_nonblank(fh)                  # type line (there is one: cell_type is set)
+        _next_nonblank(fh)                  # node count
+        ids = np.empty(nnode, dtype=np.int64)
+        xyz = np.empty((nnode, 3))
+        n = 0
+        while n < nnode:
+            line = fh.readline()
+            if not line:
+                raise ValueError(f"end of file after {n} of {nnode} nodes")
+            p = line.split()
+            if not p:
+                continue
+            ids[n] = int(p[0])
+            xyz[n] = (float(p[1]), float(p[2]), float(p[3]))
+            n += 1
+
+        nel_line = _next_nonblank(fh)
+        if nel_line is None:
+            raise ValueError("no element count after the node block")
+        try:
+            nelem = int(nel_line.split()[0])
+        except ValueError:
+            raise ValueError(
+                f"cannot read the element count from {nel_line.strip()!r}") from None
+        if nelem <= 0:
+            raise ValueError(f"element count {nelem} is not positive")
+
+        conn = np.empty((nelem, nv), dtype=np.int64)
+        n = 0
+        while n < nelem:
+            line = fh.readline()
+            if not line:
+                raise ValueError(f"end of file after {n} of {nelem} elements")
+            p = line.split()
+            if not p:
+                continue
+            if len(p) < nv + 1:
+                raise ValueError(f"element line has {len(p)} columns, need the "
+                                 f"element id and {nv} vertex ids: {line.strip()!r}")
+            try:
+                conn[n] = [int(tok) for tok in p[-nv:]]
+            except ValueError:
+                raise ValueError(f"bad element line {line.strip()!r}") from None
+            n += 1
+
+    # node ids -> rows of xyz
+    if np.array_equal(ids, np.arange(nnode)):
+        if conn.min() < 0 or conn.max() >= nnode:
+            raise ValueError(f"a vertex id in the element block is outside "
+                             f"0..{nnode - 1} (are the vertex ids really the "
+                             f"last {nv} columns of an element line?)")
+    else:
+        order = np.argsort(ids, kind="stable")
+        sid = ids[order]
+        if np.any(sid[1:] == sid[:-1]):
+            raise ValueError("duplicate node ids in the node block")
+        pos = np.minimum(np.searchsorted(sid, conn), nnode - 1)
+        if np.any(sid[pos] != conn):
+            raise ValueError("a vertex id in the element block is not a node id "
+                             f"(are the vertex ids really the last {nv} columns "
+                             "of an element line?)")
+        conn = order[pos]
+
+    warnings: list[str] = []
+    srt = np.sort(conn, axis=1)
+    n_rep = int(np.count_nonzero((srt[:, 1:] == srt[:, :-1]).any(axis=1)))
+    if n_rep:
+        warnings.append(f"{n_rep:,d} of {nelem:,d} cells repeat a vertex id "
+                        f"(degenerate cells)")
+
+    vol = np.empty(nelem)
+    bbv = np.empty(nelem)                   # volume of the bounding box of each cell
+    step = 200_000                          # chunks keep the memory use low
+    for a in range(0, nelem, step):
+        b = min(a + step, nelem)
+        pts = xyz[conn[a:b]]                # (m, nv, 3)
+        if ctype == "tetra":
+            vol[a:b] = tetra_volumes(pts)
+        else:
+            vol[a:b] = hexa_volumes(pts, hex_order)
+        bbv[a:b] = np.prod(pts.max(axis=1) - pts.min(axis=1), axis=1)
+
+    n_deformed = None
+    if ctype == "hexa":
+        n_pos = int(np.count_nonzero(vol > 0))
+        n_neg = int(np.count_nonzero(vol < 0))
+        n_tiny = int(np.count_nonzero(np.abs(vol) <= 1.0e-9 * bbv))
+        hint = (f"the vertex order is probably not HEX_NODE_ORDER = "
+                f"{hex_order!r}; try the other value")
+        if n_pos and n_neg:
+            raise ValueError(f"hexahedron volumes have both signs "
+                             f"({n_pos:,d} positive, {n_neg:,d} negative): {hint}")
+        if n_tiny > 0.01 * nelem:
+            raise ValueError(f"{n_tiny:,d} of {nelem:,d} hexahedra have "
+                             f"(almost) zero volume: {hint}")
+        if n_tiny:
+            warnings.append(f"{n_tiny:,d} hexahedra have (almost) zero volume")
+        # An axis-aligned box fills its bounding box; any shear, rotation or
+        # warp of the corners leaves a part of it empty.
+        regular = (bbv > 0) & (np.abs(vol) >= (1.0 - 1.0e-6) * bbv)
+        n_deformed = int(nelem - np.count_nonzero(regular))
+
+    av = np.abs(vol)
+    return {
+        "nelem":         nelem,
+        "volume_total":  float(av.sum()),
+        "volume_min":    float(av.min()),
+        "volume_median": float(np.median(av)),
+        "volume_max":    float(av.max()),
+        "n_deformed":    n_deformed,
+        "warnings":      warnings,
+    }
+
+
+def parse_mesh_cells(path: Path, *, hex_order: str = "vtk") -> dict:
+    """:func:`parse_mesh_extent` plus the cell statistics of the mesh.
+
+    Returns the dict of :func:`parse_mesh_extent` with two more keys:
+    ``cells`` (dict with ``nelem``, ``volume_total``, ``volume_min``,
+    ``volume_median``, ``volume_max`` in m^3 -- absolute values --,
+    ``n_deformed`` (hexahedra that are not axis-aligned boxes; None for
+    tetrahedra) and ``warnings`` (list of str)) and ``cells_msg`` (why
+    ``cells`` is None). A failing cell statistic does not lose the bounding
+    box; only a failing node block raises ValueError.
+    """
+    ext = parse_mesh_extent(path)
+    ext["cells"] = None
+    ext["cells_msg"] = None
+    try:
+        ext["cells"] = _read_cells(path, ext, hex_order)
+    except ImportError:
+        ext["cells_msg"] = "numpy is not available"
+    except Exception as exc:
+        ext["cells_msg"] = str(exc)
+    return ext
 
 
 _MESH_CACHE: dict = {}
@@ -336,7 +687,8 @@ _MESH_CACHE: dict = {}
 def get_mesh_extent(rho_path: Path):
     """Return ``(extent, message)`` for the mesh next to *rho_path*.
 
-    ``extent`` is the dict of :func:`parse_mesh_extent` or None. ``message``
+    ``extent`` is the dict of :func:`parse_mesh_extent` (of
+    :func:`parse_mesh_cells` if CELL_STATS is True) or None. ``message``
     says why it is None (file missing / unreadable); it is None as well
     when MESH_FILE is None (model-size lines switched off). The mesh is
     read once per file and cached.
@@ -344,13 +696,17 @@ def get_mesh_extent(rho_path: Path):
     if MESH_FILE is None:
         return None, None
     mesh_path = rho_path.parent / MESH_FILE
-    key = str(mesh_path.resolve())
+    key = (str(mesh_path.resolve()), bool(CELL_STATS), HEX_NODE_ORDER)
     if key not in _MESH_CACHE:
         if not mesh_path.is_file():
             _MESH_CACHE[key] = (None, f"{MESH_FILE} not found in {rho_path.parent}")
         else:
             try:
-                _MESH_CACHE[key] = (parse_mesh_extent(mesh_path), None)
+                if CELL_STATS:
+                    info = parse_mesh_cells(mesh_path, hex_order=HEX_NODE_ORDER)
+                else:
+                    info = parse_mesh_extent(mesh_path)
+                _MESH_CACHE[key] = (info, None)
             except Exception as exc:
                 _MESH_CACHE[key] = (None, f"{mesh_path.name}: {exc}")
     return _MESH_CACHE[key]
@@ -452,7 +808,7 @@ def latex_table(rows: list[dict], unit: str = "km", decimals: int = 3,
     body += [r"    \bottomrule", r"  \end{tabular}", r"\end{table}"]
 
     stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    note = ["% Generated by femtic_summarize_model_cells.py on " + stamp]
+    note = ["% Generated by " + Path(fname).name + " on " + stamp]
     if standalone:
         out = [r"\documentclass{article}",
                r"\usepackage[a4paper,margin=1.5cm]{geometry}",
@@ -531,7 +887,8 @@ def print_summary(it: int, rho: dict, dist: dict | None,
 
     print(f"\n{SEP}")
     print(f"  Iteration       : {it}")
-    print(f"  Total elements  : {rho['nelem']:>10,d}  (tetrahedra)")
+    label = cell_label(mesh["cell_type"] if mesh is not None else None)
+    print(f"  Total elements  : {rho['nelem']:>10,d}  ({label})")
     print(f"  Total regions   : {rho['nreg']:>10,d}  (resistivity blocks)")
     print(f"  Ocean inferred  : {ocean_str}")
     if mesh is not None:
@@ -541,6 +898,33 @@ def print_summary(it: int, rho: dict, dist: dict | None,
             print(f"                    {ln}")
         print(f"                    (mesh bounding box incl. air, {mesh['nnode']:,d} nodes;"
               f" z positive down)")
+        if mesh.get("nelem") is not None and mesh["nelem"] != rho["nelem"]:
+            note = ""
+            if mesh["cell_type"] != "tetra":
+                note = " (the element block layout of this mesh type is assumed)"
+            print(f"  [warn] {MESH_FILE} states {mesh['nelem']:,d} elements, "
+                  f"the resistivity block {rho['nelem']:,d}{note}")
+        cells = mesh.get("cells")
+        if cells is not None:
+            u = SIZE_UNIT
+            f3 = (1.0e-3 if u == "km" else 1.0) ** 3        # m^3 -> unit^3
+            kind = label
+            if cells["n_deformed"] is not None:
+                if cells["n_deformed"] == 0:
+                    kind += ", all axis-aligned boxes"
+                else:
+                    kind += (f", {cells['n_deformed']:,d} of {cells['nelem']:,d} "
+                             f"are not axis-aligned boxes (deformed or rotated)")
+            print(f"  Cell type       : {kind}")
+            print(f"  Model volume    : {cells['volume_total'] * f3:.4g} {u}^3"
+                  f"  (sum of the cell volumes, incl. air)")
+            print(f"  Cell volume     : min {cells['volume_min'] * f3:.4g}"
+                  f"  median {cells['volume_median'] * f3:.4g}"
+                  f"  max {cells['volume_max'] * f3:.4g} {u}^3")
+            for w in cells["warnings"]:
+                print(f"  [warn] {w}")
+        elif mesh.get("cells_msg"):
+            print(f"  Cell statistics : n/a ({mesh['cells_msg']})")
     elif mesh_msg:
         print(f"  Model size      : n/a ({mesh_msg})")
     print(SEP)
@@ -567,20 +951,32 @@ def main() -> None:
     if SIZE_UNIT not in ("km", "m"):
         print(f"[error] SIZE_UNIT must be 'km' or 'm', got {SIZE_UNIT!r}", file=sys.stderr)
         sys.exit(2)
+    if HEX_NODE_ORDER not in _HEX_TO_TENSOR:
+        print(f"[error] HEX_NODE_ORDER must be 'vtk' or 'tensor', got "
+              f"{HEX_NODE_ORDER!r}", file=sys.stderr)
+        sys.exit(2)
+    prefix = _out_prefix()
+    if "/" in prefix or "\\" in prefix or os.sep in prefix:
+        print(f"[error] OUT_FILE is a file-name prefix and must not contain a "
+              f"path separator, got {OUT_FILE!r}", file=sys.stderr)
+        sys.exit(2)
 
     args = sys.argv[1:] or list(PATHS)
 
     _write_param_summary(__file__, {
-        "PATHS":         args,
-        "MESH_FILE":     MESH_FILE,
-        "SIZE_UNIT":     SIZE_UNIT,
-        "SIZE_DECIMALS": SIZE_DECIMALS,
-        "OCEAN":         OCEAN,
+        "PATHS":          args,
+        "MESH_FILE":      MESH_FILE,
+        "SIZE_UNIT":      SIZE_UNIT,
+        "SIZE_DECIMALS":  SIZE_DECIMALS,
+        "CELL_STATS":     CELL_STATS,
+        "HEX_NODE_ORDER": HEX_NODE_ORDER,
+        "OCEAN":          OCEAN,
+        "OUT_FILE":       OUT_FILE,
         "LATEX_FILE":       LATEX_FILE,
         "LATEX_CAPTION":    LATEX_CAPTION,
         "LATEX_LABEL":      LATEX_LABEL,
         "LATEX_STANDALONE": LATEX_STANDALONE,
-    })
+    }, prefix=prefix)
 
     pairs = collect_pairs(args)
 
@@ -613,7 +1009,7 @@ def main() -> None:
         if latex_rows:
             _write_latex(latex_table(latex_rows, SIZE_UNIT, SIZE_DECIMALS,
                                      LATEX_CAPTION, LATEX_LABEL, LATEX_STANDALONE),
-                         LATEX_FILE)
+                         _prefixed(LATEX_FILE, prefix))
         else:
             print("[warn] no iteration summarised -- no LaTeX table written",
                   file=sys.stderr)

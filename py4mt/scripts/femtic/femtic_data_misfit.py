@@ -274,7 +274,7 @@ RUN_MODE: str = "ensemble"               # "single" | "ensemble"
 #  r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_0/ann*/"
 #     ]        # run dirs, results files, or globs (overridden by argv)
 RUN_PATHS: List[str] = [
-     r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_rto_0_reset-err/ann*/"
+     r"/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_orig-err/ann*/"
     ]        # run dirs, results files, or globs (overridden by argv)
 
 # RUN_MODE: str = "single"

@@ -497,7 +497,7 @@ ENS_LIST accepts two forms:
   None              — process all members 0 … N_SAMPLES-1 (default)
   [i, j, k, …]     — explicit list of member indices to process
 """
-ENS_LIST = None
+ENS_LIST = np.arange(64, 128)
 
 
 """

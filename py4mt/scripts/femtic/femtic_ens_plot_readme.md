@@ -38,7 +38,10 @@ sub-directories and filtering on `femtic.cnv` / `NRMS_MAX` — and produces:
 2. Optionally, a borehole resistivity log figure (point-in-element sampling,
    drawn by `fviz.plot_borehole_logs()`: resistivity on a log axis, depth in
    km pointing down), sampled from the first converged member's best-fit
-   model.
+   model; and/or (`BOREHOLE_HEATMAP`) a **heat map of the whole ensemble**
+   along the same boreholes: at every depth the log10 resistivities of all
+   members are histogrammed and shown as a colour image, with the median /
+   quantile lines on top. See "Borehole heat map" below.
 
 3. Optionally, a **reference model** (`REF_FILE`) shown on both kinds of
    figure: iso-resistivity lines on the slice panels, a dashed profile per
@@ -85,8 +88,11 @@ WORK_DIR/<label>/iter0.<ext>  +  WORK_DIR/<label>/best.<ext>   (per converged me
         v  PdfPages(PER_MEMBER_CATALOG_FILE)
 one multi-page pdf catalog, all member pdf figures in plot order
         |                                    [PLOT_BOREHOLE = True]
-        v  fviz.plot_borehole_logs(...)
+        v  fviz.plot_borehole_logs(...)              [BOREHOLE_LINES = True]
 borehole PDF / interactive window
+        |                                    [PLOT_BOREHOLE = True, BOREHOLE_HEATMAP = True]
+        v  every member sampled along BOREHOLE_SITES  →  per-depth histogram
+borehole heat-map figure (BOREHOLE_HEATMAP_FILE) + histograms .npz
 ```
 
 ---
@@ -259,6 +265,65 @@ artefacts; air and ocean cells of the reference are ignored.
 | `BOREHOLE_XLIM` | x range as `[log10 min, log10 max]` (converted to Ω·m for the plot); `None` = auto |
 | `BOREHOLE_SHARED` | `True` = one axes for all boreholes; `False` = one panel each |
 | `BOREHOLE_NPZ` | `True` (default): also write the sampled profiles to `<BOREHOLE_FILE stem>.npz` (`depth_<name>`, `rho_<name>`, `reference_rho_<name>` with a reference) |
+| `BOREHOLE_LINES` | `True` (default): draw the log figure above (`fviz.plot_borehole_logs`, one model). `False` skips it, e.g. to make only the heat map. |
+
+### Borehole heat map
+
+The log figure shows one model. `BOREHOLE_HEATMAP = True` additionally draws
+the **whole converged ensemble** along the same `BOREHOLE_SITES`: one panel per
+borehole, resistivity on a log x axis, depth pointing down. At each depth level
+the members' log10 resistivities are histogrammed; the colour is the fraction
+of the members in a bin (or, with `"row_max"`, relative to the most populated
+bin of that depth). Median and 1-sigma quantiles are drawn on top. One shared
+colour bar. It needs `PLOT_BOREHOLE = True`; the figure is drawn here, not by
+`fviz`, and independently of `BOREHOLE_LINES`.
+
+| Variable | Default | Description |
+|---|---|---|
+| `BOREHOLE_HEATMAP` | `False` | Draw the heat map. |
+| `BOREHOLE_HEATMAP_FILE` | `<ENSEMBLE_DIR>ensemble_boreholes_heatmap.pdf` | Figure path (extension sets the format); `None` = interactive window. |
+| `BOREHOLE_HEAT_BINS` | `60` | Number of equal bins in log10 rho across `BOREHOLE_XLIM` (the range of the member values if `BOREHOLE_XLIM` is `None`), or a list of log10(rho) bin edges. |
+| `BOREHOLE_HEAT_NORM` | `"fraction"` | `"fraction"` = fraction of the valid members per bin; `"row_max"` = each depth scaled to its own maximum (0..1). |
+| `BOREHOLE_HEAT_CMAP` | `"Greys"` | Colormap (light = few members). A single-hue, light-to-dark map (`"Greys"`, `"Blues"`, `"Purples"`, ...) keeps the overlay lines readable. |
+| `BOREHOLE_HEAT_SCALE` | `"linear"` | Shape of the colour scale: `"linear"`, `"sqrt"` (square root: lifts low densities, keeps peaks distinguishable) or `"log"` (logarithmic between `BOREHOLE_HEAT_VMIN` and `BOREHOLE_HEAT_VMAX`; empty bins are left blank; 1-2-5 colour-bar ticks when the range is under 3 decades). Anything else stops the run at start. |
+| `BOREHOLE_HEAT_VMIN` | `None` | Lower end of the colour scale. `None` = 0 (`"linear"` / `"sqrt"`) or the smallest non-zero fraction of the figure (`"log"`, which needs a value > 0). A number sets it, e.g. `0.02` to blank out bins holding less than 2 % of the members (an arrow on the colour bar marks values below it). |
+| `BOREHOLE_HEAT_VMAX` | `None` | Upper end of the colour scale (`"row_max"` is always 1). `None` = for `"linear"` / `"sqrt"` the 99th percentile of the non-zero fractions (colour bar ends in an arrow, so levels with one value in every member -- ocean, fixed regions -- do not wash out the rest), for `"log"` the maximum; `1.0` = full range. |
+| `BOREHOLE_HEAT_OVERLAY` | `["med", "sigma1"]` | Lines on top, in this order: `"avg"`, `"med"`, `"sigma1"` (P15.87 / P84.13), `"sigma2"` (P2.28 / P97.72), `"ref"` (the reference model: needs `REF_FILE` and `REF_BOREHOLE`). `[]` = none. Unknown names stop the run at start. |
+| `BOREHOLE_HEAT_STYLE` | see script | Line2D keywords per overlay item. |
+| `BOREHOLE_HEAT_PANEL_SIZE`, `BOREHOLE_HEAT_NCOLS` | `[8.0, 16.0]`, `3` | Panel width, height (cm) and number of columns. |
+| `BOREHOLE_HEAT_NPZ` | `True` | Also write `<BOREHOLE_HEATMAP_FILE stem>.npz`: `depth_<name>` (m, z down), `heat_<name>` (`n_levels x n_bins` fractions, independent of `BOREHOLE_HEAT_NORM`), `heat_edges_<name>` (log10 Ohm.m), `n_members` and a JSON `header`. Needs `BOREHOLE_HEATMAP_FILE`. |
+
+Colour scale example:
+
+```python
+BOREHOLE_HEAT_SCALE = "log"     # logarithmic colours, empty bins blank
+BOREHOLE_HEAT_VMIN = 0.05       # ignore bins with < 5 % of the members
+BOREHOLE_HEAT_CMAP = "Blues"    # single-hue colormap
+```
+
+Notes:
+
+- **Members.** Normal mode: the best-fit block file of every converged member
+  (read once each, so it takes as long as reading the members). NPZ mode: the
+  rows of the stored ensemble matrix on the template's region structure;
+  `RESULTS_BOREHOLE_MODEL` only concerns the log figure.
+- **Positions and depths.** `BOREHOLE_SITES` is used unchanged (`name`, `x`, `y`,
+  `z_top`, `z_bot`, `dz`, CRS-tagged `x` / `y` allowed; missing `z_bot` = 20 km,
+  `dz` = 50 m). `z_top="surface"` is the top of the mesh column as for the log
+  figure -- the top of the air if the mesh has an air layer, so give a number
+  to start at the ground; air levels are blank. No heat-map keys are added to
+  the specs, because their extra keys would reach `fviz` as line keywords.
+- **Range.** The bins span `BOREHOLE_XLIM`; members outside it are not drawn but
+  stay in the denominator (ocean cells at 0.25 Ohm.m with `[0, 4]` leave their
+  levels empty rather than piling up in the first bin).
+- **Sampling** is the same exact point-in-tetrahedron search as in
+  `femtic_ens_post.py` (`MOD_BH` item `"heatmap"`), with the mesh read by
+  `fem.read_femtic_mesh(MESH_FILE)`; for the same boreholes and bins the two
+  scripts give identical histograms (tested). The air is region 0 and the
+  ocean region 1 at `OCEAN_RHO` when present.
+- A borehole outside the mesh, or with `z_bot <= z_top` or `dz <= 0`, is
+  reported and skipped; a member block file with another element count than
+  `MESH_FILE` stops the run with a message.
 
 ### Site overlay
 | Variable | Description |
@@ -314,6 +379,24 @@ Position values accept:
 ---
 
 ## Changes from previous version
+
+- **2026-10-29 (Claude Sonnet 5.5, Anthropic):** Borehole heat map. New
+  `BOREHOLE_HEATMAP` (default `False`), `BOREHOLE_HEATMAP_FILE`,
+  `BOREHOLE_HEAT_BINS`, `BOREHOLE_HEAT_NORM`, `BOREHOLE_HEAT_VMAX`,
+  `BOREHOLE_HEAT_CMAP`, `BOREHOLE_HEAT_SCALE` (`"linear"` / `"sqrt"` /
+  `"log"`), `BOREHOLE_HEAT_VMIN`, `BOREHOLE_HEAT_OVERLAY`, `BOREHOLE_HEAT_STYLE`,
+  `BOREHOLE_HEAT_PANEL_SIZE`, `BOREHOLE_HEAT_NCOLS`, `BOREHOLE_HEAT_NPZ` and
+  `BOREHOLE_LINES` (default `True`; `False` skips the `fviz` log figure); see
+  "Borehole heat map". The whole ensemble is sampled along `BOREHOLE_SITES` and
+  drawn in this script (`fviz.plot_borehole_logs` shows a single model), in
+  normal mode and in NPZ mode. Members outside the bin range are not drawn but
+  stay in the denominator; the auto colour maximum is the 99th percentile of
+  the non-zero fractions (linear / sqrt scale; the maximum for a log scale). With the new settings at their defaults the run is
+  unchanged (the `fviz.plot_borehole_logs` call has identical arguments;
+  tested with a stub). Heat maps checked against an independent histogram on a
+  synthetic mesh, normal mode equal to NPZ mode, and equal to the
+  `femtic_ens_post.py` heat map. AI-generated code -- review before production
+  use.
 
 - **2026-10-27b (Claude Sonnet 5.5, Anthropic):** Can work from the results
   `.npz` of `femtic_ens_post.py` (the file its new `PLOT_ONLY` mode reads):

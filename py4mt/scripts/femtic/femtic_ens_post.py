@@ -798,6 +798,35 @@ Provenance
             behaviour of masking every statistic panel). All other panels and
             the best panel (MOD_ALPHA_QC) are masked as before.
             AI-generated code -- review before production use.
+2026-10-29  Claude Sonnet 5.5 (Anthropic)
+            MOD_BH: new "heatmap" item for the "what" list -- a density
+            heat map of the ensemble behind the other borehole items. At
+            every depth level the members' log10(rho) are histogrammed
+            (_bh_heatmap) and drawn with pcolormesh (resistivity on the
+            log x axis, depth down); one shared colour bar per figure.
+            New settings MOD_BH_HEAT_BINS (int, or list of log10(rho)
+            edges; per-entry "heat_bins"), MOD_BH_HEAT_NORM ("fraction":
+            fraction of the members per bin, "row_max": each depth scaled
+            to its maximum), MOD_BH_HEAT_CMAP, MOD_BH_HEAT_SCALE ("linear" |
+            "sqrt" | "log" colour scale), MOD_BH_HEAT_VMIN, MOD_BH_HEAT_VMAX
+            (explicit limits show as arrows on the colour bar; a log scale
+            leaves empty bins blank), MOD_BH_HEAT_CBAR, and
+            MOD_BH_STYLE["heatmap"] (cmap and pcolormesh keywords,
+            overriding MOD_BH_HEAT_CMAP, default Greys). The bins span the panel's xlim (entry "xlim",
+            MOD_BH_XLIM, 10**MOD_CLIM) or, when none is set, the range of
+            the members; members outside it are not shown (fractions
+            still refer to all valid members). Auto colour maximum
+            (MOD_BH_HEAT_VMAX = None) = 99th percentile of the non-zero
+            fractions of the figure, so that levels with a single value in
+            every member (ocean, fixed regions) do not wash out the rest.
+            "heatmap" can be combined with "ensemble", "med", "sigma1", ...
+            (drawn on top of it) or used alone. The borehole .npz gets
+            heat_<name> (n_levels x n_bins fractions) and
+            heat_edges_<name> (log10 edges), and the header the number of
+            bins ("heat_bins") and the keys' unit text ("heat_unit").
+            Nothing changes unless "heatmap" is listed in a MOD_BH entry
+            (default entries unchanged). AI-generated code -- review
+            before production use.
 
     This script targets FEMTIC's current HDF5 output layout only.
     AI-generated code -- review before production use.
@@ -1523,6 +1552,16 @@ MOD_REF_LABEL = "reference model"
 #:               "ensemble"     every accepted member, thin lines drawn with
 #:                              opacity "alpha"
 #:               "best"         the best-nRMS member
+#:               "heatmap"      density heat map of the ensemble: at every
+#:                              depth level the members' log10(rho) are
+#:                              histogrammed (MOD_BH_HEAT_BINS bins across
+#:                              the panel's resistivity range) and shown as
+#:                              a colour image behind all other items; one
+#:                              colour bar per figure. See MOD_BH_HEAT_*.
+#:                              Combine freely with "ensemble" (lines on
+#:                              top of it), "med", "sigma1", ... Put it
+#:                              anywhere in "what" -- it is always drawn at
+#:                              the bottom.
 #:               "ref"          the reference model (MOD_REF_FILE); added
 #:                              automatically (drawn last, on top) when
 #:                              MOD_REF_BH is True; list it here to choose its
@@ -1533,6 +1572,10 @@ MOD_REF_LABEL = "reference model"
 #:             True. Default True.
 #:   "alpha" : opacity of the "ensemble" lines, 0..1. Default MOD_BH_ALPHA.
 #:   "xlim"  : [rho_min, rho_max] in Ohm.m for this panel (default MOD_BH_XLIM).
+#:   "heat_bins" : bins of the "heatmap" for this entry: an int (number of
+#:             equal bins in log10(rho) across the panel's xlim) or an
+#:             increasing list of log10(rho) bin edges. Default
+#:             MOD_BH_HEAT_BINS.
 #:   "style" : dict of per-entry style overrides, keyed like MOD_BH_STYLE.
 #: Air and out-of-mesh levels are left as gaps.
 MOD_BH = [
@@ -1580,7 +1623,7 @@ MOD_BH_XLIM = None
 #: (None = up to 4 columns). MOD_BH_PER_FIG = maximum panels per figure
 #: (None = all in one); further figures get a _01, _02, ... suffix. Useful
 #: with "sites".
-MOD_BH_PANEL_SIZE = [8.0, 16.0]
+MOD_BH_PANEL_SIZE = [16.0, 18.0]
 MOD_BH_NCOLS = 3
 MOD_BH_PER_FIG = 12
 #: True = all panels use one common depth range (union of the entries'
@@ -1588,6 +1631,54 @@ MOD_BH_PER_FIG = 12
 MOD_BH_SHARE_DEPTH = True
 #: Matplotlib legend location per panel; None = no legend.
 MOD_BH_LEGEND_LOC = "lower right"
+#: Heat map ("heatmap" in a MOD_BH entry's "what"): number of bins in
+#: log10(rho) across the panel's resistivity range (the entry's "xlim", else
+#: MOD_BH_XLIM, else 10**MOD_CLIM; if all are None, the range of the
+#: members' values at that borehole). May also be a list of log10(rho) bin
+#: edges. Members outside the range are not shown (e.g. ocean cells at
+#: 0.25 Ohm.m with xlim [1, 1e4]); the fractions still refer to all valid
+#: members, so such a level sums to less than 1. A per-entry "heat_bins"
+#: overrides this.
+MOD_BH_HEAT_BINS = 60
+#: Colour scale of the heat map, one scale (and one colour bar) per figure:
+#:   "fraction" : fraction of the valid members falling into a bin (a depth
+#:                level sums to 1 if all members are inside the range) --
+#:                comparable between depths, boreholes and ensembles of
+#:                different size.
+#:   "row_max"  : every depth level scaled to its own maximum (1 = most
+#:                populated bin) -- shows the shape of the distribution
+#:                even where it is broad (small fractions).
+#: The .npz always holds the fractions; "row_max" is a display option only.
+MOD_BH_HEAT_NORM = "fraction"
+#: Colormap of the heat map (any Matplotlib name; light = few members). A
+#: single-hue light-to-dark map ("Greys", "Blues", "Purples", ...) keeps the
+#: lines on top readable. MOD_BH_STYLE["heatmap"] or an entry's
+#: style=dict(heatmap=dict(cmap=...)) overrides it; the colour bar uses the
+#: cmap of the first panel that draws a heat map.
+MOD_BH_HEAT_CMAP = "Greys"
+#: Shape of the colour scale between MOD_BH_HEAT_VMIN and MOD_BH_HEAT_VMAX:
+#:   "linear" : colour proportional to the value (default; unchanged output)
+#:   "sqrt"   : square-root scale -- lifts the low densities, keeps the
+#:              peaks distinguishable
+#:   "log"    : logarithmic scale, over the decades between VMIN and VMAX
+#:              (default VMIN = smallest non-zero value of the figure, i.e.
+#:              one member); empty bins (0) are left blank.
+MOD_BH_HEAT_SCALE = "linear"
+#: Lower end of the colour scale. None = 0 ("linear" / "sqrt"); the smallest
+#: non-zero value of the figure ("log"; a log scale needs a value > 0). A
+#: number sets it explicitly, e.g. 0.02 to blank out bins holding less than
+#: 2 % of the members; values below it get the lowest colour (an arrow on the
+#: colour bar), and with "log" they are left out.
+MOD_BH_HEAT_VMIN = None
+#: Upper end of the colour scale ("fraction" norm; "row_max" is always 1).
+#: None = for "linear" / "sqrt" the 99th percentile of the non-zero fractions
+#: of all panels of the figure, so that a few levels in which every member has
+#: the same value (the ocean, fixed regions: fraction 1) do not wash out the
+#: rest (the colour bar then ends in an arrow); for "log" the maximum. A
+#: number sets it explicitly (1.0 = the full range).
+MOD_BH_HEAT_VMAX = None
+#: Draw the colour bar of the heat map (one per figure).
+MOD_BH_HEAT_CBAR = True
 #: Line style per drawn item, keyed "avg", "med", "best", "ensemble",
 #: "percentiles" (all percentile lines), a single percentile key such as
 #: "p50", or "sigma1" / "sigma2" (both lines of the pair). Any Matplotlib Line2D keyword is allowed. "percentiles" may carry
@@ -1602,7 +1693,26 @@ MOD_BH_STYLE = {
     "sigma1": dict(color="navy", lw=1.6, ls="--"),
     "sigma2": dict(color="steelblue", lw=1.2, ls=":"),
     "ref": dict(color="black", lw=2.2, ls="--"),
+    # heat map: any pcolormesh keyword, and "cmap" to override
+    # MOD_BH_HEAT_CMAP (the colour scale itself: MOD_BH_HEAT_SCALE / _VMIN /
+    # _VMAX; the colour bar uses the cmap of the first panel with a heat map)
+    "heatmap": dict(rasterized=True),
 }
+if MOD_BH_HEAT_NORM not in ("fraction", "row_max"):
+    raise ValueError(
+        f"MOD_BH_HEAT_NORM must be 'fraction' or 'row_max', "
+        f"got {MOD_BH_HEAT_NORM!r}."
+    )
+if MOD_BH_HEAT_SCALE not in ("linear", "sqrt", "log"):
+    raise ValueError(
+        f"MOD_BH_HEAT_SCALE must be 'linear', 'sqrt' or 'log', "
+        f"got {MOD_BH_HEAT_SCALE!r}."
+    )
+if MOD_BH_HEAT_VMIN is not None and MOD_BH_HEAT_VMIN < 0:
+    raise ValueError("MOD_BH_HEAT_VMIN must be >= 0 (or None).")
+if MOD_BH_HEAT_SCALE == "log" and MOD_BH_HEAT_VMIN is not None:
+    if MOD_BH_HEAT_VMIN <= 0:
+        raise ValueError("MOD_BH_HEAT_SCALE='log' needs MOD_BH_HEAT_VMIN > 0.")
 
 MOD_XLIM = None  # [xmin, xmax] model-local km; None = auto
 MOD_YLIM = None  # [ymin, ymax] model-local km; None = auto
@@ -2661,7 +2771,8 @@ def _bh_expand_what(what, value_keys):
     """Expand a MOD_BH "what" list to an ordered list of draw keys.
 
     "percentiles" -> one key per PERCENTILES level; "avg", "med", single
-    percentile keys, "ensemble" and "best" pass through. Unknown names are
+    percentile keys, "ensemble", "heatmap", "ref" and "best" pass through.
+    Unknown names are
     reported and dropped.
     """
     pct_keys = [
@@ -2675,13 +2786,13 @@ def _bh_expand_what(what, value_keys):
             new = pct_keys
         elif w in ("sigma1", "sigma2"):
             new = [w + "_lo", w + "_hi"]
-        elif w in ("ensemble", "best", "ref") or w in value_keys:
+        elif w in ("ensemble", "best", "ref", "heatmap") or w in value_keys:
             new = [w]
         else:
             print(
                 f"  MOD_BH: '{w}' is not available (use 'avg', 'med', "
                 f"'percentiles', a percentile key {pct_keys}, 'sigma1', "
-                f"'sigma2', 'ensemble', 'best' or 'ref') - skipped."
+                f"'sigma2', 'ensemble', 'heatmap', 'best' or 'ref') - skipped."
             )
             new = []
         keys += [k for k in new if k not in keys]
@@ -2733,11 +2844,179 @@ def _bh_values(vec, reg_lvl, fixed_log10, free_pos, rho_out=True):
     return 10.0**out if rho_out else out
 
 
+def _bh_glob_xlim():
+    """Default resistivity range [min, max] (Ohm.m) of the borehole panels.
+
+    MOD_BH_XLIM, else 10**MOD_CLIM, else None (auto).
+    """
+    if MOD_BH_XLIM is not None:
+        return list(MOD_BH_XLIM)
+    if MOD_CLIM is not None:
+        return [10.0 ** MOD_CLIM[0], 10.0 ** MOD_CLIM[1]]
+    return None
+
+
+def _bh_edges(spec, ens_rho):
+    """log10(rho) bin edges of the heat map of one borehole, or None.
+
+    ``spec["heat_bins"]`` (default MOD_BH_HEAT_BINS): a list of edges is used
+    as given; an int N gives N equal bins across the panel range (entry
+    "xlim", else MOD_BH_XLIM / MOD_CLIM), or across the range of the finite
+    member values (ens_rho, Ohm.m) when no range is set. None if there is
+    nothing to bin.
+    """
+    bins = spec.get("heat_bins", MOD_BH_HEAT_BINS)
+    if np.ndim(bins) > 0:
+        edges = np.asarray(bins, dtype=float)
+        if edges.ndim != 1 or edges.size < 2 or not np.all(np.diff(edges) > 0):
+            raise ValueError(
+                f"MOD_BH '{spec.get('name', '?')}': heat_bins must be an int "
+                f"or an increasing list of >= 2 log10(rho) edges."
+            )
+        return edges
+    nb = int(bins)
+    if nb < 1:
+        raise ValueError(
+            f"MOD_BH '{spec.get('name', '?')}': heat_bins must be >= 1."
+        )
+    xl = spec.get("xlim", _bh_glob_xlim())
+    if xl is not None:
+        lo, hi = np.log10(float(xl[0])), np.log10(float(xl[1]))
+    else:
+        ok = np.isfinite(ens_rho) & (ens_rho > 0)
+        if not ok.any():
+            return None
+        lg = np.log10(ens_rho[ok])
+        lo, hi = float(lg.min()), float(lg.max())
+        if hi - lo < 1.0e-6:
+            lo, hi = lo - 0.5, hi + 0.5
+    return np.linspace(lo, hi, nb + 1)
+
+
+def _bh_heatmap(ens_rho, edges):
+    """Per-depth histogram of the ensemble along a borehole.
+
+    ens_rho : (n_mem, n_lvl) resistivity in Ohm.m, NaN for air / outside.
+    edges   : (n_bins + 1,) increasing log10(rho) bin edges.
+
+    Returns (n_lvl, n_bins): fraction of the valid members of each level
+    falling into each bin. Members outside the edges are not binned but
+    still count in the denominator, so a row sums to less than 1 where part
+    of the ensemble lies outside the range (the last bin includes its upper
+    edge). Levels without a valid member are NaN.
+    """
+    ens_rho = np.asarray(ens_rho, dtype=float)
+    n_mem, n_lvl = ens_rho.shape
+    nb = len(edges) - 1
+    with np.errstate(invalid="ignore", divide="ignore"):
+        lg = np.log10(ens_rho)
+    valid = np.isfinite(lg)
+    inside = valid & (lg >= edges[0]) & (lg <= edges[-1])
+    idx = np.clip(np.searchsorted(edges, lg, side="right") - 1, 0, nb - 1)
+    flat = idx + nb * np.arange(n_lvl)[None, :]
+    counts = np.bincount(flat[inside], minlength=n_lvl * nb).reshape(n_lvl, nb)
+    n_val = valid.sum(axis=0).astype(float)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        frac = counts / n_val[:, None]
+    frac[n_val == 0, :] = np.nan
+    return frac
+
+
+def _bh_heat_display(frac):
+    """Heat map values as shown (MOD_BH_HEAT_NORM) from the fractions."""
+    if MOD_BH_HEAT_NORM == "row_max":
+        import warnings
+
+        with warnings.catch_warnings(), np.errstate(
+            invalid="ignore", divide="ignore"
+        ):
+            warnings.simplefilter("ignore", RuntimeWarning)  # all-NaN levels
+            return frac / np.nanmax(frac, axis=1, keepdims=True)
+    return frac
+
+
+def _bh_heat_style(spec):
+    """(cmap name, pcolormesh kwargs) of the heat map (MOD_BH_STYLE < entry)."""
+    st = {}
+    for layer in (MOD_BH_STYLE, spec.get("style", {})):
+        st.update(layer.get("heatmap", {}))
+    cmap = st.pop("cmap", MOD_BH_HEAT_CMAP)
+    return cmap, st
+
+
+def _bh_heat_log_ticks(norm):
+    """1-2-5 colour-bar ticks for a log scale of less than 3 decades (the
+    default shows only the powers of ten), else None."""
+    if np.log10(norm.vmax / norm.vmin) >= 3.0:
+        return None
+    cand = np.array([m * 10.0**e for e in range(-8, 2) for m in (1.0, 2.0, 5.0)])
+    tk = cand[(cand >= norm.vmin * (1 - 1e-9)) & (cand <= norm.vmax * (1 + 1e-9))]
+    return tk if tk.size >= 2 else None
+
+
+def _bh_heat_scale(heats):
+    """Colour scale of the heat map of one figure.
+
+    ``heats`` : the displayed arrays (_bh_heat_display) of its panels.
+    Returns (norm, extend): a Matplotlib Normalize (MOD_BH_HEAT_SCALE between
+    MOD_BH_HEAT_VMIN and MOD_BH_HEAT_VMAX / their automatic values) and the
+    colour-bar ``extend`` ("neither" / "min" / "max" / "both").
+    """
+    from matplotlib import colors
+
+    log = MOD_BH_HEAT_SCALE == "log"
+    fin = np.concatenate([h[np.isfinite(h)] for h in heats])
+    pos = fin[fin > 0]
+    d_max = float(pos.max()) if pos.size else 1.0
+    d_min = float(pos.min()) if pos.size else 1.0
+    if MOD_BH_HEAT_NORM == "row_max":
+        vmax = 1.0
+    elif MOD_BH_HEAT_VMAX is not None:
+        vmax = float(MOD_BH_HEAT_VMAX)
+    elif log or not pos.size:
+        vmax = d_max
+    else:
+        vmax = float(np.percentile(pos, 99.0))
+    if MOD_BH_HEAT_VMIN is not None:
+        vmin = float(MOD_BH_HEAT_VMIN)
+    else:
+        vmin = d_min if log else 0.0
+    if not vmax > vmin:  # e.g. one value only, or an unlucky explicit pair
+        vmax = vmin * 10.0 if log else vmin + 1.0
+    # data beyond the scale -> arrows on the colour bar (zeros are blank on a
+    # log scale, so they do not count there)
+    lo = d_min if log else (float(fin.min()) if fin.size else 0.0)
+    ext_min = lo < vmin * (1.0 - 1.0e-9)
+    ext_max = d_max > vmax * (1.0 + 1.0e-9)
+    extend = {(0, 0): "neither", (1, 0): "min", (0, 1): "max", (1, 1): "both"}[
+        (int(ext_min), int(ext_max))
+    ]
+    if log:
+        norm = colors.LogNorm(vmin=vmin, vmax=vmax)
+    elif MOD_BH_HEAT_SCALE == "sqrt":
+        norm = colors.PowerNorm(0.5, vmin=vmin, vmax=vmax)
+    else:
+        norm = colors.Normalize(vmin=vmin, vmax=vmax)
+    return norm, extend
+
+
+def _bh_depth_edges(depth):
+    """Cell edges (n + 1) for the depth levels (cell centres), z-down."""
+    d = np.asarray(depth, dtype=float)
+    if d.size == 1:
+        return np.array([d[0] - 0.5, d[0] + 0.5])
+    mid = 0.5 * (d[1:] + d[:-1])
+    first = d[0] - 0.5 * (d[1] - d[0])
+    last = d[-1] + 0.5 * (d[-1] - d[-2])
+    return np.concatenate(([first], mid, [last]))
+
+
 def _plot_boreholes(profiles, plot_base):
     """One figure with a resistivity-depth panel per borehole profile.
 
     ``profiles`` : list of dicts built in step (9): name, pos_str, spec,
-    depth (m, z-down), lines {key: rho(n_lvl)}, ens (n_mem, n_lvl) or None.
+    depth (m, z-down), lines {key: rho(n_lvl)}, ens (n_mem, n_lvl) or None,
+    heat (n_lvl, n_bins) fractions and heat_edges (log10 rho) or None.
     The figure is built once and saved once per MOD_PLOT_FORMAT entry.
     """
     import matplotlib.pyplot as plt
@@ -2757,19 +3036,47 @@ def _plot_boreholes(profiles, plot_base):
     scale = 1000.0 if MOD_DEPTH_KM else 1.0
     tick_fs, label_fs = MOD_TICK_FONTSIZE, MOD_LABEL_FONTSIZE
 
-    if MOD_BH_XLIM is not None:
-        glob_xlim = list(MOD_BH_XLIM)
-    elif MOD_CLIM is not None:
-        glob_xlim = [10.0 ** MOD_CLIM[0], 10.0 ** MOD_CLIM[1]]
-    else:
-        glob_xlim = None
+    glob_xlim = _bh_glob_xlim()
+
+    # heat map: one colour scale for the whole figure
+    heats = [
+        _bh_heat_display(pr["heat"])
+        for pr in profiles
+        if "heatmap" in pr["order"] and pr.get("heat") is not None
+    ]
+    heat_norm, heat_extend = _bh_heat_scale(heats) if heats else (None, "neither")
+    heat_mesh = None
 
     for k, (ax, pr) in enumerate(zip(axs, profiles)):
         spec, depth = pr["spec"], pr["depth"] / scale
         pct_keys = [q for q in pr["lines"] if q.startswith("p")]
         handles = []
+        # heat map first (bottom layer, zorder 0), whatever its place in "what"
+        has_heat = "heatmap" in pr["order"] and pr.get("heat") is not None
+        if has_heat:
+            hcmap, hkw = _bh_heat_style(spec)
+            hkw.setdefault("shading", "flat")
+            hval = _bh_heat_display(pr["heat"])
+            # NaN (air) is always blank; on a log scale so are the empty bins
+            hval = np.ma.masked_where(
+                ~(hval > 0) if MOD_BH_HEAT_SCALE == "log" else ~np.isfinite(hval),
+                hval,
+            )
+            mesh = ax.pcolormesh(
+                10.0 ** pr["heat_edges"],
+                _bh_depth_edges(depth),
+                hval,
+                cmap=hcmap,
+                norm=heat_norm,
+                zorder=0,
+                **hkw,
+            )
+            if heat_mesh is None:
+                heat_mesh = mesh
         # draw in the order given by "what"
         for key in pr["order"]:
+            if key == "heatmap":
+                continue
             if key == "ensemble":
                 ens = pr["ens"]
                 st = _bh_style("ensemble", spec)
@@ -2816,6 +3123,8 @@ def _plot_boreholes(profiles, plot_base):
 
         ax.set_xscale("log")
         xl = spec.get("xlim", glob_xlim)
+        if xl is None and has_heat:  # auto range: the heat map's own range
+            xl = [10.0 ** pr["heat_edges"][0], 10.0 ** pr["heat_edges"][-1]]
         if xl is not None:
             ax.set_xlim(xl)
         ax.set_title(f"{pr['name']}\n{pr['pos_str']}", fontsize=tick_fs - 2)
@@ -2854,6 +3163,31 @@ def _plot_boreholes(profiles, plot_base):
         fontsize=MOD_TITLE_FONTSIZE,
     )
     fig.tight_layout(rect=(0, 0, 1, 0.94))
+    if heat_mesh is not None and MOD_BH_HEAT_CBAR:
+        # one shared colour bar, added after tight_layout so that it only
+        # takes its space from the panels
+        cb = fig.colorbar(
+            heat_mesh,
+            ax=list(axs[:n]),
+            location="right",
+            fraction=0.03,
+            pad=0.02,
+            shrink=0.6,
+            extend=heat_extend,
+        )
+        cb.set_label(
+            "fraction of ensemble members per bin"
+            if MOD_BH_HEAT_NORM == "fraction"
+            else "fraction of the per-depth maximum",
+            fontsize=label_fs,
+        )
+        cb.ax.tick_params(labelsize=tick_fs)
+        if MOD_BH_HEAT_SCALE == "log" and _bh_heat_log_ticks(heat_norm) is not None:
+            from matplotlib import ticker
+
+            cb.set_ticks(_bh_heat_log_ticks(heat_norm))
+            cb.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter("%g"))
+            cb.ax.minorticks_off()
     for _fmt in _MOD_PLOT_FORMATS:
         _f = f"{plot_base}.{_fmt}"
         fig.savefig(_f, dpi=MOD_DPI, bbox_inches="tight")
@@ -4044,7 +4378,8 @@ if MOD_STATS:
 # --- (9) Borehole profiles (optional, MOD_BH) -----------------------------
 # Resistivity-depth profiles at the MOD_BH positions: ensemble statistics
 # (avg / med / percentiles), all members ("ensemble", drawn with opacity
-# "alpha") and/or the best member. The element search is done once per
+# "alpha"), a density heat map of the members ("heatmap") and/or the best
+# member. The element search is done once per
 # borehole; each statistic / member then costs one array lookup.
 _bh_ready = False
 if MOD_BH:
@@ -4229,7 +4564,7 @@ if _bh_ready:
             _order.append("ref")
         _lines = {}
         for _k in _order:
-            if _k == "ensemble":
+            if _k in ("ensemble", "heatmap"):
                 continue
             if _k == "ref":
                 _lines[_k] = np.where(
@@ -4245,11 +4580,30 @@ if _bh_ready:
             else:
                 _vec = _stat_map[_k][0]
             _lines[_k] = _bh_values(_vec, _reg, _bh_fixed, _bh_fpos)
-        _ens = (
+        # all members along the borehole: needed for the "ensemble" lines and
+        # for the "heatmap" histogram
+        _ens_all = (
             _bh_values(ens_matrix, _reg, _bh_fixed, _bh_fpos)
-            if "ensemble" in _order
+            if ("ensemble" in _order or "heatmap" in _order)
             else None
         )
+        _ens = _ens_all if "ensemble" in _order else None
+        _heat = _heat_edges = None
+        if "heatmap" in _order:
+            try:
+                _heat_edges = _bh_edges(_spec, _ens_all)
+                if _heat_edges is None:
+                    print(f"  MOD_BH '{_nm}': heat map - nothing to bin.")
+            except ValueError as _e:
+                print(f"  {_e} - heat map skipped.")
+            if _heat_edges is None:
+                _order = [_k for _k in _order if _k != "heatmap"]
+            else:
+                _heat = _bh_heatmap(_ens_all, _heat_edges)
+                print(
+                    f"  {_nm}: heat map, {_heat.shape[1]} bins, "
+                    f"{MOD_BH_HEAT_NORM} colour scale"
+                )
         _bh_profiles.append(
             dict(
                 name=_nm,
@@ -4259,6 +4613,8 @@ if _bh_ready:
                 order=_order,
                 lines=_lines,
                 ens=_ens,
+                heat=_heat,
+                heat_edges=_heat_edges,
             )
         )
 
@@ -4268,6 +4624,10 @@ if _bh_ready:
             _bh_npz[f"{_k}_{_safe}"] = _v
         if _ens is not None:
             _bh_npz[f"ensemble_{_safe}"] = _ens
+        if _heat is not None:
+            # fractions (n_levels, n_bins); edges in log10(Ohm.m)
+            _bh_npz[f"heat_{_safe}"] = _heat
+            _bh_npz[f"heat_edges_{_safe}"] = _heat_edges
         _bh_hdr.append(
             dict(
                 name=_nm,
@@ -4279,7 +4639,10 @@ if _bh_ready:
                 z_bot_m=float(_zb),
                 dz_m=float(_dz),
                 n_levels=int(_depth.size),
-                keys=list(_lines) + (["ensemble"] if _ens is not None else []),
+                keys=list(_lines)
+                + (["ensemble"] if _ens is not None else [])
+                + (["heatmap"] if _heat is not None else []),
+                heat_bins=None if _heat is None else int(_heat.shape[1]),
             )
         )
 
@@ -4293,6 +4656,12 @@ if _bh_ready:
                         ensemble_prefix=ENSEMBLE_PREFIX,
                         depth_unit="m, z positive-down, model datum",
                         rho_unit="Ohm.m (NaN = air / outside mesh)",
+                        heat_unit=(
+                            "heat_<name>: (n_levels, n_bins) fraction of the "
+                            "valid members per bin (rows sum to 1 when all "
+                            "members are inside the edges); "
+                            "heat_edges_<name>: bin edges in log10(Ohm.m)"
+                        ),
                         members=[m[0] for m in model_list],
                         best_member=_best_file,
                         reference_file=(

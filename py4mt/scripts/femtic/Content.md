@@ -99,7 +99,7 @@ femtic_ens_post.py   →  ensemble statistics (see below)
 |--------|---------|
 | `femtic_archive_run.py` | Clean and optionally archive FEMTIC iteration directories: keep lowest / highest N iterations, protect specified files (by token or suffix), delete the rest (dry-run by default), compress to `.zip` or `.tgz`. |
 | `femtic_clean.py` | Delete all files in a list of directories (names or globs) except a list of protected file patterns (`dirs='./fem*' files=['a.dat', 'b.h5', 'x*iter*.dat']`). Dry run by default, `--delete` to act; optional recursion; refuses an empty protect list, a protected pattern that matches nothing, and `/` or the home directory. Standard library only. |
-| `femtic_summarize_model_cells.py` | Print element composition (air, ocean, other-fixed, free) for one or more `resistivity_block_iterXX.dat` files; optional `--ocean yes/no` override. Falls back to a self-contained parser if `femtic.py` is unavailable. |
+| `femtic_summarize_model.py` | Print the problem size for one or more `resistivity_block_iterXX.dat` files (air, ocean, other-fixed and free regions, free distortion parameters, Jacobian columns) and the model size (x, y, z range of `mesh.dat`); tetrahedral and hexahedral (also deformed) meshes, cell type read from `mesh.dat`. Optional `CELL_STATS`: model volume and min / median / max cell volume (numpy). Optional LaTeX table. Parses the files itself, does not import `femtic.py`. Renamed from `femtic_summarize_model_cells.py`. |
 | `femtic_summarize_observe_dat.py` | Print data content (sites, frequencies, data-vector size, observation types: MT/VTF/PT) for one or more `observe.dat` files. Falls back to a minimal parser if `femtic.py` is unavailable. |
 
 ---

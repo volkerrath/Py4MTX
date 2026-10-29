@@ -100,7 +100,7 @@ FEMTIC is a 3-D finite-element MT inversion code (Yoshiya Usui).
 | Script | Purpose |
 |--------|---------|
 | `femtic/femtic_archive_run.py` | Clean and archive FEMTIC iteration directories; keep selected iterations, protect specified files, compress. |
-| `femtic/femtic_summarize_model_cells.py` | Print element composition (air, ocean, fixed, free) for one or more `resistivity_block_iter*.dat` files. |
+| `femtic/femtic_summarize_model.py` | Print problem size (regions, free distortion parameters, Jacobian columns) and model size for one or more `resistivity_block_iter*.dat` files; tetrahedral and hexahedral (also deformed) meshes; optional cell volume statistics. |
 | `femtic/femtic_summarize_observe_dat.py` | Print data content (sites, frequencies, types: MT/VTF/PT) for one or more `observe.dat` files. |
 
 ---

@@ -547,14 +547,24 @@ Optional for visualisation and export:
 | `femtic_rto_rough.py` | Extract roughness matrix from FEMTIC.                               |
 | `femtic_rto_prior.py` | Build prior covariance proxy.                                       |
 | `femtic_rto_prep.py`  | Generate RTO ensemble.                                              |
-| `femtic_summarize_model_cells.py` | CLI: cell-count summary for `resistivity_block_iterXX.dat`. Delegates to `summarise_model_file()`; self-contained fallback when `femtic.py` is not on the path. |
+| `femtic_summarize_model.py` | CLI: problem-size and model-size summary for `resistivity_block_iterXX.dat` (tetrahedral and hexahedral meshes). Parses the files itself; does not import `femtic.py`. Renamed from `femtic_summarize_model_cells.py`. |
 | `femtic_summarize_observe_dat.py` | CLI: data-content summary for `observe.dat`. Delegates to `summarise_observe_dat()`; self-contained fallback when `femtic.py` is not on the path. |
 
 ---
 
 ## Version / provenance
 
-Updated: 2026-10-22
+Updated: 2026-10-28
+
+### Changelog (2026-10-28)
+- Documentation only, no change to `femtic.py`: in "Related modules and
+  scripts", the CLI summary script is now listed as
+  `femtic_summarize_model.py` (renamed from
+  `femtic_summarize_model_cells.py` by Claude Sonnet 5.5 (Anthropic),
+  2026-10-28, via the interim name `summarize_model.py`). The old row text (delegates to
+  `summarise_model_file()`, self-contained fallback) no longer described the
+  script, which parses the files itself and does not import `femtic.py`.
+  The older changelog entries below keep the former name, as it was then.
 
 ### Changelog (2026-06-22)
 - **v5 (anisotropic) resistivity-block format support** added throughout.

@@ -47,6 +47,7 @@ Ensemble sub-directories  (rto_*, gst_*, member_*, …)
           ├──▶  MOD_STATS = True  →  block files + slice figures for each stat
           │
           └──▶  MOD_BH = [...]    →  1-D resistivity-depth profiles at boreholes
+                                (lines, member lines, ensemble heat map)
 ```
 
 **Plotting config is shared with `femtic_gst_prep.py` / `femtic_rto_prep.py`.**
@@ -482,7 +483,8 @@ of its figure, and shows sites within `MOD_PROJECTION_DIST` when
 
 1-D resistivity-depth profiles through the ensemble at one or more vertical
 "boreholes": ensemble statistics, every member (drawn semi-transparent),
-and/or the best member, one panel per borehole, all in one figure.
+a density **heat map** of the ensemble (`"heatmap"`), and/or the best member,
+one panel per borehole, all in one figure.
 `MOD_BH` is a list of dicts in the same spirit as `MOD_SLICES`; an empty
 list (`MOD_BH = []`) switches the block off. It runs as step (9), after the
 slice figures, and works from the same in-memory ensemble (`ens_matrix` and
@@ -497,10 +499,11 @@ the statistics), so no extra block files are written.
 | `z_top` | Float km (z down, model datum) or `"surface"` (default) = top of the first non-air element at (x, y); offshore that is the sea surface, so give a float to start at the sea floor. Resolved to about dz/5. |
 | `z_bot` | Float km. Default `MOD_ZLIM[1]` if set (after `MOD_ROI_AUTO`), else 20 km. |
 | `dz` | Sampling interval, km. Default 0.05. |
-| `what` | List of items to draw, in drawing order: `"avg"` (ensemble mean of log10 rho), `"med"`, `"percentiles"` (one line per `PERCENTILES` level), single percentile keys (`"p50"`, `"p15_9"`, ... as in `MOD_STATS_WHAT`), `"sigma1"` / `"sigma2"` (the 1- / 2-sigma quantile pairs P15.87 / P84.13 and P2.28 / P97.72 of the members in log10 rho, two lines each, computed directly, so independent of `PERCENTILES`), `"ensemble"` (all accepted members), `"best"` (best-nRMS member), `"ref"` (the reference model, `MOD_REF_FILE`; added automatically as the last item when `MOD_REF_BH` is `True`). Default `["avg", "percentiles"]`. Unknown names are reported and skipped. |
+| `what` | List of items to draw, in drawing order: `"avg"` (ensemble mean of log10 rho), `"med"`, `"percentiles"` (one line per `PERCENTILES` level), single percentile keys (`"p50"`, `"p15_9"`, ... as in `MOD_STATS_WHAT`), `"sigma1"` / `"sigma2"` (the 1- / 2-sigma quantile pairs P15.87 / P84.13 and P2.28 / P97.72 of the members in log10 rho, two lines each, computed directly, so independent of `PERCENTILES`), `"ensemble"` (all accepted members), `"heatmap"` (density heat map of the members, always drawn at the bottom; see "Heat map" below), `"best"` (best-nRMS member), `"ref"` (the reference model, `MOD_REF_FILE`; added automatically as the last item when `MOD_REF_BH` is `True`). Default `["avg", "percentiles"]`. Unknown names are reported and skipped. |
 | `ref` | `False` switches the automatic reference line off for this entry (when `MOD_REF_BH` is `True`). Default `True`. |
 | `alpha` | Opacity (0..1) of the `"ensemble"` lines. Default `MOD_BH_ALPHA`. Only used when `"ensemble"` is in `what`. |
-| `xlim` | `[rho_min, rho_max]` in Ohm.m for this panel (default `MOD_BH_XLIM`). |
+| `xlim` | `[rho_min, rho_max]` in Ohm.m for this panel (default `MOD_BH_XLIM`). With `"heatmap"`: also the range of the bins. |
+| `heat_bins` | Bins of the `"heatmap"` of this entry: an int (equal bins in log10 rho across the panel's x range) or an increasing list of log10(rho) bin edges. Default `MOD_BH_HEAT_BINS`. |
 | `style` | Per-entry style overrides, keyed like `MOD_BH_STYLE`, e.g. `dict(avg=dict(color="navy", lw=3))`. |
 
 Median and 1-sigma quantiles over a faint ensemble (the default entry);
@@ -518,6 +521,8 @@ MOD_BH = [
          what=["avg", "percentiles", "ensemble"], alpha=0.15),
     dict(name="BH-2", x=2.0, y=-3.0, z_top=0.0, z_bot=6.0,
          what=["med", "p15_9", "p84_1", "best"]),
+    dict(sites=["SITE01", "SITE07"], z_bot=5.0, xlim=[1.0, 1.0e4],      # heat map
+         what=["heatmap", "med", "sigma1"]),                            # + lines on top
 ]
 ```
 
@@ -534,13 +539,69 @@ Global settings:
 | `MOD_BH_PER_FIG` | `None` | Maximum panels per figure; further figures get `_01`, `_02`, ... suffixes. Useful with `sites`. `None` = all in one. |
 | `MOD_BH_SHARE_DEPTH` | `True` | One common depth range (union over all entries) for all panels. |
 | `MOD_BH_LEGEND_LOC` | `"lower right"` | Legend position; `None` = no legend. |
-| `MOD_BH_STYLE` | see script | Line style per item: `"avg"`, `"med"`, `"best"`, `"ensemble"`, `"percentiles"` (all percentile lines), one percentile key, or `"sigma1"` / `"sigma2"` (both lines of the pair; defaults navy dashed / steelblue dotted). Any Matplotlib `Line2D` keyword; `"percentiles"` may carry `"cmap"` (default `"viridis"`) to colour the lines by level. |
+| `MOD_BH_STYLE` | see script | Line style per item: `"avg"`, `"med"`, `"best"`, `"ensemble"`, `"percentiles"` (all percentile lines), one percentile key, or `"sigma1"` / `"sigma2"` (both lines of the pair; defaults navy dashed / steelblue dotted). Any Matplotlib `Line2D` keyword; `"percentiles"` may carry `"cmap"` (default `"viridis"`) to colour the lines by level. `"heatmap"` takes any `pcolormesh` keyword (default `dict(rasterized=True)`) and `cmap` to override `MOD_BH_HEAT_CMAP`; the colour scale itself is set by the `MOD_BH_HEAT_*` settings. |
+| `MOD_BH_HEAT_BINS` | `60` | Heat map: number of equal bins in log10 rho across the panel's x range (entry `xlim`, else `MOD_BH_XLIM`, else `10**MOD_CLIM`; if none is set, the range of the member values at that borehole), or a list of log10(rho) bin edges. Per-entry `heat_bins` overrides it. |
+| `MOD_BH_HEAT_NORM` | `"fraction"` | Colour scale: `"fraction"` = fraction of the members per bin (a depth level sums to 1 when all members are inside the range), `"row_max"` = every depth level scaled to its own maximum (0..1). Anything else stops the run at start. |
+| `MOD_BH_HEAT_CMAP` | `"Greys"` | Colormap of the heat map (light = few members). A single-hue light-to-dark map (`"Greys"`, `"Blues"`, `"Purples"`, ...) keeps the lines on top readable. `MOD_BH_STYLE["heatmap"]` or an entry's `style=dict(heatmap=dict(cmap=...))` overrides it; the colour bar uses the cmap of the first panel with a heat map. |
+| `MOD_BH_HEAT_SCALE` | `"linear"` | Shape of the colour scale: `"linear"`, `"sqrt"` (square root: lifts low densities, keeps peaks distinguishable) or `"log"` (logarithmic between `MOD_BH_HEAT_VMIN` and `MOD_BH_HEAT_VMAX`; empty bins are left blank; 1-2-5 colour-bar ticks when the range is under 3 decades). One scale per figure. Anything else stops the run at start. |
+| `MOD_BH_HEAT_VMIN` | `None` | Lower end of the colour scale. `None` = 0 (`"linear"` / `"sqrt"`) or the smallest non-zero fraction of the figure (`"log"`, which needs a value > 0). A number sets it, e.g. `0.02` to blank out bins holding less than 2 % of the members (an arrow on the colour bar marks values below it). |
+| `MOD_BH_HEAT_VMAX` | `None` | Upper end of the colour scale (`"row_max"` is always 1). `None` = for `"linear"` / `"sqrt"` the 99th percentile of the non-zero fractions of the figure (the colour bar ends in an arrow), for `"log"` the maximum; `1.0` = full range. |
+| `MOD_BH_HEAT_CBAR` | `True` | Draw the shared colour bar of the heat map (one per figure). |
 
 Shared with the slice figures: `MOD_PLOT_FORMAT`, `MOD_DPI`, `MOD_CLIM`
 (x range), `MOD_TICK_FONTSIZE` / `MOD_LABEL_FONTSIZE` / `MOD_TITLE_FONTSIZE`,
 `MOD_DEPTH_KM`, `MOD_DISPLAY_COORDS` (panel-title coordinates),
 `MOD_OCEAN` / `MOD_OCEAN_RHO`, `MOD_MESH`, and the UTM-origin resolution of
 step (5) (needed for `"utm"` / `"latlon"` positions).
+
+#### Heat map
+
+`"heatmap"` in `what` shows the whole ensemble as a density image: at every
+depth level the log10 resistivities of the members are histogrammed
+(`MOD_BH_HEAT_BINS` bins) and drawn with `pcolormesh` behind all other items
+(depth axis down, log resistivity axis). It sits on a single colour scale per
+figure, with one colour bar; the colormap is taken from the first panel that
+draws a heat map. It can be used alone or combined with any other item, e.g.
+`what=["heatmap", "med", "sigma1"]` (lines on top of the image) or
+`["heatmap", "ensemble"]`.
+
+Colour scale examples (settings at the top of the script):
+
+```python
+MOD_BH_HEAT_SCALE = "log"       # logarithmic colours, empty bins blank
+MOD_BH_HEAT_VMIN = 0.05         # ignore bins with < 5 % of the members
+MOD_BH_HEAT_CMAP = "Blues"      # single-hue colormap
+MOD_BH_HEAT_NORM = "row_max"    # or scale every depth to its own maximum
+```
+
+- **What a cell means.** With `MOD_BH_HEAT_NORM = "fraction"` the colour is
+  the fraction of the valid members whose resistivity at that depth falls into
+  the bin. This is comparable between depths and boreholes. `"row_max"`
+  rescales each depth to its most populated bin and shows the shape of broad
+  distributions better.
+- **Range.** The bins span the panel's x range, so what you see is exactly
+  what is binned. Members outside that range are not drawn (e.g. ocean cells
+  at 0.25 Ohm.m with an x range of 1 ... 1e4 Ohm.m), but still count in the
+  denominator, so such a level sums to less than 1 and ocean levels stay empty
+  instead of piling up in the first bin. Widen `xlim` to see them.
+- **Air / outside the mesh** are blank (NaN rows), as for the lines.
+- **Colour scale.** `MOD_BH_HEAT_SCALE` (`"linear"` / `"sqrt"` / `"log"`),
+  `MOD_BH_HEAT_VMIN` and `MOD_BH_HEAT_VMAX` set the scale of the whole figure;
+  `MOD_BH_HEAT_CMAP` the colormap. Values outside an explicit range get the end
+  colours and an arrow on the colour bar. On a log scale the empty bins (and
+  the air) are blank, so the colours only show where members are.
+- **Auto colour maximum.** Levels in which every member has the same value
+  (the ocean, other fixed regions) have fraction 1 and would flatten the rest of
+  the image on a linear scale, so `MOD_BH_HEAT_VMAX = None` uses the 99th
+  percentile of the non-zero fractions (`"linear"` / `"sqrt"`) and marks the
+  clipped end with an arrow on the colour bar; a log scale shows the whole range.
+- **Cost.** The members are sampled once per borehole (one array lookup each),
+  as for `"ensemble"`; the histogram is one `bincount` per borehole.
+- **Export.** The `.npz` gets `heat_<name>` (`n_levels x n_bins` fractions,
+  independent of `MOD_BH_HEAT_NORM`) and `heat_edges_<name>` (log10 Ohm.m bin
+  edges). `"ensemble"` lines are only drawn / exported when `"ensemble"` is in
+  `what`.
+- An invalid `heat_bins` is reported and only that entry's heat map is skipped.
 
 Notes:
 
@@ -652,9 +713,12 @@ pipeline.
 `<MOD_BH_FILE>.<fmt>` (one per `MOD_PLOT_FORMAT` entry) and, if `MOD_BH_NPZ`,
 `<MOD_BH_FILE>.npz` with `depth_<name>` (m, z down), one array per drawn item
 `<key>_<name>` (`avg`, `med`, `p50`, `best`, `ref`, ... in Ohm.m, NaN = air /
-outside mesh), `ensemble_<name>` (`n_members x n_levels`, only if drawn) and a
-JSON `header` (member files, best member, `reference_file` (null without a
-reference), percentile levels, per-borehole position, z range and keys).
+outside mesh), `ensemble_<name>` (`n_members x n_levels`, only if drawn),
+`heat_<name>` (`n_levels x n_bins` fraction of the members per bin) and
+`heat_edges_<name>` (`n_bins + 1` bin edges in log10 Ohm.m), both only with
+`"heatmap"`, and a JSON `header` (member files, best member, `reference_file`
+(null without a reference), percentile levels, `heat_unit`, per-borehole
+position, z range, keys and `heat_bins`).
 
 ## Quick start
 
@@ -745,3 +809,4 @@ correct.
 | 2026-10-27b | Claude Sonnet 5.5 (Anthropic) | **Plot-only mode.** New `PLOT_ONLY` (default `False`), `PLOT_ONLY_NPZ`, `PLOT_ONLY_TEMPLATE`: with `PLOT_ONLY=True` steps (1)-(4b) are replaced by reading the existing results `.npz` and steps (5)-(9) (best panel, `MOD_STATS_WHAT` panels, `MOD_ALPHA_SOURCE`, boreholes, nRMS histogram from `NRMS_CSV`) run unchanged on the rebuilt variables; nothing is scanned or recomputed and the `.npz` is never rewritten. Percentile levels come from the file; missing `avg ... mad / prc` are recomputed from the stored members. Template = best member's block file from the `.npz`, or `PLOT_ONLY_TEMPLATE` (then the best panel is drawn from the stored best vector). Default `MOD_STATS_WHAT` / `MOD_STATS_STYLE` list the sens / simrc / bootstrap entries regardless of the `COMPUTE_*` flags in this mode. The scan / statistics block is indented under `else:` of `if PLOT_ONLY:`; the full-run path is otherwise unchanged (figures, `.npz` and borehole `.npz` identical to the previous version on a synthetic ensemble; plot-only figures pixel-identical to the full run that wrote the file). `femtic_ens_plot.py` gained the matching `RESULTS_NPZ` mode. AI-generated; review before production use. |
 | 2026-10-27c | Claude Sonnet 5.5 (Anthropic) | New `ITER_FALLBACK` (default `True`): when the best-nRMS iteration N has no `resistivity_block_iter<N>.dat`, the member is no longer dropped as `no_model_file` but represented by the best iteration that has a block file (usually N-1), with `NRMS_MAX` checked against that iteration's nRMS. New `NRMS_CSV` status `accepted_fallback` (counted as accepted in the histogram, whose legend shows how many members use a fallback iteration). `ITER_FALLBACK=False` = previous behaviour; with nothing missing the results are identical to the previous version. AI-generated; review before production use. |
 | 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The `MOD_ALPHA_SOURCE` mask is no longer applied to the sensitivity panels themselves (`sens_*`, `simrc_*`): shading a sensitivity map by sensitivity is circular. New `MOD_ALPHA_EXCLUDE` (key prefixes, default `("sens_", "simrc_")`; `()` restores masking of every panel). Other panels and the best panel (`MOD_ALPHA_QC`) are unchanged. AI-generated; review before production use. |
+| 2026-10-29 | Claude Sonnet 5.5 (Anthropic) | `MOD_BH`: new `"heatmap"` item for `what` (density heat map of the ensemble along the borehole: per-depth histogram of the members' log10 rho, `pcolormesh` behind the other items, one shared colour bar per figure). New globals `MOD_BH_HEAT_BINS`, `MOD_BH_HEAT_NORM` (`"fraction"` / `"row_max"`), colour scale `MOD_BH_HEAT_CMAP` (default `Greys`), `MOD_BH_HEAT_SCALE` (`"linear"` / `"sqrt"` / `"log"`), `MOD_BH_HEAT_VMIN`, `MOD_BH_HEAT_VMAX`, `MOD_BH_HEAT_CBAR`, `MOD_BH_STYLE["heatmap"]` (pcolormesh keywords), per-entry `heat_bins`. Members outside the bin range are not drawn but stay in the denominator; auto colour maximum = 99th percentile of the non-zero fractions (linear / sqrt). `.npz`: `heat_<name>`, `heat_edges_<name>`; header: `heat_unit`, `heat_bins`. Nothing changes unless `"heatmap"` is listed in an entry: with the default `MOD_BH` the borehole figure is pixel-identical and the `.npz` arrays identical to the previous version (tested on a synthetic mesh); heat maps checked against an independent histogram. AI-generated; review before production use. |
