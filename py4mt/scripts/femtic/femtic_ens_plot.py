@@ -22,7 +22,8 @@ NRMS_MAX threshold), then produces:
 
   (2) Optionally, a borehole resistivity log figure (same as step (6) in
       femtic_mod_plot.py), sampled from the first converged member's
-      best-fit model, and/or (BOREHOLE_HEATMAP) a heat map of the whole
+      best-fit model (ENS_MODEL_SOURCE = "perturbed": its perturbed
+      reference), and/or (BOREHOLE_HEATMAP) a heat map of the whole
       ensemble along the same boreholes: at every depth the members'
       log10(rho) are histogrammed and shown as a colour image, with the
       median / quantile lines on top.
@@ -338,6 +339,27 @@ Provenance
                 line keywords). With the new settings at their defaults the
                 run is unchanged. AI-generated code -- review before
                 production use.
+    2026-10-31  Claude Sonnet 5.5 (Anthropic)
+                New ENS_MODEL_SOURCE ("converged" default | "perturbed") and
+                ENS_PERTURBED_FILE (default "referencemodel.dat"): the
+                borehole figures can use each member's PERTURBED REFERENCE
+                (the RTO prior draw femtic_rto_prep.py writes per member)
+                instead of its converged model: the heat map
+                (BOREHOLE_HEATMAP: all members) and the line log
+                (BOREHOLE_LINES: the first member). The member set is
+                unchanged (NRMS_MAX etc.); REF_FILE, the base unperturbed
+                reference, is drawn as before. A missing file skips the
+                member; a symbolic link (shared, unperturbed) is reported.
+                The per-member iter0 / best-fit slice figures are not
+                affected; a note is printed when resistivity_block_iter0.dat
+                is a symbolic link (the "perturbed prior" figure then shows
+                the shared template prior, not the member's draw). NPZ mode:
+                ENS_MODEL_SOURCE is ignored, the file decides - it stores
+                <P>_model_source since femtic_ens_post.py 2026-10-31 (older
+                files: converged); titles, the heat-map header
+                ("ensemble_source") and the member figure say so. With the
+                default the run is unchanged. AI-generated code -- review
+                before production use.
 
 @author: vrath
 """
@@ -429,6 +451,37 @@ NRMS_MAX = 1.5
 #: member, in the order directories are found.  None → use each member
 #: directory's basename.
 ENS_LABELS = None
+
+#: Which model of each member the ENSEMBLE-based borehole figures use (the
+#: heat map, BOREHOLE_HEATMAP, and the line log of the first member,
+#: BOREHOLE_LINES):
+#:   "converged" (default) -- the member's best-fit model,
+#:       resistivity_block_iter<N>.dat.
+#:   "perturbed" -- the member's PERTURBED REFERENCE (the RTO prior draw): the
+#:       file ENS_PERTURBED_FILE in the member directory. The members are still
+#:       those of the converged inversion (NRMS_MAX etc.), so the prior and the
+#:       converged ensemble compare like for like. REF_FILE (the base,
+#:       unperturbed reference) is drawn as before, i.e. the perturbed models
+#:       scatter around it.
+#: The per-member slice figures are not affected (they show iter0 and best fit,
+#: as before). In NPZ mode (RESULTS_NPZ) the file decides - make it with
+#: femtic_ens_post.py ENS_MODEL_SOURCE = "perturbed"; this setting is ignored.
+ENS_MODEL_SOURCE = "converged"      # "converged" | "perturbed"
+
+#: File of the perturbed reference in each member directory. femtic_rto_prep.py
+#: writes the RTO draw to "referencemodel.dat" (a real file per member).
+#: "resistivity_block_iter0.dat" holds it only if the ensemble was prepared
+#: with MOD_START_FROM_PERTURBED = True; otherwise it is a symbolic link to the
+#: shared, unperturbed template (reported as a warning).
+ENS_PERTURBED_FILE = "referencemodel.dat"
+
+if ENS_MODEL_SOURCE not in ("converged", "perturbed"):
+    raise ValueError(
+        f"ENS_MODEL_SOURCE={ENS_MODEL_SOURCE!r}: use 'converged' or 'perturbed'.")
+if not ENS_PERTURBED_FILE or os.path.basename(ENS_PERTURBED_FILE) != ENS_PERTURBED_FILE:
+    raise ValueError(
+        f"ENS_PERTURBED_FILE={ENS_PERTURBED_FILE!r}: give a file name inside the "
+        f"member directory, without a path.")
 
 # ---------------------------------------------------------------------------
 # Work from the results .npz of femtic_ens_post.py  (optional)
@@ -1267,9 +1320,9 @@ def _hm_sample(sites):
     else:
         for k, m in enumerate(model_list):
             st = fem._read_resistivity_block_struct(
-                m["best_file"], ocean=OCEAN, out=False)
+                m["ens_file"], ocean=OCEAN, out=False)
             er = np.asarray(st["elem_region"], dtype=np.int64)
-            _check(er, m["best_file"])
+            _check(er, m["ens_file"])
             rr = _hm_region_rho(st)
             for p in profs:
                 p["ens"][k] = _hm_levels(er, rr, p["elem"])
@@ -1508,7 +1561,9 @@ def _plot_borehole_heatmaps(profs, out_file):
         ax.set_ylim(hi, lo)
 
     fig.suptitle(f"Borehole heat maps: {os.path.basename(os.path.normpath(ENSEMBLE_DIR))} "
-                 f"({len(model_list)} members)", fontsize=title_fs)
+                 f"({len(model_list)} members"
+                 + (", perturbed reference" if _ENS_SRC == "perturbed" else "")
+                 + ")", fontsize=title_fs)
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     cb = fig.colorbar(mesh, ax=list(axs[:n]), location="right",
                       fraction=0.03, pad=0.02, shrink=0.6,
@@ -1572,7 +1627,9 @@ def _load_results_npz(path, prefix=None):
     Returns a dict: ``prefix`` (key prefix used), ``ens`` (n_members x n_free
     log10 matrix), ``members`` (list of dicts file / numit / nrms, one per
     row of ``ens``), ``stats`` (key -> (vector, description)) and
-    ``value_keys`` (the statistics that are log10 resistivities).
+    ``value_keys`` (the statistics that are log10 resistivities) and
+    ``source`` ("converged" | "perturbed": which model of each member the rows
+    of ``ens`` are, as stored by femtic_ens_post.py's ENS_MODEL_SOURCE).
     Statistics missing from the file are skipped; avg / var / err / med / mad
     are recomputed from the members when absent.
     """
@@ -1653,9 +1710,11 @@ def _load_results_npz(path, prefix=None):
                       ("simrc_corr", "log10 SimRC cumulative |correlation|")):
         if f"{pk}_{key}" in keys:
             stats[key] = (np.asarray(z[f"{pk}_{key}"], dtype=float), desc)
+    source = (str(z[f"{pk}_model_source"]) if f"{pk}_model_source" in keys
+              else "converged")   # files from before ENS_MODEL_SOURCE existed
     z.close()
     return dict(prefix=pk, ens=ens, members=members, stats=stats,
-                value_keys=value_keys)
+                value_keys=value_keys, source=source)
 
 
 def _stat_style(key, value_keys):
@@ -2025,7 +2084,9 @@ if RESULTS_NPZ is None:
     print(f"Found {len(dir_list)} sub-directory/ies matching "
           f"'{ENSEMBLE_NAME}'.")
 
-model_list = []   # list of dicts: label, dir, numit, nrms, iter0_file, best_file
+model_list = []   # list of dicts: label, dir, numit, nrms, iter0_file, best_file, ens_file
+_pert_links = []  # ENS_MODEL_SOURCE="perturbed": members whose file is a symlink
+_iter0_links = []  # members whose resistivity_block_iter0.dat is a symlink
 for _d in dir_list:
     if not os.path.isdir(_d):
         print(f"\n  {_d}: not a directory — skipped (not an ensemble run).")
@@ -2070,14 +2131,28 @@ for _d in dir_list:
         print(f"    {_iter0_file} not found — skipped.")
         continue
 
+    # Model of the ensemble-based borehole figures (ENS_MODEL_SOURCE).
+    _ens_file = _best_file
+    if ENS_MODEL_SOURCE == "perturbed":
+        _ens_file = os.path.join(_d, ENS_PERTURBED_FILE)
+        if not os.path.isfile(_ens_file):
+            print(f"    {_ens_file} not found — skipped.")
+            continue
+        if os.path.islink(_ens_file):
+            _pert_links.append(_d)
+    if os.path.islink(_iter0_file):
+        _iter0_links.append(_d)
+
     _idx   = len(model_list)
     _label = (ENS_LABELS[_idx] if ENS_LABELS and _idx < len(ENS_LABELS)
               else os.path.basename(os.path.normpath(_d)))
 
     print(f"    iter={_numit}  nRMS={_nrms:.4f}  {_best_file}")
+    if ENS_MODEL_SOURCE == "perturbed":
+        print(f"    borehole model (perturbed reference): {_ens_file}")
     model_list.append(dict(
         label=_label, dir=_d, numit=_numit, nrms=_nrms,
-        iter0_file=_iter0_file, best_file=_best_file,
+        iter0_file=_iter0_file, best_file=_best_file, ens_file=_ens_file,
     ))
 
 _res = None   # NPZ mode: arrays read from RESULTS_NPZ
@@ -2097,7 +2172,8 @@ if RESULTS_NPZ is not None:
         _used.add(_label)
         model_list.append(dict(
             label=_label, dir=_d, numit=_mm["numit"], nrms=_mm["nrms"],
-            iter0_file=None, best_file=_mm["file"], vec=_res["ens"][_idx],
+            iter0_file=None, best_file=_mm["file"], ens_file=_mm["file"],
+            vec=_res["ens"][_idx],
         ))
     _bi = min(range(len(model_list)), key=lambda i: model_list[i]["nrms"])
 
@@ -2143,6 +2219,7 @@ if RESULTS_NPZ is not None:
     print(f"  {len(model_list)} members, {_nfree} free parameters, prefix "
           f"'{_res['prefix']}', best nRMS {model_list[_bi]['nrms']:.4f} "
           f"({model_list[_bi]['label']})")
+    print(f"  the file holds the {_res['source']} models of the members")
     print(f"  statistics in the file: {sorted(_res['stats'])}")
     print(f"  output directory: {NPZ_OUT_DIR}")
     if PER_MEMBER_PLOT:
@@ -2156,7 +2233,31 @@ print(f"\nConverged members: {n_members}")
 if n_members == 0:
     sys.exit("No converged members found. Nothing to do.")
 
-ENS_FILES = [m["best_file"] for m in model_list]   # kept for borehole plotting
+ENS_FILES = [m["ens_file"] for m in model_list]   # kept for borehole plotting
+#: What the rows / files of the ensemble are, for titles and headers.
+_ENS_SRC = (_res["source"] if RESULTS_NPZ is not None else ENS_MODEL_SOURCE)
+_ENS_SRC_TXT = " (perturbed reference)" if _ENS_SRC == "perturbed" else ""
+
+if RESULTS_NPZ is None:
+    if ENS_MODEL_SOURCE == "perturbed" and _pert_links:
+        print(f"WARNING: {ENS_PERTURBED_FILE} is a symbolic link in "
+              f"{len(_pert_links)} of {n_members} member(s) (e.g. "
+              f"{os.path.basename(os.path.normpath(_pert_links[0]))}) - a link "
+              f"points to the shared template, i.e. an UNPERTURBED model. "
+              f"femtic_rto_prep.py writes the draw to referencemodel.dat; "
+              f"resistivity_block_iter0.dat holds it only with "
+              f"MOD_START_FROM_PERTURBED = True.")
+    if PER_MEMBER_PLOT and _iter0_links:
+        print(f"NOTE: resistivity_block_iter0.dat is a symbolic link in "
+              f"{len(_iter0_links)} of {n_members} member(s): the "
+              f"\"perturbed prior (iter0)\" figures then show the shared, "
+              f"unperturbed template prior. The member's own perturbed model "
+              f"is {ENS_PERTURBED_FILE}.")
+else:
+    if ENS_MODEL_SOURCE == "perturbed" and _ENS_SRC != "perturbed":
+        print("NOTE: ENS_MODEL_SOURCE = 'perturbed' is ignored in NPZ mode; the "
+              "file holds the converged models. Make the file with "
+              "femtic_ens_post.py ENS_MODEL_SOURCE = 'perturbed'.")
 ENS_LABELS_resolved = [m["label"] for m in model_list]
 
 if OUT:
@@ -2287,15 +2388,19 @@ if RESULTS_NPZ is not None:
             _write_vec_block(_m["vec"], NPZ_TEMPLATE, _blk)
             _member_dir = os.path.join(NPZ_OUT_DIR, _label)
             os.makedirs(_member_dir, exist_ok=True)
-            print(f"\n  member {_label!r}: best fit (iter{_m['numit']}, "
-                  f"nRMS={_m['nrms']:.4f})")
+            print(f"\n  member {_label!r}: "
+                  + ("perturbed reference" if _ENS_SRC == "perturbed"
+                     else f"best fit (iter{_m['numit']})")
+                  + f", nRMS={_m['nrms']:.4f}")
             _plot_member_slice(
                 block_file      = _blk,
                 out_stem        = os.path.join(_member_dir, "best"),
                 slices_resolved = slices_resolved,
                 site_xys        = site_xys,
                 obs_coords_only = _sites_from_obs,
-                figure_title    = f"{_label} — best fit (iter{_m['numit']})",
+                figure_title    = (f"{_label} — perturbed reference"
+                                   if _ENS_SRC == "perturbed" else
+                                   f"{_label} — best fit (iter{_m['numit']})"),
                 cmap            = PLOT_CMAP_BEST,
                 clim            = PLOT_CLIM_BEST,
                 nrms_annotation = dict(nrms=_m["nrms"]),
@@ -2351,12 +2456,13 @@ if PLOT_BOREHOLE:
         if BOREHOLE_LINES:
             # Normal mode: the first ensemble member is the model of the log.
             _bh_model_file = ENS_FILES[0]
-            _bh_desc = f"member 0 ({ENS_LABELS_resolved[0]})"
-            _bh_label = ENS_LABELS_resolved[0]
+            _bh_desc = f"member 0 ({ENS_LABELS_resolved[0]}){_ENS_SRC_TXT}"
+            _bh_label = ENS_LABELS_resolved[0] + _ENS_SRC_TXT
             if RESULTS_NPZ is not None:
                 # NPZ mode: RESULTS_BOREHOLE_MODEL (chosen above), written as a
                 # block file with the real air / ocean values (a log10 model).
                 _bvec, _bh_label = NPZ_BH
+                _bh_label = _bh_label + _ENS_SRC_TXT
                 _bh_model_file = os.path.join(
                     NPZ_BLOCK_DIR, "resistivity_block_borehole.dat")
                 _write_vec_block(_bvec, NPZ_TEMPLATE, _bh_model_file,
@@ -2419,7 +2525,8 @@ if PLOT_BOREHOLE:
                                      "edges, else less"),
                         source=(RESULTS_NPZ if RESULTS_NPZ is not None
                                 else ENSEMBLE_DIR),
-                        members=[m["best_file"] for m in model_list],
+                        ensemble_source=_ENS_SRC,
+                        members=[m["ens_file"] for m in model_list],
                         boreholes=[dict(name=_p["name"], x_m=float(_p["x_m"]),
                                         y_m=float(_p["y_m"]))
                                    for _p in _hm_profs],

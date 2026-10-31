@@ -71,6 +71,24 @@ interest auto-scaling (`MOD_ROI_*`) is shared with `femtic_rto_prep.py` and `fem
 | `CNV_FILE` | str or list | `"femtic.cnv"` | Name of the convergence file in each member directory; a list gives candidates (first existing wins). |
 | `NRMS_MAX` | float | `1.4` | Members whose final nRMS exceeds this value are skipped. |
 | `ITER_FALLBACK` | bool | `True` | A member's model is taken from its best-nRMS iteration N. If `resistivity_block_iter<N>.dat` does not exist, `True` uses the best iteration that has a block file (iteration > 0, lowest nRMS among those with a file, ties: lower iteration -- usually N-1) and applies `NRMS_MAX` to *that* iteration's nRMS; the member enters with that iteration's model, sensitivity file and nRMS. It is logged and has status `accepted_fallback` in `NRMS_CSV`. With no usable alternative the member is skipped as `no_model_file`. `False` = skip without looking for another iteration. |
+| `ENS_MODEL_SOURCE` | str | `"converged"` | Which model of each member enters the ensemble. `"converged"`: the best-fit model `resistivity_block_iter<N>.dat` (as before). `"perturbed"`: the member's **perturbed reference** (the RTO prior draw), file `ENS_PERTURBED_FILE`, so that the prior ensemble is plotted instead of the converged one; see "Plotting the perturbed references" below. |
+| `ENS_PERTURBED_FILE` | str | `"referencemodel.dat"` | File name, inside each member directory, of the perturbed reference. `femtic_rto_prep.py` writes the draw to `referencemodel.dat` (a real file per member). `resistivity_block_iter0.dat` holds it only if the ensemble was prepared with `MOD_START_FROM_PERTURBED = True`; otherwise it is a link to the shared, unperturbed template. |
+| `ENS_PERTURBED_SUFFIX` | str | `"_perturbed"` | Appended to `ENSEMBLE_PREFIX` when `ENS_MODEL_SOURCE = "perturbed"`, so the results `.npz`, nRMS table, figures and `.npz` keys never overwrite those of the converged run. |
+
+#### Plotting the perturbed references
+
+```python
+ENS_MODEL_SOURCE = "perturbed"      # default "converged"
+# ENS_PERTURBED_FILE = "referencemodel.dat"
+```
+
+With `"perturbed"` the whole run (mean, median, percentiles, covariance, slices, the `"best"` panel, boreholes, heat maps) describes the **prior** ensemble instead of the posterior one. Rules:
+
+- **Same members.** Which members take part is still decided by the converged inversion (`NRMS_MAX`, `ITER_FALLBACK`, a block file must exist for the best iteration), so the prior and the converged ensemble contain the same members and compare like for like. Raise `NRMS_MAX` to include every member. `"best"` is the member with the best converged nRMS; its perturbed reference is drawn.
+- **Base reference unchanged.** `MOD_REF_FILE` (slice contours, dashed `"ref"` line in the boreholes) is the base, *unperturbed* reference (normally `templates/referencemodel.dat`); the perturbed models scatter around it. It is never replaced by a member's file.
+- **Separate outputs.** `ENSEMBLE_PREFIX` gets `ENS_PERTURBED_SUFFIX` (`annecy_rto` -> `annecy_rto_perturbed`): results `.npz` (`ANNECY_RTO_PERTURBED_results.npz`), `*_nrms.csv`, figures and borehole files are separate files. The `.npz` stores `<P>_model_source` and `<P>_model_file_name`. For `PLOT_ONLY` set the same `ENS_MODEL_SOURCE` (it finds the file); the stored source is reported and used for the title of the `"best"` panel.
+- **Switched off.** `COMPUTE_SIMRC` (it correlates the models with the converged responses; a message is printed). `COMPUTE_SENS` stays on: the sensitivities are those of the converged inversion.
+- **Checks.** A member without `ENS_PERTURBED_FILE` is skipped (status `no_perturbed_file` in `NRMS_CSV`). A warning is printed if the file is a symbolic link in some members (shared template = unperturbed) or if all members are identical (zero spread).
 
 ### Plot-only mode
 
@@ -433,7 +451,11 @@ and `femtic_rto_prep.py`.
 A reference model shown against the ensemble on the slice and borehole
 figures: e.g. a deterministic inversion, the prior/starting model or a
 published model. It is a resistivity block file on the **same mesh** as
-`MOD_MESH`; its region structure may differ from the members'.
+`MOD_MESH`; its region structure may differ from the members'. It is one
+fixed model for the whole ensemble: with the usual setting
+`MOD_REF_FILE = ENSEMBLE_DIR + "/templates/referencemodel.dat"` it is the
+**base (unperturbed) reference**, not a member's perturbed `referencemodel.dat`
+(see `ENS_MODEL_SOURCE` for plotting those).
 
 | Parameter | Default | Description |
 |---|---|---|
@@ -656,7 +678,9 @@ Keys follow the pattern `<PREFIX>_<stat>`:
 | Key | Shape | Description |
 |---|---|---|
 | `<P>_model_list` | `(N, 3)` | `[block_file, n_iter, nRMS]` per accepted member. |
-| `<P>_ens` | `(N_members, N_free)` | Stacked ensemble in log₁₀(Ω·m). |
+| `<P>_ens` | `(N_members, N_free)` | Stacked ensemble in log₁₀(Ω·m). Rows are the converged models, or the members' perturbed references with `ENS_MODEL_SOURCE = "perturbed"`. |
+| `<P>_model_source` | str | `"converged"` or `"perturbed"`: which model of each member the rows of `<P>_ens` are (`<P>_model_list` then lists the perturbed files). Absent in files from before 2026-10-31 (= converged). |
+| `<P>_model_file_name` | str | `ENS_PERTURBED_FILE`, or `resistivity_block_iter<N>.dat`. |
 | `<P>_cov` | `(N_free, N_free)` | Empirical covariance matrix. Present only if `COMPUTE_COV=True` and `COV_METHOD="full"`. |
 | `<P>_cov_eigval` | `(r,)` | Covariance eigenvalues, `r = min(N_members, N_free)`. Present only if `COMPUTE_COV=True` and `COV_METHOD="low_rank"`. |
 | `<P>_cov_eigvec` | `(N_free, r)` | Covariance eigenvectors; `C = eigvec @ diag(eigval) @ eigvec.T`. Present only if `COMPUTE_COV=True` and `COV_METHOD="low_rank"`. |
@@ -716,9 +740,10 @@ pipeline.
 outside mesh), `ensemble_<name>` (`n_members x n_levels`, only if drawn),
 `heat_<name>` (`n_levels x n_bins` fraction of the members per bin) and
 `heat_edges_<name>` (`n_bins + 1` bin edges in log10 Ohm.m), both only with
-`"heatmap"`, and a JSON `header` (member files, best member, `reference_file`
-(null without a reference), percentile levels, `heat_unit`, per-borehole
-position, z range, keys and `heat_bins`).
+`"heatmap"`, and a JSON `header` (`ensemble_source` (`"converged"` |
+`"perturbed"`), member files, best member, `reference_file` (null without a
+reference), percentile levels, `heat_unit`, per-borehole position, z range,
+keys and `heat_bins`).
 
 ## Quick start
 
@@ -810,3 +835,4 @@ correct.
 | 2026-10-27c | Claude Sonnet 5.5 (Anthropic) | New `ITER_FALLBACK` (default `True`): when the best-nRMS iteration N has no `resistivity_block_iter<N>.dat`, the member is no longer dropped as `no_model_file` but represented by the best iteration that has a block file (usually N-1), with `NRMS_MAX` checked against that iteration's nRMS. New `NRMS_CSV` status `accepted_fallback` (counted as accepted in the histogram, whose legend shows how many members use a fallback iteration). `ITER_FALLBACK=False` = previous behaviour; with nothing missing the results are identical to the previous version. AI-generated; review before production use. |
 | 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The `MOD_ALPHA_SOURCE` mask is no longer applied to the sensitivity panels themselves (`sens_*`, `simrc_*`): shading a sensitivity map by sensitivity is circular. New `MOD_ALPHA_EXCLUDE` (key prefixes, default `("sens_", "simrc_")`; `()` restores masking of every panel). Other panels and the best panel (`MOD_ALPHA_QC`) are unchanged. AI-generated; review before production use. |
 | 2026-10-29 | Claude Sonnet 5.5 (Anthropic) | `MOD_BH`: new `"heatmap"` item for `what` (density heat map of the ensemble along the borehole: per-depth histogram of the members' log10 rho, `pcolormesh` behind the other items, one shared colour bar per figure). New globals `MOD_BH_HEAT_BINS`, `MOD_BH_HEAT_NORM` (`"fraction"` / `"row_max"`), colour scale `MOD_BH_HEAT_CMAP` (default `Greys`), `MOD_BH_HEAT_SCALE` (`"linear"` / `"sqrt"` / `"log"`), `MOD_BH_HEAT_VMIN`, `MOD_BH_HEAT_VMAX`, `MOD_BH_HEAT_CBAR`, `MOD_BH_STYLE["heatmap"]` (pcolormesh keywords), per-entry `heat_bins`. Members outside the bin range are not drawn but stay in the denominator; auto colour maximum = 99th percentile of the non-zero fractions (linear / sqrt). `.npz`: `heat_<name>`, `heat_edges_<name>`; header: `heat_unit`, `heat_bins`. Nothing changes unless `"heatmap"` is listed in an entry: with the default `MOD_BH` the borehole figure is pixel-identical and the `.npz` arrays identical to the previous version (tested on a synthetic mesh); heat maps checked against an independent histogram. AI-generated; review before production use. |
+| 2026-10-31 | Claude Sonnet 5.5 (Anthropic) | New `ENS_MODEL_SOURCE` (`"converged"` by default, or `"perturbed"`), `ENS_PERTURBED_FILE` (default `"referencemodel.dat"`), `ENS_PERTURBED_SUFFIX` (default `"_perturbed"`): the ensemble can be built from each member's perturbed reference (the RTO prior draw) instead of its converged model, so all statistics, slices, boreholes and heat maps describe the prior ensemble. Same member set as the converged run (selection unchanged); `MOD_REF_FILE` (base reference) unchanged; `ENSEMBLE_PREFIX` gets the suffix so results do not overwrite; `<P>_model_source` / `<P>_model_file_name` in the `.npz`, `ensemble_source` in the borehole header; `PLOT_ONLY` reads the stored source (older files: converged); `COMPUTE_SIMRC` off in this mode; warnings for missing files (`no_perturbed_file`), symbolic links and zero spread. Default behaviour unchanged (scan result identical to the previous version on a synthetic ensemble). AI-generated; review before production use. |

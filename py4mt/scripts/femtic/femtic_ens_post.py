@@ -827,6 +827,31 @@ Provenance
             Nothing changes unless "heatmap" is listed in a MOD_BH entry
             (default entries unchanged). AI-generated code -- review
             before production use.
+2026-10-31  Claude Sonnet 5.5 (Anthropic)
+            New ENS_MODEL_SOURCE ("converged" default | "perturbed"): the
+            ensemble can be built from each member's PERTURBED REFERENCE
+            (ENS_PERTURBED_FILE, default "referencemodel.dat" -- the RTO
+            prior draw femtic_rto_prep.py writes per member) instead of its
+            converged model resistivity_block_iter<N>.dat. Everything
+            downstream (statistics, covariance, slices, "best" panel,
+            boreholes, heat maps) then describes the prior ensemble. The
+            member set is unchanged (still chosen from the converged
+            inversion: NRMS_MAX, ITER_FALLBACK), so prior and converged
+            ensembles compare like for like. The base, unperturbed reference
+            (MOD_REF_FILE) is drawn as before. ENSEMBLE_PREFIX gets
+            ENS_PERTURBED_SUFFIX ("_perturbed") so the results .npz, nRMS
+            table, figures and .npz keys do not overwrite those of the
+            converged run; the .npz stores <P>_model_source and
+            <P>_model_file_name, PLOT_ONLY reads them (older files: converged),
+            and the borehole .npz header gets "ensemble_source". COMPUTE_SIMRC
+            is switched off in this mode (models vs converged responses);
+            COMPUTE_SENS (sensitivities of the converged inversion) is not.
+            A missing file skips the member ("no_perturbed_file" in
+            NRMS_CSV); a symbolic link (shared, unperturbed -- e.g.
+            resistivity_block_iter0.dat without MOD_START_FROM_PERTURBED) or
+            zero spread is reported as a warning. With the default the
+            script behaves as before. AI-generated code -- review before
+            production use.
 
     This script targets FEMTIC's current HDF5 output layout only.
     AI-generated code -- review before production use.
@@ -977,13 +1002,63 @@ ENSEMBLE_PREFIX = "annecy_rto_orig-err"
 # #: e.g. "rto" → keys rto_ens, rto_avg, …  and file RTO_results.npz.
 # ENSEMBLE_PREFIX = "misti_rnd_0"
 
+# ---------------------------------------------------------------------------
+# Which model of each member enters the ensemble
+# ---------------------------------------------------------------------------
+#: "converged" (default) -- the member's best-fit model,
+#:     resistivity_block_iter<N>.dat (N = best-nRMS iteration from femtic.cnv).
+#: "perturbed" -- the member's PERTURBED REFERENCE (the RTO prior draw)
+#:     instead: the file ENS_PERTURBED_FILE inside the member directory. The
+#:     whole run (mean, median, percentiles, covariance, slices, boreholes,
+#:     heat maps, "best" panel) then describes the prior ensemble rather than
+#:     the posterior one. Which members take part is unchanged: they are still
+#:     chosen from the converged inversion (NRMS_MAX, ITER_FALLBACK, a block
+#:     file must exist for the best iteration), so the prior and the converged
+#:     ensemble are made of the SAME members and compare like for like; raise
+#:     NRMS_MAX to include every member. "best" is still the best-nRMS member
+#:     of the converged inversion. MOD_REF_FILE (the base, unperturbed
+#:     reference) is drawn as before, i.e. the perturbed models scatter around
+#:     it. COMPUTE_SIMRC is switched off in this mode (it correlates the
+#:     models with the converged responses); the sensitivities (COMPUTE_SENS)
+#:     are those of the converged inversion and stay on.
+ENS_MODEL_SOURCE = "converged"      # "converged" | "perturbed"
+
+#: File of the perturbed reference inside each member directory.
+#: femtic_rto_prep.py writes the RTO draw to "referencemodel.dat" (a real
+#: file per member). "resistivity_block_iter0.dat" holds the perturbed model
+#: only if the ensemble was prepared with MOD_START_FROM_PERTURBED = True; else
+#: it is a symbolic link to the shared, unperturbed template. A link, or a
+#: set of identical members, is reported as a warning.
+ENS_PERTURBED_FILE = "referencemodel.dat"
+
+#: Appended to ENSEMBLE_PREFIX when ENS_MODEL_SOURCE = "perturbed", so that the
+#: results .npz, nRMS table, figures and .npz keys of the two ensembles never
+#: overwrite each other. Set the same ENS_MODEL_SOURCE for PLOT_ONLY.
+ENS_PERTURBED_SUFFIX = "_perturbed"
+
+if ENS_MODEL_SOURCE not in ("converged", "perturbed"):
+    raise ValueError(
+        f"ENS_MODEL_SOURCE={ENS_MODEL_SOURCE!r}: use 'converged' or 'perturbed'."
+    )
+if (
+    not ENS_PERTURBED_FILE
+    or os.path.basename(ENS_PERTURBED_FILE) != ENS_PERTURBED_FILE
+):
+    raise ValueError(
+        f"ENS_PERTURBED_FILE={ENS_PERTURBED_FILE!r}: give a file name inside the "
+        f"member directory, without a path."
+    )
+_ENS_SRC = ENS_MODEL_SOURCE   # PLOT_ONLY replaces it by what the .npz stored
+if ENS_MODEL_SOURCE == "perturbed":
+    ENSEMBLE_PREFIX = ENSEMBLE_PREFIX + ENS_PERTURBED_SUFFIX
+
 #: Name of the FEMTIC convergence file inside each ensemble member
 #: directory. A single name or a list of candidates (first existing wins),
 #: e.g. CNV_FILE = ["femtic.cnv", "femtic_run2.cnv"].
 CNV_FILE = ["femtic.cnv", "FEMTIC-DABIC.cnv"]
 
 #: Maximum normalised RMS accepted from the convergence file (CNV_FILE).
-NRMS_MAX = 2.
+NRMS_MAX = 1.5
 
 #: A member's model is taken from its best-nRMS iteration N
 #: (resistivity_block_iter<N>.dat). If that file does not exist (FEMTIC wrote
@@ -1191,6 +1266,13 @@ SIMRC_ERR_WEIGHT = True
 #: forming the full cross-covariance matrix at once.
 SIMRC_CHUNK = 200
 
+if ENS_MODEL_SOURCE == "perturbed" and COMPUTE_SIMRC:
+    print(
+        "ENS_MODEL_SOURCE = 'perturbed': COMPUTE_SIMRC switched off (it would "
+        "correlate the perturbed models with the converged responses)."
+    )
+    COMPUTE_SIMRC = False
+
 # ---------------------------------------------------------------------------
 # Covariance
 # ---------------------------------------------------------------------------
@@ -1254,7 +1336,8 @@ ENSEMBLE_RESULTS = RESULTS_DIR + ENSEMBLE_PREFIX.upper() + "_results.npz"
 
 #: Per-member best nRMS table (CSV): member, best iteration, nRMS, status
 #: ("accepted", "accepted_fallback" (see ITER_FALLBACK), "rejected_nrms_max",
-#: "no_model_file"). Always written.
+#: "no_model_file", and with ENS_MODEL_SOURCE = "perturbed" also
+#: "no_perturbed_file"). Always written.
 NRMS_CSV = RESULTS_DIR + ENSEMBLE_PREFIX + "_nrms.csv"
 #: Histogram of the per-member best nRMS (all members with a valid nRMS,
 #: accepted and rejected shown stacked, NRMS_MAX marked). Extension-less
@@ -1304,7 +1387,7 @@ MOD_OCEAN_RHO = 0.25  # Ω·m  (region 1 when treated as ocean)
 #: Raster formats (png/jpg/tif/webp) are rendered at MOD_DPI; vector
 #: formats (pdf/svg/eps) are resolution-independent and MOD_DPI is ignored
 #: except for any embedded raster elements (e.g. rasterized markers).
-MOD_PLOT_FORMAT = ["pdf", "jpg"]
+MOD_PLOT_FORMAT = ["pdf",] # "jpg"]
 
 #: Normalised to a list regardless of whether a bare string or a list was
 #: set above.
@@ -1630,7 +1713,7 @@ MOD_BH_PER_FIG = 12
 #: ranges), so profiles can be compared by eye.
 MOD_BH_SHARE_DEPTH = True
 #: Matplotlib legend location per panel; None = no legend.
-MOD_BH_LEGEND_LOC = "lower right"
+MOD_BH_LEGEND_LOC = "best"
 #: Heat map ("heatmap" in a MOD_BH entry's "what"): number of bins in
 #: log10(rho) across the panel's resistivity range (the entry's "xlim", else
 #: MOD_BH_XLIM, else 10**MOD_CLIM; if all are None, the range of the
@@ -1655,7 +1738,7 @@ MOD_BH_HEAT_NORM = "fraction"
 #: lines on top readable. MOD_BH_STYLE["heatmap"] or an entry's
 #: style=dict(heatmap=dict(cmap=...)) overrides it; the colour bar uses the
 #: cmap of the first panel that draws a heat map.
-MOD_BH_HEAT_CMAP = "Greys"
+MOD_BH_HEAT_CMAP = "Blues" # "Greys"
 #: Shape of the colour scale between MOD_BH_HEAT_VMIN and MOD_BH_HEAT_VMAX:
 #:   "linear" : colour proportional to the value (default; unchanged output)
 #:   "sqrt"   : square-root scale -- lifts the low densities, keeps the
@@ -3323,6 +3406,20 @@ if PLOT_ONLY:
     if n_members == 0:
         sys.exit("PLOT_ONLY: the file holds no ensemble members. Nothing to do.")
 
+    # Which model of each member the stored rows are (files from before
+    # ENS_MODEL_SOURCE existed: the converged ones).
+    _ENS_SRC = (
+        str(_z[f"{_pk}_model_source"]) if f"{_pk}_model_source" in _keys
+        else "converged"
+    )
+    print(f"PLOT_ONLY: the stored ensemble holds the {_ENS_SRC} models.")
+    if _ENS_SRC != ENS_MODEL_SOURCE:
+        print(
+            f"  PLOT_ONLY: note - ENS_MODEL_SOURCE is '{ENS_MODEL_SOURCE}'; the "
+            f"file decides, the setting only names the default results file "
+            f"(ENSEMBLE_PREFIX + '{ENS_PERTURBED_SUFFIX}')."
+        )
+
     ens_avg = _po_get("avg", lambda: np.mean(ens_matrix, axis=0))
     ens_var = _po_get("var", lambda: np.var(ens_matrix, axis=0))
     ens_err = _po_get("err", lambda: np.sqrt(np.var(ens_matrix, axis=0)))
@@ -3496,6 +3593,7 @@ else:
 
     model_list = []  # list of [block_file, n_iter, nRMS]
     nrms_table = []  # (member, best_iter, nRMS, status) for NRMS_CSV / histogram
+    pert_links = []  # ENS_MODEL_SOURCE="perturbed": members whose file is a symlink
     model_count = 0
     ens_matrix = None  # will become (n_members, n_free) float64
 
@@ -3622,13 +3720,30 @@ else:
             )
             continue
 
+        # Model that enters the ensemble: the converged one (default) or the
+        # member's perturbed reference (ENS_MODEL_SOURCE = "perturbed").
+        # mod_file (the converged block file) keeps selecting the member and
+        # serves the sensitivity mapping below in both cases.
+        ens_file = mod_file
+        if ENS_MODEL_SOURCE == "perturbed":
+            ens_file = os.path.join(d, ENS_PERTURBED_FILE)
+            if not os.path.isfile(ens_file):
+                print(f"    {ens_file} not found — skipped.")
+                nrms_table.append(
+                    (os.path.basename(os.path.normpath(d)), numit, nrms,
+                     "no_perturbed_file")
+                )
+                continue
+            if os.path.islink(ens_file):
+                pert_links.append(d)
+
         nrms_table.append(
             (os.path.basename(os.path.normpath(d)), numit, nrms, _status)
         )
-        print(f"    iter={numit}  nRMS={nrms:.4f}  {mod_file}")
-        model_list.append([mod_file, numit, nrms])
+        print(f"    iter={numit}  nRMS={nrms:.4f}  {ens_file}")
+        model_list.append([ens_file, numit, nrms])
 
-        log_m = fem.read_model(model_file=mod_file, model_trans="log10", out=OUT)
+        log_m = fem.read_model(model_file=ens_file, model_trans="log10", out=OUT)
 
         if ens_matrix is None:
             ens_matrix = log_m[np.newaxis, :]  # (1, n_free)
@@ -3748,6 +3863,28 @@ else:
 
     if n_members == 0:
         sys.exit("No converged members found. Nothing to do.")
+
+    if ENS_MODEL_SOURCE == "perturbed":
+        # Is the "perturbed" ensemble really perturbed?
+        print(
+            f"\n  ENS_MODEL_SOURCE = 'perturbed': {n_members} member(s) from "
+            f"{ENS_PERTURBED_FILE} (the converged models are not used)."
+        )
+        if pert_links:
+            print(
+                f"  WARNING: {ENS_PERTURBED_FILE} is a symbolic link in "
+                f"{len(pert_links)} of {n_members} member(s) (e.g. "
+                f"{os.path.basename(os.path.normpath(pert_links[0]))}) - a "
+                f"link points to the shared template, i.e. an UNPERTURBED model. "
+                f"femtic_rto_prep.py writes the draw to referencemodel.dat; "
+                f"resistivity_block_iter0.dat holds it only with "
+                f"MOD_START_FROM_PERTURBED = True."
+            )
+        if n_members > 1 and not np.any(np.ptp(ens_matrix, axis=0) > 0.0):
+            print(
+                f"  WARNING: all {n_members} members of {ENS_PERTURBED_FILE} are "
+                f"identical - the ensemble is not perturbed (zero spread)."
+            )
 
     # ens_matrix shape: (n_members, n_free)
     # axis=0 → reduce over members  (correct for all aggregate statistics)
@@ -4028,6 +4165,12 @@ else:
     ens_dict[f"{P}_best_file"] = str(model_list[_bi][0])
     ens_dict[f"{P}_best_iter"] = int(model_list[_bi][1])
     ens_dict[f"{P}_best_nrms"] = float(model_list[_bi][2])
+    # which model of each member the rows of <P>_ens are (see ENS_MODEL_SOURCE)
+    ens_dict[f"{P}_model_source"] = str(ENS_MODEL_SOURCE)
+    ens_dict[f"{P}_model_file_name"] = (
+        str(ENS_PERTURBED_FILE) if ENS_MODEL_SOURCE == "perturbed"
+        else "resistivity_block_iter<N>.dat"
+    )
     if BOOTSTRAP_VAR:
         ens_dict[f"{P}_var_boot"] = ens_var_boot
         ens_dict[f"{P}_err_boot"] = ens_err_boot
@@ -4253,7 +4396,9 @@ if MOD_QC:
             obs_coords_only=obs_coords_only,
             alpha_file=_alpha_block if MOD_ALPHA_QC else None,
             figure_title=(
-                f"{_best_name}\n"
+                f"{_best_name}"
+                + (" (perturbed reference)" if _ENS_SRC == "perturbed" else "")
+                + "\n"
                 f"best member: {_best_member}  iter {_best_iter}  "
                 f"nRMS {_best_nrms:.3f}"
             ),
@@ -4654,6 +4799,7 @@ if _bh_ready:
                 json.dumps(
                     dict(
                         ensemble_prefix=ENSEMBLE_PREFIX,
+                        ensemble_source=_ENS_SRC,
                         depth_unit="m, z positive-down, model datum",
                         rho_unit="Ohm.m (NaN = air / outside mesh)",
                         heat_unit=(

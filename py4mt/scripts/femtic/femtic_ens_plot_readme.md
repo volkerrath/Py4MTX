@@ -115,8 +115,43 @@ borehole heat-map figure (BOREHOLE_HEATMAP_FILE) + histograms .npz
 | `CNV_FILE` | Convergence file name in each member directory (default `"femtic.cnv"`; a list gives candidates, first existing wins) -- keep equal to `femtic_ens_post.py`'s value |
 | `NRMS_MAX` | Max accepted nRMS from `femtic.cnv` — keep equal to `femtic_ens_post.py`'s value |
 | `ENS_LABELS` | Labels for member plots/filenames; `None` → directory basenames |
+| `ENS_MODEL_SOURCE` | `"converged"` (default) or `"perturbed"`: which model of each member the **ensemble-based borehole figures** use; see "Perturbed references" below |
+| `ENS_PERTURBED_FILE` | File of the perturbed reference in each member directory (default `"referencemodel.dat"`) |
 
 nRMS and the iteration number are read from each member's `femtic.cnv` via `fem.read_cnv()`, which parses column positions from the file's own header row (case-insensitive substring match) — no FEMTIC-version setting needed.
+
+#### Perturbed references
+
+`femtic_rto_prep.py` writes each member's RTO prior draw (the perturbed
+reference) to the member's own `referencemodel.dat`; the converged model is
+`resistivity_block_iter<N>.dat`. With
+
+```python
+ENS_MODEL_SOURCE = "perturbed"      # default "converged"
+```
+
+the borehole figures use the perturbed references instead of the converged
+models: the **heat map** (`BOREHOLE_HEATMAP`; all members) and the **line log**
+(`BOREHOLE_LINES`; the first member). The members are the same as in the
+converged run (`NRMS_MAX` etc.), so prior and converged ensemble compare like
+for like. `REF_FILE` is one fixed model, normally the base (unperturbed)
+`templates/referencemodel.dat`; it is drawn as before, i.e. the perturbed
+models scatter around it. Titles and the heat-map `.npz` header
+(`ensemble_source`) say which models were used.
+
+- A member without `ENS_PERTURBED_FILE` is skipped. A warning is printed if the
+  file is a symbolic link in some members (the shared template, i.e. an
+  **unperturbed** model; `resistivity_block_iter0.dat` is such a link unless the
+  ensemble was prepared with `MOD_START_FROM_PERTURBED = True`).
+- The per-member slice figures are not affected: they keep showing iter0 and
+  the best fit. Note that "iter0" is `resistivity_block_iter0.dat`; where that
+  is a link to the shared template, the "perturbed prior (iter0)" figure shows
+  the template prior, not the member's draw (a note is printed).
+- NPZ mode: the setting is ignored; the results file decides. Make a file of
+  the perturbed references with `femtic_ens_post.py` (`ENS_MODEL_SOURCE =
+  "perturbed"`, results file `<PREFIX>_PERTURBED_results.npz`). The file stores
+  its source (`<P>_model_source`; older files: converged), which appears in the
+  titles; the member figure of that file shows the perturbed reference.
 
 ### Working from the results .npz (NPZ mode)
 
@@ -380,6 +415,17 @@ Position values accept:
 
 ## Changes from previous version
 
+- **2026-10-31 (Claude Sonnet 5.5, Anthropic):** New `ENS_MODEL_SOURCE`
+  (`"converged"` by default, or `"perturbed"`) and `ENS_PERTURBED_FILE`
+  (default `"referencemodel.dat"`): the borehole heat map and the line log can
+  use each member's perturbed reference (the RTO prior draw) instead of its
+  converged model; see "Perturbed references". Same member set; `REF_FILE`
+  (base reference) unchanged; a missing file skips the member, a symbolic link
+  is reported. A note is printed when `resistivity_block_iter0.dat` is a link
+  (the per-member "perturbed prior" figure then shows the shared template
+  prior). NPZ mode: the file's stored `<P>_model_source` is used for titles and
+  the heat-map header. Default behaviour unchanged. AI-generated; review before
+  production use.
 - **2026-10-29 (Claude Sonnet 5.5, Anthropic):** Borehole heat map. New
   `BOREHOLE_HEATMAP` (default `False`), `BOREHOLE_HEATMAP_FILE`,
   `BOREHOLE_HEAT_BINS`, `BOREHOLE_HEAT_NORM`, `BOREHOLE_HEAT_VMAX`,
