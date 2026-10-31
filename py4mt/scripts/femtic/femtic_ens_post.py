@@ -1806,13 +1806,13 @@ if COMPUTE_SIMRC or PLOT_ONLY:
 #:   "sens_mean_an > -3."    keep cells within 3 decades of max sensitivity
 #:   "err < 0.2"             keep cells with ensemble std below 0.2 decades
 #: None disables blanking/fading.
-MOD_ALPHA_SOURCE = "sens_median_an > -5.5"
-#: "blank" -- failing cells are removed (hard cut).
-#: "fade"  -- failing cells fade linearly from opaque at the threshold to
-#:            fully transparent MOD_ALPHA_FADE_WIDTH beyond it (same units
-#:            as <value>, e.g. 1.0 = one decade for log10 sensitivities).
-MOD_ALPHA_MODE = "blank"
-MOD_ALPHA_SOURCE = "sens_median_an > -5."
+# MOD_ALPHA_SOURCE = "sens_median_an > -5.5"
+# #: "blank" -- failing cells are removed (hard cut).
+# #: "fade"  -- failing cells fade linearly from opaque at the threshold to
+# #:            fully transparent MOD_ALPHA_FADE_WIDTH beyond it (same units
+# #:            as <value>, e.g. 1.0 = one decade for log10 sensitivities).
+# MOD_ALPHA_MODE = "blank"
+MOD_ALPHA_SOURCE = "sens_median_an > -4.5"
 #: "blank" -- failing cells are removed (hard cut).
 #: "fade"  -- failing cells fade linearly from opaque at the threshold to
 #:            fully transparent MOD_ALPHA_FADE_WIDTH beyond it (same units

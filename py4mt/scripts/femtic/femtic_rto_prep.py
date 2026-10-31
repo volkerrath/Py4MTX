@@ -788,6 +788,7 @@ if PLOT_DATA or PLOT_MODEL:
     dict(kind="map", z0=5.0),   # km
     dict(kind="ns",  x0=0.),    # km
     dict(kind="ew",  y0=0.),    # km
+    dict(kind="plane", point=[0.0, 0.0], strike=45.0, dip=90.0),
     #dict(kind="ns",  x0=(-71.40723, 'latlon')),    # km
     #dict(kind="ew",  y0=(-16.299593, 'latlon')),    # km
 ]

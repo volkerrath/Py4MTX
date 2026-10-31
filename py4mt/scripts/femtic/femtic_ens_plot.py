@@ -704,9 +704,9 @@ PLOT_CLIM_BEST  = [0.0, 4.0]      # log10(Ω·m)
 
 #: Flat colour for ocean / lake cells.  None → use colormap.
 PLOT_OCEAN_COLOR = "lightgrey"
-
+MOD_AIR_COLOR = "whitesmoke"
 #: Axes facecolor for air / background.  None = figure default.
-PLOT_AIR_BGCOLOR = None
+PLOT_AIR_BGCOLOR = "whitesmoke"
 
 #: Slice specification — same format as femtic_mod_plot.py PLOT_SLICES.
 #: All lengths below are given in KILOMETRES; the "Unit conversion" block
@@ -738,7 +738,7 @@ PLOT_SLICES = [
     dict(kind="map", z0=25.0),   # km
     dict(kind="ns",  x0=(-71.40723, 'latlon')),    # deg
     dict(kind="ew",  y0=(-16.299593, 'latlon')),    # deg
-]
+    dict(kind="plane", point=[0.0, 0.0], strike=45.0, dip=90.0),]
 
 #: Global axis limits in model-local KILOMETRES.  None → auto.
 PLOT_XLIM = [-25., 25.]
