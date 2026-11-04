@@ -340,6 +340,16 @@ Provenance:
                 utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR).
                 Needs the util.py of the same date (new out_dir argument).
                 AI-generated; review before production use.
+    2026-11-01  Claude Sonnet 5.5 (Anthropic)
+                Fixed crash in fem.resolve_slice_positions():
+                "resolve_pos_point: 'point' must have 3 elements, got 2".
+                The kind="plane" entry in MOD_SLICES now has a 3-element
+                point [x, y, z] (km). _slices_km_to_m() also converts
+                point, p1, p2 (kind="profile") and z_top, z_bot from km
+                to m (CRS-tagged utm/latlon: only z is scaled); before,
+                only x0/y0/z0 were converted, so a plane point would have
+                been 1000x too small.
+                AI-generated; review before production use.
 """
 
 import os
@@ -395,24 +405,68 @@ def _lim_km_to_m(lim):
     return None if lim is None else [float(v) * 1000.0 for v in lim]
 
 
+def _is_num(v):
+    """True for plain int/float/numpy scalars, False for bool and others."""
+    return (isinstance(v, (int, float, np.integer, np.floating))
+            and not isinstance(v, (bool, np.bool_)))
+
+
+def _pos_km_to_m(raw):
+    """Convert a position spec (plane ``point``, profile ``p1``/``p2``) km -> m.
+
+    plain list/tuple of numbers   -> every element x 1000 (model-local km)
+    ``(pt, "model")``             -> every element x 1000
+    ``(pt, "utm" | "latlon")``    -> only the z element (index 2, if
+                                     present) x 1000; E/N [m] and lon/lat
+                                     [deg] are not km
+    anything else                 -> returned unchanged
+    """
+    if (isinstance(raw, (list, tuple)) and len(raw) == 2
+            and isinstance(raw[1], str)):
+        pt, crs = raw
+        if not isinstance(pt, (list, tuple)):
+            return raw
+        pt = list(pt)
+        if crs == "model":
+            pt = [v * 1000.0 if _is_num(v) else v for v in pt]
+        elif len(pt) > 2 and _is_num(pt[2]):
+            pt[2] = pt[2] * 1000.0
+        return (pt, crs)
+    if isinstance(raw, (list, tuple)) and all(_is_num(v) for v in raw):
+        return [v * 1000.0 for v in raw]
+    return raw
+
+
 def _slices_km_to_m(slices):
-    """Convert model-local km slice coordinates (x0/y0/z0) to metres.
+    """Convert model-local km slice coordinates to metres.
 
     ``slices`` is the MOD_SLICES/ENS_SLICES list of dicts, e.g.
-    ``dict(kind="map", z0=1.0)`` or ``dict(kind="ns", x0=0.0)``. Plain
-    numeric x0/y0/z0 values (model-local km) are converted to metres;
-    (value, "latlon") tuples are left untouched since those are
-    degrees, resolved separately by fem.resolve_slice_positions().
-    None passes through.
+    ``dict(kind="map", z0=1.0)``, ``dict(kind="ns", x0=0.0)`` or
+    ``dict(kind="plane", point=[0.0, 0.0, 0.0], strike=45.0, dip=90.0)``.
+
+    Converted (km -> m):
+      - plain numeric x0 / y0 / z0 / z_top / z_bot;
+      - ``point`` (kind="plane") and ``p1`` / ``p2`` (kind="profile"),
+        see :func:`_pos_km_to_m` for the CRS-tagged forms.
+
+    (value, "latlon") / (value, "utm") tuples for x0 / y0 are left
+    untouched, they are resolved by fem.resolve_slice_positions().
+    None passes through. The input list is not modified.
+
+    Modified 2026-11-01, Claude Sonnet 5.5 (Anthropic): point, p1, p2,
+    z_top, z_bot are now converted too (previously x0/y0/z0 only).
     """
     if slices is None:
         return None
     out = []
     for spec in slices:
         spec = dict(spec)
-        for key in ("x0", "y0", "z0"):
-            if key in spec and isinstance(spec[key], (int, float)):
+        for key in ("x0", "y0", "z0", "z_top", "z_bot"):
+            if key in spec and _is_num(spec[key]):
                 spec[key] = spec[key] * 1000.0
+        for key in ("point", "p1", "p2"):
+            if key in spec:
+                spec[key] = _pos_km_to_m(spec[key])
         out.append(spec)
     return out
 
@@ -463,7 +517,7 @@ print(f"RNG seed: {RANDOM_SEED if RANDOM_SEED is not None else '(fresh entropy �
 """
 Base setup.
 """
-N_SAMPLES = 64
+N_SAMPLES = 128
 # ENSEMBLE_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/ubinas/ensemble/"
 # ENSEMBLE_NAME = "ubinas_rto_"
 
@@ -497,7 +551,7 @@ ENS_LIST accepts two forms:
   None              — process all members 0 … N_SAMPLES-1 (default)
   [i, j, k, …]     — explicit list of member indices to process
 """
-ENS_LIST = np.arange(64, 128)
+ENS_LIST = np.arange(128, 255)
 
 
 """
@@ -765,9 +819,11 @@ if PLOT_DATA or PLOT_MODEL:
     MOD_ALPHA_BLANK_THRESH = 0.0
 
     # --- Slice specification -------------------------------------------------
-    #: Slice positions accept plain floats (model-local m) or CRS-tagged tuples:
+    #: Slice positions accept plain floats (model-local km) or CRS-tagged tuples:
     #:   (value, "utm") | (value, "latlon")
-    #: Depth z0 is always model-local metres (no CRS tagging).
+    #: Depth z0 is always model-local km (no CRS tagging).
+    #: Plane slices need a 3-element point [x, y, z] (km), or
+    #: ([E, N, z], "utm") / ([lon, lat, z], "latlon") with z in km.
     # MOD_SLICES = [
     #     dict(kind="map", z0=1.0),    # km
     #     dict(kind="map", z0=25.0),   # km
@@ -788,7 +844,7 @@ if PLOT_DATA or PLOT_MODEL:
     dict(kind="map", z0=5.0),   # km
     dict(kind="ns",  x0=0.),    # km
     dict(kind="ew",  y0=0.),    # km
-    dict(kind="plane", point=[0.0, 0.0], strike=45.0, dip=90.0),
+    dict(kind="plane", point=[0.0, 0.0, 0.0], strike=45.0, dip=90.0),  # km [x, y, z]; z irrelevant for dip=90
     #dict(kind="ns",  x0=(-71.40723, 'latlon')),    # km
     #dict(kind="ew",  y0=(-16.299593, 'latlon')),    # km
 ]

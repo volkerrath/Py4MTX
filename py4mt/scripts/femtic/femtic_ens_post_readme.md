@@ -71,7 +71,7 @@ interest auto-scaling (`MOD_ROI_*`) is shared with `femtic_rto_prep.py` and `fem
 | `CNV_FILE` | str or list | `"femtic.cnv"` | Name of the convergence file in each member directory; a list gives candidates (first existing wins). |
 | `NRMS_MAX` | float | `1.4` | Members whose final nRMS exceeds this value are skipped. |
 | `ITER_FALLBACK` | bool | `True` | A member's model is taken from its best-nRMS iteration N. If `resistivity_block_iter<N>.dat` does not exist, `True` uses the best iteration that has a block file (iteration > 0, lowest nRMS among those with a file, ties: lower iteration -- usually N-1) and applies `NRMS_MAX` to *that* iteration's nRMS; the member enters with that iteration's model, sensitivity file and nRMS. It is logged and has status `accepted_fallback` in `NRMS_CSV`. With no usable alternative the member is skipped as `no_model_file`. `False` = skip without looking for another iteration. |
-| `ENS_MODEL_SOURCE` | str | `"converged"` | Which model of each member enters the ensemble. `"converged"`: the best-fit model `resistivity_block_iter<N>.dat` (as before). `"perturbed"`: the member's **perturbed reference** (the RTO prior draw), file `ENS_PERTURBED_FILE`, so that the prior ensemble is plotted instead of the converged one; see "Plotting the perturbed references" below. |
+| `ENS_MODEL_SOURCE` | str | `"converged"` | Which model of each member enters the ensemble. `"converged"`: the best-fit model `resistivity_block_iter<N>.dat` (as before). `"perturbed"`: the member's **perturbed reference** (the RTO prior draw), file `ENS_PERTURBED_FILE`, so that the prior ensemble is plotted instead of the converged one; see "Plotting the perturbed references" below. `"both"`: the run is the converged run, and the perturbed models of the same members are loaded in addition for the **borehole figure** (`MOD_BH`), which then shows both ensembles on one colour bar; see "Converged and perturbed together" below. |
 | `ENS_PERTURBED_FILE` | str | `"referencemodel.dat"` | File name, inside each member directory, of the perturbed reference. `femtic_rto_prep.py` writes the draw to `referencemodel.dat` (a real file per member). `resistivity_block_iter0.dat` holds it only if the ensemble was prepared with `MOD_START_FROM_PERTURBED = True`; otherwise it is a link to the shared, unperturbed template. |
 | `ENS_PERTURBED_SUFFIX` | str | `"_perturbed"` | Appended to `ENSEMBLE_PREFIX` when `ENS_MODEL_SOURCE = "perturbed"`, so the results `.npz`, nRMS table, figures and `.npz` keys never overwrite those of the converged run. |
 
@@ -90,6 +90,21 @@ With `"perturbed"` the whole run (mean, median, percentiles, covariance, slices,
 - **Switched off.** `COMPUTE_SIMRC` (it correlates the models with the converged responses; a message is printed). `COMPUTE_SENS` stays on: the sensitivities are those of the converged inversion.
 - **Checks.** A member without `ENS_PERTURBED_FILE` is skipped (status `no_perturbed_file` in `NRMS_CSV`). A warning is printed if the file is a symbolic link in some members (shared template = unperturbed) or if all members are identical (zero spread).
 
+#### Converged and perturbed together (`"both"`)
+
+```python
+ENS_MODEL_SOURCE = "both"
+MOD_BH_HEAT_FIGURE = "combined"     # or "separate"
+```
+
+The run is the **converged** run: `ENSEMBLE_PREFIX` is unchanged, and the statistics, slices, covariance and results `.npz` are those of the converged ensemble. In addition every member's `ENS_PERTURBED_FILE` is read (row for row, same member order), and `MOD_BH` draws every borehole for **both** ensembles: the heat map, the `"ensemble"` lines, `avg` / `med` / percentiles / sigma lines and `"best"` (the same member in both; `"ref"` is the base reference, identical in both).
+
+- **Layout** (`MOD_BH_HEAT_FIGURE`). `"combined"` (default): one figure per `MOD_BH_PER_FIG` chunk, the converged and the perturbed panel of each borehole side by side (twice as many columns: `2 x MOD_BH_NCOLS`), **one** colour bar. `"separate"`: one figure per source, `<MOD_BH_FILE>` (converged) and `<MOD_BH_FILE>_perturbed` (`ENS_PERTURBED_SUFFIX`; chunks: `..._perturbed_01`), each with the same scale.
+- **Same bins, same colours.** Both heat maps of a borehole are binned on the same edges (taken from the entry's `xlim` / `heat_bins`; without an `xlim`, from the range of both ensembles together), and the colour limits come from both ensembles together, so equal colours mean equal fractions in every panel of the figure.
+- **Skipped members.** A member without `ENS_PERTURBED_FILE` is skipped *entirely* (`no_perturbed_file` in `NRMS_CSV`), so both matrices always hold the same members. A perturbed model with a different number of free parameters stops the run.
+- **Outputs.** The borehole profiles of the perturbed models are written to `<MOD_BH_FILE>_perturbed.npz` (same layout as `<MOD_BH_FILE>.npz`, header `"ensemble_source": "perturbed"`). The results `.npz` keeps `<P>_model_source = "converged"` and gains `<P>_ens_perturbed` (log10 rho, same shape as `<P>_ens`) and `<P>_perturbed_file_name`, so `PLOT_ONLY` can draw the `"both"` figure later. A file made without `"both"` has no `<P>_ens_perturbed`: `PLOT_ONLY` then says so and draws the converged heat maps only.
+- **Warnings.** As for `"perturbed"`: symbolic-link or zero-spread perturbed files are reported. `COMPUTE_SIMRC` stays on (the ensemble is the converged one).
+
 ### Plot-only mode
 
 Redraw the figures from an existing `<PREFIX>_results.npz` without touching
@@ -106,7 +121,8 @@ replaced by reading the file; steps (5)-(9) run exactly as in a full run.
 | `PLOT_ONLY_TEMPLATE` | str or None | `None` | Block file giving header / region structure / flag columns. `None` = the best member's own block file recorded in the `.npz` (it must still exist). Set it when the results were moved or the member directories are gone: any resistivity block file of this ensemble (same mesh, same free regions, e.g. the starting model) works; the "best" panel is then drawn from the stored best vector instead of that file. |
 
 What is read: members with their nRMS (`<P>_model_list`), the ensemble matrix
-(`<P>_ens`), `avg / var / err / med / mad / prc`, the percentile levels
+(`<P>_ens`), with `ENS_MODEL_SOURCE = "both"` the perturbed matrix
+(`<P>_ens_perturbed`, for the borehole figure), `avg / var / err / med / mad / prc`, the percentile levels
 (`<P>_prc_levels`, they define the `p<level>` panel keys), `qdiff_*`,
 `var_boot / err_boot`, `sens_*`, `simrc_*`. Missing `avg ... mad / prc` are
 recomputed from the stored members. The covariance arrays are not loaded.
@@ -569,6 +585,10 @@ Global settings:
 | `MOD_BH_HEAT_VMIN` | `None` | Lower end of the colour scale. `None` = 0 (`"linear"` / `"sqrt"`) or the smallest non-zero fraction of the figure (`"log"`, which needs a value > 0). A number sets it, e.g. `0.02` to blank out bins holding less than 2 % of the members (an arrow on the colour bar marks values below it). |
 | `MOD_BH_HEAT_VMAX` | `None` | Upper end of the colour scale (`"row_max"` is always 1). `None` = for `"linear"` / `"sqrt"` the 99th percentile of the non-zero fractions of the figure (the colour bar ends in an arrow), for `"log"` the maximum; `1.0` = full range. |
 | `MOD_BH_HEAT_CBAR` | `True` | Draw the shared colour bar of the heat map (one per figure). |
+| `MOD_BH_HEAT_SHARE_SCALE` | `False` | `False` = one colour scale per figure (the default, as before). `True` = ONE scale for ALL figures of the run (every `MOD_BH_PER_FIG` chunk, converged and perturbed): the automatic `MOD_BH_HEAT_VMAX` is taken over all of them. With `ENS_MODEL_SOURCE = "both"` the converged and the perturbed heat maps of one figure always share the scale. See "Sharing the colour scale" below. |
+| `MOD_BH_HEAT_FIGURE` | `"combined"` | `ENS_MODEL_SOURCE = "both"` only. `"combined"` = converged and perturbed panel of each borehole side by side in one figure (`2 x MOD_BH_NCOLS` columns), one colour bar. `"separate"` = one figure per source (`<MOD_BH_FILE>` and `<MOD_BH_FILE>_perturbed`), same scale. |
+| `MOD_BH_HEAT_SCALE_FILE` | `None` | JSON file that saves / reuses the colour scale across runs (same format as `BOREHOLE_HEAT_SCALE_FILE` of `femtic_ens_plot.py`); `None` = off. Values read from it replace `MOD_BH_HEAT_SCALE` / `_NORM` / `_VMIN` / `_VMAX` / `_CMAP` and, if it holds `"edges"`, the bins of every heat map. |
+| `MOD_BH_HEAT_SCALE_IO` | `"auto"` | `"auto"` = read `MOD_BH_HEAT_SCALE_FILE` if it exists, else write it (one setting serves the first and every later run); `"read"` = read it, stop if missing; `"write"` = always (over)write it. |
 
 Shared with the slice figures: `MOD_PLOT_FORMAT`, `MOD_DPI`, `MOD_CLIM`
 (x range), `MOD_TICK_FONTSIZE` / `MOD_LABEL_FONTSIZE` / `MOD_TITLE_FONTSIZE`,
@@ -625,6 +645,28 @@ MOD_BH_HEAT_NORM = "row_max"    # or scale every depth to its own maximum
   `what`.
 - An invalid `heat_bins` is reported and only that entry's heat map is skipped.
 
+#### Sharing the colour scale
+
+Colours of two heat maps are only comparable if the **bins** (bin width changes the fractions), the **colour limits** and the **colormap** agree. The defaults leave every figure on its own scale (output unchanged). To compare:
+
+- **Converged and perturbed in one run:** `ENS_MODEL_SOURCE = "both"`; both ensembles of a figure are binned on the same edges and share one scale (see above).
+- **All figures of a run** (e.g. many sites over several `MOD_BH_PER_FIG` chunks): `MOD_BH_HEAT_SHARE_SCALE = True`. For identical bins in every borehole give an `xlim` (or `MOD_BH_XLIM` / `MOD_CLIM`) and an integer `heat_bins`, or a list of edges; without an `xlim` the bins follow each borehole's own value range.
+- **Across runs** (a converged and a perturbed run, other ensembles, `femtic_ens_plot.py`): `MOD_BH_HEAT_SCALE_FILE`. The first run writes the resolved scale, every later run with the same setting reads it:
+
+```python
+MOD_BH_HEAT_SCALE_FILE = RESULTS_DIR + "heat_colorscale.json"
+MOD_BH_HEAT_SCALE_IO = "auto"       # first run writes, later runs read
+```
+
+The file is plain JSON; every key is optional (a missing or `null` key keeps this run's `MOD_BH_HEAT_*` value), so a hand-written file with just `vmax` works:
+
+```json
+{"scale": "sqrt", "norm": "fraction", "vmin": 0.0, "vmax": 0.35, "cmap": "Greys",
+ "edges": [0.0, 0.1, 0.2, 0.3, 0.4], "info": {"note": "ignored when reading"}}
+```
+
+`edges` are log10(Ohm.m) bin edges; `info` is ignored. When a file is read it applies to all heat maps of the run and the read is logged. Notes: a `cmap` set in `MOD_BH_STYLE["heatmap"]` or an entry's `style` still wins over the file's; the file is written only if there is a single scale for the run (`MOD_BH_HEAT_SHARE_SCALE = True`, or all profiles in one figure; otherwise a message says so), and `"edges"` only if all heat maps use the same bins; a missing file with `"read"`, or an invalid one (unknown `scale` / `norm`, negative `vmin`, `"log"` with `vmin <= 0`, unsorted `edges`), stops the run with a message.
+
 Notes:
 
 - **Depth convention:** z is positive downward, as everywhere in FEMTIC. The
@@ -680,6 +722,7 @@ Keys follow the pattern `<PREFIX>_<stat>`:
 | `<P>_model_list` | `(N, 3)` | `[block_file, n_iter, nRMS]` per accepted member. |
 | `<P>_ens` | `(N_members, N_free)` | Stacked ensemble in log₁₀(Ω·m). Rows are the converged models, or the members' perturbed references with `ENS_MODEL_SOURCE = "perturbed"`. |
 | `<P>_model_source` | str | `"converged"` or `"perturbed"`: which model of each member the rows of `<P>_ens` are (`<P>_model_list` then lists the perturbed files). Absent in files from before 2026-10-31 (= converged). |
+| `<P>_ens_perturbed` | `(N_members, N_free)` | Only with `ENS_MODEL_SOURCE = "both"`: the members' perturbed models in log10(Ohm.m), row for row as `<P>_ens` (which stays the converged ensemble, `<P>_model_source = "converged"`). Read by `PLOT_ONLY` for the borehole figure. `<P>_perturbed_file_name` holds the file name. |
 | `<P>_model_file_name` | str | `ENS_PERTURBED_FILE`, or `resistivity_block_iter<N>.dat`. |
 | `<P>_cov` | `(N_free, N_free)` | Empirical covariance matrix. Present only if `COMPUTE_COV=True` and `COV_METHOD="full"`. |
 | `<P>_cov_eigval` | `(r,)` | Covariance eigenvalues, `r = min(N_members, N_free)`. Present only if `COMPUTE_COV=True` and `COV_METHOD="low_rank"`. |
@@ -743,7 +786,13 @@ outside mesh), `ensemble_<name>` (`n_members x n_levels`, only if drawn),
 `"heatmap"`, and a JSON `header` (`ensemble_source` (`"converged"` |
 `"perturbed"`), member files, best member, `reference_file` (null without a
 reference), percentile levels, `heat_unit`, per-borehole position, z range,
-keys and `heat_bins`).
+keys and `heat_bins`, and `colour_scale`: the heat-map `scale`, `norm`,
+`cmap`, `vmin` / `vmax` (one number if the scale is shared by all figures,
+else a list with one entry per figure) and `shared`; `null` without a heat
+map). With `ENS_MODEL_SOURCE = "both"` the same arrays for the perturbed
+models are written to `<MOD_BH_FILE>_perturbed.npz` (header
+`ensemble_source = "perturbed"`; the heat maps of both files use the same
+`heat_edges_<name>`).
 
 ## Quick start
 
@@ -836,3 +885,4 @@ correct.
 | 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The `MOD_ALPHA_SOURCE` mask is no longer applied to the sensitivity panels themselves (`sens_*`, `simrc_*`): shading a sensitivity map by sensitivity is circular. New `MOD_ALPHA_EXCLUDE` (key prefixes, default `("sens_", "simrc_")`; `()` restores masking of every panel). Other panels and the best panel (`MOD_ALPHA_QC`) are unchanged. AI-generated; review before production use. |
 | 2026-10-29 | Claude Sonnet 5.5 (Anthropic) | `MOD_BH`: new `"heatmap"` item for `what` (density heat map of the ensemble along the borehole: per-depth histogram of the members' log10 rho, `pcolormesh` behind the other items, one shared colour bar per figure). New globals `MOD_BH_HEAT_BINS`, `MOD_BH_HEAT_NORM` (`"fraction"` / `"row_max"`), colour scale `MOD_BH_HEAT_CMAP` (default `Greys`), `MOD_BH_HEAT_SCALE` (`"linear"` / `"sqrt"` / `"log"`), `MOD_BH_HEAT_VMIN`, `MOD_BH_HEAT_VMAX`, `MOD_BH_HEAT_CBAR`, `MOD_BH_STYLE["heatmap"]` (pcolormesh keywords), per-entry `heat_bins`. Members outside the bin range are not drawn but stay in the denominator; auto colour maximum = 99th percentile of the non-zero fractions (linear / sqrt). `.npz`: `heat_<name>`, `heat_edges_<name>`; header: `heat_unit`, `heat_bins`. Nothing changes unless `"heatmap"` is listed in an entry: with the default `MOD_BH` the borehole figure is pixel-identical and the `.npz` arrays identical to the previous version (tested on a synthetic mesh); heat maps checked against an independent histogram. AI-generated; review before production use. |
 | 2026-10-31 | Claude Sonnet 5.5 (Anthropic) | New `ENS_MODEL_SOURCE` (`"converged"` by default, or `"perturbed"`), `ENS_PERTURBED_FILE` (default `"referencemodel.dat"`), `ENS_PERTURBED_SUFFIX` (default `"_perturbed"`): the ensemble can be built from each member's perturbed reference (the RTO prior draw) instead of its converged model, so all statistics, slices, boreholes and heat maps describe the prior ensemble. Same member set as the converged run (selection unchanged); `MOD_REF_FILE` (base reference) unchanged; `ENSEMBLE_PREFIX` gets the suffix so results do not overwrite; `<P>_model_source` / `<P>_model_file_name` in the `.npz`, `ensemble_source` in the borehole header; `PLOT_ONLY` reads the stored source (older files: converged); `COMPUTE_SIMRC` off in this mode; warnings for missing files (`no_perturbed_file`), symbolic links and zero spread. Default behaviour unchanged (scan result identical to the previous version on a synthetic ensemble). AI-generated; review before production use. |
+| 2026-11-02 | Claude Sonnet 5.5 (Anthropic) | Borehole heat maps of the converged **and** the perturbed models on a common colour bar, same options as `femtic_ens_plot.py`. `ENS_MODEL_SOURCE = "both"`: the run is the converged run and each member's `ENS_PERTURBED_FILE` is loaded in addition (a member lacking it is skipped, `no_perturbed_file`); `MOD_BH` draws every borehole for both ensembles (heat map, `"ensemble"`, statistics, `"best"`), side by side in one figure with one colour bar (`MOD_BH_HEAT_FIGURE = "combined"`) or as two figures (`"separate"`); the perturbed profiles go to `<MOD_BH_FILE>_perturbed.npz`, the perturbed matrix is stored as `<P>_ens_perturbed` so `PLOT_ONLY` can draw it. New `MOD_BH_HEAT_SHARE_SCALE` (default `False`: one scale per figure as before; `True`: one scale for all figures), `MOD_BH_HEAT_SCALE_FILE` / `MOD_BH_HEAT_SCALE_IO` (save / reuse the resolved scale as JSON across runs; same format as `femtic_ens_plot.py`). The borehole `.npz` header gains `colour_scale`. With the defaults, figures and `.npz` arrays are identical to the previous version. No change needed for the 2-element plane `point` (`_plane_spec_km_to_m` pads it). AI-generated; review before production use. |

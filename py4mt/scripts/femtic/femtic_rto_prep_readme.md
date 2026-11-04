@@ -93,7 +93,7 @@ Removed (2026-10-21): `MOD_MU`, `MOD_PDF` (never passed on; implied alpha = 1),
 | `PLOT_MODEL` | Enable model ensemble plot |
 | `PLOT_SLICES_QC` | Enable per-member QC slice plot |
 | `PLOT_SLICES_ENS` | Enable joint ensemble slice figure |
-| `MOD_SLICES` | Slice dicts for QC/model plots (model-local metres, `kind` key). As of 2026-06-07 the QC plot uses the full shared `MOD_*` plotting config block (`MOD_CMAP`, `MOD_CLIM`, `MOD_XLIM`/`YLIM`/`ZLIM`, `MOD_OCEAN_COLOR`, `MOD_DPI`, site overlay, UTM origin, etc. — same as `femtic_gst_prep.py`/`femtic_ens_post.py`), not the older `QC_SLICES`/`QC_CMAP`/etc. variables. |
+| `MOD_SLICES` | Slice dicts for QC/model plots (model-local **km**, `kind` key; converted to metres by `_slices_km_to_m`). As of 2026-06-07 the QC plot uses the full shared `MOD_*` plotting config block (`MOD_CMAP`, `MOD_CLIM`, `MOD_XLIM`/`YLIM`/`ZLIM`, `MOD_OCEAN_COLOR`, `MOD_DPI`, site overlay, UTM origin, etc. — same as `femtic_gst_prep.py`/`femtic_ens_post.py`), not the older `QC_SLICES`/`QC_CMAP`/etc. variables. |
 | `MOD_TICK_FONTSIZE` / `MOD_LABEL_FONTSIZE` | Axis tick/label font sizes for the QC/model slice plot. Defaults `7`/`8`, matching `fviz.plot_model_slices`' own defaults. |
 | `MOD_XLIM` / `MOD_YLIM` / `MOD_ZLIM` | Literal plot extent, model-local **km**; `None` = auto. Overridden by `MOD_ROI_AUTO` (below) when site positions are available. |
 | `MOD_ROI_AUTO` | Default `True`. With site positions available (`MOD_SITE_DAT` / `MOD_SITE_NUMBER`, subject to `MOD_PLOT_SITES_MAPS/SLICES`), `MOD_XLIM`/`MOD_YLIM` are derived from the site bounding box + `MOD_ROI_PAD_XY` and `MOD_ZLIM` is set from `MOD_ROI_ZLIM`, overriding the literals. Falls back to the literals if no sites are found. Identical to `femtic_ens_post.py` / `femtic_gst_prep.py`. Also drives the aspect-ratio panel sizing (`MOD_PANEL_WIDTH = None`). |
@@ -112,14 +112,23 @@ Removed (2026-10-21): `MOD_MU`, `MOD_PDF` (never passed on; implied alpha = 1),
 
 ## Slice specification
 
-All slice dicts use `kind` (not `type`) as the panel-type key:
+All slice dicts use `kind` (not `type`) as the panel-type key. Positions in
+`MOD_SLICES` / `ENS_SLICES` are model-local **km** (the script converts them
+to the metres expected by `femtic_viz` / `fem.resolve_slice_positions`):
 
 ```python
-dict(kind="map",  z0=5000.0)
-dict(kind="ew",   y0=0.0)
-dict(kind="ns",   x0=0.0)
-dict(kind="plane", point=[0,0,5000], strike=45, dip=60)
+dict(kind="map",  z0=5.0)                                  # km
+dict(kind="ew",   y0=0.0)                                  # km
+dict(kind="ns",   x0=0.0)                                  # km
+dict(kind="plane", point=[0.0, 0.0, 5.0], strike=45, dip=60)  # [x, y, z] km
+dict(kind="plane", point=[0.0, 0.0, 0.0], strike=45, dip=90)  # z irrelevant for dip=90
 ```
+
+A plane `point` must have **three** elements `[x, y, z]`; a 2-element point
+raises `ValueError: resolve_pos_point: 'point' must have 3 elements`.
+CRS-tagged forms `([E, N, z], "utm")` and `([lon, lat, z], "latlon")` take
+E/N in metres and lon/lat in degrees (not km); only `z` is in km.
+The same rule applies to `p1` / `p2` of `kind="profile"` (z optional).
 
 ---
 
@@ -182,4 +191,14 @@ dict(kind="plane", point=[0,0,5000], strike=45, dip=60)
   is now written to `ENSEMBLE_DIR` (the working directory set in the
   script) instead of next to the script: `utl.write_param_summary(fname,
   out_dir=ENSEMBLE_DIR)`. Needs the `util.py` of the same date.
+  AI-generated; review before production use.
+- 2026-11-01 (Claude Sonnet 5.5, Anthropic): fixed `ValueError:
+  resolve_pos_point: 'point' must have 3 elements, got 2` raised by
+  `fem.resolve_slice_positions()`: the `kind="plane"` entry in `MOD_SLICES`
+  now has a 3-element `point`. `_slices_km_to_m()` now also converts `point`,
+  `p1`, `p2`, `z_top`, `z_bot` from km to m (for CRS-tagged `utm`/`latlon`
+  positions only `z` is scaled); before, only `x0`/`y0`/`z0` were converted,
+  so a plane `point` would have been 1000x too small. Tested the conversion
+  and `fem.resolve_slice_positions()` on the changed specs (femtic.py with a
+  stubbed `ensembles`); the full script was not run here (no site/mesh data).
   AI-generated; review before production use.

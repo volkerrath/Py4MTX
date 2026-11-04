@@ -309,7 +309,7 @@ SITE_MERGE_TOL: float = 1.0           # [m] positions closer than this are the s
 
 # --- output ---
 OUT_DIR: Optional[str] = (
-    "/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_0_reset-err/results/"
+    "/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_0_orig-err/results_converged/"
 )
 # None      # None -> into the run directory (single:
                                    # each run's own; ensemble: common parent
@@ -317,9 +317,9 @@ OUT_DIR: Optional[str] = (
 OUT_PREFIX: Optional[str] = "Misfits"  # None -> derived from run / ensemble;
                                    # if set with several singles it is
                                    # prepended: <OUT_PREFIX>_<run>_iter<N>
-PLOT_FORMATS: Tuple[str, ...] = (".pdf", "jpg",)   # a tuple: note the comma!
+PLOT_FORMATS: Tuple[str, ...] = (".pdf",)   # a tuple: note the comma!
 PLOT_DPI: int = 300
-PLOT_DIR: Optional[str] = "plots"  # where the figures go (tables stay in
+PLOT_DIR: Optional[str] = None  # where the figures go (tables stay in
                             # the output directory). None = same directory
                             # as the tables; a relative name = sub-directory
                             # of the output directory (per run); an absolute

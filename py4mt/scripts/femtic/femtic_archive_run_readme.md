@@ -35,6 +35,12 @@ This utility keeps selected low- and high-iteration files, preserves protected f
   - `.tgz` / `.tar.gz`
   - always writes a real, on-disk archive containing only the
     kept-file selection, whether or not `--delete` is also given
+  - selectable compression level (`--compress-level`, 0-9, default 3
+    as a speed/size trade-off)
+  - `.tgz`/`.tar.gz` output is piped through `pigz` (parallel gzip)
+    when it is installed, with automatic fallback to Python's
+    in-process gzip if it is missing or fails (`--threads`,
+    `--no-pigz`)
 - Optional inclusion of leading directory in archive
 
 ---
@@ -140,6 +146,88 @@ also deleted from `run/` afterwards.
 - `.zip`
 - `.tgz`
 - `.tar.gz`
+
+### Compression level
+
+`--compress-level N` sets the gzip/deflate level for both `.tgz`/`.tar.gz`
+and `.zip` output. `N` is an integer from 0 to 9; the default is **3**, a
+speed/size trade-off.
+
+| Level | Meaning |
+|---|---|
+| 0 | store only, no compression (fastest, largest) |
+| 1 | fastest compression |
+| 3 | default: much faster than 9, archive only slightly larger |
+| 9 | smallest archive, slowest |
+
+```
+python mt_archive_run.py run --compress run_cleaned.tgz --compress-level 1
+python mt_archive_run.py run --compress run_cleaned.tgz --compress-level 9
+```
+
+Notes:
+- Before this option existed, `.tgz` always used tarfile's default
+  (level 9) and `.zip` used zlib's default (level 6).
+- In a quick test on a synthetic 37 MB two-run ensemble (half random
+  bytes, half random-digit text), level 3 took about 0.43 s against about
+  1.1 s for level 9, and produced an archive about 2% larger. Your
+  numbers will differ; the gain grows with the amount of data and is
+  largest on slow or shared filesystems.
+- Large HDF5 files that were already written with HDF5's own gzip
+  filter hardly shrink when compressed again, so a low level (or 0) loses
+  little there.
+- The level has no effect without `--compress`. It is validated before
+  anything is deleted, so a bad value cannot abort a `--delete` run
+  half-way.
+- It is also recorded in `femtic_archive_run_summary.md`, and printed
+  with the compression target (`Compression target: out.tgz (level 3)`).
+
+### Parallel compression with pigz
+
+For `.tgz`/`.tar.gz` output the script uses `pigz` (parallel gzip) when
+it finds one on `PATH`: Python writes the tar stream into a pipe and
+`pigz` compresses it on several threads and writes the file. The result
+is an ordinary gzip file (`tar xzf`, `gzip -t` and Python all read it),
+and the tar stream inside is byte-for-byte what the in-process path
+writes -- only the speed differs. `--compress-level` is passed to pigz
+as `-N`.
+
+```
+python mt_archive_run.py ensemble/run_* --compress ens.tgz --threads 8
+```
+
+The line `Compressor: ...` printed at the start of compression says what
+was used: pigz (with its path and thread count) or in-process gzip.
+
+**Threads.** `--threads N` sets the number of pigz threads. The default,
+`0`, means auto: `SLURM_CPUS_PER_TASK` if it is set (so a batch job with
+`#SBATCH --cpus-per-task=8` gets 8), otherwise the number of CPUs the
+process is allowed to run on. On a shared login node, where many CPUs
+are visible but not yours to use, set `--threads` explicitly.
+
+**Fallback.** The run never depends on pigz. If pigz is not on `PATH`,
+cannot be started, closes the pipe early, or exits with an error, the
+script prints a warning (with pigz's own error message, if any) and
+rewrites the archive with Python's in-process, single-threaded gzip --
+the same result, just slower. Errors that are not pigz's fault, for
+example an unreadable source file, are not hidden: pigz is stopped and
+the error is reported as it always was. `--no-pigz` skips pigz entirely
+and forces the in-process path.
+
+`.zip` output never uses pigz (it cannot write zip files), so
+`--threads` has no effect there; use `.tgz` for large ensembles.
+
+Make sure `pigz` is on `PATH` where the job runs (a cluster module or a
+conda environment will do). **Test status:** the pigz code path was
+tested against a stand-in executable with the same command-line
+interface (plus every fallback case above), because no real `pigz` was
+available when it was written. Before relying on it for data you cannot
+regenerate, do one quick check with your real pigz:
+
+```
+python mt_archive_run.py run --compress /tmp/check.tgz --threads 4
+gzip -t /tmp/check.tgz && tar tzf /tmp/check.tgz | head
+```
 
 ### ⚠️ Symlinks: use `.tgz`/`.tar.gz`, not `.zip`
 
@@ -446,6 +534,9 @@ skipped the same way.
 | `--recursive` | Scan subdirectories |
 | `--delete` | Actually remove the unwanted iteration files from the source directories (otherwise dry run -- nothing on disk is touched). Independent of `--compress`. |
 | `--compress` | Output archive path (`.zip`, `.tgz`, `.tar.gz`). Always writes a real archive with the kept-file selection, whether or not `--delete` is given. |
+| `--compress-level` | Compression level for `--compress` (`.zip` and `.tgz`/`.tar.gz`), 0-9: 0 stores without compression, 1 is fastest, 9 gives the smallest archive and is slowest. No effect without `--compress`. Default: 3 |
+| `--threads` | Threads for `pigz` when writing `.tgz`/`.tar.gz`. `0` (default) = auto: `SLURM_CPUS_PER_TASK` if set, else the CPUs the process may use. Set it explicitly on a shared login node. Ignored for `.zip` and with `--no-pigz` |
+| `--no-pigz` | Do not use `pigz` even if installed; compress in-process (single-threaded). By default `.tgz`/`.tar.gz` output is piped through `pigz` when it is on `PATH`, with automatic fallback to in-process gzip if it is missing or fails |
 | `--no-root` | Do not include leading directory in archive |
 | `--exclude-dirs` | Subdirectory names (case-insensitive) to skip entirely when `--recursive` is set: not scanned, not deleted, not archived. Default: `plots` |
 | `--always-include-dirs` | Subdirectory names (case-insensitive) that are never scanned, but added to the compressed archive untouched, as whole directories. Always checked as immediate children of the archive's base directory (no `--recursive` needed for that); `--recursive` is needed for deeper nesting or more than one distinct parent. Default: `templates python` |
@@ -495,6 +586,8 @@ Created with the help of ChatGPT (GPT-5 Thinking) on 2026-04-07
 | 2026-09-15 | Claude Sonnet 5 (Anthropic) (third same-day follow-up) | Decoupled `--compress` from `--delete`. Previously, `--compress` without `--delete` only printed a "WOULD ADD" preview and never wrote a real archive file. `--compress` now always writes a real, on-disk archive containing the kept-file selection regardless of `--delete` -- so `--compress` alone gives a genuine, already-smaller archive with every source file left untouched. `--delete` continues to control only whether the unwanted iteration files are removed from the source directories. |
 | 2026-09-15 | Claude Sonnet 5 (Anthropic) (fourth same-day follow-up) | `--always-include-dirs` names are now also looked for as immediate children of the archive's base directory (the common parent when several directories/wildcards are given, or the directory itself otherwise), via an always-on, non-recursive check -- not just when `--recursive` is set. Matches the usual ensemble layout (`run_1`, `run_2`, ..., `templates/`, `python/` as siblings under one ensemble folder): targeting the run directories directly via a wildcard, e.g. `ensemble_x/run_*`, now still picks up `ensemble_x/templates` and `ensemble_x/python` with no `--recursive` needed. `--recursive` is still required for always-include directories nested deeper than one level, or spread under more than one distinct parent. |
 | 2026-09-15 | Claude Sonnet 5 (Anthropic) (fifth same-day follow-up) | `--keep-n-low` may now be `0` ("keep none of the matched iteration files from the low end"), instead of rejecting anything below `1`. `--keep-n-high` still must be `>= 1` -- you always keep at least the highest iteration -- so this is an asymmetric relaxation. `iter0` is unaffected either way: it's kept via its own `iter0` protected-token match, independent of `--keep-n-low`/`--keep-n-high`. Also fixed a latent slicing bug this change would otherwise have exposed: Python's `list[-0:]` is the *whole* list (since `-0 == 0`), not an empty one, so a `keep_n_high == 0` could never have correctly meant "keep none from the high end" without an explicit guard -- added defensively even though the CLI no longer allows `keep_n_high == 0` to reach it. |
+| 2026-11-04 | Claude Sonnet 5.5 (Anthropic) | Added `--compress-level` (0-9, default 3) and the matching `compress_level` argument of `mt_archive_run()`. It is passed to `tarfile` (`.tgz`/`.tar.gz`) and `zipfile` (`.zip`) as `compresslevel`, validated before any file is deleted, printed with the compression target, and recorded in the parameter summary. Previously `.tgz` implicitly used level 9 (tarfile's default) and `.zip` level 6 (zlib's default). |
+| 2026-11-04 | Claude Sonnet 5.5 (Anthropic) (same-day follow-up) | Parallel compression: `.tgz`/`.tar.gz` output is now piped into `pigz` (`pigz -p N -LEVEL -c`, fed by `tarfile` in stream mode) when `pigz` is on `PATH`. Added `--threads N` (0 = auto: `SLURM_CPUS_PER_TASK`, else the CPUs the process may use) and `--no-pigz`, and the matching `threads` / `use_pigz` arguments of `mt_archive_run()`. Fallback to the previous in-process gzip, with a printed warning, if `pigz` is missing, cannot be started, closes the pipe early or exits non-zero; errors unrelated to pigz still propagate. `.zip` is unchanged. Both writers share one helper, so the archive contents are identical. Tested with a stand-in for `pigz` (no real binary was available); verify with your real `pigz`. |
 
 **Note on AI assistance:** this script and README were produced with the
 help of AI tools (ChatGPT and Claude, see table above) and have not

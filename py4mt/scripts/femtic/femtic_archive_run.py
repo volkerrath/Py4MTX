@@ -138,6 +138,45 @@ Provenance:
                 even though keep_n_high == 0 no longer reaches this
                 function via the CLI/mt_archive_run validation, as a
                 defensive correctness fix).
+    2026-11-04  Claude Sonnet 5.5 (Anthropic)
+                Added a user-settable compression level: new
+                --compress-level CLI option (0-9, default
+                DEFAULT_COMPRESS_LEVEL = 3) and matching
+                compress_level argument of mt_archive_run(). It is
+                passed to tarfile (.tgz/.tar.gz, as compresslevel) and
+                zipfile (.zip, as compresslevel; deflate). Level 3 is a
+                speed/size trade-off; previously .tgz implicitly used 9
+                (tarfile's default) and .zip used 6 (zlib's default).
+                In a quick test on a synthetic
+                37 MB two-run ensemble (half random bytes, half
+                random-digit text) level 3 was about 2.5x faster than
+                level 9 for a ~2% larger archive; real gains depend on
+                the data and the filesystem. 0 stores without
+                compression, 9 is smallest/slowest. The value is
+                validated up front (before any file is deleted) and
+                printed with the compression target.
+    2026-11-04  Claude Sonnet 5.5 (Anthropic)  (same-day follow-up)
+                Parallel compression: for .tgz/.tar.gz the tar stream is
+                now piped into pigz (subprocess, tarfile stream mode
+                "w|", pigz -p N -LEVEL -c writing the file) when pigz is
+                on PATH. New --threads N (0 = auto: SLURM_CPUS_PER_TASK,
+                else the CPUs this process may use) and --no-pigz
+                options, and matching threads / use_pigz arguments of
+                mt_archive_run(). Fallback: if pigz is not installed,
+                cannot be started, closes the pipe early or exits
+                non-zero, a warning is printed and the archive is
+                rewritten with in-process gzip (the previous
+                behaviour), so the run never depends on pigz.
+                Errors that are not pigz's fault (e.g. an unreadable
+                source file) are not swallowed: pigz is killed and the
+                exception propagates, as before. .zip is unchanged
+                (pigz cannot write zip). Archive entries are produced
+                by one shared helper (_add_to_tar), so both paths
+                write the same content. threads is validated before any
+                file is deleted. Tested with a stand-in for pigz (same
+                command-line interface) because no real pigz was
+                available where this was written -- verify with the real
+                binary on your cluster.
 
     NOTE: This script was produced with AI assistance (see provenance
     log above). It has not been independently verified for production
@@ -150,7 +189,10 @@ from __future__ import annotations
 import argparse
 import glob as glob_module
 import re
+import shutil
+import subprocess
 import tarfile
+import tempfile
 import zipfile
 from pathlib import Path
 import os
@@ -164,6 +206,62 @@ import sys
             #sys.path.insert(0, str(_p))
 
 from typing import Iterable
+
+# Default gzip/deflate level for --compress (0 = store, 9 = smallest/slowest).
+# 3 is a speed/size trade-off; tarfile's own default would be 9.
+DEFAULT_COMPRESS_LEVEL = 3
+
+
+def _check_compress_level(level: int) -> int:
+    """Return ``level`` as an int if it is a valid gzip/deflate level
+    (0-9), otherwise raise ValueError."""
+    if isinstance(level, bool) or not isinstance(level, int) or not 0 <= level <= 9:
+        raise ValueError(f"compress_level must be an integer 0-9, got {level!r}")
+    return level
+
+
+def _check_threads(threads: int) -> int:
+    """Return ``threads`` as an int if it is a valid thread count
+    (0 = auto, otherwise >= 1), else raise ValueError."""
+    if isinstance(threads, bool) or not isinstance(threads, int) or threads < 0:
+        raise ValueError(
+            f"threads must be an integer >= 0 (0 = auto), got {threads!r}"
+        )
+    return threads
+
+
+def _nonneg_int(text: str) -> int:
+    """argparse ``type`` for an integer >= 0."""
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid int value: {text!r}") from None
+    if value < 0:
+        raise argparse.ArgumentTypeError(f"must be >= 0, got {value}")
+    return value
+
+
+def _default_threads() -> int:
+    """Thread count used for pigz when --threads is 0 (auto).
+
+    Uses SLURM_CPUS_PER_TASK when set (the job's CPU allocation), else
+    the number of CPUs this process is allowed to run on (respects
+    taskset/cpusets, unlike os.cpu_count()), else os.cpu_count(); never
+    less than 1. On a shared login node with many visible CPUs pass
+    --threads explicitly instead.
+    """
+    env = os.environ.get("SLURM_CPUS_PER_TASK", "")
+    if env.isdigit() and int(env) > 0:
+        return int(env)
+    try:
+        return max(1, len(os.sched_getaffinity(0)))
+    except AttributeError:  # not available on macOS/Windows
+        return max(1, os.cpu_count() or 1)
+
+
+# Buffer size of the pipe to pigz: tar blocks are written in small chunks,
+# so a larger Popen buffer turns them into few big write() calls.
+_PIPE_BUFSIZE = 1 << 20
 
 
 def _write_param_summary(fname: str, params: dict) -> str:
@@ -370,9 +468,13 @@ def _arcname(filepath: Path, base_dir: Path, include_root: bool) -> Path:
 def _write_zip(
     archive_path: Path, files, base_dir: Path, include_root: bool,
     extra_dirs: Iterable[Path] = (),
+    compress_level: int = DEFAULT_COMPRESS_LEVEL,
 ):
     archive_path.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+    with zipfile.ZipFile(
+        archive_path, "w", compression=zipfile.ZIP_DEFLATED,
+        compresslevel=compress_level,
+    ) as zf:
         for f in files:
             try:
                 zf.write(f, arcname=_arcname(f, base_dir, include_root))
@@ -389,23 +491,118 @@ def _write_zip(
                     print(f"  SKIPPED (zip cannot store this, e.g. broken symlink): {f}: {e}")
 
 
+def _add_to_tar(tf, files, base_dir: Path, include_root: bool, extra_dirs):
+    """Add the kept files and the whole always-include directories to an
+    open TarFile. Shared by the in-process and the pigz writers so both
+    produce the same archive entries."""
+    for f in files:
+        tf.add(f, arcname=_arcname(f, base_dir, include_root))
+    for d in extra_dirs:
+        # recursive=True adds the whole tree untouched, preserving
+        # symlinks (tarfile does not dereference by default).
+        tf.add(d, arcname=_arcname(d, base_dir, include_root), recursive=True)
+
+
+def _write_tgz_pigz(
+    archive_path: Path, files, base_dir: Path, include_root: bool,
+    extra_dirs, compress_level: int, threads: int, pigz_path: str,
+) -> str | None:
+    """Stream the tar into ``pigz`` (parallel gzip) through a pipe; pigz
+    writes the .tgz itself. The result is an ordinary gzip stream that
+    ``tar xzf`` / ``gzip -t`` read as usual.
+
+    Returns None on success, or a short reason string when pigz could not
+    start, closed the pipe early, or exited non-zero -- the caller then
+    falls back to in-process gzip. Errors that are not pigz's fault (e.g.
+    an unreadable source file) are not swallowed: pigz is stopped and the
+    exception propagates, as it does for the in-process writer.
+    """
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [pigz_path, "-p", str(threads), f"-{compress_level}", "-c"]
+    with open(archive_path, "wb") as out, tempfile.TemporaryFile() as err:
+        try:
+            proc = subprocess.Popen(
+                cmd, stdin=subprocess.PIPE, stdout=out, stderr=err,
+                bufsize=_PIPE_BUFSIZE,
+            )
+        except OSError as e:
+            return f"could not start pigz: {e}"
+
+        pipe_broken = False
+        try:
+            with tarfile.open(fileobj=proc.stdin, mode="w|") as tf:
+                _add_to_tar(tf, files, base_dir, include_root, extra_dirs)
+        except BrokenPipeError:
+            pipe_broken = True  # pigz died while we were still writing
+        except BaseException:
+            proc.kill()  # not pigz's fault: stop it, then propagate
+            raise
+        finally:
+            try:
+                proc.stdin.close()
+            except BrokenPipeError:
+                pipe_broken = True
+            rc = proc.wait()
+
+        if pipe_broken or rc != 0:
+            err.seek(0)
+            msg = err.read().decode("utf-8", "replace").strip()
+            what = (
+                f"pigz closed the pipe early (exit status {rc})"
+                if pipe_broken else f"pigz exited with status {rc}"
+            )
+            return what + (f": {msg}" if msg else "")
+    return None
+
+
 def _write_tgz(
     archive_path: Path, files, base_dir: Path, include_root: bool,
     extra_dirs: Iterable[Path] = (),
+    compress_level: int = DEFAULT_COMPRESS_LEVEL,
+    threads: int = 0,
+    use_pigz: bool = True,
 ):
+    """Write a .tgz/.tar.gz. Uses pigz (parallel) when ``use_pigz`` and a
+    ``pigz`` executable is on PATH; otherwise -- or if pigz fails for any
+    reason -- falls back to Python's in-process, single-threaded gzip,
+    which rewrites the archive from scratch."""
+    if not use_pigz:
+        print("Compressor: in-process gzip (pigz disabled), single-threaded.")
+    else:
+        pigz_path = shutil.which("pigz")
+        if pigz_path is None:
+            print(
+                "Compressor: pigz not found on PATH -- using in-process "
+                "gzip, single-threaded."
+            )
+        else:
+            n = threads if threads > 0 else _default_threads()
+            auto = " (auto)" if threads == 0 else ""
+            print(
+                f"Compressor: pigz ({pigz_path}), {n} thread(s){auto}, "
+                f"level {compress_level}."
+            )
+            reason = _write_tgz_pigz(
+                archive_path, files, base_dir, include_root, extra_dirs,
+                compress_level, n, pigz_path,
+            )
+            if reason is None:
+                return
+            print(
+                f"WARNING: pigz failed ({reason}) -- falling back to "
+                "in-process gzip, single-threaded."
+            )
+
     archive_path.parent.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(archive_path, "w:gz") as tf:
-        for f in files:
-            tf.add(f, arcname=_arcname(f, base_dir, include_root))
-        for d in extra_dirs:
-            # recursive=True adds the whole tree untouched, preserving
-            # symlinks (tarfile does not dereference by default).
-            tf.add(d, arcname=_arcname(d, base_dir, include_root), recursive=True)
+    with tarfile.open(archive_path, "w:gz", compresslevel=compress_level) as tf:
+        _add_to_tar(tf, files, base_dir, include_root, extra_dirs)
 
 
 def _compress(
     compress_path, files, base_dir: Path, include_root: bool,
     extra_dirs: Iterable[Path] = (), deleted_source: bool = False,
+    compress_level: int = DEFAULT_COMPRESS_LEVEL,
+    threads: int = 0, use_pigz: bool = True,
 ):
     """Write the compressed archive from the kept-file selection.
 
@@ -415,6 +612,16 @@ def _compress(
     was passed). The archive only ever contains the kept-file
     selection either way, so --compress alone (no --delete) gives a
     real, smaller archive while leaving every source file untouched.
+
+    ``compress_level`` (0-9) is the gzip/deflate level used for both
+    .tgz/.tar.gz and .zip output: 0 stores without compression, 1 is
+    fastest, 9 gives the smallest archive and is slowest.
+
+    For .tgz/.tar.gz the tar stream is piped into ``pigz`` (parallel
+    gzip, ``threads`` threads, 0 = auto) when ``use_pigz`` is true and
+    pigz is on PATH; if pigz is missing or fails, in-process gzip is
+    used instead. .zip is always written in-process (pigz cannot
+    produce zip files).
     """
     if compress_path is None:
         return
@@ -424,7 +631,7 @@ def _compress(
     files = sorted(set(files))
     extra_dirs = sorted(set(extra_dirs))
 
-    print(f"\nCompression target: {archive_path}")
+    print(f"\nCompression target: {archive_path} (level {compress_level})")
 
     if name.endswith(".zip"):
         print(
@@ -440,9 +647,16 @@ def _compress(
         )
 
     if name.endswith(".zip"):
-        _write_zip(archive_path, files, base_dir, include_root, extra_dirs)
+        print("Compressor: zipfile, in-process (pigz applies to .tgz/.tar.gz only).")
+        _write_zip(
+            archive_path, files, base_dir, include_root, extra_dirs,
+            compress_level,
+        )
     elif name.endswith(".tgz") or name.endswith(".tar.gz"):
-        _write_tgz(archive_path, files, base_dir, include_root, extra_dirs)
+        _write_tgz(
+            archive_path, files, base_dir, include_root, extra_dirs,
+            compress_level, threads, use_pigz,
+        )
     else:
         raise ValueError("Unsupported archive format")
 
@@ -470,6 +684,9 @@ def mt_archive_run(
     dry_run: bool = True,
     compress_path: str | Path | None = None,
     include_root: bool = True,
+    compress_level: int = DEFAULT_COMPRESS_LEVEL,
+    threads: int = 0,
+    use_pigz: bool = True,
 ) -> None:
     """Clean (and optionally archive) one or more FEMTIC run directories.
 
@@ -542,6 +759,24 @@ def mt_archive_run(
     ``compress_path`` set with ``dry_run=True`` (the default, i.e. no
     ``--delete``) gives you a genuine, already-smaller archive while
     leaving every source file exactly as it was.
+
+    ``compress_level`` (0-9, default ``DEFAULT_COMPRESS_LEVEL`` = 3) is
+    the gzip/deflate level used for the archive (both .tgz/.tar.gz and
+    .zip); it has no effect without ``compress_path``. 0 stores without
+    compression, 1 is fastest, 9 is smallest and slowest. Lower levels
+    mainly pay off for large, poorly compressible files (e.g. HDF5
+    already written with its own gzip filter).
+
+    ``use_pigz`` (default True) and ``threads`` (default 0 = auto) apply
+    to .tgz/.tar.gz output only. When ``use_pigz`` is true and a ``pigz``
+    executable is on PATH, the tar stream is piped into it, so the
+    compression runs on ``threads`` CPU threads in parallel (auto =
+    SLURM_CPUS_PER_TASK, else the CPUs this process may use). If pigz is
+    not installed, cannot be started, or fails part-way, the archive is
+    rewritten with Python's in-process gzip and a warning is printed, so
+    the run never depends on pigz being available. Set ``use_pigz=False``
+    to force the in-process path. The archive content and format are the
+    same either way; only the speed differs.
     """
 
     if keep_n_low < 0 or keep_n_high < 1:
@@ -549,6 +784,11 @@ def mt_archive_run(
             "keep_n_low must be >= 0 and keep_n_high must be >= 1 "
             "(you always need at least the highest iteration)"
         )
+    # Validate before anything is deleted, so a bad level cannot abort
+    # the run after the unwanted files are already gone.
+    compress_level = _check_compress_level(compress_level)
+    threads = _check_threads(threads)
+    use_pigz = bool(use_pigz)
 
     if isinstance(directory, (str, Path)):
         directories = [Path(directory)]
@@ -628,6 +868,8 @@ def mt_archive_run(
         _compress(
             compress_path, protected, base_dir, include_root,
             always_include_paths, deleted_source=not dry_run,
+            compress_level=compress_level,
+            threads=threads, use_pigz=use_pigz,
         )
         return
 
@@ -670,6 +912,8 @@ def mt_archive_run(
     _compress(
         compress_path, final_keep, base_dir, include_root,
         always_include_paths, deleted_source=not dry_run,
+        compress_level=compress_level,
+        threads=threads, use_pigz=use_pigz,
     )
 
 
@@ -713,6 +957,29 @@ def main():
              "a genuine, already-smaller archive with the source "
              "directories left exactly as they were.",
     )
+    parser.add_argument(
+        "--compress-level", type=int, default=DEFAULT_COMPRESS_LEVEL,
+        choices=range(10), metavar="0-9",
+        help="Compression level for --compress (.tgz/.tar.gz and .zip): "
+             "0 stores without compression, 1 is fastest, 9 gives the "
+             "smallest archive and is slowest. No effect without "
+             f"--compress. Default: {DEFAULT_COMPRESS_LEVEL}.",
+    )
+    parser.add_argument(
+        "--threads", type=_nonneg_int, default=0, metavar="N",
+        help="Threads for pigz when writing .tgz/.tar.gz. 0 (default) = "
+             "auto: SLURM_CPUS_PER_TASK if set, else the CPUs this "
+             "process may use. On a shared login node set this "
+             "explicitly. Ignored for .zip and with --no-pigz.",
+    )
+    parser.add_argument(
+        "--no-pigz", action="store_true",
+        help="Do not use pigz even if it is installed; compress "
+             "in-process (single-threaded). By default .tgz/.tar.gz "
+             "output is piped through pigz when it is on PATH, with "
+             "automatic fallback to in-process gzip if it is missing "
+             "or fails.",
+    )
     parser.add_argument("--no-root", action="store_true",
                         help="Do NOT include leading directory in archive")
     parser.add_argument(
@@ -744,6 +1011,9 @@ def main():
         recursive=args.recursive,
         dry_run=not args.delete,
         compress_path=args.compress,
+        compress_level=args.compress_level,
+        threads=args.threads,
+        use_pigz=not args.no_pigz,
         include_root=not args.no_root,
         exclude_dirs=args.exclude_dirs,
         always_include_dirs=args.always_include_dirs,

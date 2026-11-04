@@ -115,7 +115,7 @@ borehole heat-map figure (BOREHOLE_HEATMAP_FILE) + histograms .npz
 | `CNV_FILE` | Convergence file name in each member directory (default `"femtic.cnv"`; a list gives candidates, first existing wins) -- keep equal to `femtic_ens_post.py`'s value |
 | `NRMS_MAX` | Max accepted nRMS from `femtic.cnv` — keep equal to `femtic_ens_post.py`'s value |
 | `ENS_LABELS` | Labels for member plots/filenames; `None` → directory basenames |
-| `ENS_MODEL_SOURCE` | `"converged"` (default) or `"perturbed"`: which model of each member the **ensemble-based borehole figures** use; see "Perturbed references" below |
+| `ENS_MODEL_SOURCE` | `"converged"` (default), `"perturbed"` or `"both"`: which model of each member the **ensemble-based borehole figures** use; `"both"` = heat maps of both on one colour bar; see "Perturbed references" and "Borehole heat map" below |
 | `ENS_PERTURBED_FILE` | File of the perturbed reference in each member directory (default `"referencemodel.dat"`) |
 
 nRMS and the iteration number are read from each member's `femtic.cnv` via `fem.read_cnv()`, which parses column positions from the file's own header row (case-insensitive substring match) — no FEMTIC-version setting needed.
@@ -152,6 +152,17 @@ models scatter around it. Titles and the heat-map `.npz` header
   "perturbed"`, results file `<PREFIX>_PERTURBED_results.npz`). The file stores
   its source (`<P>_model_source`; older files: converged), which appears in the
   titles; the member figure of that file shows the perturbed reference.
+  `"both"` needs the member directories and is ignored here (a note is
+  printed); to give the heat maps of two results files one colour bar, use
+  `BOREHOLE_HEAT_SCALE_FILE` (see "Sharing the colour scale" below).
+
+`ENS_MODEL_SOURCE = "both"` makes the heat map from the converged **and** the
+perturbed models of the same members: each member is sampled twice
+(`resistivity_block_iter<N>.dat` and `ENS_PERTURBED_FILE`; a member lacking
+either file is skipped, so both ensembles have the same members), and the two
+heat maps share one colour scale and, by default, one figure and one colour
+bar. The **line log** (`BOREHOLE_LINES`) is a single model and shows the
+converged first member.
 
 ### Working from the results .npz (NPZ mode)
 
@@ -336,6 +347,64 @@ BOREHOLE_HEAT_VMIN = 0.05       # ignore bins with < 5 % of the members
 BOREHOLE_HEAT_CMAP = "Blues"    # single-hue colormap
 ```
 
+#### Sharing the colour scale (converged vs. perturbed, other runs)
+
+Colours are only comparable between heat maps if the **bin edges** (bin width
+changes the fractions), the **colour limits** and the **colormap** are the same.
+Three settings take care of that:
+
+| Variable | Default | Description |
+|---|---|---|
+| `ENS_MODEL_SOURCE` | `"converged"` | `"both"`: sample every member twice (best-fit and `ENS_PERTURBED_FILE`) and make a heat map of each, in one run. |
+| `BOREHOLE_HEAT_SHARE_SCALE` | `True` | The heat maps of one run use ONE scale: the same bin edges (one common range over all values if `BOREHOLE_XLIM` is `None`), the same colour limits (an automatic `VMAX` is the 99th percentile over all of them) and the same colormap. `False` = each its own automatic scale, in separate figures. No effect for a single heat map. |
+| `BOREHOLE_HEAT_FIGURE` | `"combined"` | `"both"` only. `"combined"`: ONE figure, a block of panel rows per source (converged on top, perturbed reference below), ONE colour bar, in `BOREHOLE_HEATMAP_FILE`. `"separate"`: one figure per source, `<stem>_converged.<ext>` and `<stem>_perturbed.<ext>`, same scale, each with an identical colour bar. |
+| `BOREHOLE_HEAT_SCALE_FILE` | `None` | JSON file to **save and reuse the scale across runs** (other ensembles, NPZ mode, one run per source); `None` = off. |
+| `BOREHOLE_HEAT_SCALE_IO` | `"auto"` | `"write"`: always write the scale of this run. `"read"`: use the file, stop if it is missing (checked at start). `"auto"`: read it if it exists, else write it, so the same setting serves the first run (writes) and every later one (reads). |
+
+The `.npz` files are one per source (`<stem>_converged.npz`,
+`<stem>_perturbed.npz` with `"both"`; `<stem>.npz` for a single heat map), in
+the format above; the JSON `header` gained a `colour_scale` entry (`scale`,
+`norm`, `vmin`, `vmax`, `cmap`: the values actually used).
+
+The scale file is plain JSON, written like this:
+
+```json
+{
+  "scale": "linear", "norm": "fraction",
+  "vmin": 0.0, "vmax": 0.5, "cmap": "Greys",
+  "edges": [-1.0, 0.0, 1.0, 2.0, 3.0, 4.0],
+  "info": {"written": "2026-11-01T19:30:00", "ensemble": "/data/ens/", "sources": ["converged", "perturbed"], "n_members": 14}
+}
+```
+
+(`edges` are the log10(Ohm.m) bin edges, here 5 bins; a written file holds one
+more value than `BOREHOLE_HEAT_BINS`.)
+
+Every key except `info` is optional (a hand-written `{"vmax": 0.3}` is fine; the
+other values then come from the settings above). When a file is read, its values
+replace `BOREHOLE_HEAT_SCALE`, `_NORM`, `_VMIN`, `_VMAX`, `_CMAP`, the bins
+(`BOREHOLE_HEAT_BINS` / `BOREHOLE_XLIM`) and apply to every heat map of the run,
+whatever `BOREHOLE_HEAT_SHARE_SCALE` says. A file with an unknown scale, a
+negative `vmin`, or non-increasing `edges` stops the run before any figure.
+
+Typical uses:
+
+```python
+# 1. converged and perturbed in one run, one figure, one colour bar (all defaults)
+ENS_MODEL_SOURCE = "both"
+BOREHOLE_HEATMAP = True
+
+# 2. the same, but keep the scale for later runs (e.g. a second ensemble)
+BOREHOLE_HEAT_SCALE_FILE = ENSEMBLE_DIR + "heat_colorscale.json"   # "auto"
+
+# 3. two NPZ-mode runs (converged file, then perturbed file) on one colour bar:
+#    same BOREHOLE_HEAT_SCALE_FILE in both; the first run writes, the second reads
+```
+
+With `"auto"` an existing file is used again on every later run (the log says
+so: "colour scale read from ..."). Use `BOREHOLE_HEAT_SCALE_IO = "write"` to
+replace it after the data or the bins have changed.
+
 Notes:
 
 - **Members.** Normal mode: the best-fit block file of every converged member
@@ -411,10 +480,42 @@ Position values accept:
 - `(value, "utm")` → UTM metres, absolute (easting for `x0`, northing for `y0`)
 - `(value, "latlon")` → decimal degrees, absolute (longitude for `x0`, latitude for `y0`)
 
+A plane `point` is `[x, y, z]`; `fem.resolve_slice_positions()` rejects anything
+but three elements (`ValueError: resolve_pos_point: 'point' must have 3
+elements`). A 2-element `[x, y]` point is completed to `[x, y, 0.0]` by the
+unit-conversion block; `z` only matters for `dip < 90`.
+
 ---
 
 ## Changes from previous version
 
+- **2026-11-01b (Claude Sonnet 5.5, Anthropic):** Heat maps of the converged
+  and the perturbed models with a common colour bar. `ENS_MODEL_SOURCE =
+  "both"` samples every member twice (best-fit and `ENS_PERTURBED_FILE`; a
+  member lacking either is skipped) and makes both heat maps in one run; the
+  line log still shows the converged first member. New
+  `BOREHOLE_HEAT_SHARE_SCALE` (default `True`: same bin edges, colour limits
+  and colormap for all heat maps of a run), `BOREHOLE_HEAT_FIGURE`
+  (`"combined"` = one figure, one colour bar | `"separate"`), and
+  `BOREHOLE_HEAT_SCALE_FILE` / `BOREHOLE_HEAT_SCALE_IO` (`"auto"` | `"read"` |
+  `"write"`): the resolved scale (scale, norm, vmin, vmax, cmap, bin edges) is
+  saved as JSON and read back by other runs, including NPZ mode, so their
+  heat maps share the colour bar too; every key of the file is optional.
+  The `.npz` header gains `colour_scale`. A run with one source and no scale
+  file is unchanged (arrays and figure identical to the 2026-11-01 version on
+  synthetic data). Tested on synthetic data with the mesh lookup and block
+  reader stubbed (both layouts, shared / own scales, write-then-read across
+  runs, partial and invalid files, NPZ mode); the full script was not run
+  here. AI-generated; review before production use.
+- **2026-11-01 (Claude Sonnet 5.5, Anthropic):** Fixed `ValueError:
+  resolve_pos_point: 'point' must have 3 elements, got 2` from
+  `fem.resolve_slice_positions()`: the `kind="plane"` entry in `PLOT_SLICES`
+  now has a 3-element `point` (km), and `_km_to_m_point()` completes a
+  2-element `[x, y]` point to `[x, y, 0.0]` (it was documented as accepted
+  but the resolver rejects it). Tested the conversion and
+  `fem.resolve_slice_positions()` on 2- and 3-element points (femtic.py with
+  a stubbed `ensembles`); the full script was not run here. AI-generated;
+  review before production use.
 - **2026-10-31 (Claude Sonnet 5.5, Anthropic):** New `ENS_MODEL_SOURCE`
   (`"converged"` by default, or `"perturbed"`) and `ENS_PERTURBED_FILE`
   (default `"referencemodel.dat"`): the borehole heat map and the line log can
