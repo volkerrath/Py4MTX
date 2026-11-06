@@ -794,6 +794,34 @@ models are written to `<MOD_BH_FILE>_perturbed.npz` (header
 `ensemble_source = "perturbed"`; the heat maps of both files use the same
 `heat_edges_<name>`).
 
+### Parameter summary and directory scan report
+
+At the end of every run `femtic_ens_post_summary.md` is written by
+`utl.write_param_summary()` (the UPPERCASE settings, script path, run
+date/time; next to the script, as this script calls it without `out_dir`).
+After a **full run** (not `PLOT_ONLY`, which scans nothing) a section
+**"Directory scan report"** is appended to that file. It accounts for every
+scanned directory and says why each one that is *not* in the ensemble was left
+out:
+
+| Reason | Meaning |
+|---|---|
+| `no_cnv_file` | none of the `CNV_FILE` names exists in the directory |
+| `cnv_unreadable` | the convergence file has no usable header row |
+| `cnv_no_iterations` | the convergence file has no data rows or no iteration > 0 |
+| `rejected_nrms` | best nRMS (iterations > 0) above `NRMS_MAX` |
+| `no_model_file` | no `resistivity_block_iter<N>.dat` for the best iteration and no usable fallback (the detail names the iteration and why no fallback was possible) |
+| `no_perturbed_file` | `ENS_MODEL_SOURCE` `"perturbed"` / `"both"`: `ENS_PERTURBED_FILE` is missing (the member itself converged) |
+
+The section holds the counts (scanned = accepted + not accepted; a warning line
+appears if that does not add up), a count-per-reason table, a per-directory
+table (directory, reason, detail), the members accepted via `ITER_FALLBACK`
+(best iteration -> iteration used), and glob matches that are not directories.
+`NRMS_CSV` is unchanged: it has no row for directories without a usable
+convergence file, the report does. If the summary file cannot be appended to,
+the report is written to `femtic_ens_post_scan_report.md` in its place.
+Plain ASCII only (other characters in directory names show as `?`).
+
 ## Quick start
 
 ```bash
@@ -886,3 +914,4 @@ correct.
 | 2026-10-29 | Claude Sonnet 5.5 (Anthropic) | `MOD_BH`: new `"heatmap"` item for `what` (density heat map of the ensemble along the borehole: per-depth histogram of the members' log10 rho, `pcolormesh` behind the other items, one shared colour bar per figure). New globals `MOD_BH_HEAT_BINS`, `MOD_BH_HEAT_NORM` (`"fraction"` / `"row_max"`), colour scale `MOD_BH_HEAT_CMAP` (default `Greys`), `MOD_BH_HEAT_SCALE` (`"linear"` / `"sqrt"` / `"log"`), `MOD_BH_HEAT_VMIN`, `MOD_BH_HEAT_VMAX`, `MOD_BH_HEAT_CBAR`, `MOD_BH_STYLE["heatmap"]` (pcolormesh keywords), per-entry `heat_bins`. Members outside the bin range are not drawn but stay in the denominator; auto colour maximum = 99th percentile of the non-zero fractions (linear / sqrt). `.npz`: `heat_<name>`, `heat_edges_<name>`; header: `heat_unit`, `heat_bins`. Nothing changes unless `"heatmap"` is listed in an entry: with the default `MOD_BH` the borehole figure is pixel-identical and the `.npz` arrays identical to the previous version (tested on a synthetic mesh); heat maps checked against an independent histogram. AI-generated; review before production use. |
 | 2026-10-31 | Claude Sonnet 5.5 (Anthropic) | New `ENS_MODEL_SOURCE` (`"converged"` by default, or `"perturbed"`), `ENS_PERTURBED_FILE` (default `"referencemodel.dat"`), `ENS_PERTURBED_SUFFIX` (default `"_perturbed"`): the ensemble can be built from each member's perturbed reference (the RTO prior draw) instead of its converged model, so all statistics, slices, boreholes and heat maps describe the prior ensemble. Same member set as the converged run (selection unchanged); `MOD_REF_FILE` (base reference) unchanged; `ENSEMBLE_PREFIX` gets the suffix so results do not overwrite; `<P>_model_source` / `<P>_model_file_name` in the `.npz`, `ensemble_source` in the borehole header; `PLOT_ONLY` reads the stored source (older files: converged); `COMPUTE_SIMRC` off in this mode; warnings for missing files (`no_perturbed_file`), symbolic links and zero spread. Default behaviour unchanged (scan result identical to the previous version on a synthetic ensemble). AI-generated; review before production use. |
 | 2026-11-02 | Claude Sonnet 5.5 (Anthropic) | Borehole heat maps of the converged **and** the perturbed models on a common colour bar, same options as `femtic_ens_plot.py`. `ENS_MODEL_SOURCE = "both"`: the run is the converged run and each member's `ENS_PERTURBED_FILE` is loaded in addition (a member lacking it is skipped, `no_perturbed_file`); `MOD_BH` draws every borehole for both ensembles (heat map, `"ensemble"`, statistics, `"best"`), side by side in one figure with one colour bar (`MOD_BH_HEAT_FIGURE = "combined"`) or as two figures (`"separate"`); the perturbed profiles go to `<MOD_BH_FILE>_perturbed.npz`, the perturbed matrix is stored as `<P>_ens_perturbed` so `PLOT_ONLY` can draw it. New `MOD_BH_HEAT_SHARE_SCALE` (default `False`: one scale per figure as before; `True`: one scale for all figures), `MOD_BH_HEAT_SCALE_FILE` / `MOD_BH_HEAT_SCALE_IO` (save / reuse the resolved scale as JSON across runs; same format as `femtic_ens_plot.py`). The borehole `.npz` header gains `colour_scale`. With the defaults, figures and `.npz` arrays are identical to the previous version. No change needed for the 2-element plane `point` (`_plane_spec_km_to_m` pads it). AI-generated; review before production use. |
+| 2026-11-06 | Claude Sonnet 5.5 (Anthropic) | **Directory scan report** appended to `femtic_ens_post_summary.md` after a full run: every scanned directory that is not in the ensemble, with a reason (`no_cnv_file`, `cnv_unreadable`, `cnv_no_iterations`, `rejected_nrms`, `no_model_file`, `no_perturbed_file`) and detail, counts per reason, members accepted via `ITER_FALLBACK`, and ignored non-directory glob matches. Uses the path returned by `utl.write_param_summary()`; falls back to `femtic_ens_post_scan_report.md` if the summary cannot be appended to. New helpers `build_scan_report()` / `append_scan_report()` (same code as in `femtic_ens_repair.py`); no change to member selection, `NRMS_CSV`, the `.npz` or any figure. Tested by executing the edited scan loop and the helpers on a synthetic ensemble (all six reasons, fallback, non-directory matches); the full script was not run. AI-generated; review before production use. |

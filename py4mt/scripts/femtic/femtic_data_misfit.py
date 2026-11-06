@@ -309,7 +309,7 @@ SITE_MERGE_TOL: float = 1.0           # [m] positions closer than this are the s
 
 # --- output ---
 OUT_DIR: Optional[str] = (
-    "/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_0_orig-err/results_converged/"
+    "/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_orig-err/results256/"
 )
 # None      # None -> into the run directory (single:
                                    # each run's own; ensemble: common parent

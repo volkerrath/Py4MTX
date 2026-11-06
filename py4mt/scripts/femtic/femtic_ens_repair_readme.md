@@ -64,9 +64,19 @@ Ensemble sub-directories  (rto_*, gst_*, member_*, …)
 | `ENSEMBLE_NAME` | str | — | Glob matched against sub-directory names. Only actual directories among the matches are scanned (`os.path.isdir()` checked in step (1)); a stray file that happens to match the glob is skipped. |
 | `ENSEMBLE_PREFIX` | str | — | Prefix for default file/figure names. |
 | `CNV_FILE` | str or list | `"femtic.cnv"` | Convergence file name in each member directory; a list gives candidate names (first existing wins). Directories without it are tagged `"missing_cnv"`. |
-| `NRMS_MAX` | float | `1.5` | Members whose final nRMS exceeds this value are tagged `"rejected_nrms"`. |
+| `NRMS_MAX` | float | `1.5` | Members whose **best** nRMS (smallest over all iterations > 0, not the last iteration) exceeds this value are tagged `"rejected_nrms"`. |
+| `ITER_FALLBACK` | bool | `True` | If the best-nRMS iteration `N` has no `resistivity_block_iter<N>.dat`, use the best iteration that does have one (usually `N-1`); `NRMS_MAX` is then applied to that iteration's nRMS. `False` = tag the member `"missing_model"` instead. Same meaning as in `femtic_ens_post.py` -- keep the two equal. |
 
 nRMS and the iteration number are read from each member's `femtic.cnv` via `fem.read_cnv()`, which parses column positions from the file's own header row (case-insensitive substring match) — no FEMTIC-version setting needed.
+
+**Member selection** (`select_member_iteration()`) follows `femtic_ens_post.py` exactly, so both scripts accept the same members:
+
+1. Candidates are all `femtic.cnv` rows with `Iter > 0`; the one with the smallest nRMS wins (ties: lowest iteration). FEMTIC does not guarantee a monotonic nRMS decrease, so the last row is not necessarily the best.
+2. Best nRMS > `NRMS_MAX` -> `"rejected_nrms"` (the nRMS shown in the diagnostic is that best value).
+3. Block file of that iteration missing and `ITER_FALLBACK=True` -> fall back as described above; the member still counts as `"accepted"`.
+4. No usable block file -> `"missing_model"`. No iteration > 0 in the cnv file -> `"missing_cnv"`.
+
+The one difference left: `femtic_ens_post.py` with `ENS_MODEL_SOURCE = "perturbed"` or `"both"` additionally skips members lacking `ENS_PERTURBED_FILE` (`referencemodel.dat`). That is not a convergence criterion, so this script does not check it; it can therefore count a few more converged members than `femtic_ens_post.py`.
 
 ### Ocean / air handling (REPAIR only)
 
@@ -145,6 +155,29 @@ results existed, logs, plus all the `LINK_LIST`/`COPY_LIST` run
 machinery — with only the starting model swapped out. It is a
 ready-to-run restart directory, not just a bare model file.
 
+### Directory scan report (in the summary file)
+
+The section appended to `femtic_ens_repair_summary.md` accounts for every
+scanned directory (scanned = accepted + not accepted; a warning line appears if
+that does not add up) and gives a **reason** and a **detail** text for each one
+that is not in the ensemble:
+
+| Reason | Status in the convergence plot | Meaning |
+|---|---|---|
+| `no_cnv_file` | `missing_cnv` | none of the `CNV_FILE` names exists in the directory |
+| `cnv_unreadable` | `missing_cnv` | the convergence file has no usable header row |
+| `cnv_no_iterations` | `missing_cnv` | the convergence file has no data rows or no iteration > 0 |
+| `rejected_nrms` | `rejected_nrms` | best nRMS (iterations > 0) above `NRMS_MAX` |
+| `no_model_file` | `missing_model` | no `resistivity_block_iter<N>.dat` for the best iteration and no usable fallback (the detail names the iteration and why no fallback was possible) |
+
+Further tables list the counts per reason, the members accepted via
+`ITER_FALLBACK` (best iteration -> iteration used) and glob matches that are not
+directories. This also explains differences to `femtic_ens_post.py`, whose own
+section additionally has `no_perturbed_file` (a member that converged but lacks
+`ENS_PERTURBED_FILE`; not a convergence criterion, so not checked here). If the
+summary file cannot be appended to, the report goes to
+`femtic_ens_repair_scan_report.md` instead. Plain ASCII only.
+
 ### Plot output
 
 | Parameter | Type | Default | Description |
@@ -165,6 +198,7 @@ ready-to-run restart directory, not just a bare model file.
 ## Output files
 
 - `<MOD_CONV_FILE>.<fmt>` — one convergence figure per `MOD_PLOT_FORMAT` entry (e.g. `..._convergence.pdf`, `..._convergence.jpg`).
+- `femtic_ens_repair_summary.md` (in `ENSEMBLE_DIR`) - the UPPERCASE settings, script path and run date/time, followed by a **"Directory scan report"** section: why each scanned directory that is not in the ensemble was left out (see below).
 - `<dir>_restart/` — one complete copy of `<dir>` per repaired non-converged directory, when `MOD_REPAIR=True`, with `MOD_REPAIR_MODEL_NAME` overwritten by the repaired starting model.
 
 This script does **not** write a `.npz` results file — that remains
@@ -220,5 +254,7 @@ skipped.
 | 2026-09-07 | Claude Sonnet 5 (Anthropic) | Removed the `FEMTIC` config variable and its `"4.3"`/`"5."` version-string switch on the nRMS column index (6 vs 8): that switch only matched one specific column layout, and silently misread nRMS (e.g. reading the Distortion or Misfit column instead) for any run whose actual column count didn't match the assumed FEMTIC-version pairing. Now uses `fem.read_cnv()`, matching `femtic_ens_post.py`'s `get_nrms()`-based fix of 2026-09-02 — column positions are read from `femtic.cnv`'s own header row every time, independent of version or Beta/Distortion presence. |
 | 2026-10-08 | Claude Sonnet 5.5 (Anthropic) | New config `CNV_FILE` (default `"femtic.cnv"`, single name or candidate list) replaces the hard-coded `femtic.cnv` in step (1)'s scan loop; uses `fem.resolve_cnv_path()`. AI-generated; review before production use. |
 | 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The parameter summary `femtic_ens_repair_summary.md` is now written to `ENSEMBLE_DIR` (the working directory set in the script) instead of next to the script: `utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR)`. Needs the `util.py` of the same date. AI-generated; review before production use. |
+| 2026-11-06 | Claude Sonnet 5.5 (Anthropic) | **Fix: far too many members were reported as non-converged** (78 of 256 in one ensemble where `femtic_ens_post.py` correctly accepted 253 of 256). Step (1) judged each member by the **last** row of its `.cnv` file; `femtic_ens_post.py` uses the **best-nRMS iteration (iter > 0)** and falls back to the best iteration that has a block file when the best one has none (`ITER_FALLBACK`). A run whose last iteration drifted above `NRMS_MAX`, or whose last iteration wrote no block file, was wrongly tagged `"rejected_nrms"` / `"missing_model"` and, with `MOD_REPAIR=True`, would have received a spurious `_restart` copy. New function `select_member_iteration()` implements the `femtic_ens_post.py` rule; new config `ITER_FALLBACK` (default `True`). A member accepted via the fallback keeps status `"accepted"`; for `"rejected_nrms"` members the diagnostic now shows the best nRMS, not the last. Tested on a synthetic 21-directory ensemble (last-iteration drift, missing last block file, truly rejected, no cnv, no block files, fallback above `NRMS_MAX`, alternative cnv name, stray file): old logic 11 accepted, new logic 17, identical to a verbatim port of `femtic_ens_post.py`'s selection for every member; REPAIR created exactly the 4 expected `_restart` directories and left the originals bit-identical. Not tested on the real ensemble. AI-generated; review before production use. |
+| 2026-11-06b | Claude Sonnet 5.5 (Anthropic) | **Directory scan report** appended to `femtic_ens_repair_summary.md`: reason (`no_cnv_file`, `cnv_unreadable`, `cnv_no_iterations`, `rejected_nrms`, `no_model_file`) and detail for every scanned directory that is not in the ensemble, counts per reason, members accepted via `ITER_FALLBACK`, ignored non-directory glob matches. The `conv_list` entries gain `reason` / `detail` keys (the plot functions only receive the label / nRMS / status lists, so they are unaffected). Uses the path returned by `utl.write_param_summary()`; falls back to `femtic_ens_repair_scan_report.md`. Same helpers as in `femtic_ens_post.py`. Tested on a synthetic 25-directory ensemble with the real `write_param_summary`. AI-generated; review before production use. |
 
 Author: Volker Rath (DIAS)

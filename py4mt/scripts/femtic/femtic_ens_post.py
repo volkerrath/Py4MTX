@@ -877,6 +877,21 @@ Provenance
             With the defaults the output is unchanged (the borehole .npz
             header gains "colour_scale"). AI-generated code -- review before
             production use.
+2026-11-06  Claude Sonnet 5.5 (Anthropic)
+            "Directory scan report" appended to femtic_ens_post_summary.md
+            (the file utl.write_param_summary writes; its return value gives
+            the path): every scanned directory that is not in the ensemble,
+            with a reason key (no_cnv_file, cnv_unreadable,
+            cnv_no_iterations, rejected_nrms, no_model_file,
+            no_perturbed_file) and a detail text, counts per reason, the
+            members accepted via ITER_FALLBACK, and glob matches that are not
+            directories. Unlike NRMS_CSV (which has no row for directories
+            without a usable convergence file) it accounts for every
+            scanned directory. Not written in PLOT_ONLY mode (nothing is
+            scanned). If the summary cannot be appended to, the report goes to
+            femtic_ens_post_scan_report.md instead. The selection of members
+            itself is unchanged. AI-generated code -- review before
+            production use.
 
     This script targets FEMTIC's current HDF5 output layout only.
     AI-generated code -- review before production use.
@@ -1369,8 +1384,8 @@ BOOTSTRAP_SEED = None  # None = fresh OS entropy; int = reproducible
 #: Directory for ALL outputs: results .npz, "best" figure, stats_plots/ and
 #: borehole figures/profiles. Created if missing. Absolute path, or build
 #: it from ENSEMBLE_DIR (default: <ENSEMBLE_DIR>/results/).
-RESULTS_DIR = os.path.join(ENSEMBLE_DIR, "results") + os.sep
-ENSEMBLE_RESULTS = RESULTS_DIR + ENSEMBLE_PREFIX.upper() + "_results.npz"
+RESULTS_DIR = os.path.join(ENSEMBLE_DIR, "results256") + os.sep
+ENSEMBLE_RESULTS = RESULTS_DIR + ENSEMBLE_PREFIX.upper() + "_results256.npz"
 
 #: Per-member best nRMS table (CSV): member, best iteration, nRMS, status
 #: ("accepted", "accepted_fallback" (see ITER_FALLBACK), "rejected_nrms_max",
@@ -3827,6 +3842,128 @@ def _plot_nrms_hist(rows, plot_base):
     plt.close(fig)
 
 
+# ---------------------------------------------------------------------------
+# Directory scan report -- appended to the parameter summary (.md)
+# (same three helpers as in femtic_ens_repair.py; kept in step by hand)
+# ---------------------------------------------------------------------------
+
+def _scan_reason_text(nrms_max):
+    """Reason key -> one-line meaning, in report order."""
+    return {
+        "no_cnv_file":       "convergence file (CNV_FILE) not found in the directory",
+        "cnv_unreadable":    "convergence file has no usable header row",
+        "cnv_no_iterations": "convergence file has no iteration > 0",
+        "rejected_nrms":     f"best nRMS (iterations > 0) above NRMS_MAX = {nrms_max}",
+        "no_model_file":     "no resistivity_block_iter<N>.dat for the best "
+                             "iteration and no usable fallback",
+        "no_perturbed_file": "perturbed reference model (ENS_PERTURBED_FILE) "
+                             "not found",
+    }
+
+
+def build_scan_report(not_accepted, fallback, ignored, n_scanned, n_accepted,
+                      ensemble_dir, ensemble_name, nrms_max):
+    """Markdown section explaining why directories are not in the ensemble.
+
+    Parameters
+    ----------
+    not_accepted : list of dict(label, reason, detail)
+        One entry per scanned directory that was not accepted.
+    fallback : list of dict(label, best_iter, best_nrms, used_iter, used_nrms)
+        Accepted members whose best iteration had no block file.
+    ignored : list of str
+        Glob matches that are not directories (not counted as scanned).
+    n_scanned, n_accepted : int
+        Directories scanned / accepted.
+
+    Returns plain-ASCII text (names with other characters get "?").
+    """
+    def esc(s):
+        s = str(s).replace("|", "/").replace("\n", " ")
+        return s.encode("ascii", "replace").decode("ascii")
+
+    texts = _scan_reason_text(nrms_max)
+    lines = ["", "## Directory scan report", "",
+             f"- Searched for `{esc(ensemble_name)}*` in `{esc(ensemble_dir)}`",
+             f"- Directories scanned: {n_scanned}",
+             f"- Accepted (in the ensemble): {n_accepted}"
+             + (f", {len(fallback)} of them via ITER_FALLBACK" if fallback else ""),
+             f"- Not accepted: {len(not_accepted)}"]
+    if ignored:
+        lines.append(f"- Glob matches that are not directories (ignored): "
+                     f"{len(ignored)}")
+    unaccounted = n_scanned - n_accepted - len(not_accepted)
+    if unaccounted:
+        lines.append(f"- WARNING: {unaccounted} scanned directories are "
+                     f"neither accepted nor listed below.")
+
+    if not_accepted:
+        order = list(texts) + sorted({r["reason"] for r in not_accepted}
+                                     - set(texts))
+        lines += ["", "### Not accepted: count per reason", "",
+                  "| Reason | Count | Meaning |", "|---|---|---|"]
+        for key in order:
+            n = sum(1 for r in not_accepted if r["reason"] == key)
+            if n:
+                lines.append(f"| {key} | {n} | {esc(texts.get(key, ''))} |")
+        lines += ["", "### Not accepted: directories", "",
+                  "| Directory | Reason | Detail |", "|---|---|---|"]
+        for key in order:
+            for r in sorted((r for r in not_accepted if r["reason"] == key),
+                            key=lambda r: r["label"]):
+                lines.append(f"| {esc(r['label'])} | {key} | {esc(r['detail'])} |")
+    else:
+        lines += ["", "All scanned directories were accepted."]
+
+    if fallback:
+        lines += ["", "### Accepted via ITER_FALLBACK", "",
+                  "The best-nRMS iteration has no block file; the best "
+                  "iteration that has one is used instead.", "",
+                  "| Directory | Best iter | nRMS | Used iter | nRMS |",
+                  "|---|---|---|---|---|"]
+        for r in sorted(fallback, key=lambda r: r["label"]):
+            lines.append(f"| {esc(r['label'])} | {r['best_iter']} | "
+                         f"{r['best_nrms']:.4f} | {r['used_iter']} | "
+                         f"{r['used_nrms']:.4f} |")
+
+    if ignored:
+        lines += ["", "### Ignored glob matches (not directories)", ""]
+        lines += [f"- {esc(n)}" for n in sorted(ignored)[:50]]
+        if len(ignored) > 50:
+            lines.append(f"- ... and {len(ignored) - 50} more")
+    return "\n".join(lines) + "\n"
+
+
+def append_scan_report(report_md, summary_path, script_file):
+    """Append ``report_md`` to the parameter-summary file.
+
+    ``summary_path`` is what ``utl.write_param_summary()`` returned. If it
+    cannot be appended to, the report goes to ``<script>_scan_report.md`` in
+    the same directory (or next to the script) instead. Never raises on I/O
+    problems -- the report is a diagnostic, not a result.
+    """
+    if summary_path and os.path.isfile(summary_path):
+        try:
+            with open(summary_path, "a") as fh:
+                fh.write(report_md)
+            print(f"[scan report] appended to {summary_path}")
+            return summary_path
+        except OSError as exc:
+            print(f"[scan report] cannot append to {summary_path} ({exc}).")
+    stem = os.path.splitext(os.path.basename(script_file))[0]
+    base = (os.path.dirname(summary_path) if summary_path
+            else os.path.dirname(os.path.abspath(script_file)))
+    target = os.path.join(base, stem + "_scan_report.md")
+    try:
+        with open(target, "w") as fh:
+            fh.write(report_md)
+        print(f"[scan report] summary file not available; written to {target}")
+        return target
+    except OSError as exc:
+        print(f"[scan report] could not be written ({exc}).")
+        return None
+
+
 # ===========================================================================
 # Main
 # ===========================================================================
@@ -4095,11 +4232,21 @@ else:
         searchpath=ENSEMBLE_DIR,
         fullpath=True,
     )
+    scan_ignored = [  # non-directory glob matches, for the directory scan report
+        os.path.basename(os.path.normpath(d)) for d in dir_list if not os.path.isdir(d)
+    ]
     dir_list = [d for d in dir_list if os.path.isdir(d)]
     print(f"Found {len(dir_list)} sub-directory/ies matching '{ENSEMBLE_NAME}'.")
 
     model_list = []  # list of [block_file, n_iter, nRMS]
     nrms_table = []  # (member, best_iter, nRMS, status) for NRMS_CSV / histogram
+    #: For the "Directory scan report" appended to the parameter summary at the
+    #: end of the run: why each non-accepted directory is not in the ensemble
+    #: (dict(label, reason, detail)), and which accepted members needed
+    #: ITER_FALLBACK. Unlike nrms_table (-> NRMS_CSV, histogram), this also
+    #: covers directories without a usable convergence file.
+    scan_not_accepted = []
+    scan_fallback = []
     pert_links = []  # ENS_MODEL_SOURCE="perturbed": members whose file is a symlink
     model_count = 0
     ens_matrix = None  # will become (n_members, n_free) float64
@@ -4124,9 +4271,15 @@ else:
 
     for d in dir_list:
         print(f"\n  Inversion run: {d}")
+        _lbl = os.path.basename(os.path.normpath(d))  # scan report label
+        _fb_rec = None  # set if accepted via ITER_FALLBACK (scan report)
         cnv_file = str(fem.resolve_cnv_path(d, CNV_FILE))
         if not os.path.isfile(cnv_file):
             print(f"    {os.path.basename(cnv_file)} not found — skipped.")
+            _names = [CNV_FILE] if isinstance(CNV_FILE, str) else list(CNV_FILE)
+            scan_not_accepted.append(dict(
+                label=_lbl, reason="no_cnv_file",
+                detail="none of " + ", ".join(map(str, _names)) + " found"))
             continue
 
         # Column positions are read from this file's own header row via
@@ -4141,6 +4294,10 @@ else:
             _cnv = fem.read_cnv(cnv_file)
         except ValueError as e:
             print(f"    {e} — skipped.")
+            scan_not_accepted.append(dict(
+                label=_lbl, reason="cnv_unreadable",
+                detail=f"{os.path.basename(cnv_file)}: no header row naming an "
+                       f"Iter and an RMS column"))
             continue
 
         # Scan *every* convergence-history row — not just the last — to find
@@ -4171,6 +4328,10 @@ else:
                 f"    no eligible (iter>0) convergence rows found in "
                 f"{cnv_file} — skipped."
             )
+            scan_not_accepted.append(dict(
+                label=_lbl, reason="cnv_no_iterations",
+                detail=f"{os.path.basename(cnv_file)}: "
+                       + ("no iteration > 0" if _cnv["rows"] else "no data rows")))
             continue
 
         if iter0_nrms is not None and iter0_nrms <= nrms:
@@ -4189,10 +4350,17 @@ else:
             nrms_table.append(
                 (os.path.basename(os.path.normpath(d)), numit, nrms, "rejected_nrms_max")
             )
+            scan_not_accepted.append(dict(
+                label=_lbl, reason="rejected_nrms",
+                detail=f"best nRMS {nrms:.4f} (iter {numit}) > NRMS_MAX {NRMS_MAX}"))
             continue
 
         mod_file = os.path.join(d, f"resistivity_block_iter{numit}.dat")
         _status = "accepted"
+        #: why no fallback model was found (scan report); only used if the
+        #: member ends up as "no_model_file"
+        _fb_note = ("ITER_FALLBACK is False" if not ITER_FALLBACK
+                    else "no other iteration > 0 has a block file")
         if not os.path.isfile(mod_file) and ITER_FALLBACK:
             # best iteration has no block file: take the best iteration that
             # has one (usually N-1); NRMS_MAX applies to ITS nRMS.
@@ -4211,6 +4379,8 @@ else:
                         f"using iter{_i2} (nRMS={_n2:.4f}, best available; "
                         f"iter{numit} had {nrms:.4f}) instead."
                     )
+                    _fb_rec = dict(label=_lbl, best_iter=numit, best_nrms=nrms,
+                                   used_iter=_i2, used_nrms=_n2)
                     numit, nrms, _status = _i2, _n2, "accepted_fallback"
                     mod_file = os.path.join(
                         d, f"resistivity_block_iter{numit}.dat"
@@ -4220,11 +4390,17 @@ else:
                         f"    best available iteration iter{_i2} has "
                         f"nRMS={_n2:.4f} > NRMS_MAX={NRMS_MAX}."
                     )
+                    _fb_note = (f"best available iteration iter{_i2} has "
+                                f"nRMS={_n2:.4f} > NRMS_MAX={NRMS_MAX}")
         if not os.path.isfile(mod_file):
             print(f"    {mod_file} not found — skipped.")
             nrms_table.append(
                 (os.path.basename(os.path.normpath(d)), numit, nrms, "no_model_file")
             )
+            scan_not_accepted.append(dict(
+                label=_lbl, reason="no_model_file",
+                detail=f"{os.path.basename(mod_file)} not found "
+                       f"(best nRMS {nrms:.4f}); {_fb_note}"))
             continue
 
         # Model that enters the ensemble: the converged one (default) or the
@@ -4241,6 +4417,10 @@ else:
                     (os.path.basename(os.path.normpath(d)), numit, nrms,
                      "no_perturbed_file")
                 )
+                scan_not_accepted.append(dict(
+                    label=_lbl, reason="no_perturbed_file",
+                    detail=f"{ENS_PERTURBED_FILE} not found (member otherwise "
+                           f"accepted: iter {numit}, nRMS {nrms:.4f})"))
                 continue
             if os.path.islink(pert_file):
                 pert_links.append(d)
@@ -4252,6 +4432,8 @@ else:
         )
         print(f"    iter={numit}  nRMS={nrms:.4f}  {ens_file}")
         model_list.append([ens_file, numit, nrms])
+        if _fb_rec is not None:
+            scan_fallback.append(_fb_rec)
 
         log_m = fem.read_model(model_file=ens_file, model_trans="log10", out=OUT)
 
@@ -5454,4 +5636,20 @@ print("\nfemtic_ens_post.py complete.")
 # ---------------------------------------------------------------------------
 # Parameter summary
 # ---------------------------------------------------------------------------
-utl.write_param_summary(__file__)
+_summary_path = utl.write_param_summary(__file__)
+
+# Directory scan report: why directories are not in the ensemble. Appended to
+# the summary just written. Only after a full run -- PLOT_ONLY scans nothing.
+# Lowercase names so that nothing here shows up as a "user-set parameter".
+if not PLOT_ONLY:
+    _scan_md = build_scan_report(
+        not_accepted  = scan_not_accepted,
+        fallback      = scan_fallback,
+        ignored       = scan_ignored,
+        n_scanned     = len(dir_list),
+        n_accepted    = model_count,
+        ensemble_dir  = ENSEMBLE_DIR,
+        ensemble_name = ENSEMBLE_NAME,
+        nrms_max      = NRMS_MAX,
+    )
+    append_scan_report(_scan_md, _summary_path, __file__)
