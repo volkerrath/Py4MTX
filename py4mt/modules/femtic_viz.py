@@ -635,11 +635,27 @@ Provenance:
                         whenever the number of boreholes was even; it is now
                         inverted once.
                         AI-generated code -- review before production use.
+    2026-11-08  Claude  New section "Ensemble diagnostics" at the end of the
+                        module, moved from femtic_ens_post.py when its plotting
+                        was split off into femtic_ens_plot_misfit.py /
+                        femtic_ens_plot_bh.py: plot_nrms_histogram()
+                        (per-member nRMS histogram, accepted / rejected
+                        stacked; the title font size is now actually applied
+                        when given -- in femtic_ens_post.py it was swallowed
+                        by a comment), and the borehole figures
+                        plan_borehole_figures() / draw_borehole_figures() /
+                        plot_boreholes() with BoreholeFigureOptions and the
+                        heat-map helpers heat_display(), heat_style(),
+                        heat_norm(), heat_log_ticks(), depth_edges(),
+                        borehole_line_style(), borehole_view(). No module-
+                        level settings are read; the former MOD_BH_* globals
+                        are fields of BoreholeFigureOptions or arguments.
+                        AI-generated code -- review before production use.
     """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 import os
 from pathlib import Path
@@ -6725,3 +6741,653 @@ def plot_convergence_histogram(
         plt.show()
 
     plt.close(fig)
+
+
+# =============================================================================
+# Ensemble diagnostics: nRMS histogram and borehole figures
+# =============================================================================
+#
+# Drawn from the results of femtic_ens_post.py by femtic_ens_plot_misfit.py
+# and femtic_ens_plot_bh.py; the numerical side (borehole sampling, colour-
+# scale files) is femtic.py, Section 6c.  Nothing here reads module-level
+# user settings.
+#
+# AI-generated code (Claude Sonnet 5.5, Anthropic) -- review before
+# production use.
+# =============================================================================
+
+
+def plot_nrms_histogram(
+    rows,
+    plot_base: str,
+    *,
+    nrms_max: Optional[float] = None,
+    bins="auto",
+    title: Optional[str] = None,
+    tick_fontsize: int = 7,
+    label_fontsize: int = 8,
+    title_fontsize: Optional[int] = None,
+    dpi: int = 300,
+    formats: Sequence[str] = ("pdf",),
+    show: bool = False,
+    out: bool = True,
+) -> None:
+    """Histogram of the per-member best nRMS; accepted / rejected stacked.
+
+    Parameters
+    ----------
+    rows : list of (member, iteration, nrms, status)
+        As written by femtic_ens_post.py (NRMS_CSV / ``<P>_nrms_table``).
+        Every status starting with "accepted" (including
+        "accepted_fallback") counts as accepted, everything else as rejected.
+    plot_base : str
+        Output path without extension; one file per ``formats`` entry.
+    nrms_max : float | None
+        Acceptance threshold (NRMS_MAX), marked by a dashed line.
+    bins : int | str
+        Anything numpy.histogram_bin_edges accepts.
+    title : str | None
+        Figure title (e.g. the ensemble prefix); None = no title.
+    tick_fontsize, label_fontsize : int
+        Font sizes (the legend uses ``tick_fontsize - 3``).
+    title_fontsize : int | None
+        None = Matplotlib's default title size.
+    dpi, formats, show, out
+        Raster resolution, file extensions, interactive display, verbosity.
+    """
+    import matplotlib.pyplot as plt
+
+    acc = np.array(
+        [r[2] for r in rows if r[3].startswith("accepted")], dtype=float
+    )
+    rej = np.array(
+        [r[2] for r in rows if not r[3].startswith("accepted")], dtype=float
+    )
+    allv = np.concatenate((acc, rej))
+    if allv.size == 0:
+        print("  nRMS histogram: no members - skipped.")
+        return
+    edges = np.histogram_bin_edges(allv, bins=bins)
+    fig, ax = plt.subplots(figsize=(10 / 2.54 * 1.6, 8 / 2.54 * 1.6))
+    ax.hist(
+        [acc, rej],
+        bins=edges,
+        stacked=True,
+        color=["tab:blue", "tab:red"],
+        edgecolor="k",
+        label=[f"accepted (n={acc.size})", f"rejected (n={rej.size})"],
+    )
+    if nrms_max is not None:
+        ax.axvline(
+            nrms_max, color="k", ls="--", lw=1.2, label=f"NRMS_MAX = {nrms_max}"
+        )
+    if acc.size:
+        ax.axvline(
+            acc.min(), color="tab:orange", ls="-", lw=1.5,
+            label=f"best = {acc.min():.3f}",
+        )
+        ax.axvline(
+            np.median(acc), color="crimson", ls=":", lw=1.5,
+            label=f"median (accepted) = {np.median(acc):.3f}",
+        )
+    ax.set_xlabel("best nRMS per member", fontsize=label_fontsize)
+    ax.set_ylabel("number of members", fontsize=label_fontsize)
+    ax.tick_params(labelsize=tick_fontsize)
+    ax.legend(fontsize=tick_fontsize - 3)
+    if title:
+        if title_fontsize is None:
+            fig.suptitle(title)
+        else:
+            fig.suptitle(title, fontsize=title_fontsize)
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    for fmt in formats:
+        fname = f"{plot_base}.{fmt}"
+        fig.savefig(fname, dpi=dpi, bbox_inches="tight")
+        if out:
+            print(f"  saved -> {fname}")
+    if show:
+        plt.show()
+    plt.close(fig)
+
+
+def depth_edges(depth):
+    """Cell edges (n + 1) for the depth levels (cell centres), z-down."""
+    d = np.asarray(depth, dtype=float)
+    if d.size == 1:
+        return np.array([d[0] - 0.5, d[0] + 0.5])
+    mid = 0.5 * (d[1:] + d[:-1])
+    first = d[0] - 0.5 * (d[1] - d[0])
+    last = d[-1] + 0.5 * (d[-1] - d[-2])
+    return np.concatenate(([first], mid, [last]))
+
+
+def heat_display(frac, cs):
+    """Heat map values as shown (``cs["norm"]``: "fraction" or "row_max") from
+    the fractions."""
+    if cs["norm"] == "row_max":
+        import warnings
+
+        with warnings.catch_warnings(), np.errstate(
+            invalid="ignore", divide="ignore"
+        ):
+            warnings.simplefilter("ignore", RuntimeWarning)  # all-NaN levels
+            return frac / np.nanmax(frac, axis=1, keepdims=True)
+    return frac
+
+
+def heat_style(spec, cs, line_style):
+    """(cmap name, pcolormesh kwargs) of the heat map (``cs["cmap"]`` <
+    ``line_style["heatmap"]`` (MOD_BH_STYLE) < the entry's own style)."""
+    st = {}
+    for layer in (line_style, spec.get("style", {})):
+        st.update(layer.get("heatmap", {}))
+    cmap = st.pop("cmap", cs["cmap"])
+    return cmap, st
+
+
+def heat_log_ticks(norm):
+    """1-2-5 colour-bar ticks for a log scale of less than 3 decades (the
+    default shows only the powers of ten), else None."""
+    if np.log10(norm.vmax / norm.vmin) >= 3.0:
+        return None
+    cand = np.array([m * 10.0**e for e in range(-8, 2) for m in (1.0, 2.0, 5.0)])
+    tk = cand[(cand >= norm.vmin * (1 - 1e-9)) & (cand <= norm.vmax * (1 + 1e-9))]
+    return tk if tk.size >= 2 else None
+
+
+def heat_norm(heats, cs):
+    """Colour scale of the heat map of one figure (or of all, if shared).
+
+    ``heats`` : the displayed arrays (heat_display) of its panels.
+    ``cs`` : colour-scale dict (femtic.heat_scale_defaults()).
+    Returns (norm, extend): a Matplotlib Normalize (``cs["scale"]`` between
+    ``cs["vmin"]`` and ``cs["vmax"]`` / their automatic values) and the
+    colour-bar ``extend`` ("neither" / "min" / "max" / "both").
+    """
+    from matplotlib import colors
+
+    log = cs["scale"] == "log"
+    fin = np.concatenate([h[np.isfinite(h)] for h in heats])
+    pos = fin[fin > 0]
+    d_max = float(pos.max()) if pos.size else 1.0
+    d_min = float(pos.min()) if pos.size else 1.0
+    if cs["norm"] == "row_max":
+        vmax = 1.0
+    elif cs["vmax"] is not None:
+        vmax = float(cs["vmax"])
+    elif log or not pos.size:
+        vmax = d_max
+    else:
+        vmax = float(np.percentile(pos, 99.0))
+    if cs["vmin"] is not None:
+        vmin = float(cs["vmin"])
+    else:
+        vmin = d_min if log else 0.0
+    if not vmax > vmin:  # e.g. one value only, or an unlucky explicit pair
+        vmax = vmin * 10.0 if log else vmin + 1.0
+    # data beyond the scale -> arrows on the colour bar (zeros are blank on a
+    # log scale, so they do not count there)
+    lo = d_min if log else (float(fin.min()) if fin.size else 0.0)
+    ext_min = lo < vmin * (1.0 - 1.0e-9)
+    ext_max = d_max > vmax * (1.0 + 1.0e-9)
+    extend = {(0, 0): "neither", (1, 0): "min", (0, 1): "max", (1, 1): "both"}[
+        (int(ext_min), int(ext_max))
+    ]
+    if log:
+        norm = colors.LogNorm(vmin=vmin, vmax=vmax)
+    elif cs["scale"] == "sqrt":
+        norm = colors.PowerNorm(0.5, vmin=vmin, vmax=vmax)
+    else:
+        norm = colors.Normalize(vmin=vmin, vmax=vmax)
+    return norm, extend
+
+
+def borehole_line_style(key, spec, base_style, n_pct_index=None, n_pct=None):
+    """Line2D kwargs for draw key ``key`` (``base_style`` = MOD_BH_STYLE < the
+    entry's own "style")."""
+    key = key.split("_")[0] if key.startswith("sigma") else key
+    is_pct = key.startswith("p") and key not in ("percentiles",)
+    st = {}
+    layers = [base_style, spec.get("style", {})]
+    for layer in layers:
+        if is_pct:
+            st.update(layer.get("percentiles", {}))
+        st.update(layer.get(key, {}))
+    cmap = st.pop("cmap", None)
+    if is_pct and cmap is not None and "color" not in st:
+        import matplotlib
+
+        frac = 0.0 if not n_pct or n_pct < 2 else n_pct_index / (n_pct - 1)
+        st["color"] = matplotlib.colormaps[cmap](0.05 + 0.80 * frac)
+    return st
+
+
+@dataclass
+class BoreholeFigureOptions:
+    """Layout and style of the borehole figures (plot_boreholes).
+
+    The fields are the MOD_BH_* / MOD_* settings of femtic_ens_plot_bh.py.
+    """
+
+    #: Line / heat-map styles per draw key (MOD_BH_STYLE).
+    line_style: dict = field(default_factory=dict)
+    #: Opacity of the "ensemble" lines (MOD_BH_ALPHA); an entry's "alpha" wins.
+    alpha: float = 0.15
+    #: Global resistivity range [min, max] in Ohm.m or None = auto
+    #: (femtic.borehole_global_xlim()); an entry's "xlim" wins.
+    xlim: Optional[Sequence[float]] = None
+    #: Panels per row (per source); None = up to 4.
+    ncols: Optional[int] = None
+    #: Panel width, height in cm.
+    panel_size: Sequence[float] = (16.0, 20.0)
+    #: One common depth range for all panels (True) or one per panel.
+    share_depth: bool = True
+    #: Legend location, None = no legend.
+    legend_loc: Optional[str] = "best"
+    #: Colour bar next to the heat maps.
+    heat_cbar: bool = True
+    #: Depth axis in km (True) or m.
+    depth_km: bool = True
+    tick_fontsize: int = 7
+    label_fontsize: int = 8
+    title_fontsize: int = 14
+    dpi: int = 300
+    formats: Sequence[str] = ("pdf",)
+    show: bool = False
+    #: Legend text of the reference-model line; None = no legend entry.
+    ref_label: Optional[str] = None
+    #: First part of the figure title (e.g. "<ensemble dir>  <prefix>").
+    suptitle: str = ""
+    #: Add the model source to panel titles and the figure title (when the
+    #: run shows both the converged and the perturbed models).
+    tag_sources: bool = False
+    #: Names of the two model sources in titles.
+    source_labels: dict = field(
+        default_factory=lambda: {
+            "converged": "converged",
+            "perturbed": "perturbed reference",
+        }
+    )
+    out: bool = True
+
+
+def plot_boreholes(groups, plot_base, cs, norm, extend, opts):
+    """One figure with a resistivity-depth panel per borehole profile.
+
+    ``groups`` : [(source, profiles)] -- one group is the ordinary figure, two
+    (converged, perturbed) put the two panels of each borehole side by side.
+    ``profiles`` are dicts built in femtic.sample_boreholes(): name, pos_str, spec, depth (m,
+    z-down), order, lines {key: rho(n_lvl)}, ens (n_mem, n_lvl) or None, heat
+    (n_lvl, n_bins) fractions and heat_edges (log10 rho) or None. ``cs`` =
+    colour-scale settings, ``norm`` / ``extend`` the colour scale of the
+    figure (heat_norm) or None without a heat map; ``opts`` : a
+    BoreholeFigureOptions.
+    The figure is built once and saved once per ``opts.formats`` entry.
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+
+    n_src = len(groups)
+    tagged = n_src > 1 or opts.tag_sources
+    n = len(groups[0][1])
+    ncols_b = min(int(opts.ncols), n) if opts.ncols else min(n, 4)
+    nrows = int(math.ceil(n / ncols_b))
+    ncols = ncols_b * n_src
+    w, h = opts.panel_size
+    fig, axs = plt.subplots(
+        nrows,
+        ncols,
+        figsize=(w * ncols / 2.54, h * nrows / 2.54),
+        squeeze=False,
+    )
+    scale = 1000.0 if opts.depth_km else 1.0
+    tick_fs, label_fs = opts.tick_fontsize, opts.label_fontsize
+
+    glob_xlim = opts.xlim
+    heat_mesh = None
+    panels = []  # (axes, profile) of every drawn panel
+
+    for gi, (src, profiles) in enumerate(groups):
+        for k, pr in enumerate(profiles):
+            ax = axs[k // ncols_b, (k % ncols_b) * n_src + gi]
+            panels.append((ax, pr))
+            spec, depth = pr["spec"], pr["depth"] / scale
+            pct_keys = [q for q in pr["lines"] if q.startswith("p")]
+            handles = []
+            # heat map first (bottom layer, zorder 0), whatever its place in
+            # "what"
+            has_heat = "heatmap" in pr["order"] and pr.get("heat") is not None
+            if has_heat:
+                hcmap, hkw = heat_style(spec, cs, opts.line_style)
+                hkw.setdefault("shading", "flat")
+                hval = heat_display(pr["heat"], cs)
+                # NaN (air) is always blank; on a log scale so are the empty
+                # bins
+                hval = np.ma.masked_where(
+                    ~(hval > 0) if cs["scale"] == "log" else ~np.isfinite(hval),
+                    hval,
+                )
+                mesh = ax.pcolormesh(
+                    10.0 ** pr["heat_edges"],
+                    depth_edges(depth),
+                    hval,
+                    cmap=hcmap,
+                    norm=norm,
+                    zorder=0,
+                    **hkw,
+                )
+                if heat_mesh is None:
+                    heat_mesh = mesh
+            # draw in the order given by "what"
+            for key in pr["order"]:
+                if key == "heatmap":
+                    continue
+                if key == "ensemble":
+                    ens = pr["ens"]
+                    st = borehole_line_style("ensemble", spec, opts.line_style)
+                    alpha = float(spec.get("alpha", opts.alpha))
+                    ax.plot(ens.T, depth, alpha=alpha, zorder=1, **st)
+                    proxy = dict(st)
+                    handles.append(
+                        Line2D(
+                            [],
+                            [],
+                            label=f"ensemble (n={ens.shape[0]})",
+                            **{**proxy, "alpha": max(alpha, 0.6)},
+                        )
+                    )
+                    continue
+                if key not in pr["lines"]:
+                    continue
+                if key.startswith("sigma"):
+                    st = borehole_line_style(key, spec, opts.line_style)
+                    n_sig = key[5]
+                    label = (
+                        f"{n_sig}-sigma quantiles"
+                        if key.endswith("_lo")
+                        else "_nolegend_"
+                    )
+                    z = 2
+                elif key in pct_keys:
+                    st = borehole_line_style(
+                        key, spec, opts.line_style, pct_keys.index(key), len(pct_keys)
+                    )
+                    label = "P" + key[1:].replace("_", ".")
+                    z = 2
+                elif key == "ref":
+                    st = borehole_line_style(key, spec, opts.line_style)
+                    label = opts.ref_label if opts.ref_label else "_nolegend_"
+                    z = 4  # on top of the ensemble statistics
+                else:
+                    st = borehole_line_style(key, spec, opts.line_style)
+                    label = {
+                        "avg": "mean",
+                        "med": "median",
+                        "best": "best member",
+                    }[key]
+                    z = 3
+                (ln,) = ax.plot(
+                    pr["lines"][key], depth, label=label, zorder=z, **st
+                )
+                if label != "_nolegend_":
+                    handles.append(ln)
+
+            ax.set_xscale("log")
+            xl = spec.get("xlim", glob_xlim)
+            if xl is None and has_heat:  # auto range: the heat map's own range
+                xl = [10.0 ** pr["heat_edges"][0], 10.0 ** pr["heat_edges"][-1]]
+            if xl is not None:
+                ax.set_xlim(xl)
+            head = (
+                f"{pr['name']} - {opts.source_labels[src]}" if tagged else pr["name"]
+            )
+            ax.set_title(f"{head}\n{pr['pos_str']}", fontsize=tick_fs - 2)
+            ax.set_xlabel("resistivity (Ohm.m)", fontsize=label_fs)
+            if k % ncols_b == 0 and gi == 0:
+                ax.set_ylabel(
+                    "depth (km)" if opts.depth_km else "depth (m)",
+                    fontsize=label_fs,
+                )
+            ax.tick_params(labelsize=tick_fs)
+            ax.grid(True, which="both", axis="x", lw=0.3, alpha=0.5)
+            ax.grid(True, which="major", axis="y", lw=0.3, alpha=0.5)
+            if handles and opts.legend_loc is not None:
+                ax.legend(
+                    handles=handles,
+                    fontsize=max(tick_fs - 4, 6),
+                    loc=opts.legend_loc,
+                    framealpha=0.85,
+                )
+
+    # unused cells of the last row
+    for k in range(n, nrows * ncols_b):
+        for gi in range(n_src):
+            axs[k // ncols_b, (k % ncols_b) * n_src + gi].set_visible(False)
+
+    # depth range: common (union) or per panel; y axis points down
+    ranges = [
+        (np.nanmin(pr["depth"]) / scale, np.nanmax(pr["depth"]) / scale)
+        for _, pr in panels
+    ]
+    for (ax, _), (lo, hi) in zip(panels, ranges):
+        if opts.share_depth:
+            lo = min(r[0] for r in ranges)
+            hi = max(r[1] for r in ranges)
+        ax.set_ylim(hi, lo)
+
+    sup = opts.suptitle
+    if opts.tag_sources:
+        sup += "  (" + " | ".join(opts.source_labels[s] for s, _ in groups) + ")"
+    fig.suptitle(sup, fontsize=opts.title_fontsize)
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    if heat_mesh is not None and opts.heat_cbar:
+        # one shared colour bar, added after tight_layout so that it only
+        # takes its space from the panels
+        cb = fig.colorbar(
+            heat_mesh,
+            ax=[a for a, _ in panels],
+            location="right",
+            fraction=0.03,
+            pad=0.02,
+            shrink=0.6,
+            extend=extend,
+        )
+        cb.set_label(
+            "fraction of ensemble members per bin"
+            if cs["norm"] == "fraction"
+            else "fraction of the per-depth maximum",
+            fontsize=label_fs,
+        )
+        cb.ax.tick_params(labelsize=tick_fs)
+        if cs["scale"] == "log" and heat_log_ticks(norm) is not None:
+            from matplotlib import ticker
+
+            cb.set_ticks(heat_log_ticks(norm))
+            cb.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter("%g"))
+            cb.ax.minorticks_off()
+    for fmt in opts.formats:
+        fname = f"{plot_base}.{fmt}"
+        fig.savefig(fname, dpi=opts.dpi, bbox_inches="tight")
+        if opts.out:
+            print(f"  saved -> {fname}")
+    if opts.show:
+        plt.show()
+    plt.close(fig)
+
+
+def _fem():
+    """Lazy import of femtic (femtic_viz must stay importable without it)."""
+    import femtic as _f  # type: ignore
+
+    return _f
+
+
+def plan_borehole_figures(
+    profiles,
+    cs,
+    io,
+    *,
+    per_fig=None,
+    layout="combined",
+    share_scale=False,
+    scale_file=None,
+    default_source="converged",
+    ensemble=None,
+    n_members=None,
+):
+    """Sources, figures and colour scales of the borehole figures.
+
+    ``profiles`` : femtic.sample_boreholes()["profiles"]; ``cs`` / ``io`` from
+    femtic.heat_scale_init. The profiles are split into figures of ``per_fig``
+    panels (MOD_BH_PER_FIG; None = one figure). Every figure has ONE colour
+    scale for all its heat maps, the converged and the perturbed ones
+    included; with ``share_scale`` (MOD_BH_HEAT_SHARE_SCALE) or a scale file
+    that is read, all figures share it. Writes the scale file ``scale_file``
+    if io == "write" (needs a single scale for the run).
+    ``layout`` : "combined" | "separate" (MOD_BH_HEAT_FIGURE), used when the
+    profiles carry perturbed models; ``default_source`` : the source of the
+    ordinary figure (the model source of the ensemble); ``ensemble`` /
+    ``n_members`` : informational, written into the scale file.
+    Returns a dict for draw_borehole_figures: sources, layout, chunks, norms
+    [(norm, extend)] per chunk, common, header (the "colour_scale" entry of the
+    .npz header, None without a heat map).
+    """
+    multi = any(p.get("pert") is not None for p in profiles)
+    sources = ["converged", "perturbed"] if multi else [default_source]
+    per = int(per_fig) if per_fig else len(profiles)
+    chunks = [profiles[i : i + per] for i in range(0, len(profiles), per)]
+    layout = layout if multi else "combined"
+    common = bool(share_scale or io == "read")
+
+    panels = []  # per chunk: the heat panels (profile views) of all sources
+    for ch in chunks:
+        pv = []
+        for p in ch:
+            for s in sources:
+                v = borehole_view(p, s)
+                if "heatmap" in v["order"] and v.get("heat") is not None:
+                    pv.append(v)
+        panels.append(pv)
+    disp = [[heat_display(v["heat"], cs) for v in pv] for pv in panels]
+    if common:
+        flat = [h for hs in disp for h in hs]
+        nx = heat_norm(flat, cs) if flat else (None, "neither")
+        norms = [nx] * len(chunks)
+    else:
+        norms = [
+            heat_norm(hs, cs) if hs else (None, "neither") for hs in disp
+        ]
+    have = [nx for nx in norms if nx[0] is not None]
+    if have and (multi or common or io is not None or len(chunks) > 1):
+        if common:
+            print(
+                f"  heat-map colour scale (all figures): {cs['scale']}, "
+                f"{have[0][0].vmin:.4g} .. {have[0][0].vmax:.4g}, "
+                f"extend={have[0][1]}"
+            )
+        else:
+            for ic, nx in enumerate(norms):
+                if nx[0] is not None:
+                    print(
+                        f"  heat-map colour scale (figure {ic + 1}): "
+                        f"{cs['scale']}, {nx[0].vmin:.4g} .. "
+                        f"{nx[0].vmax:.4g}, extend={nx[1]}"
+                    )
+
+    if io == "write":
+        if not have:
+            print("  heat-map scale file: no heat map - not written.")
+        elif not (common or len(chunks) == 1):
+            print(
+                "  NOTE: the heat-map scales are not shared and the profiles "
+                f"fill {len(chunks)} figures - there is no single colour "
+                "scale to write to the scale file; not written."
+            )
+        else:
+            e0 = None
+            same = True
+            for pv in panels:
+                for v in pv:
+                    e = np.asarray(v["heat_edges"], dtype=float)
+                    if e0 is None:
+                        e0 = e
+                    elif e.shape != e0.shape or not np.allclose(e, e0):
+                        same = False
+            _fem().heat_scale_write(
+                scale_file,
+                cs,
+                have[0][0],
+                e0 if same else None,
+                sources,
+                ensemble=ensemble,
+                n_members=n_members,
+            )
+            if not same:
+                print(
+                    "  (the heat maps use different bins -- 'edges' left out "
+                    "of the file)"
+                )
+
+    header = None
+    if have:
+        cmap = cs["cmap"]
+        header = dict(
+            scale=cs["scale"],
+            norm=cs["norm"],
+            cmap=str(getattr(cmap, "name", cmap)),
+            shared=common,
+            vmin=float(have[0][0].vmin)
+            if common
+            else [None if nx[0] is None else float(nx[0].vmin) for nx in norms],
+            vmax=float(have[0][0].vmax)
+            if common
+            else [None if nx[0] is None else float(nx[0].vmax) for nx in norms],
+            per_figure=not common,
+        )
+    return dict(
+        sources=sources,
+        layout=layout,
+        chunks=chunks,
+        norms=norms,
+        common=common,
+        header=header,
+    )
+
+
+def borehole_view(p, src):
+    """Profile dict ``p`` as seen for model source ``src``: the profile itself
+    for "converged", else with the perturbed lines / members / heat map."""
+    if src == "converged" or p.get("pert") is None:
+        return p
+    q = dict(p)
+    q.update(p["pert"])
+    return q
+
+
+def draw_borehole_figures(plan, cs, plot_base, opts, perturbed_suffix="_perturbed"):
+    """Draw the borehole figures of ``plan`` (plan_borehole_figures).
+
+    One figure per chunk; with two sources either converged and perturbed side
+    by side in it ("combined") or one figure each ("separate": the perturbed
+    one is written to plot_base + ``perturbed_suffix``).  ``opts`` : a
+    BoreholeFigureOptions."""
+    sources, chunks = plan["sources"], plan["chunks"]
+    multi = len(sources) > 1
+    for ic, ch in enumerate(chunks):
+        norm, ext = plan["norms"][ic]
+
+        def _stem(base, ic=ic):
+            return base if len(chunks) == 1 else f"{base}_{ic + 1:02d}"
+
+        if multi and plan["layout"] == "combined":
+            groups = [(s, [borehole_view(p, s) for p in ch]) for s in sources]
+            plot_boreholes(groups, _stem(plot_base), cs, norm, ext, opts)
+        elif multi:
+            for s in sources:
+                base = plot_base if s == "converged" else plot_base + perturbed_suffix
+                plot_boreholes(
+                    [(s, [borehole_view(p, s) for p in ch])],
+                    _stem(base), cs, norm, ext, opts,
+                )
+        else:
+            plot_boreholes([(sources[0], ch)], _stem(plot_base), cs, norm, ext, opts)

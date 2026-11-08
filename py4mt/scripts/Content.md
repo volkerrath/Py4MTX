@@ -54,7 +54,7 @@ FEMTIC is a 3-D finite-element MT inversion code (Yoshiya Usui).
 | `femtic/femtic_rto_prior.py` | Build prior covariance proxy from roughness matrix. |
 | `femtic/femtic_rto_prep.py` | Generate full RTO ensemble (perturb data + draw prior model perturbations). |
 
-**RTO workflow:** `rto_rough` → `rto_prior` → `rto_prep` → *(run FEMTIC)* → `ens_post`
+**RTO workflow:** `rto_rough` → `rto_prior` → `rto_prep` → *(run FEMTIC)* → `ens_post` → `ens_plot_slices` / `ens_plot_bh` / `ens_plot_misfit`
 
 ---
 
@@ -70,7 +70,10 @@ FEMTIC is a 3-D finite-element MT inversion code (Yoshiya Usui).
 
 | Script | Purpose |
 |--------|---------|
-| `femtic/femtic_ens_post.py` | Algorithm-agnostic ensemble postprocessing: nRMS filter, statistics, covariance, optional slice figures and borehole profiles (`MOD_BH`). Replaces the former `femtic_rto_post.py`. |
+| `femtic/femtic_ens_post.py` | Algorithm-agnostic ensemble postprocessing (calculation only): nRMS filter, statistics, sensitivity, covariance, optional random subsample of N members; writes the results `.npz`. Replaces the former `femtic_rto_post.py`. |
+| `femtic/femtic_ens_plot_slices.py` | Slice figures (best member, statistics panels) from the results `.npz`. |
+| `femtic/femtic_ens_plot_bh.py` | Borehole profiles and heat maps from the results `.npz`. |
+| `femtic/femtic_ens_plot_misfit.py` | nRMS histogram from the results `.npz`. |
 | `femtic/femtic_ens_plot.py` | Joint multi-row slice figure for ensemble runs with optional statistics rows and borehole columns. |
 | `femtic/femtic_ens_repair.py` | Convergence diagnostic for all ensemble directories; restart directories for non-converged members. |
 | `femtic/femtic_ens_decomp.py` | PCA / ICA decomposition of a filtered ensemble matrix. |

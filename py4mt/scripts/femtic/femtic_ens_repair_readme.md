@@ -63,6 +63,7 @@ Ensemble sub-directories  (rto_*, gst_*, member_*, …)
 | `ENSEMBLE_DIR` | str | — | Root directory containing ensemble sub-directories. |
 | `ENSEMBLE_NAME` | str | — | Glob matched against sub-directory names. Only actual directories among the matches are scanned (`os.path.isdir()` checked in step (1)); a stray file that happens to match the glob is skipped. |
 | `ENSEMBLE_PREFIX` | str | — | Prefix for default file/figure names. |
+| `ENSEMBLE_INDEX_RANGE` | tuple or None | `None` | Expected member numbers `(first, last)`, inclusive, e.g. `(0, 255)` for 256 members named `<ENSEMBLE_NAME>0` ... `<ENSEMBLE_NAME>255`. Used only by the "Directory numbering" part of the scan report in the parameter summary. `None` = the range found in the names (cannot show a missing first or last member). |
 | `CNV_FILE` | str or list | `"femtic.cnv"` | Convergence file name in each member directory; a list gives candidate names (first existing wins). Directories without it are tagged `"missing_cnv"`. |
 | `NRMS_MAX` | float | `1.5` | Members whose **best** nRMS (smallest over all iterations > 0, not the last iteration) exceeds this value are tagged `"rejected_nrms"`. |
 | `ITER_FALLBACK` | bool | `True` | If the best-nRMS iteration `N` has no `resistivity_block_iter<N>.dat`, use the best iteration that does have one (usually `N-1`); `NRMS_MAX` is then applied to that iteration's nRMS. `False` = tag the member `"missing_model"` instead. Same meaning as in `femtic_ens_post.py` -- keep the two equal. |
@@ -143,7 +144,7 @@ both underlying functions.
 6. Overwrite `MOD_REPAIR_MODEL_NAME` inside the **copy** with the
    averaged model, using the lowest-nRMS converged member's file as the
    format template (preserves header, bounds, and flag columns — same
-   convention as `femtic_ens_post.py`'s `MOD_QC`/`MOD_STATS` blocks). A
+   convention as the slice settings of `femtic_ens_plot_slices.py`, formerly the `MOD_QC`/`MOD_STATS` blocks of `femtic_ens_post.py`). A
    defensive check unlinks the target first if it's unexpectedly a
    symlink, so the write can never land on a shared template file.
 7. `<dir>` itself is only ever *read* (by `shutil.copytree`) — never
@@ -178,11 +179,27 @@ section additionally has `no_perturbed_file` (a member that converged but lacks
 summary file cannot be appended to, the report goes to
 `femtic_ens_repair_scan_report.md` instead. Plain ASCII only.
 
+**Directory numbering.** The report always gives the number of glob matches next
+to the number of directories scanned (they differ when a match is a file or a
+broken symbolic link). It then reads the number that follows `ENSEMBLE_NAME` in
+every matching name and compares it with the expected range
+(`ENSEMBLE_INDEX_RANGE`, default: the range found in the names). It lists, if
+present:
+
+- numbers with **no entry at all** (nothing starts with `<ENSEMBLE_NAME><number>`: never created, deleted, renamed, or elsewhere) -- this is how a "255 scanned, 256 expected" difference is traced to a number;
+- numbers matched **only by a non-directory** (file, broken symbolic link);
+- numbers matched by **more than one name** (e.g. `X` and `X_restart`);
+- names with a number outside the expected range, and names without a number.
+
+Zero-padded numbers are fine (`007` = 7). With the default (inferred) range a
+missing first or last member cannot be seen; set `ENSEMBLE_INDEX_RANGE = (0, 255)`
+for a known ensemble size.
+
 ### Plot output
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `MOD_PLOT_FORMAT` | str / list of str | `["pdf", "jpg"]` | One or more save formats; see `femtic_ens_post.py`'s `MOD_PLOT_FORMAT` docstring for the full supported list. |
+| `MOD_PLOT_FORMAT` | str / list of str | `["pdf", "jpg"]` | One or more save formats; see `femtic_ens_plot_slices.py`'s `MOD_PLOT_FORMAT` comment for the full supported list. |
 | `MOD_DPI` | int | `200` | Figure DPI (raster formats only). |
 | `MOD_TICK_FONTSIZE` / `MOD_LABEL_FONTSIZE` | int | `8` / `9` | Axis tick / axis-label & title font sizes. |
 | `MOD_SHOW_IN_SPYDER` | bool | `True` | When running inside Spyder, also display every saved figure inline via `plt.show()`. No effect outside Spyder. |
@@ -256,5 +273,7 @@ skipped.
 | 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The parameter summary `femtic_ens_repair_summary.md` is now written to `ENSEMBLE_DIR` (the working directory set in the script) instead of next to the script: `utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR)`. Needs the `util.py` of the same date. AI-generated; review before production use. |
 | 2026-11-06 | Claude Sonnet 5.5 (Anthropic) | **Fix: far too many members were reported as non-converged** (78 of 256 in one ensemble where `femtic_ens_post.py` correctly accepted 253 of 256). Step (1) judged each member by the **last** row of its `.cnv` file; `femtic_ens_post.py` uses the **best-nRMS iteration (iter > 0)** and falls back to the best iteration that has a block file when the best one has none (`ITER_FALLBACK`). A run whose last iteration drifted above `NRMS_MAX`, or whose last iteration wrote no block file, was wrongly tagged `"rejected_nrms"` / `"missing_model"` and, with `MOD_REPAIR=True`, would have received a spurious `_restart` copy. New function `select_member_iteration()` implements the `femtic_ens_post.py` rule; new config `ITER_FALLBACK` (default `True`). A member accepted via the fallback keeps status `"accepted"`; for `"rejected_nrms"` members the diagnostic now shows the best nRMS, not the last. Tested on a synthetic 21-directory ensemble (last-iteration drift, missing last block file, truly rejected, no cnv, no block files, fallback above `NRMS_MAX`, alternative cnv name, stray file): old logic 11 accepted, new logic 17, identical to a verbatim port of `femtic_ens_post.py`'s selection for every member; REPAIR created exactly the 4 expected `_restart` directories and left the originals bit-identical. Not tested on the real ensemble. AI-generated; review before production use. |
 | 2026-11-06b | Claude Sonnet 5.5 (Anthropic) | **Directory scan report** appended to `femtic_ens_repair_summary.md`: reason (`no_cnv_file`, `cnv_unreadable`, `cnv_no_iterations`, `rejected_nrms`, `no_model_file`) and detail for every scanned directory that is not in the ensemble, counts per reason, members accepted via `ITER_FALLBACK`, ignored non-directory glob matches. The `conv_list` entries gain `reason` / `detail` keys (the plot functions only receive the label / nRMS / status lists, so they are unaffected). Uses the path returned by `utl.write_param_summary()`; falls back to `femtic_ens_repair_scan_report.md`. Same helpers as in `femtic_ens_post.py`. Tested on a synthetic 25-directory ensemble with the real `write_param_summary`. AI-generated; review before production use. |
+| 2026-11-06c | Claude Sonnet 5.5 (Anthropic) | Scan report: the number of glob matches is always shown next to the directories scanned (they differ for a file or broken symbolic link), and a new **"Directory numbering"** part reads the number after `ENSEMBLE_NAME` in each name and lists numbers with no entry at all, numbers matched only by a non-directory, numbers matched by several names (e.g. `X` and `X_restart`) and unnumbered names (prompted by a report of 255 directories scanned for an ensemble numbered 0..255). New optional `ENSEMBLE_INDEX_RANGE = (first, last)`, default `None` = inferred from the names. Same helpers as in `femtic_ens_post.py`. Tested on a synthetic ensemble with a missing number, a broken symbolic link, an `_restart` duplicate and a stray file. AI-generated; review before production use. |
 
 Author: Volker Rath (DIAS)
+| 2026-11-08 | Claude Sonnet 5.5 (Anthropic) | The scan-report helpers (`_scan_reason_text`, `_index_check`, building and appending the "Directory scan report") were copies of the ones in `femtic_ens_post.py`; both scripts now use the shared `femtic.build_scan_report` / `femtic.append_scan_report` (script shortened by about 200 lines). No change in the report or the settings. `femtic_ens_post.py` itself no longer draws figures (see `femtic_ens_plot_slices.py`, `femtic_ens_plot_bh.py`, `femtic_ens_plot_misfit.py`). |

@@ -10,7 +10,7 @@ workflow scripts.  All scripts live in `scripts/femtic/`.
 | Script | Purpose |
 |--------|---------|
 | `femtic_mod_plot_slice.py` | 2-D slice panels (map, N-S curtain, E-W curtain, arbitrary strike/dip plane) with optional embedded borehole columns, site overlays, compass corner labels, and nRMS annotation from `femtic.cnv`. |
-| `femtic_mod_plot_bh.py` | Standalone 1-D ρ(z) borehole resistivity logs; point-in-element sampling from a tetrahedral mesh (mesh read with `fem.read_femtic_mesh`). For ensembles see `MOD_BH` in `femtic_ens_post.py`. |
+| `femtic_mod_plot_bh.py` | Standalone 1-D ρ(z) borehole resistivity logs; point-in-element sampling from a tetrahedral mesh (mesh read with `fem.read_femtic_mesh`). For ensembles see `femtic_ens_plot_bh.py`. |
 | `femtic_plot_nrms.py` | Map of per-site nRMS misfit as colour-coded glyphs, optionally over an SRTM hillshade. The best iteration comes from `femtic.cnv`; per-site residuals from `results_iter<N>.h5` via `fem.read_results_data`. |
 | `femtic_plot_distort.py` | Map of the static galvanic distortion matrices as ellipses (optional Groom–Bailey decomposition panels, optional SRTM hillshade). |
 | `femtic_mod_plot_3d.py` | PyVista 3-D rendering and VTK/VTU export; axis-aligned and oblique slice planes, iso-surfaces, spatial clipping. |
@@ -51,7 +51,8 @@ femtic_rto_rough.py  →  R_coo.npz
 femtic_rto_prior.py  →  invRTR_*.npz   (optional)
 femtic_rto_prep.py   →  ensemble directories
                          (run FEMTIC on each member)
-femtic_ens_post.py   →  ensemble statistics (see below)
+femtic_ens_post.py   →  ensemble statistics and results .npz (see below)
+femtic_ens_plot_*.py →  slices, boreholes, nRMS histogram from that .npz
 ```
 
 ---
@@ -68,7 +69,10 @@ femtic_ens_post.py   →  ensemble statistics (see below)
 
 | Script | Purpose |
 |--------|---------|
-| `femtic_ens_post.py` | Algorithm-agnostic postprocessing of a converged ensemble: nRMS filter, log₁₀(ρ) statistics (mean, variance, median, MAD, percentiles), empirical covariance, optional QC and statistics slice figures, and optional borehole profiles (`MOD_BH`: ensemble statistics and/or all members at chosen or random positions, or at all sites). Replaces the former `femtic_rto_post.py`. |
+| `femtic_ens_post.py` | Algorithm-agnostic postprocessing of a converged ensemble (calculation only, no figures): nRMS filter, log₁₀(ρ) statistics (mean, variance, median, MAD, percentiles, Q-differences, bootstrap), optional sensitivity / SimRC and empirical covariance, optional random subsample of N members (`ENS_SUBSAMPLE_N`); writes the results `.npz` (everything the plot scripts need, incl. the nRMS table), the nRMS CSV and the parameter summary with the directory scan report. Replaces the former `femtic_rto_post.py`. |
+| `femtic_ens_plot_slices.py` | Slice figures from the results `.npz`: best-nRMS member and statistics panels (mean, median, error, MAD, percentiles, sensitivity, ...), reference-model lines, blanking by a statistic. |
+| `femtic_ens_plot_bh.py` | Borehole profiles from the results `.npz` (`MOD_BH`): ensemble statistics and/or all members at chosen or random positions or at all sites, density heat maps, converged and perturbed models side by side, reference model. |
+| `femtic_ens_plot_misfit.py` | nRMS histogram of all scanned members from the results `.npz` (accepted / rejected, threshold, median). |
 | `femtic_ens_plot.py` | Joint multi-row slice figure for a set of ensemble run directories, with optional statistical summary rows (mean, std, median) and optional borehole columns. |
 | `femtic_ens_repair.py` | Convergence diagnostic (nRMS bar chart / histogram, per status) for every directory of an ensemble; for non-converged members writes a restart directory `<dir>_restart` whose starting model is the mean of two random converged members. |
 | `femtic_ens_decomp.py` | Filter ensemble by nRMS threshold then perform PCA or ICA decomposition (scikit-learn); prints explained-variance ratios. |

@@ -496,6 +496,64 @@ mask = fem.brick_mask(
 
 ---
 
+## Ensemble results, reference model and borehole sampling (Section 6c)
+
+Added 2026-11-08 when `femtic_ens_post.py` was split into a calculation script
+and the plot scripts `femtic_ens_plot_slices.py`, `femtic_ens_plot_bh.py` and
+`femtic_ens_plot_misfit.py`. These are the pieces the scripts share. Nothing
+here draws (drawing is in `femtic_viz.py`) and nothing needs the ensemble
+member directories except where a block file is named.
+
+### Reading the results file and the nRMS table
+
+| Function | Purpose |
+|---|---|
+| `read_ensemble_results(path, prefix=None, *, percentiles=None, out=True)` | Read the results `.npz` of `femtic_ens_post.py` into a dict: `ens`, `pert` (perturbed models of the same members or `None`), `model_source`, `avg`/`var`/`err`/`med`/`mad`, `prc`/`prc_levels`, `qdiff`, `var_boot`/`err_boot`/`var_boot_se`, `sens` (`{suffix: vector}`), `simrc_coef`/`simrc_corr`, `model_list`, `best_index`/`best_member`/`best_file`/`best_iter`/`best_nrms`, `nrms_table`, `nrms_max`, `perturbed_file`, `subsample` (`idx`, `n_accepted`, `seed`, or `None`). `prefix=None` detects the file's only ensemble. Statistics missing from the file are derived from the stored members. |
+| `ensemble_stat_map(res)` | `(stat_map, value_keys)`: every plottable statistic `key -> (vector, description)` (avg, var, err, med, mad, `p<level>`, `qdiff_*`, bootstrap, `sens_*`, `simrc_*`) and the keys on the resistivity scale (usable as borehole lines). |
+| `resolve_results_template(res, template=None, *, ocean=None)` | Block file supplying header / region structure for the panels: the best member's own file, or `template`. Returns `(path, from_vector)`; `from_vector` is `True` when the "best" panel must be rebuilt from the stored best vector. |
+| `write_nrms_table(path, rows)` / `read_nrms_table(path)` | CSV of the per-member best nRMS (member, iteration, nRMS, status), sorted by nRMS. |
+
+### Units, slices and the alpha mask
+
+| Function | Purpose |
+|---|---|
+| `km_to_m`, `lim_km_to_m`, `slices_km_to_m`, `plane_spec_km_to_m` | `MOD_*` settings are in model-local km, `femtic_viz` wants metres; these convert scalars, limit pairs, `MOD_SLICES` lists and `kind="plane"` entries. |
+| `parse_alpha_source(expr)` | `"sens_mean_an > -3."` -> `(name, op, value)`; regex, never `eval`. |
+| `alpha_from_condition(arr, op, thr, mode, width)` | Per-free-parameter alpha in [0, 1] (`"blank"` hard cut, `"fade"` linear over `width`). |
+| `write_alpha_block(alpha, template, path, ocean=None, out=True)` | Block file whose raw values are the alpha values (read by `plot_model_slices(alpha_mode="direct")`). |
+| `STATS_AIR_RHO`, `STATS_AIR_LOG10_THRESH`, `STATS_OCEAN_RHO` | Sentinels (`1e30`, `29.0`, `1e-30`) written for air / ocean in statistics block files, so that a statistic near the ordinary air / ocean values is not painted as air / ocean. |
+| `DEFAULT_PERCENTILES` | `(2.3, 15.9, 50.0, 84.1, 97.7)`, used when a file stores no levels. |
+
+### Origin, sites, reference model, region of interest
+
+| Function / class | Purpose |
+|---|---|
+| `resolve_origin_and_sites(*, site_dat, site_names, site_number, observe_file, origin_*, zone_override, origin_method, plot_sites)` | UTM origin of the model and the site list in model-local coordinates; same logic as `femtic_gst_prep.py` / `femtic_rto_prep.py` (incl. the `observe.dat` fallback). Returns `utm_e, utm_n, utm_lat, utm_lon, utm_zone, utm_northern, site_xys, obs_coords_only`. |
+| `ReferenceModel(path, ocean=None, ocean_rho=...)` | Optional reference model on the ensemble's mesh. `active()`, `disable(why)`, `levels(clim, levels)`, `slice_kwargs(block_file, ...)` (iso-resistivity lines for `plot_model_slices`), `element_log10(n_elem)` (values per element for borehole lines). A missing file or another element count switches it off with a message. |
+| `roi_free_mask(block_file, n_free, mesh_file, *, xlim_km, ylim_km, zlim_km, ocean=None)` | Mask of free parameters whose centroid lies in the ROI box (for the sensitivity ROI diagnostic / normalisation). `None` with a warning if the geometry cannot be read. |
+
+### Borehole sampling
+
+`sample_boreholes()` is the numerical half of the borehole figures; the
+drawing is `femtic_viz.plan_borehole_figures()` / `draw_borehole_figures()`.
+
+| Function / class | Purpose |
+|---|---|
+| `BoreholeMesh(...)` | Mesh arrays for the point search, read once. `column(x, y)`, `locate(x, y, depths, cand=None)` (barycentric point-in-tet search, once per borehole), `surface_m(...)`. |
+| `expand_site_templates(specs, site_dat, utm_e, *, out=True)` | Expand `MOD_BH` entries with `sites=` (all / named / `n_random` with `seed`) to one entry per site. |
+| `sample_boreholes(specs, *, mesh, struct, ens, stat_map, value_keys, best_i, percentiles, utm, cs, pert=None, ref_el=None, ...)` | Profiles of all statistics, members, best member, reference and heat maps along the boreholes (and of `pert` the same way). Returns `dict(profiles, npz, hdr, npz_pert, hdr_pert)`. |
+| `borehole_resolve_xy`, `borehole_pos_str`, `borehole_expand_what`, `borehole_values`, `borehole_global_xlim`, `borehole_edges`, `borehole_heatmap`, `borehole_stat_vec`, `borehole_second_source`, `borehole_npz_entry`, `BOREHOLE_SIGMA_Q` | Building blocks of `sample_boreholes()`. |
+| `heat_scale_defaults`, `heat_scale_check`, `heat_scale_read`, `heat_scale_write`, `heat_scale_init` | Heat-map colour-scale settings, and saving / reusing them as a JSON file across runs (same format as `femtic_ens_plot.py`). |
+
+### Directory scan report
+
+| Function | Purpose |
+|---|---|
+| `build_scan_report(not_accepted, fallback, matches, n_scanned, n_accepted, ensemble_dir, ensemble_name, nrms_max, index_range=None)` | Markdown section accounting for every scanned directory and the reason each non-accepted one was left out, plus the directory-numbering check. |
+| `append_scan_report(report_md, summary_path, script_file)` | Append it to the parameter-summary file (fallback: `<script>_scan_report.md`). Used by `femtic_ens_post.py` and `femtic_ens_repair.py` (which had its own copy of these helpers before 2026-11-08). |
+
+---
+
 ## z-convention (z positive downward)
 
 FEMTIC uses a right-handed coordinate system with **z increasing downward** (depth),
@@ -541,6 +599,8 @@ Optional for visualisation and export:
 |-----------------------|----------------------------------------------------------------------|
 | **`ensembles.py`**    | Roughness/precision tools, sampling, ensemble generation, EOF / PCE. |
 | `femtic_viz.py`       | Matplotlib and PyVista visualisation.                                |
+| `femtic_ens_post.py`  | Ensemble statistics, sensitivity, covariance; writes the results `.npz` read by `read_ensemble_results()`. |
+| `femtic_ens_plot_slices.py`, `femtic_ens_plot_bh.py`, `femtic_ens_plot_misfit.py` | Slice, borehole and nRMS-histogram figures from that `.npz`; use Section 6c and the new `femtic_viz.py` functions. |
 | `femtic_mod_plot.py`  | Read and plot slice panels of a FEMTIC model; calls `fem.*` helpers. |
 | `snippets.py`         | Optional code blocks for `femtic_mod_plot.py` (e.g. ensemble plot).  |
 | `util.py`             | General-purpose helpers.                                             |
@@ -554,7 +614,23 @@ Optional for visualisation and export:
 
 ## Version / provenance
 
-Updated: 2026-10-28
+Updated: 2026-11-08
+
+### Changelog (2026-11-08) --- ensemble results, reference model, borehole sampling
+- New Section 6c (code moved out of `femtic_ens_post.py` and generalised so
+  the three plot scripts can share it): `read_ensemble_results`,
+  `ensemble_stat_map`, `resolve_results_template`, `write_nrms_table`,
+  `read_nrms_table`, the km/m helpers, the alpha helpers
+  (`parse_alpha_source`, `alpha_from_condition`, `write_alpha_block`),
+  `resolve_origin_and_sites`, `ReferenceModel`, `roi_free_mask`,
+  `BoreholeMesh`, `expand_site_templates`, `sample_boreholes` with the
+  `borehole_*` and `heat_scale_*` helpers, and `build_scan_report` /
+  `append_scan_report`. Constants `STATS_AIR_RHO`, `STATS_AIR_LOG10_THRESH`,
+  `STATS_OCEAN_RHO`, `DEFAULT_PERCENTILES`.
+- `read_ensemble_results` also returns `nrms_table`, `nrms_max`,
+  `perturbed_file` and `subsample` (the random-draw bookkeeping written by
+  `femtic_ens_post.py` with `ENS_SUBSAMPLE_N`).
+- No existing function was changed.
 
 ### Changelog (2026-10-28)
 - Documentation only, no change to `femtic.py`: in "Related modules and

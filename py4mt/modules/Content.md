@@ -274,6 +274,10 @@ in `ensembles.py` (they are no longer re-exported here: call `ens.get_roughness`
 | Convergence file | `read_cnv`, `get_nrms`, `resolve_cnv_path` |
 | Sites and positions | `read_site_dat`, `read_site_position`, `utm_to_model`, `latlon_to_model`, `estimate_utm_origin`, `resolve_slice_positions` |
 | Borehole sampling | `extract_borehole_log` |
+| Ensemble results file (`femtic_ens_post.py` `.npz`) | `read_ensemble_results`, `ensemble_stat_map`, `resolve_results_template`, `write_nrms_table`, `read_nrms_table` |
+| Ensemble plotting support | km/m helpers (`slices_km_to_m`, `plane_spec_km_to_m`, ...), alpha mask (`parse_alpha_source`, `alpha_from_condition`, `write_alpha_block`), `resolve_origin_and_sites`, `ReferenceModel`, `roi_free_mask` |
+| Ensemble borehole sampling | `BoreholeMesh`, `expand_site_templates`, `sample_boreholes`, `heat_scale_*` |
+| Directory scan report | `build_scan_report`, `append_scan_report` |
 | NPZ ↔ VTK / VTU | `unstructured_grid_from_femtic` (via PyVista) |
 | NPZ ↔ NetCDF / HDF5 | CF-compliant and HDF5 export/import |
 | CLI | `femtic-to-npz`, `npz-to-vtk`, `npz-to-femtic`, `edi-to-observe` |
@@ -302,8 +306,9 @@ Visualisation for FEMTIC resistivity models operating directly on
 | RTO/GST ensemble model plots | `plot_model_ensemble` |
 | Model slice panels (map, curtains, oblique plane) | `plot_model_slices`; ensemble version `plot_ensemble_slices` |
 | Borehole ρ(z) logs | `plot_borehole_logs` |
+| Ensemble borehole figures (profiles, heat maps) | `plan_borehole_figures`, `draw_borehole_figures`, `plot_boreholes`, `BoreholeFigureOptions` |
 | 3-D rendering | `plot_model_3d` |
-| Convergence diagnostics | `plot_convergence_bar`, `plot_convergence_histogram` |
+| Convergence diagnostics | `plot_convergence_bar`, `plot_convergence_histogram`, `plot_nrms_histogram` (ensemble nRMS table) |
 
 The mesh is read with `femtic.read_femtic_mesh` (via the internal `_load_mesh()`,
 which wraps the result in `FemticMesh`); `femtic_viz` no longer has a reader of

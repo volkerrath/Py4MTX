@@ -205,10 +205,32 @@ Modified: 2026-10-22 by Claude Sonnet 5.5 (Anthropic) -- observe.dat I/O
     (``skip_empty``). Block keywords APP_RES_AND_PHS and HTF are still not
     supported but now give a clear error message.
     AI-generated code -- review before production use.
+Modified: 2026-11-08 by Claude Sonnet 5.5 (Anthropic) -- new Section 6c,
+    "Ensemble results, reference model and borehole sampling", moved here
+    from femtic_ens_post.py when that script was split into a computing
+    script (femtic_ens_post.py) and three plotting scripts
+    (femtic_ens_plot_slices.py / _bh.py / _misfit.py). None of it reads
+    module-level user settings; the former MOD_* globals are arguments.
+    Results file: read_ensemble_results(), ensemble_stat_map(),
+    resolve_results_template(), read_nrms_table(), write_nrms_table().
+    Slice helpers: km_to_m(), lim_km_to_m(), slices_km_to_m(),
+    plane_spec_km_to_m(), parse_alpha_source(), alpha_from_condition(),
+    write_alpha_block(), resolve_origin_and_sites(), class ReferenceModel,
+    roi_free_mask(), constants STATS_AIR_RHO / STATS_OCEAN_RHO /
+    STATS_AIR_LOG10_THRESH. Boreholes: class BoreholeMesh,
+    expand_site_templates(), sample_boreholes() and the borehole_*()
+    helpers, heat_scale_defaults() / _check() / _read() / _write() /
+    _init() (JSON colour-scale files, same format as before). Directory
+    scan report: build_scan_report() / append_scan_report() (identical copies
+    used to live in femtic_ens_post.py and femtic_ens_repair.py). Behaviour is
+    unchanged apart from: the scale-file readers raise ValueError /
+    FileNotFoundError instead of calling sys.exit().
+    AI-generated code -- review before production use.
 """
 from __future__ import annotations
 
 import os
+import re
 import sys
 import time
 import json
@@ -8188,6 +8210,1915 @@ def extract_borehole_log(
         print(f"    borehole ({x_m:.0f}, {y_m:.0f}): "
               f"{len(depths)} levels, {n_hit} hit, {n_nan} outside mesh")
     return depths, rho
+
+
+# ============================================================================
+# SECTION 6c: Ensemble results, reference model and borehole sampling
+# ============================================================================
+#
+# Shared by femtic_ens_post.py (writes the results .npz) and the plotting
+# scripts femtic_ens_plot_slices.py / femtic_ens_plot_bh.py /
+# femtic_ens_plot_misfit.py (read it).  Nothing here reads module-level user
+# settings: everything a function needs is passed as an argument.  Plotting
+# counterparts (nRMS histogram, borehole figures) are in femtic_viz.py.
+#
+# AI-generated code (Claude Sonnet 5.5, Anthropic) -- review before
+# production use.
+# ============================================================================
+
+#: Sentinel air / ocean resistivities used in block files that carry a
+#: *statistic* (not a resistivity): a value such as a log10 sensitivity of
+#: -0.6 must never coincide with what plot_model_slices() recognises as ocean
+#: (log10(ocean_value) +- 0.05) or air (log10 > threshold).
+STATS_AIR_RHO = 1.0e30
+STATS_AIR_LOG10_THRESH = 29.0
+STATS_OCEAN_RHO = 1.0e-30
+
+_ALPHA_EXPR_RE = re.compile(
+    r"^\s*([A-Za-z_]\w*)\s*(>=|<=|>|<)\s*"
+    r"([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)\s*$"
+)
+
+#: Percentile levels used when a results file does not store its own.
+DEFAULT_PERCENTILES = (2.3, 15.9, 50.0, 84.1, 97.7)
+
+
+def km_to_m(val):
+    """Convert a scalar distance in km to metres; None passes through.
+
+    The plotting configuration of the ensemble scripts is given in km
+    (MOD_PROJECTION_DIST, MOD_ROI_PAD_XY, ...), while femtic_viz.py works in
+    model-local / UTM metres throughout (like mesh.dat).
+    """
+    return None if val is None else float(val) * 1000.0
+
+
+def lim_km_to_m(lim):
+    """Convert a [min, max] km limit pair to metres; None passes through."""
+    return None if lim is None else [float(v) * 1000.0 for v in lim]
+
+
+def slices_km_to_m(slices):
+    """Convert model-local km slice coordinates (x0/y0/z0) to metres.
+
+    ``slices`` is the MOD_SLICES list of dicts, e.g.
+    ``dict(kind="map", z0=5.0)`` or ``dict(kind="ns", x0=0.0)``. Plain
+    numeric x0/y0/z0 values (model-local km) are converted to metres;
+    (value, "latlon") tuples are left untouched since those are
+    degrees, resolved separately by fem.resolve_slice_positions().
+    None passes through.
+    """
+    if slices is None:
+        return None
+    out = []
+    for spec in slices:
+        spec = dict(spec)
+        for key in ("x0", "y0", "z0"):
+            if key in spec and isinstance(spec[key], (int, float)):
+                spec[key] = spec[key] * 1000.0
+        out.append(spec)
+    return out
+
+
+def plane_spec_km_to_m(spec, xlim_km=None, ylim_km=None):
+    """Convert a MOD_SLICES ``kind="plane"`` entry (km) to a plot spec (m).
+
+    Accepted keys (km / degrees): ``point`` = [x, y] or [x, y, z] model-local
+    km (default [0, 0] = model origin), ``strike`` (geographic azimuth,
+    degrees clockwise from north, for dip = 90; default 0), ``dip``
+    (default 90), ``invert_x``, ``title``, and optionally ``xlim`` =
+    [min, max] along-strike km relative to ``point``.
+
+    For a vertical plane (dip = 90) without an explicit ``xlim`` the
+    along-strike range is derived from the same limits as the other panels:
+    the corners of the xlim_km x ylim_km box (MOD_XLIM x MOD_YLIM) (east x north, model-local
+    km) are projected onto the strike direction, so the section covers the
+    same ROI. If either of xlim_km / ylim_km is None the whole mesh is
+    shown. The depth range follows MOD_ZLIM like every other curtain panel
+    (applied inside femtic_viz.plot_model_slices).
+    """
+    sp = dict(spec)
+    pt = list(sp.get("point", [0.0, 0.0]))
+    pt += [0.0] * (3 - len(pt))
+    sp["point"] = [float(v) * 1000.0 for v in pt[:3]]
+    sp.setdefault("strike", 0.0)
+    sp.setdefault("dip", 90.0)
+    if "xlim" in sp:
+        sp["xlim"] = lim_km_to_m(sp["xlim"])
+    elif abs(float(sp["dip"]) - 90.0) < 1e-6:
+        if xlim_km is not None and ylim_km is not None:
+            _s = math.radians(float(sp["strike"]))
+            _u = [
+                (ex - pt[0]) * math.sin(_s) + (ny - pt[1]) * math.cos(_s)
+                for ex in xlim_km
+                for ny in ylim_km
+            ]
+            sp["xlim"] = [min(_u) * 1000.0, max(_u) * 1000.0]
+        else:
+            sp["xlim"] = None
+    return sp
+
+
+def parse_alpha_source(expr: str):
+    """Parse MOD_ALPHA_SOURCE ("name op value") -> (name, op, value).
+
+    Only a single comparison is allowed; nothing is evaluated.
+    """
+    m = _ALPHA_EXPR_RE.match(expr)
+    if m is None:
+        raise ValueError(
+            f"MOD_ALPHA_SOURCE={expr!r}: expected '<name> <op> <value>' "
+            f"with op one of > >= < <=, e.g. 'sens_mean_an > -3.'"
+        )
+    return m.group(1), m.group(2), float(m.group(3))
+
+
+def alpha_from_condition(
+    arr, op: str, thr: float, mode: str, width: float
+) -> np.ndarray:
+    """Per-free-parameter alpha in [0, 1] from a single comparison.
+
+    Cells satisfying ``arr <op> thr`` get alpha 1. Failing cells get 0
+    ("blank") or fade linearly with distance beyond the threshold, reaching
+    0 at ``width`` ("fade"). NaN values always get 0.
+    """
+    arr = np.asarray(arr, dtype=float)
+    with np.errstate(invalid="ignore"):
+        if op == ">":
+            keep, dist = arr > thr, thr - arr
+        elif op == ">=":
+            keep, dist = arr >= thr, thr - arr
+        elif op == "<":
+            keep, dist = arr < thr, arr - thr
+        else:  # "<="
+            keep, dist = arr <= thr, arr - thr
+    if mode == "blank":
+        alpha = keep.astype(float)
+    elif mode == "fade":
+        if width <= 0.0:
+            raise ValueError("MOD_ALPHA_FADE_WIDTH must be > 0 for 'fade'.")
+        alpha = np.where(keep, 1.0, np.clip(1.0 - dist / width, 0.0, 1.0))
+    else:
+        raise ValueError(
+            f"MOD_ALPHA_MODE must be 'blank' or 'fade', got {mode!r}"
+        )
+    alpha[~np.isfinite(arr)] = 0.0
+    return alpha
+
+
+def write_alpha_block(
+    alpha: np.ndarray, template: str, path: str, ocean=None, out: bool = True
+) -> None:
+    """Write per-free-parameter alpha so the file's RAW values equal alpha.
+
+    insert_model() writes 10**v, and plot_model_slices reads alpha
+    files as raw region values -- so v = log10(alpha) (alpha = 0 -> raw 0).
+    Air/ocean are written as 1.0 (they are drawn separately anyway).
+    """
+    with np.errstate(divide="ignore"):
+        v = np.where(alpha > 0.0, np.log10(np.maximum(alpha, 1e-300)), -np.inf)
+    insert_model(
+        template=template,
+        model=v,
+        model_file=path,
+        ocean=ocean,
+        air_rho=1.0,
+        ocean_rho=1.0,
+        out=out,
+    )
+
+
+def read_ensemble_results(path, prefix=None, *, percentiles=None, out=True):
+    """Read the results .npz written by femtic_ens_post.py.
+
+    Everything the plotting scripts need is rebuilt from the file; nothing is
+    recomputed except ``avg / var / err / med / mad / prc``, which are derived
+    from the stored members if the file lacks them.
+
+    Parameters
+    ----------
+    path : str
+        Results .npz.
+    prefix : str | None
+        Key prefix inside the file (femtic_ens_post.py's ENSEMBLE_PREFIX).
+        If the file holds no ``<prefix>_ens`` but exactly one other ensemble,
+        that one is used.
+    percentiles : sequence | None
+        Percentile levels assumed when the file does not store
+        ``<prefix>_prc_levels`` (default DEFAULT_PERCENTILES); stored levels
+        always win.
+    out : bool
+        Print a short report.
+
+    Returns
+    -------
+    dict with
+        prefix, path
+        ens (n_members, n_free)        log10(rho) of the ensemble's models
+        pert (n_members, n_free)|None  perturbed models of the same members
+        model_source                   "converged" | "perturbed"
+        avg, var, err, med, mad (n_free,) ; prc (n_prc, n_free) ; prc_levels
+        qdiff {key: (n_free,)} ; var_boot, err_boot, var_boot_se | None
+        sens {suffix: (n_free,)} ; simrc_coef, simrc_corr | None
+        model_list [[block file, iteration, nRMS], ...] (rows of ``ens``)
+        best_index, best_member, best_file, best_iter, best_nrms
+        nrms_table [(member, iter, nRMS, status), ...] | None (older files)
+        nrms_max float | None
+        perturbed_file str | None       name of the perturbed reference file inside
+                                        the member directories ("both"/"perturbed")
+        subsample dict | None           random draw: idx (rows of the accepted
+                                        members), n_accepted, seed (None = unseeded)
+
+    Raises
+    ------
+    FileNotFoundError, KeyError, ValueError
+        When the file is missing, holds no ensemble or is inconsistent.
+    """
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"results file not found: {path}")
+    try:
+        z = np.load(path, allow_pickle=False)
+    except (ValueError, OSError) as exc:
+        raise ValueError(f"cannot read {path}: {exc}") from exc
+    try:
+        keys = set(z.files)
+        pk = prefix
+        if pk is None or f"{pk}_ens" not in keys:
+            cand = sorted(
+                k[: -len("_ens")]
+                for k in keys
+                if k.endswith("_ens") and f"{k[: -len('_ens')]}_avg" in keys
+            )
+            if len(cand) == 1:
+                if out and pk is not None:
+                    print(
+                        f"  results: no '{pk}_ens' in the file; using its "
+                        f"only ensemble, prefix '{cand[0]}'."
+                    )
+                pk = cand[0]
+            else:
+                raise KeyError(
+                    f"no '{pk}_ens' in {path}. Ensemble prefixes found: "
+                    f"{cand if cand else 'none'} -- set ENSEMBLE_PREFIX to "
+                    f"one of them."
+                )
+
+        def _arr(name):
+            return np.asarray(z[f"{pk}_{name}"], dtype=float)
+
+        def _get(name, recompute):
+            if f"{pk}_{name}" in keys:
+                return _arr(name)
+            if out:
+                print(f"  results: '{pk}_{name}' not in the file - recomputed.")
+            return recompute()
+
+        ens = _arr("ens")  # (n_members, n_free)
+        n_members = int(ens.shape[0])
+        if n_members == 0:
+            raise ValueError("the file holds no ensemble members.")
+        model_source = (
+            str(z[f"{pk}_model_source"]) if f"{pk}_model_source" in keys
+            else "converged"
+        )
+
+        pert = None
+        if f"{pk}_ens_perturbed" in keys:
+            pert = _arr("ens_perturbed")
+            if pert.shape != ens.shape:
+                if out:
+                    print(
+                        f"  results: '{pk}_ens_perturbed' has shape "
+                        f"{pert.shape}, the ensemble {ens.shape} - ignored."
+                    )
+                pert = None
+
+        avg = _get("avg", lambda: np.mean(ens, axis=0))
+        var = _get("var", lambda: np.var(ens, axis=0))
+        err = _get("err", lambda: np.sqrt(np.var(ens, axis=0)))
+        med = _get("med", lambda: np.median(ens, axis=0))
+        mad = _get(
+            "mad",
+            lambda: np.median(
+                np.abs(ens - np.median(ens, axis=0)[np.newaxis, :]), axis=0
+            ),
+        )
+        if f"{pk}_prc_levels" in keys:
+            levels = [float(v) for v in np.asarray(z[f"{pk}_prc_levels"]).ravel()]
+            if (
+                out
+                and percentiles is not None
+                and levels != [float(v) for v in percentiles]
+            ):
+                print(
+                    f"  results: using the stored percentile levels {levels} "
+                    f"instead of {list(percentiles)}."
+                )
+        else:
+            levels = [float(v) for v in (percentiles or DEFAULT_PERCENTILES)]
+        prc = _get("prc", lambda: np.percentile(ens, levels, axis=0))
+        if prc.shape[0] != len(levels):
+            raise ValueError(
+                f"'{pk}_prc' has {prc.shape[0]} rows but there are "
+                f"{len(levels)} percentile levels - inconsistent file."
+            )
+
+        qdiff = {}
+        pre = f"{pk}_qdiff_"
+        for k in sorted(keys):
+            if k.startswith(pre):
+                qdiff[k[len(pk) + 1 :]] = np.asarray(z[k], dtype=float)
+        var_boot = err_boot = var_boot_se = None
+        if f"{pk}_var_boot" in keys:
+            var_boot = _arr("var_boot")
+            err_boot = (
+                _arr("err_boot") if f"{pk}_err_boot" in keys
+                else np.sqrt(var_boot)
+            )
+            if f"{pk}_var_boot_se" in keys:
+                var_boot_se = _arr("var_boot_se")
+        sens = {}
+        pre = f"{pk}_sens_"
+        for k in sorted(keys):
+            if k.startswith(pre):
+                sens[k[len(pre) :]] = np.asarray(z[k], dtype=float)
+        simrc_coef = simrc_corr = None
+        if f"{pk}_simrc_coef" in keys and f"{pk}_simrc_corr" in keys:
+            simrc_coef, simrc_corr = _arr("simrc_coef"), _arr("simrc_corr")
+
+        # [block file, best iteration, nRMS] per row of ``ens`` (stored as a
+        # string array: mixed-type lists are saved that way)
+        if f"{pk}_model_list" not in keys:
+            raise KeyError(f"'{pk}_model_list' missing from {path}.")
+        model_list = [
+            [str(r[0]), int(float(r[1])), float(r[2])]
+            for r in np.asarray(z[f"{pk}_model_list"]).reshape(-1, 3)
+        ]
+        if len(model_list) != n_members:
+            raise ValueError(
+                f"model_list has {len(model_list)} entries but the ensemble "
+                f"matrix has {n_members} rows - inconsistent file."
+            )
+        bi = min(range(len(model_list)), key=lambda i: model_list[i][2])
+        best_file = (
+            str(z[f"{pk}_best_file"]) if f"{pk}_best_file" in keys
+            else model_list[bi][0]
+        )
+        best_member = (
+            str(z[f"{pk}_best_member"]) if f"{pk}_best_member" in keys
+            else os.path.basename(os.path.dirname(model_list[bi][0]))
+        )
+        if f"{pk}_best" in keys:
+            sb = _arr("best")
+            if sb.shape != ens[bi].shape or not np.allclose(sb, ens[bi]):
+                print(
+                    "  results: WARNING - stored best vector differs from "
+                    "the lowest-nRMS row of the ensemble matrix."
+                )
+
+        nrms_table = None
+        if f"{pk}_nrms_table" in keys:
+            nrms_table = [
+                (str(r[0]), int(float(r[1])), float(r[2]), str(r[3]))
+                for r in np.asarray(z[f"{pk}_nrms_table"]).reshape(-1, 4)
+            ]
+        nrms_max = float(z[f"{pk}_nrms_max"]) if f"{pk}_nrms_max" in keys else None
+        perturbed_file = (
+            str(z[f"{pk}_perturbed_file_name"])
+            if f"{pk}_perturbed_file_name" in keys
+            else None
+        )
+        subsample = None
+        if f"{pk}_subsample_idx" in keys:
+            _sd = int(z[f"{pk}_subsample_seed"]) if f"{pk}_subsample_seed" in keys else -1
+            subsample = dict(
+                idx=np.asarray(z[f"{pk}_subsample_idx"], dtype=int),
+                n_accepted=(
+                    int(z[f"{pk}_subsample_n_accepted"])
+                    if f"{pk}_subsample_n_accepted" in keys
+                    else None
+                ),
+                seed=None if _sd < 0 else _sd,
+            )
+    finally:
+        z.close()
+
+    if out:
+        print(
+            f"results: {path}\n"
+            f"  prefix '{pk}', {n_members} members, {ens.shape[1]} free "
+            f"parameters, {model_source} models"
+            + (", perturbed models too" if pert is not None else "")
+            + (
+                f", random draw from {subsample['n_accepted']} accepted members"
+                if subsample is not None
+                else ""
+            )
+            + f"\n  best nRMS {model_list[bi][2]:.4f} ({best_member}, iter "
+            f"{model_list[bi][1]})"
+        )
+    return dict(
+        prefix=pk, path=path, ens=ens, pert=pert, model_source=model_source,
+        avg=avg, var=var, err=err, med=med, mad=mad, prc=prc,
+        prc_levels=levels, qdiff=qdiff, var_boot=var_boot,
+        err_boot=err_boot, var_boot_se=var_boot_se, sens=sens,
+        simrc_coef=simrc_coef, simrc_corr=simrc_corr, model_list=model_list,
+        best_index=bi, best_member=best_member, best_file=best_file,
+        best_iter=int(model_list[bi][1]), best_nrms=float(model_list[bi][2]),
+        nrms_table=nrms_table, nrms_max=nrms_max,
+        perturbed_file=perturbed_file, subsample=subsample,
+    )
+
+
+def ensemble_stat_map(res):
+    """Plottable statistics of a read_ensemble_results() dict.
+
+    Returns ``(stat_map, value_keys)``: ``stat_map[key] = (vector over the
+    free parameters, description)`` for avg / var / err / med / mad, one
+    ``p<level>`` key per percentile level, the qdiff_* spreads, the
+    bootstrap statistics, ``sens_*`` and ``simrc_*`` -- whatever the file
+    holds.  ``value_keys`` are the keys on the resistivity scale
+    (log10(rho): avg, med and the percentiles), the ones that make sense as
+    borehole lines.
+    """
+    stat = {
+        "avg": (res["avg"], "mean"),
+        "var": (res["var"], "variance"),
+        "err": (res["err"], "error (std = sqrt(var))"),
+        "med": (res["med"], "median"),
+        "mad": (res["mad"], "MAD"),
+    }
+    value_keys = {"avg", "med"}
+    for i, p in enumerate(res["prc_levels"]):
+        key = "p" + f"{p:g}".replace(".", "_")
+        stat[key] = (res["prc"][i], f"{p:g}th percentile")
+        value_keys.add(key)
+    for key, val in res["qdiff"].items():
+        stat[key] = (val, f"|{key}| spread")
+    if res["var_boot"] is not None:
+        stat["var_boot"] = (res["var_boot"], "bootstrap variance")
+        stat["err_boot"] = (res["err_boot"], "bootstrap error (std)")
+    for key, val in res["sens"].items():
+        stat[f"sens_{key}"] = (
+            val,
+            f"sensitivity {key} ({'linear' if key.startswith('cv') else 'log10'})",
+        )
+    if res["simrc_corr"] is not None:
+        stat["simrc_coef"] = (
+            res["simrc_coef"], "log10 SimRC cumulative |regression coeff.|")
+        stat["simrc_corr"] = (
+            res["simrc_corr"], "log10 SimRC cumulative |correlation|")
+    return stat, value_keys
+
+
+def resolve_results_template(res, template=None, *, ocean=None):
+    """Block file that supplies header / region structure for result panels.
+
+    Default: the best member's own block file recorded in the results file.
+    ``template`` overrides it, e.g. when the results were moved to another
+    machine or the member directories are gone: any resistivity block file of
+    this ensemble (same mesh, same free regions) will do -- the panels are
+    drawn from the stored vectors, only its structure is used.
+
+    Returns ``(template_path, from_vector)``; ``from_vector`` is True when the
+    template is not the best member's own file, so the "best" panel has to be
+    rebuilt from the stored best vector.
+
+    Raises FileNotFoundError / ValueError when the file is missing or does not
+    belong to this ensemble (other number of free regions).
+    """
+    best = res["model_list"][res["best_index"]][0]
+    tpl = template if template else best
+    if not os.path.isfile(tpl):
+        raise FileNotFoundError(
+            f"template block file not found: {tpl}\n"
+            f"  The stored best-member file is {best}.\n"
+            f"  Set TEMPLATE_BLOCK to any resistivity block file of this "
+            f"ensemble (same mesh and regions)."
+        )
+    st = _read_resistivity_block_struct(tpl, ocean=ocean, out=False)
+    n_free = int(np.asarray(st["free_idx"]).size)
+    if n_free != res["ens"].shape[1]:
+        raise ValueError(
+            f"template {tpl} has {n_free} free regions but the ensemble has "
+            f"{res['ens'].shape[1]} - it is not a block file of this ensemble."
+        )
+    return tpl, os.path.abspath(tpl) != os.path.abspath(best)
+
+
+def write_nrms_table(path, rows):
+    """Write the per-member best-nRMS table as CSV, sorted by nRMS.
+
+    ``rows`` : [(member, best_iter, nrms, status), ...].
+    """
+    import csv
+
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(["member", "best_iter", "nrms", "status"])
+        for r in sorted(rows, key=lambda r: r[2]):
+            w.writerow([r[0], r[1], f"{r[2]:.6f}", r[3]])
+
+
+def read_nrms_table(path):
+    """Read a CSV written by write_nrms_table().
+
+    Returns [(member, best_iter, nrms, status), ...].
+    """
+    import csv
+
+    rows = []
+    with open(path, newline="", encoding="utf-8") as fh:
+        for r in csv.DictReader(fh):
+            rows.append(
+                (r["member"], int(r["best_iter"]), float(r["nrms"]), r["status"])
+            )
+    return rows
+
+
+def resolve_origin_and_sites(
+    *,
+    site_dat=None,
+    site_names=None,
+    site_number=None,
+    observe_file=None,
+    origin_e=None,
+    origin_n=None,
+    origin_lat=None,
+    origin_lon=None,
+    zone_override=None,
+    origin_method="box",
+    plot_sites=True,
+):
+    """Estimate UTM origin from a site list; collect site model-local coords.
+
+    Mirrors the origin-resolution block in femtic_gst_prep.py /
+    femtic_rto_prep.py so all scripts behave identically, including the
+    observe.dat / site_number fallback when site_dat is absent.
+
+    Parameters (the MOD_* settings of the calling script)
+    ----------
+    site_dat, site_names, site_number : MOD_SITE_DAT / _NAMES / _NUMBER
+    observe_file : observe.dat used for the site_number fallback
+    origin_e, origin_n, origin_lat, origin_lon : MOD_UTM_ORIGIN_E / _N / _LAT / _LON
+    zone_override : MOD_UTM_ZONE_OVERRIDE
+    origin_method : MOD_ORIGIN_METHOD ("box" | "average" | None)
+    plot_sites : True if any site overlay is wanted (MOD_PLOT_SITES_MAPS or
+        MOD_PLOT_SITES_SLICES); sites are only collected then
+
+    Returns
+    -------
+    utm_e, utm_n, utm_lat, utm_lon : float | None
+    utm_zone, utm_northern : str | None, bool | None
+    site_xys : list of (name, x_m, y_m, elev)
+    obs_coords_only : bool
+        True if site_xys was populated from observe.dat / MOD_SITE_NUMBER
+        rather than MOD_SITE_DAT.
+    """
+    utl = _utl()
+    _e = origin_e
+    _n = origin_n
+    _lat = origin_lat
+    _lon = origin_lon
+    _zone, _north = None, None
+
+    if (
+        origin_method is not None
+        and site_dat
+        and os.path.isfile(site_dat)
+    ):
+        _sdat = read_site_dat(site_dat)
+        if _sdat:
+            _Es = np.array([d["easting"] for d in _sdat])
+            _Ns = np.array([d["northing"] for d in _sdat])
+            if origin_method == "box":
+                _e = 0.5 * (_Es.min() + _Es.max())
+                _n = 0.5 * (_Ns.min() + _Ns.max())
+            elif origin_method == "average":
+                _e = float(_Es.mean())
+                _n = float(_Ns.mean())
+            _lats = np.array([d["lat"] for d in _sdat])
+            _lons = np.array([d["lon"] for d in _sdat])
+            _zone, _north = utl.utm_zone_from_latlon(
+                float(_lats.mean()),
+                float(_lons.mean()),
+                override=zone_override,
+            )
+            _lat, _lon = utl.utm_to_latlon_zn(_e, _n, _zone, _north)
+
+    if _lat is not None and _lon is not None:
+        _zone, _north = utl.utm_zone_from_latlon(
+            _lat, _lon, override=zone_override
+        )
+
+    site_xys = []
+    obs_coords_only = False
+    _need_sites = plot_sites
+    if _need_sites and site_dat and os.path.isfile(site_dat):
+        for row in read_site_dat(site_dat, site_names=site_names):
+            sx, sy = utm_to_model(row["easting"], row["northing"], _e, _n)
+            site_xys.append((row["name"], sx, sy, float(row.get("elev", 0.0))))
+    elif _need_sites and site_number is not None and observe_file:
+        _site_nums = (
+            site_number
+            if isinstance(site_number, (list, tuple))
+            else [site_number]
+        )
+        for _sn in _site_nums:
+            sx, sy = read_site_position(observe_file, _sn)
+            site_xys.append((_sn, sx, sy, 0.0))
+        obs_coords_only = True
+
+    return _e, _n, _lat, _lon, _zone, _north, site_xys, obs_coords_only
+
+
+class ReferenceModel:
+    """Optional reference model drawn next to an ensemble.
+
+    ``path`` is a resistivity block file on the SAME mesh as the ensemble
+    (a deterministic inversion, the prior / starting model, a published
+    model); its region structure may differ from the members'.  A missing
+    file, or one with another element count than the mesh, switches the
+    reference off with a message -- the run continues.
+
+    Parameters
+    ----------
+    path : str | None
+        Block file; None = no reference.
+    ocean : optional
+        Ocean flag passed on to the block-file reader (MOD_OCEAN).
+    ocean_rho : float
+        Resistivity (Ohm.m) the ocean region is shown with (MOD_OCEAN_RHO).
+    """
+
+    def __init__(self, path, *, ocean=None, ocean_rho=0.25):
+        self.path = path
+        self.ocean = ocean
+        self.ocean_rho = float(ocean_rho)
+        self._checked = False
+        self._ok = False
+        self._struct = None
+
+    @property
+    def active(self) -> bool:
+        """True if the file is set and exists (checked, reported once)."""
+        if not self._checked:
+            self._checked = True
+            if self.path is None:
+                pass
+            elif not os.path.isfile(self.path):
+                print(f"  reference model not found: {self.path} - reference off.")
+            else:
+                self._ok = True
+        return bool(self._ok)
+
+    def disable(self, why: str) -> None:
+        """Switch the reference off for the rest of the run, with a message."""
+        print(f"  reference model off: {why}")
+        self._ok = False
+
+    def struct(self):
+        """Region structure of the reference block file (read once); None = off."""
+        if not self.active:
+            return None
+        if self._struct is None:
+            self._struct = _read_resistivity_block_struct(
+                self.path, ocean=self.ocean, out=False
+            )
+        return self._struct
+
+    def levels(self, clim=None, levels=None) -> list:
+        """Contour levels (log10 Ohm.m) of the reference lines in slices.
+
+        ``levels`` (MOD_REF_LEVELS) if given, else the integer decades
+        strictly inside ``clim`` (MOD_CLIM), else inside the range of the
+        reference model's own free regions.  The same levels serve every
+        panel: the reference is always contoured in its own units, whatever
+        a statistics panel shows.
+        """
+        if levels is not None:
+            return [float(v) for v in np.atleast_1d(levels)]
+        if clim is not None:
+            lo, hi = float(min(clim)), float(max(clim))
+        else:
+            st = self.struct()
+            rho = np.asarray(st["region_rho"], dtype=float)
+            keep = np.isfinite(rho) & (rho > 0.0)
+            keep[0] = False  # air
+            if rho.size > 1 and st["meta"]["ocean_present"]:
+                keep[1] = False  # ocean
+            lg = np.log10(rho[keep])
+            lg = lg[lg <= 8.0]
+            if lg.size == 0:
+                return []
+            lo, hi = float(lg.min()), float(lg.max())
+        lev = np.arange(math.floor(lo) + 1, math.ceil(hi), dtype=float)
+        if lev.size == 0:
+            lev = np.array([0.5 * (lo + hi)])
+        return [float(v) for v in lev]
+
+    def slice_kwargs(self, block_file, *, levels=None, clim=None, style=None,
+                     label=None) -> dict:
+        """plot_model_slices keywords for the reference lines ({} = none).
+
+        The reference must have the element count of the plotted block file
+        (same mesh); otherwise it is switched off with a message instead of
+        stopping the run.
+        """
+        if not self.active:
+            return {}
+        try:
+            n_ref, n_blk = _block_nelem(self.path), _block_nelem(block_file)
+        except (OSError, ValueError, IndexError) as err:
+            self.disable(f"cannot read the block-file headers ({err}).")
+            return {}
+        if n_ref != n_blk:
+            self.disable(
+                f"the reference has {n_ref} elements but the model has "
+                f"{n_blk} - it must live on the same mesh."
+            )
+            return {}
+        return dict(
+            reference_file=self.path,
+            reference_levels=self.levels(clim, levels),
+            reference_style=dict(style or {}),
+            reference_label=label,
+            reference_ocean_value=self.ocean_rho,
+            reference_air_log10_thresh=8.0,
+        )
+
+    def element_log10(self, n_elem):
+        """log10(rho) per mesh element (air = NaN, ocean = ``ocean_rho``).
+
+        None when the reference is off or lives on another mesh (then it is
+        switched off with a message).  Used for the dashed reference line of
+        the borehole figures.
+        """
+        st = self.struct()
+        if st is None:
+            return None
+        er = np.asarray(st["elem_region"], dtype=np.int64)
+        if er.size != int(n_elem):
+            self.disable(
+                f"the reference has {er.size} elements but the model has "
+                f"{int(n_elem)} - it must live on the same mesh."
+            )
+            return None
+        lg = np.log10(np.asarray(st["region_rho"], dtype=float))
+        lg[0] = np.nan
+        if st["nreg"] > 1 and st["meta"]["ocean_present"]:
+            lg[1] = np.log10(self.ocean_rho)
+        return lg[er]
+
+
+def _block_nelem(path) -> int:
+    """Element count from the header line of a resistivity block file."""
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        return int(fh.readline().split()[0])
+
+
+def roi_free_mask(block_file, n_free, mesh_file, *, xlim_km=None,
+                  ylim_km=None, zlim_km=None, ocean=None):
+    """Boolean mask (n_free,), True where a free parameter lies in the ROI.
+
+    A free parameter counts as inside when its volume-weighted centroid
+    (build_region_geometry()) falls into the axis-aligned box given by
+    ``xlim_km`` / ``ylim_km`` / ``zlim_km`` (model-local km, None = no limit
+    on that axis).  The region layout comes from ``block_file``.
+
+    Returns None (with a printed warning) if the mesh or the region geometry
+    cannot be read, or if the block file has another number of free regions
+    than ``n_free`` -- callers should then skip the ROI diagnostic rather
+    than fail.
+    """
+    try:
+        st = _read_resistivity_block_struct(block_file, ocean=ocean, out=False)
+        free_idx = np.asarray(st["free_idx"], dtype=int)
+        if free_idx.size != n_free:
+            print(
+                f"  ROI: free_idx size {free_idx.size} != n_free {n_free} "
+                f"- skipping ROI diagnostic."
+            )
+            return None
+        nodes, conn = read_femtic_mesh(mesh_file)
+        region_ctr, _ = build_region_geometry(
+            nodes, conn, np.asarray(st["elem_region"], dtype=int), free_idx
+        )
+        mask = np.ones(n_free, dtype=bool)
+        for ax, lim in enumerate((xlim_km, ylim_km, zlim_km)):
+            lim_m = lim_km_to_m(lim)
+            if lim_m is not None:
+                mask &= (region_ctr[:, ax] >= min(lim_m)) & (
+                    region_ctr[:, ax] <= max(lim_m)
+                )
+        print(f"  ROI diagnostic: {int(mask.sum())} of {n_free} free "
+              f"parameters inside the plot limits.")
+        return mask
+    except Exception as exc:
+        print(
+            f"  ROI diagnostic: could not resolve free-parameter geometry "
+            f"({type(exc).__name__}: {exc}) - skipping."
+        )
+        return None
+
+
+class BoreholeMesh:
+    """Mesh arrays for borehole sampling, read once.
+
+    Uses read_femtic_mesh() (default axis handling, see MESH_SWAP_XY):
+    nodes[:, 0] = easting, nodes[:, 1] = northing, nodes[:, 2] = z-down
+    (model-local metres).  Per-element bounding boxes are cached for the
+    lateral pre-filter.  The search is the expensive part of a borehole and is
+    done once per borehole: locate() returns element indices, from which every
+    statistic and every member reads its values (borehole_values()).
+    """
+
+    def __init__(self, mesh_file):
+        nodes, conn = read_femtic_mesh(mesh_file)
+        verts = nodes[conn]  # (n_elem, 4, 3)
+        self.n_elem = int(conn.shape[0])
+        self.verts = verts
+        for i, ax in enumerate("xyz"):
+            setattr(self, ax + "min", verts[:, :, i].min(axis=1))
+            setattr(self, ax + "max", verts[:, :, i].max(axis=1))
+
+    def column(self, x_m, y_m):
+        """Indices of the elements whose (x, y) bounding box holds the point."""
+        return np.where(
+            (self.xmin <= x_m)
+            & (x_m <= self.xmax)
+            & (self.ymin <= y_m)
+            & (y_m <= self.ymax)
+        )[0]
+
+    def locate(self, x_m, y_m, depths_m, cand=None):
+        """Index of the tetrahedron containing (x_m, y_m, z) for each depth.
+
+        Exact barycentric point-in-tetrahedron test (same tolerance as
+        extract_borehole_log), vectorised over the candidate elements of the
+        column.  Returns an int array, -1 where no element contains the point
+        (outside the mesh).
+        """
+        depths_m = np.asarray(depths_m, dtype=float)
+        elem = np.full(depths_m.size, -1, dtype=np.int64)
+        if cand is None:
+            cand = self.column(x_m, y_m)
+        if cand.size == 0:
+            return elem
+        V = self.verts[cand]  # (nc, 4, 3)
+        v0 = V[:, 0, :]
+        T = np.transpose(V[:, 1:, :] - v0[:, None, :], (0, 2, 1))  # edge vectors
+        det = np.linalg.det(T)
+        ok = np.isfinite(det) & (np.abs(det) > 0.0)
+        cand, v0, T = cand[ok], v0[ok], T[ok]
+        if cand.size == 0:
+            return elem
+        Tinv = np.linalg.inv(T)
+        zmin, zmax = self.zmin[cand], self.zmax[cand]
+        tol = 1.0e-10
+        for i, z in enumerate(depths_m):
+            sel = np.where((zmin <= z) & (z <= zmax))[0]
+            if sel.size == 0:
+                continue
+            lam = np.einsum(
+                "nij,nj->ni", Tinv[sel], np.array([x_m, y_m, z]) - v0[sel]
+            )
+            inside = (lam.min(axis=1) >= -tol) & (lam.sum(axis=1) <= 1.0 + tol)
+            hit = np.where(inside)[0]
+            if hit.size:
+                elem[i] = cand[sel[hit[0]]]
+        return elem
+
+    def surface_m(self, x_m, y_m, dz_m, z_bot_m, elem_region):
+        """z (m, z-down) of the top of the first non-air element at (x_m, y_m).
+
+        Coarse scan from the top of the column (air included) downwards, then a
+        refinement of the last coarse step at dz/5.  Returns None if the column
+        holds no non-air element above z_bot_m.
+        """
+        cand = self.column(x_m, y_m)
+        if cand.size == 0:
+            return None
+        z0 = float(self.zmin[cand].min())
+
+        def _first_solid(depths):
+            el = self.locate(x_m, y_m, depths, cand=cand)
+            solid = (el >= 0) & (elem_region[np.maximum(el, 0)] != 0)
+            idx = np.where(solid)[0]
+            return int(idx[0]) if idx.size else None
+
+        step = max(float(dz_m), 250.0)
+        coarse = np.arange(z0, z_bot_m + 0.5 * step, step)
+        j = _first_solid(coarse)
+        if j is None:
+            return None
+        if j == 0:
+            return float(coarse[0])
+        fine = np.arange(coarse[j - 1], coarse[j] + 1e-9, max(float(dz_m) / 5.0, 1.0))
+        k = _first_solid(fine)
+        return float(fine[k]) if k is not None else float(coarse[j])
+
+
+def borehole_resolve_xy(spec, utm_e, utm_n, zone, north):
+    """(x_m, y_m, lat, lon) of a MOD_BH entry; lat/lon None if unknown.
+
+    ``utm_e, utm_n, zone, north`` : mesh-centre UTM origin and zone.
+
+    Plain floats are model-local km; (value, "utm") / (value, "latlon")
+    tuples as for MOD_SLICES. x and y must carry the same CRS tag.
+    """
+    xv, xc = parse_pos_crs(spec["x"])
+    yv, yc = parse_pos_crs(spec["y"])
+    if xc != yc:
+        raise ValueError(
+            f"MOD_BH '{spec.get('name', '?')}': x CRS {xc!r} and y CRS "
+            f"{yc!r} must match."
+        )
+    lat = lon = None
+    if xc == "model":
+        x_m, y_m = float(xv) * 1000.0, float(yv) * 1000.0
+        if utm_e is not None:
+            try:
+                lat, lon = _utl().utm_to_latlon_zn(
+                    utm_e + x_m, utm_n + y_m, zone, north
+                )
+            except Exception:
+                lat = lon = None
+        return x_m, y_m, lat, lon
+    if utm_e is None:
+        raise ValueError(
+            f"MOD_BH '{spec.get('name', '?')}': CRS {xc!r} needs the UTM "
+            f"origin (MOD_SITE_DAT + MOD_ORIGIN_METHOD, or "
+            f"MOD_UTM_ORIGIN_*)."
+        )
+    if xc == "utm":
+        x_m, y_m = utm_to_model(float(xv), float(yv), utm_e, utm_n)
+        try:
+            lat, lon = _utl().utm_to_latlon_zn(float(xv), float(yv), zone, north)
+        except Exception:
+            lat = lon = None
+        return x_m, y_m, lat, lon
+    if xc == "latlon":
+        lon, lat = float(xv), float(yv)
+        x_m, y_m = latlon_to_model(lat, lon, zone, north, utm_e, utm_n)
+        return x_m, y_m, lat, lon
+    raise ValueError(
+        f"MOD_BH '{spec.get('name', '?')}': unknown CRS {xc!r}; use plain "
+        f"km, 'utm' or 'latlon'."
+    )
+
+
+def borehole_pos_str(x_m, y_m, lat, lon, utm_e, utm_n, display_coords="model"):
+    """Short position text for a panel title, following MOD_DISPLAY_COORDS."""
+    if display_coords == "latlon" and lat is not None:
+        return f"{lat:.4f}, {lon:.4f} (lat, lon)"
+    if display_coords == "utm" and utm_e is not None:
+        return f"E {(utm_e + x_m) / 1000.0:.2f}, N {(utm_n + y_m) / 1000.0:.2f} km"
+    return f"x {x_m / 1000.0:.2f}, y {y_m / 1000.0:.2f} km"
+
+
+#: Quantile levels (percent) of the "sigmaN" shortcuts: P(Phi(-N)), P(Phi(N)).
+BOREHOLE_SIGMA_Q = {
+    "sigma1_lo": 15.8655,
+    "sigma1_hi": 84.1345,
+    "sigma2_lo": 2.2750,
+    "sigma2_hi": 97.7250,
+}
+
+
+def borehole_expand_what(what, value_keys, percentiles):
+    """Expand a MOD_BH "what" list to an ordered list of draw keys.
+
+    "percentiles" -> one key per level of ``percentiles``; "avg", "med", single
+    percentile keys, "ensemble", "heatmap", "ref" and "best" pass through.
+    Unknown names are
+    reported and dropped.
+    """
+    pct_keys = [
+        "p" + f"{_p:g}".replace(".", "_")
+        for _p in percentiles
+        if "p" + f"{_p:g}".replace(".", "_") in value_keys
+    ]
+    keys = []
+    for w in what:
+        if w == "percentiles":
+            new = pct_keys
+        elif w in ("sigma1", "sigma2"):
+            new = [w + "_lo", w + "_hi"]
+        elif w in ("ensemble", "best", "ref", "heatmap") or w in value_keys:
+            new = [w]
+        else:
+            print(
+                f"  MOD_BH: '{w}' is not available (use 'avg', 'med', "
+                f"'percentiles', a percentile key {pct_keys}, 'sigma1', "
+                f"'sigma2', 'ensemble', 'heatmap', 'best' or 'ref') - skipped."
+            )
+            new = []
+        keys += [k for k in new if k not in keys]
+    return keys
+
+
+def borehole_values(vec, reg_lvl, fixed_log10, free_pos, rho_out=True):
+    """Map free-parameter vector(s) to values along a borehole.
+
+    vec : (..., n_free) log10(rho) of the free regions (a statistic vector
+        or the whole ens_matrix).
+    reg_lvl : region index per depth level (-1 where no element).
+    fixed_log10 : (nreg,) log10(rho) of fixed regions (NaN = air).
+    free_pos : (nreg,) position of a region in the free vector, -1 = fixed.
+
+    Returns (..., n_lvl) in Ohm.m (rho_out=True) or log10; NaN for air and
+    for levels outside the mesh.
+    """
+    vec = np.asarray(vec, dtype=float)
+    n_lvl = reg_lvl.size
+    out = np.full(vec.shape[:-1] + (n_lvl,), np.nan)
+    inside = reg_lvl >= 0
+    fpos = np.where(inside, free_pos[np.maximum(reg_lvl, 0)], -1)
+    is_free = inside & (fpos >= 0)
+    is_fixed = inside & (fpos < 0)
+    if is_free.any():
+        out[..., is_free] = vec[..., fpos[is_free]]
+    if is_fixed.any():
+        out[..., is_fixed] = fixed_log10[reg_lvl[is_fixed]]
+    return 10.0**out if rho_out else out
+
+
+def borehole_global_xlim(xlim=None, clim=None):
+    """Default resistivity range [min, max] (Ohm.m) of the borehole panels.
+
+    ``xlim`` (MOD_BH_XLIM, Ohm.m), else 10**``clim`` (MOD_CLIM, log10), else
+    None (auto).
+    """
+    if xlim is not None:
+        return list(xlim)
+    if clim is not None:
+        return [10.0 ** clim[0], 10.0 ** clim[1]]
+    return None
+
+
+def borehole_edges(spec, ens_rho, cs=None, *, default_bins=40, glob_xlim=None):
+    """log10(rho) bin edges of the heat map of one borehole, or None.
+
+    ``spec["heat_bins"]`` (default ``default_bins``, MOD_BH_HEAT_BINS): a list of edges is used
+    as given; an int N gives N equal bins across the panel range (entry
+    "xlim", else ``glob_xlim``), or across the range of the finite
+    member values (ens_rho, Ohm.m) when no range is set. None if there is
+    nothing to bin. ``cs`` (colour-scale dict, heat_scale_defaults): edges read from
+    a MOD_BH_HEAT_SCALE_FILE (``cs["edges"]``) replace all of the above.
+    """
+    if cs is not None and cs.get("edges") is not None:
+        return np.asarray(cs["edges"], dtype=float)
+    bins = spec.get("heat_bins", default_bins)
+    if np.ndim(bins) > 0:
+        edges = np.asarray(bins, dtype=float)
+        if edges.ndim != 1 or edges.size < 2 or not np.all(np.diff(edges) > 0):
+            raise ValueError(
+                f"MOD_BH '{spec.get('name', '?')}': heat_bins must be an int "
+                f"or an increasing list of >= 2 log10(rho) edges."
+            )
+        return edges
+    nb = int(bins)
+    if nb < 1:
+        raise ValueError(
+            f"MOD_BH '{spec.get('name', '?')}': heat_bins must be >= 1."
+        )
+    xl = spec.get("xlim", glob_xlim)
+    if xl is not None:
+        lo, hi = np.log10(float(xl[0])), np.log10(float(xl[1]))
+    else:
+        ok = np.isfinite(ens_rho) & (ens_rho > 0)
+        if not ok.any():
+            return None
+        lg = np.log10(ens_rho[ok])
+        lo, hi = float(lg.min()), float(lg.max())
+        if hi - lo < 1.0e-6:
+            lo, hi = lo - 0.5, hi + 0.5
+    return np.linspace(lo, hi, nb + 1)
+
+
+def borehole_heatmap(ens_rho, edges):
+    """Per-depth histogram of the ensemble along a borehole.
+
+    ens_rho : (n_mem, n_lvl) resistivity in Ohm.m, NaN for air / outside.
+    edges   : (n_bins + 1,) increasing log10(rho) bin edges.
+
+    Returns (n_lvl, n_bins): fraction of the valid members of each level
+    falling into each bin. Members outside the edges are not binned but
+    still count in the denominator, so a row sums to less than 1 where part
+    of the ensemble lies outside the range (the last bin includes its upper
+    edge). Levels without a valid member are NaN.
+    """
+    ens_rho = np.asarray(ens_rho, dtype=float)
+    n_mem, n_lvl = ens_rho.shape
+    nb = len(edges) - 1
+    with np.errstate(invalid="ignore", divide="ignore"):
+        lg = np.log10(ens_rho)
+    valid = np.isfinite(lg)
+    inside = valid & (lg >= edges[0]) & (lg <= edges[-1])
+    idx = np.clip(np.searchsorted(edges, lg, side="right") - 1, 0, nb - 1)
+    flat = idx + nb * np.arange(n_lvl)[None, :]
+    counts = np.bincount(flat[inside], minlength=n_lvl * nb).reshape(n_lvl, nb)
+    n_val = valid.sum(axis=0).astype(float)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        frac = counts / n_val[:, None]
+    frac[n_val == 0, :] = np.nan
+    return frac
+
+
+def borehole_stat_vec(key, mat, best_i, percentiles):
+    """Free-parameter vector (log10 rho) of draw key ``key`` for the
+    ensemble matrix ``mat`` (n_members, n_free): the same statistic that
+    ensemble_stat_map() holds for the main ensemble ("avg", "med", a percentile
+    key), the sigma quantiles (BOREHOLE_SIGMA_Q) or the member ``best_i``."""
+    if key == "best":
+        return mat[best_i]
+    if key in BOREHOLE_SIGMA_Q:
+        return np.percentile(mat, BOREHOLE_SIGMA_Q[key], axis=0)
+    if key == "avg":
+        return np.mean(mat, axis=0)
+    if key == "med":
+        return np.median(mat, axis=0)
+    for _p in percentiles:
+        if key == "p" + f"{_p:g}".replace(".", "_"):
+            return np.percentile(mat, _p, axis=0)
+    raise KeyError(key)
+
+
+def borehole_second_source(
+    all_rho, mat, best_i, order, lines_main, reg, fixed, fpos, edges, percentiles
+):
+    """The profile data of the second ensemble (the perturbed models).
+
+    all_rho : (n_mem, n_lvl) its members along the borehole (Ohm.m), or None
+    mat : its ens_matrix (n_mem, n_free); best_i : row of the "best" member
+    order / lines_main : the draw keys and the lines of the main ensemble --
+        the "ref" line (a property of the reference model) is copied from it
+    edges : the bin edges (shared with the main ensemble) or None.
+    Returns dict(lines, ens, heat, heat_edges) like the main profile.
+    """
+    lines = {}
+    for k in order:
+        if k in ("ensemble", "heatmap"):
+            continue
+        if k == "ref":
+            lines[k] = lines_main[k]
+            continue
+        lines[k] = borehole_values(
+            borehole_stat_vec(k, mat, best_i, percentiles), reg, fixed, fpos
+        )
+    heat = None
+    if "heatmap" in order and edges is not None and all_rho is not None:
+        heat = borehole_heatmap(all_rho, edges)
+    return dict(
+        lines=lines,
+        ens=all_rho if "ensemble" in order else None,
+        heat=heat,
+        heat_edges=None if heat is None else edges,
+    )
+
+
+def borehole_npz_entry(npz, hdr, hdr0, safe, depth, lines, ens, heat, heat_edges):
+    """Add one borehole's arrays to the .npz dict ``npz`` and its header entry
+    to ``hdr`` (same layout as the main ensemble's; ``hdr0`` holds the common
+    header fields)."""
+    npz[f"depth_{safe}"] = depth
+    for k, v in lines.items():
+        npz[f"{k}_{safe}"] = v
+    if ens is not None:
+        npz[f"ensemble_{safe}"] = ens
+    if heat is not None:
+        npz[f"heat_{safe}"] = heat
+        npz[f"heat_edges_{safe}"] = heat_edges
+    hdr.append(
+        dict(
+            hdr0,
+            keys=list(lines)
+            + (["ensemble"] if ens is not None else [])
+            + (["heatmap"] if heat is not None else []),
+            heat_bins=None if heat is None else int(heat.shape[1]),
+        )
+    )
+
+
+def heat_scale_defaults(scale="linear", norm="fraction", vmin=None, vmax=None,
+                        cmap="Greys"):
+    """Colour-scale settings of the borehole heat maps as a dict.
+
+    scale : "linear" | "sqrt" | "log"      (MOD_BH_HEAT_SCALE)
+    norm  : "fraction" | "row_max"         (MOD_BH_HEAT_NORM)
+    vmin, vmax : explicit colour limits or None = automatic
+    cmap  : colour map name
+    edges is always None here (= bins from the entries' own settings); a scale
+    file (heat_scale_read) may fill it.  Raises ValueError for unusable values.
+    """
+    cs = dict(scale=scale, norm=norm, vmin=vmin, vmax=vmax, cmap=cmap,
+              edges=None)
+    heat_scale_check(cs, "heat map colour scale")
+    return cs
+
+
+def heat_scale_check(cs, where):
+    """Validate colour-scale values (e.g. read from a scale file); ``where``
+    names their origin in the message. Raises ValueError."""
+    if cs["norm"] not in ("fraction", "row_max"):
+        raise ValueError(
+            f"{where}: norm={cs['norm']!r} -- must be 'fraction' or 'row_max'."
+        )
+    if cs["scale"] not in ("linear", "sqrt", "log"):
+        raise ValueError(
+            f"{where}: scale={cs['scale']!r} -- must be 'linear', 'sqrt' or "
+            f"'log'."
+        )
+    for k in ("vmin", "vmax"):
+        if cs[k] is not None and not np.isfinite(float(cs[k])):
+            raise ValueError(f"{where}: {k}={cs[k]!r} is not a finite number.")
+    if cs["vmin"] is not None and float(cs["vmin"]) < 0:
+        raise ValueError(f"{where}: vmin must be >= 0 (or absent).")
+    if (
+        cs["scale"] == "log"
+        and cs["vmin"] is not None
+        and float(cs["vmin"]) <= 0
+    ):
+        raise ValueError(f"{where}: scale 'log' needs vmin > 0.")
+    if cs["edges"] is not None:
+        e = np.asarray(cs["edges"], dtype=float)
+        if e.ndim != 1 or e.size < 2 or not np.all(np.diff(e) > 0):
+            raise ValueError(
+                f"{where}: edges must be an increasing list of >= 2 "
+                f"log10(Ohm.m) values."
+            )
+
+
+def heat_scale_read(path, defaults):
+    """Colour-scale settings with the keys of the JSON file ``path`` laid over
+    ``defaults`` (heat_scale_defaults()); keys that are absent or null keep the
+    configured value.  Raises ValueError if the file is unusable."""
+    import json
+
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            d = json.load(fh)
+    except (OSError, ValueError) as e:
+        raise ValueError(f"colour-scale file {path}: cannot be read ({e}).") from e
+    if not isinstance(d, dict):
+        raise ValueError(f"colour-scale file {path}: expected a JSON object.")
+    cs = dict(defaults)
+    for k in cs:
+        if d.get(k) is not None:
+            cs[k] = d[k]
+    try:
+        heat_scale_check(cs, f"colour-scale file {path}")
+    except (ValueError, TypeError) as e:
+        raise ValueError(str(e)) from e
+    return cs
+
+
+def heat_scale_write(path, cs, norm, edges, sources, *, ensemble=None, n_members=None):
+    """Save the RESOLVED colour scale (``norm`` holds the vmin / vmax actually
+    used, ``edges`` the log10(Ohm.m) bin edges or None) as JSON, for another
+    run. Same format as femtic_ens_plot.py's BOREHOLE_HEAT_SCALE_FILE.
+    ``ensemble`` / ``n_members`` only go into the informational ``info`` block."""
+    import json
+    import datetime
+
+    cmap = cs["cmap"]
+    d = dict(
+        scale=cs["scale"],
+        norm=cs["norm"],
+        vmin=float(norm.vmin),
+        vmax=float(norm.vmax),
+        cmap=str(getattr(cmap, "name", cmap)),
+        edges=None if edges is None else [float(e) for e in edges],
+        info=dict(
+            written=datetime.datetime.now().isoformat(timespec="seconds"),
+            ensemble=ensemble,
+            sources=list(sources),
+            n_members=n_members,
+            edges_unit="log10(Ohm.m)",
+            note=(
+                "read back by the heat-map scale file setting; every key except info "
+                "is optional"
+            ),
+        ),
+    )
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(d, fh, indent=2)
+        fh.write("\n")
+    print(f"  colour scale written -> {path}")
+
+
+def heat_scale_init(defaults, scale_file, io_mode, wants_heatmap, *, out=True):
+    """Colour-scale settings for the run and the scale-file mode.
+
+    defaults : heat_scale_defaults() of the configuration
+    scale_file : path of the JSON scale file or None
+    io_mode : "auto" | "read" | "write"   (MOD_BH_HEAT_SCALE_IO)
+    wants_heatmap : True if any borehole entry draws a heat map
+
+    Returns ``(cs, io)``: ``cs`` = defaults, laid over by the scale file if it
+    is read; ``io`` = "read" | "write" | None (no file, or no heat map).
+    Called before the profiles are built, because the file's bin edges decide
+    how they are binned.  Raises FileNotFoundError / ValueError for a file
+    that is required (io_mode "read") but missing or unusable.
+    """
+    cs = dict(defaults)
+    if not scale_file or not wants_heatmap:
+        return cs, None
+    if io_mode == "read" or (io_mode == "auto" and os.path.isfile(scale_file)):
+        io = "read"
+    else:
+        io = "write"
+    if io == "read":
+        if not os.path.isfile(scale_file):
+            raise FileNotFoundError(f"heat-map scale file not found: {scale_file}")
+        cs = heat_scale_read(scale_file, defaults)
+        if out:
+            print(
+                f"  colour scale read from {scale_file}: scale={cs['scale']}, "
+                f"norm={cs['norm']}, vmin={cs['vmin']}, vmax={cs['vmax']}, "
+                f"cmap={cs['cmap']}, "
+                + (
+                    "bin edges from the file"
+                    if cs["edges"] is not None
+                    else "bin edges from this run's settings"
+                )
+            )
+    return cs, io
+
+
+def expand_site_templates(specs, site_dat, utm_e, *, out=True):
+    """Expand borehole ``"sites"`` templates to one entry per site.
+
+    ``specs`` : the MOD_BH list.  An entry with a ``"sites"`` key ("all" or a
+    list of site names) is a template: it becomes one borehole per site of
+    ``site_dat`` (mt_make_sitelist.py CSV), named after the site, positioned
+    at the site's UTM coordinates, with all other keys ("z_top", "z_bot",
+    "dz", "what", "alpha", "xlim", "style") copied.  ``"n_random"`` / ``"seed"``
+    keep only N randomly drawn sites (seed = int makes the draw reproducible).
+    Entries without ``"sites"`` pass through.  A template that cannot be
+    expanded (no site list, no UTM origin) is reported and dropped.
+    """
+    result = []
+    for tpl in specs:
+        if "sites" not in tpl:
+            result.append(tpl)
+            continue
+        if not site_dat or not os.path.isfile(site_dat):
+            print("  boreholes: 'sites' needs the site list (MOD_SITE_DAT) - entry skipped.")
+            continue
+        if utm_e is None:
+            print("  boreholes: 'sites' needs the UTM origin - entry skipped.")
+            continue
+        sel = tpl["sites"]
+        if isinstance(sel, str) and sel.strip().lower() == "all":
+            want = None
+        else:
+            want = [sel] if isinstance(sel, str) else [str(v) for v in sel]
+        rows = read_site_dat(site_dat, site_names=want)
+        if want is not None:
+            miss = sorted(set(want) - {str(r["name"]) for r in rows})
+            if miss:
+                print(f"  boreholes: sites not found in the site list: {miss}")
+        nr = tpl.get("n_random")
+        if nr is not None and int(nr) < len(rows):
+            pick = np.random.default_rng(tpl.get("seed")).choice(
+                len(rows), size=int(nr), replace=False
+            )
+            rows = [rows[i] for i in sorted(pick)]
+            print(
+                f"  n_random={int(nr)}"
+                f"{'' if tpl.get('seed') is not None else ' (no seed, not reproducible)'}"
+                f": {[str(r['name']) for r in rows]}"
+            )
+        if out:
+            print(f"  sites template -> {len(rows)} borehole(s)")
+        for r in rows:
+            t = {
+                k: v
+                for k, v in tpl.items()
+                if k not in ("sites", "n_random", "seed")
+            }
+            t.update(
+                name=str(r["name"]),
+                x=(float(r["easting"]), "utm"),
+                y=(float(r["northing"]), "utm"),
+            )
+            result.append(t)
+    return result
+
+
+def sample_boreholes(
+    specs,
+    *,
+    mesh,
+    struct,
+    ens,
+    stat_map,
+    value_keys,
+    best_i,
+    percentiles,
+    utm,
+    cs,
+    pert=None,
+    ref_el=None,
+    ref_default=True,
+    ocean_rho=0.25,
+    zlim_km=None,
+    display_coords="model",
+    heat_bins=40,
+    xlim=None,
+):
+    """Sample an ensemble (and its statistics) along vertical boreholes.
+
+    This is the numerical half of the borehole figures; draw the result with
+    femtic_viz.plan_borehole_figures() / draw_borehole_figures().
+
+    Parameters
+    ----------
+    specs : list of dict
+        Borehole entries (MOD_BH) after expand_site_templates().  Keys:
+        name, x / y (model-local km, or (value, "utm") / (value, "latlon")),
+        z_top (km or "surface"), z_bot (km), dz (km), what (list of "avg",
+        "med", "percentiles", a percentile key, "sigma1", "sigma2",
+        "ensemble", "heatmap", "best", "ref"), alpha, xlim, heat_bins, style,
+        ref.
+    mesh : BoreholeMesh
+    struct : dict
+        Region structure of the template block file
+        (_read_resistivity_block_struct).
+    ens : (n_members, n_free) ndarray
+        log10(rho) of the ensemble.
+    stat_map, value_keys : from ensemble_stat_map()
+    best_i : int
+        Row of ``ens`` drawn as "best".
+    percentiles : sequence
+        Percentile levels of the ensemble statistics.
+    utm : (utm_e, utm_n, zone, north)
+        Mesh-centre UTM origin (entries may be None without sites).
+    cs : dict
+        Colour-scale settings (heat_scale_init); its ``edges`` decide how
+        the heat maps are binned if present.
+    pert : (n_members, n_free) ndarray | None
+        Perturbed models of the same members, sampled the same way.
+    ref_el : (n_elem,) ndarray | None
+        log10(rho) of the reference model per element
+        (ReferenceModel.element_log10); None = no reference line.
+    ref_default : bool
+        Add the reference line to entries that do not list "ref" in "what"
+        (unless they say ref=False).
+    ocean_rho, zlim_km, display_coords
+        MOD_OCEAN_RHO, MOD_ZLIM (default profile bottom), MOD_DISPLAY_COORDS.
+    heat_bins : int | list
+        Default number of heat-map bins, or log10(rho) edges
+        (MOD_BH_HEAT_BINS); an entry's own ``heat_bins`` wins.
+    xlim : [min, max] | None
+        Resistivity range (Ohm.m) the heat-map bins span
+        (borehole_global_xlim(MOD_BH_XLIM, MOD_CLIM)); an entry's own
+        ``xlim`` wins; None = the range of the members.
+
+    Returns
+    -------
+    dict(profiles, npz, hdr, npz_pert, hdr_pert)
+        ``profiles`` : list of profile dicts (name, pos_str, spec, depth,
+        order, lines, ens, heat, heat_edges, pert); ``npz`` / ``hdr`` : the
+        arrays and header entries of the profile file; ``npz_pert`` /
+        ``hdr_pert`` : the same for ``pert`` (empty without it).
+
+    Raises ValueError when the template does not fit the ensemble or the mesh.
+    """
+    utm_e, utm_n, utm_zone, utm_north = utm
+    er = np.asarray(struct["elem_region"], dtype=np.int64)
+    nreg = int(struct["nreg"])
+    free = np.asarray(struct["free_idx"], dtype=np.int64)
+    if free.size != ens.shape[1]:
+        raise ValueError(
+            f"template has {free.size} free regions but the ensemble has "
+            f"{ens.shape[1]}."
+        )
+    if er.size != mesh.n_elem:
+        raise ValueError(
+            f"block file has {er.size} elements but the mesh has "
+            f"{mesh.n_elem}."
+        )
+    # log10(rho) of fixed regions: air = NaN (gap), ocean = ocean_rho, other
+    # fixed regions keep the template value.
+    fixed = np.log10(np.asarray(struct["region_rho"], dtype=float))
+    fixed[0] = np.nan
+    if nreg > 1 and struct["meta"]["ocean_present"]:
+        fixed[1] = np.log10(ocean_rho)
+    fpos = np.full(nreg, -1, dtype=np.int64)
+    fpos[free] = np.arange(free.size)
+
+    pert_mat = None
+    if pert is not None:
+        if pert.shape == ens.shape:
+            pert_mat = pert
+        else:
+            print(
+                f"  boreholes: the perturbed models have shape {pert.shape}, "
+                f"the ensemble {ens.shape} - perturbed models not drawn."
+            )
+
+    profiles, npz, hdr, names = [], {}, [], set()
+    npz_p, hdr_p = {}, []
+
+    for spec in specs:
+        nm = str(spec.get("name", f"BH{len(profiles) + 1}"))
+        nm0, dup = nm, 1
+        while nm in names:  # names key the .npz arrays: keep unique
+            dup += 1
+            nm = f"{nm0}_{dup}"
+        if nm != nm0:
+            print(f"  borehole name '{nm0}' already used - renamed '{nm}'.")
+        names.add(nm)
+        try:
+            x_m, y_m, lat, lon = borehole_resolve_xy(
+                spec, utm_e, utm_n, utm_zone, utm_north
+            )
+        except KeyError as exc:
+            print(f"  borehole '{nm}': missing key {exc} - skipped.")
+            continue
+        except ValueError as exc:
+            print(f"  {exc} - skipped.")
+            continue
+
+        dz = float(spec.get("dz", 0.05)) * 1000.0
+        zb_km = spec.get("z_bot", zlim_km[1] if zlim_km is not None else 20.0)
+        zb = float(zb_km) * 1000.0
+        zt_raw = spec.get("z_top", "surface")
+        if isinstance(zt_raw, str) and zt_raw.strip().lower() == "surface":
+            zt = mesh.surface_m(x_m, y_m, dz, zb, er)
+            if zt is None:
+                print(
+                    f"  borehole '{nm}': no non-air element above "
+                    f"z_bot={zb_km} km at this position - skipped."
+                )
+                continue
+            print(f"  {nm}: z_top='surface' -> {zt / 1000.0:.3f} km")
+        else:
+            zt = float(zt_raw) * 1000.0
+        if zb <= zt or dz <= 0.0:
+            print(f"  borehole '{nm}': need z_bot > z_top and dz > 0 - skipped.")
+            continue
+
+        depth = np.arange(zt, zb + 0.5 * dz, dz)
+        elem = mesh.locate(x_m, y_m, depth)
+        reg = np.where(elem >= 0, er[np.maximum(elem, 0)], -1)
+        n_hit = int(np.sum(reg > 0))
+        print(
+            f"  {nm}: x={x_m / 1000.0:.3f} km, y={y_m / 1000.0:.3f} km, "
+            f"{depth.size} levels, {n_hit} in non-air elements"
+        )
+        if n_hit == 0:
+            print(f"  borehole '{nm}': profile is entirely air/outside - skipped.")
+            continue
+
+        order = borehole_expand_what(
+            spec.get("what", ["avg", "percentiles"]), value_keys, percentiles
+        )
+        # reference line: listed explicitly in "what" (forces it on), or added
+        # last when ref_default is on and the entry does not say ref=False
+        if ref_el is None:
+            order = [k for k in order if k != "ref"]
+        elif "ref" not in order and ref_default and spec.get("ref", True):
+            order.append("ref")
+        lines = {}
+        for k in order:
+            if k in ("ensemble", "heatmap"):
+                continue
+            if k == "ref":
+                lines[k] = np.where(
+                    elem >= 0, 10.0 ** ref_el[np.maximum(elem, 0)], np.nan
+                )
+                continue
+            if k == "best":
+                vec = ens[best_i]
+            elif k in BOREHOLE_SIGMA_Q:
+                vec = np.percentile(ens, BOREHOLE_SIGMA_Q[k], axis=0)
+            else:
+                vec = stat_map[k][0]
+            lines[k] = borehole_values(vec, reg, fixed, fpos)
+        # all members along the borehole: needed for the "ensemble" lines and
+        # for the "heatmap" histogram
+        need_all = "ensemble" in order or "heatmap" in order
+        ens_all = borehole_values(ens, reg, fixed, fpos) if need_all else None
+        pert_all = (
+            borehole_values(pert_mat, reg, fixed, fpos)
+            if (pert_mat is not None and need_all)
+            else None
+        )
+        ens_lines = ens_all if "ensemble" in order else None
+        heat = heat_edges = None
+        if "heatmap" in order:
+            try:
+                # one set of bins for both ensembles (bin width changes the
+                # fractions, so equal colours need equal bins)
+                heat_edges = borehole_edges(
+                    spec,
+                    ens_all
+                    if pert_all is None
+                    else np.concatenate((ens_all.ravel(), pert_all.ravel())),
+                    cs,
+                    default_bins=heat_bins,
+                    glob_xlim=xlim,
+                )
+                if heat_edges is None:
+                    print(f"  borehole '{nm}': heat map - nothing to bin.")
+            except ValueError as exc:
+                print(f"  {exc} - heat map skipped.")
+            if heat_edges is None:
+                order = [k for k in order if k != "heatmap"]
+            else:
+                heat = borehole_heatmap(ens_all, heat_edges)
+                print(
+                    f"  {nm}: heat map, {heat.shape[1]} bins, "
+                    f"{cs['norm']} colour scale"
+                )
+        pert_prof = None
+        if pert_mat is not None:
+            pert_prof = borehole_second_source(
+                pert_all, pert_mat, best_i, order, lines, reg, fixed, fpos,
+                heat_edges, percentiles,
+            )
+        profiles.append(
+            dict(
+                name=nm,
+                pos_str=borehole_pos_str(
+                    x_m, y_m, lat, lon, utm_e, utm_n, display_coords
+                ),
+                spec=spec,
+                depth=depth,
+                order=order,
+                lines=lines,
+                ens=ens_lines,
+                heat=heat,
+                heat_edges=heat_edges,
+                pert=pert_prof,
+            )
+        )
+
+        safe = nm.replace(" ", "_")
+        npz[f"depth_{safe}"] = depth
+        for k, v in lines.items():
+            npz[f"{k}_{safe}"] = v
+        if ens_lines is not None:
+            npz[f"ensemble_{safe}"] = ens_lines
+        if heat is not None:
+            # fractions (n_levels, n_bins); edges in log10(Ohm.m)
+            npz[f"heat_{safe}"] = heat
+            npz[f"heat_edges_{safe}"] = heat_edges
+        hdr0 = dict(
+            name=nm,
+            x_m=x_m,
+            y_m=y_m,
+            lat=None if lat is None else float(lat),
+            lon=None if lon is None else float(lon),
+            z_top_m=float(zt),
+            z_bot_m=float(zb),
+            dz_m=float(dz),
+            n_levels=int(depth.size),
+        )
+        hdr.append(
+            dict(
+                hdr0,
+                keys=list(lines)
+                + (["ensemble"] if ens_lines is not None else [])
+                + (["heatmap"] if heat is not None else []),
+                heat_bins=None if heat is None else int(heat.shape[1]),
+            )
+        )
+        if pert_prof is not None:
+            borehole_npz_entry(
+                npz_p, hdr_p, hdr0, safe, depth, pert_prof["lines"],
+                pert_prof["ens"], pert_prof["heat"], pert_prof["heat_edges"],
+            )
+
+    return dict(
+        profiles=profiles, npz=npz, hdr=hdr, npz_pert=npz_p, hdr_pert=hdr_p
+    )
+
+
+# ---------------------------------------------------------------------------
+# Directory scan report -- appended to the parameter summary (.md) of
+# femtic_ens_post.py / femtic_ens_repair.py (these helpers used to be copied
+# into both scripts "and kept in step by hand"; they were identical).
+# ---------------------------------------------------------------------------
+
+def _scan_reason_text(nrms_max):
+    """Reason key -> one-line meaning, in report order."""
+    return {
+        "no_cnv_file":       "convergence file (CNV_FILE) not found in the directory",
+        "cnv_unreadable":    "convergence file has no usable header row",
+        "cnv_no_iterations": "convergence file has no iteration > 0",
+        "rejected_nrms":     f"best nRMS (iterations > 0) above NRMS_MAX = {nrms_max}",
+        "no_model_file":     "no resistivity_block_iter<N>.dat for the best "
+                             "iteration and no usable fallback",
+        "no_perturbed_file": "perturbed reference model (ENS_PERTURBED_FILE) "
+                             "not found",
+    }
+
+
+
+def _index_check(matches, ensemble_name, index_range):
+    """Compare the numbers in the member names with the expected indices.
+
+    A member directory is expected to be called ``<ensemble_name><index>``
+    (optionally followed by more text, e.g. ``_restart``), with indices
+    running over a contiguous range. Returns None if no name carries a
+    number, else a dict with: lo, hi, n_expected, inferred (bool), no_match
+    (expected indices with no name at all), only_files (matched only by
+    something that is not a directory), dup (index -> names, if more than
+    one name carries the index), outside (names whose index is outside the
+    range), unnumbered (names without a number right after the prefix).
+    """
+    import re as _re
+    by_idx = {}
+    unnumbered = []
+    for name, is_dir in matches:
+        rest = name[len(ensemble_name):] if name.startswith(ensemble_name) else name
+        m = _re.match(r"\d+", rest)
+        if m:
+            by_idx.setdefault(int(m.group()), []).append((name, is_dir))
+        else:
+            unnumbered.append(name)
+    if index_range is not None:
+        lo, hi = int(index_range[0]), int(index_range[1])
+        inferred = False
+    elif by_idx:
+        lo, hi = min(by_idx), max(by_idx)
+        inferred = True
+    else:
+        return None
+    return dict(
+        lo=lo, hi=hi, n_expected=max(hi - lo + 1, 0), inferred=inferred,
+        no_match=[i for i in range(lo, hi + 1) if i not in by_idx],
+        only_files=[i for i in range(lo, hi + 1)
+                    if i in by_idx and not any(d for _, d in by_idx[i])],
+        dup={i: [n for n, _ in v] for i, v in sorted(by_idx.items()) if len(v) > 1},
+        outside=sorted(n for i, v in by_idx.items() if i < lo or i > hi
+                       for n, _ in v),
+        unnumbered=sorted(unnumbered),
+    )
+
+
+
+def build_scan_report(not_accepted, fallback, matches, n_scanned, n_accepted,
+                      ensemble_dir, ensemble_name, nrms_max, index_range=None):
+    """Markdown section explaining why directories are not in the ensemble.
+
+    Parameters
+    ----------
+    not_accepted : list of dict(label, reason, detail)
+        One entry per scanned directory that was not accepted.
+    fallback : list of dict(label, best_iter, best_nrms, used_iter, used_nrms)
+        Accepted members whose best iteration had no block file.
+    matches : list of (name, is_dir)
+        EVERY entry of ``ensemble_dir`` that matches ``ensemble_name + "*"``,
+        directory or not (the non-directories are not scanned).
+    n_scanned, n_accepted : int
+        Directories scanned / accepted.
+    index_range : (first, last) or None
+        Expected member numbers (inclusive), e.g. (0, 255) for 256 members.
+        None = the range found in the names (cannot see a missing first or
+        last member).
+
+    Returns plain-ASCII text (names with other characters get "?").
+    """
+    def esc(s):
+        s = str(s).replace("|", "/").replace("\n", " ")
+        return s.encode("ascii", "replace").decode("ascii")
+
+    def idx_list(v, n=100):
+        s = ", ".join(str(i) for i in v[:n])
+        return s + (f", ... ({len(v)} in total)" if len(v) > n else "")
+
+    texts = _scan_reason_text(nrms_max)
+    ignored = [n for n, is_dir in matches if not is_dir]
+    lines = ["", "## Directory scan report", "",
+             f"- Searched for `{esc(ensemble_name)}*` in `{esc(ensemble_dir)}`",
+             f"- Glob matches: {len(matches)}",
+             f"- Directories scanned: {n_scanned}"
+             + (f" ({len(ignored)} match(es) not scanned: not a directory)"
+                if ignored else ""),
+             f"- Accepted (in the ensemble): {n_accepted}"
+             + (f", {len(fallback)} of them via ITER_FALLBACK" if fallback else ""),
+             f"- Not accepted: {len(not_accepted)}"]
+    unaccounted = n_scanned - n_accepted - len(not_accepted)
+    if unaccounted:
+        lines.append(f"- WARNING: {unaccounted} scanned directories are "
+                     f"neither accepted nor listed below.")
+
+    if not_accepted:
+        order = list(texts) + sorted({r["reason"] for r in not_accepted}
+                                     - set(texts))
+        lines += ["", "### Not accepted: count per reason", "",
+                  "| Reason | Count | Meaning |", "|---|---|---|"]
+        for key in order:
+            n = sum(1 for r in not_accepted if r["reason"] == key)
+            if n:
+                lines.append(f"| {key} | {n} | {esc(texts.get(key, ''))} |")
+        lines += ["", "### Not accepted: directories", "",
+                  "| Directory | Reason | Detail |", "|---|---|---|"]
+        for key in order:
+            for r in sorted((r for r in not_accepted if r["reason"] == key),
+                            key=lambda r: r["label"]):
+                lines.append(f"| {esc(r['label'])} | {key} | {esc(r['detail'])} |")
+    else:
+        lines += ["", "All scanned directories were accepted."]
+
+    if fallback:
+        lines += ["", "### Accepted via ITER_FALLBACK", "",
+                  "The best-nRMS iteration has no block file; the best "
+                  "iteration that has one is used instead.", "",
+                  "| Directory | Best iter | nRMS | Used iter | nRMS |",
+                  "|---|---|---|---|---|"]
+        for r in sorted(fallback, key=lambda r: r["label"]):
+            lines.append(f"| {esc(r['label'])} | {r['best_iter']} | "
+                         f"{r['best_nrms']:.4f} | {r['used_iter']} | "
+                         f"{r['used_nrms']:.4f} |")
+
+    chk = _index_check(matches, ensemble_name, index_range)
+    if chk:
+        lines += ["", "### Directory numbering", "",
+                  f"- Expected member numbers: {chk['lo']}..{chk['hi']} "
+                  f"({chk['n_expected']} members), "
+                  + ("inferred from the names found" if chk["inferred"]
+                     else "from ENSEMBLE_INDEX_RANGE")]
+        if chk["inferred"]:
+            lines.append("- An inferred range cannot show a missing first or "
+                         "last member: set ENSEMBLE_INDEX_RANGE = (first, last) "
+                         "to check against a known range.")
+        n_before = len(lines)
+        if chk["no_match"]:
+            lines.append(f"- Numbers with NO matching entry at all "
+                         f"({len(chk['no_match'])}): {idx_list(chk['no_match'])}. "
+                         f"Nothing in the search directory starts with "
+                         f"`{esc(ensemble_name)}<number>`: never created, "
+                         f"deleted, renamed, or in another directory.")
+        if chk["only_files"]:
+            lines.append(f"- Numbers matched only by something that is not a "
+                         f"directory ({len(chk['only_files'])}): "
+                         f"{idx_list(chk['only_files'])} (a file, or a broken "
+                         f"symbolic link).")
+        if chk["dup"]:
+            items = [f"{i}: " + ", ".join(esc(n) for n in v)
+                     for i, v in list(chk["dup"].items())[:20]]
+            lines.append(f"- Numbers matched by more than one name "
+                         f"({len(chk['dup'])}): " + "; ".join(items)
+                         + (" ; ..." if len(chk["dup"]) > 20 else ""))
+        if chk["outside"]:
+            lines.append(f"- Names with a number outside the expected range "
+                         f"({len(chk['outside'])}): "
+                         + ", ".join(esc(n) for n in chk["outside"][:20])
+                         + (", ..." if len(chk["outside"]) > 20 else ""))
+        if chk["unnumbered"]:
+            lines.append(f"- Names without a number right after the prefix "
+                         f"({len(chk['unnumbered'])}): "
+                         + ", ".join(esc(n) for n in chk["unnumbered"][:20])
+                         + (", ..." if len(chk["unnumbered"]) > 20 else ""))
+        if len(lines) == n_before:
+            lines.append("- Every expected number has exactly one matching "
+                         "directory.")
+
+    if ignored:
+        lines += ["", "### Glob matches that are not directories (not scanned)", ""]
+        lines += [f"- {esc(n)}" for n in sorted(ignored)[:50]]
+        if len(ignored) > 50:
+            lines.append(f"- ... and {len(ignored) - 50} more")
+    return "\n".join(lines) + "\n"
+
+
+
+def append_scan_report(report_md, summary_path, script_file):
+    """Append ``report_md`` to the parameter-summary file.
+
+    ``summary_path`` is what ``utl.write_param_summary()`` returned. If it
+    cannot be appended to, the report goes to ``<script>_scan_report.md`` in
+    the same directory (or next to the script) instead. Never raises on I/O
+    problems -- the report is a diagnostic, not a result.
+    """
+    if summary_path and os.path.isfile(summary_path):
+        try:
+            with open(summary_path, "a") as fh:
+                fh.write(report_md)
+            print(f"[scan report] appended to {summary_path}")
+            return summary_path
+        except OSError as exc:
+            print(f"[scan report] cannot append to {summary_path} ({exc}).")
+    stem = os.path.splitext(os.path.basename(script_file))[0]
+    base = (os.path.dirname(summary_path) if summary_path
+            else os.path.dirname(os.path.abspath(script_file)))
+    target = os.path.join(base, stem + "_scan_report.md")
+    try:
+        with open(target, "w") as fh:
+            fh.write(report_md)
+        print(f"[scan report] summary file not available; written to {target}")
+        return target
+    except OSError as exc:
+        print(f"[scan report] could not be written ({exc}).")
+        return None
 
 
 # ============================================================================

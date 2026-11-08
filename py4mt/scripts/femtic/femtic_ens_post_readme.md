@@ -1,65 +1,78 @@
 # femtic_ens_post.py
 
-Algorithm-agnostic postprocessing of a FEMTIC ensemble.
+Algorithm-agnostic postprocessing of a FEMTIC ensemble: **calculations only**.
 
 Collects all converged inversion members, computes summary statistics in
-log₁₀(ρ) space, assembles the empirical covariance, and saves everything
-to a compressed `.npz` file.  Optionally produces slice figures for the
-**best-nRMS member** (QC) and for the **ensemble statistics**
-(mean, variance, median, MAD).
+log10(rho) space, the optional sensitivity measures, the empirical covariance
+and a bootstrap variance, and writes
+
+- the results `.npz` (`ENSEMBLE_RESULTS`) with **everything the plot scripts
+  need**: ensemble matrix, statistics, member list, best member, the perturbed
+  models (`ENS_MODEL_SOURCE = "both"`), and the nRMS table of all scanned
+  members;
+- the nRMS table as CSV (`NRMS_CSV`);
+- the parameter summary `femtic_ens_post_summary.md`, including the directory
+  scan report.
+
+It draws nothing. Since 2026-11-08 the figures come from three separate
+scripts that read the results `.npz` (see "Relationship to other scripts"):
+
+| Script | Makes |
+|---|---|
+| `femtic_ens_plot_slices.py` | best-member and statistics slice panels |
+| `femtic_ens_plot_bh.py` | borehole profiles and heat maps |
+| `femtic_ens_plot_misfit.py` | nRMS histogram |
+
+so that colours, slices, vertical exaggeration, the reference model or the
+borehole list can be changed and re-plotted in seconds, without rescanning
+the member directories. The former `PLOT_ONLY` mode of this script is what
+these scripts do; the settings `PLOT_ONLY*`, `MOD_QC`, `MOD_STATS*`,
+`MOD_SLICES`, `MOD_BH*`, `MOD_REF_*` and the other `MOD_*` plot parameters
+moved with them (their documentation is in the readmes of the plot scripts).
+
+Optionally only **N members drawn at random** from the accepted ones are used
+(`ENS_SUBSAMPLE_N`, see "Random subsample").
 
 Supersedes `femtic_rto_post.py`.
 
-**Plot-only mode** (`PLOT_ONLY = True`): reads an existing results `.npz` and
-only redraws the figures -- no member scan, no recomputation, the `.npz` is
-not rewritten. See "Plot-only mode" below. `femtic_ens_plot.py` can work from
-the same file (`RESULTS_NPZ`).
-
-For a convergence-rate diagnostic (nRMS bar chart / histogram over
-**every** scanned directory, not just converged members) and a REPAIR
-procedure for non-converged directories, see the companion script
-`femtic_ens_repair.py` (and `femtic_ens_repair_readme.md`) — that
-functionality briefly lived here during development and was moved out to
-keep this script focused on its original scope.
+For a convergence-rate diagnostic over **every** scanned directory and a
+REPAIR procedure for non-converged directories, see the companion script
+`femtic_ens_repair.py` (and `femtic_ens_repair_readme.md`).
 
 ---
 
 ## Workflow
 
 ```
-Ensemble sub-directories  (rto_*, gst_*, member_*, …)
-          │
-          ▼
-  nRMS filter  (NRMS_MAX)
-          │
-          ▼
-  Load log₁₀(ρ)  →  N_members × N_free matrix
-          │
-          ├──▶  mean, variance, median, MAD, percentiles
-          │
-          └──▶  sklearn empirical covariance  →  optional sparse version
-          │
-          ▼
-  <PREFIX>_results.npz
-          │
-          ├──▶  MOD_QC = True   →  slice figure of best-nRMS member
-          │
-          ├──▶  MOD_STATS = True  →  block files + slice figures for each stat
-          │
-          └──▶  MOD_BH = [...]    →  1-D resistivity-depth profiles at boreholes
-                                (lines, member lines, ensemble heat map)
+Ensemble sub-directories  (rto_*, gst_*, member_*, ...)
+          |
+          v
+  nRMS filter  (NRMS_MAX, ITER_FALLBACK)          -> accepted members
+          |
+          v
+  optional random draw of N members  (ENS_SUBSAMPLE_N)
+          |
+          v
+  Load log10(rho)  ->  N_members x N_free matrix
+          |
+          +--> mean, variance, median, MAD, percentiles, Q-differences
+          +--> bootstrap variance                (BOOTSTRAP_VAR)
+          +--> sensitivity, SimRC                (COMPUTE_SENS, COMPUTE_SIMRC)
+          +--> empirical covariance              (COMPUTE_COV, COV_METHOD)
+          |
+          v
+  <PREFIX>_results.npz     <PREFIX>_nrms.csv     femtic_ens_post_summary.md
+          |
+          +--> femtic_ens_plot_slices.py   best + statistics slice figures
+          +--> femtic_ens_plot_bh.py       borehole profiles, heat maps
+          +--> femtic_ens_plot_misfit.py   nRMS histogram
 ```
-
-**Plotting config is shared with `femtic_gst_prep.py` / `femtic_rto_prep.py`.**
-All `MOD_*` variables below (mesh, ocean/air, UTM origin, display coordinates,
-site overlay, slice specs, colormap/limits, alpha/blanking, figure layout)
-use the same names and semantics as the ensemble-generation scripts, so a
-config block can be copied between scripts with no renaming. Region-of-
-interest auto-scaling (`MOD_ROI_*`) is shared with `femtic_rto_prep.py` and `femtic_gst_prep.py` (same names, defaults and semantics) as of 2026-09-19.
 
 ---
 
 ## Configuration parameters
+
+All parameters are in the UPPERCASE user section at the top of the script.
 
 ### Ensemble input
 
@@ -68,90 +81,66 @@ interest auto-scaling (`MOD_ROI_*`) is shared with `femtic_rto_prep.py` and `fem
 | `ENSEMBLE_DIR` | str | — | Root directory containing ensemble sub-directories. |
 | `ENSEMBLE_NAME` | str | `"rto_*"` | Glob matched against sub-directory names. Only actual directories among the matches are scanned as ensemble runs (`os.path.isdir()` checked in step (1)); a stray file that happens to match the glob is skipped rather than being mistaken for a failed inversion run. |
 | `ENSEMBLE_PREFIX` | str | `"rto"` | Prefix for `.npz` output keys and default filenames. Set to `"gst"`, `"ens"`, etc. as appropriate. |
+| `ENSEMBLE_INDEX_RANGE` | tuple or None | `None` | Expected member numbers `(first, last)`, inclusive, e.g. `(0, 255)` for 256 members named `<ENSEMBLE_NAME>0` ... `<ENSEMBLE_NAME>255`. Used only by the "Directory numbering" part of the scan report in the parameter summary. `None` = the range found in the names (cannot show a missing first or last member). |
 | `CNV_FILE` | str or list | `"femtic.cnv"` | Name of the convergence file in each member directory; a list gives candidates (first existing wins). |
 | `NRMS_MAX` | float | `1.4` | Members whose final nRMS exceeds this value are skipped. |
 | `ITER_FALLBACK` | bool | `True` | A member's model is taken from its best-nRMS iteration N. If `resistivity_block_iter<N>.dat` does not exist, `True` uses the best iteration that has a block file (iteration > 0, lowest nRMS among those with a file, ties: lower iteration -- usually N-1) and applies `NRMS_MAX` to *that* iteration's nRMS; the member enters with that iteration's model, sensitivity file and nRMS. It is logged and has status `accepted_fallback` in `NRMS_CSV`. With no usable alternative the member is skipped as `no_model_file`. `False` = skip without looking for another iteration. |
-| `ENS_MODEL_SOURCE` | str | `"converged"` | Which model of each member enters the ensemble. `"converged"`: the best-fit model `resistivity_block_iter<N>.dat` (as before). `"perturbed"`: the member's **perturbed reference** (the RTO prior draw), file `ENS_PERTURBED_FILE`, so that the prior ensemble is plotted instead of the converged one; see "Plotting the perturbed references" below. `"both"`: the run is the converged run, and the perturbed models of the same members are loaded in addition for the **borehole figure** (`MOD_BH`), which then shows both ensembles on one colour bar; see "Converged and perturbed together" below. |
+| `ENS_MODEL_SOURCE` | str | `"converged"` | Which model of each member enters the ensemble. `"converged"`: the best-fit model `resistivity_block_iter<N>.dat` (as before). `"perturbed"`: the member's **perturbed reference** (the RTO prior draw), file `ENS_PERTURBED_FILE`, so that the prior ensemble is plotted instead of the converged one; see "Plotting the perturbed references" below. `"both"`: the run is the converged run, and the perturbed models of the same members are loaded in addition for the **borehole figure** (`MOD_BH`), which then lets `femtic_ens_plot_bh.py` show both ensembles on one colour bar; see "Converged and perturbed together" below. |
 | `ENS_PERTURBED_FILE` | str | `"referencemodel.dat"` | File name, inside each member directory, of the perturbed reference. `femtic_rto_prep.py` writes the draw to `referencemodel.dat` (a real file per member). `resistivity_block_iter0.dat` holds it only if the ensemble was prepared with `MOD_START_FROM_PERTURBED = True`; otherwise it is a link to the shared, unperturbed template. |
 | `ENS_PERTURBED_SUFFIX` | str | `"_perturbed"` | Appended to `ENSEMBLE_PREFIX` when `ENS_MODEL_SOURCE = "perturbed"`, so the results `.npz`, nRMS table, figures and `.npz` keys never overwrite those of the converged run. |
 
-#### Plotting the perturbed references
+
+#### Using the perturbed references
 
 ```python
 ENS_MODEL_SOURCE = "perturbed"      # default "converged"
 # ENS_PERTURBED_FILE = "referencemodel.dat"
 ```
 
-With `"perturbed"` the whole run (mean, median, percentiles, covariance, slices, the `"best"` panel, boreholes, heat maps) describes the **prior** ensemble instead of the posterior one. Rules:
+With `"perturbed"` the whole run (mean, median, percentiles, covariance, the
+best member) describes the **prior** ensemble instead of the posterior one.
+Rules:
 
 - **Same members.** Which members take part is still decided by the converged inversion (`NRMS_MAX`, `ITER_FALLBACK`, a block file must exist for the best iteration), so the prior and the converged ensemble contain the same members and compare like for like. Raise `NRMS_MAX` to include every member. `"best"` is the member with the best converged nRMS; its perturbed reference is drawn.
-- **Base reference unchanged.** `MOD_REF_FILE` (slice contours, dashed `"ref"` line in the boreholes) is the base, *unperturbed* reference (normally `templates/referencemodel.dat`); the perturbed models scatter around it. It is never replaced by a member's file.
-- **Separate outputs.** `ENSEMBLE_PREFIX` gets `ENS_PERTURBED_SUFFIX` (`annecy_rto` -> `annecy_rto_perturbed`): results `.npz` (`ANNECY_RTO_PERTURBED_results.npz`), `*_nrms.csv`, figures and borehole files are separate files. The `.npz` stores `<P>_model_source` and `<P>_model_file_name`. For `PLOT_ONLY` set the same `ENS_MODEL_SOURCE` (it finds the file); the stored source is reported and used for the title of the `"best"` panel.
+- **Separate outputs.** `ENSEMBLE_PREFIX` gets `ENS_PERTURBED_SUFFIX` (`annecy_rto` -> `annecy_rto_perturbed`): results `.npz` (`ANNECY_RTO_PERTURBED_results.npz`), `*_nrms.csv` and `.npz` keys are separate files / keys. The `.npz` stores `<P>_model_source` and `<P>_model_file_name`. In the plot scripts set the same `ENSEMBLE_PREFIX` (or `ENSEMBLE_RESULTS`) to plot this run; the stored source is reported and used for the figure titles.
 - **Switched off.** `COMPUTE_SIMRC` (it correlates the models with the converged responses; a message is printed). `COMPUTE_SENS` stays on: the sensitivities are those of the converged inversion.
 - **Checks.** A member without `ENS_PERTURBED_FILE` is skipped (status `no_perturbed_file` in `NRMS_CSV`). A warning is printed if the file is a symbolic link in some members (shared template = unperturbed) or if all members are identical (zero spread).
+- **Reference model.** The base, *unperturbed* reference (`MOD_REF_FILE` in the slice and borehole plot scripts) is never replaced by a member's file.
 
 #### Converged and perturbed together (`"both"`)
 
 ```python
 ENS_MODEL_SOURCE = "both"
-MOD_BH_HEAT_FIGURE = "combined"     # or "separate"
 ```
 
-The run is the **converged** run: `ENSEMBLE_PREFIX` is unchanged, and the statistics, slices, covariance and results `.npz` are those of the converged ensemble. In addition every member's `ENS_PERTURBED_FILE` is read (row for row, same member order), and `MOD_BH` draws every borehole for **both** ensembles: the heat map, the `"ensemble"` lines, `avg` / `med` / percentiles / sigma lines and `"best"` (the same member in both; `"ref"` is the base reference, identical in both).
+The run is the **converged** run: `ENSEMBLE_PREFIX` is unchanged, and the statistics, covariance and results `.npz` are those of the converged ensemble. In addition every member's `ENS_PERTURBED_FILE` is read (row for row, same member order) and stored.
 
-- **Layout** (`MOD_BH_HEAT_FIGURE`). `"combined"` (default): one figure per `MOD_BH_PER_FIG` chunk, the converged and the perturbed panel of each borehole side by side (twice as many columns: `2 x MOD_BH_NCOLS`), **one** colour bar. `"separate"`: one figure per source, `<MOD_BH_FILE>` (converged) and `<MOD_BH_FILE>_perturbed` (`ENS_PERTURBED_SUFFIX`; chunks: `..._perturbed_01`), each with the same scale.
-- **Same bins, same colours.** Both heat maps of a borehole are binned on the same edges (taken from the entry's `xlim` / `heat_bins`; without an `xlim`, from the range of both ensembles together), and the colour limits come from both ensembles together, so equal colours mean equal fractions in every panel of the figure.
+- **Stored.** The results `.npz` keeps `<P>_model_source = "converged"` and gains `<P>_ens_perturbed` (log10 rho, same shape as `<P>_ens`) and `<P>_perturbed_file_name`. `femtic_ens_plot_bh.py` uses them to draw every borehole for **both** ensembles (heat map, lines, converged and perturbed side by side or in separate figures; `MOD_BH_HEAT_FIGURE`).
 - **Skipped members.** A member without `ENS_PERTURBED_FILE` is skipped *entirely* (`no_perturbed_file` in `NRMS_CSV`), so both matrices always hold the same members. A perturbed model with a different number of free parameters stops the run.
-- **Outputs.** The borehole profiles of the perturbed models are written to `<MOD_BH_FILE>_perturbed.npz` (same layout as `<MOD_BH_FILE>.npz`, header `"ensemble_source": "perturbed"`). The results `.npz` keeps `<P>_model_source = "converged"` and gains `<P>_ens_perturbed` (log10 rho, same shape as `<P>_ens`) and `<P>_perturbed_file_name`, so `PLOT_ONLY` can draw the `"both"` figure later. A file made without `"both"` has no `<P>_ens_perturbed`: `PLOT_ONLY` then says so and draws the converged heat maps only.
 - **Warnings.** As for `"perturbed"`: symbolic-link or zero-spread perturbed files are reported. `COMPUTE_SIMRC` stays on (the ensemble is the converged one).
 
-### Plot-only mode
+### Random subsample
 
-Redraw the figures from an existing `<PREFIX>_results.npz` without touching
-the ensemble: styling, slices, `MOD_VERT_EXAG`, the reference model, colour
-limits, borehole set-up etc. can be tuned in seconds, however large the
-ensemble. Everything in steps (1)-(4b) (member scan, statistics, sensitivity,
-SimRC, covariance, writing the `.npz` and the nRMS table) is skipped and
-replaced by reading the file; steps (5)-(9) run exactly as in a full run.
+```python
+ENS_SUBSAMPLE_N      = 32        # None = all accepted members
+ENS_SUBSAMPLE_SEED   = 42        # None = a different draw each run
+ENS_SUBSAMPLE_SUFFIX = "_sub{n}" # may contain {n} and {seed}
+```
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `PLOT_ONLY` | bool | `False` | `True` = plot-only mode. `False` = full run (unchanged; figures and `.npz` identical to the previous version). |
-| `PLOT_ONLY_NPZ` | str or None | `None` | Results file to read; `None` = `ENSEMBLE_RESULTS` (`<RESULTS_DIR>/<ENSEMBLE_PREFIX.upper()>_results.npz`). If the file holds one ensemble under another key prefix than `ENSEMBLE_PREFIX`, that prefix is detected automatically (output names keep `ENSEMBLE_PREFIX`). |
-| `PLOT_ONLY_TEMPLATE` | str or None | `None` | Block file giving header / region structure / flag columns. `None` = the best member's own block file recorded in the `.npz` (it must still exist). Set it when the results were moved or the member directories are gone: any resistivity block file of this ensemble (same mesh, same free regions, e.g. the starting model) works; the "best" panel is then drawn from the stored best vector instead of that file. |
+| `ENS_SUBSAMPLE_N` | int or None | `None` | `None` = use all accepted members. An integer N draws N members at random, **without replacement**, from the **accepted** members (those that passed `NRMS_MAX` / `ITER_FALLBACK` and have a model file; with `"perturbed"` / `"both"` also a perturbed file). Everything is then computed from these N only: statistics, sensitivity, SimRC, covariance, bootstrap, the `"best"` member (= best nRMS **within the draw**), the member list and the results `.npz`. `N >=` number of accepted members: all are used (a message is printed). |
+| `ENS_SUBSAMPLE_SEED` | int or None | `None` | Seed of the draw. `None` = fresh OS entropy; an integer gives a reproducible draw. |
+| `ENS_SUBSAMPLE_SUFFIX` | str | `"_sub{n}"` | Appended to `ENSEMBLE_PREFIX` when a draw is made, so the `.npz`, the nRMS table and the keys of the subsample never overwrite those of the full ensemble (`annecy_rto` -> `annecy_rto_sub32`; results file `ANNECY_RTO_SUB32_results.npz`). `{n}` = `ENS_SUBSAMPLE_N`, `{seed}` = `ENS_SUBSAMPLE_SEED`, e.g. `"_sub{n}_s{seed}"` to keep several draws side by side. The suffix is added after `ENS_PERTURBED_SUFFIX` if both apply. |
 
-What is read: members with their nRMS (`<P>_model_list`), the ensemble matrix
-(`<P>_ens`), with `ENS_MODEL_SOURCE = "both"` the perturbed matrix
-(`<P>_ens_perturbed`, for the borehole figure), `avg / var / err / med / mad / prc`, the percentile levels
-(`<P>_prc_levels`, they define the `p<level>` panel keys), `qdiff_*`,
-`var_boot / err_boot`, `sens_*`, `simrc_*`. Missing `avg ... mad / prc` are
-recomputed from the stored members. The covariance arrays are not loaded.
+Notes:
 
-What follows from this:
-
-- Only what the full run stored can be plotted. `MOD_STATS_WHAT` keys without
-  data are skipped with a message. In plot-only mode the default
-  `MOD_STATS_WHAT` lists the `sens_*`, `simrc_*` and `err_boot` panels
-  regardless of `COMPUTE_*` / `BOOTSTRAP_VAR` (and their `MOD_STATS_STYLE`
-  entries are always defined), so a file that has them just plots them.
-- `MOD_ALPHA_SOURCE` works on stored statistics (e.g. `sens_median_an`); if
-  the statistic is not in the file, blanking is switched off with a message.
-- The nRMS histogram needs the per-member table of the full run: `NRMS_CSV` is
-  read (also searched next to the `.npz`); without it the histogram is skipped.
-- Still needed on disk: `MOD_MESH`, the site files for origin / sites, a
-  reference block file if `MOD_REF_FILE` is set, and the template (above).
-- Checks with a message instead of a crash: file missing, template missing, or
-  a template with a different number of free regions than the ensemble. (A
-  template on a different mesh than `MOD_MESH` is not detected here, as in a
-  full run.)
-
-```python
-PLOT_ONLY = True
-# PLOT_ONLY_NPZ = "/data/ens/results/ANNECY_RTO_results.npz"   # default: ENSEMBLE_RESULTS
-# PLOT_ONLY_TEMPLATE = "/data/ens/templates/resistivity_block_iter0.dat"
-MOD_VERT_EXAG = 2.0
-MOD_STATS_WHAT = ["best", "avg", "err"]
-```
+- **What is drawn from.** The draw is made from the *accepted* members of the directory scan that is run now (the scan still reads every accepted member's model once). Drawing from an existing results `.npz` without rescanning is not implemented. For a fast run switch `COMPUTE_SENS` / `COMPUTE_SIMRC` off.
+- **Sensitivity / SimRC** are computed for the drawn members only (their rows are remapped; members whose HDF5 file is missing are skipped there as in a full run).
+- **Reproducibility.** The rows drawn are stored in the `.npz` as `<P>_subsample_idx` (indices into the accepted members in scan order), `<P>_subsample_n_accepted` and `<P>_subsample_seed` (`-1` = no seed), so a draw made with `ENS_SUBSAMPLE_SEED = None` can be reproduced afterwards.
+- **nRMS table.** `NRMS_CSV` and `<P>_nrms_table` still list **all** scanned members (the histogram of the convergence rate is not about the draw); the accepted members that were not drawn get the status `accepted_not_drawn` (counted as accepted by the histogram). The drawn members are those in `<P>_model_list`.
+- **Plotting.** Point the plot scripts at the subsample by using the same `ENSEMBLE_PREFIX` (with the suffix) or by setting `ENSEMBLE_RESULTS` to the subsample file.
+- **Use.** Typical uses: how the spread and the percentiles depend on the ensemble size (draw N = 16, 32, 64 ... with different seeds), a quick preview of a large ensemble, or checking that a result does not hinge on a few members.
 
 ### Statistics
 
@@ -160,6 +149,7 @@ MOD_STATS_WHAT = ["best", "avg", "err"]
 | `PERCENTILES` | list of float | `[2.3, 15.9, 50.0, 84.1, 97.7]` | Percentile levels (2-σ / 1-σ normal-equivalent). |
 | `QDIFF_PAIRS` | list of `(lo, hi)` | `[(15.9, 84.1), (2.3, 97.7)]` | Percentile-pair differences `\|P_hi - P_lo\|` computed as extra, outlier-robust spread statistics (both values must also appear in `PERCENTILES`). The default gives both a 1-sigma-equivalent (`15.9`/`84.1`) and 2-sigma-equivalent (`2.3`/`97.7`) spread. Saved as `<P>_qdiff_<lo>_<hi>` and plottable under the same key in `MOD_STATS_WHAT`. |
 
+
 ### Sensitivity statistics
 
 Low ensemble spread (`VAR`/`ERR`/`MAD` above) is ambiguous on its own: it
@@ -167,7 +157,7 @@ can mean the data genuinely constrain a cell, or that regularisation
 collapsed a null-space cell regardless of the data. This section adds
 two independent sensitivity diagnostics to tell the two apart. Either diagnostic can be switched off independently and
 degrades gracefully (printed warning, corresponding `.npz` keys and
-`MOD_STATS_WHAT` entries omitted) if its required per-member files are
+panels in the plot script skipped) if its required per-member files are
 missing for some or all members.
 
 > **Two aggregation orders, computed side by side.** FEMTIC's per-block
@@ -177,7 +167,7 @@ missing for some or all members.
 > a common, threshold-friendly scale before aggregating across the
 > ensemble. Both orders below are always computed when `COMPUTE_SENS`
 > succeeds (suffixes `_na`/`_an` throughout — config, `.npz` keys,
-> `MOD_STATS_WHAT`/`MOD_ALPHA_SOURCE` names):
+> `MOD_STATS_WHAT`/`MOD_ALPHA_SOURCE` names in `femtic_ens_plot_slices.py`):
 > - **`_na` (normalise, then average)** — each member's raw vector is
 >   divided by *its own* max right after reading, so every member
 >   contributes equally regardless of its absolute sensitivity scale,
@@ -194,7 +184,7 @@ missing for some or all members.
 >
 > **log10.** All sensitivity aggregates (`mean`/`median`/`min`/`max`/`std`,
 > `_raw`/`_na`/`_an`) and the SimRC sums (`simrc_coef`/`simrc_corr`) are
-> strictly positive and are stored, plotted and used in `MOD_ALPHA_SOURCE`
+> strictly positive and are stored, plotted and used in `MOD_ALPHA_SOURCE` (`femtic_ens_plot_slices.py`)
 > as **log10** (values <= 0 -> NaN). Normalised sensitivities are
 > therefore <= 0, e.g. `"sens_mean_an > -3."` keeps cells within three
 > decades of the maximum. `sens_cv_*` are ratios and stay linear.
@@ -212,17 +202,10 @@ missing for some or all members.
 | `COMPUTE_SIMRC` | bool | `True` | (2) Ensemble-native "SimRC" sensitivity from the model ensemble and the calculated responses (`cal_re`/`cal_im`, errors `re_err`/`im_err`) in `/data/data` of each member's `results_iter<numit>.h5` (same file as the sensitivity). Real parts of all rows plus imaginary parts of complex datatypes; columns with error <= 0 dropped. Members with NaN calculated values or a different data composition are skipped. |
 | `SIMRC_ERR_WEIGHT` | bool | `True` | Divide each data column by its error (first usable member), so `simrc_coef` sums over mixed datatypes are dimensionless. `simrc_corr` is unaffected. |
 | `SIMRC_CHUNK` | int | `200` | Data columns processed per chunk when accumulating the model/data cross-covariance — bounds peak memory to `O(SIMRC_CHUNK * n_free)` instead of forming the full `(n_data, n_free)` matrix. |
-| `SENS_ROI_NORMALIZE` | bool | `False` | Optional, display-time only. When `True`, every `sens_*` panel actually plotted (not `sens_cv_*`, a linear ratio) is re-centred, right before its block file is written, so the ROI's own max (the same box driving `MOD_XLIM`/`MOD_YLIM`/`MOD_ZLIM`, including `MOD_ROI_AUTO`) becomes log10 = 0 instead of the whole-mesh max — equivalent to dividing by the max *within the ROI* rather than over the whole mesh. Never touches the `.npz` output or `MOD_ALPHA_SOURCE` (both still see the original, whole-mesh-normalised values). Cells outside the ROI can come out `> 0` (log10) once renormalised this way, since they may exceed the ROI's own max — expected. `simrc_coef`/`simrc_corr` are **not** renormalised by this switch (left as-is pending more experience with tuning SimRC thresholds), but see below. |
 
-**ROI diagnostic (always on, independent of `SENS_ROI_NORMALIZE`).**
-Every `sens_*`/`simrc_*` panel that is both listed in `MOD_STATS_WHAT`
-and actually plotted has its *original* (whole-mesh-normalised, as
-currently stored) min/max printed to the console, restricted to the free
-parameters whose volume-weighted centroid falls inside the ROI — a quick
-read of the value range actually in view, meant to make picking a
-`MOD_ALPHA_SOURCE` threshold easier without guessing. Degrades
-gracefully (printed warning, diagnostic skipped for the run) if the mesh
-or region geometry can't be read.
+**Display options moved.** `SENS_ROI_NORMALIZE` (re-centre every plotted `sens_*`
+panel on the ROI's own maximum) and the ROI value-range diagnostic belong to the
+plotting and are now in `femtic_ens_plot_slices.py`.
 
 **Why two measures instead of one.** (1) is a classical linearised
 diagnostic (Christiansen & Auken, 2012, *Geophysics* 77, WB171,
@@ -250,6 +233,7 @@ names are all configurable arguments (see `femtic_readme.md`) precisely
 so this section can be pointed at whatever layout the actual FEMTIC HDF5
 export ends up using once that pipeline is finalised (see the open item
 "HDF5 archive schema compatibility with FEMTIC v5").
+
 
 ### Covariance
 
@@ -312,6 +296,7 @@ genuinely needed downstream:
   so that's the recommended first step rather than adding process-level
   parallelism to the dense path.
 
+
 ### Bootstrap variance estimation
 
 | Parameter | Type | Default | Description |
@@ -338,9 +323,10 @@ resample, and reports:
   one 32-64-member ensemble to another) — a diagnostic of estimator
   noise, not a spread statistic of the model. Not plotted by default;
   add `"var_boot_se"` to `MOD_STATS_WHAT` and an entry to `MOD_STATS_STYLE`
-  if you want a slice figure of it.
+  in `femtic_ens_plot_slices.py` if you want a slice figure of it.
 - **`err_boot`** = `sqrt(var_boot)`, on the same scale as `MAD`/`QDIFF`,
-  automatically added to `MOD_STATS_WHAT` when `BOOTSTRAP_VAR=True`.
+  stored in the `.npz` when `BOOTSTRAP_VAR=True`; `femtic_ens_plot_slices.py`
+  plots it when `"err_boot"` is in its `MOD_STATS_WHAT`.
 
 Cost is `O(BOOTSTRAP_N × n_members × n_free)` time and `O(n_free)` memory
 (running sums, not a stored `(BOOTSTRAP_N, n_free)` array) — independent
@@ -349,365 +335,22 @@ of mesh size in memory, and linear in `BOOTSTRAP_N` in time. `BOOTSTRAP_N
 2000+) to shrink `var_boot_se` further if the plug-in-vs-bootstrap spread
 matters for your analysis.
 
+
 ### Output
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `ENSEMBLE_RESULTS` | str | `<PREFIX>_results.npz` | Path for the output `.npz` file. |
-| `MOD_MESH` | str | `templates/mesh.dat` | Tetrahedral mesh — required for all slice plots. |
-| `MOD_MESH_SWAP_XY` | bool / None | `None` | Optional swap of the first two node-coordinate columns when `femtic.read_femtic_mesh` reads `MOD_MESH` (for meshes stored as x = northing, y = easting). `None` = femtic default (no swap); sets `fem.MESH_SWAP_XY` for the whole run, so slice figures, the borehole block and the ROI diagnostic all see the same axes. |
+| `RESULTS_DIR` | str | `<ENSEMBLE_DIR>/results/` | Directory for **all** outputs of this script (results `.npz`, nRMS table). The plot scripts read the `.npz` from here and write their figures here by default. Created if missing. |
+| `ENSEMBLE_RESULTS` | str | `<RESULTS_DIR>/<PREFIX.upper()>_results.npz` | Path of the output `.npz` file. |
+| `NRMS_CSV` | str | `<RESULTS_DIR>/<PREFIX>_nrms.csv` | Per-member best-nRMS table (CSV): member, best iteration, nRMS, status (`accepted`, `accepted_fallback`, `accepted_not_drawn`, `rejected_nrms_max`, `no_model_file`, `no_perturbed_file`). Always written. The same table is stored in the `.npz` (`<P>_nrms_table`). |
 | `OUT` | bool | `True` | Verbose console output. |
 
-### Ocean / air handling
-
-Must match the values used by the FEMTIC inversion that produced the ensemble.
+### Block-file reading
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `MOD_OCEAN` | bool / None | `None` | `None` = auto-infer; `True`/`False` forces ocean-present/absent. |
-| `MOD_AIR_RHO` | float | `1.0e9` | Ω·m sentinel for air cells (region 0), used when writing stat block files. |
-| `MOD_OCEAN_RHO` | float | `0.25` | Ω·m sentinel for ocean cells (region 1), used for both block-file writing and plotting. |
+| `MOD_OCEAN` | bool / None | `None` | Ocean flag handed to the resistivity-block reader; must match the FEMTIC inversion that produced the ensemble. `None` = auto-infer; `True`/`False` forces ocean-present/absent. The air / ocean sentinel resistivities and the mesh belong to the plot scripts. |
 
-### Panels to plot
-
-**Since 2026-09-26, one list drives everything.** `MOD_QC` used to be a
-separate on/off switch that had to be kept in sync with `MOD_STATS_WHAT`
-by hand (turn on QC *and* remember `MOD_STATS_WHAT` is still what it
-should be, or vice versa). It is now just the special `"best"` entry in
-`MOD_STATS_WHAT` — the *one* list of panel sources, alongside
-`MOD_ALPHA_SOURCE` as the *one* blanking option (Shared slice / plot
-parameters, below) — and `MOD_QC` / `MOD_STATS` are derived from it, not
-set directly:
-
-```python
-MOD_QC    = "best" in MOD_STATS_WHAT
-MOD_STATS = bool(set(MOD_STATS_WHAT) - {"best"})
-```
-
-To turn a panel off, edit the one list — drop `"best"` for no QC plot, or
-set `MOD_STATS_WHAT = []` for nothing at all. A key requested that isn't
-actually available this run (its `COMPUTE_*` flag is off, say) is skipped
-with a printed message, never an error, so trimming a `COMPUTE_*` flag
-never means also editing this list back down.
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `MOD_STATS_WHAT` | list of str | `["best","avg","med","err","mad"]` + one key per `PERCENTILES` level + one per `QDIFF_PAIRS` entry (+ `"err_boot"` when `BOOTSTRAP_VAR=True`) | Which panels to plot. `"best"` plots the best-nRMS converged member (to `MOD_QC_FILE`) — the former `MOD_QC` switch. Every other entry is a statistic key: subset of `"avg"`, `"var"`, `"err"`, `"med"`, `"mad"`, `"var_boot"`, `"err_boot"`, the log10 sensitivity keys (`"sens_mean_raw"`, `"sens_{mean,median,min,max,std}_{na,an}"`), `"sens_cv_na"`/`"sens_cv_an"` (linear), `"simrc_coef"`/`"simrc_corr"` (log10), plus auto-generated percentile keys (e.g. `2.3` → `"p2_3"`, `50.0` → `"p50"`, `97.7` → `"p97_7"`) and qdiff keys (e.g. `(15.9, 84.1)` → `"qdiff_15_9_84_1"`). `"err"` = `sqrt(var)` is plotted by default *instead of* `"var"`, since `var` is in (log10 Ω·m)² and isn't on the same scale as `MAD`/`QDIFF` (log10 Ω·m); add `"var"` back manually (with a `MOD_STATS_STYLE` entry) if you specifically want the raw-variance panel. |
-| `MOD_QC` | bool | derived | `"best" in MOD_STATS_WHAT`. Not user-set — edit `MOD_STATS_WHAT` instead. |
-| `MOD_QC_FILE` | str | `<prefix>_best` | Output path for the `"best"` panel; `_plot_slice()` appends `.<fmt>` per `MOD_PLOT_FORMAT` entry. |
-| `MOD_STATS` | bool | derived | `bool(set(MOD_STATS_WHAT) - {"best"})`. Not user-set — edit `MOD_STATS_WHAT` instead. |
-| `MOD_STATS_DIR` | str | `stats_plots/` | Destination for block files and figures (the non-`"best"` panels). |
-
-**Scope note.** `MOD_NROWS`/`MOD_NCOLS` (grid layout *within* one panel's
-figure, sized to `MOD_SLICES` — an unrelated list) and the
-`COMPUTE_SENS`/`COMPUTE_SIMRC`/`COMPUTE_COV`/`BOOTSTRAP_VAR` switches
-(which also gate what is saved to the `.npz`, regardless of whether it is
-ever plotted) were deliberately left as separate settings — neither can
-be safely inferred from "which panels to plot" alone.
-
-Writes each selected statistic as a FEMTIC block file, then plots it.
-
-**Per-panel style.** `MOD_CLIM` fixes the colour scale for the model
-itself (log10 Ohm.m). Spread statistics (`VAR`/`ERR`/`MAD`/`QDIFF`) and
-sensitivities live on entirely different scales, so each panel's colour
-map, colour limits and colourbar label are set in `MOD_STATS_STYLE` (in
-the shared slice block). `clim=None` now really auto-scales (it used to
-fall back to `MOD_CLIM`).
-
-**Sentinel air/ocean in statistics block files.** `plot_model_slices`
-recognises air as log10 > threshold and ocean as log10 ~ log10(ocean
-value). A statistic that happened to sit near those values (e.g. a log10
-sensitivity of -0.6, the log10 of 0.25 Ohm.m) used to be painted as ocean.
-MOD_STATS block files therefore write air as 1e30 and ocean as 1e-30 and
-are plotted with matching `air_log10_thresh`/`ocean_value`.
-
-Block files are written using the lowest-nRMS member as format template
-(preserves header, bounds, and flag columns).  Output filenames follow the
-pattern `resistivity_block_<prefix>_<stat>.dat`.
-
-### Shared slice / plot parameters
-
-Both `MOD_QC` and `MOD_STATS` use the same slice/plot config block — this
-block is identical (variable names and defaults) to `femtic_gst_prep.py`
-and `femtic_rto_prep.py`.
-
-| Parameter | Description |
-|---|---|
-| `MOD_SLICES` | List of slice-spec dicts (`kind`, `z0`/`x0`/`y0`). Kinds: `"map"`, `"ns"`, `"ew"`, `"plane"` (see "Vertical section" below). |
-| `MOD_XLIM / YLIM / ZLIM` | Global axis limits (model-local **km**); `None` = auto. Overridden automatically by `MOD_ROI_AUTO` (below) when sites are available. |
-| `MOD_ROI_AUTO` | Default `True`. When site positions are available, derives `MOD_XLIM`/`MOD_YLIM` from the site bounding box + `MOD_ROI_PAD_XY`, and sets `MOD_ZLIM` from `MOD_ROI_ZLIM` — overriding any literal values set above. Falls back to the literals (or full-mesh auto-scaling) when no sites are found. |
-| `MOD_ROI_PAD_XY` | Default `2.0` km. Padding added around the site bounding box for `MOD_XLIM`/`MOD_YLIM`. |
-| `MOD_ROI_ZLIM` | Default `[-1.0, 7.0]` km (positive-down). Depth range applied to `MOD_ZLIM` for `ns`/`ew`/`plane` panels when `MOD_ROI_AUTO=True`; `None` leaves `MOD_ZLIM` untouched. The negative lower bound leaves ~1 km of headroom above the z = 0 datum so topography is not clipped. |
-| `MOD_CMAP` | Matplotlib colormap name. |
-| `MOD_DPI` | Figure DPI, used by both `MOD_QC` and `MOD_STATS` plots. |
-| `MOD_CLIM` | `[log10(ρ_min), log10(ρ_max)]`; `None` = auto. Default colour scale for `MOD_QC` and for any `MOD_STATS` panel not overridden by `MOD_STATS_STYLE`. |
-| `MOD_OCEAN_COLOR` | Flat colour for ocean/lake cells; `None` = colormap. |
-| `MOD_AIR_COLOR` | Flat colour for air cells. |
-| `MOD_AIR_BGCOLOR` | Axes facecolor for air; `None` = figure default. |
-| `MOD_ALPHA_SOURCE` | Single condition `"<name> <op> <value>"` selecting the cells to **show** (e.g. `"sens_mean_an > -3."`); `<name>` is any statistic key computed this run (see `MOD_STATS_WHAT`), `<op>` one of `> >= < <=`, `<value>` in that statistic's own units (log10 for sensitivities). Parsed with a regex, never `eval`ed. `None` = off. |
-| `MOD_ALPHA_MODE` | `"blank"` (failing cells removed) or `"fade"` (failing cells fade linearly from opaque at the threshold to transparent `MOD_ALPHA_FADE_WIDTH` beyond it). |
-| `MOD_ALPHA_FADE_WIDTH` | Fade width in the source's units (e.g. `1.0` = one decade). Default `1.0`. |
-| `MOD_ALPHA_QC` | Also apply the mask to the `MOD_QC` best-member figure. Default `True`. |
-| `MOD_ALPHA_EXCLUDE` | Tuple of statistic-key prefixes whose panels are drawn **without** the mask. Default `("sens_", "simrc_")`: a sensitivity map is not shaded by sensitivity (circular; the unmasked panel shows where the threshold cuts). `()` = mask every panel, as before 2026-10-28. |
-| `MOD_STATS_STYLE` | Per-panel `dict(cmap=..., clim=..., label=...)` keyed as in `MOD_STATS_WHAT`; missing fields fall back to `MOD_CMAP`, `MOD_CLIM` (value-scale panels `avg`/`med`/`p*`) or auto-scaling (all others, `clim=None`), and a default colourbar label. Sensitivity/SimRC panels default to `viridis`; normalised sensitivities to `clim=[-4, 0]` (log10). |
-| `MOD_EQUAL_ASPECT` | Equal aspect ratio on map/curtain panels (legacy test: acts for model/utm display only, not for `"latlon"`). |
-| `MOD_VERT_EXAG` | `None` (default) = as `MOD_EQUAL_ASPECT` says, figures unchanged. A number VE > 0 fixes the aspect of the section panels (ns, ew, vertical plane) from the real axis units: `1.0` = true equal axes, `2.0` = vertical scale twice the horizontal, `0.5` = compressed — for every `MOD_DISPLAY_COORDS`, including `"latlon"`. Map panels stay 1:1 while `MOD_EQUAL_ASPECT` is `True`. Panel widths follow the real extents (×VE for the depth span). |
-| `MOD_DEPTH_KM / HORIZ_KM` | Axis units. |
-| `MOD_PANEL_HEIGHT` | Panel height in cm. |
-| `MOD_PANEL_WIDTH` | Panel width in cm; `None` = auto from aspect ratio. With `MOD_EQUAL_ASPECT=True` and real `MOD_XLIM`/`MOD_YLIM`/`MOD_ZLIM` (e.g. from `MOD_ROI_AUTO`), map/ns/ew panels end up with genuinely different widths instead of being forced square. |
-| `MOD_FIGSIZE` | `[w, h]` cm; overrides auto layout when set. |
-| `MOD_NROWS / NCOLS` | Grid layout. Default `2 / 2`, matching the 4 default `MOD_SLICES` panels (2 maps + ns + ew); `None` = 1 row × N columns. Adjust if you change the number of panels. |
-| `MOD_TICK_FONTSIZE` | Font size for axis tick labels and colourbar ticks. Default `7`, matching `fviz.plot_model_slices`' own default. |
-| `MOD_LABEL_FONTSIZE` | Font size for axis labels, panel titles, and colourbar label. Default `8`, matching `fviz.plot_model_slices`' own default. |
-| `MOD_TICK_DECIMALS` | Decimal digits shown on depth / easting-northing / lat-lon tick labels (all share this one value). Default `None` = `fviz.plot_model_slices`' own per-axis-type formatting unchanged. |
-| `MOD_SHOW_IN_SPYDER` | `True` (default) and running inside Spyder (detected via `utl.runtime_env() == "spyder"`) → every saved figure is also displayed inline in Spyder's Plots pane via `plt.show()`, in addition to being written to disk. No effect outside Spyder; set `False` to disable even under Spyder. |
-
-### Reference model (optional)
-
-A reference model shown against the ensemble on the slice and borehole
-figures: e.g. a deterministic inversion, the prior/starting model or a
-published model. It is a resistivity block file on the **same mesh** as
-`MOD_MESH`; its region structure may differ from the members'. It is one
-fixed model for the whole ensemble: with the usual setting
-`MOD_REF_FILE = ENSEMBLE_DIR + "/templates/referencemodel.dat"` it is the
-**base (unperturbed) reference**, not a member's perturbed `referencemodel.dat`
-(see `ENS_MODEL_SOURCE` for plotting those).
-
-| Parameter | Default | Description |
-|---|---|---|
-| `MOD_REF_FILE` | `None` | Block file of the reference model; `None` = off (everything below is then ignored). A missing file, or one whose element count differs from `MOD_MESH`'s, switches the reference off with a printed message; the run continues. |
-| `MOD_REF_SLICES` | `True` | Draw the reference as iso-resistivity lines on every slice panel: the `"best"` panel and **all** `MOD_STATS` panels (average, spread, sensitivity, ...). The lines are the exact boundaries between slice cells lying on different sides of a level, so they follow the mesh without interpolation artefacts; air and ocean cells of the reference are ignored. |
-| `MOD_REF_BH` | `True` | Add the reference profile as a dashed line (`"reference model"`) to every `MOD_BH` panel. |
-| `MOD_REF_LEVELS` | `None` | Contour levels in log10(Ω·m), e.g. `[1.0, 2.0, 3.0]`. `None` = integer decades inside `MOD_CLIM` (inside the reference's own range when `MOD_CLIM` is `None`). The levels are always in the reference model's own units, whatever quantity a `MOD_STATS` panel shows, so a spread or sensitivity panel gets the same resistivity contours as the model panels. |
-| `MOD_REF_STYLE` | `dict(colors="k", linewidths=0.8)` | `LineCollection` keywords of the slice lines, e.g. `linestyles="--"`. |
-| `MOD_REF_LABEL` | `"reference model"` | Legend entry (lower right of each slice panel, and in the borehole legend); `None` = none. |
-
-In `MOD_BH`, the reference line is added last (drawn on top) unless the
-entry has `ref=False`; listing `"ref"` in an entry's `what` chooses its
-position and forces it on even when `MOD_REF_BH` is `False`. Its style is
-`MOD_BH_STYLE["ref"]` (default black, `lw=2.2`, dashed). Reference values
-are sampled in the same elements as the ensemble lines, with air as gaps and
-ocean cells at `MOD_OCEAN_RHO`.
-
-### Vertical section (a `kind="plane"` entry in `MOD_SLICES`)
-
-A vertical section along any strike is configured like every other slice,
-as an entry of `MOD_SLICES` (units km / degrees). The default list ends
-with a SW-NE section through the model origin:
-
-```python
-dict(kind="plane", point=[0.0, 0.0], strike=45.0, dip=90.0)
-```
-
-| Key | Default | Description |
-|---|---|---|
-| `point` | `[0, 0]` | `[x, y]` (or `[x, y, z]`) model-local km the section passes through; `[0, 0]` = model origin. |
-| `strike` | `0` | For `dip = 90`: geographic azimuth, degrees clockwise from north. `45` = SW (left) to NE (right); `135` = NW to SE. |
-| `dip` | `90` | `90` = vertical section (as described here). Other dips use the legacy `femtic_viz` plane panel unchanged. |
-| `xlim` | derived | Optional along-strike range `[min, max]` in km relative to `point` (negative = SW end). |
-| `invert_x`, `title` | | Passed through to `femtic_viz`. |
-
-Limits are the same as for the other slices: the along-strike range is the
-`MOD_XLIM` x `MOD_YLIM` box projected onto the strike direction (whole mesh
-if either is `None`, e.g. after `MOD_ROI_AUTO` it follows the auto ROI), and
-the depth range is `MOD_ZLIM`. The horizontal axis is always in **model km**
-(0 at `point`), independent of `MOD_DISPLAY_COORDS`. The panel takes part in
-the normal `MOD_NROWS x MOD_NCOLS` grid, colour scale, blanking and colourbar
-of its figure, and shows sites within `MOD_PROJECTION_DIST` when
-`MOD_PLOT_SITES_SLICES` is `True`. Requires the `femtic_viz.py` of
-2026-10-07 or later.
-
-### Borehole profiles (`MOD_BH`, optional)
-
-1-D resistivity-depth profiles through the ensemble at one or more vertical
-"boreholes": ensemble statistics, every member (drawn semi-transparent),
-a density **heat map** of the ensemble (`"heatmap"`), and/or the best member,
-one panel per borehole, all in one figure.
-`MOD_BH` is a list of dicts in the same spirit as `MOD_SLICES`; an empty
-list (`MOD_BH = []`) switches the block off. It runs as step (9), after the
-slice figures, and works from the same in-memory ensemble (`ens_matrix` and
-the statistics), so no extra block files are written.
-
-| Key | Meaning |
-|---|---|
-| `name` | Panel title and key in the `.npz` (spaces become `_`). Required. |
-| `x`, `y` | Horizontal position. Plain float = model-local **km**; `(value, "utm")` = UTM metres in the mesh zone; `(value, "latlon")` = decimal degrees (x = longitude, y = latitude). Both must carry the same tag. Required unless `sites` is given. |
-| `sites` | Instead of `x`/`y`: `"all"` (every site in `MOD_SITE_DAT`) or a list of site names. The entry is a template, expanded to one borehole per site (named after the site) with all its other keys (`z_top`, `z_bot`, `dz`, `what`, `alpha`, `xlim`, `style`) applied to each. Site UTM coordinates are used, so it needs `MOD_SITE_DAT` and a resolvable UTM origin. Names are made unique (`S1`, `S1_2`, ...) because they key the `.npz`. |
-| `n_random`, `seed` | With `sites`: use only `n_random` sites drawn at random (without replacement) from the selected ones. `seed` (int) makes the draw reproducible; `None` (default) draws afresh each run. The chosen names are printed. |
-| `z_top` | Float km (z down, model datum) or `"surface"` (default) = top of the first non-air element at (x, y); offshore that is the sea surface, so give a float to start at the sea floor. Resolved to about dz/5. |
-| `z_bot` | Float km. Default `MOD_ZLIM[1]` if set (after `MOD_ROI_AUTO`), else 20 km. |
-| `dz` | Sampling interval, km. Default 0.05. |
-| `what` | List of items to draw, in drawing order: `"avg"` (ensemble mean of log10 rho), `"med"`, `"percentiles"` (one line per `PERCENTILES` level), single percentile keys (`"p50"`, `"p15_9"`, ... as in `MOD_STATS_WHAT`), `"sigma1"` / `"sigma2"` (the 1- / 2-sigma quantile pairs P15.87 / P84.13 and P2.28 / P97.72 of the members in log10 rho, two lines each, computed directly, so independent of `PERCENTILES`), `"ensemble"` (all accepted members), `"heatmap"` (density heat map of the members, always drawn at the bottom; see "Heat map" below), `"best"` (best-nRMS member), `"ref"` (the reference model, `MOD_REF_FILE`; added automatically as the last item when `MOD_REF_BH` is `True`). Default `["avg", "percentiles"]`. Unknown names are reported and skipped. |
-| `ref` | `False` switches the automatic reference line off for this entry (when `MOD_REF_BH` is `True`). Default `True`. |
-| `alpha` | Opacity (0..1) of the `"ensemble"` lines. Default `MOD_BH_ALPHA`. Only used when `"ensemble"` is in `what`. |
-| `xlim` | `[rho_min, rho_max]` in Ohm.m for this panel (default `MOD_BH_XLIM`). With `"heatmap"`: also the range of the bins. |
-| `heat_bins` | Bins of the `"heatmap"` of this entry: an int (equal bins in log10 rho across the panel's x range) or an increasing list of log10(rho) bin edges. Default `MOD_BH_HEAT_BINS`. |
-| `style` | Per-entry style overrides, keyed like `MOD_BH_STYLE`, e.g. `dict(avg=dict(color="navy", lw=3))`. |
-
-Median and 1-sigma quantiles over a faint ensemble (the default entry);
-items are drawn in the order of `what` and `"ensemble"` is always at the
-bottom, so list it first:
-
-```python
-MOD_BH = [
-    dict(sites="all", n_random=6, seed=1, z_bot=5.0,        # 6 random sites
-         what=["ensemble", "med", "sigma1"], alpha=0.05),
-    dict(sites="all", z_bot=5.0, what=["avg", "ensemble"], alpha=0.1),  # one panel per site
-    dict(name="BH-1",
-         x=(-70.868025, "latlon"), y=(-16.363436, "latlon"),
-         z_top="surface", z_bot=4.0, dz=0.05,
-         what=["avg", "percentiles", "ensemble"], alpha=0.15),
-    dict(name="BH-2", x=2.0, y=-3.0, z_top=0.0, z_bot=6.0,
-         what=["med", "p15_9", "p84_1", "best"]),
-    dict(sites=["SITE01", "SITE07"], z_bot=5.0, xlim=[1.0, 1.0e4],      # heat map
-         what=["heatmap", "med", "sigma1"]),                            # + lines on top
-]
-```
-
-Global settings:
-
-| Parameter | Default | Description |
-|---|---|---|
-| `MOD_BH_FILE` | `<dir><prefix>_boreholes` | Output path without extension; one figure per `MOD_PLOT_FORMAT` entry. |
-| `MOD_BH_NPZ` | `True` | Also write `<MOD_BH_FILE>.npz`. |
-| `MOD_BH_ALPHA` | `0.15` | Default opacity of the ensemble lines. |
-| `MOD_BH_XLIM` | `None` | x range in Ohm.m (log axis). `None` = `10**MOD_CLIM`, shared with the slice figures; auto if `MOD_CLIM` is `None` too. |
-| `MOD_BH_PANEL_SIZE` | `[10.0, 15.0]` | Panel width, height in cm. |
-| `MOD_BH_NCOLS` | `None` | Panel columns; `None` = up to 4. |
-| `MOD_BH_PER_FIG` | `None` | Maximum panels per figure; further figures get `_01`, `_02`, ... suffixes. Useful with `sites`. `None` = all in one. |
-| `MOD_BH_SHARE_DEPTH` | `True` | One common depth range (union over all entries) for all panels. |
-| `MOD_BH_LEGEND_LOC` | `"lower right"` | Legend position; `None` = no legend. |
-| `MOD_BH_STYLE` | see script | Line style per item: `"avg"`, `"med"`, `"best"`, `"ensemble"`, `"percentiles"` (all percentile lines), one percentile key, or `"sigma1"` / `"sigma2"` (both lines of the pair; defaults navy dashed / steelblue dotted). Any Matplotlib `Line2D` keyword; `"percentiles"` may carry `"cmap"` (default `"viridis"`) to colour the lines by level. `"heatmap"` takes any `pcolormesh` keyword (default `dict(rasterized=True)`) and `cmap` to override `MOD_BH_HEAT_CMAP`; the colour scale itself is set by the `MOD_BH_HEAT_*` settings. |
-| `MOD_BH_HEAT_BINS` | `60` | Heat map: number of equal bins in log10 rho across the panel's x range (entry `xlim`, else `MOD_BH_XLIM`, else `10**MOD_CLIM`; if none is set, the range of the member values at that borehole), or a list of log10(rho) bin edges. Per-entry `heat_bins` overrides it. |
-| `MOD_BH_HEAT_NORM` | `"fraction"` | Colour scale: `"fraction"` = fraction of the members per bin (a depth level sums to 1 when all members are inside the range), `"row_max"` = every depth level scaled to its own maximum (0..1). Anything else stops the run at start. |
-| `MOD_BH_HEAT_CMAP` | `"Greys"` | Colormap of the heat map (light = few members). A single-hue light-to-dark map (`"Greys"`, `"Blues"`, `"Purples"`, ...) keeps the lines on top readable. `MOD_BH_STYLE["heatmap"]` or an entry's `style=dict(heatmap=dict(cmap=...))` overrides it; the colour bar uses the cmap of the first panel with a heat map. |
-| `MOD_BH_HEAT_SCALE` | `"linear"` | Shape of the colour scale: `"linear"`, `"sqrt"` (square root: lifts low densities, keeps peaks distinguishable) or `"log"` (logarithmic between `MOD_BH_HEAT_VMIN` and `MOD_BH_HEAT_VMAX`; empty bins are left blank; 1-2-5 colour-bar ticks when the range is under 3 decades). One scale per figure. Anything else stops the run at start. |
-| `MOD_BH_HEAT_VMIN` | `None` | Lower end of the colour scale. `None` = 0 (`"linear"` / `"sqrt"`) or the smallest non-zero fraction of the figure (`"log"`, which needs a value > 0). A number sets it, e.g. `0.02` to blank out bins holding less than 2 % of the members (an arrow on the colour bar marks values below it). |
-| `MOD_BH_HEAT_VMAX` | `None` | Upper end of the colour scale (`"row_max"` is always 1). `None` = for `"linear"` / `"sqrt"` the 99th percentile of the non-zero fractions of the figure (the colour bar ends in an arrow), for `"log"` the maximum; `1.0` = full range. |
-| `MOD_BH_HEAT_CBAR` | `True` | Draw the shared colour bar of the heat map (one per figure). |
-| `MOD_BH_HEAT_SHARE_SCALE` | `False` | `False` = one colour scale per figure (the default, as before). `True` = ONE scale for ALL figures of the run (every `MOD_BH_PER_FIG` chunk, converged and perturbed): the automatic `MOD_BH_HEAT_VMAX` is taken over all of them. With `ENS_MODEL_SOURCE = "both"` the converged and the perturbed heat maps of one figure always share the scale. See "Sharing the colour scale" below. |
-| `MOD_BH_HEAT_FIGURE` | `"combined"` | `ENS_MODEL_SOURCE = "both"` only. `"combined"` = converged and perturbed panel of each borehole side by side in one figure (`2 x MOD_BH_NCOLS` columns), one colour bar. `"separate"` = one figure per source (`<MOD_BH_FILE>` and `<MOD_BH_FILE>_perturbed`), same scale. |
-| `MOD_BH_HEAT_SCALE_FILE` | `None` | JSON file that saves / reuses the colour scale across runs (same format as `BOREHOLE_HEAT_SCALE_FILE` of `femtic_ens_plot.py`); `None` = off. Values read from it replace `MOD_BH_HEAT_SCALE` / `_NORM` / `_VMIN` / `_VMAX` / `_CMAP` and, if it holds `"edges"`, the bins of every heat map. |
-| `MOD_BH_HEAT_SCALE_IO` | `"auto"` | `"auto"` = read `MOD_BH_HEAT_SCALE_FILE` if it exists, else write it (one setting serves the first and every later run); `"read"` = read it, stop if missing; `"write"` = always (over)write it. |
-
-Shared with the slice figures: `MOD_PLOT_FORMAT`, `MOD_DPI`, `MOD_CLIM`
-(x range), `MOD_TICK_FONTSIZE` / `MOD_LABEL_FONTSIZE` / `MOD_TITLE_FONTSIZE`,
-`MOD_DEPTH_KM`, `MOD_DISPLAY_COORDS` (panel-title coordinates),
-`MOD_OCEAN` / `MOD_OCEAN_RHO`, `MOD_MESH`, and the UTM-origin resolution of
-step (5) (needed for `"utm"` / `"latlon"` positions).
-
-#### Heat map
-
-`"heatmap"` in `what` shows the whole ensemble as a density image: at every
-depth level the log10 resistivities of the members are histogrammed
-(`MOD_BH_HEAT_BINS` bins) and drawn with `pcolormesh` behind all other items
-(depth axis down, log resistivity axis). It sits on a single colour scale per
-figure, with one colour bar; the colormap is taken from the first panel that
-draws a heat map. It can be used alone or combined with any other item, e.g.
-`what=["heatmap", "med", "sigma1"]` (lines on top of the image) or
-`["heatmap", "ensemble"]`.
-
-Colour scale examples (settings at the top of the script):
-
-```python
-MOD_BH_HEAT_SCALE = "log"       # logarithmic colours, empty bins blank
-MOD_BH_HEAT_VMIN = 0.05         # ignore bins with < 5 % of the members
-MOD_BH_HEAT_CMAP = "Blues"      # single-hue colormap
-MOD_BH_HEAT_NORM = "row_max"    # or scale every depth to its own maximum
-```
-
-- **What a cell means.** With `MOD_BH_HEAT_NORM = "fraction"` the colour is
-  the fraction of the valid members whose resistivity at that depth falls into
-  the bin. This is comparable between depths and boreholes. `"row_max"`
-  rescales each depth to its most populated bin and shows the shape of broad
-  distributions better.
-- **Range.** The bins span the panel's x range, so what you see is exactly
-  what is binned. Members outside that range are not drawn (e.g. ocean cells
-  at 0.25 Ohm.m with an x range of 1 ... 1e4 Ohm.m), but still count in the
-  denominator, so such a level sums to less than 1 and ocean levels stay empty
-  instead of piling up in the first bin. Widen `xlim` to see them.
-- **Air / outside the mesh** are blank (NaN rows), as for the lines.
-- **Colour scale.** `MOD_BH_HEAT_SCALE` (`"linear"` / `"sqrt"` / `"log"`),
-  `MOD_BH_HEAT_VMIN` and `MOD_BH_HEAT_VMAX` set the scale of the whole figure;
-  `MOD_BH_HEAT_CMAP` the colormap. Values outside an explicit range get the end
-  colours and an arrow on the colour bar. On a log scale the empty bins (and
-  the air) are blank, so the colours only show where members are.
-- **Auto colour maximum.** Levels in which every member has the same value
-  (the ocean, other fixed regions) have fraction 1 and would flatten the rest of
-  the image on a linear scale, so `MOD_BH_HEAT_VMAX = None` uses the 99th
-  percentile of the non-zero fractions (`"linear"` / `"sqrt"`) and marks the
-  clipped end with an arrow on the colour bar; a log scale shows the whole range.
-- **Cost.** The members are sampled once per borehole (one array lookup each),
-  as for `"ensemble"`; the histogram is one `bincount` per borehole.
-- **Export.** The `.npz` gets `heat_<name>` (`n_levels x n_bins` fractions,
-  independent of `MOD_BH_HEAT_NORM`) and `heat_edges_<name>` (log10 Ohm.m bin
-  edges). `"ensemble"` lines are only drawn / exported when `"ensemble"` is in
-  `what`.
-- An invalid `heat_bins` is reported and only that entry's heat map is skipped.
-
-#### Sharing the colour scale
-
-Colours of two heat maps are only comparable if the **bins** (bin width changes the fractions), the **colour limits** and the **colormap** agree. The defaults leave every figure on its own scale (output unchanged). To compare:
-
-- **Converged and perturbed in one run:** `ENS_MODEL_SOURCE = "both"`; both ensembles of a figure are binned on the same edges and share one scale (see above).
-- **All figures of a run** (e.g. many sites over several `MOD_BH_PER_FIG` chunks): `MOD_BH_HEAT_SHARE_SCALE = True`. For identical bins in every borehole give an `xlim` (or `MOD_BH_XLIM` / `MOD_CLIM`) and an integer `heat_bins`, or a list of edges; without an `xlim` the bins follow each borehole's own value range.
-- **Across runs** (a converged and a perturbed run, other ensembles, `femtic_ens_plot.py`): `MOD_BH_HEAT_SCALE_FILE`. The first run writes the resolved scale, every later run with the same setting reads it:
-
-```python
-MOD_BH_HEAT_SCALE_FILE = RESULTS_DIR + "heat_colorscale.json"
-MOD_BH_HEAT_SCALE_IO = "auto"       # first run writes, later runs read
-```
-
-The file is plain JSON; every key is optional (a missing or `null` key keeps this run's `MOD_BH_HEAT_*` value), so a hand-written file with just `vmax` works:
-
-```json
-{"scale": "sqrt", "norm": "fraction", "vmin": 0.0, "vmax": 0.35, "cmap": "Greys",
- "edges": [0.0, 0.1, 0.2, 0.3, 0.4], "info": {"note": "ignored when reading"}}
-```
-
-`edges` are log10(Ohm.m) bin edges; `info` is ignored. When a file is read it applies to all heat maps of the run and the read is logged. Notes: a `cmap` set in `MOD_BH_STYLE["heatmap"]` or an entry's `style` still wins over the file's; the file is written only if there is a single scale for the run (`MOD_BH_HEAT_SHARE_SCALE = True`, or all profiles in one figure; otherwise a message says so), and `"edges"` only if all heat maps use the same bins; a missing file with `"read"`, or an invalid one (unknown `scale` / `norm`, negative `vmin`, `"log"` with `vmin <= 0`, unsorted `edges`), stops the run with a message.
-
-Notes:
-
-- **Depth convention:** z is positive downward, as everywhere in FEMTIC. The
-  vertical axis increases downward and is labelled depth; values are model z,
-  so levels above the datum (topography, `z_top` above sea level) are
-  negative. `z_top`, `z_bot` and the figure axis use the same convention.
-- Statistics are formed in log10(rho) space and shown in Ohm.m, so `"avg"`
-  is the geometric mean, exactly as in the slice panels.
-- Air and levels outside the mesh are gaps (NaN). Ocean cells show
-  `MOD_OCEAN_RHO` when region 1 is an ocean block; other fixed regions keep
-  their template value.
-- The tetrahedron containing each level is found once per borehole (exact
-  barycentric test, same as `fem.extract_borehole_log`), then reused for all
-  statistics and all members.
-- Only value-scale statistics (`avg`, `med`, percentiles) can be drawn; the
-  spread and sensitivity statistics have different units.
-- All members must share the region structure of the best member (as already
-  assumed for the statistics block files); otherwise the block is skipped
-  with a message.
-
-### Site overlay
-
-| Parameter | Description |
-|---|---|
-| `MOD_SITE_DAT` | Path to `site.dat` CSV; `None` to fall back to `MOD_SITE_NUMBER`. |
-| `MOD_SITE_NAMES` | `None` = all sites; list of strings = subset. |
-| `MOD_SITE_NUMBER` | Fallback site number(s) from `observe.dat` (int or list of ints), used only when `MOD_SITE_DAT` is unavailable. |
-| `MOD_PLOT_SITES_MAPS / SLICES` | Toggle site markers on map / curtain panels. |
-| `MOD_PROJECTION_DIST` | Maximum projection distance (m) for curtain panels; `None` = show all sites on every panel. |
-| `MOD_SITE_MARKER / MARKER_SLICES` | Marker style dicts for map / curtain overlays. |
-| `MOD_MAP_MARKERS` | Extra point markers on map panels only. An entry with `"is_model_centre": True` (instead of `"latlon"`) overrides the model-centre marker's style rather than plotting as a regular marker. |
-| `MOD_SHOW_MODEL_CENTRE` | `True` (default): marks the model origin on `"map"` panels whenever `MOD_DISPLAY_COORDS` is `"utm"`/`"latlon"` (no-op for `"model"`). Default style (since 2026-09-26): yellow star with a black edge, `ms=14`, at `zorder=15` (above every other map-panel artist); no legend entry. Override via `MOD_MAP_MARKERS` as above; set `False` to force off. |
-
-### Geographic / UTM origin
-
-| Parameter | Description |
-|---|---|
-| `MOD_ORIGIN_METHOD` | `"box"` (bounding-box midpoint) / `"average"` / `None` (use literal values). |
-| `MOD_UTM_ORIGIN_LAT/LON/E/N` | Manual override; ignored when `MOD_ORIGIN_METHOD` estimates from `MOD_SITE_DAT`. |
-| `MOD_UTM_ZONE_OVERRIDE` | Force a specific UTM zone string; `None` = auto-detect. |
-| `MOD_DISPLAY_COORDS` | `"model"` / `"utm"` / `"latlon"`. |
 
 ---
 
@@ -715,14 +358,16 @@ Notes:
 
 ### `.npz` archive
 
-Keys follow the pattern `<PREFIX>_<stat>`:
+Keys follow the pattern `<PREFIX>_<stat>` (`<P>` below; `ENSEMBLE_PREFIX` with
+`ENS_PERTURBED_SUFFIX` / `ENS_SUBSAMPLE_SUFFIX` where they apply). The plot
+scripts read the file with `femtic.read_ensemble_results()`.
 
 | Key | Shape | Description |
 |---|---|---|
 | `<P>_model_list` | `(N, 3)` | `[block_file, n_iter, nRMS]` per accepted member. |
 | `<P>_ens` | `(N_members, N_free)` | Stacked ensemble in log₁₀(Ω·m). Rows are the converged models, or the members' perturbed references with `ENS_MODEL_SOURCE = "perturbed"`. |
 | `<P>_model_source` | str | `"converged"` or `"perturbed"`: which model of each member the rows of `<P>_ens` are (`<P>_model_list` then lists the perturbed files). Absent in files from before 2026-10-31 (= converged). |
-| `<P>_ens_perturbed` | `(N_members, N_free)` | Only with `ENS_MODEL_SOURCE = "both"`: the members' perturbed models in log10(Ohm.m), row for row as `<P>_ens` (which stays the converged ensemble, `<P>_model_source = "converged"`). Read by `PLOT_ONLY` for the borehole figure. `<P>_perturbed_file_name` holds the file name. |
+| `<P>_ens_perturbed` | `(N_members, N_free)` | Only with `ENS_MODEL_SOURCE = "both"`: the members' perturbed models in log10(Ohm.m), row for row as `<P>_ens` (which stays the converged ensemble, `<P>_model_source = "converged"`). Read by `femtic_ens_plot_bh.py` for the borehole figure. `<P>_perturbed_file_name` holds the file name. |
 | `<P>_model_file_name` | str | `ENS_PERTURBED_FILE`, or `resistivity_block_iter<N>.dat`. |
 | `<P>_cov` | `(N_free, N_free)` | Empirical covariance matrix. Present only if `COMPUTE_COV=True` and `COV_METHOD="full"`. |
 | `<P>_cov_eigval` | `(r,)` | Covariance eigenvalues, `r = min(N_members, N_free)`. Present only if `COMPUTE_COV=True` and `COV_METHOD="low_rank"`. |
@@ -747,59 +392,31 @@ Keys follow the pattern `<PREFIX>_<stat>`:
 | `<P>_sens_cv_an` | `(N_free,)` | Coefficient of variation, `sens_std_an/sens_mean_an` (renormalisation cancels in the ratio, so this equals the raw ensemble's CV). Same presence condition as `<P>_sens_mean_na`. |
 | `<P>_simrc_coef` | `(N_free,)` | Cumulative `\|regression coefficient\|` between the forward-response ensemble and the model ensemble (Bobe, Keller & Van De Vijver, 2021). Present only if `COMPUTE_SIMRC=True` and at least one member's result files were found. |
 | `<P>_simrc_corr` | `(N_free,)` | Cumulative `\|correlation\|`, the normalised counterpart of `<P>_simrc_coef`. Same presence condition. |
+| `<P>_best` | `(N_free,)` | log10(rho) of the best-nRMS member (within the draw when subsampled), free blocks. Plotted as the `"best"` panel by `femtic_ens_plot_slices.py` (the block-file structure comes from a template, see there). |
+| `<P>_best_member` / `_best_file` / `_best_iter` / `_best_nrms` | str / str / int / float | Directory name, model file, iteration and nRMS of that member. |
+| `<P>_nrms_table` | `(n_scanned, 4)` str | nRMS table of **all** scanned members, accepted or not: member, best iteration, nRMS, status (same content as `NRMS_CSV`). Read by `femtic_ens_plot_misfit.py`. Absent in files from before 2026-11-08 (the CSV is then used). |
+| `<P>_nrms_max` | float | `NRMS_MAX` of the run (the threshold line in the histogram). |
+| `<P>_subsample_idx` | `(N,)` int | Only with `ENS_SUBSAMPLE_N`: indices of the drawn members among the accepted members (scan order). |
+| `<P>_subsample_n_accepted` | int | Only with `ENS_SUBSAMPLE_N`: number of accepted members the draw was made from. |
+| `<P>_subsample_seed` | int | Only with `ENS_SUBSAMPLE_N`: `ENS_SUBSAMPLE_SEED`, `-1` if it was `None`. |
 
 If `COMPUTE_COV=False`, none of the `<P>_cov*` keys are present.
 All `<P>_sens_*` keys except `<P>_sens_cv_*`, and `<P>_simrc_coef`/`<P>_simrc_corr`, are **log10** since 2026-09-25 (non-positive values -> NaN).
 If `COMPUTE_SENS=False`, or no accepted member's `results_iterX.h5` was found, none of the `<P>_sens_*` keys are present.
 If `COMPUTE_SIMRC=False`, or no accepted member's result files were found, neither `<P>_simrc_coef` nor `<P>_simrc_corr` is present.
 
-### Statistics block files (MOD_STATS = True)
+### Figures
 
-```
-<PLOT_STATS_DIR>/
-  resistivity_block_<prefix>_avg.dat
-  resistivity_block_<prefix>_var.dat
-  resistivity_block_<prefix>_med.dat
-  resistivity_block_<prefix>_mad.dat
-  resistivity_block_<prefix>_alpha.dat       (if MOD_ALPHA_SOURCE is set; raw values = alpha)
-  <prefix>_avg.pdf
-  <prefix>_var.pdf
-  <prefix>_med.pdf
-  <prefix>_mad.pdf
-```
-
-All `.dat` files are valid FEMTIC resistivity block files usable as input
-to `femtic_mod_edit.py`, `femtic_mod_plot_slice.py`, or the VTK export
-pipeline.
-
----
-
-
-### Borehole profiles (`MOD_BH`)
-
-`<MOD_BH_FILE>.<fmt>` (one per `MOD_PLOT_FORMAT` entry) and, if `MOD_BH_NPZ`,
-`<MOD_BH_FILE>.npz` with `depth_<name>` (m, z down), one array per drawn item
-`<key>_<name>` (`avg`, `med`, `p50`, `best`, `ref`, ... in Ohm.m, NaN = air /
-outside mesh), `ensemble_<name>` (`n_members x n_levels`, only if drawn),
-`heat_<name>` (`n_levels x n_bins` fraction of the members per bin) and
-`heat_edges_<name>` (`n_bins + 1` bin edges in log10 Ohm.m), both only with
-`"heatmap"`, and a JSON `header` (`ensemble_source` (`"converged"` |
-`"perturbed"`), member files, best member, `reference_file` (null without a
-reference), percentile levels, `heat_unit`, per-borehole position, z range,
-keys and `heat_bins`, and `colour_scale`: the heat-map `scale`, `norm`,
-`cmap`, `vmin` / `vmax` (one number if the scale is shared by all figures,
-else a list with one entry per figure) and `shared`; `null` without a heat
-map). With `ENS_MODEL_SOURCE = "both"` the same arrays for the perturbed
-models are written to `<MOD_BH_FILE>_perturbed.npz` (header
-`ensemble_source = "perturbed"`; the heat maps of both files use the same
-`heat_edges_<name>`).
+This script writes no figures and no statistics block files. The block files
+of the statistics panels, the slice figures, the borehole figures and
+`<MOD_BH_FILE>.npz` are written by the plot scripts; see their readmes.
 
 ### Parameter summary and directory scan report
 
 At the end of every run `femtic_ens_post_summary.md` is written by
 `utl.write_param_summary()` (the UPPERCASE settings, script path, run
 date/time; next to the script, as this script calls it without `out_dir`).
-After a **full run** (not `PLOT_ONLY`, which scans nothing) a section
+After every run a section
 **"Directory scan report"** is appended to that file. It accounts for every
 scanned directory and says why each one that is *not* in the ensemble was left
 out:
@@ -820,18 +437,41 @@ table (directory, reason, detail), the members accepted via `ITER_FALLBACK`
 `NRMS_CSV` is unchanged: it has no row for directories without a usable
 convergence file, the report does. If the summary file cannot be appended to,
 the report is written to `femtic_ens_post_scan_report.md` in its place.
+**Directory numbering.** The report always gives the number of glob matches next
+to the number of directories scanned (they differ when a match is a file or a
+broken symbolic link). It then reads the number that follows `ENSEMBLE_NAME` in
+every matching name and compares it with the expected range
+(`ENSEMBLE_INDEX_RANGE`, default: the range found in the names). It lists, if
+present:
+
+- numbers with **no entry at all** (nothing starts with `<ENSEMBLE_NAME><number>`: never created, deleted, renamed, or elsewhere) -- this is how a "255 scanned, 256 expected" difference is traced to a number;
+- numbers matched **only by a non-directory** (file, broken symbolic link);
+- numbers matched by **more than one name** (e.g. `X` and `X_restart`);
+- names with a number outside the expected range, and names without a number.
+
+Zero-padded numbers are fine (`007` = 7). With the default (inferred) range a
+missing first or last member cannot be seen; set `ENSEMBLE_INDEX_RANGE = (0, 255)`
+for a known ensemble size.
+
 Plain ASCII only (other characters in directory names show as `?`).
+
 
 ## Quick start
 
 ```bash
 conda activate EM
-# Edit ENSEMBLE_DIR, ENSEMBLE_NAME, ENSEMBLE_PREFIX, NRMS_MAX,
-#      MOD_MESH, MOD_QC, MOD_STATS at the top of the script.
+# 1. Compute (slow: scans the ensemble). Edit ENSEMBLE_DIR, ENSEMBLE_NAME,
+#    ENSEMBLE_PREFIX, NRMS_MAX at the top of the script.
 python femtic_ens_post.py
 
-# Re-plot later from the saved results, without rescanning the ensemble:
-#   set PLOT_ONLY = True (optionally PLOT_ONLY_NPZ / PLOT_ONLY_TEMPLATE) and run again.
+# 2. Plot (fast, repeat as often as needed; each script has its own settings)
+python femtic_ens_plot_slices.py
+python femtic_ens_plot_bh.py
+python femtic_ens_plot_misfit.py
+
+# Variants of step 1:
+#   ENS_MODEL_SOURCE = "perturbed" | "both"          prior (perturbed) models
+#   ENS_SUBSAMPLE_N = 32, ENS_SUBSAMPLE_SEED = 1     32 random members
 ```
 
 ---
@@ -852,8 +492,12 @@ correct.
 |---|---|
 | `femtic_rto_prep.py` | Generate RTO ensemble members. |
 | `femtic_gst_prep.py` | Generate GST ensemble members. |
-| **`femtic_ens_post.py`** | Postprocess any ensemble: statistics, covariance, slice plots; `PLOT_ONLY=True` re-plots from the saved `.npz`. |
-| `femtic_ens_plot.py` | Per-member figures and borehole logs; `RESULTS_NPZ` makes it work from this script's `.npz` as well. |
+| **`femtic_ens_post.py`** | Postprocess any ensemble: statistics, sensitivity, covariance, bootstrap; writes the results `.npz`. No plotting. |
+| `femtic_ens_plot_slices.py` | Reads the `.npz`: best-member and statistics slice panels (`MOD_QC` / `MOD_STATS` of the former `femtic_ens_post.py`). |
+| `femtic_ens_plot_bh.py` | Reads the `.npz`: borehole profiles and heat maps (`MOD_BH` of the former `femtic_ens_post.py`). |
+| `femtic_ens_plot_misfit.py` | Reads the `.npz`: nRMS histogram (formerly part of `femtic_ens_post.py`). |
+| `femtic_ens_repair.py` | Convergence diagnostic over all scanned directories and REPAIR of non-converged ones; shares the scan-report helpers (`femtic.build_scan_report`) with this script. |
+| `femtic_ens_plot.py` | Per-member figures and borehole logs (older, independent script; overlaps with `femtic_ens_plot_bh.py`). |
 | `femtic_mod_math.py` | Write average and smoothed-median as block files from an N-subset. |
 | `femtic_mod_edit.py` | Apply arithmetic operations to a single model. |
 | `femtic_mod_plot_slice.py` | Plot slice figures from a single model file. |
@@ -864,6 +508,7 @@ correct.
 
 | Date | Author | Change |
 |---|---|---|
+| 2026-11-08 | Claude Sonnet 5.5 (Anthropic) | **Split into a calculation script and three plot scripts.** `femtic_ens_post.py` now only scans, computes and writes the results `.npz`, the nRMS CSV and the parameter summary with the scan report; all plotting (`MOD_QC`, `MOD_STATS*`, `MOD_SLICES`, `MOD_BH*`, `MOD_REF_*`, the other `MOD_*` plot settings, `SENS_ROI_NORMALIZE`, the nRMS histogram) and `PLOT_ONLY` / `PLOT_ONLY_NPZ` / `PLOT_ONLY_TEMPLATE` were removed; the plot scripts `femtic_ens_plot_slices.py`, `femtic_ens_plot_bh.py` and `femtic_ens_plot_misfit.py` read the `.npz`. Reusable code moved to `femtic.py` (section 6c: `read_ensemble_results`, `resolve_results_template`, `write_nrms_table`, alpha helpers, `ReferenceModel`, `BoreholeMesh`, `build_scan_report`, ...) and `femtic_viz.py` (`plot_nrms_histogram`, `plot_boreholes`, `draw_borehole_figures`, ...). New keys in the `.npz`: `<P>_nrms_table`, `<P>_nrms_max`. **New option: random subsample** (`ENS_SUBSAMPLE_N`, `ENS_SUBSAMPLE_SEED`, `ENS_SUBSAMPLE_SUFFIX`): N members drawn at random without replacement from the accepted members; everything is computed from the draw; new keys `<P>_subsample_idx`, `<P>_subsample_n_accepted`, `<P>_subsample_seed`; output names get the suffix. The duplicate scan-report helpers in `femtic_ens_repair.py` were replaced by the shared `femtic.build_scan_report` / `femtic.append_scan_report`. |
 | 2025-04-30 | vrath | Created as `femtic_rto_post.py`. |
 | 2026-03-03 | Claude (Anthropic) | Renamed user-set parameters to UPPERCASE; generated README. |
 | 2026-05-27 | vrath / Claude Sonnet 4.6 (Anthropic) | Added `femtic_viz` import; `PLOT_QC` block with minimal `plot_model_slices` call. |
@@ -915,3 +560,5 @@ correct.
 | 2026-10-31 | Claude Sonnet 5.5 (Anthropic) | New `ENS_MODEL_SOURCE` (`"converged"` by default, or `"perturbed"`), `ENS_PERTURBED_FILE` (default `"referencemodel.dat"`), `ENS_PERTURBED_SUFFIX` (default `"_perturbed"`): the ensemble can be built from each member's perturbed reference (the RTO prior draw) instead of its converged model, so all statistics, slices, boreholes and heat maps describe the prior ensemble. Same member set as the converged run (selection unchanged); `MOD_REF_FILE` (base reference) unchanged; `ENSEMBLE_PREFIX` gets the suffix so results do not overwrite; `<P>_model_source` / `<P>_model_file_name` in the `.npz`, `ensemble_source` in the borehole header; `PLOT_ONLY` reads the stored source (older files: converged); `COMPUTE_SIMRC` off in this mode; warnings for missing files (`no_perturbed_file`), symbolic links and zero spread. Default behaviour unchanged (scan result identical to the previous version on a synthetic ensemble). AI-generated; review before production use. |
 | 2026-11-02 | Claude Sonnet 5.5 (Anthropic) | Borehole heat maps of the converged **and** the perturbed models on a common colour bar, same options as `femtic_ens_plot.py`. `ENS_MODEL_SOURCE = "both"`: the run is the converged run and each member's `ENS_PERTURBED_FILE` is loaded in addition (a member lacking it is skipped, `no_perturbed_file`); `MOD_BH` draws every borehole for both ensembles (heat map, `"ensemble"`, statistics, `"best"`), side by side in one figure with one colour bar (`MOD_BH_HEAT_FIGURE = "combined"`) or as two figures (`"separate"`); the perturbed profiles go to `<MOD_BH_FILE>_perturbed.npz`, the perturbed matrix is stored as `<P>_ens_perturbed` so `PLOT_ONLY` can draw it. New `MOD_BH_HEAT_SHARE_SCALE` (default `False`: one scale per figure as before; `True`: one scale for all figures), `MOD_BH_HEAT_SCALE_FILE` / `MOD_BH_HEAT_SCALE_IO` (save / reuse the resolved scale as JSON across runs; same format as `femtic_ens_plot.py`). The borehole `.npz` header gains `colour_scale`. With the defaults, figures and `.npz` arrays are identical to the previous version. No change needed for the 2-element plane `point` (`_plane_spec_km_to_m` pads it). AI-generated; review before production use. |
 | 2026-11-06 | Claude Sonnet 5.5 (Anthropic) | **Directory scan report** appended to `femtic_ens_post_summary.md` after a full run: every scanned directory that is not in the ensemble, with a reason (`no_cnv_file`, `cnv_unreadable`, `cnv_no_iterations`, `rejected_nrms`, `no_model_file`, `no_perturbed_file`) and detail, counts per reason, members accepted via `ITER_FALLBACK`, and ignored non-directory glob matches. Uses the path returned by `utl.write_param_summary()`; falls back to `femtic_ens_post_scan_report.md` if the summary cannot be appended to. New helpers `build_scan_report()` / `append_scan_report()` (same code as in `femtic_ens_repair.py`); no change to member selection, `NRMS_CSV`, the `.npz` or any figure. Tested by executing the edited scan loop and the helpers on a synthetic ensemble (all six reasons, fallback, non-directory matches); the full script was not run. AI-generated; review before production use. |
+| 2026-11-06b | Claude Sonnet 5.5 (Anthropic) | Scan report: the number of glob matches is always shown next to the directories scanned (they differ for a file or broken symbolic link), and a new **"Directory numbering"** part reads the number after `ENSEMBLE_NAME` in each name and lists numbers with no entry at all, numbers matched only by a non-directory, numbers matched by several names and unnumbered names (prompted by a report of 255 directories scanned for an ensemble numbered 0..255). New optional `ENSEMBLE_INDEX_RANGE = (first, last)`, default `None` = inferred from the names. No change to member selection or any output other than the summary. Tested by executing the edited scan loop and helpers on a synthetic ensemble; the full script was not run. AI-generated; review before production use. |
+
