@@ -499,8 +499,9 @@ mask = fem.brick_mask(
 ## Ensemble results, reference model and borehole sampling (Section 6c)
 
 Added 2026-11-08 when `femtic_ens_post.py` was split into a calculation script
-and the plot scripts `femtic_ens_plot_slices.py`, `femtic_ens_plot_bh.py` and
-`femtic_ens_plot_misfit.py`. These are the pieces the scripts share. Nothing
+and the plot scripts `femtic_ens_plot_slices.py` and `femtic_ens_plot_bh.py`
+(the nRMS histogram is the method `"nrms"` of `femtic_data_misfit.py`). These
+are the pieces the scripts share. Nothing
 here draws (drawing is in `femtic_viz.py`) and nothing needs the ensemble
 member directories except where a block file is named.
 
@@ -544,6 +545,12 @@ drawing is `femtic_viz.plan_borehole_figures()` / `draw_borehole_figures()`.
 | `sample_boreholes(specs, *, mesh, struct, ens, stat_map, value_keys, best_i, percentiles, utm, cs, pert=None, ref_el=None, ...)` | Profiles of all statistics, members, best member, reference and heat maps along the boreholes (and of `pert` the same way). Returns `dict(profiles, npz, hdr, npz_pert, hdr_pert)`. |
 | `borehole_resolve_xy`, `borehole_pos_str`, `borehole_expand_what`, `borehole_values`, `borehole_global_xlim`, `borehole_edges`, `borehole_heatmap`, `borehole_stat_vec`, `borehole_second_source`, `borehole_npz_entry`, `BOREHOLE_SIGMA_Q` | Building blocks of `sample_boreholes()`. |
 | `heat_scale_defaults`, `heat_scale_check`, `heat_scale_read`, `heat_scale_write`, `heat_scale_init` | Heat-map colour-scale settings, and saving / reusing them as a JSON file across runs (same format as `femtic_ens_plot.py`). |
+
+### Models of a single-model script
+
+| Function | Purpose |
+|---|---|
+| `resolve_model_files(spec, iteration="last", *, cnv_name="femtic.cnv", block_name="resistivity_block_iter{n}.dat", out=True)` | `spec` = a block file, a run directory, a glob, or a list of them; for run directories `iteration` is `"last"` (last row of `femtic.cnv`), `"best"` (lowest nRMS), an integer / `"iterN"` (0 = starting model), or a list of those. Returns one dict per model: `file`, `dir`, `label` (unique), `tag` (`"iter21"`), `iter`, `nrms`, `alpha` (from the `.cnv` row of that iteration, or `None`), `selector`. Entries without a block file are skipped with a message. Used by `femtic_mod_plot_slice.py` and `femtic_mod_plot_bh.py`. |
 
 ### Directory scan report
 
@@ -600,7 +607,8 @@ Optional for visualisation and export:
 | **`ensembles.py`**    | Roughness/precision tools, sampling, ensemble generation, EOF / PCE. |
 | `femtic_viz.py`       | Matplotlib and PyVista visualisation.                                |
 | `femtic_ens_post.py`  | Ensemble statistics, sensitivity, covariance; writes the results `.npz` read by `read_ensemble_results()`. |
-| `femtic_ens_plot_slices.py`, `femtic_ens_plot_bh.py`, `femtic_ens_plot_misfit.py` | Slice, borehole and nRMS-histogram figures from that `.npz`; use Section 6c and the new `femtic_viz.py` functions. |
+| `femtic_ens_plot_slices.py`, `femtic_ens_plot_bh.py`, `femtic_data_misfit.py` (method `"nrms"`) | Slice, borehole and nRMS-histogram figures from that `.npz`; use Section 6c and the new `femtic_viz.py` functions. |
+| `femtic_mod_plot_slice.py`, `femtic_mod_plot_bh.py` | Single-model figures; with a list / glob / run directories, one figure per model (`resolve_model_files()`). |
 | `femtic_mod_plot.py`  | Read and plot slice panels of a FEMTIC model; calls `fem.*` helpers. |
 | `snippets.py`         | Optional code blocks for `femtic_mod_plot.py` (e.g. ensemble plot).  |
 | `util.py`             | General-purpose helpers.                                             |
@@ -618,7 +626,7 @@ Updated: 2026-11-08
 
 ### Changelog (2026-11-08) --- ensemble results, reference model, borehole sampling
 - New Section 6c (code moved out of `femtic_ens_post.py` and generalised so
-  the three plot scripts can share it): `read_ensemble_results`,
+  the plot scripts can share it): `read_ensemble_results`,
   `ensemble_stat_map`, `resolve_results_template`, `write_nrms_table`,
   `read_nrms_table`, the km/m helpers, the alpha helpers
   (`parse_alpha_source`, `alpha_from_condition`, `write_alpha_block`),
@@ -631,6 +639,12 @@ Updated: 2026-11-08
   `perturbed_file` and `subsample` (the random-draw bookkeeping written by
   `femtic_ens_post.py` with `ENS_SUBSAMPLE_N`).
 - No existing function was changed.
+- Later the same day: new `resolve_model_files()` (section "Models of a
+  single-model script" above), for the batch option of
+  `femtic_mod_plot_slice.py` / `femtic_mod_plot_bh.py`. The plot scripts that
+  read the results file are now `femtic_ens_plot_slices.py`,
+  `femtic_ens_plot_bh.py` and, for the nRMS histogram, `femtic_data_misfit.py`
+  (a separate `femtic_ens_plot_misfit.py` was merged into it).
 
 ### Changelog (2026-10-28)
 - Documentation only, no change to `femtic.py`: in "Related modules and

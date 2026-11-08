@@ -60,7 +60,7 @@ there with the full text.
 
 ```
 <RESULTS_DIR>/<prefix>_nrms_hist.<fmt>     the histogram (one file per MOD_PLOT_FORMAT entry)
-femtic_ens_plot_misfit_summary.md          settings of the run (next to the script)
+femtic_ens_plot_misfit_summary.md          settings of the run (in ENSEMBLE_DIR)
 ```
 
 ---

@@ -637,8 +637,8 @@ Provenance:
                         AI-generated code -- review before production use.
     2026-11-08  Claude  New section "Ensemble diagnostics" at the end of the
                         module, moved from femtic_ens_post.py when its plotting
-                        was split off into femtic_ens_plot_misfit.py /
-                        femtic_ens_plot_bh.py: plot_nrms_histogram()
+                        was split off into femtic_data_misfit.py (method
+                        "nrms") / femtic_ens_plot_bh.py: plot_nrms_histogram()
                         (per-member nRMS histogram, accepted / rejected
                         stacked; the title font size is now actually applied
                         when given -- in femtic_ens_post.py it was swallowed
@@ -650,6 +650,16 @@ Provenance:
                         borehole_line_style(), borehole_view(). No module-
                         level settings are read; the former MOD_BH_* globals
                         are fields of BoreholeFigureOptions or arguments.
+                        AI-generated code -- review before production use.
+    2026-11-08  Claude  Batches of single-model figures (for
+                        femtic_mod_plot_slice.py / femtic_mod_plot_bh.py):
+                        new plot_model_slices_robust() (plot_model_slices()
+                        with matplotlib's pdf indexed-colour error handled)
+                        and append_catalog_page() (page of a multi-page pdf
+                        catalog, same protection). plot_borehole_logs() now
+                        also returns its figure (it returned None; the
+                        figure is left open exactly as before, so a caller
+                        can close it or add it to a catalog).
                         AI-generated code -- review before production use.
     """
 
@@ -5345,6 +5355,12 @@ def plot_borehole_logs(
         Figure DPI.
     out
         Print progress messages.
+
+    Returns
+    -------
+    matplotlib.figure.Figure or None
+        The figure (left open, as before; close it with ``plt.close(fig)``
+        in a loop). ``None`` if nothing was drawn.
     """
     import json
     import datetime
@@ -5636,6 +5652,7 @@ def plot_borehole_logs(
             print(f"  boreholes: figure saved -> {plot_file}")
     else:
         plt.show()
+    return fig
 
 
 # =============================================================================
@@ -6747,8 +6764,9 @@ def plot_convergence_histogram(
 # Ensemble diagnostics: nRMS histogram and borehole figures
 # =============================================================================
 #
-# Drawn from the results of femtic_ens_post.py by femtic_ens_plot_misfit.py
-# and femtic_ens_plot_bh.py; the numerical side (borehole sampling, colour-
+# Drawn from the results of femtic_ens_post.py by the nRMS method of
+# femtic_data_misfit.py and by femtic_ens_plot_bh.py; the numerical side
+# (borehole sampling, colour-
 # scale files) is femtic.py, Section 6c.  Nothing here reads module-level
 # user settings.
 #
@@ -7391,3 +7409,81 @@ def draw_borehole_figures(plan, cs, plot_base, opts, perturbed_suffix="_perturbe
                 )
         else:
             plot_boreholes([(sources[0], ch)], _stem(plot_base), cs, norm, ext, opts)
+
+
+
+# =============================================================================
+# Batches of single-model figures (femtic_mod_plot_slice.py / _bh.py)
+# =============================================================================
+#
+# The figure functions are plot_model_slices() and plot_borehole_logs(); the
+# models come from femtic.resolve_model_files(). The two helpers below only
+# make a long batch robust: matplotlib's pdf backend can raise an IndexError
+# for an "Indexed" colour space (data-dependent, matplotlib issue #25806), and
+# one such figure must not end a run of hundreds.
+#
+# AI-generated code (Claude Sonnet 5.5, Anthropic) -- review before
+# production use.
+# =============================================================================
+
+
+def plot_model_slices_robust(plot_file, *, out=True, **kwargs):
+    """plot_model_slices(plot_file=..., **kwargs), surviving the pdf bug.
+
+    A first IndexError on a pdf is retried with ``pdf.compression`` off; if
+    that fails too, a png is rendered and converted with Pillow. Other
+    formats and other errors are raised as usual. Returns the (closed)
+    figure of plot_model_slices(), so it can be added to a catalog with
+    append_catalog_page().
+    """
+    import matplotlib as mpl
+
+    plot_file = str(plot_file)
+    try:
+        return plot_model_slices(plot_file=plot_file, out=out, **kwargs)
+    except IndexError as err:
+        if not plot_file.lower().endswith(".pdf"):
+            raise
+        print(f"    ! pdf save hit matplotlib indexed-colour bug ({err}) - "
+              f"retrying {plot_file} with pdf.compression disabled")
+    try:
+        with mpl.rc_context({"pdf.compression": 0}):
+            return plot_model_slices(plot_file=plot_file, out=out, **kwargs)
+    except IndexError as err:
+        print(f"    ! retry also failed ({err}) - falling back to png -> pdf "
+              f"for {plot_file}")
+    from PIL import Image
+
+    png = os.path.splitext(plot_file)[0] + "__pdf_fallback.png"
+    fig = plot_model_slices(plot_file=png, out=False, **kwargs)
+    Image.open(png).convert("RGB").save(
+        plot_file, "PDF", resolution=float(kwargs.get("dpi", 200)))
+    os.remove(png)
+    if out:
+        print(f"  plot: saved -> {plot_file}")
+    return fig
+
+
+def append_catalog_page(pdf, fig, name=""):
+    """Add ``fig`` as one page to an open ``PdfPages``; True if written.
+
+    The same IndexError protection as plot_model_slices_robust(): retried
+    with ``pdf.compression`` off, and if that fails the page is skipped with
+    a message (the single-figure file written before is not affected).
+    """
+    import matplotlib as mpl
+
+    try:
+        pdf.savefig(fig)
+        return True
+    except IndexError as err:
+        print(f"    ! catalog page {name} hit matplotlib indexed-colour bug "
+              f"({err}) - retrying with pdf.compression disabled")
+    try:
+        with mpl.rc_context({"pdf.compression": 0}):
+            pdf.savefig(fig)
+        return True
+    except IndexError as err:
+        print(f"    ! catalog page {name} could not be written ({err}) - "
+              "skipped in the catalog")
+        return False

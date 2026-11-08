@@ -14,14 +14,16 @@ and a bootstrap variance, and writes
 - the parameter summary `femtic_ens_post_summary.md`, including the directory
   scan report.
 
-It draws nothing. Since 2026-11-08 the figures come from three separate
-scripts that read the results `.npz` (see "Relationship to other scripts"):
+It draws nothing. Since 2026-11-08 the figures come from separate scripts that
+read the results `.npz` (see "Relationship to other scripts"); together with
+the data-level checks they are the "ens" family (quality control and ensemble
+summary plots; plots of single models are the "mod" scripts):
 
 | Script | Makes |
 |---|---|
 | `femtic_ens_plot_slices.py` | best-member and statistics slice panels |
 | `femtic_ens_plot_bh.py` | borehole profiles and heat maps |
-| `femtic_ens_plot_misfit.py` | nRMS histogram |
+| `femtic_data_misfit.py` | method `"nrms"`: nRMS histogram of all scanned members (the same script does the data-level checks of `results_iter*.h5`) |
 
 so that colours, slices, vertical exaggeration, the reference model or the
 borehole list can be changed and re-plotted in seconds, without rescanning
@@ -65,7 +67,7 @@ Ensemble sub-directories  (rto_*, gst_*, member_*, ...)
           |
           +--> femtic_ens_plot_slices.py   best + statistics slice figures
           +--> femtic_ens_plot_bh.py       borehole profiles, heat maps
-          +--> femtic_ens_plot_misfit.py   nRMS histogram
+          +--> femtic_data_misfit.py       nRMS histogram (method "nrms")
 ```
 
 ---
@@ -394,7 +396,7 @@ scripts read the file with `femtic.read_ensemble_results()`.
 | `<P>_simrc_corr` | `(N_free,)` | Cumulative `\|correlation\|`, the normalised counterpart of `<P>_simrc_coef`. Same presence condition. |
 | `<P>_best` | `(N_free,)` | log10(rho) of the best-nRMS member (within the draw when subsampled), free blocks. Plotted as the `"best"` panel by `femtic_ens_plot_slices.py` (the block-file structure comes from a template, see there). |
 | `<P>_best_member` / `_best_file` / `_best_iter` / `_best_nrms` | str / str / int / float | Directory name, model file, iteration and nRMS of that member. |
-| `<P>_nrms_table` | `(n_scanned, 4)` str | nRMS table of **all** scanned members, accepted or not: member, best iteration, nRMS, status (same content as `NRMS_CSV`). Read by `femtic_ens_plot_misfit.py`. Absent in files from before 2026-11-08 (the CSV is then used). |
+| `<P>_nrms_table` | `(n_scanned, 4)` str | nRMS table of **all** scanned members, accepted or not: member, best iteration, nRMS, status (same content as `NRMS_CSV`). Read by `femtic_data_misfit.py` (method `"nrms"`). Absent in files from before 2026-11-08 (the CSV is then used). |
 | `<P>_nrms_max` | float | `NRMS_MAX` of the run (the threshold line in the histogram). |
 | `<P>_subsample_idx` | `(N,)` int | Only with `ENS_SUBSAMPLE_N`: indices of the drawn members among the accepted members (scan order). |
 | `<P>_subsample_n_accepted` | int | Only with `ENS_SUBSAMPLE_N`: number of accepted members the draw was made from. |
@@ -415,7 +417,8 @@ of the statistics panels, the slice figures, the borehole figures and
 
 At the end of every run `femtic_ens_post_summary.md` is written by
 `utl.write_param_summary()` (the UPPERCASE settings, script path, run
-date/time; next to the script, as this script calls it without `out_dir`).
+date/time) in `ENSEMBLE_DIR`, the same place as for `femtic_ens_repair.py` and the
+plot scripts (until 2026-11-08 it was written next to the script).
 After every run a section
 **"Directory scan report"** is appended to that file. It accounts for every
 scanned directory and says why each one that is *not* in the ensemble was left
@@ -467,7 +470,7 @@ python femtic_ens_post.py
 # 2. Plot (fast, repeat as often as needed; each script has its own settings)
 python femtic_ens_plot_slices.py
 python femtic_ens_plot_bh.py
-python femtic_ens_plot_misfit.py
+python femtic_data_misfit.py          # METHODS = ("nrms",), NRMS_RESULTS = the .npz
 
 # Variants of step 1:
 #   ENS_MODEL_SOURCE = "perturbed" | "both"          prior (perturbed) models
@@ -495,12 +498,13 @@ correct.
 | **`femtic_ens_post.py`** | Postprocess any ensemble: statistics, sensitivity, covariance, bootstrap; writes the results `.npz`. No plotting. |
 | `femtic_ens_plot_slices.py` | Reads the `.npz`: best-member and statistics slice panels (`MOD_QC` / `MOD_STATS` of the former `femtic_ens_post.py`). |
 | `femtic_ens_plot_bh.py` | Reads the `.npz`: borehole profiles and heat maps (`MOD_BH` of the former `femtic_ens_post.py`). |
-| `femtic_ens_plot_misfit.py` | Reads the `.npz`: nRMS histogram (formerly part of `femtic_ens_post.py`). |
+| `femtic_data_misfit.py` | Quality control. Method `"nrms"` reads the `.npz`: nRMS histogram (formerly part of `femtic_ens_post.py`, for a short time `femtic_ens_plot_misfit.py`); the other methods check the data fit of `results_iter*.h5`. |
 | `femtic_ens_repair.py` | Convergence diagnostic over all scanned directories and REPAIR of non-converged ones; shares the scan-report helpers (`femtic.build_scan_report`) with this script. |
-| `femtic_ens_plot.py` | Per-member figures and borehole logs (older, independent script; overlaps with `femtic_ens_plot_bh.py`). |
+| `femtic_ens_plot.py` | **Superseded** (2026-11-08) by the "ens" scripts above and by the batch option of `femtic_mod_plot_slice.py` / `femtic_mod_plot_bh.py`; may be deleted. |
 | `femtic_mod_math.py` | Write average and smoothed-median as block files from an N-subset. |
 | `femtic_mod_edit.py` | Apply arithmetic operations to a single model. |
-| `femtic_mod_plot_slice.py` | Plot slice figures from a single model file. |
+| `femtic_mod_plot_slice.py` | Slice figures of a single model, or one per model for a list / glob / run directories (`MODEL_ITER`), with an optional catalog PDF (the former per-member "iter0 / best" figures). |
+| `femtic_mod_plot_bh.py` | Borehole logs of a single model, or one per model (same batch option). |
 
 ---
 
@@ -508,7 +512,7 @@ correct.
 
 | Date | Author | Change |
 |---|---|---|
-| 2026-11-08 | Claude Sonnet 5.5 (Anthropic) | **Split into a calculation script and three plot scripts.** `femtic_ens_post.py` now only scans, computes and writes the results `.npz`, the nRMS CSV and the parameter summary with the scan report; all plotting (`MOD_QC`, `MOD_STATS*`, `MOD_SLICES`, `MOD_BH*`, `MOD_REF_*`, the other `MOD_*` plot settings, `SENS_ROI_NORMALIZE`, the nRMS histogram) and `PLOT_ONLY` / `PLOT_ONLY_NPZ` / `PLOT_ONLY_TEMPLATE` were removed; the plot scripts `femtic_ens_plot_slices.py`, `femtic_ens_plot_bh.py` and `femtic_ens_plot_misfit.py` read the `.npz`. Reusable code moved to `femtic.py` (section 6c: `read_ensemble_results`, `resolve_results_template`, `write_nrms_table`, alpha helpers, `ReferenceModel`, `BoreholeMesh`, `build_scan_report`, ...) and `femtic_viz.py` (`plot_nrms_histogram`, `plot_boreholes`, `draw_borehole_figures`, ...). New keys in the `.npz`: `<P>_nrms_table`, `<P>_nrms_max`. **New option: random subsample** (`ENS_SUBSAMPLE_N`, `ENS_SUBSAMPLE_SEED`, `ENS_SUBSAMPLE_SUFFIX`): N members drawn at random without replacement from the accepted members; everything is computed from the draw; new keys `<P>_subsample_idx`, `<P>_subsample_n_accepted`, `<P>_subsample_seed`; output names get the suffix. The duplicate scan-report helpers in `femtic_ens_repair.py` were replaced by the shared `femtic.build_scan_report` / `femtic.append_scan_report`. |
+| 2026-11-08 | Claude Sonnet 5.5 (Anthropic) | **Split into a calculation script and plot scripts.** `femtic_ens_post.py` now only scans, computes and writes the results `.npz`, the nRMS CSV and the parameter summary with the scan report (in `ENSEMBLE_DIR`, no longer next to the script); all plotting (`MOD_QC`, `MOD_STATS*`, `MOD_SLICES`, `MOD_BH*`, `MOD_REF_*`, the other `MOD_*` plot settings, `SENS_ROI_NORMALIZE`, the nRMS histogram) and `PLOT_ONLY` / `PLOT_ONLY_NPZ` / `PLOT_ONLY_TEMPLATE` were removed; the plot scripts `femtic_ens_plot_slices.py` and `femtic_ens_plot_bh.py`, and the nRMS histogram (method `"nrms"` of `femtic_data_misfit.py`), read the `.npz`. Reusable code moved to `femtic.py` (section 6c: `read_ensemble_results`, `resolve_results_template`, `write_nrms_table`, alpha helpers, `ReferenceModel`, `BoreholeMesh`, `build_scan_report`, ...) and `femtic_viz.py` (`plot_nrms_histogram`, `plot_boreholes`, `draw_borehole_figures`, ...). New keys in the `.npz`: `<P>_nrms_table`, `<P>_nrms_max`. **New option: random subsample** (`ENS_SUBSAMPLE_N`, `ENS_SUBSAMPLE_SEED`, `ENS_SUBSAMPLE_SUFFIX`): N members drawn at random without replacement from the accepted members; everything is computed from the draw; new keys `<P>_subsample_idx`, `<P>_subsample_n_accepted`, `<P>_subsample_seed`; output names get the suffix. The duplicate scan-report helpers in `femtic_ens_repair.py` were replaced by the shared `femtic.build_scan_report` / `femtic.append_scan_report`. |
 | 2025-04-30 | vrath | Created as `femtic_rto_post.py`. |
 | 2026-03-03 | Claude (Anthropic) | Renamed user-set parameters to UPPERCASE; generated README. |
 | 2026-05-27 | vrath / Claude Sonnet 4.6 (Anthropic) | Added `femtic_viz` import; `PLOT_QC` block with minimal `plot_model_slices` call. |

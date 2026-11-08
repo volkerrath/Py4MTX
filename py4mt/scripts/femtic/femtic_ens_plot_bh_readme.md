@@ -314,8 +314,7 @@ models are written to `<MOD_BH_FILE>_perturbed.npz` (header
 `heat_edges_<name>`).
 
 
-The settings of the run are written to `femtic_ens_plot_bh_summary.md` next to the
-script.
+The settings of the run are written to `femtic_ens_plot_bh_summary.md` in `ENSEMBLE_DIR`.
 
 ---
 
@@ -340,9 +339,9 @@ Converged and perturbed models together: run `femtic_ens_post.py` with
 |---|---|
 | `femtic_ens_post.py` | Writes the results `.npz` this script reads. |
 | `femtic_ens_plot_slices.py` | Slice figures from the same `.npz`. |
-| `femtic_ens_plot_misfit.py` | nRMS histogram from the same `.npz`. |
-| `femtic_ens_plot.py` | Older independent script with per-member figures and borehole logs; shares the heat-map colour-scale JSON format (`MOD_BH_HEAT_SCALE_FILE`). |
-| `femtic_mod_plot_bh.py` | Borehole profiles of a single model file. |
+| `femtic_data_misfit.py` | Quality control; its method `"nrms"` draws the nRMS histogram from the same `.npz`. |
+| `femtic_ens_plot.py` | Superseded (2026-11-08); its heat-map colour-scale JSON format (`MOD_BH_HEAT_SCALE_FILE`) is still read and written by this script. |
+| `femtic_mod_plot_bh.py` | Borehole profiles of single models ("mod" family): one block file, or a list / glob / run directories with an iteration selector, one figure per model and an optional catalog PDF. |
 
 ---
 

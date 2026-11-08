@@ -199,4 +199,4 @@ print("\nfemtic_ens_plot_misfit.py complete.")
 # ---------------------------------------------------------------------------
 # Parameter summary
 # ---------------------------------------------------------------------------
-_summary_path = utl.write_param_summary(__file__)
+_summary_path = utl.write_param_summary(__file__, out_dir=ENSEMBLE_DIR)

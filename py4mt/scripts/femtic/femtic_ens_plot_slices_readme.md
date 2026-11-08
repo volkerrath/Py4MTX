@@ -270,7 +270,7 @@ of its figure, and shows sites within `MOD_PROJECTION_DIST` when
   resistivity_block_<prefix>_alpha.dat       (if MOD_ALPHA_SOURCE is set; raw values = alpha)
   <prefix>_best.<fmt>                        "best" panel (or MOD_QC_FILE.<fmt>)
   <prefix>_avg.<fmt>   <prefix>_err.<fmt>  ...      one figure per panel and MOD_PLOT_FORMAT entry
-femtic_ens_plot_slices_summary.md            settings of the run (next to the script)
+femtic_ens_plot_slices_summary.md            settings of the run (in ENSEMBLE_DIR)
 ```
 
 The statistic block files are valid FEMTIC resistivity block files usable as
@@ -301,9 +301,9 @@ the file.
 |---|---|
 | `femtic_ens_post.py` | Writes the results `.npz` this script reads. |
 | `femtic_ens_plot_bh.py` | Borehole profiles from the same `.npz`. |
-| `femtic_ens_plot_misfit.py` | nRMS histogram from the same `.npz`. |
+| `femtic_data_misfit.py` | Quality control; its method `"nrms"` draws the nRMS histogram from the same `.npz`. |
 | `femtic_gst_prep.py`, `femtic_rto_prep.py` | Share the `MOD_*` plot settings (names and semantics). |
-| `femtic_mod_plot_slice.py` | Slice figures of a single model file. |
+| `femtic_mod_plot_slice.py` | Slice figures of single models ("mod" family): one block file, or a list / glob / run directories with an iteration selector, one figure per model and an optional catalog PDF. Replaces the per-member figures of the former `femtic_ens_plot.py`. |
 
 ---
 

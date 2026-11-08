@@ -1,5 +1,14 @@
 # femtic_ens_plot.py
 
+> **Superseded (2026-11-08).** The script is unchanged and still works, but it
+> is replaced by two families of smaller scripts and may be deleted:
+> the ensemble figures by `femtic_ens_plot_slices.py` / `femtic_ens_plot_bh.py`
+> (from the results `.npz` of `femtic_ens_post.py`), the nRMS histogram by the
+> method `"nrms"` of `femtic_data_misfit.py`, and the per-member "iter0 / best"
+> figures with the catalog PDF by `femtic_mod_plot_slice.py` (and the member
+> boreholes by `femtic_mod_plot_bh.py`): `MODEL_FILE` = the member directories,
+> `MODEL_ITER = [0, "last"]`, `BATCH_CATALOG = "auto"`.
+
 Ensemble slice plot for a set of FEMTIC inversion runs, with optional
 borehole resistivity logs.
 

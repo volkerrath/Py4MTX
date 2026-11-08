@@ -23,7 +23,8 @@ perturbed models) and, if MOD_BH_HEAT_SCALE_FILE is set, the heat-map colour
 scale as JSON.
 
 Companion scripts: femtic_ens_post.py (calculation), femtic_ens_plot_slices.py
-(slice figures), femtic_ens_plot_misfit.py (nRMS histogram).
+(slice figures), femtic_data_misfit.py (quality control; method "nrms" = nRMS
+histogram). Plots of single models: femtic_mod_plot_bh.py.
 
 Provenance
 ----------
@@ -706,4 +707,4 @@ print("\nfemtic_ens_plot_bh.py complete.")
 # ---------------------------------------------------------------------------
 # Parameter summary
 # ---------------------------------------------------------------------------
-_summary_path = utl.write_param_summary(__file__)
+_summary_path = utl.write_param_summary(__file__, out_dir=ENSEMBLE_DIR)

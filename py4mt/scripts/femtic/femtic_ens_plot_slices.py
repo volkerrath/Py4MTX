@@ -21,7 +21,8 @@ scales, vertical exaggeration, reference-model lines, region of interest,
 blanking by a statistic etc. can therefore be iterated in seconds.
 
 Companion scripts: femtic_ens_post.py (calculation), femtic_ens_plot_bh.py
-(borehole profiles), femtic_ens_plot_misfit.py (nRMS histogram).
+(borehole profiles), femtic_data_misfit.py (quality control; method "nrms" =
+nRMS histogram). Plots of single models: femtic_mod_plot_slice.py.
 
 Provenance
 ----------
@@ -972,4 +973,4 @@ print("\nfemtic_ens_plot_slices.py complete.")
 # ---------------------------------------------------------------------------
 # Parameter summary
 # ---------------------------------------------------------------------------
-_summary_path = utl.write_param_summary(__file__)
+_summary_path = utl.write_param_summary(__file__, out_dir=ENSEMBLE_DIR)

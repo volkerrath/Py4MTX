@@ -208,8 +208,9 @@ Modified: 2026-10-22 by Claude Sonnet 5.5 (Anthropic) -- observe.dat I/O
 Modified: 2026-11-08 by Claude Sonnet 5.5 (Anthropic) -- new Section 6c,
     "Ensemble results, reference model and borehole sampling", moved here
     from femtic_ens_post.py when that script was split into a computing
-    script (femtic_ens_post.py) and three plotting scripts
-    (femtic_ens_plot_slices.py / _bh.py / _misfit.py). None of it reads
+    script (femtic_ens_post.py) and plotting scripts
+    (femtic_ens_plot_slices.py / _bh.py, and the nRMS histogram, now method
+    "nrms" of femtic_data_misfit.py). None of it reads
     module-level user settings; the former MOD_* globals are arguments.
     Results file: read_ensemble_results(), ensemble_stat_map(),
     resolve_results_template(), read_nrms_table(), write_nrms_table().
@@ -226,6 +227,12 @@ Modified: 2026-11-08 by Claude Sonnet 5.5 (Anthropic) -- new Section 6c,
     unchanged apart from: the scale-file readers raise ValueError /
     FileNotFoundError instead of calling sys.exit().
     AI-generated code -- review before production use.
+Modified: 2026-11-08 by Claude Sonnet 5.5 (Anthropic) -- Section 6c gained
+    resolve_model_files(): turns "a block file, a list, a glob, or run
+    directories + an iteration selector" into a list of models (file,
+    label, iteration, nRMS from femtic.cnv). Used by femtic_mod_plot_slice.py
+    and femtic_mod_plot_bh.py for batches of single-model figures. Nothing
+    else changed. AI-generated code -- review before production use.
 """
 from __future__ import annotations
 
@@ -8217,10 +8224,11 @@ def extract_borehole_log(
 # ============================================================================
 #
 # Shared by femtic_ens_post.py (writes the results .npz) and the plotting
-# scripts femtic_ens_plot_slices.py / femtic_ens_plot_bh.py /
-# femtic_ens_plot_misfit.py (read it).  Nothing here reads module-level user
-# settings: everything a function needs is passed as an argument.  Plotting
-# counterparts (nRMS histogram, borehole figures) are in femtic_viz.py.
+# scripts femtic_ens_plot_slices.py / femtic_ens_plot_bh.py and by the nRMS
+# method of femtic_data_misfit.py (read it).  Nothing here reads module-level
+# user settings: everything a function needs is passed as an argument.
+# Plotting counterparts (nRMS histogram, borehole figures) are in
+# femtic_viz.py.
 #
 # AI-generated code (Claude Sonnet 5.5, Anthropic) -- review before
 # production use.
@@ -10119,6 +10127,172 @@ def append_scan_report(report_md, summary_path, script_file):
     except OSError as exc:
         print(f"[scan report] could not be written ({exc}).")
         return None
+
+
+def resolve_model_files(
+    spec,
+    iteration="last",
+    *,
+    cnv_name=CNV_DEFAULT_NAME,
+    block_name="resistivity_block_iter{n}.dat",
+    out=True,
+):
+    """Resolve which resistivity-block files a single-model script plots.
+
+    Used by ``femtic_mod_plot_slice.py`` and ``femtic_mod_plot_bh.py`` (one
+    figure per returned model).  A plain block file gives exactly one model,
+    so those scripts behave as before for the one-model case.
+
+    Parameters
+    ----------
+    spec : str | Path | sequence of those
+        Each entry is one of
+
+        * a **block file** (``resistivity_block_iterN.dat``), used as given
+          (``iteration`` does not apply to it);
+        * a **run directory**: the block file is chosen by ``iteration``
+          (``femtic.cnv`` of that directory is read where it is needed);
+        * a **glob pattern** (``*``, ``?``, ``[``), expanded and sorted;
+          each hit is a file or a run directory as above.
+    iteration : str | int | sequence
+        Applies to run directories.  ``"last"`` = the iteration of the last
+        row of ``femtic.cnv`` (what ``femtic_ens_post.py`` takes as the
+        best-fit model of a converged member); ``"best"`` = the iteration of
+        the row with the lowest nRMS; an integer ``N`` (or ``"iterN"``) =
+        ``resistivity_block_iterN.dat``, ``0`` being the starting model (for
+        an RTO member the perturbed prior).  A list gives one model per
+        selector and run, grouped by run (e.g. ``[0, "last"]`` = prior and
+        best-fit figure of each member).
+    cnv_name : str | sequence of str
+        Name(s) of the convergence file inside a run directory.
+    block_name : str
+        File name pattern of a block file; ``{n}`` is the iteration.
+    out : bool
+        Print one line per model and a warning for every entry skipped.
+
+    Returns
+    -------
+    list of dict
+        Keys ``file`` (block file), ``dir`` (its directory), ``label`` (run
+        directory name, made unique), ``tag`` (``"iter21"``), ``iter`` (int
+        or None if it cannot be told), ``nrms`` and ``alpha`` (float or
+        None, from ``femtic.cnv`` when that has a row of this iteration),
+        ``selector``.  Entries without a block file are left out.
+
+    Raises
+    ------
+    ValueError
+        for an unknown ``iteration`` selector.
+    """
+    import glob as _glob
+
+    sels = []
+    for s in (list(iteration) if isinstance(iteration, (list, tuple))
+              else [iteration]):
+        if isinstance(s, bool):
+            raise ValueError(f"iteration: {s!r} is not a selector")
+        if isinstance(s, (int, np.integer)):
+            sels.append(int(s))
+            continue
+        t = str(s).strip().lower()
+        if t in ("last", "best"):
+            sels.append(t)
+        elif re.fullmatch(r"(iter)?\d+", t):
+            sels.append(int(re.sub(r"\D", "", t)))
+        else:
+            raise ValueError(
+                f"iteration: {s!r} - use 'last', 'best', an integer or 'iterN'")
+    if not sels:
+        raise ValueError("iteration: empty selector list")
+
+    entries = ([spec] if isinstance(spec, (str, os.PathLike))
+               else list(spec or []))
+    paths = []
+    for e in entries:
+        e = os.path.expanduser(str(e))
+        if any(ch in e for ch in "*?["):
+            hits = sorted(_glob.glob(e))
+            if not hits and out:
+                print(f"resolve_model_files: no match for {e}")
+            paths.extend(hits)
+        else:
+            paths.append(e)
+
+    def _cnv_rows(d):
+        try:
+            p = str(resolve_cnv_path(d, cnv_name))
+            if not os.path.isfile(p):
+                return []
+            return read_cnv(p)["rows"]
+        except (ValueError, OSError):
+            return []
+
+    def _row_of(rows, n):
+        hit = [r for r in rows if int(round(r["Iter"])) == n]
+        return hit[-1] if hit else None
+
+    models = []
+    for p in paths:
+        if os.path.isdir(p):
+            d = os.path.normpath(p)
+            rows = _cnv_rows(d)
+            for sel in sels:
+                if sel == "last":
+                    if not rows:
+                        if out:
+                            print(f"resolve_model_files: {d}: no usable "
+                                  "convergence file - 'last' skipped")
+                        continue
+                    n = int(round(rows[-1]["Iter"]))
+                elif sel == "best":
+                    ok = [r for r in rows if np.isfinite(r.get("RMS", np.nan))]
+                    if not ok:
+                        if out:
+                            print(f"resolve_model_files: {d}: no usable "
+                                  "convergence file - 'best' skipped")
+                        continue
+                    n = int(round(min(ok, key=lambda r: r["RMS"])["Iter"]))
+                else:
+                    n = sel
+                f = os.path.join(d, block_name.format(n=n))
+                if not os.path.isfile(f):
+                    if out:
+                        print(f"resolve_model_files: {f} not found - skipped")
+                    continue
+                r = _row_of(rows, n)
+                models.append(dict(
+                    file=f, dir=d, label=os.path.basename(d), tag=f"iter{n}",
+                    iter=n,
+                    nrms=float(r["RMS"]) if r and "RMS" in r else None,
+                    alpha=float(r["Alpha"]) if r and "Alpha" in r else None,
+                    selector=sel))
+        elif os.path.isfile(p):
+            d = os.path.dirname(os.path.abspath(p))
+            m = re.search(r"iter(\d+)", os.path.basename(p))
+            n = int(m.group(1)) if m else None
+            r = _row_of(_cnv_rows(d), n) if n is not None else None
+            models.append(dict(
+                file=p, dir=d, label=os.path.basename(d),
+                tag=f"iter{n}" if n is not None
+                else os.path.splitext(os.path.basename(p))[0],
+                iter=n,
+                nrms=float(r["RMS"]) if r and "RMS" in r else None,
+                alpha=float(r["Alpha"]) if r and "Alpha" in r else None,
+                selector=None))
+        elif out:
+            print(f"resolve_model_files: {p} not found - skipped")
+
+    seen = {}
+    for m in models:
+        k = (m["label"], m["tag"])
+        seen[k] = seen.get(k, 0) + 1
+        if seen[k] > 1:
+            m["label"] = f"{m['label']}_{seen[k]}"
+    if out:
+        for m in models:
+            nr = "n/a" if m["nrms"] is None else f"{m['nrms']:.4f}"
+            print(f"  model {m['label']} / {m['tag']}  nRMS={nr}  {m['file']}")
+    return models
 
 
 # ============================================================================

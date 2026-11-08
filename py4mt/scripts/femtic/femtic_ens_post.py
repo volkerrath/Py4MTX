@@ -24,16 +24,20 @@ covariance, bootstrap, "best" member, .npz) then refers to the N drawn members
 and the output names get a suffix, so the full results are not overwritten.
 
 This script only COMPUTES.  It draws nothing.  The figures are made from the
-results ``.npz`` by three scripts (each has its own user section):
+results ``.npz`` by two plot scripts (each has its own user section) and by
+one method of the quality-control script:
 
   femtic_ens_plot_slices.py  best-member and statistics slice panels
   femtic_ens_plot_bh.py      borehole profiles and heat maps
-  femtic_ens_plot_misfit.py  nRMS histogram
+  femtic_data_misfit.py      method "nrms": nRMS histogram of all members
+                             (the same script does the data-level checks)
 
 so that styling, slices, vertical exaggeration, the reference model etc. can
 be iterated in seconds without rescanning the member directories.  (The
-former ``PLOT_ONLY`` mode of this script is gone: it is what the three
-scripts do.)
+former ``PLOT_ONLY`` mode of this script is gone: it is what these scripts
+do.)  These are the "ens" scripts (quality control and ensemble summary
+plots); plots of single models are the "mod" scripts, femtic_mod_plot_slice.py
+and femtic_mod_plot_bh.py, which also take lists / globs of member directories.
 
 References
 ----------
@@ -923,7 +927,7 @@ Provenance
             member). AI-generated code -- review before production use.
 
 2026-11-08  Claude Sonnet 5.5 (Anthropic)
-            Split into a computing script and three plotting scripts. This
+            Split into a computing script and plotting scripts. This
             script keeps the member scan, the statistics, the sensitivity /
             SimRC / covariance / bootstrap calculations, the results .npz,
             the nRMS CSV and the parameter summary with the directory scan
@@ -931,9 +935,9 @@ Provenance
             MOD_ALPHA_SOURCE blanking, the reference-model lines, ROI and
             origin/site handling) -> femtic_ens_plot_slices.py; the borehole
             profiles and heat maps (MOD_BH*) -> femtic_ens_plot_bh.py; the
-            nRMS histogram -> femtic_ens_plot_misfit.py; the PLOT_ONLY mode
-            -> the results-file reader femtic.read_ensemble_results() that
-            all three use. Reusable code went to femtic.py (Section 6c) and
+            nRMS histogram -> method "nrms" of femtic_data_misfit.py; the
+            PLOT_ONLY mode -> the results-file reader
+            femtic.read_ensemble_results() that these scripts use. Reusable code went to femtic.py (Section 6c) and
             femtic_viz.py (build_scan_report / append_scan_report are now
             femtic.py functions, shared with femtic_ens_repair.py). All MOD_*
             plotting settings, MOD_STATS_WHAT, PLOT_ONLY* and MOD_NRMS_* are
@@ -950,8 +954,10 @@ Provenance
             are stored in the .npz (<P>_subsample_idx, _subsample_seed,
             _subsample_n_accepted), the nRMS table keeps every scanned member
             (accepted members that were not drawn get the status
-            "accepted_not_drawn"). AI-generated code -- review before
-            production use.
+            "accepted_not_drawn"). The parameter summary is now written to
+            ENSEMBLE_DIR (out_dir=ENSEMBLE_DIR, as in femtic_ens_repair.py)
+            instead of next to the script. AI-generated code -- review
+            before production use.
 
     This script targets FEMTIC's current HDF5 output layout only.
     AI-generated code -- review before production use.
@@ -1375,7 +1381,7 @@ ENSEMBLE_RESULTS = RESULTS_DIR + ENSEMBLE_PREFIX.upper() + "_results256.npz"
 #: (accepted but not in the random draw, see ENS_SUBSAMPLE_N), "rejected_nrms_max",
 #: "no_model_file", and with ENS_MODEL_SOURCE = "perturbed" or "both" also
 #: "no_perturbed_file"). Always written; the same table is stored in the
-#: results .npz (<P>_nrms_table) for femtic_ens_plot_misfit.py.
+#: results .npz (<P>_nrms_table) for femtic_data_misfit.py (method "nrms").
 NRMS_CSV = RESULTS_DIR + ENSEMBLE_PREFIX + "_nrms.csv"
 
 # ---------------------------------------------------------------------------
@@ -2362,7 +2368,7 @@ if subsample_idx is not None:
     )
 
 # nRMS table of ALL scanned members (accepted and rejected): read by
-# femtic_ens_plot_misfit.py, so the histogram needs no CSV. String array of
+# femtic_data_misfit.py (method "nrms"), so the histogram needs no CSV. String array of
 # shape (n, 4): member, best_iter, nrms, status.
 ens_dict[f"{P}_nrms_table"] = np.array(
     [[str(r[0]), str(int(r[1])), f"{float(r[2]):.6f}", str(r[3])]
@@ -2376,7 +2382,7 @@ np.savez_compressed(ENSEMBLE_RESULTS, **ens_dict)
 print(f"\nResults saved → {ENSEMBLE_RESULTS}")
 
 # --- (4b) nRMS table (CSV) ------------------------------------------------
-# The histogram is made by femtic_ens_plot_misfit.py from the .npz.
+# The histogram is made by femtic_data_misfit.py (method "nrms") from the .npz.
 fem.write_nrms_table(NRMS_CSV, nrms_table)
 print(f"nRMS table saved -> {NRMS_CSV}  ({len(nrms_table)} members)")
 
@@ -2386,7 +2392,7 @@ print("\nfemtic_ens_post.py complete.")
 # ---------------------------------------------------------------------------
 # Parameter summary
 # ---------------------------------------------------------------------------
-_summary_path = utl.write_param_summary(__file__)
+_summary_path = utl.write_param_summary(__file__, out_dir=ENSEMBLE_DIR)
 
 # Directory scan report: why directories are not in the ensemble. Appended to
 # the summary just written. Lowercase names so that nothing here shows up as a

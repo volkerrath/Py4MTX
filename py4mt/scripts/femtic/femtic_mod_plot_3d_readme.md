@@ -6,6 +6,10 @@ tetrahedral resistivity model.
 Sister script: [`femtic_mod_plot_slice.py`](femtic_mod_plot_slice_readme.md) —
 2-D slice panels and borehole logs from the same files.
 
+This is one of the "mod" scripts (plots of single models; the "ens" scripts are
+the quality-control and ensemble summary plots). Unlike its sister scripts it
+has no batch option (list / glob / run directories) yet.
+
 ---
 
 ## What this script does

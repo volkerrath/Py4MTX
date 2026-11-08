@@ -14,12 +14,20 @@ The template `py4mt_template.py` and the helper `py2ipynb` remain at the scripts
 
 FEMTIC is a 3-D finite-element MT inversion code (Yoshiya Usui).
 
+**Two script families.** The **ens** scripts are the standard scripts for
+quality control and ensemble summary plots (`femtic_ens_post`,
+`femtic_ens_plot_slices`, `femtic_ens_plot_bh`, `femtic_data_misfit`); the
+**mod** scripts plot single models (`femtic_mod_plot_slice`,
+`femtic_mod_plot_bh`, `femtic_mod_plot_3d`, with `femtic_mod_math` /
+`femtic_mod_edit` for model arithmetic). The mod scripts also take a list, a
+glob or run directories (one figure per model).
+
 ### Model visualisation
 
 | Script | Purpose |
 |--------|---------|
-| `femtic/femtic_mod_plot_slice.py` | 2-D slice panels (map, N-S, E-W, arbitrary plane) with site overlays, compass corner labels, and nRMS annotation from `femtic.cnv`. |
-| `femtic/femtic_mod_plot_bh.py` | Standalone 1-D ρ(z) borehole resistivity logs from a tetrahedral mesh. |
+| `femtic/femtic_mod_plot_slice.py` | 2-D slice panels (map, N-S, E-W, arbitrary plane) with site overlays, compass corner labels, and nRMS annotation from `femtic.cnv`. One model, or a list / glob / run directories (`MODEL_ITER` = `"last"`, `"best"`, N, or a list): one figure per model plus an optional catalog PDF. |
+| `femtic/femtic_mod_plot_bh.py` | Standalone 1-D ρ(z) borehole resistivity logs from a tetrahedral mesh; the same batch option (one figure and NPZ per model). |
 | `femtic/femtic_plot_nrms.py` | Map of per-site nRMS misfit (best iteration from `femtic.cnv`, residuals from `results_iter<N>.h5`). |
 | `femtic/femtic_plot_distort.py` | Map of static galvanic distortion matrices as ellipses (optional Groom–Bailey panels). |
 | `femtic/femtic_mod_plot_3d.py` | PyVista 3-D rendering and VTK/VTU export; slice planes, iso-surfaces, spatial clipping. |
@@ -41,7 +49,7 @@ FEMTIC is a 3-D finite-element MT inversion code (Yoshiya Usui).
 |--------|---------|
 | `femtic/femtic_convergence_plot.py` | Plot misfit, nRMS, or roughness vs. iteration from one or more `femtic.cnv` files. |
 | `femtic/femtic_plot_conv.py` | Plot any `femtic.cnv` field(s) vs. iteration, overlaid across run directories. |
-| `femtic/femtic_data_misfit.py` | Crossplots, normalised-residual histograms and Q-Q plots (and optional response curves) from `results_iter<N>.h5`; single run or ensemble. |
+| `femtic/femtic_data_misfit.py` | Quality control: crossplots, normalised-residual histograms and Q-Q plots (and optional response curves) from `results_iter<N>.h5`, single run or ensemble; plus the nRMS histogram of all ensemble members from the results `.npz` (method `"nrms"`). |
 | `femtic/femtic_lcurve_plot.py` | Plot L-curve (roughness vs. nRMS / misfit) across multiple α runs; auto-detects distortion column layout. |
 
 ---
@@ -54,7 +62,7 @@ FEMTIC is a 3-D finite-element MT inversion code (Yoshiya Usui).
 | `femtic/femtic_rto_prior.py` | Build prior covariance proxy from roughness matrix. |
 | `femtic/femtic_rto_prep.py` | Generate full RTO ensemble (perturb data + draw prior model perturbations). |
 
-**RTO workflow:** `rto_rough` → `rto_prior` → `rto_prep` → *(run FEMTIC)* → `ens_post` → `ens_plot_slices` / `ens_plot_bh` / `ens_plot_misfit`
+**RTO workflow:** `rto_rough` → `rto_prior` → `rto_prep` → *(run FEMTIC)* → `ens_post` → `ens_plot_slices` / `ens_plot_bh` / `data_misfit` (method `"nrms"`)
 
 ---
 
@@ -73,8 +81,7 @@ FEMTIC is a 3-D finite-element MT inversion code (Yoshiya Usui).
 | `femtic/femtic_ens_post.py` | Algorithm-agnostic ensemble postprocessing (calculation only): nRMS filter, statistics, sensitivity, covariance, optional random subsample of N members; writes the results `.npz`. Replaces the former `femtic_rto_post.py`. |
 | `femtic/femtic_ens_plot_slices.py` | Slice figures (best member, statistics panels) from the results `.npz`. |
 | `femtic/femtic_ens_plot_bh.py` | Borehole profiles and heat maps from the results `.npz`. |
-| `femtic/femtic_ens_plot_misfit.py` | nRMS histogram from the results `.npz`. |
-| `femtic/femtic_ens_plot.py` | Joint multi-row slice figure for ensemble runs with optional statistics rows and borehole columns. |
+| `femtic/femtic_ens_plot.py` | **Superseded** (2026-11-08) by the scripts above, `femtic_data_misfit.py` (nRMS histogram) and the batch option of `femtic_mod_plot_slice.py` / `femtic_mod_plot_bh.py` (per-member figures, catalog); can be deleted. |
 | `femtic/femtic_ens_repair.py` | Convergence diagnostic for all ensemble directories; restart directories for non-converged members. |
 | `femtic/femtic_ens_decomp.py` | PCA / ICA decomposition of a filtered ensemble matrix. |
 | `femtic/femtic_ens_eof.py` | EOFs via SVD on a demeaned ensemble matrix. |

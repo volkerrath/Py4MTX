@@ -827,7 +827,7 @@ Raises `ValueError` if no member has a status in `binned_statuses` (nothing to b
 ## Ensemble nRMS histogram (`plot_nrms_histogram`)
 
 Added 2026-11-08 (from `femtic_ens_post.py`, now used by
-`femtic_ens_plot_misfit.py`). Stacked histogram of the per-member best nRMS
+the method `"nrms"` of `femtic_data_misfit.py`). Stacked histogram of the per-member best nRMS
 of **all scanned members**: accepted (including `"accepted_fallback"` and
 `"accepted_not_drawn"`) and rejected, the acceptance threshold as a dashed
 line and the median of the accepted members. Unlike
@@ -871,6 +871,24 @@ Not to be confused with `plot_borehole_logs` (single model, above).
 
 ---
 
+## Batches of single-model figures
+
+Added 2026-11-08 for `femtic_mod_plot_slice.py` and `femtic_mod_plot_bh.py`,
+which can draw one figure per model (models from `femtic.resolve_model_files()`)
+and collect them in a multi-page PDF. matplotlib's pdf backend can raise an
+`IndexError` for an "Indexed" colour space (data-dependent, matplotlib issue
+#25806); one such figure should not end a run of hundreds.
+
+| Function | Purpose |
+|---|---|
+| `plot_model_slices_robust(plot_file, *, out=True, **kwargs)` | `plot_model_slices(plot_file=..., **kwargs)`. A pdf that hits the error is retried with `pdf.compression` off, then rendered as png and converted with Pillow. Returns the (closed) figure. |
+| `append_catalog_page(pdf, fig, name="")` | `pdf.savefig(fig)` on an open `PdfPages` with the same protection; returns `True` if the page was written, else skips it with a message. |
+
+`plot_borehole_logs` returns its figure (left open when `plot_file` is given);
+close it with `plt.close(fig)` in a loop.
+
+---
+
 ## Provenance
 
 | Date | Author | Change |
@@ -910,4 +928,5 @@ Author: Volker Rath (DIAS)
 | 2026-10-11 | Claude Sonnet 5.5 (Anthropic) | `read_femtic_mesh()` removed from `femtic_viz.py`; the only mesh reader is now `femtic.read_femtic_mesh(path, swap_xy=None) -> (nodes, conn)`. Internally `femtic_viz` wraps it in a private `_load_mesh()` returning a `FemticMesh`. The x/y column swap added 2026-05-31 is no longer applied by default; it is an option (`swap_xy=True`, or set `femtic.MESH_SWAP_XY = True` once for a whole run) for meshes stored as x = northing, y = easting. Outside callers of `fviz.read_femtic_mesh(path)` must switch to `nodes, conn = fem.read_femtic_mesh(path)`. |
 | 2026-10-22 | Claude Sonnet 5.5 (Anthropic) | `_observe_to_site_list`: VTF / PT stations with 0 frequencies (dummy VTF stations of the `OWNER_ELEMENT -1` layout) are skipped, since they hold no data. Reading of the 4-6 token station lines is in `femtic.read_observe_dat` (see `femtic_readme.md`, 2026-10-22). No other change. |
 | 2026-10-27 | Claude Sonnet 5.5 (Anthropic) | `plot_model_slices`: new `vert_exag` (vertical exaggeration of ns / ew / vertical-plane panels from the real axis units, so it also works for `display_coords="latlon"`, where the legacy `equal_aspect` has no effect; `None` = unchanged, defaults checked pixel-identical) and optional reference model `reference_file` / `reference_levels` / `reference_style` / `reference_label` / `reference_ocean_value` / `reference_air_log10_thresh` (exact iso-resistivity lines from shared polygon edges between cells of different level class; new helper `_class_boundary_segments`; `ValueError` for a reference on another mesh). `plot_borehole_logs`: new `reference_file` / `reference_style` / `reference_label` (dashed twin profile per borehole, `reference_rho_<name>` in the NPZ). **Fix** in `plot_borehole_logs`: the depth axis was inverted once per borehole, so it pointed *upward* for an even number of boreholes -- now inverted only if not already. Doc fix: `air_color` default is `"white"`. AI-generated; review before production use. |
-| 2026-11-08 | Claude Sonnet 5.5 (Anthropic) | New: `plot_nrms_histogram` (per-member nRMS, accepted / rejected stacked), `BoreholeFigureOptions`, `plot_boreholes`, `plan_borehole_figures`, `draw_borehole_figures`, `borehole_view`, `borehole_line_style`, `heat_display`, `heat_style`, `heat_log_ticks`, `heat_norm`, `depth_edges`. Moved from `femtic_ens_post.py` (now `femtic_ens_plot_misfit.py` and `femtic_ens_plot_bh.py`); no existing function was changed. |
+| 2026-11-08 | Claude Sonnet 5.5 (Anthropic) | New: `plot_nrms_histogram` (per-member nRMS, accepted / rejected stacked), `BoreholeFigureOptions`, `plot_boreholes`, `plan_borehole_figures`, `draw_borehole_figures`, `borehole_view`, `borehole_line_style`, `heat_display`, `heat_style`, `heat_log_ticks`, `heat_norm`, `depth_edges`. Moved from `femtic_ens_post.py` (now `femtic_data_misfit.py`, method `"nrms"`, and `femtic_ens_plot_bh.py`); no existing function was changed. |
+| 2026-11-08b | Claude Sonnet 5.5 (Anthropic) | New: `plot_model_slices_robust`, `append_catalog_page` (batches of single-model figures, `femtic_mod_plot_slice.py` / `femtic_mod_plot_bh.py`). `plot_borehole_logs` now also returns its figure (it returned `None`; the figure is left open as before). |
