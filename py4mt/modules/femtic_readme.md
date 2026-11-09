@@ -518,7 +518,7 @@ member directories except where a block file is named.
 
 | Function | Purpose |
 |---|---|
-| `km_to_m`, `lim_km_to_m`, `slices_km_to_m`, `plane_spec_km_to_m` | `MOD_*` settings are in model-local km, `femtic_viz` wants metres; these convert scalars, limit pairs, `MOD_SLICES` lists and `kind="plane"` entries. |
+| `km_to_m`, `lim_km_to_m`, `slices_km_to_m`, `plane_spec_km_to_m`, `plane_point_km_to_m` | `MOD_*` settings are in model-local km, `femtic_viz` wants metres; these convert scalars, limit pairs, `MOD_SLICES` lists and `kind="plane"` entries. The plane `point` may be model-local km (plain list or `([x, y, z], "model")`), `([E, N, z], "utm")` (E / N in UTM metres) or `([lon, lat, z], "latlon")` (degrees, longitude first); `z` is always km, depth positive down. The tagged UTM / latlon forms need the keyword arguments `zone`, `northern`, `origin_E`, `origin_N` of `plane_spec_km_to_m` (2026-11-09). |
 | `parse_alpha_source(expr)` | `"sens_mean_an > -3."` -> `(name, op, value)`; regex, never `eval`. |
 | `alpha_from_condition(arr, op, thr, mode, width)` | Per-free-parameter alpha in [0, 1] (`"blank"` hard cut, `"fade"` linear over `width`). |
 | `write_alpha_block(alpha, template, path, ocean=None, out=True)` | Block file whose raw values are the alpha values (read by `plot_model_slices(alpha_mode="direct")`). |
@@ -622,7 +622,22 @@ Optional for visualisation and export:
 
 ## Version / provenance
 
-Updated: 2026-11-08
+Updated: 2026-11-09
+
+### Changelog (2026-11-09) --- plane `point` in latlon / utm / model
+- `plane_spec_km_to_m()` accepts a CRS-tagged `point`: `([lon, lat, z],
+  "latlon")`, `([E, N, z], "utm")` (UTM metres) or `([x, y, z], "model")`
+  (km), z in km and depth positive down; the new helper
+  `plane_point_km_to_m()` does the conversion. The tagged UTM / latlon forms
+  need the new keyword arguments `zone`, `northern`, `origin_E`, `origin_N`
+  (a ValueError says so when they are missing). Plain `[x, y(, z)]` lists
+  and all other behaviour are unchanged.
+- `plane_spec_km_to_m()` also converts an optional spec `ylim` (down-dip
+  range of a dipping plane, km relative to `point`); the default along-strike
+  range of a vertical plane now uses the resolved point.
+- Needs the `femtic_viz.py` of the same date for dipping planes (see its
+  readme). AI-generated (Claude Sonnet 5.5, Anthropic); review before
+  production use.
 
 ### Changelog (2026-11-08) --- ensemble results, reference model, borehole sampling
 - New Section 6c (code moved out of `femtic_ens_post.py` and generalised so

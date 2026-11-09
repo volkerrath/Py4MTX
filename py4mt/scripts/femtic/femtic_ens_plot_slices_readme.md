@@ -183,7 +183,25 @@ results file (`COMPUTE_SENS` in `femtic_ens_post.py`).
 | `MOD_TICK_FONTSIZE` | Font size for axis tick labels and colourbar ticks. Default `7`, matching `fviz.plot_model_slices`' own default. |
 | `MOD_LABEL_FONTSIZE` | Font size for axis labels, panel titles, and colourbar label. Default `8`, matching `fviz.plot_model_slices`' own default. |
 | `MOD_TICK_DECIMALS` | Decimal digits shown on depth / easting-northing / lat-lon tick labels (all share this one value). Default `None` = `fviz.plot_model_slices`' own per-axis-type formatting unchanged. |
+| `MOD_TITLE_FONTSIZE` | Font size of the figure title; `None` = `MOD_LABEL_FONTSIZE + 6`. |
 | `MOD_SHOW_IN_SPYDER` | `True` (default) and running inside Spyder (detected via `utl.runtime_env() == "spyder"`) → every saved figure is also displayed inline in Spyder's Plots pane via `plt.show()`, in addition to being written to disk. No effect outside Spyder; set `False` to disable even under Spyder. |
+
+### Titles
+
+| Variable | Default | Description |
+|---|---|---|
+| `MOD_TITLE` | `"auto"` | Figure title of every figure of the script. `"auto"` = as before (the `"best"` figure: block-file name, best member, iteration, nRMS; the statistic figures: their block-file name). `None`, `False` or `""` = **no title**. A string = used as given, with the placeholders `{key}` (panel key of `MOD_STATS_WHAT`: `"best"`, `"avg"`, ...), `{label}` (description of the statistic), `{prefix}` (`ENSEMBLE_PREFIX`), `{n}` (number of members), `{source}` (`converged` / `perturbed`), `{best}`, `{iter}`, `{nrms}` (best member; `{nrms:.3f}` works); text with other braces is used as it stands. A dict = one entry per figure, e.g. `{"best": "Best member", "avg": "Mean", "err": None, "default": "auto"}` (keys = entries of `MOD_STATS_WHAT`; values as above; `"default"`, else `"auto"`, covers the keys not listed). |
+| `MOD_PANEL_TITLES` | `True` | Panel titles (`Map  z = 1.0 km`, `N-S  easting = ...`). `False` = none. One panel only: add `title="text"` to its `MOD_SLICES` entry (`title=""` = just that panel untitled). |
+
+### Colour bar
+
+| Variable | Default | Description |
+|---|---|---|
+| `MOD_CBAR_LOCATION` | `"panel"` | `"panel"` = one colour bar next to every panel (as before). `"right"`, `"bottom"`, `"top"`, `"left"` = **one joint colour bar** for all panels of a figure (they share one colour scale), at that side of the whole panel grid. The panels give up a strip of the figure for it; their spacing is kept. Applies to the `"best"` figure and all statistic figures. |
+| `MOD_CBAR_SHRINK` | `0.7` | Joint colour bar: length as a fraction of the side of the panel grid (`0 < value <= 1`). |
+| `MOD_CBAR_THICKNESS` | `None` | Joint colour bar: thickness in cm; `None` = 1.5 x `MOD_LABEL_FONTSIZE` points. |
+
+Both groups need the `femtic_viz.py` of 2026-11-09. At their defaults the figures are unchanged. The colour-bar label of each figure is still set per statistic in `MOD_STATS_STYLE` (`label`).
 
 
 ### Reference model (optional)
@@ -206,33 +224,65 @@ fixed model for the whole ensemble: with the usual setting
 | `MOD_REF_LABEL` | `"reference model"` | Legend entry (lower right of each slice panel); `None` = none. |
 
 
-### Vertical section (a `kind="plane"` entry in `MOD_SLICES`)
+### Plane sections (a `kind="plane"` entry in `MOD_SLICES`)
 
-A vertical section along any strike is configured like every other slice,
+A section along any strike and dip is configured like every other slice,
 as an entry of `MOD_SLICES` (units km / degrees). The default list ends
-with a SW-NE section through the model origin:
+with a SW-NE vertical section through the model origin:
 
 ```python
 dict(kind="plane", point=[0.0, 0.0], strike=45.0, dip=90.0)
+dict(kind="plane", point=([6.12, 45.90, 0.0], "latlon"), strike=325.0, dip=70.0)
 ```
 
 | Key | Default | Description |
 |---|---|---|
-| `point` | `[0, 0]` | `[x, y]` (or `[x, y, z]`) model-local km the section passes through; `[0, 0]` = model origin. |
-| `strike` | `0` | For `dip = 90`: geographic azimuth, degrees clockwise from north. `45` = SW (left) to NE (right); `135` = NW to SE. |
-| `dip` | `90` | `90` = vertical section (as described here). Other dips use the legacy `femtic_viz` plane panel unchanged. |
-| `xlim` | derived | Optional along-strike range `[min, max]` in km relative to `point` (negative = SW end). |
+| `point` | `[0, 0]` | A point on the plane; see "Position of `point`" below. `[0, 0]` = model origin at the surface. |
+| `strike` | `0` | Geographic azimuth of the strike line, degrees clockwise from north, for every dip. For `dip = 90`, `45` = SW (left) to NE (right); `135` = NW to SE. |
+| `dip` | `90` | Degrees below the horizontal, `0` .. `180`; the plane dips towards `strike + 90` (`strike=325, dip=70` dips 70 deg towards N55E). `90` = vertical section. |
+| `xlim` | derived | Optional along-strike range `[min, max]` in km relative to `point` (negative = left end). |
+| `ylim` | derived | Optional down-dip range `[min, max]` in km relative to `point` (dip != 90 only; positive = down the dip). |
 | `invert_x`, `title` | | Passed through to `femtic_viz`. |
 
-Limits are the same as for the other slices: the along-strike range is the
+**Position of `point`.** Like `x0` / `y0` of the other kinds it can be given
+in any of three coordinate systems; the vertical coordinate `z` is always
+depth in model-local km, positive down (default 0 = surface), and matters
+for dipping planes (a plane through `(x, y)` at depth `z`):
+
+| Form | Meaning |
+|---|---|
+| `[x, y]` / `[x, y, z]` | model-local km (plain list, as before) |
+| `([x, y, z], "model")` | model-local km |
+| `([E, N, z], "utm")` | absolute UTM easting / northing in **metres**, `z` in km |
+| `([lon, lat, z], "latlon")` | decimal degrees, **longitude first**, `z` in km |
+
+UTM and latlon points are converted with the UTM zone and model origin the
+script already uses for the other slices. They are independent of
+`MOD_DISPLAY_COORDS`, which only sets the tick labels of the map / curtain
+panels.
+
+**Vertical sections (`dip = 90`).** The along-strike range is the
 `MOD_XLIM` x `MOD_YLIM` box projected onto the strike direction (whole mesh
-if either is `None`, e.g. after `MOD_ROI_AUTO` it follows the auto ROI), and
-the depth range is `MOD_ZLIM`. The horizontal axis is always in **model km**
-(0 at `point`), independent of `MOD_DISPLAY_COORDS`. The panel takes part in
-the normal `MOD_NROWS x MOD_NCOLS` grid, colour scale, blanking and colourbar
-of its figure, and shows sites within `MOD_PROJECTION_DIST` when
-`MOD_PLOT_SITES_SLICES` is `True`. Requires the `femtic_viz.py` of
-2026-10-07 or later.
+if either is `None`; after `MOD_ROI_AUTO` it follows the auto ROI), and the
+depth range is `MOD_ZLIM`. The horizontal axis is in **model km** (0 at
+`point`), independent of `MOD_DISPLAY_COORDS`.
+
+**Dipping planes (`dip != 90`).** The axes are the true in-plane distances
+from `point`: horizontal = along strike, vertical = down dip (positive
+downwards), both in km if `MOD_DEPTH_KM` else m. The default extent is the
+plane cut with the `MOD_XLIM` x `MOD_YLIM` x `MOD_ZLIM` box, so a plane
+through the surface shows the air strip above down-dip 0 and ends at
+`MOD_ZLIM`. The panel is drawn with true aspect where the other sections
+get a fixed aspect (`MOD_EQUAL_ASPECT` with `"model"` / `"utm"` display, or
+`MOD_VERT_EXAG` set; its value does not apply to a dipping plane), otherwise
+it fills its cell. Check of the geometry: for a horizontally layered model a
+layer boundary is a horizontal line at down-dip `(depth - z) / sin(dip)`.
+
+The panel takes part in the normal `MOD_NROWS x MOD_NCOLS` grid, colour scale,
+blanking and colourbar of its figure, and shows sites within
+`MOD_PROJECTION_DIST` when `MOD_PLOT_SITES_SLICES` is `True`. Requires the
+`femtic.py` / `femtic_viz.py` of 2026-11-09 (dipping planes; tagged `point`);
+vertical sections need those of 2026-10-07 or later.
 
 
 ### Site overlay
@@ -312,3 +362,5 @@ the file.
 | Date | Author | Change |
 |---|---|---|
 | 2026-11-08 | Claude Sonnet 5.5 (Anthropic) | Created: the `"best"` and statistics slice panels of `femtic_ens_post.py` (`MOD_QC` / `MOD_STATS`, alpha mask, reference lines, ROI) as a stand-alone script that reads the results `.npz`. `MOD_STATS_WHAT` is a plain list (keys missing from the file are skipped with a message); `MOD_STATS_STYLE` lists the standard keys explicitly. Helpers moved to `femtic.py` (`read_ensemble_results`, `ensemble_stat_map`, `resolve_results_template`, `resolve_origin_and_sites`, alpha helpers, `ReferenceModel`, `roi_free_mask`). |
+| 2026-11-09 | Claude Sonnet 5.5 (Anthropic) | New `MOD_TITLE` (figure title: auto / none / text with placeholders / dict per figure), `MOD_PANEL_TITLES`, and the joint colour bar `MOD_CBAR_LOCATION` ("panel" / "right" / "left" / "top" / "bottom"), `MOD_CBAR_SHRINK`, `MOD_CBAR_THICKNESS`; passed to `fviz.plot_model_slices` (`panel_titles`, `cbar_location`, `cbar_shrink`, `cbar_thickness`; `figure_title=""` = no title). Defaults leave the figures unchanged. AI-generated; review before production use. |
+| 2026-11-09b | Claude Sonnet 5.5 (Anthropic) | Plane sections: the `point` may be CRS-tagged (`([lon, lat, z], "latlon")`, `([E, N, z], "utm")`, `([x, y, z], "model")`, z in km), and dips other than 90 work: `strike` is the azimuth for every dip, axes are along-strike / down-dip distance from `point`, default extent = plane cut with the ROI box, optional `xlim` / `ylim`. Before, a dipping plane was a sheared, mislabelled panel. Needs `femtic.py` and `femtic_viz.py` of the same date. |

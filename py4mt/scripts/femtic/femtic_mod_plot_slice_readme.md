@@ -124,12 +124,28 @@ Conversion chain: `lat/lon → UTM → model-local`.
 
 The resolver converts a `"profile"` spec into a `kind="plane"` dict with `dip=90` before passing it to `fviz.plot_model_slices`. The horizontal axis of the panel runs along-strike from *p1* to *p2*; use `invert_x=True` to reverse the sense.
 
+### Plane slices (`kind="plane"`)
+
+`point` is any point on the plane (`[x, y, z]` model-local m, or
+`([x, y, z], "model")`, `([E, N, z], "utm")`, `([lon, lat, z], "latlon")`;
+`z` = depth in m, positive down). `strike` is the azimuth of the strike line,
+degrees clockwise from north, **for every dip**; `dip` is the angle below the
+horizontal, `0` .. `180`, towards `strike + 90` (`strike=325., dip=70.` dips
+70 deg towards N55E). `dip = 90` is a vertical section (horizontal axis =
+along-strike distance in model km, vertical axis = depth). For other dips the
+axes are the true in-plane distances from `point`: horizontal = along strike,
+vertical = down dip (positive downwards), in km if `DEPTH_KM` else m, with
+true aspect where the other sections get a fixed aspect (`PLOT_EQUAL_ASPECT`, or a
+vertical exaggeration set). The default extent is the plane cut with the box
+`PLOT_XLIM` x `PLOT_YLIM` x `PLOT_ZLIM` (mesh extent where one is `None`).
+Before 2026-11-09 dipping planes came out sheared and mislabelled.
+
 ### Per-panel optional keys
 
 | Key | Description |
 |---|---|
-| `xlim` | `[xmin, xmax]` — easting / along-strike axis limit |
-| `ylim` | `[ymin, ymax]` — northing / down-dip axis limit |
+| `xlim` | `[xmin, xmax]`: easting axis limit; for a `"plane"`: along-strike range in m relative to `point` |
+| `ylim` | `[ymin, ymax]`: northing axis limit; for a `"plane"` with `dip != 90`: down-dip range in m relative to `point` |
 | `zlim` | `[zmin, zmax]` — depth axis limit (ns / ew / plane panels) |
 | `invert_x` | `True` → flip horizontal axis left-to-right (default `False`) |
 | `title` | Optional string override for panel title |
@@ -321,3 +337,4 @@ For a standalone borehole figure (higher DPI, separate PDF), use
 | 2026-09-06 | Claude Sonnet 5 (Anthropic) | Added `SHOW_MODEL_CENTRE` (default `True`): marks the model origin on `"map"` panels whenever `DISPLAY_COORDS` is `"utm"`/`"latlon"`, via `fviz.plot_model_slices`'s new `show_model_centre` parameter. Override style with a `MAP_MARKERS` entry carrying `"is_model_centre": True`. |
 | 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The parameter summary `femtic_mod_plot_slice_summary.md` is now written to `WORK_DIR` (the working directory set in the script) instead of next to the script: `utl.write_param_summary(fname, out_dir=WORK_DIR)`. Needs the `util.py` of the same date. AI-generated; review before production use. |
 | 2026-11-08 | Claude Sonnet 5.5 (Anthropic) | **Several models in one run:** `MODEL_FILE` may be a list, a glob or run directories (`MODEL_ITER` selects the iteration), giving one figure per model plus an optional catalog PDF (`BATCH_*`); new `femtic.resolve_model_files`, `fviz.plot_model_slices_robust`, `fviz.append_catalog_page`. One model behaves exactly as before (checked: the figure is pixel-identical). Takes over the per-member figures of the former `femtic_ens_plot.py`. AI-generated; review before production use. |
+| 2026-11-09 | Claude Sonnet 5.5 (Anthropic) | Dipping planes (`kind="plane"`, `dip != 90`) fixed in `femtic_viz.plot_model_slices`: `strike` is the azimuth for every dip, axes are along-strike / down-dip distance from `point`, default extent = plane cut with the `PLOT_XLIM` x `PLOT_YLIM` x `PLOT_ZLIM` box, per-slice `xlim` / `ylim` = along-strike / down-dip range (m, relative to `point`). The CRS-tagged `point` (`"model"` / `"utm"` / `"latlon"`) was already supported by this script. Needs the `femtic_viz.py` of the same date. |

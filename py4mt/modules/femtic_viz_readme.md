@@ -397,6 +397,11 @@ fviz.plot_model_slices(
 | `cbar_label` | `None` | Colourbar label; `None` = `"log10(rho / Ohm*m)"` |
 | `air_log10_thresh` | `8.0` | log10 value above which polygons are drawn as air |
 | `figure_title_fontsize` | `None` | Figure-title (file name) font size; `None` = `label_fontsize + 6` |
+| `figure_title` | `None` | Figure title (suptitle). `None` = file name of `model_file`; a string as given; `""` or `False` = **no title** (nothing is drawn; the layout is unchanged) |
+| `panel_titles` | `True` | `False` = no panel titles at all (also not those given as `"title"` in the slice specs); a single panel is left untitled with `title=""` in its spec |
+| `cbar_location` | `None` | `None` / `"panel"` = one colour bar per panel (default, as before). `"right"`, `"left"`, `"top"`, `"bottom"` = **one joint colour bar** for the whole panel grid (borehole columns included); all panels share one colour scale. The bar lives in a strip taken out of the `tight_layout` rectangle, so the panel spacing is not squeezed, and sits next to the measured extent of the panel content. Label = `cbar_label`. Anything else raises `ValueError` |
+| `cbar_shrink` | `0.7` | Joint colour bar: its length as a fraction of the side of the panel grid (`0 < value <= 1`) |
+| `cbar_thickness` | `None` | Joint colour bar: thickness in inches; `None` = `1.5 * label_fontsize / 72` (at least 0.15) |
 | `tick_fontsize` | `7` | Font size for axis tick labels and colourbar ticks |
 | `label_fontsize` | `8` | Font size for axis labels, panel titles, colourbar label |
 | `tick_decimals` | `None` | Decimal digits on depth / easting-northing (model or UTM) / lat-lon tick labels, all sharing one value. `None` = prior per-axis-type formatting unchanged (`:g` for depth, Matplotlib auto for easting/northing, `.3f` for lat/lon) |
@@ -409,6 +414,39 @@ fviz.plot_model_slices(
 Per-panel `invert_x` key in each slice dict (applies to `ns`, `ew`, `plane`
 kinds only): when `True`, calls `ax.invert_xaxis()` after rendering so the
 horizontal axis reads right-to-left.  Default `False`; no effect on `map` panels.
+
+### Plane slices (`kind="plane"`, any dip)
+
+```python
+dict(kind="plane", point=[x, y, z], strike=325., dip=70.)   # metres
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `point` | `[0, 0, 0]` | A point on the plane, model-local metres; `z` = depth, positive down. |
+| `strike` | `0` | Geographic azimuth of the strike line, degrees clockwise from north, **for every dip**. |
+| `dip` | `90` | Degrees below the horizontal, `0` .. `180`; the plane dips towards `strike + 90` (right-hand rule), so `strike=325, dip=70` dips 70 deg towards N55E. Outside `[0, 180]` raises `ValueError`. |
+| `xlim`, `ylim` | derived | Optional, metres relative to `point`: `xlim` = along-strike range (all dips), `ylim` = down-dip range (dip != 90 only). |
+| `invert_x`, `title` | | As for the other kinds. |
+
+`dip = 90` is the vertical section described under "Equal axes and vertical
+exaggeration" (horizontal axis = along-strike distance in model km, vertical
+axis = depth). For every other dip the panel axes are the true in-plane
+distances from `point`: **horizontal = along strike, vertical = down dip**
+(down-dip distance is positive downwards; the tick labels are positive), both
+in km if `depth_km` else m, so a layer boundary of a horizontally layered
+model is a horizontal line at `down-dip = (depth - z) / sin(dip)`. The default
+extent is the plane cut with the box `xlim` x `ylim` x `zlim` (figure-level,
+mesh extent where one is `None`); the figure column is sized from these
+spans. The aspect is true (equal) wherever the other sections get a fixed
+aspect (`equal_aspect` with `display_coords` `"model"` / `"utm"` and matching
+`depth_km` / `horiz_km`, or `vert_exag` set; the value of `vert_exag` does not
+apply to a dipping plane); otherwise the panel fills its cell. Corner labels
+(`SE`, `NW`, ...) give the compass direction of the left / right edge; sites
+within `projection_dist` of the plane are projected into it. Before
+2026-11-09 dipping planes used a basis that was neither horizontal nor
+aligned with the strike (strike measured from +x) and plotted metres under a
+"km" label.
 
 ### Equal axes and vertical exaggeration
 
@@ -431,7 +469,8 @@ stay 1:1 while `equal_aspect=True`, free otherwise. The auto panel width is
 computed from the same real extents (depth span times `vert_exag`), so the
 boxes come out in the right proportion; give `xlim` / `ylim` / `zlim` (or the
 slice's own `xlim`, `zlim`) so that extents exist. For the vertical `"plane"`
-panel the along-strike extent is the spec `xlim`, else the mesh diagonal.
+panel the along-strike extent is the spec `xlim`, else the mesh diagonal; a
+dipping plane uses its true in-plane spans (see "Plane slices").
 `vert_exag=None` (default) leaves all figures exactly as before (checked
 pixel-identical for `display_coords` `"model"` and `"latlon"`).
 
@@ -861,7 +900,7 @@ Not to be confused with `plot_borehole_logs` (single model, above).
 
 | Function / class | Purpose |
 |---|---|
-| `BoreholeFigureOptions` | Layout and style of the figures: `line_style`, `alpha`, `xlim`, `ncols`, `panel_size`, `share_depth`, `legend_loc`, `heat_cbar`, `depth_km`, font sizes, `dpi`, `formats`, `show`, `ref_label`, `suptitle`, `tag_sources`, `source_labels`, `out`. The fields are the `MOD_BH_*` / `MOD_*` settings of `femtic_ens_plot_bh.py`. |
+| `BoreholeFigureOptions` | Layout and style of the figures: `line_style`, `alpha`, `xlim`, `ncols`, `panel_size`, `share_depth`, `legend_loc`, `heat_cbar`, `depth_km`, font sizes, `dpi`, `formats`, `show`, `ref_label`, `suptitle` (`None` / `False` = no figure title, and no source tag), `tag_sources`, `source_labels`, `out`. The fields are the `MOD_BH_*` / `MOD_*` settings of `femtic_ens_plot_bh.py`. |
 | `plan_borehole_figures(profiles, cs, io, *, per_fig=None, layout="combined", share_scale=False, scale_file=None, default_source="converged", ensemble=None, ...)` | Splits the profiles into figures of `per_fig` panels and fixes one colour scale per figure (shared by the converged and perturbed heat maps of that figure; one scale for all figures with `share_scale` or a scale file that is read). Writes the scale file when asked. Returns the plan. |
 | `draw_borehole_figures(plan, cs, plot_base, opts, perturbed_suffix="_perturbed")` | Draws the planned figures. With converged and perturbed models either side by side in one figure (`layout="combined"`) or one figure per source (`"separate"`, the perturbed one at `plot_base + perturbed_suffix`). |
 | `plot_boreholes(groups, plot_base, cs, norm, extend, opts)` | One figure: a resistivity-depth panel per borehole (lines, member lines, heat map, reference). `groups` is `[(source, profiles)]`. |
@@ -930,3 +969,5 @@ Author: Volker Rath (DIAS)
 | 2026-10-27 | Claude Sonnet 5.5 (Anthropic) | `plot_model_slices`: new `vert_exag` (vertical exaggeration of ns / ew / vertical-plane panels from the real axis units, so it also works for `display_coords="latlon"`, where the legacy `equal_aspect` has no effect; `None` = unchanged, defaults checked pixel-identical) and optional reference model `reference_file` / `reference_levels` / `reference_style` / `reference_label` / `reference_ocean_value` / `reference_air_log10_thresh` (exact iso-resistivity lines from shared polygon edges between cells of different level class; new helper `_class_boundary_segments`; `ValueError` for a reference on another mesh). `plot_borehole_logs`: new `reference_file` / `reference_style` / `reference_label` (dashed twin profile per borehole, `reference_rho_<name>` in the NPZ). **Fix** in `plot_borehole_logs`: the depth axis was inverted once per borehole, so it pointed *upward* for an even number of boreholes -- now inverted only if not already. Doc fix: `air_color` default is `"white"`. AI-generated; review before production use. |
 | 2026-11-08 | Claude Sonnet 5.5 (Anthropic) | New: `plot_nrms_histogram` (per-member nRMS, accepted / rejected stacked), `BoreholeFigureOptions`, `plot_boreholes`, `plan_borehole_figures`, `draw_borehole_figures`, `borehole_view`, `borehole_line_style`, `heat_display`, `heat_style`, `heat_log_ticks`, `heat_norm`, `depth_edges`. Moved from `femtic_ens_post.py` (now `femtic_data_misfit.py`, method `"nrms"`, and `femtic_ens_plot_bh.py`); no existing function was changed. |
 | 2026-11-08b | Claude Sonnet 5.5 (Anthropic) | New: `plot_model_slices_robust`, `append_catalog_page` (batches of single-model figures, `femtic_mod_plot_slice.py` / `femtic_mod_plot_bh.py`). `plot_borehole_logs` now also returns its figure (it returned `None`; the figure is left open as before). |
+| 2026-11-09 | Claude Sonnet 5.5 (Anthropic) | `plot_model_slices`: `figure_title=""` / `False` = no figure title; new `panel_titles` (False = no panel titles); new `cbar_location` (None / "panel" = one colour bar per panel as before; "right" / "left" / "top" / "bottom" = one joint colour bar for the whole panel grid), `cbar_shrink`, `cbar_thickness`. The joint bar is placed in a strip reserved in the `tight_layout` rectangle (a plain `fig.colorbar(ax=[all axes])` rescales every panel position and makes the titles / axis labels of neighbouring rows collide). Default arguments: output pixel-identical to the previous version (checked). `BoreholeFigureOptions.suptitle`: `None` / `False` = no figure title. `plot_nrms_histogram`: docstring only (`title=None` was already "no title"). AI-generated code -- review before production use. |
+| 2026-11-09b | Claude Sonnet 5.5 (Anthropic) | `plot_model_slices`: dipping `"plane"` panels (dip != 90) rewritten: `strike` is the geographic azimuth for every dip (dip towards `strike + 90`), axes are along-strike and down-dip distance from `point` (km if `depth_km` else m, true aspect where the layout supports it, column width from the real spans), default extent = plane cut with the `xlim` x `ylim` x `zlim` box, per-spec `xlim` / `ylim`, compass corner labels, in-plane site markers; the old panel was sheared and labelled "km" while showing metres. `dip` outside [0, 180] raises `ValueError`. `dip = 90` and all other kinds unchanged (pixel-identical). `plot_ensemble_slices`: same plane frame and default extent; the figure-level limits are no longer applied to the plane axes (they overrode the inversion, depth pointed up). New private helpers `_strike_dip_frame`, `_plane_roi_extent`. |

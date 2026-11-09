@@ -1124,17 +1124,21 @@ ITER_FALLBACK = True
 #: members: all are used. The rows drawn are stored in the .npz
 #: (<P>_subsample_idx, indices into the accepted members in scan order), so a
 #: draw with ENS_SUBSAMPLE_SEED = None can be reproduced afterwards.
-ENS_SUBSAMPLE_N = None
+ENS_SUBSAMPLE_N = 192
 
-#: Seed of the draw. None = fresh OS entropy (a different draw each run); an
-#: int = reproducible draw.
-ENS_SUBSAMPLE_SEED = None
-
+# if ENS_SUBSAMPLE_N is None:
+#     ENS_SUBSAMPLE_N = 999
+    
 #: Appended to ENSEMBLE_PREFIX when a draw is made (ENS_SUBSAMPLE_N not None),
 #: so that the .npz, nRMS table and keys of the subsample never overwrite
 #: those of the full ensemble. May contain {n} (= ENS_SUBSAMPLE_N) and {seed}
 #: (= ENS_SUBSAMPLE_SEED), e.g. "_sub{n}_s{seed}".
 ENS_SUBSAMPLE_SUFFIX = "_sub{n}"
+#: Seed of the draw. None = fresh OS entropy (a different draw each run); an
+#: int = reproducible draw.
+ENS_SUBSAMPLE_SEED = None
+
+
 
 if ENS_SUBSAMPLE_N is not None:
     if int(ENS_SUBSAMPLE_N) != ENS_SUBSAMPLE_N or ENS_SUBSAMPLE_N < 1:
@@ -1224,7 +1228,7 @@ SENS_H5_GROUP = None
 #:   "volume_normalised"  -- the above divided by block volume (m^-3),
 #:                            i.e. sensitivity density
 #: Passed through as fem.read_h5_sensitivity()'s cumsens_key.
-SENS_KIND = "raw" #"volume_normalised"
+SENS_KIND = "volume_normalised"
 assert SENS_KIND in (
     "raw",
     "volume_normalised",
@@ -1373,8 +1377,12 @@ BOOTSTRAP_SEED = None  # None = fresh OS entropy; int = reproducible
 #: scripts (femtic_ens_plot_*.py) read the .npz from here and write their
 #: figures here by default. Created if missing. Absolute path, or build it from
 #: ENSEMBLE_DIR (default: <ENSEMBLE_DIR>/results/).
-RESULTS_DIR = os.path.join(ENSEMBLE_DIR, "results256") + os.sep
-ENSEMBLE_RESULTS = RESULTS_DIR + ENSEMBLE_PREFIX.upper() + "_results256.npz"
+
+RESULTS_DIR = os.path.join(ENSEMBLE_DIR, "results") + os.sep
+
+ENSEMBLE_RESULTS = RESULTS_DIR + (ENSEMBLE_PREFIX  #.upper() 
+                                  + "_results" 
+                                  + ".npz")
 
 #: Per-member best nRMS table (CSV): member, best iteration, nRMS, status
 #: ("accepted", "accepted_fallback" (see ITER_FALLBACK), "accepted_not_drawn"
@@ -2392,7 +2400,7 @@ print("\nfemtic_ens_post.py complete.")
 # ---------------------------------------------------------------------------
 # Parameter summary
 # ---------------------------------------------------------------------------
-_summary_path = utl.write_param_summary(__file__, out_dir=ENSEMBLE_DIR)
+_summary_path = utl.write_param_summary(__file__, out_dir=RESULTS_DIR)
 
 # Directory scan report: why directories are not in the ensemble. Appended to
 # the summary just written. Lowercase names so that nothing here shows up as a

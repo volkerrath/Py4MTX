@@ -39,6 +39,15 @@ Changes     : the profile bottom defaults to MOD_ZLIM (below) and no longer to
               the region of interest derived from the sites in the old
               combined script; entries that need another depth set "z_bot".
 AI-generated code -- review before production use.
+
+2026-11-09  Claude Sonnet 5.5 (Anthropic)
+              New MOD_TITLE: figure title of the borehole figures ("auto" = as
+              before, None / False / "" = no title, a string with the
+              placeholders {prefix} and {dir}). The panel titles (borehole name
+              and position) are not affected. Needs the femtic_viz.py of the
+              same date (BoreholeFigureOptions.suptitle = None: no title). With
+              the default the figures are unchanged. AI-generated; review before
+              production use.
 """
 
 from __future__ import annotations
@@ -207,6 +216,16 @@ MOD_DEPTH_KM = True  # depth axis in km (False: m)
 MOD_TICK_FONTSIZE = 16
 MOD_LABEL_FONTSIZE = 16
 MOD_TITLE_FONTSIZE = MOD_LABEL_FONTSIZE + 10
+#: Figure title (above all panels).
+#:   "auto"            as before: "<ensemble directory name>  <ENSEMBLE_PREFIX>"
+#:   None, False or "" no figure title.
+#:   a string          used as given; {prefix} = ENSEMBLE_PREFIX, {dir} = name
+#:                     of ENSEMBLE_DIR. Text with other braces is used as it
+#:                     stands.
+#: When the figure shows the converged and the perturbed models together, the
+#: tag "(converged | perturbed reference)" is still appended to a title (not to
+#: "no title"). The panel titles (borehole name, position) are not affected.
+MOD_TITLE = "auto"
 
 #: Name of the perturbed reference file inside each member directory (only
 #: written into the header of the perturbed-profile file; the results file
@@ -679,6 +698,26 @@ if MOD_BH_NPZ:
         print(f"  profiles saved -> {_fp}")
 
 # --- (7) Draw ------------------------------------------------------------------
+def _figure_title():
+    """Figure title from MOD_TITLE: a string, or None for no title."""
+    _dir = os.path.basename(os.path.normpath(ENSEMBLE_DIR))
+    _auto = _dir + "  " + P
+    if MOD_TITLE is None or MOD_TITLE is False:
+        return None
+    if MOD_TITLE is True:
+        return _auto
+    _t = str(MOD_TITLE)
+    if _t.strip() == "":
+        return None
+    if _t.strip().lower() == "auto":
+        return _auto
+    try:
+        return _t.format(prefix=P, dir=_dir)
+    except (KeyError, IndexError, ValueError, AttributeError) as _exc:
+        print(f"  MOD_TITLE: cannot fill in {_t!r} ({_exc!r}) - used as it stands.")
+        return _t
+
+
 _opts = fviz.BoreholeFigureOptions(
     line_style=MOD_BH_STYLE,
     alpha=MOD_BH_ALPHA,
@@ -696,7 +735,7 @@ _opts = fviz.BoreholeFigureOptions(
     formats=_MOD_PLOT_FORMATS,
     show=_SHOW_PLOTS,
     ref_label=MOD_REF_LABEL if _ref_el is not None else None,
-    suptitle=os.path.basename(os.path.normpath(ENSEMBLE_DIR)) + "  " + P,
+    suptitle=_figure_title(),
     tag_sources=pert_matrix is not None,
     out=OUT,
 )

@@ -52,6 +52,7 @@ there with the full text.
 | `MOD_DPI` | int | `400` | Figure DPI. |
 | `MOD_TICK_FONTSIZE`, `MOD_LABEL_FONTSIZE` | int or None | `16`, `16` | Axis annotation and label sizes (`None` = Matplotlib's default). |
 | `MOD_NRMS_TITLE_FONTSIZE` | int or None | `None` | Title size. `None` = Matplotlib's default: in the old code the font-size argument of the title was lost inside a comment, so the title always had the default size; that stays the default. |
+| `MOD_TITLE` | str, None or False | `"auto"` | Figure title. `"auto"` = the ensemble prefix (as before); `None`, `False` or `""` = **no title**; a string = used as given (`{prefix}` is filled in; text with other braces is used as it stands). |
 | `MOD_SHOW_IN_SPYDER` | bool | `True` | Also display the saved figure inline when running inside Spyder. |
 
 ---
@@ -91,3 +92,4 @@ python femtic_ens_plot_misfit.py
 | Date | Author | Change |
 |---|---|---|
 | 2026-11-08 | Claude Sonnet 5.5 (Anthropic) | Created: the nRMS histogram of `femtic_ens_post.py` as a stand-alone script that reads the table from the results `.npz` (`<P>_nrms_table`, `<P>_nrms_max`; CSV fallback). Drawing in `femtic_viz.plot_nrms_histogram`, table I/O in `femtic.py`. `MOD_NRMS_TITLE_FONTSIZE` added. |
+| 2026-11-09 | Claude Sonnet 5.5 (Anthropic) | New `MOD_TITLE` (figure title: auto / none / text). Default unchanged. AI-generated; review before production use. |

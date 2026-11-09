@@ -233,6 +233,16 @@ Modified: 2026-11-08 by Claude Sonnet 5.5 (Anthropic) -- Section 6c gained
     label, iteration, nRMS from femtic.cnv). Used by femtic_mod_plot_slice.py
     and femtic_mod_plot_bh.py for batches of single-model figures. Nothing
     else changed. AI-generated code -- review before production use.
+Modified: 2026-11-09 by Claude Sonnet 5.5 (Anthropic) -- plane_spec_km_to_m():
+    the plane `point` may now be CRS-tagged, ([lon, lat, z], "latlon"),
+    ([E, N, z], "utm") or ([x, y, z], "model") (new helper
+    plane_point_km_to_m(); new keyword arguments zone / northern /
+    origin_E / origin_N); an optional spec `ylim` (down-dip range of a
+    dipping plane, km) is converted too, and the default along-strike
+    range is still only derived for dip = 90 (the dipping-plane extent is
+    computed in femtic_viz.plot_model_slices). Untagged points and all
+    other behaviour unchanged. AI-generated code -- review before
+    production use.
 """
 from __future__ import annotations
 
@@ -8288,14 +8298,64 @@ def slices_km_to_m(slices):
     return out
 
 
-def plane_spec_km_to_m(spec, xlim_km=None, ylim_km=None):
+def plane_point_km_to_m(raw, zone=None, northern=None,
+                        origin_E=None, origin_N=None):
+    """Resolve a MOD_SLICES plane ``point`` to model-local metres [x, y, z].
+
+    Accepted forms (the km scripts' convention: model-local lengths in km):
+
+    ``[x, y]`` / ``[x, y, z]``          model-local km (z = depth, down; 0 if
+                                        missing); same as the tag "model"
+    ``([x, y, z], "model")``            model-local km
+    ``([E, N, z], "utm")``              absolute UTM easting / northing in
+                                        METRES (as for x0 / y0), z in km
+    ``([lon, lat, z], "latlon")``       decimal degrees, longitude first
+                                        (as in fem.resolve_pos_point), z in km
+
+    The last two need ``zone``, ``northern``, ``origin_E`` and ``origin_N``
+    (UTM zone / hemisphere and UTM position of the model origin, [m]).
+
+    Added 2026-11-09, Claude Sonnet 5.5 (Anthropic).
+    """
+    crs, pt = "model", raw
+    if (isinstance(raw, (list, tuple)) and len(raw) == 2
+            and isinstance(raw[1], str)):
+        pt, crs = raw
+    pt = [float(v) for v in pt]
+    if len(pt) not in (2, 3):
+        raise ValueError(
+            f"plane point must have 2 or 3 elements [x, y(, z)], got {raw!r}")
+    pt += [0.0] * (3 - len(pt))
+    z_m = pt[2] * 1000.0
+    if crs == "model":
+        return [pt[0] * 1000.0, pt[1] * 1000.0, z_m]
+    if crs in ("utm", "latlon"):
+        if None in (zone, northern, origin_E, origin_N):
+            raise ValueError(
+                f"plane point {raw!r} is tagged {crs!r}: UTM zone, hemisphere "
+                "and model origin (zone, northern, origin_E, origin_N) are "
+                "needed to convert it.")
+        return resolve_pos_point(([pt[0], pt[1], z_m], crs),
+                                 zone, northern, origin_E, origin_N)
+    raise ValueError(
+        f"plane point {raw!r}: unknown crs {crs!r}; choose 'model', 'utm' "
+        "or 'latlon'.")
+
+
+def plane_spec_km_to_m(spec, xlim_km=None, ylim_km=None, *,
+                       zone=None, northern=None, origin_E=None, origin_N=None):
     """Convert a MOD_SLICES ``kind="plane"`` entry (km) to a plot spec (m).
 
     Accepted keys (km / degrees): ``point`` = [x, y] or [x, y, z] model-local
-    km (default [0, 0] = model origin), ``strike`` (geographic azimuth,
-    degrees clockwise from north, for dip = 90; default 0), ``dip``
-    (default 90), ``invert_x``, ``title``, and optionally ``xlim`` =
-    [min, max] along-strike km relative to ``point``.
+    km (default [0, 0] = model origin), or CRS-tagged ``([lon, lat, z],
+    "latlon")`` / ``([E, N, z], "utm")`` / ``([x, y, z], "model")`` (see
+    :func:`plane_point_km_to_m`; the tagged UTM / latlon forms need the
+    keyword arguments ``zone``, ``northern``, ``origin_E``, ``origin_N``);
+    ``strike`` (geographic azimuth, degrees clockwise from north, for every
+    dip; default 0), ``dip`` (degrees below the horizontal towards
+    strike + 90, default 90), ``invert_x``, ``title``, and optionally
+    ``xlim`` = [min, max] along-strike km and ``ylim`` = [min, max] down-dip
+    km (dip != 90 only), both relative to ``point``.
 
     For a vertical plane (dip = 90) without an explicit ``xlim`` the
     along-strike range is derived from the same limits as the other panels:
@@ -8303,14 +8363,18 @@ def plane_spec_km_to_m(spec, xlim_km=None, ylim_km=None):
     km) are projected onto the strike direction, so the section covers the
     same ROI. If either of xlim_km / ylim_km is None the whole mesh is
     shown. The depth range follows MOD_ZLIM like every other curtain panel
-    (applied inside femtic_viz.plot_model_slices).
+    (applied inside femtic_viz.plot_model_slices). A dipping plane gets its
+    default extent there too (plane cut with the MOD_XLIM x MOD_YLIM x
+    MOD_ZLIM box).
     """
     sp = dict(spec)
-    pt = list(sp.get("point", [0.0, 0.0]))
-    pt += [0.0] * (3 - len(pt))
-    sp["point"] = [float(v) * 1000.0 for v in pt[:3]]
+    sp["point"] = plane_point_km_to_m(
+        sp.get("point", [0.0, 0.0]), zone, northern, origin_E, origin_N)
+    pt = [v / 1000.0 for v in sp["point"]]       # model-local km
     sp.setdefault("strike", 0.0)
     sp.setdefault("dip", 90.0)
+    if "ylim" in sp:
+        sp["ylim"] = lim_km_to_m(sp["ylim"])
     if "xlim" in sp:
         sp["xlim"] = lim_km_to_m(sp["xlim"])
     elif abs(float(sp["dip"]) - 90.0) < 1e-6:

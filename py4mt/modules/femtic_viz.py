@@ -661,6 +661,70 @@ Provenance:
                         figure is left open exactly as before, so a caller
                         can close it or add it to a catalog).
                         AI-generated code -- review before production use.
+    2026-11-09  Claude Sonnet 5.5 (Anthropic)
+                        Titles and joint colour bar.
+                        plot_model_slices: (1) figure_title = "" or False now
+                        draws no title at all (None = file name, a string as
+                        given, as before); new panel_titles (default True;
+                        False = no panel titles, also not those of the slice
+                        specs). (2) new cbar_location (None / "panel" =
+                        one colour bar per panel, as before; "right" /
+                        "left" / "top" / "bottom" = ONE joint colour bar for
+                        the whole panel grid, borehole columns included),
+                        cbar_shrink (bar length, fraction of the grid side,
+                        default 0.7) and cbar_thickness (inch). The bar
+                        lives in a strip taken out of the tight_layout
+                        rectangle, so the panel spacing is not squeezed (a
+                        plain fig.colorbar(ax=[all axes]) rescales every
+                        panel position, and titles / axis labels of
+                        neighbouring rows then collide); it is put next to
+                        the measured extent of the panel content (falls
+                        back to the layout rectangle when that cannot be
+                        measured). Invalid cbar_location / cbar_shrink
+                        raise ValueError. With the new arguments at their
+                        defaults the figure is pixel-identical to the
+                        previous version (checked). BoreholeFigureOptions.
+                        suptitle: None / False = no figure title (and no
+                        source tag). plot_nrms_histogram: docstring only
+                        (title=None / False / "" was already "no title").
+                        AI-generated code -- review before production use.
+    2026-11-09  Claude Sonnet 5.5 (Anthropic)
+                        Dipping plane slices (dip != 90) rewritten.
+                        The old code used a basis u = n x [0,1,0] that is
+                        neither horizontal nor along strike (for strike 325,
+                        dip 70 it mixes ~40 % vertical into the "along-strike"
+                        axis), measured strike from the +x axis, and plotted
+                        metres under a "(km)" label; the panel showed a
+                        sheared, mislabelled cut. Now, for every dip, strike
+                        is the geographic azimuth (degrees clockwise from
+                        north, as for dip = 90), the plane dips towards
+                        strike + 90 deg (right-hand rule), and the panel
+                        axes are the true in-plane distances from `point`:
+                        horizontal = along strike, vertical = down dip
+                        (positive down, tick labels positive), both in km
+                        if depth_km else m, true (equal) aspect wherever
+                        the other sections get a fixed aspect too
+                        (equal_aspect conditions, or vert_exag set; the
+                        value of vert_exag itself does not apply to a
+                        dipping plane), with the column width sized from
+                        the real spans. The
+                        default extent is the plane cut with the ROI box
+                        (xlim x ylim x zlim, mesh extent where None);
+                        per-spec xlim = along-strike range and ylim =
+                        down-dip range [m, relative to `point`] override it.
+                        Corner labels give the compass direction of the
+                        left / right edge; site markers are projected
+                        in-plane. New module helpers _strike_dip_frame()
+                        and _plane_roi_extent(); dip outside [0, 180]
+                        raises ValueError. dip = 90 output is unchanged
+                        (checked pixel-identical). plot_ensemble_slices uses
+                        the same frame (it had the same legacy plane code,
+                        also for dip = 90) with axes relative to `point`
+                        and the same default extent; there the figure-
+                        level limits (easting / northing) were also applied
+                        to the plane axes, which overrode the axis
+                        inversion and put depth upwards.
+                        AI-generated code -- review before production use.
     """
 
 from __future__ import annotations
@@ -3742,6 +3806,64 @@ def _class_boundary_segments(polys, cls) -> np.ndarray:
     return np.stack((a[e1], b[e1]), axis=1)
 
 
+def _strike_dip_frame(strike_deg, dip_deg):
+    """Return ``(normal, u_strike, v_down)`` of a plane (unit 3-vectors).
+
+    Frame of the viz code: x = easting, y = northing, z = depth (positive
+    down). ``strike_deg`` is the geographic azimuth of the strike line,
+    degrees clockwise from north; the plane dips towards ``strike + 90``
+    (right-hand rule) by ``dip_deg`` below the horizontal. ``u_strike`` is
+    the horizontal unit vector along strike, ``v_down`` the unit vector
+    down the dip line (z component sin(dip) >= 0) and ``normal`` =
+    u_strike x v_down. For dip = 90 this is the vertical-section frame
+    (normal = [cos s, -sin s, 0], v_down = [0, 0, 1]).
+
+    Added 2026-11-09, Claude Sonnet 5.5 (Anthropic).
+    """
+    s = math.radians(float(strike_deg))
+    d = math.radians(float(dip_deg))
+    u = np.array([math.sin(s), math.cos(s), 0.0])
+    v = np.array([math.cos(d) * math.cos(s), -math.cos(d) * math.sin(s),
+                  math.sin(d)])
+    return np.cross(u, v), u, v
+
+
+def _plane_roi_extent(point, normal, u_ax, v_ax, lo, hi):
+    """Extent of (plane  cut with  box) in plane coordinates.
+
+    ``lo`` / ``hi`` are the box corners (x, y, z); the plane passes through
+    ``point`` with unit ``normal``. Returns ``(umin, umax, vmin, vmax)``,
+    the ranges of ``(p - point) @ u_ax`` and ``(p - point) @ v_ax`` over the
+    polygon in which the plane cuts the box, or ``None`` if it misses it.
+
+    Added 2026-11-09, Claude Sonnet 5.5 (Anthropic).
+    """
+    point = np.asarray(point, dtype=float)
+    lo = np.asarray(lo, dtype=float)
+    hi = np.asarray(hi, dtype=float)
+    d = float(normal @ point)
+    pts = []
+    for a in range(3):
+        b, c = [i for i in range(3) if i != a]
+        for vb in (lo[b], hi[b]):
+            for vc in (lo[c], hi[c]):
+                p0 = np.empty(3)
+                p0[a], p0[b], p0[c] = lo[a], vb, vc
+                p1 = p0.copy()
+                p1[a] = hi[a]
+                den = float(normal @ (p1 - p0))
+                if abs(den) < 1e-12:
+                    continue
+                t = (d - float(normal @ p0)) / den
+                if -1e-9 <= t <= 1.0 + 1e-9:
+                    pts.append(p0 + t * (p1 - p0))
+    if not pts:
+        return None
+    q = np.asarray(pts) - point
+    uu, vv = q @ u_ax, q @ v_ax
+    return float(uu.min()), float(uu.max()), float(vv.min()), float(vv.max())
+
+
 def plot_model_slices(
     model_file: Union[str, Path],
     mesh_file: Union[str, Path],
@@ -3798,8 +3920,12 @@ def plot_model_slices(
     label_fontsize: int = 8,
     tick_decimals: Optional[int] = None,
     nrms_annotation: Optional[dict] = None,
-    figure_title: Optional[str] = None,
+    figure_title: Union[str, bool, None] = None,
     figure_title_fontsize: Optional[float] = None,
+    panel_titles: bool = True,
+    cbar_location: Optional[str] = None,
+    cbar_shrink: float = 0.7,
+    cbar_thickness: Optional[float] = None,
     vert_exag: Optional[float] = None,
     reference_file=None,
     reference_levels=None,
@@ -3826,6 +3952,15 @@ def plot_model_slices(
         ``"kind"`` (``"map"``, ``"ns"``, ``"ew"``, ``"plane"``) and the
         corresponding position keys (``z0``, ``x0``, ``y0``,
         ``point`` / ``strike`` / ``dip``).
+        ``"plane"``: ``point`` = [x, y, z] model-local m (z = depth,
+        positive down), ``strike`` = azimuth in degrees clockwise from
+        north, ``dip`` = degrees below the horizontal towards
+        ``strike + 90`` (0..180, default 90). Axes of the panel: along-
+        strike distance and down-dip distance from ``point`` (dip = 90:
+        along-strike distance in model km and depth). Optional per-spec
+        ``xlim`` = along-strike range, ``ylim`` = down-dip range (dip != 90
+        only), both in m relative to ``point``; without them the plane is
+        cut with the box xlim x ylim x zlim.
     cmap
         Matplotlib colormap name.
     clim
@@ -4052,10 +4187,33 @@ def plot_model_slices(
         corner of the panel at index ``panel`` (default: 0).
     figure_title
         Overall figure title (suptitle).  ``None`` → the basename of
-        *model_file*.
+        *model_file*; a string is used as given; ``""`` or ``False`` -> no
+        title (no suptitle is drawn at all; the layout is unchanged).
     figure_title_fontsize
         Font size of the figure title.  ``None`` → ``label_fontsize + 6``
         (was ``label_fontsize + 2`` before 2026-09-25).
+    panel_titles
+        ``True`` (default) -> every panel carries its title (the ``"title"``
+        key of its slice spec, else an automatic one such as
+        ``"Map  z = 1.0 km"``).  ``False`` -> no panel titles at all (also
+        not those given in the specs).  A single panel can be left
+        untitled with ``title=""`` in its spec.
+    cbar_location
+        Where the colour bar(s) go.  ``None`` or ``"panel"`` (default) -> one
+        colour bar next to every panel, as before.  ``"right"``,
+        ``"left"``, ``"top"`` or ``"bottom"`` -> ONE joint colour bar for all
+        panels (they share one colour scale), placed at that side of the
+        whole panel grid (borehole columns included).  Space is taken from
+        the panels' own area; for ``"top"`` / ``"bottom"`` / ``"left"`` the
+        gap to the panels is sized so that the panel titles / tick labels /
+        axis labels do not collide with the bar.  The label is
+        ``cbar_label``.
+    cbar_shrink
+        Joint colour bar only: its length as a fraction of the side of the
+        panel grid it runs along (default 0.7).
+    cbar_thickness
+        Joint colour bar only: its thickness [inch].  ``None`` ->
+        ``1.5 * label_fontsize / 72`` (at least 0.15).
     show
         If True, also display the figure interactively via
         ``plt.show()`` -- in addition to saving, when ``plot_file`` is
@@ -4075,6 +4233,22 @@ def plot_model_slices(
     except ImportError:
         print("  plot_model_slices: Matplotlib not available -- skipping.")
         return
+
+    # Colour bar placement: None / "panel" = one per panel (unchanged),
+    # otherwise one joint bar at that side of the panel grid.
+    _cb_loc = None
+    if cbar_location is not None:
+        _cb_loc = str(cbar_location).strip().lower()
+        if _cb_loc in ("panel", "each", "panels"):
+            _cb_loc = None
+        elif _cb_loc not in ("right", "left", "top", "bottom"):
+            raise ValueError(
+                f"plot_model_slices: cbar_location must be None, 'panel', "
+                f"'right', 'left', 'top' or 'bottom', got {cbar_location!r}.")
+    if not (0.0 < float(cbar_shrink) <= 1.0):
+        raise ValueError(
+            f"plot_model_slices: cbar_shrink must be in (0, 1], "
+            f"got {cbar_shrink!r}.")
 
     # Curtain/plane panels plot depth internally as -depth (z positive-
     # down; see polys_d in the "ns"/"ew" branches below), so that shallow
@@ -4299,19 +4473,6 @@ def plot_model_slices(
         if invert_v:
             ax.invert_yaxis()
         return mappable
-
-    def _strike_dip_to_normal(strike_deg, dip_deg):
-        s, d = math.radians(strike_deg), math.radians(dip_deg)
-        return np.array([-math.sin(d) * math.sin(s),
-                          math.sin(d) * math.cos(s),
-                         -math.cos(d)])
-
-    def _plane_basis(normal):
-        ref = (np.array([0., 1., 0.]) if abs(normal[1]) < 0.9
-               else np.array([1., 0., 0.]))
-        u = np.cross(normal, ref); u /= np.linalg.norm(u)
-        v = np.cross(u, normal);   v /= np.linalg.norm(v)
-        return u, v
 
     # -- display offset / scale ------------------------------------------------
     _disp = ("model" if (obs_coords_only and display_coords in ("utm", "latlon"))
@@ -4594,6 +4755,31 @@ def plot_model_slices(
             _ts.update(_bl["trace_style"])
             _bl["trace_style"] = _ts
 
+    # -- dipping-plane panel ranges (2026-11-09) -------------------------------
+    def _dip_plane_ranges(spec):
+        """(along-strike range, down-dip range) in m relative to `point`.
+
+        Per-spec xlim / ylim if given, else the plane cut with the ROI box
+        (figure-level xlim x ylim x zlim, mesh extent where None); an entry
+        is None when neither is available (plane misses the box).
+        """
+        _sxl, _syl = spec.get("xlim"), spec.get("ylim")
+        if _sxl is None or _syl is None:
+            _nrm, _uu, _vd = _strike_dip_frame(float(spec.get("strike", 0.0)),
+                                               float(spec.get("dip", 90.0)))
+            _p = np.asarray(spec.get("point", [0., 0., 0.]), dtype=float)
+            _lo = [float(xlim[0]) if xlim else float(nodes[:, 0].min()),
+                   float(ylim[0]) if ylim else float(nodes[:, 1].min()),
+                   float(zlim[0]) if zlim else float(nodes[:, 2].min())]
+            _hi = [float(xlim[1]) if xlim else float(nodes[:, 0].max()),
+                   float(ylim[1]) if ylim else float(nodes[:, 1].max()),
+                   float(zlim[1]) if zlim else float(nodes[:, 2].max())]
+            _e = _plane_roi_extent(_p, _nrm, _uu, _vd, _lo, _hi)
+            if _e is not None:
+                _sxl = [_e[0], _e[1]] if _sxl is None else _sxl
+                _syl = [_e[2], _e[3]] if _syl is None else _syl
+        return _sxl, _syl
+
     # -- figure layout ---------------------------------------------------------
     # Borehole panels occupy extra columns to the right of the slice grid.
     # When borehole_shared=True  → 1 extra column (all traces overlaid).
@@ -4648,6 +4834,14 @@ def plot_model_slices(
                     hspan = ((_xl[1] - _xl[0]) if _xl
                              else math.hypot(_ext_x, _ext_y))
                     vspan = _sz
+                elif kind == "plane":
+                    # dipping plane: true in-plane spans, same unit on both
+                    # axes (no vertical exaggeration)
+                    _a, _b = _dip_plane_ranges(spec)
+                    if _a is not None and _b is not None:
+                        hspan, vspan = abs(_a[1] - _a[0]), abs(_b[1] - _b[0])
+                    else:
+                        hspan = vspan = 1.0
                 else:
                     hspan = vspan = 1.0
                 _pw.append(_panel_h * (hspan / vspan if vspan > 0 else 1.0))
@@ -4679,6 +4873,12 @@ def plot_model_slices(
                         vspan = (_zl[1]-_zl[0])*_dz_sc
                     else:
                         hspan, vspan = 1.8, 1.0
+                elif kind == "plane":
+                    _a, _b = _dip_plane_ranges(spec)   # dipping plane
+                    if _a is not None and _b is not None:
+                        hspan, vspan = abs(_a[1] - _a[0]), abs(_b[1] - _b[0])
+                    else:
+                        hspan = vspan = 1.0
                 else:
                     hspan = vspan = 1.0
                 ratio = hspan / vspan if vspan > 0 else 1.0
@@ -4726,6 +4926,7 @@ def plot_model_slices(
             ax.set_facecolor(air_bgcolor)
 
     _site_xys = site_xys or []
+    _joint_mappable = None       # set by the first panel that drew data
 
     # -- render each panel -----------------------------------------------------
     for ax, spec in zip(axes, slices):
@@ -4929,7 +5130,11 @@ def plot_model_slices(
             _invert_x = bool(spec.get("invert_x", False))
             if out:
                 print(f"    plane slice strike={_strike:.0f} deg dip={_dip:.0f} deg ...")
-            normal = _strike_dip_to_normal(_strike, _dip)
+            if not (0.0 <= _dip <= 180.0):
+                raise ValueError(
+                    f"plot_model_slices: plane dip must be in [0, 180] "
+                    f"degrees, got {_dip!r}.")
+            normal = _strike_dip_frame(_strike, _dip)[0]
             if abs(_dip - 90.0) < 1e-6:
                 # --- vertical section (added 2026-10-07) -----------------
                 # _plane_basis() builds u = n x [0,1,0], which for a
@@ -4942,9 +5147,9 @@ def plot_model_slices(
                 # For vertical planes "strike" is a GEOGRAPHIC azimuth,
                 # clockwise from north (viz frame: x = easting, y =
                 # northing), so strike=45 reads SW (left) -> NE (right)
-                # unless invert_x=True. (_strike_dip_to_normal() measures
-                # strike from the +x axis instead, which is not a compass
-                # azimuth; it is left untouched for dipping planes.) Along-strike distance is relative
+                # unless invert_x=True. (Dipping planes use the same
+                # azimuth convention since 2026-11-09, see
+                # _strike_dip_frame().) Along-strike distance is relative
                 # to `point`'s own projection (0 at the point).
                 _s_rad = math.radians(_strike)
                 normal = np.array([math.cos(_s_rad), -math.sin(_s_rad), 0.0])
@@ -5000,43 +5205,75 @@ def plot_model_slices(
                         ax.plot(float(_sxyz @ u_ax)*_hsc, _elev*_dz_sc,
                                 linestyle="none", **mk)
             else:
-                u_ax, v_ax = _plane_basis(normal)
+                # --- dipping plane (rewritten 2026-11-09) ----------------
+                # Axes = true in-plane distances from `point`: horizontal
+                # = along strike, vertical = down dip (plotted as minus
+                # the distance so shallow is on top, tick labels positive
+                # via _depth_tick_fmt). Same unit on both axes (km if
+                # depth_km else m) and equal aspect, so angles are true.
+                normal, u_ax, _v_dn = _strike_dip_frame(_strike, _dip)
+                v_ax = -_v_dn
                 polys, vals, eidx = _slice_geometry(nodes, conn, rho_elem,
-                                              normal, _pt, u_ax, v_ax)
+                                                    normal, _pt, u_ax, v_ax)
+                _u0 = float(_pt @ u_ax)
+                _v0 = float(_pt @ v_ax)
+                _psc = _dz_sc
+                polys_d = [[((pu - _u0)*_psc, (pv - _v0)*_psc)
+                            for pu, pv in poly] for poly in polys]
                 _pa = _compute_poly_alphas(eidx, _alpha_vals, alpha_mode,
                                            alpha_blank_thresh)
-                mappable = _plot_slice_panel(ax, polys, vals,
-                                             cmap_obj=cmap_obj, norm=norm,
-                                             ocean_color=ocean_color,
-                                             air_color=air_color, ocean_value=ocean_value, invert_v=True,
-                                             poly_alphas=_pa)
-                _ref_drawn = _overlay_reference(ax, polys, eidx)
-                ax.set_xlabel("along-strike (m)", fontsize=label_fontsize)
-                ax.set_ylabel("down-dip (km)" if depth_km else "down-dip (m)", fontsize=label_fontsize)
-                if _xlim is not None:
-                    ax.set_xlim(_xlim)
-                if _ylim is not None:
-                    ax.set_ylim(_ylim)
+                mappable = _plot_slice_panel(
+                    ax, polys_d, vals, cmap_obj=cmap_obj, norm=norm,
+                    ocean_color=ocean_color, air_color=air_color,
+                    ocean_value=ocean_value, invert_v=False, poly_alphas=_pa)
+                _ref_drawn = _overlay_reference(ax, polys_d, eidx)
+                # Ranges [m] relative to `point`: per-spec xlim (along
+                # strike) / ylim (down dip), else the plane cut with the
+                # ROI box (figure-level xlim x ylim x zlim; mesh extent
+                # where one is None).
+                _sxl, _syl = _dip_plane_ranges(spec)
+                if _sxl is not None:
+                    ax.set_xlim([min(_sxl)*_psc, max(_sxl)*_psc])
+                if _syl is not None:
+                    ax.set_ylim([-max(_syl)*_psc, -min(_syl)*_psc])
                 if _invert_x:
                     ax.invert_xaxis()
+                if _do_equal or _ve is not None:
+                    # same condition as the layout above (which sizes the
+                    # column from the true spans); otherwise the panel
+                    # fills its cell like the other sections do
+                    ax.set_aspect("equal", adjustable="box")
+                _ul = "km" if depth_km else "m"
+                ax.set_xlabel(f"along strike, azimuth {_strike:.0f} deg "
+                              f"[{_ul}]", fontsize=label_fontsize)
+                ax.set_ylabel(f"down dip, dip {_dip:.0f} deg [{_ul}]",
+                              fontsize=label_fontsize)
+                ax.yaxis.set_major_formatter(_depth_tick_fmt)
                 if title is None:
                     title = f"Plane  str={_strike:.0f} deg  dip={_dip:.0f} deg"
+                _s_rad = math.radians(_strike)
+                _c_l = _s_rad + math.pi if not _invert_x else _s_rad
+                _c_r = _s_rad if not _invert_x else _s_rad + math.pi
+                def _compass(a):
+                    _n = math.cos(a); _e = math.sin(a)
+                    return (("N" if _n > 0.38 else "S" if _n < -0.38 else "")
+                            + ("E" if _e > 0.38 else "W" if _e < -0.38 else ""))
+                ax.text(0.02, 0.98, _compass(_c_l), transform=ax.transAxes,
+                        ha="left", va="top", fontsize=label_fontsize,
+                        fontweight="bold", clip_on=False, zorder=10)
+                ax.text(0.98, 0.98, _compass(_c_r), transform=ax.transAxes,
+                        ha="right", va="top", fontsize=label_fontsize,
+                        fontweight="bold", clip_on=False, zorder=10)
                 if sites_in_slices:
                     for sn, sx_m, sy_m, _elev in _site_xys:
-                        site_xyz  = np.array([sx_m, sy_m, -_elev]) - _pt
-                        perp_dist = abs(float(np.dot(site_xyz, normal)))
-                        if projection_dist is not None and perp_dist > projection_dist:
+                        _sxyz = np.array([sx_m, sy_m, -_elev]) - _pt
+                        if (projection_dist is not None
+                                and abs(float(_sxyz @ normal)) > projection_dist):
                             continue
-                        u_coord = float(np.dot(site_xyz, u_ax))
                         mk = dict(_sms); mk.setdefault("label", f"Site {sn}")
-                        # Same elev-sign fix as ns/ew (elev = -z_mesh, positive
-                        # up). Note: the plane panel's mesh polygons use their
-                        # own strike/dip-dependent v_ax + invert_v=True instead
-                        # of this simple elevation axis, and that combination
-                        # was not independently re-verified here -- if plane
-                        # panels still look wrong, check the interaction
-                        # between invert_v and this marker position too.
-                        ax.plot(u_coord, _elev*_dz_sc, linestyle="none", **mk)
+                        ax.plot(float(_sxyz @ u_ax)*_psc,
+                                float(_sxyz @ v_ax)*_psc,
+                                linestyle="none", **mk)
 
         else:
             ax.set_visible(False)
@@ -5044,17 +5281,21 @@ def plot_model_slices(
             continue
 
         if mappable is not None:
-            # Plain ScalarMappable so the colourbar is never drawn with a
-            # faded polygon collection's alpha (alpha_file fade/direct).
-            # NB: not "_sm" -- that name is the site-marker dict (above).
-            _cb_mappable = matplotlib.cm.ScalarMappable(norm=mappable.norm,
-                                                        cmap=mappable.cmap)
-            cb = fig.colorbar(_cb_mappable, ax=ax, fraction=0.046, pad=0.04)
-            cb.set_label(cbar_label if cbar_label is not None
-                         else "log10(rho / Ohm*m)", fontsize=label_fontsize)
-            cb.ax.tick_params(labelsize=tick_fontsize)
+            _joint_mappable = mappable
+            if _cb_loc is None:
+                # Plain ScalarMappable so the colourbar is never drawn with a
+                # faded polygon collection's alpha (alpha_file fade/direct).
+                # NB: not "_sm" -- that name is the site-marker dict (above).
+                _cb_mappable = matplotlib.cm.ScalarMappable(
+                    norm=mappable.norm, cmap=mappable.cmap)
+                cb = fig.colorbar(_cb_mappable, ax=ax,
+                                  fraction=0.046, pad=0.04)
+                cb.set_label(cbar_label if cbar_label is not None
+                             else "log10(rho / Ohm*m)", fontsize=label_fontsize)
+                cb.ax.tick_params(labelsize=tick_fontsize)
 
-        ax.set_title(title, fontsize=label_fontsize + 1)
+        if panel_titles:
+            ax.set_title(title, fontsize=label_fontsize + 1)
         ax.tick_params(labelsize=tick_fontsize)
         _show_legend = (
             (_site_xys and (
@@ -5146,14 +5387,99 @@ def plot_model_slices(
                 elif _bi > 0:
                     _bh_axes[0].get_shared_y_axes().join(_bh_axes[0], _bh_ax)
 
-    fig.suptitle(figure_title if figure_title is not None
-                 else os.path.basename(str(model_file)),
-                 fontsize=(figure_title_fontsize if figure_title_fontsize
-                           is not None else label_fontsize + 6))
+    # Figure title: None (or True) -> the file name; a string as given;
+    # "" / False -> no title (nothing is drawn; the layout below is the same
+    # as with a title, and savefig(bbox_inches="tight") crops the blank band).
+    if figure_title is None or figure_title is True:
+        _sup = os.path.basename(str(model_file))
+    elif figure_title is False:
+        _sup = ""
+    else:
+        _sup = str(figure_title)
+    if _sup:
+        fig.suptitle(_sup,
+                     fontsize=(figure_title_fontsize if figure_title_fontsize
+                               is not None else label_fontsize + 6))
+
     # rect leaves the top ~6% of the figure for the suptitle so it doesn't
     # collide with the top row of panel titles. Without rect, tight_layout()
     # fits the axes grid to the full figure height and ignores the suptitle.
-    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    _rect = [0.0, 0.0, 1.0, 0.94]
+    _joint = _cb_loc is not None and _joint_mappable is not None
+    if _joint:
+        # Joint colour bar (cbar_location): a strip of the figure at the
+        # bar's side is taken out of the layout rectangle, so tight_layout()
+        # arranges the panels (and their titles / tick labels / axis labels)
+        # in what remains and the panel spacing is not squeezed; the bar is
+        # then put into the strip. Sizes in inch: the bar, a gap to the
+        # panels, and room beyond the bar for its tick labels and label.
+        _fw, _fh = fig.get_size_inches()
+        _tk, _lb = float(tick_fontsize), float(label_fontsize)
+        _cb_thick = (float(cbar_thickness) if cbar_thickness is not None
+                     else max(0.15, 1.5 * _lb / 72.0))
+        _cb_gap = max(0.08, 0.4 * _cb_thick)
+        if _cb_loc in ("right", "left"):
+            _cb_room = (11.0 + 3.0 * _tk + 1.3 * _lb) / 72.0
+            _strip = min((_cb_gap + _cb_thick + _cb_room) / _fw, 0.4)
+        else:
+            _cb_room = (17.0 + 1.25 * _tk + 1.3 * _lb) / 72.0
+            _strip = min((_cb_gap + _cb_thick + _cb_room) / _fh, 0.4)
+        if _cb_loc == "right":
+            _rect[2] -= _strip
+        elif _cb_loc == "left":
+            _rect[0] += _strip
+        elif _cb_loc == "top":
+            _rect[3] -= _strip
+        else:
+            _rect[1] += _strip
+    fig.tight_layout(rect=tuple(_rect))
+
+    if _joint:
+        # The bar spans the grid of all visible panels (borehole columns
+        # included); its length is cbar_shrink of the grid side, centred.
+        from matplotlib.transforms import Bbox
+
+        _parents = [a for a in axes if a.get_visible()] + list(_bh_axes)
+        _gb = Bbox.union([a.get_position(original=True) for a in _parents])
+        _tw, _th = _cb_thick / _fw, _cb_thick / _fh    # figure fractions
+        _gw, _gh = _cb_gap / _fw, _cb_gap / _fh
+        _s = float(cbar_shrink)
+        # Edge of the panels' content (axes plus titles / tick labels / axis
+        # labels) on the bar's side, so that the bar sits next to it; the
+        # panels do not always fill their cells (equal aspect). Falls back
+        # to the edge of the layout rectangle if it cannot be measured.
+        _edge = {"right": _rect[2], "left": _rect[0],
+                 "top": _rect[3], "bottom": _rect[1]}[_cb_loc]
+        try:
+            _tb = Bbox.union([a.get_tightbbox(fig.canvas.get_renderer())
+                              for a in _parents])
+            _tbf = fig.transFigure.inverted().transform_bbox(_tb)
+            _meas = {"right": _tbf.x1, "left": _tbf.x0,
+                     "top": _tbf.y1, "bottom": _tbf.y0}[_cb_loc]
+            if np.isfinite(_meas):
+                _edge = (min(_edge, _meas) if _cb_loc in ("right", "top")
+                         else max(_edge, _meas))
+        except Exception:
+            pass
+        if _cb_loc in ("right", "left"):
+            _y0 = _gb.y0 + 0.5 * (1.0 - _s) * _gb.height
+            _x0 = _edge + _gw if _cb_loc == "right" else _edge - _gw - _tw
+            _cax_pos = [_x0, _y0, _tw, _s * _gb.height]
+            _orient, _tickloc = "vertical", _cb_loc
+        else:
+            _x0 = _gb.x0 + 0.5 * (1.0 - _s) * _gb.width
+            _y0 = _edge + _gh if _cb_loc == "top" else _edge - _gh - _th
+            _cax_pos = [_x0, _y0, _s * _gb.width, _th]
+            _orient, _tickloc = "horizontal", _cb_loc
+        _cax = fig.add_axes(_cax_pos, label="<joint colorbar>")
+        _cb_mappable = matplotlib.cm.ScalarMappable(
+            norm=_joint_mappable.norm, cmap=_joint_mappable.cmap)
+        cb = fig.colorbar(_cb_mappable, cax=_cax, orientation=_orient,
+                          ticklocation=_tickloc)
+        cb.set_label(cbar_label if cbar_label is not None
+                     else "log10(rho / Ohm*m)", fontsize=label_fontsize)
+        cb.ax.tick_params(labelsize=tick_fontsize)
+
     if plot_file is not None:
         fig.savefig(plot_file, dpi=dpi, bbox_inches="tight")
         if out:
@@ -5858,20 +6184,6 @@ def plot_ensemble_slices(
             elem_idx.append(k)
         return polys, np.asarray(elem_idx, dtype=int)
 
-    def _strike_dip_to_normal(strike_deg, dip_deg):
-        s = math.radians(strike_deg)
-        d = math.radians(dip_deg)
-        return np.array([-math.sin(d) * math.sin(s),
-                          math.sin(d) * math.cos(s),
-                         -math.cos(d)])
-
-    def _plane_basis(normal):
-        ref = np.array([0., 1., 0.]) if abs(normal[1]) < 0.9 \
-              else np.array([1., 0., 0.])
-        u = np.cross(normal, ref); u /= np.linalg.norm(u)
-        v = np.cross(u, normal);   v /= np.linalg.norm(v)
-        return u, v
-
     def _plot_panel(fig_ref, ax, polys, vals, *, cmap_obj, norm,
                     oc_color, oc_value, invert_v, row_label, col,
                     cb_label, show_ylabel):
@@ -5966,14 +6278,41 @@ def plot_ensemble_slices(
             _pt     = np.asarray(spec.get("point",  [0., 0., 0.]), dtype=float)
             _strike = float(spec.get("strike", 0.0))
             _dip    = float(spec.get("dip",    90.0))
-            normal  = _strike_dip_to_normal(_strike, _dip)
-            u_ax, v_ax = _plane_basis(normal)
+            if not (0.0 <= _dip <= 180.0):
+                raise ValueError(
+                    f"plot_ensemble_slices: plane dip must be in [0, 180] "
+                    f"degrees, got {_dip!r}.")
+            # strike = geographic azimuth, dip towards strike + 90; axes =
+            # along-strike / down-dip distance [m] from `_pt` (2026-11-09).
+            normal, u_ax, v_ax = _strike_dip_frame(_strike, _dip)
             polys, eidx = _slice_geometry_indices(nodes, conn, normal, _pt, u_ax, v_ax)
+            _u0, _v0 = float(_pt @ u_ax), float(_pt @ v_ax)
+            polys = [[(pu - _u0, pv - _v0) for pu, pv in poly] for poly in polys]
+            # In-plane ranges [m] from `point`: per-spec xlim (along strike)
+            # / ylim (down dip), else the plane cut with the box xlim x ylim
+            # x zlim (mesh extent where None). The figure-level limits are
+            # easting / northing / depth, so they must not be applied to the
+            # plane axes directly (that used to override the axis inversion
+            # and put depth upwards).
+            _pxl, _pyl = spec.get("xlim"), spec.get("ylim")
+            if _pxl is None or _pyl is None:
+                _bl = [float(xlim[0]) if xlim else float(nodes[:, 0].min()),
+                       float(ylim[0]) if ylim else float(nodes[:, 1].min()),
+                       float(zlim[0]) if zlim else float(nodes[:, 2].min())]
+                _bh = [float(xlim[1]) if xlim else float(nodes[:, 0].max()),
+                       float(ylim[1]) if ylim else float(nodes[:, 1].max()),
+                       float(zlim[1]) if zlim else float(nodes[:, 2].max())]
+                _pe = _plane_roi_extent(_pt, normal, u_ax, v_ax, _bl, _bh)
+                if _pe is not None:
+                    _pxl = [_pe[0], _pe[1]] if _pxl is None else _pxl
+                    _pyl = [_pe[2], _pe[3]] if _pyl is None else _pyl
+            _pxl = None if _pxl is None else [min(_pxl), max(_pxl)]
+            _pyl = None if _pyl is None else [max(_pyl), min(_pyl)]  # inverted axis
             title_tmpl  = title_tmpl or f"Plane  str={_strike:.0f} deg  dip={_dip:.0f} deg"
             slice_geom.append(dict(polys=polys, eidx=eidx, invert_v=True,
                                    invert_x=bool(spec.get("invert_x", False)),
                                    xlabel="along-strike [m]", ylabel="down-dip [m]",
-                                   xlim=_xlim, ylim=_ylim, zlim=None, title=title_tmpl))
+                                   xlim=_pxl, ylim=_pyl, zlim=None, title=title_tmpl))
         else:
             if out:
                 print(f"  ensemble: unknown slice kind {kind!r} -- skipped.")
@@ -6805,7 +7144,8 @@ def plot_nrms_histogram(
     bins : int | str
         Anything numpy.histogram_bin_edges accepts.
     title : str | None
-        Figure title (e.g. the ensemble prefix); None = no title.
+        Figure title (e.g. the ensemble prefix); None, False or "" = no
+        title.
     tick_fontsize, label_fontsize : int
         Font sizes (the legend uses ``tick_fontsize - 3``).
     title_fontsize : int | None
@@ -7015,7 +7355,9 @@ class BoreholeFigureOptions:
     #: Legend text of the reference-model line; None = no legend entry.
     ref_label: Optional[str] = None
     #: First part of the figure title (e.g. "<ensemble dir>  <prefix>").
-    suptitle: str = ""
+    #: None or False = no figure title at all (the source tag of
+    #: ``tag_sources`` is then not added either).
+    suptitle: Union[str, bool, None] = ""
     #: Add the model source to panel titles and the figure title (when the
     #: run shows both the converged and the perturbed models).
     tag_sources: bool = False
@@ -7193,10 +7535,12 @@ def plot_boreholes(groups, plot_base, cs, norm, extend, opts):
             hi = max(r[1] for r in ranges)
         ax.set_ylim(hi, lo)
 
-    sup = opts.suptitle
-    if opts.tag_sources:
-        sup += "  (" + " | ".join(opts.source_labels[s] for s, _ in groups) + ")"
-    fig.suptitle(sup, fontsize=opts.title_fontsize)
+    if opts.suptitle is not None and opts.suptitle is not False:
+        sup = str(opts.suptitle)
+        if opts.tag_sources:
+            sup += ("  (" + " | ".join(opts.source_labels[s] for s, _ in groups)
+                    + ")")
+        fig.suptitle(sup, fontsize=opts.title_fontsize)
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     if heat_mesh is not None and opts.heat_cbar:
         # one shared colour bar, added after tight_layout so that it only

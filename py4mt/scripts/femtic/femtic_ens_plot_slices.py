@@ -38,6 +38,35 @@ Changes     : MOD_STATS_WHAT is a plain list (the old conditionals on
               BOOTSTRAP_VAR / COMPUTE_* became "skip what the file lacks");
               MOD_STATS_STYLE lists the standard keys explicitly.
 AI-generated code -- review before production use.
+
+2026-11-09  Claude Sonnet 5.5 (Anthropic)
+              (1) Titles: new MOD_TITLE (figure title of every figure:
+              "auto" = as before, None / False / "" = no title, a string with
+              placeholders {key} {label} {prefix} {n} {source} {best} {iter}
+              {nrms}, or a dict per figure key) and MOD_PANEL_TITLES (False =
+              no panel titles; single panels: title="" / title="text" in the
+              MOD_SLICES entry). (2) Joint colour bar: new MOD_CBAR_LOCATION
+              ("panel" = one bar per panel, as before; "right" / "left" /
+              "top" / "bottom" = ONE colour bar for all panels of a figure),
+              MOD_CBAR_SHRINK, MOD_CBAR_THICKNESS. Needs the femtic_viz.py of
+              the same date (plot_model_slices: panel_titles, cbar_location,
+              cbar_shrink, cbar_thickness; figure_title="" = no title). With
+              the new settings at their defaults the figures are unchanged.
+              AI-generated; review before production use.
+
+2026-11-09  Claude Sonnet 5.5 (Anthropic)
+              Plane slices. (1) The `point` of a kind="plane" entry in
+              MOD_SLICES may now be CRS-tagged like x0 / y0: ([lon, lat, z],
+              "latlon"), ([E, N, z], "utm") (UTM metres) or ([x, y, z],
+              "model"); z is always model-local km, depth positive down;
+              plain [x, y(, z)] stays model-local km. (2) Dips other than
+              90 deg no longer give a sheared, mislabelled panel: strike is
+              the geographic azimuth for every dip, the plane dips towards
+              strike + 90, and the axes are along-strike and down-dip
+              distance from `point` (see the readme). Needs femtic.py and
+              femtic_viz.py of the same date. Entries with dip = 90 and all
+              other kinds are unchanged.
+              AI-generated; review before production use.
 """
 
 from __future__ import annotations
@@ -308,10 +337,24 @@ MOD_SLICES = [
     #: its range follows MOD_XLIM x MOD_YLIM (projected onto the strike),
     #: its depth range MOD_ZLIM. Optional: xlim=[min, max] (km) to override.
     # dict(kind="plane", point=[0.0, 0.0], strike=45.0, dip=90.0),
+    #: Dipping plane (dip < 90): strike = azimuth (deg clockwise from north)
+    #: of the strike line, the plane dips towards strike + 90. ``point`` may
+    #: be model-local km or CRS-tagged (z = depth in km, positive down):
+    #:   point=[x, y, z]                       model-local km
+    #:   point=([x, y, z], "model")            model-local km
+    #:   point=([E, N, z], "utm")              UTM metres, z in km
+    #:   point=([lon, lat, z], "latlon")       degrees (longitude first)
+    #: Axes = along-strike and down-dip distance from ``point`` (km if
+    #: MOD_DEPTH_KM else m, true aspect, see the readme). Default extent = the plane cut
+    #: with the MOD_XLIM x MOD_YLIM x MOD_ZLIM box; optional per-entry
+    #: xlim=[min, max] (along strike) and ylim=[min, max] (down dip), km
+    #: relative to ``point``.
+    # dict(kind="plane", point=([6.12, 45.90, 0.0], "latlon"), strike=325.0, dip=70.0),
+    # dict(kind="plane", point=([E_utm, N_utm, 2.0], "utm"), strike=325.0, dip=45.0),
     # dict(kind="ns",  x0=(-71.40723, 'latlon')),    # km
     # dict(kind="ew",  y0=(-16.299593, 'latlon')),    # km
 ]
-
+#: Epagny (45.9383, 6.0883) 
 # --- Reference model (optional) -----------------------------------------------
 #: A reference model to compare the ensemble with: a resistivity block file
 #: (resistivity_block_iterX.dat) on the SAME mesh as MOD_MESH -- e.g. a
@@ -483,6 +526,44 @@ MOD_LABEL_FONTSIZE = 16  # axis labels, panel titles, colourbar label
 #: None = MOD_LABEL_FONTSIZE + 6.
 MOD_TITLE_FONTSIZE = MOD_LABEL_FONTSIZE + 10
 
+# --- Titles -----------------------------------------------------------------
+#: Figure title (above all panels) of every figure of this script.
+#:   "auto"            as before: the "best" figure shows the block-file name,
+#:                     the best member, its iteration and nRMS; every
+#:                     statistic figure shows its block-file name.
+#:   None, False or "" no figure title.
+#:   a string          used as given. Placeholders, filled in per figure:
+#:                     {key} panel key of MOD_STATS_WHAT ("best", "avg", ...),
+#:                     {label} description of the statistic, {prefix}
+#:                     ENSEMBLE_PREFIX, {n} number of members, {source}
+#:                     "converged" / "perturbed", {best} name of the best
+#:                     member, {iter} its iteration, {nrms} its nRMS (a
+#:                     number: {nrms:.3f} works). Text with other braces is
+#:                     used as it stands.
+#:   a dict            one entry per figure, e.g.
+#:                       {"best": "Best member", "avg": "Mean", "err": None,
+#:                        "default": "auto"}
+#:                     keys = entries of MOD_STATS_WHAT; values as above;
+#:                     "default" (else "auto") covers the keys not listed.
+MOD_TITLE = "auto"
+#: Panel titles ("Map  z = 1.0 km", "N-S  easting = 0.0 km", ...): True = as
+#: before, False = none. A single panel is titled by adding title="text" to its
+#: MOD_SLICES entry (title="" leaves just that panel untitled).
+MOD_PANEL_TITLES = True
+
+# --- Colour bar ----------------------------------------------------------------
+#: "panel"  one colour bar next to every panel (as before);
+#: "right", "bottom", "top", "left"
+#:          ONE colour bar for all panels of a figure (they share one colour
+#:          scale), at that side of the whole panel grid. The panels give up a
+#:          strip of the figure for it; their spacing is kept.
+MOD_CBAR_LOCATION = "panel"
+#: Joint colour bar only: its length as a fraction of the side of the panel
+#: grid it runs along (0 < value <= 1), and its thickness in cm (None =
+#: 1.5 x MOD_LABEL_FONTSIZE points).
+MOD_CBAR_SHRINK = 0.7
+MOD_CBAR_THICKNESS = None  # cm
+
 #: Decimal digits shown on axis tick labels (depth, map/curtain
 #: easting-northing, and lat/lon all share this one setting). None (default)
 #: keeps plot_model_slices' own per-axis-type formatting unchanged.
@@ -566,7 +647,8 @@ def _plot_slice(
         that a statistic value can never be mistaken for air (log10 > 8)
         or ocean (log10 ~ log10(MOD_OCEAN_RHO)) by plot_model_slices.
     figure_title : str | None
-        Figure title passed to plot_model_slices; None = block-file name.
+        Figure title passed to plot_model_slices; None = block-file name,
+        "" = no title (see MOD_TITLE and _title_for()).
 
     Module settings used besides the MOD_* layout ones: MOD_REF_FILE /
     MOD_REF_SLICES / MOD_REF_LEVELS / MOD_REF_STYLE / MOD_REF_LABEL (reference
@@ -590,8 +672,9 @@ def _plot_slice(
     _ocean_value = fem.STATS_OCEAN_RHO if stats_panel else MOD_OCEAN_RHO
     _air_thresh = fem.STATS_AIR_LOG10_THRESH if stats_panel else 8.0
 
-    # "plane" entries (vertical sections) are converted here (km -> m, no
-    # CRS tagging); all other kinds go through fem.resolve_slice_positions
+    # "plane" entries are converted here (km -> m; `point` may be CRS-tagged,
+    # see fem.plane_point_km_to_m); all other kinds go through
+    # fem.resolve_slice_positions
     # exactly as before. Original MOD_SLICES order is preserved.
     _others = [sp for sp in MOD_SLICES if sp.get("kind") != "plane"]
     _others_res = iter(
@@ -609,7 +692,15 @@ def _plot_slice(
         else []
     )
     _slices_resolved = [
-        fem.plane_spec_km_to_m(sp, MOD_XLIM, MOD_YLIM)
+        fem.plane_spec_km_to_m(
+            sp,
+            MOD_XLIM,
+            MOD_YLIM,
+            zone=utm_zone,
+            northern=utm_north,
+            origin_E=utm_e,
+            origin_N=utm_n,
+        )
         if sp.get("kind") == "plane"
         else next(_others_res)
         for sp in MOD_SLICES
@@ -674,6 +765,14 @@ def _plot_slice(
             label_fontsize=MOD_LABEL_FONTSIZE,
             figure_title_fontsize=MOD_TITLE_FONTSIZE,
             figure_title=figure_title,
+            panel_titles=bool(MOD_PANEL_TITLES),
+            cbar_location=MOD_CBAR_LOCATION,
+            cbar_shrink=MOD_CBAR_SHRINK,
+            cbar_thickness=(
+                MOD_CBAR_THICKNESS / 2.54
+                if MOD_CBAR_THICKNESS is not None
+                else None
+            ),
             tick_decimals=MOD_TICK_DECIMALS,
             alpha_file=alpha_file,
             alpha_mode="direct",
@@ -782,6 +881,40 @@ def _panel_style(key):
     )
 
 
+def _title_for(key, auto, label=""):
+    """Figure title of the figure `key`, from MOD_TITLE.
+
+    Returns `auto` for "auto" (None = file name of the block file), "" for
+    no title, otherwise the text with its placeholders filled in.
+    """
+    spec = MOD_TITLE
+    if isinstance(spec, dict):
+        spec = spec.get(key, spec.get("default", "auto"))
+    if spec is None or spec is False:
+        return ""
+    if spec is True:
+        return auto
+    spec = str(spec)
+    if spec.strip() == "":
+        return ""
+    if spec.strip().lower() == "auto":
+        return auto
+    try:
+        return spec.format(
+            key=key,
+            label=label,
+            prefix=P,
+            n=len(model_list),
+            source=_ENS_SRC,
+            best=_best_member,
+            iter=_best_iter,
+            nrms=_best_nrms,
+        )
+    except (KeyError, IndexError, ValueError, AttributeError) as _exc:
+        print(f"  MOD_TITLE: cannot fill in {spec!r} ({_exc!r}) - used as it stands.")
+        return spec
+
+
 _alpha_block = None
 if MOD_ALPHA_SOURCE:
     _a_name, _a_op, _a_thr = fem.parse_alpha_source(MOD_ALPHA_SOURCE)
@@ -852,12 +985,14 @@ if MOD_QC:
         site_xys=site_xys,
         obs_coords_only=obs_coords_only,
         alpha_file=_alpha_block if MOD_ALPHA_QC else None,
-        figure_title=(
+        figure_title=_title_for(
+            "best",
             f"{_best_name}"
             + (" (perturbed reference)" if _ENS_SRC == "perturbed" else "")
             + "\n"
             f"best member: {_best_member}  iter {_best_iter}  "
-            f"nRMS {_best_nrms:.3f}"
+            f"nRMS {_best_nrms:.3f}",
+            "best member",
         ),
     )
 
@@ -966,6 +1101,7 @@ if MOD_STATS:
                 else _alpha_block
             ),
             stats_panel=True,
+            figure_title=_title_for(_key, None, _label),
         )
 
 print("\nfemtic_ens_plot_slices.py complete.")

@@ -29,6 +29,12 @@ Changes     : in the old code the font-size argument of the title was lost
               size; that stays the default, MOD_NRMS_TITLE_FONTSIZE sets it.
               Everything else looks as before.
 AI-generated code -- review before production use.
+
+2026-11-09  Claude Sonnet 5.5 (Anthropic)
+              New MOD_TITLE: figure title ("auto" = the ensemble prefix, as
+              before; None / False / "" = no title; a string with the
+              placeholder {prefix}). With the default the figure is unchanged.
+              AI-generated; review before production use.
 """
 
 from __future__ import annotations
@@ -70,10 +76,11 @@ ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_orig-er
 ENSEMBLE_PREFIX = "annecy_rto_orig-err"
 
 #: Where femtic_ens_post.py wrote its results; the figure goes here too.
-RESULTS_DIR = os.path.join(ENSEMBLE_DIR, "results256") + os.sep
+RESULTS_DIR = os.path.join(ENSEMBLE_DIR, "results") + os.sep
 
 #: The results .npz (same name rule as femtic_ens_post.py).
-ENSEMBLE_RESULTS = RESULTS_DIR + ENSEMBLE_PREFIX.upper() + "_results256.npz"
+ENSEMBLE_RESULTS = RESULTS_DIR + ENSEMBLE_PREFIX+ "_results.npz"
+#.upper() + "_results256.npz"
 
 #: Key prefix inside the .npz. None = detect (the file's only ensemble).
 NPZ_PREFIX = None
@@ -136,6 +143,10 @@ MOD_DPI = 400  # figure DPI
 MOD_TICK_FONTSIZE = 16
 MOD_LABEL_FONTSIZE = 16
 MOD_NRMS_TITLE_FONTSIZE = None
+#: Figure title. "auto" = the ensemble prefix (as before); None, False or "" =
+#: no title; a string is used as given ({prefix} = ENSEMBLE_PREFIX as stored in
+#: the results file; text with other braces is used as it stands).
+MOD_TITLE = "auto"
 
 #: When True (default) and this script is running inside Spyder, the figure is
 #: also displayed inline via plt.show(). Has no effect outside Spyder.
@@ -179,12 +190,30 @@ _nrms_max = NRMS_MAX if NRMS_MAX is not None else res["nrms_max"]
 _base = MOD_NRMS_HIST_FILE or os.path.join(RESULTS_DIR, P + "_nrms_hist")
 os.makedirs(os.path.dirname(_base) or ".", exist_ok=True)
 
+def _figure_title():
+    """Figure title from MOD_TITLE: a string, or None for no title."""
+    if MOD_TITLE is None or MOD_TITLE is False:
+        return None
+    if MOD_TITLE is True:
+        return P
+    _t = str(MOD_TITLE)
+    if _t.strip() == "":
+        return None
+    if _t.strip().lower() == "auto":
+        return P
+    try:
+        return _t.format(prefix=P)
+    except (KeyError, IndexError, ValueError, AttributeError) as _exc:
+        print(f"  MOD_TITLE: cannot fill in {_t!r} ({_exc!r}) - used as it stands.")
+        return _t
+
+
 fviz.plot_nrms_histogram(
     rows,
     _base,
     nrms_max=_nrms_max,
     bins=MOD_NRMS_BINS,
-    title=P,
+    title=_figure_title(),
     tick_fontsize=MOD_TICK_FONTSIZE,
     label_fontsize=MOD_LABEL_FONTSIZE,
     title_fontsize=MOD_NRMS_TITLE_FONTSIZE,
@@ -199,4 +228,4 @@ print("\nfemtic_ens_plot_misfit.py complete.")
 # ---------------------------------------------------------------------------
 # Parameter summary
 # ---------------------------------------------------------------------------
-_summary_path = utl.write_param_summary(__file__, out_dir=ENSEMBLE_DIR)
+_summary_path = utl.write_param_summary(__file__, out_dir=RESULTS_DIR)

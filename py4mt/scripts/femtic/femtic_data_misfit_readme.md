@@ -9,6 +9,8 @@ Data-misfit diagnostics for FEMTIC `results_iterN.h5` files (renamed from
 
 ## Overview
 
+Since 2026-11-09 the two run modes also exist as separate scripts, `femtic_ens_misfit.py` (ensemble) and `femtic_mod_misfit.py` (single models), which share the module `femtic_misfit.py` (the engine of this script, with the settings as an argument). This script is unchanged and still does both jobs; the three give identical results for the same settings.
+
 This is the quality-control script of the "ens" family (with
 `femtic_ens_post.py`, `femtic_ens_plot_slices.py`, `femtic_ens_plot_bh.py`);
 plots of single models are the "mod" scripts (`femtic_mod_plot_slice.py`, ...).
@@ -542,6 +544,9 @@ conductivity structure models. Earth, Planets and Space 75, 67.
 https://doi.org/10.1186/s40623-023-01832-5
 
 ## Changelog
+
+### Changelog (2026-11-09) --- ens / mod versions
+- Script unchanged. Added `femtic_ens_misfit.py` and `femtic_mod_misfit.py` (and the module `femtic_misfit.py`) with the ensemble and the single-model half of this script; see their readmes.
 
 ### Changelog (2026-11-08) --- method "nrms" (merge with the ensemble misfit script)
 

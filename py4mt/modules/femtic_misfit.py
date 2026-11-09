@@ -1,56 +1,36 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-femtic_data_misfit.py
+femtic_misfit.py
 
-Data-misfit diagnostics for FEMTIC results_iterN.h5 files:
+Shared code of the data-misfit scripts ``femtic_mod_misfit.py`` (single
+models / runs) and ``femtic_ens_misfit.py`` (ensembles): diagnostics for
+FEMTIC ``results_iterN.h5`` files.
 
-  1. "crossplot"  - scatter plots of observed vs. calculated data, one panel
-                    per data type and component, log10 frequency as colour.
-  2. "histogram"  - normalized-residual histograms in frequency (or period)
-                    bands, following Baba (2023): residuals normalized by the
-                    observed error only (conventional, RMS1) and by the
-                    observed and the synthesized error (proposed, RMS2).
-  3. "qq"         - normal Q-Q plots of the same normalized residuals in the
-                    same frequency (or period) bands, with the ideal 1:1
-                    line, a quartile line (slope = robust scale, intercept
-                    = bias), and a pointwise confidence envelope.
+  1. "crossplot"  observed vs. calculated data, one panel per data type and
+                  component, log10 frequency as colour.
+  2. "histogram"  normalized-residual histograms in frequency (or period)
+                  bands, after Baba (2023): RMS1 (observed error only) and,
+                  for M > 1 syntheses, RMS2 (observed and synthesized error).
+  3. "qq"         normal Q-Q plots of the same residuals, in the same bands.
+  4. "curves"     optional: response curves per site (data_viz plotters);
+                  for an ensemble as curves, density or percentile bands.
+  5. "nrms"       ensemble only: histogram of the best nRMS of all scanned
+                  members (accepted / rejected), from the results .npz of
+                  femtic_ens_post.py.
 
-  4. "curves"    - OPTIONAL (not in the default METHODS): response curves per
-                    site, observed data with errors against the calculated
-                    response, drawn with the data_viz plotters (add_rho,
-                    add_phase, add_tipper, add_pt). For an ensemble the
-                    members can be drawn as many thin curves, as a per-period
-                    density of all member curves, as percentile bands, or a
-                    combination ("auto" switches from curves to density when
-                    the ensemble is large).
+The code is the engine of femtic_data_misfit.py (same functions, same
+output), with one change: the settings are not read from module globals
+but passed in as an argument, the way the other modules of the package
+(femtic.py, femtic_viz.py) work. The scripts hold the settings and call
 
-  5. "nrms"      - histogram of the best nRMS of ALL scanned members of an
-                    ensemble, accepted and rejected stacked, with the
-                    acceptance threshold and the median of the accepted
-                    members marked. The table comes from the results .npz of
-                    femtic_ens_post.py (NRMS_RESULTS; CSV fallback NRMS_CSV),
-                    so this method reads no results_iterN.h5 and does not
-                    depend on RUN_MODE / RUN_PATHS: with only "nrms" in
-                    METHODS no run is needed. It is the quick convergence
-                    check of an ensemble; the methods 1-4 are the data-level
-                    check. (Until 2026-11-08 the histogram was a separate
-                    script, femtic_ens_plot_misfit.py.)
+    opts = fm.make_settings(**settings)          # defaults + overrides
+    fm.run_models(opts, argv)                    # every entry on its own (M = 1)
+    fm.run_ensemble(opts, argv)                  # all entries = one ensemble
 
-Methods 1-4 work on single runs (best iteration of each) or on an ensemble of
-runs (best iteration of each member); method 5 needs an ensemble.
-
-@author   vrath
-@project  py4mt
-@created  2026-09-18
-@modified 2026-11-08
-
-Provenance
-----------
-Author      : Claude (Anthropic)
-Generated   : 2026-09-19 (last modified 2026-11-08)
-Notice      : This code is AI-generated. Review and test it before any
-              production use.
+``Settings`` lists every setting with its default; ``make_settings`` rejects
+unknown names. Everything is documented in femtic_misfit_readme.md and in the
+readmes of the two scripts; the statistics follow Baba (2023).
 
 Reference
 ---------
@@ -59,221 +39,38 @@ magnetotelluric forward modeling for practical three-dimensional
 conductivity structure models. Earth, Planets and Space 75, 67.
 https://doi.org/10.1186/s40623-023-01832-5
 
-Run modes
----------
-single    RUN_PATHS is a list of runs (run directories containing
-          results_iter*.h5, results files, or glob patterns). Every entry
-          is processed on its own -- they do NOT form an ensemble. For a
-          directory the iteration is chosen by ITERATION ("best" = smallest
-          overall error-normalized RMS of the /data rows, "last", or an
-          integer).
-ensemble  All entries of RUN_PATHS together form one ensemble. The chosen
-          iteration of every run is one member; members are matched row by
-          row (datatype, site, component, frequency).
-
-Fit measures (from inverse.py): for the error-normalized residuals r,
-    nrms  = sqrt(mean(r^2))            expected 1    for r ~ N(0,1)
-    r_mae = sqrt(pi/2) * mean(|r|)     expected 1
-    r_med = median(|r|) / 0.6745       expected 1
-    q95   = 95th percentile of |r|     expected 1.96
-plus the mean of r (bias). They are given for both normalizations (err =
-conventional, err+syn = Baba's RMS2; the latter only if M > 1) in the overall
-table (<prefix>_fit_measures.txt) and in the crossplot and histogram tables.
-Robust measures (r_mae, r_med, q95) that stay near their expected values
-while nrms is large point to a few outliers rather than a general misfit.
-
-Output location: OUT_DIR = None (default) writes into the run directory
-(single: the directory of each chosen results file; ensemble: the common
-parent directory of the member directories); a string forces one directory.
-
-Method notes (see also the readme)
-----------------------------------
-Baba (2023), Eqs. (10)-(14), for M syntheses of the same model:
-
-    mu      = mean of the M calculated values          (complex mean)
-    sigma   = sqrt( 1/(M-1) * sum |Z_j - mu|^2 )       (complex modulus)
-    eps_syn = sigma / sqrt(M)
-    RMS1    = sqrt( 1/(2N) sum |Zobs - Zsyn|^2 / eps_obs^2 )
-    RMS2    = sqrt( 1/(2N) sum |Zobs - mu|^2 / (eps_obs^2 + eps_syn^2) )
-
-Here the M syntheses are the ensemble members. The histograms show the
-per-component (real/imaginary) normalized residuals, as in Baba's Fig. 10a,
-with N(0, RMS^2) overlaid. In single mode M = 1, eps_syn = 0, and RMS2 is
-identical to RMS1 (only the conventional histogram is drawn).
-
-Optional plotting section ("curves", see also the CURVES_* settings)
---------------------------------------------------------------------
-Needs data_viz.py (and, if importable, femtic_viz.py for the component
-marker convention) on the path; nothing else changes if "curves" is not in
-METHODS. One figure (one page of <prefix>_curves.pdf) per selected site, one
-panel per quantity in CURVES_WHAT ("rho", "phase", "tipper", "pt"):
-
-    single run   observed data (markers, error bars or shading) and the
-                 calculated response (line).
-    ensemble     the calculated responses of all M members, as
-                 "curves"   thin transparent lines (at most CURVES_SUBSAMPLE),
-                 "density"  per-period density of all member curves (member
-                            curves are interpolated onto a fine log-period
-                            grid and binned in y; the colour opacity is the
-                            fraction of members per bin -- this scales to
-                            hundreds of members),
-                 "bands"    percentile envelopes (CURVES_BAND_PCT),
-                 or a "+"-joined combination such as "density+bands";
-                 "auto" = curves for M <= CURVES_MAX_CURVES, else density.
-                 The ensemble median (CURVES_MEDIAN) and the observed data
-                 (mean over members, as in the other methods) are drawn on
-                 top.
-
-Quantities are derived from the /data rows in the same way as
-data_viz.datadict_to_plot_df (rho_a = |Z|^2 / (mu0 omega) with Z in SI ohm as
-stored by FEMTIC; phase = atan2(Im Z, Re Z); the error of rho_a and of the
-phase from the complex modulus of the errors); the only difference is that
-the calculated phase is put on the branch of the observed phase (no 360
-degree jumps for members crossing +-180, common for yx). Apparent-resistivity/phase
-data types (APP_RES_AND_PHS) are taken as stored (rho in ohm.m, phase in
-degrees unless CURVES_APPRES_PHASE_DEG = False). Data types without a
-data_viz plotter (HTF, NMT) are skipped.
-
-Usage
------
-    python femtic_data_misfit.py                       # config below
-    python femtic_data_misfit.py single   ./run01/ ./run02/   # separately
-    python femtic_data_misfit.py ensemble "./ens/member_*/"
-
-Examples: "single" (each entry is its own run, one output set per run)
-    # config block: RUN_MODE = "single"; ITERATION = "best"
-    RUN_PATHS = ["/data/ens/run01/", "/data/ens/run02/"]
-    #   -> two independent evaluations, prefixes Misfits_run01_iter<N> and
-    #      Misfits_run02_iter<N> (OUT_PREFIX = "Misfits"; None -> run01_iter<N>),
-    #      each written into the directory of its chosen results file.
-    python femtic_data_misfit.py single ./run01/                # one run
-    python femtic_data_misfit.py single ./run01/ ./run02/       # two runs
-    python femtic_data_misfit.py single "./ens/run_*/"          # glob: one each
-    # a fixed iteration instead of the best one: ITERATION = 25 ("last" and
-    # "best" are also allowed); a results file may be given directly:
-    python femtic_data_misfit.py single ./run01/results_iter25.h5
-
-Examples: "ensemble" (all entries together form ONE ensemble, M members)
-    # config block: RUN_MODE = "ensemble"; ITERATION = "last"
-    RUN_PATHS = ["/data/ens/member_*/"]       # one member per directory
-    python femtic_data_misfit.py ensemble "./ens/member_*/"
-    python femtic_data_misfit.py ensemble ./m01/ ./m02/ ./m03/
-    #   -> one output set, prefix ensemble_M<M>, written into the common
-    #      parent directory of the members (OUT_DIR = "/some/dir" forces
-    #      one directory). The chosen iteration of each member is one
-    #      member of the ensemble; members must share the same data rows.
-    #      Gives RMS1 and RMS2 (Baba 2023; RMS2 needs M > 1).
-    #   Quote globs so the shell does not expand them (the script expands them).
+Provenance
+----------
+Author      : Claude (Anthropic)
+Generated   : 2026-11-09, from femtic_data_misfit.py (2026-09-18 .. 2026-11-08)
+Notice      : This code is AI-generated. Review and test it before any
+              production use.
 
 Changelog
 ---------
-2026-11-08  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
-            new fifth method "nrms" (histogram of the best nRMS of all
-            scanned ensemble members, accepted / rejected stacked, threshold
-            and median marked) replaces femtic_ens_plot_misfit.py, so that
-            the misfit diagnostics of an ensemble are one script. Settings
-            NRMS_RESULTS, NRMS_NPZ_PREFIX, NRMS_CSV, NRMS_MAX, NRMS_BINS,
-            NRMS_HIST_FILE, NRMS_*_FONTSIZE; table <prefix>_nrms_stats.txt.
-            New run_nrms_histogram(); main() runs it once, independent of
-            RUN_MODE / RUN_PATHS (drawing: femtic_viz.plot_nrms_histogram,
-            imported only when the method is used). The methods 1-4 and
-            their settings are unchanged; "nrms" was added to the default
-            METHODS (it is skipped with a message when neither NRMS_RESULTS
-            nor NRMS_CSV is set).
-2026-10-10b Claude (Anthropic), AI-generated, review before use: sites at the
-            same POSITION are merged (SITE_MERGE_BY_POSITION, SITE_MERGE_TOL):
-            if data types number the same station differently (MT 1..48,
-            VTF 1001..1048), all rows at one position get the site_id of the
-            first occurrence of that position (row order, usually the
-            impedance data). One "curves" figure and one line of the per-site
-            table per position; the table has an also_ids column. New
-            merge_sites_by_position(); build_dataset(site_merge_tol=...)
-            keeps site_id_raw and site_alias. Crossplot / histogram / Q-Q
-            are not affected.
-2026-10-10  Claude (Anthropic), AI-generated, review before use: site names
-            for "curves" are now assigned by COORDINATES (site_x / site_y of
-            the results file against easting / northing of site.dat, with a
-            common shift found by the script): CURVES_SITE_MATCH = "auto"
-            (default; uses sitenum + CURVES_SITE_ID_OFFSET only if the results
-            have no coordinates), "coords", "id"; CURVES_SITE_TOL. Reason: the site_id values of the results
-            file follow the station order of observe.dat (here a case-
-            insensitive name order), not the sitenum of site.dat. New helpers
-            _read_site_dat_xy(), match_sites_by_coords(); load_site_names()
-            now takes the per-site table `info`.
-2026-10-09  Claude (Anthropic), AI-generated, review before use: new option
-            PLOT_DIR puts all figures (crossplot, histogram, Q-Q, curves)
-            into a separate directory (None = with the tables; relative
-            name = sub-directory of the output directory; absolute path =
-            one directory for all). Text tables stay in the output
-            directory. New helper resolve_plot_dir().
-2026-09-18  Claude Sonnet 5 (Anthropic): initial version (as
-            femtic_crossplot.py): observed-vs-calculated crossplots.
-2026-09-19  Claude Sonnet 5 (Anthropic): renamed to femtic_data_misfit.py;
-            added the normalized-residual histogram method of Baba (2023)
-            in frequency/period bands (default 2 per decade); added single
-            run (best iteration) and ensemble modes; METHODS switch.
-2026-09-19b Claude Sonnet 5 (Anthropic): added third method "qq" (normal Q-Q
-            plots of the normalized residuals in frequency/period bands);
-            band selection factored out of the histogram function.
-2026-09-21  Claude Sonnet 5 (Anthropic): (1) OUT_DIR = None writes into the
-            run directory (ensemble: common parent of the members);
-            (2) single mode processes every entry of RUN_PATHS separately
-            (a list of singles, not an ensemble); (3) QQ_EQUAL_AXES gives
-            optionally equal (square) Q-Q axes.
-2026-09-21b Claude Sonnet 5 (Anthropic): (4) several measures of data fit
-            (nrms, r_mae, r_med, q95 from inverse.py, plus mean) in an
-            overall table per data type and in the crossplot and histogram
-            tables; FIT_MEASURES switch. Crossplot statistics now use the
-            same residuals as the histograms (RMS1 reference = REF_MEMBER
-            response if set).
-2026-09-21c Claude Sonnet 5 (Anthropic): the run name (directory of the
-            chosen results file) and iteration are shown in the title of
-            every plot in single mode (ensemble: "ensemble of M runs").
-2026-09-21d Claude Sonnet 5 (Anthropic): fixed PLOT_FORMATS handling: a plain
-            string such as (".pdf") (no trailing comma) was iterated
-            character by character (".", "p", "d", "f") and produced four
-            PNG files with names ending in "", "p", "d", "f"; _save() now
-            accepts a string, adds a missing dot and passes the format
-            explicitly (unsupported extensions raise).
-2026-09-30  Claude (Anthropic): optional fourth method "curves": per-site
-            response curves (observed vs. calculated) built on the data_viz
-            plotters; ensemble-aware (many thin curves, per-period density,
-            percentile bands, ensemble median); CURVES_* settings; site
-            selection (even / first / worst / best by nRMS, or explicit ids);
-            multi-page PDF; per-site nRMS table (<prefix>_site_nrms.txt).
-            build_dataset() now also keeps the per-member calculated
-            responses (cal_re_m, cal_im_m, shape (M, rows)) and the site
-            coordinates (site_x, site_y); the other three methods are
-            unchanged.
-2026-09-30b Claude (Anthropic): site names for "curves" from the site.dat of
-            mt_make_sitelist.py (femtic.read_site_dat): shown in the figure
-            titles, the file names and <prefix>_site_nrms.txt, and accepted in
-            CURVES_SITES; CURVES_SITE_DAT ("auto" searches the results
-            directory and two levels up) and CURVES_SITE_ID_OFFSET.
-2026-09-30c Claude (Anthropic): CURVES_OBSERVED_ONLY = True draws only the
-            observed data (markers + errors) in "curves"; calculated
-            response, ensemble layers and nRMS in the title are omitted.
-2026-10-08  Claude (Anthropic), AI-generated, review before use: documentation
-            only -- explicit "single" and "ensemble" usage examples (config
-            block and command line) added to the Usage section and readme.
-2026-10-08b Claude (Anthropic), AI-generated, review before use: resolve_run()
-            skips files h5py cannot open (OSError, e.g. "file signature not
-            found") like unreadable results; ensemble mode skips members
-            without a usable file and continues with the rest.
+2026-11-09  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            created. The engine of femtic_data_misfit.py moved into this
+            module; settings passed as ``opts`` (``make_settings``) instead of
+            module globals; drivers ``run_models`` (list of single runs),
+            ``run_ensemble`` (one ensemble) and ``run``. Functions, outputs
+            and messages (prefix "femtic_misfit:") otherwise unchanged;
+            femtic_data_misfit.py itself is not touched.
 """
 from __future__ import annotations
 
+import copy
 import glob
 import math
 import os
 import re
 import sys
+from types import SimpleNamespace
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
 # ---------------------------------------------------------------------------
-# py4mt environment: make the modules importable (femtic.py, ensembles.py)
+# py4mt environment: make the modules importable (femtic.py, inverse.py, ...)
 # ---------------------------------------------------------------------------
 PY4MTX_ROOT = os.environ.get("PY4MTX_ROOT", "")
 if PY4MTX_ROOT:
@@ -285,217 +82,200 @@ if PY4MTX_ROOT:
 import femtic as fem  # noqa: E402
 import inverse as inv  # noqa: E402  (nrms, r_mae, r_med, q95)
 
+
 # ---------------------------------------------------------------------------
-# User configuration
+# Settings (defaults; the scripts override them)
 # ---------------------------------------------------------------------------
-# --- what to run ---
+class Settings:
+    """Default value of every setting (see the readme for the meaning).
 
-# "single":   every entry of RUN_PATHS is processed on its own (a list of
-#             singles; they do NOT form an ensemble)
-# "ensemble": all entries together form one ensemble
-#  RUN_MODE: str = "ensemble"               # "single" | "ensemble"
-RUN_MODE: str = "ensemble"               # "single" | "ensemble"
-# RUN_PATHS: List[str] = [
-#  r"/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_0/ann*/"
-#     ]        # run dirs, results files, or globs (overridden by argv)
-RUN_PATHS: List[str] = [
-     r"/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_orig-err/ann*/"
-    ]        # run dirs, results files, or globs (overridden by argv)
+    Use :func:`make_settings` to get a settings object with overrides;
+    unknown names raise ``KeyError``.
+    """
 
-# RUN_MODE: str = "single"
-# RUN_PATHS: List[str] = [
-#     "/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2/annecy_rnd_2_59/",
-#     "/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2/annecy_rnd_2_60/",
-#     ]
-ITERATION: Union[str, int] = "best"      # "best" | "last" | integer
-ITER_PATTERN: str = "results_iter*.h5"   # searched in each run directory
-METHODS: Tuple[str, ...] = ("crossplot", "histogram", "qq", "curves", "nrms", )
-# METHODS = ("crossplot", "histogram", "qq", "curves", "nrms")
-#   "curves" is optional; "nrms" needs NRMS_RESULTS or NRMS_CSV (see below)
+    # --- what to run ---
+    RUN_PATHS: List[str] = []   # run dirs, results files, or globs (argv overrides)
+    ITERATION: Union[str, int] = "best"      # "best" | "last" | integer
+    ITER_PATTERN: str = "results_iter*.h5"   # searched in each run directory
+    METHODS: Tuple[str, ...] = ("crossplot", "histogram", "qq")
+    #   "curves" is optional; "nrms" needs NRMS_RESULTS or NRMS_CSV (see below)
 
-# --- ensemble handling ---
-ENSEMBLE_OBS: str = "mean"     # observed values/errors: "mean" over members
-                               # (RTO-perturbed data average back to the
-                               # original) or "first" member
-REF_MEMBER: Optional[int] = None   # RMS1 reference: None = ensemble mean;
-                                   # integer = calculated response of that
-                                   # member (as in Baba's "6th model")
+    # --- ensemble handling ---
+    ENSEMBLE_OBS: str = "mean"     # observed values/errors: "mean" over members
+                                   # (RTO-perturbed data average back to the
+                                   # original) or "first" member
+    REF_MEMBER: Optional[int] = None   # RMS1 reference: None = ensemble mean;
+                                       # integer = calculated response of that
+                                       # member (as in Baba's "6th model")
 
-# --- sites ---
-SITE_MERGE_BY_POSITION: bool = True   # data types often number the same station
-                                      # differently (e.g. MT 1..48, VTF 1001..1048).
-                                      # True: all rows at the same position get the
-                                      # site_id of the FIRST occurrence of that
-                                      # position (row order of the results file,
-                                      # usually the impedance data): VTF 1001 -> 1.
-                                      # Affects the per-site table and the "curves"
-                                      # figures (one figure per position, all data
-                                      # types together); not the other methods
-SITE_MERGE_TOL: float = 1.0           # [m] positions closer than this are the same
+    # --- sites ---
+    SITE_MERGE_BY_POSITION: bool = True   # data types often number the same station
+                                          # differently (e.g. MT 1..48, VTF 1001..1048).
+                                          # True: all rows at the same position get the
+                                          # site_id of the FIRST occurrence of that
+                                          # position (row order of the results file,
+                                          # usually the impedance data): VTF 1001 -> 1.
+                                          # Affects the per-site table and the "curves"
+                                          # figures (one figure per position, all data
+                                          # types together); not the other methods
+    SITE_MERGE_TOL: float = 1.0           # [m] positions closer than this are the same
 
-# --- output ---
-OUT_DIR: Optional[str] = (
-    "/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_orig-err/results256/"
-)
-# None      # None -> into the run directory (single:
-                                   # each run's own; ensemble: common parent
-                                   # of the member directories); or a path
-OUT_PREFIX: Optional[str] = "Misfits"  # None -> derived from run / ensemble;
-                                   # if set with several singles it is
-                                   # prepended: <OUT_PREFIX>_<run>_iter<N>
-PLOT_FORMATS: Tuple[str, ...] = (".pdf",)   # a tuple: note the comma!
-PLOT_DPI: int = 300
-PLOT_DIR: Optional[str] = None  # where the figures go (tables stay in
-                            # the output directory). None = same directory
-                            # as the tables; a relative name = sub-directory
-                            # of the output directory (per run); an absolute
-                            # path = that one directory for all figures
-                            # (file names stay distinct via the prefix)
-WRITE_STATS: bool = True
-FIT_MEASURES: bool = True   # overall table of fit measures (per data type
-                            # and pooled) -> <prefix>_fit_measures.txt
-SHOW: bool = False
+    # --- output ---
+    OUT_DIR: Optional[str] = None   # None -> into the run directory (single: each run's own;
+                                    # ensemble: common parent of the members); or a path
+    OUT_PREFIX: Optional[str] = None  # None -> derived from run / ensemble;
+                                       # if set with several singles it is
+                                       # prepended: <OUT_PREFIX>_<run>_iter<N>
+    PLOT_FORMATS: Tuple[str, ...] = (".pdf",)   # a tuple: note the comma!
+    PLOT_DPI: int = 300
+    PLOT_DIR: Optional[str] = None  # where the figures go (tables stay in
+                                # the output directory). None = same directory
+                                # as the tables; a relative name = sub-directory
+                                # of the output directory (per run); an absolute
+                                # path = that one directory for all figures
+                                # (file names stay distinct via the prefix)
+    WRITE_STATS: bool = True
+    FIT_MEASURES: bool = True   # overall table of fit measures (per data type
+                                # and pooled) -> <prefix>_fit_measures.txt
+    SHOW: bool = False
 
-# --- selection (None = everything) ---
-DATATYPES: Optional[Sequence[str]] = None     # e.g. ["MT", "VTF"]
-COMPONENTS: Optional[Sequence[str]] = None    # e.g. ["Zxy", "Zyx"]
+    # --- selection (None = everything) ---
+    DATATYPES: Optional[Sequence[str]] = None     # e.g. ["MT", "VTF"]
+    COMPONENTS: Optional[Sequence[str]] = None    # e.g. ["Zxy", "Zyx"]
 
-# --- crossplot ---
-NCOLS: int = 4
-PANEL_SIZE: float = 3.3
-EQUAL_ASPECT: bool = True
-CMAP: str = "turbo"
-COLOR_RANGE: str = "global"   # "global" | "panel" (range of log10 f)
-MARKER_SIZE: float = 14.0
-ALPHA: float = 0.85
-LOG_RHO: bool = True          # log-log axes for rho* components
-SHOW_ERRORBARS: bool = False
+    # --- crossplot ---
+    NCOLS: int = 4
+    PANEL_SIZE: float = 3.3
+    EQUAL_ASPECT: bool = True
+    CMAP: str = "turbo"
+    COLOR_RANGE: str = "global"   # "global" | "panel" (range of log10 f)
+    MARKER_SIZE: float = 14.0
+    ALPHA: float = 0.85
+    LOG_RHO: bool = True          # log-log axes for rho* components
+    SHOW_ERRORBARS: bool = False
 
-# --- residual histograms ---
-HIST_BAND_AXIS: str = "frequency"   # "frequency" | "period"
-HIST_BANDS_PER_DECADE: int = 2
-HIST_BY_COMPONENT: bool = False     # False: one figure per data type
-                                    # (components pooled, as in Baba 2023)
-HIST_LIMIT: float = 10.0            # histogram range +/- (values outside
-                                    # are counted, not drawn)
-HIST_BIN_WIDTH: float = 0.5
-HIST_MIN_N: int = 5                 # skip bands with fewer values
-HIST_NCOLS: int = 4
-HIST_PANEL_SIZE: float = 3.0
+    # --- residual histograms ---
+    HIST_BAND_AXIS: str = "frequency"   # "frequency" | "period"
+    HIST_BANDS_PER_DECADE: int = 2
+    HIST_BY_COMPONENT: bool = False     # False: one figure per data type
+                                        # (components pooled, as in Baba 2023)
+    HIST_LIMIT: float = 10.0            # histogram range +/- (values outside
+                                        # are counted, not drawn)
+    HIST_BIN_WIDTH: float = 0.5
+    HIST_MIN_N: int = 5                 # skip bands with fewer values
+    HIST_NCOLS: int = 4
+    HIST_PANEL_SIZE: float = 3.0
 
-# --- Q-Q plots (same normalized residuals as the histograms) ---
-QQ_BAND_AXIS: str = "frequency"     # "frequency" | "period"
-QQ_BANDS_PER_DECADE: int = 2
-QQ_BY_COMPONENT: bool = False       # False: per data type, components pooled
-QQ_LIMIT: float = 10.0              # max |sample quantile| shown
-QQ_EQUAL_AXES: bool = True         # True: same range on both axes, square
-                                    # panels (1:1 line at 45 degrees)
-QQ_CONFIDENCE: Optional[float] = 0.95   # pointwise envelope; None = off
-QQ_MIN_N: int = 10                  # skip bands with fewer values
-QQ_NCOLS: int = 4
-QQ_PANEL_SIZE: float = 3.0
+    # --- Q-Q plots (same normalized residuals as the histograms) ---
+    QQ_BAND_AXIS: str = "frequency"     # "frequency" | "period"
+    QQ_BANDS_PER_DECADE: int = 2
+    QQ_BY_COMPONENT: bool = False       # False: per data type, components pooled
+    QQ_LIMIT: float = 10.0              # max |sample quantile| shown
+    QQ_EQUAL_AXES: bool = True         # True: same range on both axes, square
+                                        # panels (1:1 line at 45 degrees)
+    QQ_CONFIDENCE: Optional[float] = 0.95   # pointwise envelope; None = off
+    QQ_MIN_N: int = 10                  # skip bands with fewer values
+    QQ_NCOLS: int = 4
+    QQ_PANEL_SIZE: float = 3.0
 
-# --- ensemble nRMS histogram (method "nrms") ---
-# Needs only the results of femtic_ens_post.py; no results_iterN.h5, and
-# RUN_MODE / RUN_PATHS are not used by this method. Output: <OUT_DIR or the
-# directory of NRMS_RESULTS>/<OUT_PREFIX or the ensemble prefix>_nrms_hist.<ext>
-# (figure directory: PLOT_DIR; formats and DPI: PLOT_FORMATS, PLOT_DPI).
-NRMS_RESULTS: Optional[str] = (
-    "/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_orig-err/"
-    "results256/ANNECY_RTO_ORIG-ERR_results256.npz"
-)   # results .npz of femtic_ens_post.py (holds the nRMS table of ALL scanned
-    # members, <P>_nrms_table); None = use NRMS_CSV only
-NRMS_NPZ_PREFIX: Optional[str] = None   # key prefix inside the .npz; None = the
-                                        # file's only ensemble
-NRMS_CSV: Optional[str] = None   # fallback for results files written before
-                                 # 2026-11-08 (no table inside): the CSV
-                                 # <ENSEMBLE_PREFIX>_nrms.csv of femtic_ens_post.py.
-                                 # If neither gives a table, only the accepted
-                                 # members of the .npz are shown
-NRMS_MAX: Optional[float] = None   # acceptance threshold line; None = the
-                                   # value stored in the .npz (NRMS_MAX of
-                                   # femtic_ens_post.py), none if absent
-NRMS_BINS: Union[int, str] = "auto"   # an int, or a numpy rule ("auto", "fd", ...)
-NRMS_HIST_FILE: Optional[str] = None   # extension-less output path;
-                                       # None = <figure dir>/<prefix>_nrms_hist
-NRMS_TICK_FONTSIZE: int = 16
-NRMS_LABEL_FONTSIZE: int = 16
-NRMS_TITLE_FONTSIZE: Optional[int] = None   # None = Matplotlib's default title size
+    # --- ensemble nRMS histogram (method "nrms") ---
+    # Needs only the results of femtic_ens_post.py; no results_iterN.h5, and
+    # RUN_MODE / RUN_PATHS are not used by this method. Output: <OUT_DIR or the
+    # directory of NRMS_RESULTS>/<OUT_PREFIX or the ensemble prefix>_nrms_hist.<ext>
+    # (figure directory: PLOT_DIR; formats and DPI: PLOT_FORMATS, PLOT_DPI).
+    NRMS_RESULTS: Optional[str] = None   # results .npz of femtic_ens_post.py (holds the nRMS table
+        # of ALL scanned members, <P>_nrms_table); None = use NRMS_CSV only
+    NRMS_NPZ_PREFIX: Optional[str] = None   # key prefix inside the .npz; None = the
+                                            # file's only ensemble
+    NRMS_CSV: Optional[str] = None   # fallback for results files written before
+                                     # 2026-11-08 (no table inside): the CSV
+                                     # <ENSEMBLE_PREFIX>_nrms.csv of femtic_ens_post.py.
+                                     # If neither gives a table, only the accepted
+                                     # members of the .npz are shown
+    NRMS_MAX: Optional[float] = None   # acceptance threshold line; None = the
+                                       # value stored in the .npz (NRMS_MAX of
+                                       # femtic_ens_post.py), none if absent
+    NRMS_BINS: Union[int, str] = "auto"   # an int, or a numpy rule ("auto", "fd", ...)
+    NRMS_HIST_FILE: Optional[str] = None   # extension-less output path;
+                                           # None = <figure dir>/<prefix>_nrms_hist
+    NRMS_TICK_FONTSIZE: int = 16
+    NRMS_LABEL_FONTSIZE: int = 16
+    NRMS_TITLE_FONTSIZE: Optional[int] = None   # None = Matplotlib's default title size
 
-# --- response curves (optional method "curves"; add it to METHODS) ---
-# Needs data_viz.py on the path. One figure per site, one panel per entry of
-# CURVES_WHAT; PLOT_FORMATS/PLOT_DPI/OUT_DIR/OUT_PREFIX apply as usual.
-CURVES_WHAT: Tuple[str, ...] = ("rho", "phase", "tipper")  # + "pt"
-CURVES_COMPS: str = (
-    "xx, xy, yx, yy"  # impedance components (rho and phase panels)
-)
-CURVES_SITE_DAT: Optional[str] = (
-    "/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_rto_orig-err/templates/site.dat"
-)
-# "auto"   # site.dat from mt_make_sitelist.py
-# (name,lat,lon,elev,sitenum,E,N): gives the
-# site names. "auto" = look for site.dat in
-# the results directory and up to two
-# levels above; a path; None = no names
-CURVES_SITE_ID_OFFSET: int = 0  # site_id in the results file = sitenum
-# in site.dat + this offset (only used by
-# CURVES_SITE_MATCH = "id" and as the fallback)
-CURVES_SITE_MATCH: str = "auto"  # how the site.dat names are assigned to the
-# site_id values of the results file:
-# "auto"   by coordinates (site_x / site_y of the
-#          results file against easting / northing of
-#          site.dat; a common shift is found by the
-#          script); by id (sitenum + offset) only if
-#          the results file has no coordinates
-# "coords" by coordinates only
-# "id"     by sitenum + CURVES_SITE_ID_OFFSET only
-CURVES_SITE_TOL: float = 15.0   # [m] largest distance for a coordinate match
-CURVES_SITES: Union[None, int, Sequence[Union[int, str]]] = None
-# None = all sites; int N = N sites (chosen
-# by CURVES_SITE_ORDER); list = these
-                                   # site_id values and/or site names
-CURVES_SITE_ORDER: str = "even"    # for an int CURVES_SITES: "even" (spread
-                                   # over the site list), "id" (first N),
-                                   # "worst" / "best" (by site nRMS)
-CURVES_MAX_SITES: int = 200        # safety cap on the number of figures
+    # --- response curves (optional method "curves"; add it to METHODS) ---
+    # Needs data_viz.py on the path. One figure per site, one panel per entry of
+    # CURVES_WHAT; PLOT_FORMATS/PLOT_DPI/OUT_DIR/OUT_PREFIX apply as usual.
+    CURVES_WHAT: Tuple[str, ...] = ("rho", "phase", "tipper")  # + "pt"
+    CURVES_COMPS: str = (
+        "xx, xy, yx, yy"  # impedance components (rho and phase panels)
+    )
+    CURVES_SITE_DAT: Optional[str] = "auto"
+    # "auto"   # site.dat from mt_make_sitelist.py
+    # (name,lat,lon,elev,sitenum,E,N): gives the
+    # site names. "auto" = look for site.dat in
+    # the results directory and up to two
+    # levels above; a path; None = no names
+    CURVES_SITE_ID_OFFSET: int = 0  # site_id in the results file = sitenum
+    # in site.dat + this offset (only used by
+    # CURVES_SITE_MATCH = "id" and as the fallback)
+    CURVES_SITE_MATCH: str = "auto"  # how the site.dat names are assigned to the
+    # site_id values of the results file:
+    # "auto"   by coordinates (site_x / site_y of the
+    #          results file against easting / northing of
+    #          site.dat; a common shift is found by the
+    #          script); by id (sitenum + offset) only if
+    #          the results file has no coordinates
+    # "coords" by coordinates only
+    # "id"     by sitenum + CURVES_SITE_ID_OFFSET only
+    CURVES_SITE_TOL: float = 15.0   # [m] largest distance for a coordinate match
+    CURVES_SITES: Union[None, int, Sequence[Union[int, str]]] = None
+    # None = all sites; int N = N sites (chosen
+    # by CURVES_SITE_ORDER); list = these
+                                       # site_id values and/or site names
+    CURVES_SITE_ORDER: str = "even"    # for an int CURVES_SITES: "even" (spread
+                                       # over the site list), "id" (first N),
+                                       # "worst" / "best" (by site nRMS)
+    CURVES_MAX_SITES: int = 200        # safety cap on the number of figures
 
-# ensemble display (ignored for a single run: observed + calculated line)
-CURVES_ENS_MODE: str = "auto"      # "auto" | "curves" | "density" | "bands",
-                                   # or "+"-joined, e.g. "density+bands"
-CURVES_MAX_CURVES: int = 50        # auto: curves up to this many members,
-                                   # density above
-CURVES_SUBSAMPLE: int = 100        # "curves": at most this many members drawn
-CURVES_MEMBER_ALPHA: Optional[float] = None   # None = from number of curves
-CURVES_MEDIAN: bool = True         # ensemble median on top
-CURVES_BAND_PCT: Tuple[float, ...] = (5.0, 25.0)  # bands: p..100-p percentiles
-CURVES_DENSITY_NX: int = 200       # density: log-period grid points
-CURVES_DENSITY_NY: int = 60        # density: y bins
-CURVES_DENSITY_GAMMA: float = 0.5  # < 1 makes sparse regions more visible
-CURVES_SEED: int = 0               # member subsampling
+    # ensemble display (ignored for a single run: observed + calculated line)
+    CURVES_ENS_MODE: str = "auto"      # "auto" | "curves" | "density" | "bands",
+                                       # or "+"-joined, e.g. "density+bands"
+    CURVES_MAX_CURVES: int = 50        # auto: curves up to this many members,
+                                       # density above
+    CURVES_SUBSAMPLE: int = 100        # "curves": at most this many members drawn
+    CURVES_MEMBER_ALPHA: Optional[float] = None   # None = from number of curves
+    CURVES_MEDIAN: bool = True         # ensemble median on top
+    CURVES_BAND_PCT: Tuple[float, ...] = (5.0, 25.0)  # bands: p..100-p percentiles
+    CURVES_DENSITY_NX: int = 200       # density: log-period grid points
+    CURVES_DENSITY_NY: int = 60        # density: y bins
+    CURVES_DENSITY_GAMMA: float = 0.5  # < 1 makes sparse regions more visible
+    CURVES_SEED: int = 0               # member subsampling
 
-# observed data
-CURVES_OBS_ERRORS: str = "bar"     # "bar" | "shade" | "none"
-CURVES_OBSERVED_ONLY: bool = False # True: draw only the observed data (no calculated response, no ensemble layers)
-CURVES_OBS_MARKERSIZE: float = 3.5
-CURVES_LINEWIDTH: float = 1.2      # calculated / median line
+    # observed data
+    CURVES_OBS_ERRORS: str = "bar"     # "bar" | "shade" | "none"
+    CURVES_OBSERVED_ONLY: bool = False # True: draw only the observed data (no calculated response, no ensemble layers)
+    CURVES_OBS_MARKERSIZE: float = 3.5
+    CURVES_LINEWIDTH: float = 1.2      # calculated / median line
 
-# axes
-CURVES_INVERT_X: bool = True       # True = as data_viz (period decreasing
-                                   # to the right); False = period increasing
-CURVES_PERIOD_LIM: Optional[Tuple[float, float]] = None   # (Tmin, Tmax) [s]
-CURVES_YLIM: Dict[str, Optional[Tuple[float, float]]] = {
-    "rho": None, "phase": (-180.,+180.,), "tipper": (-0.5,+0.5,), "pt": None}
-CURVES_PANEL_SIZE: Tuple[float, float] = (4.2, 3.4)       # width, height [in]
-CURVES_LEGEND_LOC: Optional[str] = "below"   # "below" (under each panel), a
-                                   # matplotlib loc such as "upper right", or
-                                   # None for no legend. Avoid "best" with
-                                   # density: matplotlib then needs seconds
-                                   # per panel to place it
-CURVES_MULTIPAGE: bool = True      # ".pdf": one file, one page per site;
-                                   # other formats: one file per site in a
-                                   # sub-directory <prefix>_curves/
-CURVES_APPRES_PHASE_DEG: bool = True   # APP_RES_AND_PHS phase in degrees
-                                       # (False: radians)
+    # axes
+    CURVES_INVERT_X: bool = True       # True = as data_viz (period decreasing
+                                       # to the right); False = period increasing
+    CURVES_PERIOD_LIM: Optional[Tuple[float, float]] = None   # (Tmin, Tmax) [s]
+    CURVES_YLIM: Dict[str, Optional[Tuple[float, float]]] = {
+        "rho": None, "phase": (-180.,+180.,), "tipper": (-0.5,+0.5,), "pt": None}
+    CURVES_PANEL_SIZE: Tuple[float, float] = (4.2, 3.4)       # width, height [in]
+    CURVES_LEGEND_LOC: Optional[str] = "below"   # "below" (under each panel), a
+                                       # matplotlib loc such as "upper right", or
+                                       # None for no legend. Avoid "best" with
+                                       # density: matplotlib then needs seconds
+                                       # per panel to place it
+    CURVES_MULTIPAGE: bool = True      # ".pdf": one file, one page per site;
+                                       # other formats: one file per site in a
+                                       # sub-directory <prefix>_curves/
+    CURVES_APPRES_PHASE_DEG: bool = True   # APP_RES_AND_PHS phase in degrees
+                                           # (False: radians)
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -571,7 +351,7 @@ def resolve_run(path: str, *, iteration: Union[str, int], pattern: str) -> dict:
             d = fem.read_results_data(c, out=False)
         except (KeyError, OSError) as exc:
             # OSError: not an HDF5 file / truncated / still being written
-            print(f"femtic_data_misfit: skipping {c}: {exc}")
+            print(f"femtic_misfit: skipping {c}: {exc}")
             continue
         if d["nRows"] == 0:
             continue
@@ -629,7 +409,7 @@ def align_members(datas: Sequence[dict]) -> List[np.ndarray]:
     lists = [list(zip(*[a.tolist() for a in k])) for k in keys]
     maps = [{key: i for i, key in enumerate(lst)} for lst in lists]
     common = [key for key in lists[0] if all(key in m for m in maps[1:])]
-    print(f"femtic_data_misfit: members differ in row layout; "
+    print(f"femtic_misfit: members differ in row layout; "
           f"{len(common)} of {len(lists[0])} rows are common to all.")
     return [np.array([m[key] for key in common], dtype=np.int64) for m in maps]
 
@@ -783,11 +563,11 @@ def build_dataset(datas: Sequence[dict], *, obs_mode: str = "mean",
         st = merge_sites_by_position(ds, float(site_merge_tol))
         ex = ", ".join(f"{a} -> {b}" for a, b in sorted(
             (a, b) for b, v in ds["site_alias"].items() for a in v)[:4])
-        print(f"femtic_data_misfit: sites: {st['n_ids']} site ids -> {st['n_sites']} positions "
+        print(f"femtic_misfit: sites: {st['n_ids']} site ids -> {st['n_sites']} positions "
               f"(tolerance {float(site_merge_tol):g} m); rows of the later occurrences get the "
               f"id of the first one" + (f" ({ex}, ...)" if ex else "") + ".")
         for dname, a, b in st["collisions"]:
-            print(f"femtic_data_misfit: sites: WARNING: {dname} id {a} is at a different "
+            print(f"femtic_misfit: sites: WARNING: {dname} id {a} is at a different "
                   f"position than an earlier station with the same id; it is now id {b}.")
     return ds
 
@@ -1246,24 +1026,24 @@ _CURVE_TYPES = ("MT", "NMT2", "APP_RES_AND_PHS", "NMT2_APP_RES_AND_PHS",
 _CURVE_LAYERS = ("curves", "density", "bands")
 
 
-def _curves_cfg() -> dict:
-    """Snapshot of the CURVES_* settings (read when the method is run)."""
+def _curves_cfg(opts) -> dict:
+    """Snapshot of the CURVES_* settings of `opts` (read when the method is run)."""
     return dict(
-        what=tuple(CURVES_WHAT), comps=CURVES_COMPS, sites=CURVES_SITES,
-        site_order=CURVES_SITE_ORDER, max_sites=CURVES_MAX_SITES,
-        ens_mode=CURVES_ENS_MODE, max_curves=CURVES_MAX_CURVES,
-        subsample=CURVES_SUBSAMPLE, member_alpha=CURVES_MEMBER_ALPHA,
-        median=CURVES_MEDIAN, band_pct=tuple(CURVES_BAND_PCT),
-        dens_nx=CURVES_DENSITY_NX, dens_ny=CURVES_DENSITY_NY,
-        dens_gamma=CURVES_DENSITY_GAMMA, seed=CURVES_SEED,
-        obs_only=bool(CURVES_OBSERVED_ONLY),
-        obs_errors=CURVES_OBS_ERRORS, obs_ms=CURVES_OBS_MARKERSIZE,
-        lw=CURVES_LINEWIDTH, invert_x=CURVES_INVERT_X,
-        period_lim=CURVES_PERIOD_LIM, ylim=dict(CURVES_YLIM),
-        panel_size=tuple(CURVES_PANEL_SIZE), multipage=CURVES_MULTIPAGE,
-        appres_deg=CURVES_APPRES_PHASE_DEG, legend_loc=CURVES_LEGEND_LOC,
-        site_dat=CURVES_SITE_DAT, id_offset=CURVES_SITE_ID_OFFSET,
-        site_match=CURVES_SITE_MATCH, site_tol=float(CURVES_SITE_TOL),
+        what=tuple(opts.CURVES_WHAT), comps=opts.CURVES_COMPS, sites=opts.CURVES_SITES,
+        site_order=opts.CURVES_SITE_ORDER, max_sites=opts.CURVES_MAX_SITES,
+        ens_mode=opts.CURVES_ENS_MODE, max_curves=opts.CURVES_MAX_CURVES,
+        subsample=opts.CURVES_SUBSAMPLE, member_alpha=opts.CURVES_MEMBER_ALPHA,
+        median=opts.CURVES_MEDIAN, band_pct=tuple(opts.CURVES_BAND_PCT),
+        dens_nx=opts.CURVES_DENSITY_NX, dens_ny=opts.CURVES_DENSITY_NY,
+        dens_gamma=opts.CURVES_DENSITY_GAMMA, seed=opts.CURVES_SEED,
+        obs_only=bool(opts.CURVES_OBSERVED_ONLY),
+        obs_errors=opts.CURVES_OBS_ERRORS, obs_ms=opts.CURVES_OBS_MARKERSIZE,
+        lw=opts.CURVES_LINEWIDTH, invert_x=opts.CURVES_INVERT_X,
+        period_lim=opts.CURVES_PERIOD_LIM, ylim=dict(opts.CURVES_YLIM),
+        panel_size=tuple(opts.CURVES_PANEL_SIZE), multipage=opts.CURVES_MULTIPAGE,
+        appres_deg=opts.CURVES_APPRES_PHASE_DEG, legend_loc=opts.CURVES_LEGEND_LOC,
+        site_dat=opts.CURVES_SITE_DAT, id_offset=opts.CURVES_SITE_ID_OFFSET,
+        site_match=opts.CURVES_SITE_MATCH, site_tol=float(opts.CURVES_SITE_TOL),
     )
 
 
@@ -1362,7 +1142,7 @@ def load_site_names(spec: Optional[str], search_dirs: Sequence[str], offset: int
     spec: None -> {}; "auto" -> first site.dat found in `search_dirs`; else a
     path. A missing or unreadable file only gives a message and {}.
     """
-    tag = "femtic_data_misfit: curves:"
+    tag = "femtic_misfit: curves:"
     if not spec:
         return {}
     path = None
@@ -1501,7 +1281,7 @@ def select_sites(info: Dict[int, dict], spec, order: str, max_sites: int) -> Lis
             else:
                 miss.append(item)
         if miss:
-            print(f"femtic_data_misfit: curves: sites not in the data: {miss}")
+            print(f"femtic_misfit: curves: sites not in the data: {miss}")
     else:
         if order not in ("even", "id", "worst", "best"):
             raise ValueError(f"CURVES_SITE_ORDER {order!r} not in even/id/worst/best.")
@@ -1524,7 +1304,7 @@ def select_sites(info: Dict[int, dict], spec, order: str, max_sites: int) -> Lis
             else:
                 sel = ids[:n]
     if max_sites and len(sel) > max_sites:
-        print(f"femtic_data_misfit: curves: {len(sel)} sites selected, "
+        print(f"femtic_misfit: curves: {len(sel)} sites selected, "
               f"limited to CURVES_MAX_SITES = {max_sites}.")
         sel = sel[:max_sites]
     return sel
@@ -1874,7 +1654,7 @@ def format_site_nrms(info: Dict[int, dict]) -> str:
     return "\n".join(lines)
 
 
-def run_curves(ds: dict, *, out_dir: str, prefix: str, title_extra: str,
+def run_curves(ds: dict, opts, *, out_dir: str, prefix: str, title_extra: str,
                plot_dir: Optional[str] = None,
                search_dirs: Sequence[str] = ()) -> int:
     """
@@ -1886,37 +1666,37 @@ def run_curves(ds: dict, *, out_dir: str, prefix: str, title_extra: str,
     try:
         dv, markers, comp_class = _curve_modules()
     except ImportError as exc:
-        print(f"femtic_data_misfit: curves: needs data_viz.py on the path ({exc}).")
+        print(f"femtic_misfit: curves: needs data_viz.py on the path ({exc}).")
         return 1
-    cfg = _curves_cfg()
+    cfg = _curves_cfg(opts)
     bad = [w for w in cfg["what"] if w not in CURVE_PANELS]
     if bad or not cfg["what"]:
-        print(f"femtic_data_misfit: curves: CURVES_WHAT entries must be from "
+        print(f"femtic_misfit: curves: CURVES_WHAT entries must be from "
               f"{CURVE_PANELS}; got {tuple(cfg['what'])}.")
         return 1
     if cfg["obs_errors"] not in ("bar", "shade", "none"):
-        print("femtic_data_misfit: curves: CURVES_OBS_ERRORS must be bar/shade/none.")
+        print("femtic_misfit: curves: CURVES_OBS_ERRORS must be bar/shade/none.")
         return 1
     if cfg["site_match"] not in ("auto", "coords", "id"):
-        print("femtic_data_misfit: curves: CURVES_SITE_MATCH must be auto/coords/id.")
+        print("femtic_misfit: curves: CURVES_SITE_MATCH must be auto/coords/id.")
         return 1
     M = ds["M"]
     try:
         layers = resolve_layers(cfg["ens_mode"], M, cfg["max_curves"])
     except ValueError as exc:
-        print(f"femtic_data_misfit: curves: {exc}")
+        print(f"femtic_misfit: curves: {exc}")
         return 1
 
     skipped = sorted(set(np.unique(ds["datatype_name"]).tolist()) - set(_CURVE_TYPES))
     if skipped:
-        print(f"femtic_data_misfit: curves: no plotter for data types {skipped}, skipped.")
+        print(f"femtic_misfit: curves: no plotter for data types {skipped}, skipped.")
     info = site_nrms(ds)
     names = load_site_names(cfg["site_dat"], search_dirs, cfg["id_offset"], info,
                             cfg["site_match"], cfg["site_tol"])
     for s, nm in names.items():
         if s in info:
             info[s]["name"] = nm
-    if WRITE_STATS:
+    if opts.WRITE_STATS:
         _write(os.path.join(out_dir, f"{prefix}_site_nrms.txt"),
                f"# {title_extra}; per-site nRMS, conventional normalization (RMS1)\n"
                "# site_x / site_y as stored in the results file; name from site.dat;\n"
@@ -1925,18 +1705,18 @@ def run_curves(ds: dict, *, out_dir: str, prefix: str, title_extra: str,
     try:
         sids = select_sites(info, cfg["sites"], cfg["site_order"], cfg["max_sites"])
     except ValueError as exc:
-        print(f"femtic_data_misfit: curves: {exc}")
+        print(f"femtic_misfit: curves: {exc}")
         return 1
     if cfg["obs_only"]:
         layers = []
-    print(f"femtic_data_misfit: curves: {len(sids)} of {len(info)} sites, M={M}, "
+    print(f"femtic_misfit: curves: {len(sids)} of {len(info)} sites, M={M}, "
           f"layers={'observed only' if cfg['obs_only'] else '+'.join(layers) if layers else 'single run'}")
     if not sids:
-        print("femtic_data_misfit: curves: no sites selected, nothing to plot.")
+        print("femtic_misfit: curves: no sites selected, nothing to plot.")
         return 0
 
     exts = ["." + str(e).lstrip(".") for e in
-            ((PLOT_FORMATS,) if isinstance(PLOT_FORMATS, str) else PLOT_FORMATS)]
+            ((opts.PLOT_FORMATS,) if isinstance(opts.PLOT_FORMATS, str) else opts.PLOT_FORMATS)]
     multipage = bool(cfg["multipage"]) and ".pdf" in exts
     pdf_dir = plot_dir or out_dir                 # figures; tables stay in out_dir
     os.makedirs(pdf_dir, exist_ok=True)
@@ -1956,24 +1736,24 @@ def run_curves(ds: dict, *, out_dir: str, prefix: str, title_extra: str,
                                    title_extra=title_extra, dv=dv, markers=markers,
                                    comp_class=comp_class, rng=rng)
             if fig is None:
-                print(f"femtic_data_misfit: curves: site {sid}: nothing to draw, skipped.")
+                print(f"femtic_misfit: curves: site {sid}: nothing to draw, skipped.")
                 continue
             if multipage:
                 if pdf is None:
                     from matplotlib.backends.backend_pdf import PdfPages
                     pdf = PdfPages(pdf_path)
-                pdf.savefig(fig, dpi=PLOT_DPI)
+                pdf.savefig(fig, dpi=opts.PLOT_DPI)
             if other:
                 tag = f"{sid}_{_safe_name(info[sid]['name'])}" if info[sid].get("name") else f"{sid}"
-                _save(fig, os.path.join(sub_dir, f"{prefix}_curves_site{tag}"), other, PLOT_DPI)
-            if SHOW:
+                _save(fig, os.path.join(sub_dir, f"{prefix}_curves_site{tag}"), other, opts.PLOT_DPI)
+            if opts.SHOW:
                 plt.show()
             plt.close(fig)
             n_done += 1
     finally:
         if pdf is not None:
             pdf.close()
-            print(f"femtic_data_misfit: wrote {pdf_path} ({n_done} pages)")
+            print(f"femtic_misfit: wrote {pdf_path} ({n_done} pages)")
     return 0
 
 
@@ -2111,13 +1891,13 @@ def _save(fig, stem: str, formats: Union[str, Sequence[str]], dpi: int) -> None:
         ext = "." + str(ext).lstrip(".")
         out = stem + ext
         fig.savefig(out, dpi=dpi, format=ext[1:])
-        print(f"femtic_data_misfit: wrote {out}")
+        print(f"femtic_misfit: wrote {out}")
 
 
 def _write(path: str, header: str, body: str) -> None:
     with open(path, "w", encoding="ascii") as fh:
         fh.write(header + "\n" + body + "\n")
-    print(f"femtic_data_misfit: wrote {path}")
+    print(f"femtic_misfit: wrote {path}")
 
 
 def default_prefix(runs: Sequence[dict], mode: str) -> str:
@@ -2142,67 +1922,66 @@ def default_out_dir(runs: Sequence[dict]) -> str:
         return os.getcwd()
 
 
-def run_nrms_histogram() -> int:
+def run_nrms_histogram(opts) -> int:
     """
     Method "nrms": histogram of the best nRMS of all scanned ensemble members
     (accepted and rejected), from the results .npz of femtic_ens_post.py
-    (NRMS_RESULTS) or its CSV (NRMS_CSV). Independent of RUN_MODE and
-    RUN_PATHS. Returns 0 on success (also when no source is configured: the
+    (NRMS_RESULTS) or its CSV (NRMS_CSV). Independent of the run paths. Returns 0 on success (also when no source is configured: the
     method is then skipped with a message), 1 on a missing or unreadable file.
     """
-    if not NRMS_RESULTS and not NRMS_CSV:
-        print("femtic_data_misfit: method 'nrms' skipped: set NRMS_RESULTS "
+    if not opts.NRMS_RESULTS and not opts.NRMS_CSV:
+        print("femtic_misfit: method 'nrms' skipped: set NRMS_RESULTS "
               "(results .npz of femtic_ens_post.py) or NRMS_CSV.")
         return 0
     import femtic_viz as fviz   # only needed here
 
     rows = None
     prefix_npz: Optional[str] = None
-    nrms_max = NRMS_MAX
-    src_path = NRMS_RESULTS or NRMS_CSV
-    if NRMS_RESULTS:
+    nrms_max = opts.NRMS_MAX
+    src_path = opts.NRMS_RESULTS or opts.NRMS_CSV
+    if opts.NRMS_RESULTS:
         try:
-            res = fem.read_ensemble_results(NRMS_RESULTS, NRMS_NPZ_PREFIX, out=True)
+            res = fem.read_ensemble_results(opts.NRMS_RESULTS, opts.NRMS_NPZ_PREFIX, out=True)
         except (FileNotFoundError, KeyError, ValueError) as exc:
-            print(f"femtic_data_misfit: method 'nrms': {exc}")
+            print(f"femtic_misfit: method 'nrms': {exc}")
             return 1
         prefix_npz = res["prefix"]
         rows = res["nrms_table"]
         if nrms_max is None:
             nrms_max = res["nrms_max"]
-        if rows is None and not (NRMS_CSV and os.path.isfile(NRMS_CSV)):
+        if rows is None and not (opts.NRMS_CSV and os.path.isfile(opts.NRMS_CSV)):
             # last resort: the accepted members the ensemble itself holds
             rows = [(os.path.basename(os.path.dirname(m[0])), m[1], m[2], "accepted")
                     for m in res["model_list"]]
-            print("femtic_data_misfit: the results file holds no nRMS table "
+            print("femtic_misfit: the results file holds no nRMS table "
                   "(written by an older femtic_ens_post.py) - only the accepted "
                   "members are shown. Set NRMS_CSV to get the rejected ones too.")
     if rows is None:
-        if not (NRMS_CSV and os.path.isfile(NRMS_CSV)):
-            print(f"femtic_data_misfit: method 'nrms': file not found: {NRMS_CSV}")
+        if not (opts.NRMS_CSV and os.path.isfile(opts.NRMS_CSV)):
+            print(f"femtic_misfit: method 'nrms': file not found: {opts.NRMS_CSV}")
             return 1
-        rows = fem.read_nrms_table(NRMS_CSV)
-        print(f"femtic_data_misfit: nRMS table read from {NRMS_CSV}")
-        src_path = NRMS_CSV
+        rows = fem.read_nrms_table(opts.NRMS_CSV)
+        print(f"femtic_misfit: nRMS table read from {opts.NRMS_CSV}")
+        src_path = opts.NRMS_CSV
     if not rows:
-        print("femtic_data_misfit: method 'nrms': the nRMS table is empty.")
+        print("femtic_misfit: method 'nrms': the nRMS table is empty.")
         return 1
 
     name = prefix_npz or re.sub(r"_nrms$", "", os.path.splitext(os.path.basename(src_path))[0])
-    prefix = OUT_PREFIX or name
-    out_dir = OUT_DIR or os.path.dirname(os.path.abspath(src_path))
+    prefix = opts.OUT_PREFIX or name
+    out_dir = opts.OUT_DIR or os.path.dirname(os.path.abspath(src_path))
     os.makedirs(out_dir, exist_ok=True)
-    fig_dir = resolve_plot_dir(out_dir, PLOT_DIR)
-    base = NRMS_HIST_FILE or os.path.join(fig_dir, f"{prefix}_nrms_hist")
+    fig_dir = resolve_plot_dir(out_dir, opts.PLOT_DIR)
+    base = opts.NRMS_HIST_FILE or os.path.join(fig_dir, f"{prefix}_nrms_hist")
     os.makedirs(os.path.dirname(base) or ".", exist_ok=True)
-    fmts = (PLOT_FORMATS,) if isinstance(PLOT_FORMATS, str) else tuple(PLOT_FORMATS)
+    fmts = (opts.PLOT_FORMATS,) if isinstance(opts.PLOT_FORMATS, str) else tuple(opts.PLOT_FORMATS)
     fmts = [str(f).lstrip(".") for f in fmts]
 
     fviz.plot_nrms_histogram(
-        rows, base, nrms_max=nrms_max, bins=NRMS_BINS, title=name,
-        tick_fontsize=NRMS_TICK_FONTSIZE, label_fontsize=NRMS_LABEL_FONTSIZE,
-        title_fontsize=NRMS_TITLE_FONTSIZE, dpi=PLOT_DPI, formats=fmts,
-        show=SHOW, out=True)
+        rows, base, nrms_max=nrms_max, bins=opts.NRMS_BINS, title=name,
+        tick_fontsize=opts.NRMS_TICK_FONTSIZE, label_fontsize=opts.NRMS_LABEL_FONTSIZE,
+        title_fontsize=opts.NRMS_TITLE_FONTSIZE, dpi=opts.PLOT_DPI, formats=fmts,
+        show=opts.SHOW, out=True)
 
     acc = [float(r[2]) for r in rows if str(r[3]).startswith("accepted")]
     acc = [v for v in acc if np.isfinite(v)]
@@ -2218,144 +1997,144 @@ def run_nrms_histogram() -> int:
                   f"  max {max(acc):.3f}"]
     table = "\n".join(lines)
     print(table)
-    if WRITE_STATS:
+    if opts.WRITE_STATS:
         _write(os.path.join(out_dir, f"{prefix}_nrms_stats.txt"),
                f"# nRMS table of {name}; source {src_path}", table)
     return 0
 
 
-def process_runs(runs: Sequence[dict], *, mode: str, out_dir: str, prefix: str) -> int:
+def process_runs(runs: Sequence[dict], opts, *, mode: str, out_dir: str, prefix: str) -> int:
     """
-    Run the selected METHODS on one dataset built from `runs` (one run for
+    Run the selected opts.METHODS on one dataset built from `runs` (one run for
     "single", all members for "ensemble"). Returns 0 on success.
     """
     import matplotlib.pyplot as plt
 
-    ds = build_dataset([r["data"] for r in runs], obs_mode=ENSEMBLE_OBS,
-                       ref_member=REF_MEMBER,
-                       site_merge_tol=SITE_MERGE_TOL if SITE_MERGE_BY_POSITION else None)
+    ds = build_dataset([r["data"] for r in runs], obs_mode=opts.ENSEMBLE_OBS,
+                       ref_member=opts.REF_MEMBER,
+                       site_merge_tol=opts.SITE_MERGE_TOL if opts.SITE_MERGE_BY_POSITION else None)
     M = ds["M"]
     has_syn = M > 1
-    print(f"femtic_data_misfit: mode={mode}, members M={M}, rows={ds['freq'].size}, "
+    print(f"femtic_misfit: mode={mode}, members M={M}, rows={ds['freq'].size}, "
           f"dropped (non-finite calc)={ds['n_dropped_nan']}")
     if mode == "ensemble" and M == 1:
-        print("femtic_data_misfit: WARNING: ensemble with one member; RMS2 = RMS1.")
+        print("femtic_misfit: WARNING: ensemble with one member; RMS2 = RMS1.")
     runs_txt = format_runs(runs)
     if M <= 30:
         print(runs_txt)
     else:
         rr = np.array([r["rms"] for r in runs], float)
-        print(f"femtic_data_misfit: member RMS min/median/max = "
+        print(f"femtic_misfit: member RMS min/median/max = "
               f"{np.nanmin(rr):.3f} / {np.nanmedian(rr):.3f} / {np.nanmax(rr):.3f}")
 
     os.makedirs(out_dir, exist_ok=True)
-    print(f"femtic_data_misfit: output directory {out_dir}")
-    fig_dir = resolve_plot_dir(out_dir, PLOT_DIR)
-    print(f"femtic_data_misfit: figure directory {fig_dir}")
+    print(f"femtic_misfit: output directory {out_dir}")
+    fig_dir = resolve_plot_dir(out_dir, opts.PLOT_DIR)
+    print(f"femtic_misfit: figure directory {fig_dir}")
     if M > 1:
         title_extra = f"ensemble of {M} runs (best iterations)"
     else:
         run_name = os.path.basename(os.path.dirname(os.path.abspath(runs[0]["path"])))
         title_extra = f"{run_name}, iteration {runs[0]['iter']}"
-    if WRITE_STATS:
+    if opts.WRITE_STATS:
         _write(os.path.join(out_dir, f"{prefix}_runs.txt"), f"# mode={mode}", runs_txt)
 
-    panels = build_panels(ds, datatypes=DATATYPES, components=COMPONENTS)
+    panels = build_panels(ds, datatypes=opts.DATATYPES, components=opts.COMPONENTS)
     if not panels:
-        print("femtic_data_misfit: nothing left after DATATYPES/COMPONENTS selection.")
+        print("femtic_misfit: nothing left after DATATYPES/COMPONENTS selection.")
         return 1
 
-    if FIT_MEASURES:
+    if opts.FIT_MEASURES:
         table = format_fit_measures(panels, has_syn=has_syn)
         print(table)
-        if WRITE_STATS:
+        if opts.WRITE_STATS:
             _write(os.path.join(out_dir, f"{prefix}_fit_measures.txt"),
                    f"# {title_extra}\n{FIT_MEASURE_NOTE}", table)
 
-    if "crossplot" in METHODS:
-        crange = global_logf_range(panels) if COLOR_RANGE == "global" else None
+    if "crossplot" in opts.METHODS:
+        crange = global_logf_range(panels) if opts.COLOR_RANGE == "global" else None
         for dname, lst in panels.items():
             fig = plot_crossplot_datatype(
-                dname, lst, title_extra=title_extra, has_syn=has_syn, ncols=NCOLS,
-                panel_size=PANEL_SIZE, cmap=CMAP, color_range=crange,
-                marker_size=MARKER_SIZE, alpha=ALPHA, log_rho=LOG_RHO,
-                show_errorbars=SHOW_ERRORBARS, equal_aspect=EQUAL_ASPECT)
+                dname, lst, title_extra=title_extra, has_syn=has_syn, ncols=opts.NCOLS,
+                panel_size=opts.PANEL_SIZE, cmap=opts.CMAP, color_range=crange,
+                marker_size=opts.MARKER_SIZE, alpha=opts.ALPHA, log_rho=opts.LOG_RHO,
+                show_errorbars=opts.SHOW_ERRORBARS, equal_aspect=opts.EQUAL_ASPECT)
             _save(fig, os.path.join(fig_dir, f"{prefix}_crossplot_{_safe_name(dname)}"),
-                  PLOT_FORMATS, PLOT_DPI)
-            if SHOW:
+                  opts.PLOT_FORMATS, opts.PLOT_DPI)
+            if opts.SHOW:
                 plt.show()
             plt.close(fig)
         table = format_crossplot_stats(panels, has_syn=has_syn)
         print(table)
-        if WRITE_STATS:
+        if opts.WRITE_STATS:
             _write(os.path.join(out_dir, f"{prefix}_crossplot_stats.txt"),
                    f"# {title_extra}\n{FIT_MEASURE_NOTE}\n"
                    "# columns with suffix 1 / 2: conventional / obs+syn normalization "
                    "(ensemble only); rmae = r_mae, rmed = r_med", table)
 
-    if "histogram" in METHODS:
+    if "histogram" in opts.METHODS:
         if not has_syn:
-            print("femtic_data_misfit: single run: no synthesized error available, "
+            print("femtic_misfit: single run: no synthesized error available, "
                   "histograms show the conventional (RMS1) normalization only.")
         all_stats: Dict[str, List[dict]] = {}
-        for gname, lst in group_panels(panels, by_component=HIST_BY_COMPONENT).items():
+        for gname, lst in group_panels(panels, by_component=opts.HIST_BY_COMPONENT).items():
             parts = [normalized_residuals(p) for p in lst]
             freq = np.concatenate([q[0] for q in parts])
             r1 = np.concatenate([q[1] for q in parts])
             r2 = np.concatenate([q[2] for q in parts])
             if r1.size == 0:
-                print(f"femtic_data_misfit: {gname}: no rows with positive error, skipped.")
+                print(f"femtic_misfit: {gname}: no rows with positive error, skipped.")
                 continue
             fig, stats = plot_residual_histograms(
                 gname, freq, r1, r2, has_syn=has_syn,
-                per_decade=HIST_BANDS_PER_DECADE, axis=HIST_BAND_AXIS,
-                ncols=HIST_NCOLS, panel_size=HIST_PANEL_SIZE, limit=HIST_LIMIT,
-                bin_width=HIST_BIN_WIDTH, min_n=HIST_MIN_N,
+                per_decade=opts.HIST_BANDS_PER_DECADE, axis=opts.HIST_BAND_AXIS,
+                ncols=opts.HIST_NCOLS, panel_size=opts.HIST_PANEL_SIZE, limit=opts.HIST_LIMIT,
+                bin_width=opts.HIST_BIN_WIDTH, min_n=opts.HIST_MIN_N,
                 run_label=title_extra)
             all_stats[gname] = stats
             _save(fig, os.path.join(fig_dir, f"{prefix}_hist_{_safe_name(gname)}"),
-                  PLOT_FORMATS, PLOT_DPI)
-            if SHOW:
+                  opts.PLOT_FORMATS, opts.PLOT_DPI)
+            if opts.SHOW:
                 plt.show()
             plt.close(fig)
         table = format_hist_stats(all_stats, has_syn=has_syn)
         print(table)
-        if WRITE_STATS:
+        if opts.WRITE_STATS:
             _write(os.path.join(out_dir, f"{prefix}_hist_stats.txt"),
-                   f"# {title_extra}; bands: {HIST_BANDS_PER_DECADE} per decade "
-                   f"({HIST_BAND_AXIS})\n{FIT_MEASURE_NOTE}\n"
+                   f"# {title_extra}; bands: {opts.HIST_BANDS_PER_DECADE} per decade "
+                   f"({opts.HIST_BAND_AXIS})\n{FIT_MEASURE_NOTE}\n"
                    "# n_out: values of the plotted variant outside +/- HIST_LIMIT", table)
 
-    if "qq" in METHODS:
+    if "qq" in opts.METHODS:
         qq_stats: Dict[str, List[dict]] = {}
-        for gname, lst in group_panels(panels, by_component=QQ_BY_COMPONENT).items():
+        for gname, lst in group_panels(panels, by_component=opts.QQ_BY_COMPONENT).items():
             parts = [normalized_residuals(p) for p in lst]
             freq = np.concatenate([q[0] for q in parts])
             r1 = np.concatenate([q[1] for q in parts])
             r2 = np.concatenate([q[2] for q in parts])
             if r1.size < 4:
-                print(f"femtic_data_misfit: {gname}: too few rows for Q-Q plots, skipped.")
+                print(f"femtic_misfit: {gname}: too few rows for Q-Q plots, skipped.")
                 continue
             fig, stats = plot_qq_bands(
                 gname, freq, r1, r2, has_syn=has_syn,
-                per_decade=QQ_BANDS_PER_DECADE, axis=QQ_BAND_AXIS,
-                ncols=QQ_NCOLS, panel_size=QQ_PANEL_SIZE, limit=QQ_LIMIT,
-                confidence=QQ_CONFIDENCE, min_n=QQ_MIN_N,
-                equal_axes=QQ_EQUAL_AXES, run_label=title_extra)
+                per_decade=opts.QQ_BANDS_PER_DECADE, axis=opts.QQ_BAND_AXIS,
+                ncols=opts.QQ_NCOLS, panel_size=opts.QQ_PANEL_SIZE, limit=opts.QQ_LIMIT,
+                confidence=opts.QQ_CONFIDENCE, min_n=opts.QQ_MIN_N,
+                equal_axes=opts.QQ_EQUAL_AXES, run_label=title_extra)
             qq_stats[gname] = stats
             _save(fig, os.path.join(fig_dir, f"{prefix}_qq_{_safe_name(gname)}"),
-                  PLOT_FORMATS, PLOT_DPI)
-            if SHOW:
+                  opts.PLOT_FORMATS, opts.PLOT_DPI)
+            if opts.SHOW:
                 plt.show()
             plt.close(fig)
         table = format_qq_stats(qq_stats, has_syn=has_syn)
         print(table)
-        if WRITE_STATS:
+        if opts.WRITE_STATS:
             _write(os.path.join(out_dir, f"{prefix}_qq_stats.txt"),
-                   f"# {title_extra}; bands: {QQ_BANDS_PER_DECADE} per decade "
-                   f"({QQ_BAND_AXIS})", table)
+                   f"# {title_extra}; bands: {opts.QQ_BANDS_PER_DECADE} per decade "
+                   f"({opts.QQ_BAND_AXIS})", table)
 
-    if "curves" in METHODS:
+    if "curves" in opts.METHODS:
         # where to look for site.dat: the results directories and up to two
         # levels above them (ensemble members sit in a common parent)
         sdirs: List[str] = []
@@ -2365,69 +2144,118 @@ def process_runs(runs: Sequence[dict], *, mode: str, out_dir: str, prefix: str) 
                 if d not in sdirs:
                     sdirs.append(d)
                 d = os.path.dirname(d)
-        return run_curves(ds, out_dir=out_dir, prefix=prefix, title_extra=title_extra,
+        return run_curves(ds, opts, out_dir=out_dir, prefix=prefix, title_extra=title_extra,
                           plot_dir=fig_dir,
                           search_dirs=sdirs)
     return 0
 
 
-def main(argv: Sequence[str]) -> int:
+# ---------------------------------------------------------------------------
+# Settings object
+# ---------------------------------------------------------------------------
+SETTING_NAMES: Tuple[str, ...] = tuple(Settings.__annotations__)
+
+
+def make_settings(**overrides) -> SimpleNamespace:
+    """Defaults of :class:`Settings`, updated with `overrides`.
+
+    Raises KeyError for a name that is not a setting (a typo in a script would
+    otherwise be silently ignored).
+    """
+    unknown = sorted(set(overrides) - set(SETTING_NAMES))
+    if unknown:
+        raise KeyError(f"femtic_misfit.make_settings: unknown setting(s) {unknown}")
+    base = {k: copy.deepcopy(getattr(Settings, k)) for k in SETTING_NAMES}
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
+# ---------------------------------------------------------------------------
+# Drivers
+# ---------------------------------------------------------------------------
+def _backend(opts) -> None:
     import matplotlib
-    if not SHOW:
+    if not opts.SHOW:
         matplotlib.use("Agg")
 
-    argv = list(argv)
-    mode = RUN_MODE
-    if argv and argv[0] in ("single", "ensemble"):
-        mode = argv.pop(0)
-    rc_nrms = run_nrms_histogram() if "nrms" in METHODS else 0
-    if not any(m in METHODS for m in ("crossplot", "histogram", "qq", "curves")):
-        return rc_nrms        # only the nRMS histogram was asked for
-    paths = expand_paths(argv if argv else RUN_PATHS)
-    if not paths:
-        print("femtic_data_misfit: no run paths given.")
+
+def run_models(opts, argv: Sequence[str] = ()) -> int:
+    """
+    Single models: every entry of `argv` (else opts.RUN_PATHS) is processed on
+    its own, M = 1 (RMS2 = RMS1; no ensemble layers in "curves"). The method
+    "nrms" needs an ensemble and is ignored. Returns 0 if every run worked.
+    """
+    _backend(opts)
+    methods = tuple(opts.METHODS)
+    if "nrms" in methods:
+        print("femtic_misfit: method 'nrms' needs an ensemble (femtic_ens_misfit.py); "
+              "ignored for single models.")
+    if not any(m in methods for m in ("crossplot", "histogram", "qq", "curves")):
+        print("femtic_misfit: no method left to run.")
         return 1
-
-    if mode == "ensemble":
-        runs = []
-        for p in paths:
-            try:
-                runs.append(resolve_run(p, iteration=ITERATION, pattern=ITER_PATTERN))
-            except (FileNotFoundError, ValueError) as exc:
-                print(f"femtic_data_misfit: skipping member {p}: {exc}")
-        if not runs:
-            print("femtic_data_misfit: no usable ensemble member found.")
-            return 1
-        print(f"femtic_data_misfit: ensemble of {len(runs)} of {len(paths)} runs")
-        prefix = OUT_PREFIX or default_prefix(runs, mode)
-        out_dir = OUT_DIR or default_out_dir(runs)
-        return max(rc_nrms, process_runs(runs, mode=mode, out_dir=out_dir, prefix=prefix))
-
-    # single: every entry on its own (not an ensemble)
-    rc = rc_nrms
+    paths = expand_paths(list(argv) if argv else opts.RUN_PATHS)
+    if not paths:
+        print("femtic_misfit: no run paths given.")
+        return 1
+    rc = 0
     for k, p in enumerate(paths):
-        print(f"femtic_data_misfit: ===== run {k + 1} of {len(paths)}: {p}")
+        print(f"femtic_misfit: ===== run {k + 1} of {len(paths)}: {p}")
         try:
-            run = resolve_run(p, iteration=ITERATION, pattern=ITER_PATTERN)
+            run = resolve_run(p, iteration=opts.ITERATION, pattern=opts.ITER_PATTERN)
         except (FileNotFoundError, ValueError) as exc:
-            print(f"femtic_data_misfit: skipping {p}: {exc}")
+            print(f"femtic_misfit: skipping {p}: {exc}")
             rc = 1
             continue
         derived = default_prefix([run], "single")
-        if not OUT_PREFIX:
+        if not opts.OUT_PREFIX:
             prefix = derived
         elif len(paths) == 1:
-            prefix = OUT_PREFIX
+            prefix = opts.OUT_PREFIX
         else:
-            prefix = f"{OUT_PREFIX}_{derived}"
-        out_dir = OUT_DIR or default_out_dir([run])
+            prefix = f"{opts.OUT_PREFIX}_{derived}"
+        out_dir = opts.OUT_DIR or default_out_dir([run])
         try:
-            rc = max(rc, process_runs([run], mode="single", out_dir=out_dir, prefix=prefix))
+            rc = max(rc, process_runs([run], opts, mode="single", out_dir=out_dir, prefix=prefix))
         except (ValueError, KeyError) as exc:
-            print(f"femtic_data_misfit: {p} failed: {exc}")
+            print(f"femtic_misfit: {p} failed: {exc}")
             rc = 1
     return rc
 
 
-if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+def run_ensemble(opts, argv: Sequence[str] = ()) -> int:
+    """
+    One ensemble: all entries of `argv` (else opts.RUN_PATHS) together, the
+    chosen iteration of each run being one member. The method "nrms" is run
+    once, independent of the run paths. Returns 0 on success.
+    """
+    _backend(opts)
+    methods = tuple(opts.METHODS)
+    rc_nrms = run_nrms_histogram(opts) if "nrms" in methods else 0
+    if not any(m in methods for m in ("crossplot", "histogram", "qq", "curves")):
+        return rc_nrms        # only the nRMS histogram was asked for
+    paths = expand_paths(list(argv) if argv else opts.RUN_PATHS)
+    if not paths:
+        print("femtic_misfit: no run paths given.")
+        return 1
+    runs = []
+    for p in paths:
+        try:
+            runs.append(resolve_run(p, iteration=opts.ITERATION, pattern=opts.ITER_PATTERN))
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"femtic_misfit: skipping member {p}: {exc}")
+    if not runs:
+        print("femtic_misfit: no usable ensemble member found.")
+        return 1
+    print(f"femtic_misfit: ensemble of {len(runs)} of {len(paths)} runs")
+    prefix = opts.OUT_PREFIX or default_prefix(runs, "ensemble")
+    out_dir = opts.OUT_DIR or default_out_dir(runs)
+    return max(rc_nrms, process_runs(runs, opts, mode="ensemble", out_dir=out_dir, prefix=prefix))
+
+
+def run(opts, argv: Sequence[str] = (), mode: str = "ensemble") -> int:
+    """``run_models`` for mode "single", ``run_ensemble`` for "ensemble"."""
+    if mode == "single":
+        return run_models(opts, argv)
+    if mode == "ensemble":
+        return run_ensemble(opts, argv)
+    raise ValueError(f"femtic_misfit.run: mode must be 'single' or 'ensemble', got {mode!r}")

@@ -87,6 +87,7 @@ there with the full text.
 | `MOD_DPI` | int | `400` | Figure DPI. |
 | `MOD_DEPTH_KM` | bool | `True` | Depth axis in km (`False`: m). |
 | `MOD_TICK_FONTSIZE`, `MOD_LABEL_FONTSIZE`, `MOD_TITLE_FONTSIZE` | int | `16`, `16`, label + 10 | Axis annotation, label and figure title sizes. |
+| `MOD_TITLE` | str, None or False | `"auto"` | Figure title. `"auto"` = `<ensemble directory name>  <ENSEMBLE_PREFIX>` (as before); `None`, `False` or `""` = **no title**; a string = used as given (`{prefix}`, `{dir}` are filled in; text with other braces is used as it stands). The tag `(converged | perturbed reference)` of a figure that shows both model sources is still appended to a title, not to "no title". The panel titles (borehole name, position) are not affected. Needs the `femtic_viz.py` of 2026-11-09. |
 | `MOD_SHOW_IN_SPYDER` | bool | `True` | Also display saved figures inline when running inside Spyder. |
 
 ### Geographic / UTM origin and sites
@@ -350,3 +351,4 @@ Converged and perturbed models together: run `femtic_ens_post.py` with
 | Date | Author | Change |
 |---|---|---|
 | 2026-11-08 | Claude Sonnet 5.5 (Anthropic) | Created: the borehole block (`MOD_BH`, step 9) of `femtic_ens_post.py` as a stand-alone script that reads the results `.npz` (including `<P>_ens_perturbed` for the converged-and-perturbed layout). Sampling in `femtic.py` (`sample_boreholes`, `BoreholeMesh`, `heat_scale_*`), drawing in `femtic_viz.py`. Default `z_bot` is `MOD_ZLIM[1]` (else 20 km) instead of the site-derived ROI. |
+| 2026-11-09 | Claude Sonnet 5.5 (Anthropic) | New `MOD_TITLE` (figure title: auto / none / text); `BoreholeFigureOptions.suptitle = None` draws no title. Default unchanged. AI-generated; review before production use. |

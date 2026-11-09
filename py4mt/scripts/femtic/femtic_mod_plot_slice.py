@@ -193,6 +193,19 @@ Provenance
                 One model behaves exactly as before. Takes over the
                 per-member "single" figures of the former femtic_ens_plot.py.
                 AI-generated; review before production use.
+    2026-11-09  Claude Sonnet 5.5 (Anthropic)
+                Dipping planes (kind="plane", dip != 90) fixed in
+                fviz.plot_model_slices: strike is the geographic azimuth
+                for every dip (dip towards strike + 90), the axes are the
+                along-strike and down-dip distance from `point` [m], the
+                default extent is the plane cut with the PLOT_XLIM x
+                PLOT_YLIM x PLOT_ZLIM box; per-slice xlim = along-strike and
+                ylim = down-dip range [m] relative to `point`. `point` may
+                be model-local m, ([x, y, z], "model"), ([E, N, z], "utm")
+                or ([lon, lat, z], "latlon") as before (resolved by
+                fem.resolve_slice_positions). Needs the femtic_viz.py of
+                the same date; vertical sections and other kinds unchanged.
+                AI-generated; review before production use.
 
 @author: vrath
 """
@@ -496,10 +509,14 @@ ALPHA_BLANK_THRESH = 0.0
 #:            default 0.0
 #:   z_bot  : (profile only)  deepest depth of fence panel [m, z-down]
 #:            default 20 000 m
-#:   strike : (plane   only)  clockwise from North, degrees
-#:   dip    : (plane   only)  downward inclination from horizontal, degrees
-#:   xlim   : [xmin, xmax] — easting or along-strike axis limit
-#:   ylim   : [ymin, ymax] — northing or down-dip axis limit
+#:   strike : (plane   only)  azimuth of the strike line, degrees clockwise
+#:            from North (every dip)
+#:   dip    : (plane   only)  degrees below the horizontal, 0..180; the plane
+#:            dips towards strike + 90 (90 = vertical section)
+#:   xlim   : [xmin, xmax] : easting axis limit; for a plane: along-strike
+#:            range [m] relative to ``point``
+#:   ylim   : [ymin, ymax] : northing axis limit; for a plane with dip != 90:
+#:            down-dip range [m] relative to ``point``
 #:   zlim   : [zmin, zmax] — depth axis limit (ns/ew/profile panels)
 #:   invert_x : True → flip the horizontal axis left-to-right after rendering
 #:   title  : optional string override
